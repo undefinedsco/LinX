@@ -1,0 +1,177 @@
+/**
+ * ToolBlock - 工具调用块渲染器
+ * 
+ * 参考 Cherry Studio: src/renderer/src/pages/home/Messages/Blocks/ToolBlock.tsx
+ * 显示 AI 的工具/函数调用及其结果
+ */
+
+import { memo, useState } from 'react'
+import { ChevronDown, Wrench, CheckCircle, XCircle, Loader2 } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
+import { MessageBlockStatus, type ToolMessageBlock } from '@linx/models'
+
+interface ToolBlockProps {
+  block: ToolMessageBlock
+  /** 是否默认展开 */
+  defaultExpanded?: boolean
+  className?: string
+}
+
+/**
+ * 获取工具状态图标
+ */
+function getStatusIcon(status: MessageBlockStatus) {
+  switch (status) {
+    case MessageBlockStatus.SUCCESS:
+      return <CheckCircle className="w-4 h-4 text-green-500" />
+    case MessageBlockStatus.ERROR:
+      return <XCircle className="w-4 h-4 text-destructive" />
+    case MessageBlockStatus.PROCESSING:
+    case MessageBlockStatus.STREAMING:
+      return <Loader2 className="w-4 h-4 text-primary animate-spin" />
+    default:
+      return <Wrench className="w-4 h-4 text-muted-foreground" />
+  }
+}
+
+/**
+ * 格式化 JSON 显示
+ */
+function formatJSON(data: unknown): string {
+  try {
+    if (typeof data === 'string') {
+      // 尝试解析 JSON 字符串
+      const parsed = JSON.parse(data)
+      return JSON.stringify(parsed, null, 2)
+    }
+    return JSON.stringify(data, null, 2)
+  } catch {
+    return String(data ?? '')
+  }
+}
+
+/**
+ * 工具调用块组件
+ * - 显示工具名称和状态
+ * - 可折叠显示输入参数和输出结果
+ * - 支持 MCP 工具标识
+ */
+export const ToolBlock = memo<ToolBlockProps>(({
+  block,
+  defaultExpanded = false,
+  className,
+}) => {
+  const [isOpen, setIsOpen] = useState(defaultExpanded)
+
+  const isProcessing = block.status === MessageBlockStatus.PROCESSING ||
+                       block.status === MessageBlockStatus.STREAMING
+  const hasError = block.status === MessageBlockStatus.ERROR
+
+  // 格式化参数和结果
+  const formattedArgs = block.arguments ? formatJSON(block.arguments) : null
+  const formattedResult = block.content ? formatJSON(block.content) : null
+
+  return (
+    <Collapsible
+      open={isOpen}
+      onOpenChange={setIsOpen}
+      className={cn('mb-3', className)}
+    >
+      <CollapsibleTrigger asChild>
+        <div
+          className={cn(
+            'flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer select-none',
+            'bg-muted/40 hover:bg-muted/60 transition-colors',
+            'border border-border/40',
+            isOpen && 'rounded-b-none border-b-0'
+          )}
+        >
+          {/* Status Icon */}
+          {getStatusIcon(block.status)}
+
+          {/* Tool Name */}
+          <span className="text-sm font-medium text-foreground/80">
+            {block.toolName}
+          </span>
+
+          {/* MCP Badge */}
+          {block.metadata?.isMcp && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium">
+              MCP
+            </span>
+          )}
+
+          {/* Status Text */}
+          <span className="text-xs text-muted-foreground ml-auto mr-2">
+            {isProcessing ? '执行中...' : hasError ? '失败' : '完成'}
+          </span>
+
+          {/* Expand indicator */}
+          <ChevronDown
+            className={cn(
+              'w-4 h-4 text-muted-foreground transition-transform',
+              isOpen && 'rotate-180'
+            )}
+          />
+        </div>
+      </CollapsibleTrigger>
+
+      <CollapsibleContent>
+        <div
+          className={cn(
+            'px-3 py-2 rounded-b-lg text-xs font-mono',
+            'bg-muted/20 border border-t-0 border-border/40',
+            'space-y-2 overflow-hidden'
+          )}
+        >
+          {/* Arguments */}
+          {formattedArgs && (
+            <div>
+              <div className="text-muted-foreground mb-1">输入参数:</div>
+              <pre className="p-2 rounded bg-background/50 overflow-x-auto max-h-40 text-[11px]">
+                {formattedArgs}
+              </pre>
+            </div>
+          )}
+
+          {/* Result */}
+          {formattedResult && (
+            <div>
+              <div className={cn(
+                'mb-1',
+                hasError ? 'text-destructive' : 'text-muted-foreground'
+              )}>
+                {hasError ? '错误信息:' : '返回结果:'}
+              </div>
+              <pre className={cn(
+                'p-2 rounded overflow-x-auto max-h-60 text-[11px]',
+                hasError ? 'bg-destructive/10 text-destructive' : 'bg-background/50'
+              )}>
+                {formattedResult}
+              </pre>
+            </div>
+          )}
+
+          {/* Error from block.error */}
+          {block.error && (
+            <div>
+              <div className="text-destructive mb-1">错误:</div>
+              <pre className="p-2 rounded bg-destructive/10 text-destructive overflow-x-auto text-[11px]">
+                {block.error.message}
+              </pre>
+            </div>
+          )}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  )
+})
+
+ToolBlock.displayName = 'ToolBlock'
+
+export default ToolBlock

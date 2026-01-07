@@ -1,0 +1,106 @@
+{
+  "version": "1.0.0",
+  "updatedAt": "2024-12-14",
+  "providers": [
+    {
+      "slug": "openai",
+      "displayName": "OpenAI",
+      "baseUrl": "https://api.openai.com/v1",
+      "homepage": "https://platform.openai.com",
+      "logoUrl": "https://openai.com/favicon.ico",
+      "description": "OpenAI API - GPT-4, GPT-3.5 系列模型",
+      "supportedFeatures": ["chat", "embedding", "image", "audio", "vision", "function-calling"],
+      "authType": "bearer"
+    },
+    {
+      "slug": "anthropic",
+      "displayName": "Anthropic",
+      "baseUrl": "https://api.anthropic.com",
+      "homepage": "https://www.anthropic.com",
+      "logoUrl": "https://www.anthropic.com/favicon.ico",
+      "description": "Anthropic Claude 系列模型",
+      "supportedFeatures": ["chat", "vision", "function-calling"],
+      "authType": "x-api-key"
+    },
+    {
+      "slug": "openrouter",
+      "displayName": "OpenRouter",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "homepage": "https://openrouter.ai",
+      "logoUrl": "https://openrouter.ai/favicon.ico",
+      "description": "统一接口访问多种 AI 模型",
+      "supportedFeatures": ["chat", "vision", "function-calling"],
+      "authType": "bearer"
+    },
+    {
+      "slug": "deepseek",
+      "displayName": "DeepSeek",
+      "baseUrl": "https://api.deepseek.com/v1",
+      "homepage": "https://www.deepseek.com",
+      "logoUrl": "https://www.deepseek.com/favicon.ico",
+      "description": "DeepSeek 深度求索 AI 模型",
+      "supportedFeatures": ["chat", "function-calling"],
+      "authType": "bearer"
+    },
+    {
+      "slug": "google",
+      "displayName": "Google (Gemini)",
+      "baseUrl": "https://generativelanguage.googleapis.com/v1",
+      "homepage": "https://ai.google.dev",
+      "logoUrl": "https://ai.google.dev/favicon.ico",
+      "description": "Google Gemini 系列模型",
+      "supportedFeatures": ["chat", "vision", "embedding"],
+      "authType": "bearer"
+    },
+    {
+      "slug": "x-ai",
+      "displayName": "xAI (Grok)",
+      "baseUrl": "https://api.x.ai/v1",
+      "homepage": "https://x.ai",
+      "logoUrl": "https://x.ai/favicon.ico",
+      "description": "xAI Grok 模型",
+      "supportedFeatures": ["chat", "function-calling"],
+      "authType": "bearer"
+    },
+    {
+      "slug": "qwen",
+      "displayName": "通义千问",
+      "baseUrl": "https://dashscope.aliyuncs.com/api/v1",
+      "homepage": "https://qwen.ai",
+      "logoUrl": "https://qwen.ai/favicon.ico",
+      "description": "阿里云通义千问系列模型",
+      "supportedFeatures": ["chat", "vision", "function-calling"],
+      "authType": "bearer"
+    },
+    {
+      "slug": "moonshot",
+      "displayName": "Moonshot (Kimi)",
+      "baseUrl": "https://api.moonshot.cn/v1",
+      "homepage": "https://www.moonshot.cn",
+      "logoUrl": "https://www.moonshot.cn/favicon.ico",
+      "description": "月之暗面 Kimi 模型",
+      "supportedFeatures": ["chat", "function-calling"],
+      "authType": "bearer"
+    },
+    {
+      "slug": "groq",
+      "displayName": "Groq",
+      "baseUrl": "https://api.groq.com/openai/v1",
+      "homepage": "https://groq.com",
+      "logoUrl": "https://groq.com/favicon.ico",
+      "description": "Groq 高速推理平台",
+      "supportedFeatures": ["chat", "function-calling"],
+      "authType": "bearer"
+    },
+    {
+      "slug": "together",
+      "displayName": "Together AI",
+      "baseUrl": "https://api.together.xyz/v1",
+      "homepage": "https://together.ai",
+      "logoUrl": "https://together.ai/favicon.ico",
+      "description": "Together AI 开源模型平台",
+      "supportedFeatures": ["chat", "embedding", "image"],
+      "authType": "bearer"
+    }
+  ]
+}

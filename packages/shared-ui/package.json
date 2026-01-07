@@ -1,0 +1,20 @@
+{
+  "name": "@linx/shared-ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "echo \"lint not configured\""
+  },
+  "dependencies": {
+    "react": "18.2.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "name": "@linx/models",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "echo \"lint not configured\"",
+    "test": "vitest",
+    "test:pod": "dotenv -e ../../.env -- vitest run tests/pod.integration.test.ts",
+    "test:w3c": "rdf-test-suite tests/storage/quint-engine.cjs https://w3c.github.io/rdf-tests/sparql/sparql11/manifest-sparql11-query.ttl -m 'https://w3c.github.io/rdf-tests/|tests/w3c-data/rdf-tests/' -e",
+    "test:w3c:quadstore": "rdf-test-suite tests/storage/quadstore-engine.cjs https://w3c.github.io/rdf-tests/sparql/sparql11/manifest-sparql11-query.ttl -m 'https://w3c.github.io/rdf-tests/|tests/w3c-data/rdf-tests/' -e",
+    "test:w3c:all": "rdf-test-suite tests/storage/quint-engine.cjs https://w3c.github.io/rdf-tests/sparql/sparql11/manifest-all.ttl -m 'https://w3c.github.io/rdf-tests/|tests/w3c-data/rdf-tests/' -e"
+  },
+  "dependencies": {
+    "@comunica/query-sparql": "^2.10.0",
+    "@comunica/types": "^2.10.0",
+    "@rdfjs/types": "^1.1.0",
+    "@types/pg": "^8.16.0",
+    "better-sqlite3": "^11.0.0",
+    "drizzle-orm": "^0.32.0",
+    "drizzle-solid": "0.1.14",
+    "n3": "^1.17.0",
+    "pg": "^8.16.3",
+    "quadstore": "^15.4.0",
+    "quadstore-comunica": "^6.0.0",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/n3": "^1.16.0",
+    "dotenv-cli": "^7.3.0",
+    "rdf-test-suite": "^2.1.3",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  }
+}

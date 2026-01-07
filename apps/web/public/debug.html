@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Page</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: monospace;
+            background: #0a0e1a;
+            color: white;
+        }
+        .box {
+            background: #1a1f2e;
+            padding: 20px;
+            margin: 10px 0;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 LinX 调试页面</h1>
+    
+    <div class="box">
+        <h2>✅ 静态 HTML 加载成功</h2>
+        <p>如果你看到这个页面，说明服务器正常运行</p>
+    </div>
+
+    <div class="box">
+        <h2>📊 检查清单</h2>
+        <ul id="checklist">
+            <li>⏳ JavaScript 执行检查...</li>
+        </ul>
+    </div>
+
+    <div class="box">
+        <h2>🌐 网络请求</h2>
+        <p>打开浏览器控制台（F12）查看：</p>
+        <ol>
+            <li>Console 标签 - 查看 JavaScript 错误</li>
+            <li>Network 标签 - 查看请求是否成功</li>
+            <li>检查 main.tsx 是否加载失败</li>
+        </ol>
+    </div>
+
+    <script>
+        console.log('✅ JavaScript 可以执行');
+        
+        const checklist = document.getElementById('checklist');
+        checklist.innerHTML = `
+            <li>✅ JavaScript 执行成功</li>
+            <li>✅ DOM 操作正常</li>
+            <li>⏳ 检查 React 应用...</li>
+        `;
+
+        // 检查 React 应用
+        setTimeout(() => {
+            const root = document.getElementById('root');
+            if (root) {
+                console.log('Root element found:', root);
+                console.log('Root innerHTML:', root.innerHTML);
+                
+                if (root.innerHTML.trim() === '') {
+                    checklist.innerHTML += '<li style="color: #ff6b6b;">❌ React 应用未渲染（root 元素为空）</li>';
+                } else {
+                    checklist.innerHTML += '<li style="color: #51cf66;">✅ React 应用已渲染</li>';
+                }
+            } else {
+                checklist.innerHTML += '<li style="color: #ff6b6b;">❌ 找不到 root 元素</li>';
+            }
+        }, 2000);
+
+        // 捕获所有错误
+        window.addEventListener('error', (e) => {
+            console.error('❌ 捕获到错误:', e);
+            checklist.innerHTML += `<li style="color: #ff6b6b;">❌ 错误: ${e.message}</li>`;
+        });
+
+        window.addEventListener('unhandledrejection', (e) => {
+            console.error('❌ 未处理的 Promise 拒绝:', e);
+            checklist.innerHTML += `<li style="color: #ff6b6b;">❌ Promise 错误: ${e.reason}</li>`;
+        });
+    </script>
+</body>
+</html>
+

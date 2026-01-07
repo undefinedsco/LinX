@@ -4,10 +4,10 @@
   "description": "LinX Desktop Application",
   "main": "dist/main.js",
   "scripts": {
-    "build": "tsc && npm run copy-assets",
+    "build": "tsc && yarn run copy-assets",
     "copy-assets": "mkdir -p dist/pages && cp src/pages/*.html dist/pages/",
     "start": "electron .",
-    "dev": "npm run build && electron ."
+    "dev": "yarn run build && electron ."
   },
   "devDependencies": {
     "@types/node": "^20.10.0",

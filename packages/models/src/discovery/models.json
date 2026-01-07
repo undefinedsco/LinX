@@ -1,0 +1,250 @@
+{
+  "version": "1.0.0",
+  "updatedAt": "2024-12-14",
+  "models": [
+    {
+      "id": "gpt-4o",
+      "provider": "openai",
+      "displayName": "GPT-4o",
+      "description": "最强大的多模态模型",
+      "contextLength": 128000,
+      "maxOutputTokens": 16384,
+      "capabilities": ["chat", "vision", "function-calling", "streaming", "json-mode"],
+      "pricing": { "input": 2.5, "output": 10 },
+      "isDefault": true
+    },
+    {
+      "id": "gpt-4o-mini",
+      "provider": "openai",
+      "displayName": "GPT-4o Mini",
+      "description": "快速且经济的小型模型",
+      "contextLength": 128000,
+      "maxOutputTokens": 16384,
+      "capabilities": ["chat", "vision", "function-calling", "streaming", "json-mode"],
+      "pricing": { "input": 0.15, "output": 0.6 }
+    },
+    {
+      "id": "gpt-4-turbo",
+      "provider": "openai",
+      "displayName": "GPT-4 Turbo",
+      "description": "高性能 GPT-4 版本",
+      "contextLength": 128000,
+      "maxOutputTokens": 4096,
+      "capabilities": ["chat", "vision", "function-calling", "streaming", "json-mode"],
+      "pricing": { "input": 10, "output": 30 }
+    },
+
+    {
+      "id": "claude-3-5-sonnet-20241022",
+      "provider": "anthropic",
+      "displayName": "Claude 3.5 Sonnet",
+      "description": "最新最强的 Claude 模型",
+      "contextLength": 200000,
+      "maxOutputTokens": 8192,
+      "capabilities": ["chat", "vision", "function-calling", "streaming"],
+      "pricing": { "input": 3, "output": 15 },
+      "isDefault": true
+    },
+    {
+      "id": "claude-3-5-haiku-20241022",
+      "provider": "anthropic",
+      "displayName": "Claude 3.5 Haiku",
+      "description": "快速且经济的 Claude 模型",
+      "contextLength": 200000,
+      "maxOutputTokens": 8192,
+      "capabilities": ["chat", "vision", "function-calling", "streaming"],
+      "pricing": { "input": 0.8, "output": 4 }
+    },
+    {
+      "id": "claude-3-opus-20240229",
+      "provider": "anthropic",
+      "displayName": "Claude 3 Opus",
+      "description": "最强推理能力",
+      "contextLength": 200000,
+      "maxOutputTokens": 4096,
+      "capabilities": ["chat", "vision", "function-calling", "streaming"],
+      "pricing": { "input": 15, "output": 75 }
+    },
+
+    {
+      "id": "openai/gpt-4o",
+      "provider": "openrouter",
+      "displayName": "GPT-4o (via OpenRouter)",
+      "description": "OpenAI GPT-4o",
+      "contextLength": 128000,
+      "capabilities": ["chat", "vision", "function-calling", "streaming"],
+      "pricing": { "input": 2.5, "output": 10 }
+    },
+    {
+      "id": "openai/gpt-4o-mini",
+      "provider": "openrouter",
+      "displayName": "GPT-4o Mini (via OpenRouter)",
+      "description": "OpenAI GPT-4o Mini",
+      "contextLength": 128000,
+      "capabilities": ["chat", "vision", "function-calling", "streaming"],
+      "pricing": { "input": 0.15, "output": 0.6 },
+      "isDefault": true
+    },
+    {
+      "id": "x-ai/grok-4.1-fast",
+      "provider": "openrouter",
+      "displayName": "Grok 4.1 Fast (via OpenRouter)",
+      "description": "xAI Grok 4.1 Fast - 高速响应",
+      "contextLength": 131072,
+      "capabilities": ["chat", "function-calling", "streaming"],
+      "pricing": { "input": 3, "output": 15 }
+    },
+    {
+      "id": "anthropic/claude-3.5-sonnet",
+      "provider": "openrouter",
+      "displayName": "Claude 3.5 Sonnet (via OpenRouter)",
+      "description": "Anthropic Claude 3.5 Sonnet",
+      "contextLength": 200000,
+      "capabilities": ["chat", "vision", "function-calling", "streaming"],
+      "pricing": { "input": 3, "output": 15 }
+    },
+    {
+      "id": "anthropic/claude-3-haiku",
+      "provider": "openrouter",
+      "displayName": "Claude 3 Haiku (via OpenRouter)",
+      "description": "Anthropic Claude 3 Haiku - 快速响应",
+      "contextLength": 200000,
+      "capabilities": ["chat", "streaming"],
+      "pricing": { "input": 0.25, "output": 1.25 }
+    },
+    {
+      "id": "google/gemini-pro-1.5",
+      "provider": "openrouter",
+      "displayName": "Gemini Pro 1.5 (via OpenRouter)",
+      "description": "Google Gemini Pro 1.5",
+      "contextLength": 1000000,
+      "capabilities": ["chat", "vision", "streaming"],
+      "pricing": { "input": 2.5, "output": 7.5 }
+    },
+    {
+      "id": "meta-llama/llama-3.1-70b-instruct",
+      "provider": "openrouter",
+      "displayName": "Llama 3.1 70B (via OpenRouter)",
+      "description": "Meta Llama 3.1 70B",
+      "contextLength": 131072,
+      "capabilities": ["chat", "function-calling", "streaming"],
+      "pricing": { "input": 0.52, "output": 0.75 }
+    },
+    {
+      "id": "deepseek/deepseek-chat",
+      "provider": "openrouter",
+      "displayName": "DeepSeek Chat (via OpenRouter)",
+      "description": "DeepSeek V3 Chat",
+      "contextLength": 64000,
+      "capabilities": ["chat", "function-calling", "streaming"],
+      "pricing": { "input": 0.14, "output": 0.28 }
+    },
+
+    {
+      "id": "deepseek-chat",
+      "provider": "deepseek",
+      "displayName": "DeepSeek Chat",
+      "description": "DeepSeek V3 通用对话模型",
+      "contextLength": 64000,
+      "capabilities": ["chat", "function-calling", "streaming"],
+      "pricing": { "input": 0.14, "output": 0.28 },
+      "isDefault": true
+    },
+    {
+      "id": "deepseek-reasoner",
+      "provider": "deepseek",
+      "displayName": "DeepSeek Reasoner (R1)",
+      "description": "DeepSeek R1 推理模型",
+      "contextLength": 64000,
+      "capabilities": ["chat", "streaming"],
+      "pricing": { "input": 0.55, "output": 2.19 }
+    },
+
+    {
+      "id": "grok-2-1212",
+      "provider": "x-ai",
+      "displayName": "Grok 2",
+      "description": "xAI Grok 2 模型",
+      "contextLength": 131072,
+      "capabilities": ["chat", "function-calling", "streaming"],
+      "pricing": { "input": 2, "output": 10 },
+      "isDefault": true
+    },
+
+    {
+      "id": "gemini-1.5-pro",
+      "provider": "google",
+      "displayName": "Gemini 1.5 Pro",
+      "description": "Google Gemini 1.5 Pro",
+      "contextLength": 1000000,
+      "capabilities": ["chat", "vision", "streaming"],
+      "pricing": { "input": 1.25, "output": 5 },
+      "isDefault": true
+    },
+    {
+      "id": "gemini-1.5-flash",
+      "provider": "google",
+      "displayName": "Gemini 1.5 Flash",
+      "description": "Google Gemini 1.5 Flash - 快速响应",
+      "contextLength": 1000000,
+      "capabilities": ["chat", "vision", "streaming"],
+      "pricing": { "input": 0.075, "output": 0.3 }
+    },
+
+    {
+      "id": "qwen-max",
+      "provider": "qwen",
+      "displayName": "通义千问 Max",
+      "description": "通义千问最强模型",
+      "contextLength": 32000,
+      "capabilities": ["chat", "vision", "function-calling", "streaming"],
+      "isDefault": true
+    },
+    {
+      "id": "qwen-plus",
+      "provider": "qwen",
+      "displayName": "通义千问 Plus",
+      "description": "通义千问增强版",
+      "contextLength": 131072,
+      "capabilities": ["chat", "function-calling", "streaming"]
+    },
+
+    {
+      "id": "moonshot-v1-128k",
+      "provider": "moonshot",
+      "displayName": "Kimi 128K",
+      "description": "月之暗面 Kimi 长上下文模型",
+      "contextLength": 128000,
+      "capabilities": ["chat", "function-calling", "streaming"],
+      "isDefault": true
+    },
+
+    {
+      "id": "llama-3.3-70b-versatile",
+      "provider": "groq",
+      "displayName": "Llama 3.3 70B",
+      "description": "Meta Llama 3.3 70B on Groq",
+      "contextLength": 131072,
+      "capabilities": ["chat", "function-calling", "streaming"],
+      "isDefault": true
+    },
+    {
+      "id": "mixtral-8x7b-32768",
+      "provider": "groq",
+      "displayName": "Mixtral 8x7B",
+      "description": "Mistral Mixtral on Groq",
+      "contextLength": 32768,
+      "capabilities": ["chat", "streaming"]
+    },
+
+    {
+      "id": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+      "provider": "together",
+      "displayName": "Llama 3.3 70B Turbo",
+      "description": "Meta Llama 3.3 on Together",
+      "contextLength": 131072,
+      "capabilities": ["chat", "function-calling", "streaming"],
+      "isDefault": true
+    }
+  ]
+}
