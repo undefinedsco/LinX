@@ -31,7 +31,11 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+- **Privacy Sovereignty**: Document how the feature keeps data inside user Solid Pods, handles consent for any replication, and maintains encryption.
+- **Web Core & Parity**: Confirm the web build remains canonical and outline the parity plan for Windows, Linux, macOS, iOS, Android, and 鸿蒙 wrappers.
+- **Static Delivery**: Describe how Next.js `next export` delivers the change; justify any server rendering or runtime dependency.
+- **Drizzle-Solid Contracts**: List schema updates, drizzle-solid migrations, and how CRUD operations stay scoped to the active Solid session.
+- **Domain Model Discipline**: Capture domain changes, invariants, and reasons for any validation that cannot live inside the domain layer.
 
 ## Project Structure
 

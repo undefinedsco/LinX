@@ -82,6 +82,14 @@
   Fill them out with the right functional requirements.
 -->
 
+### Constitution Alignment
+
+- **Privacy Sovereignty**: Detail Solid Pod interactions, consent flows, and encryption requirements introduced by this feature.
+- **Web Core & Parity**: Explain how the web experience remains canonical and how companion platforms will stay in lockstep.
+- **Static Delivery**: Describe how Next.js static export (`next export`) will serve this functionality and justify any runtime needs.
+- **Drizzle-Solid Contracts**: Enumerate schema changes, migrations, and session-scoped CRUD behaviour driven by drizzle-solid.
+- **Domain Model Discipline**: Identify domain model updates and confirm validation resides within aggregates whenever possible.
+
 ### Functional Requirements
 
 - **FR-001**: System MUST [specific capability, e.g., "allow users to create accounts"]

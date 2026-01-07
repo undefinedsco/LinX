@@ -43,6 +43,10 @@ apps/mobile-shell/android/
 apps/mobile-shell/ios/
 apps/mobile-shell/www/
 
+# Solid W3C cache
+.w3c-cache/
+packages/**/.w3c-cache/
+
 # Temporary files
 *.tmp
 *.swp

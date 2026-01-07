@@ -1,50 +1,76 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+<!--
+Sync Impact Report
+Version change: 0.0.0 → 1.0.0
+Modified principles:
+- N/A → Solid Pod Privacy Sovereignty
+- N/A → Web-Centric Multi-Platform Reach
+- N/A → Next.js Static Delivery Core
+- N/A → Drizzle-Solid Data Contracts
+- N/A → Domain-Driven Minimal Validation
+Added sections:
+- Architecture & Platform Constraints
+- Delivery Workflow
+Removed sections:
+- None
+Templates requiring updates:
+- ✅ .specify/templates/plan-template.md
+- ✅ .specify/templates/spec-template.md
+- ✅ .specify/templates/tasks-template.md
+- ⚠ .specify/templates/commands (directory absent; confirm if guidance is needed)
+Follow-up TODOs:
+- None
+-->
+# Linq Constitution
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### Solid Pod Privacy Sovereignty
+- All personal data MUST reside in user-controlled Solid Pods using W3C Solid protocols.
+- Services MUST obtain explicit consent before copying data outside a pod and MUST delete temporary processing artefacts immediately after use.
+- Transport and storage MUST remain end-to-end encrypted with revocable keys owned by the user.
+Rationale: These controls uphold the privacy-first mandate and maintain trust in the Solid ecosystem.
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+### Web-Centric Multi-Platform Reach
+- The web application MUST remain the canonical client and define authoritative user flows.
+- Native experiences on Windows, Linux, macOS, iOS, Android, and 鸿蒙 MUST embed or package the web build without diverging business logic.
+- Each platform wrapper MUST pass automated parity checks that compare behaviour against the web baseline before release.
+Rationale: A single web core avoids fragmentation while keeping the product accessible on every target platform.
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+### Next.js Static Delivery Core
+- Core business routes MUST be implemented as Next.js pages compatible with `next export`.
+- Builds MUST generate static assets served from CDN-first infrastructure; any server rendering MUST be justified through governance review.
+- Dynamic data MUST rely on incremental static regeneration or client-side fetching that honours Solid session boundaries.
+Rationale: Static-first delivery guarantees deterministic deployments and simplifies scale planning.
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+### Drizzle-Solid Data Contracts
+- Domain entities MUST be modelled in shared drizzle-solid schemas from which all CRUD operations are generated.
+- Every data mutation MUST flow through typed drizzle-solid repositories bound to the active Solid session.
+- Schema evolution MUST include migration scripts and pod compatibility notes before release approval.
+Rationale: Centralised schema management keeps Solid data contracts consistent across clients and pods.
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+### Domain-Driven Minimal Validation
+- Each domain aggregate MUST enforce its invariants internally; external layers MAY only perform basic data-shape checks.
+- Validation outside the domain MUST log justification when a rule cannot be represented within the domain model.
+- New capabilities MUST begin with ubiquitous language workshops that update the domain model ahead of UI or API coding.
+Rationale: Domain-driven discipline keeps validation minimal and preserves the domain as the single source of truth.
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+## Architecture & Platform Constraints
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+- Deployments MUST target infrastructure that serves static Next.js exports behind HTTPS with CDN caching and Solid OIDC proxy support.
+- Identity and authorization MUST use Solid OIDC flows; alternative auth stacks MAY NOT ship without governance approval.
+- Platform-specific integrations (notifications, file access, offline storage) MUST abstract through cross-platform adapters that respect Solid data boundaries.
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+## Delivery Workflow
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+1. Begin every initiative with domain discovery and drizzle-solid schema design reviewed against Solid Pod contracts.
+2. Implementation plans MUST document privacy impacts, static export strategy, and cross-platform verification steps before coding starts.
+3. Release candidates MUST pass the web acceptance suite and parity checks on each supported platform wrapper prior to launch.
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+- Amendments require approval from the privacy steward and platform architect, with decisions recorded in the repository governance log.
+- Versioning policy: MAJOR for principle changes or removals, MINOR for new principles or governance sections, PATCH for clarifications without behavioural change.
+- Quarterly compliance reviews MUST confirm adherence to Core Principles, architecture constraints, and drizzle-solid schema integrity.
+- Release checklists MUST include verification against the latest constitution before deployment.
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+**Version**: 1.0.0 | **Ratified**: 2025-10-26 | **Last Amended**: 2025-10-26

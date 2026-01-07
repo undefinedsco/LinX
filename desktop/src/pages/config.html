@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';">
+  <title>LinX 配置</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      /* 
+       * LinX 颜色系统 - 暗色模式
+       * 与 apps/web/src/index.css 保持一致
+       */
+      
+      /* 背景层次 */
+      --background: hsl(240 10% 3.9%);       /* #09090b - 最深背景 */
+      --foreground: hsl(0 0% 98%);           /* #fafafa - 主文字 */
+      
+      /* 卡片/弹窗 */
+      --card: hsl(240 6% 10%);               /* #18181b - 卡片背景 */
+      --card-foreground: hsl(0 0% 98%);
+      
+      /* 品牌色 - LinX 紫色 */
+      --primary: hsl(262 83% 58%);           /* 紫色主色 */
+      --primary-foreground: hsl(0 0% 98%);
+      
+      /* 次要区域 */
+      --secondary: hsl(240 5% 17%);          /* #27272a */
+      --muted: hsl(240 5% 17%);              /* #27272a - 次要背景 */
+      --muted-foreground: hsl(240 4% 65%);   /* #a1a1aa - 次要文字 */
+      
+      /* 边框 */
+      --border: hsl(240 4% 28%);             /* #3f3f46 - 清晰边框 */
+      --input: hsl(240 4% 28%);
+      
+      /* 功能色 */
+      --destructive: hsl(0 62% 30%);
+      --success: hsl(142 76% 36%);           /* #10B981 */
+      --error: hsl(0 84% 60%);               /* #EF4444 */
+      
+      /* 圆角 */
+      --radius-sm: 4px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
+      background: var(--background);
+      color: var(--foreground);
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 24px;
+      padding-bottom: 80px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 32px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h1 {
+      font-size: 24px;
+      font-weight: 600;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: var(--radius-md);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease-in-out;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: var(--primary-foreground);
+    }
+
+    .btn-primary:hover {
+      filter: brightness(1.1);
+    }
+
+    .btn-secondary {
+      background: var(--secondary);
+      color: var(--foreground);
+    }
+
+    .btn-secondary:hover {
+      filter: brightness(1.2);
+    }
+
+    .btn-danger {
+      background: var(--error);
+      color: white;
+    }
+
+    .btn-danger:hover {
+      filter: brightness(1.1);
+    }
+
+    .config-group {
+      background: var(--card);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      margin-bottom: 16px;
+      border: 1px solid var(--border);
+    }
+
+    .config-group-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted-foreground);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 16px;
+    }
+
+    .config-item {
+      margin-bottom: 16px;
+    }
+
+    .config-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .config-item label {
+      display: block;
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: 4px;
+    }
+
+    .config-item .description {
+      font-size: 12px;
+      color: var(--muted-foreground);
+      margin-bottom: 8px;
+    }
+
+    .config-item input,
+    .config-item select {
+      width: 100%;
+      padding: 10px 12px;
+      background: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      color: var(--foreground);
+      font-size: 14px;
+      font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+      transition: border-color 0.2s ease-in-out;
+    }
+
+    .config-item input:focus,
+    .config-item select:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+
+    .config-item input::placeholder {
+      color: var(--muted-foreground);
+    }
+
+    .config-item select option {
+      background: var(--card);
+      color: var(--foreground);
+    }
+
+    .status-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 12px 24px;
+      background: var(--card);
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .status-text {
+      font-size: 13px;
+      color: var(--muted-foreground);
+    }
+
+    .status-path {
+      font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+      font-size: 12px;
+      color: var(--muted-foreground);
+      opacity: 0.7;
+    }
+
+    .toast {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      padding: 12px 20px;
+      border-radius: var(--radius-md);
+      font-size: 14px;
+      font-weight: 500;
+      opacity: 0;
+      transform: translateY(-10px);
+      transition: all 0.24s ease-in-out;
+      z-index: 1000;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .toast.success {
+      background: var(--success);
+      color: white;
+    }
+
+    .toast.error {
+      background: var(--error);
+      color: white;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>环境配置</h1>
+      <div class="header-actions">
+        <button class="btn btn-secondary" onclick="resetConfig()">重置默认</button>
+        <button class="btn btn-primary" onclick="saveConfig()">保存配置</button>
+      </div>
+    </header>
+
+    <div id="config-form"></div>
+  </div>
+
+  <div class="status-bar">
+    <span class="status-text">配置文件</span>
+    <span class="status-path" id="config-path">加载中...</span>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    let currentConfig = {};
+    let schema = {};
+
+    // 初始化
+    async function init() {
+      try {
+        // 获取配置 schema
+        schema = await window.xpodDesktop.config.getSchema();
+        
+        // 获取当前配置
+        currentConfig = await window.xpodDesktop.config.getAll();
+        
+        // 获取配置文件路径
+        const configPath = await window.xpodDesktop.config.getPath();
+        document.getElementById('config-path').textContent = configPath;
+        
+        // 渲染表单
+        renderForm();
+      } catch (err) {
+        showToast('加载配置失败: ' + err.message, 'error');
+      }
+    }
+
+    // 渲染配置表单
+    function renderForm() {
+      const container = document.getElementById('config-form');
+      container.innerHTML = '';
+
+      for (const [groupKey, group] of Object.entries(schema)) {
+        const groupEl = document.createElement('div');
+        groupEl.className = 'config-group';
+        groupEl.innerHTML = `<div class="config-group-title">${group.label}</div>`;
+
+        for (const [varKey, varDef] of Object.entries(group.vars)) {
+          const itemEl = document.createElement('div');
+          itemEl.className = 'config-item';
+
+          const value = currentConfig[varKey] || '';
+          
+          let inputHtml;
+          if (varDef.options) {
+            // 下拉选择
+            const optionsHtml = varDef.options
+              .map(opt => `<option value="${opt}" ${value === opt ? 'selected' : ''}>${opt}</option>`)
+              .join('');
+            inputHtml = `<select id="${varKey}" data-key="${varKey}">${optionsHtml}</select>`;
+          } else {
+            // 文本输入
+            inputHtml = `<input type="text" id="${varKey}" data-key="${varKey}" value="${value}" placeholder="${varDef.placeholder || ''}">`;
+          }
+
+          itemEl.innerHTML = `
+            <label for="${varKey}">${varDef.label}</label>
+            <div class="description">${varDef.description}</div>
+            ${inputHtml}
+          `;
+
+          groupEl.appendChild(itemEl);
+        }
+
+        container.appendChild(groupEl);
+      }
+    }
+
+    // 收集表单数据
+    function collectFormData() {
+      const data = {};
+      const inputs = document.querySelectorAll('input[data-key], select[data-key]');
+      inputs.forEach(input => {
+        const key = input.dataset.key;
+        const value = input.value.trim();
+        if (value) {
+          data[key] = value;
+        }
+      });
+      return data;
+    }
+
+    // 保存配置
+    async function saveConfig() {
+      try {
+        const data = collectFormData();
+        await window.xpodDesktop.config.update(data);
+        currentConfig = data;
+        showToast('配置已保存，重启服务后生效', 'success');
+      } catch (err) {
+        showToast('保存失败: ' + err.message, 'error');
+      }
+    }
+
+    // 重置配置
+    async function resetConfig() {
+      if (!confirm('确定要重置为默认配置吗？')) {
+        return;
+      }
+      try {
+        await window.xpodDesktop.config.reset();
+        currentConfig = await window.xpodDesktop.config.getAll();
+        renderForm();
+        showToast('已重置为默认配置', 'success');
+      } catch (err) {
+        showToast('重置失败: ' + err.message, 'error');
+      }
+    }
+
+    // 显示提示
+    function showToast(message, type = 'success') {
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      toast.className = `toast ${type} show`;
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, 3000);
+    }
+
+    // 启动
+    init();
+  </script>
+</body>
+</html>

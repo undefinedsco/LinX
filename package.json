@@ -1,0 +1,64 @@
+{
+  "name": "linx-monorepo",
+  "private": true,
+  "packageManager": "yarn@1.22.22",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "tests/*",
+    "examples/*"
+  ],
+  "scripts": {
+    "dev:web": "yarn workspace @linx/web dev",
+    "build:web": "yarn workspace @linx/web build",
+    "preview:web": "yarn workspace @linx/web preview",
+    "lint:web": "yarn workspace @linx/web lint",
+    "typecheck:web": "yarn workspace @linx/web tsc --noEmit",
+    "dev:example": "yarn workspace solid-login-example dev",
+    "build:models": "yarn workspace @linx/models build",
+    "build": "yarn build:models && yarn build:web",
+    "clean": "yarn workspace @linx/web clean && yarn workspace @linx/models clean",
+    "install:all": "ELECTRON_SKIP_BINARY_DOWNLOAD=1 yarn install",
+    "dev": "yarn dev:web",
+    "lint": "yarn lint:web",
+    "typecheck": "yarn typecheck:web",
+    "test:unit": "yarn workspace @linx/web test",
+    "test:e2e": "yarn workspace @linx/e2e test",
+    "test:e2e:ui": "yarn workspace @linx/e2e test:ui",
+    "test": "yarn test:unit && yarn test:e2e"
+  },
+  "dependencies": {
+    "@inrupt/solid-client": "^2.0.0",
+    "@inrupt/solid-client-authn-browser": "^2.0.0",
+    "@inrupt/solid-ui-react": "^2.8.1",
+    "@inrupt/vocab-common-rdf": "^1.0.5",
+    "@openai/chatkit": "^1.1.0",
+    "@radix-ui/react-avatar": "^1.0.2",
+    "@radix-ui/react-select": "^2.0.0",
+    "@radix-ui/react-slot": "^1.0.2",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^1.2.1",
+    "drizzle-orm": "^0.32.2",
+    "lucide-react": "^0.473.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "tailwind-merge": "^2.2.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@vitejs/plugin-react": "^4.3.2",
+    "autoprefixer": "^10.4.16",
+    "postcss": "^8.4.31",
+    "tailwindcss": "^3.4.3",
+    "tailwindcss-animate": "^1.0.7",
+    "typescript": "^5.4.0",
+    "vite": "^5.4.8"
+  },
+  "resolutions": {
+    "**/drizzle-orm": "^0.32.2",
+    "**/drizzle-solid": "0.1.15",
+    "**/react": "18.3.1",
+    "**/react-dom": "18.3.1"
+  }
+}

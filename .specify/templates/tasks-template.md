@@ -12,6 +12,8 @@ description: "Task list template for feature implementation"
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
+**Constitution Alignment**: Include tasks that uphold Solid Pod privacy controls, Next.js static export delivery, drizzle-solid schema integrity, cross-platform parity, and domain-driven validation discipline.
+
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: Can run in parallel (different files, no dependencies)
@@ -62,12 +64,12 @@ description: "Task list template for feature implementation"
 
 Examples of foundational tasks (adjust based on your project):
 
-- [ ] T004 Setup database schema and migrations framework
-- [ ] T005 [P] Implement authentication/authorization framework
-- [ ] T006 [P] Setup API routing and middleware structure
-- [ ] T007 Create base models/entities that all stories depend on
-- [ ] T008 Configure error handling and logging infrastructure
-- [ ] T009 Setup environment configuration management
+- [ ] T004 Establish Solid Pod authentication connectors and consent logging
+- [ ] T005 [P] Scaffold drizzle-solid schemas and migrations for shared data contracts
+- [ ] T006 [P] Configure Next.js static export pipeline (`next export`) with CDN deployment target
+- [ ] T007 Create domain aggregates enforcing invariants before exposing APIs
+- [ ] T008 Build cross-platform wrapper harness to validate parity with the web core
+- [ ] T009 Setup environment configuration management and encryption key rotation
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
