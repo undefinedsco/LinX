@@ -1,6 +1,6 @@
-# LinQ 安全和加密方案
+# LinX 安全和加密方案
 
-> LinQ 的数据安全、隐私保护和加密实现
+> LinX 的数据安全、隐私保护和加密实现
 > 
 > 创建时间：2025-11-06
 > 状态：📋 设计规划中
@@ -19,7 +19,7 @@
 
 ## 1. 概述
 
-LinQ 的安全设计遵循以下原则：
+LinX 的安全设计遵循以下原则：
 - **端到端加密**：敏感数据在传输和存储时都加密
 - **最小权限**：应用和 AI 只获得必要的权限
 - **用户控制**：用户完全掌控自己的数据和密钥
@@ -31,7 +31,7 @@ LinQ 的安全设计遵循以下原则：
 
 ### 2.1 需求
 
-用户需要在 LinQ 中存储 AI 服务的 API 密钥（OpenAI、Anthropic 等），这些密钥：
+用户需要在 LinX 中存储 AI 服务的 API 密钥（OpenAI、Anthropic 等），这些密钥：
 - 极其敏感，泄露会造成经济损失
 - 需要加密存储在 Pod 中
 - 只有用户本人可以解密
@@ -164,7 +164,7 @@ interface EncryptedAPIKeyRecord {
 - 与 Pod 访问自然关联
 
 **缺点**：
-- LinQ 需要保存用户的 Pod 密码派生密钥
+- LinX 需要保存用户的 Pod 密码派生密钥
 - Solid 服务器重启后需要重新登录
 
 **实现**：
@@ -176,7 +176,7 @@ async function onSolidLogin(username: string, password: string) {
   
   // 派生并保存主密钥（仅在内存中）
   const masterKey = await deriveMasterKey(password);
-  sessionStorage.setItem('linq_master_key', masterKey);
+  sessionStorage.setItem('linx_master_key', masterKey);
 }
 ```
 
@@ -237,7 +237,7 @@ async function onSolidLogin(username: string, password: string) {
 
 ### 3.1 权限模型
 
-LinQ 使用 Solid 的 Web Access Control (WAC) 进行权限管理：
+LinX 使用 Solid 的 Web Access Control (WAC) 进行权限管理：
 
 ```turtle
 # 示例：允许 AI 助手读取用户的联系人
@@ -245,7 +245,7 @@ LinQ 使用 Solid 的 Web Access Control (WAC) 进行权限管理：
 
 <#AIReadContacts>
     a acl:Authorization;
-    acl:agent <https://linq-ai.example/assistant#me>;
+    acl:agent <https://linx-ai.example/assistant#me>;
     acl:accessTo <https://user.pod/contacts/>;
     acl:mode acl:Read.
 ```
@@ -282,7 +282,7 @@ AI 联系人详情页：
 
 ### 4.1 HTTPS 强制
 
-- 所有 LinQ 服务必须使用 HTTPS
+- 所有 LinX 服务必须使用 HTTPS
 - 开发环境使用自签名证书
 
 ### 4.2 API 调用安全
@@ -393,6 +393,15 @@ class SecureStorage {
 | | - 定义 API 密钥加密方案（AES-GCM） |
 | | - 设计 Solid Pod 权限管理 |
 | | - 规划传输和存储安全 |
+
+
+
+
+
+
+
+
+
 
 
 

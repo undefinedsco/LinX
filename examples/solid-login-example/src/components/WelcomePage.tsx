@@ -4,14 +4,13 @@ import { drizzle } from 'drizzle-solid';
 import {
   solidProfileTable,
   type SolidProfileRow
-} from '@linq/models';
+} from '@linx/models';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { ProfileCard } from '../modules/profile/profile-card';
-import { SOLID_SESSION_ID } from '../shared/auth/solid-session-provider';
 
-const DEFAULT_NATIVE_REDIRECT = 'linq://auth/callback';
+const DEFAULT_NATIVE_REDIRECT = 'linx://auth/callback';
 
 const parseIssuerList = (): string[] => {
   const raw = process.env.NEXT_PUBLIC_SOLID_IDP_ISSUERS ?? '';
@@ -45,7 +44,7 @@ const ensureRedirectAllowed = (redirectUrl: string) => {
     if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
       return redirectUrl;
     }
-    if (parsed.protocol === 'linq:') {
+    if (parsed.protocol === 'linx:') {
       return redirectUrl;
     }
     throw new Error(`Unsupported redirect protocol: ${parsed.protocol}`);
@@ -295,7 +294,7 @@ export default function WelcomePage() {
               <p className="text-xs text-muted-foreground">
                 默认发行地址来自 <code>NEXT_PUBLIC_SOLID_IDP_ISSUERS</code>，站点 URL 来自
                 <code className="mx-1">NEXT_PUBLIC_SITE_URL</code> 或当前浏览器域名；当无法识别 Web 域名时会回退到
-                <code className="mx-1">linq://auth/callback</code> 供桌面/移动壳使用。
+                <code className="mx-1">linx://auth/callback</code> 供桌面/移动壳使用。
               </p>
             </div>
           ) : webId ? (

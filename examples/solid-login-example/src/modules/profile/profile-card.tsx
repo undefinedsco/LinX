@@ -6,7 +6,7 @@ import {
   solidProfileTable,
   type SolidProfileRow,
   type SolidProfileUpdate
-} from "@linq/models";
+} from "@linx/models";
 import { Copy } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -362,7 +362,7 @@ export function ProfileCard({ profile, webId, fetchFn, database, onProfileUpdate
       ? file.name.slice(file.name.lastIndexOf("."))
       : ".png";
     const safeExtension = extension.replace(/[^.a-zA-Z0-9]/g, "");
-    const fileName = `linq-avatar-${Date.now()}${
+    const fileName = `linx-avatar-${Date.now()}${
       safeExtension.length > 0 ? safeExtension : ".png"
     }`;
     const targetUrl = `${container}${fileName}`;

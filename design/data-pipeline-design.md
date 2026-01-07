@@ -1,4 +1,4 @@
-# LinQ 数据管线架构设计
+# LinX 数据管线架构设计
 
 > 数据模型到前端State的映射，以及浏览器与Solid Pod的同步机制
 > 
@@ -13,7 +13,7 @@
 ```
 Solid Pod (SPARQL/RDF) 
     ↓ drizzle-solid 
-TypeScript Models (@linq/models)
+TypeScript Models (@linx/models)
     ↓ TanStack Query
 Frontend State (React)
     ↓ User Actions
@@ -32,7 +32,7 @@ UI Components
 
 ### 2.1 模型到State的直接映射
 
-**原则**：每个 `@linq/models` 中的 Table Schema 直接映射为 React State
+**原则**：每个 `@linx/models` 中的 Table Schema 直接映射为 React State
 
 ```typescript
 // packages/models/src/chat/chat.schema.ts
@@ -563,7 +563,7 @@ const STORAGE_STRATEGY = {
 
 ### 7.3 实际业务场景分析
 
-**LinQ作为生产力工具的典型用户行为**：
+**LinX作为生产力工具的典型用户行为**：
 
 ```typescript
 // 场景1：用户在编写重要消息时
@@ -836,7 +836,7 @@ function ChatList() {
 
 **Phase 2：自动化状态生成**
 ```typescript
-// 1. 基于 @linq/models 自动生成前端状态类型
+// 1. 基于 @linx/models 自动生成前端状态类型
 // 2. 自动生成标准的 CRUD Hooks
 // 3. 自动生成 UI 状态管理
 ```
@@ -847,6 +847,111 @@ function ChatList() {
 // 2. 保持架构和代码的统一性
 ```
 
+### 9.9 DataLayer + Store 统一实践
+
+> 目的：把仓储（@linx/models）、数据仓库（@linx/stores）与 UI 模板解耦，形成可复用的微应用骨架。
+
+#### 包职责
+
+```
+@linx/models   → drizzle-solid schema & repositories
+@linx/stores   → createDataLayer (TanStack Query + Zustand store)
+@linx/shared-ui → 标准化列表/详情组件
+```
+
+#### `createDataLayer` API（存放在 `packages/stores`）
+
+```ts
+const layer = createDataLayer({
+  descriptor: chatRepository,
+  mapRow: mapChatRow,               // 可选，转成 ViewModel
+  listConfig: { searchable: true },
+})
+
+// 输出
+layer.queries.useListQuery(filters)
+layer.queries.useDetailQuery(id)
+layer.queries.useCreateMutation()
+layer.store.useStore(selector)      // Zustand selector
+layer.actions.select(id)
+layer.actions.setSearch(term)
+```
+
+- TanStack Query 的 `onSuccess` 内部自动调用 `hydrateList/hydrateDetail`，将结果写入实体 store。
+- 基础 store 统一包含：
+
+```ts
+type EntityStore<T> = {
+  entities: Record<string, T>
+  ids: string[]
+  selectedId: string | null
+  search: string
+  detailView: { mode: 'view' | 'create'; message?: string }
+}
+```
+
+#### 扩展模块 UI 状态
+
+```ts
+const chatLayer = createDataLayer(...)
+
+export const useChatStore = create((set) => ({
+  ...chatLayer.store.initialState,
+  isRightPaneOpen: false,
+  toggleRightPane: () => set((s) => ({ isRightPaneOpen: !s.isRightPaneOpen })),
+  select: chatLayer.actions.select,
+  setSearch: chatLayer.actions.setSearch,
+}))
+```
+
+- 实体同步逻辑全部由 data layer 维护；模块只定义额外 UI 字段。
+
+#### 可复用的列表模板
+
+```tsx
+function StandardList<T>({
+  ids,
+  entities,
+  selectedId,
+  onSelect,
+  renderItem,
+}: StandardListProps<T>) {
+  return ids.map((id) => (
+    <ListRow key={id} active={id === selectedId} onClick={() => onSelect(id)}>
+      {renderItem(entities[id]!)}
+    </ListRow>
+  ))
+}
+
+const { ids, entities, selectedId } = useChatStore((state) => ({
+  ids: state.ids,
+  entities: state.entities,
+  selectedId: state.selectedId,
+}))
+
+<StandardList
+  ids={ids}
+  entities={entities}
+  selectedId={selectedId}
+  onSelect={chatLayer.actions.select}
+  renderItem={(chat) => <ChatListItem chat={chat} />}>
+/>;
+```
+
+- 所有微应用共享相同的列表骨架，只需提供 `renderItem`/操作按钮即可。
+- 右侧面板、细分过滤等 UI 可以在各自模块 store 中扩展。
+
+#### 职责对照
+
+| 层 | 职责 |
+| --- | --- |
+| `@linx/models` | Schema + Repository 描述（纯 drizzle-solid） |
+| `@linx/stores` | TanStack Query hooks + 实体 store + invalidate 策略 |
+| Module UI store | 模块特有 UI 状态（面板开关、搜索词等） |
+| `@linx/shared-ui` | 可复用列表/详情模板，消费 store 接口 |
+
+按照这套分层，任何新微应用只需提供 descriptor + 自定义 UI slice + `renderItem`，即可复用数据管线的全部能力。
+
 ---
 
 ## 10. 简化后的最终架构
@@ -854,7 +959,7 @@ function ChatList() {
 ### 10.1 核心数据流
 
 ```
-@linq/models (drizzle-solid schemas)
+@linx/models (drizzle-solid schemas)
     ↓ 类型推导
 React State Types (自动生成)
     ↓ TanStack Query
@@ -954,7 +1059,7 @@ class DataMigration {
   
   private async cleanupIndexedDB() {
     // 删除 IndexedDB 数据库
-    indexedDB.deleteDatabase('linq-local-cache')
+    indexedDB.deleteDatabase('linx-local-cache')
   }
 }
 
@@ -1029,7 +1134,7 @@ export async function cleanupLegacyStorage() {
     const databases = await indexedDB.databases()
     
     for (const db of databases) {
-      if (db.name?.startsWith('linq-')) {
+      if (db.name?.startsWith('linx-')) {
         console.log(`清理旧数据库: ${db.name}`)
         indexedDB.deleteDatabase(db.name)
       }
@@ -1039,7 +1144,7 @@ export async function cleanupLegacyStorage() {
     const keysToRemove = []
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i)
-      if (key?.startsWith('linq-cache-')) {
+      if (key?.startsWith('linx-cache-')) {
         keysToRemove.push(key)
       }
     }
@@ -1071,11 +1176,11 @@ if (await hasLegacyData()) {
 **Phase 2: 自动迁移（对于新版本）**
 ```typescript
 // 版本检查，如果是从旧版本升级
-const lastVersion = localStorage.getItem('linq-version')
+const lastVersion = localStorage.getItem('linx-version')
 if (lastVersion && compareVersions(lastVersion, CURRENT_VERSION) < 0) {
   await autoMigrate()
 }
-localStorage.setItem('linq-version', CURRENT_VERSION)
+localStorage.setItem('linx-version', CURRENT_VERSION)
 ```
 
 **Phase 3: 清理（几个版本后）**
@@ -1101,7 +1206,7 @@ await forceCleanupLegacyData()
 **完全不使用 IndexedDB**，原因：
 
 1. **复杂性问题**：如果要在 IndexedDB 中复刻整套数据结构，就需要：
-   - 维护与 `@linq/models` 完全一致的 schema
+   - 维护与 `@linx/models` 完全一致的 schema
    - 处理关系型数据的存储和查询
    - 同步 drizzle-solid 的变更到本地存储
    - 解决数据一致性问题
@@ -1120,7 +1225,7 @@ await forceCleanupLegacyData()
 
 ```typescript
 // ===== 统一的数据流 =====
-@linq/models (drizzle-solid)
+@linx/models (drizzle-solid)
     ↓ 直接查询 Solid Pod
 TanStack Query (内存缓存)
     ↓ 类型安全的数据

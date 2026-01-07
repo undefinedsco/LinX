@@ -1,6 +1,6 @@
-# LinQ AI 集成方案
+# LinX AI 集成方案
 
-> LinQ 的 AI 功能集成设计，包括云端模型和本地模型支持
+> LinX 的 AI 功能集成设计，包括云端模型和本地模型支持
 > 
 > 创建时间：2025-11-06
 > 状态：📋 设计规划中
@@ -20,7 +20,7 @@
 
 ## 1. 概述
 
-LinQ 支持多种 AI 模型，用户可以根据需求选择：
+LinX 支持多种 AI 模型，用户可以根据需求选择：
 - **云端 AI**：通过 API 调用 GPT、Claude 等大模型
 - **本地 AI**：通过 Ollama 运行本地开源模型
 - **未来**：Pod 层 AI 支持（Pod 作为 AI 的存储和记忆）
@@ -36,7 +36,7 @@ LinQ 支持多种 AI 模型，用户可以根据需求选择：
   - 理解用户自然语言指令
   - 操作 Pod 中的数据（读取、写入、搜索）
   - 回答问题、提供建议
-- **模型来源**：LinQ 提供的模型（云端或本地）
+- **模型来源**：LinX 提供的模型（云端或本地）
 
 ### 2.2 自定义 AI 联系人
 
@@ -303,7 +303,7 @@ class AIModelManager {
 ## 8. 参考资料
 
 - [Ollama API 文档](https://github.com/ollama/ollama/blob/main/docs/api.md)
-- [LinQ 产品定位文档](./product-definition.md)
+- [LinX 产品定位文档](./product-definition.md)
 - [安全和加密文档](./security.md)
 
 ---
@@ -316,6 +316,15 @@ class AIModelManager {
 | | - 定义 AI 类型和权限 |
 | | - 设计 Ollama 集成方案 |
 | | - 规划 Pod 层 AI 支持 |
+
+
+
+
+
+
+
+
+
 
 
 

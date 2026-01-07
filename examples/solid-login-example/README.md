@@ -1,6 +1,6 @@
 # Solid Login Example
 
-This is the original Next.js implementation of Solid Pod authentication for LinQ, preserved as a learning example for new developers.
+This is the original Next.js implementation of Solid Pod authentication for LinX, preserved as a learning example for new developers.
 
 ## Overview
 
@@ -28,7 +28,7 @@ This example demonstrates how to:
 
 ## Usage
 
-This example is part of the LinQ monorepo and uses shared dependencies. From the **root directory**:
+This example is part of the LinX monorepo and uses shared dependencies. From the **root directory**:
 
 ```bash
 # Install all monorepo dependencies (only needed once)

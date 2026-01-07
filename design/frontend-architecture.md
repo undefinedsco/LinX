@@ -1,6 +1,6 @@
-# LinQ 前端架构设计
+# LinX 前端架构设计
 
-> LinQ 前端技术架构与组件库策略设计文档
+> LinX 前端技术架构与组件库策略设计文档
 > 
 > 创建时间：2025-11-07
 > 状态：✅ 架构规范已确定
@@ -24,7 +24,7 @@
 
 ### 1.1 设计原则
 
-LinQ 前端架构遵循以下核心原则：
+LinX 前端架构遵循以下核心原则：
 
 - **🎯 去中心化优先**：符合 Solid Pod 理念，避免 vendor lock-in
 - **🧩 组件化架构**：模块化设计，便于维护和扩展
@@ -36,11 +36,11 @@ LinQ 前端架构遵循以下核心原则：
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    LinQ Frontend Architecture               │
+│                    LinX Frontend Architecture               │
 ├─────────────────────────────────────────────────────────────┤
 │  🎨 UI Layer                                               │
-│  ├── shadcn/ui (基础框架)                                   │
-│  ├── OpenAI ChatKit (聊天专用)                             │
+│  ├── shadcn/ui (基础框架，包括聊天界面)                    │
+│  ├── Vercel AI SDK (AI/聊天逻辑与流式响应)                 │
 │  └── Custom Components (业务组件)                          │
 ├─────────────────────────────────────────────────────────────┤
 │  🧠 Logic Layer                                            │
@@ -49,7 +49,7 @@ LinQ 前端架构遵循以下核心原则：
 │  └── React Context (全局状态)                              │
 ├─────────────────────────────────────────────────────────────┤
 │  🔌 Data Layer                                             │
-│  ├── @linq/models (Solid Pod ORM)                          │
+│  ├── @linx/models (Solid Pod ORM)                          │
 │  ├── drizzle-solid (数据访问)                              │
 │  └── @inrupt/solid-client (Solid 集成)                     │
 ├─────────────────────────────────────────────────────────────┤
@@ -72,7 +72,8 @@ LinQ 前端架构遵循以下核心原则：
 | **构建工具** | Vite | 5.4+ | 快速开发体验，HMR 支持 |
 | **类型系统** | TypeScript | 5.0+ | 全面类型安全 |
 | **路由管理** | TanStack Router | latest | 类型安全的路由系统 |
-| **状态管理** | TanStack Query | latest | 服务端状态管理 |
+| **服务端状态** | TanStack Query | latest | 服务端数据同步与缓存 |
+| **客户端状态** | Zustand | latest | UI 交互状态与全局会话 |
 | **样式方案** | Tailwind CSS | 3.4+ | 实用优先的 CSS 框架 |
 
 ### 2.2 Solid Pod 集成
@@ -82,7 +83,7 @@ LinQ 前端架构遵循以下核心原则：
 | **Solid 客户端** | @inrupt/solid-client | 官方 Solid 客户端 |
 | **UI 集成** | @inrupt/solid-ui-react | Solid React 组件 |
 | **数据 ORM** | drizzle-solid (本地版) | 自定义 SPARQL ORM |
-| **数据模型** | @linq/models | 统一数据模型定义 |
+| **数据模型** | @linx/models | 统一数据模型定义 |
 
 ---
 
@@ -92,9 +93,14 @@ LinQ 前端架构遵循以下核心原则：
 
 **设计理念**: "各司其职，最佳实践"
 
-- **shadcn/ui**: 主框架 + 基础组件生态
-- **OpenAI ChatKit**: 专业聊天界面 + 流式响应
-- **自定义组件**: 业务特定逻辑
+**核心构建公式**:
+> **业务逻辑组件** = **无业务逻辑 UI 组件** (shadcn/ui) + **数据/状态** (Query/Zustand)
+>
+> **App** = 路由 + 布局 + (**业务逻辑组件** × N)
+
+- **shadcn/ui**: 主框架 + 基础组件生态 + 聊天界面骨架 (负责 "长什么样")
+- **Vercel AI SDK**: AI/聊天逻辑 + 流式响应 (负责 "怎么运作")
+- **自定义组件**: 业务特定逻辑，组合 UI 与数据 (负责 "具体业务")
 
 ### 3.2 组件分工明细
 
@@ -132,25 +138,44 @@ import { MessageSquare, Users, FolderOpen, Star, Key, Settings, Sun, Moon, Bot }
 - ✅ **类型安全**: TypeScript 原生支持
 - ✅ **主题系统**: 完美支持 CSS 变量
 
-#### ChatKit 负责 (💬 专业聊天)
+#### Vercel AI SDK 负责 (🤖 AI/聊天逻辑与流式响应)
 
 ```tsx
-import { ChatKit } from '@openai/chatkit-react'
+import { useChat } from 'ai/react'
 
-// 专业聊天功能
-<ChatKit 
-  baseURL={customEndpoint}     // 支持自定义端点
-  apiKey={userApiKey}
-  theme={solidTheme}           // 应用 Solid 主题
-/>
+function ChatComponent() {
+  const { messages, input, handleInputChange, handleSubmit } = useChat({
+    api: '/api/chat', // 后端 API 端点
+  })
+
+  return (
+    <div className="flex flex-col h-full">
+      <ScrollArea className="flex-1 p-4">
+        {messages.map((m, index) => (
+          <div key={index} className="whitespace-pre-wrap">
+            {m.role === 'user' ? 'User: ' : 'AI: '}
+            {m.content}
+          </div>
+        ))}
+      </ScrollArea>
+      <form onSubmit={handleSubmit} className="p-4 border-t">
+        <Input
+          value={input}
+          placeholder="Say something..."
+          onChange={handleInputChange}
+        />
+        <Button type="submit">Send</Button>
+      </form>
+    </div>
+  )
+}
 ```
 
 **功能**:
-- ✅ **对话界面**: 完整的聊天组件
-- ✅ **流式响应**: 实时消息流处理  
-- ✅ **ChatKit Widgets**: 结构化信息展示
-- ✅ **多轮对话**: 会话状态管理
+- ✅ **流式响应**: 实时消息流处理
+- ✅ **`useChat` Hook**: 简化聊天状态管理
 - ✅ **错误处理**: 优雅的 API 失败降级
+- ✅ **多模型支持**: 可灵活切换后端 AI 模型
 
 ### 3.3 技术集成策略
 
@@ -163,15 +188,7 @@ import { ChatKit } from '@openai/chatkit-react'
     <ContentArea>
       {/* 条件渲染 */}
       {activeView === 'chat' ? (
-        <ChatKit              // OpenAI ChatKit
-          baseURL={customEndpoint}
-          apiKey={userApiKey}
-          theme={{
-            primaryColor: '#764FF6',     // Solid 官方紫色
-            backgroundColor: '#0D1520',  // 深蓝背景
-            borderRadius: '12px'         // 统一圆角
-          }}
-        />
+        <ChatComponent />       {/* shadcn/ui + Vercel AI SDK: 聊天界面 */}
       ) : (
         <OtherModules>        // shadcn 组件组合
           <Card />
@@ -183,23 +200,6 @@ import { ChatKit } from '@openai/chatkit-react'
 </MainLayout>
 ```
 
-### 3.4 Solid Pod 兼容性
-
-**去中心化支持**:
-- ✅ **自定义端点**: ChatKit 支持 `CHATKIT_API_BASE` 配置
-- ✅ **本地模型**: 支持 Ollama, LM Studio 等本地 AI
-- ✅ **数据主权**: 聊天记录可存储在用户的 Solid Pod
-- ✅ **隐私保护**: 完全本地化的 AI 对话
-
-**配置示例**:
-```bash
-# 本地 Ollama 配置
-CHATKIT_API_BASE=http://localhost:11434/v1
-OPENAI_API_KEY=ollama
-
-# 或自定义 Solid Pod AI 服务
-CHATKIT_API_BASE=https://my-pod.example.com/ai/v1
-```
 
 ---
 
@@ -209,51 +209,98 @@ CHATKIT_API_BASE=https://my-pod.example.com/ai/v1
 
 ```
 📊 状态管理层级
-├── 🌐 全局状态 (React Context)
-│   ├── solidSession (Solid Pod 会话)
-│   ├── currentUser (当前用户信息)  
-│   └── appSettings (应用设置)
+├── 🌐 全局状态 (Zustand + Persist)
+│   ├── solidSession (Solid Pod 会话 - 持久化)
+│   ├── appSettings (应用设置/主题 - 持久化)
+│   └── currentUser (当前用户信息)
 ├── 🗂️ 路由状态 (TanStack Router)
 │   ├── currentView (当前功能视图)
-│   ├── selectedItem (选中的列表项)
+│   ├── params (URL参数)
 │   └── navigationHistory (导航历史)
 ├── 📡 服务端状态 (TanStack Query)
-│   ├── chatMessages (聊天消息)
+│   ├── chatMessages (聊天消息 - 缓存/同步)
 │   ├── contactList (联系人列表)
-│   ├── fileList (文件列表)
-│   └── favoriteList (收藏列表)
-└── 🔄 本地状态 (useState/useReducer)
-    ├── formData (表单数据)
-    ├── uiState (UI 交互状态)
-    └── cacheData (临时缓存)
+│   └── fileList (文件列表)
+├── ⚡ 模块 UI 状态 (Zustand)
+│   ├── selectedItems (选中项管理)
+│   ├── filterConditions (筛选条件)
+│   └── dialogVisibility (复杂弹窗控制)
+└── 🔄 局部状态 (useState/useReducer)
+    └── 简单的表单输入、组件内部显隐
 ```
 
-### 4.2 TanStack Query 集成
+### 4.2 状态库职责划分
 
+#### TanStack Query (Server State)
+**职责**: "数据的搬运工"。负责将 Solid Pod 中的数据同步到前端，处理缓存、去重、后台更新。
 ```tsx
-// 查询配置
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 1000 * 60 * 5,      // 5分钟缓存
-      cacheTime: 1000 * 60 * 30,     // 30分钟保留
-      retry: 3,                      // 自动重试
-      refetchOnWindowFocus: false,   // 避免过度刷新
-    },
-  },
-})
-
-// 使用示例
-const { data: chatMessages, isLoading } = useQuery({
+// 自动管理服务端数据的加载与缓存
+const { data: chatMessages } = useQuery({
   queryKey: ['chat', conversationId],
   queryFn: () => fetchChatMessages(conversationId),
-  enabled: !!conversationId,
 })
+```
+
+#### Zustand (Client State)
+**职责**: "UI 的记事本"。负责管理组件间共享的交互状态，填补 Query 和 Context 之间的空白。
+1. **模块级 UI 状态**: 记录用户"正在操作什么" (如：当前选中的联系人 ID、搜索框内容)。
+2. **全局持久化状态**: 记录需要跨 Session 保持的数据 (如：登录凭证、主题偏好)。
+
+```tsx
+// store.ts - 模块级状态示例
+export const useContactStore = create((set) => ({
+  selectedId: null,
+  setSelectedId: (id) => set({ selectedId: id }),
+  searchQuery: '',
+  setSearchQuery: (query) => set({ searchQuery: query }),
+}))
 ```
 
 ---
 
-## 5. 路由系统
+## 5. 业务架构分层 (Layered Business Architecture)
+
+为了应对 AI Agent、Solid Inbox 和复杂的交互需求，我们在逻辑层采用清晰的三层架构。
+
+### 5.1 分层定义
+
+#### 1. UI 层 (Presentation Layer)
+*   **核心组件**: `InteractionCard`, `MessageBubble`, `Composer`, `ShellSession`, `ThoughtChain`。
+*   **职责**: 
+    *   **纯净渲染**: 只负责 UI 展示，不包含任何业务逻辑或数据存储代码。
+    *   **事件驱动**: 通过 `props.onAction` 或 `useTelemetry().track()` 发出信号，不关心信号如何被处理。
+    *   **无状态**: 不直接依赖全局 Session 或 Query Client。
+
+#### 2. 中间层 (Infrastructure/Service Layer)
+*   **核心组件**: `TelemetryProvider`, `useTelemetry`, `InboxService`, `SolidClient`。
+*   **职责**: 
+    *   **能力封装**: 封装底层的 Solid 协议、数据埋点、网络通信。
+    *   **数据搬运**: 负责将 UI 层的事件转换为数据操作（如写入 Pod），或将 Pod 数据转换为 UI 可读格式。
+    *   **上下文注入**: 在此层注入 `SolidSession` 和 `Schema`，解耦 UI 与数据。
+
+#### 3. 业务层 (Application Logic Layer)
+*   **核心组件**: `ChatContentPane`, `useAIChat`, `ApprovalWorkflows`。
+*   **职责**: 
+    *   **流程编排**: 协调 UI 和服务。例如：用户点击“授权” -> 调用 Inbox Service 标记已读 -> 调用 Permission Service 修改 ACL -> 更新 UI 状态。
+    *   **策略管理**: 处理“自动审批”、“记住选择”等高级用户策略。
+
+### 5.2 AI-Native 交互设计
+
+#### AI Chat UI Kit
+我们将聊天界面抽象为一套通用的 AI 交互组件库：
+*   **Smart Composer**: 支持 `toolbarLeft`, `toolbarRight`, `sendButton` 插槽的容器化输入框，适应不同 Agent 能力。
+*   **Message Bubble**: 支持多态内容渲染流：`ThoughtChain` (思考) -> `ShellSession` (执行) -> `InteractionCard` (确认) -> `ToolInvocation` (结果) -> `Content` (总结)。
+*   **Interaction Card**: 专门处理 Human-in-the-loop 场景（确认、权限、选择）。
+
+#### 用户策略与自动审批 (User Policy)
+为了实现“智能管家”体验，我们在交互中引入策略层：
+*   **场景**: 当 Agent 请求权限（如读取相册）时。
+*   **交互**: 用户在 `InteractionCard` 中不仅可以选择 [同意/拒绝]，还可以勾选 [记住我的选择] 或 [总是允许此类操作]。
+*   **数据**: 用户的选择将被记录为 **User Policy (用户策略)** 存入 Pod。下次遇到相同场景，Agent 可根据策略自动执行，无需打扰用户，实现真正的“管家”模式。
+
+---
+
+## 6. 路由系统
 
 ### 5.1 TanStack Router 配置
 
@@ -325,13 +372,13 @@ export default defineConfig({
 
 **开发环境**:
 ```bash
-yarn workspace @linq/web dev    # 本地开发
+yarn workspace @linx/web dev    # 本地开发
 ```
 
 **生产构建**:
 ```bash
-yarn workspace @linq/web build  # 静态构建
-yarn workspace @linq/web preview # 预览构建结果
+yarn workspace @linx/web build  # 静态构建
+yarn workspace @linx/web preview # 预览构建结果
 ```
 
 **部署目标**:
@@ -347,18 +394,17 @@ yarn workspace @linq/web preview # 预览构建结果
 
 ```tsx
 // 路由级别懒加载
-const ChatInterface = lazy(() => import('@/components/ChatInterface'))
 const ContactList = lazy(() => import('@/components/ContactList'))
 
 // 组件级别懒加载
-const ChatKit = lazy(() => import('@openai/chatkit-react'))
+// const SomeOtherComponent = lazy(() => import('@/components/SomeOtherComponent'))
 ```
 
 ### 7.2 缓存策略
 
 ```typescript
 // Service Worker 缓存
-const CACHE_NAME = 'linq-v1'
+const CACHE_NAME = 'linx-v1'
 const STATIC_ASSETS = [
   '/',
   '/static/js/bundle.js',
@@ -421,11 +467,11 @@ const queries = {
 
 **问题**: 使用单一组件库还是多个专业组件库？
 
-**决策**: 采用 shadcn/ui + ChatKit 混合策略
+**决策**: 采用 shadcn/ui + Vercel AI SDK 混合策略
 
 **理由**:
-- shadcn/ui 提供完整的基础组件生态
-- ChatKit 提供专业的聊天体验
+- shadcn/ui 提供完整的基础组件生态和灵活的 UI 定制能力
+- Vercel AI SDK 专注于 AI 驱动的聊天逻辑和流式响应，简化开发
 - 避免重复造轮子，聚焦核心业务
 - 保持架构灵活性，符合去中心化理念
 
@@ -446,7 +492,7 @@ const queries = {
 ## 10. 下一步规划
 
 ### 10.1 短期目标 (1-2周)
-- [ ] ChatKit 集成和主题定制
+- [ ] Vercel AI SDK 集成和聊天界面定制
 - [ ] 其他模块的 shadcn 组件实现
 - [ ] 性能基准测试和优化
 
@@ -466,7 +512,7 @@ const queries = {
 
 ### 技术文档
 - **[shadcn/ui 官方文档](https://ui.shadcn.com/)**
-- **[OpenAI ChatKit 文档](https://openai.github.io/chatkit-js/)**
+- **[Vercel AI SDK 文档](https://sdk.vercel.ai/)**
 - **[TanStack Router](https://tanstack.com/router)**
 - **[TanStack Query](https://tanstack.com/query)**
 
@@ -475,10 +521,10 @@ const queries = {
 - **[聊天界面设计](./chat-interface-design.md)** - ChatKit 集成详情
 - **[主题设计](./theme-design.md)** - Solid Protocol 品牌系统
 
-### LinQ 项目文档
-- **[产品定位文档](./product-definition.md)** - LinQ 核心理念
-- **[Solid Pod 集成](../specs/001-linq-hub/contracts/solid-pod-interactions.md)**
-- **[数据模型设计](../specs/001-linq-hub/data-model.md)**
+### LinX 项目文档
+- **[产品定位文档](./product-definition.md)** - LinX 核心理念
+- **[Solid Pod 集成](../specs/001-linx-hub/contracts/solid-pod-interactions.md)**
+- **[数据模型设计](../specs/001-linx-hub/data-model.md)**
 
 ---
 

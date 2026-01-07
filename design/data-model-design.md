@@ -1,6 +1,6 @@
-# LinQ 数据模型设计文档
+# LinX 数据模型设计文档
 
-> 本文档定义 LinQ 数据模型的核心概念、设计决策和实体关系
+> 本文档定义 LinX 数据模型的核心概念、设计决策和实体关系
 > 
 > 目标：统一数据模型理解，指导 `packages/models` 的实现
 > 
@@ -15,7 +15,7 @@
 
 0. [设计原则](#0-设计原则)
 1. [Solid 基础概念](#1-solid-基础概念)
-2. [LinQ 身份体系](#2-linq-身份体系)
+2. [LinX 身份体系](#2-linx-身份体系)
 3. [聊天和消息](#3-聊天和消息)
 4. [AI 集成概念](#4-ai-集成概念)
 5. [文件和同步](#5-文件和同步)
@@ -31,13 +31,13 @@
 ### 0.1 核心原则：参考 Solid 社区已有的定义
 
 **重要要求** 🎯：
-- ✅ LinQ 的数据模型必须**优先参考** Solid 社区已经制定的标准和最佳实践
+- ✅ LinX 的数据模型必须**优先参考** Solid 社区已经制定的标准和最佳实践
 - ✅ 不自己发明概念，而是使用 Solid 生态已有的词汇表和数据结构
 - ✅ 确保与其他 Solid 应用的**互操作性**
 
 ### 0.2 参考来源
 
-在设计 LinQ 数据模型时，需要参考以下 Solid 社区资源：
+在设计 LinX 数据模型时，需要参考以下 Solid 社区资源：
 
 #### 1️⃣ **官方标准和规范**
 - [Solid Protocol](https://solidproject.org/TR/protocol) - Solid 核心协议
@@ -79,9 +79,9 @@
    ↓
 3. 查找 Solid 应用的实际实现（SolidOS, Solid Chat）
    ↓
-4. 识别缺失的部分（标准未覆盖的 LinQ 特有功能）
+4. 识别缺失的部分（标准未覆盖的 LinX 特有功能）
    ↓
-5. 仅对缺失部分创建自定义词汇表（linq: 命名空间）
+5. 仅对缺失部分创建自定义词汇表（linx: 命名空间）
    ↓
 6. 记录设计决策和参考来源
 ```
@@ -148,10 +148,10 @@
 - ✅ 使用标准的 RDF 格式存储数据
 - ✅ 基于 Linked Data Platform (LDP) 协议
 
-**在 LinQ 中的角色**：
-- Pod 是 LinQ 的**唯一数据源**
+**在 LinX 中的角色**：
+- Pod 是 LinX 的**唯一数据源**
 - 所有用户数据（聊天、联系人、文件等）都存储在 Pod 中
-- LinQ 作为 Pod 的**可视化终端**，不存储用户数据
+- LinX 作为 Pod 的**可视化终端**，不存储用户数据
 
 ### 1.2 Solid 的两类存储方式 ⚠️
 
@@ -174,7 +174,7 @@ https://alice.pod.example/photos/vacation.jpg     # 图片
 https://alice.pod.example/documents/notes.txt     # 文本文件
 ```
 
-**在 LinQ 中的应用**：
+**在 LinX 中的应用**：
 - ✅ 用户上传的文件（PDF, Word, 图片等）
 - ✅ 聊天中的附件
 - ✅ 用户头像图片
@@ -202,7 +202,7 @@ https://alice.pod.example/documents/notes.txt     # 文本文件
   foaf:knows <https://alice.pod.example/profile/card#me> .
 ```
 
-**在 LinQ 中的应用**：
+**在 LinX 中的应用**：
 - ✅ 联系人信息（Contact）
 - ✅ 聊天会话元数据（Chat）
 - ✅ 消息内容（Message）
@@ -250,24 +250,24 @@ Pod 结构（简化）：
     └── file-annotations.ttl          # 扩展元数据（标签、描述等）
 ```
 
-**扩展元数据示例**（仅 LinQ 特有的）：
+**扩展元数据示例**（仅 LinX 特有的）：
 ```turtle
 # extended-metadata/file-annotations.ttl
 @prefix dcterms: <http://purl.org/dc/terms/> .
-@prefix linq: <https://linq.ai/ns#> .
+@prefix linx: <https://linx.ai/ns#> .
 
 <../files/report.pdf>
   dcterms:title "2024 年度报告" ;        # 用户自定义标题
   dcterms:description "重要文档" ;        # 用户添加的描述
-  linq:tags "工作", "报告", "2024" ;     # 用户标签
-  linq:starred true ;                     # 是否加星
-  linq:localPath "/Users/alice/LinQ/cache/report.pdf" ;  # 本地缓存路径
-  linq:syncStatus "synced" .              # 同步状态
+  linx:tags "工作", "报告", "2024" ;     # 用户标签
+  linx:starred true ;                     # 是否加星
+  linx:localPath "/Users/alice/LinX/cache/report.pdf" ;  # 本地缓存路径
+  linx:syncStatus "synced" .              # 同步状态
 
 <../files/photo.jpg>
   dcterms:title "度假照片" ;
-  linq:tags "旅行", "2024" ;
-  linq:starred false .
+  linx:tags "旅行", "2024" ;
+  linx:starred false .
 ```
 
 **关键区别**：
@@ -281,12 +281,12 @@ Pod 结构（简化）：
 | **权限** | ACL 文件 | GET .acl | ❌ 不需要 |
 | **用户标题** | 用户输入 | SPARQL | ✅ 需要（RDF） |
 | **用户标签** | 用户输入 | SPARQL | ✅ 需要（RDF） |
-| **本地路径** | LinQ 缓存 | SPARQL | ✅ 需要（RDF） |
-| **同步状态** | LinQ 同步 | SPARQL | ✅ 需要（RDF） |
+| **本地路径** | LinX 缓存 | SPARQL | ✅ 需要（RDF） |
+| **同步状态** | LinX 同步 | SPARQL | ✅ 需要（RDF） |
 
 **结论** ✅：
 - 基础元数据 → 文件系统原生提供（无需存储）
-- 扩展元数据 → 仅存储 LinQ 特有的信息（RDF）
+- 扩展元数据 → 仅存储 LinX 特有的信息（RDF）
 - 不重复存储已有的数据
 
 ### 1.4 什么是 WebID？
@@ -298,7 +298,7 @@ Pod 结构（简化）：
 https://alice.solidcommunity.net/profile/card#me
 ```
 
-**在 LinQ 中的用途**：
+**在 LinX 中的用途**：
 - 用户登录后获得自己的 WebID
 - WebID 用于标识消息发送者、文件所有者等
 - 联系人通过 WebID 关联
@@ -306,14 +306,14 @@ https://alice.solidcommunity.net/profile/card#me
 
 **重要问题** 🤔：
 - ❓ AI 助手是否需要真实的 WebID？
-- ❓ 还是使用虚拟的 `linq:ai-assistant#id` 标识符？
+- ❓ 还是使用虚拟的 `linx:ai-assistant#id` 标识符？
 - **建议**：MVP 阶段使用虚拟标识符，未来支持 AI 注册真实 WebID
 
 ### 1.5 LDP Container
 
 **定义**：LDP Container 是 Pod 中的一个文件夹，包含多个资源。
 
-**LinQ 使用的 Container**：
+**LinX 使用的 Container**：
 ```
 /profile/card              # 用户资料（单个资源）
 /contacts/                 # 联系人列表（Container）
@@ -322,18 +322,18 @@ https://alice.solidcommunity.net/profile/card#me
 /files/                    # 文件列表
 /favorites/                # 收藏列表
 /settings/                 # 设置项
-/ai-assistants/            # AI 助手配置
+/agents/                   # Agent / 模型配置
 ```
 
 ---
 
-## 2. LinQ 身份体系
+## 2. LinX 身份体系
 
 ### 2.1 两种实体（简化）✅
 
 **已确认** 🎯（参考 [4.0.1 设计决策：AI 作为联系人](#401-设计决策ai-作为联系人)）：
 
-LinQ 中只有**两种核心实体**：
+LinX 中只有**两种核心实体**：
 
 #### 1️⃣ **Contact（联系人）**
 
@@ -341,17 +341,17 @@ LinQ 中只有**两种核心实体**：
 
 **自然人** (`type: "person"`)
 - 有真实 Solid Pod 和 WebID
-- 可以登录 LinQ
+- 可以登录 LinX
 - 可以与其他人聊天
 - **示例**：Alice (`https://alice.pod.example/profile/card#me`)
 
 **AI Agent** (`type: "ai"`)
 - 用户通讯录中的 AI 实体
 - **没有** Solid Pod 和 WebID
-- 通过 LinQ 应用访问用户 Pod（使用用户的权限）
+- 通过 LinX 应用访问用户 Pod（使用用户的权限）
 - 有"人格"（名字、头像、systemPrompt）
 - 引用 Credential（API 密钥）
-- **示例**：用户创建的"LinQ 助手"、"写作顾问"、"代码助手"
+- **示例**：用户创建的"LinX 助手"、"写作顾问"、"代码助手"
 
 **组织** (`type: "organization"`)
 - 公司、团队等
@@ -475,7 +475,7 @@ Chat (聊天会话)
 
 **答案**：存在用户自己的 Pod（明确 ✅）
 - AI 没有 Pod，所有对话历史属于用户
-- AI 通过 LinQ 应用访问用户 Pod
+- AI 通过 LinX 应用访问用户 Pod
 
 ### 3.3 消息（Message）
 
@@ -537,7 +537,7 @@ sending → sent → delivered → read → [edited] → [deleted]
 
 **问题**：
 1. ❓ 这个"AI 配置"在 Solid 社区中是否有先例？
-2. ❓ 这是 LinQ 应用的配置，还是 Pod 数据？
+2. ❓ 这是 LinX 应用的配置，还是 Pod 数据？
 3. ❓ 应该存储在哪里？
 4. ❓ 与 AI 对话、AI 联系人的关系是什么？
 
@@ -546,14 +546,14 @@ sending → sent → delivered → read → [edited] → [deleted]
 #### 方案 A：AI 配置是应用级配置
 
 ```
-AI 配置 = LinQ 应用的设置
+AI 配置 = LinX 应用的设置
 类似于：
 - 主题设置（深色/浅色）
 - 语言设置（中文/英文）
 - 快捷键配置
 
 存储位置：
-- LinQ 应用的配置文件
+- LinX 应用的配置文件
 - 或 Pod 中的 /settings/ai-providers.ttl
 ```
 
@@ -599,7 +599,7 @@ AI 配置 = 外部服务凭证
 **特征**：
 - ✅ 明确是"连接外部服务"的配置
 - ✅ 类似其他应用集成（Dropbox, Google Drive）
-- ❌ 但 LinQ 的核心价值就是 AI，不只是"集成"
+- ❌ 但 LinX 的核心价值就是 AI，不只是"集成"
 
 ### 4.0.1 设计决策：AI 作为联系人 ✅
 
@@ -634,7 +634,7 @@ Contact (联系人)
 │   └── webId: "https://alice.pod.example/profile/card#me"
 │
 ├── type = "ai"               # AI Agent
-│   ├── fullName: "LinQ 助手"
+│   ├── fullName: "LinX 助手"
 │   ├── description: "我的个人 AI 助手"
 │   ├── avatarUrl: "https://..."
 │   ├── aiProvider: "openai"
@@ -703,11 +703,11 @@ Credential (凭证，单独管理)
 
 **解释**：
 ```
-用户登录 LinQ 应用
+用户登录 LinX 应用
   ↓
-LinQ 应用获得 Pod 访问权限（通过 OAuth）
+LinX 应用获得 Pod 访问权限（通过 OAuth）
   ↓
-AI 助手通过 LinQ 应用访问 Pod
+AI 助手通过 LinX 应用访问 Pod
   ↓
 实际上是用户的权限，不是 AI 的权限
 ```
@@ -715,8 +715,8 @@ AI 助手通过 LinQ 应用访问 Pod
 **关键点**：
 - AI **不是**独立的 Solid 用户
 - AI **没有**自己的 WebID 和 Pod
-- AI 通过 LinQ 应用的权限访问用户数据
-- LinQ 应用需要向用户申请 Pod 访问权限
+- AI 通过 LinX 应用的权限访问用户数据
+- LinX 应用需要向用户申请 Pod 访问权限
 
 ### 4.2 AI 权限级别
 
@@ -731,7 +731,7 @@ podAccessLevel: "read" | "write" | "full"
 - **full**: AI 可以删除数据（危险 ⚠️）
 
 **实现方式**：
-- 在 LinQ 应用层面限制 AI 的操作
+- 在 LinX 应用层面限制 AI 的操作
 - 不是 Solid Pod 层面的权限（因为 AI 用的是用户权限）
 
 **示例场景**：
@@ -753,20 +753,20 @@ AI（read 权限）：抱歉，我没有删除权限
 
 **用户发送消息给 AI**：
 ```
-1. 用户在 LinQ 输入消息
+1. 用户在 LinX 输入消息
    ↓
-2. LinQ 创建 Message 记录（存入用户 Pod）
+2. LinX 创建 Message 记录（存入用户 Pod）
    - content: "帮我写一封邮件"
    - sender: user.webId
    - conversationId: chat_with_ai
    ↓
-3. LinQ 调用 AI API（OpenAI, Anthropic 等）
+3. LinX 调用 AI API（OpenAI, Anthropic 等）
    - 携带上下文（聊天历史、系统提示词）
    - 可能需要查询 Pod（如果 AI 需要访问数据）
    ↓
 4. AI 返回响应
    ↓
-5. LinQ 创建 AI 的回复消息（存入用户 Pod）
+5. LinX 创建 AI 的回复消息（存入用户 Pod）
    - content: "好的，邮件内容如下..."
    - sender: ai_assistant_id
    - conversationId: chat_with_ai
@@ -811,7 +811,7 @@ AI（read 权限）：抱歉，我没有删除权限
 
 **已确认** ✅（参考 [1.3 文件系统的原生元数据](#13-文件系统的原生元数据)）：
 - 文件内容和基础元数据 → Solid 文件系统原生提供
-- 扩展元数据（LinQ 特有） → 仅在需要时用 RDF 存储
+- 扩展元数据（LinX 特有） → 仅在需要时用 RDF 存储
 
 **存储结构**：
 
@@ -824,8 +824,8 @@ Pod：
 └── extended-metadata/
     └── file-annotations.ttl          # 仅存储扩展信息（标签、描述等）
 
-LinQ 本地：
-└── ~/LinQ/cache/files/
+LinX 本地：
+└── ~/LinX/cache/files/
     ├── report.pdf                    # 本地副本
     └── photo.jpg                     # 本地副本
 ```
@@ -847,15 +847,15 @@ LinQ 本地：
    SELECT ?title ?tags ?starred WHERE {
      <https://alice.pod.example/files/report.pdf>
        dcterms:title ?title ;
-       linq:tags ?tags ;
-       linq:starred ?starred .
+       linx:tags ?tags ;
+       linx:starred ?starred .
    }
    ```
 
 **File 模型的简化**：
 - ❌ 不存储文件名、大小、MIME 类型等（文件系统已有）
 - ✅ 仅存储用户自定义的扩展信息（标题、标签、星标等）
-- ✅ 存储 LinQ 特有的状态（本地路径、同步状态等）
+- ✅ 存储 LinX 特有的状态（本地路径、同步状态等）
 
 ### 5.2 同步机制
 
@@ -870,7 +870,7 @@ podUri: "https://user.pod.example/files/report.pdf"
 
 #### 2️⃣ **Local Path（本地）**
 ```
-localPath: "/Users/user/LinQ/files/report.pdf"
+localPath: "/Users/user/LinX/files/report.pdf"
 ```
 - 本地文件系统路径（如果已下载）
 - 可以为空（未下载）
@@ -892,7 +892,7 @@ syncStatus: "synced" | "pending" | "conflict" | "error"
 ```
 1. 用户选择本地文件
    ↓
-2. LinQ 上传到 Pod
+2. LinX 上传到 Pod
    - 计算文件哈希
    - 上传二进制内容
    ↓
@@ -986,7 +986,7 @@ syncStatus: "synced" | "pending" | "conflict" | "error"
 - 对于链接：快照（保存网页内容）
 ```
 
-#### 问题 2：在 LinQ 的场景下，用户想收藏什么？
+#### 问题 2：在 LinX 的场景下，用户想收藏什么？
 
 **场景思考**：
 
@@ -1053,10 +1053,10 @@ syncStatus: "synced" | "pending" | "conflict" | "error"
 **重要理解** 🎯：
 
 > 收藏需要支持两种场景：
-> 1. LinQ 内部资源的快速标记（starred 属性）
+> 1. LinX 内部资源的快速标记（starred 属性）
 > 2. 跨应用的收藏集合（独立的 Bookmark/Favorite 实体）
 
-**场景 1：LinQ 内部的快速标记**
+**场景 1：LinX 内部的快速标记**
 
 ```
 File (文件)
@@ -1083,7 +1083,7 @@ Bookmark/Favorite (独立实体)
 ├── description: string            ← 用户添加的描述
 ├── tags: string[]                 ← 标签
 ├── folder: string                 ← 分组/文件夹
-├── source: string                 ← 来源应用（"linq", "solidOS", "external"）
+├── source: string                 ← 来源应用（"linx", "solidOS", "external"）
 └── createdAt: timestamp
 ```
 
@@ -1098,9 +1098,9 @@ Bookmark/Favorite (独立实体)
 ```
 用户的收藏夹包含：
 
-1. LinQ 的消息
-   - targetUri: "https://alice.pod/linq/messages/msg-123"
-   - source: "linq"
+1. LinX 的消息
+   - targetUri: "https://alice.pod/linx/messages/msg-123"
+   - source: "linx"
    - title: "重要的项目讨论"
 
 2. SolidOS 的文档
@@ -1120,11 +1120,11 @@ Bookmark/Favorite (独立实体)
 | 特性 | starred 属性 | Bookmark 实体 |
 |------|-------------|--------------|
 | **用途** | 快速标记 | 完整的收藏管理 |
-| **范围** | 仅 LinQ 内部资源 | 任何 URI（跨应用） |
+| **范围** | 仅 LinX 内部资源 | 任何 URI（跨应用） |
 | **元数据** | 最小（只有时间戳） | 丰富（标题、描述、标签、文件夹） |
 | **查询** | 直接过滤 | 需要查询 Bookmark 表 |
 | **组织** | 无 | 支持文件夹/标签 |
-| **互操作** | LinQ 专用 | Solid 生态通用 |
+| **互操作** | LinX 专用 | Solid 生态通用 |
 
 ### 6.1 双层设计：属性 + 实体 ✅
 
@@ -1132,18 +1132,18 @@ Bookmark/Favorite (独立实体)
 
 #### 6.1.1 第一层：starred 属性（快速标记）
 
-用于 LinQ 内部资源的快速标记：
+用于 LinX 内部资源的快速标记：
 
 ```turtle
 # 文件的扩展元数据
 <../files/report.pdf>
-  linq:starred true ;
-  linq:starredAt "2024-11-07T10:30:00Z"^^xsd:dateTime .
+  linx:starred true ;
+  linx:starredAt "2024-11-07T10:30:00Z"^^xsd:dateTime .
 
 # 消息
 <../messages/msg-123>
-  linq:starred true ;
-  linq:starredAt "2024-11-07T15:20:00Z"^^xsd:dateTime .
+  linx:starred true ;
+  linx:starredAt "2024-11-07T15:20:00Z"^^xsd:dateTime .
 ```
 
 **查询**：
@@ -1163,29 +1163,29 @@ const starredFiles = await db
 # /bookmarks/bookmark-1.ttl
 @prefix dcterms: <http://purl.org/dc/terms/> .
 @prefix bookmark: <http://www.w3.org/2002/01/bookmark#> .
-@prefix linq: <https://linq.ai/ns#> .
+@prefix linx: <https://linx.ai/ns#> .
 
 <#bookmark-1> a bookmark:Bookmark ;
   dcterms:title "重要的项目讨论" ;
   dcterms:description "关于新功能的讨论" ;
-  bookmark:recalls <https://alice.pod/linq/messages/msg-123> ;
-  linq:source "linq" ;
-  linq:tags "工作", "项目" ;
-  linq:folder "工作" ;
+  bookmark:recalls <https://alice.pod/linx/messages/msg-123> ;
+  linx:source "linx" ;
+  linx:tags "工作", "项目" ;
+  linx:folder "工作" ;
   dcterms:created "2024-11-07T10:30:00Z"^^xsd:dateTime .
 
 <#bookmark-2> a bookmark:Bookmark ;
   dcterms:title "2024 年度报告" ;
   bookmark:recalls <https://alice.pod/documents/report.pdf> ;
-  linq:source "solidOS" ;
-  linq:folder "文档" ;
+  linx:source "solidOS" ;
+  linx:folder "文档" ;
   dcterms:created "2024-11-07T11:00:00Z"^^xsd:dateTime .
 
 <#bookmark-3> a bookmark:Bookmark ;
   dcterms:title "有用的技术文章" ;
   bookmark:recalls <https://example.com/article> ;
-  linq:source "external" ;
-  linq:tags "学习", "技术" ;
+  linx:source "external" ;
+  linx:tags "学习", "技术" ;
   dcterms:created "2024-11-07T12:00:00Z"^^xsd:dateTime .
 ```
 
@@ -1276,7 +1276,7 @@ file.starred = true;
 const bookmark = {
   targetUri: file.uri,
   title: file.name,  // 可以编辑
-  source: "linq",
+  source: "linx",
   // 可以添加描述、标签、文件夹
 };
 ```
@@ -1537,7 +1537,7 @@ async function getFavorites() {
   <key>URL</key>
   <string>https://solidproject.org/developers/tutorials</string>
   
-  <!-- 可选：LinQ 扩展 -->
+  <!-- 可选：LinX 扩展 -->
   <key>title</key>
   <string>Solid 开发教程</string>
   
@@ -1556,7 +1556,7 @@ async function getFavorites() {
 </plist>
 ```
 
-**在 LinQ 中的用途**：
+**在 LinX 中的用途**：
 - ✅ 保存外部网页链接
 - ✅ 收藏 Solid 生态中其他应用的资源
 - ✅ macOS/iOS 跨平台兼容
@@ -2057,7 +2057,7 @@ https://alice.pod.example/messages/chat-123.ttl#msg-003
 
 **核心理念**：
 
-LinQ 应该提供**统一的资源浏览器**，而不是分散的"文件管理器"、"收藏夹"等多个独立视图。
+LinX 应该提供**统一的资源浏览器**，而不是分散的"文件管理器"、"收藏夹"等多个独立视图。
 
 **类比**：macOS Finder
 
@@ -2174,7 +2174,7 @@ interface ResourceItem {
 **之前的设计（分散）**：
 
 ```
-LinQ 应用
+LinX 应用
 ├── 文件管理器（独立页面）
 │   └── 树状视图 + 文件列表
 ├── 收藏夹（独立页面）
@@ -2186,7 +2186,7 @@ LinQ 应用
 **新设计（统一）**：
 
 ```
-LinQ 资源浏览器（类似 Finder）
+LinX 资源浏览器（类似 Finder）
 ├── 侧边栏
 │   ├── 快捷入口
 │   │   ├ ⭐ 收藏夹 → /favorites/
@@ -2334,7 +2334,7 @@ function handleOpen(item: ResourceItem) {
 
 4. **符合 Solid 理念** ✅
    - Pod 就是文件系统
-   - LinQ 就是一个现代化的文件浏览器
+   - LinX 就是一个现代化的文件浏览器
    - 所有资源都是平等的（文件、RDF、链接）
 
 5. **类似成熟产品** ✅
@@ -2446,10 +2446,10 @@ function handleOpen(item: ResourceItem) {
 
 ```
 /files/report.pdf
-  linq:starred true
+  linx:starred true
 
 /messages/chat-1.ttl#msg-5
-  linq:starred true
+  linx:starred true
 ```
 
 **2. 添加到收藏夹（物理引用）**
@@ -2558,7 +2558,7 @@ async function addToFavorites(resourceUri: string) {
 **设计决策**：
 
 ```
-LinQ 收藏系统 = 两种视图模式
+LinX 收藏系统 = 两种视图模式
 
 模式 1：全部标星（虚拟聚合）
 ├── 查询所有 starred=true 的资源
@@ -3191,13 +3191,13 @@ async function getFavoriteFolder(path: string = "") {
 
 ### 7.1 核心原则
 
-**LinQ 的定位**：Pod 的可视化终端
+**LinX 的定位**：Pod 的可视化终端
 
 **关键点**：
-- ✅ LinQ **不存储**用户数据（除了临时缓存）
+- ✅ LinX **不存储**用户数据（除了临时缓存）
 - ✅ 所有数据属于用户，存储在用户的 Pod
 - ✅ 用户可以随时切换到其他 Solid 应用
-- ✅ LinQ 只是访问和管理 Pod 数据的工具
+- ✅ LinX 只是访问和管理 Pod 数据的工具
 
 ### 7.2 数据归属
 
@@ -3213,16 +3213,16 @@ async function getFavoriteFolder(path: string = "") {
 | AI 对话历史 | 用户 Pod | 用户 |
 
 **唯一例外**：
-- LinQ 应用本身的配置（窗口大小、快捷键等）可以存在本地
+- LinX 应用本身的配置（窗口大小、快捷键等）可以存在本地
 - 但建议也存入 Pod（`/settings/`），实现跨设备同步
 
 ### 7.3 待确认 🤔
 
-#### Q1: LinQ 是否需要中心化服务器？
+#### Q1: LinX 是否需要中心化服务器？
 
 ```
 功能需求：
-- 用户发现（查找其他 LinQ 用户）
+- 用户发现（查找其他 LinX 用户）
 - 离线消息推送（对方不在线时通知）
 - AI 服务代理（统一管理 API 密钥）
 ```
@@ -3253,7 +3253,7 @@ C. 必需服务器（某些功能需要）
 - **Append** - 追加（只能添加，不能改已有内容）
 - **Control** - 管理权限（修改 ACL）
 
-### 8.2 LinQ 的权限场景
+### 8.2 LinX 的权限场景
 
 #### 场景 1：Alice 想查看 Bob 的资料
 
@@ -3285,9 +3285,9 @@ Alice 需要给 Bob Read 权限：
 
 #### 场景 3：AI 访问 Pod
 
-**LinQ 应用请求权限**：
+**LinX 应用请求权限**：
 ```
-LinQ 向用户申请：
+LinX 向用户申请：
 - Read: /profile, /contacts, /files (查询数据)
 - Write: /messages, /chats (发送消息)
 - Append: /messages (只追加消息，不修改历史)
@@ -3299,7 +3299,7 @@ LinQ 向用户申请：
 
 ### 8.3 待确认 🤔
 
-#### Q1: LinQ 需要哪些最小权限？
+#### Q1: LinX 需要哪些最小权限？
 
 **MVP 阶段**：
 ```
@@ -3339,7 +3339,7 @@ LinQ 向用户申请：
    - [ ] 已读状态如何跨 Pod 同步？
    - 影响：用户体验、实现复杂度
 
-4. **LinQ 是否需要中心化服务**
+4. **LinX 是否需要中心化服务**
    - [ ] 完全去中心化 or 可选服务器？
    - [ ] 哪些功能需要服务器（推送、用户发现等）？
    - 影响：产品定位、技术架构
@@ -3369,7 +3369,7 @@ LinQ 向用户申请：
    - 影响：用户体验
 
 9. **跨应用互操作**
-   - [ ] LinQ 的数据能否被其他 Solid 应用读取？
+   - [ ] LinX 的数据能否被其他 Solid 应用读取？
    - [ ] 是否需要标准化数据格式？
    - 影响：生态兼容性
 
@@ -3427,4 +3427,3 @@ LinQ 向用户申请：
 
 **最后更新**: 2025-11-07  
 **下次评审**: 待定
-

@@ -7,12 +7,9 @@ type SolidSessionProviderProps = {
   children: ReactNode;
 };
 
-export const SOLID_SESSION_ID = 'linq-web-session';
-
 export function SolidSessionProvider({ children }: SolidSessionProviderProps) {
   return (
     <SessionProvider
-      sessionId={SOLID_SESSION_ID}
       restorePreviousSession
       skipLoadingProfile
       onError={(error) => {

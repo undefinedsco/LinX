@@ -1,4 +1,4 @@
-# LinQ 数据流具体实现示例
+# LinX 数据流具体实现示例
 
 > React State -> TanStack Query -> Solid Pod 的完整代码示例
 > 
@@ -18,7 +18,7 @@ drizzle-solid + Solid Pod
 
 ## 2. 完整的聊天功能示例
 
-### 2.1 数据模型层 (@linq/models)
+### 2.1 数据模型层 (@linx/models)
 
 ```typescript
 // packages/models/src/chat/chat.schema.ts (已存在)
@@ -43,7 +43,7 @@ export type ChatInsert = typeof chatTable.$inferInsert
 // apps/web/src/lib/data-access.ts
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { db } from './drizzle-solid-client'
-import { chatTable, type ChatRow, type ChatInsert } from '@linq/models'
+import { chatTable, type ChatRow, type ChatInsert } from '@linx/models'
 
 // ===== 查询 Hooks =====
 export function useChats() {
@@ -384,7 +384,7 @@ export function ChatPage() {
 
 ### 3.3 为什么这样设计
 
-1. **类型安全**：`@linq/models` 的类型直接流到 React 组件
+1. **类型安全**：`@linx/models` 的类型直接流到 React 组件
 2. **缓存优化**：TanStack Query 自动处理网络请求和缓存
 3. **状态分离**：业务数据和UI状态分开管理，职责清晰
 4. **响应式更新**：数据变更自动触发UI重新渲染

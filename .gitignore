@@ -17,6 +17,10 @@ yarn-error.log*
 .env
 .env.*
 
+# AI
+.codex
+.claude
+
 # Editor folders
 .vscode/
 .idea/
@@ -31,8 +35,8 @@ playwright-report/
 test-results/
 
 # Electron build artefacts
-apps/desktop-electron/dist/
-apps/desktop-electron/out/
+apps/desktop/dist/
+apps/desktop/out/
 
 # Capacitor / mobile build artefacts
 apps/mobile-shell/android/

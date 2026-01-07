@@ -1,6 +1,6 @@
-# LinQ 核心概念对齐文档
+# LinX 核心概念对齐文档
 
-> 本文档用于对齐 LinQ 项目的核心概念、术语定义和设计决策
+> 本文档用于对齐 LinX 项目的核心概念、术语定义和设计决策
 > 
 > 目标：确保所有开发者对核心概念有统一理解
 > 
@@ -12,7 +12,7 @@
 ## 📋 目录
 
 1. [Solid 基础概念](#1-solid-基础概念)
-2. [LinQ 身份体系](#2-linq-身份体系)
+2. [LinX 身份体系](#2-linx-身份体系)
 3. [聊天和消息](#3-聊天和消息)
 4. [AI 集成概念](#4-ai-集成概念)
 5. [文件和同步](#5-文件和同步)
@@ -35,10 +35,10 @@
 - ✅ 使用标准的 RDF 格式存储数据
 - ✅ 基于 Linked Data Platform (LDP) 协议
 
-**在 LinQ 中的角色**：
-- Pod 是 LinQ 的**唯一数据源**
+**在 LinX 中的角色**：
+- Pod 是 LinX 的**唯一数据源**
 - 所有用户数据（聊天、联系人、文件等）都存储在 Pod 中
-- LinQ 作为 Pod 的**可视化终端**，不存储用户数据
+- LinX 作为 Pod 的**可视化终端**，不存储用户数据
 
 ### 1.2 什么是 WebID？
 
@@ -49,7 +49,7 @@
 https://alice.solidcommunity.net/profile/card#me
 ```
 
-**在 LinQ 中的用途**：
+**在 LinX 中的用途**：
 - 用户登录后获得自己的 WebID
 - WebID 用于标识消息发送者、文件所有者等
 - 联系人通过 WebID 关联
@@ -57,14 +57,14 @@ https://alice.solidcommunity.net/profile/card#me
 
 **重要问题** 🤔：
 - ❓ AI 助手是否需要真实的 WebID？
-- ❓ 还是使用虚拟的 `linq:ai-assistant#id` 标识符？
+- ❓ 还是使用虚拟的 `linx:agent#id` 标识符？
 - **建议**：MVP 阶段使用虚拟标识符，未来支持 AI 注册真实 WebID
 
 ### 1.3 LDP Container
 
 **定义**：LDP Container 是 Pod 中的一个文件夹，包含多个资源。
 
-**LinQ 使用的 Container**：
+**LinX 使用的 Container**：
 ```
 /profile/card              # 用户资料（单个资源）
 /contacts/                 # 联系人列表（Container）
@@ -73,29 +73,29 @@ https://alice.solidcommunity.net/profile/card#me
 /files/                    # 文件列表
 /favorites/                # 收藏列表
 /settings/                 # 设置项
-/ai-assistants/            # AI 助手配置
+/agents/                   # Agent 配置
 ```
 
 ---
 
-## 2. LinQ 身份体系
+## 2. LinX 身份体系
 
 ### 2.1 三种"人"
 
-LinQ 中存在三种身份实体：
+LinX 中存在三种身份实体：
 
 #### 1️⃣ **自然人（Natural Person）**
 - 有真实 Solid Pod 和 WebID
-- 可以登录 LinQ
+- 可以登录 LinX
 - 可以与其他人聊天
 - **示例**：Alice (`https://alice.pod.example/profile/card#me`)
 
 #### 2️⃣ **AI 助手（AI Assistant）**
-- LinQ 中配置的 AI（GPT-4, Claude 等）
+- LinX 中配置的 AI（GPT-4, Claude 等）
 - **没有** Solid Pod 和 WebID（MVP 阶段）
-- 通过 LinQ 应用访问用户 Pod（使用用户的权限）
-- **标识符**：虚拟 URI `linq:ai-assistant#<uuid>`
-- **示例**：LinQ 默认助手、用户自定义的 GPT-4 助手
+- 通过 LinX 应用访问用户 Pod（使用用户的权限）
+- **标识符**：虚拟 URI `linx:agent#<uuid>`
+- **示例**：LinX 默认助手、用户自定义的 GPT-4 助手
 
 #### 3️⃣ **AI 联系人（AI Contact）**
 - 用户地址簿中的 AI 实体
@@ -122,7 +122,7 @@ AI 联系人 (Contact with type=ai)
 | 维度 | AI 助手 (AIAssistant) | AI 联系人 (Contact type=ai) |
 |------|----------------------|----------------------------|
 | **本质** | 模型配置（技术层面） | 地址簿条目（用户层面） |
-| **存储位置** | `/ai-assistants/` | `/contacts/` |
+| **存储位置** | `/agents/` | `/contacts/` |
 | **包含内容** | provider, modelId, systemPrompt, temperature | fullName, avatarUrl, aiAssistantId |
 | **用户感知** | 在设置中管理 | 在联系人列表中显示 |
 | **是否必需** | 每个 AI 对话都需要 | 可选（可以直接用助手，也可以创建联系人） |
@@ -136,7 +136,7 @@ AI 联系人 (Contact with type=ai)
 
 用户可以：
 1. 直接使用这个助手聊天（不创建联系人）
-2. 或者创建一个 AI 联系人"LinQ 助手"，关联这个配置
+2. 或者创建一个 AI 联系人"LinX 助手"，关联这个配置
 3. 或者创建多个 AI 联系人（"写作助手"、"代码顾问"），都使用同一个配置但有不同的系统提示词
 ```
 
@@ -206,7 +206,7 @@ AI 联系人 (Contact with type=ai)
 
 **答案**：存在用户自己的 Pod（明确 ✅）
 - AI 没有 Pod，所有对话历史属于用户
-- AI 通过 LinQ 应用访问用户 Pod
+- AI 通过 LinX 应用访问用户 Pod
 
 ### 3.3 消息（Message）
 
@@ -264,11 +264,11 @@ sending → sent → delivered → read → [edited] → [deleted]
 
 **解释**：
 ```
-用户登录 LinQ 应用
+用户登录 LinX 应用
   ↓
-LinQ 应用获得 Pod 访问权限（通过 OAuth）
+LinX 应用获得 Pod 访问权限（通过 OAuth）
   ↓
-AI 助手通过 LinQ 应用访问 Pod
+AI 助手通过 LinX 应用访问 Pod
   ↓
 实际上是用户的权限，不是 AI 的权限
 ```
@@ -276,8 +276,8 @@ AI 助手通过 LinQ 应用访问 Pod
 **关键点**：
 - AI **不是**独立的 Solid 用户
 - AI **没有**自己的 WebID 和 Pod
-- AI 通过 LinQ 应用的权限访问用户数据
-- LinQ 应用需要向用户申请 Pod 访问权限
+- AI 通过 LinX 应用的权限访问用户数据
+- LinX 应用需要向用户申请 Pod 访问权限
 
 ### 4.2 AI 权限级别
 
@@ -292,7 +292,7 @@ podAccessLevel: "read" | "write" | "full"
 - **full**: AI 可以删除数据（危险 ⚠️）
 
 **实现方式**：
-- 在 LinQ 应用层面限制 AI 的操作
+- 在 LinX 应用层面限制 AI 的操作
 - 不是 Solid Pod 层面的权限（因为 AI 用的是用户权限）
 
 **示例场景**：
@@ -314,20 +314,20 @@ AI（read 权限）：抱歉，我没有删除权限
 
 **用户发送消息给 AI**：
 ```
-1. 用户在 LinQ 输入消息
+1. 用户在 LinX 输入消息
    ↓
-2. LinQ 创建 Message 记录（存入用户 Pod）
+2. LinX 创建 Message 记录（存入用户 Pod）
    - content: "帮我写一封邮件"
    - sender: user.webId
    - conversationId: chat_with_ai
    ↓
-3. LinQ 调用 AI API（OpenAI, Anthropic 等）
+3. LinX 调用 AI API（OpenAI, Anthropic 等）
    - 携带上下文（聊天历史、系统提示词）
    - 可能需要查询 Pod（如果 AI 需要访问数据）
    ↓
 4. AI 返回响应
    ↓
-5. LinQ 创建 AI 的回复消息（存入用户 Pod）
+5. LinX 创建 AI 的回复消息（存入用户 Pod）
    - content: "好的，邮件内容如下..."
    - sender: ai_assistant_id
    - conversationId: chat_with_ai
@@ -381,7 +381,7 @@ Pod 中存储：
     └── createdAt: "2025-11-07"
 
 本地存储（可选）：
-└── ~/LinQ/files/file-123.pdf   # 本地缓存
+└── ~/LinX/files/file-123.pdf   # 本地缓存
 ```
 
 **File 模型存储的是元数据**，不是文件本身。
@@ -399,7 +399,7 @@ podUri: "https://user.pod.example/files/report.pdf"
 
 #### 2️⃣ **Local Path（本地）**
 ```
-localPath: "/Users/user/LinQ/files/report.pdf"
+localPath: "/Users/user/LinX/files/report.pdf"
 ```
 - 本地文件系统路径（如果已下载）
 - 可以为空（未下载）
@@ -421,7 +421,7 @@ syncStatus: "synced" | "pending" | "conflict" | "error"
 ```
 1. 用户选择本地文件
    ↓
-2. LinQ 上传到 Pod
+2. LinX 上传到 Pod
    - 计算文件哈希
    - 上传二进制内容
    ↓
@@ -536,13 +536,13 @@ syncStatus: "synced" | "pending" | "conflict" | "error"
 
 ### 7.1 核心原则
 
-**LinQ 的定位**：Pod 的可视化终端
+**LinX 的定位**：Pod 的可视化终端
 
 **关键点**：
-- ✅ LinQ **不存储**用户数据（除了临时缓存）
+- ✅ LinX **不存储**用户数据（除了临时缓存）
 - ✅ 所有数据属于用户，存储在用户的 Pod
 - ✅ 用户可以随时切换到其他 Solid 应用
-- ✅ LinQ 只是访问和管理 Pod 数据的工具
+- ✅ LinX 只是访问和管理 Pod 数据的工具
 
 ### 7.2 数据归属
 
@@ -558,16 +558,16 @@ syncStatus: "synced" | "pending" | "conflict" | "error"
 | AI 对话历史 | 用户 Pod | 用户 |
 
 **唯一例外**：
-- LinQ 应用本身的配置（窗口大小、快捷键等）可以存在本地
+- LinX 应用本身的配置（窗口大小、快捷键等）可以存在本地
 - 但建议也存入 Pod（`/settings/`），实现跨设备同步
 
 ### 7.3 待确认 🤔
 
-#### Q1: LinQ 是否需要中心化服务器？
+#### Q1: LinX 是否需要中心化服务器？
 
 ```
 功能需求：
-- 用户发现（查找其他 LinQ 用户）
+- 用户发现（查找其他 LinX 用户）
 - 离线消息推送（对方不在线时通知）
 - AI 服务代理（统一管理 API 密钥）
 ```
@@ -598,7 +598,7 @@ C. 必需服务器（某些功能需要）
 - **Append** - 追加（只能添加，不能改已有内容）
 - **Control** - 管理权限（修改 ACL）
 
-### 8.2 LinQ 的权限场景
+### 8.2 LinX 的权限场景
 
 #### 场景 1：Alice 想查看 Bob 的资料
 
@@ -630,9 +630,9 @@ Alice 需要给 Bob Read 权限：
 
 #### 场景 3：AI 访问 Pod
 
-**LinQ 应用请求权限**：
+**LinX 应用请求权限**：
 ```
-LinQ 向用户申请：
+LinX 向用户申请：
 - Read: /profile, /contacts, /files (查询数据)
 - Write: /messages, /chats (发送消息)
 - Append: /messages (只追加消息，不修改历史)
@@ -644,7 +644,7 @@ LinQ 向用户申请：
 
 ### 8.3 待确认 🤔
 
-#### Q1: LinQ 需要哪些最小权限？
+#### Q1: LinX 需要哪些最小权限？
 
 **MVP 阶段**：
 ```
@@ -655,7 +655,7 @@ LinQ 向用户申请：
 - Write: /contacts (添加联系人)
 - Read/Write: /chats, /messages (聊天功能)
 - Read/Write: /files (文件管理)
-- Read/Write: /favorites, /settings, /ai-assistants
+- Read/Write: /favorites, /settings, /agents
 
 可选：
 - Read: 其他用户的 /profile（查看对方资料）
@@ -684,7 +684,7 @@ LinQ 向用户申请：
    - [ ] 已读状态如何跨 Pod 同步？
    - 影响：用户体验、实现复杂度
 
-4. **LinQ 是否需要中心化服务**
+4. **LinX 是否需要中心化服务**
    - [ ] 完全去中心化 or 可选服务器？
    - [ ] 哪些功能需要服务器（推送、用户发现等）？
    - 影响：产品定位、技术架构
@@ -714,7 +714,7 @@ LinQ 向用户申请：
    - 影响：用户体验
 
 9. **跨应用互操作**
-   - [ ] LinQ 的数据能否被其他 Solid 应用读取？
+   - [ ] LinX 的数据能否被其他 Solid 应用读取？
    - [ ] 是否需要标准化数据格式？
    - 影响：生态兼容性
 
@@ -771,6 +771,13 @@ LinQ 向用户申请：
 
 **最后更新**: 2025-11-07  
 **下次评审**: 待定
+
+
+
+
+
+
+
 
 
 

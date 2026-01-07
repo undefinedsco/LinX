@@ -10,7 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@linq/models": "*",
-    "drizzle-solid": "*"
+    "@linx/models": "*",
+    "drizzle-solid": "0.1.6"
   }
 }
