@@ -1,7 +1,31 @@
 // ============================================
 // 命名空间和词汇表
 // ============================================
-export { LINQ, SIOC, DCTerms, SCHEMA, RDF, FOAF, MEETING, AS } from "./namespaces";
+export {
+  // Legacy + Wave A aliases
+  LINQ,
+  UDFS,
+  UDFS_NAMESPACE,
+  // Wave A contracts
+  LINX_CHAT,
+  LINX_MSG,
+  // Standard vocabs
+  SIOC,
+  DCTerms,
+  SCHEMA,
+  RDF,
+  RDFS,
+  OWL,
+  FOAF,
+  MEETING,
+  AS,
+  VCARD,
+  WF,
+  LDP,
+} from "./namespaces";
+
+// Wave A: centralized vocab objects (downstream should prefer these over ad-hoc namespaces)
+export * from "./vocab";
 
 // ============================================
 // 核心业务模型
@@ -67,6 +91,21 @@ export {
   parseMessageBlocks,
   serializeMessageBlocks,
 } from "./types/message-block";
+
+// Wave A CP0: collaboration-related richContent block contracts
+export {
+  type ToolApprovalBlock,
+  type ToolCallBlock,
+  type TaskProgressBlock,
+  type CollaborationRichBlock,
+  type ToolRisk,
+  type ToolApprovalStatus,
+  type ToolCallStatus,
+  type TaskProgressStepStatus,
+} from "./types/collaboration-blocks";
+
+// Wave A CP0: fixtures for downstream parallel development
+export * from "./fixtures/contracts-chat-contact";
 
 // File - 文件管理
 export {

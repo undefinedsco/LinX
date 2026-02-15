@@ -29,6 +29,22 @@ export { FOAF, VCARD, LDP }
 export const DCTerms = DCTERMS
 export const RDF = RDF_VOCAB
 
+export const RDFS = createNamespace('rdfs', 'http://www.w3.org/2000/01/rdf-schema#', {
+  Class: 'Class',
+  label: 'label',
+  comment: 'comment',
+  subClassOf: 'subClassOf',
+  domain: 'domain',
+  range: 'range',
+})
+
+export const OWL = createNamespace('owl', 'http://www.w3.org/2002/07/owl#', {
+  Ontology: 'Ontology',
+  Class: 'Class',
+  ObjectProperty: 'ObjectProperty',
+  DatatypeProperty: 'DatatypeProperty',
+})
+
 export const SCHEMA = createNamespace('schema', 'http://schema.org/', {
   CreativeWork: 'CreativeWork',
   MediaObject: 'MediaObject',
@@ -80,7 +96,9 @@ export const AS = createNamespace('as', 'https://www.w3.org/ns/activitystreams#'
   object: 'object',
 })
 
-export const LINQ = createNamespace('linx', 'https://linx.ai/ns#', {
+// Company-level namespace (community-first guidance): all custom terms live under udfs:.
+// NOTE: This base URI is part of the contract.
+export const UDFS = createNamespace('udfs', 'https://undefineds.co/ns#', {
   favorite: 'favorite',
   favoriteType: 'favoriteType',
   favoriteTarget: 'favoriteTarget',
@@ -145,4 +163,50 @@ export const LINQ = createNamespace('linx', 'https://linx.ai/ns#', {
   unreadCount: 'unreadCount',
   ttsModel: 'ttsModel',
   videoModel: 'videoModel',
+  chatType: 'chatType',
+  workspace: 'workspace',
+  policyRef: 'policyRef',
+  policyVersion: 'policyVersion',
+  parentThreadId: 'parentThreadId',
+  sessionStatus: 'sessionStatus',
+  sessionTool: 'sessionTool',
+  tokenUsage: 'tokenUsage',
+  groupOwner: 'groupOwner',
+  groupAdmin: 'groupAdmin',
+  senderName: 'senderName',
+  senderAvatarUrl: 'senderAvatarUrl',
+  mentions: 'mentions',
+  replyTo: 'replyTo',
+  routedBy: 'routedBy',
+  routeTargetAgentId: 'routeTargetAgentId',
+  coordinationId: 'coordinationId',
+  toolCallId: 'toolCallId',
+  toolName: 'toolName',
+  toolArguments: 'toolArguments',
+  toolStatus: 'toolStatus',
+  toolResult: 'toolResult',
+  toolError: 'toolError',
+  toolDuration: 'toolDuration',
+  toolRisk: 'toolRisk',
+  approvalStatus: 'approvalStatus',
+  decisionBy: 'decisionBy',
+  decisionRole: 'decisionRole',
+  onBehalfOf: 'onBehalfOf',
+  approvalReason: 'approvalReason',
+  inboxItemId: 'inboxItemId',
+  taskProgressId: 'taskProgressId',
+  taskSteps: 'taskSteps',
+  currentStep: 'currentStep',
+  totalSteps: 'totalSteps',
 })
+
+export const UDFS_NAMESPACE = UDFS.NAMESPACE
+
+// Legacy alias: existing code may still import LINQ.
+// Keep as alias to avoid churn.
+export const LINQ = UDFS
+
+// Wave A contracts: unified under company namespace (UDFS).
+// Keep legacy names as aliases to avoid downstream churn.
+export const LINX_CHAT = UDFS
+export const LINX_MSG = UDFS

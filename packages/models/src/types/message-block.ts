@@ -1,3 +1,9 @@
+import type {
+  ToolApprovalStatus,
+  ToolCallStatus,
+  TaskProgressStepStatus,
+} from './collaboration-blocks'
+
 /**
  * Message Block Types - 基于 Cherry Studio 的 block-based 消息系统
  * 
@@ -24,6 +30,10 @@ export enum MessageBlockType {
   CODE = 'code',
   /** 工具调用及响应 */
   TOOL = 'tool',
+  /** 工具审批卡片 */
+  TOOL_APPROVAL = 'tool_approval',
+  /** 任务进度卡片 */
+  TASK_PROGRESS = 'task_progress',
   /** 文件内容 */
   FILE = 'file',
   /** 错误信息 */
@@ -151,6 +161,8 @@ export interface ImageMessageBlock extends BaseMessageBlock {
 // 工具调用块
 export interface ToolMessageBlock extends BaseMessageBlock {
   type: MessageBlockType.TOOL
+  /** 协作链路中的工具调用 ID（与 CP0 ToolCallBlock 对齐） */
+  toolCallId?: string
   /** 工具 ID */
   toolId: string
   /** 工具名称 */
@@ -159,6 +171,14 @@ export interface ToolMessageBlock extends BaseMessageBlock {
   arguments?: Record<string, unknown>
   /** 响应内容 */
   content?: string | object
+  /** CP0 协作契约状态（waiting_approval / running / done ...） */
+  toolStatus?: ToolCallStatus
+  /** 执行结果（CP0 ToolCallBlock.result） */
+  result?: unknown
+  /** 错误信息（CP0 ToolCallBlock.error） */
+  toolError?: string
+  /** 耗时（ms） */
+  duration?: number
   /** 工具元数据 */
   metadata?: BaseMessageBlock['metadata'] & {
     /** 是否来自 MCP */
@@ -166,6 +186,41 @@ export interface ToolMessageBlock extends BaseMessageBlock {
     /** MCP 服务器名称 */
     mcpServer?: string
   }
+}
+
+// 工具审批块（CP0 合同）
+export interface ToolApprovalMessageBlock extends BaseMessageBlock {
+  type: MessageBlockType.TOOL_APPROVAL
+  toolCallId: string
+  toolName: string
+  toolDescription: string
+  arguments: Record<string, unknown>
+  risk: 'low' | 'medium' | 'high'
+  approvalStatus: ToolApprovalStatus
+  approvedBy?: string
+  approvedAt?: string
+  decisionBy?: string
+  decisionRole?: 'human' | 'secretary' | 'system'
+  onBehalfOf?: string
+  reason?: string
+  policyVersion?: string
+  inboxItemId?: string
+}
+
+// 任务进度块（CP0 合同）
+export interface TaskProgressMessageBlock extends BaseMessageBlock {
+  type: MessageBlockType.TASK_PROGRESS
+  taskId: string
+  title: string
+  steps: Array<{
+    id: string
+    label: string
+    status: TaskProgressStepStatus
+    detail?: string
+    duration?: number
+  }>
+  currentStep: number
+  totalSteps: number
 }
 
 // 引用块
@@ -220,6 +275,8 @@ export type MessageBlock =
   | CodeMessageBlock
   | ImageMessageBlock
   | ToolMessageBlock
+  | ToolApprovalMessageBlock
+  | TaskProgressMessageBlock
   | FileMessageBlock
   | ErrorMessageBlock
   | CitationMessageBlock

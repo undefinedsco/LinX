@@ -55,108 +55,52 @@
 > 本节定义 chat/contact/message 契约层的 RDF 词汇表（Vocab）、子类继承、predicate 映射和存储路径。
 > 所有下游 Wave 的 UI 和服务层必须引用此处定义的 Vocab，不得自行散落 namespace import。
 
-### 6A.1 新增 Namespace
+### 6A.1 Namespace 约定（UDFS 统一）
 
-在 `packages/models/src/namespaces.ts` 中新增 Chat 子类和协作相关的 namespace：
+Wave A CP0 的自定义 predicate **统一挂在公司级命名空间 `udfs:`**（代码中为 `UDFS` 常量，base URI 为 `https://undefineds.co/ns#`）。
 
-```typescript
-// 新增：LinX Chat 子类词汇
-export const LINX_CHAT = createNamespace('lxc', 'https://vocab.linx.dev/chat#', {
-  // Chat 子类 RDF types
-  DirectAIChat: 'DirectAIChat',
-  DirectHumanChat: 'DirectHumanChat',
-  GroupChat: 'GroupChat',
-  CLISession: 'CLISession',
+为避免下游 churn，仍导出 `LINX_CHAT` / `LINX_MSG`，但它们只是 `UDFS` 的别名（同一 base URI），用于语义分组/可读性。
 
-  // Chat 扩展 predicates
-  chatType: 'chatType',                   // 'direct_ai' | 'direct_human' | 'group' | 'cli_session'
-  agentWorkspaceRef: 'agentWorkspaceRef', // 指向 Contact(Agent@workspace)
-  policyRef: 'policyRef',                 // 权限策略文件引用
-  policyVersion: 'policyVersion',         // 命中策略版本
-  parentThreadId: 'parentThreadId',       // worktree thread 派生链路
+注意（CP0 冻结但不必落表/不必在实例上写入）：
 
-  // CLI Session 专用
-  sessionStatus: 'sessionStatus',         // 'active' | 'paused' | 'completed' | 'error'
-  sessionTool: 'sessionTool',             // 'claude-code' | 'cursor' | 'windsurf'
-  tokenUsage: 'tokenUsage',              // 已消耗 token 数
+- `chatType`：仅冻结词汇（`udfs:chatType`），CP0 不在 `ChatRow` 落表；交互差异统一通过 Message widgets（`richContent.blocks`）表达。
+- `agentWorkspaceRef`：旧命名/元模型中出现过；CP0 最终字段名为 `workspace`（Thread 上）。**不再保留 alias**，下游统一使用 `workspace`。
+- `policyRef` / `policyVersion` / `parentThreadId` / `session*`：CP0 仅冻结词汇，不在 schema 落表；策略文档从 workspace 容器约定链接解析。
 
-  // Group Chat 专用
-  groupOwner: 'groupOwner',               // 群主 WebID
-  groupAdmin: 'groupAdmin',               // 管理员 WebID（多值）
-})
+```ts
+import { UDFS, LINX_CHAT, LINX_MSG } from "@linx/models"
 
-// 新增：LinX Message 扩展词汇
-export const LINX_MSG = createNamespace('lxm', 'https://vocab.linx.dev/message#', {
-  // Group 消息扩展
-  senderName: 'senderName',
-  senderAvatarUrl: 'senderAvatarUrl',
-  mentions: 'mentions',                   // @提及的 contact URIs（多值）
-  replyTo: 'replyTo',                     // 引用回复的 message URI
-
-  // 多 AI 协同路由
-  routedBy: 'routedBy',                   // 路由者 WebID（通常为 SecretaryAI）
-  routeTargetAgentId: 'routeTargetAgentId',
-  coordinationId: 'coordinationId',       // 跨 AI 协同链路 ID
-
-  // Tool Call Block 扩展
-  toolCallId: 'toolCallId',
-  toolName: 'toolName',
-  toolArguments: 'toolArguments',         // JSON 序列化
-  toolStatus: 'toolStatus',              // 'calling' | 'waiting_approval' | 'running' | 'done' | 'error'
-  toolResult: 'toolResult',
-  toolError: 'toolError',
-  toolDuration: 'toolDuration',           // ms
-
-  // Tool Approval Block 扩展
-  toolRisk: 'toolRisk',                   // 'low' | 'medium' | 'high'
-  approvalStatus: 'approvalStatus',       // 'pending' | 'approved' | 'rejected' | 'auto_approved'
-  decisionBy: 'decisionBy',              // 审批执行者 WebID
-  decisionRole: 'decisionRole',          // 'human' | 'secretary' | 'system'
-  onBehalfOf: 'onBehalfOf',              // 委托方 WebID
-  approvalReason: 'approvalReason',
-  inboxItemId: 'inboxItemId',
-
-  // Task Progress Block
-  taskProgressId: 'taskProgressId',
-  taskSteps: 'taskSteps',                // JSON 序列化的步骤数组
-  currentStep: 'currentStep',
-  totalSteps: 'totalSteps',
-})
+// Aliases (same base URI)
+LINX_CHAT.workspace === UDFS.workspace
+LINX_MSG.coordinationId === UDFS.coordinationId
 ```
 
-### 6A.2 Chat 子类继承模型
+### 6A.2 Chat 语义（CP0）
 
-四个 Chat 子类共享 `/.data/chats/` 存储路径，通过 `rdf:type` 区分。
+CP0 中 Chat 作为纯 channel/place（`mee:LongChat`），不区分聊天对象类型；交互差异统一通过 Message widgets（`richContent.blocks`）表达。
 
-#### RDF 类型层次
-
-```
-mee:LongChat                          ← 基类（现有）
-  ├── lxc:DirectAIChat                ← 1v1 AI 对话
-  ├── lxc:DirectHumanChat             ← 1v1 人类对话
-  ├── lxc:GroupChat                   ← 群聊
-  └── lxc:CLISession                  ← CLI 工具会话
-```
+- **参与者**：统一用 `wf:participant`（社区词汇优先）
+- **Chat 不承载执行细节**：不在 Chat 上挂载 policy / session runtime / lineage 等
+- **Thread 在 CP0 仅承载 workspace 上下文**：Thread 上的 `workspace` 指向“workspace 容器 URI（Agent@workspace）”，策略文档由该容器约定链接解析（不在 Thread 冗余存储）
 
 #### Vocab 对象定义
 
-每个 Chat 子类对应一个 Vocab 对象，schema 定义时直接用 `V.xxx`：
+schema 定义时直接用 `V.xxx`：
 
-```typescript
+```ts
 // packages/models/src/vocab/chat.vocab.ts
 
-import { LINX_CHAT, LINX_MSG, DCTerms, SCHEMA, UDFS, MEETING, WF } from '../namespaces'
+import { DCTerms, SCHEMA, UDFS, WF } from "../namespaces"
 
-/** 所有 Chat 子类共享的基础 Vocab */
+/** Chat channel vocab (thin place/container). */
 export const ChatBaseVocab = {
   // Display
   title: DCTerms.title,
   description: DCTerms.description,
   avatarUrl: SCHEMA.image,
 
-  // Relations
-  contact: UDFS.hasContact,
-  participants: SCHEMA.participant,
+  // Participants (Solid chat-aligned)
+  participants: WF.participant,
 
   // State
   starred: UDFS.favorite,
@@ -171,87 +115,58 @@ export const ChatBaseVocab = {
   // Timestamps
   createdAt: DCTerms.created,
   updatedAt: DCTerms.modified,
-
-  // 新增：类型标识
-  chatType: LINX_CHAT.chatType,
-
-  // 新增：权限上下文
-  policyRef: LINX_CHAT.policyRef,
-  policyVersion: LINX_CHAT.policyVersion,
-} as const
-
-/** DirectAIChat Vocab — 继承 ChatBase + AI 专用 */
-export const DirectAIChatVocab = {
-  ...ChatBaseVocab,
-  agentWorkspaceRef: LINX_CHAT.agentWorkspaceRef,
-} as const
-
-/** DirectHumanChat Vocab — 继承 ChatBase（无额外字段） */
-export const DirectHumanChatVocab = {
-  ...ChatBaseVocab,
-} as const
-
-/** GroupChat Vocab — 继承 ChatBase + 群组专用 */
-export const GroupChatVocab = {
-  ...ChatBaseVocab,
-  groupOwner: LINX_CHAT.groupOwner,
-  groupAdmin: LINX_CHAT.groupAdmin,
-} as const
-
-/** CLISession Vocab — 继承 ChatBase + Session 专用 */
-export const CLISessionVocab = {
-  ...ChatBaseVocab,
-  sessionStatus: LINX_CHAT.sessionStatus,
-  sessionTool: LINX_CHAT.sessionTool,
-  tokenUsage: LINX_CHAT.tokenUsage,
-  parentThreadId: LINX_CHAT.parentThreadId,
 } as const
 ```
 
 #### chatTable 改造方案
 
-现有 `chatTable` 保持单表，新增字段通过 `LINX_CHAT` predicate 映射：
+现有 `chatTable` 保持单表，但 **Chat 作为“聊天发生的地方（channel/place）”变薄**。
 
-```typescript
-// packages/models/src/chat.schema.ts 改造后
+```ts
+// packages/models/src/chat.schema.ts
 
 export const chatTable = podTable(
-  'chats',
+  "chats",
   {
     // ... 现有字段保持不变 ...
 
-    // 新增：Chat 子类标识
-    chatType: string('chatType').predicate(LINX_CHAT.chatType).notNull().default('direct_ai'),
-
-    // 新增：权限上下文
-    policyRef: uri('policyRef').predicate(LINX_CHAT.policyRef),
-    policyVersion: string('policyVersion').predicate(LINX_CHAT.policyVersion),
-
-    // 新增：DirectAI 专用
-    agentWorkspaceRef: uri('agentWorkspaceRef').predicate(LINX_CHAT.agentWorkspaceRef),
-
-    // 新增：Group 专用
-    groupOwner: uri('groupOwner').predicate(LINX_CHAT.groupOwner),
-    groupAdmin: uri('groupAdmin').array().predicate(LINX_CHAT.groupAdmin),
-
-    // 新增：CLISession 专用
-    sessionStatus: string('sessionStatus').predicate(LINX_CHAT.sessionStatus),
-    sessionTool: string('sessionTool').predicate(LINX_CHAT.sessionTool),
-    tokenUsage: integer('tokenUsage').predicate(LINX_CHAT.tokenUsage),
-    parentThreadId: uri('parentThreadId').predicate(LINX_CHAT.parentThreadId),
+    // Participants (community-first)
+    participants: uri("participants").array().predicate(WF.participant),
   },
   {
-    base: '/.data/chats/',
-    sparqlEndpoint: '/.data/chats/-/sparql',
-    type: MEETING.LongChat,           // 基类 type 保持不变
+    base: "/.data/chats/",
+    sparqlEndpoint: "/.data/chats/-/sparql",
+    type: MEETING.LongChat,
     namespace: UDFS,
-    subjectTemplate: '{id}.ttl',
+    subjectTemplate: "{id}.ttl",
   },
 )
 ```
 
-> **设计决策**：不拆分为 4 张物理表。单表 + `chatType` 字段 + 子类专用字段可选，简化查询和迁移。
-> RDF 序列化时，每个 Chat 实例同时携带基类 `mee:LongChat` 和子类 `lxc:DirectAIChat` 两个 `rdf:type`。
+#### threadTable 改造方案（workspace 上下文）
+
+`threadTable` 在 CP0 **仅承载**与 workspace 关联的最小上下文，避免把执行细节塞进 Chat。
+
+```ts
+// packages/models/src/thread.schema.ts
+
+export const threadTable = podTable(
+  "thread",
+  {
+    // ... 现有字段保持不变 ...
+
+    // Execution context: workspace container URI (Agent@workspace)
+    workspace: uri("workspace").predicate(LINX_CHAT.workspace),
+  },
+  {
+    base: "/.data/threads/",
+    sparqlEndpoint: "/.data/threads/-/sparql",
+    type: SIOC.Thread,
+    namespace: UDFS,
+    subjectTemplate: "{id}.ttl",
+  },
+)
+```
 
 ### 6A.3 Message 扩展 Vocab
 
@@ -361,10 +276,10 @@ Wave A 阶段仅定义 JSON schema，不做 RDF 提取。
 
 | 实体 | Pod 路径 | RDF Type | Namespace | 变更 |
 |------|---------|----------|-----------|------|
-| Chat | `/.data/chats/{id}.ttl` | `mee:LongChat` + 子类 type | UDFS | 新增 `chatType` 等字段 |
+| Chat | `/.data/chats/{id}.ttl` | `mee:LongChat` | UDFS | participants 使用 `wf:participant`；不区分对象类型 |
 | Message | `/.data/messages/{id}.ttl` | `mee:Message` | UDFS | 新增 group/routing 字段 |
 | Contact | `/.data/contacts/{id}.ttl` | `vcard:Individual` | UDFS | 新增 `GROUP` 枚举值 |
-| Thread | `/.data/threads/{id}.ttl` | `sioc:Thread` | UDFS | 无变更 |
+| Thread | `/.data/threads/{id}.ttl` | `sioc:Thread` | UDFS | CP0：仅新增 `workspace` 字段；policy/session/lineage 仅冻结词汇不落表 |
 | Agent | `/.data/agents/{id}.ttl` | `foaf:Agent` | UDFS | 无变更 |
 
 ### 6A.7 Vocab 文件结构
@@ -372,7 +287,8 @@ Wave A 阶段仅定义 JSON schema，不做 RDF 提取。
 ```
 packages/models/src/vocab/
 ├── _namespaces.ts          ← 重导出 namespaces.ts（保持兼容）
-├── chat.vocab.ts           ← ChatBaseVocab, DirectAIChatVocab, GroupChatVocab, CLISessionVocab
+├── chat.vocab.ts           ← ChatBaseVocab（Chat=channel/place）
+├── thread.vocab.ts         ← ThreadVocab（workspace 上下文）
 ├── message.vocab.ts        ← MessageVocab
 ├── contact.vocab.ts        ← ContactVocab
 └── index.ts                ← 统一导出所有 Vocab
@@ -382,10 +298,10 @@ packages/models/src/vocab/
 
 | 下游 Wave | 引用的 Vocab | 用途 |
 |-----------|-------------|------|
-| 04-web-chat-ui | ChatBaseVocab, CLISessionVocab | ChatListPane chatType 差异化渲染 |
-| 05-mobile-chat-ui | ChatBaseVocab | 移动端 chat 类型判断 |
+| 04-web-chat-ui | ChatBaseVocab | ChatListPane 基于参与者/最后消息/blocks 做渲染（不依赖 chatType） |
+| 05-mobile-chat-ui | ChatBaseVocab | 移动端基于 participants/blocks 做渲染与交互 |
 | 06-web-contact-ui | ContactVocab (GROUP) | 群组联系人创建 |
-| 08-web-session-files-ui | CLISessionVocab | Session 状态字段读取 |
+| 08-web-session-files-ui | ThreadVocab | 读取 Agent@workspace 上下文（policy 由 workspace 容器解析） |
 | 10-cli-collector | MessageVocab (richContent blocks) | Block 序列化写入 |
 | 02-sidecar-events | LINX_MSG (tool*) | 事件 → Block 字段映射 |
 
@@ -468,34 +384,26 @@ interface ToolCallBlock {
 }
 ```
 
-### 7.2 Chat 类型标识
+### 7.2 Chat / Thread 的职责边界（CP0）
 
-当前 `ChatRow` 通过关联的 `ContactRow.contactType` 隐式推断聊天类型。契约层需要显式定义 `chatType` 以支持 UI 差异化渲染：
+Chat 是“消息发生的地方（channel/place）”，无论聊天对象是人/AI/群/CLI，会话中的交互统一通过 `MessageRow.richContent.blocks`（widget blocks）表达。
+
+因此 CP0 契约中：
+
+- `ChatRow` **不承载**对象类型、审批策略、session 运行态等细节，仅保留参与者（`wf:participant`）和展示/状态字段。
+- `ThreadRow` 在 CP0 仅承载 Agent@workspace container 上下文（`workspace`）；策略文档从该容器约定链接解析。
 
 ```typescript
-// 扩展 ChatRow
 interface ChatRowExtension {
-  chatType: 'direct_ai' | 'direct_human' | 'group' | 'cli_session'
+  // Participants
+  participants: string[]
+}
 
-  // 权限继承上下文（精简）
-  agentWorkspaceRef?: string // 指向 Contact(Agent@workspace)
-  policyRef?: string         // 权限策略文件引用（thread 创建时挂载）
-  policyVersion?: string     // 命中策略版本（用于审计）
-  parentThreadId?: string    // worktree thread 派生链路（可选）
-
-  // CLI Session 专用字段
-  sessionStatus?: 'active' | 'paused' | 'completed' | 'error'
-  sessionTool?: 'claude-code' | 'cursor' | 'windsurf'
-  tokenUsage?: number
+interface ThreadRowExtension {
+  // Agent@workspace container URI
+  workspace?: string
 }
 ```
-
-UI 消费方式：
-- `direct_ai`：显示 AI provider logo，启用 streaming/thinking/tool 渲染
-- `direct_human`：显示用户头像，启用 presence/typing/read receipt
-- `group`：显示群头像（多头像拼接），启用成员列表和 @mention
-- `cli_session`：显示 CLI 工具图标，启用 session 控制栏和 diff 预览
-
 ### 7.3 Group 消息扩展字段
 
 群聊消息需要额外字段以支持发送者标识和引用回复：
@@ -532,8 +440,6 @@ interface GroupMessageExtension {
 | `ToolApprovalBlock.risk` | 04-web-chat-ui, 05-mobile-chat-ui | 决定是否显示审批卡片 |
 | `ToolApprovalBlock.status` | 04-web-chat-ui | 审批按钮状态（pending→可点击，approved→灰色✓） |
 | `TaskProgressBlock.steps` | 04-web-chat-ui | 多步骤进度条渲染 |
-| `chatType` | ChatListPane | 列表项图标和标识差异 |
-| `sessionStatus` | 08-web-session-files-ui | CLI session 状态指示器 |
 | `mentions` | Inputbar, MessageList | @mention 输入和高亮渲染 |
-| `policyRef/policyVersion` | 11-mcp-bridge, 12-automation | 审批继承与策略命中 |
+| `workspace`（Thread） | 11-mcp-bridge, 12-automation | 定位 Agent@workspace 上下文与策略文档 |
 | `decisionBy/decisionRole/onBehalfOf` | Inbox, 审计视图 | 人工/SecretaryAI 决策追踪 |
