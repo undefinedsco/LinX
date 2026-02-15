@@ -1,0 +1,13 @@
+{
+  "type": "session.state",
+  "version": 1,
+  "sessionId": "sess_001",
+  "chatId": "https://pod.example/.data/chats/chat_001.ttl",
+  "policyVersion": "2026-02-01",
+  "status": "completed",
+  "previousStatus": "active",
+  "tool": "claude-code",
+  "tokenUsage": 1234,
+  "timestamp": "2026-02-12T10:01:00.000Z",
+  "policy": "https://pod.example/settings/policies/default.ttl"
+}

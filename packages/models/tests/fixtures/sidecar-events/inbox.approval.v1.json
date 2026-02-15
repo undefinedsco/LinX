@@ -1,0 +1,15 @@
+{
+  "type": "inbox.approval",
+  "inboxItemId": "inbox_001",
+  "sessionId": "sess_001",
+  "toolCallId": "tc_002",
+  "target": "https://alice.example/.data/chats/chat-001.ttl",
+  "action": "http://www.w3.org/ns/auth/acl#Read",
+  "policy": "https://pod.example/settings/policies/default.ttl",
+  "policyVersion": "2026-02-01",
+  "risk": "high",
+  "status": "pending",
+  "assignedTo": "https://alice.example/profile/card#me",
+  "createdAt": "2026-02-12T10:00:01.500Z",
+  "version": 1
+}

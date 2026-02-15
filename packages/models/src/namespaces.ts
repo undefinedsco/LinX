@@ -1,4 +1,4 @@
-import { FOAF, VCARD, LDP, DCTERMS, RDF as RDF_VOCAB } from '@inrupt/vocab-common-rdf'
+import { FOAF, VCARD, LDP, DCTERMS, RDF as RDF_VOCAB, RDFS as RDFS_VOCAB, ACL as ACL_VOCAB } from '@inrupt/vocab-common-rdf'
 
 type NamespaceObject = ((term: string) => string) & {
   prefix: string
@@ -28,6 +28,51 @@ const createNamespace = (prefix: string, baseUri: string, terms: Record<string, 
 export { FOAF, VCARD, LDP }
 export const DCTerms = DCTERMS
 export const RDF = RDF_VOCAB
+export const RDFS = RDFS_VOCAB
+export const ACL = ACL_VOCAB
+
+// ODRL isn't provided as a NamespaceConfig-compatible builder in vocab-common-rdf.
+// We define a small namespace builder to keep drizzle-solid happy.
+export const ODRL = createNamespace('odrl', 'http://www.w3.org/ns/odrl/2/', {
+  Policy: 'Policy',
+  target: 'target',
+  action: 'action',
+})
+
+// Company-level vocabulary (shared across products)
+export const UDFS = createNamespace('udfs', 'https://undefineds.co/ns#', {
+  // Types
+  ApprovalRequest: 'ApprovalRequest',
+  AuditEntry: 'AuditEntry',
+  AutonomyGrant: 'AutonomyGrant',
+
+  // ApprovalRequest predicates
+  session: 'session', // URI
+  toolCallId: 'toolCallId', // string
+  toolName: 'toolName',
+  risk: 'risk', // 'low' | 'medium' | 'high'
+  status: 'status', // approval status
+  assignedTo: 'assignedTo', // WebID
+  decisionBy: 'decisionBy', // WebID
+  decisionRole: 'decisionRole',
+  onBehalfOf: 'onBehalfOf', // WebID
+  reason: 'reason',
+  resolvedAt: 'resolvedAt',
+
+  // AuditEntry predicates
+  action: 'action',
+  actor: 'actor', // WebID
+  actorRole: 'actorRole',
+  context: 'context', // JSON: triggerEvent, reasoning, matchedPolicies, userStatus
+  policy: 'policy', // URI
+  policyVersion: 'policyVersion',
+  approval: 'approval', // URI
+
+  // AutonomyGrant predicates (ODRL covers target/action)
+  effect: 'effect', // 'allow-always' | 'deny-always'
+  riskCeiling: 'riskCeiling',
+  revokedAt: 'revokedAt',
+})
 
 export const RDFS = createNamespace('rdfs', 'http://www.w3.org/2000/01/rdf-schema#', {
   Class: 'Class',
@@ -90,6 +135,7 @@ export const WF = createNamespace('wf', 'http://www.w3.org/2005/01/wf/flow-1.0#'
 
 // Activity Streams 2.0 - W3C standard for social web
 export const AS = createNamespace('as', 'https://www.w3.org/ns/activitystreams#', {
+  Announce: 'Announce',
   Public: 'Public',
   audience: 'audience',
   actor: 'actor',

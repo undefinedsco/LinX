@@ -1,8 +1,12 @@
 import { agentTable } from './agent.schema'
+import { approvalTable } from './approval.schema'
+import { auditTable } from './audit.schema'
 import { chatTable } from './chat.schema'
 import { contactTable } from './contact.schema'
 import { favoriteTable } from './favorite/favorite.schema'
 import { fileTable } from './file/file.schema'
+import { grantTable } from './grant.schema'
+import { inboxNotificationTable } from './inbox-notification.schema'
 import { messageTable } from './message.schema'
 import { modelProviderTable } from './model-provider.schema'
 import { solidProfileTable } from './profile'
@@ -20,4 +24,10 @@ export const linxSchema = {
   fileTable,
   favoriteTable,
   settingsTable,
+
+  // Sidecar collaboration data
+  approvalTable,
+  auditTable,
+  grantTable,
+  inboxNotificationTable,
 }
