@@ -12,6 +12,7 @@ import { PlaceholderListPane, PlaceholderContentPane } from './placeholders'
 import { ChatListPane, ChatContentPane, useChatLayoutConfig } from '@/modules/chat'
 import { ContactListPane, ContactDetailPane } from '@/modules/contacts'
 import { FavoriteListPane, FavoriteContentPane } from '@/modules/favorites'
+import { FilesTreePane, FilesListPane, FileDetailPane } from '@/modules/files'
 import { ModelServicesListPane, ModelServicesContentPane, useModelServicesLayoutConfig } from '@/modules/model-services'
 
 export const microAppIds = [
@@ -105,8 +106,12 @@ export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
       itemTitle: '文件预览',
       itemSubtitle: '支持多源同步',
     },
-    ListPane: buildList('文件夹', '示例目录树', ['设计文档', '知识库', '临时文件']),
-    ContentPane: buildContent('文件内容', '文件预览区 placeholder'),
+    ListPane: FilesTreePane,
+    ContentPane: FilesListPane,
+    useLayoutConfig: () => ({
+      rightSidebar: <FileDetailPane />,
+      rightSidebarWidth: 320,
+    }),
   },
   favorites: {
     id: 'favorites',
