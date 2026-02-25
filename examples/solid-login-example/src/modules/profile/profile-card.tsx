@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
-import type { SolidDatabase } from "drizzle-solid";
+import type { SolidDatabase } from "@undefineds.co/drizzle-solid";
 import {
   solidProfileTable,
   type SolidProfileRow,
@@ -28,8 +28,10 @@ const editableFields: Array<{
   placeholder: string;
   multiline?: boolean;
 }> = [
-  { key: "displayName", label: "姓名", placeholder: "填写姓名" },
-  { key: "nickname", label: "昵称", placeholder: "填写昵称" },
+  { key: "name", label: "姓名", placeholder: "填写姓名" },
+  { key: "nick", label: "昵称", placeholder: "填写昵称" },
+  { key: "email", label: "邮箱", placeholder: "填写邮箱地址" },
+  { key: "phone", label: "电话", placeholder: "填写电话号码" },
   { key: "note", label: "个性签名", placeholder: "记录个性签名", multiline: true }
 ];
 
@@ -175,11 +177,11 @@ export function ProfileCard({ profile, webId, fetchFn, database, onProfileUpdate
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
 
   const primaryName = useMemo(() => {
-    const display = readProfileField(profile, "displayName").trim();
+    const display = readProfileField(profile, "name").trim();
     if (display) {
       return display;
     }
-    const nickname = readProfileField(profile, "nickname").trim();
+    const nickname = readProfileField(profile, "nick").trim();
     if (nickname) {
       return nickname;
     }
@@ -187,7 +189,7 @@ export function ProfileCard({ profile, webId, fetchFn, database, onProfileUpdate
   }, [profile]);
 
   const avatarSrc = useMemo(() => {
-    const value = readProfileField(profile, "avatarUrl").trim();
+    const value = readProfileField(profile, "avatar").trim();
     return value;
   }, [profile]);
 
@@ -315,7 +317,7 @@ export function ProfileCard({ profile, webId, fetchFn, database, onProfileUpdate
   };
 
   const resolveAvatarContainer = (): string | null => {
-    const avatarUrl = readProfileField(profile, "avatarUrl");
+    const avatarUrl = readProfileField(profile, "avatar");
     if (avatarUrl) {
       try {
         const url = new URL(avatarUrl);
@@ -395,7 +397,7 @@ export function ProfileCard({ profile, webId, fetchFn, database, onProfileUpdate
         );
       }
 
-      await handleSaveField("avatarUrl", targetUrl);
+      await handleSaveField("avatar", targetUrl);
     } catch (err) {
       console.error("Avatar upload failed", err);
       setError(

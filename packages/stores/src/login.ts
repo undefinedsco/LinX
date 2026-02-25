@@ -1,102 +1,175 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 
-export type SolidLoginMode = 'auto' | 'loading' | 'switch'
+// ============================================================================
+// 状态机定义
+// ============================================================================
 
-export interface CustomIssuerDraft {
-  value: string
-  isValid: boolean
-  error?: string
-}
+/**
+ * 登录状态机
+ *
+ * INIT → RESTORING → LOGGED_IN (成功)
+ *              ↓ (失败/超时)
+ *        SELECTING_PROVIDER ←→ CONNECTING
+ *              ↓ (成功)
+ *          LOGGED_IN
+ */
+export type LoginState =
+  | 'init'              // 初始化中
+  | 'restoring'         // 恢复会话中
+  | 'selecting'         // 选择 Provider
+  | 'connecting'        // 连接中
+  | 'logged_in'         // 已登录
 
-export interface SolidAccountPreview {
-  displayName?: string
-  handle?: string
-  issuerDomain?: string
-  issuerLabel?: string
+// ============================================================================
+// 类型定义
+// ============================================================================
+
+export interface StoredAccount {
+  displayName: string
   avatarUrl?: string
-  isRecent?: boolean
-  issuerLogoUrl?: string
+  issuerUrl: string
+  issuerLabel?: string
+  webId?: string
 }
 
-export interface SolidLoginState {
-  mode: SolidLoginMode
-  showModal: boolean
-  isRestoringSession: boolean
-  hasCachedSession: boolean
-  selectedIssuer?: string
-  customIssuer: CustomIssuerDraft
-  errorMessage: string | null
-  accountPreview?: SolidAccountPreview
-  storedAccount?: SolidAccountPreview
-  setMode: (mode: SolidLoginMode) => void
-  setShowModal: (value: boolean) => void
-  setRestoringSession: (value: boolean) => void
-  setHasCachedSession: (value: boolean) => void
-  setSelectedIssuer: (value: string | undefined) => void
-  setCustomIssuer: (draft: CustomIssuerDraft) => void
-  resetCustomIssuer: (value?: string) => void
-  setErrorMessage: (message: string | null) => void
-  setAccountPreview: (preview: SolidAccountPreview | undefined) => void
-  setStoredAccount: (preview: SolidAccountPreview | undefined) => void
+export interface ProviderOption {
+  id: string
+  url: string
+  label: string
+  logoUrl?: string
+  isDefault?: boolean
 }
 
-const createEmptyDraft = (value = ''): CustomIssuerDraft => ({
-  value,
-  isValid: false,
-})
+export interface LoginStore {
+  // 状态
+  state: LoginState
+  error: string | null
+  failedProvider: string | null  // 上次失败的 provider URL
 
-export const useSolidLoginStore = create<SolidLoginState>()(
+  // 数据
+  selectedProvider: string | null
+  storedAccount: StoredAccount | null
+  customProviders: ProviderOption[]
+
+  // Actions
+  setState: (state: LoginState) => void
+  setError: (error: string | null) => void
+  setFailedProvider: (url: string | null) => void
+  setSelectedProvider: (url: string | null) => void
+  setStoredAccount: (account: StoredAccount | null) => void
+  addCustomProvider: (provider: ProviderOption) => void
+  removeCustomProvider: (url: string) => void
+
+  // 复合 Actions
+  loginFailed: (error: string, providerUrl: string) => void
+  loginSuccess: (account: StoredAccount) => void
+  reset: () => void
+}
+
+// ============================================================================
+// Store 实现
+// ============================================================================
+
+export const useLoginStore = create<LoginStore>()(
   persist(
     (set) => ({
-      mode: 'switch',
-      showModal: false,
-      isRestoringSession: false,
-      hasCachedSession: false,
-      selectedIssuer: undefined,
-      customIssuer: createEmptyDraft(),
-      errorMessage: null,
-      accountPreview: undefined,
-      storedAccount: undefined,
-      setMode: (mode) => set({ mode }),
-      setShowModal: (value) => set({ showModal: value }),
-      setRestoringSession: (value) => set({ isRestoringSession: value }),
-      setHasCachedSession: (value) => set({ hasCachedSession: value }),
-      setSelectedIssuer: (value) => set({ selectedIssuer: value }),
-      setCustomIssuer: (draft) => set({ customIssuer: draft }),
-      resetCustomIssuer: (value) => set({ customIssuer: createEmptyDraft(value) }),
-      setErrorMessage: (message) => set({ errorMessage: message }),
-      setAccountPreview: (preview) => set({ accountPreview: preview }),
-      setStoredAccount: (preview) => set({ storedAccount: preview }),
+      // 初始状态
+      state: 'init',
+      error: null,
+      failedProvider: null,
+      selectedProvider: null,
+      storedAccount: null,
+      customProviders: [],
+
+      // 基础 Actions
+      setState: (state) => set({ state }),
+      setError: (error) => set({ error }),
+      setFailedProvider: (url) => set({ failedProvider: url }),
+      setSelectedProvider: (url) => set({ selectedProvider: url }),
+      setStoredAccount: (account) => set({ storedAccount: account }),
+
+      addCustomProvider: (provider) => set((s) => ({
+        customProviders: [
+          provider,
+          ...s.customProviders.filter(p => p.url !== provider.url)
+        ].slice(0, 10)  // 最多保存 10 个
+      })),
+
+      removeCustomProvider: (url) => set((s) => ({
+        customProviders: s.customProviders.filter(p => p.url !== url)
+      })),
+
+      // 复合 Actions
+      loginFailed: (error, providerUrl) => set({
+        state: 'selecting',
+        error,
+        failedProvider: providerUrl,
+      }),
+
+      loginSuccess: (account) => set({
+        state: 'logged_in',
+        error: null,
+        failedProvider: null,
+        storedAccount: account,
+      }),
+
+      reset: () => set({
+        state: 'selecting',
+        error: null,
+        failedProvider: null,
+        selectedProvider: null,
+      }),
     }),
     {
-      name: 'linx-solid-login',
-      storage: createJSONStorage(createSafeStorage),
-      partialize: (state) => ({ storedAccount: state.storedAccount }),
-    },
-  ),
+      name: 'linx-login',
+      storage: createJSONStorage(() => {
+        if (typeof window !== 'undefined' && window.localStorage) {
+          return window.localStorage
+        }
+        // SSR fallback
+        const memory: Record<string, string> = {}
+        return {
+          getItem: (key) => memory[key] ?? null,
+          setItem: (key, value) => { memory[key] = value },
+          removeItem: (key) => { delete memory[key] },
+        }
+      }),
+      // 只持久化这些字段
+      partialize: (state) => ({
+        storedAccount: state.storedAccount,
+        customProviders: state.customProviders,
+      }),
+    }
+  )
 )
 
-function createSafeStorage(): Storage {
-  if (typeof window !== 'undefined' && window.localStorage) {
-    return window.localStorage
-  }
+// ============================================================================
+// 默认 Providers
+// ============================================================================
 
-  const memory: Record<string, string> = {}
-  return {
-    getItem: (key: string) => (key in memory ? memory[key] : null),
-    setItem: (key: string, value: string) => {
-      memory[key] = value
-    },
-    removeItem: (key: string) => {
-      delete memory[key]
-    },
-    clear: () => {
-      Object.keys(memory).forEach((key) => delete memory[key])
-    },
-    key: (index: number) => Object.keys(memory)[index] ?? null,
-    get length() {
-      return Object.keys(memory).length
-    },
-  } as Storage
+export const DEFAULT_PROVIDERS: ProviderOption[] = [
+  {
+    id: 'linx-cloud',
+    url: 'https://lgnxxsoohipf.sealosgzg.site',
+    label: 'LinX Cloud',
+    logoUrl: '/linx-logo.svg',
+    isDefault: true,
+  },
+]
+
+// ============================================================================
+// 辅助函数
+// ============================================================================
+
+export function getAllProviders(customProviders: ProviderOption[]): ProviderOption[] {
+  const map = new Map<string, ProviderOption>()
+
+  // 先添加默认的
+  DEFAULT_PROVIDERS.forEach(p => map.set(p.url, p))
+
+  // 再添加自定义的（会覆盖同 URL 的默认项）
+  customProviders.forEach(p => map.set(p.url, { ...p, isDefault: false }))
+
+  return Array.from(map.values())
 }

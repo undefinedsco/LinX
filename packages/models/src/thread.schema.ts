@@ -1,5 +1,5 @@
-import { boolean, id, podTable, string, timestamp, uri } from 'drizzle-solid'
-import { DCTerms, LINX_CHAT, MEETING, SIOC, UDFS } from './namespaces'
+import { uri, boolean, podTable, string, timestamp, id } from '@undefineds.co/drizzle-solid'
+import { UDFS, DCTerms, SIOC, MEETING, LINX_CHAT } from './namespaces'
 
 /**
  * Thread schema.
@@ -24,9 +24,8 @@ export const threadTable = podTable(
     starred: boolean('starred').predicate(UDFS.favorite).default(false),
 
     // Execution context: workspace container (Agent@workspace)
-    // - New container resource created per workspace
-    // - Policy is referenced from Agent/workspace container (no per-thread policy fields in CP0)
     workspace: uri('workspace').predicate(LINX_CHAT.workspace),
+
 
     createdAt: timestamp('createdAt').predicate(DCTerms.created).notNull().defaultNow(),
     updatedAt: timestamp('updatedAt').predicate(DCTerms.modified).notNull().defaultNow(),

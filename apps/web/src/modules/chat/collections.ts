@@ -8,14 +8,14 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ilike, or } from 'drizzle-solid'
+import { like, or } from '@undefineds.co/drizzle-solid'
 import {
   chatTable,
   threadTable,
   messageTable,
   agentTable,
   contactTable,
-  modelProviderTable,
+  credentialTable,
   eq,
   ContactType,
   getBuiltinProvider,
@@ -595,25 +595,25 @@ export const chatOps = {
   },
 
   /**
-   * Get API credential for a provider from modelProviderTable
+   * Get API credential for a provider from credentialTable
    */
   async getCredential(provider: string): Promise<{ apiKey: string; baseUrl?: string } | null> {
     const db = getDb()
     if (!db) return null
     
-    const idCol = (modelProviderTable as any).id
-    const providers = await db.select()
-      .from(modelProviderTable)
-      .where(eq(idCol, provider))
+    const providerCol = (credentialTable as any).provider
+    const rows = await db.select()
+      .from(credentialTable)
+      .where(eq(providerCol, `/settings/ai/providers.ttl#${provider}`))
       .execute()
-    
-    const prov = providers[0]
-    
-    if (!prov || !prov.apiKey) return null
-    
+
+    const cred = rows.find((row: any) => row?.status === 'active') ?? rows[0]
+
+    if (!cred || !cred.apiKey) return null
+
     return {
-      apiKey: prov.apiKey as string,
-      baseUrl: prov.baseUrl || undefined,
+      apiKey: cred.apiKey as string,
+      baseUrl: cred.baseUrl || undefined,
     }
   },
 
@@ -771,8 +771,8 @@ export function useChatList(filters?: { search?: string }) {
             .from(chatTable)
             .where(
               or(
-                ilike(chatTable.title, pattern),
-                ilike(chatTable.lastMessagePreview, pattern)
+                like(chatTable.title, pattern),
+                like(chatTable.lastMessagePreview, pattern)
               )
             )
             .orderBy(chatTable.lastActiveAt, 'desc')

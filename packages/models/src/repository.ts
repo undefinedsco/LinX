@@ -6,8 +6,8 @@ import type {
   InferUpdateData,
   SolidDatabase as DrizzleSolidDatabase,
   QueryCondition,
-} from 'drizzle-solid'
-import { and, like, or } from 'drizzle-solid'
+} from '@undefineds.co/drizzle-solid'
+import { and, like, or } from '@undefineds.co/drizzle-solid'
 
 export type SolidDatabase = DrizzleSolidDatabase
 

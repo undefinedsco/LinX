@@ -244,6 +244,12 @@ export const UDFS = createNamespace('udfs', 'https://undefineds.co/ns#', {
   taskSteps: 'taskSteps',
   currentStep: 'currentStep',
   totalSteps: 'totalSteps',
+
+  // Favorites V2
+  sourceModule: 'sourceModule',
+  sourceId: 'sourceId',
+  searchText: 'searchText',
+  snapshotMeta: 'snapshotMeta',
 })
 
 export const UDFS_NAMESPACE = UDFS.NAMESPACE
@@ -256,3 +262,31 @@ export const LINQ = UDFS
 // Keep legacy names as aliases to avoid downstream churn.
 export const LINX_CHAT = UDFS
 export const LINX_MSG = UDFS
+
+export const XPOD_CREDENTIAL = createNamespace('cred', 'https://vocab.xpod.dev/credential#', {
+  Credential: 'Credential',
+  provider: 'provider',
+  service: 'service',
+  status: 'status',
+  apiKey: 'apiKey',
+  baseUrl: 'baseUrl',
+  label: 'label',
+  lastUsedAt: 'lastUsedAt',
+  failCount: 'failCount',
+  rateLimitResetAt: 'rateLimitResetAt',
+})
+
+export const XPOD_AI = createNamespace('ai', 'https://vocab.xpod.dev/ai#', {
+  Provider: 'Provider',
+  Model: 'Model',
+  baseUrl: 'baseUrl',
+  proxyUrl: 'proxyUrl',
+  hasModel: 'hasModel',
+  displayName: 'displayName',
+  modelType: 'modelType',
+  isProvidedBy: 'isProvidedBy',
+  dimension: 'dimension',
+  status: 'status',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+})

@@ -42,7 +42,7 @@ export interface UnifiedContact extends Omit<ContactRow, 'gender'> {
   }
 }
 
-export type SectionKey = 'new-friends' | 'agents' | 'contacts' | 'starred'
+export type SectionKey = 'new-friends' | 'agents' | 'contacts' | 'starred' | 'groups'
 
 export interface ContactSection {
   key: SectionKey

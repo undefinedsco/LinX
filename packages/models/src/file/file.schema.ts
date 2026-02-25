@@ -1,5 +1,5 @@
-import { podTable, string, timestamp, integer, boolean, id } from "drizzle-solid";
-import { LINQ, DCTerms, SCHEMA } from "../namespaces";
+import { podTable, string, timestamp, integer, boolean, id } from "@undefineds.co/drizzle-solid";
+import { UDFS, DCTerms, SCHEMA } from "../namespaces";
 
 /**
  * @deprecated 文件管理应由 xpod 处理，Pod 本身就是文件系统。
@@ -25,37 +25,37 @@ export const fileTable = podTable("file", {
   // 文件属性
   mimeType: string("mimeType").predicate(SCHEMA.encodingFormat).notNull(), // MIME 类型
   size: integer("size").predicate(SCHEMA.fileSize).notNull(), // 文件大小（字节）
-  hash: string("hash").predicate(LINQ.fileHash), // 文件哈希（SHA-256）
+  hash: string("hash").predicate(UDFS.fileHash), // 文件哈希（SHA-256）
   
   // 存储位置
   podUri: string("podUri").predicate(DCTerms.identifier).notNull(), // Pod 中的 URI
-  localPath: string("localPath").predicate(LINQ.localPath), // 本地路径（如果已下载）
+  localPath: string("localPath").predicate(UDFS.localPath), // 本地路径（如果已下载）
   
   // 同步状态
-  syncStatus: string("syncStatus").predicate(LINQ.syncStatus).notNull().default("synced"), // synced, pending, conflict, error
+  syncStatus: string("syncStatus").predicate(UDFS.syncStatus).notNull().default("synced"), // synced, pending, conflict, error
   lastSyncedAt: timestamp("lastSyncedAt").predicate(DCTerms.modified), // 最后同步时间
   
   // 所有者和权限
   owner: string("owner").predicate(DCTerms.creator).notNull(), // 所有者 WebID
-  sharedWith: string("sharedWith").predicate(LINQ.participants), // 共享给的用户 WebID 列表（JSON）
+  sharedWith: string("sharedWith").predicate(UDFS.participants), // 共享给的用户 WebID 列表（JSON）
   
   // 分类和标签
-  folder: string("folder").predicate(LINQ.conversation), // 所属文件夹 URI
+  folder: string("folder").predicate(UDFS.conversation), // 所属文件夹 URI
   tags: string("tags").predicate(DCTerms.subject), // 标签（JSON 数组）
   
   // 时间戳
   createdAt: timestamp("createdAt").predicate(DCTerms.created).notNull().defaultNow(),
   modifiedAt: timestamp("modifiedAt").predicate(DCTerms.modified).notNull().defaultNow(),
-  deletedAt: timestamp("deletedAt").predicate(LINQ.deletedAt), // 软删除时间
+  deletedAt: timestamp("deletedAt").predicate(UDFS.deletedAt), // 软删除时间
   
   // UI 状态
-  starred: boolean("starred").predicate(LINQ.favorite).default(false), // 是否加星标
-  pinnedAt: timestamp("pinnedAt").predicate(LINQ.pinnedAt), // 置顶时间
+  starred: boolean("starred").predicate(UDFS.favorite).default(false), // 是否加星标
+  pinnedAt: timestamp("pinnedAt").predicate(UDFS.pinnedAt), // 置顶时间
 }, {
   base: '/.data/files/', // LDP Container
   sparqlEndpoint: '/.data/files/-/sparql',
   type: SCHEMA.MediaObject,
-  namespace: LINQ,
+  namespace: UDFS,
 });
 
 export type FileRow = typeof fileTable.$inferSelect;

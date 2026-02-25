@@ -15,6 +15,8 @@ export {
   SCHEMA,
   RDF,
   RDFS,
+  ACL,
+  ODRL,
   OWL,
   FOAF,
   MEETING,
@@ -22,6 +24,9 @@ export {
   VCARD,
   WF,
   LDP,
+  // xpod vocabs
+  XPOD_CREDENTIAL,
+  XPOD_AI,
 } from "./namespaces";
 
 // Wave A: centralized vocab objects (downstream should prefer these over ad-hoc namespaces)
@@ -132,6 +137,7 @@ export {
   contactSnapshotExtractor,
   type SnapshotExtractor,
   type StarredSyncConfig,
+  type SourceModule,
 } from './favorite'
 
 // Settings - 用户设置
@@ -218,6 +224,28 @@ export {
 } from './model-provider.schema'
 export { modelProviderRepository } from './model-provider.repository'
 
+// xpod AI schema
+export {
+  credentialTable,
+  type CredentialRow,
+  type CredentialInsert,
+  type CredentialUpdate,
+} from "./credential.schema";
+
+export {
+  aiProviderTable,
+  type AIProviderRow,
+  type AIProviderInsert,
+  type AIProviderUpdate,
+} from "./ai-provider.schema";
+
+export {
+  aiModelTable,
+  type AIModelRow,
+  type AIModelInsert,
+  type AIModelUpdate,
+} from "./ai-model.schema";
+
 export {
   createRepositoryDescriptor,
   definePodRepository,
@@ -235,7 +263,7 @@ export { importJobSchema } from './import'
 // ============================================
 // 数据库操作符 (统一出口)
 // ============================================
-export { eq, ne, and, or, drizzle } from 'drizzle-solid'
+export { eq, ne, and, or, drizzle } from '@undefineds.co/drizzle-solid'
 
 // ============================================
 // Schema registry

@@ -310,7 +310,7 @@ export const Inputbar = forwardRef<InputbarRef, InputbarProps>(
             size="icon"
             className="h-9 w-9 rounded-lg bg-red-500 hover:bg-red-600 text-white"
           >
-            <Square className="w-4 h-4" />
+            <Square className="w-4 h-4" strokeWidth={1.5} />
           </Button>
         )
       }
@@ -322,7 +322,7 @@ export const Inputbar = forwardRef<InputbarRef, InputbarProps>(
           size="icon"
           className="h-9 w-9 rounded-lg"
         >
-          <Send className="w-4 h-4" />
+          <Send className="w-4 h-4" strokeWidth={1.5} />
         </Button>
       )
     }
@@ -333,7 +333,7 @@ export const Inputbar = forwardRef<InputbarRef, InputbarProps>(
         className={cn(
           // Cherry Studio Container: padding 0 18px 18px 18px
           'flex flex-col relative z-[2]',
-          'px-[18px] pb-[18px] pt-0',
+          'px-5 pb-5 pt-0',
           isDragging && 'ring-2 ring-primary ring-inset',
           className
         )}
@@ -346,9 +346,9 @@ export const Inputbar = forwardRef<InputbarRef, InputbarProps>(
           className={cn(
             'inputbar-container relative flex flex-col',
             // Cherry Studio: border 0.5px solid, border-radius 17px, padding-top 8px
-            'border border-border/50 rounded-[17px] pt-2',
-            // Cherry Studio: background-color with opacity
-            'bg-background/70 backdrop-blur-sm',
+            'border border-border/50 rounded-xl pt-2',
+            // Cherry Studio: background-color with opacity -> Compact: solid
+            'bg-background',
             // 过渡动画
             'transition-all duration-200',
             // 拖拽文件状态
@@ -366,7 +366,7 @@ export const Inputbar = forwardRef<InputbarRef, InputbarProps>(
               isDragResizing && 'opacity-100'
             )}
           >
-            <GripHorizontal className="w-4 h-3 text-muted-foreground rotate-90" />
+            <GripHorizontal className="w-4 h-3 text-muted-foreground rotate-90" strokeWidth={1.5} />
           </div>
 
           {/* File Preview (Lobe Chat style) */}
@@ -387,7 +387,7 @@ export const Inputbar = forwardRef<InputbarRef, InputbarProps>(
               className={cn(
                 'w-full resize-none bg-transparent',
                 // Cherry Studio: padding 6px 15px 0, line-height 1.4
-                'px-[15px] py-[6px] pb-0',
+                'px-4 py-1.5 pb-0',
                 'text-[15px] leading-[1.4]',
                 'placeholder:text-muted-foreground/50',
                 // Cherry Studio: min-height 30px
@@ -407,7 +407,7 @@ export const Inputbar = forwardRef<InputbarRef, InputbarProps>(
           </div>
 
           {/* BottomBar - Cherry Studio: height 40px, padding 5px 8px */}
-          <div className="h-[40px] px-2 py-[5px] flex items-center justify-between gap-4 shrink-0 relative z-[2]">
+          <div className="h-[40px] px-2 py-1.5 flex items-center justify-between gap-4 shrink-0 relative z-[2]">
             {/* LeftSection - Cherry Studio: flex 1 */}
             <div className="flex items-center flex-1 min-w-0 gap-4">
               {toolbarLeft}
@@ -430,7 +430,7 @@ export const Inputbar = forwardRef<InputbarRef, InputbarProps>(
 
         {/* Drag Overlay for file upload */}
         {isDragging && (
-          <div className="absolute inset-0 bg-green-500/5 flex items-center justify-center pointer-events-none rounded-[17px] m-[18px] mb-[18px]">
+          <div className="absolute inset-0 bg-green-500/5 flex items-center justify-center pointer-events-none rounded-xl m-5 mb-5">
             <div className="text-sm text-green-600 dark:text-green-400 font-medium">
               拖拽文件到这里上传
             </div>

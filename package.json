@@ -2,6 +2,9 @@
   "name": "linx-monorepo",
   "private": true,
   "packageManager": "yarn@1.22.22",
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "workspaces": [
     "apps/*",
     "packages/*",
@@ -9,8 +12,15 @@
     "examples/*"
   ],
   "scripts": {
+    "postinstall": "patch-package",
     "dev:web": "yarn workspace @linx/web dev",
+    "dev:desktop": "yarn workspace @linx/desktop dev",
+    "dev:service": "yarn workspace @linx/service dev",
+    "dev:all": "yarn dev:web & yarn dev:desktop",
     "build:web": "yarn workspace @linx/web build",
+    "build:desktop": "yarn workspace @linx/desktop build",
+    "build:service": "yarn workspace @linx/service build",
+    "start:service": "yarn workspace @linx/service start",
     "preview:web": "yarn workspace @linx/web preview",
     "lint:web": "yarn workspace @linx/web lint",
     "typecheck:web": "yarn workspace @linx/web tsc --noEmit",
@@ -28,9 +38,9 @@
     "test": "yarn test:unit && yarn test:e2e"
   },
   "dependencies": {
-    "@inrupt/solid-client": "^2.0.0",
-    "@inrupt/solid-client-authn-browser": "^2.0.0",
-    "@inrupt/solid-ui-react": "^2.8.1",
+    "@inrupt/solid-client": "^3.0.0",
+    "@inrupt/solid-client-authn-browser": "^3.0.0",
+    "@inrupt/solid-ui-react": "^3.0.0",
     "@inrupt/vocab-common-rdf": "^1.0.5",
     "@radix-ui/react-avatar": "^1.0.2",
     "@radix-ui/react-select": "^2.0.0",
@@ -39,6 +49,7 @@
     "class-variance-authority": "^0.7.0",
     "clsx": "^1.2.1",
     "drizzle-orm": "^0.32.2",
+    "@undefineds.co/drizzle-solid": "^0.2.7",
     "lucide-react": "^0.473.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
@@ -49,7 +60,9 @@
     "@types/react-dom": "^18.2.0",
     "@vitejs/plugin-react": "^4.3.2",
     "autoprefixer": "^10.4.16",
+    "patch-package": "^8.0.1",
     "postcss": "^8.4.31",
+    "postinstall-postinstall": "^2.1.0",
     "tailwindcss": "^3.4.3",
     "tailwindcss-animate": "^1.0.7",
     "typescript": "^5.4.0",
@@ -57,8 +70,10 @@
   },
   "resolutions": {
     "**/drizzle-orm": "^0.32.2",
-    "**/drizzle-solid": "0.2.5",
+    "**/@undefineds.co/drizzle-solid": "^0.2.7",
     "**/react": "18.3.1",
-    "**/react-dom": "18.3.1"
+    "**/react-dom": "18.3.1",
+    "**/@inrupt/solid-client": "^3.0.0",
+    "**/@inrupt/solid-client-authn-browser": "^3.0.0"
   }
 }

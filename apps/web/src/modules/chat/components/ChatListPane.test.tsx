@@ -38,7 +38,13 @@ vi.mock('@linx/models', () => ({
 
 // Mock solid session
 vi.mock('@inrupt/solid-ui-react', () => ({
-  useSession: () => ({ session: { info: { isLoggedIn: true } } }),
+  useSession: () => ({
+    session: { info: { isLoggedIn: true } },
+    sessionRequestInProgress: false,
+    fetch: globalThis.fetch,
+    login: vi.fn(),
+    logout: vi.fn(),
+  }),
 }))
 
 // Wrapper for React Query

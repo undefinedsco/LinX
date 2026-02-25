@@ -4,7 +4,7 @@
  * 运行: npx tsx scripts/check-multivalue.ts
  */
 
-import { drizzle } from 'drizzle-solid'
+import { drizzle } from '@undefineds.co/drizzle-solid'
 import { chatTable, threadTable, messageTable } from '@linx/models'
 import { createDpopHeader, generateDpopKeyPair } from '@inrupt/solid-client-authn-core'
 import { buildAuthenticatedFetch } from '@inrupt/solid-client-authn-core'

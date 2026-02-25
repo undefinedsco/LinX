@@ -1,5 +1,6 @@
 export { ContactListPane } from './components/ContactListPane'
 export { ContactDetailPane } from './components/ContactDetailPane'
+export { CreateGroupDialog } from './components/CreateGroupDialog'
+export { MemberList } from './components/MemberList'
+export type { GroupMember, MemberRole } from './components/MemberList'
 export { useContactStore } from './store'
-
-

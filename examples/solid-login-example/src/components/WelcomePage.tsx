@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSession } from '@inrupt/solid-ui-react';
-import { drizzle } from 'drizzle-solid';
+import { drizzle } from '@undefineds.co/drizzle-solid';
 import {
   solidProfileTable,
   type SolidProfileRow

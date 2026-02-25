@@ -50,3 +50,24 @@ packages/**/.w3c-cache/
 # Temporary files
 *.tmp
 *.swp
+
+# AI agent tools
+.codebuddy/
+.cursor/
+.mcp.json
+CODEBUDDY.md
+GEMINI.md
+
+# Local launch scripts
+/*.sh
+
+# Local notes / logs / issues
+logs/
+notes/
+issues/
+
+# Demo / scratch
+demos/
+
+# W3C test data (downloaded at test time)
+packages/models/tests/w3c-data/

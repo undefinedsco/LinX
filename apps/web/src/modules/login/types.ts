@@ -1,49 +1,27 @@
-import type { SolidLoginMode, SolidAccountPreview, CustomIssuerDraft } from '@linx/stores/login'
+import type { LoginState, StoredAccount, ProviderOption } from '@linx/stores/login'
 
-export type { SolidLoginMode, SolidAccountPreview, CustomIssuerDraft } from '@linx/stores/login'
+export type { LoginState, StoredAccount, ProviderOption }
 
-export interface SolidIssuerOption {
-  id: string
-  url: string
-  label: string
-  domain: string
-  description?: string
-  isDefault?: boolean
-  isRecent?: boolean
-  logoUrl?: string
-  isCustom?: boolean
-}
-
-export interface StoredIssuer {
-  url: string
+export interface LocalServiceStatus {
+  running: boolean
+  url?: string
   label?: string
-  logoUrl?: string
-  updatedAt: string
 }
 
-export interface SolidLoginModalProps {
-  mode: SolidLoginMode
-  account?: SolidAccountPreview
-  issuers: SolidIssuerOption[]
-  selectedIssuer?: string
-  customIssuer: CustomIssuerDraft
-  errorMessage?: string | null
-  disablePrimary?: boolean
-  onEnter: () => void
-  onSwitchAccount: () => void
-  onCancel: () => void
-  onClose: () => void
-  onOpenSettings: () => void
-  onSelectIssuer: (url: string) => void
-  onCustomIssuerChange: (value: string) => void
-  onSaveCustomIssuer: () => void
-}
-
-export interface IssuerPickerProps {
-  issuers: SolidIssuerOption[]
-  selectedIssuer?: string
-  customIssuer: CustomIssuerDraft
-  onSelectIssuer: (url: string) => void
-  onCustomIssuerChange: (value: string) => void
-  onSaveCustomIssuer: () => void
+export interface LoginModalProps {
+  state: LoginState
+  error: string | null
+  failedProvider: string | null
+  selectedProvider: string | null
+  storedAccount: StoredAccount | null
+  providers: ProviderOption[]
+  isConnecting: boolean
+  localService: LocalServiceStatus | null
+  isLaunching: boolean
+  onConnect: (providerUrl: string) => void
+  onAddProvider: (url: string, label?: string) => void
+  onDeleteProvider: (url: string) => void
+  onLaunchLocalService: () => void
+  onSignOut: () => void
+  onClearError: () => void
 }

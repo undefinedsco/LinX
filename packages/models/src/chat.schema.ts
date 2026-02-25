@@ -1,5 +1,5 @@
-import { boolean, id, integer, podTable, string, text, timestamp, uri } from 'drizzle-solid'
-import { DCTerms, MEETING, SCHEMA, UDFS, WF } from './namespaces'
+import { boolean, podTable, string, text, timestamp, uri, id, integer } from '@undefineds.co/drizzle-solid'
+import { UDFS, DCTerms, SCHEMA, MEETING, WF } from './namespaces'
 
 /**
  * Chat schema (channel/place).
@@ -19,13 +19,19 @@ export const chatTable = podTable(
     description: string('description').predicate(DCTerms.description),
     avatarUrl: uri('avatarUrl').predicate(SCHEMA.image),
 
-    // Participants (protocol-aligned)
-    participants: uri('participants').array().predicate(WF.participant),
+    // Primary contact (who this chat is with)
+    contact: uri('contact').predicate(UDFS.hasContact).notNull(),
 
     // Chat state
     starred: boolean('starred').predicate(UDFS.favorite).default(false),
     muted: boolean('muted').predicate(UDFS.muted).default(false),
     unreadCount: integer('unreadCount').predicate(UDFS.unreadCount).default(0),
+
+    // Group chat: additional participants (for groups only)
+    participants: uri('participants')
+      .array()
+      .predicate(SCHEMA.participant),
+
 
     // Last activity
     lastActiveAt: timestamp('lastActiveAt').predicate(UDFS.lastActiveAt),

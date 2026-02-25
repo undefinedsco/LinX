@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useSession } from '@inrupt/solid-ui-react';
 import { Loader2, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -9,48 +9,65 @@ interface AuthCallbackProps {
 }
 
 export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackProps) {
-  const { session } = useSession();
+  const { session, sessionRequestInProgress } = useSession();
   const [error, setError] = useState<string | null>(null);
+  const navigatedRef = useRef(false);
 
+  // Check for OIDC errors in URL on mount
   useEffect(() => {
-    let cancelled = false;
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      const errorParam = params.get('error')
+      const errorDesc = params.get('error_description')
 
-    const handle = async () => {
-      // Check URL for OIDC errors first
-      if (typeof window !== 'undefined') {
-        const params = new URLSearchParams(window.location.search)
-        const errorParam = params.get('error')
-        const errorDesc = params.get('error_description')
-        
-        if (errorParam) {
-           const msg = errorDesc ? decodeURIComponent(errorDesc) : '认证服务器拒绝了请求'
-           console.warn('OIDC Error:', errorParam, msg)
-           if (!cancelled) {
-              setError(msg)
-           }
-           return
-        }
+      console.log('🔍 AuthCallback URL params:', {
+        code: params.get('code') ? 'present' : 'missing',
+        state: params.get('state') ? 'present' : 'missing',
+        error: errorParam
+      })
+
+      if (errorParam) {
+        const msg = errorDesc ? decodeURIComponent(errorDesc) : '认证服务器拒绝了请求'
+        console.warn('OIDC Error:', errorParam, msg)
+        setError(msg)
       }
+    }
+  }, [])
 
-      try {
-        await session.handleIncomingRedirect({
-          url: typeof window === 'undefined' ? undefined : window.location.href,
-          restorePreviousSession: true
-        });
-        if (!cancelled) {
-          onSuccess?.();
-        }
-      } catch (err) {
-        console.error('Solid auth callback failed', err);
-        if (!cancelled) {
-          setError('身份验证失败，请重试。');
-        }
-      }
-    };
+  // Wait for SessionProvider to handle the redirect
+  useEffect(() => {
+    console.log('🔍 AuthCallback state:', {
+      isLoggedIn: session.info.isLoggedIn,
+      sessionRequestInProgress,
+      webId: session.info.webId,
+      navigated: navigatedRef.current
+    })
 
-    void handle();
-    return () => { cancelled = true; };
-  }, [session, onSuccess, onError]);
+    // Don't do anything if there's an error or we already navigated
+    if (error || navigatedRef.current) return
+
+    // Wait for session request to complete
+    if (sessionRequestInProgress) {
+      console.log('⏳ Session request in progress, waiting...')
+      return
+    }
+
+    // Check login status
+    if (session.info.isLoggedIn) {
+      console.log('✅ Login successful!')
+      navigatedRef.current = true
+      onSuccess?.()
+    } else {
+      // Give SessionProvider time to process - it might still be initializing
+      const timeout = setTimeout(() => {
+        if (!session.info.isLoggedIn && !navigatedRef.current && !sessionRequestInProgress) {
+          console.log('❌ Login failed after waiting')
+          setError('登录失败，请重试')
+        }
+      }, 3000)
+      return () => clearTimeout(timeout)
+    }
+  }, [session.info.isLoggedIn, session.info.webId, sessionRequestInProgress, onSuccess, error])
 
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-background p-4">
@@ -62,8 +79,8 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
             </div>
             <h2 className="text-xl font-semibold text-foreground mb-2">登录未完成</h2>
             <p className="text-sm text-muted-foreground mb-8 px-4">{error}</p>
-            <Button 
-              onClick={() => onError?.(error)} 
+            <Button
+              onClick={() => onError?.(error)}
               className="w-full max-w-[200px]"
             >
               返回首页

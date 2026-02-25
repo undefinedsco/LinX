@@ -2,7 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { RouterProvider } from '@tanstack/react-router'
 import { QueryProvider } from './providers/query-provider'
-import { SolidSessionProvider } from './shared/auth/solid-session-provider'
+import { SolidSessionProvider } from './providers/solid-session-provider'
 import { SolidDatabaseProvider } from './providers/solid-database-provider'
 import { TelemetryProvider } from './lib/telemetry/telemetry-context' // Import TelemetryProvider
 import { ErrorBoundary } from './components/ErrorBoundary'
@@ -14,7 +14,10 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
       <QueryProvider>
-        <SolidSessionProvider>
+        <SolidSessionProvider 
+          restorePreviousSession 
+          onError={(error) => console.warn('🔴 SessionProvider error (ignored):', error)}
+        >
           <SolidDatabaseProvider>
             <TelemetryProvider> {/* Wrap with TelemetryProvider */}
               <RouterProvider router={router} />

@@ -10,7 +10,7 @@
     "src/modules/layout/**/*",
     "src/modules/credentials/**/*",
     "src/modules/login/**/*",
-    "src/types/global.d.ts",
+    "src/types/**/*.d.ts",
     "src/vite-env.d.ts"
   ],
   "references": [{ "path": "./tsconfig.node.json" }]

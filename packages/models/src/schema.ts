@@ -1,8 +1,11 @@
 import { agentTable } from './agent.schema'
 import { approvalTable } from './approval.schema'
 import { auditTable } from './audit.schema'
+import { aiModelTable } from './ai-model.schema'
+import { aiProviderTable } from './ai-provider.schema'
 import { chatTable } from './chat.schema'
 import { contactTable } from './contact.schema'
+import { credentialTable } from './credential.schema'
 import { favoriteTable } from './favorite/favorite.schema'
 import { fileTable } from './file/file.schema'
 import { grantTable } from './grant.schema'
@@ -21,6 +24,9 @@ export const linxSchema = {
   threadTable,
   messageTable,
   modelProviderTable,
+  credentialTable,
+  aiProviderTable,
+  aiModelTable,
   fileTable,
   favoriteTable,
   settingsTable,

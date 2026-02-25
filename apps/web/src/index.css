@@ -3,184 +3,191 @@
 @tailwind utilities;
 
 /**
- * LinX 颜色系统
+ * LinX 颜色系统 - 基于 Shadcn UI Violet 标准主题
  * 
- * 灰阶设计原则：
- * - Sidebar: #E4E5E5
- * - ListPane Header: #F7F7F7
- * - ListPane Starred: #EAEAEA  
- * - ListPane Item: #F7F7F7
- * - ListPane Selected: #DEDEDE
- * - ContentPane: #EDEDED
- * 
- * 暗色模式灰阶层次（对齐 Cherry Studio）：
- * - background: #09090b (最深)
- * - card: #18181b (稍亮)
- * - muted: #27272a (次要区域)
- * - border: #3f3f46 (明显边框)
+ * 核心色值完全对齐 shadcn/ui 官方配置:
+ * - Primary: Violet (#7C3AED / #8B5CF6)
+ * - Gray: Zinc / Slate
+ * - Radius: 0.5rem (8px)
  */
 
 @layer base {
   :root {
-    /* ===== 布局灰阶（亮色模式）===== */
-    /* Sidebar: #E4E5E5, ListPane: #F7F7F7/#EAEAEA/#DEDEDE, Content: #EDEDED */
-    --layout-sidebar: 180 2% 90%;           /* #E4E5E5 */
-    --layout-list-header: 0 0% 97%;         /* #F7F7F7 */
-    --layout-list-hover: 0 0% 92%;          /* #EAEAEA */
-    --layout-list-item: 0 0% 97%;           /* #F7F7F7 */
-    --layout-list-selected: 0 0% 87%;       /* #DEDEDE */
-    --layout-content: 0 0% 93%;             /* #EDEDED */
+    /* ============================================== */
+    /* Shadcn UI Standard Theme (Light)               */
+    /* ============================================== */
+    --background: 0 0% 100%;
+    --foreground: 224 71.4% 4.1%;
     
-    /* 背景层次 */
-    --background: 0 0% 97%;                 /* #F7F7F7 */
-    --foreground: 222 47% 11%;              /* #0f172a */
-    
-    /* 卡片/弹窗 - 纯白 */
-    --card: 0 0% 100%;                    /* #ffffff - 纯白卡片 */
-    --card-foreground: 222 47% 11%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
-    
-    /* 品牌色 - LinX 紫色 */
-    --primary: 262.1 83.3% 57.8%;         /* 紫色主色 */
-    --primary-foreground: 210 20% 98%;
-    
-    /* 次要/静音区域 */
-    --secondary: 0 0% 93%;                /* #EDEDED */
-    --secondary-foreground: 222 47% 11%;
-    --muted: 0 0% 93%;                    /* #EDEDED */
-    --muted-foreground: 220 9% 46%;       /* #64748b - 次要文字 */
-    --accent: 0 0% 87%;                   /* #DEDEDE - 强调/选中 */
-    --accent-foreground: 222 47% 11%;
-    
-    /* 危险/错误 */
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 100%;
-    
-    /* 边框/输入框 */
-    --border: 0 0% 85%;                   /* #D9D9D9 */
-    --input: 0 0% 85%;
-    --ring: 262.1 83.3% 57.8%;
-    
-    /* 圆角 */
-    --radius-sm: 4px;
-    --radius-md: 8px;
-    --radius-lg: 12px;
-    --radius-xl: 16px;
-    --radius: var(--radius-md);
-    
-    /* 图表颜色 */
-    --chart-1: 12 76% 61%;
-    --chart-2: 173 58% 39%;
-    --chart-3: 197 37% 24%;
-    --chart-4: 43 74% 66%;
-    --chart-5: 27 87% 67%;
-  }
-
-  .light {
-    /* 布局灰阶 */
-    --layout-sidebar: 180 2% 90%;           /* #E4E5E5 */
-    --layout-list-header: 0 0% 97%;         /* #F7F7F7 */
-    --layout-list-hover: 0 0% 92%;          /* #EAEAEA */
-    --layout-list-item: 0 0% 97%;           /* #F7F7F7 */
-    --layout-list-selected: 0 0% 87%;       /* #DEDEDE */
-    --layout-content: 0 0% 93%;             /* #EDEDED */
-    
-    /* 背景层次 */
-    --background: 0 0% 97%;                 /* #F7F7F7 */
-    --foreground: 222 47% 11%;
-    
-    /* 卡片/弹窗 */
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
+    --card-foreground: 224 71.4% 4.1%;
     
-    /* 品牌色 */
+    --popover: 0 0% 100%;
+    --popover-foreground: 224 71.4% 4.1%;
+    
     --primary: 262.1 83.3% 57.8%;
     --primary-foreground: 210 20% 98%;
     
-    /* 次要区域 */
-    --secondary: 0 0% 93%;                /* #EDEDED */
-    --secondary-foreground: 222 47% 11%;
-    --muted: 0 0% 93%;                    /* #EDEDED */
-    --muted-foreground: 220 9% 46%;
-    --accent: 0 0% 87%;                   /* #DEDEDE */
-    --accent-foreground: 222 47% 11%;
+    --secondary: 220 14.3% 95.9%;
+    --secondary-foreground: 220.9 39.3% 11%;
     
-    /* 危险 */
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 100%;
+    --muted: 220 14.3% 95.9%;
+    --muted-foreground: 220 8.9% 46.1%;
     
-    /* 边框 */
-    --border: 0 0% 85%;                   /* #D9D9D9 */
-    --input: 0 0% 85%;
+    --accent: 220 14.3% 95.9%;
+    --accent-foreground: 220.9 39.3% 11%;
+    
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 20% 98%;
+    
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
     --ring: 262.1 83.3% 57.8%;
     
-    /* 图表 */
+    /* 圆角系统 */
+    --radius-xs: 2px;
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-xl: 20px;
+    --radius-2xl: 24px;
+    --radius-3xl: 28px;
+    --radius: 0.5rem;
+    
     --chart-1: 12 76% 61%;
     --chart-2: 173 58% 39%;
     --chart-3: 197 37% 24%;
     --chart-4: 43 74% 66%;
     --chart-5: 27 87% 67%;
+
+    /* ============================================== */
+    /* LinX Layout Mappings (Derived from Standard)   */
+    /* ============================================== */
+    /* Sidebar: 使用 Muted/Secondary (浅灰) */
+    --layout-sidebar: 220 14.3% 95.9%;
+    
+    /* List Pane: 使用 Background (纯白) */
+    --layout-list-header: 0 0% 100%;
+    --layout-list-hover: 220 14.3% 95.9%;    /* hover 使用 muted */
+    --layout-list-item: 0 0% 100%;
+    --layout-list-selected: 220 13% 91%;     /* selected 使用 border 色 */
+    
+    /* Content Pane: 使用 Background (纯白) */
+    --layout-content: 0 0% 100%;
+
+    /* 兼容性变量 (Legacy) */
+    --purple-medium: 262.1 83.3% 57.8%;
+    --purple-deep: 262 83% 42%;
+    --purple-light: 270 91% 75%;
+    --warm-amber: 38 92% 50%;
   }
 
   .dark {
-    /* 
-     * 暗色模式灰阶层次（对齐 Cherry Studio）
-     * 背景: #09090b (最深)
-     * 卡片: #18181b (稍亮)
-     * muted: #27272a (次要区域)
-     * border: #3f3f46 (明显边框)
-     * muted-foreground: #a1a1aa (次要文字)
-     * foreground: #fafafa (主文字)
-     */
+    /* ============================================== */
+    /* Shadcn UI Standard Theme (Dark)                */
+    /* ============================================== */
+    --background: 224 71.4% 4.1%;
+    --foreground: 210 20% 98%;
     
-    /* 布局灰阶 - 暗色模式 */
-    --layout-sidebar: 240 6% 8%;            /* 最深 - Sidebar */
-    --layout-list-header: 240 6% 12%;       /* ListPane Header */
-    --layout-list-hover: 240 5% 16%;        /* ListPane hover */
-    --layout-list-item: 240 6% 12%;         /* ListPane 普通项 */
-    --layout-list-selected: 240 5% 20%;     /* ListPane 选中项 */
-    --layout-content: 240 6% 10%;           /* ContentPane 背景 */
+    --card: 224 71.4% 4.1%;
+    --card-foreground: 210 20% 98%;
     
-    /* 背景层次 - 深色基底 */
-    --background: 240 10% 3.9%;        /* #09090b - 最深背景 */
-    --foreground: 0 0% 98%;            /* #fafafa - 主文字 */
+    --popover: 224 71.4% 4.1%;
+    --popover-foreground: 210 20% 98%;
     
-    /* 卡片/弹窗 - 比背景稍亮 */
-    --card: 240 6% 10%;                /* #18181b - 卡片背景 */
-    --card-foreground: 0 0% 98%;
-    --popover: 240 6% 10%;
-    --popover-foreground: 0 0% 98%;
+    --primary: 263.4 70% 50.4%;
+    --primary-foreground: 210 20% 98%;
     
-    /* 品牌色 */
-    --primary: 262 83% 58%;
-    --primary-foreground: 0 0% 98%;
+    --secondary: 215 27.9% 16.9%;
+    --secondary-foreground: 210 20% 98%;
     
-    /* 次要区域 - 明显区分 */
-    --secondary: 240 5% 17%;           /* #27272a */
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 5% 17%;               /* #27272a - 次要背景 */
-    --muted-foreground: 240 4% 65%;    /* #a1a1aa - 次要文字 */
-    --accent: 240 5% 17%;
-    --accent-foreground: 0 0% 98%;
+    --muted: 215 27.9% 16.9%;
+    --muted-foreground: 217.9 10.6% 64.9%;
     
-    /* 危险 */
-    --destructive: 0 62% 30%;
-    --destructive-foreground: 0 0% 98%;
+    --accent: 215 27.9% 16.9%;
+    --accent-foreground: 210 20% 98%;
     
-    /* 边框 - 更明显 */
-    --border: 240 4% 28%;              /* #3f3f46 - 清晰边框 */
-    --input: 240 4% 28%;
-    --ring: 262 83% 58%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 20% 98%;
     
-    /* 图表 */
+    --border: 215 27.9% 16.9%;
+    --input: 215 27.9% 16.9%;
+    --ring: 263.4 70% 50.4%;
+    
+    /* 圆角系统 */
+    --radius-xs: 2px;
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-xl: 20px;
+    --radius-2xl: 24px;
+    --radius-3xl: 28px;
+    --radius: 0.5rem;
+    
     --chart-1: 220 70% 50%;
     --chart-2: 160 60% 45%;
     --chart-3: 30 80% 55%;
     --chart-4: 280 65% 60%;
     --chart-5: 340 75% 55%;
+
+    /* ============================================== */
+    /* LinX Layout Mappings (Derived from Standard)   */
+    /* ============================================== */
+    /* Sidebar: 使用 Secondary (深灰) */
+    --layout-sidebar: 215 27.9% 16.9%;
+    
+    /* List Pane: 使用 Background (最深) */
+    --layout-list-header: 224 71.4% 4.1%;
+    --layout-list-hover: 215 27.9% 16.9%;    /* hover 使用 muted */
+    --layout-list-item: 224 71.4% 4.1%;
+    --layout-list-selected: 215 27.9% 16.9%; /* selected 使用 secondary */
+    
+    /* Content Pane: 使用 Background */
+    --layout-content: 224 71.4% 4.1%;
+  }
+
+  /* 
+   * 显式的 .light 类支持 (用于强制亮色模式)
+   * 内容与 :root 保持一致
+   */
+  .light {
+    --background: 0 0% 100%;
+    --foreground: 224 71.4% 4.1%;
+    --card: 0 0% 100%;
+    --card-foreground: 224 71.4% 4.1%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 224 71.4% 4.1%;
+    --primary: 262.1 83.3% 57.8%;
+    --primary-foreground: 210 20% 98%;
+    --secondary: 220 14.3% 95.9%;
+    --secondary-foreground: 220.9 39.3% 11%;
+    --muted: 220 14.3% 95.9%;
+    --muted-foreground: 220 8.9% 46.1%;
+    --accent: 220 14.3% 95.9%;
+    --accent-foreground: 220.9 39.3% 11%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 20% 98%;
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 262.1 83.3% 57.8%;
+    
+    /* 圆角系统 */
+    --radius-xs: 2px;
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-xl: 20px;
+    --radius-2xl: 24px;
+    --radius-3xl: 28px;
+    --radius: 0.5rem;
+    
+    /* Layout */
+    --layout-sidebar: 220 14.3% 95.9%;
+    --layout-list-header: 0 0% 100%;
+    --layout-list-hover: 220 14.3% 95.9%;
+    --layout-list-item: 0 0% 100%;
+    --layout-list-selected: 220 13% 91%;
+    --layout-content: 0 0% 100%;
   }
 }
 
@@ -191,34 +198,95 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  /* 全局滚动条美化 */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-muted-foreground/20 rounded-full transition-colors;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/40;
+  }
 }
 
-/* 
- * 额外的灰阶工具类（可选使用）
- * 用于需要更细粒度控制的场景
+/*
+ * 实用工具类
  */
 @layer utilities {
-  /* 亮色模式下的微妙边框 */
   .border-subtle {
-    border-color: hsl(220 13% 91%);
-  }
-  .dark .border-subtle {
-    border-color: hsl(240 4% 22%);
+    border-color: hsl(var(--border));
   }
   
-  /* 更深的 muted 背景 */
   .bg-muted-deeper {
-    background-color: hsl(220 14% 93%);
+    background-color: hsl(var(--secondary));
   }
-  .dark .bg-muted-deeper {
-    background-color: hsl(240 5% 13%);
-  }
-  
-  /* 悬停状态背景 */
+
   .hover-bg {
     @apply hover:bg-muted/80;
   }
-  .dark .hover-bg {
-    @apply hover:bg-muted/60;
+}
+
+/*
+ * 组件样式 - 适配标准主题
+ */
+@layer components {
+  /* 全局语义化排版 */
+  .type-h1 {
+    @apply text-2xl font-semibold tracking-tight;
+  }
+  .type-h2 {
+    @apply text-xl font-semibold tracking-tight;
+  }
+  .type-h3 {
+    @apply text-lg font-semibold tracking-tight;
+  }
+  .type-body {
+    @apply text-sm leading-normal;
+  }
+  .type-caption {
+    @apply text-xs text-muted-foreground;
+  }
+  .type-label {
+    @apply text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70;
+  }
+
+  /* 温暖卡片 - 适配标准 Radius */
+  .warm-card {
+    @apply bg-card border border-border/50 rounded-xl;
+    @apply shadow-lg shadow-black/5;
+    @apply transition-all duration-300;
+  }
+
+  .warm-card-hover {
+    @apply hover:shadow-xl hover:shadow-black/8;
+    @apply hover:-translate-y-0.5;
+  }
+
+  /* 顶部装饰条 */
+  .top-accent {
+    @apply absolute top-0 left-0 right-0 h-1 rounded-t-xl;
+    background: linear-gradient(90deg,
+      hsl(var(--primary)),
+      hsl(var(--primary) / 0.5)
+    );
+  }
+
+  /* 温暖按钮 */
+  .btn-warm {
+    @apply rounded-lg h-10 px-4;
+    @apply bg-primary text-primary-foreground;
+    @apply shadow-sm;
+    @apply transition-all duration-200;
+    @apply hover:bg-primary/90;
+    @apply active:scale-[0.98];
   }
 }

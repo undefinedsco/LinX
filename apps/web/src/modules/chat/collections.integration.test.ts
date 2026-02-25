@@ -2,7 +2,7 @@
 import dotenv from 'dotenv'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import { Session } from '@inrupt/solid-client-authn-node'
-import { drizzle, eq, type SolidDatabase } from 'drizzle-solid'
+import { drizzle, eq, type SolidDatabase } from '@undefineds.co/drizzle-solid'
 import { chatTable, threadTable, messageTable, linxSchema } from '@linx/models'
 import {
   chatCollection,

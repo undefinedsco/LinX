@@ -10,17 +10,20 @@
 
 ## 2. 圆角系统 (Radius System)
 
-| 组件类型 | Tailwind Class | 像素值 | 说明 |
-| :--- | :--- | :--- | :--- |
-| **全局基准** | `--radius` | **4px** | 极小的圆角，显得专业、硬朗 |
-| **头像** | `rounded-sm` | 4px | 微信特征，不是圆形，也不是大圆角 |
-| **按钮** | `rounded-sm` | 4px | 紧凑，不像移动端那么圆润 |
-| **输入框** | `rounded-sm` | 4px | 搜索框、表单输入 |
-| **列表项** | `rounded-none` | 0px | **直角**，全宽铺满 |
-| **气泡** | `rounded-[6px]` | 6px | 消息气泡，微圆角 |
-| **弹窗/面板** | `rounded-lg` | 8-10px | 仅对浮层使用较大圆角 |
+本项目采用混合圆角策略：主界面（Chat/List）遵循“微信桌面端”的方正风格，而登录/欢迎页（Login/Welcome）遵循“温暖守护者”的圆润风格。
 
-> **差异点**: 目前代码中大量使用了 `rounded-xl` (12px) 和 `rounded-2xl` (16px)，需要全部降级。
+| 组件类型 | Tailwind Class | 像素值 (Config) | 说明 |
+| :--- | :--- | :--- | :--- |
+| **全局基准** | `--radius` | **12px** (md) | 默认圆角 |
+| **列表项/直角** | `rounded-none` | 0px | 列表全宽铺满，无圆角 |
+| **小元素** | `rounded-sm` | 8px | 较小的按钮、标签 |
+| **标准容器** | `rounded-lg` | 16px | 一般卡片、浮层 |
+| **登录/大卡片** | `rounded-xl` | **20px** | **特例**：LoginModal 等“温暖”风格组件使用大圆角 |
+| **超大圆角** | `rounded-2xl` | 24px | 特殊装饰背景 |
+
+> **注意**: `index.css` 中定义了温暖风格的一套圆角系统 (`sm: 8px`, `md: 12px`, `xl: 20px`)。
+> *   **主界面 (Main App)**: 应通过 `rounded-none` 或 `rounded-sm` 强制覆盖，以保持紧凑感。
+> *   **登录页 (Login)**: 保留 `rounded-xl` (20px) 以维持亲和力。
 
 ## 3. 列表视图 (List View)
 

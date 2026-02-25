@@ -8,7 +8,7 @@
  */
 
 import { createPodCollection } from '@/lib/data/pod-collection'
-import { like, or } from 'drizzle-solid'
+import { like, or } from '@undefineds.co/drizzle-solid'
 import {
   contactTable,
   agentTable,
@@ -100,6 +100,13 @@ export interface CreateFriendInput {
   name: string
   webId: string
   avatarUrl?: string
+}
+
+export interface CreateGroupInput {
+  name: string
+  avatarUrl?: string
+  memberIds: string[]
+  aiAssistantIds?: string[]
 }
 
 export interface SolidProfileInfo {
@@ -624,6 +631,93 @@ export const contactOps = {
     if (hours > 0) return `${hours}小时前同步`
     if (minutes > 0) return `${minutes}分钟前同步`
     return '刚刚同步'
+  },
+
+  // ==========================================================================
+  // Group Operations
+  // ==========================================================================
+
+  /**
+   * Create a Group Contact with associated Chat
+   *
+   * Flow:
+   * 1. Create Contact record (type: group, entityUri → self)
+   * 2. Create Chat record (contact → Contact, participants → member URIs)
+   *
+   * @returns The created Contact with chatId
+   */
+  async createGroup(input: CreateGroupInput): Promise<ContactInsert & { id: string; chatId: string }> {
+    const { name, avatarUrl, memberIds, aiAssistantIds = [] } = input
+
+    const contactId = crypto.randomUUID()
+    const chatId = crypto.randomUUID()
+    const now = new Date()
+
+    // Combine human members + AI assistants as participants
+    const allParticipants = [...memberIds, ...aiAssistantIds]
+
+    // 1. Create group Contact (entityUri points to self)
+    const contactData: ContactInsert = {
+      id: contactId,
+      name,
+      contactType: ContactType.GROUP,
+      entityUri: contactId, // Group entityUri points to self
+      avatarUrl: avatarUrl || undefined,
+      createdAt: now,
+      updatedAt: now,
+    }
+    const contactTx = contactCollection.insert(contactData as ContactRow)
+
+    // 2. Create Chat linked to group contact
+    const chatData: ChatInsert = {
+      id: chatId,
+      title: name,
+      contact: contactId,
+      participants: allParticipants,
+      avatarUrl: avatarUrl || undefined,
+      createdAt: now,
+      updatedAt: now,
+      lastActiveAt: now,
+    }
+    const chatTx = chatCollection.insert(chatData as ChatRow)
+
+    await Promise.all([
+      contactTx.isPersisted.promise,
+      chatTx.isPersisted.promise,
+    ])
+
+    queryClient.invalidateQueries({ queryKey: ['chats'] })
+    queryClient.invalidateQueries({ queryKey: ['contacts'] })
+
+    return { ...contactData, id: contactId, chatId }
+  },
+
+  /**
+   * Get contacts filtered by contactType
+   */
+  getByType(type: string): ContactRow[] {
+    return this.getAll().filter(c => c.contactType === type)
+  },
+
+  /**
+   * Get group contacts
+   */
+  getGroups(): ContactRow[] {
+    return this.getByType(ContactType.GROUP)
+  },
+
+  /**
+   * Get personal (solid) contacts
+   */
+  getPersonalContacts(): ContactRow[] {
+    return this.getByType(ContactType.SOLID)
+  },
+
+  /**
+   * Get agent contacts
+   */
+  getAgentContacts(): ContactRow[] {
+    return this.getByType(ContactType.AGENT)
   },
 
   // ==========================================================================

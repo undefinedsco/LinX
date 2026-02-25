@@ -1,12 +1,12 @@
 import 'dotenv/config'
 import { describe, it, expect } from 'vitest'
 import { Session } from '@inrupt/solid-client-authn-node'
-import { drizzle } from 'drizzle-solid'
+import { drizzle } from '@undefineds.co/drizzle-solid'
 import { chatTable } from '../src/chat.schema'
 import { threadTable } from '../src/thread.schema'
 import { messageTable } from '../src/message.schema'
 import { linxSchema } from '../src/schema'
-import { eq } from 'drizzle-solid'
+import { eq } from '@undefineds.co/drizzle-solid'
 
 const env = {
   webId: process.env.SOLID_WEBID,

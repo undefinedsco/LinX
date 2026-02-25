@@ -22,10 +22,10 @@ import { useChatStore } from '../store'
 import { useChatList, useChatMutations, useChatInit } from '../collections'
 import { resolveRowId } from '@linx/models'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { 
-  Bot, 
-  Trash2, 
-  MailOpen, 
+import {
+  Bot,
+  Trash2,
+  MailOpen,
   Star,
   BellOff,
   MoreHorizontal,
@@ -34,7 +34,9 @@ import {
   X,
   Loader2,
   UserPlus,
-  Users
+  Users,
+  User,
+  Terminal,
 } from 'lucide-react'
 import { AddChatDialog } from './AddChatDialog'
 import { Button } from '@/components/ui/button'
@@ -60,6 +62,12 @@ import { cn } from '@/lib/utils'
 // Types
 // ============================================
 
+/** Chat type determines icon and preview rendering */
+type ChatType = 'direct_ai' | 'direct_human' | 'group' | 'cli_session'
+
+/** CLI session status for preview text mapping */
+type CliSessionStatus = 'active' | 'paused' | 'completed' | 'error'
+
 interface ChatItemData {
   id: string
   title: string
@@ -70,6 +78,9 @@ interface ChatItemData {
   unreadCount: number
   providerLogo?: string
   provider?: string
+  chatType?: ChatType
+  /** CLI session status (only for cli_session type) */
+  cliStatus?: CliSessionStatus
 }
 
 // ============================================
@@ -90,6 +101,37 @@ const formatTimestamp = (value?: unknown): string => {
     return date.toLocaleDateString('zh-CN', { weekday: 'short' })
   }
   return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
+}
+
+/** CLI session status → preview text mapping */
+const CLI_STATUS_PREVIEW: Record<CliSessionStatus, string> = {
+  active: '🟢运行中',
+  paused: '⏸️已暂停',
+  completed: '✅已完成',
+  error: '❌出错',
+}
+
+/** Get avatar fallback icon by chatType */
+function getChatTypeIcon(chatType?: ChatType) {
+  switch (chatType) {
+    case 'direct_human':
+      return <User strokeWidth={1.5} className="w-5 h-5" />
+    case 'group':
+      return <Users strokeWidth={1.5} className="w-5 h-5" />
+    case 'cli_session':
+      return <Terminal strokeWidth={1.5} className="w-5 h-5" />
+    case 'direct_ai':
+    default:
+      return <Bot strokeWidth={1.5} className="w-5 h-5" />
+  }
+}
+
+/** Resolve preview text: CLI sessions use status mapping, others use raw preview */
+function resolvePreview(chat: ChatItemData): string {
+  if (chat.chatType === 'cli_session' && chat.cliStatus) {
+    return CLI_STATUS_PREVIEW[chat.cliStatus]
+  }
+  return chat.preview
 }
 
 // ============================================
@@ -140,10 +182,10 @@ function ChatItem({
         >
           {/* Avatar - 48x48, 圆角 4px */}
           <div className="relative shrink-0">
-            <Avatar className="h-12 w-12 border border-border/30 rounded-[4px]">
-              <AvatarImage src={chat.providerLogo} className="rounded-[4px] object-cover" />
-              <AvatarFallback className="rounded-[4px] bg-primary/10 text-primary text-sm">
-                {chat.provider ? chat.provider.slice(0, 2).toUpperCase() : <Bot className="w-5 h-5" />}
+            <Avatar className="h-12 w-12 border border-border/30 rounded-sm">
+              <AvatarImage src={chat.providerLogo} className="rounded-sm object-cover" />
+              <AvatarFallback className="rounded-sm bg-primary/10 text-primary text-sm">
+                {chat.provider ? chat.provider.slice(0, 2).toUpperCase() : getChatTypeIcon(chat.chatType)}
               </AvatarFallback>
             </Avatar>
             
@@ -179,7 +221,7 @@ function ChatItem({
                       onClick={(e) => { e.stopPropagation(); onStar(); }}
                       title={chat.starred ? '取消标星' : '标星'}
                     >
-                      <Star className={cn("w-4 h-4", chat.starred && "fill-amber-500 text-amber-500")} />
+                      <Star strokeWidth={1.5} className={cn("w-4 h-4", chat.starred && "fill-amber-500 text-amber-500")} />
                     </Button>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -189,16 +231,16 @@ function ChatItem({
                           className="h-7 w-7 text-muted-foreground"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <MoreHorizontal className="w-4 h-4" />
+                          <MoreHorizontal strokeWidth={1.5} className="w-4 h-4" />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-40">
                         <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onMute() }}>
-                          <BellOff className={cn('mr-2 h-4 w-4', chat.muted && 'text-wechat-muted')} />
+                          <BellOff strokeWidth={1.5} className={cn('mr-2 h-4 w-4', chat.muted && 'text-wechat-muted')} />
                           {chat.muted ? '取消静音' : '静音'}
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onMarkUnread() }}>
-                          <MailOpen className="mr-2 h-4 w-4" />
+                          <MailOpen strokeWidth={1.5} className="mr-2 h-4 w-4" />
                           标记未读
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
@@ -206,7 +248,7 @@ function ChatItem({
                           className="text-destructive focus:bg-destructive focus:text-destructive-foreground"
                           onClick={(e) => { e.stopPropagation(); onDelete() }}
                         >
-                          <Trash2 className="mr-2 h-4 w-4" />
+                          <Trash2 strokeWidth={1.5} className="mr-2 h-4 w-4" />
                           删除
                         </DropdownMenuItem>
                       </DropdownMenuContent>
@@ -223,10 +265,10 @@ function ChatItem({
             {/* Bottom Row: Preview + Muted */}
             <div className="flex items-center justify-between gap-2">
               <p className="text-xs text-muted-foreground truncate flex-1">
-                {chat.preview}
+                {resolvePreview(chat)}
               </p>
               {chat.muted && (
-                <BellOff className="w-3 h-3 text-wechat-muted shrink-0" />
+                <BellOff strokeWidth={1.5} className="w-3 h-3 text-wechat-muted shrink-0" />
               )}
             </div>
           </div>
@@ -239,11 +281,11 @@ function ChatItem({
           {chat.starred ? '取消标星' : '标星'}
         </ContextMenuItem>
         <ContextMenuItem onClick={onMute}>
-          <BellOff className={cn('mr-2 h-4 w-4', chat.muted && 'text-wechat-muted')} />
+          <BellOff strokeWidth={1.5} className={cn('mr-2 h-4 w-4', chat.muted && 'text-wechat-muted')} />
           {chat.muted ? '取消静音' : '静音'}
         </ContextMenuItem>
         <ContextMenuItem onClick={onMarkUnread}>
-          <MailOpen className="mr-2 h-4 w-4" />
+          <MailOpen strokeWidth={1.5} className="mr-2 h-4 w-4" />
           标记未读
         </ContextMenuItem>
         <ContextMenuSeparator />
@@ -251,7 +293,7 @@ function ChatItem({
           className="text-destructive focus:bg-destructive focus:text-destructive-foreground"
           onClick={onDelete}
         >
-          <Trash2 className="mr-2 h-4 w-4" />
+          <Trash2 strokeWidth={1.5} className="mr-2 h-4 w-4" />
           删除
         </ContextMenuItem>
       </ContextMenuContent>
@@ -297,20 +339,20 @@ function ListHeader({
       <div className="h-16 flex items-center gap-2 px-3 border-b border-border bg-layout-list-header shrink-0">
         <div className="relative flex-1 min-w-0">
           <div className="absolute left-2 top-1/2 -translate-y-1/2 flex items-center justify-center w-5 h-5 text-muted-foreground">
-            <Search className="h-3.5 w-3.5" />
+            <Search strokeWidth={1.5} className="h-3.5 w-3.5" />
           </div>
           <Input
             value={searchValue}
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder="搜索"
-            className="pl-8 pr-8 h-8 bg-muted/50 hover:bg-muted/80 focus:bg-background rounded-[4px] text-xs border-0 focus-visible:ring-1 transition-colors"
+            className="pl-8 pr-8 h-8 bg-muted/50 hover:bg-muted/80 focus:bg-background rounded-sm text-xs border-0 focus-visible:ring-1 transition-colors"
           />
           {searchValue && (
             <button
               onClick={() => onSearchChange('')}
               className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 hover:bg-muted-foreground/20 rounded-full"
             >
-              <X className="h-3 w-3 text-muted-foreground" />
+              <X strokeWidth={1.5} className="h-3 w-3 text-muted-foreground" />
             </button>
           )}
         </div>
@@ -320,23 +362,23 @@ function ListHeader({
               <Button
                 size="icon"
                 variant="ghost"
-                className="h-8 w-8 shrink-0 bg-muted/50 hover:bg-muted/80 rounded-[4px]"
+                className="h-8 w-8 shrink-0 bg-muted/50 hover:bg-muted/80 rounded-sm"
                 title={addButtonLabel || '添加'}
               >
-                <Plus className="w-4 h-4" />
+                <Plus strokeWidth={1.5} className="w-4 h-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-40">
               <DropdownMenuItem onClick={onAddClick}>
-                <Bot className="mr-2 h-4 w-4" />
+                <Bot strokeWidth={1.5} className="mr-2 h-4 w-4" />
                 <span>创建助手</span>
               </DropdownMenuItem>
               <DropdownMenuItem onClick={onAddFriend}>
-                <UserPlus className="mr-2 h-4 w-4" />
+                <UserPlus strokeWidth={1.5} className="mr-2 h-4 w-4" />
                 <span>添加朋友</span>
               </DropdownMenuItem>
               <DropdownMenuItem onClick={onAddGroup}>
-                <Users className="mr-2 h-4 w-4" />
+                <Users strokeWidth={1.5} className="mr-2 h-4 w-4" />
                 <span>发起群聊</span>
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -352,7 +394,7 @@ function ListHeader({
       {isSearchExpanded ? (
         <>
           <div className="relative flex-1 min-w-0">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Search strokeWidth={1.5} className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               value={searchValue}
               onChange={(e) => onSearchChange(e.target.value)}
@@ -365,7 +407,7 @@ function ListHeader({
                 onClick={() => onSearchChange('')}
                 className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-muted rounded"
               >
-                <X className="h-3 w-3 text-muted-foreground" />
+                <X strokeWidth={1.5} className="h-3 w-3 text-muted-foreground" />
               </button>
             )}
           </div>
@@ -375,7 +417,7 @@ function ListHeader({
             onClick={handleCloseSearch}
             className="h-8 w-8 shrink-0"
           >
-            <X className="h-4 w-4" />
+            <X strokeWidth={1.5} className="h-4 w-4" />
           </Button>
         </>
       ) : (
@@ -389,7 +431,7 @@ function ListHeader({
             onClick={() => setIsSearchExpanded(true)}
             className="h-8 w-8 shrink-0 hover:bg-muted"
           >
-            <Search className="h-4 w-4 text-muted-foreground" />
+            <Search strokeWidth={1.5} className="h-4 w-4 text-muted-foreground" />
           </Button>
           {onAddClick && (
             <Button
@@ -399,7 +441,7 @@ function ListHeader({
               className="h-8 w-8 shrink-0 hover:bg-primary/10 hover:text-primary"
               title={addButtonLabel || '添加'}
             >
-              <Plus className="w-4 h-4" />
+              <Plus strokeWidth={1.5} className="w-4 h-4" />
             </Button>
           )}
         </>
@@ -451,6 +493,10 @@ export function ChatListPane(_props: ChatListPaneProps) {
       // Use avatarUrl directly from Chat (redundant storage)
       providerLogo: c.avatarUrl ?? undefined,
       provider: undefined,
+      // chatType derived from participants count; defaults to direct_ai
+      chatType: (c.participants && c.participants.length > 1
+        ? 'group'
+        : 'direct_ai') as ChatType,
     }))
     
     // 标星的排在前面
@@ -544,16 +590,16 @@ export function ChatListPane(_props: ChatListPaneProps) {
       
       <ScrollArea className="flex-1">
         {isChatsLoading ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground px-4 py-8 justify-center">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground px-4 py-8 justify-center animate-fade-in">
             <Loader2 className="w-4 h-4 animate-spin" />
             正在加载...
           </div>
         ) : chats.length === 0 ? (
-          <div className="px-4 py-12 text-center text-sm text-muted-foreground">
+          <div className="px-4 py-12 text-center text-sm text-muted-foreground animate-fade-in">
             暂无聊天
           </div>
         ) : (
-          <div className="divide-y divide-border/30">
+          <div className="divide-y divide-border/30 animate-fade-in">
             {chats.map((chat) => (
               <ChatItem
                 key={chat.id}

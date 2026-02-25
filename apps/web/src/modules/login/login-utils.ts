@@ -22,6 +22,16 @@ const resolveSiteUrl = (): string | null => {
 
 export const resolveRedirectUrl = (): string => {
   const siteUrl = resolveSiteUrl()
+  if (siteUrl && typeof window !== 'undefined') {
+    // 返回当前页面路径（不带 hash 和 query），让 OAuth callback 回到当前页
+    // 这样每个页面都能接收 callback，刷新时不会跳转到 /auth/callback
+    const currentPath = window.location.pathname
+    // 排除已经在 callback 页面的情况
+    if (currentPath.startsWith('/auth/callback')) {
+      return `${siteUrl}/auth/callback`
+    }
+    return `${siteUrl}${currentPath}`
+  }
   if (siteUrl) {
     return `${siteUrl}/auth/callback`
   }
@@ -39,17 +49,55 @@ export const ensureRedirectAllowed = (redirectUrl: string) => {
   throw new Error(`Unsupported redirect protocol: ${parsed.protocol}`)
 }
 
-export const hasStoredSolidSession = (storageKey: string) => {
+/**
+ * 检查是否有有效的存储会话
+ * 不仅检查数据是否存在，还验证关键字段是否完整
+ */
+export const hasStoredSolidSession = (_storageKey?: string) => {
   if (typeof window === 'undefined') return false
-  const hasSession = Boolean(localStorage.getItem(storageKey))
-  console.log('🔍 Checking for stored session:', { storageKey, hasSession })
-  return hasSession
+
+  const keys = Object.keys(localStorage)
+  for (const key of keys) {
+    if (key.startsWith('solidClientAuthenticationUser:')) {
+      const value = localStorage.getItem(key)
+      if (!value || value === '{}') continue
+
+      try {
+        const parsed = JSON.parse(value)
+        // 验证关键字段：必须有 issuer 和 refreshToken 或 accessToken
+        const hasIssuer = Boolean(parsed.issuer)
+        const hasToken = Boolean(parsed.refreshToken || parsed.accessToken)
+
+        if (hasIssuer && hasToken) {
+          console.log('🔍 Found valid stored session:', { key, issuer: parsed.issuer })
+          return true
+        } else {
+          // 数据不完整，清理掉
+          console.log('🧹 Removing invalid session data:', { key, hasIssuer, hasToken })
+          localStorage.removeItem(key)
+        }
+      } catch (e) {
+        // JSON 解析失败，清理掉
+        console.log('🧹 Removing corrupted session data:', key)
+        localStorage.removeItem(key)
+      }
+    }
+  }
+
+  console.log('🔍 No valid stored session found')
+  return false
 }
 
-export const clearStoredSolidSession = (storageKey: string) => {
+export const clearStoredSolidSession = (_storageKey?: string) => {
   if (typeof window === 'undefined') return
-  localStorage.removeItem(storageKey)
-  console.log('🧹 Cleared stored Solid session flag:', storageKey)
+  // Clear all solidClientAuthenticationUser:* keys
+  const keys = Object.keys(localStorage)
+  for (const key of keys) {
+    if (key.startsWith('solidClientAuthenticationUser:') || key.startsWith('oidc.')) {
+      localStorage.removeItem(key)
+      console.log('🧹 Cleared stored Solid session key:', key)
+    }
+  }
 }
 
 export const shouldSkipAutoRestore = () => {

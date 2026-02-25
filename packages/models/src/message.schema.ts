@@ -1,5 +1,5 @@
-import { id, podTable, string, text, timestamp, uri } from 'drizzle-solid'
-import { DCTerms, FOAF, LINX_MSG, MEETING, SCHEMA, SIOC, UDFS, WF } from './namespaces'
+import { podTable, uri, string, text, timestamp, id } from '@undefineds.co/drizzle-solid'
+import { UDFS, DCTerms, FOAF, LINX_MSG, MEETING, SCHEMA, SIOC, WF } from './namespaces'
 
 export const messageTable = podTable(
   'chat_message',
@@ -19,6 +19,7 @@ export const messageTable = podTable(
     role: string('role').predicate(UDFS.messageType).notNull().default('user'),
     content: text('content').predicate(SIOC.content).notNull(),
     richContent: text('richContent').predicate(SIOC.richContent),
+
 
     status: string('status').predicate(UDFS.messageStatus).notNull().default('sent'),
     replacedBy: string('replacedBy').predicate(DCTerms.isReplacedBy),
@@ -43,6 +44,7 @@ export const messageTable = podTable(
     sparqlEndpoint: '/.data/messages/-/sparql',
     type: MEETING.Message,
     namespace: UDFS,
+    // Document mode: one file per message
     subjectTemplate: '{id}.ttl',
   },
 )

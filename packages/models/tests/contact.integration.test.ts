@@ -1,11 +1,11 @@
 import 'dotenv/config'
 import { describe, it, expect, afterAll } from 'vitest'
 import { Session } from '@inrupt/solid-client-authn-node'
-import { drizzle, type SolidDatabase } from 'drizzle-solid'
+import { drizzle, type SolidDatabase } from '@undefineds.co/drizzle-solid'
 import { contactTable } from '../src/contact.schema'
 import { agentTable } from '../src/agent.schema'
 import { linxSchema } from '../src/schema'
-import { eq } from 'drizzle-solid'
+import { eq } from '@undefineds.co/drizzle-solid'
 
 const env = {
   webId: process.env.SOLID_WEBID,

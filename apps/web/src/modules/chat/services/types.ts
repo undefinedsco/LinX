@@ -158,6 +158,7 @@ export interface ChatHandlerContext {
   session: {
     webId: string
     podUrl: string
+    fetch: typeof fetch
   }
 
   /** Query client for cache invalidation */

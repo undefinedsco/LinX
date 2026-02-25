@@ -6,14 +6,14 @@
  */
 
 import { memo, useState } from 'react'
-import { ChevronDown, Wrench, CheckCircle, XCircle, Loader2 } from 'lucide-react'
+import { ChevronDown, Wrench, CheckCircle, XCircle, Loader2, ShieldCheck, Play } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
-import { MessageBlockStatus, type ToolMessageBlock } from '@linx/models'
+import { MessageBlockStatus, type ToolMessageBlock, type ToolCallStatus } from '@linx/models'
 
 interface ToolBlockProps {
   block: ToolMessageBlock
@@ -23,20 +23,37 @@ interface ToolBlockProps {
 }
 
 /**
- * 获取工具状态图标
+ * 获取工具状态图标 - 支持 MessageBlockStatus 和 ToolCallStatus
  */
-function getStatusIcon(status: MessageBlockStatus) {
-  switch (status) {
-    case MessageBlockStatus.SUCCESS:
-      return <CheckCircle className="w-4 h-4 text-green-500" />
-    case MessageBlockStatus.ERROR:
-      return <XCircle className="w-4 h-4 text-destructive" />
-    case MessageBlockStatus.PROCESSING:
-    case MessageBlockStatus.STREAMING:
-      return <Loader2 className="w-4 h-4 text-primary animate-spin" />
-    default:
-      return <Wrench className="w-4 h-4 text-muted-foreground" />
+function getStatusIcon(status: MessageBlockStatus, toolStatus?: ToolCallStatus) {
+  if (toolStatus) {
+    switch (toolStatus) {
+      case 'done': return <CheckCircle className="w-4 h-4 text-green-500" />
+      case 'error': return <XCircle className="w-4 h-4 text-destructive" />
+      case 'calling': return <Loader2 className="w-4 h-4 text-primary animate-spin" />
+      case 'waiting_approval': return <ShieldCheck className="w-4 h-4 text-amber-500" />
+      case 'running': return <Play className="w-4 h-4 text-blue-500" />
+    }
   }
+  switch (status) {
+    case MessageBlockStatus.SUCCESS: return <CheckCircle className="w-4 h-4 text-green-500" />
+    case MessageBlockStatus.ERROR: return <XCircle className="w-4 h-4 text-destructive" />
+    case MessageBlockStatus.PROCESSING:
+    case MessageBlockStatus.STREAMING: return <Loader2 className="w-4 h-4 text-primary animate-spin" />
+    default: return <Wrench className="w-4 h-4 text-muted-foreground" />
+  }
+}
+
+/** Map toolStatus to display text */
+function getToolStatusText(status: MessageBlockStatus, toolStatus?: ToolCallStatus): string {
+  if (toolStatus) {
+    const map: Record<ToolCallStatus, string> = {
+      calling: '调用中...', waiting_approval: '等待审批', running: '运行中...', done: '完成', error: '失败',
+    }
+    return map[toolStatus]
+  }
+  const isProcessing = status === MessageBlockStatus.PROCESSING || status === MessageBlockStatus.STREAMING
+  return isProcessing ? '执行中...' : status === MessageBlockStatus.ERROR ? '失败' : '完成'
 }
 
 /**
@@ -68,9 +85,7 @@ export const ToolBlock = memo<ToolBlockProps>(({
 }) => {
   const [isOpen, setIsOpen] = useState(defaultExpanded)
 
-  const isProcessing = block.status === MessageBlockStatus.PROCESSING ||
-                       block.status === MessageBlockStatus.STREAMING
-  const hasError = block.status === MessageBlockStatus.ERROR
+  const hasError = block.status === MessageBlockStatus.ERROR || block.toolStatus === 'error'
 
   // 格式化参数和结果
   const formattedArgs = block.arguments ? formatJSON(block.arguments) : null
@@ -92,7 +107,7 @@ export const ToolBlock = memo<ToolBlockProps>(({
           )}
         >
           {/* Status Icon */}
-          {getStatusIcon(block.status)}
+          {getStatusIcon(block.status, block.toolStatus)}
 
           {/* Tool Name */}
           <span className="text-sm font-medium text-foreground/80">
@@ -108,7 +123,7 @@ export const ToolBlock = memo<ToolBlockProps>(({
 
           {/* Status Text */}
           <span className="text-xs text-muted-foreground ml-auto mr-2">
-            {isProcessing ? '执行中...' : hasError ? '失败' : '完成'}
+            {getToolStatusText(block.status, block.toolStatus)}
           </span>
 
           {/* Expand indicator */}

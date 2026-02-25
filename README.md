@@ -1,6 +1,6 @@
 # LinX
 
-Linq 是一个面向 Solid 的 AI-native 第二大脑。它以 React/Vite Web 端为核心，同时提供 Electron 桌面壳和 Capacitor 移动壳，让同一份体验覆盖多端。当前里程碑聚焦欢迎/开启体验：连接 Solid Pod、拉取个人资料，并把受控的共享记忆交到 AI 伙伴手里。
+LinX 是一个面向 Solid 的 AI-native 第二大脑。它以 React/Vite Web 端为核心，同时提供 Electron 桌面壳和 Capacitor 移动壳，让同一份体验覆盖多端。当前里程碑聚焦欢迎/开启体验：连接 Solid Pod、拉取个人资料，并把受控的共享记忆交到 AI 伙伴手里。
 
 ## 技术栈
 

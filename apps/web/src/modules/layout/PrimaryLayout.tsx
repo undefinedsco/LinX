@@ -3,7 +3,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
-import { Moon, Sun, Upload, Settings, Bot, Info } from 'lucide-react'
+import { Moon, Sun, Upload, Settings, Bot, Info, Activity } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   microAppRegistry,
@@ -27,6 +27,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { SelfProfileCard } from '@/modules/profile/SelfProfileCard'
+import { ServiceManagementDialog } from '@/modules/settings/ServiceManagementDialog'
 
 interface PrimaryLayoutProps {
   microAppId: MicroAppId
@@ -162,33 +163,43 @@ function MicroAppContentRenderer({
 
 // ... (MicroAppContentRenderer)
 
-function SettingsMenu({ onNavigate }: { onNavigate: (id: MicroAppId) => void }) {
+function SettingsMenu({ 
+  onNavigate, 
+  onOpenServiceManagement 
+}: { 
+  onNavigate: (id: MicroAppId) => void
+  onOpenServiceManagement: () => void 
+}) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
           variant="ghost"
           size="icon"
-          className="w-9 h-9 rounded-[6px] hover:bg-muted/50 text-muted-foreground hover:text-foreground"
+          className="w-9 h-9 rounded-md hover:bg-muted/50 text-muted-foreground hover:text-foreground"
           aria-label="设置"
         >
-          <Settings className="w-6 h-6" strokeWidth={2} />
+          <Settings className="w-6 h-6" strokeWidth={1.5} />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-48" align="start" side="right" sideOffset={10}>
         <DropdownMenuLabel>设置</DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => onNavigate('settings')} className="cursor-pointer">
-          <Settings className="mr-2 h-4 w-4" />
+          <Settings className="mr-2 h-4 w-4" strokeWidth={1.5} />
           <span>通用设置</span>
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => onNavigate('model-services')} className="cursor-pointer">
-          <Bot className="mr-2 h-4 w-4" />
+          <Bot className="mr-2 h-4 w-4" strokeWidth={1.5} />
           <span>模型服务</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onOpenServiceManagement} className="cursor-pointer text-violet-500 focus:text-violet-500">
+          <Activity className="mr-2 h-4 w-4" strokeWidth={1.5} />
+          <span>服务管理</span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => console.log('About clicked')} className="cursor-pointer">
-          <Info className="mr-2 h-4 w-4" />
+          <Info className="mr-2 h-4 w-4" strokeWidth={1.5} />
           <span>关于</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
@@ -199,6 +210,7 @@ function SettingsMenu({ onNavigate }: { onNavigate: (id: MicroAppId) => void }) 
 export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
   const navigate = useNavigate()
   const [theme, toggleTheme] = useThemeMode()
+  const [isServiceMgmtOpen, setIsServiceMgmtOpen] = useState(false)
 
   const primaryApps = useMemo(() => primaryNavIds.map((id) => microAppRegistry[id]), [])
   const secondaryApps = useMemo(() => secondaryNavIds.map((id) => microAppRegistry[id]), [])
@@ -230,8 +242,8 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
           <div className="pt-[56px] flex justify-center">
             <Popover>
               <PopoverTrigger asChild>
-                <Avatar className="w-9 h-9 !rounded-[6px] shadow-sm cursor-pointer hover:ring-2 hover:ring-primary/20 transition-all">
-                  <AvatarFallback className="bg-primary text-primary-foreground text-lg font-bold !rounded-[6px]">
+                <Avatar className="w-9 h-9 !rounded-md shadow-sm cursor-pointer hover:ring-2 hover:ring-primary/20 transition-all">
+                  <AvatarFallback className="bg-primary text-primary-foreground text-lg font-bold !rounded-md">
                     L
                   </AvatarFallback>
                 </Avatar>
@@ -243,7 +255,6 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
           </div>
           <nav className="flex-1 py-4 flex flex-col items-center gap-4">
             {primaryApps.map((app) => {
-              // ... (primaryApps mapping) ...
               const Icon = app.icon
               const isActive = app.id === microAppId
               return (
@@ -252,7 +263,7 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
                   variant="ghost"
                   size="icon"
                   className={cn(
-                    "w-9 h-9 rounded-[6px] transition-all duration-200",
+                    "w-9 h-9 rounded-md transition-all duration-200",
                     isActive 
                       ? "text-primary hover:bg-transparent hover:text-primary" 
                       : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
@@ -262,7 +273,7 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
                 >
                   <Icon 
                     size={24} 
-                    strokeWidth={isActive ? 2.5 : 2} 
+                    strokeWidth={isActive ? 2 : 1.5} 
                     fill={isActive ? "currentColor" : "none"}
                     className="transition-all"
                   />
@@ -273,7 +284,6 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
           <Separator className="bg-border/30 w-8 mx-auto" />
           <div className="py-4 flex flex-col items-center gap-4 w-full">
             {secondaryApps.map((app) => {
-              // ... (secondaryApps mapping) ...
               const Icon = app.icon
               const isActive = app.id === microAppId
               return (
@@ -282,7 +292,7 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
                   variant="ghost"
                   size="icon"
                   className={cn(
-                    "w-9 h-9 rounded-[6px] hover:bg-transparent",
+                    "w-9 h-9 rounded-md hover:bg-transparent",
                     isActive 
                       ? "text-primary hover:text-primary" 
                       : "text-muted-foreground hover:text-foreground"
@@ -292,7 +302,7 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
                 >
                   <Icon 
                     size={24} 
-                    strokeWidth={isActive ? 2.5 : 2}
+                    strokeWidth={isActive ? 2 : 1.5}
                     fill={isActive ? "currentColor" : "none"} 
                   />
                 </Button>
@@ -301,7 +311,13 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
             {/* Settings Popover and Utilities */} 
             {bottomUtilities.map((utility) => {
               if (utility.id === 'settings') {
-                return <SettingsMenu key={utility.id} onNavigate={handleNavigate} />
+                return (
+                  <SettingsMenu 
+                    key={utility.id} 
+                    onNavigate={handleNavigate} 
+                    onOpenServiceManagement={() => setIsServiceMgmtOpen(true)}
+                  />
+                )
               }
               const Icon = utility.icon
               return (
@@ -310,17 +326,15 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
                   variant="ghost"
                   size="icon"
                   className={cn(
-                    "w-9 h-9 rounded-[6px] hover:bg-transparent",
-                    utility.action === 'settings' && microAppId === 'settings' 
-                      ? "text-primary hover:text-primary" 
-                      : "text-muted-foreground hover:text-foreground"
+                    "w-9 h-9 rounded-md hover:bg-transparent",
+                    "text-muted-foreground hover:text-foreground"
                   )}
                   onClick={() => handleUtilityClick(utility.action)}
                   aria-label={utility.label}
                 >
                   <Icon 
                     size={24} 
-                    strokeWidth={2}
+                    strokeWidth={1.5}
                   />
                 </Button>
               )
@@ -338,6 +352,11 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
           />
         </div>
       </div>
+
+      <ServiceManagementDialog 
+        open={isServiceMgmtOpen} 
+        onOpenChange={setIsServiceMgmtOpen} 
+      />
     </div>
   )
 }

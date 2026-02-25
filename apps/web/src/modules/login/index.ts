@@ -1,7 +1,9 @@
-export { SolidLoginModal } from './SolidLoginModal'
-export { SolidLoginOverlay } from './SolidLoginOverlay'
-export { useSolidLoginController } from './controller'
+// 新版登录模块
+export { LoginModal } from './LoginModal'
+export { LoginOverlay } from './LoginOverlay'
+export { useLoginController } from './controller'
+
+// 兼容旧版导出（逐步废弃）
+export { LoginOverlay as SolidLoginOverlay } from './LoginOverlay'
+
 export * from './types'
-export * from './constants'
-export * from './storage'
-export * from './utils'

@@ -1,10 +1,10 @@
-# 架构对比：Linq vs Cherry Studio vs LobeChat
+# 架构对比：LinX vs Cherry Studio vs LobeChat
 
 本文档对比三种不同的前端数据架构方案，帮助开发者理解我们的技术选型。
 
 ## 架构概览
 
-### Linq (我们的方案)
+### LinX (我们的方案)
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -65,7 +65,7 @@
 
 ## 功能对比
 
-| 方面 | Linq | Cherry Studio | LobeChat |
+| 方面 | LinX | Cherry Studio | LobeChat |
 |------|------|---------------|----------|
 | **状态管理** | Zustand (简单) | Redux Toolkit | Zustand Slice |
 | **数据层** | TanStack DB Collections | Dexie (IndexedDB) | Zustand + API |
@@ -164,7 +164,7 @@ contactsCollection.insert({ name: 'Alice', email: 'alice@example.com' })
 
 ## 适用场景
 
-### 选择 Linq 架构 (Collections + Pod)
+### 选择 LinX 架构 (Collections + Pod)
 
 - ✅ 需要多端同步
 - ✅ 重视用户数据隐私/自主权
@@ -188,7 +188,7 @@ contactsCollection.insert({ name: 'Alice', email: 'alice@example.com' })
 
 | 架构 | 核心理念 | 一句话总结 |
 |------|---------|-----------|
-| **Linq** | 去中心化 + 自动同步 | Collections 管数据，Zustand 管 UI，Pod 管存储 |
+| **LinX** | 去中心化 + 自动同步 | Collections 管数据，Zustand 管 UI，Pod 管存储 |
 | **Cherry Studio** | 本地优先 | Redux 管状态，Dexie 管大数据，本地即一切 |
 | **LobeChat** | 模块化 + 全栈 | Zustand Slice 拆状态，后端管数据 |
 

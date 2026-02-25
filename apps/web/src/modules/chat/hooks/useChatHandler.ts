@@ -23,6 +23,7 @@ import {
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 import { useSession } from '@inrupt/solid-ui-react'
 import { createChatHandler, type ChatHandler, type AgentChatHandler } from '../services'
+import { extractPodUrlFromWebId, resolvePodUrl } from '@/lib/pod-url'
 
 // ============================================
 // Types
@@ -72,6 +73,7 @@ export function useChatHandler(options: UseChatHandlerOptions): UseChatHandlerRe
   const { db } = useSolidDatabase()
   const { session } = useSession()
   const queryClient = useQueryClient()
+  const [podUrl, setPodUrl] = useState('')
   
   // State
   const [isStreaming, setIsStreaming] = useState(false)
@@ -81,6 +83,33 @@ export function useChatHandler(options: UseChatHandlerOptions): UseChatHandlerRe
   
   // Handler ref (to persist across renders)
   const handlerRef = useRef<ChatHandler | null>(null)
+
+  useEffect(() => {
+    const webId = session?.info?.webId
+    if (!webId) {
+      setPodUrl('')
+      return
+    }
+
+    let cancelled = false
+    const fallback = extractPodUrlFromWebId(webId)
+    setPodUrl(fallback)
+
+    const controller = new AbortController()
+    const resolve = async () => {
+      const next = await resolvePodUrl(webId, { signal: controller.signal })
+      if (!cancelled && next) {
+        setPodUrl(next)
+      }
+    }
+
+    void resolve()
+
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }, [session?.info?.webId])
   
   // ============================================
   // Queries
@@ -163,9 +192,6 @@ export function useChatHandler(options: UseChatHandlerOptions): UseChatHandlerRe
     // Clean up previous handler
     handlerRef.current?.dispose()
     
-    // Extract pod URL from webId
-    const podUrl = extractPodUrl(session.info.webId)
-    
     const ctx = {
       db,
       chatId: chatId!,
@@ -175,6 +201,7 @@ export function useChatHandler(options: UseChatHandlerOptions): UseChatHandlerRe
       session: {
         webId: session.info.webId,
         podUrl,
+        fetch: session.fetch,
       },
       invalidateQueries: (keys: string[][]) => {
         keys.forEach(key => queryClient.invalidateQueries({ queryKey: key }))
@@ -200,7 +227,7 @@ export function useChatHandler(options: UseChatHandlerOptions): UseChatHandlerRe
     }
     
     return newHandler
-  }, [db, chat, contact, agent, session?.info?.webId, chatId, queryClient])
+  }, [db, chat, contact, agent, session?.info?.webId, session?.fetch, podUrl, chatId, queryClient])
   
   // ============================================
   // Actions
@@ -319,19 +346,4 @@ function extractId(uri: string): string {
   }
   
   return uri
-}
-
-function extractPodUrl(webId: string): string {
-  try {
-    const url = new URL(webId)
-    const pathParts = url.pathname.split('/')
-    const profileIndex = pathParts.indexOf('profile')
-    if (profileIndex > 0) {
-      const podPath = pathParts.slice(0, profileIndex).join('/')
-      return `${url.origin}${podPath}`
-    }
-    return url.origin
-  } catch {
-    return ''
-  }
 }

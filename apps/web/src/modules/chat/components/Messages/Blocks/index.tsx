@@ -21,6 +21,8 @@ import {
 import { MainTextBlock } from './MainTextBlock'
 import { ThinkingBlock } from './ThinkingBlock'
 import { ToolBlock } from './ToolBlock'
+import { ToolApprovalBlock } from './ToolApprovalBlock'
+import { TaskProgressBlock } from './TaskProgressBlock'
 import { ErrorBlock } from './ErrorBlock'
 import { PlaceholderBlock } from './PlaceholderBlock'
 
@@ -35,6 +37,9 @@ interface MessageBlockRendererProps {
   messageId?: string
   /** 重试回调 */
   onRetry?: () => void
+  /** 工具审批回调 */
+  onToolApprove?: (toolCallId: string) => void
+  onToolReject?: (toolCallId: string) => void
   className?: string
 }
 
@@ -50,6 +55,8 @@ export const MessageBlockRenderer = memo<MessageBlockRendererProps>(({
   isProcessing = false,
   messageId = 'unknown',
   onRetry,
+  onToolApprove,
+  onToolReject,
   className,
 }) => {
   // 过滤并排序块
@@ -87,6 +94,24 @@ export const MessageBlockRenderer = memo<MessageBlockRendererProps>(({
               <ToolBlock
                 key={block.id}
                 block={block as ToolMessageBlock}
+              />
+            )
+
+          case MessageBlockType.TOOL_APPROVAL:
+            return (
+              <ToolApprovalBlock
+                key={block.id}
+                block={block as Extract<MessageBlock, { type: MessageBlockType.TOOL_APPROVAL }>}
+                onApprove={onToolApprove}
+                onReject={onToolReject}
+              />
+            )
+
+          case MessageBlockType.TASK_PROGRESS:
+            return (
+              <TaskProgressBlock
+                key={block.id}
+                block={block as Extract<MessageBlock, { type: MessageBlockType.TASK_PROGRESS }>}
               />
             )
 
@@ -142,6 +167,8 @@ MessageBlockRenderer.displayName = 'MessageBlockRenderer'
 export { MainTextBlock } from './MainTextBlock'
 export { ThinkingBlock } from './ThinkingBlock'
 export { ToolBlock } from './ToolBlock'
+export { ToolApprovalBlock } from './ToolApprovalBlock'
+export { TaskProgressBlock } from './TaskProgressBlock'
 export { ErrorBlock } from './ErrorBlock'
 export { PlaceholderBlock } from './PlaceholderBlock'
 

@@ -27,6 +27,7 @@ export const fixtureContactAgentWorkspace: ContactInsert = {
 export const fixtureChatDirectAI: ChatInsert = {
   id: 'chat-direct-ai-1',
   title: 'Chat Channel',
+  contact: 'https://pod.example/.data/contacts/contact-agent-ws-1.ttl#this',
   participants: [
     'https://pod.example/profile/card#me',
     'https://pod.example/.data/contacts/contact-agent-ws-1.ttl#this',

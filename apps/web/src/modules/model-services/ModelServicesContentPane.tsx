@@ -360,9 +360,9 @@ export function ModelServicesContentPane() {
                     </Tooltip>
                   )}
                 </div>
-                {provider.homepage && (
+                {provider.homeUrl && (
                   <a 
-                    href={provider.homepage} 
+                    href={provider.homeUrl} 
                     target="_blank" 
                     rel="noreferrer"
                     className="text-[10px] text-muted-foreground hover:text-primary flex items-center gap-0.5 leading-none transition-colors"

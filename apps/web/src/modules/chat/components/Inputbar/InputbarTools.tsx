@@ -31,6 +31,7 @@ export interface ToolItem {
   active?: boolean
   disabled?: boolean
   onClick?: () => void
+  className?: string
 }
 
 export interface ToolGroup {
@@ -78,10 +79,11 @@ interface ToolButtonProps {
   variant?: 'default' | 'ghost' | 'outline'
   size?: 'sm' | 'default'
   onClick?: () => void
+  className?: string
 }
 
 const ToolButton = forwardRef<HTMLButtonElement, ToolButtonProps>(
-  ({ icon: Icon, label, shortcut, active, disabled, variant = 'ghost', size = 'default', onClick }, ref) => {
+  ({ icon: Icon, label, shortcut, active, disabled, variant = 'ghost', size = 'default', onClick, className }, ref) => {
     // Cherry Studio: button 26px×26px, icon 15px
     const sizeClasses = size === 'sm' 
       ? 'h-[26px] w-[26px]' 
@@ -103,10 +105,11 @@ const ToolButton = forwardRef<HTMLButtonElement, ToolButtonProps>(
               sizeClasses,
               'text-muted-foreground hover:text-foreground',
               'rounded-lg transition-colors',
-              active && 'text-primary bg-primary/10 hover:bg-primary/15'
+              active && 'text-primary bg-primary/10 hover:bg-primary/15',
+              className
             )}
           >
-            <Icon className={iconClasses} />
+            <Icon className={iconClasses} strokeWidth={1.5} />
           </Button>
         </TooltipTrigger>
         <TooltipContent side="top" className="text-xs">

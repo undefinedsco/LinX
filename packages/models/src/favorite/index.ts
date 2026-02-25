@@ -15,6 +15,7 @@ export {
   // Types
   type SnapshotExtractor,
   type StarredSyncConfig,
+  type SourceModule,
 } from "./starred-sync";
 
 

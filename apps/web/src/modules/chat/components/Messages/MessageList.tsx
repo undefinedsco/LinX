@@ -158,6 +158,7 @@ export const MessageList = memo<MessageListProps>(({
             <div
               key={message.id}
               ref={isLastMessage ? lastMessageRef : undefined}
+              className="animate-fade-in"
             >
               <Message
                 message={message}

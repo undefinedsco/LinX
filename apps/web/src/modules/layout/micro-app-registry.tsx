@@ -11,6 +11,7 @@ import {
 import { PlaceholderListPane, PlaceholderContentPane } from './placeholders'
 import { ChatListPane, ChatContentPane, useChatLayoutConfig } from '@/modules/chat'
 import { ContactListPane, ContactDetailPane } from '@/modules/contacts'
+import { FavoriteListPane, FavoriteContentPane } from '@/modules/favorites'
 import { ModelServicesListPane, ModelServicesContentPane, useModelServicesLayoutConfig } from '@/modules/model-services'
 
 export const microAppIds = [
@@ -48,6 +49,16 @@ export interface MicroAppLayoutConfig {
   rightSidebarWidth?: number
   hideIcon?: boolean
   hideHeader?: boolean
+}
+
+export interface MicroAppDefinition {
+  id: MicroAppId
+  label: string
+  icon: LucideIcon
+  header: MicroAppHeaderMeta
+  ListPane: MicroAppListPane
+  ContentPane: MicroAppContentPane
+  useLayoutConfig?: () => MicroAppLayoutConfig
 }
 
 const buildList = (title: string, description: string, items: ReactNode[]) =>
@@ -105,10 +116,10 @@ export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
       moduleTitle: '收藏',
       moduleSubtitle: '快速访问常用资源',
       itemTitle: '收藏内容',
-      itemSubtitle: '集中在共享记忆里',
+      itemSubtitle: '跨模块标星项汇总',
     },
-    ListPane: buildList('收藏夹', '示例收藏项', ['AI Prompts', '日程模板', '关键资料']),
-    ContentPane: buildContent('收藏详情', '收藏内容 placeholder'),
+    ListPane: FavoriteListPane,
+    ContentPane: FavoriteContentPane,
   },
   settings: {
     id: 'settings',

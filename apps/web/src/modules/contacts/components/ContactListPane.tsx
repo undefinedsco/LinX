@@ -5,15 +5,16 @@ import { contactOps, initializeContactCollections } from '../collections'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 import type { UnifiedContact, ContactSection, SectionKey } from '../types'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { 
-  Search, 
-  Plus, 
+import {
+  Search,
+  Plus,
   Loader2,
   UserPlus,
   Star,
   ChevronRight,
   Bot,
-  User
+  User,
+  Users,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -26,6 +27,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import type { ContactRow } from '@linx/models'
+import { ContactType } from '@linx/models'
 import { useQuery } from '@tanstack/react-query'
 
 // ============================================
@@ -48,6 +50,25 @@ function getInitial(name: string): string {
 // Components
 // ============================================
 
+/**
+ * Group avatar: 2x2 grid of initials for group contacts
+ */
+function GroupAvatarGrid({ name }: { name: string }) {
+  const letters = (name || '??').slice(0, 2).split('')
+  return (
+    <div className="h-10 w-10 rounded-lg border border-border/30 bg-primary/10 grid grid-cols-2 gap-px overflow-hidden">
+      {letters.map((l, i) => (
+        <div key={i} className="flex items-center justify-center text-[10px] font-bold text-primary">
+          {l.toUpperCase()}
+        </div>
+      ))}
+      <div className="col-span-2 flex items-center justify-center">
+        <Users className="w-3.5 h-3.5 text-primary/60" />
+      </div>
+    </div>
+  )
+}
+
 interface ContactItemProps {
   contact: UnifiedContact
   isActive: boolean
@@ -55,6 +76,9 @@ interface ContactItemProps {
 }
 
 function ContactItem({ contact, isActive, onClick }: ContactItemProps) {
+  const isGroup = contact.contactType === ContactType.GROUP
+  const isAgent = contact.sourceType === 'agent'
+
   return (
     <div
       onClick={onClick}
@@ -67,12 +91,16 @@ function ContactItem({ contact, isActive, onClick }: ContactItemProps) {
       )}
     >
       <div className="relative shrink-0">
-        <Avatar className="h-10 w-10 rounded-lg border border-border/30">
-          <AvatarImage src={contact.displayAvatar} className="object-cover" />
-          <AvatarFallback className="bg-primary/10 text-primary text-sm font-bold">
-            {contact.displayName.slice(0, 1).toUpperCase()}
-          </AvatarFallback>
-        </Avatar>
+        {isGroup ? (
+          <GroupAvatarGrid name={contact.displayName} />
+        ) : (
+          <Avatar className="h-10 w-10 rounded-lg border border-border/30">
+            <AvatarImage src={contact.displayAvatar} className="object-cover" />
+            <AvatarFallback className="bg-primary/10 text-primary text-sm font-bold">
+              {isAgent ? <Bot className="w-5 h-5" /> : contact.displayName.slice(0, 1).toUpperCase()}
+            </AvatarFallback>
+          </Avatar>
+        )}
       </div>
 
       <div className="flex-1 min-w-0">
@@ -191,20 +219,28 @@ export function ContactListPane({}: MicroAppPaneProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const sectionRefs = useRef<Map<string, HTMLDivElement>>(new Map())
 
-  // 字母索引点击滚动
+  // 字母索引点击滚动 (支持 ⭐/群/AI/A-Z)
   const scrollToLetter = useCallback((letter: string) => {
-    // ⭐ 映射到星标朋友
-    const targetTitle = letter === '⭐' ? '星标朋友' : letter
-    const sectionEl = sectionRefs.current.get(targetTitle)
-    if (sectionEl) {
-      sectionEl.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    // Map index labels to section title prefixes
+    let target: string | undefined
+    if (letter === '⭐') target = '星标朋友'
+    else if (letter === '群') {
+      target = Array.from(sectionRefs.current.keys()).find(k => k.startsWith('群组'))
+    } else if (letter === 'AI') {
+      target = Array.from(sectionRefs.current.keys()).find(k => k.startsWith('AI'))
+    } else {
+      target = letter
+    }
+    if (target) {
+      const el = sectionRefs.current.get(target)
+      el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
   }, [])
 
-  // 数据处理: 转换为 UnifiedContact 并分组
+  // 数据处理: 转换为 UnifiedContact 并按 contactType 分组
   const { sections, letters } = useMemo(() => {
     const rawItems = rawContacts || []
-    
+
     // 转换为 UnifiedContact 格式
     const unified: UnifiedContact[] = rawItems.map((c: ContactRow) => ({
       ...c,
@@ -212,51 +248,62 @@ export function ContactListPane({}: MicroAppPaneProps) {
       displayAvatar: c.avatarUrl || '',
       initial: getInitial(c.alias || c.name || ''),
       sourceType: (c.contactType as any) === 'agent' ? 'agent' :
-                  (c.externalPlatform === 'wechat' ? 'wechat' : 'solid')
+                  (c.externalPlatform === 'wechat' ? 'wechat' : 'solid'),
     } as UnifiedContact))
 
-    // 分组逻辑 (搜索已在 query 中处理)
+    // Split by contactType
     const starredItems = unified.filter(c => c.starred)
-    const normalItems = unified.filter(c => !c.starred)
-    
-    // 按字母排序 A-Z (仅对非星标用户)
-    const groups: Record<string, UnifiedContact[]> = {}
-    normalItems.forEach(c => {
-      if (!groups[c.initial]) groups[c.initial] = []
-      groups[c.initial].push(c)
-    })
+    const groupItems = unified.filter(c => c.contactType === ContactType.GROUP && !c.starred)
+    const agentItems = unified.filter(c => c.contactType === ContactType.AGENT && !c.starred)
+    const personalItems = unified.filter(c =>
+      c.contactType !== ContactType.GROUP &&
+      c.contactType !== ContactType.AGENT &&
+      !c.starred
+    )
 
-    const sortedLetters = Object.keys(groups).sort((a, b) => {
+    // A-Z sub-groups for personal contacts
+    const alphaGroups: Record<string, UnifiedContact[]> = {}
+    personalItems.forEach(c => {
+      if (!alphaGroups[c.initial]) alphaGroups[c.initial] = []
+      alphaGroups[c.initial].push(c)
+    })
+    const sortedLetters = Object.keys(alphaGroups).sort((a, b) => {
       if (a === '#') return 1
       if (b === '#') return -1
       return a.localeCompare(b)
     })
 
     const contactSections: ContactSection[] = [
-      // 星标分组 (如果存在)
       ...(starredItems.length > 0 ? [{
         key: 'starred' as SectionKey,
         title: '星标朋友',
-        items: starredItems
+        items: starredItems,
       }] : []),
-      // A-Z 分组
+      ...(groupItems.length > 0 ? [{
+        key: 'groups' as SectionKey,
+        title: `群组 (${groupItems.length})`,
+        items: groupItems.sort((a, b) => a.displayName.localeCompare(b.displayName)),
+      }] : []),
+      ...(agentItems.length > 0 ? [{
+        key: 'agents' as SectionKey,
+        title: `AI 助手 (${agentItems.length})`,
+        items: agentItems.sort((a, b) => a.displayName.localeCompare(b.displayName)),
+      }] : []),
       ...sortedLetters.map(l => ({
         key: 'contacts' as SectionKey,
         title: l,
-        items: groups[l].sort((a, b) => a.displayName.localeCompare(b.displayName))
-      }))
-    ]
-    
-    // 字母索引包括星标和 A-Z
-    const indexLetters = [
-      ...(starredItems.length > 0 ? ['⭐'] : []),
-      ...sortedLetters
+        items: alphaGroups[l].sort((a, b) => a.displayName.localeCompare(b.displayName)),
+      })),
     ]
 
-    return {
-      sections: contactSections,
-      letters: indexLetters,
-    }
+    const indexLetters = [
+      ...(starredItems.length > 0 ? ['⭐'] : []),
+      ...(groupItems.length > 0 ? ['群'] : []),
+      ...(agentItems.length > 0 ? ['AI'] : []),
+      ...sortedLetters,
+    ]
+
+    return { sections: contactSections, letters: indexLetters }
   }, [rawContacts])
 
   return (
@@ -286,6 +333,10 @@ export function ContactListPane({}: MicroAppPaneProps) {
             <DropdownMenuItem onClick={() => openCreateDialog('friend')} className="gap-2">
               <User className="w-4 h-4" />
               <span>添加朋友</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => openCreateDialog('group')} className="gap-2">
+              <Users className="w-4 h-4" />
+              <span>创建群组</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

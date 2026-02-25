@@ -1,5 +1,5 @@
-import { podTable, string, timestamp, text, boolean } from "drizzle-solid";
-import { LINQ, DCTerms, SCHEMA } from "../namespaces";
+import { podTable, string, timestamp, text, boolean } from "@undefineds.co/drizzle-solid";
+import { UDFS, DCTerms, SCHEMA } from "../namespaces";
 
 /**
  * Settings Schema
@@ -13,9 +13,9 @@ import { LINQ, DCTerms, SCHEMA } from "../namespaces";
  */
 export const settingsTable = podTable("settings", {
   // 设置键值对
-  key: string("key").primaryKey().predicate(LINQ.settingKey).notNull(), // 设置键（唯一）
-  value: text("value").predicate(LINQ.settingValue).notNull(), // 设置值（JSON 字符串）
-  valueType: string("valueType").predicate(LINQ.settingType).notNull().default("string"), // string, number, boolean, json
+  key: string("key").primaryKey().predicate(UDFS.settingKey).notNull(), // 设置键（唯一）
+  value: text("value").predicate(UDFS.settingValue).notNull(), // 设置值（JSON 字符串）
+  valueType: string("valueType").predicate(UDFS.settingType).notNull().default("string"), // string, number, boolean, json
   
   // 元数据
   category: string("category").predicate(DCTerms.type).notNull(), // 设置分类：ui, ai, sync, privacy, notifications
@@ -26,7 +26,7 @@ export const settingsTable = podTable("settings", {
   owner: string("owner").predicate(DCTerms.creator).notNull(), // 设置所有者 WebID
   
   // 是否敏感（敏感设置可能需要加密）
-  isSensitive: boolean("isSensitive").predicate(LINQ.status).default(false),
+  isSensitive: boolean("isSensitive").predicate(UDFS.status).default(false),
   
   // 时间戳
   createdAt: timestamp("createdAt").predicate(DCTerms.created).notNull().defaultNow(),
@@ -35,7 +35,7 @@ export const settingsTable = podTable("settings", {
   base: "idp:///settings/", // LDP Container
   sparqlEndpoint: "idp:///settings/-/sparql",
   type: SCHEMA.PropertyValue,
-  namespace: LINQ,
+  namespace: UDFS,
 });
 
 /**

@@ -1,5 +1,5 @@
 import 'dotenv/config'
-import { drizzle } from 'drizzle-solid'
+import { drizzle } from '@undefineds.co/drizzle-solid'
 import { messageTable } from '../../../packages/models/src/message.schema'
 
 // 模拟 Inrupt session

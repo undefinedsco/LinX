@@ -19,7 +19,7 @@ export default defineConfig({
           vendor: ['react', 'react-dom'],
           router: ['@tanstack/react-router'],
           query: ['@tanstack/react-query'],
-          solid: ['@inrupt/solid-client', '@inrupt/solid-client-authn-browser', '@inrupt/solid-ui-react', 'drizzle-solid'],
+          solid: ['@inrupt/solid-client', '@inrupt/solid-client-authn-browser', '@undefineds.co/drizzle-solid'],
           ui: ['@radix-ui/react-slot', '@radix-ui/react-avatar', 'class-variance-authority', 'lucide-react']
         }
       }

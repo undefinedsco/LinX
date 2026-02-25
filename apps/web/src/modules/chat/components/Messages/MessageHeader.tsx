@@ -35,6 +35,10 @@ export interface MessageHeaderProps {
   showAvatarOnly?: boolean
   /** 只显示标题 */
   showTitleOnly?: boolean
+  /** 群聊消息发送者名称（优先级高于 userName / assistant.name） */
+  senderName?: string
+  /** 群聊消息发送者头像 URL（优先级高于 userAvatar / assistant.avatar） */
+  senderAvatarUrl?: string
   className?: string
 }
 
@@ -63,26 +67,30 @@ export const MessageHeader = memo<MessageHeaderProps>(({
   placement = 'left',
   showAvatarOnly = false,
   showTitleOnly = false,
+  senderName,
+  senderAvatarUrl,
   className,
 }) => {
   const isUser = role === 'user'
   const isAssistant = role === 'assistant'
 
-  // 显示名称
+  // 显示名称 - senderName (群聊) 优先
   const displayName = useMemo(() => {
+    if (senderName) return senderName
     if (isUser) return userName || '你'
     if (assistant?.name) return assistant.name
     if (model?.name) return model.name
     if (model?.id) return model.id
     return 'AI 助手'
-  }, [isUser, userName, assistant, model])
+  }, [senderName, isUser, userName, assistant, model])
 
-  // 头像源
+  // 头像源 - senderAvatarUrl (群聊) 优先
   const avatarSrc = useMemo(() => {
+    if (senderAvatarUrl) return senderAvatarUrl
     if (isUser) return userAvatar
     if (assistant?.avatar) return assistant.avatar
     return modelLogoUrl
-  }, [isUser, userAvatar, assistant, modelLogoUrl])
+  }, [senderAvatarUrl, isUser, userAvatar, assistant, modelLogoUrl])
 
   // 头像 fallback 文字
   const avatarFallbackText = useMemo(() => {
@@ -131,22 +139,22 @@ export const MessageHeader = memo<MessageHeaderProps>(({
     return (
       <div className={cn(
         'relative flex-shrink-0',
-        'w-[35px] h-[35px]',  // Cherry Studio: 35px
+        'w-9 h-9',  // Standard: 36px
         className
       )}>
         <Avatar className={cn(
-          'h-[35px] w-[35px]',
-          'rounded-[25%]',     // Cherry Studio: borderRadius 25%
+          'h-9 w-9',
+          'rounded-sm',     // Cherry Studio: borderRadius 25% -> Compact: rounded-sm
         )}>
           {avatarSrc && (
             <AvatarImage 
               src={avatarSrc} 
               alt={displayName}
-              className="rounded-[25%] object-cover"
+              className="rounded-sm object-cover"
             />
           )}
           <AvatarFallback className={cn(
-            'rounded-[25%] text-xs font-medium',
+            'rounded-sm text-xs font-medium',
             isUser ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
           )}>
             {avatarSrc ? avatarFallbackText : (
@@ -179,13 +187,13 @@ export const MessageHeader = memo<MessageHeaderProps>(({
     )}>
       {/* Avatar */}
       <Avatar className={cn(
-        'shrink-0 h-[35px] w-[35px] rounded-[25%]',
+        'shrink-0 h-9 w-9 rounded-sm',
       )}>
         {avatarSrc && (
-          <AvatarImage src={avatarSrc} alt={displayName} className="rounded-[25%] object-cover" />
+          <AvatarImage src={avatarSrc} alt={displayName} className="rounded-sm object-cover" />
         )}
         <AvatarFallback className={cn(
-          'rounded-[25%] text-xs font-medium',
+          'rounded-sm text-xs font-medium',
           isUser ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
         )}>
           {avatarSrc ? avatarFallbackText : (

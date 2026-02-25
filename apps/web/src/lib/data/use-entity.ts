@@ -13,7 +13,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
-import type { PodTable, InferTableData } from 'drizzle-solid'
+import type { PodTable, InferTableData } from '@undefineds.co/drizzle-solid'
 
 export interface UseEntityOptions<T> {
   /** 数据更新时的回调（除了更新内部 state，还可以做额外操作如更新缓存） */

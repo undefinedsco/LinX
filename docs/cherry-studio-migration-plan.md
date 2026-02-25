@@ -2,6 +2,8 @@
 
 本文档描述如何将 Cherry Studio 的交互组件迁移到 LinX，同时保留 LinX 的 Solid Pod 数据存储层。
 
+> 分支拆分与并发执行策略请参考：`docs/feature-branch-parallel-plan.md`。
+
 ## 核心架构差异
 
 | 方面 | Cherry Studio | LinX | 迁移策略 |

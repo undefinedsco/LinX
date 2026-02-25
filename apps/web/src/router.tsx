@@ -7,6 +7,10 @@ import { SolidLoginOverlay } from './modules/login'
 import { DebugSearchableSelect } from './components/debug/DebugSearchableSelect'
 import { DebugChatPage } from './components/debug/DebugChatPage'
 import { getRedirectPath } from './modules/login/login-utils'
+import InruptTest from './pages/InruptTest'
+import InruptSimpleTest from './pages/InruptSimpleTest'
+import SolidUiReactTest from './app/test/solid-ui-react'
+import { SetupView } from './modules/settings'
 
 // Root route component
 const RootComponent = () => {
@@ -14,6 +18,15 @@ const RootComponent = () => {
     <div className="min-h-screen bg-background text-foreground">
       <Outlet />
       <SolidLoginOverlay />
+    </div>
+  )
+}
+
+// Root without login overlay (for testing)
+const RootWithoutOverlay = () => {
+  return (
+    <div className="min-h-screen bg-background text-foreground">
+      <Outlet />
     </div>
   )
 }
@@ -50,6 +63,34 @@ const debugChatRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/debug/chat',
   component: DebugChatPage,
+})
+
+// Inrupt 测试路由
+const inruptTestRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/inrupt-test',
+  component: InruptTest,
+})
+
+// solid-ui-react 测试路由
+const solidUiReactTestRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/test/solid-ui-react',
+  component: SolidUiReactTest,
+})
+
+// Inrupt Simple 测试路由 (本地模块)
+const inruptSimpleTestRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/test/inrupt-simple',
+  component: InruptSimpleTest,
+})
+
+// Setup route for LinX Service configuration
+const setupRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/setup',
+  component: SetupView,
 })
 
 // Auth callback route
@@ -134,6 +175,10 @@ const appDemoRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   debugSearchSelectRoute,
   debugChatRoute,
+  inruptTestRoute,
+  solidUiReactTestRoute,
+  inruptSimpleTestRoute,
+  setupRoute,
   callbackRoute,
   homeRedirectRoute,
   microAppRoute,

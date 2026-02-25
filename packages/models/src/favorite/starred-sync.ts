@@ -8,7 +8,7 @@
  * 支持的实体类型：Chat, Thread, Contact
  * favoriteType 使用 RDF type URI 标识
  */
-import type { HookContext, TableHooks } from 'drizzle-solid'
+import type { HookContext, TableHooks } from '@undefineds.co/drizzle-solid'
 import { favoriteTable, type FavoriteInsert } from './favorite.schema'
 import { MEETING, SIOC } from '../namespaces'
 import { VCARD } from '@inrupt/vocab-common-rdf'
@@ -16,6 +16,9 @@ import { VCARD } from '@inrupt/vocab-common-rdf'
 // ============================================================================
 // Types
 // ============================================================================
+
+/** V2 来源模块类型 */
+export type SourceModule = 'chat' | 'contacts' | 'files' | 'messages' | 'thread'
 
 /** 快照数据提取器 */
 export interface SnapshotExtractor<T = Record<string, unknown>> {
@@ -25,12 +28,18 @@ export interface SnapshotExtractor<T = Record<string, unknown>> {
   getContent?: (record: T) => string | undefined
   /** 获取作者快照（可选） */
   getAuthor?: (record: T) => string | undefined
+  /** V2: 获取检索文本（可选，默认用 title） */
+  getSearchText?: (record: T) => string | undefined
+  /** V2: 获取快照元数据 JSON（可选） */
+  getSnapshotMeta?: (record: T) => string | undefined
 }
 
 /** Starred Sync Hook 配置 */
 export interface StarredSyncConfig<T = Record<string, unknown>> {
   /** RDF type URI (e.g., MEETING.LongChat, SIOC.Thread, VCARD.Individual) */
   rdfType: string
+  /** V2: 来源模块标识 */
+  sourceModule: SourceModule
   /** 快照数据提取器 */
   extractor: SnapshotExtractor<T>
 }
@@ -47,22 +56,30 @@ async function createFavorite(
   config: StarredSyncConfig,
   record: Record<string, unknown>
 ): Promise<void> {
-  const { rdfType, extractor } = config
+  const { rdfType, sourceModule, extractor } = config
   const targetUri = (record['@id'] as string) || (record.id as string)
-  
+  const sourceId = (record.id as string) || targetUri
+
   if (!targetUri) {
     console.warn('[StarredSync] Cannot create favorite: missing target URI')
     return
   }
 
+  const title = extractor.getTitle(record)
   const favoriteData: FavoriteInsert = {
     id: crypto.randomUUID(),
     targetType: rdfType,
     targetUri,
-    title: extractor.getTitle(record),
+    title,
     snapshotContent: extractor.getContent?.(record),
     snapshotAuthor: extractor.getAuthor?.(record),
+    // V2 fields
+    sourceModule,
+    sourceId,
+    searchText: extractor.getSearchText?.(record) ?? title,
+    snapshotMeta: extractor.getSnapshotMeta?.(record),
     favoredAt: new Date(),
+    updatedAt: new Date(),
   }
 
   try {
@@ -188,17 +205,20 @@ export const contactSnapshotExtractor: SnapshotExtractor = {
 /** Chat starred sync hook */
 export const chatStarredSyncHook = createStarredSyncHook({
   rdfType: MEETING.LongChat,
+  sourceModule: 'chat',
   extractor: chatSnapshotExtractor,
 })
 
 /** Thread starred sync hook */
 export const threadStarredSyncHook = createStarredSyncHook({
   rdfType: SIOC.Thread,
+  sourceModule: 'thread',
   extractor: threadSnapshotExtractor,
 })
 
 /** Contact starred sync hook */
 export const contactStarredSyncHook = createStarredSyncHook({
   rdfType: VCARD.Individual,
+  sourceModule: 'contacts',
   extractor: contactSnapshotExtractor,
 })

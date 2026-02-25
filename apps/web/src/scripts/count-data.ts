@@ -1,14 +1,16 @@
 // @ts-nocheck
 import dotenv from 'dotenv'
 import { Session } from '@inrupt/solid-client-authn-node'
-import { drizzle } from 'drizzle-solid'
+import { drizzle } from '@undefineds.co/drizzle-solid'
 import {
   chatTable,
   threadTable,
   messageTable,
   contactTable,
   agentTable,
-  modelProviderTable,
+  credentialTable,
+  aiProviderTable,
+  aiModelTable,
   linxSchema,
 } from '@linx/models'
 
@@ -47,7 +49,9 @@ async function main() {
     { name: 'messages', table: messageTable },
     { name: 'contacts', table: contactTable },
     { name: 'agents', table: agentTable },
-    { name: 'modelProviders', table: modelProviderTable },
+    { name: 'credentials', table: credentialTable },
+    { name: 'aiProviders', table: aiProviderTable },
+    { name: 'aiModels', table: aiModelTable },
   ]
 
   for (const item of tables) {

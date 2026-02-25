@@ -166,9 +166,9 @@ export const Message = memo<MessageProps>(({
         // Cherry Studio MessageContainer 样式
         'message group relative flex flex-col w-full',
         // padding: 10px, padding-bottom: 0
-        'p-[10px] pb-0',
+        'p-3 pb-0',
         // border-radius: 10px
-        'rounded-[10px]',
+        'rounded-lg',
         // 过渡
         'transition-colors duration-300',
         // 用户消息 vs 助手消息
@@ -197,13 +197,13 @@ export const Message = memo<MessageProps>(({
         className={cn(
           'message-content-container max-w-full mt-0',
           // 根据是否显示头像决定 padding
-          showAvatar && !isUserBubble && 'pl-[46px]',
-          showAvatar && isUserBubble && 'pr-[46px]',
+          showAvatar && !isUserBubble && 'pl-12',
+          showAvatar && isUserBubble && 'pr-12',
           // Bubble 模式特殊样式
           variant === 'bubble' && [
             'py-2 px-4',
             'bg-card border border-border/60',
-            'rounded-[10px]',
+            'rounded-lg',
             isUserBubble && 'bg-primary/5 border-primary/20',
           ]
         )}
@@ -250,11 +250,11 @@ export const Message = memo<MessageProps>(({
       {/* Always render to reserve space, control opacity for visibility */}
       <div 
         className={cn(
-          'MessageFooter flex items-center justify-between gap-[10px] mt-[3px]',
+          'MessageFooter flex items-center justify-between gap-2.5 mt-1',
           // 最小高度，保留空间防止抖动
           'min-h-[24px]',
-          showAvatar && !isUserBubble && 'ml-[46px]',
-          showAvatar && isUserBubble && 'mr-[46px] flex-row-reverse',
+          showAvatar && !isUserBubble && 'ml-12',
+          showAvatar && isUserBubble && 'mr-12 flex-row-reverse',
           // Opacity transition
           'transition-opacity duration-200',
           isMenubarVisible ? 'opacity-100' : 'opacity-0 pointer-events-none',

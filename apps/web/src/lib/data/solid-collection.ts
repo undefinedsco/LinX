@@ -5,7 +5,7 @@
  * enabling reactive data management with Solid Pod persistence.
  */
 
-import type { PodTable, InferTableData, InferInsertData, InferUpdateData, QueryCondition } from 'drizzle-solid'
+import type { PodTable, InferTableData, InferInsertData, InferUpdateData, QueryCondition } from '@undefineds.co/drizzle-solid'
 import type { SolidDatabase } from '@linx/models'
 
 /**

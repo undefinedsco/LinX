@@ -2,7 +2,7 @@
 import dotenv from 'dotenv'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import { Session } from '@inrupt/solid-client-authn-node'
-import { drizzle, eq, ilike, or, type SolidDatabase } from 'drizzle-solid'
+import { drizzle, eq, like, or, type SolidDatabase } from '@undefineds.co/drizzle-solid'
 import { contactTable, linxSchema } from '@linx/models'
 import { contactCollection, contactOps, initializeContactCollections, setContactsDatabaseGetter } from './collections'
 import { queryClient } from '@/providers/query-provider'
@@ -204,7 +204,7 @@ describe('contact collections integration', () => {
     const aliceResults = await database
       .select()
       .from(contactTable)
-      .where(ilike(contactTable.name, '%Alice%'))
+      .where(like(contactTable.name, '%Alice%'))
       .execute()
     
     expect(aliceResults.length).toBeGreaterThanOrEqual(1)
@@ -217,8 +217,8 @@ describe('contact collections integration', () => {
       .from(contactTable)
       .where(
         or(
-          ilike(contactTable.name, pattern),
-          ilike(contactTable.alias, pattern)
+          like(contactTable.name, pattern),
+          like(contactTable.alias, pattern)
         )
       )
       .execute()

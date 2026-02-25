@@ -1,18 +1,18 @@
-import { boolean, object, podTable, string, timestamp } from 'drizzle-solid'
-import { LINQ, DCTerms } from './namespaces'
+import { boolean, object, podTable, string, timestamp, id } from '@undefineds.co/drizzle-solid'
+import { UDFS, DCTerms } from './namespaces'
 
 export const modelProviderTable = podTable('modelProviders', {
-  id: string('id').primaryKey().predicate(LINQ.provider).notNull(),
-  enabled: boolean('enabled').predicate(LINQ.status).default(false),
-  apiKey: string('apiKey').predicate(LINQ.apiKey), 
-  baseUrl: string('baseUrl').predicate(LINQ.baseUrl), 
-  models: object('models').array().predicate(LINQ.aiModels),
+  id: id('id'),
+  enabled: boolean('enabled').predicate(UDFS.status).default(false),
+  apiKey: string('apiKey').predicate(UDFS.apiKey), 
+  baseUrl: string('baseUrl').predicate(UDFS.baseUrl), 
+  models: object('models').array().predicate(UDFS.aiModels),
   updatedAt: timestamp('updatedAt').predicate(DCTerms.modified).notNull().defaultNow(),
 }, {
   base: '/.data/model-providers/',
   sparqlEndpoint: '/.data/model-providers/-/sparql',
-  type: LINQ.ModelProvider,
-  namespace: LINQ,
+  type: UDFS.ModelProvider,
+  namespace: UDFS,
   subjectTemplate: '{id}.ttl',
 })
 

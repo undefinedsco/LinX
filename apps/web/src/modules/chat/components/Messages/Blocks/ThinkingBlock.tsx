@@ -89,7 +89,7 @@ export const ThinkingBlock = memo<ThinkingBlockProps>(({
             'transition-all duration-150',
             'cursor-pointer select-none',
             'h-[38px]',
-            isOpen ? 'rounded-t-[10px] rounded-b-none' : 'rounded-[10px]'
+            isOpen ? 'rounded-t-lg rounded-b-none' : 'rounded-lg'
           )}
         >
           {/* Icon Container - 50px */}
@@ -138,7 +138,7 @@ export const ThinkingBlock = memo<ThinkingBlockProps>(({
         <div
           className={cn(
             'relative px-4 py-4',
-            'rounded-b-[12px]',
+            'rounded-b-lg',
             'border-[0.5px] border-t-0 border-border'
           )}
         >

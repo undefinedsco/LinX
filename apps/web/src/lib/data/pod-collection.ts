@@ -1,7 +1,8 @@
 import { createCollection } from '@tanstack/react-db'
 import { queryCollectionOptions } from '@tanstack/query-db-collection'
 import { QueryClient } from '@tanstack/react-query'
-import type { SolidDatabase, PodTable } from '@linx/models'
+import type { SolidDatabase } from '@linx/models'
+import type { PodTable } from '@undefineds.co/drizzle-solid'
 
 interface PodCollectionOptions<TTable, TData> {
   table: TTable
@@ -76,6 +77,18 @@ export function createPodCollection<
     }
     
     let rows = (await query.execute()) as TData[]
+    
+    // Filter out rows with invalid/relative IRI ids (dirty data)
+    rows = rows.filter(row => {
+      const id = (row as any).id
+      if (!id) return true // Keep rows without id field
+      // Skip relative IRIs that don't start with http/https
+      if (typeof id === 'string' && !id.startsWith('http') && !id.includes('/')) {
+        console.warn(`[PodCollection] Skipping row with invalid id: ${id}`)
+        return false
+      }
+      return true
+    })
 
     if (!didSeed && rows.length === 0 && seed) {
       const seedRows = typeof seed === 'function' ? seed() : seed

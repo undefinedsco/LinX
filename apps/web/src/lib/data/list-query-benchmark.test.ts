@@ -11,7 +11,7 @@
 import dotenv from 'dotenv'
 import { afterAll, beforeAll, describe, it } from 'vitest'
 import { Session } from '@inrupt/solid-client-authn-node'
-import { drizzle, type SolidDatabase } from 'drizzle-solid'
+import { drizzle, type SolidDatabase } from '@undefineds.co/drizzle-solid'
 import {
   chatTable,
   threadTable,

@@ -2,7 +2,7 @@
 import dotenv from 'dotenv'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import { Session } from '@inrupt/solid-client-authn-node'
-import { drizzle, type SolidDatabase } from 'drizzle-solid'
+import { drizzle, eq, type SolidDatabase } from '@undefineds.co/drizzle-solid'
 import { QueryClient } from '@tanstack/react-query'
 import { modelProviderTable, linxSchema } from '@linx/models'
 import { createPodCollection } from './pod-collection'
@@ -17,6 +17,15 @@ const env = {
 }
 
 const hasEnv = Boolean(env.webId && env.clientId && env.clientSecret && env.oidcIssuer)
+
+// Extract Pod base from WebID (e.g., http://localhost:3000/test/profile/card#me -> http://localhost:3000/test/)
+function getPodBase(webId: string): string {
+  const url = new URL(webId)
+  const pathParts = url.pathname.split('/')
+  // Remove 'profile/card' from path to get pod root
+  const podPath = pathParts.slice(0, -2).join('/') + '/'
+  return `${url.origin}${podPath}`
+}
 
 let db: SolidDatabase | null = null
 let session: Session | null = null
@@ -68,7 +77,7 @@ describe('pod-collection integration', () => {
     collection.startSyncImmediate()
     await ready
 
-    const id = `optimistic-${Date.now()}`
+    const id = crypto.randomUUID()
     let optimisticSeen = false
     const subscription = collection.subscribeChanges((changes) => {
       if (changes.some((change) => change.type === 'insert' && change.value?.id === id)) {
@@ -105,7 +114,7 @@ describe('pod-collection integration', () => {
 
     await tx.isPersisted.promise
 
-    const rows = await database.select().from(modelProviderTable).where({ id } as any).execute()
+    const rows = await database.select().from(modelProviderTable).where(eq(modelProviderTable.id, id)).execute()
     const created = rows[0]
     const subject = (created as any)?.['@id']
     if (subject) createdSubjects.push(subject)
@@ -128,7 +137,7 @@ describe('pod-collection integration', () => {
 
     const unsubscribe = await collection.subscribeToPod(database)
 
-    const id = `notify-${Date.now()}`
+    const id = crypto.randomUUID()
     const [created] = await database
       .insert(modelProviderTable)
       .values({

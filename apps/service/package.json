@@ -1,0 +1,24 @@
+{
+  "name": "@linx/service",
+  "version": "0.1.0",
+  "description": "LinX Service - Unified backend with Pod, Web UI, and System Tray",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "dev": "tsx watch src/main.ts",
+    "dev:setup": "tsx src/setup/server.ts"
+  },
+  "dependencies": {
+    "@undefineds.co/xpod": "local",
+    "electron": "^35.0.0",
+    "express": "^4.18.2",
+    "open": "^10.1.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.10.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0"
+  }
+}
