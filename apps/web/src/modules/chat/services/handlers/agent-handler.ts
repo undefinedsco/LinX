@@ -1,6 +1,13 @@
 /**
  * Agent Chat Handler
- * 
+ *
+ * @deprecated 已被 @openai/chatkit-react SDK 替代。
+ * ChatKit SDK 内部处理 AI 对话、流式响应、工具调用等。
+ * xpod-api-server 实现 ChatKit 协议后端，前端直接使用 ChatKit SDK。
+ * 保留此文件以备回退，将在稳定后移除。
+ *
+ * @see docs/feature-plan/wave-a/03-xpod-client-core.md
+ *
  * Handles AI assistant conversations:
  * - Outgoing: Save user message, call AI API
  * - Incoming: Stream AI response, save to Pod

@@ -32,10 +32,10 @@
     "@inrupt/solid-client-authn-browser": "^2.0.0",
     "@inrupt/solid-ui-react": "^2.8.1",
     "@inrupt/vocab-common-rdf": "^1.0.5",
-    "@openai/chatkit": "^1.1.0",
     "@radix-ui/react-avatar": "^1.0.2",
     "@radix-ui/react-select": "^2.0.0",
     "@radix-ui/react-slot": "^1.0.2",
+    "@undefineds.co/xpod": "0.1.7",
     "class-variance-authority": "^0.7.0",
     "clsx": "^1.2.1",
     "drizzle-orm": "^0.32.2",
@@ -57,7 +57,7 @@
   },
   "resolutions": {
     "**/drizzle-orm": "^0.32.2",
-    "**/drizzle-solid": "0.1.15",
+    "**/drizzle-solid": "0.2.5",
     "**/react": "18.3.1",
     "**/react-dom": "18.3.1"
   }

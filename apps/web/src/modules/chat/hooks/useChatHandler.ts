@@ -1,6 +1,12 @@
 /**
  * useChatHandler Hook
- * 
+ *
+ * @deprecated 已被 @openai/chatkit-react SDK 替代。
+ * ChatKit SDK 内部处理消息发送、流式响应、工具调用等。
+ * 保留此文件以备回退，将在稳定后移除。
+ *
+ * @see docs/feature-plan/wave-a/03-xpod-client-core.md
+ *
  * Provides a unified interface for chat operations using the handler pattern.
  * Automatically selects the appropriate handler based on contact type.
  */

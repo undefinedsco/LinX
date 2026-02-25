@@ -376,9 +376,9 @@ export const useSolidLoginController = () => {
         if (webId && db) {
           const record = await db.findByIri(solidProfileTable, webId)
           if (cancelled) return
-          const avatarValue = toUrlValue(record?.avatarUrl)
-          const nickname = toStringValue(record?.nickname)
-          const displayName = nickname ?? toStringValue(record?.displayName) ?? 'Linq 用户'
+          const avatarValue = toUrlValue(record?.avatar)
+          const nickname = toStringValue(record?.nick)
+          const displayName = nickname ?? toStringValue(record?.name) ?? 'Linq 用户'
           const issuerDomainValue = issuerForAccount ? extractDomain(issuerForAccount) : undefined
           const issuerAlias = getProviderAlias(issuerDomainValue)
           const nextPreview: SolidAccountPreview = {
@@ -397,6 +397,9 @@ export const useSolidLoginController = () => {
             refreshStoredIssuers()
           }
         }
+
+        // ChatKit now runs entirely in the browser (chatkit-local),
+        // so no API server credentials are needed.
       } catch (error) {
         console.error('Failed to fetch Solid profile', error)
       } finally {
