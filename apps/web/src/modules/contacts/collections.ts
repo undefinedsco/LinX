@@ -720,6 +720,78 @@ export const contactOps = {
     return this.getByType(ContactType.AGENT)
   },
 
+  /**
+   * Get the Chat record linked to a group contact.
+   * Returns null if no chat is found.
+   */
+  getGroupChat(groupContactId: string): ChatRow | null {
+    const chats = Array.from(chatCollection.state.values())
+    return chats.find((c: ChatRow) => c.contact === groupContactId) ?? null
+  },
+
+  /**
+   * Get participant IDs for a group contact (reads from linked Chat).
+   */
+  getGroupMembers(groupContactId: string): string[] {
+    const chat = this.getGroupChat(groupContactId)
+    return chat?.participants ?? []
+  },
+
+  /**
+   * Add a member to a group (appends to Chat.participants).
+   */
+  async addMemberToGroup(groupContactId: string, memberId: string): Promise<void> {
+    const chat = this.getGroupChat(groupContactId)
+    if (!chat) throw new Error(`No chat found for group contact: ${groupContactId}`)
+
+    const current = chat.participants ?? []
+    if (current.includes(memberId)) return // already a member
+
+    const tx = chatCollection.update(chat.id, (draft: any) => {
+      draft.participants = [...current, memberId]
+      draft.updatedAt = new Date()
+    })
+    await tx.isPersisted.promise
+    queryClient.invalidateQueries({ queryKey: ['contacts'] })
+  },
+
+  /**
+   * Remove a member from a group (removes from Chat.participants).
+   */
+  async removeMemberFromGroup(groupContactId: string, memberId: string): Promise<void> {
+    const chat = this.getGroupChat(groupContactId)
+    if (!chat) throw new Error(`No chat found for group contact: ${groupContactId}`)
+
+    const current = chat.participants ?? []
+    if (!current.includes(memberId)) return // not a member
+
+    const tx = chatCollection.update(chat.id, (draft: any) => {
+      draft.participants = current.filter((id: string) => id !== memberId)
+      draft.updatedAt = new Date()
+    })
+    await tx.isPersisted.promise
+    queryClient.invalidateQueries({ queryKey: ['contacts'] })
+  },
+
+  /**
+   * Update group name (updates both Contact.name and Chat.title).
+   */
+  async updateGroupName(groupContactId: string, newName: string): Promise<void> {
+    // Update contact
+    await this.updateContact(groupContactId, { name: newName })
+
+    // Update linked chat title
+    const chat = this.getGroupChat(groupContactId)
+    if (chat) {
+      const tx = chatCollection.update(chat.id, (draft: any) => {
+        draft.title = newName
+        draft.updatedAt = new Date()
+      })
+      await tx.isPersisted.promise
+      queryClient.invalidateQueries({ queryKey: ['chats'] })
+    }
+  },
+
   // ==========================================================================
   // Subscription Operations
   // ==========================================================================

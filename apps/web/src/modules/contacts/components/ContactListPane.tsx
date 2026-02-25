@@ -3,7 +3,7 @@ import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { useContactStore } from '../store'
 import { contactOps, initializeContactCollections } from '../collections'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
-import type { UnifiedContact, ContactSection, SectionKey } from '../types'
+import type { UnifiedContact, ContactSection, SectionKey, ContactListFilter } from '../types'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   Search,
@@ -79,6 +79,23 @@ function ContactItem({ contact, isActive, onClick }: ContactItemProps) {
   const isGroup = contact.contactType === ContactType.GROUP
   const isAgent = contact.sourceType === 'agent'
 
+  // Subtitle: group shows member count, agent shows model, personal shows note/WebID
+  const subtitle = useMemo(() => {
+    if (isGroup && contact.groupInfo) {
+      return `${contact.groupInfo.memberCount}人`
+    }
+    if (isAgent && contact.agentConfig?.model) {
+      return contact.agentConfig.model
+    }
+    if (contact.note) {
+      return contact.note
+    }
+    if (contact.entityUri && contact.contactType === ContactType.SOLID) {
+      return contact.entityUri
+    }
+    return undefined
+  }, [contact, isGroup, isAgent])
+
   return (
     <div
       onClick={onClick}
@@ -117,6 +134,11 @@ function ContactItem({ contact, isActive, onClick }: ContactItemProps) {
             <Star className="w-3 h-3 fill-yellow-400 text-yellow-400 shrink-0" />
           )}
         </div>
+        {subtitle && (
+          <div className="text-[11px] text-muted-foreground/60 truncate mt-0.5">
+            {subtitle}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -242,14 +264,32 @@ export function ContactListPane({}: MicroAppPaneProps) {
     const rawItems = rawContacts || []
 
     // 转换为 UnifiedContact 格式
-    const unified: UnifiedContact[] = rawItems.map((c: ContactRow) => ({
-      ...c,
-      displayName: c.alias || c.name || 'Unknown',
-      displayAvatar: c.avatarUrl || '',
-      initial: getInitial(c.alias || c.name || ''),
-      sourceType: (c.contactType as any) === 'agent' ? 'agent' :
-                  (c.externalPlatform === 'wechat' ? 'wechat' : 'solid'),
-    } as UnifiedContact))
+    const unified: UnifiedContact[] = rawItems.map((c: ContactRow) => {
+      const isGroup = c.contactType === ContactType.GROUP
+      const base = {
+        ...c,
+        displayName: c.alias || c.name || 'Unknown',
+        displayAvatar: c.avatarUrl || '',
+        initial: getInitial(c.alias || c.name || ''),
+        sourceType: (c.contactType as any) === 'agent' ? 'agent' as const :
+                    (c.externalPlatform === 'wechat' ? 'wechat' as const : 'solid' as const),
+      }
+
+      // Populate groupInfo for group contacts
+      if (isGroup) {
+        const members = contactOps.getGroupMembers(c.id)
+        return {
+          ...base,
+          groupInfo: {
+            memberCount: members.length,
+            isOwner: false, // TODO: compare with current user WebID
+            memberPreview: [], // TODO: resolve member names
+          },
+        } as UnifiedContact
+      }
+
+      return base as UnifiedContact
+    })
 
     // Split by contactType
     const starredItems = unified.filter(c => c.starred)
