@@ -66,7 +66,7 @@ import { cn } from '@/lib/utils'
 type ChatType = 'direct_ai' | 'direct_human' | 'group' | 'cli_session'
 
 /** CLI session status for preview text mapping */
-type CliSessionStatus = 'active' | 'paused' | 'completed' | 'error'
+type CliSessionStatus = 'active' | 'waiting_approval' | 'paused' | 'completed' | 'error'
 
 interface ChatItemData {
   id: string
@@ -81,6 +81,21 @@ interface ChatItemData {
   chatType?: ChatType
   /** CLI session status (only for cli_session type) */
   cliStatus?: CliSessionStatus
+
+  // -- CP0: chatType differentiation fields --
+
+  /** direct_human: online status dot on avatar */
+  onlineStatus?: 'online' | 'offline'
+
+  /** group: participant avatar URLs for composite avatar (max 4) */
+  participantAvatars?: string[]
+  /** group: sender name prefix in preview ("Alice: ...") */
+  senderName?: string
+  /** group: @me badge */
+  mentionedMe?: boolean
+
+  /** cli_session: tool identifier */
+  sessionTool?: 'claude-code' | 'cursor' | 'windsurf'
 }
 
 // ============================================
@@ -103,13 +118,19 @@ const formatTimestamp = (value?: unknown): string => {
   return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
 }
 
-/** CLI session status → preview text mapping */
-const CLI_STATUS_PREVIEW: Record<CliSessionStatus, string> = {
-  active: '🟢运行中',
-  paused: '⏸️已暂停',
-  completed: '✅已完成',
-  error: '❌出错',
+/** CLI session status → preview text + color mapping (spec §7.7) */
+const CLI_STATUS_MAP: Record<CliSessionStatus, { text: string; color: string }> = {
+  active:             { text: '🟢 运行中',   color: 'text-green-600' },
+  waiting_approval:   { text: '⚠️ 等待确认', color: 'text-yellow-600' },
+  paused:             { text: '⏸ 已暂停',    color: 'text-muted-foreground' },
+  completed:          { text: '✅ 已完成',   color: 'text-green-600' },
+  error:              { text: '❌ 错误',     color: 'text-red-600' },
 }
+
+/** Backward-compat alias used by resolvePreview */
+const CLI_STATUS_PREVIEW: Record<CliSessionStatus, string> = Object.fromEntries(
+  Object.entries(CLI_STATUS_MAP).map(([k, v]) => [k, v.text])
+) as Record<CliSessionStatus, string>
 
 /** Get avatar fallback icon by chatType */
 function getChatTypeIcon(chatType?: ChatType) {
@@ -126,12 +147,21 @@ function getChatTypeIcon(chatType?: ChatType) {
   }
 }
 
-/** Resolve preview text: CLI sessions use status mapping, others use raw preview */
+/** Resolve preview text: CLI sessions use status mapping, group prefixes sender name */
 function resolvePreview(chat: ChatItemData): string {
   if (chat.chatType === 'cli_session' && chat.cliStatus) {
     return CLI_STATUS_PREVIEW[chat.cliStatus]
   }
+  if (chat.chatType === 'group' && chat.senderName) {
+    return `${chat.senderName}: ${chat.preview}`
+  }
   return chat.preview
+}
+
+/** Get CLI status color class */
+function getCliStatusColor(status?: CliSessionStatus): string | undefined {
+  if (!status) return undefined
+  return CLI_STATUS_MAP[status]?.color
 }
 
 // ============================================
@@ -148,16 +178,21 @@ interface ChatItemProps {
   onDelete: () => void
 }
 
-function ChatItem({ 
-  chat, 
-  isActive, 
-  onClick, 
+function ChatItem({
+  chat,
+  isActive,
+  onClick,
   onStar,
-  onMute, 
-  onMarkUnread, 
-  onDelete 
+  onMute,
+  onMarkUnread,
+  onDelete
 }: ChatItemProps) {
   const [isHovering, setIsHovering] = useState(false)
+
+  // CP0: chatType-differentiated preview color (cli_session uses status color)
+  const previewColorClass = chat.chatType === 'cli_session'
+    ? getCliStatusColor(chat.cliStatus) ?? 'text-muted-foreground'
+    : 'text-muted-foreground'
 
   return (
     <ContextMenu>
@@ -180,15 +215,37 @@ function ChatItem({
                 ]
           )}
         >
-          {/* Avatar - 48x48, 圆角 4px */}
+          {/* Avatar - 48x48, 圆角 4px — chatType-differentiated (spec §7.7) */}
           <div className="relative shrink-0">
-            <Avatar className="h-12 w-12 border border-border/30 rounded-sm">
-              <AvatarImage src={chat.providerLogo} className="rounded-sm object-cover" />
-              <AvatarFallback className="rounded-sm bg-primary/10 text-primary text-sm">
-                {chat.provider ? chat.provider.slice(0, 2).toUpperCase() : getChatTypeIcon(chat.chatType)}
-              </AvatarFallback>
-            </Avatar>
-            
+            {/* Group: composite 2x2 avatar grid */}
+            {chat.chatType === 'group' && chat.participantAvatars && chat.participantAvatars.length > 1 ? (
+              <div className="h-12 w-12 rounded-sm border border-border/30 grid grid-cols-2 grid-rows-2 gap-px overflow-hidden bg-muted">
+                {chat.participantAvatars.slice(0, 4).map((url, i) => (
+                  <Avatar key={i} className="h-full w-full rounded-none">
+                    <AvatarImage src={url} className="object-cover" />
+                    <AvatarFallback className="rounded-none bg-primary/10 text-primary text-[10px]">
+                      {getChatTypeIcon('group')}
+                    </AvatarFallback>
+                  </Avatar>
+                ))}
+              </div>
+            ) : (
+              <Avatar className="h-12 w-12 border border-border/30 rounded-sm">
+                <AvatarImage src={chat.providerLogo} className="rounded-sm object-cover" />
+                <AvatarFallback className="rounded-sm bg-primary/10 text-primary text-sm">
+                  {chat.provider ? chat.provider.slice(0, 2).toUpperCase() : getChatTypeIcon(chat.chatType)}
+                </AvatarFallback>
+              </Avatar>
+            )}
+
+            {/* direct_human: online status dot (spec §7.7) */}
+            {chat.chatType === 'direct_human' && chat.onlineStatus && (
+              <span className={cn(
+                'absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-background',
+                chat.onlineStatus === 'online' ? 'bg-green-500' : 'bg-muted-foreground/40'
+              )} />
+            )}
+
             {/* 未读角标 */}
             {chat.unreadCount > 0 && (
               <div className={cn(
@@ -209,7 +266,7 @@ function ChatItem({
               <div className="text-sm font-medium text-foreground truncate pr-[60px]">
                 {chat.title}
               </div>
-              
+
               {/* Time or Action - Absolute Right */}
               <div className="absolute right-0 top-0 h-full flex items-center justify-end gap-1 z-10">
                 {isHovering ? (
@@ -244,7 +301,7 @@ function ChatItem({
                           标记未读
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem 
+                        <DropdownMenuItem
                           className="text-destructive focus:bg-destructive focus:text-destructive-foreground"
                           onClick={(e) => { e.stopPropagation(); onDelete() }}
                         >
@@ -261,20 +318,28 @@ function ChatItem({
                 )}
               </div>
             </div>
-            
-            {/* Bottom Row: Preview + Muted */}
+
+            {/* Bottom Row: Preview + Badges (spec §7.7) */}
             <div className="flex items-center justify-between gap-2">
-              <p className="text-xs text-muted-foreground truncate flex-1">
+              <p className={cn('text-xs truncate flex-1', previewColorClass)}>
                 {resolvePreview(chat)}
               </p>
-              {chat.muted && (
-                <BellOff strokeWidth={1.5} className="w-3 h-3 text-wechat-muted shrink-0" />
-              )}
+              <div className="flex items-center gap-1 shrink-0">
+                {/* group: @me badge */}
+                {chat.chatType === 'group' && chat.mentionedMe && (
+                  <span className="text-[10px] px-1 py-0.5 rounded bg-primary/10 text-primary font-medium whitespace-nowrap">
+                    @我
+                  </span>
+                )}
+                {chat.muted && (
+                  <BellOff strokeWidth={1.5} className="w-3 h-3 text-wechat-muted" />
+                )}
+              </div>
             </div>
           </div>
         </div>
-      
-      {/* Context Menu */}
+
+      {/* Context Menu — chatType-differentiated (spec §7.7) */}
       <ContextMenuContent className="w-40">
         <ContextMenuItem onClick={onStar}>
           <Star className={cn('mr-2 h-4 w-4', chat.starred && 'text-amber-500 fill-amber-500')} />
@@ -284,17 +349,34 @@ function ChatItem({
           <BellOff strokeWidth={1.5} className={cn('mr-2 h-4 w-4', chat.muted && 'text-wechat-muted')} />
           {chat.muted ? '取消静音' : '静音'}
         </ContextMenuItem>
-        <ContextMenuItem onClick={onMarkUnread}>
-          <MailOpen strokeWidth={1.5} className="mr-2 h-4 w-4" />
-          标记未读
-        </ContextMenuItem>
+        {/* direct_ai / direct_human / group: 标记未读 */}
+        {chat.chatType !== 'cli_session' && (
+          <ContextMenuItem onClick={onMarkUnread}>
+            <MailOpen strokeWidth={1.5} className="mr-2 h-4 w-4" />
+            标记未读
+          </ContextMenuItem>
+        )}
         <ContextMenuSeparator />
-        <ContextMenuItem 
+        {/* cli_session: 复制日志 (placeholder) */}
+        {chat.chatType === 'cli_session' && (
+          <ContextMenuItem disabled>
+            <Terminal strokeWidth={1.5} className="mr-2 h-4 w-4" />
+            复制日志
+          </ContextMenuItem>
+        )}
+        {/* group: 群设置 (placeholder) */}
+        {chat.chatType === 'group' && (
+          <ContextMenuItem disabled>
+            <Users strokeWidth={1.5} className="mr-2 h-4 w-4" />
+            群设置
+          </ContextMenuItem>
+        )}
+        <ContextMenuItem
           className="text-destructive focus:bg-destructive focus:text-destructive-foreground"
           onClick={onDelete}
         >
           <Trash2 strokeWidth={1.5} className="mr-2 h-4 w-4" />
-          删除
+          {chat.chatType === 'group' ? '退出群聊' : '删除'}
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>

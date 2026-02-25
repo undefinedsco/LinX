@@ -39,6 +39,8 @@ export interface MessageHeaderProps {
   senderName?: string
   /** 群聊消息发送者头像 URL（优先级高于 userAvatar / assistant.avatar） */
   senderAvatarUrl?: string
+  /** CP0: chatType — group chat always shows sender name + avatar (spec §7.5) */
+  chatType?: 'direct_ai' | 'direct_human' | 'group' | 'cli_session'
   className?: string
 }
 
@@ -69,10 +71,17 @@ export const MessageHeader = memo<MessageHeaderProps>(({
   showTitleOnly = false,
   senderName,
   senderAvatarUrl,
+  chatType,
   className,
 }) => {
   const isUser = role === 'user'
   const isAssistant = role === 'assistant'
+  const isGroup = chatType === 'group'
+
+  // CP0: In group chat, always show sender name + avatar for every message (spec §7.5)
+  // Force full header display in group mode (never avatar-only or title-only)
+  const effectiveShowAvatarOnly = isGroup ? false : showAvatarOnly
+  const effectiveShowTitleOnly = isGroup ? false : showTitleOnly
 
   // 显示名称 - senderName (群聊) 优先
   const displayName = useMemo(() => {
@@ -101,7 +110,7 @@ export const MessageHeader = memo<MessageHeaderProps>(({
   const timeStr = formatTime(timestamp)
 
   // 只显示标题
-  if (showTitleOnly) {
+  if (effectiveShowTitleOnly) {
     return (
       <div className={cn(
         'flex items-center gap-1.5 mb-1.5',
@@ -135,7 +144,7 @@ export const MessageHeader = memo<MessageHeaderProps>(({
   }
 
   // 只显示头像
-  if (showAvatarOnly) {
+  if (effectiveShowAvatarOnly) {
     return (
       <div className={cn(
         'relative flex-shrink-0',
