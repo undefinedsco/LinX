@@ -19,11 +19,13 @@ import {
   agentTable,
   messageTable,
   eq,
+  type ToolRisk,
 } from '@linx/models'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 import { useSession } from '@inrupt/solid-ui-react'
 import { createChatHandler, type ChatHandler, type AgentChatHandler } from '../services'
 import { extractPodUrlFromWebId, resolvePodUrl } from '@/lib/pod-url'
+import { CHAT_CP1_ENABLED } from '../feature-flags'
 
 // ============================================
 // Types
@@ -33,33 +35,56 @@ export interface UseChatHandlerOptions {
   chatId: string | null
 }
 
+/** A tool call awaiting user approval */
+export interface PendingApproval {
+  toolCallId: string
+  toolName: string
+  args: Record<string, unknown>
+  risk: ToolRisk
+  timeout: number
+  createdAt: number
+  status: 'pending' | 'approved' | 'rejected'
+}
+
+/** Timeout rules per risk level (spec §7.1) */
+const APPROVAL_TIMEOUTS: Record<ToolRisk, { seconds: number; autoAction: 'approve' | 'reject' } | null> = {
+  high:   { seconds: 30, autoAction: 'reject' },
+  medium: { seconds: 60, autoAction: 'approve' },
+  low:    null,
+}
+
 export interface UseChatHandlerResult {
   // State
   isLoading: boolean
   isStreaming: boolean
   error: Error | null
-  
+
   // Chat data
   chat: any | null
   contact: any | null
   agent: any | null
   messages: any[]
-  
+
   // Streaming content
   streamingContent: string
   streamingThought: string
-  
+
   // Capabilities
   canSend: boolean
   canReceive: boolean
   hasStreaming: boolean
   hasThinking: boolean
   isArchive: boolean
-  
+
   // Actions
   sendMessage: (content: string) => Promise<void>
   stop: () => void
-  
+
+  // CP1: Tool approval flow
+  pendingApprovals: PendingApproval[]
+  approveToolCall: (toolCallId: string) => void
+  rejectToolCall: (toolCallId: string) => void
+
   // Handler (for advanced usage)
   handler: ChatHandler | null
 }
@@ -83,6 +108,10 @@ export function useChatHandler(options: UseChatHandlerOptions): UseChatHandlerRe
   
   // Handler ref (to persist across renders)
   const handlerRef = useRef<ChatHandler | null>(null)
+
+  // CP1: Tool approval flow state
+  const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([])
+  const approvalTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
 
   useEffect(() => {
     const webId = session?.info?.webId
@@ -224,8 +253,54 @@ export function useChatHandler(options: UseChatHandlerOptions): UseChatHandlerRe
         setStreamingContent('')
         setStreamingThought('')
       }
+
+      // CP1: Wire tool approval callbacks (only when feature flag is on)
+      if (CHAT_CP1_ENABLED) {
+        newHandler.incoming.onToolApproval = (toolCallId, toolName, args, risk, timeout) => {
+          const approval: PendingApproval = {
+            toolCallId,
+            toolName,
+            args,
+            risk,
+            timeout,
+            createdAt: Date.now(),
+            status: 'pending',
+          }
+          setPendingApprovals(prev => [...prev, approval])
+
+          // Set up auto-action timer based on risk level
+          const rule = APPROVAL_TIMEOUTS[risk]
+          if (rule) {
+            const timer = setTimeout(() => {
+              approvalTimersRef.current.delete(toolCallId)
+              setPendingApprovals(prev =>
+                prev.map(a => {
+                  if (a.toolCallId !== toolCallId || a.status !== 'pending') return a
+                  return { ...a, status: rule.autoAction === 'approve' ? 'approved' : 'rejected' }
+                })
+              )
+              // Forward auto-decision to handler
+              if (newHandler.outgoing.sendApproval) {
+                const decision = rule.autoAction === 'approve' ? 'approved' : 'rejected'
+                newHandler.outgoing.sendApproval(toolCallId, decision).catch(() => {})
+              }
+            }, rule.seconds * 1000)
+            approvalTimersRef.current.set(toolCallId, timer)
+          }
+        }
+
+        newHandler.incoming.onToolCallEnd = (toolCallId) => {
+          // Remove from pending when tool call completes
+          setPendingApprovals(prev => prev.filter(a => a.toolCallId !== toolCallId))
+          const timer = approvalTimersRef.current.get(toolCallId)
+          if (timer) {
+            clearTimeout(timer)
+            approvalTimersRef.current.delete(toolCallId)
+          }
+        }
+      }
     }
-    
+
     return newHandler
   }, [db, chat, contact, agent, session?.info?.webId, session?.fetch, podUrl, chatId, queryClient])
   
@@ -271,14 +346,52 @@ export function useChatHandler(options: UseChatHandlerOptions): UseChatHandlerRe
     }
     setIsStreaming(false)
   }, [handler])
-  
+
+  // ============================================
+  // CP1: Tool Approval Actions
+  // ============================================
+
+  const resolveApproval = useCallback((toolCallId: string, decision: 'approved' | 'rejected') => {
+    // Clear timeout timer
+    const timer = approvalTimersRef.current.get(toolCallId)
+    if (timer) {
+      clearTimeout(timer)
+      approvalTimersRef.current.delete(toolCallId)
+    }
+
+    // Update local state
+    setPendingApprovals(prev =>
+      prev.map(a => a.toolCallId === toolCallId ? { ...a, status: decision } : a)
+    )
+
+    // Forward decision to handler's outgoing strategy
+    if (CHAT_CP1_ENABLED && handler?.outgoing.sendApproval) {
+      handler.outgoing.sendApproval(toolCallId, decision).catch(err => {
+        console.error('[useChatHandler] sendApproval failed:', err)
+      })
+    }
+  }, [handler])
+
+  const approveToolCall = useCallback((toolCallId: string) => {
+    resolveApproval(toolCallId, 'approved')
+  }, [resolveApproval])
+
+  const rejectToolCall = useCallback((toolCallId: string) => {
+    resolveApproval(toolCallId, 'rejected')
+  }, [resolveApproval])
+
   // ============================================
   // Cleanup
   // ============================================
-  
+
   useEffect(() => {
     return () => {
       handlerRef.current?.dispose()
+      // Clear all approval timers
+      for (const timer of approvalTimersRef.current.values()) {
+        clearTimeout(timer)
+      }
+      approvalTimersRef.current.clear()
     }
   }, [])
   
@@ -315,7 +428,12 @@ export function useChatHandler(options: UseChatHandlerOptions): UseChatHandlerRe
     // Actions
     sendMessage,
     stop,
-    
+
+    // CP1: Tool approval flow
+    pendingApprovals,
+    approveToolCall,
+    rejectToolCall,
+
     // Handler
     handler,
   }

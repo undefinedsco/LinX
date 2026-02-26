@@ -83,6 +83,15 @@ export interface MessageProps {
   onCopy?: (content: string) => void
   /** 删除回调 */
   onDelete?: (messageId: string) => void
+  /** CP1: 工具审批回调 */
+  onToolApprove?: (toolCallId: string) => void
+  onToolReject?: (toolCallId: string) => void
+  /** CP1: chatType for group chat header display */
+  chatType?: 'direct_ai' | 'direct_human' | 'group' | 'cli_session'
+  /** 群聊发送者名称 */
+  senderName?: string
+  /** 群聊发送者头像 */
+  senderAvatarUrl?: string
   className?: string
 }
 
@@ -126,6 +135,11 @@ export const Message = memo<MessageProps>(({
   onEdit,
   onCopy,
   onDelete,
+  onToolApprove,
+  onToolReject,
+  chatType,
+  senderName,
+  senderAvatarUrl,
   className,
 }) => {
   const [isHovering, setIsHovering] = useState(false)
@@ -190,6 +204,9 @@ export const Message = memo<MessageProps>(({
         isProcessing={isProcessing}
         showAvatarOnly={!showTitle}
         placement={isUserBubble ? 'right' : 'left'}
+        chatType={chatType}
+        senderName={senderName}
+        senderAvatarUrl={senderAvatarUrl}
       />
 
       {/* Content Container - Cherry Studio: padding-left 46px */}
@@ -214,6 +231,8 @@ export const Message = memo<MessageProps>(({
           isProcessing={isProcessing}
           messageId={message.id}
           onRetry={onRetry}
+          onToolApprove={onToolApprove}
+          onToolReject={onToolReject}
         />
 
         {message.card && (
