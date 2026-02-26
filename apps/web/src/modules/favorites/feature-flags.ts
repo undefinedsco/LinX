@@ -1,6 +1,7 @@
 /**
  * Favorites Hub Feature Flags
  *
- * CP1 vertical slice — default off until integration is validated.
+ * CP2 default cutover — enabled by default.
+ * Rollback: set to false to restore CP0 placeholder behavior.
  */
-export const FAVORITES_CP1_ENABLED = false
+export const FAVORITES_CP1_ENABLED = true

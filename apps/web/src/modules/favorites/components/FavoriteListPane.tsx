@@ -5,7 +5,6 @@
  */
 import { useMemo } from 'react'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
-import { FAVORITES_CP1_ENABLED } from '../feature-flags'
 import { useFavoriteStore, type SourceFilter } from '../store'
 import { useFavoriteList, useFavoriteInit } from '../collections'
 import {
@@ -237,15 +236,6 @@ function FavoriteListEnabled() {
 
 export function FavoriteListPane(_props: MicroAppPaneProps) {
   useFavoriteInit()
-
-  if (!FAVORITES_CP1_ENABLED) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center text-muted-foreground gap-3 bg-layout-list-item">
-        <Star className="w-10 h-10 text-muted-foreground/30" />
-        <p className="text-sm">收藏功能即将上线</p>
-      </div>
-    )
-  }
 
   return <FavoriteListEnabled />
 }

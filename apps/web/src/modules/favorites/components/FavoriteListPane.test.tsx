@@ -24,14 +24,6 @@ vi.mock('../collections', () => ({
   useFavoriteInit: () => ({ db: null, isReady: true }),
 }))
 
-// Default: feature flag ON for testing the enabled path
-let mockFeatureFlag = true
-vi.mock('../feature-flags', () => ({
-  get FAVORITES_CP1_ENABLED() {
-    return mockFeatureFlag
-  },
-}))
-
 vi.mock('@linx/models', () => ({
   resolveRowId: (item: unknown) => (item as Record<string, unknown>)?.id ?? 'mock-id',
 }))
@@ -85,7 +77,6 @@ import { FavoriteListPane } from './FavoriteListPane'
 describe('FavoriteListPane', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockFeatureFlag = true
 
     mockUseFavoriteStore.mockImplementation((selector: (state: unknown) => unknown) => {
       return selector(createDefaultStoreState())
@@ -95,24 +86,6 @@ describe('FavoriteListPane', () => {
       data: [],
       isLoading: false,
       error: null,
-    })
-  })
-
-  describe('Feature Flag', () => {
-    it('shows coming-soon message when feature flag is off', () => {
-      mockFeatureFlag = false
-
-      render(<FavoriteListPane theme="light" />, { wrapper: createWrapper() })
-
-      expect(screen.getByText('收藏功能即将上线')).toBeInTheDocument()
-    })
-
-    it('renders full UI when feature flag is on', () => {
-      mockFeatureFlag = true
-
-      render(<FavoriteListPane theme="light" />, { wrapper: createWrapper() })
-
-      expect(screen.queryByText('收藏功能即将上线')).not.toBeInTheDocument()
     })
   })
 

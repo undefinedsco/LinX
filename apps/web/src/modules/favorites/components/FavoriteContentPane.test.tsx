@@ -27,13 +27,6 @@ vi.mock('../collections', () => ({
   }),
 }))
 
-let mockFeatureFlag = true
-vi.mock('../feature-flags', () => ({
-  get FAVORITES_CP1_ENABLED() {
-    return mockFeatureFlag
-  },
-}))
-
 const mockNavigate = vi.fn()
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
@@ -90,7 +83,6 @@ import { FavoriteContentPane } from './FavoriteContentPane'
 describe('FavoriteContentPane', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockFeatureFlag = true
 
     mockUseFavoriteStore.mockImplementation((selector: (state: unknown) => unknown) => {
       return selector(createDefaultStoreState())
@@ -100,16 +92,6 @@ describe('FavoriteContentPane', () => {
       data: [mockFavorite],
       isLoading: false,
       error: null,
-    })
-  })
-
-  describe('Feature Flag', () => {
-    it('shows empty state when feature flag is off', () => {
-      mockFeatureFlag = false
-
-      render(<FavoriteContentPane theme="light" />, { wrapper: createWrapper() })
-
-      expect(screen.getByText('选择一个收藏项查看详情')).toBeInTheDocument()
     })
   })
 
