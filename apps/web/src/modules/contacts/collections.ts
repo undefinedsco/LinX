@@ -26,6 +26,7 @@ import type { SolidDatabase } from '@linx/models'
 import { queryClient } from '@/providers/query-provider'
 // Import chat collection singleton from chat module
 import { chatCollection } from '@/modules/chat/collections'
+import { favoriteHooks } from '@/modules/favorites/collections'
 
 // ============================================================================
 // Database Getter
@@ -284,7 +285,16 @@ export const contactOps = {
    * Toggle starred status
    */
   async toggleStar(id: string, currentStarred: boolean): Promise<void> {
-    await this.updateContact(id, { starred: !currentStarred })
+    const newStarred = !currentStarred
+    await this.updateContact(id, { starred: newStarred })
+
+    // CP1: report starred change to favorites hub
+    const contact = this.getById(id)
+    favoriteHooks.onStarredChange('contacts', id, newStarred, {
+      title: contact?.name ?? id,
+      searchText: contact?.name ?? undefined,
+      snapshotContent: contact?.note ?? undefined,
+    })
   },
   
   /**

@@ -33,6 +33,7 @@ import {
 import type { SolidDatabase } from '@linx/models'
 import { queryClient } from '@/providers/query-provider'
 import { createPodCollection } from '@/lib/data/pod-collection'
+import { favoriteHooks } from '@/modules/favorites/collections'
 
 // ============================================================================
 // Database Getter
@@ -312,7 +313,16 @@ export const chatOps = {
    * Toggle chat starred status
    */
   async toggleChatStar(id: string, currentStarred: boolean): Promise<void> {
-    await this.updateChat(id, { starred: !currentStarred })
+    const newStarred = !currentStarred
+    await this.updateChat(id, { starred: newStarred })
+
+    // CP1: report starred change to favorites hub
+    const chat = this.getById(id)
+    favoriteHooks.onStarredChange('chat', id, newStarred, {
+      title: chat?.title ?? id,
+      searchText: chat?.title ?? undefined,
+      snapshotContent: chat?.lastMessagePreview ?? undefined,
+    })
   },
 
   /**

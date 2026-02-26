@@ -1,4 +1,5 @@
 export { FavoriteListPane } from './components/FavoriteListPane'
 export { FavoriteContentPane } from './components/FavoriteContentPane'
 export { useFavoriteStore } from './store'
+export { FAVORITES_CP1_ENABLED } from './feature-flags'
 export * from './collections'

@@ -77,6 +77,85 @@ export const favoriteOps = {
 }
 
 // ============================================================================
+// Favorite Hooks — cross-module starred change reporting
+// ============================================================================
+
+export interface StarredChangeMetadata {
+  title: string
+  searchText?: string
+  snapshotContent?: string
+  snapshotAuthor?: string
+  snapshotMeta?: string
+}
+
+/**
+ * Called by other modules when an entity's starred status changes.
+ * starred=true  → upsert into favoriteCollection
+ * starred=false → delete from favoriteCollection by sourceModule+sourceId
+ */
+async function onStarredChange(
+  sourceModule: SourceModule,
+  sourceId: string,
+  starred: boolean,
+  metadata?: StarredChangeMetadata,
+): Promise<void> {
+  if (starred) {
+    // Check if already exists (by sourceModule + sourceId)
+    const existing = Array.from(favoriteCollection.state.values()).find(
+      (f: FavoriteRow) => f.sourceModule === sourceModule && f.sourceId === sourceId,
+    )
+
+    if (existing) {
+      // Update existing favorite with fresh metadata
+      const tx = favoriteCollection.update(existing.id, (draft: any) => {
+        if (metadata?.title) draft.title = metadata.title
+        if (metadata?.searchText) draft.searchText = metadata.searchText
+        if (metadata?.snapshotContent) draft.snapshotContent = metadata.snapshotContent
+        if (metadata?.snapshotAuthor) draft.snapshotAuthor = metadata.snapshotAuthor
+        if (metadata?.snapshotMeta) draft.snapshotMeta = metadata.snapshotMeta
+        draft.updatedAt = new Date()
+      })
+      await tx.isPersisted.promise
+    } else {
+      // Insert new favorite
+      const data: FavoriteInsert = {
+        id: crypto.randomUUID(),
+        targetType: sourceModule,
+        targetUri: sourceId,
+        title: metadata?.title ?? sourceId,
+        sourceModule,
+        sourceId,
+        searchText: metadata?.searchText ?? metadata?.title ?? sourceId,
+        snapshotContent: metadata?.snapshotContent,
+        snapshotAuthor: metadata?.snapshotAuthor,
+        snapshotMeta: metadata?.snapshotMeta,
+        favoredAt: new Date(),
+        updatedAt: new Date(),
+      }
+      const tx = favoriteCollection.insert(data as FavoriteRow)
+      await tx.isPersisted.promise
+    }
+
+    queryClient.invalidateQueries({ queryKey: QUERY_KEYS.favorites })
+  } else {
+    // Find and delete by sourceModule + sourceId
+    const target = Array.from(favoriteCollection.state.values()).find(
+      (f: FavoriteRow) => f.sourceModule === sourceModule && f.sourceId === sourceId,
+    )
+    if (target) {
+      const tx = favoriteCollection.delete(target.id)
+      await tx.isPersisted.promise
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.favorites })
+    }
+  }
+}
+
+/** Exported hooks object for other modules to call */
+export const favoriteHooks = {
+  onStarredChange,
+}
+
+// ============================================================================
 // Initialization
 // ============================================================================
 

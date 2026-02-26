@@ -6,6 +6,7 @@
 import { useMemo, useCallback } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
+import { FAVORITES_CP1_ENABLED } from '../feature-flags'
 import { useFavoriteStore } from '../store'
 import { useFavoriteList, useFavoriteMutations } from '../collections'
 import type { FavoriteRow } from '@linx/models'
@@ -178,7 +179,7 @@ function FavoriteDetail({
 // Main Component
 // ============================================================================
 
-export function FavoriteContentPane(_props: MicroAppPaneProps) {
+function FavoriteContentEnabled() {
   const selectedFavoriteId = useFavoriteStore((s) => s.selectedFavoriteId)
   const select = useFavoriteStore((s) => s.select)
   const { data: favorites } = useFavoriteList()
@@ -200,7 +201,6 @@ export function FavoriteContentPane(_props: MicroAppPaneProps) {
     if (!favorite) return
     const mod = favorite.sourceModule
     if (mod && mod !== 'files') {
-      // Navigate to the source module micro-app
       navigate({ to: '/', search: { app: mod } as any })
     }
   }, [favorite, navigate])
@@ -214,6 +214,14 @@ export function FavoriteContentPane(_props: MicroAppPaneProps) {
       onOpenSource={handleOpenSource}
     />
   )
+}
+
+export function FavoriteContentPane(_props: MicroAppPaneProps) {
+  if (!FAVORITES_CP1_ENABLED) {
+    return <EmptyState />
+  }
+
+  return <FavoriteContentEnabled />
 }
 
 export default FavoriteContentPane
