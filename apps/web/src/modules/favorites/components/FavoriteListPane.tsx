@@ -3,7 +3,7 @@
  *
  * 功能：搜索框、来源筛选 tabs、平铺卡片列表
  */
-import { useMemo, useState, useCallback } from 'react'
+import { useMemo } from 'react'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { useFavoriteStore, type SourceFilter } from '../store'
 import { useFavoriteList, useFavoriteInit } from '../collections'

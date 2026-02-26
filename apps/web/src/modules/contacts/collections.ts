@@ -12,7 +12,6 @@ import { like, or } from '@undefineds.co/drizzle-solid'
 import {
   contactTable,
   agentTable,
-  chatTable,
   solidProfileTable,
   type ContactRow,
   type ContactInsert,

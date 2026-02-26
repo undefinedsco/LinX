@@ -47,7 +47,6 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
-  ContextMenuTrigger,
 } from '@/components/ui/context-menu'
 import {
   DropdownMenu,
@@ -540,7 +539,7 @@ export interface ChatListPaneProps extends MicroAppPaneProps {}
 
 export function ChatListPane(_props: ChatListPaneProps) {
   // Initialize chat collections with database
-  const { db, isReady } = useChatInit()
+  const { isReady } = useChatInit()
   
   const search = useChatStore((state) => state.search)
   const setSearch = useChatStore((state) => state.setSearch)

@@ -3,7 +3,7 @@ import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { useContactStore } from '../store'
 import { contactOps, initializeContactCollections } from '../collections'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
-import type { UnifiedContact, ContactSection, SectionKey, ContactListFilter } from '../types'
+import type { UnifiedContact, ContactSection, SectionKey } from '../types'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   Search,
