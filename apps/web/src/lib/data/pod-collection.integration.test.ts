@@ -18,6 +18,18 @@ const env = {
 
 const hasEnv = Boolean(env.webId && env.clientId && env.clientSecret && env.oidcIssuer)
 
+// Check if Pod server is reachable before running integration tests
+let podReachable = false
+if (hasEnv && env.oidcIssuer) {
+  try {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 2000)
+    await fetch(env.oidcIssuer, { signal: ctrl.signal }).then(() => { podReachable = true })
+    clearTimeout(timer)
+  } catch { /* server not reachable */ }
+}
+const canRun = hasEnv && podReachable
+
 // Extract Pod base from WebID (e.g., http://localhost:3000/test/profile/card#me -> http://localhost:3000/test/)
 function getPodBase(webId: string): string {
   const url = new URL(webId)
@@ -62,7 +74,7 @@ afterAll(async () => {
 }, 20000)
 
 describe('pod-collection integration', () => {
-  it.skipIf(!hasEnv)('optimistic insert updates local state before persistence', { timeout: 30000 }, async () => {
+  it.skipIf(!canRun)('optimistic insert updates local state before persistence', { timeout: 30000 }, async () => {
     const database = await getDb()
     const queryClient = new QueryClient()
 
@@ -121,7 +133,7 @@ describe('pod-collection integration', () => {
     expect(created?.id).toBe(id)
   })
 
-  it.skipIf(!hasEnv)('pod notifications invalidate queries on create/update/delete', { timeout: 20000 }, async () => {
+  it.skipIf(!canRun)('pod notifications invalidate queries on create/update/delete', { timeout: 20000 }, async () => {
     const database = await getDb()
     const queryClient = new QueryClient()
     const invalidateSpy = vi

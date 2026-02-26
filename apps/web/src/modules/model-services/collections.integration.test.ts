@@ -27,6 +27,18 @@ const env = {
 
 const hasEnv = Boolean(env.webId && env.clientId && env.clientSecret && env.oidcIssuer)
 
+// Check if Pod server is reachable before running integration tests
+let podReachable = false
+if (hasEnv && env.oidcIssuer) {
+  try {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 2000)
+    await fetch(env.oidcIssuer, { signal: ctrl.signal }).then(() => { podReachable = true })
+    clearTimeout(timer)
+  } catch { /* server not reachable */ }
+}
+const canRun = hasEnv && podReachable
+
 let session: Session | null = null
 let db: SolidDatabase | null = null
 const createdSubjects: Array<{ table: 'credential' | 'provider' | 'model'; id: string }> = []
@@ -85,7 +97,7 @@ function waitFor(predicate: () => boolean, timeoutMs = 10000): Promise<boolean> 
 }
 
 describe('model services collections integration', () => {
-  it.skipIf(!hasEnv)('credential collection optimistic insert persists', { timeout: 30000 }, async () => {
+  it.skipIf(!canRun)('credential collection optimistic insert persists', { timeout: 30000 }, async () => {
     const database = await getDb()
 
     const ready = new Promise<void>((resolve) => credentialCollection.onFirstReady(resolve))
@@ -129,7 +141,7 @@ describe('model services collections integration', () => {
     expect(created?.provider).toContain('#openai')
   })
 
-  it.skipIf(!hasEnv)('provider/model collections update and delete', { timeout: 30000 }, async () => {
+  it.skipIf(!canRun)('provider/model collections update and delete', { timeout: 30000 }, async () => {
     const database = await getDb()
 
     const providerReady = new Promise<void>((resolve) => providerCollection.onFirstReady(resolve))
