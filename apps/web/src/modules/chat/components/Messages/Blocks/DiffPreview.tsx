@@ -11,10 +11,11 @@
  * - Collapse diffs > 10 lines by default, show "展开 N 行变更"
  *
  * CP0: contract types + rendering skeleton.
+ * CP1: proper unified diff parsing, dual-gutter line numbers, collapse/expand.
  */
 
-import { memo, useState, useMemo } from 'react'
-import { ChevronDown, FileEdit } from 'lucide-react'
+import { memo, useState, useMemo, useCallback } from 'react'
+import { ChevronDown, ChevronUp, FileEdit } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 // ============================================================================
@@ -46,16 +47,54 @@ export interface DiffPreviewProps {
 // Helpers
 // ============================================================================
 
-function parseDiffText(raw: string): DiffLine[] {
-  return raw.split('\n').map((line, idx) => {
+/**
+ * Parse unified diff text into DiffLine[].
+ *
+ * Handles standard unified diff format:
+ * - Skips `---`, `+++` file headers
+ * - Parses `@@ -oldStart,oldCount +newStart,newCount @@` hunk headers
+ * - Tracks old/new line numbers independently
+ */
+export function parseDiffText(raw: string): DiffLine[] {
+  const result: DiffLine[] = []
+  const lines = raw.split('\n')
+  let oldLine = 1
+  let newLine = 1
+
+  for (const line of lines) {
+    // Skip empty trailing line from split
+    if (line === '' && lines.indexOf(line) === lines.length - 1) continue
+
+    // Skip file headers
+    if (line.startsWith('---') || line.startsWith('+++')) continue
+
+    // Parse hunk header: @@ -oldStart,oldCount +newStart,newCount @@
+    const hunkMatch = line.match(/^@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/)
+    if (hunkMatch) {
+      oldLine = parseInt(hunkMatch[1], 10)
+      newLine = parseInt(hunkMatch[2], 10)
+      continue
+    }
+
+    // Skip other diff metadata (e.g. "diff --git", "index ...")
+    if (line.startsWith('diff ') || line.startsWith('index ')) continue
+
     if (line.startsWith('+')) {
-      return { type: 'add' as const, content: line.slice(1), newLineNo: idx + 1 }
+      result.push({ type: 'add', content: line.slice(1), newLineNo: newLine })
+      newLine++
+    } else if (line.startsWith('-')) {
+      result.push({ type: 'delete', content: line.slice(1), oldLineNo: oldLine })
+      oldLine++
+    } else {
+      // Context line (may start with space or be plain text)
+      const content = line.startsWith(' ') ? line.slice(1) : line
+      result.push({ type: 'context', content, oldLineNo: oldLine, newLineNo: newLine })
+      oldLine++
+      newLine++
     }
-    if (line.startsWith('-')) {
-      return { type: 'delete' as const, content: line.slice(1), oldLineNo: idx + 1 }
-    }
-    return { type: 'context' as const, content: line, oldLineNo: idx + 1, newLineNo: idx + 1 }
-  })
+  }
+
+  return result
 }
 
 // ============================================================================
@@ -73,6 +112,10 @@ export const DiffPreview = memo<DiffPreviewProps>(
     }, [lines, isExpanded, collapseThreshold])
 
     const hiddenCount = lines.length - collapseThreshold
+    const addCount = useMemo(() => lines.filter((l) => l.type === 'add').length, [lines])
+    const deleteCount = useMemo(() => lines.filter((l) => l.type === 'delete').length, [lines])
+
+    const toggleExpand = useCallback(() => setIsExpanded((v) => !v), [])
 
     return (
       <div
@@ -81,13 +124,17 @@ export const DiffPreview = memo<DiffPreviewProps>(
           'bg-muted/30',
           className,
         )}
+        role="region"
+        aria-label={`Diff: ${filePath}`}
       >
         {/* Header */}
         <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border/30 bg-muted/20">
           <FileEdit className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-          <span className="text-xs text-muted-foreground truncate">
-            diff: {filePath}
+          <span className="text-xs text-muted-foreground truncate flex-1">
+            {filePath}
           </span>
+          <span className="text-[10px] text-green-600 shrink-0">+{addCount}</span>
+          <span className="text-[10px] text-red-600 shrink-0">-{deleteCount}</span>
         </div>
 
         {/* Diff lines */}
@@ -96,32 +143,44 @@ export const DiffPreview = memo<DiffPreviewProps>(
             <div
               key={idx}
               className={cn(
-                'flex items-start px-3 py-0 leading-5 whitespace-pre',
+                'flex items-start py-0 leading-5 whitespace-pre',
                 line.type === 'add' && 'bg-green-500/10 text-green-600',
                 line.type === 'delete' && 'bg-red-500/10 text-red-600',
                 line.type === 'context' && 'text-foreground/60',
               )}
             >
-              {/* Line number gutter */}
-              <span className="w-8 shrink-0 text-right pr-2 text-muted-foreground/50 select-none">
+              {/* Dual line number gutter: old | new */}
+              <span className="w-8 shrink-0 text-right pr-1 text-muted-foreground/50 select-none border-r border-border/20">
                 {line.oldLineNo ?? ' '}
+              </span>
+              <span className="w-8 shrink-0 text-right pr-1 text-muted-foreground/50 select-none">
+                {line.newLineNo ?? ' '}
               </span>
               <span className="w-4 shrink-0 text-center select-none">
                 {line.type === 'add' ? '+' : line.type === 'delete' ? '-' : ' '}
               </span>
-              <span className="flex-1">{line.content}</span>
+              <span className="flex-1 pr-3">{line.content}</span>
             </div>
           ))}
         </div>
 
-        {/* Collapse toggle */}
-        {shouldCollapse && !isExpanded && (
+        {/* Collapse/expand toggle */}
+        {shouldCollapse && (
           <button
-            onClick={() => setIsExpanded(true)}
+            onClick={toggleExpand}
             className="flex items-center justify-center gap-1 w-full px-3 py-1.5 text-xs text-primary hover:bg-muted/40 transition-colors"
           >
-            <ChevronDown className="w-3 h-3" />
-            展开 {hiddenCount} 行变更
+            {isExpanded ? (
+              <>
+                <ChevronUp className="w-3 h-3" />
+                折叠
+              </>
+            ) : (
+              <>
+                <ChevronDown className="w-3 h-3" />
+                展开 {hiddenCount} 行变更
+              </>
+            )}
           </button>
         )}
       </div>

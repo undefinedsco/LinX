@@ -10,10 +10,11 @@
  *   completed → Copy Log
  *   error     → Copy Log
  *
- * CP0: contract types + skeleton UI, callbacks are no-ops.
+ * CP0: contract types + skeleton UI.
+ * CP1: functional button states, status indicator animations, callback wiring.
  */
 
-import { memo } from 'react'
+import { memo, useCallback } from 'react'
 import {
   Pause,
   Play,
@@ -91,13 +92,34 @@ export const SessionControlBar = memo<SessionControlBarProps>(
     const cfg = STATUS_CONFIG[status]
     const isTerminal = status === 'completed' || status === 'error'
 
+    const handlePause = useCallback(() => onPause?.(), [onPause])
+    const handleResume = useCallback(() => onResume?.(), [onResume])
+    const handleStop = useCallback(() => onStop?.(), [onStop])
+    const handleCopyLog = useCallback(() => onCopyLog?.(), [onCopyLog])
+
     return (
-      <div className={cn('border-b border-border/50 bg-muted/20', className)}>
+      <div
+        className={cn('border-b border-border/50 bg-muted/20', className)}
+        role="toolbar"
+        aria-label={`Session: ${title} — ${cfg.label}`}
+      >
         {/* Main row */}
         <div className="flex items-center gap-3 px-4 py-2.5">
-          {/* Status dot + title */}
+          {/* Status dot + badge + title */}
           <div className="flex items-center gap-2 flex-1 min-w-0">
-            <span className={cn('w-2.5 h-2.5 rounded-full shrink-0', cfg.dotClass)} />
+            <span
+              className={cn('w-2.5 h-2.5 rounded-full shrink-0', cfg.dotClass)}
+              aria-hidden="true"
+            />
+            <span className={cn(
+              'text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0',
+              status === 'active' && 'bg-green-500/10 text-green-600',
+              status === 'paused' && 'bg-amber-500/10 text-amber-600',
+              status === 'completed' && 'bg-muted text-muted-foreground',
+              status === 'error' && 'bg-red-500/10 text-red-600',
+            )}>
+              {cfg.label}
+            </span>
             <span className="text-sm font-medium text-foreground truncate">{title}</span>
           </div>
 
@@ -112,13 +134,15 @@ export const SessionControlBar = memo<SessionControlBarProps>(
           </div>
 
           {/* Action buttons */}
-          <div className="flex items-center gap-1 shrink-0">
+          <div className="flex items-center gap-1 shrink-0" role="group" aria-label="Session actions">
             {status === 'active' && (
               <Button
                 variant="ghost"
                 size="icon"
                 className="h-7 w-7"
-                onClick={onPause}
+                disabled={!onPause}
+                onClick={handlePause}
+                aria-label="暂停"
                 title="暂停"
               >
                 <Pause className="w-4 h-4" />
@@ -130,7 +154,9 @@ export const SessionControlBar = memo<SessionControlBarProps>(
                 variant="ghost"
                 size="icon"
                 className="h-7 w-7"
-                onClick={onResume}
+                disabled={!onResume}
+                onClick={handleResume}
+                aria-label="恢复"
                 title="恢复"
               >
                 <Play className="w-4 h-4" />
@@ -142,7 +168,9 @@ export const SessionControlBar = memo<SessionControlBarProps>(
                 variant="ghost"
                 size="icon"
                 className="h-7 w-7 text-destructive hover:text-destructive"
-                onClick={onStop}
+                disabled={!onStop}
+                onClick={handleStop}
+                aria-label="停止"
                 title="停止"
               >
                 <Square className="w-4 h-4" />
@@ -153,7 +181,9 @@ export const SessionControlBar = memo<SessionControlBarProps>(
               variant="ghost"
               size="icon"
               className="h-7 w-7"
-              onClick={onCopyLog}
+              disabled={!onCopyLog}
+              onClick={handleCopyLog}
+              aria-label="复制日志"
               title="复制日志"
             >
               <ClipboardCopy className="w-4 h-4" />

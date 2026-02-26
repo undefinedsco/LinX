@@ -6,11 +6,12 @@
  * - No @mention, no file attachments, no deep-thinking toggle
  * - Supports Ctrl+C to send interrupt signal
  *
- * CP0: contract types + skeleton UI, send callback is a no-op.
+ * CP0: contract types + skeleton UI.
+ * CP1: functional send/interrupt, visual feedback, auto-focus.
  */
 
 import { memo, useRef, useEffect, useCallback, useState, type KeyboardEvent } from 'react'
-import { Send, Terminal } from 'lucide-react'
+import { Send, Terminal, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -50,6 +51,14 @@ export const SessionInputbar = memo<SessionInputbarProps>(
   }) => {
     const textareaRef = useRef<HTMLTextAreaElement>(null)
     const [isFocused, setIsFocused] = useState(false)
+    const [interruptFlash, setInterruptFlash] = useState(false)
+
+    // Auto-focus on mount when session is active
+    useEffect(() => {
+      if (isSessionActive && textareaRef.current) {
+        textareaRef.current.focus()
+      }
+    }, [isSessionActive])
 
     // Auto-resize textarea
     useEffect(() => {
@@ -62,10 +71,10 @@ export const SessionInputbar = memo<SessionInputbarProps>(
 
     const handleKeyDown = useCallback(
       (e: KeyboardEvent<HTMLTextAreaElement>) => {
-        // Ctrl+C → interrupt signal
+        // Ctrl+C → interrupt signal (only when input is empty)
         if (e.key === 'c' && (e.ctrlKey || e.metaKey) && !value) {
           e.preventDefault()
-          onInterrupt?.()
+          handleInterrupt()
           return
         }
 
@@ -79,6 +88,13 @@ export const SessionInputbar = memo<SessionInputbarProps>(
       },
       [disabled, value, onSend, onInterrupt],
     )
+
+    const handleInterrupt = useCallback(() => {
+      if (!onInterrupt) return
+      onInterrupt()
+      setInterruptFlash(true)
+      setTimeout(() => setInterruptFlash(false), 600)
+    }, [onInterrupt])
 
     const isDisabled = disabled || !isSessionActive
 
@@ -97,6 +113,7 @@ export const SessionInputbar = memo<SessionInputbarProps>(
             'bg-background',
             'transition-all duration-200',
             isFocused && 'border-primary/50',
+            interruptFlash && 'border-red-500/70',
             isDisabled && 'opacity-50',
           )}
         >
@@ -135,13 +152,28 @@ export const SessionInputbar = memo<SessionInputbarProps>(
             style={{ maxHeight: '120px' }}
           />
 
-          {/* Send button */}
-          <div className="flex items-center pr-2 pb-1.5 shrink-0">
+          {/* Action buttons */}
+          <div className="flex items-center gap-1 pr-2 pb-1.5 shrink-0">
+            {/* Interrupt button — visible when session is active and onInterrupt provided */}
+            {isSessionActive && onInterrupt && (
+              <Button
+                onClick={handleInterrupt}
+                disabled={isDisabled}
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 rounded-lg text-destructive hover:text-destructive"
+                aria-label="中断 (Ctrl+C)"
+                title="中断 (Ctrl+C)"
+              >
+                <XCircle className="w-3.5 h-3.5" strokeWidth={1.5} />
+              </Button>
+            )}
             <Button
               onClick={onSend}
               disabled={isDisabled || !value.trim()}
               size="icon"
               className="h-8 w-8 rounded-lg"
+              aria-label="发送"
             >
               <Send className="w-3.5 h-3.5" strokeWidth={1.5} />
             </Button>

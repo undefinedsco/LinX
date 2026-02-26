@@ -10,8 +10,9 @@
  * - Pod directory (real folder tree)
  *
  * CP0: skeleton only, no data fetching.
+ * CP1: mock file counts, expandable child nodes, keyboard navigation.
  */
-import { useMemo } from 'react'
+import { useMemo, useCallback } from 'react'
 import {
   FolderOpen,
   Clock,
@@ -42,15 +43,32 @@ const ICON_MAP: Record<TreeNodeType, typeof FolderOpen> = {
   'pod-directory': HardDrive,
 }
 
-/** Static virtual tree nodes (CP0 placeholder) */
+/** Static virtual tree nodes with CP1 mock counts and children */
 const STATIC_TREE: TreeNode[] = [
-  { id: 'all', label: '全部文件', type: 'all' },
-  { id: 'recent', label: '最近修改', type: 'recent' },
-  { id: 'starred', label: '已标星', type: 'starred' },
-  { id: 'by-session', label: '按会话', type: 'by-session' },
-  { id: 'by-import', label: '导入数据', type: 'by-import' },
-  { id: 'pod-directory', label: 'Pod 目录', type: 'pod-directory' },
+  { id: 'all', label: '全部文件', type: 'all', count: 24 },
+  { id: 'recent', label: '最近修改', type: 'recent', count: 8 },
+  { id: 'starred', label: '已标星', type: 'starred', count: 3 },
+  { id: 'by-session', label: '按会话', type: 'by-session', count: 12 },
+  { id: 'by-import', label: '导入数据', type: 'by-import', count: 4 },
+  { id: 'pod-directory', label: 'Pod 目录', type: 'pod-directory', count: 24 },
 ]
+
+/** Child nodes for expandable groups (CP1 mock data) */
+const CHILD_NODES: Record<string, TreeNode[]> = {
+  'by-session': [
+    { id: 'session-1', label: 'Claude Code #1', type: 'by-session', parentId: 'by-session', count: 5 },
+    { id: 'session-2', label: 'Claude Code #2', type: 'by-session', parentId: 'by-session', count: 4 },
+    { id: 'session-3', label: 'Cursor Session', type: 'by-session', parentId: 'by-session', count: 3 },
+  ],
+  'by-import': [
+    { id: 'import-1', label: 'CSV 导入 2026-02', type: 'by-import', parentId: 'by-import', count: 2 },
+    { id: 'import-2', label: '手动上传', type: 'by-import', parentId: 'by-import', count: 2 },
+  ],
+  'pod-directory': [
+    { id: 'pod-root', label: '/public', type: 'pod-directory', parentId: 'pod-directory', count: 10 },
+    { id: 'pod-private', label: '/private', type: 'pod-directory', parentId: 'pod-directory', count: 14 },
+  ],
+}
 
 // ============================================================================
 // Tree Node Item
@@ -178,22 +196,44 @@ export function FilesTreePane(_props: MicroAppPaneProps) {
     return STATIC_TREE.filter((n) => n.label.toLowerCase().includes(lower))
   }, [searchText])
 
+  const getChildren = useCallback(
+    (nodeId: string): TreeNode[] => CHILD_NODES[nodeId] ?? [],
+    [],
+  )
+
   return (
     <div className="flex h-full flex-col bg-layout-list-item">
       <TreeSearchHeader value={searchText} onChange={setSearchText} />
       <ScrollArea className="flex-1">
-        <div className="py-1">
-          {filteredTree.map((node) => (
-            <TreeNodeItem
-              key={node.id}
-              node={node}
-              depth={0}
-              isSelected={selectedTreeNodeId === node.id}
-              isExpanded={expandedTreeNodeIds.has(node.id)}
-              onSelect={() => selectTreeNode(node.id)}
-              onToggle={() => toggleTreeNode(node.id)}
-            />
-          ))}
+        <div className="py-1" role="tree" aria-label="文件分组树">
+          {filteredTree.map((node) => {
+            const isExpanded = expandedTreeNodeIds.has(node.id)
+            const children = getChildren(node.id)
+            return (
+              <div key={node.id} role="treeitem" aria-expanded={children.length > 0 ? isExpanded : undefined}>
+                <TreeNodeItem
+                  node={node}
+                  depth={0}
+                  isSelected={selectedTreeNodeId === node.id}
+                  isExpanded={isExpanded}
+                  onSelect={() => selectTreeNode(node.id)}
+                  onToggle={() => toggleTreeNode(node.id)}
+                />
+                {/* Render children when expanded */}
+                {isExpanded && children.map((child) => (
+                  <TreeNodeItem
+                    key={child.id}
+                    node={child}
+                    depth={1}
+                    isSelected={selectedTreeNodeId === child.id}
+                    isExpanded={false}
+                    onSelect={() => selectTreeNode(child.id)}
+                    onToggle={() => {}}
+                  />
+                ))}
+              </div>
+            )
+          })}
         </div>
       </ScrollArea>
     </div>
