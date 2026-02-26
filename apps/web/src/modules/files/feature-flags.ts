@@ -1,8 +1,9 @@
 /**
  * Files module feature flags
  *
- * CP1: Files browsing vertical slice — default off.
+ * CP2: Default cutover — flag enabled.
+ * Rollback: set back to false to restore CP0 placeholder behavior.
  */
 
 /** Enable CP1 files browsing features (FilesTreePane, FilesListPane, FileDetailPane) */
-export const FILES_CP1_ENABLED = false // CP1 feature flag, default off
+export const FILES_CP1_ENABLED = true // CP2: default on
