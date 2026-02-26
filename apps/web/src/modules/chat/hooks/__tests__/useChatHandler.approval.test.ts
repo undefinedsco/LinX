@@ -64,8 +64,8 @@ describe('Approval timeout rules', () => {
 })
 
 describe('Feature flag', () => {
-  it('CHAT_CP1_ENABLED defaults to false', () => {
-    expect(CHAT_CP1_ENABLED).toBe(false)
+  it('CHAT_CP1_ENABLED defaults to true (CP2 cutover)', () => {
+    expect(CHAT_CP1_ENABLED).toBe(true)
   })
 })
 

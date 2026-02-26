@@ -25,7 +25,6 @@ import { useSolidDatabase } from '@/providers/solid-database-provider'
 import { useSession } from '@inrupt/solid-ui-react'
 import { createChatHandler, type ChatHandler, type AgentChatHandler } from '../services'
 import { extractPodUrlFromWebId, resolvePodUrl } from '@/lib/pod-url'
-import { CHAT_CP1_ENABLED } from '../feature-flags'
 
 // ============================================
 // Types
@@ -254,49 +253,47 @@ export function useChatHandler(options: UseChatHandlerOptions): UseChatHandlerRe
         setStreamingThought('')
       }
 
-      // CP1: Wire tool approval callbacks (only when feature flag is on)
-      if (CHAT_CP1_ENABLED) {
-        newHandler.incoming.onToolApproval = (toolCallId, toolName, args, risk, timeout) => {
-          const approval: PendingApproval = {
-            toolCallId,
-            toolName,
-            args,
-            risk,
-            timeout,
-            createdAt: Date.now(),
-            status: 'pending',
-          }
-          setPendingApprovals(prev => [...prev, approval])
-
-          // Set up auto-action timer based on risk level
-          const rule = APPROVAL_TIMEOUTS[risk]
-          if (rule) {
-            const timer = setTimeout(() => {
-              approvalTimersRef.current.delete(toolCallId)
-              setPendingApprovals(prev =>
-                prev.map(a => {
-                  if (a.toolCallId !== toolCallId || a.status !== 'pending') return a
-                  return { ...a, status: rule.autoAction === 'approve' ? 'approved' : 'rejected' }
-                })
-              )
-              // Forward auto-decision to handler
-              if (newHandler.outgoing.sendApproval) {
-                const decision = rule.autoAction === 'approve' ? 'approved' : 'rejected'
-                newHandler.outgoing.sendApproval(toolCallId, decision).catch(() => {})
-              }
-            }, rule.seconds * 1000)
-            approvalTimersRef.current.set(toolCallId, timer)
-          }
+      // Wire tool approval callbacks
+      newHandler.incoming.onToolApproval = (toolCallId, toolName, args, risk, timeout) => {
+        const approval: PendingApproval = {
+          toolCallId,
+          toolName,
+          args,
+          risk,
+          timeout,
+          createdAt: Date.now(),
+          status: 'pending',
         }
+        setPendingApprovals(prev => [...prev, approval])
 
-        newHandler.incoming.onToolCallEnd = (toolCallId) => {
-          // Remove from pending when tool call completes
-          setPendingApprovals(prev => prev.filter(a => a.toolCallId !== toolCallId))
-          const timer = approvalTimersRef.current.get(toolCallId)
-          if (timer) {
-            clearTimeout(timer)
+        // Set up auto-action timer based on risk level
+        const rule = APPROVAL_TIMEOUTS[risk]
+        if (rule) {
+          const timer = setTimeout(() => {
             approvalTimersRef.current.delete(toolCallId)
-          }
+            setPendingApprovals(prev =>
+              prev.map(a => {
+                if (a.toolCallId !== toolCallId || a.status !== 'pending') return a
+                return { ...a, status: rule.autoAction === 'approve' ? 'approved' : 'rejected' }
+              })
+            )
+            // Forward auto-decision to handler
+            if (newHandler.outgoing.sendApproval) {
+              const decision = rule.autoAction === 'approve' ? 'approved' : 'rejected'
+              newHandler.outgoing.sendApproval(toolCallId, decision).catch(() => {})
+            }
+          }, rule.seconds * 1000)
+          approvalTimersRef.current.set(toolCallId, timer)
+        }
+      }
+
+      newHandler.incoming.onToolCallEnd = (toolCallId) => {
+        // Remove from pending when tool call completes
+        setPendingApprovals(prev => prev.filter(a => a.toolCallId !== toolCallId))
+        const timer = approvalTimersRef.current.get(toolCallId)
+        if (timer) {
+          clearTimeout(timer)
+          approvalTimersRef.current.delete(toolCallId)
         }
       }
     }
@@ -365,7 +362,7 @@ export function useChatHandler(options: UseChatHandlerOptions): UseChatHandlerRe
     )
 
     // Forward decision to handler's outgoing strategy
-    if (CHAT_CP1_ENABLED && handler?.outgoing.sendApproval) {
+    if (handler?.outgoing.sendApproval) {
       handler.outgoing.sendApproval(toolCallId, decision).catch(err => {
         console.error('[useChatHandler] sendApproval failed:', err)
       })
