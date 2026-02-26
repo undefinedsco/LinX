@@ -16,3 +16,4 @@ export type {
   ContactTag,
 } from './types'
 export { contactOps, contactCollection, initializeContactCollections } from './collections'
+export { CONTACTS_CP1_ENABLED } from './feature-flags'

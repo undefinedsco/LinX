@@ -2,8 +2,9 @@ import { useMemo, useCallback, useRef, useEffect } from 'react'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { useContactStore } from '../store'
 import { contactOps, initializeContactCollections } from '../collections'
+import { CONTACTS_CP1_ENABLED } from '../feature-flags'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
-import type { UnifiedContact, ContactSection, SectionKey } from '../types'
+import type { UnifiedContact, ContactSection, SectionKey, ContactListFilter } from '../types'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   Search,
@@ -49,6 +50,43 @@ function getInitial(name: string): string {
 // ============================================
 // Components
 // ============================================
+
+const FILTER_OPTIONS: { value: ContactListFilter; label: string }[] = [
+  { value: 'all', label: '全部' },
+  { value: 'personal', label: '个人' },
+  { value: 'agents', label: 'AI' },
+  { value: 'groups', label: '群组' },
+]
+
+/**
+ * CP1: Segmented filter tabs for contact type filtering
+ */
+function FilterTabs({
+  value,
+  onChange,
+}: {
+  value: ContactListFilter
+  onChange: (v: ContactListFilter) => void
+}) {
+  return (
+    <div className="flex gap-0.5 p-0.5 bg-muted/40 rounded-md">
+      {FILTER_OPTIONS.map((opt) => (
+        <button
+          key={opt.value}
+          onClick={() => onChange(opt.value)}
+          className={cn(
+            'flex-1 text-xs py-1 px-2 rounded-sm transition-colors',
+            value === opt.value
+              ? 'bg-background text-foreground shadow-sm font-medium'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  )
+}
 
 /**
  * Group avatar: 2x2 grid of initials for group contacts
@@ -194,6 +232,8 @@ export function ContactListPane({}: MicroAppPaneProps) {
   const openCreateDialog = useContactStore((state) => state.openCreateDialog)
   const showNewFriends = useContactStore((state) => state.showNewFriends)
   const newFriendsCount = useContactStore((state) => state.newFriendsCount)
+  const listFilter = useContactStore((state) => state.listFilter)
+  const setListFilter = useContactStore((state) => state.setListFilter)
 
   // Initialize collection with database and subscribe to notifications
   const { db } = useSolidDatabase()
@@ -291,11 +331,21 @@ export function ContactListPane({}: MicroAppPaneProps) {
       return base as UnifiedContact
     })
 
+    // CP1: Apply listFilter when enabled
+    const filtered = (CONTACTS_CP1_ENABLED && listFilter !== 'all')
+      ? unified.filter(c => {
+          if (listFilter === 'personal') return c.contactType === ContactType.SOLID
+          if (listFilter === 'agents') return c.contactType === ContactType.AGENT
+          if (listFilter === 'groups') return c.contactType === ContactType.GROUP
+          return true
+        })
+      : unified
+
     // Split by contactType
-    const starredItems = unified.filter(c => c.starred)
-    const groupItems = unified.filter(c => c.contactType === ContactType.GROUP && !c.starred)
-    const agentItems = unified.filter(c => c.contactType === ContactType.AGENT && !c.starred)
-    const personalItems = unified.filter(c =>
+    const starredItems = filtered.filter(c => c.starred)
+    const groupItems = filtered.filter(c => c.contactType === ContactType.GROUP && !c.starred)
+    const agentItems = filtered.filter(c => c.contactType === ContactType.AGENT && !c.starred)
+    const personalItems = filtered.filter(c =>
       c.contactType !== ContactType.GROUP &&
       c.contactType !== ContactType.AGENT &&
       !c.starred
@@ -344,7 +394,7 @@ export function ContactListPane({}: MicroAppPaneProps) {
     ]
 
     return { sections: contactSections, letters: indexLetters }
-  }, [rawContacts])
+  }, [rawContacts, listFilter])
 
   return (
     <div className="flex h-full flex-col bg-layout-list-item border-r border-border/50 relative">
@@ -381,7 +431,14 @@ export function ContactListPane({}: MicroAppPaneProps) {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      
+
+      {/* CP1: Filter tabs */}
+      {CONTACTS_CP1_ENABLED && !search && (
+        <div className="px-3 pb-2 shrink-0">
+          <FilterTabs value={listFilter} onChange={setListFilter} />
+        </div>
+      )}
+
       {/* List content */}
       <ScrollArea className="flex-1" ref={scrollRef}>
         <div className="pb-10">

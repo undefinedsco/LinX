@@ -26,10 +26,15 @@ export interface GroupMember {
 interface MemberListProps {
   members: GroupMember[]
   currentUserId?: string
+  /** Current user is the group owner */
   isOwner?: boolean
+  /** Current user is an admin (owner OR admin role) */
+  isAdmin?: boolean
   onViewProfile?: (contactId: string) => void
   onMention?: (contactName: string) => void
   onRemoveMember?: (contactId: string) => void
+  /** Only owner can promote/demote — called with (contactId, newRole) */
+  onUpdateRole?: (contactId: string, role: 'admin' | 'member') => void
   onInvite?: () => void
 }
 
@@ -53,10 +58,10 @@ function RoleBadge({ role }: { role: MemberRole }) {
   return null
 }
 
-function MemberItem({ member, isCurrentUser, canManage, onViewProfile, onMention, onRemoveMember }: {
-  member: GroupMember; isCurrentUser: boolean; canManage: boolean
+function MemberItem({ member, isCurrentUser, canManage, canSetRole, onViewProfile, onMention, onRemoveMember, onUpdateRole }: {
+  member: GroupMember; isCurrentUser: boolean; canManage: boolean; canSetRole: boolean
   onViewProfile?: (id: string) => void; onMention?: (name: string) => void
-  onRemoveMember?: (id: string) => void
+  onRemoveMember?: (id: string) => void; onUpdateRole?: (id: string, role: 'admin' | 'member') => void
 }) {
   const { contact, role } = member
   const isAgent = contact.contactType === ContactType.AGENT
@@ -97,14 +102,27 @@ function MemberItem({ member, isCurrentUser, canManage, onViewProfile, onMention
               <MoreHorizontal className="w-3.5 h-3.5" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-32">
+          <DropdownMenuContent align="end" className="w-36">
             <DropdownMenuItem onClick={() => onViewProfile?.(contact.id)}>
               查看资料
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => onMention?.(displayName)}>
               @提及
             </DropdownMenuItem>
-            {canManage && (
+            {/* Role management - only owner can set roles, and not on other owners */}
+            {canSetRole && role === 'member' && (
+              <DropdownMenuItem onClick={() => onUpdateRole?.(contact.id, 'admin')}>
+                <Shield className="w-3.5 h-3.5 mr-1.5" />
+                设为管理员
+              </DropdownMenuItem>
+            )}
+            {canSetRole && role === 'admin' && (
+              <DropdownMenuItem onClick={() => onUpdateRole?.(contact.id, 'member')}>
+                取消管理员
+              </DropdownMenuItem>
+            )}
+            {/* Remove - owner/admin can remove non-owner members */}
+            {canManage && role !== 'owner' && (
               <DropdownMenuItem
                 className="text-destructive"
                 onClick={() => onRemoveMember?.(contact.id)}
@@ -123,12 +141,18 @@ export function MemberList({
   members,
   currentUserId,
   isOwner = false,
+  isAdmin = false,
   onViewProfile,
   onMention,
   onRemoveMember,
+  onUpdateRole,
   onInvite,
 }: MemberListProps) {
   const [search, setSearch] = useState('')
+
+  // Derived permission flags
+  const canManageMembers = isOwner || isAdmin
+  const canSetRoles = isOwner // only owner can promote/demote
 
   const filtered = useMemo(() => {
     if (!search.trim()) return members
@@ -170,10 +194,12 @@ export function MemberList({
             key={member.contact.id}
             member={member}
             isCurrentUser={member.contact.id === currentUserId}
-            canManage={isOwner || member.role !== 'owner'}
+            canManage={canManageMembers}
+            canSetRole={canSetRoles}
             onViewProfile={onViewProfile}
             onMention={onMention}
             onRemoveMember={onRemoveMember}
+            onUpdateRole={onUpdateRole}
           />
         ))}
       </ScrollArea>

@@ -792,6 +792,81 @@ export const contactOps = {
   },
 
   // ==========================================================================
+  // CP1: Enhanced Group Operations
+  // ==========================================================================
+
+  /**
+   * Create a group with associated chat — CP1 entry point.
+   *
+   * Validates minimum member count (>= 2 including current user context)
+   * then delegates to createGroup().
+   */
+  async createGroupWithChat(
+    input: CreateGroupInput,
+  ): Promise<ContactInsert & { id: string; chatId: string }> {
+    const totalMembers = input.memberIds.length + (input.aiAssistantIds?.length ?? 0)
+    if (totalMembers < 2) {
+      throw new Error('群组至少需要 2 名成员')
+    }
+    return this.createGroup(input)
+  },
+
+  /**
+   * Update a member's role within a group.
+   *
+   * Role metadata is stored in the Chat.metadata JSON field as:
+   *   { memberRoles: { [contactId]: MemberRole } }
+   *
+   * Only 'admin' and 'member' can be set — 'owner' is immutable after creation.
+   */
+  async updateMemberRole(
+    groupContactId: string,
+    memberId: string,
+    role: 'admin' | 'member',
+  ): Promise<void> {
+    const chat = this.getGroupChat(groupContactId)
+    if (!chat) throw new Error(`No chat found for group contact: ${groupContactId}`)
+
+    const members = chat.participants ?? []
+    if (!members.includes(memberId)) {
+      throw new Error(`Contact ${memberId} is not a member of this group`)
+    }
+
+    const tx = chatCollection.update(chat.id, (draft: any) => {
+      const meta = draft.metadata ? { ...draft.metadata } : {}
+      const roles = meta.memberRoles ? { ...meta.memberRoles } : {}
+      roles[memberId] = role
+      meta.memberRoles = roles
+      draft.metadata = meta
+      draft.updatedAt = new Date()
+    })
+    await tx.isPersisted.promise
+    queryClient.invalidateQueries({ queryKey: ['contacts'] })
+  },
+
+  /**
+   * Get the role map for a group (from Chat.metadata.memberRoles).
+   */
+  getGroupMemberRoles(groupContactId: string): Record<string, string> {
+    const chat = this.getGroupChat(groupContactId)
+    if (!chat) return {}
+    const meta = (chat as any).metadata
+    return meta?.memberRoles ?? {}
+  },
+
+  /**
+   * Resolve member IDs to ContactRow objects for display.
+   * Returns contacts in the same order as the input IDs.
+   */
+  resolveMembers(memberIds: string[]): ContactRow[] {
+    const all = this.getAll()
+    const byId = new Map(all.map(c => [c.id, c]))
+    return memberIds
+      .map(id => byId.get(id))
+      .filter((c): c is ContactRow => c != null)
+  },
+
+  // ==========================================================================
   // Subscription Operations
   // ==========================================================================
 

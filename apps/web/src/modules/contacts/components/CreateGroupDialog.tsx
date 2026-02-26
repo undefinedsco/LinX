@@ -1,11 +1,13 @@
 /**
- * CreateGroupDialog - Group creation dialog
+ * CreateGroupDialog - Group creation dialog (CP1 functionalized)
  *
  * Allows users to create a group contact with:
- * - Group name
- * - Member selection from existing contacts
+ * - Group name input
+ * - Contact search + multi-select (reuses SelectableContactList)
  * - AI assistant selection from agent contacts
- * - Auto-creates a Chat record on submit
+ * - Minimum 2 member validation
+ * - Calls contactOps.createGroupWithChat() on submit
+ * - Closes dialog on success
  */
 
 import { useState, useMemo, useCallback } from 'react'
@@ -19,8 +21,9 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Users, Bot } from 'lucide-react'
+import { Users, Bot, AlertCircle } from 'lucide-react'
 import { contactOps } from '../collections'
+import { CONTACTS_CP1_ENABLED } from '../feature-flags'
 import { ContactType, type ContactRow } from '@linx/models'
 import { useQuery } from '@tanstack/react-query'
 import { SelectableContactList } from './SelectableContactList'
@@ -37,6 +40,7 @@ export function CreateGroupDialog({ open, onOpenChange, onCreated }: CreateGroup
   const [selectedMembers, setSelectedMembers] = useState<Set<string>>(new Set())
   const [selectedAgents, setSelectedAgents] = useState<Set<string>>(new Set())
   const [isCreating, setIsCreating] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const { data: allContacts = [] } = useQuery({
     queryKey: ['contacts', 'for-group-dialog'],
@@ -82,13 +86,20 @@ export function CreateGroupDialog({ open, onOpenChange, onCreated }: CreateGroup
     })
   }, [])
 
-  const canCreate = groupName.trim().length > 0 && selectedMembers.size >= 1
+  // CP1: minimum 2 total members (human + AI)
+  const total = selectedMembers.size + selectedAgents.size
+  const canCreate = groupName.trim().length > 0 && total >= 2
 
   const handleCreate = async () => {
     if (!canCreate || isCreating) return
+    setError(null)
     setIsCreating(true)
     try {
-      const result = await contactOps.createGroup({
+      // CP1: use createGroupWithChat which validates member count
+      const createFn = CONTACTS_CP1_ENABLED
+        ? contactOps.createGroupWithChat
+        : contactOps.createGroup
+      const result = await createFn.call(contactOps, {
         name: groupName.trim(),
         memberIds: Array.from(selectedMembers),
         aiAssistantIds: Array.from(selectedAgents),
@@ -96,6 +107,8 @@ export function CreateGroupDialog({ open, onOpenChange, onCreated }: CreateGroup
       onCreated?.(result.id, result.chatId)
       handleClose()
     } catch (err) {
+      const msg = err instanceof Error ? err.message : '创建群组失败'
+      setError(msg)
       console.error('[CreateGroupDialog] Failed to create group:', err)
     } finally {
       setIsCreating(false)
@@ -107,11 +120,11 @@ export function CreateGroupDialog({ open, onOpenChange, onCreated }: CreateGroup
     setMemberSearch('')
     setSelectedMembers(new Set())
     setSelectedAgents(new Set())
+    setError(null)
     onOpenChange(false)
   }
 
   // Selected summary text
-  const total = selectedMembers.size + selectedAgents.size
   const selectedNames = allContacts
     .filter(c => selectedMembers.has(c.id) || selectedAgents.has(c.id))
     .map(c => c.alias || c.name)
@@ -161,6 +174,16 @@ export function CreateGroupDialog({ open, onOpenChange, onCreated }: CreateGroup
           {total > 0 && (
             <div className="text-xs text-muted-foreground">
               已选: {selectedNames.join(', ')} ({total}人)
+              {total < 2 && (
+                <span className="text-amber-500 ml-1">（至少选择 2 人）</span>
+              )}
+            </div>
+          )}
+
+          {error && (
+            <div className="flex items-center gap-1.5 text-xs text-destructive">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              {error}
             </div>
           )}
         </div>
