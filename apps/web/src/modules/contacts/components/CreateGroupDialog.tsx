@@ -23,7 +23,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Users, Bot, AlertCircle } from 'lucide-react'
 import { contactOps } from '../collections'
-import { CONTACTS_CP1_ENABLED } from '../feature-flags'
 import { ContactType, type ContactRow } from '@linx/models'
 import { useQuery } from '@tanstack/react-query'
 import { SelectableContactList } from './SelectableContactList'
@@ -95,11 +94,8 @@ export function CreateGroupDialog({ open, onOpenChange, onCreated }: CreateGroup
     setError(null)
     setIsCreating(true)
     try {
-      // CP1: use createGroupWithChat which validates member count
-      const createFn = CONTACTS_CP1_ENABLED
-        ? contactOps.createGroupWithChat
-        : contactOps.createGroup
-      const result = await createFn.call(contactOps, {
+      // Always use createGroupWithChat which validates member count
+      const result = await contactOps.createGroupWithChat({
         name: groupName.trim(),
         memberIds: Array.from(selectedMembers),
         aiAssistantIds: Array.from(selectedAgents),

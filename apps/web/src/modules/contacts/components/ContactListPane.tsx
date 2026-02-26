@@ -2,7 +2,6 @@ import { useMemo, useCallback, useRef, useEffect } from 'react'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { useContactStore } from '../store'
 import { contactOps, initializeContactCollections } from '../collections'
-import { CONTACTS_CP1_ENABLED } from '../feature-flags'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 import type { UnifiedContact, ContactSection, SectionKey, ContactListFilter } from '../types'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -331,8 +330,8 @@ export function ContactListPane({}: MicroAppPaneProps) {
       return base as UnifiedContact
     })
 
-    // CP1: Apply listFilter when enabled
-    const filtered = (CONTACTS_CP1_ENABLED && listFilter !== 'all')
+    // Apply listFilter
+    const filtered = listFilter !== 'all'
       ? unified.filter(c => {
           if (listFilter === 'personal') return c.contactType === ContactType.SOLID
           if (listFilter === 'agents') return c.contactType === ContactType.AGENT
@@ -432,8 +431,8 @@ export function ContactListPane({}: MicroAppPaneProps) {
         </DropdownMenu>
       </div>
 
-      {/* CP1: Filter tabs */}
-      {CONTACTS_CP1_ENABLED && !search && (
+      {/* Filter tabs */}
+      {!search && (
         <div className="px-3 pb-2 shrink-0">
           <FilterTabs value={listFilter} onChange={setListFilter} />
         </div>

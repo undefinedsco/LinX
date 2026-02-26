@@ -49,11 +49,6 @@ vi.mock('../store', () => ({
   useContactStore: (selector: (s: typeof mockStoreState) => unknown) => selector(mockStoreState),
 }))
 
-// Feature flag — enabled for filter tests
-vi.mock('../feature-flags', () => ({
-  CONTACTS_CP1_ENABLED: true,
-}))
-
 import { ContactListPane } from './ContactListPane'
 
 const createWrapper = () => {

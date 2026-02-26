@@ -32,10 +32,6 @@ vi.mock('../collections', () => ({
   },
 }))
 
-vi.mock('../feature-flags', () => ({
-  CONTACTS_CP1_ENABLED: true,
-}))
-
 import { CreateGroupDialog } from './CreateGroupDialog'
 
 const createWrapper = () => {
@@ -137,7 +133,7 @@ describe('CreateGroupDialog', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 
-  it('calls createGroupWithChat on submit when CP1 enabled', async () => {
+  it('calls createGroupWithChat on submit', async () => {
     const onCreated = vi.fn()
     render(
       <CreateGroupDialog open onOpenChange={() => {}} onCreated={onCreated} />,
