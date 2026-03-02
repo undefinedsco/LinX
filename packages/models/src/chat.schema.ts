@@ -8,6 +8,11 @@ import { UDFS, DCTerms, SCHEMA, MEETING, WF } from './namespaces'
  * - Chat is a container for messages/widgets regardless of counterpart type.
  * - Do not encode counterpart-specific behavior in Chat (no chatType/subtype).
  * - Participants use Solid chat-aligned flow vocabulary (wf/flow).
+ *
+ * Storage structure (aligned with xpod):
+ * - Chat metadata stored as #this in index.ttl
+ * - Location: /.data/chat/{id}/index.ttl#this
+ * - Threads stored as fragments in same file: /.data/chat/{id}/index.ttl#{threadId}
  */
 export const chatTable = podTable(
   'chats',
@@ -43,11 +48,11 @@ export const chatTable = podTable(
     updatedAt: timestamp('updatedAt').predicate(DCTerms.modified).notNull().defaultNow(),
   },
   {
-    base: '/.data/chats/',
-    sparqlEndpoint: '/.data/chats/-/sparql',
+    base: '/.data/chat/',
+    sparqlEndpoint: '/.data/chat/-/sparql',
     type: MEETING.LongChat,
     namespace: UDFS,
-    subjectTemplate: '{id}.ttl',
+    subjectTemplate: '{id}/index.ttl#this',
   },
 )
 

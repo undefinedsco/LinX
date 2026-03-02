@@ -118,6 +118,7 @@ export const SIOC = createNamespace('sioc', 'http://rdfs.org/sioc/ns#', {
   hasCreator: 'has_creator',
   createdAt: 'created_at',
   hasContainer: 'has_container',
+  has_parent: 'has_parent',
   numReplies: 'num_replies',
   has_member: 'has_member',
 })
