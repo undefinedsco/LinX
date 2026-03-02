@@ -1,11 +1,17 @@
 // @vitest-environment node
 import dotenv from 'dotenv'
+import { fileURLToPath } from 'url'
+import { dirname, resolve } from 'path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { Session } from '@inrupt/solid-client-authn-node'
 import { drizzle, eq, type SolidDatabase } from '@undefineds.co/drizzle-solid'
 import { chatTable, threadTable, messageTable, linxSchema } from '@linx/models'
 
-dotenv.config({ path: '.env' })
+// Load .env from project root (../../ from this file)
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+const envPath = resolve(__dirname, '../../../../../.env')
+dotenv.config({ path: envPath })
 
 const env = {
   webId: process.env.SOLID_WEBID,
@@ -14,6 +20,13 @@ const env = {
   oidcIssuer: process.env.SOLID_OIDC_ISSUER,
 }
 
+console.log('[Integration Test] Environment:', {
+  webId: env.webId ? 'SET' : 'MISSING',
+  clientId: env.clientId ? 'SET' : 'MISSING',
+  clientSecret: env.clientSecret ? 'SET' : 'MISSING',
+  oidcIssuer: env.oidcIssuer || 'MISSING',
+})
+
 const hasEnv = Boolean(env.webId && env.clientId && env.clientSecret && env.oidcIssuer)
 
 // Check if Pod server is reachable before running integration tests
@@ -21,13 +34,20 @@ let podReachable = false
 if (hasEnv && env.oidcIssuer) {
   try {
     const probeUrl = new URL('.well-known/openid-configuration', env.oidcIssuer).href
+    console.log('[Integration Test] Probing Pod server:', probeUrl)
     const ctrl = new AbortController()
     const timer = setTimeout(() => ctrl.abort(), 5000)
-    await fetch(probeUrl, { signal: ctrl.signal }).then(() => { podReachable = true })
+    await fetch(probeUrl, { signal: ctrl.signal }).then(() => {
+      podReachable = true
+      console.log('[Integration Test] Pod server is reachable')
+    })
     clearTimeout(timer)
-  } catch { /* server not reachable */ }
+  } catch (err) {
+    console.log('[Integration Test] Pod server probe failed:', err instanceof Error ? err.message : String(err))
+  }
 }
 const canRun = hasEnv && podReachable
+console.log('[Integration Test] hasEnv:', hasEnv, 'podReachable:', podReachable, 'canRun:', canRun)
 
 let session: Session | null = null
 let db: SolidDatabase | null = null

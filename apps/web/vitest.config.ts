@@ -8,6 +8,10 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/setupTests.ts'],
     globals: true,
+    // Load .env from project root
+    env: {
+      dir: path.resolve(__dirname, '../..'),
+    },
     // Exclude Playwright E2E tests (*.spec.ts) and benchmark tests
     exclude: ['**/node_modules/**', '**/dist/**', '**/*.spec.ts', '**/*benchmark*.test.ts'],
     // Limit concurrency for integration tests to avoid Solid server lock contention
