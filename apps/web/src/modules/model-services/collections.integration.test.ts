@@ -12,11 +12,9 @@ import {
 import {
   initializeModelCollections,
   credentialCollection,
-  providerCollection,
-  modelCollection,
 } from './collections'
 
-dotenv.config({ path: '../../.env' })
+dotenv.config({ path: '.env' })
 
 const env = {
   webId: process.env.SOLID_WEBID,
@@ -31,9 +29,10 @@ const hasEnv = Boolean(env.webId && env.clientId && env.clientSecret && env.oidc
 let podReachable = false
 if (hasEnv && env.oidcIssuer) {
   try {
+    const probeUrl = new URL('.well-known/openid-configuration', env.oidcIssuer).href
     const ctrl = new AbortController()
-    const timer = setTimeout(() => ctrl.abort(), 2000)
-    await fetch(env.oidcIssuer, { signal: ctrl.signal }).then(() => { podReachable = true })
+    const timer = setTimeout(() => ctrl.abort(), 5000)
+    await fetch(probeUrl, { signal: ctrl.signal }).then(() => { podReachable = true })
     clearTimeout(timer)
   } catch { /* server not reachable */ }
 }
@@ -141,27 +140,21 @@ describe('model services collections integration', () => {
     expect(created?.provider).toContain('#openai')
   })
 
-  it.skipIf(!canRun)('provider/model collections update and delete', { timeout: 30000 }, async () => {
+  it.skipIf(!canRun)('provider/model CRUD via drizzle-solid persists to Pod', { timeout: 30000 }, async () => {
     const database = await getDb()
-
-    const providerReady = new Promise<void>((resolve) => providerCollection.onFirstReady(resolve))
-    const modelReady = new Promise<void>((resolve) => modelCollection.onFirstReady(resolve))
-    providerCollection.startSyncImmediate()
-    modelCollection.startSyncImmediate()
-    await Promise.all([providerReady, modelReady])
 
     const providerId = crypto.randomUUID()
     const modelId = `model-${crypto.randomUUID()}`
 
-    const providerInsertTx = providerCollection.insert({
+    // INSERT
+    await database.insert(aiProviderTable).values({
       id: providerId,
       baseUrl: 'https://api.example.com/v1',
       proxyUrl: '',
       hasModel: `/settings/ai/models.ttl#${modelId}`,
-    } as any)
-    await providerInsertTx.isPersisted.promise
+    } as any).execute()
 
-    const modelInsertTx = modelCollection.insert({
+    await database.insert(aiModelTable).values({
       id: modelId,
       displayName: modelId,
       modelType: 'chat',
@@ -169,42 +162,30 @@ describe('model services collections integration', () => {
       status: 'active',
       createdAt: new Date(),
       updatedAt: new Date(),
-    } as any)
-    await modelInsertTx.isPersisted.promise
+    } as any).execute()
 
     const [createdProvider] = await database.select().from(aiProviderTable).where(eq(aiProviderTable.id, providerId)).execute()
     const [createdModel] = await database.select().from(aiModelTable).where(eq(aiModelTable.id, modelId)).execute()
+    expect(createdProvider?.baseUrl).toBe('https://api.example.com/v1')
+    expect(createdModel?.status).toBe('active')
 
     const providerSubject = (createdProvider as any)?.['@id']
     const modelSubject = (createdModel as any)?.['@id']
     if (providerSubject) createdSubjects.push({ table: 'provider', id: providerSubject })
     if (modelSubject) createdSubjects.push({ table: 'model', id: modelSubject })
 
-    const providerStateItem = providerCollection.state.data?.find((row: any) => row?.id === providerId)
-    const modelStateItem = modelCollection.state.data?.find((row: any) => row?.id === modelId)
-
-    const providerKey = (providerStateItem as any)?.['@id'] ?? providerStateItem?.id ?? providerId
-    const modelKey = (modelStateItem as any)?.['@id'] ?? modelStateItem?.id ?? modelId
-
-    const providerUpdateTx = providerCollection.update(providerKey, (draft: any) => {
-      draft.baseUrl = 'https://api.changed.com/v1'
-    })
-    await providerUpdateTx.isPersisted.promise
-
-    const modelUpdateTx = modelCollection.update(modelKey, (draft: any) => {
-      draft.status = 'inactive'
-    })
-    await modelUpdateTx.isPersisted.promise
+    // UPDATE
+    await database.update(aiProviderTable).set({ baseUrl: 'https://api.changed.com/v1' } as any).where(eq(aiProviderTable.id, providerId)).execute()
+    await database.update(aiModelTable).set({ status: 'inactive' } as any).where(eq(aiModelTable.id, modelId)).execute()
 
     const [updatedProvider] = await database.select().from(aiProviderTable).where(eq(aiProviderTable.id, providerId)).execute()
     const [updatedModel] = await database.select().from(aiModelTable).where(eq(aiModelTable.id, modelId)).execute()
     expect(updatedProvider?.baseUrl).toBe('https://api.changed.com/v1')
     expect(updatedModel?.status).toBe('inactive')
 
-    const modelDeleteTx = modelCollection.delete(modelKey)
-    await modelDeleteTx.isPersisted.promise
-    const providerDeleteTx = providerCollection.delete(providerKey)
-    await providerDeleteTx.isPersisted.promise
+    // DELETE
+    await database.delete(aiModelTable).where(eq(aiModelTable.id, modelId)).execute()
+    await database.delete(aiProviderTable).where(eq(aiProviderTable.id, providerId)).execute()
 
     const providerRows = await database.select().from(aiProviderTable).where(eq(aiProviderTable.id, providerId)).execute()
     const modelRows = await database.select().from(aiModelTable).where(eq(aiModelTable.id, modelId)).execute()

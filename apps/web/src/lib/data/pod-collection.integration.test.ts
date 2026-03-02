@@ -7,7 +7,7 @@ import { QueryClient } from '@tanstack/react-query'
 import { modelProviderTable, linxSchema } from '@linx/models'
 import { createPodCollection } from './pod-collection'
 
-dotenv.config({ path: '../../.env' })
+dotenv.config({ path: '.env' })
 
 const env = {
   webId: process.env.SOLID_WEBID,
@@ -22,9 +22,10 @@ const hasEnv = Boolean(env.webId && env.clientId && env.clientSecret && env.oidc
 let podReachable = false
 if (hasEnv && env.oidcIssuer) {
   try {
+    const probeUrl = new URL('.well-known/openid-configuration', env.oidcIssuer).href
     const ctrl = new AbortController()
-    const timer = setTimeout(() => ctrl.abort(), 2000)
-    await fetch(env.oidcIssuer, { signal: ctrl.signal }).then(() => { podReachable = true })
+    const timer = setTimeout(() => ctrl.abort(), 5000)
+    await fetch(probeUrl, { signal: ctrl.signal }).then(() => { podReachable = true })
     clearTimeout(timer)
   } catch { /* server not reachable */ }
 }
