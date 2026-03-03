@@ -1,13 +1,24 @@
 import { podTable, uri, string, text, timestamp, id } from '@undefineds.co/drizzle-solid'
 import { UDFS, DCTerms, FOAF, LINX_MSG, MEETING, SCHEMA, SIOC, WF } from './namespaces'
 
+/**
+ * Message schema (aligned with xpod).
+ *
+ * Storage structure:
+ * - Location: /.data/chat/{chatId}/{id}.ttl#{id}
+ * - chatId and threadId are simple strings (not uri references)
+ * - This avoids multi-variable template resolution issues
+ */
 export const messageTable = podTable(
   'chat_message',
   {
     id: id('id'),
 
-    threadId: uri('threadId').predicate(SIOC.has_member).inverse().notNull().reference(SIOC.Thread),
-    chatId: uri('chatId').predicate(WF.message).inverse().notNull().reference(MEETING.LongChat),
+    // chatId used for path construction - simple string, not uri reference
+    chatId: string('chatId').notNull(),
+
+    // threadId links to Thread - simple string for easier querying
+    threadId: string('threadId').notNull(),
 
     // maker is the entity URI of the message author:
     // - User: their WebID (https://user.pod/profile/card#me)
@@ -40,12 +51,11 @@ export const messageTable = podTable(
     updatedAt: timestamp('updatedAt').predicate(DCTerms.modified),
   },
   {
-    base: '/.data/messages/',
-    sparqlEndpoint: '/.data/messages/-/sparql',
+    base: '/.data/chat/',
+    sparqlEndpoint: '/.data/chat/-/sparql',
     type: MEETING.Message,
     namespace: UDFS,
-    // Document mode: one file per message
-    subjectTemplate: '{id}.ttl',
+    subjectTemplate: '{chatId}/{id}.ttl#{id}',
   },
 )
 
