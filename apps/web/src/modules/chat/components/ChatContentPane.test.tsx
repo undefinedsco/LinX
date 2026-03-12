@@ -136,7 +136,7 @@ describe('ChatContentPane', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '打开收件箱' }))
 
-    expect(mockSetInboxFilter).toHaveBeenCalledWith('all')
+    expect(mockSetInboxFilter).toHaveBeenCalledWith('pending')
     expect(mockSelectInboxItem).toHaveBeenCalledWith('approval:1')
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/$microAppId',

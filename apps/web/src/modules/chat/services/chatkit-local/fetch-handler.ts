@@ -25,7 +25,6 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): type
   const service = new LocalChatKitService({ store, db, webId, authFetch })
 
   return async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    console.log('[LocalChatKitFetch] Intercepted request:', String(_input))
     try {
       // Read request body
       let body: string
@@ -54,9 +53,7 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): type
       }
 
       const context = {}
-      console.log('[LocalChatKitFetch] Request body:', body.slice(0, 200))
       const result = await service.process(body, context)
-      console.log('[LocalChatKitFetch] Result type:', result.type)
 
       if (result.type === 'streaming') {
         // Build a ReadableStream from the async generator

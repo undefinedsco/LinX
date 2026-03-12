@@ -115,4 +115,32 @@ describe('RuntimeSidecarSink', () => {
     expect(inserts.filter((item) => item.table === auditTable)).toHaveLength(1)
     expect(queryClient.invalidateQueries).toHaveBeenCalledTimes(4)
   })
+
+  it('records auth resolution once runtime output resumes after auth_required', async () => {
+    const { db, inserts } = createMockDb()
+    const sink = new RuntimeSidecarSink(db as any, 'https://alice.example/profile/card#me')
+
+    await sink.persistRuntimeEvent(runtimeSession, {
+      type: 'auth_required',
+      ts: 10,
+      threadId: 'runtime-1',
+      method: 'oauth2',
+      url: 'https://example.com/auth',
+      message: 'Please sign in',
+    }, context)
+
+    await sink.persistRuntimeEvent(runtimeSession, {
+      type: 'assistant_delta',
+      ts: 11,
+      threadId: 'runtime-1',
+    }, context)
+
+    const auditActions = inserts
+      .filter((item) => item.table === auditTable)
+      .map((item) => item.values.action)
+
+    expect(auditActions).toContain('runtime.auth_required')
+    expect(auditActions).toContain('runtime.auth_resolved')
+    expect(inserts.filter((item) => item.table === inboxNotificationTable)).toHaveLength(2)
+  })
 })

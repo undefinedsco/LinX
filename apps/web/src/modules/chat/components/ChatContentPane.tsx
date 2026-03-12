@@ -25,6 +25,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useInboxItems } from '@/modules/inbox/collections'
+import { isActionableInboxItem } from '@/modules/inbox/utils'
 import { useInboxStore } from '@/modules/inbox/store'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 import { createLocalChatKitFetch } from '../services/chatkit-local/fetch-handler'
@@ -92,10 +93,7 @@ function InboxActionBanner({
         (item) =>
           item.chatId === chatId
           && (!item.threadId || item.threadId === threadId)
-          && (
-            item.category === 'auth_required'
-            || (item.kind === 'approval' && item.status === 'pending')
-          ),
+          && isActionableInboxItem(item),
       ),
     [chatId, inboxItems, threadId],
   )
@@ -110,7 +108,7 @@ function InboxActionBanner({
 
   const handleOpenInbox = useCallback(() => {
     if (!primaryItem) return
-    setFilter('all')
+    setFilter('pending')
     selectItem(primaryItem.id)
     navigate({ to: '/$microAppId', params: { microAppId: 'inbox' } })
   }, [navigate, primaryItem, selectItem, setFilter])
@@ -295,7 +293,7 @@ function RuntimeSessionToolbar({ threadId, threadTitle }: { threadId: string; th
           <DialogHeader>
             <DialogTitle>创建运行时会话</DialogTitle>
             <DialogDescription>
-              为当前话题绑定一个本地 service runtime。当前阶段只做最小 worktree + 远程聊天闭环。
+              为当前话题绑定一个本地运行时与 worktree。
             </DialogDescription>
           </DialogHeader>
 
@@ -487,7 +485,7 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
   }, [isReady, isThreadsLoading, mutations.createThread, selectedChatId, selectedThreadId, selectThread, threads])
 
   if (!selectedChatId) {
-    return <EmptyState title="选择或创建一个聊天" description="阶段 2 已支持 Pod 留档；现在继续把运行时会话挂到话题上。" />
+    return <EmptyState title="选择或创建一个聊天" description="先打开一个会话，再为它绑定运行时与 worktree。" />
   }
 
   if (!isReady) {

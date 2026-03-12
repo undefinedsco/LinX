@@ -18,6 +18,8 @@ import { queryClient } from '@/providers/query-provider'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 import { continueRuntimeToolCallFromInbox } from '@/modules/chat/services/chatkit-local/runtime-tool-response'
 import { useInboxStore, type InboxFilter } from './store'
+import { buildAuditPresentation, createResolvedAuthTimestampsIndex } from './presentation'
+import { countActionableInboxItems, filterInboxItems } from './utils'
 
 let dbGetter: (() => SolidDatabase | null) | null = null
 
@@ -147,16 +149,6 @@ function buildApprovalDescription(approval: ApprovalRow): string {
   return `等待授权 · ${approval.risk} 风险`
 }
 
-function parseContext(value: string | null | undefined): Record<string, unknown> | null {
-  if (!value) return null
-  try {
-    const parsed = JSON.parse(value) as Record<string, unknown>
-    return parsed && typeof parsed === 'object' ? parsed : null
-  } catch {
-    return null
-  }
-}
-
 function extractChatThreadRef(uri: string | null | undefined): { chatId: string | null; threadId: string | null } {
   if (!uri) return { chatId: null, threadId: null }
 
@@ -167,41 +159,6 @@ function extractChatThreadRef(uri: string | null | undefined): { chatId: string 
   }
 }
 
-function buildAuditPresentation(audit: AuditRow): Pick<InboxItem, 'title' | 'description' | 'category' | 'chatId' | 'threadId' | 'authUrl' | 'authMethod' | 'authMessage'> {
-  const context = parseContext(audit.context)
-  const threadUri = typeof context?.threadUri === 'string' ? context.threadUri : null
-  const { chatId, threadId } = extractChatThreadRef(threadUri)
-
-  if (audit.action === 'runtime.auth_required') {
-    const method = typeof context?.method === 'string' ? context.method : null
-    const url = typeof context?.url === 'string' ? context.url : null
-    const message = typeof context?.message === 'string' ? context.message : null
-    const descriptionParts = [message, method, url].filter(Boolean)
-
-    return {
-      title: method ? `认证请求 · ${method}` : '认证请求',
-      description: descriptionParts.length > 0 ? descriptionParts.join(' · ') : '运行时需要额外认证后才能继续。',
-      category: 'auth_required',
-      chatId,
-      threadId,
-      authUrl: url,
-      authMethod: method,
-      authMessage: message,
-    }
-  }
-
-  return {
-    title: audit.action,
-    description: audit.actorRole === 'system' ? '系统事件' : audit.actorRole,
-    category: 'audit',
-    chatId,
-    threadId,
-    authUrl: null,
-    authMethod: null,
-    authMessage: null,
-  }
-}
-
 function buildInboxItems(
   notifications: InboxNotificationRow[],
   approvals: ApprovalRow[],
@@ -209,6 +166,7 @@ function buildInboxItems(
 ): InboxItem[] {
   const approvalById = new Map(approvals.map((item) => [item.id, item]))
   const auditById = new Map(audits.map((item) => [item.id, item]))
+  const resolvedAuthTimestampsByKey = createResolvedAuthTimestampsIndex(audits)
   const seen = new Set<string>()
   const items: InboxItem[] = []
 
@@ -243,7 +201,7 @@ function buildInboxItems(
       const itemId = `audit:${audit.id}`
       if (seen.has(itemId)) continue
       seen.add(itemId)
-      const presentation = buildAuditPresentation(audit)
+      const presentation = buildAuditPresentation(audit, resolvedAuthTimestampsByKey)
       items.push({
         id: itemId,
         kind: 'audit',
@@ -251,6 +209,7 @@ function buildInboxItems(
         title: presentation.title,
         description: presentation.description,
         timestamp: String(notification.createdAt ?? audit.createdAt ?? ''),
+        status: presentation.status,
         audit,
         notification,
         chatId: presentation.chatId,
@@ -283,7 +242,7 @@ function buildInboxItems(
   for (const audit of audits) {
     const itemId = `audit:${audit.id}`
     if (seen.has(itemId)) continue
-    const presentation = buildAuditPresentation(audit)
+    const presentation = buildAuditPresentation(audit, resolvedAuthTimestampsByKey)
     items.push({
       id: itemId,
       kind: 'audit',
@@ -291,6 +250,7 @@ function buildInboxItems(
       title: presentation.title,
       description: presentation.description,
       timestamp: String(audit.createdAt ?? ''),
+      status: presentation.status,
       audit,
       chatId: presentation.chatId,
       threadId: presentation.threadId,
@@ -389,20 +349,9 @@ export function useInboxItems(filterOverride?: InboxFilter) {
       ])
 
       const allItems = buildInboxItems(notifications, approvals, audits)
-      return applyInboxFilter(allItems, filter)
+      return filterInboxItems(allItems, filter)
     },
   })
-}
-
-function applyInboxFilter(items: InboxItem[], filter: InboxFilter): InboxItem[] {
-  switch (filter) {
-    case 'pending':
-      return items.filter((item) => item.kind === 'approval' && item.status === 'pending')
-    case 'audit':
-      return items.filter((item) => item.kind === 'audit')
-    default:
-      return items
-  }
 }
 
 export function useInboxSummary() {
@@ -410,7 +359,7 @@ export function useInboxSummary() {
 
   return useMemo(() => ({
     total: items.length,
-    pending: items.filter((item) => item.kind === 'approval' && item.status === 'pending').length,
+    pending: countActionableInboxItems(items),
     audit: items.filter((item) => item.kind === 'audit').length,
   }), [items])
 }

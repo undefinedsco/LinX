@@ -743,7 +743,6 @@ export const chatOps = {
       const messageUnsub = await messageCollection.subscribeToPod(db)
       
       unsubscribers.push(chatUnsub, threadUnsub, messageUnsub)
-      console.log('[chatOps] Subscribed to Pod notifications')
     } catch (e) {
       console.error('[chatOps] Failed to subscribe:', e)
     }

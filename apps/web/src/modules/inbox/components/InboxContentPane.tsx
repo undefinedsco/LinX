@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { ExternalLink, KeyRound, MessageSquareText } from 'lucide-react'
+import { CheckCircle2, ExternalLink, KeyRound, MessageSquareText } from 'lucide-react'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -8,6 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Textarea } from '@/components/ui/textarea'
 import { useChatStore } from '@/modules/chat/store'
+import { buildAuditPresentation, createResolvedAuthTimestampsIndex, formatAuditActorRole, formatInboxStatusLabel } from '../presentation'
+import { isActionableInboxItem } from '../utils'
 import { useInboxItems, useResolveInboxApproval } from '../collections'
 import { useInboxStore } from '../store'
 
@@ -36,9 +38,14 @@ export function InboxContentPane(_props: MicroAppPaneProps) {
   const { data: items = [], isLoading } = useInboxItems()
   const resolveApproval = useResolveInboxApproval()
   const selectedItem = items.find((item) => item.id === selectedItemId) ?? null
+  const resolvedAuthIndex = useMemo(
+    () => createResolvedAuthTimestampsIndex(items.flatMap((item) => (item.audit ? [item.audit] : []))),
+    [items],
+  )
 
   const isPendingApproval = selectedItem?.kind === 'approval' && selectedItem.status === 'pending' && !!selectedItem.approval
-  const isAuthRequired = selectedItem?.category === 'auth_required'
+  const isPendingAuthRequired = !!selectedItem && isActionableInboxItem(selectedItem) && selectedItem.category === 'auth_required'
+  const isResolvedAuthRequired = selectedItem?.category === 'auth_required' && selectedItem.status === 'resolved'
   const isMutating = resolveApproval.isPending
 
   const approvalMeta = useMemo(() => {
@@ -48,6 +55,11 @@ export function InboxContentPane(_props: MicroAppPaneProps) {
       resolvedAt: formatTime(String(selectedItem.approval.resolvedAt ?? '')),
     }
   }, [selectedItem])
+  const auditPresentation = useMemo(
+    () => (selectedItem?.audit ? buildAuditPresentation(selectedItem.audit, resolvedAuthIndex) : null),
+    [resolvedAuthIndex, selectedItem],
+  )
+  const statusLabel = formatInboxStatusLabel(selectedItem?.status)
 
   const handleResolve = async (decision: 'approved' | 'rejected') => {
     if (!selectedItem?.approval) return
@@ -94,7 +106,7 @@ export function InboxContentPane(_props: MicroAppPaneProps) {
               <Badge variant={selectedItem.kind === 'approval' ? 'default' : 'secondary'}>
                 {selectedItem.kind === 'approval' ? '授权请求' : selectedItem.category === 'auth_required' ? '认证请求' : '审计事件'}
               </Badge>
-              {selectedItem.status && <Badge variant="outline">{selectedItem.status}</Badge>}
+              {statusLabel && <Badge variant="outline">{statusLabel}</Badge>}
             </div>
           </CardHeader>
           <CardContent className="space-y-4 text-sm">
@@ -178,12 +190,12 @@ export function InboxContentPane(_props: MicroAppPaneProps) {
                   </p>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  当前已接通 Pod 留档、inbox 审批与 runtime 续跑；这里继续补足查看和跳转体验。
+                  审批结果会写入 Pod；运行时恢复后，相关会话会继续推进。
                 </p>
               </div>
             )}
 
-            {isAuthRequired && (
+            {isPendingAuthRequired && (
               <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4">
                 <div className="flex items-start gap-3">
                   <KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
@@ -215,15 +227,31 @@ export function InboxContentPane(_props: MicroAppPaneProps) {
               </div>
             )}
 
+            {isResolvedAuthRequired && (
+              <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+                <div className="flex items-start gap-3">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-foreground">运行时认证已完成</p>
+                    <p className="text-xs leading-6 text-muted-foreground">
+                      当前认证请求已解除待处理状态。可以返回会话继续观察运行时输出。
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {selectedItem.audit && (
               <div className="grid gap-4 rounded-xl border border-border/50 bg-muted/20 p-4 sm:grid-cols-2">
                 <div>
-                  <div className="text-xs text-muted-foreground">动作</div>
-                  <div className="mt-1 font-medium text-foreground">{selectedItem.audit.action}</div>
+                  <div className="text-xs text-muted-foreground">事件</div>
+                  <div className="mt-1 font-medium text-foreground">{auditPresentation?.title || selectedItem.title}</div>
                 </div>
                 <div>
-                  <div className="text-xs text-muted-foreground">角色</div>
-                  <div className="mt-1 font-medium text-foreground">{selectedItem.audit.actorRole}</div>
+                  <div className="text-xs text-muted-foreground">来源</div>
+                  <div className="mt-1 font-medium text-foreground">
+                    {auditPresentation?.actorRoleLabel || formatAuditActorRole(selectedItem.audit.actorRole)}
+                  </div>
                 </div>
                 <div>
                   <div className="text-xs text-muted-foreground">会话</div>
@@ -233,6 +261,16 @@ export function InboxContentPane(_props: MicroAppPaneProps) {
                   <div className="text-xs text-muted-foreground">时间</div>
                   <div className="mt-1 text-foreground">{formatTime(String(selectedItem.audit.createdAt ?? ''))}</div>
                 </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">原始动作</div>
+                  <div className="mt-1 font-mono text-xs text-foreground">{selectedItem.audit.action}</div>
+                </div>
+                {statusLabel && (
+                  <div>
+                    <div className="text-xs text-muted-foreground">状态</div>
+                    <div className="mt-1 text-foreground">{statusLabel}</div>
+                  </div>
+                )}
               </div>
             )}
 

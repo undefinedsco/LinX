@@ -99,4 +99,22 @@ describe('InboxContentPane', () => {
       params: { microAppId: 'chat' },
     })
   })
+
+  it('does not show pending auth guidance once auth request is resolved', () => {
+    mockUseInboxItems.mockReturnValue({
+      data: [
+        {
+          ...authRequiredItem,
+          status: 'resolved',
+        },
+      ],
+      isLoading: false,
+    })
+
+    render(<InboxContentPane />)
+
+    expect(screen.queryByText('运行时等待额外认证')).not.toBeInTheDocument()
+    expect(screen.getByText('运行时认证已完成')).toBeInTheDocument()
+    expect(screen.getByText('打开会话')).toBeInTheDocument()
+  })
 })

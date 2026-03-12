@@ -34,6 +34,14 @@ interface RuntimeEventContext {
   threadId: string
 }
 
+interface PendingAuthState {
+  method: string
+  url?: string
+  message?: string
+  options?: Array<{ label?: string; url?: string; method?: string }>
+  eventTs: number
+}
+
 function inferRisk(toolName: string, rawArguments: string): 'low' | 'medium' | 'high' {
   const source = `${toolName} ${rawArguments}`.toLowerCase()
 
@@ -56,6 +64,7 @@ export class RuntimeSidecarSink {
   private readonly podBaseUrl: string
   private readonly seenEventKeys = new Set<string>()
   private readonly latestSessionStatus = new Map<string, RuntimeThreadStatus>()
+  private readonly pendingAuthBySession = new Map<string, PendingAuthState>()
 
   constructor(
     private readonly db: SolidDatabase,
@@ -69,6 +78,13 @@ export class RuntimeSidecarSink {
     event: RuntimeSessionEvent,
     context: RuntimeEventContext,
   ): Promise<void> {
+    if (
+      this.pendingAuthBySession.has(runtimeSession.id)
+      && (event.type === 'assistant_delta' || event.type === 'assistant_done' || event.type === 'tool_call')
+    ) {
+      await this.persistAuthResolved(runtimeSession, event.ts, context)
+    }
+
     switch (event.type) {
       case 'status':
         await this.persistSessionStatus(runtimeSession, event, context)
@@ -159,6 +175,42 @@ export class RuntimeSidecarSink {
       .where(eq(approvalTable.toolCallId, toolCallId))
       .execute()
     return (rows[0] as ApprovalRow | undefined) ?? null
+  }
+
+  private async persistAuthResolved(
+    runtimeSession: RuntimeSessionRecord,
+    eventTs: number,
+    context: RuntimeEventContext,
+  ): Promise<void> {
+    const pendingAuth = this.pendingAuthBySession.get(runtimeSession.id)
+    if (!pendingAuth) {
+      return
+    }
+
+    const dedupeKey = this.buildEventKey('auth-resolved', runtimeSession.id, `${pendingAuth.method}:${pendingAuth.url ?? ''}`)
+    if (this.seenEventKeys.has(dedupeKey)) {
+      this.pendingAuthBySession.delete(runtimeSession.id)
+      return
+    }
+    this.seenEventKeys.add(dedupeKey)
+
+    const auditId = await this.insertAuditEntry({
+      action: 'runtime.auth_resolved',
+      sessionId: runtimeSession.id,
+      context: {
+        method: pendingAuth.method,
+        url: pendingAuth.url,
+        message: pendingAuth.message,
+        options: pendingAuth.options,
+        threadUri: this.makeThreadUri(context.chatId, context.threadId),
+        authRequiredAt: pendingAuth.eventTs,
+        eventTs,
+      },
+    })
+
+    await this.insertInboxNotification(this.makeAuditUri(auditId), this.buildEventKey('auth-resolved-notification', runtimeSession.id, auditId))
+    this.pendingAuthBySession.delete(runtimeSession.id)
+    await this.invalidateInboxQueries()
   }
 
   private async persistSessionStatus(
@@ -264,6 +316,14 @@ export class RuntimeSidecarSink {
         threadUri: this.makeThreadUri(context.chatId, context.threadId),
         eventTs: event.ts,
       },
+    })
+
+    this.pendingAuthBySession.set(runtimeSession.id, {
+      method: event.method,
+      url: event.url,
+      message: event.message,
+      options: event.options,
+      eventTs: event.ts,
     })
 
     await this.insertInboxNotification(this.makeAuditUri(auditId), this.buildEventKey('auth-notification', runtimeSession.id, auditId))

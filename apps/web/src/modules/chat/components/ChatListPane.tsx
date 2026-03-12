@@ -22,6 +22,7 @@ import { useChatStore } from '../store'
 import { useChatList, useChatMutations, useChatInit } from '../collections'
 import { resolveRowId } from '@linx/models'
 import { useInboxItems } from '@/modules/inbox/collections'
+import { isActionableInboxItem } from '@/modules/inbox/utils'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   Bot,
@@ -554,7 +555,7 @@ export interface ChatListPaneProps extends MicroAppPaneProps {}
 
 export function ChatListPane(_props: ChatListPaneProps) {
   // Initialize chat collections with database
-  const { isReady } = useChatInit()
+  useChatInit()
   
   const search = useChatStore((state) => state.search)
   const setSearch = useChatStore((state) => state.setSearch)
@@ -563,16 +564,8 @@ export function ChatListPane(_props: ChatListPaneProps) {
   const openAddDialog = useChatStore((state) => state.openAddDialog)
 
   // Use new collection-based hooks
-  const { data: rawChats, isLoading: isChatsLoading, error: chatError, fetchStatus } = useChatList(search ? { search } : undefined)
+  const { data: rawChats, isLoading: isChatsLoading } = useChatList(search ? { search } : undefined)
   const { data: inboxItems = [] } = useInboxItems('all')
-  
-  console.log('ChatListPane Debug:', { 
-    dbReady: isReady, 
-    isChatsLoading, 
-    rawChatsLength: rawChats?.length,
-    fetchStatus,
-    chatError 
-  })
 
   const mutations = useChatMutations()
 
@@ -584,9 +577,7 @@ export function ChatListPane(_props: ChatListPaneProps) {
       const pendingItems = inboxItems.filter((item) => item.chatId === id)
       const hasPendingApproval = pendingItems.some((item) => item.kind === 'approval' && item.status === 'pending')
       const hasAuthRequired = pendingItems.some((item) => item.category === 'auth_required')
-      const pendingInboxCount = pendingItems.filter((item) =>
-        item.category === 'auth_required' || (item.kind === 'approval' && item.status === 'pending'),
-      ).length
+      const pendingInboxCount = pendingItems.filter(isActionableInboxItem).length
       const pendingInboxVariant: ChatItemData['pendingInboxVariant'] =
         hasAuthRequired ? 'auth_required' : hasPendingApproval ? 'approval' : undefined
 
