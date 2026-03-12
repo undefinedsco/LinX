@@ -5,7 +5,6 @@ import {
   credentialCollection,
   providerCollection,
   modelCollection,
-  initializeModelCollections,
 } from '../collections'
 import { MODEL_PROVIDERS } from '../constants'
 import type { AIProvider, AIModel } from '../types'
@@ -42,7 +41,6 @@ export function useModelServices() {
   useEffect(() => {
     if (!db) return
 
-    initializeModelCollections(db)
     credentialCollection.startSyncImmediate()
     providerCollection.startSyncImmediate()
     modelCollection.startSyncImmediate()

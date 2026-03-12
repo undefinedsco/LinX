@@ -10,8 +10,7 @@ export * from './types'
 import type { 
   ProviderMetadata, 
   ModelMetadata, 
-  DiscoveryService,
-  DiscoveryRegistry 
+  DiscoveryService
 } from './types'
 
 // 导入内置数据

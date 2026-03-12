@@ -1,9 +1,10 @@
-import { AS, DCTerms, FOAF, UDFS, VCARD } from '../namespaces'
+import { AS, DCTerms, FOAF, RDF, UDFS, VCARD } from '../namespaces'
 
 export const ContactVocab = {
   name: VCARD.fn,
   avatarUrl: VCARD.hasPhoto,
   entityUri: FOAF.primaryTopic,
+  rdfType: RDF.type,
   contactType: UDFS.contactType,
   isPublic: AS.audience,
   externalPlatform: UDFS.externalPlatform,

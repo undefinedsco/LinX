@@ -1,6 +1,5 @@
 import { useMemo } from 'react'
 import { Switch } from '@/components/ui/switch'
-import { Label } from '@/components/ui/label'
 import type { MicroAppLayoutConfig } from '@/modules/layout/micro-app-registry'
 import { useModelServicesStore } from './store'
 import { MODEL_PROVIDERS } from './constants'
@@ -15,22 +14,25 @@ export function useModelServicesLayoutConfig(): MicroAppLayoutConfig {
   [selectedId])
   const providerState = selectedId ? providers[selectedId] : null
 
-  return {
-    mainTitle: provider ? (
-      <div className="flex items-center gap-3">
-        <span>{provider.name}</span>
-        <div onClick={(e) => e.stopPropagation()}>
-          <Switch 
-            id="header-enable" 
-            checked={providerState?.enabled || false} 
-            onCheckedChange={(checked) => updateProvider(provider.id, { enabled: checked })} 
-            className="scale-90"
-          />
+  return useMemo(
+    () => ({
+      mainTitle: provider ? (
+        <div className="flex items-center gap-3">
+          <span>{provider.name}</span>
+          <div onClick={(e) => e.stopPropagation()}>
+            <Switch
+              id="header-enable"
+              checked={providerState?.enabled || false}
+              onCheckedChange={(checked) => updateProvider(provider.id, { enabled: checked })}
+              className="scale-90"
+            />
+          </div>
         </div>
-      </div>
-    ) : '模型服务',
-    subtitle: provider ? '' : '配置 AI 提供商及模型',
-    topActions: undefined,
-    hideIcon: true
-  }
+      ) : '模型服务',
+      subtitle: provider ? '' : '配置 AI 提供商及模型',
+      topActions: undefined,
+      hideIcon: true,
+    }),
+    [provider, providerState?.enabled, updateProvider],
+  )
 }

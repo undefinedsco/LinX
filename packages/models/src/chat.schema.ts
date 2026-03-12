@@ -1,5 +1,11 @@
-import { boolean, podTable, string, text, timestamp, uri, id, integer } from '@undefineds.co/drizzle-solid'
+import { boolean, object, podTable, string, text, timestamp, uri, id, integer } from '@undefineds.co/drizzle-solid'
 import { UDFS, DCTerms, SCHEMA, MEETING, WF } from './namespaces'
+
+export type ChatMemberRole = 'owner' | 'admin' | 'member'
+
+export interface ChatMetadata {
+  memberRoles?: Record<string, ChatMemberRole>
+}
 
 /**
  * Chat schema (channel/place).
@@ -24,18 +30,18 @@ export const chatTable = podTable(
     description: string('description').predicate(DCTerms.description),
     avatarUrl: uri('avatarUrl').predicate(SCHEMA.image),
 
-    // Primary contact (who this chat is with)
-    contact: uri('contact').predicate(UDFS.hasContact).notNull(),
-
     // Chat state
     starred: boolean('starred').predicate(UDFS.favorite).default(false),
     muted: boolean('muted').predicate(UDFS.muted).default(false),
     unreadCount: integer('unreadCount').predicate(UDFS.unreadCount).default(0),
 
-    // Group chat: additional participants (for groups only)
+    // Explicit membership for group chats.
     participants: uri('participants')
       .array()
-      .predicate(SCHEMA.participant),
+      .predicate(WF.participant),
+
+    // Structured chat metadata.
+    metadata: object('metadata').predicate(UDFS.metadata),
 
 
     // Last activity

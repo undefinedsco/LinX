@@ -42,10 +42,14 @@ export * from './profile'
 // Contact - 联系人 (unified index for Solid users, external users, and AI agents)
 export {
   contactTable,
+  ContactClass,
   ContactType,
+  isAgentContact,
+  isGroupContact,
   type ContactRow,
   type ContactInsert,
   type ContactUpdate,
+  type ContactClassValue,
   type ContactTypeValue,
 } from './contact.schema'
 export { contactRepository } from './contact.repository'
@@ -53,6 +57,8 @@ export { contactRepository } from './contact.repository'
 // Chat & Message - 聊天和消息
 export {
   chatTable,
+  type ChatMetadata,
+  type ChatMemberRole,
   type ChatRow,
   type ChatInsert,
   type ChatUpdate,

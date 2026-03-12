@@ -90,7 +90,6 @@ describe('chat collections integration', () => {
       id,
       title: 'Integration Chat',
       description: 'chat insert test',
-      contact: env.webId!,
       participants: [env.webId!],
     }).execute()
 
@@ -100,6 +99,35 @@ describe('chat collections integration', () => {
     const rows = await database.select().from(chatTable).where(eq(chatTable.id, id)).execute()
     expect(rows.length).toBe(1)
     expect(rows[0]?.title).toBe('Integration Chat')
+  })
+
+  it.skipIf(!canRun)('round-trips group chat participants and metadata object', { timeout: 30000 }, async () => {
+    const database = await getDb()
+    if (!database || !env.webId) return
+
+    const id = `group-chat-${Date.now()}`
+    const podBase = env.webId.replace('/profile/card#me', '')
+    const assistantUri = `${podBase}/.data/agents/assistant-${id}.ttl#this`
+    const metadata = {
+      memberRoles: {
+        [env.webId]: 'owner',
+        [assistantUri]: 'member',
+      },
+    } as const
+
+    await database.insert(chatTable).values({
+      id,
+      title: 'Group Round Trip',
+      participants: [env.webId, assistantUri],
+      metadata,
+    }).execute()
+
+    const rows = await database.select().from(chatTable).where(eq(chatTable.id, id)).execute()
+    expect(rows.length).toBe(1)
+    expect(rows[0]?.participants).toEqual([env.webId, assistantUri])
+    expect(rows[0]?.metadata).toEqual(metadata)
+
+    await database.delete(chatTable).where(eq(chatTable.id, id)).execute()
   })
 
   it.skipIf(!canRun)('insert thread/message and SELECT back', { timeout: 30000 }, async () => {
@@ -113,7 +141,6 @@ describe('chat collections integration', () => {
     await database.insert(chatTable).values({
       id: chatId,
       title: 'Thread Test Chat',
-      contact: env.webId!,
       participants: [env.webId!],
     }).execute()
 
@@ -151,7 +178,6 @@ describe('chat collections integration', () => {
     await database.insert(chatTable).values({
       id,
       title: 'Delete Me',
-      contact: env.webId!,
       participants: [env.webId!],
     }).execute()
 

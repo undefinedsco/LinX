@@ -21,6 +21,7 @@ import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { useChatStore } from '../store'
 import { useChatList, useChatMutations, useChatInit } from '../collections'
 import { resolveRowId } from '@linx/models'
+import { useInboxItems } from '@/modules/inbox/collections'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   Bot,
@@ -95,6 +96,8 @@ interface ChatItemData {
 
   /** cli_session: tool identifier */
   sessionTool?: 'claude-code' | 'cursor' | 'windsurf'
+  pendingInboxCount?: number
+  pendingInboxVariant?: 'approval' | 'auth_required'
 }
 
 // ============================================
@@ -148,6 +151,12 @@ function getChatTypeIcon(chatType?: ChatType) {
 
 /** Resolve preview text: CLI sessions use status mapping, group prefixes sender name */
 function resolvePreview(chat: ChatItemData): string {
+  if (chat.pendingInboxVariant === 'auth_required') {
+    return '🔐 等待认证'
+  }
+  if (chat.pendingInboxVariant === 'approval') {
+    return `⚠️ 待处理授权${chat.pendingInboxCount && chat.pendingInboxCount > 1 ? ` · ${chat.pendingInboxCount} 条` : ''}`
+  }
   if (chat.chatType === 'cli_session' && chat.cliStatus) {
     return CLI_STATUS_PREVIEW[chat.cliStatus]
   }
@@ -161,6 +170,12 @@ function resolvePreview(chat: ChatItemData): string {
 function getCliStatusColor(status?: CliSessionStatus): string | undefined {
   if (!status) return undefined
   return CLI_STATUS_MAP[status]?.color
+}
+
+function getInboxPreviewColor(variant?: ChatItemData['pendingInboxVariant']): string | undefined {
+  if (variant === 'approval') return 'text-yellow-600'
+  if (variant === 'auth_required') return 'text-blue-600'
+  return undefined
 }
 
 // ============================================
@@ -191,7 +206,7 @@ function ChatItem({
   // CP0: chatType-differentiated preview color (cli_session uses status color)
   const previewColorClass = chat.chatType === 'cli_session'
     ? getCliStatusColor(chat.cliStatus) ?? 'text-muted-foreground'
-    : 'text-muted-foreground'
+    : getInboxPreviewColor(chat.pendingInboxVariant) ?? 'text-muted-foreground'
 
   return (
     <ContextMenu>
@@ -549,6 +564,7 @@ export function ChatListPane(_props: ChatListPaneProps) {
 
   // Use new collection-based hooks
   const { data: rawChats, isLoading: isChatsLoading, error: chatError, fetchStatus } = useChatList(search ? { search } : undefined)
+  const { data: inboxItems = [] } = useInboxItems('all')
   
   console.log('ChatListPane Debug:', { 
     dbReady: isReady, 
@@ -563,22 +579,34 @@ export function ChatListPane(_props: ChatListPaneProps) {
   // 格式化 Chat 列表 - 添加标星排序
   const chats: ChatItemData[] = useMemo(() => {
     if (!rawChats) return []
-    const formatted = rawChats.map(c => ({
-      id: resolveRowId(c) ?? 'unknown',
-      title: c.title ?? '未命名聊天',
-      preview: c.lastMessagePreview ?? '暂无消息',
-      timestamp: formatTimestamp(c.lastActiveAt ?? c.updatedAt),
-      starred: c.starred ?? false,
-      muted: c.muted ?? false,
-      unreadCount: c.unreadCount ?? 0,
-      // Use avatarUrl directly from Chat (redundant storage)
-      providerLogo: c.avatarUrl ?? undefined,
-      provider: undefined,
-      // chatType derived from participants count; defaults to direct_ai
-      chatType: (c.participants && c.participants.length > 1
-        ? 'group'
-        : 'direct_ai') as ChatType,
-    }))
+    const formatted = rawChats.map((chat) => {
+      const id = resolveRowId(chat) ?? 'unknown'
+      const pendingItems = inboxItems.filter((item) => item.chatId === id)
+      const hasPendingApproval = pendingItems.some((item) => item.kind === 'approval' && item.status === 'pending')
+      const hasAuthRequired = pendingItems.some((item) => item.category === 'auth_required')
+      const pendingInboxCount = pendingItems.filter((item) =>
+        item.category === 'auth_required' || (item.kind === 'approval' && item.status === 'pending'),
+      ).length
+      const pendingInboxVariant: ChatItemData['pendingInboxVariant'] =
+        hasAuthRequired ? 'auth_required' : hasPendingApproval ? 'approval' : undefined
+
+      return {
+        id,
+        title: chat.title ?? '未命名聊天',
+        preview: chat.lastMessagePreview ?? '暂无消息',
+        timestamp: formatTimestamp(chat.lastActiveAt ?? chat.updatedAt),
+        starred: chat.starred ?? false,
+        muted: chat.muted ?? false,
+        unreadCount: chat.unreadCount ?? 0,
+        providerLogo: chat.avatarUrl ?? undefined,
+        provider: undefined,
+        chatType: (chat.participants && chat.participants.length > 1
+          ? 'group'
+          : 'direct_ai') as ChatType,
+        pendingInboxCount,
+        pendingInboxVariant,
+      }
+    })
     
     // 标星的排在前面
     return formatted.sort((a, b) => {
@@ -586,7 +614,7 @@ export function ChatListPane(_props: ChatListPaneProps) {
       if (!a.starred && b.starred) return 1
       return 0
     })
-  }, [rawChats])
+  }, [inboxItems, rawChats])
 
   // Handlers
   const handleAddChat = useCallback(() => {

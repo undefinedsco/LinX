@@ -1,7 +1,7 @@
 import { DCTerms, LINX_CHAT, SIOC, UDFS } from '../namespaces'
 
 export const ThreadVocab = {
-  chatId: UDFS.hasThread,
+  chatId: SIOC.has_parent,
   title: DCTerms.title,
   starred: UDFS.favorite,
   createdAt: DCTerms.created,

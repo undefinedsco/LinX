@@ -5,7 +5,8 @@ import { UDFS, DCTerms, FOAF, LINX_MSG, MEETING, SCHEMA, SIOC, WF } from './name
  * Message schema (aligned with xpod).
  *
  * Storage structure:
- * - Location: /.data/chat/{chatId}/{id}.ttl#{id}
+ * - Location: /.data/chat/{chatId}/{yyyy}/{MM}/{dd}/messages.ttl#{id}
+ * - Date-based path for efficient time-range queries
  * - chatId and threadId are simple strings (not uri references)
  * - This avoids multi-variable template resolution issues
  */
@@ -14,11 +15,11 @@ export const messageTable = podTable(
   {
     id: id('id'),
 
-    // chatId used for path construction - simple string, not uri reference
-    chatId: string('chatId').notNull(),
+    // chatId used for path construction, but still keeps the canonical message linkage predicate
+    chatId: string('chatId').predicate(WF.message).notNull(),
 
-    // threadId links to Thread - simple string for easier querying
-    threadId: string('threadId').notNull(),
+    // threadId stays as a plain string for query/path stability while preserving the canonical thread predicate
+    threadId: string('threadId').predicate(SIOC.has_member).notNull(),
 
     // maker is the entity URI of the message author:
     // - User: their WebID (https://user.pod/profile/card#me)
@@ -55,7 +56,7 @@ export const messageTable = podTable(
     sparqlEndpoint: '/.data/chat/-/sparql',
     type: MEETING.Message,
     namespace: UDFS,
-    subjectTemplate: '{chatId}/{id}.ttl#{id}',
+    subjectTemplate: '{chatId}/{yyyy}/{MM}/{dd}/messages.ttl#{id}',
   },
 )
 

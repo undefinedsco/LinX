@@ -7,11 +7,18 @@
 import type { ChatHandler, ChatHandlerContext } from './types'
 import { createAgentHandler } from './handlers/agent-handler'
 import { createArchiveHandler } from './handlers/archive-handler'
+import { isGroupContact } from '@linx/models'
 
 /**
  * Create a chat handler based on the contact type
  */
 export function createChatHandler(ctx: ChatHandlerContext): ChatHandler {
+  if (isGroupContact(ctx.contact)) {
+    // TODO: Implement group chat handler
+    console.warn('Group chat handler not implemented, using archive handler')
+    return createArchiveHandler(ctx)
+  }
+
   const contactType = ctx.contact.contactType
   
   switch (contactType) {
@@ -26,11 +33,6 @@ export function createChatHandler(ctx: ChatHandlerContext): ChatHandler {
       // TODO: Implement Solid chat handler
       // For now, fall back to archive (read-only)
       console.warn('Solid chat handler not implemented, using archive handler')
-      return createArchiveHandler(ctx)
-    
-    case 'group':
-      // TODO: Implement group chat handler
-      console.warn('Group chat handler not implemented, using archive handler')
       return createArchiveHandler(ctx)
     
     default:

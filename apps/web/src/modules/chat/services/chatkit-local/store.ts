@@ -7,17 +7,17 @@
  * This replaces PodChatKitStore on the server — no API server round-trip needed.
  */
 
-import { eq, and } from 'drizzle-solid'
+import { eq, and } from '@undefineds.co/drizzle-solid'
 import {
   Chat, Thread, Message,
   MessageRole, MessageStatus,
-} from '@undefineds.co/xpod/dist/api/chatkit/schema'
-import type { ChatKitStore, StoreContext } from '@undefineds.co/xpod/dist/api/chatkit/store'
+} from '@/lib/vendor/xpod-chatkit'
+import type { ChatKitStore, StoreContext } from '@/lib/vendor/xpod-chatkit'
 import {
   generateId, nowTimestamp,
   type ThreadMetadata, type ThreadItem, type Attachment,
   type Page, type StoreItemType,
-} from '@undefineds.co/xpod/dist/api/chatkit/types'
+} from '@/lib/vendor/xpod-chatkit'
 import type { SolidDatabase } from '@linx/models'
 
 const DEFAULT_CHAT_ID = 'default'
@@ -76,10 +76,75 @@ function threadRecordToMetadata(record: any): ThreadMetadata {
   }
 }
 
+function parseStoredThreadItem(value: unknown, fallbackThreadId: string, fallbackCreatedAt: number): ThreadItem | null {
+  if (typeof value !== 'string' || !value.trim()) {
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(value) as Partial<ThreadItem> | null
+    if (!parsed || parsed.type !== 'client_tool_call' || typeof (parsed as any).call_id !== 'string') {
+      return null
+    }
+
+    return {
+      ...parsed,
+      thread_id: typeof parsed.thread_id === 'string' ? parsed.thread_id : fallbackThreadId,
+      created_at: typeof parsed.created_at === 'number' ? parsed.created_at : fallbackCreatedAt,
+    } as ThreadItem
+  } catch {
+    return null
+  }
+}
+
+function threadItemToMessageRecord(item: ThreadItem): {
+  content: string
+  role: string
+  status: string | null
+  richContent: string | null
+} {
+  if (item.type === 'user_message') {
+    return {
+      content: (item as any).content
+        .filter((contentPart: any) => contentPart.type === 'input_text')
+        .map((contentPart: any) => contentPart.text)
+        .join('\n'),
+      role: MessageRole.USER,
+      status: null,
+      richContent: null,
+    }
+  }
+
+  if (item.type === 'assistant_message') {
+    return {
+      content: (item as any).content
+        .filter((contentPart: any) => contentPart.type === 'output_text')
+        .map((contentPart: any) => contentPart.text)
+        .join('\n'),
+      role: MessageRole.ASSISTANT,
+      status: (item as any).status || MessageStatus.COMPLETED,
+      richContent: null,
+    }
+  }
+
+  return {
+    content: item.type === 'client_tool_call' ? (item as any).name || item.type : JSON.stringify(item),
+    role: MessageRole.SYSTEM,
+    status: typeof (item as any).status === 'string' ? (item as any).status : null,
+    richContent: JSON.stringify(item),
+  }
+}
+
 function messageRecordToItem(record: any, threadId: string): ThreadItem {
   const createdAt = record.createdAt
     ? Math.floor(new Date(record.createdAt).getTime() / 1000)
     : nowTimestamp()
+
+  const storedThreadItem = parseStoredThreadItem(record.richContent, threadId, createdAt)
+    ?? parseStoredThreadItem(record.content, threadId, createdAt)
+  if (storedThreadItem) {
+    return storedThreadItem
+  }
 
   if (record.role === MessageRole.USER) {
     return {
@@ -95,7 +160,7 @@ function messageRecordToItem(record: any, threadId: string): ThreadItem {
     id: record.id,
     thread_id: threadId,
     type: 'assistant_message',
-    content: [{ type: 'output_text', text: record.content || '', annotations: [], inline_widgets: [] } as any],
+    content: [{ type: 'output_text', text: record.content || '', annotations: [] } as any],
     attachments: [],
     status: record.status || 'completed',
     created_at: createdAt,
@@ -315,28 +380,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
 
   async addThreadItem(threadId: string, item: ThreadItem, _context: StoreContext): Promise<void> {
     const chatId = await this.getThreadChatId(threadId)
-
-    let content = ''
-    let role: string = MessageRole.USER
-    let status: string | null = null
-
-    if (item.type === 'user_message') {
-      content = (item as any).content
-        .filter((c: any) => c.type === 'input_text')
-        .map((c: any) => c.text)
-        .join('\n')
-      role = MessageRole.USER
-    } else if (item.type === 'assistant_message') {
-      content = (item as any).content
-        .filter((c: any) => c.type === 'output_text')
-        .map((c: any) => c.text)
-        .join('\n')
-      role = MessageRole.ASSISTANT
-      status = (item as any).status || MessageStatus.COMPLETED
-    } else {
-      content = JSON.stringify(item)
-      role = MessageRole.SYSTEM
-    }
+    const { content, role, status, richContent } = threadItemToMessageRecord(item)
 
     await this.db.insert(Message).values({
       id: item.id,
@@ -345,6 +389,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       maker: role === MessageRole.USER ? this.webId : null,
       role,
       content,
+      richContent,
       status,
       createdAt: new Date(item.created_at * 1000).toISOString(),
     }).execute()
@@ -354,22 +399,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
 
   async saveItem(threadId: string, item: ThreadItem, _context: StoreContext): Promise<void> {
     const chatId = await this.getThreadChatId(threadId)
-
-    let content = ''
-    let status: string | null = null
-
-    if (item.type === 'user_message') {
-      content = (item as any).content
-        .filter((c: any) => c.type === 'input_text')
-        .map((c: any) => c.text)
-        .join('\n')
-    } else if (item.type === 'assistant_message') {
-      content = (item as any).content
-        .filter((c: any) => c.type === 'output_text')
-        .map((c: any) => c.text)
-        .join('\n')
-      status = (item as any).status || MessageStatus.COMPLETED
-    }
+    const { content, status, richContent } = threadItemToMessageRecord(item)
 
     const createdAt = item.created_at
       ? new Date(item.created_at * 1000).toISOString()
@@ -378,7 +408,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     // For recently created messages, use direct SPARQL PATCH to avoid drizzle-solid UPDATE bug
     if (this.recentlyCreatedIds.has(item.id)) {
       this.recentlyCreatedIds.delete(item.id)
-      await this.directPatchMessage(chatId, item.id, content, status, createdAt)
+      await this.directPatchMessage(chatId, item.id, content, richContent, status, createdAt)
       return
     }
 
@@ -393,7 +423,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
           ? (existing as any).createdAt
           : String((existing as any).createdAt))
         : undefined
-      await this.directPatchMessage(chatId, item.id, content, status, existingCreatedAt)
+      await this.directPatchMessage(chatId, item.id, content, richContent, status, existingCreatedAt)
     } else {
       await this.addThreadItem(threadId, item, _context)
     }
@@ -407,6 +437,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     _chatId: string,
     messageId: string,
     content: string,
+    richContent: string | null,
     status: string | null,
     _createdAt?: string,
   ): Promise<void> {
@@ -434,21 +465,32 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
     }
 
-    const deletePatterns: string[] = []
-    const insertTriples: string[] = []
+    const deleteTriples = [
+      `<${subjectUri}> <http://rdfs.org/sioc/ns#content> ?oldContent .`,
+      `<${subjectUri}> <http://rdfs.org/sioc/ns#richContent> ?oldRichContent .`,
+      `<${subjectUri}> <https://undefineds.co/ns#status> ?oldStatus .`,
+    ]
+    const insertTriples = [
+      `<${subjectUri}> <http://rdfs.org/sioc/ns#content> ${escapeForSparql(content)} .`,
+    ]
+    const wherePatterns = [
+      `OPTIONAL { <${subjectUri}> <http://rdfs.org/sioc/ns#content> ?oldContent . }`,
+      `OPTIONAL { <${subjectUri}> <http://rdfs.org/sioc/ns#richContent> ?oldRichContent . }`,
+      `OPTIONAL { <${subjectUri}> <https://undefineds.co/ns#status> ?oldStatus . }`,
+    ]
 
-    deletePatterns.push(`<${subjectUri}> <http://rdfs.org/sioc/ns#content> ?oldContent .`)
-    insertTriples.push(`<${subjectUri}> <http://rdfs.org/sioc/ns#content> ${escapeForSparql(content)} .`)
+    if (richContent !== null) {
+      insertTriples.push(`<${subjectUri}> <http://rdfs.org/sioc/ns#richContent> ${escapeForSparql(richContent)} .`)
+    }
 
     if (status) {
-      deletePatterns.push(`<${subjectUri}> <https://undefineds.co/ns#status> ?oldStatus .`)
       insertTriples.push(`<${subjectUri}> <https://undefineds.co/ns#status> "${status}" .`)
     }
 
     const sparql = `
-DELETE { ${deletePatterns.join(' ')} }
+DELETE { ${deleteTriples.join(' ')} }
 INSERT { ${insertTriples.join(' ')} }
-WHERE { ${deletePatterns.join(' ')} }
+WHERE { ${wherePatterns.join(' ')} }
     `.trim()
 
     // Use the auth fetch passed in at construction time

@@ -12,6 +12,9 @@ import {
   credentialTable,
   aiProviderTable,
   aiModelTable,
+  approvalTable,
+  auditTable,
+  inboxNotificationTable,
   linxSchema,
 } from '@linx/models'
 
@@ -142,6 +145,9 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
             credentialTable,
             aiProviderTable,
             aiModelTable,
+            approvalTable,
+            auditTable,
+            inboxNotificationTable,
           ])
           console.log('✅ Pod 资源初始化完成（已跳过 TypeIndex 创建）')
         } catch (initError) {

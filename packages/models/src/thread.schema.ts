@@ -21,7 +21,7 @@ export const threadTable = podTable(
     id: id('id'),
 
     // Belongs to chat - used in subjectTemplate path
-    chatId: uri('chatId').predicate(SIOC.has_parent).notNull().reference(MEETING.LongChat),
+    chatId: uri('chatId').predicate(SIOC.has_parent).notNull().link(MEETING.LongChat),
 
     // Display / state
     title: string('title').predicate(DCTerms.title),

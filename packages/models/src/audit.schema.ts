@@ -1,4 +1,4 @@
-import { podTable, uri, string, text, timestamp, id } from 'drizzle-solid'
+import { podTable, uri, string, text, timestamp, id } from '@undefineds.co/drizzle-solid'
 import { UDFS, DCTerms } from './namespaces'
 
 // Append-only audit log (separate from Solid inbox notifications)

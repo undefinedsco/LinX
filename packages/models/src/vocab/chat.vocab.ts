@@ -9,6 +9,7 @@ export const ChatBaseVocab = {
 
   // Participants (protocol-aligned)
   participants: WF.participant,
+  metadata: UDFS.metadata,
 
   // State
   starred: UDFS.favorite,

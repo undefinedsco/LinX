@@ -1,11 +1,9 @@
 /**
  * xpod Module - Manages the Solid Pod server
  *
- * xpod 新架构:
- * - Gateway + Supervisor 模式
- * - 主端口 (--port) 是 Gateway 入口
- * - CSS 和 API 端口内部自动分配
- * - 支持 --mode (local/cloud) 或 --config 指定配置
+ * Priority:
+ * 1. Use embedded/library runtime when available
+ * 2. Fall back to legacy subprocess runtime
  */
 import * as fs from 'fs'
 import * as path from 'path'
@@ -26,9 +24,50 @@ interface XpodRuntime {
   source: string
   cwd: string
   entry: string
+  packageDir: string
+  version?: string
 }
 
-// Parse .env file to get config
+interface EmbeddedRuntimeModule {
+  PACKAGE_ROOT: string
+  GatewayProxy: new (port: number, supervisor: EmbeddedSupervisor, bindHost?: string) => EmbeddedGatewayProxy
+  getFreePort: (startPort: number) => Promise<number>
+}
+
+interface EmbeddedSupervisor {
+  register(config: {
+    name: string
+    command: string
+    args: string[]
+    env?: Record<string, string>
+    cwd?: string
+  }): void
+  startAll(): Promise<void>
+  stopAll(): Promise<void>
+  getAllStatus(): Array<{ name: string; status: string }>
+}
+
+interface EmbeddedSupervisorModule {
+  Supervisor: new () => EmbeddedSupervisor
+}
+
+interface EmbeddedGatewayProxy {
+  setTargets(targets: { css?: string; api?: string }): void
+  start(): void
+  stop(): Promise<void>
+}
+
+interface EmbeddedRuntimeHandle {
+  source: string
+  packageDir: string
+  version?: string
+  port: number
+  baseUrl: string
+  publicUrl?: string
+  supervisor: EmbeddedSupervisor
+  proxy: EmbeddedGatewayProxy
+}
+
 function parseEnvFile(envPath: string): Record<string, string> {
   const env: Record<string, string> = {}
   if (!fs.existsSync(envPath)) {
@@ -71,13 +110,31 @@ function getPackageBinEntry(packageDir: string, pkg: any): string | null {
   return null
 }
 
+function ensureTrailingSlash(url: string): string {
+  return url.endsWith('/') ? url : `${url}/`
+}
+
+function getBindHost(baseUrl: string): string {
+  const forced = process.env.XPOD_LISTEN_HOST
+  if (forced) return forced
+
+  try {
+    const hostname = new URL(baseUrl).hostname
+    if (hostname === 'localhost') return '127.0.0.1'
+    if (hostname === '::1') return '::1'
+    if (hostname.startsWith('127.')) return hostname
+  } catch {
+    // ignore
+  }
+
+  return '127.0.0.1'
+}
+
 export class XpodModule {
   private process: ChildProcess | null = null
-  private ready: boolean = false
+  private embedded: EmbeddedRuntimeHandle | null = null
+  private ready = false
 
-  /**
-   * Check Node.js version
-   */
   private checkNodeVersion(): void {
     const version = process.version
     const majorVersion = parseInt(version.slice(1).split('.')[0], 10)
@@ -90,9 +147,6 @@ export class XpodModule {
     }
   }
 
-  /**
-   * Resolve runtime from installed npm package first.
-   */
   private resolveFromNpmPackage(): XpodRuntime | null {
     for (const packageName of XPOD_PACKAGE_CANDIDATES) {
       try {
@@ -106,6 +160,8 @@ export class XpodModule {
             source: `npm:${packageName}`,
             cwd: packageDir,
             entry: binEntry,
+            packageDir,
+            version: pkg.version,
           }
         }
 
@@ -115,6 +171,8 @@ export class XpodModule {
             source: `npm:${packageName}`,
             cwd: packageDir,
             entry: mainEntry,
+            packageDir,
+            version: pkg.version,
           }
         }
       } catch {
@@ -125,9 +183,6 @@ export class XpodModule {
     return null
   }
 
-  /**
-   * Legacy fallback for local development and packaged desktop resources.
-   */
   private resolveLegacyRuntime(): XpodRuntime | null {
     const devXpod = path.join(__dirname, '..', '..', '..', '..', '..', 'xpod')
     const siblingXpod = path.join(__dirname, '..', '..', '..', '..', '..', '..', 'xpod')
@@ -141,6 +196,7 @@ export class XpodModule {
           source: `legacy:${candidate}`,
           cwd: fs.realpathSync(candidate),
           entry: distMain,
+          packageDir: fs.realpathSync(candidate),
         }
       }
     }
@@ -154,6 +210,7 @@ export class XpodModule {
           source: 'packaged-resource',
           cwd: packagedXpod,
           entry: distMain,
+          packageDir: packagedXpod,
         }
       }
     }
@@ -173,37 +230,111 @@ export class XpodModule {
     )
   }
 
-  /**
-   * Start xpod server
-   */
-  async start(): Promise<void> {
-    if (this.process) {
-      console.log('[Xpod] Already running')
-      return
+  private loadEmbeddedModules(runtime: XpodRuntime): {
+    runtimeModule: EmbeddedRuntimeModule
+    supervisorModule: EmbeddedSupervisorModule
+  } | null {
+    try {
+      const runtimeModule = require(path.join(runtime.packageDir, 'dist', 'runtime')) as EmbeddedRuntimeModule
+      const supervisorModule = require(path.join(runtime.packageDir, 'dist', 'supervisor')) as EmbeddedSupervisorModule
+
+      if (!runtimeModule?.GatewayProxy || !runtimeModule?.getFreePort || !supervisorModule?.Supervisor) {
+        return null
+      }
+
+      return { runtimeModule, supervisorModule }
+    } catch {
+      return null
+    }
+  }
+
+  private async startEmbedded(runtime: XpodRuntime, envPath: string, env: Record<string, string>): Promise<void> {
+    const modules = this.loadEmbeddedModules(runtime)
+    if (!modules) {
+      throw new Error('Embedded xpod runtime API not available')
     }
 
-    this.checkNodeVersion()
+    const { runtimeModule, supervisorModule } = modules
+    const requestedPort = parseInt(env.CSS_PORT || '5737', 10)
+    const hostBaseUrl = ensureTrailingSlash(env.CSS_BASE_URL || `http://127.0.0.1:${requestedPort}`)
+    const bindHost = getBindHost(hostBaseUrl)
+    const cssPort = await runtimeModule.getFreePort(requestedPort + 1)
+    const apiPort = await runtimeModule.getFreePort(cssPort + 1)
 
-    const envPath = getWebServerModule().getEnvPath()
+    process.env.XPOD_ENV_PATH = envPath
+    process.env.CSS_BASE_URL = hostBaseUrl
 
-    if (!fs.existsSync(envPath)) {
-      throw new Error(`Env file not found: ${envPath}. Please run setup first.`)
+    const supervisor = new supervisorModule.Supervisor()
+    const proxy = new runtimeModule.GatewayProxy(requestedPort, supervisor, bindHost)
+
+    const cssBinary = require.resolve('@solid/community-server/bin/server.js')
+    const cssModuleRoot = path.dirname(require.resolve('@solid/community-server/package.json'))
+    const configPath = path.join(runtime.packageDir, 'config', 'local.json')
+    const apiMain = path.join(runtime.packageDir, 'dist', 'api', 'main.js')
+
+    supervisor.register({
+      name: 'css',
+      command: process.execPath,
+      args: [
+        cssBinary,
+        '-c', configPath,
+        '-m', cssModuleRoot,
+        '-p', cssPort.toString(),
+        '-b', hostBaseUrl,
+      ],
+      cwd: runtime.packageDir,
+      env: {
+        ...process.env,
+        ...env,
+        CSS_PORT: cssPort.toString(),
+        CSS_BASE_URL: hostBaseUrl,
+      } as Record<string, string>,
+    })
+
+    supervisor.register({
+      name: 'api',
+      command: process.execPath,
+      args: [apiMain],
+      cwd: runtime.packageDir,
+      env: {
+        ...process.env,
+        ...env,
+        API_PORT: apiPort.toString(),
+        XPOD_MAIN_PORT: requestedPort.toString(),
+        CSS_INTERNAL_URL: `http://localhost:${cssPort}`,
+        CSS_BASE_URL: hostBaseUrl,
+        CSS_TOKEN_ENDPOINT: `${hostBaseUrl}.oidc/token`,
+      } as Record<string, string>,
+    })
+
+    proxy.setTargets({
+      css: `http://localhost:${cssPort}`,
+      api: `http://localhost:${apiPort}`,
+    })
+
+    console.log('[Xpod] Starting embedded runtime from', runtime.source, runtime.version ? `v${runtime.version}` : '')
+    await supervisor.startAll()
+    proxy.start()
+    await this.waitForReady(requestedPort)
+
+    this.embedded = {
+      source: runtime.source,
+      packageDir: runtime.packageDir,
+      version: runtime.version,
+      port: requestedPort,
+      baseUrl: hostBaseUrl,
+      publicUrl: env.CSS_PUBLIC_URL,
+      supervisor,
+      proxy,
     }
+  }
 
-    const env = parseEnvFile(envPath)
+  private async startLegacySubprocess(runtime: XpodRuntime, envPath: string, env: Record<string, string>): Promise<void> {
     const port = parseInt(env.CSS_PORT || '5737', 10)
-    const dataDir = env.CSS_ROOT_FILE_PATH || path.join(process.env.HOME || '', 'Library', 'Application Support', 'LinX', 'pod')
 
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true })
-      console.log('[Xpod] Created data directory:', dataDir)
-    }
-
-    const runtime = this.resolveRuntime()
     console.log('[Xpod] Runtime source:', runtime.source)
     console.log('[Xpod] Runtime cwd:', runtime.cwd)
     console.log('[Xpod] Runtime entry:', runtime.entry)
-    console.log('[Xpod] Data dir:', dataDir)
     console.log('[Xpod] Gateway port:', port)
     console.log('[Xpod] Using env file:', envPath)
 
@@ -247,14 +378,57 @@ export class XpodModule {
     })
 
     await this.waitForReady(port)
-    this.ready = true
-    console.log('[Xpod] Server is ready')
   }
 
-  /**
-   * Stop xpod server
-   */
+  async start(): Promise<void> {
+    if (this.process || this.embedded) {
+      console.log('[Xpod] Already running')
+      return
+    }
+
+    this.checkNodeVersion()
+
+    const envPath = getWebServerModule().getEnvPath()
+    if (!fs.existsSync(envPath)) {
+      throw new Error(`Env file not found: ${envPath}. Please run setup first.`)
+    }
+
+    const env = parseEnvFile(envPath)
+    const dataDir = env.CSS_ROOT_FILE_PATH || path.join(process.env.HOME || '', 'Library', 'Application Support', 'LinX', 'pod')
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true })
+      console.log('[Xpod] Created data directory:', dataDir)
+    }
+
+    const runtime = this.resolveRuntime()
+
+    try {
+      await this.startEmbedded(runtime, envPath, env)
+      this.ready = true
+      console.log('[Xpod] Embedded runtime is ready')
+      return
+    } catch (error) {
+      console.warn('[Xpod] Embedded runtime unavailable, falling back to subprocess:', error)
+    }
+
+    await this.startLegacySubprocess(runtime, envPath, env)
+    this.ready = true
+    console.log('[Xpod] Legacy subprocess runtime is ready')
+  }
+
   async stop(): Promise<void> {
+    if (this.embedded) {
+      const runtime = this.embedded
+      this.embedded = null
+      this.ready = false
+      try {
+        await runtime.proxy.stop()
+      } finally {
+        await runtime.supervisor.stopAll()
+      }
+      return
+    }
+
     if (!this.process) {
       return
     }
@@ -276,17 +450,11 @@ export class XpodModule {
     })
   }
 
-  /**
-   * Restart xpod server
-   */
   async restart(): Promise<void> {
     await this.stop()
     await this.start()
   }
 
-  /**
-   * Get current status
-   */
   getStatus(): XpodStatus {
     const envPath = getWebServerModule().getEnvPath()
     const env = parseEnvFile(envPath)
@@ -296,6 +464,16 @@ export class XpodModule {
     let publicUrl: string | undefined
     if (baseUrl.startsWith('https://') && !baseUrl.includes('localhost')) {
       publicUrl = baseUrl
+    }
+
+    if (this.embedded && this.ready) {
+      return {
+        running: true,
+        port: this.embedded.port,
+        baseUrl: this.embedded.baseUrl,
+        publicUrl: this.embedded.publicUrl,
+        pid: process.pid,
+      }
     }
 
     if (!this.process || !this.ready) {
@@ -311,29 +489,27 @@ export class XpodModule {
     }
   }
 
-  /**
-   * Health check
-   */
   async healthCheck(): Promise<boolean> {
     const envPath = getWebServerModule().getEnvPath()
     const env = parseEnvFile(envPath)
     const port = parseInt(env.CSS_PORT || '5737', 10)
 
     try {
-      const response = await fetch(`http://localhost:${port}/.well-known/solid`, {
+      const response = await fetch(`http://localhost:${port}/service/status`, {
         signal: AbortSignal.timeout(3000),
       })
-      return response.ok
+      if (!response.ok) {
+        return false
+      }
+      const status = await response.json() as Array<{ name: string; status: string }>
+      return status.some((item) => item.name === 'css' && item.status === 'running')
     } catch {
       return false
     }
   }
 
-  /**
-   * Wait for xpod to be ready
-   */
   private async waitForReady(port: number, maxRetries = 60): Promise<void> {
-    const gatewayUrl = `http://localhost:${port}/_gateway/status`
+    const gatewayUrl = `http://localhost:${port}/service/status`
     const rootUrl = `http://localhost:${port}/`
 
     for (let i = 0; i < maxRetries; i++) {
@@ -343,7 +519,7 @@ export class XpodModule {
         })
         if (gatewayResponse.ok) {
           const status = await gatewayResponse.json() as Array<{ name: string; status: string }>
-          const cssStatus = status.find((s) => s.name === 'css')
+          const cssStatus = status.find((item) => item.name === 'css')
           if (cssStatus?.status === 'running') {
             return
           }
@@ -361,14 +537,14 @@ export class XpodModule {
           // Continue retrying.
         }
       }
-      await new Promise((r) => setTimeout(r, 1000))
+
+      await new Promise((resolve) => setTimeout(resolve, 1000))
     }
 
     throw new Error('xpod failed to start within timeout')
   }
 }
 
-// Singleton
 let instance: XpodModule | null = null
 
 export function getXpodModule(): XpodModule {

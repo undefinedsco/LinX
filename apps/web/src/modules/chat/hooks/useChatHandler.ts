@@ -25,6 +25,7 @@ import { useSolidDatabase } from '@/providers/solid-database-provider'
 import { useSession } from '@inrupt/solid-ui-react'
 import { createChatHandler, type ChatHandler, type AgentChatHandler } from '../services'
 import { extractPodUrlFromWebId, resolvePodUrl } from '@/lib/pod-url'
+import { getPrimaryParticipantUri } from '../utils/chat-participants'
 
 // ============================================
 // Types
@@ -158,8 +159,8 @@ export function useChatHandler(options: UseChatHandlerOptions): UseChatHandlerRe
     enabled: !!db && !!chatId,
   })
   
-  // Fetch contact (using chat.contact or fallback to chat.participants)
-  const contactUri = (chat as any)?.contact
+  // Fetch contact from the canonical participants field
+  const contactUri = getPrimaryParticipantUri(chat, session?.info?.webId)
   const { data: contact, isLoading: contactLoading } = useQuery({
     queryKey: ['contact', contactUri],
     queryFn: async () => {

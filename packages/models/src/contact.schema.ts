@@ -1,5 +1,34 @@
 import { podTable, string, text, timestamp, uri, boolean, id } from '@undefineds.co/drizzle-solid'
-import { UDFS, DCTerms, VCARD, AS, FOAF } from './namespaces'
+import { UDFS, DCTerms, VCARD, AS, FOAF, RDF } from './namespaces'
+
+export const ContactType = {
+  SOLID: 'solid',
+  EXTERNAL: 'external',
+  AGENT: 'agent',
+} as const
+
+export type ContactTypeValue = typeof ContactType[keyof typeof ContactType]
+
+export const ContactClass = {
+  PERSON: UDFS.PersonContact,
+  AGENT: UDFS.AgentContact,
+  GROUP: UDFS.GroupContact,
+} as const
+
+export type ContactClassValue = typeof ContactClass[keyof typeof ContactClass]
+
+type ContactClassifier = {
+  rdfType?: string | null
+  contactType?: string | null
+}
+
+export function isGroupContact(contact: ContactClassifier | null | undefined): boolean {
+  return contact?.rdfType === ContactClass.GROUP || contact?.contactType === 'group'
+}
+
+export function isAgentContact(contact: ContactClassifier | null | undefined): boolean {
+  return contact?.rdfType === ContactClass.AGENT || contact?.contactType === ContactType.AGENT
+}
 
 /**
  * Contact Table - Unified contact index for all contact types.
@@ -16,7 +45,11 @@ export const contactTable = podTable(
     // The actual entity this contact represents
     entityUri: uri('entityUri').predicate(FOAF.primaryTopic).notNull(),
 
-    // Contact type: 'solid' | 'external' | 'agent' | 'group'
+    // Semantic classifier for the represented entity.
+    rdfType: uri('rdfType').predicate(RDF.type).notNull().default(ContactClass.PERSON),
+
+    // Runtime/source hint for fetch/handler selection.
+    // Group semantics are modeled via rdfType, not contactType.
     contactType: string('contactType').predicate(UDFS.contactType).notNull(),
 
     // Visibility (Solid social graph)
@@ -58,13 +91,3 @@ export const contactTable = podTable(
 export type ContactRow = typeof contactTable.$inferSelect
 export type ContactInsert = typeof contactTable.$inferInsert
 export type ContactUpdate = typeof contactTable.$inferUpdate
-
-// Contact type constants
-export const ContactType = {
-  SOLID: 'solid',
-  EXTERNAL: 'external',
-  AGENT: 'agent',
-  GROUP: 'group',
-} as const
-
-export type ContactTypeValue = typeof ContactType[keyof typeof ContactType]

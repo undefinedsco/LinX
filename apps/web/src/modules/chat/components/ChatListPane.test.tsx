@@ -14,6 +14,7 @@ vi.mock('../store', () => ({
 
 // Mock collections hooks
 const mockUseChatList = vi.fn()
+const mockUseInboxItems = vi.fn()
 const mockMutations = {
   createThread: { mutateAsync: vi.fn(), isPending: false },
   updateChat: { mutateAsync: vi.fn(), isPending: false },
@@ -30,11 +31,19 @@ vi.mock('../collections', () => ({
   useChatInit: () => ({ db: null, isReady: true }),
 }))
 
-// Mock models
-vi.mock('@linx/models', () => ({
-  resolveRowId: (item: unknown) => (item as Record<string, unknown>)?.id ?? 'mock-id',
-  DEFAULT_AGENT_PROVIDERS: [],
+vi.mock('@/modules/inbox/collections', () => ({
+  useInboxItems: (..._args: unknown[]) => mockUseInboxItems(),
 }))
+
+// Mock models
+vi.mock('@linx/models', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@linx/models')>()
+  return {
+    ...actual,
+    resolveRowId: (item: unknown) => (item as Record<string, unknown>)?.id ?? 'mock-id',
+    DEFAULT_AGENT_PROVIDERS: [],
+  }
+})
 
 // Mock solid session
 vi.mock('@inrupt/solid-ui-react', () => ({
@@ -86,6 +95,10 @@ describe('ChatListPane', () => {
       isLoading: false,
       error: null,
       fetchStatus: 'idle',
+    })
+    mockUseInboxItems.mockReturnValue({
+      data: [],
+      isLoading: false,
     })
   })
 
@@ -247,6 +260,76 @@ describe('ChatListPane', () => {
 
       fireEvent.click(screen.getByText('Clickable Chat'))
       expect(mockSelectChat).toHaveBeenCalledWith('chat-1')
+    })
+
+    it('shows approval preview when inbox has pending approvals for the chat', () => {
+      mockUseChatList.mockReturnValue({
+        data: [
+          {
+            id: 'chat-1',
+            title: 'Runtime Chat',
+            lastMessagePreview: '普通预览',
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+        isLoading: false,
+        error: null,
+        fetchStatus: 'idle',
+      })
+      mockUseInboxItems.mockReturnValue({
+        data: [
+          {
+            id: 'approval:1',
+            kind: 'approval',
+            status: 'pending',
+            category: 'approval',
+            chatId: 'chat-1',
+          },
+        ],
+        isLoading: false,
+      })
+
+      render(<ChatListPane theme="light" />, { wrapper: createWrapper() })
+
+      expect(screen.getByText('⚠️ 待处理授权')).toBeInTheDocument()
+    })
+
+    it('prefers auth-required preview over generic approval preview', () => {
+      mockUseChatList.mockReturnValue({
+        data: [
+          {
+            id: 'chat-1',
+            title: 'Runtime Chat',
+            lastMessagePreview: '普通预览',
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+        isLoading: false,
+        error: null,
+        fetchStatus: 'idle',
+      })
+      mockUseInboxItems.mockReturnValue({
+        data: [
+          {
+            id: 'audit:1',
+            kind: 'audit',
+            category: 'auth_required',
+            chatId: 'chat-1',
+          },
+          {
+            id: 'approval:1',
+            kind: 'approval',
+            status: 'pending',
+            category: 'approval',
+            chatId: 'chat-1',
+          },
+        ],
+        isLoading: false,
+      })
+
+      render(<ChatListPane theme="light" />, { wrapper: createWrapper() })
+
+      expect(screen.getByText('🔐 等待认证')).toBeInTheDocument()
     })
   })
 

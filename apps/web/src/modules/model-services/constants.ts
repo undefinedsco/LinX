@@ -2,7 +2,6 @@
 import type React from 'react'
 import { Globe } from 'lucide-react'
 import OpenAIImage from '@/assets/images/providers/openai.png'
-import AnthropicImage from '@/assets/images/providers/anthropic.png'
 import GoogleImage from '@/assets/images/providers/google.png'
 import DeepSeekImage from '@/assets/images/providers/deepseek.png'
 import OllamaImage from '@/assets/images/providers/ollama.png'

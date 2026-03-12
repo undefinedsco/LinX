@@ -4,7 +4,7 @@
  * When creating an AI chat, we need:
  * 1. An Agent record (stores provider, model, instructions)
  * 2. A Contact record (contactType='agent', entityUri points to Agent)
- * 3. A Chat record (contact field points to Contact)
+ * 3. A Chat record (participants stores the Contact URI)
  */
 
 import type { SolidDatabase } from '@linx/models'
@@ -13,6 +13,7 @@ import {
   contactTable,
   agentRepository,
   contactRepository,
+  ContactClass,
   ContactType,
   resolveRowId,
   eq,
@@ -94,6 +95,7 @@ export async function findOrCreateAgentContact(
     name: agent.name,
     avatarUrl: agent.avatarUrl || undefined,
     entityUri: agentUri,
+    rdfType: ContactClass.AGENT,
     contactType: ContactType.AGENT,
     isPublic: false,
   })
@@ -104,7 +106,7 @@ export async function findOrCreateAgentContact(
 
 /**
  * Convenience function: ensure Agent and Contact exist for a provider+model combo
- * Returns the Contact URI to use in Chat.contact
+ * Returns the Contact URI to use in Chat.participants
  */
 export async function ensureAgentContact(
   db: SolidDatabase,

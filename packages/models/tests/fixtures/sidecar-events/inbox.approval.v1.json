@@ -3,7 +3,7 @@
   "inboxItemId": "inbox_001",
   "sessionId": "sess_001",
   "toolCallId": "tc_002",
-  "target": "https://alice.example/.data/chats/chat-001.ttl",
+  "target": "https://alice.example/.data/chat/chat-001/index.ttl#this",
   "action": "http://www.w3.org/ns/auth/acl#Read",
   "policy": "https://pod.example/settings/policies/default.ttl",
   "policyVersion": "2026-02-01",

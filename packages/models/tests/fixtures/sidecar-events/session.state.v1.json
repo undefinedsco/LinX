@@ -2,7 +2,7 @@
   "type": "session.state",
   "version": 1,
   "sessionId": "sess_001",
-  "chatId": "https://pod.example/.data/chats/chat_001.ttl",
+  "chatId": "https://pod.example/.data/chat/chat_001/index.ttl#this",
   "policyVersion": "2026-02-01",
   "status": "completed",
   "previousStatus": "active",

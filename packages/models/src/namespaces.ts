@@ -1,4 +1,4 @@
-import { FOAF, VCARD, LDP, DCTERMS, RDF as RDF_VOCAB, RDFS as RDFS_VOCAB, ACL as ACL_VOCAB } from '@inrupt/vocab-common-rdf'
+import { FOAF, VCARD, LDP, DCTERMS, RDF as RDF_VOCAB, ACL as ACL_VOCAB } from '@inrupt/vocab-common-rdf'
 
 type NamespaceObject = ((term: string) => string) & {
   prefix: string
@@ -28,7 +28,6 @@ const createNamespace = (prefix: string, baseUri: string, terms: Record<string, 
 export { FOAF, VCARD, LDP }
 export const DCTerms = DCTERMS
 export const RDF = RDF_VOCAB
-export const RDFS = RDFS_VOCAB
 export const ACL = ACL_VOCAB
 
 // ODRL isn't provided as a NamespaceConfig-compatible builder in vocab-common-rdf.
@@ -37,41 +36,6 @@ export const ODRL = createNamespace('odrl', 'http://www.w3.org/ns/odrl/2/', {
   Policy: 'Policy',
   target: 'target',
   action: 'action',
-})
-
-// Company-level vocabulary (shared across products)
-export const UDFS = createNamespace('udfs', 'https://undefineds.co/ns#', {
-  // Types
-  ApprovalRequest: 'ApprovalRequest',
-  AuditEntry: 'AuditEntry',
-  AutonomyGrant: 'AutonomyGrant',
-
-  // ApprovalRequest predicates
-  session: 'session', // URI
-  toolCallId: 'toolCallId', // string
-  toolName: 'toolName',
-  risk: 'risk', // 'low' | 'medium' | 'high'
-  status: 'status', // approval status
-  assignedTo: 'assignedTo', // WebID
-  decisionBy: 'decisionBy', // WebID
-  decisionRole: 'decisionRole',
-  onBehalfOf: 'onBehalfOf', // WebID
-  reason: 'reason',
-  resolvedAt: 'resolvedAt',
-
-  // AuditEntry predicates
-  action: 'action',
-  actor: 'actor', // WebID
-  actorRole: 'actorRole',
-  context: 'context', // JSON: triggerEvent, reasoning, matchedPolicies, userStatus
-  policy: 'policy', // URI
-  policyVersion: 'policyVersion',
-  approval: 'approval', // URI
-
-  // AutonomyGrant predicates (ODRL covers target/action)
-  effect: 'effect', // 'allow-always' | 'deny-always'
-  riskCeiling: 'riskCeiling',
-  revokedAt: 'revokedAt',
 })
 
 export const RDFS = createNamespace('rdfs', 'http://www.w3.org/2000/01/rdf-schema#', {
@@ -146,6 +110,10 @@ export const AS = createNamespace('as', 'https://www.w3.org/ns/activitystreams#'
 // Company-level namespace (community-first guidance): all custom terms live under udfs:.
 // NOTE: This base URI is part of the contract.
 export const UDFS = createNamespace('udfs', 'https://undefineds.co/ns#', {
+  // Types
+  ApprovalRequest: 'ApprovalRequest',
+  AuditEntry: 'AuditEntry',
+  AutonomyGrant: 'AutonomyGrant',
   favorite: 'favorite',
   favoriteType: 'favoriteType',
   favoriteTarget: 'favoriteTarget',
@@ -165,6 +133,9 @@ export const UDFS = createNamespace('udfs', 'https://undefineds.co/ns#', {
   messageStatus: 'messageStatus',
   readBy: 'readBy',
   Contact: 'Contact',
+  PersonContact: 'PersonContact',
+  AgentContact: 'AgentContact',
+  GroupContact: 'GroupContact',
   hasContact: 'hasContact',
   contactType: 'contactType',
   entityUri: 'entityUri',
@@ -182,6 +153,7 @@ export const UDFS = createNamespace('udfs', 'https://undefineds.co/ns#', {
   systemMessage: 'systemMessage',
   provider: 'provider',
   model: 'model',
+  metadata: 'metadata',
   ModelProvider: 'ModelProvider',
   tools: 'tools',
   contextWindow: 'contextWindow',
@@ -200,7 +172,21 @@ export const UDFS = createNamespace('udfs', 'https://undefineds.co/ns#', {
   apiKey: 'apiKey',
   baseUrl: 'baseUrl',
   inbox: 'inbox',
+  session: 'session',
   status: 'status',
+  risk: 'risk',
+  assignedTo: 'assignedTo',
+  reason: 'reason',
+  resolvedAt: 'resolvedAt',
+  action: 'action',
+  actor: 'actor',
+  actorRole: 'actorRole',
+  context: 'context',
+  policy: 'policy',
+  approval: 'approval',
+  effect: 'effect',
+  riskCeiling: 'riskCeiling',
+  revokedAt: 'revokedAt',
   archivedAt: 'archivedAt',
   deletedAt: 'deletedAt',
   pinnedAt: 'pinnedAt',

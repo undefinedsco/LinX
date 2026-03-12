@@ -17,7 +17,6 @@ import {
   contactTable,
   credentialTable,
   eq,
-  ContactType,
   getBuiltinProvider,
   type ChatRow,
   type ChatInsert,
@@ -25,15 +24,16 @@ import {
   type ThreadInsert,
   type MessageRow,
   type MessageInsert,
-  type AgentRow,
   type AgentInsert,
-  type ContactRow,
+  type AgentRow,
   type ContactInsert,
+  type ContactRow,
 } from '@linx/models'
 import type { SolidDatabase } from '@linx/models'
 import { queryClient } from '@/providers/query-provider'
 import { createPodCollection } from '@/lib/data/pod-collection'
 import { favoriteHooks } from '@/modules/favorites/collections'
+import { createAgentContactRecords, upsertStateRow } from '@/lib/data/direct-chat-records'
 
 // ============================================================================
 // Database Getter
@@ -53,12 +53,13 @@ function getDb(): SolidDatabase | null {
 // Chat Collection
 // ============================================================================
 
-// Columns needed for chat list view (excludes description, participants, lastMessageId, timestamps)
+// Columns needed for chat list view and group member operations.
 const chatListColumns: (keyof ChatRow)[] = [
   'id',
   'title',
   'avatarUrl',
-  'contact',
+  'participants',
+  'metadata',
   'starred',
   'muted',
   'unreadCount',
@@ -177,6 +178,22 @@ export interface CreateAIChatInput {
   systemPrompt?: string
 }
 
+export interface UpdateAgentProfileInput {
+  agentId: string
+  name?: string
+  instructions?: string
+  chatId?: string
+  contactId?: string
+}
+
+export interface UpdateAgentModelInput {
+  agentId: string
+  provider: string
+  model: string
+  chatId?: string
+  contactId?: string
+}
+
 /**
  * Chat Operations - Business logic for chat management
  * 
@@ -239,63 +256,52 @@ export const chatOps = {
    * Flow:
    * 1. Create Agent record (with avatarUrl from provider)
    * 2. Create Contact record (type: agent, entityUri → Agent)
-   * 3. Create Chat record (contact → Contact)
+   * 3. Create Chat record (participants → Contact URI)
    * 
    * @returns The created Chat with related IDs
    */
   async createAIChat(input: CreateAIChatInput): Promise<ChatRow & { agentId: string; contactId: string }> {
     const { title, provider, model, systemPrompt } = input
-    
-    const agentId = crypto.randomUUID()
-    const contactId = crypto.randomUUID()
+
+    const db = getDb()
+    if (!db) {
+      throw new Error('Solid database is not ready')
+    }
+
+    const providerInfo = getBuiltinProvider(provider)
+    const {
+      agent,
+      contact,
+      agentId,
+      contactId,
+      contactUri,
+    } = await createAgentContactRecords(db, {
+      name: title,
+      provider,
+      model,
+      instructions: systemPrompt,
+    })
+
     const chatId = crypto.randomUUID()
     const now = new Date()
-    
-    // Get provider info for avatarUrl fallback
-    const providerInfo = getBuiltinProvider(provider)
-    
-    // 1. Create Agent (avatarUrl falls back to provider logo)
-    const agentData: AgentInsert = {
-      id: agentId,
-      name: title,
-      instructions: systemPrompt || undefined,
-      model,
-      provider,
-      avatarUrl: providerInfo?.logoUrl,
-    }
-    const agentTx = agentCollection.insert(agentData as AgentRow)
-    
-    // 2. Create Contact (pointing to Agent, with avatarUrl)
-    const contactData: ContactInsert = {
-      id: contactId,
-      name: title,
-      contactType: ContactType.AGENT,
-      entityUri: agentId,
-      avatarUrl: providerInfo?.logoUrl,
-      createdAt: now,
-      updatedAt: now,
-    }
-    const contactTx = _contactCollection.insert(contactData as ContactRow)
-    
-    // 3. Create Chat (pointing to Contact, with avatarUrl for list display)
+
+    upsertStateRow(agentCollection.state, agent as AgentRow, agentId)
+    upsertStateRow(_contactCollection.state, contact as ContactRow, contactId)
+
     const chatData: ChatInsert = {
       id: chatId,
       title,
-      contact: contactId,
       avatarUrl: providerInfo?.logoUrl,
+      participants: [contactUri],
       createdAt: now,
       updatedAt: now,
       lastActiveAt: now,
     }
     const chatTx = chatCollection.insert(chatData as ChatRow)
-    
-    // Wait for all to persist
-    await Promise.all([
-      agentTx.isPersisted.promise,
-      contactTx.isPersisted.promise,
-      chatTx.isPersisted.promise,
-    ])
-    
+    await chatTx.isPersisted.promise
+    upsertStateRow(chatCollection.state, { ...chatData, id: chatId } as ChatRow, chatId)
+    queryClient.invalidateQueries({ queryKey: QUERY_KEYS.chats })
+
     return { ...chatData, id: chatId, agentId, contactId } as ChatRow & { agentId: string; contactId: string }
   },
 
@@ -512,6 +518,39 @@ export const chatOps = {
   // ==========================================================================
 
   /**
+   * Update agent profile and keep related contact/chat display fields in sync.
+   */
+  async updateAgentProfile(input: UpdateAgentProfileInput): Promise<void> {
+    const { agentId, name, instructions, chatId, contactId } = input
+    const normalizedName = name?.trim()
+    const nextInstructions = instructions?.trim() ?? ''
+
+    const tx = agentCollection.update(agentId, (draft: any) => {
+      if (normalizedName) {
+        draft.name = normalizedName
+      }
+      if (instructions !== undefined) {
+        draft.instructions = nextInstructions || undefined
+      }
+      draft.updatedAt = new Date()
+    })
+    await tx.isPersisted.promise
+
+    if (contactId && normalizedName) {
+      const contactTx = _contactCollection.update(contactId, (draft: any) => {
+        draft.name = normalizedName
+        draft.updatedAt = new Date()
+      })
+      await contactTx.isPersisted.promise
+    }
+
+    if (chatId && normalizedName) {
+      await this.updateChat(chatId, { title: normalizedName })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.chats })
+    }
+  },
+
+  /**
    * Update an agent's instructions (system prompt)
    */
   async updateAgentInstructions(agentId: string, instructions: string): Promise<void> {
@@ -526,7 +565,7 @@ export const chatOps = {
    * Update an agent's model (and avatarUrl when provider changes)
    * Also updates the related Chat's avatarUrl for list display
    */
-  async updateAgentModel(agentId: string, provider: string, model: string, chatId?: string): Promise<void> {
+  async updateAgentModel(agentId: string, provider: string, model: string, chatId?: string, contactId?: string): Promise<void> {
     const providerInfo = getBuiltinProvider(provider)
     const tx = agentCollection.update(agentId, (draft: any) => {
       const providerChanged = draft.provider !== provider
@@ -539,10 +578,19 @@ export const chatOps = {
       draft.updatedAt = new Date()
     })
     await tx.isPersisted.promise
+
+    if (contactId && providerInfo?.logoUrl) {
+      const contactTx = _contactCollection.update(contactId, (draft: any) => {
+        draft.avatarUrl = providerInfo.logoUrl
+        draft.updatedAt = new Date()
+      })
+      await contactTx.isPersisted.promise
+    }
     
     // Also update Chat avatarUrl if chatId provided and provider changed
     if (chatId && providerInfo?.logoUrl) {
       await this.updateChat(chatId, { avatarUrl: providerInfo.logoUrl })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.chats })
     }
   },
 
@@ -736,7 +784,6 @@ export async function subscribeToChatCollections(db: SolidDatabase): Promise<() 
 // React Query Hooks
 // ============================================================================
 
-import { useEffect } from 'react'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 
 /**
@@ -745,13 +792,7 @@ import { useSolidDatabase } from '@/providers/solid-database-provider'
  */
 export function useChatInit() {
   const { db } = useSolidDatabase()
-  
-  useEffect(() => {
-    if (db) {
-      initializeChatCollections(db)
-    }
-  }, [db])
-  
+
   return { db, isReady: !!db }
 }
 
@@ -903,6 +944,30 @@ export function useChatMutations() {
     },
   })
 
+  const updateAgentProfile = useMutation({
+    mutationFn: (input: UpdateAgentProfileInput) => chatOps.updateAgentProfile(input),
+    onSuccess: (_, variables) => {
+      if (variables.chatId) {
+        qc.invalidateQueries({ queryKey: QUERY_KEYS.chats })
+      }
+    },
+  })
+
+  const updateAgentInstructions = useMutation({
+    mutationFn: ({ agentId, instructions }: { agentId: string; instructions: string }) =>
+      chatOps.updateAgentInstructions(agentId, instructions),
+  })
+
+  const updateAgentModel = useMutation({
+    mutationFn: ({ agentId, provider, model, chatId, contactId }: UpdateAgentModelInput) =>
+      chatOps.updateAgentModel(agentId, provider, model, chatId, contactId),
+    onSuccess: (_, variables) => {
+      if (variables.chatId) {
+        qc.invalidateQueries({ queryKey: QUERY_KEYS.chats })
+      }
+    },
+  })
+
   return {
     createAIChat,
     updateChat,
@@ -911,6 +976,9 @@ export function useChatMutations() {
     updateThread,
     deleteThread,
     deleteMessage,
+    updateAgentProfile,
+    updateAgentInstructions,
+    updateAgentModel,
   }
 }
 

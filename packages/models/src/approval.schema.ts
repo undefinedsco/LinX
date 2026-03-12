@@ -1,4 +1,4 @@
-import { podTable, uri, string, text, timestamp, id } from 'drizzle-solid'
+import { podTable, uri, string, text, timestamp, id } from '@undefineds.co/drizzle-solid'
 import { ODRL, UDFS, DCTerms } from './namespaces'
 
 // Approval request domain store (separate from Solid inbox notifications)

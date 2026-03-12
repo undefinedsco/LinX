@@ -7,10 +7,12 @@ import type {
   ToolCallBlock,
   TaskProgressBlock,
 } from '../types/collaboration-blocks'
+import { ContactClass } from '../contact.schema'
 
 export const fixtureContactSolid: ContactInsert = {
   id: 'contact-solid-1',
   name: 'Alice',
+  rdfType: ContactClass.PERSON,
   contactType: 'solid',
   entityUri: 'https://pod.example/profile/card#me',
   isPublic: false,
@@ -19,6 +21,7 @@ export const fixtureContactSolid: ContactInsert = {
 export const fixtureContactAgentWorkspace: ContactInsert = {
   id: 'contact-agent-ws-1',
   name: 'Secretary@linx',
+  rdfType: ContactClass.AGENT,
   contactType: 'agent',
   entityUri: 'https://pod.example/.data/agents/secretary.ttl#this',
   isPublic: false,
@@ -27,7 +30,6 @@ export const fixtureContactAgentWorkspace: ContactInsert = {
 export const fixtureChatDirectAI: ChatInsert = {
   id: 'chat-direct-ai-1',
   title: 'Chat Channel',
-  contact: 'https://pod.example/.data/contacts/contact-agent-ws-1.ttl#this',
   participants: [
     'https://pod.example/profile/card#me',
     'https://pod.example/.data/contacts/contact-agent-ws-1.ttl#this',
@@ -40,7 +42,7 @@ export const fixtureChatDirectAI: ChatInsert = {
 
 export const fixtureThreadDirectAI: ThreadInsert = {
   id: 'thread-001',
-  chatId: 'https://pod.example/.data/chats/chat-direct-ai-1.ttl#this',
+  chatId: 'https://pod.example/.data/chat/chat-direct-ai-1/index.ttl#this',
   title: 'Main thread',
   starred: false,
 
@@ -81,8 +83,8 @@ export const fixtureTaskProgressBlock: TaskProgressBlock = {
 
 export const fixtureMessageTooling: MessageInsert = {
   id: 'message-1',
-  threadId: 'https://pod.example/.data/threads/thread-001.ttl#this',
-  chatId: 'https://pod.example/.data/chats/chat-direct-ai-1.ttl#this',
+  threadId: 'thread-001',
+  chatId: 'https://pod.example/.data/chat/chat-direct-ai-1/index.ttl#this',
   maker: 'https://pod.example/profile/card#me',
   role: 'assistant',
   content: 'I will write a file after approval.',

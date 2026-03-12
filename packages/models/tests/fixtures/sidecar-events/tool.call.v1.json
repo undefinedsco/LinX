@@ -4,7 +4,7 @@
   "sessionId": "sess_001",
   "toolCallId": "tc_002",
   "toolName": "execute_command",
-  "target": "https://alice.example/.data/chats/chat-001.ttl",
+  "target": "https://alice.example/.data/chat/chat-001/index.ttl#this",
   "action": "http://www.w3.org/ns/auth/acl#Read",
   "risk": "high",
   "status": "waiting_approval",

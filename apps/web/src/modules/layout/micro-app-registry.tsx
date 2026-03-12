@@ -1,7 +1,8 @@
-import type { ComponentType, ReactNode } from 'react'
+import { lazy, useEffect, type ComponentType, type ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import {
   MessageSquare,
+  Bell,
   Users,
   FolderOpen,
   Star,
@@ -9,14 +10,10 @@ import {
   Bot,
 } from 'lucide-react'
 import { PlaceholderListPane, PlaceholderContentPane } from './placeholders'
-import { ChatListPane, ChatContentPane, useChatLayoutConfig } from '@/modules/chat'
-import { ContactListPane, ContactDetailPane } from '@/modules/contacts'
-import { FavoriteListPane, FavoriteContentPane } from '@/modules/favorites'
-import { FilesTreePane, FilesListPane, FileDetailPane } from '@/modules/files'
-import { ModelServicesListPane, ModelServicesContentPane, useModelServicesLayoutConfig } from '@/modules/model-services'
 
 export const microAppIds = [
   'chat',
+  'inbox',
   'contacts',
   'files',
   'favorites',
@@ -52,6 +49,12 @@ export interface MicroAppLayoutConfig {
   hideHeader?: boolean
 }
 
+export interface MicroAppLayoutConfigBridgeProps {
+  onConfigChange: (config: MicroAppLayoutConfig | undefined) => void
+}
+
+export type MicroAppLayoutConfigBridge = ComponentType<MicroAppLayoutConfigBridgeProps>
+
 export interface MicroAppDefinition {
   id: MicroAppId
   label: string
@@ -59,7 +62,19 @@ export interface MicroAppDefinition {
   header: MicroAppHeaderMeta
   ListPane: MicroAppListPane
   ContentPane: MicroAppContentPane
-  useLayoutConfig?: () => MicroAppLayoutConfig
+  LayoutConfigBridge?: MicroAppLayoutConfigBridge
+}
+
+function lazyPane<T extends ComponentType<any>>(
+  loader: () => Promise<{ default: T }>,
+): T {
+  return lazy(loader) as unknown as T
+}
+
+function lazyBridge<T extends ComponentType<any>>(
+  loader: () => Promise<{ default: T }>,
+): T {
+  return lazy(loader) as unknown as T
 }
 
 const buildList = (title: string, description: string, items: ReactNode[]) =>
@@ -67,6 +82,65 @@ const buildList = (title: string, description: string, items: ReactNode[]) =>
 
 const buildContent = (title: string, description: string, body?: ReactNode) =>
   () => <PlaceholderContentPane title={title} description={description}>{body}</PlaceholderContentPane>
+
+const ChatListPane = lazyPane(() =>
+  import('@/modules/chat/components/ChatListPane').then((mod) => ({ default: mod.ChatListPane })),
+)
+const ChatContentPane = lazyPane(() =>
+  import('@/modules/chat/components/ChatContentPane').then((mod) => ({ default: mod.ChatContentPane })),
+)
+const InboxListPane = lazyPane(() =>
+  import('@/modules/inbox/components/InboxListPane').then((mod) => ({ default: mod.InboxListPane })),
+)
+const InboxContentPane = lazyPane(() =>
+  import('@/modules/inbox/components/InboxContentPane').then((mod) => ({ default: mod.InboxContentPane })),
+)
+const ContactListPane = lazyPane(() =>
+  import('@/modules/contacts/components/ContactListPane').then((mod) => ({ default: mod.ContactListPane })),
+)
+const ContactDetailPane = lazyPane(() =>
+  import('@/modules/contacts/components/ContactDetailPane').then((mod) => ({ default: mod.ContactDetailPane })),
+)
+const FavoriteListPane = lazyPane(() =>
+  import('@/modules/favorites/components/FavoriteListPane').then((mod) => ({ default: mod.FavoriteListPane })),
+)
+const FavoriteContentPane = lazyPane(() =>
+  import('@/modules/favorites/components/FavoriteContentPane').then((mod) => ({ default: mod.FavoriteContentPane })),
+)
+const FilesTreePane = lazyPane(() =>
+  import('@/modules/files/components/FilesTreePane').then((mod) => ({ default: mod.FilesTreePane })),
+)
+const FilesListPane = lazyPane(() =>
+  import('@/modules/files/components/FilesListPane').then((mod) => ({ default: mod.FilesListPane })),
+)
+const FileDetailPane = lazyPane(() =>
+  import('@/modules/files/components/FileDetailPane').then((mod) => ({ default: mod.FileDetailPane })),
+)
+const ModelServicesListPane = lazyPane(() =>
+  import('@/modules/model-services/ModelServicesListPane').then((mod) => ({ default: mod.ModelServicesListPane })),
+)
+const ModelServicesContentPane = lazyPane(() =>
+  import('@/modules/model-services/ModelServicesContentPane').then((mod) => ({ default: mod.ModelServicesContentPane })),
+)
+const ChatLayoutConfigBridge = lazyBridge(() =>
+  import('@/modules/chat/layout/ChatLayoutConfigBridge').then((mod) => ({ default: mod.ChatLayoutConfigBridge })),
+)
+const ModelServicesLayoutConfigBridge = lazyBridge(() =>
+  import('@/modules/model-services/ModelServicesLayoutConfigBridge').then((mod) => ({ default: mod.ModelServicesLayoutConfigBridge })),
+)
+
+function FilesLayoutConfigBridge({
+  onConfigChange,
+}: MicroAppLayoutConfigBridgeProps) {
+  useEffect(() => {
+    onConfigChange({
+      rightSidebar: <FileDetailPane />,
+      rightSidebarWidth: 320,
+    })
+  }, [onConfigChange])
+
+  return null
+}
 
 export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
   chat: {
@@ -81,7 +155,20 @@ export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
     },
     ListPane: ChatListPane,
     ContentPane: ChatContentPane,
-    useLayoutConfig: useChatLayoutConfig,
+    LayoutConfigBridge: ChatLayoutConfigBridge,
+  },
+  inbox: {
+    id: 'inbox',
+    label: '收件箱',
+    icon: Bell,
+    header: {
+      moduleTitle: '收件箱',
+      moduleSubtitle: '授权与审计统一入口',
+      itemTitle: '事件详情',
+      itemSubtitle: 'Approval & Audit',
+    },
+    ListPane: InboxListPane,
+    ContentPane: InboxContentPane,
   },
   contacts: {
     id: 'contacts',
@@ -108,10 +195,7 @@ export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
     },
     ListPane: FilesTreePane,
     ContentPane: FilesListPane,
-    useLayoutConfig: () => ({
-      rightSidebar: <FileDetailPane />,
-      rightSidebarWidth: 320,
-    }),
+    LayoutConfigBridge: FilesLayoutConfigBridge,
   },
   favorites: {
     id: 'favorites',
@@ -151,7 +235,7 @@ export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
     },
     ListPane: ModelServicesListPane,
     ContentPane: ModelServicesContentPane,
-    useLayoutConfig: useModelServicesLayoutConfig,
+    LayoutConfigBridge: ModelServicesLayoutConfigBridge,
   },
 }
 

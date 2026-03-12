@@ -9,7 +9,7 @@ import type {
 } from '@undefineds.co/drizzle-solid'
 import { and, like, or } from '@undefineds.co/drizzle-solid'
 
-export type SolidDatabase = DrizzleSolidDatabase
+export type SolidDatabase<TSchema extends Record<string, unknown> = Record<string, never>> = DrizzleSolidDatabase<TSchema>
 
 export interface RepositoryCacheOptions {
   staleTime?: number
@@ -157,14 +157,6 @@ export function createRepositoryDescriptor<
       .execute()
     const record = rows?.[0]
     return record ? transformRow(record as Row) : null
-  }
-
-  const deriveIdentifier = (record: Partial<Record<string, unknown>>): string | null => {
-    const subject = (record as Record<string, unknown>)['@id'] ?? record.subject
-    if (typeof subject === 'string' && subject.length > 0) return subject
-    const id = record.id
-    if (typeof id === 'string' && id.length > 0) return id
-    return null
   }
 
   const create = options.disableMutations?.create

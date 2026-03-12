@@ -1,4 +1,4 @@
-import { podTable, uri, timestamp, id } from 'drizzle-solid'
+import { podTable, uri, timestamp, id } from '@undefineds.co/drizzle-solid'
 import { AS, DCTerms } from './namespaces'
 
 // Solid inbox notifications (protocol channel)

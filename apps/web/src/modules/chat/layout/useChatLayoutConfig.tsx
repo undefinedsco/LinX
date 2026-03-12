@@ -26,11 +26,14 @@ export const useChatLayoutConfig = () => {
     return chats.find((chat) => resolveRowId(chat) === selectedChatId)
   }, [chats, selectedChatId])
 
-  return {
-    header: <ChatHeader />,
-    mainTitle: activeChat?.title ?? '聊天',
-    subtitle: activeChat?.description ?? '与 AI 助手协作',
-    rightSidebar: showRightSidebar ? <ChatRightSidebar /> : null,
-    rightSidebarWidth: 320,
-  }
+  return useMemo(
+    () => ({
+      header: <ChatHeader />,
+      mainTitle: activeChat?.title ?? '聊天',
+      subtitle: activeChat?.description ?? '与 AI 助手协作',
+      rightSidebar: showRightSidebar ? <ChatRightSidebar /> : null,
+      rightSidebarWidth: 320,
+    }),
+    [activeChat?.description, activeChat?.title, showRightSidebar],
+  )
 }

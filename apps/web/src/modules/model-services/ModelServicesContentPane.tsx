@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo } from 'react'
 import { 
-  Eye, EyeOff, Check, ExternalLink, 
+  Eye, EyeOff, ExternalLink, 
   Loader2, Globe, Box, Image as ImageIcon,
-  Settings2, Info, TriangleAlert, Plus, Search,
-  Copy, X, Pencil, Trash2, Lock
+  Settings2, Info, Plus, Search,
+  Copy, Pencil, Trash2, Lock
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -13,7 +13,6 @@ import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Separator } from '@/components/ui/separator'
 import {
   Tooltip,
   TooltipContent,
@@ -33,7 +32,7 @@ import { useModelServicesStore } from './store'
 import { useModelServices } from './hooks/useModelServices'
 import { PlaceholderContentPane } from '@/modules/layout/placeholders'
 import { cn } from '@/lib/utils'
-import type { AIProvider, AIModel } from './types'
+import type { AIModel } from './types'
 
 // --- Helper Components ---
 

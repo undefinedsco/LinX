@@ -1,31 +1,21 @@
-import { StrictMode } from 'react'
+import { Suspense, StrictMode, lazy } from 'react'
 import { createRoot } from 'react-dom/client'
-import { RouterProvider } from '@tanstack/react-router'
 import { QueryProvider } from './providers/query-provider'
-import { SolidSessionProvider } from './providers/solid-session-provider'
-import { SolidDatabaseProvider } from './providers/solid-database-provider'
-import { TelemetryProvider } from './lib/telemetry/telemetry-context' // Import TelemetryProvider
 import { ErrorBoundary } from './components/ErrorBoundary'
-import { router } from './router'
-import { Toaster } from './Toaster' // Import Toaster
+import { Toaster } from './Toaster'
 import './index.css'
+
+const AppRuntime = lazy(() => import('./AppRuntime'))
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
       <QueryProvider>
-        <SolidSessionProvider 
-          restorePreviousSession 
-          onError={(error) => console.warn('🔴 SessionProvider error (ignored):', error)}
-        >
-          <SolidDatabaseProvider>
-            <TelemetryProvider> {/* Wrap with TelemetryProvider */}
-              <RouterProvider router={router} />
-            </TelemetryProvider>
-          </SolidDatabaseProvider>
-        </SolidSessionProvider>
+        <Suspense fallback={<div className="min-h-screen bg-background" />}>
+          <AppRuntime />
+        </Suspense>
       </QueryProvider>
-      <Toaster /> {/* Render Toaster */}
+      <Toaster />
     </ErrorBoundary>
   </StrictMode>,
 )

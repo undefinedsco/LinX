@@ -9,6 +9,7 @@
  */
 
 import { useState, useMemo, type FC } from 'react'
+import { useSession } from '@inrupt/solid-ui-react'
 import { 
   User, 
   MessageCircle, 
@@ -33,8 +34,9 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { useChatStore } from '../store'
-import { useChatList, useThreadList, useChatMutations, chatOps } from '../collections'
+import { useChatList, useThreadList, useChatMutations } from '../collections'
 import { resolveRowId, contactTable, agentTable, ContactType } from '@linx/models'
+import { getPrimaryParticipantUri } from '../utils/chat-participants'
 import { useEntity } from '@/lib/data/use-entity'
 
 // ============================================================================
@@ -298,6 +300,7 @@ const ThreadItem: FC<ThreadItemProps> = ({
 export interface ChatRightSidebarProps {}
 
 export const ChatRightSidebar: FC<ChatRightSidebarProps> = () => {
+  const { session } = useSession()
   const selectedChatId = useChatStore((state) => state.selectedChatId)
   const selectedThreadId = useChatStore((state) => state.selectedThreadId)
   const selectThread = useChatStore((state) => state.selectThread)
@@ -314,12 +317,15 @@ export const ChatRightSidebar: FC<ChatRightSidebarProps> = () => {
   }, [chats, selectedChatId])
 
   // 获取 Contact
-  const contactUri = (currentChat as any)?.contact
+  const contactUri = getPrimaryParticipantUri(currentChat, session.info.webId)
   const { data: contact } = useEntity(contactTable, contactUri)
 
   // 获取 Agent（当 contactType 是 agent 时）
   const agentUri = contact?.contactType === ContactType.AGENT ? contact.entityUri : null
-  const { data: agent } = useEntity(agentTable, agentUri)
+  const { data: agent, refresh: refreshAgent } = useEntity(agentTable, agentUri)
+  const agentId = typeof agent?.id === 'string' && agent.id.length > 0
+    ? agent.id
+    : null
 
   // 格式化话题列表
   const threads: Thread[] = useMemo(() => {
@@ -334,12 +340,16 @@ export const ChatRightSidebar: FC<ChatRightSidebarProps> = () => {
 
   // 处理编辑系统提示词 - 更新 Agent.instructions
   const handleEditSystemPrompt = async (newPrompt: string) => {
-    if (!agentUri) {
+    if (!agentId) {
       console.warn('No agent to update')
       return
     }
     try {
-      await chatOps.updateAgentInstructions(agentUri, newPrompt)
+      await mutations.updateAgentInstructions.mutateAsync({
+        agentId,
+        instructions: newPrompt,
+      })
+      await refreshAgent()
     } catch (e) {
       console.error('Update system prompt failed:', e)
     }

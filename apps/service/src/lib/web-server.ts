@@ -6,6 +6,7 @@ import * as path from 'path'
 import express, { Express, Request, Response } from 'express'
 import { Server } from 'http'
 import { getXpodModule } from './xpod'
+import { getRuntimeThreadsModule } from './runtime-threads'
 
 interface SetupData {
   dataDir: string
@@ -303,6 +304,155 @@ export class WebServerModule {
         console.error('[WebServer] Failed to restart xpod:', error)
         res.status(500).json({ error: 'Failed to restart xpod' })
       }
+    })
+
+
+    // Runtime session APIs (Phase 3 internal-first)
+    this.app.get('/api/runtime/threads', (req: Request, res: Response) => {
+      const threadId = typeof req.query.threadId === 'string' ? req.query.threadId : undefined
+      const runtimeSessions = getRuntimeThreadsModule().listSessions(threadId)
+      res.json({ items: runtimeSessions })
+    })
+
+    this.app.get('/api/runtime/threads/:id', (req: Request, res: Response) => {
+      const session = getRuntimeThreadsModule().getSession(req.params.id)
+      if (!session) {
+        res.status(404).json({ error: 'Runtime session not found' })
+        return
+      }
+      res.json(session)
+    })
+
+    this.app.post('/api/runtime/threads', (req: Request, res: Response) => {
+      try {
+        const { threadId, title, repoPath, worktreePath, runnerType, tool, baseRef, branch } = req.body ?? {}
+        if (!threadId || !title || !repoPath) {
+          res.status(400).json({ error: 'threadId, title, and repoPath are required' })
+          return
+        }
+
+        const session = getRuntimeThreadsModule().createSession({
+          threadId,
+          title,
+          repoPath,
+          worktreePath,
+          runnerType,
+          tool,
+          baseRef,
+          branch,
+        })
+        res.json(session)
+      } catch (error) {
+        console.error('[WebServer] Failed to create runtime session:', error)
+        res.status(500).json({ error: 'Failed to create runtime session' })
+      }
+    })
+
+    this.app.post('/api/runtime/threads/:id/start', async (req: Request, res: Response) => {
+      try {
+        const session = await getRuntimeThreadsModule().startSession(req.params.id)
+        res.json(session)
+      } catch (error) {
+        console.error('[WebServer] Failed to start runtime session:', error)
+        res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to start runtime session' })
+      }
+    })
+
+    this.app.post('/api/runtime/threads/:id/pause', async (req: Request, res: Response) => {
+      try {
+        const session = await getRuntimeThreadsModule().pauseSession(req.params.id)
+        res.json(session)
+      } catch (error) {
+        console.error('[WebServer] Failed to pause runtime session:', error)
+        res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to pause runtime session' })
+      }
+    })
+
+    this.app.post('/api/runtime/threads/:id/resume', async (req: Request, res: Response) => {
+      try {
+        const session = await getRuntimeThreadsModule().resumeSession(req.params.id)
+        res.json(session)
+      } catch (error) {
+        console.error('[WebServer] Failed to resume runtime session:', error)
+        res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to resume runtime session' })
+      }
+    })
+
+    this.app.post('/api/runtime/threads/:id/stop', async (req: Request, res: Response) => {
+      try {
+        const session = await getRuntimeThreadsModule().stopSession(req.params.id)
+        res.json(session)
+      } catch (error) {
+        console.error('[WebServer] Failed to stop runtime session:', error)
+        res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to stop runtime session' })
+      }
+    })
+
+    this.app.post('/api/runtime/threads/:id/message', async (req: Request, res: Response) => {
+      try {
+        const text = typeof req.body?.text === 'string' ? req.body.text.trim() : ''
+        if (!text) {
+          res.status(400).json({ error: 'text is required' })
+          return
+        }
+
+        const session = await getRuntimeThreadsModule().sendSessionMessage(req.params.id, text)
+        res.json(session)
+      } catch (error) {
+        console.error('[WebServer] Failed to send runtime session message:', error)
+        res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to send runtime session message' })
+      }
+    })
+
+    this.app.post('/api/runtime/threads/:id/tool-calls/:requestId/respond', async (req: Request, res: Response) => {
+      try {
+        const output = typeof req.body?.output === 'string' ? req.body.output : ''
+        if (!output.trim()) {
+          res.status(400).json({ error: 'output is required' })
+          return
+        }
+
+        const session = await getRuntimeThreadsModule().respondToSessionToolCall(req.params.id, req.params.requestId, output)
+        res.json(session)
+      } catch (error) {
+        console.error('[WebServer] Failed to respond runtime tool call:', error)
+        res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to respond runtime tool call' })
+      }
+    })
+
+    this.app.get('/api/runtime/threads/:id/log', (req: Request, res: Response) => {
+      try {
+        const log = getRuntimeThreadsModule().getSessionLog(req.params.id)
+        res.type('text/plain').send(log)
+      } catch (error) {
+        console.error('[WebServer] Failed to get runtime session log:', error)
+        res.status(500).json({ error: 'Failed to get runtime session log' })
+      }
+    })
+
+    this.app.get('/api/runtime/threads/:id/events', (req: Request, res: Response) => {
+      const runtimeSessions = getRuntimeThreadsModule()
+      const session = runtimeSessions.getSession(req.params.id)
+      if (!session) {
+        res.status(404).json({ error: 'Runtime session not found' })
+        return
+      }
+
+      res.setHeader('Content-Type', 'text/event-stream')
+      res.setHeader('Cache-Control', 'no-cache, no-transform')
+      res.setHeader('Connection', 'keep-alive')
+      res.flushHeaders?.()
+
+      const unsubscribe = runtimeSessions.subscribeSession(req.params.id, (event) => {
+        res.write(`data: ${JSON.stringify(event)}\n\n`)
+      })
+
+      res.write(`data: ${JSON.stringify({ type: 'status', ts: Date.now(), threadId: session.id, status: session.status })}\n\n`)
+
+      req.on('close', () => {
+        unsubscribe()
+        res.end()
+      })
     })
 
     // Serve static files with injection

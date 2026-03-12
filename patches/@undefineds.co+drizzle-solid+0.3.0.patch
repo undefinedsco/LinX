@@ -1,0 +1,168 @@
+diff --git a/node_modules/@undefineds.co/drizzle-solid/dist/esm/core/comunica-patch.js b/node_modules/@undefineds.co/drizzle-solid/dist/esm/core/comunica-patch.js
+index 60e0179..9fac356 100644
+--- a/node_modules/@undefineds.co/drizzle-solid/dist/esm/core/comunica-patch.js
++++ b/node_modules/@undefineds.co/drizzle-solid/dist/esm/core/comunica-patch.js
+@@ -1,69 +1,2 @@
+-// Comunica 兼容性补丁
+-// 修复 ActionObserverHttp 中 observedActors 未定义的问题
+-const resolveCreateRequire = () => {
+-    if (typeof window !== 'undefined') {
+-        return null;
+-    }
+-    try {
+-        const nodeRequire = eval('require');
+-        if (!nodeRequire) {
+-            return null;
+-        }
+-        const moduleLib = nodeRequire('module');
+-        if (!moduleLib || typeof moduleLib.createRequire !== 'function') {
+-            return null;
+-        }
+-        return moduleLib.createRequire;
+-    }
+-    catch {
+-        return null;
+-    }
+-};
+-const createRequireFn = resolveCreateRequire();
+-const moduleFilename = typeof __filename === 'string'
+-    ? __filename
+-    : (typeof process !== 'undefined' && typeof process.cwd === 'function'
+-        ? process.cwd()
+-        : '/');
+-const defaultRequireModule = createRequireFn
+-    ? createRequireFn(moduleFilename)
+-    : null;
+-const patchActionObserverHttp = (requireModule, moduleName) => {
+-    if (!requireModule) {
+-        return false;
+-    }
+-    try {
+-        const comunica = requireModule(moduleName);
+-        if (comunica && comunica.ActionObserverHttp) {
+-            const originalOnRun = comunica.ActionObserverHttp.prototype.onRun;
+-            comunica.ActionObserverHttp.prototype.onRun = function (actor, _action, _output) {
+-                if (!this.observedActors || !Array.isArray(this.observedActors)) {
+-                    this.observedActors = [];
+-                }
+-                return originalOnRun.call(this, actor, _action, _output);
+-            };
+-            console.log(`[Patch] Successfully patched ActionObserverHttp.onRun in ${moduleName}`);
+-            return true;
+-        }
+-        return false;
+-    }
+-    catch {
+-        return false;
+-    }
+-};
+-export const applyComunicaPatches = (requireModule = defaultRequireModule) => {
+-    if (!requireModule) {
+-        return false;
+-    }
+-    const modules = [
+-        '@comunica/actor-query-result-serialize-sparql-json',
+-        '@comunica/actor-query-result-serialize-stats',
+-        '@comunica/query-sparql-solid/node_modules/@comunica/actor-query-result-serialize-sparql-json',
+-        '@comunica/query-sparql-solid/node_modules/@comunica/actor-query-result-serialize-stats'
+-    ];
+-    return modules
+-        .map((moduleName) => patchActionObserverHttp(requireModule, moduleName))
+-        .some(Boolean);
+-};
+-applyComunicaPatches();
++export const applyComunicaPatches = () => false;
+ //# sourceMappingURL=comunica-patch.js.map
+diff --git a/node_modules/@undefineds.co/drizzle-solid/dist/esm/core/sparql-engine.js b/node_modules/@undefineds.co/drizzle-solid/dist/esm/core/sparql-engine.js
+index 5c898de..39f6907 100644
+--- a/node_modules/@undefineds.co/drizzle-solid/dist/esm/core/sparql-engine.js
++++ b/node_modules/@undefineds.co/drizzle-solid/dist/esm/core/sparql-engine.js
+@@ -1,32 +1,5 @@
+ import { applyComunicaPatches } from './comunica-patch';
+ let configuredQueryEngineFactory = null;
+-const resolveCreateRequire = async () => {
+-    if (typeof window !== 'undefined') {
+-        return null;
+-    }
+-    try {
+-        const nodeRequire = eval('require');
+-        if (nodeRequire) {
+-            const moduleLib = nodeRequire('module');
+-            if (moduleLib && typeof moduleLib.createRequire === 'function') {
+-                return moduleLib.createRequire;
+-            }
+-        }
+-    }
+-    catch {
+-        // ignore and fall back to dynamic import below
+-    }
+-    try {
+-        const moduleLib = await import('node:module');
+-        if (typeof moduleLib.createRequire === 'function') {
+-            return moduleLib.createRequire;
+-        }
+-    }
+-    catch {
+-        // ignore
+-    }
+-    return null;
+-};
+ const buildMissingComunicaError = (reason) => {
+     const suffix = reason instanceof Error && reason.message
+         ? ` Original error: ${reason.message}`
+@@ -37,37 +10,17 @@ const buildMissingComunicaError = (reason) => {
+         'or call `configureSparqlEngine(...)` before executing LDP/SPARQL-client queries.' +
+         suffix);
+ };
+-const loadComunicaModuleWithRequire = async (resolveFrom) => {
+-    const createRequire = await resolveCreateRequire();
+-    if (!createRequire) {
+-        throw new Error('Node module resolution is not available in this runtime.');
+-    }
+-    const requireFrom = createRequire(resolveFrom);
+-    applyComunicaPatches(requireFrom);
+-    const comunicaModule = requireFrom('@comunica/query-sparql-solid');
+-    if (!comunicaModule || typeof comunicaModule.QueryEngine !== 'function') {
+-        throw new Error('Resolved module does not export QueryEngine.');
+-    }
+-    return comunicaModule;
+-};
+ const loadDefaultComunicaModule = async () => {
+     try {
+-        return await loadComunicaModuleWithRequire(typeof __filename === 'string'
+-            ? __filename
+-            : (typeof process !== 'undefined' && typeof process.cwd === 'function' ? process.cwd() : '/'));
+-    }
+-    catch (requireError) {
+-        try {
+-            applyComunicaPatches();
+-            const importedModule = await import('@comunica/query-sparql-solid');
+-            if (importedModule && typeof importedModule.QueryEngine === 'function') {
+-                return importedModule;
+-            }
+-        }
+-        catch (importError) {
+-            throw buildMissingComunicaError(importError ?? requireError);
++        applyComunicaPatches();
++        const importedModule = await import('@comunica/query-sparql-solid');
++        if (importedModule && typeof importedModule.QueryEngine === 'function') {
++            return importedModule;
+         }
+-        throw buildMissingComunicaError(requireError);
++        throw new Error('Resolved module does not export QueryEngine.');
++    }
++    catch (error) {
++        throw buildMissingComunicaError(error);
+     }
+ };
+ const createDefaultQueryEngine = async () => {
+@@ -82,7 +35,8 @@ export const getConfiguredSparqlEngineFactory = (createQueryEngine) => {
+ };
+ export const createNodeModuleSparqlEngineFactory = (resolveFrom) => {
+     return async () => {
+-        const comunicaModule = await loadComunicaModuleWithRequire(resolveFrom);
++        void resolveFrom;
++        const comunicaModule = await loadDefaultComunicaModule();
+         return new comunicaModule.QueryEngine();
+     };
+ };
