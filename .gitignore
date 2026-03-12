@@ -39,6 +39,9 @@ apps/desktop/dist/
 apps/desktop/out/
 
 # Capacitor / mobile build artefacts
+apps/mobile/android/
+apps/mobile/ios/
+apps/mobile/.capacitor/
 apps/mobile-shell/android/
 apps/mobile-shell/ios/
 apps/mobile-shell/www/

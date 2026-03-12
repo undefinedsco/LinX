@@ -3,8 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "sync": "capacitor sync",
-    "build": "capacitor build",
+    "build:web": "yarn --cwd ../web build",
+    "sync": "yarn --cwd ../web build && capacitor sync",
+    "build": "yarn --cwd ../web build && capacitor sync",
     "run": "capacitor run"
   },
   "dependencies": {

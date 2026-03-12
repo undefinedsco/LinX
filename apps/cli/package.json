@@ -1,0 +1,27 @@
+{
+  "name": "@linx/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "linx": "dist/index.cjs"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit && node ./scripts/build.mjs",
+    "dev": "tsx src/index.ts",
+    "test": "yarn build && node --test test/**/*.test.mjs"
+  },
+  "dependencies": {
+    "@linx/models": "*",
+    "@inrupt/solid-client-authn-node": "^3.1.1",
+    "@inrupt/vocab-common-rdf": "^1.0.5",
+    "@undefineds.co/drizzle-solid": "^0.3.0",
+    "yargs": "^17.7.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "esbuild": "^0.27.2",
+    "tsx": "^4.21.0",
+    "typescript": "^5.6.2"
+  }
+}

@@ -1,10 +1,10 @@
-import { CapacitorConfig } from '@capacitor/cli';
+import { CapacitorConfig } from '@capacitor/cli'
 
 const config: CapacitorConfig = {
-  appId: 'com.linx.hellolinx',
-  appName: 'Linq',
-  webDir: '../web/out',
-  bundledWebRuntime: false
-};
+  appId: 'com.linx.app',
+  appName: 'LinX',
+  webDir: '../web/dist',
+  bundledWebRuntime: false,
+}
 
-export default config;
+export default config

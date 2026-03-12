@@ -28,6 +28,7 @@
     "preview:web": "yarn workspace @linx/web preview",
     "lint:web": "yarn workspace @linx/web lint",
     "typecheck:web": "yarn workspace @linx/web tsc --noEmit",
+    "test:cli": "yarn workspace @linx/cli test",
     "dev:example": "yarn workspace solid-login-example dev",
     "build:models": "yarn workspace @linx/models build",
     "build": "yarn build:models && yarn build:web",
@@ -36,7 +37,7 @@
     "dev": "yarn dev:web",
     "lint": "yarn lint:web",
     "typecheck": "yarn typecheck:web",
-    "test:unit": "yarn workspace @linx/web test",
+    "test:unit": "yarn workspace @linx/web test --run && yarn test:cli",
     "test:e2e": "yarn workspace @linx/e2e test",
     "test:e2e:ui": "yarn workspace @linx/e2e test:ui",
     "test": "yarn test:unit && yarn test:e2e"
