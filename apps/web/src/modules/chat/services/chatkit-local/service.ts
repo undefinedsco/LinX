@@ -9,6 +9,7 @@
  */
 
 import { and, eq } from '@undefineds.co/drizzle-solid'
+import { resolveLinxPodBaseUrl } from '@linx/models/client'
 import type { ChatKitStore, StoreContext } from '@/lib/vendor/xpod-chatkit'
 import {
   extractUserMessageText,
@@ -730,7 +731,7 @@ export class LocalChatKitService {
     }
 
     try {
-      const podBase = this.webId.replace('/profile/card#me', '')
+      const podBase = resolveLinxPodBaseUrl(this.webId)
       const credentialUrl = `${podBase}/settings/credentials.ttl`
       const response = await this.authFetch(credentialUrl, {
         headers: { Accept: 'text/turtle' },

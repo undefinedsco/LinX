@@ -1,231 +1,620 @@
 {
   "version": "1.0.0",
-  "updatedAt": "2024-12-14",
+  "updatedAt": "2026-03-16",
   "models": [
     {
-      "id": "gpt-4o",
-      "provider": "openai",
-      "displayName": "GPT-4o",
-      "description": "最强大的多模态模型",
-      "contextLength": 128000,
-      "maxOutputTokens": 16384,
-      "capabilities": ["chat", "vision", "function-calling", "streaming", "json-mode"],
-      "pricing": { "input": 2.5, "output": 10 },
-      "isDefault": true
-    },
-    {
-      "id": "gpt-4o-mini",
-      "provider": "openai",
-      "displayName": "GPT-4o Mini",
-      "description": "快速且经济的小型模型",
-      "contextLength": 128000,
-      "maxOutputTokens": 16384,
-      "capabilities": ["chat", "vision", "function-calling", "streaming", "json-mode"],
-      "pricing": { "input": 0.15, "output": 0.6 }
-    },
-    {
-      "id": "gpt-4-turbo",
-      "provider": "openai",
-      "displayName": "GPT-4 Turbo",
-      "description": "高性能 GPT-4 版本",
-      "contextLength": 128000,
-      "maxOutputTokens": 4096,
-      "capabilities": ["chat", "vision", "function-calling", "streaming", "json-mode"],
-      "pricing": { "input": 10, "output": 30 }
-    },
-
-    {
-      "id": "claude-3-5-sonnet-20241022",
+      "id": "anthropic/claude-3.5-sonnet",
       "provider": "anthropic",
       "displayName": "Claude 3.5 Sonnet",
-      "description": "最新最强的 Claude 模型",
+      "description": "The upgraded Claude 3.5 Sonnet is now state-of-the-art for a variety of tasks including real-world software engineering, enhanced agentic capabilities, and computer use.",
       "contextLength": 200000,
       "maxOutputTokens": 8192,
-      "capabilities": ["chat", "vision", "function-calling", "streaming"],
-      "pricing": { "input": 3, "output": 15 },
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.000003,
+        "output": 0.000015
+      },
       "isDefault": true
-    },
-    {
-      "id": "claude-3-5-haiku-20241022",
-      "provider": "anthropic",
-      "displayName": "Claude 3.5 Haiku",
-      "description": "快速且经济的 Claude 模型",
-      "contextLength": 200000,
-      "maxOutputTokens": 8192,
-      "capabilities": ["chat", "vision", "function-calling", "streaming"],
-      "pricing": { "input": 0.8, "output": 4 }
-    },
-    {
-      "id": "claude-3-opus-20240229",
-      "provider": "anthropic",
-      "displayName": "Claude 3 Opus",
-      "description": "最强推理能力",
-      "contextLength": 200000,
-      "maxOutputTokens": 4096,
-      "capabilities": ["chat", "vision", "function-calling", "streaming"],
-      "pricing": { "input": 15, "output": 75 }
-    },
-
-    {
-      "id": "openai/gpt-4o",
-      "provider": "openrouter",
-      "displayName": "GPT-4o (via OpenRouter)",
-      "description": "OpenAI GPT-4o",
-      "contextLength": 128000,
-      "capabilities": ["chat", "vision", "function-calling", "streaming"],
-      "pricing": { "input": 2.5, "output": 10 }
-    },
-    {
-      "id": "openai/gpt-4o-mini",
-      "provider": "openrouter",
-      "displayName": "GPT-4o Mini (via OpenRouter)",
-      "description": "OpenAI GPT-4o Mini",
-      "contextLength": 128000,
-      "capabilities": ["chat", "vision", "function-calling", "streaming"],
-      "pricing": { "input": 0.15, "output": 0.6 },
-      "isDefault": true
-    },
-    {
-      "id": "x-ai/grok-4.1-fast",
-      "provider": "openrouter",
-      "displayName": "Grok 4.1 Fast (via OpenRouter)",
-      "description": "xAI Grok 4.1 Fast - 高速响应",
-      "contextLength": 131072,
-      "capabilities": ["chat", "function-calling", "streaming"],
-      "pricing": { "input": 3, "output": 15 }
-    },
-    {
-      "id": "anthropic/claude-3.5-sonnet",
-      "provider": "openrouter",
-      "displayName": "Claude 3.5 Sonnet (via OpenRouter)",
-      "description": "Anthropic Claude 3.5 Sonnet",
-      "contextLength": 200000,
-      "capabilities": ["chat", "vision", "function-calling", "streaming"],
-      "pricing": { "input": 3, "output": 15 }
     },
     {
       "id": "anthropic/claude-3-haiku",
-      "provider": "openrouter",
-      "displayName": "Claude 3 Haiku (via OpenRouter)",
-      "description": "Anthropic Claude 3 Haiku - 快速响应",
+      "provider": "anthropic",
+      "displayName": "Claude 3 Haiku",
+      "description": "Claude 3 Haiku is Anthropic's fastest model yet, designed for enterprise workloads which often involve longer prompts. Haiku to quickly analyze large volumes of documents, such as quarterly filings, contracts, or legal cases, for half the cost of other models in its performance tier.",
       "contextLength": 200000,
-      "capabilities": ["chat", "streaming"],
-      "pricing": { "input": 0.25, "output": 1.25 }
+      "maxOutputTokens": 4096,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 2.5e-7,
+        "output": 0.00000125
+      }
     },
     {
-      "id": "google/gemini-pro-1.5",
-      "provider": "openrouter",
-      "displayName": "Gemini Pro 1.5 (via OpenRouter)",
-      "description": "Google Gemini Pro 1.5",
+      "id": "anthropic/claude-3-opus",
+      "provider": "anthropic",
+      "displayName": "Claude 3 Opus",
+      "description": "Claude 3 Opus is Anthropic's most powerful AI model, with state-of-the-art performance on highly complex tasks. It can navigate open-ended prompts and sight-unseen scenarios with remarkable fluency and human-like understanding. Claude 3 Opus shows us the frontier of what's possible with generative AI. Claude 3 Opus can process images and return text outputs, and features a 200K context window.",
+      "contextLength": 200000,
+      "maxOutputTokens": 8192,
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.000015,
+        "output": 0.000075
+      }
+    },
+    {
+      "id": "anthropic/claude-3.5-haiku",
+      "provider": "anthropic",
+      "displayName": "Claude 3.5 Haiku",
+      "description": "Claude 3.5 Haiku, Anthropic's fastest and most cost-effective model, excels at use cases like code and test case generation, sub-agents, and user-facing chatbots.",
+      "contextLength": 200000,
+      "maxOutputTokens": 8192,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 8e-7,
+        "output": 0.000004
+      }
+    },
+    {
+      "id": "anthropic/claude-3.5-sonnet-20240620",
+      "provider": "anthropic",
+      "displayName": "Claude 3.5 Sonnet (2024-06-20)",
+      "description": "Claude 3.5 Sonnet outperforms Claude 3 Opus on a wide range of Anthropic's evaluations with the speed and cost of Anthropic's mid-tier model, Claude 3 Sonnet.",
+      "contextLength": 200000,
+      "maxOutputTokens": 8192,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.000003,
+        "output": 0.000015
+      }
+    },
+    {
+      "id": "anthropic/claude-3.7-sonnet",
+      "provider": "anthropic",
+      "displayName": "Claude 3.7 Sonnet",
+      "description": "A highly capable multimodal model with the best combination of accuracy, speed, and cost for a wide range of tasks.",
+      "contextLength": 200000,
+      "maxOutputTokens": 8192,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.000003,
+        "output": 0.000015
+      }
+    },
+    {
+      "id": "anthropic/claude-haiku-4.5",
+      "provider": "anthropic",
+      "displayName": "Claude Haiku 4.5",
+      "description": "Claude Haiku 4.5 matches Sonnet 4's performance on coding, computer use, and agent tasks at substantially lower cost and faster speeds. It delivers near-frontier performance and Claude’s unique character at a price point that works for scaled sub-agent deployments, free tier products, and intelligence-sensitive applications with budget constraints.",
+      "contextLength": 200000,
+      "maxOutputTokens": 64000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.000001,
+        "output": 0.000005
+      }
+    },
+    {
+      "id": "anthropic/claude-opus-4",
+      "provider": "anthropic",
+      "displayName": "Claude Opus 4",
+      "description": "Claude Opus 4 is Anthropic's most powerful model yet and the best coding model in the world, leading on SWE-bench (72.5%) and Terminal-bench (43.2%). It delivers sustained performance on long-running tasks that require focused effort and thousands of steps, with the ability to work continuously for several hours—dramatically outperforming all Sonnet models and significantly expanding what AI agents can accomplish.",
+      "contextLength": 200000,
+      "maxOutputTokens": 32000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.000015,
+        "output": 0.000075
+      }
+    },
+    {
+      "id": "anthropic/claude-opus-4.1",
+      "provider": "anthropic",
+      "displayName": "Claude Opus 4.1",
+      "description": "Claude Opus 4.1 is a drop-in replacement for Opus 4 that delivers superior performance and precision for real-world coding and agentic tasks. Opus 4.1 advances state-of-the-art coding performance to 74.5% on SWE-bench Verified, and handles complex, multi-step problems with more rigor and attention to detail.",
+      "contextLength": 200000,
+      "maxOutputTokens": 32000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.000015,
+        "output": 0.000075
+      }
+    },
+    {
+      "id": "anthropic/claude-opus-4.5",
+      "provider": "anthropic",
+      "displayName": "Claude Opus 4.5",
+      "description": "Claude Opus 4.5 is Anthropic’s latest model in the Opus series, meant for demanding reasoning tasks and complex problem solving. This model has improvements in general intelligence and vision compared to previous iterations. In addition, it is suited for difficult coding tasks and agentic workflows, especially those with computer use and tool use, and can effectively handle context usage and external memory files.",
+      "contextLength": 200000,
+      "maxOutputTokens": 64000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.000005,
+        "output": 0.000025
+      }
+    },
+    {
+      "id": "anthropic/claude-opus-4.6",
+      "provider": "anthropic",
+      "displayName": "Claude Opus 4.6",
+      "description": "Opus 4.6 is the world’s best model for coding and professional work, built to power agents that take on whole categories of real-world work. It excels across the entire SDLC, breaking through on hard problems, identifying complex bugs, and demonstrating deeper codebase understanding. It also delivers a step-change in knowledge work, with near-production-ready documents, presentations, and spreadsheets on the first pass.",
       "contextLength": 1000000,
-      "capabilities": ["chat", "vision", "streaming"],
-      "pricing": { "input": 2.5, "output": 7.5 }
+      "maxOutputTokens": 128000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.000005,
+        "output": 0.000025
+      }
     },
     {
-      "id": "meta-llama/llama-3.1-70b-instruct",
-      "provider": "openrouter",
-      "displayName": "Llama 3.1 70B (via OpenRouter)",
-      "description": "Meta Llama 3.1 70B",
-      "contextLength": 131072,
-      "capabilities": ["chat", "function-calling", "streaming"],
-      "pricing": { "input": 0.52, "output": 0.75 }
+      "id": "anthropic/claude-sonnet-4",
+      "provider": "anthropic",
+      "displayName": "Claude Sonnet 4",
+      "description": "Claude Sonnet 4 significantly improves on Sonnet 3.7's industry-leading capabilities, excelling in coding with a state-of-the-art 72.7% on SWE-bench. The model balances performance and efficiency for internal and external use cases, with enhanced steerability for greater control over implementations. While not matching Opus 4 in most domains, it delivers an optimal mix of capability and practicality.",
+      "contextLength": 1000000,
+      "maxOutputTokens": 64000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.000003,
+        "output": 0.000015
+      }
     },
     {
-      "id": "deepseek/deepseek-chat",
-      "provider": "openrouter",
-      "displayName": "DeepSeek Chat (via OpenRouter)",
-      "description": "DeepSeek V3 Chat",
-      "contextLength": 64000,
-      "capabilities": ["chat", "function-calling", "streaming"],
-      "pricing": { "input": 0.14, "output": 0.28 }
+      "id": "anthropic/claude-sonnet-4.5",
+      "provider": "anthropic",
+      "displayName": "Claude Sonnet 4.5",
+      "description": "Claude Sonnet 4.5 is the newest model in the Sonnet series, offering improvements and updates over Sonnet 4.",
+      "contextLength": 1000000,
+      "maxOutputTokens": 64000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.000003,
+        "output": 0.000015
+      }
     },
-
     {
-      "id": "deepseek-chat",
+      "id": "anthropic/claude-sonnet-4.6",
+      "provider": "anthropic",
+      "displayName": "Claude Sonnet 4.6",
+      "description": "Claude Sonnet 4.6 is the most capable Sonnet-class model yet, with frontier performance across coding, agents, and professional work. It excels at iterative development, complex codebase navigation, end-to-end project management with memory, polished document creation, and confident computer use for web QA and workflow automation.",
+      "contextLength": 1000000,
+      "maxOutputTokens": 128000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.000003,
+        "output": 0.000015
+      }
+    },
+    {
+      "id": "deepseek/deepseek-v3.2",
       "provider": "deepseek",
-      "displayName": "DeepSeek Chat",
-      "description": "DeepSeek V3 通用对话模型",
-      "contextLength": 64000,
-      "capabilities": ["chat", "function-calling", "streaming"],
-      "pricing": { "input": 0.14, "output": 0.28 },
-      "isDefault": true
-    },
-    {
-      "id": "deepseek-reasoner",
-      "provider": "deepseek",
-      "displayName": "DeepSeek Reasoner (R1)",
-      "description": "DeepSeek R1 推理模型",
-      "contextLength": 64000,
-      "capabilities": ["chat", "streaming"],
-      "pricing": { "input": 0.55, "output": 2.19 }
-    },
-
-    {
-      "id": "grok-2-1212",
-      "provider": "x-ai",
-      "displayName": "Grok 2",
-      "description": "xAI Grok 2 模型",
-      "contextLength": 131072,
-      "capabilities": ["chat", "function-calling", "streaming"],
-      "pricing": { "input": 2, "output": 10 },
-      "isDefault": true
-    },
-
-    {
-      "id": "gemini-1.5-pro",
-      "provider": "google",
-      "displayName": "Gemini 1.5 Pro",
-      "description": "Google Gemini 1.5 Pro",
-      "contextLength": 1000000,
-      "capabilities": ["chat", "vision", "streaming"],
-      "pricing": { "input": 1.25, "output": 5 },
-      "isDefault": true
-    },
-    {
-      "id": "gemini-1.5-flash",
-      "provider": "google",
-      "displayName": "Gemini 1.5 Flash",
-      "description": "Google Gemini 1.5 Flash - 快速响应",
-      "contextLength": 1000000,
-      "capabilities": ["chat", "vision", "streaming"],
-      "pricing": { "input": 0.075, "output": 0.3 }
-    },
-
-    {
-      "id": "qwen-max",
-      "provider": "qwen",
-      "displayName": "通义千问 Max",
-      "description": "通义千问最强模型",
-      "contextLength": 32000,
-      "capabilities": ["chat", "vision", "function-calling", "streaming"],
-      "isDefault": true
-    },
-    {
-      "id": "qwen-plus",
-      "provider": "qwen",
-      "displayName": "通义千问 Plus",
-      "description": "通义千问增强版",
-      "contextLength": 131072,
-      "capabilities": ["chat", "function-calling", "streaming"]
-    },
-
-    {
-      "id": "moonshot-v1-128k",
-      "provider": "moonshot",
-      "displayName": "Kimi 128K",
-      "description": "月之暗面 Kimi 长上下文模型",
+      "displayName": "DeepSeek V3.2",
+      "description": "DeepSeek-V3.2: Official successor to V3.2-Exp.",
       "contextLength": 128000,
-      "capabilities": ["chat", "function-calling", "streaming"],
+      "maxOutputTokens": 8000,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 2.6e-7,
+        "output": 3.8e-7
+      },
       "isDefault": true
     },
-
+    {
+      "id": "deepseek/deepseek-r1",
+      "provider": "deepseek",
+      "displayName": "DeepSeek-R1",
+      "description": "DeepSeek-R1 provides customers a state-of-the-art reasoning model, optimized for general reasoning tasks, math, science, and code generation.",
+      "contextLength": 128000,
+      "maxOutputTokens": 8192,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.00000135,
+        "output": 0.0000054
+      }
+    },
+    {
+      "id": "deepseek/deepseek-v3",
+      "provider": "deepseek",
+      "displayName": "DeepSeek V3 0324",
+      "description": "Fast general-purpose LLM with enhanced reasoning capabilities",
+      "contextLength": 163840,
+      "maxOutputTokens": 16384,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 7.7e-7,
+        "output": 7.7e-7
+      }
+    },
+    {
+      "id": "deepseek/deepseek-v3.1",
+      "provider": "deepseek",
+      "displayName": "DeepSeek-V3.1",
+      "description": "DeepSeek-V3.1 is post-trained on the top of DeepSeek-V3.1-Base, which is built upon the original V3 base checkpoint through a two-phase long context extension approach, following the methodology outlined in the original DeepSeek-V3 report. DeepSeek has expanded their dataset by collecting additional long documents and substantially extending both training phases.",
+      "contextLength": 163840,
+      "maxOutputTokens": 16384,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 5e-7,
+        "output": 0.0000015
+      }
+    },
+    {
+      "id": "deepseek/deepseek-v3.1-terminus",
+      "provider": "deepseek",
+      "displayName": "DeepSeek V3.1 Terminus",
+      "description": "DeepSeek-V3.1-Terminus delivers more stable & reliable outputs across benchmarks compared to the previous version and addresses user feedback (i.e. language consistency and agent upgrades).",
+      "contextLength": 131072,
+      "maxOutputTokens": 65536,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 2.7e-7,
+        "output": 0.000001
+      }
+    },
+    {
+      "id": "deepseek/deepseek-v3.2-thinking",
+      "provider": "deepseek",
+      "displayName": "DeepSeek V3.2 Thinking",
+      "description": "Thinking mode of DeepSeek V3.2",
+      "contextLength": 128000,
+      "maxOutputTokens": 64000,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 2.8e-7,
+        "output": 4.2e-7
+      }
+    },
+    {
+      "id": "google/gemini-2.5-pro",
+      "provider": "google",
+      "displayName": "Gemini 2.5 Pro",
+      "description": "Gemini 2.5 Pro is our most advanced reasoning Gemini model, capable of solving complex problems. Gemini 2.5 Pro can comprehend vast datasets and challenging problems from different information sources, including text, audio, images, video, and even entire code repositories.",
+      "contextLength": 1048576,
+      "maxOutputTokens": 65536,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.00000125,
+        "output": 0.00001
+      },
+      "isDefault": true
+    },
+    {
+      "id": "google/gemini-2.0-flash",
+      "provider": "google",
+      "displayName": "Gemini 2.0 Flash",
+      "description": "Gemini 2.0 Flash delivers next-gen features and improved capabilities, including superior speed, built-in tool use, multimodal generation, and a 1M token context window.",
+      "contextLength": 1048576,
+      "maxOutputTokens": 8192,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 1.5e-7,
+        "output": 6e-7
+      }
+    },
+    {
+      "id": "google/gemini-2.0-flash-lite",
+      "provider": "google",
+      "displayName": "Gemini 2.0 Flash Lite",
+      "description": "Gemini 2.0 Flash delivers next-gen features and improved capabilities, including superior speed, built-in tool use, multimodal generation, and a 1M token context window.",
+      "contextLength": 1048576,
+      "maxOutputTokens": 8192,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 7.5e-8,
+        "output": 3e-7
+      }
+    },
+    {
+      "id": "google/gemini-2.5-flash",
+      "provider": "google",
+      "displayName": "Gemini 2.5 Flash",
+      "description": "Gemini 2.5 Flash is a thinking model that offers great, well-rounded capabilities. It is designed to offer a balance between price and performance with multimodal support and a 1M token context window.",
+      "contextLength": 1000000,
+      "maxOutputTokens": 65536,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 3e-7,
+        "output": 0.0000025
+      }
+    },
+    {
+      "id": "google/gemini-2.5-flash-image",
+      "provider": "google",
+      "displayName": "Nano Banana (Gemini 2.5 Flash Image)",
+      "description": "Nano Banana (Gemini 2.5 Flash Image) is Google's first fully hybrid reasoning model, letting developers turn thinking on or off and set thinking budgets to balance quality, cost, and latency. Upgraded for rapid creative workflows, it can generate interleaved text and images and supports conversational, multi‑turn image editing in natural language. It’s also locale‑aware, enabling culturally and linguistically appropriate image generation for audiences worldwide.",
+      "contextLength": 32768,
+      "maxOutputTokens": 65536,
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 3e-7,
+        "output": 0.0000025
+      }
+    },
+    {
+      "id": "google/gemini-2.5-flash-lite",
+      "provider": "google",
+      "displayName": "Gemini 2.5 Flash Lite",
+      "description": "Gemini 2.5 Flash-Lite is a balanced, low-latency model with configurable thinking budgets and tool connectivity (e.g., Google Search grounding and code execution). It supports multimodal input and offers a 1M-token context window.",
+      "contextLength": 1048576,
+      "maxOutputTokens": 65536,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 1e-7,
+        "output": 4e-7
+      }
+    },
+    {
+      "id": "google/gemini-2.5-flash-lite-preview-09-2025",
+      "provider": "google",
+      "displayName": "Gemini 2.5 Flash Lite Preview 09-2025",
+      "description": "Gemini 2.5 Flash-Lite is a balanced, low-latency model with configurable thinking budgets and tool connectivity (e.g., Google Search grounding and code execution). It supports multimodal input and offers a 1M-token context window.",
+      "contextLength": 1048576,
+      "maxOutputTokens": 65536,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 1e-7,
+        "output": 4e-7
+      }
+    },
+    {
+      "id": "google/gemini-2.5-flash-preview-09-2025",
+      "provider": "google",
+      "displayName": "Gemini 2.5 Flash Preview 09-2025",
+      "description": "Gemini 2.5 Flash is a thinking model that offers great, well-rounded capabilities. It is designed to offer a balance between price and performance with multimodal support and a 1M token context window.",
+      "contextLength": 1000000,
+      "maxOutputTokens": 65536,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 3e-7,
+        "output": 0.0000025
+      }
+    },
+    {
+      "id": "google/gemini-3-flash",
+      "provider": "google",
+      "displayName": "Gemini 3 Flash",
+      "description": "Google's most intelligent model built for speed, combining frontier intelligence with superior search and grounding.",
+      "contextLength": 1000000,
+      "maxOutputTokens": 65000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 5e-7,
+        "output": 0.000003
+      }
+    },
+    {
+      "id": "google/gemini-3-pro-image",
+      "provider": "google",
+      "displayName": "Nano Banana Pro (Gemini 3 Pro Image)",
+      "description": "Nano Banana Pro (Gemini 3 Pro Image) builds on Nano Banana's generation capabilities into a new era of studio-quality, functional design to help you create and edit high-fidelity, production-ready visuals with unparalleled precision and control. Improvements include enhanced world knowledge and reasoning, dynamic text and translation, and studio level controls.",
+      "contextLength": 65536,
+      "maxOutputTokens": 32768,
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.000002,
+        "output": 0.000012
+      }
+    },
+    {
+      "id": "google/gemini-3-pro-preview",
+      "provider": "google",
+      "displayName": "Gemini 3 Pro Preview",
+      "description": "This model improves upon Gemini 2.5 Pro and is catered towards challenging tasks, especially those involving complex reasoning or agentic workflows. Improvements highlighted include use cases for coding, multi-step function calling, planning, reasoning, deep knowledge tasks, and instruction following.",
+      "contextLength": 1000000,
+      "maxOutputTokens": 64000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.000002,
+        "output": 0.000012
+      }
+    },
+    {
+      "id": "google/gemini-3.1-flash-image-preview",
+      "provider": "google",
+      "displayName": "Gemini 3.1 Flash Image Preview (Nano Banana 2)",
+      "description": "Gemini 3.1 Flash Image is optimized for image understanding and generation and offers a balance of price and performance.",
+      "contextLength": 131072,
+      "maxOutputTokens": 32768,
+      "capabilities": [
+        "chat",
+        "vision",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 5e-7,
+        "output": 0.000003
+      }
+    },
+    {
+      "id": "google/gemini-3.1-flash-lite-preview",
+      "provider": "google",
+      "displayName": "Gemini 3.1 Flash Lite Preview",
+      "description": "Gemini 3.1 Flash Lite Preview outperforms 2.5 Flash Lite on overall quality and lands close to 2.5 Flash performance across key capability areas. It is a workhorse model for high-volume use cases, with improvements across audio input/ASR, RAG snippet ranking, translation, data extraction, and code completion.",
+      "contextLength": 1000000,
+      "maxOutputTokens": 65000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 2.5e-7,
+        "output": 0.0000015
+      }
+    },
+    {
+      "id": "google/gemini-3.1-pro-preview",
+      "provider": "google",
+      "displayName": "Gemini 3.1 Pro Preview",
+      "description": "This model improves upon Gemini 2.5 Pro and is catered towards challenging tasks, especially those involving complex reasoning or agentic workflows. Improvements highlighted include use cases for coding, multi-step function calling, planning, reasoning, deep knowledge tasks, and instruction following.",
+      "contextLength": 1000000,
+      "maxOutputTokens": 64000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.000002,
+        "output": 0.000012
+      }
+    },
     {
       "id": "llama-3.3-70b-versatile",
       "provider": "groq",
       "displayName": "Llama 3.3 70B",
       "description": "Meta Llama 3.3 70B on Groq",
       "contextLength": 131072,
-      "capabilities": ["chat", "function-calling", "streaming"],
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
       "isDefault": true
     },
     {
@@ -234,17 +623,2001 @@
       "displayName": "Mixtral 8x7B",
       "description": "Mistral Mixtral on Groq",
       "contextLength": 32768,
-      "capabilities": ["chat", "streaming"]
+      "capabilities": [
+        "chat",
+        "streaming"
+      ]
     },
-
+    {
+      "id": "minimax/minimax-m2.5",
+      "provider": "minimax",
+      "displayName": "MiniMax M2.5",
+      "description": "MiniMax-M2.5 is a SOTA large language model designed for real-world productivity. It is capable of handling the entire development process of various complex systems. It covers full-stack projects across multiple platforms including Web, Android, iOS, Windows, and Mac, encompassing server-side APIs, functional logic, and databases.",
+      "contextLength": 204800,
+      "maxOutputTokens": 131000,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 3e-7,
+        "output": 0.0000012
+      },
+      "isDefault": true
+    },
+    {
+      "id": "minimax/minimax-m2",
+      "provider": "minimax",
+      "displayName": "MiniMax M2",
+      "description": "MiniMax-M2 redefines efficiency for agents. It is a compact, fast, and cost-effective MoE model (230 billion total parameters with 10 billion active parameters) built for elite performance in coding and agentic tasks, all while maintaining powerful general intelligence.",
+      "contextLength": 205000,
+      "maxOutputTokens": 205000,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 3e-7,
+        "output": 0.0000012
+      }
+    },
+    {
+      "id": "minimax/minimax-m2.1",
+      "provider": "minimax",
+      "displayName": "MiniMax M2.1",
+      "description": "MiniMax 2.1 is MiniMax's latest model, optimized specifically for robustness in coding, tool use, instruction following, and long-horizon planning.",
+      "contextLength": 204800,
+      "maxOutputTokens": 131072,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 3e-7,
+        "output": 0.0000012
+      }
+    },
+    {
+      "id": "minimax/minimax-m2.1-lightning",
+      "provider": "minimax",
+      "displayName": "MiniMax M2.1 Lightning",
+      "description": "MiniMax-M2.1-lightning is a faster version of MiniMax-M2.1, offering the same performance but with significantly higher throughput (output speed ~100 TPS, MiniMax-M2 output speed ~60 TPS).",
+      "contextLength": 204800,
+      "maxOutputTokens": 131072,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 3e-7,
+        "output": 0.0000024
+      }
+    },
+    {
+      "id": "minimax/minimax-m2.5-highspeed",
+      "provider": "minimax",
+      "displayName": "MiniMax M2.5 High Speed",
+      "description": "M2.5 highspeed: Same performance, faster and more agile (output speed approximately 100 tps)",
+      "contextLength": 0,
+      "maxOutputTokens": 0,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 6e-7,
+        "output": 0.0000024
+      }
+    },
+    {
+      "id": "mistral/mistral-medium",
+      "provider": "mistral",
+      "displayName": "Mistral Medium 3.1",
+      "description": "Mistral Medium 3 delivers frontier performance while being an order of magnitude less expensive. For instance, the model performs at or above 90% of Claude Sonnet 3.7 on benchmarks across the board at a significantly lower cost.",
+      "contextLength": 128000,
+      "maxOutputTokens": 64000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 4e-7,
+        "output": 0.000002
+      },
+      "isDefault": true
+    },
+    {
+      "id": "mistral/codestral",
+      "provider": "mistral",
+      "displayName": "Mistral Codestral",
+      "description": "Mistral's cutting-edge language model for coding released end of July 2025, Codestral specializes in low-latency, high-frequency tasks such as fill-in-the-middle (FIM), code correction and test generation.",
+      "contextLength": 128000,
+      "maxOutputTokens": 4000,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 3e-7,
+        "output": 9e-7
+      }
+    },
+    {
+      "id": "mistral/devstral-2",
+      "provider": "mistral",
+      "displayName": "Devstral 2",
+      "description": "An enterprise-grade text model that excels at using tools to explore codebases, editing multiple files, and powering software engineering agents.",
+      "contextLength": 256000,
+      "maxOutputTokens": 256000,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0,
+        "output": 0
+      }
+    },
+    {
+      "id": "mistral/devstral-small",
+      "provider": "mistral",
+      "displayName": "Devstral Small 1.1",
+      "description": "Devstral is an agentic LLM for software engineering tasks built under a collaboration between Mistral AI and All Hands AI 🙌. Devstral excels at using tools to explore codebases, editing multiple files and power software engineering agents.",
+      "contextLength": 128000,
+      "maxOutputTokens": 64000,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 1e-7,
+        "output": 3e-7
+      }
+    },
+    {
+      "id": "mistral/devstral-small-2",
+      "provider": "mistral",
+      "displayName": "Devstral Small 2",
+      "description": "Our open source model that excels at using tools to explore codebases, editing multiple files, and powering software engineering agents.",
+      "contextLength": 256000,
+      "maxOutputTokens": 256000,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0,
+        "output": 0
+      }
+    },
+    {
+      "id": "mistral/magistral-medium",
+      "provider": "mistral",
+      "displayName": "Magistral Medium 2509",
+      "description": "Complex thinking, backed by deep understanding, with transparent reasoning you can follow and verify. The model excels in maintaining high-fidelity reasoning across numerous languages, even when switching between languages mid-task.",
+      "contextLength": 128000,
+      "maxOutputTokens": 64000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.000002,
+        "output": 0.000005
+      }
+    },
+    {
+      "id": "mistral/magistral-small",
+      "provider": "mistral",
+      "displayName": "Magistral Small 2509",
+      "description": "Complex thinking, backed by deep understanding, with transparent reasoning you can follow and verify. The model excels in maintaining high-fidelity reasoning across numerous languages, even when switching between languages mid-task.",
+      "contextLength": 128000,
+      "maxOutputTokens": 64000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 5e-7,
+        "output": 0.0000015
+      }
+    },
+    {
+      "id": "mistral/ministral-14b",
+      "provider": "mistral",
+      "displayName": "Ministral 14B",
+      "description": "Ministral 3 14B is the largest model in the Ministral 3 family, offering state-of-the-art capabilities and performance comparable to its larger Mistral Small 3.2 24B counterpart. Optimized for local deployment, it delivers high performance across diverse hardware, including local setups.",
+      "contextLength": 256000,
+      "maxOutputTokens": 256000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 2e-7,
+        "output": 2e-7
+      }
+    },
+    {
+      "id": "mistral/ministral-3b",
+      "provider": "mistral",
+      "displayName": "Ministral 3B",
+      "description": "A compact, efficient model for on-device tasks like smart assistants and local analytics, offering low-latency performance.",
+      "contextLength": 128000,
+      "maxOutputTokens": 4000,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 4e-8,
+        "output": 4e-8
+      }
+    },
+    {
+      "id": "mistral/ministral-8b",
+      "provider": "mistral",
+      "displayName": "Ministral 8B",
+      "description": "A more powerful model with faster, memory-efficient inference, ideal for complex workflows and demanding edge applications.",
+      "contextLength": 128000,
+      "maxOutputTokens": 4000,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 1e-7,
+        "output": 1e-7
+      }
+    },
+    {
+      "id": "mistral/mistral-large-3",
+      "provider": "mistral",
+      "displayName": "Mistral Large 3",
+      "description": "Mistral Large 3 2512 is Mistral’s most capable model to date. It has a sparse mixture-of-experts architecture with 41B active parameters (675B total).",
+      "contextLength": 256000,
+      "maxOutputTokens": 256000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 5e-7,
+        "output": 0.0000015
+      }
+    },
+    {
+      "id": "mistral/mistral-nemo",
+      "provider": "mistral",
+      "displayName": "Mistral Nemo 12B",
+      "description": "A 12B parameter model with a 128k token context length built by Mistral in collaboration with NVIDIA. The model is multilingual, supporting English, French, German, Spanish, Italian, Portuguese, Chinese, Japanese, Korean, Arabic, and Hindi. It supports function calling and is released under the Apache 2.0 license.",
+      "contextLength": 128000,
+      "maxOutputTokens": 128000,
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 1.5e-7,
+        "output": 1.5e-7
+      }
+    },
+    {
+      "id": "mistral/mistral-small",
+      "provider": "mistral",
+      "displayName": "Mistral Small",
+      "description": "Mistral Small is the ideal choice for simple tasks that one can do in bulk - like Classification, Customer Support, or Text Generation. It offers excellent performance at an affordable price point.",
+      "contextLength": 32000,
+      "maxOutputTokens": 4000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 1e-7,
+        "output": 3e-7
+      }
+    },
+    {
+      "id": "mistral/mixtral-8x22b-instruct",
+      "provider": "mistral",
+      "displayName": "Mixtral MoE 8x22B Instruct",
+      "description": "8x22b Instruct model. 8x22b is mixture-of-experts open source model by Mistral served by Fireworks.",
+      "contextLength": 65536,
+      "maxOutputTokens": 2048,
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.0000012,
+        "output": 0.0000012
+      }
+    },
+    {
+      "id": "mistral/pixtral-12b",
+      "provider": "mistral",
+      "displayName": "Pixtral 12B 2409",
+      "description": "A 12B model with image understanding capabilities in addition to text.",
+      "contextLength": 128000,
+      "maxOutputTokens": 4000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 1.5e-7,
+        "output": 1.5e-7
+      }
+    },
+    {
+      "id": "mistral/pixtral-large",
+      "provider": "mistral",
+      "displayName": "Pixtral Large",
+      "description": "Pixtral Large is the second model in our multimodal family and demonstrates frontier-level image understanding. Particularly, the model is able to understand documents, charts and natural images, while maintaining the leading text-only understanding of Mistral Large 2.",
+      "contextLength": 128000,
+      "maxOutputTokens": 4000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.000002,
+        "output": 0.000006
+      }
+    },
+    {
+      "id": "moonshotai/kimi-k2.5",
+      "provider": "moonshot",
+      "displayName": "Kimi K2.5",
+      "description": "kimi-k2.5 is Kimi's most versatile model to date, featuring a native multimodal architecture that supports both visual and text input, thinking and non-thinking modes, and dialogue and agent tasks.",
+      "contextLength": 262114,
+      "maxOutputTokens": 262114,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 6e-7,
+        "output": 0.000003
+      },
+      "isDefault": true
+    },
+    {
+      "id": "moonshotai/kimi-k2",
+      "provider": "moonshot",
+      "displayName": "Kimi K2",
+      "description": "Kimi K2 is a model with a context length of 128k, featuring powerful code and Agent capabilities based on MoE architecture. It has 1T total parameters with 32B activated parameters. In benchmark performance tests across major categories including general knowledge reasoning, programming, mathematics, and Agent capabilities, the K2 model outperforms other mainstream open-source models.",
+      "contextLength": 131072,
+      "maxOutputTokens": 16384,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 6e-7,
+        "output": 0.0000025
+      }
+    },
+    {
+      "id": "moonshotai/kimi-k2-0905",
+      "provider": "moonshot",
+      "displayName": "Kimi K2 0905",
+      "description": "Kimi K2 is a model with a context length of 256k, featuring stronger Agentic Coding capabilities, more prominent front-end code aesthetics and practicality, and better context understanding capabilities based on the capabilities of kimi-k2-0711-preview.",
+      "contextLength": 256000,
+      "maxOutputTokens": 16384,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 6e-7,
+        "output": 0.0000025
+      }
+    },
+    {
+      "id": "moonshotai/kimi-k2-thinking",
+      "provider": "moonshot",
+      "displayName": "Kimi K2 Thinking",
+      "description": "Kimi K2 Thinking is an advanced open-source thinking model by Moonshot AI. It can execute up to 200 – 300 sequential tool calls without human interference, reasoning coherently across hundreds of steps to solve complex problems. Built as a thinking agent, it reasons step by step while using tools, achieving state-of-the-art performance on Humanity's Last Exam (HLE), BrowseComp, and other benchmarks, with major gains in reasoning, agentic search, coding, writing, and general capabilities.",
+      "contextLength": 262114,
+      "maxOutputTokens": 262114,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 6e-7,
+        "output": 0.0000025
+      }
+    },
+    {
+      "id": "moonshotai/kimi-k2-thinking-turbo",
+      "provider": "moonshot",
+      "displayName": "Kimi K2 Thinking Turbo",
+      "description": "High-speed version of kimi-k2-thinking, suitable for scenarios requiring both deep reasoning and extremely fast responses",
+      "contextLength": 262114,
+      "maxOutputTokens": 262114,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.00000115,
+        "output": 0.000008
+      }
+    },
+    {
+      "id": "moonshotai/kimi-k2-turbo",
+      "provider": "moonshot",
+      "displayName": "Kimi K2 Turbo",
+      "description": "Kimi K2 Turbo is the high-speed version of kimi-k2, with the same model parameters as kimi-k2, but the output speed is increased to 60 tokens per second, with a maximum of 100 tokens per second, the context length is 256k",
+      "contextLength": 256000,
+      "maxOutputTokens": 16384,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.0000024,
+        "output": 0.00001
+      }
+    },
+    {
+      "id": "openai/gpt-4o",
+      "provider": "openai",
+      "displayName": "GPT-4o",
+      "description": "GPT-4o from OpenAI has broad general knowledge and domain expertise allowing it to follow complex instructions in natural language and solve difficult problems accurately. It matches GPT-4 Turbo performance with a faster and cheaper API.",
+      "contextLength": 128000,
+      "maxOutputTokens": 16384,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.0000025,
+        "output": 0.00001
+      },
+      "isDefault": true
+    },
+    {
+      "id": "openai/gpt-3.5-turbo",
+      "provider": "openai",
+      "displayName": "GPT-3.5 Turbo",
+      "description": "OpenAI's most capable and cost effective model in the GPT-3.5 family optimized for chat purposes, but also works well for traditional completions tasks.",
+      "contextLength": 16385,
+      "maxOutputTokens": 4096,
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 5e-7,
+        "output": 0.0000015
+      }
+    },
+    {
+      "id": "openai/gpt-3.5-turbo-instruct",
+      "provider": "openai",
+      "displayName": "GPT-3.5 Turbo Instruct",
+      "description": "Similar capabilities as GPT-3 era models. Compatible with legacy Completions endpoint and not Chat Completions.",
+      "contextLength": 8192,
+      "maxOutputTokens": 4096,
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.0000015,
+        "output": 0.000002
+      }
+    },
+    {
+      "id": "openai/gpt-4-turbo",
+      "provider": "openai",
+      "displayName": "GPT-4 Turbo",
+      "description": "gpt-4-turbo from OpenAI has broad general knowledge and domain expertise allowing it to follow complex instructions in natural language and solve difficult problems accurately. It has a knowledge cutoff of April 2023 and a 128,000 token context window.",
+      "contextLength": 128000,
+      "maxOutputTokens": 4096,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.00001,
+        "output": 0.00003
+      }
+    },
+    {
+      "id": "openai/gpt-4.1",
+      "provider": "openai",
+      "displayName": "GPT-4.1",
+      "description": "GPT 4.1 is OpenAI's flagship model for complex tasks. It is well suited for problem solving across domains.",
+      "contextLength": 1047576,
+      "maxOutputTokens": 32768,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.000002,
+        "output": 0.000008
+      }
+    },
+    {
+      "id": "openai/gpt-4.1-mini",
+      "provider": "openai",
+      "displayName": "GPT-4.1 mini",
+      "description": "GPT 4.1 mini provides a balance between intelligence, speed, and cost that makes it an attractive model for many use cases.",
+      "contextLength": 1047576,
+      "maxOutputTokens": 32768,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 4e-7,
+        "output": 0.0000016
+      }
+    },
+    {
+      "id": "openai/gpt-4.1-nano",
+      "provider": "openai",
+      "displayName": "GPT-4.1 nano",
+      "description": "GPT-4.1 nano is the fastest, most cost-effective GPT 4.1 model.",
+      "contextLength": 1047576,
+      "maxOutputTokens": 32768,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 1e-7,
+        "output": 4e-7
+      }
+    },
+    {
+      "id": "openai/gpt-4o-mini",
+      "provider": "openai",
+      "displayName": "GPT-4o mini",
+      "description": "GPT-4o mini from OpenAI is their most advanced and cost-efficient small model. It is multi-modal (accepting text or image inputs and outputting text) and has higher intelligence than gpt-3.5-turbo but is just as fast.",
+      "contextLength": 128000,
+      "maxOutputTokens": 16384,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 1.5e-7,
+        "output": 6e-7
+      }
+    },
+    {
+      "id": "openai/gpt-4o-mini-search-preview",
+      "provider": "openai",
+      "displayName": "GPT 4o Mini Search Preview",
+      "description": "GPT-4o mini Search Preview is a specialized model trained to understand and execute web search queries with the Chat Completions API. In addition to token fees, web search queries have a fee per tool call.",
+      "contextLength": 128000,
+      "maxOutputTokens": 16384,
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 1.5e-7,
+        "output": 6e-7
+      }
+    },
+    {
+      "id": "openai/gpt-5",
+      "provider": "openai",
+      "displayName": "GPT-5",
+      "description": "GPT-5 is OpenAI's flagship language model that excels at complex reasoning, broad real-world knowledge, code-intensive, and multi-step agentic tasks.",
+      "contextLength": 400000,
+      "maxOutputTokens": 128000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.00000125,
+        "output": 0.00001
+      }
+    },
+    {
+      "id": "openai/gpt-5-chat",
+      "provider": "openai",
+      "displayName": "GPT 5 Chat",
+      "description": "GPT-5 Chat points to the GPT-5 snapshot currently used in ChatGPT.",
+      "contextLength": 128000,
+      "maxOutputTokens": 16384,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.00000125,
+        "output": 0.00001
+      }
+    },
+    {
+      "id": "openai/gpt-5-codex",
+      "provider": "openai",
+      "displayName": "GPT-5-Codex",
+      "description": "GPT-5-Codex is a version of GPT-5 optimized for agentic coding tasks in Codex or similar environments.",
+      "contextLength": 400000,
+      "maxOutputTokens": 128000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.00000125,
+        "output": 0.00001
+      }
+    },
+    {
+      "id": "openai/gpt-5-mini",
+      "provider": "openai",
+      "displayName": "GPT-5 mini",
+      "description": "GPT-5 mini is a cost optimized model that excels at reasoning/chat tasks. It offers an optimal balance between speed, cost, and capability.",
+      "contextLength": 400000,
+      "maxOutputTokens": 128000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 2.5e-7,
+        "output": 0.000002
+      }
+    },
+    {
+      "id": "openai/gpt-5-nano",
+      "provider": "openai",
+      "displayName": "GPT-5 nano",
+      "description": "GPT-5 nano is a high throughput model that excels at simple instruction or classification tasks.",
+      "contextLength": 400000,
+      "maxOutputTokens": 128000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 5e-8,
+        "output": 4e-7
+      }
+    },
+    {
+      "id": "openai/gpt-5-pro",
+      "provider": "openai",
+      "displayName": "GPT-5 pro",
+      "description": "GPT-5 pro uses more compute to think harder and provide consistently better answers. Since GPT-5 pro is designed to tackle tough problems, some requests may take several minutes to finish.",
+      "contextLength": 400000,
+      "maxOutputTokens": 272000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.000015,
+        "output": 0.00012
+      }
+    },
+    {
+      "id": "openai/gpt-5.1-codex",
+      "provider": "openai",
+      "displayName": "GPT-5.1-Codex",
+      "description": "GPT-5.1-Codex is a version of GPT-5.1 optimized for agentic coding tasks in Codex or similar environments.",
+      "contextLength": 400000,
+      "maxOutputTokens": 128000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.00000125,
+        "output": 0.00001
+      }
+    },
+    {
+      "id": "openai/gpt-5.1-codex-max",
+      "provider": "openai",
+      "displayName": "GPT 5.1 Codex Max",
+      "description": "GPT‑5.1-Codex-Max is purpose-built for agentic coding.",
+      "contextLength": 400000,
+      "maxOutputTokens": 128000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.00000125,
+        "output": 0.00001
+      }
+    },
+    {
+      "id": "openai/gpt-5.1-codex-mini",
+      "provider": "openai",
+      "displayName": "GPT 5.1 Codex Mini",
+      "description": "GPT-5.1 Codex mini is a smaller, faster, and cheaper version of GPT-5.1 Codex.",
+      "contextLength": 400000,
+      "maxOutputTokens": 128000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 2.5e-7,
+        "output": 0.000002
+      }
+    },
+    {
+      "id": "openai/gpt-5.1-instant",
+      "provider": "openai",
+      "displayName": "GPT-5.1 Instant",
+      "description": "GPT-5.1 Instant (or GPT-5.1 chat) is a warmer and more conversational version of GPT-5-chat, with improved instruction following and adaptive reasoning for deciding when to think before responding.",
+      "contextLength": 128000,
+      "maxOutputTokens": 16384,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.00000125,
+        "output": 0.00001
+      }
+    },
+    {
+      "id": "openai/gpt-5.1-thinking",
+      "provider": "openai",
+      "displayName": "GPT 5.1 Thinking",
+      "description": "An upgraded version of GPT-5 that adapts thinking time more precisely to the question to spend more time on complex questions and respond more quickly to simpler tasks.",
+      "contextLength": 400000,
+      "maxOutputTokens": 128000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.00000125,
+        "output": 0.00001
+      }
+    },
+    {
+      "id": "openai/gpt-5.2",
+      "provider": "openai",
+      "displayName": "GPT 5.2",
+      "description": "GPT-5.2 is OpenAI's best general-purpose model, part of the GPT-5 flagship model family. It's their most intelligent model yet for both general and agentic tasks.",
+      "contextLength": 400000,
+      "maxOutputTokens": 128000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.00000175,
+        "output": 0.000014
+      }
+    },
+    {
+      "id": "openai/gpt-5.2-chat",
+      "provider": "openai",
+      "displayName": "GPT 5.2 Chat",
+      "description": "The model powering ChatGPT is gpt-5.2-chat-latest: this is OpenAI's best general-purpose model, part of the GPT-5 flagship model family.",
+      "contextLength": 128000,
+      "maxOutputTokens": 16384,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.00000175,
+        "output": 0.000014
+      }
+    },
+    {
+      "id": "openai/gpt-5.2-codex",
+      "provider": "openai",
+      "displayName": "GPT 5.2 Codex",
+      "description": "GPT‑5.2-Codex is a version of GPT‑5.2⁠ further optimized for agentic coding in Codex, including improvements on long-horizon work through context compaction, stronger performance on large code changes like refactors and migrations, improved performance in Windows environments, and significantly stronger cybersecurity capabilities.",
+      "contextLength": 400000,
+      "maxOutputTokens": 128000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.00000175,
+        "output": 0.000014
+      }
+    },
+    {
+      "id": "openai/gpt-5.2-pro",
+      "provider": "openai",
+      "displayName": "GPT 5.2 ",
+      "description": "Version of GPT-5.2 that produces smarter and more precise responses.",
+      "contextLength": 400000,
+      "maxOutputTokens": 128000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.000021,
+        "output": 0.000168
+      }
+    },
+    {
+      "id": "openai/gpt-5.3-chat",
+      "provider": "openai",
+      "displayName": "GPT-5.3 Chat",
+      "description": "The model powering ChatGPT is gpt-5.3-chat-latest: this is OpenAI's best general-purpose model, part of the GPT-5 flagship model family.",
+      "contextLength": 128000,
+      "maxOutputTokens": 16384,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.00000175,
+        "output": 0.000014
+      }
+    },
+    {
+      "id": "openai/gpt-5.3-codex",
+      "provider": "openai",
+      "displayName": "GPT 5.3 Codex",
+      "description": "GPT-5.3-Codex advances both the frontier coding performance of GPT‑5.2-Codex and the reasoning and professional knowledge capabilities of GPT‑5.2, together in one model, which is also 25% faster. This enables it to take on long-running tasks that involve research, tool use, and complex execution.",
+      "contextLength": 400000,
+      "maxOutputTokens": 128000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.00000175,
+        "output": 0.000014
+      }
+    },
+    {
+      "id": "openai/gpt-5.4",
+      "provider": "openai",
+      "displayName": "GPT 5.4",
+      "description": "GPT-5.4 is OpenAI's best general-purpose model, part of the GPT-5 flagship model family. It's their most intelligent model yet for both general and agentic tasks.",
+      "contextLength": 1050000,
+      "maxOutputTokens": 128000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.0000025,
+        "output": 0.000015
+      }
+    },
+    {
+      "id": "openai/gpt-5.4-pro",
+      "provider": "openai",
+      "displayName": "GPT 5.4 Pro",
+      "description": "GPT-5.4 Pro uses more compute to think harder and provide consistently better answers. It's designed to tackle tough problems.",
+      "contextLength": 1050000,
+      "maxOutputTokens": 128000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.00003,
+        "output": 0.00018
+      }
+    },
+    {
+      "id": "openai/gpt-oss-120b",
+      "provider": "openai",
+      "displayName": "gpt-oss-120b",
+      "description": "This model excels at efficient reasoning across science, math, and coding applications. It’s ideal for real-time coding assistance, processing large documents for Q&A and summarization, agentic research workflows, and regulated on-premises workloads.",
+      "contextLength": 131072,
+      "maxOutputTokens": 131000,
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 2.5e-7,
+        "output": 6.9e-7
+      }
+    },
+    {
+      "id": "openai/gpt-oss-20b",
+      "provider": "openai",
+      "displayName": "gpt-oss-20b",
+      "description": "A compact, open-weight language model optimized for low-latency and resource-constrained environments, including local and edge deployments",
+      "contextLength": 128000,
+      "maxOutputTokens": 8192,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 7e-8,
+        "output": 3e-7
+      }
+    },
+    {
+      "id": "openai/gpt-oss-safeguard-20b",
+      "provider": "openai",
+      "displayName": "gpt-oss-safeguard-20b",
+      "description": "OpenAI's first open weight reasoning model specifically trained for safety classification tasks. Fine-tuned from GPT-OSS, this model helps classify text content based on customizable policies, enabling bring-your-own-policy Trust & Safety AI where your own taxonomy, definitions, and thresholds guide classification decisions.",
+      "contextLength": 131072,
+      "maxOutputTokens": 65536,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 7.5e-8,
+        "output": 3e-7
+      }
+    },
+    {
+      "id": "openai/o1",
+      "provider": "openai",
+      "displayName": "o1",
+      "description": "o1 is OpenAI's flagship reasoning model, designed for complex problems that require deep thinking. It provides strong reasoning capabilities with improved accuracy for complex multi-step tasks.",
+      "contextLength": 200000,
+      "maxOutputTokens": 100000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.000015,
+        "output": 0.00006
+      }
+    },
+    {
+      "id": "openai/o3",
+      "provider": "openai",
+      "displayName": "o3",
+      "description": "OpenAI's o3 is their most powerful reasoning model, setting new state-of-the-art benchmarks in coding, math, science, and visual perception. It excels at complex queries requiring multi-faceted analysis, with particular strength in analyzing images, charts, and graphics.",
+      "contextLength": 200000,
+      "maxOutputTokens": 100000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.000002,
+        "output": 0.000008
+      }
+    },
+    {
+      "id": "openai/o3-deep-research",
+      "provider": "openai",
+      "displayName": "o3-deep-research",
+      "description": "o3-deep-research is OpenAI's most advanced model for deep research, designed to tackle complex, multi-step research tasks. It can search and synthesize information from across the internet as well as from your own data—brought in through MCP connectors.",
+      "contextLength": 200000,
+      "maxOutputTokens": 100000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.00001,
+        "output": 0.00004
+      }
+    },
+    {
+      "id": "openai/o3-mini",
+      "provider": "openai",
+      "displayName": "o3-mini",
+      "description": "o3-mini is OpenAI's most recent small reasoning model, providing high intelligence at the same cost and latency targets of o1-mini.",
+      "contextLength": 200000,
+      "maxOutputTokens": 100000,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.0000011,
+        "output": 0.0000044
+      }
+    },
+    {
+      "id": "openai/o3-pro",
+      "provider": "openai",
+      "displayName": "o3 Pro",
+      "description": "The o-series of models are trained with reinforcement learning to think before they answer and perform complex reasoning. The o3-pro model uses more compute to think harder and provide consistently better answers.",
+      "contextLength": 200000,
+      "maxOutputTokens": 100000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.00002,
+        "output": 0.00008
+      }
+    },
+    {
+      "id": "openai/o4-mini",
+      "provider": "openai",
+      "displayName": "o4-mini",
+      "description": "OpenAI's o4-mini delivers fast, cost-efficient reasoning with exceptional performance for its size, particularly excelling in math (best-performing on AIME benchmarks), coding, and visual tasks.",
+      "contextLength": 200000,
+      "maxOutputTokens": 100000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.0000011,
+        "output": 0.0000044
+      }
+    },
+    {
+      "id": "openai/gpt-4o-mini",
+      "provider": "openrouter",
+      "displayName": "GPT-4o Mini (via OpenRouter)",
+      "description": "OpenAI GPT-4o Mini",
+      "contextLength": 128000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.15,
+        "output": 0.6
+      },
+      "isDefault": true
+    },
+    {
+      "id": "anthropic/claude-3-haiku",
+      "provider": "openrouter",
+      "displayName": "Claude 3 Haiku (via OpenRouter)",
+      "description": "Anthropic Claude 3 Haiku - 快速响应",
+      "contextLength": 200000,
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.25,
+        "output": 1.25
+      }
+    },
+    {
+      "id": "anthropic/claude-3.5-sonnet",
+      "provider": "openrouter",
+      "displayName": "Claude 3.5 Sonnet (via OpenRouter)",
+      "description": "Anthropic Claude 3.5 Sonnet",
+      "contextLength": 200000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 3,
+        "output": 15
+      }
+    },
+    {
+      "id": "deepseek/deepseek-chat",
+      "provider": "openrouter",
+      "displayName": "DeepSeek Chat (via OpenRouter)",
+      "description": "DeepSeek V3 Chat",
+      "contextLength": 64000,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.14,
+        "output": 0.28
+      }
+    },
+    {
+      "id": "google/gemini-pro-1.5",
+      "provider": "openrouter",
+      "displayName": "Gemini Pro 1.5 (via OpenRouter)",
+      "description": "Google Gemini Pro 1.5",
+      "contextLength": 1000000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 2.5,
+        "output": 7.5
+      }
+    },
+    {
+      "id": "meta-llama/llama-3.1-70b-instruct",
+      "provider": "openrouter",
+      "displayName": "Llama 3.1 70B (via OpenRouter)",
+      "description": "Meta Llama 3.1 70B",
+      "contextLength": 131072,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.52,
+        "output": 0.75
+      }
+    },
+    {
+      "id": "openai/gpt-4o",
+      "provider": "openrouter",
+      "displayName": "GPT-4o (via OpenRouter)",
+      "description": "OpenAI GPT-4o",
+      "contextLength": 128000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 2.5,
+        "output": 10
+      }
+    },
+    {
+      "id": "x-ai/grok-4.1-fast",
+      "provider": "openrouter",
+      "displayName": "Grok 4.1 Fast (via OpenRouter)",
+      "description": "xAI Grok 4.1 Fast - 高速响应",
+      "contextLength": 131072,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 3,
+        "output": 15
+      }
+    },
+    {
+      "id": "alibaba/qwen3-max",
+      "provider": "qwen",
+      "displayName": "Qwen3 Max",
+      "description": "The Qwen 3 series Max model has undergone specialized upgrades in agent programming and tool invocation compared to the preview version. The officially released model this time has achieved state-of-the-art (SOTA) performance in its field and is better suited to meet the demands of agents operating in more complex scenarios.",
+      "contextLength": 262144,
+      "maxOutputTokens": 32768,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.0000012,
+        "output": 0.000006
+      },
+      "isDefault": true
+    },
+    {
+      "id": "alibaba/qwen-3-14b",
+      "provider": "qwen",
+      "displayName": "Qwen3-14B",
+      "description": "Qwen3 is the latest generation of large language models in Qwen series, offering a comprehensive suite of dense and mixture-of-experts (MoE) models. Built upon extensive training, Qwen3 delivers groundbreaking advancements in reasoning, instruction-following, agent capabilities, and multilingual support",
+      "contextLength": 40960,
+      "maxOutputTokens": 16384,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 6e-8,
+        "output": 2.4e-7
+      }
+    },
+    {
+      "id": "alibaba/qwen-3-235b",
+      "provider": "qwen",
+      "displayName": "Qwen3-235B-A22B",
+      "description": "Qwen3-235B-A22B-Instruct-2507 is the updated version of the Qwen3-235B-A22B non-thinking mode, featuring Significant improvements in general capabilities, including instruction following, logical reasoning, text comprehension, mathematics, science, coding and tool usage.",
+      "contextLength": 40960,
+      "maxOutputTokens": 16384,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 7.1e-8,
+        "output": 4.63e-7
+      }
+    },
+    {
+      "id": "alibaba/qwen-3-30b",
+      "provider": "qwen",
+      "displayName": "Qwen3-30B-A3B",
+      "description": "Qwen3 is the latest generation of large language models in Qwen series, offering a comprehensive suite of dense and mixture-of-experts (MoE) models. Built upon extensive training, Qwen3 delivers groundbreaking advancements in reasoning, instruction-following, agent capabilities, and multilingual support",
+      "contextLength": 40960,
+      "maxOutputTokens": 16384,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 8e-8,
+        "output": 2.9e-7
+      }
+    },
+    {
+      "id": "alibaba/qwen-3-32b",
+      "provider": "qwen",
+      "displayName": "Qwen 3 32B",
+      "description": "Qwen 3 32B is the latest generation of large language models in the Qwen series, offering groundbreaking advancements in reasoning, instruction-following, agent capabilities, and multilingual support. It uniquely supports seamless switching between thinking mode (for complex logical reasoning, math, and coding) and non-thinking mode (for efficient, general-purpose dialogue) within a single model. The model excels in human preference alignment, creative writing, role-playing, and multi-turn dialogues, while supporting 100+ languages and dialects.",
+      "contextLength": 131072,
+      "maxOutputTokens": 40960,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 2.9e-7,
+        "output": 5.9e-7
+      }
+    },
+    {
+      "id": "alibaba/qwen3-235b-a22b-thinking",
+      "provider": "qwen",
+      "displayName": "Qwen3 235B A22B Thinking 2507",
+      "description": "Qwen3-235B-A22B-Thinking-2507 is the Qwen3's new model with scaling the thinking capability of Qwen3-235B-A22B, improving both the quality and depth of reasoning.",
+      "contextLength": 262114,
+      "maxOutputTokens": 262114,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 3e-7,
+        "output": 0.0000029
+      }
+    },
+    {
+      "id": "alibaba/qwen3-coder",
+      "provider": "qwen",
+      "displayName": "Qwen3 Coder 480B A35B Instruct",
+      "description": "Qwen3-Coder-480B-A35B-Instruct is Qwen's most agentic code model, featuring significant performance on Agentic Coding, Agentic Browser-Use and other foundational coding tasks, achieving results comparable to Claude Sonnet.",
+      "contextLength": 262144,
+      "maxOutputTokens": 66536,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 4e-7,
+        "output": 0.0000016
+      }
+    },
+    {
+      "id": "alibaba/qwen3-coder-30b-a3b",
+      "provider": "qwen",
+      "displayName": "Qwen 3 Coder 30B A3B Instruct",
+      "description": "Efficient coding specialist balancing performance with cost-effectiveness for daily development tasks while maintaining strong tool integration capabilities.",
+      "contextLength": 262144,
+      "maxOutputTokens": 8192,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 1.5e-7,
+        "output": 6e-7
+      }
+    },
+    {
+      "id": "alibaba/qwen3-coder-next",
+      "provider": "qwen",
+      "displayName": "Qwen3 Coder Next",
+      "description": "Qwen3-Coder-Next is an open-weight language model built specifically for coding, with strong performance on large-scale software engineering and agentic coding benchmarks. It uses a hybrid Mixture-of-Experts architecture to offer high capability at relatively modest active parameter counts, improving efficiency for real-world deployments. The model is trained on diverse code and natural language data so it can handle tasks like code generation, refactoring, debugging, repository-level reasoning, and technical explanation across multiple programming languages. It is also optimized for tool use and function calling, making it suitable as the core of coding agents that interact with shells, editors, issue trackers, and other developer tools.",
+      "contextLength": 256000,
+      "maxOutputTokens": 256000,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 5e-7,
+        "output": 0.0000012
+      }
+    },
+    {
+      "id": "alibaba/qwen3-coder-plus",
+      "provider": "qwen",
+      "displayName": "Qwen3 Coder Plus",
+      "description": "Powered by Qwen3 this is a powerful Coding Agent that excels in tool calling and environment interaction to achieve autonomous programming. It combines outstanding coding proficiency with versatile general-purpose abilities.",
+      "contextLength": 1000000,
+      "maxOutputTokens": 65536,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.000001,
+        "output": 0.000005
+      }
+    },
+    {
+      "id": "alibaba/qwen3-max-preview",
+      "provider": "qwen",
+      "displayName": "Qwen3 Max Preview",
+      "description": "Qwen3-Max-Preview shows substantial gains over the 2.5 series in overall capability, with significant enhancements in Chinese-English text understanding, complex instruction following, handling of subjective open-ended tasks, multilingual ability, and tool invocation; model knowledge hallucinations are reduced.",
+      "contextLength": 262144,
+      "maxOutputTokens": 32768,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.0000012,
+        "output": 0.000006
+      }
+    },
+    {
+      "id": "alibaba/qwen3-max-thinking",
+      "provider": "qwen",
+      "displayName": "Qwen 3 Max Thinking",
+      "description": "Compared with the snapshot as of September 23, 2025, the Qwen-3 series Max model in this release achieves an effective integration of thinking and non-thinking modes, resulting in a comprehensive and substantial improvement in the model’s overall performance. In thinking mode, the model simultaneously supports web search, web information extraction, and a code interpreter tool, enabling it to tackle more complex and challenging problems with greater accuracy by leveraging external tools while engaging in slow, deliberative reasoning. This version is based on a snapshot taken on January 23, 2026.",
+      "contextLength": 256000,
+      "maxOutputTokens": 65536,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.0000012,
+        "output": 0.000006
+      }
+    },
+    {
+      "id": "alibaba/qwen3-next-80b-a3b-instruct",
+      "provider": "qwen",
+      "displayName": "Qwen3 Next 80B A3B Instruct",
+      "description": "A new generation of open-source, non-thinking mode model powered by Qwen3. This version demonstrates superior Chinese text understanding, augmented logical reasoning, and enhanced capabilities in text generation tasks over the previous iteration (Qwen3-235B-A22B-Instruct-2507).",
+      "contextLength": 262144,
+      "maxOutputTokens": 32768,
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 9e-8,
+        "output": 0.0000011
+      }
+    },
+    {
+      "id": "alibaba/qwen3-next-80b-a3b-thinking",
+      "provider": "qwen",
+      "displayName": "Qwen3 Next 80B A3B Thinking",
+      "description": "A new generation of Qwen3-based open-source thinking mode models. This version offers improved instruction following and streamlined summary responses over the previous iteration (Qwen3-235B-A22B-Thinking-2507).",
+      "contextLength": 131072,
+      "maxOutputTokens": 32768,
+      "capabilities": [
+        "chat",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 5e-7,
+        "output": 0.000006
+      }
+    },
+    {
+      "id": "alibaba/qwen3-vl-instruct",
+      "provider": "qwen",
+      "displayName": "Qwen3 VL 235B A22B Instruct",
+      "description": "The Qwen3 series VL models has been comprehensively upgraded in areas such as visual coding and spatial perception. Its visual perception and recognition capabilities have significantly improved, supporting the understanding of ultra-long videos, and its OCR functionality has undergone a major enhancement.",
+      "contextLength": 262144,
+      "maxOutputTokens": 262144,
+      "capabilities": [
+        "chat",
+        "vision",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 2e-7,
+        "output": 0.0000012
+      }
+    },
+    {
+      "id": "alibaba/qwen3-vl-thinking",
+      "provider": "qwen",
+      "displayName": "Qwen3 VL 235B A22B Thinking",
+      "description": "Qwen3 series VL models feature significantly enhanced multimodal reasoning capabilities, with a particular focus on optimizing the model for STEM and mathematical reasoning. Visual perception and recognition abilities have been comprehensively improved, and OCR capabilities have undergone a major upgrade.",
+      "contextLength": 256000,
+      "maxOutputTokens": 256000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 2.2e-7,
+        "output": 8.8e-7
+      }
+    },
+    {
+      "id": "alibaba/qwen3.5-flash",
+      "provider": "qwen",
+      "displayName": "Qwen 3.5 Flash",
+      "description": "The Qwen3.5 native vision-language Flash models are built on a hybrid architecture that integrates a linear attention mechanism with a sparse mixture-of-experts model, achieving higher inference efficiency. Compared to the 3 series, these models deliver a leap forward in performance for both pure text and multimodal tasks, offering fast response times while balancing inference speed and overall performance.",
+      "contextLength": 1000000,
+      "maxOutputTokens": 64000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 1e-7,
+        "output": 4e-7
+      }
+    },
+    {
+      "id": "alibaba/qwen3.5-plus",
+      "provider": "qwen",
+      "displayName": "Qwen 3.5 Plus",
+      "description": "The Qwen3.5 native vision-language series Plus models are built on a hybrid architecture that integrates linear attention mechanisms with sparse mixture-of-experts models, achieving higher inference efficiency. In a variety of task evaluations, the 3.5 series consistently demonstrates performance on par with state-of-the-art leading models. Compared to the 3 series, these models show a leap forward in both pure-text and multimodal capabilities.",
+      "contextLength": 1000000,
+      "maxOutputTokens": 64000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 4e-7,
+        "output": 0.0000024
+      }
+    },
     {
       "id": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
       "provider": "together",
       "displayName": "Llama 3.3 70B Turbo",
       "description": "Meta Llama 3.3 on Together",
       "contextLength": 131072,
-      "capabilities": ["chat", "function-calling", "streaming"],
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
       "isDefault": true
+    },
+    {
+      "id": "xai/grok-4",
+      "provider": "x-ai",
+      "displayName": "Grok 4",
+      "description": "xAI's latest and greatest flagship model, offering unparalleled performance in natural language, math and reasoning - the perfect jack of all trades.",
+      "contextLength": 256000,
+      "maxOutputTokens": 256000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.000003,
+        "output": 0.000015
+      },
+      "isDefault": true
+    },
+    {
+      "id": "xai/grok-2-vision",
+      "provider": "x-ai",
+      "displayName": "Grok 2 Vision",
+      "description": "Grok 2 vision model excels in vision-based tasks, delivering state-of-the-art performance in visual math reasoning (MathVista) and document-based question answering (DocVQA). It can process a wide variety of visual information including documents, diagrams, charts, screenshots, and photographs.",
+      "contextLength": 32768,
+      "maxOutputTokens": 32768,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.000002,
+        "output": 0.00001
+      }
+    },
+    {
+      "id": "xai/grok-3",
+      "provider": "x-ai",
+      "displayName": "Grok 3 Beta",
+      "description": "xAI's flagship model that excels at enterprise use cases like data extraction, coding, and text summarization. Possesses deep domain knowledge in finance, healthcare, law, and science.",
+      "contextLength": 131072,
+      "maxOutputTokens": 131072,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.000003,
+        "output": 0.000015
+      }
+    },
+    {
+      "id": "xai/grok-3-fast",
+      "provider": "x-ai",
+      "displayName": "Grok 3 Fast Beta",
+      "description": "xAI's flagship model that excels at enterprise use cases like data extraction, coding, and text summarization. Possesses deep domain knowledge in finance, healthcare, law, and science. The fast model variant is served on faster infrastructure, offering response times that are significantly faster than the standard. The increased speed comes at a higher cost per output token.",
+      "contextLength": 131072,
+      "maxOutputTokens": 131072,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.000005,
+        "output": 0.000025
+      }
+    },
+    {
+      "id": "xai/grok-3-mini",
+      "provider": "x-ai",
+      "displayName": "Grok 3 Mini Beta",
+      "description": "xAI's lightweight model that thinks before responding. Great for simple or logic-based tasks that do not require deep domain knowledge. The raw thinking traces are accessible.",
+      "contextLength": 131072,
+      "maxOutputTokens": 131072,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 3e-7,
+        "output": 5e-7
+      }
+    },
+    {
+      "id": "xai/grok-3-mini-fast",
+      "provider": "x-ai",
+      "displayName": "Grok 3 Mini Fast Beta",
+      "description": "xAI's lightweight model that thinks before responding. Great for simple or logic-based tasks that do not require deep domain knowledge. The raw thinking traces are accessible. The fast model variant is served on faster infrastructure, offering response times that are significantly faster than the standard. The increased speed comes at a higher cost per output token.",
+      "contextLength": 131072,
+      "maxOutputTokens": 131072,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 6e-7,
+        "output": 0.000004
+      }
+    },
+    {
+      "id": "xai/grok-4-fast-non-reasoning",
+      "provider": "x-ai",
+      "displayName": "Grok 4 Fast Non-Reasoning",
+      "description": "Grok 4 Fast is xAI's latest multimodal model with SOTA cost-efficiency and a 2M token context window. It comes in two flavors: non-reasoning and reasoning.",
+      "contextLength": 2000000,
+      "maxOutputTokens": 256000,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 2e-7,
+        "output": 5e-7
+      }
+    },
+    {
+      "id": "xai/grok-4-fast-reasoning",
+      "provider": "x-ai",
+      "displayName": "Grok 4 Fast Reasoning",
+      "description": "Grok 4 Fast is xAI's latest multimodal model with SOTA cost-efficiency and a 2M token context window. It comes in two flavors: non-reasoning and reasoning.",
+      "contextLength": 2000000,
+      "maxOutputTokens": 256000,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 2e-7,
+        "output": 5e-7
+      }
+    },
+    {
+      "id": "xai/grok-4.1-fast-non-reasoning",
+      "provider": "x-ai",
+      "displayName": "Grok 4.1 Fast Non-Reasoning",
+      "description": "Grok 4.1 Fast is xAI's best tool-calling model with a 2M context window. It reasons and completes agentic tasks accurately and rapidly, excelling at complex real-world use cases such as customer support and finance. To optimize for speed use this variant. Otherwise, use the reasoning version.",
+      "contextLength": 2000000,
+      "maxOutputTokens": 30000,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 2e-7,
+        "output": 5e-7
+      }
+    },
+    {
+      "id": "xai/grok-4.1-fast-reasoning",
+      "provider": "x-ai",
+      "displayName": "Grok 4.1 Fast Reasoning",
+      "description": "Grok 4.1 Fast is xAI's best tool-calling model with a 2M context window. It reasons and completes agentic tasks accurately and rapidly, excelling at complex real-world use cases such as customer support and finance. To optimize for maximal intelligence use this variant. Otherwise, use the non-reasoning version.",
+      "contextLength": 2000000,
+      "maxOutputTokens": 30000,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 2e-7,
+        "output": 5e-7
+      }
+    },
+    {
+      "id": "xai/grok-4.20-multi-agent-beta",
+      "provider": "x-ai",
+      "displayName": "Grok 4.20 Multi Agent Beta",
+      "description": "Multiple agents collaborate in parallel to perform deep research tasks.",
+      "contextLength": 2000000,
+      "maxOutputTokens": 2000000,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.000002,
+        "output": 0.000006
+      }
+    },
+    {
+      "id": "xai/grok-4.20-non-reasoning-beta",
+      "provider": "x-ai",
+      "displayName": "Grok 4.20 Beta Non-Reasoning",
+      "description": "Grok 4.20 Beta is the newest flagship model from xAI with industry-leading speed and agentic tool calling capabilities. It combines the lowest hallucination rate on the market with strict prompt adherance, delivering consistently precise and truthful responses.",
+      "contextLength": 2000000,
+      "maxOutputTokens": 2000000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.000002,
+        "output": 0.000006
+      }
+    },
+    {
+      "id": "xai/grok-4.20-reasoning-beta",
+      "provider": "x-ai",
+      "displayName": "Grok 4.20 Beta Reasoning",
+      "description": "Grok 4.20 Beta is the newest flagship model from xAI with industry-leading speed and agentic tool calling capabilities. It combines the lowest hallucination rate on the market with strict prompt adherance, delivering consistently precise and truthful responses.",
+      "contextLength": 2000000,
+      "maxOutputTokens": 2000000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.000002,
+        "output": 0.000006
+      }
+    },
+    {
+      "id": "xai/grok-code-fast-1",
+      "provider": "x-ai",
+      "displayName": "Grok Code Fast 1",
+      "description": "xAI's latest coding model that offers fast agentic coding with a 256K context window.",
+      "contextLength": 256000,
+      "maxOutputTokens": 256000,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 2e-7,
+        "output": 0.0000015
+      }
+    },
+    {
+      "id": "zai/glm-5",
+      "provider": "zhipu",
+      "displayName": "GLM 5",
+      "description": "GLM-5 is Zai’s new-generation flagship foundation model, designed for Agentic Engineering, capable of providing reliable productivity in complex system engineering and long-range Agent tasks. In terms of Coding and Agent capabilities, GLM-5 has achieved state-of-the-art (SOTA) performance in open source, with its usability in real programming scenarios approaching that of Claude Opus 4.5.",
+      "contextLength": 202800,
+      "maxOutputTokens": 131100,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0.000001,
+        "output": 0.0000032
+      },
+      "isDefault": true
+    },
+    {
+      "id": "zai/glm-4.5",
+      "provider": "zhipu",
+      "displayName": "GLM-4.5",
+      "description": "GLM-4.5 and GLM-4.5-Air are our latest flagship models, purpose-built as foundational models for agent-oriented applications. Both leverage a Mixture-of-Experts (MoE) architecture. GLM-4.5 has a total parameter count of 355B with 32B active parameters per forward pass, while GLM-4.5-Air adopts a more streamlined design with 106B total parameters and 12B active parameters.",
+      "contextLength": 128000,
+      "maxOutputTokens": 96000,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 6e-7,
+        "output": 0.0000022
+      }
+    },
+    {
+      "id": "zai/glm-4.5-air",
+      "provider": "zhipu",
+      "displayName": "GLM 4.5 Air",
+      "description": "GLM-4.5 and GLM-4.5-Air are our latest flagship models, purpose-built as foundational models for agent-oriented applications. Both leverage a Mixture-of-Experts (MoE) architecture. GLM-4.5 has a total parameter count of 355B with 32B active parameters per forward pass, while GLM-4.5-Air adopts a more streamlined design with 106B total parameters and 12B active parameters.",
+      "contextLength": 128000,
+      "maxOutputTokens": 96000,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 2e-7,
+        "output": 0.0000011
+      }
+    },
+    {
+      "id": "zai/glm-4.5v",
+      "provider": "zhipu",
+      "displayName": "GLM 4.5V",
+      "description": "Built on the GLM-4.5-Air base model, GLM-4.5V inherits proven techniques from GLM-4.1V-Thinking while achieving effective scaling through a powerful 106B-parameter MoE architecture.",
+      "contextLength": 66000,
+      "maxOutputTokens": 16000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 6e-7,
+        "output": 0.0000018
+      }
+    },
+    {
+      "id": "zai/glm-4.6",
+      "provider": "zhipu",
+      "displayName": "GLM 4.6",
+      "description": "As the latest iteration in the GLM series, GLM-4.6 achieves comprehensive enhancements across multiple domains, including real-world coding, long-context processing, reasoning, searching, writing, and agentic applications.",
+      "contextLength": 200000,
+      "maxOutputTokens": 96000,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 4.5e-7,
+        "output": 0.0000018
+      }
+    },
+    {
+      "id": "zai/glm-4.6v",
+      "provider": "zhipu",
+      "displayName": "GLM-4.6V",
+      "description": "GLM-4.6V series are Z.ai’s iterations in a multimodal large language model. GLM-4.6V scales its context window to 128k tokens in training, and achieves SoTA performance in visual understanding among models of similar parameter scales.",
+      "contextLength": 128000,
+      "maxOutputTokens": 24000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 3e-7,
+        "output": 9e-7
+      }
+    },
+    {
+      "id": "zai/glm-4.6v-flash",
+      "provider": "zhipu",
+      "displayName": "GLM-4.6V-Flash",
+      "description": "For local deployment and low-latency applications. GLM-4.6V series are Z.ai’s iterations in a multimodal large language model. GLM-4.6V scales its context window to 128k tokens in training, and achieves SoTA performance in visual understanding among models of similar parameter scales.",
+      "contextLength": 128000,
+      "maxOutputTokens": 24000,
+      "capabilities": [
+        "chat",
+        "vision",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 0,
+        "output": 0
+      }
+    },
+    {
+      "id": "zai/glm-4.7",
+      "provider": "zhipu",
+      "displayName": "GLM 4.7",
+      "description": "GLM-4.7 is a powerful next-generation coding model that delivers major gains in multilingual agentic coding, terminal-based workflows, and tool use, with strong improvements across benchmarks like SWE-bench, Terminal Bench, and τ²-Bench. It also features enhanced reasoning and math performance, plus significantly upgraded UI generation—producing cleaner, more modern web pages and better-designed slides.",
+      "contextLength": 200000,
+      "maxOutputTokens": 120000,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 6e-7,
+        "output": 0.0000022
+      }
+    },
+    {
+      "id": "zai/glm-4.7-flash",
+      "provider": "zhipu",
+      "displayName": "GLM 4.7 Flash",
+      "description": "GLM-4.7-Flash balances high performance with efficiency, making it the perfect lightweight deployment option. Beyond coding, it is also recommended for creative writing, translation, long-context tasks, and roleplay.",
+      "contextLength": 200000,
+      "maxOutputTokens": 131000,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 7e-8,
+        "output": 4e-7
+      }
+    },
+    {
+      "id": "zai/glm-4.7-flashx",
+      "provider": "zhipu",
+      "displayName": "GLM 4.7 FlashX",
+      "description": " GLM-4.7-Flash balances high performance with efficiency, making it the perfect lightweight deployment option. ",
+      "contextLength": 200000,
+      "maxOutputTokens": 128000,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming"
+      ],
+      "pricing": {
+        "input": 6e-8,
+        "output": 4e-7
+      }
     }
   ]
 }

@@ -1,4 +1,5 @@
 import { eq } from '@undefineds.co/drizzle-solid'
+import { resolveLinxPodBaseUrl } from '@linx/models/client'
 import {
   ODRL,
   approvalTable,
@@ -70,7 +71,7 @@ export class RuntimeSidecarSink {
     private readonly db: SolidDatabase,
     private readonly webId: string,
   ) {
-    this.podBaseUrl = this.webId.replace('/profile/card#me', '')
+    this.podBaseUrl = resolveLinxPodBaseUrl(this.webId)
   }
 
   async persistRuntimeEvent(

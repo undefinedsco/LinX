@@ -1,5 +1,4 @@
-import type { Session } from '@inrupt/solid-client-authn-node'
-import { getBuiltinModels, type ModelMetadata } from '@linx/models/discovery'
+import { resolveLinxRuntimeApiBaseUrl } from '@linx/models/client'
 
 export interface RemoteModelSummary {
   id: string
@@ -13,16 +12,16 @@ export interface RemoteChatMessage {
   content: string
 }
 
-function toBaseUrl(xpodUrl: string): string {
-  return xpodUrl.endsWith('/') ? `${xpodUrl}v1` : `${xpodUrl}/v1`
+function resolveRuntimeBaseUrl(runtimeUrl: string): string {
+  return resolveLinxRuntimeApiBaseUrl(runtimeUrl)
 }
 
 export async function listRemoteModels(
-  _session: Session,
-  xpodUrl: string,
+  _session: unknown,
+  runtimeUrl: string,
   apiKey: string,
 ): Promise<RemoteModelSummary[]> {
-  const url = `${toBaseUrl(xpodUrl)}/models`
+  const url = `${resolveRuntimeBaseUrl(runtimeUrl)}/models`
 
   try {
     const response = await fetch(url, {
@@ -52,23 +51,33 @@ export async function listRemoteModels(
       contextWindow: model.context_window,
     }))
   } catch {
-    return getBuiltinModels().map((model: ModelMetadata) => ({
+    return loadBuiltinModelFallback()
+  }
+}
+
+async function loadBuiltinModelFallback(): Promise<RemoteModelSummary[]> {
+  try {
+    const discoveryModuleName = '@linx/models/discovery'
+    const { getBuiltinModels } = await import(discoveryModuleName)
+    return getBuiltinModels().map((model: { id: string; provider?: string; contextLength?: number }) => ({
       id: model.id,
       provider: model.provider,
       ownedBy: model.provider,
       contextWindow: model.contextLength,
     }))
+  } catch {
+    return [{ id: 'default' }]
   }
 }
 
 export async function createRemoteCompletion(options: {
-  xpodUrl: string
+  runtimeUrl: string
   apiKey: string
   model?: string
   messages: RemoteChatMessage[]
 }): Promise<string> {
-  const { xpodUrl, apiKey, model, messages } = options
-  const url = `${toBaseUrl(xpodUrl)}/chat/completions`
+  const { runtimeUrl, apiKey, model, messages } = options
+  const url = `${resolveRuntimeBaseUrl(runtimeUrl)}/chat/completions`
 
   const response = await fetch(url, {
     method: 'POST',

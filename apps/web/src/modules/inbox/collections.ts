@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useSession } from '@inrupt/solid-ui-react'
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { resolveLinxPodBaseUrl } from '@linx/models/client'
 import {
   approvalTable,
   auditTable,
@@ -91,7 +92,7 @@ function formatTimestamp(value: unknown): number {
 }
 
 function extractPodBase(webId: string): string {
-  return webId.replace('/profile/card#me', '')
+  return resolveLinxPodBaseUrl(webId)
 }
 
 function makeApprovalUri(webId: string, approvalId: string): string {

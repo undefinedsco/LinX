@@ -36,6 +36,11 @@ describe('Provider Adapters', () => {
       expect(adapter.name).toBe('anthropic')
     })
 
+    it('returns openai adapter for codex provider alias', () => {
+      const adapter = getProviderAdapter('codex')
+      expect(adapter.name).toBe('openai-compatible')
+    })
+
     it('returns deepseek adapter for deepseek provider', () => {
       const adapter = getProviderAdapter('deepseek')
       expect(adapter.name).toBe('openai-compatible')
@@ -43,6 +48,11 @@ describe('Provider Adapters', () => {
 
     it('returns xai adapter for x-ai provider', () => {
       const adapter = getProviderAdapter('x-ai')
+      expect(adapter.name).toBe('openai-compatible')
+    })
+
+    it('returns xai adapter for xai provider alias', () => {
+      const adapter = getProviderAdapter('xai')
       expect(adapter.name).toBe('openai-compatible')
     })
 
@@ -60,15 +70,16 @@ describe('Provider Adapters', () => {
   })
 
   describe('providerAdapters registry', () => {
-    it('has all expected providers', () => {
+    it('exposes canonical provider ids', () => {
       expect(Object.keys(providerAdapters)).toContain('openai')
       expect(Object.keys(providerAdapters)).toContain('anthropic')
-      expect(Object.keys(providerAdapters)).toContain('claude')
       expect(Object.keys(providerAdapters)).toContain('deepseek')
       expect(Object.keys(providerAdapters)).toContain('x-ai')
-      expect(Object.keys(providerAdapters)).toContain('xai')
       expect(Object.keys(providerAdapters)).toContain('groq')
       expect(Object.keys(providerAdapters)).toContain('together')
+      expect(Object.keys(providerAdapters)).not.toContain('claude')
+      expect(Object.keys(providerAdapters)).not.toContain('xai')
+      expect(Object.keys(providerAdapters)).not.toContain('codex')
     })
   })
 
@@ -262,6 +273,33 @@ describe('Provider Adapters', () => {
 
       expect(callbacks.onContent).toHaveBeenCalledWith('Hello')
       expect(callbacks.onDone).toHaveBeenCalled()
+    })
+
+    it('uses custom baseUrl as the Anthropic API root', async () => {
+      const mockReader = {
+        read: vi.fn().mockResolvedValueOnce({ done: true, value: undefined })
+      }
+      mockFetch.mockResolvedValue({
+        ok: true,
+        body: { getReader: () => mockReader }
+      })
+
+      const callbacks: StreamCallbacks = {
+        onContent: vi.fn(),
+        onError: vi.fn(),
+        onDone: vi.fn(),
+      }
+
+      const adapter = getProviderAdapter('claude')
+      await adapter.streamChat(messages, {
+        ...config,
+        baseUrl: 'https://custom.anthropic.test/v1',
+      }, callbacks)
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://custom.anthropic.test/v1/messages',
+        expect.any(Object)
+      )
     })
 
     it('includes system prompt when provided', async () => {

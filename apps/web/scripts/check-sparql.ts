@@ -1,6 +1,6 @@
 import 'dotenv/config'
 import { drizzle } from '@undefineds.co/drizzle-solid'
-import { messageTable } from '../../../packages/models/src/message.schema'
+import { messageTable } from '@linx/models'
 
 // 模拟 Inrupt session
 const mockSession = {

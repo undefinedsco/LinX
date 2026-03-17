@@ -8,23 +8,28 @@ test.afterEach(() => {
 })
 
 test('listRemoteModels maps remote model metadata', async () => {
-  globalThis.fetch = async () => ({
-    ok: true,
-    json: async () => ({
-      data: [
-        {
-          id: 'claude-test',
-          provider: 'anthropic',
-          owned_by: 'anthropic',
-          context_window: 200000,
-        },
-      ],
-    }),
-  })
+  let requestedUrl = null
+  globalThis.fetch = async (url) => {
+    requestedUrl = url
+    return {
+      ok: true,
+      json: async () => ({
+        data: [
+          {
+            id: 'claude-test',
+            provider: 'anthropic',
+            owned_by: 'anthropic',
+            context_window: 200000,
+          },
+        ],
+      }),
+    }
+  }
 
-  const { listRemoteModels } = await import('../dist/lib/chat-api.cjs')
-  const models = await listRemoteModels({}, 'https://xpod.example', 'token')
+  const { listRemoteModels } = await import('../dist/lib/chat-api.js')
+  const models = await listRemoteModels({}, 'https://api.undefineds.co', 'token')
 
+  assert.equal(requestedUrl, 'https://api.undefineds.co/v1/models')
   assert.deepEqual(models, [
     {
       id: 'claude-test',
@@ -35,12 +40,30 @@ test('listRemoteModels maps remote model metadata', async () => {
   ])
 })
 
+test('listRemoteModels does not duplicate v1 when runtime url already targets the api base', async () => {
+  let requestedUrl = null
+  globalThis.fetch = async (url) => {
+    requestedUrl = url
+    return {
+      ok: true,
+      json: async () => ({
+        data: [],
+      }),
+    }
+  }
+
+  const { listRemoteModels } = await import('../dist/lib/chat-api.js')
+  await listRemoteModels({}, 'https://api.undefineds.co/v1/', 'token')
+
+  assert.equal(requestedUrl, 'https://api.undefineds.co/v1/models')
+})
+
 test('listRemoteModels falls back to builtin catalog on request failure', async () => {
   globalThis.fetch = async () => {
     throw new Error('unreachable')
   }
 
-  const { listRemoteModels } = await import('../dist/lib/chat-api.cjs')
+  const { listRemoteModels } = await import('../dist/lib/chat-api.js')
   const models = await listRemoteModels({}, 'https://xpod.example', 'token')
 
   assert.ok(models.length > 0)
@@ -48,52 +71,62 @@ test('listRemoteModels falls back to builtin catalog on request failure', async 
 })
 
 test('createRemoteCompletion reads string content payloads', async () => {
-  globalThis.fetch = async () => ({
-    ok: true,
-    json: async () => ({
-      choices: [
-        {
-          message: {
-            content: 'hello from xpod',
+  let requestedUrl = null
+  globalThis.fetch = async (url) => {
+    requestedUrl = url
+    return {
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: 'hello from xpod',
+            },
           },
-        },
-      ],
-    }),
-  })
+        ],
+      }),
+    }
+  }
 
-  const { createRemoteCompletion } = await import('../dist/lib/chat-api.cjs')
+  const { createRemoteCompletion } = await import('../dist/lib/chat-api.js')
   const reply = await createRemoteCompletion({
-    xpodUrl: 'https://xpod.example',
+    runtimeUrl: 'https://xpod.example',
     apiKey: 'token',
     messages: [{ role: 'user', content: 'hi' }],
   })
 
+  assert.equal(requestedUrl, 'https://xpod.example/v1/chat/completions')
   assert.equal(reply, 'hello from xpod')
 })
 
 test('createRemoteCompletion joins structured content payloads', async () => {
-  globalThis.fetch = async () => ({
-    ok: true,
-    json: async () => ({
-      choices: [
-        {
-          message: {
-            content: [
-              { type: 'text', text: 'hello ' },
-              { type: 'text', text: 'world' },
-            ],
+  let requestedUrl = null
+  globalThis.fetch = async (url) => {
+    requestedUrl = url
+    return {
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: [
+                { type: 'text', text: 'hello ' },
+                { type: 'text', text: 'world' },
+              ],
+            },
           },
-        },
-      ],
-    }),
-  })
+        ],
+      }),
+    }
+  }
 
-  const { createRemoteCompletion } = await import('../dist/lib/chat-api.cjs')
+  const { createRemoteCompletion } = await import('../dist/lib/chat-api.js')
   const reply = await createRemoteCompletion({
-    xpodUrl: 'https://xpod.example',
+    runtimeUrl: 'https://api.undefineds.co/v1',
     apiKey: 'token',
     messages: [{ role: 'user', content: 'hi' }],
   })
 
+  assert.equal(requestedUrl, 'https://api.undefineds.co/v1/chat/completions')
   assert.equal(reply, 'hello world')
 })

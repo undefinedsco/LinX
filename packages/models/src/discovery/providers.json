@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updatedAt": "2024-12-14",
+  "updatedAt": "2026-03-16",
   "providers": [
     {
       "slug": "openai",
@@ -15,7 +15,7 @@
     {
       "slug": "anthropic",
       "displayName": "Anthropic",
-      "baseUrl": "https://api.anthropic.com",
+      "baseUrl": "https://api.anthropic.com/v1",
       "homepage": "https://www.anthropic.com",
       "logoUrl": "https://www.anthropic.com/favicon.ico",
       "description": "Anthropic Claude 系列模型",
@@ -43,9 +43,19 @@
       "authType": "bearer"
     },
     {
+      "slug": "ollama",
+      "displayName": "Ollama",
+      "baseUrl": "http://localhost:11434/v1",
+      "homepage": "https://ollama.com",
+      "logoUrl": "https://ollama.com/public/ollama.png",
+      "description": "本地模型运行与管理",
+      "supportedFeatures": ["chat", "embedding", "vision"],
+      "authType": "none"
+    },
+    {
       "slug": "google",
       "displayName": "Google (Gemini)",
-      "baseUrl": "https://generativelanguage.googleapis.com/v1",
+      "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
       "homepage": "https://ai.google.dev",
       "logoUrl": "https://ai.google.dev/favicon.ico",
       "description": "Google Gemini 系列模型",
@@ -83,6 +93,26 @@
       "authType": "bearer"
     },
     {
+      "slug": "minimax",
+      "displayName": "MiniMax",
+      "baseUrl": "https://api.minimax.chat/v1",
+      "homepage": "https://www.minimaxi.com",
+      "logoUrl": "https://www.minimaxi.com/favicon.ico",
+      "description": "MiniMax 大模型平台",
+      "supportedFeatures": ["chat", "vision", "function-calling"],
+      "authType": "bearer"
+    },
+    {
+      "slug": "mistral",
+      "displayName": "Mistral",
+      "baseUrl": "https://api.mistral.ai/v1",
+      "homepage": "https://mistral.ai",
+      "logoUrl": "https://mistral.ai/favicon.ico",
+      "description": "Mistral 模型平台",
+      "supportedFeatures": ["chat", "embedding", "function-calling"],
+      "authType": "bearer"
+    },
+    {
       "slug": "groq",
       "displayName": "Groq",
       "baseUrl": "https://api.groq.com/openai/v1",
@@ -100,6 +130,26 @@
       "logoUrl": "https://together.ai/favicon.ico",
       "description": "Together AI 开源模型平台",
       "supportedFeatures": ["chat", "embedding", "image"],
+      "authType": "bearer"
+    },
+    {
+      "slug": "zhipu",
+      "displayName": "ZhiPu",
+      "baseUrl": "https://open.bigmodel.cn/api/paas/v4",
+      "homepage": "https://open.bigmodel.cn",
+      "logoUrl": "https://open.bigmodel.cn/favicon.ico",
+      "description": "智谱 GLM 模型平台",
+      "supportedFeatures": ["chat", "vision", "function-calling"],
+      "authType": "bearer"
+    },
+    {
+      "slug": "codebuddy",
+      "displayName": "CodeBuddy",
+      "baseUrl": "https://api.codebuddy.ai/v1",
+      "homepage": "https://codebuddy.ai",
+      "logoUrl": "https://codebuddy.ai/favicon.ico",
+      "description": "CodeBuddy 开发助手模型平台",
+      "supportedFeatures": ["chat", "function-calling"],
       "authType": "bearer"
     }
   ]

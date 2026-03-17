@@ -1,35 +1,112 @@
 #!/usr/bin/env node
 import yargs from 'yargs'
 import { hideBin } from 'yargs/helpers'
-import { createRemoteCompletion, listRemoteModels } from './lib/chat-api.js'
+import { aiCommand } from './lib/ai-command.js'
 import { getClientCredentials, loadCredentials } from './lib/credentials-store.js'
-import {
-  createThread,
-  formatThreadLabel,
-  getLatestThreadId,
-  getOrCreateDefaultChat,
-  initPodData,
-  listThreads,
-  loadMessages,
-  loadThread,
-  saveAssistantMessage,
-  saveUserMessage,
-  toOpenAiMessages,
-} from './lib/pod-chat-store.js'
+import { loginCommand, logoutCommand, whoamiCommand } from './lib/login-command.js'
 import { promptText } from './lib/prompt.js'
-import { authenticate } from './lib/solid-auth.js'
+import { resolveRuntimeTarget } from './lib/runtime-target.js'
+import {
+  formatWatchSessionSummary,
+  listArchivedWatchSessions,
+  listSupportedWatchBackends,
+  loadArchivedWatchSession,
+  runWatch,
+  type WatchBackend,
+  type WatchCredentialSource,
+  type WatchMode,
+} from './lib/watch/index.js'
+
+type ChatRole = 'system' | 'user' | 'assistant'
+
+interface ChatMessage {
+  role: ChatRole
+  content: string
+  createdAt?: string
+}
+
+interface ThreadSummary {
+  id: string
+  title?: string
+  workspace?: string
+}
+
+interface SessionLike {
+  logout(): Promise<void>
+}
+
+interface ChatRuntime {
+  createRemoteCompletion(options: {
+    runtimeUrl: string
+    apiKey: string
+    model?: string
+    messages: Array<{ role: ChatRole; content: string }>
+  }): Promise<string>
+  listRemoteModels(session: unknown, runtimeUrl: string, apiKey: string): Promise<Array<{
+    id: string
+    provider?: string
+    ownedBy?: string
+    contextWindow?: number
+  }>>
+  createThread(session: unknown, chatId: string, workspace: string, title: string): Promise<string>
+  formatThreadLabel(thread: ThreadSummary): string
+  getLatestThreadId(session: unknown, chatId: string): Promise<string | null>
+  getOrCreateDefaultChat(session: unknown): Promise<string>
+  initPodData(session: unknown): Promise<unknown>
+  listThreads(session: unknown, chatId: string): Promise<ThreadSummary[]>
+  loadMessages(session: unknown, threadId: string): Promise<ChatMessage[]>
+  loadThread(session: unknown, threadId: string): Promise<ThreadSummary | null>
+  saveAssistantMessage(session: unknown, chatId: string, threadId: string, reply: string): Promise<void>
+  saveUserMessage(session: unknown, chatId: string, threadId: string, prompt: string): Promise<void>
+  toOpenAiMessages(history: ChatMessage[]): Array<{ role: ChatRole; content: string }>
+  authenticate(clientId: string, clientSecret: string, oidcIssuer: string): Promise<{
+    session: SessionLike
+    apiKey: string
+  }>
+}
 
 interface RuntimeContext {
-  xpodUrl: string
+  runtimeUrl: string
   apiKey: string
-  session: Awaited<ReturnType<typeof authenticate>>['session']
+  session: SessionLike
   chatId: string
+  runtime: ChatRuntime
+}
+
+let chatRuntimePromise: Promise<ChatRuntime> | null = null
+
+async function loadChatRuntime(): Promise<ChatRuntime> {
+  if (!chatRuntimePromise) {
+    chatRuntimePromise = Promise.all([
+      import('./lib/chat-api.js'),
+      import('./lib/pod-chat-store.js'),
+      import('./lib/solid-auth.js'),
+    ]).then(([chatApi, podChatStore, solidAuth]) => ({
+      createRemoteCompletion: chatApi.createRemoteCompletion,
+      listRemoteModels: chatApi.listRemoteModels,
+      createThread: podChatStore.createThread,
+      formatThreadLabel: podChatStore.formatThreadLabel,
+      getLatestThreadId: podChatStore.getLatestThreadId,
+      getOrCreateDefaultChat: podChatStore.getOrCreateDefaultChat,
+      initPodData: podChatStore.initPodData,
+      listThreads: podChatStore.listThreads,
+      loadMessages: podChatStore.loadMessages,
+      loadThread: podChatStore.loadThread,
+      saveAssistantMessage: podChatStore.saveAssistantMessage,
+      saveUserMessage: podChatStore.saveUserMessage,
+      toOpenAiMessages: podChatStore.toOpenAiMessages,
+      authenticate: solidAuth.authenticate,
+    }))
+  }
+
+  return chatRuntimePromise!
 }
 
 async function resolveContext(urlOverride?: string): Promise<RuntimeContext> {
+  const runtime = await loadChatRuntime()
   const creds = loadCredentials()
   if (!creds) {
-    throw new Error('No credentials found. Please login with xpod-cli first, or place credentials in ~/.linx.')
+    throw new Error('No credentials found. Run `linx login` first.')
   }
 
   const clientCreds = getClientCredentials(creds)
@@ -37,12 +114,15 @@ async function resolveContext(urlOverride?: string): Promise<RuntimeContext> {
     throw new Error('Only client credentials auth is supported in the MVP CLI.')
   }
 
-  const xpodUrl = urlOverride || creds.url
-  const { session, apiKey } = await authenticate(clientCreds.clientId, clientCreds.clientSecret, xpodUrl)
-  await initPodData(session)
-  const chatId = await getOrCreateDefaultChat(session)
+  const target = resolveRuntimeTarget({
+    issuerUrl: creds.url,
+    runtimeUrlOverride: urlOverride,
+  })
+  const { session, apiKey } = await runtime.authenticate(clientCreds.clientId, clientCreds.clientSecret, target.oidcIssuer)
+  await runtime.initPodData(session)
+  const chatId = await runtime.getOrCreateDefaultChat(session)
 
-  return { xpodUrl, apiKey, session, chatId }
+  return { runtimeUrl: target.runtimeUrl, apiKey, session, chatId, runtime }
 }
 
 async function runSingleTurn(options: {
@@ -52,18 +132,18 @@ async function runSingleTurn(options: {
   prompt: string
 }): Promise<void> {
   const { ctx, threadId, model, prompt } = options
-  const history = await loadMessages(ctx.session, threadId)
+  const history = await ctx.runtime.loadMessages(ctx.session, threadId)
 
-  await saveUserMessage(ctx.session, ctx.chatId, threadId, prompt)
+  await ctx.runtime.saveUserMessage(ctx.session, ctx.chatId, threadId, prompt)
 
-  const reply = await createRemoteCompletion({
-    xpodUrl: ctx.xpodUrl,
+  const reply = await ctx.runtime.createRemoteCompletion({
+    runtimeUrl: ctx.runtimeUrl,
     apiKey: ctx.apiKey,
     model,
-    messages: [...toOpenAiMessages(history), { role: 'user', content: prompt }],
+    messages: [...ctx.runtime.toOpenAiMessages(history), { role: 'user', content: prompt }],
   })
 
-  await saveAssistantMessage(ctx.session, ctx.chatId, threadId, reply)
+  await ctx.runtime.saveAssistantMessage(ctx.session, ctx.chatId, threadId, reply)
   process.stdout.write(`\n${reply}\n\n`)
 }
 
@@ -80,13 +160,13 @@ async function resolveThreadId(options: {
   }
 
   if (continueMode) {
-    const latest = await getLatestThreadId(ctx.session, ctx.chatId)
+    const latest = await ctx.runtime.getLatestThreadId(ctx.session, ctx.chatId)
     if (latest) {
       return latest
     }
   }
 
-  return createThread(ctx.session, ctx.chatId, workspace || process.cwd(), 'CLI Session')
+  return ctx.runtime.createThread(ctx.session, ctx.chatId, workspace || process.cwd(), 'CLI Session')
 }
 
 async function runInteractive(options: {
@@ -121,25 +201,25 @@ async function runInteractive(options: {
     }
 
     if (input === '/threads') {
-      const threads = await listThreads(ctx.session, ctx.chatId)
+      const threads = await ctx.runtime.listThreads(ctx.session, ctx.chatId)
       if (threads.length === 0) {
         process.stdout.write('暂无 threads\n\n')
         continue
       }
 
-      process.stdout.write(`${threads.map((thread) => `- ${formatThreadLabel(thread)}`).join('\n')}\n\n`)
+      process.stdout.write(`${threads.map((thread) => `- ${ctx.runtime.formatThreadLabel(thread)}`).join('\n')}\n\n`)
       continue
     }
 
     if (input === '/new') {
-      threadId = await createThread(ctx.session, ctx.chatId, process.cwd(), 'CLI Session')
+      threadId = await ctx.runtime.createThread(ctx.session, ctx.chatId, process.cwd(), 'CLI Session')
       process.stdout.write(`已创建 thread: ${threadId}\n\n`)
       continue
     }
 
     if (input.startsWith('/use ')) {
       const nextThreadId = input.slice(5).trim()
-      const thread = await loadThread(ctx.session, nextThreadId)
+      const thread = await ctx.runtime.loadThread(ctx.session, nextThreadId)
       if (!thread) {
         process.stdout.write(`未找到 thread: ${nextThreadId}\n\n`)
         continue
@@ -159,8 +239,15 @@ async function runInteractive(options: {
   }
 }
 
-void yargs(hideBin(process.argv))
+const cli = yargs(hideBin(process.argv))
   .scriptName('linx')
+  .parserConfiguration({
+    'populate--': true,
+  })
+  .command(loginCommand)
+  .command(logoutCommand)
+  .command(whoamiCommand)
+  .command(aiCommand)
   .command(
     '$0 [prompt..]',
     'Start chat mode',
@@ -169,7 +256,7 @@ void yargs(hideBin(process.argv))
         .option('model', { type: 'string', describe: 'Model ID override' })
         .option('continue', { type: 'boolean', default: false, describe: 'Continue latest thread' })
         .option('thread', { type: 'string', describe: 'Use an existing thread ID' })
-        .option('url', { type: 'string', describe: 'xpod base URL override' })
+        .option('url', { type: 'string', describe: 'Runtime API base URL override' })
         .option('workspace', { type: 'string', describe: 'Workspace/worktree path metadata' }),
     async (argv) => {
       const ctx = await resolveContext(argv.url)
@@ -199,7 +286,7 @@ void yargs(hideBin(process.argv))
         .option('model', { type: 'string', describe: 'Model ID override' })
         .option('continue', { type: 'boolean', default: false, describe: 'Continue latest thread' })
         .option('thread', { type: 'string', describe: 'Use an existing thread ID' })
-        .option('url', { type: 'string', describe: 'xpod base URL override' })
+        .option('url', { type: 'string', describe: 'Runtime API base URL override' })
         .option('workspace', { type: 'string', describe: 'Workspace/worktree path metadata' }),
     async (argv) => {
       const ctx = await resolveContext(argv.url)
@@ -224,10 +311,10 @@ void yargs(hideBin(process.argv))
   .command(
     'models',
     'List available remote models',
-    (command) => command.option('url', { type: 'string', describe: 'xpod base URL override' }),
+    (command) => command.option('url', { type: 'string', describe: 'Runtime API base URL override' }),
     async (argv) => {
       const ctx = await resolveContext(argv.url)
-      const models = await listRemoteModels(ctx.session, ctx.xpodUrl, ctx.apiKey)
+      const models = await ctx.runtime.listRemoteModels(ctx.session, ctx.runtimeUrl, ctx.apiKey)
 
       if (models.length === 0) {
         process.stdout.write('No models found.\n')
@@ -246,24 +333,121 @@ void yargs(hideBin(process.argv))
   .command(
     'sessions',
     'List recent CLI threads',
-    (command) => command.option('url', { type: 'string', describe: 'xpod base URL override' }),
+    (command) => command.option('url', { type: 'string', describe: 'Runtime API base URL override' }),
     async (argv) => {
       const ctx = await resolveContext(argv.url)
-      const threads = await listThreads(ctx.session, ctx.chatId)
+      const threads = await ctx.runtime.listThreads(ctx.session, ctx.chatId)
 
       if (threads.length === 0) {
         process.stdout.write('No threads found.\n')
       } else {
-        process.stdout.write(`${threads.map((thread) => `- ${formatThreadLabel(thread)}`).join('\n')}\n`)
+        process.stdout.write(`${threads.map((thread) => `- ${ctx.runtime.formatThreadLabel(thread)}`).join('\n')}\n`)
       }
 
       await ctx.session.logout()
     },
   )
+  .command(
+    'watch <action> [backend] [prompt..]',
+    'Run or inspect local watch backends',
+    (command) =>
+      command
+        .positional('action', {
+          type: 'string',
+          choices: ['run', 'backends', 'sessions', 'show'] as const,
+        })
+        .positional('backend', {
+          type: 'string',
+          describe: 'Watch backend for `run`, or session id for `show`',
+        })
+        .option('mode', {
+          type: 'string',
+          default: 'smart',
+          choices: ['manual', 'smart', 'auto'] as const,
+          describe: 'Unified autonomy mode',
+        })
+        .option('model', {
+          type: 'string',
+          describe: 'Backend-native model override',
+        })
+        .option('cwd', {
+          type: 'string',
+          describe: 'Working directory for local backend execution',
+        })
+        .option('credential-source', {
+          type: 'string',
+          default: 'auto',
+          choices: ['auto', 'local', 'cloud'] as const,
+          describe: 'Resolve credentials only: local CLI login, LinX cloud config, or auto fallback. Runtime still runs locally.',
+        }),
+    async (argv) => {
+      const action = String(argv.action)
+
+      if (action === 'backends') {
+        const backends = listSupportedWatchBackends()
+        for (const backend of backends) {
+          process.stdout.write(`- ${backend.backend} (${backend.label})\n`)
+          process.stdout.write(`  ${backend.description}\n`)
+          process.stdout.write(`  manual: ${backend.modes.manual}\n`)
+          process.stdout.write(`  smart: ${backend.modes.smart}\n`)
+          process.stdout.write(`  auto: ${backend.modes.auto}\n`)
+        }
+        return
+      }
+
+      if (action === 'sessions') {
+        const sessions = listArchivedWatchSessions()
+        if (sessions.length === 0) {
+          process.stdout.write('No watch sessions found.\n')
+          return
+        }
+
+        process.stdout.write(`${sessions.map(formatWatchSessionSummary).join('\n')}\n`)
+        return
+      }
+
+      if (action === 'show') {
+        const sessionId = argv.backend ? String(argv.backend) : ''
+        if (!sessionId) {
+          throw new Error('Usage: linx watch show <sessionId>')
+        }
+
+        const session = loadArchivedWatchSession(sessionId)
+        if (!session) {
+          throw new Error(`Watch session not found: ${sessionId}`)
+        }
+
+        process.stdout.write(`${JSON.stringify(session, null, 2)}\n`)
+        return
+      }
+
+      const backend = argv.backend as WatchBackend | undefined
+      if (!backend || !['codex', 'claude', 'codebuddy'].includes(backend)) {
+        throw new Error('Usage: linx watch run <codex|claude|codebuddy> <prompt> [-- backend args]')
+      }
+
+      const prompt = (argv.prompt as string[] | undefined)?.join(' ').trim() || undefined
+      const exitCode = await runWatch({
+        backend,
+        mode: argv.mode as WatchMode,
+        cwd: argv.cwd || process.cwd(),
+        model: argv.model,
+        prompt,
+        passthroughArgs: ((argv['--'] as string[] | undefined) ?? []).map(String),
+        credentialSource: argv['credential-source'] as WatchCredentialSource,
+      })
+
+      if (exitCode !== 0) {
+        process.exitCode = exitCode
+      }
+    },
+  )
   .strict()
   .help()
-  .parseAsync()
-  .catch((error) => {
-    console.error(error instanceof Error ? error.message : String(error))
-    process.exit(1)
-  })
+
+process.on('unhandledRejection', (error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error))
+  process.exit(1)
+})
+
+cli.parse()

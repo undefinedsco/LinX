@@ -22,7 +22,7 @@ export interface ProviderMetadata {
   logoUrl?: string
   description?: string
   supportedFeatures?: ProviderFeature[]
-  authType?: 'bearer' | 'x-api-key' | 'query-param'
+  authType?: 'bearer' | 'x-api-key' | 'query-param' | 'none'
 }
 
 export type ProviderFeature = 'chat' | 'embedding' | 'image' | 'audio' | 'vision' | 'function-calling'

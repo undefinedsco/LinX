@@ -5,11 +5,16 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./discovery": "./src/discovery/index.ts"
+    "./ai-config": "./src/ai-config/index.ts",
+    "./client": "./src/client/index.ts",
+    "./discovery": "./src/discovery/index.ts",
+    "./namespaces": "./src/namespaces.ts",
+    "./watch": "./src/watch/index.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "lint": "echo \"lint not configured\"",
+    "sync:discovery:vercel": "node --experimental-strip-types scripts/sync-discovery-vercel.ts",
     "test": "vitest",
     "test:pod": "dotenv -e ../../.env -- vitest run tests/pod.integration.test.ts",
     "test:w3c": "rdf-test-suite tests/storage/quint-engine.cjs https://w3c.github.io/rdf-tests/sparql/sparql11/manifest-sparql11-query.ttl -m 'https://w3c.github.io/rdf-tests/|tests/w3c-data/rdf-tests/' -e",

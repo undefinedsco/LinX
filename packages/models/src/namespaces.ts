@@ -154,7 +154,6 @@ export const UDFS = createNamespace('udfs', 'https://undefineds.co/ns#', {
   provider: 'provider',
   model: 'model',
   metadata: 'metadata',
-  ModelProvider: 'ModelProvider',
   tools: 'tools',
   contextWindow: 'contextWindow',
   contextRound: 'contextRound',

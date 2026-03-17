@@ -34,7 +34,7 @@ const DEFAULT_PROVIDERS: ProvidersData = {
     {
       id: 'undefineds',
       name: 'Undefineds Pod',
-      issuerUrl: 'https://pods.undefineds.co',
+      issuerUrl: 'https://id.undefineds.co',
       isDefault: true,
     },
   ],

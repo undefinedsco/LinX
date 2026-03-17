@@ -4,7 +4,7 @@ import { afterAll, describe, expect, it, vi } from 'vitest'
 import { Session } from '@inrupt/solid-client-authn-node'
 import { drizzle, eq, type SolidDatabase } from '@undefineds.co/drizzle-solid'
 import { QueryClient } from '@tanstack/react-query'
-import { modelProviderTable, linxSchema } from '@linx/models'
+import { aiProviderTable, linxSchema } from '@linx/models'
 import { createPodCollection } from './pod-collection'
 
 dotenv.config({ path: '.env' })
@@ -31,15 +31,6 @@ if (hasEnv && env.oidcIssuer) {
 }
 const canRun = hasEnv && podReachable
 
-// Extract Pod base from WebID (e.g., http://localhost:3000/test/profile/card#me -> http://localhost:3000/test/)
-function getPodBase(webId: string): string {
-  const url = new URL(webId)
-  const pathParts = url.pathname.split('/')
-  // Remove 'profile/card' from path to get pod root
-  const podPath = pathParts.slice(0, -2).join('/') + '/'
-  return `${url.origin}${podPath}`
-}
-
 let db: SolidDatabase | null = null
 let session: Session | null = null
 const createdSubjects: string[] = []
@@ -54,7 +45,7 @@ async function getDb() {
     tokenType: 'DPoP',
   })
   db = drizzle(session, { logger: false, disableInteropDiscovery: true, schema: linxSchema })
-  await db.init([modelProviderTable])
+  await db.init([aiProviderTable])
   return db
 }
 
@@ -62,7 +53,7 @@ async function cleanup() {
   if (!db) return
   for (const subject of createdSubjects) {
     try {
-      await db.delete(modelProviderTable).where({ '@id': subject } as any).execute()
+      await db.delete(aiProviderTable).where({ '@id': subject } as any).execute()
     } catch {
       // ignore cleanup errors
     }
@@ -80,7 +71,7 @@ describe('pod-collection integration', () => {
     const queryClient = new QueryClient()
 
     const collection = createPodCollection({
-      table: modelProviderTable,
+      table: aiProviderTable,
       queryKey: ['model-providers-test-optimistic'],
       queryClient,
       getDb: () => database,
@@ -100,10 +91,9 @@ describe('pod-collection integration', () => {
 
     const tx = collection.insert({
       id,
-      enabled: true,
-      apiKey: 'sk-test',
       baseUrl: 'https://api.test.com',
-      models: [{ id: 'model-1', name: 'model-1', enabled: true }],
+      proxyUrl: 'https://proxy.test.com',
+      hasModel: '/settings/ai/models.ttl#model-1',
     } as any)
 
     let optimisticCheck: ReturnType<typeof setInterval> | null = null
@@ -127,7 +117,7 @@ describe('pod-collection integration', () => {
 
     await tx.isPersisted.promise
 
-    const rows = await database.select().from(modelProviderTable).where(eq(modelProviderTable.id, id)).execute()
+    const rows = await database.select().from(aiProviderTable).where(eq(aiProviderTable.id, id)).execute()
     const created = rows[0]
     const subject = (created as any)?.['@id']
     if (subject) createdSubjects.push(subject)
@@ -142,7 +132,7 @@ describe('pod-collection integration', () => {
       .mockImplementation(async () => {})
 
     const collection = createPodCollection({
-      table: modelProviderTable,
+      table: aiProviderTable,
       queryKey: ['model-providers-test-notify'],
       queryClient,
       getDb: () => database,
@@ -152,13 +142,12 @@ describe('pod-collection integration', () => {
 
     const id = crypto.randomUUID()
     const [created] = await database
-      .insert(modelProviderTable)
+      .insert(aiProviderTable)
       .values({
         id,
-        enabled: true,
-        apiKey: 'sk-test',
         baseUrl: 'https://api.test.com',
-        models: [{ id: 'model-1', name: 'model-1', enabled: true }],
+        proxyUrl: 'https://proxy.test.com',
+        hasModel: '/settings/ai/models.ttl#model-1',
       })
       .execute()
 
@@ -176,8 +165,8 @@ describe('pod-collection integration', () => {
       }, 100)
     })
 
-    await database.update(modelProviderTable).set({ enabled: false }).where({ id } as any).execute()
-    await database.delete(modelProviderTable).where({ id } as any).execute()
+    await database.update(aiProviderTable).set({ proxyUrl: 'https://proxy.changed.test.com' }).where({ id } as any).execute()
+    await database.delete(aiProviderTable).where({ id } as any).execute()
     await unsubscribe()
 
     expect(notified).toBe(true)

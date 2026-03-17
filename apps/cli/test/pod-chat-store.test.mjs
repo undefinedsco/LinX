@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 test('formatThreadLabel includes title and workspace when present', async () => {
-  const { formatThreadLabel } = await import('../dist/lib/thread-utils.cjs')
+  const { formatThreadLabel } = await import('../dist/lib/thread-utils.js')
 
   assert.equal(
     formatThreadLabel({
@@ -15,7 +15,7 @@ test('formatThreadLabel includes title and workspace when present', async () => 
 })
 
 test('toOpenAiMessages preserves role ordering', async () => {
-  const { toOpenAiMessages } = await import('../dist/lib/thread-utils.cjs')
+  const { toOpenAiMessages } = await import('../dist/lib/thread-utils.js')
 
   assert.deepEqual(
     toOpenAiMessages([

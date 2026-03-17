@@ -8,6 +8,7 @@
  */
 
 import { eq, and } from '@undefineds.co/drizzle-solid'
+import { resolveLinxPodBaseUrl } from '@linx/models/client'
 import {
   Chat, Thread, Message,
   MessageRole, MessageStatus,
@@ -443,7 +444,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   ): Promise<void> {
     // The db instance already carries session.fetch with DPoP auth.
     // Build resource URL from webId.
-    const podBaseUrl = this.webId.replace('/profile/card#me', '')
+    const podBaseUrl = resolveLinxPodBaseUrl(this.webId)
     const resourceUrl = `${podBaseUrl}/.data/chat/${_chatId}/${messageId}.ttl`
     const subjectUri = `${resourceUrl}#${messageId}`
 

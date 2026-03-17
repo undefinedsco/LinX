@@ -4,7 +4,9 @@
  * 目前使用 mock 实现，等服务端好了再对接真实 API
  */
 
-const API_BASE = 'https://api.undefineds.co'
+import { LINX_CLOUD_API_ORIGIN } from '@linx/models/client'
+
+const API_BASE = LINX_CLOUD_API_ORIGIN
 
 export interface SubdomainCheckResult {
   available: boolean

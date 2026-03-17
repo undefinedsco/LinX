@@ -221,15 +221,6 @@ export {
 // Extension - 扩展
 export { extensionSchema } from './extension'
 
-// Model Provider
-export {
-  modelProviderTable,
-  type ModelProviderRow,
-  type ModelProviderInsert,
-  type ModelProviderUpdate,
-} from './model-provider.schema'
-export { modelProviderRepository } from './model-provider.repository'
-
 // xpod AI schema
 export {
   credentialTable,
@@ -251,6 +242,68 @@ export {
   type AIModelInsert,
   type AIModelUpdate,
 } from "./ai-model.schema";
+
+export {
+  aiConfigModelUri,
+  aiConfigProviderUri,
+  buildAIConfigMutationPlan,
+  buildAIConfigProviderStateMap,
+  getAIConfigDefaultBaseUrl,
+  getAIConfigProviderCatalog,
+  getAIConfigProviderFamilyIds,
+  getAIConfigProviderMetadata,
+  getDefaultAIConfigCredentialId,
+  normalizeAIConfigProviderId,
+  normalizeAIConfigResourceId,
+  sameAIConfigProviderFamily,
+  type AIConfigModel,
+  type AIConfigMutationPlan,
+  type AIConfigProviderCatalogEntry,
+  type AIConfigProviderState,
+  type AIConfigUpdate,
+  type BuildAIConfigProviderStateMapOptions,
+} from './ai-config'
+
+export {
+  createWatchSessionId,
+  detectWatchAuthFailure,
+  formatWatchAutoFallbackMessage,
+  formatWatchBackendAuthMessage,
+  extractWatchSessionIdFromJsonLine,
+  getWatchArchiveRelativePaths,
+  getWatchAuthLoginCommand,
+  looksLikeWatchAuthFailureText,
+  normalizeCodexAppServerNotification,
+  normalizeCodexAppServerRequest,
+  normalizeWatchCredentialSource,
+  parseWatchClaudeAuthStatus,
+  parseWatchJsonLine,
+  parseWatchJsonProtocolLine,
+  resolveWatchCredentialSourceResolution,
+  shouldAttemptCloudCredentialProbe,
+  WATCH_EVENTS_FILE_NAME,
+  WATCH_HOME_DIRNAME,
+  WATCH_SESSIONS_DIRNAME,
+  WATCH_SESSION_FILE_NAME,
+  type CreateWatchSessionIdOptions,
+  type WatchAuthFailure,
+  type WatchAuthState,
+  type WatchAuthStatus,
+  type WatchArchiveRelativePaths,
+  type WatchBackend,
+  type WatchCloudCredentialProbe,
+  type WatchCloudCredentialProbeStatus,
+  type WatchCredentialSource,
+  type WatchCredentialSourceResolution,
+  type WatchEventLogEntry,
+  type WatchMode,
+  type WatchNormalizedEvent,
+  type WatchOutputStream,
+  type WatchResolvedCredentialSource,
+  type WatchRuntime,
+  type WatchSessionRecord,
+  type WatchSessionStatus,
+} from './watch'
 
 export {
   createRepositoryDescriptor,

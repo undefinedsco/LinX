@@ -28,3 +28,57 @@ export async function authenticate(
 
   return { session, apiKey }
 }
+
+export interface SolidTokenResult {
+  accessToken: string
+  tokenType: string
+  expiresAt: Date
+}
+
+export async function getAccessToken(
+  clientId: string,
+  clientSecret: string,
+  baseUrl: string,
+): Promise<SolidTokenResult | null> {
+  try {
+    const base = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`
+    const res = await fetch(`${base}.well-known/openid-configuration`)
+    if (!res.ok) return null
+
+    const config = (await res.json()) as { token_endpoint?: string }
+    if (!config.token_endpoint) return null
+
+    const tokenRes = await fetch(config.token_endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'client_credentials',
+        client_id: clientId,
+        client_secret: clientSecret,
+      }).toString(),
+    })
+
+    if (!tokenRes.ok) return null
+
+    const data = (await tokenRes.json()) as { access_token?: string; expires_in?: number }
+    if (!data.access_token) return null
+
+    return {
+      accessToken: data.access_token,
+      tokenType: 'Bearer',
+      expiresAt: new Date(Date.now() + (data.expires_in ?? 3600) * 1000),
+    }
+  } catch {
+    return null
+  }
+}
+
+export async function authenticatedFetch(
+  url: string,
+  token: string,
+  init?: RequestInit,
+): Promise<Response> {
+  const headers = new Headers(init?.headers)
+  headers.set('Authorization', `Bearer ${token}`)
+  return fetch(url, { ...init, headers })
+}

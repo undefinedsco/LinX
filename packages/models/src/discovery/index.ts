@@ -7,6 +7,7 @@
 
 export * from './types'
 
+import { normalizeAIConfigProviderId } from '../ai-config'
 import type { 
   ProviderMetadata, 
   ModelMetadata, 
@@ -24,6 +25,29 @@ import modelsData from './models.json'
 const builtinProviders: ProviderMetadata[] = providersData.providers as ProviderMetadata[]
 const builtinModels: ModelMetadata[] = modelsData.models as ModelMetadata[]
 
+function normalizeProviderSlug(slug?: string | null): string {
+  return normalizeAIConfigProviderId(slug)
+}
+
+function findBuiltinProvider(slug: string): ProviderMetadata | undefined {
+  const normalizedSlug = normalizeProviderSlug(slug)
+  if (!normalizedSlug) return undefined
+  return builtinProviders.find((provider) => normalizeProviderSlug(provider.slug) === normalizedSlug)
+}
+
+function filterBuiltinModels(provider?: string): ModelMetadata[] {
+  if (!provider) {
+    return builtinModels
+  }
+
+  const normalizedProvider = normalizeProviderSlug(provider)
+  if (!normalizedProvider) {
+    return []
+  }
+
+  return builtinModels.filter((model) => normalizeProviderSlug(model.provider) === normalizedProvider)
+}
+
 // ============================================================================
 // Discovery Service Implementation
 // ============================================================================
@@ -39,7 +63,7 @@ class BuiltinDiscoveryService implements DiscoveryService {
   }
   
   async getProvider(slug: string): Promise<ProviderMetadata | undefined> {
-    return builtinProviders.find(p => p.slug === slug)
+    return findBuiltinProvider(slug)
   }
   
   // -------------------------------------------------------------------------
@@ -47,18 +71,15 @@ class BuiltinDiscoveryService implements DiscoveryService {
   // -------------------------------------------------------------------------
   
   async getModels(provider?: string): Promise<ModelMetadata[]> {
-    if (provider) {
-      return builtinModels.filter(m => m.provider === provider)
-    }
-    return builtinModels
+    return filterBuiltinModels(provider)
   }
   
   async getModel(provider: string, modelId: string): Promise<ModelMetadata | undefined> {
-    return builtinModels.find(m => m.provider === provider && m.id === modelId)
+    return filterBuiltinModels(provider).find((model) => model.id === modelId)
   }
   
   async getDefaultModel(provider: string): Promise<ModelMetadata | undefined> {
-    const providerModels = builtinModels.filter(m => m.provider === provider)
+    const providerModels = filterBuiltinModels(provider)
     return providerModels.find(m => m.isDefault) || providerModels[0]
   }
 }
@@ -158,12 +179,12 @@ export function createDiscoveryService(options?: SmartDiscoveryOptions): Discove
 // 便捷方法：直接获取内置数据
 export const getBuiltinProviders = () => builtinProviders
 export const getBuiltinModels = (provider?: string) => 
-  provider ? builtinModels.filter(m => m.provider === provider) : builtinModels
-export const getBuiltinProvider = (slug: string) => builtinProviders.find(p => p.slug === slug)
+  filterBuiltinModels(provider)
+export const getBuiltinProvider = (slug: string) => findBuiltinProvider(slug)
 export const getBuiltinModel = (provider: string, modelId: string) => 
-  builtinModels.find(m => m.provider === provider && m.id === modelId)
+  filterBuiltinModels(provider).find(m => m.id === modelId)
 export const getBuiltinDefaultModel = (provider: string) => {
-  const providerModels = builtinModels.filter(m => m.provider === provider)
+  const providerModels = filterBuiltinModels(provider)
   return providerModels.find(m => m.isDefault) || providerModels[0]
 }
 

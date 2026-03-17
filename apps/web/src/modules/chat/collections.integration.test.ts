@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { Session } from '@inrupt/solid-client-authn-node'
+import { resolveLinxPodBaseUrl } from '@linx/models/client'
 import { drizzle, eq, type SolidDatabase } from '@undefineds.co/drizzle-solid'
 import { chatTable, threadTable, messageTable, linxSchema } from '@linx/models'
 
@@ -106,7 +107,7 @@ describe('chat collections integration', () => {
     if (!database || !env.webId) return
 
     const id = `group-chat-${Date.now()}`
-    const podBase = env.webId.replace('/profile/card#me', '')
+    const podBase = resolveLinxPodBaseUrl(env.webId)
     const assistantUri = `${podBase}/.data/agents/assistant-${id}.ttl#this`
     const metadata = {
       memberRoles: {

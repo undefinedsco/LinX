@@ -13,12 +13,12 @@ import { afterAll, beforeAll, describe, it } from 'vitest'
 import { Session } from '@inrupt/solid-client-authn-node'
 import { drizzle, type SolidDatabase } from '@undefineds.co/drizzle-solid'
 import {
+  aiProviderTable,
   chatTable,
   threadTable,
   messageTable,
   contactTable,
   agentTable,
-  modelProviderTable,
   solidProfileTable,
   linxSchema,
 } from '@linx/models'
@@ -164,7 +164,7 @@ describe.skipIf(!hasEnv)('List Query Benchmark', () => {
       messageTable,
       contactTable,
       agentTable,
-      modelProviderTable,
+      aiProviderTable,
       solidProfileTable,
     ])
   }, 30000)
@@ -240,7 +240,7 @@ describe.skipIf(!hasEnv)('List Query Benchmark', () => {
 
   it('provider.list - fetch all providers', { timeout: 30000 }, async () => {
     await measure('ModelServices', 'providerCollection.fetch()', async () => {
-      return await db!.select().from(modelProviderTable).execute()
+      return await db!.select().from(aiProviderTable).execute()
     })
   })
 

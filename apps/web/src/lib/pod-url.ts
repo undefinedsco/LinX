@@ -1,3 +1,5 @@
+import { resolveLinxPodBaseUrl } from '@linx/models/client'
+
 export interface ResolvePodUrlOptions {
   signal?: AbortSignal
 }
@@ -7,18 +9,7 @@ function trimTrailingSlash(url: string): string {
 }
 
 export function extractPodUrlFromWebId(webId: string): string {
-  try {
-    const url = new URL(webId)
-    const pathParts = url.pathname.split('/')
-    const profileIndex = pathParts.indexOf('profile')
-    if (profileIndex > 0) {
-      const podPath = pathParts.slice(0, profileIndex).join('/')
-      return trimTrailingSlash(`${url.origin}${podPath}`)
-    }
-    return trimTrailingSlash(url.origin)
-  } catch {
-    return ''
-  }
+  return trimTrailingSlash(resolveLinxPodBaseUrl(webId))
 }
 
 export async function resolvePodUrl(webId: string, options: ResolvePodUrlOptions = {}): Promise<string> {

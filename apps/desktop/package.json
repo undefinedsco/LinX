@@ -5,6 +5,7 @@
   "main": "dist/apps/desktop/src/main.js",
   "scripts": {
     "build": "tsc && yarn run copy-assets",
+    "test": "yarn build && node --test test/**/*.test.cjs",
     "copy-assets": "mkdir -p dist/pages && cp src/pages/*.html dist/pages/",
     "start": "electron .",
     "dev": "yarn workspace @linx/web dev & yarn run build && electron .",

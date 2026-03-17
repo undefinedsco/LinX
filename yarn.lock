@@ -10370,7 +10370,7 @@
     "@typescript-eslint/types" "8.52.0"
     eslint-visitor-keys "^4.2.1"
 
-"@undefineds.co/drizzle-solid@^0.3.0":
+"@undefineds.co/drizzle-solid@^0.2.6", "@undefineds.co/drizzle-solid@^0.3.0":
   version "0.3.0"
   resolved "https://registry.yarnpkg.com/@undefineds.co/drizzle-solid/-/drizzle-solid-0.3.0.tgz#1b6fce4bbe0b3914b357615de8dd4a4403cd58c8"
   integrity sha512-lgXo94PDae+j7ukkHZyuyxwlSNtd5TX6p3C4bLzrTHK+z4+YkehLehBCaZ5yW2pN4tN11zJv6Y5olHiz7GIZPQ==

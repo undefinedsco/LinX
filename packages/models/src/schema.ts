@@ -11,7 +11,6 @@ import { fileTable } from './file/file.schema'
 import { grantTable } from './grant.schema'
 import { inboxNotificationTable } from './inbox-notification.schema'
 import { messageTable } from './message.schema'
-import { modelProviderTable } from './model-provider.schema'
 import { solidProfileTable } from './profile'
 import { settingsTable } from './settings/settings.schema'
 import { threadTable } from './thread.schema'
@@ -23,7 +22,6 @@ export const linxSchema = {
   chatTable,
   threadTable,
   messageTable,
-  modelProviderTable,
   credentialTable,
   aiProviderTable,
   aiModelTable,

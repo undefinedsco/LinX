@@ -4,6 +4,11 @@
  * 不同的 AI 供应商有不同的 API 格式，这里提供统一的接口
  */
 
+import {
+  getAIConfigDefaultBaseUrl,
+  normalizeAIConfigProviderId,
+} from '@linx/models'
+
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
@@ -32,6 +37,10 @@ export interface ProviderAdapter {
     callbacks: StreamCallbacks,
     signal?: AbortSignal
   ) => Promise<void>
+}
+
+function joinApiPath(baseUrl: string, path: string): string {
+  return `${baseUrl.replace(/\/$/, '')}/${path.replace(/^\//, '')}`
 }
 
 // ============================================================================
@@ -136,8 +145,8 @@ const createOpenAIAdapter = (defaultBaseUrl: string): ProviderAdapter => ({
 const anthropicAdapter: ProviderAdapter = {
   name: 'anthropic',
   async streamChat(messages, config, callbacks, signal) {
-    const baseUrl = config.baseUrl || 'https://api.anthropic.com'
-    const endpoint = `${baseUrl.replace(/\/$/, '')}/v1/messages`
+    const baseUrl = config.baseUrl || getAIConfigDefaultBaseUrl('anthropic') || 'https://api.anthropic.com/v1'
+    const endpoint = joinApiPath(baseUrl, 'messages')
 
     // Convert messages to Anthropic format
     const anthropicMessages = messages.map((m) => ({
@@ -233,25 +242,24 @@ const anthropicAdapter: ProviderAdapter = {
 // Provider Registry
 // ============================================================================
 
-const openaiAdapter = createOpenAIAdapter('https://api.openai.com/v1')
-const deepseekAdapter = createOpenAIAdapter('https://api.deepseek.com/v1')
-const xaiAdapter = createOpenAIAdapter('https://api.x.ai/v1')
-const groqAdapter = createOpenAIAdapter('https://api.groq.com/openai/v1')
+const openaiAdapter = createOpenAIAdapter(getAIConfigDefaultBaseUrl('openai') || 'https://api.openai.com/v1')
+const deepseekAdapter = createOpenAIAdapter(getAIConfigDefaultBaseUrl('deepseek') || 'https://api.deepseek.com/v1')
+const xaiAdapter = createOpenAIAdapter(getAIConfigDefaultBaseUrl('x-ai') || 'https://api.x.ai/v1')
+const groqAdapter = createOpenAIAdapter(getAIConfigDefaultBaseUrl('groq') || 'https://api.groq.com/openai/v1')
 const togetherAdapter = createOpenAIAdapter('https://api.together.xyz/v1')
-const openrouterAdapter = createOpenAIAdapter('https://openrouter.ai/api/v1')
+const openrouterAdapter = createOpenAIAdapter(getAIConfigDefaultBaseUrl('openrouter') || 'https://openrouter.ai/api/v1')
 
 export const providerAdapters: Record<string, ProviderAdapter> = {
   openai: openaiAdapter,
   anthropic: anthropicAdapter,
-  claude: anthropicAdapter,
   deepseek: deepseekAdapter,
   'x-ai': xaiAdapter,
-  xai: xaiAdapter,
   groq: groqAdapter,
   together: togetherAdapter,
   openrouter: openrouterAdapter,
 }
 
 export function getProviderAdapter(provider: string): ProviderAdapter {
-  return providerAdapters[provider.toLowerCase()] || openaiAdapter
+  const normalizedProvider = normalizeAIConfigProviderId(provider)
+  return providerAdapters[normalizedProvider] || openaiAdapter
 }
