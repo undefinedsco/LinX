@@ -21,6 +21,7 @@ test('watch archive creates, updates, and lists sessions', async (t) => {
     appendWatchEvent,
     createWatchSession,
     finishWatchSession,
+    loadWatchEvents,
     listWatchSessions,
     loadWatchSession,
   } = module
@@ -53,11 +54,13 @@ test('watch archive creates, updates, and lists sessions', async (t) => {
   })
 
   assert.equal(finished.status, 'completed')
+  assert.equal(finished.approvalSource, 'hybrid')
   assert.equal(loadWatchSession(record.id)?.status, 'completed')
 
   const listed = listWatchSessions()
   assert.equal(listed.length, 1)
   assert.equal(listed[0].id, record.id)
+  assert.equal(loadWatchEvents(record.id).length, 1)
 
   const eventsFile = readFileSync(record.eventsFile, 'utf-8').trim().split('\n')
   assert.equal(eventsFile.length, 1)

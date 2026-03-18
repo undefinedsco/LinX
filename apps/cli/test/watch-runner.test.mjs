@@ -1,247 +1,267 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
-import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { pathToFileURL } from 'node:url'
 import { loadWatchModule } from './watch-test-bundle.mjs'
 
-test('per-turn watch sessions resume backend ids across repl turns', async (t) => {
-  const root = mkdtempSync(join(tmpdir(), 'linx-watch-runner-'))
+function writeExecutable(path, source) {
+  writeFileSync(path, source)
+  chmodSync(path, 0o755)
+}
+
+function createWatchSandbox(prefix) {
+  const root = mkdtempSync(join(tmpdir(), prefix))
   const binDir = join(root, 'bin')
   const watchHome = join(root, 'watch-home')
-  const logFile = join(root, 'claude-invocations.jsonl')
+  mkdirSync(binDir, { recursive: true })
+  return { root, binDir, watchHome }
+}
+
+async function withPatchedEnv(t, env, fn) {
+  const originals = new Map()
+
+  for (const [key, value] of Object.entries(env)) {
+    originals.set(key, process.env[key])
+    process.env[key] = value
+  }
+
+  t.after(() => {
+    for (const [key, value] of originals.entries()) {
+      if (value === undefined) {
+        delete process.env[key]
+      } else {
+        process.env[key] = value
+      }
+    }
+  })
+
+  return fn()
+}
+
+test('watch reuses one ACP session across multiple turns', async (t) => {
+  const { root, binDir, watchHome } = createWatchSandbox('linx-watch-acp-runner-')
+  const logFile = join(root, 'claude-acp-log.jsonl')
 
   t.after(() => {
     rmSync(root, { recursive: true, force: true })
   })
 
-  mkdirSync(binDir, { recursive: true })
-
-  const fakeClaudePath = join(binDir, 'claude')
-  writeFileSync(
-    fakeClaudePath,
-    `#!/usr/bin/env node
-const { appendFileSync } = require('node:fs')
-const args = process.argv.slice(2)
-appendFileSync(process.env.FAKE_CLAUDE_LOG, JSON.stringify({ args }) + '\\n')
-if (args[0] === 'auth' && args[1] === 'status' && args[2] === '--json') {
+  writeExecutable(join(binDir, 'claude'), `#!/usr/bin/env node
+if (process.argv[2] === 'auth' && process.argv[3] === 'status' && process.argv[4] === '--json') {
   process.stdout.write(JSON.stringify({ loggedIn: true, authMethod: 'oauth_token', apiProvider: 'firstParty' }) + '\\n')
   process.exit(0)
 }
-const resumeIndex = args.indexOf('--resume')
-const resumed = resumeIndex !== -1 ? args[resumeIndex + 1] : null
-if (!resumed) {
-  process.stdout.write(JSON.stringify({ type: 'system', subtype: 'init', session_id: 'sess_test_123' }) + '\\n')
+process.exit(1)
+`)
+
+  writeExecutable(join(binDir, 'claude-code-acp'), `#!/usr/bin/env node
+const { appendFileSync } = require('node:fs')
+const readline = require('node:readline')
+
+function write(obj) {
+  process.stdout.write(JSON.stringify(obj) + '\\n')
 }
-process.stdout.write(JSON.stringify({ type: 'assistant', text: resumed ? 'second turn' : 'first turn' }) + '\\n')
-process.stdout.write(JSON.stringify({ type: 'result', text: resumed ? 'done second' : 'done first' }) + '\\n')
-`,
-  )
-  chmodSync(fakeClaudePath, 0o755)
 
-  const { entryPath, cleanup } = await loadWatchModule()
-  t.after(() => cleanup())
+appendFileSync(process.env.FAKE_ACP_LOG, JSON.stringify({
+  argv: process.argv.slice(2),
+  apiKey: process.env.ANTHROPIC_API_KEY ?? null,
+}) + '\\n')
 
-  const child = spawn(
-    process.execPath,
-    [
-      '--input-type=module',
-      '--eval',
-      `
-        import(${JSON.stringify(pathToFileURL(entryPath).href)})
-          .then(({ runWatch }) => runWatch({
-            backend: 'claude',
-            mode: 'smart',
-            cwd: ${JSON.stringify(process.cwd())},
-            passthroughArgs: []
-          }))
-          .then((exitCode) => {
-            process.exit(exitCode);
-          })
-          .catch((error) => {
-            console.error(error instanceof Error ? error.stack ?? error.message : String(error));
-            process.exit(1);
-          });
-      `,
-    ],
-    {
-      cwd: process.cwd(),
-      env: {
-        ...process.env,
-        PATH: `${binDir}:${process.env.PATH ?? ''}`,
-        LINX_WATCH_HOME: watchHome,
-        FAKE_CLAUDE_LOG: logFile,
-      },
-      stdio: ['pipe', 'pipe', 'pipe'],
-    },
-  )
+const rl = readline.createInterface({ input: process.stdin })
+let promptCount = 0
+const sessionId = 'sess_claude_acp_123'
 
-  let stdout = ''
-  let stderr = ''
-  let sentLines = 0
-  let stdinClosed = false
-  const inputs = ['first question\n', 'second question\n', '/exit\n']
+rl.on('line', (line) => {
+  const message = JSON.parse(line)
+  appendFileSync(process.env.FAKE_ACP_LOG, JSON.stringify({ message }) + '\\n')
 
-  function maybeSendNextInput() {
-    const promptCount = stdout.match(/you> /g)?.length ?? 0
-
-    while (sentLines < inputs.length && promptCount > sentLines) {
-      child.stdin.write(inputs[sentLines])
-      sentLines += 1
-    }
-
-    if (!stdinClosed && sentLines === inputs.length) {
-      stdinClosed = true
-      child.stdin.end()
-    }
+  if (message.method === 'initialize') {
+    write({ jsonrpc: '2.0', id: message.id, result: { protocolVersion: 1 } })
+    return
   }
 
-  child.stdout.setEncoding('utf-8')
-  child.stderr.setEncoding('utf-8')
-  child.stdout.on('data', (chunk) => {
-    stdout += chunk
-    maybeSendNextInput()
-  })
-  child.stderr.on('data', (chunk) => {
-    stderr += chunk
+  if (message.method === 'session/new') {
+    write({ jsonrpc: '2.0', id: message.id, result: { sessionId } })
+    return
+  }
+
+  if (message.method === 'session/prompt') {
+    promptCount += 1
+    const prompt = message.params.prompt[0].text
+    write({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId,
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: promptCount === 1 ? 'first turn' : 'second turn' },
+        },
+      },
+    })
+    write({ jsonrpc: '2.0', id: message.id, result: { stopReason: 'end_turn' } })
+    return
+  }
+
+  if (message.method === 'session/set_model') {
+    write({ jsonrpc: '2.0', id: message.id, result: {} })
+  }
+})
+`)
+
+  const { module, cleanup } = await loadWatchModule()
+  t.after(() => cleanup())
+
+  let promptCount = 0
+  t.mock.method(module.watchRuntime, 'promptText', async () => {
+    promptCount += 1
+    return promptCount === 1 ? 'first question' : promptCount === 2 ? 'second question' : '/exit'
   })
 
-  const exitCode = await new Promise((resolve, reject) => {
-    child.on('error', reject)
-    child.on('exit', (code) => resolve(code))
+  await withPatchedEnv(t, {
+    PATH: `${binDir}:${process.env.PATH ?? ''}`,
+    LINX_WATCH_HOME: watchHome,
+    FAKE_ACP_LOG: logFile,
+  }, async () => {
+    const exitCode = await module.runWatch({
+      backend: 'claude',
+      mode: 'smart',
+      cwd: process.cwd(),
+      passthroughArgs: [],
+    })
+
+    assert.equal(exitCode, 0)
   })
 
-  assert.equal(exitCode, 0, stderr)
-  assert.match(stdout, /LinX watch/)
-  assert.match(stdout, /first turn/)
-  assert.match(stdout, /second turn/)
-  assert.match(stdout, /\[session\] completed/)
-
-  const invocations = readFileSync(logFile, 'utf-8')
+  const logLines = readFileSync(logFile, 'utf-8')
     .trim()
     .split('\n')
     .filter(Boolean)
     .map((line) => JSON.parse(line))
 
-  assert.equal(invocations.length, 3)
-  assert.deepEqual(invocations[0].args, ['auth', 'status', '--json'])
-  assert.ok(invocations[1].args.includes('--print'))
-  assert.ok(!invocations[1].args.includes('--resume'))
-  assert.equal(invocations[1].args.at(-1), 'first question')
-  assert.deepEqual(
-    invocations[2].args.slice(invocations[2].args.indexOf('--resume'), invocations[2].args.indexOf('--resume') + 2),
-    ['--resume', 'sess_test_123'],
-  )
-  assert.equal(invocations[2].args.at(-1), 'second question')
+  const rpcMessages = logLines
+    .filter((entry) => entry.message)
+    .map((entry) => entry.message)
+
+  const prompts = rpcMessages.filter((message) => message.method === 'session/prompt')
+  assert.equal(prompts.length, 2)
+  assert.equal(prompts[0].params.sessionId, 'sess_claude_acp_123')
+  assert.equal(prompts[1].params.sessionId, 'sess_claude_acp_123')
+  assert.equal(prompts[0].params.prompt[0].text, 'first question')
+  assert.equal(prompts[1].params.prompt[0].text, 'second question')
 
   const sessionDirs = readdirSync(join(watchHome, 'sessions'))
   assert.equal(sessionDirs.length, 1)
 
   const session = JSON.parse(readFileSync(join(watchHome, 'sessions', sessionDirs[0], 'session.json'), 'utf-8'))
-  assert.equal(session.backendSessionId, 'sess_test_123')
+  assert.equal(session.backendSessionId, 'sess_claude_acp_123')
+  assert.equal(session.transport, 'acp')
   assert.equal(session.status, 'completed')
 
   const events = readFileSync(join(watchHome, 'sessions', sessionDirs[0], 'events.jsonl'), 'utf-8')
     .trim()
     .split('\n')
+    .filter(Boolean)
     .map((line) => JSON.parse(line))
 
-  const turnStarts = events.filter((entry) => {
+  assert.equal(events.some((entry) => {
+    if (entry.stream !== 'system') {
+      return false
+    }
+
     try {
       return JSON.parse(entry.line).type === 'turn.start'
     } catch {
       return false
     }
-  })
-
-  assert.equal(turnStarts.length, 2)
+  }), true)
+  assert.equal(events.some((entry) => JSON.stringify(entry).includes('first turn')), true)
+  assert.equal(events.some((entry) => JSON.stringify(entry).includes('second turn')), true)
 })
 
-test('runWatch injects cloud-backed claude credentials and skips local auth preflight for cloud credential-source', async (t) => {
-  const root = mkdtempSync(join(tmpdir(), 'linx-watch-pod-runner-'))
-  const binDir = join(root, 'bin')
-  const watchHome = join(root, 'watch-home')
-  const logFile = join(root, 'claude-invocations.jsonl')
+test('runWatch injects cloud-backed claude credentials into claude-code-acp', async (t) => {
+  const { root, binDir, watchHome } = createWatchSandbox('linx-watch-acp-claude-cloud-')
+  const logFile = join(root, 'claude-cloud-log.jsonl')
 
   t.after(() => {
     rmSync(root, { recursive: true, force: true })
   })
 
-  mkdirSync(binDir, { recursive: true })
-
-  const fakeClaudePath = join(binDir, 'claude')
-  writeFileSync(
-    fakeClaudePath,
-    `#!/usr/bin/env node
+  writeExecutable(join(binDir, 'claude-code-acp'), `#!/usr/bin/env node
 const { appendFileSync } = require('node:fs')
-const args = process.argv.slice(2)
-appendFileSync(process.env.FAKE_CLAUDE_LOG, JSON.stringify({ args, apiKey: process.env.ANTHROPIC_API_KEY ?? null }) + '\\n')
-process.stdout.write(JSON.stringify({ type: 'system', subtype: 'init', session_id: 'sess_pod_123' }) + '\\n')
-process.stdout.write(JSON.stringify({ type: 'assistant', text: 'pod-backed turn' }) + '\\n')
-process.stdout.write(JSON.stringify({ type: 'result', text: 'pod-backed done' }) + '\\n')
-`,
-  )
-  chmodSync(fakeClaudePath, 0o755)
+const readline = require('node:readline')
+
+function write(obj) {
+  process.stdout.write(JSON.stringify(obj) + '\\n')
+}
+
+appendFileSync(process.env.FAKE_ACP_LOG, JSON.stringify({
+  argv: process.argv.slice(2),
+  apiKey: process.env.ANTHROPIC_API_KEY ?? null,
+}) + '\\n')
+
+const rl = readline.createInterface({ input: process.stdin })
+rl.on('line', (line) => {
+  const message = JSON.parse(line)
+  if (message.method === 'initialize') {
+    write({ jsonrpc: '2.0', id: message.id, result: { protocolVersion: 1 } })
+    return
+  }
+  if (message.method === 'session/new') {
+    write({ jsonrpc: '2.0', id: message.id, result: { sessionId: 'sess_claude_cloud_123' } })
+    return
+  }
+  if (message.method === 'session/prompt') {
+    write({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'sess_claude_cloud_123',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'pod-backed turn' },
+        },
+      },
+    })
+    write({ jsonrpc: '2.0', id: message.id, result: { stopReason: 'end_turn' } })
+  }
+})
+`)
 
   const { module, cleanup } = await loadWatchModule()
   t.after(() => cleanup())
 
-  const originalPath = process.env.PATH
-  const originalWatchHome = process.env.LINX_WATCH_HOME
-
-  process.env.PATH = `${binDir}:${process.env.PATH ?? ''}`
-  process.env.LINX_WATCH_HOME = watchHome
-  process.env.FAKE_CLAUDE_LOG = logFile
-
-  t.after(() => {
-    if (originalPath === undefined) {
-      delete process.env.PATH
-    } else {
-      process.env.PATH = originalPath
-    }
-
-    if (originalWatchHome === undefined) {
-      delete process.env.LINX_WATCH_HOME
-    } else {
-      process.env.LINX_WATCH_HOME = originalWatchHome
-    }
-
-    delete process.env.FAKE_CLAUDE_LOG
-  })
-
-  let preflightCalls = 0
-
   t.mock.method(module.watchRuntime, 'preflightWatchAuth', async () => {
-    preflightCalls += 1
-    return { state: 'authenticated' }
+    throw new Error('should not preflight local auth for cloud credential source')
   })
 
-  t.mock.method(module.watchRuntime, 'loadPodBackendCredential', async (backend) => {
-    assert.equal(backend, 'claude')
-    return {
-      backend: 'claude',
-      provider: 'anthropic',
-      env: {
-        ANTHROPIC_API_KEY: 'sk-pod-key',
-      },
-    }
-  })
+  t.mock.method(module.watchRuntime, 'loadPodBackendCredential', async () => ({
+    backend: 'claude',
+    provider: 'anthropic',
+    env: {
+      ANTHROPIC_API_KEY: 'sk-pod-key',
+    },
+  }))
 
   t.mock.method(module.watchRuntime, 'promptText', async () => '/exit')
 
-  const exitCode = await module.runWatch({
-    backend: 'claude',
-    mode: 'smart',
-    cwd: process.cwd(),
-    prompt: 'hello from cloud',
-    passthroughArgs: [],
-    credentialSource: 'cloud',
-  })
+  await withPatchedEnv(t, {
+    PATH: `${binDir}:${process.env.PATH ?? ''}`,
+    LINX_WATCH_HOME: watchHome,
+    FAKE_ACP_LOG: logFile,
+  }, async () => {
+    const exitCode = await module.runWatch({
+      backend: 'claude',
+      mode: 'smart',
+      cwd: process.cwd(),
+      prompt: 'hello from cloud',
+      passthroughArgs: [],
+      credentialSource: 'cloud',
+    })
 
-  assert.equal(exitCode, 0)
-  assert.equal(preflightCalls, 0)
+    assert.equal(exitCode, 0)
+  })
 
   const invocations = readFileSync(logFile, 'utf-8')
     .trim()
@@ -251,110 +271,99 @@ process.stdout.write(JSON.stringify({ type: 'result', text: 'pod-backed done' })
 
   assert.equal(invocations.length, 1)
   assert.equal(invocations[0].apiKey, 'sk-pod-key')
-  assert.ok(invocations[0].args.includes('--print'))
-  assert.equal(invocations[0].args.at(-1), 'hello from cloud')
+  assert.deepEqual(invocations[0].argv, [])
 
   const sessionDirs = readdirSync(join(watchHome, 'sessions'))
-  assert.equal(sessionDirs.length, 1)
-
   const session = JSON.parse(readFileSync(join(watchHome, 'sessions', sessionDirs[0], 'session.json'), 'utf-8'))
   assert.equal(session.credentialSource, 'cloud')
   assert.equal(session.resolvedCredentialSource, 'cloud')
-  assert.equal(session.backendSessionId, 'sess_pod_123')
-  assert.equal(session.status, 'completed')
-
-  const events = readFileSync(join(watchHome, 'sessions', sessionDirs[0], 'events.jsonl'), 'utf-8')
-  assert.match(events, /credentials\.resolve/)
+  assert.equal(session.transport, 'acp')
 })
 
-test('runWatch injects cloud-backed codebuddy credentials for cloud credential-source', async (t) => {
-  const root = mkdtempSync(join(tmpdir(), 'linx-watch-codebuddy-runner-'))
-  const binDir = join(root, 'bin')
-  const watchHome = join(root, 'watch-home')
-  const logFile = join(root, 'codebuddy-invocations.jsonl')
+test('runWatch injects cloud-backed codebuddy credentials into built-in ACP mode', async (t) => {
+  const { root, binDir, watchHome } = createWatchSandbox('linx-watch-acp-codebuddy-cloud-')
+  const logFile = join(root, 'codebuddy-cloud-log.jsonl')
 
   t.after(() => {
     rmSync(root, { recursive: true, force: true })
   })
 
-  mkdirSync(binDir, { recursive: true })
-
-  const fakeCodebuddyPath = join(binDir, 'codebuddy')
-  writeFileSync(
-    fakeCodebuddyPath,
-    `#!/usr/bin/env node
+  writeExecutable(join(binDir, 'codebuddy'), `#!/usr/bin/env node
 const { appendFileSync } = require('node:fs')
-const args = process.argv.slice(2)
-appendFileSync(process.env.FAKE_CODEBUDDY_LOG, JSON.stringify({
-  args,
+const readline = require('node:readline')
+
+function write(obj) {
+  process.stdout.write(JSON.stringify(obj) + '\\n')
+}
+
+appendFileSync(process.env.FAKE_ACP_LOG, JSON.stringify({
+  argv: process.argv.slice(2),
   apiKey: process.env.CODEBUDDY_API_KEY ?? null,
   baseUrl: process.env.CODEBUDDY_BASE_URL ?? null,
 }) + '\\n')
-process.stdout.write(JSON.stringify({ type: 'system', subtype: 'init', session_id: 'sess_codebuddy_123' }) + '\\n')
-process.stdout.write(JSON.stringify({ type: 'assistant', text: 'codebuddy pod-backed turn' }) + '\\n')
-process.stdout.write(JSON.stringify({ type: 'result', text: 'codebuddy pod-backed done' }) + '\\n')
-`,
-  )
-  chmodSync(fakeCodebuddyPath, 0o755)
+
+const rl = readline.createInterface({ input: process.stdin })
+rl.on('line', (line) => {
+  const message = JSON.parse(line)
+  if (message.method === 'initialize') {
+    write({ jsonrpc: '2.0', id: message.id, result: { protocolVersion: 1 } })
+    return
+  }
+  if (message.method === 'session/new') {
+    write({ jsonrpc: '2.0', id: message.id, result: { sessionId: 'sess_codebuddy_cloud_123' } })
+    return
+  }
+  if (message.method === 'session/prompt') {
+    write({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'sess_codebuddy_cloud_123',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'codebuddy pod-backed turn' },
+        },
+      },
+    })
+    write({ jsonrpc: '2.0', id: message.id, result: { stopReason: 'end_turn' } })
+  }
+})
+`)
 
   const { module, cleanup } = await loadWatchModule()
   t.after(() => cleanup())
 
-  const originalPath = process.env.PATH
-  const originalWatchHome = process.env.LINX_WATCH_HOME
-
-  process.env.PATH = `${binDir}:${process.env.PATH ?? ''}`
-  process.env.LINX_WATCH_HOME = watchHome
-  process.env.FAKE_CODEBUDDY_LOG = logFile
-
-  t.after(() => {
-    if (originalPath === undefined) {
-      delete process.env.PATH
-    } else {
-      process.env.PATH = originalPath
-    }
-
-    if (originalWatchHome === undefined) {
-      delete process.env.LINX_WATCH_HOME
-    } else {
-      process.env.LINX_WATCH_HOME = originalWatchHome
-    }
-
-    delete process.env.FAKE_CODEBUDDY_LOG
-  })
-
-  let preflightCalls = 0
-
   t.mock.method(module.watchRuntime, 'preflightWatchAuth', async () => {
-    preflightCalls += 1
-    return { state: 'authenticated' }
+    throw new Error('should not preflight local auth for cloud credential source')
   })
 
-  t.mock.method(module.watchRuntime, 'loadPodBackendCredential', async (backend) => {
-    assert.equal(backend, 'codebuddy')
-    return {
-      backend: 'codebuddy',
-      provider: 'codebuddy',
-      env: {
-        CODEBUDDY_API_KEY: 'sk-codebuddy-key',
-        CODEBUDDY_BASE_URL: 'https://proxy.codebuddy.example/v1',
-      },
-    }
-  })
+  t.mock.method(module.watchRuntime, 'loadPodBackendCredential', async () => ({
+    backend: 'codebuddy',
+    provider: 'codebuddy',
+    env: {
+      CODEBUDDY_API_KEY: 'sk-codebuddy-key',
+      CODEBUDDY_BASE_URL: 'https://proxy.codebuddy.example/v1',
+    },
+  }))
 
   t.mock.method(module.watchRuntime, 'promptText', async () => '/exit')
 
-  const exitCode = await module.runWatch({
-    backend: 'codebuddy',
-    mode: 'smart',
-    cwd: process.cwd(),
-    prompt: 'hello from codebuddy cloud',
-    passthroughArgs: [],
-    credentialSource: 'cloud',
-  })
+  await withPatchedEnv(t, {
+    PATH: `${binDir}:${process.env.PATH ?? ''}`,
+    LINX_WATCH_HOME: watchHome,
+    FAKE_ACP_LOG: logFile,
+  }, async () => {
+    const exitCode = await module.runWatch({
+      backend: 'codebuddy',
+      mode: 'smart',
+      cwd: process.cwd(),
+      prompt: 'hello from codebuddy cloud',
+      passthroughArgs: [],
+      credentialSource: 'cloud',
+    })
 
-  assert.equal(exitCode, 0)
-  assert.equal(preflightCalls, 0)
+    assert.equal(exitCode, 0)
+  })
 
   const invocations = readFileSync(logFile, 'utf-8')
     .trim()
@@ -365,135 +374,92 @@ process.stdout.write(JSON.stringify({ type: 'result', text: 'codebuddy pod-backe
   assert.equal(invocations.length, 1)
   assert.equal(invocations[0].apiKey, 'sk-codebuddy-key')
   assert.equal(invocations[0].baseUrl, 'https://proxy.codebuddy.example/v1')
-  assert.ok(invocations[0].args.includes('--print'))
-  assert.equal(invocations[0].args.at(-1), 'hello from codebuddy cloud')
-
-  const sessionDirs = readdirSync(join(watchHome, 'sessions'))
-  assert.equal(sessionDirs.length, 1)
-
-  const session = JSON.parse(readFileSync(join(watchHome, 'sessions', sessionDirs[0], 'session.json'), 'utf-8'))
-  assert.equal(session.credentialSource, 'cloud')
-  assert.equal(session.resolvedCredentialSource, 'cloud')
-  assert.equal(session.backendSessionId, 'sess_codebuddy_123')
-  assert.equal(session.status, 'completed')
+  assert.deepEqual(invocations[0].argv, ['--acp', '--acp-transport', 'stdio'])
 })
 
-test('runWatch injects cloud-backed codex credentials for cloud credential-source', async (t) => {
-  const root = mkdtempSync(join(tmpdir(), 'linx-watch-codex-runner-'))
-  const binDir = join(root, 'bin')
-  const watchHome = join(root, 'watch-home')
-  const logFile = join(root, 'codex-invocations.jsonl')
+test('runWatch expands OpenAI pod credentials for codex-acp', async (t) => {
+  const { root, binDir, watchHome } = createWatchSandbox('linx-watch-acp-codex-cloud-')
+  const logFile = join(root, 'codex-cloud-log.jsonl')
 
   t.after(() => {
     rmSync(root, { recursive: true, force: true })
   })
 
-  mkdirSync(binDir, { recursive: true })
-
-  const fakeCodexPath = join(binDir, 'codex')
-  writeFileSync(
-    fakeCodexPath,
-    `#!/usr/bin/env node
+  writeExecutable(join(binDir, 'codex-acp'), `#!/usr/bin/env node
 const { appendFileSync } = require('node:fs')
 const readline = require('node:readline')
-appendFileSync(process.env.FAKE_CODEX_LOG, JSON.stringify({
-  args: process.argv.slice(2),
-  apiKey: process.env.OPENAI_API_KEY ?? null,
+
+function write(obj) {
+  process.stdout.write(JSON.stringify(obj) + '\\n')
+}
+
+appendFileSync(process.env.FAKE_ACP_LOG, JSON.stringify({
+  argv: process.argv.slice(2),
+  openaiKey: process.env.OPENAI_API_KEY ?? null,
+  codexKey: process.env.CODEX_API_KEY ?? null,
 }) + '\\n')
+
 const rl = readline.createInterface({ input: process.stdin })
 rl.on('line', (line) => {
   const message = JSON.parse(line)
   if (message.method === 'initialize') {
-    process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: {} }) + '\\n')
+    write({ jsonrpc: '2.0', id: message.id, result: { protocolVersion: 1 } })
     return
   }
-  if (message.method === 'thread/start') {
-    process.stdout.write(JSON.stringify({
-      jsonrpc: '2.0',
-      id: message.id,
-      result: { thread: { id: 'thread_codex_123' } },
-    }) + '\\n')
+  if (message.method === 'session/new') {
+    write({ jsonrpc: '2.0', id: message.id, result: { sessionId: 'sess_codex_cloud_123' } })
     return
   }
-  if (message.method === 'turn/start') {
-    process.stdout.write(JSON.stringify({
+  if (message.method === 'session/prompt') {
+    write({
       jsonrpc: '2.0',
-      id: message.id,
-      result: { turn: { id: 'turn_codex_123' } },
-    }) + '\\n')
-    process.stdout.write(JSON.stringify({
-      jsonrpc: '2.0',
-      method: 'item/agentMessage/delta',
-      params: { delta: 'codex pod-backed turn' },
-    }) + '\\n')
-    process.stdout.write(JSON.stringify({
-      jsonrpc: '2.0',
-      method: 'turn/completed',
-      params: { turn: { id: 'turn_codex_123' } },
-    }) + '\\n')
+      method: 'session/update',
+      params: {
+        sessionId: 'sess_codex_cloud_123',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'codex pod-backed turn' },
+        },
+      },
+    })
+    write({ jsonrpc: '2.0', id: message.id, result: { stopReason: 'end_turn' } })
   }
 })
-`,
-  )
-  chmodSync(fakeCodexPath, 0o755)
+`)
 
   const { module, cleanup } = await loadWatchModule()
   t.after(() => cleanup())
 
-  const originalPath = process.env.PATH
-  const originalWatchHome = process.env.LINX_WATCH_HOME
-
-  process.env.PATH = `${binDir}:${process.env.PATH ?? ''}`
-  process.env.LINX_WATCH_HOME = watchHome
-  process.env.FAKE_CODEX_LOG = logFile
-
-  t.after(() => {
-    if (originalPath === undefined) {
-      delete process.env.PATH
-    } else {
-      process.env.PATH = originalPath
-    }
-
-    if (originalWatchHome === undefined) {
-      delete process.env.LINX_WATCH_HOME
-    } else {
-      process.env.LINX_WATCH_HOME = originalWatchHome
-    }
-
-    delete process.env.FAKE_CODEX_LOG
-  })
-
-  let preflightCalls = 0
-
   t.mock.method(module.watchRuntime, 'preflightWatchAuth', async () => {
-    preflightCalls += 1
-    return { state: 'authenticated' }
+    throw new Error('should not preflight local auth for cloud credential source')
   })
 
-  t.mock.method(module.watchRuntime, 'loadPodBackendCredential', async (backend) => {
-    assert.equal(backend, 'codex')
-    return {
-      backend: 'codex',
-      provider: 'openai',
-      env: {
-        OPENAI_API_KEY: 'sk-openai-key',
-      },
-    }
-  })
+  t.mock.method(module.watchRuntime, 'loadPodBackendCredential', async () => ({
+    backend: 'codex',
+    provider: 'openai',
+    env: {
+      OPENAI_API_KEY: 'sk-openai-key',
+    },
+  }))
 
   t.mock.method(module.watchRuntime, 'promptText', async () => '/exit')
 
-  const exitCode = await module.runWatch({
-    backend: 'codex',
-    mode: 'smart',
-    cwd: process.cwd(),
-    prompt: 'hello from codex cloud',
-    passthroughArgs: [],
-    credentialSource: 'cloud',
-  })
+  await withPatchedEnv(t, {
+    PATH: `${binDir}:${process.env.PATH ?? ''}`,
+    LINX_WATCH_HOME: watchHome,
+    FAKE_ACP_LOG: logFile,
+  }, async () => {
+    const exitCode = await module.runWatch({
+      backend: 'codex',
+      mode: 'smart',
+      cwd: process.cwd(),
+      prompt: 'hello from codex cloud',
+      passthroughArgs: [],
+      credentialSource: 'cloud',
+    })
 
-  assert.equal(exitCode, 0)
-  assert.equal(preflightCalls, 0)
+    assert.equal(exitCode, 0)
+  })
 
   const invocations = readFileSync(logFile, 'utf-8')
     .trim()
@@ -502,132 +468,105 @@ rl.on('line', (line) => {
     .map((line) => JSON.parse(line))
 
   assert.equal(invocations.length, 1)
-  assert.deepEqual(invocations[0].args, ['app-server', '--listen', 'stdio://'])
-  assert.equal(invocations[0].apiKey, 'sk-openai-key')
-
-  const sessionDirs = readdirSync(join(watchHome, 'sessions'))
-  assert.equal(sessionDirs.length, 1)
-
-  const session = JSON.parse(readFileSync(join(watchHome, 'sessions', sessionDirs[0], 'session.json'), 'utf-8'))
-  assert.equal(session.credentialSource, 'cloud')
-  assert.equal(session.resolvedCredentialSource, 'cloud')
-  assert.equal(session.status, 'completed')
+  assert.equal(invocations[0].openaiKey, 'sk-openai-key')
+  assert.equal(invocations[0].codexKey, 'sk-openai-key')
 })
 
-test('codex watch smart mode auto-approves trusted command requests via shared interaction rules', async (t) => {
-  const root = mkdtempSync(join(tmpdir(), 'linx-watch-codex-approval-'))
-  const binDir = join(root, 'bin')
-  const watchHome = join(root, 'watch-home')
-  const requestLog = join(root, 'codex-requests.jsonl')
+test('watch auto-approves trusted ACP permission requests in smart mode', async (t) => {
+  const { root, binDir, watchHome } = createWatchSandbox('linx-watch-acp-approval-')
+  const logFile = join(root, 'approval-log.jsonl')
 
   t.after(() => {
     rmSync(root, { recursive: true, force: true })
   })
 
-  mkdirSync(binDir, { recursive: true })
-
-  const fakeCodexPath = join(binDir, 'codex')
-  writeFileSync(
-    fakeCodexPath,
-    `#!/usr/bin/env node
+  writeExecutable(join(binDir, 'codex-acp'), `#!/usr/bin/env node
 const { appendFileSync } = require('node:fs')
 const readline = require('node:readline')
+
+function write(obj) {
+  process.stdout.write(JSON.stringify(obj) + '\\n')
+}
+
 const rl = readline.createInterface({ input: process.stdin })
-let pendingApprovalId = null
+let pendingPromptId = null
+let pendingPermissionId = null
+
 rl.on('line', (line) => {
   const message = JSON.parse(line)
   if (message.method === 'initialize') {
-    process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: {} }) + '\\n')
+    write({ jsonrpc: '2.0', id: message.id, result: { protocolVersion: 1 } })
     return
   }
-  if (message.method === 'thread/start') {
-    process.stdout.write(JSON.stringify({
-      jsonrpc: '2.0',
-      id: message.id,
-      result: { thread: { id: 'thread_codex_approval_123' } },
-    }) + '\\n')
+  if (message.method === 'session/new') {
+    write({ jsonrpc: '2.0', id: message.id, result: { sessionId: 'sess_approval_123' } })
     return
   }
-  if (message.method === 'turn/start') {
-    process.stdout.write(JSON.stringify({
+  if (message.method === 'session/prompt') {
+    pendingPromptId = message.id
+    pendingPermissionId = 700
+    write({
       jsonrpc: '2.0',
-      id: message.id,
-      result: { turn: { id: 'turn_codex_approval_123' } },
-    }) + '\\n')
-    pendingApprovalId = 200
-    process.stdout.write(JSON.stringify({
-      jsonrpc: '2.0',
-      id: pendingApprovalId,
-      method: 'item/commandExecution/requestApproval',
-      params: { command: 'pwd', cwd: '/tmp/demo' },
-    }) + '\\n')
+      id: pendingPermissionId,
+      method: 'session/request_permission',
+      params: {
+        sessionId: 'sess_approval_123',
+        toolCall: {
+          toolCallId: 'tool_1',
+          title: 'Run shell command',
+          kind: 'execute',
+          rawInput: { command: 'pwd', cwd: '/tmp/demo' },
+        },
+        options: [
+          { optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' },
+          { optionId: 'allow_always', name: 'Allow always', kind: 'allow_always' },
+          { optionId: 'reject_once', name: 'Reject once', kind: 'reject_once' }
+        ],
+      },
+    })
     return
   }
-  if (pendingApprovalId !== null && message.id === pendingApprovalId) {
-    appendFileSync(process.env.FAKE_CODEX_REQUEST_LOG, JSON.stringify(message) + '\\n')
-    process.stdout.write(JSON.stringify({
+  if (pendingPermissionId !== null && message.id === pendingPermissionId) {
+    appendFileSync(process.env.FAKE_ACP_LOG, JSON.stringify(message) + '\\n')
+    write({
       jsonrpc: '2.0',
-      method: 'turn/completed',
-      params: { turn: { id: 'turn_codex_approval_123' } },
-    }) + '\\n')
+      method: 'session/update',
+      params: {
+        sessionId: 'sess_approval_123',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'approved trusted command' },
+        },
+      },
+    })
+    write({ jsonrpc: '2.0', id: pendingPromptId, result: { stopReason: 'end_turn' } })
   }
 })
-`,
-  )
-  chmodSync(fakeCodexPath, 0o755)
+`)
 
   const { module, cleanup } = await loadWatchModule()
   t.after(() => cleanup())
 
-  const originalPath = process.env.PATH
-  const originalWatchHome = process.env.LINX_WATCH_HOME
-  const originalRequestLog = process.env.FAKE_CODEX_REQUEST_LOG
+  t.mock.method(module.watchRuntime, 'promptText', async () => '/exit')
 
-  process.env.PATH = `${binDir}:${process.env.PATH ?? ''}`
-  process.env.LINX_WATCH_HOME = watchHome
-  process.env.FAKE_CODEX_REQUEST_LOG = requestLog
+  await withPatchedEnv(t, {
+    PATH: `${binDir}:${process.env.PATH ?? ''}`,
+    LINX_WATCH_HOME: watchHome,
+    FAKE_ACP_LOG: logFile,
+  }, async () => {
+    const exitCode = await module.runWatch({
+      backend: 'codex',
+      mode: 'smart',
+      cwd: process.cwd(),
+      prompt: 'inspect trusted command',
+      passthroughArgs: [],
+      credentialSource: 'local',
+    })
 
-  t.after(() => {
-    if (originalPath === undefined) {
-      delete process.env.PATH
-    } else {
-      process.env.PATH = originalPath
-    }
-
-    if (originalWatchHome === undefined) {
-      delete process.env.LINX_WATCH_HOME
-    } else {
-      process.env.LINX_WATCH_HOME = originalWatchHome
-    }
-
-    if (originalRequestLog === undefined) {
-      delete process.env.FAKE_CODEX_REQUEST_LOG
-    } else {
-      process.env.FAKE_CODEX_REQUEST_LOG = originalRequestLog
-    }
+    assert.equal(exitCode, 0)
   })
 
-  t.mock.method(module.watchRuntime, 'preflightWatchAuth', async () => ({ state: 'authenticated' }))
-
-  let promptCalls = 0
-  t.mock.method(module.watchRuntime, 'promptText', async () => {
-    promptCalls += 1
-    return '/exit'
-  })
-
-  const exitCode = await module.runWatch({
-    backend: 'codex',
-    mode: 'smart',
-    cwd: process.cwd(),
-    prompt: 'inspect trusted command',
-    passthroughArgs: [],
-    credentialSource: 'local',
-  })
-
-  assert.equal(exitCode, 0)
-  assert.equal(promptCalls, 1)
-
-  const responses = readFileSync(requestLog, 'utf-8')
+  const responses = readFileSync(logFile, 'utf-8')
     .trim()
     .split('\n')
     .filter(Boolean)
@@ -635,7 +574,10 @@ rl.on('line', (line) => {
 
   assert.equal(responses.length, 1)
   assert.deepEqual(responses[0].result, {
-    decision: 'accept',
+    outcome: {
+      outcome: 'selected',
+      optionId: 'allow_once',
+    },
   })
 
   const sessionDirs = readdirSync(join(watchHome, 'sessions'))
@@ -644,134 +586,411 @@ rl.on('line', (line) => {
   assert.match(events, /"command":"pwd"/)
 })
 
-test('codex watch maps structured user input answers through shared watch questions', async (t) => {
-  const root = mkdtempSync(join(tmpdir(), 'linx-watch-codex-input-'))
-  const binDir = join(root, 'bin')
-  const watchHome = join(root, 'watch-home')
-  const requestLog = join(root, 'codex-input-requests.jsonl')
+test('watch lets remote approval win by default and aborts the local approval prompt', async (t) => {
+  const { root, binDir, watchHome } = createWatchSandbox('linx-watch-acp-remote-approval-')
+  const logFile = join(root, 'remote-approval-log.jsonl')
 
   t.after(() => {
     rmSync(root, { recursive: true, force: true })
   })
 
-  mkdirSync(binDir, { recursive: true })
-
-  const fakeCodexPath = join(binDir, 'codex')
-  writeFileSync(
-    fakeCodexPath,
-    `#!/usr/bin/env node
+  writeExecutable(join(binDir, 'codex-acp'), `#!/usr/bin/env node
 const { appendFileSync } = require('node:fs')
 const readline = require('node:readline')
+
+function write(obj) {
+  process.stdout.write(JSON.stringify(obj) + '\\n')
+}
+
 const rl = readline.createInterface({ input: process.stdin })
-let pendingInputId = null
+let pendingPromptId = null
+let pendingPermissionId = null
+
 rl.on('line', (line) => {
   const message = JSON.parse(line)
   if (message.method === 'initialize') {
-    process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: {} }) + '\\n')
+    write({ jsonrpc: '2.0', id: message.id, result: { protocolVersion: 1 } })
     return
   }
-  if (message.method === 'thread/start') {
-    process.stdout.write(JSON.stringify({
-      jsonrpc: '2.0',
-      id: message.id,
-      result: { thread: { id: 'thread_codex_input_123' } },
-    }) + '\\n')
+  if (message.method === 'session/new') {
+    write({ jsonrpc: '2.0', id: message.id, result: { sessionId: 'sess_remote_approval_123' } })
     return
   }
-  if (message.method === 'turn/start') {
-    process.stdout.write(JSON.stringify({
+  if (message.method === 'session/prompt') {
+    pendingPromptId = message.id
+    pendingPermissionId = 711
+    write({
       jsonrpc: '2.0',
-      id: message.id,
-      result: { turn: { id: 'turn_codex_input_123' } },
-    }) + '\\n')
-    pendingInputId = 201
-    process.stdout.write(JSON.stringify({
-      jsonrpc: '2.0',
-      id: pendingInputId,
-      method: 'item/tool/requestUserInput',
+      id: pendingPermissionId,
+      method: 'session/request_permission',
       params: {
-        questions: [{
-          id: 'runtime',
-          header: 'Runtime',
-          question: 'Choose runtime',
-          options: [
-            { label: 'local' },
-            { label: 'cloud', description: 'Use Pod credentials' }
-          ]
-        }]
+        sessionId: 'sess_remote_approval_123',
+        toolCall: {
+          toolCallId: 'tool_remote_1',
+          title: 'Run shell command',
+          kind: 'execute',
+          rawInput: { command: 'git status', cwd: '/tmp/demo' },
+        },
+        options: [
+          { optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' },
+          { optionId: 'allow_always', name: 'Allow always', kind: 'allow_always' },
+          { optionId: 'reject_once', name: 'Reject once', kind: 'reject_once' }
+        ],
       },
-    }) + '\\n')
+    })
     return
   }
-  if (pendingInputId !== null && message.id === pendingInputId) {
-    appendFileSync(process.env.FAKE_CODEX_REQUEST_LOG, JSON.stringify(message) + '\\n')
-    process.stdout.write(JSON.stringify({
+  if (pendingPermissionId !== null && message.id === pendingPermissionId) {
+    appendFileSync(process.env.FAKE_ACP_LOG, JSON.stringify(message) + '\\n')
+    write({
       jsonrpc: '2.0',
-      method: 'turn/completed',
-      params: { turn: { id: 'turn_codex_input_123' } },
-    }) + '\\n')
+      method: 'session/update',
+      params: {
+        sessionId: 'sess_remote_approval_123',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'remote approval applied' },
+        },
+      },
+    })
+    write({ jsonrpc: '2.0', id: pendingPromptId, result: { stopReason: 'end_turn' } })
   }
 })
-`,
-  )
-  chmodSync(fakeCodexPath, 0o755)
+`)
 
   const { module, cleanup } = await loadWatchModule()
   t.after(() => cleanup())
 
-  const originalPath = process.env.PATH
-  const originalWatchHome = process.env.LINX_WATCH_HOME
-  const originalRequestLog = process.env.FAKE_CODEX_REQUEST_LOG
+  const prompts = []
+  const createdApprovals = []
+  const waitedApprovals = []
+  const resolvedApprovals = []
 
-  process.env.PATH = `${binDir}:${process.env.PATH ?? ''}`
-  process.env.LINX_WATCH_HOME = watchHome
-  process.env.FAKE_CODEX_REQUEST_LOG = requestLog
-
-  t.after(() => {
-    if (originalPath === undefined) {
-      delete process.env.PATH
-    } else {
-      process.env.PATH = originalPath
+  t.mock.method(module.watchRuntime, 'promptText', async (prompt, signal) => {
+    prompts.push(prompt)
+    if (prompt === 'you> ') {
+      return '/exit'
     }
-
-    if (originalWatchHome === undefined) {
-      delete process.env.LINX_WATCH_HOME
-    } else {
-      process.env.LINX_WATCH_HOME = originalWatchHome
-    }
-
-    if (originalRequestLog === undefined) {
-      delete process.env.FAKE_CODEX_REQUEST_LOG
-    } else {
-      process.env.FAKE_CODEX_REQUEST_LOG = originalRequestLog
-    }
+    return await new Promise((resolve, reject) => {
+      signal?.addEventListener('abort', () => {
+        const error = new Error('The operation was aborted.')
+        error.name = 'AbortError'
+        reject(error)
+      }, { once: true })
+    })
+  })
+  t.mock.method(module.watchRuntime, 'createRemoteWatchApproval', async (payload) => {
+    createdApprovals.push(payload)
+    return { id: 'approval_remote_1' }
+  })
+  t.mock.method(module.watchRuntime, 'waitForRemoteWatchApproval', async (payload) => {
+    waitedApprovals.push(payload)
+    return 'accept_for_session'
+  })
+  t.mock.method(module.watchRuntime, 'resolveRemoteWatchApproval', async (payload) => {
+    resolvedApprovals.push(payload)
+    return { id: payload.approvalId, decision: payload.decision }
   })
 
-  t.mock.method(module.watchRuntime, 'preflightWatchAuth', async () => ({ state: 'authenticated' }))
+  await withPatchedEnv(t, {
+    PATH: `${binDir}:${process.env.PATH ?? ''}`,
+    LINX_WATCH_HOME: watchHome,
+    FAKE_ACP_LOG: logFile,
+  }, async () => {
+    const exitCode = await module.runWatch({
+      backend: 'codex',
+      mode: 'manual',
+      cwd: process.cwd(),
+      prompt: 'request remote approval',
+      passthroughArgs: [],
+      credentialSource: 'local',
+    })
+
+    assert.equal(exitCode, 0)
+  })
+
+  assert.equal(createdApprovals.length, 1)
+  assert.equal(createdApprovals[0].request.kind, 'command-approval')
+  assert.equal(createdApprovals[0].request.command, 'git status')
+  assert.equal(waitedApprovals.length, 1)
+  assert.equal(waitedApprovals[0].approvalId, 'approval_remote_1')
+  assert.equal(resolvedApprovals.length, 0)
+  assert.equal(prompts.includes('select> '), true)
+
+  const responses = readFileSync(logFile, 'utf-8')
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line))
+
+  assert.equal(responses.length, 1)
+  assert.deepEqual(responses[0].result, {
+    outcome: {
+      outcome: 'selected',
+      optionId: 'allow_always',
+    },
+  })
+
+  const sessionDirs = readdirSync(join(watchHome, 'sessions'))
+  const events = readFileSync(join(watchHome, 'sessions', sessionDirs[0], 'events.jsonl'), 'utf-8')
+  assert.match(events, /Remote approval opened \| approval_remote_1/)
+  assert.match(events, /Remote approval resolved \| accept_for_session/)
+})
+
+test('watch mirrors a local approval decision back into Pod remote approval state by default', async (t) => {
+  const { root, binDir, watchHome } = createWatchSandbox('linx-watch-acp-hybrid-local-first-')
+  const logFile = join(root, 'hybrid-local-first-log.jsonl')
+
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  writeExecutable(join(binDir, 'codex-acp'), `#!/usr/bin/env node
+const { appendFileSync } = require('node:fs')
+const readline = require('node:readline')
+
+function write(obj) {
+  process.stdout.write(JSON.stringify(obj) + '\\n')
+}
+
+const rl = readline.createInterface({ input: process.stdin })
+let pendingPromptId = null
+let pendingPermissionId = null
+
+rl.on('line', (line) => {
+  const message = JSON.parse(line)
+  if (message.method === 'initialize') {
+    write({ jsonrpc: '2.0', id: message.id, result: { protocolVersion: 1 } })
+    return
+  }
+  if (message.method === 'session/new') {
+    write({ jsonrpc: '2.0', id: message.id, result: { sessionId: 'sess_hybrid_local_123' } })
+    return
+  }
+  if (message.method === 'session/prompt') {
+    pendingPromptId = message.id
+    pendingPermissionId = 712
+    write({
+      jsonrpc: '2.0',
+      id: pendingPermissionId,
+      method: 'session/request_permission',
+      params: {
+        sessionId: 'sess_hybrid_local_123',
+        toolCall: {
+          toolCallId: 'tool_hybrid_local_1',
+          title: 'Run shell command',
+          kind: 'execute',
+          rawInput: { command: 'git diff --stat', cwd: '/tmp/demo' },
+        },
+        options: [
+          { optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' },
+          { optionId: 'allow_always', name: 'Allow always', kind: 'allow_always' },
+          { optionId: 'reject_once', name: 'Reject once', kind: 'reject_once' }
+        ],
+      },
+    })
+    return
+  }
+  if (pendingPermissionId !== null && message.id === pendingPermissionId) {
+    appendFileSync(process.env.FAKE_ACP_LOG, JSON.stringify(message) + '\\n')
+    write({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'sess_hybrid_local_123',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'local approval applied' },
+        },
+      },
+    })
+    write({ jsonrpc: '2.0', id: pendingPromptId, result: { stopReason: 'end_turn' } })
+  }
+})
+`)
+
+  const { module, cleanup } = await loadWatchModule()
+  t.after(() => cleanup())
+
+  const createdApprovals = []
+  const waitedApprovals = []
+  const resolvedApprovals = []
+
+  t.mock.method(module.watchRuntime, 'promptText', async (prompt) => {
+    if (prompt === 'select> ') {
+      return 's'
+    }
+    return '/exit'
+  })
+  t.mock.method(module.watchRuntime, 'createRemoteWatchApproval', async (payload) => {
+    createdApprovals.push(payload)
+    return { id: 'approval_local_1' }
+  })
+  t.mock.method(module.watchRuntime, 'waitForRemoteWatchApproval', async (payload) => {
+    waitedApprovals.push(payload)
+    return await new Promise(() => {})
+  })
+  t.mock.method(module.watchRuntime, 'resolveRemoteWatchApproval', async (payload) => {
+    resolvedApprovals.push(payload)
+    return { id: payload.approvalId, decision: payload.decision }
+  })
+
+  await withPatchedEnv(t, {
+    PATH: `${binDir}:${process.env.PATH ?? ''}`,
+    LINX_WATCH_HOME: watchHome,
+    FAKE_ACP_LOG: logFile,
+  }, async () => {
+    const exitCode = await module.runWatch({
+      backend: 'codex',
+      mode: 'manual',
+      cwd: process.cwd(),
+      prompt: 'request local approval first',
+      passthroughArgs: [],
+      credentialSource: 'local',
+    })
+
+    assert.equal(exitCode, 0)
+  })
+
+  assert.equal(createdApprovals.length, 1)
+  assert.equal(waitedApprovals.length, 1)
+  assert.equal(resolvedApprovals.length, 1)
+  assert.equal(resolvedApprovals[0].approvalId, 'approval_local_1')
+  assert.equal(resolvedApprovals[0].decision, 'accept_for_session')
+
+  const responses = readFileSync(logFile, 'utf-8')
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line))
+
+  assert.equal(responses.length, 1)
+  assert.deepEqual(responses[0].result, {
+    outcome: {
+      outcome: 'selected',
+      optionId: 'allow_always',
+    },
+  })
+
+  const sessionDirs = readdirSync(join(watchHome, 'sessions'))
+  const events = readFileSync(join(watchHome, 'sessions', sessionDirs[0], 'events.jsonl'), 'utf-8')
+  assert.match(events, /Remote approval opened \| approval_local_1/)
+  assert.match(events, /Local approval resolved \| accept_for_session/)
+})
+
+test('watch batches multi-question ACP user input responses into one payload', async (t) => {
+  const { root, binDir, watchHome } = createWatchSandbox('linx-watch-acp-input-')
+  const logFile = join(root, 'input-log.jsonl')
+
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  writeExecutable(join(binDir, 'codex-acp'), `#!/usr/bin/env node
+const { appendFileSync } = require('node:fs')
+const readline = require('node:readline')
+
+function write(obj) {
+  process.stdout.write(JSON.stringify(obj) + '\\n')
+}
+
+const rl = readline.createInterface({ input: process.stdin })
+let pendingPromptId = null
+let pendingInputId = null
+
+rl.on('line', (line) => {
+  const message = JSON.parse(line)
+  if (message.method === 'initialize') {
+    write({ jsonrpc: '2.0', id: message.id, result: { protocolVersion: 1 } })
+    return
+  }
+  if (message.method === 'session/new') {
+    write({ jsonrpc: '2.0', id: message.id, result: { sessionId: 'sess_input_123' } })
+    return
+  }
+  if (message.method === 'session/prompt') {
+    pendingPromptId = message.id
+    pendingInputId = 901
+    write({
+      jsonrpc: '2.0',
+      id: pendingInputId,
+      method: 'session/request_input',
+      params: {
+        questions: [
+          {
+            id: 'runtime',
+            header: 'Runtime',
+            question: 'Choose runtime',
+            options: [
+              { label: 'local' },
+              { label: 'cloud', description: 'Use Pod credentials' }
+            ]
+          },
+          {
+            id: 'goal',
+            header: 'Goal',
+            question: 'Describe the goal',
+            options: []
+          }
+        ]
+      },
+    })
+    return
+  }
+  if (pendingInputId !== null && message.id === pendingInputId) {
+    appendFileSync(process.env.FAKE_ACP_LOG, JSON.stringify(message) + '\\n')
+    write({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'sess_input_123',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'received structured input' },
+        },
+      },
+    })
+    write({ jsonrpc: '2.0', id: pendingPromptId, result: { stopReason: 'end_turn' } })
+  }
+})
+`)
+
+  const { module, cleanup } = await loadWatchModule()
+  t.after(() => cleanup())
 
   const prompts = []
   t.mock.method(module.watchRuntime, 'promptText', async (prompt) => {
     prompts.push(prompt)
-    if (prompt === 'answer> ') {
+    if (prompt === 'select> ') {
       return '2'
+    }
+    if (prompt === 'answer> ') {
+      return 'Need a Codex-like multi-step request flow'
     }
     return '/exit'
   })
 
-  const exitCode = await module.runWatch({
-    backend: 'codex',
-    mode: 'manual',
-    cwd: process.cwd(),
-    prompt: 'answer runtime question',
-    passthroughArgs: [],
-    credentialSource: 'local',
+  await withPatchedEnv(t, {
+    PATH: `${binDir}:${process.env.PATH ?? ''}`,
+    LINX_WATCH_HOME: watchHome,
+    FAKE_ACP_LOG: logFile,
+  }, async () => {
+    const exitCode = await module.runWatch({
+      backend: 'codex',
+      mode: 'manual',
+      cwd: process.cwd(),
+      prompt: 'answer multiple questions',
+      passthroughArgs: [],
+      credentialSource: 'local',
+    })
+
+    assert.equal(exitCode, 0)
   })
 
-  assert.equal(exitCode, 0)
+  assert.ok(prompts.includes('select> '))
   assert.ok(prompts.includes('answer> '))
-  assert.ok(prompts.includes('you> '))
 
-  const responses = readFileSync(requestLog, 'utf-8')
+  const responses = readFileSync(logFile, 'utf-8')
     .trim()
     .split('\n')
     .filter(Boolean)
@@ -783,6 +1002,9 @@ rl.on('line', (line) => {
       runtime: {
         answers: ['cloud'],
       },
+      goal: {
+        answers: ['Need a Codex-like multi-step request flow'],
+      },
     },
   })
 
@@ -790,4 +1012,79 @@ rl.on('line', (line) => {
   const events = readFileSync(join(watchHome, 'sessions', sessionDirs[0], 'events.jsonl'), 'utf-8')
   assert.match(events, /"type":"input.required"/)
   assert.match(events, /"question":"Choose runtime"/)
+  assert.match(events, /"question":"Describe the goal"/)
+})
+
+test('watch persists the final conversation to Pod opportunistically without breaking local success', async (t) => {
+  const { root, binDir, watchHome } = createWatchSandbox('linx-watch-pod-persist-')
+
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  writeExecutable(join(binDir, 'codex-acp'), `#!/usr/bin/env node
+const readline = require('node:readline')
+
+function write(obj) {
+  process.stdout.write(JSON.stringify(obj) + '\\n')
+}
+
+const rl = readline.createInterface({ input: process.stdin })
+rl.on('line', (line) => {
+  const message = JSON.parse(line)
+  if (message.method === 'initialize') {
+    write({ jsonrpc: '2.0', id: message.id, result: { protocolVersion: 1 } })
+    return
+  }
+  if (message.method === 'session/new') {
+    write({ jsonrpc: '2.0', id: message.id, result: { sessionId: 'sess_codex_persist_123' } })
+    return
+  }
+  if (message.method === 'session/prompt') {
+    write({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'sess_codex_persist_123',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'persist me to pod' },
+        },
+      },
+    })
+    write({ jsonrpc: '2.0', id: message.id, result: { stopReason: 'end_turn' } })
+  }
+})
+`)
+
+  const { module, cleanup } = await loadWatchModule()
+  t.after(() => cleanup())
+
+  const persisted = []
+  t.mock.method(module.watchRuntime, 'promptText', async () => '/exit')
+  t.mock.method(module.watchRuntime, 'persistWatchConversationToPod', async (record) => {
+    persisted.push(record)
+    throw new Error('ignore pod persistence errors')
+  })
+
+  await withPatchedEnv(t, {
+    PATH: `${binDir}:${process.env.PATH ?? ''}`,
+    LINX_WATCH_HOME: watchHome,
+  }, async () => {
+    const exitCode = await module.runWatch({
+      backend: 'codex',
+      mode: 'smart',
+      cwd: process.cwd(),
+      prompt: 'persist conversation',
+      passthroughArgs: [],
+      credentialSource: 'local',
+    })
+
+    assert.equal(exitCode, 0)
+  })
+
+  assert.equal(persisted.length, 1)
+  assert.equal(persisted[0].status, 'completed')
+  assert.equal(persisted[0].backend, 'codex')
+  assert.equal(typeof persisted[0].endedAt, 'string')
 })

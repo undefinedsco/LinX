@@ -1,4 +1,4 @@
-import { uri, boolean, podTable, string, timestamp, id } from '@undefineds.co/drizzle-solid'
+import { uri, boolean, object, podTable, string, timestamp, id } from '@undefineds.co/drizzle-solid'
 import { UDFS, DCTerms, SIOC, MEETING, LINX_CHAT } from './namespaces'
 
 /**
@@ -29,6 +29,9 @@ export const threadTable = podTable(
 
     // Execution context: workspace container (Agent@workspace)
     workspace: uri('workspace').predicate(LINX_CHAT.workspace),
+
+    // Generic execution metadata shared by CLI/App runtimes.
+    metadata: object('metadata').predicate(UDFS.metadata),
 
 
     createdAt: timestamp('createdAt').predicate(DCTerms.created).notNull().defaultNow(),

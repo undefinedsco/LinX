@@ -12,7 +12,7 @@ async function getWatchModule() {
   return watchModulePromise
 }
 
-test('codex hook maps to app-server multi-turn transport', async () => {
+test('codex hook maps to codex-acp transport', async () => {
   const { module } = await getWatchModule()
   const { getWatchHook } = module
   const hook = getWatchHook('codex')
@@ -25,11 +25,11 @@ test('codex hook maps to app-server multi-turn transport', async () => {
     passthroughArgs: ['--search'],
   })
 
-  assert.equal(plan.command, 'codex')
-  assert.deepEqual(plan.args, ['app-server', '--listen', 'stdio://', '--search'])
+  assert.equal(plan.command, 'codex-acp')
+  assert.deepEqual(plan.args, ['--search'])
 })
 
-test('claude hook maps auto mode to print/resume stream-json', async () => {
+test('claude hook maps to claude-code-acp transport', async () => {
   const { module } = await getWatchModule()
   const { getWatchHook } = module
   const hook = getWatchHook('claude')
@@ -39,24 +39,14 @@ test('claude hook maps auto mode to print/resume stream-json', async () => {
     cwd: '/tmp/demo',
     model: 'sonnet',
     prompt: 'summarize',
-    passthroughArgs: [],
+    passthroughArgs: ['--verbose'],
   })
 
-  assert.deepEqual(plan.args, [
-    '--print',
-    '--verbose',
-    '--output-format',
-    'stream-json',
-    '--include-partial-messages',
-    '--permission-mode',
-    'bypassPermissions',
-    '--dangerously-skip-permissions',
-    '--model',
-    'sonnet',
-  ])
+  assert.equal(plan.command, 'claude-code-acp')
+  assert.deepEqual(plan.args, ['--verbose'])
 })
 
-test('codebuddy hook maps manual mode to print/resume stream-json', async () => {
+test('codebuddy hook maps to built-in ACP mode and preserves model arg', async () => {
   const { module } = await getWatchModule()
   const { getWatchHook } = module
   const hook = getWatchHook('codebuddy')
@@ -64,97 +54,20 @@ test('codebuddy hook maps manual mode to print/resume stream-json', async () => 
     backend: 'codebuddy',
     mode: 'manual',
     cwd: '/tmp/demo',
+    model: 'deepseek-v3.1-thinking',
     prompt: 'inspect repo',
     passthroughArgs: ['--tools', 'Read,Edit'],
   })
 
+  assert.equal(plan.command, 'codebuddy')
   assert.deepEqual(plan.args, [
-    '--print',
-    '--verbose',
-    '--output-format',
-    'stream-json',
-    '--include-partial-messages',
-    '--permission-mode',
-    'default',
+    '--acp',
+    '--acp-transport',
+    'stdio',
+    '--model',
+    'deepseek-v3.1-thinking',
     '--tools',
     'Read,Edit',
-  ])
-})
-
-test('claude hook resumes backend session ids per turn', async () => {
-  const { module } = await getWatchModule()
-  const { getWatchHook } = module
-  const hook = getWatchHook('claude')
-  const plan = hook.buildTurnPlan({
-    backend: 'claude',
-    mode: 'smart',
-    cwd: '/tmp/demo',
-    prompt: undefined,
-    passthroughArgs: [],
-  }, {
-    backendSessionId: '123e4567-e89b-12d3-a456-426614174000',
-    prompt: 'continue',
-    turnIndex: 1,
-  })
-
-  assert.deepEqual(plan.args, [
-    '--print',
-    '--verbose',
-    '--output-format',
-    'stream-json',
-    '--include-partial-messages',
-    '--permission-mode',
-    'auto',
-    '--resume',
-    '123e4567-e89b-12d3-a456-426614174000',
-    'continue',
-  ])
-})
-
-test('codebuddy hook extracts session ids from stream-json init lines', async () => {
-  const { module } = await getWatchModule()
-  const { getWatchHook } = module
-  const hook = getWatchHook('codebuddy')
-
-  assert.equal(
-    hook.extractSessionId('{"type":"system","subtype":"init","session_id":"sess_123"}'),
-    'sess_123',
-  )
-})
-
-test('generic json parser emits approval and tool events', async () => {
-  const { module } = await getWatchModule()
-  const { getWatchHook } = module
-  const hook = getWatchHook('claude')
-  const events = hook.parseLine(JSON.stringify({
-    type: 'tool_permission',
-    message: 'Run yarn test?',
-    toolName: 'Bash',
-    arguments: { command: 'yarn test' },
-  }), 'stdout')
-
-  assert.deepEqual(events, [
-    {
-      type: 'approval.required',
-      message: 'Run yarn test?',
-      raw: {
-        type: 'tool_permission',
-        message: 'Run yarn test?',
-        toolName: 'Bash',
-        arguments: { command: 'yarn test' },
-      },
-    },
-    {
-      type: 'tool.call',
-      name: 'Bash',
-      arguments: { command: 'yarn test' },
-      raw: {
-        type: 'tool_permission',
-        message: 'Run yarn test?',
-        toolName: 'Bash',
-        arguments: { command: 'yarn test' },
-      },
-    },
   ])
 })
 

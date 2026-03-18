@@ -7,16 +7,17 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const cliRoot = fileURLToPath(new URL('..', import.meta.url))
 const modelsRoot = fileURLToPath(new URL('../../../packages/models', import.meta.url))
 const sourceRoot = join(cliRoot, 'src')
-const watchEntry = join(sourceRoot, 'lib/watch/index.ts')
 
-export async function loadWatchModule() {
-  return buildWatchBundle()
+export async function loadWatchModule(entryRelative = 'lib/watch/index.ts') {
+  return buildWatchBundle(entryRelative)
 }
 
-async function buildWatchBundle() {
+async function buildWatchBundle(entryRelative) {
   const root = mkdtempSync(join(tmpdir(), 'linx-watch-test-'))
   const outdir = join(root, 'dist')
   const nodeModulesDir = join(outdir, 'node_modules', '@linx')
+  const entryPath = join(sourceRoot, entryRelative)
+  const compiledEntry = join(outdir, entryRelative.replace(/\.ts$/, '.js'))
 
   execFileSync('tsc', [
     '--outDir',
@@ -35,7 +36,7 @@ async function buildWatchBundle() {
     'node',
     '--skipLibCheck',
     'true',
-    watchEntry,
+    entryPath,
   ], {
     cwd: cliRoot,
     stdio: 'pipe',
@@ -45,8 +46,8 @@ async function buildWatchBundle() {
   symlinkSync(modelsRoot, join(nodeModulesDir, 'models'), 'dir')
 
   return {
-    module: await import(pathToFileURL(join(outdir, 'lib/watch/index.js')).href),
-    entryPath: join(outdir, 'lib/watch/index.js'),
+    module: await import(pathToFileURL(compiledEntry).href),
+    entryPath: compiledEntry,
     cleanup() {
       rmSync(root, { recursive: true, force: true })
     },

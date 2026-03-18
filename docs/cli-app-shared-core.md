@@ -34,6 +34,7 @@
 - `packages/models/watch`: auth failure / auth status normalization helper
 - `packages/models/watch`: generic JSON line / codex JSON-RPC event normalization helper
 - `packages/models/watch`: approval request / structured user-input / auto-approval decision helper
+- `packages/models`: `approval / audit / inbox_notification` 是跨端 remote approval 的共享真相
 - `packages/models/client`: `~/.linx` account/config/secrets contract
 - `packages/models/client`: linx cloud login bootstrap / whoami field helper
 - `packages/models/client`: linx cloud account API 与 runtime API URL 解析 helper
@@ -54,7 +55,7 @@
 - `AIModel`
 - `Thread`
 - `Message`
-- `WatchSession`
+- `ThreadExecutionMetadata`
 - `ApprovalRequest`
 
 这些类型必须是纯 domain 类型，不得包含：
@@ -79,6 +80,7 @@
 - `resolve credential-source local | cloud | auto`
 - `create thread / append turn / continue thread`
 - `watch` 后端事件归一化
+- `local runtime + remote approval` 的 pending / resolve 控制面
 - approval / tool-call / archive 持久化
 
 规则：
@@ -96,6 +98,7 @@
 - provider alias 规则
 - auth failure / approval / tool-call 的归一化规则
 - structured user-input / approval response payload 规则
+- local runtime 把 pending approval 写入 Pod，remote surface 回写 decision 的控制协议
 
 示例：
 

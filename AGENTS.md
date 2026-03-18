@@ -7,6 +7,7 @@ This file provides guidance to AI coding agents when working with this repositor
 ## Quick Links
 
 - **[Architecture Comparison](docs/architecture-comparison.md)** - 架构对比：LinX vs Cherry Studio vs LobeChat
+- **[@linx/models Shared Core](docs/cli-app-shared-core.md)** - 所有端共享的业务真相、跨端语义与模型边界以 `@linx/models` 为准
 - **[Chat Module Alignment](docs/chat-module-alignment.md)** - Chat 模块与 Cherry Studio 及设计规范的对齐状态、视觉检查清单、待修复项
 - **[UI Style Guide](docs/ui-style-guide.md)** - UI 样式指南
 - **[UI Component Architecture](docs/ui-component-architecture.md)** - UI 组件分层架构（纯 UI / 逻辑 UI）
@@ -20,6 +21,7 @@ LinX is a Solid-first productivity application built as a monorepo targeting web
 ### Key Architectural Principles
 
 - **Solid Data Access**: All structured data (profiles, contacts, sessions) flows through repositories in `packages/models` using `drizzle-solid`. Never use direct `getSolidDataset` calls in React components.
+- **Shared Business Truth**: Any domain rule, storage contract, normalization logic, or cross-surface use-case that must be shared across surfaces belongs in `@linx/models`. Shells in `apps/*` may adapt and render it, but must not redefine it.
 - **No UI Fallbacks**: When queries fail, fix the drizzle-solid repository (schema, permissions, SPARQL) rather than implementing UI fallbacks.
 - **Monorepo Structure**: Workspaces organized as `apps/*`, `packages/*`, `tests/*`, and `examples/*`.
 

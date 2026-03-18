@@ -4,7 +4,9 @@ export type WatchSessionStatus = 'running' | 'completed' | 'failed'
 export type WatchOutputStream = 'stdout' | 'stderr' | 'system'
 export type WatchCredentialSource = 'auto' | 'local' | 'cloud'
 export type WatchResolvedCredentialSource = 'local' | 'cloud'
+export type WatchApprovalSource = 'local' | 'remote' | 'hybrid'
 export type WatchRuntime = 'local'
+export type WatchTransport = 'native' | 'acp'
 export type WatchAuthState = 'authenticated' | 'unauthenticated' | 'unknown'
 
 export interface WatchAuthStatus {
@@ -34,6 +36,7 @@ export interface WatchSessionRecord {
   id: string
   backend: WatchBackend
   runtime: WatchRuntime
+  transport?: WatchTransport
   mode: WatchMode
   cwd: string
   model?: string
@@ -41,6 +44,7 @@ export interface WatchSessionRecord {
   passthroughArgs: string[]
   credentialSource: WatchCredentialSource
   resolvedCredentialSource?: WatchResolvedCredentialSource
+  approvalSource?: WatchApprovalSource
   command: string
   args: string[]
   status: WatchSessionStatus
@@ -174,6 +178,31 @@ export interface WatchEventLogEntry {
   events: WatchNormalizedEvent[]
 }
 
+export interface WatchThreadMetadata extends Record<string, unknown> {
+  kind: 'watch'
+  delegatedTo: 'secretary'
+  sessionId: string
+  backend: WatchBackend
+  runtime: WatchRuntime
+  transport?: WatchTransport
+  mode: WatchMode
+  cwd: string
+  model?: string
+  credentialSource: WatchCredentialSource
+  resolvedCredentialSource?: WatchResolvedCredentialSource
+  approvalSource?: WatchApprovalSource
+  status: WatchSessionStatus
+  backendSessionId?: string
+}
+
+export type WatchTranscriptMessageRole = 'user' | 'assistant' | 'system'
+
+export interface WatchTranscriptMessage {
+  role: WatchTranscriptMessageRole
+  content: string
+  createdAt: string
+}
+
 export interface CreateWatchSessionIdOptions {
   now?: Date
   randomId?: string
@@ -189,6 +218,11 @@ export const WATCH_HOME_DIRNAME = 'watch'
 export const WATCH_SESSIONS_DIRNAME = 'sessions'
 export const WATCH_SESSION_FILE_NAME = 'session.json'
 export const WATCH_EVENTS_FILE_NAME = 'events.jsonl'
+
+interface WatchTranscriptState {
+  assistantText: string
+  assistantTimestamp?: string
+}
 
 function fallbackRandomId(): string {
   return Math.random().toString(36).slice(2, 10).padEnd(8, '0')
@@ -320,6 +354,86 @@ export function resolveWatchQuestionAnswer(question: WatchUserInputQuestion, ans
   return [normalized]
 }
 
+function recordFromUnknown(value: unknown): Record<string, unknown> | null {
+  return isRecord(value) ? value : null
+}
+
+function extractAcpCommand(value: unknown): string | undefined {
+  if (typeof value === 'string' && value.trim()) {
+    return value.trim()
+  }
+
+  const record = recordFromUnknown(value)
+  if (!record) {
+    return undefined
+  }
+
+  const command = firstNonEmpty([
+    typeof record.command === 'string' ? record.command : undefined,
+    typeof record.cmd === 'string' ? record.cmd : undefined,
+  ])
+  const args = Array.isArray(record.args)
+    ? record.args.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    : []
+
+  if (command && args.length > 0) {
+    return `${command} ${args.join(' ')}`
+  }
+
+  return command ?? extractWatchJsonText(record)
+}
+
+function normalizeAcpPermissionOptions(value: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value.filter((item): item is Record<string, unknown> => isRecord(item))
+}
+
+function selectAcpPermissionOption(
+  options: Array<Record<string, unknown>>,
+  decision: WatchApprovalDecision,
+): string | undefined {
+  if (decision === 'cancel') {
+    return undefined
+  }
+
+  const preferredKinds = decision === 'accept'
+    ? ['allow_once', 'allow_always']
+    : decision === 'accept_for_session'
+      ? ['allow_always', 'allow_once']
+      : ['reject_once', 'reject_always']
+
+  for (const kind of preferredKinds) {
+    const match = options.find((option) => option.kind === kind && typeof option.optionId === 'string')
+    if (match && typeof match.optionId === 'string') {
+      return match.optionId
+    }
+  }
+
+  const preferredNames = decision === 'decline'
+    ? ['reject', 'deny', 'decline', 'no']
+    : ['allow', 'approve', 'yes']
+
+  for (const option of options) {
+    if (typeof option.optionId !== 'string' || typeof option.name !== 'string') {
+      continue
+    }
+
+    const name = option.name.toLowerCase()
+    if (preferredNames.some((token) => name.includes(token))) {
+      return option.optionId
+    }
+  }
+
+  const fallback = decision === 'decline'
+    ? options.find((option) => typeof option.optionId === 'string')
+    : options.find((option) => typeof option.optionId === 'string')
+
+  return typeof fallback?.optionId === 'string' ? fallback.optionId : undefined
+}
+
 export function createWatchSessionId(options: CreateWatchSessionIdOptions = {}): string {
   const now = options.now ?? new Date()
   const randomId = (options.randomId?.trim() || globalThis.crypto?.randomUUID?.() || fallbackRandomId()).slice(0, 8)
@@ -404,6 +518,47 @@ export function resolveWatchCredentialSourceResolution(input: {
       message: formatWatchAutoFallbackMessage(localMessage, detail),
     },
   }
+}
+
+export function resolveWatchAutoApprovalDecision(input: {
+  mode: WatchMode
+  request: WatchApprovalRequest
+}): WatchApprovalDecision | null {
+  const { mode, request } = input
+
+  if (request.kind === 'command-approval') {
+    if (mode === 'auto') {
+      return 'accept_for_session'
+    }
+
+    if (mode === 'smart' && isTrustedWatchCommand(request.command)) {
+      return 'accept'
+    }
+
+    return null
+  }
+
+  if (request.kind === 'file-change-approval') {
+    if (mode === 'auto') {
+      return 'accept_for_session'
+    }
+
+    if (mode === 'smart') {
+      return 'accept'
+    }
+
+    return null
+  }
+
+  if (request.kind === 'permissions-approval') {
+    if (mode === 'auto') {
+      return 'accept_for_session'
+    }
+
+    return null
+  }
+
+  return null
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -681,38 +836,16 @@ export function resolveWatchInteractionAutoResponse(input: {
     return null
   }
 
-  if (request.kind === 'command-approval') {
-    if (mode === 'auto') {
-      return { decision: 'acceptForSession' }
-    }
+  const decision = resolveWatchAutoApprovalDecision({
+    mode,
+    request,
+  })
 
-    if (mode === 'smart' && isTrustedWatchCommand(request.command)) {
-      return { decision: 'accept' }
-    }
-
+  if (!decision) {
     return null
   }
 
-  if (request.kind === 'file-change-approval') {
-    if (mode === 'auto') {
-      return { decision: 'acceptForSession' }
-    }
-
-    if (mode === 'smart') {
-      return { decision: 'accept' }
-    }
-
-    return null
-  }
-
-  if (request.kind === 'permissions-approval' && mode === 'auto') {
-    return {
-      permissions: request.permissions,
-      scope: 'session',
-    }
-  }
-
-  return null
+  return buildCodexApprovalResponse(request, decision)
 }
 
 export function buildCodexApprovalResponse(
@@ -764,6 +897,219 @@ export function buildCodexApprovalResponse(
 
 export function buildCodexUserInputResponse(answers: WatchUserInputAnswers): { answers: WatchUserInputAnswers } {
   return { answers }
+}
+
+export function buildWatchUserInputResponse(answers: WatchUserInputAnswers): { answers: WatchUserInputAnswers } {
+  return buildCodexUserInputResponse(answers)
+}
+
+export function normalizeAcpInteractionRequest(message: Record<string, unknown>): WatchInteractionRequest | null {
+  const method = typeof message.method === 'string' ? message.method.toLowerCase() : ''
+  const params = (recordFromUnknown(message.params) ?? {}) as Record<string, unknown>
+
+  if (method === 'session/request_permission' || Array.isArray(params.options)) {
+    const toolCall = (recordFromUnknown(params.toolCall) ?? {}) as Record<string, unknown>
+    const toolKind = typeof toolCall.kind === 'string' ? toolCall.kind : ''
+    const command = extractAcpCommand(toolCall.rawInput)
+    const cwd = firstNonEmpty([
+      typeof toolCall.cwd === 'string' ? toolCall.cwd : undefined,
+      recordFromUnknown(toolCall.rawInput) && typeof recordFromUnknown(toolCall.rawInput)?.cwd === 'string'
+        ? recordFromUnknown(toolCall.rawInput)?.cwd as string
+        : undefined,
+    ])
+    const messageText = firstNonEmpty([
+      typeof toolCall.title === 'string' ? toolCall.title : undefined,
+      command,
+      extractWatchJsonText(toolCall),
+      method || undefined,
+    ]) ?? 'Approval required'
+
+    if (toolKind === 'execute' || command) {
+      return {
+        kind: 'command-approval',
+        message: command ?? messageText,
+        ...(command ? { command } : {}),
+        ...(cwd ? { cwd } : {}),
+        raw: message,
+      }
+    }
+
+    if (toolKind === 'edit' || toolKind === 'delete' || toolKind === 'move') {
+      return {
+        kind: 'file-change-approval',
+        message: messageText,
+        reason: messageText,
+        raw: message,
+      }
+    }
+
+    return {
+      kind: 'permissions-approval',
+      message: messageText,
+      permissions: recordFromUnknown(toolCall.rawInput) ?? {},
+      raw: message,
+    }
+  }
+
+  const looksLikeInput = method.includes('request_input')
+    || method.includes('requestuserinput')
+    || method.includes('user_input')
+    || Array.isArray(params.questions)
+
+  if (!looksLikeInput) {
+    return null
+  }
+
+  const questions = Array.isArray(params.questions)
+    ? params.questions
+      .map((question, index) => normalizeWatchUserInputQuestion(question, `question-${index + 1}`))
+      .filter((question): question is WatchUserInputQuestion => question !== null)
+    : []
+
+  return {
+    kind: 'user-input',
+    message: firstNonEmpty([
+      extractWatchJsonText(params.message),
+      extractWatchJsonText(params.prompt),
+      extractWatchJsonText(params.question),
+      questions[0]?.question,
+    ]) ?? 'Input required',
+    questions,
+    raw: message,
+  }
+}
+
+export function normalizeAcpRequest(message: Record<string, unknown>): WatchNormalizedEvent[] {
+  const interaction = normalizeAcpInteractionRequest(message)
+  if (!interaction) {
+    return []
+  }
+
+  if (interaction.kind === 'user-input') {
+    return [{
+      type: 'input.required',
+      message: interaction.message,
+      request: interaction,
+      raw: message,
+    }]
+  }
+
+  const events: WatchNormalizedEvent[] = [{
+    type: 'approval.required',
+    message: interaction.message,
+    request: interaction,
+    raw: message,
+  }]
+
+  if (interaction.kind === 'command-approval' && interaction.command) {
+    events.push({
+      type: 'tool.call',
+      name: 'commandExecution',
+      arguments: {
+        command: interaction.command,
+        cwd: interaction.cwd,
+      },
+      raw: message,
+    })
+  }
+
+  return events
+}
+
+function normalizeAcpToolCallEvent(
+  update: Record<string, unknown>,
+  raw: Record<string, unknown>,
+): WatchToolCallEvent | null {
+  const name = firstNonEmpty([
+    typeof update.title === 'string' ? update.title : undefined,
+    typeof update.kind === 'string' ? update.kind : undefined,
+    typeof update.toolCallId === 'string' ? update.toolCallId : undefined,
+  ])
+
+  if (!name) {
+    return null
+  }
+
+  return {
+    type: 'tool.call',
+    name,
+    arguments: extractWatchJsonArguments(update.rawInput),
+    raw,
+  }
+}
+
+export function normalizeAcpSessionNotification(message: Record<string, unknown>): WatchNormalizedEvent[] {
+  const method = typeof message.method === 'string' ? message.method : ''
+  const params = (recordFromUnknown(message.params) ?? {}) as Record<string, unknown>
+
+  if (method !== 'session/update') {
+    return []
+  }
+
+  const update = (recordFromUnknown(params.update) ?? {}) as Record<string, unknown>
+  const updateType = firstNonEmpty([
+    typeof update.sessionUpdate === 'string' ? update.sessionUpdate : undefined,
+    typeof update.type === 'string' ? update.type : undefined,
+  ])?.toLowerCase() ?? ''
+
+  if (updateType === 'agent_message_chunk') {
+    const text = extractWatchJsonText(update.content ?? update)
+    return text ? [{ type: 'assistant.delta', text, raw: message }] : []
+  }
+
+  if (updateType === 'agent_thought_chunk') {
+    const text = extractWatchJsonText(update.content ?? update)
+    return text ? [{ type: 'session.note', message: text, raw: message }] : []
+  }
+
+  if (updateType === 'tool_call' || updateType === 'tool_call_update') {
+    const toolEvent = normalizeAcpToolCallEvent(update, message)
+    if (toolEvent) {
+      return [toolEvent]
+    }
+  }
+
+  const text = extractWatchJsonText(update)
+  if (!text) {
+    return []
+  }
+
+  return [{
+    type: 'session.note',
+    message: text,
+    raw: message,
+  }]
+}
+
+export function buildAcpPermissionResponse(
+  request: WatchApprovalRequest,
+  decision: WatchApprovalDecision,
+): { outcome: { outcome: 'selected'; optionId: string } | { outcome: 'cancelled' } } {
+  if (decision === 'cancel') {
+    return {
+      outcome: { outcome: 'cancelled' },
+    }
+  }
+
+  const raw = recordFromUnknown(request.raw)
+  const params = recordFromUnknown(raw?.params) ?? {}
+  const optionId = selectAcpPermissionOption(
+    normalizeAcpPermissionOptions(params.options),
+    decision,
+  )
+
+  if (!optionId) {
+    return {
+      outcome: { outcome: 'cancelled' },
+    }
+  }
+
+  return {
+    outcome: {
+      outcome: 'selected',
+      optionId,
+    },
+  }
 }
 
 function maybeWatchToolEvent(json: Record<string, unknown>, lowerType: string): WatchNormalizedEvent | null {
@@ -1095,4 +1441,184 @@ export function getWatchArchiveRelativePaths(sessionId: string): WatchArchiveRel
     sessionFile: `${sessionDir}/${WATCH_SESSION_FILE_NAME}`,
     eventsFile: `${sessionDir}/${WATCH_EVENTS_FILE_NAME}`,
   }
+}
+
+export function buildWatchThreadMetadata(record: WatchSessionRecord): WatchThreadMetadata {
+  return {
+    kind: 'watch',
+    delegatedTo: 'secretary',
+    sessionId: record.id,
+    backend: record.backend,
+    runtime: record.runtime,
+    transport: record.transport,
+    mode: record.mode,
+    cwd: record.cwd,
+    model: record.model,
+    credentialSource: record.credentialSource,
+    resolvedCredentialSource: record.resolvedCredentialSource,
+    approvalSource: record.approvalSource,
+    status: record.status,
+    backendSessionId: record.backendSessionId,
+  }
+}
+
+function pushWatchTranscriptMessage(
+  messages: WatchTranscriptMessage[],
+  role: WatchTranscriptMessageRole,
+  content: string | undefined,
+  createdAt: string,
+): void {
+  const normalized = content?.replace(/\r/g, '').trimEnd()
+  if (!normalized) {
+    return
+  }
+
+  messages.push({
+    role,
+    content: normalized,
+    createdAt,
+  })
+}
+
+function flushWatchAssistantMessage(
+  messages: WatchTranscriptMessage[],
+  state: WatchTranscriptState,
+  fallbackTimestamp: string,
+): void {
+  if (!state.assistantText.trim()) {
+    state.assistantText = ''
+    state.assistantTimestamp = undefined
+    return
+  }
+
+  pushWatchTranscriptMessage(
+    messages,
+    'assistant',
+    state.assistantText,
+    state.assistantTimestamp ?? fallbackTimestamp,
+  )
+  state.assistantText = ''
+  state.assistantTimestamp = undefined
+}
+
+function appendWatchTranscriptEvent(
+  messages: WatchTranscriptMessage[],
+  state: WatchTranscriptState,
+  entry: WatchEventLogEntry,
+  event: WatchNormalizedEvent,
+): void {
+  if (event.type === 'assistant.delta') {
+    if (!state.assistantTimestamp) {
+      state.assistantTimestamp = entry.timestamp
+    }
+
+    state.assistantText += event.text
+    return
+  }
+
+  if (event.type === 'assistant.done') {
+    if (event.text && !state.assistantText) {
+      pushWatchTranscriptMessage(messages, 'assistant', event.text, entry.timestamp)
+      return
+    }
+
+    flushWatchAssistantMessage(messages, state, entry.timestamp)
+    return
+  }
+
+  flushWatchAssistantMessage(messages, state, entry.timestamp)
+
+  if (event.type === 'tool.call') {
+    pushWatchTranscriptMessage(
+      messages,
+      'system',
+      `[tool] ${event.name}${event.arguments ? ` ${JSON.stringify(event.arguments)}` : ''}`,
+      entry.timestamp,
+    )
+    return
+  }
+
+  if (event.type === 'approval.required') {
+    pushWatchTranscriptMessage(messages, 'system', `[approval] ${event.message}`, entry.timestamp)
+    return
+  }
+
+  if (event.type === 'input.required') {
+    pushWatchTranscriptMessage(messages, 'system', `[input] ${event.message}`, entry.timestamp)
+    return
+  }
+
+  pushWatchTranscriptMessage(messages, 'system', `[note] ${event.message}`, entry.timestamp)
+}
+
+function appendWatchTranscriptRawEntry(
+  messages: WatchTranscriptMessage[],
+  entry: WatchEventLogEntry,
+): void {
+  const trimmed = entry.line.trim()
+  if (!trimmed) {
+    return
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as Record<string, unknown>
+    const type = typeof parsed.type === 'string' ? parsed.type : ''
+
+    if (type === 'user.turn' && typeof parsed.text === 'string') {
+      pushWatchTranscriptMessage(messages, 'user', parsed.text, entry.timestamp)
+      return
+    }
+
+    if (type === 'turn.start') {
+      const command = typeof parsed.command === 'string' ? parsed.command : 'unknown'
+      const args = Array.isArray(parsed.args)
+        ? parsed.args.filter((value): value is string => typeof value === 'string')
+        : []
+      pushWatchTranscriptMessage(messages, 'system', `[turn] ${[command, ...args].join(' ').trim()}`, entry.timestamp)
+      return
+    }
+
+    if (type === 'credentials.resolve') {
+      const requested = typeof parsed.requestedCredentialSource === 'string' ? parsed.requestedCredentialSource : 'auto'
+      const resolved = typeof parsed.resolvedCredentialSource === 'string' ? parsed.resolvedCredentialSource : requested
+      pushWatchTranscriptMessage(messages, 'system', `[credentials] ${requested} -> ${resolved}`, entry.timestamp)
+      return
+    }
+
+    if (type === 'process.error' && typeof parsed.message === 'string') {
+      pushWatchTranscriptMessage(messages, 'system', `[error] ${parsed.message}`, entry.timestamp)
+      return
+    }
+  } catch {
+    // Keep original line when it is not structured JSON.
+  }
+
+  pushWatchTranscriptMessage(
+    messages,
+    'system',
+    entry.stream === 'stderr' ? `stderr> ${trimmed}` : trimmed,
+    entry.timestamp,
+  )
+}
+
+export function buildWatchTranscriptMessages(entries: WatchEventLogEntry[]): WatchTranscriptMessage[] {
+  const messages: WatchTranscriptMessage[] = []
+  const state: WatchTranscriptState = {
+    assistantText: '',
+  }
+
+  for (const entry of entries) {
+    if (entry.events.length > 0) {
+      for (const event of entry.events) {
+        appendWatchTranscriptEvent(messages, state, entry, event)
+      }
+      continue
+    }
+
+    flushWatchAssistantMessage(messages, state, entry.timestamp)
+    appendWatchTranscriptRawEntry(messages, entry)
+  }
+
+  flushWatchAssistantMessage(messages, state, new Date().toISOString())
+  return messages
 }

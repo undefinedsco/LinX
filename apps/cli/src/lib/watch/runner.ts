@@ -1,61 +1,79 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { setTimeout as delay } from 'node:timers/promises'
 import {
-  buildCodexApprovalResponse,
-  buildCodexUserInputResponse,
-  normalizeCodexAppServerNotification,
-  normalizeCodexAppServerInteractionRequest,
-  normalizeCodexAppServerRequest,
+  buildAcpPermissionResponse,
+  buildWatchUserInputResponse,
+  normalizeAcpInteractionRequest,
+  normalizeAcpRequest,
+  normalizeAcpSessionNotification,
   normalizeWatchCredentialSource,
   parseWatchJsonLine,
-  resolveWatchInteractionAutoResponse,
-  resolveWatchQuestionAnswer,
+  resolveWatchAutoApprovalDecision,
   resolveWatchCredentialSourceResolution,
   shouldAttemptCloudCredentialProbe,
   type WatchAuthStatus,
   type WatchApprovalDecision,
   type WatchApprovalRequest,
   type WatchCloudCredentialProbe,
-  type WatchUserInputAnswers,
   type WatchUserInputQuestion,
 } from '@linx/models/watch'
 import {
   appendWatchEvent,
   createWatchSession,
   finishWatchSession,
+  loadWatchEvents,
   loadWatchSession,
   listWatchSessions,
   writeWatchSession,
 } from './archive.js'
 import { detectWatchAuthFailure, preflightWatchAuth, type WatchAuthPreflightResult } from './auth.js'
+import { createWatchDisplay, type WatchDisplay } from './display.js'
+import { formatWatchSessionSummary } from './format.js'
 import { describeWatchMode, getWatchHook, listWatchHooks } from './hooks/index.js'
+import {
+  createRemoteWatchApproval,
+  isRemoteApprovalAbortError,
+  resolveRemoteWatchApproval,
+  waitForRemoteWatchApproval,
+} from './pod-approval.js'
+import { persistWatchConversationToPod } from './pod-persistence.js'
 import { loadPodBackendCredential, podCredentialMissingMessage } from './pod-ai.js'
 import { promptText } from '../prompt.js'
 import type {
   WatchBackendHook,
   WatchCredentialSource,
   WatchEventLogEntry,
+  WatchInputController,
   WatchNormalizedEvent,
+  WatchPromptSubmission,
+  WatchQueueState,
   WatchRuntime,
   WatchRunOptions,
-  WatchSpawnPlan,
   WatchSessionRecord,
+  WatchSpawnPlan,
 } from './types.js'
 
-type OutputStream = 'stdout' | 'stderr'
+type OutputStream = 'stdout' | 'stderr' | 'system'
 
 interface WatchConversationSession {
   readonly record: WatchSessionRecord
   start(): Promise<void>
   sendTurn(text: string): Promise<void>
+  setModel(model: string): Promise<void>
   applyResolvedOptions(options: WatchRunOptions): void
   close(): Promise<void>
 }
 
-interface TurnState {
+interface WatchTurnState {
   resolve: () => void
   reject: (error: Error) => void
-  turnId?: string
+  responseReceived: boolean
+}
+
+interface PendingRpcRequest {
+  resolve: (value: unknown) => void
+  reject: (error: Error) => void
+  method: string
 }
 
 interface ResolvedWatchRun {
@@ -67,62 +85,10 @@ export const watchRuntime = {
   promptText,
   preflightWatchAuth,
   loadPodBackendCredential,
-}
-
-function quoteArg(value: string): string {
-  return /[\s"]/u.test(value) ? JSON.stringify(value) : value
-}
-
-function renderSessionHeader(record: WatchSessionRecord): void {
-  process.stdout.write(
-    `LinX watch\nsession: ${record.id}\nbackend: ${record.backend}\nruntime: ${record.runtime}\nmode: ${record.mode}\ncmd: ${quoteArg(record.command)} ${record.args.map(quoteArg).join(' ')}\n\n`,
-  )
-}
-
-function flushAssistantLine(state: { hasAssistantOutput: boolean }): void {
-  if (state.hasAssistantOutput) {
-    process.stdout.write('\n')
-    state.hasAssistantOutput = false
-  }
-}
-
-function renderEvents(events: WatchNormalizedEvent[], state: { hasAssistantOutput: boolean }): void {
-  for (const event of events) {
-    if (event.type === 'assistant.delta') {
-      process.stdout.write(event.text)
-      state.hasAssistantOutput = true
-      continue
-    }
-
-    if (event.type === 'assistant.done') {
-      if (event.text && !state.hasAssistantOutput) {
-        process.stdout.write(`${event.text}\n`)
-      } else {
-        flushAssistantLine(state)
-      }
-      continue
-    }
-
-    flushAssistantLine(state)
-
-    if (event.type === 'tool.call') {
-      const detail = event.arguments ? ` ${JSON.stringify(event.arguments)}` : ''
-      process.stdout.write(`[tool] ${event.name}${detail}\n`)
-      continue
-    }
-
-    if (event.type === 'approval.required') {
-      process.stdout.write(`[approval] ${event.message}\n`)
-      continue
-    }
-
-    if (event.type === 'input.required') {
-      process.stdout.write(`[input] ${event.message}\n`)
-      continue
-    }
-
-    process.stdout.write(`[note] ${event.message}\n`)
-  }
+  createRemoteWatchApproval,
+  waitForRemoteWatchApproval,
+  resolveRemoteWatchApproval,
+  persistWatchConversationToPod,
 }
 
 function createLineSplitter(
@@ -169,51 +135,84 @@ function appendEntry(record: WatchSessionRecord, stream: WatchEventLogEntry['str
   appendWatchEvent(record, entry)
 }
 
-function textForRawOutput(raw: unknown): string | undefined {
-  if (typeof raw === 'string' && raw.trim()) {
-    return raw
-  }
+function appendSessionNote(record: WatchSessionRecord, message: string, raw?: unknown): void {
+  appendEntry(record, 'system', JSON.stringify({
+    type: 'session.note',
+    message,
+  }), [{
+    type: 'session.note',
+    message,
+    raw,
+  }])
+}
 
-  if (typeof raw !== 'object' || raw === null) {
-    return undefined
-  }
+async function promptApproval(
+  display: WatchDisplay,
+  message: string,
+  allowSessionOption = true,
+  signal?: AbortSignal,
+): Promise<WatchApprovalDecision> {
+  while (true) {
+    display.setPhase('approval', message)
+    const answer = (await display.chooseOption(
+      'Approval required',
+      [`[approval] ${message}`],
+      allowSessionOption
+        ? [
+          { label: 'Yes', value: 'y', shortcuts: ['y'] },
+          { label: 'Session', value: 's', shortcuts: ['s'] },
+          { label: 'No', value: 'n', shortcuts: ['n'] },
+          { label: 'Cancel', value: 'c', shortcuts: ['c'] },
+        ]
+        : [
+          { label: 'Yes', value: 'y', shortcuts: ['y'] },
+          { label: 'No', value: 'n', shortcuts: ['n'] },
+          { label: 'Cancel', value: 'c', shortcuts: ['c'] },
+        ],
+      signal,
+    )).trim().toLowerCase()
 
-  const record = raw as Record<string, unknown>
-  const candidates = [record.message, record.reason, record.delta, record.text, record.summary]
-
-  for (const candidate of candidates) {
-    if (typeof candidate === 'string' && candidate.trim()) {
-      return candidate
+    if (answer === 'y' || answer === 'yes') {
+      display.setPhase('running', 'Continuing turn')
+      return 'accept'
+    }
+    if (allowSessionOption && (answer === 's' || answer === 'session')) {
+      display.setPhase('running', 'Continuing turn')
+      return 'accept_for_session'
+    }
+    if (answer === 'n' || answer === 'no') {
+      display.setPhase('running', 'Continuing turn')
+      return 'decline'
+    }
+    if (answer === 'c' || answer === 'cancel') {
+      display.setPhase('running', 'Continuing turn')
+      return 'cancel'
     }
   }
-
-  return undefined
 }
 
-async function promptApproval(message: string, allowSessionOption = true): Promise<WatchApprovalDecision> {
+async function promptAuthContinue(display: WatchDisplay, lines: string[]): Promise<boolean> {
   while (true) {
-    const suffix = allowSessionOption ? ' [y]es/[s]ession/[n]o/[c]ancel: ' : ' [y]es/[n]o/[c]ancel: '
-    const answer = (await watchRuntime.promptText(`${message}${suffix}`)).trim().toLowerCase()
+    display.setPhase('question', 'Authentication required')
+    const answer = (await display.chooseOption(
+      'Authentication required',
+      lines,
+      [
+        { label: 'Continue', value: 'continue', shortcuts: ['c', 'y'] },
+        { label: 'Cancel', value: 'cancel', shortcuts: ['n', 'x'] },
+      ],
+    )).trim().toLowerCase()
 
-    if (answer === 'y' || answer === 'yes') return 'accept'
-    if (allowSessionOption && (answer === 's' || answer === 'session')) return 'accept_for_session'
-    if (answer === 'n' || answer === 'no') return 'decline'
-    if (answer === 'c' || answer === 'cancel') return 'cancel'
+    if (answer === 'continue' || answer === 'c' || answer === 'y' || answer === 'yes') {
+      display.setPhase('running', 'Continuing turn')
+      return true
+    }
+
+    if (answer === 'cancel' || answer === 'n' || answer === 'x' || answer === 'no') {
+      display.setPhase('running', 'Continuing turn')
+      return false
+    }
   }
-}
-
-async function promptToolQuestion(question: WatchUserInputQuestion): Promise<string[]> {
-  const options = question.options
-
-  process.stdout.write(`[input] ${question.header}: ${question.question}\n`)
-  if (options.length > 0) {
-    options.forEach((option, index) => {
-      process.stdout.write(`  ${index + 1}. ${option.label}${option.description ? ` - ${option.description}` : ''}\n`)
-    })
-  }
-
-  const raw = (await watchRuntime.promptText('answer> ')).trim()
-  return resolveWatchQuestionAnswer(question, raw)
 }
 
 function approvalPromptMessage(request: WatchApprovalRequest): string {
@@ -229,7 +228,7 @@ function approvalPromptMessage(request: WatchApprovalRequest): string {
     return request.message || 'Approve additional permissions'
   }
 
-  return request.message || 'Codex requests approval'
+  return request.message || 'Approval required'
 }
 
 function appendUserTurn(record: WatchSessionRecord, text: string): void {
@@ -244,20 +243,43 @@ function requestedCredentialSource(options: WatchRunOptions): WatchCredentialSou
   return normalizeWatchCredentialSource(options.credentialSource)
 }
 
+function requestedApprovalSource(options: WatchRunOptions): 'local' | 'remote' | 'hybrid' {
+  return options.approvalSource ?? 'hybrid'
+}
+
 function requestedRuntime(options: WatchRunOptions): WatchRuntime {
   return options.runtime ?? 'local'
 }
 
+function normalizeBackendCommandEnv(
+  backend: WatchRunOptions['backend'],
+  env: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  if (!env) {
+    return undefined
+  }
+
+  const next = { ...env }
+
+  if (backend === 'codex' && next.OPENAI_API_KEY && !next.CODEX_API_KEY) {
+    next.CODEX_API_KEY = next.OPENAI_API_KEY
+  }
+
+  return next
+}
+
 function mergeCommandEnv(
+  backend: WatchRunOptions['backend'],
   commandEnv: Record<string, string> | undefined,
   planEnv: Record<string, string> | undefined,
 ): Record<string, string> | undefined {
-  if (!commandEnv && !planEnv) {
+  const normalizedCommandEnv = normalizeBackendCommandEnv(backend, commandEnv)
+  if (!normalizedCommandEnv && !planEnv) {
     return undefined
   }
 
   return {
-    ...(commandEnv ?? {}),
+    ...(normalizedCommandEnv ?? {}),
     ...(planEnv ?? {}),
   }
 }
@@ -277,8 +299,10 @@ function syncRecordFromOptions(
     passthroughArgs: [...options.passthroughArgs],
     credentialSource: requestedCredentialSource(options),
     resolvedCredentialSource: options.resolvedCredentialSource,
+    approvalSource: requestedApprovalSource(options),
     command: plan.command,
     args: [...plan.args],
+    transport: options.transport ?? 'acp',
   }
 }
 
@@ -289,7 +313,9 @@ function withResolvedSource(
 ): WatchRunOptions {
   return {
     ...options,
+    transport: options.transport ?? 'acp',
     credentialSource: requestedCredentialSource(options),
+    approvalSource: requestedApprovalSource(options),
     resolvedCredentialSource,
     commandEnv,
   }
@@ -315,7 +341,7 @@ async function probeCloudCredentialSource(
 
     return {
       probe: { status: 'available' },
-      commandEnv: { ...podCredential.env },
+      commandEnv: normalizeBackendCommandEnv(backend, { ...podCredential.env }),
     }
   } catch (error) {
     return {
@@ -383,15 +409,16 @@ export async function resolveWatchRunOptions(
 
 abstract class BaseSession implements WatchConversationSession {
   readonly record: WatchSessionRecord
-  protected readonly renderState = { hasAssistantOutput: false }
+  readonly display: WatchDisplay
   protected child: ChildProcessWithoutNullStreams | null = null
   private activeExitPromise: Promise<{ code: number | null; signal: NodeJS.Signals | null }> | null = null
   private activeExitResolve: ((result: { code: number | null; signal: NodeJS.Signals | null }) => void) | null = null
   protected closed = false
   protected lastExit: { code: number | null; signal: NodeJS.Signals | null } | null = null
 
-  constructor(record: WatchSessionRecord) {
+  constructor(record: WatchSessionRecord, prompt: typeof watchRuntime.promptText) {
     this.record = record
+    this.display = createWatchDisplay(record, prompt)
   }
 
   protected spawnProcess(command: string, args: string[], cwd: string, env?: Record<string, string>): ChildProcessWithoutNullStreams {
@@ -429,7 +456,7 @@ abstract class BaseSession implements WatchConversationSession {
     return child
   }
 
-  async finalizeAndClose(status: 'completed' | 'failed', error?: string): Promise<void> {
+  async finalizeAndClose(status: 'completed' | 'failed', error?: string): Promise<WatchSessionRecord> {
     const exitState = await this.waitForActiveExit()
     const next = finishWatchSession(this.record, {
       status,
@@ -437,34 +464,25 @@ abstract class BaseSession implements WatchConversationSession {
       signal: exitState.signal,
       error,
     })
-    flushAssistantLine(this.renderState)
-    if (status === 'completed') {
-      process.stdout.write(`\n[session] completed ${next.id}\n`)
-    } else {
-      process.stderr.write(`\n[session] failed ${next.id}${error ? `: ${error}` : ''}\n`)
-    }
+    this.display.finish(status, next, error)
+    return next
   }
 
   protected recordParsedLine(stream: OutputStream, line: string, events: WatchNormalizedEvent[]): void {
     appendEntry(this.record, stream, line, events)
 
     if (events.length > 0) {
-      renderEvents(events, this.renderState)
+      this.display.renderEvents(events)
       return
     }
 
-    flushAssistantLine(this.renderState)
-    if (!line.trim()) {
-      return
-    }
-
-    const target = stream === 'stderr' ? process.stderr : process.stdout
-    target.write(`${line}\n`)
+    this.display.renderRawLine(stream, line)
   }
 
   protected updateRecord(updates: Partial<WatchSessionRecord>): void {
     Object.assign(this.record, updates)
     writeWatchSession(this.record)
+    this.display.updateRecord(this.record)
   }
 
   protected waitForActiveExit(): Promise<{ code: number | null; signal: NodeJS.Signals | null }> {
@@ -484,6 +502,7 @@ abstract class BaseSession implements WatchConversationSession {
 
   abstract start(): Promise<void>
   abstract sendTurn(text: string): Promise<void>
+  abstract setModel(model: string): Promise<void>
   abstract applyResolvedOptions(options: WatchRunOptions): void
 
   async close(): Promise<void> {
@@ -507,131 +526,31 @@ abstract class BaseSession implements WatchConversationSession {
   }
 }
 
-class PerTurnCliSession extends BaseSession {
+class AcpSession extends BaseSession {
   private readonly hook: WatchBackendHook
   private options: WatchRunOptions
-  private turnState: TurnState | null = null
-  private turnIndex = 0
+  private requestId = 1
+  private readonly pendingRequests = new Map<number, PendingRpcRequest>()
+  private turnState: WatchTurnState | null = null
+  private sessionId: string | null = null
   private authFailureMessage: string | null = null
+  private turnSettleTimer: NodeJS.Timeout | null = null
+  private activeAgentRequests = 0
 
   constructor(options: WatchRunOptions, hook: WatchBackendHook) {
-    const plan = hook.buildSpawnPlan({ ...options, prompt: undefined })
-    super(createWatchSession({ ...options, prompt: options.prompt }, plan))
+    const plan = hook.buildSpawnPlan(options)
+    super(createWatchSession({ ...options, transport: options.transport ?? 'acp' }, plan), watchRuntime.promptText)
     this.hook = hook
     this.options = options
   }
 
-  async start(): Promise<void> {}
-
-  applyResolvedOptions(options: WatchRunOptions): void {
-    this.options = options
-    const plan = this.hook.buildSpawnPlan({ ...options, prompt: undefined })
-    this.updateRecord(syncRecordFromOptions(this.record, options, plan))
-  }
-
-  async sendTurn(text: string): Promise<void> {
-    if (!this.hook.buildTurnPlan) {
-      throw new Error(`Watch backend ${this.hook.id} does not support per-turn execution`)
-    }
-    if (this.turnState) {
-      throw new Error('A watch turn is already in progress')
-    }
-
-    const plan = this.hook.buildTurnPlan(this.options, {
-      backendSessionId: this.record.backendSessionId,
-      prompt: text,
-      turnIndex: this.turnIndex,
-    })
-
-    appendUserTurn(this.record, text)
-    appendTurnStart(this.record, plan.command, plan.args)
-    this.authFailureMessage = null
-
+  async start(): Promise<void> {
+    const plan = this.hook.buildSpawnPlan(this.options)
     const child = this.spawnProcess(
       plan.command,
       plan.args,
       this.record.cwd,
-      mergeCommandEnv(this.options.commandEnv, plan.env),
-    )
-    const stdoutSplitter = createLineSplitter('stdout', this.handleLine.bind(this))
-    const stderrSplitter = createLineSplitter('stderr', this.handleLine.bind(this))
-
-    child.stdout.on('data', (chunk: string) => stdoutSplitter.push(chunk))
-    child.stderr.on('data', (chunk: string) => stderrSplitter.push(chunk))
-    child.on('exit', () => {
-      stdoutSplitter.flush()
-      stderrSplitter.flush()
-    })
-    child.stdin.end()
-
-    await new Promise<void>((resolve, reject) => {
-      this.turnState = { resolve, reject }
-    })
-
-    this.turnIndex += 1
-  }
-
-  protected onProcessExit(code: number | null, signal: NodeJS.Signals | null): void {
-    if (this.turnState) {
-      const { resolve, reject } = this.turnState
-      this.turnState = null
-      if (code === 0 && !this.authFailureMessage) {
-        resolve()
-        return
-      }
-
-      reject(new Error(this.authFailureMessage ?? `Watch process exited during turn (${code ?? signal ?? 'null'})`))
-    }
-  }
-
-  protected onProcessFailure(error: Error): void {
-    if (this.turnState) {
-      const reject = this.turnState.reject
-      this.turnState = null
-      reject(error)
-    }
-  }
-
-  private handleLine(line: string, stream: OutputStream): void {
-    const authFailure = detectWatchAuthFailure(this.record.backend, line)
-    if (authFailure) {
-      this.authFailureMessage = authFailure.message
-    }
-
-    const events = this.hook.parseLine(line, stream)
-    this.recordParsedLine(stream, line, events)
-
-    const backendSessionId = this.hook.extractSessionId?.(line)
-    if (backendSessionId && backendSessionId !== this.record.backendSessionId) {
-      this.updateRecord({
-        backendSessionId,
-        error: undefined,
-      })
-    }
-  }
-}
-
-class CodexAppServerSession extends BaseSession {
-  private requestId = 1
-  private readonly pendingRequests = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>()
-  private options: WatchRunOptions
-  private turnState: TurnState | null = null
-  private threadId: string | null = null
-  private authFailureMessage: string | null = null
-
-  constructor(options: WatchRunOptions) {
-    const hook = getWatchHook('codex')
-    const plan = hook.buildSpawnPlan({ ...options, prompt: undefined })
-    super(createWatchSession({ ...options, prompt: options.prompt }, plan))
-    this.options = options
-  }
-
-  async start(): Promise<void> {
-    const child = this.spawnProcess(
-      this.record.command,
-      this.record.args,
-      this.record.cwd,
-      this.options.commandEnv,
+      mergeCommandEnv(this.options.backend, this.options.commandEnv, plan.env),
     )
     const stdoutSplitter = createLineSplitter('stdout', this.handleLine.bind(this))
     const stderrSplitter = createLineSplitter('stderr', this.handleLine.bind(this))
@@ -644,80 +563,116 @@ class CodexAppServerSession extends BaseSession {
     })
 
     await this.sendRequest('initialize', {
+      protocolVersion: 1,
+      clientCapabilities: {},
       clientInfo: {
         name: 'linx-cli',
-        title: 'LinX CLI',
         version: '0.1.0',
       },
-      capabilities: null,
     })
-    this.sendNotification('initialized')
 
-    const response = await this.sendRequest('thread/start', {
-      model: this.options.model ?? null,
+    const newSession = await this.sendRequest('session/new', {
       cwd: this.options.cwd,
-      approvalPolicy: this.approvalPolicy(),
-      sandbox: this.sandboxMode(),
-      ephemeral: false,
-      experimentalRawEvents: false,
-      persistExtendedHistory: false,
-    }) as { thread?: { id?: string } }
+    }) as Record<string, unknown>
 
-    const threadId = response.thread?.id
-    if (!threadId) {
-      throw new Error('Codex app-server did not return a thread id')
+    const sessionId = typeof newSession.sessionId === 'string'
+      ? newSession.sessionId
+      : typeof (newSession.session as Record<string, unknown> | undefined)?.id === 'string'
+        ? ((newSession.session as Record<string, unknown>).id as string)
+        : null
+
+    if (!sessionId) {
+      throw new Error(`ACP backend ${this.options.backend} did not return a session id`)
     }
 
-    this.threadId = threadId
+    this.sessionId = sessionId
+    this.updateRecord({
+      backendSessionId: sessionId,
+      error: undefined,
+    })
+
+    if (this.options.model) {
+      await this.trySetModel(this.options.model)
+    }
+  }
+
+  applyResolvedOptions(options: WatchRunOptions): void {
+    this.options = options
+    const plan = this.hook.buildSpawnPlan(options)
+    this.updateRecord(syncRecordFromOptions(this.record, options, plan))
+  }
+
+  async setModel(model: string): Promise<void> {
+    const normalized = model.trim()
+    if (!normalized) {
+      throw new Error('Model id cannot be empty')
+    }
+
+    this.options = {
+      ...this.options,
+      model: normalized,
+    }
+    this.updateRecord({
+      model: normalized,
+    })
+    await this.trySetModel(normalized)
   }
 
   async sendTurn(text: string): Promise<void> {
-    if (!this.threadId) {
-      throw new Error('Codex thread is not initialized')
+    if (!this.sessionId) {
+      throw new Error('ACP session is not initialized')
     }
     if (this.turnState) {
       throw new Error('A watch turn is already in progress')
     }
 
     appendUserTurn(this.record, text)
+    appendTurnStart(this.record, this.record.command, this.record.args)
     this.authFailureMessage = null
 
     const completion = new Promise<void>((resolve, reject) => {
-      this.turnState = { resolve, reject }
+      this.turnState = {
+        resolve,
+        reject,
+        responseReceived: false,
+      }
     })
+    void completion.catch(() => {})
 
     try {
-      const response = await this.sendRequest('turn/start', {
-        threadId: this.threadId,
-        input: [{ type: 'text', text, text_elements: [] }],
-        model: this.options.model ?? null,
-      }) as { turn?: { id?: string } }
+      const response = await this.sendRequest('session/prompt', {
+        sessionId: this.sessionId,
+        prompt: [{ type: 'text', text }],
+      }) as Record<string, unknown>
 
-      const turnState = this.turnState as TurnState | null
-      if (turnState && response.turn?.id) {
-        turnState.turnId = response.turn.id
+      const turnState = this.turnState as WatchTurnState | null
+      if (turnState === null) {
+        return
       }
+
+      ;(turnState as WatchTurnState).responseReceived = true
+      this.recordParsedLine('system', JSON.stringify({
+        type: 'turn.stop',
+        stopReason: typeof response.stopReason === 'string' ? response.stopReason : undefined,
+      }), [{
+        type: 'assistant.done',
+        raw: {
+          stopReason: typeof response.stopReason === 'string' ? response.stopReason : undefined,
+        },
+      }])
+      this.scheduleTurnSettle()
     } catch (error) {
-      const turnState = this.turnState as TurnState | null
-      if (turnState) {
-        this.turnState = null
-        turnState.reject(error instanceof Error ? error : new Error(String(error)))
-      }
+      this.turnState = null
+      this.clearTurnSettleTimer()
       throw error
     }
 
     await completion
   }
 
-  applyResolvedOptions(options: WatchRunOptions): void {
-    this.options = options
-    const hook = getWatchHook('codex')
-    const plan = hook.buildSpawnPlan({ ...options, prompt: undefined })
-    this.updateRecord(syncRecordFromOptions(this.record, options, plan))
-  }
-
-  protected onProcessExit(code: number | null): void {
-    const errorMessage = this.authFailureMessage ?? `Codex app-server exited (${code ?? 'null'})`
+  protected onProcessExit(code: number | null, signal: NodeJS.Signals | null): void {
+    this.clearTurnSettleTimer()
+    const errorMessage = this.authFailureMessage ?? `ACP backend exited (${code ?? signal ?? 'null'})`
     for (const pending of this.pendingRequests.values()) {
       pending.reject(new Error(errorMessage))
     }
@@ -726,11 +681,12 @@ class CodexAppServerSession extends BaseSession {
     if (this.turnState) {
       const reject = this.turnState.reject
       this.turnState = null
-      reject(new Error(this.authFailureMessage ?? `Codex app-server exited during turn (${code ?? 'null'})`))
+      reject(new Error(this.authFailureMessage ?? `ACP backend exited during turn (${code ?? signal ?? 'null'})`))
     }
   }
 
   protected onProcessFailure(error: Error): void {
+    this.clearTurnSettleTimer()
     for (const pending of this.pendingRequests.values()) {
       pending.reject(error)
     }
@@ -743,39 +699,101 @@ class CodexAppServerSession extends BaseSession {
     }
   }
 
+  private clearTurnSettleTimer(): void {
+    if (!this.turnSettleTimer) {
+      return
+    }
+
+    clearTimeout(this.turnSettleTimer)
+    this.turnSettleTimer = null
+  }
+
+  private scheduleTurnSettle(): void {
+    if (!this.turnState || !this.turnState.responseReceived || this.activeAgentRequests > 0) {
+      return
+    }
+
+    this.clearTurnSettleTimer()
+    this.turnSettleTimer = setTimeout(() => {
+      if (!this.turnState || !this.turnState.responseReceived || this.activeAgentRequests > 0) {
+        return
+      }
+
+      const turnState = this.turnState
+      this.turnState = null
+      this.turnSettleTimer = null
+
+      if (this.authFailureMessage) {
+        turnState.reject(new Error(this.authFailureMessage))
+        return
+      }
+
+      turnState.resolve()
+    }, 75)
+  }
+
+  private markTurnActivity(): void {
+    if (!this.turnState?.responseReceived) {
+      return
+    }
+
+    this.scheduleTurnSettle()
+  }
+
   private handleLine(line: string, stream: OutputStream): void {
     const authFailure = detectWatchAuthFailure(this.record.backend, line)
     if (authFailure) {
       this.authFailureMessage = authFailure.message
     }
 
+    if (stream === 'stderr') {
+      this.recordParsedLine(stream, line, [])
+      this.markTurnActivity()
+      return
+    }
+
     const message = parseWatchJsonLine(line)
     if (!message) {
       this.recordParsedLine(stream, line, [])
+      this.markTurnActivity()
       return
     }
 
     if (typeof message.method === 'string' && typeof message.id !== 'undefined') {
-      const events = normalizeCodexAppServerRequest(message)
+      const method = message.method
+      const params = (typeof message.params === 'object' && message.params !== null ? message.params : {}) as Record<string, unknown>
+      const events = method === 'auth/request'
+        ? [{
+          type: 'session.note' as const,
+          message: [
+            typeof params.message === 'string' ? params.message : 'Authentication required',
+            typeof params.url === 'string' ? `Open ${params.url}` : '',
+          ].filter(Boolean).join(' · '),
+          raw: message,
+        }]
+        : normalizeAcpRequest(message)
       this.recordParsedLine(stream, line, events)
-      void this.handleServerRequest(message)
+      void this.handleAgentRequest(message)
+      this.markTurnActivity()
       return
     }
 
     if (typeof message.method === 'string') {
-      const events = normalizeCodexAppServerNotification(message)
+      const events = normalizeAcpSessionNotification(message)
       this.recordParsedLine(stream, line, events)
-      this.handleNotification(message)
+      this.markTurnActivity()
       return
     }
 
     if (typeof message.id !== 'undefined') {
       appendEntry(this.record, stream, line, [])
       this.handleResponse(message)
+      this.markTurnActivity()
       return
     }
 
     this.recordParsedLine(stream, line, [])
+    this.markTurnActivity()
   }
 
   private handleResponse(message: Record<string, unknown>): void {
@@ -784,178 +802,316 @@ class CodexAppServerSession extends BaseSession {
     if (!pending) {
       return
     }
+
     this.pendingRequests.delete(id)
 
     if ('error' in message && message.error) {
-      const authFailure = detectWatchAuthFailure('codex', JSON.stringify(message))
+      const authFailure = detectWatchAuthFailure(this.record.backend, JSON.stringify(message))
       if (authFailure) {
         this.authFailureMessage = authFailure.message
         pending.reject(new Error(authFailure.message))
         return
       }
 
-      pending.reject(new Error(JSON.stringify(message.error)))
+      const error = message.error as Record<string, unknown>
+      const detail = typeof error.message === 'string'
+        ? error.message
+        : JSON.stringify(error)
+      pending.reject(new Error(detail))
       return
     }
 
     pending.resolve(message.result)
   }
 
-  private handleNotification(message: Record<string, unknown>): void {
+  private async handleAgentRequest(message: Record<string, unknown>): Promise<void> {
+    const id = typeof message.id === 'number' ? message.id : Number(message.id)
     const method = typeof message.method === 'string' ? message.method : ''
-    const params = (typeof message.params === 'object' && message.params !== null
-      ? message.params
-      : {}) as Record<string, unknown>
+    const params = (typeof message.params === 'object' && message.params !== null ? message.params : {}) as Record<string, unknown>
 
-    if (method === 'turn/started' && typeof params.turn === 'object' && params.turn !== null && this.turnState) {
-      const turn = params.turn as Record<string, unknown>
-      if (typeof turn.id === 'string') {
-        this.turnState.turnId = turn.id
-      }
-      return
-    }
+    this.activeAgentRequests += 1
+    this.clearTurnSettleTimer()
 
-    if (method === 'turn/completed' && this.turnState) {
-      const turn = (typeof params.turn === 'object' && params.turn !== null ? params.turn : {}) as Record<string, unknown>
-      const completedId = typeof turn.id === 'string' ? turn.id : undefined
-
-      if (!this.turnState.turnId || !completedId || this.turnState.turnId === completedId) {
-        const resolve = this.turnState.resolve
-        this.turnState = null
-        resolve()
-      }
-      return
-    }
-
-    if (method === 'error' && this.turnState) {
-      const authFailure = detectWatchAuthFailure('codex', JSON.stringify(message))
-      if (authFailure) {
-        this.authFailureMessage = authFailure.message
+    try {
+      if (method === 'auth/request') {
+        const lines = [
+          `[note] ${typeof params.message === 'string' ? params.message : 'Authentication required'}`,
+          ...(typeof params.url === 'string' ? [`[note] ${params.url}`] : []),
+        ]
+        const shouldContinue = await promptAuthContinue(this.display, lines)
+        if (!shouldContinue) {
+          this.authFailureMessage = 'Authentication request cancelled by user'
+        }
+        this.sendResponse(id, {})
+        return
       }
 
-      const reject = this.turnState.reject
-      this.turnState = null
-      reject(new Error(this.authFailureMessage ?? (textForRawOutput(params.error) || 'Codex turn failed')))
-    }
-  }
+      const interaction = normalizeAcpInteractionRequest(message)
+      if (!interaction) {
+        this.sendError(id, -32601, `Unsupported ACP client request: ${method}`)
+        return
+      }
 
-  private async handleServerRequest(message: Record<string, unknown>): Promise<void> {
-    const method = message.method as string
-    const id = message.id
-    const params = (message.params ?? {}) as Record<string, unknown>
-    const interaction = normalizeCodexAppServerInteractionRequest(message)
+      if (interaction.kind === 'user-input') {
+        const result = await this.resolveToolUserInput(interaction.questions)
+        this.sendResponse(id, result)
+        return
+      }
 
-    let result: unknown
-
-    if (interaction?.kind === 'user-input') {
-      result = await this.resolveToolUserInput(interaction.questions)
-    } else if (interaction) {
-      const autoResult = resolveWatchInteractionAutoResponse({
+      const autoDecision = resolveWatchAutoApprovalDecision({
         mode: this.options.mode,
         request: interaction,
       })
-
-      if (autoResult) {
-        result = autoResult
-      } else {
-        const decision = await promptApproval(approvalPromptMessage(interaction), true)
-        result = buildCodexApprovalResponse(interaction, decision)
-      }
-    } else if (method === 'item/tool/call') {
-      result = {
-        contentItems: [{ type: 'inputText', text: 'linx-cli local dynamic tool execution is not implemented' }],
-        success: false,
-      }
-    } else if (method === 'mcpServer/elicitation/request') {
-      result = { action: 'cancel', content: null, _meta: null }
-    } else {
-      result = { action: 'cancel', content: null, _meta: null }
+      const decision = autoDecision ?? await this.resolveApproval(interaction)
+      this.sendResponse(id, buildAcpPermissionResponse(interaction, decision))
+    } catch (error) {
+      const messageText = error instanceof Error ? error.message : String(error)
+      this.sendError(id, -32000, messageText)
+    } finally {
+      this.activeAgentRequests = Math.max(0, this.activeAgentRequests - 1)
+      this.scheduleTurnSettle()
     }
-
-    this.sendResponse(id, result)
   }
 
   private async resolveToolUserInput(questions: WatchUserInputQuestion[]): Promise<unknown> {
-    const answers: WatchUserInputAnswers = {}
+    this.display.setPhase('question', questions[0]?.header ?? 'Input required')
+    const answers = await this.display.chooseQuestions(questions)
+    this.display.setPhase('running', 'Continuing turn')
+    return buildWatchUserInputResponse(answers)
+  }
 
-    for (const question of questions) {
-      answers[question.id] = {
-        answers: await promptToolQuestion(question),
-      }
+  private async resolveApproval(interaction: WatchApprovalRequest): Promise<WatchApprovalDecision> {
+    const source = this.options.approvalSource ?? 'hybrid'
+    if (source === 'local') {
+      return promptApproval(this.display, approvalPromptMessage(interaction), true)
     }
 
-    return buildCodexUserInputResponse(answers)
+    if (source === 'remote') {
+      return this.resolveRemoteOnlyApproval(interaction)
+    }
+
+    return this.resolveHybridApproval(interaction)
+  }
+
+  private async resolveRemoteOnlyApproval(interaction: WatchApprovalRequest): Promise<WatchApprovalDecision> {
+    const promptMessage = approvalPromptMessage(interaction)
+    appendSessionNote(this.record, `Waiting for remote approval | ${promptMessage}`)
+    this.display.setPhase('approval', `${promptMessage} · remote`)
+
+    const remote = await watchRuntime.createRemoteWatchApproval({
+      record: this.record,
+      request: interaction,
+    })
+    const decision = await watchRuntime.waitForRemoteWatchApproval({
+      approvalId: remote.id,
+    })
+
+    appendSessionNote(this.record, `Remote approval resolved | ${decision}`)
+    this.display.setPhase('running', 'Continuing turn')
+    return decision
+  }
+
+  private async resolveHybridApproval(interaction: WatchApprovalRequest): Promise<WatchApprovalDecision> {
+    const promptMessage = approvalPromptMessage(interaction)
+
+    let remoteApproval: { id: string } | null = null
+    try {
+      remoteApproval = await watchRuntime.createRemoteWatchApproval({
+        record: this.record,
+        request: interaction,
+      })
+      appendSessionNote(this.record, `Remote approval opened | ${remoteApproval.id}`)
+    } catch (error) {
+      appendSessionNote(
+        this.record,
+        `Remote approval unavailable | ${error instanceof Error ? error.message : String(error)}`,
+      )
+      return promptApproval(this.display, promptMessage, true)
+    }
+
+    const localAbort = new AbortController()
+    const remoteAbort = new AbortController()
+    const localDecisionPromise = promptApproval(this.display, promptMessage, true, localAbort.signal)
+      .then((decision) => ({ source: 'local' as const, decision }))
+    const remoteDecisionPromise = watchRuntime.waitForRemoteWatchApproval({
+      approvalId: remoteApproval.id,
+      signal: remoteAbort.signal,
+    }).then((decision) => ({ source: 'remote' as const, decision }))
+
+    void localDecisionPromise.catch(() => undefined)
+    void remoteDecisionPromise.catch(() => undefined)
+
+    try {
+      const winner = await Promise.race([localDecisionPromise, remoteDecisionPromise])
+
+      if (winner.source === 'local') {
+        remoteAbort.abort()
+        appendSessionNote(this.record, `Local approval resolved | ${winner.decision}`)
+        void watchRuntime.resolveRemoteWatchApproval({
+          approvalId: remoteApproval.id,
+          decision: winner.decision,
+          note: 'resolved from active local watch session',
+        }).catch(() => undefined)
+        this.display.setPhase('running', 'Continuing turn')
+        return winner.decision
+      }
+
+      localAbort.abort()
+      appendSessionNote(this.record, `Remote approval resolved | ${winner.decision}`)
+      this.display.setPhase('running', 'Continuing turn')
+      return winner.decision
+    } catch (error) {
+      if (isRemoteApprovalAbortError(error)) {
+        throw error
+      }
+
+      remoteAbort.abort()
+      localAbort.abort()
+      throw error
+    }
   }
 
   private sendRequest(method: string, params: unknown): Promise<unknown> {
     const id = this.requestId++
     const child = this.child
     if (!child) {
-      throw new Error('Codex app-server is not started')
+      throw new Error('ACP backend is not started')
     }
 
     child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`)
 
     return new Promise((resolve, reject) => {
-      this.pendingRequests.set(id, { resolve, reject })
+      this.pendingRequests.set(id, { resolve, reject, method })
     })
   }
 
-  private sendNotification(method: string, params?: unknown): void {
+  private sendResponse(id: number, result: unknown): void {
     const child = this.child
     if (!child) {
-      throw new Error('Codex app-server is not started')
-    }
-
-    const payload = typeof params === 'undefined'
-      ? { jsonrpc: '2.0', method }
-      : { jsonrpc: '2.0', method, params }
-    child.stdin.write(`${JSON.stringify(payload)}\n`)
-  }
-
-  private sendResponse(id: unknown, result: unknown): void {
-    const child = this.child
-    if (!child) {
-      throw new Error('Codex app-server is not started')
+      throw new Error('ACP backend is not started')
     }
 
     child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, result })}\n`)
   }
 
-  private approvalPolicy(): 'untrusted' | 'on-request' | 'never' {
-    if (this.options.mode === 'manual') return 'untrusted'
-    if (this.options.mode === 'smart') return 'on-request'
-    return 'never'
+  private sendError(id: number, code: number, message: string): void {
+    const child = this.child
+    if (!child) {
+      throw new Error('ACP backend is not started')
+    }
+
+    child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, error: { code, message } })}\n`)
   }
 
-  private sandboxMode(): 'workspace-write' {
-    return 'workspace-write'
+  private async trySetModel(model: string): Promise<void> {
+    if (!this.sessionId) {
+      return
+    }
+
+    try {
+      await this.sendRequest('session/set_model', {
+        sessionId: this.sessionId,
+        modelId: model,
+      })
+    } catch (error) {
+      appendEntry(this.record, 'system', JSON.stringify({
+        type: 'session.set_model.skipped',
+        model,
+        reason: error instanceof Error ? error.message : String(error),
+      }), [])
+    }
   }
 }
 
-function buildConversationSession(options: WatchRunOptions): WatchConversationSession {
+function buildConversationSession(options: WatchRunOptions): BaseSession {
   const hook = getWatchHook(options.backend)
-
-  if (hook.sessionKind === 'persistent-process') {
-    return new CodexAppServerSession(options)
-  }
-
-  return new PerTurnCliSession(options, hook)
+  return new AcpSession(options, hook)
 }
 
-function printWatchHelp(): void {
-  process.stdout.write('/help 查看帮助\n/exit 退出当前 watch 会话\n\n')
+async function handleWatchShellCommand(args: {
+  input: string
+  session: WatchConversationSession
+  display: WatchDisplay
+  queueState: WatchQueueState
+  backend: string
+  record: WatchSessionRecord
+}): Promise<'handled' | 'exit' | 'pass'> {
+  const { input, session, display, queueState, backend, record } = args
+
+  if (input === '/exit' || input === '/quit') {
+    return 'exit'
+  }
+
+  if (input === '/help') {
+    display.showHelp()
+    return 'handled'
+  }
+
+  if (input === '/session') {
+    appendSessionNote(record, [
+      `session=${record.id}`,
+      `backend=${record.backend}`,
+      `runtime=${record.runtime}`,
+      `source=${record.resolvedCredentialSource ?? record.credentialSource}`,
+      `model=${record.model ?? 'default'}`,
+      `cwd=${record.cwd}`,
+    ].join(' | '))
+    return 'handled'
+  }
+
+  if (input === '/queue') {
+    appendSessionNote(record, `queue | steer=${queueState.steeringCount} | follow-up=${queueState.followUpCount}`)
+    return 'handled'
+  }
+
+  if (input === '/sessions') {
+    const summaries = listWatchSessions().slice(0, 5).map(formatWatchSessionSummary)
+    if (summaries.length === 0) {
+      appendSessionNote(record, 'No archived watch sessions found')
+      return 'handled'
+    }
+
+    for (const summary of summaries) {
+      appendSessionNote(record, summary)
+    }
+    return 'handled'
+  }
+
+  if (input === '/new') {
+    appendSessionNote(record, 'Use `linx watch run` to start a fresh watch session')
+    return 'handled'
+  }
+
+  if (input.startsWith('/model ')) {
+    const model = input.slice('/model '.length).trim()
+    if (!model) {
+      throw new Error('Usage: /model <modelId>')
+    }
+
+    await session.setModel(model)
+    appendSessionNote(record, `Model set to ${model}`, { backend, model })
+    return 'handled'
+  }
+
+  return 'pass'
 }
 
 export async function runWatch(options: WatchRunOptions): Promise<number> {
   const requestedOptions = {
     ...options,
     runtime: requestedRuntime(options),
+    transport: 'acp' as const,
     credentialSource: requestedCredentialSource(options),
+    approvalSource: requestedApprovalSource(options),
   }
   const session = buildConversationSession(requestedOptions)
-  renderSessionHeader(session.record)
-  printWatchHelp()
+  session.display.start()
+  session.display.showHelp()
+  session.display.setPhase('starting', `Preparing ${requestedOptions.backend}`)
+  session.display.updateQueue({
+    steeringCount: 0,
+    followUpCount: 0,
+  })
 
   let fatalError: Error | null = null
 
@@ -998,33 +1154,195 @@ export async function runWatch(options: WatchRunOptions): Promise<number> {
     }
 
     await session.start()
+    const steeringQueue: WatchPromptSubmission[] = []
+    const followUpQueue: WatchPromptSubmission[] = []
+    let stopRequested = false
+    let activeTurn: Promise<void> | null = null
+    let wakeResolver: (() => void) | null = null
+
+    const resolveWake = () => {
+      if (!wakeResolver) {
+        return
+      }
+
+      const resolve = wakeResolver
+      wakeResolver = null
+      resolve()
+    }
+
+    const waitForWake = async (): Promise<void> => {
+      if (fatalError || (stopRequested && activeTurn === null)) {
+        return
+      }
+
+      await new Promise<void>((resolve) => {
+        wakeResolver = resolve
+      })
+    }
+
+    const updateQueueState = () => {
+      session.display.updateQueue({
+        steeringCount: steeringQueue.length,
+        followUpCount: followUpQueue.length,
+      })
+    }
+
+    const clearQueuedSubmissions = () => {
+      if (steeringQueue.length === 0 && followUpQueue.length === 0) {
+        return
+      }
+
+      steeringQueue.length = 0
+      followUpQueue.length = 0
+      updateQueueState()
+    }
+
+    const restoreQueuedSubmission = (): WatchPromptSubmission | null => {
+      const restored = steeringQueue.pop() ?? followUpQueue.pop() ?? null
+      updateQueueState()
+      return restored
+    }
+
+    const inputController: WatchInputController = {
+      restoreQueuedSubmission,
+    }
+    session.display.bindInputController(inputController)
+
+    const enqueueSubmission = (submission: WatchPromptSubmission) => {
+      if (submission.mode === 'follow-up') {
+        followUpQueue.push(submission)
+      } else {
+        steeringQueue.push(submission)
+      }
+
+      updateQueueState()
+      appendSessionNote(
+        session.record,
+        submission.mode === 'follow-up'
+          ? `Queued follow-up message (${followUpQueue.length} total)`
+          : `Queued steering message (${steeringQueue.length} total)`,
+        { text: submission.text, mode: submission.mode },
+      )
+      resolveWake()
+    }
+
+    const dequeueSubmission = (): WatchPromptSubmission | null => {
+      const next = steeringQueue.shift() ?? followUpQueue.shift() ?? null
+      updateQueueState()
+      return next
+    }
+
+    const runTurn = (text: string) => {
+      const trimmed = text.trim()
+      if (!trimmed) {
+        return
+      }
+
+      session.display.showUserTurn(trimmed)
+      session.display.setPhase('running', `Running ${resolvedRun.options.backend}`)
+
+      activeTurn = session.sendTurn(trimmed)
+        .catch((error) => {
+          fatalError = error instanceof Error ? error : new Error(String(error))
+        })
+        .finally(() => {
+          activeTurn = null
+
+          if (fatalError) {
+            stopRequested = true
+            clearQueuedSubmissions()
+            resolveWake()
+            return
+          }
+
+          const next = dequeueSubmission()
+          if (next) {
+            runTurn(next.text)
+            return
+          }
+
+          if (stopRequested) {
+            resolveWake()
+            return
+          }
+
+          session.display.setPhase('ready', 'Waiting for input')
+          resolveWake()
+        })
+    }
+
+    const dispatchSubmission = async (submission: WatchPromptSubmission): Promise<void> => {
+      const trimmed = submission.text.trim()
+      if (!trimmed) {
+        return
+      }
+
+      const shellCommand = await handleWatchShellCommand({
+        input: trimmed,
+        session,
+        display: session.display,
+        queueState: {
+          steeringCount: steeringQueue.length,
+          followUpCount: followUpQueue.length,
+        },
+        backend: resolvedRun.options.backend,
+        record: session.record,
+      })
+
+      if (shellCommand === 'handled') {
+        session.display.setPhase(activeTurn ? 'running' : 'ready', activeTurn ? `Running ${resolvedRun.options.backend}` : 'Waiting for input')
+        resolveWake()
+        return
+      }
+
+      if (shellCommand === 'exit') {
+        stopRequested = true
+        resolveWake()
+        return
+      }
+
+      if (activeTurn) {
+        enqueueSubmission({
+          text: trimmed,
+          mode: submission.mode,
+        })
+        return
+      }
+
+      runTurn(trimmed)
+    }
+
+    const inputLoop = (async () => {
+      session.display.setPhase('ready', 'Waiting for input')
+      while (!fatalError && !stopRequested) {
+        const submission = await session.display.promptInput('you> ')
+        await dispatchSubmission(submission)
+      }
+    })().catch((error) => {
+      fatalError = error instanceof Error ? error : new Error(String(error))
+      stopRequested = true
+      clearQueuedSubmissions()
+      resolveWake()
+    })
 
     if (resolvedRun.options.prompt) {
-      await session.sendTurn(resolvedRun.options.prompt)
+      await dispatchSubmission({
+        text: resolvedRun.options.prompt,
+        mode: 'send',
+      })
     }
 
-    while (true) {
-      const input = (await watchRuntime.promptText('you> ')).trim()
-      if (!input) {
-        continue
-      }
-
-      if (input === '/exit' || input === '/quit') {
-        break
-      }
-
-      if (input === '/help') {
-        printWatchHelp()
-        continue
-      }
-
-      await session.sendTurn(input)
+    while (!fatalError && (!stopRequested || activeTurn !== null || steeringQueue.length > 0 || followUpQueue.length > 0)) {
+      await waitForWake()
     }
+
+    void inputLoop
   } catch (error) {
     fatalError = error instanceof Error ? error : new Error(String(error))
   } finally {
     await session.close()
-    await (session as BaseSession).finalizeAndClose(fatalError ? 'failed' : 'completed', fatalError?.message)
+    const finalRecord = await session.finalizeAndClose(fatalError ? 'failed' : 'completed', fatalError?.message)
+    await watchRuntime.persistWatchConversationToPod(finalRecord).catch(() => undefined)
   }
 
   if (fatalError) {
@@ -1034,20 +1352,6 @@ export async function runWatch(options: WatchRunOptions): Promise<number> {
   return 0
 }
 
-export function formatWatchSessionSummary(record: WatchSessionRecord): string {
-  const prompt = record.prompt?.replace(/\s+/g, ' ').slice(0, 48)
-  return [
-    record.id,
-    record.backend,
-    record.runtime,
-    record.mode,
-    record.status,
-    prompt,
-  ]
-    .filter((part): part is string => typeof part === 'string' && part.length > 0)
-    .join(' · ')
-}
-
 export function listArchivedWatchSessions(): WatchSessionRecord[] {
   return listWatchSessions()
 }
@@ -1055,6 +1359,12 @@ export function listArchivedWatchSessions(): WatchSessionRecord[] {
 export function loadArchivedWatchSession(id: string): WatchSessionRecord | null {
   return loadWatchSession(id)
 }
+
+export function loadArchivedWatchEvents(id: string): WatchEventLogEntry[] {
+  return loadWatchEvents(id)
+}
+
+export { formatWatchSessionSummary }
 
 export function listSupportedWatchBackends(): Array<{
   backend: string

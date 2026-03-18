@@ -259,6 +259,7 @@ test('cloud credential source resolves pod-backed codex credentials and skips lo
   assert.equal(resolved.options.resolvedCredentialSource, 'cloud')
   assert.deepEqual(resolved.options.commandEnv, {
     OPENAI_API_KEY: 'sk-openai',
+    CODEX_API_KEY: 'sk-openai',
   })
   assert.equal(resolved.authPreflight.state, 'authenticated')
 })
@@ -381,22 +382,46 @@ test('watch normalizes runtime auth failures for codebuddy sessions', async (t) 
   writeFileSync(
     fakeCodebuddyPath,
     `#!/usr/bin/env node
-process.stdout.write(JSON.stringify({ type: 'system', subtype: 'init', session_id: 'sess_auth_fail' }) + '\\n')
-process.stdout.write(JSON.stringify({
-  type: 'assistant',
-  error: 'authentication_failed',
-  message: {
-    content: [{ type: 'text', text: 'Not logged in · Please sign in first' }],
-  },
-  session_id: 'sess_auth_fail',
-}) + '\\n')
-process.stdout.write(JSON.stringify({
-  type: 'result',
-  is_error: true,
-  result: 'Not logged in · Please sign in first',
-  session_id: 'sess_auth_fail',
-}) + '\\n')
-process.exit(1)
+const readline = require('node:readline')
+
+function write(obj) {
+  process.stdout.write(JSON.stringify(obj) + '\\n')
+}
+
+const rl = readline.createInterface({ input: process.stdin })
+rl.on('line', (line) => {
+  const message = JSON.parse(line)
+  if (message.method === 'initialize') {
+    write({ jsonrpc: '2.0', id: message.id, result: { protocolVersion: 1 } })
+    return
+  }
+  if (message.method === 'session/new') {
+    write({ jsonrpc: '2.0', id: message.id, result: { sessionId: 'sess_auth_fail' } })
+    return
+  }
+  if (message.method === 'session/prompt') {
+    write({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'sess_auth_fail',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'Not logged in · Please sign in first' },
+        },
+      },
+    })
+    write({
+      jsonrpc: '2.0',
+      id: message.id,
+      error: {
+        code: -32001,
+        message: 'Not logged in · Please sign in first',
+      },
+    })
+    process.exit(1)
+  }
+})
 `,
   )
   chmodSync(fakeCodebuddyPath, 0o755)
@@ -429,7 +454,7 @@ process.exit(1)
   const eventsFile = join(watchHome, 'sessions', sessionDirs[0], 'events.jsonl')
   assert.equal(existsSync(eventsFile), true)
   const events = readFileSync(eventsFile, 'utf-8')
-  assert.match(events, /authentication_failed/)
+  assert.match(events, /Not logged in/)
 })
 
 test.after(async () => {

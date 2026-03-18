@@ -44,6 +44,9 @@ yarn workspace @linx/cli dev watch run claude "先总结这个目录的职责"
 yarn workspace @linx/cli dev watch run codebuddy -- --tools Read,Edit
 yarn workspace @linx/cli dev watch backends
 yarn workspace @linx/cli dev watch sessions
+yarn workspace @linx/cli dev watch approvals
+yarn workspace @linx/cli dev watch approve <approvalId> --session
+yarn workspace @linx/cli dev watch reject <approvalId> --reason "unsafe command"
 ```
 
 ## Slash Commands
@@ -67,15 +70,18 @@ yarn workspace @linx/cli dev watch sessions
 - LinX 负责统一 `manual | smart | auto` 模式，并把会话元数据写到 `~/.linx/watch/sessions/`
 - `--credential-source local|cloud|auto` 只决定凭据来源；`watch` 当前运行时始终是本地
 - `--credential-source cloud` 当前可显式用于 `codex` / `claude` / `codebuddy`，前提是对应 API key 已写进 Pod
-- 当前是最小多轮版：本地 REPL、读取 JSON/JSONL 输出、归档结构化事件
-- `codex` 走常驻 `app-server`；`claude` / `codebuddy` 走原生 `--print --output-format stream-json`，每轮自动续用后端 session
-- `claude` / `codebuddy` 的 `stream-json` 路径要求同时带上 `--verbose`
+- 默认人工审批同时支持当前本地 watch 和 Pod 远端控制面，谁先决策谁生效
+- 如果本地已 `linx login`，LinX 会把 pending approval 写进 Pod 的 `approval / audit / inbox_notification`
+- 远端 CLI 可用 `linx watch approvals` 查看待处理审批，再用 `linx watch approve|reject <approvalId>` 回写结果
+- 当前是最小多轮版：本地 REPL、统一 ACP 会话、归档结构化事件
+- 在交互式 TTY 里，`watch run` 会默认进入全屏 TUI；非 TTY / 管道输出会自动降级到 plain mode
+- `linx watch show <sessionId>` 现在会回放归档 timeline，而不是直接输出 `session.json`
+- `codex` 走 `codex-acp`，`claude` 走 `claude-code-acp`，`codebuddy` 走内置 `--acp --acp-transport stdio`
+- LinX 不再维护各家 native / 非 ACP JSON 输出兼容层，统一按 ACP 处理多轮会话、权限请求和结构化输入
 - 仓库内 `yarn workspace @linx/cli dev watch ...` 不再依赖 `tsx`，会直接编译并运行独立 watch 入口
 - `--` 后面的参数会原样透传给对应后端 CLI
+- 当前只支持 `local runtime + remote approval`；不支持本地 runtime 退出后由云端接管执行
 
 ## TODO
 
-- future: `watch --runtime cloud`
-- unresolved: remote workspace mounting / file transport
-- unresolved: remote tool approval protocol and ownership model
-- unresolved: session lifecycle between local CLI and cloud executor
+- blocked by xpod: `watch --runtime cloud`

@@ -7,6 +7,8 @@ import {
   aiProviderTable,
   buildAIConfigMutationPlan,
   buildAIConfigProviderStateMap,
+  buildWatchThreadMetadata,
+  buildWatchTranscriptMessages,
   credentialTable,
   ContactType,
   agentTable,
@@ -29,10 +31,15 @@ import {
   type AIModelRow,
   type AIProviderRow,
   type CredentialRow,
+  type ChatInsert,
   type MessageRow,
+  type MessageInsert,
   type ModelMetadata,
   type SolidDatabase,
+  type ThreadInsert,
   type ThreadRow,
+  type WatchEventLogEntry,
+  type WatchSessionRecord,
 } from '@linx/models'
 
 export {
@@ -44,6 +51,8 @@ export {
   aiProviderTable,
   buildAIConfigMutationPlan,
   buildAIConfigProviderStateMap,
+  buildWatchThreadMetadata,
+  buildWatchTranscriptMessages,
   chatTable,
   contactTable,
   credentialTable,
@@ -66,11 +75,16 @@ export type {
   AIConfigProviderState,
   AIModelRow,
   AIProviderRow,
+  ChatInsert,
   CredentialRow,
+  MessageInsert,
   MessageRow,
   ModelMetadata,
   SolidDatabase,
+  ThreadInsert,
   ThreadRow,
+  WatchEventLogEntry,
+  WatchSessionRecord,
 }
 
 export function getBuiltinModels(): ModelMetadata[] {

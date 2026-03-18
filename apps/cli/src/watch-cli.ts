@@ -2,10 +2,15 @@
 import yargs from 'yargs'
 import { hideBin } from 'yargs/helpers'
 import {
+  formatRemoteWatchApprovalSummary,
+  formatArchivedWatchSession,
   formatWatchSessionSummary,
+  loadArchivedWatchEvents,
   listArchivedWatchSessions,
+  listRemoteWatchApprovals,
   listSupportedWatchBackends,
   loadArchivedWatchSession,
+  resolveRemoteWatchApproval,
   runWatch,
   type WatchBackend,
   type WatchCredentialSource,
@@ -24,11 +29,11 @@ const cli = yargs(hideBin(process.argv))
       command
         .positional('action', {
           type: 'string',
-          choices: ['run', 'backends', 'sessions', 'show'] as const,
+          choices: ['run', 'backends', 'sessions', 'show', 'approvals', 'approve', 'reject'] as const,
         })
         .positional('backend', {
           type: 'string',
-          describe: 'Watch backend for `run`, or session id for `show`',
+          describe: 'Watch backend for `run`, session id for `show`, or approval id for `approve|reject`',
         })
         .option('mode', {
           type: 'string',
@@ -49,6 +54,15 @@ const cli = yargs(hideBin(process.argv))
           default: 'auto',
           choices: ['auto', 'local', 'cloud'] as const,
           describe: 'Resolve credentials only: local CLI login, LinX cloud config, or auto fallback. Runtime still runs locally.',
+        })
+        .option('session', {
+          type: 'boolean',
+          default: false,
+          describe: 'Approve for the current watch session instead of only once.',
+        })
+        .option('reason', {
+          type: 'string',
+          describe: 'Optional note recorded with an approval decision.',
         }),
     async (argv) => {
       const action = String(argv.action)
@@ -87,7 +101,35 @@ const cli = yargs(hideBin(process.argv))
           throw new Error(`Watch session not found: ${sessionId}`)
         }
 
-        process.stdout.write(`${JSON.stringify(session, null, 2)}\n`)
+        process.stdout.write(formatArchivedWatchSession(session, loadArchivedWatchEvents(sessionId)))
+        return
+      }
+
+      if (action === 'approvals') {
+        const approvals = await listRemoteWatchApprovals()
+        if (approvals.length === 0) {
+          process.stdout.write('No pending remote approvals.\n')
+          return
+        }
+
+        process.stdout.write(`${approvals.map(formatRemoteWatchApprovalSummary).join('\n')}\n`)
+        return
+      }
+
+      if (action === 'approve' || action === 'reject') {
+        const approvalId = argv.backend ? String(argv.backend) : ''
+        if (!approvalId) {
+          throw new Error(`Usage: linx watch ${action} <approvalId>`)
+        }
+
+        const summary = await resolveRemoteWatchApproval({
+          approvalId,
+          decision: action === 'approve'
+            ? (argv.session ? 'accept_for_session' : 'accept')
+            : 'decline',
+          note: argv.reason ? String(argv.reason) : undefined,
+        })
+        process.stdout.write(`${formatRemoteWatchApprovalSummary(summary)}\n`)
         return
       }
 

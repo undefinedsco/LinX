@@ -1,4 +1,5 @@
 import type {
+  WatchApprovalSource,
   WatchBackend,
   WatchCredentialSource,
   WatchEventLogEntry,
@@ -9,9 +10,11 @@ import type {
   WatchRuntime,
   WatchSessionRecord,
   WatchSessionStatus,
+  WatchTransport,
 } from '@linx/models/watch'
 
 export type {
+  WatchApprovalSource,
   WatchBackend,
   WatchCredentialSource,
   WatchEventLogEntry,
@@ -22,9 +25,8 @@ export type {
   WatchRuntime,
   WatchSessionRecord,
   WatchSessionStatus,
+  WatchTransport,
 } from '@linx/models/watch'
-
-export type WatchSessionKind = 'persistent-process' | 'per-turn-cli'
 
 export interface WatchRunOptions {
   backend: WatchBackend
@@ -34,8 +36,10 @@ export interface WatchRunOptions {
   prompt?: string
   passthroughArgs: string[]
   runtime?: WatchRuntime
+  transport?: WatchTransport
   credentialSource?: WatchCredentialSource
   resolvedCredentialSource?: WatchResolvedCredentialSource
+  approvalSource?: WatchApprovalSource
   commandEnv?: Record<string, string>
 }
 
@@ -43,6 +47,22 @@ export interface WatchSpawnPlan {
   command: string
   args: string[]
   env?: Record<string, string>
+}
+
+export type WatchPromptSubmissionMode = 'send' | 'follow-up'
+
+export interface WatchPromptSubmission {
+  text: string
+  mode: WatchPromptSubmissionMode
+}
+
+export interface WatchQueueState {
+  steeringCount: number
+  followUpCount: number
+}
+
+export interface WatchInputController {
+  restoreQueuedSubmission(): WatchPromptSubmission | null
 }
 
 export interface WatchTurnPlanContext {
@@ -55,9 +75,5 @@ export interface WatchBackendHook {
   id: WatchBackend
   label: string
   description: string
-  sessionKind: WatchSessionKind
   buildSpawnPlan(options: WatchRunOptions): WatchSpawnPlan
-  buildTurnPlan?(options: WatchRunOptions, turn: WatchTurnPlanContext): WatchSpawnPlan
-  extractSessionId?(line: string): string | undefined
-  parseLine(line: string, stream: WatchOutputStream): WatchNormalizedEvent[]
 }

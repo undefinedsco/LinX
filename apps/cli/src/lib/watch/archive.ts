@@ -62,6 +62,7 @@ export function createWatchSession(
     id,
     backend: options.backend,
     runtime: options.runtime ?? 'local',
+    transport: options.transport ?? 'acp',
     mode: options.mode,
     cwd: options.cwd,
     model: options.model,
@@ -69,6 +70,7 @@ export function createWatchSession(
     passthroughArgs: [...options.passthroughArgs],
     credentialSource: options.credentialSource ?? 'auto',
     resolvedCredentialSource: options.resolvedCredentialSource,
+    approvalSource: options.approvalSource ?? 'hybrid',
     command: plan.command,
     args: [...plan.args],
     status: 'running',
@@ -122,4 +124,21 @@ export function listWatchSessions(): WatchSessionRecord[] {
 
 export function loadWatchSession(id: string): WatchSessionRecord | null {
   return readSessionJson(id)
+}
+
+export function loadWatchEvents(id: string): WatchEventLogEntry[] {
+  const record = loadWatchSession(id)
+  if (!record) {
+    return []
+  }
+
+  try {
+    return readFileSync(record.eventsFile, 'utf-8')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as WatchEventLogEntry)
+  } catch {
+    return []
+  }
 }

@@ -1,13 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildAcpPermissionResponse,
+  buildWatchThreadMetadata,
+  buildWatchTranscriptMessages,
   buildCodexApprovalResponse,
   buildCodexUserInputResponse,
+  buildWatchUserInputResponse,
   createWatchSessionId,
   detectWatchAuthFailure,
   extractWatchSessionIdFromJsonLine,
   formatWatchBackendAuthMessage,
   getWatchAuthLoginCommand,
   isTrustedWatchCommand,
+  normalizeAcpInteractionRequest,
+  normalizeAcpRequest,
+  normalizeAcpSessionNotification,
   normalizeCodexAppServerInteractionRequest,
   normalizeCodexAppServerNotification,
   normalizeCodexAppServerRequest,
@@ -16,6 +23,7 @@ import {
   normalizeWatchUserInputQuestion,
   parseWatchClaudeAuthStatus,
   parseWatchJsonProtocolLine,
+  resolveWatchAutoApprovalDecision,
   resolveWatchInteractionAutoResponse,
   resolveWatchQuestionAnswer,
   resolveWatchCredentialSourceResolution,
@@ -48,6 +56,108 @@ describe('watch shared core', () => {
       sessionFile: 'sessions/watch_demo_1234/session.json',
       eventsFile: 'sessions/watch_demo_1234/events.jsonl',
     })
+  })
+
+  it('maps watch runtime context into generic thread metadata instead of a parallel session type', () => {
+    expect(buildWatchThreadMetadata({
+      id: 'watch_demo_1234',
+      backend: 'codex',
+      runtime: 'local',
+      transport: 'acp',
+      mode: 'smart',
+      cwd: '/tmp/demo',
+      model: 'gpt-5-codex',
+      prompt: 'fix failing tests',
+      passthroughArgs: ['--dangerously-bypass-approvals-and-sandbox'],
+      credentialSource: 'cloud',
+      resolvedCredentialSource: 'cloud',
+      approvalSource: 'remote',
+      command: 'codex-acp',
+      args: [],
+      status: 'completed',
+      startedAt: '2026-03-18T00:00:00.000Z',
+      endedAt: '2026-03-18T00:01:00.000Z',
+      archiveDir: '/tmp/.linx/watch/sessions/watch_demo_1234',
+      eventsFile: '/tmp/.linx/watch/sessions/watch_demo_1234/events.jsonl',
+      backendSessionId: 'sess_codex_123',
+    })).toEqual({
+      kind: 'watch',
+      delegatedTo: 'secretary',
+      sessionId: 'watch_demo_1234',
+      backend: 'codex',
+      runtime: 'local',
+      transport: 'acp',
+      mode: 'smart',
+      cwd: '/tmp/demo',
+      model: 'gpt-5-codex',
+      credentialSource: 'cloud',
+      resolvedCredentialSource: 'cloud',
+      approvalSource: 'remote',
+      status: 'completed',
+      backendSessionId: 'sess_codex_123',
+    })
+  })
+
+  it('builds structured transcript messages from archived watch events', () => {
+    expect(buildWatchTranscriptMessages([
+      {
+        timestamp: '2026-03-18T00:00:00.000Z',
+        stream: 'system',
+        line: JSON.stringify({ type: 'user.turn', text: 'inspect workspace' }),
+        events: [],
+      },
+      {
+        timestamp: '2026-03-18T00:00:01.000Z',
+        stream: 'stdout',
+        line: JSON.stringify({ type: 'session/update' }),
+        events: [{ type: 'assistant.delta', text: 'I found ' }],
+      },
+      {
+        timestamp: '2026-03-18T00:00:02.000Z',
+        stream: 'stdout',
+        line: JSON.stringify({ type: 'session/update' }),
+        events: [{ type: 'assistant.delta', text: 'two issues.' }],
+      },
+      {
+        timestamp: '2026-03-18T00:00:03.000Z',
+        stream: 'stdout',
+        line: JSON.stringify({ type: 'session/update' }),
+        events: [{ type: 'assistant.done' }],
+      },
+      {
+        timestamp: '2026-03-18T00:00:04.000Z',
+        stream: 'stdout',
+        line: JSON.stringify({ type: 'tool' }),
+        events: [{ type: 'tool.call', name: 'bash', arguments: { command: 'pwd' } }],
+      },
+      {
+        timestamp: '2026-03-18T00:00:05.000Z',
+        stream: 'stderr',
+        line: 'permission denied',
+        events: [],
+      },
+    ])).toEqual([
+      {
+        role: 'user',
+        content: 'inspect workspace',
+        createdAt: '2026-03-18T00:00:00.000Z',
+      },
+      {
+        role: 'assistant',
+        content: 'I found two issues.',
+        createdAt: '2026-03-18T00:00:01.000Z',
+      },
+      {
+        role: 'system',
+        content: '[tool] bash {"command":"pwd"}',
+        createdAt: '2026-03-18T00:00:04.000Z',
+      },
+      {
+        role: 'system',
+        content: 'stderr> permission denied',
+        createdAt: '2026-03-18T00:00:05.000Z',
+      },
+    ])
   })
 
   it('normalizes requested credential source and decides when cloud fallback should be probed', () => {
@@ -284,6 +394,10 @@ describe('watch shared core', () => {
       mode: 'smart',
       request: commandRequest,
     })).toEqual({ decision: 'accept' })
+    expect(resolveWatchAutoApprovalDecision({
+      mode: 'smart',
+      request: commandRequest,
+    })).toBe('accept')
 
     expect(buildCodexApprovalResponse(commandRequest, 'accept_for_session')).toEqual({
       decision: 'acceptForSession',
@@ -308,6 +422,10 @@ describe('watch shared core', () => {
       permissions: { network: true },
       scope: 'session',
     })
+    expect(resolveWatchAutoApprovalDecision({
+      mode: 'auto',
+      request: permissionsRequest,
+    })).toBe('accept_for_session')
 
     expect(buildCodexApprovalResponse(permissionsRequest, 'decline')).toEqual({
       permissions: {},
@@ -372,6 +490,14 @@ describe('watch shared core', () => {
     })
 
     expect(buildCodexUserInputResponse({
+      runtime: { answers: ['cloud'] },
+    })).toEqual({
+      answers: {
+        runtime: { answers: ['cloud'] },
+      },
+    })
+
+    expect(buildWatchUserInputResponse({
       runtime: { answers: ['cloud'] },
     })).toEqual({
       answers: {
@@ -533,6 +659,187 @@ describe('watch shared core', () => {
                 options: [{ label: 'local' }, { label: 'cloud' }],
               },
             ],
+          },
+        },
+      },
+    ])
+  })
+
+  it('normalizes ACP permission requests, updates, and permission responses', () => {
+    const acpRequest = normalizeAcpInteractionRequest({
+      method: 'session/request_permission',
+      params: {
+        sessionId: 'sess_123',
+        toolCall: {
+          toolCallId: 'tool_1',
+          title: 'Run shell command',
+          kind: 'execute',
+          rawInput: {
+            command: 'pwd',
+            cwd: '/tmp/demo',
+          },
+        },
+        options: [
+          { optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' },
+          { optionId: 'allow_always', name: 'Allow always', kind: 'allow_always' },
+          { optionId: 'reject_once', name: 'Reject once', kind: 'reject_once' },
+        ],
+      },
+    })
+
+    if (!acpRequest || acpRequest.kind !== 'command-approval') {
+      throw new Error('Expected ACP command approval request')
+    }
+
+    expect(acpRequest).toEqual({
+      kind: 'command-approval',
+      message: 'pwd',
+      command: 'pwd',
+      cwd: '/tmp/demo',
+      raw: {
+        method: 'session/request_permission',
+        params: {
+          sessionId: 'sess_123',
+          toolCall: {
+            toolCallId: 'tool_1',
+            title: 'Run shell command',
+            kind: 'execute',
+            rawInput: {
+              command: 'pwd',
+              cwd: '/tmp/demo',
+            },
+          },
+          options: [
+            { optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' },
+            { optionId: 'allow_always', name: 'Allow always', kind: 'allow_always' },
+            { optionId: 'reject_once', name: 'Reject once', kind: 'reject_once' },
+          ],
+        },
+      },
+    })
+
+    const singleOptionPermissionMessage = {
+      method: 'session/request_permission',
+      params: {
+        sessionId: 'sess_123',
+        toolCall: {
+          toolCallId: 'tool_1',
+          title: 'Run shell command',
+          kind: 'execute',
+          rawInput: {
+            command: 'pwd',
+            cwd: '/tmp/demo',
+          },
+        },
+        options: [
+          { optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' },
+        ],
+      },
+    }
+
+    expect(normalizeAcpRequest(singleOptionPermissionMessage)).toEqual([
+      {
+        type: 'approval.required',
+        message: 'pwd',
+        request: {
+          kind: 'command-approval',
+          message: 'pwd',
+          command: 'pwd',
+          cwd: '/tmp/demo',
+          raw: singleOptionPermissionMessage,
+        },
+        raw: singleOptionPermissionMessage,
+      },
+      {
+        type: 'tool.call',
+        name: 'commandExecution',
+        arguments: {
+          command: 'pwd',
+          cwd: '/tmp/demo',
+        },
+        raw: singleOptionPermissionMessage,
+      },
+    ])
+
+    expect(buildAcpPermissionResponse(acpRequest, 'accept_for_session')).toEqual({
+      outcome: {
+        outcome: 'selected',
+        optionId: 'allow_always',
+      },
+    })
+
+    expect(buildAcpPermissionResponse(acpRequest, 'cancel')).toEqual({
+      outcome: {
+        outcome: 'cancelled',
+      },
+    })
+
+    expect(normalizeAcpSessionNotification({
+      method: 'session/update',
+      params: {
+        sessionId: 'sess_123',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: {
+            type: 'text',
+            text: 'hello from acp',
+          },
+        },
+      },
+    })).toEqual([
+      {
+        type: 'assistant.delta',
+        text: 'hello from acp',
+        raw: {
+          method: 'session/update',
+          params: {
+            sessionId: 'sess_123',
+            update: {
+              sessionUpdate: 'agent_message_chunk',
+              content: {
+                type: 'text',
+                text: 'hello from acp',
+              },
+            },
+          },
+        },
+      },
+    ])
+
+    expect(normalizeAcpSessionNotification({
+      method: 'session/update',
+      params: {
+        sessionId: 'sess_123',
+        update: {
+          type: 'tool_call',
+          toolCallId: 'tool_1',
+          title: 'Read package.json',
+          kind: 'read',
+          rawInput: {
+            path: 'package.json',
+          },
+        },
+      },
+    })).toEqual([
+      {
+        type: 'tool.call',
+        name: 'Read package.json',
+        arguments: {
+          path: 'package.json',
+        },
+        raw: {
+          method: 'session/update',
+          params: {
+            sessionId: 'sess_123',
+            update: {
+              type: 'tool_call',
+              toolCallId: 'tool_1',
+              title: 'Read package.json',
+              kind: 'read',
+              rawInput: {
+                path: 'package.json',
+              },
+            },
           },
         },
       },

@@ -1,5 +1,6 @@
 import { podTable, uri, string, text, timestamp, id } from '@undefineds.co/drizzle-solid'
 import { UDFS, DCTerms, FOAF, LINX_MSG, MEETING, SCHEMA, SIOC, WF } from './namespaces'
+import { threadTable } from './thread.schema'
 
 /**
  * Message schema (aligned with xpod).
@@ -7,8 +8,8 @@ import { UDFS, DCTerms, FOAF, LINX_MSG, MEETING, SCHEMA, SIOC, WF } from './name
  * Storage structure:
  * - Location: /.data/chat/{chatId}/{yyyy}/{MM}/{dd}/messages.ttl#{id}
  * - Date-based path for efficient time-range queries
- * - chatId and threadId are simple strings (not uri references)
- * - This avoids multi-variable template resolution issues
+ * - chatId and threadId remain stable string ids in app state
+ * - threadId is stored as an RDF link to the Thread while still reading back as a stable bare id
  */
 export const messageTable = podTable(
   'chat_message',
@@ -18,8 +19,8 @@ export const messageTable = podTable(
     // chatId used for path construction, but still keeps the canonical message linkage predicate
     chatId: string('chatId').predicate(WF.message).notNull(),
 
-    // threadId stays as a plain string for query/path stability while preserving the canonical thread predicate
-    threadId: string('threadId').predicate(SIOC.has_member).notNull(),
+    // threadId stays string-shaped in app state, but serializes as a Thread link in RDF.
+    threadId: string('threadId').predicate(SIOC.term('has_container')).notNull().link(threadTable),
 
     // maker is the entity URI of the message author:
     // - User: their WebID (https://user.pod/profile/card#me)

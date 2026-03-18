@@ -265,6 +265,10 @@ export {
 } from './ai-config'
 
 export {
+  buildAcpPermissionResponse,
+  buildWatchThreadMetadata,
+  buildWatchTranscriptMessages,
+  buildWatchUserInputResponse,
   createWatchSessionId,
   detectWatchAuthFailure,
   formatWatchAutoFallbackMessage,
@@ -273,18 +277,26 @@ export {
   getWatchArchiveRelativePaths,
   getWatchAuthLoginCommand,
   looksLikeWatchAuthFailureText,
+  normalizeAcpInteractionRequest,
+  normalizeAcpRequest,
+  normalizeAcpSessionNotification,
   normalizeCodexAppServerNotification,
   normalizeCodexAppServerRequest,
   normalizeWatchCredentialSource,
   parseWatchClaudeAuthStatus,
   parseWatchJsonLine,
   parseWatchJsonProtocolLine,
+  resolveWatchAutoApprovalDecision,
   resolveWatchCredentialSourceResolution,
+  resolveWatchInteractionAutoResponse,
+  resolveWatchQuestionAnswer,
   shouldAttemptCloudCredentialProbe,
   WATCH_EVENTS_FILE_NAME,
   WATCH_HOME_DIRNAME,
   WATCH_SESSIONS_DIRNAME,
   WATCH_SESSION_FILE_NAME,
+  type WatchApprovalDecision,
+  type WatchApprovalRequest,
   type CreateWatchSessionIdOptions,
   type WatchAuthFailure,
   type WatchAuthState,
@@ -303,6 +315,9 @@ export {
   type WatchRuntime,
   type WatchSessionRecord,
   type WatchSessionStatus,
+  type WatchThreadMetadata,
+  type WatchTranscriptMessage,
+  type WatchTranscriptMessageRole,
 } from './watch'
 
 export {

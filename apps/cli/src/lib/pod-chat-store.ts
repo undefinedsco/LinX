@@ -16,6 +16,36 @@ import { formatThreadLabel, toOpenAiMessages } from './thread-utils.js'
 const DEFAULT_CHAT_ID = 'cli-default'
 const DEFAULT_AGENT_ID = 'linx-cli-assistant'
 
+function extractChatId(chatIdOrUri: string | null | undefined): string {
+  if (!chatIdOrUri) return DEFAULT_CHAT_ID
+  if (chatIdOrUri.includes('#')) {
+    const match = chatIdOrUri.match(/\.data\/chat\/([^/]+)\/index\.ttl#this/)
+    if (match) return match[1]
+  }
+  return chatIdOrUri
+}
+
+function extractThreadId(threadIdOrUri: string | null | undefined): string | undefined {
+  if (!threadIdOrUri) return undefined
+  if (threadIdOrUri.includes('#')) {
+    return threadIdOrUri.split('#').pop() || undefined
+  }
+  return threadIdOrUri
+}
+
+function getPodBaseUrl(webId: string): string {
+  return webId.replace('/profile/card#me', '').replace(/\/$/, '')
+}
+
+function buildThreadUri(webId: string, chatIdOrUri: string, threadId: string): string {
+  const chatId = extractChatId(chatIdOrUri)
+  return `${getPodBaseUrl(webId)}/.data/chat/${chatId}/index.ttl#${threadId}`
+}
+
+function buildAgentUri(webId: string, agentId: string): string {
+  return `${getPodBaseUrl(webId)}/.data/agents/${agentId}.ttl`
+}
+
 export interface ThreadSummary {
   id: string
   title?: string
@@ -134,11 +164,20 @@ export async function touchThread(session: Session, threadId: string): Promise<v
 
 export async function loadMessages(session: Session, threadId: string): Promise<StoredThreadMessage[]> {
   const db = await initPodData(session)
-  const threadIdCol = (messageTable as any).threadId
   const createdAtCol = (messageTable as any).createdAt
-  const rows = await db.select().from(messageTable).where(eq(threadIdCol, threadId)).orderBy(createdAtCol).execute()
+  const thread = await loadThread(session, threadId)
+  if (!thread) {
+    return []
+  }
+
+  const chatId = extractChatId((thread as any).chatId)
+  const rows = await db.select().from(messageTable).orderBy(createdAtCol).execute()
 
   return rows
+    .filter((row: any) => (
+      extractChatId((row as any).chatId) === chatId
+      && extractThreadId((row as any).threadId) === threadId
+    ))
     .filter((row: any) => row.role === 'user' || row.role === 'assistant' || row.role === 'system')
     .map((row: any) => ({
       role: row.role as 'user' | 'assistant' | 'system',
@@ -155,12 +194,16 @@ export async function saveUserMessage(
 ): Promise<void> {
   const db = await initPodData(session)
   const now = new Date()
+  const webId = session.info.webId
+  if (!webId) {
+    throw new Error('Missing webId in Solid session')
+  }
 
   await db.insert(messageTable).values({
     id: crypto.randomUUID(),
     chatId,
-    threadId,
-    maker: session.info.webId!,
+    threadId: buildThreadUri(webId, chatId, threadId),
+    maker: webId,
     role: 'user',
     content,
     status: 'sent',
@@ -184,12 +227,16 @@ export async function saveAssistantMessage(
 ): Promise<void> {
   const db = await initPodData(session)
   const now = new Date()
+  const webId = session.info.webId
+  if (!webId) {
+    throw new Error('Missing webId in Solid session')
+  }
 
   await db.insert(messageTable).values({
     id: crypto.randomUUID(),
     chatId,
-    threadId,
-    maker: DEFAULT_AGENT_ID,
+    threadId: buildThreadUri(webId, chatId, threadId),
+    maker: buildAgentUri(webId, DEFAULT_AGENT_ID),
     role: 'assistant',
     content,
     status: 'sent',

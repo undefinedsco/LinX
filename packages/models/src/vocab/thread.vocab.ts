@@ -4,6 +4,7 @@ export const ThreadVocab = {
   chatId: SIOC.has_parent,
   title: DCTerms.title,
   starred: UDFS.favorite,
+  metadata: UDFS.metadata,
   createdAt: DCTerms.created,
   updatedAt: DCTerms.modified,
 
