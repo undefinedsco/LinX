@@ -132,8 +132,8 @@ describe('Solid Pod live CRUD (chat)', () => {
       .insert(messageTable)
       .values({
         id: messageIdValue,
-        chatId: chatId ?? chatIdValue,
-        threadId: threadId ?? threadIdValue,
+        chat: chatId ?? chatIdValue,
+        thread: threadId ?? threadIdValue,
         maker: env.webId!,
         role: 'user',
         content: 'hello from integration test',
@@ -145,7 +145,7 @@ describe('Solid Pod live CRUD (chat)', () => {
     const messageRows = await db
       .select()
       .from(messageTable)
-      .where(eq(messageTable.threadId, threadId ?? threadIdValue))
+      .where(eq(messageTable.thread, threadId ?? threadIdValue))
       .execute()
     const messageRecord = messageRows[0] ?? msgCreated
     let messageId =
@@ -193,7 +193,7 @@ describe('Solid Pod live CRUD (chat)', () => {
 
     // Cleanup (message -> thread -> chat)
     if (threadId ?? threadIdValue) {
-      await db.delete(messageTable).where(eq(messageTable.threadId, threadId ?? threadIdValue)).execute()
+      await db.delete(messageTable).where(eq(messageTable.thread, threadId ?? threadIdValue)).execute()
       await db.delete(threadTable).where({ '@id': threadId ?? threadIdValue } as any).execute()
     }
     if (chatId ?? chatIdValue) {

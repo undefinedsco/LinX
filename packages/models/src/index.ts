@@ -74,6 +74,25 @@ export {
 export { threadRepository } from './thread.repository'
 
 export {
+  workspaceTable,
+  WORKSPACE_TYPES,
+  WORKSPACE_KINDS,
+  getWorkspaceContainerPath,
+  resolveWorkspaceContainerUri,
+  parseWorkspaceIdFromContainerUri,
+  normalizeLocalWorkspacePath,
+  buildLocalWorkspaceUri,
+  parseLocalWorkspaceUri,
+  isLocalWorkspaceUri,
+  type WorkspaceType,
+  type WorkspaceKind,
+  type WorkspaceRow,
+  type WorkspaceInsert,
+  type WorkspaceUpdate,
+} from './workspace.schema'
+export { workspaceRepository } from './workspace.repository'
+
+export {
   messageTable,
   type MessageRow,
   type MessageInsert,

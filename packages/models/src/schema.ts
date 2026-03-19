@@ -14,6 +14,7 @@ import { messageTable } from './message.schema'
 import { solidProfileTable } from './profile'
 import { settingsTable } from './settings/settings.schema'
 import { threadTable } from './thread.schema'
+import { workspaceTable } from './workspace.schema'
 
 export const linxSchema = {
   solidProfileTable,
@@ -21,6 +22,7 @@ export const linxSchema = {
   agentTable,
   chatTable,
   threadTable,
+  workspaceTable,
   messageTable,
   credentialTable,
   aiProviderTable,

@@ -83,8 +83,8 @@ export const fixtureTaskProgressBlock: TaskProgressBlock = {
 
 export const fixtureMessageTooling: MessageInsert = {
   id: 'message-1',
-  threadId: 'thread-001',
-  chatId: 'https://pod.example/.data/chat/chat-direct-ai-1/index.ttl#this',
+  thread: 'https://pod.example/.data/chat/chat-direct-ai-1/index.ttl#thread-001',
+  chat: 'https://pod.example/.data/chat/chat-direct-ai-1/index.ttl#this',
   maker: 'https://pod.example/profile/card#me',
   role: 'assistant',
   content: 'I will write a file after approval.',

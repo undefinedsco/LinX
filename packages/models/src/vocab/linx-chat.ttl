@@ -2,6 +2,7 @@
 @prefix mee: <http://www.w3.org/ns/pim/meeting#> .
 @prefix sioc: <http://rdfs.org/sioc/ns#> .
 @prefix wf: <http://www.w3.org/2005/01/wf/flow-1.0#> .
+@prefix ldp: <http://www.w3.org/ns/ldp#> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix owl: <http://www.w3.org/2002/07/owl#> .
@@ -14,17 +15,44 @@
 # Predicates (company namespace)
 # --------------------------------------------
 
-# Reserved discriminator (CP0: NOT used in Chat schema)
-udfs:chatType a rdf:Property ;
-  rdfs:domain mee:LongChat ;
-  rdfs:range rdfs:Literal ;
-  rdfs:comment "Reserved. Chat is a pure channel; UI/behavior differences come from widgets (Message richContent blocks)." .
+udfs:Workspace a rdfs:Class ;
+  rdfs:label "Workspace" ;
+  rdfs:subClassOf ldp:Container ;
+  rdfs:comment "Shared collaboration container. A thread links to its container URI; metadata lives in the workspace container index.ttl." .
 
 # Execution context: workspace container (stored on Thread)
 udfs:workspace a rdf:Property ;
   rdfs:domain sioc:Thread ;
   rdfs:range rdfs:Resource ;
-  rdfs:comment "Points at the workspace container URI (Agent@workspace). Older drafts used name agentWorkspaceRef; CP0 final field name is workspace." .
+  rdfs:comment "Points at the workspace root URI. This can be a Pod container URI or a local linx://{node-id}/path workspace URI." .
+
+udfs:workspaceType a rdf:Property ;
+  rdfs:domain udfs:Workspace ;
+  rdfs:range rdfs:Literal ;
+  rdfs:comment "Workspace location type, e.g. pod or local." .
+
+udfs:workspaceKind a rdf:Property ;
+  rdfs:domain udfs:Workspace ;
+  rdfs:range rdfs:Literal ;
+  rdfs:comment "Workspace kind, e.g. folder, git, or worktree." .
+
+udfs:rootUri a rdf:Property ;
+  rdfs:domain udfs:Workspace ;
+  rdfs:range rdfs:Resource ;
+  rdfs:comment "Canonical root URI for the workspace." .
+
+udfs:repoRootUri a rdf:Property ;
+  rdfs:domain udfs:Workspace ;
+  rdfs:range rdfs:Resource ;
+  rdfs:comment "Repository root URI when the workspace is git-backed." .
+
+udfs:baseRef a rdf:Property ;
+  rdfs:domain udfs:Workspace ;
+  rdfs:range rdfs:Literal .
+
+udfs:branch a rdf:Property ;
+  rdfs:domain udfs:Workspace ;
+  rdfs:range rdfs:Literal .
 
 # Policy inheritance context (reserved; resolved via workspace container in CP0)
 udfs:policyRef a rdf:Property ;

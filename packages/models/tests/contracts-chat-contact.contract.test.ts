@@ -11,12 +11,19 @@ import {
   MessageVocab,
   ContactVocab,
   ThreadVocab,
+  WorkspaceVocab,
+  resolveWorkspaceContainerUri,
+  parseWorkspaceIdFromContainerUri,
+  buildLocalWorkspaceUri,
+  parseLocalWorkspaceUri,
+  isLocalWorkspaceUri,
 } from '../src/index'
 
 import type { ChatRow } from '../src/chat.schema'
 import type { ThreadRow } from '../src/thread.schema'
 import type { MessageRow } from '../src/message.schema'
 import type { ContactTypeValue } from '../src/contact.schema'
+import type { WorkspaceRow } from '../src/workspace.schema'
 
 import {
   fixtureChatDirectAI,
@@ -63,6 +70,12 @@ describe('Wave A CP0 contracts: centralized vocabs', () => {
     expect(ThreadVocab.workspace).toBe(LINX_CHAT.workspace)
   })
 
+  it('WorkspaceVocab exposes container metadata fields', () => {
+    expect(WorkspaceVocab.workspaceType).toBe(LINX_CHAT.workspaceType)
+    expect(WorkspaceVocab.kind).toBe(LINX_CHAT.workspaceKind)
+    expect(WorkspaceVocab.rootUri).toBe(LINX_CHAT.rootUri)
+  })
+
   it('MessageVocab exposes routing predicates', () => {
     expect(MessageVocab.routedBy).toBe(LINX_MSG.routedBy)
     expect(MessageVocab.routeTargetAgentId).toBe(LINX_MSG.routeTargetAgentId)
@@ -82,15 +95,28 @@ describe('Wave A CP0 contracts: schema types', () => {
     expectTypeOf<ChatRow>().not.toHaveProperty('contact')
   })
 
-  it('ThreadRow contains workspace context only', () => {
+  it('ThreadRow contains workspace context and thread lifecycle metadata', () => {
     expectTypeOf<ThreadRow>().toHaveProperty('workspace')
+    expectTypeOf<ThreadRow>().toHaveProperty('status')
+    expectTypeOf<ThreadRow>().toHaveProperty('metadata')
     expectTypeOf<ThreadRow>().not.toHaveProperty('policyRef')
     expectTypeOf<ThreadRow>().not.toHaveProperty('policyVersion')
     expectTypeOf<ThreadRow>().not.toHaveProperty('parentThreadId')
     expectTypeOf<ThreadRow>().not.toHaveProperty('sessionStatus')
   })
 
+  it('WorkspaceRow captures container metadata for local and remote materialization', () => {
+    expectTypeOf<WorkspaceRow>().toHaveProperty('workspaceType')
+    expectTypeOf<WorkspaceRow>().toHaveProperty('kind')
+    expectTypeOf<WorkspaceRow>().toHaveProperty('rootUri')
+    expectTypeOf<WorkspaceRow>().toHaveProperty('repoRootUri')
+  })
+
   it('MessageRow contains group/routing extensions', () => {
+    expectTypeOf<MessageRow>().toHaveProperty('chat')
+    expectTypeOf<MessageRow>().toHaveProperty('thread')
+    expectTypeOf<MessageRow>().not.toHaveProperty('chatId')
+    expectTypeOf<MessageRow>().not.toHaveProperty('threadId')
     expectTypeOf<MessageRow>().toHaveProperty('senderName')
     expectTypeOf<MessageRow>().toHaveProperty('mentions')
     expectTypeOf<MessageRow>().toHaveProperty('coordinationId')
@@ -113,5 +139,21 @@ describe('Wave A CP0 fixtures compile and are stable', () => {
     expect(fixtureToolCallBlock.type).toBe('tool')
     expect(fixtureToolApprovalBlock.type).toBe('tool_approval')
     expect(fixtureTaskProgressBlock.type).toBe('task_progress')
+  })
+
+  it('derives workspace container URIs deterministically', () => {
+    const workspaceUri = resolveWorkspaceContainerUri('https://pod.example', 'thread-001')
+    expect(workspaceUri).toBe('https://pod.example/.data/workspaces/thread-001/')
+    expect(parseWorkspaceIdFromContainerUri(workspaceUri)).toBe('thread-001')
+  })
+
+  it('builds local workspace URIs with node identity', () => {
+    const workspaceUri = buildLocalWorkspaceUri('node-123', '/Users/ganlu/develop/linx')
+    expect(workspaceUri).toBe('linx://node-123/Users/ganlu/develop/linx')
+    expect(isLocalWorkspaceUri(workspaceUri)).toBe(true)
+    expect(parseLocalWorkspaceUri(workspaceUri)).toEqual({
+      nodeId: 'node-123',
+      path: '/Users/ganlu/develop/linx',
+    })
   })
 })
