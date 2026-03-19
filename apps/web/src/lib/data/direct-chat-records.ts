@@ -106,3 +106,11 @@ export function upsertStateRow<T extends Record<string, unknown>>(
     ...row,
   }
 }
+
+export function writeCollectionRow<T extends Record<string, unknown>>(
+  collection: { state?: { data?: T[] } } | null | undefined,
+  row: T,
+  rowId?: string,
+): void {
+  upsertStateRow(collection?.state, row, rowId)
+}

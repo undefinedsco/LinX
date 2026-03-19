@@ -8,7 +8,6 @@
  */
 
 import { eq, and } from '@undefineds.co/drizzle-solid'
-import { resolveLinxPodBaseUrl } from '@linx/models/client'
 import {
   Chat, Thread, Message,
   MessageRole, MessageStatus,
@@ -19,7 +18,7 @@ import {
   type ThreadMetadata, type ThreadItem, type Attachment,
   type Page, type StoreItemType,
 } from '@/lib/vendor/xpod-chatkit'
-import type { SolidDatabase } from '@linx/models'
+import { contactTable, resolveRowId, type SolidDatabase } from '@linx/models'
 
 const DEFAULT_CHAT_ID = 'default'
 
@@ -48,9 +47,33 @@ function extractChatId(chatIdOrUri: string | null | undefined): string {
   return chatIdOrUri
 }
 
+function extractThreadId(threadIdOrUri: string | null | undefined): string | undefined {
+  if (!threadIdOrUri) return undefined
+  if (threadIdOrUri.includes('#')) {
+    return threadIdOrUri.split('#').pop() || undefined
+  }
+  return threadIdOrUri
+}
+
 function getChatIdFromMetadata(metadata?: Record<string, unknown>): string {
   if (metadata && typeof metadata.chat_id === 'string') return metadata.chat_id
   return DEFAULT_CHAT_ID
+}
+
+function parseThreadMetadata(metadata: unknown): Record<string, unknown> | undefined {
+  if (!metadata) return undefined
+  if (typeof metadata === 'string') {
+    try {
+      const parsed = JSON.parse(metadata) as Record<string, unknown> | null
+      return parsed ?? undefined
+    } catch {
+      return undefined
+    }
+  }
+  if (typeof metadata === 'object') {
+    return metadata as Record<string, unknown>
+  }
+  return undefined
 }
 
 // ---------------------------------------------------------------------------
@@ -59,14 +82,11 @@ function getChatIdFromMetadata(metadata?: Record<string, unknown>): string {
 
 function threadRecordToMetadata(record: any): ThreadMetadata {
   const chatId = extractChatId(record.chatId)
-  let extra: Record<string, unknown> | undefined
-  if (record.metadata) {
-    try { extra = JSON.parse(record.metadata) } catch { /* ignore */ }
-  }
+  const extra = parseThreadMetadata(record.metadata)
   return {
     id: record.id,
     title: record.title || undefined,
-    status: stringToStatus(record.status),
+    status: stringToStatus(record.status || 'active'),
     created_at: record.createdAt
       ? Math.floor(new Date(record.createdAt).getTime() / 1000)
       : nowTimestamp(),
@@ -208,12 +228,10 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       .where(eq(Chat.id, chatId))
       .execute()
     if (existingChats.length === 0) {
-      const now = new Date().toISOString()
+      const now = new Date()
       await this.db.insert(Chat).values({
         id: chatId,
         title: chatId === DEFAULT_CHAT_ID ? 'Default Chat' : chatId,
-        author: this.webId || null,
-        status: 'active',
         createdAt: now,
         updatedAt: now,
       }).execute()
@@ -232,6 +250,58 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     const chatId = extractChatId((threads[0] as any).chatId)
     this.threadChatIdCache.set(threadId, chatId)
     return chatId
+  }
+
+  private getPodBaseUrl(): string {
+    return this.webId.replace('/profile/card#me', '').replace(/\/$/, '')
+  }
+
+  private buildThreadUri(chatId: string, threadId: string): string {
+    return `${this.getPodBaseUrl()}/.data/chat/${chatId}/index.ttl#${threadId}`
+  }
+
+  private async resolveCounterpartMaker(chatId: string): Promise<string> {
+    const chats = await this.db.select().from(Chat)
+      .where(eq(Chat.id, chatId))
+      .execute()
+    const chat = chats[0] as any
+    const participants = Array.isArray(chat?.participants)
+      ? chat.participants.filter((participant: unknown): participant is string => typeof participant === 'string' && participant.length > 0)
+      : []
+
+    const participantRef = participants.find((participant: string) => participant !== this.webId) ?? participants[0]
+    if (!participantRef) {
+      return this.webId
+    }
+
+    const contacts = await this.db.select().from(contactTable).execute()
+    const contact = contacts.find((entry: any) => (
+      entry.entityUri === participantRef
+      || resolveRowId(entry) === participantRef
+      || entry.id === participantRef
+    )) as { entityUri?: string | null } | undefined
+
+    return contact?.entityUri || participantRef
+  }
+
+  private async selectMessagesForThread(threadId: string): Promise<any[]> {
+    const chatId = await this.getThreadChatId(threadId)
+    const messages = await this.db.select().from(Message).execute()
+
+    return messages.filter((message: any) => (
+      extractChatId(message.chat) === chatId
+      && extractThreadId(message.thread) === threadId
+    ))
+  }
+
+  private async deleteMessageRecord(message: any): Promise<void> {
+    await this.db.delete(Message).where(
+      and(
+        eq(Message.id, message.id),
+        eq((Message as any).chat, message.chat),
+        eq(Message.createdAt, message.createdAt),
+      ),
+    ).execute()
   }
 
   // -----------------------------------------------------------------------
@@ -253,14 +323,14 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   }
 
   async saveThread(thread: ThreadMetadata, _context: StoreContext): Promise<void> {
-    const now = new Date().toISOString()
+    const now = new Date()
     const chatId = getChatIdFromMetadata(thread.metadata)
 
     const metadataToPersist = { ...(thread.metadata ?? {}) }
     delete metadataToPersist.chat_id
-    const metadataJson = Object.keys(metadataToPersist).length > 0
-      ? JSON.stringify(metadataToPersist)
-      : null
+    const metadataValue = Object.keys(metadataToPersist).length > 0
+      ? metadataToPersist
+      : undefined
 
     await this.ensureChat(chatId)
     this.threadChatIdCache.set(thread.id, chatId)
@@ -271,19 +341,19 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
 
     if (existingThreads.length > 0) {
       await this.db.update(Thread).set({
-        title: thread.title || null,
+        title: thread.title || undefined,
         status: statusToString(thread.status),
-        metadata: metadataJson,
+        metadata: metadataValue,
         updatedAt: now,
       }).where(eq(Thread.id, thread.id)).execute()
     } else {
       await this.db.insert(Thread).values({
         id: thread.id,
         chatId,
-        title: thread.title || null,
+        title: thread.title || undefined,
         status: statusToString(thread.status),
-        metadata: metadataJson,
-        createdAt: new Date(thread.created_at * 1000).toISOString(),
+        metadata: metadataValue,
+        createdAt: new Date(thread.created_at * 1000),
         updatedAt: now,
       }).execute()
     }
@@ -326,15 +396,46 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   }
 
   async deleteThread(threadId: string, _context: StoreContext): Promise<void> {
+    let chatId = this.threadChatIdCache.get(threadId)
+    if (!chatId) {
+      try {
+        const threads = await this.db.select().from(Thread)
+          .where(eq(Thread.id, threadId))
+          .execute()
+        if (threads.length > 0) {
+          chatId = extractChatId((threads[0] as any).chatId)
+        }
+      } catch (err: any) {
+        console.debug('[LocalStore] Ignoring thread lookup error during delete:', err?.message || err)
+      }
+    }
+
     try {
-      await this.db.delete(Message).where(eq(Message.threadId, threadId)).execute()
+      const messages = await this.selectMessagesForThread(threadId)
+      for (const message of messages) {
+        await this.deleteMessageRecord(message)
+      }
     } catch (err: any) {
-      if (!err.message?.includes('404') && !err.message?.includes('Parse error')) throw err
+      if (
+        !err.message?.includes('404')
+        && !err.message?.includes('Could not retrieve')
+        && !err.message?.includes('Parse error')
+      ) throw err
     }
     try {
-      await this.db.delete(Thread).where(eq(Thread.id, threadId)).execute()
+      if (chatId) {
+        await this.db.delete(Thread)
+          .where(and(eq(Thread.id, threadId), eq(Thread.chatId, chatId)))
+          .execute()
+      } else {
+        await this.db.delete(Thread).where(eq(Thread.id, threadId)).execute()
+      }
     } catch (err: any) {
-      if (!err.message?.includes('404') && !err.message?.includes('Parse error')) throw err
+      if (
+        !err.message?.includes('404')
+        && !err.message?.includes('Could not retrieve')
+        && !err.message?.includes('Parse error')
+      ) throw err
     }
     this.threadMetadataCache.delete(threadId)
     this.threadChatIdCache.delete(threadId)
@@ -352,9 +453,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     _context: StoreContext,
   ): Promise<Page<ThreadItem>> {
     try {
-      const messages = await this.db.select().from(Message)
-        .where(eq(Message.threadId, threadId))
-        .execute()
+      const messages = await this.selectMessagesForThread(threadId)
 
       messages.sort((a: any, b: any) => {
         const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0
@@ -382,17 +481,21 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   async addThreadItem(threadId: string, item: ThreadItem, _context: StoreContext): Promise<void> {
     const chatId = await this.getThreadChatId(threadId)
     const { content, role, status, richContent } = threadItemToMessageRecord(item)
+    const podBaseUrl = this.getPodBaseUrl()
+    const maker = role === MessageRole.USER
+      ? this.webId
+      : await this.resolveCounterpartMaker(chatId)
 
     await this.db.insert(Message).values({
       id: item.id,
-      chatId,
-      threadId,
-      maker: role === MessageRole.USER ? this.webId : null,
+      chat: `${podBaseUrl}/.data/chat/${chatId}/index.ttl#this`,
+      thread: this.buildThreadUri(chatId, threadId),
+      maker,
       role,
       content,
-      richContent,
-      status,
-      createdAt: new Date(item.created_at * 1000).toISOString(),
+      richContent: richContent ?? undefined,
+      status: status ?? undefined,
+      createdAt: new Date(item.created_at * 1000),
     }).execute()
 
     this.recentlyCreatedIds.add(item.id)
@@ -435,17 +538,21 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
    * Avoids drizzle-solid UPDATE bug (same approach as PodChatKitStore).
    */
   private async directPatchMessage(
-    _chatId: string,
+    chatId: string,
     messageId: string,
     content: string,
     richContent: string | null,
     status: string | null,
-    _createdAt?: string,
+    createdAt?: string,
   ): Promise<void> {
     // The db instance already carries session.fetch with DPoP auth.
     // Build resource URL from webId.
-    const podBaseUrl = resolveLinxPodBaseUrl(this.webId)
-    const resourceUrl = `${podBaseUrl}/.data/chat/${_chatId}/${messageId}.ttl`
+    const dateForPath = createdAt ? new Date(createdAt) : new Date()
+    const yyyy = dateForPath.getUTCFullYear()
+    const mm = String(dateForPath.getUTCMonth() + 1).padStart(2, '0')
+    const dd = String(dateForPath.getUTCDate()).padStart(2, '0')
+    const podBaseUrl = this.getPodBaseUrl()
+    const resourceUrl = `${podBaseUrl}/.data/chat/${chatId}/${yyyy}/${mm}/${dd}/messages.ttl`
     const subjectUri = `${resourceUrl}#${messageId}`
 
     const escapeForSparql = (value: string): string => {
@@ -508,17 +615,20 @@ WHERE { ${wherePatterns.join(' ')} }
   }
 
   async loadItem(threadId: string, itemId: string, _context: StoreContext): Promise<ThreadItem> {
-    const messages = await this.db.select().from(Message)
-      .where(and(eq(Message.id, itemId), eq(Message.threadId, threadId)))
-      .execute()
+    const messages = (await this.selectMessagesForThread(threadId))
+      .filter((message: any) => message.id === itemId)
     if (messages.length === 0) throw new Error(`Item not found: ${itemId}`)
     return messageRecordToItem(messages[0], threadId)
   }
 
   async deleteThreadItem(threadId: string, itemId: string, _context: StoreContext): Promise<void> {
-    await this.db.delete(Message)
-      .where(and(eq(Message.id, itemId), eq(Message.threadId, threadId)))
-      .execute()
+    const messages = await this.selectMessagesForThread(threadId)
+    const message = messages.find((entry: any) => entry.id === itemId)
+    if (!message) {
+      return
+    }
+
+    await this.deleteMessageRecord(message)
   }
 
   // -----------------------------------------------------------------------

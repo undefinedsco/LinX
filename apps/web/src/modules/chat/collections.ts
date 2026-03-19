@@ -8,38 +8,50 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { getLiteral, getSolidDataset, getThing, getUrl, getUrlAll } from '@inrupt/solid-client'
 import { like, or } from '@undefineds.co/drizzle-solid'
 import {
   chatTable,
   threadTable,
+  workspaceTable,
   messageTable,
   agentTable,
   contactTable,
   credentialTable,
   eq,
   getBuiltinProvider,
+  UDFS,
+  WF,
   type ChatRow,
   type ChatInsert,
   type ThreadRow,
   type ThreadInsert,
+  type WorkspaceRow,
+  type WorkspaceInsert,
+  type WorkspaceKind,
   type MessageRow,
   type MessageInsert,
   type AgentInsert,
   type AgentRow,
   type ContactInsert,
   type ContactRow,
+  isLocalWorkspaceUri,
+  resolveWorkspaceContainerUri,
+  parseWorkspaceIdFromContainerUri,
+  normalizeLocalWorkspacePath,
 } from '@linx/models'
 import type { SolidDatabase } from '@linx/models'
 import { queryClient } from '@/providers/query-provider'
 import { createPodCollection } from '@/lib/data/pod-collection'
 import { favoriteHooks } from '@/modules/favorites/collections'
-import { createAgentContactRecords, upsertStateRow } from '@/lib/data/direct-chat-records'
+import { createAgentContactRecords, writeCollectionRow } from '@/lib/data/direct-chat-records'
 
 // ============================================================================
 // Database Getter
 // ============================================================================
 
 let dbGetter: (() => SolidDatabase | null) | null = null
+const threadChatIdCache = new Map<string, string>()
 
 export function setDatabaseGetter(getter: () => SolidDatabase | null) {
   dbGetter = getter
@@ -47,6 +59,216 @@ export function setDatabaseGetter(getter: () => SolidDatabase | null) {
 
 function getDb(): SolidDatabase | null {
   return dbGetter?.() ?? null
+}
+
+function getPodBaseUrl(db: SolidDatabase): string | null {
+  const podUrl = (db as any).getDialect?.()?.getPodUrl?.()
+  if (typeof podUrl === 'string' && podUrl.length > 0) {
+    return podUrl.replace(/\/$/, '')
+  }
+
+  const webId = (db as any).getSession?.()?.info?.webId
+  if (typeof webId !== 'string' || !webId.includes('/profile/card#me')) {
+    return null
+  }
+  return webId.replace('/profile/card#me', '')
+}
+
+function getCurrentWebId(db: SolidDatabase): string | null {
+  const webId = (
+    (db as any).getDialect?.()?.getWebId?.()
+    ?? (db as any).getSession?.()?.info?.webId
+    ?? (db as any).session?.info?.webId
+  )
+  return typeof webId === 'string' && webId.length > 0 ? webId : null
+}
+
+function normalizeParticipants(participants: string[], selfWebId?: string | null): string[] {
+  return Array.from(new Set(participants)).sort((left, right) => {
+    if (selfWebId) {
+      if (left === selfWebId && right !== selfWebId) return -1
+      if (right === selfWebId && left !== selfWebId) return 1
+    }
+    return left.localeCompare(right)
+  })
+}
+
+function buildChatSubjectIri(db: SolidDatabase, chatId: string | undefined): string | null {
+  if (!chatId) return null
+  const podBaseUrl = getPodBaseUrl(db)
+  if (!podBaseUrl) return null
+  return `${podBaseUrl}/.data/chat/${chatId}/index.ttl#this`
+}
+
+function getCachedThreadChatId(threadId: string): string | null {
+  return threadChatIdCache.get(threadId) ?? threadCollection.get(threadId)?.chatId ?? null
+}
+
+async function resolveThreadChatId(
+  db: SolidDatabase,
+  threadId: string | undefined,
+  chatId?: string | null,
+): Promise<string | null> {
+  if (!threadId) return null
+  if (chatId) return chatId
+
+  const cachedChatId = getCachedThreadChatId(threadId)
+  if (cachedChatId) {
+    return cachedChatId
+  }
+
+  const rows = await db.select()
+    .from(threadTable)
+    .where(eq(threadTable.id, threadId))
+    .execute()
+  const row = rows[0] as ThreadRow | undefined
+  if (!row?.chatId) {
+    return null
+  }
+
+  threadChatIdCache.set(threadId, row.chatId)
+  ;(threadCollection.utils as { writeUpsert?: (data: ThreadRow) => void }).writeUpsert?.(row)
+  return row.chatId
+}
+
+async function buildThreadSubjectIri(
+  db: SolidDatabase,
+  threadId: string | undefined,
+  chatId?: string | null,
+): Promise<string | null> {
+  if (!threadId) return null
+  const resolvedChatId = await resolveThreadChatId(db, threadId, chatId)
+  if (!resolvedChatId) return null
+  const podBaseUrl = getPodBaseUrl(db)
+  if (!podBaseUrl) return null
+  return `${podBaseUrl}/.data/chat/${resolvedChatId}/index.ttl#${threadId}`
+}
+
+function extractLinkedEntityId(uri: string | null | undefined): string | null {
+  if (!uri) return null
+  if (uri.includes('#')) {
+    const fragment = uri.split('#').pop() ?? null
+    if (fragment && fragment !== 'this') return fragment
+  }
+  const match = uri.match(/\/\.data\/chat\/([^/]+)\/index\.ttl#this$/)
+  if (match) return match[1] ?? null
+  return uri
+}
+
+async function hydrateChatRows(db: SolidDatabase, rows: ChatRow[]): Promise<ChatRow[]> {
+  const selfWebId = getCurrentWebId(db)
+  const normalizedRows = rows.map((row) => {
+    if (!Array.isArray(row.participants)) {
+      return row
+    }
+
+    return {
+      ...row,
+      participants: normalizeParticipants(row.participants, selfWebId),
+    }
+  })
+
+  const needsHydration = normalizedRows.filter((row) => !Array.isArray(row.participants))
+  if (needsHydration.length === 0) {
+    return normalizedRows
+  }
+
+  const hydratedRowsById = new Map<string, Partial<ChatRow>>()
+
+  await Promise.all(needsHydration.map(async (row) => {
+    const subjectIri = buildChatSubjectIri(db, row.id)
+    if (!subjectIri) return
+
+    try {
+      const sessionFetch = (
+        (db as any).getDialect?.()?.getAuthenticatedFetch?.()
+        ?? (db as any).getSession?.()?.fetch
+      ) as typeof fetch | undefined
+      if (!sessionFetch) return
+
+      const resourceUrl = subjectIri.split('#')[0]
+      const dataset = await getSolidDataset(resourceUrl, {
+        fetch: sessionFetch,
+      })
+      const thing = getThing(dataset, subjectIri)
+      if (!thing) return
+      const nextRow: Partial<ChatRow> = {}
+      const participants = normalizeParticipants(getUrlAll(thing, WF.participant), selfWebId)
+      if (participants.length > 0) {
+        nextRow.participants = participants
+      }
+
+      const metadataUrl = getUrl(thing, UDFS.metadata)
+      if (metadataUrl) {
+        const metadataThing = getThing(dataset, metadataUrl)
+        const memberRolesLiteral = metadataThing
+          ? getLiteral(metadataThing, UDFS.term('memberRoles'))
+          : null
+        if (memberRolesLiteral?.value) {
+          try {
+            nextRow.metadata = {
+              memberRoles: JSON.parse(memberRolesLiteral.value) as Record<string, 'owner' | 'admin' | 'member'>,
+            }
+          } catch (error) {
+            console.warn('[chatOps] Failed to parse chat metadata:', row.id, error)
+          }
+        }
+      }
+
+      if (row.id && Object.keys(nextRow).length > 0) {
+        hydratedRowsById.set(row.id, nextRow)
+      }
+    } catch (error) {
+      console.warn('[chatOps] Failed to hydrate chat participants:', row.id, error)
+    }
+  }))
+
+  return normalizedRows.map((row) => {
+    const hydratedRow = row.id ? hydratedRowsById.get(row.id) : undefined
+    if (!hydratedRow) return row
+    return {
+      ...row,
+      ...hydratedRow,
+    }
+  })
+}
+
+async function ensureChatStateRow(db: SolidDatabase, chatId: string): Promise<ChatRow> {
+  const cached = chatCollection.get(chatId)
+  if (cached) {
+    return cached
+  }
+
+  const rows = await chatCollection.fetch()
+  const [row] = await hydrateChatRows(db, rows.filter((candidate) => candidate.id === chatId))
+
+  if (!row) {
+    throw new Error(`Chat ${chatId} was not found in the Pod`)
+  }
+
+  ;(chatCollection.utils as { writeUpsert?: (data: ChatRow) => void }).writeUpsert?.(row)
+  return row
+}
+
+async function ensureThreadStateRow(db: SolidDatabase, threadId: string): Promise<ThreadRow> {
+  const cached = threadCollection.get(threadId)
+  if (cached) {
+    return cached
+  }
+
+  const rows = await db.select()
+    .from(threadTable)
+    .where(eq(threadTable.id, threadId))
+    .execute()
+  const row = rows[0] as ThreadRow | undefined
+
+  if (!row) {
+    throw new Error(`Thread ${threadId} was not found in the Pod`)
+  }
+
+  threadChatIdCache.set(threadId, row.chatId)
+  ;(threadCollection.utils as { writeUpsert?: (data: ThreadRow) => void }).writeUpsert?.(row)
+  return row
 }
 
 // ============================================================================
@@ -90,6 +312,7 @@ const threadListColumns: (keyof ThreadRow)[] = [
   'chatId',
   'title',
   'starred',
+  'workspace',
   'updatedAt',
 ]
 
@@ -107,14 +330,43 @@ export const threadCollection = createPodCollection<typeof threadTable, ThreadRo
 })
 
 // ============================================================================
+// Workspace Collection
+// ============================================================================
+
+const workspaceListColumns: (keyof WorkspaceRow)[] = [
+  'id',
+  'title',
+  'workspaceType',
+  'kind',
+  'rootUri',
+  'repoRootUri',
+  'baseRef',
+  'branch',
+  'updatedAt',
+]
+
+export const workspaceCollection = createPodCollection<typeof workspaceTable, WorkspaceRow, WorkspaceInsert>({
+  table: workspaceTable,
+  queryKey: ['workspaces'],
+  queryClient,
+  getDb,
+  columns: workspaceListColumns,
+  orderBy: { column: 'updatedAt', direction: 'desc' },
+  getKey: (item) => {
+    if (!item.id) throw new Error('Workspace item is missing id.')
+    return item.id
+  },
+})
+
+// ============================================================================
 // Message Collection
 // ============================================================================
 
 // Columns needed for message list view (excludes richContent, replacedBy, deletedAt, updatedAt)
 const messageListColumns: (keyof MessageRow)[] = [
   'id',
-  'threadId',
-  'chatId',
+  'thread',
+  'chat',
   'maker',
   'role',
   'content',
@@ -238,7 +490,7 @@ export const chatOps = {
     const stateMap = messageCollection.state
     const items = Array.from(stateMap.values())
     return items
-      .filter((m: MessageRow) => m.threadId === threadId)
+      .filter((m: MessageRow) => extractLinkedEntityId(m.thread) === threadId)
       .sort((a, b) => {
         const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0
         const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0
@@ -285,8 +537,8 @@ export const chatOps = {
     const chatId = crypto.randomUUID()
     const now = new Date()
 
-    upsertStateRow(agentCollection.state, agent as AgentRow, agentId)
-    upsertStateRow(_contactCollection.state, contact as ContactRow, contactId)
+    writeCollectionRow(agentCollection, agent as AgentRow, agentId)
+    writeCollectionRow(_contactCollection, contact as ContactRow, contactId)
 
     const chatData: ChatInsert = {
       id: chatId,
@@ -299,7 +551,7 @@ export const chatOps = {
     }
     const chatTx = chatCollection.insert(chatData as ChatRow)
     await chatTx.isPersisted.promise
-    upsertStateRow(chatCollection.state, { ...chatData, id: chatId } as ChatRow, chatId)
+    writeCollectionRow(chatCollection, { ...chatData, id: chatId } as ChatRow, chatId)
     queryClient.invalidateQueries({ queryKey: QUERY_KEYS.chats })
 
     return { ...chatData, id: chatId, agentId, contactId } as ChatRow & { agentId: string; contactId: string }
@@ -309,6 +561,14 @@ export const chatOps = {
    * Update a chat
    */
   async updateChat(id: string, data: Partial<ChatRow>): Promise<void> {
+    const db = getDb()
+    if (!chatCollection.get(id)) {
+      if (!db) {
+        throw new Error('Solid database is not ready')
+      }
+      await ensureChatStateRow(db, id)
+    }
+
     const tx = chatCollection.update(id, (draft: any) => {
       Object.assign(draft, data, { updatedAt: new Date() })
     })
@@ -374,11 +634,122 @@ export const chatOps = {
     
     const tx = threadCollection.insert(threadData as ThreadRow)
     await tx.isPersisted.promise
+    threadChatIdCache.set(threadId, chatId)
+    writeCollectionRow(threadCollection, { ...threadData, id: threadId } as ThreadRow, threadId)
     
     // Invalidate threads query
     queryClient.invalidateQueries({ queryKey: ['chats', chatId, 'threads'] })
     
     return { ...threadData, id: threadId } as ThreadRow
+  },
+
+  async ensureThreadWorkspace(input: {
+    threadId: string
+    workspaceUri?: string
+    title?: string
+    repoPath?: string
+    folderPath?: string
+    baseRef?: string
+    branch?: string
+  }): Promise<string> {
+    const db = getDb()
+    if (!db) {
+      throw new Error('数据库未就绪，无法创建 workspace。')
+    }
+
+    const thread = await ensureThreadStateRow(db, input.threadId)
+    const requestedWorkspaceUri = input.workspaceUri?.trim()
+
+    if (requestedWorkspaceUri && isLocalWorkspaceUri(requestedWorkspaceUri)) {
+      if (thread.workspace !== requestedWorkspaceUri) {
+        await this.updateThread(input.threadId, { workspace: requestedWorkspaceUri })
+        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.threads(thread.chatId) })
+      }
+      return requestedWorkspaceUri
+    }
+
+    if (!requestedWorkspaceUri && thread.workspace && isLocalWorkspaceUri(thread.workspace)) {
+      return thread.workspace
+    }
+
+    const podBaseUrl = getPodBaseUrl(db)
+    if (!podBaseUrl) {
+      throw new Error('无法解析 Pod 地址，无法创建 workspace。')
+    }
+
+    const currentPodWorkspaceUri =
+      thread.workspace && !isLocalWorkspaceUri(thread.workspace) ? thread.workspace : undefined
+    const workspaceUri =
+      requestedWorkspaceUri
+      ?? currentPodWorkspaceUri
+      ?? resolveWorkspaceContainerUri(podBaseUrl, input.threadId)
+    const workspaceId = parseWorkspaceIdFromContainerUri(workspaceUri) ?? input.threadId
+    const normalizedRepoPath = normalizeLocalWorkspacePath(input.repoPath)
+    const normalizedFolderPath = normalizeLocalWorkspacePath(input.folderPath)
+    const kind: WorkspaceKind =
+      normalizedFolderPath && normalizedRepoPath && normalizedFolderPath !== normalizedRepoPath
+        ? 'worktree'
+        : normalizedRepoPath
+          ? 'git'
+          : 'folder'
+    const now = new Date()
+
+    const cachedWorkspace = workspaceCollection.get(workspaceId)
+    const persistedWorkspaceRows = cachedWorkspace
+      ? []
+      : await db.select().from(workspaceTable).where(eq(workspaceTable.id, workspaceId)).execute()
+    const existingWorkspace = cachedWorkspace ?? persistedWorkspaceRows[0] as WorkspaceRow | undefined
+
+    const nextWorkspaceCreate: WorkspaceInsert = {
+      id: workspaceId,
+      title: input.title?.trim() || thread.title || 'Workspace',
+      workspaceType: 'pod',
+      kind,
+      rootUri: workspaceUri,
+      repoRootUri: existingWorkspace?.repoRootUri || undefined,
+      baseRef: input.baseRef?.trim() || existingWorkspace?.baseRef || '',
+      branch: input.branch?.trim() || existingWorkspace?.branch || '',
+      createdAt: existingWorkspace?.createdAt ?? now,
+      updatedAt: now,
+    }
+    const nextWorkspaceRow = {
+      ...existingWorkspace,
+      ...nextWorkspaceCreate,
+      id: workspaceId,
+      createdAt: existingWorkspace?.createdAt ?? now,
+      updatedAt: now,
+    } as WorkspaceRow
+
+    if (existingWorkspace) {
+      if (!cachedWorkspace) {
+        writeCollectionRow(workspaceCollection, existingWorkspace, workspaceId)
+      }
+      const tx = workspaceCollection.update(workspaceId, (draft: any) => {
+        Object.assign(draft, {
+          title: nextWorkspaceCreate.title,
+          workspaceType: nextWorkspaceCreate.workspaceType,
+          kind: nextWorkspaceCreate.kind,
+          rootUri: nextWorkspaceCreate.rootUri,
+          repoRootUri: nextWorkspaceCreate.repoRootUri,
+          baseRef: nextWorkspaceCreate.baseRef,
+          branch: nextWorkspaceCreate.branch,
+          updatedAt: now,
+        })
+      })
+      await tx.isPersisted.promise
+    } else {
+      const tx = workspaceCollection.insert(nextWorkspaceCreate as WorkspaceRow)
+      await tx.isPersisted.promise
+    }
+
+    writeCollectionRow(workspaceCollection, nextWorkspaceRow, workspaceId)
+
+    if (thread.workspace !== workspaceUri) {
+      await this.updateThread(input.threadId, { workspace: workspaceUri })
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.threads(thread.chatId) })
+    }
+
+    return workspaceUri
   },
 
   /**
@@ -431,13 +802,20 @@ export const chatOps = {
     content: string, 
     maker: string
   ): Promise<MessageRow> {
+    const db = getDb()
+    if (!db) throw new Error('Database not connected')
+
     const msgId = crypto.randomUUID()
     const now = new Date()
+    const threadRef = await buildThreadSubjectIri(db, threadId, chatId)
+    if (!threadRef) {
+      throw new Error(`Failed to resolve thread IRI for thread ${threadId}`)
+    }
     
     const msgData: MessageInsert = {
       id: msgId,
-      chatId,
-      threadId,
+      chat: buildChatSubjectIri(db, chatId) ?? chatId,
+      thread: threadRef,
       maker,
       role: 'user',
       content,
@@ -456,7 +834,7 @@ export const chatOps = {
     })
     
     // Invalidate messages query
-    queryClient.invalidateQueries({ queryKey: ['threads', threadId, 'messages'] })
+    queryClient.invalidateQueries({ queryKey: QUERY_KEYS.messages(chatId, threadId) })
     
     return { ...msgData, id: msgId } as MessageRow
   },
@@ -471,13 +849,20 @@ export const chatOps = {
     maker: string,
     richContent?: string
   ): Promise<MessageRow> {
+    const db = getDb()
+    if (!db) throw new Error('Database not connected')
+
     const msgId = crypto.randomUUID()
     const now = new Date()
+    const threadRef = await buildThreadSubjectIri(db, threadId, chatId)
+    if (!threadRef) {
+      throw new Error(`Failed to resolve thread IRI for thread ${threadId}`)
+    }
     
     const msgData: MessageInsert = {
       id: msgId,
-      chatId,
-      threadId,
+      chat: buildChatSubjectIri(db, chatId) ?? chatId,
+      thread: threadRef,
       maker,
       role: 'assistant',
       content,
@@ -497,7 +882,7 @@ export const chatOps = {
     })
     
     // Invalidate messages query
-    queryClient.invalidateQueries({ queryKey: ['threads', threadId, 'messages'] })
+    queryClient.invalidateQueries({ queryKey: QUERY_KEYS.messages(chatId, threadId) })
     
     return { ...msgData, id: msgId } as MessageRow
   },
@@ -508,9 +893,9 @@ export const chatOps = {
   async deleteMessage(id: string, threadId: string): Promise<void> {
     const tx = messageCollection.delete(id)
     await tx.isPersisted.promise
-    
-    // Invalidate messages query
-    queryClient.invalidateQueries({ queryKey: ['threads', threadId, 'messages'] })
+
+    const chatId = getCachedThreadChatId(threadId) || ''
+    queryClient.invalidateQueries({ queryKey: QUERY_KEYS.messages(chatId, threadId) })
   },
 
   // ==========================================================================
@@ -683,7 +1068,23 @@ export const chatOps = {
    * Fetch chats from Pod
    */
   async fetchChats(): Promise<ChatRow[]> {
-    return await chatCollection.fetch()
+    const db = getDb()
+    const rows = await chatCollection.fetch()
+    if (!db || rows.length === 0) {
+      return rows
+    }
+
+    const hydratedRows = await hydrateChatRows(db, rows)
+    const writeBatch = (chatCollection.utils as { writeBatch?: (callback: () => void) => void }).writeBatch
+    const writeUpsert = (chatCollection.utils as { writeUpsert?: (data: ChatRow) => void }).writeUpsert
+    if (typeof writeBatch === 'function' && typeof writeUpsert === 'function') {
+      writeBatch(() => {
+        hydratedRows.forEach((row) => {
+          writeUpsert(row)
+        })
+      })
+    }
+    return hydratedRows
   },
 
   /**
@@ -699,6 +1100,12 @@ export const chatOps = {
       .where(eq(chatIdCol, chatId))
       .orderBy('updatedAt', 'desc')
       .execute()
+
+    rows.forEach((row) => {
+      if (row.id && row.chatId) {
+        threadChatIdCache.set(row.id, row.chatId)
+      }
+    })
     
     return rows
   },
@@ -706,19 +1113,43 @@ export const chatOps = {
   /**
    * Fetch messages for a thread
    */
-  async fetchMessages(threadId: string): Promise<MessageRow[]> {
+  async fetchMessages(threadId: string, chatId?: string | null): Promise<MessageRow[]> {
     const db = getDb()
     if (!db) return []
-    
-    const threadIdCol = (messageTable as any).threadId
+    const resolvedChatId = await resolveThreadChatId(db, threadId, chatId)
+    if (!resolvedChatId) {
+      console.warn('[chatOps] Failed to resolve thread IRI for message query:', threadId)
+      return []
+    }
+    const threadRef = await buildThreadSubjectIri(db, threadId, resolvedChatId)
+    if (!threadRef) {
+      console.warn('[chatOps] Failed to resolve thread IRI for message query:', threadId)
+      return []
+    }
+
+    const threadCol = (messageTable as any).thread
     const createdAtCol = (messageTable as any).createdAt
     const rows = await db.select()
       .from(messageTable)
-      .where(eq(threadIdCol, threadId))
+      .where(eq(threadCol, threadRef))
       .orderBy(createdAtCol)
       .execute()
-    
-    return rows
+
+    if (rows.length > 0) {
+      return rows
+    }
+
+    const allRows = await db.select()
+      .from(messageTable)
+      .orderBy(createdAtCol)
+      .execute()
+
+    return allRows.filter((row) => {
+      const rowThread = row.thread
+      return rowThread === threadRef
+        || rowThread === threadId
+        || (typeof rowThread === 'string' && rowThread.endsWith(`#${threadId}`))
+    })
   },
 
   // ==========================================================================
@@ -799,7 +1230,8 @@ const QUERY_KEYS = {
   chats: ['chats'] as const,
   chat: (id: string) => ['chats', id] as const,
   threads: (chatId: string) => ['chats', chatId, 'threads'] as const,
-  messages: (threadId: string) => ['threads', threadId, 'messages'] as const,
+  workspaces: ['workspaces'] as const,
+  messages: (chatId: string, threadId: string) => ['chats', chatId, 'threads', threadId, 'messages'] as const,
 }
 
 /**
@@ -827,7 +1259,7 @@ export function useChatList(filters?: { search?: string }) {
             )
             .orderBy(chatTable.lastActiveAt, 'desc')
             .execute()
-          return results as ChatRow[]
+          return await hydrateChatRows(db, results as ChatRow[])
         } catch (error) {
           console.error('[useChatList] Search error, falling back to local:', error)
           // Fallback to local search
@@ -864,18 +1296,35 @@ export function useThreadList(chatId: string, options?: { enabled?: boolean }) {
 }
 
 /**
+ * Hook to fetch all threads for chat list/runtime index use cases.
+ */
+export function useThreadIndex(options?: { enabled?: boolean }) {
+  const db = getDb()
+  const enabled = options?.enabled ?? !!db
+
+  return useQuery({
+    queryKey: ['threads', 'index'],
+    queryFn: async () => {
+      if (!db) return []
+      return threadCollection.fetch()
+    },
+    enabled: !!db && enabled,
+  })
+}
+
+/**
  * Hook to fetch message list for a thread
  */
-export function useMessageList(threadId: string | null) {
+export function useMessageList(chatId: string | null, threadId: string | null) {
   const db = getDb()
   
   return useQuery({
-    queryKey: QUERY_KEYS.messages(threadId || ''),
+    queryKey: QUERY_KEYS.messages(chatId || '', threadId || ''),
     queryFn: async () => {
-      if (!db || !threadId) return []
-      return chatOps.fetchMessages(threadId)
+      if (!db || !threadId || !chatId) return []
+      return chatOps.fetchMessages(threadId, chatId)
     },
-    enabled: !!db && !!threadId,
+    enabled: !!db && !!threadId && !!chatId,
   })
 }
 
@@ -919,6 +1368,22 @@ export function useChatMutations() {
     },
   })
 
+  const ensureThreadWorkspace = useMutation({
+    mutationFn: (input: {
+      threadId: string
+      workspaceUri?: string
+      title?: string
+      repoPath?: string
+      folderPath?: string
+      baseRef?: string
+      branch?: string
+    }) => chatOps.ensureThreadWorkspace(input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: QUERY_KEYS.workspaces })
+      qc.invalidateQueries({ queryKey: ['threads', 'index'] })
+    },
+  })
+
   const updateThread = useMutation({
     mutationFn: ({ id, chatId, ...data }: { id: string; chatId: string } & Partial<ThreadRow>) => 
       chatOps.updateThread(id, data),
@@ -939,7 +1404,8 @@ export function useChatMutations() {
     mutationFn: ({ id, threadId }: { id: string; threadId: string }) => 
       chatOps.deleteMessage(id, threadId),
     onSuccess: (_, variables) => {
-      qc.invalidateQueries({ queryKey: QUERY_KEYS.messages(variables.threadId) })
+      const cachedChatId = getCachedThreadChatId(variables.threadId) || ''
+      qc.invalidateQueries({ queryKey: QUERY_KEYS.messages(cachedChatId, variables.threadId) })
     },
   })
 
@@ -972,6 +1438,7 @@ export function useChatMutations() {
     updateChat,
     deleteChat,
     createThread,
+    ensureThreadWorkspace,
     updateThread,
     deleteThread,
     deleteMessage,

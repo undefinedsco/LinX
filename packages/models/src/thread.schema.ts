@@ -26,13 +26,11 @@ export const threadTable = podTable(
     // Display / state
     title: string('title').predicate(DCTerms.title),
     starred: boolean('starred').predicate(UDFS.favorite).default(false),
-
-    // Execution context: workspace container (Agent@workspace)
-    workspace: uri('workspace').predicate(LINX_CHAT.workspace),
-
-    // Generic execution metadata shared by CLI/App runtimes.
+    status: string('status').predicate(UDFS.status).default('active'),
     metadata: object('metadata').predicate(UDFS.metadata),
 
+    // Execution context: workspace root URI (Pod container or local `linx://` workspace)
+    workspace: uri('workspace').predicate(LINX_CHAT.workspace),
 
     createdAt: timestamp('createdAt').predicate(DCTerms.created).notNull().defaultNow(),
     updatedAt: timestamp('updatedAt').predicate(DCTerms.modified).notNull().defaultNow(),
