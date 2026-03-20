@@ -5,6 +5,7 @@ import { resolveLinxPodBaseUrl } from '@linx/models/client'
 import {
   approvalTable,
   auditTable,
+  updateExactRecord,
   inboxNotificationTable,
   type ApprovalInsert,
   type ApprovalRow,
@@ -290,16 +291,16 @@ export const inboxOps = {
     const auditId = crypto.randomUUID()
     const auditUri = makeAuditUri(input.actorWebId, auditId)
 
-    await db.update(approvalTable).set({
+    await updateExactRecord(db, approvalTable as any, input.approval as any, {
       status: input.decision,
       decisionBy: input.actorWebId,
       decisionRole: 'human',
       reason: input.reason?.trim() || null,
       resolvedAt: now,
       policyVersion: input.approval.policyVersion || 'phase4-inbox-v1',
-    } as any).where({ id: input.approval.id } as any).execute()
+    } as any)
 
-    await db.insert(auditTable).values({
+    await (db as any).insert(auditTable as any).values({
       id: auditId,
       action: `inbox.approval.${input.decision}`,
       actor: input.actorWebId,
@@ -318,7 +319,7 @@ export const inboxOps = {
       createdAt: now,
     }).execute()
 
-    await db.insert(inboxNotificationTable).values({
+    await (db as any).insert(inboxNotificationTable).values({
       id: crypto.randomUUID(),
       actor: input.actorWebId,
       object: auditUri,

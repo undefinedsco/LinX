@@ -1,52 +1,48 @@
-import 'dotenv/config'
-import { describe, it, expect } from 'vitest'
-import { Session } from '@inrupt/solid-client-authn-node'
+import { afterAll, describe, expect, it } from 'vitest'
 import { drizzle } from '@undefineds.co/drizzle-solid'
 import { chatTable } from '../src/chat.schema'
 import { threadTable } from '../src/thread.schema'
 import { messageTable } from '../src/message.schema'
 import { linxSchema } from '../src/schema'
 import { eq } from '@undefineds.co/drizzle-solid'
+import {
+  createXpodIntegrationContext,
+  type XpodIntegrationContext,
+} from './support/xpod-integration'
 
-const env = {
-  webId: process.env.SOLID_WEBID,
-  clientId: process.env.SOLID_CLIENT_ID,
-  clientSecret: process.env.SOLID_CLIENT_SECRET,
-  oidcIssuer: process.env.SOLID_OIDC_ISSUER,
+let context: XpodIntegrationContext<typeof linxSchema> | null = null
+
+async function getContext(): Promise<XpodIntegrationContext<typeof linxSchema>> {
+  if (context) return context
+  context = await createXpodIntegrationContext({
+    schema: linxSchema,
+    tables: [chatTable, threadTable, messageTable],
+  })
+  return context
 }
 
-const hasEnv = Boolean(env.webId && env.clientId && env.clientSecret && env.oidcIssuer)
+afterAll(async () => {
+  await context?.stop()
+}, 30000)
 
-function resolvePodUri(table: { resolveUri: (id: string) => string }, id: string) {
-  if (!env.webId) return table.resolveUri(id)
+function resolvePodUri(
+  table: { resolveUri: (id: string) => string },
+  id: string,
+  webId: string,
+) {
   const relative = table.resolveUri(id)
   if (relative.startsWith('http://') || relative.startsWith('https://')) {
     return relative
   }
-  const webIdUrl = new URL(env.webId)
+  const webIdUrl = new URL(webId)
   const baseRoot = webIdUrl.pathname.split('/profile/')[0] + '/'
   const podBase = `${webIdUrl.origin}${baseRoot}`
   return new URL(relative, podBase).toString()
 }
 
 describe('Solid Pod live CRUD (chat)', () => {
-  it.skipIf(!hasEnv)('creates chat/thread/message and cleans up', { timeout: 60000 }, async () => {
-    const session = new Session()
-    await session.login({
-      clientId: env.clientId!,
-      clientSecret: env.clientSecret!,
-      oidcIssuer: env.oidcIssuer!,
-      tokenType: 'DPoP',
-    })
-
-    const db = drizzle(session, {
-      logger: false,
-      disableInteropDiscovery: true,
-      schema: linxSchema,
-    })
-
-    // Ensure containers/resources exist (will create containers if missing)
-    await db.init([chatTable, threadTable, messageTable])
+  it('creates chat/thread/message and cleans up', { timeout: 60000 }, async () => {
+    const { db, webId } = await getContext()
 
     const chatIdValue = crypto.randomUUID()
     const threadIdValue = crypto.randomUUID()
@@ -63,7 +59,7 @@ describe('Solid Pod live CRUD (chat)', () => {
         description,
         provider: 'openai',
         model: 'gpt-4o-mini',
-        participants: [env.webId!],
+        participants: [webId],
         createdAt: now,
         updatedAt: now,
       })
@@ -86,7 +82,7 @@ describe('Solid Pod live CRUD (chat)', () => {
       chatId = (match as any)?.['@id']
     }
     if (!chatId) {
-      chatId = resolvePodUri(chatTable, chatIdValue)
+      chatId = resolvePodUri(chatTable, chatIdValue, webId)
     }
     expect(chatRecord, 'inserted chat').toBeTruthy()
 
@@ -123,7 +119,7 @@ describe('Solid Pod live CRUD (chat)', () => {
       threadId = (match as any)?.['@id']
     }
     if (!threadId) {
-      threadId = resolvePodUri(threadTable, threadIdValue)
+      threadId = resolvePodUri(threadTable, threadIdValue, webId)
     }
     expect(threadRecord, 'inserted thread').toBeTruthy()
 
@@ -134,7 +130,7 @@ describe('Solid Pod live CRUD (chat)', () => {
         id: messageIdValue,
         chat: chatId ?? chatIdValue,
         thread: threadId ?? threadIdValue,
-        maker: env.webId!,
+        maker: webId,
         role: 'user',
         content: 'hello from integration test',
         status: 'sent',
@@ -163,7 +159,7 @@ describe('Solid Pod live CRUD (chat)', () => {
       messageId = (match as any)?.['@id']
     }
     if (!messageId) {
-      messageId = resolvePodUri(messageTable, messageIdValue)
+      messageId = resolvePodUri(messageTable, messageIdValue, webId)
     }
     expect(messageRecord, 'inserted message').toBeTruthy()
 
@@ -172,32 +168,34 @@ describe('Solid Pod live CRUD (chat)', () => {
     await db
       .update(chatTable)
       .set({ title: updatedTitle })
-      .where({ '@id': chatId } as any)
+      .whereByIri(chatId)
       .execute()
 
     const updatedThreadTitle = 'integration-thread-updated'
     await db
       .update(threadTable)
       .set({ title: updatedThreadTitle })
-      .where({ '@id': threadId } as any)
+      .whereByIri(threadId)
       .execute()
 
     await db
       .update(messageTable)
       .set({ content: 'updated message content', status: 'edited' })
-      .where({ '@id': messageId } as any)
+      .whereByIri(messageId)
       .execute()
 
-    await db.select().from(threadTable).where({ '@id': threadId } as any).execute()
-    await db.select().from(messageTable).where({ '@id': messageId } as any).execute()
+    await (db as any).findByIri(threadTable as any, threadId)
+    await (db as any).findByIri(messageTable as any, messageId)
 
     // Cleanup (message -> thread -> chat)
+    if (messageId ?? messageIdValue) {
+      await (db as any).deleteByIri(messageTable as any, messageId ?? messageIdValue)
+    }
     if (threadId ?? threadIdValue) {
-      await db.delete(messageTable).where(eq(messageTable.thread, threadId ?? threadIdValue)).execute()
-      await db.delete(threadTable).where({ '@id': threadId ?? threadIdValue } as any).execute()
+      await (db as any).deleteByIri(threadTable as any, threadId ?? threadIdValue)
     }
     if (chatId ?? chatIdValue) {
-      await db.delete(chatTable).where({ '@id': chatId ?? chatIdValue } as any).execute()
+      await (db as any).deleteByIri(chatTable as any, chatId ?? chatIdValue)
     }
   })
 })

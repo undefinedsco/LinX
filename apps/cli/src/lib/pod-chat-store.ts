@@ -4,12 +4,14 @@ import {
   chatTable,
   drizzle,
   eq,
+  findExactRecord,
   linxSchema,
   messageTable,
   threadTable,
   type MessageRow,
   type SolidDatabase,
   type ThreadRow,
+  updateExactRecord,
 } from './models.js'
 import { formatThreadLabel, toOpenAiMessages } from './thread-utils.js'
 
@@ -61,7 +63,6 @@ export interface StoredThreadMessage {
 
 function createDb(session: Session): SolidDatabase {
   return drizzle(session, {
-    logger: false,
     disableInteropDiscovery: true,
     schema: linxSchema,
   }) as unknown as SolidDatabase
@@ -71,7 +72,7 @@ export async function initPodData(session: Session): Promise<SolidDatabase> {
   const db = createDb(session)
 
   try {
-    await db.init([chatTable, threadTable, messageTable, agentTable])
+    await (db as any).init([chatTable, threadTable, messageTable, agentTable])
   } catch {
     // 容器可能已存在，MVP 允许继续。
   }
@@ -80,15 +81,13 @@ export async function initPodData(session: Session): Promise<SolidDatabase> {
 }
 
 async function ensureCliAgent(db: SolidDatabase): Promise<void> {
-  const idCol = (agentTable as any).id
-  const rows = await db.select().from(agentTable).where(eq(idCol, DEFAULT_AGENT_ID)).limit(1).execute()
-
-  if (rows.length > 0) {
+  const row = await findExactRecord(db, agentTable as any, DEFAULT_AGENT_ID)
+  if (row) {
     return
   }
 
   const now = new Date()
-  await db.insert(agentTable).values({
+  await (db as any).insert(agentTable).values({
     id: DEFAULT_AGENT_ID,
     name: 'LinX CLI Assistant',
     provider: 'xpod',
@@ -102,14 +101,13 @@ export async function getOrCreateDefaultChat(session: Session): Promise<string> 
   const db = await initPodData(session)
   await ensureCliAgent(db)
 
-  const idCol = (chatTable as any).id
-  const rows = await db.select().from(chatTable).where(eq(idCol, DEFAULT_CHAT_ID)).limit(1).execute()
-  if (rows.length > 0) {
+  const row = await findExactRecord(db, chatTable as any, DEFAULT_CHAT_ID)
+  if (row) {
     return DEFAULT_CHAT_ID
   }
 
   const now = new Date()
-  await db.insert(chatTable).values({
+  await (db as any).insert(chatTable).values({
     id: DEFAULT_CHAT_ID,
     title: 'LinX CLI',
     participants: [],
@@ -144,7 +142,7 @@ export async function createThread(
   const threadId = crypto.randomUUID()
   const now = new Date()
 
-  await db.insert(threadTable).values({
+  await (db as any).insert(threadTable).values({
     id: threadId,
     chatId,
     title: title || 'CLI Session',
@@ -158,8 +156,9 @@ export async function createThread(
 
 export async function touchThread(session: Session, threadId: string): Promise<void> {
   const db = await initPodData(session)
-  const idCol = (threadTable as any).id
-  await db.update(threadTable).set({ updatedAt: new Date() }).where(eq(idCol, threadId)).execute()
+  const thread = await loadThread(session, threadId)
+  if (!thread) return
+  await updateExactRecord(db, threadTable as any, thread as any, { updatedAt: new Date() })
 }
 
 export async function loadMessages(session: Session, threadId: string): Promise<StoredThreadMessage[]> {
@@ -175,8 +174,8 @@ export async function loadMessages(session: Session, threadId: string): Promise<
 
   return rows
     .filter((row: any) => (
-      extractChatId((row as any).chatId) === chatId
-      && extractThreadId((row as any).threadId) === threadId
+      extractChatId((row as any).chat) === chatId
+      && extractThreadId((row as any).thread) === threadId
     ))
     .filter((row: any) => row.role === 'user' || row.role === 'assistant' || row.role === 'system')
     .map((row: any) => ({
@@ -199,10 +198,10 @@ export async function saveUserMessage(
     throw new Error('Missing webId in Solid session')
   }
 
-  await db.insert(messageTable).values({
+  await (db as any).insert(messageTable).values({
     id: crypto.randomUUID(),
-    chatId,
-    threadId: buildThreadUri(webId, chatId, threadId),
+    chat: `${getPodBaseUrl(webId)}/.data/chat/${chatId}/index.ttl#this`,
+    thread: buildThreadUri(webId, chatId, threadId),
     maker: webId,
     role: 'user',
     content,
@@ -210,11 +209,11 @@ export async function saveUserMessage(
     createdAt: now,
   }).execute()
 
-  await db.update(chatTable).set({
+  await (db as any).update(chatTable).set({
     lastActiveAt: now,
     lastMessagePreview: content.slice(0, 100),
     updatedAt: now,
-  }).where(eq((chatTable as any).id, chatId)).execute()
+  }).whereByIri(`${getPodBaseUrl(webId)}/.data/chat/${chatId}/index.ttl#this`).execute()
 
   await touchThread(session, threadId)
 }
@@ -232,10 +231,10 @@ export async function saveAssistantMessage(
     throw new Error('Missing webId in Solid session')
   }
 
-  await db.insert(messageTable).values({
+  await (db as any).insert(messageTable).values({
     id: crypto.randomUUID(),
-    chatId,
-    threadId: buildThreadUri(webId, chatId, threadId),
+    chat: `${getPodBaseUrl(webId)}/.data/chat/${chatId}/index.ttl#this`,
+    thread: buildThreadUri(webId, chatId, threadId),
     maker: buildAgentUri(webId, DEFAULT_AGENT_ID),
     role: 'assistant',
     content,
@@ -243,20 +242,19 @@ export async function saveAssistantMessage(
     createdAt: now,
   }).execute()
 
-  await db.update(chatTable).set({
+  await (db as any).update(chatTable).set({
     lastActiveAt: now,
     lastMessagePreview: content.slice(0, 100),
     updatedAt: now,
-  }).where(eq((chatTable as any).id, chatId)).execute()
+  }).whereByIri(`${getPodBaseUrl(webId)}/.data/chat/${chatId}/index.ttl#this`).execute()
 
   await touchThread(session, threadId)
 }
 
 export async function loadThread(session: Session, threadId: string): Promise<ThreadRow | null> {
   const db = await initPodData(session)
-  const idCol = (threadTable as any).id
-  const rows = await db.select().from(threadTable).where(eq(idCol, threadId)).limit(1).execute()
-  return (rows[0] as ThreadRow | undefined) ?? null
+  const rows = await db.select().from(threadTable).execute()
+  return (rows.find((row: any) => row.id === threadId) as ThreadRow | undefined) ?? null
 }
 
 export async function getLatestThreadId(session: Session, chatId: string): Promise<string | null> {

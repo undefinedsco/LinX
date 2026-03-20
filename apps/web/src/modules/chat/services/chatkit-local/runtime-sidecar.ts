@@ -142,7 +142,7 @@ export class RuntimeSidecarSink {
     context: Record<string, unknown>
   }): Promise<string> {
     const id = input.id ?? crypto.randomUUID()
-    await this.db.insert(auditTable).values({
+    await (this.db as any).insert(auditTable).values({
       id,
       action: input.action,
       actor: this.webId,
@@ -163,7 +163,7 @@ export class RuntimeSidecarSink {
     }
 
     this.seenEventKeys.add(dedupeKey)
-    await this.db.insert(inboxNotificationTable).values({
+    await (this.db as any).insert(inboxNotificationTable).values({
       id: crypto.randomUUID(),
       actor: this.webId,
       object: objectUri,
@@ -173,7 +173,7 @@ export class RuntimeSidecarSink {
 
   private async findApprovalByToolCall(toolCallId: string): Promise<ApprovalRow | null> {
     const rows = await this.db.select().from(approvalTable)
-      .where(eq(approvalTable.toolCallId, toolCallId))
+      .where(eq(approvalTable.toolCallId as any, toolCallId))
       .execute()
     return (rows[0] as ApprovalRow | undefined) ?? null
   }
@@ -259,7 +259,7 @@ export class RuntimeSidecarSink {
 
     if (!approvalId) {
       approvalId = crypto.randomUUID()
-      await this.db.insert(approvalTable).values({
+      await (this.db as any).insert(approvalTable).values({
         id: approvalId,
         session: this.makeRuntimeSessionUri(runtimeSession.id),
         toolCallId: event.requestId,

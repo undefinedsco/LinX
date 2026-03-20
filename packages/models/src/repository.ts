@@ -80,6 +80,70 @@ export function resolveRowId(row: Partial<Record<string, unknown>> | null): stri
   return null
 }
 
+export function isIriLikeIdentifier(value: string): boolean {
+  return /^(?:[a-z][a-z0-9+.-]*:|\/)/i.test(value) || value.startsWith('#')
+}
+
+export function stripEntityIdentifiers<T extends Record<string, unknown>>(data: T | null | undefined): Partial<T> {
+  if (!data) return {}
+  const next: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(data)) {
+    if (key === 'id' || key === '@id' || key === 'subject' || key === 'source') continue
+    next[key] = value
+  }
+  return next as Partial<T>
+}
+
+type ExactTargetInput = string | Partial<Record<string, unknown>>
+
+function resolveExactTarget(input: ExactTargetInput): { iri: string } | { locator: Record<string, unknown> } {
+  if (typeof input === 'string') {
+    return isIriLikeIdentifier(input) ? { iri: input } : { locator: { id: input } }
+  }
+
+  const iri = input['@id'] ?? input.subject
+  if (typeof iri === 'string' && iri.length > 0) {
+    return { iri }
+  }
+
+  return { locator: input as Record<string, unknown> }
+}
+
+export async function findExactRecord<TTable extends PodTable<any>>(
+  db: SolidDatabase<any>,
+  table: TTable,
+  target: ExactTargetInput,
+): Promise<InferTableData<TTable> | null> {
+  const exact = resolveExactTarget(target)
+  return 'iri' in exact
+    ? await (db as any).findByIri(table as any, exact.iri)
+    : await (db as any).findByLocator(table as any, exact.locator as any)
+}
+
+export async function updateExactRecord<TTable extends PodTable<any>>(
+  db: SolidDatabase<any>,
+  table: TTable,
+  target: ExactTargetInput,
+  data: Partial<Record<string, unknown>>,
+): Promise<InferTableData<TTable> | null> {
+  const exact = resolveExactTarget(target)
+  const payload = stripEntityIdentifiers(data)
+  return 'iri' in exact
+    ? await (db as any).updateByIri(table as any, exact.iri, payload as any)
+    : await (db as any).updateByLocator(table as any, exact.locator as any, payload as any)
+}
+
+export async function deleteExactRecord<TTable extends PodTable<any>>(
+  db: SolidDatabase<any>,
+  table: TTable,
+  target: ExactTargetInput,
+): Promise<boolean> {
+  const exact = resolveExactTarget(target)
+  return 'iri' in exact
+    ? await (db as any).deleteByIri(table as any, exact.iri)
+    : await (db as any).deleteByLocator(table as any, exact.locator as any)
+}
+
 export function createRepositoryDescriptor<
   TTable extends PodTable<any>,
   Row extends Record<string, unknown> = InferTableData<TTable>,
@@ -149,13 +213,7 @@ export function createRepositoryDescriptor<
   }
 
   const detail = async (db: SolidDatabase, id: string): Promise<Row | null> => {
-    const rows = await db
-      .select()
-      .from(table)
-      .where({ '@id': id } as unknown as QueryCondition)
-      .limit(1)
-      .execute()
-    const record = rows?.[0]
+    const record = await findExactRecord(db, table, id)
     return record ? transformRow(record as Row) : null
   }
 
@@ -203,11 +261,7 @@ export function createRepositoryDescriptor<
   const update = options.disableMutations?.update
     ? undefined
     : async (db: SolidDatabase, id: string, input: Update): Promise<Row> => {
-        await db
-          .update(table)
-          .set(input as InferUpdateData<TTable>)
-          .where({ '@id': id } as unknown as QueryCondition)
-          .execute()
+        await updateExactRecord(db, table, id, input as Record<string, unknown>)
         const next = await detail(db, id)
         if (!next) {
           throw new Error(`Failed to load ${namespace} record after update`)
@@ -218,7 +272,7 @@ export function createRepositoryDescriptor<
   const remove = options.disableMutations?.remove
     ? undefined
     : async (db: SolidDatabase, id: string): Promise<{ id: string }> => {
-        await db.delete(table).where({ '@id': id } as unknown as QueryCondition).execute()
+        await deleteExactRecord(db, table, id)
         return { id }
       }
 

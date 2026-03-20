@@ -6,7 +6,12 @@
  */
 
 import type { PodTable, InferTableData, InferInsertData, InferUpdateData, QueryCondition } from '@undefineds.co/drizzle-solid'
-import type { SolidDatabase } from '@linx/models'
+import {
+  deleteExactRecord,
+  findExactRecord,
+  updateExactRecord,
+  type SolidDatabase,
+} from '@linx/models'
 
 /**
  * Options for creating a Solid Pod collection
@@ -120,29 +125,13 @@ export function solidCollectionOptions<
     id: string,
     updates: Partial<TUpdate>
   ): Promise<TRow | null> => {
-    await db
-      .update(table)
-      .set(updates as InferUpdateData<TTable>)
-      .where({ '@id': id } as unknown as QueryCondition)
-      .execute()
-    
-    // Fetch updated record
-    const rows = await db
-      .select()
-      .from(table)
-      .where({ '@id': id } as unknown as QueryCondition)
-      .limit(1)
-      .execute()
-    
-    const record = rows?.[0]
+    await updateExactRecord(db, table as any, id, updates as Record<string, unknown>)
+    const record = await findExactRecord(db, table as any, id)
     return record ? transformRow(record as InferTableData<TTable>) : null
   }
   
   const onDelete = async (db: SolidDatabase, id: string): Promise<void> => {
-    await db
-      .delete(table)
-      .where({ '@id': id } as unknown as QueryCondition)
-      .execute()
+    await deleteExactRecord(db, table as any, id)
   }
   
   return {

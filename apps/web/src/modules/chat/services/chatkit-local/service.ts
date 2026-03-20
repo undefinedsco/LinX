@@ -714,8 +714,8 @@ export class LocalChatKitService {
       const credentials = await this.db.select().from(Credential)
         .where(
           and(
-            eq(Credential.service, ServiceType.AI),
-            eq(Credential.status, CredentialStatus.ACTIVE),
+            eq(Credential.service as any, ServiceType.AI),
+            eq(Credential.status as any, CredentialStatus.ACTIVE),
           ),
         )
         .execute()

@@ -28,7 +28,7 @@
     "@types/pg": "^8.16.0",
     "better-sqlite3": "^11.0.0",
     "drizzle-orm": "^0.32.0",
-    "@undefineds.co/drizzle-solid": "^0.3.0",
+    "@undefineds.co/drizzle-solid": "^0.3.3",
     "n3": "^1.17.0",
     "pg": "^8.16.3",
     "quadstore": "^15.4.0",

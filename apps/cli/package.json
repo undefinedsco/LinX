@@ -15,7 +15,7 @@
     "@linx/models": "*",
     "@inrupt/solid-client-authn-node": "^3.1.1",
     "@inrupt/vocab-common-rdf": "^1.0.5",
-    "@undefineds.co/drizzle-solid": "^0.3.0",
+    "@undefineds.co/drizzle-solid": "^0.3.3",
     "yargs": "^17.7.2"
   },
   "devDependencies": {

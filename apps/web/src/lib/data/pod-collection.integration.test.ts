@@ -1,8 +1,7 @@
 // @vitest-environment node
 import { afterAll, describe, expect, it, vi } from 'vitest'
-import { eq } from '@undefineds.co/drizzle-solid'
 import { QueryClient } from '@tanstack/react-query'
-import { aiProviderTable, linxSchema } from '@linx/models'
+import { aiProviderTable, deleteExactRecord, linxSchema } from '@linx/models'
 import { createPodCollection } from './pod-collection'
 import { createXpodIntegrationContext, type XpodIntegrationContext } from '../../test/xpod-integration'
 
@@ -24,7 +23,7 @@ async function cleanup() {
   if (!db) return
   for (const subject of createdSubjects) {
     try {
-      await db.delete(aiProviderTable).where({ '@id': subject } as any).execute()
+      await deleteExactRecord(db as any, aiProviderTable as any, subject)
     } catch {
       // ignore cleanup errors
     }
@@ -92,8 +91,7 @@ describe('pod-collection integration', () => {
 
       await tx.isPersisted.promise
 
-      const rows = await database.select().from(aiProviderTable).where(eq(aiProviderTable.id, id)).execute()
-      const created = rows[0]
+      const created = await (database as any).findByLocator(aiProviderTable as any, { id } as any)
       const subject = (created as any)?.['@id']
       const expectedModelUri = new URL('/settings/ai/models.ttl#model-1', baseUrl).href
       if (subject) createdSubjects.push(subject)
@@ -129,7 +127,7 @@ describe('pod-collection integration', () => {
       unsubscribe = await collection.subscribeToPod(database)
 
       const id = crypto.randomUUID()
-      const [created] = await database
+      const [created] = await (database as any)
         .insert(aiProviderTable)
         .values({
           id,
@@ -153,8 +151,10 @@ describe('pod-collection integration', () => {
         }, 100)
       })
 
-      await database.update(aiProviderTable).set({ proxyUrl: 'https://proxy.changed.test.com' }).where({ id } as any).execute()
-      await database.delete(aiProviderTable).where({ id } as any).execute()
+      await (database as any).updateByLocator(aiProviderTable as any, { id } as any, {
+        proxyUrl: 'https://proxy.changed.test.com',
+      })
+      await (database as any).deleteByLocator(aiProviderTable as any, { id } as any)
 
       expect(await notified).toBe(true)
     } finally {

@@ -401,7 +401,6 @@ async function createDefaultRuntime(): Promise<WatchRemoteApprovalRuntime> {
     authenticate: solidAuth.authenticate,
     createStore(session) {
       const db = models.drizzle(session, {
-        logger: false,
         disableInteropDiscovery: true,
         schema: models.linxSchema,
       })
@@ -413,7 +412,7 @@ async function createDefaultRuntime(): Promise<WatchRemoteApprovalRuntime> {
         }
 
         initialized = true
-        await db.init([
+        await (db as any).init([
           models.approvalTable,
           models.auditTable,
           models.inboxNotificationTable,

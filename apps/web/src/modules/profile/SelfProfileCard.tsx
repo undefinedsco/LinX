@@ -186,7 +186,7 @@ export function SelfProfileCard() {
     queryKey: ["profile", webId],
     queryFn: async () => {
       if (!db || !webId) return null;
-      const record = await db.findByIri(solidProfileTable, webId);
+      const record = await (db as any).findByIri(solidProfileTable, webId);
       return record as SolidProfileRow | null;
     },
     enabled: !!db && !!webId,
@@ -274,10 +274,11 @@ export function SelfProfileCard() {
     setSavingKey(key);
     setError(null);
     try {
-      await db
+      await (db as any)
         .update(solidProfileTable)
-        .set({ [key]: value })
-        .where({ "@id": webId });
+        .set({ [key]: value } as any)
+        .where({ "@id": webId } as any)
+        .execute();
 
       queryClient.setQueryData(["profile", webId], {
         ...profile,

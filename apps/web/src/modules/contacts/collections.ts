@@ -53,6 +53,16 @@ function getDb(): SolidDatabase | null {
   return dbGetter?.() ?? null
 }
 
+async function findByIriCompat<T>(db: SolidDatabase, table: unknown, iri: string): Promise<T | null> {
+  if (typeof (db as any).findByIri === 'function') {
+    return await (db as any).findByIri(table as any, iri)
+  }
+  if (typeof (db as any).findFirst === 'function') {
+    return await (db as any).findFirst(table as any, { '@id': iri } as any)
+  }
+  return null
+}
+
 function buildLocalChatUri(chatId: string): string {
   return `/.data/chat/${chatId}/index.ttl#this`
 }
@@ -486,11 +496,11 @@ export const contactOps = {
         .from(contactTable)
         .where(
           or(
-            like(contactTable.name, pattern),
-            like(contactTable.alias, pattern),
-            like(contactTable.externalId, pattern),
-            like(contactTable.note, pattern),
-            like(contactTable.entityUri, pattern)
+            like(contactTable.name as any, pattern),
+            like(contactTable.alias as any, pattern),
+            like(contactTable.externalId as any, pattern),
+            like(contactTable.note as any, pattern),
+            like(contactTable.entityUri as any, pattern)
           )
         )
         .execute()
@@ -592,7 +602,7 @@ export const contactOps = {
     try {
       // Use drizzle-solid to fetch remote profile
       // The '@id' query will resolve to the full WebID URL
-      const record = await db.findFirst(solidProfileTable, { '@id': webId }) as SolidProfileRow | null
+      const record = await findByIriCompat<SolidProfileRow>(db, solidProfileTable, webId)
       
       if (!record) {
         console.warn(`[contactOps] Profile not found for WebID: ${webId}`)
@@ -629,7 +639,7 @@ export const contactOps = {
     
     try {
       // Use drizzle-solid to fetch remote agent
-      const record = await db.findFirst(agentTable, { '@id': agentUrl }) as AgentRow | null
+      const record = await findByIriCompat<AgentRow>(db, agentTable, agentUrl)
       
       if (!record) {
         console.warn(`[contactOps] Agent not found at: ${agentUrl}`)

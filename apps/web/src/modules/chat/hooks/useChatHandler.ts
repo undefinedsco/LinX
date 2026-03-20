@@ -149,12 +149,7 @@ export function useChatHandler(options: UseChatHandlerOptions): UseChatHandlerRe
     queryKey: ['chat', chatId],
     queryFn: async () => {
       if (!db || !chatId) return null
-      const idCol = (chatTable as any).id
-      const rows = await db.select()
-        .from(chatTable)
-        .where(eq(idCol, chatId))
-        .execute()
-      return rows[0] ?? null
+      return await (db as any).findByLocator(chatTable as any, { id: chatId } as any)
     },
     enabled: !!db && !!chatId,
   })
@@ -165,10 +160,9 @@ export function useChatHandler(options: UseChatHandlerOptions): UseChatHandlerRe
     queryKey: ['contact', contactUri],
     queryFn: async () => {
       if (!db || !contactUri) return null
-      const idCol = (contactTable as any).id
       const rows = await db.select()
         .from(contactTable)
-        .where(eq(idCol, extractId(contactUri)))
+        .where(eq(contactTable.entityUri as any, contactUri))
         .execute()
       return rows[0] ?? null
     },
@@ -181,12 +175,7 @@ export function useChatHandler(options: UseChatHandlerOptions): UseChatHandlerRe
     queryKey: ['agent', agentUri],
     queryFn: async () => {
       if (!db || !agentUri || contact?.contactType !== 'agent') return null
-      const idCol = (agentTable as any).id
-      const rows = await db.select()
-        .from(agentTable)
-        .where(eq(idCol, extractId(agentUri)))
-        .execute()
-      return rows[0] ?? null
+      return await (db as any).findByIri(agentTable as any, agentUri)
     },
     enabled: !!db && !!agentUri && contact?.contactType === 'agent',
   })

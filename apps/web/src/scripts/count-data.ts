@@ -35,7 +35,6 @@ async function main() {
   })
 
   const db = drizzle(session, {
-    logger: false,
     disableInteropDiscovery: true,
     schema: linxSchema,
   })

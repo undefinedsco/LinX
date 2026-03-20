@@ -161,14 +161,13 @@ describe.skipIf(!hasEnv)('List Query Benchmark', () => {
     })
     
     const database = drizzle(session, {
-      logger: false,
       disableInteropDiscovery: true,
       schema: linxSchema,
     })
     db = database
     
     // Initialize all tables
-    await database.init([
+    await (database as any).init([
       chatTable,
       threadTable,
       messageTable,
@@ -260,7 +259,7 @@ describe.skipIf(!hasEnv)('List Query Benchmark', () => {
 
   it('profile.fetch - fetch current user profile', { timeout: 30000 }, async () => {
     await measureSingle('Profile', 'profileOps.fetch()', async () => {
-      return await db!.findFirst(solidProfileTable, { '@id': env.webId! })
+      return await (db as any)!.findByIri(solidProfileTable as any, env.webId!)
     })
   })
 

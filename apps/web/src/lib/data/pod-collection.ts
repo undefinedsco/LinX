@@ -1,7 +1,7 @@
 import { createCollection } from '@tanstack/react-db'
 import { queryCollectionOptions } from '@tanstack/query-db-collection'
 import { QueryClient } from '@tanstack/react-query'
-import type { SolidDatabase } from '@linx/models'
+import { deleteExactRecord, updateExactRecord, type SolidDatabase } from '@linx/models'
 import type { PodTable } from '@undefineds.co/drizzle-solid'
 
 interface PodCollectionOptions<TTable, TData> {
@@ -9,7 +9,7 @@ interface PodCollectionOptions<TTable, TData> {
   queryKey: string[]
   queryClient: QueryClient
   // Function to get the current DB instance
-  getDb: () => SolidDatabase<Record<string, unknown>> | null
+  getDb: () => SolidDatabase<any> | null
   // Optional: columns to select for list view (defaults to all)
   columns?: (keyof TData)[]
   // Optional: sorting configuration
@@ -133,11 +133,9 @@ export function createPodCollection<
         const db = getDb()
         if (!db) throw new Error('Database not connected')
         const { original, modified } = transaction.mutations[0]
-        const id = getKey(original)
-        if (!id) return
 
         try {
-          await db.update(table).set(modified as any).where({ id } as any).execute()
+          await updateExactRecord(db, table as any, (original ?? modified) as any, modified as any)
         } catch (error) {
           console.error(`[PodCollection] Update failed for ${queryKey.join('/')}:`, error)
           throw error
@@ -149,8 +147,7 @@ export function createPodCollection<
         const db = getDb()
         if (!db) throw new Error('Database not connected')
         const { original } = transaction.mutations[0]
-        const id = getKey(original)
-        await db.delete(table).where({ id } as any).execute()
+        await deleteExactRecord(db, table as any, original as any)
       }
     })
   )
@@ -171,7 +168,7 @@ export function createPodCollection<
   }
 
   // Usage: useEffect(() => collection.subscribeToPod(db), [db])
-  const subscribeToPod = async (db: SolidDatabase<Record<string, unknown>>) => {
+  const subscribeToPod = async (db: SolidDatabase<any>) => {
     if (typeof (db as any).subscribe !== 'function') {
       console.warn('[PodCollection] db.subscribe not available')
       return () => {}

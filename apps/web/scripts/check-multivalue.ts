@@ -78,7 +78,6 @@ async function main() {
 
   // 3. 创建 drizzle 实例
   const db = drizzle(mockSession as any, {
-    logger: false,
   })
 
   // 4. 检查各表

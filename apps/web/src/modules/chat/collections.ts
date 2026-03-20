@@ -93,6 +93,13 @@ function normalizeParticipants(participants: string[], selfWebId?: string | null
   })
 }
 
+function hasHydratedChatMetadata(metadata: unknown): boolean {
+  return typeof metadata === 'object'
+    && metadata !== null
+    && !Array.isArray(metadata)
+    && 'memberRoles' in metadata
+}
+
 function buildChatSubjectIri(db: SolidDatabase, chatId: string | undefined): string | null {
   if (!chatId) return null
   const podBaseUrl = getPodBaseUrl(db)
@@ -117,11 +124,11 @@ async function resolveThreadChatId(
     return cachedChatId
   }
 
-  const rows = await db.select()
-    .from(threadTable)
-    .where(eq(threadTable.id, threadId))
-    .execute()
-  const row = rows[0] as ThreadRow | undefined
+  const cachedRow = cachedChatId
+    ? await (db as any).findByLocator(threadTable as any, { id: threadId, chatId: cachedChatId } as any)
+    : null
+  const row = (cachedRow
+    ?? (await db.select().from(threadTable).execute()).find((entry: any) => entry.id === threadId)) as ThreadRow | undefined
   if (!row?.chatId) {
     return null
   }
@@ -168,7 +175,9 @@ async function hydrateChatRows(db: SolidDatabase, rows: ChatRow[]): Promise<Chat
     }
   })
 
-  const needsHydration = normalizedRows.filter((row) => !Array.isArray(row.participants))
+  const needsHydration = normalizedRows.filter(
+    (row) => !Array.isArray(row.participants) || !hasHydratedChatMetadata(row.metadata),
+  )
   if (needsHydration.length === 0) {
     return normalizedRows
   }
@@ -256,11 +265,12 @@ async function ensureThreadStateRow(db: SolidDatabase, threadId: string): Promis
     return cached
   }
 
-  const rows = await db.select()
-    .from(threadTable)
-    .where(eq(threadTable.id, threadId))
-    .execute()
-  const row = rows[0] as ThreadRow | undefined
+  const cachedChatId = getCachedThreadChatId(threadId)
+  const cachedRow = cachedChatId
+    ? await (db as any).findByLocator(threadTable as any, { id: threadId, chatId: cachedChatId } as any)
+    : null
+  const row = (cachedRow
+    ?? (await db.select().from(threadTable).execute()).find((entry: any) => entry.id === threadId)) as ThreadRow | undefined
 
   if (!row) {
     throw new Error(`Thread ${threadId} was not found in the Pod`)
@@ -695,9 +705,13 @@ export const chatOps = {
     const now = new Date()
 
     const cachedWorkspace = workspaceCollection.get(workspaceId)
-    const persistedWorkspaceRows = cachedWorkspace
-      ? []
-      : await db.select().from(workspaceTable).where(eq(workspaceTable.id, workspaceId)).execute()
+    const persistedWorkspaceRows: WorkspaceRow[] = []
+    if (!cachedWorkspace) {
+      const persistedWorkspace = await (db as any).findByLocator(workspaceTable as any, { id: workspaceId } as any)
+      if (persistedWorkspace) {
+        persistedWorkspaceRows.push(persistedWorkspace)
+      }
+    }
     const existingWorkspace = cachedWorkspace ?? persistedWorkspaceRows[0] as WorkspaceRow | undefined
 
     const nextWorkspaceCreate: WorkspaceInsert = {
@@ -812,7 +826,7 @@ export const chatOps = {
       throw new Error(`Failed to resolve thread IRI for thread ${threadId}`)
     }
     
-    const msgData: MessageInsert = {
+    const msgData = {
       id: msgId,
       chat: buildChatSubjectIri(db, chatId) ?? chatId,
       thread: threadRef,
@@ -821,7 +835,7 @@ export const chatOps = {
       content,
       status: 'sent',
       createdAt: now,
-    }
+    } as MessageInsert
     
     const tx = messageCollection.insert(msgData as MessageRow)
     await tx.isPersisted.promise
@@ -859,7 +873,7 @@ export const chatOps = {
       throw new Error(`Failed to resolve thread IRI for thread ${threadId}`)
     }
     
-    const msgData: MessageInsert = {
+    const msgData = {
       id: msgId,
       chat: buildChatSubjectIri(db, chatId) ?? chatId,
       thread: threadRef,
@@ -869,7 +883,7 @@ export const chatOps = {
       richContent,
       status: 'sent',
       createdAt: now,
-    }
+    } as MessageInsert
     
     const tx = messageCollection.insert(msgData as MessageRow)
     await tx.isPersisted.promise
@@ -1253,8 +1267,8 @@ export function useChatList(filters?: { search?: string }) {
             .from(chatTable)
             .where(
               or(
-                like(chatTable.title, pattern),
-                like(chatTable.lastMessagePreview, pattern)
+                like(chatTable.title as any, pattern),
+                like(chatTable.lastMessagePreview as any, pattern)
               )
             )
             .orderBy(chatTable.lastActiveAt, 'desc')

@@ -574,7 +574,6 @@ async function createAuthenticatedContext<TSchema extends Record<string, unknown
 
   const webId = session.info.webId ?? config.webId
   const db = drizzle<TSchema>(session as unknown as SolidAuthSession, {
-    logger: false,
     disableInteropDiscovery: true,
     schema: options.schema,
   })
@@ -669,7 +668,6 @@ async function createLocalSeededContext<TSchema extends Record<string, unknown>>
     }
 
     const db = drizzle<TSchema>(session, {
-      logger: false,
       disableInteropDiscovery: true,
       schema: options.schema,
     })

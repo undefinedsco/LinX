@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterAll, describe, expect, it } from 'vitest'
-import { eq, type SolidDatabase } from '@undefineds.co/drizzle-solid'
+import type { SolidDatabase } from '@undefineds.co/drizzle-solid'
 import {
   aiModelTable,
   aiProviderTable,
@@ -36,11 +36,11 @@ async function cleanup() {
   for (const entry of createdSubjects) {
     try {
       if (entry.table === 'credential') {
-        await db.delete(credentialTable).where({ '@id': entry.id } as any).execute()
+        await (db as any).deleteByIri(credentialTable as any, entry.id)
       } else if (entry.table === 'provider') {
-        await db.delete(aiProviderTable).where({ '@id': entry.id } as any).execute()
+        await (db as any).deleteByIri(aiProviderTable as any, entry.id)
       } else {
-        await db.delete(aiModelTable).where({ '@id': entry.id } as any).execute()
+        await (db as any).deleteByIri(aiModelTable as any, entry.id)
       }
     } catch {
       // ignore cleanup errors
@@ -103,8 +103,7 @@ describe('model services collections integration', () => {
 
     await tx.isPersisted.promise
 
-    const rows = await database.select().from(credentialTable).where(eq(credentialTable.id, id)).execute()
-    const created = rows[0]
+    const created = await (database as any).findByLocator(credentialTable as any, { id } as any)
     const subject = (created as any)?.['@id']
     if (subject) createdSubjects.push({ table: 'credential', id: subject })
     expect(created?.id).toBe(id)
@@ -135,8 +134,8 @@ describe('model services collections integration', () => {
       updatedAt: new Date(),
     } as any).execute()
 
-    const [createdProvider] = await database.select().from(aiProviderTable).where(eq(aiProviderTable.id, providerId)).execute()
-    const [createdModel] = await database.select().from(aiModelTable).where(eq(aiModelTable.id, modelId)).execute()
+    const createdProvider = await (database as any).findByLocator(aiProviderTable as any, { id: providerId } as any)
+    const createdModel = await (database as any).findByLocator(aiModelTable as any, { id: modelId } as any)
     expect(createdProvider?.baseUrl).toBe('https://api.example.com/v1')
     expect(createdModel?.status).toBe('active')
 
@@ -146,21 +145,25 @@ describe('model services collections integration', () => {
     if (modelSubject) createdSubjects.push({ table: 'model', id: modelSubject })
 
     // UPDATE
-    await database.update(aiProviderTable).set({ baseUrl: 'https://api.changed.com/v1' } as any).where(eq(aiProviderTable.id, providerId)).execute()
-    await database.update(aiModelTable).set({ status: 'inactive' } as any).where(eq(aiModelTable.id, modelId)).execute()
+    await (database as any).updateByLocator(aiProviderTable as any, { id: providerId } as any, {
+      baseUrl: 'https://api.changed.com/v1',
+    })
+    await (database as any).updateByLocator(aiModelTable as any, { id: modelId } as any, {
+      status: 'inactive',
+    })
 
-    const [updatedProvider] = await database.select().from(aiProviderTable).where(eq(aiProviderTable.id, providerId)).execute()
-    const [updatedModel] = await database.select().from(aiModelTable).where(eq(aiModelTable.id, modelId)).execute()
+    const updatedProvider = await (database as any).findByLocator(aiProviderTable as any, { id: providerId } as any)
+    const updatedModel = await (database as any).findByLocator(aiModelTable as any, { id: modelId } as any)
     expect(updatedProvider?.baseUrl).toBe('https://api.changed.com/v1')
     expect(updatedModel?.status).toBe('inactive')
 
     // DELETE
-    await database.delete(aiModelTable).where(eq(aiModelTable.id, modelId)).execute()
-    await database.delete(aiProviderTable).where(eq(aiProviderTable.id, providerId)).execute()
+    await (database as any).deleteByLocator(aiModelTable as any, { id: modelId } as any)
+    await (database as any).deleteByLocator(aiProviderTable as any, { id: providerId } as any)
 
-    const providerRows = await database.select().from(aiProviderTable).where(eq(aiProviderTable.id, providerId)).execute()
-    const modelRows = await database.select().from(aiModelTable).where(eq(aiModelTable.id, modelId)).execute()
-    expect(providerRows.length).toBe(0)
-    expect(modelRows.length).toBe(0)
+    const providerRow = await (database as any).findByLocator(aiProviderTable as any, { id: providerId } as any)
+    const modelRow = await (database as any).findByLocator(aiModelTable as any, { id: modelId } as any)
+    expect(providerRow).toBeNull()
+    expect(modelRow).toBeNull()
   })
 })

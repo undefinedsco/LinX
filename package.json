@@ -54,7 +54,7 @@
     "class-variance-authority": "^0.7.0",
     "clsx": "^1.2.1",
     "drizzle-orm": "^0.32.2",
-    "@undefineds.co/drizzle-solid": "^0.3.0",
+    "@undefineds.co/drizzle-solid": "^0.3.3",
     "lucide-react": "^0.473.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
@@ -75,7 +75,7 @@
   },
   "resolutions": {
     "**/drizzle-orm": "^0.32.2",
-    "**/@undefineds.co/drizzle-solid": "^0.3.0",
+    "**/@undefineds.co/drizzle-solid": "^0.3.3",
     "**/react": "18.3.1",
     "**/react-dom": "18.3.1",
     "**/@inrupt/solid-client": "^3.0.0",

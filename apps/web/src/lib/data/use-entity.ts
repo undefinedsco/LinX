@@ -3,8 +3,8 @@
  * 
  * 查询和订阅单个实体（支持本地和远程 IRI）。
  * 
- * 目标 API：使用 drizzle-solid 的 findByIri + subscribeByIri
- * 临时实现：使用 findFirst + 暂无订阅（等待 drizzle-solid 支持）
+ * 查询使用 drizzle-solid 的 findByIri。
+ * 订阅暂未启用。
  * 
  * - 进入页面时自动 fetch
  * - 自动订阅变更（待实现）
@@ -93,9 +93,9 @@ export function useEntity<TTable extends PodTable<any>>(
     setError(null)
     
     try {
-      // TODO: 等 drizzle-solid 支持后改为 db.findByIri(table, iri)
-      // 临时使用 findFirst + @id
-      const result = await db.findFirst(table, { '@id': iri } as any)
+      const result = typeof (db as any).findByIri === 'function'
+        ? await (db as any).findByIri(table as any, iri)
+        : await (db as any).findFirst?.(table as any, { '@id': iri } as any)
       setData(result)
       if (result) {
         callbacksRef.current.onUpdate?.(result)

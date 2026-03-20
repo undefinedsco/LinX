@@ -98,7 +98,6 @@ async function createDefaultRuntime(): Promise<WatchPodPersistenceRuntime> {
     authenticate: solidAuth.authenticate,
     createDb(session) {
       return models.drizzle(session, {
-        logger: false,
         disableInteropDiscovery: true,
         schema: models.linxSchema,
       }) as unknown as PodPersistenceDb
@@ -310,7 +309,7 @@ export async function persistWatchConversationToPod(
     const transcriptRows = buildWatchConversationMessages(record, stored.webId, entries)
     const lastPreview = transcriptRows.at(-1)?.content
 
-    await db.init([
+    await (db as any).init([
       activeRuntime.chatTable,
       activeRuntime.threadTable,
       activeRuntime.messageTable,

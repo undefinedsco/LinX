@@ -116,8 +116,7 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
         }
         
         console.log('🔨 创建 drizzle-solid 实例...')
-        const instance = drizzle(session, {
-          logger: false,
+        const instance = drizzle(session as any, {
           disableInteropDiscovery: true,
           schema: linxSchema,
         }) as unknown as SolidDatabase
@@ -137,7 +136,7 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
         // Initialize required containers/resources
         try {
           console.log('🔧 初始化 Pod 资源与容器...')
-          await instance.init([
+          await (instance as any).init([
             chatTable,
             threadTable,
             workspaceTable,

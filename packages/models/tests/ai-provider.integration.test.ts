@@ -1,35 +1,24 @@
-import 'dotenv/config'
 import { afterAll, describe, expect, it } from 'vitest'
-import { Session } from '@inrupt/solid-client-authn-node'
-import { drizzle, eq, type SolidDatabase } from '@undefineds.co/drizzle-solid'
+import type { SolidDatabase } from '@undefineds.co/drizzle-solid'
 import { aiProviderTable } from '../src/ai-provider.schema'
 import { linxSchema } from '../src/schema'
+import {
+  createXpodIntegrationContext,
+  type XpodIntegrationContext,
+} from './support/xpod-integration'
 
-const env = {
-  webId: process.env.SOLID_WEBID,
-  clientId: process.env.SOLID_CLIENT_ID,
-  clientSecret: process.env.SOLID_CLIENT_SECRET,
-  oidcIssuer: process.env.SOLID_OIDC_ISSUER,
-}
-
-const hasEnv = Boolean(env.webId && env.clientId && env.clientSecret && env.oidcIssuer)
-
-let session: Session | null = null
+let context: XpodIntegrationContext<typeof linxSchema> | null = null
 let db: SolidDatabase | null = null
 const createdIds: string[] = []
 
 async function getDb(): Promise<SolidDatabase> {
   if (db) return db
 
-  session = new Session()
-  await session.login({
-    clientId: env.clientId!,
-    clientSecret: env.clientSecret!,
-    oidcIssuer: env.oidcIssuer!,
-    tokenType: 'DPoP',
+  context = await createXpodIntegrationContext({
+    schema: linxSchema,
+    tables: [aiProviderTable],
   })
-  db = drizzle(session, { logger: false, disableInteropDiscovery: true, schema: linxSchema })
-  await db.init([aiProviderTable])
+  db = context.db
   return db
 }
 
@@ -37,15 +26,16 @@ afterAll(async () => {
   if (!db) return
   for (const id of createdIds) {
     try {
-      await db.delete(aiProviderTable).where({ '@id': id } as any).execute()
+      await (db as any).deleteByIri(aiProviderTable as any, id)
     } catch {
       // ignore cleanup errors
     }
   }
+  await context?.stop()
 })
 
 describe('Solid Pod AIProvider CRUD', () => {
-  it.skipIf(!hasEnv)('creates and reads an AI provider', { timeout: 60000 }, async () => {
+  it('creates and reads an AI provider', { timeout: 60000 }, async () => {
     const database = await getDb()
     const providerId = `test-provider-${Date.now()}`
 
@@ -62,14 +52,8 @@ describe('Solid Pod AIProvider CRUD', () => {
     const subject = (created as any)?.['@id'] || (created as any)?.source
     if (subject) createdIds.push(subject)
 
-    const rows = await database
-      .select()
-      .from(aiProviderTable)
-      .where(eq(aiProviderTable.id, providerId))
-      .execute()
-
-    expect(rows.length).toBeGreaterThanOrEqual(1)
-    const record = rows[0]
+    const record = await (database as any).findByLocator(aiProviderTable as any, { id: providerId } as any)
+    expect(record).toBeTruthy()
 
     expect(record.id).toBe(providerId)
     expect(record.baseUrl).toBe('https://api.test.com/v1')
@@ -77,7 +61,7 @@ describe('Solid Pod AIProvider CRUD', () => {
     expect(record.hasModel).toContain('#test-model')
   })
 
-  it.skipIf(!hasEnv)('updates and deletes an AI provider', { timeout: 60000 }, async () => {
+  it('updates and deletes an AI provider', { timeout: 60000 }, async () => {
     const database = await getDb()
     const providerId = `update-provider-${Date.now()}`
 
@@ -93,30 +77,18 @@ describe('Solid Pod AIProvider CRUD', () => {
     const subject = (created as any)?.['@id'] || (created as any)?.source
     if (subject) createdIds.push(subject)
 
-    await database
-      .update(aiProviderTable)
-      .set({
-        baseUrl: 'https://api.updated.com/v1',
-      })
-      .where(eq(aiProviderTable.id, providerId))
-      .execute()
+    await (database as any).updateByLocator(aiProviderTable as any, { id: providerId } as any, {
+      baseUrl: 'https://api.updated.com/v1',
+    })
 
-    const updatedRows = await database
-      .select()
-      .from(aiProviderTable)
-      .where(eq(aiProviderTable.id, providerId))
-      .execute()
+    const updatedRecord = await (database as any).findByLocator(aiProviderTable as any, { id: providerId } as any)
 
-    expect(updatedRows[0]?.baseUrl).toBe('https://api.updated.com/v1')
+    expect(updatedRecord?.baseUrl).toBe('https://api.updated.com/v1')
 
-    await database.delete(aiProviderTable).where(eq(aiProviderTable.id, providerId)).execute()
+    await (database as any).deleteByLocator(aiProviderTable as any, { id: providerId } as any)
 
-    const afterDelete = await database
-      .select()
-      .from(aiProviderTable)
-      .where(eq(aiProviderTable.id, providerId))
-      .execute()
+    const afterDelete = await (database as any).findByLocator(aiProviderTable as any, { id: providerId } as any)
 
-    expect(afterDelete.length).toBe(0)
+    expect(afterDelete).toBeNull()
   })
 })

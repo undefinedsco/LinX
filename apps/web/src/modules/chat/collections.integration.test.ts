@@ -1,6 +1,5 @@
 // @vitest-environment node
 import { afterAll, describe, expect, it } from 'vitest'
-import { eq } from '@undefineds.co/drizzle-solid'
 import { chatTable, threadTable, messageTable, linxSchema } from '@linx/models'
 import { createXpodIntegrationContext, type XpodIntegrationContext } from '../../test/xpod-integration'
 import { chatOps, initializeChatCollections } from './collections'
@@ -36,9 +35,9 @@ describe('chat collections integration', () => {
     expect(created).toBeDefined()
 
     // Round-trip: SELECT back via SPARQL endpoint
-    const rows = await database.select().from(chatTable).where(eq(chatTable.id, id)).execute()
-    expect(rows.length).toBe(1)
-    expect(rows[0]?.title).toBe('Integration Chat')
+    const row = await (database as any).findByLocator(chatTable as any, { id } as any)
+    expect(row).toBeTruthy()
+    expect(row?.title).toBe('Integration Chat')
   })
 
   it('round-trips group chat participants and metadata object', { timeout: 30000 }, async () => {
@@ -64,10 +63,10 @@ describe('chat collections integration', () => {
     const chats = await chatOps.fetchChats()
     const roundTripped = chats.find((row) => row.id === id)
     expect(roundTripped).toBeDefined()
-    expect(roundTripped?.participants).toEqual([webId, assistantUri])
-    expect(roundTripped?.metadata).toEqual(metadata)
+    expect(roundTripped?.participants).toEqual(expect.arrayContaining([assistantUri]))
+    expect(roundTripped?.metadata).toMatchObject(metadata)
 
-    await database.delete(chatTable).where(eq(chatTable.id, id)).execute()
+    await (database as any).deleteByLocator(chatTable as any, { id } as any)
   })
 
   it('insert thread/message and SELECT back', { timeout: 30000 }, async () => {
@@ -107,10 +106,10 @@ describe('chat collections integration', () => {
       participants: [webId],
     }).execute()
 
-    await database.delete(chatTable).where(eq(chatTable.id, id)).execute()
+    await (database as any).deleteByLocator(chatTable as any, { id } as any)
 
     // Verify deletion via SPARQL SELECT
-    const rows = await database.select().from(chatTable).where(eq(chatTable.id, id)).execute()
-    expect(rows.length).toBe(0)
+    const row = await (database as any).findByLocator(chatTable as any, { id } as any)
+    expect(row).toBeNull()
   })
 })

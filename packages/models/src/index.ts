@@ -341,8 +341,13 @@ export {
 
 export {
   createRepositoryDescriptor,
+  deleteExactRecord,
   definePodRepository,
+  findExactRecord,
+  isIriLikeIdentifier,
   resolveRowId,
+  stripEntityIdentifiers,
+  updateExactRecord,
   type PodRepositoryDescriptor,
   type RepositoryCacheOptions,
   type RepositoryInvalidations,

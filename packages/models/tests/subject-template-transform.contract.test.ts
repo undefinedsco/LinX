@@ -62,7 +62,7 @@ describe('subjectTemplate transforms', () => {
     expect(resolver.extractId(subject, messageArchiveTable)).toBe('message-1')
   })
 
-  it('supports slug transform in subject resolution and container narrowing', async () => {
+  it('supports slug transform in subject resolution and exact-target narrowing', async () => {
     const resolver = new UriResolverImpl('https://pod.example')
     const subject = resolver.resolveSubject(slugTable, {
       id: 'entry-1',
@@ -72,18 +72,14 @@ describe('subjectTemplate transforms', () => {
     expect(subject).toBe('https://pod.example/.data/slug-demo/hello-linx-世界/index.ttl#entry-1')
 
     const documentResolver = new DocumentResourceResolver('https://pod.example/')
-    let narrowedContainer: string | undefined
-
-    await documentResolver.resolveSelectSources(
+    const sources = await documentResolver.resolveSelectSources(
       slugTable,
       '',
-      { title: 'Hello LinX / 世界' } as any,
-      async (containerUrl?: string) => {
-        narrowedContainer = containerUrl
-        return []
-      },
+      { id: 'entry-1', title: 'Hello LinX / 世界' } as any,
     )
 
-    expect(narrowedContainer).toBe('https://pod.example/.data/slug-demo/hello-linx-%E4%B8%96%E7%95%8C/')
+    expect(sources).toEqual([
+      'https://pod.example/.data/slug-demo/hello-linx-世界/index.ttl',
+    ])
   })
 })

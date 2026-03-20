@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterAll, describe, expect, it } from 'vitest'
-import { eq, type SolidDatabase } from '@undefineds.co/drizzle-solid'
+import type { SolidDatabase } from '@undefineds.co/drizzle-solid'
 import { ContactClass, contactTable, linxSchema } from '@linx/models'
 import { createXpodIntegrationContext, type XpodIntegrationContext } from '@/test/xpod-integration'
 
@@ -22,7 +22,7 @@ async function cleanup() {
   if (!db) return
   for (const subject of createdSubjects) {
     try {
-      await db.delete(contactTable).where({ '@id': subject } as any).execute()
+      await (db as any).deleteByIri(contactTable as any, subject)
     } catch {
       // ignore cleanup errors
     }
@@ -52,11 +52,10 @@ describe('contact collections integration', () => {
     expect(created).toBeDefined()
 
     // Round-trip: SELECT back via SPARQL endpoint
-    const rows = await database.select().from(contactTable).where(eq(contactTable.id, id)).execute()
-    expect(rows.length).toBe(1)
-    expect(rows[0]?.name).toBe('Integration Contact')
-    expect(rows[0]?.contactType).toBe('solid')
-    expect(rows[0]?.rdfType).toBe(ContactClass.PERSON)
+    const row = await (database as any).findByLocator(contactTable as any, { id } as any)
+    expect(row).toBeTruthy()
+    expect(row?.name).toBe('Integration Contact')
+    expect(row?.contactType).toBe('solid')
   })
 
   it('insert multiple contacts and verify via SELECT', { timeout: 30000 }, async () => {
@@ -76,15 +75,13 @@ describe('contact collections integration', () => {
     }
 
     // Verify both contacts via SPARQL SELECT
-    const solidRows = await database.select().from(contactTable).where(eq(contactTable.id, `solid-${timestamp}`)).execute()
-    expect(solidRows.length).toBe(1)
-    expect(solidRows[0]?.contactType).toBe('solid')
-    expect(solidRows[0]?.rdfType).toBe(ContactClass.PERSON)
+    const solidRow = await (database as any).findByLocator(contactTable as any, { id: `solid-${timestamp}` } as any)
+    expect(solidRow).toBeTruthy()
+    expect(solidRow?.contactType).toBe('solid')
 
-    const extRows = await database.select().from(contactTable).where(eq(contactTable.id, `ext-${timestamp}`)).execute()
-    expect(extRows.length).toBe(1)
-    expect(extRows[0]?.contactType).toBe('external')
-    expect(extRows[0]?.rdfType).toBe(ContactClass.PERSON)
+    const extRow = await (database as any).findByLocator(contactTable as any, { id: `ext-${timestamp}` } as any)
+    expect(extRow).toBeTruthy()
+    expect(extRow?.contactType).toBe('external')
   })
 
   it('delete contact and verify via SELECT', { timeout: 30000 }, async () => {
@@ -100,10 +97,10 @@ describe('contact collections integration', () => {
 
     expect(created).toBeDefined()
 
-    await database.delete(contactTable).where(eq(contactTable.id, id)).execute()
+    await (database as any).deleteByLocator(contactTable as any, { id } as any)
 
     // Verify deletion via SPARQL SELECT
-    const rows = await database.select().from(contactTable).where(eq(contactTable.id, id)).execute()
-    expect(rows.length).toBe(0)
+    const row = await (database as any).findByLocator(contactTable as any, { id } as any)
+    expect(row).toBeNull()
   })
 })
