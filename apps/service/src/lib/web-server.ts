@@ -2,6 +2,7 @@
  * Web Server Module - Serves LinX Web UI
  */
 import * as fs from 'fs'
+import * as os from 'os'
 import * as path from 'path'
 import express, { Express, Request, Response } from 'express'
 import { Server } from 'http'
@@ -37,6 +38,10 @@ interface SetupData {
 const CONFIG_DIR = path.join(process.env.HOME || '', 'Library', 'Application Support', 'LinX')
 const ENV_PATH = path.join(CONFIG_DIR, '.env')
 const SETUP_FLAG_PATH = path.join(CONFIG_DIR, '.setup-complete')
+
+function getDefaultDeviceId() {
+  return process.env.LINX_DEVICE_ID || process.env.CSS_NODE_ID || os.hostname() || 'local'
+}
 
 export class WebServerModule {
   private app: Express
@@ -172,7 +177,7 @@ export class WebServerModule {
             autoDetectPublicIp: env.LINX_AUTO_DETECT_PUBLIC_IP === 'true',
             httpsCertPath: env.LINX_HTTPS_CERT_PATH || '',
             subdomain: env.LINX_SUBDOMAIN || '',
-            deviceId: env.LINX_DEVICE_ID || env.CSS_NODE_ID || '',
+            deviceId: env.LINX_DEVICE_ID || env.CSS_NODE_ID || getDefaultDeviceId(),
             tunnelProvider,
             hasTunnelToken: Boolean(env.CLOUDFLARE_TUNNEL_TOKEN || env.SAKURA_TOKEN),
           })
@@ -188,7 +193,7 @@ export class WebServerModule {
             autoDetectPublicIp: true,
             httpsCertPath: '',
             subdomain: '',
-            deviceId: '',
+            deviceId: getDefaultDeviceId(),
             tunnelProvider: '',
             hasTunnelToken: false,
           })
@@ -325,7 +330,7 @@ export class WebServerModule {
 
     this.app.post('/api/runtime/threads', (req: Request, res: Response) => {
       try {
-        const { threadId, title, repoPath, worktreePath, runnerType, tool, baseRef, branch } = req.body ?? {}
+        const { threadId, workspaceUri, title, repoPath, folderPath, runnerType, tool, baseRef, branch } = req.body ?? {}
         if (!threadId || !title || !repoPath) {
           res.status(400).json({ error: 'threadId, title, and repoPath are required' })
           return
@@ -333,9 +338,10 @@ export class WebServerModule {
 
         const session = getRuntimeThreadsModule().createSession({
           threadId,
+          workspaceUri,
           title,
           repoPath,
-          worktreePath,
+          folderPath,
           runnerType,
           tool,
           baseRef,

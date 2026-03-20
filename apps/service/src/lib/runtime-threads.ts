@@ -38,6 +38,10 @@ export class RuntimeThreadsModule {
     try {
       const raw = JSON.parse(fs.readFileSync(STORE_PATH, 'utf-8')) as RuntimeThreadRecord[]
       for (const item of raw) {
+        if (!item?.id || !item?.threadId || !item?.repoPath || !item?.folderPath) {
+          console.warn('[RuntimeThreads] Skip invalid runtime session record:', item?.id ?? '<unknown>')
+          continue
+        }
         this.threads.set(item.id, item)
       }
     } catch (error) {
@@ -158,9 +162,10 @@ export class RuntimeThreadsModule {
     const record: RuntimeThreadRecord = {
       id: crypto.randomUUID(),
       threadId: input.threadId,
+      workspaceUri: input.workspaceUri,
       title: input.title,
       repoPath: input.repoPath,
-      worktreePath: input.worktreePath || input.repoPath,
+      folderPath: input.folderPath || input.repoPath,
       runnerType: input.runnerType || 'xpod-pty',
       tool: input.tool || 'codex',
       status: 'idle',

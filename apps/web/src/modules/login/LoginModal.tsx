@@ -89,7 +89,7 @@ function SelectingView(props: LoginModalProps) {
           登录 LinX
         </h2>
         <p className="text-xs text-muted-foreground text-center mt-1.5">
-          选择你的数据空间
+          当前阶段仅支持 Solid Pod 登录
         </p>
       </div>
 
@@ -121,28 +121,6 @@ function SelectingView(props: LoginModalProps) {
           ))}
         </div>
       </div>
-
-      {/* Local Service Entry */}
-      {props.localService && !props.localService.running && (
-        <div className="mx-4 mt-3 mb-1 px-3 py-2.5 bg-muted/60 rounded-xl shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-background border border-border/60 flex items-center justify-center overflow-hidden">
-              <span className="text-sm text-muted-foreground">💻</span>
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-foreground">本地服务</p>
-              <p className="text-[11px] text-muted-foreground">未运行</p>
-            </div>
-            <button
-              onClick={props.onLaunchLocalService}
-              disabled={props.isLaunching}
-              className="px-3 h-7 text-xs font-medium text-primary-foreground bg-primary rounded-lg disabled:opacity-50 cursor-pointer hover:bg-primary/90 transition-colors"
-            >
-              {props.isLaunching ? '启动中...' : '启动'}
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Add Custom Provider */}
       <div className="px-4 py-4 shrink-0 mt-auto">
@@ -187,7 +165,7 @@ function SelectingView(props: LoginModalProps) {
       {/* Footer */}
       <div className="px-4 pb-6 pt-3 border-t border-border/30 shrink-0">
         <p className="text-[10px] text-muted-foreground/60 text-center leading-normal">
-          LinX 使用 Solid 协议保护你的数据主权
+          阶段 1 只使用 Solid Pod 登录，三端共用同一套壳
         </p>
       </div>
     </div>

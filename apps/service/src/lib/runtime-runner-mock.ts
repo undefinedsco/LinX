@@ -18,7 +18,7 @@ function buildMockReply(record: RuntimeThreadRecord, text: string): string {
   return [
     `已在运行时会话中收到你的请求：${text}`,
     `当前仓库：${record.repoPath}`,
-    `当前 worktree：${record.worktreePath}`,
+    `当前文件夹：${record.folderPath}`,
     '现在走的是 Phase 3 最小远程链路：消息经由 service 转发，回复再回写到 Pod。',
   ].join('\n')
 }
@@ -43,7 +43,7 @@ export class MockRuntimeRunner implements RuntimeRunner {
       ts: Date.now(),
       threadId: record.id,
       runner: record.tool,
-      workdir: record.worktreePath,
+      workdir: record.folderPath,
     })
     this.host.emitEvent({
       type: 'status',

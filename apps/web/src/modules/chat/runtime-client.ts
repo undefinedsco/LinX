@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { buildLocalWorkspaceUri, normalizeLocalWorkspacePath } from '@linx/models'
 
 export type RuntimeThreadStatus = 'idle' | 'active' | 'paused' | 'completed' | 'error'
 export type RuntimeSessionStatus = RuntimeThreadStatus
@@ -11,9 +12,10 @@ export const DEFAULT_RUNTIME_BASE_REF = 'HEAD'
 export interface RuntimeThreadRecord {
   id: string
   threadId: string
+  workspaceUri?: string
   title: string
   repoPath: string
-  worktreePath: string
+  folderPath: string
   runnerType: RuntimeRunnerType
   tool: RuntimeToolType
   status: RuntimeThreadStatus
@@ -44,9 +46,10 @@ export type RuntimeSessionEvent = RuntimeThreadEvent
 
 export interface CreateRuntimeThreadInput {
   threadId: string
+  workspaceUri?: string
   title: string
   repoPath: string
-  worktreePath?: string
+  folderPath?: string
   runnerType?: RuntimeRunnerType
   tool?: RuntimeToolType
   baseRef?: string
@@ -54,6 +57,12 @@ export interface CreateRuntimeThreadInput {
 }
 
 export type CreateRuntimeSessionInput = CreateRuntimeThreadInput
+
+type SetupConfigResponse = {
+  deviceId?: string
+}
+
+let cachedServiceDeviceId: string | null | undefined
 
 function isServiceMode() {
   return typeof window !== 'undefined' && !!(window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__
@@ -82,18 +91,48 @@ export function normalizeRuntimeSessionInput(input: CreateRuntimeSessionInput): 
     throw new Error('请先填写仓库路径。')
   }
 
-  const worktreePath = input.worktreePath?.trim() || repoPath
+  const folderPath = input.folderPath?.trim() || repoPath
   const baseRef = input.baseRef?.trim() || DEFAULT_RUNTIME_BASE_REF
   const branch = input.branch?.trim() || undefined
 
   return {
     ...input,
     repoPath,
-    worktreePath,
+    workspaceUri: input.workspaceUri?.trim() || undefined,
+    folderPath,
     tool: input.tool ?? DEFAULT_RUNTIME_TOOL,
     baseRef,
     branch,
   }
+}
+
+export async function getServiceDeviceId(): Promise<string> {
+  if (cachedServiceDeviceId !== undefined) {
+    if (!cachedServiceDeviceId) {
+      throw new Error('当前 Linx 节点缺少 nodeId。')
+    }
+    return cachedServiceDeviceId
+  }
+
+  if (!isServiceMode()) {
+    throw new Error('当前环境不支持本地 workspace。')
+  }
+
+  const data = await fetchRuntimeJson<SetupConfigResponse>('/api/setup/config')
+  cachedServiceDeviceId = data.deviceId?.trim() || null
+  if (!cachedServiceDeviceId) {
+    throw new Error('请先为当前 Linx 节点配置 deviceId。')
+  }
+  return cachedServiceDeviceId
+}
+
+export async function resolveLocalWorkspaceUri(rootPath: string): Promise<string> {
+  const nodeId = await getServiceDeviceId()
+  const normalizedRootPath = normalizeLocalWorkspacePath(rootPath)
+  if (!normalizedRootPath) {
+    throw new Error('请先填写工作区根路径。')
+  }
+  return buildLocalWorkspaceUri(nodeId, normalizedRootPath)
 }
 
 export async function createRuntimeSession(input: CreateRuntimeSessionInput): Promise<RuntimeSessionRecord> {
@@ -112,6 +151,12 @@ export async function createAndStartRuntimeSession(input: CreateRuntimeSessionIn
   return startRuntimeSession(created.id)
 }
 
+export async function listRuntimeSessions(threadId?: string): Promise<RuntimeSessionRecord[]> {
+  const suffix = threadId ? `?threadId=${encodeURIComponent(threadId)}` : ''
+  const data = await fetchRuntimeJson<{ items: RuntimeSessionRecord[] }>(`/api/runtime/threads${suffix}`)
+  return data.items
+}
+
 export function useRuntimeSession(threadId: string | null | undefined) {
   const queryClient = useQueryClient()
   const enabled = isServiceMode() && !!threadId
@@ -121,8 +166,8 @@ export function useRuntimeSession(threadId: string | null | undefined) {
     queryKey,
     enabled,
     queryFn: async () => {
-      const data = await fetchRuntimeJson<{ items: RuntimeSessionRecord[] }>(`/api/runtime/threads?threadId=${encodeURIComponent(threadId!)}`)
-      return data.items[0] ?? null
+      const sessions = await listRuntimeSessions(threadId!)
+      return sessions[0] ?? null
     },
   })
 

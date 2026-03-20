@@ -6,6 +6,7 @@ import type { SolidDatabase } from '@linx/models'
 import {
   chatTable,
   threadTable,
+  workspaceTable,
   messageTable,
   contactTable,
   agentTable,
@@ -139,6 +140,7 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
           await instance.init([
             chatTable,
             threadTable,
+            workspaceTable,
             messageTable,
             contactTable,
             agentTable,

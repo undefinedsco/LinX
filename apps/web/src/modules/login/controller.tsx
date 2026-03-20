@@ -156,7 +156,6 @@ export function useLoginController() {
         clearTimeout(timeoutId)
 
         if (response.ok) {
-          const data = await response.json()
           setLocalService({
             running: true,
             url: `http://localhost:${port}`,
@@ -187,7 +186,7 @@ export function useLoginController() {
 
       // 轮询检查服务是否启动
       let attempts = 0
-      const maxAttempts = 30 // 最多等待 30 秒
+      const maxAttempts = Math.ceil(XPOD_LAUNCH_TIMEOUT / 1000)
       const checkInterval = setInterval(async () => {
         attempts++
         await checkLocalService()

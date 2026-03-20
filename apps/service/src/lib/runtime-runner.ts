@@ -5,9 +5,10 @@ export type RuntimeToolType = 'codex' | 'claude' | 'codebuddy' | 'mock'
 export interface RuntimeThreadRecord {
   id: string
   threadId: string
+  workspaceUri?: string
   title: string
   repoPath: string
-  worktreePath: string
+  folderPath: string
   runnerType: RuntimeRunnerType
   tool: RuntimeToolType
   status: RuntimeThreadStatus
@@ -34,9 +35,10 @@ export type RuntimeThreadEvent =
 
 export interface CreateRuntimeThreadInput {
   threadId: string
+  workspaceUri?: string
   title: string
   repoPath: string
-  worktreePath?: string
+  folderPath?: string
   runnerType?: RuntimeRunnerType
   tool?: RuntimeToolType
   baseRef?: string

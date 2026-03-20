@@ -142,7 +142,7 @@ export class XpodPtyRuntimeRunner implements RuntimeRunner {
       ts: Date.now(),
       threadId: updated.id,
       runner: updated.tool,
-      workdir: updated.worktreePath,
+      workdir: updated.folderPath,
     })
     this.host.emitEvent({
       type: 'status',
@@ -235,14 +235,14 @@ export class XpodPtyRuntimeRunner implements RuntimeRunner {
     const record = this.host.getRecord()
     await this.gitService.assertGitRepo(record.repoPath)
 
-    const usesDedicatedWorktree = record.worktreePath !== record.repoPath
-    if (!usesDedicatedWorktree || fs.existsSync(record.worktreePath)) {
+    const usesDedicatedFolder = record.folderPath !== record.repoPath
+    if (!usesDedicatedFolder || fs.existsSync(record.folderPath)) {
       return
     }
 
     await this.gitService.createWorktree({
       repoPath: record.repoPath,
-      worktreePath: record.worktreePath,
+      worktreePath: record.folderPath,
       baseRef: record.baseRef || 'HEAD',
       branch: record.branch || buildDefaultBranchName(record),
     })
@@ -254,14 +254,14 @@ export class XpodPtyRuntimeRunner implements RuntimeRunner {
   }
 
   private buildPtyConfig(record: RuntimeThreadRecord) {
-    const workspace = record.worktreePath === record.repoPath
+    const workspace = record.folderPath === record.repoPath
       ? { type: 'path' as const, rootPath: record.repoPath }
       : {
           type: 'git' as const,
           rootPath: record.repoPath,
           worktree: {
             mode: 'existing' as const,
-            path: record.worktreePath,
+            path: record.folderPath,
           },
         }
 
