@@ -8,13 +8,14 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactNode } from 'react'
+import { ContactClass } from '@linx/models'
 
 // Mock contacts data with mixed types
 const mockContacts = [
-  { id: 's-1', name: 'Alice', contactType: 'solid', starred: false, avatarUrl: null },
-  { id: 's-2', name: 'Bob', contactType: 'solid', starred: true, avatarUrl: null },
-  { id: 'a-1', name: 'GPT Helper', contactType: 'agent', starred: false, avatarUrl: null },
-  { id: 'g-1', name: 'Dev Team', contactType: 'group', starred: false, avatarUrl: null },
+  { id: 's-1', name: 'Alice', rdfType: ContactClass.PERSON, contactType: 'solid', starred: false, avatarUrl: null, entityUri: 'https://alice.example/profile/card#me' },
+  { id: 's-2', name: 'Bob', rdfType: ContactClass.PERSON, contactType: 'solid', starred: true, avatarUrl: null, entityUri: 'https://bob.example/profile/card#me' },
+  { id: 'a-1', name: 'GPT Helper', rdfType: ContactClass.AGENT, contactType: 'agent', starred: false, avatarUrl: null, entityUri: 'https://pod.example/.data/agents/gpt-helper.ttl#this' },
+  { id: 'g-1', name: 'Dev Team', rdfType: ContactClass.GROUP, contactType: 'solid', starred: false, avatarUrl: null, entityUri: '/.data/contacts/g-1.ttl' },
 ]
 
 vi.mock('../collections', () => ({
@@ -22,13 +23,27 @@ vi.mock('../collections', () => ({
     getAll: vi.fn(() => mockContacts),
     search: vi.fn(() => []),
     subscribeToPod: vi.fn(() => Promise.resolve(() => {})),
-    getGroupMembers: vi.fn(() => ['s-1', 's-2']),
+    getGroupDisplayInfo: vi.fn(() => ({
+      memberCount: 2,
+      isOwner: true,
+      memberPreview: ['Alice', 'Bob'],
+    })),
   },
   initializeContactCollections: vi.fn(),
 }))
 
 vi.mock('@/providers/solid-database-provider', () => ({
   useSolidDatabase: () => ({ db: { mockDb: true }, status: 'ready' }),
+}))
+
+vi.mock('@inrupt/solid-ui-react', () => ({
+  useSession: () => ({
+    session: {
+      info: {
+        webId: 'https://me.example/profile/card#me',
+      },
+    },
+  }),
 }))
 
 // Store mock — mutable so tests can change listFilter
@@ -119,11 +134,11 @@ describe('ContactListPane CP1 Filtering', () => {
     expect(screen.queryByText('Dev Team')).not.toBeInTheDocument()
   })
 
-  it('shows member count subtitle for group contacts', async () => {
+  it('shows group summary and owner badge for group contacts', async () => {
     render(<ContactListPane theme="light" />, { wrapper: createWrapper() })
 
-    // Dev Team group should show "2人" (from mocked getGroupMembers)
-    expect(await screen.findByText('2人')).toBeInTheDocument()
+    expect(await screen.findByText('2人 · Alice、Bob')).toBeInTheDocument()
+    expect(screen.getByText('群主')).toBeInTheDocument()
   })
 
   it('hides filter tabs when searching', async () => {

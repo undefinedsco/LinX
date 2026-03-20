@@ -16,6 +16,18 @@ export interface CreateAgentContactRecordsInput {
   instructions?: string
 }
 
+export interface CreateSolidContactRecordInput {
+  name: string
+  webId: string
+  avatarUrl?: string
+}
+
+export interface CreateGroupContactRecordInput {
+  name: string
+  entityUri: string
+  avatarUrl?: string
+}
+
 function ensureRecordId(record: Partial<Record<string, unknown>>, fallback?: string): string {
   const directId = typeof record.id === 'string' && record.id.length > 0 ? record.id : undefined
   if (directId) {
@@ -71,6 +83,58 @@ export async function createAgentContactRecords(
     agent: agent as AgentRow,
     contact: contact as ContactRow,
     agentId: ensureRecordId(agent as Record<string, unknown>, agentId),
+    contactId: ensureRecordId(contact as Record<string, unknown>, contactId),
+    contactUri: resolveRowId(contact) ?? contactId,
+  }
+}
+
+export async function createSolidContactRecord(
+  db: SolidDatabase,
+  input: CreateSolidContactRecordInput,
+): Promise<{
+  contact: ContactRow
+  contactId: string
+  contactUri: string
+}> {
+  const contactId = crypto.randomUUID()
+  const contact = await contactRepository.create!(db, {
+    id: contactId,
+    name: input.name,
+    avatarUrl: input.avatarUrl,
+    entityUri: input.webId,
+    rdfType: ContactClass.PERSON,
+    contactType: ContactType.SOLID,
+    isPublic: false,
+  })
+
+  return {
+    contact: contact as ContactRow,
+    contactId: ensureRecordId(contact as Record<string, unknown>, contactId),
+    contactUri: resolveRowId(contact) ?? contactId,
+  }
+}
+
+export async function createGroupContactRecord(
+  db: SolidDatabase,
+  input: CreateGroupContactRecordInput,
+): Promise<{
+  contact: ContactRow
+  contactId: string
+  contactUri: string
+}> {
+  const contactId = crypto.randomUUID()
+  const contact = await contactRepository.create!(db, {
+    id: contactId,
+    name: input.name,
+    avatarUrl: input.avatarUrl,
+    entityUri: input.entityUri,
+    rdfType: ContactClass.GROUP,
+    contactType: ContactType.SOLID,
+    isPublic: false,
+  })
+
+  return {
+    contact: contact as ContactRow,
     contactId: ensureRecordId(contact as Record<string, unknown>, contactId),
     contactUri: resolveRowId(contact) ?? contactId,
   }

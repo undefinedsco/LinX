@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { ContactType } from '@linx/models'
+import { ContactClass, ContactType } from '@linx/models'
 
 // Mock search results storage for db.select().from().where().execute()
 let mockSearchResults: any[] = []
@@ -133,11 +133,13 @@ describe('contactOps', () => {
       expect(result.contactType).toBe(ContactType.AGENT)
       expect(result.entityUri).toBe('uuid-1') // Agent ID (first UUID)
       
-      // Verify insert was called 3 times (Agent, Contact, Chat)
-      expect(mockInsert).toHaveBeenCalledTimes(3)
+      // Repositories create Agent + Contact via db.insert; collection persists Chat
+      expect(mockDb.insert).toHaveBeenCalledTimes(2)
+      expect(mockInsert).toHaveBeenCalledTimes(1)
       
       // Verify query invalidation
       expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['chats'] })
+      expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['contacts'] })
     })
 
     it('should use default model and provider if not provided', async () => {
@@ -178,11 +180,13 @@ describe('contactOps', () => {
       expect(result.entityUri).toBe('https://alice.solidcommunity.net/profile/card#me')
       expect(result.avatarUrl).toBe('https://alice.solidcommunity.net/avatar.png')
       
-      // Verify insert was called 2 times (Contact, Chat)
-      expect(mockInsert).toHaveBeenCalledTimes(2)
+      // Repository creates Contact; collection persists Chat
+      expect(mockDb.insert).toHaveBeenCalledTimes(1)
+      expect(mockInsert).toHaveBeenCalledTimes(1)
       
       // Verify query invalidation
       expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['chats'] })
+      expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['contacts'] })
     })
 
     it('should work without avatarUrl', async () => {
@@ -269,6 +273,48 @@ describe('contactOps', () => {
     })
   })
 
+  describe('findOrCreateChat', () => {
+    it('should reuse an existing chat when participants store contact URI', async () => {
+      const contact = {
+        id: 'contact-1',
+        '@id': 'https://pod.example/.data/contacts/contact-1.ttl',
+        name: 'Alice',
+      }
+      const chat = {
+        id: 'chat-1',
+        participants: ['https://pod.example/.data/contacts/contact-1.ttl'],
+      }
+
+      mockCollectionState.set(contact.id, contact)
+      mockCollectionState.set(chat.id, chat)
+
+      const result = await contactOps.findOrCreateChat('contact-1')
+
+      expect(result).toBe('chat-1')
+      expect(mockInsert).not.toHaveBeenCalled()
+    })
+
+    it('should create a new chat using the persisted contact reference', async () => {
+      const contact = {
+        id: 'contact-1',
+        '@id': 'https://pod.example/.data/contacts/contact-1.ttl',
+        name: 'Alice',
+      }
+
+      mockCollectionState.set(contact.id, contact)
+
+      const result = await contactOps.findOrCreateChat('contact-1')
+
+      expect(result).toBe('uuid-1')
+      expect(mockInsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'uuid-1',
+          participants: ['https://pod.example/.data/contacts/contact-1.ttl'],
+        }),
+      )
+    })
+  })
+
   describe('getAgentById', () => {
     it('should find agent by id from collection state', () => {
       const mockAgent = { id: 'agent-1', name: 'Test Agent' }
@@ -287,6 +333,51 @@ describe('contactOps', () => {
       expect(result).toBeNull()
     })
   })
+
+  describe('getGroupDisplayInfo', () => {
+    it('should derive owner flag and member preview from group chat state', () => {
+      const ownerRef = 'https://me.example/profile/card#me'
+      const memberRef = 'https://bob.example/profile/card#me'
+
+      mockCollectionState.set('group-1', {
+        id: 'group-1',
+        name: '产品群',
+        rdfType: ContactClass.GROUP,
+        entityUri: '/.data/chat/chat-1/index.ttl#this',
+        contactType: ContactType.SOLID,
+      })
+      mockCollectionState.set('owner-contact', {
+        id: 'owner-contact',
+        name: 'Me',
+        entityUri: ownerRef,
+        contactType: ContactType.SOLID,
+      })
+      mockCollectionState.set('member-1', {
+        id: 'member-1',
+        name: 'Bob',
+        alias: '老鲍',
+        entityUri: memberRef,
+        contactType: ContactType.SOLID,
+      })
+      mockCollectionState.set('chat-1', {
+        id: 'chat-1',
+        participants: [ownerRef, memberRef],
+        metadata: {
+          memberRoles: {
+            [ownerRef]: 'owner',
+          },
+        },
+      })
+
+      const result = contactOps.getGroupDisplayInfo('group-1', ownerRef)
+
+      expect(result).toEqual({
+        memberCount: 2,
+        isOwner: true,
+        memberPreview: ['Me', '老鲍'],
+      })
+    })
+  })
 })
 
 describe('Contact + Chat Linkage Logic', () => {
@@ -301,7 +392,7 @@ describe('Contact + Chat Linkage Logic', () => {
     setContactsDatabaseGetter(() => null)
   })
 
-  it('createAgent: Agent.id → Contact.entityUri, Contact.id → Chat.contact', async () => {
+  it('createAgent: Agent.id → Contact.entityUri, Contact reference → Chat.participants', async () => {
     const result = await contactOps.createAgent({ name: 'AI Assistant' })
 
     // UUID allocation: uuid-1 (Agent), uuid-2 (Contact), uuid-3 (Chat)
@@ -315,7 +406,7 @@ describe('Contact + Chat Linkage Logic', () => {
     expect(result.chatId).toBe(chatId)
   })
 
-  it('addFriend: WebID → Contact.entityUri, Contact.id → Chat.contact', async () => {
+  it('addFriend: WebID → Contact.entityUri, Contact reference → Chat.participants', async () => {
     const webId = 'https://friend.pod/profile/card#me'
     const result = await contactOps.addFriend({ name: 'Friend', webId })
 
@@ -329,20 +420,25 @@ describe('Contact + Chat Linkage Logic', () => {
     expect(result.chatId).toBe(chatId)
   })
 
-  it('createAgent creates 3 records, addFriend creates 2 records', async () => {
-    // Reset mock
+  it('createAgent uses repository+chat collection, addFriend uses repository+chat collection', async () => {
     mockInsert.mockClear()
+    mockDb.insert.mockClear()
 
     await contactOps.createAgent({ name: 'Agent' })
-    const agentInsertCount = mockInsert.mock.calls.length
+    const agentDbInsertCount = mockDb.insert.mock.calls.length
+    const agentCollectionInsertCount = mockInsert.mock.calls.length
 
     mockInsert.mockClear()
+    mockDb.insert.mockClear()
 
     await contactOps.addFriend({ name: 'Friend', webId: 'https://friend.pod/#me' })
-    const friendInsertCount = mockInsert.mock.calls.length
+    const friendDbInsertCount = mockDb.insert.mock.calls.length
+    const friendCollectionInsertCount = mockInsert.mock.calls.length
 
-    expect(agentInsertCount).toBe(3) // Agent + Contact + Chat
-    expect(friendInsertCount).toBe(2) // Contact + Chat
+    expect(agentDbInsertCount).toBe(2) // Agent + Contact
+    expect(agentCollectionInsertCount).toBe(1) // Chat
+    expect(friendDbInsertCount).toBe(1) // Contact
+    expect(friendCollectionInsertCount).toBe(1) // Chat
   })
 })
 
@@ -543,6 +639,7 @@ describe('contactOps Solid Profile Operations', () => {
     })
 
     it('should return null when profile not found', async () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
       mockDb.findFirst.mockResolvedValueOnce(null)
 
       const result = await contactOps.fetchSolidProfile('https://invalid.pod/profile')
@@ -564,6 +661,7 @@ describe('contactOps Solid Profile Operations', () => {
     })
 
     it('should return null on error', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
       mockDb.findFirst.mockRejectedValueOnce(new Error('Network error'))
 
       const result = await contactOps.fetchSolidProfile('https://error.pod/profile')

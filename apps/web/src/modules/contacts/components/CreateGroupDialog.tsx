@@ -3,14 +3,14 @@
  *
  * Allows users to create a group contact with:
  * - Group name input
- * - Contact search + multi-select (reuses SelectableContactList)
- * - AI assistant selection from agent contacts
+ * - Unified participant search + multi-select (reuses SelectableContactList)
  * - Minimum 2 member validation
  * - Calls contactOps.createGroupWithChat() on submit
  * - Closes dialog on success
  */
 
 import { useState, useMemo, useCallback } from 'react'
+import { useSession } from '@inrupt/solid-ui-react'
 import {
   Dialog,
   DialogContent,
@@ -21,9 +21,9 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Users, Bot, AlertCircle } from 'lucide-react'
+import { Users, AlertCircle } from 'lucide-react'
 import { contactOps } from '../collections'
-import { ContactType, type ContactRow } from '@linx/models'
+import { isGroupContact, type ContactRow } from '@linx/models'
 import { useQuery } from '@tanstack/react-query'
 import { SelectableContactList } from './SelectableContactList'
 
@@ -34,12 +34,13 @@ interface CreateGroupDialogProps {
 }
 
 export function CreateGroupDialog({ open, onOpenChange, onCreated }: CreateGroupDialogProps) {
+  const { session } = useSession()
   const [groupName, setGroupName] = useState('')
-  const [memberSearch, setMemberSearch] = useState('')
-  const [selectedMembers, setSelectedMembers] = useState<Set<string>>(new Set())
-  const [selectedAgents, setSelectedAgents] = useState<Set<string>>(new Set())
+  const [participantSearch, setParticipantSearch] = useState('')
+  const [selectedParticipants, setSelectedParticipants] = useState<Set<string>>(new Set())
   const [isCreating, setIsCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const ownerRef = session.info.webId ?? undefined
 
   const { data: allContacts = [] } = useQuery({
     queryKey: ['contacts', 'for-group-dialog'],
@@ -47,46 +48,30 @@ export function CreateGroupDialog({ open, onOpenChange, onCreated }: CreateGroup
     enabled: open,
   })
 
-  const personalContacts = useMemo(
+  const candidateContacts = useMemo(
     () => allContacts.filter((c: ContactRow) =>
-      c.contactType === ContactType.SOLID && !c.deletedAt
+      !isGroupContact(c) && !c.deletedAt && typeof c.entityUri === 'string' && c.entityUri.length > 0
     ),
     [allContacts]
   )
 
-  const agentContacts = useMemo(
-    () => allContacts.filter((c: ContactRow) =>
-      c.contactType === ContactType.AGENT && !c.deletedAt
-    ),
-    [allContacts]
-  )
-
-  const filteredPersonal = useMemo(() => {
-    if (!memberSearch.trim()) return personalContacts
-    const q = memberSearch.toLowerCase()
-    return personalContacts.filter(c =>
+  const filteredParticipants = useMemo(() => {
+    if (!participantSearch.trim()) return candidateContacts
+    const q = participantSearch.toLowerCase()
+    return candidateContacts.filter(c =>
       c.name?.toLowerCase().includes(q) || c.alias?.toLowerCase().includes(q)
     )
-  }, [personalContacts, memberSearch])
+  }, [candidateContacts, participantSearch])
 
-  const toggleMember = useCallback((id: string) => {
-    setSelectedMembers(prev => {
+  const toggleParticipant = useCallback((id: string) => {
+    setSelectedParticipants(prev => {
       const next = new Set(prev)
       next.has(id) ? next.delete(id) : next.add(id)
       return next
     })
   }, [])
 
-  const toggleAgent = useCallback((id: string) => {
-    setSelectedAgents(prev => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
-  }, [])
-
-  // CP1: minimum 2 total members (human + AI)
-  const total = selectedMembers.size + selectedAgents.size
+  const total = selectedParticipants.size + (ownerRef ? 1 : 0)
   const canCreate = groupName.trim().length > 0 && total >= 2
 
   const handleCreate = async () => {
@@ -94,18 +79,22 @@ export function CreateGroupDialog({ open, onOpenChange, onCreated }: CreateGroup
     setError(null)
     setIsCreating(true)
     try {
+      const byId = new Map(allContacts.map((contact) => [contact.id, contact]))
+      const participants = Array.from(selectedParticipants)
+        .map((id) => byId.get(id)?.entityUri)
+        .filter((uri): uri is string => typeof uri === 'string' && uri.length > 0)
+
       // Always use createGroupWithChat which validates member count
       const result = await contactOps.createGroupWithChat({
         name: groupName.trim(),
-        memberIds: Array.from(selectedMembers),
-        aiAssistantIds: Array.from(selectedAgents),
+        participants,
+        ownerRef,
       })
       onCreated?.(result.id, result.chatId)
       handleClose()
     } catch (err) {
       const msg = err instanceof Error ? err.message : '创建群组失败'
       setError(msg)
-      console.error('[CreateGroupDialog] Failed to create group:', err)
     } finally {
       setIsCreating(false)
     }
@@ -113,16 +102,15 @@ export function CreateGroupDialog({ open, onOpenChange, onCreated }: CreateGroup
 
   const handleClose = () => {
     setGroupName('')
-    setMemberSearch('')
-    setSelectedMembers(new Set())
-    setSelectedAgents(new Set())
+    setParticipantSearch('')
+    setSelectedParticipants(new Set())
     setError(null)
     onOpenChange(false)
   }
 
   // Selected summary text
   const selectedNames = allContacts
-    .filter(c => selectedMembers.has(c.id) || selectedAgents.has(c.id))
+    .filter(c => selectedParticipants.has(c.id))
     .map(c => c.alias || c.name)
 
   return (
@@ -147,31 +135,21 @@ export function CreateGroupDialog({ open, onOpenChange, onCreated }: CreateGroup
           </div>
 
           <SelectableContactList
-            title="添加成员"
+            title="添加参与者"
             icon={<Users className="w-4 h-4" />}
-            contacts={filteredPersonal}
-            selected={selectedMembers}
-            onToggle={toggleMember}
-            search={memberSearch}
-            onSearchChange={setMemberSearch}
+            contacts={filteredParticipants}
+            selected={selectedParticipants}
+            onToggle={toggleParticipant}
+            search={participantSearch}
+            onSearchChange={setParticipantSearch}
             showSearch
           />
 
-          {agentContacts.length > 0 && (
-            <SelectableContactList
-              title="添加 AI 助手"
-              icon={<Bot className="w-4 h-4" />}
-              contacts={agentContacts}
-              selected={selectedAgents}
-              onToggle={toggleAgent}
-            />
-          )}
-
           {total > 0 && (
             <div className="text-xs text-muted-foreground">
-              已选: {selectedNames.join(', ')} ({total}人)
+              已选: {selectedNames.join(', ') || '无'}（共 {total} 人{ownerRef ? '，包含你' : ''}）
               {total < 2 && (
-                <span className="text-amber-500 ml-1">（至少选择 2 人）</span>
+                <span className="text-amber-500 ml-1">（至少选择 {ownerRef ? 1 : 2} 人）</span>
               )}
             </div>
           )}

@@ -19,10 +19,10 @@ const makeContact = (id: string, name: string, type = 'solid') => ({
 })
 
 const baseMembers: GroupMember[] = [
-  { contact: makeContact('owner-1', 'Owner') as any, role: 'owner' },
-  { contact: makeContact('admin-1', 'Admin') as any, role: 'admin' },
-  { contact: makeContact('member-1', 'Member') as any, role: 'member' },
-  { contact: makeContact('bot-1', 'AI Bot', 'agent') as any, role: 'member' },
+  { memberRef: 'owner-1', contact: makeContact('owner-1', 'Owner') as any, role: 'owner' },
+  { memberRef: 'admin-1', contact: makeContact('admin-1', 'Admin') as any, role: 'admin' },
+  { memberRef: 'member-1', contact: makeContact('member-1', 'Member') as any, role: 'member' },
+  { memberRef: 'bot-1', contact: makeContact('bot-1', 'AI Bot', 'agent') as any, role: 'member' },
 ]
 
 describe('MemberList', () => {
@@ -46,7 +46,7 @@ describe('MemberList', () => {
   })
 
   it('marks current user with (你)', () => {
-    render(<MemberList members={baseMembers} currentUserId="member-1" />)
+    render(<MemberList members={baseMembers} currentUserRef="member-1" />)
     expect(screen.getByText('(你)')).toBeInTheDocument()
   })
 

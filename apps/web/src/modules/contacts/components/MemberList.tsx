@@ -19,22 +19,23 @@ import { ContactType } from '@linx/models'
 export type MemberRole = 'owner' | 'admin' | 'member'
 
 export interface GroupMember {
+  memberRef: string
   contact: ContactRow
   role: MemberRole
 }
 
 interface MemberListProps {
   members: GroupMember[]
-  currentUserId?: string
+  currentUserRef?: string
   /** Current user is the group owner */
   isOwner?: boolean
   /** Current user is an admin (owner OR admin role) */
   isAdmin?: boolean
   onViewProfile?: (contactId: string) => void
   onMention?: (contactName: string) => void
-  onRemoveMember?: (contactId: string) => void
-  /** Only owner can promote/demote — called with (contactId, newRole) */
-  onUpdateRole?: (contactId: string, role: 'admin' | 'member') => void
+  onRemoveMember?: (memberRef: string) => void
+  /** Only owner can promote/demote — called with (memberRef, newRole) */
+  onUpdateRole?: (memberRef: string, role: 'admin' | 'member') => void
   onInvite?: () => void
 }
 
@@ -63,7 +64,7 @@ function MemberItem({ member, isCurrentUser, canManage, canSetRole, onViewProfil
   onViewProfile?: (id: string) => void; onMention?: (name: string) => void
   onRemoveMember?: (id: string) => void; onUpdateRole?: (id: string, role: 'admin' | 'member') => void
 }) {
-  const { contact, role } = member
+  const { contact, memberRef, role } = member
   const isAgent = contact.contactType === ContactType.AGENT
   const displayName = contact.alias || contact.name || '?'
 
@@ -111,13 +112,13 @@ function MemberItem({ member, isCurrentUser, canManage, canSetRole, onViewProfil
             </DropdownMenuItem>
             {/* Role management - only owner can set roles, and not on other owners */}
             {canSetRole && role === 'member' && (
-              <DropdownMenuItem onClick={() => onUpdateRole?.(contact.id, 'admin')}>
+              <DropdownMenuItem onClick={() => onUpdateRole?.(memberRef, 'admin')}>
                 <Shield className="w-3.5 h-3.5 mr-1.5" />
                 设为管理员
               </DropdownMenuItem>
             )}
             {canSetRole && role === 'admin' && (
-              <DropdownMenuItem onClick={() => onUpdateRole?.(contact.id, 'member')}>
+              <DropdownMenuItem onClick={() => onUpdateRole?.(memberRef, 'member')}>
                 取消管理员
               </DropdownMenuItem>
             )}
@@ -125,7 +126,7 @@ function MemberItem({ member, isCurrentUser, canManage, canSetRole, onViewProfil
             {canManage && role !== 'owner' && (
               <DropdownMenuItem
                 className="text-destructive"
-                onClick={() => onRemoveMember?.(contact.id)}
+                onClick={() => onRemoveMember?.(memberRef)}
               >
                 移除成员
               </DropdownMenuItem>
@@ -139,7 +140,7 @@ function MemberItem({ member, isCurrentUser, canManage, canSetRole, onViewProfil
 
 export function MemberList({
   members,
-  currentUserId,
+  currentUserRef,
   isOwner = false,
   isAdmin = false,
   onViewProfile,
@@ -191,9 +192,9 @@ export function MemberList({
       <ScrollArea className="flex-1">
         {sorted.map(member => (
           <MemberItem
-            key={member.contact.id}
+            key={member.memberRef}
             member={member}
-            isCurrentUser={member.contact.id === currentUserId}
+            isCurrentUser={member.memberRef === currentUserRef}
             canManage={canManageMembers}
             canSetRole={canSetRoles}
             onViewProfile={onViewProfile}

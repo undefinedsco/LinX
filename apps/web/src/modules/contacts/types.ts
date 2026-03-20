@@ -15,7 +15,7 @@ export interface ContactTag {
 
 /**
  * Group-specific display info attached to UnifiedContact
- * Populated when contactType === 'group'
+ * Populated when rdfType marks the row as a GroupContact subclass
  */
 export interface GroupContactInfo {
   /** Number of members (human + AI) */
@@ -54,7 +54,7 @@ export interface UnifiedContact extends Omit<ContactRow, 'gender'> {
     tools?: string[] // List of enabled tool IDs
   }
 
-  // Group specific data (optional, populated if contactType='group')
+  // Group specific data (optional, populated if rdfType is GroupContact)
   groupInfo?: GroupContactInfo
 }
 

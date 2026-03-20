@@ -16,12 +16,22 @@ const {
   mockCreateGroup,
 } = vi.hoisted(() => ({
   mockContacts: [
-    { id: 'p-1', name: 'Alice', alias: null, contactType: 'solid', deletedAt: null, avatarUrl: null },
-    { id: 'p-2', name: 'Bob', alias: null, contactType: 'solid', deletedAt: null, avatarUrl: null },
-    { id: 'a-1', name: 'GPT Helper', alias: null, contactType: 'agent', deletedAt: null, avatarUrl: null },
+    { id: 'p-1', name: 'Alice', alias: null, rdfType: 'https://undefineds.co/ns#PersonContact', contactType: 'solid', deletedAt: null, avatarUrl: null, entityUri: 'https://alice.example/profile/card#me' },
+    { id: 'p-2', name: 'Bob', alias: null, rdfType: 'https://undefineds.co/ns#PersonContact', contactType: 'solid', deletedAt: null, avatarUrl: null, entityUri: 'https://bob.example/profile/card#me' },
+    { id: 'a-1', name: 'GPT Helper', alias: null, rdfType: 'https://undefineds.co/ns#AgentContact', contactType: 'agent', deletedAt: null, avatarUrl: null, entityUri: 'https://pod.example/.data/agents/gpt-helper.ttl#this' },
   ],
   mockCreateGroupWithChat: vi.fn().mockResolvedValue({ id: 'g-1', chatId: 'ch-1' }),
   mockCreateGroup: vi.fn().mockResolvedValue({ id: 'g-1', chatId: 'ch-1' }),
+}))
+
+vi.mock('@inrupt/solid-ui-react', () => ({
+  useSession: () => ({
+    session: {
+      info: {
+        webId: 'https://me.example/profile/card#me',
+      },
+    },
+  }),
 }))
 
 vi.mock('../collections', () => ({
@@ -53,6 +63,7 @@ describe('CreateGroupDialog', () => {
     )
     expect(screen.getByRole('heading', { name: '创建群组' })).toBeInTheDocument()
     expect(screen.getByText('选择成员并创建群聊')).toBeInTheDocument()
+    expect(screen.queryByText('添加 AI 助手')).not.toBeInTheDocument()
   })
 
   it('renders group name input', () => {
@@ -72,26 +83,20 @@ describe('CreateGroupDialog', () => {
     expect(btn).toBeDisabled()
   })
 
-  it('disables create button when fewer than 2 members selected', async () => {
+  it('disables create button when only self is in the group', () => {
     render(
       <CreateGroupDialog open onOpenChange={() => {}} />,
       { wrapper: createWrapper() },
     )
 
-    // Type a group name
     const nameInput = screen.getByPlaceholderText('输入群组名称')
     fireEvent.change(nameInput, { target: { value: 'My Group' } })
 
-    // Select only 1 member
-    const alice = await screen.findByText('Alice')
-    fireEvent.click(alice)
-
-    // Button should still be disabled (need >= 2)
     const btn = screen.getByRole('button', { name: '创建群组' })
     expect(btn).toBeDisabled()
   })
 
-  it('enables create button when name + 2 members selected', async () => {
+  it('enables create button when name + 1 member selected', async () => {
     render(
       <CreateGroupDialog open onOpenChange={() => {}} />,
       { wrapper: createWrapper() },
@@ -100,26 +105,21 @@ describe('CreateGroupDialog', () => {
     const nameInput = screen.getByPlaceholderText('输入群组名称')
     fireEvent.change(nameInput, { target: { value: 'My Group' } })
 
-    // Select 2 members
     const alice = await screen.findByText('Alice')
-    const bob = await screen.findByText('Bob')
     fireEvent.click(alice)
-    fireEvent.click(bob)
 
     const btn = screen.getByRole('button', { name: '创建群组' })
     expect(btn).not.toBeDisabled()
   })
 
-  it('shows minimum-2 hint when only 1 selected', async () => {
+  it('shows owner-inclusive summary and minimum hint', () => {
     render(
       <CreateGroupDialog open onOpenChange={() => {}} />,
       { wrapper: createWrapper() },
     )
 
-    const alice = await screen.findByText('Alice')
-    fireEvent.click(alice)
-
-    expect(screen.getByText(/至少选择 2 人/)).toBeInTheDocument()
+    expect(screen.getByText(/共 1 人，包含你/)).toBeInTheDocument()
+    expect(screen.getByText(/至少选择 1 人/)).toBeInTheDocument()
   })
 
   it('calls onOpenChange(false) on cancel', () => {
@@ -145,11 +145,9 @@ describe('CreateGroupDialog', () => {
       target: { value: 'Test Group' },
     })
 
-    // Select 2 members
+    // Select 1 member + self
     const alice = await screen.findByText('Alice')
-    const bob = await screen.findByText('Bob')
     fireEvent.click(alice)
-    fireEvent.click(bob)
 
     // Submit
     fireEvent.click(screen.getByRole('button', { name: '创建群组' }))
@@ -157,8 +155,10 @@ describe('CreateGroupDialog', () => {
     await waitFor(() => {
       expect(mockCreateGroupWithChat).toHaveBeenCalledWith({
         name: 'Test Group',
-        memberIds: expect.arrayContaining(['p-1', 'p-2']),
-        aiAssistantIds: [],
+        participants: expect.arrayContaining([
+          'https://alice.example/profile/card#me',
+        ]),
+        ownerRef: 'https://me.example/profile/card#me',
       })
     })
 

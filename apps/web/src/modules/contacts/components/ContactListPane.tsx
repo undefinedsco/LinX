@@ -1,7 +1,8 @@
 import { useMemo, useCallback, useRef, useEffect } from 'react'
+import { useSession } from '@inrupt/solid-ui-react'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { useContactStore } from '../store'
-import { contactOps, initializeContactCollections } from '../collections'
+import { contactOps } from '../collections'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 import type { UnifiedContact, ContactSection, SectionKey, ContactListFilter } from '../types'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -27,7 +28,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import type { ContactRow } from '@linx/models'
-import { ContactType } from '@linx/models'
+import { ContactType, isGroupContact } from '@linx/models'
 import { useQuery } from '@tanstack/react-query'
 
 // ============================================
@@ -113,13 +114,16 @@ interface ContactItemProps {
 }
 
 function ContactItem({ contact, isActive, onClick }: ContactItemProps) {
-  const isGroup = contact.contactType === ContactType.GROUP
+  const isGroup = isGroupContact(contact)
   const isAgent = contact.sourceType === 'agent'
 
   // Subtitle: group shows member count, agent shows model, personal shows note/WebID
   const subtitle = useMemo(() => {
     if (isGroup && contact.groupInfo) {
-      return `${contact.groupInfo.memberCount}人`
+      const preview = contact.groupInfo.memberPreview.slice(0, 2).join('、')
+      return preview
+        ? `${contact.groupInfo.memberCount}人 · ${preview}`
+        : `${contact.groupInfo.memberCount}人`
     }
     if (isAgent && contact.agentConfig?.model) {
       return contact.agentConfig.model
@@ -169,6 +173,11 @@ function ContactItem({ contact, isActive, onClick }: ContactItemProps) {
           </span>
           {contact.starred && (
             <Star className="w-3 h-3 fill-yellow-400 text-yellow-400 shrink-0" />
+          )}
+          {isGroup && contact.groupInfo?.isOwner && (
+            <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary shrink-0">
+              群主
+            </span>
           )}
         </div>
         {subtitle && (
@@ -224,6 +233,7 @@ function StaticEntry({
 // ============================================
 
 export function ContactListPane({}: MicroAppPaneProps) {
+  const { session } = useSession()
   const search = useContactStore((state) => state.search)
   const setSearch = useContactStore((state) => state.setSearch)
   const selectedId = useContactStore((state) => state.selectedId)
@@ -234,12 +244,7 @@ export function ContactListPane({}: MicroAppPaneProps) {
   const listFilter = useContactStore((state) => state.listFilter)
   const setListFilter = useContactStore((state) => state.setListFilter)
 
-  // Initialize collection with database and subscribe to notifications
   const { db } = useSolidDatabase()
-  
-  useEffect(() => {
-    initializeContactCollections(db)
-  }, [db])
 
   // Subscribe to Pod notifications for real-time updates
   useEffect(() => {
@@ -257,25 +262,17 @@ export function ContactListPane({}: MicroAppPaneProps) {
   }, [db])
 
   // Use TanStack Query with contactOps for reactive updates
-  const { data: rawContacts = [], isLoading, error } = useQuery({
+  const { data: rawContacts = [], isLoading } = useQuery({
     queryKey: ['contacts', search],
     queryFn: async () => {
-      console.log('[ContactListPane] Fetching contacts, db:', !!db)
-      // Use search if there's a query, otherwise get all
-      const result = search.trim() 
+      const result = search.trim()
         ? await contactOps.search(search.trim())
         : contactOps.getAll()
-      console.log('[ContactListPane] Fetched contacts:', result.length)
       return result
     },
     enabled: !!db,
     staleTime: 1000 * 60, // 1 minute
   })
-  
-  // Debug: log loading state
-  useEffect(() => {
-    console.log('[ContactListPane] State:', { isLoading, error, db: !!db, count: rawContacts.length })
-  }, [isLoading, error, db, rawContacts.length])
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const sectionRefs = useRef<Map<string, HTMLDivElement>>(new Map())
@@ -304,7 +301,7 @@ export function ContactListPane({}: MicroAppPaneProps) {
 
     // 转换为 UnifiedContact 格式
     const unified: UnifiedContact[] = rawItems.map((c: ContactRow) => {
-      const isGroup = c.contactType === ContactType.GROUP
+      const isGroup = isGroupContact(c)
       const base = {
         ...c,
         displayName: c.alias || c.name || 'Unknown',
@@ -316,14 +313,10 @@ export function ContactListPane({}: MicroAppPaneProps) {
 
       // Populate groupInfo for group contacts
       if (isGroup) {
-        const members = contactOps.getGroupMembers(c.id)
+        const groupRef = c.entityUri || c.id
         return {
           ...base,
-          groupInfo: {
-            memberCount: members.length,
-            isOwner: false, // TODO: compare with current user WebID
-            memberPreview: [], // TODO: resolve member names
-          },
+          groupInfo: contactOps.getGroupDisplayInfo(groupRef, session.info.webId ?? undefined),
         } as UnifiedContact
       }
 
@@ -333,19 +326,19 @@ export function ContactListPane({}: MicroAppPaneProps) {
     // Apply listFilter
     const filtered = listFilter !== 'all'
       ? unified.filter(c => {
-          if (listFilter === 'personal') return c.contactType === ContactType.SOLID
+          if (listFilter === 'personal') return c.contactType === ContactType.SOLID && !isGroupContact(c)
           if (listFilter === 'agents') return c.contactType === ContactType.AGENT
-          if (listFilter === 'groups') return c.contactType === ContactType.GROUP
+          if (listFilter === 'groups') return isGroupContact(c)
           return true
         })
       : unified
 
     // Split by contactType
     const starredItems = filtered.filter(c => c.starred)
-    const groupItems = filtered.filter(c => c.contactType === ContactType.GROUP && !c.starred)
+    const groupItems = filtered.filter(c => isGroupContact(c) && !c.starred)
     const agentItems = filtered.filter(c => c.contactType === ContactType.AGENT && !c.starred)
     const personalItems = filtered.filter(c =>
-      c.contactType !== ContactType.GROUP &&
+      !isGroupContact(c) &&
       c.contactType !== ContactType.AGENT &&
       !c.starred
     )
@@ -393,7 +386,7 @@ export function ContactListPane({}: MicroAppPaneProps) {
     ]
 
     return { sections: contactSections, letters: indexLetters }
-  }, [rawContacts, listFilter])
+  }, [rawContacts, listFilter, session.info.webId])
 
   return (
     <div className="flex h-full flex-col bg-layout-list-item border-r border-border/50 relative">

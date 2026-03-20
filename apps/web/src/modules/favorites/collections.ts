@@ -6,7 +6,6 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useEffect } from 'react'
 import { createPodCollection } from '@/lib/data/pod-collection'
 import {
   favoriteTable,
@@ -173,11 +172,6 @@ const QUERY_KEYS = {
 
 export function useFavoriteInit() {
   const { db } = useSolidDatabase()
-
-  useEffect(() => {
-    if (db) initializeFavoriteCollections(db)
-  }, [db])
-
   return { db, isReady: !!db }
 }
 

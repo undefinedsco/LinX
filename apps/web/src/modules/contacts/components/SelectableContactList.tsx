@@ -7,9 +7,9 @@
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Input } from '@/components/ui/input'
-import { Search, Check } from 'lucide-react'
+import { Search, Check, Bot } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { ContactRow } from '@linx/models'
+import { isAgentContact, type ContactRow } from '@linx/models'
 
 interface SelectableContactListProps {
   title: string
@@ -68,6 +68,9 @@ function SelectableItem({
   isSelected: boolean
   onToggle: () => void
 }) {
+  const isAgent = isAgentContact(contact)
+  const displayName = contact.alias || contact.name
+
   return (
     <div
       onClick={onToggle}
@@ -85,10 +88,17 @@ function SelectableItem({
       <Avatar className="h-7 w-7 rounded-md">
         <AvatarImage src={contact.avatarUrl ?? undefined} />
         <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
-          {(contact.name ?? '?').slice(0, 1).toUpperCase()}
+          {isAgent ? <Bot className="w-3.5 h-3.5" /> : (contact.name ?? '?').slice(0, 1).toUpperCase()}
         </AvatarFallback>
       </Avatar>
-      <span className="text-sm truncate">{contact.alias || contact.name}</span>
+      <div className="min-w-0 flex-1 flex items-center gap-1.5">
+        <span className="text-sm truncate">{displayName}</span>
+        {isAgent && (
+          <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+            AI
+          </span>
+        )}
+      </div>
     </div>
   )
 }
