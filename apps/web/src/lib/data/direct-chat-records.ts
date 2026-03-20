@@ -28,6 +28,10 @@ export interface CreateGroupContactRecordInput {
   avatarUrl?: string
 }
 
+type CollectionStateLike<T extends Record<string, unknown>> =
+  | Map<string, T>
+  | { data?: T[] }
+
 function ensureRecordId(record: Partial<Record<string, unknown>>, fallback?: string): string {
   const directId = typeof record.id === 'string' && record.id.length > 0 ? record.id : undefined
   if (directId) {
@@ -141,15 +145,30 @@ export async function createGroupContactRecord(
 }
 
 export function upsertStateRow<T extends Record<string, unknown>>(
-  state: { data?: T[] } | undefined,
+  state: CollectionStateLike<T> | undefined,
   row: T,
   rowId?: string,
 ): void {
-  if (!state || !Array.isArray(state.data)) {
+  if (!state) {
     return
   }
 
   const resolvedId = rowId ?? resolveRowId(row)
+
+  if (state instanceof Map) {
+    if (!resolvedId) {
+      return
+    }
+
+    const existing = state.get(resolvedId)
+    state.set(resolvedId, existing ? { ...existing, ...row } : row)
+    return
+  }
+
+  if (!Array.isArray(state.data)) {
+    return
+  }
+
   if (!resolvedId) {
     state.data.unshift(row)
     return
@@ -172,7 +191,7 @@ export function upsertStateRow<T extends Record<string, unknown>>(
 }
 
 export function writeCollectionRow<T extends Record<string, unknown>>(
-  collection: { state?: { data?: T[] } } | null | undefined,
+  collection: { state?: CollectionStateLike<T> } | null | undefined,
   row: T,
   rowId?: string,
 ): void {

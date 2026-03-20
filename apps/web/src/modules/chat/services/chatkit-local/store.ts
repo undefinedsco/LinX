@@ -387,7 +387,8 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       return {
         data: slice.map((t: any) => threadRecordToMetadata(t)),
         has_more: startIndex + limit < threads.length,
-        after: slice.length > 0 ? (slice[slice.length - 1] as any).id : undefined,
+        first_id: slice.length > 0 ? (slice[0] as any).id : undefined,
+        last_id: slice.length > 0 ? (slice[slice.length - 1] as any).id : undefined,
       }
     } catch (error) {
       console.error('[LocalStore] Failed to load threads:', error)
@@ -470,7 +471,8 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       return {
         data: slice.map((m: any) => messageRecordToItem(m, threadId)),
         has_more: startIndex + limit < messages.length,
-        after: slice.length > 0 ? (slice[slice.length - 1] as any).id : undefined,
+        first_id: slice.length > 0 ? (slice[0] as any).id : undefined,
+        last_id: slice.length > 0 ? (slice[slice.length - 1] as any).id : undefined,
       }
     } catch (error) {
       console.error('[LocalStore] Failed to load thread items:', error)
