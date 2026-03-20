@@ -1,0 +1,14 @@
+diff --git a/node_modules/@comunica/actor-query-result-serialize-sparql-json/lib/ActionObserverHttp.js b/node_modules/@comunica/actor-query-result-serialize-sparql-json/lib/ActionObserverHttp.js
+index 43b74d8..dadc151 100644
+--- a/node_modules/@comunica/actor-query-result-serialize-sparql-json/lib/ActionObserverHttp.js
++++ b/node_modules/@comunica/actor-query-result-serialize-sparql-json/lib/ActionObserverHttp.js
+@@ -19,6 +19,9 @@ class ActionObserverHttp extends core_1.ActionObserver {
+     }
+     /* eslint-enable max-len */
+     onRun(actor, _action, _output) {
++        if (!Array.isArray(this.observedActors)) {
++            this.observedActors = [];
++        }
+         if (this.observedActors.includes(actor.name)) {
+             this.requests++;
+         }
