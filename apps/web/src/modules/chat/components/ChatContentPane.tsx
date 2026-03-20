@@ -35,6 +35,7 @@ import { SessionControlBar, type SessionStatus } from './SessionControlBar'
 import {
   fetchRuntimeSessionLog,
   isRuntimeSessionMode,
+  resolveLocalWorkspaceUri,
   useRuntimeSession,
   useRuntimeSessionEvents,
   type RuntimeSessionEvent,
@@ -144,10 +145,11 @@ function InboxActionBanner({
 
 function RuntimeSessionToolbar({ threadId, threadTitle }: { threadId: string; threadTitle: string }) {
   const runtimeSession = useRuntimeSession(threadId)
+  const mutations = useChatMutations()
   const isSessionMode = isRuntimeSessionMode()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [repoPath, setRepoPath] = useState('')
-  const [worktreePath, setWorktreePath] = useState('')
+  const [folderPath, setFolderPath] = useState('')
   const [tool, setTool] = useState<RuntimeToolType>('codex')
   const [baseRef, setBaseRef] = useState('HEAD')
   const [branch, setBranch] = useState('')
@@ -174,7 +176,7 @@ function RuntimeSessionToolbar({ threadId, threadTitle }: { threadId: string; th
 
   const handleCreateRuntimeSession = useCallback(async () => {
     const normalizedRepoPath = repoPath.trim()
-    const normalizedWorktreePath = worktreePath.trim() || normalizedRepoPath
+    const normalizedFolderPath = folderPath.trim() || normalizedRepoPath
     const normalizedBaseRef = baseRef.trim() || 'HEAD'
     const normalizedBranch = branch.trim()
 
@@ -185,11 +187,22 @@ function RuntimeSessionToolbar({ threadId, threadTitle }: { threadId: string; th
 
     try {
       setRuntimeError(null)
-      const created = await runtimeSession.createSession.mutateAsync({
+      const requestedWorkspaceUri = await resolveLocalWorkspaceUri(normalizedFolderPath)
+      const workspaceUri = await mutations.ensureThreadWorkspace.mutateAsync({
         threadId,
+        workspaceUri: requestedWorkspaceUri,
         title: threadTitle || '运行时会话',
         repoPath: normalizedRepoPath,
-        worktreePath: normalizedWorktreePath,
+        folderPath: normalizedFolderPath,
+        baseRef: normalizedBaseRef,
+        branch: normalizedBranch || undefined,
+      })
+      const created = await runtimeSession.createSession.mutateAsync({
+        threadId,
+        workspaceUri,
+        title: threadTitle || '运行时会话',
+        repoPath: normalizedRepoPath,
+        folderPath: normalizedFolderPath,
         tool,
         baseRef: normalizedBaseRef,
         branch: normalizedBranch || undefined,
@@ -198,7 +211,7 @@ function RuntimeSessionToolbar({ threadId, threadTitle }: { threadId: string; th
       await runtimeSession.refetch()
       setIsDialogOpen(false)
       setRepoPath('')
-      setWorktreePath('')
+      setFolderPath('')
       setTool('codex')
       setBaseRef('HEAD')
       setBranch('')
@@ -206,7 +219,7 @@ function RuntimeSessionToolbar({ threadId, threadTitle }: { threadId: string; th
       console.error('Create runtime session failed:', error)
       setRuntimeError(error instanceof Error ? error.message : '创建运行时会话失败。')
     }
-  }, [baseRef, branch, repoPath, runtimeSession, threadId, threadTitle, tool, worktreePath])
+  }, [baseRef, branch, folderPath, mutations.ensureThreadWorkspace, repoPath, runtimeSession, threadId, threadTitle, tool])
 
   const handlePause = useCallback(async () => {
     if (!runtimeSession.runtimeSession) return
@@ -275,7 +288,7 @@ function RuntimeSessionToolbar({ threadId, threadTitle }: { threadId: string; th
           <div className="min-w-0">
             <p className="text-sm font-medium text-foreground">当前话题仅做 Pod 留档</p>
             <p className="text-xs text-muted-foreground">
-              需要远程运行时时，再为这个聊天话题绑定运行时会话与 worktree 即可。
+              需要远程运行时时，再为这个聊天话题绑定运行时会话与文件夹即可。
             </p>
             {runtimeError && (
               <p className="mt-1 text-xs text-destructive">{runtimeError}</p>
@@ -293,7 +306,7 @@ function RuntimeSessionToolbar({ threadId, threadTitle }: { threadId: string; th
           <DialogHeader>
             <DialogTitle>创建运行时会话</DialogTitle>
             <DialogDescription>
-              为当前话题绑定一个本地运行时与 worktree。
+              为当前话题绑定一个本地运行时与文件夹。
             </DialogDescription>
           </DialogHeader>
 
@@ -309,11 +322,11 @@ function RuntimeSessionToolbar({ threadId, threadTitle }: { threadId: string; th
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="runtime-worktree-path">Worktree 路径</Label>
+              <Label htmlFor="runtime-folder-path">文件夹路径</Label>
               <Input
-                id="runtime-worktree-path"
-                value={worktreePath}
-                onChange={(event) => setWorktreePath(event.target.value)}
+                id="runtime-folder-path"
+                value={folderPath}
+                onChange={(event) => setFolderPath(event.target.value)}
                 placeholder="留空则默认使用仓库路径"
               />
             </div>
@@ -485,7 +498,7 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
   }, [isReady, isThreadsLoading, mutations.createThread, selectedChatId, selectedThreadId, selectThread, threads])
 
   if (!selectedChatId) {
-    return <EmptyState title="选择或创建一个聊天" description="先打开一个会话，再为它绑定运行时与 worktree。" />
+    return <EmptyState title="选择或创建一个聊天" description="先打开一个会话，再为它绑定运行时与文件夹。" />
   }
 
   if (!isReady) {

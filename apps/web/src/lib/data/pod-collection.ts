@@ -9,7 +9,7 @@ interface PodCollectionOptions<TTable, TData> {
   queryKey: string[]
   queryClient: QueryClient
   // Function to get the current DB instance
-  getDb: () => SolidDatabase | null
+  getDb: () => SolidDatabase<Record<string, unknown>> | null
   // Optional: columns to select for list view (defaults to all)
   columns?: (keyof TData)[]
   // Optional: sorting configuration
@@ -30,7 +30,7 @@ interface PodCollectionOptions<TTable, TData> {
 export function createPodCollection<
   TTable extends PodTable<any>,
   TData extends { id?: string },
-  TInsert = any
+  _TInsert = any
 >(
   options: PodCollectionOptions<TTable, TData>
 ) {
@@ -78,12 +78,14 @@ export function createPodCollection<
     
     let rows = (await query.execute()) as TData[]
     
-    // Filter out rows with invalid/relative IRI ids (dirty data)
+    // Filter out rows with relative IRI-like ids (dirty data), but keep normal bare ids.
     rows = rows.filter(row => {
       const id = (row as any).id
       if (!id) return true // Keep rows without id field
-      // Skip relative IRIs that don't start with http/https
-      if (typeof id === 'string' && !id.startsWith('http') && !id.includes('/')) {
+      if (
+        typeof id === 'string'
+        && (id.startsWith('/') || id.startsWith('./') || id.startsWith('../') || id.startsWith('#'))
+      ) {
         console.warn(`[PodCollection] Skipping row with invalid id: ${id}`)
         return false
       }
@@ -154,10 +156,22 @@ export function createPodCollection<
   )
 
   // 2. Attach helpers
-  const fetch = fetchRows
+  const fetch = async () => {
+    if (!collection.isReady()) {
+      await collection.preload()
+      return collection.toArray as TData[]
+    }
+
+    const refetch = (collection.utils as { refetch?: () => Promise<void> }).refetch
+    if (typeof refetch === 'function') {
+      await refetch()
+    }
+
+    return collection.toArray as TData[]
+  }
 
   // Usage: useEffect(() => collection.subscribeToPod(db), [db])
-  const subscribeToPod = async (db: SolidDatabase) => {
+  const subscribeToPod = async (db: SolidDatabase<Record<string, unknown>>) => {
     if (typeof (db as any).subscribe !== 'function') {
       console.warn('[PodCollection] db.subscribe not available')
       return () => {}

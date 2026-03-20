@@ -50,10 +50,13 @@ class AgentOutgoingStrategy implements OutgoingStrategy {
 
     try {
       this.onSendStatusChange?.('sending')
+      const podBaseUrl = session.podUrl.replace(/\/$/, '')
+      const chatUri = `${podBaseUrl}/.data/chat/${chatId}/index.ttl#this`
+      const threadUri = `${podBaseUrl}/.data/chat/${chatId}/index.ttl#${chatId}`
 
       const userMsgInput: MessageInsert = {
-        chatId,
-        threadId: chatId,
+        chat: chatUri,
+        thread: threadUri,
         maker: session.webId,
         role: 'user',
         content: message.content,
@@ -211,10 +214,13 @@ class AgentIncomingStrategy implements IncomingStrategy {
 
       const aiMaker = contact.entityUri
       const richContent = fullThought ? JSON.stringify({ thought: fullThought }) : undefined
+      const podBaseUrl = session.podUrl.replace(/\/$/, '')
+      const chatUri = `${podBaseUrl}/.data/chat/${chatId}/index.ttl#this`
+      const threadUri = `${podBaseUrl}/.data/chat/${chatId}/index.ttl#${chatId}`
 
       const aiMsgInput: MessageInsert = {
-        chatId,
-        threadId: chatId,
+        chat: chatUri,
+        thread: threadUri,
         maker: aiMaker,
         role: 'assistant',
         content: fullContent,

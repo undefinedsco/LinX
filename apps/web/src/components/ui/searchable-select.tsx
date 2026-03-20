@@ -1,7 +1,6 @@
 import * as React from "react"
-import { Check, ChevronsUpDown, Loader2, Plus, X, Search } from "lucide-react"
+import { Check, ChevronsUpDown, Loader2, Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { Button } from "./button"
 import { Input } from "./input"
 
 export interface SearchableSelectProps<T> {

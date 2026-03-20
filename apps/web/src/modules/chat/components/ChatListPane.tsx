@@ -19,10 +19,11 @@
 import { useMemo, useState, useCallback } from 'react'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { useChatStore } from '../store'
-import { useChatList, useChatMutations, useChatInit } from '../collections'
+import { useChatList, useChatMutations, useChatInit, useThreadIndex } from '../collections'
 import { resolveRowId } from '@linx/models'
 import { useInboxItems } from '@/modules/inbox/collections'
 import { isActionableInboxItem } from '@/modules/inbox/utils'
+import { useToast } from '@/components/ui/use-toast'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   Bot,
@@ -49,6 +50,7 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuTrigger,
 } from '@/components/ui/context-menu'
 import {
   DropdownMenu,
@@ -58,16 +60,23 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
+import { useQuery } from '@tanstack/react-query'
+import {
+  fetchRuntimeSessionLog,
+  isRuntimeSessionMode,
+  listRuntimeSessions,
+  type RuntimeSessionRecord,
+} from '../runtime-client'
 
 // ============================================
 // Types
 // ============================================
 
-/** Chat type determines icon and preview rendering */
-type ChatType = 'direct_ai' | 'direct_human' | 'group' | 'cli_session'
+type ConversationKind = 'one' | 'group'
+type ThreadMode = 'chat' | 'workspace'
 
-/** CLI session status for preview text mapping */
-type CliSessionStatus = 'active' | 'waiting_approval' | 'paused' | 'completed' | 'error'
+/** Workspace thread status for preview text mapping */
+type WorkspaceStatus = 'idle' | 'active' | 'waiting_approval' | 'paused' | 'completed' | 'error'
 
 interface ChatItemData {
   id: string
@@ -79,13 +88,14 @@ interface ChatItemData {
   unreadCount: number
   providerLogo?: string
   provider?: string
-  chatType?: ChatType
-  /** CLI session status (only for cli_session type) */
-  cliStatus?: CliSessionStatus
+  conversationKind: ConversationKind
+  threadMode: ThreadMode
+  /** workspace 线程状态 */
+  workspaceStatus?: WorkspaceStatus
 
-  // -- CP0: chatType differentiation fields --
+  // -- CP0: conversation/thread differentiation fields --
 
-  /** direct_human: online status dot on avatar */
+  /** one-to-one: optional online status dot on avatar */
   onlineStatus?: 'online' | 'offline'
 
   /** group: participant avatar URLs for composite avatar (max 4) */
@@ -95,8 +105,10 @@ interface ChatItemData {
   /** group: @me badge */
   mentionedMe?: boolean
 
-  /** cli_session: tool identifier */
-  sessionTool?: 'claude-code' | 'cursor' | 'windsurf'
+  /** workspace 线程工具标识 */
+  sessionTool?: string
+  runtimeSessionId?: string
+  runtimeThreadId?: string
   pendingInboxCount?: number
   pendingInboxVariant?: 'approval' | 'auth_required'
 }
@@ -121,8 +133,9 @@ const formatTimestamp = (value?: unknown): string => {
   return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
 }
 
-/** CLI session status → preview text + color mapping (spec §7.7) */
-const CLI_STATUS_MAP: Record<CliSessionStatus, { text: string; color: string }> = {
+/** Workspace status → preview text + color mapping */
+const WORKSPACE_STATUS_MAP: Record<WorkspaceStatus, { text: string; color: string }> = {
+  idle:               { text: '⏳ 待启动',   color: 'text-muted-foreground' },
   active:             { text: '🟢 运行中',   color: 'text-green-600' },
   waiting_approval:   { text: '⚠️ 等待确认', color: 'text-yellow-600' },
   paused:             { text: '⏸ 已暂停',    color: 'text-muted-foreground' },
@@ -130,27 +143,24 @@ const CLI_STATUS_MAP: Record<CliSessionStatus, { text: string; color: string }> 
   error:              { text: '❌ 错误',     color: 'text-red-600' },
 }
 
-/** Backward-compat alias used by resolvePreview */
-const CLI_STATUS_PREVIEW: Record<CliSessionStatus, string> = Object.fromEntries(
-  Object.entries(CLI_STATUS_MAP).map(([k, v]) => [k, v.text])
-) as Record<CliSessionStatus, string>
+const WORKSPACE_STATUS_PREVIEW: Record<WorkspaceStatus, string> = Object.fromEntries(
+  Object.entries(WORKSPACE_STATUS_MAP).map(([key, value]) => [key, value.text])
+) as Record<WorkspaceStatus, string>
 
-/** Get avatar fallback icon by chatType */
-function getChatTypeIcon(chatType?: ChatType) {
-  switch (chatType) {
-    case 'direct_human':
-      return <User strokeWidth={1.5} className="w-5 h-5" />
+function getChatIcon(chat: Pick<ChatItemData, 'conversationKind' | 'threadMode'>) {
+  if (chat.threadMode === 'workspace') {
+    return <Terminal strokeWidth={1.5} className="w-5 h-5" />
+  }
+
+  switch (chat.conversationKind) {
     case 'group':
       return <Users strokeWidth={1.5} className="w-5 h-5" />
-    case 'cli_session':
-      return <Terminal strokeWidth={1.5} className="w-5 h-5" />
-    case 'direct_ai':
     default:
-      return <Bot strokeWidth={1.5} className="w-5 h-5" />
+      return <User strokeWidth={1.5} className="w-5 h-5" />
   }
 }
 
-/** Resolve preview text: CLI sessions use status mapping, group prefixes sender name */
+/** Resolve preview text: workspace threads use status mapping, groups prefix sender name */
 function resolvePreview(chat: ChatItemData): string {
   if (chat.pendingInboxVariant === 'auth_required') {
     return '🔐 等待认证'
@@ -158,25 +168,30 @@ function resolvePreview(chat: ChatItemData): string {
   if (chat.pendingInboxVariant === 'approval') {
     return `⚠️ 待处理授权${chat.pendingInboxCount && chat.pendingInboxCount > 1 ? ` · ${chat.pendingInboxCount} 条` : ''}`
   }
-  if (chat.chatType === 'cli_session' && chat.cliStatus) {
-    return CLI_STATUS_PREVIEW[chat.cliStatus]
+  if (chat.threadMode === 'workspace' && chat.workspaceStatus) {
+    return WORKSPACE_STATUS_PREVIEW[chat.workspaceStatus]
   }
-  if (chat.chatType === 'group' && chat.senderName) {
+  if (chat.conversationKind === 'group' && chat.senderName) {
     return `${chat.senderName}: ${chat.preview}`
   }
   return chat.preview
 }
 
-/** Get CLI status color class */
-function getCliStatusColor(status?: CliSessionStatus): string | undefined {
+function getWorkspaceStatusColor(status?: WorkspaceStatus): string | undefined {
   if (!status) return undefined
-  return CLI_STATUS_MAP[status]?.color
+  return WORKSPACE_STATUS_MAP[status]?.color
 }
 
 function getInboxPreviewColor(variant?: ChatItemData['pendingInboxVariant']): string | undefined {
   if (variant === 'approval') return 'text-yellow-600'
   if (variant === 'auth_required') return 'text-blue-600'
   return undefined
+}
+
+function compareRuntimeSessions(left: RuntimeSessionRecord, right: RuntimeSessionRecord): number {
+  const leftTime = new Date(left.lastActivityAt || left.updatedAt || left.createdAt).getTime()
+  const rightTime = new Date(right.lastActivityAt || right.updatedAt || right.createdAt).getTime()
+  return rightTime - leftTime
 }
 
 // ============================================
@@ -190,6 +205,7 @@ interface ChatItemProps {
   onStar: () => void
   onMute: () => void
   onMarkUnread: () => void
+  onCopyLog: () => void
   onDelete: () => void
 }
 
@@ -200,17 +216,18 @@ function ChatItem({
   onStar,
   onMute,
   onMarkUnread,
+  onCopyLog,
   onDelete
 }: ChatItemProps) {
   const [isHovering, setIsHovering] = useState(false)
 
-  // CP0: chatType-differentiated preview color (cli_session uses status color)
-  const previewColorClass = chat.chatType === 'cli_session'
-    ? getCliStatusColor(chat.cliStatus) ?? 'text-muted-foreground'
+  const previewColorClass = chat.threadMode === 'workspace'
+    ? getWorkspaceStatusColor(chat.workspaceStatus) ?? 'text-muted-foreground'
     : getInboxPreviewColor(chat.pendingInboxVariant) ?? 'text-muted-foreground'
 
   return (
     <ContextMenu>
+      <ContextMenuTrigger asChild>
         <div
           onClick={onClick}
           onMouseEnter={() => setIsHovering(true)}
@@ -230,16 +247,15 @@ function ChatItem({
                 ]
           )}
         >
-          {/* Avatar - 48x48, 圆角 4px — chatType-differentiated (spec §7.7) */}
+          {/* Avatar - 48x48, 圆角 4px */}
           <div className="relative shrink-0">
-            {/* Group: composite 2x2 avatar grid */}
-            {chat.chatType === 'group' && chat.participantAvatars && chat.participantAvatars.length > 1 ? (
+            {chat.conversationKind === 'group' && chat.participantAvatars && chat.participantAvatars.length > 1 ? (
               <div className="h-12 w-12 rounded-sm border border-border/30 grid grid-cols-2 grid-rows-2 gap-px overflow-hidden bg-muted">
                 {chat.participantAvatars.slice(0, 4).map((url, i) => (
                   <Avatar key={i} className="h-full w-full rounded-none">
                     <AvatarImage src={url} className="object-cover" />
                     <AvatarFallback className="rounded-none bg-primary/10 text-primary text-[10px]">
-                      {getChatTypeIcon('group')}
+                      {getChatIcon({ conversationKind: 'group', threadMode: 'chat' })}
                     </AvatarFallback>
                   </Avatar>
                 ))}
@@ -248,13 +264,12 @@ function ChatItem({
               <Avatar className="h-12 w-12 border border-border/30 rounded-sm">
                 <AvatarImage src={chat.providerLogo} className="rounded-sm object-cover" />
                 <AvatarFallback className="rounded-sm bg-primary/10 text-primary text-sm">
-                  {chat.provider ? chat.provider.slice(0, 2).toUpperCase() : getChatTypeIcon(chat.chatType)}
+                  {chat.provider ? chat.provider.slice(0, 2).toUpperCase() : getChatIcon(chat)}
                 </AvatarFallback>
               </Avatar>
             )}
 
-            {/* direct_human: online status dot (spec §7.7) */}
-            {chat.chatType === 'direct_human' && chat.onlineStatus && (
+            {chat.conversationKind === 'one' && chat.threadMode === 'chat' && chat.onlineStatus && (
               <span className={cn(
                 'absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-background',
                 chat.onlineStatus === 'online' ? 'bg-green-500' : 'bg-muted-foreground/40'
@@ -340,8 +355,7 @@ function ChatItem({
                 {resolvePreview(chat)}
               </p>
               <div className="flex items-center gap-1 shrink-0">
-                {/* group: @me badge */}
-                {chat.chatType === 'group' && chat.mentionedMe && (
+                {chat.conversationKind === 'group' && chat.mentionedMe && (
                   <span className="text-[10px] px-1 py-0.5 rounded bg-primary/10 text-primary font-medium whitespace-nowrap">
                     @我
                   </span>
@@ -353,8 +367,9 @@ function ChatItem({
             </div>
           </div>
         </div>
+      </ContextMenuTrigger>
 
-      {/* Context Menu — chatType-differentiated (spec §7.7) */}
+      {/* Context Menu — conversation/thread differentiated */}
       <ContextMenuContent className="w-40">
         <ContextMenuItem onClick={onStar}>
           <Star className={cn('mr-2 h-4 w-4', chat.starred && 'text-amber-500 fill-amber-500')} />
@@ -364,23 +379,20 @@ function ChatItem({
           <BellOff strokeWidth={1.5} className={cn('mr-2 h-4 w-4', chat.muted && 'text-wechat-muted')} />
           {chat.muted ? '取消静音' : '静音'}
         </ContextMenuItem>
-        {/* direct_ai / direct_human / group: 标记未读 */}
-        {chat.chatType !== 'cli_session' && (
+        {chat.threadMode !== 'workspace' && (
           <ContextMenuItem onClick={onMarkUnread}>
             <MailOpen strokeWidth={1.5} className="mr-2 h-4 w-4" />
             标记未读
           </ContextMenuItem>
         )}
         <ContextMenuSeparator />
-        {/* cli_session: 复制日志 (placeholder) */}
-        {chat.chatType === 'cli_session' && (
-          <ContextMenuItem disabled>
+        {chat.threadMode === 'workspace' && (
+          <ContextMenuItem onClick={onCopyLog}>
             <Terminal strokeWidth={1.5} className="mr-2 h-4 w-4" />
             复制日志
           </ContextMenuItem>
         )}
-        {/* group: 群设置 (placeholder) */}
-        {chat.chatType === 'group' && (
+        {chat.conversationKind === 'group' && (
           <ContextMenuItem disabled>
             <Users strokeWidth={1.5} className="mr-2 h-4 w-4" />
             群设置
@@ -391,7 +403,7 @@ function ChatItem({
           onClick={onDelete}
         >
           <Trash2 strokeWidth={1.5} className="mr-2 h-4 w-4" />
-          {chat.chatType === 'group' ? '退出群聊' : '删除'}
+          {chat.conversationKind === 'group' ? '退出群聊' : '删除'}
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
@@ -556,6 +568,7 @@ export interface ChatListPaneProps extends MicroAppPaneProps {}
 export function ChatListPane(_props: ChatListPaneProps) {
   // Initialize chat collections with database
   useChatInit()
+  const { toast } = useToast()
   
   const search = useChatStore((state) => state.search)
   const setSearch = useChatStore((state) => state.setSearch)
@@ -565,14 +578,45 @@ export function ChatListPane(_props: ChatListPaneProps) {
 
   // Use new collection-based hooks
   const { data: rawChats, isLoading: isChatsLoading } = useChatList(search ? { search } : undefined)
+  const runtimeMode = isRuntimeSessionMode()
+  const { data: threads = [] } = useThreadIndex({ enabled: runtimeMode })
   const { data: inboxItems = [] } = useInboxItems('all')
+  const { data: runtimeSessions = [] } = useQuery({
+    queryKey: ['runtime-sessions'],
+    queryFn: () => listRuntimeSessions(),
+    enabled: runtimeMode,
+    refetchInterval: 5000,
+  })
 
   const mutations = useChatMutations()
 
   // 格式化 Chat 列表 - 添加标星排序
   const chats: ChatItemData[] = useMemo(() => {
     if (!rawChats) return []
-    const formatted = rawChats.map((chat) => {
+
+    const threadsByChatId = new Map<string, string[]>()
+    const workspaceBackedChatIds = new Set<string>()
+    for (const thread of threads) {
+      const threadId = resolveRowId(thread) ?? thread.id
+      const chatId = thread.chatId
+      if (!threadId || !chatId) continue
+      const list = threadsByChatId.get(chatId) ?? []
+      list.push(threadId)
+      threadsByChatId.set(chatId, list)
+      if (thread.workspace) {
+        workspaceBackedChatIds.add(chatId)
+      }
+    }
+
+    const runtimeSessionByThreadId = new Map<string, RuntimeSessionRecord>()
+    for (const session of runtimeSessions) {
+      const previous = runtimeSessionByThreadId.get(session.threadId)
+      if (!previous || compareRuntimeSessions(previous, session) > 0) {
+        runtimeSessionByThreadId.set(session.threadId, session)
+      }
+    }
+
+    const formatted = rawChats.map((chat): ChatItemData => {
       const id = resolveRowId(chat) ?? 'unknown'
       const pendingItems = inboxItems.filter((item) => item.chatId === id)
       const hasPendingApproval = pendingItems.some((item) => item.kind === 'approval' && item.status === 'pending')
@@ -580,6 +624,13 @@ export function ChatListPane(_props: ChatListPaneProps) {
       const pendingInboxCount = pendingItems.filter(isActionableInboxItem).length
       const pendingInboxVariant: ChatItemData['pendingInboxVariant'] =
         hasAuthRequired ? 'auth_required' : hasPendingApproval ? 'approval' : undefined
+      const runtimeThreadIds = threadsByChatId.get(id) ?? []
+      const linkedRuntimeSessions = runtimeThreadIds
+        .map((threadId) => runtimeSessionByThreadId.get(threadId))
+        .filter((session): session is RuntimeSessionRecord => !!session)
+        .sort(compareRuntimeSessions)
+      const runtimeSession = linkedRuntimeSessions[0]
+      const hasWorkspaceContext = workspaceBackedChatIds.has(id)
 
       return {
         id,
@@ -591,9 +642,12 @@ export function ChatListPane(_props: ChatListPaneProps) {
         unreadCount: chat.unreadCount ?? 0,
         providerLogo: chat.avatarUrl ?? undefined,
         provider: undefined,
-        chatType: (chat.participants && chat.participants.length > 1
-          ? 'group'
-          : 'direct_ai') as ChatType,
+        conversationKind: chat.participants && chat.participants.length > 1 ? 'group' : 'one',
+        threadMode: runtimeSession || hasWorkspaceContext ? 'workspace' : 'chat',
+        workspaceStatus: runtimeSession?.status,
+        sessionTool: runtimeSession?.tool,
+        runtimeSessionId: runtimeSession?.id,
+        runtimeThreadId: runtimeSession?.threadId,
         pendingInboxCount,
         pendingInboxVariant,
       }
@@ -605,7 +659,7 @@ export function ChatListPane(_props: ChatListPaneProps) {
       if (!a.starred && b.starred) return 1
       return 0
     })
-  }, [inboxItems, rawChats])
+  }, [inboxItems, rawChats, runtimeSessions, threads])
 
   // Handlers
   const handleAddChat = useCallback(() => {
@@ -675,6 +729,29 @@ export function ChatListPane(_props: ChatListPaneProps) {
     }
   }, [selectedChatId, mutations, selectChat])
 
+  const handleCopyLog = useCallback(async (chatId: string) => {
+    const chat = chats.find((item) => item.id === chatId)
+    if (!chat?.runtimeSessionId) {
+      toast({
+        description: '当前聊天还没有可复制的运行时日志。',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    try {
+      const log = await fetchRuntimeSessionLog(chat.runtimeSessionId)
+      await navigator.clipboard.writeText(log)
+      toast({ description: '运行时日志已复制。' })
+    } catch (error) {
+      console.error('Copy runtime session log failed:', error)
+      toast({
+        description: error instanceof Error ? error.message : '复制运行时日志失败。',
+        variant: 'destructive',
+      })
+    }
+  }, [chats, toast])
+
   return (
     <div className="flex h-full flex-col bg-layout-list-item">
       <ListHeader
@@ -709,6 +786,7 @@ export function ChatListPane(_props: ChatListPaneProps) {
                 onStar={() => handleStarChat(chat.id)}
                 onMute={() => handleMuteChat(chat.id)}
                 onMarkUnread={() => handleMarkAsUnread(chat.id)}
+                onCopyLog={() => handleCopyLog(chat.id)}
                 onDelete={() => handleDeleteChat(chat.id)}
               />
             ))}

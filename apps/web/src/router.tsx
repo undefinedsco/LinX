@@ -1,16 +1,28 @@
+import { Suspense, lazy } from 'react'
 import { createRouter, createRootRoute, createRoute, Outlet, redirect } from '@tanstack/react-router'
 import { useNavigate, useParams } from '@tanstack/react-router'
-import SolidAuthCallback from './components/AuthCallback'
 import { PrimaryLayout } from './modules/layout/PrimaryLayout'
 import { defaultMicroAppId, isValidMicroAppId, MicroAppId } from './modules/layout/micro-app-registry'
 import { SolidLoginOverlay } from './modules/login'
-import { DebugSearchableSelect } from './components/debug/DebugSearchableSelect'
-import { DebugChatPage } from './components/debug/DebugChatPage'
 import { getRedirectPath } from './modules/login/login-utils'
-import InruptTest from './pages/InruptTest'
-import InruptSimpleTest from './pages/InruptSimpleTest'
-import SolidUiReactTest from './app/test/solid-ui-react'
-import { SetupView } from './modules/settings'
+
+const SolidAuthCallback = lazy(() => import('./components/AuthCallback'))
+const DebugSearchableSelect = lazy(() =>
+  import('./components/debug/DebugSearchableSelect').then((mod) => ({ default: mod.DebugSearchableSelect })),
+)
+const DebugChatPage = lazy(() =>
+  import('./components/debug/DebugChatPage').then((mod) => ({ default: mod.DebugChatPage })),
+)
+const InruptTest = lazy(() => import('./pages/InruptTest'))
+const InruptSimpleTest = lazy(() => import('./pages/InruptSimpleTest'))
+const SolidUiReactTest = lazy(() => import('./app/test/solid-ui-react'))
+const SetupView = lazy(() =>
+  import('./modules/settings').then((mod) => ({ default: mod.SetupView })),
+)
+
+function RouteFallback() {
+  return <div className="min-h-screen bg-background" />
+}
 
 // Root route component
 const RootComponent = () => {
@@ -18,15 +30,6 @@ const RootComponent = () => {
     <div className="min-h-screen bg-background text-foreground">
       <Outlet />
       <SolidLoginOverlay />
-    </div>
-  )
-}
-
-// Root without login overlay (for testing)
-const RootWithoutOverlay = () => {
-  return (
-    <div className="min-h-screen bg-background text-foreground">
-      <Outlet />
     </div>
   )
 }
@@ -56,41 +59,65 @@ const rootRoute = createRootRoute({
 const debugSearchSelectRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/debug/search-select',
-  component: DebugSearchableSelect,
+  component: () => (
+    <Suspense fallback={<RouteFallback />}>
+      <DebugSearchableSelect />
+    </Suspense>
+  ),
 })
 
 const debugChatRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/debug/chat',
-  component: DebugChatPage,
+  component: () => (
+    <Suspense fallback={<RouteFallback />}>
+      <DebugChatPage />
+    </Suspense>
+  ),
 })
 
 // Inrupt 测试路由
 const inruptTestRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/inrupt-test',
-  component: InruptTest,
+  component: () => (
+    <Suspense fallback={<RouteFallback />}>
+      <InruptTest />
+    </Suspense>
+  ),
 })
 
 // solid-ui-react 测试路由
 const solidUiReactTestRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/test/solid-ui-react',
-  component: SolidUiReactTest,
+  component: () => (
+    <Suspense fallback={<RouteFallback />}>
+      <SolidUiReactTest />
+    </Suspense>
+  ),
 })
 
 // Inrupt Simple 测试路由 (本地模块)
 const inruptSimpleTestRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/test/inrupt-simple',
-  component: InruptSimpleTest,
+  component: () => (
+    <Suspense fallback={<RouteFallback />}>
+      <InruptSimpleTest />
+    </Suspense>
+  ),
 })
 
 // Setup route for LinX Service configuration
 const setupRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/setup',
-  component: SetupView,
+  component: () => (
+    <Suspense fallback={<RouteFallback />}>
+      <SetupView />
+    </Suspense>
+  ),
 })
 
 // Auth callback route
@@ -100,17 +127,19 @@ const callbackRoute = createRoute({
   component: () => {
     const navigate = useNavigate()
     return (
-      <SolidAuthCallback
-        onSuccess={() => {
-           const returnTo = getRedirectPath()
-           if (returnTo && returnTo !== '/') {
-             navigate({ to: returnTo as any, replace: true })
-           } else {
-             navigate({ to: '/$microAppId', params: { microAppId: 'chat' as MicroAppId }, replace: true })
-           }
-        }}
-        onError={() => navigate({ to: '/$microAppId', params: { microAppId: defaultMicroAppId } })}
-      />
+      <Suspense fallback={<RouteFallback />}>
+        <SolidAuthCallback
+          onSuccess={() => {
+             const returnTo = getRedirectPath()
+             if (returnTo && returnTo !== '/') {
+               navigate({ to: returnTo as any, replace: true })
+             } else {
+               navigate({ to: '/$microAppId', params: { microAppId: 'chat' as MicroAppId }, replace: true })
+             }
+          }}
+          onError={() => navigate({ to: '/$microAppId', params: { microAppId: defaultMicroAppId } })}
+        />
+      </Suspense>
     )
   },
 })
@@ -118,16 +147,6 @@ const callbackRoute = createRoute({
 const microAppRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/$microAppId',
-  beforeLoad: ({ params }) => {
-    /*
-    if (!isValidMicroAppId(params.microAppId)) {
-      throw redirect({
-        to: '/$microAppId',
-        params: { microAppId: defaultMicroAppId },
-      })
-    }
-    */
-  },
   component: function MicroAppRouteComponent() {
     const { microAppId } = useParams({ from: microAppRoute.id })
     return <PrimaryLayout microAppId={microAppId as MicroAppId} />

@@ -39,8 +39,10 @@ export interface MessageHeaderProps {
   senderName?: string
   /** 群聊消息发送者头像 URL（优先级高于 userAvatar / assistant.avatar） */
   senderAvatarUrl?: string
-  /** CP0: chatType — group chat always shows sender name + avatar (spec §7.5) */
-  chatType?: 'direct_ai' | 'direct_human' | 'group' | 'cli_session'
+  /** 会话结构维度 */
+  conversationKind?: 'one' | 'group'
+  /** 话题执行模式，预留给 workspace 样式差异 */
+  threadMode?: 'chat' | 'workspace'
   className?: string
 }
 
@@ -71,14 +73,15 @@ export const MessageHeader = memo<MessageHeaderProps>(({
   showTitleOnly = false,
   senderName,
   senderAvatarUrl,
-  chatType,
+  conversationKind,
+  threadMode: _threadMode,
   className,
 }) => {
   const isUser = role === 'user'
   const isAssistant = role === 'assistant'
-  const isGroup = chatType === 'group'
+  const isGroup = conversationKind === 'group'
 
-  // CP0: In group chat, always show sender name + avatar for every message (spec §7.5)
+  // In group chat, always show sender name + avatar for every message.
   // Force full header display in group mode (never avatar-only or title-only)
   const effectiveShowAvatarOnly = isGroup ? false : showAvatarOnly
   const effectiveShowTitleOnly = isGroup ? false : showTitleOnly

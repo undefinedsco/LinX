@@ -1,7 +1,7 @@
 #!/bin/bash
 # 直接通过 SPARQL 查询检查多值问题
 
-SPARQL_ENDPOINT="http://localhost:3000/ganlu/.data/threads/-/sparql"
+SPARQL_ENDPOINT="http://localhost:3000/ganlu/.data/chat/-/sparql"
 
 echo "============================================================"
 echo "SPARQL 多值问题诊断"

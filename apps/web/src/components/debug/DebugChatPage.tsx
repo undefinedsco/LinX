@@ -1,7 +1,12 @@
-import React from 'react'
-import { ChatListPane } from '@/modules/chat/components/ChatListPane'
-import { ChatContentPane } from '@/modules/chat/components/ChatContentPane'
+import React, { Suspense, lazy } from 'react'
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable'
+
+const ChatListPane = lazy(() =>
+  import('@/modules/chat/components/ChatListPane').then((mod) => ({ default: mod.ChatListPane })),
+)
+const ChatContentPane = lazy(() =>
+  import('@/modules/chat/components/ChatContentPane').then((mod) => ({ default: mod.ChatContentPane })),
+)
 
 export const DebugChatPage: React.FC = () => {
   return (
@@ -12,11 +17,15 @@ export const DebugChatPage: React.FC = () => {
       <div className="flex-1 overflow-hidden">
         <ResizablePanelGroup direction="horizontal">
           <ResizablePanel defaultSize={20} minSize={15} maxSize={30} className="min-w-[260px]">
-            <ChatListPane theme="light" />
+            <Suspense fallback={<div className="h-full w-full animate-pulse bg-muted/10" />}>
+              <ChatListPane theme="light" />
+            </Suspense>
           </ResizablePanel>
           <ResizableHandle />
           <ResizablePanel defaultSize={80}>
-            <ChatContentPane theme="light" />
+            <Suspense fallback={<div className="h-full w-full animate-pulse bg-muted/10" />}>
+              <ChatContentPane theme="light" />
+            </Suspense>
           </ResizablePanel>
         </ResizablePanelGroup>
       </div>

@@ -88,7 +88,7 @@ export function DebugSearchableSelect() {
             getLabel={(item) => item.label}
             getValue={(item) => item.id}
             placeholder="Type a new fruit..."
-            renderOption={(item, isSelected) => (
+            renderOption={(item, _isSelected) => (
                 <div className="flex flex-col">
                     <span className="font-bold">{item.label}</span>
                     <span className="text-xs text-muted-foreground">ID: {item.id}</span>

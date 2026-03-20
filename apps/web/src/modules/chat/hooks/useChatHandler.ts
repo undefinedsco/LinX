@@ -196,17 +196,18 @@ export function useChatHandler(options: UseChatHandlerOptions): UseChatHandlerRe
   const { data: messages = [], isLoading: messagesLoading } = useQuery({
     queryKey: ['threads', threadId, 'messages'],
     queryFn: async () => {
-      if (!db || !threadId) return []
-      const threadIdCol = (messageTable as any).threadId
+      if (!db || !threadId || !podUrl) return []
+      const threadCol = (messageTable as any).thread
       const createdAtCol = (messageTable as any).createdAt
+      const threadUri = `${podUrl}/.data/chat/${threadId}/index.ttl#${threadId}`
       const rows = await db.select()
         .from(messageTable)
-        .where(eq(threadIdCol, threadId))
+        .where(eq(threadCol, threadUri))
         .orderBy(createdAtCol)
         .execute()
       return rows
     },
-    enabled: !!db && !!threadId,
+    enabled: !!db && !!threadId && !!podUrl,
   })
   
   // ============================================

@@ -7,6 +7,7 @@ const mockSelectChat = vi.fn()
 const mockSelectThread = vi.fn()
 const mockCreateAIChat = vi.fn()
 const mockCreateThread = vi.fn()
+const mockEnsureThreadWorkspace = vi.fn()
 const mockToast = vi.fn()
 const mockCreateAndStartRuntimeSession = vi.fn()
 const mockUseChatStore = vi.fn()
@@ -79,6 +80,10 @@ vi.mock('../collections', () => ({
       mutateAsync: mockCreateThread,
       isPending: false,
     },
+    ensureThreadWorkspace: {
+      mutateAsync: mockEnsureThreadWorkspace,
+      isPending: false,
+    },
   }),
 }))
 
@@ -87,6 +92,7 @@ vi.mock('../runtime-client', () => ({
   DEFAULT_RUNTIME_TOOL: 'codex',
   createAndStartRuntimeSession: (input: unknown) => mockCreateAndStartRuntimeSession(input),
   isRuntimeSessionMode: () => mockIsRuntimeSessionMode(),
+  resolveLocalWorkspaceUri: vi.fn(async () => 'linx://node-123/repo/linx'),
 }))
 
 vi.mock('@/modules/contacts/collections', () => ({
@@ -129,6 +135,7 @@ describe('AddChatDialog', () => {
     setupStore()
     mockCreateAIChat.mockResolvedValue({ id: 'chat-1' })
     mockCreateThread.mockResolvedValue({ id: 'thread-1' })
+    mockEnsureThreadWorkspace.mockResolvedValue('linx://node-123/repo/linx')
     mockIsRuntimeSessionMode.mockReturnValue(true)
     mockFetchSolidProfile.mockResolvedValue({
       name: 'Alice',
@@ -162,11 +169,22 @@ describe('AddChatDialog', () => {
       title: '默认话题',
     })
 
-    expect(mockCreateAndStartRuntimeSession).toHaveBeenCalledWith({
+    expect(mockEnsureThreadWorkspace).toHaveBeenCalledWith({
       threadId: 'thread-1',
+      workspaceUri: 'linx://node-123/repo/linx',
       title: '默认话题',
       repoPath: '/repo/linx',
-      worktreePath: '/repo/linx',
+      folderPath: '/repo/linx',
+      baseRef: 'HEAD',
+      branch: 'feature/runtime',
+    })
+
+    expect(mockCreateAndStartRuntimeSession).toHaveBeenCalledWith({
+      threadId: 'thread-1',
+      workspaceUri: 'linx://node-123/repo/linx',
+      title: '默认话题',
+      repoPath: '/repo/linx',
+      folderPath: '/repo/linx',
       tool: 'codex',
       baseRef: 'HEAD',
       branch: 'feature/runtime',

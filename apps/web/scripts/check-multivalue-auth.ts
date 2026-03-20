@@ -55,9 +55,9 @@ async function checkMultiValueIssue() {
     console.log('认证成功\n')
 
     const endpoints = [
-      { name: 'chats', url: 'http://localhost:3000/ganlu/.data/chats/-/sparql' },
-      { name: 'threads', url: 'http://localhost:3000/ganlu/.data/threads/-/sparql' },
-      { name: 'messages', url: 'http://localhost:3000/ganlu/.data/messages/-/sparql' },
+      { name: 'chats', url: 'http://localhost:3000/ganlu/.data/chat/-/sparql' },
+      { name: 'threads', url: 'http://localhost:3000/ganlu/.data/chat/-/sparql' },
+      { name: 'messages', url: 'http://localhost:3000/ganlu/.data/chat/-/sparql' },
     ]
 
     // 查询多值的 SPARQL

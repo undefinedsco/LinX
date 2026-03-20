@@ -75,6 +75,10 @@ const mockMutations = {
     isPending: false,
     mutate: vi.fn(),
   },
+  ensureThreadWorkspace: {
+    isPending: false,
+    mutateAsync: vi.fn(),
+  },
 }
 
 vi.mock('../collections', () => ({
@@ -92,6 +96,7 @@ vi.mock('../collections', () => ({
 vi.mock('../runtime-client', () => ({
   fetchRuntimeSessionLog: vi.fn(),
   isRuntimeSessionMode: () => false,
+  resolveLocalWorkspaceUri: vi.fn(async () => 'linx://node-123/repo/linx'),
   useRuntimeSession: () => ({
     runtimeSession: null,
     refetch: vi.fn(),

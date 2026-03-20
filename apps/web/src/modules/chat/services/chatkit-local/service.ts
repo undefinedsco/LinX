@@ -53,6 +53,7 @@ type RuntimeThreadStatus = 'idle' | 'active' | 'paused' | 'completed' | 'error'
 interface RuntimeThreadRecord {
   id: string
   threadId: string
+  workspaceUri?: string
   title: string
   tool: string
   status: RuntimeThreadStatus

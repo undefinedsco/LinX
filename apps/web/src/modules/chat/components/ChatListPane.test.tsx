@@ -1,4 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/react'
+import { waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ChatListPane } from './ChatListPane'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -14,6 +15,7 @@ vi.mock('../store', () => ({
 
 // Mock collections hooks
 const mockUseChatList = vi.fn()
+const mockUseThreadIndex = vi.fn()
 const mockUseInboxItems = vi.fn()
 const mockMutations = {
   createThread: { mutateAsync: vi.fn(), isPending: false },
@@ -27,6 +29,7 @@ const mockMutations = {
 
 vi.mock('../collections', () => ({
   useChatList: (filters?: { search?: string }) => mockUseChatList(filters),
+  useThreadIndex: (..._args: unknown[]) => mockUseThreadIndex(),
   useChatMutations: () => mockMutations,
   useChatInit: () => ({ db: null, isReady: true }),
 }))
@@ -34,6 +37,26 @@ vi.mock('../collections', () => ({
 vi.mock('@/modules/inbox/collections', () => ({
   useInboxItems: (..._args: unknown[]) => mockUseInboxItems(),
 }))
+
+const mockToast = vi.fn()
+vi.mock('@/components/ui/use-toast', () => ({
+  useToast: () => ({ toast: mockToast }),
+}))
+
+const mockListRuntimeSessions = vi.fn()
+const mockFetchRuntimeSessionLog = vi.fn()
+const mockIsRuntimeSessionMode = vi.fn(() => false)
+const mockCreateAndStartRuntimeSession = vi.fn()
+vi.mock('../runtime-client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../runtime-client')>()
+  return {
+    ...actual,
+    listRuntimeSessions: (...args: unknown[]) => mockListRuntimeSessions(...args),
+    fetchRuntimeSessionLog: (...args: unknown[]) => mockFetchRuntimeSessionLog(...args),
+    isRuntimeSessionMode: () => mockIsRuntimeSessionMode(),
+    createAndStartRuntimeSession: (...args: unknown[]) => mockCreateAndStartRuntimeSession(...args),
+  }
+})
 
 // Mock models
 vi.mock('@linx/models', async (importOriginal) => {
@@ -65,6 +88,12 @@ const createWrapper = () => {
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   )
 }
+
+vi.stubGlobal('navigator', {
+  clipboard: {
+    writeText: vi.fn(),
+  },
+})
 
 // Default store state factory
 const createDefaultStoreState = (overrides = {}) => ({
@@ -100,6 +129,15 @@ describe('ChatListPane', () => {
       data: [],
       isLoading: false,
     })
+    mockUseThreadIndex.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: null,
+    })
+    mockListRuntimeSessions.mockResolvedValue([])
+    mockFetchRuntimeSessionLog.mockResolvedValue('runtime log')
+    mockIsRuntimeSessionMode.mockReturnValue(false)
+    mockCreateAndStartRuntimeSession.mockResolvedValue(null)
   })
 
   describe('Chat List Mode', () => {
@@ -330,6 +368,118 @@ describe('ChatListPane', () => {
       render(<ChatListPane theme="light" />, { wrapper: createWrapper() })
 
       expect(screen.getByText('🔐 等待认证')).toBeInTheDocument()
+    })
+
+    it('renders runtime-backed chats as workspace threads with status preview', async () => {
+      mockIsRuntimeSessionMode.mockReturnValue(true)
+      mockUseChatList.mockReturnValue({
+        data: [
+          {
+            id: 'chat-1',
+            title: 'Runtime Chat',
+            lastMessagePreview: '普通预览',
+            updatedAt: new Date().toISOString(),
+            participants: ['contact-1'],
+          },
+        ],
+        isLoading: false,
+        error: null,
+        fetchStatus: 'idle',
+      })
+      mockUseThreadIndex.mockReturnValue({
+        data: [
+          {
+            id: 'thread-1',
+            chatId: 'chat-1',
+            title: '默认话题',
+          },
+        ],
+        isLoading: false,
+        error: null,
+      })
+      mockListRuntimeSessions.mockResolvedValue([
+        {
+          id: 'runtime-1',
+          threadId: 'thread-1',
+          title: '默认话题',
+          repoPath: '/repo',
+          folderPath: '/repo',
+          runnerType: 'xpod-pty',
+          tool: 'codex',
+          status: 'active',
+          tokenUsage: 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          lastActivityAt: new Date().toISOString(),
+        },
+      ])
+
+      render(<ChatListPane theme="light" />, { wrapper: createWrapper() })
+
+      expect(await screen.findByText('🟢 运行中')).toBeInTheDocument()
+    })
+
+    it('copies runtime log from workspace thread context menu', async () => {
+      mockIsRuntimeSessionMode.mockReturnValue(true)
+      mockUseChatList.mockReturnValue({
+        data: [
+          {
+            id: 'chat-1',
+            title: 'Runtime Chat',
+            lastMessagePreview: '普通预览',
+            updatedAt: new Date().toISOString(),
+            participants: ['contact-1'],
+          },
+        ],
+        isLoading: false,
+        error: null,
+        fetchStatus: 'idle',
+      })
+      mockUseThreadIndex.mockReturnValue({
+        data: [
+          {
+            id: 'thread-1',
+            chatId: 'chat-1',
+            title: '默认话题',
+          },
+        ],
+        isLoading: false,
+        error: null,
+      })
+      mockListRuntimeSessions.mockResolvedValue([
+        {
+          id: 'runtime-1',
+          threadId: 'thread-1',
+          title: '默认话题',
+          repoPath: '/repo',
+          folderPath: '/repo',
+          runnerType: 'xpod-pty',
+          tool: 'codex',
+          status: 'active',
+          tokenUsage: 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          lastActivityAt: new Date().toISOString(),
+        },
+      ])
+
+      render(<ChatListPane theme="light" />, { wrapper: createWrapper() })
+
+      const item = await screen.findByText('Runtime Chat')
+      fireEvent.contextMenu(item)
+
+      const copyItem = await screen.findByText('复制日志')
+      fireEvent.click(copyItem)
+
+      await waitFor(() => {
+        expect(mockFetchRuntimeSessionLog).toHaveBeenCalledWith('runtime-1')
+      })
+      await waitFor(() => {
+        expect(navigator.clipboard.writeText).toHaveBeenCalledWith('runtime log')
+      })
+      expect(mockToast).toHaveBeenCalledWith(expect.objectContaining({
+        description: '运行时日志已复制。',
+      }))
     })
   })
 

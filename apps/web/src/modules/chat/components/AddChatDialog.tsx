@@ -25,6 +25,7 @@ import {
   DEFAULT_RUNTIME_TOOL,
   createAndStartRuntimeSession,
   isRuntimeSessionMode,
+  resolveLocalWorkspaceUri,
   type RuntimeToolType,
 } from '../runtime-client'
 
@@ -62,7 +63,7 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
   const [instructions, setInstructions] = useState('')
   const [createRuntime, setCreateRuntime] = useState(false)
   const [runtimeRepoPath, setRuntimeRepoPath] = useState('')
-  const [runtimeWorktreePath, setRuntimeWorktreePath] = useState('')
+  const [runtimeFolderPath, setRuntimeFolderPath] = useState('')
   const [runtimeTool, setRuntimeTool] = useState<RuntimeToolType>(DEFAULT_RUNTIME_TOOL)
   const [runtimeBaseRef, setRuntimeBaseRef] = useState(DEFAULT_RUNTIME_BASE_REF)
   const [runtimeBranch, setRuntimeBranch] = useState('')
@@ -82,7 +83,7 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
     setInstructions('')
     setCreateRuntime(false)
     setRuntimeRepoPath('')
-    setRuntimeWorktreePath('')
+    setRuntimeFolderPath('')
     setRuntimeTool(DEFAULT_RUNTIME_TOOL)
     setRuntimeBaseRef(DEFAULT_RUNTIME_BASE_REF)
     setRuntimeBranch('')
@@ -122,7 +123,7 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
 
     const shouldCreateRuntime = runtimeAvailable && createRuntime
     const normalizedRepoPath = runtimeRepoPath.trim()
-    const normalizedWorktreePath = runtimeWorktreePath.trim() || normalizedRepoPath
+    const normalizedFolderPath = runtimeFolderPath.trim() || normalizedRepoPath
     const normalizedBaseRef = runtimeBaseRef.trim() || DEFAULT_RUNTIME_BASE_REF
     const normalizedBranch = runtimeBranch.trim()
 
@@ -169,11 +170,22 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
 
         if (shouldCreateRuntime && threadId) {
           try {
-            await createAndStartRuntimeSession({
+            const requestedWorkspaceUri = await resolveLocalWorkspaceUri(normalizedFolderPath)
+            const workspaceUri = await mutations.ensureThreadWorkspace.mutateAsync({
               threadId,
+              workspaceUri: requestedWorkspaceUri,
               title: '默认话题',
               repoPath: normalizedRepoPath,
-              worktreePath: normalizedWorktreePath,
+              folderPath: normalizedFolderPath,
+              baseRef: normalizedBaseRef,
+              branch: normalizedBranch || undefined,
+            })
+            await createAndStartRuntimeSession({
+              threadId,
+              workspaceUri,
+              title: '默认话题',
+              repoPath: normalizedRepoPath,
+              folderPath: normalizedFolderPath,
               tool: runtimeTool,
               baseRef: normalizedBaseRef,
               branch: normalizedBranch || undefined,
@@ -329,7 +341,7 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
             <div className="space-y-1">
               <Label htmlFor="create-runtime" className="text-sm">同时创建运行时会话</Label>
               <p className="text-xs text-muted-foreground">
-                为默认话题直接绑定 worktree，创建后即可远程继续聊天。
+                为默认话题直接绑定文件夹，创建后即可远程继续聊天。
               </p>
             </div>
             <Switch
@@ -352,11 +364,11 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="runtime-worktree-path">Worktree 路径</Label>
+                <Label htmlFor="runtime-folder-path">文件夹路径</Label>
                 <Input
-                  id="runtime-worktree-path"
-                  value={runtimeWorktreePath}
-                  onChange={(event) => setRuntimeWorktreePath(event.target.value)}
+                  id="runtime-folder-path"
+                  value={runtimeFolderPath}
+                  onChange={(event) => setRuntimeFolderPath(event.target.value)}
                   placeholder="留空则默认使用仓库路径"
                 />
               </div>

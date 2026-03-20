@@ -86,8 +86,10 @@ export interface MessageProps {
   /** CP1: 工具审批回调 */
   onToolApprove?: (toolCallId: string) => void
   onToolReject?: (toolCallId: string) => void
-  /** CP1: chatType for group chat header display */
-  chatType?: 'direct_ai' | 'direct_human' | 'group' | 'cli_session'
+  /** 当前会话结构维度 */
+  conversationKind?: 'one' | 'group'
+  /** 当前话题执行模式 */
+  threadMode?: 'chat' | 'workspace'
   /** 群聊发送者名称 */
   senderName?: string
   /** 群聊发送者头像 */
@@ -137,7 +139,8 @@ export const Message = memo<MessageProps>(({
   onDelete,
   onToolApprove,
   onToolReject,
-  chatType,
+  conversationKind,
+  threadMode,
   senderName,
   senderAvatarUrl,
   className,
@@ -204,7 +207,8 @@ export const Message = memo<MessageProps>(({
         isProcessing={isProcessing}
         showAvatarOnly={!showTitle}
         placement={isUserBubble ? 'right' : 'left'}
-        chatType={chatType}
+        conversationKind={conversationKind}
+        threadMode={threadMode}
         senderName={senderName}
         senderAvatarUrl={senderAvatarUrl}
       />

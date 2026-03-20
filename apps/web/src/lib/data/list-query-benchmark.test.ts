@@ -35,7 +35,16 @@ const env = {
 const hasEnv = Boolean(env.webId && env.clientId && env.clientSecret && env.oidcIssuer)
 
 let session: Session | null = null
-let db: SolidDatabase | null = null
+type BenchmarkDb = SolidDatabase<typeof linxSchema>
+
+let db: BenchmarkDb | null = null
+
+function requireDb(): BenchmarkDb {
+  if (!db) {
+    throw new Error('Benchmark database is not initialized')
+  }
+  return db
+}
 
 interface BenchmarkResult {
   module: string
@@ -151,14 +160,15 @@ describe.skipIf(!hasEnv)('List Query Benchmark', () => {
       tokenType: 'DPoP',
     })
     
-    db = drizzle(session, {
+    const database = drizzle(session, {
       logger: false,
       disableInteropDiscovery: true,
       schema: linxSchema,
     })
+    db = database
     
     // Initialize all tables
-    await db.init([
+    await database.init([
       chatTable,
       threadTable,
       messageTable,
@@ -180,41 +190,41 @@ describe.skipIf(!hasEnv)('List Query Benchmark', () => {
   
   it('chat.list - fetch all chats', { timeout: 30000 }, async () => {
     await measure('Chat', 'chatCollection.fetch()', async () => {
-      return await db!.select().from(chatTable).execute()
+      return await requireDb().select().from(chatTable).execute()
     })
   })
 
   it('chat.list - fetch chats with columns', { timeout: 30000 }, async () => {
     await measure('Chat', 'chatTable (selected columns)', async () => {
-      return await db!.select({
-        id: chatTable.id,
-        title: chatTable.title,
-        avatarUrl: chatTable.avatarUrl,
-        contact: chatTable.contact,
-        starred: chatTable.starred,
-        muted: chatTable.muted,
-        unreadCount: chatTable.unreadCount,
-        lastActiveAt: chatTable.lastActiveAt,
-        lastMessagePreview: chatTable.lastMessagePreview,
-      }).from(chatTable).execute()
+      const rows = await requireDb().select().from(chatTable).execute()
+      return rows.map((row) => ({
+        id: row.id,
+        title: row.title,
+        avatarUrl: row.avatarUrl,
+        starred: row.starred,
+        muted: row.muted,
+        unreadCount: row.unreadCount,
+        lastActiveAt: row.lastActiveAt,
+        lastMessagePreview: row.lastMessagePreview,
+      }))
     })
   })
 
   it('thread.list - fetch all threads', { timeout: 30000 }, async () => {
     await measure('Chat', 'threadCollection.fetch()', async () => {
-      return await db!.select().from(threadTable).execute()
+      return await requireDb().select().from(threadTable).execute()
     })
   })
 
   it('message.list - fetch all messages', { timeout: 30000 }, async () => {
     await measure('Chat', 'messageCollection.fetch()', async () => {
-      return await db!.select().from(messageTable).execute()
+      return await requireDb().select().from(messageTable).execute()
     })
   })
 
   it('agent.list - fetch all agents (chat module)', { timeout: 30000 }, async () => {
     await measure('Chat', 'agentCollection.fetch()', async () => {
-      return await db!.select().from(agentTable).execute()
+      return await requireDb().select().from(agentTable).execute()
     })
   })
 
@@ -224,13 +234,13 @@ describe.skipIf(!hasEnv)('List Query Benchmark', () => {
 
   it('contact.list - fetch all contacts', { timeout: 30000 }, async () => {
     await measure('Contacts', 'contactCollection.fetch()', async () => {
-      return await db!.select().from(contactTable).execute()
+      return await requireDb().select().from(contactTable).execute()
     })
   })
 
   it('contact.list - fetch contacts with order', { timeout: 30000 }, async () => {
     await measure('Contacts', 'contactTable (ordered by name)', async () => {
-      return await db!.select().from(contactTable).orderBy('name', 'asc').execute()
+      return await requireDb().select().from(contactTable).orderBy('name', 'asc').execute()
     })
   })
 
