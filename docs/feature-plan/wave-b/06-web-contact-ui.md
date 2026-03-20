@@ -60,20 +60,20 @@
 | 上游 Wave | Vocab | UI 组件 | 消费字段 |
 |-----------|-------|---------|---------|
 | 01 | `ContactVocab` | ContactList, ContactDetail | `name`, `avatarUrl`, `contactType`, `entityUri`, `alias`, `starred`, `note` |
-| 01 | `ContactType.GROUP` | GroupCreateDialog | 创建群组联系人时 `contactType='group'` |
-| 01 | `ChatBaseVocab` | "发起聊天" 按钮 | 创建 Chat 时关联 `contact` URI |
+| 01 | `ContactClass.GROUP` | GroupCreateDialog | 创建群组联系人时写入 `rdfType=GroupContact` |
+| 01 | `ChatBaseVocab` | "发起聊天" 按钮 | 创建 Chat 时写入 `participants` 与 `metadata` |
 
 ### 6A.2 群组创建的数据写入流程
 
 创建群组时需要同时写入 Contact 和 Chat：
 
 ```
-1. INSERT contactTable: { contactType: 'group', name: 群名, avatarUrl: 拼接头像 }
-2. INSERT chatTable: { chatType: 'group', contact: 步骤1的 contact URI, participants: [成员 URIs], groupOwner: 当前用户 WebID }
+1. INSERT contactTable: { contactType: 'solid', rdfType: GroupContact, name: 群名, avatarUrl: 拼接头像, entityUri: chat URI }
+2. INSERT chatTable: { title: 群名, participants: [成员 URIs], metadata.memberRoles: { [ownerWebId]: 'owner' } }
 ```
 
-> **约束**：群组联系人的 `entityUri` 指向自身（`/.data/contacts/{id}.ttl#this`），
-> 与 Agent 联系人的 `entityUri` 指向 Agent 记录不同。
+> **约束**：群组联系人的 `entityUri` 指向关联 Chat
+> （`/.data/chat/{id}/index.ttl#this`），而不是联系人自身资源。
 
 ### 6A.3 不新增 Pod 表
 
@@ -179,4 +179,3 @@ Web Contact UI 不新增任何 Pod 表。
 | `contacts/components/MemberActionMenu.tsx` | 新增 | 成员操作菜单 |
 | `contacts/components/ContactListPane.tsx` | 修改 | 区分个人/群组联系人渲染 |
 | `contacts/collections.ts` | 修改 | 群组 CRUD 操作 |
-

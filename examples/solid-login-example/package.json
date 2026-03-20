@@ -11,6 +11,6 @@
   },
   "dependencies": {
     "@linx/models": "*",
-    "@undefineds.co/drizzle-solid": "^0.2.6"
+    "@undefineds.co/drizzle-solid": "^0.3.0"
   }
 }

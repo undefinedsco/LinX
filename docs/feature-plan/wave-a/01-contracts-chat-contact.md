@@ -134,11 +134,11 @@ export const chatTable = podTable(
     participants: uri("participants").array().predicate(WF.participant),
   },
   {
-    base: "/.data/chats/",
-    sparqlEndpoint: "/.data/chats/-/sparql",
+    base: "/.data/chat/",
+    sparqlEndpoint: "/.data/chat/-/sparql",
     type: MEETING.LongChat,
     namespace: UDFS,
-    subjectTemplate: "{id}.ttl",
+    subjectTemplate: "{id}/index.ttl#this",
   },
 )
 ```
@@ -159,11 +159,11 @@ export const threadTable = podTable(
     workspace: uri("workspace").predicate(LINX_CHAT.workspace),
   },
   {
-    base: "/.data/threads/",
-    sparqlEndpoint: "/.data/threads/-/sparql",
+    base: "/.data/chat/",
+    sparqlEndpoint: "/.data/chat/-/sparql",
     type: SIOC.Thread,
     namespace: UDFS,
-    subjectTemplate: "{id}.ttl",
+    subjectTemplate: "{chatId}/index.ttl#{id}",
   },
 )
 ```
@@ -276,10 +276,10 @@ Wave A 阶段仅定义 JSON schema，不做 RDF 提取。
 
 | 实体 | Pod 路径 | RDF Type | Namespace | 变更 |
 |------|---------|----------|-----------|------|
-| Chat | `/.data/chats/{id}.ttl` | `mee:LongChat` | UDFS | participants 使用 `wf:participant`；不区分对象类型 |
-| Message | `/.data/messages/{id}.ttl` | `mee:Message` | UDFS | 新增 group/routing 字段 |
+| Chat | `/.data/chat/{chatId}/index.ttl#this` | `mee:LongChat` | UDFS | Chat 元数据与 thread 共享 index.ttl；participants 使用 `wf:participant` |
+| Message | `/.data/chat/{chatId}/{yyyy}/{MM}/{dd}/messages.ttl#{id}` | `mee:Message` | UDFS | 按日期分桶；`chatId/threadId` 保留字符串键但带 canonical predicate |
 | Contact | `/.data/contacts/{id}.ttl` | `vcard:Individual` | UDFS | 新增 `GROUP` 枚举值 |
-| Thread | `/.data/threads/{id}.ttl` | `sioc:Thread` | UDFS | CP0：仅新增 `workspace` 字段；policy/session/lineage 仅冻结词汇不落表 |
+| Thread | `/.data/chat/{chatId}/index.ttl#{threadId}` | `sioc:Thread` | UDFS | 与 chat 共用 index.ttl；CP0 仅新增 `workspace` 字段 |
 | Agent | `/.data/agents/{id}.ttl` | `foaf:Agent` | UDFS | 无变更 |
 
 ### 6A.7 Vocab 文件结构

@@ -23,6 +23,7 @@ LinX is a Solid-first productivity application built as a monorepo targeting web
 - **Solid Data Access**: All structured data (profiles, contacts, sessions) flows through repositories in `packages/models` using `drizzle-solid`. Never use direct `getSolidDataset` calls in React components.
 - **Shared Business Truth**: Any domain rule, storage contract, normalization logic, or cross-surface use-case that must be shared across surfaces belongs in `@linx/models`. Shells in `apps/*` may adapt and render it, but must not redefine it.
 - **No UI Fallbacks**: When queries fail, fix the drizzle-solid repository (schema, permissions, SPARQL) rather than implementing UI fallbacks.
+- **Follow drizzle-solid's Solid-first semantics**: When touching Pod data access, align with the newer `drizzle-solid` model: IRI is the real entity identity, `link` fields represent RDF links, and mutation paths should prefer exact-target/entity semantics over SQL-style broad updates. In bug-fix work, adopt these semantics locally instead of doing a repo-wide API migration.
 - **Monorepo Structure**: Workspaces organized as `apps/*`, `packages/*`, `tests/*`, and `examples/*`.
 
 ### Core Components
