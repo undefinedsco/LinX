@@ -18,7 +18,7 @@ import {
   type ThreadMetadata, type ThreadItem, type Attachment,
   type Page, type StoreItemType,
 } from '@/lib/vendor/xpod-chatkit'
-import { contactTable, resolveRowId, type SolidDatabase } from '@linx/models'
+import { contactTable, resolveRowId, type SolidDatabase, UDFS } from '@linx/models'
 
 const DEFAULT_CHAT_ID = 'default'
 
@@ -576,7 +576,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     const deleteTriples = [
       `<${subjectUri}> <http://rdfs.org/sioc/ns#content> ?oldContent .`,
       `<${subjectUri}> <http://rdfs.org/sioc/ns#richContent> ?oldRichContent .`,
-      `<${subjectUri}> <https://undefineds.co/ns#status> ?oldStatus .`,
+      `<${subjectUri}> <${UDFS.messageStatus}> ?oldStatus .`,
     ]
     const insertTriples = [
       `<${subjectUri}> <http://rdfs.org/sioc/ns#content> ${escapeForSparql(content)} .`,
@@ -584,7 +584,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     const wherePatterns = [
       `OPTIONAL { <${subjectUri}> <http://rdfs.org/sioc/ns#content> ?oldContent . }`,
       `OPTIONAL { <${subjectUri}> <http://rdfs.org/sioc/ns#richContent> ?oldRichContent . }`,
-      `OPTIONAL { <${subjectUri}> <https://undefineds.co/ns#status> ?oldStatus . }`,
+      `OPTIONAL { <${subjectUri}> <${UDFS.messageStatus}> ?oldStatus . }`,
     ]
 
     if (richContent !== null) {
@@ -592,7 +592,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     }
 
     if (status) {
-      insertTriples.push(`<${subjectUri}> <https://undefineds.co/ns#status> "${status}" .`)
+      insertTriples.push(`<${subjectUri}> <${UDFS.messageStatus}> "${status}" .`)
     }
 
     const sparql = `

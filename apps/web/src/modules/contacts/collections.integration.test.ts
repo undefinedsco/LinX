@@ -1,63 +1,24 @@
 // @vitest-environment node
-import dotenv from 'dotenv'
 import { afterAll, describe, expect, it } from 'vitest'
-import { Session } from '@inrupt/solid-client-authn-node'
-import { drizzle, eq, type SolidDatabase } from '@undefineds.co/drizzle-solid'
-import { contactTable, linxSchema } from '@linx/models'
+import { eq, type SolidDatabase } from '@undefineds.co/drizzle-solid'
+import { ContactClass, contactTable, linxSchema } from '@linx/models'
+import { createXpodIntegrationContext, type XpodIntegrationContext } from '@/test/xpod-integration'
 
-dotenv.config({ path: '.env' })
-
-const env = {
-  webId: process.env.SOLID_WEBID,
-  clientId: process.env.SOLID_CLIENT_ID,
-  clientSecret: process.env.SOLID_CLIENT_SECRET,
-  oidcIssuer: process.env.SOLID_OIDC_ISSUER,
-}
-
-const hasEnv = Boolean(env.webId && env.clientId && env.clientSecret && env.oidcIssuer)
-
-// Check if Pod server is reachable before running integration tests
-let podReachable = false
-if (hasEnv && env.oidcIssuer) {
-  try {
-    const probeUrl = new URL('.well-known/openid-configuration', env.oidcIssuer).href
-    const ctrl = new AbortController()
-    const timer = setTimeout(() => ctrl.abort(), 5000)
-    await fetch(probeUrl, { signal: ctrl.signal }).then(() => { podReachable = true })
-    clearTimeout(timer)
-  } catch { /* server not reachable */ }
-}
-const canRun = hasEnv && podReachable
-
-let session: Session | null = null
-let db: SolidDatabase | null = null
-let loginFailed = false
+let context: XpodIntegrationContext<typeof linxSchema> | null = null
 const createdSubjects: string[] = []
 
-async function getDb(): Promise<SolidDatabase | null> {
-  if (loginFailed) return null
-  if (db) return db
-
-  try {
-    session = new Session()
-    await session.login({
-      clientId: env.clientId!,
-      clientSecret: env.clientSecret!,
-      oidcIssuer: env.oidcIssuer!,
-      tokenType: 'DPoP',
-    })
-
-    db = drizzle(session, { logger: false, disableInteropDiscovery: true, schema: linxSchema })
-    await db.init([contactTable])
-    return db
-  } catch (e) {
-    console.log('[Test] Login failed:', (e as Error).message)
-    loginFailed = true
-    return null
-  }
+async function getContext(): Promise<XpodIntegrationContext<typeof linxSchema>> {
+  if (context) return context
+  context = await createXpodIntegrationContext({
+    schema: linxSchema,
+    tables: [contactTable],
+  })
+  return context
 }
 
 async function cleanup() {
+  if (!context) return
+  const db = context.db
   if (!db) return
   for (const subject of createdSubjects) {
     try {
@@ -70,19 +31,18 @@ async function cleanup() {
 
 afterAll(async () => {
   await cleanup()
-  if (session) await session.logout()
+  await context?.stop()
 }, 30000)
 
 describe('contact collections integration', () => {
-  it.skipIf(!canRun)('insert contact and SELECT back via SPARQL', { timeout: 30000 }, async () => {
-    const database = await getDb()
-    if (!database) return
+  it('insert contact and SELECT back via SPARQL', { timeout: 30000 }, async () => {
+    const { db: database, webId } = await getContext()
 
     const id = `contact-${Date.now()}`
     const [created] = await database.insert(contactTable).values({
       id,
       name: 'Integration Contact',
-      entityUri: env.webId!,
+      entityUri: webId,
       contactType: 'solid',
     }).execute()
 
@@ -96,11 +56,11 @@ describe('contact collections integration', () => {
     expect(rows.length).toBe(1)
     expect(rows[0]?.name).toBe('Integration Contact')
     expect(rows[0]?.contactType).toBe('solid')
+    expect(rows[0]?.rdfType).toBe(ContactClass.PERSON)
   })
 
-  it.skipIf(!canRun)('insert multiple contacts and verify via SELECT', { timeout: 30000 }, async () => {
-    const database = await getDb()
-    if (!database) return
+  it('insert multiple contacts and verify via SELECT', { timeout: 30000 }, async () => {
+    const { db: database } = await getContext()
 
     const timestamp = Date.now()
     const contacts = [
@@ -119,21 +79,22 @@ describe('contact collections integration', () => {
     const solidRows = await database.select().from(contactTable).where(eq(contactTable.id, `solid-${timestamp}`)).execute()
     expect(solidRows.length).toBe(1)
     expect(solidRows[0]?.contactType).toBe('solid')
+    expect(solidRows[0]?.rdfType).toBe(ContactClass.PERSON)
 
     const extRows = await database.select().from(contactTable).where(eq(contactTable.id, `ext-${timestamp}`)).execute()
     expect(extRows.length).toBe(1)
     expect(extRows[0]?.contactType).toBe('external')
+    expect(extRows[0]?.rdfType).toBe(ContactClass.PERSON)
   })
 
-  it.skipIf(!canRun)('delete contact and verify via SELECT', { timeout: 30000 }, async () => {
-    const database = await getDb()
-    if (!database) return
+  it('delete contact and verify via SELECT', { timeout: 30000 }, async () => {
+    const { db: database, webId } = await getContext()
 
     const id = `contact-del-${Date.now()}`
     const [created] = await database.insert(contactTable).values({
       id,
       name: 'Delete Me',
-      entityUri: env.webId!,
+      entityUri: webId,
       contactType: 'solid',
     }).execute()
 

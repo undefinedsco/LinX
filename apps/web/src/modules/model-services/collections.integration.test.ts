@@ -1,8 +1,6 @@
 // @vitest-environment node
-import dotenv from 'dotenv'
 import { afterAll, describe, expect, it } from 'vitest'
-import { Session } from '@inrupt/solid-client-authn-node'
-import { drizzle, eq, type SolidDatabase } from '@undefineds.co/drizzle-solid'
+import { eq, type SolidDatabase } from '@undefineds.co/drizzle-solid'
 import {
   aiModelTable,
   aiProviderTable,
@@ -13,53 +11,26 @@ import {
   initializeModelCollections,
   credentialCollection,
 } from './collections'
+import { createXpodIntegrationContext, type XpodIntegrationContext } from '@/test/xpod-integration'
 
-dotenv.config({ path: '.env' })
-
-const env = {
-  webId: process.env.SOLID_WEBID,
-  clientId: process.env.SOLID_CLIENT_ID,
-  clientSecret: process.env.SOLID_CLIENT_SECRET,
-  oidcIssuer: process.env.SOLID_OIDC_ISSUER,
-}
-
-const hasEnv = Boolean(env.webId && env.clientId && env.clientSecret && env.oidcIssuer)
-
-// Check if Pod server is reachable before running integration tests
-let podReachable = false
-if (hasEnv && env.oidcIssuer) {
-  try {
-    const probeUrl = new URL('.well-known/openid-configuration', env.oidcIssuer).href
-    const ctrl = new AbortController()
-    const timer = setTimeout(() => ctrl.abort(), 5000)
-    await fetch(probeUrl, { signal: ctrl.signal }).then(() => { podReachable = true })
-    clearTimeout(timer)
-  } catch { /* server not reachable */ }
-}
-const canRun = hasEnv && podReachable
-
-let session: Session | null = null
-let db: SolidDatabase | null = null
+let context: XpodIntegrationContext<typeof linxSchema> | null = null
 const createdSubjects: Array<{ table: 'credential' | 'provider' | 'model'; id: string }> = []
 
-async function getDb(): Promise<SolidDatabase> {
-  if (db) return db
-
-  session = new Session()
-  await session.login({
-    clientId: env.clientId!,
-    clientSecret: env.clientSecret!,
-    oidcIssuer: env.oidcIssuer!,
-    tokenType: 'DPoP',
+async function getContext(): Promise<XpodIntegrationContext<typeof linxSchema>> {
+  if (context) return context
+  context = await createXpodIntegrationContext({
+    schema: linxSchema,
+    tables: [credentialTable, aiProviderTable, aiModelTable],
+    initialize: (db) => {
+      initializeModelCollections(db)
+    },
   })
-
-  db = drizzle(session, { logger: false, disableInteropDiscovery: true, schema: linxSchema })
-  await db.init([credentialTable, aiProviderTable, aiModelTable])
-  initializeModelCollections(db)
-  return db
+  return context
 }
 
 async function cleanup() {
+  if (!context) return
+  const db = context.db
   if (!db) return
 
   for (const entry of createdSubjects) {
@@ -79,7 +50,7 @@ async function cleanup() {
 
 afterAll(async () => {
   await cleanup()
-  if (session) await session.logout()
+  await context?.stop()
 }, 40000)
 
 function waitFor(predicate: () => boolean, timeoutMs = 10000): Promise<boolean> {
@@ -96,8 +67,8 @@ function waitFor(predicate: () => boolean, timeoutMs = 10000): Promise<boolean> 
 }
 
 describe('model services collections integration', () => {
-  it.skipIf(!canRun)('credential collection optimistic insert persists', { timeout: 30000 }, async () => {
-    const database = await getDb()
+  it('credential collection optimistic insert persists', { timeout: 30000 }, async () => {
+    const { db: database } = await getContext()
 
     const ready = new Promise<void>((resolve) => credentialCollection.onFirstReady(resolve))
     credentialCollection.startSyncImmediate()
@@ -140,8 +111,8 @@ describe('model services collections integration', () => {
     expect(created?.provider).toContain('#openai')
   })
 
-  it.skipIf(!canRun)('provider/model CRUD via drizzle-solid persists to Pod', { timeout: 30000 }, async () => {
-    const database = await getDb()
+  it('provider/model CRUD via drizzle-solid persists to Pod', { timeout: 30000 }, async () => {
+    const { db: database } = await getContext()
 
     const providerId = crypto.randomUUID()
     const modelId = `model-${crypto.randomUUID()}`
