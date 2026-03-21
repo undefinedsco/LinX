@@ -78,10 +78,12 @@
 ## 二、集成测试
 
 集成测试使用真实的 Solid Pod 进行数据存储验证，确保数据能正确持久化。
+当前主线默认通过 `createXpodIntegrationContext` 自举本地 seeded `xpod` runtime，并在其上运行真实 Pod 读写。
 
 **测试环境**:
-- Solid Pod: `http://localhost:3000/test/`
-- 认证方式: `@inrupt/solid-client-authn-node`
+- 默认模式: 自举本地 seeded `xpod` + 真实 Pod
+- 可选模式: `XPOD_TEST_MODE=auth|auto` 时接入外部已存在的认证环境
+- 统一入口: `apps/web/src/test/xpod-integration.ts`
 
 ### 2.1 Contact 集成测试
 
@@ -195,10 +197,7 @@ npx vitest run src/modules/credentials/
 ### 集成测试
 
 ```bash
-# 需要先配置环境变量
-# SOLID_IDP_URL - Solid Identity Provider URL
-# SOLID_CLIENT_ID - 客户端 ID
-# SOLID_CLIENT_SECRET - 客户端密钥
+# 默认直接运行即可；需要复用外部认证环境时，再设置 XPOD_TEST_MODE/XPOD_TEST_URL 等变量
 
 # 运行所有集成测试
 cd packages/models && npx vitest run tests/*.integration.test.ts

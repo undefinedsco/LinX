@@ -4,6 +4,11 @@
 
 目标只有一个：CLI 和 App 共享同一个 domain + service 内核，只在最外层分别套 TUI 和 GUI。
 
+当前权威包约定：
+
+- `@undefineds.co/models`：共享数据面权威源
+- `@linx/models`：Linx 仓内兼容入口，逐步收缩为适配层
+
 ## Core Rule
 
 - CLI 和 App 必须共享数据模型、领域语义、用例服务、运行时协议。
@@ -24,20 +29,20 @@
 
 推荐落点：
 
-- `packages/models`: Pod schema、repository、runtime contracts
+- `@undefineds.co/models`: Pod schema、repository、runtime contracts
 - 后续独立 shared package: 本地配置 schema、watch archive schema、client session schema
 
 当前主线：
 
-- `packages/models/watch`: watch session/event/archive contract
-- `packages/models/watch`: `credential-source=local|cloud|auto` 解析 helper
-- `packages/models/watch`: auth failure / auth status normalization helper
-- `packages/models/watch`: generic JSON line / codex JSON-RPC event normalization helper
-- `packages/models/watch`: approval request / structured user-input / auto-approval decision helper
-- `packages/models`: `approval / audit / inbox_notification` 是跨端 remote approval 的共享真相
-- `packages/models/client`: `~/.linx` account/config/secrets contract
-- `packages/models/client`: linx cloud login bootstrap / whoami field helper
-- `packages/models/client`: linx cloud account API 与 runtime API URL 解析 helper
+- `@linx/models/watch`: watch session/event/archive contract
+- `@linx/models/watch`: `credential-source=local|cloud|auto` 解析 helper
+- `@linx/models/watch`: auth failure / auth status normalization helper
+- `@linx/models/watch`: generic JSON line / codex JSON-RPC event normalization helper
+- `@linx/models/watch`: approval request / structured user-input / auto-approval decision helper
+- `@undefineds.co/models`: `approval / audit / inbox_notification` 是跨端 remote approval 的共享真相
+- `@linx/models/client`: `~/.linx` account/config/secrets contract
+- `@linx/models/client`: linx cloud login bootstrap / whoami field helper
+- `@linx/models/client`: linx cloud account API 与 runtime API URL 解析 helper
 
 强约束：
 
@@ -118,9 +123,9 @@
 - cloud identity / account 默认入口应指向身份域，例如 `https://id.undefineds.co/`；Pod 托管域如 `https://pods.undefineds.co/` 不能被当成默认 OIDC issuer
 - cloud runtime 的模型真相来自 live API，例如 `https://api.undefineds.co/v1/models`
 - cloud runtime 的对话主路径来自 live API，例如 `https://api.undefineds.co/v1/chat/completions`
-- discovery 请求失败时，必须回退到 `@linx/models/discovery` 内置快照，不能让 provider 消失或阻塞主流程
+- discovery 请求失败时，必须回退到 `@undefineds.co/models/discovery` 内置快照，不能让 provider 消失或阻塞主流程
 - 内置快照只是离线 fallback / 词典，不得替代 live cloud `/v1/models`
-- 内置快照应优先通过同步脚本更新，例如 `yarn workspace @linx/models sync:discovery:vercel`，而不是在多个端里各自手改 provider/model 词典
+- 内置快照应优先通过共享包同步脚本更新，而不是在多个端里各自手改 provider/model 词典
 
 ## Non-Shared Layers
 
@@ -169,7 +174,7 @@ AI 配置以三张表为准，不允许再引入平行主线：
 
 目标边界如下：
 
-- `packages/models`: schema、repository、runtime contracts
+- `@undefineds.co/models`: schema、repository、runtime contracts
 - `packages/core` 或等价 shared package: 领域对象、用例服务、alias 规则、配置解析
 - `apps/cli`: 命令行入口、TTY 交互、stdout/stderr 壳
 - `apps/web`: GUI 页面、Collection 订阅、UI state、view metadata

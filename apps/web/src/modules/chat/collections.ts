@@ -11,6 +11,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getLiteral, getSolidDataset, getThing, getUrl, getUrlAll } from '@inrupt/solid-client'
 import { like, or } from '@undefineds.co/drizzle-solid'
 import {
+  aiConfigModelUri,
+  aiConfigProviderUri,
   chatTable,
   threadTable,
   workspaceTable,
@@ -20,6 +22,7 @@ import {
   credentialTable,
   eq,
   getBuiltinProvider,
+  extractAIConfigProviderId,
   UDFS,
   WF,
   type ChatRow,
@@ -39,8 +42,8 @@ import {
   resolveWorkspaceContainerUri,
   parseWorkspaceIdFromContainerUri,
   normalizeLocalWorkspacePath,
-} from '@linx/models'
-import type { SolidDatabase } from '@linx/models'
+} from '@undefineds.co/models'
+import type { SolidDatabase } from '@undefineds.co/models'
 import { queryClient } from '@/providers/query-provider'
 import { createPodCollection } from '@/lib/data/pod-collection'
 import { favoriteHooks } from '@/modules/favorites/collections'
@@ -248,6 +251,17 @@ async function ensureChatStateRow(db: SolidDatabase, chatId: string): Promise<Ch
     return cached
   }
 
+  const located = await (db as any).findByLocator(chatTable as any, { id: chatId } as any) as ChatRow | null
+  if (located) {
+    if (!chatCollection.isReady()) {
+      await chatCollection.preload()
+    }
+    const [hydrated] = await hydrateChatRows(db, [located])
+    const row = hydrated ?? located
+    ;(chatCollection.utils as { writeUpsert?: (data: ChatRow) => void }).writeUpsert?.(row)
+    return row
+  }
+
   const rows = await chatCollection.fetch()
   const [row] = await hydrateChatRows(db, rows.filter((candidate) => candidate.id === chatId))
 
@@ -285,26 +299,11 @@ async function ensureThreadStateRow(db: SolidDatabase, threadId: string): Promis
 // Chat Collection
 // ============================================================================
 
-// Columns needed for chat list view and group member operations.
-const chatListColumns: (keyof ChatRow)[] = [
-  'id',
-  'title',
-  'avatarUrl',
-  'participants',
-  'metadata',
-  'starred',
-  'muted',
-  'unreadCount',
-  'lastActiveAt',
-  'lastMessagePreview',
-]
-
 export const chatCollection = createPodCollection<typeof chatTable, ChatRow, ChatInsert>({
   table: chatTable,
   queryKey: ['chats'],
   queryClient,
   getDb,
-  columns: chatListColumns,
   orderBy: { column: 'lastActiveAt', direction: 'desc' },
   getKey: (item) => {
     if (!item.id) throw new Error('Chat item is missing id.')
@@ -966,10 +965,13 @@ export const chatOps = {
    */
   async updateAgentModel(agentId: string, provider: string, model: string, chatId?: string, contactId?: string): Promise<void> {
     const providerInfo = getBuiltinProvider(provider)
+    const providerUri = aiConfigProviderUri(provider)
+    const modelUri = aiConfigModelUri(model)
     const tx = agentCollection.update(agentId, (draft: any) => {
-      const providerChanged = draft.provider !== provider
-      draft.provider = provider
-      draft.model = model
+      const currentProviderId = extractAIConfigProviderId(typeof draft.provider === 'string' ? draft.provider : '')
+      const providerChanged = currentProviderId !== provider
+      draft.provider = providerUri
+      draft.model = modelUri
       // Update avatarUrl when provider changes (unless user set a custom one)
       if (providerChanged && providerInfo?.logoUrl) {
         draft.avatarUrl = providerInfo.logoUrl
@@ -1061,7 +1063,7 @@ export const chatOps = {
     const providerCol = (credentialTable as any).provider
     const rows = await db.select()
       .from(credentialTable)
-      .where(eq(providerCol, `/settings/ai/providers.ttl#${provider}`))
+      .where(eq(providerCol, aiConfigProviderUri(provider)))
       .execute()
 
     const cred = rows.find((row: any) => row?.status === 'active') ?? rows[0]
@@ -1083,22 +1085,19 @@ export const chatOps = {
    */
   async fetchChats(): Promise<ChatRow[]> {
     const db = getDb()
-    const rows = await chatCollection.fetch()
-    if (!db || rows.length === 0) {
+    if (!db) {
+      return chatCollection.fetch()
+    }
+
+    const rows = await db.select()
+      .from(chatTable)
+      .orderBy('lastActiveAt', 'desc')
+      .execute() as ChatRow[]
+    if (rows.length === 0) {
       return rows
     }
 
-    const hydratedRows = await hydrateChatRows(db, rows)
-    const writeBatch = (chatCollection.utils as { writeBatch?: (callback: () => void) => void }).writeBatch
-    const writeUpsert = (chatCollection.utils as { writeUpsert?: (data: ChatRow) => void }).writeUpsert
-    if (typeof writeBatch === 'function' && typeof writeUpsert === 'function') {
-      writeBatch(() => {
-        hydratedRows.forEach((row) => {
-          writeUpsert(row)
-        })
-      })
-    }
-    return hydratedRows
+    return hydrateChatRows(db, rows)
   },
 
   /**
@@ -1142,11 +1141,10 @@ export const chatOps = {
     }
 
     const threadCol = (messageTable as any).thread
-    const createdAtCol = (messageTable as any).createdAt
     const rows = await db.select()
       .from(messageTable)
       .where(eq(threadCol, threadRef))
-      .orderBy(createdAtCol)
+      .orderBy('createdAt', 'asc')
       .execute()
 
     if (rows.length > 0) {
@@ -1155,7 +1153,7 @@ export const chatOps = {
 
     const allRows = await db.select()
       .from(messageTable)
-      .orderBy(createdAtCol)
+      .orderBy('createdAt', 'asc')
       .execute()
 
     return allRows.filter((row) => {
@@ -1271,7 +1269,7 @@ export function useChatList(filters?: { search?: string }) {
                 like(chatTable.lastMessagePreview as any, pattern)
               )
             )
-            .orderBy(chatTable.lastActiveAt, 'desc')
+            .orderBy('lastActiveAt', 'desc')
             .execute()
           return await hydrateChatRows(db, results as ChatRow[])
         } catch (error) {

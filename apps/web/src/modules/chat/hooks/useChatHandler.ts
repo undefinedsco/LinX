@@ -20,7 +20,7 @@ import {
   messageTable,
   eq,
   type ToolRisk,
-} from '@linx/models'
+} from '@undefineds.co/models'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 import { useSession } from '@inrupt/solid-ui-react'
 import { createChatHandler, type ChatHandler, type AgentChatHandler } from '../services'
@@ -187,12 +187,11 @@ export function useChatHandler(options: UseChatHandlerOptions): UseChatHandlerRe
     queryFn: async () => {
       if (!db || !threadId || !podUrl) return []
       const threadCol = (messageTable as any).thread
-      const createdAtCol = (messageTable as any).createdAt
       const threadUri = `${podUrl}/.data/chat/${threadId}/index.ttl#${threadId}`
       const rows = await db.select()
         .from(messageTable)
         .where(eq(threadCol, threadUri))
-        .orderBy(createdAtCol)
+        .orderBy('createdAt', 'asc')
         .execute()
       return rows
     },

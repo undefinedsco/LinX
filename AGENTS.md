@@ -7,7 +7,7 @@ This file provides guidance to AI coding agents when working with this repositor
 ## Quick Links
 
 - **[Architecture Comparison](docs/architecture-comparison.md)** - 架构对比：LinX vs Cherry Studio vs LobeChat
-- **[@linx/models Shared Core](docs/cli-app-shared-core.md)** - 所有端共享的业务真相、跨端语义与模型边界以 `@linx/models` 为准
+- **[@undefineds.co/models Shared Core](docs/cli-app-shared-core.md)** - 所有端共享的业务真相、跨端语义与模型边界以 `@undefineds.co/models` 为准；`@linx/models` 仅保留兼容入口
 - **[Chat Module Alignment](docs/chat-module-alignment.md)** - Chat 模块与 Cherry Studio 及设计规范的对齐状态、视觉检查清单、待修复项
 - **[UI Style Guide](docs/ui-style-guide.md)** - UI 样式指南
 - **[UI Component Architecture](docs/ui-component-architecture.md)** - UI 组件分层架构（纯 UI / 逻辑 UI）
@@ -20,15 +20,17 @@ LinX is a Solid-first productivity application built as a monorepo targeting web
 
 ### Key Architectural Principles
 
-- **Solid Data Access**: All structured data (profiles, contacts, sessions) flows through repositories in `packages/models` using `drizzle-solid`. Never use direct `getSolidDataset` calls in React components.
-- **Shared Business Truth**: Any domain rule, storage contract, normalization logic, or cross-surface use-case that must be shared across surfaces belongs in `@linx/models`. Shells in `apps/*` may adapt and render it, but must not redefine it.
+- **Solid Data Access**: All structured data (profiles, contacts, sessions) flows through repositories and schemas sourced from `@undefineds.co/models` using `drizzle-solid`. Never use direct `getSolidDataset` calls in React components.
+- **Shared Business Truth**: Any domain rule, storage contract, normalization logic, or cross-surface use-case that must be shared across surfaces belongs in `@undefineds.co/models`. Shells in `apps/*` may adapt and render it, but must not redefine it.
 - **No UI Fallbacks**: When queries fail, fix the drizzle-solid repository (schema, permissions, SPARQL) rather than implementing UI fallbacks.
 - **Follow drizzle-solid's Solid-first semantics**: When touching Pod data access, align with the newer `drizzle-solid` model: IRI is the real entity identity, `link` fields represent RDF links, and mutation paths should prefer exact-target/entity semantics over SQL-style broad updates. In bug-fix work, adopt these semantics locally instead of doing a repo-wide API migration.
+- **Pod Test Discipline**: Unit tests may use mocks/stubs. Any integration test that covers Pod login, Pod persistence, permissions, or notifications must run against a self-bootstrapped `xpod` runtime with a real Pod; do not replace that path with fake Pod adapters or UI-level fallbacks.
 - **Monorepo Structure**: Workspaces organized as `apps/*`, `packages/*`, `tests/*`, and `examples/*`.
 
 ### Core Components
 
-- **`packages/models`**: Published as `@linx/models`, contains all Solid data schemas and repositories using drizzle-solid
+- **`@undefineds.co/models`**: External authority package for shared Solid schemas, repositories, and RDF contracts
+- **`packages/linx-models`**: Repo-local compatibility wrapper published as `@linx/models`
 - **`apps/web`**: Vite + React 18.3 SPA with TanStack Router + Query, shadcn/ui, and Tailwind CSS
 - **`apps/desktop`**: Electron 32.x wrapper
 - **`apps/mobile`**: Capacitor 6 shell scaffold
@@ -77,7 +79,7 @@ yarn build
 
 # Individual builds
 yarn build:vendor     # Build drizzle-solid vendor package
-yarn build:models     # Build @linx/models package  
+yarn build:models     # Build repo-local `@linx/models` compatibility package
 yarn build:web        # Build web application
 
 # Linting and type checking
@@ -171,7 +173,7 @@ export function createPodCollection<TData extends { id: string }, TInsert>(optio
 ```typescript
 // modules/contacts/collections.ts
 import { createPodCollection } from '@/lib/data/pod-collection'
-import { contactTable, type ContactRow, type ContactInsert } from '@linx/models'
+import { contactTable, type ContactRow, type ContactInsert } from '@undefineds.co/models'
 
 export const contactCollection = createPodCollection<ContactRow, ContactInsert>({
   table: contactTable,
@@ -326,6 +328,6 @@ modules/xxx/
 
 ## File-Structure Notes
 
-- 业务模块统一放在 `apps/web/src/modules/*`；模块内部引用 `@linx/models` 暴露的仓储和类型
-- 共用模型/仓储集中在 `packages/models`，以实体为子目录，`index.ts` 聚合导出
+- 业务模块统一放在 `apps/web/src/modules/*`；模块内部优先引用 `@undefineds.co/models` 暴露的共享 schema、仓储和类型
+- `@undefineds.co/models` 是共享数据面权威源；`packages/linx-models` 仅保留 `@linx/models` 兼容导出
 - 第三方补丁放在 `vendors/*`，通过 `file:vendors/...` 方式覆盖；改动后需执行该包的 build
