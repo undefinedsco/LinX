@@ -2,4 +2,4 @@
  * SPARQL Engine exports
  */
 
-export { ComunicaQuintEngine, type QueryContext, type QueryBindingsResult } from './ComunicaQuintEngine';
+export { ComunicaQuintEngine, type QueryContext, type QueryBindingsResult } from './ComunicaQuintEngine.js';

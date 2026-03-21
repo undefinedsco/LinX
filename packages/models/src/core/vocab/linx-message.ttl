@@ -1,0 +1,39 @@
+@prefix udfs: <https://undefineds.co/ns#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix mee: <http://www.w3.org/ns/pim/meeting#> .
+
+<> a owl:Ontology ;
+  rdfs:label "LinX Message Vocabulary (Wave A CP0)" ;
+  rdfs:comment "Company-level terms (udfs:) used by message contracts for group/routing and collaboration metadata." .
+
+# Group message extensions
+udfs:senderName a rdf:Property ;
+  rdfs:domain mee:Message ;
+  rdfs:range rdfs:Literal .
+
+udfs:senderAvatarUrl a rdf:Property ;
+  rdfs:domain mee:Message ;
+  rdfs:range rdfs:Resource .
+
+udfs:mentions a rdf:Property ;
+  rdfs:domain mee:Message ;
+  rdfs:range rdfs:Resource .
+
+udfs:replyTo a rdf:Property ;
+  rdfs:domain mee:Message ;
+  rdfs:range rdfs:Resource .
+
+# Multi-AI routing
+udfs:routedBy a rdf:Property ;
+  rdfs:domain mee:Message ;
+  rdfs:range rdfs:Resource .
+
+udfs:routeTargetAgentId a rdf:Property ;
+  rdfs:domain mee:Message ;
+  rdfs:range rdfs:Literal .
+
+udfs:coordinationId a rdf:Property ;
+  rdfs:domain mee:Message ;
+  rdfs:range rdfs:Literal .

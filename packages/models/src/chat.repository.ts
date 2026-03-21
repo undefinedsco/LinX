@@ -1,5 +1,5 @@
-import { definePodRepository } from './repository'
-import { chatTable, type ChatRow, type ChatInsert, type ChatUpdate } from './chat.schema'
+import { definePodRepository } from './repository.js'
+import { chatTable, type ChatRow, type ChatInsert, type ChatUpdate } from './chat.schema.js'
 
 export const chatRepository = definePodRepository<
   typeof chatTable,

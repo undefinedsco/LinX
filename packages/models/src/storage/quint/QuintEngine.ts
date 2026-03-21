@@ -6,10 +6,10 @@
  *   const engine = await createQuintEngine({ endpoint: 'postgresql://user:pass@host:5432/db' });
  */
 
-import { ComunicaQuintEngine, QueryContext, QueryBindingsResult } from '../sparql/ComunicaQuintEngine';
-import { SqliteQuintStore } from './SqliteQuintStore';
-import { PgQuintStore } from './PgQuintStore';
-import type { QuintStore } from './types';
+import { ComunicaQuintEngine, QueryContext, QueryBindingsResult } from '../sparql/ComunicaQuintEngine.js';
+import { SqliteQuintStore } from './SqliteQuintStore.js';
+import { PgQuintStore } from './PgQuintStore.js';
+import type { QuintStore } from './types.js';
 import type { Quad } from '@rdfjs/types';
 
 export interface QuintEngineArgs {

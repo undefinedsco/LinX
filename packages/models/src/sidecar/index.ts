@@ -1,2 +1,2 @@
-export * from './sidecar-events'
-export * from './persistence-mapping'
+export * from './sidecar-events.js'
+export * from './persistence-mapping.js'

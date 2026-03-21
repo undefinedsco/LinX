@@ -1,13 +1,13 @@
-import type { ChatInsert } from '../chat.schema'
-import type { ContactInsert } from '../contact.schema'
-import type { MessageInsert } from '../message.schema'
-import type { ThreadInsert } from '../thread.schema'
+import type { ChatInsert } from '../chat.schema.js'
+import type { ContactInsert } from '../contact.schema.js'
+import type { MessageInsert } from '../message.schema.js'
+import type { ThreadInsert } from '../thread.schema.js'
 import type {
   ToolApprovalBlock,
   ToolCallBlock,
   TaskProgressBlock,
-} from '../types/collaboration-blocks'
-import { ContactClass } from '../contact.schema'
+} from '../types/collaboration-blocks.js'
+import { ContactClass } from '../contact.schema.js'
 
 export const fixtureContactSolid: ContactInsert = {
   id: 'contact-solid-1',

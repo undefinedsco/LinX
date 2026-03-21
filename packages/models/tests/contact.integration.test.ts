@@ -2,6 +2,7 @@ import { describe, it, expect, afterAll } from 'vitest'
 import type { SolidDatabase } from '@undefineds.co/drizzle-solid'
 import { contactTable } from '../src/contact.schema'
 import { agentTable } from '../src/agent.schema'
+import { aiConfigModelUri, aiConfigProviderUri, extractAIConfigResourceId } from '../src/ai-config'
 import { linxSchema } from '../src/schema'
 import { eq } from '@undefineds.co/drizzle-solid'
 import {
@@ -165,8 +166,8 @@ describe('Solid Pod Contact CRUD', () => {
         name: testAgentName,
         description: 'A test AI assistant',
         instructions: 'You are a helpful assistant for integration testing.',
-        provider: 'openai',
-        model: 'gpt-4o',
+        provider: aiConfigProviderUri('openai'),
+        model: aiConfigModelUri('gpt-4o'),
         temperature: 0.7,
         tools: ['WebSearch'],
         createdAt: now,
@@ -187,7 +188,7 @@ describe('Solid Pod Contact CRUD', () => {
     expect(agentRows.length).toBeGreaterThanOrEqual(1)
     const agentRecord = agentRows[0]
     expect(agentRecord.name).toBe(testAgentName)
-    expect(agentRecord.model).toBe('gpt-4o')
+    expect(extractAIConfigResourceId(String(agentRecord.model ?? ''))).toBe('gpt-4o')
     expect(agentRecord.instructions).toContain('helpful assistant')
 
     // 2. CREATE CONTACT pointing to agent

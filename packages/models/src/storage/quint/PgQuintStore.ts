@@ -9,14 +9,14 @@
 
 import { Pool } from 'pg';
 
-import type { Quint, QuintPattern, QuintStore, TermMatch, TermOperators } from './types';
-import { isTerm } from './types';
+import type { Quint, QuintPattern, QuintStore, TermMatch, TermOperators } from './types.js';
+import { isTerm } from './types.js';
 import {
   serializeTerm,
   serializeObject,
   deserializeTerm,
   deserializeObject,
-} from './serialization';
+} from './serialization.js';
 
 /** Fixed vector dimension for pgvector */
 export const VECTOR_DIMENSION = 4096;

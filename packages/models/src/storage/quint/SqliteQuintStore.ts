@@ -16,15 +16,15 @@ import { eq, ne, and, gte, lt, gt, lte, like, inArray, notInArray, isNull, isNot
 import type { SQL } from 'drizzle-orm';
 import type { Term } from '@rdfjs/types';
 
-import { quints, type QuintRow, type QuintInsert } from './schema';
-import type { Quint, QuintPattern, QuintStore, QuintStoreOptions, TermMatch, TermOperators } from './types';
-import { isTerm } from './types';
+import { quints, type QuintRow, type QuintInsert } from './schema.js';
+import type { Quint, QuintPattern, QuintStore, QuintStoreOptions, TermMatch, TermOperators } from './types.js';
+import { isTerm } from './types.js';
 import {
   serializeTerm,
   serializeObject,
   deserializeTerm,
   deserializeObject,
-} from './serialization';
+} from './serialization.js';
 
 export class SqliteQuintStore implements QuintStore {
   private sqlite: Database.Database;

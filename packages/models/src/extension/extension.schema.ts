@@ -1,11 +1,1 @@
-export const extensionSchema = {
-  extensionId: "uuid",
-  extensionType: [
-    "application",
-    "agent",
-    "provider",
-    "tool",
-    "importer",
-    "editor"
-  ]
-};
+export { extensionSchema } from '../core.js'

@@ -1,0 +1,89 @@
+@prefix udfs: <https://undefineds.co/ns#> .
+@prefix mee: <http://www.w3.org/ns/pim/meeting#> .
+@prefix sioc: <http://rdfs.org/sioc/ns#> .
+@prefix wf: <http://www.w3.org/2005/01/wf/flow-1.0#> .
+@prefix ldp: <http://www.w3.org/ns/ldp#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+
+<> a owl:Ontology ;
+  rdfs:label "LinX Chat/Thread Vocabulary (Wave A CP0)" ;
+  rdfs:comment "Company-level terms (udfs:) used by chat/thread contracts. Chat is a thin channel; behavioral differences are expressed via Message richContent blocks." .
+
+# --------------------------------------------
+# Predicates (company namespace)
+# --------------------------------------------
+
+udfs:Workspace a rdfs:Class ;
+  rdfs:label "Workspace" ;
+  rdfs:subClassOf ldp:Container ;
+  rdfs:comment "Shared collaboration container. A thread links to its container URI; metadata lives in the workspace container index.ttl." .
+
+# Execution context: workspace container (stored on Thread)
+udfs:workspace a rdf:Property ;
+  rdfs:domain sioc:Thread ;
+  rdfs:range rdfs:Resource ;
+  rdfs:comment "Points at the workspace root URI. This can be a Pod container URI or a local linx://{node-id}/path workspace URI." .
+
+udfs:workspaceType a rdf:Property ;
+  rdfs:domain udfs:Workspace ;
+  rdfs:range rdfs:Literal ;
+  rdfs:comment "Workspace location type, e.g. pod or local." .
+
+udfs:workspaceKind a rdf:Property ;
+  rdfs:domain udfs:Workspace ;
+  rdfs:range rdfs:Literal ;
+  rdfs:comment "Workspace kind, e.g. folder, git, or worktree." .
+
+udfs:rootUri a rdf:Property ;
+  rdfs:domain udfs:Workspace ;
+  rdfs:range rdfs:Resource ;
+  rdfs:comment "Canonical root URI for the workspace." .
+
+udfs:repoRootUri a rdf:Property ;
+  rdfs:domain udfs:Workspace ;
+  rdfs:range rdfs:Resource ;
+  rdfs:comment "Repository root URI when the workspace is git-backed." .
+
+udfs:baseRef a rdf:Property ;
+  rdfs:domain udfs:Workspace ;
+  rdfs:range rdfs:Literal .
+
+udfs:branch a rdf:Property ;
+  rdfs:domain udfs:Workspace ;
+  rdfs:range rdfs:Literal .
+
+# Policy inheritance context (reserved; resolved via workspace container in CP0)
+udfs:policyRef a rdf:Property ;
+  rdfs:domain rdfs:Resource ;
+  rdfs:range rdfs:Resource .
+
+udfs:policyVersion a rdf:Property ;
+  rdfs:domain rdfs:Resource ;
+  rdfs:range rdfs:Literal .
+
+# Lineage (reserved; CP0 does not persist derivation chain)
+udfs:parentThreadId a rdf:Property ;
+  rdfs:domain sioc:Thread ;
+  rdfs:range rdfs:Resource .
+
+# Session runtime (reserved; CP0 does not model a single status across multiple workers)
+udfs:sessionStatus a rdf:Property ;
+  rdfs:domain sioc:Thread ;
+  rdfs:range rdfs:Literal .
+
+udfs:sessionTool a rdf:Property ;
+  rdfs:domain sioc:Thread ;
+  rdfs:range rdfs:Literal .
+
+udfs:tokenUsage a rdf:Property ;
+  rdfs:domain rdfs:Resource ;
+  rdfs:range rdfs:Literal .
+
+# --------------------------------------------
+# External community-first predicate references
+# --------------------------------------------
+
+# Participants are modeled via wf:participant (community-first) on the chat resource.
+wf:participant a rdf:Property .

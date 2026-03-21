@@ -1,5 +1,5 @@
-import { definePodRepository } from './repository'
-import { contactTable, type ContactRow, type ContactInsert, type ContactUpdate } from './contact.schema'
+import { definePodRepository } from './repository.js'
+import { contactTable, type ContactRow, type ContactInsert, type ContactUpdate } from './contact.schema.js'
 
 export const contactRepository = definePodRepository<
   typeof contactTable,

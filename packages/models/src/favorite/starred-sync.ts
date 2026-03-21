@@ -9,8 +9,8 @@
  * favoriteType 使用 RDF type URI 标识
  */
 import type { HookContext, TableHooks } from '@undefineds.co/drizzle-solid'
-import { favoriteTable, type FavoriteInsert } from './favorite.schema'
-import { MEETING, SIOC } from '../namespaces'
+import { favoriteTable, type FavoriteInsert } from './favorite.schema.js'
+import { MEETING, SIOC } from '../namespaces.js'
 import { VCARD } from '@inrupt/vocab-common-rdf'
 
 // ============================================================================

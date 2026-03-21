@@ -1,8 +1,8 @@
-import type { ApprovalInsert, ApprovalUpdate } from '../approval.schema'
-import type { AuditInsert } from '../audit.schema'
-import type { GrantInsert } from '../grant.schema'
-import type { InboxNotificationInsert } from '../inbox-notification.schema'
-import type { ToolCallEvent, InboxApprovalEvent, SessionStateEvent } from './sidecar-events'
+import type { ApprovalInsert, ApprovalUpdate } from '../approval.schema.js'
+import type { AuditInsert } from '../audit.schema.js'
+import type { GrantInsert } from '../grant.schema.js'
+import type { InboxNotificationInsert } from '../inbox-notification.schema.js'
+import type { ToolCallEvent, InboxApprovalEvent, SessionStateEvent } from './sidecar-events.js'
 
 // ============================================
 // Runtime Event -> Pod Persistence Projection (CP0)

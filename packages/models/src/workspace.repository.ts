@@ -1,5 +1,5 @@
-import { definePodRepository } from './repository'
-import { workspaceTable, type WorkspaceRow, type WorkspaceInsert, type WorkspaceUpdate } from './workspace.schema'
+import { definePodRepository } from './repository.js'
+import { workspaceTable, type WorkspaceRow, type WorkspaceInsert, type WorkspaceUpdate } from './workspace.schema.js'
 
 export const workspaceRepository = definePodRepository<
   typeof workspaceTable,

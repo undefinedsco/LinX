@@ -2,5 +2,5 @@
  * Storage layer exports
  */
 
-export * from './quint';
-export * from './sparql';
+export * from './quint.js';
+export * from './sparql.js';

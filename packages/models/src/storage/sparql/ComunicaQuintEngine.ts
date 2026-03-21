@@ -11,8 +11,8 @@ import { QueryEngine } from '@comunica/query-sparql';
 import { DataFactory, Store as N3Store } from 'n3';
 import type { Quad, Term, Bindings } from '@rdfjs/types';
 import type { BindingsStream, QueryStringContext } from '@comunica/types';
-import type { QuintStore } from '../quint/types';
-import { quintToQuad } from '../quint/types';
+import type { QuintStore } from '../quint/types.js';
+import { quintToQuad } from '../quint/types.js';
 
 export interface QueryContext {
   /** Filter results to graphs with this prefix */

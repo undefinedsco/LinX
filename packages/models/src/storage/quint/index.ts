@@ -4,9 +4,9 @@
  * @module storage/quint
  */
 
-export * from './types';
-export * from './schema';
-export * from './serialization';
-export { SqliteQuintStore } from './SqliteQuintStore';
-export { PgQuintStore, type PgQuintStoreOptions } from './PgQuintStore';
-export { QuintEngine, createQuintEngine, type QuintEngineArgs } from './QuintEngine';
+export * from './types.js';
+export * from './schema.js';
+export * from './serialization.js';
+export { SqliteQuintStore } from './SqliteQuintStore.js';
+export { PgQuintStore, type PgQuintStoreOptions } from './PgQuintStore.js';
+export { QuintEngine, createQuintEngine, type QuintEngineArgs } from './QuintEngine.js';

@@ -1,18 +1,42 @@
 {
-  "name": "@linx/models",
+  "name": "@undefineds.co/models",
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./ai-config": "./src/ai-config/index.ts",
-    "./client": "./src/client/index.ts",
-    "./discovery": "./src/discovery/index.ts",
-    "./namespaces": "./src/namespaces.ts",
-    "./watch": "./src/watch/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./ai-config": {
+      "types": "./dist/ai-config/index.d.ts",
+      "default": "./dist/ai-config/index.js"
+    },
+    "./_drizzle-solid/pod-table": {
+      "types": "./dist/_drizzle-solid/pod-table.d.ts",
+      "default": "./dist/_drizzle-solid/pod-table.js"
+    },
+    "./_drizzle-solid/types": {
+      "types": "./dist/_drizzle-solid/types.d.ts",
+      "default": "./dist/_drizzle-solid/types.js"
+    },
+    "./_drizzle-solid/columns": {
+      "types": "./dist/_drizzle-solid/columns.d.ts",
+      "default": "./dist/_drizzle-solid/columns.js"
+    },
+    "./discovery": {
+      "types": "./dist/discovery/index.d.ts",
+      "default": "./dist/discovery/index.js"
+    },
+    "./namespaces": {
+      "types": "./dist/namespaces.d.ts",
+      "default": "./dist/namespaces.js"
+    }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node scripts/rewrite-dts-imports.mjs",
     "lint": "echo \"lint not configured\"",
     "sync:discovery:vercel": "node --experimental-strip-types scripts/sync-discovery-vercel.ts",
     "test": "vitest",
@@ -28,7 +52,7 @@
     "@types/pg": "^8.16.0",
     "better-sqlite3": "^11.0.0",
     "drizzle-orm": "^0.32.0",
-    "@undefineds.co/drizzle-solid": "^0.3.3",
+    "@undefineds.co/drizzle-solid": "^0.3.4",
     "n3": "^1.17.0",
     "pg": "^8.16.3",
     "quadstore": "^15.4.0",

@@ -1,5 +1,5 @@
-import { definePodRepository } from './repository'
-import { messageTable, type MessageRow, type MessageInsert, type MessageUpdate } from './message.schema'
+import { definePodRepository } from './repository.js'
+import { messageTable, type MessageRow, type MessageInsert, type MessageUpdate } from './message.schema.js'
 
 export const messageRepository = definePodRepository<
   typeof messageTable,
