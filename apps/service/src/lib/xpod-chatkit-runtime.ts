@@ -119,6 +119,14 @@ function buildDefaultBranchName(record: RuntimeThreadRecord): string {
   return `linx/${titlePart}-${idPart}`
 }
 
+function getWorkspaceRoot(record: RuntimeThreadRecord): string | undefined {
+  return record.workspace?.rootPath || record.mountPath || record.worktreePath
+}
+
+function isGitWorkspace(record: RuntimeThreadRecord): boolean {
+  return Boolean(record.workspace?.git?.repoPath || record.workspace?.capabilities?.git)
+}
+
 export class XpodPtyRuntimeRunner implements RuntimeRunner {
   private readonly ptyRuntime = getSharedPtyRuntime()
   private readonly gitService = getSharedGitService()
@@ -142,7 +150,7 @@ export class XpodPtyRuntimeRunner implements RuntimeRunner {
       ts: Date.now(),
       threadId: updated.id,
       runner: updated.tool,
-      workdir: updated.worktreePath,
+      workdir: getWorkspaceRoot(updated) || updated.repoPath,
     })
     this.host.emitEvent({
       type: 'status',
@@ -233,6 +241,21 @@ export class XpodPtyRuntimeRunner implements RuntimeRunner {
 
   private async ensureWorkspaceReady(): Promise<void> {
     const record = this.host.getRecord()
+    const workspaceRoot = record.workspace?.rootPath || record.mountPath
+    if (workspaceRoot && record.mountPath) {
+      if (!fs.existsSync(workspaceRoot)) {
+        throw new Error(`Workspace path not found: ${workspaceRoot}`)
+      }
+      return
+    }
+
+    if (record.repoPath && !isGitWorkspace(record)) {
+      if (!fs.existsSync(record.repoPath)) {
+        throw new Error(`Workspace path not found: ${record.repoPath}`)
+      }
+      return
+    }
+
     await this.gitService.assertGitRepo(record.repoPath)
 
     const usesDedicatedWorktree = record.worktreePath !== record.repoPath
@@ -254,7 +277,23 @@ export class XpodPtyRuntimeRunner implements RuntimeRunner {
   }
 
   private buildPtyConfig(record: RuntimeThreadRecord) {
-    const workspace = record.worktreePath === record.repoPath
+    const workspaceRoot = record.workspace?.rootPath || record.mountPath
+    const workspace = record.mountPath
+      ? { type: 'path' as const, rootPath: workspaceRoot! }
+      : record.workspace?.copy && workspaceRoot && isGitWorkspace(record) && record.worktreePath !== record.repoPath
+      ? { type: 'path' as const, rootPath: workspaceRoot }
+      : isGitWorkspace(record) && record.worktreePath !== record.repoPath
+      ? {
+          type: 'git' as const,
+          rootPath: record.repoPath,
+          worktree: {
+            mode: 'existing' as const,
+            path: record.worktreePath,
+          },
+        }
+      : workspaceRoot
+      ? { type: 'path' as const, rootPath: workspaceRoot }
+      : record.worktreePath === record.repoPath
       ? { type: 'path' as const, rootPath: record.repoPath }
       : {
           type: 'git' as const,

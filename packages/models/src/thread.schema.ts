@@ -12,8 +12,11 @@ import { UDFS, DCTerms, SIOC, MEETING, LINX_CHAT } from './namespaces'
  * - Thread stored as fragment in Chat's index.ttl
  * - Location: /.data/chat/{chatId}/index.ttl#{id}
  *
- * NOTE: workspace is modeled as a workspace container URI (Pod resource),
- *       and can link to Agent/policy documents via RDF references (not filesystem symlinks).
+ * NOTE:
+ * - `thread.workspace` is a storage-layer reference (URI) to a container/resource in CSS/Pod.
+ * - It is NOT the same thing as the runtime create API payload `workspace: { path, copy }`.
+ * - Runtime path/copy is an execution-time interface shape; persistence should keep the
+ *   container URI here and store portable metadata with that container/resource.
  */
 export const threadTable = podTable(
   'thread',
@@ -27,7 +30,7 @@ export const threadTable = podTable(
     title: string('title').predicate(DCTerms.title),
     starred: boolean('starred').predicate(UDFS.favorite).default(false),
 
-    // Execution context: workspace container (Agent@workspace)
+    // Storage-layer execution context reference: container/resource URI
     workspace: uri('workspace').predicate(LINX_CHAT.workspace),
 
     // Generic execution metadata shared by CLI/App runtimes.

@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 export type RuntimeThreadStatus = 'idle' | 'active' | 'paused' | 'completed' | 'error'
 export type RuntimeSessionStatus = RuntimeThreadStatus
-export type RuntimeRunnerType = 'mock' | 'xpod-pty'
 export type RuntimeToolType = 'codex' | 'claude' | 'codebuddy' | 'mock'
 export const DEFAULT_RUNTIME_TOOL: RuntimeToolType = 'codex'
 export const DEFAULT_RUNTIME_BASE_REF = 'HEAD'
@@ -14,7 +13,8 @@ export interface RuntimeThreadRecord {
   title: string
   repoPath: string
   worktreePath: string
-  runnerType: RuntimeRunnerType
+  mountId?: string
+  mountPath?: string
   tool: RuntimeToolType
   status: RuntimeThreadStatus
   tokenUsage: number
@@ -45,12 +45,20 @@ export type RuntimeSessionEvent = RuntimeThreadEvent
 export interface CreateRuntimeThreadInput {
   threadId: string
   title: string
-  repoPath: string
-  worktreePath?: string
-  runnerType?: RuntimeRunnerType
+  /**
+   * Runtime create interface shape.
+   *
+   * This is intentionally an execution API payload (`path`, `copy`) rather than the
+   * CSS storage model. Persisted thread state should keep a container/resource URI,
+   * and UI/service code can resolve that into this input shape when launching runtime.
+   */
+  workspace?: {
+    path?: string
+    copy?: boolean
+  } & {
+    rootPath?: string
+  }
   tool?: RuntimeToolType
-  baseRef?: string
-  branch?: string
 }
 
 export type CreateRuntimeSessionInput = CreateRuntimeThreadInput
@@ -77,39 +85,55 @@ async function fetchRuntimeJson<T>(input: RequestInfo, init?: RequestInit): Prom
 }
 
 export function normalizeRuntimeSessionInput(input: CreateRuntimeSessionInput): CreateRuntimeSessionInput {
-  const repoPath = input.repoPath.trim()
-  if (!repoPath) {
-    throw new Error('请先填写仓库路径。')
+  const workspacePath = input.workspace?.path?.trim() || ''
+  const workspaceRootPath = input.workspace?.rootPath?.trim() || ''
+  const primaryPath = workspacePath || workspaceRootPath
+  if (!primaryPath) {
+    throw new Error('请先填写 workspace 路径。')
   }
-
-  const worktreePath = input.worktreePath?.trim() || repoPath
-  const baseRef = input.baseRef?.trim() || DEFAULT_RUNTIME_BASE_REF
-  const branch = input.branch?.trim() || undefined
 
   return {
     ...input,
-    repoPath,
-    worktreePath,
+    workspace: input.workspace
+      ? {
+        ...input.workspace,
+        path: workspacePath || undefined,
+        copy: input.workspace.copy === true,
+        rootPath: workspaceRootPath || undefined,
+      }
+      : undefined,
     tool: input.tool ?? DEFAULT_RUNTIME_TOOL,
-    baseRef,
-    branch,
   }
 }
 
 export async function createRuntimeSession(input: CreateRuntimeSessionInput): Promise<RuntimeSessionRecord> {
-  return fetchRuntimeJson<RuntimeSessionRecord>('/api/runtime/threads', {
+  return fetchRuntimeJson<RuntimeSessionRecord>(`/api/threads/${encodeURIComponent(input.threadId)}/runtime`, {
     method: 'POST',
     body: JSON.stringify(normalizeRuntimeSessionInput(input)),
   })
 }
 
+export async function createThreadRuntimeSession(
+  threadId: string,
+  input: Omit<CreateRuntimeSessionInput, 'threadId'>,
+): Promise<RuntimeSessionRecord> {
+  return fetchRuntimeJson<RuntimeSessionRecord>(`/api/threads/${encodeURIComponent(threadId)}/runtime`, {
+    method: 'POST',
+    body: JSON.stringify(normalizeRuntimeSessionInput({ ...input, threadId })),
+  })
+}
+
 export async function startRuntimeSession(id: string): Promise<RuntimeSessionRecord> {
-  return fetchRuntimeJson<RuntimeSessionRecord>(`/api/runtime/threads/${id}/start`, { method: 'POST' })
+  throw new Error(`Direct runtime start by id is no longer supported: ${id}`)
+}
+
+export async function startThreadRuntimeSession(threadId: string): Promise<RuntimeSessionRecord> {
+  return fetchRuntimeJson<RuntimeSessionRecord>(`/api/threads/${encodeURIComponent(threadId)}/runtime/start`, { method: 'POST' })
 }
 
 export async function createAndStartRuntimeSession(input: CreateRuntimeSessionInput): Promise<RuntimeSessionRecord> {
-  const created = await createRuntimeSession(input)
-  return startRuntimeSession(created.id)
+  const created = await createThreadRuntimeSession(input.threadId, input)
+  return startThreadRuntimeSession(input.threadId)
 }
 
 export function useRuntimeSession(threadId: string | null | undefined) {
@@ -121,8 +145,13 @@ export function useRuntimeSession(threadId: string | null | undefined) {
     queryKey,
     enabled,
     queryFn: async () => {
-      const data = await fetchRuntimeJson<{ items: RuntimeSessionRecord[] }>(`/api/runtime/threads?threadId=${encodeURIComponent(threadId!)}`)
-      return data.items[0] ?? null
+      return fetchRuntimeJson<RuntimeSessionRecord>(`/api/threads/${encodeURIComponent(threadId!)}/runtime`)
+        .catch((error: unknown) => {
+          if (error instanceof Error && /404/.test(error.message)) {
+            return null
+          }
+          throw error
+        })
     },
   })
 
@@ -131,41 +160,41 @@ export function useRuntimeSession(threadId: string | null | undefined) {
   }
 
   const createSession = useMutation({
-    mutationFn: (input: CreateRuntimeSessionInput) => createRuntimeSession(input),
+    mutationFn: (input: CreateRuntimeSessionInput) => createThreadRuntimeSession(input.threadId, input),
     onSuccess: invalidate,
   })
 
   const startSession = useMutation({
-    mutationFn: (id: string) => startRuntimeSession(id),
+    mutationFn: (_id: string) => startThreadRuntimeSession(threadId!),
     onSuccess: invalidate,
   })
 
   const pauseSession = useMutation({
-    mutationFn: (id: string) => fetchRuntimeJson<RuntimeSessionRecord>(`/api/runtime/threads/${id}/pause`, { method: 'POST' }),
+    mutationFn: (_id: string) => fetchRuntimeJson<RuntimeSessionRecord>(`/api/threads/${encodeURIComponent(threadId!)}/runtime/pause`, { method: 'POST' }),
     onSuccess: invalidate,
   })
 
   const resumeSession = useMutation({
-    mutationFn: (id: string) => fetchRuntimeJson<RuntimeSessionRecord>(`/api/runtime/threads/${id}/resume`, { method: 'POST' }),
+    mutationFn: (_id: string) => fetchRuntimeJson<RuntimeSessionRecord>(`/api/threads/${encodeURIComponent(threadId!)}/runtime/resume`, { method: 'POST' }),
     onSuccess: invalidate,
   })
 
   const stopSession = useMutation({
-    mutationFn: (id: string) => fetchRuntimeJson<RuntimeSessionRecord>(`/api/runtime/threads/${id}/stop`, { method: 'POST' }),
+    mutationFn: (_id: string) => fetchRuntimeJson<RuntimeSessionRecord>(`/api/threads/${encodeURIComponent(threadId!)}/runtime/stop`, { method: 'POST' }),
     onSuccess: invalidate,
   })
 
   const sendSessionMessage = useMutation({
-    mutationFn: ({ id, text }: { id: string; text: string }) =>
-      fetchRuntimeJson<RuntimeSessionRecord>(`/api/runtime/threads/${id}/message`, {
+    mutationFn: ({ text }: { id: string; text: string }) =>
+      fetchRuntimeJson<RuntimeSessionRecord>(`/api/threads/${encodeURIComponent(threadId!)}/runtime/message`, {
         method: 'POST',
         body: JSON.stringify({ text }),
       }),
   })
 
   const respondToToolCall = useMutation({
-    mutationFn: ({ id, requestId, output }: { id: string; requestId: string; output: string }) =>
-      fetchRuntimeJson<RuntimeSessionRecord>(`/api/runtime/threads/${id}/tool-calls/${encodeURIComponent(requestId)}/respond`, {
+    mutationFn: ({ requestId, output }: { id: string; requestId: string; output: string }) =>
+      fetchRuntimeJson<RuntimeSessionRecord>(`/api/threads/${encodeURIComponent(threadId!)}/runtime/tool-calls/${encodeURIComponent(requestId)}/respond`, {
         method: 'POST',
         body: JSON.stringify({ output }),
       }),
@@ -199,16 +228,16 @@ export function useRuntimeSession(threadId: string | null | undefined) {
 export const useRuntimeThread = useRuntimeSession
 
 export function useRuntimeSessionEvents(
-  runtimeSessionId: string | null | undefined,
+  threadId: string | null | undefined,
   onEvent: (event: RuntimeSessionEvent) => void,
   enabled = true,
 ) {
   useEffect(() => {
-    if (!enabled || !runtimeSessionId || !isServiceMode()) {
+    if (!enabled || !threadId || !isServiceMode()) {
       return
     }
 
-    const eventSource = new EventSource(`/api/runtime/threads/${runtimeSessionId}/events`)
+    const eventSource = new EventSource(`/api/threads/${encodeURIComponent(threadId)}/runtime/events`)
     eventSource.onmessage = (message) => {
       try {
         const event = JSON.parse(message.data) as RuntimeSessionEvent
@@ -224,13 +253,13 @@ export function useRuntimeSessionEvents(
     return () => {
       eventSource.close()
     }
-  }, [enabled, onEvent, runtimeSessionId])
+  }, [enabled, onEvent, threadId])
 }
 
 export const useRuntimeThreadEvents = useRuntimeSessionEvents
 
-export async function fetchRuntimeSessionLog(id: string): Promise<string> {
-  const response = await fetch(`/api/runtime/threads/${id}/log`)
+export async function fetchRuntimeSessionLog(threadId: string): Promise<string> {
+  const response = await fetch(`/api/threads/${encodeURIComponent(threadId)}/runtime/log`)
   if (!response.ok) {
     throw new Error(`Failed to fetch runtime session log: ${response.status}`)
   }

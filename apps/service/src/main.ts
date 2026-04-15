@@ -9,6 +9,7 @@
 import { app, BrowserWindow, shell } from 'electron'
 import { getXpodModule } from './lib/xpod'
 import { getWebServerModule } from './lib/web-server'
+import { getRuntimeThreadsModule } from './lib/runtime-threads'
 import { getTrayModule } from './lib/tray'
 
 // Prevent multiple instances
@@ -130,6 +131,7 @@ async function stopServices(): Promise<void> {
   console.log('[LinX] Stopping services...')
 
   getTrayModule().destroy()
+  await getRuntimeThreadsModule().stopAllSessions()
   await getWebServerModule().stop()
   await getXpodModule().stop()
 

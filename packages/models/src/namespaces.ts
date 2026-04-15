@@ -197,6 +197,7 @@ export const UDFS = createNamespace('udfs', 'https://undefineds.co/ns#', {
   videoModel: 'videoModel',
   chatType: 'chatType',
   workspace: 'workspace',
+  container: 'workspace',
   policyRef: 'policyRef',
   policyVersion: 'policyVersion',
   parentThreadId: 'parentThreadId',

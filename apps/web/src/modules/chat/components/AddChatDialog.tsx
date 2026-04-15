@@ -21,7 +21,6 @@ import { useChatMutations } from '../collections'
 import { CreateGroupDialog } from '@/modules/contacts/components/CreateGroupDialog'
 import { contactOps } from '@/modules/contacts/collections'
 import {
-  DEFAULT_RUNTIME_BASE_REF,
   DEFAULT_RUNTIME_TOOL,
   createAndStartRuntimeSession,
   isRuntimeSessionMode,
@@ -61,11 +60,9 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
   const [model, setModel] = useState('')
   const [instructions, setInstructions] = useState('')
   const [createRuntime, setCreateRuntime] = useState(false)
-  const [runtimeRepoPath, setRuntimeRepoPath] = useState('')
-  const [runtimeWorktreePath, setRuntimeWorktreePath] = useState('')
+  const [runtimeContainerPath, setRuntimeContainerPath] = useState('')
+  const [runtimeCopy, setRuntimeCopy] = useState(false)
   const [runtimeTool, setRuntimeTool] = useState<RuntimeToolType>(DEFAULT_RUNTIME_TOOL)
-  const [runtimeBaseRef, setRuntimeBaseRef] = useState(DEFAULT_RUNTIME_BASE_REF)
-  const [runtimeBranch, setRuntimeBranch] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [friendSearch, setFriendSearch] = useState<FriendSearchState>({
@@ -81,11 +78,9 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
     setAgentName('')
     setInstructions('')
     setCreateRuntime(false)
-    setRuntimeRepoPath('')
-    setRuntimeWorktreePath('')
+    setRuntimeContainerPath('')
+    setRuntimeCopy(false)
     setRuntimeTool(DEFAULT_RUNTIME_TOOL)
-    setRuntimeBaseRef(DEFAULT_RUNTIME_BASE_REF)
-    setRuntimeBranch('')
     setIsSubmitting(false)
     setError(null)
     setFriendSearch({
@@ -121,13 +116,10 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
     if (mutations.createAIChat.isPending || isSubmitting) return
 
     const shouldCreateRuntime = runtimeAvailable && createRuntime
-    const normalizedRepoPath = runtimeRepoPath.trim()
-    const normalizedWorktreePath = runtimeWorktreePath.trim() || normalizedRepoPath
-    const normalizedBaseRef = runtimeBaseRef.trim() || DEFAULT_RUNTIME_BASE_REF
-    const normalizedBranch = runtimeBranch.trim()
+    const normalizedContainerPath = runtimeContainerPath.trim()
 
-    if (shouldCreateRuntime && !normalizedRepoPath) {
-      setError('启用运行时会话时请先填写仓库路径。')
+    if (shouldCreateRuntime && !normalizedContainerPath) {
+      setError('启用运行时会话时请先填写 workspace 路径。')
       return
     }
 
@@ -172,11 +164,11 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
             await createAndStartRuntimeSession({
               threadId,
               title: '默认话题',
-              repoPath: normalizedRepoPath,
-              worktreePath: normalizedWorktreePath,
+              workspace: {
+                path: normalizedContainerPath,
+                copy: runtimeCopy,
+              },
               tool: runtimeTool,
-              baseRef: normalizedBaseRef,
-              branch: normalizedBranch || undefined,
             })
           } catch (runtimeError: any) {
             console.error('Create runtime session failed:', runtimeError)
@@ -329,7 +321,7 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
             <div className="space-y-1">
               <Label htmlFor="create-runtime" className="text-sm">同时创建运行时会话</Label>
               <p className="text-xs text-muted-foreground">
-                为默认话题直接绑定 worktree，创建后即可远程继续聊天。
+                为默认话题绑定一个 workspace 路径；如果它是 Git workspace，后端会按 copy 选项决定是否创建 worktree。
               </p>
             </div>
             <Switch
@@ -342,26 +334,30 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
           {createRuntime && (
             <div className="space-y-3">
               <div className="space-y-2">
-                <Label htmlFor="runtime-repo-path">仓库路径</Label>
+                <Label htmlFor="runtime-workspace-path">Workspace 路径</Label>
                 <Input
-                  id="runtime-repo-path"
-                  value={runtimeRepoPath}
-                  onChange={(event) => setRuntimeRepoPath(event.target.value)}
-                  placeholder="例如：/Users/ganlu/develop/linx"
+                  id="runtime-workspace-path"
+                  value={runtimeContainerPath}
+                  onChange={(event) => setRuntimeContainerPath(event.target.value)}
+                  placeholder="例如：/Volumes/Linx/alice/project 或 /Users/ganlu/develop/linx"
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="runtime-worktree-path">Worktree 路径</Label>
-                <Input
-                  id="runtime-worktree-path"
-                  value={runtimeWorktreePath}
-                  onChange={(event) => setRuntimeWorktreePath(event.target.value)}
-                  placeholder="留空则默认使用仓库路径"
+              <div className="flex items-center justify-between gap-3 rounded-md border border-border/60 px-3 py-2">
+                <div className="space-y-1">
+                  <Label htmlFor="runtime-copy" className="text-sm">Copy Workspace</Label>
+                  <p className="text-xs text-muted-foreground">
+                    如果这个 workspace 具备 Git 语义，后端可据此创建独立 worktree；否则忽略。
+                  </p>
+                </div>
+                <Switch
+                  id="runtime-copy"
+                  checked={runtimeCopy}
+                  onCheckedChange={setRuntimeCopy}
                 />
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-1">
                 <div className="space-y-2">
                   <Label htmlFor="runtime-tool">工具</Label>
                   <Input
@@ -369,24 +365,6 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
                     value={runtimeTool}
                     onChange={(event) => setRuntimeTool(event.target.value as RuntimeToolType)}
                     placeholder={DEFAULT_RUNTIME_TOOL}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="runtime-base-ref">Base Ref</Label>
-                  <Input
-                    id="runtime-base-ref"
-                    value={runtimeBaseRef}
-                    onChange={(event) => setRuntimeBaseRef(event.target.value)}
-                    placeholder={DEFAULT_RUNTIME_BASE_REF}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="runtime-branch">Branch</Label>
-                  <Input
-                    id="runtime-branch"
-                    value={runtimeBranch}
-                    onChange={(event) => setRuntimeBranch(event.target.value)}
-                    placeholder="留空则自动生成"
                   />
                 </div>
               </div>

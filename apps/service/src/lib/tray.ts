@@ -5,6 +5,7 @@ import { app, Tray, Menu, nativeImage, shell } from 'electron'
 import * as path from 'path'
 import { getXpodModule } from './xpod'
 import { getWebServerModule } from './web-server'
+import { getPodMountModule } from './mount/module'
 
 export class TrayModule {
   private tray: Tray | null = null
@@ -96,6 +97,16 @@ export class TrayModule {
         click: () => {
           const target = `${(xpodStatus.publicUrl || xpodStatus.baseUrl || 'http://localhost:5737').replace(/\/$/, '')}/dashboard/`
           shell.openExternal(target)
+        },
+      },
+      {
+        label: '打开当前 Pod 挂载点',
+        click: async () => {
+          try {
+            await getPodMountModule().revealCurrent()
+          } catch (error) {
+            console.error('[Tray] Failed to reveal current mount:', error)
+          }
         },
       },
       { type: 'separator' },

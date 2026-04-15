@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { useInboxItems } from '@/modules/inbox/collections'
 import { isActionableInboxItem } from '@/modules/inbox/utils'
 import { useInboxStore } from '@/modules/inbox/store'
@@ -146,11 +147,9 @@ function RuntimeSessionToolbar({ threadId, threadTitle }: { threadId: string; th
   const runtimeSession = useRuntimeSession(threadId)
   const isSessionMode = isRuntimeSessionMode()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [repoPath, setRepoPath] = useState('')
-  const [worktreePath, setWorktreePath] = useState('')
+  const [workspacePath, setWorkspacePath] = useState('')
+  const [copyWorkspace, setCopyWorkspace] = useState(false)
   const [tool, setTool] = useState<RuntimeToolType>('codex')
-  const [baseRef, setBaseRef] = useState('HEAD')
-  const [branch, setBranch] = useState('')
   const [runtimeError, setRuntimeError] = useState<string | null>(null)
 
   const handleRuntimeSessionEvent = useCallback((event: RuntimeSessionEvent) => {
@@ -167,19 +166,16 @@ function RuntimeSessionToolbar({ threadId, threadTitle }: { threadId: string; th
   }, [runtimeSession])
 
   useRuntimeSessionEvents(
-    runtimeSession.runtimeSession?.id,
+    threadId,
     handleRuntimeSessionEvent,
     !!runtimeSession.runtimeSession,
   )
 
   const handleCreateRuntimeSession = useCallback(async () => {
-    const normalizedRepoPath = repoPath.trim()
-    const normalizedWorktreePath = worktreePath.trim() || normalizedRepoPath
-    const normalizedBaseRef = baseRef.trim() || 'HEAD'
-    const normalizedBranch = branch.trim()
+    const normalizedWorkspacePath = workspacePath.trim()
 
-    if (!normalizedRepoPath) {
-      setRuntimeError('请先填写仓库路径。')
+    if (!normalizedWorkspacePath) {
+      setRuntimeError('请先填写 workspace 路径。')
       return
     }
 
@@ -188,25 +184,23 @@ function RuntimeSessionToolbar({ threadId, threadTitle }: { threadId: string; th
       const created = await runtimeSession.createSession.mutateAsync({
         threadId,
         title: threadTitle || '运行时会话',
-        repoPath: normalizedRepoPath,
-        worktreePath: normalizedWorktreePath,
+        workspace: {
+          path: normalizedWorkspacePath,
+          copy: copyWorkspace,
+        },
         tool,
-        baseRef: normalizedBaseRef,
-        branch: normalizedBranch || undefined,
       })
       await runtimeSession.startSession.mutateAsync(created.id)
       await runtimeSession.refetch()
       setIsDialogOpen(false)
-      setRepoPath('')
-      setWorktreePath('')
+      setWorkspacePath('')
+      setCopyWorkspace(false)
       setTool('codex')
-      setBaseRef('HEAD')
-      setBranch('')
     } catch (error) {
       console.error('Create runtime session failed:', error)
       setRuntimeError(error instanceof Error ? error.message : '创建运行时会话失败。')
     }
-  }, [baseRef, branch, repoPath, runtimeSession, threadId, threadTitle, tool, worktreePath])
+  }, [workspacePath, copyWorkspace, runtimeSession, threadId, threadTitle, tool])
 
   const handlePause = useCallback(async () => {
     if (!runtimeSession.runtimeSession) return
@@ -230,7 +224,7 @@ function RuntimeSessionToolbar({ threadId, threadTitle }: { threadId: string; th
     if (!runtimeSession.runtimeSession) return
     try {
       setRuntimeError(null)
-      const log = await fetchRuntimeSessionLog(runtimeSession.runtimeSession.id)
+      const log = await fetchRuntimeSessionLog(threadId)
       await navigator.clipboard.writeText(log)
     } catch (error) {
       console.error('Copy runtime session log failed:', error)
@@ -293,32 +287,36 @@ function RuntimeSessionToolbar({ threadId, threadTitle }: { threadId: string; th
           <DialogHeader>
             <DialogTitle>创建运行时会话</DialogTitle>
             <DialogDescription>
-              为当前话题绑定一个本地运行时与 worktree。
+              为当前话题绑定一个 workspace 路径；如果它是 Git workspace，后端会按 copy 选项决定是否创建 worktree。
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="runtime-repo-path">仓库路径</Label>
+              <Label htmlFor="runtime-workspace-path">Workspace 路径</Label>
               <Input
-                id="runtime-repo-path"
-                value={repoPath}
-                onChange={(event) => setRepoPath(event.target.value)}
-                placeholder="例如：/Users/ganlu/develop/linx"
+                id="runtime-workspace-path"
+                value={workspacePath}
+                onChange={(event) => setWorkspacePath(event.target.value)}
+                placeholder="例如：/Volumes/Linx/alice/project 或 /Users/ganlu/develop/linx"
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="runtime-worktree-path">Worktree 路径</Label>
-              <Input
-                id="runtime-worktree-path"
-                value={worktreePath}
-                onChange={(event) => setWorktreePath(event.target.value)}
-                placeholder="留空则默认使用仓库路径"
+            <div className="flex items-center justify-between gap-3 rounded-md border border-border/60 px-3 py-2">
+              <div className="space-y-1">
+                <Label htmlFor="runtime-copy">Copy Workspace</Label>
+                <p className="text-xs text-muted-foreground">
+                  如果这个 workspace 具备 Git 语义，后端可据此创建独立 worktree；否则忽略。
+                </p>
+              </div>
+              <Switch
+                id="runtime-copy"
+                checked={copyWorkspace}
+                onCheckedChange={setCopyWorkspace}
               />
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-1">
               <div className="space-y-2">
                 <Label htmlFor="runtime-tool">工具</Label>
                 <Input
@@ -326,24 +324,6 @@ function RuntimeSessionToolbar({ threadId, threadTitle }: { threadId: string; th
                   value={tool}
                   onChange={(event) => setTool(event.target.value as RuntimeToolType)}
                   placeholder="codex"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="runtime-base-ref">Base Ref</Label>
-                <Input
-                  id="runtime-base-ref"
-                  value={baseRef}
-                  onChange={(event) => setBaseRef(event.target.value)}
-                  placeholder="HEAD"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="runtime-branch">Branch</Label>
-                <Input
-                  id="runtime-branch"
-                  value={branch}
-                  onChange={(event) => setBranch(event.target.value)}
-                  placeholder="留空则自动生成"
                 />
               </div>
             </div>

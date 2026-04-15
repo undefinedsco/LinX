@@ -6,6 +6,7 @@ const mockUseInboxItems = vi.fn()
 const mockSelectInboxItem = vi.fn()
 const mockSetInboxFilter = vi.fn()
 const mockSetThreadId = vi.fn()
+const mockCreateSessionMutateAsync = vi.fn()
 
 const storeState = {
   selectedChatId: 'chat-1',
@@ -91,11 +92,11 @@ vi.mock('../collections', () => ({
 
 vi.mock('../runtime-client', () => ({
   fetchRuntimeSessionLog: vi.fn(),
-  isRuntimeSessionMode: () => false,
+  isRuntimeSessionMode: () => true,
   useRuntimeSession: () => ({
     runtimeSession: null,
     refetch: vi.fn(),
-    createSession: { isPending: false, mutateAsync: vi.fn() },
+    createSession: { isPending: false, mutateAsync: mockCreateSessionMutateAsync },
     startSession: { isPending: false, mutateAsync: vi.fn() },
     pauseSession: { isPending: false, mutateAsync: vi.fn() },
     resumeSession: { isPending: false, mutateAsync: vi.fn() },
@@ -109,6 +110,7 @@ import { ChatContentPane } from './ChatContentPane'
 describe('ChatContentPane', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockCreateSessionMutateAsync.mockResolvedValue({ id: 'runtime-1' })
     mockUseInboxItems.mockReturnValue({
       data: [],
       isLoading: false,
@@ -171,5 +173,24 @@ describe('ChatContentPane', () => {
 
     expect(screen.getByText('当前话题等待认证')).toBeInTheDocument()
     expect(screen.getByText('请先在收件箱完成认证，再继续当前 runtime 会话。')).toBeInTheDocument()
+  })
+
+  it('creates thread runtime from workspace path + copy', async () => {
+    render(<ChatContentPane theme="light" />)
+
+    fireEvent.click(screen.getByRole('button', { name: '创建运行时会话' }))
+    fireEvent.change(screen.getByLabelText('Workspace 路径'), { target: { value: '/Volumes/Linx/alice/project' } })
+    fireEvent.click(screen.getByLabelText('Copy Workspace'))
+    fireEvent.click(screen.getByRole('button', { name: '创建并启动' }))
+
+    expect(mockCreateSessionMutateAsync).toHaveBeenCalledWith({
+      threadId: 'thread-1',
+      title: '默认话题',
+      workspace: {
+        path: '/Volumes/Linx/alice/project',
+        copy: true,
+      },
+      tool: 'codex',
+    })
   })
 })

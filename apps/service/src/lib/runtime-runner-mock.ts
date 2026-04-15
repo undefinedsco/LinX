@@ -15,12 +15,15 @@ function chunkText(text: string, targetChunks = 3): string[] {
 }
 
 function buildMockReply(record: RuntimeThreadRecord, text: string): string {
+  const workspaceRoot = record.workspace?.rootPath || record.mountPath || record.worktreePath
   return [
     `已在运行时会话中收到你的请求：${text}`,
     `当前仓库：${record.repoPath}`,
     `当前 worktree：${record.worktreePath}`,
+    record.mountPath ? `当前 Pod 挂载点：${record.mountPath}` : undefined,
+    workspaceRoot ? `当前 workspace 根：${workspaceRoot}` : undefined,
     '现在走的是 Phase 3 最小远程链路：消息经由 service 转发，回复再回写到 Pod。',
-  ].join('\n')
+  ].filter((line): line is string => typeof line === 'string').join('\n')
 }
 
 function buildMockToolResponse(record: RuntimeThreadRecord, requestId: string, output: string): string {
@@ -43,7 +46,7 @@ export class MockRuntimeRunner implements RuntimeRunner {
       ts: Date.now(),
       threadId: record.id,
       runner: record.tool,
-      workdir: record.worktreePath,
+      workdir: record.workspace?.rootPath || record.mountPath || record.worktreePath,
     })
     this.host.emitEvent({
       type: 'status',

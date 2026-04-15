@@ -82,12 +82,15 @@ vi.mock('../collections', () => ({
   }),
 }))
 
-vi.mock('../runtime-client', () => ({
-  DEFAULT_RUNTIME_BASE_REF: 'HEAD',
-  DEFAULT_RUNTIME_TOOL: 'codex',
-  createAndStartRuntimeSession: (input: unknown) => mockCreateAndStartRuntimeSession(input),
-  isRuntimeSessionMode: () => mockIsRuntimeSessionMode(),
-}))
+vi.mock('../runtime-client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../runtime-client')>()
+  return {
+    ...actual,
+    createAndStartRuntimeSession: (input: unknown) => mockCreateAndStartRuntimeSession(input),
+    createThreadRuntimeSession: (threadId: string, input: unknown) => mockCreateAndStartRuntimeSession({ threadId, ...(input as object) }),
+    isRuntimeSessionMode: () => mockIsRuntimeSessionMode(),
+  }
+})
 
 vi.mock('@/modules/contacts/collections', () => ({
   contactOps: {
@@ -144,8 +147,8 @@ describe('AddChatDialog', () => {
 
     fireEvent.change(screen.getByLabelText('助手名称'), { target: { value: '代码助手' } })
     fireEvent.click(screen.getByLabelText('同时创建运行时会话'))
-    fireEvent.change(screen.getByLabelText('仓库路径'), { target: { value: '/repo/linx' } })
-    fireEvent.change(screen.getByLabelText('Branch'), { target: { value: 'feature/runtime' } })
+    fireEvent.change(screen.getByLabelText('Workspace 路径'), { target: { value: '/repo/linx' } })
+    fireEvent.click(screen.getByLabelText('Copy Workspace'))
     fireEvent.click(screen.getByRole('button', { name: '创建' }))
 
     await waitFor(() => {
@@ -165,11 +168,11 @@ describe('AddChatDialog', () => {
     expect(mockCreateAndStartRuntimeSession).toHaveBeenCalledWith({
       threadId: 'thread-1',
       title: '默认话题',
-      repoPath: '/repo/linx',
-      worktreePath: '/repo/linx',
+      workspace: {
+        path: '/repo/linx',
+        copy: true,
+      },
       tool: 'codex',
-      baseRef: 'HEAD',
-      branch: 'feature/runtime',
     })
 
     expect(mockSelectChat).toHaveBeenCalledWith('chat-1')
@@ -179,15 +182,33 @@ describe('AddChatDialog', () => {
     expect(mockToast).not.toHaveBeenCalled()
   })
 
-  it('blocks submit when runtime is enabled without repo path', async () => {
+  it('blocks submit when runtime is enabled without workspace path', async () => {
     render(<AddChatDialog />)
 
     fireEvent.click(screen.getByLabelText('同时创建运行时会话'))
     fireEvent.click(screen.getByRole('button', { name: '创建' }))
 
-    expect(await screen.findByText('启用运行时会话时请先填写仓库路径。')).toBeInTheDocument()
+    expect(await screen.findByText('启用运行时会话时请先填写 workspace 路径。')).toBeInTheDocument()
     expect(mockCreateAIChat).not.toHaveBeenCalled()
     expect(mockCreateAndStartRuntimeSession).not.toHaveBeenCalled()
+  })
+
+  it('normalizes workspace.path + copy runtime input', async () => {
+    const runtimeClient = await import('../runtime-client')
+
+    const normalized = runtimeClient.normalizeRuntimeSessionInput({
+      threadId: 'thread-1',
+      title: 'Workspace Runtime',
+      workspace: {
+        path: '/Volumes/Linx/alice/project',
+        copy: true,
+      },
+      tool: 'codex',
+    })
+
+    expect(normalized.workspace?.path).toBe('/Volumes/Linx/alice/project')
+    expect(normalized.workspace?.copy).toBe(true)
+    expect(normalized.tool).toBe('codex')
   })
 
   it('searches webid and creates a friend chat', async () => {

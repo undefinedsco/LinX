@@ -59,7 +59,7 @@ describe('Wave A CP0 contracts: centralized vocabs', () => {
     expect(ChatBaseVocab.participants).toBe(WF.participant)
   })
 
-  it('ThreadVocab exposes workspace container context', () => {
+  it('ThreadVocab exposes workspace context', () => {
     expect(ThreadVocab.workspace).toBe(LINX_CHAT.workspace)
   })
 

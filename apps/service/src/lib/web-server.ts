@@ -7,6 +7,9 @@ import express, { Express, Request, Response } from 'express'
 import { Server } from 'http'
 import { getXpodModule } from './xpod'
 import { getRuntimeThreadsModule } from './runtime-threads'
+import { getPodMountModule } from './mount/module'
+import type { PodMountRecord } from './mount/types'
+import type { PodMountModule } from './mount/module'
 
 interface SetupData {
   dataDir: string
@@ -33,10 +36,41 @@ interface SetupData {
 }
 
 
-// Config paths
-const CONFIG_DIR = path.join(process.env.HOME || '', 'Library', 'Application Support', 'LinX')
-const ENV_PATH = path.join(CONFIG_DIR, '.env')
-const SETUP_FLAG_PATH = path.join(CONFIG_DIR, '.setup-complete')
+function getConfigDir(): string {
+  return path.join(process.env.HOME || '', 'Library', 'Application Support', 'LinX')
+}
+
+function getEnvPathInternal(): string {
+  return path.join(getConfigDir(), '.env')
+}
+
+function getSetupFlagPath(): string {
+  return path.join(getConfigDir(), '.setup-complete')
+}
+
+
+export function serializeMountForResponse(record: PodMountRecord) {
+  return {
+    id: record.id,
+    label: record.label,
+    source: record.source,
+    status: record.status,
+    finderVisible: record.finderVisible,
+    podBaseUrls: record.podBaseUrls,
+    podNames: record.podNames,
+    mounts: record.mounts,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    lastUsedAt: record.lastUsedAt,
+    lastError: record.lastError,
+    mountId: record.id,
+    mountPath: record.rootPath,
+  }
+}
+
+export function serializeOwnerSessionStatus(module: Pick<PodMountModule, 'getLeaseStatus'>, record: Pick<PodMountRecord, 'ownerKey' | 'ownerWebId'> | null) {
+  return record ? module.getLeaseStatus(record) : null
+}
 
 export class WebServerModule {
   private app: Express
@@ -142,15 +176,16 @@ export class WebServerModule {
 
     // Check if setup is completed
     this.app.get('/api/setup/status', (_req: Request, res: Response) => {
-      const setupCompleted = fs.existsSync(SETUP_FLAG_PATH)
+      const setupCompleted = fs.existsSync(getSetupFlagPath())
       res.json({ setupCompleted })
     })
 
     // Get current .env config
     this.app.get('/api/setup/config', (_req: Request, res: Response) => {
       try {
-        if (fs.existsSync(ENV_PATH)) {
-          const envContent = fs.readFileSync(ENV_PATH, 'utf-8')
+        const envPath = getEnvPathInternal()
+        if (fs.existsSync(envPath)) {
+          const envContent = fs.readFileSync(envPath, 'utf-8')
           const env: Record<string, string> = {}
 
           for (const line of envContent.split('\n')) {
@@ -163,7 +198,7 @@ export class WebServerModule {
           const tunnelProvider = env.LINX_TUNNEL_PROVIDER || (env.CLOUDFLARE_TUNNEL_TOKEN ? 'cloudflare' : env.SAKURA_TOKEN ? 'sakura' : '')
 
           res.json({
-            dataDir: env.CSS_ROOT_FILE_PATH || path.join(CONFIG_DIR, 'pod'),
+            dataDir: env.CSS_ROOT_FILE_PATH || path.join(getConfigDir(), 'pod'),
             port: parseInt(env.CSS_PORT || '5737', 10),
             baseUrl: env.CSS_BASE_URL || 'http://localhost:5737',
             deploymentMode: (env.LINX_DEPLOYMENT_MODE as 'local' | 'standalone') || 'local',
@@ -179,7 +214,7 @@ export class WebServerModule {
         } else {
           // Return defaults
           res.json({
-            dataDir: path.join(CONFIG_DIR, 'pod'),
+            dataDir: path.join(getConfigDir(), 'pod'),
             port: 5737,
             baseUrl: 'http://localhost:5737',
             deploymentMode: 'local',
@@ -210,12 +245,13 @@ export class WebServerModule {
         }
 
         if (data.network?.accessMode === 'tunnel' && data.network.tunnelProvider && !data.network.tunnelToken) {
-          if (!fs.existsSync(ENV_PATH)) {
+          const envPath = getEnvPathInternal()
+          if (!fs.existsSync(envPath)) {
             res.status(400).json({ error: 'tunnelToken is required for new tunnel configuration' })
             return
           }
 
-          const envContent = fs.readFileSync(ENV_PATH, 'utf-8')
+          const envContent = fs.readFileSync(envPath, 'utf-8')
           const env: Record<string, string> = {}
           for (const line of envContent.split('\n')) {
             const match = line.match(/^([A-Z_]+)=(.+)$/)
@@ -234,8 +270,9 @@ export class WebServerModule {
         }
 
         // Ensure config directory exists
-        if (!fs.existsSync(CONFIG_DIR)) {
-          fs.mkdirSync(CONFIG_DIR, { recursive: true })
+        const configDir = getConfigDir()
+        if (!fs.existsSync(configDir)) {
+          fs.mkdirSync(configDir, { recursive: true })
         }
 
         // Ensure data directory exists
@@ -245,13 +282,14 @@ export class WebServerModule {
 
         // Write .env file
         const envContent = this.generateEnvContent(data)
-        fs.writeFileSync(ENV_PATH, envContent)
-        console.log('[WebServer] Generated .env file:', ENV_PATH)
+        const envPath = getEnvPathInternal()
+        fs.writeFileSync(envPath, envContent)
+        console.log('[WebServer] Generated .env file:', envPath)
 
         // Mark setup as complete
-        fs.writeFileSync(SETUP_FLAG_PATH, new Date().toISOString())
+        fs.writeFileSync(getSetupFlagPath(), new Date().toISOString())
 
-        res.json({ success: true, envPath: ENV_PATH })
+        res.json({ success: true, envPath: envPath })
       } catch (error) {
         console.error('[WebServer] Failed to save setup:', error)
         res.status(500).json({ error: 'Failed to save configuration' })
@@ -261,7 +299,7 @@ export class WebServerModule {
     // Get service status
     this.app.get('/api/service/status', (_req: Request, res: Response) => {
       const xpodStatus = getXpodModule().getStatus()
-      const setupCompleted = fs.existsSync(SETUP_FLAG_PATH)
+      const setupCompleted = fs.existsSync(getSetupFlagPath())
 
       res.json({
         pod: {
@@ -271,7 +309,7 @@ export class WebServerModule {
           running: xpodStatus.running,
         },
         setupCompleted,
-        envPath: ENV_PATH,
+        envPath: getEnvPathInternal(),
       })
     })
 
@@ -288,6 +326,7 @@ export class WebServerModule {
 
     this.app.post('/api/service/stop', async (_req: Request, res: Response) => {
       try {
+        await getRuntimeThreadsModule().stopAllSessions()
         await getXpodModule().stop()
         res.json({ success: true })
       } catch (error) {
@@ -307,15 +346,8 @@ export class WebServerModule {
     })
 
 
-    // Runtime session APIs (Phase 3 internal-first)
-    this.app.get('/api/runtime/threads', (req: Request, res: Response) => {
-      const threadId = typeof req.query.threadId === 'string' ? req.query.threadId : undefined
-      const runtimeSessions = getRuntimeThreadsModule().listSessions(threadId)
-      res.json({ items: runtimeSessions })
-    })
-
-    this.app.get('/api/runtime/threads/:id', (req: Request, res: Response) => {
-      const session = getRuntimeThreadsModule().getSession(req.params.id)
+    this.app.get('/api/threads/:threadId/runtime', (req: Request, res: Response) => {
+      const session = getRuntimeThreadsModule().getSessionByChatThread(req.params.threadId)
       if (!session) {
         res.status(404).json({ error: 'Runtime session not found' })
         return
@@ -323,116 +355,159 @@ export class WebServerModule {
       res.json(session)
     })
 
-    this.app.post('/api/runtime/threads', (req: Request, res: Response) => {
+    this.app.post('/api/threads/:threadId/runtime', async (req: Request, res: Response) => {
       try {
-        const { threadId, title, repoPath, worktreePath, runnerType, tool, baseRef, branch } = req.body ?? {}
-        if (!threadId || !title || !repoPath) {
-          res.status(400).json({ error: 'threadId, title, and repoPath are required' })
+        const {
+          title,
+          workspace,
+          tool,
+        } = req.body ?? {}
+        const threadId = req.params.threadId
+        const normalizedWorkspace = workspace && typeof workspace === 'object'
+          ? workspace as Record<string, any>
+          : null
+
+        const workspacePath = workspace && typeof workspace === 'object' && typeof workspace.path === 'string'
+          ? workspace.path
+          : undefined
+        const hasWorkspacePath = typeof workspacePath === 'string' && workspacePath.trim().length > 0
+
+        if (!threadId || !hasWorkspacePath) {
+          res.status(400).json({ error: 'threadId and workspace.path are required' })
           return
         }
 
-        const session = getRuntimeThreadsModule().createSession({
+        const session = await getRuntimeThreadsModule().createSession({
           threadId,
-          title,
-          repoPath,
-          worktreePath,
-          runnerType,
+          title: typeof title === 'string' && title.trim().length > 0 ? title : '运行时会话',
+          workspace: normalizedWorkspace as any,
           tool,
-          baseRef,
-          branch,
         })
         res.json(session)
       } catch (error) {
-        console.error('[WebServer] Failed to create runtime session:', error)
+        console.error('[WebServer] Failed to create thread-bound runtime session:', error)
         res.status(500).json({ error: 'Failed to create runtime session' })
       }
     })
 
-    this.app.post('/api/runtime/threads/:id/start', async (req: Request, res: Response) => {
+    this.app.post('/api/threads/:threadId/runtime/start', async (req: Request, res: Response) => {
       try {
-        const session = await getRuntimeThreadsModule().startSession(req.params.id)
+        const existing = getRuntimeThreadsModule().getSessionByChatThread(req.params.threadId)
+        if (!existing) {
+          res.status(404).json({ error: 'Runtime session not found' })
+          return
+        }
+        const session = await getRuntimeThreadsModule().startSession(existing.id)
         res.json(session)
       } catch (error) {
-        console.error('[WebServer] Failed to start runtime session:', error)
+        console.error('[WebServer] Failed to start thread-bound runtime session:', error)
         res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to start runtime session' })
       }
     })
 
-    this.app.post('/api/runtime/threads/:id/pause', async (req: Request, res: Response) => {
+    this.app.post('/api/threads/:threadId/runtime/pause', async (req: Request, res: Response) => {
       try {
-        const session = await getRuntimeThreadsModule().pauseSession(req.params.id)
+        const existing = getRuntimeThreadsModule().getSessionByChatThread(req.params.threadId)
+        if (!existing) {
+          res.status(404).json({ error: 'Runtime session not found' })
+          return
+        }
+        const session = await getRuntimeThreadsModule().pauseSession(existing.id)
         res.json(session)
       } catch (error) {
-        console.error('[WebServer] Failed to pause runtime session:', error)
+        console.error('[WebServer] Failed to pause thread-bound runtime session:', error)
         res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to pause runtime session' })
       }
     })
 
-    this.app.post('/api/runtime/threads/:id/resume', async (req: Request, res: Response) => {
+    this.app.post('/api/threads/:threadId/runtime/resume', async (req: Request, res: Response) => {
       try {
-        const session = await getRuntimeThreadsModule().resumeSession(req.params.id)
+        const existing = getRuntimeThreadsModule().getSessionByChatThread(req.params.threadId)
+        if (!existing) {
+          res.status(404).json({ error: 'Runtime session not found' })
+          return
+        }
+        const session = await getRuntimeThreadsModule().resumeSession(existing.id)
         res.json(session)
       } catch (error) {
-        console.error('[WebServer] Failed to resume runtime session:', error)
+        console.error('[WebServer] Failed to resume thread-bound runtime session:', error)
         res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to resume runtime session' })
       }
     })
 
-    this.app.post('/api/runtime/threads/:id/stop', async (req: Request, res: Response) => {
+    this.app.post('/api/threads/:threadId/runtime/stop', async (req: Request, res: Response) => {
       try {
-        const session = await getRuntimeThreadsModule().stopSession(req.params.id)
+        const existing = getRuntimeThreadsModule().getSessionByChatThread(req.params.threadId)
+        if (!existing) {
+          res.status(404).json({ error: 'Runtime session not found' })
+          return
+        }
+        const session = await getRuntimeThreadsModule().stopSession(existing.id)
         res.json(session)
       } catch (error) {
-        console.error('[WebServer] Failed to stop runtime session:', error)
+        console.error('[WebServer] Failed to stop thread-bound runtime session:', error)
         res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to stop runtime session' })
       }
     })
 
-    this.app.post('/api/runtime/threads/:id/message', async (req: Request, res: Response) => {
+    this.app.post('/api/threads/:threadId/runtime/message', async (req: Request, res: Response) => {
       try {
+        const existing = getRuntimeThreadsModule().getSessionByChatThread(req.params.threadId)
+        if (!existing) {
+          res.status(404).json({ error: 'Runtime session not found' })
+          return
+        }
         const text = typeof req.body?.text === 'string' ? req.body.text.trim() : ''
         if (!text) {
           res.status(400).json({ error: 'text is required' })
           return
         }
-
-        const session = await getRuntimeThreadsModule().sendSessionMessage(req.params.id, text)
+        const session = await getRuntimeThreadsModule().sendSessionMessage(existing.id, text)
         res.json(session)
       } catch (error) {
-        console.error('[WebServer] Failed to send runtime session message:', error)
+        console.error('[WebServer] Failed to send thread-bound runtime session message:', error)
         res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to send runtime session message' })
       }
     })
 
-    this.app.post('/api/runtime/threads/:id/tool-calls/:requestId/respond', async (req: Request, res: Response) => {
+    this.app.post('/api/threads/:threadId/runtime/tool-calls/:requestId/respond', async (req: Request, res: Response) => {
       try {
+        const existing = getRuntimeThreadsModule().getSessionByChatThread(req.params.threadId)
+        if (!existing) {
+          res.status(404).json({ error: 'Runtime session not found' })
+          return
+        }
         const output = typeof req.body?.output === 'string' ? req.body.output : ''
         if (!output.trim()) {
           res.status(400).json({ error: 'output is required' })
           return
         }
-
-        const session = await getRuntimeThreadsModule().respondToSessionToolCall(req.params.id, req.params.requestId, output)
+        const session = await getRuntimeThreadsModule().respondToSessionToolCall(existing.id, req.params.requestId, output)
         res.json(session)
       } catch (error) {
-        console.error('[WebServer] Failed to respond runtime tool call:', error)
+        console.error('[WebServer] Failed to respond thread-bound runtime tool call:', error)
         res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to respond runtime tool call' })
       }
     })
 
-    this.app.get('/api/runtime/threads/:id/log', (req: Request, res: Response) => {
+    this.app.get('/api/threads/:threadId/runtime/log', (req: Request, res: Response) => {
       try {
-        const log = getRuntimeThreadsModule().getSessionLog(req.params.id)
+        const existing = getRuntimeThreadsModule().getSessionByChatThread(req.params.threadId)
+        if (!existing) {
+          res.status(404).json({ error: 'Runtime session not found' })
+          return
+        }
+        const log = getRuntimeThreadsModule().getSessionLog(existing.id)
         res.type('text/plain').send(log)
       } catch (error) {
-        console.error('[WebServer] Failed to get runtime session log:', error)
+        console.error('[WebServer] Failed to get thread-bound runtime session log:', error)
         res.status(500).json({ error: 'Failed to get runtime session log' })
       }
     })
 
-    this.app.get('/api/runtime/threads/:id/events', (req: Request, res: Response) => {
+    this.app.get('/api/threads/:threadId/runtime/events', (req: Request, res: Response) => {
       const runtimeSessions = getRuntimeThreadsModule()
-      const session = runtimeSessions.getSession(req.params.id)
+      const session = runtimeSessions.getSessionByChatThread(req.params.threadId)
       if (!session) {
         res.status(404).json({ error: 'Runtime session not found' })
         return
@@ -443,7 +518,7 @@ export class WebServerModule {
       res.setHeader('Connection', 'keep-alive')
       res.flushHeaders?.()
 
-      const unsubscribe = runtimeSessions.subscribeSession(req.params.id, (event) => {
+      const unsubscribe = runtimeSessions.subscribeSession(session.id, (event) => {
         res.write(`data: ${JSON.stringify(event)}\n\n`)
       })
 
@@ -455,6 +530,121 @@ export class WebServerModule {
       })
     })
 
+    // Canonical Pod mount APIs (mount-first product contract)
+    this.app.get('/api/mounts', (_req: Request, res: Response) => {
+      const mountModule = getPodMountModule()
+      res.json({
+        items: mountModule.listForCurrentOwner().map((record) => serializeMountForResponse(record)),
+        ownerSessionStatus: serializeOwnerSessionStatus(mountModule, mountModule.listForCurrentOwner()[0] ?? null),
+      })
+    })
+
+    this.app.post('/api/mounts/current/ensure', async (req: Request, res: Response) => {
+      try {
+        const revealInFinder = req.body?.revealInFinder === true
+        const mount = await getPodMountModule().ensureCurrent({ revealInFinder })
+        const mountModule = getPodMountModule()
+        res.json({
+          ...serializeMountForResponse(mount),
+          ownerSessionStatus: serializeOwnerSessionStatus(mountModule, mount),
+        })
+      } catch (error) {
+        console.error('[WebServer] Failed to ensure current mount:', error)
+        const message = error instanceof Error ? error.message : 'Failed to ensure current mount'
+        const status = /No active Linx session/i.test(message)
+          ? 404
+          : /No authorized pod primitives/i.test(message)
+            ? 400
+            : 500
+        res.status(status).json({ error: message })
+      }
+    })
+
+    this.app.get('/api/mounts/current', (_req: Request, res: Response) => {
+      try {
+        const session = getPodMountModule().peekOwnerContext()
+        if (!session?.ownerKey) {
+          res.status(404).json({ error: 'No active Linx session available' })
+          return
+        }
+
+        const mount = getPodMountModule().findLatestForOwner(session.ownerKey, session.ownerWebId)
+        if (!mount) {
+          res.status(404).json({ error: 'Current mount not found' })
+          return
+        }
+
+        const mountModule = getPodMountModule()
+        res.json({
+          ...serializeMountForResponse(mount),
+          ownerSessionStatus: serializeOwnerSessionStatus(mountModule, mount),
+        })
+      } catch (error) {
+        console.error('[WebServer] Failed to get current mount:', error)
+        res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to get current mount' })
+      }
+    })
+
+    this.app.get('/api/mounts/:id', (req: Request, res: Response) => {
+      const mount = getPodMountModule().getForCurrentOwner(req.params.id)
+      if (!mount) {
+        res.status(404).json({ error: 'Mount not found' })
+        return
+      }
+      const mountModule = getPodMountModule()
+      res.json({
+        ...serializeMountForResponse(mount),
+        ownerSessionStatus: serializeOwnerSessionStatus(mountModule, mount),
+      })
+    })
+
+    this.app.post('/api/mounts/current/reveal', async (_req: Request, res: Response) => {
+      try {
+        const mount = await getPodMountModule().revealCurrent()
+        const mountModule = getPodMountModule()
+        res.json({
+          ...serializeMountForResponse(mount),
+          ownerSessionStatus: serializeOwnerSessionStatus(mountModule, mount),
+        })
+      } catch (error) {
+        console.error('[WebServer] Failed to reveal current mount:', error)
+        const message = error instanceof Error ? error.message : 'Failed to reveal current mount'
+        const status = /No active Linx session/i.test(message) ? 404 : 500
+        res.status(status).json({ error: message })
+      }
+    })
+
+    this.app.post('/api/mounts/:id/reveal', async (req: Request, res: Response) => {
+      try {
+        const mount = await getPodMountModule().revealForCurrentOwner(req.params.id)
+        const mountModule = getPodMountModule()
+        res.json({
+          ...serializeMountForResponse(mount),
+          ownerSessionStatus: serializeOwnerSessionStatus(mountModule, mount),
+        })
+      } catch (error) {
+        console.error('[WebServer] Failed to reveal mount:', error)
+        const message = error instanceof Error ? error.message : 'Failed to reveal mount'
+        const status = /current owner/i.test(message) ? 404 : 500
+        res.status(status).json({ error: message })
+      }
+    })
+
+    this.app.delete('/api/mounts/:id', async (req: Request, res: Response) => {
+      try {
+        const mount = await getPodMountModule().removeForCurrentOwner(req.params.id)
+        res.json({
+          success: true,
+          mount: serializeMountForResponse(mount),
+          ownerSessionStatus: serializeOwnerSessionStatus(getPodMountModule(), mount),
+        })
+      } catch (error) {
+        console.error('[WebServer] Failed to remove mount:', error)
+        const message = error instanceof Error ? error.message : 'Failed to remove mount'
+        const status = /current owner|Mount not found/i.test(message) ? 404 : 500
+        res.status(status).json({ error: message })
+      }
+    })
     // Serve static files with injection
     if (fs.existsSync(distDir)) {
       // Inject __LINX_SERVICE__ into index.html
@@ -548,14 +738,14 @@ export class WebServerModule {
    * Check if setup is completed
    */
   isSetupCompleted(): boolean {
-    return fs.existsSync(SETUP_FLAG_PATH)
+    return fs.existsSync(getSetupFlagPath())
   }
 
   /**
    * Get .env file path
    */
   getEnvPath(): string {
-    return ENV_PATH
+    return getEnvPathInternal()
   }
 }
 

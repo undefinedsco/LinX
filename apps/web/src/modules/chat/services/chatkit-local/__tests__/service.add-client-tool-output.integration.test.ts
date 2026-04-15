@@ -136,27 +136,25 @@ describe('LocalChatKitService add_client_tool_output integration', () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
 
-      if (url === '/api/runtime/threads?threadId=thread-1') {
+      if (url === '/api/threads/thread-1/runtime') {
         return new Response(JSON.stringify({
-          items: [{
-            id: 'runtime-1',
-            threadId: 'thread-1',
-            title: 'Demo Runtime',
-            tool: 'codex',
-            status: 'active',
-            tokenUsage: 0,
-          }],
+          id: 'runtime-1',
+          threadId: 'thread-1',
+          title: 'Demo Runtime',
+          tool: 'codex',
+          status: 'active',
+          tokenUsage: 0,
         }), { status: 200, headers: { 'Content-Type': 'application/json' } })
       }
 
-      if (url === '/api/runtime/threads/runtime-1/events') {
+      if (url === '/api/threads/thread-1/runtime/events') {
         return createSseResponse([
           { type: 'assistant_delta', ts: 1, threadId: 'runtime-1', text: '继续处理 ' },
           { type: 'assistant_done', ts: 2, threadId: 'runtime-1', text: '继续处理 完成' },
         ])
       }
 
-      if (url === '/api/runtime/threads/runtime-1/tool-calls/call-1/respond') {
+      if (url === '/api/threads/thread-1/runtime/tool-calls/call-1/respond') {
         return new Response(JSON.stringify({ success: true }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
@@ -213,27 +211,25 @@ describe('LocalChatKitService add_client_tool_output integration', () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
 
-      if (url === '/api/runtime/threads?threadId=thread-1') {
+      if (url === '/api/threads/thread-1/runtime') {
         return new Response(JSON.stringify({
-          items: [{
-            id: 'runtime-1',
-            threadId: 'thread-1',
-            title: 'Demo Runtime',
-            tool: 'codex',
-            status: 'active',
-            tokenUsage: 0,
-          }],
+          id: 'runtime-1',
+          threadId: 'thread-1',
+          title: 'Demo Runtime',
+          tool: 'codex',
+          status: 'active',
+          tokenUsage: 0,
         }), { status: 200, headers: { 'Content-Type': 'application/json' } })
       }
 
-      if (url === '/api/runtime/threads/runtime-1/events') {
+      if (url === '/api/threads/thread-1/runtime/events') {
         return createSseResponse([
           { type: 'assistant_delta', ts: 1, threadId: 'runtime-1', text: '先检查一下。' },
           { type: 'tool_call', ts: 2, threadId: 'runtime-1', requestId: 'call-2', name: 'open_url', arguments: '{"url":"https://example.com/auth"}' },
         ])
       }
 
-      if (url === '/api/runtime/threads/runtime-1/tool-calls/call-1/respond') {
+      if (url === '/api/threads/thread-1/runtime/tool-calls/call-1/respond') {
         return new Response(JSON.stringify({ success: true }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },

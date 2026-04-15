@@ -420,24 +420,22 @@ export class LocalChatKitService {
   private async getRuntimeThread(threadId: string): Promise<RuntimeThreadRecord | null> {
     if (!this.isServiceMode()) return null
 
-    const response = await fetch(`/api/runtime/threads?threadId=${encodeURIComponent(threadId)}`)
+    const response = await fetch(`/api/threads/${encodeURIComponent(threadId)}/runtime`)
     if (!response.ok) return null
-
-    const data = await response.json() as { items?: RuntimeThreadRecord[] }
-    return data.items?.[0] ?? null
+    return response.json() as Promise<RuntimeThreadRecord>
   }
 
   private async ensureRuntimeThreadActive(runtimeThread: RuntimeThreadRecord): Promise<void> {
     if (runtimeThread.status === 'active') return
 
     if (runtimeThread.status === 'paused') {
-      const response = await fetch(`/api/runtime/threads/${runtimeThread.id}/resume`, { method: 'POST' })
+      const response = await fetch(`/api/threads/${encodeURIComponent(runtimeThread.threadId)}/runtime/resume`, { method: 'POST' })
       if (!response.ok) throw new Error('Failed to resume runtime thread')
       return
     }
 
     if (runtimeThread.status === 'idle' || runtimeThread.status === 'completed') {
-      const response = await fetch(`/api/runtime/threads/${runtimeThread.id}/start`, { method: 'POST' })
+      const response = await fetch(`/api/threads/${encodeURIComponent(runtimeThread.threadId)}/runtime/start`, { method: 'POST' })
       if (!response.ok) throw new Error('Failed to start runtime thread')
       return
     }
@@ -549,7 +547,7 @@ export class LocalChatKitService {
     await this.ensureRuntimeThreadActive(runtimeThread)
 
     const controller = new AbortController()
-    const response = await fetch(`/api/runtime/threads/${runtimeThread.id}/events`, {
+    const response = await fetch(`/api/threads/${encodeURIComponent(runtimeThread.threadId)}/runtime/events`, {
       method: 'GET',
       headers: { Accept: 'text/event-stream' },
       signal: controller.signal,
@@ -661,7 +659,7 @@ export class LocalChatKitService {
       assistantItem,
       assistantItemId,
       context,
-      () => fetch(`/api/runtime/threads/${runtimeThread.id}/message`, {
+      () => fetch(`/api/threads/${encodeURIComponent(runtimeThread.threadId)}/runtime/message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: userText }),
@@ -691,7 +689,7 @@ export class LocalChatKitService {
       assistantItem,
       assistantItemId,
       context,
-      () => fetch(`/api/runtime/threads/${runtimeThread.id}/tool-calls/${encodeURIComponent(requestId)}/respond`, {
+      () => fetch(`/api/threads/${encodeURIComponent(runtimeThread.threadId)}/runtime/tool-calls/${encodeURIComponent(requestId)}/respond`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ output }),

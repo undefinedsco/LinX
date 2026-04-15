@@ -8,7 +8,7 @@ export const ThreadVocab = {
   createdAt: DCTerms.created,
   updatedAt: DCTerms.modified,
 
-  // Execution context: workspace container (Agent@workspace)
+  // Execution context: workspace URI for the runnable root
   workspace: LINX_CHAT.workspace,
 
   // Type marker (for SPARQL convenience)

@@ -74,3 +74,4 @@ demos/
 
 # W3C test data (downloaded at test time)
 packages/models/tests/w3c-data/
+.omx/
