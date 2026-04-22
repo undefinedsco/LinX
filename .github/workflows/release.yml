@@ -1,0 +1,163 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  web:
+    name: Web Artifact
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Build web shell
+        env:
+          VITE_APP_VERSION: ${{ github.ref_name }}
+          VITE_RELEASE_REPO: ${{ github.repository }}
+        run: |
+          export VITE_APP_VERSION="${VITE_APP_VERSION#v}"
+          yarn workspace @linx/client build
+          yarn workspace @linx/web build
+          yarn workspace @linx/mobile smoke
+
+      - name: Archive web dist
+        run: tar -czf linx-web-${{ github.ref_name }}.tar.gz -C apps/web dist
+
+      - name: Upload web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linx-web-${{ github.ref_name }}
+          path: linx-web-${{ github.ref_name }}.tar.gz
+
+  desktop:
+    name: Desktop Release (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Build desktop release artifacts
+        env:
+          LINX_APP_VERSION: ${{ github.ref_name }}
+          LINX_RELEASE_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          export LINX_APP_VERSION="${LINX_APP_VERSION#v}"
+          if [ "${{ matrix.os }}" = "macos-latest" ]; then
+            yarn workspace @linx/desktop run dist:mac:zip -- --config.extraMetadata.version="$LINX_APP_VERSION"
+          elif [ "${{ matrix.os }}" = "windows-latest" ]; then
+            yarn workspace @linx/desktop run dist:win -- --config.extraMetadata.version="$LINX_APP_VERSION"
+          else
+            yarn workspace @linx/desktop run dist:linux:release -- --config.extraMetadata.version="$LINX_APP_VERSION"
+          fi
+
+      - name: Collect desktop artifacts
+        shell: bash
+        run: |
+          mkdir -p desktop-release-assets
+          if [ "${{ matrix.os }}" = "macos-latest" ]; then
+            find apps/desktop/release -maxdepth 1 -type f \
+              \( -name '*.zip' -o -name '*.blockmap' -o -name 'latest*.yml' \) \
+              -exec cp {} desktop-release-assets/ \;
+          elif [ "${{ matrix.os }}" = "windows-latest" ]; then
+            find apps/desktop/release -maxdepth 1 -type f \
+              \( -name '*.exe' -o -name '*.blockmap' -o -name 'latest*.yml' \) \
+              -exec cp {} desktop-release-assets/ \;
+          else
+            find apps/desktop/release -maxdepth 1 -type f \
+              \( -name '*.AppImage' -o -name '*.deb' -o -name '*.blockmap' -o -name 'latest*.yml' \) \
+              -exec cp {} desktop-release-assets/ \;
+          fi
+
+      - name: Upload desktop artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linx-desktop-${{ matrix.os }}-${{ github.ref_name }}
+          path: desktop-release-assets
+
+  publish:
+    name: Publish Release
+    runs-on: ubuntu-latest
+    needs:
+      - web
+      - desktop
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Flatten artifacts
+        run: find release-assets -type f \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.blockmap' -o -name 'latest*.yml' \) -exec cp {} . \;
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            *.tar.gz
+            *.zip
+            *.exe
+            *.AppImage
+            *.deb
+            *.blockmap
+            latest*.yml
+          generate_release_notes: true
+          body: |
+            LinX release `${{ github.ref_name }}`
+
+            Included artifacts:
+            - Web shell bundle
+            - Desktop release artifacts for macOS and Linux
+
+  notify:
+    name: Notify Release
+    runs-on: ubuntu-latest
+    needs:
+      - publish
+    if: ${{ success() && secrets.RELEASE_WEBHOOK_URL != '' }}
+    steps:
+      - name: Send webhook notification
+        run: |
+          payload=$(printf '{"project":"linx","tag":"%s","releaseUrl":"%s/%s/releases/tag/%s"}' \
+            "${{ github.ref_name }}" \
+            "${{ github.server_url }}" \
+            "${{ github.repository }}" \
+            "${{ github.ref_name }}")
+          curl -X POST "${{ secrets.RELEASE_WEBHOOK_URL }}" \
+            -H 'Content-Type: application/json' \
+            -d "$payload"
