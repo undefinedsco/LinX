@@ -7,6 +7,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const cliRoot = fileURLToPath(new URL('..', import.meta.url))
 const modelsRoot = fileURLToPath(new URL('../../../packages/models', import.meta.url))
 const sourceRoot = join(cliRoot, 'src')
+const wsRoot = fileURLToPath(new URL('../../../node_modules/ws', import.meta.url))
+const mariozechnerRoot = fileURLToPath(new URL('../../../node_modules/@mariozechner', import.meta.url))
 
 export async function loadWatchModule(entryRelative = 'lib/watch/index.ts') {
   return buildWatchBundle(entryRelative)
@@ -16,6 +18,8 @@ async function buildWatchBundle(entryRelative) {
   const root = mkdtempSync(join(tmpdir(), 'linx-watch-test-'))
   const outdir = join(root, 'dist')
   const nodeModulesDir = join(outdir, 'node_modules', '@linx')
+  const genericNodeModulesDir = join(outdir, 'node_modules')
+  const scopedNodeModulesDir = join(outdir, 'node_modules', '@mariozechner')
   const entryPath = join(sourceRoot, entryRelative)
   const compiledEntry = join(outdir, entryRelative.replace(/\.ts$/, '.js'))
 
@@ -43,7 +47,20 @@ async function buildWatchBundle(entryRelative) {
   })
 
   mkdirSync(nodeModulesDir, { recursive: true })
+  mkdirSync(genericNodeModulesDir, { recursive: true })
+  mkdirSync(scopedNodeModulesDir, { recursive: true })
   symlinkSync(modelsRoot, join(nodeModulesDir, 'models'), 'dir')
+  symlinkSync(wsRoot, join(genericNodeModulesDir, 'ws'), 'dir')
+  symlinkSync(fileURLToPath(new URL('../../../node_modules/@mariozechner/pi-ai', import.meta.url)), join(scopedNodeModulesDir, 'pi-ai'), 'dir')
+  symlinkSync(fileURLToPath(new URL('../../../node_modules/@mariozechner/pi-agent-core', import.meta.url)), join(scopedNodeModulesDir, 'pi-agent-core'), 'dir')
+  symlinkSync(fileURLToPath(new URL('../../../node_modules/@mariozechner/pi-coding-agent', import.meta.url)), join(scopedNodeModulesDir, 'pi-coding-agent'), 'dir')
+  symlinkSync(fileURLToPath(new URL('../../../node_modules/@mariozechner/pi-tui', import.meta.url)), join(scopedNodeModulesDir, 'pi-tui'), 'dir')
+  mkdirSync(join(outdir, 'node_modules', '@inrupt'), { recursive: true })
+  symlinkSync(
+    fileURLToPath(new URL('../../../node_modules/@inrupt/solid-client-authn-node', import.meta.url)),
+    join(outdir, 'node_modules', '@inrupt', 'solid-client-authn-node'),
+    'dir',
+  )
 
   return {
     module: await import(pathToFileURL(compiledEntry).href),

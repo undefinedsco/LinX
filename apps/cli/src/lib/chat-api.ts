@@ -1,4 +1,6 @@
+import { appendFileSync } from 'node:fs'
 import { resolveLinxRuntimeApiBaseUrl } from '@linx/models/client'
+import { DEFAULT_LINX_CLOUD_MODEL_ID } from './default-model.js'
 
 export interface RemoteModelSummary {
   id: string
@@ -16,15 +18,21 @@ function resolveRuntimeBaseUrl(runtimeUrl: string): string {
   return resolveLinxRuntimeApiBaseUrl(runtimeUrl)
 }
 
+function withTimeoutSignal(timeoutMs: number): AbortSignal {
+  return AbortSignal.timeout(timeoutMs)
+}
+
 export async function listRemoteModels(
   _session: unknown,
   runtimeUrl: string,
   apiKey: string,
+  options: { fallback?: boolean; timeoutMs?: number } = {},
 ): Promise<RemoteModelSummary[]> {
   const url = `${resolveRuntimeBaseUrl(runtimeUrl)}/models`
 
   try {
     const response = await fetch(url, {
+      signal: withTimeoutSignal(options.timeoutMs ?? 10_000),
       headers: {
         Accept: 'application/json',
         Authorization: `Bearer ${apiKey}`,
@@ -32,25 +40,45 @@ export async function listRemoteModels(
     })
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
+      const text = await response.text().catch(() => '')
+      throw new Error(`HTTP ${response.status}: ${text || response.statusText}`)
     }
 
-    const json = (await response.json()) as {
+    const bodyText = await response.text()
+    let json: {
       data?: Array<{
         id: string
         provider?: string
         owned_by?: string
         context_window?: number
       }>
+      error?: string
+      message?: string
+    }
+    try {
+      json = JSON.parse(bodyText) as typeof json
+    } catch {
+      throw new Error(`Invalid JSON response from ${url}: ${bodyText.slice(0, 200)}`)
     }
 
-    return (json.data ?? []).map((model) => ({
-      id: model.id,
-      provider: model.provider,
-      ownedBy: model.owned_by,
-      contextWindow: model.context_window,
-    }))
-  } catch {
+    if (Array.isArray(json.data)) {
+      return json.data.map((model) => ({
+        id: model.id,
+        provider: model.provider,
+        ownedBy: model.owned_by,
+        contextWindow: model.context_window,
+      }))
+    }
+
+    if (json.error || json.message) {
+      throw new Error(`Runtime error from ${url}: ${json.message || json.error}`)
+    }
+
+    throw new Error(`Unexpected response from ${url}: ${bodyText.slice(0, 200)}`)
+  } catch (error) {
+    if (options.fallback === false) {
+      throw error
+    }
     return loadBuiltinModelFallback()
   }
 }
@@ -66,7 +94,7 @@ async function loadBuiltinModelFallback(): Promise<RemoteModelSummary[]> {
       contextWindow: model.contextLength,
     }))
   } catch {
-    return [{ id: 'default' }]
+    return [{ id: DEFAULT_LINX_CLOUD_MODEL_ID }]
   }
 }
 
@@ -78,6 +106,18 @@ export async function createRemoteCompletion(options: {
 }): Promise<string> {
   const { runtimeUrl, apiKey, model, messages } = options
   const url = `${resolveRuntimeBaseUrl(runtimeUrl)}/chat/completions`
+  const resolvedModel = model || DEFAULT_LINX_CLOUD_MODEL_ID
+  const requestBody = {
+    model: resolvedModel,
+    stream: false,
+    messages,
+  }
+
+  appendFileSync('/tmp/linx-chat-debug.log', `${JSON.stringify({
+    at: new Date().toISOString(),
+    url,
+    body: requestBody,
+  })}\n`)
 
   const response = await fetch(url, {
     method: 'POST',
@@ -86,11 +126,7 @@ export async function createRemoteCompletion(options: {
       Accept: 'application/json',
       Authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({
-      model: model || 'default',
-      stream: false,
-      messages,
-    }),
+    body: JSON.stringify(requestBody),
   })
 
   if (!response.ok) {

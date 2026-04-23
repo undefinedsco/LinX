@@ -1052,14 +1052,17 @@ export function normalizeAcpSessionNotification(message: Record<string, unknown>
     typeof update.type === 'string' ? update.type : undefined,
   ])?.toLowerCase() ?? ''
 
+  if (updateType === 'available_commands_update' || updateType === 'usage_update') {
+    return []
+  }
+
   if (updateType === 'agent_message_chunk') {
     const text = extractWatchJsonText(update.content ?? update)
     return text ? [{ type: 'assistant.delta', text, raw: message }] : []
   }
 
   if (updateType === 'agent_thought_chunk') {
-    const text = extractWatchJsonText(update.content ?? update)
-    return text ? [{ type: 'session.note', message: text, raw: message }] : []
+    return []
   }
 
   if (updateType === 'tool_call' || updateType === 'tool_call_update') {
@@ -1308,6 +1311,25 @@ export function parseWatchJsonProtocolLine(line: string): WatchNormalizedEvent[]
 function normalizeCodexThreadItem(item: Record<string, unknown>, raw: Record<string, unknown>): WatchNormalizedEvent[] {
   const type = typeof item.type === 'string' ? item.type : ''
 
+  if (type === 'userMessage') {
+    const content = Array.isArray(item.content)
+      ? item.content
+        .map((part) => (typeof part === 'object' && part !== null ? part : null))
+        .filter((part): part is Record<string, unknown> => part !== null)
+        .map((part) => (typeof part.text === 'string' ? part.text : ''))
+        .filter((text) => text.length > 0)
+        .join('')
+      : ''
+
+    return content
+      ? [{
+        type: 'session.note',
+        message: `userMessage · ${content}`,
+        raw,
+      }]
+      : []
+  }
+
   if (type === 'commandExecution') {
     return [{
       type: 'tool.call',
@@ -1349,6 +1371,32 @@ export function normalizeCodexAppServerNotification(message: Record<string, unkn
   const params = (typeof message.params === 'object' && message.params !== null
     ? message.params
     : {}) as Record<string, unknown>
+
+  if (method === 'thread/started') {
+    return [{
+      type: 'session.note',
+      message: 'Thread started',
+      raw: message,
+    }]
+  }
+
+  if (method === 'thread/status/changed') {
+    const status = (typeof params.status === 'object' && params.status !== null ? params.status : {}) as Record<string, unknown>
+    const statusType = typeof status.type === 'string' ? status.type : 'unknown'
+    return [{
+      type: 'session.note',
+      message: `Thread status · ${statusType}`,
+      raw: message,
+    }]
+  }
+
+  if (method === 'turn/started') {
+    return [{
+      type: 'session.note',
+      message: 'Turn started',
+      raw: message,
+    }]
+  }
 
   if (method === 'item/agentMessage/delta' && typeof params.delta === 'string') {
     return [{ type: 'assistant.delta', text: params.delta, raw: message }]

@@ -20,6 +20,7 @@ export async function promptPassword(prompt: string): Promise<string> {
     const setRawMode = 'setRawMode' in stdin ? stdin.setRawMode.bind(stdin) : null
     const originalRawMode = setRawMode ? Boolean(stdin.isRaw) : false
     let password = ''
+    let cleanedLine = false
 
     function cleanup(): void {
       stdin.off('data', handleData)
@@ -31,6 +32,15 @@ export async function promptPassword(prompt: string): Promise<string> {
 
     function handleData(chunk: string | Buffer): void {
       const value = chunk.toString('utf8')
+
+      if (!cleanedLine) {
+        output.write('\r')
+        output.write(' '.repeat(prompt.length + Math.max(password.length, 1) + 8))
+        output.write('\r')
+        output.write(prompt)
+        output.write('*'.repeat(password.length))
+        cleanedLine = true
+      }
 
       switch (value) {
         case '\n':
@@ -47,12 +57,24 @@ export async function promptPassword(prompt: string): Promise<string> {
         case '\b':
           if (password.length > 0) {
             password = password.slice(0, -1)
-            output.write('\b \b')
+            output.write('\r')
+            output.write(prompt)
+            output.write('*'.repeat(password.length))
+            output.write(' ')
+            output.write('\r')
+            output.write(prompt)
+            output.write('*'.repeat(password.length))
           }
           break
         default:
-          password += value
-          output.write('*')
+          {
+            const normalized = value.replace(/\r/g, '').replace(/\n/g, '')
+            if (!normalized) {
+              break
+            }
+            password += normalized
+            output.write('*'.repeat(normalized.length))
+          }
       }
     }
 

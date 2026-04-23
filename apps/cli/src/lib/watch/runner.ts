@@ -146,6 +146,17 @@ function appendSessionNote(record: WatchSessionRecord, message: string, raw?: un
   }])
 }
 
+function appendAndDisplaySessionNote(
+  record: WatchSessionRecord,
+  display: WatchDisplay,
+  message: string,
+  tone: 'note' | 'success' | 'error' = 'note',
+  raw?: unknown,
+): void {
+  appendSessionNote(record, message, raw)
+  display.showActivity(message, tone)
+}
+
 async function promptApproval(
   display: WatchDisplay,
   message: string,
@@ -573,6 +584,7 @@ class AcpSession extends BaseSession {
 
     const newSession = await this.sendRequest('session/new', {
       cwd: this.options.cwd,
+      mcpServers: [],
     }) as Record<string, unknown>
 
     const sessionId = typeof newSession.sessionId === 'string'
@@ -608,6 +620,7 @@ class AcpSession extends BaseSession {
       throw new Error('Model id cannot be empty')
     }
 
+    await this.trySetModel(normalized, true)
     this.options = {
       ...this.options,
       model: normalized,
@@ -615,7 +628,6 @@ class AcpSession extends BaseSession {
     this.updateRecord({
       model: normalized,
     })
-    await this.trySetModel(normalized)
   }
 
   async sendTurn(text: string): Promise<void> {
@@ -772,7 +784,11 @@ class AcpSession extends BaseSession {
           raw: message,
         }]
         : normalizeAcpRequest(message)
-      this.recordParsedLine(stream, line, events)
+      if (events.length > 0) {
+        this.recordParsedLine(stream, line, events)
+      } else {
+        appendEntry(this.record, stream, line, [])
+      }
       void this.handleAgentRequest(message)
       this.markTurnActivity()
       return
@@ -780,7 +796,11 @@ class AcpSession extends BaseSession {
 
     if (typeof message.method === 'string') {
       const events = normalizeAcpSessionNotification(message)
-      this.recordParsedLine(stream, line, events)
+      if (events.length > 0) {
+        this.recordParsedLine(stream, line, events)
+      } else {
+        appendEntry(this.record, stream, line, [])
+      }
       this.markTurnActivity()
       return
     }
@@ -1003,9 +1023,9 @@ class AcpSession extends BaseSession {
     child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, error: { code, message } })}\n`)
   }
 
-  private async trySetModel(model: string): Promise<void> {
+  private async trySetModel(model: string, throwOnFailure = false): Promise<boolean> {
     if (!this.sessionId) {
-      return
+      return false
     }
 
     try {
@@ -1013,12 +1033,18 @@ class AcpSession extends BaseSession {
         sessionId: this.sessionId,
         modelId: model,
       })
+      return true
     } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
       appendEntry(this.record, 'system', JSON.stringify({
         type: 'session.set_model.skipped',
         model,
-        reason: error instanceof Error ? error.message : String(error),
+        reason,
       }), [])
+      if (throwOnFailure) {
+        throw new Error(reason)
+      }
+      return false
     }
   }
 }
@@ -1048,7 +1074,7 @@ async function handleWatchShellCommand(args: {
   }
 
   if (input === '/session') {
-    appendSessionNote(record, [
+    appendAndDisplaySessionNote(record, display, [
       `session=${record.id}`,
       `backend=${record.backend}`,
       `runtime=${record.runtime}`,
@@ -1060,43 +1086,71 @@ async function handleWatchShellCommand(args: {
   }
 
   if (input === '/queue') {
-    appendSessionNote(record, `queue | steer=${queueState.steeringCount} | follow-up=${queueState.followUpCount}`)
+    appendAndDisplaySessionNote(record, display, `queue | steer=${queueState.steeringCount} | follow-up=${queueState.followUpCount}`)
     return 'handled'
   }
 
   if (input === '/sessions') {
     const summaries = listWatchSessions().slice(0, 5).map(formatWatchSessionSummary)
     if (summaries.length === 0) {
-      appendSessionNote(record, 'No archived watch sessions found')
+      appendAndDisplaySessionNote(record, display, 'No archived watch sessions found')
       return 'handled'
     }
 
     for (const summary of summaries) {
-      appendSessionNote(record, summary)
+      appendAndDisplaySessionNote(record, display, summary)
     }
     return 'handled'
   }
 
   if (input === '/new') {
-    appendSessionNote(record, 'Use `linx watch run` to start a fresh watch session')
+    appendAndDisplaySessionNote(record, display, 'Use `linx watch run` to start a fresh watch session')
+    return 'handled'
+  }
+
+  if (input === '/debug' || input === '/debug on') {
+    display.setDebugMode(true)
+    appendSessionNote(record, 'Debug protocol view enabled', { debug: true })
+    return 'handled'
+  }
+
+  if (input === '/debug off') {
+    display.setDebugMode(false)
+    appendSessionNote(record, 'Debug protocol view disabled', { debug: false })
     return 'handled'
   }
 
   if (input.startsWith('/model ')) {
     const model = input.slice('/model '.length).trim()
     if (!model) {
-      throw new Error('Usage: /model <modelId>')
+      appendAndDisplaySessionNote(record, display, 'Usage: /model <modelId>', 'error')
+      return 'handled'
     }
 
-    await session.setModel(model)
-    appendSessionNote(record, `Model set to ${model}`, { backend, model })
+    try {
+      await session.setModel(model)
+      appendAndDisplaySessionNote(record, display, `Model set to ${model}`, 'success', { backend, model })
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      appendAndDisplaySessionNote(record, display, `Model switch failed | ${reason}`, 'error', { backend, model, reason })
+    }
     return 'handled'
   }
 
   return 'pass'
 }
 
+export const __testHandleWatchShellCommand = handleWatchShellCommand
+
 export async function runWatch(options: WatchRunOptions): Promise<number> {
+  const previousPlainEnv = process.env.LINX_WATCH_PLAIN
+  if (options.plain) {
+    process.env.LINX_WATCH_PLAIN = '1'
+  }
+
+  let fatalError: Error | null = null
+  let session: BaseSession | null = null
+
   const requestedOptions = {
     ...options,
     runtime: requestedRuntime(options),
@@ -1104,25 +1158,25 @@ export async function runWatch(options: WatchRunOptions): Promise<number> {
     credentialSource: requestedCredentialSource(options),
     approvalSource: requestedApprovalSource(options),
   }
-  const session = buildConversationSession(requestedOptions)
-  session.display.start()
-  session.display.showHelp()
-  session.display.setPhase('starting', `Preparing ${requestedOptions.backend}`)
-  session.display.updateQueue({
-    steeringCount: 0,
-    followUpCount: 0,
-  })
-
-  let fatalError: Error | null = null
 
   try {
+    session = buildConversationSession(requestedOptions)
+    const activeSession = session
+    activeSession.display.start()
+    activeSession.display.showHelp()
+    activeSession.display.setPhase('starting', `Preparing ${requestedOptions.backend}`)
+    activeSession.display.updateQueue({
+      steeringCount: 0,
+      followUpCount: 0,
+    })
+
     let resolvedRun: ResolvedWatchRun
 
     try {
       resolvedRun = await resolveWatchRunOptions(requestedOptions)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      appendEntry(session.record, 'system', JSON.stringify({
+      appendEntry(activeSession.record, 'system', JSON.stringify({
         type: 'credentials.resolve',
         backend: requestedOptions.backend,
         requestedCredentialSource: requestedOptions.credentialSource,
@@ -1131,8 +1185,8 @@ export async function runWatch(options: WatchRunOptions): Promise<number> {
       throw error
     }
 
-    session.applyResolvedOptions(resolvedRun.options)
-    appendEntry(session.record, 'system', JSON.stringify({
+    activeSession.applyResolvedOptions(resolvedRun.options)
+    appendEntry(activeSession.record, 'system', JSON.stringify({
       type: 'credentials.resolve',
       backend: resolvedRun.options.backend,
       requestedCredentialSource: resolvedRun.options.credentialSource,
@@ -1142,7 +1196,7 @@ export async function runWatch(options: WatchRunOptions): Promise<number> {
     const authPreflight = resolvedRun.authPreflight
     if (authPreflight.state === 'unauthenticated') {
       const message = authPreflight.message ?? `${resolvedRun.options.backend} is not authenticated`
-      appendEntry(session.record, 'system', JSON.stringify({
+      appendEntry(activeSession.record, 'system', JSON.stringify({
         type: 'auth.preflight',
         backend: resolvedRun.options.backend,
         state: authPreflight.state,
@@ -1153,7 +1207,7 @@ export async function runWatch(options: WatchRunOptions): Promise<number> {
       throw new Error(message)
     }
 
-    await session.start()
+    await activeSession.start()
     const steeringQueue: WatchPromptSubmission[] = []
     const followUpQueue: WatchPromptSubmission[] = []
     let stopRequested = false
@@ -1181,7 +1235,7 @@ export async function runWatch(options: WatchRunOptions): Promise<number> {
     }
 
     const updateQueueState = () => {
-      session.display.updateQueue({
+      activeSession.display.updateQueue({
         steeringCount: steeringQueue.length,
         followUpCount: followUpQueue.length,
       })
@@ -1217,7 +1271,7 @@ export async function runWatch(options: WatchRunOptions): Promise<number> {
 
       updateQueueState()
       appendSessionNote(
-        session.record,
+        activeSession.record,
         submission.mode === 'follow-up'
           ? `Queued follow-up message (${followUpQueue.length} total)`
           : `Queued steering message (${steeringQueue.length} total)`,
@@ -1238,10 +1292,10 @@ export async function runWatch(options: WatchRunOptions): Promise<number> {
         return
       }
 
-      session.display.showUserTurn(trimmed)
-      session.display.setPhase('running', `Running ${resolvedRun.options.backend}`)
+      activeSession.display.showUserTurn(trimmed)
+      activeSession.display.setPhase('running', `Running ${resolvedRun.options.backend}`)
 
-      activeTurn = session.sendTurn(trimmed)
+      activeTurn = activeSession.sendTurn(trimmed)
         .catch((error) => {
           fatalError = error instanceof Error ? error : new Error(String(error))
         })
@@ -1266,7 +1320,7 @@ export async function runWatch(options: WatchRunOptions): Promise<number> {
             return
           }
 
-          session.display.setPhase('ready', 'Waiting for input')
+          activeSession.display.setPhase('ready', 'Waiting for input')
           resolveWake()
         })
     }
@@ -1279,18 +1333,18 @@ export async function runWatch(options: WatchRunOptions): Promise<number> {
 
       const shellCommand = await handleWatchShellCommand({
         input: trimmed,
-        session,
-        display: session.display,
+        session: activeSession,
+        display: activeSession.display,
         queueState: {
           steeringCount: steeringQueue.length,
           followUpCount: followUpQueue.length,
         },
         backend: resolvedRun.options.backend,
-        record: session.record,
+        record: activeSession.record,
       })
 
       if (shellCommand === 'handled') {
-        session.display.setPhase(activeTurn ? 'running' : 'ready', activeTurn ? `Running ${resolvedRun.options.backend}` : 'Waiting for input')
+        activeSession.display.setPhase(activeTurn ? 'running' : 'ready', activeTurn ? `Running ${resolvedRun.options.backend}` : 'Waiting for input')
         resolveWake()
         return
       }
@@ -1312,23 +1366,26 @@ export async function runWatch(options: WatchRunOptions): Promise<number> {
       runTurn(trimmed)
     }
 
-    const inputLoop = (async () => {
-      session.display.setPhase('ready', 'Waiting for input')
-      while (!fatalError && !stopRequested) {
-        const submission = await session.display.promptInput('you> ')
-        await dispatchSubmission(submission)
-      }
-    })().catch((error) => {
-      fatalError = error instanceof Error ? error : new Error(String(error))
-      stopRequested = true
-      clearQueuedSubmissions()
-      resolveWake()
-    })
+    let inputLoop: Promise<void> | null = null
 
     if (resolvedRun.options.prompt) {
       await dispatchSubmission({
         text: resolvedRun.options.prompt,
         mode: 'send',
+      })
+      stopRequested = true
+    } else {
+      inputLoop = (async () => {
+        activeSession.display.setPhase('ready', 'Waiting for input')
+        while (!fatalError && !stopRequested) {
+          const submission = await activeSession.display.promptInput('you> ')
+          await dispatchSubmission(submission)
+        }
+      })().catch((error) => {
+        fatalError = error instanceof Error ? error : new Error(String(error))
+        stopRequested = true
+        clearQueuedSubmissions()
+        resolveWake()
       })
     }
 
@@ -1337,19 +1394,29 @@ export async function runWatch(options: WatchRunOptions): Promise<number> {
     }
 
     void inputLoop
+    if (fatalError) {
+      throw fatalError
+    }
+
+    return 0
   } catch (error) {
     fatalError = error instanceof Error ? error : new Error(String(error))
-  } finally {
-    await session.close()
-    const finalRecord = await session.finalizeAndClose(fatalError ? 'failed' : 'completed', fatalError?.message)
-    await watchRuntime.persistWatchConversationToPod(finalRecord).catch(() => undefined)
-  }
-
-  if (fatalError) {
     throw fatalError
-  }
+  } finally {
+    if (session) {
+      await session.close()
+      const finalRecord = await session.finalizeAndClose(fatalError ? 'failed' : 'completed', fatalError?.message)
+      await watchRuntime.persistWatchConversationToPod(finalRecord).catch(() => undefined)
+    }
 
-  return 0
+    if (options.plain) {
+      if (previousPlainEnv === undefined) {
+        delete process.env.LINX_WATCH_PLAIN
+      } else {
+        process.env.LINX_WATCH_PLAIN = previousPlainEnv
+      }
+    }
+  }
 }
 
 export function listArchivedWatchSessions(): WatchSessionRecord[] {

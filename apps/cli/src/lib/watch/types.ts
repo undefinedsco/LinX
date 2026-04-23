@@ -32,6 +32,7 @@ export interface WatchRunOptions {
   backend: WatchBackend
   mode: WatchMode
   cwd: string
+  plain?: boolean
   model?: string
   prompt?: string
   passthroughArgs: string[]
@@ -50,6 +51,27 @@ export interface WatchSpawnPlan {
 }
 
 export type WatchPromptSubmissionMode = 'send' | 'follow-up'
+
+export type WatchUiActivityTone = 'note' | 'success' | 'error' | 'debug'
+
+export type WatchUiEntry =
+  | {
+    kind: 'user' | 'assistant'
+    text: string
+  }
+  | {
+    kind: 'tool'
+    text: string
+  }
+  | {
+    kind: 'note' | 'success' | 'error'
+    text: string
+  }
+  | {
+    kind: 'debug'
+    text: string
+    detail?: string
+  }
 
 export interface WatchPromptSubmission {
   text: string

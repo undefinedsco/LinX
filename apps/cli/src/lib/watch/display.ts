@@ -2,6 +2,7 @@ import { emitKeypressEvents } from 'node:readline'
 import { stdin, stdout } from 'node:process'
 import type { WatchUserInputAnswers, WatchUserInputQuestion } from '@linx/models/watch'
 import { CodexComposer, type CodexComposerRenderLine } from './codex-composer.js'
+import { renderFooterLine } from './codex-footer.js'
 import { CodexRequestForm } from './codex-request-form.js'
 import { renderCodexOverlay, type CodexOverlayOption, type CodexOverlayState } from './codex-overlay.js'
 import {
@@ -16,6 +17,8 @@ import type {
   WatchPromptSubmission,
   WatchQueueState,
   WatchSessionRecord,
+  WatchUiActivityTone,
+  WatchUiEntry,
 } from './types.js'
 
 type PromptText = (prompt: string, signal?: AbortSignal) => Promise<string>
@@ -45,6 +48,8 @@ export interface WatchDisplay {
   updateQueue(state: WatchQueueState): void
   bindInputController(controller: WatchInputController | null): void
   setPhase(phase: WatchDisplayPhase, detail?: string): void
+  showActivity(text: string, tone?: WatchUiActivityTone): void
+  setDebugMode(enabled: boolean): void
   chooseOption(title: string, lines: string[], options: CodexOverlayOption[], signal?: AbortSignal): Promise<string>
   chooseQuestions(questions: WatchUserInputQuestion[]): Promise<WatchUserInputAnswers>
   chooseQuestion(state: {
@@ -242,6 +247,135 @@ function shortPath(value: string, width = 28): string {
   return `...${value.slice(-(width - 3))}`
 }
 
+function footerHintForPhase(phase: WatchDisplayPhase): { emptyHint: string; draftHint: string } {
+  switch (phase) {
+    case 'starting':
+      return {
+        emptyHint: 'Starting',
+        draftHint: 'Starting',
+      }
+    case 'ready':
+      return {
+        emptyHint: '/help · /exit · /model <id> · /debug on|off',
+        draftHint: 'Enter send · Shift+Enter newline · Alt+Enter follow-up',
+      }
+    case 'running':
+      return {
+        emptyHint: '/help · /exit · /model <id> · /debug on|off',
+        draftHint: 'Enter steer · Shift+Enter newline · Alt+Enter follow-up',
+      }
+    case 'approval':
+      return {
+        emptyHint: 'Approve: y · session: s · reject: n · cancel: c',
+        draftHint: 'Approve: y · session: s · reject: n · cancel: c',
+      }
+    case 'question':
+      return {
+        emptyHint: 'Answer and press Enter',
+        draftHint: 'Answer and press Enter',
+      }
+  }
+}
+
+function summarizeToolField(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    return trimmed || undefined
+  }
+
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((entry) => summarizeToolField(entry))
+      .filter((entry): entry is string => Boolean(entry))
+
+    return parts.length > 0 ? parts.join(' ') : undefined
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value)
+  }
+
+  return undefined
+}
+
+export function summarizeWatchToolCall(name: string, args?: Record<string, unknown>): string {
+  const detail = args
+    ? summarizeToolField(
+      args.command
+      ?? args.cmd
+      ?? args.pattern
+      ?? args.query
+      ?? args.path
+      ?? args.filePath
+      ?? args.file
+      ?? args.url
+      ?? args.cwd,
+    )
+    : undefined
+
+  if (!detail) {
+    return name
+  }
+
+  const summarizedDetail = /^(\/|~\/|\.\.?\/)/.test(detail) ? shortPath(detail, 40) : detail
+  return `${name} · ${summarizedDetail}`
+}
+
+export function summarizeWatchDebugPayload(raw: unknown): { text: string; detail?: string } {
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim()
+    if (!trimmed) {
+      return { text: 'raw event' }
+    }
+
+    if (trimmed.length <= 96) {
+      return { text: trimmed }
+    }
+
+    return {
+      text: `${trimmed.slice(0, 93)}...`,
+      detail: trimmed,
+    }
+  }
+
+  const serialized = JSON.stringify(raw)
+  if (!serialized) {
+    return { text: 'raw event' }
+  }
+
+  try {
+    const parsed = typeof raw === 'object' && raw !== null ? raw as Record<string, unknown> : null
+    const method = typeof parsed?.method === 'string' ? parsed.method : undefined
+    const update = typeof parsed?.params === 'object' && parsed.params !== null
+      ? (parsed.params as Record<string, unknown>).update as Record<string, unknown> | undefined
+      : undefined
+    const updateType = typeof update?.sessionUpdate === 'string'
+      ? update.sessionUpdate
+      : typeof update?.type === 'string'
+        ? update.type
+        : undefined
+    const summary = method ?? updateType ?? 'raw event'
+
+    if (serialized.length <= 120) {
+      return { text: `${summary} · ${serialized}` }
+    }
+
+    return {
+      text: summary,
+      detail: serialized,
+    }
+  } catch {
+    if (serialized.length <= 96) {
+      return { text: serialized }
+    }
+
+    return {
+      text: `${serialized.slice(0, 93)}...`,
+      detail: serialized,
+    }
+  }
+}
+
 function editorBorderColor(phase: WatchDisplayPhase): string {
   switch (phase) {
     case 'starting':
@@ -311,6 +445,169 @@ export function formatWatchQueueLine(queueState: WatchQueueState, width: number)
   }
 
   return clipLine(` Queued | ${parts.join(' | ')} `, width)
+}
+
+export function formatWatchFooterContext(record: WatchSessionRecord): string {
+  const source = record.resolvedCredentialSource ?? record.credentialSource
+  return [
+    shortPath(record.cwd),
+    `session=${shortSessionId(record.id)}`,
+    record.model ? `model=${shortSessionId(record.model)}` : null,
+    `source=${source}`,
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join(' | ')
+}
+
+export function formatWatchFooterLine(input: {
+  width: number
+  phase: WatchDisplayPhase
+  record: WatchSessionRecord
+  hasDraft: boolean
+}): string {
+  const hints = footerHintForPhase(input.phase)
+  return renderFooterLine(
+    {
+      mode: input.hasDraft ? 'ComposerHasDraft' : 'ComposerEmpty',
+      emptyHint: hints.emptyHint,
+      draftHint: hints.draftHint,
+      context: formatWatchFooterContext(input.record),
+    },
+    input.width,
+  )
+}
+
+export function formatWatchActivityPanelLines(input: {
+  width: number
+  maxHeight: number
+  entries: WatchUiEntry[]
+  hideToolOutput?: boolean
+  debugMode?: boolean
+}): string[] {
+  if (input.maxHeight <= 2) {
+    return []
+  }
+
+  const visibleEntries = input.hideToolOutput
+    ? input.entries.filter((entry) => entry.kind !== 'tool')
+    : input.entries
+
+  const innerWidth = Math.max(1, input.width - 4)
+  const toolEntries = visibleEntries.filter((entry) => entry.kind === 'tool')
+  const debugEntries = visibleEntries.filter((entry) => entry.kind === 'debug')
+  const statusEntries = visibleEntries.filter((entry) => entry.kind !== 'tool' && entry.kind !== 'debug')
+
+  const groups: string[][] = []
+  const pushGroup = (label: string, lines: string[]) => {
+    if (lines.length === 0) {
+      return
+    }
+
+    const group: string[] = [
+      applyAnsi(clipLine(label, innerWidth), ANSI.bold, ANSI.dim),
+      ...lines,
+    ]
+
+    groups.push(group)
+  }
+
+  const renderToolLines = (entry: WatchUiEntry): string[] => {
+    return [applyAnsi(clipLine(`[tool] ${entry.text}`, innerWidth), ANSI.green)]
+  }
+
+  const renderStatusLines = (entry: WatchUiEntry): string[] => {
+    if (entry.kind === 'success') {
+      return [applyAnsi(clipLine(`[session] ${entry.text}`, innerWidth), ANSI.green)]
+    }
+
+    if (entry.kind === 'error') {
+      return wrapText(`[error] ${entry.text}`, innerWidth).map((line) => applyAnsi(clipLine(line, innerWidth), ANSI.red))
+    }
+
+    const label = /approval/i.test(entry.text)
+      ? '[approval]'
+      : /input/i.test(entry.text)
+        ? '[input]'
+        : '[note]'
+    return wrapText(`${label} ${entry.text}`, innerWidth).map((line) => applyAnsi(clipLine(line, innerWidth), ANSI.dim))
+  }
+
+  const renderDebugLines = (entry: WatchUiEntry): string[] => {
+    if (entry.kind !== 'debug') {
+      return []
+    }
+
+    const debugLines = wrapText(`[debug] ${entry.text}`, innerWidth)
+    if (entry.detail) {
+      debugLines.push(...wrapText(`        ${entry.detail}`, innerWidth))
+    }
+    return debugLines.map((line) => applyAnsi(clipLine(line, innerWidth), ANSI.dim))
+  }
+
+  pushGroup('status', statusEntries.slice(-2).flatMap((entry) => renderStatusLines(entry)))
+  pushGroup('tools', toolEntries.slice(-2).flatMap((entry) => renderToolLines(entry)))
+  pushGroup('debug', debugEntries.slice(-1).flatMap((entry) => renderDebugLines(entry)))
+
+  const maxContentLines = Math.max(0, input.maxHeight - 2)
+  const selectedGroups: string[][] = []
+  let remaining = maxContentLines
+
+  for (let index = 0; index < groups.length; index += 1) {
+    const group = groups[index] ?? []
+    const separatorCost = selectedGroups.length > 0 ? 1 : 0
+    const required = group.length + separatorCost
+    if (required > remaining) {
+      continue
+    }
+
+    selectedGroups.push(group)
+    remaining -= required
+  }
+
+  const contentLines = selectedGroups.flatMap((group, index) => {
+    const result: string[] = []
+    if (index > 0) {
+      result.push(applyAnsi(clipLine('·'.repeat(Math.min(innerWidth, 12)), innerWidth), ANSI.dim))
+    }
+    result.push(...group)
+    return result
+  })
+
+  if (contentLines.length === 0) {
+    return []
+  }
+
+  const title = input.debugMode ? 'activity | debug' : 'activity'
+  return renderBorderBox(contentLines, input.width, title, ANSI.dim)
+}
+
+export function selectWatchFooterSectionCounts(input: {
+  totalHeight: number
+  headerCount: number
+  contextCount: number
+  showStatus: boolean
+  queueCount: number
+  promptCount: number
+}): {
+  contextCount: number
+  statusCount: number
+  queueCount: number
+} {
+  let remaining = Math.max(0, input.totalHeight - input.headerCount - input.promptCount - 1)
+
+  const statusCount = input.showStatus && remaining > 0 ? 1 : 0
+  remaining -= statusCount
+
+  const queueCount = Math.min(input.queueCount, remaining)
+  remaining -= queueCount
+
+  const contextCount = Math.min(input.contextCount, remaining)
+
+  return {
+    contextCount,
+    statusCount,
+    queueCount,
+  }
 }
 
 export function formatWatchTranscriptLine(line: string, width: number): string[] {
@@ -457,6 +754,21 @@ class PlainWatchDisplay implements WatchDisplay {
 
   setPhase(): void {}
 
+  showActivity(text: string, tone: WatchUiActivityTone = 'note'): void {
+    const prefix = tone === 'success'
+      ? '[ok]'
+      : tone === 'error'
+        ? '[error]'
+        : tone === 'debug'
+          ? '[debug]'
+        : '[note]'
+    stdout.write(`${prefix} ${text}\n`)
+  }
+
+  setDebugMode(enabled: boolean): void {
+    this.showActivity(`Debug protocol view ${enabled ? 'enabled' : 'disabled'}`)
+  }
+
   async chooseOption(title: string, lines: string[], options: CodexOverlayOption[], signal?: AbortSignal): Promise<string> {
     stdout.write(`${title}\n`)
     for (const line of lines) {
@@ -571,8 +883,7 @@ class PlainWatchDisplay implements WatchDisplay {
       this.flushAssistantLine()
 
       if (event.type === 'tool.call') {
-        const detail = event.arguments ? ` ${JSON.stringify(event.arguments)}` : ''
-        stdout.write(`[tool] ${event.name}${detail}\n`)
+        stdout.write(`[tool] ${summarizeWatchToolCall(event.name, event.arguments)}\n`)
         continue
       }
 
@@ -586,7 +897,7 @@ class PlainWatchDisplay implements WatchDisplay {
         continue
       }
 
-      stdout.write(`[note] ${event.message}\n`)
+      this.showActivity(event.message)
     }
   }
 
@@ -622,7 +933,8 @@ class PlainWatchDisplay implements WatchDisplay {
 class TuiWatchDisplay implements WatchDisplay {
   private record: WatchSessionRecord
   private readonly promptFallback: PromptText
-  private readonly transcript: string[] = []
+  private readonly transcript: WatchUiEntry[] = []
+  private readonly activityEntries: WatchUiEntry[] = []
   private contextLines: string[] = []
   private assistantLine = ''
   private queueState: WatchQueueState = { steeringCount: 0, followUpCount: 0 }
@@ -637,6 +949,7 @@ class TuiWatchDisplay implements WatchDisplay {
   private overlayRejecter: ((error: Error) => void) | null = null
   private inputController: WatchInputController | null = null
   private hideToolOutput = false
+  private debugMode = false
   private lastCtrlCTime = 0
   private state: WatchDisplayState = {
     phase: 'starting',
@@ -655,8 +968,8 @@ class TuiWatchDisplay implements WatchDisplay {
     }
 
     this.active = true
-    this.transcript.push('[note] LinX watch ready')
-    this.transcript.push('[note] Use /help for commands. Type /exit to leave this session.')
+    this.pushActivityEntry({ kind: 'note', text: 'LinX watch ready' })
+    this.pushActivityEntry({ kind: 'note', text: 'Use /help for commands. Type /exit to leave this session.' })
 
     emitKeypressEvents(stdin)
     if ('setRawMode' in stdin && typeof stdin.setRawMode === 'function') {
@@ -699,6 +1012,23 @@ class TuiWatchDisplay implements WatchDisplay {
       detail,
       since: Date.now(),
     }
+    this.render()
+  }
+
+  showActivity(text: string, tone: WatchUiActivityTone = 'note'): void {
+    this.pushActivityEntry({
+      kind: tone,
+      text,
+    })
+    this.render()
+  }
+
+  setDebugMode(enabled: boolean): void {
+    this.debugMode = enabled
+    this.pushActivityEntry({
+      kind: 'note',
+      text: `Debug protocol view ${enabled ? 'enabled' : 'disabled'}`,
+    })
     this.render()
   }
 
@@ -800,13 +1130,12 @@ class TuiWatchDisplay implements WatchDisplay {
   showUserTurn(text: string): void {
     this.flushAssistant()
     this.composer.recordSubmission(text)
-    this.pushTranscript(`you> ${text}`)
+    this.pushTranscriptEntry({ kind: 'user', text })
     this.render()
   }
 
   showHelp(): void {
-    this.pushTranscript('[note] Commands: /help, /exit')
-    this.render()
+    this.showActivity('Commands: /help, /exit')
   }
 
   showQuestion(lines: string[]): void {
@@ -824,7 +1153,7 @@ class TuiWatchDisplay implements WatchDisplay {
 
       if (event.type === 'assistant.done') {
         if (event.text && !this.assistantLine) {
-          this.pushTranscript(`assistant> ${event.text}`)
+          this.pushTranscriptEntry({ kind: 'assistant', text: event.text })
         } else {
           this.flushAssistant()
         }
@@ -834,7 +1163,18 @@ class TuiWatchDisplay implements WatchDisplay {
       this.flushAssistant()
 
       if (event.type === 'tool.call') {
-        this.pushTranscript(`[tool] ${event.name}${event.arguments ? ` ${JSON.stringify(event.arguments)}` : ''}`)
+        this.pushActivityEntry({
+          kind: 'tool',
+          text: summarizeWatchToolCall(event.name, event.arguments),
+        })
+        if (this.debugMode && event.raw) {
+          const debugPayload = summarizeWatchDebugPayload(event.raw)
+          this.pushActivityEntry({
+            kind: 'debug',
+            text: debugPayload.text,
+            ...(debugPayload.detail ? { detail: debugPayload.detail } : {}),
+          })
+        }
         continue
       }
 
@@ -846,7 +1186,18 @@ class TuiWatchDisplay implements WatchDisplay {
         continue
       }
 
-      this.pushTranscript(`[note] ${event.message}`)
+      this.pushActivityEntry({
+        kind: 'note',
+        text: event.message,
+      })
+      if (this.debugMode && event.raw) {
+        const debugPayload = summarizeWatchDebugPayload(event.raw)
+        this.pushActivityEntry({
+          kind: 'debug',
+          text: debugPayload.text,
+          ...(debugPayload.detail ? { detail: debugPayload.detail } : {}),
+        })
+      }
     }
 
     this.render()
@@ -855,8 +1206,24 @@ class TuiWatchDisplay implements WatchDisplay {
   renderRawLine(stream: WatchEventLogEntry['stream'], line: string): void {
     this.flushAssistant()
 
-    if (line.trim()) {
-      this.pushTranscript(stream === 'stderr' ? `stderr> ${line}` : line)
+    const trimmed = line.trim()
+    if (trimmed) {
+      if (stream === 'stdout' && !this.debugMode) {
+        this.render()
+        return
+      }
+
+      const debugPayload = stream === 'stdout' && this.debugMode
+        ? summarizeWatchDebugPayload(trimmed)
+        : null
+
+      this.pushActivityEntry({
+        kind: stream === 'stderr' ? 'error' : this.debugMode ? 'debug' : 'note',
+        text: stream === 'stderr'
+          ? trimmed
+          : debugPayload?.text ?? trimmed,
+        ...(debugPayload?.detail ? { detail: debugPayload.detail } : {}),
+      })
     }
 
     this.render()
@@ -880,9 +1247,9 @@ class TuiWatchDisplay implements WatchDisplay {
     this.updateRecord(record)
     this.flushAssistant()
     if (status === 'completed') {
-      this.pushTranscript(`[session] completed ${record.id}`)
+      this.pushActivityEntry({ kind: 'success', text: `Session completed | ${record.id}` })
     } else {
-      this.pushTranscript(`[session] failed ${record.id}${error ? `: ${error}` : ''}`)
+      this.pushActivityEntry({ kind: 'error', text: `Session failed | ${record.id}${error ? `: ${error}` : ''}` })
     }
     this.render()
     this.teardown()
@@ -917,14 +1284,14 @@ class TuiWatchDisplay implements WatchDisplay {
     }
 
     this.lastCtrlCTime = now
-    this.pushTranscript('[note] Press Ctrl+C again to quit')
+    this.pushActivityEntry({ kind: 'note', text: 'Press Ctrl+C again to quit' })
     this.render()
   }
 
   private restoreQueuedSubmission(): void {
     const restored = this.inputController?.restoreQueuedSubmission() ?? null
     if (!restored) {
-      this.pushTranscript('[note] Queue is empty')
+      this.pushActivityEntry({ kind: 'note', text: 'Queue is empty' })
       this.render()
       return
     }
@@ -932,15 +1299,24 @@ class TuiWatchDisplay implements WatchDisplay {
     this.composer.setText(restored.text)
     this.contextLines = [
       restored.mode === 'follow-up'
-        ? '[note] Restored queued follow-up message'
-        : '[note] Restored queued steering message',
+        ? 'Restored queued follow-up message'
+        : 'Restored queued steering message',
     ]
+    this.pushActivityEntry({
+      kind: 'note',
+      text: restored.mode === 'follow-up'
+        ? 'Restored queued follow-up message'
+        : 'Restored queued steering message',
+    })
     this.render()
   }
 
   private toggleToolOutput(): void {
     this.hideToolOutput = !this.hideToolOutput
-    this.pushTranscript(this.hideToolOutput ? '[note] Tool output collapsed' : '[note] Tool output expanded')
+    this.pushActivityEntry({
+      kind: 'note',
+      text: this.hideToolOutput ? 'Tool output collapsed' : 'Tool output expanded',
+    })
     this.render()
   }
 
@@ -1226,32 +1602,99 @@ class TuiWatchDisplay implements WatchDisplay {
       return
     }
 
-    this.pushTranscript(`assistant> ${this.assistantLine}`)
+    this.pushTranscriptEntry({ kind: 'assistant', text: this.assistantLine })
     this.assistantLine = ''
   }
 
-  private pushTranscript(line: string): void {
-    if (!line.trim()) {
+  private pushTranscriptEntry(entry: WatchUiEntry): void {
+    if (!entry.text.trim()) {
       return
     }
 
-    this.transcript.push(line.trimEnd())
+    const nextEntry = {
+      ...entry,
+      text: entry.text.trimEnd(),
+    }
+    this.transcript.push(nextEntry)
     if (this.transcript.length > 400) {
       this.transcript.splice(0, this.transcript.length - 400)
     }
   }
 
+  private pushActivityEntry(entry: WatchUiEntry): void {
+    if (!entry.text.trim()) {
+      return
+    }
+
+    const nextEntry = {
+      ...entry,
+      text: entry.text.trimEnd(),
+    }
+    this.activityEntries.push(nextEntry)
+    if (this.activityEntries.length > 120) {
+      this.activityEntries.splice(0, this.activityEntries.length - 120)
+    }
+  }
+
   private buildMainLines(width: number): string[] {
-    const lines = [...this.transcript]
+    const lines = this.transcript.map((entry) => {
+      if (entry.kind === 'user') {
+        return `you> ${entry.text}`
+      }
+
+      return `assistant> ${entry.text}`
+    })
     if (this.assistantLine) {
       lines.push(`linx> ${this.assistantLine}`)
     }
 
-    const visibleLines = this.hideToolOutput
-      ? lines.filter((line) => !line.startsWith('[tool] '))
-      : lines
+    return lines.flatMap((line) => formatWatchTranscriptLine(line, width))
+  }
 
-    return visibleLines.flatMap((line) => formatWatchTranscriptLine(line, width))
+  private buildActivityLines(width: number, maxLines: number): string[] {
+    if (maxLines <= 0) {
+      return []
+    }
+
+    const sourceEntries = this.hideToolOutput
+      ? this.activityEntries.filter((entry) => entry.kind !== 'tool')
+      : this.activityEntries
+
+    return sourceEntries
+      .flatMap((entry) => {
+        if (entry.kind === 'tool') {
+          return [applyAnsi(clipLine(`[tool] ${entry.text}`, width), ANSI.green)]
+        }
+
+        if (entry.kind === 'success') {
+          return [applyAnsi(clipLine(`[ok] ${entry.text}`, width), ANSI.green)]
+        }
+
+        if (entry.kind === 'error') {
+          return wrapText(`[error] ${entry.text}`, width).map((line) => applyAnsi(clipLine(line, width), ANSI.red))
+        }
+
+        if (entry.kind === 'debug') {
+          const debugLines = wrapText(`[debug] ${entry.text}`, width)
+          if (entry.detail) {
+            debugLines.push(...wrapText(`        ${entry.detail}`, width))
+          }
+          return debugLines.map((line) => applyAnsi(clipLine(line, width), ANSI.dim))
+        }
+
+        return wrapText(`[note] ${entry.text}`, width).map((line) => applyAnsi(clipLine(line, width), ANSI.dim))
+      })
+      .slice(-maxLines)
+  }
+
+  private buildActivityPanel(width: number, maxHeight: number): string[] {
+    return formatWatchActivityPanelLines({
+      width,
+      maxHeight,
+      entries: this.activityEntries,
+      hideToolOutput: this.hideToolOutput,
+      debugMode: this.debugMode,
+    })
   }
 
   private buildContextLines(width: number, maxLines: number): string[] {
@@ -1261,16 +1704,9 @@ class TuiWatchDisplay implements WatchDisplay {
   }
 
   private buildHeaderLines(width: number): string[] {
-    const shortcuts = this.state.phase === 'running'
-      ? 'Enter steer | Alt+Enter follow-up | Alt+Up restore | Ctrl+O tools'
-      : 'Enter send | Shift+Enter newline | Alt+Up restore | Ctrl+O tools'
-
     return [
       styleStatusLine(formatWatchHeaderLine(this.record, width)),
-      applyAnsi(
-        clipLine(` ${shortcuts} | Ctrl+C clear / double Ctrl+C quit | /session | /model <id> `, width),
-        ANSI.dim,
-      ),
+      applyAnsi(clipLine(' Alt+Up restore | Ctrl+O tools | Ctrl+C clear / double Ctrl+C quit ', width), ANSI.dim),
     ]
   }
 
@@ -1283,17 +1719,12 @@ class TuiWatchDisplay implements WatchDisplay {
   }
 
   private buildFooterLine(width: number): string {
-    const source = this.record.resolvedCredentialSource ?? this.record.credentialSource
-    const context = [
-      shortPath(this.record.cwd),
-      `session=${shortSessionId(this.record.id)}`,
-      this.record.model ? `model=${shortSessionId(this.record.model)}` : null,
-      `source=${source}`,
-    ]
-      .filter((part): part is string => Boolean(part))
-      .join(' | ')
-
-    return applyAnsi(clipLine(` ${context} `, width), ANSI.dim)
+    return applyAnsi(formatWatchFooterLine({
+      width,
+      phase: this.state.phase,
+      record: this.record,
+      hasDraft: this.composer.hasDraft(),
+    }), ANSI.dim)
   }
 
   private buildPromptLines(width: number): { lines: string[]; cursorRow: number; cursorCol: number } {
@@ -1383,7 +1814,7 @@ class TuiWatchDisplay implements WatchDisplay {
     }
 
     const totalWidth = Math.max(stdout.columns ?? 100, 60)
-    const totalHeight = Math.max(stdout.rows ?? 24, 12)
+    const totalHeight = Math.max(stdout.rows ?? 24, 4)
     const headerLines = this.buildHeaderLines(totalWidth)
     const showStatusLine = this.state.phase !== 'ready'
     const maxContextLines = Math.min(5, Math.max(0, totalHeight - (showStatusLine ? 5 : 4)))
@@ -1391,23 +1822,40 @@ class TuiWatchDisplay implements WatchDisplay {
     const queueLines = this.buildQueueLines(totalWidth)
     const showPromptLine = Boolean(this.promptResolver)
     const promptRender = showPromptLine ? this.buildPromptLines(totalWidth) : null
+    const footerSectionCounts = selectWatchFooterSectionCounts({
+      totalHeight,
+      headerCount: headerLines.length,
+      contextCount: contextLines.length,
+      showStatus: showStatusLine,
+      queueCount: queueLines.length,
+      promptCount: promptRender?.lines.length ?? 0,
+    })
     const footerLines = [
-      ...contextLines.map((line) => styleContextLine(line, totalWidth)),
-      ...(showStatusLine ? [styleStatusLine(formatWatchStatusLine(this.state, totalWidth))] : []),
-      ...queueLines,
+      ...contextLines
+        .slice(-footerSectionCounts.contextCount)
+        .map((line) => styleContextLine(line, totalWidth)),
+      ...(footerSectionCounts.statusCount > 0 ? [styleStatusLine(formatWatchStatusLine(this.state, totalWidth))] : []),
+      ...queueLines.slice(0, footerSectionCounts.queueCount),
       ...(promptRender ? promptRender.lines : []),
       this.buildFooterLine(totalWidth),
     ]
-    const overlayRender = this.buildOverlayLines(totalWidth, Math.max(0, totalHeight - headerLines.length - footerLines.length - 2))
+    const overlayRender = this.buildOverlayLines(totalWidth, Math.max(0, totalHeight - headerLines.length - footerLines.length))
     const overlayLines = overlayRender.lines
-    const contentHeight = Math.max(4, totalHeight - headerLines.length - footerLines.length - overlayLines.length)
+    const contentHeight = Math.max(0, totalHeight - headerLines.length - footerLines.length - overlayLines.length)
+    const activityBudget = Math.min(6, Math.max(0, Math.floor(contentHeight / 3)))
     const mainLines = this.buildMainLines(totalWidth)
-    const visibleMain = mainLines.slice(-contentHeight)
+    const activityPanelLines = this.buildActivityPanel(totalWidth, activityBudget)
+    const mainBudget = Math.max(0, contentHeight - activityPanelLines.length)
+    const visibleMain = mainLines.slice(-mainBudget)
     const rows: string[] = []
 
     rows.push(...headerLines)
 
     for (const line of visibleMain) {
+      rows.push(line)
+    }
+
+    for (const line of activityPanelLines) {
       rows.push(line)
     }
 
@@ -1418,23 +1866,25 @@ class TuiWatchDisplay implements WatchDisplay {
     rows.push(...overlayLines)
     rows.push(...footerLines)
 
+    const visibleRows = rows.slice(0, totalHeight)
+
     stdout.write('\x1b[H')
-    stdout.write(rows.join('\n'))
+    stdout.write(visibleRows.join('\n'))
     stdout.write('\x1b[J')
 
     if (overlayRender.cursorRow !== undefined && overlayRender.cursorCol !== undefined) {
-      const cursorRow = headerLines.length + contentHeight + overlayRender.cursorRow + 1
+      const cursorRow = Math.min(totalHeight, headerLines.length + contentHeight + overlayRender.cursorRow + 1)
       const cursorCol = Math.min(totalWidth, overlayRender.cursorCol)
       stdout.write(`\x1b[?25h\x1b[${cursorRow};${cursorCol}H`)
     } else if (this.promptResolver) {
-      const cursorRow = headerLines.length
+      const cursorRow = Math.min(totalHeight, headerLines.length
         + contentHeight
         + overlayLines.length
-        + contextLines.length
-        + (showStatusLine ? 1 : 0)
-        + queueLines.length
+        + footerSectionCounts.contextCount
+        + footerSectionCounts.statusCount
+        + footerSectionCounts.queueCount
         + (promptRender?.cursorRow ?? 0)
-        + 1
+        + 1)
       const cursorCol = Math.min(totalWidth, promptRender?.cursorCol ?? 1)
       stdout.write(`\x1b[?25h\x1b[${cursorRow};${cursorCol}H`)
     } else {

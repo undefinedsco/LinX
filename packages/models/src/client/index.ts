@@ -15,6 +15,7 @@ export interface LinxOidcOAuthSecrets {
   oidcRefreshToken: string
   oidcAccessToken: string
   oidcExpiresAt: string
+  oidcClientId?: string
 }
 
 export type LinxClientSecrets = LinxClientCredentialsSecrets | LinxOidcOAuthSecrets
@@ -241,6 +242,7 @@ export function parseLinxClientSecrets(raw: unknown): LinxClientSecrets | null {
       oidcRefreshToken: raw.oidcRefreshToken,
       oidcAccessToken: raw.oidcAccessToken,
       oidcExpiresAt: raw.oidcExpiresAt,
+      oidcClientId: optionalString(raw.oidcClientId),
     }
   }
 
@@ -310,6 +312,35 @@ export function selectLinxAccountWebId(account: LinxAccountData | null, preferre
   }
 
   return Object.keys(account.webIds)[0] ?? null
+}
+
+export function resolveLinxAccountPodUrl(
+  account: LinxAccountData | null,
+  webId?: string | null,
+): string | null {
+  if (!account) {
+    return null
+  }
+
+  if (webId && account.webIds[webId]) {
+    return resolveLinxBaseUrl(account.webIds[webId], account.webIds[webId])
+  }
+
+  const firstMappedPodUrl = Object.values(account.webIds)[0]
+  if (typeof firstMappedPodUrl === 'string' && firstMappedPodUrl.trim()) {
+    return resolveLinxBaseUrl(firstMappedPodUrl, firstMappedPodUrl)
+  }
+
+  if (account.controls.pod?.trim()) {
+    return resolveLinxBaseUrl(account.controls.pod, account.controls.pod)
+  }
+
+  const firstPodKey = Object.keys(account.pods)[0]
+  if (typeof firstPodKey === 'string' && firstPodKey.trim()) {
+    return resolveLinxBaseUrl(firstPodKey, firstPodKey)
+  }
+
+  return null
 }
 
 export function hasMatchingLinxStoredCredentials(
@@ -430,7 +461,7 @@ export async function performLinxPasswordLogin(
       email: input.email,
       token,
       webId,
-      podUrl: resolveLinxPodUrl(webId),
+      podUrl: resolveLinxAccountPodUrl(account, webId) ?? resolveLinxPodUrl(webId),
       createdAt: (input.now ?? new Date()).toISOString(),
     },
   }

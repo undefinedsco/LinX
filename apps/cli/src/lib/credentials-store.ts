@@ -81,6 +81,13 @@ export function getClientCredentials(creds: StoredCredentials): ClientCredential
   return isClientCredentials(creds.secrets) ? creds.secrets : null
 }
 
+export function getOidcOAuthSecrets(creds: StoredCredentials): OidcOAuthSecrets | null {
+  const secrets = creds.secrets
+  return 'oidcRefreshToken' in secrets && 'oidcAccessToken' in secrets && 'oidcExpiresAt' in secrets
+    ? secrets
+    : null
+}
+
 export function loadCredentials(): StoredCredentials | null {
   for (const sourceDir of credentialDirs()) {
     const configPath = join(sourceDir, LINX_CONFIG_FILE_NAME)

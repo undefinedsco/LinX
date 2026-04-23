@@ -12,6 +12,7 @@ import {
 } from '@linx/models/ai-config'
 import { XPOD_AI, XPOD_CREDENTIAL } from '@linx/models/namespaces'
 import { getClientCredentials, loadCredentials } from './credentials-store.js'
+import { loadAccountSession } from './account-session.js'
 import { authenticatedFetch, getAccessToken } from './solid-auth.js'
 import { promptPassword } from './prompt.js'
 
@@ -257,7 +258,7 @@ async function resolvePodWriteContext(urlOverride?: string): Promise<{ accessTok
 
   return {
     accessToken: tokenResult.accessToken,
-    podUrl: resolveLinxPodUrl(creds.webId),
+    podUrl: loadAccountSession()?.podUrl || resolveLinxPodUrl(creds.webId),
   }
 }
 

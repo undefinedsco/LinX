@@ -11,6 +11,7 @@ import {
   type SolidDatabase,
   type ThreadRow,
 } from './models.js'
+import { DEFAULT_LINX_CLOUD_MODEL_ID } from './default-model.js'
 import { formatThreadLabel, toOpenAiMessages } from './thread-utils.js'
 
 const DEFAULT_CHAT_ID = 'cli-default'
@@ -92,7 +93,7 @@ async function ensureCliAgent(db: SolidDatabase): Promise<void> {
     id: DEFAULT_AGENT_ID,
     name: 'LinX CLI Assistant',
     provider: 'xpod',
-    model: 'default',
+    model: DEFAULT_LINX_CLOUD_MODEL_ID,
     createdAt: now,
     updatedAt: now,
   }).execute()

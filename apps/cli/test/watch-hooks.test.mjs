@@ -25,7 +25,7 @@ test('codex hook maps to codex-acp transport', async () => {
     passthroughArgs: ['--search'],
   })
 
-  assert.equal(plan.command, 'codex-acp')
+  assert.match(plan.command, /codex-acp(?:\\.js)?$/)
   assert.deepEqual(plan.args, ['--search'])
 })
 

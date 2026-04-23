@@ -25,6 +25,7 @@ import {
   resolveLinxCloudApiBaseUrl,
   resolveLinxCloudRuntimeApiBaseUrl,
   resolveLinxCredentialBootstrapStatus,
+  resolveLinxAccountPodUrl,
   resolveLinxPodUrl,
   resolveLinxRuntimeApiBaseUrlForIssuerUrl,
   resolveLinxRuntimeOriginForIssuerUrl,
@@ -122,6 +123,18 @@ describe('client local config shared core', () => {
     expect(resolveLinxRuntimeApiBaseUrlForIssuerUrl('https://alice.pods.undefineds.co')).toBe('https://alice.pods.undefineds.co/v1')
     expect(resolveLinxPodUrl('https://pod.example/profile/card#me')).toBe('https://pod.example/profile/')
     expect(resolveLinxPodBaseUrl('https://pod.example/profile/card#me')).toBe('https://pod.example/profile')
+    expect(resolveLinxAccountPodUrl({
+      controls: {
+        pod: 'https://pods.undefineds.co/ganbb/',
+      },
+      pods: {
+        'https://pods.undefineds.co/ganbb/': 'ganbb',
+      },
+      webIds: {
+        'https://id.undefineds.co/ganbb/profile/card#me': 'https://pods.undefineds.co/ganbb/',
+      },
+      clientCredentials: {},
+    }, 'https://id.undefineds.co/ganbb/profile/card#me')).toBe('https://pods.undefineds.co/ganbb/')
 
     expect(
       parseLinxAccountData({
