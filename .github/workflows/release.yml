@@ -149,15 +149,18 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - publish
-    if: ${{ success() && secrets.RELEASE_WEBHOOK_URL != '' }}
+    if: success()
     steps:
       - name: Send webhook notification
+        if: ${{ env.WEBHOOK_URL != '' }}
+        env:
+          WEBHOOK_URL: ${{ secrets.RELEASE_WEBHOOK_URL }}
         run: |
           payload=$(printf '{"project":"linx","tag":"%s","releaseUrl":"%s/%s/releases/tag/%s"}' \
             "${{ github.ref_name }}" \
             "${{ github.server_url }}" \
             "${{ github.repository }}" \
             "${{ github.ref_name }}")
-          curl -X POST "${{ secrets.RELEASE_WEBHOOK_URL }}" \
+          curl -X POST "$WEBHOOK_URL" \
             -H 'Content-Type: application/json' \
             -d "$payload"
