@@ -1,5 +1,5 @@
 {
-  "name": "@linx/models",
+  "name": "@undefineds.co/models",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,11 +9,14 @@
     "./client": "./src/client/index.ts",
     "./discovery": "./src/discovery/index.ts",
     "./namespaces": "./src/namespaces.ts",
+    "./profile": "./src/profile.ts",
+    "./profile.schema": "./src/profile.schema.ts",
     "./watch": "./src/watch/index.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "lint": "echo \"lint not configured\"",
+    "pack:release": "node scripts/pack-release.mjs",
     "sync:discovery:vercel": "node --experimental-strip-types scripts/sync-discovery-vercel.ts",
     "test": "vitest",
     "test:pod": "dotenv -e ../../.env -- vitest run tests/pod.integration.test.ts",

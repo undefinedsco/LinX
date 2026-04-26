@@ -1,5 +1,5 @@
 {
-  "name": "@linx/cli",
+  "name": "@undefineds.co/linx",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -12,7 +12,8 @@
     "test": "yarn build && node --test test/**/*.test.mjs"
   },
   "dependencies": {
-    "@linx/models": "*",
+    "@undefineds.co/models": "*",
+    "@comunica/query-sparql-solid": "^4.0.2",
     "@inrupt/solid-client-authn-node": "^3.1.1",
     "@inrupt/vocab-common-rdf": "^1.0.5",
     "@mariozechner/pi-coding-agent": "^0.67.6",

@@ -7,8 +7,11 @@ import { tmpdir } from 'node:os'
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 const cliRoot = fileURLToPath(new URL('..', import.meta.url))
 const previewRoot = join(repoRoot, 'preview')
-const workRoot = join(tmpdir(), `linx-cli-preview-${Date.now()}`)
-const previewVersionTag = `0.1.0-${Date.now()}`
+const args = parseArgs(process.argv.slice(2))
+const baseCliPkg = JSON.parse(readFileSync(join(cliRoot, 'package.json'), 'utf-8'))
+const packageVersion = args.version ?? (args.release ? baseCliPkg.version : `${baseCliPkg.version}-${Date.now()}`)
+const artifactKind = args.release ? 'release' : 'preview'
+const workRoot = join(tmpdir(), `linx-cli-${artifactKind}-${Date.now()}`)
 
 rmSync(workRoot, { recursive: true, force: true })
 mkdirSync(workRoot, { recursive: true })
@@ -26,7 +29,7 @@ cpSync(join(repoRoot, 'packages', 'models', 'dist'), join(vendorModelsRoot, 'dis
 
 const modelsPkg = JSON.parse(readFileSync(join(repoRoot, 'packages', 'models', 'package.json'), 'utf-8'))
 const slimModelsPkg = {
-  name: '@linx/models',
+  name: '@undefineds.co/models',
   version: modelsPkg.version,
   type: 'module',
   exports: {
@@ -35,6 +38,8 @@ const slimModelsPkg = {
     './client': './dist/client/index.js',
     './discovery': './dist/discovery/index.js',
     './namespaces': './dist/namespaces.js',
+    './profile': './dist/profile.js',
+    './profile.schema': './dist/profile.schema.js',
     './watch': './dist/watch/index.js',
   },
   dependencies: modelsPkg.dependencies,
@@ -44,9 +49,18 @@ writeFileSync(join(vendorModelsRoot, 'package.json'), `${JSON.stringify(slimMode
 const cliPkgPath = join(workRoot, 'package.json')
 const cliPkg = JSON.parse(readFileSync(cliPkgPath, 'utf-8'))
 cliPkg.private = false
-cliPkg.version = previewVersionTag
+cliPkg.version = packageVersion
+cliPkg.files = [
+  'dist',
+  'vendor',
+  'README.md',
+  'package.json',
+]
+cliPkg.publishConfig = {
+  access: 'public',
+}
 if (cliPkg.dependencies) {
-  delete cliPkg.dependencies['@linx/models']
+  delete cliPkg.dependencies['@undefineds.co/models']
   cliPkg.dependencies['@zed-industries/codex-acp'] = '^0.9.5'
 }
 writeFileSync(cliPkgPath, `${JSON.stringify(cliPkg, null, 2)}\n`)
@@ -67,18 +81,22 @@ function rewriteModelImports(root) {
     const rel = relative(dirname(file), join(workRoot, 'vendor', 'models', 'dist')).replaceAll('\\', '/')
     const base = rel.startsWith('.') ? rel : `./${rel}`
     const replacements = [
-      ["'@linx/models'", `'${base}/index.js'`],
-      ["'@linx/models/client'", `'${base}/client/index.js'`],
-      ["'@linx/models/ai-config'", `'${base}/ai-config/index.js'`],
-      ["'@linx/models/discovery'", `'${base}/discovery/index.js'`],
-      ["'@linx/models/namespaces'", `'${base}/namespaces.js'`],
-      ["'@linx/models/watch'", `'${base}/watch/index.js'`],
-      ['"@linx/models"', `"${base}/index.js"`],
-      ['"@linx/models/client"', `"${base}/client/index.js"`],
-      ['"@linx/models/ai-config"', `"${base}/ai-config/index.js"`],
-      ['"@linx/models/discovery"', `"${base}/discovery/index.js"`],
-      ['"@linx/models/namespaces"', `"${base}/namespaces.js"`],
-      ['"@linx/models/watch"', `"${base}/watch/index.js"`],
+      ["'@undefineds.co/models'", `'${base}/index.js'`],
+      ["'@undefineds.co/models/client'", `'${base}/client/index.js'`],
+      ["'@undefineds.co/models/ai-config'", `'${base}/ai-config/index.js'`],
+      ["'@undefineds.co/models/discovery'", `'${base}/discovery/index.js'`],
+      ["'@undefineds.co/models/namespaces'", `'${base}/namespaces.js'`],
+      ["'@undefineds.co/models/profile'", `'${base}/profile.js'`],
+      ["'@undefineds.co/models/profile.schema'", `'${base}/profile.schema.js'`],
+      ["'@undefineds.co/models/watch'", `'${base}/watch/index.js'`],
+      ['"@undefineds.co/models"', `"${base}/index.js"`],
+      ['"@undefineds.co/models/client"', `"${base}/client/index.js"`],
+      ['"@undefineds.co/models/ai-config"', `"${base}/ai-config/index.js"`],
+      ['"@undefineds.co/models/discovery"', `"${base}/discovery/index.js"`],
+      ['"@undefineds.co/models/namespaces"', `"${base}/namespaces.js"`],
+      ['"@undefineds.co/models/profile"', `"${base}/profile.js"`],
+      ['"@undefineds.co/models/profile.schema"', `"${base}/profile.schema.js"`],
+      ['"@undefineds.co/models/watch"', `"${base}/watch/index.js"`],
     ]
     for (const [from, to] of replacements) {
       source = source.split(from).join(to)
@@ -153,9 +171,47 @@ for (const name of ['src', 'test', '.tmp-dev-emit', '.omx']) {
 }
 
 mkdirSync(previewRoot, { recursive: true })
-const pack = spawnSync('npm', ['pack'], { cwd: workRoot, stdio: 'inherit' })
+const pack = spawnSync('npm', ['pack'], {
+  cwd: workRoot,
+  stdio: 'inherit',
+  env: {
+    ...process.env,
+    npm_config_cache: join(workRoot, '.npm-cache'),
+  },
+})
 if ((pack.status ?? 1) !== 0) process.exit(pack.status ?? 1)
-const tgz = join(workRoot, `linx-cli-${previewVersionTag}.tgz`)
-const out = join(previewRoot, `linx-cli-preview-selfcontained-${previewVersionTag}.tgz`)
+const tgz = join(workRoot, `linx-cli-${packageVersion}.tgz`)
+const out = join(previewRoot, `linx-cli-${artifactKind}-selfcontained-${packageVersion}.tgz`)
 cpSync(tgz, out)
 console.log(out)
+
+function parseArgs(argv) {
+  const parsed = {
+    release: false,
+    version: undefined,
+  }
+
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i]
+    if (arg === '--release') {
+      parsed.release = true
+      continue
+    }
+    if (arg === '--preview') {
+      parsed.release = false
+      continue
+    }
+    if (arg === '--version') {
+      parsed.version = argv[i + 1]
+      i += 1
+      continue
+    }
+    if (arg.startsWith('--version=')) {
+      parsed.version = arg.slice('--version='.length)
+      continue
+    }
+    throw new Error(`Unknown option: ${arg}`)
+  }
+
+  return parsed
+}

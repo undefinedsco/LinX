@@ -1,13 +1,14 @@
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { readFileSync } from 'node:fs'
-import { LINX_HOME_DIRNAME } from '@linx/models/client'
+import { LINX_HOME_DIRNAME } from '@undefineds.co/models/client'
 import { keyHint, keyText, rawKeyHint } from '@mariozechner/pi-coding-agent'
 import { Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from '@mariozechner/pi-tui'
 import { loadCredentials } from '../credentials-store.js'
+import { extractUsernameFromWebId, resolveProfileDisplayName } from '../profile-identity.js'
 
 export const LINX_AGENT_DIR = join(homedir(), LINX_HOME_DIRNAME, 'agent')
-export const LINX_UPDATE_PACKAGE_NAME = '@linx/cli'
+export const LINX_UPDATE_PACKAGE_NAME = '@undefineds.co/linx'
 export const LINX_CHANGELOG_URL = 'https://github.com/undefineds-co/linx-cli/releases'
 export const LINX_CLI_VERSION = readLinxCliVersion()
 
@@ -59,7 +60,7 @@ function patchUpdateNotification(interactive: any): void {
   interactive.showNewVersionNotification = function patchedShowNewVersionNotification(newVersion: string): void {
     const lines = [
       '\x1b[1m\x1b[33mLinX Update Available\x1b[39m\x1b[22m',
-      `\x1b[2mNew version ${newVersion} is available. \x1b[22m\x1b[36mRun: npm install -g @linx/cli\x1b[39m`,
+      `\x1b[2mNew version ${newVersion} is available. \x1b[22m\x1b[36mRun: npm install -g @undefineds.co/linx\x1b[39m`,
       `\x1b[2mChangelog: \x1b[22m\x1b[36m${LINX_CHANGELOG_URL}\x1b[39m`,
     ]
     this.chatContainer?.addChild?.(new Text(lines.join('\n'), 1, 0))
@@ -77,7 +78,8 @@ function patchHeader(interactive: any): void {
       return
     }
 
-    const replacement = new LinxWelcomeCard(() => buildHeaderState(this))
+    let profileDisplayName: string | null = null
+    const replacement = new LinxWelcomeCard(() => buildHeaderState(this, profileDisplayName))
     const currentHeader = this.customHeader ?? this.builtInHeader
     const index = this.headerContainer?.children?.indexOf?.(currentHeader) ?? -1
     if (index >= 0) {
@@ -86,16 +88,27 @@ function patchHeader(interactive: any): void {
     this.customHeader = replacement
     this.ui?.requestRender?.()
     this.updateTerminalTitle?.()
+
+    void suppressPodStatusOutput(() => resolveProfileDisplayName())
+      .then((displayName) => {
+        if (!displayName || displayName === profileDisplayName) {
+          return
+        }
+        profileDisplayName = displayName
+        replacement.invalidate()
+        this.ui?.requestRender?.()
+      })
+      .catch(() => undefined)
   }
 }
 
 type HeaderState = {
   webId: string
+  username: string
   provider: string
   model: string
   workspace: string
   session: string
-  status: string
   next: string
 }
 
@@ -107,11 +120,9 @@ class LinxWelcomeCard {
   render(width: number): string[] {
     const innerWidth = Math.max(20, width - 4)
     const state = this.getState()
-    const logo = buildLogoLines()
     const titleBlock = [
       `\x1b[1mLinX\x1b[22m \x1b[2mv${LINX_CLI_VERSION}\x1b[22m`,
-      '\x1b[1mReady to chat\x1b[22m',
-      `\x1b[2m${state.provider}\x1b[22m`,
+      `\x1b[1mWelcome back, ${state.username}\x1b[22m`,
     ]
     const rows = [
       renderField('WebID', state.webId, innerWidth),
@@ -119,12 +130,11 @@ class LinxWelcomeCard {
       renderField('Model', state.model, innerWidth),
       renderField('Workspace', state.workspace, innerWidth),
       renderField('Session', state.session, innerWidth),
-      renderField('Status', state.status, innerWidth),
       '',
       truncateToWidth(`\x1b[2mNext\x1b[22m      ${state.next}`, innerWidth),
     ]
 
-    const headerLines = mergeColumns(logo, titleBlock, innerWidth)
+    const headerLines = titleBlock.map((line) => truncateToWidth(line, innerWidth))
     const body = [
       ...headerLines.map((line) => padLine(line, innerWidth)),
       padLine('', innerWidth),
@@ -139,20 +149,22 @@ class LinxWelcomeCard {
   }
 }
 
-function buildHeaderState(interactive: any): HeaderState {
+function buildHeaderState(interactive: any, profileDisplayName: string | null = null): HeaderState {
   const credentials = loadCredentials()
   const webId = credentials?.webId ?? 'not logged in'
   const workspace = interactive?.sessionManager?.getCwd?.() || process.cwd()
-  const sessionName = interactive?.sessionManager?.getSessionName?.() || basename(workspace)
+  const sessionId = interactive?.sessionManager?.getSessionId?.()
+  const sessionName = interactive?.sessionManager?.getSessionName?.()
+  const session = sessionName && sessionId ? `${sessionName} (${shortSessionId(sessionId)})` : shortSessionId(sessionId)
   const model = interactive?.session?.model?.id ?? 'unknown-model'
 
   return {
     webId,
+    username: profileDisplayName ?? extractUsernameFromWebId(webId),
     provider: resolveRuntimeProviderLabel(interactive),
     model,
     workspace,
-    session: sessionName,
-    status: 'Ready',
+    session,
     next: [
       keyHint('tui.input.submit', 'send'),
       keyHint('app.model.select', 'model'),
@@ -179,31 +191,11 @@ function wrapAndPad(line: string, width: number): string[] {
     : [padLine('', width)]
 }
 
-function buildLogoLines(): string[] {
-  const pencil = '\x1b[35m'
-  const pen = '\x1b[37m'
-  const reset = '\x1b[39m'
-  return [
-    `${pencil}╲══◥${reset}`,
-    ` ${pen}◣${reset}╳${pencil}◢${reset}`,
-    `${pen}◣══╱${reset}`,
-  ]
-}
-
-function mergeColumns(left: string[], right: string[], width: number): string[] {
-  const rows = Math.max(left.length, right.length)
-  const leftWidth = Math.max(...left.map((line) => visibleWidth(line)), 0)
-  const gap = '  '
-  const lines: string[] = []
-
-  for (let index = 0; index < rows; index += 1) {
-    const leftLine = left[index] ?? ''
-    const rightLine = right[index] ?? ''
-    const paddedLeft = leftLine + ' '.repeat(Math.max(0, leftWidth - visibleWidth(leftLine)))
-    lines.push(truncateToWidth(`${paddedLeft}${gap}${rightLine}`, width))
+function shortSessionId(sessionId: unknown): string {
+  if (typeof sessionId !== 'string' || !sessionId.trim()) {
+    return 'new session'
   }
-
-  return lines
+  return sessionId.length > 12 ? sessionId.slice(0, 12) : sessionId
 }
 
 function padLine(line: string, width: number): string {
@@ -230,4 +222,56 @@ function resolveRuntimeProviderLabel(interactive: any): string {
     return bridge.providerLabel
   }
   return 'undefineds(cloud)'
+}
+
+async function suppressPodStatusOutput<T>(operation: () => Promise<T>): Promise<T> {
+  if (process.env.LINX_TUI_SHOW_POD_STATUS === '1') {
+    return await operation()
+  }
+
+  const restoreStdout = patchPodStatusWriter(process.stdout)
+  const restoreStderr = patchPodStatusWriter(process.stderr)
+  try {
+    return await operation()
+  } finally {
+    restoreStdout()
+    restoreStderr()
+  }
+}
+
+function patchPodStatusWriter(stream: NodeJS.WriteStream): () => void {
+  const originalWrite = stream.write.bind(stream) as typeof stream.write
+  ;(stream as unknown as { write: typeof stream.write }).write = function patchedWrite(
+    chunk: string | Uint8Array,
+    encodingOrCallback?: BufferEncoding | ((error?: Error | null) => void),
+    callback?: (error?: Error | null) => void,
+  ): boolean {
+    const encoding = typeof encodingOrCallback === 'string' ? encodingOrCallback : undefined
+    const onComplete = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback
+    const text = typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString(encoding)
+    const filtered = stripPodStatusLines(text)
+
+    if (!filtered) {
+      onComplete?.()
+      return true
+    }
+
+    if (typeof chunk === 'string') {
+      return originalWrite(filtered, encodingOrCallback as BufferEncoding, callback)
+    }
+    return originalWrite(Buffer.from(filtered, encoding), callback)
+  } as typeof stream.write
+
+  return () => {
+    ;(stream as unknown as { write: typeof stream.write }).write = originalWrite
+  }
+}
+
+function stripPodStatusLines(input: string): string {
+  const urlPattern = String.raw`https?:\/\/[A-Za-z0-9._~:/?#[\]@!$&'()*+,;=%-]+`
+  return input
+    .replace(new RegExp(String.raw`\[Container\]\s*容器已存在:\s*${urlPattern}[ \t]*(?:\r?\n)?`, 'g'), '')
+    .replace(new RegExp(String.raw`Connecting to Solid Pod:\s*${urlPattern}[ \t]*(?:\r?\n)?`, 'g'), '')
+    .replace(new RegExp(String.raw`Using WebID:\s*${urlPattern}[ \t]*(?:\r?\n)?`, 'g'), '')
+    .replace(/Successfully connected to Solid Pod[ \t]*(?:\r?\n)?/g, '')
 }

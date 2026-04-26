@@ -71,6 +71,8 @@ issues/
 
 # Demo / scratch
 demos/
+.tmp-smoke/
+preview/
 
 # W3C test data (downloaded at test time)
 packages/models/tests/w3c-data/
