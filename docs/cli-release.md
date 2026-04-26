@@ -69,6 +69,42 @@ After registry publication, users install:
 npm i -g @undefineds.co/linx
 ```
 
+## Regional Deployments
+
+Do not split the npm product package by deployment region. The public CLI product package stays:
+
+```text
+@undefineds.co/linx
+```
+
+Do not create package variants such as `@undefineds.co/linx-cn`. That makes versioning, update prompts, support, and user documentation diverge for the same product.
+
+xpod/cloud can still be deployed as separate regional stacks, for example overseas and mainland China. The regional difference is an endpoint/configuration concern, not a separate CLI product identity:
+
+```text
+overseas xpod/cloud -> overseas issuer + runtime API
+mainland xpod/cloud -> mainland issuer + runtime API
+```
+
+The CLI should support choosing those endpoints through runtime configuration, login URL overrides, environment variables, or a first-run region selector. If a regional installer is needed, it should install the same `@undefineds.co/linx` package and write the region-specific default config after install.
+
+Good release shape:
+
+```text
+one npm package: @undefineds.co/linx
+one update stream: @undefineds.co/linx
+multiple xpod deployments: selected by config
+optional regional install pages/scripts: same package, different default config
+```
+
+Avoid this release shape:
+
+```text
+@undefineds.co/linx
+@undefineds.co/linx-cn
+@undefineds.co/linx-overseas
+```
+
 ## CI/CD
 
 CLI CI runs on Linux, macOS, and Windows with Node 22:
