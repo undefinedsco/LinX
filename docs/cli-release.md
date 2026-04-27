@@ -203,7 +203,7 @@ Workflow filename: cli-release.yml
 Environment name: empty unless the workflow is changed to use a GitHub environment
 ```
 
-The release workflow has `id-token: write`; npm automatically detects the GitHub OIDC environment during `npm publish`. Do not set `NODE_AUTH_TOKEN` for the publish steps. If publish fails with `EOTP`, the workflow is still using token-based publishing or the npm package has not been configured for Trusted Publishing.
+The release workflow has top-level `id-token: write`; npm automatically detects the GitHub OIDC environment during `npm publish`. Do not set a real `NODE_AUTH_TOKEN` for the publish steps. The workflow explicitly clears `NODE_AUTH_TOKEN` during publish so an old repository `NPM_TOKEN` cannot make npm fall back to token-based publishing. If publish fails with `EOTP`, the workflow is still using token-based publishing or the npm package has not been configured for Trusted Publishing.
 
 For an already-published package whose registry metadata points at an old repository, publish one corrected package version or update package metadata so the package repository matches `undefinedsco/LinX`. Trusted Publishing validates the package repository against the GitHub Actions claim.
 
