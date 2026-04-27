@@ -74,17 +74,17 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       - name: Dry-run publish models
-        run: npm publish --access public --dry-run preview/undefineds-co-models-*.tgz
+        run: npm publish --access public --dry-run ./preview/undefineds-co-models-*.tgz
 
       - name: Dry-run publish CLI
-        run: npm publish --access public --dry-run preview/undefineds-co-linx-*.tgz
+        run: npm publish --access public --dry-run ./preview/undefineds-co-linx-*.tgz
 
       - name: Publish models
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --access public preview/undefineds-co-models-*.tgz
+        run: npm publish --access public ./preview/undefineds-co-models-*.tgz
 
       - name: Publish CLI
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --access public preview/undefineds-co-linx-*.tgz
+        run: npm publish --access public ./preview/undefineds-co-linx-*.tgz
