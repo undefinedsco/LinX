@@ -154,11 +154,13 @@ The next structural optimization is removing `@comunica/query-sparql-solid` from
 
 ## CI/CD
 
-CLI CI runs on Linux, macOS, and Windows with Node 22:
+CLI CI runs on Linux and macOS with Node 22:
 
 ```text
 .github/workflows/cli-ci.yml
 ```
+
+The supported Linux target includes WSL2 when LinX CLI is installed and run inside the WSL2 Linux environment. Windows native shells such as PowerShell and cmd are not part of the supported CLI/TUI release gate. The native Windows runner currently differs on terminal behavior, POSIX permission bits, shebang/PATH execution, and file-lock cleanup semantics; those are not release blockers for the supported macOS/Linux path.
 
 The CI path builds models, builds CLI, runs CLI tests, packs release tarballs, and installs the tarballs into an isolated global npm prefix before running:
 
@@ -173,7 +175,7 @@ Release publishing is handled by:
 .github/workflows/cli-release.yml
 ```
 
-It verifies the same release tarballs on Linux, macOS, and Windows. Only the Linux artifact is uploaded for publish. Publishing runs in order:
+It verifies the same release tarballs on Linux and macOS. Only the Linux artifact is uploaded for publish. Publishing runs in order:
 
 ```text
 @undefineds.co/models -> @undefineds.co/linx
