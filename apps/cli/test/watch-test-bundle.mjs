@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -9,6 +10,8 @@ const modelsRoot = fileURLToPath(new URL('../../../packages/models', import.meta
 const sourceRoot = join(cliRoot, 'src')
 const wsRoot = fileURLToPath(new URL('../../../node_modules/ws', import.meta.url))
 const cliNodeModulesRoot = fileURLToPath(new URL('../node_modules', import.meta.url))
+const require = createRequire(import.meta.url)
+const tscBin = require.resolve('typescript/bin/tsc')
 
 export async function loadWatchModule(entryRelative = 'lib/watch/index.ts') {
   return buildWatchBundle(entryRelative)
@@ -23,7 +26,8 @@ async function buildWatchBundle(entryRelative) {
   const entryPath = join(sourceRoot, entryRelative)
   const compiledEntry = join(outdir, entryRelative.replace(/\.ts$/, '.js'))
 
-  execFileSync('tsc', [
+  execFileSync(process.execPath, [
+    tscBin,
     '--outDir',
     outdir,
     '--rootDir',
