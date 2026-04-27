@@ -156,3 +156,100 @@ test('pi agent stream adapter uses the current session model instead of the boot
   assert.equal(events[0].partial.model, 'linx-lite')
   assert.equal(events.at(-1).message.model, 'linx-lite')
 })
+
+test('pi agent stream adapter forwards tools and emits tool calls for Pi agent loop', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/stream.ts')
+  t.after(() => cleanup())
+
+  const completionCalls = []
+  const adapter = module.createPiAgentStreamAdapter({
+    sessionId: 'undefineds_pi_frontend',
+    cwd: '/tmp/demo',
+    model: 'linx-lite',
+    completionBackend: {
+      async complete(input) {
+        completionCalls.push(input)
+        return {
+          content: '',
+          finishReason: 'tool_calls',
+          toolCalls: [
+            {
+              id: 'call_1',
+              type: 'function',
+              function: {
+                name: 'bash',
+                arguments: JSON.stringify({ command: 'pwd' }),
+              },
+            },
+          ],
+        }
+      },
+    },
+  })
+
+  const events = []
+  for await (const event of adapter.streamFn(undefined, {
+    messages: [{ role: 'user', content: 'run pwd' }],
+    tools: [{ name: 'bash', description: 'Run a shell command', parameters: { type: 'object' } }],
+  })) {
+    events.push(event)
+  }
+
+  assert.equal(completionCalls.length, 1)
+  assert.equal(completionCalls[0].tools[0].function.name, 'bash')
+  assert.equal(events[1].type, 'toolcall_start')
+  assert.equal(events[2].type, 'toolcall_delta')
+  assert.equal(events[3].type, 'toolcall_end')
+  assert.deepEqual(events[3].toolCall.arguments, { command: 'pwd' })
+  assert.equal(events[4].type, 'done')
+  assert.equal(events[4].reason, 'toolUse')
+  assert.equal(events[4].message.stopReason, 'toolUse')
+})
+
+test('pi agent stream adapter preserves assistant tool calls and tool results in history', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/stream.ts')
+  t.after(() => cleanup())
+
+  const completionCalls = []
+  const adapter = module.createPiAgentStreamAdapter({
+    completionBackend: {
+      async complete(input) {
+        completionCalls.push(input)
+        return 'done'
+      },
+    },
+  })
+
+  for await (const _event of adapter.streamFn(undefined, {
+    messages: [
+      { role: 'assistant', content: [{ type: 'toolCall', id: 'call_1', name: 'bash', arguments: { command: 'pwd' } }] },
+      { role: 'toolResult', toolCallId: 'call_1', toolName: 'bash', content: [{ type: 'text', text: '/tmp/demo' }] },
+      { role: 'user', content: 'what did it print?' },
+    ],
+  })) {
+    // drain
+  }
+
+  assert.deepEqual(completionCalls[0].messages.slice(0, 2), [
+    {
+      role: 'assistant',
+      content: null,
+      tool_calls: [
+        {
+          id: 'call_1',
+          type: 'function',
+          function: {
+            name: 'bash',
+            arguments: JSON.stringify({ command: 'pwd' }),
+          },
+        },
+      ],
+    },
+    {
+      role: 'tool',
+      content: '/tmp/demo',
+      tool_call_id: 'call_1',
+      name: 'bash',
+    },
+  ])
+})

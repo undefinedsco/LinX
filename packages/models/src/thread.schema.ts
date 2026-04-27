@@ -1,5 +1,5 @@
 import { uri, boolean, object, podTable, string, timestamp, id } from '@undefineds.co/drizzle-solid'
-import { UDFS, DCTerms, SIOC, MEETING, LINX_CHAT } from './namespaces'
+import { UDFS, DCTerms, SIOC, LINX_CHAT } from './namespaces'
 
 /**
  * Thread schema.
@@ -10,7 +10,7 @@ import { UDFS, DCTerms, SIOC, MEETING, LINX_CHAT } from './namespaces'
  *
  * Storage structure (aligned with xpod):
  * - Thread stored as fragment in Chat's index.ttl
- * - Location: /.data/chat/{chatId}/index.ttl#{id}
+ * - Location: /.data/chat/{chat}/index.ttl#{id}
  *
  * NOTE:
  * - `thread.workspace` is a storage-layer reference (URI) to a container/resource in CSS/Pod.
@@ -23,8 +23,8 @@ export const threadTable = podTable(
   {
     id: id('id'),
 
-    // Belongs to chat - used in subjectTemplate path
-    chatId: uri('chatId').predicate(SIOC.has_parent).notNull().link(MEETING.LongChat),
+    // Belongs to chat. Stored as an RDF URI; short ids are resolved via chatTable's URI template by the ORM.
+    chat: uri('chat').predicate(SIOC.has_parent).notNull().link('chats'),
 
     // Display / state
     title: string('title').predicate(DCTerms.title),
@@ -45,7 +45,7 @@ export const threadTable = podTable(
     sparqlEndpoint: '/.data/chat/-/sparql',
     type: SIOC.Thread,
     namespace: UDFS,
-    subjectTemplate: '{chatId}/index.ttl#{id}',
+    subjectTemplate: '{chat}/index.ttl#{id}',
   },
 )
 

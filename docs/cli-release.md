@@ -47,26 +47,37 @@ yarn pack:cli:preview
 Install the produced tarball into an isolated npm prefix before publishing or uploading it:
 
 ```bash
-PREFIX="$(mktemp -d)"
-npm i -g --prefix "$PREFIX" ./preview/undefineds-co-models-0.1.0.tgz ./preview/undefineds-co-linx-0.1.0.tgz
-"$PREFIX/bin/linx" --help
+node scripts/smoke-install-cli-release.mjs
 ```
 
-This verifies that the CLI resolves `@undefineds.co/models` through normal npm dependency resolution instead of a workspace-only link.
+This verifies that the CLI resolves `@undefineds.co/models` through normal npm dependency resolution instead of a workspace-only link. It also verifies the installed `@undefineds.co/drizzle-solid` package contains the compound URI template link-resolution fix required by the Pod chat/thread/message path. `linx --help` and `linx --version` passing is not enough for release readiness.
+
+The required `@undefineds.co/drizzle-solid` runtime fix has two externally visible effects:
+
+- Inserting a message with `message.chat` and `message.thread` resolves inverse links to concrete chat/thread IRIs.
+- Generated triples must never contain unresolved template variables such as `{chat}`.
+
+If the smoke script fails on the drizzle-solid check, publish a fixed `@undefineds.co/drizzle-solid` first and then rebuild the models and CLI tarballs. Do not publish `@undefineds.co/models` or `@undefineds.co/linx` against a registry drizzle-solid version that still only replaces `{id}` in linked table templates.
 
 ## npm Registry Publish
 
 Publish models first, then CLI:
 
 ```bash
-npm publish --access public preview/undefineds-co-models-0.1.0.tgz
-npm publish --access public preview/undefineds-co-linx-0.1.0.tgz
+npm publish --access public preview/undefineds-co-models-<version>.tgz
+npm publish --access public preview/undefineds-co-linx-<version>.tgz
 ```
 
 After registry publication, users install:
 
 ```bash
 npm i -g @undefineds.co/linx
+```
+
+If a new models release depends on ORM behavior, publish order is:
+
+```text
+@undefineds.co/drizzle-solid -> @undefineds.co/models -> @undefineds.co/linx
 ```
 
 ## Regional Deployments
@@ -104,6 +115,42 @@ Avoid this release shape:
 @undefineds.co/linx-cn
 @undefineds.co/linx-overseas
 ```
+
+## Install Performance
+
+The CLI install path should stay as small as possible because users install it globally. Keep `apps/cli/package.json` limited to dependencies directly imported by CLI runtime code.
+
+Current direct CLI runtime dependencies are:
+
+```text
+@undefineds.co/models
+@inrupt/solid-client-authn-node
+@mariozechner/pi-coding-agent
+yargs
+```
+
+`@comunica/query-sparql-solid` is not a CLI product dependency. It belongs behind `@undefineds.co/models` because the CLI calls the shared profile/chat/session APIs, while models owns the Solid/drizzle-solid data access boundary. Do not add `@undefineds.co/drizzle-solid`, `@comunica/query-sparql-solid`, or `@inrupt/vocab-common-rdf` directly to the CLI package unless CLI code imports them directly.
+
+The remaining install-time cost is mostly transitive:
+
+- `@mariozechner/pi-coding-agent` brings the native Pi TUI/runtime stack.
+- `@inrupt/solid-client-authn-node` brings browser-consent OIDC support.
+- `@undefineds.co/models` brings `@undefineds.co/drizzle-solid` and the Solid SPARQL query engine needed by the current Pod/profile read path.
+
+The models package must not expose or publish local storage engines. xpod owns runtime storage; LinX and xpod share `@undefineds.co/models` only for data semantics, schemas, vocabs, contracts, and lightweight client helpers. Keep storage-only code and dependencies out of models:
+
+```text
+better-sqlite3
+pg
+quadstore
+quadstore-comunica
+@comunica/query-sparql
+@comunica/types
+```
+
+Do not add `./storage` to models exports and do not make LinX CLI install storage dependencies. If xpod needs local RDF/SPARQL/SQL engines, they belong in the xpod package and release pipeline.
+
+The next structural optimization is removing `@comunica/query-sparql-solid` from the models install path. That requires replacing startup profile/name lookup with a lightweight Solid profile fetch/parser, or moving that lookup behind an optional dependency boundary. Publishing multiple regional CLI packages is not an install-performance fix.
 
 ## CI/CD
 

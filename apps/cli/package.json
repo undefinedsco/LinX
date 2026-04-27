@@ -1,6 +1,6 @@
 {
   "name": "@undefineds.co/linx",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "bin": {
@@ -13,11 +13,8 @@
   },
   "dependencies": {
     "@undefineds.co/models": "*",
-    "@comunica/query-sparql-solid": "^4.0.2",
     "@inrupt/solid-client-authn-node": "^3.1.1",
-    "@inrupt/vocab-common-rdf": "^1.0.5",
     "@mariozechner/pi-coding-agent": "^0.67.6",
-    "@undefineds.co/drizzle-solid": "^0.3.0",
     "yargs": "^17.7.2"
   },
   "devDependencies": {

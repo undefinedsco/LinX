@@ -5,6 +5,7 @@ export const ContactType = {
   SOLID: 'solid',
   EXTERNAL: 'external',
   AGENT: 'agent',
+  GROUP: 'group',
 } as const
 
 export type ContactTypeValue = typeof ContactType[keyof typeof ContactType]

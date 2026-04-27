@@ -1,8 +1,8 @@
-import { appendFileSync } from 'node:fs'
-import { createPiAgentStreamAdapter, type PiAgentStreamAdapter } from './stream.js'
+import { createPiAgentStreamAdapter, type PiAgentStreamAdapter, type PiCompletionBackendResult } from './stream.js'
 import { resolveLinxPiCloudOAuthCredential } from './auth.js'
 import { loginWithBrowserConsent } from '../oidc-auth.js'
 import { DEFAULT_LINX_CLOUD_MODEL_ID, resolvePreferredLinxCloudModelId } from '../default-model.js'
+import { ensureLinxPiTheme } from './theme.js'
 import {
   type AgentSessionRuntime,
   AuthStorage,
@@ -12,8 +12,10 @@ import {
   createAgentSessionFromServices,
   createAgentSessionRuntime,
   createAgentSessionServices,
+  createCodingTools,
 } from '@mariozechner/pi-coding-agent'
 import type { Api, Model, OAuthCredentials } from '@mariozechner/pi-ai'
+import type { RemoteChatMessage, RemoteChatTool } from '../chat-api.js'
 
 const UNDEFINEDS_PROVIDER_ID = 'undefineds'
 const UNDEFINEDS_PROVIDER_LABEL = 'undefineds(cloud)'
@@ -43,8 +45,10 @@ export interface PiRuntimeAdapterDependencies {
     runtimeUrl: string
     apiKey: string
     model?: string
-    messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>
-  }) => Promise<string>
+    messages: RemoteChatMessage[]
+    tools?: RemoteChatTool[]
+    systemPrompt?: string
+  }) => Promise<string | PiCompletionBackendResult>
   listRemoteModels?: (
     session: unknown,
     runtimeUrl: string,
@@ -177,7 +181,8 @@ export function createPiRuntimeAdapter(
             runtimeUrl: baseUrl,
             apiKey,
             model: input.model,
-            messages: input.messages,
+            messages: withSystemPrompt(input.systemPrompt, input.messages),
+            tools: input.tools,
           })
         },
       }
@@ -271,6 +276,8 @@ export function createPiRuntimeAdapter(
       }
 
       const settingsManager = SettingsManager.create(context.cwd, context.agentDir)
+      ensureLinxPiTheme(context.agentDir)
+      settingsManager.setTheme('linx')
       sanitizeLinxCloudDefaults(settingsManager)
       const services = await createAgentSessionServices({
         cwd: context.cwd,
@@ -289,19 +296,12 @@ export function createPiRuntimeAdapter(
         sessionManager: context.sessionManager as SessionManager,
         sessionStartEvent: context.sessionStartEvent as never,
         model: selectedModel,
+        tools: createCodingTools(context.cwd),
       })
       const session = created.session
       if (session.model?.provider === UNDEFINEDS_PROVIDER_ID && session.model.id !== selectedModel.id) {
         await session.setModel(selectedModel)
       }
-      appendFileSync('/tmp/linx-runtime-debug.log', `${JSON.stringify({
-        at: new Date().toISOString(),
-        selectedModel,
-        sessionModel: session.model,
-        agentStateModel: session.agent?.state?.model,
-        streamFnName: session.agent?.streamFn?.name ?? 'anonymous',
-      })}\n`)
-
       const runtime = await createAgentSessionRuntime(async () => ({
         ...created,
         session,
@@ -420,4 +420,15 @@ async function resolveLinxPiCloudApiKey(options: {
   }
 
   throw new Error('No LinX cloud login found. Interactive TUI supports /login in-app. For non-interactive --print mode, run `linx login` first.')
+}
+
+function withSystemPrompt(systemPrompt: string | undefined, messages: RemoteChatMessage[]): RemoteChatMessage[] {
+  const prompt = systemPrompt?.trim()
+  if (!prompt) {
+    return messages
+  }
+  if (messages.some((message) => message.role === 'system')) {
+    return messages
+  }
+  return [{ role: 'system', content: prompt }, ...messages]
 }

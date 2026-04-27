@@ -4,9 +4,13 @@ import {
   chatTable,
   drizzle,
   eq,
-  linxSchema,
+  findPodRowByStorageId,
+  initSolidTables,
+  solidSchema,
   messageTable,
+  sessionTable,
   threadTable,
+  whereByPodStorageId,
   type MessageRow,
   type SolidDatabase,
   type ThreadRow,
@@ -38,11 +42,6 @@ function getPodBaseUrl(webId: string): string {
   return webId.replace('/profile/card#me', '').replace(/\/$/, '')
 }
 
-function buildThreadUri(webId: string, chatIdOrUri: string, threadId: string): string {
-  const chatId = extractChatId(chatIdOrUri)
-  return `${getPodBaseUrl(webId)}/.data/chat/${chatId}/index.ttl#${threadId}`
-}
-
 function buildAgentUri(webId: string, agentId: string): string {
   return `${getPodBaseUrl(webId)}/.data/agents/${agentId}.ttl`
 }
@@ -64,7 +63,7 @@ function createDb(session: Session): SolidDatabase {
   return drizzle(session, {
     logger: false,
     disableInteropDiscovery: true,
-    schema: linxSchema,
+    schema: solidSchema,
   }) as unknown as SolidDatabase
 }
 
@@ -72,7 +71,7 @@ export async function initPodData(session: Session): Promise<SolidDatabase> {
   const db = createDb(session)
 
   try {
-    await db.init([chatTable, threadTable, messageTable, agentTable])
+    await initSolidTables(db, [chatTable, threadTable, messageTable, sessionTable, agentTable])
   } catch {
     // 容器可能已存在，MVP 允许继续。
   }
@@ -80,11 +79,10 @@ export async function initPodData(session: Session): Promise<SolidDatabase> {
   return db
 }
 
-async function ensureCliAgent(db: SolidDatabase): Promise<void> {
-  const idCol = (agentTable as any).id
-  const rows = await db.select().from(agentTable).where(eq(idCol, DEFAULT_AGENT_ID)).limit(1).execute()
+async function ensureCliAgent(db: SolidDatabase, webId: string): Promise<void> {
+  const existing = await findPodRowByStorageId(db, webId, agentTable, DEFAULT_AGENT_ID)
 
-  if (rows.length > 0) {
+  if (existing) {
     return
   }
 
@@ -101,11 +99,15 @@ async function ensureCliAgent(db: SolidDatabase): Promise<void> {
 
 export async function getOrCreateDefaultChat(session: Session): Promise<string> {
   const db = await initPodData(session)
-  await ensureCliAgent(db)
+  const webId = session.info.webId
+  if (!webId) {
+    throw new Error('Missing webId in Solid session')
+  }
 
-  const idCol = (chatTable as any).id
-  const rows = await db.select().from(chatTable).where(eq(idCol, DEFAULT_CHAT_ID)).limit(1).execute()
-  if (rows.length > 0) {
+  await ensureCliAgent(db, webId)
+
+  const existing = await findPodRowByStorageId(db, webId, chatTable, DEFAULT_CHAT_ID)
+  if (existing) {
     return DEFAULT_CHAT_ID
   }
 
@@ -124,8 +126,8 @@ export async function getOrCreateDefaultChat(session: Session): Promise<string> 
 
 export async function listThreads(session: Session, chatId: string): Promise<ThreadSummary[]> {
   const db = await initPodData(session)
-  const chatIdCol = (threadTable as any).chatId
-  const rows = await db.select().from(threadTable).where(eq(chatIdCol, chatId)).orderBy('updatedAt', 'desc').execute()
+  const chatCol = (threadTable as any).chat
+  const rows = await db.select().from(threadTable).where(eq(chatCol, chatId)).orderBy('updatedAt', 'desc').execute()
 
   return rows.map((row: any) => ({
     id: String(row.id),
@@ -147,7 +149,7 @@ export async function createThread(
 
   await db.insert(threadTable).values({
     id: threadId,
-    chatId,
+    chat: chatId,
     title: title || 'CLI Session',
     workspace: workspace || undefined,
     createdAt: now,
@@ -159,8 +161,11 @@ export async function createThread(
 
 export async function touchThread(session: Session, threadId: string): Promise<void> {
   const db = await initPodData(session)
-  const idCol = (threadTable as any).id
-  await db.update(threadTable).set({ updatedAt: new Date() }).where(eq(idCol, threadId)).execute()
+  const webId = session.info.webId
+  if (!webId) {
+    throw new Error('Missing webId in Solid session')
+  }
+  await whereByPodStorageId(webId, threadTable, db.update(threadTable).set({ updatedAt: new Date() }), threadId).execute()
 }
 
 export async function loadMessages(session: Session, threadId: string): Promise<StoredThreadMessage[]> {
@@ -171,13 +176,13 @@ export async function loadMessages(session: Session, threadId: string): Promise<
     return []
   }
 
-  const chatId = extractChatId((thread as any).chatId)
+  const chatId = extractChatId((thread as any).chat)
   const rows = await db.select().from(messageTable).orderBy(createdAtCol).execute()
 
   return rows
     .filter((row: any) => (
-      extractChatId((row as any).chatId) === chatId
-      && extractThreadId((row as any).threadId) === threadId
+      extractChatId((row as any).chat) === chatId
+      && extractThreadId((row as any).thread) === threadId
     ))
     .filter((row: any) => row.role === 'user' || row.role === 'assistant' || row.role === 'system')
     .map((row: any) => ({
@@ -202,8 +207,8 @@ export async function saveUserMessage(
 
   await db.insert(messageTable).values({
     id: crypto.randomUUID(),
-    chatId,
-    threadId: buildThreadUri(webId, chatId, threadId),
+    chat: chatId,
+    thread: threadId,
     maker: webId,
     role: 'user',
     content,
@@ -211,11 +216,11 @@ export async function saveUserMessage(
     createdAt: now,
   }).execute()
 
-  await db.update(chatTable).set({
+  await whereByPodStorageId(webId, chatTable, db.update(chatTable).set({
     lastActiveAt: now,
     lastMessagePreview: content.slice(0, 100),
     updatedAt: now,
-  }).where(eq((chatTable as any).id, chatId)).execute()
+  }), chatId).execute()
 
   await touchThread(session, threadId)
 }
@@ -235,8 +240,8 @@ export async function saveAssistantMessage(
 
   await db.insert(messageTable).values({
     id: crypto.randomUUID(),
-    chatId,
-    threadId: buildThreadUri(webId, chatId, threadId),
+    chat: chatId,
+    thread: threadId,
     maker: buildAgentUri(webId, DEFAULT_AGENT_ID),
     role: 'assistant',
     content,
@@ -244,20 +249,22 @@ export async function saveAssistantMessage(
     createdAt: now,
   }).execute()
 
-  await db.update(chatTable).set({
+  await whereByPodStorageId(webId, chatTable, db.update(chatTable).set({
     lastActiveAt: now,
     lastMessagePreview: content.slice(0, 100),
     updatedAt: now,
-  }).where(eq((chatTable as any).id, chatId)).execute()
+  }), chatId).execute()
 
   await touchThread(session, threadId)
 }
 
 export async function loadThread(session: Session, threadId: string): Promise<ThreadRow | null> {
   const db = await initPodData(session)
-  const idCol = (threadTable as any).id
-  const rows = await db.select().from(threadTable).where(eq(idCol, threadId)).limit(1).execute()
-  return (rows[0] as ThreadRow | undefined) ?? null
+  const webId = session.info.webId
+  if (!webId) {
+    throw new Error('Missing webId in Solid session')
+  }
+  return await findPodRowByStorageId<ThreadRow>(db, webId, threadTable, threadId)
 }
 
 export async function getLatestThreadId(session: Session, chatId: string): Promise<string | null> {

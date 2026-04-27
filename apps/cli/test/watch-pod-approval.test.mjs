@@ -33,6 +33,7 @@ function createRecord(overrides = {}) {
 function createRuntime(module) {
   const approvals = []
   const audits = []
+  const grants = []
   const inbox = []
   const webId = 'https://alice.example/profile/card#me'
 
@@ -72,6 +73,10 @@ function createRuntime(module) {
       insertAudit: async (row) => {
         audits.push({ ...row })
       },
+      listGrants: async () => grants,
+      insertGrant: async (row) => {
+        grants.push({ ...row })
+      },
       insertInboxNotification: async (row) => {
         inbox.push({ ...row })
       },
@@ -84,6 +89,7 @@ function createRuntime(module) {
     runtime,
     approvals,
     audits,
+    grants,
     inbox,
     webId,
     encodeDecisionReason: module.__podApprovalInternal.encodeDecisionReason,
@@ -139,7 +145,48 @@ test('requestRemoteWatchApproval writes pending approval rows and waits for remo
   assert.equal(state.approvals[0].status, 'approved')
   assert.equal(state.audits.length, 1)
   assert.equal(state.audits[0].action, 'approval_requested')
+  assert.equal(state.grants.length, 0)
   assert.equal(state.inbox.length, 1)
+})
+
+test('requestRemoteWatchApproval short-circuits when an active grant already covers the request', async () => {
+  const state = createRuntime(approvalModule)
+
+  state.grants.push({
+    id: 'grant_123',
+    target: 'https://alice.example/.data/chat/linx-watch/index.ttl#watch_2026-03-18T00-00-00-000Z_deadbeef',
+    action: 'https://undefineds.co/ns#commandExecution',
+    effect: 'allow',
+    riskCeiling: 'high',
+    decisionBy: state.webId,
+    decisionRole: 'human',
+    onBehalfOf: state.webId,
+    createdAt: '2026-03-18T00:00:00.000Z',
+  })
+
+  const decision = await approvalModule.requestRemoteWatchApproval({
+    record: createRecord(),
+    request: {
+      kind: 'command-approval',
+      message: 'pwd',
+      command: 'pwd',
+      cwd: '/tmp/demo',
+      raw: {
+        params: {
+          toolCall: {
+            toolCallId: 'tool_1',
+          },
+        },
+      },
+    },
+    runtime: state.runtime,
+    pollMs: 1,
+  })
+
+  assert.equal(decision, 'accept_for_session')
+  assert.equal(state.approvals.length, 0)
+  assert.equal(state.audits.length, 0)
+  assert.equal(state.inbox.length, 0)
 })
 
 test('resolveRemoteWatchApproval updates Pod approval state and listRemoteWatchApprovals reads the enriched summary', async () => {
@@ -182,14 +229,17 @@ test('resolveRemoteWatchApproval updates Pod approval state and listRemoteWatchA
 
   const resolved = await approvalModule.resolveRemoteWatchApproval({
     approvalId: 'approval_123',
-    decision: 'decline',
-    note: 'unsafe command',
+    decision: 'accept_for_session',
+    note: 'delegate to this session',
     runtime: state.runtime,
   })
 
-  assert.equal(resolved.decision, 'decline')
-  assert.equal(state.approvals[0].status, 'rejected')
-  assert.equal(state.audits.at(-1).action, 'approval_rejected')
+  assert.equal(resolved.decision, 'accept_for_session')
+  assert.equal(state.approvals[0].status, 'approved')
+  assert.equal(state.audits.at(-1).action, 'approval_approved')
+  assert.equal(state.grants.length, 1)
+  assert.equal(state.grants[0].target, 'https://alice.example/.data/chat/linx-watch/index.ttl#watch_2026-03-18T00-00-00-000Z_deadbeef')
+  assert.equal(state.grants[0].effect, 'allow')
 
   const listed = await approvalModule.listRemoteWatchApprovals({
     status: 'all',
@@ -200,5 +250,5 @@ test('resolveRemoteWatchApproval updates Pod approval state and listRemoteWatchA
   assert.equal(listed[0].message, 'rm -rf dist')
   assert.equal(listed[0].command, 'rm -rf dist')
   assert.equal(listed[0].cwd, '/tmp/demo')
-  assert.equal(listed[0].decision, 'decline')
+  assert.equal(listed[0].decision, 'accept_for_session')
 })

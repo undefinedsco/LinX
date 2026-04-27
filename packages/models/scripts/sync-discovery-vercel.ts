@@ -35,7 +35,7 @@ function formatDate(date = new Date()): string {
 
 function usage(): string {
   return [
-    'Usage: yarn workspace @linx/models sync:discovery:vercel [--check|--stdout]',
+    'Usage: yarn workspace @undefineds.co/models sync:discovery:vercel [--check|--stdout]',
     '',
     'Options:',
     '  --check   Exit with code 1 when the generated snapshot differs from models.json',

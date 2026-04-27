@@ -416,3 +416,53 @@ test('pi runtime adapter ignores stale undefineds defaults that point to gpt-5-c
   await runtime.dispose()
   process.chdir(cliRoot)
 })
+
+test('pi runtime adapter keeps Pi native coding tools active in the cloud path', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/runtime.ts')
+  t.after(() => cleanup())
+
+  const { SessionManager } = await import('@mariozechner/pi-coding-agent')
+  const cwd = mkdtempSync(join(tmpdir(), 'linx-pi-runtime-tools-'))
+  const agentDir = mkdtempSync(join(tmpdir(), 'linx-pi-runtime-tools-agent-'))
+  t.after(() => {
+    process.chdir(cliRoot)
+    rmSync(cwd, { recursive: true, force: true })
+    rmSync(agentDir, { recursive: true, force: true })
+  })
+
+  const adapter = module.createPiRuntimeAdapter({
+    async createRemoteCompletion() {
+      return 'hello'
+    },
+  }, {
+    cwd,
+    providerConfig: {
+      baseUrl: 'https://api.undefineds.co/v1',
+      oauth: {
+        name: 'LinX Cloud',
+        async login() {
+          return {
+            refresh: 'refresh-token',
+            access: 'access-token',
+            expires: Date.now() + 60_000,
+          }
+        },
+        async refreshToken(credentials) {
+          return credentials
+        },
+        getApiKey() {
+          return 'cloud-access-token'
+        },
+      },
+    },
+  })
+
+  const runtime = await adapter.createRuntime({
+    cwd,
+    agentDir,
+    sessionManager: SessionManager.inMemory(cwd),
+  })
+
+  assert.deepEqual(runtime.session.getActiveToolNames(), ['read', 'bash', 'edit', 'write'])
+  await runtime.dispose()
+})

@@ -1,6 +1,6 @@
 import { emitKeypressEvents } from 'node:readline'
 import { stdin, stdout } from 'node:process'
-import type { WatchUserInputAnswers, WatchUserInputQuestion } from '@linx/models/watch'
+import type { WatchUserInputAnswers, WatchUserInputQuestion } from '@undefineds.co/models/watch'
 import { CodexComposer, type CodexComposerRenderLine } from './codex-composer.js'
 import { renderFooterLine } from './codex-footer.js'
 import { CodexRequestForm } from './codex-request-form.js'

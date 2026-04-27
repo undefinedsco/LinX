@@ -159,3 +159,46 @@ test('createRemoteCompletion defaults to linx-lite when no model override is pro
   assert.equal(requestBody.model, 'linx-lite')
   assert.equal(reply, 'hello default model')
 })
+
+test('createRemoteCompletionResult forwards tools and parses tool calls', async () => {
+  let requestBody = null
+  globalThis.fetch = async (_url, init) => {
+    requestBody = JSON.parse(String(init?.body ?? '{}'))
+    return {
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            finish_reason: 'tool_calls',
+            message: {
+              content: null,
+              tool_calls: [
+                {
+                  id: 'call_1',
+                  type: 'function',
+                  function: { name: 'bash', arguments: '{"command":"pwd"}' },
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    }
+  }
+
+  const { createRemoteCompletionResult } = await import('../dist/lib/chat-api.js')
+  const result = await createRemoteCompletionResult({
+    runtimeUrl: 'https://api.undefineds.co/v1',
+    apiKey: 'token',
+    model: 'linx-lite',
+    messages: [{ role: 'user', content: 'run pwd' }],
+    tools: [{ type: 'function', function: { name: 'bash', parameters: { type: 'object' } } }],
+  })
+
+  assert.equal(requestBody.model, 'linx-lite')
+  assert.equal(requestBody.stream, false)
+  assert.equal(requestBody.tools[0].function.name, 'bash')
+  assert.equal(requestBody.tool_choice, 'auto')
+  assert.equal(result.finishReason, 'tool_calls')
+  assert.equal(result.toolCalls[0].function.name, 'bash')
+})

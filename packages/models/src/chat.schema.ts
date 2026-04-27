@@ -35,6 +35,9 @@ export const chatTable = podTable(
     muted: boolean('muted').predicate(UDFS.muted).default(false),
     unreadCount: integer('unreadCount').predicate(UDFS.unreadCount).default(0),
 
+    // Optional counterpart/contact represented by this channel. Stored as RDF URI; callers may pass a short contact id.
+    contact: uri('contact').predicate(UDFS.term('contact')).link('contact'),
+
     // Explicit membership for group chats.
     participants: uri('participants')
       .array()

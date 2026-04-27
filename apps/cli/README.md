@@ -12,41 +12,41 @@
 ```bash
 # 浏览器授权登录并保存本地 OIDC 会话
 # 默认用官方 cloud identity：https://id.undefineds.co
-yarn workspace @linx/cli dev login
+yarn workspace @undefineds.co/linx dev login
 
 # 自建 / 本地 issuer 时再显式覆盖
-yarn workspace @linx/cli dev login --url http://localhost:3000
+yarn workspace @undefineds.co/linx dev login --url http://localhost:3000
 
 # 查看 / 清理当前本地登录态
-yarn workspace @linx/cli dev whoami --verbose
-yarn workspace @linx/cli dev logout
+yarn workspace @undefineds.co/linx dev whoami --verbose
+yarn workspace @undefineds.co/linx dev logout
 
 # 把云端 AI provider 凭据写进 Pod
-yarn workspace @linx/cli dev ai connect claude --api-key sk-ant-xxx --model claude-sonnet-4-20250514
-yarn workspace @linx/cli dev ai status claude
-yarn workspace @linx/cli dev ai disconnect claude
+yarn workspace @undefineds.co/linx dev ai connect claude --api-key sk-ant-xxx --model claude-sonnet-4-20250514
+yarn workspace @undefineds.co/linx dev ai status claude
+yarn workspace @undefineds.co/linx dev ai disconnect claude
 
 # 列出远程可用模型
-yarn workspace @linx/cli dev models
+yarn workspace @undefineds.co/linx dev models
 
 # 单轮聊天
-yarn workspace @linx/cli dev chat "帮我总结一下今天的工作"
+yarn workspace @undefineds.co/linx dev chat "帮我总结一下今天的工作"
 
 # 进入默认 Pi TUI
-yarn workspace @linx/cli dev
+yarn workspace @undefineds.co/linx dev
 
 # 继续最近一次 thread
-yarn workspace @linx/cli dev chat --continue
+yarn workspace @undefineds.co/linx dev chat --continue
 
 # 本地 watch（多轮 REPL + 结构化留档）
-yarn workspace @linx/cli dev watch run codex
-yarn workspace @linx/cli dev watch run claude "先总结这个目录的职责"
-yarn workspace @linx/cli dev watch run codebuddy -- --tools Read,Edit
-yarn workspace @linx/cli dev watch backends
-yarn workspace @linx/cli dev watch sessions
-yarn workspace @linx/cli dev watch approvals
-yarn workspace @linx/cli dev watch approve <approvalId> --session
-yarn workspace @linx/cli dev watch reject <approvalId> --reason "unsafe command"
+yarn workspace @undefineds.co/linx dev watch run codex
+yarn workspace @undefineds.co/linx dev watch run claude "先总结这个目录的职责"
+yarn workspace @undefineds.co/linx dev watch run codebuddy -- --tools Read,Edit
+yarn workspace @undefineds.co/linx dev watch backends
+yarn workspace @undefineds.co/linx dev watch sessions
+yarn workspace @undefineds.co/linx dev watch approvals
+yarn workspace @undefineds.co/linx dev watch approve <approvalId> --session
+yarn workspace @undefineds.co/linx dev watch reject <approvalId> --reason "unsafe command"
 ```
 
 ## Slash Commands
@@ -82,7 +82,7 @@ yarn workspace @linx/cli dev watch reject <approvalId> --reason "unsafe command"
 - 当前 `linx watch run codex` 的前台仍是 LinX watch TUI，不是 Codex 原生 TUI；真正执行任务与工具调用的是 `codex-acp`
 - Codex 原生壳相关集成不放在 LinX watch 壳里维护；后台桥接能力位于 `apps/cli/src/lib/codex-plugin/*`，按 plugin/sidecar 语义组织
 - LinX 不再维护各家 native / 非 ACP JSON 输出兼容层，统一按 ACP 处理多轮会话、权限请求和结构化输入
-- 仓库内 `yarn workspace @linx/cli dev watch ...` 不再依赖 `tsx`，会直接编译并运行独立 watch 入口
+- 仓库内 `yarn workspace @undefineds.co/linx dev watch ...` 不再依赖 `tsx`，会直接编译并运行独立 watch 入口
 - `--` 后面的参数会原样透传给对应后端 CLI
 - 当前只支持 `local runtime + remote approval`；不支持本地 runtime 退出后由云端接管执行
 

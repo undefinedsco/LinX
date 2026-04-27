@@ -15,15 +15,15 @@ step "codex-acp help"
 sed -n '1,20p' /tmp/linx-codex-acp-help.txt
 
 step "watch run codex pwd"
-yarn workspace @linx/cli dev watch run codex "pwd"
+yarn workspace @undefineds.co/linx dev watch run codex "pwd"
 
 step "watch run codex git status"
-yarn workspace @linx/cli dev watch run codex "git status"
+yarn workspace @undefineds.co/linx dev watch run codex "git status"
 
 step "watch sessions"
-yarn workspace @linx/cli dev watch sessions | sed -n '1,20p'
+yarn workspace @undefineds.co/linx dev watch sessions | sed -n '1,20p'
 
 step "watch show latest"
 latest=$(ls -1t ~/.linx/watch/sessions | head -n 1)
 echo "latest=$latest"
-yarn workspace @linx/cli dev watch show "$latest"
+yarn workspace @undefineds.co/linx dev watch show "$latest"

@@ -1,9 +1,24 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
 import { loadWatchModule } from './watch-test-bundle.mjs'
 
 test('codex attach runner pumps codex request lines through xpod bridge responses', async (t) => {
+  const previousWatchHome = process.env.LINX_WATCH_HOME
+  const watchHome = mkdtempSync(join(tmpdir(), 'linx-watch-home-'))
+  process.env.LINX_WATCH_HOME = watchHome
+  t.after(() => {
+    if (previousWatchHome === undefined) {
+      delete process.env.LINX_WATCH_HOME
+    } else {
+      process.env.LINX_WATCH_HOME = previousWatchHome
+    }
+    rmSync(watchHome, { recursive: true, force: true })
+  })
+
   const { module, cleanup } = await loadWatchModule('lib/codex-plugin/runner.ts')
   t.after(() => cleanup())
 

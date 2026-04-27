@@ -9,8 +9,8 @@ import {
   Session,
   type SessionTokenSet,
 } from '@inrupt/solid-client-authn-node'
-import type { LinxStoredCredentials } from '@linx/models/client'
-import { isLinxOidcOAuthSecrets, resolveLinxCloudAccountBaseUrl, type LinxOidcOAuthSecrets } from '@linx/models/client'
+import type { LinxStoredCredentials } from '@undefineds.co/models/client'
+import { isLinxOidcOAuthSecrets, resolveLinxCloudAccountBaseUrl, type LinxOidcOAuthSecrets } from '@undefineds.co/models/client'
 import { saveAccountSession } from './account-session.js'
 import { loadCredentials, saveCredentials } from './credentials-store.js'
 import { createOidcSessionStorage } from './oidc-session-storage.js'

@@ -4,8 +4,11 @@ import { Session } from '@inrupt/solid-client-authn-node'
 import { drizzle, type SolidDatabase } from '@undefineds.co/drizzle-solid'
 import { contactTable } from '../src/contact.schema'
 import { agentTable } from '../src/agent.schema'
-import { linxSchema } from '../src/schema'
+import { solidSchema } from '../src/schema'
+import { startLocalXpod, type LocalXpodTestPod } from './utils/local-xpod'
 import { eq } from '@undefineds.co/drizzle-solid'
+
+let localXpod: LocalXpodTestPod | null = null
 
 const env = {
   webId: process.env.SOLID_WEBID,
@@ -14,7 +17,17 @@ const env = {
   oidcIssuer: process.env.SOLID_OIDC_ISSUER,
 }
 
-const hasEnv = Boolean(env.webId && env.clientId && env.clientSecret && env.oidcIssuer)
+async function ensureEnv(): Promise<typeof env> {
+  if (env.webId && env.clientId && env.clientSecret && env.oidcIssuer) return env
+  if (!localXpod) {
+    localXpod = await startLocalXpod()
+  }
+  env.webId = localXpod.webId
+  env.clientId = localXpod.clientId
+  env.clientSecret = localXpod.clientSecret
+  env.oidcIssuer = localXpod.oidcIssuer
+  return env
+}
 
 // Shared session and db for all tests
 let session: Session | null = null
@@ -27,26 +40,30 @@ const createdAgentIds: string[] = []
 async function getDb(): Promise<SolidDatabase> {
   if (db) return db
   
+  const activeEnv = await ensureEnv()
   session = new Session()
   await session.login({
-    clientId: env.clientId!,
-    clientSecret: env.clientSecret!,
-    oidcIssuer: env.oidcIssuer!,
+    clientId: activeEnv.clientId!,
+    clientSecret: activeEnv.clientSecret!,
+    oidcIssuer: activeEnv.oidcIssuer!,
     tokenType: 'DPoP',
   })
-  db = drizzle(session, { logger: false, disableInteropDiscovery: true, schema: linxSchema })
+  db = drizzle(session, { logger: false, disableInteropDiscovery: true, schema: solidSchema })
   await db.init([contactTable, agentTable])
   return db
 }
 
 // Cleanup after all tests
 afterAll(async () => {
-  if (!db) return
+  if (!db) {
+    await localXpod?.stop()
+    return
+  }
   
   // Clean up created contacts
   for (const id of createdContactIds) {
     try {
-      await db.delete(contactTable).where({ '@id': id } as any).execute()
+      await db.delete(contactTable).whereByIri(id).execute()
     } catch (e) {
       // Ignore cleanup errors
     }
@@ -55,16 +72,18 @@ afterAll(async () => {
   // Clean up created agents
   for (const id of createdAgentIds) {
     try {
-      await db.delete(agentTable).where({ '@id': id } as any).execute()
+      await db.delete(agentTable).whereByIri(id).execute()
     } catch (e) {
       // Ignore cleanup errors
     }
   }
+
+  await localXpod?.stop()
 })
 
 describe('Solid Pod Contact CRUD', () => {
   
-  it.skipIf(!hasEnv)('creates and reads a solid contact', { timeout: 60000 }, async () => {
+  it('creates and reads a solid contact', { timeout: 60000 }, async () => {
     const database = await getDb()
     const contactId = crypto.randomUUID()
     const testName = `solid-test-${Date.now()}`
@@ -111,7 +130,7 @@ describe('Solid Pod Contact CRUD', () => {
     expect(record.province).toBe('Beijing')
   })
 
-  it.skipIf(!hasEnv)('creates and reads an external (wechat) contact', { timeout: 60000 }, async () => {
+  it('creates and reads an external (wechat) contact', { timeout: 60000 }, async () => {
     const database = await getDb()
     const contactId = crypto.randomUUID()
     const testExternalId = `wxid_test_${Date.now()}`
@@ -157,7 +176,7 @@ describe('Solid Pod Contact CRUD', () => {
     expect(record.externalId).toBe(testExternalId)
   })
 
-  it.skipIf(!hasEnv)('creates agent and agent contact together', { timeout: 60000 }, async () => {
+  it('creates agent and agent contact together', { timeout: 60000 }, async () => {
     const database = await getDb()
     const agentId = crypto.randomUUID()
     const contactId = crypto.randomUUID()
@@ -232,7 +251,7 @@ describe('Solid Pod Contact CRUD', () => {
     expect(ourContact!.alias).toBe('Test Bot')
   })
 
-  it.skipIf(!hasEnv)('lists all contacts', { timeout: 60000 }, async () => {
+  it('lists all contacts', { timeout: 60000 }, async () => {
     const database = await getDb()
 
     // List all contacts

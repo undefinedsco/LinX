@@ -17,7 +17,7 @@ export async function loadWatchModule(entryRelative = 'lib/watch/index.ts') {
 async function buildWatchBundle(entryRelative) {
   const root = mkdtempSync(join(tmpdir(), 'linx-watch-test-'))
   const outdir = join(root, 'dist')
-  const nodeModulesDir = join(outdir, 'node_modules', '@linx')
+  const undefinedsNodeModulesDir = join(outdir, 'node_modules', '@undefineds.co')
   const genericNodeModulesDir = join(outdir, 'node_modules')
   const scopedNodeModulesDir = join(outdir, 'node_modules', '@mariozechner')
   const entryPath = join(sourceRoot, entryRelative)
@@ -46,10 +46,10 @@ async function buildWatchBundle(entryRelative) {
     stdio: 'pipe',
   })
 
-  mkdirSync(nodeModulesDir, { recursive: true })
+  mkdirSync(undefinedsNodeModulesDir, { recursive: true })
   mkdirSync(genericNodeModulesDir, { recursive: true })
   mkdirSync(scopedNodeModulesDir, { recursive: true })
-  symlinkSync(modelsRoot, join(nodeModulesDir, 'models'), 'dir')
+  symlinkSync(modelsRoot, join(undefinedsNodeModulesDir, 'models'), 'dir')
   symlinkSync(wsRoot, join(genericNodeModulesDir, 'ws'), 'dir')
   symlinkSync(fileURLToPath(new URL('../../../node_modules/@mariozechner/pi-ai', import.meta.url)), join(scopedNodeModulesDir, 'pi-ai'), 'dir')
   symlinkSync(fileURLToPath(new URL('../../../node_modules/@mariozechner/pi-agent-core', import.meta.url)), join(scopedNodeModulesDir, 'pi-agent-core'), 'dir')

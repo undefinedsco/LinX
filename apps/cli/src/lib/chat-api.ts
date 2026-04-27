@@ -1,5 +1,4 @@
-import { appendFileSync } from 'node:fs'
-import { resolveLinxRuntimeApiBaseUrl } from '@linx/models/client'
+import { resolveLinxRuntimeApiBaseUrl } from '@undefineds.co/models/client'
 import { DEFAULT_LINX_CLOUD_MODEL_ID } from './default-model.js'
 
 export interface RemoteModelSummary {
@@ -9,9 +8,38 @@ export interface RemoteModelSummary {
   contextWindow?: number
 }
 
+export type RemoteChatContent = string | Array<{ type?: string; text?: string; [key: string]: unknown }> | null
+
+export interface RemoteChatToolCall {
+  id: string
+  type: 'function'
+  function: {
+    name: string
+    arguments: string
+  }
+}
+
 export interface RemoteChatMessage {
-  role: 'system' | 'user' | 'assistant'
+  role: 'system' | 'user' | 'assistant' | 'tool'
+  content: RemoteChatContent
+  tool_calls?: RemoteChatToolCall[]
+  tool_call_id?: string
+  name?: string
+}
+
+export interface RemoteChatTool {
+  type: 'function'
+  function: {
+    name: string
+    description?: string
+    parameters?: unknown
+  }
+}
+
+export interface RemoteCompletionResult {
   content: string
+  toolCalls: RemoteChatToolCall[]
+  finishReason?: string | null
 }
 
 function resolveRuntimeBaseUrl(runtimeUrl: string): string {
@@ -85,7 +113,7 @@ export async function listRemoteModels(
 
 async function loadBuiltinModelFallback(): Promise<RemoteModelSummary[]> {
   try {
-    const discoveryModuleName = '@linx/models/discovery'
+    const discoveryModuleName = '@undefineds.co/models/discovery'
     const { getBuiltinModels } = await import(discoveryModuleName)
     return getBuiltinModels().map((model: { id: string; provider?: string; contextLength?: number }) => ({
       id: model.id,
@@ -98,26 +126,31 @@ async function loadBuiltinModelFallback(): Promise<RemoteModelSummary[]> {
   }
 }
 
-export async function createRemoteCompletion(options: {
+export async function createRemoteCompletionResult(options: {
   runtimeUrl: string
   apiKey: string
   model?: string
   messages: RemoteChatMessage[]
-}): Promise<string> {
-  const { runtimeUrl, apiKey, model, messages } = options
+  tools?: RemoteChatTool[]
+}): Promise<RemoteCompletionResult> {
+  const { runtimeUrl, apiKey, model, messages, tools } = options
   const url = `${resolveRuntimeBaseUrl(runtimeUrl)}/chat/completions`
   const resolvedModel = model || DEFAULT_LINX_CLOUD_MODEL_ID
-  const requestBody = {
+  const requestBody: {
+    model: string
+    stream: false
+    messages: RemoteChatMessage[]
+    tools?: RemoteChatTool[]
+    tool_choice?: 'auto'
+  } = {
     model: resolvedModel,
     stream: false,
     messages,
   }
-
-  appendFileSync('/tmp/linx-chat-debug.log', `${JSON.stringify({
-    at: new Date().toISOString(),
-    url,
-    body: requestBody,
-  })}\n`)
+  if (tools && tools.length > 0) {
+    requestBody.tools = tools
+    requestBody.tool_choice = 'auto'
+  }
 
   const response = await fetch(url, {
     method: 'POST',
@@ -136,13 +169,42 @@ export async function createRemoteCompletion(options: {
 
   const json = (await response.json()) as {
     choices?: Array<{
+      finish_reason?: string | null
       message?: {
-        content?: string | Array<{ type?: string; text?: string }>
+        content?: string | Array<{ type?: string; text?: string }> | null
+        tool_calls?: RemoteChatToolCall[]
       }
     }>
   }
 
-  const content = json.choices?.[0]?.message?.content
+  const choice = json.choices?.[0]
+  const message = choice?.message
+  const content = normalizeRemoteContent(message?.content)
+  const toolCalls = Array.isArray(message?.tool_calls) ? message.tool_calls : []
+
+  if (content || toolCalls.length > 0) {
+    return {
+      content,
+      toolCalls,
+      finishReason: choice?.finish_reason,
+    }
+  }
+
+  throw new Error('Empty response from remote model')
+}
+
+export async function createRemoteCompletion(options: {
+  runtimeUrl: string
+  apiKey: string
+  model?: string
+  messages: RemoteChatMessage[]
+  tools?: RemoteChatTool[]
+}): Promise<string> {
+  const result = await createRemoteCompletionResult(options)
+  return result.content.trim()
+}
+
+function normalizeRemoteContent(content: string | Array<{ type?: string; text?: string }> | null | undefined): string {
   if (typeof content === 'string') {
     return content.trim()
   }
@@ -154,5 +216,5 @@ export async function createRemoteCompletion(options: {
       .trim()
   }
 
-  throw new Error('Empty response from remote model')
+  return ''
 }

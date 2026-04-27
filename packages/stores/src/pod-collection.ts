@@ -1,7 +1,7 @@
 import { createCollection } from '@tanstack/react-db'
 import { queryCollectionOptions } from '@tanstack/query-db-collection'
 import { QueryClient } from '@tanstack/react-query'
-import type { SolidDatabase } from '@linx/models'
+import type { SolidDatabase } from '@undefineds.co/models'
 
 // Define a minimal interface for what we expect from a Drizzle/Pod Table
 interface PodTableSchema {

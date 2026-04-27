@@ -14,6 +14,8 @@ import { createCodexNativeProxy } from './lib/codex-plugin/index.js'
 import { bootstrapPiInteractiveMode, createPiRuntimeAdapter } from './lib/pi-adapter/index.js'
 import { getOidcAccessToken } from './lib/oidc-auth.js'
 import { DEFAULT_LINX_CLOUD_MODEL_ID } from './lib/default-model.js'
+import type { PiCompletionBackendResult } from './lib/pi-adapter/stream.js'
+import type { RemoteChatMessage, RemoteChatTool } from './lib/chat-api.js'
 import { LINX_AGENT_DIR } from './lib/pi-adapter/branding.js'
 import {
   formatRemoteWatchApprovalSummary,
@@ -54,8 +56,9 @@ interface ChatRuntime {
     runtimeUrl: string
     apiKey: string
     model?: string
-    messages: Array<{ role: ChatRole; content: string }>
-  }): Promise<string>
+    messages: RemoteChatMessage[]
+    tools?: RemoteChatTool[]
+  }): Promise<string | PiCompletionBackendResult>
   listRemoteModels(session: unknown, runtimeUrl: string, apiKey: string, options?: { fallback?: boolean; timeoutMs?: number }): Promise<Array<{
     id: string
     provider?: string
@@ -225,8 +228,9 @@ async function runSingleTurn(options: {
     messages: [...ctx.runtime.toOpenAiMessages(history), { role: 'user', content: prompt }],
   })
 
-  await ctx.runtime.saveAssistantMessage(ctx.session, ctx.chatId, threadId, reply)
-  process.stdout.write(`\n${reply}\n\n`)
+  const replyText = typeof reply === 'string' ? reply : reply.content ?? ''
+  await ctx.runtime.saveAssistantMessage(ctx.session, ctx.chatId, threadId, replyText)
+  process.stdout.write(`\n${replyText}\n\n`)
 }
 
 async function resolveThreadId(options: {
@@ -371,7 +375,7 @@ async function runPiCommand(argv: {
     },
     async createRemoteCompletion(options) {
       const chatApi = await import('./lib/chat-api.js')
-      return chatApi.createRemoteCompletion(options)
+      return chatApi.createRemoteCompletionResult(options)
     },
     async listRemoteModels(session, runtimeUrl, apiKey) {
       const chatApi = await import('./lib/chat-api.js')
@@ -488,6 +492,16 @@ const hiddenPiFrontendAliasCommand: CommandModule<object, PiCommandArgs> = {
   handler: runPiCommand,
 }
 
+const execCommand: CommandModule<object, PiCommandArgs> = {
+  command: 'exec [prompt..]',
+  aliases: ['e'],
+  describe: 'Run LinX non-interactively',
+  builder: buildPiCommand,
+  async handler(argv): Promise<void> {
+    await runPiCommand({ ...argv, print: true })
+  },
+}
+
 const cli = yargs(hideBin(process.argv))
   .scriptName('linx')
   .parserConfiguration({
@@ -497,6 +511,7 @@ const cli = yargs(hideBin(process.argv))
   .command(logoutCommand)
   .command(whoamiCommand)
   .command(aiCommand)
+  .command(execCommand)
   .command(defaultPiCommand)
   .command(
     'chat [prompt..]',
@@ -557,8 +572,8 @@ const cli = yargs(hideBin(process.argv))
     },
   )
   .command(
-    'sessions',
-    'List recent CLI threads',
+    'resume',
+    'List resumable CLI threads',
     (command) => command.option('url', { type: 'string', describe: 'Runtime API base URL override' }),
     async (argv) => {
       const ctx = await resolveContext(argv.url)
@@ -571,6 +586,16 @@ const cli = yargs(hideBin(process.argv))
       }
 
       await ctx.session.logout()
+    },
+  )
+  .command(
+    'fork [thread]',
+    'Fork a previous interactive session',
+    (command) => command
+      .positional('thread', { type: 'string', describe: 'Thread ID to fork' })
+      .option('last', { type: 'boolean', default: false, describe: 'Fork the most recent thread' }),
+    () => {
+      throw new Error('Fork is not implemented yet for LinX Pod-backed Pi sessions.')
     },
   )
   .command(hiddenPiAliasCommand)

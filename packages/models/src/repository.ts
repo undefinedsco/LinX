@@ -4,12 +4,109 @@ import type {
   InferTableData,
   InferInsertData,
   InferUpdateData,
-  SolidDatabase as DrizzleSolidDatabase,
   QueryCondition,
 } from '@undefineds.co/drizzle-solid'
 import { and, like, or } from '@undefineds.co/drizzle-solid'
 
-export type SolidDatabase<TSchema extends Record<string, unknown> = Record<string, never>> = DrizzleSolidDatabase<TSchema>
+export interface AnyPodTable {
+  resolveUri?: (id: string) => string
+  config?: { name?: string; base?: string }
+  getResourcePath?: () => string
+}
+
+export interface PodExecutableQuery<TRow = unknown> {
+  where(condition: unknown): PodExecutableQuery<TRow>
+  whereByIri?(iri: string | string[]): PodExecutableQuery<TRow>
+  orderBy(...args: unknown[]): PodExecutableQuery<TRow>
+  execute(): Promise<TRow[]>
+}
+
+export interface PodInsertQuery {
+  values(values: unknown): { execute(): Promise<unknown[]> }
+}
+
+export interface PodUpdateQuery {
+  set(values: unknown): PodMutationQuery
+}
+
+export interface PodMutationQuery {
+  where(condition: unknown): PodMutationQuery
+  whereByIri?(iri: string): PodMutationQuery
+  execute(): Promise<unknown[]>
+}
+
+export interface SolidDatabase<TSchema extends Record<string, unknown> = Record<string, unknown>> {
+  init?(tables: AnyPodTable[] | AnyPodTable, ...rest: unknown[]): Promise<void>
+  select(fields?: unknown): { from(table: AnyPodTable): PodExecutableQuery }
+  insert(table: AnyPodTable): PodInsertQuery
+  update(table: AnyPodTable): PodUpdateQuery
+  delete(table: AnyPodTable): PodMutationQuery
+  findByIri?<T = unknown>(table: AnyPodTable, iri: string): Promise<T | null>
+  updateByIri?<T = unknown>(table: AnyPodTable, iri: string, data: Record<string, unknown>): Promise<T | null>
+  deleteByIri?(table: AnyPodTable, iri: string): Promise<unknown>
+  subscribe?(table: AnyPodTable, options: unknown): Promise<{ unsubscribe?: () => void } | (() => void)>
+}
+
+export async function initSolidTables(
+  db: SolidDatabase,
+  tables: AnyPodTable[],
+): Promise<void> {
+  await db.init?.(tables)
+}
+
+export function resolvePodUri(
+  webId: string,
+  table: { resolveUri?: (id: string) => string },
+  id: string,
+): string {
+  const relativeUri = typeof table.resolveUri === 'function' ? table.resolveUri(id) : id
+  if (/^https?:\/\//.test(relativeUri)) {
+    return relativeUri
+  }
+
+  return new URL(relativeUri.replace(/^\//, ''), `${resolvePodBaseUrl(webId)}/`).toString()
+}
+
+export async function findPodRowByStorageId<T>(
+  db: SolidDatabase,
+  webId: string,
+  table: AnyPodTable,
+  id: string,
+): Promise<T | null> {
+  if (typeof (db as unknown as { findByIri?: unknown }).findByIri === 'function') {
+    return await (db.findByIri as (table: AnyPodTable, iri: string) => Promise<T | null>)(
+      table,
+      resolvePodUri(webId, table, id),
+    )
+  }
+
+  const rows = await (db.select().from as (table: AnyPodTable) => { execute(): Promise<unknown[]> })(table).execute()
+  return rows.find((row) => (row as Record<string, unknown>)?.id === id) as T | undefined ?? null
+}
+
+export function whereByPodStorageId<TTable extends AnyPodTable>(
+  webId: string,
+  table: TTable,
+  query: PodMutationQuery,
+  id: string,
+): PodMutationQuery {
+  if (typeof query.whereByIri === 'function') {
+    return query.whereByIri(resolvePodUri(webId, table, id))
+  }
+
+  return query.where({ id })
+}
+
+function resolvePodBaseUrl(webId: string): string {
+  try {
+    const target = new URL(webId)
+    const pathParts = target.pathname.split('/').filter(Boolean)
+    const ownerSegment = pathParts[0] ?? ''
+    return `${target.origin}/${ownerSegment}`.replace(/\/+$/, '')
+  } catch {
+    return webId.replace('/profile/card#me', '').replace(/\/$/, '')
+  }
+}
 
 export interface RepositoryCacheOptions {
   staleTime?: number
@@ -136,7 +233,7 @@ export function createRepositoryDescriptor<
   }
 
   const list = async (db: SolidDatabase, filters?: Filters): Promise<Row[]> => {
-    let query = db.select().from(table)
+    let query = db.select().from(table as unknown as AnyPodTable)
     const whereClause = buildWhereClause(filters)
     if (whereClause) {
       query = query.where(whereClause)
@@ -149,13 +246,9 @@ export function createRepositoryDescriptor<
   }
 
   const detail = async (db: SolidDatabase, id: string): Promise<Row | null> => {
-    const rows = await db
-      .select()
-      .from(table)
-      .where({ '@id': id } as unknown as QueryCondition)
-      .limit(1)
-      .execute()
-    const record = rows?.[0]
+    const record = typeof db.findByIri === 'function'
+      ? await db.findByIri<Row>(table as unknown as AnyPodTable, id)
+      : null
     return record ? transformRow(record as Row) : null
   }
 
@@ -169,7 +262,7 @@ export function createRepositoryDescriptor<
           : crypto.randomUUID()
         
         const inputWithId = { ...input, id: generatedId } as InferInsertData<TTable>
-        const result = await db.insert(table).values(inputWithId).execute()
+        const result = await db.insert(table as unknown as AnyPodTable).values(inputWithId).execute()
         
         // drizzle-solid returns [{success, source}] or the created row
         const firstResult = Array.isArray(result) ? result?.[0] : result
@@ -203,11 +296,13 @@ export function createRepositoryDescriptor<
   const update = options.disableMutations?.update
     ? undefined
     : async (db: SolidDatabase, id: string, input: Update): Promise<Row> => {
-        await db
-          .update(table)
+        const query = db
+          .update(table as unknown as AnyPodTable)
           .set(input as InferUpdateData<TTable>)
-          .where({ '@id': id } as unknown as QueryCondition)
-          .execute()
+        const scopedQuery = typeof (query as unknown as { whereByIri?: (iri: string) => typeof query }).whereByIri === 'function'
+          ? (query as unknown as { whereByIri: (iri: string) => typeof query }).whereByIri(id)
+          : query.where({ '@id': id } as unknown as QueryCondition)
+        await scopedQuery.execute()
         const next = await detail(db, id)
         if (!next) {
           throw new Error(`Failed to load ${namespace} record after update`)
@@ -218,7 +313,11 @@ export function createRepositoryDescriptor<
   const remove = options.disableMutations?.remove
     ? undefined
     : async (db: SolidDatabase, id: string): Promise<{ id: string }> => {
-        await db.delete(table).where({ '@id': id } as unknown as QueryCondition).execute()
+        const query = db.delete(table as unknown as AnyPodTable)
+        const scopedQuery = typeof (query as unknown as { whereByIri?: (iri: string) => typeof query }).whereByIri === 'function'
+          ? (query as unknown as { whereByIri: (iri: string) => typeof query }).whereByIri(id)
+          : query.where({ '@id': id } as unknown as QueryCondition)
+        await scopedQuery.execute()
         return { id }
       }
 

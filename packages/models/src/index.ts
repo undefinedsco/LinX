@@ -38,6 +38,8 @@ export * from "./vocab";
 
 // Profile - 用户资料
 export * from './profile'
+export * from './profile.repository'
+export * from './profile.schema'
 
 // Contact - 联系人 (unified index for Solid users, external users, and AI agents)
 export {
@@ -176,7 +178,15 @@ export {
 // ============================================
 
 // Session - 会话管理
-export { sessionSchema } from './session'
+export {
+  sessionTable,
+  type SessionType,
+  type SessionStatus,
+  type SessionRow,
+  type SessionInsert,
+  type SessionUpdate,
+} from './session'
+export { sessionRepository } from './session.repository'
 
 // Approval / Audit / Grant / Inbox Notification
 export {
@@ -323,7 +333,12 @@ export {
 export {
   createRepositoryDescriptor,
   definePodRepository,
+  findPodRowByStorageId,
+  initSolidTables,
   resolveRowId,
+  resolvePodUri,
+  whereByPodStorageId,
+  type AnyPodTable,
   type PodRepositoryDescriptor,
   type RepositoryCacheOptions,
   type RepositoryInvalidations,
@@ -342,7 +357,7 @@ export { eq, ne, and, or, drizzle } from '@undefineds.co/drizzle-solid'
 // ============================================
 // Schema registry
 // ============================================
-export { linxSchema } from './schema'
+export { solidSchema } from './schema'
 
 // ============================================
 // Discovery Service (发现服务)

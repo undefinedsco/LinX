@@ -7,7 +7,7 @@ import {
   normalizeCodexAppServerRequest,
   type WatchNormalizedEvent,
   type WatchSessionRecord,
-} from '@linx/models/watch'
+} from '@undefineds.co/models/watch'
 import { appendWatchEvent, createWatchSession, finishWatchSession, writeWatchSession } from '../watch/archive.js'
 import { persistWatchConversationToPod } from '../watch/pod-persistence.js'
 import { createCodexAttachBridge, type CodexAttachBridgeRuntime } from './bridge.js'

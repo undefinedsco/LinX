@@ -11,7 +11,7 @@ import type {
   WatchSessionRecord,
   WatchSessionStatus,
   WatchTransport,
-} from '@linx/models/watch'
+} from '@undefineds.co/models/watch'
 
 export type {
   WatchApprovalSource,
@@ -26,7 +26,7 @@ export type {
   WatchSessionRecord,
   WatchSessionStatus,
   WatchTransport,
-} from '@linx/models/watch'
+} from '@undefineds.co/models/watch'
 
 export interface WatchRunOptions {
   backend: WatchBackend

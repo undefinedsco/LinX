@@ -1,7 +1,7 @@
 import type { CommandModule } from 'yargs'
 import {
   listLinxWhoAmIFields,
-} from '@linx/models/client'
+} from '@undefineds.co/models/client'
 import { clearAccountSession, loadAccountSession } from './account-session.js'
 import { clearCredentials } from './credentials-store.js'
 import { ensureBrowserConsentLogin } from './oidc-auth.js'

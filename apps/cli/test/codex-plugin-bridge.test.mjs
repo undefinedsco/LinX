@@ -1,8 +1,26 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { loadWatchModule } from './watch-test-bundle.mjs'
 
+function useTempWatchHome(t) {
+  const previous = process.env.LINX_WATCH_HOME
+  const dir = mkdtempSync(join(tmpdir(), 'linx-watch-home-'))
+  process.env.LINX_WATCH_HOME = dir
+  t.after(() => {
+    if (previous === undefined) {
+      delete process.env.LINX_WATCH_HOME
+    } else {
+      process.env.LINX_WATCH_HOME = previous
+    }
+    rmSync(dir, { recursive: true, force: true })
+  })
+}
+
 test('createCodexAttachSessionRecord creates a codex->xpod attach session', async (t) => {
+  useTempWatchHome(t)
   const { module, cleanup } = await loadWatchModule('lib/codex-plugin/bridge.ts')
   t.after(() => cleanup())
 
@@ -21,6 +39,7 @@ test('createCodexAttachSessionRecord creates a codex->xpod attach session', asyn
 })
 
 test('createCodexAttachSessionRecord prefers workspacePath over cwd and rejects missing path', async (t) => {
+  useTempWatchHome(t)
   const { module, cleanup } = await loadWatchModule('lib/codex-plugin/bridge.ts')
   t.after(() => cleanup())
 
@@ -40,6 +59,7 @@ test('createCodexAttachSessionRecord prefers workspacePath over cwd and rejects 
 })
 
 test('codex attach bridge maps codex approval requests to xpod remote approvals and back', async (t) => {
+  useTempWatchHome(t)
   const { module, cleanup } = await loadWatchModule('lib/codex-plugin/bridge.ts')
   t.after(() => cleanup())
 
@@ -89,6 +109,7 @@ test('codex attach bridge maps codex approval requests to xpod remote approvals 
 })
 
 test('codex attach bridge handles JSON-RPC lines and emits codex responses', async (t) => {
+  useTempWatchHome(t)
   const { module, cleanup } = await loadWatchModule('lib/codex-plugin/bridge.ts')
   t.after(() => cleanup())
 

@@ -1,1 +1,8 @@
-export { sessionSchema } from "./session.schema";
+export {
+  sessionTable,
+  type SessionType,
+  type SessionStatus,
+  type SessionRow,
+  type SessionInsert,
+  type SessionUpdate,
+} from './session.schema'

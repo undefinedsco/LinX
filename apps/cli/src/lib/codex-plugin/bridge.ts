@@ -5,7 +5,7 @@ import {
   type WatchApprovalRequest,
   type WatchInteractionRequest,
   type WatchSessionRecord,
-} from '@linx/models/watch'
+} from '@undefineds.co/models/watch'
 import { createWatchSession, writeWatchSession } from '../watch/archive.js'
 import { createRemoteWatchApproval, waitForRemoteWatchApproval } from '../watch/pod-approval.js'
 import type { WatchRunOptions, WatchSpawnPlan } from '../watch/types.js'

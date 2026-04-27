@@ -6,7 +6,7 @@ import {
   LINX_HOME_DIRNAME,
   parseAccountSession,
   type AccountSession,
-} from '@linx/models/client'
+} from '@undefineds.co/models/client'
 
 export type StoredAccountSession = AccountSession
 

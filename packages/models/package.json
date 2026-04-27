@@ -1,6 +1,6 @@
 {
   "name": "@undefineds.co/models",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "exports": {
@@ -10,6 +10,7 @@
     "./discovery": "./src/discovery/index.ts",
     "./namespaces": "./src/namespaces.ts",
     "./profile": "./src/profile.ts",
+    "./profile.repository": "./src/profile.repository.ts",
     "./profile.schema": "./src/profile.schema.ts",
     "./watch": "./src/watch/index.ts"
   },
@@ -19,30 +20,16 @@
     "pack:release": "node scripts/pack-release.mjs",
     "sync:discovery:vercel": "node --experimental-strip-types scripts/sync-discovery-vercel.ts",
     "test": "vitest",
-    "test:pod": "dotenv -e ../../.env -- vitest run tests/pod.integration.test.ts",
-    "test:w3c": "rdf-test-suite tests/storage/quint-engine.cjs https://w3c.github.io/rdf-tests/sparql/sparql11/manifest-sparql11-query.ttl -m 'https://w3c.github.io/rdf-tests/|tests/w3c-data/rdf-tests/' -e",
-    "test:w3c:quadstore": "rdf-test-suite tests/storage/quadstore-engine.cjs https://w3c.github.io/rdf-tests/sparql/sparql11/manifest-sparql11-query.ttl -m 'https://w3c.github.io/rdf-tests/|tests/w3c-data/rdf-tests/' -e",
-    "test:w3c:all": "rdf-test-suite tests/storage/quint-engine.cjs https://w3c.github.io/rdf-tests/sparql/sparql11/manifest-all.ttl -m 'https://w3c.github.io/rdf-tests/|tests/w3c-data/rdf-tests/' -e"
+    "test:pod": "dotenv -e ../../.env -- vitest run tests/pod.integration.test.ts"
   },
   "dependencies": {
-    "@comunica/query-sparql": "^2.10.0",
-    "@comunica/types": "^2.10.0",
-    "@rdfjs/types": "^1.1.0",
-    "@types/pg": "^8.16.0",
-    "better-sqlite3": "^11.0.0",
+    "@comunica/query-sparql-solid": "^4.0.2",
     "drizzle-orm": "^0.32.0",
-    "@undefineds.co/drizzle-solid": "^0.3.0",
-    "n3": "^1.17.0",
-    "pg": "^8.16.3",
-    "quadstore": "^15.4.0",
-    "quadstore-comunica": "^6.0.0",
+    "@undefineds.co/drizzle-solid": "^0.3.5",
     "zod": "^3.22.4"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.11",
-    "@types/n3": "^1.16.0",
     "dotenv-cli": "^7.3.0",
-    "rdf-test-suite": "^2.1.3",
     "typescript": "^5.4.0",
     "vitest": "^1.6.0"
   }

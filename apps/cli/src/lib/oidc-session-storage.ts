@@ -2,7 +2,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSy
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import type { IStorage } from '@inrupt/solid-client-authn-node'
-import { LINX_HOME_DIRNAME } from '@linx/models/client'
+import { LINX_HOME_DIRNAME } from '@undefineds.co/models/client'
 
 function linxDir(): string {
   return join(homedir(), LINX_HOME_DIRNAME)

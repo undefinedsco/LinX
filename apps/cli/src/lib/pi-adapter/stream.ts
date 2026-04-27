@@ -1,5 +1,5 @@
-import { appendFileSync } from 'node:fs'
 import { createAssistantMessageEventStream, type AssistantMessage, type AssistantMessageEventStream } from '@mariozechner/pi-ai'
+import type { RemoteChatMessage, RemoteChatTool, RemoteChatToolCall } from '../chat-api.js'
 import type { WatchNormalizedEvent } from '../watch/types.js'
 import { DEFAULT_LINX_CLOUD_MODEL_ID } from '../default-model.js'
 
@@ -9,6 +9,20 @@ const UNDEFINEDS_PROVIDER_API = 'linx-cloud-chat-completions'
 type PiStreamContextMessage = {
   role?: string
   content?: unknown
+  toolCallId?: string
+  toolName?: string
+}
+
+type PiStreamTool = {
+  name?: string
+  description?: string
+  parameters?: unknown
+}
+
+export interface PiCompletionBackendResult {
+  content?: string
+  toolCalls?: RemoteChatToolCall[]
+  finishReason?: string | null
 }
 
 export interface PiAgentStreamAdapterOptions {
@@ -24,8 +38,10 @@ export interface PiAgentStreamAdapterOptions {
     complete(input: {
       model?: string
       apiKey?: string
-      messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>
-    }): Promise<string>
+      messages: RemoteChatMessage[]
+      tools?: RemoteChatTool[]
+      systemPrompt?: string
+    }): Promise<string | PiCompletionBackendResult>
   }
 }
 
@@ -61,7 +77,7 @@ export function createPiAgentStreamAdapter(options: PiAgentStreamAdapterOptions 
     model: options.model,
     streamFn(
       modelArg?: unknown,
-      context?: { messages?: Array<{ role?: string; content?: unknown }> },
+      context?: { messages?: PiStreamContextMessage[]; tools?: PiStreamTool[]; systemPrompt?: string },
       streamOptions?: { apiKey?: string; modelId?: string },
     ): AssistantMessageEventStream {
       const stream = createAssistantMessageEventStream()
@@ -70,46 +86,20 @@ export function createPiAgentStreamAdapter(options: PiAgentStreamAdapterOptions 
 
       void (async () => {
         stream.push({ type: 'start', partial: { ...message } })
-        const normalizedMessages = normalizeContextMessages(context?.messages ?? [])
+        const normalizedMessages = normalizeContextMessages(context)
+        const normalizedTools = normalizeContextTools(context?.tools)
         const lastUserText = [...normalizedMessages].reverse().find((entry) => entry.role === 'user')
-        const prompt = lastUserText?.content ?? ''
+        const prompt = typeof lastUserText?.content === 'string' ? lastUserText.content : ''
 
         if (options.completionBackend) {
-          appendFileSync('/tmp/linx-stream-debug.log', `${JSON.stringify({
-            at: new Date().toISOString(),
-            model: resolvedModelId,
-            messageCount: normalizedMessages.length,
-            messages: normalizedMessages,
-          })}\n`)
           const reply = await options.completionBackend.complete({
             model: resolvedModelId,
             apiKey: streamOptions?.apiKey,
             messages: normalizedMessages,
+            tools: normalizedTools,
+            systemPrompt: context?.systemPrompt,
           })
-
-          if (reply) {
-            message.content = [{ type: 'text', text: '' }]
-            stream.push({ type: 'text_start', contentIndex: 0, partial: { ...message } })
-            message.content = [{ type: 'text', text: reply }]
-            stream.push({
-              type: 'text_delta',
-              contentIndex: 0,
-              delta: reply,
-              partial: { ...message },
-            })
-            stream.push({
-              type: 'text_end',
-              contentIndex: 0,
-              content: reply,
-              partial: { ...message },
-            })
-          }
-
-          stream.push({
-            type: 'done',
-            reason: 'stop',
-            message,
-          })
+          emitCompletionResult(stream, message, reply)
           return
         }
 
@@ -188,26 +178,113 @@ function resolveModelId(modelArg: unknown, overrideModelId?: string, fallbackMod
   return DEFAULT_LINX_CLOUD_MODEL_ID
 }
 
-function normalizeContextMessages(
-  messages: PiStreamContextMessage[],
-): Array<{ role: 'system' | 'user' | 'assistant'; content: string }> {
-  return messages
-    .map((entry) => {
-      const role = entry.role === 'system' || entry.role === 'assistant' || entry.role === 'user'
-        ? entry.role
-        : null
-      if (!role) {
-        return null
-      }
+function normalizeContextMessages(context?: { messages?: PiStreamContextMessage[]; systemPrompt?: string }): RemoteChatMessage[] {
+  const messages = context?.messages ?? []
+  const normalized: RemoteChatMessage[] = []
+  const systemPrompt = context?.systemPrompt?.trim()
+  if (systemPrompt) {
+    normalized.push({ role: 'system', content: systemPrompt })
+  }
 
+  for (const entry of messages) {
+    if (entry.role === 'system' || entry.role === 'user') {
       const content = normalizeMessageContent(entry.content)
-      if (!content) {
-        return null
+      if (content) {
+        normalized.push({ role: entry.role, content })
       }
+      continue
+    }
 
-      return { role, content }
+    if (entry.role === 'assistant') {
+      const content = normalizeAssistantTextContent(entry.content)
+      const toolCalls = normalizeAssistantToolCalls(entry.content)
+      if (content || toolCalls.length > 0) {
+        normalized.push({
+          role: 'assistant',
+          content: content || null,
+          ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+        })
+      }
+      continue
+    }
+
+    if (entry.role === 'toolResult' || entry.role === 'tool') {
+      const content = normalizeMessageContent(entry.content) || '(empty tool result)'
+      const toolCallId = typeof entry.toolCallId === 'string' ? entry.toolCallId : undefined
+      if (toolCallId) {
+        normalized.push({
+          role: 'tool',
+          content,
+          tool_call_id: toolCallId,
+          ...(typeof entry.toolName === 'string' ? { name: entry.toolName } : {}),
+        })
+      }
+    }
+  }
+
+  return normalized
+}
+
+function normalizeContextTools(tools: PiStreamTool[] | undefined): RemoteChatTool[] | undefined {
+  if (!Array.isArray(tools)) {
+    return undefined
+  }
+
+  const normalized: RemoteChatTool[] = []
+  for (const tool of tools) {
+    if (!tool?.name) {
+      continue
+    }
+    normalized.push({
+      type: 'function',
+      function: {
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters,
+      },
     })
-    .filter((entry): entry is { role: 'system' | 'user' | 'assistant'; content: string } => Boolean(entry))
+  }
+  return normalized
+}
+
+function normalizeAssistantToolCalls(content: unknown): RemoteChatToolCall[] {
+  if (!Array.isArray(content)) {
+    return []
+  }
+
+  return content.flatMap((part) => {
+    if (!isRecord(part) || part.type !== 'toolCall') {
+      return []
+    }
+    const id = typeof part.id === 'string' ? part.id : ''
+    const name = typeof part.name === 'string' ? part.name : ''
+    if (!id || !name) {
+      return []
+    }
+    return [{
+      id,
+      type: 'function' as const,
+      function: {
+        name,
+        arguments: JSON.stringify(isRecord(part.arguments) ? part.arguments : {}),
+      },
+    }]
+  })
+}
+
+function normalizeAssistantTextContent(content: unknown): string {
+  if (!Array.isArray(content)) {
+    return normalizeMessageContent(content)
+  }
+
+  return content
+    .map((part) => {
+      if (isRecord(part) && part.type === 'text') {
+        return String(part.text ?? '')
+      }
+      return ''
+    })
+    .join('')
 }
 
 function normalizeMessageContent(content: unknown): string {
@@ -225,13 +302,77 @@ function normalizeMessageContent(content: unknown): string {
         return part
       }
 
-      if (typeof part === 'object' && part !== null && 'text' in part) {
-        return String((part as { text?: unknown }).text ?? '')
+      if (isRecord(part) && part.type === 'text') {
+        return String(part.text ?? '')
       }
 
       return ''
     })
     .join('')
+}
+
+function emitCompletionResult(
+  stream: AssistantMessageEventStream,
+  message: AssistantMessage,
+  reply: string | PiCompletionBackendResult,
+): void {
+  const content = typeof reply === 'string' ? reply : reply.content ?? ''
+  const toolCalls = typeof reply === 'string' ? [] : reply.toolCalls ?? []
+
+  if (content) {
+    const contentIndex = message.content.length
+    message.content.push({ type: 'text', text: '' })
+    stream.push({ type: 'text_start', contentIndex, partial: { ...message } })
+    message.content[contentIndex] = { type: 'text', text: content }
+    stream.push({ type: 'text_delta', contentIndex, delta: content, partial: { ...message } })
+    stream.push({ type: 'text_end', contentIndex, content, partial: { ...message } })
+  }
+
+  for (const toolCall of toolCalls) {
+    const parsedArguments = parseToolArguments(toolCall.function.arguments)
+    const contentIndex = message.content.length
+    const piToolCall = {
+      type: 'toolCall' as const,
+      id: toolCall.id,
+      name: toolCall.function.name,
+      arguments: parsedArguments,
+    }
+    message.content.push(piToolCall)
+    stream.push({ type: 'toolcall_start', contentIndex, partial: { ...message } })
+    stream.push({
+      type: 'toolcall_delta',
+      contentIndex,
+      delta: toolCall.function.arguments,
+      partial: { ...message },
+    })
+    stream.push({
+      type: 'toolcall_end',
+      contentIndex,
+      toolCall: piToolCall,
+      partial: { ...message },
+    })
+  }
+
+  const reason = toolCalls.length > 0 || (!isStringReply(reply) && reply.finishReason === 'tool_calls') ? 'toolUse' : 'stop'
+  message.stopReason = reason
+  stream.push({ type: 'done', reason, message })
+}
+
+function parseToolArguments(input: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(input || '{}')
+    return isRecord(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function isStringReply(reply: string | PiCompletionBackendResult): reply is string {
+  return typeof reply === 'string'
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
 }
 
 async function* createBackendEventSource(

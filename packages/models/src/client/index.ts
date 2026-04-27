@@ -201,6 +201,24 @@ export function resolveLinxPodBaseUrl(webId: string): string {
   return trimTrailingSlash(resolveLinxPodUrl(webId))
 }
 
+export function extractProfileUsernameFromWebId(webId: string): string {
+  try {
+    const target = new URL(webId)
+    const pathParts = target.pathname.split('/').filter(Boolean).map((part) => decodeURIComponent(part))
+    const profileIndex = pathParts.indexOf('profile')
+    if (profileIndex > 0) {
+      return pathParts[profileIndex - 1]
+    }
+    const firstUserSegment = pathParts.find((part) => part !== 'profile' && part !== 'card')
+    if (firstUserSegment) {
+      return firstUserSegment
+    }
+  } catch {
+    // Fall through to the unsigned-in fallback.
+  }
+  return 'there'
+}
+
 export function parseLinxClientConfig(raw: unknown): LinxClientConfig | null {
   if (!isRecord(raw) || typeof raw.url !== 'string' || typeof raw.webId !== 'string') {
     return null
