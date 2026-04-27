@@ -1,10 +1,14 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, renameSync, rmSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
 
 const workspaceRoot = fileURLToPath(new URL('..', import.meta.url))
 const distDir = fileURLToPath(new URL('../dist', import.meta.url))
+const require = createRequire(import.meta.url)
+const tscBin = require.resolve('typescript/bin/tsc')
 const compileArgs = [
+  tscBin,
   '-p',
   'tsconfig.json',
   '--outDir',
@@ -42,9 +46,13 @@ function removeDirRobust(path) {
 
 removeDirRobust(distDir)
 
-const compile = spawnSync('tsc', compileArgs, {
+const compile = spawnSync(process.execPath, compileArgs, {
   cwd: workspaceRoot,
   stdio: 'inherit',
 })
+
+if (compile.error) {
+  process.stderr.write(`[linx-cli] Failed to run TypeScript compiler: ${compile.error.message}\n`)
+}
 
 process.exit(compile.status ?? 1)
