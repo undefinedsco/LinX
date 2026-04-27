@@ -13,7 +13,7 @@ import {
   type LinxClientCredentialsSecrets,
   type LinxClientSecrets,
   type LinxOidcOAuthSecrets,
-} from '@linx/models/client'
+} from '@undefineds.co/models/client'
 
 export type AuthType = LinxAuthType
 export type StoredConfig = LinxClientConfig
@@ -79,6 +79,13 @@ export function isClientCredentials(secrets: StoredSecrets): secrets is ClientCr
 
 export function getClientCredentials(creds: StoredCredentials): ClientCredentialsSecrets | null {
   return isClientCredentials(creds.secrets) ? creds.secrets : null
+}
+
+export function getOidcOAuthSecrets(creds: StoredCredentials): OidcOAuthSecrets | null {
+  const secrets = creds.secrets
+  return 'oidcRefreshToken' in secrets && 'oidcAccessToken' in secrets && 'oidcExpiresAt' in secrets
+    ? secrets
+    : null
 }
 
 export function loadCredentials(): StoredCredentials | null {

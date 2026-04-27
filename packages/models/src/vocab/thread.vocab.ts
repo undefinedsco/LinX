@@ -1,15 +1,14 @@
-import { DCTerms, LINX_CHAT, SIOC, UDFS } from '../namespaces.js'
+import { DCTerms, LINX_CHAT, SIOC, UDFS } from '../namespaces'
 
 export const ThreadVocab = {
-  chatId: SIOC.has_parent,
+  chat: SIOC.has_parent,
   title: DCTerms.title,
   starred: UDFS.favorite,
-  status: UDFS.status,
   metadata: UDFS.metadata,
   createdAt: DCTerms.created,
   updatedAt: DCTerms.modified,
 
-  // Execution context: workspace container (Agent@workspace)
+  // Execution context: workspace URI for the runnable root
   workspace: LINX_CHAT.workspace,
 
   // Type marker (for SPARQL convenience)

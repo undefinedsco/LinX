@@ -48,6 +48,11 @@ class MockMutationBuilder {
     return this
   }
 
+  whereByIri(iri: string) {
+    this.whereArgs.push({ '@id': iri })
+    return this
+  }
+
   async execute() {
     return []
   }
@@ -99,6 +104,10 @@ class MockDatabase<Row> {
         return builder
       },
     }
+  }
+
+  async findByIri(_table: unknown, iri: string) {
+    return this.selectRows.find((row) => (row as Record<string, unknown>)['@id'] === iri) ?? null
   }
 
   delete() {
@@ -154,7 +163,7 @@ describe('createRepositoryDescriptor', () => {
     const row = await descriptor.detail(db as unknown as SolidDatabase, 'chat-1')
 
     expect(row).toEqual(baseChatRow)
-    expect(db.lastSelectQuery?.limitValue).toBe(1)
+    expect(db.lastSelectQuery).toBeNull()
   })
 
   it('creates rows via insert and returns the created object', async () => {

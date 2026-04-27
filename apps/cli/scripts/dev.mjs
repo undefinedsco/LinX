@@ -1,45 +1,51 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, rmSync } from 'node:fs'
+import { existsSync, renameSync, rmSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 const workspaceRoot = fileURLToPath(new URL('..', import.meta.url))
+const distDir = fileURLToPath(new URL('../dist', import.meta.url))
 const distIndex = fileURLToPath(new URL('../dist/index.js', import.meta.url))
 const distWatchCli = fileURLToPath(new URL('../dist/watch-cli.js', import.meta.url))
 const args = process.argv.slice(2)
 const watchMode = args[0] === 'watch'
 const targetEntry = watchMode ? distWatchCli : distIndex
-const compileArgs = watchMode
-  ? [
-      '--outDir',
-      'dist',
-      '--rootDir',
-      'src',
-      '--module',
-      'nodenext',
-      '--moduleResolution',
-      'nodenext',
-      '--target',
-      'ES2022',
-      '--lib',
-      'ES2022',
-      '--types',
-      'node',
-      '--skipLibCheck',
-      'true',
-      '--noEmitOnError',
-      'false',
-      'src/watch-cli.ts',
-    ]
-  : [
-      '-p',
-      'tsconfig.json',
-      '--outDir',
-      'dist',
-      '--noEmitOnError',
-      'false',
-    ]
+const compileArgs = [
+  '-p',
+  'tsconfig.json',
+  '--outDir',
+  'dist',
+  '--noEmitOnError',
+  'false',
+]
 
-rmSync(new URL('../dist', import.meta.url), { recursive: true, force: true })
+function sleep(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+
+function removeDirRobust(path) {
+  if (!existsSync(path)) return
+
+  const tombstone = `${path}.trash-${Date.now()}`
+  try {
+    renameSync(path, tombstone)
+    rmSync(tombstone, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+    return
+  } catch {
+    // Fall through to direct retry. Rename can fail if another process already touched dist.
+  }
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      rmSync(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+      return
+    } catch (error) {
+      if (attempt === 4) throw error
+      sleep(100)
+    }
+  }
+}
+
+removeDirRobust(distDir)
 
 const compile = spawnSync('tsc', compileArgs, {
   cwd: workspaceRoot,
@@ -55,7 +61,6 @@ if ((compile.status ?? 1) !== 0) {
 }
 
 const runArgs = watchMode ? [targetEntry, ...args.slice(1)] : [targetEntry, ...args]
-
 const run = spawnSync(process.execPath, runArgs, {
   cwd: workspaceRoot,
   stdio: 'inherit',

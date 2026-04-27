@@ -1,10 +1,11 @@
-import type { AIModelInsert, AIModelRow } from '../ai-model.schema.js'
-import type { AIProviderInsert, AIProviderRow } from '../ai-provider.schema.js'
-import type { CredentialInsert, CredentialRow } from '../credential.schema.js'
+import type { AIModelInsert, AIModelRow } from '../ai-model.schema'
+import type { AIProviderInsert, AIProviderRow } from '../ai-provider.schema'
+import type { CredentialInsert, CredentialRow } from '../credential.schema'
 
 export interface AIConfigProviderCatalogEntry {
   id: string
   displayName: string
+  aliases?: string[]
   defaultBaseUrl?: string
   defaultModels?: string[]
 }
@@ -53,11 +54,13 @@ const AI_CONFIG_PROVIDER_CATALOG: readonly AIConfigProviderCatalogEntry[] = [
   {
     id: 'openai',
     displayName: 'OpenAI',
+    aliases: ['codex'],
     defaultBaseUrl: 'https://api.openai.com/v1',
   },
   {
     id: 'anthropic',
     displayName: 'Anthropic',
+    aliases: ['claude'],
     defaultBaseUrl: 'https://api.anthropic.com/v1',
   },
   {
@@ -78,6 +81,7 @@ const AI_CONFIG_PROVIDER_CATALOG: readonly AIConfigProviderCatalogEntry[] = [
   {
     id: 'x-ai',
     displayName: 'xAI',
+    aliases: ['xai'],
     defaultBaseUrl: 'https://api.x.ai/v1',
   },
   {
@@ -141,6 +145,9 @@ function collectKnownProviderIds(catalog: readonly AIConfigProviderCatalogEntry[
   const ids = new Set<string>()
   for (const entry of catalog) {
     ids.add(entry.id)
+    for (const alias of entry.aliases ?? []) {
+      ids.add(alias)
+    }
   }
   return ids
 }
@@ -158,14 +165,14 @@ export function getAIConfigProviderCatalog(): readonly AIConfigProviderCatalogEn
 }
 
 export function getAIConfigProviderMetadata(providerId: string): AIConfigProviderCatalogEntry {
-  const canonicalId = extractAIConfigProviderId(providerId)
+  const canonicalId = normalizeAIConfigProviderId(providerId)
   return AI_CONFIG_PROVIDER_MAP.get(canonicalId) ?? {
     id: canonicalId,
     displayName: titleizeProviderId(canonicalId),
   }
 }
 
-export function extractAIConfigResourceId(raw?: string | null): string {
+export function normalizeAIConfigResourceId(raw?: string | null): string {
   if (!raw) return ''
   if (raw.includes('#')) return raw.split('#').pop() || raw
   const clean = raw.replace(/\/$/, '')
@@ -173,14 +180,28 @@ export function extractAIConfigResourceId(raw?: string | null): string {
   return tail.endsWith('.ttl') ? tail.slice(0, -4) : tail
 }
 
-export function extractAIConfigProviderId(raw?: string | null): string {
-  return normalizeText(extractAIConfigResourceId(raw))
+export function normalizeAIConfigProviderId(raw?: string | null): string {
+  const normalized = normalizeText(normalizeAIConfigResourceId(raw))
+  if (!normalized) return ''
+
+  for (const entry of AI_CONFIG_PROVIDER_CATALOG) {
+    if (entry.id === normalized || (entry.aliases ?? []).includes(normalized)) {
+      return entry.id
+    }
+  }
+
+  return normalized
 }
 
-export function sameAIConfigProviderId(left?: string | null, right?: string | null): boolean {
-  const normalizedLeft = extractAIConfigProviderId(left)
-  const normalizedRight = extractAIConfigProviderId(right)
+export function sameAIConfigProviderFamily(left?: string | null, right?: string | null): boolean {
+  const normalizedLeft = normalizeAIConfigProviderId(left)
+  const normalizedRight = normalizeAIConfigProviderId(right)
   return Boolean(normalizedLeft) && normalizedLeft === normalizedRight
+}
+
+export function getAIConfigProviderFamilyIds(providerId: string): string[] {
+  const metadata = getAIConfigProviderMetadata(providerId)
+  return [metadata.id, ...(metadata.aliases ?? [])]
 }
 
 export function getAIConfigDefaultBaseUrl(providerId: string): string | undefined {
@@ -188,15 +209,15 @@ export function getAIConfigDefaultBaseUrl(providerId: string): string | undefine
 }
 
 export function getDefaultAIConfigCredentialId(providerId: string): string {
-  return `${extractAIConfigProviderId(providerId)}-default`
+  return `${normalizeAIConfigProviderId(providerId)}-default`
 }
 
 export function aiConfigProviderUri(providerId: string): string {
-  return `/settings/ai/providers.ttl#${extractAIConfigProviderId(providerId)}`
+  return `/settings/ai/providers.ttl#${normalizeAIConfigProviderId(providerId)}`
 }
 
 export function aiConfigModelUri(modelId: string): string {
-  return `/settings/ai/models.ttl#${extractAIConfigResourceId(modelId)}`
+  return `/settings/ai/models.ttl#${normalizeAIConfigResourceId(modelId)}`
 }
 
 export function buildAIConfigProviderStateMap(options: BuildAIConfigProviderStateMapOptions): Record<string, AIConfigProviderState> {
@@ -207,7 +228,7 @@ export function buildAIConfigProviderStateMap(options: BuildAIConfigProviderStat
 
   const providerMap = new Map<string, Partial<AIProviderRow> & Record<string, unknown>>()
   for (const row of options.providerRows) {
-    const providerId = typeof row.id === 'string' ? row.id : ''
+    const providerId = normalizeAIConfigProviderId(String(row.id ?? row['@id'] ?? ''))
     if (!providerId) continue
     const previous = providerMap.get(providerId) ?? {}
     providerMap.set(providerId, { ...previous, ...row })
@@ -215,7 +236,7 @@ export function buildAIConfigProviderStateMap(options: BuildAIConfigProviderStat
 
   const credentialMap = new Map<string, Partial<CredentialRow> & Record<string, unknown>>()
   for (const row of options.credentialRows) {
-    const providerId = extractAIConfigProviderId(typeof row.provider === 'string' ? row.provider : '')
+    const providerId = normalizeAIConfigProviderId(String(row.provider ?? row.id ?? ''))
     if (!providerId) continue
     const previous = credentialMap.get(providerId) ?? {}
     credentialMap.set(providerId, { ...previous, ...row })
@@ -223,10 +244,10 @@ export function buildAIConfigProviderStateMap(options: BuildAIConfigProviderStat
 
   const modelMap = new Map<string, AIConfigModel[]>()
   for (const row of options.modelRows) {
-    const providerId = extractAIConfigProviderId(typeof row.isProvidedBy === 'string' ? row.isProvidedBy : '')
+    const providerId = normalizeAIConfigProviderId(String(row.isProvidedBy ?? ''))
     if (!providerId) continue
 
-    const modelId = typeof row.id === 'string' ? row.id : ''
+    const modelId = normalizeAIConfigResourceId(String(row.id ?? row['@id'] ?? ''))
     if (!modelId) continue
 
     const list = modelMap.get(providerId) ?? []
@@ -264,7 +285,7 @@ export function buildAIConfigProviderStateMap(options: BuildAIConfigProviderStat
           capabilities: [],
         }))
 
-    const selectedModelId = extractAIConfigResourceId(
+    const selectedModelId = normalizeAIConfigResourceId(
       typeof providerRow?.hasModel === 'string' ? providerRow.hasModel : '',
     ) || preferredSelectedModelId(models)
 
@@ -291,15 +312,11 @@ export function buildAIConfigMutationPlan(input: {
   currentModelRows: Array<Partial<AIModelRow> & Record<string, unknown>>
   updates: AIConfigUpdate
 }): AIConfigMutationPlan {
-  const providerId = extractAIConfigProviderId(input.providerId)
+  const providerId = normalizeAIConfigProviderId(input.providerId)
   const metadata = getAIConfigProviderMetadata(providerId)
-  const existingProvider = input.currentProviderRows.find((row) => row.id === providerId)
-  const existingCredential = input.currentCredentialRows.find((row) =>
-    sameAIConfigProviderId(typeof row.provider === 'string' ? row.provider : '', providerId),
-  )
-  const existingModels = input.currentModelRows.filter((row) =>
-    sameAIConfigProviderId(typeof row.isProvidedBy === 'string' ? row.isProvidedBy : '', providerId),
-  )
+  const existingProvider = input.currentProviderRows.find((row) => sameAIConfigProviderFamily(String(row.id ?? row['@id'] ?? ''), providerId))
+  const existingCredential = input.currentCredentialRows.find((row) => sameAIConfigProviderFamily(String(row.provider ?? row.id ?? ''), providerId))
+  const existingModels = input.currentModelRows.filter((row) => sameAIConfigProviderFamily(String(row.isProvidedBy ?? ''), providerId))
   const hasConfigUpdate = input.updates.enabled !== undefined || input.updates.apiKey !== undefined || input.updates.baseUrl !== undefined
 
   let providerPayload: AIProviderInsert | undefined
@@ -310,7 +327,7 @@ export function buildAIConfigMutationPlan(input: {
   if (hasConfigUpdate || input.updates.models !== undefined) {
     const selectedModelId = input.updates.models
       ? preferredSelectedModelId(input.updates.models)
-      : extractAIConfigResourceId(typeof existingProvider?.hasModel === 'string' ? existingProvider.hasModel : '')
+      : normalizeAIConfigResourceId(typeof existingProvider?.hasModel === 'string' ? existingProvider.hasModel : '')
 
     providerPayload = {
       id: providerId,
@@ -326,7 +343,7 @@ export function buildAIConfigMutationPlan(input: {
   if (hasConfigUpdate) {
     credentialPayload = {
       id:
-        (typeof existingCredential?.id === 'string' ? existingCredential.id : '') ||
+        normalizeAIConfigResourceId(typeof existingCredential?.id === 'string' ? existingCredential.id : '') ||
         getDefaultAIConfigCredentialId(providerId),
       provider: aiConfigProviderUri(providerId),
       service: typeof existingCredential?.service === 'string' && existingCredential.service ? existingCredential.service : 'ai',
@@ -354,14 +371,14 @@ export function buildAIConfigMutationPlan(input: {
   if (input.updates.models !== undefined) {
     const existingById = new Map(
       existingModels.map((row) => [
-        typeof row.id === 'string' ? row.id : '',
+        normalizeAIConfigResourceId(String(row.id ?? row['@id'] ?? '')),
         row,
       ] as const),
     )
     const nextIds = new Set<string>()
 
     for (const model of input.updates.models) {
-      const modelId = extractAIConfigResourceId(model.id)
+      const modelId = normalizeAIConfigResourceId(model.id)
       if (!modelId) continue
       nextIds.add(modelId)
       const existing = existingById.get(modelId)

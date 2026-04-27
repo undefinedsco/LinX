@@ -1,13 +1,13 @@
-import type { ChatInsert } from '../chat.schema.js'
-import type { ContactInsert } from '../contact.schema.js'
-import type { MessageInsert } from '../message.schema.js'
-import type { ThreadInsert } from '../thread.schema.js'
+import type { ChatInsert } from '../chat.schema'
+import type { ContactInsert } from '../contact.schema'
+import type { MessageInsert } from '../message.schema'
+import type { ThreadInsert } from '../thread.schema'
 import type {
   ToolApprovalBlock,
   ToolCallBlock,
   TaskProgressBlock,
-} from '../types/collaboration-blocks.js'
-import { ContactClass } from '../contact.schema.js'
+} from '../types/collaboration-blocks'
+import { ContactClass } from '../contact.schema'
 
 export const fixtureContactSolid: ContactInsert = {
   id: 'contact-solid-1',
@@ -42,7 +42,7 @@ export const fixtureChatDirectAI: ChatInsert = {
 
 export const fixtureThreadDirectAI: ThreadInsert = {
   id: 'thread-001',
-  chatId: 'https://pod.example/.data/chat/chat-direct-ai-1/index.ttl#this',
+  chat: 'https://pod.example/.data/chat/chat-direct-ai-1/index.ttl#this',
   title: 'Main thread',
   starred: false,
 

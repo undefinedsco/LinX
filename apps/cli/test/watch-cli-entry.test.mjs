@@ -54,6 +54,146 @@ test('compiled cli entry can serve watch commands without chat dependencies', as
   assert.match(output, /codebuddy/i)
 })
 
+test('compiled cli entry exposes codex-native-proxy command help', async (t) => {
+  const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-native-proxy-'))
+  t.after(() => {
+    rmSync(outdir, { recursive: true, force: true })
+  })
+
+  try {
+    execFileSync('tsc', [
+      '--outDir',
+      outdir,
+      '--rootDir',
+      sourceRoot,
+      '--module',
+      'nodenext',
+      '--moduleResolution',
+      'nodenext',
+      '--target',
+      'ES2022',
+      '--lib',
+      'ES2022',
+      '--types',
+      'node',
+      '--skipLibCheck',
+      'true',
+      '--noEmitOnError',
+      'false',
+      entryPath,
+    ], {
+      cwd: cliRoot,
+      stdio: 'pipe',
+    })
+  } catch {
+    assert.ok(existsSync(join(outdir, 'index.js')))
+  }
+
+  const output = execFileSync(process.execPath, [join(outdir, 'index.js'), 'codex-native-proxy', '--help'], {
+    cwd: cliRoot,
+    encoding: 'utf-8',
+  })
+
+  assert.match(output, /codex-native-proxy/)
+  assert.match(output, /websocket/i)
+  assert.match(output, /--port/)
+})
+
+test('compiled cli default entry is Pi TUI and hides explicit frontend aliases', async (t) => {
+  const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-pi-'))
+  t.after(() => {
+    rmSync(outdir, { recursive: true, force: true })
+  })
+
+  try {
+    execFileSync('tsc', [
+      '--outDir',
+      outdir,
+      '--rootDir',
+      sourceRoot,
+      '--module',
+      'nodenext',
+      '--moduleResolution',
+      'nodenext',
+      '--target',
+      'ES2022',
+      '--lib',
+      'ES2022',
+      '--types',
+      'node',
+      '--skipLibCheck',
+      'true',
+      '--noEmitOnError',
+      'false',
+      entryPath,
+    ], {
+      cwd: cliRoot,
+      stdio: 'pipe',
+    })
+  } catch {
+    assert.ok(existsSync(join(outdir, 'index.js')))
+  }
+
+  const output = execFileSync(process.execPath, [join(outdir, 'index.js'), '--help'], {
+    cwd: cliRoot,
+    encoding: 'utf-8',
+  })
+
+  assert.match(output, /linx \[prompt\.\.\]/)
+  assert.match(output, /native Pi TUI/i)
+  assert.match(output, /runtime-url/)
+  assert.match(output, /--backend/)
+  assert.match(output, /--print/)
+  assert.doesNotMatch(output, /pi-frontend/)
+  assert.doesNotMatch(output, /linx pi /)
+})
+
+test('compiled cli login help exposes browser consent flow and no password options', async (t) => {
+  const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-login-help-'))
+  t.after(() => {
+    rmSync(outdir, { recursive: true, force: true })
+  })
+
+  try {
+    execFileSync('tsc', [
+      '--outDir',
+      outdir,
+      '--rootDir',
+      sourceRoot,
+      '--module',
+      'nodenext',
+      '--moduleResolution',
+      'nodenext',
+      '--target',
+      'ES2022',
+      '--lib',
+      'ES2022',
+      '--types',
+      'node',
+      '--skipLibCheck',
+      'true',
+      '--noEmitOnError',
+      'false',
+      entryPath,
+    ], {
+      cwd: cliRoot,
+      stdio: 'pipe',
+    })
+  } catch {
+    assert.ok(existsSync(join(outdir, 'index.js')))
+  }
+
+  const output = execFileSync(process.execPath, [join(outdir, 'index.js'), 'login', '--help'], {
+    cwd: cliRoot,
+    encoding: 'utf-8',
+  })
+
+  assert.match(output, /browser/i)
+  assert.match(output, /OIDC/i)
+  assert.doesNotMatch(output, /email/i)
+  assert.doesNotMatch(output, /password/i)
+})
+
 test('compiled cli watch show replays archived timeline instead of raw json', async (t) => {
   const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-show-'))
   const watchHome = mkdtempSync(join(cliRoot, '.tmp-linx-watch-home-'))

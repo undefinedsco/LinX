@@ -25,7 +25,9 @@ import {
   resolveLinxCloudApiBaseUrl,
   resolveLinxCloudRuntimeApiBaseUrl,
   resolveLinxCredentialBootstrapStatus,
+  resolveLinxAccountPodUrl,
   resolveLinxPodUrl,
+  extractProfileUsernameFromWebId,
   resolveLinxRuntimeApiBaseUrlForIssuerUrl,
   resolveLinxRuntimeOriginForIssuerUrl,
   resolveLinxRuntimeApiBaseUrl,
@@ -49,6 +51,12 @@ describe('client local config shared core', () => {
       webId: 'https://pod.example/profile#me',
       authType: 'client_credentials',
     })
+  })
+
+  it('extracts profile username from WebID paths', () => {
+    expect(extractProfileUsernameFromWebId('https://id.undefineds.co/ganbb/profile/card#me')).toBe('ganbb')
+    expect(extractProfileUsernameFromWebId('https://id.undefineds.co/local/profile/card#me')).toBe('local')
+    expect(extractProfileUsernameFromWebId('not logged in')).toBe('there')
   })
 
   it('parses both client credential secret shapes', () => {
@@ -122,6 +130,18 @@ describe('client local config shared core', () => {
     expect(resolveLinxRuntimeApiBaseUrlForIssuerUrl('https://alice.pods.undefineds.co')).toBe('https://alice.pods.undefineds.co/v1')
     expect(resolveLinxPodUrl('https://pod.example/profile/card#me')).toBe('https://pod.example/profile/')
     expect(resolveLinxPodBaseUrl('https://pod.example/profile/card#me')).toBe('https://pod.example/profile')
+    expect(resolveLinxAccountPodUrl({
+      controls: {
+        pod: 'https://pods.undefineds.co/ganbb/',
+      },
+      pods: {
+        'https://pods.undefineds.co/ganbb/': 'ganbb',
+      },
+      webIds: {
+        'https://id.undefineds.co/ganbb/profile/card#me': 'https://pods.undefineds.co/ganbb/',
+      },
+      clientCredentials: {},
+    }, 'https://id.undefineds.co/ganbb/profile/card#me')).toBe('https://pods.undefineds.co/ganbb/')
 
     expect(
       parseLinxAccountData({

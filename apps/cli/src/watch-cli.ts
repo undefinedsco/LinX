@@ -29,7 +29,7 @@ const cli = yargs(hideBin(process.argv))
       command
         .positional('action', {
           type: 'string',
-          choices: ['run', 'backends', 'sessions', 'show', 'approvals', 'approve', 'reject'] as const,
+          choices: ['run', 'backends', 'sessions', 'show', 'approvals', 'approve', 'reject', 'codex', 'claude', 'codebuddy'] as const,
         })
         .positional('backend', {
           type: 'string',
@@ -49,6 +49,11 @@ const cli = yargs(hideBin(process.argv))
           type: 'string',
           describe: 'Working directory for local backend execution',
         })
+        .option('plain', {
+          type: 'boolean',
+          default: false,
+          describe: 'Disable full-screen TUI and use plain streaming output',
+        })
         .option('credential-source', {
           type: 'string',
           default: 'auto',
@@ -65,7 +70,9 @@ const cli = yargs(hideBin(process.argv))
           describe: 'Optional note recorded with an approval decision.',
         }),
     async (argv) => {
-      const action = String(argv.action)
+      const rawAction = String(argv.action)
+      const directBackend = ['codex', 'claude', 'codebuddy'].includes(rawAction)
+      const action = directBackend ? 'run' : rawAction
 
       if (action === 'backends') {
         const backends = listSupportedWatchBackends()
@@ -108,7 +115,7 @@ const cli = yargs(hideBin(process.argv))
       if (action === 'approvals') {
         const approvals = await listRemoteWatchApprovals()
         if (approvals.length === 0) {
-          process.stdout.write('No pending remote approvals.\n')
+          process.stdout.write('No pending remote approvals in the approval inbox.\n')
           return
         }
 
@@ -133,16 +140,21 @@ const cli = yargs(hideBin(process.argv))
         return
       }
 
-      const backend = argv.backend as WatchBackend | undefined
+      const backend = (directBackend ? rawAction : argv.backend) as WatchBackend | undefined
       if (!backend || !['codex', 'claude', 'codebuddy'].includes(backend)) {
-        throw new Error('Usage: linx watch run <codex|claude|codebuddy> <prompt> [-- backend args]')
+        throw new Error('Usage: linx watch run <codex|claude|codebuddy> <prompt> [-- backend args]\n   or: linx watch <codex|claude|codebuddy> <prompt>')
       }
 
-      const prompt = (argv.prompt as string[] | undefined)?.join(' ').trim() || undefined
+      const plain = Boolean(argv.plain)
+      const prompt = ((directBackend ? [argv.backend, ...(argv.prompt as string[] | undefined ?? [])] : (argv.prompt as string[] | undefined)) ?? [])
+        .filter((item): item is string => typeof item === 'string')
+        .join(' ')
+        .trim() || undefined
       const exitCode = await runWatch({
         backend,
         mode: argv.mode as WatchMode,
         cwd: argv.cwd || process.cwd(),
+        plain,
         model: argv.model,
         prompt,
         passthroughArgs: ((argv['--'] as string[] | undefined) ?? []).map(String),

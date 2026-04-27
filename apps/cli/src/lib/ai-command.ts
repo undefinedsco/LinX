@@ -1,5 +1,5 @@
 import type { CommandModule } from 'yargs'
-import { resolveLinxPodUrl } from '@linx/models/client'
+import { resolveLinxPodUrl } from '@undefineds.co/models/client'
 import {
   aiConfigProviderUri,
   buildAIConfigMutationPlan,
@@ -9,9 +9,10 @@ import {
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
   sameAIConfigProviderFamily,
-} from '@linx/models/ai-config'
-import { XPOD_AI, XPOD_CREDENTIAL } from '@linx/models/namespaces'
+} from '@undefineds.co/models/ai-config'
+import { XPOD_AI, XPOD_CREDENTIAL } from '@undefineds.co/models/namespaces'
 import { getClientCredentials, loadCredentials } from './credentials-store.js'
+import { loadAccountSession } from './account-session.js'
 import { authenticatedFetch, getAccessToken } from './solid-auth.js'
 import { promptPassword } from './prompt.js'
 
@@ -257,7 +258,7 @@ async function resolvePodWriteContext(urlOverride?: string): Promise<{ accessTok
 
   return {
     accessToken: tokenResult.accessToken,
-    podUrl: resolveLinxPodUrl(creds.webId),
+    podUrl: loadAccountSession()?.podUrl || resolveLinxPodUrl(creds.webId),
   }
 }
 

@@ -1015,6 +1015,216 @@ rl.on('line', (line) => {
   assert.match(events, /"question":"Describe the goal"/)
 })
 
+
+test('watch with an initial prompt does not emit an extra empty prompt turn before the scripted turn', async (t) => {
+  const { root, binDir, watchHome } = createWatchSandbox('linx-watch-initial-prompt-')
+
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  writeExecutable(join(binDir, 'codex-acp'), `#!/usr/bin/env node
+const readline = require('node:readline')
+
+function write(obj) {
+  process.stdout.write(JSON.stringify(obj) + '\\n')
+}
+
+const rl = readline.createInterface({ input: process.stdin })
+rl.on('line', (line) => {
+  const message = JSON.parse(line)
+  if (message.method === 'initialize') {
+    write({ jsonrpc: '2.0', id: message.id, result: { protocolVersion: 1 } })
+    return
+  }
+  if (message.method === 'session/new') {
+    write({ jsonrpc: '2.0', id: message.id, result: { sessionId: 'sess_initial_prompt_123' } })
+    return
+  }
+  if (message.method === 'session/prompt') {
+    write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'sess_initial_prompt_123', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'hi' } } } })
+    write({ jsonrpc: '2.0', id: message.id, result: { stopReason: 'end_turn' } })
+  }
+})
+`)
+
+  const { module, cleanup } = await loadWatchModule()
+  t.after(() => cleanup())
+
+  const prompts = []
+  t.mock.method(module.watchRuntime, 'promptText', async (prompt) => {
+    prompts.push(prompt)
+    return '/exit'
+  })
+
+  await withPatchedEnv(t, {
+    PATH: `${binDir}:${process.env.PATH ?? ''}`,
+    LINX_WATCH_HOME: watchHome,
+  }, async () => {
+    const exitCode = await module.runWatch({
+      backend: 'codex',
+      mode: 'smart',
+      cwd: process.cwd(),
+      prompt: 'Reply with exactly hi',
+      passthroughArgs: [],
+      credentialSource: 'local',
+    })
+
+    assert.equal(exitCode, 0)
+  })
+
+  assert.deepEqual(prompts, [])
+})
+
+test('watch /model surfaces ACP failure without mutating the model state', async (t) => {
+  const { module, cleanup } = await loadWatchModule()
+  t.after(() => cleanup())
+
+  const root = mkdtempSync(join(tmpdir(), 'linx-watch-model-command-'))
+  const archiveDir = join(root, 'session')
+  mkdirSync(archiveDir, { recursive: true })
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  const activity = []
+  const record = {
+    id: 'watch_model_command_123',
+    backend: 'codex',
+    runtime: 'local',
+    transport: 'acp',
+    mode: 'manual',
+    cwd: '/tmp/demo',
+    model: 'gpt-5-codex',
+    prompt: undefined,
+    passthroughArgs: [],
+    credentialSource: 'local',
+    resolvedCredentialSource: 'local',
+    approvalSource: 'hybrid',
+    command: 'codex-acp',
+    args: [],
+    status: 'running',
+    startedAt: '2026-04-17T00:00:00.000Z',
+    archiveDir,
+    eventsFile: join(archiveDir, 'events.jsonl'),
+  }
+
+  const display = {
+    showHelp() {},
+    showQuestion() {},
+    showUserTurn() {},
+    renderEvents() {},
+    renderRawLine() {},
+    start() {},
+    updateRecord() {},
+    updateQueue() {},
+    bindInputController() {},
+    setPhase() {},
+    chooseOption: async () => 'y',
+    chooseQuestions: async () => ({}),
+    chooseQuestion: async () => '',
+    promptInput: async () => ({ text: '', mode: 'send' }),
+    finish() {},
+    showActivity(message, tone = 'note') {
+      activity.push({ message, tone })
+    },
+  }
+
+  await module.__testHandleWatchShellCommand({
+    input: '/model gpt-5.4',
+    session: {
+      async setModel() {
+        throw new Error('Invalid params')
+      },
+    },
+    display,
+    queueState: { steeringCount: 0, followUpCount: 0 },
+    backend: 'codex',
+    record,
+  })
+
+  assert.deepEqual(activity, [
+    { message: 'Model switch failed | Invalid params', tone: 'error' },
+  ])
+  assert.equal(record.model, 'gpt-5-codex')
+})
+
+test('watch /debug toggles full-fidelity protocol view without affecting the main session state', async (t) => {
+  const { module, cleanup } = await loadWatchModule()
+  t.after(() => cleanup())
+
+  const root = mkdtempSync(join(tmpdir(), 'linx-watch-debug-command-'))
+  const archiveDir = join(root, 'session')
+  mkdirSync(archiveDir, { recursive: true })
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  const debugModes = []
+  const record = {
+    id: 'watch_debug_command_123',
+    backend: 'codex',
+    runtime: 'local',
+    transport: 'acp',
+    mode: 'manual',
+    cwd: '/tmp/demo',
+    model: 'gpt-5-codex',
+    prompt: undefined,
+    passthroughArgs: [],
+    credentialSource: 'local',
+    resolvedCredentialSource: 'local',
+    approvalSource: 'hybrid',
+    command: 'codex-acp',
+    args: [],
+    status: 'running',
+    startedAt: '2026-04-17T00:00:00.000Z',
+    archiveDir,
+    eventsFile: join(archiveDir, 'events.jsonl'),
+  }
+
+  const display = {
+    showHelp() {},
+    showQuestion() {},
+    showUserTurn() {},
+    renderEvents() {},
+    renderRawLine() {},
+    start() {},
+    updateRecord() {},
+    updateQueue() {},
+    bindInputController() {},
+    setPhase() {},
+    chooseOption: async () => 'y',
+    chooseQuestions: async () => ({}),
+    chooseQuestion: async () => '',
+    promptInput: async () => ({ text: '', mode: 'send' }),
+    finish() {},
+    showActivity() {},
+    setDebugMode(enabled) {
+      debugModes.push(enabled)
+    },
+  }
+
+  await module.__testHandleWatchShellCommand({
+    input: '/debug on',
+    session: { async setModel() {} },
+    display,
+    queueState: { steeringCount: 0, followUpCount: 0 },
+    backend: 'codex',
+    record,
+  })
+
+  await module.__testHandleWatchShellCommand({
+    input: '/debug off',
+    session: { async setModel() {} },
+    display,
+    queueState: { steeringCount: 0, followUpCount: 0 },
+    backend: 'codex',
+    record,
+  })
+
+  assert.deepEqual(debugModes, [true, false])
+})
+
 test('watch persists the final conversation to Pod opportunistically without breaking local success', async (t) => {
   const { root, binDir, watchHome } = createWatchSandbox('linx-watch-pod-persist-')
 

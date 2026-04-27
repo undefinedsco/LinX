@@ -1,7 +1,7 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import type { Session } from '@inrupt/solid-client-authn-node'
 import type { ClientCredentialsSecrets, StoredCredentials } from '../credentials-store.js'
-import type { WatchApprovalDecision, WatchApprovalRequest, WatchSessionRecord } from '@linx/models/watch'
+import type { WatchApprovalDecision, WatchApprovalRequest, WatchSessionRecord } from '@undefineds.co/models/watch'
 
 const WATCH_CHAT_ID = 'linx-watch'
 const WATCH_AGENT_ID = 'linx-watch-assistant'
@@ -57,6 +57,8 @@ interface WatchRemoteApprovalStore {
   updateApproval(id: string, patch: Partial<ApprovalRowLike>): Promise<void>
   listAudits(): Promise<AuditRowLike[]>
   insertAudit(row: AuditRowLike): Promise<void>
+  listGrants(): Promise<Array<Record<string, unknown>>>
+  insertGrant(row: Record<string, unknown>): Promise<void>
   insertInboxNotification(row: InboxNotificationRowLike): Promise<void>
 }
 
@@ -153,6 +155,10 @@ function buildApprovalUri(webIdOrUri: string, approvalId: string): string {
   return `${getPodBaseUrl(webIdOrUri)}/.data/approvals/${approvalId}.ttl`
 }
 
+function buildGrantUri(webIdOrUri: string, grantId: string): string {
+  return `${getPodBaseUrl(webIdOrUri)}/settings/autonomy/grants/${grantId}.ttl`
+}
+
 function buildAgentUri(webId: string): string {
   return `${getPodBaseUrl(webId)}/.data/agents/${WATCH_AGENT_ID}.ttl`
 }
@@ -199,6 +205,19 @@ function buildRisk(request: WatchApprovalRequest): RemoteApprovalRisk {
   }
 
   return 'medium'
+}
+
+function riskScore(risk: string | undefined): number {
+  switch (risk) {
+    case 'low':
+      return 1
+    case 'medium':
+      return 2
+    case 'high':
+      return 3
+    default:
+      return 0
+  }
 }
 
 function buildRequestMessage(request: WatchApprovalRequest): string {
@@ -401,8 +420,9 @@ async function createDefaultRuntime(): Promise<WatchRemoteApprovalRuntime> {
     authenticate: solidAuth.authenticate,
     createStore(session) {
       const db = models.drizzle(session, {
+        logger: false,
         disableInteropDiscovery: true,
-        schema: models.linxSchema,
+        schema: models.solidSchema,
       })
       let initialized = false
 
@@ -412,9 +432,10 @@ async function createDefaultRuntime(): Promise<WatchRemoteApprovalRuntime> {
         }
 
         initialized = true
-        await (db as any).init([
+        await db.init([
           models.approvalTable,
           models.auditTable,
+          models.grantTable,
           models.inboxNotificationTable,
         ]).catch(() => undefined)
       }
@@ -439,6 +460,14 @@ async function createDefaultRuntime(): Promise<WatchRemoteApprovalRuntime> {
         async insertAudit(row: AuditRowLike): Promise<void> {
           await ensureInitialized()
           await db.insert(models.auditTable).values(row).execute()
+        },
+        async listGrants(): Promise<Array<Record<string, unknown>>> {
+          await ensureInitialized()
+          return await db.select().from(models.grantTable).execute() as Array<Record<string, unknown>>
+        },
+        async insertGrant(row: Record<string, unknown>): Promise<void> {
+          await ensureInitialized()
+          await db.insert(models.grantTable).values(row as any).execute()
         },
         async insertInboxNotification(row: InboxNotificationRowLike): Promise<void> {
           await ensureInitialized()
@@ -606,17 +635,38 @@ export async function requestRemoteWatchApproval(options: {
   signal?: AbortSignal
   runtime?: WatchRemoteApprovalRuntime
 }): Promise<WatchApprovalDecision> {
+  const activeRuntime = options.runtime ?? await createDefaultRuntime()
+
+  const delegated = await withRemoteApprovalStore(activeRuntime, async ({ store, webId }) => {
+    const grants = await store.listGrants()
+    const requestAction = buildActionUri(options.request)
+    const requestTarget = buildThreadUri(webId, options.record.id)
+    const requestRisk = buildRisk(options.request)
+
+    return grants.some((grant) => (
+      grant.effect === 'allow'
+      && grant.action === requestAction
+      && grant.target === requestTarget
+      && riskScore(typeof grant.riskCeiling === 'string' ? grant.riskCeiling : undefined) >= riskScore(requestRisk)
+      && !grant.revokedAt
+    ))
+  })
+
+  if (delegated) {
+    return 'accept_for_session'
+  }
+
   const summary = await createRemoteWatchApproval({
     record: options.record,
     request: options.request,
-    runtime: options.runtime,
+    runtime: activeRuntime,
   })
 
   return waitForRemoteWatchApproval({
     approvalId: summary.id,
     pollMs: options.pollMs,
     signal: options.signal,
-    runtime: options.runtime,
+    runtime: activeRuntime,
   })
 }
 
@@ -692,6 +742,28 @@ export async function resolveRemoteWatchApproval(options: {
       policyVersion: REMOTE_APPROVAL_POLICY_VERSION,
       createdAt: now,
     })
+
+    if (options.decision === 'accept_for_session') {
+      const grantId = crypto.randomUUID()
+      await store.insertGrant({
+        id: grantId,
+        target: row.target,
+        action: row.action,
+        effect: 'allow',
+        riskCeiling: row.risk,
+        decisionBy: webId,
+        decisionRole: 'human',
+        onBehalfOf: webId,
+        createdAt: now,
+      })
+
+      await store.insertInboxNotification({
+        id: crypto.randomUUID(),
+        actor: webId,
+        object: buildGrantUri(row.session, grantId),
+        createdAt: now,
+      }).catch(() => undefined)
+    }
 
     await store.insertInboxNotification({
       id: crypto.randomUUID(),

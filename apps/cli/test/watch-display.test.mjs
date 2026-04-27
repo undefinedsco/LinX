@@ -93,3 +93,179 @@ test('formatWatchTranscriptLine maps live roles to codex-like prefixes', () => {
   assert.deepEqual(userLines, ['you hello linx'])
   assert.deepEqual(assistantLines, ['linx hello user'])
 })
+
+test('summarizeWatchToolCall keeps tool activity short and avoids dumping raw JSON', () => {
+  assert.equal(
+    displayModule.summarizeWatchToolCall('commandExecution', {
+      command: 'git status',
+      cwd: '/Users/ganlu/develop/linx-cli',
+      process_id: 123,
+      turn_id: 'turn_1',
+    }),
+    'commandExecution · git status',
+  )
+
+  assert.equal(
+    displayModule.summarizeWatchToolCall('List', {
+      path: '/Users/ganlu/develop/linx-cli/apps/cli/src/lib/watch/display.ts',
+    }),
+    'List · .../watch/display.ts',
+  )
+})
+
+test('summarizeWatchDebugPayload keeps a readable summary plus optional detail', () => {
+  assert.deepEqual(
+    displayModule.summarizeWatchDebugPayload({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        update: {
+          sessionUpdate: 'tool_call',
+          rawInput: {
+            command: 'git status',
+          },
+        },
+      },
+    }),
+    {
+      text: 'session/update',
+      detail: '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"sessionUpdate":"tool_call","rawInput":{"command":"git status"}}}}',
+    },
+  )
+
+  assert.deepEqual(
+    displayModule.summarizeWatchDebugPayload('short raw line'),
+    {
+      text: 'short raw line',
+    },
+  )
+})
+
+test('formatWatchFooterContext keeps session metadata compact', () => {
+  assert.equal(
+    displayModule.formatWatchFooterContext(createRecord()),
+    '/tmp/demo | session=watch_2026-0...deadbeef | model=gpt-5-codex | source=cloud',
+  )
+})
+
+test('formatWatchFooterLine uses codex-like hinting for ready and running phases', () => {
+  const ready = stripAnsi(displayModule.formatWatchFooterLine({
+    width: 140,
+    phase: 'ready',
+    record: createRecord(),
+    hasDraft: false,
+  }))
+
+  const runningDraft = stripAnsi(displayModule.formatWatchFooterLine({
+    width: 120,
+    phase: 'running',
+    record: createRecord(),
+    hasDraft: true,
+  }))
+
+  const tightReady = stripAnsi(displayModule.formatWatchFooterLine({
+    width: 72,
+    phase: 'ready',
+    record: createRecord(),
+    hasDraft: false,
+  }))
+
+  assert.match(ready, /\/help · \/exit · \/model <id> · \/debug on\|off/)
+  assert.match(ready, /source=cloud\s*$/)
+  assert.match(runningDraft, /Enter steer · Shift\+Enter newline · Alt\+Enter follow-up/)
+  assert.doesNotMatch(runningDraft, /model=gpt-5-codex/)
+  assert.doesNotMatch(tightReady, /source=cloud/)
+  assert.match(tightReady, /\/help · \/exit · \/model <id>/)
+})
+
+test('activity panel renders as a titled box when debug content is present', async () => {
+  const compactPanelLines = displayModule.formatWatchActivityPanelLines({
+    width: 72,
+    maxHeight: 10,
+    debugMode: true,
+    entries: [
+      {
+        kind: 'tool',
+        text: 'commandExecution · git status',
+      },
+      {
+        kind: 'note',
+        text: 'Approval required for git status',
+      },
+      {
+        kind: 'debug',
+        text: 'session/update',
+        detail: '{"sessionUpdate":"usage_update"}',
+      },
+    ],
+  }).map((line) => stripAnsi(line).trimEnd())
+
+  const tallPanelLines = displayModule.formatWatchActivityPanelLines({
+    width: 72,
+    maxHeight: 14,
+    debugMode: true,
+    entries: [
+      {
+        kind: 'tool',
+        text: 'commandExecution · git status',
+      },
+      {
+        kind: 'note',
+        text: 'Approval required for git status',
+      },
+      {
+        kind: 'debug',
+        text: 'session/update',
+        detail: '{"sessionUpdate":"usage_update"}',
+      },
+    ],
+  }).map((line) => stripAnsi(line).trimEnd())
+
+  assert.ok(compactPanelLines.length > 0)
+  assert.match(compactPanelLines[0] ?? '', /activity \| debug/)
+  assert.ok(compactPanelLines.some((line) => line.includes('status')))
+  assert.ok(compactPanelLines.some((line) => line.includes('[approval] Approval required')))
+  assert.ok(compactPanelLines.some((line) => line.includes('tools')))
+  assert.ok(compactPanelLines.some((line) => line.includes('commandExecution')))
+  assert.ok(compactPanelLines.every((line) => !line.includes('session/update')))
+
+  assert.ok(tallPanelLines.some((line) => line.includes('status')))
+  assert.ok(tallPanelLines.some((line) => line.includes('tools')))
+  assert.ok(tallPanelLines.some((line) => line.includes('debug')))
+  assert.ok(tallPanelLines.some((line) => line.includes('commandExecution')))
+  assert.ok(tallPanelLines.some((line) => line.includes('session/update')))
+})
+
+test('selectWatchFooterSectionCounts keeps prompt/footer visible on short terminals', () => {
+  const counts = displayModule.selectWatchFooterSectionCounts({
+    totalHeight: 4,
+    headerCount: 2,
+    contextCount: 3,
+    showStatus: true,
+    queueCount: 1,
+    promptCount: 3,
+  })
+
+  assert.deepEqual(counts, {
+    contextCount: 0,
+    statusCount: 0,
+    queueCount: 0,
+  })
+})
+
+test('selectWatchFooterSectionCounts uses remaining space in priority order', () => {
+  const counts = displayModule.selectWatchFooterSectionCounts({
+    totalHeight: 10,
+    headerCount: 2,
+    contextCount: 5,
+    showStatus: true,
+    queueCount: 1,
+    promptCount: 3,
+  })
+
+  assert.deepEqual(counts, {
+    contextCount: 2,
+    statusCount: 1,
+    queueCount: 1,
+  })
+})

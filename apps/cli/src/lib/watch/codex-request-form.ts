@@ -6,7 +6,7 @@ import {
   resolveWatchQuestionAnswer,
   type WatchUserInputAnswers,
   type WatchUserInputQuestion,
-} from '@linx/models/watch'
+} from '@undefineds.co/models/watch'
 import { CodexComposer } from './codex-composer.js'
 import type { CodexOverlayState } from './codex-overlay.js'
 import type { CodexRequestInputState } from './codex-request-input.js'

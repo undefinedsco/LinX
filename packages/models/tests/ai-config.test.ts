@@ -4,18 +4,21 @@ import {
   aiConfigProviderUri,
   buildAIConfigMutationPlan,
   buildAIConfigProviderStateMap,
-  extractAIConfigProviderId,
-  extractAIConfigResourceId,
-  sameAIConfigProviderId,
+  getAIConfigProviderFamilyIds,
+  normalizeAIConfigProviderId,
+  sameAIConfigProviderFamily,
 } from '../src/ai-config'
 
 describe('ai-config shared core', () => {
-  it('extracts ids from provider and model uris without alias remapping', () => {
-    expect(extractAIConfigProviderId('https://pod.example/settings/ai/providers.ttl#anthropic')).toBe('anthropic')
-    expect(extractAIConfigProviderId(' X-AI ')).toBe('x-ai')
-    expect(extractAIConfigResourceId('https://pod.example/settings/ai/models.ttl#gpt-4o-mini')).toBe('gpt-4o-mini')
-    expect(sameAIConfigProviderId('https://pod.example/settings/ai/providers.ttl#anthropic', 'anthropic')).toBe(true)
-    expect(sameAIConfigProviderId('claude', 'anthropic')).toBe(false)
+  it('normalizes provider aliases to canonical ids', () => {
+    expect(normalizeAIConfigProviderId('claude')).toBe('anthropic')
+    expect(normalizeAIConfigProviderId('codex')).toBe('openai')
+    expect(normalizeAIConfigProviderId('xai')).toBe('x-ai')
+    expect(getAIConfigProviderFamilyIds('claude')).toEqual(['anthropic', 'claude'])
+    expect(getAIConfigProviderFamilyIds('openai')).toEqual(['openai', 'codex'])
+    expect(getAIConfigProviderFamilyIds('xai')).toEqual(['x-ai', 'xai'])
+    expect(sameAIConfigProviderFamily('https://pod.example/settings/ai/providers.ttl#claude', 'anthropic')).toBe(true)
+    expect(sameAIConfigProviderFamily('xai', 'https://pod.example/settings/ai/providers.ttl#x-ai')).toBe(true)
   })
 
   it('builds provider state from split AI config tables', () => {
@@ -31,7 +34,7 @@ describe('ai-config shared core', () => {
       credentialRows: [
         {
           id: 'anthropic-default',
-          provider: '/settings/ai/providers.ttl#anthropic',
+          provider: '/settings/ai/providers.ttl#claude',
           service: 'ai',
           status: 'active',
           apiKey: 'sk-ant-test',
@@ -67,7 +70,7 @@ describe('ai-config shared core', () => {
 
   it('creates a shared mutation plan for provider, credential, and model writes', () => {
     const plan = buildAIConfigMutationPlan({
-      providerId: 'anthropic',
+      providerId: 'claude',
       currentProviderRows: [],
       currentCredentialRows: [],
       currentModelRows: [],

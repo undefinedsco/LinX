@@ -1,4 +1,4 @@
-import { AS, DCTerms, ODRL, UDFS } from '../namespaces.js'
+import { AS, DCTerms, ODRL, UDFS } from '../namespaces'
 
 export const ApprovalVocab = {
   session: UDFS.session,

@@ -5,7 +5,7 @@ import {
   buildWatchTranscriptMessages,
   type WatchEventLogEntry,
   type WatchSessionRecord,
-} from '@linx/models/watch'
+} from '@undefineds.co/models/watch'
 import { loadWatchEvents } from './archive.js'
 
 const WATCH_CHAT_ID = 'linx-watch'
@@ -21,14 +21,15 @@ interface WatchPodPersistenceRuntime {
   threadTable: unknown
   messageTable: unknown
   agentTable: unknown
-  eq: (left: unknown, right: unknown) => unknown
   loadWatchEvents: (id: string) => WatchEventLogEntry[]
 }
 
 interface PodPersistenceDb {
   init(tables: unknown[]): Promise<unknown>
+  findByIri?: (table: unknown, iri: string) => Promise<unknown | null>
   select(): {
     from(table: unknown): {
+      execute(): Promise<unknown[]>
       where(condition: unknown): {
         limit(limit: number): {
           execute(): Promise<unknown[]>
@@ -62,7 +63,7 @@ interface WatchChatRow extends Record<string, unknown> {
 
 interface WatchThreadRow extends Record<string, unknown> {
   id: string
-  chatId: string
+  chat: string
   title: string
   metadata: Record<string, unknown>
   createdAt: Date
@@ -71,8 +72,8 @@ interface WatchThreadRow extends Record<string, unknown> {
 
 interface PersistedWatchConversationMessage extends Record<string, unknown> {
   id: string
-  chatId: string
-  threadId: string
+  chat: string
+  thread: string
   maker: string
   role: 'user' | 'assistant' | 'system'
   content: string
@@ -98,15 +99,15 @@ async function createDefaultRuntime(): Promise<WatchPodPersistenceRuntime> {
     authenticate: solidAuth.authenticate,
     createDb(session) {
       return models.drizzle(session, {
+        logger: false,
         disableInteropDiscovery: true,
-        schema: models.linxSchema,
+        schema: models.solidSchema,
       }) as unknown as PodPersistenceDb
     },
     chatTable: models.chatTable,
     threadTable: models.threadTable,
     messageTable: models.messageTable,
     agentTable: models.agentTable,
-    eq: models.eq,
     loadWatchEvents,
   }
 }
@@ -126,6 +127,24 @@ function normalizeTitle(text: string, width = 72): string {
 
 function getPodBaseUrl(webId: string): string {
   return webId.replace('/profile/card#me', '').replace(/\/$/, '')
+}
+
+function buildPodIri(webId: string, relativeUri: string): string {
+  if (/^https?:\/\//.test(relativeUri)) return relativeUri
+  return new URL(relativeUri.replace(/^\//, ''), `${getPodBaseUrl(webId)}/`).toString()
+}
+
+function resolveRowIri(webId: string, table: { resolveUri?: (id: string) => string }, id: string): string {
+  const relativeUri = typeof table.resolveUri === 'function' ? table.resolveUri(id) : id
+  return buildPodIri(webId, relativeUri)
+}
+
+function whereByStorageId(webId: string, table: any, query: any, id: string): any {
+  const iri = resolveRowIri(webId, table, id)
+  if (typeof query.whereByIri === 'function') {
+    return query.whereByIri(iri)
+  }
+  return query.where({ id } as any)
 }
 
 function buildThreadUri(webId: string, chatId: string, threadId: string): string {
@@ -169,7 +188,7 @@ function buildWatchConversationThreadRow(
 
   return {
     id: record.id,
-    chatId: WATCH_CHAT_ID,
+    chat: WATCH_CHAT_ID,
     title: buildWatchConversationThreadTitle(record, transcript),
     metadata: buildWatchThreadMetadata(record),
     createdAt: startedAt,
@@ -188,8 +207,8 @@ function buildWatchConversationMessages(
 
   return transcript.map((message, index) => ({
     id: `${record.id}-m${String(index + 1).padStart(4, '0')}`,
-    chatId: WATCH_CHAT_ID,
-    threadId: threadUri,
+    chat: WATCH_CHAT_ID,
+    thread: record.id,
     maker: message.role === 'user' ? webId : agentUri,
     role: message.role,
     content: message.content,
@@ -198,30 +217,33 @@ function buildWatchConversationMessages(
   }))
 }
 
-async function selectById(db: PodPersistenceDb, eq: WatchPodPersistenceRuntime['eq'], table: unknown, id: string): Promise<unknown | null> {
-  const idCol = (table as any).id
-  const rows = await db.select().from(table as any).where(eq(idCol, id)).limit(1).execute()
-  return rows[0] ?? null
+async function selectById(db: PodPersistenceDb, webId: string, table: unknown, id: string): Promise<unknown | null> {
+  if (typeof db.findByIri === 'function') {
+    return await db.findByIri(table, resolveRowIri(webId, table as { resolveUri?: (id: string) => string }, id))
+  }
+
+  const rows = await db.select().from(table as any).execute()
+  return (rows as any[]).find((row) => row?.id === id) ?? null
 }
 
-async function ensureWatchConversationChat(db: PodPersistenceDb, runtime: WatchPodPersistenceRuntime, row: WatchChatRow): Promise<void> {
-  const existing = await selectById(db, runtime.eq, runtime.chatTable, WATCH_CHAT_ID)
+async function ensureWatchConversationChat(db: PodPersistenceDb, runtime: WatchPodPersistenceRuntime, webId: string, row: WatchChatRow): Promise<void> {
+  const existing = await selectById(db, webId, runtime.chatTable, WATCH_CHAT_ID)
 
   if (!existing) {
     await db.insert(runtime.chatTable).values(row).execute()
     return
   }
 
-  await db.update(runtime.chatTable).set({
+  await whereByStorageId(webId, runtime.chatTable, db.update(runtime.chatTable).set({
     title: row.title,
     lastActiveAt: row.lastActiveAt,
     lastMessagePreview: row.lastMessagePreview,
     updatedAt: row.updatedAt,
-  }).where(runtime.eq((runtime.chatTable as any).id, WATCH_CHAT_ID)).execute()
+  }), WATCH_CHAT_ID).execute()
 }
 
-async function ensureWatchConversationAgent(db: PodPersistenceDb, runtime: WatchPodPersistenceRuntime, record: WatchSessionRecord): Promise<void> {
-  const existing = await selectById(db, runtime.eq, runtime.agentTable, WATCH_AGENT_ID)
+async function ensureWatchConversationAgent(db: PodPersistenceDb, runtime: WatchPodPersistenceRuntime, webId: string, record: WatchSessionRecord): Promise<void> {
+  const existing = await selectById(db, webId, runtime.agentTable, WATCH_AGENT_ID)
   const now = record.endedAt ? new Date(record.endedAt) : new Date(record.startedAt)
 
   if (!existing) {
@@ -236,53 +258,54 @@ async function ensureWatchConversationAgent(db: PodPersistenceDb, runtime: Watch
     return
   }
 
-  await db.update(runtime.agentTable).set({
+  await whereByStorageId(webId, runtime.agentTable, db.update(runtime.agentTable).set({
     provider: 'linx',
     model: record.model ?? record.backend,
     updatedAt: now,
-  }).where(runtime.eq((runtime.agentTable as any).id, WATCH_AGENT_ID)).execute()
+  }), WATCH_AGENT_ID).execute()
 }
 
-async function upsertWatchConversationThread(db: PodPersistenceDb, runtime: WatchPodPersistenceRuntime, row: WatchThreadRow): Promise<void> {
+async function upsertWatchConversationThread(db: PodPersistenceDb, runtime: WatchPodPersistenceRuntime, webId: string, row: WatchThreadRow): Promise<void> {
   const threadId = row.id
   if (!threadId) {
     return
   }
 
-  const existing = await selectById(db, runtime.eq, runtime.threadTable, threadId)
+  const existing = await selectById(db, webId, runtime.threadTable, threadId)
 
   if (!existing) {
     await db.insert(runtime.threadTable).values(row).execute()
     return
   }
 
-  await db.update(runtime.threadTable).set({
+  await whereByStorageId(webId, runtime.threadTable, db.update(runtime.threadTable).set({
     title: row.title,
     metadata: row.metadata,
     updatedAt: row.updatedAt,
-  }).where(runtime.eq((runtime.threadTable as any).id, threadId)).execute()
+  }), threadId).execute()
 }
 
 async function upsertWatchConversationMessages(
   db: PodPersistenceDb,
   runtime: WatchPodPersistenceRuntime,
+  webId: string,
   rows: PersistedWatchConversationMessage[],
 ): Promise<void> {
   for (const row of rows) {
-    const existing = await selectById(db, runtime.eq, runtime.messageTable, row.id)
+    const existing = await selectById(db, webId, runtime.messageTable, row.id)
 
     if (!existing) {
       await db.insert(runtime.messageTable).values(row).execute()
       continue
     }
 
-    await db.update(runtime.messageTable).set({
+    await whereByStorageId(webId, runtime.messageTable, db.update(runtime.messageTable).set({
       role: row.role,
       maker: row.maker,
       content: row.content,
       status: row.status,
       createdAt: row.createdAt,
-    }).where(runtime.eq((runtime.messageTable as any).id, row.id)).execute()
+    }), row.id).execute()
   }
 }
 
@@ -309,16 +332,16 @@ export async function persistWatchConversationToPod(
     const transcriptRows = buildWatchConversationMessages(record, stored.webId, entries)
     const lastPreview = transcriptRows.at(-1)?.content
 
-    await (db as any).init([
+    await db.init([
       activeRuntime.chatTable,
       activeRuntime.threadTable,
       activeRuntime.messageTable,
       activeRuntime.agentTable,
     ]).catch(() => undefined)
-    await ensureWatchConversationChat(db, activeRuntime, buildWatchConversationChatRow(record, lastPreview))
-    await ensureWatchConversationAgent(db, activeRuntime, record)
-    await upsertWatchConversationThread(db, activeRuntime, buildWatchConversationThreadRow(record, transcriptRows))
-    await upsertWatchConversationMessages(db, activeRuntime, transcriptRows)
+    await ensureWatchConversationChat(db, activeRuntime, stored.webId, buildWatchConversationChatRow(record, lastPreview))
+    await ensureWatchConversationAgent(db, activeRuntime, stored.webId, record)
+    await upsertWatchConversationThread(db, activeRuntime, stored.webId, buildWatchConversationThreadRow(record, transcriptRows))
+    await upsertWatchConversationMessages(db, activeRuntime, stored.webId, transcriptRows)
     return true
   } finally {
     await session.logout().catch(() => undefined)

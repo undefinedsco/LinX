@@ -5,18 +5,18 @@
  * 支持内置数据 + 远程 API 获取（有 Key 时）
  */
 
-export * from './types.js'
+export * from './types'
 
-import { extractAIConfigProviderId } from '../ai-config.js'
+import { normalizeAIConfigProviderId } from '../ai-config'
 import type { 
   ProviderMetadata, 
   ModelMetadata, 
   DiscoveryService
-} from './types.js'
+} from './types'
 
 // 导入内置数据
-import providersData from './providers.json' with { type: 'json' }
-import modelsData from './models.json' with { type: 'json' }
+import providersData from './providers.json'
+import modelsData from './models.json'
 
 // ============================================================================
 // Builtin Data (内置数据)
@@ -26,7 +26,7 @@ const builtinProviders: ProviderMetadata[] = providersData.providers as Provider
 const builtinModels: ModelMetadata[] = modelsData.models as ModelMetadata[]
 
 function normalizeProviderSlug(slug?: string | null): string {
-  return extractAIConfigProviderId(slug)
+  return normalizeAIConfigProviderId(slug)
 }
 
 function findBuiltinProvider(slug: string): ProviderMetadata | undefined {

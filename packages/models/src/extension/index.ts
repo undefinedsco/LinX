@@ -1,1 +1,1 @@
-export { extensionSchema } from "./extension.schema.js";
+export { extensionSchema } from "./extension.schema";

@@ -1,4 +1,4 @@
-export { fileTable, type FileRow, type FileInsert, type FileUpdate } from "./file.schema.js";
+export { fileTable, type FileRow, type FileInsert, type FileUpdate } from "./file.schema";
 
 
 

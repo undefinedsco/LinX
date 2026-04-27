@@ -1,10 +1,17 @@
 {
   "extends": "../../tsconfig.json",
-  "include": ["src/**/*"],
+  "include": [
+    "src/index.ts",
+    "src/ai-config/index.ts",
+    "src/client/index.ts",
+    "src/discovery/index.ts",
+    "src/namespaces.ts",
+    "src/profile.ts",
+    "src/profile.repository.ts",
+    "src/profile.schema.ts",
+    "src/watch/index.ts"
+  ],
   "compilerOptions": {
-    "module": "ESNext",
-    "moduleResolution": "Node",
-    "baseUrl": ".",
     "rootDir": "src",
     "outDir": "dist",
     "declaration": true,

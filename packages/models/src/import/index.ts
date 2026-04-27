@@ -1,1 +1,1 @@
-export { importJobSchema } from "./import-job.schema.js";
+export { importJobSchema } from "./import-job.schema";

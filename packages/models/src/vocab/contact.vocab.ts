@@ -1,4 +1,4 @@
-import { AS, DCTerms, FOAF, RDF, UDFS, VCARD } from '../namespaces.js'
+import { AS, DCTerms, FOAF, RDF, UDFS, VCARD } from '../namespaces'
 
 export const ContactVocab = {
   name: VCARD.fn,

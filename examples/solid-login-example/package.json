@@ -10,7 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@undefineds.co/models": "0.1.1",
+    "@undefineds.co/models": "0.2.1",
     "@undefineds.co/drizzle-solid": "^0.3.4"
   }
 }

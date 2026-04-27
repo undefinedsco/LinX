@@ -237,78 +237,9 @@ function execCli(args, env, modulePath) {
   })
 }
 
-test('linx login bootstraps account session and local client credentials', async (t) => {
-  const home = mkdtempSync(join(tmpdir(), 'linx-cli-login-home-'))
-  t.after(() => {
-    rmSync(home, { recursive: true, force: true })
-  })
 
-  const { baseUrl, logFile, modulePath } = createFetchMock(t)
-  const output = execCli([
-    'login',
-    '--url',
-    baseUrl,
-    '--email',
-    'dev@example.com',
-    '--password',
-    'passw0rd',
-    '--name',
-    'linx-local-device',
-  ], {
-    HOME: home,
-    FAKE_FETCH_LOG: logFile,
-  }, modulePath)
-
-  assert.match(output, /LinX login successful\./)
-  assert.match(output, /local client credentials: created/)
-
-  const account = JSON.parse(readFileSync(join(home, '.linx', 'account.json'), 'utf-8'))
-  const config = JSON.parse(readFileSync(join(home, '.linx', 'config.json'), 'utf-8'))
-  const secrets = JSON.parse(readFileSync(join(home, '.linx', 'secrets.json'), 'utf-8'))
-
-  assert.equal(account.email, 'dev@example.com')
-  assert.equal(account.url, baseUrl)
-  assert.equal(account.webId, 'https://pod.example/profile/card#me')
-  assert.equal(config.webId, 'https://pod.example/profile/card#me')
-  assert.equal(secrets.clientId, 'cred_test')
-  assert.equal(secrets.clientSecret, 'secret_test')
-})
-
-test('linx login uses the prefilled account base url when --url is omitted', async (t) => {
-  const home = mkdtempSync(join(tmpdir(), 'linx-cli-login-default-home-'))
-  t.after(() => {
-    rmSync(home, { recursive: true, force: true })
-  })
-
-  const { baseUrl, logFile, modulePath } = createFetchMock(t)
-  const output = execCli([
-    'login',
-    '--email',
-    'dev@example.com',
-    '--password',
-    'passw0rd',
-  ], {
-    HOME: home,
-    CSS_BASE_URL: baseUrl,
-    FAKE_FETCH_LOG: logFile,
-  }, modulePath)
-
-  assert.match(output, /LinX login successful\./)
-
-  const requests = readRequests(logFile)
-  assert.ok(requests.some((item) => item.method === 'GET' && item.url === 'https://account.test/.account/'))
-
-  const account = JSON.parse(readFileSync(join(home, '.linx', 'account.json'), 'utf-8'))
-  assert.equal(account.url, baseUrl)
-})
-
-test('linx login reuses valid local client credentials for the same server and webId', async (t) => {
-  const home = mkdtempSync(join(tmpdir(), 'linx-cli-login-reuse-home-'))
+function writeClientCredentialsLogin(home) {
   const linxDir = join(home, '.linx')
-  t.after(() => {
-    rmSync(home, { recursive: true, force: true })
-  })
-
   mkdirSync(linxDir, { recursive: true })
   writeFileSync(join(linxDir, 'config.json'), JSON.stringify({
     url: 'https://account.test/',
@@ -319,78 +250,15 @@ test('linx login reuses valid local client credentials for the same server and w
     clientId: 'cred_test',
     clientSecret: 'secret_test',
   }))
-
-  const { baseUrl, logFile, modulePath } = createFetchMock(t)
-  const output = execCli([
-    'login',
-    '--url',
-    baseUrl,
-    '--email',
-    'dev@example.com',
-    '--password',
-    'passw0rd',
-  ], {
-    HOME: home,
-    FAKE_FETCH_LOG: logFile,
-  }, modulePath)
-
-  assert.match(output, /LinX login successful\./)
-  assert.match(output, /local client credentials: reused/)
-
-  const requests = readRequests(logFile)
-  const createRequests = requests.filter((item) => item.method === 'POST' && item.url === 'https://account.test/.account/client-credentials/')
-  assert.equal(createRequests.length, 0)
-  assert.ok(requests.some((item) => item.method === 'POST' && item.url === 'https://account.test/token'))
-
-  const secrets = JSON.parse(readFileSync(join(linxDir, 'secrets.json'), 'utf-8'))
-  assert.equal(secrets.clientId, 'cred_test')
-  assert.equal(secrets.clientSecret, 'secret_test')
-})
-
-test('linx login recreates invalid local client credentials for the same server and webId', async (t) => {
-  const home = mkdtempSync(join(tmpdir(), 'linx-cli-login-recreate-home-'))
-  const linxDir = join(home, '.linx')
-  t.after(() => {
-    rmSync(home, { recursive: true, force: true })
-  })
-
-  mkdirSync(linxDir, { recursive: true })
-  writeFileSync(join(linxDir, 'config.json'), JSON.stringify({
+  writeFileSync(join(linxDir, 'account.json'), JSON.stringify({
     url: 'https://account.test/',
+    email: 'browser-consent',
+    token: 'oidc-session',
     webId: 'https://pod.example/profile/card#me',
-    authType: 'client_credentials',
+    podUrl: 'https://pod.example/profile/',
+    createdAt: '2026-03-15T00:00:00.000Z',
   }))
-  writeFileSync(join(linxDir, 'secrets.json'), JSON.stringify({
-    clientId: 'cred_stale',
-    clientSecret: 'secret_stale',
-  }))
-
-  const { baseUrl, logFile, modulePath } = createFetchMock(t)
-  const output = execCli([
-    'login',
-    '--url',
-    baseUrl,
-    '--email',
-    'dev@example.com',
-    '--password',
-    'passw0rd',
-  ], {
-    HOME: home,
-    FAKE_FETCH_LOG: logFile,
-  }, modulePath)
-
-  assert.match(output, /LinX login successful\./)
-  assert.match(output, /local client credentials: recreated/)
-
-  const requests = readRequests(logFile)
-  const tokenRequests = requests.filter((item) => item.method === 'POST' && item.url === 'https://account.test/token')
-  assert.ok(tokenRequests.some((item) => item.body.includes('client_id=cred_stale')))
-  assert.ok(requests.some((item) => item.method === 'POST' && item.url === 'https://account.test/.account/client-credentials/'))
-
-  const secrets = JSON.parse(readFileSync(join(linxDir, 'secrets.json'), 'utf-8'))
-  assert.equal(secrets.clientId, 'cred_test')
-  assert.equal(secrets.clientSecret, 'secret_test')
-})
+}
 
 test('linx whoami reads the saved LinX account session', async (t) => {
   const home = mkdtempSync(join(tmpdir(), 'linx-cli-whoami-home-'))
@@ -453,19 +321,8 @@ test('linx ai connect writes provider and credential config to Pod', async (t) =
     rmSync(home, { recursive: true, force: true })
   })
 
-  const { baseUrl, logFile, modulePath } = createFetchMock(t)
-  execCli([
-    'login',
-    '--url',
-    baseUrl,
-    '--email',
-    'dev@example.com',
-    '--password',
-    'passw0rd',
-  ], {
-    HOME: home,
-    FAKE_FETCH_LOG: logFile,
-  }, modulePath)
+  const { logFile, modulePath } = createFetchMock(t)
+  writeClientCredentialsLogin(home)
 
   const output = execCli([
     'ai',
@@ -508,19 +365,8 @@ test('linx ai disconnect removes provider credential config from Pod', async (t)
     rmSync(home, { recursive: true, force: true })
   })
 
-  const { baseUrl, logFile, modulePath } = createFetchMock(t)
-  execCli([
-    'login',
-    '--url',
-    baseUrl,
-    '--email',
-    'dev@example.com',
-    '--password',
-    'passw0rd',
-  ], {
-    HOME: home,
-    FAKE_FETCH_LOG: logFile,
-  }, modulePath)
+  const { logFile, modulePath } = createFetchMock(t)
+  writeClientCredentialsLogin(home)
 
   const output = execCli([
     'ai',

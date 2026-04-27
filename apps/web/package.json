@@ -15,7 +15,7 @@
     "@inrupt/solid-client": "^3.0.0",
     "@inrupt/solid-client-authn-browser": "^3.0.0",
     "@inrupt/vocab-common-rdf": "^1.0.5",
-    "@undefineds.co/models": "0.1.1",
+    "@undefineds.co/models": "0.2.1",
     "@linx/models": "*",
     "@linx/stores": "^0.1.0",
     "@lobehub/icons": "^2.44.0",

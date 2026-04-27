@@ -1,4 +1,4 @@
-import type { DiscoveryRegistry, ModelCapability, ModelMetadata } from './types.js'
+import type { DiscoveryRegistry, ModelCapability, ModelMetadata } from './types'
 
 export interface VercelModelPricing {
   input?: string

@@ -1,8 +1,8 @@
-import { DCTerms, FOAF, LINX_MSG, SCHEMA, SIOC, UDFS, WF } from '../namespaces.js'
+import { DCTerms, FOAF, LINX_MSG, SCHEMA, SIOC, UDFS, WF } from '../namespaces'
 
 export const MessageVocab = {
   // Existing
-  thread: SIOC.hasContainer,
+  thread: SIOC.has_member,
   chat: WF.message,
   maker: FOAF.maker,
   role: UDFS.messageType,

@@ -509,6 +509,82 @@ describe('watch shared core', () => {
   it('normalizes codex app-server notifications and server requests', () => {
     expect(
       normalizeCodexAppServerNotification({
+        method: 'thread/started',
+        params: {
+          thread: {
+            id: 'thread_1',
+          },
+        },
+      }),
+    ).toEqual([
+      {
+        type: 'session.note',
+        message: 'Thread started',
+        raw: {
+          method: 'thread/started',
+          params: {
+            thread: {
+              id: 'thread_1',
+            },
+          },
+        },
+      },
+    ])
+
+    expect(
+      normalizeCodexAppServerNotification({
+        method: 'thread/status/changed',
+        params: {
+          threadId: 'thread_1',
+          status: {
+            type: 'active',
+          },
+        },
+      }),
+    ).toEqual([
+      {
+        type: 'session.note',
+        message: 'Thread status · active',
+        raw: {
+          method: 'thread/status/changed',
+          params: {
+            threadId: 'thread_1',
+            status: {
+              type: 'active',
+            },
+          },
+        },
+      },
+    ])
+
+    expect(
+      normalizeCodexAppServerNotification({
+        method: 'turn/started',
+        params: {
+          threadId: 'thread_1',
+          turn: {
+            id: 'turn_1',
+          },
+        },
+      }),
+    ).toEqual([
+      {
+        type: 'session.note',
+        message: 'Turn started',
+        raw: {
+          method: 'turn/started',
+          params: {
+            threadId: 'thread_1',
+            turn: {
+              id: 'turn_1',
+            },
+          },
+        },
+      },
+    ])
+
+    expect(
+      normalizeCodexAppServerNotification({
         method: 'item/agentMessage/delta',
         params: { delta: 'hello' },
       }),
@@ -519,6 +595,38 @@ describe('watch shared core', () => {
         raw: {
           method: 'item/agentMessage/delta',
           params: { delta: 'hello' },
+        },
+      },
+    ])
+
+    expect(
+      normalizeCodexAppServerNotification({
+        method: 'item/started',
+        params: {
+          item: {
+            type: 'userMessage',
+            id: 'user_1',
+            content: [
+              { type: 'text', text: 'reply with exactly hi' },
+            ],
+          },
+        },
+      }),
+    ).toEqual([
+      {
+        type: 'session.note',
+        message: 'userMessage · reply with exactly hi',
+        raw: {
+          method: 'item/started',
+          params: {
+            item: {
+              type: 'userMessage',
+              id: 'user_1',
+              content: [
+                { type: 'text', text: 'reply with exactly hi' },
+              ],
+            },
+          },
         },
       },
     ])
@@ -811,7 +919,49 @@ describe('watch shared core', () => {
       params: {
         sessionId: 'sess_123',
         update: {
-          type: 'tool_call',
+          sessionUpdate: 'available_commands_update',
+          availableCommands: [
+            {
+              name: 'review',
+              description: 'Review current changes',
+            },
+          ],
+        },
+      },
+    })).toEqual([])
+
+    expect(normalizeAcpSessionNotification({
+      method: 'session/update',
+      params: {
+        sessionId: 'sess_123',
+        update: {
+          sessionUpdate: 'usage_update',
+          used: 12857,
+          size: 950000,
+        },
+      },
+    })).toEqual([])
+
+    expect(normalizeAcpSessionNotification({
+      method: 'session/update',
+      params: {
+        sessionId: 'sess_123',
+        update: {
+          sessionUpdate: 'agent_thought_chunk',
+          content: {
+            type: 'text',
+            text: 'internal reasoning',
+          },
+        },
+      },
+    })).toEqual([])
+
+    expect(normalizeAcpSessionNotification({
+      method: 'session/update',
+      params: {
+        sessionId: 'sess_123',
+        update: {
+          sessionUpdate: 'tool_call',
           toolCallId: 'tool_1',
           title: 'Read package.json',
           kind: 'read',
@@ -832,13 +982,43 @@ describe('watch shared core', () => {
           params: {
             sessionId: 'sess_123',
             update: {
-              type: 'tool_call',
+              sessionUpdate: 'tool_call',
               toolCallId: 'tool_1',
               title: 'Read package.json',
               kind: 'read',
               rawInput: {
                 path: 'package.json',
               },
+            },
+          },
+        },
+      },
+    ])
+
+    expect(normalizeAcpSessionNotification({
+      method: 'session/update',
+      params: {
+        sessionId: 'sess_123',
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'tool_1',
+          status: 'completed',
+          title: 'Read package.json',
+        },
+      },
+    })).toEqual([
+      {
+        type: 'tool.call',
+        name: 'Read package.json',
+        raw: {
+          method: 'session/update',
+          params: {
+            sessionId: 'sess_123',
+            update: {
+              sessionUpdate: 'tool_call_update',
+              toolCallId: 'tool_1',
+              status: 'completed',
+              title: 'Read package.json',
             },
           },
         },

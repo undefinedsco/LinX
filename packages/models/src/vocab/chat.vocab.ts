@@ -1,4 +1,4 @@
-import { DCTerms, SCHEMA, UDFS, WF } from '../namespaces.js'
+import { DCTerms, SCHEMA, UDFS, WF } from '../namespaces'
 
 /** Chat channel vocab (thin place/container). */
 export const ChatBaseVocab = {

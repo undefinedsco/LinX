@@ -7,7 +7,7 @@ import {
   WATCH_HOME_DIRNAME,
   WATCH_SESSIONS_DIRNAME,
   WATCH_SESSION_FILE_NAME,
-} from '@linx/models/watch'
+} from '@undefineds.co/models/watch'
 import type { WatchEventLogEntry, WatchRunOptions, WatchSessionRecord, WatchSessionStatus, WatchSpawnPlan } from './types.js'
 
 function getWatchHome(): string {

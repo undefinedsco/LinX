@@ -5,7 +5,7 @@ export {
   type SettingsRow, 
   type SettingsInsert, 
   type SettingsUpdate 
-} from "./settings.schema.js";
+} from "./settings.schema";
 
 
 

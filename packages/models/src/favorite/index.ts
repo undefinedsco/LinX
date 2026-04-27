@@ -1,4 +1,4 @@
-export { favoriteTable, type FavoriteRow, type FavoriteInsert, type FavoriteUpdate } from "./favorite.schema.js";
+export { favoriteTable, type FavoriteRow, type FavoriteInsert, type FavoriteUpdate } from "./favorite.schema";
 
 // Starred Sync Hook
 export {
@@ -16,7 +16,7 @@ export {
   type SnapshotExtractor,
   type StarredSyncConfig,
   type SourceModule,
-} from "./starred-sync.js";
+} from "./starred-sync";
 
 
 

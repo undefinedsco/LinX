@@ -13,7 +13,7 @@ test('listRemoteModels maps remote model metadata', async () => {
     requestedUrl = url
     return {
       ok: true,
-      json: async () => ({
+      text: async () => JSON.stringify({
         data: [
           {
             id: 'claude-test',
@@ -46,7 +46,7 @@ test('listRemoteModels does not duplicate v1 when runtime url already targets th
     requestedUrl = url
     return {
       ok: true,
-      json: async () => ({
+      text: async () => JSON.stringify({
         data: [],
       }),
     }
@@ -129,4 +129,76 @@ test('createRemoteCompletion joins structured content payloads', async () => {
 
   assert.equal(requestedUrl, 'https://api.undefineds.co/v1/chat/completions')
   assert.equal(reply, 'hello world')
+})
+
+test('createRemoteCompletion defaults to linx-lite when no model override is provided', async () => {
+  let requestBody = null
+  globalThis.fetch = async (_url, init) => {
+    requestBody = JSON.parse(String(init?.body ?? '{}'))
+    return {
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: 'hello default model',
+            },
+          },
+        ],
+      }),
+    }
+  }
+
+  const { createRemoteCompletion } = await import('../dist/lib/chat-api.js')
+  const reply = await createRemoteCompletion({
+    runtimeUrl: 'https://api.undefineds.co/v1',
+    apiKey: 'token',
+    messages: [{ role: 'user', content: 'hi' }],
+  })
+
+  assert.equal(requestBody.model, 'linx-lite')
+  assert.equal(reply, 'hello default model')
+})
+
+test('createRemoteCompletionResult forwards tools and parses tool calls', async () => {
+  let requestBody = null
+  globalThis.fetch = async (_url, init) => {
+    requestBody = JSON.parse(String(init?.body ?? '{}'))
+    return {
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            finish_reason: 'tool_calls',
+            message: {
+              content: null,
+              tool_calls: [
+                {
+                  id: 'call_1',
+                  type: 'function',
+                  function: { name: 'bash', arguments: '{"command":"pwd"}' },
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    }
+  }
+
+  const { createRemoteCompletionResult } = await import('../dist/lib/chat-api.js')
+  const result = await createRemoteCompletionResult({
+    runtimeUrl: 'https://api.undefineds.co/v1',
+    apiKey: 'token',
+    model: 'linx-lite',
+    messages: [{ role: 'user', content: 'run pwd' }],
+    tools: [{ type: 'function', function: { name: 'bash', parameters: { type: 'object' } } }],
+  })
+
+  assert.equal(requestBody.model, 'linx-lite')
+  assert.equal(requestBody.stream, false)
+  assert.equal(requestBody.tools[0].function.name, 'bash')
+  assert.equal(requestBody.tool_choice, 'auto')
+  assert.equal(result.finishReason, 'tool_calls')
+  assert.equal(result.toolCalls[0].function.name, 'bash')
 })

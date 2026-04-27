@@ -1,4 +1,4 @@
 export {
   knowledgeFolderSchema,
   type KnowledgeFolderScope
-} from "./knowledge-folder.schema.js";
+} from "./knowledge-folder.schema";

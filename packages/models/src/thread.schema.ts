@@ -1,6 +1,54 @@
-export {
-  threadTable,
-  type ThreadRow,
-  type ThreadInsert,
-  type ThreadUpdate,
-} from './core.js'
+import { uri, boolean, object, podTable, string, timestamp, id } from '@undefineds.co/drizzle-solid'
+import { UDFS, DCTerms, SIOC, LINX_CHAT } from './namespaces'
+
+/**
+ * Thread schema.
+ *
+ * CP0 baseline:
+ * - Chat is a pure channel/place.
+ * - Thread carries execution context needed for collaboration/audit.
+ *
+ * Storage structure (aligned with xpod):
+ * - Thread stored as fragment in Chat's index.ttl
+ * - Location: /.data/chat/{chat}/index.ttl#{id}
+ *
+ * NOTE:
+ * - `thread.workspace` is a storage-layer reference (URI) to a container/resource in CSS/Pod.
+ * - It is NOT the same thing as the runtime create API payload `workspace: { path, copy }`.
+ * - Runtime path/copy is an execution-time interface shape; persistence should keep the
+ *   container URI here and store portable metadata with that container/resource.
+ */
+export const threadTable = podTable(
+  'thread',
+  {
+    id: id('id'),
+
+    // Belongs to chat. Stored as an RDF URI; short ids are resolved via chatTable's URI template by the ORM.
+    chat: uri('chat').predicate(SIOC.has_parent).notNull().link('chats'),
+
+    // Display / state
+    title: string('title').predicate(DCTerms.title),
+    starred: boolean('starred').predicate(UDFS.favorite).default(false),
+
+    // Storage-layer execution context reference: container/resource URI
+    workspace: uri('workspace').predicate(LINX_CHAT.workspace),
+
+    // Generic execution metadata shared by CLI/App runtimes.
+    metadata: object('metadata').predicate(UDFS.metadata),
+
+
+    createdAt: timestamp('createdAt').predicate(DCTerms.created).notNull().defaultNow(),
+    updatedAt: timestamp('updatedAt').predicate(DCTerms.modified).notNull().defaultNow(),
+  },
+  {
+    base: '/.data/chat/',
+    sparqlEndpoint: '/.data/chat/-/sparql',
+    type: SIOC.Thread,
+    namespace: UDFS,
+    subjectTemplate: '{chat}/index.ttl#{id}',
+  },
+)
+
+export type ThreadRow = typeof threadTable.$inferSelect
+export type ThreadInsert = typeof threadTable.$inferInsert
+export type ThreadUpdate = typeof threadTable.$inferUpdate

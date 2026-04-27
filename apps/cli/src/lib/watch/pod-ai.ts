@@ -215,8 +215,9 @@ async function createDefaultRuntime(): Promise<PodAiRuntime> {
     authenticate: solidAuth.authenticate,
     createDb(session) {
       return models.drizzle(session, {
+        logger: false,
         disableInteropDiscovery: true,
-        schema: models.linxSchema,
+        schema: models.solidSchema,
       }) as unknown as PodQueryDb
     },
     credentialTable: models.credentialTable,

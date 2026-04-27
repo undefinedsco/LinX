@@ -1,17 +1,36 @@
+import 'dotenv/config'
 import { describe, it, expect, afterAll } from 'vitest'
-import type { SolidDatabase } from '@undefineds.co/drizzle-solid'
+import { Session } from '@inrupt/solid-client-authn-node'
+import { drizzle, type SolidDatabase } from '@undefineds.co/drizzle-solid'
 import { contactTable } from '../src/contact.schema'
 import { agentTable } from '../src/agent.schema'
-import { aiConfigModelUri, aiConfigProviderUri, extractAIConfigResourceId } from '../src/ai-config'
-import { linxSchema } from '../src/schema'
+import { solidSchema } from '../src/schema'
+import { startLocalXpod, type LocalXpodTestPod } from './utils/local-xpod'
 import { eq } from '@undefineds.co/drizzle-solid'
-import {
-  createXpodIntegrationContext,
-  type XpodIntegrationContext,
-} from './support/xpod-integration'
+
+let localXpod: LocalXpodTestPod | null = null
+
+const env = {
+  webId: process.env.SOLID_WEBID,
+  clientId: process.env.SOLID_CLIENT_ID,
+  clientSecret: process.env.SOLID_CLIENT_SECRET,
+  oidcIssuer: process.env.SOLID_OIDC_ISSUER,
+}
+
+async function ensureEnv(): Promise<typeof env> {
+  if (env.webId && env.clientId && env.clientSecret && env.oidcIssuer) return env
+  if (!localXpod) {
+    localXpod = await startLocalXpod()
+  }
+  env.webId = localXpod.webId
+  env.clientId = localXpod.clientId
+  env.clientSecret = localXpod.clientSecret
+  env.oidcIssuer = localXpod.oidcIssuer
+  return env
+}
 
 // Shared session and db for all tests
-let context: XpodIntegrationContext<typeof linxSchema> | null = null
+let session: Session | null = null
 let db: SolidDatabase | null = null
 
 // Test data tracking for cleanup
@@ -21,22 +40,30 @@ const createdAgentIds: string[] = []
 async function getDb(): Promise<SolidDatabase> {
   if (db) return db
 
-  context = await createXpodIntegrationContext({
-    schema: linxSchema,
-    tables: [contactTable, agentTable],
+  const activeEnv = await ensureEnv()
+  session = new Session()
+  await session.login({
+    clientId: activeEnv.clientId!,
+    clientSecret: activeEnv.clientSecret!,
+    oidcIssuer: activeEnv.oidcIssuer!,
+    tokenType: 'DPoP',
   })
-  db = context.db
+  db = drizzle(session, { logger: false, disableInteropDiscovery: true, schema: solidSchema })
+  await db.init([contactTable, agentTable])
   return db
 }
 
 // Cleanup after all tests
 afterAll(async () => {
-  if (!db) return
+  if (!db) {
+    await localXpod?.stop()
+    return
+  }
   
   // Clean up created contacts
   for (const id of createdContactIds) {
     try {
-      await (db as any).deleteByIri(contactTable as any, id)
+      await db.delete(contactTable).whereByIri(id).execute()
     } catch (e) {
       // Ignore cleanup errors
     }
@@ -45,20 +72,19 @@ afterAll(async () => {
   // Clean up created agents
   for (const id of createdAgentIds) {
     try {
-      await (db as any).deleteByIri(agentTable as any, id)
+      await db.delete(agentTable).whereByIri(id).execute()
     } catch (e) {
       // Ignore cleanup errors
     }
   }
 
-  await context?.stop()
+  await localXpod?.stop()
 })
 
 describe('Solid Pod Contact CRUD', () => {
   
   it('creates and reads a solid contact', { timeout: 60000 }, async () => {
     const database = await getDb()
-    const webId = context!.webId
     const contactId = crypto.randomUUID()
     const testName = `solid-test-${Date.now()}`
     const now = new Date()
@@ -71,7 +97,7 @@ describe('Solid Pod Contact CRUD', () => {
         name: testName,
         alias: 'Solid Test Alias',
         contactType: 'solid',
-        entityUri: webId,
+        entityUri: 'https://test.solidcommunity.net/profile/card#me',
         isPublic: false,
         starred: true,
         note: 'Integration test - solid contact',
@@ -106,7 +132,6 @@ describe('Solid Pod Contact CRUD', () => {
 
   it('creates and reads an external (wechat) contact', { timeout: 60000 }, async () => {
     const database = await getDb()
-    const webId = context!.webId
     const contactId = crypto.randomUUID()
     const testExternalId = `wxid_test_${Date.now()}`
     const now = new Date()
@@ -121,7 +146,7 @@ describe('Solid Pod Contact CRUD', () => {
         alias: '微信测试好友',
         contactType: 'external',
         // Use WebID as base to construct absolute URI
-        entityUri: `${webId.replace('/profile/card#me', '')}/.data/contacts/${contactId}.ttl`,
+        entityUri: `${env.webId!.replace('/profile/card#me', '')}/.data/contacts/${contactId}.ttl`,
         externalPlatform: 'wechat',
         externalId: testExternalId,
         isPublic: false,
@@ -166,8 +191,8 @@ describe('Solid Pod Contact CRUD', () => {
         name: testAgentName,
         description: 'A test AI assistant',
         instructions: 'You are a helpful assistant for integration testing.',
-        provider: aiConfigProviderUri('openai'),
-        model: aiConfigModelUri('gpt-4o'),
+        provider: 'openai',
+        model: 'gpt-4o',
         temperature: 0.7,
         tools: ['WebSearch'],
         createdAt: now,
@@ -188,12 +213,11 @@ describe('Solid Pod Contact CRUD', () => {
     expect(agentRows.length).toBeGreaterThanOrEqual(1)
     const agentRecord = agentRows[0]
     expect(agentRecord.name).toBe(testAgentName)
-    expect(extractAIConfigResourceId(String(agentRecord.model ?? ''))).toBe('gpt-4o')
+    expect(agentRecord.model).toBe('gpt-4o')
     expect(agentRecord.instructions).toContain('helpful assistant')
 
     // 2. CREATE CONTACT pointing to agent
-    const webId = context!.webId
-    const agentEntityUri = agentSubject || `${webId.replace('/profile/card#me', '')}/.data/agents/${agentId}.ttl`
+    const agentEntityUri = agentSubject || `${env.webId!.replace('/profile/card#me', '')}/.data/agents/${agentId}.ttl`
     
     const [contactCreated] = await database
       .insert(contactTable)

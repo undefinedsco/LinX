@@ -24,17 +24,22 @@ export {
   VCARD,
   WF,
   LDP,
-} from "./namespaces.js";
+  // xpod vocabs
+  XPOD_CREDENTIAL,
+  XPOD_AI,
+} from "./namespaces";
 
 // Wave A: centralized vocab objects (downstream should prefer these over ad-hoc namespaces)
-export * from "./vocab.js";
+export * from "./vocab";
 
 // ============================================
 // 核心业务模型
 // ============================================
 
 // Profile - 用户资料
-export * from './profile.js'
+export * from './profile'
+export * from './profile.repository'
+export * from './profile.schema'
 
 // Contact - 联系人 (unified index for Solid users, external users, and AI agents)
 export {
@@ -48,8 +53,8 @@ export {
   type ContactUpdate,
   type ContactClassValue,
   type ContactTypeValue,
-} from './contact.schema.js'
-export { contactRepository } from './contact.repository.js'
+} from './contact.schema'
+export { contactRepository } from './contact.repository'
 
 // Chat & Message - 聊天和消息
 export {
@@ -59,43 +64,24 @@ export {
   type ChatRow,
   type ChatInsert,
   type ChatUpdate,
-} from './chat.schema.js'
-export { chatRepository } from './chat.repository.js'
+} from './chat.schema'
+export { chatRepository } from './chat.repository'
 
 export {
   threadTable,
   type ThreadRow,
   type ThreadInsert,
   type ThreadUpdate,
-} from './thread.schema.js'
-export { threadRepository } from './thread.repository.js'
-
-export {
-  workspaceTable,
-  WORKSPACE_TYPES,
-  WORKSPACE_KINDS,
-  getWorkspaceContainerPath,
-  resolveWorkspaceContainerUri,
-  parseWorkspaceIdFromContainerUri,
-  normalizeLocalWorkspacePath,
-  buildLocalWorkspaceUri,
-  parseLocalWorkspaceUri,
-  isLocalWorkspaceUri,
-  type WorkspaceType,
-  type WorkspaceKind,
-  type WorkspaceRow,
-  type WorkspaceInsert,
-  type WorkspaceUpdate,
-} from './workspace.schema.js'
-export { workspaceRepository } from './workspace.repository.js'
+} from './thread.schema'
+export { threadRepository } from './thread.repository'
 
 export {
   messageTable,
   type MessageRow,
   type MessageInsert,
   type MessageUpdate,
-} from './message.schema.js'
-export { messageRepository } from './message.repository.js'
+} from './message.schema'
+export { messageRepository } from './message.repository'
 
 // Message Block - 消息块类型系统 (Block-based Message System)
 export {
@@ -117,7 +103,7 @@ export {
   isBlockType,
   parseMessageBlocks,
   serializeMessageBlocks,
-} from './types/message-block.js'
+} from './types/message-block'
 
 // Wave A CP0: collaboration-related richContent block contracts
 export {
@@ -129,10 +115,10 @@ export {
   type ToolApprovalStatus,
   type ToolCallStatus,
   type TaskProgressStepStatus,
-} from "./types/collaboration-blocks.js";
+} from "./types/collaboration-blocks";
 
 // Wave A CP0: fixtures for downstream parallel development
-export * from "./fixtures/contracts-chat-contact.js";
+export * from "./fixtures/contracts-chat-contact";
 
 // File - 文件管理
 export {
@@ -140,7 +126,7 @@ export {
   type FileRow,
   type FileInsert,
   type FileUpdate,
-} from './file.js'
+} from './file'
 
 // Favorite - 收藏
 export {
@@ -160,7 +146,7 @@ export {
   type SnapshotExtractor,
   type StarredSyncConfig,
   type SourceModule,
-} from './favorite.js'
+} from './favorite'
 
 // Settings - 用户设置
 export {
@@ -170,7 +156,7 @@ export {
   type SettingsRow,
   type SettingsInsert,
   type SettingsUpdate,
-} from './settings.js'
+} from './settings'
 
 // Agent - AI 助手配置
 export {
@@ -178,21 +164,29 @@ export {
   type AgentRow,
   type AgentInsert,
   type AgentUpdate,
-} from './agent.schema.js'
-export { agentRepository } from './agent.repository.js'
+} from './agent.schema'
+export { agentRepository } from './agent.repository'
 
 export {
   DEFAULT_AGENT_PROVIDERS,
   type AgentProviderMetadata,
   type AgentModelOption,
-} from './agent.providers.js'
+} from './agent.providers'
 
 // ============================================
 // 其他模型
 // ============================================
 
 // Session - 会话管理
-export { sessionSchema } from './session.js'
+export {
+  sessionTable,
+  type SessionType,
+  type SessionStatus,
+  type SessionRow,
+  type SessionInsert,
+  type SessionUpdate,
+} from './session'
+export { sessionRepository } from './session.repository'
 
 // Approval / Audit / Grant / Inbox Notification
 export {
@@ -200,111 +194,160 @@ export {
   type ApprovalRow,
   type ApprovalInsert,
   type ApprovalUpdate,
-} from './approval.schema.js'
+} from './approval.schema'
 
 export {
   auditTable,
   type AuditRow,
   type AuditInsert,
   type AuditUpdate,
-} from './audit.schema.js'
+} from './audit.schema'
 
 export {
   grantTable,
   type GrantRow,
   type GrantInsert,
   type GrantUpdate,
-} from './grant.schema.js'
+} from './grant.schema'
 
 export {
   inboxNotificationTable,
   type InboxNotificationRow,
   type InboxNotificationInsert,
   type InboxNotificationUpdate,
-} from './inbox-notification.schema.js'
+} from './inbox-notification.schema'
 
 // Sidecar vocab + runtime contracts
-export { ApprovalVocab, AuditVocab, GrantVocab, InboxNotificationVocab } from './vocab/sidecar.vocab.js'
-export * from './sidecar/sidecar-events.js'
-export * from './sidecar/persistence-mapping.js'
+export { ApprovalVocab, AuditVocab, GrantVocab, InboxNotificationVocab } from './vocab/sidecar.vocab'
+export * from './sidecar/sidecar-events'
+export * from './sidecar/persistence-mapping'
 
 // Knowledge Folder - 知识库文件夹
 export {
   knowledgeFolderSchema,
   type KnowledgeFolderScope
-} from './knowledge.js'
+} from './knowledge'
 
 // Extension - 扩展
-export { extensionSchema } from './extension.js'
+export { extensionSchema } from './extension'
 
 // xpod AI schema
 export {
   credentialTable,
-  apiKeyCredentialTable,
-  oauthCredentialTable,
   type CredentialRow,
   type CredentialInsert,
   type CredentialUpdate,
-  type ApiKeyCredentialRow,
-  type ApiKeyCredentialInsert,
-  type ApiKeyCredentialUpdate,
-  type OAuthCredentialRow,
-  type OAuthCredentialInsert,
-  type OAuthCredentialUpdate,
-} from "./credential.schema.js";
+} from "./credential.schema";
 
 export {
   aiProviderTable,
   type AIProviderRow,
   type AIProviderInsert,
   type AIProviderUpdate,
-} from "./ai-provider.schema.js";
+} from "./ai-provider.schema";
 
 export {
   aiModelTable,
   type AIModelRow,
   type AIModelInsert,
   type AIModelUpdate,
-} from "./ai-model.schema.js";
+} from "./ai-model.schema";
 
 export {
   aiConfigModelUri,
   aiConfigProviderUri,
   buildAIConfigMutationPlan,
   buildAIConfigProviderStateMap,
-  extractAIConfigProviderId,
-  extractAIConfigResourceId,
   getAIConfigDefaultBaseUrl,
   getAIConfigProviderCatalog,
+  getAIConfigProviderFamilyIds,
   getAIConfigProviderMetadata,
   getDefaultAIConfigCredentialId,
-  sameAIConfigProviderId,
+  normalizeAIConfigProviderId,
+  normalizeAIConfigResourceId,
+  sameAIConfigProviderFamily,
   type AIConfigModel,
   type AIConfigMutationPlan,
   type AIConfigProviderCatalogEntry,
   type AIConfigProviderState,
   type AIConfigUpdate,
   type BuildAIConfigProviderStateMapOptions,
-} from './ai-config.js'
+} from './ai-config'
+
+export {
+  buildAcpPermissionResponse,
+  buildWatchThreadMetadata,
+  buildWatchTranscriptMessages,
+  buildWatchUserInputResponse,
+  createWatchSessionId,
+  detectWatchAuthFailure,
+  formatWatchAutoFallbackMessage,
+  formatWatchBackendAuthMessage,
+  extractWatchSessionIdFromJsonLine,
+  getWatchArchiveRelativePaths,
+  getWatchAuthLoginCommand,
+  looksLikeWatchAuthFailureText,
+  normalizeAcpInteractionRequest,
+  normalizeAcpRequest,
+  normalizeAcpSessionNotification,
+  normalizeCodexAppServerNotification,
+  normalizeCodexAppServerRequest,
+  normalizeWatchCredentialSource,
+  parseWatchClaudeAuthStatus,
+  parseWatchJsonLine,
+  parseWatchJsonProtocolLine,
+  resolveWatchAutoApprovalDecision,
+  resolveWatchCredentialSourceResolution,
+  resolveWatchInteractionAutoResponse,
+  resolveWatchQuestionAnswer,
+  shouldAttemptCloudCredentialProbe,
+  WATCH_EVENTS_FILE_NAME,
+  WATCH_HOME_DIRNAME,
+  WATCH_SESSIONS_DIRNAME,
+  WATCH_SESSION_FILE_NAME,
+  type WatchApprovalDecision,
+  type WatchApprovalRequest,
+  type CreateWatchSessionIdOptions,
+  type WatchAuthFailure,
+  type WatchAuthState,
+  type WatchAuthStatus,
+  type WatchArchiveRelativePaths,
+  type WatchBackend,
+  type WatchCloudCredentialProbe,
+  type WatchCloudCredentialProbeStatus,
+  type WatchCredentialSource,
+  type WatchCredentialSourceResolution,
+  type WatchEventLogEntry,
+  type WatchMode,
+  type WatchNormalizedEvent,
+  type WatchOutputStream,
+  type WatchResolvedCredentialSource,
+  type WatchRuntime,
+  type WatchSessionRecord,
+  type WatchSessionStatus,
+  type WatchThreadMetadata,
+  type WatchTranscriptMessage,
+  type WatchTranscriptMessageRole,
+} from './watch'
 
 export {
   createRepositoryDescriptor,
-  deleteExactRecord,
   definePodRepository,
-  findExactRecord,
-  isIriLikeIdentifier,
+  findPodRowByStorageId,
+  initSolidTables,
   resolveRowId,
-  stripEntityIdentifiers,
-  updateExactRecord,
+  resolvePodUri,
+  whereByPodStorageId,
+  type AnyPodTable,
   type PodRepositoryDescriptor,
   type RepositoryCacheOptions,
   type RepositoryInvalidations,
   type RepositoryScope,
   type SolidDatabase,
-} from './repository.js'
+} from './repository'
 
 // Import Job - 导入任务
-export { importJobSchema } from './import.js'
+export { importJobSchema } from './import'
 
 // ============================================
 // 数据库操作符 (统一出口)
@@ -314,9 +357,9 @@ export { eq, ne, and, or, drizzle } from '@undefineds.co/drizzle-solid'
 // ============================================
 // Schema registry
 // ============================================
-export { linxSchema } from './schema.js'
+export { solidSchema } from './schema'
 
 // ============================================
 // Discovery Service (发现服务)
 // ============================================
-export * from './discovery.js'
+export * from './discovery'

@@ -2,7 +2,7 @@ import type {
   ToolApprovalStatus,
   ToolCallStatus,
   TaskProgressStepStatus,
-} from './collaboration-blocks.js'
+} from './collaboration-blocks'
 
 /**
  * Message Block Types - 基于 Cherry Studio 的 block-based 消息系统
