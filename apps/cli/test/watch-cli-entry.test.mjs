@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
+import { createRequire } from 'node:module'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -8,6 +9,8 @@ import { fileURLToPath } from 'node:url'
 const cliRoot = fileURLToPath(new URL('..', import.meta.url))
 const sourceRoot = join(cliRoot, 'src')
 const entryPath = join(sourceRoot, 'index.ts')
+const require = createRequire(import.meta.url)
+const tscBin = require.resolve('typescript/bin/tsc')
 
 test('compiled cli entry can serve watch commands without chat dependencies', async (t) => {
   const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-entry-'))
@@ -16,7 +19,7 @@ test('compiled cli entry can serve watch commands without chat dependencies', as
   })
 
   try {
-    execFileSync('tsc', [
+    execFileSync(process.execPath, [tscBin,
       '--outDir',
       outdir,
       '--rootDir',
@@ -61,7 +64,7 @@ test('compiled cli entry exposes codex-native-proxy command help', async (t) => 
   })
 
   try {
-    execFileSync('tsc', [
+    execFileSync(process.execPath, [tscBin,
       '--outDir',
       outdir,
       '--rootDir',
@@ -106,7 +109,7 @@ test('compiled cli default entry is Pi TUI and hides explicit frontend aliases',
   })
 
   try {
-    execFileSync('tsc', [
+    execFileSync(process.execPath, [tscBin,
       '--outDir',
       outdir,
       '--rootDir',
@@ -155,7 +158,7 @@ test('compiled cli login help exposes browser consent flow and no password optio
   })
 
   try {
-    execFileSync('tsc', [
+    execFileSync(process.execPath, [tscBin,
       '--outDir',
       outdir,
       '--rootDir',
@@ -204,7 +207,7 @@ test('compiled cli watch show replays archived timeline instead of raw json', as
   })
 
   try {
-    execFileSync('tsc', [
+    execFileSync(process.execPath, [tscBin,
       '--outDir',
       outdir,
       '--rootDir',

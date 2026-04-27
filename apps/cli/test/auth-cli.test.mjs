@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const cliRoot = fileURLToPath(new URL('..', import.meta.url))
 const entryPath = join(cliRoot, 'dist', 'index.js')
@@ -227,7 +227,7 @@ globalThis.fetch = async (input, init = {}) => {
 }
 
 function execCli(args, env, modulePath) {
-  return execFileSync(process.execPath, ['--import', modulePath, entryPath, ...args], {
+  return execFileSync(process.execPath, ['--import', pathToFileURL(modulePath).href, entryPath, ...args], {
     cwd: cliRoot,
     env: {
       ...process.env,

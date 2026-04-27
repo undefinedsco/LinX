@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
+import { createRequire } from 'node:module'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -9,6 +10,8 @@ import { fileURLToPath } from 'node:url'
 const cliRoot = fileURLToPath(new URL('..', import.meta.url))
 const sourceRoot = join(cliRoot, 'src')
 const entryPath = join(sourceRoot, 'index.ts')
+const require = createRequire(import.meta.url)
+const tscBin = require.resolve('typescript/bin/tsc')
 
 test('compiled cli default --print accepts a prompt argument and starts the pi path', async (t) => {
   const outdir = mkdtempSync(join(tmpdir(), 'linx-cli-pi-print-'))
@@ -17,7 +20,7 @@ test('compiled cli default --print accepts a prompt argument and starts the pi p
   })
 
   try {
-    execFileSync('tsc', [
+    execFileSync(process.execPath, [tscBin,
       '--outDir',
       outdir,
       '--rootDir',

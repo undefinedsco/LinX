@@ -69,9 +69,11 @@ test('watch archive creates, updates, and lists sessions', async (t) => {
 
 test('watch archive ignores legacy LINX_WORKER_HOME override', async (t) => {
   const originalHome = process.env.HOME
+  const originalUserProfile = process.env.USERPROFILE
   const tempHome = mkdtempSync(join(tmpdir(), 'linx-watch-home-'))
   const root = mkdtempSync(join(tmpdir(), 'linx-watch-legacy-'))
   process.env.HOME = tempHome
+  process.env.USERPROFILE = tempHome
   process.env.LINX_WORKER_HOME = root
 
   t.after(() => {
@@ -79,6 +81,11 @@ test('watch archive ignores legacy LINX_WORKER_HOME override', async (t) => {
       delete process.env.HOME
     } else {
       process.env.HOME = originalHome
+    }
+    if (originalUserProfile === undefined) {
+      delete process.env.USERPROFILE
+    } else {
+      process.env.USERPROFILE = originalUserProfile
     }
     delete process.env.LINX_WORKER_HOME
     rmSync(tempHome, { recursive: true, force: true })

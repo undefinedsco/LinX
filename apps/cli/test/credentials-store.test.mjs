@@ -5,15 +5,26 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const originalHome = process.env.HOME
+const originalUserProfile = process.env.USERPROFILE
 
 test.afterEach(() => {
   if (originalHome === undefined) {
     delete process.env.HOME
-    return
+  } else {
+    process.env.HOME = originalHome
   }
 
-  process.env.HOME = originalHome
+  if (originalUserProfile === undefined) {
+    delete process.env.USERPROFILE
+  } else {
+    process.env.USERPROFILE = originalUserProfile
+  }
 })
+
+function setTestHome(home) {
+  process.env.HOME = home
+  process.env.USERPROFILE = home
+}
 
 function writeCredentialSet(baseDir, folderName, values) {
   const dir = join(baseDir, folderName)
@@ -24,7 +35,7 @@ function writeCredentialSet(baseDir, folderName, values) {
 
 test('saveCredentials persists client credentials under ~/.linx and clearCredentials removes them', async () => {
   const tempHome = mkdtempSync(join(tmpdir(), 'linx-cli-creds-'))
-  process.env.HOME = tempHome
+  setTestHome(tempHome)
 
   const mod = await import(`../dist/lib/credentials-store.js?save=${Date.now()}`)
   mod.saveCredentials({
@@ -51,7 +62,7 @@ test('saveCredentials persists client credentials under ~/.linx and clearCredent
 
 test('loadCredentials reads credentials from ~/.linx', async () => {
   const tempHome = mkdtempSync(join(tmpdir(), 'linx-cli-creds-'))
-  process.env.HOME = tempHome
+  setTestHome(tempHome)
 
   writeCredentialSet(tempHome, '.linx', {
     config: {
@@ -75,7 +86,7 @@ test('loadCredentials reads credentials from ~/.linx', async () => {
 
 test('loadCredentials ignores legacy ~/.xpod credentials', async () => {
   const tempHome = mkdtempSync(join(tmpdir(), 'linx-cli-creds-'))
-  process.env.HOME = tempHome
+  setTestHome(tempHome)
 
   writeCredentialSet(tempHome, '.xpod', {
     config: {
@@ -95,7 +106,7 @@ test('loadCredentials ignores legacy ~/.xpod credentials', async () => {
 
 test('loadCredentials returns null for incomplete secrets', async () => {
   const tempHome = mkdtempSync(join(tmpdir(), 'linx-cli-creds-'))
-  process.env.HOME = tempHome
+  setTestHome(tempHome)
 
   writeCredentialSet(tempHome, '.linx', {
     config: {
