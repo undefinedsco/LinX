@@ -24,6 +24,8 @@ preview/undefineds-co-linx-<version>.tgz
 
 The release pack script converts `packages/models` exports from `src/*.ts` to `dist/*.js` and makes `apps/cli` depend on the exact same `@undefineds.co/models` version.
 
+Release tarballs force `repository.url` to `git+https://github.com/undefinedsco/LinX.git`. Keep this value aligned with the GitHub Actions publisher configured in npm Trusted Publishing, otherwise npm cannot bind the OIDC claim to the package.
+
 `@undefineds.co/models` is a shared contract package for xpod and LinX. It is not owned by the CLI release script. The root `pack:cli:release` command only orchestrates the order:
 
 ```text
@@ -181,7 +183,29 @@ It verifies the same release tarballs on Linux and macOS. Only the Linux artifac
 @undefineds.co/models -> @undefineds.co/linx
 ```
 
-Automatic publish happens on tags matching `linx-v*`. Manual `workflow_dispatch` can verify without publish, or publish when `publish=true`. npm publishing requires `NPM_TOKEN` in GitHub Actions secrets.
+Automatic publish happens on tags matching `linx-v*`. Manual `workflow_dispatch` can verify without publish, or publish when `publish=true`.
+
+npm publishing uses Trusted Publishing/OIDC, not a long-lived `NPM_TOKEN`. The npm CLI requires npm `>=11.5.1` and Node `>=22.14.0` for this path, so the publish job uses Node 24 while the product verification matrix remains on Node 22.
+
+Configure Trusted Publishing on npm for both packages:
+
+```text
+@undefineds.co/models
+@undefineds.co/linx
+```
+
+Use these GitHub Actions publisher fields on npm:
+
+```text
+Organization/user: undefinedsco
+Repository: LinX
+Workflow filename: cli-release.yml
+Environment name: empty unless the workflow is changed to use a GitHub environment
+```
+
+The release workflow has `id-token: write`; npm automatically detects the GitHub OIDC environment during `npm publish`. Do not set `NODE_AUTH_TOKEN` for the publish steps. If publish fails with `EOTP`, the workflow is still using token-based publishing or the npm package has not been configured for Trusted Publishing.
+
+For an already-published package whose registry metadata points at an old repository, publish one corrected package version or update package metadata so the package repository matches `undefinedsco/LinX`. Trusted Publishing validates the package repository against the GitHub Actions claim.
 
 ## Shared Models Development
 

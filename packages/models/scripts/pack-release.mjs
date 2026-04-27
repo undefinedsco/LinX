@@ -52,6 +52,11 @@ function createPublishablePackage(packageJson, packageVersion) {
       'README.md',
       'package.json',
     ],
+    repository: {
+      type: 'git',
+      url: 'git+https://github.com/undefinedsco/LinX.git',
+      directory: 'packages/models',
+    },
     exports: {
       '.': {
         types: './dist/index.d.ts',

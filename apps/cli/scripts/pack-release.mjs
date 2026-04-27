@@ -63,6 +63,11 @@ function createPublishableCliPackage(pkg, packageVersion) {
       'README.md',
       'package.json',
     ],
+    repository: {
+      type: 'git',
+      url: 'git+https://github.com/undefinedsco/LinX.git',
+      directory: 'apps/cli',
+    },
     dependencies,
     publishConfig: {
       access: 'public',

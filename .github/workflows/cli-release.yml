@@ -23,12 +23,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: yarn
@@ -43,7 +43,7 @@ jobs:
 
       - name: Upload release tarballs
         if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: cli-release-tarballs
           path: |
@@ -62,15 +62,15 @@ jobs:
 
     steps:
       - name: Download release tarballs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: cli-release-tarballs
           path: preview
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           registry-url: https://registry.npmjs.org
 
       - name: Dry-run publish models
@@ -80,11 +80,7 @@ jobs:
         run: npm publish --access public --dry-run ./preview/undefineds-co-linx-*.tgz
 
       - name: Publish models
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --access public ./preview/undefineds-co-models-*.tgz
 
       - name: Publish CLI
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --access public ./preview/undefineds-co-linx-*.tgz
