@@ -14,7 +14,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
   verify:
@@ -81,10 +80,10 @@ jobs:
 
       - name: Publish models
         env:
-          NODE_AUTH_TOKEN: ''
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --access public ./preview/undefineds-co-models-*.tgz
 
       - name: Publish CLI
         env:
-          NODE_AUTH_TOKEN: ''
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --access public ./preview/undefineds-co-linx-*.tgz

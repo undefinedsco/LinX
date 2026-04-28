@@ -185,27 +185,9 @@ It verifies the same release tarballs on Linux and macOS. Only the Linux artifac
 
 Automatic publish happens on tags matching `linx-v*`. Manual `workflow_dispatch` can verify without publish, or publish when `publish=true`.
 
-npm publishing uses Trusted Publishing/OIDC, not a long-lived `NPM_TOKEN`. The npm CLI requires npm `>=11.5.1` and Node `>=22.14.0` for this path, so the publish job uses Node 24 while the product verification matrix remains on Node 22.
+npm publishing uses the GitHub Actions secret `NPM_TOKEN`. The token must have publish access to the `@undefineds.co` scope and must be allowed to bypass publish-time 2FA. `@undefineds.co/linx` does not need to pre-exist; the first successful `npm publish --access public` creates the package.
 
-Configure Trusted Publishing on npm for both packages:
-
-```text
-@undefineds.co/models
-@undefineds.co/linx
-```
-
-Use these GitHub Actions publisher fields on npm:
-
-```text
-Organization/user: undefinedsco
-Repository: LinX
-Workflow filename: cli-release.yml
-Environment name: empty unless the workflow is changed to use a GitHub environment
-```
-
-The release workflow has top-level `id-token: write`; npm automatically detects the GitHub OIDC environment during `npm publish`. Do not set a real `NODE_AUTH_TOKEN` for the publish steps. The workflow explicitly clears `NODE_AUTH_TOKEN` during publish so an old repository `NPM_TOKEN` cannot make npm fall back to token-based publishing. If publish fails with `EOTP`, the workflow is still using token-based publishing or the npm package has not been configured for Trusted Publishing.
-
-For an already-published package whose registry metadata points at an old repository, publish one corrected package version or update package metadata so the package repository matches `undefinedsco/LinX`. Trusted Publishing validates the package repository against the GitHub Actions claim.
+If publish fails with `EOTP`, the token is still subject to one-time-password verification. If publish fails with `E403` or `E404`, the token does not have publish permission for the target package or scope.
 
 ## Shared Models Development
 
