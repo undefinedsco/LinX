@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -195,6 +195,50 @@ test('compiled cli login help exposes browser consent flow and no password optio
   assert.match(output, /OIDC/i)
   assert.doesNotMatch(output, /email/i)
   assert.doesNotMatch(output, /password/i)
+})
+
+test('compiled cli version matches package version', async (t) => {
+  const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-version-'))
+  t.after(() => {
+    rmSync(outdir, { recursive: true, force: true })
+  })
+
+  try {
+    execFileSync(process.execPath, [tscBin,
+      '--outDir',
+      outdir,
+      '--rootDir',
+      sourceRoot,
+      '--module',
+      'nodenext',
+      '--moduleResolution',
+      'nodenext',
+      '--target',
+      'ES2022',
+      '--lib',
+      'ES2022',
+      '--types',
+      'node',
+      '--skipLibCheck',
+      'true',
+      '--noEmitOnError',
+      'false',
+      entryPath,
+    ], {
+      cwd: cliRoot,
+      stdio: 'pipe',
+    })
+  } catch {
+    assert.ok(existsSync(join(outdir, 'index.js')))
+  }
+
+  const output = execFileSync(process.execPath, [join(outdir, 'index.js'), '--version'], {
+    cwd: cliRoot,
+    encoding: 'utf-8',
+  }).trim()
+  const packageJson = JSON.parse(readFileSync(join(cliRoot, 'package.json'), 'utf8'))
+
+  assert.equal(output, packageJson.version)
 })
 
 test('compiled cli watch show replays archived timeline instead of raw json', async (t) => {

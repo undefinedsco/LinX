@@ -1,16 +1,15 @@
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
-import { readFileSync } from 'node:fs'
 import { LINX_HOME_DIRNAME } from '@undefineds.co/models/client'
 import { keyHint, keyText, rawKeyHint } from '@mariozechner/pi-coding-agent'
 import { Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from '@mariozechner/pi-tui'
 import { loadCredentials } from '../credentials-store.js'
 import { extractUsernameFromWebId, resolveProfileDisplayName } from '../profile-identity.js'
+import { LINX_CLI_VERSION } from '../../generated/version.js'
 
 export const LINX_AGENT_DIR = join(homedir(), LINX_HOME_DIRNAME, 'agent')
 export const LINX_UPDATE_PACKAGE_NAME = '@undefineds.co/linx'
 export const LINX_CHANGELOG_URL = 'https://github.com/undefineds-co/linx-cli/releases'
-export const LINX_CLI_VERSION = readLinxCliVersion()
 
 export function applyLinxInteractiveBranding(interactive: any): void {
   patchTerminalTitle(interactive)
@@ -204,16 +203,6 @@ function padLine(line: string, width: number): string {
     return truncateToWidth(line, width)
   }
   return `${line}${' '.repeat(width - visible)}`
-}
-
-function readLinxCliVersion(): string {
-  try {
-    const raw = readFileSync(new URL('../../package.json', import.meta.url), 'utf-8')
-    const pkg = JSON.parse(raw) as { version?: string }
-    return typeof pkg.version === 'string' && pkg.version.trim() ? pkg.version.trim() : '0.1.0'
-  } catch {
-    return '0.1.0'
-  }
 }
 
 function resolveRuntimeProviderLabel(interactive: any): string {

@@ -43,7 +43,7 @@ const smokeEnv = {
 }
 
 run(linxBin, ['--help'], { env: smokeEnv })
-run(linxBin, ['--version'], { env: smokeEnv })
+assertInstalledCliVersion(linxBin, smokeEnv)
 assertInstalledDrizzleSolidPatch()
 
 console.log(`release smoke install passed: ${linxBin}`)
@@ -69,6 +69,39 @@ function run(command, args, options = {}) {
   if ((result.status ?? 1) !== 0) {
     throw new Error(`${command} ${args.join(' ')} failed with ${result.status ?? 1}`)
   }
+}
+
+function runCapture(command, args, options = {}) {
+  console.log(`$ ${[command, ...args].join(' ')}`)
+  const result = spawnSync(command, args, {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    shell: process.platform === 'win32',
+    ...options,
+  })
+  if (result.stdout) {
+    process.stdout.write(result.stdout)
+  }
+  if (result.stderr) {
+    process.stderr.write(result.stderr)
+  }
+  if ((result.status ?? 1) !== 0) {
+    throw new Error(`${command} ${args.join(' ')} failed with ${result.status ?? 1}`)
+  }
+  return result.stdout
+}
+
+function assertInstalledCliVersion(linxBin, env) {
+  const packageRoot = findInstalledPackageRoot('@undefineds.co/linx')
+  const packageJson = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'))
+  const expectedVersion = packageJson.version
+  const actualVersion = runCapture(linxBin, ['--version'], { env }).trim()
+
+  if (actualVersion !== expectedVersion) {
+    throw new Error(`Installed linx --version mismatch: expected ${expectedVersion}, got ${actualVersion || '<empty>'}`)
+  }
+
+  console.log(`verified @undefineds.co/linx@${expectedVersion} --version`)
 }
 
 function assertInstalledDrizzleSolidPatch() {

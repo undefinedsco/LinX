@@ -17,6 +17,7 @@ import { DEFAULT_LINX_CLOUD_MODEL_ID } from './lib/default-model.js'
 import type { PiCompletionBackendResult } from './lib/pi-adapter/stream.js'
 import type { RemoteChatMessage, RemoteChatTool } from './lib/chat-api.js'
 import { LINX_AGENT_DIR } from './lib/pi-adapter/branding.js'
+import { LINX_CLI_VERSION } from './generated/version.js'
 import {
   formatRemoteWatchApprovalSummary,
   formatArchivedWatchSession,
@@ -504,6 +505,7 @@ const execCommand: CommandModule<object, PiCommandArgs> = {
 
 const cli = yargs(hideBin(process.argv))
   .scriptName('linx')
+  .version(LINX_CLI_VERSION)
   .parserConfiguration({
     'populate--': true,
   })
