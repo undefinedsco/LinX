@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { LINX_HOME_DIRNAME } from '@undefineds.co/models/client'
@@ -10,11 +11,16 @@ import { LINX_CLI_VERSION } from '../../generated/version.js'
 export const LINX_AGENT_DIR = join(homedir(), LINX_HOME_DIRNAME, 'agent')
 export const LINX_UPDATE_PACKAGE_NAME = '@undefineds.co/linx'
 export const LINX_CHANGELOG_URL = 'https://github.com/undefineds-co/linx-cli/releases'
+const LINX_UPDATE_IN_PROGRESS = Symbol.for('linx.tui.updateInProgress')
+const LINX_UPDATE_RUNNER = Symbol.for('linx.tui.updateRunner')
+
+type LinxUpdateRunner = (command: string, args: string[]) => Promise<{ exitCode: number | null, signal: NodeJS.Signals | null }>
 
 export function applyLinxInteractiveBranding(interactive: any): void {
   patchTerminalTitle(interactive)
   patchVersionCheck(interactive)
   patchUpdateNotification(interactive)
+  patchUpdateCommand(interactive)
   patchHeader(interactive)
 }
 
@@ -45,7 +51,7 @@ function patchVersionCheck(interactive: any): void {
 
       const body = await response.json() as { version?: string }
       const latest = typeof body.version === 'string' ? body.version.trim() : ''
-      if (!latest || latest === this.version) {
+      if (!latest || !isNewerVersion(latest, LINX_CLI_VERSION)) {
         return undefined
       }
       return latest
@@ -59,12 +65,124 @@ function patchUpdateNotification(interactive: any): void {
   interactive.showNewVersionNotification = function patchedShowNewVersionNotification(newVersion: string): void {
     const lines = [
       '\x1b[1m\x1b[33mLinX Update Available\x1b[39m\x1b[22m',
-      `\x1b[2mNew version ${newVersion} is available. \x1b[22m\x1b[36mRun: npm install -g @undefineds.co/linx\x1b[39m`,
+      `\x1b[2mNew version ${newVersion} is available. \x1b[22m\x1b[36mType /update to install now.\x1b[39m`,
+      `\x1b[2mManual install: \x1b[22m\x1b[36mnpm install -g ${LINX_UPDATE_PACKAGE_NAME}@latest\x1b[39m`,
       `\x1b[2mChangelog: \x1b[22m\x1b[36m${LINX_CHANGELOG_URL}\x1b[39m`,
     ]
     this.chatContainer?.addChild?.(new Text(lines.join('\n'), 1, 0))
     this.ui?.requestRender?.()
   }
+}
+
+function isNewerVersion(candidate: string, current: string): boolean {
+  const candidateParts = parseSemverCore(candidate)
+  const currentParts = parseSemverCore(current)
+  if (!candidateParts || !currentParts) {
+    return candidate !== current
+  }
+
+  for (let index = 0; index < 3; index += 1) {
+    if (candidateParts[index] > currentParts[index]) {
+      return true
+    }
+    if (candidateParts[index] < currentParts[index]) {
+      return false
+    }
+  }
+
+  return false
+}
+
+function parseSemverCore(version: string): [number, number, number] | null {
+  const match = version.trim().match(/^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/)
+  if (!match) {
+    return null
+  }
+  return [Number(match[1]), Number(match[2]), Number(match[3])]
+}
+
+function patchUpdateCommand(interactive: any): void {
+  const originalSetup = interactive.setupEditorSubmitHandler?.bind(interactive)
+  if (typeof originalSetup !== 'function') {
+    return
+  }
+
+  interactive.setupEditorSubmitHandler = function patchedSetupEditorSubmitHandler(): void {
+    originalSetup()
+
+    const originalSubmit = this.defaultEditor?.onSubmit?.bind(this.defaultEditor)
+    if (typeof originalSubmit !== 'function') {
+      return
+    }
+
+    this.defaultEditor.onSubmit = async (text: string): Promise<void> => {
+      const command = text.trim()
+      if (command === '/update' || command === '/update linx') {
+        this.editor?.setText?.('')
+        await runLinxUpdateFromTui(this)
+        return
+      }
+      await originalSubmit(text)
+    }
+  }
+}
+
+async function runLinxUpdateFromTui(interactive: any): Promise<void> {
+  if (interactive[LINX_UPDATE_IN_PROGRESS]) {
+    interactive.showStatus?.('LinX update is already running')
+    return
+  }
+
+  interactive[LINX_UPDATE_IN_PROGRESS] = true
+  const packageSpec = `${LINX_UPDATE_PACKAGE_NAME}@latest`
+  const npmCommand = process.env.npm_execpath && !process.env.npm_execpath.endsWith('npx-cli.js')
+    ? process.execPath
+    : 'npm'
+  const args = npmCommand === process.execPath
+    ? [process.env.npm_execpath as string, 'install', '-g', packageSpec]
+    : ['install', '-g', packageSpec]
+
+  try {
+    interactive.showStatus?.(`Installing LinX update: ${packageSpec}`)
+    interactive.ui?.requestRender?.()
+
+    interactive.ui?.stop?.()
+    const runner = resolveUpdateRunner(interactive)
+    const result = await runner(npmCommand, args)
+    interactive.ui?.start?.()
+
+    if (result.exitCode === 0) {
+      interactive.showStatus?.('LinX updated. Restart linx to use the new version.')
+      return
+    }
+
+    const detail = result.signal ? `signal ${result.signal}` : `exit code ${result.exitCode}`
+    interactive.showError?.(`LinX update failed with ${detail}`)
+  } catch (error) {
+    interactive.ui?.start?.()
+    const message = error instanceof Error ? error.message : String(error)
+    interactive.showError?.(`LinX update failed: ${message}`)
+  } finally {
+    interactive[LINX_UPDATE_IN_PROGRESS] = false
+    interactive.ui?.requestRender?.()
+  }
+}
+
+function resolveUpdateRunner(interactive: any): LinxUpdateRunner {
+  return typeof interactive[LINX_UPDATE_RUNNER] === 'function'
+    ? interactive[LINX_UPDATE_RUNNER]
+    : spawnInstall
+}
+
+function spawnInstall(command: string, args: string[]): Promise<{ exitCode: number | null, signal: NodeJS.Signals | null }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      stdio: 'inherit',
+      shell: process.platform === 'win32',
+    })
+    child.once('error', reject)
+    child.once('close', (exitCode, signal) => resolve({ exitCode, signal }))
+  })
 }
 
 function patchHeader(interactive: any): void {

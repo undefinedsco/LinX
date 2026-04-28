@@ -87,6 +87,68 @@ test('linx interactive branding stores agent state under .linx and patches updat
 
   assert.equal(brandingModule.LINX_AGENT_DIR.endsWith('/.linx/agent'), true)
 
+  const notificationChildren = []
+  const notificationInteractive = {
+    async init() {},
+    chatContainer: {
+      addChild(child) {
+        notificationChildren.push(child)
+      },
+    },
+    ui: {
+      requestRender() {},
+    },
+  }
+  brandingModule.applyLinxInteractiveBranding(notificationInteractive)
+  notificationInteractive.showNewVersionNotification('9.9.9')
+  const notificationText = notificationChildren.map((child) => child.text ?? '').join('\n')
+  assert.match(notificationText, /Type \/update to install now/)
+  assert.match(notificationText, /npm install -g @undefineds\.co\/linx@latest/)
+
+  const submitted = []
+  const statuses = []
+  const editorTexts = []
+  const updateRuns = []
+  const updateRunner = Symbol.for('linx.tui.updateRunner')
+  const updateInteractive = {
+    [updateRunner]: async (command, args) => {
+      updateRuns.push({ command, args })
+      return { exitCode: 0, signal: null }
+    },
+    defaultEditor: {},
+    async init() {},
+    editor: {
+      setText(value) {
+        editorTexts.push(value)
+      },
+    },
+    ui: {
+      requestRender() {},
+      stop() {},
+      start() {},
+    },
+    setupEditorSubmitHandler() {
+      this.defaultEditor.onSubmit = async (text) => {
+        submitted.push(text)
+      }
+    },
+    showStatus(message) {
+      statuses.push(message)
+    },
+    showError(message) {
+      throw new Error(message)
+    },
+  }
+  brandingModule.applyLinxInteractiveBranding(updateInteractive)
+  updateInteractive.setupEditorSubmitHandler()
+  await updateInteractive.defaultEditor.onSubmit('/update')
+  await updateInteractive.defaultEditor.onSubmit('hello')
+  assert.deepEqual(editorTexts, [''])
+  assert.deepEqual(submitted, ['hello'])
+  assert.equal(updateRuns.length, 1)
+  assert.equal(updateRuns[0].args.at(-1), '@undefineds.co/linx@latest')
+  assert.equal(statuses.some((message) => message.includes('LinX updated')), true)
+
   const runtime = {
     sessionManager: {
       getCwd() {

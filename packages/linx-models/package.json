@@ -35,7 +35,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@undefineds.co/models": "0.2.2"
+    "@undefineds.co/models": "0.2.3"
   },
   "devDependencies": {
     "typescript": "^5.4.0"
