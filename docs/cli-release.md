@@ -1,11 +1,11 @@
-# LinX CLI Release
+# LinX Release
 
-LinX CLI release publishes two npm packages under the Undefineds scope:
+LinX uses one product version line across CLI, app shells, and shared model contracts. A tag such as `v0.2.3` represents the LinX product version. Today the npm release path publishes two packages under the Undefineds scope:
 
 - `@undefineds.co/models`
 - `@undefineds.co/linx`
 
-The CLI package depends on `@undefineds.co/models` at the same exact version. Do not publish the raw workspace package directly unless the package metadata has been converted to its publish form; the workspace package uses development exports and wildcard workspace dependencies.
+The CLI package depends on `@undefineds.co/models` at the same exact version. App shells should join the same `v*` version line when their release artifacts are ready. Do not publish the raw workspace package directly unless the package metadata has been converted to its publish form; the workspace package uses development exports and wildcard workspace dependencies.
 
 ## Current Release Path
 
@@ -171,7 +171,7 @@ linx --help
 linx --version
 ```
 
-Release publishing is handled by:
+CLI npm publishing is handled by:
 
 ```text
 .github/workflows/cli-release.yml
@@ -183,7 +183,9 @@ It verifies the same release tarballs on Linux and macOS. Only the Linux artifac
 @undefineds.co/models -> @undefineds.co/linx
 ```
 
-Automatic publish happens on tags matching `linx-v*`. Manual `workflow_dispatch` can verify without publish, or publish when `publish=true`.
+Automatic CLI npm publish happens on product release tags matching `v*`. Manual `workflow_dispatch` can verify without publish, or publish when `publish=true`.
+
+The legacy Web/Desktop GitHub release workflow is currently manual-only. Keep it off automatic `v*` tags until the app artifacts are ready to ship on the same product version line. When app release is ready, attach those jobs to the same `v*` tag flow instead of introducing a separate app version stream.
 
 npm publishing uses the GitHub Actions secret `NPM_TOKEN`. The token must have publish access to the `@undefineds.co` scope and must be allowed to bypass publish-time 2FA. `@undefineds.co/linx` does not need to pre-exist; the first successful `npm publish --access public` creates the package.
 
