@@ -111,8 +111,10 @@ export interface WatchRemoteApprovalStore {
 export interface WatchRemoteApprovalRuntime {
   loadCredentials: () => StoredCredentials | null
   getClientCredentials: (stored: StoredCredentials) => ClientCredentialsSecrets | null
+  getOidcAccessToken?: (stored: StoredCredentials) => Promise<string | null>
   authenticate: (clientId: string, clientSecret: string, oidcIssuer: string) => Promise<{ session: Session }>
-  createStore: (session: Session) => WatchRemoteApprovalStore
+  authenticatedFetch?: (url: string, token: string, init?: RequestInit) => Promise<Response>
+  createStore: (sessionOrWebId: Session | string, fetcher?: PodFetch) => WatchRemoteApprovalStore
   sleep: (ms: number) => Promise<void>
   now: () => Date
 }
@@ -474,25 +476,40 @@ function missingRemoteApprovalCredentialsMessage(): string {
 }
 
 function unsupportedRemoteApprovalAuthMessage(): string {
-  return 'LinX remote approval requires client credentials auth in `~/.linx`.'
+  return 'LinX remote approval requires a valid LinX login in `~/.linx`.'
 }
 
 async function createDefaultRuntime(): Promise<WatchRemoteApprovalRuntime> {
-  const [credentialsStore, solidAuth] = await Promise.all([
+  const [credentialsStore, solidAuth, oidcAuth] = await Promise.all([
     dynamicImport(new URL('../credentials-store.js', import.meta.url).href),
     dynamicImport(new URL('../solid-auth.js', import.meta.url).href),
+    dynamicImport(new URL('../oidc-auth.js', import.meta.url).href),
   ])
 
   return {
     loadCredentials: credentialsStore.loadCredentials,
     getClientCredentials: credentialsStore.getClientCredentials,
+    getOidcAccessToken: oidcAuth.getOidcAccessToken,
     authenticate: solidAuth.authenticate,
-    createStore(session) {
-      const webId = session.info.webId
+    authenticatedFetch(url, token, init) {
+      const headers = new Headers(init?.headers)
+      headers.set('Authorization', `Bearer ${token}`)
+      return fetch(url, { ...init, headers })
+    },
+    createStore(sessionOrWebId, fetcher) {
+      const webId = typeof sessionOrWebId === 'string' ? sessionOrWebId : sessionOrWebId.info.webId
       if (!webId) {
         throw new Error('Remote approval authentication succeeded without a WebID.')
       }
-      return createNativeRemoteApprovalStore(webId, (url, init) => session.fetch(url, init))
+      const activeFetcher = fetcher ?? (
+        typeof sessionOrWebId === 'string'
+          ? undefined
+          : ((url, init) => sessionOrWebId.fetch(url, init))
+      )
+      if (!activeFetcher) {
+        throw new Error('Remote approval authentication succeeded without a Pod fetcher.')
+      }
+      return createNativeRemoteApprovalStore(webId, activeFetcher)
     },
     sleep(ms: number) {
       return delay(ms)
@@ -517,26 +534,36 @@ async function withRemoteApprovalStore<T>(
   }
 
   const clientCredentials = runtime.getClientCredentials(stored)
-  if (!clientCredentials) {
-    throw new Error(unsupportedRemoteApprovalAuthMessage())
+  if (clientCredentials) {
+    const { session } = await runtime.authenticate(getClientCredentialId(clientCredentials), getClientCredentialKey(clientCredentials), stored.url)
+    const webId = session.info.webId ?? stored.webId
+    if (!webId) {
+      await session.logout().catch(() => undefined)
+      throw new Error('Remote approval authentication succeeded without a WebID.')
+    }
+
+    try {
+      return await fn({
+        store: runtime.createStore(session),
+        webId,
+        stored,
+      })
+    } finally {
+      await session.logout().catch(() => undefined)
+    }
   }
 
-  const { session } = await runtime.authenticate(getClientCredentialId(clientCredentials), getClientCredentialKey(clientCredentials), stored.url)
-  const webId = session.info.webId ?? stored.webId
-  if (!webId) {
-    await session.logout().catch(() => undefined)
-    throw new Error('Remote approval authentication succeeded without a WebID.')
-  }
-
-  try {
+  const accessToken = await runtime.getOidcAccessToken?.(stored)
+  if (accessToken && stored.webId && runtime.authenticatedFetch) {
+    const fetcher: PodFetch = (url, init) => runtime.authenticatedFetch!(url, accessToken, init)
     return await fn({
-      store: runtime.createStore(session),
-      webId,
+      store: runtime.createStore(stored.webId, fetcher),
+      webId: stored.webId,
       stored,
     })
-  } finally {
-    await session.logout().catch(() => undefined)
   }
+
+  throw new Error(unsupportedRemoteApprovalAuthMessage())
 }
 
 function createNativeRemoteApprovalStore(webId: string, fetcher: PodFetch): WatchRemoteApprovalStore {

@@ -96,6 +96,30 @@ function createRuntime(module) {
   }
 }
 
+function createOidcRuntime(module) {
+  const state = createRuntime(module)
+
+  state.runtime.loadCredentials = () => ({
+    url: 'https://id.undefineds.co',
+    webId: state.webId,
+    authType: 'oidc_oauth',
+    sourceDir: '/tmp/.linx',
+    secrets: {
+      oidcAccessToken: 'oidc-access-token',
+      oidcRefreshToken: 'oidc-refresh-token',
+      oidcExpiresAt: '2026-03-18T01:00:00.000Z',
+    },
+  })
+  state.runtime.getClientCredentials = () => null
+  state.runtime.getOidcAccessToken = async () => 'oidc-access-token'
+  state.runtime.authenticatedFetch = async (url, token, init) => {
+    assert.equal(token, 'oidc-access-token')
+    return new Response(null, { status: 200 })
+  }
+
+  return state
+}
+
 test.before(async () => {
   const loaded = await loadWatchModule('lib/watch/pod-approval.ts')
   approvalModule = loaded.module
@@ -146,6 +170,46 @@ test('requestRemoteWatchApproval writes pending approval rows and waits for remo
   assert.equal(state.audits.length, 1)
   assert.equal(state.audits[0].action, 'approval_requested')
   assert.equal(state.grants.length, 0)
+  assert.equal(state.inbox.length, 1)
+})
+
+test('requestRemoteWatchApproval accepts OIDC-only credentials', async () => {
+  const state = createOidcRuntime(approvalModule)
+  let sleepCalls = 0
+
+  state.runtime.sleep = async () => {
+    sleepCalls += 1
+    if (sleepCalls === 1) {
+      state.approvals[0].status = 'approved'
+      state.approvals[0].decisionBy = state.webId
+      state.approvals[0].reason = state.encodeDecisionReason('accept', 'approve once')
+      state.approvals[0].resolvedAt = '2026-03-18T00:00:05.000Z'
+    }
+  }
+
+  const decision = await approvalModule.requestRemoteWatchApproval({
+    record: createRecord(),
+    request: {
+      kind: 'command-approval',
+      message: 'pwd',
+      command: 'pwd',
+      cwd: '/tmp/demo',
+      raw: {
+        params: {
+          toolCall: {
+            toolCallId: 'tool_oidc_1',
+          },
+        },
+      },
+    },
+    runtime: state.runtime,
+    pollMs: 1,
+  })
+
+  assert.equal(decision, 'accept')
+  assert.equal(state.approvals.length, 1)
+  assert.equal(state.approvals[0].toolCallId, 'tool_oidc_1')
+  assert.equal(state.audits.length, 1)
   assert.equal(state.inbox.length, 1)
 })
 
