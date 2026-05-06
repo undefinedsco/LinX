@@ -116,10 +116,17 @@ function extractThreadId(targetUri: string | null | undefined): string | null {
   return hash || null
 }
 
-function buildRuntimeToolResponse(decision: 'approved' | 'rejected', reason?: string): string {
+export function buildRuntimeToolResponse(
+  decision: 'approved' | 'rejected',
+  reason?: string,
+  grantPattern?: string,
+): string {
+  const normalizedGrantPattern = grantPattern?.trim()
   return JSON.stringify({
     decision,
     reason: reason?.trim() || null,
+    command: decision === 'approved' && normalizedGrantPattern ? 'approve_pattern' : undefined,
+    pattern: decision === 'approved' && normalizedGrantPattern ? normalizedGrantPattern : undefined,
     source: 'linx-inbox',
   })
 }
@@ -280,6 +287,7 @@ export const inboxOps = {
     decision: 'approved' | 'rejected'
     actorWebId: string
     reason?: string
+    grantPattern?: string
   }) {
     const db = getDb()
     if (!db) {
@@ -290,6 +298,7 @@ export const inboxOps = {
     const resolvedAt = now.toISOString()
     const auditId = crypto.randomUUID()
     const auditUri = makeAuditUri(input.actorWebId, auditId)
+    const grantPattern = input.decision === 'approved' ? input.grantPattern?.trim() : undefined
 
     await updateExactRecord(db, approvalTable as any, input.approval as any, {
       status: input.decision,
@@ -313,6 +322,8 @@ export const inboxOps = {
         risk: input.approval.risk,
         status: input.decision,
         reason: input.reason?.trim() || null,
+        grantPattern: grantPattern || null,
+        command: grantPattern ? 'approve_pattern' : null,
         resolvedAt,
       }),
       policyVersion: input.approval.policyVersion || 'phase4-inbox-v1',
@@ -375,6 +386,7 @@ export function useResolveInboxApproval() {
       approval: ApprovalRow
       decision: 'approved' | 'rejected'
       reason?: string
+      grantPattern?: string
     }) => {
       const actorWebId = session.info.webId
       if (!actorWebId) {
@@ -386,6 +398,7 @@ export function useResolveInboxApproval() {
         decision: input.decision,
         actorWebId,
         reason: input.reason,
+        grantPattern: input.grantPattern,
       })
 
       const runtimeSessionId = extractRuntimeSessionId(input.approval.session)
@@ -399,7 +412,7 @@ export function useResolveInboxApproval() {
             authFetch: session.fetch,
             threadId,
             toolCallId: input.approval.toolCallId,
-            output: buildRuntimeToolResponse(input.decision, input.reason),
+            output: buildRuntimeToolResponse(input.decision, input.reason, input.grantPattern),
           })
 
           await queryClient.invalidateQueries({ queryKey: ['threads', threadId, 'messages'] })

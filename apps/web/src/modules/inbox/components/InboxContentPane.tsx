@@ -5,6 +5,7 @@ import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Textarea } from '@/components/ui/textarea'
 import { useChatStore } from '@/modules/chat/store'
@@ -31,6 +32,7 @@ function prettyContext(value: string | null | undefined) {
 
 export function InboxContentPane(_props: MicroAppPaneProps) {
   const [reason, setReason] = useState('')
+  const [grantPattern, setGrantPattern] = useState('')
   const navigate = useNavigate()
   const selectChat = useChatStore((state) => state.selectChat)
   const selectThread = useChatStore((state) => state.selectThread)
@@ -67,8 +69,10 @@ export function InboxContentPane(_props: MicroAppPaneProps) {
       approval: selectedItem.approval,
       decision,
       reason,
+      grantPattern: decision === 'approved' ? grantPattern : undefined,
     })
     setReason('')
+    setGrantPattern('')
   }
 
   const handleOpenConversation = () => {
@@ -170,11 +174,27 @@ export function InboxContentPane(_props: MicroAppPaneProps) {
                 <div>
                   <div className="text-xs uppercase tracking-wide text-muted-foreground">处理备注</div>
                   <Textarea
+                    aria-label="处理备注"
                     value={reason}
                     onChange={(event) => setReason(event.target.value)}
                     placeholder="可选：补充批准 / 拒绝原因，便于后续审计。"
                     className="mt-2 min-h-[96px]"
                   />
+                </div>
+                <div>
+                  <label htmlFor="inbox-grant-pattern" className="text-xs uppercase tracking-wide text-muted-foreground">
+                    自动允许同类请求
+                  </label>
+                  <Input
+                    id="inbox-grant-pattern"
+                    value={grantPattern}
+                    onChange={(event) => setGrantPattern(event.target.value)}
+                    placeholder="可选：例如 shell:git status 或 tool:read_file"
+                    className="mt-2"
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    批准时可同时授权同类请求；拒绝时会忽略此项。
+                  </p>
                 </div>
                 <div className="flex items-center gap-2">
                   <Button onClick={() => void handleResolve('approved')} disabled={isMutating}>
