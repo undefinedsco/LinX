@@ -83,6 +83,7 @@ function npmPack(cwd, cacheRoot) {
     cwd,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'inherit'],
+    shell: process.platform === 'win32',
     env: {
       ...process.env,
       npm_config_cache: join(cacheRoot, '.npm-cache'),
