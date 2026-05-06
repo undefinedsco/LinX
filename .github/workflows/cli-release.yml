@@ -34,7 +34,7 @@ jobs:
           cache: yarn
 
       - name: Install
-        run: yarn install --frozen-lockfile
+        run: yarn install --frozen-lockfile --ignore-engines
 
       - name: Build, pack, and smoke
         run: |
