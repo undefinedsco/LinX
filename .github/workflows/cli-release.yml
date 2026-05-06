@@ -82,8 +82,8 @@ jobs:
           cli_tgz="$(find preview -type f -name 'undefineds-co-linx-*.tgz' -print -quit)"
           test -n "$models_tgz"
           test -n "$cli_tgz"
-          echo "models=$models_tgz" >> "$GITHUB_OUTPUT"
-          echo "cli=$cli_tgz" >> "$GITHUB_OUTPUT"
+          echo "models=./$models_tgz" >> "$GITHUB_OUTPUT"
+          echo "cli=./$cli_tgz" >> "$GITHUB_OUTPUT"
 
       - name: Dry-run publish models
         run: npm publish --access public --dry-run "${{ steps.tarballs.outputs.models }}"
