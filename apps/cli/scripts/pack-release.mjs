@@ -1,6 +1,6 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { join } from 'node:path'
+import { join, relative, sep } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 
@@ -38,13 +38,20 @@ console.log(cliOut)
 function copyPackage(from, to) {
   cpSync(from, to, {
     recursive: true,
-    filter: (src) => !src.includes('/node_modules/')
-      && !src.includes('/.tmp-dev-emit/')
-      && !src.endsWith('/.tmp-dev-emit')
-      && !src.includes('/test/')
-      && !src.includes('/tests/')
-      && !src.includes('/src/'),
+    filter: (src) => shouldCopyPackagePath(from, src),
   })
+}
+
+function shouldCopyPackagePath(root, path) {
+  const relativePath = relative(root, path)
+  if (!relativePath) return true
+
+  const segments = relativePath.split(sep)
+  return !segments.includes('node_modules')
+    && !segments.includes('.tmp-dev-emit')
+    && !segments.includes('test')
+    && !segments.includes('tests')
+    && !segments.includes('src')
 }
 
 function createPublishableCliPackage(pkg, packageVersion) {
