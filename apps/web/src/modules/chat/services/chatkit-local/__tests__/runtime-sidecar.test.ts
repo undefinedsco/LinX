@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { approvalTable, auditTable, inboxNotificationTable } from '@linx/models'
+import { approvalTable, auditTable, inboxNotificationTable } from '@undefineds.co/models'
 
 const mocked = vi.hoisted(() => ({
   invalidateQueries: vi.fn().mockResolvedValue(undefined),

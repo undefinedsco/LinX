@@ -24,6 +24,7 @@ const mockMutations = {
   updateThread: { mutateAsync: vi.fn(), isPending: false },
   deleteThread: { mutateAsync: vi.fn(), isPending: false },
   createAIChat: { mutateAsync: vi.fn(), isPending: false },
+  ensureLinxWelcome: { mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false },
   createGroupChat: { mutateAsync: vi.fn(), isPending: false },
 }
 
@@ -32,6 +33,7 @@ vi.mock('../collections', () => ({
   useThreadIndex: (..._args: unknown[]) => mockUseThreadIndex(),
   useChatMutations: () => mockMutations,
   useChatInit: () => ({ db: null, isReady: true }),
+  isLinxDefaultSecretaryChat: (chat: { title?: string } | null | undefined) => chat?.title === 'AI Secretary',
 }))
 
 vi.mock('@/modules/inbox/collections', () => ({
@@ -59,8 +61,8 @@ vi.mock('../runtime-client', async (importOriginal) => {
 })
 
 // Mock models
-vi.mock('@linx/models', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@linx/models')>()
+vi.mock('@undefineds.co/models', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@undefineds.co/models')>()
   return {
     ...actual,
     resolveRowId: (item: unknown) => (item as Record<string, unknown>)?.id ?? 'mock-id',
@@ -102,6 +104,7 @@ const createDefaultStoreState = (overrides = {}) => ({
   selectedChatId: null,
   selectedThreadId: null,
   selectChat: vi.fn(),
+  selectThread: vi.fn(),
   openAddDialog: vi.fn(),
   isAddDialogOpen: false,
   addDialogMode: 'ai',
@@ -138,6 +141,9 @@ describe('ChatListPane', () => {
     mockFetchRuntimeSessionLog.mockResolvedValue('runtime log')
     mockIsRuntimeSessionMode.mockReturnValue(false)
     mockCreateAndStartRuntimeSession.mockResolvedValue(null)
+    mockMutations.ensureLinxWelcome.mutate.mockReset()
+    mockMutations.ensureLinxWelcome.mutateAsync.mockReset()
+    mockMutations.ensureLinxWelcome.isPending = false
   })
 
   describe('Chat List Mode', () => {
@@ -189,7 +195,83 @@ describe('ChatListPane', () => {
       expect(screen.getByText('正在加载...')).toBeInTheDocument()
     })
 
-    it('shows empty state when no chats', () => {
+    it('prepares AI Secretary when chat list is empty', async () => {
+      const mockSelectChat = vi.fn()
+      const mockSelectThread = vi.fn()
+      mockUseChatStore.mockImplementation((selector: (state: unknown) => unknown) => {
+        return selector(createDefaultStoreState({
+          selectChat: mockSelectChat,
+          selectThread: mockSelectThread,
+        }))
+      })
+      mockUseChatList.mockReturnValue({
+        data: [],
+        isLoading: false,
+        error: null,
+        fetchStatus: 'idle',
+      })
+      mockMutations.ensureLinxWelcome.mutate.mockImplementation((_input, options) => {
+        options?.onSuccess?.({ chatId: 'secretary-chat', threadId: 'secretary-thread', created: true })
+      })
+
+      render(<ChatListPane theme="light" />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(mockMutations.ensureLinxWelcome.mutate).toHaveBeenCalled()
+      })
+      expect(mockSelectChat).toHaveBeenCalledWith('secretary-chat')
+      expect(mockSelectThread).toHaveBeenCalledWith('secretary-thread')
+    })
+
+    it('prepares AI Secretary for existing accounts without it', async () => {
+      mockUseChatList.mockReturnValue({
+        data: [
+          {
+            id: 'chat-1',
+            title: 'Existing Chat',
+            lastMessagePreview: 'hello',
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+        isLoading: false,
+        error: null,
+        fetchStatus: 'idle',
+      })
+
+      render(<ChatListPane theme="light" />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(mockMutations.ensureLinxWelcome.mutate).toHaveBeenCalled()
+      })
+    })
+
+    it('does not prepare AI Secretary when it already exists', async () => {
+      mockUseChatList.mockReturnValue({
+        data: [
+          {
+            id: 'secretary-chat',
+            title: 'AI Secretary',
+            lastMessagePreview: '默认助手',
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+        isLoading: false,
+        error: null,
+        fetchStatus: 'idle',
+      })
+
+      render(<ChatListPane theme="light" />, { wrapper: createWrapper() })
+
+      await waitFor(() => {
+        expect(screen.getByText('AI Secretary')).toBeInTheDocument()
+      })
+      expect(mockMutations.ensureLinxWelcome.mutate).not.toHaveBeenCalled()
+    })
+
+    it('does not run welcome flow while searching', () => {
+      mockUseChatStore.mockImplementation((selector: (state: unknown) => unknown) => {
+        return selector(createDefaultStoreState({ search: 'alice' }))
+      })
       mockUseChatList.mockReturnValue({
         data: [],
         isLoading: false,
@@ -200,6 +282,33 @@ describe('ChatListPane', () => {
       render(<ChatListPane theme="light" />, { wrapper: createWrapper() })
 
       expect(screen.getByText('暂无聊天')).toBeInTheDocument()
+      expect(mockMutations.ensureLinxWelcome.mutate).not.toHaveBeenCalled()
+    })
+
+    it('does not show delete action for AI Secretary', async () => {
+      mockUseChatList.mockReturnValue({
+        data: [
+          {
+            id: 'secretary-chat',
+            title: 'AI Secretary',
+            lastMessagePreview: '默认助手',
+            updatedAt: new Date().toISOString(),
+            participants: ['contact-1'],
+          },
+        ],
+        isLoading: false,
+        error: null,
+        fetchStatus: 'idle',
+      })
+
+      render(<ChatListPane theme="light" />, { wrapper: createWrapper() })
+
+      fireEvent.contextMenu(screen.getByText('AI Secretary'))
+
+      await waitFor(() => {
+        expect(screen.getByText('AI Secretary')).toBeInTheDocument()
+      })
+      expect(screen.queryByText('删除')).not.toBeInTheDocument()
     })
 
     it('displays unread badge with count', () => {

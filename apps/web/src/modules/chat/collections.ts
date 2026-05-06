@@ -21,8 +21,8 @@ import {
   contactTable,
   credentialTable,
   eq,
-  getBuiltinProvider,
   extractAIConfigProviderId,
+  resolveRowId,
   UDFS,
   WF,
   type ChatRow,
@@ -48,6 +48,8 @@ import { queryClient } from '@/providers/query-provider'
 import { createPodCollection } from '@/lib/data/pod-collection'
 import { favoriteHooks } from '@/modules/favorites/collections'
 import { createAgentContactRecords, writeCollectionRow } from '@/lib/data/direct-chat-records'
+import { getAgentProviderInfo } from '@/lib/agent-providers'
+import { toStringArray } from '@/lib/utils'
 
 // ============================================================================
 // Database Getter
@@ -55,6 +57,68 @@ import { createAgentContactRecords, writeCollectionRow } from '@/lib/data/direct
 
 let dbGetter: (() => SolidDatabase | null) | null = null
 const threadChatIdCache = new Map<string, string>()
+let linxWelcomeInFlight: Promise<LinxWelcomeResult | null> | null = null
+
+export const LINX_DEFAULT_SECRETARY = {
+  title: 'AI Secretary',
+  provider: 'undefineds',
+  model: 'undefineds/linx-lite',
+  threadTitle: '默认话题',
+  welcomeMessage: '你好，我是 LinX 的 AI Secretary。以后我会帮你整理信息、跟进任务，也可以直接陪你聊天。先请你给我取个名字吧。',
+} as const
+
+export interface LinxWelcomeResult {
+  chatId: string
+  threadId?: string
+  created: boolean
+}
+
+type SecretaryMetadata = {
+  linx?: {
+    role?: string
+    version?: number
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function getSecretaryMetadata(metadata: unknown): SecretaryMetadata | null {
+  if (!isRecord(metadata)) {
+    return null
+  }
+
+  const linx = metadata.linx
+  if (!isRecord(linx)) {
+    return null
+  }
+
+  return {
+    linx: {
+      role: typeof linx.role === 'string' ? linx.role : undefined,
+      version: typeof linx.version === 'number' ? linx.version : undefined,
+    },
+  }
+}
+
+function createSecretaryMetadata(existing?: unknown): Record<string, unknown> {
+  const metadata = isRecord(existing) ? { ...existing } : {}
+  const current = getSecretaryMetadata(metadata)
+
+  metadata.linx = {
+    ...(current?.linx ?? {}),
+    role: 'secretary',
+    version: 1,
+  }
+
+  return metadata
+}
+
+export function isLinxDefaultSecretaryChat(chat: Pick<ChatRow, 'title' | 'metadata'> | null | undefined): boolean {
+  return chat?.title === LINX_DEFAULT_SECRETARY.title
+    || getSecretaryMetadata(chat?.metadata)?.linx?.role === 'secretary'
+}
 
 export function setDatabaseGetter(getter: () => SolidDatabase | null) {
   dbGetter = getter
@@ -86,8 +150,8 @@ function getCurrentWebId(db: SolidDatabase): string | null {
   return typeof webId === 'string' && webId.length > 0 ? webId : null
 }
 
-function normalizeParticipants(participants: string[], selfWebId?: string | null): string[] {
-  return Array.from(new Set(participants)).sort((left, right) => {
+function normalizeParticipants(participants: unknown, selfWebId?: string | null): string[] {
+  return Array.from(new Set(toStringArray(participants))).sort((left, right) => {
     if (selfWebId) {
       if (left === selfWebId && right !== selfWebId) return -1
       if (right === selfWebId && left !== selfWebId) return 1
@@ -97,10 +161,11 @@ function normalizeParticipants(participants: string[], selfWebId?: string | null
 }
 
 function hasHydratedChatMetadata(metadata: unknown): boolean {
-  return typeof metadata === 'object'
-    && metadata !== null
-    && !Array.isArray(metadata)
-    && 'memberRoles' in metadata
+  return isRecord(metadata)
+    && (
+      'memberRoles' in metadata
+      || getSecretaryMetadata(metadata)?.linx?.role === 'secretary'
+    )
 }
 
 function buildChatSubjectIri(db: SolidDatabase, chatId: string | undefined): string | null {
@@ -219,6 +284,7 @@ async function hydrateChatRows(db: SolidDatabase, rows: ChatRow[]): Promise<Chat
         if (memberRolesLiteral?.value) {
           try {
             nextRow.metadata = {
+              ...(isRecord(row.metadata) ? row.metadata : {}),
               memberRoles: JSON.parse(memberRolesLiteral.value) as Record<string, 'owner' | 'admin' | 'member'>,
             }
           } catch (error) {
@@ -293,6 +359,148 @@ async function ensureThreadStateRow(db: SolidDatabase, threadId: string): Promis
   threadChatIdCache.set(threadId, row.chatId)
   ;(threadCollection.utils as { writeUpsert?: (data: ThreadRow) => void }).writeUpsert?.(row)
   return row
+}
+
+async function findChatRow(db: SolidDatabase, chatId: string | undefined): Promise<ChatRow | null> {
+  if (!chatId) return null
+
+  const cached = chatCollection.get(chatId)
+  if (cached) return cached
+
+  try {
+    return await ensureChatStateRow(db, chatId)
+  } catch {
+    return null
+  }
+}
+
+async function isProtectedLinxSecretaryChat(db: SolidDatabase, chatId: string): Promise<boolean> {
+  const chat = await findChatRow(db, chatId)
+  return isLinxDefaultSecretaryChat(chat)
+}
+
+async function ensureDefaultThread(chatId: string): Promise<ThreadRow> {
+  const db = getDb()
+  if (!db) {
+    throw new Error('Solid database is not ready')
+  }
+
+  const threads = await chatOps.fetchThreads(chatId)
+  const existing = threads.find((thread) => thread.title === LINX_DEFAULT_SECRETARY.threadTitle) ?? threads[0]
+  if (existing) {
+    const threadId = resolveRowId(existing) ?? existing.id
+    if (threadId) {
+      threadChatIdCache.set(threadId, chatId)
+      writeCollectionRow(threadCollection, existing, threadId)
+    }
+    return existing
+  }
+
+  return chatOps.createThread(chatId, LINX_DEFAULT_SECRETARY.threadTitle)
+}
+
+async function ensureLinxWelcomeInternal(): Promise<LinxWelcomeResult | null> {
+  const db = getDb()
+  if (!db) {
+    throw new Error('Solid database is not ready')
+  }
+
+  let chats: ChatRow[]
+  try {
+    chats = await chatOps.fetchChats()
+  } catch (error) {
+    console.warn('[chatOps] Failed to list chats before LinX welcome, creating default assistant:', error)
+    chats = chatOps.getAll()
+  }
+  const existingSecretary = chats.find((chat) => isLinxDefaultSecretaryChat(chat))
+  if (existingSecretary) {
+    const chatId = resolveRowId(existingSecretary) ?? existingSecretary.id
+    if (!chatId) return null
+
+    if (!getSecretaryMetadata(existingSecretary.metadata)?.linx?.role) {
+      await chatOps.updateChat(chatId, {
+        metadata: createSecretaryMetadata(existingSecretary.metadata),
+      })
+    }
+
+    const thread = await ensureDefaultThread(chatId)
+    const threadId = resolveRowId(thread) ?? thread.id
+    const maker = await resolveAssistantMakerFromChat(db, existingSecretary)
+    await ensureDefaultWelcomeMessage(chatId, threadId, maker ?? getCurrentWebId(db) ?? 'linx')
+    return { chatId, threadId, created: false }
+  }
+
+  const chat = await chatOps.createAIChat({
+    title: LINX_DEFAULT_SECRETARY.title,
+    provider: LINX_DEFAULT_SECRETARY.provider,
+    model: LINX_DEFAULT_SECRETARY.model,
+  })
+  const chatId = resolveRowId(chat) ?? chat.id
+  const thread = await ensureDefaultThread(chatId)
+  const threadId = resolveRowId(thread) ?? thread.id
+  await ensureDefaultWelcomeMessage(
+    chatId,
+    threadId,
+    await resolveAgentMaker(db, chat.agentId),
+  )
+
+  return { chatId, threadId, created: true }
+}
+
+async function resolveAssistantMakerFromChat(db: SolidDatabase, chat: Pick<ChatRow, 'participants'>): Promise<string | null> {
+  const [participant] = toStringArray(chat.participants)
+  if (!participant) return null
+
+  try {
+    const contactId = extractLinkedEntityId(participant)
+    const contact = contactId
+      ? await (db as any).findByLocator(contactTable as any, { id: contactId } as any) as ContactRow | null
+      : null
+    if (contact?.entityUri) {
+      return contact.entityUri
+    }
+  } catch (error) {
+    console.warn('[chatOps] Failed to resolve AI Secretary contact:', error)
+  }
+
+  return participant
+}
+
+async function resolveAgentMaker(db: SolidDatabase, agentId: string): Promise<string> {
+  try {
+    const agent = await (db as any).findByLocator(agentTable as any, { id: agentId } as any)
+    const agentUri = resolveRowId(agent)
+    if (agentUri) return agentUri
+  } catch (error) {
+    console.warn('[chatOps] Failed to resolve default AI Secretary agent URI:', error)
+  }
+
+  const podBaseUrl = getPodBaseUrl(db)
+  return podBaseUrl ? `${podBaseUrl}/.data/agents/${agentId}.ttl` : agentId
+}
+
+async function ensureDefaultWelcomeMessage(
+  chatId: string,
+  threadId: string | undefined,
+  maker: string,
+): Promise<MessageRow | null> {
+  if (!threadId) return null
+
+  const existingMessages = await chatOps.fetchMessages(threadId, chatId).catch(() => [])
+  const existing = existingMessages.find((message) =>
+    message.role === 'assistant' && message.content === LINX_DEFAULT_SECRETARY.welcomeMessage
+  )
+  if (existing) {
+    writeCollectionRow(messageCollection, existing, existing.id)
+    return existing
+  }
+
+  return chatOps.createAssistantMessage(
+    chatId,
+    threadId,
+    LINX_DEFAULT_SECRETARY.welcomeMessage,
+    maker,
+  )
 }
 
 // ============================================================================
@@ -529,7 +737,7 @@ export const chatOps = {
       throw new Error('Solid database is not ready')
     }
 
-    const providerInfo = getBuiltinProvider(provider)
+    const providerInfo = getAgentProviderInfo(provider)
     const {
       agent,
       contact,
@@ -538,8 +746,8 @@ export const chatOps = {
       contactUri,
     } = await createAgentContactRecords(db, {
       name: title,
-      provider,
-      model,
+      provider: aiConfigProviderUri(provider),
+      model: aiConfigModelUri(model),
       instructions: systemPrompt,
     })
 
@@ -553,6 +761,9 @@ export const chatOps = {
       id: chatId,
       title,
       avatarUrl: providerInfo?.logoUrl,
+      metadata: title === LINX_DEFAULT_SECRETARY.title
+        ? createSecretaryMetadata()
+        : undefined,
       participants: [contactUri],
       createdAt: now,
       updatedAt: now,
@@ -564,6 +775,23 @@ export const chatOps = {
     queryClient.invalidateQueries({ queryKey: QUERY_KEYS.chats })
 
     return { ...chatData, id: chatId, agentId, contactId } as ChatRow & { agentId: string; contactId: string }
+  },
+
+  /**
+   * LinX product welcome flow.
+   *
+   * xpod remains generic storage/runtime infrastructure; LinX owns the
+   * product-specific default assistant and records completion in LinX settings.
+   */
+  async ensureLinxWelcome(): Promise<LinxWelcomeResult | null> {
+    if (!linxWelcomeInFlight) {
+      linxWelcomeInFlight = ensureLinxWelcomeInternal()
+        .finally(() => {
+          linxWelcomeInFlight = null
+        })
+    }
+
+    return linxWelcomeInFlight
   },
 
   /**
@@ -611,6 +839,15 @@ export const chatOps = {
    * Delete a chat (and its threads/messages)
    */
   async deleteChat(id: string): Promise<void> {
+    const db = getDb()
+    if (!db) {
+      throw new Error('Solid database is not ready')
+    }
+
+    if (await isProtectedLinxSecretaryChat(db, id)) {
+      throw new Error('AI Secretary 是默认助手，不能删除。')
+    }
+
     // Delete all threads first
     const threads = this.getThreads(id)
     for (const thread of threads) {
@@ -964,7 +1201,7 @@ export const chatOps = {
    * Also updates the related Chat's avatarUrl for list display
    */
   async updateAgentModel(agentId: string, provider: string, model: string, chatId?: string, contactId?: string): Promise<void> {
-    const providerInfo = getBuiltinProvider(provider)
+    const providerInfo = getAgentProviderInfo(provider)
     const providerUri = aiConfigProviderUri(provider)
     const modelUri = aiConfigModelUri(model)
     const tx = agentCollection.update(agentId, (draft: any) => {
@@ -1006,7 +1243,7 @@ export const chatOps = {
    * Future: Can be upgraded to remote discovery service.
    */
   getProviderBaseUrl(providerSlug: string): string {
-    const provider = getBuiltinProvider(providerSlug)
+    const provider = getAgentProviderInfo(providerSlug)
     return provider?.baseUrl || 'https://api.openai.com/v1'
   },
 
@@ -1089,10 +1326,16 @@ export const chatOps = {
       return chatCollection.fetch()
     }
 
-    const rows = await db.select()
-      .from(chatTable)
-      .orderBy('lastActiveAt', 'desc')
-      .execute() as ChatRow[]
+    let rows: ChatRow[]
+    try {
+      rows = await db.select()
+        .from(chatTable)
+        .orderBy('lastActiveAt', 'desc')
+        .execute() as ChatRow[]
+    } catch (error) {
+      console.warn('[chatOps] fetchChats failed, falling back to collection state:', error)
+      return chatOps.getAll()
+    }
     if (rows.length === 0) {
       return rows
     }
@@ -1108,11 +1351,17 @@ export const chatOps = {
     if (!db) return []
     
     const chatIdCol = (threadTable as any).chatId
-    const rows = await db.select()
-      .from(threadTable)
-      .where(eq(chatIdCol, chatId))
-      .orderBy('updatedAt', 'desc')
-      .execute()
+    let rows: ThreadRow[]
+    try {
+      rows = await db.select()
+        .from(threadTable)
+        .where(eq(chatIdCol, chatId))
+        .orderBy('updatedAt', 'desc')
+        .execute() as ThreadRow[]
+    } catch (error) {
+      console.warn('[chatOps] fetchThreads failed, falling back to collection state:', error)
+      return chatOps.getThreads(chatId)
+    }
 
     rows.forEach((row) => {
       if (row.id && row.chatId) {
@@ -1128,40 +1377,45 @@ export const chatOps = {
    */
   async fetchMessages(threadId: string, chatId?: string | null): Promise<MessageRow[]> {
     const db = getDb()
-    if (!db) return []
+    if (!db) return chatOps.getMessages(threadId)
     const resolvedChatId = await resolveThreadChatId(db, threadId, chatId)
     if (!resolvedChatId) {
       console.warn('[chatOps] Failed to resolve thread IRI for message query:', threadId)
-      return []
+      return chatOps.getMessages(threadId)
     }
     const threadRef = await buildThreadSubjectIri(db, threadId, resolvedChatId)
     if (!threadRef) {
       console.warn('[chatOps] Failed to resolve thread IRI for message query:', threadId)
-      return []
+      return chatOps.getMessages(threadId)
     }
 
-    const threadCol = (messageTable as any).thread
-    const rows = await db.select()
-      .from(messageTable)
-      .where(eq(threadCol, threadRef))
-      .orderBy('createdAt', 'asc')
-      .execute()
+    try {
+      const threadCol = (messageTable as any).thread
+      const rows = await db.select()
+        .from(messageTable)
+        .where(eq(threadCol, threadRef))
+        .orderBy('createdAt', 'asc')
+        .execute()
 
-    if (rows.length > 0) {
-      return rows
+      if (rows.length > 0) {
+        return rows
+      }
+
+      const allRows = await db.select()
+        .from(messageTable)
+        .orderBy('createdAt', 'asc')
+        .execute()
+
+      return allRows.filter((row) => {
+        const rowThread = row.thread
+        return rowThread === threadRef
+          || rowThread === threadId
+          || (typeof rowThread === 'string' && rowThread.endsWith(`#${threadId}`))
+      })
+    } catch (error) {
+      console.warn('[chatOps] fetchMessages failed, falling back to collection state:', error)
+      return chatOps.getMessages(threadId)
     }
-
-    const allRows = await db.select()
-      .from(messageTable)
-      .orderBy('createdAt', 'asc')
-      .execute()
-
-    return allRows.filter((row) => {
-      const rowThread = row.thread
-      return rowThread === threadRef
-        || rowThread === threadId
-        || (typeof rowThread === 'string' && rowThread.endsWith(`#${threadId}`))
-    })
   },
 
   // ==========================================================================
@@ -1234,6 +1488,7 @@ import { useSolidDatabase } from '@/providers/solid-database-provider'
  */
 export function useChatInit() {
   const { db } = useSolidDatabase()
+  setDatabaseGetter(() => db)
 
   return { db, isReady: !!db }
 }
@@ -1324,6 +1579,20 @@ export function useThreadIndex(options?: { enabled?: boolean }) {
   })
 }
 
+export function useWorkspaceList(options?: { enabled?: boolean }) {
+  const db = getDb()
+  const enabled = options?.enabled ?? !!db
+
+  return useQuery({
+    queryKey: QUERY_KEYS.workspaces,
+    queryFn: async () => {
+      if (!db) return []
+      return workspaceCollection.fetch()
+    },
+    enabled: !!db && enabled,
+  })
+}
+
 /**
  * Hook to fetch message list for a thread
  */
@@ -1367,6 +1636,13 @@ export function useChatMutations() {
 
   const deleteChat = useMutation({
     mutationFn: (id: string) => chatOps.deleteChat(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: QUERY_KEYS.chats })
+    },
+  })
+
+  const ensureLinxWelcome = useMutation({
+    mutationFn: () => chatOps.ensureLinxWelcome(),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: QUERY_KEYS.chats })
     },
@@ -1447,6 +1723,7 @@ export function useChatMutations() {
 
   return {
     createAIChat,
+    ensureLinxWelcome,
     updateChat,
     deleteChat,
     createThread,

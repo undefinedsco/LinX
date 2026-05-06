@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useSolidDatabase } from './solid-database-provider'
-import { initializeChatCollections } from '@/modules/chat/collections'
+import { chatOps, initializeChatCollections } from '@/modules/chat/collections'
 import { initializeContactCollections } from '@/modules/contacts/collections'
 import { initializeFavoriteCollections } from '@/modules/favorites/collections'
 import { initializeInboxCollections } from '@/modules/inbox/collections'
@@ -15,6 +15,12 @@ export function PodCollectionsBootstrap() {
     initializeFavoriteCollections(db)
     initializeInboxCollections(db)
     initializeModelCollections(db)
+
+    if (!db) return
+
+    void chatOps.ensureLinxWelcome().catch((error) => {
+      console.warn('[PodCollectionsBootstrap] Failed to prepare LinX welcome:', error)
+    })
   }, [db])
 
   return null
