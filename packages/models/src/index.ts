@@ -58,6 +58,7 @@ export { contactRepository } from './contact.repository'
 
 // Chat & Message - 聊天和消息
 export {
+  chatResource,
   chatTable,
   type ChatMetadata,
   type ChatMemberRole,
@@ -68,6 +69,7 @@ export {
 export { chatRepository } from './chat.repository'
 
 export {
+  threadResource,
   threadTable,
   type ThreadRow,
   type ThreadInsert,
@@ -76,6 +78,7 @@ export {
 export { threadRepository } from './thread.repository'
 
 export {
+  messageResource,
   messageTable,
   type MessageRow,
   type MessageInsert,
@@ -179,6 +182,7 @@ export {
 
 // Session - 会话管理
 export {
+  sessionResource,
   sessionTable,
   type SessionType,
   type SessionStatus,
@@ -331,6 +335,10 @@ export {
 } from './watch'
 
 export {
+  applySolidComunicaPatches,
+} from './comunica-patches'
+
+export {
   createRepositoryDescriptor,
   definePodRepository,
   findPodRowByStorageId,
@@ -357,7 +365,7 @@ export { eq, ne, and, or, drizzle } from '@undefineds.co/drizzle-solid'
 // ============================================
 // Schema registry
 // ============================================
-export { solidSchema } from './schema'
+export { solidResources, solidSchema } from './schema'
 
 // ============================================
 // Discovery Service (发现服务)

@@ -134,3 +134,41 @@ test('resolveProfileDisplayName returns null when profile lookup fails', async (
 
   assert.equal(displayName, null)
 })
+
+test('resolveProfileDisplayName default path reads the WebID document directly', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/profile-identity.ts')
+  const originalFetch = globalThis.fetch
+  t.after(() => {
+    globalThis.fetch = originalFetch
+    cleanup()
+  })
+
+  const requestedUrls = []
+  globalThis.fetch = async (url) => {
+    requestedUrls.push(String(url))
+    return new Response('<#me> <http://www.w3.org/2006/vcard/ns#fn> "Gan Lu" .', {
+      headers: { 'content-type': 'text/turtle' },
+    })
+  }
+
+  const displayName = await module.resolveProfileDisplayName({
+    timeoutMs: 500,
+    runtime: {
+      loadCredentials() {
+        return credentials()
+      },
+      getClientCredentials() {
+        return null
+      },
+      async getOidcAccessToken() {
+        return 'access-token'
+      },
+      async authenticate() {
+        throw new Error('client credentials should not be used')
+      },
+    },
+  })
+
+  assert.equal(displayName, 'Gan Lu')
+  assert.deepEqual(requestedUrls, ['https://id.undefineds.co/ganbb/profile/card'])
+})

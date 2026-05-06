@@ -1,4 +1,5 @@
 export {
+  sessionResource,
   sessionTable,
   type SessionType,
   type SessionStatus,

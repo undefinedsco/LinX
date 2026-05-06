@@ -1,5 +1,5 @@
 import type { Session } from '@inrupt/solid-client-authn-node'
-import type { ClientCredentialsSecrets, StoredCredentials } from '../credentials-store.js'
+import { getClientCredentialId, getClientCredentialKey, type ClientCredentialsSecrets, type StoredCredentials } from '../credentials-store.js'
 import {
   buildWatchThreadMetadata,
   buildWatchTranscriptMessages,
@@ -324,7 +324,7 @@ export async function persistWatchConversationToPod(
     return false
   }
 
-  const { session } = await activeRuntime.authenticate(clientCredentials.clientId, clientCredentials.clientSecret, stored.url)
+  const { session } = await activeRuntime.authenticate(getClientCredentialId(clientCredentials), getClientCredentialKey(clientCredentials), stored.url)
 
   try {
     const db = activeRuntime.createDb(session)

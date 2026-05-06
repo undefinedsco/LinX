@@ -1,16 +1,22 @@
 import { uri, boolean, object, podTable, string, timestamp, id } from '@undefineds.co/drizzle-solid'
 import { UDFS, DCTerms, SIOC, LINX_CHAT } from './namespaces'
+import { chatResource } from './chat.schema'
 
 /**
- * Thread schema.
+ * Thread resource.
  *
- * CP0 baseline:
- * - Chat is a pure channel/place.
- * - Thread carries execution context needed for collaboration/audit.
+ * Product semantics:
+ * - Thread is the concrete conversation timeline/place under a Chat.
+ * - AI product runtime sessions map to Thread when they represent a concrete
+ *   conversation timeline/place/run.
+ * - Thread carries workspace/runtime/place metadata. Chat only identifies the
+ *   counterpart/conversation object.
+ * - Product/runtime-specific ids should stay in metadata as `runtimeSessionId`,
+ *   `runtime`, `surface`, etc. Do not name the generic thread id `piSessionId`.
  *
  * Storage structure (aligned with xpod):
  * - Thread stored as fragment in Chat's index.ttl
- * - Location: /.data/chat/{chat}/index.ttl#{id}
+ * - Location: /.data/chat/{chat|id}/index.ttl#{id}
  *
  * NOTE:
  * - `thread.workspace` is a storage-layer reference (URI) to a container/resource in CSS/Pod.
@@ -18,13 +24,13 @@ import { UDFS, DCTerms, SIOC, LINX_CHAT } from './namespaces'
  * - Runtime path/copy is an execution-time interface shape; persistence should keep the
  *   container URI here and store portable metadata with that container/resource.
  */
-export const threadTable = podTable(
+export const threadResource = podTable(
   'thread',
   {
     id: id('id'),
 
-    // Belongs to chat. Stored as an RDF URI; short ids are resolved via chatTable's URI template by the ORM.
-    chat: uri('chat').predicate(SIOC.has_parent).notNull().link('chats'),
+    // Belongs to chat/counterpart. Stored as an RDF URI; short ids are resolved via chatResource's URI template by the ORM.
+    chat: uri('chat').predicate(SIOC.has_parent).notNull().link(chatResource),
 
     // Display / state
     title: string('title').predicate(DCTerms.title),
@@ -45,10 +51,13 @@ export const threadTable = podTable(
     sparqlEndpoint: '/.data/chat/-/sparql',
     type: SIOC.Thread,
     namespace: UDFS,
-    subjectTemplate: '{chat}/index.ttl#{id}',
+    subjectTemplate: '{chat|id}/index.ttl#{id}',
   },
 )
 
-export type ThreadRow = typeof threadTable.$inferSelect
-export type ThreadInsert = typeof threadTable.$inferInsert
-export type ThreadUpdate = typeof threadTable.$inferUpdate
+// Compatibility alias. New model code should prefer `threadResource`.
+export const threadTable = threadResource
+
+export type ThreadRow = typeof threadResource.$inferSelect
+export type ThreadInsert = typeof threadResource.$inferInsert
+export type ThreadUpdate = typeof threadResource.$inferUpdate

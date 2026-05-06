@@ -1,39 +1,43 @@
 import { object, podTable, string, timestamp, uri, id, integer } from '@undefineds.co/drizzle-solid'
 import { DCTerms, UDFS } from '../namespaces'
+import { chatResource } from '../chat.schema'
+import { threadResource } from '../thread.schema'
 
 export type SessionType = 'direct' | 'group' | 'imported-readonly'
 export type SessionStatus = 'active' | 'paused' | 'completed' | 'error' | 'archived'
 
 /**
- * Runtime / collaboration session schema.
+ * Runtime / collaboration session resource.
  *
- * This is the durable session truth layer for Pi/xpod-aligned runtime state.
+ * This preserves generic AI product runtime/session lifecycle state.
  * It is intentionally separate from:
  * - UI-only local state (focus, draft text, scroll position, expand/collapse)
  * - transient transport/session-manager internals
+ * - the durable conversation timeline, which is Thread
  *
  * Storage structure:
  * - Location: /.data/session/{id}.ttl
- * - Primary use: durable cross-app session state / lifecycle projection
+ * - Primary use: runtime lifecycle projection for a concrete Thread
  *
- * Contract notes for this baseline:
+ * Contract notes:
+ * - Chat identifies the counterpart/conversation object.
+ * - Thread identifies the concrete conversation timeline/place/run. AI product
+ *   runtime sessions map to Thread; this Session resource records lifecycle state
+ *   and points to that Thread.
  * - `archived` is a persistence-layer/session-lifecycle status; interactive runtime
  *   surfaces may continue to use the narrower active/paused/completed/error subset
  *   until they explicitly adopt archival semantics.
- * - `chatId` and `threadId` are intentionally stored as opaque string references for
- *   now. This keeps the initial session baseline decoupled from any single runtime or
- *   RDF-linking strategy while the writer/reader contract is still being designed.
  * - `tool` is intentionally open-string in this baseline so the durable table does not
  *   prematurely overfit to today's sidecar enum before all writers are aligned.
  */
-export const sessionTable = podTable(
+export const sessionResource = podTable(
   'session',
   {
     id: id('id'),
 
     ownerWebId: uri('ownerWebId').predicate(UDFS.actor).notNull(),
-    chatId: string('chatId').predicate(UDFS.conversation),
-    threadId: string('threadId').predicate(UDFS.inThread),
+    chat: uri('chat').predicate(UDFS.conversation).link(chatResource),
+    thread: uri('thread').predicate(UDFS.inThread).link(threadResource),
 
     sessionType: string('sessionType').predicate(UDFS.conversationType).notNull().default('direct'),
     status: string('status').predicate(UDFS.sessionStatus).notNull().default('active'),
@@ -58,6 +62,9 @@ export const sessionTable = podTable(
   },
 )
 
-export type SessionRow = typeof sessionTable.$inferSelect
-export type SessionInsert = typeof sessionTable.$inferInsert
-export type SessionUpdate = typeof sessionTable.$inferUpdate
+// Compatibility alias. New model code should prefer `sessionResource`.
+export const sessionTable = sessionResource
+
+export type SessionRow = typeof sessionResource.$inferSelect
+export type SessionInsert = typeof sessionResource.$inferInsert
+export type SessionUpdate = typeof sessionResource.$inferUpdate

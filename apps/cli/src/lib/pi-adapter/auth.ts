@@ -1,5 +1,5 @@
-import { getClientCredentials, loadCredentials } from '../credentials-store.js'
-import { getOidcAccessToken } from '../oidc-auth.js'
+import { getClientCredentialId, getClientCredentialKey, getClientCredentials, loadCredentials } from '../credentials-store.js'
+import { getOidcAccessToken, isOidcLoginExpiredError } from '../oidc-auth.js'
 import { getAccessToken } from '../solid-auth.js'
 import type { OAuthCredentials } from '@mariozechner/pi-ai'
 
@@ -28,7 +28,12 @@ export async function resolveLinxPiCloudOAuthCredential(
 
   const clientCredentials = runtime.getClientCredentials(stored)
   if (!clientCredentials) {
-    const oidcAccessToken = await getOidcAccessToken(stored).catch(() => null)
+    const oidcAccessToken = await getOidcAccessToken(stored).catch((error) => {
+      if (isOidcLoginExpiredError(error)) {
+        throw error
+      }
+      return null
+    })
     if (!oidcAccessToken) {
       return null
     }
@@ -42,14 +47,16 @@ export async function resolveLinxPiCloudOAuthCredential(
   }
 
   const resolvedIssuerUrl = issuerUrl?.trim() || stored.url
-  const token = await runtime.getAccessToken(clientCredentials.clientId, clientCredentials.clientSecret, resolvedIssuerUrl)
+  const clientId = getClientCredentialId(clientCredentials)
+  const clientSecret = getClientCredentialKey(clientCredentials)
+  const token = await runtime.getAccessToken(clientId, clientSecret, resolvedIssuerUrl)
   if (!token) {
     return null
   }
 
   return {
     type: 'oauth',
-    refresh: clientCredentials.clientSecret,
+    refresh: clientSecret,
     access: token.accessToken,
     expires: token.expiresAt.getTime(),
   }

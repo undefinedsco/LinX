@@ -1,5 +1,6 @@
 import type { Session } from '@inrupt/solid-client-authn-node'
 import type { WatchBackend } from './types.js'
+import { getClientCredentialId, getClientCredentialKey } from '../credentials-store.js'
 
 type SupportedPodWatchBackend = WatchBackend
 
@@ -240,7 +241,7 @@ export async function loadPodBackendCredential(
     throw new Error(unsupportedStoredAuthMessage())
   }
 
-  const { session } = await activeRuntime.authenticate(clientCredentials.clientId, clientCredentials.clientSecret, stored.url)
+  const { session } = await activeRuntime.authenticate(getClientCredentialId(clientCredentials), getClientCredentialKey(clientCredentials), stored.url)
 
   try {
     const db = activeRuntime.createDb(session)

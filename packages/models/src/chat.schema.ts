@@ -8,19 +8,23 @@ export interface ChatMetadata {
 }
 
 /**
- * Chat schema (channel/place).
+ * Chat resource.
  *
- * CP0 baseline (alignment):
- * - Chat is a container for messages/widgets regardless of counterpart type.
- * - Do not encode counterpart-specific behavior in Chat (no chatType/subtype).
- * - Participants use Solid chat-aligned flow vocabulary (wf/flow).
+ * Product semantics:
+ * - Chat means "who/what the user is talking with": a person, group, AI agent, or
+ *   default AI secretary. It is the counterpart/conversation object, not the place
+ *   where a runtime executes.
+ * - Runtime/workspace/place/session context belongs on Thread.
+ * - Direct LinX CLI entry should use a chat representing the AI secretary.
+ * - Watch entry should use a chat representing the watched agent/tool, such as
+ *   Codex, Claude Code, or a concrete AI identity when available.
  *
  * Storage structure (aligned with xpod):
  * - Chat metadata stored as #this in index.ttl
  * - Location: /.data/chat/{id}/index.ttl#this
  * - Threads stored as fragments in same file: /.data/chat/{id}/index.ttl#{threadId}
  */
-export const chatTable = podTable(
+export const chatResource = podTable(
   'chats',
   {
     id: id('id'),
@@ -49,7 +53,9 @@ export const chatTable = podTable(
 
     // Last activity
     lastActiveAt: timestamp('lastActiveAt').predicate(UDFS.lastActiveAt),
-    lastMessageId: uri('lastMessageId').predicate(WF.message),
+    // Latest-message pointer. Do not reuse WF.message here: WF.message is the
+    // Solid Chat containment relation used by message.chat inverse links.
+    lastMessageId: uri('lastMessageId').predicate(UDFS.lastMessage),
     lastMessagePreview: text('lastMessagePreview').predicate(SCHEMA.text),
 
     // Timestamps
@@ -65,6 +71,9 @@ export const chatTable = podTable(
   },
 )
 
-export type ChatRow = typeof chatTable.$inferSelect
-export type ChatInsert = typeof chatTable.$inferInsert
-export type ChatUpdate = typeof chatTable.$inferUpdate
+// Compatibility alias. New model code should prefer `chatResource`.
+export const chatTable = chatResource
+
+export type ChatRow = typeof chatResource.$inferSelect
+export type ChatInsert = typeof chatResource.$inferInsert
+export type ChatUpdate = typeof chatResource.$inferUpdate

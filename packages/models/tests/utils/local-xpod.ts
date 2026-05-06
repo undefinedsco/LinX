@@ -188,12 +188,8 @@ async function tryExternalBaseUrl(): Promise<string | null> {
 function resolveXpodNode(): string {
   if (process.env.XPOD_TEST_NODE) return process.env.XPOD_TEST_NODE
 
-  // Keep xpod's native sqlite addon out of the LinX/Vitest process. If this
-  // checkout has Node 22 via nvm, use it for the isolated xpod child because
-  // the installed xpod native modules are commonly built for Node 22 ABI.
-  const nvmNode22 = path.join(process.env.HOME ?? '', '.nvm/versions/node/v22.21.1/bin/node')
-  if (fs.existsSync(nvmNode22)) return nvmNode22
-
+  // Default to the same Node binary that is running the tests so native
+  // addons such as better-sqlite3 match the current ABI.
   return process.execPath
 }
 

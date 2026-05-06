@@ -81,6 +81,14 @@ export function getClientCredentials(creds: StoredCredentials): ClientCredential
   return isClientCredentials(creds.secrets) ? creds.secrets : null
 }
 
+export function getClientCredentialId(secrets: ClientCredentialsSecrets): string {
+  return secrets.clientId ?? (secrets as ClientCredentialsSecrets & { secret_id?: string }).secret_id ?? ''
+}
+
+export function getClientCredentialKey(secrets: ClientCredentialsSecrets): string {
+  return secrets.clientSecret ?? (secrets as ClientCredentialsSecrets & { secret_key?: string }).secret_key ?? ''
+}
+
 export function getOidcOAuthSecrets(creds: StoredCredentials): OidcOAuthSecrets | null {
   const secrets = creds.secrets
   return 'oidcRefreshToken' in secrets && 'oidcAccessToken' in secrets && 'oidcExpiresAt' in secrets

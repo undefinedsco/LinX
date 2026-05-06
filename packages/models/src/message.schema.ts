@@ -1,26 +1,32 @@
 import { podTable, uri, string, text, timestamp, id } from '@undefineds.co/drizzle-solid'
 import { UDFS, DCTerms, FOAF, LINX_MSG, MEETING, SCHEMA, SIOC, WF } from './namespaces'
-import { threadTable } from './thread.schema'
+import { chatResource } from './chat.schema'
+import { threadResource } from './thread.schema'
 
 
 /**
- * Message schema (aligned with xpod).
+ * Message resource (aligned with xpod).
+ *
+ * Product semantics:
+ * - Message belongs to both a Chat counterpart and a concrete Thread timeline.
+ * - Chat answers "who/what is this conversation with".
+ * - Thread answers "which run/timeline/place does this message belong to".
  *
  * Storage structure:
- * - Location: /.data/chat/{chat}/{yyyy}/{MM}/{dd}/messages.ttl#{id}
+ * - Location: /.data/chat/{chat|id}/{yyyy}/{MM}/{dd}/messages.ttl#{id}
  * - Date-based path for efficient time-range queries
  * - chat/thread are RDF URI relations. Short ids remain accepted at API/query call sites via ORM URI template resolution.
  */
-export const messageTable = podTable(
+export const messageResource = podTable(
   'chat_message',
   {
     id: id('id'),
 
     // Chat relation. In RDF this is an inverse Solid Chat link: <chat> wf:message <message>.
-    chat: uri('chat').predicate(WF.message).inverse().notNull().link('chats'),
+    chat: uri('chat').predicate(WF.message).inverse().notNull().link(chatResource),
 
     // Thread relation. In RDF this is an inverse Solid Chat/SIOC link: <thread> sioc:has_member <message>.
-    thread: uri('thread').predicate(SIOC.has_member).inverse().notNull().link(threadTable),
+    thread: uri('thread').predicate(SIOC.has_member).inverse().notNull().link(threadResource),
 
     // maker is the entity URI of the message author:
     // - User: their WebID (https://user.pod/profile/card#me)
@@ -57,10 +63,13 @@ export const messageTable = podTable(
     sparqlEndpoint: '/.data/chat/-/sparql',
     type: MEETING.Message,
     namespace: UDFS,
-    subjectTemplate: '{chat}/{yyyy}/{MM}/{dd}/messages.ttl#{id}',
+    subjectTemplate: '{chat|id}/{yyyy}/{MM}/{dd}/messages.ttl#{id}',
   },
 )
 
-export type MessageRow = typeof messageTable.$inferSelect
-export type MessageInsert = typeof messageTable.$inferInsert
-export type MessageUpdate = typeof messageTable.$inferUpdate
+// Compatibility alias. New model code should prefer `messageResource`.
+export const messageTable = messageResource
+
+export type MessageRow = typeof messageResource.$inferSelect
+export type MessageInsert = typeof messageResource.$inferInsert
+export type MessageUpdate = typeof messageResource.$inferUpdate

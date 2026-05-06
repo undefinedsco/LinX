@@ -21,8 +21,16 @@ type PiStreamTool = {
 
 export interface PiCompletionBackendResult {
   content?: string
+  reasoningContent?: string
   toolCalls?: RemoteChatToolCall[]
   finishReason?: string | null
+  usage?: {
+    input: number
+    output: number
+    cacheRead: number
+    cacheWrite: number
+    totalTokens: number
+  }
 }
 
 export interface PiAgentStreamAdapterOptions {
@@ -150,13 +158,31 @@ export function createPiAgentStreamAdapter(options: PiAgentStreamAdapterOptions 
       })().catch((error) => {
         const errorMessage = createBaseMessage()
         errorMessage.stopReason = 'error'
-        errorMessage.errorMessage = error instanceof Error ? error.message : String(error)
+        errorMessage.errorMessage = formatStreamErrorMessage(error)
         stream.push({ type: 'error', reason: 'error', error: errorMessage })
       })
 
       return stream
     },
   }
+}
+
+function formatStreamErrorMessage(error: unknown): string {
+  if (isAuthExpiredError(error)) {
+    return 'LinX Cloud login expired.'
+  }
+  return error instanceof Error ? error.message : String(error)
+}
+
+function isAuthExpiredError(error: unknown): boolean {
+  if (isRecord(error) && error.authExpired === true) {
+    return true
+  }
+  const message = error instanceof Error ? error.message : String(error)
+  const normalized = message.toLowerCase()
+  return normalized.includes('linx cloud login expired')
+    || normalized.includes('invalid solid token')
+    || (normalized.includes('chat request failed (401)') && normalized.includes('unauthorized'))
 }
 
 function resolveModelId(modelArg: unknown, overrideModelId?: string, fallbackModelId?: string): string {
@@ -198,10 +224,12 @@ function normalizeContextMessages(context?: { messages?: PiStreamContextMessage[
     if (entry.role === 'assistant') {
       const content = normalizeAssistantTextContent(entry.content)
       const toolCalls = normalizeAssistantToolCalls(entry.content)
+      const reasoningContent = normalizeAssistantReasoningContent(entry.content)
       if (content || toolCalls.length > 0) {
         normalized.push({
           role: 'assistant',
           content: content || null,
+          ...(reasoningContent && toolCalls.length > 0 ? { reasoning_content: reasoningContent } : {}),
           ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
         })
       }
@@ -272,6 +300,26 @@ function normalizeAssistantToolCalls(content: unknown): RemoteChatToolCall[] {
   })
 }
 
+function normalizeAssistantReasoningContent(content: unknown): string {
+  if (!Array.isArray(content)) {
+    return ''
+  }
+
+  return content
+    .map((part) => {
+      if (!isRecord(part) || part.type !== 'thinking') {
+        return ''
+      }
+      const signature = typeof part.thinkingSignature === 'string' ? part.thinkingSignature : ''
+      if (signature && signature !== 'reasoning_content') {
+        return ''
+      }
+      return typeof part.thinking === 'string' ? part.thinking : ''
+    })
+    .join('')
+    .trim()
+}
+
 function normalizeAssistantTextContent(content: unknown): string {
   if (!Array.isArray(content)) {
     return normalizeMessageContent(content)
@@ -317,7 +365,45 @@ function emitCompletionResult(
   reply: string | PiCompletionBackendResult,
 ): void {
   const content = typeof reply === 'string' ? reply : reply.content ?? ''
+  const reasoningContent = typeof reply === 'string' ? '' : reply.reasoningContent ?? ''
   const toolCalls = typeof reply === 'string' ? [] : reply.toolCalls ?? []
+  if (!isStringReply(reply) && reply.usage) {
+    message.usage = {
+      input: reply.usage.input,
+      output: reply.usage.output,
+      cacheRead: reply.usage.cacheRead,
+      cacheWrite: reply.usage.cacheWrite,
+      totalTokens: reply.usage.totalTokens,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    }
+  }
+
+  if (reasoningContent) {
+    const contentIndex = message.content.length
+    message.content.push({
+      type: 'thinking',
+      thinking: '',
+      thinkingSignature: 'reasoning_content',
+    })
+    stream.push({ type: 'thinking_start', contentIndex, partial: { ...message } })
+    message.content[contentIndex] = {
+      type: 'thinking',
+      thinking: reasoningContent,
+      thinkingSignature: 'reasoning_content',
+    }
+    stream.push({
+      type: 'thinking_delta',
+      contentIndex,
+      delta: reasoningContent,
+      partial: { ...message },
+    })
+    stream.push({
+      type: 'thinking_end',
+      contentIndex,
+      content: reasoningContent,
+      partial: { ...message },
+    })
+  }
 
   if (content) {
     const contentIndex = message.content.length

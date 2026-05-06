@@ -74,6 +74,12 @@ const custom = UDFS('CustomTerm');  // 'https://undefineds.co/ns#CustomTerm'
 
 ## drizzle-solid Schema 定义
 
+项目级业务语义不要写进这个 skill 文件。
+
+- 这类定义应放在仓库的 models/schema/docs 里，由代码和 shared docs 作为单一真相。
+- 这个 skill 只保留通用 Solid/RDF 建模原则、drizzle-solid 约束和可复用的模式。
+- 如果某个产品需要定义 `chat` / `thread` / `session` 的具体含义，应写回对应 package 的 schema 注释和 shared docs，而不是放到 skill。
+
 ### 基本结构
 
 ```typescript

@@ -73,14 +73,12 @@ describe('client local config shared core', () => {
 
     expect(
       parseLinxClientSecrets({
-        oidcRefreshToken: 'refresh',
-        oidcAccessToken: 'access',
-        oidcExpiresAt: '2026-03-16T00:00:00.000Z',
+        secret_id: 'alias-client',
+        secret_key: 'alias-secret',
       }),
     ).toEqual({
-      oidcRefreshToken: 'refresh',
-      oidcAccessToken: 'access',
-      oidcExpiresAt: '2026-03-16T00:00:00.000Z',
+      clientId: 'alias-client',
+      clientSecret: 'alias-secret',
     })
   })
 

@@ -1,6 +1,6 @@
 {
   "name": "@undefineds.co/linx",
-  "version": "0.2.1",
+  "version": "0.2.3",
   "private": true,
   "type": "module",
   "bin": {
@@ -15,6 +15,7 @@
     "@undefineds.co/models": "*",
     "@inrupt/solid-client-authn-node": "^3.1.1",
     "@mariozechner/pi-coding-agent": "^0.67.6",
+    "n3": "^1.26.0",
     "yargs": "^17.7.2"
   },
   "devDependencies": {

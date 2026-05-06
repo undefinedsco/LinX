@@ -1,15 +1,21 @@
 import 'dotenv/config'
-import { afterAll, describe, it, expect } from 'vitest'
+import { afterAll, describe, expect, it } from 'vitest'
 import { Session } from '@inrupt/solid-client-authn-node'
-import { drizzle } from '@undefineds.co/drizzle-solid'
+import { drizzle, type SolidDatabase } from '@undefineds.co/drizzle-solid'
+import { approvalTable } from '../src/approval.schema'
+import { auditTable } from '../src/audit.schema'
 import { chatTable } from '../src/chat.schema'
-import { threadTable } from '../src/thread.schema'
+import { grantTable } from '../src/grant.schema'
 import { messageTable } from '../src/message.schema'
 import { solidSchema } from '../src/schema'
+import { sessionTable } from '../src/session/session.schema'
+import { threadTable } from '../src/thread.schema'
+import { resolvePodUri } from '../src/repository'
 import { startLocalXpod, type LocalXpodTestPod } from './utils/local-xpod'
-import { eq } from '@undefineds.co/drizzle-solid'
 
 let localXpod: LocalXpodTestPod | null = null
+let session: Session | null = null
+let db: SolidDatabase | null = null
 
 const env = {
   webId: process.env.SOLID_WEBID,
@@ -30,153 +36,282 @@ async function ensureEnv(): Promise<typeof env> {
   return env
 }
 
+async function getDb(): Promise<SolidDatabase> {
+  if (db) return db
+
+  const activeEnv = await ensureEnv()
+  session = new Session()
+  await session.login({
+    clientId: activeEnv.clientId!,
+    clientSecret: activeEnv.clientSecret!,
+    oidcIssuer: activeEnv.oidcIssuer!,
+    tokenType: 'DPoP',
+  })
+
+  db = drizzle(session, {
+    logger: false,
+    disableInteropDiscovery: true,
+    schema: solidSchema,
+  })
+
+  await db.init([
+    chatTable,
+    threadTable,
+    messageTable,
+    sessionTable,
+    approvalTable,
+    grantTable,
+    auditTable,
+  ])
+
+  return db
+}
 
 afterAll(async () => {
+  await session?.logout?.().catch(() => undefined)
   await localXpod?.stop()
 })
 
-function resolvePodUri(table: { resolveUri: (id: string) => string }, id: string) {
-  if (!env.webId) return table.resolveUri(id)
-  const relative = table.resolveUri(id)
-  if (relative.startsWith('http://') || relative.startsWith('https://')) {
-    return relative
-  }
-  const webIdUrl = new URL(env.webId)
-  const baseRoot = webIdUrl.pathname.split('/profile/')[0] + '/'
-  const podBase = `${webIdUrl.origin}${baseRoot}`
-  return new URL(relative, podBase).toString()
+function testId(prefix: string): string {
+  return `${prefix}-${crypto.randomUUID()}`
 }
 
-describe('Solid Pod live CRUD (chat)', () => {
-  it('creates chat/thread/message and cleans up', { timeout: 60000 }, async () => {
+function podBaseUrl(webId: string): string {
+  return webId.replace('/profile/card#me', '').replace(/\/$/, '')
+}
+
+function subjectIri(row: Record<string, unknown>): string {
+  const value = row['@id'] ?? row.subject ?? row.uri ?? row.source
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(`Expected persisted row to expose an IRI: ${JSON.stringify(row)}`)
+  }
+  return value
+}
+
+async function expectDeleted(
+  database: SolidDatabase,
+  table: Parameters<SolidDatabase['findByIri']>[0],
+  iri: string,
+): Promise<void> {
+  const deleted = await database.deleteByIri(table, iri)
+  expect(deleted).toBe(true)
+  await expect(database.findByIri(table, iri)).resolves.toBeNull()
+}
+
+async function expectResourceContains(session: Session, url: string, text: string): Promise<void> {
+  const response = await session.fetch(url, { headers: { accept: 'text/turtle' } })
+  expect(response.ok).toBe(true)
+  const body = await response.text()
+  expect(body).toContain(text)
+}
+
+async function expectResourceNotContains(session: Session, url: string, text: string): Promise<void> {
+  const response = await session.fetch(url, { headers: { accept: 'text/turtle' } })
+  expect(response.ok).toBe(true)
+  const body = await response.text()
+  expect(body).not.toContain(text)
+}
+
+async function step<T>(name: string, action: () => Promise<T>): Promise<T> {
+  console.log(`POD_CRUD_STEP start ${name}`)
+  const result = await action()
+  console.log(`POD_CRUD_STEP done ${name}`)
+  return result
+}
+
+describe('Solid Pod live CRUD core surfaces', () => {
+  it('creates, reads, updates, and deletes chat/thread/message/session/approval/grant/audit on local xpod', { timeout: 90_000 }, async () => {
+    const database = await getDb()
     const activeEnv = await ensureEnv()
-    const session = new Session()
-    await session.login({
-      clientId: activeEnv.clientId!,
-      clientSecret: activeEnv.clientSecret!,
-      oidcIssuer: activeEnv.oidcIssuer!,
-      tokenType: 'DPoP',
-    })
+    const webId = activeEnv.webId!
+    const baseUrl = podBaseUrl(webId)
+    const now = new Date('2026-01-02T03:04:05.000Z')
 
-    const db = drizzle(session, {
-      logger: false,
-      disableInteropDiscovery: true,
-      schema: solidSchema,
-    })
+    const chatId = testId('chat')
+    const threadId = testId('thread')
+    const messageId = testId('message')
+    const runtimeSessionId = testId('session')
+    const approvalId = testId('approval')
+    const grantId = testId('grant')
+    const auditId = testId('audit')
 
-    // Ensure containers/resources exist (will create containers if missing)
-    await db.init([chatTable, threadTable, messageTable])
+    const chatIri = resolvePodUri(webId, chatTable, chatId)
+    const threadIri = `${baseUrl}/.data/chat/${chatId}/index.ttl#${threadId}`
 
-    const chatIdValue = crypto.randomUUID()
-    const threadIdValue = crypto.randomUUID()
-    const messageIdValue = crypto.randomUUID()
-    const title = `integration-chat-${Date.now()}`
-    const description = `integration-desc-${chatIdValue}`
-    const now = new Date()
+    await step('chat.create', () => database.insert(chatTable).values({
+      id: chatId,
+      title: 'Pod CRUD chat',
+      description: `created-${chatId}`,
+      participants: [webId],
+      createdAt: now,
+      updatedAt: now,
+      lastActiveAt: now,
+    }).execute())
+    await step('chat.read', async () => expect(database.findByIri(chatTable, chatIri)).resolves.toMatchObject({
+      id: chatId,
+      title: 'Pod CRUD chat',
+    }))
+    await step('chat.update', async () => expect(database.updateByIri(chatTable, chatIri, {
+      title: 'Pod CRUD chat updated',
+      updatedAt: new Date('2026-01-02T04:04:05.000Z'),
+    })).resolves.toMatchObject({ title: 'Pod CRUD chat updated' }))
 
-    const [created] = await db
-      .insert(chatTable)
-      .values({
-        id: chatIdValue,
-        title,
-        description,
-        provider: 'openai',
-        model: 'gpt-4o-mini',
-        participants: [env.webId!],
-        createdAt: now,
-        updatedAt: now,
-      })
-      .execute()
+    await step('thread.create', () => database.insert(threadTable).values({
+      id: threadId,
+      chat: chatIri,
+      title: 'Pod CRUD thread',
+      workspace: `${baseUrl}/workspace/${threadId}/`,
+      metadata: { source: 'pod.integration.test' },
+      createdAt: now,
+      updatedAt: now,
+    }).execute())
+    await step('thread.read', async () => expect(database.findByIri(threadTable, threadIri)).resolves.toMatchObject({
+      id: threadId,
+      title: 'Pod CRUD thread',
+    }))
+    await step('thread.update', async () => expect(database.updateByIri(threadTable, threadIri, {
+      title: 'Pod CRUD thread updated',
+      updatedAt: new Date('2026-01-02T04:05:05.000Z'),
+    })).resolves.toMatchObject({ title: 'Pod CRUD thread updated' }))
 
-    const chatRows = await db.select().from(chatTable).where(eq(chatTable.description, description)).execute()
-    const chatRecord = chatRows[0] ?? created
-    let chatId =
-      (created as any)?.['@id'] ||
-      (created as any)?.subject ||
-      (created as any)?.uri ||
-      ((chatRecord as Record<string, unknown>)['@id'] as string | undefined)
-    if (!chatId) {
-      const allChats = await db.select().from(chatTable).execute()
-      const match = allChats.find(
-        (row) =>
-          (row as any).id === chatIdValue ||
-          (row as any)['@id']?.includes?.(chatIdValue),
-      )
-      chatId = (match as any)?.['@id']
-    }
-    if (!chatId) {
-      chatId = resolvePodUri(chatTable, chatIdValue)
-    }
-    expect(chatRecord, 'inserted chat').toBeTruthy()
-
-    // Create thread
-    const [threadCreated] = await db
-      .insert(threadTable)
-      .values({
-        id: threadIdValue,
-        chat: chatIdValue,
-        title: 'integration-thread',
-        createdAt: now,
-        updatedAt: now,
-      })
-      .execute()
-
-    const threadRows = await db
-      .select()
-      .from(threadTable)
-      .where(eq(threadTable.chat, chatIdValue))
-      .execute()
-    const threadRecord = threadRows[0] ?? threadCreated
-    let threadId =
-      (threadCreated as any)?.['@id'] ||
-      (threadCreated as any)?.subject ||
-      (threadCreated as any)?.uri ||
-      ((threadRecord as Record<string, unknown>)['@id'] as string | undefined)
-    if (!threadId) {
-      const allThreads = await db.select().from(threadTable).execute()
-      const match = allThreads.find(
-        (row) =>
-          (row as any).id === threadIdValue ||
-          (row as any)['@id']?.includes?.(threadIdValue),
-      )
-      threadId = (match as any)?.['@id']
-    }
-    if (!threadId) {
-      threadId = resolvePodUri(threadTable, threadIdValue)
-    }
-    expect(threadRecord, 'inserted thread').toBeTruthy()
-
-    // Create message (document mode with date partition)
-    const [msgCreated] = await db
-      .insert(messageTable)
-      .values({
-        id: messageIdValue,
-        chat: chatIdValue,
-        thread: threadIdValue,
-        maker: env.webId!,
-        role: 'user',
-        content: 'hello from integration test',
+    await step('message.create', () => database.insert(messageTable).values({
+      id: messageId,
+      chat: chatIri,
+      thread: threadIri,
+      maker: webId,
+      role: 'user',
+      content: 'Pod CRUD message',
+      status: 'sent',
+      createdAt: now,
+      updatedAt: now,
+    }).execute())
+    const messageIri = `${baseUrl}/.data/chat/${chatId}/2026/01/02/messages.ttl#${messageId}`
+    const messageDocUrl = messageIri.split('#')[0]
+    await step('message.read', async () => expectResourceContains(session!, messageDocUrl, 'Pod CRUD message'))
+    await step('message.update', async () => {
+      const result = await database.update(messageTable).set({
+        content: 'Pod CRUD message updated',
         status: 'sent',
-        createdAt: now,
-      })
-      .execute()
+        updatedAt: new Date('2026-01-02T04:06:05.000Z'),
+      }).whereByIri(messageIri).execute()
+      expect(result.length).toBeGreaterThan(0)
+      await expectResourceContains(session!, messageDocUrl, 'Pod CRUD message updated')
+    })
+    await step('message.verify-update', async () => expectResourceContains(session!, messageDocUrl, 'Pod CRUD message updated'))
 
-    const messageRecord = msgCreated
-    let messageId =
-      (msgCreated as any)?.['@id'] ||
-      (msgCreated as any)?.subject ||
-      (msgCreated as any)?.uri ||
-      ((messageRecord as Record<string, unknown>)['@id'] as string | undefined)
-    if (!messageId) {
-      messageId = resolvePodUri(messageTable, messageIdValue)
-    }
-    expect(messageRecord, 'inserted message').toBeTruthy()
+    const runtimeSessionIri = resolvePodUri(webId, sessionTable, runtimeSessionId)
+    const [createdSession] = await step('session.create', () => database.insert(sessionTable).values({
+      id: runtimeSessionId,
+      ownerWebId: webId,
+      chat: chatIri,
+      thread: threadIri,
+      sessionType: 'direct',
+      status: 'active',
+      tool: 'linx',
+      tokenUsage: 12,
+      policyVersion: 'pod-crud-test/v1',
+      metadata: { source: 'pod.integration.test' },
+      createdAt: now,
+      updatedAt: now,
+    }).execute())
+    expect(subjectIri(createdSession as Record<string, unknown>)).toBe(runtimeSessionIri)
+    await step('session.read', async () => expect(database.findByIri(sessionTable, runtimeSessionIri)).resolves.toMatchObject({
+      id: runtimeSessionId,
+      chat: chatIri,
+      thread: threadIri,
+      status: 'active',
+      tokenUsage: 12,
+    }))
+    await step('session.update', async () => expect(database.updateByIri(sessionTable, runtimeSessionIri, {
+      status: 'completed',
+      tokenUsage: 34,
+      updatedAt: new Date('2026-01-02T04:07:05.000Z'),
+    })).resolves.toMatchObject({ status: 'completed', tokenUsage: 34 }))
 
-    // Verify the inserted resources can be read back from the live Pod.
-    // The self-hosted Pod is temporary, so cleanup is handled by server shutdown.
-    expect(chatId).toContain(chatIdValue)
-    expect(threadId).toContain(threadIdValue)
-    expect(messageId).toContain(messageIdValue)
+    const approvalIri = resolvePodUri(webId, approvalTable, approvalId)
+    await step('approval.create', () => database.insert(approvalTable).values({
+      id: approvalId,
+      session: runtimeSessionIri,
+      toolCallId: `tool-${approvalId}`,
+      toolName: 'shell',
+      target: `${baseUrl}/workspace/${threadId}/`,
+      action: 'https://undefineds.co/ns#executeCommand',
+      risk: 'medium',
+      status: 'pending',
+      assignedTo: webId,
+      policyVersion: 'pod-crud-test/v1',
+      createdAt: now,
+    }).execute())
+    await step('approval.read', async () => expect(database.findByIri(approvalTable, approvalIri)).resolves.toMatchObject({
+      id: approvalId,
+      status: 'pending',
+      toolName: 'shell',
+    }))
+    await step('approval.update', async () => expect(database.updateByIri(approvalTable, approvalIri, {
+      status: 'approved',
+      decisionBy: webId,
+      decisionRole: 'owner',
+      reason: 'integration test approval',
+      resolvedAt: new Date('2026-01-02T04:08:05.000Z'),
+    })).resolves.toMatchObject({ status: 'approved', decisionBy: webId }))
 
+    const grantIri = resolvePodUri(webId, grantTable, grantId)
+    await step('grant.create', () => database.insert(grantTable).values({
+      id: grantId,
+      target: `${baseUrl}/workspace/${threadId}/`,
+      action: 'https://undefineds.co/ns#executeCommand',
+      effect: 'allow',
+      riskCeiling: 'medium',
+      decisionBy: webId,
+      decisionRole: 'owner',
+      onBehalfOf: webId,
+      createdAt: now,
+    }).execute())
+    await step('grant.read', async () => expect(database.findByIri(grantTable, grantIri)).resolves.toMatchObject({
+      id: grantId,
+      effect: 'allow',
+      riskCeiling: 'medium',
+    }))
+    await step('grant.update', async () => expect(database.updateByIri(grantTable, grantIri, {
+      riskCeiling: 'high',
+    })).resolves.toMatchObject({ riskCeiling: 'high' }))
+
+    const auditIri = resolvePodUri(webId, auditTable, auditId)
+    await step('audit.create', () => database.insert(auditTable).values({
+      id: auditId,
+      action: 'approval_requested',
+      actor: webId,
+      actorRole: 'owner',
+      onBehalfOf: webId,
+      session: runtimeSessionIri,
+      toolCallId: `tool-${approvalId}`,
+      approval: approvalIri,
+      context: JSON.stringify({ source: 'pod.integration.test' }),
+      policyVersion: 'pod-crud-test/v1',
+      createdAt: now,
+    }).execute())
+    await step('audit.read', async () => expect(database.findByIri(auditTable, auditIri)).resolves.toMatchObject({
+      id: auditId,
+      action: 'approval_requested',
+      actor: webId,
+    }))
+    await step('audit.update', async () => expect(database.updateByIri(auditTable, auditIri, {
+      context: JSON.stringify({ source: 'pod.integration.test', updated: true }),
+    })).resolves.toMatchObject({
+      context: JSON.stringify({ source: 'pod.integration.test', updated: true }),
+    }))
+
+    await step('audit.delete', () => expectDeleted(database, auditTable, auditIri))
+    await step('grant.delete', () => expectDeleted(database, grantTable, grantIri))
+    await step('approval.delete', () => expectDeleted(database, approvalTable, approvalIri))
+    await step('message.delete', async () => {
+      const result = await database.delete(messageTable).whereByIri(messageIri).execute()
+      expect(result.length).toBeGreaterThan(0)
+      await expectResourceNotContains(session!, messageDocUrl, messageIri)
+      await expectResourceNotContains(session!, messageDocUrl, 'Pod CRUD message updated')
+    })
+    await step('session.delete', () => expectDeleted(database, sessionTable, runtimeSessionIri))
+    await step('thread.delete', () => expectDeleted(database, threadTable, threadIri))
+    await step('chat.delete', () => expectDeleted(database, chatTable, chatIri))
   })
 })

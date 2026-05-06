@@ -71,6 +71,21 @@
 - `apps/web` 中的 provider 展示元数据只能是 web view metadata
 - 它不能作为 CLI / App 共用的 domain type
 
+### Chat / Thread / Session Semantics
+
+这些语义属于 `packages/models` 的 shared truth，CLI 和 App 不能各自重定义：
+
+- `Chat` 只表示对话对象/counterpart：用户正在和谁或什么对话，例如默认 AI secretary、某个人、群组、Codex、Claude Code，或后续具体 AI 身份。
+- `Thread` 表示具体场所、时间线和 runtime context：workspace、watch 场景、AI 产品运行时 session、外部 agent session 等上下文都归在 thread 上。
+- `Session` 表示通用 AI 产品/agent runtime 的运行生命周期投影：它必须指向对应的 `chat` URI 和 `thread` URI，不能作为另一套对话根。
+- `Message` 同时属于一个 `chat` 和一个 `thread`：chat 回答“跟谁聊”，thread 回答“在哪个运行/时间线里聊”。
+
+存储层规则：
+
+- Pod schema 使用 `chat`、`thread` 这类 URI-valued RDF relation 字段。
+- `chatId`、`threadId` 只允许作为 UI 状态、函数参数、runtime protocol 字段或 metadata 中的兼容信息，不允许作为持久 RDF link 字段。
+- 新增 shared model 代码优先使用 `chatResource`、`threadResource`、`messageResource`、`sessionResource` 等 Solid resource 命名；`*Table` 只作为兼容 alias 逐步退出。
+
 ## 3. Use Case Services
 
 必须共享的用例服务：

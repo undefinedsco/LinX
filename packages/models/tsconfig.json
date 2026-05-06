@@ -6,6 +6,7 @@
     "src/client/index.ts",
     "src/discovery/index.ts",
     "src/namespaces.ts",
+    "src/n3.d.ts",
     "src/profile.ts",
     "src/profile.repository.ts",
     "src/profile.schema.ts",

@@ -1,17 +1,63 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import type { Session } from '@inrupt/solid-client-authn-node'
-import type { ClientCredentialsSecrets, StoredCredentials } from '../credentials-store.js'
+import { getClientCredentialId, getClientCredentialKey, type ClientCredentialsSecrets, type StoredCredentials } from '../credentials-store.js'
 import type { WatchApprovalDecision, WatchApprovalRequest, WatchSessionRecord } from '@undefineds.co/models/watch'
+import {
+  AS_ACTOR,
+  AS_ANNOUNCE,
+  AS_OBJECT,
+  DCT_CREATED,
+  ODRL_ACTION,
+  ODRL_POLICY,
+  ODRL_TARGET,
+  RDF_TYPE,
+  UDFS_ACTION,
+  UDFS_ACTOR,
+  UDFS_ACTOR_ROLE,
+  UDFS_APPROVAL_REQUEST,
+  UDFS_ASSIGNED_TO,
+  UDFS_AUDIT_ENTRY,
+  UDFS_AUTONOMY_GRANT,
+  UDFS_CONTEXT,
+  UDFS_DECISION_BY,
+  UDFS_DECISION_ROLE,
+  UDFS_EFFECT,
+  UDFS_ON_BEHALF_OF,
+  UDFS_POLICY_VERSION,
+  UDFS_REASON,
+  UDFS_RESOLVED_AT,
+  UDFS_REVOKED_AT,
+  UDFS_RISK,
+  UDFS_RISK_CEILING,
+  UDFS_SESSION,
+  UDFS_STATUS,
+  UDFS_TOOL_CALL_ID,
+  UDFS_TOOL_NAME,
+  buildApprovalResourceUrl,
+  buildAuditResourceUrl,
+  buildGrantResourceUrl,
+  buildInboxResourceUrl,
+  firstIri,
+  firstLiteral,
+  iri,
+  listTurtleResources,
+  literal,
+  parseManagedTurtleBlocks,
+  readTurtleResource,
+  subjectIdFromResourceUrl,
+  upsertManagedTurtleBlock,
+  type PodFetch,
+} from '../pi-adapter/pod-native.js'
 
 const WATCH_CHAT_ID = 'linx-watch'
 const WATCH_AGENT_ID = 'linx-watch-assistant'
 const REMOTE_APPROVAL_POLICY_VERSION = 'linx-watch-remote-approval/v1'
 const DEFAULT_REMOTE_APPROVAL_POLL_MS = 1000
 
-type RemoteApprovalStatus = 'pending' | 'approved' | 'rejected'
-type RemoteApprovalRisk = 'low' | 'medium' | 'high'
+export type RemoteApprovalStatus = 'pending' | 'approved' | 'rejected'
+export type RemoteApprovalRisk = 'low' | 'medium' | 'high'
 
-interface ApprovalRowLike extends Record<string, unknown> {
+export interface ApprovalRowLike extends Record<string, unknown> {
   id: string
   session: string
   toolCallId: string
@@ -30,7 +76,7 @@ interface ApprovalRowLike extends Record<string, unknown> {
   resolvedAt?: Date | string
 }
 
-interface AuditRowLike extends Record<string, unknown> {
+export interface AuditRowLike extends Record<string, unknown> {
   id: string
   action: string
   actor: string
@@ -44,14 +90,14 @@ interface AuditRowLike extends Record<string, unknown> {
   createdAt: Date | string
 }
 
-interface InboxNotificationRowLike extends Record<string, unknown> {
+export interface InboxNotificationRowLike extends Record<string, unknown> {
   id: string
   actor?: string
   object: string
   createdAt: Date | string
 }
 
-interface WatchRemoteApprovalStore {
+export interface WatchRemoteApprovalStore {
   listApprovals(): Promise<ApprovalRowLike[]>
   insertApproval(row: ApprovalRowLike): Promise<void>
   updateApproval(id: string, patch: Partial<ApprovalRowLike>): Promise<void>
@@ -62,7 +108,7 @@ interface WatchRemoteApprovalStore {
   insertInboxNotification(row: InboxNotificationRowLike): Promise<void>
 }
 
-interface WatchRemoteApprovalRuntime {
+export interface WatchRemoteApprovalRuntime {
   loadCredentials: () => StoredCredentials | null
   getClientCredentials: (stored: StoredCredentials) => ClientCredentialsSecrets | null
   authenticate: (clientId: string, clientSecret: string, oidcIssuer: string) => Promise<{ session: Session }>
@@ -94,13 +140,36 @@ interface RequestAuditContext {
   message: string
   command?: string
   cwd?: string
-  backend: WatchSessionRecord['backend']
+  backend?: string
+  runtime?: string
+  toolName?: string
   sessionId: string
 }
 
 interface DecisionAuditContext {
   decision: WatchApprovalDecision
   note?: string
+}
+
+export interface RemoteApprovalSubjectContext {
+  sessionUri: string
+  actorUri: string
+  assignedTo?: string
+  onBehalfOf?: string
+  targetUri?: string
+  policyVersion?: string
+}
+
+export interface RemoteApprovalRequestDetails {
+  kind: WatchApprovalRequest['kind']
+  message: string
+  toolCallId: string
+  toolName: string
+  action: string
+  risk: RemoteApprovalRisk
+  command?: string
+  cwd?: string
+  context?: Record<string, unknown>
 }
 
 function createAbortError(): Error {
@@ -301,17 +370,18 @@ function parseRequestAuditContext(value: unknown): RequestAuditContext | null {
 
     const kind = normalizeString(parsed.kind)
     const message = normalizeString(parsed.message)
-    const backend = normalizeString(parsed.backend)
     const sessionId = normalizeString(parsed.sessionId)
-    if (!kind || !message || !backend || !sessionId) {
+    if (!kind || !message || !sessionId) {
       return null
     }
 
     return {
       kind: kind as WatchApprovalRequest['kind'],
       message,
-      backend: backend as WatchSessionRecord['backend'],
       sessionId,
+      ...(normalizeString(parsed.backend) ? { backend: normalizeString(parsed.backend) } : {}),
+      ...(normalizeString(parsed.runtime) ? { runtime: normalizeString(parsed.runtime) } : {}),
+      ...(normalizeString(parsed.toolName) ? { toolName: normalizeString(parsed.toolName) } : {}),
       ...(normalizeString(parsed.command) ? { command: normalizeString(parsed.command) } : {}),
       ...(normalizeString(parsed.cwd) ? { cwd: normalizeString(parsed.cwd) } : {}),
     }
@@ -408,10 +478,9 @@ function unsupportedRemoteApprovalAuthMessage(): string {
 }
 
 async function createDefaultRuntime(): Promise<WatchRemoteApprovalRuntime> {
-  const [credentialsStore, solidAuth, models] = await Promise.all([
+  const [credentialsStore, solidAuth] = await Promise.all([
     dynamicImport(new URL('../credentials-store.js', import.meta.url).href),
     dynamicImport(new URL('../solid-auth.js', import.meta.url).href),
-    dynamicImport(new URL('../models.js', import.meta.url).href),
   ])
 
   return {
@@ -419,61 +488,11 @@ async function createDefaultRuntime(): Promise<WatchRemoteApprovalRuntime> {
     getClientCredentials: credentialsStore.getClientCredentials,
     authenticate: solidAuth.authenticate,
     createStore(session) {
-      const db = models.drizzle(session, {
-        logger: false,
-        disableInteropDiscovery: true,
-        schema: models.solidSchema,
-      })
-      let initialized = false
-
-      async function ensureInitialized(): Promise<void> {
-        if (initialized) {
-          return
-        }
-
-        initialized = true
-        await db.init([
-          models.approvalTable,
-          models.auditTable,
-          models.grantTable,
-          models.inboxNotificationTable,
-        ]).catch(() => undefined)
+      const webId = session.info.webId
+      if (!webId) {
+        throw new Error('Remote approval authentication succeeded without a WebID.')
       }
-
-      return {
-        async listApprovals(): Promise<ApprovalRowLike[]> {
-          await ensureInitialized()
-          return await db.select().from(models.approvalTable).execute() as ApprovalRowLike[]
-        },
-        async insertApproval(row: ApprovalRowLike): Promise<void> {
-          await ensureInitialized()
-          await db.insert(models.approvalTable).values(row).execute()
-        },
-        async updateApproval(id: string, patch: Partial<ApprovalRowLike>): Promise<void> {
-          await ensureInitialized()
-          await db.update(models.approvalTable).set(patch).where(models.eq((models.approvalTable as any).id, id)).execute()
-        },
-        async listAudits(): Promise<AuditRowLike[]> {
-          await ensureInitialized()
-          return await db.select().from(models.auditTable).execute() as AuditRowLike[]
-        },
-        async insertAudit(row: AuditRowLike): Promise<void> {
-          await ensureInitialized()
-          await db.insert(models.auditTable).values(row).execute()
-        },
-        async listGrants(): Promise<Array<Record<string, unknown>>> {
-          await ensureInitialized()
-          return await db.select().from(models.grantTable).execute() as Array<Record<string, unknown>>
-        },
-        async insertGrant(row: Record<string, unknown>): Promise<void> {
-          await ensureInitialized()
-          await db.insert(models.grantTable).values(row as any).execute()
-        },
-        async insertInboxNotification(row: InboxNotificationRowLike): Promise<void> {
-          await ensureInitialized()
-          await db.insert(models.inboxNotificationTable).values(row).execute()
-        },
-      }
+      return createNativeRemoteApprovalStore(webId, (url, init) => session.fetch(url, init))
     },
     sleep(ms: number) {
       return delay(ms)
@@ -502,7 +521,7 @@ async function withRemoteApprovalStore<T>(
     throw new Error(unsupportedRemoteApprovalAuthMessage())
   }
 
-  const { session } = await runtime.authenticate(clientCredentials.clientId, clientCredentials.clientSecret, stored.url)
+  const { session } = await runtime.authenticate(getClientCredentialId(clientCredentials), getClientCredentialKey(clientCredentials), stored.url)
   const webId = session.info.webId ?? stored.webId
   if (!webId) {
     await session.logout().catch(() => undefined)
@@ -520,6 +539,233 @@ async function withRemoteApprovalStore<T>(
   }
 }
 
+function createNativeRemoteApprovalStore(webId: string, fetcher: PodFetch): WatchRemoteApprovalStore {
+  return {
+    listApprovals: () => listApprovalRows(webId, fetcher),
+    insertApproval: (row) => writeApprovalRow(webId, fetcher, row),
+    async updateApproval(id, patch): Promise<void> {
+      const existing = (await listApprovalRows(webId, fetcher)).find((row) => row.id === id)
+      if (!existing) {
+        throw new Error(`Remote approval not found: ${id}`)
+      }
+      await writeApprovalRow(webId, fetcher, { ...existing, ...patch })
+    },
+    listAudits: () => listAuditRows(webId, fetcher),
+    insertAudit: (row) => writeAuditRow(webId, fetcher, row),
+    listGrants: () => listGrantRows(webId, fetcher),
+    insertGrant: (row) => writeGrantRow(webId, fetcher, row),
+    insertInboxNotification: (row) => writeInboxNotificationRow(webId, fetcher, row),
+  }
+}
+
+async function listApprovalRows(webId: string, fetcher: PodFetch): Promise<ApprovalRowLike[]> {
+  const urls = await listTurtleResources(fetcher, `${getPodBaseUrl(webId)}/.data/approvals/`)
+  const rows: ApprovalRowLike[] = []
+  for (const url of urls.filter((entry) => entry.endsWith('.ttl'))) {
+    const turtle = await readTurtleResource(fetcher, url).catch(() => null)
+    if (!turtle) continue
+    const predicates = parseManagedTurtleBlocks(turtle, url).get(url)
+    if (!predicates) continue
+    const row = approvalRowFromPredicates(url, predicates)
+    if (row) rows.push(row)
+  }
+  return rows
+}
+
+async function writeApprovalRow(webId: string, fetcher: PodFetch, row: ApprovalRowLike): Promise<void> {
+  const url = buildApprovalResourceUrl(webId, row.id)
+  await upsertManagedTurtleBlock(fetcher, url, {
+    subject: url,
+    triples: [
+      { predicate: RDF_TYPE, object: iri(UDFS_APPROVAL_REQUEST) },
+      { predicate: UDFS_SESSION, object: iri(row.session) },
+      { predicate: UDFS_TOOL_CALL_ID, object: literal(row.toolCallId) },
+      { predicate: UDFS_TOOL_NAME, object: literal(row.toolName) },
+      { predicate: ODRL_TARGET, object: iri(row.target) },
+      { predicate: ODRL_ACTION, object: iri(row.action) },
+      { predicate: UDFS_RISK, object: literal(row.risk) },
+      { predicate: UDFS_STATUS, object: literal(row.status) },
+      ...(row.assignedTo ? [{ predicate: UDFS_ASSIGNED_TO, object: iri(row.assignedTo) }] : []),
+      ...(row.decisionBy ? [{ predicate: UDFS_DECISION_BY, object: iri(row.decisionBy) }] : []),
+      ...(row.decisionRole ? [{ predicate: UDFS_DECISION_ROLE, object: literal(row.decisionRole) }] : []),
+      ...(row.onBehalfOf ? [{ predicate: UDFS_ON_BEHALF_OF, object: iri(row.onBehalfOf) }] : []),
+      ...(row.reason ? [{ predicate: UDFS_REASON, object: literal(row.reason) }] : []),
+      ...(row.policyVersion ? [{ predicate: UDFS_POLICY_VERSION, object: literal(row.policyVersion) }] : []),
+      { predicate: DCT_CREATED, object: literal(toIsoString(row.createdAt, new Date().toISOString())) },
+      ...(row.resolvedAt ? [{ predicate: UDFS_RESOLVED_AT, object: literal(toIsoString(row.resolvedAt, new Date().toISOString())) }] : []),
+    ],
+  })
+}
+
+async function listAuditRows(webId: string, fetcher: PodFetch): Promise<AuditRowLike[]> {
+  const urls = await listTurtleResources(fetcher, `${getPodBaseUrl(webId)}/.data/audit/`)
+  const rows: AuditRowLike[] = []
+  for (const url of urls.filter((entry) => entry.endsWith('.ttl'))) {
+    const turtle = await readTurtleResource(fetcher, url).catch(() => null)
+    if (!turtle) continue
+    const predicates = parseManagedTurtleBlocks(turtle, url).get(url)
+    if (!predicates) continue
+    const row = auditRowFromPredicates(url, predicates)
+    if (row) rows.push(row)
+  }
+  return rows
+}
+
+async function writeAuditRow(webId: string, fetcher: PodFetch, row: AuditRowLike): Promise<void> {
+  const url = buildAuditResourceUrl(webId, row.id)
+  await upsertManagedTurtleBlock(fetcher, url, {
+    subject: url,
+    triples: [
+      { predicate: RDF_TYPE, object: iri(UDFS_AUDIT_ENTRY) },
+      { predicate: UDFS_ACTION, object: literal(row.action) },
+      { predicate: UDFS_ACTOR, object: iri(row.actor) },
+      { predicate: UDFS_ACTOR_ROLE, object: literal(row.actorRole) },
+      ...(row.onBehalfOf ? [{ predicate: UDFS_ON_BEHALF_OF, object: iri(row.onBehalfOf) }] : []),
+      ...(row.session ? [{ predicate: UDFS_SESSION, object: iri(row.session) }] : []),
+      ...(row.toolCallId ? [{ predicate: UDFS_TOOL_CALL_ID, object: literal(row.toolCallId) }] : []),
+      ...(row.approval ? [{ predicate: 'https://undefineds.co/ns#approval', object: iri(row.approval) }] : []),
+      ...(row.context ? [{ predicate: UDFS_CONTEXT, object: literal(row.context) }] : []),
+      ...(row.policyVersion ? [{ predicate: UDFS_POLICY_VERSION, object: literal(row.policyVersion) }] : []),
+      { predicate: DCT_CREATED, object: literal(toIsoString(row.createdAt, new Date().toISOString())) },
+    ],
+  })
+}
+
+async function listGrantRows(webId: string, fetcher: PodFetch): Promise<Array<Record<string, unknown>>> {
+  const urls = await listTurtleResources(fetcher, `${getPodBaseUrl(webId)}/settings/autonomy/grants/`)
+  const rows: Array<Record<string, unknown>> = []
+  for (const url of urls.filter((entry) => entry.endsWith('.ttl'))) {
+    const turtle = await readTurtleResource(fetcher, url).catch(() => null)
+    if (!turtle) continue
+    const predicates = parseManagedTurtleBlocks(turtle, url).get(url)
+    if (!predicates) continue
+    const row = grantRowFromPredicates(url, predicates)
+    if (row) rows.push(row)
+  }
+  return rows
+}
+
+async function writeGrantRow(webId: string, fetcher: PodFetch, row: Record<string, unknown>): Promise<void> {
+  const id = normalizeString(row.id) ?? crypto.randomUUID()
+  const url = buildGrantResourceUrl(webId, id)
+  const target = normalizeString(row.target)
+  const action = normalizeString(row.action)
+  const effect = normalizeString(row.effect)
+  const decisionBy = normalizeString(row.decisionBy)
+  const decisionRole = normalizeString(row.decisionRole)
+  if (!target || !action || !effect || !decisionBy || !decisionRole) {
+    throw new Error(`Invalid remote approval grant row: ${id}`)
+  }
+  await upsertManagedTurtleBlock(fetcher, url, {
+    subject: url,
+    triples: [
+      { predicate: RDF_TYPE, object: iri(ODRL_POLICY) },
+      { predicate: RDF_TYPE, object: iri(UDFS_AUTONOMY_GRANT) },
+      { predicate: ODRL_TARGET, object: iri(target) },
+      { predicate: ODRL_ACTION, object: iri(action) },
+      { predicate: UDFS_EFFECT, object: literal(effect) },
+      ...(normalizeString(row.riskCeiling) ? [{ predicate: UDFS_RISK_CEILING, object: literal(normalizeString(row.riskCeiling) as string) }] : []),
+      { predicate: UDFS_DECISION_BY, object: iri(decisionBy) },
+      { predicate: UDFS_DECISION_ROLE, object: literal(decisionRole) },
+      ...(normalizeString(row.onBehalfOf) ? [{ predicate: UDFS_ON_BEHALF_OF, object: iri(normalizeString(row.onBehalfOf) as string) }] : []),
+      { predicate: DCT_CREATED, object: literal(toIsoString(row.createdAt as Date | string | undefined, new Date().toISOString())) },
+      ...(normalizeString(row.revokedAt) ? [{ predicate: UDFS_REVOKED_AT, object: literal(normalizeString(row.revokedAt) as string) }] : []),
+    ],
+  })
+}
+
+async function writeInboxNotificationRow(webId: string, fetcher: PodFetch, row: InboxNotificationRowLike): Promise<void> {
+  const url = buildInboxResourceUrl(webId, row.id)
+  await upsertManagedTurtleBlock(fetcher, url, {
+    subject: url,
+    triples: [
+      { predicate: RDF_TYPE, object: iri(AS_ANNOUNCE) },
+      ...(row.actor ? [{ predicate: AS_ACTOR, object: iri(row.actor) }] : []),
+      { predicate: AS_OBJECT, object: iri(row.object) },
+      { predicate: DCT_CREATED, object: literal(toIsoString(row.createdAt, new Date().toISOString())) },
+    ],
+  })
+}
+
+function approvalRowFromPredicates(url: string, predicates: Map<string, unknown[]>): ApprovalRowLike | null {
+  const session = firstIri(predicates as never, UDFS_SESSION)
+  const toolCallId = firstLiteral(predicates as never, UDFS_TOOL_CALL_ID)
+  const toolName = firstLiteral(predicates as never, UDFS_TOOL_NAME)
+  const target = firstIri(predicates as never, ODRL_TARGET)
+  const action = firstIri(predicates as never, ODRL_ACTION)
+  const risk = firstLiteral(predicates as never, UDFS_RISK)
+  const status = firstLiteral(predicates as never, UDFS_STATUS)
+  const createdAt = firstLiteral(predicates as never, DCT_CREATED)
+  if (!session || !toolCallId || !toolName || !target || !action || !risk || !status || !createdAt) {
+    return null
+  }
+  return {
+    id: subjectIdFromResourceUrl(url),
+    session,
+    toolCallId,
+    toolName,
+    target,
+    action,
+    risk,
+    status,
+    assignedTo: firstIri(predicates as never, UDFS_ASSIGNED_TO),
+    decisionBy: firstIri(predicates as never, UDFS_DECISION_BY),
+    decisionRole: firstLiteral(predicates as never, UDFS_DECISION_ROLE),
+    onBehalfOf: firstIri(predicates as never, UDFS_ON_BEHALF_OF),
+    reason: firstLiteral(predicates as never, UDFS_REASON),
+    policyVersion: firstLiteral(predicates as never, UDFS_POLICY_VERSION),
+    createdAt,
+    resolvedAt: firstLiteral(predicates as never, UDFS_RESOLVED_AT),
+  }
+}
+
+function auditRowFromPredicates(url: string, predicates: Map<string, unknown[]>): AuditRowLike | null {
+  const action = firstLiteral(predicates as never, UDFS_ACTION)
+  const actor = firstIri(predicates as never, UDFS_ACTOR)
+  const actorRole = firstLiteral(predicates as never, UDFS_ACTOR_ROLE)
+  const createdAt = firstLiteral(predicates as never, DCT_CREATED)
+  if (!action || !actor || !actorRole || !createdAt) {
+    return null
+  }
+  return {
+    id: subjectIdFromResourceUrl(url),
+    action,
+    actor,
+    actorRole,
+    onBehalfOf: firstIri(predicates as never, UDFS_ON_BEHALF_OF),
+    session: firstIri(predicates as never, UDFS_SESSION),
+    toolCallId: firstLiteral(predicates as never, UDFS_TOOL_CALL_ID),
+    approval: firstIri(predicates as never, 'https://undefineds.co/ns#approval'),
+    context: firstLiteral(predicates as never, UDFS_CONTEXT),
+    policyVersion: firstLiteral(predicates as never, UDFS_POLICY_VERSION),
+    createdAt,
+  }
+}
+
+function grantRowFromPredicates(url: string, predicates: Map<string, unknown[]>): Record<string, unknown> | null {
+  const target = firstIri(predicates as never, ODRL_TARGET)
+  const action = firstIri(predicates as never, ODRL_ACTION)
+  const effect = firstLiteral(predicates as never, UDFS_EFFECT)
+  const decisionBy = firstIri(predicates as never, UDFS_DECISION_BY)
+  const decisionRole = firstLiteral(predicates as never, UDFS_DECISION_ROLE)
+  const createdAt = firstLiteral(predicates as never, DCT_CREATED)
+  if (!target || !action || !effect || !decisionBy || !decisionRole || !createdAt) {
+    return null
+  }
+  return {
+    id: subjectIdFromResourceUrl(url),
+    target,
+    action,
+    effect,
+    riskCeiling: firstLiteral(predicates as never, UDFS_RISK_CEILING),
+    decisionBy,
+    decisionRole,
+    onBehalfOf: firstIri(predicates as never, UDFS_ON_BEHALF_OF),
+    createdAt,
+    revokedAt: firstLiteral(predicates as never, UDFS_REVOKED_AT),
+  }
+}
+
 export async function createRemoteWatchApproval(options: {
   record: WatchSessionRecord
   request: WatchApprovalRequest
@@ -527,45 +773,89 @@ export async function createRemoteWatchApproval(options: {
 }): Promise<RemoteWatchApprovalSummary> {
   const activeRuntime = options.runtime ?? await createDefaultRuntime()
 
-  return withRemoteApprovalStore(activeRuntime, async ({ store, webId }) => {
+  return createRemoteApproval({
+    subject: ({ webId }) => ({
+      sessionUri: buildThreadUri(webId, options.record.id),
+      actorUri: buildAgentUri(webId),
+      policyVersion: REMOTE_APPROVAL_POLICY_VERSION,
+    }),
+    request: ({ sessionUri }) => ({
+      kind: options.request.kind,
+      message: buildRequestMessage(options.request),
+      toolCallId: extractToolCallId(options.request),
+      toolName: buildToolName(options.request),
+      action: buildActionUri(options.request),
+      risk: buildRisk(options.request),
+      ...(options.request.kind === 'command-approval' && options.request.command ? { command: options.request.command } : {}),
+      ...(options.request.kind === 'command-approval' && options.request.cwd ? { cwd: options.request.cwd } : {}),
+      context: buildRequestAuditContext(options.record, options.request) as unknown as Record<string, unknown>,
+    }),
+    runtime: activeRuntime,
+  })
+}
+
+export async function createRemoteApproval(options: {
+  subject: RemoteApprovalSubjectContext | ((input: { webId: string; stored: StoredCredentials }) => RemoteApprovalSubjectContext)
+  request: RemoteApprovalRequestDetails | ((input: { webId: string; stored: StoredCredentials; sessionUri: string }) => RemoteApprovalRequestDetails)
+  runtime?: WatchRemoteApprovalRuntime
+}): Promise<RemoteWatchApprovalSummary> {
+  const activeRuntime = options.runtime ?? await createDefaultRuntime()
+
+  return withRemoteApprovalStore(activeRuntime, async ({ store, webId, stored }) => {
+    const subject = typeof options.subject === 'function'
+      ? options.subject({ webId, stored })
+      : options.subject
+    const request = typeof options.request === 'function'
+      ? options.request({ webId, stored, sessionUri: subject.sessionUri })
+      : options.request
     const approvalId = crypto.randomUUID()
     const now = activeRuntime.now()
-    const sessionUri = buildThreadUri(webId, options.record.id)
+    const sessionUri = subject.sessionUri
     const approvalUri = buildApprovalUri(webId, approvalId)
-    const toolCallId = extractToolCallId(options.request)
-    const requestContext = buildRequestAuditContext(options.record, options.request)
+    const targetUri = subject.targetUri ?? sessionUri
+    const assignedTo = subject.assignedTo ?? webId
+    const onBehalfOf = subject.onBehalfOf ?? webId
+    const policyVersion = subject.policyVersion ?? REMOTE_APPROVAL_POLICY_VERSION
+    const requestContext = request.context ?? {
+      kind: request.kind,
+      message: request.message,
+      sessionId: extractSessionId(sessionUri),
+      toolName: request.toolName,
+      ...(request.command ? { command: request.command } : {}),
+      ...(request.cwd ? { cwd: request.cwd } : {}),
+    }
 
     await store.insertApproval({
       id: approvalId,
       session: sessionUri,
-      toolCallId,
-      toolName: buildToolName(options.request),
-      target: sessionUri,
-      action: buildActionUri(options.request),
-      risk: buildRisk(options.request),
+      toolCallId: request.toolCallId,
+      toolName: request.toolName,
+      target: targetUri,
+      action: request.action,
+      risk: request.risk,
       status: 'pending',
-      assignedTo: webId,
-      policyVersion: REMOTE_APPROVAL_POLICY_VERSION,
+      assignedTo,
+      policyVersion,
       createdAt: now,
     })
 
     await store.insertAudit({
       id: crypto.randomUUID(),
       action: 'approval_requested',
-      actor: buildAgentUri(webId),
+      actor: subject.actorUri,
       actorRole: 'secretary',
-      onBehalfOf: webId,
+      onBehalfOf,
       session: sessionUri,
-      toolCallId,
+      toolCallId: request.toolCallId,
       approval: approvalUri,
       context: JSON.stringify(requestContext),
-      policyVersion: REMOTE_APPROVAL_POLICY_VERSION,
+      policyVersion,
       createdAt: now,
     })
 
     await store.insertInboxNotification({
       id: crypto.randomUUID(),
-      actor: buildAgentUri(webId),
+      actor: subject.actorUri,
       object: approvalUri,
       createdAt: now,
     }).catch(() => undefined)
@@ -573,26 +863,26 @@ export async function createRemoteWatchApproval(options: {
     return normalizeApprovalSummary({
       id: approvalId,
       session: sessionUri,
-      toolCallId,
-      toolName: buildToolName(options.request),
-      target: sessionUri,
-      action: buildActionUri(options.request),
-      risk: buildRisk(options.request),
+      toolCallId: request.toolCallId,
+      toolName: request.toolName,
+      target: targetUri,
+      action: request.action,
+      risk: request.risk,
       status: 'pending',
-      assignedTo: webId,
-      policyVersion: REMOTE_APPROVAL_POLICY_VERSION,
+      assignedTo,
+      policyVersion,
       createdAt: now,
     }, [{
       id: crypto.randomUUID(),
       action: 'approval_requested',
-      actor: buildAgentUri(webId),
+      actor: subject.actorUri,
       actorRole: 'secretary',
-      onBehalfOf: webId,
+      onBehalfOf,
       session: sessionUri,
-      toolCallId,
+      toolCallId: request.toolCallId,
       approval: approvalUri,
       context: JSON.stringify(requestContext),
-      policyVersion: REMOTE_APPROVAL_POLICY_VERSION,
+      policyVersion,
       createdAt: now,
     }])
   })
@@ -658,6 +948,52 @@ export async function requestRemoteWatchApproval(options: {
 
   const summary = await createRemoteWatchApproval({
     record: options.record,
+    request: options.request,
+    runtime: activeRuntime,
+  })
+
+  return waitForRemoteWatchApproval({
+    approvalId: summary.id,
+    pollMs: options.pollMs,
+    signal: options.signal,
+    runtime: activeRuntime,
+  })
+}
+
+export async function requestRemoteApproval(options: {
+  subject: RemoteApprovalSubjectContext | ((input: { webId: string; stored: StoredCredentials }) => RemoteApprovalSubjectContext)
+  request: RemoteApprovalRequestDetails | ((input: { webId: string; stored: StoredCredentials; sessionUri: string }) => RemoteApprovalRequestDetails)
+  pollMs?: number
+  signal?: AbortSignal
+  runtime?: WatchRemoteApprovalRuntime
+}): Promise<WatchApprovalDecision> {
+  const activeRuntime = options.runtime ?? await createDefaultRuntime()
+
+  const delegated = await withRemoteApprovalStore(activeRuntime, async ({ store, webId, stored }) => {
+    const subject = typeof options.subject === 'function'
+      ? options.subject({ webId, stored })
+      : options.subject
+    const request = typeof options.request === 'function'
+      ? options.request({ webId, stored, sessionUri: subject.sessionUri })
+      : options.request
+    const grants = await store.listGrants()
+    const requestTarget = subject.targetUri ?? subject.sessionUri
+
+    return grants.some((grant) => (
+      grant.effect === 'allow'
+      && grant.action === request.action
+      && grant.target === requestTarget
+      && riskScore(typeof grant.riskCeiling === 'string' ? grant.riskCeiling : undefined) >= riskScore(request.risk)
+      && !grant.revokedAt
+    ))
+  })
+
+  if (delegated) {
+    return 'accept_for_session'
+  }
+
+  const summary = await createRemoteApproval({
+    subject: options.subject,
     request: options.request,
     runtime: activeRuntime,
   })
@@ -788,10 +1124,12 @@ export async function resolveRemoteWatchApproval(options: {
 
 export const __podApprovalInternal = {
   createAbortError,
+  createDefaultRuntime,
   buildActionUri,
   buildRequestAuditContext,
   buildRisk,
   buildToolName,
+  createNativeRemoteApprovalStore,
   extractToolCallId,
   decisionFromApprovalRow,
   encodeDecisionReason,

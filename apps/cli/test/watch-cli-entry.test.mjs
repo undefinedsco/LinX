@@ -9,6 +9,50 @@ const cliRoot = fileURLToPath(new URL('..', import.meta.url))
 const sourceRoot = join(cliRoot, 'src')
 const entryPath = join(sourceRoot, 'index.ts')
 
+test('compiled cli entry prints package version instead of unknown', async (t) => {
+  const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-version-'))
+  t.after(() => {
+    rmSync(outdir, { recursive: true, force: true })
+  })
+
+  try {
+    execFileSync('tsc', [
+      '--outDir',
+      outdir,
+      '--rootDir',
+      sourceRoot,
+      '--module',
+      'nodenext',
+      '--moduleResolution',
+      'nodenext',
+      '--target',
+      'ES2022',
+      '--lib',
+      'ES2022',
+      '--types',
+      'node',
+      '--skipLibCheck',
+      'true',
+      '--noEmitOnError',
+      'false',
+      entryPath,
+    ], {
+      cwd: cliRoot,
+      stdio: 'pipe',
+    })
+  } catch {
+    assert.ok(existsSync(join(outdir, 'index.js')))
+  }
+
+  const output = execFileSync(process.execPath, [join(outdir, 'index.js'), '--version'], {
+    cwd: cliRoot,
+    encoding: 'utf-8',
+  }).trim()
+
+  assert.match(output, /^\d+\.\d+\.\d+(?:-.+)?$/)
+  assert.notEqual(output, 'unknown')
+})
+
 test('compiled cli entry can serve watch commands without chat dependencies', async (t) => {
   const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-entry-'))
   t.after(() => {
@@ -146,6 +190,53 @@ test('compiled cli default entry is Pi TUI and hides explicit frontend aliases',
   assert.match(output, /--print/)
   assert.doesNotMatch(output, /pi-frontend/)
   assert.doesNotMatch(output, /linx pi /)
+})
+
+test('compiled cli exposes LinX package commands in help', async (t) => {
+  const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-package-help-'))
+  t.after(() => {
+    rmSync(outdir, { recursive: true, force: true })
+  })
+
+  try {
+    execFileSync('tsc', [
+      '--outDir',
+      outdir,
+      '--rootDir',
+      sourceRoot,
+      '--module',
+      'nodenext',
+      '--moduleResolution',
+      'nodenext',
+      '--target',
+      'ES2022',
+      '--lib',
+      'ES2022',
+      '--types',
+      'node',
+      '--skipLibCheck',
+      'true',
+      '--noEmitOnError',
+      'false',
+      entryPath,
+    ], {
+      cwd: cliRoot,
+      stdio: 'pipe',
+    })
+  } catch {
+    assert.ok(existsSync(join(outdir, 'index.js')))
+  }
+
+  const output = execFileSync(process.execPath, [join(outdir, 'index.js'), '--help'], {
+    cwd: cliRoot,
+    encoding: 'utf-8',
+  })
+
+  assert.match(output, /linx install \[source\]/)
+  assert.match(output, /linx remove \[source\]/)
+  assert.match(output, /linx update \[source\]/)
+  assert.match(output, /linx list/)
+  assert.doesNotMatch(output, /pi install/)
 })
 
 test('compiled cli login help exposes browser consent flow and no password options', async (t) => {

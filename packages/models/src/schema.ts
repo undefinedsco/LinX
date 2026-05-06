@@ -3,19 +3,42 @@ import { approvalTable } from './approval.schema'
 import { auditTable } from './audit.schema'
 import { aiModelTable } from './ai-model.schema'
 import { aiProviderTable } from './ai-provider.schema'
-import { chatTable } from './chat.schema'
+import { chatResource, chatTable } from './chat.schema'
 import { contactTable } from './contact.schema'
 import { credentialTable } from './credential.schema'
 import { favoriteTable } from './favorite/favorite.schema'
 import { fileTable } from './file/file.schema'
 import { grantTable } from './grant.schema'
 import { inboxNotificationTable } from './inbox-notification.schema'
-import { messageTable } from './message.schema'
+import { messageResource, messageTable } from './message.schema'
 import { solidProfileTable } from './profile.schema'
-import { sessionTable } from './session'
+import { sessionResource, sessionTable } from './session'
 import { settingsTable } from './settings/settings.schema'
-import { threadTable } from './thread.schema'
+import { threadResource, threadTable } from './thread.schema'
 
+export const solidResources = {
+  solidProfileTable,
+  contactTable,
+  agentTable,
+  chatResource,
+  sessionResource,
+  threadResource,
+  messageResource,
+  credentialTable,
+  aiProviderTable,
+  aiModelTable,
+  fileTable,
+  favoriteTable,
+  settingsTable,
+
+  // Sidecar collaboration data
+  approvalTable,
+  auditTable,
+  grantTable,
+  inboxNotificationTable,
+}
+
+// Compatibility schema for existing drizzle-solid call sites.
 export const solidSchema = {
   solidProfileTable,
   contactTable,

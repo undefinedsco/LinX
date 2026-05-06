@@ -25,9 +25,10 @@ export interface BrowserOidcLoginOptions {
   callbackHost?: string
   callbackPath?: string
   clientName?: string
+  forceFresh?: boolean
   openBrowser?: (url: string) => Promise<void>
   onAuthUrl?: (url: string) => void
-  manualRedirectUrl?: () => Promise<string>
+  manualRedirectUrl?: (signal?: AbortSignal) => Promise<string>
 }
 
 export interface BrowserOidcLoginResult {
@@ -41,14 +42,45 @@ export interface EnsureBrowserOidcLoginResult extends BrowserOidcLoginResult {
   reusedExistingSession: boolean
 }
 
+export class LinxOidcLoginExpiredError extends Error {
+  readonly authExpired = true
+
+  constructor(cause?: unknown) {
+    super('LinX Cloud login expired.')
+    this.name = 'LinxOidcLoginExpiredError'
+    if (cause !== undefined) {
+      ;(this as Error & { cause?: unknown }).cause = cause
+    }
+  }
+}
+
+export function isOidcLoginExpiredError(error: unknown): boolean {
+  if (error instanceof LinxOidcLoginExpiredError) {
+    return true
+  }
+  if (typeof error === 'object' && error !== null && 'authExpired' in error && error.authExpired === true) {
+    return true
+  }
+
+  const message = error instanceof Error ? error.message : String(error)
+  const normalized = message.toLowerCase()
+  return normalized.includes('linx cloud login expired')
+    || normalized.includes('invalid refresh credentials')
+    || normalized.includes('missing static client secret in storage')
+    || normalized.includes('invalid_client')
+    || normalized.includes('invalid_grant')
+}
+
 export async function ensureBrowserConsentLogin(
   options: BrowserOidcLoginOptions = {},
 ): Promise<EnsureBrowserOidcLoginResult> {
-  const reused = await reuseExistingBrowserConsentLogin(options).catch(() => null)
-  if (reused) {
-    return {
-      ...reused,
-      reusedExistingSession: true,
+  if (!options.forceFresh) {
+    const reused = await reuseExistingBrowserConsentLogin(options).catch(() => null)
+    if (reused) {
+      return {
+        ...reused,
+        reusedExistingSession: true,
+      }
     }
   }
 
@@ -101,6 +133,7 @@ export async function loginWithBrowserConsent(
       }
     },
     async (requestUrl) => {
+      assertOidcCallbackDidNotReturnError(requestUrl)
       await session.handleIncomingRedirect(requestUrl)
     },
     options.manualRedirectUrl,
@@ -163,12 +196,12 @@ export function serializeOidcCredentials(
   }
 }
 
-async function withCallbackServer(
+export async function withCallbackServer(
   host: string,
   pathname: string,
   startLogin: (callbackUrl: string) => Promise<void>,
   onCallback: (requestUrl: string) => Promise<void>,
-  manualRedirectUrl?: () => Promise<string>,
+  manualRedirectUrl?: (signal?: AbortSignal) => Promise<string>,
 ): Promise<void> {
   const server = createServer()
   const sockets = new Set<Socket>()
@@ -236,10 +269,24 @@ async function withCallbackServer(
     }
 
     const callbackUrl = `http://${host}:${(address as AddressInfo).port}${pathname}`
+    const manualRedirectAbortController = new AbortController()
+    const cancellableCallbackPromise = callbackPromise.finally(() => {
+      manualRedirectAbortController.abort()
+    })
     await startLogin(callbackUrl)
+    const manualRedirectPromise = waitForManualRedirect(
+      onCallback,
+      manualRedirectUrl,
+      manualRedirectAbortController.signal,
+    ).catch((error) => {
+      if (manualRedirectAbortController.signal.aborted) {
+        return new Promise<void>(() => undefined)
+      }
+      throw error
+    })
     await Promise.race([
-      callbackPromise,
-      waitForManualRedirect(onCallback, manualRedirectUrl),
+      cancellableCallbackPromise,
+      manualRedirectPromise,
     ])
   } finally {
     server.closeIdleConnections?.()
@@ -251,6 +298,22 @@ async function withCallbackServer(
     }
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }
+}
+
+export function assertOidcCallbackDidNotReturnError(requestUrl: string): void {
+  const url = new URL(requestUrl)
+  const error = url.searchParams.get('error')
+  if (!error) {
+    return
+  }
+
+  const description = url.searchParams.get('error_description')
+  const details = [
+    `OIDC callback returned ${error}`,
+    description ? `description: ${description}` : null,
+    `redirect: ${url.origin}${url.pathname}`,
+  ].filter(Boolean)
+  throw new Error(details.join('; '))
 }
 
 function renderCallbackPage(input: {
@@ -449,7 +512,14 @@ async function refreshStoredOidcSession(
     refreshedTokenSet = tokenSet
   })
 
-  await refreshSession(session, { storage })
+  try {
+    await refreshSession(session, { storage })
+  } catch (error) {
+    if (isOidcLoginExpiredError(error)) {
+      throw new LinxOidcLoginExpiredError(error)
+    }
+    throw error
+  }
 
   const nextTokenSet = refreshedTokenSet as SessionTokenSet | null
   if (!nextTokenSet?.accessToken) {
@@ -533,18 +603,23 @@ function escapeHtml(value: string): string {
 
 async function waitForManualRedirect(
   onCallback: (requestUrl: string) => Promise<void>,
-  manualRedirectUrl?: () => Promise<string>,
+  manualRedirectUrl?: (signal?: AbortSignal) => Promise<string>,
+  signal?: AbortSignal,
 ): Promise<void> {
   if (!manualRedirectUrl) {
     await new Promise(() => undefined)
     return
   }
 
-  const requestUrl = await manualRedirectUrl()
+  const requestUrl = await manualRedirectUrl(signal)
+  if (signal?.aborted || !requestUrl) {
+    await new Promise(() => undefined)
+    return
+  }
   await onCallback(requestUrl)
 }
 
-async function openBrowser(url: string): Promise<void> {
+export async function openBrowser(url: string): Promise<void> {
   if (process.platform === 'darwin') {
     await execFileAsync('open', [url])
     return

@@ -1,7 +1,7 @@
 import { createPiAgentStreamAdapter, type PiAgentStreamAdapter, type PiCompletionBackendResult } from './stream.js'
 import { resolveLinxPiCloudOAuthCredential } from './auth.js'
-import { loginWithBrowserConsent } from '../oidc-auth.js'
-import { DEFAULT_LINX_CLOUD_MODEL_ID, resolvePreferredLinxCloudModelId } from '../default-model.js'
+import { ensureBrowserConsentLogin, isOidcLoginExpiredError } from '../oidc-auth.js'
+import { DEFAULT_LINX_CLOUD_MODEL_ID, FALLBACK_LINX_CLOUD_MODEL_IDS, resolvePreferredLinxCloudModelId } from '../default-model.js'
 import { ensureLinxPiTheme } from './theme.js'
 import {
   type AgentSessionRuntime,
@@ -15,7 +15,8 @@ import {
   createCodingTools,
 } from '@mariozechner/pi-coding-agent'
 import type { Api, Model, OAuthCredentials } from '@mariozechner/pi-ai'
-import type { RemoteChatMessage, RemoteChatTool } from '../chat-api.js'
+import { isRemoteAuthExpiredError, type RemoteChatMessage, type RemoteChatTool } from '../chat-api.js'
+import { installLinxPiRemoteApproval } from './pod-approval.js'
 
 const UNDEFINEDS_PROVIDER_ID = 'undefineds'
 const UNDEFINEDS_PROVIDER_LABEL = 'undefineds(cloud)'
@@ -92,6 +93,7 @@ export interface LinxCloudPiAuthBridge {
   providerId: 'undefineds-cloud'
   providerLabel: 'undefineds(cloud)'
   runtimeUrl: string
+  shouldPromptLoginOnStart?: boolean
 }
 
 export interface PiRuntimeAdapter {
@@ -115,6 +117,7 @@ export function createPiRuntimeAdapter(
   const requestedModel = options.model?.trim() || undefined
   let activeModelId = requestedModel ?? DEFAULT_LINX_CLOUD_MODEL_ID
   const baseUrl = options.providerConfig?.baseUrl ?? 'https://api.undefineds.co/v1'
+  let shouldPromptLoginOnStart = false
   const providerModels: Array<{
     id: string
     name: string
@@ -134,10 +137,7 @@ export function createPiRuntimeAdapter(
       supportsDeveloperRole: false
       supportsStrictMode: false
     }
-  }> = [buildProviderModel({
-    id: activeModelId,
-    contextWindow: 1_000_000,
-  })]
+  }> = buildFallbackProviderModels(activeModelId)
   const proxy = backendMode === 'native'
     ? dependencies.createNativeProxy?.({
       cwd,
@@ -209,11 +209,13 @@ export function createPiRuntimeAdapter(
         async login(callbacks: {
           onAuth(info: { url: string; instructions?: string }): void
           onProgress?(message: string): void
-          onManualCodeInput?: () => Promise<string>
+          onManualCodeInput?: (signal?: AbortSignal) => Promise<string>
+          forceFresh?: boolean
         }) {
           callbacks.onProgress?.('Opening LinX Cloud login in your browser...')
-          const result = await loginWithBrowserConsent({
+          const result = await ensureBrowserConsentLogin({
             issuerUrl: options.providerConfig?.issuerUrl,
+            forceFresh: callbacks.forceFresh,
             onAuthUrl(url) {
               callbacks.onAuth({
                 url,
@@ -222,7 +224,10 @@ export function createPiRuntimeAdapter(
             },
             manualRedirectUrl: callbacks.onManualCodeInput,
           })
-          await syncProviderModels(result.tokenSet.accessToken ?? '')
+          if (result.reusedExistingSession) {
+            callbacks.onProgress?.('Reused existing LinX Cloud session.')
+          }
+          await syncProviderModels(result.tokenSet.accessToken ?? '', { throwAuthExpired: true })
 
           return {
             refresh: result.tokenSet.refreshToken ?? '',
@@ -244,7 +249,13 @@ export function createPiRuntimeAdapter(
       }
       const resolvedOAuth = options.providerConfig?.oauth
         ? null
-        : await resolveLinxPiCloudOAuthCredential(options.providerConfig?.issuerUrl)
+        : await resolveLinxPiCloudOAuthCredential(options.providerConfig?.issuerUrl).catch((error) => {
+          if (isOidcLoginExpiredError(error)) {
+            shouldPromptLoginOnStart = true
+            return null
+          }
+          throw error
+        })
       const explicitOAuthCredential = options.providerConfig?.oauth
         ? await options.providerConfig.oauth.login()
         : null
@@ -278,15 +289,19 @@ export function createPiRuntimeAdapter(
       const settingsManager = SettingsManager.create(context.cwd, context.agentDir)
       ensureLinxPiTheme(context.agentDir)
       settingsManager.setTheme('linx')
-      sanitizeLinxCloudDefaults(settingsManager)
+      const defaultModelId = sanitizeLinxCloudDefaults(settingsManager, requestedModel, providerModels)
+      activeModelId = defaultModelId
       const services = await createAgentSessionServices({
         cwd: context.cwd,
         agentDir: context.agentDir,
         authStorage,
         settingsManager,
         modelRegistry,
+        resourceLoaderOptions: {
+          systemPromptOverride: overrideLinxSystemPrompt,
+        },
       })
-      const selectedModel = modelRegistry.find(UNDEFINEDS_PROVIDER_ID, requestedModel ?? activeModelId)
+      const selectedModel = modelRegistry.find(UNDEFINEDS_PROVIDER_ID, defaultModelId)
         ?? modelRegistry.getAvailable().find((candidate) => candidate.provider === UNDEFINEDS_PROVIDER_ID)
       if (!selectedModel) {
         throw new Error('Failed to resolve undefineds model from the LinX Pi runtime adapter')
@@ -299,7 +314,12 @@ export function createPiRuntimeAdapter(
         tools: createCodingTools(context.cwd),
       })
       const session = created.session
-      if (session.model?.provider === UNDEFINEDS_PROVIDER_ID && session.model.id !== selectedModel.id) {
+      enableLinxXhighThinking(session)
+      installLinxPiRemoteApproval({
+        session,
+        cwd: context.cwd,
+      })
+      if (session.model?.provider !== selectedModel.provider || session.model.id !== selectedModel.id) {
         await session.setModel(selectedModel)
       }
       const runtime = await createAgentSessionRuntime(async () => ({
@@ -319,6 +339,7 @@ export function createPiRuntimeAdapter(
         providerId: 'undefineds-cloud',
         providerLabel: UNDEFINEDS_PROVIDER_LABEL,
         runtimeUrl: baseUrl,
+        shouldPromptLoginOnStart,
       } satisfies LinxCloudPiAuthBridge & { authMode: 'oauth' | 'apiKey' }
       return runtime
     },
@@ -330,20 +351,29 @@ export function createPiRuntimeAdapter(
     },
   }
 
-  async function syncProviderModels(apiKey: string): Promise<void> {
+  async function syncProviderModels(apiKey: string, options: { throwAuthExpired?: boolean } = {}): Promise<void> {
     if (!apiKey || !dependencies.listRemoteModels) {
       return
     }
 
-    const remoteModels = await dependencies.listRemoteModels(null, baseUrl, apiKey).catch(() => [])
+    const remoteModels = await dependencies.listRemoteModels(null, baseUrl, apiKey).catch((error) => {
+      if (isAuthExpiredError(error)) {
+        shouldPromptLoginOnStart = true
+        if (options.throwAuthExpired) {
+          throw error
+        }
+      }
+      return []
+    })
     if (remoteModels.length === 0) {
       return
     }
 
-    const nextModels = remoteModels.map((entry) => buildProviderModel({
+    const mergedModels = mergeLinxProviderModels(remoteModels.map((entry) => ({
       id: entry.id,
       contextWindow: entry.contextWindow ?? 1_000_000,
-    }))
+    })), activeModelId)
+    const nextModels = mergedModels.map((entry) => buildProviderModel(entry))
     providerModels.splice(0, providerModels.length, ...nextModels)
 
     if (!requestedModel) {
@@ -352,13 +382,55 @@ export function createPiRuntimeAdapter(
   }
 }
 
-function sanitizeLinxCloudDefaults(settingsManager: SettingsManager): void {
-  const provider = settingsManager.getDefaultProvider()
-  const model = settingsManager.getDefaultModel()
+function enableLinxXhighThinking(session: {
+  model?: { provider?: string; reasoning?: boolean }
+  supportsXhighThinking?: () => boolean
+  getAvailableThinkingLevels?: () => string[]
+}): void {
+  const originalSupportsXhighThinking = session.supportsXhighThinking?.bind(session)
+  const originalGetAvailableThinkingLevels = session.getAvailableThinkingLevels?.bind(session)
 
-  if (provider === UNDEFINEDS_PROVIDER_ID && model && model !== 'linx' && model !== 'linx-lite') {
-    settingsManager.setDefaultModelAndProvider(UNDEFINEDS_PROVIDER_ID, DEFAULT_LINX_CLOUD_MODEL_ID)
+  if (originalSupportsXhighThinking) {
+    session.supportsXhighThinking = () => (
+      session.model?.provider === UNDEFINEDS_PROVIDER_ID && session.model.reasoning
+        ? true
+        : originalSupportsXhighThinking()
+    )
   }
+
+  if (originalGetAvailableThinkingLevels) {
+    session.getAvailableThinkingLevels = () => {
+      const levels = originalGetAvailableThinkingLevels()
+      if (session.model?.provider === UNDEFINEDS_PROVIDER_ID && session.model.reasoning && !levels.includes('xhigh')) {
+        return [...levels, 'xhigh']
+      }
+      return levels
+    }
+  }
+}
+
+function isAuthExpiredError(error: unknown): boolean {
+  return isRemoteAuthExpiredError(error)
+}
+
+function sanitizeLinxCloudDefaults(
+  settingsManager: SettingsManager,
+  requestedModel: string | undefined,
+  providerModels: Array<{ id: string }>,
+): string {
+  const availableModelIds = new Set(providerModels.map((model) => model.id))
+  const savedProvider = settingsManager.getDefaultProvider()
+  const savedModel = settingsManager.getDefaultModel()
+  const savedLinxModel = savedProvider === UNDEFINEDS_PROVIDER_ID && savedModel && availableModelIds.has(savedModel)
+    ? savedModel
+    : undefined
+  const nextModel = requestedModel || savedLinxModel || DEFAULT_LINX_CLOUD_MODEL_ID
+
+  if (savedProvider !== UNDEFINEDS_PROVIDER_ID || savedModel !== nextModel) {
+    settingsManager.setDefaultModelAndProvider(UNDEFINEDS_PROVIDER_ID, nextModel)
+  }
+
+  return nextModel
 }
 
 function buildProviderModel(input: {
@@ -406,6 +478,37 @@ function buildProviderModel(input: {
   }
 }
 
+function buildFallbackProviderModels(activeModelId: string): ReturnType<typeof buildProviderModel>[] {
+  return mergeLinxProviderModels([], activeModelId).map((entry) => buildProviderModel(entry))
+}
+
+function mergeLinxProviderModels(
+  models: Array<{ id: string; contextWindow: number }>,
+  activeModelId: string,
+): Array<{ id: string; contextWindow: number }> {
+  const byId = new Map<string, { id: string; contextWindow: number }>()
+  for (const id of [
+    ...FALLBACK_LINX_CLOUD_MODEL_IDS,
+    activeModelId,
+  ]) {
+    byId.set(id, {
+      id,
+      contextWindow: 1_000_000,
+    })
+  }
+  for (const model of models) {
+    const id = model.id.trim()
+    if (!id) {
+      continue
+    }
+    byId.set(id, {
+      id,
+      contextWindow: model.contextWindow,
+    })
+  }
+  return [...byId.values()]
+}
+
 async function resolveLinxPiCloudApiKey(options: {
   issuerUrl?: string
   explicitApiKey?: string
@@ -431,4 +534,20 @@ function withSystemPrompt(systemPrompt: string | undefined, messages: RemoteChat
     return messages
   }
   return [{ role: 'system', content: prompt }, ...messages]
+}
+
+function overrideLinxSystemPrompt(base: string | undefined): string | undefined {
+  const original = base?.trim()
+  const identity = [
+    'You are LinX, an AI Secretary operating inside the LinX CLI.',
+    'When replying in Chinese, describe yourself as "AI主理人".',
+    'Use a friendly, direct style like: "你好！我是 LinX，一个 AI 主理人，很高兴为你服务！"',
+    'Keep Pi-compatible coding agent behavior: read files, run commands, edit code, use tools, and follow project instructions.',
+  ].join('\n')
+
+  if (!original) {
+    return identity
+  }
+
+  return `${identity}\n\n${original.replace(/\bpi\b/g, 'LinX').replace(/\bPi\b/g, 'LinX')}`
 }

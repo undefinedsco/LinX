@@ -12,6 +12,7 @@ import {
   credentialTable,
   ContactType,
   agentTable,
+  applySolidComunicaPatches,
   chatTable,
   contactTable,
   drizzle,
@@ -54,6 +55,7 @@ import {
 export {
   ContactType,
   agentTable,
+  applySolidComunicaPatches,
   aiConfigModelUri,
   aiConfigProviderUri,
   aiModelTable,

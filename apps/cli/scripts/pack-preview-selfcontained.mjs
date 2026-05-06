@@ -9,7 +9,7 @@ const cliRoot = fileURLToPath(new URL('..', import.meta.url))
 const previewRoot = join(repoRoot, 'preview')
 const args = parseArgs(process.argv.slice(2))
 const baseCliPkg = JSON.parse(readFileSync(join(cliRoot, 'package.json'), 'utf-8'))
-const packageVersion = args.version ?? (args.release ? baseCliPkg.version : `${baseCliPkg.version}-${Date.now()}`)
+const packageVersion = args.version ?? (args.release ? baseCliPkg.version : createPreviewVersion(baseCliPkg.version))
 const artifactKind = args.release ? 'release' : 'preview'
 const workRoot = join(tmpdir(), `linx-cli-${artifactKind}-${Date.now()}`)
 
@@ -61,6 +61,7 @@ cliPkg.publishConfig = {
 }
 if (cliPkg.dependencies) {
   delete cliPkg.dependencies['@undefineds.co/models']
+  Object.assign(cliPkg.dependencies, modelsPkg.dependencies)
   cliPkg.dependencies['@zed-industries/codex-acp'] = '^0.9.5'
 }
 writeFileSync(cliPkgPath, `${JSON.stringify(cliPkg, null, 2)}\n`)
@@ -171,16 +172,18 @@ for (const name of ['src', 'test', '.tmp-dev-emit', '.omx']) {
 }
 
 mkdirSync(previewRoot, { recursive: true })
-const pack = spawnSync('npm', ['pack'], {
+const pack = spawnSync('npm', ['pack', '--json'], {
   cwd: workRoot,
-  stdio: 'inherit',
+  encoding: 'utf8',
+  stdio: ['ignore', 'pipe', 'inherit'],
   env: {
     ...process.env,
     npm_config_cache: join(workRoot, '.npm-cache'),
   },
 })
 if ((pack.status ?? 1) !== 0) process.exit(pack.status ?? 1)
-const tgz = join(workRoot, `linx-cli-${packageVersion}.tgz`)
+const packed = JSON.parse(pack.stdout)[0]
+const tgz = join(workRoot, packed.filename)
 const out = join(previewRoot, `linx-cli-${artifactKind}-selfcontained-${packageVersion}.tgz`)
 cpSync(tgz, out)
 console.log(out)
@@ -214,4 +217,16 @@ function parseArgs(argv) {
   }
 
   return parsed
+}
+
+function createPreviewVersion(baseVersion) {
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:-.+)?$/.exec(baseVersion)
+  if (!match) {
+    throw new Error(`Cannot derive preview version from package version: ${baseVersion}`)
+  }
+
+  const major = Number(match[1])
+  const minor = Number(match[2])
+  const patch = Number(match[3])
+  return `${major}.${minor}.${patch + 1}-preview.${Date.now()}`
 }

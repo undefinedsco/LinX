@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   pickSolidProfileDisplayName,
+  parseSolidProfileDocument,
   profileRepository,
   resolveSolidProfile,
   resolveSolidProfileDisplayName,
+  resolveSolidProfileIdentityFromWebIdDocument,
   resolveSolidProfileIdentityWithReader,
   resolveSolidProfileWithTable,
   type SolidProfileRow,
@@ -94,5 +96,47 @@ describe('solid profile helpers', () => {
       username: 'ganbb',
       profile: { name: 'Gan Lu' },
     })
+  })
+
+  it('parses profile display identity from a WebID Turtle document without a Pod database', async () => {
+    const webId = 'https://id.undefineds.co/ganbb/profile/card#me'
+    const turtle = `
+      @prefix vcard: <http://www.w3.org/2006/vcard/ns#> .
+      @prefix foaf: <http://xmlns.com/foaf/0.1/> .
+
+      <#me> vcard:fn "Gan Lu" ;
+            foaf:nick "ganbb" .
+    `
+
+    await expect(parseSolidProfileDocument(turtle, {
+      contentType: 'text/turtle',
+      profileDocumentUrl: 'https://id.undefineds.co/ganbb/profile/card',
+      webId,
+    })).resolves.toMatchObject({
+      id: webId,
+      name: 'Gan Lu',
+      nick: 'ganbb',
+    })
+  })
+
+  it('resolves profile identity from a WebID document fetch without registering profile tables', async () => {
+    const webId = 'https://id.undefineds.co/ganbb/profile/card#me'
+    const requestedUrls: string[] = []
+    const session = {
+      info: { webId },
+      async fetch(url: string) {
+        requestedUrls.push(url)
+        return new Response('<#me> <http://www.w3.org/2006/vcard/ns#fn> "Gan Lu" .', {
+          headers: { 'content-type': 'text/turtle' },
+        })
+      },
+    }
+
+    await expect(resolveSolidProfileIdentityFromWebIdDocument(session, { webId })).resolves.toMatchObject({
+      webId,
+      displayName: 'Gan Lu',
+      username: 'ganbb',
+    })
+    expect(requestedUrls).toEqual(['https://id.undefineds.co/ganbb/profile/card'])
   })
 })

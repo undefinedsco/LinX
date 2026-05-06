@@ -251,6 +251,13 @@ export function parseLinxClientSecrets(raw: unknown): LinxClientSecrets | null {
     }
   }
 
+  if (typeof raw.secret_id === 'string' && typeof raw.secret_key === 'string') {
+    return {
+      clientId: raw.secret_id,
+      clientSecret: raw.secret_key,
+    }
+  }
+
   if (
     typeof raw.oidcRefreshToken === 'string'
     && typeof raw.oidcAccessToken === 'string'

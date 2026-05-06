@@ -8,9 +8,9 @@ export const grantTable = podTable(
   {
     id: id('id'),
 
-    // Also tag the instance with our company-level class for easy discovery.
-    // Primary rdf:type is ODRL.Policy (standard).
-    rdfType: uri('rdfType').predicate(RDF.type).notNull().default(UDFS.AutonomyGrant),
+    // Table-level type writes odrl:Policy. Keep the project-specific class as
+    // an additional rdf:type, so readback treats RDF class membership as multi-valued.
+    rdfType: uri('rdfType').array().predicate(RDF.type).notNull().default([UDFS.AutonomyGrant]),
 
     // Minimal ODRL surface (CP0): allow/deny action on target.
     target: uri('target').predicate(ODRL.target).notNull(),

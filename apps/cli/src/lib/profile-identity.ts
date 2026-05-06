@@ -1,10 +1,12 @@
 import {
+  getClientCredentialId,
+  getClientCredentialKey,
   getClientCredentials,
   loadCredentials,
   type StoredCredentials,
 } from './credentials-store.js'
 import { extractProfileUsernameFromWebId } from '@undefineds.co/models/client'
-import { resolveSolidProfileIdentity, type SolidProfileIdentity } from '@undefineds.co/models/profile'
+import { resolveSolidProfileIdentityFromWebIdDocument, type SolidProfileIdentity } from '@undefineds.co/models/profile'
 import { getOidcAccessToken } from './oidc-auth.js'
 import { authenticate } from './solid-auth.js'
 
@@ -26,7 +28,7 @@ export interface ProfileIdentityResource {
 const resourceCache = new Map<string, ProfileIdentityResource>()
 
 const defaultResolveProfileIdentity = (session: unknown, webId: string): Promise<SolidProfileIdentity | null> => {
-  return resolveSolidProfileIdentity(session as never, { webId })
+  return resolveSolidProfileIdentityFromWebIdDocument(session as never, { webId })
 }
 
 const defaultRuntime: ProfileIdentityRuntime = {
@@ -102,8 +104,8 @@ async function createProfileSession(
   const clientCredentials = runtime.getClientCredentials(credentials)
   if (clientCredentials) {
     const { session } = await runtime.authenticate(
-      clientCredentials.clientId,
-      clientCredentials.clientSecret,
+      getClientCredentialId(clientCredentials),
+      getClientCredentialKey(clientCredentials),
       credentials.url,
     )
     return session
@@ -123,7 +125,7 @@ async function createProfileSession(
 function buildProfileResourceCacheKey(credentials: StoredCredentials): string {
   const clientCredentials = getClientCredentials(credentials)
   const secretVersion = clientCredentials
-    ? clientCredentials.clientId
+    ? getClientCredentialId(clientCredentials)
     : 'oidcRefreshToken' in credentials.secrets
       ? credentials.secrets.oidcRefreshToken
       : ''

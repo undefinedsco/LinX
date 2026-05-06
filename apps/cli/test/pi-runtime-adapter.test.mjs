@@ -348,6 +348,121 @@ test('pi runtime adapter prefers linx-lite when cloud model discovery returns mu
   process.chdir(cliRoot)
 })
 
+test('pi runtime adapter keeps both LinX fallback models when cloud discovery is unavailable', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/runtime.ts')
+  t.after(() => cleanup())
+
+  const { SessionManager } = await import('@mariozechner/pi-coding-agent')
+  const cwd = mkdtempSync(join(tmpdir(), 'linx-pi-runtime-model-fallback-'))
+  const agentDir = mkdtempSync(join(tmpdir(), 'linx-pi-runtime-model-fallback-agent-'))
+  t.after(() => {
+    process.chdir(cliRoot)
+    rmSync(cwd, { recursive: true, force: true })
+    rmSync(agentDir, { recursive: true, force: true })
+  })
+
+  const adapter = module.createPiRuntimeAdapter({
+    async createRemoteCompletion() {
+      return 'hello fallback models'
+    },
+    async listRemoteModels() {
+      throw new Error('models unavailable')
+    },
+  }, {
+    cwd,
+    providerConfig: {
+      baseUrl: 'https://api.undefineds.co/v1',
+      oauth: {
+        name: 'LinX Cloud',
+        async login() {
+          return {
+            refresh: 'refresh-token',
+            access: 'access-token',
+            expires: Date.now() + 60_000,
+          }
+        },
+        async refreshToken(credentials) {
+          return credentials
+        },
+        getApiKey() {
+          return 'cloud-access-token'
+        },
+      },
+    },
+  })
+
+  const runtime = await adapter.createRuntime({
+    cwd,
+    agentDir,
+    sessionManager: SessionManager.inMemory(cwd),
+  })
+
+  const available = runtime.session.modelRegistry.getAvailable()
+    .filter((model) => model.provider === 'undefineds')
+    .map((model) => model.id)
+  assert.deepEqual(available, ['linx', 'linx-lite'])
+  assert.equal(runtime.session.model.id, 'linx-lite')
+
+  await runtime.dispose()
+  process.chdir(cliRoot)
+})
+
+test('pi runtime adapter enables xhigh thinking for LinX cloud models', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/runtime.ts')
+  t.after(() => cleanup())
+
+  const { SessionManager } = await import('@mariozechner/pi-coding-agent')
+  const cwd = mkdtempSync(join(tmpdir(), 'linx-pi-runtime-xhigh-'))
+  const agentDir = mkdtempSync(join(tmpdir(), 'linx-pi-runtime-xhigh-agent-'))
+  t.after(() => {
+    process.chdir(cliRoot)
+    rmSync(cwd, { recursive: true, force: true })
+    rmSync(agentDir, { recursive: true, force: true })
+  })
+
+  const adapter = module.createPiRuntimeAdapter({
+    async createRemoteCompletion() {
+      return 'hello xhigh'
+    },
+  }, {
+    cwd,
+    providerConfig: {
+      baseUrl: 'https://api.undefineds.co/v1',
+      oauth: {
+        name: 'LinX Cloud',
+        async login() {
+          return {
+            refresh: 'refresh-token',
+            access: 'access-token',
+            expires: Date.now() + 60_000,
+          }
+        },
+        async refreshToken(credentials) {
+          return credentials
+        },
+        getApiKey() {
+          return 'cloud-access-token'
+        },
+      },
+    },
+  })
+
+  const runtime = await adapter.createRuntime({
+    cwd,
+    agentDir,
+    sessionManager: SessionManager.inMemory(cwd),
+  })
+
+  assert.equal(runtime.session.model.provider, 'undefineds')
+  assert.equal(runtime.session.supportsXhighThinking(), true)
+  assert.ok(runtime.session.getAvailableThinkingLevels().includes('xhigh'))
+  runtime.session.setThinkingLevel('xhigh')
+  assert.equal(runtime.session.thinkingLevel, 'xhigh')
+
+  await runtime.dispose()
+  process.chdir(cliRoot)
+})
+
 test('pi runtime adapter ignores stale undefineds defaults that point to gpt-5-codex', async (t) => {
   const { module, cleanup } = await loadWatchModule('lib/pi-adapter/runtime.ts')
   t.after(() => cleanup())
@@ -417,6 +532,258 @@ test('pi runtime adapter ignores stale undefineds defaults that point to gpt-5-c
   process.chdir(cliRoot)
 })
 
+test('pi runtime adapter preserves the last valid LinX model and thinking defaults', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/runtime.ts')
+  t.after(() => cleanup())
+
+  const { SessionManager } = await import('@mariozechner/pi-coding-agent')
+  const cwd = mkdtempSync(join(tmpdir(), 'linx-pi-runtime-saved-default-'))
+  const agentDir = mkdtempSync(join(tmpdir(), 'linx-pi-runtime-saved-default-agent-'))
+  mkdirSync(agentDir, { recursive: true })
+  writeFileSync(join(agentDir, 'settings.json'), JSON.stringify({
+    defaultProvider: 'undefineds',
+    defaultModel: 'linx',
+    defaultThinkingLevel: 'xhigh',
+  }, null, 2))
+
+  t.after(() => {
+    process.chdir(cliRoot)
+    rmSync(cwd, { recursive: true, force: true })
+    rmSync(agentDir, { recursive: true, force: true })
+  })
+
+  const adapter = module.createPiRuntimeAdapter({
+    async createRemoteCompletion() {
+      return 'hello saved default'
+    },
+    async listRemoteModels() {
+      return [
+        { id: 'linx', contextWindow: 200_000 },
+        { id: 'linx-lite', contextWindow: 100_000 },
+      ]
+    },
+  }, {
+    cwd,
+    providerConfig: {
+      baseUrl: 'https://api.undefineds.co/v1',
+      oauth: {
+        name: 'LinX Cloud',
+        async login() {
+          return {
+            refresh: 'refresh-token',
+            access: 'access-token',
+            expires: Date.now() + 60_000,
+          }
+        },
+        async refreshToken(credentials) {
+          return credentials
+        },
+        getApiKey() {
+          return 'cloud-access-token'
+        },
+      },
+    },
+  })
+
+  const runtime = await adapter.createRuntime({
+    cwd,
+    agentDir,
+    sessionManager: SessionManager.inMemory(cwd),
+  })
+
+  assert.equal(runtime.session.model.id, 'linx')
+  assert.equal(runtime.session.thinkingLevel, 'xhigh')
+
+  await runtime.dispose()
+  process.chdir(cliRoot)
+})
+
+test('pi runtime adapter brands the default system prompt as LinX AI Secretary', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/runtime.ts')
+  t.after(() => cleanup())
+
+  const { SessionManager } = await import('@mariozechner/pi-coding-agent')
+  const cwd = mkdtempSync(join(tmpdir(), 'linx-pi-runtime-system-prompt-'))
+  const agentDir = mkdtempSync(join(tmpdir(), 'linx-pi-runtime-system-prompt-agent-'))
+  t.after(() => {
+    process.chdir(cliRoot)
+    rmSync(cwd, { recursive: true, force: true })
+    rmSync(agentDir, { recursive: true, force: true })
+  })
+
+  const adapter = module.createPiRuntimeAdapter({
+    async createRemoteCompletion() {
+      return 'hello system prompt'
+    },
+  }, {
+    cwd,
+    providerConfig: {
+      baseUrl: 'https://api.undefineds.co/v1',
+      oauth: {
+        name: 'LinX Cloud',
+        async login() {
+          return {
+            refresh: 'refresh-token',
+            access: 'access-token',
+            expires: Date.now() + 60_000,
+          }
+        },
+        async refreshToken(credentials) {
+          return credentials
+        },
+        getApiKey() {
+          return 'cloud-access-token'
+        },
+      },
+    },
+  })
+
+  const runtime = await adapter.createRuntime({
+    cwd,
+    agentDir,
+    sessionManager: SessionManager.inMemory(cwd),
+  })
+
+  assert.match(runtime.session.systemPrompt, /AI Secretary/)
+  assert.match(runtime.session.systemPrompt, /AI主理人/)
+  assert.match(runtime.session.systemPrompt, /我是 LinX/)
+  assert.doesNotMatch(runtime.session.systemPrompt, /operating inside pi/)
+
+  await runtime.dispose()
+  process.chdir(cliRoot)
+})
+
+test('pi runtime adapter marks expired cloud auth during startup model preflight', async (t) => {
+  const [{ module, cleanup }, { module: chatApiModule, cleanup: chatApiCleanup }] = await Promise.all([
+    loadWatchModule('lib/pi-adapter/runtime.ts'),
+    loadWatchModule('lib/chat-api.ts'),
+  ])
+  t.after(() => cleanup())
+  t.after(() => chatApiCleanup())
+
+  const { SessionManager } = await import('@mariozechner/pi-coding-agent')
+  const cwd = mkdtempSync(join(tmpdir(), 'linx-pi-runtime-expired-auth-'))
+  const agentDir = mkdtempSync(join(tmpdir(), 'linx-pi-runtime-expired-auth-agent-'))
+  t.after(() => {
+    process.chdir(cliRoot)
+    rmSync(cwd, { recursive: true, force: true })
+    rmSync(agentDir, { recursive: true, force: true })
+  })
+
+  const adapter = module.createPiRuntimeAdapter({
+    async createRemoteCompletion() {
+      return 'not reached'
+    },
+    async listRemoteModels() {
+      throw new chatApiModule.RemoteChatRequestError('LinX Cloud login expired.', 401, '{"message":"Invalid Solid token"}', true)
+    },
+  }, {
+    cwd,
+    providerConfig: {
+      baseUrl: 'https://api.undefineds.co/v1',
+      oauth: {
+        name: 'LinX Cloud',
+        async login() {
+          return {
+            refresh: 'refresh-token',
+            access: 'expired-access-token',
+            expires: Date.now() + 60_000,
+          }
+        },
+        async refreshToken(credentials) {
+          return credentials
+        },
+        getApiKey() {
+          return 'expired-access-token'
+        },
+      },
+    },
+  })
+
+  const runtime = await adapter.createRuntime({
+    cwd,
+    agentDir,
+    sessionManager: SessionManager.inMemory(cwd),
+  })
+
+  assert.equal(runtime.linxAuthBridge.shouldPromptLoginOnStart, true)
+  await runtime.dispose()
+  process.chdir(cliRoot)
+})
+
+test('pi runtime adapter overrides restored non-LinX session models', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/runtime.ts')
+  t.after(() => cleanup())
+
+  const { SessionManager } = await import('@mariozechner/pi-coding-agent')
+  const cwd = mkdtempSync(join(tmpdir(), 'linx-pi-runtime-stale-session-model-'))
+  const agentDir = mkdtempSync(join(tmpdir(), 'linx-pi-runtime-stale-session-model-agent-'))
+  t.after(() => {
+    process.chdir(cliRoot)
+    rmSync(cwd, { recursive: true, force: true })
+    rmSync(agentDir, { recursive: true, force: true })
+  })
+
+  const sessionManager = SessionManager.inMemory(cwd)
+  sessionManager.appendModelChange('anthropic', 'claude-3.5-sonnet')
+  sessionManager.appendMessage({
+    role: 'user',
+    content: [{ type: 'text', text: 'old message' }],
+    timestamp: new Date().toISOString(),
+  })
+
+  const completionCalls = []
+  const adapter = module.createPiRuntimeAdapter({
+    async createRemoteCompletion(input) {
+      completionCalls.push(input)
+      return 'hello after stale session model fix'
+    },
+    async listRemoteModels() {
+      return [
+        { id: 'linx', contextWindow: 200_000 },
+        { id: 'linx-lite', contextWindow: 100_000 },
+      ]
+    },
+  }, {
+    cwd,
+    providerConfig: {
+      baseUrl: 'https://api.undefineds.co/v1',
+      oauth: {
+        name: 'LinX Cloud',
+        async login() {
+          return {
+            refresh: 'refresh-token',
+            access: 'access-token',
+            expires: Date.now() + 60_000,
+          }
+        },
+        async refreshToken(credentials) {
+          return credentials
+        },
+        getApiKey() {
+          return 'cloud-access-token'
+        },
+      },
+    },
+  })
+
+  const runtime = await adapter.createRuntime({
+    cwd,
+    agentDir,
+    sessionManager,
+  })
+
+  assert.equal(runtime.session.model.provider, 'undefineds')
+  assert.equal(runtime.session.model.id, 'linx-lite')
+
+  await runtime.session.prompt('say hi')
+  assert.equal(completionCalls.length, 1)
+  assert.equal(completionCalls[0].model, 'linx-lite')
+
+  await runtime.dispose()
+  process.chdir(cliRoot)
+})
+
 test('pi runtime adapter keeps Pi native coding tools active in the cloud path', async (t) => {
   const { module, cleanup } = await loadWatchModule('lib/pi-adapter/runtime.ts')
   t.after(() => cleanup())
@@ -466,3 +833,212 @@ test('pi runtime adapter keeps Pi native coding tools active in the cloud path',
   assert.deepEqual(runtime.session.getActiveToolNames(), ['read', 'bash', 'edit', 'write'])
   await runtime.dispose()
 })
+
+test('linx pi remote approval blocks rejected side-effect tools from executing', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/pod-approval.ts')
+  t.after(() => cleanup())
+
+  const runtime = createApprovalRuntime({
+    onSleep(state) {
+      state.approvals[0].status = 'rejected'
+      state.approvals[0].reason = JSON.stringify({ decision: 'decline' })
+      state.approvals[0].resolvedAt = '2026-05-05T00:00:01.000Z'
+    },
+  })
+
+  const result = await module.requestLinxPiToolApproval({
+    session: createFakePiSession('019df-test-approval'),
+    cwd: '/tmp/linx-work',
+    pollMs: 1,
+    runtime,
+    context: createToolContext({
+      id: 'tool_bash_1',
+      name: 'bash',
+      args: { command: 'rm -rf tmp' },
+    }),
+  })
+
+  assert.equal(runtime.state.approvals.length, 1)
+  assert.equal(runtime.state.approvals[0].status, 'rejected')
+  assert.equal(runtime.state.approvals[0].toolName, 'bash')
+  assert.equal(runtime.state.audits[0].action, 'approval_requested')
+  assert.deepEqual(result, {
+    block: true,
+    reason: 'LinX remote approval rejected tool bash.',
+  })
+})
+
+test('linx pi remote approval resumes when another app approves in Pod', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/pod-approval.ts')
+  t.after(() => cleanup())
+
+  const runtime = createApprovalRuntime({
+    onSleep(state) {
+      state.approvals[0].status = 'approved'
+      state.approvals[0].reason = JSON.stringify({ decision: 'accept' })
+      state.approvals[0].decisionBy = state.webId
+      state.approvals[0].resolvedAt = '2026-05-05T00:00:01.000Z'
+    },
+  })
+
+  const result = await module.requestLinxPiToolApproval({
+    session: createFakePiSession('019df-test-approved'),
+    cwd: '/tmp/linx-work',
+    pollMs: 1,
+    runtime,
+    context: createToolContext({
+      id: 'tool_write_1',
+      name: 'write',
+      args: { path: '/tmp/linx-work/a.txt', content: 'hello' },
+    }),
+  })
+
+  assert.equal(result, undefined)
+  assert.equal(runtime.state.approvals.length, 1)
+  assert.equal(runtime.state.approvals[0].status, 'approved')
+  assert.match(runtime.state.approvals[0].session, /\/\.data\/chat\/ai-secretary\/index\.ttl#019df-test-approved$/)
+})
+
+test('linx pi remote approval skips read-only tools', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/pod-approval.ts')
+  t.after(() => cleanup())
+
+  const runtime = createApprovalRuntime()
+  const result = await module.requestLinxPiToolApproval({
+    session: createFakePiSession('019df-test-readonly'),
+    cwd: '/tmp/linx-work',
+    runtime,
+    context: createToolContext({
+      id: 'tool_read_1',
+      name: 'read',
+      args: { path: '/tmp/linx-work/a.txt' },
+    }),
+  })
+
+  assert.equal(result, undefined)
+  assert.equal(runtime.state.approvals.length, 0)
+})
+
+test('linx pi remote approval preserves existing Pi extension beforeToolCall blocks', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/pod-approval.ts')
+  t.after(() => cleanup())
+
+  const runtime = createApprovalRuntime()
+  const session = createFakePiSession('019df-test-extension-block')
+  session.agent.beforeToolCall = async () => ({ block: true, reason: 'extension blocked first' })
+
+  module.installLinxPiRemoteApproval({
+    session,
+    cwd: '/tmp/linx-work',
+    runtime,
+  })
+
+  const result = await session.agent.beforeToolCall(createToolContext({
+    id: 'tool_bash_2',
+    name: 'bash',
+    args: { command: 'echo should not request remote approval' },
+  }))
+
+  assert.deepEqual(result, { block: true, reason: 'extension blocked first' })
+  assert.equal(runtime.state.approvals.length, 0)
+})
+
+function createToolContext({ id, name, args }) {
+  return {
+    assistantMessage: {
+      role: 'assistant',
+      content: [{ type: 'toolCall', id, name, arguments: args }],
+      timestamp: Date.now(),
+    },
+    toolCall: { type: 'toolCall', id, name, arguments: args },
+    args,
+    context: {
+      messages: [],
+      tools: [],
+      systemPrompt: '',
+    },
+  }
+}
+
+function createFakePiSession(sessionId) {
+  return {
+    agent: {},
+    sessionManager: {
+      getSessionId() {
+        return sessionId
+      },
+    },
+  }
+}
+
+function createApprovalRuntime(options = {}) {
+  const state = {
+    webId: 'https://id.undefineds.co/alice/profile/card#me',
+    approvals: [],
+    audits: [],
+    grants: [],
+    inbox: [],
+  }
+  const runtime = {
+    state,
+    loadCredentials() {
+      return {
+        url: 'https://id.undefineds.co/',
+        webId: state.webId,
+        authType: 'clientCredentials',
+        sourceDir: '/tmp/linx',
+        secrets: {
+          clientId: 'client-id',
+          clientSecret: 'client-secret',
+        },
+      }
+    },
+    getClientCredentials(stored) {
+      return stored.secrets
+    },
+    async authenticate() {
+      return {
+        session: {
+          info: { webId: state.webId },
+          async logout() {},
+        },
+      }
+    },
+    createStore() {
+      return {
+        async listApprovals() {
+          return state.approvals
+        },
+        async insertApproval(row) {
+          state.approvals.push({ ...row })
+        },
+        async updateApproval(id, patch) {
+          const row = state.approvals.find((entry) => entry.id === id)
+          Object.assign(row, patch)
+        },
+        async listAudits() {
+          return state.audits
+        },
+        async insertAudit(row) {
+          state.audits.push({ ...row })
+        },
+        async listGrants() {
+          return state.grants
+        },
+        async insertGrant(row) {
+          state.grants.push({ ...row })
+        },
+        async insertInboxNotification(row) {
+          state.inbox.push({ ...row })
+        },
+      }
+    },
+    async sleep() {
+      options.onSleep?.(state)
+    },
+    now() {
+      return new Date('2026-05-05T00:00:00.000Z')
+    },
+  }
+  return runtime
+}

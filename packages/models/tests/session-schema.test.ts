@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { solidSchema, sessionTable } from '../src'
+import { sessionResource, solidResources, solidSchema, sessionTable } from '../src'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -7,6 +7,8 @@ describe('session schema', () => {
   it('registers a real session table in the shared schema', () => {
     expect(sessionTable).toBeDefined()
     expect((solidSchema as any).sessionTable).toBe(sessionTable)
+    expect(sessionResource).toBe(sessionTable)
+    expect((solidResources as any).sessionResource).toBe(sessionResource)
   })
 
   it('uses Pod-backed session fields instead of a stub contract', () => {
@@ -16,6 +18,10 @@ describe('session schema', () => {
     expect(columns).toBeDefined()
     expect(columns.id).toBeDefined()
     expect(columns.ownerWebId).toBeDefined()
+    expect(columns.chat).toBeDefined()
+    expect(columns.thread).toBeDefined()
+    expect(columns.chatId).toBeUndefined()
+    expect(columns.threadId).toBeUndefined()
     expect(columns.sessionType).toBeDefined()
     expect(columns.status).toBeDefined()
     expect(columns.tool).toBeDefined()

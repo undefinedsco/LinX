@@ -55,13 +55,33 @@ Instead, a real integration will need one of:
 
 These should be reused as the backend/data plane.
 
-## Next implementation target
+## Updated baseline after truth-surface audit
 
-Build a minimal **Pi Agent stream adapter** that can:
+The current repo state is now clearer:
 
-- start a Codex thread/turn
-- emit assistant deltas into Pi's message/event model
-- surface approval/tool events in a shape Pi can consume
-- finalize the turn and session
+- `chat` / `thread` / `message` already have real Pod tables and active writers
+- `approval` / `audit` / `inbox` already have real Pod tables and active writers in watch/runtime-sidecar paths
+- `grant` exists as the durable delegation/authz layer; watch remote approval now writes and consumes active grants, while Pi/web coverage is still incomplete
+- `session` had been only a stub contract; it now has a real shared `sessionTable` baseline in `@linx/models`, exposed through neutral `solidSchema`, with runtime-sidecar write/read baseline in place
 
-Only after that should `InteractiveMode` be instantiated on top.
+This means the next implementation target is **not** “just make Pi talk to a stream adapter”.
+The next correct target is:
+
+1. truth-source audit / ownership matrix
+2. session-domain writer/reader implementation
+3. approval vs authorization mapping
+4. only then transport normalization
+
+## Immediate next implementation target
+
+Use the new session table + truth-surface matrix as the execution baseline:
+
+- wire a durable session writer/reader
+- keep UI-only state local
+- keep Pod as truth for the in-scope runtime/business surfaces
+- document any remaining transport limitations explicitly until the richer runtime path is implemented
+
+
+## Product-branded storage naming
+
+Shared storage contracts should use Solid/domain language. The old `linxSchema` product-branded export has been removed instead of kept as a compatibility alias. New Pi/Pod/cloud alignment code should import `solidSchema`, and docs should describe durable records as Solid resources / schemas instead of product-level tables.

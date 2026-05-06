@@ -11,7 +11,7 @@ import {
   sameAIConfigProviderFamily,
 } from '@undefineds.co/models/ai-config'
 import { XPOD_AI, XPOD_CREDENTIAL } from '@undefineds.co/models/namespaces'
-import { getClientCredentials, loadCredentials } from './credentials-store.js'
+import { getClientCredentialId, getClientCredentialKey, getClientCredentials, loadCredentials } from './credentials-store.js'
 import { loadAccountSession } from './account-session.js'
 import { authenticatedFetch, getAccessToken } from './solid-auth.js'
 import { promptPassword } from './prompt.js'
@@ -251,7 +251,7 @@ async function resolvePodWriteContext(urlOverride?: string): Promise<{ accessTok
   }
 
   const baseUrl = (urlOverride ?? creds.url).replace(/\/?$/, '/')
-  const tokenResult = await getAccessToken(clientCreds.clientId, clientCreds.clientSecret, baseUrl)
+  const tokenResult = await getAccessToken(getClientCredentialId(clientCreds), getClientCredentialKey(clientCreds), baseUrl)
   if (!tokenResult) {
     throw new Error('Failed to obtain Pod access token. Run `linx login` again.')
   }

@@ -252,3 +252,98 @@ test('resolveRemoteWatchApproval updates Pod approval state and listRemoteWatchA
   assert.equal(listed[0].cwd, '/tmp/demo')
   assert.equal(listed[0].decision, 'accept_for_session')
 })
+
+test('native remote approval store writes and reads approval grant audit resources as Pod TTL', async () => {
+  const resources = new Map()
+  const writes = []
+  const webId = 'https://alice.example/profile/card#me'
+
+  const store = approvalModule.__podApprovalInternal.createNativeRemoteApprovalStore(webId, async (url, init = {}) => {
+    const method = init.method ?? 'GET'
+    if (method === 'GET') {
+      if (resources.has(url)) {
+        return new Response(resources.get(url), { status: 200, headers: { 'Content-Type': 'text/turtle' } })
+      }
+      const children = [...resources.keys()]
+        .filter((entry) => entry.startsWith(url) && entry !== url)
+        .map((entry) => `<${entry}> .`)
+      if (children.length > 0 || url.endsWith('/')) {
+        return new Response(children.join('\n'), { status: 200, headers: { 'Content-Type': 'text/turtle' } })
+      }
+      return new Response('missing', { status: 404 })
+    }
+    if (method === 'HEAD') {
+      return new Response(null, { status: resources.has(url) || url.endsWith('/') ? 200 : 404 })
+    }
+    if (method === 'PUT') {
+      const body = typeof init.body === 'string' ? init.body : ''
+      resources.set(url, body)
+      writes.push({ url, body })
+      return new Response(null, { status: 201 })
+    }
+    return new Response(null, { status: 405 })
+  })
+
+  await store.insertApproval({
+    id: 'approval_native_1',
+    session: 'https://alice.example/.data/chat/linx-watch/index.ttl#watch_1',
+    toolCallId: 'tool_1',
+    toolName: 'commandExecution',
+    target: 'https://alice.example/.data/chat/linx-watch/index.ttl#watch_1',
+    action: 'https://undefineds.co/ns#commandExecution',
+    risk: 'medium',
+    status: 'pending',
+    assignedTo: webId,
+    policyVersion: 'linx-watch-remote-approval/v1',
+    createdAt: '2026-03-18T00:00:00.000Z',
+  })
+  await store.insertAudit({
+    id: 'audit_native_1',
+    action: 'approval_requested',
+    actor: 'https://alice.example/.data/agents/linx-watch-assistant.ttl',
+    actorRole: 'secretary',
+    onBehalfOf: webId,
+    session: 'https://alice.example/.data/chat/linx-watch/index.ttl#watch_1',
+    toolCallId: 'tool_1',
+    approval: 'https://alice.example/.data/approvals/approval_native_1.ttl',
+    context: JSON.stringify({ message: 'pwd' }),
+    policyVersion: 'linx-watch-remote-approval/v1',
+    createdAt: '2026-03-18T00:00:00.000Z',
+  })
+  await store.insertGrant({
+    id: 'grant_native_1',
+    target: 'https://alice.example/.data/chat/linx-watch/index.ttl#watch_1',
+    action: 'https://undefineds.co/ns#commandExecution',
+    effect: 'allow',
+    riskCeiling: 'medium',
+    decisionBy: webId,
+    decisionRole: 'human',
+    onBehalfOf: webId,
+    createdAt: '2026-03-18T00:00:01.000Z',
+  })
+  await store.updateApproval('approval_native_1', {
+    status: 'approved',
+    decisionBy: webId,
+    decisionRole: 'human',
+    onBehalfOf: webId,
+    reason: approvalModule.__podApprovalInternal.encodeDecisionReason('accept_for_session'),
+    resolvedAt: '2026-03-18T00:00:02.000Z',
+  })
+
+  const [approvals, audits, grants] = await Promise.all([
+    store.listApprovals(),
+    store.listAudits(),
+    store.listGrants(),
+  ])
+
+  assert.equal(approvals.length, 1)
+  assert.equal(approvals[0].status, 'approved')
+  assert.equal(approvals[0].toolCallId, 'tool_1')
+  assert.equal(audits.length, 1)
+  assert.equal(audits[0].approval, 'https://alice.example/.data/approvals/approval_native_1.ttl')
+  assert.equal(grants.length, 1)
+  assert.equal(grants[0].effect, 'allow')
+  assert.equal(writes.some((write) => write.url.endsWith('/.data/approvals/approval_native_1.ttl')), true)
+  assert.equal(writes.some((write) => write.url.endsWith('/.data/audit/audit_native_1.ttl')), true)
+  assert.equal(writes.some((write) => write.url.endsWith('/settings/autonomy/grants/grant_native_1.ttl')), true)
+})

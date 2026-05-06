@@ -1,12 +1,23 @@
 import type { SolidProfileRow } from "./profile.schema.js";
-import { profileRepository, type SolidProfileIdentity } from "./profile.repository.js";
+import { pickSolidProfileDisplayName, profileRepository, type SolidProfileIdentity } from "./profile.repository.js";
+import { FOAF, VCARD } from "./namespaces.js";
+import { extractProfileUsernameFromWebId } from "./client/index.js";
+import { Parser as N3Parser } from "n3";
+import { applySolidComunicaPatches } from "./comunica-patches.js";
 export {
   pickSolidProfileDisplayName,
   profileRepository,
   type SolidProfileIdentity,
 } from "./profile.repository.js";
 
-type NodeRequire = (id: string) => unknown;
+type RdfQuad = {
+  subject: { value?: string };
+  predicate: { value?: string };
+  object: { value?: string; termType?: string };
+};
+type N3ParserConstructor = new (options?: { baseIRI?: string }) => {
+  parse(source: string): RdfQuad[];
+};
 
 export interface SolidProfileSessionLike {
   info?: {
@@ -20,7 +31,7 @@ export interface SolidProfileReader<TTable = unknown> {
 }
 
 export async function createSolidProfileDatabase(session: unknown): Promise<SolidProfileReader> {
-  await applySolidProfileComunicaPatches();
+  applySolidProfileComunicaPatches();
 
   const [{ drizzle }, { solidProfileTable }] = await Promise.all([
     import("@undefineds.co/drizzle-solid"),
@@ -34,18 +45,8 @@ export async function createSolidProfileDatabase(session: unknown): Promise<Soli
   }) as SolidProfileReader;
 }
 
-export async function applySolidProfileComunicaPatches(requireModule?: NodeRequire): Promise<boolean> {
-  const resolvedRequire = requireModule ?? await createNodeRequire();
-  if (!resolvedRequire) {
-    return false;
-  }
-
-  return [
-    "@comunica/actor-query-result-serialize-sparql-json",
-    "@comunica/actor-query-result-serialize-stats",
-    "@comunica/query-sparql-solid/node_modules/@comunica/actor-query-result-serialize-sparql-json",
-    "@comunica/query-sparql-solid/node_modules/@comunica/actor-query-result-serialize-stats",
-  ].map((moduleName) => patchActionObserverHttp(resolvedRequire, moduleName)).some(Boolean);
+export function applySolidProfileComunicaPatches(): boolean {
+  return applySolidComunicaPatches();
 }
 
 export async function resolveSolidProfile(
@@ -80,6 +81,39 @@ export async function resolveSolidProfileIdentityWithReader(
   return await profileRepository.resolveIdentity(db, webId);
 }
 
+export async function resolveSolidProfileIdentityFromWebIdDocument(
+  session: SolidProfileSessionLike,
+  options: { webId?: string } = {},
+): Promise<SolidProfileIdentity | null> {
+  const webId = options.webId ?? session.info?.webId;
+  if (!webId?.trim() || typeof session.fetch !== 'function') {
+    return null;
+  }
+
+  const profileDocumentUrl = stripHash(webId);
+  const response = await session.fetch(profileDocumentUrl, {
+    headers: {
+      Accept: 'text/turtle, application/ld+json;q=0.9, text/n3;q=0.8, */*;q=0.1',
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch WebID profile: ${response.status} ${response.statusText}`.trim());
+  }
+
+  const contentType = response.headers.get('content-type') ?? '';
+  const body = await response.text();
+  if (!body.trim()) {
+    return buildSolidProfileIdentity(webId, null);
+  }
+
+  const profile = await parseSolidProfileDocument(body, {
+    contentType,
+    profileDocumentUrl,
+    webId,
+  });
+  return buildSolidProfileIdentity(webId, profile);
+}
+
 export async function resolveSolidProfileIdentity(
   session: SolidProfileSessionLike,
   options: { webId?: string } = {},
@@ -93,55 +127,126 @@ export async function resolveSolidProfileIdentity(
   return resolveSolidProfileIdentityWithReader(db, webId);
 }
 
-async function createNodeRequire(): Promise<NodeRequire | null> {
-  if (typeof process === 'undefined') {
-    return null;
+export async function parseSolidProfileDocument(
+  source: string,
+  options: {
+    contentType?: string;
+    profileDocumentUrl: string;
+    webId: string;
+  },
+): Promise<SolidProfileRow | null> {
+  const contentType = options.contentType?.toLowerCase() ?? '';
+  if (contentType.includes('application/ld+json') || source.trimStart().startsWith('{')) {
+    return parseJsonLdProfileDocument(source, options.webId);
   }
+  return await parseTurtleProfileDocument(source, options);
+}
 
+async function parseTurtleProfileDocument(
+  source: string,
+  options: {
+    profileDocumentUrl: string;
+    webId: string;
+  },
+): Promise<SolidProfileRow | null> {
+  const Parser = N3Parser as N3ParserConstructor;
+  const parser = new Parser({ baseIRI: options.profileDocumentUrl });
+  const quads = parser.parse(source);
+  return pickProfileFromQuads(quads, options.webId);
+}
+
+function parseJsonLdProfileDocument(source: string, webId: string): SolidProfileRow | null {
   try {
-    const moduleLib = await import("node:module");
-    if (typeof moduleLib.createRequire !== 'function') {
+    const parsed = JSON.parse(source) as unknown;
+    const nodes = Array.isArray(parsed)
+      ? parsed
+      : isRecord(parsed) && Array.isArray(parsed['@graph'])
+        ? parsed['@graph']
+        : [parsed];
+    const webIdNode = nodes.find((node) => isRecord(node) && node['@id'] === webId);
+    const node = isRecord(webIdNode) ? webIdNode : nodes.find(isRecord);
+    if (!node) {
       return null;
     }
-    return moduleLib.createRequire(import.meta.url) as NodeRequire;
+    return normalizeProfileRow({
+      id: webId,
+      name: pickJsonLdString(node, VCARD.fn),
+      nick: pickJsonLdString(node, FOAF.nick),
+      avatar: pickJsonLdString(node, VCARD.hasPhoto),
+      note: pickJsonLdString(node, VCARD.note),
+      email: pickJsonLdString(node, VCARD.hasEmail),
+      phone: pickJsonLdString(node, VCARD.hasTelephone),
+      region: pickJsonLdString(node, VCARD.region),
+      gender: pickJsonLdString(node, VCARD.hasGender),
+    });
   } catch {
     return null;
   }
 }
 
-function patchActionObserverHttp(requireModule: NodeRequire, moduleName: string): boolean {
-  try {
-    const module = requireModule(moduleName) as {
-      ActionObserverHttp?: {
-        prototype?: {
-          onRun?: (actor: unknown, action: unknown, output: unknown) => unknown;
-          __linxObservedActorsPatchApplied?: boolean;
-        };
-      };
-    };
-    const prototype = module.ActionObserverHttp?.prototype;
-    const originalOnRun = prototype?.onRun;
-    if (!prototype || typeof originalOnRun !== 'function') {
-      return false;
+function pickProfileFromQuads(quads: RdfQuad[], webId: string): SolidProfileRow | null {
+  const profile: Partial<SolidProfileRow> = { id: webId };
+  for (const quad of quads) {
+    if (quad.subject.value !== webId) {
+      continue;
     }
-    if (prototype.__linxObservedActorsPatchApplied) {
-      return true;
+    const predicate = quad.predicate.value;
+    const value = quad.object.value;
+    if (!predicate || !value) {
+      continue;
     }
-
-    prototype.onRun = function patchedActionObserverOnRun(
-      this: { observedActors?: unknown },
-      actor: unknown,
-      action: unknown,
-      output: unknown,
-    ) {
-      if (!Array.isArray(this.observedActors)) {
-        this.observedActors = [];
-      }
-      return originalOnRun.call(this, actor, action, output);
-    };
-    prototype.__linxObservedActorsPatchApplied = true;
-    return true;
-  } catch {
-    return false;
+    if (predicate === VCARD.fn) profile.name = value;
+    else if (predicate === FOAF.nick) profile.nick = value;
+    else if (predicate === VCARD.hasPhoto) profile.avatar = value;
+    else if (predicate === VCARD.note) profile.note = value;
+    else if (predicate === VCARD.hasEmail) profile.email = value;
+    else if (predicate === VCARD.hasTelephone) profile.phone = value;
+    else if (predicate === VCARD.region) profile.region = value;
+    else if (predicate === VCARD.hasGender) profile.gender = value;
   }
+  return normalizeProfileRow(profile);
+}
+
+function buildSolidProfileIdentity(webId: string, profile: SolidProfileRow | null): SolidProfileIdentity {
+  return {
+    webId,
+    profile,
+    displayName: pickSolidProfileDisplayName(profile),
+    username: extractProfileUsernameFromWebId(webId),
+  };
+}
+
+function normalizeProfileRow(profile: Partial<SolidProfileRow>): SolidProfileRow | null {
+  const normalized = Object.fromEntries(
+    Object.entries(profile).filter(([, value]) => typeof value === 'string' && value.trim()),
+  ) as Partial<SolidProfileRow>;
+  return Object.keys(normalized).length > 1
+    ? normalized as SolidProfileRow
+    : null;
+}
+
+function pickJsonLdString(node: Record<string, unknown>, iri: string): string | undefined {
+  return normalizeJsonLdValue(node[iri]);
+}
+
+function normalizeJsonLdValue(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map(normalizeJsonLdValue).find(Boolean);
+  }
+  if (isRecord(value)) {
+    return normalizeJsonLdValue(value['@value'] ?? value['@id']);
+  }
+  return undefined;
+}
+
+function stripHash(value: string): string {
+  const index = value.indexOf('#');
+  return index >= 0 ? value.slice(0, index) : value;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

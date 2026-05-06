@@ -1,6 +1,6 @@
 {
   "name": "@undefineds.co/models",
-  "version": "0.2.1",
+  "version": "0.2.3",
   "private": true,
   "type": "module",
   "exports": {
@@ -24,8 +24,10 @@
   },
   "dependencies": {
     "@comunica/query-sparql-solid": "^4.0.2",
+    "@inrupt/vocab-common-rdf": "^1.0.5",
     "drizzle-orm": "^0.32.0",
-    "@undefineds.co/drizzle-solid": "^0.3.5",
+    "n3": "^1.26.0",
+    "@undefineds.co/drizzle-solid": "^0.3.8",
     "zod": "^3.22.4"
   },
   "devDependencies": {

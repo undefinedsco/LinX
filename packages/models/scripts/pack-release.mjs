@@ -99,7 +99,9 @@ function createPublishablePackage(packageJson, packageVersion) {
 function pickPublishDependencies(dependencies) {
   return pick(dependencies, [
     '@comunica/query-sparql-solid',
+    '@inrupt/vocab-common-rdf',
     '@undefineds.co/drizzle-solid',
+    'n3',
     'zod',
   ])
 }
