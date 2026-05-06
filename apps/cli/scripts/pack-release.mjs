@@ -78,7 +78,8 @@ function createPublishableCliPackage(pkg, packageVersion) {
 }
 
 function npmPack(cwd, cacheRoot) {
-  const pack = spawnSync('npm', ['pack'], {
+  const packCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm'
+  const pack = spawnSync(packCommand, ['pack'], {
     cwd,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'inherit'],
