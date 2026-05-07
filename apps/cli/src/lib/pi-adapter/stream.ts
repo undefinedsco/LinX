@@ -250,7 +250,77 @@ function normalizeContextMessages(context?: { messages?: PiStreamContextMessage[
     }
   }
 
-  return normalized
+  return sanitizeChatCompletionMessages(normalized)
+}
+
+function sanitizeChatCompletionMessages(messages: RemoteChatMessage[]): RemoteChatMessage[] {
+  const sanitized: RemoteChatMessage[] = []
+
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index]
+
+    if (message.role === 'tool') {
+      continue
+    }
+
+    if (message.role !== 'assistant' || !message.tool_calls?.length) {
+      sanitized.push(message)
+      continue
+    }
+
+    const followingToolMessages: RemoteChatMessage[] = []
+    let nextIndex = index + 1
+    while (nextIndex < messages.length && messages[nextIndex]?.role === 'tool') {
+      followingToolMessages.push(messages[nextIndex])
+      nextIndex += 1
+    }
+
+    const toolResultIds = new Set(
+      followingToolMessages
+        .map((toolMessage) => toolMessage.tool_call_id)
+        .filter((toolCallId): toolCallId is string => typeof toolCallId === 'string' && toolCallId.length > 0),
+    )
+    const matchedToolCalls = message.tool_calls.filter((toolCall) => toolResultIds.has(toolCall.id))
+
+    if (matchedToolCalls.length > 0) {
+      const matchedToolCallIds = new Set(matchedToolCalls.map((toolCall) => toolCall.id))
+      const emittedToolResults = new Set<string>()
+      sanitized.push({
+        ...message,
+        tool_calls: matchedToolCalls,
+      })
+
+      for (const toolMessage of followingToolMessages) {
+        const toolCallId = toolMessage.tool_call_id
+        if (typeof toolCallId !== 'string' || !matchedToolCallIds.has(toolCallId) || emittedToolResults.has(toolCallId)) {
+          continue
+        }
+        sanitized.push(toolMessage)
+        emittedToolResults.add(toolCallId)
+      }
+    } else if (hasVisibleMessageContent(message.content)) {
+      sanitized.push({
+        role: 'assistant',
+        content: message.content,
+      })
+    }
+
+    index = nextIndex - 1
+  }
+
+  return sanitized
+}
+
+function hasVisibleMessageContent(content: RemoteChatMessage['content']): boolean {
+  if (typeof content === 'string') {
+    return content.trim().length > 0
+  }
+
+  if (!Array.isArray(content)) {
+    return false
+  }
+
+  return content.some((part) => typeof part.text === 'string' && part.text.trim().length > 0)
 }
 
 function normalizeContextTools(tools: PiStreamTool[] | undefined): RemoteChatTool[] | undefined {

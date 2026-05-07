@@ -100,6 +100,7 @@ export const WF = createNamespace('wf', 'http://www.w3.org/2005/01/wf/flow-1.0#'
 
 // Activity Streams 2.0 - W3C standard for social web
 export const AS = createNamespace('as', 'https://www.w3.org/ns/activitystreams#', {
+  Activity: 'Activity',
   Announce: 'Announce',
   Public: 'Public',
   audience: 'audience',

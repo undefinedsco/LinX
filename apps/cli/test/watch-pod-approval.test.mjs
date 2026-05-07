@@ -36,51 +36,56 @@ function createRuntime(module) {
   const grants = []
   const inbox = []
   const webId = 'https://alice.example/profile/card#me'
-
-  const runtime = {
-    loadCredentials: () => ({
-      url: 'https://id.undefineds.co',
-      webId,
-      authType: 'client_credentials',
-      sourceDir: '/tmp/.linx',
-      secrets: {
-        clientId: 'client-id',
-        clientSecret: 'client-secret',
-      },
-    }),
-    getClientCredentials: () => ({
+  const storeInputs = []
+  const credentials = {
+    url: 'https://id.undefineds.co',
+    webId,
+    authType: 'client_credentials',
+    sourceDir: '/tmp/.linx',
+    secrets: {
       clientId: 'client-id',
       clientSecret: 'client-secret',
-    }),
-    authenticate: async () => ({
-      session: {
-        info: { webId },
-        logout: async () => {},
-      },
-    }),
-    createStore: () => ({
-      listApprovals: async () => approvals,
-      insertApproval: async (row) => {
-        approvals.push({ ...row })
-      },
-      updateApproval: async (id, patch) => {
-        const row = approvals.find((entry) => entry.id === id)
-        if (row) {
-          Object.assign(row, patch)
-        }
-      },
-      listAudits: async () => audits,
-      insertAudit: async (row) => {
-        audits.push({ ...row })
-      },
-      listGrants: async () => grants,
-      insertGrant: async (row) => {
-        grants.push({ ...row })
-      },
-      insertInboxNotification: async (row) => {
-        inbox.push({ ...row })
-      },
-    }),
+    },
+  }
+  const podSession = {
+    credentials,
+    webId,
+    fetch: async () => new Response(null, { status: 200 }),
+    close: async () => {},
+  }
+  let sessionCalls = 0
+
+  const runtime = {
+    getPodDataSession: async () => {
+      sessionCalls += 1
+      return podSession
+    },
+    createStore: (storeWebId, fetcher) => {
+      storeInputs.push({ webId: storeWebId, fetcher })
+      return {
+        listApprovals: async () => approvals,
+        insertApproval: async (row) => {
+          approvals.push({ ...row })
+        },
+        updateApproval: async (id, patch) => {
+          const row = approvals.find((entry) => entry.id === id)
+          if (row) {
+            Object.assign(row, patch)
+          }
+        },
+        listAudits: async () => audits,
+        insertAudit: async (row) => {
+          audits.push({ ...row })
+        },
+        listGrants: async () => grants,
+        insertGrant: async (row) => {
+          grants.push({ ...row })
+        },
+        insertInboxNotification: async (row) => {
+          inbox.push({ ...row })
+        },
+      }
+    },
     sleep: async () => {},
     now: () => new Date('2026-03-18T00:00:00.000Z'),
   }
@@ -92,6 +97,11 @@ function createRuntime(module) {
     grants,
     inbox,
     webId,
+    storeInputs,
+    podSession,
+    get sessionCalls() {
+      return sessionCalls
+    },
     encodeDecisionReason: module.__podApprovalInternal.encodeDecisionReason,
   }
 }
@@ -99,7 +109,7 @@ function createRuntime(module) {
 function createOidcRuntime(module) {
   const state = createRuntime(module)
 
-  state.runtime.loadCredentials = () => ({
+  state.podSession.credentials = {
     url: 'https://id.undefineds.co',
     webId: state.webId,
     authType: 'oidc_oauth',
@@ -109,12 +119,6 @@ function createOidcRuntime(module) {
       oidcRefreshToken: 'oidc-refresh-token',
       oidcExpiresAt: '2026-03-18T01:00:00.000Z',
     },
-  })
-  state.runtime.getClientCredentials = () => null
-  state.runtime.getOidcAccessToken = async () => 'oidc-access-token'
-  state.runtime.authenticatedFetch = async (url, token, init) => {
-    assert.equal(token, 'oidc-access-token')
-    return new Response(null, { status: 200 })
   }
 
   return state
@@ -164,6 +168,10 @@ test('requestRemoteWatchApproval writes pending approval rows and waits for remo
   })
 
   assert.equal(decision, 'accept_for_session')
+  assert.equal(state.sessionCalls, 1)
+  assert.equal(state.storeInputs.length, 1)
+  assert.equal(state.storeInputs.every((input) => input.webId === state.webId), true)
+  assert.equal(state.storeInputs.every((input) => typeof input.fetcher === 'function'), true)
   assert.equal(state.approvals.length, 1)
   assert.equal(state.approvals[0].toolCallId, 'tool_1')
   assert.equal(state.approvals[0].status, 'approved')
@@ -207,6 +215,10 @@ test('requestRemoteWatchApproval accepts OIDC-only credentials', async () => {
   })
 
   assert.equal(decision, 'accept')
+  assert.equal(state.sessionCalls, 1)
+  assert.equal(state.storeInputs.length, 1)
+  assert.equal(state.storeInputs.every((input) => input.webId === state.webId), true)
+  assert.equal(state.storeInputs.every((input) => typeof input.fetcher === 'function'), true)
   assert.equal(state.approvals.length, 1)
   assert.equal(state.approvals[0].toolCallId, 'tool_oidc_1')
   assert.equal(state.audits.length, 1)
@@ -278,7 +290,7 @@ test('resolveRemoteWatchApproval updates Pod approval state and listRemoteWatchA
     onBehalfOf: state.webId,
     session: 'https://alice.example/.data/chat/linx-watch/index.ttl#watch_2026-03-18T00-00-00-000Z_deadbeef',
     toolCallId: 'tool_rm_1',
-    approval: 'https://alice.example/.data/approvals/approval_123.ttl',
+    approval: 'https://alice.example/.data/approvals/2026/03/18.ttl#approval_123',
     context: JSON.stringify({
       kind: 'command-approval',
       message: 'rm -rf dist',
@@ -369,7 +381,7 @@ test('native remote approval store writes and reads approval grant audit resourc
     onBehalfOf: webId,
     session: 'https://alice.example/.data/chat/linx-watch/index.ttl#watch_1',
     toolCallId: 'tool_1',
-    approval: 'https://alice.example/.data/approvals/approval_native_1.ttl',
+    approval: 'https://alice.example/.data/approvals/2026/03/18.ttl#approval_native_1',
     context: JSON.stringify({ message: 'pwd' }),
     policyVersion: 'linx-watch-remote-approval/v1',
     createdAt: '2026-03-18T00:00:00.000Z',
@@ -404,10 +416,10 @@ test('native remote approval store writes and reads approval grant audit resourc
   assert.equal(approvals[0].status, 'approved')
   assert.equal(approvals[0].toolCallId, 'tool_1')
   assert.equal(audits.length, 1)
-  assert.equal(audits[0].approval, 'https://alice.example/.data/approvals/approval_native_1.ttl')
+  assert.equal(audits[0].approval, 'https://alice.example/.data/approvals/2026/03/18.ttl#approval_native_1')
   assert.equal(grants.length, 1)
   assert.equal(grants[0].effect, 'allow')
-  assert.equal(writes.some((write) => write.url.endsWith('/.data/approvals/approval_native_1.ttl')), true)
-  assert.equal(writes.some((write) => write.url.endsWith('/.data/audit/audit_native_1.ttl')), true)
-  assert.equal(writes.some((write) => write.url.endsWith('/settings/autonomy/grants/grant_native_1.ttl')), true)
+  assert.equal(writes.some((write) => write.url.endsWith('/.data/approvals/2026/03/18.ttl')), true)
+  assert.equal(writes.some((write) => write.url.endsWith('/.data/audits/2026/03/18.ttl')), true)
+  assert.equal(writes.some((write) => write.url.endsWith('/settings/autonomy/grants.ttl')), true)
 })

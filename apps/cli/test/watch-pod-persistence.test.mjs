@@ -103,7 +103,7 @@ test('buildWatchConversationMessages maps archived transcript into standard Pod 
 
 test('persistWatchConversationToPod is skipped when linx login credentials are unavailable', async () => {
   const persisted = await persistenceModule.persistWatchConversationToPod(createRecord(), {
-    loadCredentials: () => null,
+    getPodDataSession: async () => null,
   })
 
   assert.equal(persisted, false)

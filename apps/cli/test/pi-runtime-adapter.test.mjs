@@ -834,6 +834,34 @@ test('pi runtime adapter keeps Pi native coding tools active in the cloud path',
   await runtime.dispose()
 })
 
+test('pi runtime adapter applies a default timeout to bash when the model omits one', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/runtime.ts')
+  t.after(() => cleanup())
+
+  const cwd = mkdtempSync(join(tmpdir(), 'linx-pi-runtime-bash-timeout-'))
+  t.after(() => {
+    rmSync(cwd, { recursive: true, force: true })
+  })
+
+  const execCalls = []
+  const tools = module.createLinxPiCodingTools(cwd, {
+    bashOperations: {
+      async exec(command, workingDirectory, options) {
+        execCalls.push({ command, workingDirectory, options })
+        return { exitCode: 0 }
+      },
+    },
+  })
+  const bash = tools.find((tool) => tool.name === 'bash')
+  assert.ok(bash)
+
+  await bash.execute('call_timeout_1', { command: 'pwd' })
+  await bash.execute('call_timeout_2', { command: 'pwd', timeout: 7 })
+
+  assert.equal(execCalls[0].options.timeout, module.DEFAULT_LINX_PI_BASH_TIMEOUT_SECONDS)
+  assert.equal(execCalls[1].options.timeout, 7)
+})
+
 test('linx pi remote approval blocks rejected side-effect tools from executing', async (t) => {
   const { module, cleanup } = await loadWatchModule('lib/pi-adapter/pod-approval.ts')
   t.after(() => cleanup())
@@ -981,8 +1009,8 @@ function createApprovalRuntime(options = {}) {
   }
   const runtime = {
     state,
-    loadCredentials() {
-      return {
+    async getPodDataSession() {
+      const credentials = {
         url: 'https://id.undefineds.co/',
         webId: state.webId,
         authType: 'clientCredentials',
@@ -992,16 +1020,10 @@ function createApprovalRuntime(options = {}) {
           clientSecret: 'client-secret',
         },
       }
-    },
-    getClientCredentials(stored) {
-      return stored.secrets
-    },
-    async authenticate() {
       return {
-        session: {
-          info: { webId: state.webId },
-          async logout() {},
-        },
+        credentials,
+        webId: state.webId,
+        fetch: async () => new Response(null, { status: 204 }),
       }
     },
     createStore() {

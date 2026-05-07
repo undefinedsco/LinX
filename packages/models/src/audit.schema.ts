@@ -1,8 +1,10 @@
 import { podTable, uri, string, text, timestamp, id } from '@undefineds.co/drizzle-solid'
 import { UDFS, DCTerms } from './namespaces'
 
-// Append-only audit log (separate from Solid inbox notifications)
-export const auditTable = podTable(
+// Append-only audit entry resource (separate from Solid inbox notifications).
+// Audit entries are independent events; session/chat/thread are optional relations,
+// not storage ownership boundaries.
+export const auditResource = podTable(
   'audit',
   {
     id: id('id'),
@@ -31,14 +33,26 @@ export const auditTable = podTable(
     createdAt: timestamp('createdAt').predicate(DCTerms.created).notNull().defaultNow(),
   },
   {
-    base: '/.data/audit/',
-    sparqlEndpoint: '/.data/audit/-/sparql',
+    base: '/.data/audits/',
+    sparqlEndpoint: '/.data/audits/-/sparql',
     type: UDFS.AuditEntry,
     namespace: UDFS,
-    subjectTemplate: '{id}.ttl',
+    subjectTemplate: '{yyyy}/{MM}/{dd}.ttl#{id}',
   },
 )
 
-export type AuditRow = typeof auditTable.$inferSelect
-export type AuditInsert = typeof auditTable.$inferInsert
-export type AuditUpdate = typeof auditTable.$inferUpdate
+export function buildAuditSubjectPath(auditId: string, createdAt: Date | string | number = new Date()): string {
+  const date = createdAt instanceof Date ? createdAt : new Date(createdAt)
+  const safeDate = Number.isFinite(date.getTime()) ? date : new Date()
+  const yyyy = String(safeDate.getUTCFullYear())
+  const mm = String(safeDate.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(safeDate.getUTCDate()).padStart(2, '0')
+  return `/.data/audits/${yyyy}/${mm}/${dd}.ttl#${encodeURIComponent(auditId)}`
+}
+
+// Compatibility alias. New model code should prefer `auditResource`.
+export const auditTable = auditResource
+
+export type AuditRow = typeof auditResource.$inferSelect
+export type AuditInsert = typeof auditResource.$inferInsert
+export type AuditUpdate = typeof auditResource.$inferUpdate

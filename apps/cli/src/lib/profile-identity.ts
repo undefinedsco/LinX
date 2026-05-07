@@ -1,20 +1,9 @@
-import {
-  getClientCredentialId,
-  getClientCredentialKey,
-  getClientCredentials,
-  loadCredentials,
-  type StoredCredentials,
-} from './credentials-store.js'
 import { extractProfileUsernameFromWebId } from '@undefineds.co/models/client'
 import { resolveSolidProfileIdentityFromWebIdDocument, type SolidProfileIdentity } from '@undefineds.co/models/profile'
-import { getOidcAccessToken } from './oidc-auth.js'
-import { authenticate } from './solid-auth.js'
+import { getDefaultPodDataSession, type PodDataSession } from './pod-data-session.js'
 
 export interface ProfileIdentityRuntime {
-  loadCredentials(): StoredCredentials | null
-  getClientCredentials(credentials: StoredCredentials): ReturnType<typeof getClientCredentials>
-  getOidcAccessToken(credentials: StoredCredentials): Promise<string | null>
-  authenticate(clientId: string, clientSecret: string, oidcIssuer: string): Promise<{ session: unknown }>
+  getPodDataSession(): Promise<PodDataSession | null>
   resolveProfileIdentity?(session: unknown, webId: string): Promise<SolidProfileIdentity | null>
   getCachedResource?(key: string): ProfileIdentityResource | null
   setCachedResource?(key: string, resource: ProfileIdentityResource): void
@@ -32,10 +21,7 @@ const defaultResolveProfileIdentity = (session: unknown, webId: string): Promise
 }
 
 const defaultRuntime: ProfileIdentityRuntime = {
-  loadCredentials,
-  getClientCredentials,
-  getOidcAccessToken,
-  authenticate,
+  getPodDataSession: getDefaultPodDataSession,
   resolveProfileIdentity: defaultResolveProfileIdentity,
   getCachedResource(key) {
     return resourceCache.get(key) ?? null
@@ -50,13 +36,13 @@ export async function resolveProfileDisplayName(options: {
   timeoutMs?: number
 } = {}): Promise<string | null> {
   const runtime = options.runtime ?? defaultRuntime
-  const credentials = runtime.loadCredentials()
-  if (!credentials) {
+  const session = await runtime.getPodDataSession()
+  if (!session) {
     return null
   }
 
   return await withTimeout(
-    readProfileDisplayName(credentials, runtime).catch(() => null),
+    readProfileDisplayName(session, runtime).catch(() => null),
     options.timeoutMs ?? 5_000,
   )
 }
@@ -70,88 +56,38 @@ export function clearProfileIdentityResourceCache(): void {
 }
 
 async function readProfileDisplayName(
-  credentials: StoredCredentials,
+  session: PodDataSession,
   runtime: ProfileIdentityRuntime,
 ): Promise<string | null> {
-  const resource = await getOrCreateProfileResource(credentials, runtime)
+  const resource = await getOrCreateProfileResource(session, runtime)
   return resource.identity?.displayName ?? null
 }
 
 async function getOrCreateProfileResource(
-  credentials: StoredCredentials,
+  session: PodDataSession,
   runtime: ProfileIdentityRuntime,
 ): Promise<ProfileIdentityResource> {
-  const cacheKey = buildProfileResourceCacheKey(credentials)
+  const cacheKey = buildProfileResourceCacheKey(session)
   const cached = runtime.getCachedResource?.(cacheKey)
   if (cached) {
     return cached
   }
 
-  const session = await createProfileSession(credentials, runtime)
   const resolveIdentity = runtime.resolveProfileIdentity ?? defaultResolveProfileIdentity
   const resource = {
     session,
-    identity: await resolveIdentity(session, credentials.webId),
+    identity: await resolveIdentity(session.solidSession ?? session, session.webId),
   }
   runtime.setCachedResource?.(cacheKey, resource)
   return resource
 }
 
-async function createProfileSession(
-  credentials: StoredCredentials,
-  runtime: ProfileIdentityRuntime,
-): Promise<unknown> {
-  const clientCredentials = runtime.getClientCredentials(credentials)
-  if (clientCredentials) {
-    const { session } = await runtime.authenticate(
-      getClientCredentialId(clientCredentials),
-      getClientCredentialKey(clientCredentials),
-      credentials.url,
-    )
-    return session
-  }
-
-  if (credentials.authType === 'oidc_oauth') {
-    const accessToken = await runtime.getOidcAccessToken(credentials)
-    if (!accessToken) {
-      throw new Error('Failed to restore OIDC access token for profile lookup')
-    }
-    return createOidcSessionLike(credentials, accessToken)
-  }
-
-  throw new Error('Unsupported credential type for profile lookup')
-}
-
-function buildProfileResourceCacheKey(credentials: StoredCredentials): string {
-  const clientCredentials = getClientCredentials(credentials)
-  const secretVersion = clientCredentials
-    ? getClientCredentialId(clientCredentials)
-    : 'oidcRefreshToken' in credentials.secrets
-      ? credentials.secrets.oidcRefreshToken
-      : ''
+function buildProfileResourceCacheKey(session: PodDataSession): string {
   return [
-    credentials.authType,
-    credentials.url,
-    credentials.webId,
-    secretVersion,
+    session.credentials.authType,
+    session.credentials.url,
+    session.webId,
   ].join('\n')
-}
-
-function createOidcSessionLike(credentials: StoredCredentials, accessToken: string): unknown {
-  const podUrl = credentials.webId.replace('/card#me', '').replace(/\/?$/, '/')
-  return {
-    info: {
-      isLoggedIn: true,
-      webId: credentials.webId,
-      podUrl,
-    },
-    async logout(): Promise<void> {},
-    fetch(url: string, init?: RequestInit): Promise<Response> {
-      const headers = new Headers(init?.headers)
-      headers.set('Authorization', `Bearer ${accessToken}`)
-      return fetch(url, { ...init, headers })
-    },
-  }
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T | null> {

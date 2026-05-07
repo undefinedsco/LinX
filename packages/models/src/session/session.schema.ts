@@ -6,6 +6,14 @@ import { threadResource } from '../thread.schema'
 export type SessionType = 'direct' | 'group' | 'imported-readonly'
 export type SessionStatus = 'active' | 'paused' | 'completed' | 'error' | 'archived'
 
+export function buildSessionSubjectPath(sessionId: string, createdAt: Date | string | number = new Date()): string {
+  const date = createdAt instanceof Date ? createdAt : new Date(createdAt)
+  const safeDate = Number.isFinite(date.getTime()) ? date : new Date()
+  const yyyy = String(safeDate.getUTCFullYear())
+  const mm = String(safeDate.getUTCMonth() + 1).padStart(2, '0')
+  return `/.data/sessions/${yyyy}/${mm}.ttl#${encodeURIComponent(sessionId)}`
+}
+
 /**
  * Runtime / collaboration session resource.
  *
@@ -16,7 +24,7 @@ export type SessionStatus = 'active' | 'paused' | 'completed' | 'error' | 'archi
  * - the durable conversation timeline, which is Thread
  *
  * Storage structure:
- * - Location: /.data/session/{id}.ttl
+ * - Location: /.data/sessions/{yyyy}/{MM}.ttl#{id}
  * - Primary use: runtime lifecycle projection for a concrete Thread
  *
  * Contract notes:
@@ -54,11 +62,11 @@ export const sessionResource = podTable(
     archivedAt: timestamp('archivedAt').predicate(UDFS.archivedAt),
   },
   {
-    base: '/.data/session/',
-    sparqlEndpoint: '/.data/session/-/sparql',
+    base: '/.data/sessions/',
+    sparqlEndpoint: '/.data/sessions/-/sparql',
     type: UDFS.term('Session'),
     namespace: UDFS,
-    subjectTemplate: '{id}.ttl',
+    subjectTemplate: '{yyyy}/{MM}.ttl#{id}',
   },
 )
 

@@ -1,13 +1,12 @@
 import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
-import type { Session } from '@inrupt/solid-client-authn-node'
 import {
   CURRENT_SESSION_VERSION,
   SessionManager,
   type SessionEntry,
   type SessionInfo,
 } from '@mariozechner/pi-coding-agent'
-import { getClientCredentialId, getClientCredentialKey, type ClientCredentialsSecrets, type StoredCredentials } from '../credentials-store.js'
+import { getDefaultPodDataSession } from '../pod-data-session.js'
 import { PI_CHAT_ID, buildChatUri, buildThreadUri } from './pod-mirror-mapping.js'
 import {
   DCT_CREATED,
@@ -21,10 +20,10 @@ import {
   UDFS_SESSION_TOOL,
   buildChatIndexResourceUrl,
   buildMessageResourceUrl,
-  buildSessionResourceUrl,
   firstIri,
   firstLiteral,
   listTurtleResources,
+  listTurtleResourcesRecursive,
   parseManagedTurtleBlocks,
   podBaseUrlFromWebId,
   readTurtleResource,
@@ -81,13 +80,6 @@ export function createNativeLinxPiPodSessionSource(context: {
       return listPodSessionSnapshots(context, cwd)
     },
     async findSession(input: string, cwd?: string): Promise<LinxPiPodSessionSnapshot | null> {
-      const direct = await readPodSessionSnapshot(
-        context,
-        buildSessionResourceUrl(context.webId, input),
-      ).catch(() => null)
-      if (direct) {
-        return direct
-      }
       const sessions = await source.listSessions(cwd)
       const exact = sessions.find((session: LinxPiPodSessionSnapshot) => session.id === input)
       if (exact) {
@@ -110,7 +102,7 @@ export async function createLinxPiSessionManager(options: LinxPiSessionManagerOp
     const session = await resolveLinxPiSession(options.session.trim(), options.cwd, sessionDir, {
       podSessionSource: options.podSessionSource,
     })
-    return SessionManager.open(session.path, sessionDir)
+    return openAndRepairLinxPiSession(session.path, sessionDir)
   }
 
   if (options.last) {
@@ -118,7 +110,7 @@ export async function createLinxPiSessionManager(options: LinxPiSessionManagerOp
       podSessionSource: options.podSessionSource,
     })
     if (sessions[0]) {
-      return SessionManager.open(sessions[0].path, sessionDir)
+      return openAndRepairLinxPiSession(sessions[0].path, sessionDir)
     }
     return SessionManager.create(options.cwd, sessionDir)
   }
@@ -301,9 +293,177 @@ function materializePodSessionSnapshot(
   const lines = [header, ...entries].map((entry) => JSON.stringify(entry))
   writeFileSync(sessionFile, `${lines.join('\n')}\n`)
 
-  const manager = SessionManager.open(sessionFile, sessionDir)
+  const manager = openAndRepairLinxPiSession(sessionFile, sessionDir)
   const info = buildSessionInfoFromManager(manager, sessionFile, created, modified)
   return snapshot.name ? { ...info, name: snapshot.name } : info
+}
+
+function openAndRepairLinxPiSession(path: string, sessionDir?: string): SessionManager {
+  const manager = SessionManager.open(path, sessionDir)
+  repairDanglingLinxPiToolCalls(manager)
+  return manager
+}
+
+export function repairDanglingLinxPiToolCalls(manager: SessionManager): number {
+  let repaired = 0
+  const maxRepairs = 10
+
+  for (let index = 0; index < maxRepairs; index += 1) {
+    const repair = findFirstDanglingToolCallRepair(manager.getBranch())
+    if (!repair) {
+      break
+    }
+
+    manager.branch(repair.assistantEntry.id)
+    for (const toolCall of repair.toolCalls) {
+      const existingResult = repair.immediateToolResults.get(toolCall.id)
+      if (existingResult) {
+        appendReplayedSessionEntry(manager, existingResult)
+      } else {
+        manager.appendMessage(createInterruptedToolResultMessage(toolCall))
+      }
+    }
+
+    for (const entry of repair.replayEntries) {
+      const message = entry.type === 'message' ? entry.message : undefined
+      if (isToolResultMessageFor(message, repair.toolCallIds)) {
+        continue
+      }
+      appendReplayedSessionEntry(manager, entry)
+    }
+    repaired += repair.toolCalls.filter((toolCall) => !repair.immediateToolResults.has(toolCall.id)).length
+  }
+
+  return repaired
+}
+
+function findFirstDanglingToolCallRepair(branch: SessionEntry[]): {
+  assistantEntry: SessionEntry
+  toolCalls: Array<{ id: string; name: string }>
+  toolCallIds: Set<string>
+  immediateToolResults: Map<string, SessionEntry>
+  replayEntries: SessionEntry[]
+} | null {
+  for (let index = 0; index < branch.length; index += 1) {
+    const entry = branch[index]
+    const message = entry.type === 'message' ? entry.message : undefined
+    const toolCalls = extractAssistantToolCalls(message)
+    if (toolCalls.length === 0) {
+      continue
+    }
+
+    const toolCallIds = new Set(toolCalls.map((toolCall) => toolCall.id))
+    const immediateToolResults = new Map<string, SessionEntry>()
+    let nextIndex = index + 1
+    while (nextIndex < branch.length) {
+      const nextEntry = branch[nextIndex]
+      const nextMessage = nextEntry.type === 'message' ? nextEntry.message : undefined
+      if (!isRecord(nextMessage) || nextMessage.role !== 'toolResult') {
+        break
+      }
+      const toolCallId = typeof nextMessage.toolCallId === 'string' ? nextMessage.toolCallId : ''
+      if (toolCallIds.has(toolCallId) && !immediateToolResults.has(toolCallId)) {
+        immediateToolResults.set(toolCallId, nextEntry)
+      }
+      nextIndex += 1
+    }
+
+    if (toolCalls.every((toolCall) => immediateToolResults.has(toolCall.id))) {
+      continue
+    }
+
+    return {
+      assistantEntry: entry,
+      toolCalls,
+      toolCallIds,
+      immediateToolResults,
+      replayEntries: branch.slice(nextIndex),
+    }
+  }
+
+  return null
+}
+
+function extractAssistantToolCalls(message: unknown): Array<{ id: string; name: string }> {
+  if (!isRecord(message) || message.role !== 'assistant' || !Array.isArray(message.content)) {
+    return []
+  }
+
+  return message.content.flatMap((part) => {
+    if (!isRecord(part) || part.type !== 'toolCall') {
+      return []
+    }
+    const id = typeof part.id === 'string' ? part.id : ''
+    const name = typeof part.name === 'string' ? part.name : ''
+    return id && name ? [{ id, name }] : []
+  })
+}
+
+function isToolResultMessageFor(message: unknown, toolCallIds: Set<string>): boolean {
+  if (!isRecord(message) || message.role !== 'toolResult') {
+    return false
+  }
+  const toolCallId = typeof message.toolCallId === 'string' ? message.toolCallId : ''
+  return toolCallIds.has(toolCallId)
+}
+
+function createInterruptedToolResultMessage(toolCall: { id: string; name: string }): {
+  role: 'toolResult'
+  toolCallId: string
+  toolName: string
+  content: Array<{ type: 'text'; text: string }>
+  details: { linxRepair: string; interrupted: boolean }
+  isError: boolean
+  timestamp: number
+} {
+  return {
+    role: 'toolResult',
+    toolCallId: toolCall.id,
+    toolName: toolCall.name,
+    content: [{
+      type: 'text',
+      text: `Tool execution was interrupted before LinX received a result for ${toolCall.name}. Treat this tool call as failed and retry only if still needed.`,
+    }],
+    details: {
+      linxRepair: 'dangling-tool-call',
+      interrupted: true,
+    },
+    isError: true,
+    timestamp: Date.now(),
+  }
+}
+
+function appendReplayedSessionEntry(manager: SessionManager, entry: SessionEntry): void {
+  if (entry.type === 'message') {
+    manager.appendMessage(cloneJson(entry.message) as Parameters<SessionManager['appendMessage']>[0])
+    return
+  }
+  if (entry.type === 'thinking_level_change') {
+    manager.appendThinkingLevelChange(entry.thinkingLevel)
+    return
+  }
+  if (entry.type === 'model_change') {
+    manager.appendModelChange(entry.provider, entry.modelId)
+    return
+  }
+  if (entry.type === 'session_info' && entry.name) {
+    manager.appendSessionInfo(entry.name)
+    return
+  }
+  if (entry.type === 'custom') {
+    manager.appendCustomEntry(entry.customType, cloneJson(entry.data))
+    return
+  }
+  if (entry.type === 'custom_message') {
+    manager.appendCustomMessageEntry(entry.customType, cloneJson(entry.content), entry.display, cloneJson(entry.details))
+  }
+}
+
+function cloneJson<T>(value: T): T {
+  if (value === undefined) {
+    return value
+  }
+  return JSON.parse(JSON.stringify(value)) as T
 }
 
 function buildPodSessionEntries(snapshot: LinxPiPodSessionSnapshot): SessionEntry[] {
@@ -515,47 +675,14 @@ async function createDefaultLinxPiPodSessionSource(): Promise<LinxPiPodSessionSo
 }
 
 async function createDefaultPodSessionContext(): Promise<DefaultPodSessionContext | null> {
-  const [credentialsStore, oidcAuth, solidAuth] = await Promise.all([
-    import('../credentials-store.js'),
-    import('../oidc-auth.js'),
-    import('../solid-auth.js'),
-  ])
-
-  const credentials = credentialsStore.loadCredentials()
-  if (!credentials) {
+  const session = await getDefaultPodDataSession()
+  if (!session) {
     return null
   }
 
-  const clientCredentials = credentialsStore.getClientCredentials(credentials)
-  let session: Session
-  if (clientCredentials) {
-    session = (await solidAuth.authenticate(
-      getClientCredentialId(clientCredentials),
-      getClientCredentialKey(clientCredentials),
-      credentials.url,
-    )).session
-    const webId = session.info.webId || credentials.webId
-    if (!webId) {
-      return null
-    }
-    return {
-      webId,
-      fetch: (url, init) => session.fetch(url, init),
-    }
-  } else if (credentials.authType === 'oidc_oauth') {
-    const accessToken = await oidcAuth.getOidcAccessToken(credentials)
-    if (!accessToken) {
-      return null
-    }
-    if (!credentials.webId) {
-      return null
-    }
-    return {
-      webId: credentials.webId,
-      fetch: (url, init) => solidAuth.authenticatedFetch(url, accessToken, init),
-    }
-  } else {
-    return null
+  return {
+    webId: session.webId,
+    fetch: session.fetch,
   }
 }
 
@@ -563,7 +690,12 @@ async function listPodSessionSnapshots(
   context: DefaultPodSessionContext,
   cwd?: string,
 ): Promise<LinxPiPodSessionSnapshot[]> {
-  const sessionUrls = await listTurtleResources(context.fetch, `${podBaseUrlFromWebId(context.webId)}/.data/session/`)
+  const podBaseUrl = podBaseUrlFromWebId(context.webId)
+  const [currentSessionUrls, legacySessionUrls] = await Promise.all([
+    listTurtleResourcesRecursive(context.fetch, `${podBaseUrl}/.data/sessions/`).catch(() => []),
+    listTurtleResources(context.fetch, `${podBaseUrl}/.data/session/`).catch(() => []),
+  ])
+  const sessionUrls = [...new Set([...currentSessionUrls, ...legacySessionUrls])]
   const snapshots = (await mapWithConcurrency(sessionUrls, 6, (sessionUrl) => (
     readPodSessionSnapshot(context, sessionUrl, { expectedCwd: cwd }).catch(() => null)
   )))
@@ -586,8 +718,11 @@ async function readPodSessionSnapshot(
     return null
   }
   const blocks = parseManagedTurtleBlocks(turtle, sessionUrl)
-  const predicates = blocks.get(sessionUrl)
-    ?? [...blocks.values()].find((entry) => firstLiteral(entry, UDFS_SESSION_TOOL) === 'linx')
+  const blockEntries = [...blocks.entries()]
+  const blockEntry = blockEntries.find(([subject]) => subject === sessionUrl)
+    ?? blockEntries.find(([, entry]) => firstLiteral(entry, UDFS_SESSION_TOOL) === 'linx')
+  const subjectUrl = blockEntry?.[0] ?? sessionUrl
+  const predicates = blockEntry?.[1]
   if (!(predicates instanceof Map)) {
     return null
   }
@@ -607,7 +742,9 @@ async function readPodSessionSnapshot(
     return null
   }
 
-  const id = decodeURIComponent(sessionUrl.split('/').pop()?.replace(/\.ttl$/, '') ?? '')
+  const id = decodeURIComponent(subjectUrl.includes('#')
+    ? subjectUrl.split('#').pop() ?? ''
+    : sessionUrl.split('/').pop()?.replace(/\.ttl$/, '') ?? '')
   if (!id) {
     return null
   }

@@ -35,8 +35,8 @@ describe('session schema', () => {
       'utf8',
     )
 
-    expect(source).toContain("base: '/.data/session/'")
-    expect(source).toContain("sparqlEndpoint: '/.data/session/-/sparql'")
-    expect(source).toContain("subjectTemplate: '{id}.ttl'")
+    expect(source).toContain("base: '/.data/sessions/'")
+    expect(source).toContain("sparqlEndpoint: '/.data/sessions/-/sparql'")
+    expect(source).toContain("subjectTemplate: '{yyyy}/{MM}.ttl#{id}'")
   })
 })

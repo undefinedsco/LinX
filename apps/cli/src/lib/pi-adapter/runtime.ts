@@ -4,6 +4,7 @@ import { ensureBrowserConsentLogin, isOidcLoginExpiredError } from '../oidc-auth
 import { DEFAULT_LINX_CLOUD_MODEL_ID, FALLBACK_LINX_CLOUD_MODEL_IDS, resolvePreferredLinxCloudModelId } from '../default-model.js'
 import { ensureLinxPiTheme } from './theme.js'
 import {
+  type BashOperations,
   type AgentSessionRuntime,
   AuthStorage,
   ModelRegistry,
@@ -13,6 +14,7 @@ import {
   createAgentSessionRuntime,
   createAgentSessionServices,
   createCodingTools,
+  createLocalBashOperations,
 } from '@mariozechner/pi-coding-agent'
 import type { Api, Model, OAuthCredentials } from '@mariozechner/pi-ai'
 import { isRemoteAuthExpiredError, type RemoteChatMessage, type RemoteChatTool } from '../chat-api.js'
@@ -23,6 +25,7 @@ const UNDEFINEDS_PROVIDER_LABEL = 'undefineds(cloud)'
 const UNDEFINEDS_PROVIDER_API = 'openai-completions'
 const UNDEFINEDS_SESSION_ID = 'undefineds_pi_frontend'
 const UNDEFINEDS_AUTH_BRIDGE_ID = 'undefineds-cloud-oauth-bridge'
+export const DEFAULT_LINX_PI_BASH_TIMEOUT_SECONDS = 15
 
 export interface PiRuntimeAdapterDependencies {
   createNativeProxy?: (options?: {
@@ -311,7 +314,7 @@ export function createPiRuntimeAdapter(
         sessionManager: context.sessionManager as SessionManager,
         sessionStartEvent: context.sessionStartEvent as never,
         model: selectedModel,
-        tools: createCodingTools(context.cwd),
+        tools: createLinxPiCodingTools(context.cwd),
       })
       const session = created.session
       enableLinxXhighThinking(session)
@@ -380,6 +383,28 @@ export function createPiRuntimeAdapter(
       activeModelId = resolvePreferredLinxCloudModelId(nextModels, activeModelId)
     }
   }
+}
+
+export function createLinxPiCodingTools(cwd: string, options: {
+  bashTimeoutSeconds?: number
+  bashOperations?: BashOperations
+} = {}): ReturnType<typeof createCodingTools> {
+  const localBashOperations = options.bashOperations ?? createLocalBashOperations()
+  const bashTimeoutSeconds = options.bashTimeoutSeconds ?? DEFAULT_LINX_PI_BASH_TIMEOUT_SECONDS
+  return createCodingTools(cwd, {
+    bash: {
+      operations: {
+        exec(command, workingDirectory, options) {
+          return localBashOperations.exec(command, workingDirectory, {
+            ...options,
+            timeout: typeof options.timeout === 'number'
+              ? options.timeout
+              : bashTimeoutSeconds,
+          })
+        },
+      },
+    },
+  })
 }
 
 function enableLinxXhighThinking(session: {

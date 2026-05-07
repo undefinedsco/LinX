@@ -336,6 +336,53 @@ test('pi agent stream adapter preserves assistant tool calls and tool results in
   ])
 })
 
+test('pi agent stream adapter drops interrupted dangling tool calls from resumed history', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/stream.ts')
+  t.after(() => cleanup())
+
+  const completionCalls = []
+  const adapter = module.createPiAgentStreamAdapter({
+    completionBackend: {
+      async complete(input) {
+        completionCalls.push(input)
+        return 'continued'
+      },
+    },
+  })
+
+  for await (const _event of adapter.streamFn(undefined, {
+    messages: [
+      {
+        role: 'assistant',
+        content: [
+          { type: 'thinking', thinking: 'need to inspect files', thinkingSignature: 'reasoning_content' },
+          { type: 'text', text: 'I will inspect the repo.' },
+          {
+            type: 'toolCall',
+            id: 'call_interrupted',
+            name: 'bash',
+            arguments: { command: 'grep -r "well-known" --include="*.ts" --include="*.json" -l' },
+          },
+        ],
+      },
+      { role: 'user', content: '继续' },
+    ],
+  })) {
+    // drain
+  }
+
+  assert.deepEqual(completionCalls[0].messages, [
+    {
+      role: 'assistant',
+      content: 'I will inspect the repo.',
+    },
+    {
+      role: 'user',
+      content: '继续',
+    },
+  ])
+})
+
 test('pi agent stream adapter preserves DeepSeek reasoning content for tool-result history', async (t) => {
   const { module, cleanup } = await loadWatchModule('lib/pi-adapter/stream.ts')
   t.after(() => cleanup())

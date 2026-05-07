@@ -184,6 +184,7 @@ export {
 export {
   sessionResource,
   sessionTable,
+  buildSessionSubjectPath,
   type SessionType,
   type SessionStatus,
   type SessionRow,
@@ -194,21 +195,27 @@ export { sessionRepository } from './session.repository'
 
 // Approval / Audit / Grant / Inbox Notification
 export {
+  approvalResource,
   approvalTable,
+  buildApprovalSubjectPath,
   type ApprovalRow,
   type ApprovalInsert,
   type ApprovalUpdate,
 } from './approval.schema'
 
 export {
+  auditResource,
   auditTable,
+  buildAuditSubjectPath,
   type AuditRow,
   type AuditInsert,
   type AuditUpdate,
 } from './audit.schema'
 
 export {
+  grantResource,
   grantTable,
+  buildGrantSubjectPath,
   type GrantRow,
   type GrantInsert,
   type GrantUpdate,

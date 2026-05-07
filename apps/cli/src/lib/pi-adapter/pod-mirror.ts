@@ -1,8 +1,8 @@
-import type { Session } from '@inrupt/solid-client-authn-node'
 import type { AgentMessage } from '@mariozechner/pi-agent-core'
 import type { SessionEntry, SessionManager } from '@mariozechner/pi-coding-agent'
-import { getClientCredentialId, getClientCredentialKey, type ClientCredentialsSecrets, type StoredCredentials } from '../credentials-store.js'
+import type { StoredCredentials } from '../credentials-store.js'
 import { DEFAULT_LINX_CLOUD_MODEL_ID } from '../default-model.js'
+import { getDefaultPodDataSession, type PodDataSession } from '../pod-data-session.js'
 export { buildPodMessageRow } from './pod-mirror-mapping.js'
 import {
   DEFAULT_SECRETARY_CHAT_ID,
@@ -56,6 +56,7 @@ import {
   UDFS_WORKSPACE,
   WF_MESSAGE,
   buildAgentResourceUrl,
+  buildAuditDocumentUrl,
   buildAuditResourceUrl,
   buildChatIndexResourceUrl,
   buildMessageResourceUrl,
@@ -72,11 +73,7 @@ import {
 const PI_POLICY_VERSION = 'linx-pi-pod-mirror/v1'
 
 interface PodMirrorRuntime {
-  loadCredentials(): StoredCredentials | null
-  getClientCredentials(credentials: StoredCredentials): ClientCredentialsSecrets | null
-  getOidcAccessToken(credentials: StoredCredentials): Promise<string | null>
-  authenticate(clientId: string, clientSecret: string, oidcIssuer: string): Promise<{ session: Session }>
-  authenticatedFetch(url: string, token: string, init?: RequestInit): Promise<Response>
+  getPodDataSession(): Promise<PodDataSession | null>
 }
 
 export interface LinxPiPodMirrorOptions {
@@ -241,15 +238,17 @@ export class LinxPiPodMirror {
 
     const id = buildToolAuditId(this.options.sessionManager.getSessionId(), toolCallId, action)
     const createdAt = new Date()
-    await upsertManagedTurtleBlock(context.fetch, buildAuditResourceUrl(context.webId, id), {
-      subject: buildAuditResourceUrl(context.webId, id),
+    const documentUrl = buildAuditDocumentUrl(context.webId, createdAt)
+    const subjectUrl = buildAuditResourceUrl(context.webId, id, createdAt)
+    await upsertManagedTurtleBlock(context.fetch, documentUrl, {
+      subject: subjectUrl,
       triples: [
         { predicate: RDF_TYPE, object: iri(UDFS_AUDIT_ENTRY) },
         { predicate: UDFS_ACTION, object: literal(action) },
         { predicate: UDFS_ACTOR, object: iri(buildAgentUri(context.webId)) },
         { predicate: UDFS_ACTOR_ROLE, object: literal('assistant') },
         { predicate: UDFS_ON_BEHALF_OF, object: iri(context.webId) },
-        { predicate: UDFS_SESSION, object: iri(buildSessionResourceUrl(context.webId, this.options.sessionManager.getSessionId())) },
+        { predicate: UDFS_SESSION, object: iri(buildSessionResourceUrl(context.webId, this.options.sessionManager.getSessionId(), createdAt)) },
         { predicate: UDFS_TOOL_CALL_ID, object: literal(toolCallId) },
         { predicate: UDFS_CONTEXT, object: literal(JSON.stringify(buildToolAuditContext(event))) },
         { predicate: UDFS_POLICY_VERSION, object: literal(PI_POLICY_VERSION) },
@@ -271,42 +270,15 @@ export class LinxPiPodMirror {
 
   private async createContext(): Promise<PodMirrorContext | null> {
     const runtime = await this.runtimePromise
-    const credentials = runtime.loadCredentials()
-    if (!credentials) {
-      return null
-    }
-
-    const clientCredentials = runtime.getClientCredentials(credentials)
-    if (clientCredentials) {
-      const { session } = await runtime.authenticate(
-        getClientCredentialId(clientCredentials),
-        getClientCredentialKey(clientCredentials),
-        credentials.url,
-      )
-      const webId = session.info.webId || credentials.webId
-      if (!webId) {
-        return null
-      }
-      return {
-        credentials,
-        webId,
-        fetch: (url, init) => session.fetch(url, init),
-      }
-    }
-
-    if (credentials.authType !== 'oidc_oauth') {
-      return null
-    }
-
-    const accessToken = await runtime.getOidcAccessToken(credentials)
-    if (!accessToken || !credentials.webId) {
+    const session = await runtime.getPodDataSession()
+    if (!session) {
       return null
     }
 
     return {
-      credentials,
-      webId: credentials.webId,
-      fetch: (url, init) => runtime.authenticatedFetch(url, accessToken, init),
+      credentials: session.credentials,
+      webId: session.webId,
+      fetch: session.fetch,
     }
   }
 }
@@ -383,8 +355,10 @@ async function persistRuntimeSession(
     messageResources: [...messageResourceUrls],
   }
 
-  await upsertManagedTurtleBlock(context.fetch, buildSessionResourceUrl(context.webId, runtimeSessionId), {
-    subject: buildSessionResourceUrl(context.webId, runtimeSessionId),
+  const sessionDocumentUrl = buildSessionResourceUrl(context.webId, runtimeSessionId, now).split('#')[0]
+  const sessionSubjectUrl = buildSessionResourceUrl(context.webId, runtimeSessionId, now)
+  await upsertManagedTurtleBlock(context.fetch, sessionDocumentUrl, {
+    subject: sessionSubjectUrl,
     triples: [
       { predicate: RDF_TYPE, object: iri(UDFS_SESSION) },
       { predicate: UDFS_ACTOR, object: iri(context.webId) },
@@ -469,18 +443,8 @@ async function createDefaultRuntime(overrides: Partial<PodMirrorRuntime> | undef
     return overrides
   }
 
-  const [credentialsStore, oidcAuth, solidAuth] = await Promise.all([
-    import('../credentials-store.js'),
-    import('../oidc-auth.js'),
-    import('../solid-auth.js'),
-  ])
-
   return {
-    loadCredentials: credentialsStore.loadCredentials,
-    getClientCredentials: credentialsStore.getClientCredentials,
-    getOidcAccessToken: oidcAuth.getOidcAccessToken,
-    authenticate: solidAuth.authenticate,
-    authenticatedFetch: solidAuth.authenticatedFetch,
+    getPodDataSession: getDefaultPodDataSession,
     ...overrides,
   }
 }
@@ -488,11 +452,7 @@ async function createDefaultRuntime(overrides: Partial<PodMirrorRuntime> | undef
 function isCompletePodMirrorRuntime(runtime: Partial<PodMirrorRuntime> | undefined): runtime is PodMirrorRuntime {
   return Boolean(
     runtime
-    && runtime.loadCredentials
-    && runtime.getClientCredentials
-    && runtime.getOidcAccessToken
-    && runtime.authenticate
-    && runtime.authenticatedFetch,
+    && runtime.getPodDataSession,
   )
 }
 

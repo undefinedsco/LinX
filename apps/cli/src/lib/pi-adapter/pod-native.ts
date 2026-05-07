@@ -84,20 +84,40 @@ export function podBaseUrlFromWebId(webId: string): string {
   return webId.replace('/profile/card#me', '').replace(/\/$/, '')
 }
 
-export function buildSessionResourceUrl(webId: string, sessionId: string): string {
-  return `${podBaseUrlFromWebId(webId)}/.data/session/${encodeURIComponent(sessionId)}.ttl`
+export function buildSessionDocumentUrl(webId: string, createdAt: Date): string {
+  const yyyy = String(createdAt.getUTCFullYear())
+  const mm = String(createdAt.getUTCMonth() + 1).padStart(2, '0')
+  return `${podBaseUrlFromWebId(webId)}/.data/sessions/${yyyy}/${mm}.ttl`
 }
 
-export function buildAuditResourceUrl(webId: string, auditId: string): string {
-  return `${podBaseUrlFromWebId(webId)}/.data/audit/${encodeURIComponent(auditId)}.ttl`
+export function buildSessionResourceUrl(webId: string, sessionId: string, createdAt: Date = new Date()): string {
+  return `${buildSessionDocumentUrl(webId, createdAt)}#${encodeURIComponent(sessionId)}`
 }
 
-export function buildApprovalResourceUrl(webId: string, approvalId: string): string {
-  return `${podBaseUrlFromWebId(webId)}/.data/approvals/${encodeURIComponent(approvalId)}.ttl`
+export function buildAuditDocumentUrl(webId: string, createdAt: Date): string {
+  const yyyy = String(createdAt.getUTCFullYear())
+  const mm = String(createdAt.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(createdAt.getUTCDate()).padStart(2, '0')
+  return `${podBaseUrlFromWebId(webId)}/.data/audits/${yyyy}/${mm}/${dd}.ttl`
+}
+
+export function buildAuditResourceUrl(webId: string, auditId: string, createdAt: Date): string {
+  return `${buildAuditDocumentUrl(webId, createdAt)}#${encodeURIComponent(auditId)}`
+}
+
+export function buildApprovalDocumentUrl(webId: string, createdAt: Date): string {
+  const yyyy = String(createdAt.getUTCFullYear())
+  const mm = String(createdAt.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(createdAt.getUTCDate()).padStart(2, '0')
+  return `${podBaseUrlFromWebId(webId)}/.data/approvals/${yyyy}/${mm}/${dd}.ttl`
+}
+
+export function buildApprovalResourceUrl(webId: string, approvalId: string, createdAt: Date = new Date()): string {
+  return `${buildApprovalDocumentUrl(webId, createdAt)}#${encodeURIComponent(approvalId)}`
 }
 
 export function buildGrantResourceUrl(webIdOrUri: string, grantId: string): string {
-  return `${podBaseUrlFromWebIdOrUri(webIdOrUri)}/settings/autonomy/grants/${encodeURIComponent(grantId)}.ttl`
+  return `${podBaseUrlFromWebIdOrUri(webIdOrUri)}/settings/autonomy/grants.ttl#${encodeURIComponent(grantId)}`
 }
 
 export function buildInboxResourceUrl(webIdOrUri: string, notificationId: string): string {
@@ -161,7 +181,9 @@ export async function putTurtleResource(fetcher: PodFetch, url: string, turtle: 
     body: turtle.endsWith('\n') ? turtle : `${turtle}\n`,
   })
   if (!response.ok) {
-    throw new Error(`Failed to write Pod resource ${url}: ${response.status} ${response.statusText}`)
+    const details = await response.text().catch(() => '')
+    const suffix = details.trim() ? ` - ${details.trim().slice(0, 500)}` : ''
+    throw new Error(`Failed to write Pod resource ${url}: ${response.status} ${response.statusText}${suffix}`)
   }
 }
 
@@ -306,6 +328,10 @@ export function firstInteger(
 }
 
 export function subjectIdFromResourceUrl(resourceUrl: string): string {
+  const hashIndex = resourceUrl.indexOf('#')
+  if (hashIndex !== -1) {
+    return decodeURIComponent(resourceUrl.slice(hashIndex + 1))
+  }
   return decodeURIComponent(resourceUrl.split('/').pop()?.replace(/\.ttl$/, '') ?? '')
 }
 
@@ -332,6 +358,39 @@ export async function listTurtleResources(fetcher: PodFetch, containerUrl: strin
     urls.add(new URL(relativeMatch[1], containerUrl).toString())
   }
   return [...urls].sort()
+}
+
+export async function listTurtleResourcesRecursive(fetcher: PodFetch, containerUrl: string): Promise<string[]> {
+  const response = await fetcher(containerUrl, {
+    method: 'GET',
+    headers: { Accept: 'text/turtle, application/ld+json;q=0.8, */*;q=0.1' },
+  })
+  if (response.status === 404) {
+    return []
+  }
+  if (!response.ok) {
+    throw new Error(`Failed to list Pod container ${containerUrl}: ${response.status} ${response.statusText}`)
+  }
+
+  const text = await response.text()
+  const resources = new Set<string>()
+  const containers = new Set<string>()
+  const resourceRegexp = /[<"]([^<>"']+\.ttl)[>"]/g
+  let resourceMatch: RegExpExecArray | null
+  while ((resourceMatch = resourceRegexp.exec(text))) {
+    resources.add(new URL(resourceMatch[1], containerUrl).toString())
+  }
+  const containerRegexp = /[<"]([^<>"']+\/)[>"]/g
+  let containerMatch: RegExpExecArray | null
+  while ((containerMatch = containerRegexp.exec(text))) {
+    const url = new URL(containerMatch[1], containerUrl).toString()
+    if (url !== containerUrl) {
+      containers.add(url)
+    }
+  }
+
+  const nested = await Promise.all([...containers].map((url) => listTurtleResourcesRecursive(fetcher, url)))
+  return [...resources, ...nested.flat()].sort()
 }
 
 async function ensureResourceContainers(fetcher: PodFetch, resourceUrl: string): Promise<void> {

@@ -1,6 +1,6 @@
 import { agentTable } from './agent.schema'
-import { approvalTable } from './approval.schema'
-import { auditTable } from './audit.schema'
+import { approvalResource, approvalTable } from './approval.schema'
+import { auditResource, auditTable } from './audit.schema'
 import { aiModelTable } from './ai-model.schema'
 import { aiProviderTable } from './ai-provider.schema'
 import { chatResource, chatTable } from './chat.schema'
@@ -8,7 +8,7 @@ import { contactTable } from './contact.schema'
 import { credentialTable } from './credential.schema'
 import { favoriteTable } from './favorite/favorite.schema'
 import { fileTable } from './file/file.schema'
-import { grantTable } from './grant.schema'
+import { grantResource, grantTable } from './grant.schema'
 import { inboxNotificationTable } from './inbox-notification.schema'
 import { messageResource, messageTable } from './message.schema'
 import { solidProfileTable } from './profile.schema'
@@ -32,9 +32,9 @@ export const solidResources = {
   settingsTable,
 
   // Sidecar collaboration data
-  approvalTable,
-  auditTable,
-  grantTable,
+  approvalResource,
+  auditResource,
+  grantResource,
   inboxNotificationTable,
 }
 

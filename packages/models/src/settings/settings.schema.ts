@@ -32,10 +32,11 @@ export const settingsTable = podTable("settings", {
   createdAt: timestamp("createdAt").predicate(DCTerms.created).notNull().defaultNow(),
   modifiedAt: timestamp("modifiedAt").predicate(DCTerms.modified).notNull().defaultNow(),
 }, {
-  base: "idp:///settings/", // LDP Container
-  sparqlEndpoint: "idp:///settings/-/sparql",
+  base: "/settings/", // LDP Container
+  sparqlEndpoint: "/settings/-/sparql",
   type: SCHEMA.PropertyValue,
   namespace: UDFS,
+  subjectTemplate: "{key}.ttl",
 });
 
 /**
@@ -78,8 +79,6 @@ export type SettingKey = typeof SETTING_KEYS[keyof typeof SETTING_KEYS];
 export type SettingsRow = typeof settingsTable.$inferSelect;
 export type SettingsInsert = typeof settingsTable.$inferInsert;
 export type SettingsUpdate = typeof settingsTable.$inferUpdate;
-
-
 
 
 

@@ -28,43 +28,38 @@ function createFakePodRuntime() {
   const writes = []
   return {
     runtime: {
-      loadCredentials() {
+      async getPodDataSession() {
         return {
-          authType: 'oidc_oauth',
-          url: 'https://id.undefineds.co/',
+          credentials: {
+            authType: 'oidc_oauth',
+            url: 'https://id.undefineds.co/',
+            webId: 'https://id.undefineds.co/alice/profile/card#me',
+          },
           webId: 'https://id.undefineds.co/alice/profile/card#me',
-        }
-      },
-      getClientCredentials() {
-        return null
-      },
-      async getOidcAccessToken() {
-        return 'access-token'
-      },
-      async authenticate() {
-        throw new Error('client credentials should not be used')
-      },
-      async authenticatedFetch(url, _token, init = {}) {
-        const method = init.method ?? 'GET'
-        if (method === 'GET') {
-          if (!resources.has(url)) {
-            return new Response('missing', { status: 404, statusText: 'Not Found' })
+          async close() {},
+          async fetch(url, init = {}) {
+            const method = init.method ?? 'GET'
+            if (method === 'GET') {
+              if (!resources.has(url)) {
+                return new Response('missing', { status: 404, statusText: 'Not Found' })
+              }
+              return new Response(resources.get(url), {
+                status: 200,
+                headers: { 'Content-Type': 'text/turtle' },
+              })
+            }
+            if (method === 'HEAD') {
+              return new Response(null, { status: resources.has(url) ? 200 : 404 })
+            }
+            if (method === 'PUT') {
+              const body = typeof init.body === 'string' ? init.body : ''
+              resources.set(url, body)
+              writes.push({ url, body })
+              return new Response(null, { status: 201 })
+            }
+            return new Response('unsupported', { status: 405 })
           }
-          return new Response(resources.get(url), {
-            status: 200,
-            headers: { 'Content-Type': 'text/turtle' },
-          })
         }
-        if (method === 'HEAD') {
-          return new Response(null, { status: resources.has(url) ? 200 : 404 })
-        }
-        if (method === 'PUT') {
-          const body = typeof init.body === 'string' ? init.body : ''
-          resources.set(url, body)
-          writes.push({ url, body })
-          return new Response(null, { status: 201 })
-        }
-        return new Response('unsupported', { status: 405 })
       },
     },
     resources,
@@ -205,9 +200,9 @@ test('LinxPiPodMirror persists Pi session events into Pod tables', async (t) => 
   assert.match(allTurtle, /persist through mirror/)
   assert.match(allTurtle, new RegExp(`${sessionManager.getSessionId()}-u1`))
   assert.equal(writes.some((write) => write.url.endsWith('/.data/chat/ai-secretary/index.ttl')), true)
-  assert.equal(writes.some((write) => write.url.endsWith(`/.data/session/${sessionManager.getSessionId()}.ttl`)), true)
+  assert.equal(writes.some((write) => /\/\.data\/sessions\/\d{4}\/\d{2}\.ttl$/.test(write.url)), true)
   assert.equal(writes.some((write) => /\/\.data\/chat\/ai-secretary\/2026\/04\/01\/messages\.ttl$/.test(write.url)), true)
-  assert.equal(writes.some((write) => write.url.includes('/.data/audit/')), false)
+  assert.equal(writes.some((write) => write.url.includes('/.data/audits/')), false)
 })
 
 test('LinxPiPodMirror writes tool execution audits to Pod tables', async (t) => {
@@ -239,9 +234,9 @@ test('LinxPiPodMirror writes tool execution audits to Pod tables', async (t) => 
   await mirror.flush()
   await mirror.close()
 
-  const auditResources = [...resources.entries()].filter(([url]) => url.includes('/.data/audit/') && url.endsWith('.ttl'))
-  assert.equal(auditResources.length, 2)
-  assert.equal(auditResources.every(([url]) => /\/\.data\/audit\/audit-[0-9a-f]{16}\.ttl$/.test(url)), true)
+  const auditResources = [...resources.entries()].filter(([url]) => url.includes('/.data/audits/') && url.endsWith('.ttl'))
+  assert.equal(auditResources.length, 1)
+  assert.equal(auditResources.every(([url]) => /\/\.data\/audits\/\d{4}\/\d{2}\/\d{2}\.ttl$/.test(url)), true)
   assert.equal(auditResources.some(([url]) => url.includes(sessionManager.getSessionId())), false)
   assert.equal(auditResources.some(([url]) => url.includes('call-1')), false)
   const auditTurtle = auditResources.map(([, body]) => body).join('\n')

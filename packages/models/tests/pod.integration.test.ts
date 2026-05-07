@@ -2,13 +2,13 @@ import 'dotenv/config'
 import { afterAll, describe, expect, it } from 'vitest'
 import { Session } from '@inrupt/solid-client-authn-node'
 import { drizzle, type SolidDatabase } from '@undefineds.co/drizzle-solid'
-import { approvalTable } from '../src/approval.schema'
-import { auditTable } from '../src/audit.schema'
+import { approvalResource, buildApprovalSubjectPath } from '../src/approval.schema'
+import { auditResource, buildAuditSubjectPath } from '../src/audit.schema'
 import { chatTable } from '../src/chat.schema'
-import { grantTable } from '../src/grant.schema'
+import { grantResource, buildGrantSubjectPath } from '../src/grant.schema'
 import { messageTable } from '../src/message.schema'
 import { solidSchema } from '../src/schema'
-import { sessionTable } from '../src/session/session.schema'
+import { buildSessionSubjectPath, sessionTable } from '../src/session/session.schema'
 import { threadTable } from '../src/thread.schema'
 import { resolvePodUri } from '../src/repository'
 import { startLocalXpod, type LocalXpodTestPod } from './utils/local-xpod'
@@ -59,9 +59,9 @@ async function getDb(): Promise<SolidDatabase> {
     threadTable,
     messageTable,
     sessionTable,
-    approvalTable,
-    grantTable,
-    auditTable,
+    approvalResource,
+    grantResource,
+    auditResource,
   ])
 
   return db
@@ -199,7 +199,7 @@ describe('Solid Pod live CRUD core surfaces', () => {
     })
     await step('message.verify-update', async () => expectResourceContains(session!, messageDocUrl, 'Pod CRUD message updated'))
 
-    const runtimeSessionIri = resolvePodUri(webId, sessionTable, runtimeSessionId)
+    const runtimeSessionIri = `${baseUrl}${buildSessionSubjectPath(runtimeSessionId, now)}`
     const [createdSession] = await step('session.create', () => database.insert(sessionTable).values({
       id: runtimeSessionId,
       ownerWebId: webId,
@@ -214,7 +214,7 @@ describe('Solid Pod live CRUD core surfaces', () => {
       createdAt: now,
       updatedAt: now,
     }).execute())
-    expect(subjectIri(createdSession as Record<string, unknown>)).toBe(runtimeSessionIri)
+    expect(subjectIri(createdSession as Record<string, unknown>)).toBe(runtimeSessionIri.split('#')[0])
     await step('session.read', async () => expect(database.findByIri(sessionTable, runtimeSessionIri)).resolves.toMatchObject({
       id: runtimeSessionId,
       chat: chatIri,
@@ -228,8 +228,8 @@ describe('Solid Pod live CRUD core surfaces', () => {
       updatedAt: new Date('2026-01-02T04:07:05.000Z'),
     })).resolves.toMatchObject({ status: 'completed', tokenUsage: 34 }))
 
-    const approvalIri = resolvePodUri(webId, approvalTable, approvalId)
-    await step('approval.create', () => database.insert(approvalTable).values({
+    const approvalIri = `${baseUrl}${buildApprovalSubjectPath(approvalId, now)}`
+    await step('approval.create', () => database.insert(approvalResource).values({
       id: approvalId,
       session: runtimeSessionIri,
       toolCallId: `tool-${approvalId}`,
@@ -242,12 +242,12 @@ describe('Solid Pod live CRUD core surfaces', () => {
       policyVersion: 'pod-crud-test/v1',
       createdAt: now,
     }).execute())
-    await step('approval.read', async () => expect(database.findByIri(approvalTable, approvalIri)).resolves.toMatchObject({
+    await step('approval.read', async () => expect(database.findByIri(approvalResource, approvalIri)).resolves.toMatchObject({
       id: approvalId,
       status: 'pending',
       toolName: 'shell',
     }))
-    await step('approval.update', async () => expect(database.updateByIri(approvalTable, approvalIri, {
+    await step('approval.update', async () => expect(database.updateByIri(approvalResource, approvalIri, {
       status: 'approved',
       decisionBy: webId,
       decisionRole: 'owner',
@@ -255,8 +255,8 @@ describe('Solid Pod live CRUD core surfaces', () => {
       resolvedAt: new Date('2026-01-02T04:08:05.000Z'),
     })).resolves.toMatchObject({ status: 'approved', decisionBy: webId }))
 
-    const grantIri = resolvePodUri(webId, grantTable, grantId)
-    await step('grant.create', () => database.insert(grantTable).values({
+    const grantIri = `${baseUrl}${buildGrantSubjectPath(grantId)}`
+    await step('grant.create', () => database.insert(grantResource).values({
       id: grantId,
       target: `${baseUrl}/workspace/${threadId}/`,
       action: 'https://undefineds.co/ns#executeCommand',
@@ -267,17 +267,17 @@ describe('Solid Pod live CRUD core surfaces', () => {
       onBehalfOf: webId,
       createdAt: now,
     }).execute())
-    await step('grant.read', async () => expect(database.findByIri(grantTable, grantIri)).resolves.toMatchObject({
+    await step('grant.read', async () => expect(database.findByIri(grantResource, grantIri)).resolves.toMatchObject({
       id: grantId,
       effect: 'allow',
       riskCeiling: 'medium',
     }))
-    await step('grant.update', async () => expect(database.updateByIri(grantTable, grantIri, {
+    await step('grant.update', async () => expect(database.updateByIri(grantResource, grantIri, {
       riskCeiling: 'high',
     })).resolves.toMatchObject({ riskCeiling: 'high' }))
 
-    const auditIri = resolvePodUri(webId, auditTable, auditId)
-    await step('audit.create', () => database.insert(auditTable).values({
+    const auditIri = `${baseUrl}${buildAuditSubjectPath(auditId, now)}`
+    await step('audit.create', () => database.insert(auditResource).values({
       id: auditId,
       action: 'approval_requested',
       actor: webId,
@@ -290,20 +290,20 @@ describe('Solid Pod live CRUD core surfaces', () => {
       policyVersion: 'pod-crud-test/v1',
       createdAt: now,
     }).execute())
-    await step('audit.read', async () => expect(database.findByIri(auditTable, auditIri)).resolves.toMatchObject({
+    await step('audit.read', async () => expect(database.findByIri(auditResource, auditIri)).resolves.toMatchObject({
       id: auditId,
       action: 'approval_requested',
       actor: webId,
     }))
-    await step('audit.update', async () => expect(database.updateByIri(auditTable, auditIri, {
+    await step('audit.update', async () => expect(database.updateByIri(auditResource, auditIri, {
       context: JSON.stringify({ source: 'pod.integration.test', updated: true }),
     })).resolves.toMatchObject({
       context: JSON.stringify({ source: 'pod.integration.test', updated: true }),
     }))
 
-    await step('audit.delete', () => expectDeleted(database, auditTable, auditIri))
-    await step('grant.delete', () => expectDeleted(database, grantTable, grantIri))
-    await step('approval.delete', () => expectDeleted(database, approvalTable, approvalIri))
+    await step('audit.delete', () => expectDeleted(database, auditResource, auditIri))
+    await step('grant.delete', () => expectDeleted(database, grantResource, grantIri))
+    await step('approval.delete', () => expectDeleted(database, approvalResource, approvalIri))
     await step('message.delete', async () => {
       const result = await database.delete(messageTable).whereByIri(messageIri).execute()
       expect(result.length).toBeGreaterThan(0)

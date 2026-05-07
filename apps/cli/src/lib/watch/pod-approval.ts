@@ -1,11 +1,12 @@
 import { setTimeout as delay } from 'node:timers/promises'
-import type { Session } from '@inrupt/solid-client-authn-node'
-import { getClientCredentialId, getClientCredentialKey, type ClientCredentialsSecrets, type StoredCredentials } from '../credentials-store.js'
+import type { StoredCredentials } from '../credentials-store.js'
+import { getDefaultPodDataSession, type PodDataSession } from '../pod-data-session.js'
 import type { WatchApprovalDecision, WatchApprovalRequest, WatchSessionRecord } from '@undefineds.co/models/watch'
 import {
   AS_ACTOR,
   AS_ANNOUNCE,
   AS_OBJECT,
+  buildApprovalDocumentUrl,
   DCT_CREATED,
   ODRL_ACTION,
   ODRL_POLICY,
@@ -34,6 +35,7 @@ import {
   UDFS_TOOL_CALL_ID,
   UDFS_TOOL_NAME,
   buildApprovalResourceUrl,
+  buildAuditDocumentUrl,
   buildAuditResourceUrl,
   buildGrantResourceUrl,
   buildInboxResourceUrl,
@@ -41,6 +43,7 @@ import {
   firstLiteral,
   iri,
   listTurtleResources,
+  listTurtleResourcesRecursive,
   literal,
   parseManagedTurtleBlocks,
   readTurtleResource,
@@ -109,15 +112,18 @@ export interface WatchRemoteApprovalStore {
 }
 
 export interface WatchRemoteApprovalRuntime {
-  loadCredentials: () => StoredCredentials | null
-  getClientCredentials: (stored: StoredCredentials) => ClientCredentialsSecrets | null
-  getOidcAccessToken?: (stored: StoredCredentials) => Promise<string | null>
-  authenticate: (clientId: string, clientSecret: string, oidcIssuer: string) => Promise<{ session: Session }>
-  authenticatedFetch?: (url: string, token: string, init?: RequestInit) => Promise<Response>
-  createStore: (sessionOrWebId: Session | string, fetcher?: PodFetch) => WatchRemoteApprovalStore
+  getPodDataSession: () => Promise<PodDataSession | null>
+  createStore: (webId: string, fetcher: PodFetch) => WatchRemoteApprovalStore
   sleep: (ms: number) => Promise<void>
   now: () => Date
 }
+
+interface RemoteApprovalClient {
+  session: PodDataSession
+  store: WatchRemoteApprovalStore
+}
+
+const remoteApprovalClientCache = new WeakMap<WatchRemoteApprovalRuntime, Promise<RemoteApprovalClient | null>>()
 
 export interface RemoteWatchApprovalSummary {
   id: string
@@ -180,11 +186,6 @@ function createAbortError(): Error {
   return error
 }
 
-async function dynamicImport(specifier: string): Promise<Record<string, any>> {
-  const loader = new Function('modulePath', 'return import(modulePath)') as (modulePath: string) => Promise<Record<string, any>>
-  return loader(specifier)
-}
-
 function normalizeString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
 }
@@ -223,11 +224,19 @@ function buildThreadUri(webId: string, threadId: string): string {
 }
 
 function buildApprovalUri(webIdOrUri: string, approvalId: string): string {
-  return `${getPodBaseUrl(webIdOrUri)}/.data/approvals/${approvalId}.ttl`
+  return buildApprovalResourceUrl(webIdOrUri, approvalId)
+}
+
+function buildApprovalUriForDate(webIdOrUri: string, approvalId: string, createdAt: Date): string {
+  return buildApprovalResourceUrl(webIdOrUri, approvalId, createdAt)
 }
 
 function buildGrantUri(webIdOrUri: string, grantId: string): string {
-  return `${getPodBaseUrl(webIdOrUri)}/settings/autonomy/grants/${grantId}.ttl`
+  return buildGrantResourceUrl(webIdOrUri, grantId)
+}
+
+function buildGrantDocumentUrl(webIdOrUri: string): string {
+  return `${getPodBaseUrl(webIdOrUri)}/settings/autonomy/grants.ttl`
 }
 
 function buildAgentUri(webId: string): string {
@@ -419,17 +428,27 @@ function decisionFromApprovalRow(row: ApprovalRowLike): WatchApprovalDecision | 
   return 'accept'
 }
 
-function requestAuditForApproval(approvalUri: string, audits: AuditRowLike[]): AuditRowLike | undefined {
-  const matches = audits.filter((audit) => audit.approval === approvalUri && audit.action === 'approval_requested')
+function requestAuditForApproval(row: ApprovalRowLike, approvalUris: string[], audits: AuditRowLike[]): AuditRowLike | undefined {
+  const uriSet = new Set(approvalUris)
+  const matches = audits.filter((audit) => (
+    audit.action === 'approval_requested'
+    && (
+      (audit.approval && uriSet.has(audit.approval))
+      || (audit.session === row.session && audit.toolCallId === row.toolCallId)
+    )
+  ))
   matches.sort((left, right) => toIsoString(right.createdAt, '').localeCompare(toIsoString(left.createdAt, '')))
   return matches[0]
 }
 
 function normalizeApprovalSummary(row: ApprovalRowLike, audits: AuditRowLike[]): RemoteWatchApprovalSummary {
-  const approvalUri = buildApprovalUri(row.session, row.id)
-  const requestAudit = requestAuditForApproval(approvalUri, audits)
-  const requestContext = parseRequestAuditContext(requestAudit?.context)
   const createdAt = toIsoString(row.createdAt, new Date(0).toISOString())
+  const approvalUris = [
+    buildApprovalUriForDate(row.session, row.id, new Date(createdAt)),
+    buildApprovalUri(row.session, row.id),
+  ]
+  const requestAudit = requestAuditForApproval(row, approvalUris, audits)
+  const requestContext = parseRequestAuditContext(requestAudit?.context)
   const sessionUri = row.session
   const decision = decisionFromApprovalRow(row)
 
@@ -475,41 +494,11 @@ function missingRemoteApprovalCredentialsMessage(): string {
   return 'LinX remote approval requires `linx login` first.'
 }
 
-function unsupportedRemoteApprovalAuthMessage(): string {
-  return 'LinX remote approval requires a valid LinX login in `~/.linx`.'
-}
-
 async function createDefaultRuntime(): Promise<WatchRemoteApprovalRuntime> {
-  const [credentialsStore, solidAuth, oidcAuth] = await Promise.all([
-    dynamicImport(new URL('../credentials-store.js', import.meta.url).href),
-    dynamicImport(new URL('../solid-auth.js', import.meta.url).href),
-    dynamicImport(new URL('../oidc-auth.js', import.meta.url).href),
-  ])
-
   return {
-    loadCredentials: credentialsStore.loadCredentials,
-    getClientCredentials: credentialsStore.getClientCredentials,
-    getOidcAccessToken: oidcAuth.getOidcAccessToken,
-    authenticate: solidAuth.authenticate,
-    authenticatedFetch(url, token, init) {
-      const headers = new Headers(init?.headers)
-      headers.set('Authorization', `Bearer ${token}`)
-      return fetch(url, { ...init, headers })
-    },
-    createStore(sessionOrWebId, fetcher) {
-      const webId = typeof sessionOrWebId === 'string' ? sessionOrWebId : sessionOrWebId.info.webId
-      if (!webId) {
-        throw new Error('Remote approval authentication succeeded without a WebID.')
-      }
-      const activeFetcher = fetcher ?? (
-        typeof sessionOrWebId === 'string'
-          ? undefined
-          : ((url, init) => sessionOrWebId.fetch(url, init))
-      )
-      if (!activeFetcher) {
-        throw new Error('Remote approval authentication succeeded without a Pod fetcher.')
-      }
-      return createNativeRemoteApprovalStore(webId, activeFetcher)
+    getPodDataSession: getDefaultPodDataSession,
+    createStore(webId, fetcher) {
+      return createNativeRemoteApprovalStore(webId, fetcher)
     },
     sleep(ms: number) {
       return delay(ms)
@@ -528,42 +517,48 @@ async function withRemoteApprovalStore<T>(
     stored: StoredCredentials
   }) => Promise<T>,
 ): Promise<T> {
-  const stored = runtime.loadCredentials()
-  if (!stored) {
+  const client = await getRemoteApprovalClient(runtime)
+  if (!client) {
     throw new Error(missingRemoteApprovalCredentialsMessage())
   }
 
-  const clientCredentials = runtime.getClientCredentials(stored)
-  if (clientCredentials) {
-    const { session } = await runtime.authenticate(getClientCredentialId(clientCredentials), getClientCredentialKey(clientCredentials), stored.url)
-    const webId = session.info.webId ?? stored.webId
-    if (!webId) {
-      await session.logout().catch(() => undefined)
-      throw new Error('Remote approval authentication succeeded without a WebID.')
-    }
+  return await fn({
+    store: client.store,
+    webId: client.session.webId,
+    stored: client.session.credentials,
+  })
+}
 
-    try {
-      return await fn({
-        store: runtime.createStore(session),
-        webId,
-        stored,
+async function getRemoteApprovalClient(runtime: WatchRemoteApprovalRuntime): Promise<RemoteApprovalClient | null> {
+  let promise = remoteApprovalClientCache.get(runtime)
+  if (!promise) {
+    promise = createRemoteApprovalClient(runtime)
+      .then((client) => {
+        if (!client) {
+          remoteApprovalClientCache.delete(runtime)
+        }
+        return client
       })
-    } finally {
-      await session.logout().catch(() => undefined)
-    }
+      .catch((error) => {
+        remoteApprovalClientCache.delete(runtime)
+        throw error
+      })
+    remoteApprovalClientCache.set(runtime, promise)
   }
 
-  const accessToken = await runtime.getOidcAccessToken?.(stored)
-  if (accessToken && stored.webId && runtime.authenticatedFetch) {
-    const fetcher: PodFetch = (url, init) => runtime.authenticatedFetch!(url, accessToken, init)
-    return await fn({
-      store: runtime.createStore(stored.webId, fetcher),
-      webId: stored.webId,
-      stored,
-    })
+  return promise
+}
+
+async function createRemoteApprovalClient(runtime: WatchRemoteApprovalRuntime): Promise<RemoteApprovalClient | null> {
+  const session = await runtime.getPodDataSession()
+  if (!session) {
+    return null
   }
 
-  throw new Error(unsupportedRemoteApprovalAuthMessage())
+  return {
+    session,
+    store: runtime.createStore(session.webId, session.fetch),
+  }
 }
 
 function createNativeRemoteApprovalStore(webId: string, fetcher: PodFetch): WatchRemoteApprovalStore {
@@ -586,23 +581,29 @@ function createNativeRemoteApprovalStore(webId: string, fetcher: PodFetch): Watc
 }
 
 async function listApprovalRows(webId: string, fetcher: PodFetch): Promise<ApprovalRowLike[]> {
-  const urls = await listTurtleResources(fetcher, `${getPodBaseUrl(webId)}/.data/approvals/`)
+  const [currentUrls, legacyUrls] = await Promise.all([
+    listTurtleResourcesRecursive(fetcher, `${getPodBaseUrl(webId)}/.data/approvals/`).catch(() => []),
+    listTurtleResources(fetcher, `${getPodBaseUrl(webId)}/.data/approvals/`).catch(() => []),
+  ])
+  const urls = [...new Set([...currentUrls, ...legacyUrls])]
   const rows: ApprovalRowLike[] = []
   for (const url of urls.filter((entry) => entry.endsWith('.ttl'))) {
     const turtle = await readTurtleResource(fetcher, url).catch(() => null)
     if (!turtle) continue
-    const predicates = parseManagedTurtleBlocks(turtle, url).get(url)
-    if (!predicates) continue
-    const row = approvalRowFromPredicates(url, predicates)
-    if (row) rows.push(row)
+    for (const [subject, predicates] of parseManagedTurtleBlocks(turtle, url)) {
+      const row = approvalRowFromPredicates(subject, predicates)
+      if (row) rows.push(row)
+    }
   }
   return rows
 }
 
 async function writeApprovalRow(webId: string, fetcher: PodFetch, row: ApprovalRowLike): Promise<void> {
-  const url = buildApprovalResourceUrl(webId, row.id)
-  await upsertManagedTurtleBlock(fetcher, url, {
-    subject: url,
+  const createdAt = new Date(toIsoString(row.createdAt, new Date().toISOString()))
+  const documentUrl = buildApprovalDocumentUrl(webId, createdAt)
+  const subjectUrl = buildApprovalResourceUrl(webId, row.id, createdAt)
+  await upsertManagedTurtleBlock(fetcher, documentUrl, {
+    subject: subjectUrl,
     triples: [
       { predicate: RDF_TYPE, object: iri(UDFS_APPROVAL_REQUEST) },
       { predicate: UDFS_SESSION, object: iri(row.session) },
@@ -625,23 +626,25 @@ async function writeApprovalRow(webId: string, fetcher: PodFetch, row: ApprovalR
 }
 
 async function listAuditRows(webId: string, fetcher: PodFetch): Promise<AuditRowLike[]> {
-  const urls = await listTurtleResources(fetcher, `${getPodBaseUrl(webId)}/.data/audit/`)
+  const urls = await listTurtleResourcesRecursive(fetcher, `${getPodBaseUrl(webId)}/.data/audits/`)
   const rows: AuditRowLike[] = []
   for (const url of urls.filter((entry) => entry.endsWith('.ttl'))) {
     const turtle = await readTurtleResource(fetcher, url).catch(() => null)
     if (!turtle) continue
-    const predicates = parseManagedTurtleBlocks(turtle, url).get(url)
-    if (!predicates) continue
-    const row = auditRowFromPredicates(url, predicates)
-    if (row) rows.push(row)
+    for (const [subject, predicates] of parseManagedTurtleBlocks(turtle, url)) {
+      const row = auditRowFromPredicates(subject, predicates)
+      if (row) rows.push(row)
+    }
   }
   return rows
 }
 
 async function writeAuditRow(webId: string, fetcher: PodFetch, row: AuditRowLike): Promise<void> {
-  const url = buildAuditResourceUrl(webId, row.id)
-  await upsertManagedTurtleBlock(fetcher, url, {
-    subject: url,
+  const createdAt = new Date(toIsoString(row.createdAt, new Date().toISOString()))
+  const documentUrl = buildAuditDocumentUrl(webId, createdAt)
+  const subjectUrl = buildAuditResourceUrl(webId, row.id, createdAt)
+  await upsertManagedTurtleBlock(fetcher, documentUrl, {
+    subject: subjectUrl,
     triples: [
       { predicate: RDF_TYPE, object: iri(UDFS_AUDIT_ENTRY) },
       { predicate: UDFS_ACTION, object: literal(row.action) },
@@ -659,22 +662,26 @@ async function writeAuditRow(webId: string, fetcher: PodFetch, row: AuditRowLike
 }
 
 async function listGrantRows(webId: string, fetcher: PodFetch): Promise<Array<Record<string, unknown>>> {
-  const urls = await listTurtleResources(fetcher, `${getPodBaseUrl(webId)}/settings/autonomy/grants/`)
+  const urls = [
+    `${getPodBaseUrl(webId)}/settings/autonomy/grants.ttl`,
+    ...await listTurtleResources(fetcher, `${getPodBaseUrl(webId)}/settings/autonomy/grants/`).catch(() => []),
+  ]
   const rows: Array<Record<string, unknown>> = []
   for (const url of urls.filter((entry) => entry.endsWith('.ttl'))) {
     const turtle = await readTurtleResource(fetcher, url).catch(() => null)
     if (!turtle) continue
-    const predicates = parseManagedTurtleBlocks(turtle, url).get(url)
-    if (!predicates) continue
-    const row = grantRowFromPredicates(url, predicates)
-    if (row) rows.push(row)
+    for (const [subject, predicates] of parseManagedTurtleBlocks(turtle, url)) {
+      const row = grantRowFromPredicates(subject, predicates)
+      if (row) rows.push(row)
+    }
   }
   return rows
 }
 
 async function writeGrantRow(webId: string, fetcher: PodFetch, row: Record<string, unknown>): Promise<void> {
   const id = normalizeString(row.id) ?? crypto.randomUUID()
-  const url = buildGrantResourceUrl(webId, id)
+  const documentUrl = buildGrantDocumentUrl(webId)
+  const subjectUrl = buildGrantResourceUrl(webId, id)
   const target = normalizeString(row.target)
   const action = normalizeString(row.action)
   const effect = normalizeString(row.effect)
@@ -683,8 +690,8 @@ async function writeGrantRow(webId: string, fetcher: PodFetch, row: Record<strin
   if (!target || !action || !effect || !decisionBy || !decisionRole) {
     throw new Error(`Invalid remote approval grant row: ${id}`)
   }
-  await upsertManagedTurtleBlock(fetcher, url, {
-    subject: url,
+  await upsertManagedTurtleBlock(fetcher, documentUrl, {
+    subject: subjectUrl,
     triples: [
       { predicate: RDF_TYPE, object: iri(ODRL_POLICY) },
       { predicate: RDF_TYPE, object: iri(UDFS_AUTONOMY_GRANT) },
@@ -838,7 +845,7 @@ export async function createRemoteApproval(options: {
     const approvalId = crypto.randomUUID()
     const now = activeRuntime.now()
     const sessionUri = subject.sessionUri
-    const approvalUri = buildApprovalUri(webId, approvalId)
+    const approvalUri = buildApprovalUriForDate(webId, approvalId, now)
     const targetUri = subject.targetUri ?? sessionUri
     const assignedTo = subject.assignedTo ?? webId
     const onBehalfOf = subject.onBehalfOf ?? webId
@@ -1075,7 +1082,8 @@ export async function resolveRemoteWatchApproval(options: {
     }
 
     const now = activeRuntime.now()
-    const approvalUri = buildApprovalUri(row.session, row.id)
+    const approvalCreatedAt = new Date(toIsoString(row.createdAt, now.toISOString()))
+    const approvalUri = buildApprovalUriForDate(row.session, row.id, approvalCreatedAt)
     const nextStatus = options.decision === 'accept' || options.decision === 'accept_for_session'
       ? 'approved'
       : 'rejected'

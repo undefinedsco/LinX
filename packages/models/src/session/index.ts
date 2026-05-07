@@ -1,6 +1,7 @@
 export {
   sessionResource,
   sessionTable,
+  buildSessionSubjectPath,
   type SessionType,
   type SessionStatus,
   type SessionRow,

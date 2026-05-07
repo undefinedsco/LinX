@@ -1,5 +1,5 @@
-import type { Session } from '@inrupt/solid-client-authn-node'
-import { getClientCredentialId, getClientCredentialKey, type ClientCredentialsSecrets, type StoredCredentials } from '../credentials-store.js'
+import type { PodDataSession } from '../pod-data-session.js'
+import { getDefaultPodDataSession } from '../pod-data-session.js'
 import {
   buildWatchThreadMetadata,
   buildWatchTranscriptMessages,
@@ -13,10 +13,8 @@ const WATCH_CHAT_TITLE = 'LinX Watch'
 const WATCH_AGENT_ID = 'linx-watch-assistant'
 
 interface WatchPodPersistenceRuntime {
-  loadCredentials: () => StoredCredentials | null
-  getClientCredentials: (stored: StoredCredentials) => ClientCredentialsSecrets | null
-  authenticate: (clientId: string, clientSecret: string, oidcIssuer: string) => Promise<{ session: Session }>
-  createDb: (session: Session) => PodPersistenceDb
+  getPodDataSession: () => Promise<PodDataSession | null>
+  createDb: (session: PodDataSession) => PodPersistenceDb
   chatTable: unknown
   threadTable: unknown
   messageTable: unknown
@@ -87,18 +85,14 @@ async function dynamicImport(specifier: string): Promise<Record<string, any>> {
 }
 
 async function createDefaultRuntime(): Promise<WatchPodPersistenceRuntime> {
-  const [credentialsStore, solidAuth, models] = await Promise.all([
-    dynamicImport(new URL('../credentials-store.js', import.meta.url).href),
-    dynamicImport(new URL('../solid-auth.js', import.meta.url).href),
+  const [models] = await Promise.all([
     dynamicImport(new URL('../models.js', import.meta.url).href),
   ])
 
   return {
-    loadCredentials: credentialsStore.loadCredentials,
-    getClientCredentials: credentialsStore.getClientCredentials,
-    authenticate: solidAuth.authenticate,
-    createDb(session) {
-      return models.drizzle(session, {
+    getPodDataSession: getDefaultPodDataSession,
+    createDb(podSession) {
+      return models.drizzle(podSession.solidSession ?? podSession, {
         logger: false,
         disableInteropDiscovery: true,
         schema: models.solidSchema,
@@ -314,38 +308,27 @@ export async function persistWatchConversationToPod(
   runtime?: WatchPodPersistenceRuntime,
 ): Promise<boolean> {
   const activeRuntime = runtime ?? await createDefaultRuntime()
-  const stored = activeRuntime.loadCredentials()
-  if (!stored) {
+  const podSession = await activeRuntime.getPodDataSession()
+  if (!podSession) {
     return false
   }
 
-  const clientCredentials = activeRuntime.getClientCredentials(stored)
-  if (!clientCredentials) {
-    return false
-  }
+  const db = activeRuntime.createDb(podSession)
+  const entries = activeRuntime.loadWatchEvents(record.id)
+  const transcriptRows = buildWatchConversationMessages(record, podSession.webId, entries)
+  const lastPreview = transcriptRows.at(-1)?.content
 
-  const { session } = await activeRuntime.authenticate(getClientCredentialId(clientCredentials), getClientCredentialKey(clientCredentials), stored.url)
-
-  try {
-    const db = activeRuntime.createDb(session)
-    const entries = activeRuntime.loadWatchEvents(record.id)
-    const transcriptRows = buildWatchConversationMessages(record, stored.webId, entries)
-    const lastPreview = transcriptRows.at(-1)?.content
-
-    await db.init([
-      activeRuntime.chatTable,
-      activeRuntime.threadTable,
-      activeRuntime.messageTable,
-      activeRuntime.agentTable,
-    ]).catch(() => undefined)
-    await ensureWatchConversationChat(db, activeRuntime, stored.webId, buildWatchConversationChatRow(record, lastPreview))
-    await ensureWatchConversationAgent(db, activeRuntime, stored.webId, record)
-    await upsertWatchConversationThread(db, activeRuntime, stored.webId, buildWatchConversationThreadRow(record, transcriptRows))
-    await upsertWatchConversationMessages(db, activeRuntime, stored.webId, transcriptRows)
-    return true
-  } finally {
-    await session.logout().catch(() => undefined)
-  }
+  await db.init([
+    activeRuntime.chatTable,
+    activeRuntime.threadTable,
+    activeRuntime.messageTable,
+    activeRuntime.agentTable,
+  ]).catch(() => undefined)
+  await ensureWatchConversationChat(db, activeRuntime, podSession.webId, buildWatchConversationChatRow(record, lastPreview))
+  await ensureWatchConversationAgent(db, activeRuntime, podSession.webId, record)
+  await upsertWatchConversationThread(db, activeRuntime, podSession.webId, buildWatchConversationThreadRow(record, transcriptRows))
+  await upsertWatchConversationMessages(db, activeRuntime, podSession.webId, transcriptRows)
+  return true
 }
 
 export const __podPersistenceInternal = {

@@ -1,8 +1,17 @@
 import { podTable, uri, string, text, timestamp, id } from '@undefineds.co/drizzle-solid'
 import { ODRL, UDFS, DCTerms } from './namespaces'
 
-// Approval request domain store (separate from Solid inbox notifications)
-export const approvalTable = podTable(
+export function buildApprovalSubjectPath(approvalId: string, createdAt: Date | string | number = new Date()): string {
+  const date = createdAt instanceof Date ? createdAt : new Date(createdAt)
+  const safeDate = Number.isFinite(date.getTime()) ? date : new Date()
+  const yyyy = String(safeDate.getUTCFullYear())
+  const mm = String(safeDate.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(safeDate.getUTCDate()).padStart(2, '0')
+  return `/.data/approvals/${yyyy}/${mm}/${dd}.ttl#${encodeURIComponent(approvalId)}`
+}
+
+// Approval request resource (separate from Solid inbox notifications).
+export const approvalResource = podTable(
   'approval',
   {
     id: id('id'),
@@ -38,10 +47,13 @@ export const approvalTable = podTable(
     sparqlEndpoint: '/.data/approvals/-/sparql',
     type: UDFS.ApprovalRequest,
     namespace: UDFS,
-    subjectTemplate: '{id}.ttl',
+    subjectTemplate: '{yyyy}/{MM}/{dd}.ttl#{id}',
   },
 )
 
-export type ApprovalRow = typeof approvalTable.$inferSelect
-export type ApprovalInsert = typeof approvalTable.$inferInsert
-export type ApprovalUpdate = typeof approvalTable.$inferUpdate
+// Compatibility alias. New model code should prefer `approvalResource`.
+export const approvalTable = approvalResource
+
+export type ApprovalRow = typeof approvalResource.$inferSelect
+export type ApprovalInsert = typeof approvalResource.$inferInsert
+export type ApprovalUpdate = typeof approvalResource.$inferUpdate
