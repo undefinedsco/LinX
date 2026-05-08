@@ -7,7 +7,7 @@ This file provides guidance to AI coding agents when working with this repositor
 ## Quick Links
 
 - **[Architecture Comparison](docs/architecture-comparison.md)** - 架构对比：LinX vs Cherry Studio vs LobeChat
-- **[@linx/models Shared Core](docs/cli-app-shared-core.md)** - 所有端共享的业务真相、跨端语义与模型边界以 `@linx/models` 为准
+- **[@undefineds.co/models Shared Core](docs/cli-app-shared-core.md)** - 所有端共享的业务真相、跨端语义与模型边界以 `@undefineds.co/models` 为准
 - **[Chat Module Alignment](docs/chat-module-alignment.md)** - Chat 模块与 Cherry Studio 及设计规范的对齐状态、视觉检查清单、待修复项
 - **[UI Style Guide](docs/ui-style-guide.md)** - UI 样式指南
 - **[UI Component Architecture](docs/ui-component-architecture.md)** - UI 组件分层架构（纯 UI / 逻辑 UI）
@@ -20,14 +20,15 @@ LinX is a Solid-first productivity application built as a monorepo targeting web
 
 ### Key Architectural Principles
 
-- **Solid Data Access**: All structured data (profiles, contacts, sessions) flows through repositories in `packages/models` using `drizzle-solid`. Never use direct `getSolidDataset` calls in React components.
-- **Shared Business Truth**: Any domain rule, storage contract, normalization logic, or cross-surface use-case that must be shared across surfaces belongs in `@linx/models`. Shells in `apps/*` may adapt and render it, but must not redefine it.
+- **Solid Data Access**: All structured data (profiles, contacts, sessions, approvals, grants, audits) flows through repositories/resources in `packages/models` using `drizzle-solid`. Do not handwrite shared RDF predicates, subject templates, Turtle serializers, or parallel Pod CRUD in app shells.
+- **Shared Business Truth**: Any domain rule, storage contract, normalization logic, or cross-surface use-case that must be shared across surfaces belongs in `@undefineds.co/models`. Shells in `apps/*` may adapt and render it, but must not redefine it.
+- **ORM Boundary**: If a shared resource exists in `packages/models`, CLI/App code must use the exported resource/repository or add the missing repository helper there first. App shells may only keep runtime adapters, TTY/GUI interaction, local cache plumbing, and protocol mapping.
 - **No UI Fallbacks**: When queries fail, fix the drizzle-solid repository (schema, permissions, SPARQL) rather than implementing UI fallbacks.
 - **Monorepo Structure**: Workspaces organized as `apps/*`, `packages/*`, `tests/*`, and `examples/*`.
 
 ### Core Components
 
-- **`packages/models`**: Published as `@linx/models`, contains all Solid data schemas and repositories using drizzle-solid
+- **`packages/models`**: Published as `@undefineds.co/models`, contains all Solid data schemas and repositories using drizzle-solid
 - **`apps/web`**: Vite + React 18.3 SPA with TanStack Router + Query, shadcn/ui, and Tailwind CSS
 - **`apps/desktop`**: Electron 32.x wrapper
 - **`apps/mobile`**: Capacitor 6 shell scaffold

@@ -366,6 +366,114 @@ test('resolveRemoteWatchApproval updates Pod approval state and listRemoteWatchA
   assert.equal(listed[0].decision, 'accept_for_session')
 })
 
+test('waitForRemoteWatchApproval direct-reads a known approval URI without listing approvals', async () => {
+  const state = createRuntime(approvalModule)
+  let findCalls = 0
+  let listCalls = 0
+
+  state.runtime.createStore = () => ({
+    async findApproval(id, options) {
+      findCalls += 1
+      assert.equal(id, 'approval_direct_1')
+      assert.equal(options.resourceUri, 'https://alice.example/.data/approvals/2026/03/18.ttl#approval_direct_1')
+      return {
+        id,
+        approvalUri: options.resourceUri,
+        session: 'https://alice.example/.data/chat/linx-watch/index.ttl#watch_2026-03-18T00-00-00-000Z_deadbeef',
+        toolCallId: 'tool_direct_1',
+        toolName: 'commandExecution',
+        target: 'https://alice.example/.data/chat/linx-watch/index.ttl#watch_2026-03-18T00-00-00-000Z_deadbeef',
+        action: 'https://undefineds.co/ns#commandExecution',
+        risk: 'medium',
+        status: 'approved',
+        reason: state.encodeDecisionReason('accept'),
+        createdAt: '2026-03-18T00:00:00.000Z',
+        resolvedAt: '2026-03-18T00:00:01.000Z',
+      }
+    },
+    async listApprovals() {
+      listCalls += 1
+      throw new Error('known approval URI should not list approvals')
+    },
+    async insertApproval() {},
+    async updateApproval() {},
+    async listAudits() { return [] },
+    async insertAudit() {},
+    async listGrants() { return [] },
+    async insertGrant() {},
+    async insertInboxNotification() {},
+  })
+
+  const decision = await approvalModule.waitForRemoteWatchApproval({
+    approvalId: 'approval_direct_1',
+    approvalUri: 'https://alice.example/.data/approvals/2026/03/18.ttl#approval_direct_1',
+    runtime: state.runtime,
+    pollMs: 1,
+  })
+
+  assert.equal(decision, 'accept')
+  assert.equal(findCalls, 1)
+  assert.equal(listCalls, 0)
+})
+
+test('waitForRemoteWatchApproval retries temporary direct-read misses without listing approvals', async () => {
+  const state = createRuntime(approvalModule)
+  let findCalls = 0
+  let listCalls = 0
+  let sleepCalls = 0
+
+  state.runtime.createStore = () => ({
+    async findApproval(id, options) {
+      findCalls += 1
+      assert.equal(id, 'approval_direct_retry_1')
+      assert.equal(options.resourceUri, 'https://alice.example/.data/approvals/2026/03/18.ttl#approval_direct_retry_1')
+      if (findCalls === 1) {
+        return null
+      }
+      return {
+        id,
+        approvalUri: options.resourceUri,
+        session: 'https://alice.example/.data/chat/linx-watch/index.ttl#watch_2026-03-18T00-00-00-000Z_deadbeef',
+        toolCallId: 'tool_direct_retry_1',
+        toolName: 'commandExecution',
+        target: 'https://alice.example/.data/chat/linx-watch/index.ttl#watch_2026-03-18T00-00-00-000Z_deadbeef',
+        action: 'https://undefineds.co/ns#commandExecution',
+        risk: 'medium',
+        status: 'approved',
+        reason: state.encodeDecisionReason('accept_for_session'),
+        createdAt: '2026-03-18T00:00:00.000Z',
+        resolvedAt: '2026-03-18T00:00:01.000Z',
+      }
+    },
+    async listApprovals() {
+      listCalls += 1
+      throw new Error('known approval URI should not list approvals')
+    },
+    async insertApproval() {},
+    async updateApproval() {},
+    async listAudits() { return [] },
+    async insertAudit() {},
+    async listGrants() { return [] },
+    async insertGrant() {},
+    async insertInboxNotification() {},
+  })
+  state.runtime.sleep = async () => {
+    sleepCalls += 1
+  }
+
+  const decision = await approvalModule.waitForRemoteWatchApproval({
+    approvalId: 'approval_direct_retry_1',
+    approvalUri: 'https://alice.example/.data/approvals/2026/03/18.ttl#approval_direct_retry_1',
+    runtime: state.runtime,
+    pollMs: 1,
+  })
+
+  assert.equal(decision, 'accept_for_session')
+  assert.equal(findCalls, 2)
+  assert.equal(sleepCalls, 1)
+  assert.equal(listCalls, 0)
+})
+
 test('native remote approval store writes and reads approval grant audit resources as Pod TTL', async () => {
   const resources = new Map()
   const writes = []

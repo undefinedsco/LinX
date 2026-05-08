@@ -43,7 +43,10 @@
 
 - 不允许 CLI 和 App 分别维护不同的 predicate 或 subject 规则
 - shared model 的字段、RDF class、predicate、subject template 的唯一真相在 owning shared package 中；当前 LinX 共享 Pod 模型的 owning package 是 `packages/models`，具体落点是 `namespaces.ts`、`vocab/*.vocab.ts`、schema 和 repository。
-- CLI / App 的 native Pod helper 只能负责 Turtle/RDF I/O、缓存和运行时适配；对于 shared model 字段，它们必须消费 shared package 导出的 vocab/schema，不能再定义自己的业务 predicate 或同义字段。
+- CLI / App 的 native Pod helper 只能负责底层传输、缓存和运行时适配；对于 shared model 字段，它们必须消费 shared package 导出的 resource/repository/vocab/schema，不能再定义自己的业务 predicate、subject template、Turtle serializer 或同义字段。
+- 如果 `packages/models` 已经存在对应 resource 或 repository，CLI / App 必须直接使用；如果缺少查询、upsert、resolve-by-uri 等能力，先在 `packages/models` 补 repository/helper 和 contract tests，再由壳层调用。
+- 允许留在 CLI / App 的逻辑只有壳层适配：TTY/GUI 渲染、快捷键、命令参数、Pi/Codex/Claude 协议事件到 shared insert/update DTO 的映射、本地缓存策略、错误展示。它不能决定 shared Pod resource 的存储路径、predicate、subject 或跨端状态机。
+- remote approval 的审批颗粒度必须跟原生运行时对齐：只有 Pi/Codex/Claude 等上游原生流程请求审批时，LinX 才写 `approval`/`inbox` 控制面；LinX CLI 不得用自己的工具名 allowlist/blocklist 额外发明一套审批策略。
 - 端内私有模型可以在自己的 owning module/package 中定义专用 predicate，但必须明确作用域为私有、不能被另一端按 shared contract 读取；一旦字段需要跨 CLI / App / xpod 共享，必须先迁入 shared model，再由各端消费。
 - 不允许一端写 `udfs:*`，另一端读 `cred:*` / `ai:*`
 - 不允许新功能继续建立平行 schema
@@ -214,6 +217,9 @@ AI 配置以三张表为准，不允许再引入平行主线：
 
 - 是否改动了共享 schema 或 namespace
 - 是否把业务语义偷偷放进了 `apps/cli` 或 `apps/web`
+- 是否在壳层手写了 shared resource 的 predicate、subject template、Turtle 读写、URI builder、approval/grant/audit/session 状态机
+- 是否已有 `packages/models` resource/repository 可以直接用；如果没有，是否先把缺失 helper 补进 models 并覆盖 tests
+- 是否新增了和上游原生审批策略不一致的 LinX 私有审批判断
 - 是否引入了 UI 类型到 shared core
 - 是否新增了与三张 AI 表并行的第二套配置表示法
 - 是否新增了第二份 provider alias 规则

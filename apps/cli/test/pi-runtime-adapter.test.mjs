@@ -862,91 +862,6 @@ test('pi runtime adapter applies a default timeout to bash when the model omits 
   assert.equal(execCalls[1].options.timeout, 7)
 })
 
-test('linx pi remote approval blocks rejected side-effect tools from executing', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/pod-approval.ts')
-  t.after(() => cleanup())
-
-  const runtime = createApprovalRuntime({
-    onSleep(state) {
-      state.approvals[0].status = 'rejected'
-      state.approvals[0].reason = JSON.stringify({ decision: 'decline' })
-      state.approvals[0].resolvedAt = '2026-05-05T00:00:01.000Z'
-    },
-  })
-
-  const result = await module.requestLinxPiToolApproval({
-    session: createFakePiSession('019df-test-approval'),
-    cwd: '/tmp/linx-work',
-    pollMs: 1,
-    runtime,
-    context: createToolContext({
-      id: 'tool_bash_1',
-      name: 'bash',
-      args: { command: 'rm -rf tmp' },
-    }),
-  })
-
-  assert.equal(runtime.state.approvals.length, 1)
-  assert.equal(runtime.state.approvals[0].status, 'rejected')
-  assert.equal(runtime.state.approvals[0].toolName, 'bash')
-  assert.equal(runtime.state.audits[0].action, 'approval_requested')
-  assert.deepEqual(result, {
-    block: true,
-    reason: 'LinX remote approval rejected tool bash.',
-  })
-})
-
-test('linx pi remote approval resumes when another app approves in Pod', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/pod-approval.ts')
-  t.after(() => cleanup())
-
-  const runtime = createApprovalRuntime({
-    onSleep(state) {
-      state.approvals[0].status = 'approved'
-      state.approvals[0].reason = JSON.stringify({ decision: 'accept' })
-      state.approvals[0].decisionBy = state.webId
-      state.approvals[0].resolvedAt = '2026-05-05T00:00:01.000Z'
-    },
-  })
-
-  const result = await module.requestLinxPiToolApproval({
-    session: createFakePiSession('019df-test-approved'),
-    cwd: '/tmp/linx-work',
-    pollMs: 1,
-    runtime,
-    context: createToolContext({
-      id: 'tool_write_1',
-      name: 'write',
-      args: { path: '/tmp/linx-work/a.txt', content: 'hello' },
-    }),
-  })
-
-  assert.equal(result, undefined)
-  assert.equal(runtime.state.approvals.length, 1)
-  assert.equal(runtime.state.approvals[0].status, 'approved')
-  assert.match(runtime.state.approvals[0].session, /\/\.data\/chat\/ai-secretary\/index\.ttl#019df-test-approved$/)
-})
-
-test('linx pi remote approval skips read-only tools', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/pod-approval.ts')
-  t.after(() => cleanup())
-
-  const runtime = createApprovalRuntime()
-  const result = await module.requestLinxPiToolApproval({
-    session: createFakePiSession('019df-test-readonly'),
-    cwd: '/tmp/linx-work',
-    runtime,
-    context: createToolContext({
-      id: 'tool_read_1',
-      name: 'read',
-      args: { path: '/tmp/linx-work/a.txt' },
-    }),
-  })
-
-  assert.equal(result, undefined)
-  assert.equal(runtime.state.approvals.length, 0)
-})
-
 test('linx pi remote approval preserves existing Pi extension beforeToolCall blocks', async (t) => {
   const { module, cleanup } = await loadWatchModule('lib/pi-adapter/pod-approval.ts')
   t.after(() => cleanup())
@@ -969,6 +884,37 @@ test('linx pi remote approval preserves existing Pi extension beforeToolCall blo
 
   assert.deepEqual(result, { block: true, reason: 'extension blocked first' })
   assert.equal(runtime.state.approvals.length, 0)
+})
+
+test('linx pi remote approval does not create approvals for Pi-native allowed tool calls', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/pod-approval.ts')
+  t.after(() => cleanup())
+
+  const runtime = createApprovalRuntime()
+  const session = createFakePiSession('019df-test-native-allow')
+  let originalCalled = false
+  session.agent.beforeToolCall = async () => {
+    originalCalled = true
+    return undefined
+  }
+
+  module.installLinxPiRemoteApproval({
+    session,
+    cwd: '/tmp/linx-work',
+    runtime,
+  })
+
+  const result = await session.agent.beforeToolCall(createToolContext({
+    id: 'tool_bash_native_allow',
+    name: 'bash',
+    args: { command: 'pwd' },
+  }))
+
+  assert.equal(originalCalled, true)
+  assert.equal(result, undefined)
+  assert.equal(runtime.state.approvals.length, 0)
+  assert.equal(runtime.state.audits.length, 0)
+  assert.equal(runtime.state.inbox.length, 0)
 })
 
 function createToolContext({ id, name, args }) {
