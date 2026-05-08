@@ -42,6 +42,9 @@
 强约束：
 
 - 不允许 CLI 和 App 分别维护不同的 predicate 或 subject 规则
+- shared model 的字段、RDF class、predicate、subject template 的唯一真相在 owning shared package 中；当前 LinX 共享 Pod 模型的 owning package 是 `packages/models`，具体落点是 `namespaces.ts`、`vocab/*.vocab.ts`、schema 和 repository。
+- CLI / App 的 native Pod helper 只能负责 Turtle/RDF I/O、缓存和运行时适配；对于 shared model 字段，它们必须消费 shared package 导出的 vocab/schema，不能再定义自己的业务 predicate 或同义字段。
+- 端内私有模型可以在自己的 owning module/package 中定义专用 predicate，但必须明确作用域为私有、不能被另一端按 shared contract 读取；一旦字段需要跨 CLI / App / xpod 共享，必须先迁入 shared model，再由各端消费。
 - 不允许一端写 `udfs:*`，另一端读 `cred:*` / `ai:*`
 - 不允许新功能继续建立平行 schema
 

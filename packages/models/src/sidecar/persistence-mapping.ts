@@ -38,7 +38,7 @@ export type ApprovalProjectionUpdate = Partial<
 
 export type AuditProjectionInsert = Pick<
   AuditInsert,
-  'action' | 'actor' | 'actorRole' | 'onBehalfOf' | 'session' | 'toolCallId' | 'approval' | 'context' | 'policy' | 'policyVersion'
+  'action' | 'actor' | 'actorRole' | 'onBehalfOf' | 'session' | 'entry' | 'toolCallId' | 'toolName' | 'approval' | 'policy' | 'policyVersion'
 >
 
 export type GrantProjectionInsert = Pick<

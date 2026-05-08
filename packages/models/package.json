@@ -12,10 +12,12 @@
     "./profile": "./src/profile.ts",
     "./profile.repository": "./src/profile.repository.ts",
     "./profile.schema": "./src/profile.schema.ts",
+    "./vocab": "./src/vocab/index.ts",
+    "./vocab/sidecar": "./src/vocab/sidecar.vocab.ts",
     "./watch": "./src/watch/index.ts"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node scripts/fix-dist-esm.mjs",
     "lint": "echo \"lint not configured\"",
     "pack:release": "node scripts/pack-release.mjs",
     "sync:discovery:vercel": "node --experimental-strip-types scripts/sync-discovery-vercel.ts",

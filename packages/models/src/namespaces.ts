@@ -181,6 +181,7 @@ export const UDFS = createNamespace('udfs', 'https://undefineds.co/ns#', {
   action: 'action',
   actor: 'actor',
   actorRole: 'actorRole',
+  entry: 'entry',
   context: 'context',
   policy: 'policy',
   approval: 'approval',

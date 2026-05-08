@@ -190,6 +190,35 @@ test('createRemoteCompletion defaults to linx-lite when no model override is pro
   assert.equal(reply, 'hello default model')
 })
 
+test('createRemoteCompletionResult passes external abort signal and reports user abort', async () => {
+  const controller = new AbortController()
+  let receivedSignal = null
+  globalThis.fetch = async (_url, init) => {
+    receivedSignal = init?.signal
+    controller.abort()
+    throw new DOMException('Aborted', 'AbortError')
+  }
+
+  const { createRemoteCompletionResult, RemoteChatRequestError } = await import('../dist/lib/chat-api.js')
+  await assert.rejects(
+    createRemoteCompletionResult({
+      runtimeUrl: 'https://api.undefineds.co/v1',
+      apiKey: 'token',
+      model: 'linx-lite',
+      messages: [{ role: 'user', content: 'abort me' }],
+      signal: controller.signal,
+    }),
+    (error) => {
+      assert.equal(error instanceof RemoteChatRequestError, true)
+      assert.equal(error.status, 0)
+      assert.match(error.message, /aborted by user/)
+      assert.doesNotMatch(error.message, /timed out/)
+      return true
+    },
+  )
+  assert.ok(receivedSignal instanceof AbortSignal)
+})
+
 test('createRemoteCompletionResult forwards tools and parses tool calls', async () => {
   let requestBody = null
   globalThis.fetch = async (_url, init) => {

@@ -52,6 +52,7 @@ export interface PiRuntimeAdapterDependencies {
     messages: RemoteChatMessage[]
     tools?: RemoteChatTool[]
     systemPrompt?: string
+    signal?: AbortSignal
   }) => Promise<string | PiCompletionBackendResult>
   listRemoteModels?: (
     session: unknown,
@@ -186,6 +187,7 @@ export function createPiRuntimeAdapter(
             model: input.model,
             messages: withSystemPrompt(input.systemPrompt, input.messages),
             tools: input.tools,
+            signal: input.signal,
           })
         },
       }

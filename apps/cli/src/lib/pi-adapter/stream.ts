@@ -33,6 +33,12 @@ export interface PiCompletionBackendResult {
   }
 }
 
+type PiStreamOptions = {
+  apiKey?: string
+  modelId?: string
+  signal?: AbortSignal
+}
+
 export interface PiAgentStreamAdapterOptions {
   sessionId?: string
   cwd?: string
@@ -49,6 +55,7 @@ export interface PiAgentStreamAdapterOptions {
       messages: RemoteChatMessage[]
       tools?: RemoteChatTool[]
       systemPrompt?: string
+      signal?: AbortSignal
     }): Promise<string | PiCompletionBackendResult>
   }
 }
@@ -86,7 +93,7 @@ export function createPiAgentStreamAdapter(options: PiAgentStreamAdapterOptions 
     streamFn(
       modelArg?: unknown,
       context?: { messages?: PiStreamContextMessage[]; tools?: PiStreamTool[]; systemPrompt?: string },
-      streamOptions?: { apiKey?: string; modelId?: string },
+      streamOptions?: PiStreamOptions,
     ): AssistantMessageEventStream {
       const stream = createAssistantMessageEventStream()
       const resolvedModelId = resolveModelId(modelArg, streamOptions?.modelId, options.model)
@@ -100,13 +107,16 @@ export function createPiAgentStreamAdapter(options: PiAgentStreamAdapterOptions 
         const prompt = typeof lastUserText?.content === 'string' ? lastUserText.content : ''
 
         if (options.completionBackend) {
+          throwIfAborted(streamOptions?.signal)
           const reply = await options.completionBackend.complete({
             model: resolvedModelId,
             apiKey: streamOptions?.apiKey,
             messages: normalizedMessages,
             tools: normalizedTools,
             systemPrompt: context?.systemPrompt,
+            signal: streamOptions?.signal,
           })
+          throwIfAborted(streamOptions?.signal)
           emitCompletionResult(stream, message, reply)
           return
         }
@@ -157,9 +167,10 @@ export function createPiAgentStreamAdapter(options: PiAgentStreamAdapterOptions 
         })
       })().catch((error) => {
         const errorMessage = createBaseMessage()
-        errorMessage.stopReason = 'error'
+        const aborted = isAbortError(error) || streamOptions?.signal?.aborted === true
+        errorMessage.stopReason = aborted ? 'aborted' : 'error'
         errorMessage.errorMessage = formatStreamErrorMessage(error)
-        stream.push({ type: 'error', reason: 'error', error: errorMessage })
+        stream.push({ type: 'error', reason: errorMessage.stopReason, error: errorMessage })
       })
 
       return stream
@@ -167,11 +178,31 @@ export function createPiAgentStreamAdapter(options: PiAgentStreamAdapterOptions 
   }
 }
 
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) {
+    return
+  }
+  throw createAbortError()
+}
+
+function createAbortError(): Error {
+  const error = new Error('Request was aborted.')
+  error.name = 'AbortError'
+  return error
+}
+
 function formatStreamErrorMessage(error: unknown): string {
+  if (isAbortError(error)) {
+    return 'Request was aborted.'
+  }
   if (isAuthExpiredError(error)) {
     return 'LinX Cloud login expired.'
   }
   return error instanceof Error ? error.message : String(error)
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError'
 }
 
 function isAuthExpiredError(error: unknown): boolean {

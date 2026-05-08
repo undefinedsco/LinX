@@ -92,6 +92,14 @@ function createPublishablePackage(packageJson, packageVersion) {
         types: './dist/profile.schema.d.ts',
         default: './dist/profile.schema.js',
       },
+      './vocab': {
+        types: './dist/vocab/index.d.ts',
+        default: './dist/vocab/index.js',
+      },
+      './vocab/sidecar': {
+        types: './dist/vocab/sidecar.vocab.d.ts',
+        default: './dist/vocab/sidecar.vocab.js',
+      },
       './watch': {
         types: './dist/watch/index.d.ts',
         default: './dist/watch/index.js',

@@ -23,6 +23,7 @@ export function bootstrapPiInteractiveMode(runtime: any): PiInteractiveBootstrap
   return {
     async init(): Promise<void> {
       await interactive.init()
+      installLinxEscapeInterrupt(interactive as any)
     },
     async run(): Promise<void> {
       await interactive.run()
@@ -34,6 +35,50 @@ export function bootstrapPiInteractiveMode(runtime: any): PiInteractiveBootstrap
       interactive.stop()
     },
   }
+}
+
+export function installLinxEscapeInterrupt(interactive: any): void {
+  const editor = interactive?.defaultEditor
+  if (!editor || editor.__linxEscapeInterruptInstalled) {
+    return
+  }
+
+  let currentOnEscape = typeof editor.onEscape === 'function'
+    ? editor.onEscape
+    : undefined
+
+  Object.defineProperty(editor, 'onEscape', {
+    configurable: true,
+    get() {
+      return function linxEscapeInterrupt(): void {
+        const session = interactive?.session
+
+        if (session?.isBashRunning && typeof session.abortBash === 'function') {
+          void session.abortBash()
+          return
+        }
+
+        if (isLinxSessionRunning(interactive) && typeof session?.abort === 'function') {
+          void session.abort()
+          return
+        }
+
+        currentOnEscape?.call(editor)
+      }
+    },
+    set(next: unknown) {
+      currentOnEscape = typeof next === 'function' ? next : undefined
+    },
+  })
+
+  editor.__linxEscapeInterruptInstalled = true
+}
+
+function isLinxSessionRunning(interactive: any): boolean {
+  return interactive?.session?.isStreaming === true
+    || Boolean(interactive?.loadingAnimation)
+    || Boolean(interactive?.autoCompactionEscapeHandler)
+    || Boolean(interactive?.retryEscapeHandler)
 }
 
 function patchInteractiveExitMessage(interactive: any): void {

@@ -1,39 +1,12 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import type { StoredCredentials } from '../credentials-store.js'
 import { getDefaultPodDataSession, type PodDataSession } from '../pod-data-session.js'
+import { AS, ODRL, UDFS } from '@undefineds.co/models/namespaces'
+import { ApprovalVocab, AuditVocab, GrantVocab, InboxNotificationVocab } from '@undefineds.co/models/vocab/sidecar'
 import type { WatchApprovalDecision, WatchApprovalRequest, WatchSessionRecord } from '@undefineds.co/models/watch'
 import {
-  AS_ACTOR,
-  AS_ANNOUNCE,
-  AS_OBJECT,
   buildApprovalDocumentUrl,
-  DCT_CREATED,
-  ODRL_ACTION,
-  ODRL_POLICY,
-  ODRL_TARGET,
   RDF_TYPE,
-  UDFS_ACTION,
-  UDFS_ACTOR,
-  UDFS_ACTOR_ROLE,
-  UDFS_APPROVAL_REQUEST,
-  UDFS_ASSIGNED_TO,
-  UDFS_AUDIT_ENTRY,
-  UDFS_AUTONOMY_GRANT,
-  UDFS_CONTEXT,
-  UDFS_DECISION_BY,
-  UDFS_DECISION_ROLE,
-  UDFS_EFFECT,
-  UDFS_ON_BEHALF_OF,
-  UDFS_POLICY_VERSION,
-  UDFS_REASON,
-  UDFS_RESOLVED_AT,
-  UDFS_REVOKED_AT,
-  UDFS_RISK,
-  UDFS_RISK_CEILING,
-  UDFS_SESSION,
-  UDFS_STATUS,
-  UDFS_TOOL_CALL_ID,
-  UDFS_TOOL_NAME,
   buildApprovalResourceUrl,
   buildAuditDocumentUrl,
   buildAuditResourceUrl,
@@ -86,9 +59,10 @@ export interface AuditRowLike extends Record<string, unknown> {
   actorRole: string
   onBehalfOf?: string
   session?: string
+  entry?: string
   toolCallId?: string
+  toolName?: string
   approval?: string
-  context?: string
   policyVersion?: string
   createdAt: Date | string
 }
@@ -116,6 +90,7 @@ export interface WatchRemoteApprovalRuntime {
   createStore: (webId: string, fetcher: PodFetch) => WatchRemoteApprovalStore
   sleep: (ms: number) => Promise<void>
   now: () => Date
+  onWarning?: (error: unknown) => void
 }
 
 interface RemoteApprovalClient {
@@ -143,17 +118,6 @@ export interface RemoteWatchApprovalSummary {
   resolvedAt?: string
 }
 
-interface RequestAuditContext {
-  kind: WatchApprovalRequest['kind']
-  message: string
-  command?: string
-  cwd?: string
-  backend?: string
-  runtime?: string
-  toolName?: string
-  sessionId: string
-}
-
 interface DecisionAuditContext {
   decision: WatchApprovalDecision
   note?: string
@@ -177,7 +141,7 @@ export interface RemoteApprovalRequestDetails {
   risk: RemoteApprovalRisk
   command?: string
   cwd?: string
-  context?: Record<string, unknown>
+  entry?: string
 }
 
 function createAbortError(): Error {
@@ -312,17 +276,6 @@ function buildRequestMessage(request: WatchApprovalRequest): string {
   return request.message
 }
 
-function buildRequestAuditContext(record: WatchSessionRecord, request: WatchApprovalRequest): RequestAuditContext {
-  return {
-    kind: request.kind,
-    message: buildRequestMessage(request),
-    ...(request.kind === 'command-approval' && request.command ? { command: request.command } : {}),
-    ...(request.kind === 'command-approval' && request.cwd ? { cwd: request.cwd } : {}),
-    backend: record.backend,
-    sessionId: record.id,
-  }
-}
-
 function extractToolCallId(request: WatchApprovalRequest): string {
   if (!isRecord(request.raw)) {
     return crypto.randomUUID()
@@ -337,7 +290,7 @@ function extractToolCallId(request: WatchApprovalRequest): string {
 }
 
 function encodeDecisionReason(decision: WatchApprovalDecision, note?: string): string {
-  return JSON.stringify({
+  return safeJsonStringify({
     decision,
     ...(note?.trim() ? { note: note.trim() } : {}),
   })
@@ -368,36 +321,24 @@ function parseDecisionReason(value: unknown): DecisionAuditContext | null {
   }
 }
 
-function parseRequestAuditContext(value: unknown): RequestAuditContext | null {
-  if (typeof value !== 'string' || !value.trim()) {
-    return null
-  }
-
+async function warnOnly(runtime: WatchRemoteApprovalRuntime, task: () => Promise<void>): Promise<void> {
   try {
-    const parsed = JSON.parse(value) as unknown
-    if (!isRecord(parsed)) {
-      return null
+    await task()
+  } catch (error) {
+    if (runtime.onWarning) {
+      runtime.onWarning(error)
+      return
     }
+    const message = error instanceof Error ? error.message : String(error)
+    process.emitWarning(`LinX Pod sync failed: ${message}`)
+  }
+}
 
-    const kind = normalizeString(parsed.kind)
-    const message = normalizeString(parsed.message)
-    const sessionId = normalizeString(parsed.sessionId)
-    if (!kind || !message || !sessionId) {
-      return null
-    }
-
-    return {
-      kind: kind as WatchApprovalRequest['kind'],
-      message,
-      sessionId,
-      ...(normalizeString(parsed.backend) ? { backend: normalizeString(parsed.backend) } : {}),
-      ...(normalizeString(parsed.runtime) ? { runtime: normalizeString(parsed.runtime) } : {}),
-      ...(normalizeString(parsed.toolName) ? { toolName: normalizeString(parsed.toolName) } : {}),
-      ...(normalizeString(parsed.command) ? { command: normalizeString(parsed.command) } : {}),
-      ...(normalizeString(parsed.cwd) ? { cwd: normalizeString(parsed.cwd) } : {}),
-    }
+function safeJsonStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value)
   } catch {
-    return null
+    return JSON.stringify({ error: 'unserializable_context' })
   }
 }
 
@@ -428,27 +369,8 @@ function decisionFromApprovalRow(row: ApprovalRowLike): WatchApprovalDecision | 
   return 'accept'
 }
 
-function requestAuditForApproval(row: ApprovalRowLike, approvalUris: string[], audits: AuditRowLike[]): AuditRowLike | undefined {
-  const uriSet = new Set(approvalUris)
-  const matches = audits.filter((audit) => (
-    audit.action === 'approval_requested'
-    && (
-      (audit.approval && uriSet.has(audit.approval))
-      || (audit.session === row.session && audit.toolCallId === row.toolCallId)
-    )
-  ))
-  matches.sort((left, right) => toIsoString(right.createdAt, '').localeCompare(toIsoString(left.createdAt, '')))
-  return matches[0]
-}
-
-function normalizeApprovalSummary(row: ApprovalRowLike, audits: AuditRowLike[]): RemoteWatchApprovalSummary {
+function normalizeApprovalSummary(row: ApprovalRowLike): RemoteWatchApprovalSummary {
   const createdAt = toIsoString(row.createdAt, new Date(0).toISOString())
-  const approvalUris = [
-    buildApprovalUriForDate(row.session, row.id, new Date(createdAt)),
-    buildApprovalUri(row.session, row.id),
-  ]
-  const requestAudit = requestAuditForApproval(row, approvalUris, audits)
-  const requestContext = parseRequestAuditContext(requestAudit?.context)
   const sessionUri = row.session
   const decision = decisionFromApprovalRow(row)
 
@@ -460,15 +382,26 @@ function normalizeApprovalSummary(row: ApprovalRowLike, audits: AuditRowLike[]):
     toolName: row.toolName,
     risk: (normalizeString(row.risk) as RemoteApprovalRisk | undefined) ?? 'medium',
     status: (normalizeString(row.status) as RemoteApprovalStatus | undefined) ?? 'pending',
-    message: requestContext?.message ?? row.toolName,
-    ...(requestContext?.command ? { command: requestContext.command } : {}),
-    ...(requestContext?.cwd ? { cwd: requestContext.cwd } : {}),
+    message: formatApprovalMessage(row),
     ...(normalizeString(row.assignedTo) ? { assignedTo: normalizeString(row.assignedTo) } : {}),
     ...(normalizeString(row.decisionBy) ? { decisionBy: normalizeString(row.decisionBy) } : {}),
     ...(decision ? { decision } : {}),
     createdAt,
     ...(row.resolvedAt ? { resolvedAt: toIsoString(row.resolvedAt, createdAt) } : {}),
   }
+}
+
+function formatApprovalMessage(row: ApprovalRowLike): string {
+  if (row.toolName === 'commandExecution') {
+    return 'Command execution approval'
+  }
+  if (row.toolName === 'fileChange') {
+    return 'File change approval'
+  }
+  if (row.toolName === 'permissionRequest') {
+    return 'Permission approval'
+  }
+  return row.toolName
 }
 
 function formatSummaryHeadline(summary: RemoteWatchApprovalSummary): string {
@@ -605,22 +538,22 @@ async function writeApprovalRow(webId: string, fetcher: PodFetch, row: ApprovalR
   await upsertManagedTurtleBlock(fetcher, documentUrl, {
     subject: subjectUrl,
     triples: [
-      { predicate: RDF_TYPE, object: iri(UDFS_APPROVAL_REQUEST) },
-      { predicate: UDFS_SESSION, object: iri(row.session) },
-      { predicate: UDFS_TOOL_CALL_ID, object: literal(row.toolCallId) },
-      { predicate: UDFS_TOOL_NAME, object: literal(row.toolName) },
-      { predicate: ODRL_TARGET, object: iri(row.target) },
-      { predicate: ODRL_ACTION, object: iri(row.action) },
-      { predicate: UDFS_RISK, object: literal(row.risk) },
-      { predicate: UDFS_STATUS, object: literal(row.status) },
-      ...(row.assignedTo ? [{ predicate: UDFS_ASSIGNED_TO, object: iri(row.assignedTo) }] : []),
-      ...(row.decisionBy ? [{ predicate: UDFS_DECISION_BY, object: iri(row.decisionBy) }] : []),
-      ...(row.decisionRole ? [{ predicate: UDFS_DECISION_ROLE, object: literal(row.decisionRole) }] : []),
-      ...(row.onBehalfOf ? [{ predicate: UDFS_ON_BEHALF_OF, object: iri(row.onBehalfOf) }] : []),
-      ...(row.reason ? [{ predicate: UDFS_REASON, object: literal(row.reason) }] : []),
-      ...(row.policyVersion ? [{ predicate: UDFS_POLICY_VERSION, object: literal(row.policyVersion) }] : []),
-      { predicate: DCT_CREATED, object: literal(toIsoString(row.createdAt, new Date().toISOString())) },
-      ...(row.resolvedAt ? [{ predicate: UDFS_RESOLVED_AT, object: literal(toIsoString(row.resolvedAt, new Date().toISOString())) }] : []),
+      { predicate: RDF_TYPE, object: iri(UDFS.ApprovalRequest) },
+      { predicate: ApprovalVocab.session, object: iri(row.session) },
+      { predicate: ApprovalVocab.toolCallId, object: literal(row.toolCallId) },
+      { predicate: ApprovalVocab.toolName, object: literal(row.toolName) },
+      { predicate: ApprovalVocab.target, object: iri(row.target) },
+      { predicate: ApprovalVocab.action, object: iri(row.action) },
+      { predicate: ApprovalVocab.risk, object: literal(row.risk) },
+      { predicate: ApprovalVocab.status, object: literal(row.status) },
+      ...(row.assignedTo ? [{ predicate: ApprovalVocab.assignedTo, object: iri(row.assignedTo) }] : []),
+      ...(row.decisionBy ? [{ predicate: ApprovalVocab.decisionBy, object: iri(row.decisionBy) }] : []),
+      ...(row.decisionRole ? [{ predicate: ApprovalVocab.decisionRole, object: literal(row.decisionRole) }] : []),
+      ...(row.onBehalfOf ? [{ predicate: ApprovalVocab.onBehalfOf, object: iri(row.onBehalfOf) }] : []),
+      ...(row.reason ? [{ predicate: ApprovalVocab.reason, object: literal(row.reason) }] : []),
+      ...(row.policyVersion ? [{ predicate: ApprovalVocab.policyVersion, object: literal(row.policyVersion) }] : []),
+      { predicate: ApprovalVocab.createdAt, object: literal(toIsoString(row.createdAt, new Date().toISOString())) },
+      ...(row.resolvedAt ? [{ predicate: ApprovalVocab.resolvedAt, object: literal(toIsoString(row.resolvedAt, new Date().toISOString())) }] : []),
     ],
   })
 }
@@ -646,17 +579,18 @@ async function writeAuditRow(webId: string, fetcher: PodFetch, row: AuditRowLike
   await upsertManagedTurtleBlock(fetcher, documentUrl, {
     subject: subjectUrl,
     triples: [
-      { predicate: RDF_TYPE, object: iri(UDFS_AUDIT_ENTRY) },
-      { predicate: UDFS_ACTION, object: literal(row.action) },
-      { predicate: UDFS_ACTOR, object: iri(row.actor) },
-      { predicate: UDFS_ACTOR_ROLE, object: literal(row.actorRole) },
-      ...(row.onBehalfOf ? [{ predicate: UDFS_ON_BEHALF_OF, object: iri(row.onBehalfOf) }] : []),
-      ...(row.session ? [{ predicate: UDFS_SESSION, object: iri(row.session) }] : []),
-      ...(row.toolCallId ? [{ predicate: UDFS_TOOL_CALL_ID, object: literal(row.toolCallId) }] : []),
-      ...(row.approval ? [{ predicate: 'https://undefineds.co/ns#approval', object: iri(row.approval) }] : []),
-      ...(row.context ? [{ predicate: UDFS_CONTEXT, object: literal(row.context) }] : []),
-      ...(row.policyVersion ? [{ predicate: UDFS_POLICY_VERSION, object: literal(row.policyVersion) }] : []),
-      { predicate: DCT_CREATED, object: literal(toIsoString(row.createdAt, new Date().toISOString())) },
+      { predicate: RDF_TYPE, object: iri(UDFS.AuditEntry) },
+      { predicate: AuditVocab.action, object: literal(row.action) },
+      { predicate: AuditVocab.actor, object: iri(row.actor) },
+      { predicate: AuditVocab.actorRole, object: literal(row.actorRole) },
+      ...(row.onBehalfOf ? [{ predicate: AuditVocab.onBehalfOf, object: iri(row.onBehalfOf) }] : []),
+      ...(row.session ? [{ predicate: AuditVocab.session, object: iri(row.session) }] : []),
+      ...(row.entry ? [{ predicate: AuditVocab.entry, object: iri(row.entry) }] : []),
+      ...(row.toolCallId ? [{ predicate: AuditVocab.toolCallId, object: literal(row.toolCallId) }] : []),
+      ...(row.toolName ? [{ predicate: AuditVocab.toolName, object: literal(row.toolName) }] : []),
+      ...(row.approval ? [{ predicate: AuditVocab.approval, object: iri(row.approval) }] : []),
+      ...(row.policyVersion ? [{ predicate: AuditVocab.policyVersion, object: literal(row.policyVersion) }] : []),
+      { predicate: AuditVocab.createdAt, object: literal(toIsoString(row.createdAt, new Date().toISOString())) },
     ],
   })
 }
@@ -693,17 +627,17 @@ async function writeGrantRow(webId: string, fetcher: PodFetch, row: Record<strin
   await upsertManagedTurtleBlock(fetcher, documentUrl, {
     subject: subjectUrl,
     triples: [
-      { predicate: RDF_TYPE, object: iri(ODRL_POLICY) },
-      { predicate: RDF_TYPE, object: iri(UDFS_AUTONOMY_GRANT) },
-      { predicate: ODRL_TARGET, object: iri(target) },
-      { predicate: ODRL_ACTION, object: iri(action) },
-      { predicate: UDFS_EFFECT, object: literal(effect) },
-      ...(normalizeString(row.riskCeiling) ? [{ predicate: UDFS_RISK_CEILING, object: literal(normalizeString(row.riskCeiling) as string) }] : []),
-      { predicate: UDFS_DECISION_BY, object: iri(decisionBy) },
-      { predicate: UDFS_DECISION_ROLE, object: literal(decisionRole) },
-      ...(normalizeString(row.onBehalfOf) ? [{ predicate: UDFS_ON_BEHALF_OF, object: iri(normalizeString(row.onBehalfOf) as string) }] : []),
-      { predicate: DCT_CREATED, object: literal(toIsoString(row.createdAt as Date | string | undefined, new Date().toISOString())) },
-      ...(normalizeString(row.revokedAt) ? [{ predicate: UDFS_REVOKED_AT, object: literal(normalizeString(row.revokedAt) as string) }] : []),
+      { predicate: RDF_TYPE, object: iri(ODRL.Policy) },
+      { predicate: RDF_TYPE, object: iri(UDFS.AutonomyGrant) },
+      { predicate: GrantVocab.target, object: iri(target) },
+      { predicate: GrantVocab.action, object: iri(action) },
+      { predicate: GrantVocab.effect, object: literal(effect) },
+      ...(normalizeString(row.riskCeiling) ? [{ predicate: GrantVocab.riskCeiling, object: literal(normalizeString(row.riskCeiling) as string) }] : []),
+      { predicate: GrantVocab.decisionBy, object: iri(decisionBy) },
+      { predicate: GrantVocab.decisionRole, object: literal(decisionRole) },
+      ...(normalizeString(row.onBehalfOf) ? [{ predicate: GrantVocab.onBehalfOf, object: iri(normalizeString(row.onBehalfOf) as string) }] : []),
+      { predicate: GrantVocab.createdAt, object: literal(toIsoString(row.createdAt as Date | string | undefined, new Date().toISOString())) },
+      ...(normalizeString(row.revokedAt) ? [{ predicate: GrantVocab.revokedAt, object: literal(normalizeString(row.revokedAt) as string) }] : []),
     ],
   })
 }
@@ -713,23 +647,23 @@ async function writeInboxNotificationRow(webId: string, fetcher: PodFetch, row: 
   await upsertManagedTurtleBlock(fetcher, url, {
     subject: url,
     triples: [
-      { predicate: RDF_TYPE, object: iri(AS_ANNOUNCE) },
-      ...(row.actor ? [{ predicate: AS_ACTOR, object: iri(row.actor) }] : []),
-      { predicate: AS_OBJECT, object: iri(row.object) },
-      { predicate: DCT_CREATED, object: literal(toIsoString(row.createdAt, new Date().toISOString())) },
+      { predicate: RDF_TYPE, object: iri(AS.Announce) },
+      ...(row.actor ? [{ predicate: InboxNotificationVocab.actor, object: iri(row.actor) }] : []),
+      { predicate: InboxNotificationVocab.object, object: iri(row.object) },
+      { predicate: InboxNotificationVocab.createdAt, object: literal(toIsoString(row.createdAt, new Date().toISOString())) },
     ],
   })
 }
 
 function approvalRowFromPredicates(url: string, predicates: Map<string, unknown[]>): ApprovalRowLike | null {
-  const session = firstIri(predicates as never, UDFS_SESSION)
-  const toolCallId = firstLiteral(predicates as never, UDFS_TOOL_CALL_ID)
-  const toolName = firstLiteral(predicates as never, UDFS_TOOL_NAME)
-  const target = firstIri(predicates as never, ODRL_TARGET)
-  const action = firstIri(predicates as never, ODRL_ACTION)
-  const risk = firstLiteral(predicates as never, UDFS_RISK)
-  const status = firstLiteral(predicates as never, UDFS_STATUS)
-  const createdAt = firstLiteral(predicates as never, DCT_CREATED)
+  const session = firstIri(predicates as never, ApprovalVocab.session)
+  const toolCallId = firstLiteral(predicates as never, ApprovalVocab.toolCallId)
+  const toolName = firstLiteral(predicates as never, ApprovalVocab.toolName)
+  const target = firstIri(predicates as never, ApprovalVocab.target)
+  const action = firstIri(predicates as never, ApprovalVocab.action)
+  const risk = firstLiteral(predicates as never, ApprovalVocab.risk)
+  const status = firstLiteral(predicates as never, ApprovalVocab.status)
+  const createdAt = firstLiteral(predicates as never, ApprovalVocab.createdAt)
   if (!session || !toolCallId || !toolName || !target || !action || !risk || !status || !createdAt) {
     return null
   }
@@ -742,22 +676,22 @@ function approvalRowFromPredicates(url: string, predicates: Map<string, unknown[
     action,
     risk,
     status,
-    assignedTo: firstIri(predicates as never, UDFS_ASSIGNED_TO),
-    decisionBy: firstIri(predicates as never, UDFS_DECISION_BY),
-    decisionRole: firstLiteral(predicates as never, UDFS_DECISION_ROLE),
-    onBehalfOf: firstIri(predicates as never, UDFS_ON_BEHALF_OF),
-    reason: firstLiteral(predicates as never, UDFS_REASON),
-    policyVersion: firstLiteral(predicates as never, UDFS_POLICY_VERSION),
+    assignedTo: firstIri(predicates as never, ApprovalVocab.assignedTo),
+    decisionBy: firstIri(predicates as never, ApprovalVocab.decisionBy),
+    decisionRole: firstLiteral(predicates as never, ApprovalVocab.decisionRole),
+    onBehalfOf: firstIri(predicates as never, ApprovalVocab.onBehalfOf),
+    reason: firstLiteral(predicates as never, ApprovalVocab.reason),
+    policyVersion: firstLiteral(predicates as never, ApprovalVocab.policyVersion),
     createdAt,
-    resolvedAt: firstLiteral(predicates as never, UDFS_RESOLVED_AT),
+    resolvedAt: firstLiteral(predicates as never, ApprovalVocab.resolvedAt),
   }
 }
 
 function auditRowFromPredicates(url: string, predicates: Map<string, unknown[]>): AuditRowLike | null {
-  const action = firstLiteral(predicates as never, UDFS_ACTION)
-  const actor = firstIri(predicates as never, UDFS_ACTOR)
-  const actorRole = firstLiteral(predicates as never, UDFS_ACTOR_ROLE)
-  const createdAt = firstLiteral(predicates as never, DCT_CREATED)
+  const action = firstLiteral(predicates as never, AuditVocab.action)
+  const actor = firstIri(predicates as never, AuditVocab.actor)
+  const actorRole = firstLiteral(predicates as never, AuditVocab.actorRole)
+  const createdAt = firstLiteral(predicates as never, AuditVocab.createdAt)
   if (!action || !actor || !actorRole || !createdAt) {
     return null
   }
@@ -766,23 +700,24 @@ function auditRowFromPredicates(url: string, predicates: Map<string, unknown[]>)
     action,
     actor,
     actorRole,
-    onBehalfOf: firstIri(predicates as never, UDFS_ON_BEHALF_OF),
-    session: firstIri(predicates as never, UDFS_SESSION),
-    toolCallId: firstLiteral(predicates as never, UDFS_TOOL_CALL_ID),
-    approval: firstIri(predicates as never, 'https://undefineds.co/ns#approval'),
-    context: firstLiteral(predicates as never, UDFS_CONTEXT),
-    policyVersion: firstLiteral(predicates as never, UDFS_POLICY_VERSION),
+    onBehalfOf: firstIri(predicates as never, AuditVocab.onBehalfOf),
+    session: firstIri(predicates as never, AuditVocab.session),
+    entry: firstIri(predicates as never, AuditVocab.entry),
+    toolCallId: firstLiteral(predicates as never, AuditVocab.toolCallId),
+    toolName: firstLiteral(predicates as never, AuditVocab.toolName),
+    approval: firstIri(predicates as never, AuditVocab.approval),
+    policyVersion: firstLiteral(predicates as never, AuditVocab.policyVersion),
     createdAt,
   }
 }
 
 function grantRowFromPredicates(url: string, predicates: Map<string, unknown[]>): Record<string, unknown> | null {
-  const target = firstIri(predicates as never, ODRL_TARGET)
-  const action = firstIri(predicates as never, ODRL_ACTION)
-  const effect = firstLiteral(predicates as never, UDFS_EFFECT)
-  const decisionBy = firstIri(predicates as never, UDFS_DECISION_BY)
-  const decisionRole = firstLiteral(predicates as never, UDFS_DECISION_ROLE)
-  const createdAt = firstLiteral(predicates as never, DCT_CREATED)
+  const target = firstIri(predicates as never, GrantVocab.target)
+  const action = firstIri(predicates as never, GrantVocab.action)
+  const effect = firstLiteral(predicates as never, GrantVocab.effect)
+  const decisionBy = firstIri(predicates as never, GrantVocab.decisionBy)
+  const decisionRole = firstLiteral(predicates as never, GrantVocab.decisionRole)
+  const createdAt = firstLiteral(predicates as never, GrantVocab.createdAt)
   if (!target || !action || !effect || !decisionBy || !decisionRole || !createdAt) {
     return null
   }
@@ -791,12 +726,12 @@ function grantRowFromPredicates(url: string, predicates: Map<string, unknown[]>)
     target,
     action,
     effect,
-    riskCeiling: firstLiteral(predicates as never, UDFS_RISK_CEILING),
+    riskCeiling: firstLiteral(predicates as never, GrantVocab.riskCeiling),
     decisionBy,
     decisionRole,
-    onBehalfOf: firstIri(predicates as never, UDFS_ON_BEHALF_OF),
+    onBehalfOf: firstIri(predicates as never, GrantVocab.onBehalfOf),
     createdAt,
-    revokedAt: firstLiteral(predicates as never, UDFS_REVOKED_AT),
+    revokedAt: firstLiteral(predicates as never, GrantVocab.revokedAt),
   }
 }
 
@@ -822,7 +757,7 @@ export async function createRemoteWatchApproval(options: {
       risk: buildRisk(options.request),
       ...(options.request.kind === 'command-approval' && options.request.command ? { command: options.request.command } : {}),
       ...(options.request.kind === 'command-approval' && options.request.cwd ? { cwd: options.request.cwd } : {}),
-      context: buildRequestAuditContext(options.record, options.request) as unknown as Record<string, unknown>,
+      entry: sessionUri,
     }),
     runtime: activeRuntime,
   })
@@ -850,14 +785,7 @@ export async function createRemoteApproval(options: {
     const assignedTo = subject.assignedTo ?? webId
     const onBehalfOf = subject.onBehalfOf ?? webId
     const policyVersion = subject.policyVersion ?? REMOTE_APPROVAL_POLICY_VERSION
-    const requestContext = request.context ?? {
-      kind: request.kind,
-      message: request.message,
-      sessionId: extractSessionId(sessionUri),
-      toolName: request.toolName,
-      ...(request.command ? { command: request.command } : {}),
-      ...(request.cwd ? { cwd: request.cwd } : {}),
-    }
+    const requestEntry = request.entry ?? approvalUri
 
     await store.insertApproval({
       id: approvalId,
@@ -873,26 +801,29 @@ export async function createRemoteApproval(options: {
       createdAt: now,
     })
 
-    await store.insertAudit({
+    const requestAudit: AuditRowLike = {
       id: crypto.randomUUID(),
       action: 'approval_requested',
       actor: subject.actorUri,
       actorRole: 'secretary',
       onBehalfOf,
       session: sessionUri,
+      entry: requestEntry,
       toolCallId: request.toolCallId,
+      toolName: request.toolName,
       approval: approvalUri,
-      context: JSON.stringify(requestContext),
       policyVersion,
       createdAt: now,
-    })
+    }
 
-    await store.insertInboxNotification({
+    await warnOnly(activeRuntime, () => store.insertAudit(requestAudit))
+
+    await warnOnly(activeRuntime, () => store.insertInboxNotification({
       id: crypto.randomUUID(),
       actor: subject.actorUri,
       object: approvalUri,
       createdAt: now,
-    }).catch(() => undefined)
+    }))
 
     return normalizeApprovalSummary({
       id: approvalId,
@@ -906,19 +837,7 @@ export async function createRemoteApproval(options: {
       assignedTo,
       policyVersion,
       createdAt: now,
-    }, [{
-      id: crypto.randomUUID(),
-      action: 'approval_requested',
-      actor: subject.actorUri,
-      actorRole: 'secretary',
-      onBehalfOf,
-      session: sessionUri,
-      toolCallId: request.toolCallId,
-      approval: approvalUri,
-      context: JSON.stringify(requestContext),
-      policyVersion,
-      createdAt: now,
-    }])
+    })
   })
 }
 
@@ -1048,13 +967,10 @@ export async function listRemoteWatchApprovals(options: {
   const requestedStatus = options.status ?? 'pending'
 
   return withRemoteApprovalStore(activeRuntime, async ({ store, webId }) => {
-    const [approvals, audits] = await Promise.all([
-      store.listApprovals(),
-      store.listAudits(),
-    ])
+    const approvals = await store.listApprovals()
 
     return approvals
-      .map((row) => normalizeApprovalSummary(row, audits))
+      .map((row) => normalizeApprovalSummary(row))
       .filter((summary) => !summary.assignedTo || summary.assignedTo === webId)
       .filter((summary) => requestedStatus === 'all' || summary.status === requestedStatus)
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
@@ -1077,8 +993,7 @@ export async function resolveRemoteWatchApproval(options: {
     }
 
     if (row.status !== 'pending') {
-      const audits = await store.listAudits()
-      return normalizeApprovalSummary(row, audits)
+      return normalizeApprovalSummary(row)
     }
 
     const now = activeRuntime.now()
@@ -1097,22 +1012,20 @@ export async function resolveRemoteWatchApproval(options: {
       resolvedAt: now,
     })
 
-    await store.insertAudit({
+    await warnOnly(activeRuntime, () => store.insertAudit({
       id: crypto.randomUUID(),
       action: nextStatus === 'approved' ? 'approval_approved' : 'approval_rejected',
       actor: webId,
       actorRole: 'human',
       onBehalfOf: webId,
       session: row.session,
+      entry: approvalUri,
       toolCallId: row.toolCallId,
+      toolName: row.toolName,
       approval: approvalUri,
-      context: JSON.stringify({
-        decision: options.decision,
-        ...(options.note?.trim() ? { note: options.note.trim() } : {}),
-      }),
       policyVersion: REMOTE_APPROVAL_POLICY_VERSION,
       createdAt: now,
-    })
+    }))
 
     if (options.decision === 'accept_for_session') {
       const grantId = crypto.randomUUID()
@@ -1128,20 +1041,20 @@ export async function resolveRemoteWatchApproval(options: {
         createdAt: now,
       })
 
-      await store.insertInboxNotification({
+      await warnOnly(activeRuntime, () => store.insertInboxNotification({
         id: crypto.randomUUID(),
         actor: webId,
         object: buildGrantUri(row.session, grantId),
         createdAt: now,
-      }).catch(() => undefined)
+      }))
     }
 
-    await store.insertInboxNotification({
+    await warnOnly(activeRuntime, () => store.insertInboxNotification({
       id: crypto.randomUUID(),
       actor: webId,
       object: approvalUri,
       createdAt: now,
-    }).catch(() => undefined)
+    }))
 
     const nextRow: ApprovalRowLike = {
       ...row,
@@ -1152,8 +1065,7 @@ export async function resolveRemoteWatchApproval(options: {
       reason: encodeDecisionReason(options.decision, options.note),
       resolvedAt: now,
     }
-    const audits = await store.listAudits()
-    return normalizeApprovalSummary(nextRow, audits)
+    return normalizeApprovalSummary(nextRow)
   })
 }
 
@@ -1161,7 +1073,6 @@ export const __podApprovalInternal = {
   createAbortError,
   createDefaultRuntime,
   buildActionUri,
-  buildRequestAuditContext,
   buildRisk,
   buildToolName,
   createNativeRemoteApprovalStore,
@@ -1172,5 +1083,4 @@ export const __podApprovalInternal = {
   isRemoteApprovalAbortError,
   normalizeApprovalSummary,
   parseDecisionReason,
-  parseRequestAuditContext,
 }

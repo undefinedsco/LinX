@@ -85,8 +85,20 @@ function resolveRuntimeBaseUrl(runtimeUrl: string): string {
   return resolveLinxRuntimeApiBaseUrl(runtimeUrl)
 }
 
-function withTimeoutSignal(timeoutMs: number): AbortSignal {
-  return AbortSignal.timeout(timeoutMs)
+function withTimeoutSignal(timeoutMs: number, signal?: AbortSignal): {
+  signal: AbortSignal
+  timeoutSignal: AbortSignal
+} {
+  const timeoutSignal = AbortSignal.timeout(timeoutMs)
+  if (!signal) {
+    return { signal: timeoutSignal, timeoutSignal }
+  }
+
+  const anySignal = typeof AbortSignal.any === 'function'
+    ? AbortSignal.any([signal, timeoutSignal])
+    : combineAbortSignals(signal, timeoutSignal)
+
+  return { signal: anySignal, timeoutSignal }
 }
 
 function resolveChatTimeoutMs(): number {
@@ -108,7 +120,7 @@ export async function listRemoteModels(
 
   try {
     const response = await fetch(url, {
-      signal: withTimeoutSignal(options.timeoutMs ?? 10_000),
+      signal: withTimeoutSignal(options.timeoutMs ?? 10_000).signal,
       headers: {
         Accept: 'application/json',
         Authorization: `Bearer ${apiKey}`,
@@ -188,6 +200,7 @@ export async function createRemoteCompletionResult(options: {
   model?: string
   messages: RemoteChatMessage[]
   tools?: RemoteChatTool[]
+  signal?: AbortSignal
 }): Promise<RemoteCompletionResult> {
   const { runtimeUrl, apiKey, model, messages, tools } = options
   const url = `${resolveRuntimeBaseUrl(runtimeUrl)}/chat/completions`
@@ -209,11 +222,12 @@ export async function createRemoteCompletionResult(options: {
   }
 
   const timeoutMs = resolveChatTimeoutMs()
+  const abortSignals = withTimeoutSignal(timeoutMs, options.signal)
   let response: Response
   try {
     response = await fetch(url, {
       method: 'POST',
-      signal: withTimeoutSignal(timeoutMs),
+      signal: abortSignals.signal,
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
@@ -223,6 +237,13 @@ export async function createRemoteCompletionResult(options: {
     })
   } catch (error) {
     if (isAbortError(error)) {
+      if (options.signal?.aborted) {
+        throw new RemoteChatRequestError(
+          'LinX Cloud request aborted by user.',
+          0,
+          error instanceof Error ? error.message : String(error),
+        )
+      }
       throw new RemoteChatRequestError(
         `LinX Cloud request timed out after ${Math.round(timeoutMs / 1000)}s.`,
         0,
@@ -270,6 +291,24 @@ export async function createRemoteCompletionResult(options: {
   }
 
   throw new Error('Empty response from remote model')
+}
+
+function combineAbortSignals(signal: AbortSignal, timeoutSignal: AbortSignal): AbortSignal {
+  const controller = new AbortController()
+  const abort = () => {
+    if (!controller.signal.aborted) {
+      controller.abort()
+    }
+  }
+
+  if (signal.aborted || timeoutSignal.aborted) {
+    abort()
+  } else {
+    signal.addEventListener('abort', abort, { once: true })
+    timeoutSignal.addEventListener('abort', abort, { once: true })
+  }
+
+  return controller.signal
 }
 
 function buildRemoteChatRequestError(
@@ -385,6 +424,7 @@ export async function createRemoteCompletion(options: {
   model?: string
   messages: RemoteChatMessage[]
   tools?: RemoteChatTool[]
+  signal?: AbortSignal
 }): Promise<string> {
   const result = await createRemoteCompletionResult(options)
   return result.content.trim()

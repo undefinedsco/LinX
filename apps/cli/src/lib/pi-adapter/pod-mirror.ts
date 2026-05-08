@@ -1,5 +1,8 @@
 import type { AgentMessage } from '@mariozechner/pi-agent-core'
 import type { SessionEntry, SessionManager } from '@mariozechner/pi-coding-agent'
+import { UDFS } from '@undefineds.co/models/namespaces'
+import { ChatBaseVocab } from '@undefineds.co/models/vocab'
+import { AuditVocab } from '@undefineds.co/models/vocab/sidecar'
 import type { StoredCredentials } from '../credentials-store.js'
 import { DEFAULT_LINX_CLOUD_MODEL_ID } from '../default-model.js'
 import { getDefaultPodDataSession, type PodDataSession } from '../pod-data-session.js'
@@ -28,13 +31,8 @@ import {
   SIOC_HAS_MEMBER,
   SIOC_RICH_CONTENT,
   SIOC_THREAD,
-  UDFS_ACTION,
-  UDFS_ACTOR,
-  UDFS_ACTOR_ROLE,
   UDFS_AGENT,
-  UDFS_AUDIT_ENTRY,
   UDFS_CHAT_TYPE,
-  UDFS_CONTEXT,
   UDFS_CONVERSATION,
   UDFS_CONVERSATION_TITLE,
   UDFS_CONVERSATION_TYPE,
@@ -45,14 +43,11 @@ import {
   UDFS_MESSAGE_TYPE,
   UDFS_METADATA,
   UDFS_MODEL,
-  UDFS_ON_BEHALF_OF,
-  UDFS_POLICY_VERSION,
   UDFS_PROVIDER,
   UDFS_SESSION,
   UDFS_SESSION_STATUS,
   UDFS_SESSION_TOOL,
   UDFS_TOKEN_USAGE,
-  UDFS_TOOL_CALL_ID,
   UDFS_WORKSPACE,
   WF_MESSAGE,
   buildAgentResourceUrl,
@@ -243,16 +238,17 @@ export class LinxPiPodMirror {
     await upsertManagedTurtleBlock(context.fetch, documentUrl, {
       subject: subjectUrl,
       triples: [
-        { predicate: RDF_TYPE, object: iri(UDFS_AUDIT_ENTRY) },
-        { predicate: UDFS_ACTION, object: literal(action) },
-        { predicate: UDFS_ACTOR, object: iri(buildAgentUri(context.webId)) },
-        { predicate: UDFS_ACTOR_ROLE, object: literal('assistant') },
-        { predicate: UDFS_ON_BEHALF_OF, object: iri(context.webId) },
-        { predicate: UDFS_SESSION, object: iri(buildSessionResourceUrl(context.webId, this.options.sessionManager.getSessionId(), createdAt)) },
-        { predicate: UDFS_TOOL_CALL_ID, object: literal(toolCallId) },
-        { predicate: UDFS_CONTEXT, object: literal(JSON.stringify(buildToolAuditContext(event))) },
-        { predicate: UDFS_POLICY_VERSION, object: literal(PI_POLICY_VERSION) },
-        { predicate: DCT_CREATED, object: dateLiteral(createdAt) },
+        { predicate: RDF_TYPE, object: iri(UDFS.AuditEntry) },
+        { predicate: AuditVocab.action, object: literal(action) },
+        { predicate: AuditVocab.actor, object: iri(buildAgentUri(context.webId)) },
+        { predicate: AuditVocab.actorRole, object: literal('assistant') },
+        { predicate: AuditVocab.onBehalfOf, object: iri(context.webId) },
+        { predicate: AuditVocab.session, object: iri(buildSessionResourceUrl(context.webId, this.options.sessionManager.getSessionId(), createdAt)) },
+        { predicate: AuditVocab.entry, object: iri(buildThreadUri(context.webId, DEFAULT_SECRETARY_CHAT_ID, this.options.sessionManager.getSessionId())) },
+        { predicate: AuditVocab.toolCallId, object: literal(toolCallId) },
+        ...(typeof event.toolName === 'string' && event.toolName ? [{ predicate: AuditVocab.toolName, object: literal(event.toolName) }] : []),
+        { predicate: AuditVocab.policyVersion, object: literal(PI_POLICY_VERSION) },
+        { predicate: AuditVocab.createdAt, object: dateLiteral(createdAt) },
       ],
     })
   }
@@ -361,14 +357,14 @@ async function persistRuntimeSession(
     subject: sessionSubjectUrl,
     triples: [
       { predicate: RDF_TYPE, object: iri(UDFS_SESSION) },
-      { predicate: UDFS_ACTOR, object: iri(context.webId) },
+      { predicate: UDFS.actor, object: iri(context.webId) },
       { predicate: UDFS_CONVERSATION, object: iri(chatUri) },
       { predicate: UDFS_IN_THREAD, object: iri(threadUri) },
       { predicate: UDFS_CONVERSATION_TYPE, object: literal('direct') },
       { predicate: UDFS_SESSION_STATUS, object: literal(status) },
       { predicate: UDFS_SESSION_TOOL, object: literal('linx') },
       { predicate: UDFS_TOKEN_USAGE, object: integerLiteral(calculateTokenUsage(options.sessionManager.getEntries())) },
-      { predicate: UDFS_POLICY_VERSION, object: literal(PI_POLICY_VERSION) },
+      { predicate: UDFS.policyVersion, object: literal(PI_POLICY_VERSION) },
       { predicate: UDFS_METADATA, object: literal(JSON.stringify(metadata)) },
       { predicate: DCT_CREATED, object: dateLiteral(now) },
       { predicate: DCT_MODIFIED, object: dateLiteral(now) },
@@ -417,7 +413,7 @@ async function touchPiConversation(
       { predicate: RDF_TYPE, object: iri(MEETING_LONG_CHAT) },
       { predicate: UDFS_CHAT_TYPE, object: literal('ai-secretary') },
       { predicate: UDFS_CONVERSATION_TITLE, object: literal('AI Secretary') },
-      { predicate: UDFS_CONTEXT, object: literal(JSON.stringify({ lastMessagePreview: preview.slice(0, 100) })) },
+      { predicate: ChatBaseVocab.lastMessagePreview, object: literal(preview.slice(0, 100)) },
       { predicate: UDFS_HAS_THREAD, object: iri(threadUri) },
       { predicate: UDFS_LAST_ACTIVE_AT, object: dateLiteral(now) },
       { predicate: DCT_MODIFIED, object: dateLiteral(now) },
@@ -465,40 +461,6 @@ function buildThreadMetadata(options: LinxPiPodMirrorOptions): Record<string, un
     cwd: options.cwd,
     sessionFile: options.sessionManager.getSessionFile(),
   }
-}
-
-function buildToolAuditContext(event: Record<string, unknown>): Record<string, unknown> {
-  return {
-    runtime: 'pi',
-    toolName: typeof event.toolName === 'string' ? event.toolName : 'unknown',
-    ...(event.args !== undefined ? { args: toJsonSafeValue(event.args) } : {}),
-    ...(event.result !== undefined ? { result: toJsonSafeValue(event.result) } : {}),
-    ...(typeof event.isError === 'boolean' ? { isError: event.isError } : {}),
-  }
-}
-
-function toJsonSafeValue(value: unknown, depth = 0): unknown {
-  if (depth > 4) {
-    return '[depth-limit]'
-  }
-  if (typeof value === 'string') {
-    return value.length > 4000 ? `${value.slice(0, 4000)}...` : value
-  }
-  if (typeof value === 'number' || typeof value === 'boolean' || value === null) {
-    return value
-  }
-  if (Array.isArray(value)) {
-    return value.slice(0, 50).map((item) => toJsonSafeValue(item, depth + 1))
-  }
-  if (!isRecord(value)) {
-    return String(value)
-  }
-
-  const output: Record<string, unknown> = {}
-  for (const [key, entry] of Object.entries(value).slice(0, 50)) {
-    output[key] = toJsonSafeValue(entry, depth + 1)
-  }
-  return output
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

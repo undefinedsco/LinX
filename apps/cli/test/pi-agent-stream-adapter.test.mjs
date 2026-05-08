@@ -100,6 +100,40 @@ test('pi agent stream adapter can use a direct completion backend with full cont
   assert.equal(events[4].message.content[0].text, 'cloud hello')
 })
 
+test('pi agent stream adapter forwards abort signal to completion backend', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/stream.ts')
+  t.after(() => cleanup())
+
+  const controller = new AbortController()
+  const completionCalls = []
+  const adapter = module.createPiAgentStreamAdapter({
+    completionBackend: {
+      async complete(input) {
+        completionCalls.push(input)
+        controller.abort()
+        throw new DOMException('Aborted', 'AbortError')
+      },
+    },
+  })
+
+  const events = []
+  for await (const event of adapter.streamFn(undefined, {
+    messages: [{ role: 'user', content: 'hello' }],
+  }, {
+    signal: controller.signal,
+  })) {
+    events.push(event)
+  }
+
+  assert.equal(completionCalls.length, 1)
+  assert.equal(completionCalls[0].signal, controller.signal)
+  const errorEvent = events.find((event) => event.type === 'error')
+  assert.ok(errorEvent)
+  assert.equal(errorEvent.reason, 'aborted')
+  assert.equal(errorEvent.error.stopReason, 'aborted')
+  assert.equal(errorEvent.error.errorMessage, 'Request was aborted.')
+})
+
 test('pi agent stream adapter defaults assistant metadata to linx-lite', async (t) => {
   const { module, cleanup } = await loadWatchModule('lib/pi-adapter/stream.ts')
   t.after(() => cleanup())

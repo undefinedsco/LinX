@@ -139,6 +139,88 @@ test('linx interactive branding stores agent state under .linx and patches updat
   assert.equal(typeof interactive.stop, 'function')
 })
 
+test('linx escape interrupt aborts streaming session before Pi default handler', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/interactive.ts')
+  t.after(() => cleanup())
+
+  const calls = []
+  const interactive = {
+    defaultEditor: {
+      onEscape() {
+        calls.push('original')
+      },
+    },
+    session: {
+      isStreaming: true,
+      abort() {
+        calls.push('abort')
+      },
+    },
+  }
+
+  module.installLinxEscapeInterrupt(interactive)
+  interactive.defaultEditor.onEscape()
+
+  assert.deepEqual(calls, ['abort'])
+})
+
+test('linx escape interrupt aborts bash and preserves idle escape behavior', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/interactive.ts')
+  t.after(() => cleanup())
+
+  const calls = []
+  const interactive = {
+    defaultEditor: {
+      onEscape() {
+        calls.push('original')
+      },
+    },
+    session: {
+      isBashRunning: true,
+      abortBash() {
+        calls.push('abortBash')
+      },
+    },
+  }
+
+  module.installLinxEscapeInterrupt(interactive)
+  interactive.defaultEditor.onEscape()
+  interactive.session.isBashRunning = false
+  interactive.defaultEditor.onEscape()
+
+  assert.deepEqual(calls, ['abortBash', 'original'])
+})
+
+test('linx escape interrupt keeps wrapping later Pi escape handler assignments', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/interactive.ts')
+  t.after(() => cleanup())
+
+  const calls = []
+  const interactive = {
+    defaultEditor: {
+      onEscape() {
+        calls.push('original')
+      },
+    },
+    session: {
+      abort() {
+        calls.push('abort')
+      },
+    },
+    loadingAnimation: {},
+  }
+
+  module.installLinxEscapeInterrupt(interactive)
+  interactive.defaultEditor.onEscape = () => {
+    calls.push('later')
+  }
+  interactive.defaultEditor.onEscape()
+  interactive.loadingAnimation = null
+  interactive.defaultEditor.onEscape()
+
+  assert.deepEqual(calls, ['abort', 'later'])
+})
+
 test('linx footer patch adds cache rate from assistant usage', async (t) => {
   const [{ module: runtimeModule, cleanup: runtimeCleanup }, { module: interactiveModule, cleanup: interactiveCleanup }] = await Promise.all([
     loadWatchModule('lib/pi-adapter/runtime.ts'),

@@ -225,6 +225,49 @@ test('requestRemoteWatchApproval accepts OIDC-only credentials', async () => {
   assert.equal(state.inbox.length, 1)
 })
 
+test('requestRemoteWatchApproval writes audit entry pointers without embedding command context', async () => {
+  const state = createRuntime(approvalModule)
+  let sleepCalls = 0
+
+  state.runtime.sleep = async () => {
+    sleepCalls += 1
+    if (sleepCalls === 1) {
+      state.approvals[0].status = 'approved'
+      state.approvals[0].decisionBy = state.webId
+      state.approvals[0].reason = state.encodeDecisionReason('accept', 'approve once')
+      state.approvals[0].resolvedAt = '2026-03-18T00:00:05.000Z'
+    }
+  }
+
+  await approvalModule.requestRemoteWatchApproval({
+    record: createRecord(),
+    request: {
+      kind: 'command-approval',
+      message: 'large command',
+      command: `node -e "${'x'.repeat(6000)}"`,
+      cwd: '/tmp/demo',
+      raw: {
+        params: {
+          toolCall: {
+            toolCallId: 'tool_large_1',
+          },
+        },
+      },
+    },
+    runtime: state.runtime,
+    pollMs: 1,
+  })
+
+  assert.equal(state.audits.length, 1)
+  assert.equal(state.audits[0].action, 'approval_requested')
+  assert.equal(state.audits[0].session, 'https://alice.example/.data/chat/linx-watch/index.ttl#watch_2026-03-18T00-00-00-000Z_deadbeef')
+  assert.equal(state.audits[0].entry, state.audits[0].session)
+  assert.equal(state.audits[0].toolCallId, 'tool_large_1')
+  assert.equal(state.audits[0].toolName, 'commandExecution')
+  assert.equal('context' in state.audits[0], false)
+  assert.equal(JSON.stringify(state.audits[0]).includes('x'.repeat(100)), false)
+})
+
 test('requestRemoteWatchApproval short-circuits when an active grant already covers the request', async () => {
   const state = createRuntime(approvalModule)
 
@@ -289,16 +332,10 @@ test('resolveRemoteWatchApproval updates Pod approval state and listRemoteWatchA
     actorRole: 'secretary',
     onBehalfOf: state.webId,
     session: 'https://alice.example/.data/chat/linx-watch/index.ttl#watch_2026-03-18T00-00-00-000Z_deadbeef',
+    entry: 'https://alice.example/.data/chat/linx-watch/index.ttl#watch_2026-03-18T00-00-00-000Z_deadbeef',
     toolCallId: 'tool_rm_1',
+    toolName: 'commandExecution',
     approval: 'https://alice.example/.data/approvals/2026/03/18.ttl#approval_123',
-    context: JSON.stringify({
-      kind: 'command-approval',
-      message: 'rm -rf dist',
-      command: 'rm -rf dist',
-      cwd: '/tmp/demo',
-      backend: 'codex',
-      sessionId: 'watch_2026-03-18T00-00-00-000Z_deadbeef',
-    }),
     policyVersion: 'linx-watch-remote-approval/v1',
     createdAt: '2026-03-18T00:00:00.000Z',
   })
@@ -323,9 +360,9 @@ test('resolveRemoteWatchApproval updates Pod approval state and listRemoteWatchA
   })
 
   assert.equal(listed.length, 1)
-  assert.equal(listed[0].message, 'rm -rf dist')
-  assert.equal(listed[0].command, 'rm -rf dist')
-  assert.equal(listed[0].cwd, '/tmp/demo')
+  assert.equal(listed[0].message, 'Command execution approval')
+  assert.equal(listed[0].command, undefined)
+  assert.equal(listed[0].cwd, undefined)
   assert.equal(listed[0].decision, 'accept_for_session')
 })
 
@@ -380,9 +417,10 @@ test('native remote approval store writes and reads approval grant audit resourc
     actorRole: 'secretary',
     onBehalfOf: webId,
     session: 'https://alice.example/.data/chat/linx-watch/index.ttl#watch_1',
+    entry: 'https://alice.example/.data/chat/linx-watch/index.ttl#watch_1',
     toolCallId: 'tool_1',
+    toolName: 'commandExecution',
     approval: 'https://alice.example/.data/approvals/2026/03/18.ttl#approval_native_1',
-    context: JSON.stringify({ message: 'pwd' }),
     policyVersion: 'linx-watch-remote-approval/v1',
     createdAt: '2026-03-18T00:00:00.000Z',
   })
@@ -417,6 +455,8 @@ test('native remote approval store writes and reads approval grant audit resourc
   assert.equal(approvals[0].toolCallId, 'tool_1')
   assert.equal(audits.length, 1)
   assert.equal(audits[0].approval, 'https://alice.example/.data/approvals/2026/03/18.ttl#approval_native_1')
+  assert.equal(audits[0].entry, 'https://alice.example/.data/chat/linx-watch/index.ttl#watch_1')
+  assert.equal(audits[0].toolName, 'commandExecution')
   assert.equal(grants.length, 1)
   assert.equal(grants[0].effect, 'allow')
   assert.equal(writes.some((write) => write.url.endsWith('/.data/approvals/2026/03/18.ttl')), true)

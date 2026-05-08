@@ -1,4 +1,4 @@
-import { podTable, uri, string, text, timestamp, id } from '@undefineds.co/drizzle-solid'
+import { podTable, uri, string, timestamp, id } from '@undefineds.co/drizzle-solid'
 import { UDFS, DCTerms } from './namespaces'
 
 // Append-only audit entry resource (separate from Solid inbox notifications).
@@ -19,11 +19,10 @@ export const auditResource = podTable(
 
     // Relations
     session: uri('session').predicate(UDFS.session),
+    entry: uri('entry').predicate(UDFS.entry),
     toolCallId: string('toolCallId').predicate(UDFS.toolCallId),
+    toolName: string('toolName').predicate(UDFS.toolName),
     approval: uri('approval').predicate(UDFS.approval),
-
-    // JSON payload with policy/reasoning snapshot
-    context: text('context').predicate(UDFS.context),
 
     // Policy metadata
     policy: uri('policy').predicate(UDFS.policy),
