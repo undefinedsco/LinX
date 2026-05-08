@@ -924,6 +924,7 @@ class AcpSession extends BaseSession {
     })
     const decision = await watchRuntime.waitForRemoteWatchApproval({
       approvalId: remote.id,
+      approvalUri: remote.approvalUri,
     })
 
     appendSessionNote(this.record, `Remote approval resolved | ${decision}`)
@@ -934,7 +935,7 @@ class AcpSession extends BaseSession {
   private async resolveHybridApproval(interaction: WatchApprovalRequest): Promise<WatchApprovalDecision> {
     const promptMessage = approvalPromptMessage(interaction)
 
-    let remoteApproval: { id: string } | null = null
+    let remoteApproval: { id: string; approvalUri?: string } | null = null
     try {
       remoteApproval = await watchRuntime.createRemoteWatchApproval({
         record: this.record,
@@ -955,6 +956,7 @@ class AcpSession extends BaseSession {
       .then((decision) => ({ source: 'local' as const, decision }))
     const remoteDecisionPromise = watchRuntime.waitForRemoteWatchApproval({
       approvalId: remoteApproval.id,
+      approvalUri: remoteApproval.approvalUri,
       signal: remoteAbort.signal,
     }).then((decision) => ({ source: 'remote' as const, decision }))
 
@@ -969,6 +971,7 @@ class AcpSession extends BaseSession {
         appendSessionNote(this.record, `Local approval resolved | ${winner.decision}`)
         void watchRuntime.resolveRemoteWatchApproval({
           approvalId: remoteApproval.id,
+          approvalUri: remoteApproval.approvalUri,
           decision: winner.decision,
           note: 'resolved from active local watch session',
         }).catch(() => undefined)

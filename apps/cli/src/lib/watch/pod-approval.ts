@@ -35,6 +35,7 @@ export type RemoteApprovalRisk = 'low' | 'medium' | 'high'
 
 export interface ApprovalRowLike extends Record<string, unknown> {
   id: string
+  approvalUri?: string
   session: string
   toolCallId: string
   toolName: string
@@ -76,6 +77,10 @@ export interface InboxNotificationRowLike extends Record<string, unknown> {
 
 export interface WatchRemoteApprovalStore {
   listApprovals(): Promise<ApprovalRowLike[]>
+  findApproval?(
+    id: string,
+    options?: { resourceUri?: string; createdAt?: Date | string },
+  ): Promise<ApprovalRowLike | null>
   insertApproval(row: ApprovalRowLike): Promise<void>
   updateApproval(id: string, patch: Partial<ApprovalRowLike>): Promise<void>
   listAudits(): Promise<AuditRowLike[]>
@@ -102,6 +107,7 @@ const remoteApprovalClientCache = new WeakMap<WatchRemoteApprovalRuntime, Promis
 
 export interface RemoteWatchApprovalSummary {
   id: string
+  approvalUri?: string
   sessionId: string
   sessionUri: string
   toolCallId: string
@@ -193,6 +199,10 @@ function buildApprovalUri(webIdOrUri: string, approvalId: string): string {
 
 function buildApprovalUriForDate(webIdOrUri: string, approvalId: string, createdAt: Date): string {
   return buildApprovalResourceUrl(webIdOrUri, approvalId, createdAt)
+}
+
+function documentUrlFromResourceUri(resourceUri: string): string {
+  return resourceUri.split('#', 1)[0] ?? resourceUri
 }
 
 function buildGrantUri(webIdOrUri: string, grantId: string): string {
@@ -376,6 +386,7 @@ function normalizeApprovalSummary(row: ApprovalRowLike): RemoteWatchApprovalSumm
 
   return {
     id: row.id,
+    ...(normalizeString(row.approvalUri) ? { approvalUri: normalizeString(row.approvalUri) } : {}),
     sessionId: extractSessionId(sessionUri),
     sessionUri,
     toolCallId: row.toolCallId,
@@ -497,6 +508,7 @@ async function createRemoteApprovalClient(runtime: WatchRemoteApprovalRuntime): 
 function createNativeRemoteApprovalStore(webId: string, fetcher: PodFetch): WatchRemoteApprovalStore {
   return {
     listApprovals: () => listApprovalRows(webId, fetcher),
+    findApproval: (id, options) => findApprovalRow(webId, fetcher, id, options),
     insertApproval: (row) => writeApprovalRow(webId, fetcher, row),
     async updateApproval(id, patch): Promise<void> {
       const existing = (await listApprovalRows(webId, fetcher)).find((row) => row.id === id)
@@ -511,6 +523,43 @@ function createNativeRemoteApprovalStore(webId: string, fetcher: PodFetch): Watc
     insertGrant: (row) => writeGrantRow(webId, fetcher, row),
     insertInboxNotification: (row) => writeInboxNotificationRow(webId, fetcher, row),
   }
+}
+
+async function findApprovalRow(
+  webId: string,
+  fetcher: PodFetch,
+  id: string,
+  options: { resourceUri?: string; createdAt?: Date | string } = {},
+): Promise<ApprovalRowLike | null> {
+  if (options.resourceUri) {
+    return readApprovalRowFromResource(fetcher, options.resourceUri)
+  }
+
+  if (options.createdAt) {
+    const createdAt = new Date(toIsoString(options.createdAt, new Date().toISOString()))
+    return readApprovalRowFromResource(fetcher, buildApprovalResourceUrl(webId, id, createdAt))
+  }
+
+  return (await listApprovalRows(webId, fetcher)).find((row) => row.id === id) ?? null
+}
+
+async function readApprovalRowFromResource(fetcher: PodFetch, resourceUri: string): Promise<ApprovalRowLike | null> {
+  const turtle = await readTurtleResource(fetcher, documentUrlFromResourceUri(resourceUri))
+  if (!turtle) {
+    return null
+  }
+
+  for (const [subject, predicates] of parseManagedTurtleBlocks(turtle, documentUrlFromResourceUri(resourceUri))) {
+    if (subject !== resourceUri) {
+      continue
+    }
+    const row = approvalRowFromPredicates(subject, predicates)
+    if (row) {
+      return row
+    }
+  }
+
+  return null
 }
 
 async function listApprovalRows(webId: string, fetcher: PodFetch): Promise<ApprovalRowLike[]> {
@@ -827,6 +876,7 @@ export async function createRemoteApproval(options: {
 
     return normalizeApprovalSummary({
       id: approvalId,
+      approvalUri,
       session: sessionUri,
       toolCallId: request.toolCallId,
       toolName: request.toolName,
@@ -843,6 +893,7 @@ export async function createRemoteApproval(options: {
 
 export async function waitForRemoteWatchApproval(options: {
   approvalId: string
+  approvalUri?: string
   pollMs?: number
   signal?: AbortSignal
   runtime?: WatchRemoteApprovalRuntime
@@ -855,10 +906,13 @@ export async function waitForRemoteWatchApproval(options: {
         throw createAbortError()
       }
 
-      const approvals = await store.listApprovals()
-      const row = approvals.find((entry) => entry.id === options.approvalId)
+      const row = await readRemoteApprovalRow(store, {
+        approvalId: options.approvalId,
+        approvalUri: options.approvalUri,
+      })
       if (!row) {
-        throw new Error(`Remote approval disappeared before resolution: ${options.approvalId}`)
+        await activeRuntime.sleep(options.pollMs ?? DEFAULT_REMOTE_APPROVAL_POLL_MS)
+        continue
       }
 
       const decision = decisionFromApprovalRow(row)
@@ -907,6 +961,7 @@ export async function requestRemoteWatchApproval(options: {
 
   return waitForRemoteWatchApproval({
     approvalId: summary.id,
+    approvalUri: summary.approvalUri,
     pollMs: options.pollMs,
     signal: options.signal,
     runtime: activeRuntime,
@@ -953,6 +1008,7 @@ export async function requestRemoteApproval(options: {
 
   return waitForRemoteWatchApproval({
     approvalId: summary.id,
+    approvalUri: summary.approvalUri,
     pollMs: options.pollMs,
     signal: options.signal,
     runtime: activeRuntime,
@@ -979,6 +1035,7 @@ export async function listRemoteWatchApprovals(options: {
 
 export async function resolveRemoteWatchApproval(options: {
   approvalId: string
+  approvalUri?: string
   decision: WatchApprovalDecision
   note?: string
   runtime?: WatchRemoteApprovalRuntime
@@ -986,8 +1043,10 @@ export async function resolveRemoteWatchApproval(options: {
   const activeRuntime = options.runtime ?? await createDefaultRuntime()
 
   return withRemoteApprovalStore(activeRuntime, async ({ store, webId }) => {
-    const approvals = await store.listApprovals()
-    const row = approvals.find((entry) => entry.id === options.approvalId)
+    const row = await readRemoteApprovalRow(store, {
+      approvalId: options.approvalId,
+      approvalUri: options.approvalUri,
+    })
     if (!row) {
       throw new Error(`Remote approval not found: ${options.approvalId}`)
     }
@@ -1069,6 +1128,26 @@ export async function resolveRemoteWatchApproval(options: {
   })
 }
 
+async function readRemoteApprovalRow(
+  store: WatchRemoteApprovalStore,
+  options: {
+    approvalId: string
+    approvalUri?: string
+  },
+): Promise<ApprovalRowLike | null> {
+  if (store.findApproval) {
+    const row = await store.findApproval(options.approvalId, {
+      resourceUri: options.approvalUri,
+    })
+    if (row || options.approvalUri) {
+      return row
+    }
+  }
+
+  const approvals = await store.listApprovals()
+  return approvals.find((entry) => entry.id === options.approvalId) ?? null
+}
+
 export const __podApprovalInternal = {
   createAbortError,
   createDefaultRuntime,
@@ -1080,6 +1159,7 @@ export const __podApprovalInternal = {
   decisionFromApprovalRow,
   encodeDecisionReason,
   formatSummaryHeadline,
+  readRemoteApprovalRow,
   isRemoteApprovalAbortError,
   normalizeApprovalSummary,
   parseDecisionReason,

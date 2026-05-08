@@ -297,22 +297,9 @@ Observed response shape:
 }
 ```
 
-### `mcpServer/startupStatus/updated`
-
-```json
-{
-  "method": "mcpServer/startupStatus/updated",
-  "params": {
-    "name": "ai-collector",
-    "status": "ready",
-    "error": null
-  }
-}
-```
-
 ## Implications
 
 - `initialize` and `account/read` are immediate boot requirements for the native shell.
 - `thread/start` and `turn/start` already have real response/notification shapes; proxy code should prefer child-first passthrough over local fabrication.
 - `item/started` / `item/completed` include user-message samples and should be normalized into persistence/transcript state, even if the frontend shell renders them itself.
-- `mcpServer/startupStatus/updated`, `thread/status/changed`, and similar notifications are part of the real protocol surface and should not be silently dropped without an explicit mapping decision.
+- `thread/status/changed` and similar notifications are part of the real protocol surface and should not be silently dropped without an explicit mapping decision.

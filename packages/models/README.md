@@ -54,6 +54,8 @@ LinX 的所有数据存储在 Solid Pod 中，使用标准的 RDF 格式。本�
 - Pod schema 使用 `chat`、`thread` 这类 URI-valued RDF relation 字段。
 - `chatId`、`threadId` 只允许作为 UI 状态、函数参数、runtime protocol 字段或 metadata 中的兼容信息，不允许作为持久 RDF link 字段。
 - 新增 shared model 代码优先使用 `chatResource`、`threadResource`、`messageResource`、`sessionResource` 等 Solid resource 命名；`*Table` 只作为兼容 alias 逐步退出。
+- 如果壳层需要新的查询、upsert、resolve-by-uri、审计或审批状态变更能力，优先在本包新增 repository/helper 和 tests；不要在 CLI/App 中复制 predicate、subject template、Turtle 读写或 shared 状态机。
+- `approval` / `grant` / `audit` / `inboxNotification` / `session` 等跨端控制面也属于本包的 shared resource 语义。CLI/App 只负责把 Pi/Codex/Claude 等运行时事件映射成本包定义的 insert/update DTO，不能另建一套存储路径或审批策略。
 
 ---
 
@@ -583,7 +585,6 @@ yarn workspace @linq/models typecheck
 ## 许可证
 
 MIT License
-
 
 
 
