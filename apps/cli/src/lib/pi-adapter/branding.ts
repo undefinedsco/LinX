@@ -146,7 +146,7 @@ async function installLinxUpdateAndRestart(interactive: any, newVersion: string)
 
 function runNpmInstallLatest(): Promise<void> {
   const npmCommand = process.env.npm_execpath || 'npm'
-  const args = ['install', '-g', `${LINX_UPDATE_PACKAGE_NAME}@latest`]
+  const args = ['install', '-g', '--omit=peer', `${LINX_UPDATE_PACKAGE_NAME}@latest`]
   return new Promise((resolve, reject) => {
     const child = spawn(npmCommand, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -893,7 +893,7 @@ function resolveRuntimeProviderLabel(interactive: any): string {
   if (bridge?.providerLabel) {
     return bridge.providerLabel
   }
-  return 'undefineds(cloud)'
+  return 'undefineds'
 }
 
 async function suppressPodStatusOutput<T>(operation: () => Promise<T>): Promise<T> {

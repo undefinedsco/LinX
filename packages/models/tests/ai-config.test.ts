@@ -5,6 +5,7 @@ import {
   buildAIConfigMutationPlan,
   buildAIConfigProviderStateMap,
   getAIConfigProviderFamilyIds,
+  getAIConfigProviderMetadata,
   normalizeAIConfigProviderId,
   sameAIConfigProviderFamily,
 } from '../src/ai-config'
@@ -19,6 +20,30 @@ describe('ai-config shared core', () => {
     expect(getAIConfigProviderFamilyIds('xai')).toEqual(['x-ai', 'xai'])
     expect(sameAIConfigProviderFamily('https://pod.example/settings/ai/providers.ttl#claude', 'anthropic')).toBe(true)
     expect(sameAIConfigProviderFamily('xai', 'https://pod.example/settings/ai/providers.ttl#x-ai')).toBe(true)
+  })
+
+  it('treats undefineds as a first-class shared AI provider', () => {
+    expect(normalizeAIConfigProviderId('undefineds')).toBe('undefineds')
+    expect(getAIConfigProviderMetadata('undefineds')).toMatchObject({
+      id: 'undefineds',
+      displayName: 'undefineds',
+      defaultBaseUrl: 'https://api.undefineds.co/v1',
+      defaultModels: ['linx-lite', 'linx'],
+    })
+
+    const states = buildAIConfigProviderStateMap({
+      providerRows: [],
+      credentialRows: [],
+      modelRows: [],
+    })
+
+    expect(states.undefineds).toMatchObject({
+      id: 'undefineds',
+      enabled: false,
+      baseUrl: 'https://api.undefineds.co/v1',
+      selectedModelId: 'linx-lite',
+    })
+    expect(states.undefineds?.models.map((model) => model.id)).toEqual(['linx-lite', 'linx'])
   })
 
   it('builds provider state from split AI config tables', () => {

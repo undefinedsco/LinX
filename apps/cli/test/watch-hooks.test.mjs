@@ -16,6 +16,8 @@ test('codex hook maps to codex-acp transport', async () => {
   const { module } = await getWatchModule()
   const { getWatchHook } = module
   const hook = getWatchHook('codex')
+  assert.equal(hook.capabilities.protocol, 'acp')
+  assert.equal(hook.capabilities.canSetModel, false)
   const plan = hook.buildSpawnPlan({
     backend: 'codex',
     mode: 'smart',
@@ -33,6 +35,7 @@ test('claude hook maps to claude-code-acp transport', async () => {
   const { module } = await getWatchModule()
   const { getWatchHook } = module
   const hook = getWatchHook('claude')
+  assert.equal(hook.capabilities.protocol, 'acp')
   const plan = hook.buildSpawnPlan({
     backend: 'claude',
     mode: 'auto',
@@ -50,6 +53,7 @@ test('codebuddy hook maps to built-in ACP mode and preserves model arg', async (
   const { module } = await getWatchModule()
   const { getWatchHook } = module
   const hook = getWatchHook('codebuddy')
+  assert.equal(hook.capabilities.protocol, 'acp')
   const plan = hook.buildSpawnPlan({
     backend: 'codebuddy',
     mode: 'manual',

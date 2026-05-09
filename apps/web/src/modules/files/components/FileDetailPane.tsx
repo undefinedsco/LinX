@@ -7,9 +7,8 @@
  * CP0: skeleton with tab structure, no real data.
  * CP1: mock file data display, functional preview/metadata/lineage tabs.
  */
-import { useMemo, useCallback } from 'react'
+import { useCallback } from 'react'
 import {
-  ExternalLink,
   Copy,
   Star,
   Trash2,

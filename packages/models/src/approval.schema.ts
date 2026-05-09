@@ -36,10 +36,13 @@ export const approvalResource = podTable(
     decisionRole: string('decisionRole').predicate(UDFS.decisionRole),
     onBehalfOf: uri('onBehalfOf').predicate(UDFS.onBehalfOf),
     reason: text('reason').predicate(UDFS.reason),
+    context: text('context').predicate(UDFS.context),
+    approvalOptions: text('approvalOptions').predicate(UDFS.approvalOptions),
     policyVersion: string('policyVersion').predicate(UDFS.policyVersion),
 
     // Timestamps
     createdAt: timestamp('createdAt').predicate(DCTerms.created).notNull().defaultNow(),
+    expiresAt: timestamp('expiresAt').predicate(UDFS.expiresAt),
     resolvedAt: timestamp('resolvedAt').predicate(UDFS.resolvedAt),
   },
   {

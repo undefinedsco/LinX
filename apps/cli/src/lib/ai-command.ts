@@ -14,7 +14,14 @@ import { XPOD_AI, XPOD_CREDENTIAL } from '@undefineds.co/models/namespaces'
 import { getClientCredentialId, getClientCredentialKey, getClientCredentials, loadCredentials } from './credentials-store.js'
 import { loadAccountSession } from './account-session.js'
 import { authenticatedFetch, getAccessToken } from './solid-auth.js'
+import { getOidcAccessToken } from './oidc-auth.js'
 import { promptPassword } from './prompt.js'
+import {
+  firstIri,
+  firstLiteral,
+  parseManagedTurtleBlocks,
+  subjectIdFromResourceUrl,
+} from './pi-adapter/pod-native.js'
 
 interface AiArgs {
   action?: 'connect' | 'disconnect' | 'status'
@@ -146,10 +153,6 @@ function absolutePodUri(podUrl: string, relativePath: string): string {
   return `${podUrl.replace(/\/?$/, '/')}${relativePath.replace(/^\/+/, '')}`
 }
 
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
 function quoteLiteral(value: string): string {
   return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`
 }
@@ -158,72 +161,48 @@ function dateTimeLiteral(value: Date): string {
   return `"${value.toISOString()}"^^<${XSD_DATE_TIME}>`
 }
 
-function splitResourceBlocks(turtle: string, resourceUrl: string): string[] {
-  if (!turtle.trim()) return []
-  const pattern = new RegExp(`(?=<${escapeRegex(resourceUrl)}#)`)
-  return turtle
-    .split(pattern)
-    .map((block) => block.trim())
-    .filter(Boolean)
-}
-
-function matchLiteral(block: string, predicateUri: string): string | undefined {
-  const match = block.match(new RegExp(`<${escapeRegex(predicateUri)}>\\s+"([^"]*)"(?:\\^\\^<[^>]+>)?`))
-  return match?.[1]
-}
-
-function matchIri(block: string, predicateUri: string): string | undefined {
-  const match = block.match(new RegExp(`<${escapeRegex(predicateUri)}>\\s+<([^>]+)>`))
-  return match?.[1]
-}
-
 function parseCredentialRows(turtle: string, resourceUrl: string, runtime: AiRuntime): ParsedCredentialRow[] {
-  return splitResourceBlocks(turtle, resourceUrl)
-    .map((block) => {
-      const subject = block.match(new RegExp(`^<${escapeRegex(resourceUrl)}#([^>]+)>`))
-      if (!subject?.[1]) return null
+  return [...parseManagedTurtleBlocks(turtle, resourceUrl)]
+    .map(([subject, predicates]) => {
       return {
-        id: subject[1],
-        provider: matchIri(block, runtime.XPOD_CREDENTIAL.provider),
-        service: matchLiteral(block, runtime.XPOD_CREDENTIAL.service),
-        status: matchLiteral(block, runtime.XPOD_CREDENTIAL.status),
-        apiKey: matchLiteral(block, runtime.XPOD_CREDENTIAL.apiKey),
-        baseUrl: matchLiteral(block, runtime.XPOD_CREDENTIAL.baseUrl),
-        label: matchLiteral(block, runtime.XPOD_CREDENTIAL.label),
+        id: subjectIdFromResourceUrl(subject),
+        provider: firstIri(predicates, runtime.XPOD_CREDENTIAL.provider),
+        service: firstLiteral(predicates, runtime.XPOD_CREDENTIAL.service),
+        status: firstLiteral(predicates, runtime.XPOD_CREDENTIAL.status),
+        apiKey: firstLiteral(predicates, runtime.XPOD_CREDENTIAL.apiKey),
+        baseUrl: firstLiteral(predicates, runtime.XPOD_CREDENTIAL.baseUrl),
+        label: firstLiteral(predicates, runtime.XPOD_CREDENTIAL.label),
       }
     })
-    .filter(Boolean) as ParsedCredentialRow[]
+    .filter((row) => row.id) as ParsedCredentialRow[]
 }
 
 function parseProviderRows(turtle: string, resourceUrl: string, runtime: AiRuntime): ParsedProviderRow[] {
-  return splitResourceBlocks(turtle, resourceUrl)
-    .map((block) => {
-      const subject = block.match(new RegExp(`^<${escapeRegex(resourceUrl)}#([^>]+)>`))
-      if (!subject?.[1]) return null
+  return [...parseManagedTurtleBlocks(turtle, resourceUrl)]
+    .map(([subject, predicates]) => {
       return {
-        id: subject[1],
-        baseUrl: matchLiteral(block, runtime.XPOD_AI.baseUrl),
-        proxyUrl: matchLiteral(block, runtime.XPOD_AI.proxyUrl),
-        hasModel: matchIri(block, runtime.XPOD_AI.hasModel),
+        id: subjectIdFromResourceUrl(subject),
+        '@id': subject,
+        baseUrl: firstLiteral(predicates, runtime.XPOD_AI.baseUrl),
+        proxyUrl: firstLiteral(predicates, runtime.XPOD_AI.proxyUrl),
+        hasModel: firstIri(predicates, runtime.XPOD_AI.hasModel),
       }
     })
-    .filter(Boolean) as ParsedProviderRow[]
+    .filter((row) => row.id) as ParsedProviderRow[]
 }
 
 function parseModelRows(turtle: string, resourceUrl: string, runtime: AiRuntime): ParsedModelRow[] {
-  return splitResourceBlocks(turtle, resourceUrl)
-    .map((block) => {
-      const subject = block.match(new RegExp(`^<${escapeRegex(resourceUrl)}#([^>]+)>`))
-      if (!subject?.[1]) return null
+  return [...parseManagedTurtleBlocks(turtle, resourceUrl)]
+    .map(([subject, predicates]) => {
       return {
-        id: subject[1],
-        displayName: matchLiteral(block, runtime.XPOD_AI.displayName),
-        modelType: matchLiteral(block, runtime.XPOD_AI.modelType),
-        isProvidedBy: matchIri(block, runtime.XPOD_AI.isProvidedBy),
-        status: matchLiteral(block, runtime.XPOD_AI.status),
+        id: subjectIdFromResourceUrl(subject),
+        displayName: firstLiteral(predicates, runtime.XPOD_AI.displayName),
+        modelType: firstLiteral(predicates, runtime.XPOD_AI.modelType),
+        isProvidedBy: firstIri(predicates, runtime.XPOD_AI.isProvidedBy),
+        status: firstLiteral(predicates, runtime.XPOD_AI.status),
       }
     })
-    .filter(Boolean) as ParsedModelRow[]
+    .filter((row) => row.id) as ParsedModelRow[]
 }
 
 async function requireApiKey(argv: AiArgs): Promise<string> {
@@ -246,18 +225,21 @@ async function resolvePodWriteContext(urlOverride?: string): Promise<{ accessTok
   }
 
   const clientCreds = getClientCredentials(creds)
-  if (!clientCreds) {
-    throw new Error('Only client credentials auth is supported for `linx ai connect`.')
+  let accessToken: string | null = null
+  if (clientCreds) {
+    const baseUrl = (urlOverride ?? creds.url).replace(/\/?$/, '/')
+    const tokenResult = await getAccessToken(getClientCredentialId(clientCreds), getClientCredentialKey(clientCreds), baseUrl)
+    accessToken = tokenResult?.accessToken ?? null
+  } else {
+    accessToken = await getOidcAccessToken(creds)
   }
 
-  const baseUrl = (urlOverride ?? creds.url).replace(/\/?$/, '/')
-  const tokenResult = await getAccessToken(getClientCredentialId(clientCreds), getClientCredentialKey(clientCreds), baseUrl)
-  if (!tokenResult) {
+  if (!accessToken) {
     throw new Error('Failed to obtain Pod access token. Run `linx login` again.')
   }
 
   return {
-    accessToken: tokenResult.accessToken,
+    accessToken,
     podUrl: loadAccountSession()?.podUrl || resolveLinxPodUrl(creds.webId),
   }
 }

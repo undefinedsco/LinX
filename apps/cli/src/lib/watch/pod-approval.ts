@@ -3,7 +3,14 @@ import type { StoredCredentials } from '../credentials-store.js'
 import { getDefaultPodDataSession, type PodDataSession } from '../pod-data-session.js'
 import { AS, ODRL, UDFS } from '@undefineds.co/models/namespaces'
 import { ApprovalVocab, AuditVocab, GrantVocab, InboxNotificationVocab } from '@undefineds.co/models/vocab/sidecar'
-import type { WatchApprovalDecision, WatchApprovalRequest, WatchSessionRecord } from '@undefineds.co/models/watch'
+import type {
+  WatchApprovalDecision,
+  WatchApprovalOption,
+  WatchApprovalRequest,
+  WatchGrantCoverageDecision,
+  WatchSessionRecord,
+} from '@undefineds.co/models/watch'
+import { resolveWatchGrantCoverage, type WatchGrantCoverageInput } from './secretary.js'
 import {
   buildApprovalDocumentUrl,
   RDF_TYPE,
@@ -25,10 +32,16 @@ import {
   type PodFetch,
 } from '../pi-adapter/pod-native.js'
 
-const WATCH_CHAT_ID = 'linx-watch'
+const WATCH_CHAT_ID_PREFIX = 'linx-watch'
 const WATCH_AGENT_ID = 'linx-watch-assistant'
 const REMOTE_APPROVAL_POLICY_VERSION = 'linx-watch-remote-approval/v1'
 const DEFAULT_REMOTE_APPROVAL_POLL_MS = 1000
+const DEFAULT_WARN_ONLY_TIMEOUT_MS = 5000
+const DEFAULT_APPROVAL_LIST_DAYS = 7
+const MAX_GRANT_POLICY_LENGTH = 1200
+const MAX_APPROVAL_CONTEXT_LENGTH = 1400
+const MIN_GRANT_COVERAGE_CONFIDENCE = 0.75
+const MAX_GRANT_COVERAGE_CANDIDATES = 5
 
 export type RemoteApprovalStatus = 'pending' | 'approved' | 'rejected'
 export type RemoteApprovalRisk = 'low' | 'medium' | 'high'
@@ -48,8 +61,11 @@ export interface ApprovalRowLike extends Record<string, unknown> {
   decisionRole?: string
   onBehalfOf?: string
   reason?: string
+  context?: string
+  approvalOptions?: string
   policyVersion?: string
   createdAt: Date | string
+  expiresAt?: Date | string
   resolvedAt?: Date | string
 }
 
@@ -75,6 +91,33 @@ export interface InboxNotificationRowLike extends Record<string, unknown> {
   createdAt: Date | string
 }
 
+export interface GrantRowLike extends Record<string, unknown> {
+  id: string
+  target: string
+  action: string
+  title?: string
+  summary?: string
+  body?: string
+  schema?: string
+  pageKind?: string
+  wikiStatus?: string
+  tags?: string
+  source?: string
+  sourceHash?: string
+  compiledAt?: Date | string
+  compiledFrom?: string[]
+  related?: string[]
+  effect: string
+  riskCeiling?: string
+  policy?: string
+  context?: string
+  decisionBy: string
+  decisionRole: string
+  onBehalfOf?: string
+  createdAt: Date | string
+  revokedAt?: Date | string
+}
+
 export interface WatchRemoteApprovalStore {
   listApprovals(): Promise<ApprovalRowLike[]>
   findApproval?(
@@ -85,8 +128,8 @@ export interface WatchRemoteApprovalStore {
   updateApproval(id: string, patch: Partial<ApprovalRowLike>): Promise<void>
   listAudits(): Promise<AuditRowLike[]>
   insertAudit(row: AuditRowLike): Promise<void>
-  listGrants(): Promise<Array<Record<string, unknown>>>
-  insertGrant(row: Record<string, unknown>): Promise<void>
+  listGrants(): Promise<GrantRowLike[]>
+  insertGrant(row: GrantRowLike): Promise<void>
   insertInboxNotification(row: InboxNotificationRowLike): Promise<void>
 }
 
@@ -96,6 +139,7 @@ export interface WatchRemoteApprovalRuntime {
   sleep: (ms: number) => Promise<void>
   now: () => Date
   onWarning?: (error: unknown) => void
+  resolveGrantCoverage?: (input: WatchGrantCoverageInput) => Promise<WatchGrantCoverageDecision>
 }
 
 interface RemoteApprovalClient {
@@ -120,6 +164,8 @@ export interface RemoteWatchApprovalSummary {
   assignedTo?: string
   decisionBy?: string
   decision?: WatchApprovalDecision
+  approvalOptions?: WatchApprovalOption[]
+  expiresAt?: string
   createdAt: string
   resolvedAt?: string
 }
@@ -147,6 +193,10 @@ export interface RemoteApprovalRequestDetails {
   risk: RemoteApprovalRisk
   command?: string
   cwd?: string
+  approvalOptions?: WatchApprovalOption[]
+  timeoutMs?: number
+  expiresAt?: Date | string
+  context?: string
   entry?: string
 }
 
@@ -189,8 +239,12 @@ function getPodBaseUrl(webIdOrUri: string): string {
   return webIdOrUri.replace(/\/$/, '')
 }
 
-function buildThreadUri(webId: string, threadId: string): string {
-  return `${getPodBaseUrl(webId)}/.data/chat/${WATCH_CHAT_ID}/index.ttl#${threadId}`
+function buildWatchChatId(record: WatchSessionRecord): string {
+  return `${WATCH_CHAT_ID_PREFIX}-${record.backend}`
+}
+
+function buildThreadUri(webId: string, record: WatchSessionRecord): string {
+  return `${getPodBaseUrl(webId)}/.data/chat/${buildWatchChatId(record)}/index.ttl#${record.id}`
 }
 
 function buildApprovalUri(webIdOrUri: string, approvalId: string): string {
@@ -209,8 +263,8 @@ function buildGrantUri(webIdOrUri: string, grantId: string): string {
   return buildGrantResourceUrl(webIdOrUri, grantId)
 }
 
-function buildGrantDocumentUrl(webIdOrUri: string): string {
-  return `${getPodBaseUrl(webIdOrUri)}/settings/autonomy/grants.ttl`
+function buildGrantSchemaUri(webIdOrUri: string): string {
+  return `${getPodBaseUrl(webIdOrUri)}/settings/autonomy/schema/grant.ttl#GrantWikiPage`
 }
 
 function buildAgentUri(webId: string): string {
@@ -333,7 +387,12 @@ function parseDecisionReason(value: unknown): DecisionAuditContext | null {
 
 async function warnOnly(runtime: WatchRemoteApprovalRuntime, task: () => Promise<void>): Promise<void> {
   try {
-    await task()
+    await Promise.race([
+      task(),
+      runtime.sleep(DEFAULT_WARN_ONLY_TIMEOUT_MS).then(() => {
+        throw new Error(`Pod side-effect sync timed out after ${DEFAULT_WARN_ONLY_TIMEOUT_MS}ms`)
+      }),
+    ])
   } catch (error) {
     if (runtime.onWarning) {
       runtime.onWarning(error)
@@ -350,6 +409,199 @@ function safeJsonStringify(value: unknown): string {
   } catch {
     return JSON.stringify({ error: 'unserializable_context' })
   }
+}
+
+function truncatePodLiteral(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value
+  }
+  return `${value.slice(0, Math.max(0, maxLength - 15))}...[truncated]`
+}
+
+function safeCompactJson(value: unknown, maxLength: number): string {
+  return truncatePodLiteral(safeJsonStringify(value), maxLength)
+}
+
+function compactApprovalContext(request: RemoteApprovalRequestDetails): string {
+  return safeCompactJson({
+    kind: request.kind,
+    message: request.message,
+    toolName: request.toolName,
+    action: request.action,
+    risk: request.risk,
+    ...(request.command ? { command: request.command } : {}),
+    ...(request.cwd ? { cwd: request.cwd } : {}),
+    ...(request.approvalOptions ? { approvalOptions: request.approvalOptions } : {}),
+    ...(request.expiresAt ? { expiresAt: normalizeDateLike(request.expiresAt) } : {}),
+    ...(request.context ? { sourceContext: truncatePodLiteral(request.context, 500) } : {}),
+  }, MAX_APPROVAL_CONTEXT_LENGTH)
+}
+
+function grantWikiTitleFromApproval(row: ApprovalRowLike, explicitTitle?: string): string {
+  const explicit = normalizeString(explicitTitle)
+  if (explicit) {
+    return truncatePodLiteral(explicit, 160)
+  }
+
+  return truncatePodLiteral(`${row.toolName} grant wiki for ${extractSessionId(row.session)}`, 160)
+}
+
+function grantWikiSummaryFromApproval(row: ApprovalRowLike, explicitSummary?: string): string {
+  const explicit = normalizeString(explicitSummary)
+  if (explicit) {
+    return truncatePodLiteral(explicit, 500)
+  }
+
+  return truncatePodLiteral(
+    `Authorization wiki page for ${row.toolName}. AI Secretary must read the page body before reusing this grant.`,
+    500,
+  )
+}
+
+function grantWikiBodyFromApproval(row: ApprovalRowLike, explicitBody?: string): string {
+  const explicit = normalizeString(explicitBody)
+  if (explicit) {
+    return truncatePodLiteral(explicit, MAX_GRANT_POLICY_LENGTH)
+  }
+
+  return truncatePodLiteral([
+    '# Grant Semantics',
+    '',
+    'This page follows the LLM Wiki pattern: it is the maintained wiki view AI Secretary reads before reusing an authorization.',
+    '',
+    '## Covers',
+    `- Requests semantically inside target ${row.target}.`,
+    `- Action family ${row.action}.`,
+    `- Risk no higher than ${row.risk}.`,
+    '',
+    '## Does Not Cover',
+    '- Requests that are materially broader than the source approval.',
+    '- Requests that change from read-oriented to write/destructive behavior.',
+    '- Requests that touch credentials, secrets, package installation, new network side effects, or workspace boundaries unless explicitly documented here.',
+    '',
+    '## Source Context',
+    row.context ?? safeJsonStringify({ toolName: row.toolName, action: row.action, risk: row.risk }),
+  ].join('\n'), MAX_GRANT_POLICY_LENGTH)
+}
+
+function grantIndexTextFromWikiBody(body: string): string {
+  return truncatePodLiteral(body, MAX_GRANT_POLICY_LENGTH)
+}
+
+function grantWikiTagsFromApproval(row: ApprovalRowLike, explicitTags?: string[]): string {
+  const tags = [
+    'autonomy',
+    'grant',
+    row.toolName,
+    row.risk,
+    ...(explicitTags ?? []),
+  ]
+    .map((tag) => tag.trim())
+    .filter(Boolean)
+
+  return safeJsonStringify([...new Set(tags)])
+}
+
+function grantContextFromApproval(row: ApprovalRowLike): string {
+  return safeCompactJson({
+    sourceApproval: buildApprovalUriForDate(row.session, row.id, new Date(toIsoString(row.createdAt, new Date().toISOString()))),
+    session: row.session,
+    toolCallId: row.toolCallId,
+    toolName: row.toolName,
+    target: row.target,
+    action: row.action,
+    risk: row.risk,
+    approvalContext: row.context,
+  }, MAX_APPROVAL_CONTEXT_LENGTH)
+}
+
+function literalValues(predicates: Map<string, unknown[]>, predicate: string): string[] {
+  return (predicates.get(predicate) ?? [])
+    .map((object) => isRecord(object) && object.type === 'literal' && typeof object.value === 'string' ? object.value : '')
+    .filter(Boolean)
+}
+
+function iriValues(predicates: Map<string, unknown[]>, predicate: string): string[] {
+  return (predicates.get(predicate) ?? [])
+    .map((object) => isRecord(object) && object.type === 'iri' && typeof object.value === 'string' ? object.value : '')
+    .filter(Boolean)
+}
+
+function grantSourceHash(row: ApprovalRowLike): string {
+  return `approval:${row.id}:${row.toolCallId}:${row.risk}`
+}
+
+function encodeApprovalOptions(options: WatchApprovalOption[] | undefined): string | undefined {
+  if (!options || options.length === 0) {
+    return undefined
+  }
+  return safeJsonStringify(options)
+}
+
+function parseApprovalOptions(value: unknown): WatchApprovalOption[] | undefined {
+  if (typeof value !== 'string' || !value.trim()) {
+    return undefined
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown
+    if (!Array.isArray(parsed)) {
+      return undefined
+    }
+
+    const options = parsed
+      .map((option): WatchApprovalOption | null => {
+        if (!isRecord(option)) {
+          return null
+        }
+
+        const optionId = normalizeString(option.optionId)
+        const label = normalizeString(option.label)
+        if (!optionId || !label) {
+          return null
+        }
+
+        const kind = normalizeString(option.kind)
+        const description = normalizeString(option.description)
+        return {
+          optionId,
+          label,
+          ...(kind ? { kind } : {}),
+          ...(description ? { description } : {}),
+        }
+      })
+      .filter((option): option is WatchApprovalOption => option !== null)
+
+    return options.length > 0 ? options : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function normalizeDateLike(value: Date | string | undefined): string | undefined {
+  if (value instanceof Date) {
+    return Number.isFinite(value.getTime()) ? value.toISOString() : undefined
+  }
+
+  if (typeof value !== 'string' || !value.trim()) {
+    return undefined
+  }
+
+  const parsed = new Date(value)
+  return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : undefined
+}
+
+function resolveApprovalExpiresAt(request: RemoteApprovalRequestDetails, now: Date): Date | string | undefined {
+  const explicit = normalizeDateLike(request.expiresAt)
+  if (explicit) {
+    return explicit
+  }
+
+  if (typeof request.timeoutMs === 'number' && Number.isFinite(request.timeoutMs) && request.timeoutMs > 0) {
+    return new Date(now.getTime() + request.timeoutMs)
+  }
+
+  return undefined
 }
 
 function extractSessionId(sessionUri: string): string {
@@ -383,6 +635,7 @@ function normalizeApprovalSummary(row: ApprovalRowLike): RemoteWatchApprovalSumm
   const createdAt = toIsoString(row.createdAt, new Date(0).toISOString())
   const sessionUri = row.session
   const decision = decisionFromApprovalRow(row)
+  const approvalOptions = parseApprovalOptions(row.approvalOptions)
 
   return {
     id: row.id,
@@ -397,7 +650,9 @@ function normalizeApprovalSummary(row: ApprovalRowLike): RemoteWatchApprovalSumm
     ...(normalizeString(row.assignedTo) ? { assignedTo: normalizeString(row.assignedTo) } : {}),
     ...(normalizeString(row.decisionBy) ? { decisionBy: normalizeString(row.decisionBy) } : {}),
     ...(decision ? { decision } : {}),
+    ...(approvalOptions ? { approvalOptions } : {}),
     createdAt,
+    ...(row.expiresAt ? { expiresAt: toIsoString(row.expiresAt, createdAt) } : {}),
     ...(row.resolvedAt ? { resolvedAt: toIsoString(row.resolvedAt, createdAt) } : {}),
   }
 }
@@ -450,6 +705,7 @@ async function createDefaultRuntime(): Promise<WatchRemoteApprovalRuntime> {
     now() {
       return new Date()
     },
+    resolveGrantCoverage: resolveWatchGrantCoverage,
   }
 }
 
@@ -563,13 +819,12 @@ async function readApprovalRowFromResource(fetcher: PodFetch, resourceUri: strin
 }
 
 async function listApprovalRows(webId: string, fetcher: PodFetch): Promise<ApprovalRowLike[]> {
-  const [currentUrls, legacyUrls] = await Promise.all([
-    listTurtleResourcesRecursive(fetcher, `${getPodBaseUrl(webId)}/.data/approvals/`).catch(() => []),
-    listTurtleResources(fetcher, `${getPodBaseUrl(webId)}/.data/approvals/`).catch(() => []),
-  ])
-  const urls = [...new Set([...currentUrls, ...legacyUrls])]
+  const urls = [
+    ...recentApprovalDocumentUrls(webId),
+    ...await listTurtleResources(fetcher, `${getPodBaseUrl(webId)}/.data/approvals/`).catch(() => []),
+  ]
   const rows: ApprovalRowLike[] = []
-  for (const url of urls.filter((entry) => entry.endsWith('.ttl'))) {
+  for (const url of [...new Set(urls)].filter((entry) => entry.endsWith('.ttl'))) {
     const turtle = await readTurtleResource(fetcher, url).catch(() => null)
     if (!turtle) continue
     for (const [subject, predicates] of parseManagedTurtleBlocks(turtle, url)) {
@@ -578,6 +833,16 @@ async function listApprovalRows(webId: string, fetcher: PodFetch): Promise<Appro
     }
   }
   return rows
+}
+
+function recentApprovalDocumentUrls(webId: string, days = DEFAULT_APPROVAL_LIST_DAYS): string[] {
+  const urls: string[] = []
+  const base = Date.now()
+  for (let offset = 0; offset < days; offset += 1) {
+    const date = new Date(base - offset * 24 * 60 * 60 * 1000)
+    urls.push(buildApprovalDocumentUrl(webId, date))
+  }
+  return urls
 }
 
 async function writeApprovalRow(webId: string, fetcher: PodFetch, row: ApprovalRowLike): Promise<void> {
@@ -600,8 +865,11 @@ async function writeApprovalRow(webId: string, fetcher: PodFetch, row: ApprovalR
       ...(row.decisionRole ? [{ predicate: ApprovalVocab.decisionRole, object: literal(row.decisionRole) }] : []),
       ...(row.onBehalfOf ? [{ predicate: ApprovalVocab.onBehalfOf, object: iri(row.onBehalfOf) }] : []),
       ...(row.reason ? [{ predicate: ApprovalVocab.reason, object: literal(row.reason) }] : []),
+      ...(row.context ? [{ predicate: ApprovalVocab.context, object: literal(row.context) }] : []),
+      ...(row.approvalOptions ? [{ predicate: ApprovalVocab.approvalOptions, object: literal(row.approvalOptions) }] : []),
       ...(row.policyVersion ? [{ predicate: ApprovalVocab.policyVersion, object: literal(row.policyVersion) }] : []),
       { predicate: ApprovalVocab.createdAt, object: literal(toIsoString(row.createdAt, new Date().toISOString())) },
+      ...(row.expiresAt ? [{ predicate: ApprovalVocab.expiresAt, object: literal(toIsoString(row.expiresAt, new Date().toISOString())) }] : []),
       ...(row.resolvedAt ? [{ predicate: ApprovalVocab.resolvedAt, object: literal(toIsoString(row.resolvedAt, new Date().toISOString())) }] : []),
     ],
   })
@@ -644,12 +912,11 @@ async function writeAuditRow(webId: string, fetcher: PodFetch, row: AuditRowLike
   })
 }
 
-async function listGrantRows(webId: string, fetcher: PodFetch): Promise<Array<Record<string, unknown>>> {
+async function listGrantRows(webId: string, fetcher: PodFetch): Promise<GrantRowLike[]> {
   const urls = [
-    `${getPodBaseUrl(webId)}/settings/autonomy/grants.ttl`,
     ...await listTurtleResources(fetcher, `${getPodBaseUrl(webId)}/settings/autonomy/grants/`).catch(() => []),
   ]
-  const rows: Array<Record<string, unknown>> = []
+  const rows: GrantRowLike[] = []
   for (const url of urls.filter((entry) => entry.endsWith('.ttl'))) {
     const turtle = await readTurtleResource(fetcher, url).catch(() => null)
     if (!turtle) continue
@@ -661,10 +928,10 @@ async function listGrantRows(webId: string, fetcher: PodFetch): Promise<Array<Re
   return rows
 }
 
-async function writeGrantRow(webId: string, fetcher: PodFetch, row: Record<string, unknown>): Promise<void> {
+async function writeGrantRow(webId: string, fetcher: PodFetch, row: GrantRowLike): Promise<void> {
   const id = normalizeString(row.id) ?? crypto.randomUUID()
-  const documentUrl = buildGrantDocumentUrl(webId)
   const subjectUrl = buildGrantResourceUrl(webId, id)
+  const documentUrl = subjectUrl
   const target = normalizeString(row.target)
   const action = normalizeString(row.action)
   const effect = normalizeString(row.effect)
@@ -680,8 +947,22 @@ async function writeGrantRow(webId: string, fetcher: PodFetch, row: Record<strin
       { predicate: RDF_TYPE, object: iri(UDFS.AutonomyGrant) },
       { predicate: GrantVocab.target, object: iri(target) },
       { predicate: GrantVocab.action, object: iri(action) },
+      ...(normalizeString(row.title) ? [{ predicate: GrantVocab.title, object: literal(truncatePodLiteral(normalizeString(row.title) as string, 160)) }] : []),
+      ...(normalizeString(row.summary) ? [{ predicate: GrantVocab.summary, object: literal(truncatePodLiteral(normalizeString(row.summary) as string, 500)) }] : []),
+      ...(normalizeString(row.body) ? [{ predicate: GrantVocab.body, object: literal(truncatePodLiteral(normalizeString(row.body) as string, MAX_GRANT_POLICY_LENGTH)) }] : []),
+      ...(normalizeString(row.schema) ? [{ predicate: GrantVocab.schema, object: iri(normalizeString(row.schema) as string) }] : []),
+      ...(normalizeString(row.pageKind) ? [{ predicate: GrantVocab.pageKind, object: literal(normalizeString(row.pageKind) as string) }] : []),
+      ...(normalizeString(row.wikiStatus) ? [{ predicate: GrantVocab.wikiStatus, object: literal(normalizeString(row.wikiStatus) as string) }] : []),
+      ...(normalizeString(row.tags) ? [{ predicate: GrantVocab.tags, object: literal(truncatePodLiteral(normalizeString(row.tags) as string, 500)) }] : []),
+      ...(normalizeString(row.source) ? [{ predicate: GrantVocab.source, object: literal(normalizeString(row.source) as string) }] : []),
+      ...(normalizeString(row.sourceHash) ? [{ predicate: GrantVocab.sourceHash, object: literal(normalizeString(row.sourceHash) as string) }] : []),
+      ...(row.compiledAt ? [{ predicate: GrantVocab.compiledAt, object: literal(toIsoString(row.compiledAt, new Date().toISOString())) }] : []),
+      ...(row.compiledFrom ?? []).map((value) => ({ predicate: GrantVocab.compiledFrom, object: iri(value) })),
+      ...(row.related ?? []).map((value) => ({ predicate: GrantVocab.related, object: iri(value) })),
       { predicate: GrantVocab.effect, object: literal(effect) },
       ...(normalizeString(row.riskCeiling) ? [{ predicate: GrantVocab.riskCeiling, object: literal(normalizeString(row.riskCeiling) as string) }] : []),
+      ...(normalizeString(row.policy) ? [{ predicate: GrantVocab.policy, object: literal(truncatePodLiteral(normalizeString(row.policy) as string, MAX_GRANT_POLICY_LENGTH)) }] : []),
+      ...(normalizeString(row.context) ? [{ predicate: GrantVocab.context, object: literal(truncatePodLiteral(normalizeString(row.context) as string, MAX_APPROVAL_CONTEXT_LENGTH)) }] : []),
       { predicate: GrantVocab.decisionBy, object: iri(decisionBy) },
       { predicate: GrantVocab.decisionRole, object: literal(decisionRole) },
       ...(normalizeString(row.onBehalfOf) ? [{ predicate: GrantVocab.onBehalfOf, object: iri(normalizeString(row.onBehalfOf) as string) }] : []),
@@ -730,8 +1011,11 @@ function approvalRowFromPredicates(url: string, predicates: Map<string, unknown[
     decisionRole: firstLiteral(predicates as never, ApprovalVocab.decisionRole),
     onBehalfOf: firstIri(predicates as never, ApprovalVocab.onBehalfOf),
     reason: firstLiteral(predicates as never, ApprovalVocab.reason),
+    context: firstLiteral(predicates as never, ApprovalVocab.context),
+    approvalOptions: firstLiteral(predicates as never, ApprovalVocab.approvalOptions),
     policyVersion: firstLiteral(predicates as never, ApprovalVocab.policyVersion),
     createdAt,
+    expiresAt: firstLiteral(predicates as never, ApprovalVocab.expiresAt),
     resolvedAt: firstLiteral(predicates as never, ApprovalVocab.resolvedAt),
   }
 }
@@ -760,7 +1044,7 @@ function auditRowFromPredicates(url: string, predicates: Map<string, unknown[]>)
   }
 }
 
-function grantRowFromPredicates(url: string, predicates: Map<string, unknown[]>): Record<string, unknown> | null {
+function grantRowFromPredicates(url: string, predicates: Map<string, unknown[]>): GrantRowLike | null {
   const target = firstIri(predicates as never, GrantVocab.target)
   const action = firstIri(predicates as never, GrantVocab.action)
   const effect = firstLiteral(predicates as never, GrantVocab.effect)
@@ -774,13 +1058,134 @@ function grantRowFromPredicates(url: string, predicates: Map<string, unknown[]>)
     id: subjectIdFromResourceUrl(url),
     target,
     action,
+    title: firstLiteral(predicates as never, GrantVocab.title),
+    summary: firstLiteral(predicates as never, GrantVocab.summary),
+    body: firstLiteral(predicates as never, GrantVocab.body),
+    schema: firstIri(predicates as never, GrantVocab.schema),
+    pageKind: firstLiteral(predicates as never, GrantVocab.pageKind),
+    wikiStatus: firstLiteral(predicates as never, GrantVocab.wikiStatus),
+    tags: firstLiteral(predicates as never, GrantVocab.tags),
+    source: firstLiteral(predicates as never, GrantVocab.source),
+    sourceHash: firstLiteral(predicates as never, GrantVocab.sourceHash),
+    compiledAt: firstLiteral(predicates as never, GrantVocab.compiledAt),
+    compiledFrom: iriValues(predicates, GrantVocab.compiledFrom),
+    related: iriValues(predicates, GrantVocab.related),
     effect,
     riskCeiling: firstLiteral(predicates as never, GrantVocab.riskCeiling),
+    policy: firstLiteral(predicates as never, GrantVocab.policy),
+    context: firstLiteral(predicates as never, GrantVocab.context),
     decisionBy,
     decisionRole,
     onBehalfOf: firstIri(predicates as never, GrantVocab.onBehalfOf),
     createdAt,
     revokedAt: firstLiteral(predicates as never, GrantVocab.revokedAt),
+  }
+}
+
+function isActiveAllowGrant(grant: GrantRowLike): boolean {
+  return grant.effect === 'allow' && !grant.revokedAt && !!(normalizeString(grant.body) || normalizeString(grant.policy))
+}
+
+function isGrantRiskCandidate(grant: GrantRowLike, requestRisk: string): boolean {
+  const ceiling = riskScore(typeof grant.riskCeiling === 'string' ? grant.riskCeiling : undefined)
+  return ceiling === 0 || ceiling >= riskScore(requestRisk)
+}
+
+function rankGrantCandidate(
+  grant: GrantRowLike,
+  requestContext: Record<string, unknown>,
+): number {
+  let score = 0
+  if (grant.target === requestContext.target) {
+    score += 4
+  }
+  if (grant.action === requestContext.action) {
+    score += 3
+  }
+  if (grant.schema) {
+    score += 2
+  }
+  if (grant.pageKind === 'autonomy-grant') {
+    score += 1
+  }
+  return score
+}
+
+function selectSemanticGrantCandidates(
+  grants: GrantRowLike[],
+  requestContext: Record<string, unknown>,
+): GrantRowLike[] {
+  const risk = normalizeString(requestContext.risk) ?? 'medium'
+  return grants
+    .filter((grant) => isActiveAllowGrant(grant) && isGrantRiskCandidate(grant, risk))
+    .sort((left, right) => rankGrantCandidate(right, requestContext) - rankGrantCandidate(left, requestContext))
+    .slice(0, MAX_GRANT_COVERAGE_CANDIDATES)
+}
+
+function acceptsGrantCoverage(decision: WatchGrantCoverageDecision | null | undefined): boolean {
+  return decision?.covers === true
+    && typeof decision.confidence === 'number'
+    && decision.confidence >= MIN_GRANT_COVERAGE_CONFIDENCE
+}
+
+async function resolveSemanticGrantDecision(options: {
+  runtime: WatchRemoteApprovalRuntime
+  grants: GrantRowLike[]
+  request: WatchApprovalRequest | Record<string, unknown>
+  requestContext: Record<string, unknown>
+  record?: WatchSessionRecord
+}): Promise<WatchApprovalDecision | null> {
+  const candidates = selectSemanticGrantCandidates(options.grants, options.requestContext)
+  if (candidates.length === 0) {
+    return null
+  }
+
+  const resolver = options.runtime.resolveGrantCoverage ?? resolveWatchGrantCoverage
+  for (const grant of candidates) {
+    const coverage = await resolver({
+      record: options.record,
+      request: options.request,
+      requestContext: options.requestContext,
+      grant,
+    }).catch(() => null)
+
+    if (acceptsGrantCoverage(coverage)) {
+      return 'accept_for_session'
+    }
+  }
+
+  return null
+}
+
+function buildWatchGrantRequestContext(input: {
+  webId: string
+  record: WatchSessionRecord
+  request: WatchApprovalRequest
+}): Record<string, unknown> {
+  return {
+    session: buildThreadUri(input.webId, input.record),
+    target: buildThreadUri(input.webId, input.record),
+    action: buildActionUri(input.request),
+    risk: buildRisk(input.request),
+    toolName: buildToolName(input.request),
+    cwd: input.record.cwd,
+    backend: input.record.backend,
+    mode: input.record.mode,
+  }
+}
+
+function buildGenericGrantRequestContext(input: {
+  subject: RemoteApprovalSubjectContext
+  request: RemoteApprovalRequestDetails
+}): Record<string, unknown> {
+  return {
+    session: input.subject.sessionUri,
+    target: input.subject.targetUri ?? input.subject.sessionUri,
+    action: input.request.action,
+    risk: input.request.risk,
+    toolName: input.request.toolName,
+    cwd: input.request.cwd,
+    kind: input.request.kind,
   }
 }
 
@@ -793,7 +1198,7 @@ export async function createRemoteWatchApproval(options: {
 
   return createRemoteApproval({
     subject: ({ webId }) => ({
-      sessionUri: buildThreadUri(webId, options.record.id),
+      sessionUri: buildThreadUri(webId, options.record),
       actorUri: buildAgentUri(webId),
       policyVersion: REMOTE_APPROVAL_POLICY_VERSION,
     }),
@@ -806,6 +1211,9 @@ export async function createRemoteWatchApproval(options: {
       risk: buildRisk(options.request),
       ...(options.request.kind === 'command-approval' && options.request.command ? { command: options.request.command } : {}),
       ...(options.request.kind === 'command-approval' && options.request.cwd ? { cwd: options.request.cwd } : {}),
+      ...(options.request.approvalOptions ? { approvalOptions: options.request.approvalOptions } : {}),
+      ...(options.request.timeoutMs ? { timeoutMs: options.request.timeoutMs } : {}),
+      ...(options.request.expiresAt ? { expiresAt: options.request.expiresAt } : {}),
       entry: sessionUri,
     }),
     runtime: activeRuntime,
@@ -835,6 +1243,9 @@ export async function createRemoteApproval(options: {
     const onBehalfOf = subject.onBehalfOf ?? webId
     const policyVersion = subject.policyVersion ?? REMOTE_APPROVAL_POLICY_VERSION
     const requestEntry = request.entry ?? approvalUri
+    const expiresAt = resolveApprovalExpiresAt(request, now)
+    const approvalOptions = encodeApprovalOptions(request.approvalOptions)
+    const context = compactApprovalContext(request)
 
     await store.insertApproval({
       id: approvalId,
@@ -846,8 +1257,11 @@ export async function createRemoteApproval(options: {
       risk: request.risk,
       status: 'pending',
       assignedTo,
+      context,
+      ...(approvalOptions ? { approvalOptions } : {}),
       policyVersion,
       createdAt: now,
+      ...(expiresAt ? { expiresAt } : {}),
     })
 
     const requestAudit: AuditRowLike = {
@@ -885,8 +1299,11 @@ export async function createRemoteApproval(options: {
       risk: request.risk,
       status: 'pending',
       assignedTo,
+      context,
+      ...(approvalOptions ? { approvalOptions } : {}),
       policyVersion,
       createdAt: now,
+      ...(expiresAt ? { expiresAt } : {}),
     })
   })
 }
@@ -936,21 +1353,21 @@ export async function requestRemoteWatchApproval(options: {
 
   const delegated = await withRemoteApprovalStore(activeRuntime, async ({ store, webId }) => {
     const grants = await store.listGrants()
-    const requestAction = buildActionUri(options.request)
-    const requestTarget = buildThreadUri(webId, options.record.id)
-    const requestRisk = buildRisk(options.request)
-
-    return grants.some((grant) => (
-      grant.effect === 'allow'
-      && grant.action === requestAction
-      && grant.target === requestTarget
-      && riskScore(typeof grant.riskCeiling === 'string' ? grant.riskCeiling : undefined) >= riskScore(requestRisk)
-      && !grant.revokedAt
-    ))
+    return resolveSemanticGrantDecision({
+      runtime: activeRuntime,
+      grants,
+      record: options.record,
+      request: options.request,
+      requestContext: buildWatchGrantRequestContext({
+        webId,
+        record: options.record,
+        request: options.request,
+      }),
+    })
   })
 
   if (delegated) {
-    return 'accept_for_session'
+    return delegated
   }
 
   const summary = await createRemoteWatchApproval({
@@ -965,6 +1382,29 @@ export async function requestRemoteWatchApproval(options: {
     pollMs: options.pollMs,
     signal: options.signal,
     runtime: activeRuntime,
+  })
+}
+
+export async function resolveExistingRemoteWatchGrant(options: {
+  record: WatchSessionRecord
+  request: WatchApprovalRequest
+  runtime?: WatchRemoteApprovalRuntime
+}): Promise<WatchApprovalDecision | null> {
+  const activeRuntime = options.runtime ?? await createDefaultRuntime()
+
+  return withRemoteApprovalStore(activeRuntime, async ({ store, webId }) => {
+    const grants = await store.listGrants()
+    return resolveSemanticGrantDecision({
+      runtime: activeRuntime,
+      grants,
+      record: options.record,
+      request: options.request,
+      requestContext: buildWatchGrantRequestContext({
+        webId,
+        record: options.record,
+        request: options.request,
+      }),
+    })
   })
 }
 
@@ -985,19 +1425,22 @@ export async function requestRemoteApproval(options: {
       ? options.request({ webId, stored, sessionUri: subject.sessionUri })
       : options.request
     const grants = await store.listGrants()
-    const requestTarget = subject.targetUri ?? subject.sessionUri
+    const requestContext = buildGenericGrantRequestContext({ subject, request })
 
-    return grants.some((grant) => (
-      grant.effect === 'allow'
-      && grant.action === request.action
-      && grant.target === requestTarget
-      && riskScore(typeof grant.riskCeiling === 'string' ? grant.riskCeiling : undefined) >= riskScore(request.risk)
-      && !grant.revokedAt
-    ))
+    return resolveSemanticGrantDecision({
+      runtime: activeRuntime,
+      grants,
+      request: {
+        ...request,
+        session: subject.sessionUri,
+        target: requestContext.target,
+      },
+      requestContext,
+    })
   })
 
   if (delegated) {
-    return 'accept_for_session'
+    return delegated
   }
 
   const summary = await createRemoteApproval({
@@ -1037,7 +1480,12 @@ export async function resolveRemoteWatchApproval(options: {
   approvalId: string
   approvalUri?: string
   decision: WatchApprovalDecision
+  decisionRole?: 'human' | 'secretary'
   note?: string
+  grantWikiTitle?: string
+  grantWikiSummary?: string
+  grantWikiBody?: string
+  grantWikiTags?: string[]
   runtime?: WatchRemoteApprovalRuntime
 }): Promise<RemoteWatchApprovalSummary> {
   const activeRuntime = options.runtime ?? await createDefaultRuntime()
@@ -1061,11 +1509,12 @@ export async function resolveRemoteWatchApproval(options: {
     const nextStatus = options.decision === 'accept' || options.decision === 'accept_for_session'
       ? 'approved'
       : 'rejected'
+    const decisionRole = options.decisionRole ?? 'human'
 
     await store.updateApproval(row.id, {
       status: nextStatus,
       decisionBy: webId,
-      decisionRole: 'human',
+      decisionRole,
       onBehalfOf: webId,
       reason: encodeDecisionReason(options.decision, options.note),
       resolvedAt: now,
@@ -1075,7 +1524,7 @@ export async function resolveRemoteWatchApproval(options: {
       id: crypto.randomUUID(),
       action: nextStatus === 'approved' ? 'approval_approved' : 'approval_rejected',
       actor: webId,
-      actorRole: 'human',
+      actorRole: decisionRole,
       onBehalfOf: webId,
       session: row.session,
       entry: approvalUri,
@@ -1088,14 +1537,29 @@ export async function resolveRemoteWatchApproval(options: {
 
     if (options.decision === 'accept_for_session') {
       const grantId = crypto.randomUUID()
+      const body = grantWikiBodyFromApproval(row, options.grantWikiBody)
       await store.insertGrant({
         id: grantId,
         target: row.target,
         action: row.action,
+        title: grantWikiTitleFromApproval(row, options.grantWikiTitle),
+        summary: grantWikiSummaryFromApproval(row, options.grantWikiSummary),
+        body,
+        schema: buildGrantSchemaUri(webId),
+        pageKind: 'autonomy-grant',
+        wikiStatus: 'active',
+        tags: grantWikiTagsFromApproval(row, options.grantWikiTags),
+        source: 'approval',
+        sourceHash: grantSourceHash(row),
+        compiledAt: now,
+        compiledFrom: [approvalUri],
+        related: [row.session],
         effect: 'allow',
         riskCeiling: row.risk,
+        policy: grantIndexTextFromWikiBody(body),
+        context: grantContextFromApproval(row),
         decisionBy: webId,
-        decisionRole: 'human',
+        decisionRole,
         onBehalfOf: webId,
         createdAt: now,
       })
@@ -1119,7 +1583,7 @@ export async function resolveRemoteWatchApproval(options: {
       ...row,
       status: nextStatus,
       decisionBy: webId,
-      decisionRole: 'human',
+      decisionRole,
       onBehalfOf: webId,
       reason: encodeDecisionReason(options.decision, options.note),
       resolvedAt: now,

@@ -339,6 +339,7 @@ export {
   type WatchThreadMetadata,
   type WatchTranscriptMessage,
   type WatchTranscriptMessageRole,
+  type WatchTranscriptMessageSource,
 } from './watch'
 
 export {

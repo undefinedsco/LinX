@@ -7,7 +7,7 @@
 
 import { memo } from 'react'
 import { cn } from '@/lib/utils'
-import type { PlaceholderMessageBlock } from '@linx/models'
+import type { PlaceholderMessageBlock } from '@undefineds.co/models'
 
 interface PlaceholderBlockProps {
   block: PlaceholderMessageBlock

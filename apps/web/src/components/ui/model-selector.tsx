@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
 
-import { DEFAULT_AGENT_PROVIDERS } from "@linx/models"
+import { DEFAULT_AGENT_PROVIDERS } from "@undefineds.co/models"
 
 // Capability Types
 export type ModelCapability = 'vision' | 'function_calling' | 'web_search' | 'reasoning' | 'embedding' | 'rerank' | 'free'

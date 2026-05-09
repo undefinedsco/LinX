@@ -5,7 +5,7 @@ import {
   buildAIConfigProviderStateMap,
   normalizeAIConfigResourceId,
   sameAIConfigProviderFamily,
-} from '@linx/models'
+} from '@undefineds.co/models'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 import {
   credentialCollection,

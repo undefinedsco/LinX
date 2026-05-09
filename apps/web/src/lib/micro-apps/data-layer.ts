@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { PodRepositoryDescriptor } from '@linx/models'
+import type { PodRepositoryDescriptor } from '@undefineds.co/models'
 import { createRepositoryQueries } from '@/lib/data/query-factory'
 import type {
   DetailConfig,

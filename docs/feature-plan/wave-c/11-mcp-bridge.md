@@ -62,7 +62,7 @@
 | 01 | `CLISessionVocab` / `chatTable` | 读+写 | 读取 sessionStatus，写入状态变更 |
 | 01 | `MessageVocab` / `messageTable` | 写 | 转发 CLI 输出时写入 message |
 | 02 | `InboxVocab` / `inboxTable` | 读+写 | 创建审批项、回写审批结果 |
-| 02 | `AuditVocab` / `auditTable` | 写 | 审批操作写入审计日志 |
+| 02 | `AuditVocab` / `auditResource` | 写 | 审批操作写入审计日志 |
 
 ### 6A.2 运行时数据结构 → Pod 持久化映射
 
@@ -73,7 +73,7 @@ MCP Bridge 的运行时事件在以下时机触发 Pod 写入：
 | `MCPToolEvent` (waiting_approval) | INSERT | `inboxTable` | `toolCallRef`, `toolName`, `risk`, `status='pending'` |
 | `MCPControlCommand` (approve) | UPDATE | `inboxTable` | `status='approved'`, `decisionBy`, `decisionRole` |
 | `MCPControlCommand` (reject) | UPDATE | `inboxTable` | `status='rejected'`, `decisionBy`, `reason` |
-| `MCPControlCommand` (approve/reject) | INSERT | `auditTable` | `action`, `actor`, `actorRole`, `context` |
+| `MCPControlCommand` (approve/reject) | INSERT | `auditResource` | `action`, `actor`, `actorRole`, `context` |
 | `MCPControlCommand` (approve_pattern) | — | 内存 `ApprovalRule[]` | Session 结束时过期，不落 Pod |
 | `SessionStateSync` (completed/error) | UPDATE | `chatTable` | `sessionStatus` |
 | `MCPToolEvent` (done/error) | UPDATE | `messageTable.richContent` | 更新对应 ToolBlock 的 status/duration |
@@ -297,4 +297,3 @@ interface ApprovalRule {
 | `mcp-bridge/transport/websocket.ts` | 新增 | WebSocket 推送通道 |
 | `mcp-bridge/transport/sse.ts` | 新增 | SSE 推送通道 |
 | `mcp-bridge/auth/permission.ts` | 新增 | 指令权限验证 |
-

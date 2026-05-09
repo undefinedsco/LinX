@@ -6,7 +6,7 @@
  * 或在组件中调用: import { checkMultiValue } from '@/debug/multivalue-check'
  */
 
-import { chatTable, threadTable, messageTable } from '@linx/models'
+import { chatTable, threadTable, messageTable } from '@undefineds.co/models'
 
 export async function checkMultiValue() {
   console.log('='.repeat(60))

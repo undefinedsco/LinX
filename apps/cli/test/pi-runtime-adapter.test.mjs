@@ -182,6 +182,7 @@ test('pi runtime adapter createRuntime builds a minimal pi runtime around the cl
   assert.ok(Array.isArray(runtime.diagnostics))
   assert.equal(runtime.linxAuthBridge.description, 'undefineds-cloud-oauth-bridge')
   assert.equal(runtime.linxAuthBridge.authMode, 'oauth')
+  assert.equal(runtime.linxAuthBridge.providerId, 'undefineds')
   assert.equal(runtime.session.model.provider, 'undefineds')
 
   await runtime.session.prompt('say hi')

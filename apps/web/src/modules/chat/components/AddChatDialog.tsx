@@ -15,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { DEFAULT_AGENT_PROVIDERS } from '@linx/models'
+import { DEFAULT_AGENT_PROVIDERS } from '@undefineds.co/models'
 import { useChatStore } from '../store'
 import { useChatMutations } from '../collections'
 import { CreateGroupDialog } from '@/modules/contacts/components/CreateGroupDialog'

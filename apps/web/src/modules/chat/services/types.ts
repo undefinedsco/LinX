@@ -11,7 +11,8 @@
  * using Incoming/Outgoing strategies for message flow.
  */
 
-import type { SolidDatabase, ContactRow, ChatRow, AgentRow } from '@linx/models'
+import type { AgentRuntimeCapabilities } from '@linx/agent-runtime'
+import type { SolidDatabase, ContactRow, ChatRow, AgentRow } from '@undefineds.co/models'
 
 // ============================================
 // Message Types
@@ -117,6 +118,7 @@ export interface ChatCapabilities {
   hasStreaming: boolean       // AI: streaming responses
   hasThinking: boolean        // AI: reasoning/thinking display
   hasToolCalls: boolean       // AI: tool invocations
+  agentRuntime?: AgentRuntimeCapabilities // Shared ACP/ChatKit runtime capability contract
   hasPresence: boolean        // Solid: online status
   hasReadReceipt: boolean     // Solid: read receipts
   hasTypingIndicator: boolean // Solid: typing indicator

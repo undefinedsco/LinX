@@ -1,6 +1,6 @@
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { join, relative, sep } from 'node:path'
+import { dirname, join, relative, sep } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 
@@ -12,6 +12,8 @@ const args = parseArgs(process.argv.slice(2))
 
 const cliPkg = JSON.parse(readFileSync(join(cliRoot, 'package.json'), 'utf-8'))
 const modelsPkg = JSON.parse(readFileSync(join(modelsRoot, 'package.json'), 'utf-8'))
+const agentRuntimeRoot = join(repoRoot, 'packages', 'agent-runtime')
+const agentRuntimePkg = JSON.parse(readFileSync(join(agentRuntimeRoot, 'package.json'), 'utf-8'))
 const version = args.version ?? cliPkg.version
 if (modelsPkg.version !== cliPkg.version && !args.version) {
   throw new Error(`CLI and models versions must match for release: cli=${cliPkg.version}, models=${modelsPkg.version}`)
@@ -25,6 +27,8 @@ mkdirSync(outRoot, { recursive: true })
 mkdirSync(cliWorkRoot, { recursive: true })
 
 copyPackage(cliRoot, cliWorkRoot)
+copyAgentRuntimePackage(cliWorkRoot)
+rewriteAgentRuntimeImports(join(cliWorkRoot, 'dist'), cliWorkRoot)
 
 writeJson(join(cliWorkRoot, 'package.json'), createPublishableCliPackage(cliPkg, version))
 
@@ -60,6 +64,7 @@ function createPublishableCliPackage(pkg, packageVersion) {
     '@undefineds.co/models': packageVersion,
     '@zed-industries/codex-acp': '^0.9.5',
   }
+  delete dependencies['@linx/agent-runtime']
 
   return {
     ...pkg,
@@ -67,6 +72,7 @@ function createPublishableCliPackage(pkg, packageVersion) {
     private: false,
     files: [
       'dist',
+      'vendor',
       'README.md',
       'package.json',
     ],
@@ -75,6 +81,94 @@ function createPublishableCliPackage(pkg, packageVersion) {
       access: 'public',
     },
   }
+}
+
+function copyAgentRuntimePackage(cliWorkRoot) {
+  const vendorRoot = join(cliWorkRoot, 'vendor', 'agent-runtime')
+  mkdirSync(vendorRoot, { recursive: true })
+  cpSync(join(agentRuntimeRoot, 'dist'), join(vendorRoot, 'dist'), { recursive: true })
+  writeJson(join(vendorRoot, 'package.json'), {
+    name: '@linx/agent-runtime',
+    version: agentRuntimePkg.version,
+    type: 'module',
+    exports: {
+      '.': './dist/index.js',
+      './acp': './dist/acp.js',
+      './companion-model': './dist/companion-model.js',
+      './turn-controller': './dist/turn-controller.js',
+    },
+  })
+  fixExtensionlessRelativeImports(join(vendorRoot, 'dist'))
+}
+
+function rewriteAgentRuntimeImports(root, cliWorkRoot) {
+  const jsFiles = walkJs(root)
+  for (const file of jsFiles) {
+    let source = readFileSync(file, 'utf8')
+    const rel = relative(dirname(file), join(cliWorkRoot, 'vendor', 'agent-runtime', 'dist')).replaceAll('\\', '/')
+    const base = rel.startsWith('.') ? rel : `./${rel}`
+    const replacements = [
+      ["'@linx/agent-runtime'", `'${base}/index.js'`],
+      ["'@linx/agent-runtime/acp'", `'${base}/acp.js'`],
+      ["'@linx/agent-runtime/companion-model'", `'${base}/companion-model.js'`],
+      ["'@linx/agent-runtime/turn-controller'", `'${base}/turn-controller.js'`],
+      ['"@linx/agent-runtime"', `"${base}/index.js"`],
+      ['"@linx/agent-runtime/acp"', `"${base}/acp.js"`],
+      ['"@linx/agent-runtime/companion-model"', `"${base}/companion-model.js"`],
+      ['"@linx/agent-runtime/turn-controller"', `"${base}/turn-controller.js"`],
+    ]
+    for (const [from, to] of replacements) {
+      source = source.split(from).join(to)
+    }
+    writeFileSync(file, source)
+  }
+}
+
+function walkJs(dir, files = []) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const next = join(dir, entry.name)
+    if (entry.isDirectory()) walkJs(next, files)
+    else if (entry.isFile() && next.endsWith('.js')) files.push(next)
+  }
+  return files
+}
+
+function fixExtensionlessRelativeImports(root) {
+  const jsFiles = walkJs(root)
+  const specifierPattern = /(from\s+['"])(\.{1,2}\/[^'"]+)(['"])/g
+  const sideEffectPattern = /(import\s+['"])(\.{1,2}\/[^'"]+)(['"])/g
+  for (const file of jsFiles) {
+    let source = readFileSync(file, 'utf8')
+    source = source.replace(specifierPattern, (_match, before, specifier, after) => {
+      return `${before}${resolveRelativeSpecifier(file, specifier)}${after}`
+    })
+    source = source.replace(sideEffectPattern, (_match, before, specifier, after) => {
+      return `${before}${resolveRelativeSpecifier(file, specifier)}${after}`
+    })
+    writeFileSync(file, source)
+  }
+}
+
+function resolveRelativeSpecifier(fromFile, specifier) {
+  if (
+    specifier.endsWith('.js')
+    || specifier.endsWith('.json')
+    || specifier.includes('?')
+    || specifier.includes('#')
+  ) {
+    return specifier
+  }
+
+  const targetBase = join(dirname(fromFile), specifier)
+  if (existsSync(`${targetBase}.js`)) {
+    return `${specifier}.js`
+  }
+
+  if (existsSync(join(targetBase, 'index.js'))) {
+    return `${specifier}/index.js`
+  }
+
+  return specifier
 }
 
 function npmPack(cwd, cacheRoot) {

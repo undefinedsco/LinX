@@ -74,6 +74,14 @@ After registry publication, users install:
 npm i -g @undefineds.co/linx
 ```
 
+Use `--omit=peer` for the normal CLI install path:
+
+```bash
+npm i -g --omit=peer @undefineds.co/linx
+```
+
+npm 7+ auto-installs peer dependencies, including `drizzle-orm` optional database driver peers that are not needed by LinX CLI. The CLI release smoke test and in-TUI updater intentionally install with `--omit=peer` so global installs stay small and avoid fetching optional SQL drivers such as `better-sqlite3`, `pg`, or AWS database clients.
+
 If a new models release depends on ORM behavior, publish order is:
 
 ```text
@@ -128,6 +136,14 @@ Current direct CLI runtime dependencies are:
 @mariozechner/pi-coding-agent
 yargs
 ```
+
+Global install commands should include `--omit=peer`:
+
+```bash
+npm i -g --omit=peer @undefineds.co/linx
+```
+
+`@undefineds.co/models` depends on `@undefineds.co/drizzle-solid`, which depends on `drizzle-orm`. `drizzle-orm` publishes many optional peer dependencies for SQL/database adapters. LinX CLI does not need those adapters, and npm will otherwise auto-install them. Keep release verification and update prompts on the `--omit=peer` path unless CLI code starts importing those peer packages directly.
 
 `@comunica/query-sparql-solid` is not a CLI product dependency. It belongs behind `@undefineds.co/models` because the CLI calls the shared profile/chat/session APIs, while models owns the Solid/drizzle-solid data access boundary. Do not add `@undefineds.co/drizzle-solid`, `@comunica/query-sparql-solid`, or `@inrupt/vocab-common-rdf` directly to the CLI package unless CLI code imports them directly.
 

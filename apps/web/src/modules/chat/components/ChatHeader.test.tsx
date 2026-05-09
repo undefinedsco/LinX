@@ -85,7 +85,7 @@ vi.mock('@/lib/data/use-entity', () => ({
   useEntity: (...args: unknown[]) => mockUseEntity(...args),
 }))
 
-vi.mock('@linx/models', () => ({
+vi.mock('@undefineds.co/models', () => ({
   DEFAULT_AGENT_PROVIDERS: [
     {
       slug: 'openai',

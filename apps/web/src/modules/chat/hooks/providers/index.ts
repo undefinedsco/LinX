@@ -7,7 +7,7 @@
 import {
   getAIConfigDefaultBaseUrl,
   normalizeAIConfigProviderId,
-} from '@linx/models'
+} from '@undefineds.co/models'
 
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system'
@@ -243,6 +243,7 @@ const anthropicAdapter: ProviderAdapter = {
 // ============================================================================
 
 const openaiAdapter = createOpenAIAdapter(getAIConfigDefaultBaseUrl('openai') || 'https://api.openai.com/v1')
+const undefinedsAdapter = createOpenAIAdapter(getAIConfigDefaultBaseUrl('undefineds') || 'https://api.undefineds.co/v1')
 const deepseekAdapter = createOpenAIAdapter(getAIConfigDefaultBaseUrl('deepseek') || 'https://api.deepseek.com/v1')
 const xaiAdapter = createOpenAIAdapter(getAIConfigDefaultBaseUrl('x-ai') || 'https://api.x.ai/v1')
 const groqAdapter = createOpenAIAdapter(getAIConfigDefaultBaseUrl('groq') || 'https://api.groq.com/openai/v1')
@@ -250,6 +251,7 @@ const togetherAdapter = createOpenAIAdapter('https://api.together.xyz/v1')
 const openrouterAdapter = createOpenAIAdapter(getAIConfigDefaultBaseUrl('openrouter') || 'https://openrouter.ai/api/v1')
 
 export const providerAdapters: Record<string, ProviderAdapter> = {
+  undefineds: undefinedsAdapter,
   openai: openaiAdapter,
   anthropic: anthropicAdapter,
   deepseek: deepseekAdapter,

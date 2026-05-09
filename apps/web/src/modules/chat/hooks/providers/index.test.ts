@@ -41,6 +41,11 @@ describe('Provider Adapters', () => {
       expect(adapter.name).toBe('openai-compatible')
     })
 
+    it('returns openai-compatible adapter for undefineds provider', () => {
+      const adapter = getProviderAdapter('undefineds')
+      expect(adapter.name).toBe('openai-compatible')
+    })
+
     it('returns deepseek adapter for deepseek provider', () => {
       const adapter = getProviderAdapter('deepseek')
       expect(adapter.name).toBe('openai-compatible')
@@ -72,6 +77,7 @@ describe('Provider Adapters', () => {
   describe('providerAdapters registry', () => {
     it('exposes canonical provider ids', () => {
       expect(Object.keys(providerAdapters)).toContain('openai')
+      expect(Object.keys(providerAdapters)).toContain('undefineds')
       expect(Object.keys(providerAdapters)).toContain('anthropic')
       expect(Object.keys(providerAdapters)).toContain('deepseek')
       expect(Object.keys(providerAdapters)).toContain('x-ai')
@@ -154,6 +160,33 @@ describe('Provider Adapters', () => {
       expect(mockFetch).toHaveBeenCalledWith(
         'https://custom.api.com/v1/chat/completions',
         expect.any(Object)
+      )
+    })
+
+    it('uses undefineds default baseUrl as a normal OpenAI-compatible provider', async () => {
+      const mockReader = {
+        read: vi.fn().mockResolvedValueOnce({ done: true, value: undefined })
+      }
+      mockFetch.mockResolvedValue({
+        ok: true,
+        body: { getReader: () => mockReader }
+      })
+
+      const callbacks: StreamCallbacks = {
+        onContent: vi.fn(),
+        onError: vi.fn(),
+        onDone: vi.fn(),
+      }
+
+      const adapter = getProviderAdapter('undefineds')
+      await adapter.streamChat(messages, {
+        apiKey: 'linx-key',
+        model: 'linx-lite',
+      }, callbacks)
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.undefineds.co/v1/chat/completions',
+        expect.objectContaining({ method: 'POST' }),
       )
     })
 

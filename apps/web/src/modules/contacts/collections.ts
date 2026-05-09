@@ -21,8 +21,8 @@ import {
   type ChatInsert,
   type SolidProfileRow,
   ContactType,
-} from '@linx/models'
-import type { SolidDatabase } from '@linx/models'
+} from '@undefineds.co/models'
+import type { SolidDatabase } from '@undefineds.co/models'
 import { queryClient } from '@/providers/query-provider'
 // Import chat collection singleton from chat module
 import { chatCollection } from '@/modules/chat/collections'

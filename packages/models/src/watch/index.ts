@@ -66,10 +66,22 @@ export type WatchApprovalRequestKind =
 
 export type WatchInteractionRequestKind = WatchApprovalRequestKind | 'user-input'
 export type WatchApprovalDecision = 'accept' | 'accept_for_session' | 'decline' | 'cancel'
+export type WatchSecretaryApprovalDecision = 'accept' | 'decline' | 'cancel'
+export type WatchApprovalOptionKind = 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always' | (string & {})
+
+export interface WatchApprovalOption {
+  optionId: string
+  label: string
+  kind?: WatchApprovalOptionKind
+  description?: string
+}
 
 interface WatchInteractionRequestBase {
   kind: WatchInteractionRequestKind
   message: string
+  approvalOptions?: WatchApprovalOption[]
+  timeoutMs?: number
+  expiresAt?: string
   raw?: unknown
 }
 
@@ -123,6 +135,48 @@ export interface WatchUserInputAnswerRecord {
 }
 
 export type WatchUserInputAnswers = Record<string, WatchUserInputAnswerRecord>
+
+export type WatchSecretaryRecommendationSource = 'model' | 'fallback'
+
+export interface WatchSecretaryRecommendationBase {
+  kind: WatchInteractionRequestKind
+  canAutoDecide: boolean
+  confidence?: number
+  reason?: string
+  reactionWindowMs?: number
+  source?: WatchSecretaryRecommendationSource
+}
+
+export interface WatchSecretaryApprovalRecommendation extends WatchSecretaryRecommendationBase {
+  kind: WatchApprovalRequestKind
+  decision?: WatchSecretaryApprovalDecision
+}
+
+export interface WatchSecretaryUserInputRecommendation extends WatchSecretaryRecommendationBase {
+  kind: 'user-input'
+  answers?: WatchUserInputAnswers
+}
+
+export type WatchSecretaryRecommendation =
+  | WatchSecretaryApprovalRecommendation
+  | WatchSecretaryUserInputRecommendation
+
+export interface WatchGrantCoverageDecision {
+  covers: boolean
+  confidence?: number
+  reason?: string
+  source?: WatchSecretaryRecommendationSource
+}
+
+export interface ParseWatchSecretaryRecommendationOptions {
+  mode: WatchMode
+  request: WatchInteractionRequest
+  defaultReactionWindowMs?: number
+}
+
+export const DEFAULT_WATCH_SECRETARY_REACTION_WINDOW_MS = 5_000
+export const MIN_WATCH_SECRETARY_REACTION_WINDOW_MS = 5_000
+export const MAX_WATCH_SECRETARY_REACTION_WINDOW_MS = 60_000
 
 export interface WatchToolCallEvent {
   type: 'tool.call'
@@ -196,9 +250,16 @@ export interface WatchThreadMetadata extends Record<string, unknown> {
 }
 
 export type WatchTranscriptMessageRole = 'user' | 'assistant' | 'system'
+export type WatchTranscriptMessageSource =
+  | 'user'
+  | 'primary-agent'
+  | 'secretary'
+  | 'tool'
+  | 'system'
 
 export interface WatchTranscriptMessage {
   role: WatchTranscriptMessageRole
+  source: WatchTranscriptMessageSource
   content: string
   createdAt: string
 }
@@ -391,6 +452,118 @@ function normalizeAcpPermissionOptions(value: unknown): Array<Record<string, unk
   return value.filter((item): item is Record<string, unknown> => isRecord(item))
 }
 
+export function normalizeWatchApprovalOptions(value: unknown): WatchApprovalOption[] {
+  return normalizeAcpPermissionOptions(value)
+    .map((option) => {
+      const optionId = typeof option.optionId === 'string' && option.optionId.trim()
+        ? option.optionId.trim()
+        : undefined
+      const label = firstNonEmpty([
+        typeof option.name === 'string' ? option.name : undefined,
+        typeof option.label === 'string' ? option.label : undefined,
+        optionId,
+      ])
+
+      if (!optionId || !label) {
+        return null
+      }
+
+      const kind = typeof option.kind === 'string' && option.kind.trim()
+        ? option.kind.trim() as WatchApprovalOptionKind
+        : undefined
+      const description = firstNonEmpty([
+        typeof option.description === 'string' ? option.description : undefined,
+        typeof option.detail === 'string' ? option.detail : undefined,
+      ])
+
+      return {
+        optionId,
+        label,
+        ...(kind ? { kind } : {}),
+        ...(description ? { description } : {}),
+      }
+    })
+    .filter((option): option is WatchApprovalOption => option !== null)
+}
+
+function normalizeDurationMs(value: unknown, unit: 'ms' | 'seconds' | 'auto'): number | undefined {
+  const numeric = typeof value === 'number'
+    ? value
+    : typeof value === 'string' && value.trim()
+      ? Number(value)
+      : Number.NaN
+
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return undefined
+  }
+
+  const milliseconds = unit === 'ms'
+    ? numeric
+    : unit === 'seconds'
+      ? numeric * 1000
+      : numeric > 10_000
+        ? numeric
+        : numeric * 1000
+
+  return Math.round(milliseconds)
+}
+
+function normalizeIsoDatetime(value: unknown): string | undefined {
+  if (value instanceof Date) {
+    return Number.isFinite(value.getTime()) ? value.toISOString() : undefined
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const date = new Date(value)
+    return Number.isFinite(date.getTime()) ? date.toISOString() : undefined
+  }
+
+  if (typeof value !== 'string' || !value.trim()) {
+    return undefined
+  }
+
+  const date = new Date(value)
+  return Number.isFinite(date.getTime()) ? date.toISOString() : undefined
+}
+
+function extractWatchApprovalTimeoutMs(params: Record<string, unknown>, raw: Record<string, unknown>): number | undefined {
+  const meta = isRecord(params._meta)
+    ? params._meta
+    : isRecord(raw._meta)
+      ? raw._meta
+      : {}
+
+  return normalizeDurationMs(params.timeoutMs ?? meta.timeoutMs, 'ms')
+    ?? normalizeDurationMs(params.timeoutMillis ?? params.timeoutMilliseconds ?? meta.timeoutMillis ?? meta.timeoutMilliseconds, 'ms')
+    ?? normalizeDurationMs(params.timeoutSeconds ?? params.timeoutSec ?? meta.timeoutSeconds ?? meta.timeoutSec, 'seconds')
+    ?? normalizeDurationMs(params.timeout ?? meta.timeout, 'auto')
+}
+
+function extractWatchApprovalExpiresAt(params: Record<string, unknown>, raw: Record<string, unknown>): string | undefined {
+  const meta = isRecord(params._meta)
+    ? params._meta
+    : isRecord(raw._meta)
+      ? raw._meta
+      : {}
+
+  return normalizeIsoDatetime(params.expiresAt ?? params.deadline ?? params.expires ?? meta.expiresAt ?? meta.deadline ?? meta.expires)
+}
+
+function extractWatchApprovalMetadata(
+  raw: Record<string, unknown>,
+  params: Record<string, unknown>,
+): Pick<WatchApprovalRequest, 'approvalOptions' | 'timeoutMs' | 'expiresAt'> {
+  const approvalOptions = normalizeWatchApprovalOptions(params.options)
+  const timeoutMs = extractWatchApprovalTimeoutMs(params, raw)
+  const expiresAt = extractWatchApprovalExpiresAt(params, raw)
+
+  return {
+    ...(approvalOptions.length > 0 ? { approvalOptions } : {}),
+    ...(timeoutMs ? { timeoutMs } : {}),
+    ...(expiresAt ? { expiresAt } : {}),
+  }
+}
+
 function selectAcpPermissionOption(
   options: Array<Record<string, unknown>>,
   decision: WatchApprovalDecision,
@@ -561,8 +734,308 @@ export function resolveWatchAutoApprovalDecision(input: {
   return null
 }
 
+export function createFallbackWatchSecretaryRecommendation(input: {
+  mode: WatchMode
+  request: WatchInteractionRequest
+}): WatchSecretaryRecommendation | null {
+  if (input.mode === 'manual' || input.request.kind === 'user-input') {
+    return null
+  }
+
+  const decision = resolveWatchAutoApprovalDecision({
+    mode: input.mode,
+    request: input.request,
+  })
+  const secretaryDecision = decision === 'accept_for_session' ? 'accept' : decision
+  if (!secretaryDecision) {
+    return null
+  }
+
+  return {
+    kind: input.request.kind,
+    canAutoDecide: true,
+    decision: secretaryDecision,
+    confidence: input.mode === 'auto' ? 0.7 : 0.6,
+    reason: 'Matched local fallback policy while AI secretary was unavailable.',
+    reactionWindowMs: 0,
+    source: 'fallback',
+  }
+}
+
+export function parseWatchSecretaryRecommendation(
+  text: string,
+  options: ParseWatchSecretaryRecommendationOptions,
+): WatchSecretaryRecommendation | null {
+  const raw = parseJsonObjectFromText(text)
+  if (!raw) {
+    return null
+  }
+
+  const canAutoDecide = booleanFromUnknown(
+    raw.canAutoDecide
+      ?? raw.can_auto_decide
+      ?? raw.autoApprove
+      ?? raw.auto_approve
+      ?? raw.canAnswer
+      ?? raw.can_answer,
+  )
+  const confidence = normalizeConfidence(raw.confidence ?? raw.confidenceScore ?? raw.confidence_score)
+  const reason = stringFromUnknown(raw.reason ?? raw.rationale ?? raw.explanation)
+  const fallbackReactionWindowMs = options.defaultReactionWindowMs ?? DEFAULT_WATCH_SECRETARY_REACTION_WINDOW_MS
+  const reactionWindowMs = confidence !== undefined
+    ? computeWatchSecretaryReactionWindowMs(confidence, fallbackReactionWindowMs)
+    : normalizeReactionWindowMs(
+      raw.reactionWindowMs
+        ?? raw.reaction_window_ms
+        ?? raw.reviewWindowMs
+        ?? raw.review_window_ms
+        ?? raw.autoDecisionDelayMs
+        ?? raw.auto_decision_delay_ms,
+      fallbackReactionWindowMs,
+    )
+
+  if (options.request.kind === 'user-input') {
+    const answers = normalizeSecretaryUserInputAnswers(
+      options.request.questions,
+      raw.answers ?? raw.answer ?? raw.userInputAnswers ?? raw.user_input_answers,
+    )
+
+    return {
+      kind: 'user-input',
+      canAutoDecide: canAutoDecide === true && !!answers,
+      ...(confidence !== undefined ? { confidence } : {}),
+      ...(reason ? { reason } : {}),
+      ...(reactionWindowMs !== undefined ? { reactionWindowMs } : {}),
+      ...(answers ? { answers } : {}),
+      source: 'model',
+    }
+  }
+
+  const decision = normalizeSecretaryApprovalDecision(raw.decision ?? raw.recommendedDecision ?? raw.recommended_decision)
+  if (!decision) {
+    return {
+      kind: options.request.kind,
+      canAutoDecide: false,
+      ...(confidence !== undefined ? { confidence } : {}),
+      ...(reason ? { reason } : {}),
+      ...(reactionWindowMs !== undefined ? { reactionWindowMs } : {}),
+      source: 'model',
+    }
+  }
+
+  return {
+    kind: options.request.kind,
+    canAutoDecide: canAutoDecide === true,
+    decision,
+    ...(confidence !== undefined ? { confidence } : {}),
+    ...(reason ? { reason } : {}),
+    ...(reactionWindowMs !== undefined ? { reactionWindowMs } : {}),
+    source: 'model',
+  }
+}
+
+export function watchApprovalDecisionLabel(decision: WatchApprovalDecision): string {
+  if (decision === 'accept') {
+    return 'Allow once'
+  }
+  if (decision === 'accept_for_session') {
+    return 'Grant'
+  }
+  if (decision === 'decline') {
+    return 'Deny'
+  }
+  return 'Cancel'
+}
+
+export function watchUserInputAnswersSummary(answers: WatchUserInputAnswers): string {
+  return Object.entries(answers)
+    .map(([key, value]) => `${key}: ${value.answers.join(', ')}`)
+    .join('; ')
+}
+
+export function parseWatchGrantCoverageDecision(text: string): WatchGrantCoverageDecision | null {
+  const raw = parseJsonObjectFromText(text)
+  if (!raw) {
+    return null
+  }
+
+  const covers = booleanFromUnknown(raw.covers ?? raw.covered ?? raw.applies ?? raw.allowed)
+  if (covers === undefined) {
+    return null
+  }
+
+  const confidence = normalizeConfidence(raw.confidence ?? raw.confidenceScore ?? raw.confidence_score)
+  const reason = stringFromUnknown(raw.reason ?? raw.rationale ?? raw.explanation)
+
+  return {
+    covers,
+    ...(confidence !== undefined ? { confidence } : {}),
+    ...(reason ? { reason } : {}),
+    source: 'model',
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function stringFromUnknown(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+function normalizeStringList(value: unknown): string[] {
+  const source = typeof value === 'string'
+    ? value.split(',')
+    : Array.isArray(value)
+      ? value
+      : []
+
+  return source
+    .map((entry) => typeof entry === 'string' ? entry.trim() : '')
+    .filter(Boolean)
+}
+
+function booleanFromUnknown(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') {
+    return value
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (['true', 'yes', 'y', '1'].includes(normalized)) {
+      return true
+    }
+    if (['false', 'no', 'n', '0'].includes(normalized)) {
+      return false
+    }
+  }
+  return undefined
+}
+
+function normalizeConfidence(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    if (value > 1 && value <= 100) {
+      return Math.max(0, Math.min(1, value / 100))
+    }
+    return Math.max(0, Math.min(1, value))
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? normalizeConfidence(parsed) : undefined
+  }
+
+  return undefined
+}
+
+function normalizeReactionWindowMs(value: unknown, fallback: number): number | undefined {
+  const parsed = normalizeDurationMs(value ?? fallback, 'ms')
+  if (parsed === undefined) {
+    return undefined
+  }
+  return Math.max(0, Math.min(MAX_WATCH_SECRETARY_REACTION_WINDOW_MS, parsed))
+}
+
+export function computeWatchSecretaryReactionWindowMs(
+  confidence: number | undefined,
+  fallback = DEFAULT_WATCH_SECRETARY_REACTION_WINDOW_MS,
+): number {
+  if (typeof confidence !== 'number' || !Number.isFinite(confidence)) {
+    return Math.max(0, Math.min(MAX_WATCH_SECRETARY_REACTION_WINDOW_MS, fallback))
+  }
+
+  const normalized = Math.max(0, Math.min(1, confidence))
+  const window = Math.round(
+    MIN_WATCH_SECRETARY_REACTION_WINDOW_MS
+      + (1 - normalized) * (MAX_WATCH_SECRETARY_REACTION_WINDOW_MS - MIN_WATCH_SECRETARY_REACTION_WINDOW_MS),
+  )
+  return Math.max(MIN_WATCH_SECRETARY_REACTION_WINDOW_MS, Math.min(MAX_WATCH_SECRETARY_REACTION_WINDOW_MS, window))
+}
+
+function normalizeSecretaryApprovalDecision(value: unknown): WatchSecretaryApprovalDecision | undefined {
+  if (typeof value !== 'string') {
+    return undefined
+  }
+
+  const normalized = value.trim().toLowerCase().replace(/-/g, '_')
+  if (['accept', 'allow', 'allow_once', 'approve', 'yes', 'accept_for_session', 'allow_always', 'grant', 'session', 'approve_for_session'].includes(normalized)) {
+    return 'accept'
+  }
+  if (['decline', 'deny', 'reject', 'reject_once', 'reject_always', 'no'].includes(normalized)) {
+    return 'decline'
+  }
+  if (['cancel', 'abort'].includes(normalized)) {
+    return 'cancel'
+  }
+  return undefined
+}
+
+function parseJsonObjectFromText(text: string): Record<string, unknown> | null {
+  const trimmed = text.trim()
+  if (!trimmed) {
+    return null
+  }
+
+  for (const candidate of [
+    trimmed,
+    extractFencedJson(trimmed),
+    extractBracedJson(trimmed),
+  ]) {
+    if (!candidate) {
+      continue
+    }
+    try {
+      const parsed = JSON.parse(candidate) as unknown
+      return recordFromUnknown(parsed)
+    } catch {
+      // Try the next extraction shape.
+    }
+  }
+
+  return null
+}
+
+function extractFencedJson(text: string): string | null {
+  const match = text.match(/```(?:json)?\s*([\s\S]*?)```/iu)
+  return match?.[1]?.trim() || null
+}
+
+function extractBracedJson(text: string): string | null {
+  const start = text.indexOf('{')
+  const end = text.lastIndexOf('}')
+  return start !== -1 && end > start ? text.slice(start, end + 1) : null
+}
+
+function normalizeSecretaryUserInputAnswers(
+  questions: WatchUserInputQuestion[],
+  rawAnswers: unknown,
+): WatchUserInputAnswers | undefined {
+  const source = recordFromUnknown(rawAnswers)
+  if (!source) {
+    return undefined
+  }
+
+  const answers: WatchUserInputAnswers = {}
+  for (const question of questions) {
+    const raw = source[question.id] ?? source[question.header] ?? source[question.question]
+    const normalizedAnswers = normalizeSecretaryAnswerValues(raw)
+    if (normalizedAnswers.length > 0) {
+      answers[question.id] = { answers: normalizedAnswers }
+    }
+  }
+
+  return Object.keys(answers).length > 0 ? answers : undefined
+}
+
+function normalizeSecretaryAnswerValues(value: unknown): string[] {
+  const answerRecord = recordFromUnknown(value)
+  if (answerRecord) {
+    return normalizeSecretaryAnswerValues(answerRecord.answers ?? answerRecord.value ?? answerRecord.answer)
+  }
+
+  const values = Array.isArray(value) ? value : [value]
+  return values
+    .map((entry) => typeof entry === 'string' ? entry.trim() : '')
+    .filter(Boolean)
 }
 
 function firstNonEmpty(values: Array<string | undefined>): string | undefined {
@@ -763,6 +1236,7 @@ export function normalizeCodexAppServerInteractionRequest(message: Record<string
   const params = (typeof message.params === 'object' && message.params !== null
     ? message.params
     : {}) as Record<string, unknown>
+  const approvalMetadata = extractWatchApprovalMetadata(message, params)
 
   if (method === 'item/commandExecution/requestApproval') {
     const command = typeof params.command === 'string' ? params.command : undefined
@@ -773,6 +1247,7 @@ export function normalizeCodexAppServerInteractionRequest(message: Record<string
       message: command || 'Codex requests command approval',
       command,
       cwd,
+      ...approvalMetadata,
       raw: message,
     }
   }
@@ -784,6 +1259,7 @@ export function normalizeCodexAppServerInteractionRequest(message: Record<string
       kind: 'file-change-approval',
       message: reason && reason.trim() ? reason : 'Codex requests file-change approval',
       ...(reason ? { reason } : {}),
+      ...approvalMetadata,
       raw: message,
     }
   }
@@ -796,6 +1272,7 @@ export function normalizeCodexAppServerInteractionRequest(message: Record<string
       kind: 'permissions-approval',
       message: reason && reason.trim() ? reason : 'Codex requests additional permissions',
       permissions,
+      ...approvalMetadata,
       raw: message,
     }
   }
@@ -819,6 +1296,7 @@ export function normalizeCodexAppServerInteractionRequest(message: Record<string
     return {
       kind: 'codex-approval',
       message: 'Codex requests approval',
+      ...approvalMetadata,
       raw: message,
     }
   }
@@ -908,6 +1386,7 @@ export function normalizeAcpInteractionRequest(message: Record<string, unknown>)
   const params = (recordFromUnknown(message.params) ?? {}) as Record<string, unknown>
 
   if (method === 'session/request_permission' || Array.isArray(params.options)) {
+    const approvalMetadata = extractWatchApprovalMetadata(message, params)
     const toolCall = (recordFromUnknown(params.toolCall) ?? {}) as Record<string, unknown>
     const toolKind = typeof toolCall.kind === 'string' ? toolCall.kind : ''
     const command = extractAcpCommand(toolCall.rawInput)
@@ -930,6 +1409,7 @@ export function normalizeAcpInteractionRequest(message: Record<string, unknown>)
         message: command ?? messageText,
         ...(command ? { command } : {}),
         ...(cwd ? { cwd } : {}),
+        ...approvalMetadata,
         raw: message,
       }
     }
@@ -939,6 +1419,7 @@ export function normalizeAcpInteractionRequest(message: Record<string, unknown>)
         kind: 'file-change-approval',
         message: messageText,
         reason: messageText,
+        ...approvalMetadata,
         raw: message,
       }
     }
@@ -947,6 +1428,7 @@ export function normalizeAcpInteractionRequest(message: Record<string, unknown>)
       kind: 'permissions-approval',
       message: messageText,
       permissions: recordFromUnknown(toolCall.rawInput) ?? {},
+      ...approvalMetadata,
       raw: message,
     }
   }
@@ -1205,6 +1687,7 @@ function maybeWatchApprovalEvent(json: Record<string, unknown>, lowerType: strin
           kind: 'permissions-approval' as const,
           message: message || 'Approval required',
           permissions: json.permissions,
+          ...extractWatchApprovalMetadata(json, json),
           raw: json,
         },
       }
@@ -1513,6 +1996,7 @@ export function buildWatchThreadMetadata(record: WatchSessionRecord): WatchThrea
 function pushWatchTranscriptMessage(
   messages: WatchTranscriptMessage[],
   role: WatchTranscriptMessageRole,
+  source: WatchTranscriptMessageSource,
   content: string | undefined,
   createdAt: string,
 ): void {
@@ -1523,6 +2007,7 @@ function pushWatchTranscriptMessage(
 
   messages.push({
     role,
+    source,
     content: normalized,
     createdAt,
   })
@@ -1542,6 +2027,7 @@ function flushWatchAssistantMessage(
   pushWatchTranscriptMessage(
     messages,
     'assistant',
+    'primary-agent',
     state.assistantText,
     state.assistantTimestamp ?? fallbackTimestamp,
   )
@@ -1566,7 +2052,7 @@ function appendWatchTranscriptEvent(
 
   if (event.type === 'assistant.done') {
     if (event.text && !state.assistantText) {
-      pushWatchTranscriptMessage(messages, 'assistant', event.text, entry.timestamp)
+      pushWatchTranscriptMessage(messages, 'assistant', 'primary-agent', event.text, entry.timestamp)
       return
     }
 
@@ -1580,6 +2066,7 @@ function appendWatchTranscriptEvent(
     pushWatchTranscriptMessage(
       messages,
       'system',
+      'tool',
       `[tool] ${event.name}${event.arguments ? ` ${JSON.stringify(event.arguments)}` : ''}`,
       entry.timestamp,
     )
@@ -1587,16 +2074,16 @@ function appendWatchTranscriptEvent(
   }
 
   if (event.type === 'approval.required') {
-    pushWatchTranscriptMessage(messages, 'system', `[approval] ${event.message}`, entry.timestamp)
+    pushWatchTranscriptMessage(messages, 'system', 'secretary', `[approval] ${event.message}`, entry.timestamp)
     return
   }
 
   if (event.type === 'input.required') {
-    pushWatchTranscriptMessage(messages, 'system', `[input] ${event.message}`, entry.timestamp)
+    pushWatchTranscriptMessage(messages, 'system', 'secretary', `[input] ${event.message}`, entry.timestamp)
     return
   }
 
-  pushWatchTranscriptMessage(messages, 'system', `[note] ${event.message}`, entry.timestamp)
+  pushWatchTranscriptMessage(messages, 'system', 'system', `[note] ${event.message}`, entry.timestamp)
 }
 
 function appendWatchTranscriptRawEntry(
@@ -1613,7 +2100,7 @@ function appendWatchTranscriptRawEntry(
     const type = typeof parsed.type === 'string' ? parsed.type : ''
 
     if (type === 'user.turn' && typeof parsed.text === 'string') {
-      pushWatchTranscriptMessage(messages, 'user', parsed.text, entry.timestamp)
+      pushWatchTranscriptMessage(messages, 'user', 'user', parsed.text, entry.timestamp)
       return
     }
 
@@ -1622,19 +2109,19 @@ function appendWatchTranscriptRawEntry(
       const args = Array.isArray(parsed.args)
         ? parsed.args.filter((value): value is string => typeof value === 'string')
         : []
-      pushWatchTranscriptMessage(messages, 'system', `[turn] ${[command, ...args].join(' ').trim()}`, entry.timestamp)
+      pushWatchTranscriptMessage(messages, 'system', 'system', `[turn] ${[command, ...args].join(' ').trim()}`, entry.timestamp)
       return
     }
 
     if (type === 'credentials.resolve') {
       const requested = typeof parsed.requestedCredentialSource === 'string' ? parsed.requestedCredentialSource : 'auto'
       const resolved = typeof parsed.resolvedCredentialSource === 'string' ? parsed.resolvedCredentialSource : requested
-      pushWatchTranscriptMessage(messages, 'system', `[credentials] ${requested} -> ${resolved}`, entry.timestamp)
+      pushWatchTranscriptMessage(messages, 'system', 'system', `[credentials] ${requested} -> ${resolved}`, entry.timestamp)
       return
     }
 
     if (type === 'process.error' && typeof parsed.message === 'string') {
-      pushWatchTranscriptMessage(messages, 'system', `[error] ${parsed.message}`, entry.timestamp)
+      pushWatchTranscriptMessage(messages, 'system', 'system', `[error] ${parsed.message}`, entry.timestamp)
       return
     }
   } catch {
@@ -1644,6 +2131,7 @@ function appendWatchTranscriptRawEntry(
   pushWatchTranscriptMessage(
     messages,
     'system',
+    entry.stream === 'stderr' ? 'system' : 'primary-agent',
     entry.stream === 'stderr' ? `stderr> ${trimmed}` : trimmed,
     entry.timestamp,
   )

@@ -5,12 +5,14 @@ import {
   buildWatchTranscriptMessages,
   type WatchEventLogEntry,
   type WatchSessionRecord,
+  type WatchTranscriptMessageSource,
 } from '@undefineds.co/models/watch'
+import { DEFAULT_AGENT_RUNTIME_COMPANION_MODEL_ID } from '@linx/agent-runtime/companion-model'
 import { loadWatchEvents } from './archive.js'
 
-const WATCH_CHAT_ID = 'linx-watch'
+const WATCH_CHAT_ID_PREFIX = 'linx-watch'
 const WATCH_CHAT_TITLE = 'LinX Watch'
-const WATCH_AGENT_ID = 'linx-watch-assistant'
+const WATCH_SECRETARY_AGENT_ID = 'linx-watch-assistant'
 
 interface WatchPodPersistenceRuntime {
   getPodDataSession: () => Promise<PodDataSession | null>
@@ -53,6 +55,7 @@ interface WatchChatRow extends Record<string, unknown> {
   id: string
   title: string
   participants: string[]
+  metadata: Record<string, unknown>
   lastActiveAt: Date
   lastMessagePreview?: string
   createdAt: Date
@@ -76,7 +79,22 @@ interface PersistedWatchConversationMessage extends Record<string, unknown> {
   role: 'user' | 'assistant' | 'system'
   content: string
   status: 'sent'
+  senderName?: string
+  senderAvatarUrl?: string
+  routedBy?: string
+  routeTargetAgentId?: string
+  coordinationId?: string
   createdAt: Date
+}
+
+interface WatchAgentRow extends Record<string, unknown> {
+  id: string
+  name: string
+  provider: string
+  model: string
+  description?: string
+  createdAt: Date
+  updatedAt: Date
 }
 
 async function dynamicImport(specifier: string): Promise<Record<string, any>> {
@@ -141,12 +159,57 @@ function whereByStorageId(webId: string, table: any, query: any, id: string): an
   return query.where({ id } as any)
 }
 
-function buildThreadUri(webId: string, chatId: string, threadId: string): string {
-  return `${getPodBaseUrl(webId)}/.data/chat/${chatId}/index.ttl#${threadId}`
-}
-
 function buildAgentUri(webId: string, agentId: string): string {
   return `${getPodBaseUrl(webId)}/.data/agents/${agentId}.ttl`
+}
+
+function buildWatchChatId(record: Pick<WatchSessionRecord, 'backend'>): string {
+  return `${WATCH_CHAT_ID_PREFIX}-${record.backend}`
+}
+
+function buildWatchPrimaryAgentId(record: Pick<WatchSessionRecord, 'backend'>): string {
+  return `${WATCH_CHAT_ID_PREFIX}-${record.backend}-agent`
+}
+
+function watchBackendDisplayName(backend: WatchSessionRecord['backend']): string {
+  if (backend === 'codex') return 'Codex'
+  if (backend === 'claude') return 'Claude Code'
+  if (backend === 'codebuddy') return 'CodeBuddy'
+  return backend
+}
+
+function buildWatchParticipants(webId: string, record: Pick<WatchSessionRecord, 'backend'>): string[] {
+  return [
+    webId,
+    buildAgentUri(webId, WATCH_SECRETARY_AGENT_ID),
+    buildAgentUri(webId, buildWatchPrimaryAgentId(record)),
+  ]
+}
+
+function buildWatchChatMetadata(webId: string, record: WatchSessionRecord): Record<string, unknown> {
+  const secretaryAgentUri = buildAgentUri(webId, WATCH_SECRETARY_AGENT_ID)
+  const primaryAgentId = buildWatchPrimaryAgentId(record)
+  const primaryAgentUri = buildAgentUri(webId, primaryAgentId)
+
+  return {
+    kind: 'watch-group',
+    surface: 'watch',
+    backend: record.backend,
+    runtime: record.runtime,
+    transport: record.transport,
+    secretaryAgent: secretaryAgentUri,
+    primaryAgent: primaryAgentUri,
+    memberRoles: {
+      [webId]: 'owner',
+      [secretaryAgentUri]: 'admin',
+      [primaryAgentUri]: 'member',
+    },
+    members: [
+      { uri: webId, role: 'user', label: 'User' },
+      { uri: secretaryAgentUri, role: 'secretary', label: 'AI Secretary' },
+      { uri: primaryAgentUri, role: 'primary-agent', label: watchBackendDisplayName(record.backend) },
+    ],
+  }
 }
 
 function buildWatchConversationThreadTitle(
@@ -158,14 +221,15 @@ function buildWatchConversationThreadTitle(
   return normalizeTitle(`${record.backend} · ${base}`)
 }
 
-function buildWatchConversationChatRow(record: WatchSessionRecord, lastPreview?: string): WatchChatRow {
+function buildWatchConversationChatRow(record: WatchSessionRecord, webId: string, lastPreview?: string): WatchChatRow {
   const startedAt = new Date(record.startedAt)
   const updatedAt = record.endedAt ? new Date(record.endedAt) : startedAt
 
   return {
-    id: WATCH_CHAT_ID,
-    title: WATCH_CHAT_TITLE,
-    participants: [],
+    id: buildWatchChatId(record),
+    title: `${WATCH_CHAT_TITLE} · ${watchBackendDisplayName(record.backend)}`,
+    participants: buildWatchParticipants(webId, record),
+    metadata: buildWatchChatMetadata(webId, record),
     lastActiveAt: updatedAt,
     lastMessagePreview: lastPreview ? normalizeTitle(lastPreview, 100) : undefined,
     createdAt: startedAt,
@@ -182,11 +246,59 @@ function buildWatchConversationThreadRow(
 
   return {
     id: record.id,
-    chat: WATCH_CHAT_ID,
+    chat: buildWatchChatId(record),
     title: buildWatchConversationThreadTitle(record, transcript),
-    metadata: buildWatchThreadMetadata(record),
+    metadata: {
+      ...buildWatchThreadMetadata(record),
+      chatId: buildWatchChatId(record),
+    },
     createdAt: startedAt,
     updatedAt,
+  }
+}
+
+function resolveMessageSender(input: {
+  record: WatchSessionRecord
+  webId: string
+  source: WatchTranscriptMessageSource
+}): {
+  maker: string
+  senderName: string
+  routedBy?: string
+  routeTargetAgentId?: string
+} {
+  const secretaryAgentUri = buildAgentUri(input.webId, WATCH_SECRETARY_AGENT_ID)
+  const primaryAgentId = buildWatchPrimaryAgentId(input.record)
+  const primaryAgentUri = buildAgentUri(input.webId, primaryAgentId)
+
+  if (input.source === 'user') {
+    return {
+      maker: input.webId,
+      senderName: 'User',
+    }
+  }
+
+  if (input.source === 'primary-agent') {
+    return {
+      maker: primaryAgentUri,
+      senderName: watchBackendDisplayName(input.record.backend),
+    }
+  }
+
+  if (input.source === 'tool') {
+    return {
+      maker: primaryAgentUri,
+      senderName: `${watchBackendDisplayName(input.record.backend)} Tool`,
+      routedBy: primaryAgentUri,
+      routeTargetAgentId: primaryAgentId,
+    }
+  }
+
+  return {
+    maker: secretaryAgentUri,
+    senderName: input.source === 'secretary' ? 'AI Secretary' : 'LinX Watch',
+    routedBy: secretaryAgentUri,
+    routeTargetAgentId: primaryAgentId,
   }
 }
 
@@ -196,19 +308,30 @@ function buildWatchConversationMessages(
   entries: WatchEventLogEntry[],
 ): PersistedWatchConversationMessage[] {
   const transcript = buildWatchTranscriptMessages(entries)
-  const threadUri = buildThreadUri(webId, WATCH_CHAT_ID, record.id)
-  const agentUri = buildAgentUri(webId, WATCH_AGENT_ID)
+  const chatId = buildWatchChatId(record)
 
-  return transcript.map((message, index) => ({
-    id: `${record.id}-m${String(index + 1).padStart(4, '0')}`,
-    chat: WATCH_CHAT_ID,
-    thread: record.id,
-    maker: message.role === 'user' ? webId : agentUri,
-    role: message.role,
-    content: message.content,
-    status: 'sent',
-    createdAt: new Date(message.createdAt),
-  }))
+  return transcript.map((message, index) => {
+    const sender = resolveMessageSender({
+      record,
+      webId,
+      source: message.source,
+    })
+
+    return {
+      id: `${record.id}-m${String(index + 1).padStart(4, '0')}`,
+      chat: chatId,
+      thread: record.id,
+      maker: sender.maker,
+      role: message.role,
+      content: message.content,
+      status: 'sent',
+      senderName: sender.senderName,
+      routedBy: sender.routedBy,
+      routeTargetAgentId: sender.routeTargetAgentId,
+      coordinationId: record.id,
+      createdAt: new Date(message.createdAt),
+    }
+  })
 }
 
 async function selectById(db: PodPersistenceDb, webId: string, table: unknown, id: string): Promise<unknown | null> {
@@ -221,7 +344,7 @@ async function selectById(db: PodPersistenceDb, webId: string, table: unknown, i
 }
 
 async function ensureWatchConversationChat(db: PodPersistenceDb, runtime: WatchPodPersistenceRuntime, webId: string, row: WatchChatRow): Promise<void> {
-  const existing = await selectById(db, webId, runtime.chatTable, WATCH_CHAT_ID)
+  const existing = await selectById(db, webId, runtime.chatTable, row.id)
 
   if (!existing) {
     await db.insert(runtime.chatTable).values(row).execute()
@@ -230,33 +353,56 @@ async function ensureWatchConversationChat(db: PodPersistenceDb, runtime: WatchP
 
   await whereByStorageId(webId, runtime.chatTable, db.update(runtime.chatTable).set({
     title: row.title,
+    participants: row.participants,
+    metadata: row.metadata,
     lastActiveAt: row.lastActiveAt,
     lastMessagePreview: row.lastMessagePreview,
     updatedAt: row.updatedAt,
-  }), WATCH_CHAT_ID).execute()
+  }), row.id).execute()
 }
 
-async function ensureWatchConversationAgent(db: PodPersistenceDb, runtime: WatchPodPersistenceRuntime, webId: string, record: WatchSessionRecord): Promise<void> {
-  const existing = await selectById(db, webId, runtime.agentTable, WATCH_AGENT_ID)
-  const now = record.endedAt ? new Date(record.endedAt) : new Date(record.startedAt)
-
+async function ensureWatchConversationAgent(db: PodPersistenceDb, runtime: WatchPodPersistenceRuntime, webId: string, row: WatchAgentRow): Promise<void> {
+  const existing = await selectById(db, webId, runtime.agentTable, row.id)
   if (!existing) {
-    await db.insert(runtime.agentTable).values({
-      id: WATCH_AGENT_ID,
-      name: 'Secretary AI',
-      provider: 'linx',
-      model: record.model ?? record.backend,
-      createdAt: now,
-      updatedAt: now,
-    }).execute()
+    await db.insert(runtime.agentTable).values(row).execute()
     return
   }
 
   await whereByStorageId(webId, runtime.agentTable, db.update(runtime.agentTable).set({
-    provider: 'linx',
-    model: record.model ?? record.backend,
-    updatedAt: now,
-  }), WATCH_AGENT_ID).execute()
+    name: row.name,
+    description: row.description,
+    provider: row.provider,
+    model: row.model,
+    updatedAt: row.updatedAt,
+  }), row.id).execute()
+}
+
+async function ensureWatchConversationAgents(db: PodPersistenceDb, runtime: WatchPodPersistenceRuntime, webId: string, record: WatchSessionRecord): Promise<void> {
+  const now = record.endedAt ? new Date(record.endedAt) : new Date(record.startedAt)
+  const rows: WatchAgentRow[] = [
+    {
+      id: WATCH_SECRETARY_AGENT_ID,
+      name: 'AI Secretary',
+      description: 'LinX companion that routes watch approvals and structured input.',
+      provider: 'undefineds',
+      model: DEFAULT_AGENT_RUNTIME_COMPANION_MODEL_ID,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: buildWatchPrimaryAgentId(record),
+      name: watchBackendDisplayName(record.backend),
+      description: `Watched ${watchBackendDisplayName(record.backend)} runtime participant.`,
+      provider: record.backend,
+      model: record.model ?? record.backend,
+      createdAt: now,
+      updatedAt: now,
+    },
+  ]
+
+  for (const row of rows) {
+    await ensureWatchConversationAgent(db, runtime, webId, row)
+  }
 }
 
 async function upsertWatchConversationThread(db: PodPersistenceDb, runtime: WatchPodPersistenceRuntime, webId: string, row: WatchThreadRow): Promise<void> {
@@ -298,6 +444,11 @@ async function upsertWatchConversationMessages(
       maker: row.maker,
       content: row.content,
       status: row.status,
+      senderName: row.senderName,
+      senderAvatarUrl: row.senderAvatarUrl,
+      routedBy: row.routedBy,
+      routeTargetAgentId: row.routeTargetAgentId,
+      coordinationId: row.coordinationId,
       createdAt: row.createdAt,
     }), row.id).execute()
   }
@@ -324,18 +475,21 @@ export async function persistWatchConversationToPod(
     activeRuntime.messageTable,
     activeRuntime.agentTable,
   ]).catch(() => undefined)
-  await ensureWatchConversationChat(db, activeRuntime, podSession.webId, buildWatchConversationChatRow(record, lastPreview))
-  await ensureWatchConversationAgent(db, activeRuntime, podSession.webId, record)
+  await ensureWatchConversationChat(db, activeRuntime, podSession.webId, buildWatchConversationChatRow(record, podSession.webId, lastPreview))
+  await ensureWatchConversationAgents(db, activeRuntime, podSession.webId, record)
   await upsertWatchConversationThread(db, activeRuntime, podSession.webId, buildWatchConversationThreadRow(record, transcriptRows))
   await upsertWatchConversationMessages(db, activeRuntime, podSession.webId, transcriptRows)
   return true
 }
 
 export const __podPersistenceInternal = {
-  WATCH_AGENT_ID,
-  WATCH_CHAT_ID,
+  WATCH_CHAT_ID_PREFIX,
+  WATCH_SECRETARY_AGENT_ID,
   WATCH_CHAT_TITLE,
+  buildWatchChatId,
+  buildWatchConversationChatRow,
   buildWatchConversationMessages,
+  buildWatchPrimaryAgentId,
   buildWatchConversationThreadRow,
   buildWatchConversationThreadTitle,
 }

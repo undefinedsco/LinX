@@ -17,9 +17,9 @@ It is the execution baseline for implementation, verification, and release claim
 | thread | Pod-backed for CLI default TUI, legacy CLI chat, and watch conversation data | `threadTable` | `pod-mirror.ts`, `pod-chat-store.ts`, `watch/pod-persistence.ts` | Production CRUD must be verified against real Pod before release claim | Keep as authoritative workspace/session thread |
 | message | Pod-backed for CLI default TUI, legacy CLI chat, and watch conversation data | `messageTable` | `pod-mirror.ts`, `pod-chat-store.ts`, `watch/pod-persistence.ts` | Production CRUD must be verified against real Pod before release claim | Keep as authoritative message history |
 | session | Pod-backed lifecycle projection for default TUI and web sidecar; live runtime control still uses Pi/runtime state | `sessionTable` | `pod-mirror.ts`, `apps/web/src/modules/chat/services/chatkit-local/runtime-sidecar.ts`, `apps/web/src/modules/chat/collections.ts` | Production CRUD must be verified; live transport state is not yet Pod-first | Keep Pod as durable session projection, local state only for live controls |
-| approval | Pod-backed in real approval flows | `approvalTable`, `auditTable`, `inboxNotificationTable` | `apps/cli/src/lib/watch/pod-approval.ts`, `apps/web/src/modules/chat/services/chatkit-local/runtime-sidecar.ts` | Default Pi ordinary tool calls do not create approval rows unless an approval request actually exists | Keep approval rows tied to real approval semantics |
-| authorization / delegation | Pod-backed in remote approval grant flow | `grantTable` | `pod-approval.ts` writes `grantTable` for `accept_for_session` and reads active grants before creating new approvals | Broader Pi/web consumption still needs adoption; production CRUD must be verified | Keep grant as durable delegation policy |
-| audit | Pod-backed for default TUI tool execution and approval decisions | `auditTable` | `pod-mirror.ts`, `pod-approval.ts`, web sidecar | Production CRUD must be verified against real Pod before release claim | Keep as append-only audit/event surface |
+| approval | Pod-backed in real approval flows | `approvalResource`, `auditResource`, `inboxNotificationTable` | `apps/cli/src/lib/watch/pod-approval.ts`, `apps/web/src/modules/chat/services/chatkit-local/runtime-sidecar.ts` | Default Pi ordinary tool calls do not create approval rows unless an approval request actually exists | Keep approval rows tied to real approval semantics |
+| authorization / delegation | Pod-backed in remote approval grant flow | `grantResource` | `pod-approval.ts` writes `grantResource` for `accept_for_session` and reads active grants before creating new approvals | Broader Pi/web consumption still needs adoption; production CRUD must be verified | Keep grant as durable delegation policy |
+| audit | Pod-backed for default TUI tool execution and approval decisions | `auditResource` | `pod-mirror.ts`, `pod-approval.ts`, web sidecar | Production CRUD must be verified against real Pod before release claim | Keep as append-only audit/event surface |
 
 ## Current architectural gap
 
@@ -85,3 +85,50 @@ CSS/Comunica can enter high-cost scans or hot loops on larger TTL/graph data.
 
 LDP document reads are fallback behavior for missing/failed query capability, not the primary path
 for large TTL resources.
+
+## Approval lookup shape
+
+Approval storage is date-bucketed, for example:
+
+```text
+/.data/approvals/{yyyy}/{MM}/{dd}.ttl#{approvalId}
+```
+
+This bucket layout is a storage/resource layout detail owned by `packages/models`. Runtime code must
+not infer a different approval path in CLI/App shells.
+
+There are two separate read paths:
+
+1. **Known approval:** when an approval request has already produced an `approvalUri`, wait/resolve
+   code must read that exact URI first. This is a subject lookup, not a list operation.
+2. **Approval inbox/list:** App/Inbox surfaces may discover recent approvals by reading a bounded
+   set of recent date-bucket documents. This is only a bounded listing strategy for user-visible
+   pending queues; it must not become an unbounded recursive scan of `/.data/approvals/`.
+
+Legacy rows that do not carry `approvalUri` may use a bounded list fallback during migration. New
+rows must preserve `approvalUri` so remote approval resolution never depends on directory-wide list
+semantics.
+
+Approval rows also carry the user-decision UI contract when the upstream runtime provides it:
+
+- `expiresAt` is the durable countdown deadline.
+- `approvalOptions` is a JSON projection of the upstream native options, for example
+  `allow_once`, `allow_always`, and `reject_once`.
+
+AI secretary and App inbox surfaces should derive countdown and "approve once vs approve for
+session" affordances from these fields, not from CLI-local state.
+
+## Structured data access rule
+
+For every surface in this matrix, if a schema/resource exists in `packages/models`, the default
+application query path is:
+
+```text
+Solid auth -> Inrupt-compatible session -> drizzle-solid -> packages/models resource/repository
+```
+
+Client credentials and browser/OIDC consent may create that session differently, but after the
+session boundary the query path must be the same. CLI/App shells should not parse shared RDF
+documents directly to compensate for auth differences. If the shell only has an authenticated
+`fetch`, adapt it to an inline session shape with `info.isLoggedIn`, `info.webId`, and `fetch`, then
+use the same `drizzle-solid` path.

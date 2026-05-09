@@ -21,7 +21,7 @@ import { isRemoteAuthExpiredError, type RemoteChatMessage, type RemoteChatTool }
 import { installLinxPiRemoteApproval } from './pod-approval.js'
 
 const UNDEFINEDS_PROVIDER_ID = 'undefineds'
-const UNDEFINEDS_PROVIDER_LABEL = 'undefineds(cloud)'
+const UNDEFINEDS_PROVIDER_LABEL = 'undefineds'
 const UNDEFINEDS_PROVIDER_API = 'openai-completions'
 const UNDEFINEDS_SESSION_ID = 'undefineds_pi_frontend'
 const UNDEFINEDS_AUTH_BRIDGE_ID = 'undefineds-cloud-oauth-bridge'
@@ -94,8 +94,8 @@ export interface PiRuntimeAdapterOptions {
 
 export interface LinxCloudPiAuthBridge {
   description: 'undefineds-cloud-oauth-bridge'
-  providerId: 'undefineds-cloud'
-  providerLabel: 'undefineds(cloud)'
+  providerId: 'undefineds'
+  providerLabel: 'undefineds'
   runtimeUrl: string
   shouldPromptLoginOnStart?: boolean
 }
@@ -341,7 +341,7 @@ export function createPiRuntimeAdapter(
       ;(runtime as unknown as Record<string, unknown>).linxAuthBridge = {
         description: UNDEFINEDS_AUTH_BRIDGE_ID,
         authMode,
-        providerId: 'undefineds-cloud',
+        providerId: UNDEFINEDS_PROVIDER_ID,
         providerLabel: UNDEFINEDS_PROVIDER_LABEL,
         runtimeUrl: baseUrl,
         shouldPromptLoginOnStart,

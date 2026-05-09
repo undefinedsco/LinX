@@ -1,0 +1,42 @@
+{
+  "name": "@linx/agent-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "node": "./dist/index.js",
+      "default": "./src/index.ts"
+    },
+    "./acp": {
+      "types": "./src/acp.ts",
+      "node": "./dist/acp.js",
+      "default": "./src/acp.ts"
+    },
+    "./companion-model": {
+      "types": "./src/companion-model.ts",
+      "node": "./dist/companion-model.js",
+      "default": "./src/companion-model.ts"
+    },
+    "./turn-controller": {
+      "types": "./src/turn-controller.ts",
+      "node": "./dist/turn-controller.js",
+      "default": "./src/turn-controller.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "yarn build && node --test test/*.test.mjs",
+    "lint": "echo \"lint not configured\""
+  },
+  "dependencies": {
+    "@undefineds.co/models": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}

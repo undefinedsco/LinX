@@ -3,6 +3,16 @@
   "updatedAt": "2026-03-16",
   "providers": [
     {
+      "slug": "undefineds",
+      "displayName": "undefineds",
+      "baseUrl": "https://api.undefineds.co/v1",
+      "homepage": "https://undefineds.co/linx",
+      "logoUrl": "https://undefineds.co/favicon.ico",
+      "description": "undefineds LinX 模型服务",
+      "supportedFeatures": ["chat", "function-calling", "streaming"],
+      "authType": "bearer"
+    },
+    {
       "slug": "openai",
       "displayName": "OpenAI",
       "baseUrl": "https://api.openai.com/v1",

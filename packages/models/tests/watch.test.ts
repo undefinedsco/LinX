@@ -6,6 +6,8 @@ import {
   buildCodexApprovalResponse,
   buildCodexUserInputResponse,
   buildWatchUserInputResponse,
+  createFallbackWatchSecretaryRecommendation,
+  computeWatchSecretaryReactionWindowMs,
   createWatchSessionId,
   detectWatchAuthFailure,
   extractWatchSessionIdFromJsonLine,
@@ -21,12 +23,16 @@ import {
   looksLikeWatchAuthFailureText,
   normalizeWatchCredentialSource,
   normalizeWatchUserInputQuestion,
+  parseWatchSecretaryRecommendation,
+  parseWatchGrantCoverageDecision,
   parseWatchClaudeAuthStatus,
   parseWatchJsonProtocolLine,
   resolveWatchAutoApprovalDecision,
   resolveWatchInteractionAutoResponse,
   resolveWatchQuestionAnswer,
   resolveWatchCredentialSourceResolution,
+  watchApprovalDecisionLabel,
+  watchUserInputAnswersSummary,
   shouldAttemptCloudCredentialProbe,
   getWatchArchiveRelativePaths,
   WATCH_EVENTS_FILE_NAME,
@@ -139,21 +145,25 @@ describe('watch shared core', () => {
     ])).toEqual([
       {
         role: 'user',
+        source: 'user',
         content: 'inspect workspace',
         createdAt: '2026-03-18T00:00:00.000Z',
       },
       {
         role: 'assistant',
+        source: 'primary-agent',
         content: 'I found two issues.',
         createdAt: '2026-03-18T00:00:01.000Z',
       },
       {
         role: 'system',
+        source: 'tool',
         content: '[tool] bash {"command":"pwd"}',
         createdAt: '2026-03-18T00:00:04.000Z',
       },
       {
         role: 'system',
+        source: 'system',
         content: 'stderr> permission denied',
         createdAt: '2026-03-18T00:00:05.000Z',
       },
@@ -787,9 +797,11 @@ describe('watch shared core', () => {
             cwd: '/tmp/demo',
           },
         },
+        timeoutSeconds: 45,
+        expiresAt: '2026-03-18T00:00:45.000Z',
         options: [
           { optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' },
-          { optionId: 'allow_always', name: 'Allow always', kind: 'allow_always' },
+          { optionId: 'allow_always', name: 'Allow always', kind: 'allow_always', description: 'Trust for this session' },
           { optionId: 'reject_once', name: 'Reject once', kind: 'reject_once' },
         ],
       },
@@ -804,6 +816,13 @@ describe('watch shared core', () => {
       message: 'pwd',
       command: 'pwd',
       cwd: '/tmp/demo',
+      approvalOptions: [
+        { optionId: 'allow_once', label: 'Allow once', kind: 'allow_once' },
+        { optionId: 'allow_always', label: 'Allow always', kind: 'allow_always', description: 'Trust for this session' },
+        { optionId: 'reject_once', label: 'Reject once', kind: 'reject_once' },
+      ],
+      timeoutMs: 45000,
+      expiresAt: '2026-03-18T00:00:45.000Z',
       raw: {
         method: 'session/request_permission',
         params: {
@@ -817,9 +836,11 @@ describe('watch shared core', () => {
               cwd: '/tmp/demo',
             },
           },
+          timeoutSeconds: 45,
+          expiresAt: '2026-03-18T00:00:45.000Z',
           options: [
             { optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' },
-            { optionId: 'allow_always', name: 'Allow always', kind: 'allow_always' },
+            { optionId: 'allow_always', name: 'Allow always', kind: 'allow_always', description: 'Trust for this session' },
             { optionId: 'reject_once', name: 'Reject once', kind: 'reject_once' },
           ],
         },
@@ -854,6 +875,9 @@ describe('watch shared core', () => {
           message: 'pwd',
           command: 'pwd',
           cwd: '/tmp/demo',
+          approvalOptions: [
+            { optionId: 'allow_once', label: 'Allow once', kind: 'allow_once' },
+          ],
           raw: singleOptionPermissionMessage,
         },
         raw: singleOptionPermissionMessage,
@@ -1024,5 +1048,105 @@ describe('watch shared core', () => {
         },
       },
     ])
+  })
+
+  it('parses AI secretary approval and user-input recommendations conservatively', () => {
+    const approvalRequest = normalizeAcpInteractionRequest({
+      method: 'session/request_permission',
+      params: {
+        toolCall: {
+          toolCallId: 'tool_1',
+          title: 'Run shell command',
+          kind: 'execute',
+          rawInput: {
+            command: 'pwd',
+            cwd: '/tmp/demo',
+          },
+        },
+        options: [
+          { optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' },
+          { optionId: 'allow_always', name: 'Allow always', kind: 'allow_always' },
+        ],
+      },
+    })
+
+    if (!approvalRequest || approvalRequest.kind !== 'command-approval') {
+      throw new Error('Expected ACP command approval request')
+    }
+
+    expect(parseWatchSecretaryRecommendation(JSON.stringify({
+      can_auto_decide: true,
+      decision: 'allow_always',
+      confidence: 92,
+      reason: 'safe read-only command',
+      reaction_window_ms: 1200,
+    }), {
+      mode: 'smart',
+      request: approvalRequest,
+    })).toMatchObject({
+      kind: 'command-approval',
+      canAutoDecide: true,
+      decision: 'accept',
+      confidence: 0.92,
+      reason: 'safe read-only command',
+      reactionWindowMs: computeWatchSecretaryReactionWindowMs(0.92),
+      source: 'model',
+    })
+    expect(computeWatchSecretaryReactionWindowMs(0)).toBe(60000)
+    expect(computeWatchSecretaryReactionWindowMs(1)).toBe(5000)
+    expect(createFallbackWatchSecretaryRecommendation({
+      mode: 'auto',
+      request: approvalRequest,
+    })).toMatchObject({
+      kind: 'command-approval',
+      decision: 'accept',
+      source: 'fallback',
+    })
+    expect(watchApprovalDecisionLabel('accept_for_session')).toBe('Grant')
+
+    const inputRequest = normalizeAcpInteractionRequest({
+      method: 'session/request_user_input',
+      params: {
+        questions: [{
+          id: 'runtime',
+          header: 'Runtime',
+          question: 'Choose runtime',
+          options: [{ label: 'local' }, { label: 'cloud' }],
+        }],
+      },
+    })
+
+    if (!inputRequest || inputRequest.kind !== 'user-input') {
+      throw new Error('Expected ACP user input request')
+    }
+
+    const recommendation = parseWatchSecretaryRecommendation('```json\n{"canAnswer":true,"answers":{"runtime":{"answers":["cloud"]}},"confidence":0.8,"reason":"Pod credentials are available"}\n```', {
+      mode: 'smart',
+      request: inputRequest,
+    })
+
+    expect(recommendation).toMatchObject({
+      kind: 'user-input',
+      canAutoDecide: true,
+      answers: {
+        runtime: { answers: ['cloud'] },
+      },
+      source: 'model',
+    })
+    if (recommendation?.kind !== 'user-input' || !recommendation.answers) {
+      throw new Error('Expected user input answers')
+    }
+    expect(watchUserInputAnswersSummary(recommendation.answers)).toBe('runtime: cloud')
+
+    expect(parseWatchGrantCoverageDecision(JSON.stringify({
+      applies: true,
+      confidence_score: 0.86,
+      rationale: 'The request stays inside the maintained read-only session grant.',
+    }))).toEqual({
+      covers: true,
+      confidence: 0.86,
+      reason: 'The request stays inside the maintained read-only session grant.',
+      source: 'model',
+    })
   })
 })

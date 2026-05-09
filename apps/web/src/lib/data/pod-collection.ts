@@ -1,8 +1,62 @@
 import { createCollection } from '@tanstack/react-db'
 import { queryCollectionOptions } from '@tanstack/query-db-collection'
 import { QueryClient } from '@tanstack/react-query'
-import type { SolidDatabase } from '@linx/models'
+import type { SolidDatabase } from '@undefineds.co/models'
 import type { PodTable } from '@undefineds.co/drizzle-solid'
+
+function isAbsoluteIri(value: string): boolean {
+  return /^https?:\/\//.test(value)
+}
+
+function resolveCollectionIri<TTable extends PodTable<any>>(table: TTable, id: string): string {
+  if (isAbsoluteIri(id)) return id
+  const relativeUri = typeof (table as any).resolveUri === 'function'
+    ? (table as any).resolveUri(id)
+    : id
+  if (isAbsoluteIri(relativeUri)) return relativeUri
+  throw new Error(`Collection mutation requires an absolute IRI or a table-resolved absolute IRI for id: ${id}`)
+}
+
+async function updateByCollectionId<TTable extends PodTable<any>>(
+  db: SolidDatabase,
+  table: TTable,
+  id: string,
+  updates: Record<string, unknown>,
+): Promise<void> {
+  const updateByIri = (db as unknown as { updateByIri?: (table: TTable, iri: string, data: Record<string, unknown>) => Promise<unknown> }).updateByIri
+  if (typeof updateByIri === 'function') {
+    await updateByIri.call(db, table, resolveCollectionIri(table, id), updates)
+    return
+  }
+
+  const query = db.update(table).set(updates as any)
+  if (typeof (query as any).whereByIri === 'function') {
+    await (query as any).whereByIri(resolveCollectionIri(table, id)).execute()
+    return
+  }
+
+  await query.where({ id } as any).execute()
+}
+
+async function deleteByCollectionId<TTable extends PodTable<any>>(
+  db: SolidDatabase,
+  table: TTable,
+  id: string,
+): Promise<void> {
+  const deleteByIri = (db as unknown as { deleteByIri?: (table: TTable, iri: string) => Promise<unknown> }).deleteByIri
+  if (typeof deleteByIri === 'function') {
+    await deleteByIri.call(db, table, resolveCollectionIri(table, id))
+    return
+  }
+
+  const query = db.delete(table)
+  if (typeof (query as any).whereByIri === 'function') {
+    await (query as any).whereByIri(resolveCollectionIri(table, id)).execute()
+    return
+  }
+
+  await query.where({ id } as any).execute()
+}
 
 interface PodCollectionOptions<TTable, TData> {
   table: TTable
@@ -30,7 +84,7 @@ interface PodCollectionOptions<TTable, TData> {
 export function createPodCollection<
   TTable extends PodTable<any>,
   TData extends { id?: string },
-  TInsert = any
+  _TInsert = any
 >(
   options: PodCollectionOptions<TTable, TData>
 ) {
@@ -135,7 +189,7 @@ export function createPodCollection<
         if (!id) return
 
         try {
-          await db.update(table).set(modified as any).where({ id } as any).execute()
+          await updateByCollectionId(db, table, id, modified as any)
         } catch (error) {
           console.error(`[PodCollection] Update failed for ${queryKey.join('/')}:`, error)
           throw error
@@ -148,7 +202,7 @@ export function createPodCollection<
         if (!db) throw new Error('Database not connected')
         const { original } = transaction.mutations[0]
         const id = getKey(original)
-        await db.delete(table).where({ id } as any).execute()
+        await deleteByCollectionId(db, table, id)
       }
     })
   )

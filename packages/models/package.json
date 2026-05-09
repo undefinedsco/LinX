@@ -3,18 +3,64 @@
   "version": "0.2.15",
   "private": true,
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./ai-config": "./src/ai-config/index.ts",
-    "./client": "./src/client/index.ts",
-    "./discovery": "./src/discovery/index.ts",
-    "./namespaces": "./src/namespaces.ts",
-    "./profile": "./src/profile.ts",
-    "./profile.repository": "./src/profile.repository.ts",
-    "./profile.schema": "./src/profile.schema.ts",
-    "./vocab": "./src/vocab/index.ts",
-    "./vocab/sidecar": "./src/vocab/sidecar.vocab.ts",
-    "./watch": "./src/watch/index.ts"
+    ".": {
+      "types": "./src/index.ts",
+      "node": "./dist/index.js",
+      "default": "./src/index.ts"
+    },
+    "./ai-config": {
+      "types": "./src/ai-config/index.ts",
+      "node": "./dist/ai-config/index.js",
+      "default": "./src/ai-config/index.ts"
+    },
+    "./client": {
+      "types": "./src/client/index.ts",
+      "node": "./dist/client/index.js",
+      "default": "./src/client/index.ts"
+    },
+    "./discovery": {
+      "types": "./src/discovery/index.ts",
+      "node": "./dist/discovery/index.js",
+      "default": "./src/discovery/index.ts"
+    },
+    "./namespaces": {
+      "types": "./src/namespaces.ts",
+      "node": "./dist/namespaces.js",
+      "default": "./src/namespaces.ts"
+    },
+    "./profile": {
+      "types": "./src/profile.ts",
+      "node": "./dist/profile.js",
+      "default": "./src/profile.ts"
+    },
+    "./profile.repository": {
+      "types": "./src/profile.repository.ts",
+      "node": "./dist/profile.repository.js",
+      "default": "./src/profile.repository.ts"
+    },
+    "./profile.schema": {
+      "types": "./src/profile.schema.ts",
+      "node": "./dist/profile.schema.js",
+      "default": "./src/profile.schema.ts"
+    },
+    "./vocab": {
+      "types": "./src/vocab/index.ts",
+      "node": "./dist/vocab/index.js",
+      "default": "./src/vocab/index.ts"
+    },
+    "./vocab/sidecar": {
+      "types": "./src/vocab/sidecar.vocab.ts",
+      "node": "./dist/vocab/sidecar.vocab.js",
+      "default": "./src/vocab/sidecar.vocab.ts"
+    },
+    "./watch": {
+      "types": "./src/watch/index.ts",
+      "node": "./dist/watch/index.js",
+      "default": "./src/watch/index.ts"
+    }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/fix-dist-esm.mjs",

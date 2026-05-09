@@ -11,6 +11,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { like, or } from '@undefineds.co/drizzle-solid'
 import {
   chatTable,
+  sessionTable,
   threadTable,
   messageTable,
   agentTable,
@@ -20,6 +21,8 @@ import {
   getBuiltinProvider,
   type ChatRow,
   type ChatInsert,
+  type SessionRow,
+  type SessionInsert,
   type ThreadRow,
   type ThreadInsert,
   type MessageRow,
@@ -28,8 +31,8 @@ import {
   type AgentRow,
   type ContactInsert,
   type ContactRow,
-} from '@linx/models'
-import type { SolidDatabase } from '@linx/models'
+} from '@undefineds.co/models'
+import type { SolidDatabase } from '@undefineds.co/models'
 import { queryClient } from '@/providers/query-provider'
 import { createPodCollection } from '@/lib/data/pod-collection'
 import { favoriteHooks } from '@/modules/favorites/collections'
@@ -48,6 +51,18 @@ export function setDatabaseGetter(getter: () => SolidDatabase | null) {
 function getDb(): SolidDatabase | null {
   return dbGetter?.() ?? null
 }
+
+function extractChatId(chatOrUri: string | null | undefined): string | undefined {
+  if (!chatOrUri) return undefined
+  const match = chatOrUri.match(/\.data\/chat\/([^/]+)\/index\.ttl#this/)
+  return match?.[1] ?? chatOrUri
+}
+
+function extractThreadId(threadOrUri: string | null | undefined): string | undefined {
+  if (!threadOrUri) return undefined
+  return threadOrUri.includes('#') ? threadOrUri.split('#').pop() || undefined : threadOrUri
+}
+
 
 // ============================================================================
 // Chat Collection
@@ -87,7 +102,7 @@ export const chatCollection = createPodCollection<typeof chatTable, ChatRow, Cha
 // Columns needed for thread list view
 const threadListColumns: (keyof ThreadRow)[] = [
   'id',
-  'chatId',
+  'chat',
   'title',
   'starred',
   'updatedAt',
@@ -107,18 +122,54 @@ export const threadCollection = createPodCollection<typeof threadTable, ThreadRo
 })
 
 // ============================================================================
+// Session Collection
+// ============================================================================
+
+const sessionListColumns: (keyof SessionRow)[] = [
+  'id',
+  'ownerWebId',
+  'chat',
+  'thread',
+  'sessionType',
+  'status',
+  'tool',
+  'tokenUsage',
+  'metadata',
+  'updatedAt',
+]
+
+export const sessionCollection = createPodCollection<typeof sessionTable, SessionRow, SessionInsert>({
+  table: sessionTable,
+  queryKey: ['sessions'],
+  queryClient,
+  getDb,
+  columns: sessionListColumns,
+  orderBy: { column: 'updatedAt', direction: 'desc' },
+  getKey: (item) => {
+    if (!item.id) throw new Error('Session item is missing id.')
+    return item.id
+  },
+})
+
+// ============================================================================
 // Message Collection
 // ============================================================================
 
 // Columns needed for message list view (excludes richContent, replacedBy, deletedAt, updatedAt)
 const messageListColumns: (keyof MessageRow)[] = [
   'id',
-  'threadId',
-  'chatId',
+  'thread',
+  'chat',
   'maker',
   'role',
   'content',
   'status',
+  'senderName',
+  'senderAvatarUrl',
+  'mentions',
+  'routedBy',
+  'routeTargetAgentId',
+  'coordinationId',
   'createdAt',
 ]
 
@@ -228,7 +279,7 @@ export const chatOps = {
   getThreads(chatId: string): ThreadRow[] {
     const stateMap = threadCollection.state
     const items = Array.from(stateMap.values())
-    return items.filter((t: ThreadRow) => t.chatId === chatId)
+    return items.filter((t: ThreadRow) => extractChatId((t as any).chat) === chatId)
   },
 
   /**
@@ -238,7 +289,7 @@ export const chatOps = {
     const stateMap = messageCollection.state
     const items = Array.from(stateMap.values())
     return items
-      .filter((m: MessageRow) => m.threadId === threadId)
+      .filter((m: MessageRow) => extractThreadId((m as any).thread) === threadId)
       .sort((a, b) => {
         const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0
         const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0
@@ -285,8 +336,8 @@ export const chatOps = {
     const chatId = crypto.randomUUID()
     const now = new Date()
 
-    upsertStateRow(agentCollection.state, agent as AgentRow, agentId)
-    upsertStateRow(_contactCollection.state, contact as ContactRow, contactId)
+    upsertStateRow(agentCollection.state as unknown as { data?: AgentRow[] }, agent as AgentRow, agentId)
+    upsertStateRow(_contactCollection.state as unknown as { data?: ContactRow[] }, contact as ContactRow, contactId)
 
     const chatData: ChatInsert = {
       id: chatId,
@@ -299,7 +350,7 @@ export const chatOps = {
     }
     const chatTx = chatCollection.insert(chatData as ChatRow)
     await chatTx.isPersisted.promise
-    upsertStateRow(chatCollection.state, { ...chatData, id: chatId } as ChatRow, chatId)
+    upsertStateRow(chatCollection.state as unknown as { data?: ChatRow[] }, { ...chatData, id: chatId } as ChatRow, chatId)
     queryClient.invalidateQueries({ queryKey: QUERY_KEYS.chats })
 
     return { ...chatData, id: chatId, agentId, contactId } as ChatRow & { agentId: string; contactId: string }
@@ -366,7 +417,7 @@ export const chatOps = {
     
     const threadData: ThreadInsert = {
       id: threadId,
-      chatId,
+      chat: chatId,
       title: title || `话题 ${now.toLocaleTimeString()}`,
       createdAt: now,
       updatedAt: now,
@@ -436,8 +487,8 @@ export const chatOps = {
     
     const msgData: MessageInsert = {
       id: msgId,
-      chatId,
-      threadId,
+      chat: chatId,
+      thread: threadId,
       maker,
       role: 'user',
       content,
@@ -476,8 +527,8 @@ export const chatOps = {
     
     const msgData: MessageInsert = {
       id: msgId,
-      chatId,
-      threadId,
+      chat: chatId,
+      thread: threadId,
       maker,
       role: 'assistant',
       content,
@@ -693,7 +744,7 @@ export const chatOps = {
     const db = getDb()
     if (!db) return []
     
-    const chatIdCol = (threadTable as any).chatId
+    const chatIdCol = (threadTable as any).chat
     const rows = await db.select()
       .from(threadTable)
       .where(eq(chatIdCol, chatId))
@@ -704,13 +755,38 @@ export const chatOps = {
   },
 
   /**
+   * Fetch sessions for a thread
+   */
+  async fetchSessions(threadId: string): Promise<SessionRow[]> {
+    const db = getDb()
+    if (!db) return []
+
+    const updatedAtCol = (sessionTable as any).updatedAt
+    const rows = await db.select()
+      .from(sessionTable)
+      .orderBy(updatedAtCol, 'desc')
+      .execute()
+
+    return rows.filter((row) => {
+      const linkedThread = (row as { thread?: unknown }).thread
+      if (typeof linkedThread === 'string' && linkedThread.split('#').pop() === threadId) {
+        return true
+      }
+      const metadata = (row as { metadata?: unknown }).metadata
+      return typeof metadata === 'object'
+        && metadata !== null
+        && (metadata as { threadId?: unknown }).threadId === threadId
+    })
+  },
+
+  /**
    * Fetch messages for a thread
    */
   async fetchMessages(threadId: string): Promise<MessageRow[]> {
     const db = getDb()
     if (!db) return []
     
-    const threadIdCol = (messageTable as any).threadId
+    const threadIdCol = (messageTable as any).thread
     const createdAtCol = (messageTable as any).createdAt
     const rows = await db.select()
       .from(messageTable)
@@ -739,10 +815,11 @@ export const chatOps = {
     
     try {
       const chatUnsub = await chatCollection.subscribeToPod(db)
+      const sessionUnsub = await sessionCollection.subscribeToPod(db)
       const threadUnsub = await threadCollection.subscribeToPod(db)
       const messageUnsub = await messageCollection.subscribeToPod(db)
       
-      unsubscribers.push(chatUnsub, threadUnsub, messageUnsub)
+      unsubscribers.push(chatUnsub, sessionUnsub, threadUnsub, messageUnsub)
     } catch (e) {
       console.error('[chatOps] Failed to subscribe:', e)
     }
@@ -799,6 +876,7 @@ const QUERY_KEYS = {
   chats: ['chats'] as const,
   chat: (id: string) => ['chats', id] as const,
   threads: (chatId: string) => ['chats', chatId, 'threads'] as const,
+  sessions: (threadId: string) => ['threads', threadId, 'sessions'] as const,
   messages: (threadId: string) => ['threads', threadId, 'messages'] as const,
 }
 
@@ -874,6 +952,22 @@ export function useMessageList(threadId: string | null) {
     queryFn: async () => {
       if (!db || !threadId) return []
       return chatOps.fetchMessages(threadId)
+    },
+    enabled: !!db && !!threadId,
+  })
+}
+
+/**
+ * Hook to fetch session list for a thread
+ */
+export function useSessionList(threadId: string | null) {
+  const db = getDb()
+
+  return useQuery({
+    queryKey: QUERY_KEYS.sessions(threadId || ''),
+    queryFn: async () => {
+      if (!db || !threadId) return []
+      return chatOps.fetchSessions(threadId)
     },
     enabled: !!db && !!threadId,
   })

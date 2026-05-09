@@ -1,10 +1,12 @@
 import { useMemo } from 'react'
 import { useSession } from '@inrupt/solid-ui-react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { resolveLinxPodBaseUrl } from '@linx/models/client'
+import { resolveLinxPodBaseUrl } from '@undefineds.co/models/client'
 import {
-  approvalTable,
-  auditTable,
+  approvalResource,
+  auditResource,
+  buildApprovalSubjectPath,
+  buildAuditSubjectPath,
   inboxNotificationTable,
   type ApprovalInsert,
   type ApprovalRow,
@@ -13,7 +15,7 @@ import {
   type InboxNotificationInsert,
   type InboxNotificationRow,
   type SolidDatabase,
-} from '@linx/models'
+} from '@undefineds.co/models'
 import { createPodCollection } from '@/lib/data/pod-collection'
 import { queryClient } from '@/providers/query-provider'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
@@ -32,8 +34,8 @@ function getDb(): SolidDatabase | null {
   return dbGetter?.() ?? null
 }
 
-export const approvalCollection = createPodCollection<typeof approvalTable, ApprovalRow, ApprovalInsert>({
-  table: approvalTable,
+export const approvalCollection = createPodCollection<typeof approvalResource, ApprovalRow, ApprovalInsert>({
+  table: approvalResource,
   queryKey: ['inbox', 'approvals'],
   queryClient,
   getDb,
@@ -44,8 +46,8 @@ export const approvalCollection = createPodCollection<typeof approvalTable, Appr
   },
 })
 
-export const auditCollection = createPodCollection<typeof auditTable, AuditRow, AuditInsert>({
-  table: auditTable,
+export const auditCollection = createPodCollection<typeof auditResource, AuditRow, AuditInsert>({
+  table: auditResource,
   queryKey: ['inbox', 'audit'],
   queryClient,
   getDb,
@@ -95,18 +97,58 @@ function extractPodBase(webId: string): string {
   return resolveLinxPodBaseUrl(webId)
 }
 
-function makeApprovalUri(webId: string, approvalId: string): string {
-  return `${extractPodBase(webId)}/.data/approvals/${approvalId}.ttl#${approvalId}`
+function makeApprovalUri(webId: string, approvalId: string, createdAt: Date | string | number = new Date()): string {
+  return `${extractPodBase(webId)}${buildApprovalSubjectPath(approvalId, createdAt)}`
 }
 
-function makeAuditUri(webId: string, auditId: string): string {
-  return `${extractPodBase(webId)}/.data/audit/${auditId}.ttl#${auditId}`
+function resolveApprovalIri(actorWebId: string, approval: ApprovalRow): string {
+  const subject = (approval as Record<string, unknown>)['@id'] ?? (approval as Record<string, unknown>).subject
+  if (typeof subject === 'string' && /^https?:\/\//.test(subject)) {
+    return subject
+  }
+  return makeApprovalUri(actorWebId, approval.id, approval.createdAt ?? new Date())
+}
+
+async function updateApprovalByIri(
+  db: SolidDatabase,
+  actorWebId: string,
+  approval: ApprovalRow,
+  patch: Record<string, unknown>,
+): Promise<void> {
+  const iri = resolveApprovalIri(actorWebId, approval)
+  const updateByIri = (db as unknown as { updateByIri?: (resource: typeof approvalResource, iri: string, data: Record<string, unknown>) => Promise<unknown> }).updateByIri
+  if (typeof updateByIri === 'function') {
+    await updateByIri.call(db, approvalResource, iri, patch)
+    return
+  }
+
+  const query = db.update(approvalResource).set(patch as any)
+  if (typeof (query as any).whereByIri === 'function') {
+    await (query as any).whereByIri(iri).execute()
+    return
+  }
+
+  await query.where({ id: approval.id } as any).execute()
+}
+
+function makeAuditUri(webId: string, auditId: string, createdAt: Date | string | number = new Date()): string {
+  return `${extractPodBase(webId)}${buildAuditSubjectPath(auditId, createdAt)}`
 }
 
 function extractRuntimeSessionId(sessionUri: string | null | undefined): string | null {
   if (!sessionUri) return null
   const match = sessionUri.match(/^urn:linx:runtime-session:(.+)$/)
-  return match?.[1] ?? null
+  if (match?.[1]) return match[1]
+
+  const currentPodMatch = sessionUri.match(/\/\.data\/sessions\/\d{4}\/\d{2}\.ttl#([^/#]+)$/)
+  if (currentPodMatch?.[1]) return decodeURIComponent(currentPodMatch[1])
+
+  const legacyPodMatch = sessionUri.match(/\/\.data\/session\/([^/#]+)\.ttl(?:#([^/#]+))?$/)
+  return legacyPodMatch?.[2]
+    ? decodeURIComponent(legacyPodMatch[2])
+    : legacyPodMatch?.[1]
+      ? decodeURIComponent(legacyPodMatch[1])
+      : null
 }
 
 function extractThreadId(targetUri: string | null | undefined): string | null {
@@ -288,25 +330,25 @@ export const inboxOps = {
     const now = new Date()
     const resolvedAt = now.toISOString()
     const auditId = crypto.randomUUID()
-    const auditUri = makeAuditUri(input.actorWebId, auditId)
+    const auditUri = makeAuditUri(input.actorWebId, auditId, now)
 
-    await db.update(approvalTable).set({
+    await updateApprovalByIri(db, input.actorWebId, input.approval, {
       status: input.decision,
       decisionBy: input.actorWebId,
       decisionRole: 'human',
       reason: input.reason?.trim() || null,
       resolvedAt: now,
       policyVersion: input.approval.policyVersion || 'phase4-inbox-v1',
-    } as any).where({ id: input.approval.id } as any).execute()
+    })
 
-    await db.insert(auditTable).values({
+    await db.insert(auditResource).values({
       id: auditId,
       action: `inbox.approval.${input.decision}`,
       actor: input.actorWebId,
       actorRole: 'human',
       session: input.approval.session,
       toolCallId: input.approval.toolCallId,
-      approval: makeApprovalUri(input.actorWebId, input.approval.id),
+      approval: resolveApprovalIri(input.actorWebId, input.approval),
       context: JSON.stringify({
         toolName: input.approval.toolName,
         risk: input.approval.risk,

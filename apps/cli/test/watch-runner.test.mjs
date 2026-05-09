@@ -472,7 +472,26 @@ rl.on('line', (line) => {
   assert.equal(invocations[0].codexKey, 'sk-openai-key')
 })
 
-test('watch auto-approves trusted ACP permission requests in smart mode', async (t) => {
+test('watch secretary countdown detail shrinks over time and clamps to a five second minimum', async (t) => {
+  const { module, cleanup } = await loadWatchModule()
+  t.after(() => cleanup())
+
+  assert.equal(module.formatWatchSecretaryCountdownDetail(5000, 5000), 'auto [##########] 5s')
+  assert.equal(module.formatWatchSecretaryCountdownDetail(2500, 5000), 'auto [#####-----] 3s')
+  assert.equal(module.formatWatchSecretaryCountdownDetail(0, 5000), 'auto [----------] 0s')
+  assert.equal(module.__testResolveSecretaryReactionWindowMs({
+    canAutoDecide: true,
+    reactionWindowMs: 1,
+    source: 'model',
+  }), 5000)
+  assert.equal(module.__testResolveSecretaryReactionWindowMs({
+    canAutoDecide: true,
+    reactionWindowMs: 0,
+    source: 'fallback',
+  }), 0)
+})
+
+test('watch auto-approves trusted ACP permission requests when remote approval is unavailable', async (t) => {
   const { root, binDir, watchHome } = createWatchSandbox('linx-watch-acp-approval-')
   const logFile = join(root, 'approval-log.jsonl')
 
@@ -547,6 +566,19 @@ rl.on('line', (line) => {
   const { module, cleanup } = await loadWatchModule()
   t.after(() => cleanup())
 
+  t.mock.method(module.watchRuntime, 'resolveWatchSecretaryRecommendation', async () => ({
+    kind: 'command-approval',
+    canAutoDecide: true,
+    decision: 'accept',
+    confidence: 0.95,
+    reason: 'matched fallback policy for safe read-only command',
+    reactionWindowMs: 0,
+    source: 'fallback',
+  }))
+  t.mock.method(module.watchRuntime, 'resolveExistingRemoteWatchGrant', async () => null)
+  t.mock.method(module.watchRuntime, 'createRemoteWatchApproval', async () => {
+    throw new Error('remote unavailable')
+  })
   t.mock.method(module.watchRuntime, 'promptText', async () => '/exit')
 
   await withPatchedEnv(t, {
@@ -584,6 +616,7 @@ rl.on('line', (line) => {
   const events = readFileSync(join(watchHome, 'sessions', sessionDirs[0], 'events.jsonl'), 'utf-8')
   assert.match(events, /"type":"approval.required"/)
   assert.match(events, /"command":"pwd"/)
+  assert.match(events, /Remote approval unavailable \| remote unavailable/)
 })
 
 test('watch lets remote approval win by default and aborts the local approval prompt', async (t) => {
@@ -666,6 +699,7 @@ rl.on('line', (line) => {
   const waitedApprovals = []
   const resolvedApprovals = []
 
+  t.mock.method(module.watchRuntime, 'resolveExistingRemoteWatchGrant', async () => null)
   t.mock.method(module.watchRuntime, 'promptText', async (prompt, signal) => {
     prompts.push(prompt)
     if (prompt === 'you> ') {
@@ -816,6 +850,7 @@ rl.on('line', (line) => {
   const waitedApprovals = []
   const resolvedApprovals = []
 
+  t.mock.method(module.watchRuntime, 'resolveExistingRemoteWatchGrant', async () => null)
   t.mock.method(module.watchRuntime, 'promptText', async (prompt) => {
     if (prompt === 'select> ') {
       return 's'
@@ -876,6 +911,137 @@ rl.on('line', (line) => {
   const events = readFileSync(join(watchHome, 'sessions', sessionDirs[0], 'events.jsonl'), 'utf-8')
   assert.match(events, /Remote approval opened \| approval_local_1/)
   assert.match(events, /Local approval resolved \| accept_for_session/)
+})
+
+test('watch lets AI secretary allow approval after a reaction window and mirrors it to Pod', async (t) => {
+  const { root, binDir, watchHome } = createWatchSandbox('linx-watch-acp-secretary-approval-')
+  const logFile = join(root, 'secretary-approval-log.jsonl')
+
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  writeExecutable(join(binDir, 'codex-acp'), `#!/usr/bin/env node
+const { appendFileSync } = require('node:fs')
+const readline = require('node:readline')
+
+function write(obj) {
+  process.stdout.write(JSON.stringify(obj) + '\\n')
+}
+
+const rl = readline.createInterface({ input: process.stdin })
+let pendingPromptId = null
+let pendingPermissionId = null
+
+rl.on('line', (line) => {
+  const message = JSON.parse(line)
+  if (message.method === 'initialize') {
+    write({ jsonrpc: '2.0', id: message.id, result: { protocolVersion: 1 } })
+    return
+  }
+  if (message.method === 'session/new') {
+    write({ jsonrpc: '2.0', id: message.id, result: { sessionId: 'sess_secretary_approval_123' } })
+    return
+  }
+  if (message.method === 'session/prompt') {
+    pendingPromptId = message.id
+    pendingPermissionId = 713
+    write({
+      jsonrpc: '2.0',
+      id: pendingPermissionId,
+      method: 'session/request_permission',
+      params: {
+        sessionId: 'sess_secretary_approval_123',
+        toolCall: {
+          toolCallId: 'tool_secretary_1',
+          title: 'Run shell command',
+          kind: 'execute',
+          rawInput: { command: 'git status', cwd: '/tmp/demo' },
+        },
+        options: [
+          { optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' },
+          { optionId: 'allow_always', name: 'Allow always', kind: 'allow_always' },
+          { optionId: 'reject_once', name: 'Reject once', kind: 'reject_once' }
+        ],
+      },
+    })
+    return
+  }
+  if (pendingPermissionId !== null && message.id === pendingPermissionId) {
+    appendFileSync(process.env.FAKE_ACP_LOG, JSON.stringify(message) + '\\n')
+    write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'sess_secretary_approval_123', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'secretary approved' } } } })
+    write({ jsonrpc: '2.0', id: pendingPromptId, result: { stopReason: 'end_turn' } })
+  }
+})
+`)
+
+  const { module, cleanup } = await loadWatchModule()
+  t.after(() => cleanup())
+
+  const resolvedApprovals = []
+  t.mock.method(module.watchRuntime, 'resolveExistingRemoteWatchGrant', async () => null)
+  t.mock.method(module.watchRuntime, 'resolveWatchSecretaryRecommendation', async () => ({
+    kind: 'command-approval',
+    canAutoDecide: true,
+    decision: 'accept',
+    confidence: 0.91,
+    reason: 'read-only git status is safe to approve once',
+    reactionWindowMs: 5000,
+    source: 'model',
+  }))
+  t.mock.method(module.watchRuntime, 'promptText', async (prompt, signal) => {
+    if (prompt === 'select> ') {
+      return await new Promise((resolve, reject) => {
+        signal?.addEventListener('abort', () => {
+          const error = new Error('The operation was aborted.')
+          error.name = 'AbortError'
+          reject(error)
+        }, { once: true })
+      })
+    }
+    return '/exit'
+  })
+  t.mock.method(module.watchRuntime, 'createRemoteWatchApproval', async () => ({ id: 'approval_secretary_1' }))
+  t.mock.method(module.watchRuntime, 'waitForRemoteWatchApproval', async () => await new Promise(() => {}))
+  t.mock.method(module.watchRuntime, 'resolveRemoteWatchApproval', async (payload) => {
+    resolvedApprovals.push(payload)
+    return { id: payload.approvalId, decision: payload.decision }
+  })
+
+  await withPatchedEnv(t, {
+    PATH: `${binDir}:${process.env.PATH ?? ''}`,
+    LINX_WATCH_HOME: watchHome,
+    FAKE_ACP_LOG: logFile,
+  }, async () => {
+    const exitCode = await module.runWatch({
+      backend: 'codex',
+      mode: 'smart',
+      cwd: process.cwd(),
+      prompt: 'request secretary approval',
+      passthroughArgs: [],
+      credentialSource: 'local',
+    })
+
+    assert.equal(exitCode, 0)
+  })
+
+  assert.equal(resolvedApprovals.length, 1)
+  assert.equal(resolvedApprovals[0].decision, 'accept')
+  assert.equal(resolvedApprovals[0].decisionRole, 'secretary')
+
+  const responses = readFileSync(logFile, 'utf-8')
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line))
+
+  assert.equal(responses.length, 1)
+  assert.deepEqual(responses[0].result, {
+    outcome: {
+      outcome: 'selected',
+      optionId: 'allow_once',
+    },
+  })
 })
 
 test('watch batches multi-question ACP user input responses into one payload', async (t) => {
@@ -1013,6 +1179,130 @@ rl.on('line', (line) => {
   assert.match(events, /"type":"input.required"/)
   assert.match(events, /"question":"Choose runtime"/)
   assert.match(events, /"question":"Describe the goal"/)
+})
+
+test('watch lets AI secretary answer ACP user input after a reaction window', async (t) => {
+  const { root, binDir, watchHome } = createWatchSandbox('linx-watch-acp-secretary-input-')
+  const logFile = join(root, 'secretary-input-log.jsonl')
+
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  writeExecutable(join(binDir, 'codex-acp'), `#!/usr/bin/env node
+const { appendFileSync } = require('node:fs')
+const readline = require('node:readline')
+
+function write(obj) {
+  process.stdout.write(JSON.stringify(obj) + '\\n')
+}
+
+const rl = readline.createInterface({ input: process.stdin })
+let pendingPromptId = null
+let pendingInputId = null
+
+rl.on('line', (line) => {
+  const message = JSON.parse(line)
+  if (message.method === 'initialize') {
+    write({ jsonrpc: '2.0', id: message.id, result: { protocolVersion: 1 } })
+    return
+  }
+  if (message.method === 'session/new') {
+    write({ jsonrpc: '2.0', id: message.id, result: { sessionId: 'sess_secretary_input_123' } })
+    return
+  }
+  if (message.method === 'session/prompt') {
+    pendingPromptId = message.id
+    pendingInputId = 902
+    write({
+      jsonrpc: '2.0',
+      id: pendingInputId,
+      method: 'session/request_input',
+      params: {
+        questions: [
+          {
+            id: 'runtime',
+            header: 'Runtime',
+            question: 'Choose runtime',
+            options: [
+              { label: 'local' },
+              { label: 'cloud', description: 'Use Pod credentials' }
+            ]
+          }
+        ]
+      },
+    })
+    return
+  }
+  if (pendingInputId !== null && message.id === pendingInputId) {
+    appendFileSync(process.env.FAKE_ACP_LOG, JSON.stringify(message) + '\\n')
+    write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'sess_secretary_input_123', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'secretary answered' } } } })
+    write({ jsonrpc: '2.0', id: pendingPromptId, result: { stopReason: 'end_turn' } })
+  }
+})
+`)
+
+  const { module, cleanup } = await loadWatchModule()
+  t.after(() => cleanup())
+
+  t.mock.method(module.watchRuntime, 'resolveWatchSecretaryRecommendation', async () => ({
+    kind: 'user-input',
+    canAutoDecide: true,
+    answers: {
+      runtime: {
+        answers: ['cloud'],
+      },
+    },
+    confidence: 0.9,
+    reason: 'Pod credentials are the requested runtime source',
+    reactionWindowMs: 5000,
+    source: 'model',
+  }))
+
+  t.mock.method(module.watchRuntime, 'promptText', async (prompt, signal) => {
+    if (prompt === 'select> ') {
+      return await new Promise((resolve, reject) => {
+        signal?.addEventListener('abort', () => {
+          const error = new Error('The operation was aborted.')
+          error.name = 'AbortError'
+          reject(error)
+        }, { once: true })
+      })
+    }
+    return '/exit'
+  })
+
+  await withPatchedEnv(t, {
+    PATH: `${binDir}:${process.env.PATH ?? ''}`,
+    LINX_WATCH_HOME: watchHome,
+    FAKE_ACP_LOG: logFile,
+  }, async () => {
+    const exitCode = await module.runWatch({
+      backend: 'codex',
+      mode: 'smart',
+      cwd: process.cwd(),
+      prompt: 'answer runtime for me',
+      passthroughArgs: [],
+      credentialSource: 'local',
+    })
+
+    assert.equal(exitCode, 0)
+  })
+
+  const responses = readFileSync(logFile, 'utf-8')
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line))
+
+  assert.equal(responses.length, 1)
+  assert.deepEqual(responses[0].result, {
+    answers: {
+      runtime: {
+        answers: ['cloud'],
+      },
+    },
+  })
 })
 
 

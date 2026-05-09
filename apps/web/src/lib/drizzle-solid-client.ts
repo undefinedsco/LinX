@@ -1,7 +1,7 @@
 // Mock drizzle-solid client for demo purposes
 // TODO: Replace with actual drizzle-solid implementation
 
-import { type ChatRow, type ChatInsert } from '@linx/models'
+import { type ChatRow, type ChatInsert } from '@undefineds.co/models'
 
 // Mock database implementation
 class MockSolidDatabase {

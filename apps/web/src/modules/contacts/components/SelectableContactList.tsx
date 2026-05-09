@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Input } from '@/components/ui/input'
 import { Search, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { ContactRow } from '@linx/models'
+import type { ContactRow } from '@undefineds.co/models'
 
 interface SelectableContactListProps {
   title: string

@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { ContactType } from '@linx/models'
+import { ContactType } from '@undefineds.co/models'
 
 // Use vi.hoisted so these are available in vi.mock
 const {

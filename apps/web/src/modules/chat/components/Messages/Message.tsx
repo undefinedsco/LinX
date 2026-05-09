@@ -20,7 +20,7 @@ import {
   createMessageBlock,
   type MessageBlock,
   type MainTextMessageBlock,
-} from '@linx/models'
+} from '@undefineds.co/models'
 import { MessageBlockRenderer } from './Blocks'
 import { MessageHeader } from './MessageHeader'
 import { MessageMenubar } from './MessageMenubar'
@@ -53,6 +53,10 @@ export interface MessageData {
     name: string
     avatar?: string
   }
+  /** 群聊发送者名称 */
+  senderName?: string
+  /** 群聊发送者头像 */
+  senderAvatarUrl?: string
 }
 
 export interface MessageProps {
@@ -205,8 +209,8 @@ export const Message = memo<MessageProps>(({
         showAvatarOnly={!showTitle}
         placement={isUserBubble ? 'right' : 'left'}
         chatType={chatType}
-        senderName={senderName}
-        senderAvatarUrl={senderAvatarUrl}
+        senderName={senderName ?? message.senderName}
+        senderAvatarUrl={senderAvatarUrl ?? message.senderAvatarUrl}
       />
 
       {/* Content Container - Cherry Studio: padding-left 46px */}

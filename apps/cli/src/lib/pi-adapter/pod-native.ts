@@ -119,7 +119,7 @@ export function buildApprovalResourceUrl(webId: string, approvalId: string, crea
 }
 
 export function buildGrantResourceUrl(webIdOrUri: string, grantId: string): string {
-  return `${podBaseUrlFromWebIdOrUri(webIdOrUri)}/settings/autonomy/grants.ttl#${encodeURIComponent(grantId)}`
+  return `${podBaseUrlFromWebIdOrUri(webIdOrUri)}/settings/autonomy/grants/${encodeURIComponent(grantId)}.ttl`
 }
 
 export function buildInboxResourceUrl(webIdOrUri: string, notificationId: string): string {
@@ -295,7 +295,11 @@ export function parseManagedTurtleBlocks(turtle: string, baseIRI?: string): Map<
     }
     blocks.set(subject, predicates)
   }
-  for (const [subject, predicates] of parseStandardTurtleBlocks(turtle, baseIRI)) {
+  const turtleWithoutManagedBlocks = turtle.replace(new RegExp(
+    `${escapeRegExp(MANAGED_BEGIN)} [^\\n]+\\n[\\s\\S]*?${escapeRegExp(MANAGED_END)}\\n?`,
+    'g',
+  ), '')
+  for (const [subject, predicates] of parseStandardTurtleBlocks(turtleWithoutManagedBlocks, baseIRI)) {
     const existing = blocks.get(subject) ?? new Map<string, TurtleObject[]>()
     for (const [predicate, objects] of predicates) {
       existing.set(predicate, [...(existing.get(predicate) ?? []), ...objects])

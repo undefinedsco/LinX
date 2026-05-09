@@ -8,7 +8,7 @@ import { useNavigate } from '@tanstack/react-router'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { useFavoriteStore } from '../store'
 import { useFavoriteList, useFavoriteMutations } from '../collections'
-import type { FavoriteRow } from '@linx/models'
+import type { FavoriteRow } from '@undefineds.co/models'
 import {
   Star,
   ExternalLink,

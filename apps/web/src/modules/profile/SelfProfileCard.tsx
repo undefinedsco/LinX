@@ -7,7 +7,7 @@ import {
   solidProfileTable,
   type SolidProfileRow,
   type SolidProfileUpdate
-} from "@linx/models";
+} from "@undefineds.co/models";
 import { Copy, MapPin, Camera } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";

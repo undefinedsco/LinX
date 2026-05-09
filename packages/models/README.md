@@ -56,6 +56,12 @@ LinX 的所有数据存储在 Solid Pod 中，使用标准的 RDF 格式。本�
 - 新增 shared model 代码优先使用 `chatResource`、`threadResource`、`messageResource`、`sessionResource` 等 Solid resource 命名；`*Table` 只作为兼容 alias 逐步退出。
 - 如果壳层需要新的查询、upsert、resolve-by-uri、审计或审批状态变更能力，优先在本包新增 repository/helper 和 tests；不要在 CLI/App 中复制 predicate、subject template、Turtle 读写或 shared 状态机。
 - `approval` / `grant` / `audit` / `inboxNotification` / `session` 等跨端控制面也属于本包的 shared resource 语义。CLI/App 只负责把 Pi/Codex/Claude 等运行时事件映射成本包定义的 insert/update DTO，不能另建一套存储路径或审批策略。
+- approval 的倒计时和可选决策也属于 shared resource 语义：使用 `approvalResource.expiresAt` 表示截止时间，使用 `approvalResource.approvalOptions` 存储上游原生协议给出的可选决策（例如 `allow_once` / `allow_always` / `reject_once`）。CLI/App 不得各自用私有 predicate 或本地状态推断这些字段。
+- grant 是可维护的 LLM Wiki 文档资源，不是一次请求的 fingerprint。`grantResource` 使用 `/settings/autonomy/grants/{id}.ttl`，文档 URI 本身就是 RDF subject；通过 `title/summary/body/schema/pageKind/wikiStatus/tags/source/sourceHash/compiledAt/compiledFrom/related/context` 描述页面语义、来源和上下文。
+- `grant.schema` 使用 `dcterms:conformsTo` 指向 Solid schema/shape URI，例如 `/settings/autonomy/schema/grant.ttl#GrantWikiPage`；它不是 `path`/`wikiPath` 字符串，TTL wiki page 也不需要 `.meta` subject。
+- `grant.target`、`grant.action`、`grant.riskCeiling` 只用于候选筛选或排序，不得作为最终自动审批判定。最终是否覆盖必须看 wiki page 的 `body/summary/tags/source/provenance/context` 与当前请求的语义匹配结果。
+- CLI/App 不得为 shared 控制面字段自定义业务 predicate。新增 approval/grant/audit 字段必须先在本包的 namespace、vocab、schema 和 tests 中定义。
+- structured user-input 与 approval 一样属于 watch 共享协议：AI secretary 只能在答案能从请求上下文明确推出时代答，否则必须回到人工输入。
 
 ---
 
@@ -585,10 +591,6 @@ yarn workspace @linq/models typecheck
 ## 许可证
 
 MIT License
-
-
-
-
 
 
 

@@ -2,10 +2,11 @@
 import dotenv from 'dotenv'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import { Session } from '@inrupt/solid-client-authn-node'
-import { drizzle, eq, type SolidDatabase } from '@undefineds.co/drizzle-solid'
+import { drizzle, eq } from '@undefineds.co/drizzle-solid'
 import { QueryClient } from '@tanstack/react-query'
-import { aiProviderTable, linxSchema } from '@linx/models'
+import { aiProviderTable, solidSchema, type SolidDatabase } from '@undefineds.co/models'
 import { createPodCollection } from './pod-collection'
+import { startLocalXpod, type LocalXpodTestPod } from '../../test-utils/local-xpod'
 
 dotenv.config({ path: '.env' })
 
@@ -16,44 +17,45 @@ const env = {
   oidcIssuer: process.env.SOLID_OIDC_ISSUER,
 }
 
-const hasEnv = Boolean(env.webId && env.clientId && env.clientSecret && env.oidcIssuer)
+let localXpod: LocalXpodTestPod | null = null
 
-// Check if Pod server is reachable before running integration tests
-let podReachable = false
-if (hasEnv && env.oidcIssuer) {
-  try {
-    const probeUrl = new URL('.well-known/openid-configuration', env.oidcIssuer).href
-    const ctrl = new AbortController()
-    const timer = setTimeout(() => ctrl.abort(), 5000)
-    await fetch(probeUrl, { signal: ctrl.signal }).then(() => { podReachable = true })
-    clearTimeout(timer)
-  } catch { /* server not reachable */ }
+async function ensureEnv(): Promise<typeof env> {
+  if (env.webId && env.clientId && env.clientSecret && env.oidcIssuer) return env
+  if (!localXpod) {
+    localXpod = await startLocalXpod()
+  }
+  env.webId = localXpod.webId
+  env.clientId = localXpod.clientId
+  env.clientSecret = localXpod.clientSecret
+  env.oidcIssuer = localXpod.oidcIssuer
+  return env
 }
-const canRun = hasEnv && podReachable
 
-let db: SolidDatabase | null = null
+let db: SolidDatabase<any> | null = null
 let session: Session | null = null
 const createdSubjects: string[] = []
 
 async function getDb() {
   if (db) return db
+  const activeEnv = await ensureEnv()
   session = new Session()
   await session.login({
-    clientId: env.clientId!,
-    clientSecret: env.clientSecret!,
-    oidcIssuer: env.oidcIssuer!,
+    clientId: activeEnv.clientId!,
+    clientSecret: activeEnv.clientSecret!,
+    oidcIssuer: activeEnv.oidcIssuer!,
     tokenType: 'DPoP',
   })
-  db = drizzle(session, { logger: false, disableInteropDiscovery: true, schema: linxSchema })
-  await db.init([aiProviderTable])
-  return db
+  const createdDb = drizzle(session, { logger: false, disableInteropDiscovery: true, schema: solidSchema }) as SolidDatabase<any>
+  db = createdDb
+  await createdDb.init([aiProviderTable])
+  return createdDb
 }
 
 async function cleanup() {
   if (!db) return
   for (const subject of createdSubjects) {
     try {
-      await db.delete(aiProviderTable).where({ '@id': subject } as any).execute()
+      await db.delete(aiProviderTable).whereByIri(subject).execute()
     } catch {
       // ignore cleanup errors
     }
@@ -62,11 +64,20 @@ async function cleanup() {
 
 afterAll(async () => {
   await cleanup()
-  if (session) await session.logout()
-}, 20000)
+  if (session) {
+    await Promise.race([
+      session.logout(),
+      new Promise((resolve) => setTimeout(resolve, 2000)),
+    ])
+  }
+  await Promise.race([
+    localXpod?.stop() ?? Promise.resolve(),
+    new Promise((resolve) => setTimeout(resolve, 5000)),
+  ])
+}, 60000)
 
 describe('pod-collection integration', () => {
-  it.skipIf(!canRun)('optimistic insert updates local state before persistence', { timeout: 30000 }, async () => {
+  it('optimistic insert updates local state before persistence', { timeout: 30000 }, async () => {
     const database = await getDb()
     const queryClient = new QueryClient()
 
@@ -124,7 +135,7 @@ describe('pod-collection integration', () => {
     expect(created?.id).toBe(id)
   })
 
-  it.skipIf(!canRun)('pod notifications invalidate queries on create/update/delete', { timeout: 20000 }, async () => {
+  it('pod notifications invalidate queries on create/update/delete', { timeout: 20000 }, async () => {
     const database = await getDb()
     const queryClient = new QueryClient()
     const invalidateSpy = vi

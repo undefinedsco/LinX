@@ -14,6 +14,17 @@ export interface AgentProviderMetadata {
 
 export const DEFAULT_AGENT_PROVIDERS: AgentProviderMetadata[] = [
   {
+    slug: 'undefineds',
+    displayName: 'undefineds',
+    baseUrl: 'https://api.undefineds.co/v1',
+    homepage: 'https://undefineds.co/linx',
+    logoUrl: 'https://undefineds.co/favicon.ico',
+    models: [
+      { id: 'linx-lite', displayName: 'LinX Lite' },
+      { id: 'linx', displayName: 'LinX' },
+    ],
+  },
+  {
     slug: 'openai',
     displayName: 'OpenAI',
     homepage: 'https://platform.openai.com',

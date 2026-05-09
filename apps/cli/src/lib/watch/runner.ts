@@ -3,18 +3,27 @@ import { setTimeout as delay } from 'node:timers/promises'
 import {
   buildAcpPermissionResponse,
   buildWatchUserInputResponse,
+  MAX_WATCH_SECRETARY_REACTION_WINDOW_MS,
+  MIN_WATCH_SECRETARY_REACTION_WINDOW_MS,
   normalizeAcpInteractionRequest,
   normalizeAcpRequest,
   normalizeAcpSessionNotification,
   normalizeWatchCredentialSource,
   parseWatchJsonLine,
-  resolveWatchAutoApprovalDecision,
   resolveWatchCredentialSourceResolution,
   shouldAttemptCloudCredentialProbe,
+  watchApprovalDecisionLabel,
+  watchUserInputAnswersSummary,
   type WatchAuthStatus,
   type WatchApprovalDecision,
   type WatchApprovalRequest,
   type WatchCloudCredentialProbe,
+  type WatchInteractionRequest,
+  type WatchSecretaryApprovalRecommendation,
+  type WatchSecretaryRecommendation,
+  type WatchSecretaryUserInputRecommendation,
+  type WatchUserInputAnswers,
+  type WatchUserInputRequest,
   type WatchUserInputQuestion,
 } from '@undefineds.co/models/watch'
 import {
@@ -33,12 +42,15 @@ import { describeWatchMode, getWatchHook, listWatchHooks } from './hooks/index.j
 import {
   createRemoteWatchApproval,
   isRemoteApprovalAbortError,
+  resolveExistingRemoteWatchGrant,
   resolveRemoteWatchApproval,
   waitForRemoteWatchApproval,
 } from './pod-approval.js'
 import { persistWatchConversationToPod } from './pod-persistence.js'
 import { loadPodBackendCredential, podCredentialMissingMessage } from './pod-ai.js'
+import { resolveWatchSecretaryRecommendation } from './secretary.js'
 import { promptText } from '../prompt.js'
+import type { AgentRuntimeCapabilities } from '@linx/agent-runtime'
 import type {
   WatchBackendHook,
   WatchCredentialSource,
@@ -81,14 +93,19 @@ interface ResolvedWatchRun {
   authPreflight: WatchAuthPreflightResult
 }
 
+const WATCH_SECRETARY_COUNTDOWN_BAR_WIDTH = 10
+const WATCH_SECRETARY_COUNTDOWN_TICK_MS = 250
+
 export const watchRuntime = {
   promptText,
   preflightWatchAuth,
   loadPodBackendCredential,
   createRemoteWatchApproval,
+  resolveExistingRemoteWatchGrant,
   waitForRemoteWatchApproval,
   resolveRemoteWatchApproval,
   persistWatchConversationToPod,
+  resolveWatchSecretaryRecommendation,
 }
 
 function createLineSplitter(
@@ -162,44 +179,207 @@ async function promptApproval(
   message: string,
   allowSessionOption = true,
   signal?: AbortSignal,
+  recommendation?: WatchSecretaryApprovalRecommendation | null,
 ): Promise<WatchApprovalDecision> {
   while (true) {
     display.setPhase('approval', message)
     const answer = (await display.chooseOption(
       'Approval required',
-      [`[approval] ${message}`],
-      allowSessionOption
-        ? [
-          { label: 'Yes', value: 'y', shortcuts: ['y'] },
-          { label: 'Session', value: 's', shortcuts: ['s'] },
-          { label: 'No', value: 'n', shortcuts: ['n'] },
-          { label: 'Cancel', value: 'c', shortcuts: ['c'] },
-        ]
-        : [
-          { label: 'Yes', value: 'y', shortcuts: ['y'] },
-          { label: 'No', value: 'n', shortcuts: ['n'] },
-          { label: 'Cancel', value: 'c', shortcuts: ['c'] },
-        ],
+      approvalPromptLines(message, recommendation),
+      approvalPromptOptions(allowSessionOption, recommendation?.decision),
       signal,
     )).trim().toLowerCase()
 
-    if (answer === 'y' || answer === 'yes') {
+    if (answer === 'accept' || answer === 'y' || answer === 'yes') {
       display.setPhase('running', 'Continuing turn')
       return 'accept'
     }
-    if (allowSessionOption && (answer === 's' || answer === 'session')) {
+    if (allowSessionOption && (answer === 'accept_for_session' || answer === 'g' || answer === 'grant' || answer === 's' || answer === 'session')) {
       display.setPhase('running', 'Continuing turn')
       return 'accept_for_session'
     }
-    if (answer === 'n' || answer === 'no') {
+    if (answer === 'decline' || answer === 'n' || answer === 'no') {
       display.setPhase('running', 'Continuing turn')
       return 'decline'
     }
-    if (answer === 'c' || answer === 'cancel') {
+    if (answer === 'cancel' || answer === 'c') {
       display.setPhase('running', 'Continuing turn')
       return 'cancel'
     }
   }
+}
+
+function approvalPromptLines(message: string, recommendation?: WatchSecretaryApprovalRecommendation | null): string[] {
+  const lines = [`[approval] ${message}`]
+  if (recommendation?.decision) {
+    const label = watchApprovalDecisionLabel(recommendation.decision)
+    const confidence = typeof recommendation.confidence === 'number'
+      ? ` · confidence ${Math.round(recommendation.confidence * 100)}%`
+      : ''
+    lines.push(`[secretary] recommends ${label}${confidence}`)
+  }
+  if (recommendation?.reason) {
+    lines.push(`[secretary] ${recommendation.reason}`)
+  }
+  if (recommendation?.canAutoDecide && recommendation.decision && (recommendation.reactionWindowMs ?? 0) > 0) {
+    lines.push(`[secretary] auto-selects ${watchApprovalDecisionLabel(recommendation.decision)} after ${formatReactionWindow(recommendation.reactionWindowMs)}`)
+  }
+  return lines
+}
+
+interface WatchSecretaryReactionWindowInput {
+  canAutoDecide?: boolean
+  reactionWindowMs?: number
+  source?: WatchSecretaryRecommendation['source']
+}
+
+function resolveSecretaryReactionWindowMs(recommendation?: WatchSecretaryReactionWindowInput | null): number {
+  if (!recommendation?.canAutoDecide) {
+    return 0
+  }
+
+  const reactionWindowMs = recommendation.reactionWindowMs ?? 0
+  if (recommendation.source === 'fallback') {
+    return Math.max(0, Math.min(MAX_WATCH_SECRETARY_REACTION_WINDOW_MS, reactionWindowMs))
+  }
+
+  return Math.max(
+    MIN_WATCH_SECRETARY_REACTION_WINDOW_MS,
+    Math.min(
+      MAX_WATCH_SECRETARY_REACTION_WINDOW_MS,
+      reactionWindowMs > 0 ? reactionWindowMs : MIN_WATCH_SECRETARY_REACTION_WINDOW_MS,
+    ),
+  )
+}
+
+export const __testResolveSecretaryReactionWindowMs = resolveSecretaryReactionWindowMs
+
+function approvalPromptOptions(
+  allowSessionOption: boolean,
+  recommendedDecision?: WatchApprovalDecision,
+): Array<{ label: string; value: string; description?: string; shortcuts?: string[] }> {
+  const option = (decision: WatchApprovalDecision, label: string, description: string, shortcuts: string[]) => ({
+    label: recommendedDecision === decision ? `${label} (recommended)` : label,
+    value: decision,
+    description,
+    shortcuts,
+  })
+
+  const options = [
+    option('accept', 'Allow once', 'approve this request only', ['y', '1']),
+  ]
+  if (allowSessionOption) {
+    options.push(option('accept_for_session', 'Grant', 'allow similar requests for this session', ['g', 's', '2']))
+  }
+  options.push(
+    option('decline', 'Deny', 'reject this request', ['n', allowSessionOption ? '3' : '2']),
+    option('cancel', 'Cancel', 'abort the current request', ['c', allowSessionOption ? '4' : '3']),
+  )
+  return options
+}
+
+async function promptApprovalWithRecommendation(
+  display: WatchDisplay,
+  message: string,
+  recommendation?: WatchSecretaryApprovalRecommendation | null,
+  signal?: AbortSignal,
+  onAuto?: () => void,
+): Promise<WatchApprovalDecision> {
+  if (!recommendation?.canAutoDecide || !recommendation.decision) {
+    return promptApproval(display, message, true, signal, recommendation)
+  }
+
+  const reactionWindowMs = resolveSecretaryReactionWindowMs(recommendation)
+  const displayRecommendation = {
+    ...recommendation,
+    reactionWindowMs,
+  }
+
+  return promptWithAutoDefault({
+    fallback: (activeSignal) => promptApproval(display, message, true, activeSignal, displayRecommendation),
+    defaultValue: recommendation.decision,
+    reactionWindowMs,
+    signal,
+    onProgress: reactionWindowMs > 0
+      ? (detail) => display.setPhase('approval', detail)
+      : undefined,
+    onAuto: () => {
+      onAuto?.()
+      display.showActivity(
+        `AI secretary selected ${watchApprovalDecisionLabel(recommendation.decision!)} | ${recommendation.reason ?? 'auto decision'}`,
+        'success',
+      )
+    },
+  })
+}
+
+async function promptWithAutoDefault<T>(options: {
+  fallback: (signal?: AbortSignal) => Promise<T>
+  defaultValue: T
+  reactionWindowMs: number
+  signal?: AbortSignal
+  onAuto?: () => void
+  onProgress?: (detail: string) => void
+}): Promise<T> {
+  if (options.reactionWindowMs <= 0) {
+    options.onAuto?.()
+    return options.defaultValue
+  }
+
+  const controller = new AbortController()
+  const activeSignal = options.signal
+    ? (typeof AbortSignal.any === 'function'
+      ? AbortSignal.any([options.signal, controller.signal])
+      : controller.signal)
+    : controller.signal
+  const startedAt = Date.now()
+  const promptPromise = options.fallback(activeSignal)
+    .then((value) => ({ type: 'user' as const, value }))
+  const autoPromise = delay(options.reactionWindowMs)
+    .then(() => ({ type: 'auto' as const, value: options.defaultValue }))
+  const progressTimer = options.onProgress
+    ? setInterval(() => {
+      const remainingMs = Math.max(0, options.reactionWindowMs - Math.max(0, Date.now() - startedAt))
+      options.onProgress?.(formatWatchSecretaryCountdownDetail(remainingMs, options.reactionWindowMs))
+    }, WATCH_SECRETARY_COUNTDOWN_TICK_MS)
+    : null
+
+  if (options.onProgress) {
+    options.onProgress(formatWatchSecretaryCountdownDetail(options.reactionWindowMs, options.reactionWindowMs))
+  }
+
+  void promptPromise.catch(() => undefined)
+  try {
+    const winner = await Promise.race([promptPromise, autoPromise])
+    if (winner.type === 'auto') {
+      controller.abort()
+      options.onAuto?.()
+    }
+    return winner.value
+  } finally {
+    if (progressTimer) {
+      clearInterval(progressTimer)
+    }
+  }
+}
+
+function formatReactionWindow(ms: number | undefined): string {
+  const seconds = Math.max(0, Math.ceil((ms ?? 0) / 1000))
+  return `${seconds}s`
+}
+
+export function formatWatchSecretaryCountdownDetail(remainingMs: number, durationMs: number): string {
+  const totalMs = Math.max(1, durationMs)
+  const clampedRemainingMs = Math.max(0, Math.min(totalMs, remainingMs))
+  const filled = Math.max(
+    0,
+    Math.min(
+      WATCH_SECRETARY_COUNTDOWN_BAR_WIDTH,
+      Math.ceil((clampedRemainingMs / totalMs) * WATCH_SECRETARY_COUNTDOWN_BAR_WIDTH),
+    ),
+  )
+  const bar = `${'#'.repeat(filled)}${'-'.repeat(WATCH_SECRETARY_COUNTDOWN_BAR_WIDTH - filled)}`
+  return `auto [${bar}] ${formatReactionWindow(clampedRemainingMs)}`
 }
 
 async function promptAuthContinue(display: WatchDisplay, lines: string[]): Promise<boolean> {
@@ -603,8 +783,14 @@ class AcpSession extends BaseSession {
       error: undefined,
     })
 
-    if (this.options.model) {
+    if (this.options.model && this.hook.capabilities.canSetModel) {
       await this.trySetModel(this.options.model)
+    } else if (this.options.model) {
+      appendEntry(this.record, 'system', JSON.stringify({
+        type: 'session.set_model.skipped',
+        model: this.options.model,
+        reason: `${this.record.backend} does not advertise runtime model switching`,
+      }), [])
     }
   }
 
@@ -618,6 +804,9 @@ class AcpSession extends BaseSession {
     const normalized = model.trim()
     if (!normalized) {
       throw new Error('Model id cannot be empty')
+    }
+    if (!this.hook.capabilities.canSetModel) {
+      throw new Error(`${this.record.backend} does not advertise runtime model switching`)
     }
 
     await this.trySetModel(normalized, true)
@@ -873,16 +1062,12 @@ class AcpSession extends BaseSession {
       }
 
       if (interaction.kind === 'user-input') {
-        const result = await this.resolveToolUserInput(interaction.questions)
+        const result = await this.resolveToolUserInput(interaction)
         this.sendResponse(id, result)
         return
       }
 
-      const autoDecision = resolveWatchAutoApprovalDecision({
-        mode: this.options.mode,
-        request: interaction,
-      })
-      const decision = autoDecision ?? await this.resolveApproval(interaction)
+      const decision = await this.resolveApproval(interaction)
       this.sendResponse(id, buildAcpPermissionResponse(interaction, decision))
     } catch (error) {
       const messageText = error instanceof Error ? error.message : String(error)
@@ -893,27 +1078,113 @@ class AcpSession extends BaseSession {
     }
   }
 
-  private async resolveToolUserInput(questions: WatchUserInputQuestion[]): Promise<unknown> {
-    this.display.setPhase('question', questions[0]?.header ?? 'Input required')
-    const answers = await this.display.chooseQuestions(questions)
+  private async resolveToolUserInput(interaction: WatchUserInputRequest): Promise<unknown> {
+    const recommendation = await this.resolveSecretaryRecommendation(interaction)
+    const answers = await this.resolveToolUserInputAnswers(interaction.questions, recommendation?.kind === 'user-input' ? recommendation : null)
     this.display.setPhase('running', 'Continuing turn')
     return buildWatchUserInputResponse(answers)
   }
 
+  private async resolveToolUserInputAnswers(
+    questions: WatchUserInputQuestion[],
+    recommendation?: WatchSecretaryUserInputRecommendation | null,
+  ): Promise<WatchUserInputAnswers> {
+    this.display.setPhase('question', questions[0]?.header ?? 'Input required')
+    if (!recommendation?.answers || !recommendation.canAutoDecide) {
+      if (recommendation?.answers) {
+        this.display.showActivity(`AI secretary suggests: ${watchUserInputAnswersSummary(recommendation.answers)}`)
+      }
+      return this.display.chooseQuestions(questions)
+    }
+
+    const reactionWindowMs = resolveSecretaryReactionWindowMs(recommendation)
+    const displayRecommendation = {
+      ...recommendation,
+      reactionWindowMs,
+    }
+
+    const useAiAnswer = await promptWithAutoDefault({
+      fallback: (signal) => this.display.chooseOption(
+        'Input required',
+        [
+          `[input] ${questions[0]?.question ?? 'Input required'}`,
+          `[secretary] suggests ${watchUserInputAnswersSummary(recommendation.answers!)}`,
+          ...(recommendation.reason ? [`[secretary] ${recommendation.reason}`] : []),
+          ...(displayRecommendation.reactionWindowMs ? [`[secretary] auto-uses this answer after ${formatReactionWindow(displayRecommendation.reactionWindowMs)}`] : []),
+        ],
+        [
+          { label: 'Use AI answer (recommended)', value: 'use', shortcuts: ['u', 'y', '1'] },
+          { label: 'Answer myself', value: 'manual', shortcuts: ['m', 'n', '2'] },
+        ],
+        signal,
+      ),
+      defaultValue: 'use',
+      reactionWindowMs,
+      onProgress: reactionWindowMs > 0
+        ? (detail) => this.display.setPhase('question', detail)
+        : undefined,
+      onAuto: () => this.display.showActivity(
+        `AI secretary answered input | ${watchUserInputAnswersSummary(recommendation.answers!)}`,
+        'success',
+      ),
+    })
+
+    if (useAiAnswer === 'use' || useAiAnswer === 'u' || useAiAnswer === 'y' || useAiAnswer === 'yes') {
+      return recommendation.answers
+    }
+    return this.display.chooseQuestions(questions)
+  }
+
   private async resolveApproval(interaction: WatchApprovalRequest): Promise<WatchApprovalDecision> {
     const source = this.options.approvalSource ?? 'hybrid'
+    if (source !== 'local') {
+      const granted = await watchRuntime.resolveExistingRemoteWatchGrant({
+        record: this.record,
+        request: interaction,
+      }).catch(() => null)
+
+      if (granted) {
+        appendSessionNote(this.record, `Existing grant covered approval | ${watchApprovalDecisionLabel(granted)}`)
+        this.display.showActivity(`Existing grant covered approval | ${watchApprovalDecisionLabel(granted)}`, 'success')
+        this.display.setPhase('running', 'Continuing turn')
+        return granted
+      }
+    }
+
+    const recommendation = await this.resolveSecretaryRecommendation(interaction)
     if (source === 'local') {
-      return promptApproval(this.display, approvalPromptMessage(interaction), true)
+      return promptApprovalWithRecommendation(
+        this.display,
+        approvalPromptMessage(interaction),
+        recommendation?.kind === interaction.kind ? recommendation as WatchSecretaryApprovalRecommendation : null,
+      )
     }
 
     if (source === 'remote') {
-      return this.resolveRemoteOnlyApproval(interaction)
+      return this.resolveRemoteOnlyApproval(
+        interaction,
+        recommendation?.kind === interaction.kind ? recommendation as WatchSecretaryApprovalRecommendation : null,
+      )
     }
 
-    return this.resolveHybridApproval(interaction)
+    return this.resolveHybridApproval(
+      interaction,
+      recommendation?.kind === interaction.kind ? recommendation as WatchSecretaryApprovalRecommendation : null,
+    )
   }
 
-  private async resolveRemoteOnlyApproval(interaction: WatchApprovalRequest): Promise<WatchApprovalDecision> {
+  private async resolveSecretaryRecommendation(interaction: WatchInteractionRequest): Promise<WatchSecretaryRecommendation | null> {
+    return watchRuntime.resolveWatchSecretaryRecommendation({
+      mode: this.options.mode,
+      record: this.record,
+      request: interaction,
+    }).catch(() => null)
+  }
+
+  private async resolveRemoteOnlyApproval(
+    interaction: WatchApprovalRequest,
+    recommendation?: WatchSecretaryApprovalRecommendation | null,
+  ): Promise<WatchApprovalDecision> {
     const promptMessage = approvalPromptMessage(interaction)
     appendSessionNote(this.record, `Waiting for remote approval | ${promptMessage}`)
     this.display.setPhase('approval', `${promptMessage} · remote`)
@@ -922,17 +1193,47 @@ class AcpSession extends BaseSession {
       record: this.record,
       request: interaction,
     })
-    const decision = await watchRuntime.waitForRemoteWatchApproval({
+    const remoteDecisionPromise = watchRuntime.waitForRemoteWatchApproval({
       approvalId: remote.id,
       approvalUri: remote.approvalUri,
     })
+    void remoteDecisionPromise.catch(() => undefined)
+
+    if (!recommendation?.canAutoDecide || !recommendation.decision) {
+      const decision = await remoteDecisionPromise
+      appendSessionNote(this.record, `Remote approval resolved | ${decision}`)
+      this.display.setPhase('running', 'Continuing turn')
+      return decision
+    }
+
+    const reactionWindowMs = resolveSecretaryReactionWindowMs(recommendation)
+    const decision = await Promise.race([
+      remoteDecisionPromise,
+      delay(reactionWindowMs).then(async () => {
+        this.display.showActivity(
+          `AI secretary selected ${watchApprovalDecisionLabel(recommendation.decision!)} | ${recommendation.reason ?? 'auto decision'}`,
+          'success',
+        )
+        await watchRuntime.resolveRemoteWatchApproval({
+          approvalId: remote.id,
+          approvalUri: remote.approvalUri,
+          decision: recommendation.decision!,
+          decisionRole: 'secretary',
+          note: recommendation.reason ?? 'resolved by AI secretary',
+        }).catch(() => undefined)
+        return recommendation.decision!
+      }),
+    ])
 
     appendSessionNote(this.record, `Remote approval resolved | ${decision}`)
     this.display.setPhase('running', 'Continuing turn')
     return decision
   }
 
-  private async resolveHybridApproval(interaction: WatchApprovalRequest): Promise<WatchApprovalDecision> {
+  private async resolveHybridApproval(
+    interaction: WatchApprovalRequest,
+    recommendation?: WatchSecretaryApprovalRecommendation | null,
+  ): Promise<WatchApprovalDecision> {
     const promptMessage = approvalPromptMessage(interaction)
 
     let remoteApproval: { id: string; approvalUri?: string } | null = null
@@ -947,12 +1248,21 @@ class AcpSession extends BaseSession {
         this.record,
         `Remote approval unavailable | ${error instanceof Error ? error.message : String(error)}`,
       )
-      return promptApproval(this.display, promptMessage, true)
+      return promptApprovalWithRecommendation(this.display, promptMessage, recommendation)
     }
 
     const localAbort = new AbortController()
     const remoteAbort = new AbortController()
-    const localDecisionPromise = promptApproval(this.display, promptMessage, true, localAbort.signal)
+    let secretaryAutoResolved = false
+    const localDecisionPromise = promptApprovalWithRecommendation(
+      this.display,
+      promptMessage,
+      recommendation,
+      localAbort.signal,
+      () => {
+        secretaryAutoResolved = true
+      },
+    )
       .then((decision) => ({ source: 'local' as const, decision }))
     const remoteDecisionPromise = watchRuntime.waitForRemoteWatchApproval({
       approvalId: remoteApproval.id,
@@ -973,7 +1283,10 @@ class AcpSession extends BaseSession {
           approvalId: remoteApproval.id,
           approvalUri: remoteApproval.approvalUri,
           decision: winner.decision,
-          note: 'resolved from active local watch session',
+          decisionRole: secretaryAutoResolved ? 'secretary' : 'human',
+          note: secretaryAutoResolved
+            ? (recommendation?.reason ?? 'resolved by AI secretary')
+            : 'resolved from active local watch session',
         }).catch(() => undefined)
         this.display.setPhase('running', 'Continuing turn')
         return winner.decision
@@ -1440,12 +1753,14 @@ export function listSupportedWatchBackends(): Array<{
   backend: string
   label: string
   description: string
+  capabilities: AgentRuntimeCapabilities
   modes: Record<string, string>
 }> {
   return listWatchHooks().map((hook) => ({
     backend: hook.id,
     label: hook.label,
     description: hook.description,
+    capabilities: hook.capabilities,
     modes: {
       manual: describeWatchMode('manual'),
       smart: describeWatchMode('smart'),

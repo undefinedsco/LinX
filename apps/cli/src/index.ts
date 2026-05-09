@@ -5,15 +5,15 @@ import yargs, { type Argv, type CommandModule } from 'yargs'
 import { hideBin } from 'yargs/helpers'
 import { aiCommand } from './lib/ai-command.js'
 import { resolveAccountBaseUrl } from './lib/account-api.js'
-import { getClientCredentialId, getClientCredentialKey, getClientCredentials, loadCredentials } from './lib/credentials-store.js'
-import { loadAccountSession } from './lib/account-session.js'
+import { loadCredentials } from './lib/credentials-store.js'
 import { loginCommand, logoutCommand, whoamiCommand } from './lib/login-command.js'
 import { DefaultPackageManager, SettingsManager, runPrintMode } from '@mariozechner/pi-coding-agent'
 import { promptText } from './lib/prompt.js'
 import { resolveRuntimeTarget } from './lib/runtime-target.js'
 import { createCodexNativeProxy } from './lib/codex-plugin/index.js'
 import { bootstrapPiInteractiveMode, createPiRuntimeAdapter, type LinxLoginReason } from './lib/pi-adapter/index.js'
-import { getOidcAccessToken, isOidcLoginExpiredError } from './lib/oidc-auth.js'
+import { isOidcLoginExpiredError } from './lib/oidc-auth.js'
+import { createPodDataSession, type PodDataSession } from './lib/pod-data-session.js'
 import { DEFAULT_LINX_CLOUD_MODEL_ID, FALLBACK_LINX_CLOUD_MODEL_IDS } from './lib/default-model.js'
 import type { PiCompletionBackendResult } from './lib/pi-adapter/stream.js'
 import {
@@ -25,17 +25,15 @@ import { LinxPiPodMirror } from './lib/pi-adapter/pod-mirror.js'
 import type { RemoteChatMessage, RemoteChatTool } from './lib/chat-api.js'
 import { LINX_AGENT_DIR } from './lib/pi-adapter/branding.js'
 import {
-  formatRemoteWatchApprovalSummary,
   formatArchivedWatchSession,
   formatWatchSessionSummary,
   loadArchivedWatchEvents,
   listArchivedWatchSessions,
-  listRemoteWatchApprovals,
   listSupportedWatchBackends,
   loadArchivedWatchSession,
-  resolveRemoteWatchApproval,
   runWatch,
   type WatchBackend,
+  type WatchApprovalSource,
   type WatchCredentialSource,
   type WatchMode,
 } from './lib/watch/index.js'
@@ -94,6 +92,7 @@ interface RuntimeContext {
   runtimeUrl: string
   apiKey: string
   session: SessionLike
+  podSession: PodDataSession
   chatId: string
   runtime: ChatRuntime
 }
@@ -102,6 +101,7 @@ interface RuntimeAuthContext {
   runtimeUrl: string
   apiKey: string
   session: SessionLike
+  podSession: PodDataSession
   runtime: ChatRuntime
 }
 
@@ -164,94 +164,60 @@ async function loadChatRuntime(): Promise<ChatRuntime> {
 
 async function resolveContext(urlOverride?: string): Promise<RuntimeContext> {
   const runtime = await loadChatRuntime()
-  const creds = loadCredentials()
-  if (!creds) {
-    throw new Error('No credentials found. Run `linx login` first.')
-  }
-
+  const podSession = await createLinxPodDataSession()
   const target = resolveRuntimeTarget({
-    issuerUrl: creds.url,
+    issuerUrl: podSession.credentials.url,
     runtimeUrlOverride: urlOverride,
   })
-  const clientCreds = getClientCredentials(creds)
+  const apiKey = await resolvePodRuntimeAuthToken(podSession)
+  const session = podSession.solidSession
 
-  if (clientCreds) {
-    const { session, apiKey } = await runtime.authenticate(getClientCredentialId(clientCreds), getClientCredentialKey(clientCreds), target.oidcIssuer)
-    await runtime.initPodData(session)
-    const chatId = await runtime.getOrCreateDefaultChat(session)
+  await runtime.initPodData(session)
+  const chatId = await runtime.getOrCreateDefaultChat(session)
 
-    return { runtimeUrl: target.runtimeUrl, apiKey, session, chatId, runtime }
-  }
-
-  if (creds.authType === 'oidc_oauth') {
-    const accessToken = await getOidcAccessToken(creds).catch((error) => {
-      if (isOidcLoginExpiredError(error)) {
-        throw new Error('LinX Cloud login expired. Run `linx login` to re-authorize.')
-      }
-      throw error
-    })
-    if (!accessToken) {
-      throw new Error('Failed to restore OIDC access token. Run `linx login` again.')
-    }
-
-    const pseudoSession: SessionLike = {
-      async logout(): Promise<void> {},
-    }
-    const podUrl = loadAccountSession()?.podUrl || creds.webId.replace('/card#me', '').replace(/\/?$/, '/')
-    const session = {
-      ...pseudoSession,
-      info: {
-        isLoggedIn: true,
-        webId: creds.webId,
-        podUrl,
-      },
-      fetch: (url: string, init?: RequestInit) => runtime.authenticatedFetch(url, accessToken, init),
-    }
-    await runtime.initPodData(session)
-    const chatId = await runtime.getOrCreateDefaultChat(session)
-
-    return { runtimeUrl: target.runtimeUrl, apiKey: accessToken, session, chatId, runtime }
-  }
-
-  throw new Error('Unsupported LinX auth type. Run `linx login` again.')
+  return { runtimeUrl: target.runtimeUrl, apiKey, session, podSession, chatId, runtime }
 }
 
 async function resolveRuntimeAuthContext(urlOverride?: string): Promise<RuntimeAuthContext> {
   const runtime = await loadChatRuntime()
-  const creds = loadCredentials()
-  if (!creds) {
+  const podSession = await createLinxPodDataSession()
+  const target = resolveRuntimeTarget({
+    issuerUrl: podSession.credentials.url,
+    runtimeUrlOverride: urlOverride,
+  })
+  const apiKey = await resolvePodRuntimeAuthToken(podSession)
+
+  return {
+    runtimeUrl: target.runtimeUrl,
+    apiKey,
+    session: podSession.solidSession,
+    podSession,
+    runtime,
+  }
+}
+
+async function createLinxPodDataSession(): Promise<PodDataSession> {
+  if (!loadCredentials()) {
     throw new Error('No credentials found. Run `linx login` first.')
   }
 
-  const target = resolveRuntimeTarget({
-    issuerUrl: creds.url,
-    runtimeUrlOverride: urlOverride,
-  })
-  const clientCreds = getClientCredentials(creds)
-
-  if (clientCreds) {
-    const { session, apiKey } = await runtime.authenticate(getClientCredentialId(clientCreds), getClientCredentialKey(clientCreds), target.oidcIssuer)
-    return { runtimeUrl: target.runtimeUrl, apiKey, session, runtime }
+  const podSession = await createPodDataSession()
+  if (!podSession) {
+    throw new Error('Unsupported LinX auth type. Run `linx login` again.')
   }
 
-  if (creds.authType === 'oidc_oauth') {
-    const accessToken = await getOidcAccessToken(creds).catch((error) => {
-      if (isOidcLoginExpiredError(error)) {
-        throw new Error('LinX Cloud login expired. Run `linx login` to re-authorize.')
-      }
-      throw error
-    })
-    if (!accessToken) {
-      throw new Error('Failed to restore OIDC access token. Run `linx login` again.')
-    }
+  return podSession
+}
 
-    const pseudoSession: SessionLike = {
-      async logout(): Promise<void> {},
+async function resolvePodRuntimeAuthToken(podSession: PodDataSession): Promise<string> {
+  try {
+    return await podSession.getRuntimeAuthToken()
+  } catch (error) {
+    if (isOidcLoginExpiredError(error)) {
+      throw new Error('LinX Cloud login expired. Run `linx login` to re-authorize.')
     }
-    return { runtimeUrl: target.runtimeUrl, apiKey: accessToken, session: pseudoSession, runtime }
+    throw error
   }
-
-  throw new Error('Unsupported LinX auth type. Run `linx login` again.')
 }
 
 async function runSingleTurn(options: {
@@ -720,12 +686,12 @@ const cli = yargs(hideBin(process.argv))
       const prompt = (argv.prompt as string[] | undefined)?.join(' ').trim() || undefined
       if (prompt) {
         await runSingleTurn({ ctx, threadId, model: argv.model, prompt })
-        await ctx.session.logout()
+        await ctx.podSession.close()
         return
       }
 
       await runInteractive({ ctx, initialThreadId: threadId, initialModel: argv.model })
-      await ctx.session.logout()
+      await ctx.podSession.close()
     },
   )
   .command(
@@ -751,7 +717,7 @@ const cli = yargs(hideBin(process.argv))
         }
       }
 
-      await ctx.session.logout()
+      await ctx.podSession.close()
     },
   )
   .command(
@@ -856,11 +822,11 @@ const cli = yargs(hideBin(process.argv))
       command
         .positional('action', {
           type: 'string',
-          choices: ['run', 'backends', 'sessions', 'show', 'approvals', 'approve', 'reject', 'codex', 'claude', 'codebuddy'] as const,
+          choices: ['run', 'backends', 'sessions', 'show', 'codex', 'claude', 'codebuddy'] as const,
         })
         .positional('backend', {
           type: 'string',
-          describe: 'Watch backend for `run`, session id for `show`, or approval id for `approve|reject`',
+          describe: 'Watch backend for `run` or session id for `show`',
         })
         .option('mode', {
           type: 'string',
@@ -887,14 +853,11 @@ const cli = yargs(hideBin(process.argv))
           choices: ['auto', 'local', 'cloud'] as const,
           describe: 'Resolve credentials only: local CLI login, LinX cloud config, or auto fallback. Runtime still runs locally.',
         })
-        .option('session', {
-          type: 'boolean',
-          default: false,
-          describe: 'Approve for the current watch session instead of only once.',
-        })
-        .option('reason', {
+        .option('approval-source', {
           type: 'string',
-          describe: 'Optional note recorded with an approval decision.',
+          default: 'hybrid',
+          choices: ['local', 'remote', 'hybrid'] as const,
+          describe: 'Resolve backend approval requests locally, through Pod remote approvals, or whichever answers first.',
         }),
     async (argv) => {
       const rawAction = String(argv.action)
@@ -939,34 +902,6 @@ const cli = yargs(hideBin(process.argv))
         return
       }
 
-      if (action === 'approvals') {
-        const approvals = await listRemoteWatchApprovals()
-        if (approvals.length === 0) {
-          process.stdout.write('No pending remote approvals in the approval inbox.\n')
-          return
-        }
-
-        process.stdout.write(`${approvals.map(formatRemoteWatchApprovalSummary).join('\n')}\n`)
-        return
-      }
-
-      if (action === 'approve' || action === 'reject') {
-        const approvalId = argv.backend ? String(argv.backend) : ''
-        if (!approvalId) {
-          throw new Error(`Usage: linx watch ${action} <approvalId>`)
-        }
-
-        const summary = await resolveRemoteWatchApproval({
-          approvalId,
-          decision: action === 'approve'
-            ? (argv.session ? 'accept_for_session' : 'accept')
-            : 'decline',
-          note: argv.reason ? String(argv.reason) : undefined,
-        })
-        process.stdout.write(`${formatRemoteWatchApprovalSummary(summary)}\n`)
-        return
-      }
-
       const backend = (directBackend ? rawAction : argv.backend) as WatchBackend | undefined
       if (!backend || !['codex', 'claude', 'codebuddy'].includes(backend)) {
         throw new Error('Usage: linx watch run <codex|claude|codebuddy> <prompt> [-- backend args]\n   or: linx watch <codex|claude|codebuddy> <prompt>')
@@ -986,6 +921,7 @@ const cli = yargs(hideBin(process.argv))
         prompt,
         passthroughArgs: ((argv['--'] as string[] | undefined) ?? []).map(String),
         credentialSource: argv['credential-source'] as WatchCredentialSource,
+        approvalSource: argv['approval-source'] as WatchApprovalSource,
       })
 
       if (exitCode !== 0) {

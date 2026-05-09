@@ -9,11 +9,12 @@
  */
 
 import {
+  resolveSolidProfile,
   solidProfileTable,
   type SolidProfileRow,
   type SolidProfileUpdate,
-} from '@linx/models'
-import type { SolidDatabase } from '@linx/models'
+} from '@undefineds.co/models'
+import type { SolidDatabase } from '@undefineds.co/models'
 import { queryClient } from '@/providers/query-provider'
 
 // ============================================================================
@@ -62,8 +63,7 @@ export const profileOps = {
     }
     
     try {
-      const record = await db.findByIri(solidProfileTable, webId)
-      return record as SolidProfileRow | null
+      return await resolveSolidProfile(db, webId)
     } catch (error) {
       console.error('[profileOps] Failed to fetch profile:', error)
       return null

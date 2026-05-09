@@ -4,7 +4,7 @@
  * 目前使用 mock 实现，等服务端好了再对接真实 API
  */
 
-import { LINX_CLOUD_API_ORIGIN } from '@linx/models/client'
+import { LINX_CLOUD_API_ORIGIN } from '@undefineds.co/models/client'
 
 const API_BASE = LINX_CLOUD_API_ORIGIN
 

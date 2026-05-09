@@ -16,7 +16,7 @@ import {
   type ToolMessageBlock,
   type ErrorMessageBlock,
   type PlaceholderMessageBlock,
-} from '@linx/models'
+} from '@undefineds.co/models'
 
 import { MainTextBlock } from './MainTextBlock'
 import { ThinkingBlock } from './ThinkingBlock'

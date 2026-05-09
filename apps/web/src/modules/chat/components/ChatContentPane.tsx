@@ -11,7 +11,7 @@ import { useSession } from '@inrupt/solid-ui-react'
 import { useNavigate } from '@tanstack/react-router'
 import { Bot, Loader2, LockKeyhole, PlayCircle, ShieldAlert } from 'lucide-react'
 import { useChatKit, ChatKit as ChatKitComponent } from '@openai/chatkit-react'
-import { resolveRowId } from '@linx/models'
+import { resolveRowId } from '@undefineds.co/models'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { Button } from '@/components/ui/button'
 import {
@@ -31,7 +31,7 @@ import { useInboxStore } from '@/modules/inbox/store'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 import { createLocalChatKitFetch } from '../services/chatkit-local/fetch-handler'
 import { useChatStore } from '../store'
-import { useChatInit, useChatList, useChatMutations, useThreadList } from '../collections'
+import { useChatInit, useChatList, useChatMutations, useSessionList, useThreadList } from '../collections'
 import { SessionControlBar, type SessionStatus } from './SessionControlBar'
 import {
   fetchRuntimeSessionLog,
@@ -41,6 +41,7 @@ import {
   type RuntimeSessionEvent,
   type RuntimeToolType,
 } from '../runtime-client'
+import type { SessionRow } from '@undefineds.co/models'
 
 export interface ChatContentPaneProps extends MicroAppPaneProps {}
 
@@ -74,6 +75,14 @@ function formatDuration(updatedAt?: string) {
   if (minutes < 60) return `${minutes} 分钟`
   const hours = Math.floor(minutes / 60)
   return `${hours} 小时`
+}
+
+function isPersistedSessionRow(session: unknown): session is SessionRow {
+  return Boolean(
+    session
+    && typeof session === 'object'
+    && 'ownerWebId' in session
+  )
 }
 
 function InboxActionBanner({
@@ -145,6 +154,7 @@ function InboxActionBanner({
 
 function RuntimeSessionToolbar({ threadId, threadTitle }: { threadId: string; threadTitle: string }) {
   const runtimeSession = useRuntimeSession(threadId)
+  const { data: persistedSessions = [] } = useSessionList(threadId)
   const isSessionMode = isRuntimeSessionMode()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [workspacePath, setWorkspacePath] = useState('')
@@ -237,6 +247,7 @@ function RuntimeSessionToolbar({ threadId, threadTitle }: { threadId: string; th
   }
 
   const currentSession = runtimeSession.runtimeSession
+    ?? persistedSessions[0]
   const isBusy = runtimeSession.createSession.isPending
     || runtimeSession.startSession.isPending
     || runtimeSession.pauseSession.isPending
@@ -248,16 +259,33 @@ function RuntimeSessionToolbar({ threadId, threadTitle }: { threadId: string; th
       {currentSession ? (
         <>
           <SessionControlBar
-            title={currentSession.title}
-            status={mapSessionStatus(currentSession.status)}
-            tool={currentSession.tool}
-            tokenUsage={currentSession.tokenUsage}
-            duration={formatDuration(currentSession.updatedAt)}
+            title={isPersistedSessionRow(currentSession)
+              ? String((currentSession.metadata?.title ?? threadTitle) || '运行时会话')
+              : currentSession.title}
+            status={mapSessionStatus(
+              isPersistedSessionRow(currentSession)
+                ? (currentSession.status as 'active' | 'paused' | 'completed' | 'error' | 'idle')
+                : currentSession.status,
+            )}
+            tool={String(currentSession.tool ?? 'unknown')}
+            tokenUsage={Number(currentSession.tokenUsage ?? 0)}
+            duration={formatDuration(
+              isPersistedSessionRow(currentSession)
+                ? currentSession.updatedAt instanceof Date
+                  ? currentSession.updatedAt.toISOString()
+                  : undefined
+                : currentSession.updatedAt,
+            )}
             onPause={currentSession.status === 'active' ? handlePause : undefined}
             onResume={currentSession.status === 'paused' ? handleResume : undefined}
             onStop={currentSession.status === 'active' || currentSession.status === 'paused' ? handleStop : undefined}
             onCopyLog={handleCopyLog}
           />
+          {!runtimeSession.runtimeSession && (
+            <div className="border-b border-border/50 px-4 py-2 text-xs text-muted-foreground">
+              当前显示的是 Pod 中已持久化的会话状态；实时控制需等待运行时连接恢复。
+            </div>
+          )}
           {runtimeError && (
             <div className="border-b border-border/50 px-4 py-2 text-xs text-destructive">
               {runtimeError}

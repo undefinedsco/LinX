@@ -31,6 +31,13 @@ export type ToolCallStatus = z.infer<typeof ToolCallStatusSchema>
 
 const IsoDatetimeSchema = z.string().datetime()
 
+const ApprovalOptionSchema = z.object({
+  optionId: z.string(),
+  label: z.string(),
+  kind: z.string().optional(),
+  description: z.string().optional(),
+}).strict()
+
 // --------------------------------------------
 // tool.call
 // --------------------------------------------
@@ -45,6 +52,8 @@ export const ToolCallEventV1Schema = z
     toolName: z.string(),
     risk: RiskLevelSchema.optional(),
     status: ToolCallStatusSchema,
+    approvalOptions: z.array(ApprovalOptionSchema).optional(),
+    expiresAt: IsoDatetimeSchema.optional(),
 
     // CP0 Pod-only scope projection
     target: z.string().optional(),
@@ -168,9 +177,11 @@ export const InboxApprovalEventV1Schema = z
 
     risk: RiskLevelSchema,
     status: InboxApprovalStatusSchema,
+    approvalOptions: z.array(ApprovalOptionSchema).optional(),
     assignedTo: z.string().optional(),
 
     createdAt: IsoDatetimeSchema,
+    expiresAt: IsoDatetimeSchema.optional(),
     resolvedAt: IsoDatetimeSchema.optional(),
   })
   .strict()

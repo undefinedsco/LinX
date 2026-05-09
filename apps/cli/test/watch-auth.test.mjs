@@ -264,6 +264,140 @@ test('cloud credential source resolves pod-backed codex credentials and skips lo
   assert.equal(resolved.authPreflight.state, 'authenticated')
 })
 
+test('oidc pod data session exposes a drizzle-compatible solid session', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/pod-data-session.ts')
+  t.after(cleanup)
+
+  const credentials = {
+    url: 'https://id.undefineds.co/',
+    webId: 'https://pod.example/profile/card#me',
+    authType: 'oidc_oauth',
+    sourceDir: '/tmp/linx',
+    secrets: {
+      oidcRefreshToken: 'refresh',
+      oidcAccessToken: 'access',
+      oidcExpiresAt: '2030-01-01T00:00:00.000Z',
+    },
+  }
+  const requests = []
+
+  const podSession = await module.createPodDataSession({
+    loadCredentials: () => credentials,
+    getClientCredentials: () => null,
+    getOidcAccessToken: async (stored) => {
+      assert.equal(stored, credentials)
+      return 'access-token'
+    },
+    authenticate: async () => {
+      throw new Error('client credentials auth should not be used')
+    },
+    authenticatedFetch: async (url, token, init) => {
+      requests.push({ url: String(url), token, method: init?.method ?? 'GET' })
+      return new Response('ok', { status: 200 })
+    },
+  })
+
+  assert.ok(podSession)
+  assert.equal(podSession.webId, credentials.webId)
+  assert.equal(podSession.solidSession.info.isLoggedIn, true)
+  assert.equal(podSession.solidSession.info.webId, credentials.webId)
+
+  await podSession.solidSession.fetch('https://pod.example/settings/credentials.ttl', { method: 'HEAD' })
+  assert.deepEqual(requests, [{
+    url: 'https://pod.example/settings/credentials.ttl',
+    token: 'access-token',
+    method: 'HEAD',
+  }])
+})
+
+test('pod-backed codex credential is read through shared model db', async () => {
+  const { module } = await getWatchBundle()
+  const credentialTable = { name: 'credentialTable' }
+  const aiProviderTable = { name: 'aiProviderTable' }
+  let createDbCalls = 0
+  let fetchCalls = 0
+  const runtime = {
+    async getPodDataSession() {
+      return {
+        webId: 'https://pod.example/profile/card#me',
+        credentials: {
+          url: 'https://id.undefineds.co/',
+          webId: 'https://pod.example/profile/card#me',
+          authType: 'oidc_oauth',
+          secrets: {
+            oidcRefreshToken: 'refresh',
+            oidcAccessToken: 'access',
+            oidcExpiresAt: '2030-01-01T00:00:00.000Z',
+          },
+        },
+        solidSession: {
+          info: {
+            isLoggedIn: true,
+            webId: 'https://pod.example/profile/card#me',
+          },
+          async fetch() {
+            fetchCalls += 1
+            return new Response('unexpected fetch', { status: 500 })
+          },
+          async logout() {},
+        },
+        async fetch() {
+          fetchCalls += 1
+          return new Response('unexpected fetch', { status: 500 })
+        },
+        async close() {},
+      }
+    },
+    createDb(session) {
+      createDbCalls += 1
+      assert.equal(session.solidSession.info.isLoggedIn, true)
+      return {
+        select() {
+          return {
+            from(table) {
+              return {
+                async execute() {
+                  if (table === credentialTable) {
+                    return [{
+                      id: 'openai-default',
+                      service: 'ai',
+                      status: 'active',
+                      provider: 'https://pod.example/settings/ai/providers.ttl#openai',
+                      apiKey: 'sk-openai',
+                    }]
+                  }
+                  if (table === aiProviderTable) {
+                    return [{
+                      id: 'openai',
+                      '@id': 'https://pod.example/settings/ai/providers.ttl#openai',
+                      baseUrl: 'https://api.openai.com/v1',
+                    }]
+                  }
+                  throw new Error('unexpected table')
+                },
+              }
+            },
+          }
+        },
+      }
+    },
+    credentialTable,
+    aiProviderTable,
+  }
+
+  const credential = await module.loadPodBackendCredential('codex', runtime)
+
+  assert.deepEqual(credential, {
+    backend: 'codex',
+    provider: 'openai',
+    env: {
+      OPENAI_API_KEY: 'sk-openai',
+    },
+  })
+  assert.equal(createDbCalls, 1)
+  assert.equal(fetchCalls, 0)
+})
+
 test('cloud credential source resolves pod-backed codebuddy credentials and skips local auth preflight', async (t) => {
   const { module } = await getWatchBundle()
   let preflightCalls = 0

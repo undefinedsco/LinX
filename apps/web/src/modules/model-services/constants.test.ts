@@ -5,7 +5,15 @@ describe('model-services provider metadata', () => {
   it('hydrates shared provider metadata from builtin discovery', () => {
     const anthropic = MODEL_PROVIDERS.find((provider) => provider.id === 'anthropic')
     const ollama = MODEL_PROVIDERS.find((provider) => provider.id === 'ollama')
+    const undefineds = MODEL_PROVIDERS.find((provider) => provider.id === 'undefineds')
 
+    expect(undefineds).toMatchObject({
+      id: 'undefineds',
+      name: 'undefineds',
+      homeUrl: 'https://undefineds.co/linx',
+      defaultBaseUrl: 'https://api.undefineds.co/v1',
+      defaultModels: ['linx-lite', 'linx'],
+    })
     expect(anthropic).toMatchObject({
       id: 'anthropic',
       name: 'Anthropic',

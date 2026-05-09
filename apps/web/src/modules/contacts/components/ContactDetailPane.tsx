@@ -9,7 +9,7 @@ import { contactOps, contactCollection } from '../collections'
 import type { UnifiedContact } from '../types'
 import { useChatStore } from '@/modules/chat/store'
 import { useEntity } from '@/lib/data/use-entity'
-import { solidProfileTable, agentTable, ContactType } from '@linx/models'
+import { solidProfileTable, agentTable, ContactType } from '@undefineds.co/models'
 import { 
   MessageCircle, 
   Phone, 

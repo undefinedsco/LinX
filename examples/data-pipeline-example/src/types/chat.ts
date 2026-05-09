@@ -1,4 +1,4 @@
-// 聊天数据类型（简化版的 @linx/models）
+// 聊天数据类型（简化版的 @undefineds.co/models）
 export interface ChatRow {
   id: string
   title: string

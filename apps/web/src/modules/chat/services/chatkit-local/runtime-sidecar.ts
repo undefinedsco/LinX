@@ -1,13 +1,16 @@
 import { eq } from '@undefineds.co/drizzle-solid'
-import { resolveLinxPodBaseUrl } from '@linx/models/client'
 import {
   ODRL,
-  approvalTable,
-  auditTable,
+  approvalResource,
+  auditResource,
+  buildApprovalSubjectPath,
+  buildAuditSubjectPath,
+  buildSessionSubjectPath,
   inboxNotificationTable,
+  sessionTable,
   type ApprovalRow,
   type SolidDatabase,
-} from '@linx/models'
+} from '@undefineds.co/models'
 import { queryClient } from '@/providers/query-provider'
 
 const POLICY_VERSION = 'phase4-inbox-v1'
@@ -57,8 +60,13 @@ function inferRisk(toolName: string, rawArguments: string): 'low' | 'medium' | '
   return 'medium'
 }
 
-function buildResourceUri(podBaseUrl: string, basePath: string, id: string): string {
-  return `${podBaseUrl}${basePath}${id}.ttl#${id}`
+function eventDateFromTs(ts: number): Date {
+  return Number.isFinite(ts) ? new Date(ts) : new Date()
+}
+
+function recordIri(row: Record<string, unknown> | null | undefined): string | null {
+  const value = row?.['@id'] ?? row?.subject ?? row?.uri ?? row?.source
+  return typeof value === 'string' && value.length > 0 ? value : null
 }
 
 export class RuntimeSidecarSink {
@@ -71,7 +79,41 @@ export class RuntimeSidecarSink {
     private readonly db: SolidDatabase,
     private readonly webId: string,
   ) {
-    this.podBaseUrl = resolveLinxPodBaseUrl(this.webId)
+    this.podBaseUrl = this.resolvePodBaseUrl(this.webId)
+  }
+
+  private resolvePodBaseUrl(webId: string): string {
+    return webId.replace('/profile/card#me', '').replace(/\/$/, '')
+  }
+
+  private resolveResourceIri(resource: { resolveUri?: (id: string) => string }, id: string): string {
+    if (!resource) {
+      throw new Error(`Missing resource while resolving storage id: ${id}`)
+    }
+
+    const relativeUri = typeof resource.resolveUri === 'function' ? resource.resolveUri(id) : id
+    if (/^https?:\/\//.test(relativeUri)) return relativeUri
+    return new URL(relativeUri.replace(/^\//, ''), `${this.podBaseUrl}/`).toString()
+  }
+
+  private whereByStorageId(resource: any, query: any, id: string): any {
+    const iri = this.resolveResourceIri(resource, id)
+    if (typeof query.whereByIri === 'function') {
+      return query.whereByIri(iri)
+    }
+    return query.where({ id } as any)
+  }
+
+  private async findByStorageId<T>(resource: any, id: string): Promise<T | null> {
+    if (typeof (this.db as any).findByIri === 'function') {
+      const byIri = await (this.db as any).findByIri(resource, this.resolveResourceIri(resource, id)) as T | null
+      if (byIri) {
+        return byIri
+      }
+    }
+
+    const rows = await this.db.select().from(resource).execute()
+    return (rows as any[]).find((row) => row?.id === id) as T | undefined ?? null
   }
 
   async persistRuntimeEvent(
@@ -104,20 +146,72 @@ export class RuntimeSidecarSink {
     }
   }
 
-  private makeRuntimeSessionUri(sessionId: string): string {
-    return `urn:linx:runtime-session:${sessionId}`
+  private makeRuntimeSessionUri(sessionId: string, createdAt: Date = new Date()): string {
+    return `${this.podBaseUrl}${buildSessionSubjectPath(sessionId, createdAt)}`
+  }
+
+  private makeChatUri(chatId: string): string {
+    return `${this.podBaseUrl}/.data/chat/${chatId}/index.ttl#this`
   }
 
   private makeThreadUri(chatId: string, threadId: string): string {
     return `${this.podBaseUrl}/.data/chat/${chatId}/index.ttl#${threadId}`
   }
 
-  private makeApprovalUri(id: string): string {
-    return buildResourceUri(this.podBaseUrl, '/.data/approvals/', id)
+  private async upsertSessionState(
+    runtimeSession: RuntimeSessionRecord,
+    event: Extract<RuntimeSessionEvent, { type: 'status' }>,
+    context: RuntimeEventContext,
+    previousStatus: RuntimeThreadStatus | undefined,
+  ): Promise<void> {
+    const eventDate = eventDateFromTs(event.ts)
+    const existing = await this.findByStorageId<Record<string, unknown>>(sessionTable, runtimeSession.id)
+
+    const payload = {
+      ownerWebId: this.webId,
+      chat: this.makeChatUri(context.chatId),
+      thread: this.makeThreadUri(context.chatId, context.threadId),
+      sessionType: 'direct',
+      status: event.status,
+      tool: runtimeSession.tool,
+      tokenUsage: runtimeSession.tokenUsage,
+      metadata: {
+        title: runtimeSession.title,
+        previousStatus: previousStatus ?? null,
+        chatId: context.chatId,
+        threadId: context.threadId,
+        threadUri: this.makeThreadUri(context.chatId, context.threadId),
+        lastEventTs: event.ts,
+      },
+      updatedAt: eventDate,
+    } as const
+
+    if (!existing) {
+      await this.db.insert(sessionTable).values({
+        id: runtimeSession.id,
+        ...payload,
+        createdAt: eventDate,
+      }).execute()
+      return
+    }
+
+    const existingIri = recordIri(existing)
+    const updateByIri = (this.db as unknown as { updateByIri?: (resource: typeof sessionTable, iri: string, data: Record<string, unknown>) => Promise<unknown> }).updateByIri
+    if (existingIri && typeof updateByIri === 'function') {
+      await updateByIri.call(this.db, sessionTable, existingIri, payload)
+      return
+    }
+
+    await this.whereByStorageId(sessionTable, this.db.update(sessionTable).set(payload), runtimeSession.id)
+      .execute()
   }
 
-  private makeAuditUri(id: string): string {
-    return buildResourceUri(this.podBaseUrl, '/.data/audit/', id)
+  private makeApprovalUri(id: string, createdAt: Date = new Date()): string {
+    return `${this.podBaseUrl}${buildApprovalSubjectPath(id, createdAt)}`
+  }
+
+  private makeAuditUri(id: string, createdAt: Date = new Date()): string {
+    return `${this.podBaseUrl}${buildAuditSubjectPath(id, createdAt)}`
   }
 
   private buildEventKey(type: string, runtimeSessionId: string, suffix: string): string {
@@ -139,25 +233,28 @@ export class RuntimeSidecarSink {
     sessionId: string
     toolCallId?: string
     approvalUri?: string
+    createdAt?: Date
+    sessionCreatedAt?: Date
     context: Record<string, unknown>
   }): Promise<string> {
     const id = input.id ?? crypto.randomUUID()
-    await this.db.insert(auditTable).values({
+    const createdAt = input.createdAt ?? new Date()
+    await this.db.insert(auditResource).values({
       id,
       action: input.action,
       actor: this.webId,
       actorRole: 'system',
-      session: this.makeRuntimeSessionUri(input.sessionId),
+      session: this.makeRuntimeSessionUri(input.sessionId, input.sessionCreatedAt ?? createdAt),
       toolCallId: input.toolCallId,
       approval: input.approvalUri,
       context: JSON.stringify(input.context),
       policyVersion: POLICY_VERSION,
-      createdAt: new Date(),
+      createdAt,
     }).execute()
     return id
   }
 
-  private async insertInboxNotification(objectUri: string, dedupeKey: string): Promise<void> {
+  private async insertInboxNotification(objectUri: string, dedupeKey: string, createdAt: Date = new Date()): Promise<void> {
     if (this.seenEventKeys.has(dedupeKey)) {
       return
     }
@@ -167,13 +264,13 @@ export class RuntimeSidecarSink {
       id: crypto.randomUUID(),
       actor: this.webId,
       object: objectUri,
-      createdAt: new Date(),
+      createdAt,
     }).execute()
   }
 
   private async findApprovalByToolCall(toolCallId: string): Promise<ApprovalRow | null> {
-    const rows = await this.db.select().from(approvalTable)
-      .where(eq(approvalTable.toolCallId, toolCallId))
+    const rows = await this.db.select().from(approvalResource)
+      .where(eq(approvalResource.toolCallId, toolCallId))
       .execute()
     return (rows[0] as ApprovalRow | undefined) ?? null
   }
@@ -195,9 +292,12 @@ export class RuntimeSidecarSink {
     }
     this.seenEventKeys.add(dedupeKey)
 
+    const eventDate = eventDateFromTs(eventTs)
     const auditId = await this.insertAuditEntry({
       action: 'runtime.auth_resolved',
       sessionId: runtimeSession.id,
+      createdAt: eventDate,
+      sessionCreatedAt: eventDate,
       context: {
         method: pendingAuth.method,
         url: pendingAuth.url,
@@ -209,7 +309,7 @@ export class RuntimeSidecarSink {
       },
     })
 
-    await this.insertInboxNotification(this.makeAuditUri(auditId), this.buildEventKey('auth-resolved-notification', runtimeSession.id, auditId))
+    await this.insertInboxNotification(this.makeAuditUri(auditId, eventDate), this.buildEventKey('auth-resolved-notification', runtimeSession.id, auditId), eventDate)
     this.pendingAuthBySession.delete(runtimeSession.id)
     await this.invalidateInboxQueries()
   }
@@ -232,9 +332,14 @@ export class RuntimeSidecarSink {
     }
     this.seenEventKeys.add(eventKey)
 
+    await this.upsertSessionState(runtimeSession, event, context, previousStatus)
+
+    const eventDate = eventDateFromTs(event.ts)
     await this.insertAuditEntry({
       action: `runtime.session.${event.status}`,
       sessionId: runtimeSession.id,
+      createdAt: eventDate,
+      sessionCreatedAt: eventDate,
       context: {
         title: runtimeSession.title,
         tool: runtimeSession.tool,
@@ -254,14 +359,15 @@ export class RuntimeSidecarSink {
     event: Extract<RuntimeSessionEvent, { type: 'tool_call' }>,
     context: RuntimeEventContext,
   ): Promise<void> {
+    const eventDate = eventDateFromTs(event.ts)
     const existingApproval = await this.findApprovalByToolCall(event.requestId)
     let approvalId = existingApproval?.id
 
     if (!approvalId) {
       approvalId = crypto.randomUUID()
-      await this.db.insert(approvalTable).values({
+      await this.db.insert(approvalResource).values({
         id: approvalId,
-        session: this.makeRuntimeSessionUri(runtimeSession.id),
+        session: this.makeRuntimeSessionUri(runtimeSession.id, eventDate),
         toolCallId: event.requestId,
         toolName: event.name,
         target: this.makeThreadUri(context.chatId, context.threadId),
@@ -270,16 +376,19 @@ export class RuntimeSidecarSink {
         status: 'pending',
         assignedTo: this.webId,
         policyVersion: POLICY_VERSION,
-        createdAt: new Date(),
+        createdAt: eventDate,
       }).execute()
     }
 
-    const approvalUri = this.makeApprovalUri(approvalId)
+    const approvalCreatedAt = eventDateFromTs(Date.parse(String(existingApproval?.createdAt ?? eventDate.toISOString())))
+    const approvalUri = this.makeApprovalUri(approvalId, existingApproval ? approvalCreatedAt : eventDate)
     const auditId = await this.insertAuditEntry({
       action: 'runtime.tool_call.waiting_approval',
       sessionId: runtimeSession.id,
       toolCallId: event.requestId,
       approvalUri,
+      createdAt: eventDate,
+      sessionCreatedAt: eventDate,
       context: {
         toolName: event.name,
         arguments: event.arguments,
@@ -289,8 +398,8 @@ export class RuntimeSidecarSink {
       },
     })
 
-    await this.insertInboxNotification(approvalUri, this.buildEventKey('approval', runtimeSession.id, event.requestId))
-    await this.insertInboxNotification(this.makeAuditUri(auditId), this.buildEventKey('audit', runtimeSession.id, `tool-call-${event.requestId}`))
+    await this.insertInboxNotification(approvalUri, this.buildEventKey('approval', runtimeSession.id, event.requestId), eventDate)
+    await this.insertInboxNotification(this.makeAuditUri(auditId, eventDate), this.buildEventKey('audit', runtimeSession.id, `tool-call-${event.requestId}`), eventDate)
 
     await this.invalidateInboxQueries()
   }
@@ -306,9 +415,12 @@ export class RuntimeSidecarSink {
     }
     this.seenEventKeys.add(dedupeKey)
 
+    const eventDate = eventDateFromTs(event.ts)
     const auditId = await this.insertAuditEntry({
       action: 'runtime.auth_required',
       sessionId: runtimeSession.id,
+      createdAt: eventDate,
+      sessionCreatedAt: eventDate,
       context: {
         method: event.method,
         url: event.url,
@@ -327,7 +439,7 @@ export class RuntimeSidecarSink {
       eventTs: event.ts,
     })
 
-    await this.insertInboxNotification(this.makeAuditUri(auditId), this.buildEventKey('auth-notification', runtimeSession.id, auditId))
+    await this.insertInboxNotification(this.makeAuditUri(auditId, eventDate), this.buildEventKey('auth-notification', runtimeSession.id, auditId), eventDate)
 
     await this.invalidateInboxQueries()
   }
@@ -343,9 +455,12 @@ export class RuntimeSidecarSink {
     }
     this.seenEventKeys.add(dedupeKey)
 
+    const eventDate = eventDateFromTs(event.ts)
     const auditId = await this.insertAuditEntry({
       action: 'runtime.session.error',
       sessionId: runtimeSession.id,
+      createdAt: eventDate,
+      sessionCreatedAt: eventDate,
       context: {
         message: event.message,
         title: runtimeSession.title,
@@ -355,7 +470,7 @@ export class RuntimeSidecarSink {
       },
     })
 
-    await this.insertInboxNotification(this.makeAuditUri(auditId), this.buildEventKey('error-notification', runtimeSession.id, auditId))
+    await this.insertInboxNotification(this.makeAuditUri(auditId, eventDate), this.buildEventKey('error-notification', runtimeSession.id, auditId), eventDate)
 
     await this.invalidateInboxQueries()
   }

@@ -1,4 +1,4 @@
-import { MessageBlockType, MessageBlockStatus, serializeMessageBlocks } from '@linx/models'
+import { MessageBlockType, MessageBlockStatus, serializeMessageBlocks } from '@undefineds.co/models'
 import type { MessageData } from './components/Messages'
 
 const now = new Date();

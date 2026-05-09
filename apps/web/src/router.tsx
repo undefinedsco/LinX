@@ -22,15 +22,6 @@ const RootComponent = () => {
   )
 }
 
-// Root without login overlay (for testing)
-const RootWithoutOverlay = () => {
-  return (
-    <div className="min-h-screen bg-background text-foreground">
-      <Outlet />
-    </div>
-  )
-}
-
 // Not Found component
 const NotFoundComponent = () => {
   return (
@@ -118,7 +109,7 @@ const callbackRoute = createRoute({
 const microAppRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/$microAppId',
-  beforeLoad: ({ params }) => {
+  beforeLoad: () => {
     /*
     if (!isValidMicroAppId(params.microAppId)) {
       throw redirect({

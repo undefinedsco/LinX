@@ -7,6 +7,7 @@ const mockSelectInboxItem = vi.fn()
 const mockSetInboxFilter = vi.fn()
 const mockSetThreadId = vi.fn()
 const mockCreateSessionMutateAsync = vi.fn()
+const mockUseSessionList = vi.fn()
 
 const storeState = {
   selectedChatId: 'chat-1',
@@ -35,8 +36,8 @@ vi.mock('@openai/chatkit-react', () => ({
   ChatKit: () => <div data-testid="chatkit-root" />,
 }))
 
-vi.mock('@linx/models', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@linx/models')>()
+vi.mock('@undefineds.co/models', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@undefineds.co/models')>()
   return {
     ...actual,
     resolveRowId: (row: { id?: string }) => row?.id ?? null,
@@ -87,6 +88,7 @@ vi.mock('../collections', () => ({
     data: [{ id: 'thread-1', title: '默认话题' }],
     isLoading: false,
   }),
+  useSessionList: () => mockUseSessionList(),
   useChatMutations: () => mockMutations,
 }))
 
@@ -111,6 +113,9 @@ describe('ChatContentPane', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockCreateSessionMutateAsync.mockResolvedValue({ id: 'runtime-1' })
+    mockUseSessionList.mockReturnValue({
+      data: [],
+    })
     mockUseInboxItems.mockReturnValue({
       data: [],
       isLoading: false,
@@ -192,5 +197,27 @@ describe('ChatContentPane', () => {
       },
       tool: 'codex',
     })
+  })
+
+  it('falls back to persisted Pod session state when live runtime session is empty', () => {
+    mockUseSessionList.mockReturnValue({
+      data: [{
+        id: 'runtime-1',
+        threadId: 'thread-1',
+        title: 'Persisted Runtime',
+        status: 'paused',
+        tool: 'codex',
+        tokenUsage: 42,
+        updatedAt: new Date().toISOString(),
+      }],
+    })
+
+    render(<ChatContentPane theme="light" />)
+
+    expect(screen.getByText('Persisted Runtime')).toBeInTheDocument()
+    expect(screen.getByText('已暂停')).toBeInTheDocument()
+    expect(
+      screen.getByText('当前显示的是 Pod 中已持久化的会话状态；实时控制需等待运行时连接恢复。'),
+    ).toBeInTheDocument()
   })
 })

@@ -2,9 +2,10 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import { useSession } from '@inrupt/solid-ui-react'
 import { drizzle } from '@undefineds.co/drizzle-solid'
 import { resolvePodUrl } from '@/lib/pod-url'
-import type { SolidDatabase } from '@linx/models'
+import type { SolidDatabase } from '@undefineds.co/models'
 import {
   chatTable,
+  sessionTable,
   threadTable,
   messageTable,
   contactTable,
@@ -12,11 +13,11 @@ import {
   credentialTable,
   aiProviderTable,
   aiModelTable,
-  approvalTable,
-  auditTable,
+  approvalResource,
+  auditResource,
   inboxNotificationTable,
-  linxSchema,
-} from '@linx/models'
+  solidSchema,
+} from '@undefineds.co/models'
 
 interface SolidDatabaseContextValue {
   db: SolidDatabase | null
@@ -118,7 +119,7 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
         const instance = drizzle(session, {
           logger: false,
           disableInteropDiscovery: true,
-          schema: linxSchema,
+          schema: solidSchema,
         }) as unknown as SolidDatabase
         
         // 缓存实例
@@ -138,6 +139,7 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
           console.log('🔧 初始化 Pod 资源与容器...')
           await instance.init([
             chatTable,
+            sessionTable,
             threadTable,
             messageTable,
             contactTable,
@@ -145,8 +147,8 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
             credentialTable,
             aiProviderTable,
             aiModelTable,
-            approvalTable,
-            auditTable,
+            approvalResource,
+            auditResource,
             inboxNotificationTable,
           ])
           console.log('✅ Pod 资源初始化完成（已跳过 TypeIndex 创建）')

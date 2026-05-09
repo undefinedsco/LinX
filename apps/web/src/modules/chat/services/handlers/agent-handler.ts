@@ -17,7 +17,8 @@ import {
   chatRepository,
   resolveRowId,
   type MessageInsert,
-} from '@linx/models'
+} from '@undefineds.co/models'
+import { createLinxChatKitAgentCapabilities } from '@linx/agent-runtime'
 import type {
   ChatHandler,
   ChatHandlerContext,
@@ -277,6 +278,7 @@ export class AgentChatHandler implements ChatHandler {
     hasStreaming: true,
     hasThinking: true,
     hasToolCalls: true,
+    agentRuntime: createLinxChatKitAgentCapabilities(),
     hasPresence: false,
     hasReadReceipt: false,
     hasTypingIndicator: false,

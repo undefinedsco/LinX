@@ -132,7 +132,7 @@ export async function startThreadRuntimeSession(threadId: string): Promise<Runti
 }
 
 export async function createAndStartRuntimeSession(input: CreateRuntimeSessionInput): Promise<RuntimeSessionRecord> {
-  const created = await createThreadRuntimeSession(input.threadId, input)
+  await createThreadRuntimeSession(input.threadId, input)
   return startThreadRuntimeSession(input.threadId)
 }
 

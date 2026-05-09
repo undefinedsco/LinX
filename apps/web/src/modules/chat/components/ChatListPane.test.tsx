@@ -36,8 +36,8 @@ vi.mock('@/modules/inbox/collections', () => ({
 }))
 
 // Mock models
-vi.mock('@linx/models', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@linx/models')>()
+vi.mock('@undefineds.co/models', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@undefineds.co/models')>()
   return {
     ...actual,
     resolveRowId: (item: unknown) => (item as Record<string, unknown>)?.id ?? 'mock-id',

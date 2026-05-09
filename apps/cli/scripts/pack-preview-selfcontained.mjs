@@ -27,6 +27,10 @@ const vendorModelsRoot = join(workRoot, 'vendor', 'models')
 mkdirSync(vendorModelsRoot, { recursive: true })
 cpSync(join(repoRoot, 'packages', 'models', 'dist'), join(vendorModelsRoot, 'dist'), { recursive: true })
 
+const vendorAgentRuntimeRoot = join(workRoot, 'vendor', 'agent-runtime')
+mkdirSync(vendorAgentRuntimeRoot, { recursive: true })
+cpSync(join(repoRoot, 'packages', 'agent-runtime', 'dist'), join(vendorAgentRuntimeRoot, 'dist'), { recursive: true })
+
 const modelsPkg = JSON.parse(readFileSync(join(repoRoot, 'packages', 'models', 'package.json'), 'utf-8'))
 const slimModelsPkg = {
   name: '@undefineds.co/models',
@@ -40,11 +44,27 @@ const slimModelsPkg = {
     './namespaces': './dist/namespaces.js',
     './profile': './dist/profile.js',
     './profile.schema': './dist/profile.schema.js',
+    './vocab': './dist/vocab/index.js',
+    './vocab/sidecar': './dist/vocab/sidecar.vocab.js',
     './watch': './dist/watch/index.js',
   },
   dependencies: modelsPkg.dependencies,
 }
 writeFileSync(join(vendorModelsRoot, 'package.json'), `${JSON.stringify(slimModelsPkg, null, 2)}\n`)
+
+const agentRuntimePkg = JSON.parse(readFileSync(join(repoRoot, 'packages', 'agent-runtime', 'package.json'), 'utf-8'))
+const slimAgentRuntimePkg = {
+  name: '@linx/agent-runtime',
+  version: agentRuntimePkg.version,
+  type: 'module',
+  exports: {
+    '.': './dist/index.js',
+    './acp': './dist/acp.js',
+    './companion-model': './dist/companion-model.js',
+    './turn-controller': './dist/turn-controller.js',
+  },
+}
+writeFileSync(join(vendorAgentRuntimeRoot, 'package.json'), `${JSON.stringify(slimAgentRuntimePkg, null, 2)}\n`)
 
 const cliPkgPath = join(workRoot, 'package.json')
 const cliPkg = JSON.parse(readFileSync(cliPkgPath, 'utf-8'))
@@ -61,6 +81,7 @@ cliPkg.publishConfig = {
 }
 if (cliPkg.dependencies) {
   delete cliPkg.dependencies['@undefineds.co/models']
+  delete cliPkg.dependencies['@linx/agent-runtime']
   Object.assign(cliPkg.dependencies, modelsPkg.dependencies)
   cliPkg.dependencies['@zed-industries/codex-acp'] = '^0.9.5'
 }
@@ -75,29 +96,43 @@ function walkJs(dir, files = []) {
   return files
 }
 
-function rewriteModelImports(root) {
+function rewriteVendorImports(root) {
   const jsFiles = walkJs(root)
   for (const file of jsFiles) {
     let source = readFileSync(file, 'utf8')
-    const rel = relative(dirname(file), join(workRoot, 'vendor', 'models', 'dist')).replaceAll('\\', '/')
-    const base = rel.startsWith('.') ? rel : `./${rel}`
+    const modelsRel = relative(dirname(file), join(workRoot, 'vendor', 'models', 'dist')).replaceAll('\\', '/')
+    const modelsBase = modelsRel.startsWith('.') ? modelsRel : `./${modelsRel}`
+    const agentRuntimeRel = relative(dirname(file), join(workRoot, 'vendor', 'agent-runtime', 'dist')).replaceAll('\\', '/')
+    const agentRuntimeBase = agentRuntimeRel.startsWith('.') ? agentRuntimeRel : `./${agentRuntimeRel}`
     const replacements = [
-      ["'@undefineds.co/models'", `'${base}/index.js'`],
-      ["'@undefineds.co/models/client'", `'${base}/client/index.js'`],
-      ["'@undefineds.co/models/ai-config'", `'${base}/ai-config/index.js'`],
-      ["'@undefineds.co/models/discovery'", `'${base}/discovery/index.js'`],
-      ["'@undefineds.co/models/namespaces'", `'${base}/namespaces.js'`],
-      ["'@undefineds.co/models/profile'", `'${base}/profile.js'`],
-      ["'@undefineds.co/models/profile.schema'", `'${base}/profile.schema.js'`],
-      ["'@undefineds.co/models/watch'", `'${base}/watch/index.js'`],
-      ['"@undefineds.co/models"', `"${base}/index.js"`],
-      ['"@undefineds.co/models/client"', `"${base}/client/index.js"`],
-      ['"@undefineds.co/models/ai-config"', `"${base}/ai-config/index.js"`],
-      ['"@undefineds.co/models/discovery"', `"${base}/discovery/index.js"`],
-      ['"@undefineds.co/models/namespaces"', `"${base}/namespaces.js"`],
-      ['"@undefineds.co/models/profile"', `"${base}/profile.js"`],
-      ['"@undefineds.co/models/profile.schema"', `"${base}/profile.schema.js"`],
-      ['"@undefineds.co/models/watch"', `"${base}/watch/index.js"`],
+      ["'@undefineds.co/models'", `'${modelsBase}/index.js'`],
+      ["'@undefineds.co/models/client'", `'${modelsBase}/client/index.js'`],
+      ["'@undefineds.co/models/ai-config'", `'${modelsBase}/ai-config/index.js'`],
+      ["'@undefineds.co/models/discovery'", `'${modelsBase}/discovery/index.js'`],
+      ["'@undefineds.co/models/namespaces'", `'${modelsBase}/namespaces.js'`],
+      ["'@undefineds.co/models/profile'", `'${modelsBase}/profile.js'`],
+      ["'@undefineds.co/models/profile.schema'", `'${modelsBase}/profile.schema.js'`],
+      ["'@undefineds.co/models/vocab'", `'${modelsBase}/vocab/index.js'`],
+      ["'@undefineds.co/models/vocab/sidecar'", `'${modelsBase}/vocab/sidecar.vocab.js'`],
+      ["'@undefineds.co/models/watch'", `'${modelsBase}/watch/index.js'`],
+      ["'@linx/agent-runtime'", `'${agentRuntimeBase}/index.js'`],
+      ["'@linx/agent-runtime/acp'", `'${agentRuntimeBase}/acp.js'`],
+      ["'@linx/agent-runtime/companion-model'", `'${agentRuntimeBase}/companion-model.js'`],
+      ["'@linx/agent-runtime/turn-controller'", `'${agentRuntimeBase}/turn-controller.js'`],
+      ['"@undefineds.co/models"', `"${modelsBase}/index.js"`],
+      ['"@undefineds.co/models/client"', `"${modelsBase}/client/index.js"`],
+      ['"@undefineds.co/models/ai-config"', `"${modelsBase}/ai-config/index.js"`],
+      ['"@undefineds.co/models/discovery"', `"${modelsBase}/discovery/index.js"`],
+      ['"@undefineds.co/models/namespaces"', `"${modelsBase}/namespaces.js"`],
+      ['"@undefineds.co/models/profile"', `"${modelsBase}/profile.js"`],
+      ['"@undefineds.co/models/profile.schema"', `"${modelsBase}/profile.schema.js"`],
+      ['"@undefineds.co/models/vocab"', `"${modelsBase}/vocab/index.js"`],
+      ['"@undefineds.co/models/vocab/sidecar"', `"${modelsBase}/vocab/sidecar.vocab.js"`],
+      ['"@undefineds.co/models/watch"', `"${modelsBase}/watch/index.js"`],
+      ['"@linx/agent-runtime"', `"${agentRuntimeBase}/index.js"`],
+      ['"@linx/agent-runtime/acp"', `"${agentRuntimeBase}/acp.js"`],
+      ['"@linx/agent-runtime/companion-model"', `"${agentRuntimeBase}/companion-model.js"`],
+      ['"@linx/agent-runtime/turn-controller"', `"${agentRuntimeBase}/turn-controller.js"`],
     ]
     for (const [from, to] of replacements) {
       source = source.split(from).join(to)
@@ -106,8 +141,10 @@ function rewriteModelImports(root) {
   }
 }
 
-rewriteModelImports(join(workRoot, 'dist'))
+rewriteVendorImports(join(workRoot, 'dist'))
+rewriteVendorImports(join(workRoot, 'vendor', 'agent-runtime', 'dist'))
 fixExtensionlessRelativeImports(join(workRoot, 'vendor', 'models', 'dist'))
+fixExtensionlessRelativeImports(join(workRoot, 'vendor', 'agent-runtime', 'dist'))
 fixJsonImportAttributes(join(workRoot, 'vendor', 'models', 'dist'))
 
 function fixExtensionlessRelativeImports(root) {

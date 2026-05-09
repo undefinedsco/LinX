@@ -5,7 +5,7 @@
  */
 
 import { drizzle } from '@undefineds.co/drizzle-solid'
-import { chatTable, threadTable, messageTable } from '@linx/models'
+import { chatTable, threadTable, messageTable } from '@undefineds.co/models'
 import { createDpopHeader, generateDpopKeyPair } from '@inrupt/solid-client-authn-core'
 import { buildAuthenticatedFetch } from '@inrupt/solid-client-authn-core'
 import * as dotenv from 'dotenv'

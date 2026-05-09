@@ -12,7 +12,6 @@ import type { LocalServiceStatus } from './types'
 const SESSION_RESTORE_TIMEOUT = 3000
 const PROVIDER_CHECK_TIMEOUT = 5000
 const XPOD_CHECK_INTERVAL = 5000
-const XPOD_LAUNCH_TIMEOUT = 30000
 
 // XPod 检测配置 - 支持多个可能端口
 const XPOD_PORTS = [3000, 5737, 8080]
@@ -156,7 +155,7 @@ export function useLoginController() {
         clearTimeout(timeoutId)
 
         if (response.ok) {
-          const data = await response.json()
+          await response.json().catch(() => null)
           setLocalService({
             running: true,
             url: `http://localhost:${port}`,

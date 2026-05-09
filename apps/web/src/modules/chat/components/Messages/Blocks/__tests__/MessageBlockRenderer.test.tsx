@@ -8,8 +8,8 @@
 import { render, screen } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import { MessageBlockRenderer } from '..'
-import { MessageBlockType, MessageBlockStatus } from '@linx/models'
-import type { MessageBlock } from '@linx/models'
+import { MessageBlockType, MessageBlockStatus } from '@undefineds.co/models'
+import type { MessageBlock } from '@undefineds.co/models'
 
 // Mock MarkdownRenderer to avoid complex markdown parsing in tests
 vi.mock('../../../Markdown/MarkdownRenderer', () => ({

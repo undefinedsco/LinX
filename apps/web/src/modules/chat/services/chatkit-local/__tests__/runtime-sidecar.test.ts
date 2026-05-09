@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { approvalTable, auditTable, inboxNotificationTable } from '@linx/models'
+import { approvalResource, auditResource, inboxNotificationTable, sessionTable } from '@undefineds.co/models'
 
 const mocked = vi.hoisted(() => ({
   invalidateQueries: vi.fn().mockResolvedValue(undefined),
@@ -19,8 +19,12 @@ type InsertRecord = {
   values: Record<string, unknown>
 }
 
-function createMockDb(existingApprovals: Array<Record<string, unknown>> = []) {
+function createMockDb(
+  existingApprovals: Array<Record<string, unknown>> = [],
+  existingSessions: Array<Record<string, unknown>> = [],
+) {
   const inserts: InsertRecord[] = []
+  const updates: InsertRecord[] = []
 
   return {
     db: {
@@ -34,22 +38,37 @@ function createMockDb(existingApprovals: Array<Record<string, unknown>> = []) {
           },
         }
       },
-      select() {
+      update(table: unknown) {
         return {
-          from() {
+          set(values: Record<string, unknown>) {
+            updates.push({ table, values })
             return {
               where() {
                 return {
-                  execute: vi.fn().mockResolvedValue(existingApprovals),
+                  execute: vi.fn().mockResolvedValue(undefined),
                 }
               },
-              execute: vi.fn().mockResolvedValue(existingApprovals),
+            }
+          },
+        }
+      },
+      select() {
+        return {
+          from(table: unknown) {
+            return {
+              where() {
+                return {
+                  execute: vi.fn().mockResolvedValue(table === sessionTable ? existingSessions : existingApprovals),
+                }
+              },
+              execute: vi.fn().mockResolvedValue(table === sessionTable ? existingSessions : existingApprovals),
             }
           },
         }
       },
     },
     inserts,
+    updates,
   }
 }
 
@@ -85,9 +104,12 @@ describe('RuntimeSidecarSink', () => {
       arguments: '{"path":"/tmp/demo.txt"}',
     }, context)
 
-    expect(inserts.filter((item) => item.table === approvalTable)).toHaveLength(1)
-    expect(inserts.filter((item) => item.table === auditTable)).toHaveLength(1)
+    expect(inserts.filter((item) => item.table === approvalResource)).toHaveLength(1)
+    expect(inserts.filter((item) => item.table === auditResource)).toHaveLength(1)
     expect(inserts.filter((item) => item.table === inboxNotificationTable)).toHaveLength(2)
+    expect(inserts.find((item) => item.table === approvalResource)?.values.session).toBe(
+      'https://alice.example/.data/sessions/1970/01.ttl#runtime-1',
+    )
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['inbox', 'approvals'] })
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['inbox', 'audit'] })
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['inbox', 'notifications'] })
@@ -112,8 +134,35 @@ describe('RuntimeSidecarSink', () => {
       status: 'active',
     }, context)
 
-    expect(inserts.filter((item) => item.table === auditTable)).toHaveLength(1)
+    expect(inserts.filter((item) => item.table === auditResource)).toHaveLength(1)
+    expect(inserts.filter((item) => item.table === sessionTable)).toHaveLength(1)
+    expect(inserts.find((item) => item.table === sessionTable)?.values.chat).toBe(
+      'https://alice.example/.data/chat/chat-1/index.ttl#this',
+    )
+    expect(inserts.find((item) => item.table === sessionTable)?.values.thread).toBe(
+      'https://alice.example/.data/chat/chat-1/index.ttl#thread-1',
+    )
+    expect(inserts.find((item) => item.table === sessionTable)?.values).not.toHaveProperty('chatId')
+    expect(inserts.find((item) => item.table === sessionTable)?.values).not.toHaveProperty('threadId')
     expect(queryClient.invalidateQueries).toHaveBeenCalledTimes(4)
+  })
+
+  it('updates an existing session row when runtime status changes', async () => {
+    const { db, updates } = createMockDb([], [{
+      id: runtimeSession.id,
+      status: 'active',
+    }])
+    const sink = new RuntimeSidecarSink(db as any, 'https://alice.example/profile/card#me')
+
+    await sink.persistRuntimeEvent(runtimeSession, {
+      type: 'status',
+      ts: 2,
+      threadId: 'runtime-1',
+      status: 'paused',
+    }, context)
+
+    expect(updates.filter((item) => item.table === sessionTable)).toHaveLength(1)
+    expect(updates.find((item) => item.table === sessionTable)?.values.status).toBe('paused')
   })
 
   it('records auth resolution once runtime output resumes after auth_required', async () => {
@@ -136,7 +185,7 @@ describe('RuntimeSidecarSink', () => {
     }, context)
 
     const auditActions = inserts
-      .filter((item) => item.table === auditTable)
+      .filter((item) => item.table === auditResource)
       .map((item) => item.values.action)
 
     expect(auditActions).toContain('runtime.auth_required')

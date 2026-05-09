@@ -239,13 +239,22 @@ describe('Solid Pod live CRUD core surfaces', () => {
       risk: 'medium',
       status: 'pending',
       assignedTo: webId,
+      approvalOptions: JSON.stringify([
+        { optionId: 'allow_once', label: 'Allow once', kind: 'allow_once' },
+        { optionId: 'allow_always', label: 'Always allow', kind: 'allow_always' },
+      ]),
       policyVersion: 'pod-crud-test/v1',
       createdAt: now,
+      expiresAt: new Date('2026-01-02T03:05:05.000Z'),
     }).execute())
     await step('approval.read', async () => expect(database.findByIri(approvalResource, approvalIri)).resolves.toMatchObject({
       id: approvalId,
       status: 'pending',
       toolName: 'shell',
+      approvalOptions: JSON.stringify([
+        { optionId: 'allow_once', label: 'Allow once', kind: 'allow_once' },
+        { optionId: 'allow_always', label: 'Always allow', kind: 'allow_always' },
+      ]),
     }))
     await step('approval.update', async () => expect(database.updateByIri(approvalResource, approvalIri, {
       status: 'approved',
@@ -260,8 +269,22 @@ describe('Solid Pod live CRUD core surfaces', () => {
       id: grantId,
       target: `${baseUrl}/workspace/${threadId}/`,
       action: 'https://undefineds.co/ns#executeCommand',
+      title: 'Integration grant',
+      summary: 'Integration test semantic grant wiki page.',
+      body: 'Allow semantically equivalent command approvals in this integration session.',
+      schema: `${baseUrl}/settings/autonomy/schema/grant.ttl#GrantWikiPage`,
+      pageKind: 'autonomy-grant',
+      wikiStatus: 'active',
+      tags: JSON.stringify(['autonomy', 'grant', 'commandExecution']),
+      source: 'approval',
+      sourceHash: 'approval:integration',
+      compiledAt: now,
+      compiledFrom: [approvalIri],
+      related: [runtimeSessionIri],
       effect: 'allow',
       riskCeiling: 'medium',
+      policy: 'Allow semantically equivalent command approvals in this integration session.',
+      context: JSON.stringify({ toolName: 'shell', cwd: '/tmp/demo' }),
       decisionBy: webId,
       decisionRole: 'owner',
       onBehalfOf: webId,
@@ -269,12 +292,26 @@ describe('Solid Pod live CRUD core surfaces', () => {
     }).execute())
     await step('grant.read', async () => expect(database.findByIri(grantResource, grantIri)).resolves.toMatchObject({
       id: grantId,
+      title: 'Integration grant',
+      summary: 'Integration test semantic grant wiki page.',
+      body: 'Allow semantically equivalent command approvals in this integration session.',
+      schema: `${baseUrl}/settings/autonomy/schema/grant.ttl#GrantWikiPage`,
+      pageKind: 'autonomy-grant',
+      wikiStatus: 'active',
+      tags: JSON.stringify(['autonomy', 'grant', 'commandExecution']),
+      source: 'approval',
+      sourceHash: 'approval:integration',
+      compiledFrom: [approvalIri],
+      related: [runtimeSessionIri],
       effect: 'allow',
       riskCeiling: 'medium',
+      policy: 'Allow semantically equivalent command approvals in this integration session.',
+      context: JSON.stringify({ toolName: 'shell', cwd: '/tmp/demo' }),
     }))
     await step('grant.update', async () => expect(database.updateByIri(grantResource, grantIri, {
       riskCeiling: 'high',
-    })).resolves.toMatchObject({ riskCeiling: 'high' }))
+      wikiStatus: 'reviewed',
+    })).resolves.toMatchObject({ riskCeiling: 'high', wikiStatus: 'reviewed' }))
 
     const auditIri = `${baseUrl}${buildAuditSubjectPath(auditId, now)}`
     await step('audit.create', () => database.insert(auditResource).values({
@@ -286,7 +323,6 @@ describe('Solid Pod live CRUD core surfaces', () => {
       session: runtimeSessionIri,
       toolCallId: `tool-${approvalId}`,
       approval: approvalIri,
-      context: JSON.stringify({ source: 'pod.integration.test' }),
       policyVersion: 'pod-crud-test/v1',
       createdAt: now,
     }).execute())
@@ -296,9 +332,9 @@ describe('Solid Pod live CRUD core surfaces', () => {
       actor: webId,
     }))
     await step('audit.update', async () => expect(database.updateByIri(auditResource, auditIri, {
-      context: JSON.stringify({ source: 'pod.integration.test', updated: true }),
+      policyVersion: 'pod-crud-test/v2',
     })).resolves.toMatchObject({
-      context: JSON.stringify({ source: 'pod.integration.test', updated: true }),
+      policyVersion: 'pod-crud-test/v2',
     }))
 
     await step('audit.delete', () => expectDeleted(database, auditResource, auditIri))

@@ -7,7 +7,7 @@
 import type { ChatHandler, ChatHandlerContext } from './types'
 import { createAgentHandler } from './handlers/agent-handler'
 import { createArchiveHandler } from './handlers/archive-handler'
-import { isGroupContact } from '@linx/models'
+import { isGroupContact } from '@undefineds.co/models'
 
 /**
  * Create a chat handler based on the contact type

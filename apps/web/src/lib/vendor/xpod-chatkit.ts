@@ -2,7 +2,7 @@ import {
   chatTable,
   messageTable,
   threadTable,
-} from '@linx/models'
+} from '@undefineds.co/models'
 
 export const Chat = chatTable
 export const Thread = threadTable
@@ -68,6 +68,7 @@ export interface UserMessageItem {
   type: 'user_message'
   content: InputTextContentPart[]
   attachments?: Attachment[]
+  metadata?: Record<string, unknown>
   created_at: number
 }
 
@@ -78,6 +79,7 @@ export interface AssistantMessageItem {
   content: OutputTextContentPart[]
   attachments?: Attachment[]
   status?: string
+  metadata?: Record<string, unknown>
   created_at: number
 }
 

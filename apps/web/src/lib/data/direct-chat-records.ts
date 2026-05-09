@@ -7,7 +7,7 @@ import {
   type AgentRow,
   type ContactRow,
   type SolidDatabase,
-} from '@linx/models'
+} from '@undefineds.co/models'
 
 export interface CreateAgentContactRecordsInput {
   name: string

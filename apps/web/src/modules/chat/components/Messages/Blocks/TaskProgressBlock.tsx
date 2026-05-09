@@ -17,7 +17,7 @@ import {
   MessageBlockType,
   type MessageBlock,
   type TaskProgressStepStatus,
-} from '@linx/models'
+} from '@undefineds.co/models'
 
 /** Extract TaskProgressMessageBlock from the MessageBlock union */
 type TaskProgressMessageBlock = Extract<MessageBlock, { type: MessageBlockType.TASK_PROGRESS }>

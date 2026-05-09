@@ -26,7 +26,7 @@ export type ChatSessionProjection = {
 
 export type ApprovalProjectionInsert = Pick<
   ApprovalInsert,
-  'session' | 'toolCallId' | 'toolName' | 'target' | 'action' | 'risk' | 'status' | 'policyVersion'
+  'session' | 'toolCallId' | 'toolName' | 'target' | 'action' | 'risk' | 'status' | 'context' | 'approvalOptions' | 'policyVersion' | 'expiresAt'
 >
 
 export type ApprovalProjectionUpdate = Partial<
@@ -43,7 +43,27 @@ export type AuditProjectionInsert = Pick<
 
 export type GrantProjectionInsert = Pick<
   GrantInsert,
-  'target' | 'action' | 'effect' | 'riskCeiling' | 'decisionBy' | 'decisionRole' | 'onBehalfOf'
+  | 'target'
+  | 'action'
+  | 'title'
+  | 'summary'
+  | 'body'
+  | 'schema'
+  | 'pageKind'
+  | 'wikiStatus'
+  | 'tags'
+  | 'source'
+  | 'sourceHash'
+  | 'compiledAt'
+  | 'compiledFrom'
+  | 'related'
+  | 'effect'
+  | 'riskCeiling'
+  | 'policy'
+  | 'context'
+  | 'decisionBy'
+  | 'decisionRole'
+  | 'onBehalfOf'
 >
 
 export type InboxNotificationProjectionInsert = Pick<

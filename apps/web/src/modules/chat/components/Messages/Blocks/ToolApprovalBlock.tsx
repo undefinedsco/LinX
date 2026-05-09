@@ -28,7 +28,7 @@ import {
   type MessageBlock,
   type ToolApprovalStatus,
   type ToolRisk,
-} from '@linx/models'
+} from '@undefineds.co/models'
 
 /** Extract ToolApprovalMessageBlock from the MessageBlock union */
 type ToolApprovalMessageBlock = Extract<MessageBlock, { type: MessageBlockType.TOOL_APPROVAL }>

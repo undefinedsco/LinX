@@ -54,10 +54,11 @@ vi.mock('@/providers/solid-database-provider', () => ({
   useSolidDatabase: () => ({ db: null }),
 }))
 
-vi.mock('@linx/models', () => ({
+vi.mock('@undefineds.co/models', () => ({
   chatTable: {},
   threadTable: {},
   messageTable: {},
+  sessionTable: {},
   agentTable: {},
   contactTable: {},
   credentialTable: {},

@@ -2,17 +2,15 @@
 import yargs from 'yargs'
 import { hideBin } from 'yargs/helpers'
 import {
-  formatRemoteWatchApprovalSummary,
   formatArchivedWatchSession,
   formatWatchSessionSummary,
   loadArchivedWatchEvents,
   listArchivedWatchSessions,
-  listRemoteWatchApprovals,
   listSupportedWatchBackends,
   loadArchivedWatchSession,
-  resolveRemoteWatchApproval,
   runWatch,
   type WatchBackend,
+  type WatchApprovalSource,
   type WatchCredentialSource,
   type WatchMode,
 } from './lib/watch/index.js'
@@ -29,11 +27,11 @@ const cli = yargs(hideBin(process.argv))
       command
         .positional('action', {
           type: 'string',
-          choices: ['run', 'backends', 'sessions', 'show', 'approvals', 'approve', 'reject', 'codex', 'claude', 'codebuddy'] as const,
+          choices: ['run', 'backends', 'sessions', 'show', 'codex', 'claude', 'codebuddy'] as const,
         })
         .positional('backend', {
           type: 'string',
-          describe: 'Watch backend for `run`, session id for `show`, or approval id for `approve|reject`',
+          describe: 'Watch backend for `run` or session id for `show`',
         })
         .option('mode', {
           type: 'string',
@@ -60,14 +58,11 @@ const cli = yargs(hideBin(process.argv))
           choices: ['auto', 'local', 'cloud'] as const,
           describe: 'Resolve credentials only: local CLI login, LinX cloud config, or auto fallback. Runtime still runs locally.',
         })
-        .option('session', {
-          type: 'boolean',
-          default: false,
-          describe: 'Approve for the current watch session instead of only once.',
-        })
-        .option('reason', {
+        .option('approval-source', {
           type: 'string',
-          describe: 'Optional note recorded with an approval decision.',
+          default: 'hybrid',
+          choices: ['local', 'remote', 'hybrid'] as const,
+          describe: 'Resolve backend approval requests locally, through Pod remote approvals, or whichever answers first.',
         }),
     async (argv) => {
       const rawAction = String(argv.action)
@@ -112,34 +107,6 @@ const cli = yargs(hideBin(process.argv))
         return
       }
 
-      if (action === 'approvals') {
-        const approvals = await listRemoteWatchApprovals()
-        if (approvals.length === 0) {
-          process.stdout.write('No pending remote approvals in the approval inbox.\n')
-          return
-        }
-
-        process.stdout.write(`${approvals.map(formatRemoteWatchApprovalSummary).join('\n')}\n`)
-        return
-      }
-
-      if (action === 'approve' || action === 'reject') {
-        const approvalId = argv.backend ? String(argv.backend) : ''
-        if (!approvalId) {
-          throw new Error(`Usage: linx watch ${action} <approvalId>`)
-        }
-
-        const summary = await resolveRemoteWatchApproval({
-          approvalId,
-          decision: action === 'approve'
-            ? (argv.session ? 'accept_for_session' : 'accept')
-            : 'decline',
-          note: argv.reason ? String(argv.reason) : undefined,
-        })
-        process.stdout.write(`${formatRemoteWatchApprovalSummary(summary)}\n`)
-        return
-      }
-
       const backend = (directBackend ? rawAction : argv.backend) as WatchBackend | undefined
       if (!backend || !['codex', 'claude', 'codebuddy'].includes(backend)) {
         throw new Error('Usage: linx watch run <codex|claude|codebuddy> <prompt> [-- backend args]\n   or: linx watch <codex|claude|codebuddy> <prompt>')
@@ -159,6 +126,7 @@ const cli = yargs(hideBin(process.argv))
         prompt,
         passthroughArgs: ((argv['--'] as string[] | undefined) ?? []).map(String),
         credentialSource: argv['credential-source'] as WatchCredentialSource,
+        approvalSource: argv['approval-source'] as WatchApprovalSource,
       })
 
       if (exitCode !== 0) {

@@ -72,7 +72,7 @@ Push Notification payload:
   { inboxItemId: "xxx", sessionId: "yyy", toolName: "execute_command", risk: "high" }
   → 用户点击 → 打开 QuickApprovalSheet
   → 审批操作 → UPDATE inboxTable (status, decisionBy, decisionRole)
-  → 同时 INSERT auditTable
+  → 同时 INSERT auditResource
 ```
 
 ### 6A.3 不新增 Pod 表
@@ -219,4 +219,3 @@ Mobile Session Control UI 不新增任何 Pod 表。
 | `mobile/session/SessionControlBar.tsx` | 新增 | 底部控制栏 |
 | `mobile/session/SessionListSection.tsx` | 新增 | Session 列表 section |
 | `services/push-notification.ts` | 修改 | 新增 session 相关推送类别 |
-

@@ -24,7 +24,7 @@ vi.mock('../collections', () => ({
   useFavoriteInit: () => ({ db: null, isReady: true }),
 }))
 
-vi.mock('@linx/models', () => ({
+vi.mock('@undefineds.co/models', () => ({
   resolveRowId: (item: unknown) => (item as Record<string, unknown>)?.id ?? 'mock-id',
 }))
 

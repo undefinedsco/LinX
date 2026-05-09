@@ -8,8 +8,7 @@
  * No API server round-trip — fetch goes directly to the AI provider.
  */
 
-import { and, eq } from '@undefineds.co/drizzle-solid'
-import { resolveLinxPodBaseUrl } from '@linx/models/client'
+import { resolveLinxPodBaseUrl } from '@undefineds.co/models/client'
 import type { ChatKitStore, StoreContext } from '@/lib/vendor/xpod-chatkit'
 import {
   extractUserMessageText,
@@ -23,10 +22,28 @@ import {
   type ThreadMetadata,
   type ThreadStreamEvent,
 } from '@/lib/vendor/xpod-chatkit'
-import { Credential } from '@/lib/vendor/xpod-credential'
 import { CredentialStatus, ServiceType } from '@/lib/vendor/xpod-credential'
-import type { SolidDatabase } from '@linx/models'
+import {
+  credentialTable,
+  getAIConfigDefaultBaseUrl,
+  normalizeAIConfigProviderId,
+  sameAIConfigProviderFamily,
+  type SolidDatabase,
+} from '@undefineds.co/models'
+import { DEFAULT_AGENT_RUNTIME_COMPANION_MODEL_ID } from '@linx/agent-runtime/companion-model'
+import type {
+  GroupTurnAgent,
+  GroupTurnDecision,
+  GroupTurnMessage,
+  GroupTurnRoute,
+} from '@linx/agent-runtime/turn-controller'
 import { RuntimeSidecarSink } from './runtime-sidecar'
+import {
+  buildGroupTurnControllerMessages,
+  parseGroupTurnDecision,
+  resolveGroupTurnRouting,
+  type RoutedGroupAgent,
+} from './group-turn-routing'
 
 export interface LocalServiceOptions {
   store: ChatKitStore<StoreContext>
@@ -34,6 +51,11 @@ export interface LocalServiceOptions {
   webId: string
   authFetch: typeof fetch
   systemPrompt?: string
+  groupTurnDecide?: (input: {
+    latestUserMessage: string
+    agents: GroupTurnAgent[]
+    history: GroupTurnMessage[]
+  }) => Promise<GroupTurnDecision>
 }
 
 export interface StreamingResult {
@@ -71,6 +93,20 @@ type RuntimeThreadEvent =
   | { type: 'exit'; ts: number; threadId: string; code: number | null; signal?: string }
   | { type: 'error'; ts: number; threadId: string; message: string }
 
+interface AiProviderConfig {
+  provider: string
+  baseUrl: string
+  apiKey: string
+  defaultModel?: string
+}
+
+function normalizeProviderModel(provider: string, model: string): string {
+  const cleanModel = model.trim()
+  if (!cleanModel) return cleanModel
+  if (provider === 'undefineds') return cleanModel
+  return cleanModel.includes('/') ? cleanModel : `${provider}/${cleanModel}`
+}
+
 export class LocalChatKitService {
   private store: ChatKitStore<StoreContext>
   private db: SolidDatabase
@@ -78,6 +114,7 @@ export class LocalChatKitService {
   private authFetch: typeof fetch
   private systemPrompt: string
   private runtimeSidecar: RuntimeSidecarSink
+  private groupTurnDecide?: LocalServiceOptions['groupTurnDecide']
 
   constructor(options: LocalServiceOptions) {
     this.store = options.store
@@ -86,6 +123,7 @@ export class LocalChatKitService {
     this.authFetch = options.authFetch
     this.systemPrompt = options.systemPrompt ?? 'You are a helpful assistant.'
     this.runtimeSidecar = new RuntimeSidecarSink(this.db, this.webId)
+    this.groupTurnDecide = options.groupTurnDecide
   }
 
   async process(requestBody: string, context: StoreContext): Promise<ChatKitResult> {
@@ -203,7 +241,7 @@ export class LocalChatKitService {
       await this.store.addThreadItem(threadId, userMessage, context)
       yield { type: 'thread.item.added', item: userMessage }
       yield { type: 'thread.item.done', item: userMessage }
-      yield* this.respond(thread, userMessage, context, params.input.inference_options)
+      yield* this.respondWithRouting(thread, userMessage, context, params.input.inference_options)
     }
   }
 
@@ -216,7 +254,7 @@ export class LocalChatKitService {
     await this.store.addThreadItem(params.thread_id, userMessage, context)
     yield { type: 'thread.item.added', item: userMessage }
     yield { type: 'thread.item.done', item: userMessage }
-    yield* this.respond(thread, userMessage, context, params.input.inference_options)
+    yield* this.respondWithRouting(thread, userMessage, context, params.input.inference_options)
   }
 
   private async *handleThreadsAddClientToolOutput(
@@ -273,7 +311,7 @@ export class LocalChatKitService {
     }
 
     if (lastUserMessage) {
-      yield* this.respond(thread, lastUserMessage, context)
+      yield* this.respondWithRouting(thread, lastUserMessage, context)
     }
   }
 
@@ -306,15 +344,67 @@ export class LocalChatKitService {
     return { success: true }
   }
 
-  private async *respond(
+  private async *respondWithRouting(
     thread: ThreadMetadata,
     userMessage: ThreadItem,
     context: StoreContext,
     inferenceOptions?: any,
   ): AsyncIterable<ThreadStreamEvent> {
-    const messages = await this.buildConversationHistory(thread.id, context)
+    const userText = extractUserMessageText((userMessage as any).content)
+    const history = await this.buildConversationHistory(thread.id, context)
+
+    const routing = await resolveGroupTurnRouting({
+      db: this.db,
+      thread,
+      latestUserMessage: userText,
+      history: history.filter((message): message is GroupTurnMessage =>
+        message.role === 'user' || message.role === 'assistant' || message.role === 'system',
+      ),
+      decide: this.groupTurnDecide ?? ((input) => this.decideGroupTurn(input)),
+    })
+
+    if (routing) {
+      if (!routing.route.shouldReply) {
+        return
+      }
+
+      if (routing.targetAgents.length > 0) {
+        yield* this.respond(thread, userMessage, context, inferenceOptions, {
+          messages: history,
+          agent: routing.targetAgents[0],
+          route: routing.route,
+        })
+        return
+      }
+    }
+
+    yield* this.respond(thread, userMessage, context, inferenceOptions, { messages: history })
+  }
+
+  private async *respond(
+    thread: ThreadMetadata,
+    userMessage: ThreadItem,
+    context: StoreContext,
+    inferenceOptions?: any,
+    responseOptions: {
+      messages?: Array<{ role: string; content: string }>
+      agent?: RoutedGroupAgent
+      route?: GroupTurnRoute
+    } = {},
+  ): AsyncIterable<ThreadStreamEvent> {
+    const messages = responseOptions.messages ?? await this.buildConversationHistory(thread.id, context)
 
     const assistantItem = this.createAssistantItem(thread, context) as any
+    if (responseOptions.agent) {
+      assistantItem.metadata = {
+        maker: responseOptions.agent.agentUri,
+        senderName: responseOptions.agent.name,
+        senderAvatarUrl: responseOptions.agent.agent.avatarUrl,
+        routedBy: responseOptions.route?.routedBy,
+        routeTargetAgentId: responseOptions.agent.id,
+        coordinationId: responseOptions.route?.coordinationId,
+      }
+    }
     const assistantItemId = assistantItem.id
     await this.store.addThreadItem(thread.id, assistantItem, context)
     yield { type: 'thread.item.added', item: assistantItem }
@@ -353,7 +443,7 @@ export class LocalChatKitService {
           yield event
         }
       } else {
-        const aiConfig = await this.getAiConfig()
+        const aiConfig = await this.getAiConfig(responseOptions.agent?.agent.provider)
         if (!aiConfig) {
           assistantItem.content = [{ type: 'output_text', text: '请先在设置中配置 AI API Key。', annotations: [] }]
           assistantItem.status = 'completed'
@@ -362,8 +452,17 @@ export class LocalChatKitService {
           return
         }
 
-        const model = inferenceOptions?.model ?? aiConfig.defaultModel ?? 'openai/gpt-4o-mini'
-        const stream = this.streamFromProvider(aiConfig, messages, model, inferenceOptions)
+        const model = inferenceOptions?.model
+          ?? responseOptions.agent?.agent.model
+          ?? aiConfig.defaultModel
+          ?? (aiConfig.provider === 'undefineds' ? DEFAULT_AGENT_RUNTIME_COMPANION_MODEL_ID : 'openai/gpt-4o-mini')
+        const providerMessages = responseOptions.agent?.agent.instructions
+          ? [{ role: 'system', content: responseOptions.agent.agent.instructions }, ...messages.filter((message) => message.role !== 'system')]
+          : messages
+        const stream = this.streamFromProvider(aiConfig, providerMessages, model, {
+          ...inferenceOptions,
+          temperature: inferenceOptions?.temperature ?? responseOptions.agent?.agent.temperature,
+        })
 
         for await (const chunk of stream) {
           fullText += chunk
@@ -702,25 +801,20 @@ export class LocalChatKitService {
     )
   }
 
-  private async getAiConfig(): Promise<{
-    baseUrl: string
-    apiKey: string
-    defaultModel?: string
-  } | null> {
+  private async getAiConfig(provider?: string): Promise<AiProviderConfig | null> {
+    const providerId = normalizeAIConfigProviderId(provider || 'openai')
     try {
-      const credentials = await this.db.select().from(Credential)
-        .where(
-          and(
-            eq(Credential.service, ServiceType.AI),
-            eq(Credential.status, CredentialStatus.ACTIVE),
-          ),
-        )
-        .execute()
+      const credentials = await this.db.select().from(credentialTable).execute()
+      const credential = (credentials as any[]).find((candidate) => {
+        if (candidate.service !== ServiceType.AI || candidate.status !== CredentialStatus.ACTIVE) return false
+        if (!provider && !candidate.provider) return true
+        return sameAIConfigProviderFamily(String(candidate.provider ?? candidate.id ?? ''), providerId)
+      }) ?? (!provider ? (credentials as any[])[0] : null)
 
-      if (credentials.length > 0) {
-        const credential = credentials[0] as any
+      if (credential) {
         return {
-          baseUrl: credential.baseUrl || 'https://openrouter.ai/api/v1',
+          provider: providerId,
+          baseUrl: credential.baseUrl || getAIConfigDefaultBaseUrl(providerId) || 'https://openrouter.ai/api/v1',
           apiKey: credential.apiKey as string,
         }
       }
@@ -740,23 +834,20 @@ export class LocalChatKitService {
       }
 
       const turtle = await response.text()
-      return this.parseCredentialFromTurtle(turtle)
+      return this.parseCredentialFromTurtle(turtle, providerId)
     } catch (error) {
       console.warn('[LocalChatKitService] Direct credential fetch failed:', error)
       return null
     }
   }
 
-  private parseCredentialFromTurtle(turtle: string): {
-    baseUrl: string
-    apiKey: string
-    defaultModel?: string
-  } | null {
+  private parseCredentialFromTurtle(turtle: string, providerId: string): AiProviderConfig | null {
     const lines = turtle.split('\n')
     let apiKey: string | null = null
     let baseUrl: string | null = null
     let service: string | null = null
     let status: string | null = null
+    let provider: string | null = null
 
     for (const line of lines) {
       const trimmed = line.trim()
@@ -769,11 +860,14 @@ export class LocalChatKitService {
       baseUrl = matchStr('baseUrl') ?? baseUrl
       service = matchStr('service') ?? service
       status = matchStr('status') ?? status
+      const providerMatch = trimmed.match(/<https:\/\/vocab\.xpod\.dev\/credential#provider>\s+<([^>]+)>/)
+      provider = providerMatch?.[1] ?? provider
     }
 
-    if (service === 'ai' && status === 'active' && apiKey) {
+    if (service === 'ai' && status === 'active' && apiKey && (!provider || sameAIConfigProviderFamily(provider, providerId))) {
       return {
-        baseUrl: baseUrl || 'https://openrouter.ai/api/v1',
+        provider: providerId,
+        baseUrl: baseUrl || getAIConfigDefaultBaseUrl(providerId) || 'https://openrouter.ai/api/v1',
         apiKey,
       }
     }
@@ -781,8 +875,30 @@ export class LocalChatKitService {
     return null
   }
 
+  private async decideGroupTurn(input: {
+    latestUserMessage: string
+    agents: GroupTurnAgent[]
+    history: GroupTurnMessage[]
+  }): Promise<GroupTurnDecision> {
+    const aiConfig = await this.getAiConfig('undefineds')
+    if (!aiConfig) {
+      return { shouldReply: false, targetAgentIds: [], reason: 'No undefineds provider credential is configured.' }
+    }
+
+    const messages = buildGroupTurnControllerMessages(input)
+    let content = ''
+    for await (const chunk of this.streamFromProvider(aiConfig, messages, DEFAULT_AGENT_RUNTIME_COMPANION_MODEL_ID, {
+      temperature: 0,
+      max_tokens: 512,
+    })) {
+      content += chunk
+    }
+
+    return parseGroupTurnDecision(content)
+  }
+
   private async *streamFromProvider(
-    config: { baseUrl: string; apiKey: string },
+    config: AiProviderConfig,
     messages: Array<{ role: string; content: string }>,
     model: string,
     inferenceOptions?: any,
@@ -797,7 +913,7 @@ export class LocalChatKitService {
         Authorization: `Bearer ${config.apiKey}`,
       },
       body: JSON.stringify({
-        model,
+        model: normalizeProviderModel(config.provider, model),
         messages,
         stream: true,
         temperature: inferenceOptions?.temperature ?? 0.7,

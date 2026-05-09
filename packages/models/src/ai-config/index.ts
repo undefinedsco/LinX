@@ -50,7 +50,21 @@ export interface AIConfigMutationPlan {
   modelDeleteIds: string[]
 }
 
+export const UNDEFINEDS_AI_PROVIDER_ID = 'undefineds'
+export const UNDEFINEDS_AI_PROVIDER_DISPLAY_NAME = 'undefineds'
+export const UNDEFINEDS_AI_BASE_URL = 'https://api.undefineds.co/v1'
+export const LINX_LITE_MODEL_ID = 'linx-lite'
+export const LINX_MODEL_ID = 'linx'
+export const DEFAULT_LINX_MODEL_ID = LINX_LITE_MODEL_ID
+export const UNDEFINEDS_AI_MODEL_IDS = [LINX_LITE_MODEL_ID, LINX_MODEL_ID] as const
+
 const AI_CONFIG_PROVIDER_CATALOG: readonly AIConfigProviderCatalogEntry[] = [
+  {
+    id: UNDEFINEDS_AI_PROVIDER_ID,
+    displayName: UNDEFINEDS_AI_PROVIDER_DISPLAY_NAME,
+    defaultBaseUrl: UNDEFINEDS_AI_BASE_URL,
+    defaultModels: [...UNDEFINEDS_AI_MODEL_IDS],
+  },
   {
     id: 'openai',
     displayName: 'OpenAI',

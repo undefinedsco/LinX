@@ -12,6 +12,7 @@
     "test": "yarn build && node --test test/**/*.test.mjs"
   },
   "dependencies": {
+    "@linx/agent-runtime": "*",
     "@undefineds.co/models": "*",
     "@inrupt/solid-client-authn-node": "^3.1.1",
     "@mariozechner/pi-coding-agent": "^0.67.6",

@@ -8,7 +8,7 @@
  */
 
 import { eq, and } from '@undefineds.co/drizzle-solid'
-import { resolveLinxPodBaseUrl } from '@linx/models/client'
+import { resolveLinxPodBaseUrl } from '@undefineds.co/models/client'
 import {
   Chat, Thread, Message,
   MessageRole, MessageStatus,
@@ -19,7 +19,7 @@ import {
   type ThreadMetadata, type ThreadItem, type Attachment,
   type Page, type StoreItemType,
 } from '@/lib/vendor/xpod-chatkit'
-import type { SolidDatabase } from '@linx/models'
+import type { SolidDatabase } from '@undefineds.co/models'
 
 const DEFAULT_CHAT_ID = 'default'
 
@@ -58,15 +58,17 @@ function getChatIdFromMetadata(metadata?: Record<string, unknown>): string {
 // ---------------------------------------------------------------------------
 
 function threadRecordToMetadata(record: any): ThreadMetadata {
-  const chatId = extractChatId(record.chatId)
+  const chatId = extractChatId(record.chat)
   let extra: Record<string, unknown> | undefined
-  if (record.metadata) {
+  if (record.metadata && typeof record.metadata === 'object') {
+    extra = record.metadata
+  } else if (typeof record.metadata === 'string') {
     try { extra = JSON.parse(record.metadata) } catch { /* ignore */ }
   }
   return {
     id: record.id,
     title: record.title || undefined,
-    status: stringToStatus(record.status),
+    status: stringToStatus(record.metadata?.status ?? record.status),
     created_at: record.createdAt
       ? Math.floor(new Date(record.createdAt).getTime() / 1000)
       : nowTimestamp(),
@@ -96,6 +98,64 @@ function parseStoredThreadItem(value: unknown, fallbackThreadId: string, fallbac
   } catch {
     return null
   }
+}
+
+function messageGroupMetadata(record: any): Record<string, unknown> | undefined {
+  const metadata = {
+    senderName: typeof record.senderName === 'string' ? record.senderName : undefined,
+    senderAvatarUrl: typeof record.senderAvatarUrl === 'string' ? record.senderAvatarUrl : undefined,
+    mentions: Array.isArray(record.mentions) ? record.mentions : undefined,
+    routedBy: typeof record.routedBy === 'string' ? record.routedBy : undefined,
+    routeTargetAgentId: typeof record.routeTargetAgentId === 'string' ? record.routeTargetAgentId : undefined,
+    coordinationId: typeof record.coordinationId === 'string' ? record.coordinationId : undefined,
+  }
+  const compact = Object.fromEntries(
+    Object.entries(metadata).filter(([, value]) => value !== undefined),
+  )
+  return Object.keys(compact).length > 0 ? compact : undefined
+}
+
+function stringArrayMetadata(value: unknown): string[] | undefined {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string' && item.length > 0)
+    : undefined
+}
+
+function itemGroupMetadata(item: ThreadItem): {
+  senderName?: string
+  senderAvatarUrl?: string
+  mentions?: string[]
+  routedBy?: string
+  routeTargetAgentId?: string
+  coordinationId?: string
+  maker?: string
+} {
+  const metadata = 'metadata' in item && item.metadata && typeof item.metadata === 'object'
+    ? item.metadata as Record<string, unknown>
+    : {}
+
+  return {
+    senderName: typeof metadata.senderName === 'string' ? metadata.senderName : undefined,
+    senderAvatarUrl: typeof metadata.senderAvatarUrl === 'string' ? metadata.senderAvatarUrl : undefined,
+    mentions: stringArrayMetadata(metadata.mentions),
+    routedBy: typeof metadata.routedBy === 'string' ? metadata.routedBy : undefined,
+    routeTargetAgentId: typeof metadata.routeTargetAgentId === 'string' ? metadata.routeTargetAgentId : undefined,
+    coordinationId: typeof metadata.coordinationId === 'string' ? metadata.coordinationId : undefined,
+    maker: typeof metadata.maker === 'string' ? metadata.maker : undefined,
+  }
+}
+
+function applyMessageMetadata<T extends ThreadItem>(item: T, metadata: Record<string, unknown> | undefined): T {
+  if (!metadata) {
+    return item
+  }
+  return {
+    ...item,
+    metadata: {
+      ...('metadata' in item && item.metadata && typeof item.metadata === 'object' ? item.metadata : {}),
+      ...metadata,
+    },
+  } as T
 }
 
 function threadItemToMessageRecord(item: ThreadItem): {
@@ -144,20 +204,21 @@ function messageRecordToItem(record: any, threadId: string): ThreadItem {
   const storedThreadItem = parseStoredThreadItem(record.richContent, threadId, createdAt)
     ?? parseStoredThreadItem(record.content, threadId, createdAt)
   if (storedThreadItem) {
-    return storedThreadItem
+    return applyMessageMetadata(storedThreadItem, messageGroupMetadata(record))
   }
 
+  const metadata = messageGroupMetadata(record)
   if (record.role === MessageRole.USER) {
-    return {
+    return applyMessageMetadata({
       id: record.id,
       thread_id: threadId,
       type: 'user_message',
       content: [{ type: 'input_text', text: record.content || '' }],
       attachments: [],
       created_at: createdAt,
-    } as ThreadItem
+    } as ThreadItem, metadata)
   }
-  return {
+  return applyMessageMetadata({
     id: record.id,
     thread_id: threadId,
     type: 'assistant_message',
@@ -165,7 +226,11 @@ function messageRecordToItem(record: any, threadId: string): ThreadItem {
     attachments: [],
     status: record.status || 'completed',
     created_at: createdAt,
-  } as ThreadItem
+  } as ThreadItem, metadata)
+}
+
+export const __chatKitStoreTestInternals = {
+  messageRecordToItem,
 }
 
 // ---------------------------------------------------------------------------
@@ -208,12 +273,12 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       .where(eq(Chat.id, chatId))
       .execute()
     if (existingChats.length === 0) {
-      const now = new Date().toISOString()
+      const now = new Date()
       await this.db.insert(Chat).values({
         id: chatId,
         title: chatId === DEFAULT_CHAT_ID ? 'Default Chat' : chatId,
-        author: this.webId || null,
-        status: 'active',
+        participants: this.webId ? [this.webId] : [],
+        metadata: { status: 'active' },
         createdAt: now,
         updatedAt: now,
       }).execute()
@@ -229,7 +294,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       .execute()
     if (threads.length === 0) return DEFAULT_CHAT_ID
 
-    const chatId = extractChatId((threads[0] as any).chatId)
+    const chatId = extractChatId((threads[0] as any).chat)
     this.threadChatIdCache.set(threadId, chatId)
     return chatId
   }
@@ -253,14 +318,14 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   }
 
   async saveThread(thread: ThreadMetadata, _context: StoreContext): Promise<void> {
-    const now = new Date().toISOString()
+    const now = new Date()
     const chatId = getChatIdFromMetadata(thread.metadata)
 
     const metadataToPersist = { ...(thread.metadata ?? {}) }
     delete metadataToPersist.chat_id
     const metadataJson = Object.keys(metadataToPersist).length > 0
-      ? JSON.stringify(metadataToPersist)
-      : null
+      ? metadataToPersist
+      : undefined
 
     await this.ensureChat(chatId)
     this.threadChatIdCache.set(thread.id, chatId)
@@ -271,19 +336,17 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
 
     if (existingThreads.length > 0) {
       await this.db.update(Thread).set({
-        title: thread.title || null,
-        status: statusToString(thread.status),
-        metadata: metadataJson,
+        title: thread.title || undefined,
+        metadata: { ...(metadataJson ?? {}), status: statusToString(thread.status) },
         updatedAt: now,
       }).where(eq(Thread.id, thread.id)).execute()
     } else {
       await this.db.insert(Thread).values({
         id: thread.id,
-        chatId,
-        title: thread.title || null,
-        status: statusToString(thread.status),
-        metadata: metadataJson,
-        createdAt: new Date(thread.created_at * 1000).toISOString(),
+        chat: chatId,
+        title: thread.title || undefined,
+        metadata: { ...(metadataJson ?? {}), status: statusToString(thread.status) },
+        createdAt: new Date(thread.created_at * 1000),
         updatedAt: now,
       }).execute()
     }
@@ -317,7 +380,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       return {
         data: slice.map((t: any) => threadRecordToMetadata(t)),
         has_more: startIndex + limit < threads.length,
-        after: slice.length > 0 ? (slice[slice.length - 1] as any).id : undefined,
+        last_id: slice.length > 0 ? (slice[slice.length - 1] as any).id : undefined,
       }
     } catch (error) {
       console.error('[LocalStore] Failed to load threads:', error)
@@ -327,7 +390,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
 
   async deleteThread(threadId: string, _context: StoreContext): Promise<void> {
     try {
-      await this.db.delete(Message).where(eq(Message.threadId, threadId)).execute()
+      await this.db.delete(Message).where(eq(Message.thread, threadId)).execute()
     } catch (err: any) {
       if (!err.message?.includes('404') && !err.message?.includes('Parse error')) throw err
     }
@@ -353,7 +416,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   ): Promise<Page<ThreadItem>> {
     try {
       const messages = await this.db.select().from(Message)
-        .where(eq(Message.threadId, threadId))
+        .where(eq(Message.thread, threadId))
         .execute()
 
       messages.sort((a: any, b: any) => {
@@ -371,7 +434,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       return {
         data: slice.map((m: any) => messageRecordToItem(m, threadId)),
         has_more: startIndex + limit < messages.length,
-        after: slice.length > 0 ? (slice[slice.length - 1] as any).id : undefined,
+        last_id: slice.length > 0 ? (slice[slice.length - 1] as any).id : undefined,
       }
     } catch (error) {
       console.error('[LocalStore] Failed to load thread items:', error)
@@ -382,17 +445,24 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   async addThreadItem(threadId: string, item: ThreadItem, _context: StoreContext): Promise<void> {
     const chatId = await this.getThreadChatId(threadId)
     const { content, role, status, richContent } = threadItemToMessageRecord(item)
+    const metadata = itemGroupMetadata(item)
 
     await this.db.insert(Message).values({
       id: item.id,
-      chatId,
-      threadId,
-      maker: role === MessageRole.USER ? this.webId : null,
+      chat: chatId,
+      thread: threadId,
+      maker: metadata.maker ?? (role === MessageRole.USER ? this.webId : `${resolveLinxPodBaseUrl(this.webId)}/.data/agents/default.ttl#this`),
       role,
       content,
-      richContent,
-      status,
-      createdAt: new Date(item.created_at * 1000).toISOString(),
+      richContent: richContent ?? undefined,
+      status: status ?? undefined,
+      senderName: metadata.senderName,
+      senderAvatarUrl: metadata.senderAvatarUrl,
+      mentions: metadata.mentions,
+      routedBy: metadata.routedBy,
+      routeTargetAgentId: metadata.routeTargetAgentId,
+      coordinationId: metadata.coordinationId,
+      createdAt: new Date(item.created_at * 1000),
     }).execute()
 
     this.recentlyCreatedIds.add(item.id)
@@ -409,7 +479,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     // For recently created messages, use direct SPARQL PATCH to avoid drizzle-solid UPDATE bug
     if (this.recentlyCreatedIds.has(item.id)) {
       this.recentlyCreatedIds.delete(item.id)
-      await this.directPatchMessage(chatId, item.id, content, richContent, status, createdAt)
+      await this.directPatchMessage(chatId, item.id, content, richContent, status, createdAt, itemGroupMetadata(item))
       return
     }
 
@@ -424,7 +494,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
           ? (existing as any).createdAt
           : String((existing as any).createdAt))
         : undefined
-      await this.directPatchMessage(chatId, item.id, content, richContent, status, existingCreatedAt)
+      await this.directPatchMessage(chatId, item.id, content, richContent, status, existingCreatedAt, itemGroupMetadata(item))
     } else {
       await this.addThreadItem(threadId, item, _context)
     }
@@ -441,6 +511,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     richContent: string | null,
     status: string | null,
     _createdAt?: string,
+    metadata: ReturnType<typeof itemGroupMetadata> = {},
   ): Promise<void> {
     // The db instance already carries session.fetch with DPoP auth.
     // Build resource URL from webId.
@@ -470,6 +541,12 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       `<${subjectUri}> <http://rdfs.org/sioc/ns#content> ?oldContent .`,
       `<${subjectUri}> <http://rdfs.org/sioc/ns#richContent> ?oldRichContent .`,
       `<${subjectUri}> <https://undefineds.co/ns#status> ?oldStatus .`,
+      `<${subjectUri}> <https://undefineds.co/ns#senderName> ?oldSenderName .`,
+      `<${subjectUri}> <https://undefineds.co/ns#senderAvatarUrl> ?oldSenderAvatarUrl .`,
+      `<${subjectUri}> <https://undefineds.co/ns#mentions> ?oldMentions .`,
+      `<${subjectUri}> <https://undefineds.co/ns#routedBy> ?oldRoutedBy .`,
+      `<${subjectUri}> <https://undefineds.co/ns#routeTargetAgentId> ?oldRouteTargetAgentId .`,
+      `<${subjectUri}> <https://undefineds.co/ns#coordinationId> ?oldCoordinationId .`,
     ]
     const insertTriples = [
       `<${subjectUri}> <http://rdfs.org/sioc/ns#content> ${escapeForSparql(content)} .`,
@@ -478,6 +555,12 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       `OPTIONAL { <${subjectUri}> <http://rdfs.org/sioc/ns#content> ?oldContent . }`,
       `OPTIONAL { <${subjectUri}> <http://rdfs.org/sioc/ns#richContent> ?oldRichContent . }`,
       `OPTIONAL { <${subjectUri}> <https://undefineds.co/ns#status> ?oldStatus . }`,
+      `OPTIONAL { <${subjectUri}> <https://undefineds.co/ns#senderName> ?oldSenderName . }`,
+      `OPTIONAL { <${subjectUri}> <https://undefineds.co/ns#senderAvatarUrl> ?oldSenderAvatarUrl . }`,
+      `OPTIONAL { <${subjectUri}> <https://undefineds.co/ns#mentions> ?oldMentions . }`,
+      `OPTIONAL { <${subjectUri}> <https://undefineds.co/ns#routedBy> ?oldRoutedBy . }`,
+      `OPTIONAL { <${subjectUri}> <https://undefineds.co/ns#routeTargetAgentId> ?oldRouteTargetAgentId . }`,
+      `OPTIONAL { <${subjectUri}> <https://undefineds.co/ns#coordinationId> ?oldCoordinationId . }`,
     ]
 
     if (richContent !== null) {
@@ -486,6 +569,30 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
 
     if (status) {
       insertTriples.push(`<${subjectUri}> <https://undefineds.co/ns#status> "${status}" .`)
+    }
+
+    if (metadata.senderName) {
+      insertTriples.push(`<${subjectUri}> <https://undefineds.co/ns#senderName> ${escapeForSparql(metadata.senderName)} .`)
+    }
+
+    if (metadata.senderAvatarUrl) {
+      insertTriples.push(`<${subjectUri}> <https://undefineds.co/ns#senderAvatarUrl> <${metadata.senderAvatarUrl}> .`)
+    }
+
+    for (const mention of metadata.mentions ?? []) {
+      insertTriples.push(`<${subjectUri}> <https://undefineds.co/ns#mentions> <${mention}> .`)
+    }
+
+    if (metadata.routedBy) {
+      insertTriples.push(`<${subjectUri}> <https://undefineds.co/ns#routedBy> <${metadata.routedBy}> .`)
+    }
+
+    if (metadata.routeTargetAgentId) {
+      insertTriples.push(`<${subjectUri}> <https://undefineds.co/ns#routeTargetAgentId> ${escapeForSparql(metadata.routeTargetAgentId)} .`)
+    }
+
+    if (metadata.coordinationId) {
+      insertTriples.push(`<${subjectUri}> <https://undefineds.co/ns#coordinationId> ${escapeForSparql(metadata.coordinationId)} .`)
     }
 
     const sparql = `
@@ -509,7 +616,7 @@ WHERE { ${wherePatterns.join(' ')} }
 
   async loadItem(threadId: string, itemId: string, _context: StoreContext): Promise<ThreadItem> {
     const messages = await this.db.select().from(Message)
-      .where(and(eq(Message.id, itemId), eq(Message.threadId, threadId)))
+      .where(and(eq(Message.id, itemId), eq(Message.thread, threadId)))
       .execute()
     if (messages.length === 0) throw new Error(`Item not found: ${itemId}`)
     return messageRecordToItem(messages[0], threadId)
@@ -517,7 +624,7 @@ WHERE { ${wherePatterns.join(' ')} }
 
   async deleteThreadItem(threadId: string, itemId: string, _context: StoreContext): Promise<void> {
     await this.db.delete(Message)
-      .where(and(eq(Message.id, itemId), eq(Message.threadId, threadId)))
+      .where(and(eq(Message.id, itemId), eq(Message.thread, threadId)))
       .execute()
   }
 

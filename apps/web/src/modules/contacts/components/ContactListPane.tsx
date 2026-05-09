@@ -26,8 +26,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
-import type { ContactRow } from '@linx/models'
-import { ContactType } from '@linx/models'
+import type { ContactRow } from '@undefineds.co/models'
+import { ContactType } from '@undefineds.co/models'
 import { useQuery } from '@tanstack/react-query'
 
 // ============================================

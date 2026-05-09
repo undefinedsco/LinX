@@ -40,6 +40,8 @@ export interface MessageListProps {
   showTitle?: boolean
   /** 流式消息 ID (正在处理的消息) */
   streamingMessageId?: string
+  /** 当前聊天类型。群聊会强制显示 senderName/avatar。 */
+  chatType?: 'direct_ai' | 'direct_human' | 'group' | 'cli_session'
   /** 消息操作回调 */
   onRetry?: (messageId: string) => void
   onEdit?: (message: MessageData) => void
@@ -104,6 +106,7 @@ export const MessageList = memo<MessageListProps>(({
   showAvatar = true,
   showTitle = true,
   streamingMessageId,
+  chatType,
   onRetry,
   onEdit,
   onCopy,
@@ -170,6 +173,7 @@ export const MessageList = memo<MessageListProps>(({
                 showTitle={showTitle}
                 isLastMessage={isLastMessage}
                 isProcessing={isProcessing}
+                chatType={chatType}
                 onRetry={onRetry ? () => onRetry(message.id) : undefined}
                 onEdit={onEdit}
                 onCopy={onCopy}

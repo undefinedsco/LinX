@@ -45,8 +45,17 @@
 - shared model 的字段、RDF class、predicate、subject template 的唯一真相在 owning shared package 中；当前 LinX 共享 Pod 模型的 owning package 是 `packages/models`，具体落点是 `namespaces.ts`、`vocab/*.vocab.ts`、schema 和 repository。
 - CLI / App 的 native Pod helper 只能负责底层传输、缓存和运行时适配；对于 shared model 字段，它们必须消费 shared package 导出的 resource/repository/vocab/schema，不能再定义自己的业务 predicate、subject template、Turtle serializer 或同义字段。
 - 如果 `packages/models` 已经存在对应 resource 或 repository，CLI / App 必须直接使用；如果缺少查询、upsert、resolve-by-uri 等能力，先在 `packages/models` 补 repository/helper 和 contract tests，再由壳层调用。
+- 所有已进入 `packages/models` 的结构化 Pod 数据读写，主路径必须通过 `drizzle-solid` 和 shared resource/repository。壳层不得为了方便在 CLI / App 内部直接解析 shared resource 的 Turtle；如果当前 auth 形态只有 token/fetch，必须在 session 适配层包成 `drizzle-solid` 可接受的 Inrupt-compatible session，而不是让业务查询分叉。
+- Inrupt-compatible session 可以是真实 Inrupt `Session`，也可以是由已认证 `fetch` 适配出来的 inline session：至少包含 `info.isLoggedIn=true`、`info.webId` 和 `fetch`。client credentials 与 OIDC/browser consent 只影响这个 session 如何获得，不能影响后续 shared model 查询路径。
 - 允许留在 CLI / App 的逻辑只有壳层适配：TTY/GUI 渲染、快捷键、命令参数、Pi/Codex/Claude 协议事件到 shared insert/update DTO 的映射、本地缓存策略、错误展示。它不能决定 shared Pod resource 的存储路径、predicate、subject 或跨端状态机。
 - remote approval 的审批颗粒度必须跟原生运行时对齐：只有 Pi/Codex/Claude 等上游原生流程请求审批时，LinX 才写 `approval`/`inbox` 控制面；LinX CLI 不得用自己的工具名 allowlist/blocklist 额外发明一套审批策略。
+- remote approval 的读取分两类：等待/处理一个已知 approval 时，优先使用持久化的 `approvalUri` 做精确 subject lookup；App/Inbox 这类列表界面可以做最近日期分桶的有界发现，但不得对 `/.data/approvals/` 做无界递归扫描，也不得把列表优化理解成改变 approval URI 存储语义。
+- remote approval 的倒计时和 auto/session 决策能力必须来自 shared model 字段：`approval.expiresAt` 表示截止时间，`approval.approvalOptions` 表示上游原生协议提供的选项。AI secretary/App 可以据此判断是否有倒计时、是否支持一次同意或 session 级同意；CLI/App 不得用本地私有字段重新推断。
+- grant 是用户可维护的 LLM Wiki 文档资源，不是隐藏的 request fingerprint。`grantResource` 以一页一个 TTL 文档存储在 `/settings/autonomy/grants/{id}.ttl`；文档 URI 本身就是 RDF subject，页面属性通过 `title/summary/body/schema/pageKind/wikiStatus/tags/source/sourceHash/compiledAt/compiledFrom/related/context` 等 predicate 描述。
+- grant 的 `schema` 是 Solid schema/shape URI 关系，对应 `dcterms:conformsTo </settings/autonomy/schema/grant.ttl#GrantWikiPage>`，不是 `path`/`wikiPath` 字符串；TTL wiki page 不需要 `.meta` subject。
+- grant 覆盖判断必须由 AI secretary 基于当前请求语义、grant wiki 页面正文、摘要、标签、来源、上下文和 provenance 判断；`target/action/riskCeiling` 只能用于候选排序或粗筛，不能单独作为自动审批依据。
+- CLI/App 不得为 `approval/grant/audit` 字段定义自己的业务 predicate。shared 字段必须先在 `packages/models` 的 namespace/vocab/schema 中定义清楚，再由壳层消费。
+- structured user-input 是 watch 共享协议的一等请求类型，不是 CLI 私有 prompt。AI secretary 可以在答案能从 session context、Pod credential source 或请求选项中明确推出时代答；不能明确推出时必须展示建议并等待用户，不得捏造 secret、token、路径或用户偏好。
 - 端内私有模型可以在自己的 owning module/package 中定义专用 predicate，但必须明确作用域为私有、不能被另一端按 shared contract 读取；一旦字段需要跨 CLI / App / xpod 共享，必须先迁入 shared model，再由各端消费。
 - 不允许一端写 `udfs:*`，另一端读 `cred:*` / `ai:*`
 - 不允许新功能继续建立平行 schema
@@ -120,12 +129,21 @@
 - auth failure / approval / tool-call 的归一化规则
 - structured user-input / approval response payload 规则
 - local runtime 把 pending approval 写入 Pod，remote surface 回写 decision 的控制协议
+- ACP / ChatKit 运行时能力声明、事件/控制能力归一化、fast companion model 策略、Agent Turn Controller 策略
 
 示例：
 
 - `claude` 与 `anthropic` 的 alias 规则必须只有一份
 - `codex` 与 `openai` 的 alias 规则必须只有一份
 - `credential-source=local|cloud|auto` 的解析逻辑必须只有一份
+
+当前落点：
+
+- `packages/agent-runtime` 是 CLI/App 共用的公共运行时组件包，负责描述 ACP、LinX ChatKit、LinX Cloud 等 agent runtime 的能力边界。
+- `packages/agent-runtime` 可以定义 turn-controller 这类公共调度策略，例如 watch 场景下何时让 AI secretary 观察 approval/input 请求并产出审批、输入答案或控制命令。
+- `packages/agent-runtime` 统一定义 fast companion model，当前默认是 `linx-lite`。它是类似 Claude Code 快速旁路模型的公共能力，可用于 turn routing、审批判断、structured input 代答、上下文摘要/压缩、标题生成、检索排序等低延迟辅助任务。
+- `Agent Turn Controller` 默认使用 fast companion model 做轻量仲裁；`AI Secretary` 本身的回复/判断模型仍使用用户配置，不由 controller package 硬编码。
+- `apps/cli` 只保留子进程、TTY、ACP stdio 适配；`apps/web` 只保留 React/GUI/runtime-sidecar 适配。两端不得再各自定义一份 runtime capability schema。
 
 ## 5. Discovery Boundary
 
@@ -139,6 +157,7 @@
 - cloud identity / account 默认入口应指向身份域，例如 `https://id.undefineds.co/`；Pod 托管域如 `https://pods.undefineds.co/` 不能被当成默认 OIDC issuer
 - cloud runtime 的模型真相来自 live API，例如 `https://api.undefineds.co/v1/models`
 - cloud runtime 的对话主路径来自 live API，例如 `https://api.undefineds.co/v1/chat/completions`
+- LinX 云在 shared AI config 中只有一个 provider：`undefineds`。`linx-lite` 和 `linx` 是这个 provider 下的模型，不是另一套 provider，也不再允许出现 `undefineds-cloud`、`linx-cloud` 这类平行 provider id。
 - discovery 请求失败时，必须回退到 `@linx/models/discovery` 内置快照，不能让 provider 消失或阻塞主流程
 - 内置快照只是离线 fallback / 词典，不得替代 live cloud `/v1/models`
 - 内置快照应优先通过同步脚本更新，例如 `yarn workspace @linx/models sync:discovery:vercel`，而不是在多个端里各自手改 provider/model 词典
@@ -175,6 +194,23 @@ AI 配置以三张表为准，不允许再引入平行主线：
 - 这个聚合读模型必须是共享 domain object，不是某个 UI hook 的私有产物
 
 `ai connect / disconnect / status` 的语义必须基于这三张表定义，而不是各端自行拼凑。
+
+### Watch Credential Injection
+
+`linx watch --credential-source cloud` 的职责分层必须固定：
+
+1. 认证层从本地 Solid auth 恢复 Pod 访问能力；本地只保留 Solid auth 所需材料，不保存其它 app/provider 的 API key。
+2. session 适配层产出统一的 Inrupt-compatible session，供 `drizzle-solid` 使用。
+3. shared model 查询层读取 `credentialTable`、`aiProviderTable`、`aiModelTable`，并根据共享 provider alias 规则选择 active credential。
+4. watch runner 只把选中的 credential 映射成子进程环境变量，不把 credential 复制到 watch archive、message、audit 或 TUI state。
+
+当前 backend env 映射规则：
+
+- `claude` / Anthropic: 注入 `ANTHROPIC_API_KEY`
+- `codex` / OpenAI: 注入 `OPENAI_API_KEY`，并为 Codex 兼容补 `CODEX_API_KEY`
+- `codebuddy`: 注入 `CODEBUDDY_API_KEY`，如 credential/provider 配置了 base URL 再注入 `CODEBUDDY_BASE_URL`
+
+这条链路不允许出现第二套 credential 读取器。若 OIDC 场景、测试夹具或某个 runtime 不能直接传真实 Inrupt `Session`，修 session 适配层；若 shared model 缺少方便的聚合查询，修 `packages/models` repository/helper；不要在 `apps/cli` 或 `apps/web` 里手写 `credentialTable` 的 Turtle parser。
 
 ## Removed Path
 
@@ -218,6 +254,10 @@ AI 配置以三张表为准，不允许再引入平行主线：
 - 是否改动了共享 schema 或 namespace
 - 是否把业务语义偷偷放进了 `apps/cli` 或 `apps/web`
 - 是否在壳层手写了 shared resource 的 predicate、subject template、Turtle 读写、URI builder、approval/grant/audit/session 状态机
+- 是否为了 OIDC、测试或 watch 场景绕开了 `drizzle-solid` shared model 查询；正确做法是把认证结果适配成 Inrupt-compatible session
+- 是否把 cloud credential 注入到了子进程 env 以外的位置，或把 provider API key 写进了 archive/message/audit/TUI state
+- approval 处理是否保持 known `approvalUri` 精确读取，App/Inbox 列表是否保持有界日期分桶发现，且没有恢复无界 recursive list
+- ACP / ChatKit / LinX Cloud runtime 的 capability、fast companion model、turn-controller、事件/控制能力是否复用 `packages/agent-runtime`，没有在 CLI/App 壳层复制一份 schema
 - 是否已有 `packages/models` resource/repository 可以直接用；如果没有，是否先把缺失 helper 补进 models 并覆盖 tests
 - 是否新增了和上游原生审批策略不一致的 LinX 私有审批判断
 - 是否引入了 UI 类型到 shared core

@@ -11,7 +11,7 @@
 import dotenv from 'dotenv'
 import { afterAll, beforeAll, describe, it } from 'vitest'
 import { Session } from '@inrupt/solid-client-authn-node'
-import { drizzle, type SolidDatabase } from '@undefineds.co/drizzle-solid'
+import { drizzle } from '@undefineds.co/drizzle-solid'
 import {
   aiProviderTable,
   chatTable,
@@ -20,8 +20,9 @@ import {
   contactTable,
   agentTable,
   solidProfileTable,
-  linxSchema,
-} from '@linx/models'
+  solidSchema,
+  type SolidDatabase,
+} from '@undefineds.co/models'
 
 dotenv.config({ path: '../../.env' })
 
@@ -35,7 +36,7 @@ const env = {
 const hasEnv = Boolean(env.webId && env.clientId && env.clientSecret && env.oidcIssuer)
 
 let session: Session | null = null
-let db: SolidDatabase | null = null
+let db: SolidDatabase<any> | null = null
 
 interface BenchmarkResult {
   module: string
@@ -151,14 +152,15 @@ describe.skipIf(!hasEnv)('List Query Benchmark', () => {
       tokenType: 'DPoP',
     })
     
-    db = drizzle(session, {
+    const createdDb = drizzle(session, {
       logger: false,
       disableInteropDiscovery: true,
-      schema: linxSchema,
-    })
+      schema: solidSchema,
+    }) as SolidDatabase<any>
+    db = createdDb
     
     // Initialize all tables
-    await db.init([
+    await createdDb.init([
       chatTable,
       threadTable,
       messageTable,
@@ -196,7 +198,7 @@ describe.skipIf(!hasEnv)('List Query Benchmark', () => {
         unreadCount: chatTable.unreadCount,
         lastActiveAt: chatTable.lastActiveAt,
         lastMessagePreview: chatTable.lastMessagePreview,
-      }).from(chatTable).execute()
+      } as any).from(chatTable).execute()
     })
   })
 

@@ -1,4 +1,4 @@
-import type { AuditRow } from '@linx/models'
+import type { AuditRow } from '@undefineds.co/models'
 
 export interface AuditPresentation {
   title: string

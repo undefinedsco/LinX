@@ -1,8 +1,11 @@
 // Provider definitions for the model-services surface.
-// Shared provider metadata comes from @linx/models/discovery; this file only
+// Shared provider metadata comes from @undefineds.co/models/discovery; this file only
 // keeps web-specific presentation and docs links.
 import type React from 'react'
-import { getBuiltinProvider } from '@linx/models'
+import {
+  getAIConfigProviderMetadata,
+  getBuiltinProvider,
+} from '@undefineds.co/models'
 import { Globe } from 'lucide-react'
 import OpenAIImage from '@/assets/images/providers/openai.png'
 import GoogleImage from '@/assets/images/providers/google.png'
@@ -45,6 +48,7 @@ interface ProviderUiExtras {
 }
 
 const MODEL_PROVIDER_ORDER = [
+  'undefineds',
   'openai',
   'anthropic',
   'google',
@@ -60,6 +64,16 @@ const MODEL_PROVIDER_ORDER = [
 ] as const
 
 const PROVIDER_UI_EXTRAS: Record<string, ProviderUiExtras> = {
+  undefineds: {
+    name: 'undefineds',
+    description: 'LinX 模型服务',
+    icon: Globe,
+    homeUrl: 'https://undefineds.co/linx',
+    docsUrl: 'https://undefineds.co/linx',
+    modelsApi: 'https://api.undefineds.co/v1/models',
+    defaultApiKeyPlaceholder: 'linx-...',
+    defaultModels: ['linx-lite', 'linx'],
+  },
   openai: {
     name: 'OpenAI',
     description: 'GPT 系列',
@@ -193,6 +207,7 @@ const PROVIDER_UI_EXTRAS: Record<string, ProviderUiExtras> = {
 }
 
 function buildProviderDef(id: string): ProviderDef {
+  const aiConfigProvider = getAIConfigProviderMetadata(id)
   const discoveryProvider = getBuiltinProvider(id)
   const extras = PROVIDER_UI_EXTRAS[id]
 
@@ -211,7 +226,7 @@ function buildProviderDef(id: string): ProviderDef {
     apiKeyUrl: extras.apiKeyUrl,
     modelsUrl: extras.modelsUrl,
     modelsApi: extras.modelsApi,
-    defaultBaseUrl: discoveryProvider?.baseUrl ?? extras.defaultBaseUrl,
+    defaultBaseUrl: aiConfigProvider.defaultBaseUrl ?? discoveryProvider?.baseUrl ?? extras.defaultBaseUrl,
     defaultApiKeyPlaceholder: extras.defaultApiKeyPlaceholder,
     defaultModels: extras.defaultModels,
   }

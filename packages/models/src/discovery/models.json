@@ -3,6 +3,35 @@
   "updatedAt": "2026-03-16",
   "models": [
     {
+      "id": "linx-lite",
+      "provider": "undefineds",
+      "displayName": "LinX Lite",
+      "description": "Fast undefineds model for LinX companion, routing, and lightweight assistant tasks.",
+      "contextLength": 1000000,
+      "maxOutputTokens": 8192,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming",
+        "json-mode"
+      ],
+      "isDefault": true
+    },
+    {
+      "id": "linx",
+      "provider": "undefineds",
+      "displayName": "LinX",
+      "description": "undefineds general LinX assistant model.",
+      "contextLength": 1000000,
+      "maxOutputTokens": 8192,
+      "capabilities": [
+        "chat",
+        "function-calling",
+        "streaming",
+        "json-mode"
+      ]
+    },
+    {
       "id": "anthropic/claude-3.5-sonnet",
       "provider": "anthropic",
       "displayName": "Claude 3.5 Sonnet",

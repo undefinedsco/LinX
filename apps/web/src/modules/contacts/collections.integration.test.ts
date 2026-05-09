@@ -3,7 +3,8 @@ import dotenv from 'dotenv'
 import { afterAll, describe, expect, it } from 'vitest'
 import { Session } from '@inrupt/solid-client-authn-node'
 import { drizzle, eq, type SolidDatabase } from '@undefineds.co/drizzle-solid'
-import { contactTable, linxSchema } from '@linx/models'
+import { contactTable, solidSchema } from '@undefineds.co/models'
+import { startLocalXpod, type LocalXpodTestPod } from '../../test-utils/local-xpod'
 
 dotenv.config({ path: '.env' })
 
@@ -14,54 +15,46 @@ const env = {
   oidcIssuer: process.env.SOLID_OIDC_ISSUER,
 }
 
-const hasEnv = Boolean(env.webId && env.clientId && env.clientSecret && env.oidcIssuer)
+let localXpod: LocalXpodTestPod | null = null
 
-// Check if Pod server is reachable before running integration tests
-let podReachable = false
-if (hasEnv && env.oidcIssuer) {
-  try {
-    const probeUrl = new URL('.well-known/openid-configuration', env.oidcIssuer).href
-    const ctrl = new AbortController()
-    const timer = setTimeout(() => ctrl.abort(), 5000)
-    await fetch(probeUrl, { signal: ctrl.signal }).then(() => { podReachable = true })
-    clearTimeout(timer)
-  } catch { /* server not reachable */ }
+async function ensureEnv(): Promise<typeof env> {
+  if (env.webId && env.clientId && env.clientSecret && env.oidcIssuer) return env
+  if (!localXpod) {
+    localXpod = await startLocalXpod()
+  }
+  env.webId = localXpod.webId
+  env.clientId = localXpod.clientId
+  env.clientSecret = localXpod.clientSecret
+  env.oidcIssuer = localXpod.oidcIssuer
+  return env
 }
-const canRun = hasEnv && podReachable
 
 let session: Session | null = null
 let db: SolidDatabase | null = null
-let loginFailed = false
 const createdSubjects: string[] = []
 
-async function getDb(): Promise<SolidDatabase | null> {
-  if (loginFailed) return null
+async function getDb(): Promise<SolidDatabase> {
   if (db) return db
 
-  try {
-    session = new Session()
-    await session.login({
-      clientId: env.clientId!,
-      clientSecret: env.clientSecret!,
-      oidcIssuer: env.oidcIssuer!,
-      tokenType: 'DPoP',
-    })
+  const activeEnv = await ensureEnv()
+  session = new Session()
+  await session.login({
+    clientId: activeEnv.clientId!,
+    clientSecret: activeEnv.clientSecret!,
+    oidcIssuer: activeEnv.oidcIssuer!,
+    tokenType: 'DPoP',
+  })
 
-    db = drizzle(session, { logger: false, disableInteropDiscovery: true, schema: linxSchema })
-    await db.init([contactTable])
-    return db
-  } catch (e) {
-    console.log('[Test] Login failed:', (e as Error).message)
-    loginFailed = true
-    return null
-  }
+  db = drizzle(session, { logger: false, disableInteropDiscovery: true, schema: solidSchema })
+  await db.init([contactTable])
+  return db
 }
 
 async function cleanup() {
   if (!db) return
   for (const subject of createdSubjects) {
     try {
-      await db.delete(contactTable).where({ '@id': subject } as any).execute()
+      await db.delete(contactTable).whereByIri(subject).execute()
     } catch {
       // ignore cleanup errors
     }
@@ -71,12 +64,12 @@ async function cleanup() {
 afterAll(async () => {
   await cleanup()
   if (session) await session.logout()
+  await localXpod?.stop()
 }, 30000)
 
 describe('contact collections integration', () => {
-  it.skipIf(!canRun)('insert contact and SELECT back via SPARQL', { timeout: 30000 }, async () => {
+  it('insert contact and SELECT back via SPARQL', { timeout: 30000 }, async () => {
     const database = await getDb()
-    if (!database) return
 
     const id = `contact-${Date.now()}`
     const [created] = await database.insert(contactTable).values({
@@ -98,9 +91,8 @@ describe('contact collections integration', () => {
     expect(rows[0]?.contactType).toBe('solid')
   })
 
-  it.skipIf(!canRun)('insert multiple contacts and verify via SELECT', { timeout: 30000 }, async () => {
+  it('insert multiple contacts and verify via SELECT', { timeout: 30000 }, async () => {
     const database = await getDb()
-    if (!database) return
 
     const timestamp = Date.now()
     const contacts = [
@@ -125,9 +117,8 @@ describe('contact collections integration', () => {
     expect(extRows[0]?.contactType).toBe('external')
   })
 
-  it.skipIf(!canRun)('delete contact and verify via SELECT', { timeout: 30000 }, async () => {
+  it('delete contact and verify via SELECT', { timeout: 30000 }, async () => {
     const database = await getDb()
-    if (!database) return
 
     const id = `contact-del-${Date.now()}`
     const [created] = await database.insert(contactTable).values({

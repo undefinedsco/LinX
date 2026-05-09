@@ -20,7 +20,7 @@ import {
   messageTable,
   eq,
   type ToolRisk,
-} from '@linx/models'
+} from '@undefineds.co/models'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 import { useSession } from '@inrupt/solid-ui-react'
 import { createChatHandler, type ChatHandler, type AgentChatHandler } from '../services'

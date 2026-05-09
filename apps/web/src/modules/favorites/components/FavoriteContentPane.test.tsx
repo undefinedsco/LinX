@@ -32,7 +32,7 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
 }))
 
-vi.mock('@linx/models', () => ({
+vi.mock('@undefineds.co/models', () => ({
   resolveRowId: (item: unknown) => (item as Record<string, unknown>)?.id ?? 'mock-id',
 }))
 

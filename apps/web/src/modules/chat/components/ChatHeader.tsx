@@ -27,7 +27,7 @@ import {
   agentTable,
   ContactType,
   getBuiltinProvider,
-} from '@linx/models'
+} from '@undefineds.co/models'
 
 function resolvePersistedId(row?: Partial<Record<string, unknown>> | null): string | null {
   const record = row as Record<string, unknown> | null | undefined

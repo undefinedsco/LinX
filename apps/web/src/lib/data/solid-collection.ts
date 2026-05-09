@@ -6,11 +6,24 @@
  */
 
 import type { PodTable, InferTableData, InferInsertData, InferUpdateData, QueryCondition } from '@undefineds.co/drizzle-solid'
-import type { SolidDatabase } from '@linx/models'
+import type { SolidDatabase } from '@undefineds.co/models'
 
 /**
  * Options for creating a Solid Pod collection
  */
+function isAbsoluteIri(value: string): boolean {
+  return /^https?:\/\//.test(value)
+}
+
+function resolveSolidCollectionIri<TTable extends PodTable<any>>(table: TTable, id: string): string {
+  if (isAbsoluteIri(id)) return id
+  const relativeUri = typeof (table as any).resolveUri === 'function'
+    ? (table as any).resolveUri(id)
+    : id
+  if (isAbsoluteIri(relativeUri)) return relativeUri
+  throw new Error(`Solid collection mutation requires an absolute IRI or a table-resolved absolute IRI for id: ${id}`)
+}
+
 export interface SolidCollectionOptions<
   TTable extends PodTable<any>,
   TRow extends Record<string, unknown> = InferTableData<TTable>,
@@ -120,29 +133,38 @@ export function solidCollectionOptions<
     id: string,
     updates: Partial<TUpdate>
   ): Promise<TRow | null> => {
-    await db
-      .update(table)
-      .set(updates as InferUpdateData<TTable>)
-      .where({ '@id': id } as unknown as QueryCondition)
-      .execute()
+    const iri = resolveSolidCollectionIri(table, id)
+    const updateByIri = (db as unknown as { updateByIri?: (table: TTable, iri: string, data: Partial<TUpdate>) => Promise<InferTableData<TTable> | null> }).updateByIri
+    if (typeof updateByIri === 'function') {
+      const updated = await updateByIri.call(db, table, iri, updates)
+      return updated ? transformRow(updated) : null
+    }
+
+    const query = db.update(table).set(updates as InferUpdateData<TTable>)
+    const scopedQuery = typeof (query as any).whereByIri === 'function'
+      ? (query as any).whereByIri(iri)
+      : query.where({ '@id': iri } as unknown as QueryCondition)
+    await scopedQuery.execute()
     
-    // Fetch updated record
-    const rows = await db
-      .select()
-      .from(table)
-      .where({ '@id': id } as unknown as QueryCondition)
-      .limit(1)
-      .execute()
-    
-    const record = rows?.[0]
+    const record = typeof (db as unknown as { findByIri?: (table: TTable, iri: string) => Promise<InferTableData<TTable> | null> }).findByIri === 'function'
+      ? await (db as unknown as { findByIri: (table: TTable, iri: string) => Promise<InferTableData<TTable> | null> }).findByIri(table, iri)
+      : null
     return record ? transformRow(record as InferTableData<TTable>) : null
   }
   
   const onDelete = async (db: SolidDatabase, id: string): Promise<void> => {
-    await db
-      .delete(table)
-      .where({ '@id': id } as unknown as QueryCondition)
-      .execute()
+    const iri = resolveSolidCollectionIri(table, id)
+    const deleteByIri = (db as unknown as { deleteByIri?: (table: TTable, iri: string) => Promise<unknown> }).deleteByIri
+    if (typeof deleteByIri === 'function') {
+      await deleteByIri.call(db, table, iri)
+      return
+    }
+
+    const query = db.delete(table)
+    const scopedQuery = typeof (query as any).whereByIri === 'function'
+      ? (query as any).whereByIri(iri)
+      : query.where({ '@id': iri } as unknown as QueryCondition)
+    await scopedQuery.execute()
   }
   
   return {

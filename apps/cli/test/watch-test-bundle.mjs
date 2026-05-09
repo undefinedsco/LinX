@@ -7,6 +7,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const cliRoot = fileURLToPath(new URL('..', import.meta.url))
 const modelsRoot = fileURLToPath(new URL('../../../packages/models', import.meta.url))
 const modelsDistRoot = join(modelsRoot, 'dist')
+const agentRuntimeRoot = fileURLToPath(new URL('../../../packages/agent-runtime', import.meta.url))
+const agentRuntimeDistRoot = join(agentRuntimeRoot, 'dist')
 const sourceRoot = join(cliRoot, 'src')
 const wsRoot = fileURLToPath(new URL('../../../node_modules/ws', import.meta.url))
 const n3Root = fileURLToPath(new URL('../../../node_modules/n3', import.meta.url))
@@ -20,11 +22,18 @@ async function buildWatchBundle(entryRelative) {
   const root = mkdtempSync(join(tmpdir(), 'linx-watch-test-'))
   const outdir = join(root, 'dist')
   const undefinedsNodeModulesDir = join(outdir, 'node_modules', '@undefineds.co')
+  const linxNodeModulesDir = join(outdir, 'node_modules', '@linx')
   const modelsPackageDir = join(undefinedsNodeModulesDir, 'models')
+  const agentRuntimePackageDir = join(linxNodeModulesDir, 'agent-runtime')
   const genericNodeModulesDir = join(outdir, 'node_modules')
   const scopedNodeModulesDir = join(outdir, 'node_modules', '@mariozechner')
   const entryPath = join(sourceRoot, entryRelative)
   const compiledEntry = join(outdir, entryRelative.replace(/\.ts$/, '.js'))
+
+  execFileSync('tsc', ['-p', join(agentRuntimeRoot, 'tsconfig.json')], {
+    cwd: cliRoot,
+    stdio: 'pipe',
+  })
 
   execFileSync('tsc', [
     '--outDir',
@@ -52,9 +61,11 @@ async function buildWatchBundle(entryRelative) {
   })
 
   mkdirSync(undefinedsNodeModulesDir, { recursive: true })
+  mkdirSync(linxNodeModulesDir, { recursive: true })
   mkdirSync(genericNodeModulesDir, { recursive: true })
   mkdirSync(scopedNodeModulesDir, { recursive: true })
   mkdirSync(modelsPackageDir, { recursive: true })
+  mkdirSync(agentRuntimePackageDir, { recursive: true })
   symlinkSync(modelsDistRoot, join(modelsPackageDir, 'dist'), 'dir')
   writeFileSync(join(modelsPackageDir, 'package.json'), JSON.stringify({
     name: '@undefineds.co/models',
@@ -70,6 +81,17 @@ async function buildWatchBundle(entryRelative) {
       './vocab': './dist/vocab/index.js',
       './vocab/sidecar': './dist/vocab/sidecar.vocab.js',
       './watch': './dist/watch/index.js',
+    },
+  }, null, 2))
+  symlinkSync(agentRuntimeDistRoot, join(agentRuntimePackageDir, 'dist'), 'dir')
+  writeFileSync(join(agentRuntimePackageDir, 'package.json'), JSON.stringify({
+    name: '@linx/agent-runtime',
+    type: 'module',
+    exports: {
+      '.': './dist/index.js',
+      './acp': './dist/acp.js',
+      './companion-model': './dist/companion-model.js',
+      './turn-controller': './dist/turn-controller.js',
     },
   }, null, 2))
   symlinkSync(wsRoot, join(genericNodeModulesDir, 'ws'), 'dir')

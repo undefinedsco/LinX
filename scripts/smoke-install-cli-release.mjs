@@ -22,6 +22,7 @@ run('npm', [
   '-g',
   '--no-audit',
   '--no-fund',
+  '--omit=peer',
   '--loglevel=info',
   '--fetch-timeout=30000',
   '--fetch-retries=2',

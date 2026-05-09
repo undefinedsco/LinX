@@ -3,6 +3,7 @@ import { existsSync, renameSync, rmSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 const workspaceRoot = fileURLToPath(new URL('..', import.meta.url))
+const agentRuntimeTsconfig = fileURLToPath(new URL('../../../packages/agent-runtime/tsconfig.json', import.meta.url))
 const distDir = fileURLToPath(new URL('../dist', import.meta.url))
 const compileArgs = [
   '-p',
@@ -41,6 +42,14 @@ function removeDirRobust(path) {
 }
 
 removeDirRobust(distDir)
+
+const compileAgentRuntime = spawnSync('tsc', ['-p', agentRuntimeTsconfig], {
+  cwd: workspaceRoot,
+  stdio: 'inherit',
+})
+if ((compileAgentRuntime.status ?? 1) !== 0) {
+  process.exit(compileAgentRuntime.status ?? 1)
+}
 
 const compile = spawnSync('tsc', compileArgs, {
   cwd: workspaceRoot,

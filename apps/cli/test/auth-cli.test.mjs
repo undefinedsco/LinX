@@ -46,6 +46,11 @@ function normalizeHeaders(input) {
   return headers
 }
 
+function isAuthorized(headers) {
+  return headers.authorization === 'Bearer pod_access_token'
+    || headers.authorization === 'Bearer access-token'
+}
+
 globalThis.fetch = async (input, init = {}) => {
   const url = typeof input === 'string' || input instanceof URL ? String(input) : String(input.url)
   const method = String(init.method || 'GET').toUpperCase()
@@ -153,7 +158,7 @@ globalThis.fetch = async (input, init = {}) => {
       || pathname === '/profile/settings/ai/models.ttl'
     )
   ) {
-    if (headers.authorization === 'Bearer pod_access_token') {
+    if (isAuthorized(headers)) {
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -167,7 +172,7 @@ globalThis.fetch = async (input, init = {}) => {
   }
 
   if (method === 'GET' && pathname === '/profile/settings/credentials.ttl') {
-    if (headers.authorization !== 'Bearer pod_access_token') {
+    if (!isAuthorized(headers)) {
       return new Response('unauthorized', { status: 401 })
     }
 
@@ -182,7 +187,7 @@ globalThis.fetch = async (input, init = {}) => {
   }
 
   if (method === 'GET' && pathname === '/profile/settings/ai/providers.ttl') {
-    if (headers.authorization !== 'Bearer pod_access_token') {
+    if (!isAuthorized(headers)) {
       return new Response('unauthorized', { status: 401 })
     }
 
@@ -197,7 +202,7 @@ globalThis.fetch = async (input, init = {}) => {
   }
 
   if (method === 'GET' && pathname === '/profile/settings/ai/models.ttl') {
-    if (headers.authorization !== 'Bearer pod_access_token') {
+    if (!isAuthorized(headers)) {
       return new Response('unauthorized', { status: 401 })
     }
 
@@ -429,4 +434,54 @@ test('linx ai status prints configured cloud AI credentials', async (t) => {
   assert.match(output, /provider: anthropic/)
   assert.match(output, /model: claude-sonnet-4-20250514/)
   assert.match(output, /api-key: sk-a\*\*\*\*-key/)
+})
+
+test('linx ai connect accepts oidc oauth login and writes provider config to Pod', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'linx-cli-ai-connect-oidc-home-'))
+  t.after(() => {
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  const { logFile, modulePath } = createFetchMock(t)
+  const linxDir = join(home, '.linx')
+  mkdirSync(linxDir, { recursive: true })
+  writeFileSync(join(linxDir, 'config.json'), JSON.stringify({
+    url: 'https://id.undefineds.co/',
+    webId: 'https://pod.example/profile/card#me',
+    authType: 'oidc_oauth',
+  }))
+  writeFileSync(join(linxDir, 'secrets.json'), JSON.stringify({
+    oidcRefreshToken: 'refresh-token',
+    oidcAccessToken: 'access-token',
+    oidcExpiresAt: '2030-01-01T00:00:00.000Z',
+    oidcClientId: 'client-123',
+  }))
+  writeFileSync(join(linxDir, 'account.json'), JSON.stringify({
+    url: 'https://id.undefineds.co/',
+    email: 'browser-consent',
+    token: 'oidc-session',
+    webId: 'https://pod.example/profile/card#me',
+    podUrl: 'https://pod.example/profile/',
+    createdAt: '2026-03-15T00:00:00.000Z',
+  }))
+
+  const output = execCli([
+    'ai',
+    'connect',
+    'codex',
+    '--api-key',
+    'sk-openai-test-key',
+  ], {
+    HOME: home,
+    FAKE_FETCH_LOG: logFile,
+  }, modulePath)
+
+  assert.match(output, /Connected AI provider: openai/)
+  assert.match(output, /api-key: sk-o\*\*\*\*-key/)
+
+  const requests = readRequests(logFile)
+  const providerPatch = requests.find((item) => item.method === 'PATCH' && item.url === 'https://pod.example/profile/settings/ai/providers.ttl')
+  const credentialPatch = requests.find((item) => item.method === 'PATCH' && item.url === 'https://pod.example/profile/settings/credentials.ttl')
+  assert.equal(providerPatch?.headers.authorization, 'Bearer access-token')
+  assert.equal(credentialPatch?.headers.authorization, 'Bearer access-token')
 })

@@ -1,4 +1,4 @@
-import { credentialTable } from '@linx/models'
+import { credentialTable } from '@undefineds.co/models'
 
 export const Credential = credentialTable
 

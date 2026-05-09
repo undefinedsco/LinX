@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient, type QueryKey, type UseMutationOptions, type UseQueryOptions } from '@tanstack/react-query'
-import type { PodRepositoryDescriptor } from '@linx/models'
+import type { PodRepositoryDescriptor } from '@undefineds.co/models'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 import { runWithOfflineQueue } from '@/lib/data/offline-queue'
 

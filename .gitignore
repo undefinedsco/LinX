@@ -12,6 +12,7 @@ npm-debug.log*
 pnpm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+package-lock.json
 
 # Environment files
 .env
@@ -33,6 +34,7 @@ Thumbs.db
 coverage/
 playwright-report/
 test-results/
+.test-data/
 
 # Electron build artefacts
 apps/desktop/dist/

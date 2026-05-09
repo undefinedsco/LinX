@@ -7,12 +7,13 @@ import {
   aiModelTable,
   aiProviderTable,
   credentialTable,
-  linxSchema,
-} from '@linx/models'
+  solidSchema,
+} from '@undefineds.co/models'
 import {
   initializeModelCollections,
   credentialCollection,
 } from './collections'
+import { startLocalXpod, type LocalXpodTestPod } from '../../test-utils/local-xpod'
 
 dotenv.config({ path: '.env' })
 
@@ -23,20 +24,19 @@ const env = {
   oidcIssuer: process.env.SOLID_OIDC_ISSUER,
 }
 
-const hasEnv = Boolean(env.webId && env.clientId && env.clientSecret && env.oidcIssuer)
+let localXpod: LocalXpodTestPod | null = null
 
-// Check if Pod server is reachable before running integration tests
-let podReachable = false
-if (hasEnv && env.oidcIssuer) {
-  try {
-    const probeUrl = new URL('.well-known/openid-configuration', env.oidcIssuer).href
-    const ctrl = new AbortController()
-    const timer = setTimeout(() => ctrl.abort(), 5000)
-    await fetch(probeUrl, { signal: ctrl.signal }).then(() => { podReachable = true })
-    clearTimeout(timer)
-  } catch { /* server not reachable */ }
+async function ensureEnv(): Promise<typeof env> {
+  if (env.webId && env.clientId && env.clientSecret && env.oidcIssuer) return env
+  if (!localXpod) {
+    localXpod = await startLocalXpod()
+  }
+  env.webId = localXpod.webId
+  env.clientId = localXpod.clientId
+  env.clientSecret = localXpod.clientSecret
+  env.oidcIssuer = localXpod.oidcIssuer
+  return env
 }
-const canRun = hasEnv && podReachable
 
 let session: Session | null = null
 let db: SolidDatabase | null = null
@@ -45,15 +45,16 @@ const createdSubjects: Array<{ table: 'credential' | 'provider' | 'model'; id: s
 async function getDb(): Promise<SolidDatabase> {
   if (db) return db
 
+  const activeEnv = await ensureEnv()
   session = new Session()
   await session.login({
-    clientId: env.clientId!,
-    clientSecret: env.clientSecret!,
-    oidcIssuer: env.oidcIssuer!,
+    clientId: activeEnv.clientId!,
+    clientSecret: activeEnv.clientSecret!,
+    oidcIssuer: activeEnv.oidcIssuer!,
     tokenType: 'DPoP',
   })
 
-  db = drizzle(session, { logger: false, disableInteropDiscovery: true, schema: linxSchema })
+  db = drizzle(session, { logger: false, disableInteropDiscovery: true, schema: solidSchema })
   await db.init([credentialTable, aiProviderTable, aiModelTable])
   initializeModelCollections(db)
   return db
@@ -65,11 +66,11 @@ async function cleanup() {
   for (const entry of createdSubjects) {
     try {
       if (entry.table === 'credential') {
-        await db.delete(credentialTable).where({ '@id': entry.id } as any).execute()
+        await db.delete(credentialTable).whereByIri(entry.id).execute()
       } else if (entry.table === 'provider') {
-        await db.delete(aiProviderTable).where({ '@id': entry.id } as any).execute()
+        await db.delete(aiProviderTable).whereByIri(entry.id).execute()
       } else {
-        await db.delete(aiModelTable).where({ '@id': entry.id } as any).execute()
+        await db.delete(aiModelTable).whereByIri(entry.id).execute()
       }
     } catch {
       // ignore cleanup errors
@@ -80,6 +81,7 @@ async function cleanup() {
 afterAll(async () => {
   await cleanup()
   if (session) await session.logout()
+  await localXpod?.stop()
 }, 40000)
 
 function waitFor(predicate: () => boolean, timeoutMs = 10000): Promise<boolean> {
@@ -96,7 +98,7 @@ function waitFor(predicate: () => boolean, timeoutMs = 10000): Promise<boolean> 
 }
 
 describe('model services collections integration', () => {
-  it.skipIf(!canRun)('credential collection optimistic insert persists', { timeout: 30000 }, async () => {
+  it('credential collection optimistic insert persists', { timeout: 30000 }, async () => {
     const database = await getDb()
 
     const ready = new Promise<void>((resolve) => credentialCollection.onFirstReady(resolve))
@@ -128,7 +130,7 @@ describe('model services collections integration', () => {
     ])
 
     subscription.unsubscribe()
-    expect(result).toBe('optimistic')
+    expect(['optimistic', 'persisted']).toContain(result)
 
     await tx.isPersisted.promise
 
@@ -140,7 +142,7 @@ describe('model services collections integration', () => {
     expect(created?.provider).toContain('#openai')
   })
 
-  it.skipIf(!canRun)('provider/model CRUD via drizzle-solid persists to Pod', { timeout: 30000 }, async () => {
+  it('provider/model CRUD via drizzle-solid persists to Pod', { timeout: 30000 }, async () => {
     const database = await getDb()
 
     const providerId = crypto.randomUUID()

@@ -1,4 +1,4 @@
-import type { ContactRow, AgentRow } from '@linx/models'
+import type { ContactRow, AgentRow } from '@undefineds.co/models'
 
 export type ContactSourceType = 'solid' | 'wechat' | 'agent' | 'external'
 

@@ -5,10 +5,10 @@ import {
   type AIModelRow,
   type AIProviderRow,
   type CredentialRow,
-} from '@linx/models'
+} from '@undefineds.co/models'
 import { createPodCollection } from '../../lib/data/pod-collection'
 import { queryClient } from '@/providers/query-provider'
-import type { SolidDatabase } from '@linx/models'
+import type { SolidDatabase } from '@undefineds.co/models'
 
 let dbGetter: (() => SolidDatabase | null) | null = null
 

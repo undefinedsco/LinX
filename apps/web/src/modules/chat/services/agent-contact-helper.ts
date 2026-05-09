@@ -7,7 +7,7 @@
  * 3. A Chat record (participants stores the Contact URI)
  */
 
-import type { SolidDatabase } from '@linx/models'
+import type { SolidDatabase } from '@undefineds.co/models'
 import {
   agentTable,
   contactTable,
@@ -19,7 +19,7 @@ import {
   eq,
   type AgentRow,
   type ContactRow,
-} from '@linx/models'
+} from '@undefineds.co/models'
 
 export interface FindOrCreateAgentParams {
   provider: string

@@ -7,7 +7,7 @@
 
 import { memo } from 'react'
 import { cn } from '@/lib/utils'
-import type { MainTextMessageBlock } from '@linx/models'
+import type { MainTextMessageBlock } from '@undefineds.co/models'
 import { MarkdownRenderer } from '../../Markdown/MarkdownRenderer'
 
 interface MainTextBlockProps {
