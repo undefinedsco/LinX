@@ -1,4 +1,4 @@
-import type { AuditRow } from '@linx/models'
+import type { ApprovalRow, AuditRow } from '@undefineds.co/models'
 
 export interface AuditPresentation {
   title: string
@@ -7,6 +7,8 @@ export interface AuditPresentation {
   status?: string
   chatId: string | null
   threadId: string | null
+  thread: string | null
+  about: string | null
   authUrl: string | null
   authMethod: string | null
   authMessage: string | null
@@ -37,6 +39,60 @@ function extractChatThreadRef(uri: string | null | undefined): { chatId: string 
     chatId: match?.[1] ?? null,
     threadId: match?.[2] ?? null,
   }
+}
+
+function extractContextString(context: Record<string, unknown> | null, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = context?.[key]
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.trim()
+    }
+  }
+
+  return null
+}
+
+function extractAuditThread(
+  context: Record<string, unknown> | null,
+  relatedApproval?: Pick<ApprovalRow, 'target'> | null,
+): string | null {
+  const contextThread = extractContextString(context, ['thread', 'threadUri'])
+  if (contextThread) return contextThread
+
+  const approvalTarget = relatedApproval?.target
+  if (!approvalTarget) return null
+
+  const threadRef = extractChatThreadRef(approvalTarget)
+  return threadRef.chatId || threadRef.threadId ? approvalTarget : null
+}
+
+function extractAuditAbout(
+  context: Record<string, unknown> | null,
+  relatedApproval?: Pick<ApprovalRow, 'target'> | null,
+): string | null {
+  const contextAbout = extractContextString(context, [
+    'about',
+    'aboutUri',
+    'target',
+    'targetUri',
+    'object',
+    'objectUri',
+    'resource',
+    'resourceUri',
+    'file',
+    'fileUri',
+    'container',
+    'containerUri',
+    'workspace',
+    'workspaceUri',
+    'result',
+    'resultUri',
+    'output',
+    'outputUri',
+  ])
+
+  if (contextAbout) return contextAbout
+  return relatedApproval?.target ?? null
 }
 
 function getAuditAuthKey(audit: AuditRow, context: Record<string, unknown> | null): string | null {
@@ -119,10 +175,12 @@ export function createResolvedAuthTimestampsIndex(audits: AuditRow[]): Map<strin
 export function buildAuditPresentation(
   audit: AuditRow,
   resolvedAuthTimestampsByKey: Map<string, number[]>,
+  relatedApproval?: Pick<ApprovalRow, 'target'> | null,
 ): AuditPresentation {
   const context = parseAuditContext(audit.context)
-  const threadUri = typeof context?.threadUri === 'string' ? context.threadUri : null
-  const { chatId, threadId } = extractChatThreadRef(threadUri)
+  const thread = extractAuditThread(context, relatedApproval)
+  const about = extractAuditAbout(context, relatedApproval) ?? thread
+  const { chatId, threadId } = extractChatThreadRef(thread)
   const actorRoleLabel = formatAuditActorRole(audit.actorRole)
 
   if (audit.action === 'runtime.auth_required') {
@@ -143,6 +201,8 @@ export function buildAuditPresentation(
       status: isResolved ? 'resolved' : 'pending',
       chatId,
       threadId,
+      thread,
+      about,
       authUrl: url,
       authMethod: method,
       authMessage: message,
@@ -162,6 +222,8 @@ export function buildAuditPresentation(
       status: 'resolved',
       chatId,
       threadId,
+      thread,
+      about,
       authUrl: url,
       authMethod: method,
       authMessage: null,
@@ -180,6 +242,8 @@ export function buildAuditPresentation(
       status: undefined,
       chatId,
       threadId,
+      thread,
+      about,
       authUrl: null,
       authMethod: null,
       authMessage: null,
@@ -195,6 +259,8 @@ export function buildAuditPresentation(
       status: 'approved',
       chatId,
       threadId,
+      thread,
+      about,
       authUrl: null,
       authMethod: null,
       authMessage: null,
@@ -210,6 +276,8 @@ export function buildAuditPresentation(
       status: 'rejected',
       chatId,
       threadId,
+      thread,
+      about,
       authUrl: null,
       authMethod: null,
       authMessage: null,
@@ -225,6 +293,8 @@ export function buildAuditPresentation(
       status: 'active',
       chatId,
       threadId,
+      thread,
+      about,
       authUrl: null,
       authMethod: null,
       authMessage: null,
@@ -240,6 +310,8 @@ export function buildAuditPresentation(
       status: 'paused',
       chatId,
       threadId,
+      thread,
+      about,
       authUrl: null,
       authMethod: null,
       authMessage: null,
@@ -255,6 +327,8 @@ export function buildAuditPresentation(
       status: 'completed',
       chatId,
       threadId,
+      thread,
+      about,
       authUrl: null,
       authMethod: null,
       authMessage: null,
@@ -271,6 +345,8 @@ export function buildAuditPresentation(
       status: 'error',
       chatId,
       threadId,
+      thread,
+      about,
       authUrl: null,
       authMethod: null,
       authMessage: null,
@@ -285,6 +361,8 @@ export function buildAuditPresentation(
     status: undefined,
     chatId,
     threadId,
+    thread,
+    about,
     authUrl: null,
     authMethod: null,
     authMessage: null,

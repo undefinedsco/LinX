@@ -13,7 +13,8 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
-import { MessageBlockStatus, type ToolMessageBlock, type ToolCallStatus } from '@linx/models'
+import type { ToolCallStatus } from '@undefineds.co/models'
+import { MessageBlockStatus, type ToolMessageBlock } from '../message-blocks'
 
 interface ToolBlockProps {
   block: ToolMessageBlock

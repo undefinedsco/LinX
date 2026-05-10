@@ -69,11 +69,9 @@ let mockStoreState = {
   selectedId: null as string | null,
   viewMode: 'view',
   select: vi.fn(),
-  startCreate: vi.fn(),
-  startEdit: vi.fn(),
-  cancelEdit: vi.fn(),
-  showNewFriends: vi.fn(),
-  newFriendsCount: 2,
+  openCreateDialog: vi.fn(),
+  listFilter: 'all' as string,
+  setListFilter: vi.fn(),
 }
 
 vi.mock('../store', () => ({
@@ -105,11 +103,9 @@ describe('ContactListPane', () => {
       selectedId: null,
       viewMode: 'view',
       select: vi.fn(),
-      startCreate: vi.fn(),
-      startEdit: vi.fn(),
-      cancelEdit: vi.fn(),
-      showNewFriends: vi.fn(),
-      newFriendsCount: 2,
+      openCreateDialog: vi.fn(),
+      listFilter: 'all',
+      setListFilter: vi.fn(),
     }
   })
 
@@ -125,10 +121,10 @@ describe('ContactListPane', () => {
       expect(buttons.length).toBeGreaterThan(0)
     })
 
-    it('renders new friends entry with badge', async () => {
+    it('does not render the unfinished new friends entry', async () => {
       render(<ContactListPane theme="light" />, { wrapper: createWrapper() })
-      expect(screen.getByText('新的朋友')).toBeInTheDocument()
-      expect(screen.getByText('2')).toBeInTheDocument()
+      expect(screen.queryByText('新的朋友')).not.toBeInTheDocument()
+      expect(screen.queryByText('2')).not.toBeInTheDocument()
     })
 
     it('renders contacts from contactOps', async () => {
@@ -206,11 +202,10 @@ describe('ContactListPane', () => {
       expect(mockStoreState.select).toHaveBeenCalledWith('mock-solid-1')
     })
 
-    it('calls showNewFriends when clicking new friends entry', async () => {
+    it('does not expose new friends entry from the primary list surface', async () => {
       render(<ContactListPane theme="light" />, { wrapper: createWrapper() })
       
-      fireEvent.click(screen.getByText('新的朋友'))
-      expect(mockStoreState.showNewFriends).toHaveBeenCalled()
+      expect(screen.queryByText('新的朋友')).not.toBeInTheDocument()
     })
 
     it('updates search on input change', async () => {

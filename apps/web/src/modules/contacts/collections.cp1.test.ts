@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { ContactClass, ContactType } from '@linx/models'
+import { ContactClass, ContactType } from '@undefineds.co/models'
 
 const mockDb = {
   insert: vi.fn().mockReturnValue({

@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { SourceModule } from '@linx/models'
+import type { SourceModule } from '@undefineds.co/models'
 
 export type SourceFilter = 'all' | SourceModule
 

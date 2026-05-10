@@ -10,7 +10,7 @@
 import { useMemo } from 'react'
 import { useChatStore } from '../store'
 import { useChatList } from '../collections'
-import { resolveRowId } from '@linx/models'
+import { resolveRowId } from '@undefineds.co/models'
 import { ChatRightSidebar } from '../components/ChatRightSidebar'
 import { ChatHeader } from '../components/ChatHeader'
 

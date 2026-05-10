@@ -7,19 +7,23 @@
  * 3. A Chat record (participants stores the Contact URI)
  */
 
-import type { SolidDatabase } from '@linx/models'
+import type { SolidDatabase } from '@undefineds.co/models'
 import {
+  aiConfigModelUri,
+  aiConfigProviderUri,
   agentTable,
   contactTable,
   agentRepository,
   contactRepository,
   ContactClass,
   ContactType,
+  extractAIConfigProviderId,
+  extractAIConfigResourceId,
   resolveRowId,
   eq,
   type AgentRow,
   type ContactRow,
-} from '@linx/models'
+} from '@undefineds.co/models'
 
 export interface FindOrCreateAgentParams {
   provider: string
@@ -47,7 +51,10 @@ export async function findOrCreateAgent(
   
   // Find matching agent by provider + model
   const existing = agents.find(
-    a => a.provider === provider && a.model === model
+    (agent) => (
+      extractAIConfigProviderId(typeof agent.provider === 'string' ? agent.provider : '') === extractAIConfigProviderId(provider)
+      && extractAIConfigResourceId(typeof agent.model === 'string' ? agent.model : '') === extractAIConfigResourceId(model)
+    )
   )
 
   if (existing) {
@@ -59,8 +66,8 @@ export async function findOrCreateAgent(
   const agentName = name || `${provider}/${model}`
   const newAgent = await agentRepository.create!(db, {
     name: agentName,
-    provider,
-    model,
+    provider: aiConfigProviderUri(provider),
+    model: aiConfigModelUri(model),
     instructions: instructions || '',
   })
 

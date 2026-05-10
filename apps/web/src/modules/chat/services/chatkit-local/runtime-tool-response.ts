@@ -1,4 +1,4 @@
-import type { SolidDatabase } from '@linx/models'
+import type { SolidDatabase } from '@undefineds.co/models'
 import type { ThreadItem } from '@/lib/vendor/xpod-chatkit'
 import { LocalChatKitStore } from './store'
 import { LocalChatKitService, type ChatKitResult } from './service'

@@ -6,11 +6,11 @@ describe('useContactStore', () => {
     // Reset store to initial state
     useContactStore.setState({
       search: '',
+      listFilter: 'all',
       selectedId: null,
       viewMode: 'view',
       createDialogOpen: false,
       createType: null,
-      newFriendsCount: 2,
     })
   })
 
@@ -23,7 +23,6 @@ describe('useContactStore', () => {
       expect(state.viewMode).toBe('view')
       expect(state.createDialogOpen).toBe(false)
       expect(state.createType).toBe(null)
-      expect(state.newFriendsCount).toBe(2)
     })
   })
 
@@ -124,31 +123,6 @@ describe('useContactStore', () => {
     })
   })
 
-  describe('showNewFriends', () => {
-    it('sets viewMode to new-friends', () => {
-      useContactStore.getState().showNewFriends()
-      
-      expect(useContactStore.getState().viewMode).toBe('new-friends')
-    })
-
-    it('clears selectedId', () => {
-      useContactStore.getState().select('contact-123')
-      useContactStore.getState().showNewFriends()
-      
-      expect(useContactStore.getState().selectedId).toBe(null)
-    })
-  })
-
-  describe('clearNewFriends', () => {
-    it('sets newFriendsCount to 0', () => {
-      expect(useContactStore.getState().newFriendsCount).toBe(2)
-      
-      useContactStore.getState().clearNewFriends()
-      
-      expect(useContactStore.getState().newFriendsCount).toBe(0)
-    })
-  })
-
   describe('State Transitions', () => {
     it('handles view -> edit -> cancel flow', () => {
       // Start in view mode
@@ -178,17 +152,6 @@ describe('useContactStore', () => {
       useContactStore.getState().closeCreateDialog()
       expect(useContactStore.getState().createDialogOpen).toBe(false)
       expect(useContactStore.getState().createType).toBe(null)
-    })
-
-    it('handles new-friends -> select flow', () => {
-      // Show new friends
-      useContactStore.getState().showNewFriends()
-      expect(useContactStore.getState().viewMode).toBe('new-friends')
-      
-      // Select a contact
-      useContactStore.getState().select('contact-789')
-      expect(useContactStore.getState().viewMode).toBe('view')
-      expect(useContactStore.getState().selectedId).toBe('contact-789')
     })
   })
 })

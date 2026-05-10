@@ -15,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { DEFAULT_AGENT_PROVIDERS } from '@linx/models'
+import { CHAT_AGENT_PROVIDERS } from '@/lib/agent-providers'
 import { useChatStore } from '../store'
 import { useChatMutations } from '../collections'
 import { CreateGroupDialog } from '@/modules/contacts/components/CreateGroupDialog'
@@ -52,7 +52,7 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
   const selectThread = useChatStore((state) => state.selectThread)
   const { toast } = useToast()
 
-  const agentProviders = DEFAULT_AGENT_PROVIDERS
+  const agentProviders = CHAT_AGENT_PROVIDERS
   const mutations = useChatMutations()
   const runtimeAvailable = isRuntimeSessionMode()
 

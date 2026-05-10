@@ -50,6 +50,31 @@ describe('inbox presentation', () => {
     expect(presentation.status).toBe('approved')
   })
 
+  it('falls back to related approval target for thread restoration', () => {
+    const audit = {
+      id: 'audit-approval-approved',
+      action: 'inbox.approval.approved',
+      actorRole: 'human',
+      session: 'urn:linx:runtime-session:runtime-1',
+      createdAt: '2026-03-12T12:00:00.000Z',
+      context: JSON.stringify({
+        toolName: 'write_file',
+      }),
+    }
+
+    const relatedApproval = {
+      id: 'approval-1',
+      target: 'https://alice.example/.data/chat/chat-1/index.ttl#thread-1',
+    }
+
+    const presentation = buildAuditPresentation(audit as any, new Map(), relatedApproval as any)
+
+    expect(presentation.chatId).toBe('chat-1')
+    expect(presentation.threadId).toBe('thread-1')
+    expect(presentation.thread).toBe('https://alice.example/.data/chat/chat-1/index.ttl#thread-1')
+    expect(presentation.about).toBe('https://alice.example/.data/chat/chat-1/index.ttl#thread-1')
+  })
+
   it('keeps tool-call timeline events informational instead of actionable', () => {
     const audit = {
       id: 'audit-tool-call',

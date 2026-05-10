@@ -9,7 +9,6 @@ import {
   Settings as SettingsIcon,
   Bot,
 } from 'lucide-react'
-import { PlaceholderListPane, PlaceholderContentPane } from './placeholders'
 
 export const microAppIds = [
   'chat',
@@ -77,12 +76,6 @@ function lazyBridge<T extends ComponentType<any>>(
   return lazy(loader) as unknown as T
 }
 
-const buildList = (title: string, description: string, items: ReactNode[]) =>
-  () => <PlaceholderListPane title={title} description={description} items={items} />
-
-const buildContent = (title: string, description: string, body?: ReactNode) =>
-  () => <PlaceholderContentPane title={title} description={description}>{body}</PlaceholderContentPane>
-
 const ChatListPane = lazyPane(() =>
   import('@/modules/chat/components/ChatListPane').then((mod) => ({ default: mod.ChatListPane })),
 )
@@ -121,6 +114,12 @@ const ModelServicesListPane = lazyPane(() =>
 )
 const ModelServicesContentPane = lazyPane(() =>
   import('@/modules/model-services/ModelServicesContentPane').then((mod) => ({ default: mod.ModelServicesContentPane })),
+)
+const SettingsListPane = lazyPane(() =>
+  import('@/modules/settings/components/SettingsListPane').then((mod) => ({ default: mod.SettingsListPane })),
+)
+const SettingsContentPane = lazyPane(() =>
+  import('@/modules/settings/components/SettingsContentPane').then((mod) => ({ default: mod.SettingsContentPane })),
 )
 const ChatLayoutConfigBridge = lazyBridge(() =>
   import('@/modules/chat/layout/ChatLayoutConfigBridge').then((mod) => ({ default: mod.ChatLayoutConfigBridge })),
@@ -189,9 +188,9 @@ export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
     icon: FolderOpen,
     header: {
       moduleTitle: '文件',
-      moduleSubtitle: '浏览 Pod 文件系统',
+      moduleSubtitle: '当前话题资产与 Pod 容器',
       itemTitle: '文件预览',
-      itemSubtitle: '支持多源同步',
+      itemSubtitle: '打开、复制、收藏',
     },
     ListPane: FilesTreePane,
     ContentPane: FilesListPane,
@@ -220,8 +219,8 @@ export const microAppRegistry: Record<MicroAppId, MicroAppDefinition> = {
       itemTitle: '设置详情',
       itemSubtitle: '主题、实验功能等',
     },
-    ListPane: buildList('设置项', '示例设置类别', ['通用', '外观', '隐私']),
-    ContentPane: buildContent('设置面板', '选择一个设置类别'),
+    ListPane: SettingsListPane,
+    ContentPane: SettingsContentPane,
   },
   'model-services': {
     id: 'model-services',

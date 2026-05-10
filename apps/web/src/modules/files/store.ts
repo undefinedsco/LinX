@@ -13,14 +13,12 @@ import { create } from 'zustand'
 // Types
 // ============================================================================
 
-/** Virtual tree node types (section 8.2 of feature plan) */
+/** Tree node types for the real Pod/file browser. */
 export type TreeNodeType =
   | 'all'
-  | 'recent'
-  | 'starred'
-  | 'by-session'
-  | 'by-import'
-  | 'pod-directory'
+  | 'workspace'
+  | 'local-workspace'
+  | 'container'
 
 export interface TreeNode {
   id: string
@@ -37,7 +35,7 @@ export interface TreeNode {
 export type FileDetailTab = 'preview' | 'metadata' | 'lineage'
 
 /** Sort field for file list */
-export type FileSortField = 'name' | 'mimeType' | 'size' | 'modifiedAt' | 'syncStatus'
+export type FileSortField = 'name' | 'kind' | 'mimeType' | 'size' | 'modifiedAt' | 'source'
 export type SortDirection = 'asc' | 'desc'
 
 // ============================================================================
@@ -98,7 +96,13 @@ export const useFilesStore = create<FilesStore>((set) => ({
   detailTab: 'preview',
 
   // Actions: tree
-  selectTreeNode: (id) => set({ selectedTreeNodeId: id }),
+  selectTreeNode: (id) =>
+    set({
+      selectedTreeNodeId: id,
+      selectedFileId: null,
+      selectedFileIds: new Set<string>(),
+      detailTab: 'preview',
+    }),
   toggleTreeNode: (id) =>
     set((state) => {
       const next = new Set(state.expandedTreeNodeIds)

@@ -37,10 +37,26 @@ vi.mock('@/components/ui/model-selector', () => ({
       value={value}
       onChange={(event) => onChange?.(event.target.value)}
     >
+      <option value="undefineds/linx-lite">undefineds/linx-lite</option>
       <option value="gpt-4o-mini">gpt-4o-mini</option>
       <option value="claude-3-5-sonnet-latest">claude-3-5-sonnet-latest</option>
     </select>
   ),
+}))
+
+vi.mock('@/lib/agent-providers', () => ({
+  CHAT_AGENT_PROVIDERS: [
+    {
+      slug: 'undefineds',
+      displayName: 'Undefineds Cloud',
+      models: [{ id: 'undefineds/linx-lite', displayName: 'LinX Lite' }],
+    },
+    {
+      slug: 'openai',
+      displayName: 'OpenAI',
+      models: [{ id: 'gpt-4o-mini', displayName: 'GPT-4o mini' }],
+    },
+  ],
 }))
 
 vi.mock('@/components/ui/switch', () => ({
@@ -158,8 +174,8 @@ describe('AddChatDialog', () => {
     await waitFor(() => {
       expect(mockCreateAIChat).toHaveBeenCalledWith({
         title: '代码助手',
-        provider: 'openai',
-        model: 'gpt-4o-mini',
+        provider: 'undefineds',
+        model: 'undefineds/linx-lite',
         systemPrompt: undefined,
       })
     })

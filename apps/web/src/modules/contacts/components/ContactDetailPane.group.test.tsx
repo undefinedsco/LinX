@@ -2,7 +2,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactNode } from 'react'
-import { ContactClass, ContactType } from '@linx/models'
+import { ContactClass, ContactType } from '@undefineds.co/models'
 
 const {
   mockNavigate,
@@ -26,7 +26,6 @@ const {
     viewMode: 'view',
     createDialogOpen: false,
     createType: null as 'agent' | 'friend' | 'group' | null,
-    clearNewFriends: vi.fn(),
     closeCreateDialog: vi.fn(),
     select: vi.fn(),
     inviteMemberDialogOpen: false,
@@ -148,7 +147,6 @@ describe('ContactDetailPane group flows', () => {
       viewMode: 'view',
       createDialogOpen: false,
       createType: null,
-      clearNewFriends: vi.fn(),
       closeCreateDialog: vi.fn(),
       select: vi.fn(),
       inviteMemberDialogOpen: false,
@@ -305,7 +303,7 @@ describe('ContactDetailPane group flows', () => {
 
     mockContactState.set(candidate.id, candidate)
     Object.assign(mockStoreState, {
-      selectedId: 'mock-solid-1',
+      selectedId: null,
       createDialogOpen: true,
       createType: 'group',
     })

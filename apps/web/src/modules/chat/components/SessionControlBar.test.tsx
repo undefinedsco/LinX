@@ -119,6 +119,18 @@ describe('SessionControlBar', () => {
     expect(screen.getByText(/git status/)).toBeInTheDocument()
   })
 
+  it('renders bound workspace context when provided', () => {
+    render(
+      <SessionControlBar
+        {...baseProps}
+        workspacePrimary="/repo/linx/worktrees/feature-runtime"
+        workspaceSecondary="节点 node-123 · feature/runtime · 基于 HEAD"
+      />,
+    )
+    expect(screen.getByText('/repo/linx/worktrees/feature-runtime')).toBeInTheDocument()
+    expect(screen.getByText('节点 node-123 · feature/runtime · 基于 HEAD')).toBeInTheDocument()
+  })
+
   it('formats token count with k suffix for large numbers', () => {
     render(<SessionControlBar {...baseProps} tokenUsage={25000} />)
     expect(screen.getByText('25.0k tokens')).toBeInTheDocument()

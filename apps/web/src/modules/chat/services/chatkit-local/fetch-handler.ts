@@ -9,7 +9,7 @@
  * completely bypassing the API server.
  */
 
-import type { SolidDatabase } from '@linx/models'
+import type { SolidDatabase } from '@undefineds.co/models'
 import { LocalChatKitStore } from './store'
 import { LocalChatKitService } from './service'
 

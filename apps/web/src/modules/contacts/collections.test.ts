@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { ContactClass, ContactType } from '@linx/models'
+import { ContactClass, ContactType } from '@undefineds.co/models'
 
 // Mock search results storage for db.select().from().where().execute()
 let mockSearchResults: any[] = []

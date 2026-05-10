@@ -1,73 +1,30 @@
-/**
- * FilesTreePane - Left pane tree navigation skeleton
- *
- * Section 8.2: Virtual groups + real directory tree
- * - All files (virtual root)
- * - Recent (last 7 days)
- * - Starred
- * - By session
- * - By import
- * - Pod directory (real folder tree)
- *
- * CP0: skeleton only, no data fetching.
- * CP1: mock file counts, expandable child nodes, keyboard navigation.
- */
-import { useMemo, useCallback } from 'react'
+import { useMemo } from 'react'
 import {
   FolderOpen,
-  Clock,
-  Star,
-  Terminal,
-  Download,
   HardDrive,
   ChevronRight,
-  Search,
-  X,
+  Loader2,
+  FolderRoot,
 } from 'lucide-react'
-import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
-import { useFilesStore, type TreeNode, type TreeNodeType } from '../store'
+import { useFilesStore } from '../store'
+import {
+  type FilesTreeNode,
+  ALL_FILES_NODE_ID,
+} from '../browser'
+import {
+  useActiveFilesWorkspaceContext,
+  useContainerChildTreeNodes,
+  useFilesRootNodes,
+} from '../queries'
 
-// ============================================================================
-// Constants
-// ============================================================================
-
-const ICON_MAP: Record<TreeNodeType, typeof FolderOpen> = {
-  all: FolderOpen,
-  recent: Clock,
-  starred: Star,
-  'by-session': Terminal,
-  'by-import': Download,
-  'pod-directory': HardDrive,
-}
-
-/** Static virtual tree nodes with CP1 mock counts and children */
-const STATIC_TREE: TreeNode[] = [
-  { id: 'all', label: '全部文件', type: 'all', count: 24 },
-  { id: 'recent', label: '最近修改', type: 'recent', count: 8 },
-  { id: 'starred', label: '已标星', type: 'starred', count: 3 },
-  { id: 'by-session', label: '按会话', type: 'by-session', count: 12 },
-  { id: 'by-import', label: '导入数据', type: 'by-import', count: 4 },
-  { id: 'pod-directory', label: 'Pod 目录', type: 'pod-directory', count: 24 },
-]
-
-/** Child nodes for expandable groups (CP1 mock data) */
-const CHILD_NODES: Record<string, TreeNode[]> = {
-  'by-session': [
-    { id: 'session-1', label: 'Claude Code #1', type: 'by-session', parentId: 'by-session', count: 5 },
-    { id: 'session-2', label: 'Claude Code #2', type: 'by-session', parentId: 'by-session', count: 4 },
-    { id: 'session-3', label: 'Cursor Session', type: 'by-session', parentId: 'by-session', count: 3 },
-  ],
-  'by-import': [
-    { id: 'import-1', label: 'CSV 导入 2026-02', type: 'by-import', parentId: 'by-import', count: 2 },
-    { id: 'import-2', label: '手动上传', type: 'by-import', parentId: 'by-import', count: 2 },
-  ],
-  'pod-directory': [
-    { id: 'pod-root', label: '/public', type: 'pod-directory', parentId: 'pod-directory', count: 10 },
-    { id: 'pod-private', label: '/private', type: 'pod-directory', parentId: 'pod-directory', count: 14 },
-  ],
+const ICON_MAP: Record<FilesTreeNode['type'], typeof FolderOpen> = {
+  all: FolderRoot,
+  workspace: FolderOpen,
+  'local-workspace': HardDrive,
+  container: FolderOpen,
 }
 
 // ============================================================================
@@ -75,10 +32,12 @@ const CHILD_NODES: Record<string, TreeNode[]> = {
 // ============================================================================
 
 interface TreeNodeItemProps {
-  node: TreeNode
+  node: FilesTreeNode
   depth: number
   isSelected: boolean
   isExpanded: boolean
+  canExpand: boolean
+  isLoading?: boolean
   onSelect: () => void
   onToggle: () => void
 }
@@ -88,11 +47,12 @@ function TreeNodeItem({
   depth,
   isSelected,
   isExpanded,
+  canExpand,
+  isLoading,
   onSelect,
   onToggle,
 }: TreeNodeItemProps) {
   const Icon = ICON_MAP[node.type] ?? FolderOpen
-  const hasChildren = node.type === 'by-session' || node.type === 'by-import' || node.type === 'pod-directory'
 
   return (
     <div
@@ -106,7 +66,7 @@ function TreeNodeItem({
       style={{ paddingLeft: `${12 + depth * 16}px` }}
     >
       {/* Expand toggle */}
-      {hasChildren ? (
+      {canExpand ? (
         <button
           onClick={(e) => {
             e.stopPropagation()
@@ -114,12 +74,16 @@ function TreeNodeItem({
           }}
           className="shrink-0 p-0.5 rounded hover:bg-muted/60"
         >
-          <ChevronRight
-            className={cn(
-              'w-3.5 h-3.5 text-muted-foreground transition-transform',
-              isExpanded && 'rotate-90',
-            )}
-          />
+          {isLoading ? (
+            <Loader2 className="w-3.5 h-3.5 text-muted-foreground animate-spin" />
+          ) : (
+            <ChevronRight
+              className={cn(
+                'w-3.5 h-3.5 text-muted-foreground transition-transform',
+                isExpanded && 'rotate-90',
+              )}
+            />
+          )}
         </button>
       ) : (
         <span className="w-4.5" />
@@ -131,106 +95,110 @@ function TreeNodeItem({
       {node.count != null && (
         <span className="text-[11px] text-muted-foreground shrink-0">{node.count}</span>
       )}
-
-      {node.syncIndicator === 'error' && (
-        <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
-      )}
-      {node.syncIndicator === 'warning' && (
-        <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
-      )}
     </div>
   )
 }
 
-// ============================================================================
-// Search Header
-// ============================================================================
-
-function TreeSearchHeader({
-  value,
-  onChange,
+function TreeSectionHeader({
+  title,
+  description,
 }: {
-  value: string
-  onChange: (v: string) => void
+  title: string
+  description: string
 }) {
   return (
-    <div className="h-16 flex items-center gap-2 px-3 border-b border-border bg-layout-list-header shrink-0">
-      <div className="relative flex-1 min-w-0">
-        <div className="absolute left-2 top-1/2 -translate-y-1/2 flex items-center justify-center w-5 h-5 text-muted-foreground">
-          <Search strokeWidth={1.5} className="h-3.5 w-3.5" />
-        </div>
-        <Input
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder="搜索文件"
-          className="pl-8 pr-8 h-8 bg-muted/50 hover:bg-muted/80 focus:bg-background rounded-sm text-xs border-0 focus-visible:ring-1 transition-colors"
-        />
-        {value && (
-          <button
-            onClick={() => onChange('')}
-            className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 hover:bg-muted-foreground/20 rounded-full"
-          >
-            <X strokeWidth={1.5} className="h-3 w-3 text-muted-foreground" />
-          </button>
-        )}
-      </div>
+    <div className="border-b border-border bg-layout-list-header px-3 py-3 shrink-0">
+      <p className="text-xs font-medium text-foreground">{title}</p>
+      <p className="mt-1 text-[11px] leading-5 text-muted-foreground">{description}</p>
     </div>
   )
 }
 
-// ============================================================================
-// Main Component
-// ============================================================================
+function TreeChildren({
+  parentNode,
+  depth,
+}: {
+  parentNode: FilesTreeNode
+  depth: number
+}) {
+  const selectedTreeNodeId = useFilesStore((state) => state.selectedTreeNodeId)
+  const expandedTreeNodeIds = useFilesStore((state) => state.expandedTreeNodeIds)
+  const selectTreeNode = useFilesStore((state) => state.selectTreeNode)
+  const toggleTreeNode = useFilesStore((state) => state.toggleTreeNode)
+  const { data: childNodes = [], isLoading } = useContainerChildTreeNodes(parentNode)
+
+  if (isLoading) {
+    return (
+      <div className="px-4 py-2 text-xs text-muted-foreground">
+        正在读取子容器…
+      </div>
+    )
+  }
+
+  return childNodes.map((childNode) => {
+    const isExpanded = expandedTreeNodeIds.has(childNode.id)
+    const canExpand = childNode.type === 'container'
+    return (
+      <div key={childNode.id} role="treeitem" aria-expanded={canExpand ? isExpanded : undefined}>
+        <TreeNodeItem
+          node={childNode}
+          depth={depth}
+          isSelected={selectedTreeNodeId === childNode.id}
+          isExpanded={isExpanded}
+          canExpand={canExpand}
+          onSelect={() => selectTreeNode(childNode.id)}
+          onToggle={() => toggleTreeNode(childNode.id)}
+        />
+        {canExpand && isExpanded ? (
+          <TreeChildren parentNode={childNode} depth={depth + 1} />
+        ) : null}
+      </div>
+    )
+  })
+}
 
 export function FilesTreePane(_props: MicroAppPaneProps) {
   const selectedTreeNodeId = useFilesStore((s) => s.selectedTreeNodeId)
   const expandedTreeNodeIds = useFilesStore((s) => s.expandedTreeNodeIds)
   const selectTreeNode = useFilesStore((s) => s.selectTreeNode)
   const toggleTreeNode = useFilesStore((s) => s.toggleTreeNode)
-  const searchText = useFilesStore((s) => s.searchText)
-  const setSearchText = useFilesStore((s) => s.setSearchText)
+  const { workspaceUri, threadTitle } = useActiveFilesWorkspaceContext()
+  const { data, isLoading, error } = useFilesRootNodes()
 
-  const filteredTree = useMemo(() => {
-    if (!searchText) return STATIC_TREE
-    const lower = searchText.toLowerCase()
-    return STATIC_TREE.filter((n) => n.label.toLowerCase().includes(lower))
-  }, [searchText])
-
-  const getChildren = useCallback(
-    (nodeId: string): TreeNode[] => CHILD_NODES[nodeId] ?? [],
-    [],
-  )
+  const treeNodes = useMemo(() => data?.nodes ?? [], [data?.nodes])
+  const description = workspaceUri
+    ? `当前话题：${threadTitle ?? '未命名话题'}`
+    : '浏览当前 Pod 容器；绑定目录后会在这里出现当前话题容器。'
 
   return (
     <div className="flex h-full flex-col bg-layout-list-item">
-      <TreeSearchHeader value={searchText} onChange={setSearchText} />
+      <TreeSectionHeader title="资源范围" description={description} />
       <ScrollArea className="flex-1">
         <div className="py-1" role="tree" aria-label="文件分组树">
-          {filteredTree.map((node) => {
+          {isLoading ? (
+            <div className="px-4 py-3 text-sm text-muted-foreground">正在加载容器…</div>
+          ) : null}
+          {error ? (
+            <div className="px-4 py-3 text-sm text-destructive">读取容器失败。</div>
+          ) : null}
+          {treeNodes.map((node) => {
             const isExpanded = expandedTreeNodeIds.has(node.id)
-            const children = getChildren(node.id)
+            const canExpand = node.type === 'workspace' || node.type === 'container'
             return (
-              <div key={node.id} role="treeitem" aria-expanded={children.length > 0 ? isExpanded : undefined}>
+              <div key={node.id} role="treeitem" aria-expanded={canExpand ? isExpanded : undefined}>
                 <TreeNodeItem
                   node={node}
                   depth={0}
                   isSelected={selectedTreeNodeId === node.id}
                   isExpanded={isExpanded}
+                  canExpand={canExpand}
+                  isLoading={isLoading && node.id !== ALL_FILES_NODE_ID}
                   onSelect={() => selectTreeNode(node.id)}
                   onToggle={() => toggleTreeNode(node.id)}
                 />
-                {/* Render children when expanded */}
-                {isExpanded && children.map((child) => (
-                  <TreeNodeItem
-                    key={child.id}
-                    node={child}
-                    depth={1}
-                    isSelected={selectedTreeNodeId === child.id}
-                    isExpanded={false}
-                    onSelect={() => selectTreeNode(child.id)}
-                    onToggle={() => {}}
-                  />
-                ))}
+                {canExpand && isExpanded ? (
+                  <TreeChildren parentNode={node} depth={1} />
+                ) : null}
               </div>
             )
           })}

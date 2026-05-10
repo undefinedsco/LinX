@@ -3,9 +3,8 @@ import { useLiveQuery } from '@tanstack/react-db'
 import {
   buildAIConfigMutationPlan,
   buildAIConfigProviderStateMap,
-  normalizeAIConfigResourceId,
-  sameAIConfigProviderFamily,
-} from '@linx/models'
+  sameAIConfigProviderId,
+} from '@undefineds.co/models'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 import {
   credentialCollection,
@@ -129,14 +128,12 @@ export function useModelServices() {
       updates,
     })
 
-    const existingProvider = providerRows.find((row) =>
-      sameAIConfigProviderFamily(String(row.id ?? row['@id'] ?? ''), plan.providerId),
-    )
+    const existingProvider = providerRows.find((row) => row.id === plan.providerId)
     const existingCredential = credentialRows.find((row) =>
-      sameAIConfigProviderFamily(String(row.provider ?? row.id ?? ''), plan.providerId),
+      sameAIConfigProviderId(typeof row.provider === 'string' ? row.provider : '', plan.providerId),
     )
     const existingModels = modelRows.filter((row) =>
-      sameAIConfigProviderFamily(String(row.isProvidedBy ?? ''), plan.providerId),
+      sameAIConfigProviderId(typeof row.isProvidedBy === 'string' ? row.isProvidedBy : '', plan.providerId),
     )
 
     if (plan.providerPayload) {
@@ -161,7 +158,9 @@ export function useModelServices() {
 
     if (plan.modelUpserts.length > 0 || plan.modelDeleteIds.length > 0) {
       const existingById = new Map(
-        existingModels.map((row) => [normalizeAIConfigResourceId(String(row.id ?? row['@id'] ?? '')), row] as const),
+        existingModels
+          .filter((row) => typeof row.id === 'string' && row.id.length > 0)
+          .map((row) => [row.id as string, row] as const),
       )
 
       for (const modelPayload of plan.modelUpserts) {
@@ -177,7 +176,7 @@ export function useModelServices() {
       }
 
       for (const row of existingModels) {
-        const modelId = normalizeAIConfigResourceId(String(row.id ?? row['@id'] ?? ''))
+        const modelId = typeof row.id === 'string' ? row.id : ''
         if (!plan.modelDeleteIds.includes(modelId)) continue
         const deleteTx = modelCollection.delete(rowKey(row))
         await waitPersist(deleteTx)

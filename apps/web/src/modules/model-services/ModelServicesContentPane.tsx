@@ -33,6 +33,7 @@ import { useModelServices } from './hooks/useModelServices'
 import { PlaceholderContentPane } from '@/modules/layout/placeholders'
 import { cn } from '@/lib/utils'
 import type { AIModel } from './types'
+import { searchProviderModels } from './services/model-fetcher'
 
 // --- Helper Components ---
 
@@ -245,6 +246,8 @@ export function ModelServicesContentPane() {
     )
   }, [provider?.models, modelSearch])
 
+  const verificationRequiresApiKey = provider?.id !== 'ollama'
+
   const handleSave = () => {
     if (!provider) return
     if (localApiKey !== provider.apiKey || localBaseUrl !== provider.baseUrl) {
@@ -261,23 +264,44 @@ export function ModelServicesContentPane() {
   }
 
   const handleVerify = async () => {
+    if (!provider) return
     setIsVerifying(true)
     try {
-      // TODO: Implement real connectivity check
-      await new Promise(resolve => setTimeout(resolve, 1500))
-      
-      // Simulate random success for now, or always success if key is present
-      if (!localApiKey) throw new Error("API Key is missing")
-      
+      const normalizedApiKey = localApiKey.trim()
+      const normalizedBaseUrl = localBaseUrl.trim()
+      const fetchedGroups = await searchProviderModels(
+        provider,
+        normalizedApiKey || undefined,
+        normalizedBaseUrl || undefined,
+      )
+      const fetchedModels: AIModel[] = Object.values(fetchedGroups)
+        .flat()
+        .map((model) => ({
+          id: model.id,
+          name: model.name,
+          capabilities: model.capabilities,
+          enabled: true,
+        }))
+      const mergedModels = [
+        ...provider.models,
+        ...fetchedModels.filter((model) => !provider.models.some((existing) => existing.id === model.id)),
+      ]
+
+      await updateProvider(provider.id, {
+        apiKey: normalizedApiKey,
+        baseUrl: normalizedBaseUrl || provider.defaultBaseUrl,
+        models: mergedModels,
+      })
+
       toast({ 
-        description: "连接成功", 
+        description: fetchedModels.length > 0 ? `连接成功，已同步 ${fetchedModels.length} 个模型` : '连接成功',
         className: "bg-green-500/15 border-green-500/20 text-green-600" 
       })
-      handleSave()
     } catch (e) {
+      const message = e instanceof Error ? e.message : '请检查 API Key、Base URL 或网络设置'
       toast({ 
         variant: "destructive",
-        description: "连接失败: 请检查 API Key 或网络设置"
+        description: `连接失败: ${message}`
       })
     } finally {
       setIsVerifying(false)
@@ -431,7 +455,7 @@ export function ModelServicesContentPane() {
                         size="sm"
                         variant="secondary"
                         onClick={handleVerify}
-                        disabled={isVerifying || !localApiKey}
+                        disabled={isVerifying || (verificationRequiresApiKey && !localApiKey.trim())}
                         className="h-full px-3 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/20 rounded-sm"
                       >
                         {isVerifying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "验证"}

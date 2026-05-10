@@ -9,79 +9,8 @@ export interface Model {
 
 const providerMap = Object.fromEntries(MODEL_PROVIDERS.map((p) => [p.id, p]))
 
-const MOCK_PROVIDER_MODELS: Record<string, Record<string, Model[]>> = {
-  openai: {
-    'GPT-4o 系列': [
-      { id: 'gpt-4o', name: 'GPT-4o', capabilities: ['vision', 'function_calling'], logo: 'https://openai.com/favicon.ico' },
-      { id: 'gpt-4o-mini', name: 'GPT-4o mini', capabilities: ['function_calling'], logo: 'https://openai.com/favicon.ico' },
-    ],
-    'GPT-3.5 系列': [
-      { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo', capabilities: [], logo: 'https://openai.com/favicon.ico' },
-    ],
-  },
-  anthropic: {
-    'Claude 3': [
-      { id: 'claude-3-5-sonnet-latest', name: 'Claude 3.5 Sonnet', capabilities: ['vision'], logo: 'https://assets-global.website-files.com/646ff90f09097f3bdbd1b0b0/646ffc34f3c6e7d42937f1c6_anthropic%20favicon%20transparent.png' },
-      { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', capabilities: ['vision'], logo: 'https://assets-global.website-files.com/646ff90f09097f3bdbd1b0b0/646ffc34f3c6e7d42937f1c6_anthropic%20favicon%20transparent.png' },
-      { id: 'claude-3-haiku-20240307', name: 'Claude 3 Haiku', capabilities: [], logo: 'https://assets-global.website-files.com/646ff90f09097f3bdbd1b0b0/646ffc34f3c6e7d42937f1c6_anthropic%20favicon%20transparent.png' },
-    ],
-  },
-  google: {
-    'Gemini 1.5': [
-      { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', capabilities: ['vision', 'function_calling'], logo: 'https://ai.google.dev/static/favicon.png' },
-      { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', capabilities: ['vision'], logo: 'https://ai.google.dev/static/favicon.png' },
-    ],
-  },
-  deepseek: {
-    'DeepSeek': [
-      { id: 'deepseek-chat', name: 'DeepSeek Chat', capabilities: ['function_calling'], logo: 'https://raw.githubusercontent.com/deepseek-ai/deepseek-coder/main/assets/logo.png' },
-      { id: 'deepseek-coder', name: 'DeepSeek Coder', capabilities: [], logo: 'https://raw.githubusercontent.com/deepseek-ai/deepseek-coder/main/assets/logo.png' },
-    ],
-  },
-  'x-ai': {
-    'Grok': [
-      { id: 'grok-2', name: 'Grok 2', capabilities: ['function_calling'], logo: 'https://x.ai/favicon.ico' },
-      { id: 'grok-beta', name: 'Grok Beta', capabilities: [], logo: 'https://x.ai/favicon.ico' },
-    ],
-  },
-  openrouter: {
-    'OpenRouter': [
-      { id: 'openai/gpt-4o-mini', name: 'GPT-4o mini (OR)', capabilities: ['function_calling'], logo: 'https://openrouter.ai/favicon.ico' },
-      { id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet (OR)', capabilities: ['vision'], logo: 'https://openrouter.ai/favicon.ico' },
-    ],
-  },
-  minimax: {
-    'MiniMax': [
-      { id: 'abab6.5-chat', name: 'abab6.5 Chat', capabilities: [], logo: 'https://www.minimaxi.com/favicon.ico' },
-      { id: 'abab6.5s-chat', name: 'abab6.5s Chat', capabilities: [], logo: 'https://www.minimaxi.com/favicon.ico' },
-    ],
-  },
-  ollama: {
-    '本地模型': [
-      { id: 'llama3', name: 'llama3', capabilities: [], logo: 'https://ollama.com/public/ollama.png' },
-      { id: 'mistral', name: 'mistral', capabilities: [], logo: 'https://ollama.com/public/ollama.png' },
-    ],
-  },
-}
-
-export const fetchModels = async (providerId: string, apiKey?: string, baseUrl?: string): Promise<Record<string, Model[]>> => {
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 800))
-  
-  if (MOCK_PROVIDER_MODELS[providerId]) {
-    return MOCK_PROVIDER_MODELS[providerId]
-  }
-  
-  return {
-    'Custom': [
-      { id: 'custom-model-1', name: 'Custom Model 1', capabilities: [] },
-    ]
-  }
-}
-
 /**
- * Online search against provider APIs (best-effort; requires apiKey).
- * Currently implemented for OpenAI (GET /models). Others fall back to mock.
+ * Search models from the provider's real API surface.
  */
 const normalizeId = (raw: string, providerId?: string) => {
   if (!raw) return ''

@@ -1,103 +1,121 @@
-/**
- * FilesTreePane - Unit tests
- *
- * Tests node rendering, expand/collapse, selection, and search filtering.
- */
-import { describe, it, expect, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { FilesTreePane } from './FilesTreePane'
 import { useFilesStore } from '../store'
 
-// Reset store before each test
+const mockUseFilesRootNodes = vi.fn()
+const mockUseContainerChildTreeNodes = vi.fn()
+const mockUseActiveFilesWorkspaceContext = vi.fn()
+
+vi.mock('../queries', () => ({
+  useFilesRootNodes: () => mockUseFilesRootNodes(),
+  useContainerChildTreeNodes: (node: unknown) => mockUseContainerChildTreeNodes(node),
+  useActiveFilesWorkspaceContext: () => mockUseActiveFilesWorkspaceContext(),
+}))
+
 beforeEach(() => {
   useFilesStore.setState({
     selectedTreeNodeId: 'all',
     expandedTreeNodeIds: new Set(),
+    selectedFileId: null,
+    selectedFileIds: new Set(),
     searchText: '',
+    sortField: 'modifiedAt',
+    sortDirection: 'desc',
+    mimeTypeFilter: null,
+    detailTab: 'preview',
+  })
+
+  mockUseActiveFilesWorkspaceContext.mockReturnValue({
+    workspaceUri: 'https://pod.example/.data/workspaces/ws-1/',
+    threadTitle: '代码审阅',
+  })
+
+  mockUseFilesRootNodes.mockReturnValue({
+    data: {
+      podRootUri: 'https://pod.example/',
+      nodes: [
+        { id: 'all', label: '全部可浏览资源', type: 'all', count: 3 },
+        {
+          id: 'workspace:https://pod.example/.data/workspaces/ws-1/',
+          label: '当前话题容器',
+          type: 'workspace',
+          uri: 'https://pod.example/.data/workspaces/ws-1/',
+          count: 1,
+        },
+        {
+          id: 'pod-root',
+          label: 'Pod 根目录',
+          type: 'container',
+          uri: 'https://pod.example/',
+          count: 2,
+        },
+      ],
+    },
+    isLoading: false,
+    error: null,
+  })
+
+  mockUseContainerChildTreeNodes.mockImplementation((node: { id: string }) => {
+    if (node.id === 'pod-root') {
+      return {
+        data: [
+          {
+            id: 'container:https://pod.example/public/',
+            label: 'public',
+            type: 'container',
+            uri: 'https://pod.example/public/',
+            parentId: 'pod-root',
+          },
+        ],
+        isLoading: false,
+      }
+    }
+    return { data: [], isLoading: false }
   })
 })
 
 const defaultProps = { paneId: 'tree', appId: 'files' }
 
 describe('FilesTreePane', () => {
-  it('renders all virtual group nodes', () => {
+  it('renders real root nodes and current thread summary', () => {
     render(<FilesTreePane {...defaultProps} />)
-    expect(screen.getByText('全部文件')).toBeInTheDocument()
-    expect(screen.getByText('最近修改')).toBeInTheDocument()
-    expect(screen.getByText('已标星')).toBeInTheDocument()
-    expect(screen.getByText('按会话')).toBeInTheDocument()
-    expect(screen.getByText('导入数据')).toBeInTheDocument()
-    expect(screen.getByText('Pod 目录')).toBeInTheDocument()
+
+    expect(screen.getByText('全部可浏览资源')).toBeInTheDocument()
+    expect(screen.getByText('当前话题容器')).toBeInTheDocument()
+    expect(screen.getByText('Pod 根目录')).toBeInTheDocument()
+    expect(screen.getByText('当前话题：代码审阅')).toBeInTheDocument()
   })
 
-  it('renders file count badges', () => {
+  it('selects a root node on click', () => {
     render(<FilesTreePane {...defaultProps} />)
-    // '8' for recent, '3' for starred — these are unique counts
-    expect(screen.getByText('8')).toBeInTheDocument()
-    expect(screen.getByText('3')).toBeInTheDocument()
-    // '24' appears twice (all + pod-directory), so use getAllByText
-    expect(screen.getAllByText('24')).toHaveLength(2)
+
+    fireEvent.click(screen.getByText('当前话题容器'))
+
+    expect(useFilesStore.getState().selectedTreeNodeId).toBe('workspace:https://pod.example/.data/workspaces/ws-1/')
   })
 
-  it('selects a node on click', () => {
+  it('expands pod root and renders child containers', () => {
     render(<FilesTreePane {...defaultProps} />)
-    fireEvent.click(screen.getByText('已标星'))
-    expect(useFilesStore.getState().selectedTreeNodeId).toBe('starred')
+
+    const rootLabel = screen.getByText('Pod 根目录')
+    const expandButton = rootLabel.parentElement?.querySelector('button')
+    expect(expandButton).toBeTruthy()
+
+    fireEvent.click(expandButton!)
+
+    expect(screen.getByText('public')).toBeInTheDocument()
   })
 
-  it('expands a group node and shows children', () => {
+  it('shows loading state while root nodes are loading', () => {
+    mockUseFilesRootNodes.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      error: null,
+    })
+
     render(<FilesTreePane {...defaultProps} />)
-    // Find the expand button for "按会话" — it's the chevron button
-    const sessionNode = screen.getByText('按会话')
-    const expandBtn = sessionNode.closest('div')?.querySelector('button')
-    expect(expandBtn).toBeTruthy()
-    fireEvent.click(expandBtn!)
 
-    // Children should now be visible
-    expect(screen.getByText('Claude Code #1')).toBeInTheDocument()
-    expect(screen.getByText('Claude Code #2')).toBeInTheDocument()
-    expect(screen.getByText('Cursor Session')).toBeInTheDocument()
-  })
-
-  it('collapses an expanded group node', () => {
-    // Pre-expand
-    useFilesStore.setState({ expandedTreeNodeIds: new Set(['by-session']) })
-    render(<FilesTreePane {...defaultProps} />)
-    expect(screen.getByText('Claude Code #1')).toBeInTheDocument()
-
-    // Click expand button again to collapse
-    const sessionNode = screen.getByText('按会话')
-    const expandBtn = sessionNode.closest('div')?.querySelector('button')
-    fireEvent.click(expandBtn!)
-
-    expect(screen.queryByText('Claude Code #1')).not.toBeInTheDocument()
-  })
-
-  it('filters tree nodes by search text', () => {
-    render(<FilesTreePane {...defaultProps} />)
-    const searchInput = screen.getByPlaceholderText('搜索文件')
-    fireEvent.change(searchInput, { target: { value: '标星' } })
-
-    expect(screen.getByText('已标星')).toBeInTheDocument()
-    expect(screen.queryByText('全部文件')).not.toBeInTheDocument()
-    expect(screen.queryByText('最近修改')).not.toBeInTheDocument()
-  })
-
-  it('shows all nodes when search is cleared', () => {
-    useFilesStore.setState({ searchText: '标星' })
-    render(<FilesTreePane {...defaultProps} />)
-    expect(screen.queryByText('全部文件')).not.toBeInTheDocument()
-
-    const searchInput = screen.getByPlaceholderText('搜索文件')
-    fireEvent.change(searchInput, { target: { value: '' } })
-
-    expect(screen.getByText('全部文件')).toBeInTheDocument()
-  })
-
-  it('selects child node on click', () => {
-    useFilesStore.setState({ expandedTreeNodeIds: new Set(['by-session']) })
-    render(<FilesTreePane {...defaultProps} />)
-    fireEvent.click(screen.getByText('Claude Code #1'))
-    expect(useFilesStore.getState().selectedTreeNodeId).toBe('session-1')
+    expect(screen.getByText('正在加载容器…')).toBeInTheDocument()
   })
 })

@@ -11,7 +11,7 @@ import { useSession } from '@inrupt/solid-ui-react'
 import { useNavigate } from '@tanstack/react-router'
 import { Bot, Loader2, LockKeyhole, PlayCircle, ShieldAlert } from 'lucide-react'
 import { useChatKit, ChatKit as ChatKitComponent } from '@openai/chatkit-react'
-import { resolveRowId } from '@linx/models'
+import { resolveRowId } from '@undefineds.co/models'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { Button } from '@/components/ui/button'
 import {
@@ -30,7 +30,7 @@ import { useInboxStore } from '@/modules/inbox/store'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 import { createLocalChatKitFetch } from '../services/chatkit-local/fetch-handler'
 import { useChatStore } from '../store'
-import { useChatInit, useChatList, useChatMutations, useThreadList } from '../collections'
+import { useChatInit, useChatList, useChatMutations, useThreadList, useWorkspaceList } from '../collections'
 import { SessionControlBar, type SessionStatus } from './SessionControlBar'
 import {
   fetchRuntimeSessionLog,
@@ -41,6 +41,8 @@ import {
   type RuntimeSessionEvent,
   type RuntimeToolType,
 } from '../runtime-client'
+import { buildWorkspaceSummary } from '../workspace-summary'
+import { restoreChatMessageAnchor } from '../message-anchor'
 
 export interface ChatContentPaneProps extends MicroAppPaneProps {}
 
@@ -143,9 +145,20 @@ function InboxActionBanner({
   )
 }
 
-function RuntimeSessionToolbar({ threadId, threadTitle }: { threadId: string; threadTitle: string }) {
+function RuntimeSessionToolbar({
+  threadId,
+  threadTitle,
+  workspaceUri,
+}: {
+  threadId: string
+  threadTitle: string
+  workspaceUri?: string | null
+}) {
   const runtimeSession = useRuntimeSession(threadId)
   const mutations = useChatMutations()
+  const { data: workspaces = [] } = useWorkspaceList({
+    enabled: !!workspaceUri,
+  })
   const isSessionMode = isRuntimeSessionMode()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [repoPath, setRepoPath] = useState('')
@@ -251,6 +264,15 @@ function RuntimeSessionToolbar({ threadId, threadTitle }: { threadId: string; th
     }
   }, [runtimeSession])
 
+  const workspaceSummary = useMemo(
+    () => buildWorkspaceSummary({
+      workspaceUri,
+      workspaces,
+      runtimeSession: runtimeSession.runtimeSession,
+    }),
+    [runtimeSession.runtimeSession, workspaceUri, workspaces],
+  )
+
   if (!isSessionMode) {
     return null
   }
@@ -272,6 +294,12 @@ function RuntimeSessionToolbar({ threadId, threadTitle }: { threadId: string; th
             tool={currentSession.tool}
             tokenUsage={currentSession.tokenUsage}
             duration={formatDuration(currentSession.updatedAt)}
+            workspacePrimary={workspaceSummary?.primaryText}
+            workspaceSecondary={
+              workspaceSummary
+                ? [workspaceSummary.kindLabel, workspaceSummary.secondaryText].filter(Boolean).join(' · ')
+                : undefined
+            }
             onPause={currentSession.status === 'active' ? handlePause : undefined}
             onResume={currentSession.status === 'paused' ? handleResume : undefined}
             onStop={currentSession.status === 'active' || currentSession.status === 'paused' ? handleStop : undefined}
@@ -286,9 +314,13 @@ function RuntimeSessionToolbar({ threadId, threadTitle }: { threadId: string; th
       ) : (
         <div className="flex items-center justify-between gap-3 border-b border-border/50 bg-muted/20 px-4 py-3">
           <div className="min-w-0">
-            <p className="text-sm font-medium text-foreground">当前话题仅做 Pod 留档</p>
+            <p className="text-sm font-medium text-foreground">
+              {workspaceSummary ? `当前话题已绑定${workspaceSummary.kindLabel}` : '当前话题仅做 Pod 留档'}
+            </p>
             <p className="text-xs text-muted-foreground">
-              需要远程运行时时，再为这个聊天话题绑定运行时会话与文件夹即可。
+              {workspaceSummary
+                ? [workspaceSummary.primaryText, workspaceSummary.secondaryText].filter(Boolean).join(' · ')
+                : '需要远程运行时时，再为这个聊天话题绑定运行时会话与文件夹即可。'}
             </p>
             {runtimeError && (
               <p className="mt-1 text-xs text-destructive">{runtimeError}</p>
@@ -378,8 +410,11 @@ function RuntimeSessionToolbar({ threadId, threadTitle }: { threadId: string; th
 
 function ChatKitPanel({ session, selectedThreadId }: { session: any; selectedThreadId: string }) {
   const selectThread = useChatStore((state) => state.selectThread)
+  const messageAnchorId = useChatStore((state) => state.messageAnchorId)
+  const clearMessageAnchor = useChatStore((state) => state.clearMessageAnchor)
   const theme = useThemeMode()
   const { db } = useSolidDatabase()
+  const chatKitHostRef = useRef<(HTMLElement & { setThreadId?: (threadId: string | null) => Promise<void> | void }) | null>(null)
 
   const localFetch = useMemo(() => {
     if (!db || !session.info.webId || !session.fetch) return session.fetch
@@ -392,6 +427,7 @@ function ChatKitPanel({ session, selectedThreadId }: { session: any; selectedThr
       domainKey: 'local',
       fetch: localFetch,
     },
+    initialThread: selectedThreadId,
     theme: {
       colorScheme: theme,
       color: {
@@ -416,14 +452,108 @@ function ChatKitPanel({ session, selectedThreadId }: { session: any; selectedThr
   })
 
   useEffect(() => {
-    if (selectedThreadId) {
-      chatkit.setThreadId(selectedThreadId)
+    if (!selectedThreadId) return
+
+    let disposed = false
+
+    const switchThread = async () => {
+      const registry = typeof window !== 'undefined' ? window.customElements : undefined
+      const tagName = 'openai-chatkit'
+      const element = chatKitHostRef.current
+      const isChatKitElement = element?.tagName?.toLowerCase() === tagName
+
+      if (isChatKitElement && registry?.whenDefined && !registry.get(tagName)) {
+        try {
+          await registry.whenDefined(tagName)
+        } catch (error) {
+          console.error('[ChatKit] Failed to wait for custom element definition:', error)
+          return
+        }
+      }
+
+      if (disposed) return
+
+      const setThreadId = chatKitHostRef.current?.setThreadId
+      if (typeof setThreadId !== 'function') {
+        return
+      }
+
+      try {
+        await setThreadId.call(chatKitHostRef.current, selectedThreadId)
+      } catch (error) {
+        console.error('[ChatKit] Failed to switch thread:', error)
+      }
     }
-  }, [chatkit, selectedThreadId])
+
+    void switchThread()
+
+    return () => {
+      disposed = true
+    }
+  }, [selectedThreadId])
+
+  useEffect(() => {
+    if (!messageAnchorId || !chatKitHostRef.current) return
+
+    let disposed = false
+    let observer: MutationObserver | null = null
+    let clearAnchorTimer: number | null = null
+
+    const tryRestore = () => {
+      if (disposed || !chatKitHostRef.current || !messageAnchorId) return false
+
+      const restored = restoreChatMessageAnchor(chatKitHostRef.current, messageAnchorId)
+      if (!restored) return false
+
+      clearAnchorTimer = window.setTimeout(() => {
+        if (!disposed) {
+          clearMessageAnchor()
+        }
+      }, 2000)
+      return true
+    }
+
+    if (tryRestore()) {
+      return () => {
+        disposed = true
+        if (clearAnchorTimer !== null) {
+          window.clearTimeout(clearAnchorTimer)
+        }
+      }
+    }
+
+    const observeRoot = chatKitHostRef.current.shadowRoot ?? chatKitHostRef.current
+    observer = new MutationObserver(() => {
+      if (tryRestore()) {
+        observer?.disconnect()
+        observer = null
+      }
+    })
+    observer.observe(observeRoot, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+    })
+
+    const timeoutId = window.setTimeout(() => {
+      observer?.disconnect()
+      observer = null
+    }, 4000)
+
+    return () => {
+      disposed = true
+      observer?.disconnect()
+      window.clearTimeout(timeoutId)
+      if (clearAnchorTimer !== null) {
+        window.clearTimeout(clearAnchorTimer)
+      }
+    }
+  }, [clearMessageAnchor, messageAnchorId, selectedThreadId])
 
   return (
     <div className="h-full flex-1 overflow-hidden">
       <ChatKitComponent
+        ref={chatKitHostRef as any}
         control={chatkit.control}
         style={{ display: 'block', width: '100%', height: '100%' }}
       />
@@ -534,6 +664,7 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
         <RuntimeSessionToolbar
           threadId={selectedThreadId}
           threadTitle={activeThread?.title ?? '默认话题'}
+          workspaceUri={activeThread?.workspace}
         />
         <InboxActionBanner chatId={selectedChatId} threadId={selectedThreadId} />
         <div className="min-h-0 flex-1 overflow-hidden">

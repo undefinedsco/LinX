@@ -6,8 +6,8 @@
 
 import {
   getAIConfigDefaultBaseUrl,
-  normalizeAIConfigProviderId,
-} from '@linx/models'
+  extractAIConfigProviderId,
+} from '@undefineds.co/models'
 
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system'
@@ -260,6 +260,6 @@ export const providerAdapters: Record<string, ProviderAdapter> = {
 }
 
 export function getProviderAdapter(provider: string): ProviderAdapter {
-  const normalizedProvider = normalizeAIConfigProviderId(provider)
+  const normalizedProvider = extractAIConfigProviderId(provider)
   return providerAdapters[normalizedProvider] || openaiAdapter
 }

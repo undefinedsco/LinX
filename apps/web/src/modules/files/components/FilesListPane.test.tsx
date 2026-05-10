@@ -1,95 +1,125 @@
-/**
- * FilesListPane - Unit tests
- *
- * Tests sorting, search filtering, and file selection.
- */
-import { describe, it, expect, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { FilesListPane } from './FilesListPane'
+import { createContainerNodeId } from '../browser'
 import { useFilesStore } from '../store'
 
-// Reset store before each test
+const mockUseFilesEntries = vi.fn()
+const mockUseSelectedFilesLocation = vi.fn()
+
+vi.mock('../queries', () => ({
+  useFilesEntries: () => mockUseFilesEntries(),
+  useSelectedFilesLocation: () => mockUseSelectedFilesLocation(),
+}))
+
 beforeEach(() => {
   useFilesStore.setState({
     selectedTreeNodeId: 'all',
+    expandedTreeNodeIds: new Set(),
     selectedFileId: null,
+    selectedFileIds: new Set(),
     searchText: '',
     sortField: 'modifiedAt',
     sortDirection: 'desc',
+    mimeTypeFilter: null,
     detailTab: 'preview',
+  })
+
+  mockUseSelectedFilesLocation.mockReturnValue({ kind: 'all' })
+  mockUseFilesEntries.mockReturnValue({
+    data: [
+      {
+        id: 'https://pod.example/public/',
+        uri: 'https://pod.example/public/',
+        name: 'public',
+        kind: 'container',
+        parentUri: 'https://pod.example/',
+        mimeType: 'inode/container',
+        size: null,
+        modifiedAt: null,
+        sourceLabel: 'Pod 根目录',
+      },
+      {
+        id: 'https://pod.example/public/README.md',
+        uri: 'https://pod.example/public/README.md',
+        name: 'README.md',
+        kind: 'resource',
+        parentUri: 'https://pod.example/public/',
+        mimeType: 'text/markdown',
+        size: 1024,
+        modifiedAt: '2026-03-01T10:00:00Z',
+        sourceLabel: '当前话题',
+      },
+      {
+        id: 'https://pod.example/public/config.json',
+        uri: 'https://pod.example/public/config.json',
+        name: 'config.json',
+        kind: 'resource',
+        parentUri: 'https://pod.example/public/',
+        mimeType: 'application/json',
+        size: 512,
+        modifiedAt: '2026-03-01T09:00:00Z',
+        sourceLabel: 'Pod 根目录',
+      },
+    ],
+    isLoading: false,
+    error: null,
   })
 })
 
 const defaultProps = { paneId: 'list', appId: 'files' }
 
 describe('FilesListPane', () => {
-  it('renders mock file list', () => {
+  it('renders queried entries', () => {
     render(<FilesListPane {...defaultProps} />)
+
+    expect(screen.getByText('public')).toBeInTheDocument()
     expect(screen.getByText('README.md')).toBeInTheDocument()
     expect(screen.getByText('config.json')).toBeInTheDocument()
-    expect(screen.getByText('notes.md')).toBeInTheDocument()
   })
 
-  it('renders column headers', () => {
+  it('filters entries by search text', () => {
     render(<FilesListPane {...defaultProps} />)
-    expect(screen.getByText('名称')).toBeInTheDocument()
-    expect(screen.getByText('同步')).toBeInTheDocument()
-  })
 
-  it('selects a file on click', () => {
-    render(<FilesListPane {...defaultProps} />)
-    fireEvent.click(screen.getByText('README.md'))
-    expect(useFilesStore.getState().selectedFileId).toBe('f1')
-  })
-
-  it('filters files by search text', () => {
-    render(<FilesListPane {...defaultProps} />)
-    const searchInput = screen.getByPlaceholderText('搜索文件名...')
-    fireEvent.change(searchInput, { target: { value: 'README' } })
+    fireEvent.change(screen.getByPlaceholderText('搜索当前范围...'), {
+      target: { value: 'README' },
+    })
 
     expect(screen.getByText('README.md')).toBeInTheDocument()
     expect(screen.queryByText('config.json')).not.toBeInTheDocument()
   })
 
-  it('shows empty state when search has no results', () => {
+  it('double-clicking a container enters that container', () => {
     render(<FilesListPane {...defaultProps} />)
-    const searchInput = screen.getByPlaceholderText('搜索文件名...')
-    fireEvent.change(searchInput, { target: { value: 'nonexistent-file' } })
 
-    expect(screen.getByText('当前分组暂无文件')).toBeInTheDocument()
+    fireEvent.doubleClick(screen.getByText('public'))
+
+    expect(useFilesStore.getState().selectedTreeNodeId).toBe(createContainerNodeId('https://pod.example/public/'))
+    expect(useFilesStore.getState().selectedFileId).toBeNull()
   })
 
-  it('sorts by name when name column header is clicked', () => {
+  it('clicking the name header updates sort field', () => {
     render(<FilesListPane {...defaultProps} />)
+
     fireEvent.click(screen.getByText('名称'))
+
     expect(useFilesStore.getState().sortField).toBe('name')
   })
 
-  it('toggles sort direction when same column is clicked twice', () => {
-    useFilesStore.setState({ sortField: 'name', sortDirection: 'asc' })
-    render(<FilesListPane {...defaultProps} />)
-    fireEvent.click(screen.getByText('名称'))
-    expect(useFilesStore.getState().sortDirection).toBe('desc')
-  })
+  it('shows local workspace empty state when current node is local', () => {
+    mockUseSelectedFilesLocation.mockReturnValue({
+      kind: 'local-workspace',
+      localPath: '/repo/linx',
+    })
+    mockUseFilesEntries.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: null,
+    })
 
-  it('filters by starred when starred tree node is selected', () => {
-    useFilesStore.setState({ selectedTreeNodeId: 'starred' })
     render(<FilesListPane {...defaultProps} />)
-    // Only starred files should be visible
-    expect(screen.getByText('README.md')).toBeInTheDocument()
-    expect(screen.getByText('profile-photo.png')).toBeInTheDocument()
-    expect(screen.queryByText('config.json')).not.toBeInTheDocument()
-  })
 
-  it('renders source tags for session and imported files', () => {
-    render(<FilesListPane {...defaultProps} />)
-    expect(screen.getAllByText('Session').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Imported').length).toBeGreaterThan(0)
-  })
-
-  it('renders sync status badges', () => {
-    render(<FilesListPane {...defaultProps} />)
-    const syncBadges = screen.getAllByText('已同步')
-    expect(syncBadges.length).toBeGreaterThan(0)
+    expect(screen.getByText('当前话题绑定的是本地目录')).toBeInTheDocument()
+    expect(screen.getByText(/\/repo\/linx/)).toBeInTheDocument()
   })
 })

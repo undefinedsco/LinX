@@ -13,8 +13,8 @@ import {
   DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Search, MoreHorizontal, UserPlus, Bot, Crown, Shield } from 'lucide-react'
-import type { ContactRow } from '@linx/models'
-import { ContactType } from '@linx/models'
+import type { ContactRow } from '@undefineds.co/models'
+import { ContactType } from '@undefineds.co/models'
 
 export type MemberRole = 'owner' | 'admin' | 'member'
 

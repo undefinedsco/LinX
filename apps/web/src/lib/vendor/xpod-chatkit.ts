@@ -2,7 +2,7 @@ import {
   chatTable,
   messageTable,
   threadTable,
-} from '@linx/models'
+} from '@undefineds.co/models'
 
 export const Chat = chatTable
 export const Thread = threadTable

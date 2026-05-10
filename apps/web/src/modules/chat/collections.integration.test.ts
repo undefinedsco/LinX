@@ -1,15 +1,15 @@
 // @vitest-environment node
 import { afterAll, describe, expect, it } from 'vitest'
-import { chatTable, threadTable, messageTable, linxSchema } from '@linx/models'
+import { chatTable, threadTable, messageTable, schema } from '@undefineds.co/models'
 import { createXpodIntegrationContext, type XpodIntegrationContext } from '../../test/xpod-integration'
 import { chatOps, initializeChatCollections } from './collections'
 
-let context: XpodIntegrationContext<typeof linxSchema> | null = null
+let context: XpodIntegrationContext<typeof schema> | null = null
 
-async function getContext(): Promise<XpodIntegrationContext<typeof linxSchema>> {
+async function getContext(): Promise<XpodIntegrationContext<typeof schema>> {
   if (context) return context
   context = await createXpodIntegrationContext({
-    schema: linxSchema,
+    schema,
     tables: [chatTable, threadTable, messageTable],
   })
   initializeChatCollections(context.db)

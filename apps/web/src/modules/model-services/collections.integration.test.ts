@@ -5,21 +5,21 @@ import {
   aiModelTable,
   aiProviderTable,
   credentialTable,
-  linxSchema,
-} from '@linx/models'
+  schema,
+} from '@undefineds.co/models'
 import {
   initializeModelCollections,
   credentialCollection,
 } from './collections'
 import { createXpodIntegrationContext, type XpodIntegrationContext } from '@/test/xpod-integration'
 
-let context: XpodIntegrationContext<typeof linxSchema> | null = null
+let context: XpodIntegrationContext<typeof schema> | null = null
 const createdSubjects: Array<{ table: 'credential' | 'provider' | 'model'; id: string }> = []
 
-async function getContext(): Promise<XpodIntegrationContext<typeof linxSchema>> {
+async function getContext(): Promise<XpodIntegrationContext<typeof schema>> {
   if (context) return context
   context = await createXpodIntegrationContext({
-    schema: linxSchema,
+    schema,
     tables: [credentialTable, aiProviderTable, aiModelTable],
     initialize: (db) => {
       initializeModelCollections(db)

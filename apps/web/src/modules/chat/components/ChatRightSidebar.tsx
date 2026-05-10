@@ -35,7 +35,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { useChatStore } from '../store'
 import { useChatList, useThreadList, useChatMutations } from '../collections'
-import { resolveRowId, contactTable, agentTable, ContactType } from '@linx/models'
+import { resolveRowId, contactTable, agentTable, ContactType } from '@undefineds.co/models'
 import { getPrimaryParticipantUri } from '../utils/chat-participants'
 import { useEntity } from '@/lib/data/use-entity'
 

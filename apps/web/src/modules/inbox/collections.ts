@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useSession } from '@inrupt/solid-ui-react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { resolveLinxPodBaseUrl } from '@linx/models/client'
+import { resolveLinxPodBaseUrl } from '@linx/client'
 import {
   approvalTable,
   auditTable,
@@ -14,7 +14,7 @@ import {
   type InboxNotificationInsert,
   type InboxNotificationRow,
   type SolidDatabase,
-} from '@linx/models'
+} from '@undefineds.co/models'
 import { createPodCollection } from '@/lib/data/pod-collection'
 import { queryClient } from '@/providers/query-provider'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
@@ -145,8 +145,11 @@ export interface InboxItem {
   approval?: ApprovalRow
   audit?: AuditRow
   notification?: InboxNotificationRow
+  approvalId?: string | null
   chatId?: string | null
   threadId?: string | null
+  thread?: string | null
+  about?: string | null
   authUrl?: string | null
   authMethod?: string | null
   authMessage?: string | null
@@ -199,18 +202,23 @@ function buildInboxItems(
         status: approval.status,
         approval,
         notification,
+        approvalId: approval.id,
         chatId: threadRef.chatId,
         threadId: threadRef.threadId,
+        thread: threadRef.chatId || threadRef.threadId ? approval.target : null,
+        about: approval.target,
       })
       continue
     }
 
     const audit = auditById.get(resourceId)
     if (audit) {
+      const relatedApprovalId = extractResourceId(audit.approval)
+      const relatedApproval = relatedApprovalId ? approvalById.get(relatedApprovalId) : undefined
       const itemId = `audit:${audit.id}`
       if (seen.has(itemId)) continue
       seen.add(itemId)
-      const presentation = buildAuditPresentation(audit, resolvedAuthTimestampsByKey)
+      const presentation = buildAuditPresentation(audit, resolvedAuthTimestampsByKey, relatedApproval)
       items.push({
         id: itemId,
         kind: 'audit',
@@ -221,8 +229,11 @@ function buildInboxItems(
         status: presentation.status,
         audit,
         notification,
+        approvalId: relatedApprovalId,
         chatId: presentation.chatId,
         threadId: presentation.threadId,
+        thread: presentation.thread,
+        about: presentation.about,
         authUrl: presentation.authUrl,
         authMethod: presentation.authMethod,
         authMessage: presentation.authMessage,
@@ -243,15 +254,20 @@ function buildInboxItems(
       timestamp: String(approval.resolvedAt ?? approval.createdAt ?? ''),
       status: approval.status,
       approval,
+      approvalId: approval.id,
       chatId: threadRef.chatId,
       threadId: threadRef.threadId,
+      thread: threadRef.chatId || threadRef.threadId ? approval.target : null,
+      about: approval.target,
     })
   }
 
   for (const audit of audits) {
     const itemId = `audit:${audit.id}`
     if (seen.has(itemId)) continue
-    const presentation = buildAuditPresentation(audit, resolvedAuthTimestampsByKey)
+    const relatedApprovalId = extractResourceId(audit.approval)
+    const relatedApproval = relatedApprovalId ? approvalById.get(relatedApprovalId) : undefined
+    const presentation = buildAuditPresentation(audit, resolvedAuthTimestampsByKey, relatedApproval)
     items.push({
       id: itemId,
       kind: 'audit',
@@ -261,8 +277,11 @@ function buildInboxItems(
       timestamp: String(audit.createdAt ?? ''),
       status: presentation.status,
       audit,
+      approvalId: relatedApprovalId,
       chatId: presentation.chatId,
       threadId: presentation.threadId,
+      thread: presentation.thread,
+      about: presentation.about,
       authUrl: presentation.authUrl,
       authMethod: presentation.authMethod,
       authMessage: presentation.authMessage,

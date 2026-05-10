@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { ContactListFilter } from './types'
 
-export type ContactViewMode = 'view' | 'edit' | 'new-friends'
+export type ContactViewMode = 'view' | 'edit'
 export type CreateContactType = 'agent' | 'friend' | 'group'
 
 interface ContactStore {
@@ -21,9 +21,6 @@ interface ContactStore {
   createDialogOpen: boolean
   createType: CreateContactType | null
 
-  // New Friends badge count (mock)
-  newFriendsCount: number
-
   // Member List sidebar state
   memberListOpen: boolean
 
@@ -37,8 +34,6 @@ interface ContactStore {
   closeCreateDialog: () => void
   startEdit: () => void
   cancelEdit: () => void
-  showNewFriends: () => void
-  clearNewFriends: () => void
   toggleMemberList: () => void
   setMemberListOpen: (open: boolean) => void
   openInviteMemberDialog: (groupId: string) => void
@@ -56,7 +51,6 @@ export const useContactStore = create<ContactStore>((set) => ({
   viewMode: 'view',
   createDialogOpen: false,
   createType: null,
-  newFriendsCount: 2, // Mock: 2 new friend requests
   memberListOpen: false,
   inviteMemberDialogOpen: false,
   inviteTargetGroupId: null,
@@ -66,13 +60,10 @@ export const useContactStore = create<ContactStore>((set) => ({
   closeCreateDialog: () => set({ createDialogOpen: false, createType: null }),
   startEdit: () => set((state) => state.selectedId ? { viewMode: 'edit' } : {}),
   cancelEdit: () => set({ viewMode: 'view' }),
-  showNewFriends: () => set({ viewMode: 'new-friends', selectedId: null }),
-  clearNewFriends: () => set({ newFriendsCount: 0 }),
   toggleMemberList: () => set((state) => ({ memberListOpen: !state.memberListOpen })),
   setMemberListOpen: (open) => set({ memberListOpen: open }),
   openInviteMemberDialog: (groupId) => set({ inviteMemberDialogOpen: true, inviteTargetGroupId: groupId }),
   closeInviteMemberDialog: () => set({ inviteMemberDialogOpen: false, inviteTargetGroupId: null }),
 }))
-
 
 

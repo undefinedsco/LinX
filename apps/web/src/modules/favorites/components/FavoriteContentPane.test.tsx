@@ -32,7 +32,34 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
 }))
 
-vi.mock('@linx/models', () => ({
+const mockSelectChat = vi.fn()
+const mockSelectThread = vi.fn()
+const mockSetMessageAnchor = vi.fn()
+vi.mock('@/modules/chat/store', () => ({
+  useChatStore: (selector: (state: unknown) => unknown) => selector({
+    selectChat: mockSelectChat,
+    selectThread: mockSelectThread,
+    setMessageAnchor: mockSetMessageAnchor,
+  }),
+}))
+
+const mockSelectContact = vi.fn()
+vi.mock('@/modules/contacts/store', () => ({
+  useContactStore: (selector: (state: unknown) => unknown) => selector({
+    select: mockSelectContact,
+  }),
+}))
+
+const mockSelectFile = vi.fn()
+const mockSelectTreeNode = vi.fn()
+vi.mock('@/modules/files/store', () => ({
+  useFilesStore: (selector: (state: unknown) => unknown) => selector({
+    selectFile: mockSelectFile,
+    selectTreeNode: mockSelectTreeNode,
+  }),
+}))
+
+vi.mock('@undefineds.co/models', () => ({
   resolveRowId: (item: unknown) => (item as Record<string, unknown>)?.id ?? 'mock-id',
 }))
 
@@ -162,7 +189,7 @@ describe('FavoriteContentPane', () => {
   })
 
   describe('Open Source', () => {
-    it('navigates to source module on open source click', () => {
+    it('restores chat selection and navigates to the scene on open source click', () => {
       mockUseFavoriteStore.mockImplementation((selector: (state: unknown) => unknown) => {
         return selector(createDefaultStoreState({ selectedFavoriteId: 'fav-1' }))
       })
@@ -171,10 +198,41 @@ describe('FavoriteContentPane', () => {
 
       fireEvent.click(screen.getByText('打开原对象'))
 
+      expect(mockSelectChat).toHaveBeenCalledWith('chat-1')
+      expect(mockSetMessageAnchor).toHaveBeenCalledWith(null)
       expect(mockNavigate).toHaveBeenCalledWith({
-        to: '/',
-        search: { app: 'chat' },
+        to: '/$microAppId',
+        params: { microAppId: 'chat' },
       })
+    })
+
+    it('restores message anchor when favorite points to a message', () => {
+      mockUseFavoriteList.mockReturnValue({
+        data: [{
+          ...mockFavorite,
+          sourceModule: 'messages',
+          sourceId: 'msg-3',
+          targetUri: 'https://alice.example/.data/chat/chat-1/2026/03/27/messages.ttl#msg-3',
+          snapshotMeta: JSON.stringify({
+            chatId: 'chat-1',
+            threadId: 'thread-2',
+          }),
+        }],
+        isLoading: false,
+        error: null,
+      })
+
+      mockUseFavoriteStore.mockImplementation((selector: (state: unknown) => unknown) => {
+        return selector(createDefaultStoreState({ selectedFavoriteId: 'fav-1' }))
+      })
+
+      render(<FavoriteContentPane theme="light" />, { wrapper: createWrapper() })
+
+      fireEvent.click(screen.getByText('打开原对象'))
+
+      expect(mockSelectChat).toHaveBeenCalledWith('chat-1')
+      expect(mockSelectThread).toHaveBeenCalledWith('thread-2')
+      expect(mockSetMessageAnchor).toHaveBeenCalledWith('msg-3')
     })
   })
 })

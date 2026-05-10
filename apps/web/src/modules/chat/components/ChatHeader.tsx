@@ -16,18 +16,20 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { ModelSelector } from '@/components/ui/model-selector'
 import { useToast } from '@/components/ui/use-toast'
+import { InboxBellButton } from '@/modules/inbox/components/InboxBellButton'
 import { useChatStore } from '../store'
 import { getPrimaryParticipantUri } from '../utils/chat-participants'
 import { useChatList, useChatMutations } from '../collections'
 import { useEntity } from '@/lib/data/use-entity'
 import {
-  DEFAULT_AGENT_PROVIDERS,
+  extractAIConfigProviderId,
+  extractAIConfigResourceId,
   resolveRowId,
   contactTable,
   agentTable,
   ContactType,
-  getBuiltinProvider,
-} from '@linx/models'
+} from '@undefineds.co/models'
+import { findAgentProviderForModel, getAgentProviderInfo } from '@/lib/agent-providers'
 
 function resolvePersistedId(row?: Partial<Record<string, unknown>> | null): string | null {
   const record = row as Record<string, unknown> | null | undefined
@@ -37,13 +39,6 @@ function resolvePersistedId(row?: Partial<Record<string, unknown>> | null): stri
     return id
   }
   return resolveRowId(record)
-}
-
-function findProviderForModel(modelId: string): string | null {
-  const matchedProvider = DEFAULT_AGENT_PROVIDERS.find((provider) =>
-    provider.models.some((model) => model.id === modelId),
-  )
-  return matchedProvider?.slug ?? null
 }
 
 export function ChatHeader() {
@@ -73,15 +68,15 @@ export function ChatHeader() {
   const agentId = useMemo(() => resolvePersistedId(agent), [agent])
   const contactId = useMemo(() => resolvePersistedId(contact), [contact])
 
-  const provider = (agent?.provider as string) || 'openai'
-  const model = (agent?.model as string) || 'gpt-4o-mini'
+  const provider = extractAIConfigProviderId(typeof agent?.provider === 'string' ? agent.provider : '') || 'openai'
+  const model = extractAIConfigResourceId(typeof agent?.model === 'string' ? agent.model : '') || 'gpt-4o-mini'
   const providerInfo = useMemo(() => {
     if (!provider) return null
-    return getBuiltinProvider(provider)
+    return getAgentProviderInfo(provider)
   }, [provider])
   const draftProvider = useMemo(() => {
-    const providerSlug = findProviderForModel(modelDraft)
-    return providerSlug ? getBuiltinProvider(providerSlug) : null
+    const providerSlug = findAgentProviderForModel(modelDraft)
+    return providerSlug ? getAgentProviderInfo(providerSlug) : null
   }, [modelDraft])
   const isSavingAgentProfile = mutations.updateAgentProfile.isPending
   const isSavingModel = mutations.updateAgentModel.isPending
@@ -185,7 +180,7 @@ export function ChatHeader() {
       return
     }
 
-    const nextProvider = findProviderForModel(normalizedModel)
+    const nextProvider = findAgentProviderForModel(normalizedModel)
     if (!nextProvider) {
       toast({
         title: '无法识别模型提供方',
@@ -271,6 +266,7 @@ export function ChatHeader() {
 
         {chat && (
           <div className="flex items-center gap-1 shrink-0 ml-2">
+            <InboxBellButton />
             <Button
               variant="ghost"
               size="icon"

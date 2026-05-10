@@ -12,8 +12,8 @@ import {
   type FavoriteRow,
   type FavoriteInsert,
   type SourceModule,
-} from '@linx/models'
-import type { SolidDatabase } from '@linx/models'
+} from '@undefineds.co/models'
+import type { SolidDatabase } from '@undefineds.co/models'
 import { queryClient } from '@/providers/query-provider'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 

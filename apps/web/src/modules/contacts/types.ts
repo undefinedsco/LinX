@@ -1,4 +1,4 @@
-import type { ContactRow, AgentRow } from '@linx/models'
+import type { ContactRow, AgentRow } from '@undefineds.co/models'
 
 export type ContactSourceType = 'solid' | 'wechat' | 'agent' | 'external'
 
@@ -48,7 +48,7 @@ export interface UnifiedContact extends Omit<ContactRow, 'gender'> {
   tags?: ContactTag[]
 
   // Agent specific data (optional, populated if contactType='agent')
-  agentConfig?: Partial<AgentRow> & {
+  agentConfig?: Omit<Partial<AgentRow>, 'tools'> & {
     ttsModel?: string
     videoModel?: string
     tools?: string[] // List of enabled tool IDs
@@ -61,7 +61,7 @@ export interface UnifiedContact extends Omit<ContactRow, 'gender'> {
 /** Filter mode for the contact list view */
 export type ContactListFilter = 'all' | 'personal' | 'groups' | 'agents'
 
-export type SectionKey = 'new-friends' | 'agents' | 'contacts' | 'starred' | 'groups'
+export type SectionKey = 'agents' | 'contacts' | 'starred' | 'groups'
 
 export interface ContactSection {
   key: SectionKey

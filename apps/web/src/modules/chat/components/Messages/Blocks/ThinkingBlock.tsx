@@ -21,7 +21,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
-import { MessageBlockStatus, type ThinkingMessageBlock } from '@linx/models'
+import { MessageBlockStatus, type ThinkingMessageBlock } from '../message-blocks'
 import { MarkdownRenderer } from '../../Markdown/MarkdownRenderer'
 
 interface ThinkingBlockProps {

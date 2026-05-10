@@ -35,6 +35,11 @@ describe('ModelSelector', () => {
       // Provider icon shows first letter
       expect(screen.getByText('A')).toBeInTheDocument() // Anthropic
     })
+
+    it('renders LinX cloud models', () => {
+      render(<ModelSelector value="undefineds/linx-lite" />)
+      expect(screen.getByText('LinX Lite')).toBeInTheDocument()
+    })
   })
 
   describe('Dialog Interaction', () => {
@@ -54,6 +59,7 @@ describe('ModelSelector', () => {
       fireEvent.click(screen.getByRole('button'))
       
       await waitFor(() => {
+        expect(screen.getAllByText('LinX Lite').length).toBeGreaterThan(0)
         // Use getAllByText since multiple providers may have same model name (e.g., OpenRouter + OpenAI)
         expect(screen.getAllByText('GPT-4o').length).toBeGreaterThan(0)
         expect(screen.getAllByText('Claude 3.5 Sonnet').length).toBeGreaterThan(0)
@@ -90,6 +96,24 @@ describe('ModelSelector', () => {
         expect(screen.getByText('OpenAI')).toBeInTheDocument()
         expect(screen.getByText('Anthropic')).toBeInTheDocument()
       })
+    })
+
+    it('keeps the model list in a scrollable flex region', async () => {
+      render(<ModelSelector type="chat" />)
+
+      fireEvent.click(screen.getByRole('button'))
+
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText('搜索模型...')).toBeInTheDocument()
+      })
+
+      const scrollRegion = document.querySelector('.max-h-\\[350px\\]')
+      expect(scrollRegion).toBeTruthy()
+      expect(scrollRegion).toHaveClass('min-h-0', 'flex-1')
+
+      const popover = document.querySelector('.max-h-\\[500px\\]')
+      expect(popover).toBeTruthy()
+      expect(popover).toHaveClass('min-h-0', 'flex', 'flex-col')
     })
   })
 
