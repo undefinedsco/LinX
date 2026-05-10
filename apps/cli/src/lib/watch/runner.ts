@@ -16,7 +16,7 @@ import {
   type WatchApprovalRequest,
   type WatchCloudCredentialProbe,
   type WatchUserInputQuestion,
-} from '@linx/models/watch'
+} from '@linx/client/watch'
 import {
   appendWatchEvent,
   createWatchSession,

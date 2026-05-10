@@ -3,7 +3,7 @@ import {
   listLinxWhoAmIFields,
   performLinxPasswordLogin,
   type LinxStoredCredentials,
-} from '@linx/models/client'
+} from '@linx/client'
 import { clearAccountSession, loadAccountSession, saveAccountSession } from './account-session.js'
 import { checkServer, createClientCredentials, getAccountData, login as loginAccount, resolveAccountBaseUrl } from './account-api.js'
 import { clearCredentials, getClientCredentials, loadCredentials, saveCredentials } from './credentials-store.js'

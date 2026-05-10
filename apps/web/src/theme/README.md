@@ -40,7 +40,7 @@ LinX 的主题系统包含两个核心部分：
 
 ```css
 :root {
-  --primary: 258 90% 66%;  /* 紫色 #8b5cf6 */
+  --primary: 255.8 100% 65.1%;  /* Solid Royal Lavender #7c4dff */
 }
 ```
 
@@ -56,7 +56,7 @@ LinX 的主题系统包含两个核心部分：
 
 ❌ **旧方式**（硬编码）：
 ```tsx
-<button className="bg-[#8b5cf6] text-white hover:bg-[#7c3aed]">
+<button className="bg-[#7c4dff] text-white hover:bg-[#6b3bff]">
   按钮
 </button>
 ```
@@ -211,14 +211,14 @@ className="bg-primary"
 
 ### ✅ DO
 
-- 使用语义化类名：`bg-primary` 而非 `bg-[#8b5cf6]`
+- 使用语义化类名：`bg-primary` 而非 `bg-[#7c4dff]`
 - 使用 `cn()` 工具函数合并类名
 - 使用 `/90`、`/10` 等透明度修饰符：`bg-primary/90`
 - 在组件中使用条件类名
 
 ### ❌ DON'T
 
-- 不要硬编码颜色值：`bg-[#8b5cf6]`
+- 不要硬编码颜色值：`bg-[#7c4dff]`
 - 不要使用非语义化的颜色名：`bg-purple-500`（除非是特殊场景）
 - 不要在多个地方定义相同的颜色组合
 
@@ -227,7 +227,7 @@ className="bg-primary"
 1. 找到硬编码的颜色：
    ```tsx
    // 旧
-   className="bg-[#8b5cf6] text-white"
+   className="bg-[#7c4dff] text-white"
    ```
 
 2. 替换为语义化类名：
@@ -239,7 +239,7 @@ className="bg-primary"
 3. 更新悬停状态：
    ```tsx
    // 旧
-   className="hover:bg-[#7c3aed]"
+   className="hover:bg-[#6b3bff]"
    
    // 新
    className="hover:bg-primary/90"
@@ -326,4 +326,3 @@ linxLayout.contentArea.headerHeight // 64px
 **问题反馈**：如果在使用过程中遇到问题，请查看：
 - `theme/colors.ts` - 配色使用示例
 - `theme/spacing.ts` - 间距使用示例
-

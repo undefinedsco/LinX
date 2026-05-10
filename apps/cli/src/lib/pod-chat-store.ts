@@ -1,11 +1,13 @@
 import type { Session } from '@inrupt/solid-client-authn-node'
 import {
+  aiConfigModelUri,
+  aiConfigProviderUri,
   agentTable,
   chatTable,
   drizzle,
   eq,
   findExactRecord,
-  linxSchema,
+  schema,
   messageTable,
   threadTable,
   type MessageRow,
@@ -64,7 +66,7 @@ export interface StoredThreadMessage {
 function createDb(session: Session): SolidDatabase {
   return drizzle(session, {
     disableInteropDiscovery: true,
-    schema: linxSchema,
+    schema,
   }) as unknown as SolidDatabase
 }
 
@@ -90,8 +92,8 @@ async function ensureCliAgent(db: SolidDatabase): Promise<void> {
   await (db as any).insert(agentTable).values({
     id: DEFAULT_AGENT_ID,
     name: 'LinX CLI Assistant',
-    provider: 'xpod',
-    model: 'default',
+    provider: aiConfigProviderUri('openai'),
+    model: aiConfigModelUri('gpt-4o-mini'),
     createdAt: now,
     updatedAt: now,
   }).execute()

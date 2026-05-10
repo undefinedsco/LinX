@@ -1,4 +1,4 @@
-import { resolveLinxRuntimeApiBaseUrl } from '@linx/models/client'
+import { resolveLinxRuntimeApiBaseUrl } from '@linx/client'
 
 export interface RemoteModelSummary {
   id: string
@@ -57,7 +57,7 @@ export async function listRemoteModels(
 
 async function loadBuiltinModelFallback(): Promise<RemoteModelSummary[]> {
   try {
-    const discoveryModuleName = '@linx/models/discovery'
+    const discoveryModuleName = '@undefineds.co/models/discovery'
     const { getBuiltinModels } = await import(discoveryModuleName)
     return getBuiltinModels().map((model: { id: string; provider?: string; contextLength?: number }) => ({
       id: model.id,

@@ -216,7 +216,7 @@ async function createDefaultRuntime(): Promise<PodAiRuntime> {
     createDb(session) {
       return models.drizzle(session, {
         disableInteropDiscovery: true,
-        schema: models.linxSchema,
+        schema: models.schema,
       }) as unknown as PodQueryDb
     },
     credentialTable: models.credentialTable,

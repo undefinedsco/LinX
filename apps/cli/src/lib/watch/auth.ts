@@ -4,7 +4,7 @@ import {
   parseWatchClaudeAuthStatus,
   type WatchAuthFailure,
   type WatchAuthStatus,
-} from '@linx/models/watch'
+} from '@linx/client/watch'
 import type { WatchBackend } from './types.js'
 
 export type WatchAuthPreflightResult = WatchAuthStatus

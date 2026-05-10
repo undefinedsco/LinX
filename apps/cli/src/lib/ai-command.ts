@@ -1,16 +1,15 @@
 import type { CommandModule } from 'yargs'
-import { resolveLinxPodUrl } from '@linx/models/client'
+import { resolveLinxPodUrl } from '@linx/client'
 import {
   aiConfigProviderUri,
   buildAIConfigMutationPlan,
   buildAIConfigProviderStateMap,
-  getAIConfigProviderFamilyIds,
+  extractAIConfigProviderId,
+  extractAIConfigResourceId,
   getAIConfigProviderMetadata,
-  normalizeAIConfigProviderId,
-  normalizeAIConfigResourceId,
-  sameAIConfigProviderFamily,
-} from '@linx/models/ai-config'
-import { XPOD_AI, XPOD_CREDENTIAL } from '@linx/models/namespaces'
+  sameAIConfigProviderId,
+} from '@undefineds.co/models/ai-config'
+import { DCTerms, RDFS, UDFS } from '@undefineds.co/models'
 import { getClientCredentials, loadCredentials } from './credentials-store.js'
 import { authenticatedFetch, getAccessToken } from './solid-auth.js'
 import { promptPassword } from './prompt.js'
@@ -50,8 +49,9 @@ interface ParsedModelRow extends Record<string, unknown> {
 }
 
 interface AiRuntime {
-  XPOD_AI: typeof XPOD_AI
-  XPOD_CREDENTIAL: typeof XPOD_CREDENTIAL
+  DCTerms: typeof DCTerms
+  RDFS: typeof RDFS
+  UDFS: typeof UDFS
   aiConfigProviderUri: (providerId: string) => string
   buildAIConfigMutationPlan: (input: {
     providerId: string
@@ -106,11 +106,10 @@ interface AiRuntime {
     apiKey?: string
     selectedModelId?: string
   }>
-  getAIConfigProviderFamilyIds: (providerId: string) => string[]
+  extractAIConfigProviderId: (value?: string | null) => string
+  extractAIConfigResourceId: (value?: string | null) => string
   getAIConfigProviderMetadata: (providerId: string) => { id: string }
-  normalizeAIConfigProviderId: (value?: string | null) => string
-  normalizeAIConfigResourceId: (value?: string | null) => string
-  sameAIConfigProviderFamily: (left?: string | null, right?: string | null) => boolean
+  sameAIConfigProviderId: (left?: string | null, right?: string | null) => boolean
 }
 
 const XSD_DATE_TIME = 'http://www.w3.org/2001/XMLSchema#dateTime'
@@ -120,16 +119,16 @@ let aiRuntimePromise: Promise<AiRuntime> | null = null
 async function loadAiRuntime(): Promise<AiRuntime> {
   if (!aiRuntimePromise) {
     aiRuntimePromise = Promise.resolve({
-      XPOD_AI,
-      XPOD_CREDENTIAL,
+      DCTerms,
+      RDFS,
+      UDFS,
       aiConfigProviderUri,
       buildAIConfigMutationPlan,
       buildAIConfigProviderStateMap,
-      getAIConfigProviderFamilyIds,
+      extractAIConfigProviderId,
+      extractAIConfigResourceId,
       getAIConfigProviderMetadata,
-      normalizeAIConfigProviderId,
-      normalizeAIConfigResourceId,
-      sameAIConfigProviderFamily,
+      sameAIConfigProviderId,
     })
   }
 
@@ -183,12 +182,12 @@ function parseCredentialRows(turtle: string, resourceUrl: string, runtime: AiRun
       if (!subject?.[1]) return null
       return {
         id: subject[1],
-        provider: matchIri(block, runtime.XPOD_CREDENTIAL.provider),
-        service: matchLiteral(block, runtime.XPOD_CREDENTIAL.service),
-        status: matchLiteral(block, runtime.XPOD_CREDENTIAL.status),
-        apiKey: matchLiteral(block, runtime.XPOD_CREDENTIAL.apiKey),
-        baseUrl: matchLiteral(block, runtime.XPOD_CREDENTIAL.baseUrl),
-        label: matchLiteral(block, runtime.XPOD_CREDENTIAL.label),
+        provider: matchIri(block, runtime.UDFS.provider),
+        service: matchLiteral(block, runtime.UDFS.service),
+        status: matchLiteral(block, runtime.UDFS.status),
+        apiKey: matchLiteral(block, runtime.UDFS.apiKey),
+        baseUrl: matchLiteral(block, runtime.UDFS.baseUrl),
+        label: matchLiteral(block, runtime.RDFS.label),
       }
     })
     .filter(Boolean) as ParsedCredentialRow[]
@@ -201,9 +200,9 @@ function parseProviderRows(turtle: string, resourceUrl: string, runtime: AiRunti
       if (!subject?.[1]) return null
       return {
         id: subject[1],
-        baseUrl: matchLiteral(block, runtime.XPOD_AI.baseUrl),
-        proxyUrl: matchLiteral(block, runtime.XPOD_AI.proxyUrl),
-        hasModel: matchIri(block, runtime.XPOD_AI.hasModel),
+        baseUrl: matchLiteral(block, runtime.UDFS.baseUrl),
+        proxyUrl: matchLiteral(block, runtime.UDFS.proxyUrl),
+        hasModel: matchIri(block, runtime.UDFS.hasModel),
       }
     })
     .filter(Boolean) as ParsedProviderRow[]
@@ -216,10 +215,10 @@ function parseModelRows(turtle: string, resourceUrl: string, runtime: AiRuntime)
       if (!subject?.[1]) return null
       return {
         id: subject[1],
-        displayName: matchLiteral(block, runtime.XPOD_AI.displayName),
-        modelType: matchLiteral(block, runtime.XPOD_AI.modelType),
-        isProvidedBy: matchIri(block, runtime.XPOD_AI.isProvidedBy),
-        status: matchLiteral(block, runtime.XPOD_AI.status),
+        displayName: matchLiteral(block, runtime.RDFS.label),
+        modelType: matchLiteral(block, runtime.UDFS.modelType),
+        isProvidedBy: matchIri(block, runtime.UDFS.isProvidedBy),
+        status: matchLiteral(block, runtime.UDFS.status),
       }
     })
     .filter(Boolean) as ParsedModelRow[]
@@ -297,26 +296,26 @@ function buildProviderSparql(runtime: AiRuntime, resourceUrl: string, podUrl: st
 }): string {
   const subject = `<${resourceUrl}#${payload.id}>`
   const deletes = [
-    `OPTIONAL { ${subject} <${runtime.XPOD_AI.baseUrl}> ?oldBaseUrl }`,
-    `OPTIONAL { ${subject} <${runtime.XPOD_AI.proxyUrl}> ?oldProxyUrl }`,
-    `OPTIONAL { ${subject} <${runtime.XPOD_AI.hasModel}> ?oldHasModel }`,
+    `OPTIONAL { ${subject} <${runtime.UDFS.baseUrl}> ?oldBaseUrl }`,
+    `OPTIONAL { ${subject} <${runtime.UDFS.proxyUrl}> ?oldProxyUrl }`,
+    `OPTIONAL { ${subject} <${runtime.UDFS.hasModel}> ?oldHasModel }`,
   ]
-  const inserts = [`${subject} a <${runtime.XPOD_AI.Provider}> .`]
+  const inserts = [`${subject} a <${runtime.UDFS.Provider}> .`]
 
   if (payload.baseUrl) {
-    inserts.push(`${subject} <${runtime.XPOD_AI.baseUrl}> ${quoteLiteral(payload.baseUrl)} .`)
+    inserts.push(`${subject} <${runtime.UDFS.baseUrl}> ${quoteLiteral(payload.baseUrl)} .`)
   }
   if (payload.proxyUrl) {
-    inserts.push(`${subject} <${runtime.XPOD_AI.proxyUrl}> ${quoteLiteral(payload.proxyUrl)} .`)
+    inserts.push(`${subject} <${runtime.UDFS.proxyUrl}> ${quoteLiteral(payload.proxyUrl)} .`)
   }
   if (payload.hasModel) {
-    inserts.push(`${subject} <${runtime.XPOD_AI.hasModel}> <${absolutePodUri(podUrl, payload.hasModel)}> .`)
+    inserts.push(`${subject} <${runtime.UDFS.hasModel}> <${absolutePodUri(podUrl, payload.hasModel)}> .`)
   }
 
   return `DELETE {
-  ${subject} <${runtime.XPOD_AI.baseUrl}> ?oldBaseUrl .
-  ${subject} <${runtime.XPOD_AI.proxyUrl}> ?oldProxyUrl .
-  ${subject} <${runtime.XPOD_AI.hasModel}> ?oldHasModel .
+  ${subject} <${runtime.UDFS.baseUrl}> ?oldBaseUrl .
+  ${subject} <${runtime.UDFS.proxyUrl}> ?oldProxyUrl .
+  ${subject} <${runtime.UDFS.hasModel}> ?oldHasModel .
 }
 INSERT {
   ${inserts.join('\n  ')}
@@ -337,37 +336,37 @@ function buildCredentialSparql(runtime: AiRuntime, resourceUrl: string, podUrl: 
 }): string {
   const subject = `<${resourceUrl}#${payload.id}>`
   const deletes = [
-    `OPTIONAL { ${subject} <${runtime.XPOD_CREDENTIAL.provider}> ?oldProvider }`,
-    `OPTIONAL { ${subject} <${runtime.XPOD_CREDENTIAL.service}> ?oldService }`,
-    `OPTIONAL { ${subject} <${runtime.XPOD_CREDENTIAL.status}> ?oldStatus }`,
-    `OPTIONAL { ${subject} <${runtime.XPOD_CREDENTIAL.apiKey}> ?oldApiKey }`,
-    `OPTIONAL { ${subject} <${runtime.XPOD_CREDENTIAL.baseUrl}> ?oldBaseUrl }`,
-    `OPTIONAL { ${subject} <${runtime.XPOD_CREDENTIAL.label}> ?oldLabel }`,
+    `OPTIONAL { ${subject} <${runtime.UDFS.provider}> ?oldProvider }`,
+    `OPTIONAL { ${subject} <${runtime.UDFS.service}> ?oldService }`,
+    `OPTIONAL { ${subject} <${runtime.UDFS.status}> ?oldStatus }`,
+    `OPTIONAL { ${subject} <${runtime.UDFS.apiKey}> ?oldApiKey }`,
+    `OPTIONAL { ${subject} <${runtime.UDFS.baseUrl}> ?oldBaseUrl }`,
+    `OPTIONAL { ${subject} <${runtime.RDFS.label}> ?oldLabel }`,
   ]
   const inserts = [
-    `${subject} a <${runtime.XPOD_CREDENTIAL.Credential}> .`,
-    `${subject} <${runtime.XPOD_CREDENTIAL.provider}> <${absolutePodUri(podUrl, payload.provider)}> .`,
-    `${subject} <${runtime.XPOD_CREDENTIAL.service}> ${quoteLiteral(payload.service)} .`,
-    `${subject} <${runtime.XPOD_CREDENTIAL.status}> ${quoteLiteral(payload.status)} .`,
+    `${subject} a <${runtime.UDFS.ApiKeyCredential}> .`,
+    `${subject} <${runtime.UDFS.provider}> <${absolutePodUri(podUrl, payload.provider)}> .`,
+    `${subject} <${runtime.UDFS.service}> ${quoteLiteral(payload.service)} .`,
+    `${subject} <${runtime.UDFS.status}> ${quoteLiteral(payload.status)} .`,
   ]
 
   if (payload.apiKey) {
-    inserts.push(`${subject} <${runtime.XPOD_CREDENTIAL.apiKey}> ${quoteLiteral(payload.apiKey)} .`)
+    inserts.push(`${subject} <${runtime.UDFS.apiKey}> ${quoteLiteral(payload.apiKey)} .`)
   }
   if (payload.baseUrl) {
-    inserts.push(`${subject} <${runtime.XPOD_CREDENTIAL.baseUrl}> ${quoteLiteral(payload.baseUrl)} .`)
+    inserts.push(`${subject} <${runtime.UDFS.baseUrl}> ${quoteLiteral(payload.baseUrl)} .`)
   }
   if (payload.label) {
-    inserts.push(`${subject} <${runtime.XPOD_CREDENTIAL.label}> ${quoteLiteral(payload.label)} .`)
+    inserts.push(`${subject} <${runtime.RDFS.label}> ${quoteLiteral(payload.label)} .`)
   }
 
   return `DELETE {
-  ${subject} <${runtime.XPOD_CREDENTIAL.provider}> ?oldProvider .
-  ${subject} <${runtime.XPOD_CREDENTIAL.service}> ?oldService .
-  ${subject} <${runtime.XPOD_CREDENTIAL.status}> ?oldStatus .
-  ${subject} <${runtime.XPOD_CREDENTIAL.apiKey}> ?oldApiKey .
-  ${subject} <${runtime.XPOD_CREDENTIAL.baseUrl}> ?oldBaseUrl .
-  ${subject} <${runtime.XPOD_CREDENTIAL.label}> ?oldLabel .
+  ${subject} <${runtime.UDFS.provider}> ?oldProvider .
+  ${subject} <${runtime.UDFS.service}> ?oldService .
+  ${subject} <${runtime.UDFS.status}> ?oldStatus .
+  ${subject} <${runtime.UDFS.apiKey}> ?oldApiKey .
+  ${subject} <${runtime.UDFS.baseUrl}> ?oldBaseUrl .
+  ${subject} <${runtime.RDFS.label}> ?oldLabel .
 }
 INSERT {
   ${inserts.join('\n  ')}
@@ -388,30 +387,30 @@ function buildModelSparql(runtime: AiRuntime, resourceUrl: string, podUrl: strin
 }): string {
   const subject = `<${resourceUrl}#${payload.id}>`
   const deletes = [
-    `OPTIONAL { ${subject} <${runtime.XPOD_AI.displayName}> ?oldDisplayName }`,
-    `OPTIONAL { ${subject} <${runtime.XPOD_AI.modelType}> ?oldModelType }`,
-    `OPTIONAL { ${subject} <${runtime.XPOD_AI.isProvidedBy}> ?oldIsProvidedBy }`,
-    `OPTIONAL { ${subject} <${runtime.XPOD_AI.status}> ?oldStatus }`,
-    `OPTIONAL { ${subject} <${runtime.XPOD_AI.createdAt}> ?oldCreatedAt }`,
-    `OPTIONAL { ${subject} <${runtime.XPOD_AI.updatedAt}> ?oldUpdatedAt }`,
+    `OPTIONAL { ${subject} <${runtime.RDFS.label}> ?oldDisplayName }`,
+    `OPTIONAL { ${subject} <${runtime.UDFS.modelType}> ?oldModelType }`,
+    `OPTIONAL { ${subject} <${runtime.UDFS.isProvidedBy}> ?oldIsProvidedBy }`,
+    `OPTIONAL { ${subject} <${runtime.UDFS.status}> ?oldStatus }`,
+    `OPTIONAL { ${subject} <${runtime.DCTerms.created}> ?oldCreatedAt }`,
+    `OPTIONAL { ${subject} <${runtime.DCTerms.modified}> ?oldUpdatedAt }`,
   ]
   const inserts = [
-    `${subject} a <${runtime.XPOD_AI.Model}> .`,
-    `${subject} <${runtime.XPOD_AI.displayName}> ${quoteLiteral(payload.displayName || payload.id)} .`,
-    `${subject} <${runtime.XPOD_AI.modelType}> ${quoteLiteral(payload.modelType || 'chat')} .`,
-    `${subject} <${runtime.XPOD_AI.isProvidedBy}> <${absolutePodUri(podUrl, payload.isProvidedBy)}> .`,
-    `${subject} <${runtime.XPOD_AI.status}> ${quoteLiteral(payload.status || 'active')} .`,
-    `${subject} <${runtime.XPOD_AI.createdAt}> ${dateTimeLiteral(payload.createdAt)} .`,
-    `${subject} <${runtime.XPOD_AI.updatedAt}> ${dateTimeLiteral(payload.updatedAt)} .`,
+    `${subject} a <${runtime.UDFS.Model}> .`,
+    `${subject} <${runtime.RDFS.label}> ${quoteLiteral(payload.displayName || payload.id)} .`,
+    `${subject} <${runtime.UDFS.modelType}> ${quoteLiteral(payload.modelType || 'chat')} .`,
+    `${subject} <${runtime.UDFS.isProvidedBy}> <${absolutePodUri(podUrl, payload.isProvidedBy)}> .`,
+    `${subject} <${runtime.UDFS.status}> ${quoteLiteral(payload.status || 'active')} .`,
+    `${subject} <${runtime.DCTerms.created}> ${dateTimeLiteral(payload.createdAt)} .`,
+    `${subject} <${runtime.DCTerms.modified}> ${dateTimeLiteral(payload.updatedAt)} .`,
   ]
 
   return `DELETE {
-  ${subject} <${runtime.XPOD_AI.displayName}> ?oldDisplayName .
-  ${subject} <${runtime.XPOD_AI.modelType}> ?oldModelType .
-  ${subject} <${runtime.XPOD_AI.isProvidedBy}> ?oldIsProvidedBy .
-  ${subject} <${runtime.XPOD_AI.status}> ?oldStatus .
-  ${subject} <${runtime.XPOD_AI.createdAt}> ?oldCreatedAt .
-  ${subject} <${runtime.XPOD_AI.updatedAt}> ?oldUpdatedAt .
+  ${subject} <${runtime.RDFS.label}> ?oldDisplayName .
+  ${subject} <${runtime.UDFS.modelType}> ?oldModelType .
+  ${subject} <${runtime.UDFS.isProvidedBy}> ?oldIsProvidedBy .
+  ${subject} <${runtime.UDFS.status}> ?oldStatus .
+  ${subject} <${runtime.DCTerms.created}> ?oldCreatedAt .
+  ${subject} <${runtime.DCTerms.modified}> ?oldUpdatedAt .
 }
 INSERT {
   ${inserts.join('\n  ')}
@@ -426,7 +425,7 @@ function buildCredentialDeleteSparql(runtime: AiRuntime, providerRef: string): s
   ?credential ?predicate ?object .
 }
 WHERE {
-  ?credential <${runtime.XPOD_CREDENTIAL.provider}> <${providerRef}> ;
+  ?credential <${runtime.UDFS.provider}> <${providerRef}> ;
     ?predicate ?object .
 }`
 }
@@ -442,7 +441,7 @@ export const aiCommand: CommandModule<object, AiArgs> = {
       })
       .positional('provider', {
         type: 'string',
-        description: 'Provider/backend id, for example claude, anthropic, codebuddy, codex',
+        description: 'Provider/backend id, for example anthropic, openai, codebuddy',
       })
       .option('url', { type: 'string', description: 'Server base URL override' })
       .option('api-key', { type: 'string', description: 'Provider API key' })
@@ -473,7 +472,7 @@ export const aiCommand: CommandModule<object, AiArgs> = {
       const filtered = Object.values(states).filter((state) => {
         if (!state.apiKey) return false
         if (!argv.provider) return true
-        return aiRuntime.sameAIConfigProviderFamily(argv.provider, state.id)
+        return aiRuntime.sameAIConfigProviderId(argv.provider, state.id)
       })
 
       if (filtered.length === 0) {
@@ -502,16 +501,11 @@ export const aiCommand: CommandModule<object, AiArgs> = {
         : 'Usage: linx ai connect <provider> --api-key <key>')
     }
 
-    const provider = aiRuntime.normalizeAIConfigProviderId(providerArg)
+    const provider = aiRuntime.extractAIConfigProviderId(providerArg)
 
     if (action === 'disconnect') {
-      const providerRefs = aiRuntime.getAIConfigProviderFamilyIds(provider).map((providerId) =>
-        absolutePodUri(podUrl, `/settings/ai/providers.ttl#${providerId}`),
-      )
-
-      for (const providerRef of providerRefs) {
-        await patchResource(credentialResource, accessToken, buildCredentialDeleteSparql(aiRuntime, providerRef))
-      }
+      const providerRef = absolutePodUri(podUrl, `/settings/ai/providers.ttl#${provider}`)
+      await patchResource(credentialResource, accessToken, buildCredentialDeleteSparql(aiRuntime, providerRef))
 
       process.stdout.write(`Disconnected AI provider: ${provider}\n`)
       return
@@ -595,7 +589,7 @@ export const aiCommand: CommandModule<object, AiArgs> = {
     const metadata = aiRuntime.getAIConfigProviderMetadata(provider)
     process.stdout.write(`Connected AI provider: ${metadata.id}\n`)
     if (modelId) {
-      process.stdout.write(`model: ${aiRuntime.normalizeAIConfigResourceId(modelId)}\n`)
+      process.stdout.write(`model: ${aiRuntime.extractAIConfigResourceId(modelId)}\n`)
     }
     process.stdout.write(`api-key: ${maskSecret(apiKey)}\n`)
   },

@@ -491,15 +491,15 @@ test('linx ai connect writes provider and credential config to Pod', async (t) =
   assert.ok(providerPatch)
   assert.ok(credentialPatch)
   assert.ok(modelPatch)
-  assert.match(providerPatch.body, /https:\/\/vocab\.xpod\.dev\/ai#Provider/)
-  assert.match(providerPatch.body, /https:\/\/vocab\.xpod\.dev\/ai#baseUrl/)
-  assert.match(providerPatch.body, /https:\/\/vocab\.xpod\.dev\/ai#hasModel/)
-  assert.match(credentialPatch.body, /https:\/\/vocab\.xpod\.dev\/credential#Credential/)
-  assert.match(credentialPatch.body, /https:\/\/vocab\.xpod\.dev\/credential#apiKey/)
+  assert.match(providerPatch.body, /https:\/\/undefineds\.co\/ns#Provider/)
+  assert.match(providerPatch.body, /https:\/\/undefineds\.co\/ns#baseUrl/)
+  assert.match(providerPatch.body, /https:\/\/undefineds\.co\/ns#hasModel/)
+  assert.match(credentialPatch.body, /https:\/\/undefineds\.co\/ns#ApiKeyCredential/)
+  assert.match(credentialPatch.body, /https:\/\/undefineds\.co\/ns#apiKey/)
   assert.doesNotMatch(credentialPatch.body, /defaultModel/)
-  assert.match(modelPatch.body, /https:\/\/vocab\.xpod\.dev\/ai#Model/)
-  assert.match(modelPatch.body, /https:\/\/vocab\.xpod\.dev\/ai#displayName/)
-  assert.match(modelPatch.body, /https:\/\/vocab\.xpod\.dev\/ai#isProvidedBy/)
+  assert.match(modelPatch.body, /https:\/\/undefineds\.co\/ns#Model/)
+  assert.match(modelPatch.body, /http:\/\/www\.w3\.org\/2000\/01\/rdf-schema#label/)
+  assert.match(modelPatch.body, /https:\/\/undefineds\.co\/ns#isProvidedBy/)
 })
 
 test('linx ai disconnect removes provider credential config from Pod', async (t) => {
@@ -531,13 +531,12 @@ test('linx ai disconnect removes provider credential config from Pod', async (t)
     FAKE_FETCH_LOG: logFile,
   }, modulePath)
 
-  assert.match(output, /Disconnected AI provider: anthropic/)
+  assert.match(output, /Disconnected AI provider: claude/)
 
   const requests = readRequests(logFile)
   const credentialPatches = requests.filter((item) =>
     item.method === 'PATCH' && item.url === 'https://pod.example/profile/settings/credentials.ttl')
 
-  assert.ok(credentialPatches.some((item) => /https:\/\/pod\.example\/profile\/settings\/ai\/providers\.ttl#anthropic/.test(item.body)))
   assert.ok(credentialPatches.some((item) => /https:\/\/pod\.example\/profile\/settings\/ai\/providers\.ttl#claude/.test(item.body)))
 })
 
@@ -568,15 +567,15 @@ test('linx ai status prints configured cloud AI credentials', async (t) => {
   ], {
     HOME: home,
     FAKE_FETCH_LOG: logFile,
-    FAKE_AI_STATUS_TTL: `<https://pod.example/profile/settings/credentials.ttl#anthropic-default> a <https://vocab.xpod.dev/credential#Credential> ;
-  <https://vocab.xpod.dev/credential#service> "ai" ;
-  <https://vocab.xpod.dev/credential#status> "active" ;
-  <https://vocab.xpod.dev/credential#provider> <https://pod.example/profile/settings/ai/providers.ttl#anthropic> ;
-  <https://vocab.xpod.dev/credential#apiKey> "sk-ant-test-key" .
+    FAKE_AI_STATUS_TTL: `<https://pod.example/profile/settings/credentials.ttl#anthropic-default> a <https://undefineds.co/ns#Credential> ;
+  <https://undefineds.co/ns#service> "ai" ;
+  <https://undefineds.co/ns#status> "active" ;
+  <https://undefineds.co/ns#provider> <https://pod.example/profile/settings/ai/providers.ttl#anthropic> ;
+  <https://undefineds.co/ns#apiKey> "sk-ant-test-key" .
 `,
-    FAKE_AI_STATUS_PROVIDERS_TTL: `<https://pod.example/profile/settings/ai/providers.ttl#anthropic> a <https://vocab.xpod.dev/ai#Provider> ;
-  <https://vocab.xpod.dev/ai#baseUrl> "https://api.anthropic.com/v1" ;
-  <https://vocab.xpod.dev/ai#hasModel> <https://pod.example/profile/settings/ai/models.ttl#claude-sonnet-4-20250514> .
+    FAKE_AI_STATUS_PROVIDERS_TTL: `<https://pod.example/profile/settings/ai/providers.ttl#anthropic> a <https://undefineds.co/ns#Provider> ;
+  <https://undefineds.co/ns#baseUrl> "https://api.anthropic.com/v1" ;
+  <https://undefineds.co/ns#hasModel> <https://pod.example/profile/settings/ai/models.ttl#claude-sonnet-4-20250514> .
 `,
   }, modulePath)
 
