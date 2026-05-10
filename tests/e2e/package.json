@@ -7,6 +7,9 @@
     "test:ui": "playwright test --ui",
     "test:headed": "playwright test --headed",
     "test:debug": "playwright test --debug",
+    "test:local-onboarding": "playwright test specs/local-onboarding.spec.ts --workers=1",
+    "test:real-auth": "playwright test specs/real-seeded-auth.spec.ts --workers=1",
+    "test:real-cloud": "playwright test specs/real-cloud-auth.spec.ts --workers=1",
     "test:chat": "playwright test specs/chat-e2e.spec.ts",
     "report": "playwright show-report"
   },

@@ -5532,6 +5532,27 @@
     "@iconify/types" "^2.0.0"
     mlly "^1.8.0"
 
+"@inrupt/oidc-client-ext@^1.17.5":
+  version "1.17.5"
+  resolved "https://registry.npmjs.org/@inrupt/oidc-client-ext/-/oidc-client-ext-1.17.5.tgz#b6ca5bc8e34718b7e7efe2ac1e7b5eef23d8674a"
+  integrity sha512-vYnYbNW+EwDeAkzLzLF77PLXVeajhZ0IqocC5M2xM9aGc0JgRIy8lnrwxrV/VLf2AXRig9Aqlv/RmLY1VTz2eg==
+  dependencies:
+    "@inrupt/oidc-client" "^1.11.6"
+    "@inrupt/solid-client-authn-core" "^1.17.5"
+    "@inrupt/universal-fetch" "^1.0.1"
+    jose "^4.15.4"
+    uuid "^9.0.1"
+
+"@inrupt/oidc-client-ext@^2.5.0":
+  version "2.5.0"
+  resolved "https://registry.npmjs.org/@inrupt/oidc-client-ext/-/oidc-client-ext-2.5.0.tgz#34d2b7639ae9595dd976855b15592b40f04a8e07"
+  integrity sha512-Pr89aEk0zWTghET6bAFvF75x3LL9X7Mj2aaum28DIfvMDoAgihJnc6O5UoTox3/0+r7bvz0JkhlQM7a8Gn4hig==
+  dependencies:
+    "@inrupt/oidc-client" "^1.11.6"
+    "@inrupt/solid-client-authn-core" "^2.5.0"
+    jose "^5.1.3"
+    uuid "^11.1.0"
+
 "@inrupt/oidc-client-ext@^3.1.1":
   version "3.1.1"
   resolved "https://registry.yarnpkg.com/@inrupt/oidc-client-ext/-/oidc-client-ext-3.1.1.tgz#49ceaae936d63a48bdffc75f8ab06446505b5b47"
@@ -5553,7 +5574,30 @@
     crypto-js "^4.0.0"
     serialize-javascript "^4.0.0"
 
-"@inrupt/solid-client-authn-browser@^1.12.1", "@inrupt/solid-client-authn-browser@^2.0.0", "@inrupt/solid-client-authn-browser@^3.0.0", "@inrupt/solid-client-authn-browser@^3.1.1":
+"@inrupt/solid-client-authn-browser@^1.12.1":
+  version "1.17.5"
+  resolved "https://registry.npmjs.org/@inrupt/solid-client-authn-browser/-/solid-client-authn-browser-1.17.5.tgz#222487afc0a0946c2affe4b0888d6afccb1b6d5f"
+  integrity sha512-zjyXPmKACp7syNsctQfkFhYCwEQ5QoTStLMbBFhtqJAsoWpo+d/awI1nljTDKxlJtYnvEoYjl2pM2aZMJ7mtew==
+  dependencies:
+    "@inrupt/oidc-client-ext" "^1.17.5"
+    "@inrupt/solid-client-authn-core" "^1.17.5"
+    "@inrupt/universal-fetch" "^1.0.2"
+    events "^3.3.0"
+    jose "^4.15.4"
+    uuid "^9.0.1"
+
+"@inrupt/solid-client-authn-browser@^2.0.0":
+  version "2.5.0"
+  resolved "https://registry.npmjs.org/@inrupt/solid-client-authn-browser/-/solid-client-authn-browser-2.5.0.tgz#e076f2db1ab6a86b4dcd18488c2c8ca0721f0f30"
+  integrity sha512-ftY1UCgTDkjcvfmQKBI8QRcxvRo84Os0tSDRjlUYPKS+dj0Qq6s4WbBenj6j7tsi0TlkCMw8jeGruL6ePdtI1Q==
+  dependencies:
+    "@inrupt/oidc-client-ext" "^2.5.0"
+    "@inrupt/solid-client-authn-core" "^2.5.0"
+    events "^3.3.0"
+    jose "^5.1.3"
+    uuid "^11.1.0"
+
+"@inrupt/solid-client-authn-browser@^3.0.0", "@inrupt/solid-client-authn-browser@^3.1.1":
   version "3.1.1"
   resolved "https://registry.yarnpkg.com/@inrupt/solid-client-authn-browser/-/solid-client-authn-browser-3.1.1.tgz#ac9661e1e694fedc9443c1de13e2010c4e2429b4"
   integrity sha512-Wd7TREmvdhTp+Sk88ei3hlg54sG1fNqkkPkuS+2tDBkcsXaViRQAEugVyh5pWRkd1xSFKrEzftb7UYEG4mJ0CQ==
@@ -5573,6 +5617,15 @@
     events "^3.3.0"
     jose "^4.15.4"
     uuid "^9.0.1"
+
+"@inrupt/solid-client-authn-core@^2.5.0":
+  version "2.5.0"
+  resolved "https://registry.npmjs.org/@inrupt/solid-client-authn-core/-/solid-client-authn-core-2.5.0.tgz#1f9c29e001c061fe20aea7c85831af9285c9c9b6"
+  integrity sha512-S02hizURW3IL4d03Cn1xZTz25KqZdmS7qYfkOb/UHwPcy+VA7G8Um1xeDByqu7Bva2yPjNk5iCrKKUMmGb56mA==
+  dependencies:
+    events "^3.3.0"
+    jose "^5.1.3"
+    uuid "^11.1.0"
 
 "@inrupt/solid-client-authn-core@^3.1.1":
   version "3.1.1"
@@ -5609,7 +5662,23 @@
   resolved "https://registry.yarnpkg.com/@inrupt/solid-client-errors/-/solid-client-errors-0.0.2.tgz#58b1e44024cf344866f23e4866db7a0e2a0e816c"
   integrity sha512-Nhq39DJMKDMc35/VFT168v9JwuKzfzCHPN4fYYAE/Q0ECtM6PuBGT7nu0gZ06+S0pZQasHDyTkOGXRIx+zkvJA==
 
-"@inrupt/solid-client@^2.0.0", "@inrupt/solid-client@^3.0.0":
+"@inrupt/solid-client@^2.0.0":
+  version "2.1.2"
+  resolved "https://registry.npmjs.org/@inrupt/solid-client/-/solid-client-2.1.2.tgz#52d6821704d3d5f96a5b265dd23f5988a0857ee7"
+  integrity sha512-JCqWe2Kl0fVjBpd+Ntdjrd1rhv4v9NkiQI/PXE0wOhfmj/zNd45/qu8nGbpojfnUqopmBZSN2BU4dUpGy795nQ==
+  dependencies:
+    "@inrupt/solid-client-errors" "^0.0.2"
+    "@rdfjs/dataset" "^1.1.1"
+    buffer "^6.0.3"
+    http-link-header "^1.1.1"
+    jsonld-context-parser "^3.0.0"
+    jsonld-streaming-parser "^4.0.1"
+    n3 "^1.17.2"
+    uuid "^10.0.0"
+  optionalDependencies:
+    fsevents "^2.3.3"
+
+"@inrupt/solid-client@^3.0.0":
   version "3.0.0"
   resolved "https://registry.yarnpkg.com/@inrupt/solid-client/-/solid-client-3.0.0.tgz#df02e75a62866ecb3c4b13a70a8a28d0167a7764"
   integrity sha512-QQCLakUeQldTAFewZZv7qlIotAlXnN1ZigRphr6SNKck2L9NAESWihba9i+9/AJLMnAPStx9XS+WuJswzlmhVA==
@@ -5636,7 +5705,7 @@
     stream "0.0.2"
     swr "^2.2.4"
 
-"@inrupt/universal-fetch@^1.0.1", "@inrupt/universal-fetch@^1.0.3":
+"@inrupt/universal-fetch@^1.0.1", "@inrupt/universal-fetch@^1.0.2", "@inrupt/universal-fetch@^1.0.3":
   version "1.0.3"
   resolved "https://registry.yarnpkg.com/@inrupt/universal-fetch/-/universal-fetch-1.0.3.tgz#b13cedc95e6e7adbd6b749846ab0c7e49e918f9c"
   integrity sha512-AP/nMOuuKvR2YoQkdS77ntuuq5ZYDGStI8Uirp1MCsyPSoBLyNnRjMLjlGqIlaC+5Xp7TYZJ9z/Kl2uUEpXUFw==
@@ -9233,7 +9302,15 @@
     sparqljs "^3.7.3"
     zod "^4.1.8"
 
-"@undefineds.co/models@0.1.1", "@undefineds.co/models@0.2.0":
+"@undefineds.co/models@0.1.1":
+  version "0.1.1"
+  resolved "https://registry.npmjs.org/@undefineds.co/models/-/models-0.1.1.tgz#322bbe9a7a679c5e788eca39ecca282c025f3b8e"
+  integrity sha512-H4xUnXq8KkrS+E7IdRO06MZ8LsFSGo2ZekQrb+fEUWXwLp/3G/H6bFt/ktyIGLAlUoPMA6HTs3JSsD9KhE4ifw==
+  dependencies:
+    "@undefineds.co/drizzle-solid" "^0.3.4"
+    zod "^3.22.4"
+
+"@undefineds.co/models@0.2.0":
   version "0.2.0"
   resolved "https://registry.npmmirror.com/@undefineds.co/models/-/models-0.2.0.tgz#8de5d830da4f7ad0e46792c9c13e3603f17d8e82"
   integrity sha512-xR7QtCdW6qCEgtU3HniXrW7QVIS4xf+k5vRXvAatXrloDtBQUx+eqQJum8SmwO5Nyci/isJfWg8dQpx8usJsFg==
@@ -9241,10 +9318,10 @@
     "@undefineds.co/drizzle-solid" "^0.3.4"
     zod "^3.22.4"
 
-"@undefineds.co/xpod@0.2.2":
-  version "0.2.2"
-  resolved "https://registry.npmmirror.com/@undefineds.co/xpod/-/xpod-0.2.2.tgz#e81d17e252f93da1bac73aed1298368f20c54f18"
-  integrity sha512-6Tn78wcGbb1V9V2j1LRcILmECycgnkFlk0AdkpqWCpyy65x+i+3aotgii+RDt7+ypLK+dH+hkmayod4VnvH8yw==
+"@undefineds.co/xpod@0.2.35":
+  version "0.2.35"
+  resolved "https://registry.npmmirror.com/@undefineds.co/xpod/-/xpod-0.2.35.tgz#82ffe8b1dea9cc66c2bef682ae265daef25f699b"
+  integrity sha512-k/mKlw83sTV5+mSjFOVnA48hmnVkqPiaOhDF/9VrCtdGnydgueobphNFoeMOk7451U6XcRUXDMSaeV+HcST01g==
   dependencies:
     "@agentclientprotocol/sdk" "^0.14.1"
     "@ai-sdk/openai" "^3.0.2"
@@ -11390,10 +11467,25 @@ dotenv@^17.2.2:
   resolved "https://registry.yarnpkg.com/dotenv/-/dotenv-17.2.3.tgz#ad995d6997f639b11065f419a22fabf567cdb9a2"
   integrity sha512-JVUnt+DUIzu87TABbhPmNfVdBDt18BLOWjMUFJMSi/Qqg7NTYtabbvSNJGOJ7afbRuv9D/lngizHtP7QyLQ+9w==
 
-drizzle-orm@^0.28.0, drizzle-orm@^0.32.2, drizzle-orm@^0.44.7, drizzle-orm@^0.45.1:
+drizzle-orm@^0.28.0:
+  version "0.28.6"
+  resolved "https://registry.npmjs.org/drizzle-orm/-/drizzle-orm-0.28.6.tgz#9c28ace432e826e3c21ea923530df0d1e76810be"
+  integrity sha512-yBe+F9htrlYER7uXgDJUQsTHFoIrI5yMm5A0bg0GiZ/kY5jNXTWoEy4KQtg35cE27sw1VbgzoMWHAgCckUUUww==
+
+drizzle-orm@^0.32.2:
   version "0.32.2"
   resolved "https://registry.yarnpkg.com/drizzle-orm/-/drizzle-orm-0.32.2.tgz#a44d8703120d44ad8005c6130b0b96ef967534d3"
   integrity sha512-3fXKzPzrgZIcnWCSLiERKN5Opf9Iagrag75snfFlKeKSYB1nlgPBshzW3Zn6dQymkyiib+xc4nIz0t8U+Xdpuw==
+
+drizzle-orm@^0.44.7:
+  version "0.44.7"
+  resolved "https://registry.npmjs.org/drizzle-orm/-/drizzle-orm-0.44.7.tgz#6f67c80c6b64d9c18a401e8e5d03dfa67b652011"
+  integrity sha512-quIpnYznjU9lHshEOAYLoZ9s3jweleHlZIAWR/jX9gAWNg/JhQ1wj0KGRf7/Zm+obRrYd9GjPVJg790QY9N5AQ==
+
+drizzle-orm@^0.45.1:
+  version "0.45.2"
+  resolved "https://registry.npmjs.org/drizzle-orm/-/drizzle-orm-0.45.2.tgz#37eb5e4e6bd1309cb8d5414de09632d8f82d8a65"
+  integrity sha512-kY0BSaTNYWnoDMVoyY8uxmyHjpJW1geOmBMdSSicKo9CIIWkSxMIj2rkeSR51b8KAPB7m+qysjuHme5nKP+E5Q==
 
 dunder-proto@^1.0.1:
   version "1.0.1"
@@ -16951,7 +17043,14 @@ react-zoom-pan-pinch@^3.7.0:
   resolved "https://registry.yarnpkg.com/react-zoom-pan-pinch/-/react-zoom-pan-pinch-3.7.0.tgz#7db4d2ec49c316eb20f71c56e9012eeb3ef4b504"
   integrity sha512-UmReVZ0TxlKzxSbYiAj+LeGRW8s8LraAFTXRAxzMYnNRgGPsxCudwZKVkjvGmjtx7SW/hZamt69NUmGf4xrkXA==
 
-react@18.2.0, react@18.3.1, react@^18.2.0, react@^18.3.1:
+react@18.2.0:
+  version "18.2.0"
+  resolved "https://registry.npmjs.org/react/-/react-18.2.0.tgz#555bd98592883255fa00de14f1151a917b5d77d5"
+  integrity sha512-/3IjMdb2L9QbBdWiW5e3P2/npwMBaU9mHCSCUzNln0ZCYbcfTsGbTJrU/kGemdH2IWmB2ioZ+zkxtmq6g09fGQ==
+  dependencies:
+    loose-envify "^1.1.0"
+
+react@18.3.1, react@^18.2.0, react@^18.3.1:
   version "18.3.1"
   resolved "https://registry.yarnpkg.com/react/-/react-18.3.1.tgz#49ab892009c53933625bd16b2533fc754cab2891"
   integrity sha512-wS+hAgJShR0KhEvPJArfuPVN1+Hz1t0Y6n5jLrGQbkb4urgPE/0Rve+1kMB1v/oWgHgm4WIcV+i7F2pTVj+2iQ==
@@ -18823,6 +18922,11 @@ utils-merge@1.0.1:
   version "1.0.1"
   resolved "https://registry.yarnpkg.com/utils-merge/-/utils-merge-1.0.1.tgz#9f95710f50a267947b2ccc124741c1028427e713"
   integrity sha512-pMZTvIkT1d+TFGvDOqodOclx0QWkkgi6Tdoa8gC8ffGAAqz9pzPTZWAybbsHHoED/ztMtkv/VoYTYyShUn81hA==
+
+uuid@^10.0.0:
+  version "10.0.0"
+  resolved "https://registry.npmjs.org/uuid/-/uuid-10.0.0.tgz#5a95aa454e6e002725c79055fd42aaba30ca6294"
+  integrity sha512-8XkAphELsDnEGrDxUOHB3RGvXz6TeuYSGEZBOjtTtPm2lwhGBjLgOzLHB63IUWfBpNucQjND6d3AOudO+H3RWQ==
 
 uuid@^11.0.0, uuid@^11.0.1, uuid@^11.1.0:
   version "11.1.0"

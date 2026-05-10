@@ -4,9 +4,17 @@
   "private": true,
   "scripts": {
     "build:web": "yarn --cwd ../web build",
-    "sync": "yarn --cwd ../web build && capacitor sync",
-    "build": "yarn --cwd ../web build && capacitor sync",
-    "run": "capacitor run"
+    "sync": "yarn run build:web && node ./scripts/capacitor-sync.mjs",
+    "build": "yarn run sync",
+    "smoke": "yarn run build",
+    "build:android:debug": "node ./scripts/build-android-debug.mjs",
+    "doctor": "capacitor doctor",
+    "add:android": "capacitor add android",
+    "add:ios": "capacitor add ios",
+    "open:android": "capacitor open android",
+    "open:ios": "capacitor open ios",
+    "run:android": "yarn run build:web && capacitor run android",
+    "run:ios": "yarn run build:web && capacitor run ios"
   },
   "dependencies": {
     "@capacitor/android": "^6.1.0",

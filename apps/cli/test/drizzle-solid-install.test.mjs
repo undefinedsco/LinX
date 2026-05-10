@@ -19,8 +19,9 @@ test('drizzle-solid install no longer relies on local patch-package override', (
   const comunicaPatchSource = readFileSync(comunicaPatchPath, 'utf-8')
   const sparqlEngineSource = readFileSync(sparqlEnginePath, 'utf-8')
 
-  assert.match(comunicaPatchSource, /applyComunicaPatches = \(\) => false/)
+  assert.match(comunicaPatchSource, /export const applyComunicaPatches = \(requireModule = defaultRequireModule\)/)
+  assert.match(comunicaPatchSource, /patchActionObserverHttp/)
   assert.match(sparqlEngineSource, /await import\('@comunica\/query-sparql-solid'\)/)
-  assert.match(sparqlEngineSource, /void resolveFrom;/)
-  assert.doesNotMatch(sparqlEngineSource, /resolveCreateRequire/)
+  assert.match(sparqlEngineSource, /applyComunicaPatches\(requireFrom\)/)
+  assert.match(sparqlEngineSource, /resolveCreateRequire/)
 })
