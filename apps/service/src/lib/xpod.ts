@@ -9,6 +9,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { spawn, ChildProcess } from 'child_process'
 import { getWebServerModule } from './web-server'
+import { resolveLinxUserDataDir } from './linx-paths'
 
 const XPOD_PACKAGE_CANDIDATES = ['@undefineds.co/xpod', 'xpod']
 
@@ -394,7 +395,7 @@ export class XpodModule {
     }
 
     const env = parseEnvFile(envPath)
-    const dataDir = env.CSS_ROOT_FILE_PATH || path.join(process.env.HOME || '', 'Library', 'Application Support', 'LinX', 'pod')
+    const dataDir = env.CSS_ROOT_FILE_PATH || path.join(resolveLinxUserDataDir(), 'pod')
     if (!fs.existsSync(dataDir)) {
       fs.mkdirSync(dataDir, { recursive: true })
       console.log('[Xpod] Created data directory:', dataDir)

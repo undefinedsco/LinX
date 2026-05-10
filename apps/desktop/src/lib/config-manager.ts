@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { app } from 'electron';
+import { ensureLinxLocalHome } from './local-home';
 
 export interface EnvConfig {
   [key: string]: string;
@@ -91,8 +91,7 @@ export class ConfigManager {
   private config: EnvConfig = {};
 
   constructor(configDir?: string) {
-    const baseDir = configDir || app.getPath('userData');
-    this.configPath = path.join(baseDir, '.env');
+    this.configPath = ensureLinxLocalHome(configDir).envFile;
     this.load();
   }
 
@@ -166,6 +165,14 @@ export class ConfigManager {
    */
   update(updates: EnvConfig): void {
     this.config = { ...this.config, ...updates };
+    this.save();
+  }
+
+  /**
+   * 用完整配置替换当前配置
+   */
+  replace(config: EnvConfig): void {
+    this.config = { ...config };
     this.save();
   }
 

@@ -1,18 +1,15 @@
 # LinX Desktop
 
-Electron 桌面应用，集成 xpod 作为本地 Solid Pod 服务器。
+Electron 桌面应用，负责控制和连接本机独立运行的 `xpod` 服务。
 
 ## 开发设置
 
 ```bash
-# 1. 创建 xpod 符号链接（首次）
-yarn link:xpod
-
-# 2. 构建 xpod（首次或 xpod 代码变更后）
-yarn build:xpod
-
-# 3. 启动开发环境
+# 1. 启动 Web 开发服务器并打开桌面壳
 yarn dev
+
+# 2. 使用桌面专用 Web 产物启动桌面壳
+yarn start
 ```
 
 ## 架构
@@ -20,12 +17,12 @@ yarn dev
 ```
 LinX Desktop
 ├── Electron Main Process
-│   ├── Supervisor      # 进程管理器
+│   ├── Supervisor      # 前台辅助进程管理
 │   ├── ConfigManager   # 配置管理（~/.config/LinX/.env）
 │   └── Tray Menu       # 系统托盘
 │
-└── xpod (子进程)
-    └── Solid Pod Server (localhost:3000)
+└── xpod (独立后台服务)
+    └── Solid Pod Server (LinX 退出后继续运行)
 ```
 
 ## 打包
@@ -40,7 +37,7 @@ yarn dist:win
 yarn dist:linux
 ```
 
-打包时会将 `vendor/xpod` 目录复制到应用的 Resources 目录。
+打包时会将桌面专用的 `apps/web/dist-desktop` 和 `@undefineds.co/xpod` 一并复制到应用的 Resources 目录。不要再直接拿普通 `apps/web/dist` 给桌面壳使用，否则 `file://` 下会因为绝对资源路径而白屏。
 
 ## 目录结构
 
@@ -51,10 +48,6 @@ apps/desktop/
 │   ├── preload.ts        # 预加载脚本
 │   ├── lib/
 │   │   └── config-manager.ts
-│   └── pages/
-│       └── config.html   # 配置页面
-├── vendor/
-│   └── xpod -> /path/to/xpod  # 符号链接（开发）
 └── release/              # 打包输出
 ```
 
@@ -64,3 +57,5 @@ xpod 的配置通过 ConfigManager 管理，存储在：
 - macOS: `~/Library/Application Support/LinX/.env`
 - Windows: `%APPDATA%/LinX/.env`
 - Linux: `~/.config/LinX/.env`
+
+`xpod` 的运行状态、日志和单文件缓存也放在对应的 `LinX` userData 目录下。

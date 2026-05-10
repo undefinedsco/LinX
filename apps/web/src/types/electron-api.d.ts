@@ -13,7 +13,7 @@ export interface ManagedPodConfig {
   dataDir: string
   port: number
   domain: {
-    type: 'none' | 'undefineds' | 'custom'
+    type: 'none' | 'custom'
     value?: string
   }
   tunnelToken?: string
@@ -32,7 +32,7 @@ export interface XpodStartOptions {
   dataDir: string
   port: number
   domain?: {
-    type: 'none' | 'undefineds' | 'custom'
+    type: 'none' | 'custom'
     value?: string
   }
   tunnelToken?: string
@@ -40,10 +40,69 @@ export interface XpodStartOptions {
 
 export interface XpodStatus {
   running: boolean
+  status?: 'starting' | 'running' | 'stopped' | 'error'
   providerId?: string
   port?: number
   baseUrl?: string
+  localUrl?: string
   pid?: number
+  provisioning?: XpodProvisioningInfo
+}
+
+export interface XpodProvisioningInfo {
+  nodeId: string
+  publicUrl: string
+  provisionCode: string
+  provisionUrl: string
+  spDomain?: string
+  cloudIdentityUrl: string
+  cloudApiUrl: string
+  registeredAt: number
+}
+
+export interface AppUpdateStatus {
+  currentVersion: string
+  latestVersion: string | null
+  releaseUrl: string | null
+  checkedAt: string | null
+  available: boolean
+  source: 'github-release' | 'custom-feed'
+  error: string | null
+}
+
+export type LocalOnboardingMode = 'device-only' | 'remote-ready'
+
+export type LocalOnboardingState =
+  | 'mode_required'
+  | 'idle'
+  | 'checking'
+  | 'starting'
+  | 'repair_required'
+  | 'ready'
+  | 'error'
+
+export interface LocalOnboardingCapabilities {
+  supported: boolean
+  contract: string | null
+  baseUrl: string | null
+  version: string | null
+}
+
+export interface LocalOnboardingSnapshot {
+  state: LocalOnboardingState
+  mode: LocalOnboardingMode | null
+  localUrl: string | null
+  baseUrl: string | null
+  publicUrl: string | null
+  capabilities: LocalOnboardingCapabilities | null
+  cloudIdentityUrl: string | null
+  provisionCode: string | null
+  provisionUrl: string | null
+  nodeId: string | null
+  message: string | null
+  errorCode: string | null
+  canRetry: boolean
+  canOpenSettings: boolean
 }
 
 export interface ProviderAPI {
@@ -87,12 +146,51 @@ export interface DialogAPI {
   selectDirectory: () => Promise<string | null>
 }
 
+export interface AppAPI {
+  getVersion: () => Promise<string>
+  getConfigWindowState: () => Promise<{ open: boolean; reason: 'opened' | 'closed'; ready: boolean }>
+  getUpdateStatus: (force?: boolean) => Promise<AppUpdateStatus>
+  openExternal: (url: string) => Promise<void>
+  openConfigWindow: () => Promise<{ success: boolean }>
+  closeConfigWindow: () => Promise<{ success: boolean }>
+  onConfigWindowState: (
+    callback: (state: { open: boolean; reason: 'opened' | 'closed'; ready: boolean }) => void,
+  ) => () => void
+}
+
+export interface AuthAPI {
+  prepareLoopbackRedirect: () => Promise<string>
+  getEmbeddedAuthorizationState: () => Promise<{ open: boolean; reason: 'opened' | 'completed' | 'dismissed'; ready: boolean }>
+  openAuthorizationWindow: (url: string) => Promise<void>
+  openEmbeddedAuthorization: (url: string) => Promise<void>
+  closeEmbeddedAuthorization: () => Promise<void>
+  consumePendingRedirect: () => Promise<string | null>
+  onAuthorizationWindowState: (
+    callback: (state: { open: boolean; reason: 'opened' | 'completed' | 'dismissed' }) => void,
+  ) => () => void
+  onEmbeddedAuthorizationState: (
+    callback: (state: { open: boolean; reason: 'opened' | 'completed' | 'dismissed'; ready: boolean }) => void,
+  ) => () => void
+  onRedirect: (callback: () => void) => () => void
+}
+
+export interface LocalOnboardingAPI {
+  getSnapshot: () => Promise<LocalOnboardingSnapshot>
+  chooseMode: (mode: LocalOnboardingMode) => Promise<LocalOnboardingSnapshot>
+  continue: () => Promise<LocalOnboardingSnapshot>
+  refresh: () => Promise<LocalOnboardingSnapshot>
+  onStateChange: (callback: (snapshot: LocalOnboardingSnapshot) => void) => () => void
+}
+
 export interface XpodDesktopAPI {
   provider: ProviderAPI
   xpod: XpodAPI
   config: ConfigAPI
   supervisor: SupervisorAPI
   dialog: DialogAPI
+  app: AppAPI
+  auth: AuthAPI
+  localOnboarding: LocalOnboardingAPI
 }
 
 declare global {

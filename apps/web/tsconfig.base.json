@@ -23,7 +23,9 @@
     /* Path mapping */
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@linx/client": ["../../packages/client/src/index.ts"],
+      "@linx/client/*": ["../../packages/client/src/*"]
     }
   },
   "include": ["src"],
