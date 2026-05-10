@@ -13,7 +13,7 @@
 ```
 Solid Pod (SPARQL/RDF) 
     ↓ drizzle-solid 
-TypeScript Models (@linx/models)
+TypeScript Models (@undefineds.co/models)
     ↓ TanStack Query
 Frontend State (React)
     ↓ User Actions
@@ -32,7 +32,7 @@ UI Components
 
 ### 2.1 模型到State的直接映射
 
-**原则**：每个 `@linx/models` 中的 Table Schema 直接映射为 React State
+**原则**：每个 `@undefineds.co/models` 中的 Table Schema 直接映射为 React State
 
 ```typescript
 // packages/models/src/chat/chat.schema.ts
@@ -836,7 +836,7 @@ function ChatList() {
 
 **Phase 2：自动化状态生成**
 ```typescript
-// 1. 基于 @linx/models 自动生成前端状态类型
+// 1. 基于 @undefineds.co/models 自动生成前端状态类型
 // 2. 自动生成标准的 CRUD Hooks
 // 3. 自动生成 UI 状态管理
 ```
@@ -849,12 +849,12 @@ function ChatList() {
 
 ### 9.9 DataLayer + Store 统一实践
 
-> 目的：把仓储（@linx/models）、数据仓库（@linx/stores）与 UI 模板解耦，形成可复用的微应用骨架。
+> 目的：把仓储（@undefineds.co/models）、数据仓库（@linx/stores）与 UI 模板解耦，形成可复用的微应用骨架。
 
 #### 包职责
 
 ```
-@linx/models   → drizzle-solid schema & repositories
+@undefineds.co/models   → drizzle-solid schema & repositories
 @linx/stores   → createDataLayer (TanStack Query + Zustand store)
 @linx/shared-ui → 标准化列表/详情组件
 ```
@@ -945,7 +945,7 @@ const { ids, entities, selectedId } = useChatStore((state) => ({
 
 | 层 | 职责 |
 | --- | --- |
-| `@linx/models` | Schema + Repository 描述（纯 drizzle-solid） |
+| `@undefineds.co/models` | Schema + Repository 描述（纯 drizzle-solid） |
 | `@linx/stores` | TanStack Query hooks + 实体 store + invalidate 策略 |
 | Module UI store | 模块特有 UI 状态（面板开关、搜索词等） |
 | `@linx/shared-ui` | 可复用列表/详情模板，消费 store 接口 |
@@ -959,7 +959,7 @@ const { ids, entities, selectedId } = useChatStore((state) => ({
 ### 10.1 核心数据流
 
 ```
-@linx/models (drizzle-solid schemas)
+@undefineds.co/models (drizzle-solid schemas)
     ↓ 类型推导
 React State Types (自动生成)
     ↓ TanStack Query
@@ -1206,7 +1206,7 @@ await forceCleanupLegacyData()
 **完全不使用 IndexedDB**，原因：
 
 1. **复杂性问题**：如果要在 IndexedDB 中复刻整套数据结构，就需要：
-   - 维护与 `@linx/models` 完全一致的 schema
+   - 维护与 `@undefineds.co/models` 完全一致的 schema
    - 处理关系型数据的存储和查询
    - 同步 drizzle-solid 的变更到本地存储
    - 解决数据一致性问题
@@ -1225,7 +1225,7 @@ await forceCleanupLegacyData()
 
 ```typescript
 // ===== 统一的数据流 =====
-@linx/models (drizzle-solid)
+@undefineds.co/models (drizzle-solid)
     ↓ 直接查询 Solid Pod
 TanStack Query (内存缓存)
     ↓ 类型安全的数据

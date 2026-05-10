@@ -7,7 +7,7 @@
 当前权威包约定：
 
 - `@undefineds.co/models`：共享数据面权威源
-- `@linx/models`：Linx 仓内兼容入口，逐步收缩为适配层
+- `@linx/client`：Linx 仓内客户端 helper 包
 
 ## Core Rule
 
@@ -34,15 +34,15 @@
 
 当前主线：
 
-- `@linx/models/watch`: watch session/event/archive contract
-- `@linx/models/watch`: `credential-source=local|cloud|auto` 解析 helper
-- `@linx/models/watch`: auth failure / auth status normalization helper
-- `@linx/models/watch`: generic JSON line / codex JSON-RPC event normalization helper
-- `@linx/models/watch`: approval request / structured user-input / auto-approval decision helper
+- `@linx/client/watch`: watch session/event/archive contract
+- `@linx/client/watch`: `credential-source=local|cloud|auto` 解析 helper
+- `@linx/client/watch`: auth failure / auth status normalization helper
+- `@linx/client/watch`: generic JSON line / codex JSON-RPC event normalization helper
+- `@linx/client/watch`: approval request / structured user-input / auto-approval decision helper
 - `@undefineds.co/models`: `approval / audit / inbox_notification` 是跨端 remote approval 的共享真相
-- `@linx/models/client`: `~/.linx` account/config/secrets contract
-- `@linx/models/client`: linx cloud login bootstrap / whoami field helper
-- `@linx/models/client`: linx cloud account API 与 runtime API URL 解析 helper
+- `@linx/client`: `~/.linx` account/config/secrets contract
+- `@linx/client`: linx cloud login bootstrap / whoami field helper
+- `@linx/client`: linx cloud account API 与 runtime API URL 解析 helper
 
 强约束：
 

@@ -79,4 +79,4 @@
 ### SolidOS
 - **Repo**: https://github.com/SolidOS
 - **用途**: 参考标准 Solid 数据结构，确保与 SolidOS 应用互操作
-- **本地 Schema**: `packages/models/src/schemas/solid-os/`
+- **共享 Schema**: `@undefineds.co/models` 仓库中的 `src/schemas/solid-os/`

@@ -1,0 +1,52 @@
+name: CI Smoke
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+concurrency:
+  group: ci-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Build shared client
+        run: yarn workspace @linx/client build
+
+      - name: Web build check
+        run: yarn workspace @linx/web build:check
+
+      - name: Desktop tests
+        run: yarn workspace @linx/desktop test
+
+      - name: Desktop package smoke
+        if: matrix.os == 'ubuntu-latest'
+        run: yarn workspace @linx/desktop run package:dir
+
+      - name: Mobile shell smoke
+        run: yarn workspace @linx/mobile smoke

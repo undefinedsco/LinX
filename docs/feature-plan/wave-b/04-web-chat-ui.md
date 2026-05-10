@@ -95,7 +95,7 @@ ChatListPane 根据 `chatType` 字段差异化渲染：
 
 ### 6A.4 不新增 Pod 表
 
-Web Chat UI 不新增任何 Pod 表。所有数据读写通过 `@linx/models` 导出的 table 和 repository 完成。
+Web Chat UI 不新增任何 Pod 表。所有数据读写通过 `@undefineds.co/models` 导出的 schema / repository 合同完成。
 
 ---
 
@@ -429,4 +429,3 @@ interface ChatItemData {
 | `paused` | ⏸ 已暂停 | `text-muted-foreground` |
 | `completed` | ✅ 已完成 | `text-green-600` |
 | `error` | ❌ 错误 | `text-red-600` |
-

@@ -78,15 +78,21 @@ LinX 直接调用 API，而不是自己 `spawn` + 猜测 ready。
 LinX 目前产品配置采用 5 项主配置：
 
 1. 数据地址
-2. 公网域名（手填或 cloud 分配）
-3. 自动检查公网 IP
+2. 公网域名（用户自己的域名，可选或必填取决于部署路线）
+3. 本机/局域网或公网直连选择
 4. 隧道供应商（cloudflare / sakura frp）
 5. HTTPS 证书
 
 补充原则：
 
-- 当自动检测到公网 IP 可达时，默认不走隧道
-- 当选择 cloud 自动分配域名时，不强制用户手填域名
+- `cloud` 路线不启动本地 xpod，不需要 Local SP 域名
+- `local` 默认自动路径是 device-only，只启动本地 xpod，不要求公网域名，只保证本机/局域网验证
+- `local` + Cloud IDP 需要外网可访问时，公网域名必须由用户自己提供
+- 当用户确认本机外网可直连时，可以不走隧道，但如果要走 Cloud IDP + Local SP，仍需要用户自己的公网 URL
+- 当外网不可直连时，用户需要自己的公网 URL 或隧道供应商稳定分配的 HTTPS 域名，并把它接到隧道出口
+- `standalone` 默认使用 `localhost`，公网域名可选
+- LinX 不再提供 `node-*.undefineds.co` 或 `pods.undefineds.co` 这类 Local SP 自动分配域名
+- `CSS_BASE_STORAGE_DOMAIN` 不再是 Local onboarding 的用户配置路径
 - 隧道供应商与隧道 token 必须成对配置（或允许复用已有 token）
 
 这些属于“LinX 产品配置层”，xpod 侧只需保证对 env/参数的消费语义稳定。
@@ -125,4 +131,3 @@ LinX 不做 dashboard 复刻。LinX 只需要：
 - 一份 launcher 契约文档（参数、返回、退出码、错误码）
 - 一组最小 E2E 用例（run/status/health/stop）
 - 版本变更日志中注明 launcher 兼容性策略
-

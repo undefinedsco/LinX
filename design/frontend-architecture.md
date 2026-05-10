@@ -49,7 +49,7 @@ LinX 前端架构遵循以下核心原则：
 │  └── React Context (全局状态)                              │
 ├─────────────────────────────────────────────────────────────┤
 │  🔌 Data Layer                                             │
-│  ├── @linx/models (Solid Pod ORM)                          │
+│  ├── @undefineds.co/models (Solid Pod data SDK)           │
 │  ├── drizzle-solid (数据访问)                              │
 │  └── @inrupt/solid-client (Solid 集成)                     │
 ├─────────────────────────────────────────────────────────────┤
@@ -83,7 +83,7 @@ LinX 前端架构遵循以下核心原则：
 | **Solid 客户端** | @inrupt/solid-client | 官方 Solid 客户端 |
 | **UI 集成** | @inrupt/solid-ui-react | Solid React 组件 |
 | **数据 ORM** | drizzle-solid (本地版) | 自定义 SPARQL ORM |
-| **数据模型** | @linx/models | 统一数据模型定义 |
+| **数据模型** | @undefineds.co/models | 统一数据模型定义 |
 
 ---
 

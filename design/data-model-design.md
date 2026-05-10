@@ -2,12 +2,12 @@
 
 > 本文档定义 LinX 数据模型的核心概念、设计决策和实体关系
 > 
-> 目标：统一数据模型理解，指导 `packages/models` 的实现
+> 目标：统一数据模型理解，指导 `@undefineds.co/models` 的实现
 > 
 > 创建时间：2025-11-07  
 > 状态：📝 草稿 - 需要团队评审确认
 > 
-> 相关代码：`packages/models/src/`
+> 相关代码：`../models/src/`
 
 ---
 
@@ -3420,8 +3420,8 @@ LinX 向用户申请：
 - [主布局设计](./main-layout-design.md) - UI/UX 设计
 - [AI 集成方案](./ai-integration.md) - AI 功能设计
 - [安全和加密](./security.md) - 安全策略
-- [数据模型实现](../packages/models/README.md) - 代码实现文档
-- [数据模型关系图](../packages/models/DATA-MODEL-DIAGRAM.md) - ERD 图
+- [数据模型实现](../models/README.md) - 代码实现文档
+- [数据模型仓库](../models) - 独立共享仓库
 
 ---
 

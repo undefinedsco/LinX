@@ -68,7 +68,7 @@ Wave A CP0 的自定义 predicate **统一挂在公司级命名空间 `udfs:`**�
 - `policyRef` / `policyVersion` / `parentThreadId` / `session*`：CP0 仅冻结词汇，不在 schema 落表；策略文档从 workspace 容器约定链接解析。
 
 ```ts
-import { UDFS, LINX_CHAT, LINX_MSG } from "@linx/models"
+import { UDFS, LINX_CHAT, LINX_MSG } from "@undefineds.co/models"
 
 // Aliases (same base URI)
 LINX_CHAT.workspace === UDFS.workspace

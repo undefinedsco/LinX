@@ -79,7 +79,7 @@
 
 ### 6A.3 不新增 Pod 表
 
-Mobile Chat UI 不新增任何 Pod 表。与 Web 端共享 `@linx/models` 的 schema 定义。
+Mobile Chat UI 不新增任何 Pod 表。与 Web 端共享 `@undefineds.co/models` 的 schema 定义。
 
 ---
 
@@ -210,4 +210,3 @@ Mobile Chat UI 不新增任何 Pod 表。与 Web 端共享 `@linx/models` 的 sc
 | `mobile/chat/MessageBubble.tsx` | 修改 | 长按操作菜单、group 发送者头部 |
 | `mobile/chat/Inputbar.tsx` | 修改 | 单行/多行切换、@mention 触发 |
 | `services/push-notification.ts` | 新增 | 推送通知注册和处理 |
-

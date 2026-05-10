@@ -1,0 +1,213 @@
+import { expect, test, type Page } from '@playwright/test'
+import { startSeededXpodRuntime, type SeededXpodRuntime } from '../helpers/seeded-xpod-runtime'
+
+test.describe.configure({ mode: 'serial' })
+
+test.describe('Real seeded xpod auth flow', () => {
+  let runtime: SeededXpodRuntime
+
+  test.beforeAll(async ({}, testInfo) => {
+    testInfo.setTimeout(120_000)
+    runtime = await startSeededXpodRuntime()
+  })
+
+  test.afterAll(async () => {
+    await runtime?.stop()
+  })
+
+  test('logs into seeded xpod and lands on chat', async ({ page }) => {
+    test.setTimeout(120_000)
+    await page.addInitScript(() => {
+      const shouldTraceKey = (key: string) =>
+        key.startsWith('solid') || key.startsWith('oidc') || key.startsWith('linx')
+
+      const patchStorage = (label: string, storage: Storage) => {
+        const originalSetItem = storage.setItem.bind(storage)
+        const originalRemoveItem = storage.removeItem.bind(storage)
+
+        storage.setItem = ((key: string, value: string) => {
+          if (shouldTraceKey(key)) {
+            console.log(`[storage:${label}:set] ${key}=${value}`)
+          }
+          return originalSetItem(key, value)
+        }) as Storage['setItem']
+
+        storage.removeItem = ((key: string) => {
+          if (shouldTraceKey(key)) {
+            console.log(`[storage:${label}:remove] ${key}`)
+          }
+          return originalRemoveItem(key)
+        }) as Storage['removeItem']
+      }
+
+      patchStorage('local', window.localStorage)
+      patchStorage('session', window.sessionStorage)
+    })
+
+    page.on('console', (message) => {
+      console.log(`[browser:${message.type()}] ${message.text()}`)
+    })
+    page.on('pageerror', (error) => {
+      console.error(`[pageerror] ${error.message}`)
+    })
+    page.on('framenavigated', (frame) => {
+      if (frame === page.mainFrame()) {
+        console.log(`[nav] ${frame.url()}`)
+      }
+    })
+    page.on('requestfailed', (request) => {
+      console.error(`[requestfailed] ${request.method()} ${request.url()} ${request.failure()?.errorText ?? ''}`)
+    })
+    page.on('request', (request) => {
+      const url = request.url()
+      if (!url.startsWith(runtime.baseUrl) || !url.includes(`/${runtime.podName}/`)) {
+        return
+      }
+
+      const headers = request.headers()
+      const dpop = decodeDpopProof(headers.dpop)
+      const dpopSummary = dpop ? `${dpop.htm ?? '?'} ${dpop.htu ?? '?'}` : headers.dpop ? 'unreadable' : 'no'
+      console.log(`[pod-request] ${request.method()} ${url} auth=${headers.authorization ? headers.authorization.split(' ')[0] : 'none'} dpop=${dpopSummary}`)
+    })
+    page.on('response', (response) => {
+      if (response.status() >= 400) {
+        const headers = response.headers()
+        const authChallenge = headers['www-authenticate'] ? ` www-authenticate=${headers['www-authenticate']}` : ''
+        console.error(`[response:${response.status()}] ${response.url()}${authChallenge}`)
+      }
+    })
+
+    await page.goto('/')
+
+    await expect(page.getByRole('heading', { name: '选择空间' })).toBeVisible({ timeout: 15_000 })
+
+    await page.getByRole('button', { name: '连接其他 Solid 账号' }).click()
+    await page.getByPlaceholder('https://pod.example.com').fill(runtime.baseUrl)
+
+    await Promise.all([
+      page.waitForURL(new RegExp(escapeRegex(new URL(runtime.baseUrl).origin)), { timeout: 30_000 }),
+      page.getByRole('button', { name: '连接' }).click(),
+    ])
+
+    await signInToSeededRuntime(page, runtime)
+    await authorizeSeededRuntime(page)
+
+    const landedOnChat = await waitForChatPath(page, 30_000)
+    if (!landedOnChat) {
+      const debugState = await readCallbackDebugState(page)
+      throw new Error(`expected LinX to finish callback and land on /chat\n${JSON.stringify(debugState, null, 2)}`)
+    }
+
+    await assertLoginRouteReady(page, runtime)
+    await expect(page.getByRole('heading', { name: '选择空间' })).toHaveCount(0)
+  })
+})
+
+async function signInToSeededRuntime(page: Page, runtime: SeededXpodRuntime): Promise<void> {
+  const signInGate = page.getByRole('button', { name: /Go to Sign in/i })
+  if (await signInGate.isVisible({ timeout: 5_000 }).catch(() => false)) {
+    await signInGate.click()
+  }
+
+  const emailInput = page.getByPlaceholder(/Email(?: address)?/i)
+  const passwordInput = page.getByPlaceholder(/^Password$/i)
+
+  await emailInput.waitFor({ state: 'visible', timeout: 20_000 })
+  await emailInput.fill(runtime.email)
+  await passwordInput.fill(runtime.password)
+
+  await Promise.all([
+    page.waitForURL(/\/\.account\/oidc\/consent\//, { timeout: 30_000 }),
+    page.getByRole('button', { name: /^Sign in$/i }).click(),
+  ])
+}
+
+async function authorizeSeededRuntime(page: Page): Promise<void> {
+  const authorizeButton = page.getByRole('button', { name: /Authorize|允许访问/i })
+  await expect(authorizeButton).toBeVisible({ timeout: 20_000 })
+
+  const missingPodMessage = page.getByText('You need to create a Pod first to get a WebID.')
+  await expect(missingPodMessage).toHaveCount(0)
+
+  await expect(authorizeButton).toBeEnabled({ timeout: 20_000 })
+  await authorizeButton.click()
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function decodeDpopProof(value: string | undefined): { htm?: string; htu?: string } | null {
+  const payload = value?.split('.')[1]
+  if (!payload) {
+    return null
+  }
+
+  try {
+    return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { htm?: string; htu?: string }
+  } catch {
+    return null
+  }
+}
+
+async function waitForChatPath(page: Page, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs
+
+  while (Date.now() < deadline) {
+    if (new URL(page.url()).pathname === '/chat') {
+      return true
+    }
+    await page.waitForTimeout(250)
+  }
+
+  return false
+}
+
+async function assertLoginRouteReady(page: Page, runtime: SeededXpodRuntime): Promise<void> {
+  try {
+    await page.waitForFunction(() => Boolean((window as any).__SOLID_DB__), null, { timeout: 30_000 })
+    await expect(page.getByRole('heading', { name: '选择空间' })).toHaveCount(0)
+  } catch (error) {
+    const debugState = await readCallbackDebugState(page)
+    throw new Error(`expected login route to be ready\n${JSON.stringify(debugState, null, 2)}`, { cause: error })
+  }
+
+  const debugState = await readCallbackDebugState(page)
+  expect(debugState.url).toContain('/chat')
+  expect(debugState.dbReady).toBe(true)
+  expect(debugState.dbStatus).toBe('ready')
+  expect(debugState.dbError).toBeNull()
+  expect(debugState.currentSession).toBeTruthy()
+  expect(debugState.loginStore?.state?.storedAccount?.webId).toContain(`/${runtime.podName}/profile/card#me`)
+}
+
+async function readCallbackDebugState(page: Page) {
+  return page.evaluate(() => {
+    const readStorage = (storage: Storage) =>
+      Object.fromEntries(
+        Object.keys(storage)
+          .filter((key) => key.startsWith('solid') || key.startsWith('linx') || key.startsWith('oidc'))
+          .map((key) => [key, storage.getItem(key)]),
+      )
+
+    const sessionId = window.localStorage.getItem('solidClientAuthn:currentSession')
+    const storedSession = sessionId
+      ? window.localStorage.getItem(`solidClientAuthenticationUser:${sessionId}`)
+      : null
+
+    return {
+      url: window.location.href,
+      title: document.title,
+      body: document.body.innerText,
+      dbReady: Boolean((window as any).__SOLID_DB__),
+      dbStatus: (window as any).__SOLID_DB_STATUS__ ?? null,
+      dbError: (window as any).__SOLID_DB_ERROR__ ?? null,
+      currentSession: sessionId,
+      storedSession: storedSession ? JSON.parse(storedSession) : null,
+      loginStore: JSON.parse(window.localStorage.getItem('linx-login') ?? 'null'),
+      localStorage: readStorage(window.localStorage),
+      sessionStorage: readStorage(window.sessionStorage),
+      cookie: document.cookie,
+    }
+  })
+}

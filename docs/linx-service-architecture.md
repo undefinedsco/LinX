@@ -23,7 +23,7 @@ LinX 采用"服务 + 客户端"架构，将 xpod（Solid Pod 服务）与 LinX �
 │  │                    Tunnel 模块                           │ │
 │  │                                                          │ │
 │  │  Cloudflare Tunnel (可选)                                │ │
-│  │  公网域名: xxx.pods.undefineds.co                        │ │
+│  │  公网域名: 用户自有域名（可选）                            │ │
 │  │                                                          │ │
 │  └─────────────────────────────────────────────────────────┘ │
 │                                                              │
@@ -74,7 +74,7 @@ LinX 采用"服务 + 客户端"架构，将 xpod（Solid Pod 服务）与 LinX �
 ├── ─────────────────────────
 ├── Pod 状态
 │   ├── 本地: http://localhost:5737
-│   └── 公网: https://xxx.pods.undefineds.co (如有)
+│   └── 公网: https://pod.example.com (如有)
 ├── ─────────────────────────
 ├── 隧道
 │   ├── ✓ 已连接 / ✗ 未配置
@@ -156,8 +156,8 @@ LinX Web UI 加载
   },
   "tunnel": {
     "enabled": true,
-    "type": "undefineds",
-    "subdomain": "my-pod",
+    "type": "cloudflare",
+    "publicDomain": "pod.example.com",
     "token": "eyJ..."
   },
   "autoStart": true
@@ -183,9 +183,9 @@ LinX Web UI 加载
 │  ┌────────────────────────────────────┐ │
 │  │ 公网访问 (可选)                     │ │
 │  │                                     │ │
-│  │ ○ 仅本地访问                        │ │
-│  │ ● 申请免费域名 (xxx.pods.co)        │ │
-│  │ ○ 使用自有域名                      │ │
+│  │ ● 仅本地/局域网访问                  │ │
+│  │ ○ 使用自有公网域名                   │ │
+│  │ ○ 使用自有域名 + 隧道                │ │
 │  └────────────────────────────────────┘ │
 │                                          │
 │              [开始使用 LinX]             │
