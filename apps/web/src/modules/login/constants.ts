@@ -1,5 +1,5 @@
-export const LINQ_OFFICIAL_ISSUER = 'https://lgnxxsoohipf.sealosgzg.site'
-export const LOCAL_DEV_ISSUER = import.meta.env.VITE_SOLID_DEV_ISSUER ?? 'http://localhost:3000'
+export const LINQ_OFFICIAL_ISSUER = 'https://id.undefineds.co'
+export const LOCAL_DEV_ISSUER = import.meta.env.VITE_SOLID_DEV_ISSUER ?? 'http://localhost:5737'
 
 export const ISSUER_STORAGE_KEY = 'linx-solid-issuers'
 // Using a fixed session key for this app instance

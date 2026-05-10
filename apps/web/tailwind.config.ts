@@ -34,6 +34,22 @@ const config: Config = {
           DEFAULT: "hsl(var(--destructive))",
           foreground: "hsl(var(--destructive-foreground))"
         },
+        lineage: {
+          DEFAULT: "hsl(var(--lineage))",
+          foreground: "hsl(var(--lineage-foreground))"
+        },
+        boundary: {
+          DEFAULT: "hsl(var(--boundary))",
+          foreground: "hsl(var(--boundary-foreground))"
+        },
+        success: {
+          DEFAULT: "hsl(var(--success))",
+          foreground: "hsl(var(--success-foreground))"
+        },
+        warning: {
+          DEFAULT: "hsl(var(--warning))",
+          foreground: "hsl(var(--warning-foreground))"
+        },
         card: {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))"
@@ -103,6 +119,10 @@ const config: Config = {
         "fade-in": "fade-in 0.3s ease-out",
         "zoom-in": "zoom-in 0.2s ease-out",
         "slide-in-up": "slide-in-up 0.4s cubic-bezier(0.16, 1, 0.3, 1)"
+      },
+      fontFamily: {
+        sans: ["SF Pro Text", "SF Pro Display", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "system-ui", "sans-serif"],
+        mono: ["SF Mono", "SFMono-Regular", "JetBrains Mono", "monospace"]
       }
     }
   },

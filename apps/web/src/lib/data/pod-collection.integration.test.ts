@@ -1,17 +1,17 @@
 // @vitest-environment node
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import { QueryClient } from '@tanstack/react-query'
-import { aiProviderTable, deleteExactRecord, linxSchema } from '@linx/models'
+import { aiProviderTable, deleteExactRecord, schema } from '@undefineds.co/models'
 import { createPodCollection } from './pod-collection'
 import { createXpodIntegrationContext, type XpodIntegrationContext } from '../../test/xpod-integration'
 
-let context: XpodIntegrationContext<typeof linxSchema> | null = null
+let context: XpodIntegrationContext<typeof schema> | null = null
 const createdSubjects: string[] = []
 
-async function getContext(): Promise<XpodIntegrationContext<typeof linxSchema>> {
+async function getContext(): Promise<XpodIntegrationContext<typeof schema>> {
   if (context) return context
   context = await createXpodIntegrationContext({
-    schema: linxSchema,
+    schema,
     tables: [aiProviderTable],
   })
   return context

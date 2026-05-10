@@ -1,4 +1,3 @@
-// 新版登录模块
 export { LoginModal } from './LoginModal'
 export { LoginOverlay } from './LoginOverlay'
 export { useLoginController } from './controller'

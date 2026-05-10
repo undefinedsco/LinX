@@ -9,8 +9,10 @@ import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { ExternalLink, Loader2, Server, CircleDot, Play, Square, RotateCw } from 'lucide-react'
 
+const LOCAL_DOMAIN_HELP_PATH = '/docs/local-sp-domain-and-tunnel.md'
+
 type DeploymentMode = 'local' | 'standalone'
-type DomainSource = 'cloud' | 'manual'
+type DomainSource = 'manual'
 
 type ServiceStatus = {
   pod?: {
@@ -23,15 +25,18 @@ type ServiceStatus = {
 
 type SetupConfigResponse = {
   dataDir?: string
+  autoStart?: boolean
   deploymentMode?: DeploymentMode
   domainSource?: DomainSource
   publicDomain?: string
   autoDetectPublicIp?: boolean
   httpsCertPath?: string
-  subdomain?: string
-  deviceId?: string
   tunnelProvider?: 'cloudflare' | 'sakura' | ''
   hasTunnelToken?: boolean
+}
+
+function ensureLocalDomainSource(): DomainSource {
+  return 'manual'
 }
 
 interface ServiceManagementDialogProps {
@@ -68,7 +73,8 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
   // Parameters
   const [deploymentMode, setDeploymentMode] = useState<DeploymentMode>('local')
   const [dataDir, setDataDir] = useState('')
-  const [domainSource, setDomainSource] = useState<DomainSource>('cloud')
+  const [autoStart, setAutoStart] = useState(true)
+  const [domainSource, setDomainSource] = useState<DomainSource>('manual')
   const [publicDomain, setPublicDomain] = useState('')
   const [autoDetectPublicIp, setAutoDetectPublicIp] = useState(true)
   const [hasPublicIp, setHasPublicIp] = useState<boolean | null>(null)
@@ -78,30 +84,23 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
   const [initialHasTunnelToken, setInitialHasTunnelToken] = useState(false)
   const [httpsCertPath, setHttpsCertPath] = useState('')
 
-  // local-cloud fields
-  const [subdomain, setSubdomain] = useState('')
-  const [deviceId, setDeviceId] = useState('')
-
   const isServiceMode = typeof window !== 'undefined' && !!(window as any).__LINX_SERVICE__
 
   const running = !!status?.pod?.running
   const podBaseUrl = useMemo(() => trimSlash(status?.pod?.publicUrl || status?.pod?.baseUrl || ''), [status])
+  const tunnelSuggested = deploymentMode === 'local' && (!autoDetectPublicIp || hasPublicIp === false)
+  const useTunnel = deploymentMode === 'local' && !!tunnelProvider
 
   const effectivePublicDomain = useMemo(() => {
-    if (deploymentMode === 'local' && domainSource === 'cloud' && subdomain) {
-      return `${subdomain}.undefineds.xyz`
-    }
     return publicDomain.trim()
-  }, [deploymentMode, domainSource, subdomain, publicDomain])
-
-  const tunnelRequired = !autoDetectPublicIp || hasPublicIp === false
-  const useTunnel = tunnelRequired && !!tunnelProvider
+  }, [publicDomain])
 
   useEffect(() => {
-    if (deploymentMode === 'standalone' && domainSource !== 'manual') {
-      setDomainSource('manual')
+    const nextSource = ensureLocalDomainSource()
+    if (nextSource !== domainSource) {
+      setDomainSource(nextSource)
     }
-  }, [deploymentMode, domainSource])
+  }, [deploymentMode, domainSource, tunnelSuggested])
 
   const refreshStatus = async () => {
     if (!isServiceMode) return
@@ -139,13 +138,12 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
         if (configRes.ok && !cancelled) {
           const cfg = (await configRes.json()) as SetupConfigResponse
           if (cfg.dataDir) setDataDir(cfg.dataDir)
+          if (typeof cfg.autoStart === 'boolean') setAutoStart(cfg.autoStart)
           if (cfg.deploymentMode) setDeploymentMode(cfg.deploymentMode)
-          if (cfg.domainSource) setDomainSource(cfg.domainSource)
+          setDomainSource(ensureLocalDomainSource())
           if (cfg.publicDomain) setPublicDomain(cfg.publicDomain)
           if (typeof cfg.autoDetectPublicIp === 'boolean') setAutoDetectPublicIp(cfg.autoDetectPublicIp)
           if (cfg.httpsCertPath) setHttpsCertPath(cfg.httpsCertPath)
-          if (cfg.subdomain) setSubdomain(cfg.subdomain)
-          if (cfg.deviceId) setDeviceId(cfg.deviceId)
           if (typeof cfg.hasTunnelToken === 'boolean') setInitialHasTunnelToken(cfg.hasTunnelToken)
           if (cfg.tunnelProvider) {
             setTunnelProvider(cfg.tunnelProvider)
@@ -170,7 +168,8 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
   }, [open, isServiceMode])
 
   useEffect(() => {
-    if (!open || !autoDetectPublicIp || running) {
+    if (!open || deploymentMode !== 'local' || !autoDetectPublicIp || running) {
+      if (deploymentMode !== 'local') setHasPublicIp(null)
       if (!autoDetectPublicIp) setHasPublicIp(false)
       return
     }
@@ -185,7 +184,7 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
     return () => {
       cancelled = true
     }
-  }, [open, autoDetectPublicIp, running])
+  }, [open, deploymentMode, autoDetectPublicIp, running])
 
   const postServiceAction = async (path: '/api/service/start' | '/api/service/stop' | '/api/service/restart') => {
     setSubmitting(true)
@@ -206,13 +205,8 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
       setError('请填写数据地址')
       return
     }
-    const requiresManualDomain = deploymentMode === 'standalone' || (deploymentMode === 'local' && domainSource === 'manual')
-    if (requiresManualDomain && !effectivePublicDomain) {
-      setError('请填写公网域名')
-      return
-    }
-    if (tunnelRequired && !useTunnel) {
-      setError('公网 IP 不可用时必须选择隧道供应商')
+    if (useTunnel && !effectivePublicDomain) {
+      setError('使用隧道时请填写公网域名或隧道域名')
       return
     }
 
@@ -231,23 +225,23 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
         dataDir,
         port: 5737,
         deploymentMode,
-        domainSource,
-        publicDomain: effectivePublicDomain || undefined,
+        domainSource: 'manual',
+        publicDomain: deploymentMode === 'local' && effectivePublicDomain ? effectivePublicDomain || undefined : undefined,
         autoDetectPublicIp,
-        httpsCertPath,
+        httpsCertPath: deploymentMode === 'standalone' ? (httpsCertPath || undefined) : undefined,
         network: {
           accessMode: useTunnel ? 'tunnel' : 'auto',
           tunnelProvider: useTunnel ? tunnelProvider : undefined,
           tunnelToken: useTunnel ? (tunnelToken || undefined) : undefined,
         },
         local: {
-          subdomain: deploymentMode === 'local' && domainSource === 'cloud' ? subdomain : undefined,
-          deviceId: deploymentMode === 'local' && domainSource === 'cloud' ? deviceId : undefined,
+          nodeId: undefined,
+          deviceId: undefined,
         },
         standalone: {
           customDomain: deploymentMode === 'standalone' ? effectivePublicDomain : undefined,
         },
-        autoStart: true,
+        autoStart,
       }
 
       const setupRes = await fetch('/api/setup', {
@@ -283,7 +277,8 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
             </div>
             <div>
               <div className="text-base font-semibold text-foreground">服务管理</div>
-              <div className="text-xs text-muted-foreground">未启动时配置 5 项参数；启动后查看状态并进入 xpod 原生界面</div>
+              <div className="text-xs text-muted-foreground">未启动时配置 6 项参数；启动后查看状态并进入 xpod 原生界面</div>
+              <div className="text-xs text-muted-foreground">域名与隧道说明：{LOCAL_DOMAIN_HELP_PATH}</div>
             </div>
           </div>
         </div>
@@ -317,60 +312,52 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
                 <Input value={dataDir} onChange={(e) => setDataDir(e.target.value)} placeholder="~/Library/Application Support/LinX/pod" />
               </div>
 
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="service-auto-start">2) 开机自动启动</Label>
+                  <Switch id="service-auto-start" checked={autoStart} onCheckedChange={setAutoStart} />
+                </div>
+              </div>
+
               {deploymentMode === 'local' ? (
                 <>
                   <div className="space-y-2">
-                    <Label>2) 公网域名来源</Label>
-                    <Select value={domainSource} onValueChange={(v) => setDomainSource(v as DomainSource)}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="cloud">cloud 分配</SelectItem>
-                        <SelectItem value="manual">手动填写</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <Label>3) 公网域名（可选）</Label>
+                    <Input value={publicDomain} onChange={(e) => setPublicDomain(e.target.value)} placeholder="pod.example.com" />
+                    <div className="text-xs text-muted-foreground">不填写时先保证本机/局域网可用；需要 Cloud 或外网访问本地 SP 时，再填你自己的公网域名或隧道域名。</div>
+                    <div className="text-xs text-muted-foreground">配置说明：{LOCAL_DOMAIN_HELP_PATH}</div>
                   </div>
-
-                  {domainSource === 'cloud' ? (
-                    <div className="space-y-2">
-                      <Label>cloud 子域名（可选，不填则由 cloud 分配）</Label>
-                      <Input value={subdomain} onChange={(e) => setSubdomain(e.target.value)} placeholder="alice" />
-                      <Input value={deviceId} onChange={(e) => setDeviceId(e.target.value)} placeholder="deviceId（可选）" />
-                      <div className="text-xs text-muted-foreground">最终域名：{subdomain ? `${subdomain}.undefineds.xyz` : '-'}</div>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <Label>2) 公网域名（手填）</Label>
-                      <Input value={publicDomain} onChange={(e) => setPublicDomain(e.target.value)} placeholder="pod.example.com" />
-                    </div>
-                  )}
                 </>
               ) : (
                 <div className="space-y-2">
-                  <Label>2) 公网域名（standalone）</Label>
+                  <Label>3) 公网域名（standalone，可选）</Label>
                   <Input value={publicDomain} onChange={(e) => setPublicDomain(e.target.value)} placeholder="pod.example.com" />
+                  <div className="text-xs text-muted-foreground">留空时只在本机或局域网使用；需要公网访问时再填你自己的域名。</div>
                 </div>
               )}
 
+              {deploymentMode === 'local' ? (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="auto-check">3) 自动检查公网 IP</Label>
+                  <Label htmlFor="auto-check">4) 自动检查公网 IP</Label>
                   <Switch id="auto-check" checked={autoDetectPublicIp} onCheckedChange={setAutoDetectPublicIp} />
                 </div>
                 {autoDetectPublicIp ? (
                   <div className="text-xs text-muted-foreground">
-                    检测结果：{hasPublicIp === null ? '检测中...' : hasPublicIp ? '有公网 IP（默认不走隧道）' : '无公网 IP（需配置隧道供应商）'}
+                    检测结果：{hasPublicIp === null ? '检测中...' : hasPublicIp ? '有公网 IP（可直接配置公网入口）' : '无公网 IP（仍可本机/局域网使用，外网访问再配隧道）'}
                   </div>
                 ) : (
                   <div className="text-xs text-muted-foreground">已关闭自动检测，将强制使用隧道供应商。</div>
                 )}
               </div>
+              ) : null}
 
+              {deploymentMode === 'local' ? (
               <div className="space-y-2">
-                <Label>4) 隧道供应商{tunnelRequired ? '（必选）' : '（检测到公网 IP，无需配置）'}</Label>
+                  <Label>5) 隧道供应商{tunnelSuggested ? '（建议，外网访问时需要）' : '（可选）'}</Label>
                 <Select
                   value={tunnelProvider || 'none'}
                   onValueChange={(v) => setTunnelProvider(v === 'none' ? '' : (v as 'cloudflare' | 'sakura'))}
-                  disabled={!tunnelRequired}
                 >
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -394,9 +381,10 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
                   </div>
                 ) : null}
               </div>
+              ) : null}
 
               <div className="space-y-2">
-                <Label>5) HTTPS 证书</Label>
+                <Label>{deploymentMode === 'local' ? '6) HTTPS 证书' : '4) HTTPS 证书（可选）'}</Label>
                 <Input value={httpsCertPath} onChange={(e) => setHttpsCertPath(e.target.value)} placeholder="证书路径（例如 /path/to/fullchain.pem）" />
               </div>
 

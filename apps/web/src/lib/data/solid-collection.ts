@@ -11,7 +11,7 @@ import {
   findExactRecord,
   updateExactRecord,
   type SolidDatabase,
-} from '@linx/models'
+} from '@undefineds.co/models'
 
 /**
  * Options for creating a Solid Pod collection

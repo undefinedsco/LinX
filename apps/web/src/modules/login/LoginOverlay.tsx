@@ -1,26 +1,40 @@
+import { useRouterState } from '@tanstack/react-router'
 import { useLoginController } from './controller'
 import { LoginModal } from './LoginModal'
 
 export function LoginOverlay() {
   const controller = useLoginController()
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  })
+
+  if (
+    pathname.startsWith('/auth/callback')
+    || pathname.startsWith('/test/')
+  ) {
+    return null
+  }
 
   return (
     <LoginModal
+      view={controller.view}
       state={controller.state}
       error={controller.error}
-      failedProvider={controller.failedProvider}
-      selectedProvider={controller.selectedProvider}
       storedAccount={controller.storedAccount}
+      storageConflict={controller.storageConflict}
       providers={controller.providers}
-      isConnecting={controller.isConnecting}
-      localService={controller.localService}
-      isLaunching={controller.isLaunching}
+      localOnboarding={controller.localOnboarding}
+      onContinueStoredAccount={controller.continueStoredAccount}
+      onBackFromLocal={controller.backFromLocal}
+      onContinueLocalLogin={controller.continueLocalLogin}
+      onSwitchAccount={controller.switchAccount}
       onConnect={controller.connect}
       onAddProvider={controller.addProvider}
-      onDeleteProvider={controller.deleteProvider}
-      onLaunchLocalService={controller.onLaunchLocalService}
-      onSignOut={controller.signOut}
       onClearError={controller.clearError}
+      onDismissStorageConflict={controller.dismissStorageConflict}
+      onOpenCurrentSpacePodSetup={controller.openCurrentSpacePodSetup}
+      localLoginStatus={controller.localLoginStatus}
+      authWindowStatus={controller.authWindowStatus}
     />
   )
 }

@@ -1,4 +1,4 @@
-import { resolveLinxPodBaseUrl } from '@linx/models/client'
+import { resolveLinxPodBaseUrl } from '@linx/client'
 
 export interface ResolvePodUrlOptions {
   signal?: AbortSignal

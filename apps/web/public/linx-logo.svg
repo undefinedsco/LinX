@@ -1,10 +1,51 @@
-<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="64" height="64" rx="16" fill="url(#gradient)"/>
-  <path d="M20 44V20h6v24h-6zM30 44l8-12-8-12h7l4.5 7 4.5-7h7l-8 12 8 12h-7l-4.5-7-4.5 7h-7z" fill="white"/>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="gradient" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#7C3AED"/>
-      <stop offset="1" stop-color="#A855F7"/>
+    <linearGradient id="pencilGradient" x1="264" y1="512" x2="760" y2="512" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6A4BFF"/>
+      <stop offset="1" stop-color="#5A38F4"/>
     </linearGradient>
+    <clipPath id="iconClip">
+      <rect x="80" y="80" width="864" height="864" rx="212" />
+    </clipPath>
   </defs>
+
+  <g clip-path="url(#iconClip)">
+    <rect x="80" y="80" width="864" height="864" rx="212" fill="white" />
+    <g transform="translate(512 512)">
+      <g transform="rotate(-45)">
+        <rect
+          x="-24"
+          y="-40"
+          width="488"
+          height="80"
+          rx="22"
+          fill="white"
+          stroke="#050505"
+          stroke-width="10"
+        />
+        <path
+          d="M-220 0L-120 -72C-106 -83 -88 -88 -69 -88H-24C-4 -88 12 -72 12 -52V52C12 72 -4 88 -24 88H-69C-88 88 -106 83 -120 72L-220 0Z"
+          fill="white"
+          stroke="#050505"
+          stroke-width="10"
+          stroke-linejoin="round"
+        />
+        <path d="M-168 0L-92 -56" stroke="#050505" stroke-width="8" stroke-linecap="round" />
+        <path d="M-168 0L-92 56" stroke="#050505" stroke-width="8" stroke-linecap="round" />
+        <path d="M-118 0H-58" stroke="#050505" stroke-width="8" stroke-linecap="round" />
+        <circle cx="-112" cy="0" r="14" fill="white" stroke="#050505" stroke-width="8" />
+      </g>
+
+      <g transform="rotate(45)">
+        <rect x="-300" y="-48" width="116" height="96" rx="28" fill="#7A56FF" />
+        <rect x="-172" y="-48" width="484" height="96" fill="url(#pencilGradient)" />
+        <path d="M312 -48L428 0L312 48V-48Z" fill="url(#pencilGradient)" />
+        <rect x="-190" y="-48" width="18" height="96" rx="9" fill="white" />
+        <path
+          d="M322 -5L364 -20L350 0L364 20L322 5L286 0L322 -5Z"
+          fill="white"
+        />
+      </g>
+    </g>
+  </g>
 </svg>

@@ -35,8 +35,8 @@ Thumbs.db
 coverage/
 playwright-report/
 test-results/
-.test-data/
-data/
+/.test-data/
+/data/
 
 # Electron build artefacts
 apps/desktop/dist/
