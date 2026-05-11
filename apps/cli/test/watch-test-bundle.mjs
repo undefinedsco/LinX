@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -10,6 +10,7 @@ const modelsDistRoot = join(modelsRoot, 'dist')
 const agentRuntimeRoot = fileURLToPath(new URL('../../../packages/agent-runtime', import.meta.url))
 const agentRuntimeDistRoot = join(agentRuntimeRoot, 'dist')
 const sourceRoot = join(cliRoot, 'src')
+const skillsRoot = fileURLToPath(new URL('../../../skills', import.meta.url))
 const wsRoot = fileURLToPath(new URL('../../../node_modules/ws', import.meta.url))
 const n3Root = fileURLToPath(new URL('../../../node_modules/n3', import.meta.url))
 const mariozechnerRoot = fileURLToPath(new URL('../../../node_modules/@mariozechner', import.meta.url))
@@ -60,6 +61,10 @@ async function buildWatchBundle(entryRelative) {
   ], {
     cwd: cliRoot,
     stdio: 'pipe',
+  })
+  cpSync(skillsRoot, join(outdir, 'skills'), {
+    recursive: true,
+    filter: (src) => !src.includes('/node_modules/') && !src.includes('/.git/'),
   })
 
   mkdirSync(undefinedsNodeModulesDir, { recursive: true })

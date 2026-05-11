@@ -18,7 +18,8 @@ import {
 } from '@mariozechner/pi-coding-agent'
 import { webFetchTool, webSearchTool } from './web-fetch.js'
 import { podReadTool, podWriteTool } from './pod-tools.js'
-import { dirname, join } from 'node:path'
+import { existsSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Api, Model, OAuthCredentials } from '@mariozechner/pi-ai'
 import { isRemoteAuthExpiredError, type RemoteChatMessage, type RemoteChatTool } from '../chat-api.js'
@@ -29,6 +30,7 @@ const UNDEFINEDS_PROVIDER_LABEL = 'undefineds'
 const UNDEFINEDS_PROVIDER_API = 'openai-completions'
 const UNDEFINEDS_SESSION_ID = 'undefineds_pi_frontend'
 const UNDEFINEDS_AUTH_BRIDGE_ID = 'undefineds-cloud-oauth-bridge'
+const LINX_PACKAGE_SOURCE = '@undefineds.co/linx'
 export const DEFAULT_LINX_PI_BASH_TIMEOUT_SECONDS = 15
 
 export interface PiRuntimeAdapterDependencies {
@@ -354,6 +356,7 @@ export function createPiRuntimeAdapter(
       settingsManager.setTheme('linx')
       const defaultModelId = sanitizeLinxCloudDefaults(settingsManager, requestedModel, providerModels)
       activeModelId = defaultModelId
+      const bundledSkillsDir = resolveBundledLinxSkillsDir()
       const services = await createAgentSessionServices({
         cwd: context.cwd,
         agentDir: context.agentDir,
@@ -361,24 +364,12 @@ export function createPiRuntimeAdapter(
         settingsManager,
         modelRegistry,
         resourceLoaderOptions: {
+          additionalSkillPaths: bundledSkillsDir ? [bundledSkillsDir] : [],
+          skillsOverride: bundledSkillsDir
+            ? (base) => withBundledLinxSkillSourceInfo(base, bundledSkillsDir)
+            : undefined,
           systemPromptOverride: overrideLinxSystemPrompt,
         },
-      })
-
-      // Inject npm-packaged skills shipped with linx-cli
-      const linxSkillsDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'skills')
-      services.resourceLoader.extendResources({
-        skillPaths: [{
-          path: linxSkillsDir,
-          metadata: {
-            source: '@undefineds.co/linx',
-            scope: 'temporary',
-            origin: 'package',
-            baseDir: dirname(fileURLToPath(import.meta.url)),
-          },
-        }],
-        promptPaths: [],
-        themePaths: [],
       })
       const selectedModel = modelRegistry.find(UNDEFINEDS_PROVIDER_ID, defaultModelId)
         ?? modelRegistry.getAvailable().find((candidate) => candidate.provider === UNDEFINEDS_PROVIDER_ID)
@@ -525,6 +516,52 @@ export function createPiRuntimeAdapter(
         apiKey: refreshed.access,
       })
     }
+  }
+}
+
+export function resolveBundledLinxSkillsDir(importMetaUrl = import.meta.url): string | null {
+  const moduleDir = dirname(fileURLToPath(importMetaUrl))
+  const candidates = [
+    // Published package: dist/lib/pi-adapter/runtime.js -> dist/skills
+    join(moduleDir, '..', '..', 'skills'),
+    // Test/dev bundle: <tmp>/dist/lib/pi-adapter/runtime.js -> repo skills
+    resolve(moduleDir, '..', '..', '..', '..', 'skills'),
+    // Source-tree fallback when running through a TS loader.
+    resolve(moduleDir, '..', '..', '..', '..', '..', 'skills'),
+  ]
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate
+    }
+  }
+
+  return null
+}
+
+function withBundledLinxSkillSourceInfo<T extends {
+  skills: Array<{
+    filePath: string
+    sourceInfo?: unknown
+  }>
+  diagnostics: unknown[]
+}>(base: T, bundledSkillsDir: string): T {
+  return {
+    ...base,
+    skills: base.skills.map((skill) => (
+      skill.filePath.startsWith(bundledSkillsDir)
+        ? {
+          ...skill,
+          sourceInfo: {
+            path: skill.filePath,
+            source: LINX_PACKAGE_SOURCE,
+            scope: 'temporary',
+            origin: 'package',
+            baseDir: bundledSkillsDir,
+          },
+        }
+        : skill
+    )),
   }
 }
 

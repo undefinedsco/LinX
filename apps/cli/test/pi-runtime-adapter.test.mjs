@@ -291,6 +291,74 @@ test('pi runtime adapter createRuntime builds a minimal pi runtime around the cl
   process.chdir(cliRoot)
 })
 
+test('pi runtime adapter exposes bundled LinX skills during initial resource loading', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/runtime.ts')
+  t.after(() => cleanup())
+
+  const { SessionManager } = await import('@mariozechner/pi-coding-agent')
+  const cwd = mkdtempSync(join(tmpdir(), 'linx-pi-runtime-skills-'))
+  const agentDir = mkdtempSync(join(tmpdir(), 'linx-pi-runtime-skills-agent-'))
+  t.after(() => {
+    process.chdir(cliRoot)
+    rmSync(cwd, { recursive: true, force: true })
+    rmSync(agentDir, { recursive: true, force: true })
+  })
+
+  const adapter = module.createPiRuntimeAdapter({
+    async createRemoteCompletion() {
+      return 'hello with skills'
+    },
+  }, {
+    cwd,
+    providerConfig: {
+      baseUrl: 'https://api.undefineds.co/v1',
+      oauth: {
+        name: 'LinX Cloud',
+        async login() {
+          return {
+            refresh: 'refresh-token',
+            access: 'access-token',
+            expires: Date.now() + 60_000,
+          }
+        },
+        async refreshToken(credentials) {
+          return credentials
+        },
+        getApiKey() {
+          return 'cloud-access-token'
+        },
+      },
+    },
+  })
+
+  const runtime = await adapter.createRuntime({
+    cwd,
+    agentDir,
+    sessionManager: SessionManager.inMemory(cwd),
+  })
+
+  const skills = runtime.session.resourceLoader.getSkills().skills
+  assert.deepEqual(skills.map((skill) => skill.name).sort(), [
+    'drizzle-solid',
+    'pod-storage',
+    'solid-modeling',
+    'xpod-componentsjs',
+  ])
+  assert.equal(
+    skills.every((skill) => skill.sourceInfo?.source === '@undefineds.co/linx'),
+    true,
+  )
+  assert.equal(
+    skills.every((skill) => skill.sourceInfo?.origin === 'package'),
+    true,
+  )
+  assert.match(runtime.session.systemPrompt, /<skill>/)
+  assert.match(runtime.session.systemPrompt, /solid-modeling/)
+
+  await runtime.dispose()
+  process.chdir(cliRoot)
+})
+
 test('pi runtime adapter configures undefineds models as openai chat completions', async (t) => {
   const { module, cleanup } = await loadWatchModule('lib/pi-adapter/runtime.ts')
   t.after(() => cleanup())
