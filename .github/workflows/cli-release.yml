@@ -1,5 +1,8 @@
 name: LinX CLI npm Release
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   workflow_dispatch:
     inputs:
@@ -49,9 +52,7 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: cli-release-tarballs
-          path: |
-            preview/undefineds-co-models-*.tgz
-            preview/undefineds-co-linx-*.tgz
+          path: preview/undefineds-co-linx-*.tgz
           if-no-files-found: error
 
   publish:
@@ -72,16 +73,8 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
 
-      - name: Dry-run publish models
-        run: npm publish --access public --dry-run ./preview/undefineds-co-models-*.tgz
-
       - name: Dry-run publish CLI
         run: npm publish --access public --dry-run ./preview/undefineds-co-linx-*.tgz
-
-      - name: Publish models
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --access public ./preview/undefineds-co-models-*.tgz
 
       - name: Publish CLI
         env:

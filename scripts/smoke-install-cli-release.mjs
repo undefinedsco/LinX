@@ -9,7 +9,6 @@ const previewRoot = join(repoRoot, 'preview')
 const prefix = mkdtempSync(join(tmpdir(), 'linx-cli-release-prefix-'))
 const cache = mkdtempSync(join(tmpdir(), 'linx-cli-release-cache-'))
 
-const modelsTarball = findTarball(/^undefineds-co-models-.+\.tgz$/)
 const cliTarball = findTarball(/^undefineds-co-linx-.+\.tgz$/)
 
 mkdirSync(prefix, { recursive: true })
@@ -27,7 +26,6 @@ run('npm', [
   prefix,
   '--cache',
   cache,
-  modelsTarball,
   cliTarball,
 ])
 

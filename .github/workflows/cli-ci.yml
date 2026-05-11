@@ -1,11 +1,13 @@
 name: CLI CI
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   pull_request:
     paths:
       - 'apps/cli/**'
-      - 'packages/models/**'
-      - 'packages/linx-models/**'
+      - 'packages/client/**'
       - 'packages/stores/**'
       - 'scripts/**'
       - 'package.json'
@@ -18,8 +20,7 @@ on:
       - 'feat/**'
     paths:
       - 'apps/cli/**'
-      - 'packages/models/**'
-      - 'packages/linx-models/**'
+      - 'packages/client/**'
       - 'packages/stores/**'
       - 'scripts/**'
       - 'package.json'
@@ -52,8 +53,8 @@ jobs:
       - name: Install
         run: yarn install --frozen-lockfile --ignore-engines
 
-      - name: Build models
-        run: yarn build:models
+      - name: Build client
+        run: yarn build:client
 
       - name: Build CLI
         run: yarn build:cli

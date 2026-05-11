@@ -22,7 +22,7 @@
     "dev:all": "yarn dev:web & yarn dev:desktop",
     "build:cli": "yarn workspace @undefineds.co/linx build",
     "build:client": "yarn workspace @linx/client build",
-    "pack:cli:release": "yarn build:cli && node apps/cli/scripts/pack-release.mjs",
+    "pack:cli:release": "yarn build:client && yarn build:cli && node apps/cli/scripts/pack-release.mjs",
     "build:web": "yarn workspace @linx/web build",
     "build:mobile": "yarn workspace @linx/mobile build",
     "build:phase1": "yarn build:web && yarn build:mobile && yarn build:desktop",

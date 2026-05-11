@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 
@@ -7,6 +7,8 @@ const workspaceRoot = fileURLToPath(new URL('..', import.meta.url))
 const distDir = fileURLToPath(new URL('../dist', import.meta.url))
 const generatedDir = fileURLToPath(new URL('../src/generated', import.meta.url))
 const packageJsonPath = fileURLToPath(new URL('../package.json', import.meta.url))
+const skillsSourceDir = fileURLToPath(new URL('../../../skills', import.meta.url))
+const skillsDistDir = fileURLToPath(new URL('../dist/skills', import.meta.url))
 const require = createRequire(import.meta.url)
 const tscBin = require.resolve('typescript/bin/tsc')
 const compileArgs = [
@@ -75,12 +77,28 @@ function flattenNestedEmit() {
     ['index.js.map', 'apps/cli/src/index.js.map'],
     ['watch-cli.js', 'apps/cli/src/watch-cli.js'],
     ['watch-cli.js.map', 'apps/cli/src/watch-cli.js.map'],
+    ['generated', 'apps/cli/src/generated'],
     ['lib', 'apps/cli/src/lib'],
   ]) {
     const targetPath = fileURLToPath(new URL(`../dist/${targetName}`, import.meta.url))
+    const sourcePath = fileURLToPath(new URL(`../dist/${sourceName}`, import.meta.url))
     rmSync(targetPath, { recursive: true, force: true })
-    symlinkSync(sourceName, targetPath)
+    cpSync(sourcePath, targetPath, { recursive: true })
   }
+
+  rmSync(fileURLToPath(new URL('../dist/apps', import.meta.url)), { recursive: true, force: true })
+  rmSync(fileURLToPath(new URL('../dist/packages', import.meta.url)), { recursive: true, force: true })
+}
+
+function copyBundledSkills() {
+  if (!existsSync(skillsSourceDir)) {
+    return
+  }
+
+  cpSync(skillsSourceDir, skillsDistDir, {
+    recursive: true,
+    filter: (src) => !src.includes('/node_modules/') && !src.includes('/.git/'),
+  })
 }
 
 removeDirRobust(distDir)
@@ -100,4 +118,5 @@ if ((compile.status ?? 1) !== 0) {
 }
 
 flattenNestedEmit()
+copyBundledSkills()
 process.exit(0)
