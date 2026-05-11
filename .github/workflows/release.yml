@@ -33,7 +33,7 @@ jobs:
           VITE_RELEASE_REPO: ${{ github.repository }}
         run: |
           export VITE_APP_VERSION="${VITE_APP_VERSION#v}"
-          yarn workspace @linx/client build
+          yarn build:models
           yarn workspace @linx/web build
           yarn workspace @linx/mobile smoke
 

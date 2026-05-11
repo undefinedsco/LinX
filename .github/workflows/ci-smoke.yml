@@ -36,8 +36,8 @@ jobs:
       - name: Install dependencies
         run: yarn install --frozen-lockfile --ignore-engines
 
-      - name: Build shared client
-        run: yarn workspace @linx/client build
+      - name: Build shared models
+        run: yarn build:models
 
       - name: Web build check
         run: yarn workspace @linx/web build:check
