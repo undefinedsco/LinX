@@ -1,11 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const cliRoot = fileURLToPath(new URL('..', import.meta.url))
+const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 const sourceRoot = join(cliRoot, 'src')
 const entryPath = join(sourceRoot, 'index.ts')
 
@@ -283,6 +284,27 @@ test('compiled cli login help exposes browser consent flow and no password optio
   assert.match(output, /OIDC/i)
   assert.doesNotMatch(output, /email/i)
   assert.doesNotMatch(output, /password/i)
+})
+
+test('cli build ships repository skills for the Pi resource loader', async (t) => {
+  execFileSync('node', ['scripts/build.mjs'], {
+    cwd: cliRoot,
+    stdio: 'pipe',
+  })
+
+  const sourceSkills = readdirSync(join(repoRoot, 'skills'), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort()
+  const distSkills = readdirSync(join(cliRoot, 'dist', 'skills'), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort()
+
+  assert.deepEqual(distSkills, sourceSkills)
+  for (const skill of sourceSkills) {
+    assert.ok(existsSync(join(cliRoot, 'dist', 'skills', skill, 'SKILL.md')), `${skill} should include SKILL.md`)
+  }
 })
 
 test('compiled cli watch show replays archived timeline instead of raw json', async (t) => {

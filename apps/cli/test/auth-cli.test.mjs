@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { loadWatchModule } from './watch-test-bundle.mjs'
 
 const cliRoot = fileURLToPath(new URL('..', import.meta.url))
 const entryPath = join(cliRoot, 'dist', 'index.js')
@@ -264,6 +265,72 @@ function writeClientCredentialsLogin(home) {
     createdAt: '2026-03-15T00:00:00.000Z',
   }))
 }
+
+test('linx login command always starts a fresh browser consent flow', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/login-command.ts')
+  t.after(() => cleanup())
+
+  const loginOptions = []
+  const prompts = []
+  const opened = []
+  const output = []
+
+  await module.runLinxLoginCommand({ url: 'https://id.undefineds.co/' }, {
+    write(chunk) {
+      output.push(chunk)
+    },
+    async openBrowser(url) {
+      opened.push(url)
+    },
+    async promptText(prompt) {
+      prompts.push(prompt)
+      return '  http://127.0.0.1:1234/auth/callback?code=abc&state=state  '
+    },
+    async ensureBrowserConsentLogin(options) {
+      loginOptions.push(options)
+      options.onAuthUrl('https://id.undefineds.co/.oidc/auth?client_id=test')
+      await options.openBrowser('https://id.undefineds.co/.oidc/auth?client_id=test')
+      assert.equal(await options.manualRedirectUrl(), 'http://127.0.0.1:1234/auth/callback?code=abc&state=state')
+      return {
+        url: 'https://id.undefineds.co/',
+        webId: 'https://id.undefineds.co/ganbb/profile/card#me',
+        reusedExistingSession: false,
+        tokenSet: {},
+        credentialsToSave: {},
+      }
+    },
+  })
+
+  assert.equal(loginOptions.length, 1)
+  assert.equal(loginOptions[0].issuerUrl, 'https://id.undefineds.co/')
+  assert.equal(loginOptions[0].forceFresh, true)
+  assert.deepEqual(opened, ['https://id.undefineds.co/.oidc/auth?client_id=test'])
+  assert.deepEqual(prompts, ['redirect URL (leave empty to keep waiting): '])
+  assert.match(output.join(''), /LinX login successful\./)
+  assert.match(output.join(''), /session: browser-consent/)
+})
+
+test('linx login command does not reuse an existing browser session when forceFresh is enabled', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/login-command.ts')
+  t.after(() => cleanup())
+
+  const loginOptions = []
+  await module.runLinxLoginCommand({ url: 'https://id.undefineds.co/' }, {
+    async ensureBrowserConsentLogin(options) {
+      loginOptions.push(options)
+      return {
+        url: 'https://id.undefineds.co/',
+        webId: 'https://id.undefineds.co/ganbb/profile/card#me',
+        reusedExistingSession: true,
+        tokenSet: {},
+        credentialsToSave: {},
+      }
+    },
+  })
+
+  assert.equal(loginOptions[0].forceFresh, true)
+  assert.equal(loginOptions[0].forceRefreshExisting, undefined)
+})
 
 test('linx whoami reads the saved LinX account session', async (t) => {
   const home = mkdtempSync(join(tmpdir(), 'linx-cli-whoami-home-'))

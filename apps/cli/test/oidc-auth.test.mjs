@@ -98,3 +98,70 @@ test('loginWithBrowserConsent cancels manual redirect prompt after browser callb
   assert.equal(abortSignals.length, 1)
   assert.equal(abortSignals[0].aborted, true)
 })
+
+test('loginWithBrowserConsent keeps waiting when manual redirect prompt is cancelled first', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/oidc-auth.ts')
+  t.after(() => cleanup())
+
+  let callbackUrl = ''
+  let callbackHandled = false
+  const resultPromise = module.withCallbackServer(
+    '127.0.0.1',
+    '/auth/callback',
+    async (url) => {
+      callbackUrl = url
+    },
+    async () => {
+      callbackHandled = true
+    },
+    async () => {
+      throw new Error('Login cancelled')
+    },
+  )
+
+  while (!callbackUrl) {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+  await new Promise((resolve) => setTimeout(resolve, 20))
+
+  assert.equal(callbackHandled, false)
+
+  await new Promise((resolve, reject) => {
+    get(`${callbackUrl}?code=abc&state=state`, (response) => {
+      response.resume()
+      response.on('end', resolve)
+    }).on('error', reject)
+  })
+
+  await resultPromise
+  assert.equal(callbackHandled, true)
+})
+
+test('loginWithBrowserConsent can be cancelled by the outer login signal', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/oidc-auth.ts')
+  t.after(() => cleanup())
+
+  const abortController = new AbortController()
+  let callbackUrl = ''
+  const resultPromise = module.withCallbackServer(
+    '127.0.0.1',
+    '/auth/callback',
+    async (url) => {
+      callbackUrl = url
+    },
+    async () => {},
+    async (signal) => {
+      return new Promise((resolve) => {
+        signal.addEventListener('abort', () => resolve(''), { once: true })
+      })
+    },
+    abortController.signal,
+  )
+
+  while (!callbackUrl) {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+
+  abortController.abort()
+  await assert.rejects(resultPromise, /Login cancelled/)
+})

@@ -16,6 +16,10 @@ import {
   createCodingTools,
   createLocalBashOperations,
 } from '@mariozechner/pi-coding-agent'
+import { webFetchTool, webSearchTool } from './web-fetch.js'
+import { podReadTool, podWriteTool } from './pod-tools.js'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { Api, Model, OAuthCredentials } from '@mariozechner/pi-ai'
 import { isRemoteAuthExpiredError, type RemoteChatMessage, type RemoteChatTool } from '../chat-api.js'
 import { installLinxPiRemoteApproval } from './pod-approval.js'
@@ -100,6 +104,60 @@ export interface LinxCloudPiAuthBridge {
   shouldPromptLoginOnStart?: boolean
 }
 
+export type LinxStartupLoginPromptDecision =
+  | { shouldPrompt: false; reason: 'print-mode' | 'native-backend' | 'credential-present' }
+  | { shouldPrompt: true; reason: 'missing-credential' | 'expired-credential' }
+
+export type LinxStartupLoginReason = 'startup' | 'expired' | null
+
+export async function resolveLinxStartupLoginPromptDecision(options: {
+  backend: 'cloud' | 'native'
+  print?: boolean
+  issuerUrl?: string
+  resolveCredential?: typeof resolveLinxPiCloudOAuthCredential
+}): Promise<LinxStartupLoginPromptDecision> {
+  if (options.print) {
+    return { shouldPrompt: false, reason: 'print-mode' }
+  }
+  if (options.backend === 'native') {
+    return { shouldPrompt: false, reason: 'native-backend' }
+  }
+
+  const resolveCredential = options.resolveCredential ?? resolveLinxPiCloudOAuthCredential
+  try {
+    const credential = await resolveCredential(options.issuerUrl)
+    return credential
+      ? { shouldPrompt: false, reason: 'credential-present' }
+      : { shouldPrompt: true, reason: 'missing-credential' }
+  } catch (error) {
+    if (isOidcLoginExpiredError(error)) {
+      return { shouldPrompt: true, reason: 'expired-credential' }
+    }
+    throw error
+  }
+}
+
+export function resolveLinxStartupLoginReason(
+  decision: LinxStartupLoginPromptDecision,
+): LinxStartupLoginReason {
+  if (!decision.shouldPrompt) {
+    return null
+  }
+
+  return decision.reason === 'expired-credential' ? 'expired' : 'startup'
+}
+
+export function resolveLinxInteractiveLoginReason(options: {
+  startupDecision: LinxStartupLoginPromptDecision
+  runtimePromptOnStart?: boolean
+}): LinxStartupLoginReason {
+  if (options.runtimePromptOnStart) {
+    return 'expired'
+  }
+
+  return resolveLinxStartupLoginReason(options.startupDecision)
+}
+
 export interface PiRuntimeAdapter {
   readonly remoteUrl: string
   readonly sessionId: string
@@ -181,9 +239,8 @@ export function createPiRuntimeAdapter(
             issuerUrl: options.providerConfig?.issuerUrl,
             explicitApiKey: options.providerConfig?.apiKey,
           })
-          return dependencies.createRemoteCompletion!({
+          return completeWithAuthRecovery(apiKey, {
             runtimeUrl: baseUrl,
-            apiKey,
             model: input.model,
             messages: withSystemPrompt(input.systemPrompt, input.messages),
             tools: input.tools,
@@ -216,11 +273,13 @@ export function createPiRuntimeAdapter(
           onProgress?(message: string): void
           onManualCodeInput?: (signal?: AbortSignal) => Promise<string>
           forceFresh?: boolean
+          signal?: AbortSignal
         }) {
           callbacks.onProgress?.('Opening LinX Cloud login in your browser...')
           const result = await ensureBrowserConsentLogin({
             issuerUrl: options.providerConfig?.issuerUrl,
             forceFresh: callbacks.forceFresh,
+            signal: callbacks.signal,
             onAuthUrl(url) {
               callbacks.onAuth({
                 url,
@@ -256,7 +315,6 @@ export function createPiRuntimeAdapter(
         ? null
         : await resolveLinxPiCloudOAuthCredential(options.providerConfig?.issuerUrl).catch((error) => {
           if (isOidcLoginExpiredError(error)) {
-            shouldPromptLoginOnStart = true
             return null
           }
           throw error
@@ -267,7 +325,7 @@ export function createPiRuntimeAdapter(
       const explicitApiKey = options.providerConfig?.apiKey
       const authMode: 'oauth' | 'apiKey' = options.providerConfig?.oauth || resolvedOAuth || !explicitApiKey ? 'oauth' : 'apiKey'
       if (resolvedOAuth?.access) {
-        await syncProviderModels(resolvedOAuth.access)
+        await syncProviderModels(resolvedOAuth.access, { refreshOnAuthExpired: true })
       } else if (explicitOAuthCredential?.access) {
         await syncProviderModels(explicitOAuthCredential.access)
       } else if (explicitApiKey) {
@@ -306,6 +364,22 @@ export function createPiRuntimeAdapter(
           systemPromptOverride: overrideLinxSystemPrompt,
         },
       })
+
+      // Inject npm-packaged skills shipped with linx-cli
+      const linxSkillsDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'skills')
+      services.resourceLoader.extendResources({
+        skillPaths: [{
+          path: linxSkillsDir,
+          metadata: {
+            source: '@undefineds.co/linx',
+            scope: 'temporary',
+            origin: 'package',
+            baseDir: dirname(fileURLToPath(import.meta.url)),
+          },
+        }],
+        promptPaths: [],
+        themePaths: [],
+      })
       const selectedModel = modelRegistry.find(UNDEFINEDS_PROVIDER_ID, defaultModelId)
         ?? modelRegistry.getAvailable().find((candidate) => candidate.provider === UNDEFINEDS_PROVIDER_ID)
       if (!selectedModel) {
@@ -317,6 +391,7 @@ export function createPiRuntimeAdapter(
         sessionStartEvent: context.sessionStartEvent as never,
         model: selectedModel,
         tools: createLinxPiCodingTools(context.cwd),
+        customTools: [webFetchTool, webSearchTool, podReadTool, podWriteTool],
       })
       const session = created.session
       enableLinxXhighThinking(session)
@@ -356,20 +431,12 @@ export function createPiRuntimeAdapter(
     },
   }
 
-  async function syncProviderModels(apiKey: string, options: { throwAuthExpired?: boolean } = {}): Promise<void> {
+  async function syncProviderModels(apiKey: string, options: { throwAuthExpired?: boolean; refreshOnAuthExpired?: boolean } = {}): Promise<void> {
     if (!apiKey || !dependencies.listRemoteModels) {
       return
     }
 
-    const remoteModels = await dependencies.listRemoteModels(null, baseUrl, apiKey).catch((error) => {
-      if (isAuthExpiredError(error)) {
-        shouldPromptLoginOnStart = true
-        if (options.throwAuthExpired) {
-          throw error
-        }
-      }
-      return []
-    })
+    const remoteModels = await listRemoteModelsWithAuthRecovery(apiKey, options)
     if (remoteModels.length === 0) {
       return
     }
@@ -383,6 +450,80 @@ export function createPiRuntimeAdapter(
 
     if (!requestedModel) {
       activeModelId = resolvePreferredLinxCloudModelId(nextModels, activeModelId)
+    }
+  }
+
+  async function listRemoteModelsWithAuthRecovery(
+    apiKey: string,
+    recoveryOptions: { throwAuthExpired?: boolean; refreshOnAuthExpired?: boolean },
+  ): Promise<Array<{ id: string; contextWindow?: number }>> {
+    try {
+      return await dependencies.listRemoteModels!(null, baseUrl, apiKey)
+    } catch (error) {
+      if (!isAuthExpiredError(error)) {
+        return []
+      }
+
+      if (recoveryOptions.refreshOnAuthExpired) {
+        const refreshed = await resolveLinxPiCloudOAuthCredential(options.providerConfig?.issuerUrl, { forceRefresh: true }).catch((refreshError) => {
+          if (isOidcLoginExpiredError(refreshError)) {
+            return null
+          }
+          throw refreshError
+        })
+        if (refreshed?.access) {
+          try {
+            return await dependencies.listRemoteModels!(null, baseUrl, refreshed.access)
+          } catch (retryError) {
+            if (!isAuthExpiredError(retryError)) {
+              return []
+            }
+          }
+        }
+      }
+
+      shouldPromptLoginOnStart = true
+      if (recoveryOptions.throwAuthExpired) {
+        throw error
+      }
+      return []
+    }
+  }
+
+  async function completeWithAuthRecovery(
+    apiKey: string,
+    request: {
+      runtimeUrl: string
+      model?: string
+      messages: RemoteChatMessage[]
+      tools?: RemoteChatTool[]
+      signal?: AbortSignal
+    },
+  ): Promise<string | PiCompletionBackendResult> {
+    try {
+      return await dependencies.createRemoteCompletion!({
+        ...request,
+        apiKey,
+      })
+    } catch (error) {
+      if (!isAuthExpiredError(error)) {
+        throw error
+      }
+
+      const refreshed = await resolveLinxPiCloudOAuthCredential(options.providerConfig?.issuerUrl, { forceRefresh: true }).catch((refreshError) => {
+        if (isOidcLoginExpiredError(refreshError)) {
+          return null
+        }
+        throw refreshError
+      })
+      if (!refreshed?.access) {
+        throw error
+      }
+
+      return dependencies.createRemoteCompletion!({
+        ...request,
+        apiKey: refreshed.access,
+      })
     }
   }
 }

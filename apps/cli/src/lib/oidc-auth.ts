@@ -26,6 +26,8 @@ export interface BrowserOidcLoginOptions {
   callbackPath?: string
   clientName?: string
   forceFresh?: boolean
+  forceRefreshExisting?: boolean
+  signal?: AbortSignal
   openBrowser?: (url: string) => Promise<void>
   onAuthUrl?: (url: string) => void
   manualRedirectUrl?: (signal?: AbortSignal) => Promise<string>
@@ -75,7 +77,7 @@ export async function ensureBrowserConsentLogin(
   options: BrowserOidcLoginOptions = {},
 ): Promise<EnsureBrowserOidcLoginResult> {
   if (!options.forceFresh) {
-    const reused = await reuseExistingBrowserConsentLogin(options).catch(() => null)
+    const reused = await reuseBrowserConsentLogin(options).catch(() => null)
     if (reused) {
       return {
         ...reused,
@@ -137,6 +139,7 @@ export async function loginWithBrowserConsent(
       await session.handleIncomingRedirect(requestUrl)
     },
     options.manualRedirectUrl,
+    options.signal,
   )
 
   if (!session.info.isLoggedIn || !session.info.webId) {
@@ -158,13 +161,16 @@ export async function loginWithBrowserConsent(
   return result
 }
 
-export async function getOidcAccessToken(credentials: Pick<LinxStoredCredentials, 'authType' | 'secrets' | 'webId' | 'url'>): Promise<string | null> {
+export async function getOidcAccessToken(
+  credentials: Pick<LinxStoredCredentials, 'authType' | 'secrets' | 'webId' | 'url'>,
+  options: { forceRefresh?: boolean } = {},
+): Promise<string | null> {
   if (credentials.authType !== 'oidc_oauth' || !isLinxOidcOAuthSecrets(credentials.secrets)) {
     return null
   }
 
   const secrets = credentials.secrets as LinxOidcOAuthSecrets
-  if (!secrets.oidcAccessToken) {
+  if (options.forceRefresh || !secrets.oidcAccessToken) {
     return refreshStoredOidcSession(credentials, secrets)
   }
 
@@ -202,9 +208,11 @@ export async function withCallbackServer(
   startLogin: (callbackUrl: string) => Promise<void>,
   onCallback: (requestUrl: string) => Promise<void>,
   manualRedirectUrl?: (signal?: AbortSignal) => Promise<string>,
+  signal?: AbortSignal,
 ): Promise<void> {
   const server = createServer()
   const sockets = new Set<Socket>()
+  let manualRedirectAbortController: AbortController | undefined
   server.on('connection', (socket) => {
     sockets.add(socket)
     socket.on('close', () => {
@@ -269,17 +277,19 @@ export async function withCallbackServer(
     }
 
     const callbackUrl = `http://${host}:${(address as AddressInfo).port}${pathname}`
-    const manualRedirectAbortController = new AbortController()
+    const manualRedirectController = new AbortController()
+    manualRedirectAbortController = manualRedirectController
+    const manualRedirectSignal = combineAbortSignals(manualRedirectController.signal, signal)
     const cancellableCallbackPromise = callbackPromise.finally(() => {
-      manualRedirectAbortController.abort()
+      manualRedirectController.abort()
     })
     await startLogin(callbackUrl)
     const manualRedirectPromise = waitForManualRedirect(
       onCallback,
       manualRedirectUrl,
-      manualRedirectAbortController.signal,
+      manualRedirectSignal,
     ).catch((error) => {
-      if (manualRedirectAbortController.signal.aborted) {
+      if (manualRedirectController.signal.aborted) {
         return new Promise<void>(() => undefined)
       }
       throw error
@@ -287,8 +297,10 @@ export async function withCallbackServer(
     await Promise.race([
       cancellableCallbackPromise,
       manualRedirectPromise,
+      waitForAbort(signal),
     ])
   } finally {
+    manualRedirectAbortController?.abort()
     server.closeIdleConnections?.()
     server.closeAllConnections?.()
     for (const socket of sockets) {
@@ -438,7 +450,7 @@ function renderCallbackPage(input: {
 </html>`
 }
 
-async function reuseExistingBrowserConsentLogin(
+export async function reuseBrowserConsentLogin(
   options: BrowserOidcLoginOptions,
 ): Promise<BrowserOidcLoginResult | null> {
   const stored = loadCredentials()
@@ -456,7 +468,7 @@ async function reuseExistingBrowserConsentLogin(
     return null
   }
 
-  const accessToken = await getOidcAccessToken(stored)
+  const accessToken = await getOidcAccessToken(stored, { forceRefresh: options.forceRefreshExisting })
   if (!accessToken || !isLinxOidcOAuthSecrets(stored.secrets)) {
     return null
   }
@@ -611,12 +623,57 @@ async function waitForManualRedirect(
     return
   }
 
-  const requestUrl = await manualRedirectUrl(signal)
+  let requestUrl: string
+  try {
+    requestUrl = await manualRedirectUrl(signal)
+  } catch (error) {
+    if (signal?.aborted) {
+      throw error
+    }
+    await new Promise(() => undefined)
+    return
+  }
   if (signal?.aborted || !requestUrl) {
     await new Promise(() => undefined)
     return
   }
   await onCallback(requestUrl)
+}
+
+function waitForAbort(signal?: AbortSignal): Promise<never> {
+  if (!signal) {
+    return new Promise(() => undefined)
+  }
+
+  return new Promise((_, reject) => {
+    const rejectCancelled = () => reject(new Error('Login cancelled'))
+    if (signal.aborted) {
+      rejectCancelled()
+      return
+    }
+    signal.addEventListener('abort', rejectCancelled, { once: true })
+  })
+}
+
+function combineAbortSignals(...signals: Array<AbortSignal | undefined>): AbortSignal | undefined {
+  const activeSignals = signals.filter((entry): entry is AbortSignal => Boolean(entry))
+  if (activeSignals.length === 0) {
+    return undefined
+  }
+  if (activeSignals.length === 1) {
+    return activeSignals[0]
+  }
+
+  const controller = new AbortController()
+  const abort = () => controller.abort()
+  for (const entry of activeSignals) {
+    if (entry.aborted) {
+      controller.abort()
+      break
+    }
+    entry.addEventListener('abort', abort, { once: true })
+  }
+  return controller.signal
 }
 
 export async function openBrowser(url: string): Promise<void> {

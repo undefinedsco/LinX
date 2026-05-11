@@ -13,6 +13,7 @@ const sourceRoot = join(cliRoot, 'src')
 const wsRoot = fileURLToPath(new URL('../../../node_modules/ws', import.meta.url))
 const n3Root = fileURLToPath(new URL('../../../node_modules/n3', import.meta.url))
 const mariozechnerRoot = fileURLToPath(new URL('../../../node_modules/@mariozechner', import.meta.url))
+const typeboxRoot = fileURLToPath(new URL('../../../node_modules/@sinclair/typebox', import.meta.url))
 
 export async function loadWatchModule(entryRelative = 'lib/watch/index.ts') {
   return buildWatchBundle(entryRelative)
@@ -27,6 +28,7 @@ async function buildWatchBundle(entryRelative) {
   const agentRuntimePackageDir = join(linxNodeModulesDir, 'agent-runtime')
   const genericNodeModulesDir = join(outdir, 'node_modules')
   const scopedNodeModulesDir = join(outdir, 'node_modules', '@mariozechner')
+  const sinclairNodeModulesDir = join(outdir, 'node_modules', '@sinclair')
   const entryPath = join(sourceRoot, entryRelative)
   const compiledEntry = join(outdir, entryRelative.replace(/\.ts$/, '.js'))
 
@@ -64,6 +66,7 @@ async function buildWatchBundle(entryRelative) {
   mkdirSync(linxNodeModulesDir, { recursive: true })
   mkdirSync(genericNodeModulesDir, { recursive: true })
   mkdirSync(scopedNodeModulesDir, { recursive: true })
+  mkdirSync(sinclairNodeModulesDir, { recursive: true })
   mkdirSync(modelsPackageDir, { recursive: true })
   mkdirSync(agentRuntimePackageDir, { recursive: true })
   symlinkSync(modelsDistRoot, join(modelsPackageDir, 'dist'), 'dir')
@@ -96,6 +99,7 @@ async function buildWatchBundle(entryRelative) {
   }, null, 2))
   symlinkSync(wsRoot, join(genericNodeModulesDir, 'ws'), 'dir')
   symlinkSync(n3Root, join(genericNodeModulesDir, 'n3'), 'dir')
+  symlinkSync(typeboxRoot, join(sinclairNodeModulesDir, 'typebox'), 'dir')
   symlinkSync(fileURLToPath(new URL('../../../node_modules/@mariozechner/pi-ai', import.meta.url)), join(scopedNodeModulesDir, 'pi-ai'), 'dir')
   symlinkSync(fileURLToPath(new URL('../../../node_modules/@mariozechner/pi-agent-core', import.meta.url)), join(scopedNodeModulesDir, 'pi-agent-core'), 'dir')
   symlinkSync(fileURLToPath(new URL('../../../node_modules/@mariozechner/pi-coding-agent', import.meta.url)), join(scopedNodeModulesDir, 'pi-coding-agent'), 'dir')

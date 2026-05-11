@@ -15,6 +15,7 @@ export const LINX_CHANGELOG_URL = 'https://github.com/undefineds-co/linx-cli/rel
 export const LINX_CLI_VERSION = readLinxCliVersion()
 const LINX_AUTH_LOGIN_IN_PROGRESS = Symbol.for('linx.tui.authLoginInProgress')
 const LINX_AUTH_LOGIN_ON_INIT = Symbol.for('linx.tui.authLoginOnInit')
+const LINX_AUTH_PENDING_RETRY = Symbol.for('linx.tui.authPendingRetry')
 const LINX_AUTH_LOGIN_SCHEDULED = Symbol.for('linx.tui.authLoginScheduled')
 const LINX_AUTH_REPORTING_ERROR = Symbol.for('linx.tui.authReportingError')
 const LINX_UPDATE_IN_PROGRESS = Symbol.for('linx.tui.updateInProgress')
@@ -27,6 +28,12 @@ const UPDATE_OPTION_CHANGELOG = 'Open changelog'
 const UPDATE_OPTION_LATER = 'Later'
 
 type LinxAuthReason = 'startup' | 'expired' | 'manual'
+
+type LinxAuthPendingRetry = {
+  continueFromId?: string | null
+  promptText?: string
+  promptParentId?: string | null
+}
 
 export function applyLinxInteractiveBranding(interactive: any): void {
   patchTerminalTitle(interactive)
@@ -250,10 +257,14 @@ function patchAuthExpiredSessionEvents(interactive: any): void {
   }
 
   interactive.handleEvent = async function patchedHandleEvent(event: unknown): Promise<unknown> {
-    const result = await originalHandleEvent(event)
     if (eventHasLinxAuthExpiredError(event)) {
+      prepareLinxAuthExpiredRetry(this)
+      suppressLinxAuthExpiredAssistantError(this)
       scheduleLinxCloudLogin(this, 'expired')
+      return undefined
     }
+
+    const result = await originalHandleEvent(event)
     return result
   }
 }
@@ -320,7 +331,7 @@ async function startLinxCloudLogin(interactive: any, options: { reason?: LinxAut
       }
       await runLinxCloudBrowserLogin(interactive, authStorage, reason)
       await refreshLinxAuthState(interactive)
-      interactive.showStatus?.(`${authStatusPrefix(reason)} Browser authorization complete. Retry your message.`)
+      await finishLinxAuthSuccess(interactive, reason, 'Browser authorization complete.')
       return
     }
 
@@ -454,7 +465,249 @@ async function promptForLinxApiKey(interactive: any, reason: LinxAuthReason): Pr
   authStorage?.setRuntimeApiKey?.(LINX_PROVIDER_ID, trimmed)
   authStorage?.set?.(LINX_PROVIDER_ID, { type: 'api_key', key: trimmed })
   await refreshLinxAuthState(interactive)
-  interactive.showStatus?.(`${authStatusPrefix(reason)} API key saved for this TUI session. Retry your message.`)
+  await finishLinxAuthSuccess(interactive, reason, 'API key saved for this TUI session.')
+}
+
+async function finishLinxAuthSuccess(interactive: any, reason: LinxAuthReason, detail: string): Promise<void> {
+  const prefix = authStatusPrefix(reason)
+  const retryStarted = await retryPendingLinxAuthTurn(interactive, reason)
+  if (retryStarted) {
+    interactive.showStatus?.(`${prefix} ${detail} Retrying your message...`)
+    return
+  }
+
+  const suffix = reason === 'expired' ? ' Retry your message.' : ''
+  interactive.showStatus?.(`${prefix} ${detail}${suffix}`)
+}
+
+function prepareLinxAuthExpiredRetry(interactive: any): void {
+  if (interactive[LINX_AUTH_PENDING_RETRY]) {
+    return
+  }
+
+  const session = interactive.session
+  const sessionManager = session?.sessionManager
+  const leafId = typeof sessionManager?.getLeafId === 'function'
+    ? sessionManager.getLeafId()
+    : undefined
+  const leafEntry = leafId && typeof sessionManager?.getEntry === 'function'
+    ? sessionManager.getEntry(leafId)
+    : undefined
+  const leafMessage = leafEntry?.type === 'message' ? leafEntry.message : undefined
+  const userEntry = findLastUserMessageEntry(sessionManager, leafId)
+  const promptText = extractUserMessageText(userEntry?.message)
+    ?? extractUserMessageText(leafMessage)
+    ?? findLastUserMessageText(session?.state?.messages)
+
+  const pending = {
+    continueFromId: userEntry?.id ?? (leafMessage?.role === 'user' ? leafId : undefined),
+    promptText,
+    promptParentId: userEntry?.parentId ?? (leafMessage?.role === 'user' ? leafEntry.parentId : undefined),
+  } satisfies LinxAuthPendingRetry
+  interactive[LINX_AUTH_PENDING_RETRY] = pending
+
+  // AgentSession persists the assistant error after TUI subscribers run. Restore
+  // the active branch on the next tick so "continue" never resumes from the
+  // failed auth assistant message if the user cancels or login fails.
+  setTimeout(() => {
+    if (interactive[LINX_AUTH_PENDING_RETRY] === pending) {
+      restoreLinxRetryBranch(interactive.session, pending.continueFromId)
+    }
+  }, 0)
+}
+
+function suppressLinxAuthExpiredAssistantError(interactive: any): void {
+  const streamingComponent = interactive.streamingComponent
+  if (streamingComponent) {
+    interactive.chatContainer?.removeChild?.(streamingComponent)
+  }
+
+  interactive.streamingComponent = undefined
+  interactive.streamingMessage = undefined
+  interactive.footer?.invalidate?.()
+  interactive.ui?.requestRender?.()
+}
+
+async function retryPendingLinxAuthTurn(interactive: any, reason: LinxAuthReason): Promise<boolean> {
+  if (reason !== 'expired') {
+    return false
+  }
+
+  const pending = interactive[LINX_AUTH_PENDING_RETRY] as LinxAuthPendingRetry | undefined
+  if (!pending) {
+    return false
+  }
+  interactive[LINX_AUTH_PENDING_RETRY] = undefined
+
+  const session = interactive.session
+  const sessionManager = session?.sessionManager
+  if (!session || !sessionManager) {
+    return false
+  }
+
+  await session.agent?.waitForIdle?.()
+
+  try {
+    restoreLinxRetryBranch(session, pending.continueFromId)
+    if (typeof session.agent?.continue === 'function') {
+      startLinxContinuation(interactive, session, pending)
+      return true
+    }
+  } catch (error) {
+    if (!pending.promptText) {
+      throw error
+    }
+  }
+
+  if (!pending.promptText || typeof session.prompt !== 'function') {
+    return false
+  }
+
+  restoreLinxRetryBranch(session, pending.promptParentId)
+  const promptResult = session.prompt(pending.promptText)
+  if (isPromiseLike(promptResult)) {
+    promptResult.catch((error) => {
+      const message = error instanceof Error ? error.message : String(error)
+      interactive.showError?.(`LinX Cloud retry failed: ${message}`)
+    })
+  }
+  return true
+}
+
+function startLinxContinuation(interactive: any, session: any, pending: LinxAuthPendingRetry): void {
+  try {
+    const result = session.agent.continue()
+    if (isPromiseLike(result)) {
+      result.catch((error) => {
+        void retryLinxPromptFallback(interactive, session, pending, error)
+      })
+    }
+  } catch (error) {
+    void retryLinxPromptFallback(interactive, session, pending, error)
+  }
+}
+
+async function retryLinxPromptFallback(
+  interactive: any,
+  session: any,
+  pending: LinxAuthPendingRetry,
+  cause: unknown,
+): Promise<void> {
+  if (!pending.promptText || typeof session?.prompt !== 'function') {
+    const message = cause instanceof Error ? cause.message : String(cause)
+    interactive.showError?.(`LinX Cloud retry failed: ${message}`)
+    return
+  }
+
+  try {
+    restoreLinxRetryBranch(session, pending.promptParentId)
+    await session.prompt(pending.promptText)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    interactive.showError?.(`LinX Cloud retry failed: ${message}`)
+  }
+}
+
+function restoreLinxRetryBranch(session: any, leafId: string | null | undefined): void {
+  const sessionManager = session?.sessionManager
+  if (!sessionManager) {
+    return
+  }
+
+  if (typeof leafId === 'string' && leafId) {
+    sessionManager.branch?.(leafId)
+  } else if (leafId === null) {
+    sessionManager.resetLeaf?.()
+  }
+
+  const context = sessionManager.buildSessionContext?.()
+  if (context?.messages && session.agent?.state) {
+    session.agent.state.messages = context.messages
+  }
+}
+
+function findLastUserMessageText(messages: unknown): string | undefined {
+  if (!Array.isArray(messages)) {
+    return undefined
+  }
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const text = extractUserMessageText(messages[index])
+    if (text) {
+      return text
+    }
+  }
+  return undefined
+}
+
+function findLastUserMessageEntry(
+  sessionManager: any,
+  leafId: unknown,
+): { id: string; parentId?: string | null; message: unknown } | undefined {
+  const branch = typeof sessionManager?.getBranch === 'function' && typeof leafId === 'string'
+    ? sessionManager.getBranch(leafId)
+    : undefined
+  const entries = Array.isArray(branch) && branch.length > 0
+    ? branch
+    : typeof sessionManager?.getEntries === 'function'
+      ? sessionManager.getEntries()
+      : []
+
+  if (!Array.isArray(entries)) {
+    return undefined
+  }
+
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index]
+    if (
+      isRecord(entry)
+      && entry.type === 'message'
+      && typeof entry.id === 'string'
+      && isRecord(entry.message)
+      && entry.message.role === 'user'
+    ) {
+      return {
+        id: entry.id,
+        parentId: normalizeParentId(entry.parentId),
+        message: entry.message,
+      }
+    }
+  }
+
+  return undefined
+}
+
+function normalizeParentId(parentId: unknown): string | null | undefined {
+  if (typeof parentId === 'string') {
+    return parentId
+  }
+  if (parentId === null) {
+    return null
+  }
+  return undefined
+}
+
+function extractUserMessageText(message: unknown): string | undefined {
+  if (!isRecord(message) || message.role !== 'user') {
+    return undefined
+  }
+
+  const content = message.content
+  if (typeof content === 'string') {
+    return content.trim() || undefined
+  }
+  if (!Array.isArray(content)) {
+    return undefined
+  }
+
+  const text = content
+    .filter((entry): entry is { type: string; text: string } => (
+      isRecord(entry) && entry.type === 'text' && typeof entry.text === 'string'
+    ))
+    .map((entry) => entry.text)
+    .join('')
+    .trim()
+  return text || undefined
 }
 
 async function refreshLinxAuthState(interactive: any): Promise<void> {
@@ -479,7 +732,7 @@ async function runLinxCloudLogin(
   reason: LinxAuthReason,
 ): Promise<void> {
   await authStorage.login(LINX_PROVIDER_ID, {
-    forceFresh: reason === 'expired',
+    forceFresh: true,
     onAuth(info: { url: string; instructions?: string }) {
       showLinxLoginUrl(interactive, info)
       openLoginUrl(info.url, interactive)
@@ -552,7 +805,7 @@ async function runLinxCloudLoginDialog(
 
   try {
     await authStorage.login(LINX_PROVIDER_ID, {
-      forceFresh: reason === 'expired',
+      forceFresh: true,
       onAuth(info: { url: string; instructions?: string }) {
         dialog.showAuth(info.url, info.instructions)
         dialog.showManualInput('Paste redirect URL below, or complete login in browser:')
@@ -954,4 +1207,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function stripAnsi(text: string): string {
   return text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
+}
+
+function isPromiseLike(value: unknown): value is Promise<unknown> {
+  return isRecord(value) && typeof value.then === 'function'
 }

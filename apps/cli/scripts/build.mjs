@@ -1,10 +1,12 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, renameSync, rmSync } from 'node:fs'
+import { cpSync, existsSync, renameSync, rmSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 const workspaceRoot = fileURLToPath(new URL('..', import.meta.url))
 const agentRuntimeTsconfig = fileURLToPath(new URL('../../../packages/agent-runtime/tsconfig.json', import.meta.url))
 const distDir = fileURLToPath(new URL('../dist', import.meta.url))
+const skillsSourceDir = fileURLToPath(new URL('../../../skills', import.meta.url))
+const skillsDistDir = fileURLToPath(new URL('../dist/skills', import.meta.url))
 const compileArgs = [
   '-p',
   'tsconfig.json',
@@ -56,4 +58,13 @@ const compile = spawnSync('tsc', compileArgs, {
   stdio: 'inherit',
 })
 
-process.exit(compile.status ?? 1)
+if ((compile.status ?? 1) !== 0) {
+  process.exit(compile.status ?? 1)
+}
+
+if (existsSync(skillsSourceDir)) {
+  cpSync(skillsSourceDir, skillsDistDir, {
+    recursive: true,
+    filter: (src) => !src.includes('/node_modules/') && !src.includes('/.git/'),
+  })
+}

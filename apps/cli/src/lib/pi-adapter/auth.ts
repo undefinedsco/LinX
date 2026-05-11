@@ -11,16 +11,63 @@ export interface PiAuthBridgeRuntime {
   loadCredentials: typeof loadCredentials
   getClientCredentials: typeof getClientCredentials
   getAccessToken: typeof getAccessToken
+  getOidcAccessToken: typeof getOidcAccessToken
+}
+
+type ResolveLinxPiCloudOAuthOptions = {
+  forceRefresh?: boolean
+}
+
+function isPiAuthBridgeRuntime(value: unknown): value is PiAuthBridgeRuntime {
+  return typeof value === 'object'
+    && value !== null
+    && 'loadCredentials' in value
+    && 'getClientCredentials' in value
+    && 'getAccessToken' in value
+}
+
+function resolveOidcExpiresAt(secrets: unknown): number {
+  const rawExpiresAt = typeof secrets === 'object'
+    && secrets !== null
+    && 'oidcExpiresAt' in secrets
+    ? secrets.oidcExpiresAt
+    : undefined
+  if (typeof rawExpiresAt !== 'string') {
+    return Date.now()
+  }
+
+  const expiresAt = new Date(rawExpiresAt).getTime()
+  return Number.isFinite(expiresAt) ? expiresAt : Date.now()
 }
 
 export async function resolveLinxPiCloudOAuthCredential(
   issuerUrl?: string,
-  runtime: PiAuthBridgeRuntime = {
+  options?: ResolveLinxPiCloudOAuthOptions,
+  runtime?: Partial<PiAuthBridgeRuntime>,
+): Promise<PiCloudOAuthCredential | null>
+export async function resolveLinxPiCloudOAuthCredential(
+  issuerUrl?: string,
+  runtime?: Partial<PiAuthBridgeRuntime>,
+): Promise<PiCloudOAuthCredential | null>
+export async function resolveLinxPiCloudOAuthCredential(
+  issuerUrl?: string,
+  optionsOrRuntime: ResolveLinxPiCloudOAuthOptions | Partial<PiAuthBridgeRuntime> = {},
+  runtimeArg?: Partial<PiAuthBridgeRuntime>,
+): Promise<PiCloudOAuthCredential | null> {
+  const defaultRuntime: PiAuthBridgeRuntime = {
     loadCredentials,
     getClientCredentials,
     getAccessToken,
-  },
-): Promise<PiCloudOAuthCredential | null> {
+    getOidcAccessToken,
+  }
+  const options = isPiAuthBridgeRuntime(optionsOrRuntime)
+    ? {}
+    : optionsOrRuntime as ResolveLinxPiCloudOAuthOptions
+  const runtime = {
+    ...defaultRuntime,
+    ...(isPiAuthBridgeRuntime(optionsOrRuntime) ? optionsOrRuntime : runtimeArg),
+  }
+
   const stored = runtime.loadCredentials()
   if (!stored) {
     return null
@@ -28,7 +75,7 @@ export async function resolveLinxPiCloudOAuthCredential(
 
   const clientCredentials = runtime.getClientCredentials(stored)
   if (!clientCredentials) {
-    const oidcAccessToken = await getOidcAccessToken(stored).catch((error) => {
+    const oidcAccessToken = await runtime.getOidcAccessToken(stored, { forceRefresh: options.forceRefresh }).catch((error) => {
       if (isOidcLoginExpiredError(error)) {
         throw error
       }
@@ -42,7 +89,7 @@ export async function resolveLinxPiCloudOAuthCredential(
       type: 'oauth',
       refresh: 'linx-oidc-refresh',
       access: oidcAccessToken,
-      expires: Date.now() + 60 * 60 * 1000,
+      expires: resolveOidcExpiresAt(stored.secrets),
     }
   }
 

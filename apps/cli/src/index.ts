@@ -11,7 +11,7 @@ import { DefaultPackageManager, SettingsManager, runPrintMode } from '@mariozech
 import { promptText } from './lib/prompt.js'
 import { resolveRuntimeTarget } from './lib/runtime-target.js'
 import { createCodexNativeProxy } from './lib/codex-plugin/index.js'
-import { bootstrapPiInteractiveMode, createPiRuntimeAdapter, type LinxLoginReason } from './lib/pi-adapter/index.js'
+import { bootstrapPiInteractiveMode, createPiRuntimeAdapter, resolveLinxInteractiveLoginReason, resolveLinxStartupLoginPromptDecision, type LinxLoginReason } from './lib/pi-adapter/index.js'
 import { isOidcLoginExpiredError } from './lib/oidc-auth.js'
 import { createPodDataSession, type PodDataSession } from './lib/pod-data-session.js'
 import { DEFAULT_LINX_CLOUD_MODEL_ID, FALLBACK_LINX_CLOUD_MODEL_IDS } from './lib/default-model.js'
@@ -418,18 +418,11 @@ async function runPiCommand(argv: {
   prompt?: string[]
 }): Promise<void> {
   const backend = (argv.backend as 'cloud' | 'native' | undefined) ?? 'cloud'
-  let shouldPromptLinxCloudLoginOnStart = false
-  if (!argv.print && backend === 'cloud') {
-    const { resolveLinxPiCloudOAuthCredential } = await import('./lib/pi-adapter/auth.js')
-    const existingCredential = await resolveLinxPiCloudOAuthCredential(undefined).catch((error) => {
-      shouldPromptLinxCloudLoginOnStart = true
-      return null
-    })
-
-    if (!existingCredential) {
-      shouldPromptLinxCloudLoginOnStart = true
-    }
-  }
+  const startupLoginPrompt = await resolveLinxStartupLoginPromptDecision({
+    backend,
+    print: argv.print,
+    issuerUrl: resolveAccountBaseUrl(),
+  })
 
   const adapter = createPiRuntimeAdapter({
     createNativeProxy(options) {
@@ -487,11 +480,10 @@ async function runPiCommand(argv: {
 
   const interactive = bootstrapPiInteractiveMode(runtime)
   const bridge = runtime as unknown as { linxAuthBridge?: { shouldPromptLoginOnStart?: boolean } }
-  const loginPromptReason: LinxLoginReason | null = bridge.linxAuthBridge?.shouldPromptLoginOnStart
-    ? 'expired'
-    : shouldPromptLinxCloudLoginOnStart
-      ? 'startup'
-      : null
+  const loginPromptReason: LinxLoginReason | null = resolveLinxInteractiveLoginReason({
+    startupDecision: startupLoginPrompt,
+    runtimePromptOnStart: bridge.linxAuthBridge?.shouldPromptLoginOnStart,
+  })
   if (loginPromptReason) {
     interactive.requestLogin?.(loginPromptReason)
   }

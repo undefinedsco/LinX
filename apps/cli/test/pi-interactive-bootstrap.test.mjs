@@ -642,7 +642,7 @@ test('linx /login command shows a LinX-only auth selector before browser login',
   assert.deepEqual(linxSelectorCalls[0].options, ['Authorize in browser', 'Enter API key', 'Exit'])
   assert.equal(loginCalls[0], 'undefineds')
   assert.equal(loginCalls[1], 'undefineds:fresh-access-token')
-  assert.deepEqual(loginForceFreshValues, [false])
+  assert.deepEqual(loginForceFreshValues, [true])
   assert.deepEqual(hasManualRedirectCallbacks, [true])
   assert.equal(openedUrls[0], 'https://id.undefineds.co/.oidc/auth?client_id=test')
   assert.deepEqual(submitted, ['hello'])
@@ -712,9 +712,79 @@ test('linx browser login fallback passes a manual redirect input callback to aut
 
   assert.equal(loginCalls[0], 'undefineds')
   assert.equal(loginCalls[1], 'undefineds:fresh-access-token')
-  assert.deepEqual(loginForceFreshValues, [false])
+  assert.deepEqual(loginForceFreshValues, [true])
   assert.deepEqual(manualRedirects, ['http://127.0.0.1:1234/auth/callback?code=abc&state=state&iss=https%3A%2F%2Fid.undefineds.co%2F'])
   assert.equal(openedUrls[0], 'https://id.undefineds.co/.oidc/auth?client_id=test')
+})
+
+test('linx browser login dialog also forces a fresh consent flow', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/branding.ts')
+  t.after(() => cleanup())
+
+  const loginCalls = []
+  const loginForceFreshValues = []
+  const hasManualRedirectCallbacks = []
+  const hasAbortSignals = []
+  const addedChildren = []
+  const focused = []
+  const editor = { setText() {} }
+  const interactive = {
+    defaultEditor: {},
+    editor,
+    editorContainer: {
+      clear() {},
+      addChild(child) {
+        addedChildren.push(child)
+      },
+    },
+    session: {
+      modelRegistry: {
+        refresh() {},
+        authStorage: {
+          async login(providerId, callbacks) {
+            loginCalls.push(providerId)
+            loginForceFreshValues.push(callbacks.forceFresh)
+            hasManualRedirectCallbacks.push(typeof callbacks.onManualCodeInput === 'function')
+            hasAbortSignals.push(callbacks.signal instanceof AbortSignal)
+          },
+          get() {
+            return undefined
+          },
+        },
+      },
+    },
+    chatContainer: {
+      addChild() {},
+    },
+    ui: {
+      setFocus(target) {
+        focused.push(target)
+      },
+      requestRender() {},
+    },
+    setupEditorSubmitHandler() {
+      this.defaultEditor.onSubmit = async () => {}
+    },
+    async showExtensionSelector() {
+      return 'Authorize in browser'
+    },
+    showStatus() {},
+    showError(message) {
+      throw new Error(message)
+    },
+    async updateAvailableProviderCount() {},
+  }
+
+  module.applyLinxInteractiveBranding(interactive)
+  interactive.setupEditorSubmitHandler()
+  await interactive.defaultEditor.onSubmit('/login')
+
+  assert.deepEqual(loginCalls, ['undefineds'])
+  assert.deepEqual(loginForceFreshValues, [true])
+  assert.deepEqual(hasManualRedirectCallbacks, [true])
+  assert.deepEqual(hasAbortSignals, [true])
+  assert.equal(addedChildren.at(-1), editor)
+  assert.equal(focused.at(-1), editor)
 })
 
 test('linx /login command can store a direct LinX API key from the selector', async (t) => {
@@ -835,7 +905,7 @@ test('linx native oauth selector is replaced with LinX-only login', async (t) =>
   assert.deepEqual(selectorCalls[1].options, ['Authorize in browser', 'Enter API key', 'Exit'])
   assert.equal(loginCalls.includes('anthropic'), false)
   assert.equal(loginCalls.filter((entry) => entry === 'undefineds').length, 2)
-  assert.deepEqual(loginForceFreshValues, [false, false])
+  assert.deepEqual(loginForceFreshValues, [true, true])
   assert.equal(loginCalls.includes('logout:undefineds'), true)
   assert.equal(statuses.some((message) => message.includes('LinX only supports LinX Cloud')), true)
   assert.equal(statuses.some((message) => message.includes('Logged out of LinX Cloud')), true)
@@ -897,11 +967,20 @@ test('linx expired login prompt is deferred until interactive init completes', a
   t.after(() => cleanup())
 
   const selectorCalls = []
+  const loginForceFreshValues = []
   const interactive = {
     isInitialized: false,
     session: {
       modelRegistry: {
-        authStorage: {},
+        refresh() {},
+        authStorage: {
+          async login(_providerId, callbacks) {
+            loginForceFreshValues.push(callbacks.forceFresh)
+          },
+          get() {
+            return undefined
+          },
+        },
       },
     },
     settingsManager: {
@@ -935,6 +1014,7 @@ test('linx expired login prompt is deferred until interactive init completes', a
   assert.equal(selectorCalls.length, 1)
   assert.match(selectorCalls[0].title, /LinX Cloud login expired/)
   assert.deepEqual(selectorCalls[0].options, ['Authorize in browser', 'Enter API key', 'Exit'])
+  assert.deepEqual(loginForceFreshValues, [true])
 })
 
 test('linx interactive branding shows the LinX auth selector when cloud auth expires', async (t) => {
@@ -1028,12 +1108,85 @@ test('linx interactive branding reacts to assistant stream auth-expired events',
   const loginForceFreshValues = []
   const selectorCalls = []
   const events = []
+  const statuses = []
+  const branches = []
+  const activeMessages = []
+  let continued = false
   const interactive = {
     async handleEvent(event) {
       events.push(event)
       return 'handled'
     },
     session: {
+      agent: {
+        state: {
+          messages: [
+            { role: 'user', content: [{ type: 'text', text: 'hello' }] },
+            { role: 'assistant', content: [], stopReason: 'error', errorMessage: 'LinX Cloud login expired.' },
+          ],
+        },
+        async waitForIdle() {},
+        continue() {
+          continued = true
+        },
+      },
+      sessionManager: {
+        getLeafId() {
+          return 'assistant-error'
+        },
+        getEntry(id) {
+          if (id === 'assistant-error') {
+            return {
+              id,
+              type: 'message',
+              parentId: 'user-1',
+              message: {
+                role: 'assistant',
+                content: [],
+                stopReason: 'error',
+                errorMessage: 'LinX Cloud login expired.',
+              },
+            }
+          }
+          if (id === 'user-1') {
+            return {
+              id,
+              type: 'message',
+              parentId: null,
+              message: { role: 'user', content: [{ type: 'text', text: 'hello' }] },
+            }
+          }
+          return undefined
+        },
+        getBranch() {
+          return [
+            {
+              id: 'user-1',
+              type: 'message',
+              parentId: null,
+              message: { role: 'user', content: [{ type: 'text', text: 'hello' }] },
+            },
+            {
+              id: 'assistant-error',
+              type: 'message',
+              parentId: 'user-1',
+              message: {
+                role: 'assistant',
+                content: [],
+                stopReason: 'error',
+                errorMessage: 'LinX Cloud login expired.',
+              },
+            },
+          ]
+        },
+        branch(id) {
+          branches.push(id)
+        },
+        buildSessionContext() {
+          activeMessages.push('rebuilt')
+          return { messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }] }
+        },
+      },
       modelRegistry: {
         refresh() {},
         authStorage: {
@@ -1062,7 +1215,9 @@ test('linx interactive branding reacts to assistant stream auth-expired events',
       return 'Authorize in browser'
     },
     openExternal() {},
-    showStatus() {},
+    showStatus(message) {
+      statuses.push(message)
+    },
     showError(message) {
       throw new Error(message)
     },
@@ -1076,11 +1231,100 @@ test('linx interactive branding reacts to assistant stream auth-expired events',
   })
   await new Promise((resolve) => setTimeout(resolve, 0))
 
-  assert.equal(result, 'handled')
-  assert.equal(events.length, 1)
+  assert.equal(result, undefined)
+  assert.equal(events.length, 0)
   assert.equal(selectorCalls.length, 1)
   assert.match(selectorCalls[0].title, /LinX Cloud login expired/)
   assert.equal(loginCalls[0], 'undefineds')
   assert.equal(loginCalls[1], 'undefineds:fresh-access-token')
   assert.deepEqual(loginForceFreshValues, [true])
+  assert.deepEqual(branches, ['user-1', 'user-1'])
+  assert.deepEqual(interactive.session.agent.state.messages, [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }])
+  assert.equal(activeMessages.length, 2)
+  assert.equal(continued, true)
+  assert.equal(statuses.some((message) => message.includes('Retrying your message')), true)
+})
+
+test('linx auth-expired branch restore still runs when reauth is cancelled', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/branding.ts')
+  t.after(() => cleanup())
+
+  const branches = []
+  const selectorCalls = []
+  const interactive = {
+    async handleEvent(event) {
+      throw new Error(`original handler should not render auth error: ${event.type}`)
+    },
+    session: {
+      agent: {
+        state: {
+          messages: [
+            { role: 'user', content: [{ type: 'text', text: 'hello' }] },
+            { role: 'assistant', content: [], stopReason: 'error', errorMessage: 'LinX Cloud login expired.' },
+          ],
+        },
+      },
+      sessionManager: {
+        getLeafId() {
+          return 'assistant-error'
+        },
+        getBranch() {
+          return [
+            {
+              id: 'user-1',
+              type: 'message',
+              parentId: null,
+              message: { role: 'user', content: [{ type: 'text', text: 'hello' }] },
+            },
+            {
+              id: 'assistant-error',
+              type: 'message',
+              parentId: 'user-1',
+              message: { role: 'assistant', content: [], stopReason: 'error', errorMessage: 'LinX Cloud login expired.' },
+            },
+          ]
+        },
+        getEntry() {
+          return undefined
+        },
+        branch(id) {
+          branches.push(id)
+        },
+        buildSessionContext() {
+          return { messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }] }
+        },
+      },
+      modelRegistry: {
+        authStorage: {},
+      },
+    },
+    chatContainer: {
+      removeChild() {},
+    },
+    footer: {
+      invalidate() {},
+    },
+    ui: {
+      requestRender() {},
+    },
+    async showExtensionSelector(title) {
+      selectorCalls.push(title)
+      return undefined
+    },
+    showStatus() {},
+    showError(message) {
+      throw new Error(message)
+    },
+  }
+
+  module.applyLinxInteractiveBranding(interactive)
+  await interactive.handleEvent({
+    type: 'message_end',
+    message: { errorMessage: 'LinX Cloud login expired.' },
+  })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  assert.equal(selectorCalls.length, 1)
+  assert.deepEqual(branches, ['user-1'])
+  assert.deepEqual(interactive.session.agent.state.messages, [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }])
 })

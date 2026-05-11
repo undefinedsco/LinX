@@ -16,6 +16,48 @@ interface WhoAmIArgs {
   verbose?: boolean
 }
 
+interface LoginCommandDeps {
+  ensureBrowserConsentLogin?: typeof ensureBrowserConsentLogin
+  openBrowser?: typeof openBrowser
+  promptText?: typeof promptText
+  write?: (chunk: string) => unknown
+}
+
+export async function runLinxLoginCommand(
+  argv: LoginArgs,
+  deps: LoginCommandDeps = {},
+): Promise<void> {
+  const doBrowserConsentLogin = deps.ensureBrowserConsentLogin ?? ensureBrowserConsentLogin
+  const doOpenBrowser = deps.openBrowser ?? openBrowser
+  const doPromptText = deps.promptText ?? promptText
+  const write = deps.write ?? ((chunk: string) => process.stdout.write(chunk))
+
+  let browserLoginStarted = false
+  const result = await doBrowserConsentLogin({
+    issuerUrl: argv.url,
+    forceFresh: true,
+    onAuthUrl(url) {
+      browserLoginStarted = true
+      write('Opening LinX Cloud login in your browser...\n')
+      write(`${url}\n\n`)
+      write('Complete LinX Cloud consent in your browser. If the browser cannot return to this terminal, paste the final redirect URL below.\n')
+    },
+    openBrowser: doOpenBrowser,
+    async manualRedirectUrl(signal) {
+      return (await doPromptText('redirect URL (leave empty to keep waiting): ', signal)).trim()
+    },
+  })
+
+  if (browserLoginStarted) {
+    write('\n')
+  }
+  write('LinX login successful.\n')
+  write(`server: ${result.url}\n`)
+  write(`webId: ${result.webId}\n`)
+  write('auth: oidc_oauth\n')
+  write(`session: ${result.reusedExistingSession ? 'reused' : 'browser-consent'}\n`)
+}
+
 export const loginCommand: CommandModule<object, LoginArgs> = {
   command: 'login',
   describe: 'Login to LinX cloud in the browser and persist the local OIDC session',
@@ -28,29 +70,7 @@ export const loginCommand: CommandModule<object, LoginArgs> = {
         description: 'Solid / account issuer URL',
       }),
   handler: async (argv) => {
-    let browserLoginStarted = false
-    const result = await ensureBrowserConsentLogin({
-      issuerUrl: argv.url,
-      onAuthUrl(url) {
-        browserLoginStarted = true
-        process.stdout.write('Opening LinX Cloud login in your browser...\n')
-        process.stdout.write(`${url}\n\n`)
-        process.stdout.write('Complete LinX Cloud consent in your browser. If the browser cannot return to this terminal, paste the final redirect URL below.\n')
-      },
-      openBrowser,
-      async manualRedirectUrl(signal) {
-        return (await promptText('redirect URL (leave empty to keep waiting): ', signal)).trim()
-      },
-    })
-
-    if (browserLoginStarted) {
-      process.stdout.write('\n')
-    }
-    process.stdout.write('LinX login successful.\n')
-    process.stdout.write(`server: ${result.url}\n`)
-    process.stdout.write(`webId: ${result.webId}\n`)
-    process.stdout.write('auth: oidc_oauth\n')
-    process.stdout.write(`session: ${result.reusedExistingSession ? 'reused' : 'browser-consent'}\n`)
+    await runLinxLoginCommand(argv)
     process.exit(0)
   },
 }
