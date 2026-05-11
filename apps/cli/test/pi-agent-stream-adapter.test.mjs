@@ -100,6 +100,40 @@ test('pi agent stream adapter can use a direct completion backend with full cont
   assert.equal(events[4].message.content[0].text, 'cloud hello')
 })
 
+test('pi agent stream adapter forwards abort signal to completion backend', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/stream.ts')
+  t.after(() => cleanup())
+
+  const controller = new AbortController()
+  const completionCalls = []
+  const adapter = module.createPiAgentStreamAdapter({
+    completionBackend: {
+      async complete(input) {
+        completionCalls.push(input)
+        controller.abort()
+        throw new DOMException('Aborted', 'AbortError')
+      },
+    },
+  })
+
+  const events = []
+  for await (const event of adapter.streamFn(undefined, {
+    messages: [{ role: 'user', content: 'hello' }],
+  }, {
+    signal: controller.signal,
+  })) {
+    events.push(event)
+  }
+
+  assert.equal(completionCalls.length, 1)
+  assert.equal(completionCalls[0].signal, controller.signal)
+  const errorEvent = events.find((event) => event.type === 'error')
+  assert.ok(errorEvent)
+  assert.equal(errorEvent.reason, 'aborted')
+  assert.equal(errorEvent.error.stopReason, 'aborted')
+  assert.equal(errorEvent.error.errorMessage, 'Request was aborted.')
+})
+
 test('pi agent stream adapter defaults assistant metadata to linx-lite', async (t) => {
   const { module, cleanup } = await loadWatchModule('lib/pi-adapter/stream.ts')
   t.after(() => cleanup())
@@ -206,6 +240,88 @@ test('pi agent stream adapter forwards tools and emits tool calls for Pi agent l
   assert.equal(events[4].message.stopReason, 'toolUse')
 })
 
+test('pi agent stream adapter emits Pi thinking events from remote reasoning content', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/stream.ts')
+  t.after(() => cleanup())
+
+  const adapter = module.createPiAgentStreamAdapter({
+    completionBackend: {
+      async complete() {
+        return {
+          reasoningContent: 'model reasoning trace',
+          content: 'final answer',
+          finishReason: 'stop',
+          toolCalls: [],
+        }
+      },
+    },
+  })
+
+  const events = []
+  for await (const event of adapter.streamFn(undefined, {
+    messages: [{ role: 'user', content: 'think' }],
+  })) {
+    events.push(event)
+  }
+
+  assert.equal(events[1].type, 'thinking_start')
+  assert.equal(events[2].type, 'thinking_delta')
+  assert.equal(events[2].delta, 'model reasoning trace')
+  assert.equal(events[3].type, 'thinking_end')
+  assert.equal(events[3].content, 'model reasoning trace')
+  assert.equal(events[4].type, 'text_start')
+  assert.equal(events.at(-1).type, 'done')
+  assert.deepEqual(events.at(-1).message.content.slice(0, 2), [
+    {
+      type: 'thinking',
+      thinking: 'model reasoning trace',
+      thinkingSignature: 'reasoning_content',
+    },
+    {
+      type: 'text',
+      text: 'final answer',
+    },
+  ])
+})
+
+test('pi agent stream adapter attaches remote usage for Pi footer context and cache stats', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/stream.ts')
+  t.after(() => cleanup())
+
+  const adapter = module.createPiAgentStreamAdapter({
+    completionBackend: {
+      async complete() {
+        return {
+          content: 'usage answer',
+          usage: {
+            input: 60,
+            output: 25,
+            cacheRead: 30,
+            cacheWrite: 10,
+            totalTokens: 125,
+          },
+        }
+      },
+    },
+  })
+
+  const events = []
+  for await (const event of adapter.streamFn(undefined, {
+    messages: [{ role: 'user', content: 'usage' }],
+  })) {
+    events.push(event)
+  }
+
+  assert.deepEqual(events.at(-1).message.usage, {
+    input: 60,
+    output: 25,
+    cacheRead: 30,
+    cacheWrite: 10,
+    totalTokens: 125,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  })
+})
+
 test('pi agent stream adapter preserves assistant tool calls and tool results in history', async (t) => {
   const { module, cleanup } = await loadWatchModule('lib/pi-adapter/stream.ts')
   t.after(() => cleanup())
@@ -252,4 +368,116 @@ test('pi agent stream adapter preserves assistant tool calls and tool results in
       name: 'bash',
     },
   ])
+})
+
+test('pi agent stream adapter drops interrupted dangling tool calls from resumed history', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/stream.ts')
+  t.after(() => cleanup())
+
+  const completionCalls = []
+  const adapter = module.createPiAgentStreamAdapter({
+    completionBackend: {
+      async complete(input) {
+        completionCalls.push(input)
+        return 'continued'
+      },
+    },
+  })
+
+  for await (const _event of adapter.streamFn(undefined, {
+    messages: [
+      {
+        role: 'assistant',
+        content: [
+          { type: 'thinking', thinking: 'need to inspect files', thinkingSignature: 'reasoning_content' },
+          { type: 'text', text: 'I will inspect the repo.' },
+          {
+            type: 'toolCall',
+            id: 'call_interrupted',
+            name: 'bash',
+            arguments: { command: 'grep -r "well-known" --include="*.ts" --include="*.json" -l' },
+          },
+        ],
+      },
+      { role: 'user', content: '继续' },
+    ],
+  })) {
+    // drain
+  }
+
+  assert.deepEqual(completionCalls[0].messages, [
+    {
+      role: 'assistant',
+      content: 'I will inspect the repo.',
+    },
+    {
+      role: 'user',
+      content: '继续',
+    },
+  ])
+})
+
+test('pi agent stream adapter preserves DeepSeek reasoning content for tool-result history', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/stream.ts')
+  t.after(() => cleanup())
+
+  const completionCalls = []
+  const adapter = module.createPiAgentStreamAdapter({
+    completionBackend: {
+      async complete(input) {
+        completionCalls.push(input)
+        return 'done'
+      },
+    },
+  })
+
+  for await (const _event of adapter.streamFn(undefined, {
+    messages: [
+      {
+        role: 'assistant',
+        content: [
+          {
+            type: 'thinking',
+            thinking: 'need to inspect cwd',
+            thinkingSignature: 'reasoning_content',
+          },
+          { type: 'toolCall', id: 'call_1', name: 'bash', arguments: { command: 'pwd' } },
+        ],
+      },
+      { role: 'toolResult', toolCallId: 'call_1', toolName: 'bash', content: [{ type: 'text', text: '/tmp/demo' }] },
+      { role: 'user', content: 'continue' },
+    ],
+  })) {
+    // drain
+  }
+
+  assert.equal(completionCalls[0].messages[0].reasoning_content, 'need to inspect cwd')
+  assert.equal(completionCalls[0].messages[0].tool_calls[0].id, 'call_1')
+})
+
+test('pi agent stream adapter maps expired LinX cloud auth errors to a compact TUI error', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/stream.ts')
+  t.after(() => cleanup())
+
+  const adapter = module.createPiAgentStreamAdapter({
+    completionBackend: {
+      async complete() {
+        const error = new Error('Chat request failed (401): {"error":"Unauthorized","message":"Invalid Solid token"}')
+        error.authExpired = true
+        throw error
+      },
+    },
+  })
+
+  const events = []
+  for await (const event of adapter.streamFn(undefined, {
+    messages: [{ role: 'user', content: 'hello' }],
+  })) {
+    events.push(event)
+  }
+
+  const errorEvent = events.find((event) => event.type === 'error')
+  assert.ok(errorEvent)
+  assert.equal(errorEvent.error.errorMessage, 'LinX Cloud login expired.')
+  assert.doesNotMatch(errorEvent.error.errorMessage, /Invalid Solid token/)
 })

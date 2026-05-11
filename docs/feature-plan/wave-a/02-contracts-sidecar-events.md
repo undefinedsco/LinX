@@ -54,7 +54,7 @@
 
 > NOTE (CP0 对齐更新)：
 > - 领域字段以 **UDFS(company vocab)** 承载（复用范围为公司级，非产品级）。
-> - Solid `ldp:inbox` 仅作为通知通道：inbox 内资源使用 **AS2**（`as:Announce`），并通过 `as:object` 指向 `ApprovalRequest`。
+> - Solid `ldp:inbox` 仅作为通知通道：LinX 发出的 inbox 通知默认使用 **AS2**（`as:Announce`），并通过 `as:object` 指向 `ApprovalRequest`；协议 inbox 本身不限定只能承载 `as:Announce`。
 > - 本分支 CP0 范围收敛为「**只审计/审批触达 Pod 数据的操作**」。
 > - 字段命名避免 `xxxRef`（uri 字段本身即引用）。
 
@@ -65,7 +65,7 @@
 ### 6A.1 Namespace（CP0）
 
 - 公司词汇表：`udfs:`（存储 Approval/Audit/Grant 的领域字段）
-- Inbox 通知：AS2（`as:`），inbox 内资源类型为 `as:Announce`
+- Inbox 通知：AS2（`as:`），LinX approval 通知默认类型为 `as:Announce`
 - 授权策略表达：ODRL（`odrl:`），Grant 主类型为 `odrl:Policy`
 - Pod 动作语义：ACL（`acl:`）
 
@@ -83,7 +83,7 @@
 
 inbox 仅做通知通道，不承载审批本体：
 
-- `rdf:type as:Announce`
+- `rdf:type` 可写；LinX approval 通知默认写 `as:Announce`
 - `as:object` 指向 `ApprovalRequest` 资源 URI
 - `dcterms:created` 记录创建时间
 
@@ -94,7 +94,7 @@ inbox 仅做通知通道，不承载审批本体：
   - Pod 数据访问范围：`odrl:target`（Pod URI）+ `odrl:action`（例如 `acl:Read`）
   - 身份链：`decisionBy` + `decisionRole` + `onBehalfOf`
 - Audit（追加写审计）：`udfs:AuditEntry`（append-only intent）
-  - runtime 细节必须进入 `udfs:context`（JSON），不落稳定列
+  - 仅记录结构化事件字段与资源指针（`action`、`actor`、`actorRole`、`session`、`entry`、`toolCallId`、`toolName`、`approval`、`policy`、`policyVersion`、`createdAt`）
 - Grant（"不再提醒" 的放权层）：主类型 `odrl:Policy`，并额外打 `rdf:type udfs:AutonomyGrant`
   - 最小字段：`odrl:target` + `odrl:action` + `udfs:effect`/`udfs:riskCeiling` + 身份链条
 
@@ -102,11 +102,11 @@ inbox 仅做通知通道，不承载审批本体：
 
 | 运行时事件 | 持久化目标 | 触发条件 |
 |-----------|-----------|---------|
-| `tool.call` (waiting_approval) | `approvalTable` INSERT + `inboxNotificationTable` INSERT | 仅当事件携带 `target/action`（触达 Pod 数据）且需要审批 |
-| `tool.call` (approved/rejected) | `approvalTable` UPDATE + `auditTable` INSERT + `inboxNotificationTable` INSERT | 同上 |
-| `inbox.approval` (resolved) | `approvalTable` UPDATE + `inboxNotificationTable` INSERT | 审批结果从 Web/Mobile 回写 |
+| `tool.call` (waiting_approval) | `approvalResource` INSERT + `inboxNotificationTable` INSERT | 仅当事件携带 `target/action`（触达 Pod 数据）且需要审批 |
+| `tool.call` (approved/rejected) | `approvalResource` UPDATE + `auditResource` INSERT + `inboxNotificationTable` INSERT | 同上 |
+| `inbox.approval` (resolved) | `approvalResource` UPDATE + `inboxNotificationTable` INSERT | 审批结果从 Web/Mobile 回写 |
 
-> 注意：runtime-only 字段（arguments、result/error、duration 等）不作为 Pod 稳定列；需要审计的细节应进入 `auditTable.context`（JSON）。
+> 注意：runtime-only 字段（arguments、result/error、duration 等）不作为 Audit 稳定列，也不写入 `auditResource.context`。需要审批上下文时写入 `approvalResource.context`；需要回放细节时通过 `entry` 指向的消息 / tool block 恢复。
 
 Writer of Record（选型：B）：
 - **xpod/chatkit（服务端）** 负责把 action 的执行与 Approval/Audit/Grant/InboxNotification 的落盘绑定在一起（同一侧完成一致性与幂等）。
@@ -116,10 +116,11 @@ Writer of Record（选型：B）：
 
 | 实体 | Pod 路径 | RDF Type |
 |------|---------|----------|
-| Inbox Notification | `/inbox/{id}.ttl` | `as:Announce` |
-| Approval | `/.data/approvals/{id}.ttl` | `udfs:ApprovalRequest` |
-| Audit | `/.data/audit/{id}.ttl` | `udfs:AuditEntry` |
+| Inbox Notification | `/inbox/{id}.ttl` | base `as:Activity`; writable `rdf:type`, LinX approval notifications default `as:Announce` |
+| Approval | `/.data/approvals/YYYY/MM/DD.ttl#{id}` | `udfs:ApprovalRequest` |
+| Audit | `/.data/audits/YYYY/MM/DD.ttl#{id}` | `udfs:AuditEntry` |
 | Grant | `/settings/autonomy/grants/{id}.ttl` | `odrl:Policy` (+ `rdf:type udfs:AutonomyGrant`) |
+| Session | `/.data/sessions/YYYY/MM.ttl#{id}` | `udfs:Session` |
 
 ---
 

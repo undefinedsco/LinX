@@ -40,6 +40,36 @@ test('listRemoteModels maps remote model metadata', async () => {
   ])
 })
 
+test('listRemoteModels normalizes LinX cloud provider display metadata', async () => {
+  globalThis.fetch = async () => ({
+    ok: true,
+    text: async () => JSON.stringify({
+      data: [
+        {
+          id: 'linx',
+          provider: 'openai',
+          owned_by: 'openai',
+          context_window: 1000000,
+        },
+        {
+          id: 'linx-lite',
+          provider: 'openai',
+          owned_by: 'openai',
+          context_window: 200000,
+        },
+      ],
+    }),
+  })
+
+  const { listRemoteModels } = await import('../dist/lib/chat-api.js')
+  const models = await listRemoteModels({}, 'https://api.undefineds.co', 'token')
+
+  assert.deepEqual(models.map((model) => ({ id: model.id, provider: model.provider, ownedBy: model.ownedBy })), [
+    { id: 'linx', provider: 'undefineds', ownedBy: 'undefineds' },
+    { id: 'linx-lite', provider: 'undefineds', ownedBy: 'undefineds' },
+  ])
+})
+
 test('listRemoteModels does not duplicate v1 when runtime url already targets the api base', async () => {
   let requestedUrl = null
   globalThis.fetch = async (url) => {
@@ -160,6 +190,35 @@ test('createRemoteCompletion defaults to linx-lite when no model override is pro
   assert.equal(reply, 'hello default model')
 })
 
+test('createRemoteCompletionResult passes external abort signal and reports user abort', async () => {
+  const controller = new AbortController()
+  let receivedSignal = null
+  globalThis.fetch = async (_url, init) => {
+    receivedSignal = init?.signal
+    controller.abort()
+    throw new DOMException('Aborted', 'AbortError')
+  }
+
+  const { createRemoteCompletionResult, RemoteChatRequestError } = await import('../dist/lib/chat-api.js')
+  await assert.rejects(
+    createRemoteCompletionResult({
+      runtimeUrl: 'https://api.undefineds.co/v1',
+      apiKey: 'token',
+      model: 'linx-lite',
+      messages: [{ role: 'user', content: 'abort me' }],
+      signal: controller.signal,
+    }),
+    (error) => {
+      assert.equal(error instanceof RemoteChatRequestError, true)
+      assert.equal(error.status, 0)
+      assert.match(error.message, /aborted by user/)
+      assert.doesNotMatch(error.message, /timed out/)
+      return true
+    },
+  )
+  assert.ok(receivedSignal instanceof AbortSignal)
+})
+
 test('createRemoteCompletionResult forwards tools and parses tool calls', async () => {
   let requestBody = null
   globalThis.fetch = async (_url, init) => {
@@ -201,4 +260,134 @@ test('createRemoteCompletionResult forwards tools and parses tool calls', async 
   assert.equal(requestBody.tool_choice, 'auto')
   assert.equal(result.finishReason, 'tool_calls')
   assert.equal(result.toolCalls[0].function.name, 'bash')
+})
+
+test('createRemoteCompletionResult parses OpenAI-compatible reasoning fields', async () => {
+  globalThis.fetch = async () => ({
+    ok: true,
+    json: async () => ({
+      choices: [
+        {
+          finish_reason: 'stop',
+          message: {
+            reasoning_content: 'short reasoning trace',
+            content: 'final answer',
+          },
+        },
+      ],
+    }),
+  })
+
+  const { createRemoteCompletionResult } = await import('../dist/lib/chat-api.js')
+  const result = await createRemoteCompletionResult({
+    runtimeUrl: 'https://api.undefineds.co/v1',
+    apiKey: 'token',
+    model: 'linx-lite',
+    messages: [{ role: 'user', content: 'think' }],
+  })
+
+  assert.equal(result.reasoningContent, 'short reasoning trace')
+  assert.equal(result.content, 'final answer')
+})
+
+test('createRemoteCompletionResult maps OpenAI-compatible usage and cache tokens', async () => {
+  globalThis.fetch = async () => ({
+    ok: true,
+    json: async () => ({
+      usage: {
+        prompt_tokens: 100,
+        completion_tokens: 20,
+        prompt_tokens_details: {
+          cached_tokens: 40,
+          cache_write_tokens: 10,
+        },
+        completion_tokens_details: {
+          reasoning_tokens: 5,
+        },
+      },
+      choices: [
+        {
+          message: {
+            content: 'final answer',
+          },
+        },
+      ],
+    }),
+  })
+
+  const { createRemoteCompletionResult } = await import('../dist/lib/chat-api.js')
+  const result = await createRemoteCompletionResult({
+    runtimeUrl: 'https://api.undefineds.co/v1',
+    apiKey: 'token',
+    model: 'linx-lite',
+    messages: [{ role: 'user', content: 'usage' }],
+  })
+
+  assert.deepEqual(result.usage, {
+    input: 60,
+    output: 25,
+    cacheRead: 30,
+    cacheWrite: 10,
+    totalTokens: 125,
+  })
+})
+
+test('createRemoteCompletionResult marks invalid Solid token as expired cloud auth', async () => {
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 401,
+    statusText: 'Unauthorized',
+    text: async () => JSON.stringify({
+      error: 'Unauthorized',
+      message: 'Invalid Solid token',
+    }),
+  })
+
+  const { createRemoteCompletionResult, RemoteChatRequestError } = await import('../dist/lib/chat-api.js')
+  await assert.rejects(
+    createRemoteCompletionResult({
+      runtimeUrl: 'https://api.undefineds.co/v1',
+      apiKey: 'expired-token',
+      model: 'linx-lite',
+      messages: [{ role: 'user', content: 'hi' }],
+    }),
+    (error) => {
+      assert.equal(error instanceof RemoteChatRequestError, true)
+      assert.equal(error.status, 401)
+      assert.equal(error.authExpired, true)
+      assert.match(error.message, /LinX Cloud login expired/)
+      assert.doesNotMatch(error.message, /Invalid Solid token/)
+      return true
+    },
+  )
+})
+
+test('createRemoteCompletionResult normalizes upstream timeout errors', async () => {
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 500,
+    statusText: 'Internal Server Error',
+    text: async () => JSON.stringify({
+      error: {
+        message: 'The operation was aborted due to timeout',
+      },
+    }),
+  })
+
+  const { createRemoteCompletionResult, RemoteChatRequestError } = await import('../dist/lib/chat-api.js')
+  await assert.rejects(
+    createRemoteCompletionResult({
+      runtimeUrl: 'https://api.undefineds.co/v1',
+      apiKey: 'token',
+      model: 'linx-lite',
+      messages: [{ role: 'user', content: 'hi' }],
+    }),
+    (error) => {
+      assert.equal(error instanceof RemoteChatRequestError, true)
+      assert.equal(error.status, 500)
+      assert.match(error.message, /LinX Cloud request timed out upstream/)
+      assert.match(error.message, /aborted due to timeout/)
+      return true
+    },
+  )
 })

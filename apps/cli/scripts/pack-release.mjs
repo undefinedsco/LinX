@@ -6,13 +6,18 @@ import { tmpdir } from 'node:os'
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 const cliRoot = fileURLToPath(new URL('..', import.meta.url))
-const clientRoot = join(repoRoot, 'packages', 'client')
+const modelsRoot = join(repoRoot, 'packages', 'models')
 const outRoot = join(repoRoot, 'preview')
 const args = parseArgs(process.argv.slice(2))
 
 const cliPkg = JSON.parse(readFileSync(join(cliRoot, 'package.json'), 'utf-8'))
-const clientPkg = JSON.parse(readFileSync(join(clientRoot, 'package.json'), 'utf-8'))
+const modelsPkg = JSON.parse(readFileSync(join(modelsRoot, 'package.json'), 'utf-8'))
+const agentRuntimeRoot = join(repoRoot, 'packages', 'agent-runtime')
+const agentRuntimePkg = JSON.parse(readFileSync(join(agentRuntimeRoot, 'package.json'), 'utf-8'))
 const version = args.version ?? cliPkg.version
+if (modelsPkg.version !== cliPkg.version && !args.version) {
+  throw new Error(`CLI and models versions must match for release: cli=${cliPkg.version}, models=${modelsPkg.version}`)
+}
 
 const workRoot = join(tmpdir(), `linx-cli-release-${Date.now()}`)
 const cliWorkRoot = join(workRoot, 'cli')
@@ -22,8 +27,8 @@ mkdirSync(outRoot, { recursive: true })
 mkdirSync(cliWorkRoot, { recursive: true })
 
 copyPackage(cliRoot, cliWorkRoot)
-copyClientPackage(cliWorkRoot)
-rewriteClientImports(join(cliWorkRoot, 'dist'), cliWorkRoot)
+copyAgentRuntimePackage(cliWorkRoot)
+rewriteAgentRuntimeImports(join(cliWorkRoot, 'dist'), cliWorkRoot)
 
 writeJson(join(cliWorkRoot, 'package.json'), createPublishableCliPackage(cliPkg, version))
 
@@ -56,9 +61,10 @@ function shouldCopyPackagePath(root, path) {
 function createPublishableCliPackage(pkg, packageVersion) {
   const dependencies = {
     ...(pkg.dependencies ?? {}),
+    '@undefineds.co/models': packageVersion,
     '@zed-industries/codex-acp': '^0.9.5',
   }
-  delete dependencies['@linx/client']
+  delete dependencies['@linx/agent-runtime']
 
   return {
     ...pkg,
@@ -70,11 +76,6 @@ function createPublishableCliPackage(pkg, packageVersion) {
       'README.md',
       'package.json',
     ],
-    repository: {
-      type: 'git',
-      url: 'git+https://github.com/undefinedsco/LinX.git',
-      directory: 'apps/cli',
-    },
     dependencies,
     publishConfig: {
       access: 'public',
@@ -82,33 +83,39 @@ function createPublishableCliPackage(pkg, packageVersion) {
   }
 }
 
-function copyClientPackage(cliWorkRoot) {
-  const vendorRoot = join(cliWorkRoot, 'vendor', 'client')
+function copyAgentRuntimePackage(cliWorkRoot) {
+  const vendorRoot = join(cliWorkRoot, 'vendor', 'agent-runtime')
   mkdirSync(vendorRoot, { recursive: true })
-  cpSync(join(clientRoot, 'dist'), join(vendorRoot, 'dist'), { recursive: true })
+  cpSync(join(agentRuntimeRoot, 'dist'), join(vendorRoot, 'dist'), { recursive: true })
   writeJson(join(vendorRoot, 'package.json'), {
-    name: '@linx/client',
-    version: clientPkg.version,
+    name: '@linx/agent-runtime',
+    version: agentRuntimePkg.version,
     type: 'module',
     exports: {
       '.': './dist/index.js',
-      './watch': './dist/watch/index.js',
+      './acp': './dist/acp.js',
+      './companion-model': './dist/companion-model.js',
+      './turn-controller': './dist/turn-controller.js',
     },
   })
   fixExtensionlessRelativeImports(join(vendorRoot, 'dist'))
 }
 
-function rewriteClientImports(root, cliWorkRoot) {
+function rewriteAgentRuntimeImports(root, cliWorkRoot) {
   const jsFiles = walkJs(root)
   for (const file of jsFiles) {
     let source = readFileSync(file, 'utf8')
-    const rel = relative(dirname(file), join(cliWorkRoot, 'vendor', 'client', 'dist')).replaceAll('\\', '/')
+    const rel = relative(dirname(file), join(cliWorkRoot, 'vendor', 'agent-runtime', 'dist')).replaceAll('\\', '/')
     const base = rel.startsWith('.') ? rel : `./${rel}`
     const replacements = [
-      ["'@linx/client'", `'${base}/index.js'`],
-      ["'@linx/client/watch'", `'${base}/watch/index.js'`],
-      ['"@linx/client"', `"${base}/index.js"`],
-      ['"@linx/client/watch"', `"${base}/watch/index.js"`],
+      ["'@linx/agent-runtime'", `'${base}/index.js'`],
+      ["'@linx/agent-runtime/acp'", `'${base}/acp.js'`],
+      ["'@linx/agent-runtime/companion-model'", `'${base}/companion-model.js'`],
+      ["'@linx/agent-runtime/turn-controller'", `'${base}/turn-controller.js'`],
+      ['"@linx/agent-runtime"', `"${base}/index.js"`],
+      ['"@linx/agent-runtime/acp"', `"${base}/acp.js"`],
+      ['"@linx/agent-runtime/companion-model"', `"${base}/companion-model.js"`],
+      ['"@linx/agent-runtime/turn-controller"', `"${base}/turn-controller.js"`],
     ]
     for (const [from, to] of replacements) {
       source = source.split(from).join(to)
@@ -165,10 +172,12 @@ function resolveRelativeSpecifier(fromFile, specifier) {
 }
 
 function npmPack(cwd, cacheRoot) {
-  const pack = spawnSync('npm', ['pack'], {
+  const packCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm'
+  const pack = spawnSync(packCommand, ['pack'], {
     cwd,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'inherit'],
+    shell: process.platform === 'win32',
     env: {
       ...process.env,
       npm_config_cache: join(cacheRoot, '.npm-cache'),

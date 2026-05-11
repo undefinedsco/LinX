@@ -7,7 +7,7 @@ const mocked = vi.hoisted(() => ({
   credentialTable: { name: 'credential' },
 }))
 
-vi.mock('@linx/client', () => ({
+vi.mock('@undefineds.co/models/client', () => ({
   resolveLinxPodBaseUrl: (webId: string) => webId.replace('/profile/card#me', '').replace(/\/$/, ''),
   resolveLinxRuntimeApiBaseUrlForIssuerUrl: (url: string) => {
     const clean = url.replace(/\/$/, '')

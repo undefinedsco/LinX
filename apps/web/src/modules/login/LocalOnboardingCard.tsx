@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2, Wrench } from 'lucide-react'
-import { LINX_CLOUD_IDENTITY_ORIGIN } from '@linx/client'
+import { LINX_CLOUD_IDENTITY_ORIGIN } from '@undefineds.co/models/client'
 import { Button } from '@/components/ui/button'
 import { LoginCardShell } from './LoginCardShell'
 import { useConfigWindowState } from './hooks/use-config-window-state'

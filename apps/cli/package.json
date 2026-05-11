@@ -12,12 +12,11 @@
     "test": "yarn build && node --test test/**/*.test.mjs"
   },
   "dependencies": {
-    "@linx/client": "*",
+    "@linx/agent-runtime": "*",
+    "@undefineds.co/models": "*",
     "@inrupt/solid-client-authn-node": "^3.1.1",
-    "@inrupt/vocab-common-rdf": "^1.0.5",
     "@mariozechner/pi-coding-agent": "^0.67.6",
-    "@undefineds.co/drizzle-solid": "^0.3.5",
-    "@undefineds.co/models": "0.2.16",
+    "n3": "^1.26.0",
     "yargs": "^17.7.2"
   },
   "devDependencies": {

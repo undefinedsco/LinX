@@ -1,0 +1,16 @@
+import { DCTerms, LINX_CHAT, SIOC, UDFS } from '../namespaces'
+
+export const ThreadVocab = {
+  chat: SIOC.has_parent,
+  title: DCTerms.title,
+  starred: UDFS.favorite,
+  metadata: UDFS.metadata,
+  createdAt: DCTerms.created,
+  updatedAt: DCTerms.modified,
+
+  // Execution context: workspace URI for the runnable root
+  workspace: LINX_CHAT.workspace,
+
+  // Type marker (for SPARQL convenience)
+  type: SIOC.Thread,
+} as const

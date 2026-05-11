@@ -53,6 +53,10 @@ test('saveCredentials persists client credentials under ~/.linx and clearCredent
   assert.equal(statSync(join(tempHome, '.linx', 'config.json')).mode & 0o777, 0o644)
   assert.equal(statSync(join(tempHome, '.linx', 'secrets.json')).mode & 0o777, 0o600)
   assert.match(readFileSync(join(tempHome, '.linx', 'config.json'), 'utf-8'), /linx\.example/)
+  assert.deepEqual(JSON.parse(readFileSync(join(tempHome, '.linx', 'secrets.json'), 'utf-8')), {
+    clientId: 'linx-client',
+    clientSecret: 'linx-secret',
+  })
   assert.equal(mod.loadCredentials()?.sourceDir, join(tempHome, '.linx'))
 
   mod.clearCredentials()
@@ -76,12 +80,42 @@ test('loadCredentials reads credentials from ~/.linx', async () => {
     },
   })
 
-  const { loadCredentials } = await import('../dist/lib/credentials-store.js')
-  const credentials = loadCredentials()
+  const mod = await import('../dist/lib/credentials-store.js')
+  const credentials = mod.loadCredentials()
 
   assert.ok(credentials)
   assert.equal(credentials.url, 'https://linx.example')
   assert.equal(credentials.sourceDir, join(tempHome, '.linx'))
+  assert.deepEqual(mod.getClientCredentials(credentials), {
+    clientId: 'linx-client',
+    clientSecret: 'linx-secret',
+  })
+})
+
+test('loadCredentials migrates legacy clientId/clientSecret secrets to clientId/clientSecret in memory', async () => {
+  const tempHome = mkdtempSync(join(tmpdir(), 'linx-cli-creds-'))
+  process.env.HOME = tempHome
+
+  writeCredentialSet(tempHome, '.linx', {
+    config: {
+      url: 'https://linx.example',
+      webId: 'https://pod.example/profile#me',
+      authType: 'client_credentials',
+    },
+    secrets: {
+      clientId: 'legacy-client',
+      clientSecret: 'legacy-secret',
+    },
+  })
+
+  const mod = await import(`../dist/lib/credentials-store.js?legacy=${Date.now()}`)
+  const credentials = mod.loadCredentials()
+
+  assert.ok(credentials)
+  assert.deepEqual(mod.getClientCredentials(credentials), {
+    clientId: 'legacy-client',
+    clientSecret: 'legacy-secret',
+  })
 })
 
 test('loadCredentials ignores legacy ~/.xpod credentials', async () => {

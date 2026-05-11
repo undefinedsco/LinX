@@ -65,7 +65,7 @@
 | 01 | `CLISessionVocab` | ChatListPane (Session 项) | `sessionStatus`, `sessionTool`, `tokenUsage` |
 | 01 | `MessageVocab` | MessageList, Message | `content`, `richContent`, `maker`, `role`, `senderName`, `mentions` |
 | 02 | `InboxVocab` | ToolApprovalCard | `toolName`, `toolArguments`, `risk`, `status` |
-| 02 | `AuditVocab` | AuditLogViewer (P2) | `action`, `actor`, `actorRole`, `context` |
+| 02 | `AuditVocab` | AuditLogViewer (P2) | `action`, `actor`, `actorRole`, `session`, `entry`, `approval`, `policyVersion` |
 
 ### 6A.2 chatType → UI 渲染映射
 

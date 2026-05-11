@@ -1,17 +1,7 @@
-import type { Session } from '@inrupt/solid-client-authn-node'
 import type { WatchBackend } from './types.js'
+import { getDefaultPodDataSession, type PodDataSession } from '../pod-data-session.js'
 
 type SupportedPodWatchBackend = WatchBackend
-
-interface StoredCredentialsLike {
-  url: string
-  secrets: unknown
-}
-
-interface ClientCredentialsLike {
-  clientId: string
-  clientSecret: string
-}
 
 interface PodQueryDb {
   select(): {
@@ -49,17 +39,10 @@ interface PodProviderMatch {
 }
 
 interface PodAiRuntime {
-  loadCredentials: () => StoredCredentialsLike | null
-  getClientCredentials: (stored: StoredCredentialsLike) => ClientCredentialsLike | null
-  authenticate: (clientId: string, clientSecret: string, oidcIssuer: string) => Promise<{ session: Session }>
-  createDb: (session: Session) => PodQueryDb
-  credentialTable: unknown
-  aiProviderTable: unknown
-}
-
-async function dynamicImport(specifier: string): Promise<Record<string, any>> {
-  const loader = new Function('modulePath', 'return import(modulePath)') as (modulePath: string) => Promise<Record<string, any>>
-  return loader(specifier)
+  getPodDataSession: () => Promise<PodDataSession | null>
+  createDb?: (session: PodDataSession) => PodQueryDb
+  credentialTable?: unknown
+  aiProviderTable?: unknown
 }
 
 const POD_PROVIDER_IDS: Record<SupportedPodWatchBackend, readonly string[]> = {
@@ -182,10 +165,6 @@ function missingPodClientCredentialsMessage(): string {
   return 'LinX cloud credential source is not connected yet. Run `linx login` first.'
 }
 
-function unsupportedStoredAuthMessage(): string {
-  return 'LinX watch cloud credential source requires client credentials auth in `~/.linx`.'
-}
-
 export function podCredentialMissingMessage(backend: SupportedPodWatchBackend): string {
   if (backend === 'claude') {
     return 'No active Anthropic AI credential was found in LinX cloud credential config. Configure one in `/settings/credentials.ttl` and try again.'
@@ -202,27 +181,43 @@ export function podCredentialMissingMessage(backend: SupportedPodWatchBackend): 
   return 'No matching Pod AI credential was found.'
 }
 
+async function dynamicImport(specifier: string): Promise<Record<string, any>> {
+  const loader = new Function('modulePath', 'return import(modulePath)') as (modulePath: string) => Promise<Record<string, any>>
+  return loader(specifier)
+}
+
 async function createDefaultRuntime(): Promise<PodAiRuntime> {
-  const [credentialsStore, solidAuth, models] = await Promise.all([
-    dynamicImport('../credentials-store.js'),
-    dynamicImport('../solid-auth.js'),
-    dynamicImport('../models.js'),
-  ])
+  const models = await dynamicImport(new URL('../models.js', import.meta.url).href)
 
   return {
-    loadCredentials: credentialsStore.loadCredentials,
-    getClientCredentials: credentialsStore.getClientCredentials,
-    authenticate: solidAuth.authenticate,
-    createDb(session) {
-      return models.drizzle(session, {
+    getPodDataSession: getDefaultPodDataSession,
+    createDb(podSession) {
+      return models.drizzle(podSession.solidSession, {
         logger: false,
         disableInteropDiscovery: true,
         schema: models.solidSchema,
-      }) as unknown as PodQueryDb
+      }) as PodQueryDb
     },
     credentialTable: models.credentialTable,
     aiProviderTable: models.aiProviderTable,
   }
+}
+
+async function loadRowsWithDrizzle(
+  runtime: PodAiRuntime,
+  podSession: PodDataSession,
+): Promise<{ credentials: PodCredentialRow[]; providers: PodProviderRow[] } | null> {
+  if (!runtime.createDb || !runtime.credentialTable || !runtime.aiProviderTable) {
+    return null
+  }
+
+  const db = runtime.createDb(podSession)
+  const [credentials, providers] = await Promise.all([
+    db.select().from(runtime.credentialTable).execute() as Promise<PodCredentialRow[]>,
+    db.select().from(runtime.aiProviderTable).execute() as Promise<PodProviderRow[]>,
+  ])
+
+  return { credentials, providers }
 }
 
 export async function loadPodBackendCredential(
@@ -230,34 +225,22 @@ export async function loadPodBackendCredential(
   runtime?: PodAiRuntime,
 ): Promise<PodBackedWatchCredential | null> {
   const activeRuntime = runtime ?? await createDefaultRuntime()
-  const stored = activeRuntime.loadCredentials()
-  if (!stored) {
+  const podSession = await activeRuntime.getPodDataSession()
+  if (!podSession) {
     throw new Error(missingPodClientCredentialsMessage())
   }
 
-  const clientCredentials = activeRuntime.getClientCredentials(stored)
-  if (!clientCredentials) {
-    throw new Error(unsupportedStoredAuthMessage())
+  const rows = await loadRowsWithDrizzle(activeRuntime, podSession)
+  if (!rows) {
+    throw new Error('LinX cloud credential source requires shared models/drizzle-solid access.')
   }
 
-  const { session } = await activeRuntime.authenticate(clientCredentials.clientId, clientCredentials.clientSecret, stored.url)
-
-  try {
-    const db = activeRuntime.createDb(session)
-    const [credentials, providers] = await Promise.all([
-      db.select().from(activeRuntime.credentialTable).execute() as Promise<PodCredentialRow[]>,
-      db.select().from(activeRuntime.aiProviderTable).execute() as Promise<PodProviderRow[]>,
-    ])
-
-    const match = selectPodCredentialForBackend(backend, credentials, providers)
-    if (!match) {
-      return null
-    }
-
-    return buildBackendEnv(match, backend)
-  } finally {
-    await session.logout().catch(() => undefined)
+  const match = selectPodCredentialForBackend(backend, rows.credentials, rows.providers)
+  if (!match) {
+    return null
   }
+
+  return buildBackendEnv(match, backend)
 }
 
 export const __podInternal = {

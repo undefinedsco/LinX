@@ -4,11 +4,13 @@ import {
   chatTable,
   drizzle,
   eq,
+  extractChatIdFromChatRef,
+  extractThreadIdFromThreadRef,
   findPodRowByStorageId,
   initSolidTables,
+  solidSchema,
   messageTable,
   sessionTable,
-  solidSchema,
   threadTable,
   whereByPodStorageId,
   type MessageRow,
@@ -22,20 +24,11 @@ const DEFAULT_CHAT_ID = 'cli-default'
 const DEFAULT_AGENT_ID = 'linx-cli-assistant'
 
 function extractChatId(chatIdOrUri: string | null | undefined): string {
-  if (!chatIdOrUri) return DEFAULT_CHAT_ID
-  if (chatIdOrUri.includes('#')) {
-    const match = chatIdOrUri.match(/\.data\/chat\/([^/]+)\/index\.ttl#this/)
-    if (match) return match[1]
-  }
-  return chatIdOrUri
+  return extractChatIdFromChatRef(chatIdOrUri) ?? DEFAULT_CHAT_ID
 }
 
 function extractThreadId(threadIdOrUri: string | null | undefined): string | undefined {
-  if (!threadIdOrUri) return undefined
-  if (threadIdOrUri.includes('#')) {
-    return threadIdOrUri.split('#').pop() || undefined
-  }
-  return threadIdOrUri
+  return extractThreadIdFromThreadRef(threadIdOrUri) ?? undefined
 }
 
 function getPodBaseUrl(webId: string): string {

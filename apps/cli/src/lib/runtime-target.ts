@@ -1,4 +1,4 @@
-import { resolveLinxRuntimeOriginForIssuerUrl } from '@linx/client'
+import { resolveLinxRuntimeOriginForIssuerUrl } from '@undefineds.co/models/client'
 
 export interface RuntimeTargetOptions {
   issuerUrl: string

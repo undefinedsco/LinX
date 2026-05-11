@@ -1,10 +1,18 @@
 import { useMemo } from 'react'
 import { useSession } from '@inrupt/solid-ui-react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { resolveLinxPodBaseUrl } from '@linx/client'
+import { resolveLinxPodBaseUrl } from '@undefineds.co/models/client'
 import {
   approvalTable,
   auditTable,
+  buildApprovalResourceIri,
+  buildAuditResourceIri,
+  buildRuntimeSessionIri,
+  extractApprovalIdFromApprovalRef,
+  extractChatThreadRef,
+  extractPodResourceId,
+  extractRuntimeSessionId,
+  extractThreadIdFromThreadRef,
   inboxNotificationTable,
   type ApprovalInsert,
   type ApprovalRow,
@@ -78,14 +86,6 @@ export function useInboxInit() {
   return { db, isReady: !!db }
 }
 
-function extractResourceId(uri: string | undefined): string | null {
-  if (!uri) return null
-  const hash = uri.split('#').pop()
-  if (hash) return hash
-  const match = uri.match(/\/([^/]+)\.ttl$/)
-  return match?.[1] ?? null
-}
-
 function formatTimestamp(value: unknown): number {
   if (!value) return 0
   const time = new Date(String(value)).getTime()
@@ -96,24 +96,16 @@ function extractPodBase(webId: string): string {
   return resolveLinxPodBaseUrl(webId)
 }
 
-function makeApprovalUri(webId: string, approvalId: string): string {
-  return `${extractPodBase(webId)}/.data/approvals/${approvalId}.ttl#${approvalId}`
+function makeApprovalUri(webId: string, approvalId: string, createdAt: Date | string | number = new Date()): string {
+  return buildApprovalResourceIri(extractPodBase(webId), approvalId, createdAt)
 }
 
-function makeAuditUri(webId: string, auditId: string): string {
-  return `${extractPodBase(webId)}/.data/audit/${auditId}.ttl#${auditId}`
-}
-
-function extractRuntimeSessionId(sessionUri: string | null | undefined): string | null {
-  if (!sessionUri) return null
-  const match = sessionUri.match(/^urn:linx:runtime-session:(.+)$/)
-  return match?.[1] ?? null
+function makeAuditUri(webId: string, auditId: string, createdAt: Date | string | number = new Date()): string {
+  return buildAuditResourceIri(extractPodBase(webId), auditId, createdAt)
 }
 
 function extractThreadId(targetUri: string | null | undefined): string | null {
-  if (!targetUri) return null
-  const hash = targetUri.split('#').pop()
-  return hash || null
+  return extractThreadIdFromThreadRef(targetUri)
 }
 
 export function buildRuntimeToolResponse(
@@ -161,16 +153,6 @@ function buildApprovalDescription(approval: ApprovalRow): string {
   return `等待授权 · ${approval.risk} 风险`
 }
 
-function extractChatThreadRef(uri: string | null | undefined): { chatId: string | null; threadId: string | null } {
-  if (!uri) return { chatId: null, threadId: null }
-
-  const match = uri.match(/\.data\/chat\/([^/]+)\/index\.ttl#(.+)$/)
-  return {
-    chatId: match?.[1] ?? null,
-    threadId: match?.[2] ?? null,
-  }
-}
-
 function buildInboxItems(
   notifications: InboxNotificationRow[],
   approvals: ApprovalRow[],
@@ -183,7 +165,7 @@ function buildInboxItems(
   const items: InboxItem[] = []
 
   for (const notification of notifications) {
-    const resourceId = extractResourceId(notification.object)
+    const resourceId = extractPodResourceId(notification.object)
     if (!resourceId) continue
 
     const approval = approvalById.get(resourceId)
@@ -213,7 +195,7 @@ function buildInboxItems(
 
     const audit = auditById.get(resourceId)
     if (audit) {
-      const relatedApprovalId = extractResourceId(audit.approval)
+      const relatedApprovalId = extractApprovalIdFromApprovalRef(audit.approval)
       const relatedApproval = relatedApprovalId ? approvalById.get(relatedApprovalId) : undefined
       const itemId = `audit:${audit.id}`
       if (seen.has(itemId)) continue
@@ -265,7 +247,7 @@ function buildInboxItems(
   for (const audit of audits) {
     const itemId = `audit:${audit.id}`
     if (seen.has(itemId)) continue
-    const relatedApprovalId = extractResourceId(audit.approval)
+    const relatedApprovalId = extractApprovalIdFromApprovalRef(audit.approval)
     const relatedApproval = relatedApprovalId ? approvalById.get(relatedApprovalId) : undefined
     const presentation = buildAuditPresentation(audit, resolvedAuthTimestampsByKey, relatedApproval)
     items.push({
@@ -314,9 +296,8 @@ export const inboxOps = {
     }
 
     const now = new Date()
-    const resolvedAt = now.toISOString()
     const auditId = crypto.randomUUID()
-    const auditUri = makeAuditUri(input.actorWebId, auditId)
+    const auditUri = makeAuditUri(input.actorWebId, auditId, now)
     const grantPattern = input.decision === 'approved' ? input.grantPattern?.trim() : undefined
 
     await updateExactRecord(db, approvalTable as any, input.approval as any, {
@@ -335,16 +316,10 @@ export const inboxOps = {
       actorRole: 'human',
       session: input.approval.session,
       toolCallId: input.approval.toolCallId,
-      approval: makeApprovalUri(input.actorWebId, input.approval.id),
-      context: JSON.stringify({
-        toolName: input.approval.toolName,
-        risk: input.approval.risk,
-        status: input.decision,
-        reason: input.reason?.trim() || null,
-        grantPattern: grantPattern || null,
-        command: grantPattern ? 'approve_pattern' : null,
-        resolvedAt,
-      }),
+      toolName: input.approval.toolName,
+      approval: makeApprovalUri(input.actorWebId, input.approval.id, input.approval.createdAt ?? now),
+      entry: input.approval.target,
+      policy: grantPattern ? `approve_pattern:${grantPattern}` : undefined,
       policyVersion: input.approval.policyVersion || 'phase4-inbox-v1',
       createdAt: now,
     }).execute()
@@ -420,7 +395,7 @@ export function useResolveInboxApproval() {
         grantPattern: input.grantPattern,
       })
 
-      const runtimeSessionId = extractRuntimeSessionId(input.approval.session)
+      const runtimeSessionId = extractRuntimeSessionId(input.approval.session ?? buildRuntimeSessionIri(''))
       const threadId = extractThreadId(input.approval.target)
       const isServiceMode = typeof window !== 'undefined' && !!(window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__
       if (runtimeSessionId && threadId && isServiceMode && input.approval.toolCallId && db && session.fetch) {

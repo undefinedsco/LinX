@@ -333,9 +333,9 @@ export const inboxTable = podTable(
 );
 ```
 
-**Audit Table** (6A.3):
+**Audit Resource** (6A.3):
 ```typescript
-export const auditTable = podTable(
+export const auditResource = podTable(
   'audit',
   {
     id: id('id'),
@@ -350,7 +350,8 @@ export const auditTable = podTable(
     createdAt: timestamp('createdAt'),
   },
   {
-    base: '/.data/audit/',
+    base: '/.data/audits/',
+    subjectTemplate: '{yyyy}/{MM}/{dd}.ttl#{id}',
     type: LINX_SIDECAR.AuditEntry,
   }
 );
@@ -368,7 +369,7 @@ export const auditTable = podTable(
   - INSERT new inbox item when tool_approval_required
   - UPDATE status when user approves/rejects
   - Record decisionBy, decisionRole, reason, resolvedAt
-- On tool execution completion, write to auditTable
+- On tool execution completion, write to auditResource
   - action: 'tool_approved' | 'tool_rejected' | 'tool_completed'
   - actor: current user's webId
   - context: JSON with trigger event and reasoning
@@ -590,7 +591,7 @@ Web/Mobile UI
 Pod Solid Storage (RDF)
   ├─ messageTable (cache SSE events)
   ├─ inboxTable (approval queue)
-  ├─ auditTable (approval audit)
+  ├─ auditResource (approval audit)
   └─ settingsTable (autonomy.level)
 ```
 
@@ -625,11 +626,11 @@ Pod Solid Storage (RDF)
 ### Phase 2: Autonomy & Approval
 1. Load AutonomyCheck settings from Pod settingsTable
 2. Implement approval timeout timer (30s default)
-3. Write approval decision to inboxTable + auditTable
+3. Write approval decision to inboxTable + auditResource
 
 ### Phase 3: Persistence & Audit
 1. Implement inboxTable CRUD (insert approval, update decision)
-2. Implement auditTable logging (action + actor + context)
+2. Implement auditResource logging (action + actor + resource pointers)
 3. Align with LinX's LINX_SIDECAR vocab
 
 ### Phase 4: Session Integration
@@ -678,4 +679,3 @@ Pod Solid Storage (RDF)
 |------|----------|-------------|
 | A | `/docs/feature-plan/wave-a/03-xpod-client-core.md` | Client protocol spec, AutonomyCheck, tool events |
 | A | `/docs/feature-plan/wave-a/02-contracts-sidecar-events.md` | Inbox/Audit schema, event contracts, control commands |
-

@@ -28,7 +28,7 @@ Skill source of truth:
 
 ## Doc Map
 
-- `docs/cli-app-shared-core.md` — `@undefineds.co/models` / `@linx/client` 边界
+- `docs/cli-app-shared-core.md` — `@undefineds.co/models` 共享数据面、client/watch helper 与 CLI/App 边界
 - `docs/desktop-product-strategy.md` — 桌面端 Chat-first + AI-native 产品策略
 - `docs/scene-restoration-solid-modeling.md` — `favorites / inbox / audit / workspace` 的场景恢复与 Solid 建模约束
 - `docs/chat-module-alignment.md` — Chat 模块对齐状态与待修复项

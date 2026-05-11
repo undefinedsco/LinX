@@ -1,0 +1,16 @@
+{
+  "commandId": "cmd_001",
+  "type": "tool.control",
+  "version": 1,
+  "command": "approve",
+  "sessionId": "sess_001",
+  "toolCallId": "tc_002",
+  "inboxItemId": "inbox_001",
+  "actor": {
+    "actorWebId": "https://alice.example/profile/card#me",
+    "actorRole": "human",
+    "onBehalfOf": "https://alice.example/profile/card#me"
+  },
+  "policyVersion": "2026-02-01",
+  "timestamp": "2026-02-12T10:00:11.000Z"
+}

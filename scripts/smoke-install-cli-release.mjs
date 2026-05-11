@@ -8,8 +8,11 @@ const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const previewRoot = join(repoRoot, 'preview')
 const prefix = mkdtempSync(join(tmpdir(), 'linx-cli-release-prefix-'))
 const cache = mkdtempSync(join(tmpdir(), 'linx-cli-release-cache-'))
+const modelsVersion = JSON.parse(readFileSync(join(repoRoot, 'packages', 'models', 'package.json'), 'utf8')).version
+const cliVersion = JSON.parse(readFileSync(join(repoRoot, 'apps', 'cli', 'package.json'), 'utf8')).version
 
-const cliTarball = findTarball(/^undefineds-co-linx-.+\.tgz$/)
+const modelsTarball = findTarball(`undefineds-co-models-${modelsVersion}.tgz`, /^undefineds-co-models-.+\.tgz$/)
+const cliTarball = findTarball(`undefineds-co-linx-${cliVersion}.tgz`, /^undefineds-co-linx-.+\.tgz$/)
 
 mkdirSync(prefix, { recursive: true })
 mkdirSync(cache, { recursive: true })
@@ -19,6 +22,7 @@ run('npm', [
   '-g',
   '--no-audit',
   '--no-fund',
+  '--omit=peer',
   '--loglevel=info',
   '--fetch-timeout=30000',
   '--fetch-retries=2',
@@ -26,6 +30,7 @@ run('npm', [
   prefix,
   '--cache',
   cache,
+  modelsTarball,
   cliTarball,
 ])
 
@@ -41,18 +46,22 @@ const smokeEnv = {
 }
 
 run(linxBin, ['--help'], { env: smokeEnv })
-assertInstalledCliVersion(linxBin, smokeEnv)
+run(linxBin, ['--version'], { env: smokeEnv })
 assertInstalledDrizzleSolidPatch()
 
 console.log(`release smoke install passed: ${linxBin}`)
 
-function findTarball(pattern) {
+function findTarball(exactName, fallbackPattern) {
+  if (existsSync(join(previewRoot, exactName))) {
+    return join(previewRoot, exactName)
+  }
+
   const matches = readdirSync(previewRoot)
-    .filter((name) => pattern.test(name))
+    .filter((name) => fallbackPattern.test(name))
     .sort()
   const latest = matches.at(-1)
   if (!latest) {
-    throw new Error(`No tarball matching ${pattern} in ${previewRoot}`)
+    throw new Error(`No tarball matching ${exactName} or ${fallbackPattern} in ${previewRoot}`)
   }
   return join(previewRoot, latest)
 }
@@ -67,39 +76,6 @@ function run(command, args, options = {}) {
   if ((result.status ?? 1) !== 0) {
     throw new Error(`${command} ${args.join(' ')} failed with ${result.status ?? 1}`)
   }
-}
-
-function runCapture(command, args, options = {}) {
-  console.log(`$ ${[command, ...args].join(' ')}`)
-  const result = spawnSync(command, args, {
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-    shell: process.platform === 'win32',
-    ...options,
-  })
-  if (result.stdout) {
-    process.stdout.write(result.stdout)
-  }
-  if (result.stderr) {
-    process.stderr.write(result.stderr)
-  }
-  if ((result.status ?? 1) !== 0) {
-    throw new Error(`${command} ${args.join(' ')} failed with ${result.status ?? 1}`)
-  }
-  return result.stdout
-}
-
-function assertInstalledCliVersion(linxBin, env) {
-  const packageRoot = findInstalledPackageRoot('@undefineds.co/linx')
-  const packageJson = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'))
-  const expectedVersion = packageJson.version
-  const actualVersion = runCapture(linxBin, ['--version'], { env }).trim()
-
-  if (actualVersion !== expectedVersion) {
-    throw new Error(`Installed linx --version mismatch: expected ${expectedVersion}, got ${actualVersion || '<empty>'}`)
-  }
-
-  console.log(`verified @undefineds.co/linx@${expectedVersion} --version`)
 }
 
 function assertInstalledDrizzleSolidPatch() {

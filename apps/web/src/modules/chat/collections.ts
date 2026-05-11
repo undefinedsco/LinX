@@ -19,9 +19,12 @@ import {
   agentTable,
   contactTable,
   credentialTable,
+  buildChatResourceIri,
+  buildThreadResourceIri,
   eq,
   normalizeAIConfigProviderId,
   resolveRowId,
+  resolveThreadChatId as resolveThreadChatIdFromRow,
   UDFS,
   WF,
   type ChatRow,
@@ -174,11 +177,11 @@ function buildChatSubjectIri(db: SolidDatabase, chatId: string | undefined): str
   if (!chatId) return null
   const podBaseUrl = getPodBaseUrl(db)
   if (!podBaseUrl) return null
-  return `${podBaseUrl}/.data/chat/${chatId}/index.ttl#this`
+  return buildChatResourceIri(podBaseUrl, chatId)
 }
 
 function getCachedThreadChatId(threadId: string): string | null {
-  return threadChatIdCache.get(threadId) ?? threadCollection.get(threadId)?.chatId ?? null
+  return threadChatIdCache.get(threadId) ?? resolveThreadChatIdFromRow(threadCollection.get(threadId)) ?? null
 }
 
 async function resolveThreadChatId(
@@ -195,17 +198,20 @@ async function resolveThreadChatId(
   }
 
   const cachedRow = cachedChatId
-    ? await (db as any).findByLocator(threadTable as any, { id: threadId, chatId: cachedChatId } as any)
+    ? await (db as any).findByLocator(threadTable as any, { id: threadId, chat: cachedChatId } as any)
     : null
   const row = (cachedRow
     ?? (await db.select().from(threadTable).execute()).find((entry: any) => entry.id === threadId)) as ThreadRow | undefined
-  if (!row?.chatId) {
+  const rowChatId = resolveThreadChatIdFromRow(row)
+  if (!rowChatId) {
     return null
   }
 
-  threadChatIdCache.set(threadId, row.chatId)
-  ;(threadCollection.utils as { writeUpsert?: (data: ThreadRow) => void }).writeUpsert?.(row)
-  return row.chatId
+  threadChatIdCache.set(threadId, rowChatId)
+  if (row) {
+    ;(threadCollection.utils as { writeUpsert?: (data: ThreadRow) => void }).writeUpsert?.(row)
+  }
+  return rowChatId
 }
 
 async function buildThreadSubjectIri(
@@ -218,7 +224,7 @@ async function buildThreadSubjectIri(
   if (!resolvedChatId) return null
   const podBaseUrl = getPodBaseUrl(db)
   if (!podBaseUrl) return null
-  return `${podBaseUrl}/.data/chat/${resolvedChatId}/index.ttl#${threadId}`
+  return buildThreadResourceIri(podBaseUrl, resolvedChatId, threadId)
 }
 
 function extractLinkedEntityId(uri: string | null | undefined): string | null {
@@ -349,7 +355,7 @@ async function ensureThreadStateRow(db: SolidDatabase, threadId: string): Promis
 
   const cachedChatId = getCachedThreadChatId(threadId)
   const cachedRow = cachedChatId
-    ? await (db as any).findByLocator(threadTable as any, { id: threadId, chatId: cachedChatId } as any)
+    ? await (db as any).findByLocator(threadTable as any, { id: threadId, chat: cachedChatId } as any)
     : null
   const row = (cachedRow
     ?? (await db.select().from(threadTable).execute()).find((entry: any) => entry.id === threadId)) as ThreadRow | undefined
@@ -358,7 +364,10 @@ async function ensureThreadStateRow(db: SolidDatabase, threadId: string): Promis
     throw new Error(`Thread ${threadId} was not found in the Pod`)
   }
 
-  threadChatIdCache.set(threadId, row.chatId)
+  const rowChatId = resolveThreadChatIdFromRow(row)
+  if (rowChatId) {
+    threadChatIdCache.set(threadId, rowChatId)
+  }
   ;(threadCollection.utils as { writeUpsert?: (data: ThreadRow) => void }).writeUpsert?.(row)
   return row
 }
@@ -528,7 +537,7 @@ export const chatCollection = createPodCollection<typeof chatTable, ChatRow, Cha
 // Columns needed for thread list view
 const threadListColumns: (keyof ThreadRow)[] = [
   'id',
-  'chatId',
+  'chat',
   'title',
   'starred',
   'workspace',
@@ -699,7 +708,7 @@ export const chatOps = {
   getThreads(chatId: string): ThreadRow[] {
     const stateMap = threadCollection.state
     const items = Array.from(stateMap.values())
-    return items.filter((t: ThreadRow) => t.chatId === chatId)
+    return items.filter((t: ThreadRow) => resolveThreadChatIdFromRow(t) === chatId)
   },
 
   /**
@@ -874,7 +883,7 @@ export const chatOps = {
     
     const threadData: ThreadInsert = {
       id: threadId,
-      chatId,
+      chat: chatId,
       title: title || `话题 ${now.toLocaleTimeString()}`,
       createdAt: now,
       updatedAt: now,
@@ -911,7 +920,10 @@ export const chatOps = {
     if (requestedWorkspaceUri && isLocalWorkspaceUri(requestedWorkspaceUri)) {
       if (thread.workspace !== requestedWorkspaceUri) {
         await this.updateThread(input.threadId, { workspace: requestedWorkspaceUri })
-        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.threads(thread.chatId) })
+        const chatId = resolveThreadChatIdFromRow(thread)
+        if (chatId) {
+          queryClient.invalidateQueries({ queryKey: QUERY_KEYS.threads(chatId) })
+        }
       }
       return requestedWorkspaceUri
     }
@@ -998,7 +1010,10 @@ export const chatOps = {
 
     if (thread.workspace !== workspaceUri) {
       await this.updateThread(input.threadId, { workspace: workspaceUri })
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.threads(thread.chatId) })
+      const chatId = resolveThreadChatIdFromRow(thread)
+      if (chatId) {
+        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.threads(chatId) })
+      }
     }
 
     return workspaceUri
@@ -1352,12 +1367,12 @@ export const chatOps = {
     const db = getDb()
     if (!db) return []
     
-    const chatIdCol = (threadTable as any).chatId
+    const chatCol = (threadTable as any).chat
     let rows: ThreadRow[]
     try {
       rows = await db.select()
         .from(threadTable)
-        .where(eq(chatIdCol, chatId))
+        .where(eq(chatCol, chatId))
         .orderBy('updatedAt', 'desc')
         .execute() as ThreadRow[]
     } catch (error) {
@@ -1366,8 +1381,9 @@ export const chatOps = {
     }
 
     rows.forEach((row) => {
-      if (row.id && row.chatId) {
-        threadChatIdCache.set(row.id, row.chatId)
+      const rowChatId = resolveThreadChatIdFromRow(row)
+      if (row.id && rowChatId) {
+        threadChatIdCache.set(row.id, rowChatId)
       }
     })
     

@@ -21,8 +21,22 @@ type PiStreamTool = {
 
 export interface PiCompletionBackendResult {
   content?: string
+  reasoningContent?: string
   toolCalls?: RemoteChatToolCall[]
   finishReason?: string | null
+  usage?: {
+    input: number
+    output: number
+    cacheRead: number
+    cacheWrite: number
+    totalTokens: number
+  }
+}
+
+type PiStreamOptions = {
+  apiKey?: string
+  modelId?: string
+  signal?: AbortSignal
 }
 
 export interface PiAgentStreamAdapterOptions {
@@ -41,6 +55,7 @@ export interface PiAgentStreamAdapterOptions {
       messages: RemoteChatMessage[]
       tools?: RemoteChatTool[]
       systemPrompt?: string
+      signal?: AbortSignal
     }): Promise<string | PiCompletionBackendResult>
   }
 }
@@ -78,7 +93,7 @@ export function createPiAgentStreamAdapter(options: PiAgentStreamAdapterOptions 
     streamFn(
       modelArg?: unknown,
       context?: { messages?: PiStreamContextMessage[]; tools?: PiStreamTool[]; systemPrompt?: string },
-      streamOptions?: { apiKey?: string; modelId?: string },
+      streamOptions?: PiStreamOptions,
     ): AssistantMessageEventStream {
       const stream = createAssistantMessageEventStream()
       const resolvedModelId = resolveModelId(modelArg, streamOptions?.modelId, options.model)
@@ -92,13 +107,16 @@ export function createPiAgentStreamAdapter(options: PiAgentStreamAdapterOptions 
         const prompt = typeof lastUserText?.content === 'string' ? lastUserText.content : ''
 
         if (options.completionBackend) {
+          throwIfAborted(streamOptions?.signal)
           const reply = await options.completionBackend.complete({
             model: resolvedModelId,
             apiKey: streamOptions?.apiKey,
             messages: normalizedMessages,
             tools: normalizedTools,
             systemPrompt: context?.systemPrompt,
+            signal: streamOptions?.signal,
           })
+          throwIfAborted(streamOptions?.signal)
           emitCompletionResult(stream, message, reply)
           return
         }
@@ -149,14 +167,53 @@ export function createPiAgentStreamAdapter(options: PiAgentStreamAdapterOptions 
         })
       })().catch((error) => {
         const errorMessage = createBaseMessage()
-        errorMessage.stopReason = 'error'
-        errorMessage.errorMessage = error instanceof Error ? error.message : String(error)
-        stream.push({ type: 'error', reason: 'error', error: errorMessage })
+        const aborted = isAbortError(error) || streamOptions?.signal?.aborted === true
+        errorMessage.stopReason = aborted ? 'aborted' : 'error'
+        errorMessage.errorMessage = formatStreamErrorMessage(error)
+        stream.push({ type: 'error', reason: errorMessage.stopReason, error: errorMessage })
       })
 
       return stream
     },
   }
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) {
+    return
+  }
+  throw createAbortError()
+}
+
+function createAbortError(): Error {
+  const error = new Error('Request was aborted.')
+  error.name = 'AbortError'
+  return error
+}
+
+function formatStreamErrorMessage(error: unknown): string {
+  if (isAbortError(error)) {
+    return 'Request was aborted.'
+  }
+  if (isAuthExpiredError(error)) {
+    return 'LinX Cloud login expired.'
+  }
+  return error instanceof Error ? error.message : String(error)
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError'
+}
+
+function isAuthExpiredError(error: unknown): boolean {
+  if (isRecord(error) && error.authExpired === true) {
+    return true
+  }
+  const message = error instanceof Error ? error.message : String(error)
+  const normalized = message.toLowerCase()
+  return normalized.includes('linx cloud login expired')
+    || normalized.includes('invalid solid token')
+    || (normalized.includes('chat request failed (401)') && normalized.includes('unauthorized'))
 }
 
 function resolveModelId(modelArg: unknown, overrideModelId?: string, fallbackModelId?: string): string {
@@ -198,10 +255,12 @@ function normalizeContextMessages(context?: { messages?: PiStreamContextMessage[
     if (entry.role === 'assistant') {
       const content = normalizeAssistantTextContent(entry.content)
       const toolCalls = normalizeAssistantToolCalls(entry.content)
+      const reasoningContent = normalizeAssistantReasoningContent(entry.content)
       if (content || toolCalls.length > 0) {
         normalized.push({
           role: 'assistant',
           content: content || null,
+          ...(reasoningContent && toolCalls.length > 0 ? { reasoning_content: reasoningContent } : {}),
           ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
         })
       }
@@ -222,7 +281,77 @@ function normalizeContextMessages(context?: { messages?: PiStreamContextMessage[
     }
   }
 
-  return normalized
+  return sanitizeChatCompletionMessages(normalized)
+}
+
+function sanitizeChatCompletionMessages(messages: RemoteChatMessage[]): RemoteChatMessage[] {
+  const sanitized: RemoteChatMessage[] = []
+
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index]
+
+    if (message.role === 'tool') {
+      continue
+    }
+
+    if (message.role !== 'assistant' || !message.tool_calls?.length) {
+      sanitized.push(message)
+      continue
+    }
+
+    const followingToolMessages: RemoteChatMessage[] = []
+    let nextIndex = index + 1
+    while (nextIndex < messages.length && messages[nextIndex]?.role === 'tool') {
+      followingToolMessages.push(messages[nextIndex])
+      nextIndex += 1
+    }
+
+    const toolResultIds = new Set(
+      followingToolMessages
+        .map((toolMessage) => toolMessage.tool_call_id)
+        .filter((toolCallId): toolCallId is string => typeof toolCallId === 'string' && toolCallId.length > 0),
+    )
+    const matchedToolCalls = message.tool_calls.filter((toolCall) => toolResultIds.has(toolCall.id))
+
+    if (matchedToolCalls.length > 0) {
+      const matchedToolCallIds = new Set(matchedToolCalls.map((toolCall) => toolCall.id))
+      const emittedToolResults = new Set<string>()
+      sanitized.push({
+        ...message,
+        tool_calls: matchedToolCalls,
+      })
+
+      for (const toolMessage of followingToolMessages) {
+        const toolCallId = toolMessage.tool_call_id
+        if (typeof toolCallId !== 'string' || !matchedToolCallIds.has(toolCallId) || emittedToolResults.has(toolCallId)) {
+          continue
+        }
+        sanitized.push(toolMessage)
+        emittedToolResults.add(toolCallId)
+      }
+    } else if (hasVisibleMessageContent(message.content)) {
+      sanitized.push({
+        role: 'assistant',
+        content: message.content,
+      })
+    }
+
+    index = nextIndex - 1
+  }
+
+  return sanitized
+}
+
+function hasVisibleMessageContent(content: RemoteChatMessage['content']): boolean {
+  if (typeof content === 'string') {
+    return content.trim().length > 0
+  }
+
+  if (!Array.isArray(content)) {
+    return false
+  }
+
+  return content.some((part) => typeof part.text === 'string' && part.text.trim().length > 0)
 }
 
 function normalizeContextTools(tools: PiStreamTool[] | undefined): RemoteChatTool[] | undefined {
@@ -272,6 +401,26 @@ function normalizeAssistantToolCalls(content: unknown): RemoteChatToolCall[] {
   })
 }
 
+function normalizeAssistantReasoningContent(content: unknown): string {
+  if (!Array.isArray(content)) {
+    return ''
+  }
+
+  return content
+    .map((part) => {
+      if (!isRecord(part) || part.type !== 'thinking') {
+        return ''
+      }
+      const signature = typeof part.thinkingSignature === 'string' ? part.thinkingSignature : ''
+      if (signature && signature !== 'reasoning_content') {
+        return ''
+      }
+      return typeof part.thinking === 'string' ? part.thinking : ''
+    })
+    .join('')
+    .trim()
+}
+
 function normalizeAssistantTextContent(content: unknown): string {
   if (!Array.isArray(content)) {
     return normalizeMessageContent(content)
@@ -317,7 +466,45 @@ function emitCompletionResult(
   reply: string | PiCompletionBackendResult,
 ): void {
   const content = typeof reply === 'string' ? reply : reply.content ?? ''
+  const reasoningContent = typeof reply === 'string' ? '' : reply.reasoningContent ?? ''
   const toolCalls = typeof reply === 'string' ? [] : reply.toolCalls ?? []
+  if (!isStringReply(reply) && reply.usage) {
+    message.usage = {
+      input: reply.usage.input,
+      output: reply.usage.output,
+      cacheRead: reply.usage.cacheRead,
+      cacheWrite: reply.usage.cacheWrite,
+      totalTokens: reply.usage.totalTokens,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    }
+  }
+
+  if (reasoningContent) {
+    const contentIndex = message.content.length
+    message.content.push({
+      type: 'thinking',
+      thinking: '',
+      thinkingSignature: 'reasoning_content',
+    })
+    stream.push({ type: 'thinking_start', contentIndex, partial: { ...message } })
+    message.content[contentIndex] = {
+      type: 'thinking',
+      thinking: reasoningContent,
+      thinkingSignature: 'reasoning_content',
+    }
+    stream.push({
+      type: 'thinking_delta',
+      contentIndex,
+      delta: reasoningContent,
+      partial: { ...message },
+    })
+    stream.push({
+      type: 'thinking_end',
+      contentIndex,
+      content: reasoningContent,
+      partial: { ...message },
+    })
+  }
 
   if (content) {
     const contentIndex = message.content.length

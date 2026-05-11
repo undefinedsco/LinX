@@ -8,18 +8,15 @@ describe('inbox presentation', () => {
       action: 'runtime.session.completed',
       actorRole: 'system',
       session: 'urn:linx:runtime-session:runtime-1',
+      entry: 'https://alice.example/.data/chat/chat-1/index.ttl#thread-1',
+      toolName: 'codex',
       createdAt: '2026-03-12T12:00:00.000Z',
-      context: JSON.stringify({
-        title: '代码修复',
-        tool: 'codex',
-        threadUri: 'https://alice.example/.data/chat/chat-1/index.ttl#thread-1',
-      }),
     }
 
     const presentation = buildAuditPresentation(audit as any, new Map())
 
     expect(presentation.title).toBe('运行时已完成')
-    expect(presentation.description).toBe('代码修复 · 工具 codex')
+    expect(presentation.description).toBe('工具 codex')
     expect(presentation.status).toBe('completed')
     expect(presentation.chatId).toBe('chat-1')
     expect(presentation.threadId).toBe('thread-1')
@@ -32,15 +29,18 @@ describe('inbox presentation', () => {
       action: 'inbox.approval.approved',
       actorRole: 'human',
       session: 'urn:linx:runtime-session:runtime-1',
+      toolName: 'write_file',
       createdAt: '2026-03-12T12:00:00.000Z',
-      context: JSON.stringify({
-        toolName: 'write_file',
-        risk: 'high',
-        reason: '确认路径安全',
-      }),
     }
 
-    const presentation = buildAuditPresentation(audit as any, new Map())
+    const relatedApproval = {
+      target: 'https://alice.example/.data/chat/chat-1/index.ttl#thread-1',
+      toolName: 'write_file',
+      risk: 'high',
+      reason: '确认路径安全',
+    }
+
+    const presentation = buildAuditPresentation(audit as any, new Map(), relatedApproval as any)
 
     expect(presentation.title).toBe('授权已批准')
     expect(presentation.description).toContain('收件箱已批准工具执行。')
@@ -57,9 +57,6 @@ describe('inbox presentation', () => {
       actorRole: 'human',
       session: 'urn:linx:runtime-session:runtime-1',
       createdAt: '2026-03-12T12:00:00.000Z',
-      context: JSON.stringify({
-        toolName: 'write_file',
-      }),
     }
 
     const relatedApproval = {
@@ -81,14 +78,17 @@ describe('inbox presentation', () => {
       action: 'runtime.tool_call.waiting_approval',
       actorRole: 'system',
       session: 'urn:linx:runtime-session:runtime-1',
+      toolName: 'write_file',
       createdAt: '2026-03-12T12:00:00.000Z',
-      context: JSON.stringify({
-        toolName: 'write_file',
-        risk: 'high',
-      }),
     }
 
-    const presentation = buildAuditPresentation(audit as any, new Map())
+    const relatedApproval = {
+      target: 'https://alice.example/.data/chat/chat-1/index.ttl#thread-1',
+      toolName: 'write_file',
+      risk: 'high',
+    }
+
+    const presentation = buildAuditPresentation(audit as any, new Map(), relatedApproval as any)
 
     expect(presentation.title).toBe('工具请求 · write_file')
     expect(presentation.description).toContain('已进入审批队列')
@@ -101,12 +101,10 @@ describe('inbox presentation', () => {
       action: 'runtime.auth_required',
       actorRole: 'system',
       session: 'urn:linx:runtime-session:runtime-1',
+      entry: 'https://alice.example/.data/chat/chat-1/index.ttl#thread-1',
+      toolName: 'oauth2',
+      policy: 'https://example.com/auth',
       createdAt: '2026-03-12T12:00:00.000Z',
-      context: JSON.stringify({
-        method: 'oauth2',
-        url: 'https://example.com/auth',
-        message: '请登录',
-      }),
     }
 
     const authResolved = {
@@ -114,11 +112,10 @@ describe('inbox presentation', () => {
       action: 'runtime.auth_resolved',
       actorRole: 'system',
       session: 'urn:linx:runtime-session:runtime-1',
+      entry: 'https://alice.example/.data/chat/chat-1/index.ttl#thread-1',
+      toolName: 'oauth2',
+      policy: 'https://example.com/auth',
       createdAt: '2026-03-12T12:01:00.000Z',
-      context: JSON.stringify({
-        method: 'oauth2',
-        url: 'https://example.com/auth',
-      }),
     }
 
     const resolvedIndex = createResolvedAuthTimestampsIndex([authResolved as any])

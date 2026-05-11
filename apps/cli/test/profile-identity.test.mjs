@@ -17,6 +17,19 @@ function credentials(overrides = {}) {
   }
 }
 
+function podSession(overrides = {}) {
+  const creds = credentials()
+  return {
+    credentials: creds,
+    webId: creds.webId,
+    async close() {},
+    async fetch(url, init) {
+      return fetch(url, init)
+    },
+    ...overrides,
+  }
+}
+
 test('extractUsernameFromWebId uses the profile path owner as fallback identity', async (t) => {
   const { module, cleanup } = await loadWatchModule('lib/profile-identity.ts')
   t.after(() => cleanup())
@@ -34,17 +47,8 @@ test('resolveProfileDisplayName reads the configured WebID through solidProfileT
   const displayName = await module.resolveProfileDisplayName({
     timeoutMs: 500,
     runtime: {
-      loadCredentials() {
-        return credentials()
-      },
-      getClientCredentials() {
-        return null
-      },
-      async getOidcAccessToken() {
-        return 'access-token'
-      },
-      async authenticate() {
-        throw new Error('client credentials should not be used')
+      async getPodDataSession() {
+        return podSession()
       },
       async resolveProfileIdentity(_session, webId) {
         calls.push({ webId })
@@ -69,20 +73,11 @@ test('resolveProfileDisplayName reuses the per-login profile db resource', async
 
   const cache = new Map()
   let identityCount = 0
-  let tokenCount = 0
+  let sessionCount = 0
   const runtime = {
-    loadCredentials() {
-      return credentials()
-    },
-    getClientCredentials() {
-      return null
-    },
-    async getOidcAccessToken() {
-      tokenCount += 1
-      return 'access-token'
-    },
-    async authenticate() {
-      throw new Error('client credentials should not be used')
+    async getPodDataSession() {
+      sessionCount += 1
+      return podSession()
     },
     async resolveProfileIdentity(_session, webId) {
       identityCount += 1
@@ -104,7 +99,7 @@ test('resolveProfileDisplayName reuses the per-login profile db resource', async
   assert.equal(await module.resolveProfileDisplayName({ timeoutMs: 500, runtime }), 'Gan Lu')
   assert.equal(await module.resolveProfileDisplayName({ timeoutMs: 500, runtime }), 'Gan Lu')
   assert.equal(identityCount, 1)
-  assert.equal(tokenCount, 1)
+  assert.equal(sessionCount, 2)
 })
 
 test('resolveProfileDisplayName returns null when profile lookup fails', async (t) => {
@@ -114,17 +109,8 @@ test('resolveProfileDisplayName returns null when profile lookup fails', async (
   const displayName = await module.resolveProfileDisplayName({
     timeoutMs: 500,
     runtime: {
-      loadCredentials() {
-        return credentials()
-      },
-      getClientCredentials() {
-        return null
-      },
-      async getOidcAccessToken() {
-        return 'access-token'
-      },
-      async authenticate() {
-        throw new Error('client credentials should not be used')
+      async getPodDataSession() {
+        return podSession()
       },
       async resolveProfileIdentity() {
         throw new Error('pod offline')
@@ -133,4 +119,33 @@ test('resolveProfileDisplayName returns null when profile lookup fails', async (
   })
 
   assert.equal(displayName, null)
+})
+
+test('resolveProfileDisplayName default path reads the WebID document directly', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/profile-identity.ts')
+  const originalFetch = globalThis.fetch
+  t.after(() => {
+    globalThis.fetch = originalFetch
+    cleanup()
+  })
+
+  const requestedUrls = []
+  globalThis.fetch = async (url) => {
+    requestedUrls.push(String(url))
+    return new Response('<#me> <http://www.w3.org/2006/vcard/ns#fn> "Gan Lu" .', {
+      headers: { 'content-type': 'text/turtle' },
+    })
+  }
+
+  const displayName = await module.resolveProfileDisplayName({
+    timeoutMs: 500,
+    runtime: {
+      async getPodDataSession() {
+        return podSession()
+      },
+    },
+  })
+
+  assert.equal(displayName, 'Gan Lu')
+  assert.deepEqual(requestedUrls, ['https://id.undefineds.co/ganbb/profile/card'])
 })

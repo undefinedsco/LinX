@@ -2,12 +2,6 @@ import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 
-export {
-  extractWatchSessionIdFromJsonLine as extractSessionIdFromJsonLine,
-  parseWatchJsonLine as tryParseJson,
-  parseWatchJsonProtocolLine as parseJsonProtocolLine,
-} from '@linx/client/watch'
-
 const require = createRequire(import.meta.url)
 
 function resolvePackageBin(packageName: string, relativeBinPath: string): string | null {

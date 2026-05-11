@@ -223,9 +223,9 @@ export const SETTING_KEYS = {
 
 ### 6A.5 Automation → 审计日志集成
 
-自动化规则执行时，需要写入审计日志（复用 02-sidecar-events 的 `auditTable`）：
+自动化规则执行时，需要写入审计日志（复用 02-sidecar-events 的 `auditResource`）：
 
-| 自动化事件 | auditTable 写入 | 说明 |
+| 自动化事件 | auditResource 写入 | 说明 |
 |-----------|----------------|------|
 | 规则触发 AI 消息 | `action='auto_ai_message'`, `actorRole='system'` | 自动化触发的 AI 对话 |
 | 规则执行 CLI 命令 | `action='auto_command'`, `actorRole='system'` | 自动化执行的命令 |
@@ -495,4 +495,3 @@ interface AutonomySettings {
 | `automation/components/AutonomySettings.tsx` | 新增 | AI 自治安全闸门设置页 |
 | `automation/collections.ts` | 新增 | 规则 CRUD Collection |
 | `settings/components/AutonomyCard.tsx` | 新增 | 设置页中的自治等级卡片 |
-

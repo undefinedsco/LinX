@@ -1,4 +1,5 @@
 export const DEFAULT_LINX_CLOUD_MODEL_ID = 'linx-lite'
+export const FALLBACK_LINX_CLOUD_MODEL_IDS = ['linx', DEFAULT_LINX_CLOUD_MODEL_ID] as const
 
 export function resolvePreferredLinxCloudModelId(
   models: Array<{ id: string }>,

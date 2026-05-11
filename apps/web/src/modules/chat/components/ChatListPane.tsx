@@ -26,7 +26,7 @@ import {
   useChatInit,
   useThreadIndex,
 } from '../collections'
-import { resolveRowId } from '@undefineds.co/models'
+import { resolveRowId, resolveThreadChatId } from '@undefineds.co/models'
 import { useInboxItems } from '@/modules/inbox/collections'
 import { isActionableInboxItem } from '@/modules/inbox/utils'
 import { useToast } from '@/components/ui/use-toast'
@@ -642,7 +642,7 @@ export function ChatListPane(_props: ChatListPaneProps) {
     const workspaceBackedChatIds = new Set<string>()
     for (const thread of threads) {
       const threadId = resolveRowId(thread) ?? thread.id
-      const chatId = thread.chatId
+      const chatId = resolveThreadChatId(thread)
       if (!threadId || !chatId) continue
       const list = threadsByChatId.get(chatId) ?? []
       list.push(threadId)

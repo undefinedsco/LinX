@@ -26,7 +26,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import type { ContactRow } from '@undefineds.co/models'
-import { ContactType, isGroupContact } from '@undefineds.co/models'
+import { ContactGender, ContactType, isGroupContact, normalizeContactGender } from '@undefineds.co/models'
 import { useQuery } from '@tanstack/react-query'
 
 // ============================================
@@ -270,9 +270,11 @@ export function ContactListPane({}: MicroAppPaneProps) {
 
     // 转换为 UnifiedContact 格式
     const unified: UnifiedContact[] = rawItems.map((c: ContactRow) => {
-      const isGroup = isUnifiedGroupContact(c)
+      const normalizedGender = normalizeContactGender(c.gender, c.contactType === ContactType.AGENT ? ContactGender.BOT : undefined)
+      const isGroup = isUnifiedGroupContact({ ...c, gender: normalizedGender })
       const base = {
         ...c,
+        gender: normalizedGender,
         displayName: c.alias || c.name || 'Unknown',
         displayAvatar: c.avatarUrl || '',
         initial: getInitial(c.alias || c.name || ''),

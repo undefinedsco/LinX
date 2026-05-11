@@ -1,35 +1,39 @@
 #!/usr/bin/env node
-import { join } from 'node:path'
+import './lib/node-warning-filter.js'
+import { readFileSync } from 'node:fs'
 import yargs, { type Argv, type CommandModule } from 'yargs'
 import { hideBin } from 'yargs/helpers'
 import { aiCommand } from './lib/ai-command.js'
 import { resolveAccountBaseUrl } from './lib/account-api.js'
-import { getClientCredentials, loadCredentials } from './lib/credentials-store.js'
-import { loadAccountSession } from './lib/account-session.js'
+import { loadCredentials } from './lib/credentials-store.js'
 import { loginCommand, logoutCommand, whoamiCommand } from './lib/login-command.js'
-import { runPrintMode } from '@mariozechner/pi-coding-agent'
+import { DefaultPackageManager, SettingsManager, runPrintMode } from '@mariozechner/pi-coding-agent'
 import { promptText } from './lib/prompt.js'
 import { resolveRuntimeTarget } from './lib/runtime-target.js'
 import { createCodexNativeProxy } from './lib/codex-plugin/index.js'
-import { bootstrapPiInteractiveMode, createPiRuntimeAdapter } from './lib/pi-adapter/index.js'
-import { getOidcAccessToken } from './lib/oidc-auth.js'
-import { DEFAULT_LINX_CLOUD_MODEL_ID } from './lib/default-model.js'
+import { bootstrapPiInteractiveMode, createPiRuntimeAdapter, resolveLinxInteractiveLoginReason, resolveLinxStartupLoginPromptDecision, type LinxLoginReason } from './lib/pi-adapter/index.js'
+import { isOidcLoginExpiredError } from './lib/oidc-auth.js'
+import { createPodDataSession, type PodDataSession } from './lib/pod-data-session.js'
+import { DEFAULT_LINX_CLOUD_MODEL_ID, FALLBACK_LINX_CLOUD_MODEL_IDS } from './lib/default-model.js'
 import type { PiCompletionBackendResult } from './lib/pi-adapter/stream.js'
+import {
+  createLinxPiSessionManager,
+  formatLinxPiSessionSummary,
+  listLinxPiSessions,
+} from './lib/pi-adapter/session.js'
+import { LinxPiPodMirror } from './lib/pi-adapter/pod-mirror.js'
 import type { RemoteChatMessage, RemoteChatTool } from './lib/chat-api.js'
 import { LINX_AGENT_DIR } from './lib/pi-adapter/branding.js'
-import { LINX_CLI_VERSION } from './generated/version.js'
 import {
-  formatRemoteWatchApprovalSummary,
   formatArchivedWatchSession,
   formatWatchSessionSummary,
   loadArchivedWatchEvents,
   listArchivedWatchSessions,
-  listRemoteWatchApprovals,
   listSupportedWatchBackends,
   loadArchivedWatchSession,
-  resolveRemoteWatchApproval,
   runWatch,
   type WatchBackend,
+  type WatchApprovalSource,
   type WatchCredentialSource,
   type WatchMode,
 } from './lib/watch/index.js'
@@ -88,6 +92,7 @@ interface RuntimeContext {
   runtimeUrl: string
   apiKey: string
   session: SessionLike
+  podSession: PodDataSession
   chatId: string
   runtime: ChatRuntime
 }
@@ -96,7 +101,35 @@ interface RuntimeAuthContext {
   runtimeUrl: string
   apiKey: string
   session: SessionLike
+  podSession: PodDataSession
   runtime: ChatRuntime
+}
+
+type LinxPackageCommand = 'install' | 'remove' | 'update' | 'list'
+
+function readPackageVersion(): string {
+  try {
+    const raw = readFileSync(new URL('../package.json', import.meta.url), 'utf-8')
+    const pkg = JSON.parse(raw) as { version?: string }
+    return typeof pkg.version === 'string' && pkg.version.trim() ? pkg.version.trim() : 'unknown'
+  } catch {
+    return 'unknown'
+  }
+}
+
+function formatRemoteModelMetadata(model: { id: string; provider?: string; ownedBy?: string; contextWindow?: number }): string {
+  const provider = resolveRemoteModelProviderLabel(model)
+  return [provider, model.contextWindow ? `${model.contextWindow}` : '']
+    .filter(Boolean)
+    .join(' · ')
+}
+
+function resolveRemoteModelProviderLabel(model: { id: string; provider?: string; ownedBy?: string }): string | undefined {
+  if (FALLBACK_LINX_CLOUD_MODEL_IDS.includes(model.id as typeof FALLBACK_LINX_CLOUD_MODEL_IDS[number])) {
+    return 'undefineds'
+  }
+
+  return model.provider || model.ownedBy
 }
 
 let chatRuntimePromise: Promise<ChatRuntime> | null = null
@@ -131,84 +164,60 @@ async function loadChatRuntime(): Promise<ChatRuntime> {
 
 async function resolveContext(urlOverride?: string): Promise<RuntimeContext> {
   const runtime = await loadChatRuntime()
-  const creds = loadCredentials()
-  if (!creds) {
-    throw new Error('No credentials found. Run `linx login` first.')
-  }
-
+  const podSession = await createLinxPodDataSession()
   const target = resolveRuntimeTarget({
-    issuerUrl: creds.url,
+    issuerUrl: podSession.credentials.url,
     runtimeUrlOverride: urlOverride,
   })
-  const clientCreds = getClientCredentials(creds)
+  const apiKey = await resolvePodRuntimeAuthToken(podSession)
+  const session = podSession.solidSession
 
-  if (clientCreds) {
-    const { session, apiKey } = await runtime.authenticate(clientCreds.clientId, clientCreds.clientSecret, target.oidcIssuer)
-    await runtime.initPodData(session)
-    const chatId = await runtime.getOrCreateDefaultChat(session)
+  await runtime.initPodData(session)
+  const chatId = await runtime.getOrCreateDefaultChat(session)
 
-    return { runtimeUrl: target.runtimeUrl, apiKey, session, chatId, runtime }
-  }
-
-  if (creds.authType === 'oidc_oauth') {
-    const accessToken = await getOidcAccessToken(creds)
-    if (!accessToken) {
-      throw new Error('Failed to restore OIDC access token. Run `linx login` again.')
-    }
-
-    const pseudoSession: SessionLike = {
-      async logout(): Promise<void> {},
-    }
-    const podUrl = loadAccountSession()?.podUrl || creds.webId.replace('/card#me', '').replace(/\/?$/, '/')
-    const session = {
-      ...pseudoSession,
-      info: {
-        isLoggedIn: true,
-        webId: creds.webId,
-        podUrl,
-      },
-      fetch: (url: string, init?: RequestInit) => runtime.authenticatedFetch(url, accessToken, init),
-    }
-    await runtime.initPodData(session)
-    const chatId = await runtime.getOrCreateDefaultChat(session)
-
-    return { runtimeUrl: target.runtimeUrl, apiKey: accessToken, session, chatId, runtime }
-  }
-
-  throw new Error('Unsupported LinX auth type. Run `linx login` again.')
+  return { runtimeUrl: target.runtimeUrl, apiKey, session, podSession, chatId, runtime }
 }
 
 async function resolveRuntimeAuthContext(urlOverride?: string): Promise<RuntimeAuthContext> {
   const runtime = await loadChatRuntime()
-  const creds = loadCredentials()
-  if (!creds) {
+  const podSession = await createLinxPodDataSession()
+  const target = resolveRuntimeTarget({
+    issuerUrl: podSession.credentials.url,
+    runtimeUrlOverride: urlOverride,
+  })
+  const apiKey = await resolvePodRuntimeAuthToken(podSession)
+
+  return {
+    runtimeUrl: target.runtimeUrl,
+    apiKey,
+    session: podSession.solidSession,
+    podSession,
+    runtime,
+  }
+}
+
+async function createLinxPodDataSession(): Promise<PodDataSession> {
+  if (!loadCredentials()) {
     throw new Error('No credentials found. Run `linx login` first.')
   }
 
-  const target = resolveRuntimeTarget({
-    issuerUrl: creds.url,
-    runtimeUrlOverride: urlOverride,
-  })
-  const clientCreds = getClientCredentials(creds)
-
-  if (clientCreds) {
-    const { session, apiKey } = await runtime.authenticate(clientCreds.clientId, clientCreds.clientSecret, target.oidcIssuer)
-    return { runtimeUrl: target.runtimeUrl, apiKey, session, runtime }
+  const podSession = await createPodDataSession()
+  if (!podSession) {
+    throw new Error('Unsupported LinX auth type. Run `linx login` again.')
   }
 
-  if (creds.authType === 'oidc_oauth') {
-    const accessToken = await getOidcAccessToken(creds)
-    if (!accessToken) {
-      throw new Error('Failed to restore OIDC access token. Run `linx login` again.')
-    }
+  return podSession
+}
 
-    const pseudoSession: SessionLike = {
-      async logout(): Promise<void> {},
+async function resolvePodRuntimeAuthToken(podSession: PodDataSession): Promise<string> {
+  try {
+    return await podSession.getRuntimeAuthToken()
+  } catch (error) {
+    if (isOidcLoginExpiredError(error)) {
+      throw new Error('LinX Cloud login expired. Run `linx login` to re-authorize.')
     }
-    return { runtimeUrl: target.runtimeUrl, apiKey: accessToken, session: pseudoSession, runtime }
+    throw error
   }
-
-  throw new Error('Unsupported LinX auth type. Run `linx login` again.')
 }
 
 async function runSingleTurn(options: {
@@ -266,7 +275,7 @@ async function runInteractive(options: {
   let threadId = initialThreadId
   let model = initialModel
 
-  process.stdout.write(`LinX CLI ready\nthread: ${threadId}\nmodel: ${model || DEFAULT_LINX_CLOUD_MODEL_ID}\n输入 /help 查看命令。\n\n`)
+  process.stdout.write(`LinX CLI ready\nthread: ${threadId}\nmodel: ${model || DEFAULT_LINX_CLOUD_MODEL_ID}\n输入 /hotkeys 查看快捷键。\n\n`)
 
   if (initialPrompt) {
     await runSingleTurn({ ctx, threadId, model, prompt: initialPrompt })
@@ -282,7 +291,7 @@ async function runInteractive(options: {
 
     if (input === '/help') {
       process.stdout.write(
-        '/help 查看帮助\n/threads 列出 threads\n/new 新建 thread\n/use <threadId> 切换 thread\n/model <modelId> 切换模型\n/exit 退出\n\n',
+        '/hotkeys 查看快捷键\n/threads 列出 threads\n/new 新建 thread\n/use <threadId> 切换 thread\n/model <modelId> 切换模型\n/exit 退出\n\n',
       )
       continue
     }
@@ -326,6 +335,77 @@ async function runInteractive(options: {
   }
 }
 
+async function runLinxPackageCommand(command: LinxPackageCommand, options: {
+  source?: string
+  local?: boolean
+} = {}): Promise<void> {
+  if ((command === 'install' || command === 'remove') && !options.source) {
+    throw new Error(`Missing ${command} source. Usage: linx ${command} <source> [-l]`)
+  }
+
+  const cwd = process.cwd()
+  const settingsManager = SettingsManager.create(cwd, LINX_AGENT_DIR)
+  const packageManager = new DefaultPackageManager({
+    cwd,
+    agentDir: LINX_AGENT_DIR,
+    settingsManager,
+  })
+  packageManager.setProgressCallback((event: { type?: string; message?: string }) => {
+    if (event.type === 'start' && event.message) {
+      process.stdout.write(`${event.message}\n`)
+    }
+  })
+
+  switch (command) {
+    case 'install':
+      await packageManager.installAndPersist(options.source!, { local: Boolean(options.local) })
+      process.stdout.write(`Installed ${options.source}\n`)
+      return
+    case 'remove': {
+      const removed = await packageManager.removeAndPersist(options.source!, { local: Boolean(options.local) })
+      if (!removed) {
+        throw new Error(`No matching package found for ${options.source}`)
+      }
+      process.stdout.write(`Removed ${options.source}\n`)
+      return
+    }
+    case 'update':
+      await packageManager.update(options.source)
+      process.stdout.write(options.source ? `Updated ${options.source}\n` : 'Updated packages\n')
+      return
+    case 'list':
+      printConfiguredLinxPackages(packageManager)
+      return
+  }
+}
+
+function printConfiguredLinxPackages(packageManager: {
+  listConfiguredPackages(): Array<{ scope?: string; source: string; filtered?: boolean; installedPath?: string }>
+}): void {
+  const configuredPackages = packageManager.listConfiguredPackages()
+  if (configuredPackages.length === 0) {
+    process.stdout.write('No packages installed.\n')
+    return
+  }
+
+  const printGroup = (title: string, packages: typeof configuredPackages): void => {
+    if (packages.length === 0) {
+      return
+    }
+    process.stdout.write(`${title}:\n`)
+    for (const pkg of packages) {
+      const display = pkg.filtered ? `${pkg.source} (filtered)` : pkg.source
+      process.stdout.write(`  ${display}\n`)
+      if (pkg.installedPath) {
+        process.stdout.write(`    ${pkg.installedPath}\n`)
+      }
+    }
+  }
+
+  printGroup('User packages', configuredPackages.filter((pkg) => pkg.scope === 'user'))
+  printGroup('Project packages', configuredPackages.filter((pkg) => pkg.scope === 'project'))
+}
+
 async function runPiCommand(argv: {
   cwd?: string
   model?: string
@@ -333,38 +413,16 @@ async function runPiCommand(argv: {
   port?: number
   'runtime-url'?: string
   print?: boolean
+  session?: string
+  last?: boolean
   prompt?: string[]
 }): Promise<void> {
   const backend = (argv.backend as 'cloud' | 'native' | undefined) ?? 'cloud'
-  if (!argv.print && backend === 'cloud') {
-    const { resolveLinxPiCloudOAuthCredential } = await import('./lib/pi-adapter/auth.js')
-    const existingCredential = await resolveLinxPiCloudOAuthCredential(undefined)
-
-    if (!existingCredential) {
-      const answer = (await promptText('LinX Cloud not connected. Open browser login now? [Y/n] ')).trim().toLowerCase()
-      const shouldLoginNow = answer === '' || answer === 'y' || answer === 'yes'
-
-      if (shouldLoginNow) {
-        const { ensureBrowserConsentLogin } = await import('./lib/oidc-auth.js')
-        process.stdout.write('Opening LinX Cloud login in your browser...\n')
-        try {
-          const result = await ensureBrowserConsentLogin({
-            issuerUrl: resolveAccountBaseUrl(),
-          })
-          if (result.reusedExistingSession) {
-            process.stdout.write('Reused existing LinX Cloud session.\n')
-          }
-        } catch (error) {
-          process.stdout.write(
-            'LinX Cloud login was not completed. Continuing into TUI without auth.\n',
-          )
-          if (error instanceof Error && error.message.trim()) {
-            process.stdout.write(`${error.message}\n`)
-          }
-        }
-      }
-    }
-  }
+  const startupLoginPrompt = await resolveLinxStartupLoginPromptDecision({
+    backend,
+    print: argv.print,
+    issuerUrl: resolveAccountBaseUrl(),
+  })
 
   const adapter = createPiRuntimeAdapter({
     createNativeProxy(options) {
@@ -380,11 +438,11 @@ async function runPiCommand(argv: {
     },
     async listRemoteModels(session, runtimeUrl, apiKey) {
       const chatApi = await import('./lib/chat-api.js')
-      return chatApi.listRemoteModels(session, runtimeUrl, apiKey)
+      return chatApi.listRemoteModels(session, runtimeUrl, apiKey, { fallback: false, timeoutMs: 5000 })
     },
   }, {
     cwd: argv.cwd || process.cwd(),
-    model: argv.model || DEFAULT_LINX_CLOUD_MODEL_ID,
+    model: argv.model,
     backend,
     port: argv.port,
     providerConfig: {
@@ -395,14 +453,40 @@ async function runPiCommand(argv: {
 
   await adapter.start()
 
-  const { SessionManager } = await import('@mariozechner/pi-coding-agent')
+  const sessionManager = await createLinxPiSessionManager({
+    cwd: adapter.cwd,
+    agentDir: LINX_AGENT_DIR,
+    session: argv.session,
+    last: argv.last,
+  })
   const runtime = await adapter.createRuntime({
     cwd: adapter.cwd,
     agentDir: LINX_AGENT_DIR,
-    sessionManager: SessionManager.inMemory(adapter.cwd),
+    sessionManager,
+  })
+  const podMirror = new LinxPiPodMirror({
+    cwd: adapter.cwd,
+    sessionManager,
+    onError(error) {
+      if (process.env.LINX_DEBUG === '1') {
+        const message = error instanceof Error ? error.stack || error.message : String(error)
+        process.stderr.write(`[linx pod mirror] ${message}\n`)
+      }
+    },
+  })
+  const unsubscribePodMirror = runtime.session.subscribe((event: unknown) => {
+    podMirror.handleEvent(event)
   })
 
   const interactive = bootstrapPiInteractiveMode(runtime)
+  const bridge = runtime as unknown as { linxAuthBridge?: { shouldPromptLoginOnStart?: boolean } }
+  const loginPromptReason: LinxLoginReason | null = resolveLinxInteractiveLoginReason({
+    startupDecision: startupLoginPrompt,
+    runtimePromptOnStart: bridge.linxAuthBridge?.shouldPromptLoginOnStart,
+  })
+  if (loginPromptReason) {
+    interactive.requestLogin?.(loginPromptReason)
+  }
   try {
     if (argv.print) {
       const prompt = ((argv.prompt as string[] | undefined) ?? []).join(' ').trim()
@@ -418,6 +502,8 @@ async function runPiCommand(argv: {
 
     await interactive.run()
   } finally {
+    unsubscribePodMirror()
+    await podMirror.close().catch(() => undefined)
     interactive.stop()
     await adapter.close()
   }
@@ -430,6 +516,8 @@ interface PiCommandArgs {
   port?: number
   'runtime-url'?: string
   print?: boolean
+  session?: string
+  last?: boolean
   prompt?: string[]
 }
 
@@ -441,7 +529,7 @@ function buildPiCommand(command: Argv<object>): Argv<PiCommandArgs> {
     })
     .option('model', {
       type: 'string',
-      describe: 'Model id to expose through the Pi runtime adapter',
+      describe: 'Model id to expose through the Pi runtime adapter; defaults to the last LinX selection',
     })
     .option('backend', {
       type: 'string',
@@ -463,6 +551,15 @@ function buildPiCommand(command: Argv<object>): Argv<PiCommandArgs> {
       type: 'boolean',
       default: false,
       describe: 'Run a single prompt without entering interactive mode',
+    })
+    .option('session', {
+      type: 'string',
+      describe: 'Resume a specific LinX/Pi session id or JSONL file',
+    })
+    .option('last', {
+      type: 'boolean',
+      default: false,
+      describe: 'Continue the most recent local LinX/Pi session for this workspace',
     })
     .positional('prompt', {
       array: true,
@@ -505,7 +602,7 @@ const execCommand: CommandModule<object, PiCommandArgs> = {
 
 const cli = yargs(hideBin(process.argv))
   .scriptName('linx')
-  .version(LINX_CLI_VERSION)
+  .version(readPackageVersion())
   .parserConfiguration({
     'populate--': true,
   })
@@ -513,6 +610,50 @@ const cli = yargs(hideBin(process.argv))
   .command(logoutCommand)
   .command(whoamiCommand)
   .command(aiCommand)
+  .command(
+    'install [source]',
+    'Install a LinX package or extension',
+    (command) => command
+      .positional('source', { type: 'string', describe: 'Package source to install' })
+      .option('local', { alias: 'l', type: 'boolean', default: false, describe: 'Install project-locally (.pi/settings.json)' }),
+    async (argv) => {
+      await runLinxPackageCommand('install', {
+        source: typeof argv.source === 'string' ? argv.source : undefined,
+        local: Boolean(argv.local),
+      })
+    },
+  )
+  .command(
+    'remove [source]',
+    'Remove a LinX package or extension',
+    (command) => command
+      .positional('source', { type: 'string', describe: 'Package source to remove' })
+      .option('local', { alias: 'l', type: 'boolean', default: false, describe: 'Remove from project settings (.pi/settings.json)' }),
+    async (argv) => {
+      await runLinxPackageCommand('remove', {
+        source: typeof argv.source === 'string' ? argv.source : undefined,
+        local: Boolean(argv.local),
+      })
+    },
+  )
+  .command(
+    'update [source]',
+    'Update installed LinX packages',
+    (command) => command.positional('source', { type: 'string', describe: 'Package source to update' }),
+    async (argv) => {
+      await runLinxPackageCommand('update', {
+        source: typeof argv.source === 'string' ? argv.source : undefined,
+      })
+    },
+  )
+  .command(
+    'list',
+    'List installed LinX packages',
+    () => undefined,
+    async () => {
+      await runLinxPackageCommand('list')
+    },
+  )
   .command(execCommand)
   .command(defaultPiCommand)
   .command(
@@ -537,12 +678,12 @@ const cli = yargs(hideBin(process.argv))
       const prompt = (argv.prompt as string[] | undefined)?.join(' ').trim() || undefined
       if (prompt) {
         await runSingleTurn({ ctx, threadId, model: argv.model, prompt })
-        await ctx.session.logout()
+        await ctx.podSession.close()
         return
       }
 
       await runInteractive({ ctx, initialThreadId: threadId, initialModel: argv.model })
-      await ctx.session.logout()
+      await ctx.podSession.close()
     },
   )
   .command(
@@ -563,31 +704,51 @@ const cli = yargs(hideBin(process.argv))
         process.stdout.write(`Cloud runtime returned an empty model list.\n`)
       } else {
         for (const model of models) {
-          const meta = [model.provider || model.ownedBy, model.contextWindow ? `${model.contextWindow}` : '']
-            .filter(Boolean)
-            .join(' · ')
+          const meta = formatRemoteModelMetadata(model)
           process.stdout.write(`- ${model.id}${meta ? ` (${meta})` : ''}\n`)
         }
       }
 
-      await ctx.session.logout()
+      await ctx.podSession.close()
     },
   )
   .command(
-    'resume',
-    'List resumable CLI threads',
-    (command) => command.option('url', { type: 'string', describe: 'Runtime API base URL override' }),
+    'resume [session]',
+    'Resume a previous interactive LinX session',
+    (command) => command
+      .positional('session', { type: 'string', describe: 'Session id/prefix or JSONL file to resume' })
+      .option('last', { type: 'boolean', default: false, describe: 'Resume the most recent local session for this workspace' })
+      .option('cwd', { type: 'string', describe: 'Workspace path for the resumed session' })
+      .option('model', { type: 'string', describe: 'Model id to expose through the Pi runtime adapter' })
+      .option('backend', {
+        type: 'string',
+        default: 'cloud',
+        choices: ['cloud', 'native'] as const,
+        describe: 'Backend mode. Default is cloud; native keeps the local Codex proxy for debugging only.',
+      })
+      .option('port', { type: 'number', default: 8787, describe: 'Local websocket port used only when --backend native' })
+      .option('runtime-url', { type: 'string', default: 'https://api.undefineds.co/v1', describe: 'Cloud runtime API base URL' }),
     async (argv) => {
-      const ctx = await resolveContext(argv.url)
-      const threads = await ctx.runtime.listThreads(ctx.session, ctx.chatId)
-
-      if (threads.length === 0) {
-        process.stdout.write('No threads found.\n')
-      } else {
-        process.stdout.write(`${threads.map((thread) => `- ${ctx.runtime.formatThreadLabel(thread)}`).join('\n')}\n`)
+      const session = typeof argv.session === 'string' ? argv.session : undefined
+      if (!session && !argv.last) {
+        const sessions = await listLinxPiSessions(argv.cwd || process.cwd(), LINX_AGENT_DIR)
+        if (sessions.length === 0) {
+          process.stdout.write('No LinX sessions found.\n')
+          return
+        }
+        process.stdout.write(`${sessions.map(formatLinxPiSessionSummary).join('\n')}\n`)
+        return
       }
 
-      await ctx.session.logout()
+      await runPiCommand({
+        cwd: argv.cwd,
+        model: argv.model,
+        backend: argv.backend,
+        port: argv.port,
+        'runtime-url': argv['runtime-url'],
+        session,
+        last: argv.last || !session,
+      })
     },
   )
   .command(
@@ -653,11 +814,11 @@ const cli = yargs(hideBin(process.argv))
       command
         .positional('action', {
           type: 'string',
-          choices: ['run', 'backends', 'sessions', 'show', 'approvals', 'approve', 'reject', 'codex', 'claude', 'codebuddy'] as const,
+          choices: ['run', 'backends', 'sessions', 'show', 'codex', 'claude', 'codebuddy'] as const,
         })
         .positional('backend', {
           type: 'string',
-          describe: 'Watch backend for `run`, session id for `show`, or approval id for `approve|reject`',
+          describe: 'Watch backend for `run` or session id for `show`',
         })
         .option('mode', {
           type: 'string',
@@ -684,14 +845,11 @@ const cli = yargs(hideBin(process.argv))
           choices: ['auto', 'local', 'cloud'] as const,
           describe: 'Resolve credentials only: local CLI login, LinX cloud config, or auto fallback. Runtime still runs locally.',
         })
-        .option('session', {
-          type: 'boolean',
-          default: false,
-          describe: 'Approve for the current watch session instead of only once.',
-        })
-        .option('reason', {
+        .option('approval-source', {
           type: 'string',
-          describe: 'Optional note recorded with an approval decision.',
+          default: 'hybrid',
+          choices: ['local', 'remote', 'hybrid'] as const,
+          describe: 'Resolve backend approval requests locally, through Pod remote approvals, or whichever answers first.',
         }),
     async (argv) => {
       const rawAction = String(argv.action)
@@ -736,34 +894,6 @@ const cli = yargs(hideBin(process.argv))
         return
       }
 
-      if (action === 'approvals') {
-        const approvals = await listRemoteWatchApprovals()
-        if (approvals.length === 0) {
-          process.stdout.write('No pending remote approvals in the approval inbox.\n')
-          return
-        }
-
-        process.stdout.write(`${approvals.map(formatRemoteWatchApprovalSummary).join('\n')}\n`)
-        return
-      }
-
-      if (action === 'approve' || action === 'reject') {
-        const approvalId = argv.backend ? String(argv.backend) : ''
-        if (!approvalId) {
-          throw new Error(`Usage: linx watch ${action} <approvalId>`)
-        }
-
-        const summary = await resolveRemoteWatchApproval({
-          approvalId,
-          decision: action === 'approve'
-            ? (argv.session ? 'accept_for_session' : 'accept')
-            : 'decline',
-          note: argv.reason ? String(argv.reason) : undefined,
-        })
-        process.stdout.write(`${formatRemoteWatchApprovalSummary(summary)}\n`)
-        return
-      }
-
       const backend = (directBackend ? rawAction : argv.backend) as WatchBackend | undefined
       if (!backend || !['codex', 'claude', 'codebuddy'].includes(backend)) {
         throw new Error('Usage: linx watch run <codex|claude|codebuddy> <prompt> [-- backend args]\n   or: linx watch <codex|claude|codebuddy> <prompt>')
@@ -783,6 +913,7 @@ const cli = yargs(hideBin(process.argv))
         prompt,
         passthroughArgs: ((argv['--'] as string[] | undefined) ?? []).map(String),
         credentialSource: argv['credential-source'] as WatchCredentialSource,
+        approvalSource: argv['approval-source'] as WatchApprovalSource,
       })
 
       if (exitCode !== 0) {
@@ -792,6 +923,18 @@ const cli = yargs(hideBin(process.argv))
   )
   .strict()
   .help()
+  .fail((message, error, yargsInstance) => {
+    if (error) {
+      console.error(error instanceof Error ? error.message : String(error))
+      process.exit(1)
+    }
+    if (message) {
+      console.error(message)
+      process.exit(1)
+    }
+    yargsInstance.showHelp()
+    process.exit(1)
+  })
 
 process.on('unhandledRejection', (error: unknown) => {
   console.error(error instanceof Error ? error.message : String(error))

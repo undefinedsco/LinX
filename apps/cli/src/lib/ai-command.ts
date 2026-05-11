@@ -1,19 +1,27 @@
 import type { CommandModule } from 'yargs'
-import { resolveLinxPodUrl } from '@linx/client'
+import { resolveLinxPodUrl } from '@undefineds.co/models/client'
 import {
   aiConfigProviderUri,
   buildAIConfigMutationPlan,
   buildAIConfigProviderStateMap,
+  getAIConfigProviderFamilyIds,
   getAIConfigProviderMetadata,
-  normalizeAIConfigProviderId as extractAIConfigProviderId,
-  normalizeAIConfigResourceId as extractAIConfigResourceId,
-  sameAIConfigProviderFamily as sameAIConfigProviderId,
+  normalizeAIConfigProviderId,
+  normalizeAIConfigResourceId,
+  sameAIConfigProviderFamily,
 } from '@undefineds.co/models/ai-config'
-import { DCTerms, RDFS, UDFS, XPOD_AI, XPOD_CREDENTIAL } from '@undefineds.co/models'
-import { getClientCredentials, loadCredentials } from './credentials-store.js'
+import { XPOD_AI, XPOD_CREDENTIAL } from '@undefineds.co/models/namespaces'
+import { getClientCredentialId, getClientCredentialKey, getClientCredentials, loadCredentials } from './credentials-store.js'
 import { loadAccountSession } from './account-session.js'
 import { authenticatedFetch, getAccessToken } from './solid-auth.js'
+import { getOidcAccessToken } from './oidc-auth.js'
 import { promptPassword } from './prompt.js'
+import {
+  firstIri,
+  firstLiteral,
+  parseManagedTurtleBlocks,
+  subjectIdFromResourceUrl,
+} from './pi-adapter/pod-native.js'
 
 interface AiArgs {
   action?: 'connect' | 'disconnect' | 'status'
@@ -50,9 +58,6 @@ interface ParsedModelRow extends Record<string, unknown> {
 }
 
 interface AiRuntime {
-  DCTerms: typeof DCTerms
-  RDFS: typeof RDFS
-  UDFS: typeof UDFS
   XPOD_AI: typeof XPOD_AI
   XPOD_CREDENTIAL: typeof XPOD_CREDENTIAL
   aiConfigProviderUri: (providerId: string) => string
@@ -109,10 +114,11 @@ interface AiRuntime {
     apiKey?: string
     selectedModelId?: string
   }>
-  extractAIConfigProviderId: (value?: string | null) => string
-  extractAIConfigResourceId: (value?: string | null) => string
+  getAIConfigProviderFamilyIds: (providerId: string) => string[]
   getAIConfigProviderMetadata: (providerId: string) => { id: string }
-  sameAIConfigProviderId: (left?: string | null, right?: string | null) => boolean
+  normalizeAIConfigProviderId: (value?: string | null) => string
+  normalizeAIConfigResourceId: (value?: string | null) => string
+  sameAIConfigProviderFamily: (left?: string | null, right?: string | null) => boolean
 }
 
 const XSD_DATE_TIME = 'http://www.w3.org/2001/XMLSchema#dateTime'
@@ -122,18 +128,16 @@ let aiRuntimePromise: Promise<AiRuntime> | null = null
 async function loadAiRuntime(): Promise<AiRuntime> {
   if (!aiRuntimePromise) {
     aiRuntimePromise = Promise.resolve({
-      DCTerms,
-      RDFS,
-      UDFS,
       XPOD_AI,
       XPOD_CREDENTIAL,
       aiConfigProviderUri,
       buildAIConfigMutationPlan,
       buildAIConfigProviderStateMap,
-      extractAIConfigProviderId,
-      extractAIConfigResourceId,
+      getAIConfigProviderFamilyIds,
       getAIConfigProviderMetadata,
-      sameAIConfigProviderId,
+      normalizeAIConfigProviderId,
+      normalizeAIConfigResourceId,
+      sameAIConfigProviderFamily,
     })
   }
 
@@ -149,10 +153,6 @@ function absolutePodUri(podUrl: string, relativePath: string): string {
   return `${podUrl.replace(/\/?$/, '/')}${relativePath.replace(/^\/+/, '')}`
 }
 
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
 function quoteLiteral(value: string): string {
   return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`
 }
@@ -161,90 +161,48 @@ function dateTimeLiteral(value: Date): string {
   return `"${value.toISOString()}"^^<${XSD_DATE_TIME}>`
 }
 
-function splitResourceBlocks(turtle: string, resourceUrl: string): string[] {
-  if (!turtle.trim()) return []
-  const pattern = new RegExp(`(?=<${escapeRegex(resourceUrl)}#)`)
-  return turtle
-    .split(pattern)
-    .map((block) => block.trim())
-    .filter(Boolean)
-}
-
-function matchLiteral(block: string, predicateUri: string): string | undefined {
-  const match = block.match(new RegExp(`<${escapeRegex(predicateUri)}>\\s+"([^"]*)"(?:\\^\\^<[^>]+>)?`))
-  return match?.[1]
-}
-
-function matchIri(block: string, predicateUri: string): string | undefined {
-  const match = block.match(new RegExp(`<${escapeRegex(predicateUri)}>\\s+<([^>]+)>`))
-  return match?.[1]
-}
-
-function matchFirstLiteral(block: string, predicateUris: string[]): string | undefined {
-  for (const predicateUri of predicateUris) {
-    if (!predicateUri) continue
-    const value = matchLiteral(block, predicateUri)
-    if (value !== undefined) return value
-  }
-  return undefined
-}
-
-function matchFirstIri(block: string, predicateUris: string[]): string | undefined {
-  for (const predicateUri of predicateUris) {
-    if (!predicateUri) continue
-    const value = matchIri(block, predicateUri)
-    if (value !== undefined) return value
-  }
-  return undefined
-}
-
 function parseCredentialRows(turtle: string, resourceUrl: string, runtime: AiRuntime): ParsedCredentialRow[] {
-  return splitResourceBlocks(turtle, resourceUrl)
-    .map((block) => {
-      const subject = block.match(new RegExp(`^<${escapeRegex(resourceUrl)}#([^>]+)>`))
-      if (!subject?.[1]) return null
+  return [...parseManagedTurtleBlocks(turtle, resourceUrl)]
+    .map(([subject, predicates]) => {
       return {
-        id: subject[1],
-        provider: matchFirstIri(block, [runtime.XPOD_CREDENTIAL.provider, runtime.UDFS.provider]),
-        service: matchFirstLiteral(block, [runtime.XPOD_CREDENTIAL.service, runtime.UDFS.service]),
-        status: matchFirstLiteral(block, [runtime.XPOD_CREDENTIAL.status, runtime.UDFS.status]),
-        apiKey: matchFirstLiteral(block, [runtime.XPOD_CREDENTIAL.apiKey, runtime.UDFS.apiKey]),
-        baseUrl: matchFirstLiteral(block, [runtime.XPOD_CREDENTIAL.baseUrl, runtime.UDFS.baseUrl]),
-        label: matchFirstLiteral(block, [runtime.XPOD_CREDENTIAL.label, runtime.RDFS.label]),
+        id: subjectIdFromResourceUrl(subject),
+        provider: firstIri(predicates, runtime.XPOD_CREDENTIAL.provider),
+        service: firstLiteral(predicates, runtime.XPOD_CREDENTIAL.service),
+        status: firstLiteral(predicates, runtime.XPOD_CREDENTIAL.status),
+        apiKey: firstLiteral(predicates, runtime.XPOD_CREDENTIAL.apiKey),
+        baseUrl: firstLiteral(predicates, runtime.XPOD_CREDENTIAL.baseUrl),
+        label: firstLiteral(predicates, runtime.XPOD_CREDENTIAL.label),
       }
     })
-    .filter(Boolean) as ParsedCredentialRow[]
+    .filter((row) => row.id) as ParsedCredentialRow[]
 }
 
 function parseProviderRows(turtle: string, resourceUrl: string, runtime: AiRuntime): ParsedProviderRow[] {
-  return splitResourceBlocks(turtle, resourceUrl)
-    .map((block) => {
-      const subject = block.match(new RegExp(`^<${escapeRegex(resourceUrl)}#([^>]+)>`))
-      if (!subject?.[1]) return null
+  return [...parseManagedTurtleBlocks(turtle, resourceUrl)]
+    .map(([subject, predicates]) => {
       return {
-        id: subject[1],
-        baseUrl: matchFirstLiteral(block, [runtime.XPOD_AI.baseUrl, runtime.UDFS.baseUrl]),
-        proxyUrl: matchFirstLiteral(block, [runtime.XPOD_AI.proxyUrl, runtime.UDFS.proxyUrl]),
-        hasModel: matchFirstIri(block, [runtime.XPOD_AI.hasModel, runtime.UDFS.hasModel]),
+        id: subjectIdFromResourceUrl(subject),
+        '@id': subject,
+        baseUrl: firstLiteral(predicates, runtime.XPOD_AI.baseUrl),
+        proxyUrl: firstLiteral(predicates, runtime.XPOD_AI.proxyUrl),
+        hasModel: firstIri(predicates, runtime.XPOD_AI.hasModel),
       }
     })
-    .filter(Boolean) as ParsedProviderRow[]
+    .filter((row) => row.id) as ParsedProviderRow[]
 }
 
 function parseModelRows(turtle: string, resourceUrl: string, runtime: AiRuntime): ParsedModelRow[] {
-  return splitResourceBlocks(turtle, resourceUrl)
-    .map((block) => {
-      const subject = block.match(new RegExp(`^<${escapeRegex(resourceUrl)}#([^>]+)>`))
-      if (!subject?.[1]) return null
+  return [...parseManagedTurtleBlocks(turtle, resourceUrl)]
+    .map(([subject, predicates]) => {
       return {
-        id: subject[1],
-        displayName: matchFirstLiteral(block, [runtime.XPOD_AI.displayName, runtime.RDFS.label]),
-        modelType: matchFirstLiteral(block, [runtime.XPOD_AI.modelType, runtime.UDFS.modelType]),
-        isProvidedBy: matchFirstIri(block, [runtime.XPOD_AI.isProvidedBy, runtime.UDFS.isProvidedBy]),
-        status: matchFirstLiteral(block, [runtime.XPOD_AI.status, runtime.UDFS.status]),
+        id: subjectIdFromResourceUrl(subject),
+        displayName: firstLiteral(predicates, runtime.XPOD_AI.displayName),
+        modelType: firstLiteral(predicates, runtime.XPOD_AI.modelType),
+        isProvidedBy: firstIri(predicates, runtime.XPOD_AI.isProvidedBy),
+        status: firstLiteral(predicates, runtime.XPOD_AI.status),
       }
     })
-    .filter(Boolean) as ParsedModelRow[]
+    .filter((row) => row.id) as ParsedModelRow[]
 }
 
 async function requireApiKey(argv: AiArgs): Promise<string> {
@@ -267,18 +225,21 @@ async function resolvePodWriteContext(urlOverride?: string): Promise<{ accessTok
   }
 
   const clientCreds = getClientCredentials(creds)
-  if (!clientCreds) {
-    throw new Error('Only client credentials auth is supported for `linx ai connect`.')
+  let accessToken: string | null = null
+  if (clientCreds) {
+    const baseUrl = (urlOverride ?? creds.url).replace(/\/?$/, '/')
+    const tokenResult = await getAccessToken(getClientCredentialId(clientCreds), getClientCredentialKey(clientCreds), baseUrl)
+    accessToken = tokenResult?.accessToken ?? null
+  } else {
+    accessToken = await getOidcAccessToken(creds)
   }
 
-  const baseUrl = (urlOverride ?? creds.url).replace(/\/?$/, '/')
-  const tokenResult = await getAccessToken(clientCreds.clientId, clientCreds.clientSecret, baseUrl)
-  if (!tokenResult) {
+  if (!accessToken) {
     throw new Error('Failed to obtain Pod access token. Run `linx login` again.')
   }
 
   return {
-    accessToken: tokenResult.accessToken,
+    accessToken,
     podUrl: loadAccountSession()?.podUrl || resolveLinxPodUrl(creds.webId),
   }
 }
@@ -448,15 +409,8 @@ function buildCredentialDeleteSparql(runtime: AiRuntime, providerRef: string): s
   ?credential ?predicate ?object .
 }
 WHERE {
-  {
-    ?credential <${runtime.XPOD_CREDENTIAL.provider}> <${providerRef}> ;
-      ?predicate ?object .
-  }
-  UNION
-  {
-    ?credential <${runtime.UDFS.provider}> <${providerRef}> ;
-      ?predicate ?object .
-  }
+  ?credential <${runtime.XPOD_CREDENTIAL.provider}> <${providerRef}> ;
+    ?predicate ?object .
 }`
 }
 
@@ -471,7 +425,7 @@ export const aiCommand: CommandModule<object, AiArgs> = {
       })
       .positional('provider', {
         type: 'string',
-        description: 'Provider/backend id, for example anthropic, openai, codebuddy',
+        description: 'Provider/backend id, for example claude, anthropic, codebuddy, codex',
       })
       .option('url', { type: 'string', description: 'Server base URL override' })
       .option('api-key', { type: 'string', description: 'Provider API key' })
@@ -502,7 +456,7 @@ export const aiCommand: CommandModule<object, AiArgs> = {
       const filtered = Object.values(states).filter((state) => {
         if (!state.apiKey) return false
         if (!argv.provider) return true
-        return aiRuntime.sameAIConfigProviderId(argv.provider, state.id)
+        return aiRuntime.sameAIConfigProviderFamily(argv.provider, state.id)
       })
 
       if (filtered.length === 0) {
@@ -531,11 +485,16 @@ export const aiCommand: CommandModule<object, AiArgs> = {
         : 'Usage: linx ai connect <provider> --api-key <key>')
     }
 
-    const provider = aiRuntime.extractAIConfigProviderId(providerArg)
+    const provider = aiRuntime.normalizeAIConfigProviderId(providerArg)
 
     if (action === 'disconnect') {
-      const providerRef = absolutePodUri(podUrl, `/settings/ai/providers.ttl#${provider}`)
-      await patchResource(credentialResource, accessToken, buildCredentialDeleteSparql(aiRuntime, providerRef))
+      const providerRefs = aiRuntime.getAIConfigProviderFamilyIds(provider).map((providerId) =>
+        absolutePodUri(podUrl, `/settings/ai/providers.ttl#${providerId}`),
+      )
+
+      for (const providerRef of providerRefs) {
+        await patchResource(credentialResource, accessToken, buildCredentialDeleteSparql(aiRuntime, providerRef))
+      }
 
       process.stdout.write(`Disconnected AI provider: ${provider}\n`)
       return
@@ -619,7 +578,7 @@ export const aiCommand: CommandModule<object, AiArgs> = {
     const metadata = aiRuntime.getAIConfigProviderMetadata(provider)
     process.stdout.write(`Connected AI provider: ${metadata.id}\n`)
     if (modelId) {
-      process.stdout.write(`model: ${aiRuntime.extractAIConfigResourceId(modelId)}\n`)
+      process.stdout.write(`model: ${aiRuntime.normalizeAIConfigResourceId(modelId)}\n`)
     }
     process.stdout.write(`api-key: ${maskSecret(apiKey)}\n`)
   },

@@ -11,7 +11,8 @@ import type {
   WatchSessionRecord,
   WatchSessionStatus,
   WatchTransport,
-} from '@linx/client/watch'
+} from '@undefineds.co/models/watch'
+import type { AgentRuntimeCapabilities } from '@linx/agent-runtime'
 
 export type {
   WatchApprovalSource,
@@ -26,7 +27,7 @@ export type {
   WatchSessionRecord,
   WatchSessionStatus,
   WatchTransport,
-} from '@linx/client/watch'
+} from '@undefineds.co/models/watch'
 
 export interface WatchRunOptions {
   backend: WatchBackend
@@ -97,5 +98,6 @@ export interface WatchBackendHook {
   id: WatchBackend
   label: string
   description: string
+  capabilities: AgentRuntimeCapabilities
   buildSpawnPlan(options: WatchRunOptions): WatchSpawnPlan
 }

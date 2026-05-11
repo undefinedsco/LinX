@@ -1,4 +1,9 @@
-import type { ThreadRow } from '@undefineds.co/models'
+import {
+  extractApprovalIdFromApprovalRef,
+  extractChatThreadRef,
+  resolveThreadChatId,
+  type ThreadRow,
+} from '@undefineds.co/models'
 import { isLocalWorkspaceUri } from '@/lib/data/workspace-model'
 import {
   createContainerNodeId,
@@ -8,10 +13,6 @@ import {
   normalizeContainerUri,
 } from '@/modules/files/browser'
 import type { InboxItem } from './collections'
-
-interface ParsedAuditContext {
-  [key: string]: unknown
-}
 
 export interface InboxSceneTarget {
   chatId: string | null
@@ -35,43 +36,8 @@ export type InboxObjectTarget =
   | { kind: 'approval'; approvalItemId: string }
   | ({ kind: 'files' } & InboxFilesTarget)
 
-const CHAT_THREAD_URI_PATTERN = /\.data\/chat\/([^/]+)\/index\.ttl#(.+)$/
-const APPROVAL_URI_PATTERN = /\.data\/approvals\/([^/#]+)\.ttl(?:#.*)?$/
-
-function parseAuditContext(value: string | null | undefined): ParsedAuditContext | null {
-  if (!value) return null
-  try {
-    const parsed = JSON.parse(value) as ParsedAuditContext
-    return parsed && typeof parsed === 'object' ? parsed : null
-  } catch {
-    return null
-  }
-}
-
-function extractContextString(context: ParsedAuditContext | null, keys: string[]): string | null {
-  for (const key of keys) {
-    const value = context?.[key]
-    if (typeof value === 'string' && value.trim().length > 0) {
-      return value.trim()
-    }
-  }
-
-  return null
-}
-
-function parseChatThreadUri(uri: string | null | undefined): { chatId: string | null; threadId: string | null } {
-  if (!uri) return { chatId: null, threadId: null }
-
-  const match = uri.match(CHAT_THREAD_URI_PATTERN)
-  return {
-    chatId: match?.[1] ?? null,
-    threadId: match?.[2] ?? null,
-  }
-}
-
 function parseApprovalId(uri: string | null | undefined): string | null {
-  if (!uri) return null
-  return uri.match(APPROVAL_URI_PATTERN)?.[1] ?? null
+  return extractApprovalIdFromApprovalRef(uri)
 }
 
 function findThreadRow(
@@ -81,38 +47,17 @@ function findThreadRow(
 ): ThreadRow | null {
   if (!threadId) return null
 
-  const exact = threads.find((thread) => thread.id === threadId && (!chatId || thread.chatId === chatId))
+  const exact = threads.find((thread) => thread.id === threadId && (!chatId || resolveThreadChatId(thread) === chatId))
   if (exact) return exact
   return threads.find((thread) => thread.id === threadId) ?? null
 }
 
-function extractThread(item: InboxItem, context: ParsedAuditContext | null): string | null {
-  return item.thread ?? extractContextString(context, ['thread', 'threadUri'])
+function extractThread(item: InboxItem): string | null {
+  return item.thread ?? null
 }
 
-function extractAbout(item: InboxItem, context: ParsedAuditContext | null): string | null {
-  return item.about
-    ?? extractContextString(context, [
-      'about',
-      'aboutUri',
-      'target',
-      'targetUri',
-      'object',
-      'objectUri',
-      'resource',
-      'resourceUri',
-      'file',
-      'fileUri',
-      'container',
-      'containerUri',
-      'workspace',
-      'workspaceUri',
-      'result',
-      'resultUri',
-      'output',
-      'outputUri',
-    ])
-    ?? null
+function extractAbout(item: InboxItem): string | null {
+  return item.about ?? null
 }
 
 function normalizeWorkspaceLikeUri(uri: string | null): string | null {
@@ -121,16 +66,13 @@ function normalizeWorkspaceLikeUri(uri: string | null): string | null {
 }
 
 export function resolveInboxScene(item: InboxItem, threads: ThreadRow[]): InboxSceneTarget {
-  const context = parseAuditContext(item.audit?.context)
-  const thread = extractThread(item, context)
-  const threadRef = parseChatThreadUri(thread)
+  const thread = extractThread(item)
+  const threadRef = extractChatThreadRef(thread)
   const chatId = item.chatId ?? threadRef.chatId
   const threadId = item.threadId ?? threadRef.threadId
   const threadRow = findThreadRow(threads, chatId ?? null, threadId ?? null)
-  const workspace = normalizeWorkspaceLikeUri(
-    threadRow?.workspace ?? extractContextString(context, ['workspace', 'workspaceUri', 'container', 'containerUri']),
-  )
-  const about = extractAbout(item, context) ?? thread
+  const workspace = normalizeWorkspaceLikeUri(threadRow?.workspace ?? null)
+  const about = extractAbout(item) ?? thread
   const approvalId = item.approvalId ?? item.approval?.id ?? parseApprovalId(item.audit?.approval ?? null)
 
   return {
@@ -170,7 +112,7 @@ export function resolveInboxObjectTarget(scene: InboxSceneTarget): InboxObjectTa
       : null
   }
 
-  const threadRef = parseChatThreadUri(scene.about)
+  const threadRef = extractChatThreadRef(scene.about)
   if (threadRef.chatId || threadRef.threadId) {
     return { kind: 'chat' }
   }

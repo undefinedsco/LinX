@@ -12,7 +12,7 @@ import { and, eq } from '@undefineds.co/drizzle-solid'
 import {
   resolveLinxPodBaseUrl,
   resolveLinxRuntimeApiBaseUrlForIssuerUrl,
-} from '@linx/client'
+} from '@undefineds.co/models/client'
 import type { ChatKitStore, StoreContext } from '@/lib/vendor/xpod-chatkit'
 import {
   extractUserMessageText,

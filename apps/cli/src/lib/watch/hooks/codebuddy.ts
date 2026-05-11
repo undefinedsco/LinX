@@ -1,9 +1,13 @@
+import { createAcpAgentCapabilities } from '@linx/agent-runtime'
 import type { WatchBackendHook } from '../types.js'
 
 export const codebuddyHook: WatchBackendHook = {
   id: 'codebuddy',
   label: 'CodeBuddy Code',
   description: 'Use local codebuddy ACP transport for persistent multi-turn watch sessions.',
+  capabilities: createAcpAgentCapabilities({
+    hasThinking: true,
+  }),
   buildSpawnPlan(options) {
     return {
       command: 'codebuddy',

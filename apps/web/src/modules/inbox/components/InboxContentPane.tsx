@@ -11,7 +11,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { useThreadIndex } from '@/modules/chat/collections'
 import { useChatStore } from '@/modules/chat/store'
 import { useFilesStore } from '@/modules/files/store'
-import { buildAuditPresentation, createResolvedAuthTimestampsIndex, formatAuditActorRole, formatInboxStatusLabel } from '../presentation'
+import { buildAuditDetailRecord, buildAuditPresentation, createResolvedAuthTimestampsIndex, formatAuditActorRole, formatInboxStatusLabel } from '../presentation'
 import { resolveInboxObjectTarget, resolveInboxScene, resolveInboxWorkspaceTarget, type InboxFilesTarget } from '../scene-restore'
 import { isActionableInboxItem } from '../utils'
 import { useInboxItems, useResolveInboxApproval } from '../collections'
@@ -24,13 +24,9 @@ function formatTime(value: string | undefined) {
   return date.toLocaleString('zh-CN')
 }
 
-function prettyContext(value: string | null | undefined) {
+function prettyDetails(value: Record<string, unknown> | null | undefined) {
   if (!value) return null
-  try {
-    return JSON.stringify(JSON.parse(value), null, 2)
-  } catch {
-    return value
-  }
+  return JSON.stringify(value, null, 2)
 }
 
 export function InboxContentPane(_props: MicroAppPaneProps) {
@@ -78,8 +74,12 @@ export function InboxContentPane(_props: MicroAppPaneProps) {
     }
   }, [selectedItem])
   const auditPresentation = useMemo(
-    () => (selectedItem?.audit ? buildAuditPresentation(selectedItem.audit, resolvedAuthIndex) : null),
+    () => (selectedItem?.audit ? buildAuditPresentation(selectedItem.audit, resolvedAuthIndex, selectedItem.approval) : null),
     [resolvedAuthIndex, selectedItem],
+  )
+  const auditDetails = useMemo(
+    () => (selectedItem?.audit ? buildAuditDetailRecord(selectedItem.audit, selectedItem.approval) : null),
+    [selectedItem],
   )
   const statusLabel = formatInboxStatusLabel(selectedItem?.status)
   const canOpenConversation = !!scene?.chatId
@@ -404,11 +404,11 @@ export function InboxContentPane(_props: MicroAppPaneProps) {
               </div>
             )}
 
-            {selectedItem.audit?.context && (
+            {auditDetails && (
               <div>
-                <div className="text-xs uppercase tracking-wide text-muted-foreground">上下文</div>
+                <div className="text-xs uppercase tracking-wide text-muted-foreground">事件详情</div>
                 <pre className="mt-2 overflow-x-auto rounded-xl border border-border/50 bg-card/70 p-4 text-xs leading-6 text-foreground">
-                  {prettyContext(selectedItem.audit.context)}
+                  {prettyDetails(auditDetails)}
                 </pre>
               </div>
             )}

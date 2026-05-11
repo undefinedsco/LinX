@@ -4,7 +4,7 @@ import {
   resolveLinxCloudAccountBaseUrl,
   type LinxAccountData,
   type LinxClientCredential,
-} from '@linx/client'
+} from '@undefineds.co/models/client'
 
 export type AccountData = LinxAccountData
 export type ClientCredential = LinxClientCredential

@@ -7,7 +7,7 @@ on:
   pull_request:
     paths:
       - 'apps/cli/**'
-      - 'packages/client/**'
+      - 'packages/models/**'
       - 'packages/stores/**'
       - 'scripts/**'
       - 'package.json'
@@ -20,7 +20,7 @@ on:
       - 'feat/**'
     paths:
       - 'apps/cli/**'
-      - 'packages/client/**'
+      - 'packages/models/**'
       - 'packages/stores/**'
       - 'scripts/**'
       - 'package.json'
@@ -40,12 +40,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           submodules: recursive
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
           cache: yarn
@@ -53,8 +53,11 @@ jobs:
       - name: Install
         run: yarn install --frozen-lockfile --ignore-engines
 
-      - name: Build client
-        run: yarn build:client
+      - name: Models status
+        run: yarn models:status
+
+      - name: Build models
+        run: yarn build:models
 
       - name: Build CLI
         run: yarn build:cli

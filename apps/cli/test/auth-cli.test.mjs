@@ -4,7 +4,8 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
+import { loadWatchModule } from './watch-test-bundle.mjs'
 
 const cliRoot = fileURLToPath(new URL('..', import.meta.url))
 const entryPath = join(cliRoot, 'dist', 'index.js')
@@ -44,6 +45,11 @@ function normalizeHeaders(input) {
   }
   for (const [key, value] of Object.entries(input)) headers[String(key).toLowerCase()] = String(value)
   return headers
+}
+
+function isAuthorized(headers) {
+  return headers.authorization === 'Bearer pod_access_token'
+    || headers.authorization === 'Bearer access-token'
 }
 
 globalThis.fetch = async (input, init = {}) => {
@@ -153,7 +159,7 @@ globalThis.fetch = async (input, init = {}) => {
       || pathname === '/profile/settings/ai/models.ttl'
     )
   ) {
-    if (headers.authorization === 'Bearer pod_access_token') {
+    if (isAuthorized(headers)) {
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -167,7 +173,7 @@ globalThis.fetch = async (input, init = {}) => {
   }
 
   if (method === 'GET' && pathname === '/profile/settings/credentials.ttl') {
-    if (headers.authorization !== 'Bearer pod_access_token') {
+    if (!isAuthorized(headers)) {
       return new Response('unauthorized', { status: 401 })
     }
 
@@ -182,7 +188,7 @@ globalThis.fetch = async (input, init = {}) => {
   }
 
   if (method === 'GET' && pathname === '/profile/settings/ai/providers.ttl') {
-    if (headers.authorization !== 'Bearer pod_access_token') {
+    if (!isAuthorized(headers)) {
       return new Response('unauthorized', { status: 401 })
     }
 
@@ -197,7 +203,7 @@ globalThis.fetch = async (input, init = {}) => {
   }
 
   if (method === 'GET' && pathname === '/profile/settings/ai/models.ttl') {
-    if (headers.authorization !== 'Bearer pod_access_token') {
+    if (!isAuthorized(headers)) {
       return new Response('unauthorized', { status: 401 })
     }
 
@@ -227,7 +233,7 @@ globalThis.fetch = async (input, init = {}) => {
 }
 
 function execCli(args, env, modulePath) {
-  return execFileSync(process.execPath, ['--import', pathToFileURL(modulePath).href, entryPath, ...args], {
+  return execFileSync(process.execPath, ['--import', modulePath, entryPath, ...args], {
     cwd: cliRoot,
     env: {
       ...process.env,
@@ -259,6 +265,72 @@ function writeClientCredentialsLogin(home) {
     createdAt: '2026-03-15T00:00:00.000Z',
   }))
 }
+
+test('linx login command always starts a fresh browser consent flow', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/login-command.ts')
+  t.after(() => cleanup())
+
+  const loginOptions = []
+  const prompts = []
+  const opened = []
+  const output = []
+
+  await module.runLinxLoginCommand({ url: 'https://id.undefineds.co/' }, {
+    write(chunk) {
+      output.push(chunk)
+    },
+    async openBrowser(url) {
+      opened.push(url)
+    },
+    async promptText(prompt) {
+      prompts.push(prompt)
+      return '  http://127.0.0.1:1234/auth/callback?code=abc&state=state  '
+    },
+    async ensureBrowserConsentLogin(options) {
+      loginOptions.push(options)
+      options.onAuthUrl('https://id.undefineds.co/.oidc/auth?client_id=test')
+      await options.openBrowser('https://id.undefineds.co/.oidc/auth?client_id=test')
+      assert.equal(await options.manualRedirectUrl(), 'http://127.0.0.1:1234/auth/callback?code=abc&state=state')
+      return {
+        url: 'https://id.undefineds.co/',
+        webId: 'https://id.undefineds.co/ganbb/profile/card#me',
+        reusedExistingSession: false,
+        tokenSet: {},
+        credentialsToSave: {},
+      }
+    },
+  })
+
+  assert.equal(loginOptions.length, 1)
+  assert.equal(loginOptions[0].issuerUrl, 'https://id.undefineds.co/')
+  assert.equal(loginOptions[0].forceFresh, true)
+  assert.deepEqual(opened, ['https://id.undefineds.co/.oidc/auth?client_id=test'])
+  assert.deepEqual(prompts, ['redirect URL (leave empty to keep waiting): '])
+  assert.match(output.join(''), /LinX login successful\./)
+  assert.match(output.join(''), /session: browser-consent/)
+})
+
+test('linx login command does not reuse an existing browser session when forceFresh is enabled', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/login-command.ts')
+  t.after(() => cleanup())
+
+  const loginOptions = []
+  await module.runLinxLoginCommand({ url: 'https://id.undefineds.co/' }, {
+    async ensureBrowserConsentLogin(options) {
+      loginOptions.push(options)
+      return {
+        url: 'https://id.undefineds.co/',
+        webId: 'https://id.undefineds.co/ganbb/profile/card#me',
+        reusedExistingSession: true,
+        tokenSet: {},
+        credentialsToSave: {},
+      }
+    },
+  })
+
+  assert.equal(loginOptions[0].forceFresh, true)
+  assert.equal(loginOptions[0].forceRefreshExisting, undefined)
+})
 
 test('linx whoami reads the saved LinX account session', async (t) => {
   const home = mkdtempSync(join(tmpdir(), 'linx-cli-whoami-home-'))
@@ -384,6 +456,7 @@ test('linx ai disconnect removes provider credential config from Pod', async (t)
     item.method === 'PATCH' && item.url === 'https://pod.example/profile/settings/credentials.ttl')
 
   assert.ok(credentialPatches.some((item) => /https:\/\/pod\.example\/profile\/settings\/ai\/providers\.ttl#anthropic/.test(item.body)))
+  assert.ok(credentialPatches.some((item) => /https:\/\/pod\.example\/profile\/settings\/ai\/providers\.ttl#claude/.test(item.body)))
 })
 
 test('linx ai status prints configured cloud AI credentials', async (t) => {
@@ -428,4 +501,54 @@ test('linx ai status prints configured cloud AI credentials', async (t) => {
   assert.match(output, /provider: anthropic/)
   assert.match(output, /model: claude-sonnet-4-20250514/)
   assert.match(output, /api-key: sk-a\*\*\*\*-key/)
+})
+
+test('linx ai connect accepts oidc oauth login and writes provider config to Pod', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'linx-cli-ai-connect-oidc-home-'))
+  t.after(() => {
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  const { logFile, modulePath } = createFetchMock(t)
+  const linxDir = join(home, '.linx')
+  mkdirSync(linxDir, { recursive: true })
+  writeFileSync(join(linxDir, 'config.json'), JSON.stringify({
+    url: 'https://id.undefineds.co/',
+    webId: 'https://pod.example/profile/card#me',
+    authType: 'oidc_oauth',
+  }))
+  writeFileSync(join(linxDir, 'secrets.json'), JSON.stringify({
+    oidcRefreshToken: 'refresh-token',
+    oidcAccessToken: 'access-token',
+    oidcExpiresAt: '2030-01-01T00:00:00.000Z',
+    oidcClientId: 'client-123',
+  }))
+  writeFileSync(join(linxDir, 'account.json'), JSON.stringify({
+    url: 'https://id.undefineds.co/',
+    email: 'browser-consent',
+    token: 'oidc-session',
+    webId: 'https://pod.example/profile/card#me',
+    podUrl: 'https://pod.example/profile/',
+    createdAt: '2026-03-15T00:00:00.000Z',
+  }))
+
+  const output = execCli([
+    'ai',
+    'connect',
+    'codex',
+    '--api-key',
+    'sk-openai-test-key',
+  ], {
+    HOME: home,
+    FAKE_FETCH_LOG: logFile,
+  }, modulePath)
+
+  assert.match(output, /Connected AI provider: openai/)
+  assert.match(output, /api-key: sk-o\*\*\*\*-key/)
+
+  const requests = readRequests(logFile)
+  const providerPatch = requests.find((item) => item.method === 'PATCH' && item.url === 'https://pod.example/profile/settings/ai/providers.ttl')
+  const credentialPatch = requests.find((item) => item.method === 'PATCH' && item.url === 'https://pod.example/profile/settings/credentials.ttl')
+  assert.equal(providerPatch?.headers.authorization, 'Bearer access-token')
+  assert.equal(credentialPatch?.headers.authorization, 'Bearer access-token')
 })

@@ -61,8 +61,10 @@ const authRequiredItem = {
     action: 'runtime.auth_required',
     actorRole: 'system',
     session: 'urn:linx:runtime-session:runtime-1',
+    entry: 'https://alice.example/.data/chat/chat-1/index.ttl#thread-1',
+    toolName: 'oauth2',
+    policy: 'https://example.com/auth',
     createdAt: '2026-03-10T12:00:00.000Z',
-    context: JSON.stringify({ method: 'oauth2', url: 'https://example.com/auth' }),
   },
 }
 
@@ -103,7 +105,7 @@ describe('InboxContentPane', () => {
     }))
   })
 
-  it('renders auth-required actions and context', () => {
+  it('renders auth-required actions', () => {
     render(<InboxContentPane />)
 
     expect(screen.getByText('运行时等待额外认证')).toBeInTheDocument()
@@ -144,7 +146,7 @@ describe('InboxContentPane', () => {
     expect(screen.getByText('打开会话')).toBeInTheDocument()
   })
 
-  it('opens derived workspace and object targets from audit context', () => {
+  it('opens derived workspace and object targets from audit pointers', () => {
     mockUseInboxItems.mockReturnValue({
       data: [
         {
@@ -163,10 +165,9 @@ describe('InboxContentPane', () => {
             action: 'runtime.session.completed',
             actorRole: 'system',
             session: 'urn:linx:runtime-session:runtime-1',
+            entry: 'https://alice.example/.data/chat/chat-1/index.ttl#thread-1',
+            toolName: 'codex',
             createdAt: '2026-03-10T12:00:00.000Z',
-            context: JSON.stringify({
-              threadUri: 'https://alice.example/.data/chat/chat-1/index.ttl#thread-1',
-            }),
           },
         },
       ],
@@ -183,7 +184,7 @@ describe('InboxContentPane', () => {
       data: [
         {
           id: 'thread-1',
-          chatId: 'chat-1',
+          chat: 'chat-1',
           workspace: 'https://alice.example/.data/workspaces/ws-1/',
         },
       ],
@@ -226,7 +227,6 @@ describe('InboxContentPane', () => {
             session: 'urn:linx:runtime-session:runtime-1',
             approval: 'https://alice.example/.data/approvals/approval-1.ttl#this',
             createdAt: '2026-03-10T12:00:00.000Z',
-            context: JSON.stringify({ toolName: 'write_file' }),
           },
         },
       ],

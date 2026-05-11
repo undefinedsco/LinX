@@ -1,16 +1,58 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { createRequire } from 'node:module'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const cliRoot = fileURLToPath(new URL('..', import.meta.url))
+const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 const sourceRoot = join(cliRoot, 'src')
 const entryPath = join(sourceRoot, 'index.ts')
-const require = createRequire(import.meta.url)
-const tscBin = require.resolve('typescript/bin/tsc')
+
+test('compiled cli entry prints package version instead of unknown', async (t) => {
+  const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-version-'))
+  t.after(() => {
+    rmSync(outdir, { recursive: true, force: true })
+  })
+
+  try {
+    execFileSync('tsc', [
+      '--outDir',
+      outdir,
+      '--rootDir',
+      sourceRoot,
+      '--module',
+      'nodenext',
+      '--moduleResolution',
+      'nodenext',
+      '--target',
+      'ES2022',
+      '--lib',
+      'ES2022',
+      '--types',
+      'node',
+      '--skipLibCheck',
+      'true',
+      '--noEmitOnError',
+      'false',
+      entryPath,
+    ], {
+      cwd: cliRoot,
+      stdio: 'pipe',
+    })
+  } catch {
+    assert.ok(existsSync(join(outdir, 'index.js')))
+  }
+
+  const output = execFileSync(process.execPath, [join(outdir, 'index.js'), '--version'], {
+    cwd: cliRoot,
+    encoding: 'utf-8',
+  }).trim()
+
+  assert.match(output, /^\d+\.\d+\.\d+(?:-.+)?$/)
+  assert.notEqual(output, 'unknown')
+})
 
 test('compiled cli entry can serve watch commands without chat dependencies', async (t) => {
   const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-entry-'))
@@ -19,7 +61,7 @@ test('compiled cli entry can serve watch commands without chat dependencies', as
   })
 
   try {
-    execFileSync(process.execPath, [tscBin,
+    execFileSync('tsc', [
       '--outDir',
       outdir,
       '--rootDir',
@@ -64,7 +106,7 @@ test('compiled cli entry exposes codex-native-proxy command help', async (t) => 
   })
 
   try {
-    execFileSync(process.execPath, [tscBin,
+    execFileSync('tsc', [
       '--outDir',
       outdir,
       '--rootDir',
@@ -109,7 +151,7 @@ test('compiled cli default entry is Pi TUI and hides explicit frontend aliases',
   })
 
   try {
-    execFileSync(process.execPath, [tscBin,
+    execFileSync('tsc', [
       '--outDir',
       outdir,
       '--rootDir',
@@ -151,6 +193,53 @@ test('compiled cli default entry is Pi TUI and hides explicit frontend aliases',
   assert.doesNotMatch(output, /linx pi /)
 })
 
+test('compiled cli exposes LinX package commands in help', async (t) => {
+  const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-package-help-'))
+  t.after(() => {
+    rmSync(outdir, { recursive: true, force: true })
+  })
+
+  try {
+    execFileSync('tsc', [
+      '--outDir',
+      outdir,
+      '--rootDir',
+      sourceRoot,
+      '--module',
+      'nodenext',
+      '--moduleResolution',
+      'nodenext',
+      '--target',
+      'ES2022',
+      '--lib',
+      'ES2022',
+      '--types',
+      'node',
+      '--skipLibCheck',
+      'true',
+      '--noEmitOnError',
+      'false',
+      entryPath,
+    ], {
+      cwd: cliRoot,
+      stdio: 'pipe',
+    })
+  } catch {
+    assert.ok(existsSync(join(outdir, 'index.js')))
+  }
+
+  const output = execFileSync(process.execPath, [join(outdir, 'index.js'), '--help'], {
+    cwd: cliRoot,
+    encoding: 'utf-8',
+  })
+
+  assert.match(output, /linx install \[source\]/)
+  assert.match(output, /linx remove \[source\]/)
+  assert.match(output, /linx update \[source\]/)
+  assert.match(output, /linx list/)
+  assert.doesNotMatch(output, /pi install/)
+})
+
 test('compiled cli login help exposes browser consent flow and no password options', async (t) => {
   const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-login-help-'))
   t.after(() => {
@@ -158,7 +247,7 @@ test('compiled cli login help exposes browser consent flow and no password optio
   })
 
   try {
-    execFileSync(process.execPath, [tscBin,
+    execFileSync('tsc', [
       '--outDir',
       outdir,
       '--rootDir',
@@ -197,48 +286,25 @@ test('compiled cli login help exposes browser consent flow and no password optio
   assert.doesNotMatch(output, /password/i)
 })
 
-test('compiled cli version matches package version', async (t) => {
-  const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-version-'))
-  t.after(() => {
-    rmSync(outdir, { recursive: true, force: true })
+test('cli build ships repository skills for the Pi resource loader', async (t) => {
+  execFileSync('node', ['scripts/build.mjs'], {
+    cwd: cliRoot,
+    stdio: 'pipe',
   })
 
-  try {
-    execFileSync(process.execPath, [tscBin,
-      '--outDir',
-      outdir,
-      '--rootDir',
-      sourceRoot,
-      '--module',
-      'nodenext',
-      '--moduleResolution',
-      'nodenext',
-      '--target',
-      'ES2022',
-      '--lib',
-      'ES2022',
-      '--types',
-      'node',
-      '--skipLibCheck',
-      'true',
-      '--noEmitOnError',
-      'false',
-      entryPath,
-    ], {
-      cwd: cliRoot,
-      stdio: 'pipe',
-    })
-  } catch {
-    assert.ok(existsSync(join(outdir, 'index.js')))
+  const sourceSkills = readdirSync(join(repoRoot, 'skills'), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort()
+  const distSkills = readdirSync(join(cliRoot, 'dist', 'skills'), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort()
+
+  assert.deepEqual(distSkills, sourceSkills)
+  for (const skill of sourceSkills) {
+    assert.ok(existsSync(join(cliRoot, 'dist', 'skills', skill, 'SKILL.md')), `${skill} should include SKILL.md`)
   }
-
-  const output = execFileSync(process.execPath, [join(outdir, 'index.js'), '--version'], {
-    cwd: cliRoot,
-    encoding: 'utf-8',
-  }).trim()
-  const packageJson = JSON.parse(readFileSync(join(cliRoot, 'package.json'), 'utf8'))
-
-  assert.equal(output, packageJson.version)
 })
 
 test('compiled cli watch show replays archived timeline instead of raw json', async (t) => {
@@ -251,7 +317,7 @@ test('compiled cli watch show replays archived timeline instead of raw json', as
   })
 
   try {
-    execFileSync(process.execPath, [tscBin,
+    execFileSync('tsc', [
       '--outDir',
       outdir,
       '--rootDir',

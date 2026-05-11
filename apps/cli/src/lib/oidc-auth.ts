@@ -25,9 +25,12 @@ export interface BrowserOidcLoginOptions {
   callbackHost?: string
   callbackPath?: string
   clientName?: string
+  forceFresh?: boolean
+  forceRefreshExisting?: boolean
+  signal?: AbortSignal
   openBrowser?: (url: string) => Promise<void>
   onAuthUrl?: (url: string) => void
-  manualRedirectUrl?: () => Promise<string>
+  manualRedirectUrl?: (signal?: AbortSignal) => Promise<string>
 }
 
 export interface BrowserOidcLoginResult {
@@ -41,14 +44,45 @@ export interface EnsureBrowserOidcLoginResult extends BrowserOidcLoginResult {
   reusedExistingSession: boolean
 }
 
+export class LinxOidcLoginExpiredError extends Error {
+  readonly authExpired = true
+
+  constructor(cause?: unknown) {
+    super('LinX Cloud login expired.')
+    this.name = 'LinxOidcLoginExpiredError'
+    if (cause !== undefined) {
+      ;(this as Error & { cause?: unknown }).cause = cause
+    }
+  }
+}
+
+export function isOidcLoginExpiredError(error: unknown): boolean {
+  if (error instanceof LinxOidcLoginExpiredError) {
+    return true
+  }
+  if (typeof error === 'object' && error !== null && 'authExpired' in error && error.authExpired === true) {
+    return true
+  }
+
+  const message = error instanceof Error ? error.message : String(error)
+  const normalized = message.toLowerCase()
+  return normalized.includes('linx cloud login expired')
+    || normalized.includes('invalid refresh credentials')
+    || normalized.includes('missing static client secret in storage')
+    || normalized.includes('invalid_client')
+    || normalized.includes('invalid_grant')
+}
+
 export async function ensureBrowserConsentLogin(
   options: BrowserOidcLoginOptions = {},
 ): Promise<EnsureBrowserOidcLoginResult> {
-  const reused = await reuseExistingBrowserConsentLogin(options).catch(() => null)
-  if (reused) {
-    return {
-      ...reused,
-      reusedExistingSession: true,
+  if (!options.forceFresh) {
+    const reused = await reuseBrowserConsentLogin(options).catch(() => null)
+    if (reused) {
+      return {
+        ...reused,
+        reusedExistingSession: true,
+      }
     }
   }
 
@@ -101,9 +135,11 @@ export async function loginWithBrowserConsent(
       }
     },
     async (requestUrl) => {
+      assertOidcCallbackDidNotReturnError(requestUrl)
       await session.handleIncomingRedirect(requestUrl)
     },
     options.manualRedirectUrl,
+    options.signal,
   )
 
   if (!session.info.isLoggedIn || !session.info.webId) {
@@ -125,13 +161,16 @@ export async function loginWithBrowserConsent(
   return result
 }
 
-export async function getOidcAccessToken(credentials: Pick<LinxStoredCredentials, 'authType' | 'secrets' | 'webId' | 'url'>): Promise<string | null> {
+export async function getOidcAccessToken(
+  credentials: Pick<LinxStoredCredentials, 'authType' | 'secrets' | 'webId' | 'url'>,
+  options: { forceRefresh?: boolean } = {},
+): Promise<string | null> {
   if (credentials.authType !== 'oidc_oauth' || !isLinxOidcOAuthSecrets(credentials.secrets)) {
     return null
   }
 
   const secrets = credentials.secrets as LinxOidcOAuthSecrets
-  if (!secrets.oidcAccessToken) {
+  if (options.forceRefresh || !secrets.oidcAccessToken) {
     return refreshStoredOidcSession(credentials, secrets)
   }
 
@@ -163,15 +202,17 @@ export function serializeOidcCredentials(
   }
 }
 
-async function withCallbackServer(
+export async function withCallbackServer(
   host: string,
   pathname: string,
   startLogin: (callbackUrl: string) => Promise<void>,
   onCallback: (requestUrl: string) => Promise<void>,
-  manualRedirectUrl?: () => Promise<string>,
+  manualRedirectUrl?: (signal?: AbortSignal) => Promise<string>,
+  signal?: AbortSignal,
 ): Promise<void> {
   const server = createServer()
   const sockets = new Set<Socket>()
+  let manualRedirectAbortController: AbortController | undefined
   server.on('connection', (socket) => {
     sockets.add(socket)
     socket.on('close', () => {
@@ -236,12 +277,30 @@ async function withCallbackServer(
     }
 
     const callbackUrl = `http://${host}:${(address as AddressInfo).port}${pathname}`
+    const manualRedirectController = new AbortController()
+    manualRedirectAbortController = manualRedirectController
+    const manualRedirectSignal = combineAbortSignals(manualRedirectController.signal, signal)
+    const cancellableCallbackPromise = callbackPromise.finally(() => {
+      manualRedirectController.abort()
+    })
     await startLogin(callbackUrl)
+    const manualRedirectPromise = waitForManualRedirect(
+      onCallback,
+      manualRedirectUrl,
+      manualRedirectSignal,
+    ).catch((error) => {
+      if (manualRedirectController.signal.aborted) {
+        return new Promise<void>(() => undefined)
+      }
+      throw error
+    })
     await Promise.race([
-      callbackPromise,
-      waitForManualRedirect(onCallback, manualRedirectUrl),
+      cancellableCallbackPromise,
+      manualRedirectPromise,
+      waitForAbort(signal),
     ])
   } finally {
+    manualRedirectAbortController?.abort()
     server.closeIdleConnections?.()
     server.closeAllConnections?.()
     for (const socket of sockets) {
@@ -251,6 +310,22 @@ async function withCallbackServer(
     }
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }
+}
+
+export function assertOidcCallbackDidNotReturnError(requestUrl: string): void {
+  const url = new URL(requestUrl)
+  const error = url.searchParams.get('error')
+  if (!error) {
+    return
+  }
+
+  const description = url.searchParams.get('error_description')
+  const details = [
+    `OIDC callback returned ${error}`,
+    description ? `description: ${description}` : null,
+    `redirect: ${url.origin}${url.pathname}`,
+  ].filter(Boolean)
+  throw new Error(details.join('; '))
 }
 
 function renderCallbackPage(input: {
@@ -375,7 +450,7 @@ function renderCallbackPage(input: {
 </html>`
 }
 
-async function reuseExistingBrowserConsentLogin(
+export async function reuseBrowserConsentLogin(
   options: BrowserOidcLoginOptions,
 ): Promise<BrowserOidcLoginResult | null> {
   const stored = loadCredentials()
@@ -393,7 +468,7 @@ async function reuseExistingBrowserConsentLogin(
     return null
   }
 
-  const accessToken = await getOidcAccessToken(stored)
+  const accessToken = await getOidcAccessToken(stored, { forceRefresh: options.forceRefreshExisting })
   if (!accessToken || !isLinxOidcOAuthSecrets(stored.secrets)) {
     return null
   }
@@ -449,7 +524,14 @@ async function refreshStoredOidcSession(
     refreshedTokenSet = tokenSet
   })
 
-  await refreshSession(session, { storage })
+  try {
+    await refreshSession(session, { storage })
+  } catch (error) {
+    if (isOidcLoginExpiredError(error)) {
+      throw new LinxOidcLoginExpiredError(error)
+    }
+    throw error
+  }
 
   const nextTokenSet = refreshedTokenSet as SessionTokenSet | null
   if (!nextTokenSet?.accessToken) {
@@ -533,18 +615,68 @@ function escapeHtml(value: string): string {
 
 async function waitForManualRedirect(
   onCallback: (requestUrl: string) => Promise<void>,
-  manualRedirectUrl?: () => Promise<string>,
+  manualRedirectUrl?: (signal?: AbortSignal) => Promise<string>,
+  signal?: AbortSignal,
 ): Promise<void> {
   if (!manualRedirectUrl) {
     await new Promise(() => undefined)
     return
   }
 
-  const requestUrl = await manualRedirectUrl()
+  let requestUrl: string
+  try {
+    requestUrl = await manualRedirectUrl(signal)
+  } catch (error) {
+    if (signal?.aborted) {
+      throw error
+    }
+    await new Promise(() => undefined)
+    return
+  }
+  if (signal?.aborted || !requestUrl) {
+    await new Promise(() => undefined)
+    return
+  }
   await onCallback(requestUrl)
 }
 
-async function openBrowser(url: string): Promise<void> {
+function waitForAbort(signal?: AbortSignal): Promise<never> {
+  if (!signal) {
+    return new Promise(() => undefined)
+  }
+
+  return new Promise((_, reject) => {
+    const rejectCancelled = () => reject(new Error('Login cancelled'))
+    if (signal.aborted) {
+      rejectCancelled()
+      return
+    }
+    signal.addEventListener('abort', rejectCancelled, { once: true })
+  })
+}
+
+function combineAbortSignals(...signals: Array<AbortSignal | undefined>): AbortSignal | undefined {
+  const activeSignals = signals.filter((entry): entry is AbortSignal => Boolean(entry))
+  if (activeSignals.length === 0) {
+    return undefined
+  }
+  if (activeSignals.length === 1) {
+    return activeSignals[0]
+  }
+
+  const controller = new AbortController()
+  const abort = () => controller.abort()
+  for (const entry of activeSignals) {
+    if (entry.aborted) {
+      controller.abort()
+      break
+    }
+    entry.addEventListener('abort', abort, { once: true })
+  }
+  return controller.signal
+}
+
+export async function openBrowser(url: string): Promise<void> {
   if (process.platform === 'darwin') {
     await execFileAsync('open', [url])
     return

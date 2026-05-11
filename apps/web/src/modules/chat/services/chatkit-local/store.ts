@@ -17,7 +17,14 @@ import {
   type ThreadMetadata, type ThreadItem, type Attachment,
   type Page, type StoreItemType,
 } from '@/lib/vendor/xpod-chatkit'
-import { contactTable, resolveRowId, type SolidDatabase, UDFS } from '@undefineds.co/models'
+import {
+  contactTable,
+  extractChatIdFromChatRef,
+  extractThreadIdFromThreadRef,
+  resolveRowId,
+  type SolidDatabase,
+  UDFS,
+} from '@undefineds.co/models'
 import { deleteExactRecord, updateExactRecord } from '@/lib/data/exact-records'
 
 const DEFAULT_CHAT_ID = 'default'
@@ -39,20 +46,11 @@ function stringToStatus(s: string): ThreadMetadata['status'] {
 }
 
 function extractChatId(chatIdOrUri: string | null | undefined): string {
-  if (!chatIdOrUri) return DEFAULT_CHAT_ID
-  if (chatIdOrUri.includes('#')) {
-    const match = chatIdOrUri.match(/\.data\/chat\/([^/]+)\/index\.ttl#this/)
-    if (match) return match[1]
-  }
-  return chatIdOrUri
+  return extractChatIdFromChatRef(chatIdOrUri) ?? DEFAULT_CHAT_ID
 }
 
 function extractThreadId(threadIdOrUri: string | null | undefined): string | undefined {
-  if (!threadIdOrUri) return undefined
-  if (threadIdOrUri.includes('#')) {
-    return threadIdOrUri.split('#').pop() || undefined
-  }
-  return threadIdOrUri
+  return extractThreadIdFromThreadRef(threadIdOrUri) ?? undefined
 }
 
 function getChatIdFromMetadata(metadata?: Record<string, unknown>): string {
@@ -78,7 +76,7 @@ function parseThreadMetadata(metadata: unknown): Record<string, unknown> | undef
 
 async function findThreadRecord(db: SolidDatabase<any>, threadId: string, chatId?: string | null): Promise<any | null> {
   if (chatId) {
-    const exact = await (db as any).findByLocator(Thread as any, { id: threadId, chatId } as any)
+    const exact = await (db as any).findByLocator(Thread as any, { id: threadId, chat: chatId } as any)
     if (exact) return exact
   }
 
@@ -91,7 +89,7 @@ async function findThreadRecord(db: SolidDatabase<any>, threadId: string, chatId
 // ---------------------------------------------------------------------------
 
 function threadRecordToMetadata(record: any): ThreadMetadata {
-  const chatId = extractChatId(record.chatId)
+  const chatId = extractChatId(record.chat)
   const extra = parseThreadMetadata(record.metadata)
   return {
     id: record.id,
@@ -253,7 +251,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     const thread = await findThreadRecord(this.db, threadId, cached)
     if (!thread) return DEFAULT_CHAT_ID
 
-    const chatId = extractChatId((thread as any).chatId)
+    const chatId = extractChatId((thread as any).chat)
     this.threadChatIdCache.set(threadId, chatId)
     return chatId
   }
@@ -342,7 +340,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     } else {
       await (this.db as any).insert(Thread as any).values({
         id: thread.id,
-        chatId,
+        chat: chatId,
         title: thread.title || undefined,
         status: statusToString(thread.status),
         metadata: metadataValue,
@@ -395,7 +393,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       try {
         const thread = await findThreadRecord(this.db, threadId)
         if (thread) {
-          chatId = extractChatId((thread as any).chatId)
+          chatId = extractChatId((thread as any).chat)
         }
       } catch (err: any) {
         console.debug('[LocalStore] Ignoring thread lookup error during delete:', err?.message || err)

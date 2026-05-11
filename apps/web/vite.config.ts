@@ -104,7 +104,6 @@ export default defineConfig({
     preserveSymlinks: true,
     alias: {
       '@': path.resolve(__dirname, './src'),
-      '@linx/client': path.resolve(__dirname, '../../packages/client/src'),
       '@linx/stores': path.resolve(__dirname, '../../packages/stores/src'),
       '@inrupt/solid-client-authn-browser': inruptAuthnBrowser,
     },

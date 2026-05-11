@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { resolveInboxObjectTarget, resolveInboxScene, resolveInboxWorkspaceTarget } from './scene-restore'
 
 describe('inbox scene restoration', () => {
-  it('derives workspace and file target from thread context', () => {
+  it('derives workspace and file target from thread resource', () => {
     const item = {
       id: 'audit:file-1',
       kind: 'audit',
@@ -11,17 +11,13 @@ describe('inbox scene restoration', () => {
       threadId: 'thread-1',
       thread: 'https://alice.example/.data/chat/chat-1/index.ttl#thread-1',
       about: 'https://alice.example/.data/workspaces/ws-1/output/report.md',
-      audit: {
-        context: JSON.stringify({
-          threadUri: 'https://alice.example/.data/chat/chat-1/index.ttl#thread-1',
-        }),
-      },
+      audit: {},
     }
 
     const scene = resolveInboxScene(item as any, [
       {
         id: 'thread-1',
-        chatId: 'chat-1',
+        chat: 'chat-1',
         workspace: 'https://alice.example/.data/workspaces/ws-1/',
       },
     ] as any)
@@ -47,7 +43,6 @@ describe('inbox scene restoration', () => {
       category: 'audit',
       audit: {
         approval: 'https://alice.example/.data/approvals/approval-1.ttl#this',
-        context: null,
       },
     } as any, [])
 
@@ -64,12 +59,15 @@ describe('inbox scene restoration', () => {
       category: 'audit',
       chatId: 'chat-2',
       threadId: 'thread-2',
-      audit: {
-        context: JSON.stringify({
-          workspace: 'linx://node-123/repo/linx',
-        }),
+      thread: 'https://alice.example/.data/chat/chat-2/index.ttl#thread-2',
+      audit: {},
+    } as any, [
+      {
+        id: 'thread-2',
+        chat: 'chat-2',
+        workspace: 'linx://node-123/repo/linx',
       },
-    } as any, [])
+    ] as any)
 
     expect(resolveInboxWorkspaceTarget(scene)).toEqual({
       mode: 'workspace',

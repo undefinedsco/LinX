@@ -38,7 +38,7 @@ const LINX_STORAGE_CONTAINERS = [
   '/.data/agents/',
   '/.data/workspaces/',
   '/.data/approvals/',
-  '/.data/audit/',
+  '/.data/audits/',
   '/settings/',
   '/settings/ai/',
   '/inbox/',

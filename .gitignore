@@ -12,12 +12,11 @@ npm-debug.log*
 pnpm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+package-lock.json
 
 # Environment files
 .env
 .env.*
-.npmrc
-.yarnrc
 
 # AI
 .codex
@@ -35,17 +34,11 @@ Thumbs.db
 coverage/
 playwright-report/
 test-results/
-/.test-data/
-/data/
+.test-data/
 
 # Electron build artefacts
 apps/desktop/dist/
 apps/desktop/out/
-apps/desktop/build/
-apps/desktop/release/
-apps/desktop/*.tgz
-apps/web/dist-desktop/
-apps/web/*.tsbuildinfo
 
 # Capacitor / mobile build artefacts
 apps/mobile/android/
@@ -80,6 +73,8 @@ issues/
 
 # Demo / scratch
 demos/
+.tmp-smoke/
+preview/
 
 # W3C test data (downloaded at test time)
 packages/models/tests/w3c-data/
