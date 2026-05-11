@@ -68,7 +68,7 @@
 CLI Collector 解析后写入 `messageTable.richContent` 的 JSON 格式：
 
 ```typescript
-// Block 类型枚举（与 @linx/models MessageBlockType 对齐）
+// Block 类型枚举（与 Web 展示层 message-blocks.ts 对齐）
 type CLIBlockType = 'thinking' | 'text' | 'tool' | 'tool_approval' | 'error'
 
 interface CLIBlock {
@@ -97,7 +97,7 @@ interface CLIBlock {
 }
 ```
 
-> **约束**：此 JSON schema 必须与 `@linx/models` 中 `MessageBlockType` / `MessageRichContent` 类型定义保持一致。
+> **约束**：此 JSON schema 必须与 `apps/web/src/modules/chat/components/Messages/message-blocks.ts` 的展示层 block 定义，以及 `@undefineds.co/models` 的 `message.richContent` 合同保持一致。
 > CLI Collector 是 richContent 的主要生产者，UI 层是消费者。
 
 ### 6A.3 CLI 输出 → Pod 写入流程
@@ -292,4 +292,3 @@ interface ParseContext {
 | `cli-collector/parsers/registry.ts` | 新增 | 解析器注册中心 |
 | `cli-collector/block-serializer.ts` | 新增 | Block → richContent JSON 序列化 |
 | `cli-collector/stream-emitter.ts` | 新增 | 实时解析 → SSE 事件发射 |
-

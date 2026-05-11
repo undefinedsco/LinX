@@ -12,8 +12,8 @@ import {
   solidProfileTable,
   type SolidProfileRow,
   type SolidProfileUpdate,
-} from '@linx/models'
-import type { SolidDatabase } from '@linx/models'
+} from '@undefineds.co/models'
+import type { SolidDatabase } from '@undefineds.co/models'
 import { queryClient } from '@/providers/query-provider'
 
 // ============================================================================

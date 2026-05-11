@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { buildLocalWorkspaceUri, normalizeLocalWorkspacePath } from '@linx/models'
+import { buildLocalWorkspaceUri, normalizeLocalWorkspacePath } from '@/lib/data/workspace-model'
 
 export type RuntimeThreadStatus = 'idle' | 'active' | 'paused' | 'completed' | 'error'
 export type RuntimeSessionStatus = RuntimeThreadStatus
@@ -59,10 +59,11 @@ export interface CreateRuntimeThreadInput {
 export type CreateRuntimeSessionInput = CreateRuntimeThreadInput
 
 type SetupConfigResponse = {
+  nodeId?: string
   deviceId?: string
 }
 
-let cachedServiceDeviceId: string | null | undefined
+let cachedServiceNodeId: string | null | undefined
 
 function isServiceMode() {
   return typeof window !== 'undefined' && !!(window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__
@@ -107,11 +108,11 @@ export function normalizeRuntimeSessionInput(input: CreateRuntimeSessionInput): 
 }
 
 export async function getServiceDeviceId(): Promise<string> {
-  if (cachedServiceDeviceId !== undefined) {
-    if (!cachedServiceDeviceId) {
+  if (cachedServiceNodeId !== undefined) {
+    if (!cachedServiceNodeId) {
       throw new Error('当前 Linx 节点缺少 nodeId。')
     }
-    return cachedServiceDeviceId
+    return cachedServiceNodeId
   }
 
   if (!isServiceMode()) {
@@ -119,11 +120,11 @@ export async function getServiceDeviceId(): Promise<string> {
   }
 
   const data = await fetchRuntimeJson<SetupConfigResponse>('/api/setup/config')
-  cachedServiceDeviceId = data.deviceId?.trim() || null
-  if (!cachedServiceDeviceId) {
-    throw new Error('请先为当前 Linx 节点配置 deviceId。')
+  cachedServiceNodeId = data.nodeId?.trim() || data.deviceId?.trim() || null
+  if (!cachedServiceNodeId) {
+    throw new Error('请先为当前 Linx 节点配置 nodeId。')
   }
-  return cachedServiceDeviceId
+  return cachedServiceNodeId
 }
 
 export async function resolveLocalWorkspaceUri(rootPath: string): Promise<string> {

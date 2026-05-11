@@ -1,27 +1,14 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { EVENTS } from '@inrupt/solid-client-authn-browser'
 import { useSession } from '@inrupt/solid-ui-react'
-import { drizzle } from '@undefineds.co/drizzle-solid'
-import { resolvePodUrl } from '@/lib/pod-url'
-import type { SolidDatabase } from '@linx/models'
-import {
-  chatTable,
-  threadTable,
-  workspaceTable,
-  messageTable,
-  contactTable,
-  agentTable,
-  credentialTable,
-  aiProviderTable,
-  aiModelTable,
-  approvalTable,
-  auditTable,
-  inboxNotificationTable,
-  linxSchema,
-} from '@linx/models'
+import { useLoginStore } from '@linx/stores/login'
+import type { SolidDatabase } from '@undefineds.co/models'
+import { createLinxSolidDatabase } from '@/lib/data/linx-solid-database'
+import { getPendingLoginAttempt } from '@/modules/login/login-utils'
 
 interface SolidDatabaseContextValue {
   db: SolidDatabase | null
-  status: 'idle' | 'ready' | 'error'
+  status: 'idle' | 'initializing' | 'ready' | 'error'
   error: Error | null
 }
 
@@ -33,153 +20,304 @@ const SolidDatabaseContext = createContext<SolidDatabaseContextValue>({
 
 export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
   const { session, sessionRequestInProgress } = useSession()
-  
-  // 缓存 drizzle 实例，避免重复创建
+  const storedAccount = useLoginStore((state) => state.storedAccount)
+  const [sessionVersion, setSessionVersion] = useState(0)
+
   const dbInstanceRef = useRef<SolidDatabase | null>(null)
-  const initializedSessionIdRef = useRef<string | null>(null)
-  const initializingRef = useRef<boolean>(false)
-  
+  const initializedSessionKeyRef = useRef<string | null>(null)
+  const initGenerationRef = useRef(0)
+  const inFlightSessionKeyRef = useRef<string | null>(null)
+  const observedSessionKeyRef = useRef<string | null>(null)
+  const resolvedLocalPodUrlRef = useRef<string | null>(null)
+
   const [value, setValue] = useState<SolidDatabaseContextValue>({
     db: null,
     status: 'idle',
     error: null,
   })
 
+  const publishValue = (nextValue: SolidDatabaseContextValue) => {
+    if (typeof window !== 'undefined') {
+      (window as any).__SOLID_DB_STATUS__ = nextValue.status
+      ;(window as any).__SOLID_DB_ERROR__ = nextValue.error?.message ?? null
+      ;(window as any).__SOLID_DB_POD_URL__ = resolveDatabasePodUrl(nextValue.db)
+    }
+    setValue(nextValue)
+  }
+
   useEffect(() => {
-    console.log('🔍 SolidDatabaseProvider 状态检查:', {
-      isLoggedIn: session.info.isLoggedIn,
-      sessionId: session.info.sessionId,
-      webId: session.info.webId,
-      hasFetch: !!session.fetch,
-      sessionRequestInProgress,
-      hasExistingDb: !!dbInstanceRef.current,
-      initializedSessionId: initializedSessionIdRef.current,
-    })
+    const bumpSessionVersion = () => setSessionVersion((current) => current + 1)
 
-    // 等待 session 请求完成
-    if (sessionRequestInProgress) {
-      console.log('⏳ Session 请求进行中，等待...')
-      return
+    session.events.on(EVENTS.LOGIN, bumpSessionVersion)
+    session.events.on(EVENTS.SESSION_RESTORED, bumpSessionVersion)
+    session.events.on(EVENTS.LOGOUT, bumpSessionVersion)
+    session.events.on(EVENTS.ERROR, bumpSessionVersion)
+
+    return () => {
+      session.events.off(EVENTS.LOGIN, bumpSessionVersion)
+      session.events.off(EVENTS.SESSION_RESTORED, bumpSessionVersion)
+      session.events.off(EVENTS.LOGOUT, bumpSessionVersion)
+      session.events.off(EVENTS.ERROR, bumpSessionVersion)
     }
+  }, [session.events])
 
-    if (!session.info.isLoggedIn) {
-      console.log('⭕ 用户未登录，数据库状态设为 idle')
-      dbInstanceRef.current = null
-      initializedSessionIdRef.current = null
-      setValue({ db: null, status: 'idle', error: null })
-      return
-    }
+  useEffect(() => {
+    const observeSessionKey = () => {
+      const nextSessionKey = session.info.isLoggedIn && session.info.webId
+        ? getSessionKey(session.info.sessionId, session.info.webId)
+        : 'logged-out'
 
-    if (!session.info.webId) {
-      console.log('⭕ 没有 WebID，数据库状态设为 idle')
-      setValue({ db: null, status: 'idle', error: null })
-      return
-    }
-
-    // 如果已经为这个 session 创建过实例，直接复用
-    if (dbInstanceRef.current && initializedSessionIdRef.current === session.info.sessionId) {
-      console.log('♻️ 复用已存在的 drizzle 实例')
-      if (value.status !== 'ready' || value.db !== dbInstanceRef.current) {
-        setValue({ db: dbInstanceRef.current, status: 'ready', error: null })
+      if (observedSessionKeyRef.current === nextSessionKey) {
+        return
       }
+
+      observedSessionKeyRef.current = nextSessionKey
+      setSessionVersion((current) => current + 1)
+    }
+
+    observeSessionKey()
+    const intervalId = window.setInterval(observeSessionKey, 250)
+
+    return () => {
+      window.clearInterval(intervalId)
+    }
+  }, [session])
+
+  // sessionRequestInProgress is a React state in SolidSessionProvider.
+  // When it transitions false → we know handleIncomingRedirect completed
+  // and session.info.isLoggedIn is up to date.
+  // session.info.isLoggedIn is NOT React state — it's a mutable property
+  // on a stable object reference, so we can't use it as an effect dependency.
+  useEffect(() => {
+    // Still waiting for session provider to finish
+    if (sessionRequestInProgress) return
+
+    const isLoggedIn = session.info.isLoggedIn
+    const webId = session.info.webId
+    const sessionKey = isLoggedIn && webId ? getSessionKey(session.info.sessionId, webId) : null
+    const podUrl = webId
+      ? resolveLoginPodUrl(webId, storedAccount, resolvedLocalPodUrlRef.current)
+      : resolvedLocalPodUrlRef.current
+    if (podUrl) {
+      resolvedLocalPodUrlRef.current = podUrl
+    }
+    const databaseKey = sessionKey ? getDatabaseKey(sessionKey, podUrl) : null
+
+    if (!databaseKey) {
+      initGenerationRef.current += 1
+      inFlightSessionKeyRef.current = null
+      if (dbInstanceRef.current) {
+        dbInstanceRef.current = null
+        initializedSessionKeyRef.current = null
+      }
+      publishValue({ db: null, status: 'idle', error: null })
       return
     }
 
-    // 防止并发初始化
-    if (initializingRef.current) {
-      console.log('⏳ 已经在初始化中，跳过')
-      return
-    }
-
-    // 异步初始化
-    let cancelled = false
-    const initDatabase = async () => {
-      initializingRef.current = true
-      
-      try {
-        const podUrl = await resolvePodUrl(session.info.webId!)
-        console.log('🔍 验证 session.fetch 可用性，请求:', podUrl)
-        
-        // 先验证 fetch 是否真的可用（能发起认证请求）
-        try {
-          const testResponse = await session.fetch(podUrl, { method: 'HEAD' })
-          console.log('✅ fetch 验证成功，状态码:', testResponse.status)
-        } catch (fetchError) {
-          console.error('❌ fetch 验证失败:', fetchError)
-          // fetch 不可用，可能 session 还没完全初始化，稍后重试
-          throw new Error(`Session fetch 不可用: ${fetchError}`)
+    // Reuse existing instance for same session
+    if (dbInstanceRef.current && initializedSessionKeyRef.current === databaseKey) {
+      setValue((current) => {
+        if (current.status === 'ready' && current.db === dbInstanceRef.current) {
+          return current
         }
-        
-        if (cancelled) {
-          initializingRef.current = false
+        const nextValue = { db: dbInstanceRef.current, status: 'ready' as const, error: null }
+        if (typeof window !== 'undefined') {
+          (window as any).__SOLID_DB_STATUS__ = nextValue.status
+          ;(window as any).__SOLID_DB_ERROR__ = null
+          ;(window as any).__SOLID_DB_POD_URL__ = resolveDatabasePodUrl(nextValue.db)
+        }
+        return nextValue
+      })
+      return
+    }
+
+    if (inFlightSessionKeyRef.current === databaseKey) {
+      setValue((current) => {
+        if (current.status === 'initializing') {
+          return current
+        }
+        const nextValue = { db: null, status: 'initializing' as const, error: null }
+        if (typeof window !== 'undefined') {
+          (window as any).__SOLID_DB_STATUS__ = nextValue.status
+          ;(window as any).__SOLID_DB_ERROR__ = null
+          ;(window as any).__SOLID_DB_POD_URL__ = null
+        }
+        return nextValue
+      })
+      return
+    }
+
+    const generation = initGenerationRef.current + 1
+    initGenerationRef.current = generation
+    inFlightSessionKeyRef.current = databaseKey
+    const initDatabase = async () => {
+      try {
+        publishValue({ db: null, status: 'initializing', error: null })
+
+        const initTimeoutMs = resolveDatabaseInitTimeoutMs(podUrl)
+        const instance = await createLinxSolidDatabase(session, {
+          ...(initTimeoutMs === undefined ? {} : { initTimeoutMs }),
+          podUrl,
+        })
+
+        if (!isCurrentSession(session.info, sessionKey, generation, initGenerationRef.current)) {
           return
         }
-        
-        console.log('🔨 创建 drizzle-solid 实例...')
-        const instance = drizzle(session as any, {
-          disableInteropDiscovery: true,
-          schema: linxSchema,
-        }) as unknown as SolidDatabase
-        
-        // 缓存实例
+
         dbInstanceRef.current = instance
-        initializedSessionIdRef.current = session.info.sessionId ?? null
-        
-        console.log('✅ drizzle-solid 实例创建成功，状态设为 ready')
-        setValue({ db: instance, status: 'ready', error: null })
-        
-        // 暴露到全局方便调试
+        initializedSessionKeyRef.current = databaseKey
         if (typeof window !== 'undefined') {
           (window as any).__SOLID_DB__ = instance
         }
-
-        // Initialize required containers/resources
-        try {
-          console.log('🔧 初始化 Pod 资源与容器...')
-          await (instance as any).init([
-            chatTable,
-            threadTable,
-            workspaceTable,
-            messageTable,
-            contactTable,
-            agentTable,
-            credentialTable,
-            aiProviderTable,
-            aiModelTable,
-            approvalTable,
-            auditTable,
-            inboxNotificationTable,
-          ])
-          console.log('✅ Pod 资源初始化完成（已跳过 TypeIndex 创建）')
-        } catch (initError) {
-          console.warn('⚠️ Pod 资源初始化失败（仍可继续使用已存在的容器）:', initError)
-        }
+        publishValue({ db: instance, status: 'ready', error: null })
       } catch (error) {
-        if (cancelled) {
-          initializingRef.current = false
+        if (!isCurrentSession(session.info, sessionKey, generation, initGenerationRef.current)) {
           return
         }
-        console.error('❌ drizzle-solid 实例创建失败:', error)
-        setValue({
+
+        dbInstanceRef.current = null
+        initializedSessionKeyRef.current = null
+        publishValue({
           db: null,
           status: 'error',
           error: error instanceof Error ? error : new Error(String(error)),
         })
       } finally {
-        initializingRef.current = false
+        if (inFlightSessionKeyRef.current === databaseKey && initGenerationRef.current === generation) {
+          inFlightSessionKeyRef.current = null
+        }
       }
     }
-    
+
     initDatabase()
-    
-    return () => {
-      cancelled = true
-    }
-  }, [session.info.isLoggedIn, session.info.sessionId, session.info.webId, session.fetch, sessionRequestInProgress, value.status, value.db])
+  }, [sessionRequestInProgress, sessionVersion, session, storedAccount])
 
-  const memoValue = useMemo(() => value, [value])
+  const contextValue = useMemo(() => value, [value])
 
-  return <SolidDatabaseContext.Provider value={memoValue}>{children}</SolidDatabaseContext.Provider>
+  return (
+    <SolidDatabaseContext.Provider value={contextValue}>
+      {children}
+    </SolidDatabaseContext.Provider>
+  )
 }
 
-export const useSolidDatabase = () => useContext(SolidDatabaseContext)
+export function useSolidDatabase() {
+  return useContext(SolidDatabaseContext)
+}
+
+function getSessionKey(sessionId: string | undefined, webId: string): string {
+  return `${sessionId ?? 'no-session-id'}:${webId}`
+}
+
+function getDatabaseKey(sessionKey: string, podUrl: string | null): string {
+  return `${sessionKey}:pod=${podUrl ?? 'default'}`
+}
+
+function resolveDatabasePodUrl(db: SolidDatabase | null): string | null {
+  const podUrl = (db as any)?.getDialect?.()?.getPodUrl?.()
+  return typeof podUrl === 'string' && podUrl.trim() ? normalizePodUrl(podUrl) : null
+}
+
+function isCurrentSession(
+  info: { isLoggedIn: boolean; sessionId?: string; webId?: string },
+  expectedSessionKey: string | null,
+  expectedGeneration: number,
+  currentGeneration: number,
+): boolean {
+  return Boolean(
+    info.isLoggedIn
+    && info.webId
+    && getSessionKey(info.sessionId, info.webId) === expectedSessionKey
+    && expectedGeneration === currentGeneration,
+  )
+}
+
+function resolveLoginPodUrl(
+  webId: string,
+  storedAccount: { providerUrl?: string; providerLabel?: string; issuerUrl?: string; issuerLabel?: string } | null,
+  fallbackPodUrl: string | null = null,
+): string | null {
+  const pendingLoginAttempt = getPendingLoginAttempt()
+  const candidates: Array<{ providerUrl?: string; providerLabel?: string; issuerUrl?: string }> = [
+    {
+      providerUrl: pendingLoginAttempt?.providerUrl,
+      providerLabel: pendingLoginAttempt?.providerLabel,
+      issuerUrl: pendingLoginAttempt?.issuerUrl,
+    },
+    {
+      providerUrl: storedAccount?.providerUrl,
+      providerLabel: storedAccount?.providerLabel,
+      issuerUrl: storedAccount?.issuerUrl,
+    },
+  ]
+
+  for (const candidate of candidates) {
+    if (candidate.providerLabel?.trim().toLowerCase() !== 'local') {
+      continue
+    }
+
+    const normalized = resolveProviderPodUrl(candidate.providerUrl, webId)
+    if (normalized) {
+      return normalized
+    }
+  }
+
+  return fallbackPodUrl
+}
+
+function resolveProviderPodUrl(providerUrl: string | undefined, webId: string): string | null {
+  try {
+    if (typeof providerUrl !== 'string' || !providerUrl.trim()) {
+      return null
+    }
+
+    const provider = new URL(providerUrl)
+    const webIdUrl = new URL(webId)
+    const podName = webIdUrl.pathname.match(/^\/([^/]+)\/profile\/card\/?$/)?.[1]
+    if (!podName) {
+      return normalizePodUrl(provider.toString())
+    }
+
+    provider.pathname = `/${podName}/`
+    provider.search = ''
+    provider.hash = ''
+    return normalizePodUrl(provider.toString())
+  } catch {
+    return null
+  }
+}
+
+function resolveDatabaseInitTimeoutMs(podUrl: string | null): number | undefined {
+  if (!podUrl) {
+    return undefined
+  }
+
+  try {
+    const { hostname, protocol } = new URL(podUrl)
+    const isLoopback =
+      hostname === 'localhost'
+      || hostname === '127.0.0.1'
+      || hostname === '[::1]'
+
+    if (protocol === 'https:' && !isLoopback) {
+      return 90_000
+    }
+  } catch {
+    return undefined
+  }
+
+  return undefined
+}
+
+function normalizePodUrl(url?: string): string | null {
+  if (typeof url !== 'string') {
+    return null
+  }
+
+  const trimmed = url.trim()
+  if (!trimmed) {
+    return null
+  }
+
+  return trimmed.endsWith('/') ? trimmed : `${trimmed}/`
+}

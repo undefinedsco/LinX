@@ -18,7 +18,7 @@ export function ShellStatusBadge({ className }: { className?: string }) {
         <Icon className="h-3 w-3" />
         <span>{shell.label}</span>
       </div>
-      <div className="inline-flex items-center rounded-full bg-primary/10 px-2 py-1 text-[10px] font-medium text-primary">
+      <div className="inline-flex items-center rounded-full border border-success/20 bg-success/10 px-2 py-1 text-[10px] font-medium text-success">
         {shell.authLabel}
       </div>
     </div>

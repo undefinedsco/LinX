@@ -23,7 +23,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Users, AlertCircle } from 'lucide-react'
 import { contactOps } from '../collections'
-import { isGroupContact, type ContactRow } from '@linx/models'
+import { isGroupContact, type ContactRow } from '@undefineds.co/models'
 import { useQuery } from '@tanstack/react-query'
 import { SelectableContactList } from './SelectableContactList'
 

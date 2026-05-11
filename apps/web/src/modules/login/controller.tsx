@@ -1,325 +1,740 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSession } from '@inrupt/solid-ui-react'
 import { useNavigate } from '@tanstack/react-router'
-import { useLoginStore, getAllProviders, type StoredAccount, type ProviderOption } from '@linx/stores/login'
-import { hasStoredSolidSession, clearStoredSolidSession } from './login-utils'
-import type { LocalServiceStatus } from './types'
+import { defaultMicroAppId } from '@/modules/layout/micro-app-registry'
+import { getRememberedAccount, useLoginStore, type StoredAccount } from '@linx/stores/login'
+import { useSessionRestore } from './hooks/use-session-restore'
+import { useOidcConnect } from './hooks/use-oidc-connect'
+import { useProviders } from './hooks/use-providers'
+import { useEmbeddedAuthorizationState } from './hooks/use-embedded-authorization-state'
+import {
+  clearPendingCallbackError,
+  clearPendingLoginAttempt,
+  clearPendingPostLoginMicroAppId,
+  clearStoredSolidSession,
+  consumePendingPostLoginMicroAppId,
+  ensurePendingPostLoginMicroAppId,
+  getPendingLoginAttempt,
+  getStoredSolidSession,
+  getPendingCallbackError,
+  resolvePostLoginMicroAppId,
+  SIGN_OUT_EVENT,
+} from './login-utils'
+import type { LoginProviderOption } from './types'
+import { detectStorageConflict, type StorageConflict } from './storage-reconciliation'
 
-// ============================================================================
-// Constants
-// ============================================================================
+const LOCAL_RESTORE_TIMEOUT_MS = 5000
 
-const SESSION_RESTORE_TIMEOUT = 3000
-const PROVIDER_CHECK_TIMEOUT = 5000
-const XPOD_CHECK_INTERVAL = 5000
-const XPOD_LAUNCH_TIMEOUT = 30000
+function normalizeUrl(url: string): string {
+  return url.replace(/\/$/, '')
+}
 
-// XPod 检测配置 - 支持多个可能端口
-const XPOD_PORTS = [3000, 5737, 8080]
-const XPOD_HEALTH_PATH = '/.well-known/openid-configuration'
-
-// ============================================================================
-// Hook: useLoginController
-// ============================================================================
+function restoreStoredSolidSession(session: ReturnType<typeof useSession>['session']) {
+  return Promise.race([
+    session.handleIncomingRedirect({
+      url: window.location.href,
+      restorePreviousSession: true,
+    }),
+    new Promise<undefined>((resolve) => {
+      window.setTimeout(() => resolve(undefined), LOCAL_RESTORE_TIMEOUT_MS)
+    }),
+  ])
+}
 
 export function useLoginController() {
-  const { session, login, logout, sessionRequestInProgress } = useSession()
+  const { session, logout } = useSession()
   const navigate = useNavigate()
+  const [view, setView] = useState<'default' | 'local'>('default')
 
   const {
     state,
     error,
-    failedProvider,
-    selectedProvider,
     storedAccount,
-    customProviders,
     setState,
     setError,
-    setSelectedProvider,
-    loginFailed,
+    setStoredAccount,
     loginSuccess,
-    addCustomProvider,
-    removeCustomProvider,
     reset,
   } = useLoginStore()
 
   const initRef = useRef(false)
-  const restoreAttemptedRef = useRef(false)
-  const localServiceCheckRef = useRef<NodeJS.Timeout | null>(null)
-
-  // 本地服务状态
-  const [localService, setLocalService] = useState<LocalServiceStatus | null>(null)
-  const [isLaunching, setIsLaunching] = useState(false)
-
-  // 合并 providers 列表
-  const providers = getAllProviders(customProviders)
-
-  // ==========================================================================
-  // 状态机：初始化
-  // ==========================================================================
+  const suppressAutoLoginRef = useRef(false)
+  const localConnectKeyRef = useRef<string | null>(null)
+  const desktopAuthPendingRef = useRef(false)
+  const desktopAuthSurfaceOpenedRef = useRef(false)
+  const restore = useSessionRestore()
+  const oidc = useOidcConnect()
+  const embeddedAuthorization = useEmbeddedAuthorizationState()
+  const {
+    providers,
+    addProvider,
+    removeProvider,
+    localOnboarding,
+    startLocal,
+  } = useProviders()
+  const [localLoginActive, setLocalLoginActive] = useState(false)
+  const [storageConflict, setStorageConflict] = useState<StorageConflict | null>(null)
+  const isDesktop = typeof window !== 'undefined' && Boolean(window.xpodDesktop?.auth)
+  const resetDesktopAuthState = useCallback((): void => {
+    desktopAuthPendingRef.current = false
+    desktopAuthSurfaceOpenedRef.current = false
+  }, [])
 
   useEffect(() => {
     if (initRef.current) return
-    if (typeof window === 'undefined') return
     initRef.current = true
 
-    // 已登录，直接完成
     if (session.info.isLoggedIn) {
-      setState('logged_in')
       return
     }
 
-    // 检查是否有缓存会话
-    const hasSession = hasStoredSolidSession()
-    if (hasSession) {
+    if (!isDesktop && restore.hasStoredSession) {
       setState('restoring')
     } else {
-      setState('selecting')
+      setState('idle')
     }
-  }, [session.info.isLoggedIn, setState])
-
-  // ==========================================================================
-  // 状态机：恢复会话
-  // ==========================================================================
+  }, [isDesktop, restore.hasStoredSession, session.info.isLoggedIn, setState])
 
   useEffect(() => {
-    if (state !== 'restoring') return
-    if (restoreAttemptedRef.current) return
-    restoreAttemptedRef.current = true
+    if (storedAccount || session.info.isLoggedIn) return
 
-    const restore = async () => {
-      try {
-        await Promise.race([
-          session.handleIncomingRedirect({
-            url: window.location.href,
-            restorePreviousSession: true,
-          }),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('timeout')), SESSION_RESTORE_TIMEOUT)
-          ),
-        ])
+    const rememberedAccount = getRememberedAccount()
+    if (!rememberedAccount) return
 
-        // 恢复后检查是否真的登录了
-        if (!session.info.isLoggedIn) {
-          clearStoredSolidSession()
-          setState('selecting')
+    setStoredAccount(rememberedAccount)
+  }, [session.info.isLoggedIn, setStoredAccount, storedAccount])
+
+  useEffect(() => {
+    if (restore.restoreComplete || !restore.restoreFailed) return
+
+    const path = window.location.pathname
+    const hasCallbackError =
+      new URLSearchParams(window.location.search).has('error')
+      || Boolean(getPendingCallbackError())
+    const callbackRestoreFailed = path.startsWith('/auth/callback') && !hasCallbackError
+
+    // Only act on callback restore failures — don't interfere with user-initiated connecting state
+    if (!callbackRestoreFailed && state === 'restoring') {
+      setState('idle')
+      return
+    }
+
+    if (!callbackRestoreFailed) return
+
+    clearPendingLoginAttempt()
+    clearPendingPostLoginMicroAppId()
+    setError('登录未完成，请重试。')
+
+    navigate({
+      to: '/$microAppId',
+      params: { microAppId: defaultMicroAppId },
+      replace: true,
+    })
+
+    setState('idle')
+  }, [navigate, restore.restoreComplete, restore.restoreFailed, setError, setState, state])
+
+  useEffect(() => {
+    if (!isDesktop || !desktopAuthPendingRef.current) return
+
+    if (embeddedAuthorization.open && embeddedAuthorization.reason === 'opened') {
+      desktopAuthSurfaceOpenedRef.current = true
+      return
+    }
+
+    if (embeddedAuthorization.open) return
+    if (!desktopAuthSurfaceOpenedRef.current) return
+
+    resetDesktopAuthState()
+
+    if (embeddedAuthorization.reason === 'completed') {
+      setError(null)
+      setState('restoring')
+      return
+    }
+
+    if (state === 'connecting') {
+      clearPendingLoginAttempt()
+      clearPendingPostLoginMicroAppId()
+      setError('登录已取消。')
+      setState('idle')
+    }
+  }, [
+    embeddedAuthorization.open,
+    embeddedAuthorization.reason,
+    isDesktop,
+    setError,
+    resetDesktopAuthState,
+    setState,
+    state,
+  ])
+
+  useEffect(() => {
+    if (!session.info.isLoggedIn) return
+    if (state === 'authenticated') return
+    if (storageConflict) return
+    if (suppressAutoLoginRef.current) return
+
+    const { issuerUrl, issuerLabel, providerUrl, providerLabel } = resolveAccountContext(storedAccount, providers)
+    const account: StoredAccount = {
+      displayName: storedAccount?.displayName || 'LinX 用户',
+      avatarUrl: storedAccount?.avatarUrl,
+      issuerUrl,
+      issuerLabel,
+      providerUrl,
+      providerLabel,
+      webId: session.info.webId,
+    }
+
+    let cancelled = false
+
+    const finalizeLogin = async () => {
+      const providerPublicUrl =
+        providerLabel === 'Local'
+          ? resolveConflictCheckPublicUrl(localOnboarding?.publicUrl, localOnboarding?.baseUrl)
+          : null
+      const conflict = await detectStorageConflict({
+        webId: session.info.webId ?? '',
+        providerUrl,
+        providerPublicUrl,
+      })
+
+      if (cancelled) return
+
+      if (conflict) {
+        setStorageConflict(conflict)
+        setStoredAccount(account)
+        setView('default')
+        setLocalLoginActive(false)
+        localConnectKeyRef.current = null
+        resetDesktopAuthState()
+        clearPendingCallbackError()
+        clearPendingLoginAttempt()
+        clearPendingPostLoginMicroAppId()
+        try {
+          await logout()
+        } catch {
+          // ignore logout failures; local cleanup still runs below.
         }
-      } catch (err) {
-        console.warn('Session restore failed:', err)
         clearStoredSolidSession()
-        setState('selecting')
+        setState('idle')
+        return
       }
-    }
 
-    restore()
-  }, [state, session, setState])
-
-  // ==========================================================================
-  // 状态机：监听登录状态变化
-  // ==========================================================================
-
-  useEffect(() => {
-    if (session.info.isLoggedIn && state !== 'logged_in') {
-      // 登录成功，保存账号信息
-      const account: StoredAccount = {
-        displayName: 'LinX 用户',
-        issuerUrl: selectedProvider || '',
-        webId: session.info.webId,
-      }
+      setStorageConflict(null)
       loginSuccess(account)
+      setView('default')
+      setLocalLoginActive(false)
+      localConnectKeyRef.current = null
+      resetDesktopAuthState()
+      clearPendingCallbackError()
+      clearPendingLoginAttempt()
 
-      // 导航到主页
-      const currentPath = window.location.pathname
-      if (currentPath === '/' || currentPath.startsWith('/auth/callback')) {
-        navigate({ to: '/$microAppId', params: { microAppId: 'chat' }, replace: true })
-      }
-    }
-  }, [session.info.isLoggedIn, session.info.webId, state, selectedProvider, loginSuccess, navigate])
-
-  // ==========================================================================
-  // 本地服务检测
-  // ==========================================================================
-
-  /** 扫描本地 XPod 服务 */
-  const checkLocalService = useCallback(async () => {
-    for (const port of XPOD_PORTS) {
-      try {
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 2000)
-
-        const response = await fetch(`http://localhost:${port}${XPOD_HEALTH_PATH}`, {
-          method: 'GET',
-          signal: controller.signal,
-          headers: { Accept: 'application/json' },
-        })
-
-        clearTimeout(timeoutId)
-
-        if (response.ok) {
-          setLocalService({
-            running: true,
-            url: `http://localhost:${port}`,
-            label: '本地 XPod',
-          })
-          return
-        }
-      } catch {
-        // 继续尝试下一个端口
+      const path = window.location.pathname
+      if (path === '/' || path.startsWith('/auth/callback')) {
+        const microAppId = consumePendingPostLoginMicroAppId()
+        navigate({ to: '/$microAppId', params: { microAppId }, replace: true })
       }
     }
 
-    // 所有端口都未检测到
-    setLocalService({ running: false })
-  }, [])
-
-  /** 启动本地服务 */
-  const launchLocalService = useCallback(async () => {
-    setIsLaunching(true)
-    try {
-      // 尝试通过 Electron API 启动
-      if (typeof window !== 'undefined' && (window as any).electronAPI?.launchXPod) {
-        await (window as any).electronAPI.launchXPod()
-      } else {
-        // Web 环境：打开下载页面或提示
-        window.open('https://xpod.linx.io/download', '_blank')
-      }
-
-      // 轮询检查服务是否启动
-      let attempts = 0
-      const maxAttempts = Math.ceil(XPOD_LAUNCH_TIMEOUT / 1000)
-      const checkInterval = setInterval(async () => {
-        attempts++
-        await checkLocalService()
-        if (localService?.running || attempts >= maxAttempts) {
-          clearInterval(checkInterval)
-          setIsLaunching(false)
-        }
-      }, 1000)
-    } catch (err) {
-      console.error('Failed to launch local service:', err)
-      setIsLaunching(false)
-    }
-  }, [checkLocalService, localService?.running])
-
-  // 定期检测本地服务状态
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-
-    // 初始检查
-    checkLocalService()
-
-    // 定期轮询
-    localServiceCheckRef.current = setInterval(checkLocalService, XPOD_CHECK_INTERVAL)
+    void finalizeLogin().catch((error: any) => {
+      if (cancelled) return
+      setStoredAccount(account)
+      resetDesktopAuthState()
+      setState('idle')
+      setError(error?.message || '登录后校验空间失败，请重试。')
+    })
 
     return () => {
-      if (localServiceCheckRef.current) {
-        clearInterval(localServiceCheckRef.current)
-      }
+      cancelled = true
     }
-  }, [checkLocalService])
+  }, [
+    localOnboarding?.baseUrl,
+    localOnboarding?.publicUrl,
+    loginSuccess,
+    logout,
+    navigate,
+    providers,
+    session.info.isLoggedIn,
+    session.info.webId,
+    setError,
+    setState,
+    setStoredAccount,
+    storageConflict,
+    state,
+    storedAccount,
+    resetDesktopAuthState,
+  ])
 
-  // ==========================================================================
-  // Actions
-  // ==========================================================================
-
-  /** 检查 Provider 是否可用 */
-  const checkProvider = useCallback(async (url: string): Promise<void> => {
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), PROVIDER_CHECK_TIMEOUT)
-
-    try {
-      const configUrl = `${url.replace(/\/$/, '')}/.well-known/openid-configuration`
-      await fetch(configUrl, {
-        method: 'GET',
-        signal: controller.signal,
-        headers: { Accept: 'application/json' },
-      })
-    } catch (err: any) {
-      if (err.name === 'AbortError') {
-        throw new Error('连接超时，请检查网络')
-      }
-      throw new Error('无法连接服务器')
-    } finally {
-      clearTimeout(timeoutId)
-    }
-  }, [])
-
-  /** 连接到 Provider */
-  const connect = useCallback(async (providerUrl: string) => {
-    setSelectedProvider(providerUrl)
+  const startLocalLogin = useCallback(async (options?: { preferRestore?: boolean }) => {
+    suppressAutoLoginRef.current = false
+    setStorageConflict(null)
     setError(null)
-    setState('connecting')
+    setState('idle')
+    resetDesktopAuthState()
+    ensurePendingPostLoginMicroAppId(resolvePostLoginMicroAppId())
+    setView('local')
+    setLocalLoginActive(false)
+    localConnectKeyRef.current = null
 
     try {
-      // 1. 检查 Provider 可用性
-      await checkProvider(providerUrl)
+      const snapshot = await startLocal()
 
-      // 2. 发起登录
-      const redirectUrl = `${window.location.origin}/auth/callback`
-      await login({
-        oidcIssuer: providerUrl,
-        redirectUrl,
-        clientName: 'LinX',
+      if (snapshot?.state === 'error') {
+        setLocalLoginActive(false)
+        setError(snapshot.message || '启动 Local 失败。')
+        return
+      }
+
+      if (snapshot?.state === 'repair_required') {
+        setLocalLoginActive(false)
+        return
+      }
+
+      if (options?.preferRestore && snapshot?.state === 'ready') {
+        if (session.info.isLoggedIn) {
+          const microAppId = consumePendingPostLoginMicroAppId()
+          navigate({ to: '/$microAppId', params: { microAppId }, replace: true })
+          return
+        }
+
+        if (!isDesktop && getStoredSolidSession()) {
+          setState('restoring')
+
+          try {
+            const restored = await restoreStoredSolidSession(session)
+
+            if (restored?.isLoggedIn || session.info.isLoggedIn) {
+              const microAppId = consumePendingPostLoginMicroAppId()
+              navigate({ to: '/$microAppId', params: { microAppId }, replace: true })
+              return
+            }
+          } catch {
+            // fall through to interactive login
+          } finally {
+            setState('idle')
+          }
+        }
+      }
+
+      setLocalLoginActive(true)
+    } catch (error: any) {
+      setLocalLoginActive(false)
+      setError(error?.message || '启动 Local 失败。')
+    }
+  }, [isDesktop, navigate, resetDesktopAuthState, session, setError, setState, startLocal])
+
+  const connect = useCallback(async (providerUrl: string) => {
+    suppressAutoLoginRef.current = false
+    setStorageConflict(null)
+    const normalizedProviderUrl = normalizeUrl(providerUrl)
+    const provider = providers.find((item) => normalizeUrl(item.url) === normalizedProviderUrl)
+    if (provider?.source === 'local') {
+      await startLocalLogin()
+      return
+    }
+
+    setView('default')
+    setState('connecting')
+    setError(null)
+
+    try {
+      const desktopApi = typeof window !== 'undefined' ? window.xpodDesktop : undefined
+      const surface = desktopApi ? 'embedded' : 'window'
+      if (desktopApi) {
+        desktopAuthPendingRef.current = true
+        desktopAuthSurfaceOpenedRef.current = false
+      }
+      await oidc.connect(normalizedProviderUrl, {
+        authorizationSurface: surface,
+        providerUrl: normalizedProviderUrl,
+        providerLabel: provider?.label,
       })
     } catch (err: any) {
-      loginFailed(err.message || '连接失败', providerUrl)
+      resetDesktopAuthState()
+      setError(err.message || '连接失败')
+      setState('idle')
     }
-  }, [checkProvider, login, loginFailed, setError, setSelectedProvider, setState])
+  }, [oidc, providers, resetDesktopAuthState, setError, setState, startLocalLogin])
 
-  /** 添加自定义 Provider */
-  const addProvider = useCallback((url: string, label?: string) => {
-    const normalized = url.replace(/\/+$/, '')
-    const provider: ProviderOption = {
-      id: normalized,
-      url: normalized,
-      label: label || new URL(normalized).hostname,
+  const continueStoredAccount = useCallback(() => {
+    suppressAutoLoginRef.current = false
+    setStorageConflict(null)
+    setError(null)
+    ensurePendingPostLoginMicroAppId(resolvePostLoginMicroAppId())
+
+    const targetProviderUrl =
+      normalizeRememberedUrl(storedAccount?.providerUrl)
+      ?? normalizeRememberedUrl(storedAccount?.issuerUrl)
+      ?? (storedAccount?.webId && isLocalUrl(storedAccount.webId) ? 'http://localhost:5737' : null)
+    if (!targetProviderUrl) {
+      setState('idle')
+      return
     }
-    addCustomProvider(provider)
-    return provider
-  }, [addCustomProvider])
 
-  /** 删除 Provider */
-  const deleteProvider = useCallback((url: string) => {
-    removeCustomProvider(url)
-    if (selectedProvider === url) {
-      setSelectedProvider(providers[0]?.url || null)
+    const matched = resolveStoredAccountProvider(targetProviderUrl, providers)
+    const isRememberedLocal =
+      matched?.source === 'local'
+      || isLocalUrl(targetProviderUrl)
+      || storedAccount?.providerLabel === 'Local'
+      || storedAccount?.issuerLabel === 'Local'
+    if (isRememberedLocal) {
+      void startLocalLogin({ preferRestore: true })
+      return
     }
-  }, [providers, removeCustomProvider, selectedProvider, setSelectedProvider])
 
-  /** 登出 */
-  const signOut = useCallback(async () => {
+    if (session.info.isLoggedIn) {
+      const microAppId = consumePendingPostLoginMicroAppId()
+      navigate({ to: '/$microAppId', params: { microAppId }, replace: true })
+      return
+    }
+
+    const storedSolidSession = getStoredSolidSession()
+    if (!isDesktop && storedSolidSession) {
+      setState('restoring')
+      void session.handleIncomingRedirect({
+        url: window.location.href,
+        restorePreviousSession: true,
+      }).then((restored) => {
+        if (restored?.isLoggedIn || session.info.isLoggedIn) {
+          const microAppId = consumePendingPostLoginMicroAppId()
+          navigate({ to: '/$microAppId', params: { microAppId }, replace: true })
+          return
+        }
+
+        setState('idle')
+        const matched = resolveStoredAccountProvider(targetProviderUrl, providers)
+        if (matched) {
+          if (matched.source === 'local') {
+            void startLocalLogin()
+            return
+          }
+          void connect(matched.url)
+          return
+        }
+
+        if (isLocalUrl(targetProviderUrl)) {
+          void startLocalLogin()
+          return
+        }
+
+        void connect(targetProviderUrl)
+      }).catch(() => {
+        setState('idle')
+      })
+      return
+    }
+
+    if (matched) {
+      if (matched.source === 'local') {
+        void startLocalLogin()
+        return
+      }
+      void connect(matched.url)
+      return
+    }
+
+    if (isLocalUrl(targetProviderUrl)) {
+      void startLocalLogin()
+      return
+    }
+
+    void connect(targetProviderUrl)
+  }, [connect, isDesktop, navigate, providers, session, setError, setState, startLocalLogin, storedAccount])
+
+  const signInLocalOnboarding = useCallback(async () => {
+    if (!localOnboarding || localOnboarding.state !== 'ready') {
+      void startLocalLogin({ preferRestore: Boolean(storedAccount) })
+      return
+    }
+
+    const isDeviceOnly = localOnboarding.mode === 'device-only'
+    const localProviderUrl = isDeviceOnly
+      ? normalizeRememberedUrl(localOnboarding.localUrl) ?? normalizeRememberedUrl(localOnboarding.baseUrl)
+      : normalizeRememberedUrl(localOnboarding.publicUrl)
+        ?? normalizeRememberedUrl(localOnboarding.baseUrl)
+        ?? normalizeRememberedUrl(localOnboarding.localUrl)
+    if (!localProviderUrl) {
+      setError('Local 已启动，但本地登录入口尚未准备好。')
+      return
+    }
+
+    const issuerUrl = isDeviceOnly
+      ? localProviderUrl
+      : normalizeRememberedUrl(localOnboarding.cloudIdentityUrl) ?? 'https://id.undefineds.co'
+
+    if (!isDeviceOnly && !localOnboarding.provisionCode) {
+      setError('Local 还没完成 Cloud 绑定，暂时无法继续登录。')
+      return
+    }
+
+    const connectKey = `${issuerUrl}|${localProviderUrl}|${localOnboarding.provisionCode ?? ''}`
+    if (localConnectKeyRef.current === connectKey) return
+    localConnectKeyRef.current = connectKey
+
+    setLocalLoginActive(false)
+    setState('connecting')
+    setError(null)
+
+    try {
+      await oidc.connect(issuerUrl, {
+        authorizationSurface: 'embedded',
+        providerUrl: localProviderUrl,
+        providerLabel: 'Local',
+        authorizationQuery: isDeviceOnly
+          ? undefined
+          : { provisionCode: localOnboarding.provisionCode },
+      })
+    } catch (error: any) {
+      localConnectKeyRef.current = null
+      setState('idle')
+      setError(error?.message || (isDeviceOnly ? '打开 Local 登录失败。' : '打开 Cloud 登录失败。'))
+    }
+  }, [
+    localOnboarding,
+    oidc,
+    setError,
+    setState,
+    startLocalLogin,
+    storedAccount,
+  ])
+
+  const backFromLocal = useCallback(() => {
+    setError(null)
+    setStorageConflict(null)
+    setView('default')
+    setLocalLoginActive(false)
+    localConnectKeyRef.current = null
+    resetDesktopAuthState()
+  }, [resetDesktopAuthState, setError])
+
+  const switchAccount = useCallback(async () => {
+    suppressAutoLoginRef.current = true
     try {
       await logout()
-    } catch (err) {
-      console.warn('Logout failed:', err)
+    } catch {
+      // ignore
     }
+    clearPendingLoginAttempt()
+    clearPendingPostLoginMicroAppId()
     clearStoredSolidSession()
-    reset()
-  }, [logout, reset])
+    setError(null)
+    setStorageConflict(null)
+    setStoredAccount(null)
+    setState('idle')
+    setView('default')
+    setLocalLoginActive(false)
+    localConnectKeyRef.current = null
+    resetDesktopAuthState()
+  }, [logout, resetDesktopAuthState, setError, setState, setStoredAccount])
 
-  // ==========================================================================
-  // 返回值
-  // ==========================================================================
+  const signOut = useCallback(async () => {
+    suppressAutoLoginRef.current = true
+    try {
+      await logout()
+    } catch {
+      // ignore
+    }
+    clearPendingLoginAttempt()
+    clearPendingPostLoginMicroAppId()
+    clearStoredSolidSession()
+    setStorageConflict(null)
+    setView('default')
+    setLocalLoginActive(false)
+    localConnectKeyRef.current = null
+    resetDesktopAuthState()
+    reset()
+  }, [logout, reset, resetDesktopAuthState])
+
+  // Listen for sign-out events from other components (e.g. PrimaryLayout)
+  useEffect(() => {
+    const handler = () => void signOut()
+    window.addEventListener(SIGN_OUT_EVENT, handler)
+    return () => window.removeEventListener(SIGN_OUT_EVENT, handler)
+  }, [signOut])
+
+  const clearError = useCallback(() => setError(null), [setError])
+  const dismissStorageConflict = useCallback(() => {
+    setStoredAccount(null)
+    setError(null)
+    setStorageConflict(null)
+    setState('idle')
+    setView('default')
+    setLocalLoginActive(false)
+    localConnectKeyRef.current = null
+    resetDesktopAuthState()
+  }, [resetDesktopAuthState, setError, setState, setStoredAccount])
+  const openCurrentSpacePodSetup = useCallback(() => {
+    const managementUrl = storageConflict?.managementUrl
+    if (!managementUrl || typeof window === 'undefined') {
+      return
+    }
+
+    const desktopApi = window.xpodDesktop
+    if (desktopApi?.auth?.openEmbeddedAuthorization) {
+      void desktopApi.auth.openEmbeddedAuthorization(managementUrl)
+      return
+    }
+
+    if (desktopApi?.app?.openExternal) {
+      void desktopApi.app.openExternal(managementUrl)
+      return
+    }
+
+    window.open(managementUrl, '_blank', 'noopener,noreferrer')
+  }, [storageConflict?.managementUrl])
 
   return {
-    // 状态
+    view,
     state,
     error,
-    failedProvider,
-    selectedProvider,
     storedAccount,
+    storageConflict,
     providers,
-    isConnecting: state === 'connecting' || sessionRequestInProgress,
-    localService,
-    isLaunching,
-
-    // Actions
+    localOnboarding,
+    localLoginStatus: {
+      active: localLoginActive,
+      message: localLoginActive ? (localOnboarding?.message ?? '正在启动 Local…') : null,
+    },
+    authWindowStatus: {
+      open: embeddedAuthorization.open,
+      reason: embeddedAuthorization.reason,
+      ready: embeddedAuthorization.ready,
+    },
+    isRestoring: restore.isRestoring,
     connect,
+    continueStoredAccount,
+    continueLocalLogin: signInLocalOnboarding,
+    backFromLocal,
+    switchAccount,
     addProvider,
-    deleteProvider,
+    removeProvider,
     signOut,
-    setSelectedProvider,
-    clearError: () => setError(null),
-    onLaunchLocalService: launchLocalService,
+    clearError,
+    dismissStorageConflict,
+    openCurrentSpacePodSetup,
   }
+}
+
+function resolveStoredAccountProvider(
+  issuerUrl: string,
+  providers: LoginProviderOption[],
+): LoginProviderOption | null {
+  const normalized = normalizeUrl(issuerUrl)
+  const exact = providers.find((provider) => normalizeUrl(provider.url) === normalized)
+  if (exact) return exact
+
+  if (isLocalUrl(normalized)) {
+    return providers.find((provider) => provider.source === 'local') ?? null
+  }
+
+  return null
+}
+
+function resolveAccountContext(
+  storedAccount: StoredAccount | null,
+  providers: LoginProviderOption[],
+): Pick<StoredAccount, 'issuerUrl' | 'issuerLabel' | 'providerUrl' | 'providerLabel'> {
+  const pendingLoginAttempt = getPendingLoginAttempt()
+  const storedSolidSession = getStoredSolidSession()
+  const issuerUrl =
+    pendingLoginAttempt?.issuerUrl
+    ?? storedAccount?.issuerUrl
+    ?? storedSolidSession?.issuerUrl
+    ?? ''
+  const providerUrl =
+    pendingLoginAttempt?.providerUrl
+    ?? storedAccount?.providerUrl
+    ?? issuerUrl
+
+  return {
+    issuerUrl,
+    issuerLabel: resolveIssuerLabel(issuerUrl, providers, storedAccount?.issuerLabel),
+    providerUrl,
+    providerLabel: pendingLoginAttempt?.providerLabel
+      ?? resolveProviderLabel(providerUrl, providers, storedAccount?.providerLabel),
+  }
+}
+
+function resolveIssuerLabel(
+  issuerUrl: string,
+  providers: LoginProviderOption[],
+  fallback?: string,
+): string | undefined {
+  if (!issuerUrl) {
+    return fallback
+  }
+
+  const matched = resolveStoredAccountProvider(issuerUrl, providers)
+  if (matched) {
+    if (matched.source === 'cloud') return 'Cloud'
+    if (matched.source === 'local') return 'Local'
+    return matched.label
+  }
+
+  if (isLocalUrl(issuerUrl)) {
+    return 'Local'
+  }
+
+  try {
+    return new URL(issuerUrl).hostname
+  } catch {
+    return fallback
+  }
+}
+
+function resolveProviderLabel(
+  providerUrl: string,
+  providers: LoginProviderOption[],
+  fallback?: string,
+): string | undefined {
+  if (!providerUrl) {
+    return fallback
+  }
+
+  const matched = resolveStoredAccountProvider(providerUrl, providers)
+  if (matched) {
+    if (matched.source === 'cloud') return 'Cloud'
+    if (matched.source === 'local') return 'Local'
+    return matched.label
+  }
+
+  if (isLocalUrl(providerUrl)) {
+    return 'Local'
+  }
+
+  try {
+    return new URL(providerUrl).hostname
+  } catch {
+    return fallback
+  }
+}
+
+function isLocalUrl(url: string): boolean {
+  try {
+    const { hostname } = new URL(url)
+    return hostname === 'localhost' || hostname === '127.0.0.1'
+  } catch {
+    return false
+  }
+}
+
+function normalizeRememberedUrl(url?: string | null): string | null {
+  if (typeof url !== 'string') {
+    return null
+  }
+
+  const trimmed = url.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+function resolveConflictCheckPublicUrl(...urls: Array<string | null | undefined>): string | null {
+  for (const url of urls) {
+    const normalized = normalizeRememberedUrl(url)
+    if (!normalized || isLocalUrl(normalized)) {
+      continue
+    }
+    return normalized
+  }
+  return null
 }

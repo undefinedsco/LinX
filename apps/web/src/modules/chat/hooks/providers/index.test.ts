@@ -31,9 +31,9 @@ describe('Provider Adapters', () => {
       expect(adapter.name).toBe('anthropic')
     })
 
-    it('returns anthropic adapter for claude provider', () => {
+    it('returns openai adapter for claude provider without alias normalization', () => {
       const adapter = getProviderAdapter('claude')
-      expect(adapter.name).toBe('anthropic')
+      expect(adapter.name).toBe('openai-compatible')
     })
 
     it('returns openai adapter for codex provider alias', () => {
@@ -290,7 +290,7 @@ describe('Provider Adapters', () => {
         onDone: vi.fn(),
       }
 
-      const adapter = getProviderAdapter('claude')
+      const adapter = getProviderAdapter('anthropic')
       await adapter.streamChat(messages, {
         ...config,
         baseUrl: 'https://custom.anthropic.test/v1',

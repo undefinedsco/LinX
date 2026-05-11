@@ -1,4 +1,4 @@
-import { resolveLinxRuntimeApiBaseUrl } from '@undefineds.co/models/client'
+import { resolveLinxRuntimeApiBaseUrl } from '@linx/client'
 import { DEFAULT_LINX_CLOUD_MODEL_ID } from './default-model.js'
 
 export interface RemoteModelSummary {

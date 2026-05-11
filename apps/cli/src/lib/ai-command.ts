@@ -1,16 +1,15 @@
 import type { CommandModule } from 'yargs'
-import { resolveLinxPodUrl } from '@undefineds.co/models/client'
+import { resolveLinxPodUrl } from '@linx/client'
 import {
   aiConfigProviderUri,
   buildAIConfigMutationPlan,
   buildAIConfigProviderStateMap,
-  getAIConfigProviderFamilyIds,
   getAIConfigProviderMetadata,
-  normalizeAIConfigProviderId,
-  normalizeAIConfigResourceId,
-  sameAIConfigProviderFamily,
+  normalizeAIConfigProviderId as extractAIConfigProviderId,
+  normalizeAIConfigResourceId as extractAIConfigResourceId,
+  sameAIConfigProviderFamily as sameAIConfigProviderId,
 } from '@undefineds.co/models/ai-config'
-import { XPOD_AI, XPOD_CREDENTIAL } from '@undefineds.co/models/namespaces'
+import { DCTerms, RDFS, UDFS, XPOD_AI, XPOD_CREDENTIAL } from '@undefineds.co/models'
 import { getClientCredentials, loadCredentials } from './credentials-store.js'
 import { loadAccountSession } from './account-session.js'
 import { authenticatedFetch, getAccessToken } from './solid-auth.js'
@@ -51,6 +50,9 @@ interface ParsedModelRow extends Record<string, unknown> {
 }
 
 interface AiRuntime {
+  DCTerms: typeof DCTerms
+  RDFS: typeof RDFS
+  UDFS: typeof UDFS
   XPOD_AI: typeof XPOD_AI
   XPOD_CREDENTIAL: typeof XPOD_CREDENTIAL
   aiConfigProviderUri: (providerId: string) => string
@@ -107,11 +109,10 @@ interface AiRuntime {
     apiKey?: string
     selectedModelId?: string
   }>
-  getAIConfigProviderFamilyIds: (providerId: string) => string[]
+  extractAIConfigProviderId: (value?: string | null) => string
+  extractAIConfigResourceId: (value?: string | null) => string
   getAIConfigProviderMetadata: (providerId: string) => { id: string }
-  normalizeAIConfigProviderId: (value?: string | null) => string
-  normalizeAIConfigResourceId: (value?: string | null) => string
-  sameAIConfigProviderFamily: (left?: string | null, right?: string | null) => boolean
+  sameAIConfigProviderId: (left?: string | null, right?: string | null) => boolean
 }
 
 const XSD_DATE_TIME = 'http://www.w3.org/2001/XMLSchema#dateTime'
@@ -121,16 +122,18 @@ let aiRuntimePromise: Promise<AiRuntime> | null = null
 async function loadAiRuntime(): Promise<AiRuntime> {
   if (!aiRuntimePromise) {
     aiRuntimePromise = Promise.resolve({
+      DCTerms,
+      RDFS,
+      UDFS,
       XPOD_AI,
       XPOD_CREDENTIAL,
       aiConfigProviderUri,
       buildAIConfigMutationPlan,
       buildAIConfigProviderStateMap,
-      getAIConfigProviderFamilyIds,
+      extractAIConfigProviderId,
+      extractAIConfigResourceId,
       getAIConfigProviderMetadata,
-      normalizeAIConfigProviderId,
-      normalizeAIConfigResourceId,
-      sameAIConfigProviderFamily,
+      sameAIConfigProviderId,
     })
   }
 
@@ -177,6 +180,24 @@ function matchIri(block: string, predicateUri: string): string | undefined {
   return match?.[1]
 }
 
+function matchFirstLiteral(block: string, predicateUris: string[]): string | undefined {
+  for (const predicateUri of predicateUris) {
+    if (!predicateUri) continue
+    const value = matchLiteral(block, predicateUri)
+    if (value !== undefined) return value
+  }
+  return undefined
+}
+
+function matchFirstIri(block: string, predicateUris: string[]): string | undefined {
+  for (const predicateUri of predicateUris) {
+    if (!predicateUri) continue
+    const value = matchIri(block, predicateUri)
+    if (value !== undefined) return value
+  }
+  return undefined
+}
+
 function parseCredentialRows(turtle: string, resourceUrl: string, runtime: AiRuntime): ParsedCredentialRow[] {
   return splitResourceBlocks(turtle, resourceUrl)
     .map((block) => {
@@ -184,12 +205,12 @@ function parseCredentialRows(turtle: string, resourceUrl: string, runtime: AiRun
       if (!subject?.[1]) return null
       return {
         id: subject[1],
-        provider: matchIri(block, runtime.XPOD_CREDENTIAL.provider),
-        service: matchLiteral(block, runtime.XPOD_CREDENTIAL.service),
-        status: matchLiteral(block, runtime.XPOD_CREDENTIAL.status),
-        apiKey: matchLiteral(block, runtime.XPOD_CREDENTIAL.apiKey),
-        baseUrl: matchLiteral(block, runtime.XPOD_CREDENTIAL.baseUrl),
-        label: matchLiteral(block, runtime.XPOD_CREDENTIAL.label),
+        provider: matchFirstIri(block, [runtime.XPOD_CREDENTIAL.provider, runtime.UDFS.provider]),
+        service: matchFirstLiteral(block, [runtime.XPOD_CREDENTIAL.service, runtime.UDFS.service]),
+        status: matchFirstLiteral(block, [runtime.XPOD_CREDENTIAL.status, runtime.UDFS.status]),
+        apiKey: matchFirstLiteral(block, [runtime.XPOD_CREDENTIAL.apiKey, runtime.UDFS.apiKey]),
+        baseUrl: matchFirstLiteral(block, [runtime.XPOD_CREDENTIAL.baseUrl, runtime.UDFS.baseUrl]),
+        label: matchFirstLiteral(block, [runtime.XPOD_CREDENTIAL.label, runtime.RDFS.label]),
       }
     })
     .filter(Boolean) as ParsedCredentialRow[]
@@ -202,9 +223,9 @@ function parseProviderRows(turtle: string, resourceUrl: string, runtime: AiRunti
       if (!subject?.[1]) return null
       return {
         id: subject[1],
-        baseUrl: matchLiteral(block, runtime.XPOD_AI.baseUrl),
-        proxyUrl: matchLiteral(block, runtime.XPOD_AI.proxyUrl),
-        hasModel: matchIri(block, runtime.XPOD_AI.hasModel),
+        baseUrl: matchFirstLiteral(block, [runtime.XPOD_AI.baseUrl, runtime.UDFS.baseUrl]),
+        proxyUrl: matchFirstLiteral(block, [runtime.XPOD_AI.proxyUrl, runtime.UDFS.proxyUrl]),
+        hasModel: matchFirstIri(block, [runtime.XPOD_AI.hasModel, runtime.UDFS.hasModel]),
       }
     })
     .filter(Boolean) as ParsedProviderRow[]
@@ -217,10 +238,10 @@ function parseModelRows(turtle: string, resourceUrl: string, runtime: AiRuntime)
       if (!subject?.[1]) return null
       return {
         id: subject[1],
-        displayName: matchLiteral(block, runtime.XPOD_AI.displayName),
-        modelType: matchLiteral(block, runtime.XPOD_AI.modelType),
-        isProvidedBy: matchIri(block, runtime.XPOD_AI.isProvidedBy),
-        status: matchLiteral(block, runtime.XPOD_AI.status),
+        displayName: matchFirstLiteral(block, [runtime.XPOD_AI.displayName, runtime.RDFS.label]),
+        modelType: matchFirstLiteral(block, [runtime.XPOD_AI.modelType, runtime.UDFS.modelType]),
+        isProvidedBy: matchFirstIri(block, [runtime.XPOD_AI.isProvidedBy, runtime.UDFS.isProvidedBy]),
+        status: matchFirstLiteral(block, [runtime.XPOD_AI.status, runtime.UDFS.status]),
       }
     })
     .filter(Boolean) as ParsedModelRow[]
@@ -427,8 +448,15 @@ function buildCredentialDeleteSparql(runtime: AiRuntime, providerRef: string): s
   ?credential ?predicate ?object .
 }
 WHERE {
-  ?credential <${runtime.XPOD_CREDENTIAL.provider}> <${providerRef}> ;
-    ?predicate ?object .
+  {
+    ?credential <${runtime.XPOD_CREDENTIAL.provider}> <${providerRef}> ;
+      ?predicate ?object .
+  }
+  UNION
+  {
+    ?credential <${runtime.UDFS.provider}> <${providerRef}> ;
+      ?predicate ?object .
+  }
 }`
 }
 
@@ -443,7 +471,7 @@ export const aiCommand: CommandModule<object, AiArgs> = {
       })
       .positional('provider', {
         type: 'string',
-        description: 'Provider/backend id, for example claude, anthropic, codebuddy, codex',
+        description: 'Provider/backend id, for example anthropic, openai, codebuddy',
       })
       .option('url', { type: 'string', description: 'Server base URL override' })
       .option('api-key', { type: 'string', description: 'Provider API key' })
@@ -474,7 +502,7 @@ export const aiCommand: CommandModule<object, AiArgs> = {
       const filtered = Object.values(states).filter((state) => {
         if (!state.apiKey) return false
         if (!argv.provider) return true
-        return aiRuntime.sameAIConfigProviderFamily(argv.provider, state.id)
+        return aiRuntime.sameAIConfigProviderId(argv.provider, state.id)
       })
 
       if (filtered.length === 0) {
@@ -503,16 +531,11 @@ export const aiCommand: CommandModule<object, AiArgs> = {
         : 'Usage: linx ai connect <provider> --api-key <key>')
     }
 
-    const provider = aiRuntime.normalizeAIConfigProviderId(providerArg)
+    const provider = aiRuntime.extractAIConfigProviderId(providerArg)
 
     if (action === 'disconnect') {
-      const providerRefs = aiRuntime.getAIConfigProviderFamilyIds(provider).map((providerId) =>
-        absolutePodUri(podUrl, `/settings/ai/providers.ttl#${providerId}`),
-      )
-
-      for (const providerRef of providerRefs) {
-        await patchResource(credentialResource, accessToken, buildCredentialDeleteSparql(aiRuntime, providerRef))
-      }
+      const providerRef = absolutePodUri(podUrl, `/settings/ai/providers.ttl#${provider}`)
+      await patchResource(credentialResource, accessToken, buildCredentialDeleteSparql(aiRuntime, providerRef))
 
       process.stdout.write(`Disconnected AI provider: ${provider}\n`)
       return
@@ -596,7 +619,7 @@ export const aiCommand: CommandModule<object, AiArgs> = {
     const metadata = aiRuntime.getAIConfigProviderMetadata(provider)
     process.stdout.write(`Connected AI provider: ${metadata.id}\n`)
     if (modelId) {
-      process.stdout.write(`model: ${aiRuntime.normalizeAIConfigResourceId(modelId)}\n`)
+      process.stdout.write(`model: ${aiRuntime.extractAIConfigResourceId(modelId)}\n`)
     }
     process.stdout.write(`api-key: ${maskSecret(apiKey)}\n`)
   },

@@ -87,7 +87,7 @@
 
 ### 2.1 Contact 集成测试
 
-**文件**: `packages/models/tests/contact.integration.test.ts`
+**当前位置**: `../models/tests/*`（`@undefineds.co/models` 独立仓库）
 
 | 测试用例 | 耗时 | 状态 |
 |----------|------|------|
@@ -98,7 +98,7 @@
 
 ### 2.2 Credential 集成测试
 
-**文件**: `packages/models/tests/credential.integration.test.ts`
+**当前位置**: `../models/tests/*`（`@undefineds.co/models` 独立仓库）
 
 | 测试用例 | 耗时 | 状态 |
 |----------|------|------|
@@ -108,7 +108,7 @@
 
 ### 2.3 Model Provider 集成测试
 
-**文件**: `packages/models/tests/model-provider.integration.test.ts`
+**当前位置**: `../models/tests/*`（`@undefineds.co/models` 独立仓库）
 
 | 测试用例 | 耗时 | 状态 |
 |----------|------|------|
@@ -118,7 +118,7 @@
 
 ### 2.4 Chat/Thread/Message 集成测试
 
-**文件**: `packages/models/tests/pod.integration.test.ts`
+**当前位置**: `../models/tests/*`（`@undefineds.co/models` 独立仓库）
 
 | 测试用例 | 耗时 | 状态 |
 |----------|------|------|
@@ -200,7 +200,7 @@ npx vitest run src/modules/credentials/
 # 默认直接运行即可；需要复用外部认证环境时，再设置 XPOD_TEST_MODE/XPOD_TEST_URL 等变量
 
 # 运行所有集成测试
-cd packages/models && npx vitest run tests/*.integration.test.ts
+cd ../models && npx vitest run tests/*.integration.test.ts
 
 # 运行特定集成测试
 npx vitest run tests/contact.integration.test.ts

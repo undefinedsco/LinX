@@ -11,8 +11,8 @@ import {
   credentialTable,
   aiProviderTable,
   aiModelTable,
-  linxSchema,
-} from '@linx/models'
+  solidSchema,
+} from '@undefineds.co/models'
 
 dotenv.config({ path: '../../.env' })
 
@@ -36,7 +36,7 @@ async function main() {
 
   const db = drizzle(session, {
     disableInteropDiscovery: true,
-    schema: linxSchema,
+    schema: solidSchema,
   })
 
   console.log('\n📊 数据量统计\n')

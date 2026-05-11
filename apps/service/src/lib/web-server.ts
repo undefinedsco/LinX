@@ -4,25 +4,27 @@
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
+import { app } from 'electron'
 import express, { Express, Request, Response } from 'express'
 import { Server } from 'http'
 import { getXpodModule } from './xpod'
 import { getRuntimeThreadsModule } from './runtime-threads'
+import { resolveLinxUserDataDir } from './linx-paths'
 
 interface SetupData {
   dataDir: string
   port: number
   autoStart: boolean
   deploymentMode: 'local' | 'standalone'
-  domainSource?: 'cloud' | 'manual'
+  domainSource?: 'manual'
   network: {
     accessMode: 'auto' | 'tunnel'
     tunnelProvider?: 'cloudflare' | 'sakura'
     tunnelToken?: string
   }
   local?: {
+    nodeId?: string
     deviceId?: string
-    subdomain?: string
   }
   standalone?: {
     customDomain?: string
@@ -33,14 +35,63 @@ interface SetupData {
   httpsCertPath?: string
 }
 
+function normalizeSetupData(data: SetupData): SetupData {
+  if (data.deploymentMode === 'local') {
+    return {
+      ...data,
+      domainSource: 'manual',
+      publicDomain: data.publicDomain?.trim() || undefined,
+      httpsCertPath: undefined,
+      standalone: undefined,
+    }
+  }
 
-// Config paths
-const CONFIG_DIR = path.join(process.env.HOME || '', 'Library', 'Application Support', 'LinX')
-const ENV_PATH = path.join(CONFIG_DIR, '.env')
-const SETUP_FLAG_PATH = path.join(CONFIG_DIR, '.setup-complete')
+  return {
+    ...data,
+    domainSource: 'manual',
+  }
+}
 
-function getDefaultDeviceId() {
-  return process.env.LINX_DEVICE_ID || process.env.CSS_NODE_ID || os.hostname() || 'local'
+function getConfigDir(): string {
+  return resolveLinxUserDataDir()
+}
+
+function getEnvPath(): string {
+  return path.join(getConfigDir(), '.env')
+}
+
+function getSetupFlagPath(): string {
+  return path.join(getConfigDir(), '.setup-complete')
+}
+
+function normalizeNodeId(value?: string | null): string {
+  const normalized = (value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^node-+/, '')
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/-{2,}/g, '-')
+    .replace(/^-+|-+$/g, '')
+
+  if (!normalized) {
+    return 'local'
+  }
+
+  if (normalized.length <= 12) {
+    return normalized
+  }
+
+  return normalized.slice(0, 12).replace(/-+$/g, '') || 'local'
+}
+
+function getDefaultNodeId() {
+  return normalizeNodeId(
+    process.env.LINX_NODE_ID
+    || process.env.LINX_DEVICE_ID
+    || process.env.CSS_NODE_ID
+    || os.hostname()
+    || 'local',
+  )
 }
 
 export class WebServerModule {
@@ -76,14 +127,15 @@ export class WebServerModule {
    * Generate .env file content
    */
   private generateEnvContent(data: SetupData): string {
-    const { port, dataDir, deploymentMode, domainSource, network, local, standalone, publicDomain } = data
+    const normalized = normalizeSetupData(data)
+    const { port, dataDir, deploymentMode, domainSource, network, local, standalone, publicDomain } = normalized
 
     // Build base URL
     let baseUrl: string
+    const localNodeId = normalizeNodeId(local?.nodeId || local?.deviceId)
+
     if (publicDomain) {
       baseUrl = `https://${publicDomain}`
-    } else if (deploymentMode === 'local' && local?.subdomain) {
-      baseUrl = `https://${local.subdomain}.undefineds.xyz`
     } else if (deploymentMode === 'standalone' && standalone?.customDomain) {
       baseUrl = `https://${standalone.customDomain}`
     } else {
@@ -105,18 +157,21 @@ export class WebServerModule {
     ]
 
     // Device ID for DDNS
-    if (local?.deviceId) {
-      lines.push(`CSS_NODE_ID=${local.deviceId}`)
+    if (localNodeId) {
+      lines.push(`CSS_NODE_ID=${localNodeId}`)
     }
 
     // LinX service metadata for runtime UX and future automation
     lines.push(`LINX_DEPLOYMENT_MODE=${deploymentMode}`)
     lines.push(`LINX_DOMAIN_SOURCE=${domainSource || 'manual'}`)
-    if (data.publicDomain) lines.push(`LINX_PUBLIC_DOMAIN=${data.publicDomain}`)
-    if (typeof data.autoDetectPublicIp === 'boolean') lines.push(`LINX_AUTO_DETECT_PUBLIC_IP=${data.autoDetectPublicIp}`)
-    if (data.httpsCertPath) lines.push(`LINX_HTTPS_CERT_PATH=${data.httpsCertPath}`)
-    if (local?.subdomain) lines.push(`LINX_SUBDOMAIN=${local.subdomain}`)
-    if (local?.deviceId) lines.push(`LINX_DEVICE_ID=${local.deviceId}`)
+    lines.push(`LINX_AUTO_START=${normalized.autoStart ? 'true' : 'false'}`)
+    if (normalized.publicDomain) lines.push(`LINX_PUBLIC_DOMAIN=${normalized.publicDomain}`)
+    if (typeof normalized.autoDetectPublicIp === 'boolean') lines.push(`LINX_AUTO_DETECT_PUBLIC_IP=${normalized.autoDetectPublicIp}`)
+    if (normalized.httpsCertPath) lines.push(`LINX_HTTPS_CERT_PATH=${normalized.httpsCertPath}`)
+    if (localNodeId) {
+      lines.push(`LINX_NODE_ID=${localNodeId}`)
+      lines.push(`LINX_DEVICE_ID=${localNodeId}`)
+    }
     if (network.tunnelProvider) lines.push(`LINX_TUNNEL_PROVIDER=${network.tunnelProvider}`)
 
     // IdP URL for standalone mode
@@ -136,6 +191,50 @@ export class WebServerModule {
     return lines.join('\n')
   }
 
+  private readEnvMap(): Record<string, string> {
+    const envPath = getEnvPath()
+    if (!fs.existsSync(envPath)) {
+      return {}
+    }
+
+    const envContent = fs.readFileSync(envPath, 'utf-8')
+    const env: Record<string, string> = {}
+
+    for (const line of envContent.split('\n')) {
+      const match = line.match(/^([A-Z_]+)=(.+)$/)
+      if (match) {
+        env[match[1]] = match[2]
+      }
+    }
+
+    return env
+  }
+
+  private applyAutoStart(enabled: boolean): void {
+    app.setLoginItemSettings({
+      openAtLogin: enabled,
+      openAsHidden: true,
+    })
+  }
+
+  public setAutoStart(enabled: boolean): void {
+    this.applyAutoStart(enabled)
+
+    const envPath = getEnvPath()
+    if (!fs.existsSync(envPath)) {
+      return
+    }
+
+    const env = this.readEnvMap()
+    env.LINX_AUTO_START = enabled ? 'true' : 'false'
+
+    const nextContent = Object.entries(env)
+      .map(([key, value]) => `${key}=${value}`)
+      .join('\n')
+
+    fs.writeFileSync(envPath, `${nextContent}\n`)
+  }
+
   /**
    * Setup routes
    */
@@ -147,53 +246,47 @@ export class WebServerModule {
 
     // Check if setup is completed
     this.app.get('/api/setup/status', (_req: Request, res: Response) => {
-      const setupCompleted = fs.existsSync(SETUP_FLAG_PATH)
+      const setupCompleted = fs.existsSync(getSetupFlagPath())
       res.json({ setupCompleted })
     })
 
     // Get current .env config
     this.app.get('/api/setup/config', (_req: Request, res: Response) => {
       try {
-        if (fs.existsSync(ENV_PATH)) {
-          const envContent = fs.readFileSync(ENV_PATH, 'utf-8')
-          const env: Record<string, string> = {}
-
-          for (const line of envContent.split('\n')) {
-            const match = line.match(/^([A-Z_]+)=(.+)$/)
-            if (match) {
-              env[match[1]] = match[2]
-            }
-          }
+        const envPath = getEnvPath()
+        const configDir = getConfigDir()
+        if (fs.existsSync(envPath)) {
+          const env = this.readEnvMap()
 
           const tunnelProvider = env.LINX_TUNNEL_PROVIDER || (env.CLOUDFLARE_TUNNEL_TOKEN ? 'cloudflare' : env.SAKURA_TOKEN ? 'sakura' : '')
 
           res.json({
-            dataDir: env.CSS_ROOT_FILE_PATH || path.join(CONFIG_DIR, 'pod'),
+            dataDir: env.CSS_ROOT_FILE_PATH || path.join(configDir, 'pod'),
             port: parseInt(env.CSS_PORT || '5737', 10),
             baseUrl: env.CSS_BASE_URL || 'http://localhost:5737',
             deploymentMode: (env.LINX_DEPLOYMENT_MODE as 'local' | 'standalone') || 'local',
-            domainSource: (env.LINX_DOMAIN_SOURCE as 'cloud' | 'manual') || 'manual',
+            domainSource: 'manual',
+            autoStart: env.LINX_AUTO_START ? env.LINX_AUTO_START === 'true' : app.getLoginItemSettings().openAtLogin,
             publicDomain: env.LINX_PUBLIC_DOMAIN || '',
             autoDetectPublicIp: env.LINX_AUTO_DETECT_PUBLIC_IP === 'true',
             httpsCertPath: env.LINX_HTTPS_CERT_PATH || '',
-            subdomain: env.LINX_SUBDOMAIN || '',
-            deviceId: env.LINX_DEVICE_ID || env.CSS_NODE_ID || getDefaultDeviceId(),
+            nodeId: normalizeNodeId(env.LINX_NODE_ID || env.LINX_DEVICE_ID || env.CSS_NODE_ID || getDefaultNodeId()),
             tunnelProvider,
             hasTunnelToken: Boolean(env.CLOUDFLARE_TUNNEL_TOKEN || env.SAKURA_TOKEN),
           })
         } else {
           // Return defaults
           res.json({
-            dataDir: path.join(CONFIG_DIR, 'pod'),
+            dataDir: path.join(configDir, 'pod'),
             port: 5737,
             baseUrl: 'http://localhost:5737',
             deploymentMode: 'local',
             domainSource: 'manual',
+            autoStart: app.getLoginItemSettings().openAtLogin,
             publicDomain: '',
             autoDetectPublicIp: true,
             httpsCertPath: '',
-            subdomain: '',
-            deviceId: getDefaultDeviceId(),
+            nodeId: getDefaultNodeId(),
             tunnelProvider: '',
             hasTunnelToken: false,
           })
@@ -207,7 +300,12 @@ export class WebServerModule {
     // Save setup config - directly write .env file
     this.app.post('/api/setup', (req: Request, res: Response) => {
       try {
-        const data = req.body as SetupData
+        const data = normalizeSetupData(req.body as SetupData)
+
+        if (data.deploymentMode === 'local' && data.network?.accessMode === 'tunnel' && !data.publicDomain?.trim()) {
+          res.status(400).json({ error: 'publicDomain is required when Local uses tunnel access' })
+          return
+        }
 
         if (data.network?.accessMode === 'tunnel' && !data.network.tunnelProvider) {
           res.status(400).json({ error: 'tunnelProvider is required when accessMode=tunnel' })
@@ -215,12 +313,13 @@ export class WebServerModule {
         }
 
         if (data.network?.accessMode === 'tunnel' && data.network.tunnelProvider && !data.network.tunnelToken) {
-          if (!fs.existsSync(ENV_PATH)) {
+          const envPath = getEnvPath()
+          if (!fs.existsSync(envPath)) {
             res.status(400).json({ error: 'tunnelToken is required for new tunnel configuration' })
             return
           }
 
-          const envContent = fs.readFileSync(ENV_PATH, 'utf-8')
+          const envContent = fs.readFileSync(envPath, 'utf-8')
           const env: Record<string, string> = {}
           for (const line of envContent.split('\n')) {
             const match = line.match(/^([A-Z_]+)=(.+)$/)
@@ -239,8 +338,11 @@ export class WebServerModule {
         }
 
         // Ensure config directory exists
-        if (!fs.existsSync(CONFIG_DIR)) {
-          fs.mkdirSync(CONFIG_DIR, { recursive: true })
+        const configDir = getConfigDir()
+        const envPath = getEnvPath()
+        const setupFlagPath = getSetupFlagPath()
+        if (!fs.existsSync(configDir)) {
+          fs.mkdirSync(configDir, { recursive: true })
         }
 
         // Ensure data directory exists
@@ -250,13 +352,14 @@ export class WebServerModule {
 
         // Write .env file
         const envContent = this.generateEnvContent(data)
-        fs.writeFileSync(ENV_PATH, envContent)
-        console.log('[WebServer] Generated .env file:', ENV_PATH)
+        fs.writeFileSync(envPath, envContent)
+        console.log('[WebServer] Generated .env file:', envPath)
+        this.applyAutoStart(data.autoStart)
 
         // Mark setup as complete
-        fs.writeFileSync(SETUP_FLAG_PATH, new Date().toISOString())
+        fs.writeFileSync(setupFlagPath, new Date().toISOString())
 
-        res.json({ success: true, envPath: ENV_PATH })
+        res.json({ success: true, envPath })
       } catch (error) {
         console.error('[WebServer] Failed to save setup:', error)
         res.status(500).json({ error: 'Failed to save configuration' })
@@ -266,7 +369,8 @@ export class WebServerModule {
     // Get service status
     this.app.get('/api/service/status', (_req: Request, res: Response) => {
       const xpodStatus = getXpodModule().getStatus()
-      const setupCompleted = fs.existsSync(SETUP_FLAG_PATH)
+      const setupCompleted = fs.existsSync(getSetupFlagPath())
+      const envPath = getEnvPath()
 
       res.json({
         pod: {
@@ -276,7 +380,7 @@ export class WebServerModule {
           running: xpodStatus.running,
         },
         setupCompleted,
-        envPath: ENV_PATH,
+        envPath,
       })
     })
 
@@ -554,14 +658,14 @@ export class WebServerModule {
    * Check if setup is completed
    */
   isSetupCompleted(): boolean {
-    return fs.existsSync(SETUP_FLAG_PATH)
+    return fs.existsSync(getSetupFlagPath())
   }
 
   /**
    * Get .env file path
    */
   getEnvPath(): string {
-    return ENV_PATH
+    return getEnvPath()
   }
 }
 

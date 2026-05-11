@@ -1,10 +1,9 @@
 import { Suspense, lazy } from 'react'
-import { createRouter, createRootRoute, createRoute, Outlet, redirect } from '@tanstack/react-router'
+import { createRouter, createRootRoute, createRoute, Outlet, redirect, createHashHistory } from '@tanstack/react-router'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import { PrimaryLayout } from './modules/layout/PrimaryLayout'
 import { defaultMicroAppId, isValidMicroAppId, MicroAppId } from './modules/layout/micro-app-registry'
 import { SolidLoginOverlay } from './modules/login'
-import { getRedirectPath } from './modules/login/login-utils'
 
 const SolidAuthCallback = lazy(() => import('./components/AuthCallback'))
 const DebugSearchableSelect = lazy(() =>
@@ -34,6 +33,16 @@ const RootComponent = () => {
   )
 }
 
+function RouteErrorComponent({ error }: { error: unknown }) {
+  const message = error instanceof Error ? error.message : String(error)
+
+  return (
+    <div className="min-h-screen bg-background p-4 text-sm text-destructive">
+      {message}
+    </div>
+  )
+}
+
 // Not Found component
 const NotFoundComponent = () => {
   return (
@@ -52,6 +61,7 @@ const NotFoundComponent = () => {
 // Define the root route
 const rootRoute = createRootRoute({
   component: RootComponent,
+  errorComponent: RouteErrorComponent,
   notFoundComponent: NotFoundComponent,
 })
 
@@ -129,15 +139,8 @@ const callbackRoute = createRoute({
     return (
       <Suspense fallback={<RouteFallback />}>
         <SolidAuthCallback
-          onSuccess={() => {
-             const returnTo = getRedirectPath()
-             if (returnTo && returnTo !== '/') {
-               navigate({ to: returnTo as any, replace: true })
-             } else {
-               navigate({ to: '/$microAppId', params: { microAppId: 'chat' as MicroAppId }, replace: true })
-             }
-          }}
-          onError={() => navigate({ to: '/$microAppId', params: { microAppId: defaultMicroAppId } })}
+          onSuccess={() => navigate({ to: '/$microAppId', params: { microAppId: defaultMicroAppId }, replace: true })}
+          onError={() => navigate({ to: '/$microAppId', params: { microAppId: defaultMicroAppId }, replace: true })}
         />
       </Suspense>
     )
@@ -206,9 +209,14 @@ const routeTree = rootRoute.addChildren([
 ])
 
 // Create and export the router
+const history = typeof window !== 'undefined' && window.location.protocol === 'file:'
+  ? createHashHistory()
+  : undefined
+
 export const router = createRouter({ 
   routeTree,
   defaultPreload: 'intent',
+  history,
 })
 
 // Register router for type safety

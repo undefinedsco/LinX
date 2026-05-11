@@ -20,7 +20,8 @@
 
 1. **Block-based 消息系统**
    - 源: `cherry-studio-main/src/renderer/src/types/newMessage.ts`
-   - 目标: `linx/packages/models/src/types/message-block.ts`
+   - 目标: `linx/apps/web/src/modules/chat/components/Messages/message-blocks.ts`
+   - 数据真相: `@undefineds.co/models` 的 `message.richContent.items`
    
    ```typescript
    // 新增块类型定义
@@ -114,7 +115,7 @@
 
 ```bash
 # 创建块类型定义
-packages/models/src/types/message-block.ts
+apps/web/src/modules/chat/components/Messages/message-blocks.ts
 ```
 
 ### Step 2: 迁移消息组件

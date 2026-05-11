@@ -45,14 +45,37 @@ vi.mock('@/components/ui/model-selector', () => ({
       value={value}
       onChange={(event) => onChange?.(event.target.value)}
     >
+      <option value="undefineds/linx-lite">undefineds/linx-lite</option>
       <option value="gpt-4o-mini">gpt-4o-mini</option>
       <option value="claude-3-5-sonnet-latest">claude-3-5-sonnet-latest</option>
     </select>
   ),
 }))
 
+vi.mock('@/lib/agent-providers', () => ({
+  findAgentProviderForModel: (modelId: string) => {
+    if (modelId === 'claude-3-5-sonnet-latest') return 'anthropic'
+    if (modelId === 'undefineds/linx-lite') return 'undefineds'
+    return 'openai'
+  },
+  getAgentProviderInfo: (slug: string) => ({
+    slug,
+    displayName:
+      slug === 'anthropic'
+        ? 'Anthropic'
+        : slug === 'undefineds'
+          ? 'Undefineds Cloud'
+          : 'OpenAI',
+    logoUrl: `${slug}.png`,
+  }),
+}))
+
 vi.mock('@/components/ui/use-toast', () => ({
   useToast: () => ({ toast: mockToast }),
+}))
+
+vi.mock('@/modules/inbox/components/InboxBellButton', () => ({
+  InboxBellButton: () => <div>InboxBellButton</div>,
 }))
 
 vi.mock('../store', () => ({
@@ -85,30 +108,15 @@ vi.mock('@/lib/data/use-entity', () => ({
   useEntity: (...args: unknown[]) => mockUseEntity(...args),
 }))
 
-vi.mock('@linx/models', () => ({
-  DEFAULT_AGENT_PROVIDERS: [
-    {
-      slug: 'openai',
-      displayName: 'OpenAI',
-      models: [{ id: 'gpt-4o-mini', displayName: 'GPT-4o mini' }],
-    },
-    {
-      slug: 'anthropic',
-      displayName: 'Anthropic',
-      models: [{ id: 'claude-3-5-sonnet-latest', displayName: 'Claude 3.5 Sonnet' }],
-    },
-  ],
+vi.mock('@undefineds.co/models', () => ({
+  extractAIConfigProviderId: (value: string) => value || null,
+  extractAIConfigResourceId: (value: string) => value || null,
   resolveRowId: (row: Record<string, unknown> | null | undefined) => row?.id ?? row?.['@id'] ?? null,
   contactTable: { name: 'contact' },
   agentTable: { name: 'agent' },
   ContactType: {
     AGENT: 'agent',
   },
-  getBuiltinProvider: (slug: string) => ({
-    slug,
-    displayName: slug === 'anthropic' ? 'Anthropic' : 'OpenAI',
-    logoUrl: `${slug}.png`,
-  }),
 }))
 
 import { ChatHeader } from './ChatHeader'

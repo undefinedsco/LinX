@@ -2,73 +2,117 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactNode } from 'react'
+import { ContactType } from '@undefineds.co/models'
 
-// --- Mocks must be hoisted ---
+const {
+  mockNavigate,
+  mockToast,
+  mockStoreState,
+  mockContactState,
+  mockEntityByUri,
+  mockSelectChat,
+  mockFindOrCreateChat,
+  mockGetLastSyncedText,
+  mockUpdateContact,
+  mockUpdateAgent,
+} = vi.hoisted(() => ({
+  mockNavigate: vi.fn(),
+  mockToast: vi.fn(),
+  mockStoreState: {
+    selectedId: null as string | null,
+    viewMode: 'view',
+    createDialogOpen: false,
+    createType: null as 'agent' | 'friend' | 'group' | null,
+    closeCreateDialog: vi.fn(),
+    select: vi.fn(),
+    inviteMemberDialogOpen: false,
+    inviteTargetGroupId: null as string | null,
+    openInviteMemberDialog: vi.fn(),
+    closeInviteMemberDialog: vi.fn(),
+  },
+  mockContactState: new Map<string, any>(),
+  mockEntityByUri: new Map<string, any>(),
+  mockSelectChat: vi.fn(),
+  mockFindOrCreateChat: vi.fn(),
+  mockGetLastSyncedText: vi.fn(() => '刚刚同步'),
+  mockUpdateContact: vi.fn(),
+  mockUpdateAgent: vi.fn(),
+}))
 
-// Mock navigate
-const mockNavigate = vi.fn()
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
 }))
 
-// Mock chat store
-const mockChatStore = {
-  selectChat: vi.fn(),
-}
-
-vi.mock('@/modules/chat/store', () => ({
-  useChatStore: (selector: (state: typeof mockChatStore) => unknown) => selector(mockChatStore),
-}))
-
-// Mock service
-const mockMutations = {
-  create: { mutateAsync: vi.fn().mockResolvedValue({ id: 'test-id', '@id': '/.data/contacts/test-id.ttl' }) },
-  update: { mutateAsync: vi.fn().mockResolvedValue(undefined) },
-  remove: { mutateAsync: vi.fn().mockResolvedValue(undefined) },
-}
-
-const mockAgentMutations = {
-  create: { mutateAsync: vi.fn().mockResolvedValue({ id: 'agent-id', '@id': '/.data/agents/agent-id.ttl' }) },
-  update: { mutateAsync: vi.fn().mockResolvedValue(undefined) },
-}
-
-vi.mock('../service', () => ({
-  useContactService: () => ({
-    useDetail: vi.fn().mockReturnValue({ data: null, isLoading: false }),
-    useAgent: vi.fn().mockReturnValue({ data: null }),
-    mutations: mockMutations,
-    agentMutations: mockAgentMutations,
+vi.mock('@inrupt/solid-ui-react', () => ({
+  useSession: () => ({
+    session: {
+      info: {
+        webId: 'https://me.example/profile/card#me',
+      },
+    },
   }),
 }))
 
-// Store state - will be updated in tests  
-let mockStoreState: {
-  selectedId: string | null,
-  viewMode: string,
-  select: ReturnType<typeof vi.fn>,
-  clearNewFriends: ReturnType<typeof vi.fn>,
-  cancelEdit: ReturnType<typeof vi.fn>,
-}
+vi.mock('@/components/ui/use-toast', () => ({
+  useToast: () => ({
+    toast: mockToast,
+  }),
+}))
 
-// Need to reset state before mock is called
-const getInitialState = () => ({
-  selectedId: null as string | null,
-  viewMode: 'view' as string,
-  select: vi.fn(),
-  clearNewFriends: vi.fn(),
-  cancelEdit: vi.fn(),
-})
+vi.mock('@/modules/chat/store', () => ({
+  useChatStore: (selector: (state: { selectChat: typeof mockSelectChat }) => unknown) =>
+    selector({ selectChat: mockSelectChat }),
+}))
 
-mockStoreState = getInitialState()
+vi.mock('@/lib/data/use-entity', () => ({
+  useEntity: (_table: unknown, entityUri: string | null) => ({
+    data: entityUri ? (mockEntityByUri.get(entityUri) ?? null) : null,
+    isLoading: false,
+    error: null,
+    refresh: vi.fn(),
+  }),
+}))
+
+vi.mock('@/components/ui/model-selector', () => ({
+  ModelSelector: ({ value }: { value: string }) => <div data-testid="model-selector">{value}</div>,
+}))
+
+vi.mock('./CreateGroupDialog', () => ({
+  CreateGroupDialog: ({ open }: { open: boolean }) => open ? <div data-testid="group-dialog" /> : null,
+}))
 
 vi.mock('../store', () => ({
   useContactStore: (selector: (state: typeof mockStoreState) => unknown) => selector(mockStoreState),
 }))
 
-// Import after mocks
+vi.mock('../collections', () => ({
+  contactCollection: {
+    state: mockContactState,
+  },
+  contactOps: {
+    findOrCreateChat: (...args: unknown[]) => mockFindOrCreateChat(...args),
+    getLastSyncedText: (...args: unknown[]) => mockGetLastSyncedText(...args),
+    updateContact: (...args: unknown[]) => mockUpdateContact(...args),
+    updateAgent: (...args: unknown[]) => mockUpdateAgent(...args),
+    toggleStar: vi.fn(),
+    deleteContact: vi.fn(),
+    fetchSolidProfile: vi.fn(),
+    addFriend: vi.fn(),
+    createAgent: vi.fn(),
+    getGroupMembers: vi.fn(() => []),
+    getGroupMemberRoles: vi.fn(() => ({})),
+    resolveMembers: vi.fn(() => []),
+    getGroupChat: vi.fn(),
+    getAll: vi.fn(() => Array.from(mockContactState.values())),
+    addMemberToGroup: vi.fn(),
+    removeMemberFromGroup: vi.fn(),
+    updateMemberRole: vi.fn(),
+    createGroupWithChat: vi.fn(),
+  },
+}))
+
 import { ContactDetailPane } from './ContactDetailPane'
 
-// Wrapper for React Query
 const createWrapper = () => {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -78,229 +122,159 @@ const createWrapper = () => {
   )
 }
 
+const makeContact = (overrides: Record<string, unknown>) => ({
+  id: 'contact-1',
+  name: 'Alice',
+  alias: null,
+  avatarUrl: null,
+  deletedAt: null,
+  createdAt: new Date('2026-03-13T00:00:00.000Z'),
+  updatedAt: new Date('2026-03-13T00:00:00.000Z'),
+  contactType: ContactType.SOLID,
+  ...overrides,
+})
+
 describe('ContactDetailPane', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    // Create fresh state for each test
-    Object.assign(mockStoreState, getInitialState())
-  })
-
-  describe('Empty State', () => {
-    it('shows placeholder when no contact is selected', () => {
-      render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
-      
-      expect(screen.getByText('选择联系人查看详情')).toBeInTheDocument()
+    mockContactState.clear()
+    mockEntityByUri.clear()
+    Object.assign(mockStoreState, {
+      selectedId: null,
+      viewMode: 'view',
+      createDialogOpen: false,
+      createType: null,
+      closeCreateDialog: vi.fn(),
+      select: vi.fn(),
+      inviteMemberDialogOpen: false,
+      inviteTargetGroupId: null,
+      openInviteMemberDialog: vi.fn(),
+      closeInviteMemberDialog: vi.fn(),
     })
   })
 
-  describe('New Friends View', () => {
-    it('renders new friends view when viewMode is new-friends', () => {
-      mockStoreState.viewMode = 'new-friends'
-      
-      render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
-      
-      expect(screen.getByText('新的朋友')).toBeInTheDocument()
-      expect(screen.getByText('Bob Johnson')).toBeInTheDocument()
-      expect(screen.getByText('李明')).toBeInTheDocument()
+  it('shows placeholder when no contact is selected', () => {
+    render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
+
+    expect(screen.getByText('选择联系人查看详情')).toBeInTheDocument()
+  })
+
+  it('keeps add-friend dialog available without an active selection', () => {
+    mockStoreState.createDialogOpen = true
+    mockStoreState.createType = 'friend'
+
+    render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
+
+    expect(screen.getByText('添加朋友')).toBeInTheDocument()
+    expect(screen.getByText('WebID')).toBeInTheDocument()
+  })
+
+  it('renders human contact details from real collection data', () => {
+    const contact = makeContact({
+      id: 'contact-solid-1',
+      name: 'Alice Smith',
+      alias: 'Alice',
+      entityUri: 'https://alice.solidcommunity.net/profile/card#me',
+      inbox: 'https://alice.solidcommunity.net/inbox/',
+      province: '北京',
+      city: '海淀',
+      isPublic: true,
     })
 
-    it('shows accept and ignore buttons for friend requests', () => {
-      mockStoreState.viewMode = 'new-friends'
-      
-      render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
-      
-      expect(screen.getAllByText('接受').length).toBe(2)
-      expect(screen.getAllByText('忽略').length).toBe(2)
+    mockContactState.set(contact.id, contact)
+    mockStoreState.selectedId = contact.id
+
+    render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
+
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Alice')
+    expect(screen.getByText('北京 海淀')).toBeInTheDocument()
+    expect(screen.getByText('WebID')).toBeInTheDocument()
+    expect(screen.getByText('Inbox')).toBeInTheDocument()
+    expect(screen.getByText('公开关系')).toBeInTheDocument()
+    expect(screen.queryByText('标签')).not.toBeInTheDocument()
+  })
+
+  it('starts chat from a persisted contact instead of using fake ids', async () => {
+    const contact = makeContact({
+      id: 'contact-solid-1',
+      entityUri: 'https://alice.solidcommunity.net/profile/card#me',
     })
 
-    it('calls clearNewFriends when accepting a friend', () => {
-      mockStoreState.viewMode = 'new-friends'
-      
-      render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
-      
-      const acceptButtons = screen.getAllByText('接受')
-      fireEvent.click(acceptButtons[0])
-      
-      expect(mockStoreState.clearNewFriends).toHaveBeenCalled()
+    mockContactState.set(contact.id, contact)
+    mockStoreState.selectedId = contact.id
+    mockFindOrCreateChat.mockResolvedValue('chat-1')
+
+    render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
+
+    fireEvent.click(screen.getByText('聊天'))
+
+    await waitFor(() => {
+      expect(mockFindOrCreateChat).toHaveBeenCalledWith('contact-solid-1')
+    })
+    expect(mockSelectChat).toHaveBeenCalledWith('chat-1')
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/$microAppId',
+      params: { microAppId: 'chat' },
     })
   })
 
-  describe('Mock Contact Display', () => {
-    it('displays mock agent contact details', () => {
-      mockStoreState.selectedId = 'mock-agent-1'
-      
-      render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
-      
-      // Check for agent display name (alias) in heading
-      expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('翻译助手')
-      expect(screen.getByText('广东 深圳')).toBeInTheDocument()
+  it('renders local agent configuration and allows opening tools editor', async () => {
+    const entityUri = '/.data/agents/agent-1.ttl#this'
+    const contact = makeContact({
+      id: 'contact-agent-1',
+      name: '智能翻译官',
+      alias: '翻译助手',
+      contactType: ContactType.AGENT,
+      entityUri,
+      province: '广东',
+      city: '深圳',
+      gender: 'bot',
     })
 
-    it('displays mock solid contact details', () => {
-      mockStoreState.selectedId = 'mock-solid-1'
-      
-      render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
-      
-      // Check for contact name in heading
-      expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Alice')
-      expect(screen.getByText('北京 海淀')).toBeInTheDocument()
+    mockContactState.set(contact.id, contact)
+    mockEntityByUri.set(entityUri, {
+      model: 'openai/gpt-4o',
+      instructions: '你是一个精通 12 国语言的翻译专家。',
+      ttsModel: 'openai/tts-1',
+      videoModel: 'heygen/avatar-v2',
+      tools: ['WebSearch'],
     })
+    mockStoreState.selectedId = contact.id
 
-    it('displays mock wechat contact details', () => {
-      mockStoreState.selectedId = 'mock-wechat-1'
-      
-      render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
-      
-      // Check for contact name in heading
-      expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('老王')
-      expect(screen.getByText('上海 黄浦')).toBeInTheDocument()
-      expect(screen.getByText('@wechat')).toBeInTheDocument()
-    })
-  })
+    render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
 
-  describe('Action Buttons', () => {
-    beforeEach(() => {
-      mockStoreState.selectedId = 'mock-solid-1'
-    })
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('翻译助手')
+    expect(screen.getByText('系统提示词')).toBeInTheDocument()
+    expect(screen.getByText(/翻译专家/)).toBeInTheDocument()
+    expect(screen.getByText('聊天模型')).toBeInTheDocument()
+    expect(screen.getByText('语音模型')).toBeInTheDocument()
+    expect(screen.getByText('视频模型')).toBeInTheDocument()
+    expect(screen.getByText('插件工具')).toBeInTheDocument()
 
-    it('renders chat, voice, and video buttons', () => {
-      render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
-      
-      expect(screen.getByText('聊天')).toBeInTheDocument()
-      expect(screen.getByText('语音')).toBeInTheDocument()
-      expect(screen.getByText('视频')).toBeInTheDocument()
-    })
+    fireEvent.click(screen.getByText('插件工具'))
 
-    it('navigates to chat when clicking chat button', () => {
-      render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
-      
-      fireEvent.click(screen.getByText('聊天'))
-      
-      expect(mockChatStore.selectChat).toHaveBeenCalled()
-      expect(mockNavigate).toHaveBeenCalledWith({ 
-        to: '/$microAppId', 
-        params: { microAppId: 'chat' } 
-      })
+    await waitFor(() => {
+      expect(screen.getByText('配置插件工具')).toBeInTheDocument()
     })
   })
 
-  describe('Contact Information', () => {
-    beforeEach(() => {
-      mockStoreState.selectedId = 'mock-solid-1'
+  it('opens alias dialog for persisted contacts', async () => {
+    const contact = makeContact({
+      id: 'contact-solid-1',
+      alias: 'Alice',
+      entityUri: 'https://alice.solidcommunity.net/profile/card#me',
     })
 
-    it('displays alias/remark section', () => {
-      render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
-      
-      expect(screen.getByText('备注名')).toBeInTheDocument()
-    })
+    mockContactState.set(contact.id, contact)
+    mockStoreState.selectedId = contact.id
 
-    it('displays tags section', () => {
-      render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
-      
-      expect(screen.getByText('标签')).toBeInTheDocument()
-    })
+    render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
 
-    it('displays public relationship switch', () => {
-      render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
-      
-      expect(screen.getByText('公开关系')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('备注名'))
+
+    await waitFor(() => {
+      expect(screen.getByText('修改备注名')).toBeInTheDocument()
+      expect(screen.getByPlaceholderText('输入备注名...')).toBeInTheDocument()
     })
   })
-
-  describe('Agent Specific Config', () => {
-    beforeEach(() => {
-      mockStoreState.selectedId = 'mock-agent-1'
-    })
-
-    it('displays system prompt for agents', () => {
-      render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
-      
-      expect(screen.getByText('系统提示词')).toBeInTheDocument()
-      expect(screen.getByText(/翻译专家/)).toBeInTheDocument()
-    })
-
-    it('displays model selectors for agents', () => {
-      render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
-      
-      expect(screen.getByText('聊天模型')).toBeInTheDocument()
-      expect(screen.getByText('语音模型')).toBeInTheDocument()
-      expect(screen.getByText('视频模型')).toBeInTheDocument()
-    })
-
-    it('displays tools section for agents', () => {
-      render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
-      
-      expect(screen.getByText('插件工具')).toBeInTheDocument()
-    })
-  })
-
-  describe('Human Contact Info', () => {
-    beforeEach(() => {
-      mockStoreState.selectedId = 'mock-solid-1'
-    })
-
-    it('displays phone and email for human contacts', () => {
-      render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
-      
-      expect(screen.getByText('电话')).toBeInTheDocument()
-      expect(screen.getByText('邮箱')).toBeInTheDocument()
-    })
-
-    it('displays inbox for solid contacts', () => {
-      render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
-      
-      expect(screen.getByText('Inbox')).toBeInTheDocument()
-    })
-  })
-
-  describe('Dialogs', () => {
-    beforeEach(() => {
-      mockStoreState.selectedId = 'mock-solid-1'
-    })
-
-    it('opens alias edit dialog when clicking alias row', async () => {
-      render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
-      
-      fireEvent.click(screen.getByText('备注名'))
-      
-      await waitFor(() => {
-        expect(screen.getByText('修改备注名')).toBeInTheDocument()
-        expect(screen.getByPlaceholderText('输入备注名...')).toBeInTheDocument()
-      })
-    })
-
-    it('opens tags management dialog when clicking tags row', async () => {
-      render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
-      
-      fireEvent.click(screen.getByText('标签'))
-      
-      await waitFor(() => {
-        expect(screen.getByText('管理标签')).toBeInTheDocument()
-      })
-    })
-  })
-
-  describe('Source Information', () => {
-    it('displays source type badge', () => {
-      mockStoreState.selectedId = 'mock-solid-1'
-      
-      render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
-      
-      expect(screen.getByText('来源')).toBeInTheDocument()
-      expect(screen.getByText('solid')).toBeInTheDocument()
-    })
-
-    it('shows correct source description for agent', () => {
-      mockStoreState.selectedId = 'mock-agent-1'
-      
-      render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
-      
-      expect(screen.getByText('本地创建')).toBeInTheDocument()
-    })
-  })
-
-  // Note: The old "Create Contact View" tests have been removed because the component
-  // now uses a Dialog-based flow (createDialogOpen + createType) instead of viewMode='create'.
-  // TODO: Add tests for the new CreateAgent and AddFriend dialogs when needed.
 })

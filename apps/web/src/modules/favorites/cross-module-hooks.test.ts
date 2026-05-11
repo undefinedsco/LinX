@@ -20,7 +20,7 @@ vi.mock('@/modules/favorites/collections', () => ({
 }))
 
 // Shared collection mock primitives
-const { mockCollectionState, mockInsert, mockUpdate, mockDelete, mockFetch, mockSubscribeToPod } = vi.hoisted(() => ({
+const { mockCollectionState, mockInsert, mockUpdate, mockDelete, mockFetch, mockSubscribeToPod, mockGet } = vi.hoisted(() => ({
   mockCollectionState: new Map(),
   mockInsert: vi.fn().mockReturnValue({
     isPersisted: { promise: Promise.resolve() },
@@ -33,6 +33,7 @@ const { mockCollectionState, mockInsert, mockUpdate, mockDelete, mockFetch, mock
   }),
   mockFetch: vi.fn().mockResolvedValue([]),
   mockSubscribeToPod: vi.fn().mockResolvedValue(() => {}),
+  mockGet: vi.fn((id: string) => mockCollectionState.get(id) ?? null),
 }))
 
 vi.mock('@/lib/data/pod-collection', () => ({
@@ -41,6 +42,7 @@ vi.mock('@/lib/data/pod-collection', () => ({
     insert: mockInsert,
     update: mockUpdate,
     delete: mockDelete,
+    get: mockGet,
     fetch: mockFetch,
     subscribeToPod: mockSubscribeToPod,
   })),
@@ -54,19 +56,23 @@ vi.mock('@/providers/solid-database-provider', () => ({
   useSolidDatabase: () => ({ db: null }),
 }))
 
-vi.mock('@linx/models', () => ({
-  chatTable: {},
-  threadTable: {},
-  messageTable: {},
-  agentTable: {},
-  contactTable: {},
-  credentialTable: {},
-  solidProfileTable: {},
-  favoriteTable: {},
-  eq: vi.fn(),
-  ContactType: { AGENT: 'agent', SOLID: 'solid', GROUP: 'group' },
-  getBuiltinProvider: vi.fn(),
-}))
+vi.mock('@undefineds.co/models', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@undefineds.co/models')>()
+  return {
+    ...actual,
+    chatTable: {},
+    threadTable: {},
+    workspaceTable: {},
+    messageTable: {},
+    agentTable: {},
+    contactTable: {},
+    credentialTable: {},
+    solidProfileTable: {},
+    favoriteTable: {},
+    eq: vi.fn(),
+    getBuiltinProvider: vi.fn(),
+  }
+})
 
 vi.mock('@undefineds.co/drizzle-solid', () => ({
   like: vi.fn(),

@@ -1,11 +1,10 @@
 import { useMemo } from 'react'
 import { useSession } from '@inrupt/solid-ui-react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { resolveLinxPodBaseUrl } from '@linx/models/client'
+import { resolveLinxPodBaseUrl } from '@linx/client'
 import {
   approvalTable,
   auditTable,
-  updateExactRecord,
   inboxNotificationTable,
   type ApprovalInsert,
   type ApprovalRow,
@@ -14,7 +13,8 @@ import {
   type InboxNotificationInsert,
   type InboxNotificationRow,
   type SolidDatabase,
-} from '@linx/models'
+} from '@undefineds.co/models'
+import { updateExactRecord } from '@/lib/data/exact-records'
 import { createPodCollection } from '@/lib/data/pod-collection'
 import { queryClient } from '@/providers/query-provider'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
@@ -116,10 +116,17 @@ function extractThreadId(targetUri: string | null | undefined): string | null {
   return hash || null
 }
 
-function buildRuntimeToolResponse(decision: 'approved' | 'rejected', reason?: string): string {
+export function buildRuntimeToolResponse(
+  decision: 'approved' | 'rejected',
+  reason?: string,
+  grantPattern?: string,
+): string {
+  const normalizedGrantPattern = grantPattern?.trim()
   return JSON.stringify({
     decision,
     reason: reason?.trim() || null,
+    command: decision === 'approved' && normalizedGrantPattern ? 'approve_pattern' : undefined,
+    pattern: decision === 'approved' && normalizedGrantPattern ? normalizedGrantPattern : undefined,
     source: 'linx-inbox',
   })
 }
@@ -138,8 +145,11 @@ export interface InboxItem {
   approval?: ApprovalRow
   audit?: AuditRow
   notification?: InboxNotificationRow
+  approvalId?: string | null
   chatId?: string | null
   threadId?: string | null
+  thread?: string | null
+  about?: string | null
   authUrl?: string | null
   authMethod?: string | null
   authMessage?: string | null
@@ -192,18 +202,23 @@ function buildInboxItems(
         status: approval.status,
         approval,
         notification,
+        approvalId: approval.id,
         chatId: threadRef.chatId,
         threadId: threadRef.threadId,
+        thread: threadRef.chatId || threadRef.threadId ? approval.target : null,
+        about: approval.target,
       })
       continue
     }
 
     const audit = auditById.get(resourceId)
     if (audit) {
+      const relatedApprovalId = extractResourceId(audit.approval)
+      const relatedApproval = relatedApprovalId ? approvalById.get(relatedApprovalId) : undefined
       const itemId = `audit:${audit.id}`
       if (seen.has(itemId)) continue
       seen.add(itemId)
-      const presentation = buildAuditPresentation(audit, resolvedAuthTimestampsByKey)
+      const presentation = buildAuditPresentation(audit, resolvedAuthTimestampsByKey, relatedApproval)
       items.push({
         id: itemId,
         kind: 'audit',
@@ -214,8 +229,11 @@ function buildInboxItems(
         status: presentation.status,
         audit,
         notification,
+        approvalId: relatedApprovalId,
         chatId: presentation.chatId,
         threadId: presentation.threadId,
+        thread: presentation.thread,
+        about: presentation.about,
         authUrl: presentation.authUrl,
         authMethod: presentation.authMethod,
         authMessage: presentation.authMessage,
@@ -236,15 +254,20 @@ function buildInboxItems(
       timestamp: String(approval.resolvedAt ?? approval.createdAt ?? ''),
       status: approval.status,
       approval,
+      approvalId: approval.id,
       chatId: threadRef.chatId,
       threadId: threadRef.threadId,
+      thread: threadRef.chatId || threadRef.threadId ? approval.target : null,
+      about: approval.target,
     })
   }
 
   for (const audit of audits) {
     const itemId = `audit:${audit.id}`
     if (seen.has(itemId)) continue
-    const presentation = buildAuditPresentation(audit, resolvedAuthTimestampsByKey)
+    const relatedApprovalId = extractResourceId(audit.approval)
+    const relatedApproval = relatedApprovalId ? approvalById.get(relatedApprovalId) : undefined
+    const presentation = buildAuditPresentation(audit, resolvedAuthTimestampsByKey, relatedApproval)
     items.push({
       id: itemId,
       kind: 'audit',
@@ -254,8 +277,11 @@ function buildInboxItems(
       timestamp: String(audit.createdAt ?? ''),
       status: presentation.status,
       audit,
+      approvalId: relatedApprovalId,
       chatId: presentation.chatId,
       threadId: presentation.threadId,
+      thread: presentation.thread,
+      about: presentation.about,
       authUrl: presentation.authUrl,
       authMethod: presentation.authMethod,
       authMessage: presentation.authMessage,
@@ -280,6 +306,7 @@ export const inboxOps = {
     decision: 'approved' | 'rejected'
     actorWebId: string
     reason?: string
+    grantPattern?: string
   }) {
     const db = getDb()
     if (!db) {
@@ -290,6 +317,7 @@ export const inboxOps = {
     const resolvedAt = now.toISOString()
     const auditId = crypto.randomUUID()
     const auditUri = makeAuditUri(input.actorWebId, auditId)
+    const grantPattern = input.decision === 'approved' ? input.grantPattern?.trim() : undefined
 
     await updateExactRecord(db, approvalTable as any, input.approval as any, {
       status: input.decision,
@@ -313,6 +341,8 @@ export const inboxOps = {
         risk: input.approval.risk,
         status: input.decision,
         reason: input.reason?.trim() || null,
+        grantPattern: grantPattern || null,
+        command: grantPattern ? 'approve_pattern' : null,
         resolvedAt,
       }),
       policyVersion: input.approval.policyVersion || 'phase4-inbox-v1',
@@ -375,6 +405,7 @@ export function useResolveInboxApproval() {
       approval: ApprovalRow
       decision: 'approved' | 'rejected'
       reason?: string
+      grantPattern?: string
     }) => {
       const actorWebId = session.info.webId
       if (!actorWebId) {
@@ -386,6 +417,7 @@ export function useResolveInboxApproval() {
         decision: input.decision,
         actorWebId,
         reason: input.reason,
+        grantPattern: input.grantPattern,
       })
 
       const runtimeSessionId = extractRuntimeSessionId(input.approval.session)
@@ -399,7 +431,7 @@ export function useResolveInboxApproval() {
             authFetch: session.fetch,
             threadId,
             toolCallId: input.approval.toolCallId,
-            output: buildRuntimeToolResponse(input.decision, input.reason),
+            output: buildRuntimeToolResponse(input.decision, input.reason, input.grantPattern),
           })
 
           await queryClient.invalidateQueries({ queryKey: ['threads', threadId, 'messages'] })

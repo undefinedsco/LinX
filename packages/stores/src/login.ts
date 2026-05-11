@@ -8,18 +8,13 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 /**
  * 登录状态机
  *
- * INIT → RESTORING → LOGGED_IN (成功)
- *              ↓ (失败/超时)
- *        SELECTING_PROVIDER ←→ CONNECTING
- *              ↓ (成功)
- *          LOGGED_IN
+ * restoring → idle → connecting → authenticated
  */
 export type LoginState =
-  | 'init'              // 初始化中
-  | 'restoring'         // 恢复会话中
-  | 'selecting'         // 选择 Provider
-  | 'connecting'        // 连接中
-  | 'logged_in'         // 已登录
+  | 'restoring'         // 静默恢复缓存 session
+  | 'idle'              // 等待用户操作（头像卡片 or provider 选择）
+  | 'connecting'        // 正在连接（含 Local 自动启动）
+  | 'authenticated'     // 已登录
 
 // ============================================================================
 // 类型定义
@@ -30,6 +25,8 @@ export interface StoredAccount {
   avatarUrl?: string
   issuerUrl: string
   issuerLabel?: string
+  providerUrl?: string
+  providerLabel?: string
   webId?: string
 }
 
@@ -41,28 +38,70 @@ export interface ProviderOption {
   isDefault?: boolean
 }
 
+const REMEMBERED_ACCOUNT_KEY = 'linx-remembered-account'
+
+function getBrowserStorage(): Storage | null {
+  if (typeof window === 'undefined') return null
+  return window.localStorage ?? null
+}
+
+function persistRememberedAccount(account: StoredAccount | null): void {
+  const storage = getBrowserStorage()
+  if (!storage) return
+
+  if (!account) {
+    storage.removeItem(REMEMBERED_ACCOUNT_KEY)
+    return
+  }
+
+  storage.setItem(REMEMBERED_ACCOUNT_KEY, JSON.stringify(account))
+}
+
+export function getRememberedAccount(): StoredAccount | null {
+  const storage = getBrowserStorage()
+  if (!storage) return null
+
+  const raw = storage.getItem(REMEMBERED_ACCOUNT_KEY)
+  if (!raw) return null
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<StoredAccount>
+    if (typeof parsed.displayName !== 'string' || typeof parsed.issuerUrl !== 'string') {
+      return null
+    }
+
+    return {
+      displayName: parsed.displayName,
+      avatarUrl: typeof parsed.avatarUrl === 'string' ? parsed.avatarUrl : undefined,
+      issuerUrl: parsed.issuerUrl,
+      issuerLabel: typeof parsed.issuerLabel === 'string' ? parsed.issuerLabel : undefined,
+      providerUrl: typeof parsed.providerUrl === 'string' ? parsed.providerUrl : undefined,
+      providerLabel: typeof parsed.providerLabel === 'string' ? parsed.providerLabel : undefined,
+      webId: typeof parsed.webId === 'string' ? parsed.webId : undefined,
+    }
+  } catch {
+    storage.removeItem(REMEMBERED_ACCOUNT_KEY)
+    return null
+  }
+}
+
 export interface LoginStore {
   // 状态
   state: LoginState
   error: string | null
-  failedProvider: string | null  // 上次失败的 provider URL
 
   // 数据
-  selectedProvider: string | null
   storedAccount: StoredAccount | null
   customProviders: ProviderOption[]
 
   // Actions
   setState: (state: LoginState) => void
   setError: (error: string | null) => void
-  setFailedProvider: (url: string | null) => void
-  setSelectedProvider: (url: string | null) => void
   setStoredAccount: (account: StoredAccount | null) => void
   addCustomProvider: (provider: ProviderOption) => void
   removeCustomProvider: (url: string) => void
 
   // 复合 Actions
-  loginFailed: (error: string, providerUrl: string) => void
   loginSuccess: (account: StoredAccount) => void
   reset: () => void
 }
@@ -75,25 +114,25 @@ export const useLoginStore = create<LoginStore>()(
   persist(
     (set) => ({
       // 初始状态
-      state: 'init',
+      state: 'restoring' as LoginState,
       error: null,
-      failedProvider: null,
-      selectedProvider: null,
       storedAccount: null,
       customProviders: [],
 
       // 基础 Actions
-      setState: (state) => set({ state }),
-      setError: (error) => set({ error }),
-      setFailedProvider: (url) => set({ failedProvider: url }),
-      setSelectedProvider: (url) => set({ selectedProvider: url }),
-      setStoredAccount: (account) => set({ storedAccount: account }),
+      setState: (state) => set((current) => current.state === state ? current : { state }),
+      setError: (error) => set((current) => current.error === error ? current : { error }),
+      setStoredAccount: (account) => set((current) => {
+        if (current.storedAccount === account) return current
+        persistRememberedAccount(account)
+        return { storedAccount: account }
+      }),
 
       addCustomProvider: (provider) => set((s) => ({
         customProviders: [
           provider,
           ...s.customProviders.filter(p => p.url !== provider.url)
-        ].slice(0, 10)  // 最多保存 10 个
+        ].slice(0, 10)
       })),
 
       removeCustomProvider: (url) => set((s) => ({
@@ -101,24 +140,21 @@ export const useLoginStore = create<LoginStore>()(
       })),
 
       // 复合 Actions
-      loginFailed: (error, providerUrl) => set({
-        state: 'selecting',
-        error,
-        failedProvider: providerUrl,
+      loginSuccess: (account) => set(() => {
+        persistRememberedAccount(account)
+        return {
+          state: 'authenticated' as LoginState,
+          error: null,
+          storedAccount: account,
+        }
       }),
 
-      loginSuccess: (account) => set({
-        state: 'logged_in',
-        error: null,
-        failedProvider: null,
-        storedAccount: account,
-      }),
-
-      reset: () => set({
-        state: 'selecting',
-        error: null,
-        failedProvider: null,
-        selectedProvider: null,
+      reset: () => set((current) => {
+        persistRememberedAccount(current.storedAccount)
+        return {
+          state: 'idle' as LoginState,
+          error: null,
+        }
       }),
     }),
     {
@@ -151,9 +187,9 @@ export const useLoginStore = create<LoginStore>()(
 export const DEFAULT_PROVIDERS: ProviderOption[] = [
   {
     id: 'linx-cloud',
-    url: 'https://lgnxxsoohipf.sealosgzg.site',
-    label: 'LinX Cloud',
-    logoUrl: '/linx-logo.svg',
+    url: 'https://id.undefineds.co',
+    label: 'Cloud',
+    logoUrl: '/linx-logo.png',
     isDefault: true,
   },
 ]

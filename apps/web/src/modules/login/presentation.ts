@@ -1,0 +1,135 @@
+import type { LoginProviderOption } from './types'
+
+export interface ProviderStatusBadge {
+  label: string
+  tone: 'neutral' | 'primary' | 'success' | 'warning' | 'danger'
+}
+
+export function getProviderDisplayLabel(provider: LoginProviderOption): string {
+  if (provider.source === 'local') {
+    return 'Local'
+  }
+
+  if (provider.source === 'cloud') {
+    return 'Cloud'
+  }
+
+  return provider.label
+}
+
+export function getProviderSourceLabel(provider: LoginProviderOption): string {
+  switch (provider.source) {
+    case 'cloud':
+      return '云端'
+    case 'local':
+      return '本地'
+    default:
+      return '其他'
+  }
+}
+
+export function getProviderSubtitle(provider: LoginProviderOption, isFailed: boolean): string {
+  if (isFailed) {
+    return '连接失败，请重试'
+  }
+
+  if (provider.source === 'cloud') {
+    return '官方云端空间'
+  }
+
+  if (provider.runtime?.kind === 'local-pod') {
+    return '这台设备上的本地空间'
+  }
+
+  return new URL(provider.url).hostname
+}
+
+export function getProviderActionLabel(provider: LoginProviderOption): string {
+  if (provider.source === 'cloud') {
+    return '登录'
+  }
+
+  if (provider.source === 'custom') {
+    return '连接'
+  }
+
+  if (provider.runtime?.kind === 'local-pod') {
+    const onboarding = provider.runtime.onboarding
+    if (onboarding) {
+      switch (onboarding.state) {
+        case 'mode_required':
+          return '开始'
+        case 'idle':
+          return '启动'
+        case 'checking':
+        case 'starting':
+          return '查看'
+        case 'repair_required':
+          return '设置'
+        case 'ready':
+          return '登录'
+        case 'error':
+          return '修复'
+      }
+    }
+
+    switch (provider.runtime.status) {
+      case 'missing':
+        return '开始'
+      case 'stopped':
+        return provider.runtime.canStart ? '启动' : '查看'
+      case 'starting':
+        return '查看'
+      case 'running':
+        return '登录'
+      case 'error':
+        return '修复'
+    }
+  }
+
+  return '进入'
+}
+
+export function getProviderStatusBadge(provider: LoginProviderOption): ProviderStatusBadge | null {
+  if (provider.source === 'cloud') {
+    return { label: '官方', tone: 'primary' }
+  }
+
+  if (provider.runtime?.kind === 'local-pod') {
+    const onboarding = provider.runtime.onboarding
+    if (onboarding) {
+      switch (onboarding.state) {
+        case 'mode_required':
+          return { label: '首次', tone: 'primary' }
+        case 'idle':
+          return { label: '继续', tone: 'neutral' }
+        case 'checking':
+        case 'starting':
+          return { label: '准备中', tone: 'primary' }
+        case 'repair_required':
+          return { label: '需设置', tone: 'warning' }
+        case 'ready':
+          return { label: '已就绪', tone: 'success' }
+        case 'error':
+          return { label: '需修复', tone: 'danger' }
+      }
+    }
+
+    switch (provider.runtime.status) {
+      case 'starting':
+        return { label: '准备中', tone: 'primary' }
+      case 'running':
+        return { label: '已就绪', tone: 'success' }
+      case 'error':
+        return { label: '需修复', tone: 'danger' }
+      case 'stopped':
+        return provider.runtime.canStart
+          ? { label: '继续', tone: 'neutral' }
+          : null
+      case 'missing':
+        return { label: '首次', tone: 'primary' }
+    }
+  }
+
+  return null
+}

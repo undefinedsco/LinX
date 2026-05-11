@@ -6,6 +6,11 @@ LinX 是一个构建在 Solid Pod 之上的 AI-native 第二大脑。它给用�
 
 LinX 的目标不是再做一个套了 LLM 的聊天框，而是把 AI 做成一个真正可长期协作的秘书。
 
+## 关键设计文档
+
+- `docs/desktop-product-strategy.md`：桌面端产品策略、信息架构、审批 / inbox / workspace 融合方式，以及渐进式发布纪律
+- `docs/scene-restoration-solid-modeling.md`：`favorites / inbox / audit / workspace` 的场景恢复要求与 Solid-first 建模约束
+
 ## 为什么是 LinX
 
 - **AI 秘书体验**：AI 不只是回答问题，而是长期记忆、协助整理、代表用户处理信息与任务。
@@ -49,7 +54,8 @@ AI 越了解用户，就越有价值；但这只有在用户持续掌控数据�
 LinX 处在整个栈的用户产品层：
 
 - **xpod**：提供 Pod runtime、Solid 凭证、身份与服务基础设施
-- **`@linx/models` / drizzle-solid**：提供类型化的 Pod 数据模型和仓储访问
+- **`@undefineds.co/models` / drizzle-solid**：提供共享数据面 SDK、类型化 Pod schema 与仓储合同
+- **`@linx/client`**：LinX 专属客户端辅助包，承载本地账号、runtime URL 与 `watch` 协议
 - **LinX**：提供最终面向用户的聊天、记忆、多端体验和工作流界面
 
 换句话说，LinX 是前门。它把 Pod-native 的身份、存储和 AI 服务，组织成用户每天真正能用的产品。
@@ -109,13 +115,14 @@ Web 是当前主产品面，也是迭代最快的环境。
 - **Web**：React 18.3 + TypeScript + Vite 5，使用 `@tanstack/react-router`、React Query、Tailwind，以及 `@openai/chatkit-react`
 - **Desktop**：Electron 32.x
 - **Mobile**：Capacitor 6
-- **Data**：`@linx/models`（drizzle-solid + drizzle-orm）统一管理 Pod 读写
+- **Data**：`@undefineds.co/models` 统一管理 Pod schema / repository 合同，`@linx/client` 仅保留客户端侧 helper
 - **Solid**：`@inrupt/solid-client(-authn)`、`@inrupt/solid-ui-react`、`@inrupt/vocab-common-rdf`、`@comunica/*`
 - **AI / Runtime**：ChatKit 交互层 + 本地/远程 runtime 会话 + xpod 兼容服务集成
 
 ## Solid 数据访问约定
 
-- 所有结构化数据（profile、contacts、chat、messages、approval、audit 等）都必须通过 `packages/models` 暴露的 schema / repository / collection 路径访问
+- 所有结构化数据（profile、contacts、chat、messages、approval、audit 等）都必须通过 `@undefineds.co/models` 暴露的 schema / repository 合同访问
+- `@linx/client` 只用于 LinX 专属客户端能力，例如本地账号配置与 `watch`
 - UI 不允许直接调用 `getSolidDataset` 之类的低层 API 绕过模型层
 - 查询失败时，应该修正 schema、权限、SPARQL 或 repository，而不是在 UI 层做兜底分叉
 
@@ -157,7 +164,8 @@ yarn test
 - `apps/mobile`：Capacitor 壳
 - `apps/service`：本地服务进程 / xpod 兼容服务集成
 - `apps/cli`：CLI 入口
-- `packages/models`：Pod 数据模型、schema、repository
+- `packages/client`：`@linx/client` 包源码
+- `@undefineds.co/models`：外部权威数据面 SDK（独立仓库）
 - `packages/shared-ui`：跨端共享 UI
 - `packages/utils`：通用工具
 - `tests/*`：单元、集成和端到端测试

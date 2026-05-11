@@ -20,8 +20,8 @@ import {
   contactTable,
   agentTable,
   solidProfileTable,
-  linxSchema,
-} from '@linx/models'
+  solidSchema,
+} from '@undefineds.co/models'
 
 dotenv.config({ path: '../../.env' })
 
@@ -35,7 +35,7 @@ const env = {
 const hasEnv = Boolean(env.webId && env.clientId && env.clientSecret && env.oidcIssuer)
 
 let session: Session | null = null
-type BenchmarkDb = SolidDatabase<typeof linxSchema>
+type BenchmarkDb = SolidDatabase<typeof solidSchema>
 
 let db: BenchmarkDb | null = null
 
@@ -162,7 +162,7 @@ describe.skipIf(!hasEnv)('List Query Benchmark', () => {
     
     const database = drizzle(session, {
       disableInteropDiscovery: true,
-      schema: linxSchema,
+      schema: solidSchema,
     })
     db = database
     

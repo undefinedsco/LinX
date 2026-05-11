@@ -4,8 +4,7 @@ import { useModelServices } from './hooks/useModelServices'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Search, Plus } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Search } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 
@@ -42,9 +41,6 @@ export function ModelServicesListPane({}: MicroAppPaneProps) {
             data-1p-ignore
           />
         </div>
-        <Button size="icon" variant="ghost" className="h-7 w-7 rounded-md text-muted-foreground hover:bg-muted shrink-0" onClick={() => alert("Todo: Add Custom Provider")}>
-          <Plus className="h-4 w-4" />
-        </Button>
       </div>
 
       {/* List Content */}

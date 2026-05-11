@@ -13,14 +13,8 @@ import {
   SkipForward,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import {
-  MessageBlockType,
-  type MessageBlock,
-  type TaskProgressStepStatus,
-} from '@linx/models'
-
-/** Extract TaskProgressMessageBlock from the MessageBlock union */
-type TaskProgressMessageBlock = Extract<MessageBlock, { type: MessageBlockType.TASK_PROGRESS }>
+import type { TaskProgressStepStatus } from '@undefineds.co/models'
+import type { TaskProgressMessageBlock } from '../message-blocks'
 
 interface TaskProgressBlockProps {
   block: TaskProgressMessageBlock

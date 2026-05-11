@@ -131,7 +131,7 @@ linx/
 │       ├── types.ts        # ServiceConfig, ServiceState
 │       └── index.ts
 ├── packages/
-│   └── models/             # 共享数据模型 (@linx/models)
+│   └── client/             # LinX 客户端 helper (@linx/client)
 └── docs/
     ├── desktop-architecture.md
     └── linx-xpod-design.md

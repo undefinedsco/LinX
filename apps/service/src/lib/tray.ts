@@ -154,10 +154,7 @@ export class TrayModule {
    * Set auto launch on login
    */
   private setAutoLaunch(enabled: boolean): void {
-    app.setLoginItemSettings({
-      openAtLogin: enabled,
-      openAsHidden: true,
-    })
+    getWebServerModule().setAutoStart(enabled)
     console.log('[Tray] Auto launch:', enabled)
   }
 

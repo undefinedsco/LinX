@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 
@@ -46,20 +46,6 @@ function removeDirRobust(path) {
   }
 }
 
-removeDirRobust(distDir)
-writeGeneratedVersionModule()
-
-const compile = spawnSync(process.execPath, compileArgs, {
-  cwd: workspaceRoot,
-  stdio: 'inherit',
-})
-
-if (compile.error) {
-  process.stderr.write(`[linx-cli] Failed to run TypeScript compiler: ${compile.error.message}\n`)
-}
-
-process.exit(compile.status ?? 1)
-
 function writeGeneratedVersionModule() {
   const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'))
   const version = typeof packageJson.version === 'string' && packageJson.version.trim()
@@ -76,3 +62,42 @@ function writeGeneratedVersionModule() {
     ].join('\n'),
   )
 }
+
+function flattenNestedEmit() {
+  const emittedRoot = fileURLToPath(new URL('../dist/apps/cli/src/', import.meta.url))
+
+  if (!existsSync(emittedRoot)) {
+    return
+  }
+
+  for (const [targetName, sourceName] of [
+    ['index.js', 'apps/cli/src/index.js'],
+    ['index.js.map', 'apps/cli/src/index.js.map'],
+    ['watch-cli.js', 'apps/cli/src/watch-cli.js'],
+    ['watch-cli.js.map', 'apps/cli/src/watch-cli.js.map'],
+    ['lib', 'apps/cli/src/lib'],
+  ]) {
+    const targetPath = fileURLToPath(new URL(`../dist/${targetName}`, import.meta.url))
+    rmSync(targetPath, { recursive: true, force: true })
+    symlinkSync(sourceName, targetPath)
+  }
+}
+
+removeDirRobust(distDir)
+writeGeneratedVersionModule()
+
+const compile = spawnSync(process.execPath, compileArgs, {
+  cwd: workspaceRoot,
+  stdio: 'inherit',
+})
+
+if (compile.error) {
+  process.stderr.write(`[linx-cli] Failed to run TypeScript compiler: ${compile.error.message}\n`)
+}
+
+if ((compile.status ?? 1) !== 0) {
+  process.exit(compile.status ?? 1)
+}
+
+flattenNestedEmit()
+process.exit(0)

@@ -10,7 +10,7 @@ import { contactOps, contactCollection } from '../collections'
 import type { UnifiedContact } from '../types'
 import { useChatStore } from '@/modules/chat/store'
 import { useEntity } from '@/lib/data/use-entity'
-import { solidProfileTable, agentTable, ContactType, isGroupContact } from '@linx/models'
+import { solidProfileTable, agentTable, ContactType, isGroupContact } from '@undefineds.co/models'
 import { useToast } from '@/components/ui/use-toast'
 import { 
   MessageCircle, 
@@ -19,7 +19,6 @@ import {
   Star, 
   MoreHorizontal, 
   ChevronRight,
-  Wrench,
   Bot,
   User,
   Loader2,
@@ -42,7 +41,6 @@ import { Switch } from '@/components/ui/switch'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { ModelSelector } from '@/components/ui/model-selector'
 import { useQuery } from '@tanstack/react-query'
 import { CreateGroupDialog } from './CreateGroupDialog'
@@ -55,11 +53,15 @@ import {
   DropdownMenuSeparator, 
   DropdownMenuTrigger 
 } from '@/components/ui/dropdown-menu'
-import { cn } from '@/lib/utils'
+import { cn, toStringArray } from '@/lib/utils'
 
 // ============================================
 // Helpers & Components
 // ============================================
+
+const CONTACTS_CALLING_ACTIONS_ENABLED = false
+const CONTACTS_SHARED_GROUPS_ENABLED = false
+const CONTACTS_REFERENCE_PERMISSION_EDITOR_ENABLED = false
 
 function getShortId(id: string) {
   if (!id) return ''
@@ -109,11 +111,9 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
   const { toast } = useToast()
   const selectedId = useContactStore((state) => state.selectedId)
   const selectContact = useContactStore((state) => state.select)
-  const viewMode = useContactStore((state) => state.viewMode)
   const createDialogOpen = useContactStore((state) => state.createDialogOpen)
   const createType = useContactStore((state) => state.createType)
   const closeCreateDialog = useContactStore((state) => state.closeCreateDialog)
-  const clearNewFriends = useContactStore((state) => state.clearNewFriends)
   const inviteMemberDialogOpen = useContactStore((state) => state.inviteMemberDialogOpen)
   const inviteTargetGroupId = useContactStore((state) => state.inviteTargetGroupId)
   const openInviteMemberDialog = useContactStore((state) => state.openInviteMemberDialog)
@@ -123,11 +123,10 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
   const selectChat = useChatStore((state) => state.selectChat)
   
   // Edit State
-  const [editMode, setEditMode] = useState<'none' | 'prompt' | 'tools' | 'alias' | 'delete' | 'tags'>('none')
+  const [editMode, setEditMode] = useState<'none' | 'prompt' | 'tools' | 'alias' | 'delete'>('none')
   const [editingAlias, setEditingAlias] = useState('')
   const [editingPrompt, setEditingPrompt] = useState('')
-  const [editingTags, setEditingTags] = useState<string[]>([])
-  const [newTagName, setNewTagName] = useState('')
+  const [editingToolsText, setEditingToolsText] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [inviteSearch, setInviteSearch] = useState('')
   const [selectedInvitees, setSelectedInvitees] = useState<Set<string>>(new Set())
@@ -165,17 +164,8 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
     }
   }, [createDialogOpen])
 
-  // Mock available tags (后续可从数据库获取)
-  const AVAILABLE_TAGS = [
-    { id: 'friend', name: '朋友', color: 'blue' },
-    { id: 'family', name: '家人', color: 'pink' },
-    { id: 'work', name: '同事', color: 'orange' },
-    { id: 'school', name: '同学', color: 'green' },
-    { id: 'vip', name: 'VIP', color: 'yellow' },
-  ]
-  
   // Find contact from collection state (本地缓存)
-  const realContact = selectedId && !selectedId.startsWith('mock-')
+  const realContact = selectedId
     ? contacts.find(c => c.id === selectedId || (c as any)['@id'] === selectedId)
     : null
   const isContactLoading = false // Collections handle loading state
@@ -211,27 +201,16 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
 
   const contact: UnifiedContact | null = useMemo(() => {
     if (!selectedId) return null
-    if (selectedId.startsWith('mock-')) {
-      if (selectedId === 'mock-agent-1') return {
-        id: 'mock-agent-1', name: '智能翻译官', alias: '翻译助手', contactType: 'agent', starred: true, gender: 'bot', province: '广东', city: '深圳', sourceType: 'agent',
-        agentConfig: { model: 'openai/gpt-4o', instructions: '你是一个精通 12 国语言的翻译专家，能够精准捕捉语境中的文化细微差别。', ttsModel: 'openai/tts-1', videoModel: 'heygen/avatar-v2', tools: ['WebSearch'] }
-      } as any
-      if (selectedId === 'mock-solid-1') return {
-        id: 'mock-solid-1', name: 'Alice Smith', alias: 'Alice', contactType: 'solid', entityUri: 'https://alice.solidcommunity.net/profile/card#me', gender: 'female', province: '北京', city: '海淀', sourceType: 'solid', isPublic: true
-      } as any
-      if (selectedId === 'mock-wechat-1') return {
-        id: 'mock-wechat-1', name: '王小二', alias: '老王', contactType: 'external', externalPlatform: 'wechat', externalId: 'wxid_wang123', gender: 'male', province: '上海', city: '黄浦', sourceType: 'wechat', isPublic: true
-      } as any
-    }
     if (!realContact) return null
     
     // 构建 agentConfig（如果是 Agent 类型且有源数据）
     const agentConfig = realContact.contactType === ContactType.AGENT && entityData ? {
       ...entityData,
-      model: (entityData as any).model,
-      instructions: (entityData as any).instructions,
-      ttsModel: (entityData as any).ttsModel,
-      videoModel: (entityData as any).videoModel,
+      model: typeof (entityData as any).model === 'string' ? (entityData as any).model : undefined,
+      instructions: typeof (entityData as any).instructions === 'string' ? (entityData as any).instructions : undefined,
+      ttsModel: typeof (entityData as any).ttsModel === 'string' ? (entityData as any).ttsModel : undefined,
+      videoModel: typeof (entityData as any).videoModel === 'string' ? (entityData as any).videoModel : undefined,
+      tools: toStringArray((entityData as any).tools),
     } : undefined
     
     return {
@@ -245,6 +224,10 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
 
   const currentUserRef = session.info.webId ?? undefined
   const isGroup = !!realContact && isGroupContact(realContact)
+  const contactInbox = useMemo(() => {
+    const record = contact as Record<string, unknown> | null
+    return typeof record?.inbox === 'string' && record.inbox.length > 0 ? record.inbox : null
+  }, [contact])
   const groupContactRef = isGroup ? realContact?.entityUri || realContact?.id || null : null
   const groupMemberRoleMap = useMemo(
     () => (groupContactRef ? contactOps.getGroupMemberRoles(groupContactRef) : {}),
@@ -310,13 +293,6 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
     if (!contact || !selectedId) return
     
     try {
-      // 对于 mock 数据，使用 contact.id 作为 chatId
-      if (selectedId.startsWith('mock-')) {
-        selectChat(contact.id)
-        navigate({ to: '/$microAppId', params: { microAppId: 'chat' } })
-        return
-      }
-
       if (realContact && isGroupContact(realContact)) {
         const chat = contactOps.getGroupChat(realContact.entityUri || realContact.id)
         if (!chat) {
@@ -354,12 +330,9 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
 
   // 切换星标
   const handleToggleStar = useCallback(async () => {
-    if (!contact || selectedId?.startsWith('mock-')) {
-      notify.info('Mock 数据不支持修改')
-      return
-    }
+    if (!contact || !selectedId) return
     try {
-      await contactOps.toggleStar(selectedId!, !!contact.starred)
+      await contactOps.toggleStar(selectedId, !!contact.starred)
       notify.success(contact.starred ? '已取消星标' : '已添加星标')
     } catch (e) {
       notify.error('操作失败')
@@ -368,12 +341,9 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
 
   // 切换公开关系
   const handleTogglePublic = useCallback(async (checked: boolean) => {
-    if (!contact || selectedId?.startsWith('mock-')) {
-      notify.info('Mock 数据不支持修改')
-      return
-    }
+    if (!contact || !selectedId) return
     try {
-      await contactOps.updateContact(selectedId!, { isPublic: checked })
+      await contactOps.updateContact(selectedId, { isPublic: checked })
       notify.success(checked ? '已公开到个人资料' : '已设为私密')
     } catch (e) {
       notify.error('操作失败')
@@ -388,14 +358,10 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
 
   // 保存备注名
   const handleSaveAlias = useCallback(async () => {
-    if (!contact || selectedId?.startsWith('mock-')) {
-      notify.info('Mock 数据不支持修改')
-      setEditMode('none')
-      return
-    }
+    if (!contact || !selectedId) return
     setIsSaving(true)
     try {
-      await contactOps.updateContact(selectedId!, { alias: editingAlias.trim() || undefined })
+      await contactOps.updateContact(selectedId, { alias: editingAlias.trim() || undefined })
       notify.success('备注名已更新')
       setEditMode('none')
     } catch (e) {
@@ -413,11 +379,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
 
   // 保存 Prompt
   const handleSavePrompt = useCallback(async () => {
-    if (!contact || selectedId?.startsWith('mock-') || !entityUri) {
-      notify.info('Mock 数据不支持修改')
-      setEditMode('none')
-      return
-    }
+    if (!contact || !entityUri) return
     setIsSaving(true)
     try {
       await contactOps.updateAgent(entityUri, { instructions: editingPrompt.trim() })
@@ -432,14 +394,10 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
 
   // 删除联系人
   const handleDelete = useCallback(async () => {
-    if (!contact || selectedId?.startsWith('mock-')) {
-      notify.info('Mock 数据不支持删除')
-      setEditMode('none')
-      return
-    }
+    if (!contact || !selectedId) return
     setIsSaving(true)
     try {
-      await contactOps.deleteContact(selectedId!)
+      await contactOps.deleteContact(selectedId)
       notify.success('联系人已删除')
       selectContact(null)
       setEditMode('none')
@@ -458,54 +416,36 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
     notify.success('联系人链接已复制')
   }, [contact, notify])
 
-  // 打开标签编辑
-  const handleOpenTagsEdit = useCallback(() => {
-    setEditingTags(contact?.tags?.map(t => t.id) || [])
-    setNewTagName('')
-    setEditMode('tags')
+  const handleOpenToolsEdit = useCallback(() => {
+    setEditingToolsText((contact?.agentConfig?.tools || []).join('\n'))
+    setEditMode('tools')
   }, [contact])
 
-  // 切换标签选中状态
-  const handleToggleTag = useCallback((tagId: string) => {
-    setEditingTags(prev => 
-      prev.includes(tagId) 
-        ? prev.filter(id => id !== tagId)
-        : [...prev, tagId]
+  const handleSaveTools = useCallback(async () => {
+    if (!contact || !entityUri) return
+
+    const nextTools = Array.from(
+      new Set(
+        editingToolsText
+          .split('\n')
+          .map((entry) => entry.trim())
+          .filter(Boolean),
+      ),
     )
-  }, [])
 
-  // 添加新标签
-  const handleAddNewTag = useCallback(() => {
-    if (!newTagName.trim()) return
-    // 创建临时 ID
-    const newId = `custom-${Date.now()}`
-    setEditingTags(prev => [...prev, newId])
-    setNewTagName('')
-    notify.success(`标签 "${newTagName}" 已添加`)
-  }, [newTagName, notify])
-
-  // 保存标签 (Mock)
-  const handleSaveTags = useCallback(() => {
-    notify.success('标签已更新')
-    setEditMode('none')
-  }, [notify])
-
-  // Mock new friends data
-  const MOCK_NEW_FRIENDS = [
-    { id: 'new-1', name: 'Bob Johnson', avatarUrl: '', message: '我是通过微信搜索添加的', time: '2小时前' },
-    { id: 'new-2', name: '李明', avatarUrl: '', message: '你好，我是 xxx 的朋友', time: '昨天' },
-  ]
-
-  // 接受好友请求
-  const handleAcceptFriend = useCallback((_id: string) => {
-    notify.success('已添加为好友')
-    clearNewFriends()
-  }, [clearNewFriends, notify])
-
-  // 忽略好友请求
-  const handleIgnoreFriend = useCallback((_id: string) => {
-    notify.info('已忽略该请求')
-  }, [notify])
+    setIsSaving(true)
+    try {
+      await contactOps.updateAgent(entityUri, {
+        tools: nextTools.length > 0 ? nextTools : [],
+      })
+      notify.success('工具配置已更新')
+      setEditMode('none')
+    } catch {
+      notify.error('保存失败')
+    } finally {
+      setIsSaving(false)
+    }
+  }, [contact, editingToolsText, entityUri, notify])
 
   // 搜索 WebID - 使用 contactOps.fetchSolidProfile
   const handleSearchWebId = useCallback(async () => {
@@ -677,108 +617,60 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
     selectChat(chatId)
     navigate({ to: '/$microAppId', params: { microAppId: 'chat' } })
   }, [closeCreateDialog, selectContact, selectChat, navigate])
+  const content = !selectedId ? (
+    <div className="flex-1 h-full bg-layout-content flex items-center justify-center">
+      <div className="text-center opacity-60">
+        <User className="w-12 h-12 mx-auto mb-2 text-muted-foreground" />
+        <p className="text-sm">选择联系人查看详情</p>
+      </div>
+    </div>
+  ) : isContactLoading || !contact ? (
+    <div className="flex-1 h-full bg-layout-content flex items-center justify-center">
+      <Loader2 className="w-8 h-8 animate-spin text-muted-foreground/30" />
+    </div>
+  ) : (() => {
+    const displayName = contact.alias || contact.name || 'Unknown'
+    const rawId = contact.externalId || contact.entityUri || contact.id
+    const displayId = getShortId(rawId ?? '')
+    const region = contact.province ? `${contact.province} ${contact.city || ''}` : '未知地区'
+    const gender = contact.gender || (contact.contactType === 'agent' ? 'bot' : 'unknown')
+    const isAgent = contact.sourceType === 'agent'
+    const isReference = contact.sourceType === 'solid' || (isAgent && rawId?.startsWith('http'))
 
-  // 渲染 "新的朋友" 视图
-  if (viewMode === 'new-friends') {
     return (
-      <div className="flex-1 h-full bg-background flex flex-col overflow-hidden">
-        <div className="h-16 flex items-center px-6 border-b border-border/30">
-          <h2 className="text-lg font-semibold">新的朋友</h2>
+      <>
+        {/* Top Actions */}
+        <div className="h-16 flex items-center justify-end px-4 gap-1 shrink-0">
+          <Button variant="ghost" size="icon" className="h-9 w-9 rounded-md" onClick={handleShare}>
+            <Share2 className="w-4.5 h-4.5 text-muted-foreground" />
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-9 w-9 rounded-md">
+                <MoreHorizontal className="w-4.5 h-4.5 text-muted-foreground" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40">
+              <DropdownMenuItem onClick={handleToggleStar}>
+                <Star className={cn("w-4 h-4 mr-2", contact.starred && "fill-yellow-400 text-yellow-400")} />
+                {contact.starred ? '取消星标' : '设为星标'}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleOpenAliasEdit}>
+                <Edit3 className="w-4 h-4 mr-2" />
+                修改备注
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setEditMode('delete')} className="text-destructive focus:text-destructive">
+                <Trash2 className="w-4 h-4 mr-2" />
+                删除联系人
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
-        <ScrollArea className="flex-1">
-          <div className="p-4 space-y-2">
-            {MOCK_NEW_FRIENDS.length === 0 ? (
-              <div className="py-20 text-center text-muted-foreground">
-                <UserPlus className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                <p>暂无好友请求</p>
-              </div>
-            ) : (
-              MOCK_NEW_FRIENDS.map(friend => (
-                <div key={friend.id} className="flex items-center gap-4 p-4 rounded-xl bg-card border border-border/40">
-                  <Avatar className="w-12 h-12 rounded-lg">
-                    <AvatarImage src={friend.avatarUrl} />
-                    <AvatarFallback className="bg-primary/10 text-primary font-bold">
-                      {friend.name.slice(0, 1).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium">{friend.name}</span>
-                      <span className="text-xs text-muted-foreground">{friend.time}</span>
-                    </div>
-                    <p className="text-sm text-muted-foreground truncate">{friend.message}</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="outline" onClick={() => handleIgnoreFriend(friend.id)}>
-                      忽略
-                    </Button>
-                    <Button size="sm" onClick={() => handleAcceptFriend(friend.id)}>
-                      接受
-                    </Button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </ScrollArea>
-      </div>
-    )
-  }
 
-  if (!selectedId) return <div className="flex-1 h-full bg-layout-content flex items-center justify-center"><div className="text-center opacity-60"><User className="w-12 h-12 mx-auto mb-2 text-muted-foreground" /><p className="text-sm">选择联系人查看详情</p></div></div>
-  if (isContactLoading || !contact) return <div className="flex-1 h-full bg-layout-content flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground/30" /></div>
-
-  const displayName = contact.alias || contact.name || 'Unknown'
-  const rawId = contact.externalId || contact.entityUri || contact.id
-  const displayId = getShortId(rawId ?? '')
-  const region = contact.province ? `${contact.province} ${contact.city || ''}` : '未知地区'
-  const gender = contact.gender || (contact.contactType === 'agent' ? 'bot' : 'unknown')
-  
-  const isAgent = contact.sourceType === 'agent'
-  const isReference = contact.sourceType === 'solid' || (isAgent && rawId?.startsWith('http'))
-
-  // Tools Mock Data
-  const TOOLS = [
-    { id: 'web-search', name: '联网搜索', desc: 'Google / Bing Search', enabled: true },
-    { id: 'calculator', name: '计算器', desc: 'Math Calculator', enabled: true },
-    { id: 'dalle', name: 'DALL·E 3', desc: 'Image Generation', enabled: false },
-    { id: 'browser', name: '网页浏览', desc: 'Fetch & Read URL', enabled: false }
-  ]
-
-  return (
-    <div className="flex-1 h-full bg-background flex flex-col overflow-hidden">
-      {/* Top Actions */}
-      <div className="h-16 flex items-center justify-end px-4 gap-1 shrink-0">
-        <Button variant="ghost" size="icon" className="h-9 w-9 rounded-md" onClick={handleShare}>
-          <Share2 className="w-4.5 h-4.5 text-muted-foreground" />
-        </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-md">
-              <MoreHorizontal className="w-4.5 h-4.5 text-muted-foreground" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-40">
-            <DropdownMenuItem onClick={handleToggleStar}>
-              <Star className={cn("w-4 h-4 mr-2", contact.starred && "fill-yellow-400 text-yellow-400")} />
-              {contact.starred ? '取消星标' : '设为星标'}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleOpenAliasEdit}>
-              <Edit3 className="w-4 h-4 mr-2" />
-              修改备注
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => setEditMode('delete')} className="text-destructive focus:text-destructive">
-              <Trash2 className="w-4 h-4 mr-2" />
-              删除联系人
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-
-      <div className="flex-1 overflow-hidden flex">
-        <div className="flex-1 overflow-y-auto">
-          <div className="max-w-2xl mx-auto px-8 pt-2 pb-12 space-y-8">
+        <div className="flex-1 overflow-hidden flex">
+          <div className="flex-1 overflow-y-auto">
+            <div className="max-w-2xl mx-auto px-8 pt-2 pb-12 space-y-8">
           
           {/* HEADER */}
           <div className="flex items-start gap-6">
@@ -863,10 +755,14 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
           </div>
 
           {/* ACTION BAR */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className={cn('grid gap-3', CONTACTS_CALLING_ACTIONS_ENABLED ? 'grid-cols-3' : 'grid-cols-1')}>
             <Button variant="secondary" className="h-12 rounded-xl gap-2 text-sm font-medium bg-muted/60 hover:bg-muted border border-border/10" onClick={handleStartChat}><MessageCircle className="w-5 h-5" /> 聊天</Button>
-            <Button variant="secondary" className="h-12 rounded-xl gap-2 text-sm font-medium bg-muted/60 hover:bg-muted border border-border/10" onClick={handleVoiceCall}><Phone className="w-5 h-5" /> 语音</Button>
-            <Button variant="secondary" className="h-12 rounded-xl gap-2 text-sm font-medium bg-muted/60 hover:bg-muted border border-border/10" onClick={handleVideoCall}><Video className="w-5 h-5" /> 视频</Button>
+            {CONTACTS_CALLING_ACTIONS_ENABLED && (
+              <>
+                <Button variant="secondary" className="h-12 rounded-xl gap-2 text-sm font-medium bg-muted/60 hover:bg-muted border border-border/10" onClick={handleVoiceCall}><Phone className="w-5 h-5" /> 语音</Button>
+                <Button variant="secondary" className="h-12 rounded-xl gap-2 text-sm font-medium bg-muted/60 hover:bg-muted border border-border/10" onClick={handleVideoCall}><Video className="w-5 h-5" /> 视频</Button>
+              </>
+            )}
           </div>
 
           {isGroup ? (
@@ -888,21 +784,11 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
               <InfoRow label="备注名" onClick={handleOpenAliasEdit} hideArrow>
                 <span className="font-medium">{contact.alias || '点击设置备注'}</span>
               </InfoRow>
-              <InfoRow label="标签" onClick={handleOpenTagsEdit} hideArrow>
-                <div className="flex flex-wrap gap-1.5 items-center">
-                  {(contact.tags && contact.tags.length > 0) ? (
-                    contact.tags.map(tag => (
-                      <Badge key={tag.id} variant="secondary" className="bg-muted/50 font-normal text-xs px-2 py-0.5 rounded-md border-none">{tag.name}</Badge>
-                    ))
-                  ) : (
-                    <Badge variant="secondary" className="bg-muted/50 font-normal text-xs px-2 py-0.5 rounded-md border-none">朋友</Badge>
-                  )}
-                  <div className="w-6 h-6 rounded-md border border-dashed border-border/60 flex items-center justify-center text-muted-foreground/40 hover:border-primary/50 hover:text-primary/50 cursor-pointer transition-colors"><UserPlus className="w-3 h-3" /></div>
-                </div>
-              </InfoRow>
-              <InfoRow label="朋友权限" onClick={() => {}}>
-                <span>已允许访问 Inbox, Profile</span>
-              </InfoRow>
+              {CONTACTS_REFERENCE_PERMISSION_EDITOR_ENABLED && (
+                <InfoRow label="朋友权限" onClick={() => {}}>
+                  <span>已允许访问 Inbox, Profile</span>
+                </InfoRow>
+              )}
               <div className="flex items-center justify-between py-3 px-4 hover:bg-muted/30 transition-colors">
                 <span className="w-24 shrink-0 text-sm text-muted-foreground">公开关系</span>
                 <div className="flex-1 flex items-center justify-between">
@@ -916,7 +802,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
           {/* BLOCK 2: Agent Specific Config */}
           {isAgent && contact.agentConfig && (
             <div className="bg-card rounded-xl border border-border/40 overflow-hidden shadow-sm">
-              <InfoRow label="系统提示词" onClick={() => !isReference && handleOpenPromptEdit()}>
+              <InfoRow label="系统提示词" onClick={!isReference ? handleOpenPromptEdit : undefined}>
                 <div className="flex items-center justify-between gap-2">
                   <p className="line-clamp-2 italic text-muted-foreground/80">{contact.agentConfig.instructions || '未设置'}</p>
                   {isReference && <Lock className="w-3 h-3 text-muted-foreground/40 shrink-0" />}
@@ -924,40 +810,51 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
               </InfoRow>
               
               <InfoRow label="聊天模型" hideArrow>
-                <ModelSelector type="chat" value={contact.agentConfig.model} className="h-8 border-none bg-transparent hover:bg-transparent px-0 justify-end" />
+                <span className="font-medium">{contact.agentConfig.model || '未设置'}</span>
               </InfoRow>
 
               <InfoRow label="语音模型" hideArrow>
-                <ModelSelector type="voice" value={contact.agentConfig.ttsModel} className="h-8 border-none bg-transparent hover:bg-transparent px-0 justify-end" />
+                <span className="font-medium">{contact.agentConfig.ttsModel || '未设置'}</span>
               </InfoRow>
 
               <InfoRow label="视频模型" hideArrow>
-                <ModelSelector type="video" value={contact.agentConfig.videoModel} className="h-8 border-none bg-transparent hover:bg-transparent px-0 justify-end" />
+                <span className="font-medium">{contact.agentConfig.videoModel || '未设置'}</span>
               </InfoRow>
 
-              <InfoRow label="插件工具" onClick={() => setEditMode('tools')} last>
-                <div className="flex items-center gap-1">
-                  {(contact.agentConfig.tools || []).slice(0, 3).map((tool, i) => (
-                    <div key={i} className="w-5 h-5 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-[8px] text-primary font-bold">{tool[0]}</div>
-                  ))}
-                  {(contact.agentConfig.tools?.length || 0) === 0 && <span className="text-muted-foreground">无</span>}
+              <InfoRow label="插件工具" onClick={!isReference ? handleOpenToolsEdit : undefined} last>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex flex-wrap gap-1.5">
+                    {(contact.agentConfig.tools && contact.agentConfig.tools.length > 0) ? (
+                      contact.agentConfig.tools.map((tool) => (
+                        <Badge
+                          key={tool}
+                          variant="secondary"
+                          className="bg-muted/50 font-normal text-xs px-2 py-0.5 rounded-md border-none"
+                        >
+                          {tool}
+                        </Badge>
+                      ))
+                    ) : (
+                      <span className="text-muted-foreground">无</span>
+                    )}
+                  </div>
+                  {isReference && <Lock className="w-3 h-3 text-muted-foreground/40 shrink-0" />}
                 </div>
               </InfoRow>
             </div>
           )}
 
           {/* BLOCK 3: Contact Details (Humans Only) */}
-          {!isAgent && !isGroup && (
+          {!isAgent && !isGroup && (contact.entityUri || contactInbox) && (
             <div className="bg-card rounded-xl border border-border/40 overflow-hidden shadow-sm">
-              <InfoRow label="电话" onClick={() => {}} hideArrow>
-                <span className="text-blue-500">138 0013 8000</span>
-              </InfoRow>
-              <InfoRow label="邮箱" onClick={() => {}} hideArrow last={contact.sourceType !== 'solid'}>
-                <span className="text-blue-500">alice@example.com</span>
-              </InfoRow>
-              {contact.sourceType === 'solid' && (
-                <InfoRow label="Inbox" onClick={() => {}} last>
-                  <span className="font-mono text-xs break-all">https://alice.solid/inbox/</span>
+              {contact.entityUri && (
+                <InfoRow label={contact.sourceType === 'solid' ? 'WebID' : '资源'} hideArrow last={!contactInbox}>
+                  <span className="font-mono text-xs break-all">{contact.entityUri}</span>
+                </InfoRow>
+              )}
+              {contactInbox && (
+                <InfoRow label="Inbox" hideArrow last>
+                  <span className="font-mono text-xs break-all">{contactInbox}</span>
                 </InfoRow>
               )}
             </div>
@@ -966,11 +863,13 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
           {/* BLOCK 4: Origin & Bio */}
           {!isGroup && (
             <div className="bg-card rounded-xl border border-border/40 overflow-hidden shadow-sm">
-              <InfoRow label="共同群聊" onClick={() => {}}>
-                <span className="text-muted-foreground">3 个群聊</span>
-              </InfoRow>
+              {CONTACTS_SHARED_GROUPS_ENABLED && (
+                <InfoRow label="共同群聊" onClick={() => {}}>
+                  <span className="text-muted-foreground">3 个群聊</span>
+                </InfoRow>
+              )}
               {(contact.agentConfig?.description || contact.note) && (
-                <InfoRow label="个性签名" onClick={() => {}} hideArrow>
+                <InfoRow label="个性签名" hideArrow>
                   <span className="italic text-muted-foreground/80">{contact.agentConfig?.description || contact.note}</span>
                 </InfoRow>
               )}
@@ -983,22 +882,29 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
             </div>
           )}
 
+            </div>
           </div>
+          {isGroup && (
+            <MemberList
+              members={groupMembers}
+              currentUserRef={currentUserRef}
+              isOwner={isGroupOwner}
+              isAdmin={isGroupAdmin}
+              onViewProfile={handleViewGroupMemberProfile}
+              onMention={handleMentionMember}
+              onRemoveMember={handleRemoveGroupMember}
+              onUpdateRole={handleUpdateGroupMemberRole}
+              onInvite={() => realContact && openInviteMemberDialog(realContact.entityUri || realContact.id)}
+            />
+          )}
         </div>
-        {isGroup && (
-          <MemberList
-            members={groupMembers}
-            currentUserRef={currentUserRef}
-            isOwner={isGroupOwner}
-            isAdmin={isGroupAdmin}
-            onViewProfile={handleViewGroupMemberProfile}
-            onMention={handleMentionMember}
-            onRemoveMember={handleRemoveGroupMember}
-            onUpdateRole={handleUpdateGroupMemberRole}
-            onInvite={() => realContact && openInviteMemberDialog(realContact.entityUri || realContact.id)}
-          />
-        )}
-      </div>
+      </>
+    )
+  })()
+
+  return (
+    <div className="flex-1 h-full bg-background flex flex-col overflow-hidden">
+      {content}
 
       {/* --- DIALOGS --- */}
       
@@ -1051,77 +957,23 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
 
       {/* 工具配置 Dialog */}
       <Dialog open={editMode === 'tools'} onOpenChange={(v) => !v && setEditMode('none')}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>配置插件工具</DialogTitle>
-            <DialogDescription>管理当前助手可调用的插件工具。</DialogDescription>
+            <DialogDescription>每行一个工具标识，直接写入当前助手配置。</DialogDescription>
           </DialogHeader>
-          <div className="relative mb-4">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input placeholder="搜索工具..." className="pl-9" />
-          </div>
-          <ScrollArea className="h-[300px] -mx-6 px-6">
-            <div className="space-y-4">
-              {TOOLS.map((t) => (
-                <div key={t.id} className="flex items-start justify-between">
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-muted/50 flex items-center justify-center">
-                      <Wrench className="w-5 h-5 text-muted-foreground" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">{t.name}</p>
-                      <p className="text-xs text-muted-foreground">{t.desc}</p>
-                    </div>
-                  </div>
-                  <Switch defaultChecked={t.enabled} />
-                </div>
-              ))}
-            </div>
-          </ScrollArea>
-        </DialogContent>
-      </Dialog>
-
-      {/* 标签管理 Dialog */}
-      <Dialog open={editMode === 'tags'} onOpenChange={(v) => !v && setEditMode('none')}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>管理标签</DialogTitle>
-            <DialogDescription>为当前联系人维护标签信息。</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 mt-2">
-            <div className="flex flex-wrap gap-2">
-              {AVAILABLE_TAGS.map((tag) => (
-                <Badge
-                  key={tag.id}
-                  variant={editingTags.includes(tag.id) ? "default" : "secondary"}
-                  className={cn(
-                    "cursor-pointer transition-all px-3 py-1.5 text-sm",
-                    editingTags.includes(tag.id) 
-                      ? "bg-primary text-primary-foreground" 
-                      : "bg-muted/50 hover:bg-muted"
-                  )}
-                  onClick={() => handleToggleTag(tag.id)}
-                >
-                  {tag.name}
-                </Badge>
-              ))}
-            </div>
-            <div className="flex gap-2">
-              <Input
-                placeholder="添加新标签..."
-                value={newTagName}
-                onChange={(e) => setNewTagName(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleAddNewTag()}
-                className="flex-1"
-              />
-              <Button size="sm" onClick={handleAddNewTag} disabled={!newTagName.trim()}>
-                添加
-              </Button>
-            </div>
-          </div>
+          <Textarea
+            placeholder="例如：web-search&#10;filesystem&#10;notion"
+            className="min-h-[220px] resize-none font-mono text-sm leading-relaxed"
+            value={editingToolsText}
+            onChange={(e) => setEditingToolsText(e.target.value)}
+          />
           <DialogFooter className="mt-4">
-            <Button variant="outline" onClick={() => setEditMode('none')}>取消</Button>
-            <Button onClick={handleSaveTags}>保存</Button>
+            <Button variant="outline" onClick={() => setEditMode('none')} disabled={isSaving}>取消</Button>
+            <Button onClick={handleSaveTools} disabled={isSaving}>
+              {isSaving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              保存
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -68,6 +68,30 @@ export const themeColors = {
     subtle: 'bg-destructive/10 text-destructive',
   },
 
+  success: {
+    DEFAULT: 'bg-success text-success-foreground',
+    subtle: 'bg-success/10 text-success',
+    border: 'border-success/30',
+  },
+
+  warning: {
+    DEFAULT: 'bg-warning text-warning-foreground',
+    subtle: 'bg-warning/10 text-warning',
+    border: 'border-warning/30',
+  },
+
+  boundary: {
+    DEFAULT: 'bg-boundary text-boundary-foreground',
+    subtle: 'bg-boundary/10 text-boundary',
+    border: 'border-boundary/30',
+  },
+
+  lineage: {
+    DEFAULT: 'bg-lineage text-lineage-foreground',
+    subtle: 'bg-lineage/10 text-lineage',
+    border: 'border-lineage/30',
+  },
+
   /**
    * 背景色 - Background
    * 用途：页面背景、容器背景
@@ -117,6 +141,11 @@ export const themePresets = {
   
   // 列表项（选中）
   listItemActive: 'bg-primary/10 border-l-2 border-l-primary',
+
+  // 状态胶囊
+  successBadge: 'border border-success/30 bg-success/10 text-success',
+  warningBadge: 'border border-warning/30 bg-warning/10 text-warning',
+  boundaryBadge: 'border border-boundary/30 bg-boundary/10 text-boundary',
 } as const
 
 /**
@@ -141,7 +170,6 @@ export const themePresets = {
  * </button>
  * ```
  */
-
 
 
 

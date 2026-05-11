@@ -13,7 +13,7 @@ import {
   type LinxClientCredentialsSecrets,
   type LinxClientSecrets,
   type LinxOidcOAuthSecrets,
-} from '@undefineds.co/models/client'
+} from '@linx/client'
 
 export type AuthType = LinxAuthType
 export type StoredConfig = LinxClientConfig

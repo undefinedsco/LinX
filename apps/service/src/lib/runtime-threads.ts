@@ -10,8 +10,9 @@ import {
 } from './runtime-runner'
 import { MockRuntimeRunner } from './runtime-runner-mock'
 import { XpodPtyRuntimeRunner } from './xpod-chatkit-runtime'
+import { resolveLinxUserDataDir } from './linx-paths'
 
-const CONFIG_DIR = path.join(process.env.HOME || '', 'Library', 'Application Support', 'LinX')
+const CONFIG_DIR = resolveLinxUserDataDir()
 const STORE_PATH = path.join(CONFIG_DIR, 'runtime-threads.json')
 const MAX_LOG_EVENTS = 500
 

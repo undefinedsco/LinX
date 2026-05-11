@@ -1,9 +1,10 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
-import { Moon, Sun, Upload, Settings, Bot, Info, Activity } from 'lucide-react'
+import linxLogoUrl from '@/assets/linx-logo.png'
+import { Moon, Sun, Settings, Bot, Info, Activity, LogOut } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   microAppRegistry,
@@ -27,65 +28,35 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { SelfProfileCard } from '@/modules/profile/SelfProfileCard'
+import { InboxBellButton } from '@/modules/inbox/components/InboxBellButton'
 import { ServiceManagementDialog } from '@/modules/settings/ServiceManagementDialog'
-import { ShellStatusBadge } from '@/components/ShellStatusBadge'
+import { requestSignOut } from '@/modules/login/login-utils'
 import { useSession } from '@/providers/solid-session-provider'
-import { useInboxSummary } from '@/modules/inbox/collections'
+import { AboutDialog } from './AboutDialog'
+import { useAppUpdateStatus } from './use-app-update-status'
+import { useThemeMode } from './use-theme-mode'
+import { OPEN_SERVICE_MANAGEMENT_EVENT } from '@/modules/settings/events'
 
 interface PrimaryLayoutProps {
   microAppId: MicroAppId
   onNavigate?: (id: MicroAppId) => void
 }
 
-const primaryNavIds: MicroAppId[] = ['chat', 'inbox', 'contacts', 'files', 'favorites']
+/**
+ * First releasable desktop slice:
+ * keep visible navigation limited to stable day-one modules.
+ * Experimental surfaces stay routeable for internal work, but are hidden from
+ * the main sidebar until they reach a releasable quality bar.
+ */
+const primaryNavIds: MicroAppId[] = ['chat', 'contacts', 'files', 'favorites']
 const secondaryNavIds: MicroAppId[] = []
 
 const bottomUtilities = [
-  { id: 'import', icon: Upload, label: '导入', action: 'import' },
-  { id: 'settings', icon: Settings, label: '设置', action: 'settings' }, // 'settings' now triggers popover
+  { id: 'settings', icon: Settings, label: '设置', action: 'settings' },
 ] as const
-
-type UtilityAction = (typeof bottomUtilities)[number]['action']
 
 function PaneFallback() {
   return <div className="h-full w-full animate-pulse bg-muted/10" />
-}
-
-function LoginRequiredPane({
-  title,
-  description,
-}: {
-  title: string
-  description: string
-}) {
-  return (
-    <div className="flex h-full items-center justify-center bg-layout-content">
-      <div className="max-w-sm px-6 text-center">
-        <p className="mb-2 text-base font-medium text-foreground">{title}</p>
-        <p className="text-sm leading-relaxed text-muted-foreground">{description}</p>
-      </div>
-    </div>
-  )
-}
-
-const useThemeMode = (): [ThemeMode, () => void] => {
-  const [theme, setTheme] = useState<ThemeMode>(() => {
-    if (typeof window === 'undefined') return 'dark'
-    const saved = localStorage.getItem('linx-theme') as ThemeMode | null
-    if (saved) return saved
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-    return prefersDark ? 'dark' : 'light'
-  })
-
-  useEffect(() => {
-    document.documentElement.classList.toggle('light', theme === 'light')
-    document.documentElement.classList.toggle('dark', theme === 'dark')
-    localStorage.setItem('linx-theme', theme)
-  }, [theme])
-
-  const toggle = () => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))
-
-  return [theme, toggle]
 }
 
 // Inner component that is safe to use varying hooks because it's keyed
@@ -155,6 +126,7 @@ function MicroAppContentRenderer({
 
                       <div className="flex items-center gap-1 min-w-[100px] justify-end px-4">
                         {layoutConfig?.topActions}
+                        <InboxBellButton />
                         <Button
                           variant="ghost"
                           size="icon"
@@ -192,22 +164,18 @@ function MicroAppContentRenderer({
   )
 }
 
-// ... (imports)
-
-// ... (interfaces)
-
-// ... (bottomUtilities definition)
-
-// ... (useThemeMode)
-
-// ... (MicroAppContentRenderer)
-
-function SettingsMenu({ 
-  onNavigate, 
-  onOpenServiceManagement 
-}: { 
+function SettingsMenu({
+  onNavigate,
+  onOpenServiceManagement,
+  onOpenAbout,
+  onSignOut,
+  aboutLabel,
+}: {
   onNavigate: (id: MicroAppId) => void
-  onOpenServiceManagement: () => void 
+  onOpenServiceManagement: () => void
+  onOpenAbout: () => void
+  onSignOut: () => void
+  aboutLabel: string
 }) {
   return (
     <DropdownMenu>
@@ -232,14 +200,19 @@ function SettingsMenu({
           <Bot className="mr-2 h-4 w-4" strokeWidth={1.5} />
           <span>模型服务</span>
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={onOpenServiceManagement} className="cursor-pointer text-violet-500 focus:text-violet-500">
+        <DropdownMenuItem onSelect={onOpenServiceManagement} className="cursor-pointer text-boundary focus:text-boundary">
           <Activity className="mr-2 h-4 w-4" strokeWidth={1.5} />
           <span>服务管理</span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => console.log('About clicked')} className="cursor-pointer">
+        <DropdownMenuItem onSelect={onOpenAbout} className="cursor-pointer">
           <Info className="mr-2 h-4 w-4" strokeWidth={1.5} />
-          <span>关于</span>
+          <span>{aboutLabel}</span>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={onSignOut} className="cursor-pointer text-destructive focus:text-destructive">
+          <LogOut className="mr-2 h-4 w-4" strokeWidth={1.5} />
+          <span>退出登录</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -249,29 +222,41 @@ function SettingsMenu({
 export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
   const navigate = useNavigate()
   const { session, sessionRequestInProgress } = useSession()
-  const inboxSummary = useInboxSummary()
   const [theme, toggleTheme] = useThemeMode()
   const [isServiceMgmtOpen, setIsServiceMgmtOpen] = useState(false)
+  const [isAboutOpen, setIsAboutOpen] = useState(false)
+  const appUpdate = useAppUpdateStatus()
   const isWorkspaceReady = session.info.isLoggedIn && !sessionRequestInProgress
 
   const primaryApps = useMemo(() => primaryNavIds.map((id) => microAppRegistry[id]), [])
   const secondaryApps = useMemo(() => secondaryNavIds.map((id) => microAppRegistry[id]), [])
-  const activeMicroApp = microAppRegistry[microAppId]
+  const aboutLabel = appUpdate.status.available ? '关于（有更新）' : '关于'
+
+  const handleSignOut = useCallback(() => {
+    requestSignOut()
+  }, [])
 
   const handleNavigate = (id: MicroAppId) => {
     navigate({ to: '/$microAppId', params: { microAppId: id } })
     onNavigate?.(id)
   }
 
-  const handleUtilityClick = (action: UtilityAction) => {
-    // This will now only handle 'import' if needed, 'settings' is handled by Popover
-    if (action === 'import') {
-      alert('Import hub coming soon')
-      return
-    }
-  }
-
   const sidebarWidth = linxLayout.sidebar.defaultWidth // This is the leftmost App Nav width
+
+  useEffect(() => {
+    const handleOpenServiceManagement = () => {
+      setIsServiceMgmtOpen(true)
+    }
+
+    window.addEventListener(OPEN_SERVICE_MANAGEMENT_EVENT, handleOpenServiceManagement)
+    return () => {
+      window.removeEventListener(OPEN_SERVICE_MANAGEMENT_EVENT, handleOpenServiceManagement)
+    }
+  }, [])
+
+  if (!isWorkspaceReady) {
+    return <div className="h-screen w-screen bg-background" />
+  }
 
   return (
     <div className="h-screen w-screen bg-background text-foreground overflow-hidden">
@@ -285,26 +270,29 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
           <div className="pt-[56px] flex flex-col items-center gap-3">
             <Popover>
               <PopoverTrigger asChild>
-                <Avatar className="w-9 h-9 !rounded-md shadow-sm cursor-pointer hover:ring-2 hover:ring-primary/20 transition-all">
-                  <AvatarFallback className="bg-primary text-primary-foreground text-lg font-bold !rounded-md">
-                    L
-                  </AvatarFallback>
-                </Avatar>
+                <button
+                  type="button"
+                  aria-label="个人资料"
+                  className="w-9 h-9 rounded-md shadow-sm cursor-pointer hover:ring-2 hover:ring-primary/20 transition-all overflow-hidden"
+                >
+                  <Avatar className="w-full h-full !rounded-md">
+                    <AvatarImage src={linxLogoUrl} alt="LinX" className="object-cover" />
+                    <AvatarFallback className="bg-primary text-primary-foreground text-lg font-bold !rounded-md">
+                      L
+                    </AvatarFallback>
+                  </Avatar>
+                </button>
               </PopoverTrigger>
               <PopoverContent side="right" align="start" sideOffset={12} className="p-0 border-none shadow-xl bg-card">
                 <SelfProfileCard />
               </PopoverContent>
             </Popover>
-            <ShellStatusBadge />
           </div>
           <nav className="flex-1 py-4 flex flex-col items-center gap-4">
             {primaryApps.map((app) => {
               const Icon = app.icon
               const isActive = app.id === microAppId
-              const hasPendingInboxItems = app.id === 'inbox' && inboxSummary.pending > 0
-              const navLabel = hasPendingInboxItems
-                ? `${app.label}，${inboxSummary.pending} 条待处理`
-                : app.label
+              const navLabel = app.label
               return (
                 <div key={app.id} className="relative">
                   <Button
@@ -326,16 +314,7 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
                       fill={isActive ? "currentColor" : "none"}
                       className="transition-all"
                     />
-                    {hasPendingInboxItems && <span className="sr-only">{navLabel}</span>}
                   </Button>
-                  {hasPendingInboxItems && (
-                    <span
-                      aria-hidden="true"
-                      className="absolute -right-1.5 -top-1.5 inline-flex min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold leading-4 text-white shadow-sm"
-                    >
-                      {inboxSummary.pending > 99 ? '99+' : inboxSummary.pending}
-                    </span>
-                  )}
                 </div>
               )
             })}
@@ -371,61 +350,47 @@ export function PrimaryLayout({ microAppId, onNavigate }: PrimaryLayoutProps) {
             {bottomUtilities.map((utility) => {
               if (utility.id === 'settings') {
                 return (
-                  <SettingsMenu 
-                    key={utility.id} 
-                    onNavigate={handleNavigate} 
+                  <SettingsMenu
+                    key={utility.id}
+                    onNavigate={handleNavigate}
                     onOpenServiceManagement={() => setIsServiceMgmtOpen(true)}
+                    onOpenAbout={() => setIsAboutOpen(true)}
+                    onSignOut={handleSignOut}
+                    aboutLabel={aboutLabel}
                   />
                 )
               }
-              const Icon = utility.icon
-              return (
-                <Button
-                  key={utility.id}
-                  variant="ghost"
-                  size="icon"
-                  className={cn(
-                    "w-9 h-9 rounded-md hover:bg-transparent",
-                    "text-muted-foreground hover:text-foreground"
-                  )}
-                  onClick={() => handleUtilityClick(utility.action)}
-                  aria-label={utility.label}
-                >
-                  <Icon 
-                    size={24} 
-                    strokeWidth={1.5}
-                  />
-                </Button>
-              )
+              return null
             })}
           </div>
         </aside>
 
         {/* Resizable MicroApp Content Area */}
         <div className="flex-1 min-w-0">
-          {isWorkspaceReady ? (
-            <MicroAppContentRenderer
-              key={microAppId}
-              microAppId={microAppId}
-              theme={theme}
-              onToggleTheme={toggleTheme}
-            />
-          ) : (
-            <LoginRequiredPane
-              title={sessionRequestInProgress ? '正在恢复登录状态' : `打开 ${activeMicroApp.label}`}
-              description={
-                sessionRequestInProgress
-                  ? '会话恢复完成后再加载 Pod 数据与工作区。'
-                  : '先完成 Solid Pod 登录，再加载聊天、联系人和文件等数据模块。'
-              }
-            />
-          )}
+          <MicroAppContentRenderer
+            key={microAppId}
+            microAppId={microAppId}
+            theme={theme}
+            onToggleTheme={toggleTheme}
+          />
         </div>
       </div>
 
       <ServiceManagementDialog 
         open={isServiceMgmtOpen} 
         onOpenChange={setIsServiceMgmtOpen} 
+      />
+      <AboutDialog
+        open={isAboutOpen}
+        onOpenChange={setIsAboutOpen}
+        status={appUpdate.status}
+        isChecking={appUpdate.isChecking}
+        onCheckUpdates={() => {
+          void appUpdate.refresh(true, 'manual')
+        }}
+        onOpenReleasePage={() => {
+          void appUpdate.openReleasePage()
+        }}
       />
     </div>
   )

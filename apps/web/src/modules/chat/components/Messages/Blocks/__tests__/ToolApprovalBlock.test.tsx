@@ -7,7 +7,7 @@
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ToolApprovalBlock } from '../ToolApprovalBlock'
-import { MessageBlockType, MessageBlockStatus } from '@linx/models'
+import { MessageBlockType, MessageBlockStatus } from '../../message-blocks'
 
 function createApprovalBlock(overrides = {}) {
   return {

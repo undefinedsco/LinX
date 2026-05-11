@@ -7,7 +7,7 @@
 import {
   getAIConfigDefaultBaseUrl,
   normalizeAIConfigProviderId,
-} from '@linx/models'
+} from '@undefineds.co/models'
 
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system'

@@ -65,7 +65,7 @@ Content cards vary based on contact type:
     *   **MCP / Tools**: List of enabled tools + [Configure] button.
 
 ## 3. Data Model Requirements
-*To be implemented in `packages/models` schema.*
+*To be implemented in `@undefineds.co/models` schema.*
 
 *   **Common Fields** (`contactTable`):
     *   `gender`: `male` | `female` | `bot` | `unknown`.

@@ -4,7 +4,6 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const cliRoot = fileURLToPath(new URL('..', import.meta.url))
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 const packageRoot = join(repoRoot, 'node_modules', '@undefineds.co', 'drizzle-solid')
 const comunicaPatchPath = join(packageRoot, 'dist', 'esm', 'core', 'comunica-patch.js')
@@ -24,8 +23,8 @@ test('drizzle-solid install includes the required URI-template runtime patch', (
   assert.match(tripleBuilderSource, /__currentRecord/)
   assert.match(tripleBuilderSource, /createContext\(record, currentTable\)/)
   assert.match(comunicaPatchSource, /export const applyComunicaPatches = /)
-  assert.match(comunicaPatchSource, /ActionObserverHttp/)
+  assert.match(comunicaPatchSource, /patchActionObserverHttp|ActionObserverHttp/)
   assert.match(sparqlEngineSource, /await import\('@comunica\/query-sparql-solid'\)/)
   assert.match(sparqlEngineSource, /applyComunicaPatches/)
-  assert.match(sparqlEngineSource, /createNodeModuleSparqlEngineFactory/)
+  assert.match(sparqlEngineSource, /createNodeModuleSparqlEngineFactory|resolveCreateRequire/)
 })

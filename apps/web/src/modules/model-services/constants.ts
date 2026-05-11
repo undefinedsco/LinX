@@ -1,8 +1,8 @@
 // Provider definitions for the model-services surface.
-// Shared provider metadata comes from @linx/models/discovery; this file only
+// Shared provider metadata comes from @undefineds.co/models/discovery; this file only
 // keeps web-specific presentation and docs links.
 import type React from 'react'
-import { getBuiltinProvider } from '@linx/models'
+import { getBuiltinProvider } from '@undefineds.co/models'
 import { Globe } from 'lucide-react'
 import OpenAIImage from '@/assets/images/providers/openai.png'
 import GoogleImage from '@/assets/images/providers/google.png'
@@ -45,6 +45,7 @@ interface ProviderUiExtras {
 }
 
 const MODEL_PROVIDER_ORDER = [
+  'undefineds',
   'openai',
   'anthropic',
   'google',
@@ -60,6 +61,13 @@ const MODEL_PROVIDER_ORDER = [
 ] as const
 
 const PROVIDER_UI_EXTRAS: Record<string, ProviderUiExtras> = {
+  undefineds: {
+    name: 'Undefineds Cloud',
+    description: 'LinX 官方云模型',
+    avatar: '/linx-logo.png',
+    homeUrl: 'https://undefineds.co',
+    defaultModels: ['undefineds/linx-lite', 'undefineds/linx'],
+  },
   openai: {
     name: 'OpenAI',
     description: 'GPT 系列',
@@ -152,7 +160,7 @@ const PROVIDER_UI_EXTRAS: Record<string, ProviderUiExtras> = {
     avatar: MistralImage,
     apiKeyUrl: 'https://console.mistral.ai/api-keys/',
     docsUrl: 'https://docs.mistral.ai',
-    modelsUrl: 'https://docs.mistral.ai/getting-started/models/models_overview',
+    modelsUrl: 'https://docs.mistral.ai/getting-started/models_overview',
     modelsApi: 'https://api.mistral.ai/v1/models',
     defaultApiKeyPlaceholder: 'sk-...',
     defaultModels: ['mistral-large-latest', 'mistral-small-latest', 'codestral-latest'],

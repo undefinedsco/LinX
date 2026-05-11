@@ -2,7 +2,10 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 
 const mockNavigate = vi.fn()
-const mockUseInboxSummary = vi.fn()
+const mockSessionState = vi.hoisted(() => ({
+  isLoggedIn: true,
+  sessionRequestInProgress: false,
+}))
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
@@ -12,15 +15,11 @@ vi.mock('@/providers/solid-session-provider', () => ({
   useSession: () => ({
     session: {
       info: {
-        isLoggedIn: false,
+        isLoggedIn: mockSessionState.isLoggedIn,
       },
     },
-    sessionRequestInProgress: false,
+    sessionRequestInProgress: mockSessionState.sessionRequestInProgress,
   }),
-}))
-
-vi.mock('@/modules/inbox/collections', () => ({
-  useInboxSummary: () => mockUseInboxSummary(),
 }))
 
 vi.mock('@/modules/profile/SelfProfileCard', () => ({
@@ -33,6 +32,10 @@ vi.mock('@/modules/settings/ServiceManagementDialog', () => ({
 
 vi.mock('@/components/ShellStatusBadge', () => ({
   ShellStatusBadge: () => <div>ShellStatusBadge</div>,
+}))
+
+vi.mock('@/modules/inbox/components/InboxBellButton', () => ({
+  InboxBellButton: () => <button aria-label="收件箱通知" type="button" />,
 }))
 
 import { PrimaryLayout } from './PrimaryLayout'
@@ -56,31 +59,45 @@ describe('PrimaryLayout', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    mockSessionState.isLoggedIn = true
+    mockSessionState.sessionRequestInProgress = false
   })
 
-  it('shows pending badge on inbox nav when approvals are waiting', () => {
-    mockUseInboxSummary.mockReturnValue({
-      total: 5,
-      pending: 3,
-      audit: 2,
-    })
+  it('shows only stable first-slice modules in primary navigation', () => {
+    render(<PrimaryLayout microAppId="chat" />)
+
+    expect(screen.getByLabelText('聊天')).toBeTruthy()
+    expect(screen.getByLabelText('联系人')).toBeTruthy()
+    expect(screen.getByLabelText('文件')).toBeTruthy()
+    expect(screen.getByLabelText('收藏')).toBeTruthy()
+  })
+
+  it('hides unfinished modules from the primary navigation', () => {
+    render(<PrimaryLayout microAppId="chat" />)
+
+    expect(screen.queryByLabelText('收件箱')).toBeNull()
+  })
+
+  it('does not expose the unfinished import utility', () => {
+    render(<PrimaryLayout microAppId="chat" />)
+
+    expect(screen.queryByLabelText('导入')).toBeNull()
+    expect(screen.getByLabelText('设置')).toBeTruthy()
+  })
+
+  it('exposes the self profile trigger as an accessible button', () => {
+    render(<PrimaryLayout microAppId="chat" />)
+
+    expect(screen.getByRole('button', { name: '个人资料' })).toBeTruthy()
+  })
+
+  it('hides the application shell after sign out', () => {
+    mockSessionState.isLoggedIn = false
 
     render(<PrimaryLayout microAppId="chat" />)
 
-    expect(screen.getByLabelText('收件箱，3 条待处理')).toBeTruthy()
-    expect(screen.getByText('3')).toBeTruthy()
-  })
-
-  it('keeps inbox nav label plain when there is no pending approval', () => {
-    mockUseInboxSummary.mockReturnValue({
-      total: 0,
-      pending: 0,
-      audit: 0,
-    })
-
-    render(<PrimaryLayout microAppId="chat" />)
-
-    expect(screen.getByLabelText('收件箱')).toBeTruthy()
-    expect(screen.queryByText('99+')).toBeNull()
+    expect(screen.queryByLabelText('聊天')).toBeNull()
+    expect(screen.queryByLabelText('个人资料')).toBeNull()
+    expect(screen.queryByText('打开 聊天')).toBeNull()
   })
 })

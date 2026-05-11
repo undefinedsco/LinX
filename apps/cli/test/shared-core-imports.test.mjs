@@ -7,10 +7,11 @@ import { fileURLToPath } from 'node:url'
 const cliRoot = fileURLToPath(new URL('..', import.meta.url))
 const aiCommandPath = join(cliRoot, 'dist', 'lib', 'ai-command.js')
 
-test('compiled ai command depends on @undefineds.co/models exports instead of repo-local source paths', () => {
+test('compiled ai command depends on shared packages instead of repo-local source paths', () => {
   const source = readFileSync(aiCommandPath, 'utf-8')
 
   assert.match(source, /from '@undefineds\.co\/models\/ai-config'/)
-  assert.match(source, /from '@undefineds\.co\/models\/namespaces'/)
+  assert.match(source, /from '@undefineds\.co\/models'/)
+  assert.match(source, /from '@linx\/client'/)
   assert.doesNotMatch(source, /packages\/models\/src/)
 })

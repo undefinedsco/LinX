@@ -1,6 +1,20 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
+import { readFileSync } from 'node:fs'
+
+const packageJson = JSON.parse(readFileSync(path.resolve(__dirname, './package.json'), 'utf8')) as {
+  version?: string
+}
+const appVersion = String(process.env.VITE_APP_VERSION ?? packageJson.version ?? '0.0.0').replace(/^v/i, '')
+const releaseRepo = String(process.env.VITE_RELEASE_REPO ?? 'undefinedsco/LinX')
+const assetBase = process.env.LINX_VITE_BASE ?? '/'
+const outputDir = process.env.LINX_VITE_OUT_DIR ?? 'dist'
+const repoRoot = path.resolve(__dirname, '../..')
+const inruptAuthnBrowser = path.resolve(
+  repoRoot,
+  'node_modules/@inrupt/solid-client-authn-browser/dist/index.mjs',
+)
 
 function getPackageName(id: string): string | null {
   const marker = '/node_modules/'
@@ -72,13 +86,32 @@ function resolveVendorChunk(id: string): string | undefined {
 }
 
 export default defineConfig({
+  base: assetBase,
   plugins: [react()],
+  optimizeDeps: {
+    exclude: [
+      '@linx/stores',
+      '@linx/stores/login',
+    ],
+  },
+  define: {
+    __LINX_APP_VERSION__: JSON.stringify(appVersion),
+    __LINX_RELEASE_REPO__: JSON.stringify(releaseRepo),
+  },
   resolve: {
+    // Keep workspace-linked packages under this app's node_modules tree so their
+    // peer dependencies resolve to the patched app-level installs.
+    preserveSymlinks: true,
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@linx/client': path.resolve(__dirname, '../../packages/client/src'),
+      '@linx/stores': path.resolve(__dirname, '../../packages/stores/src'),
+      '@inrupt/solid-client-authn-browser': inruptAuthnBrowser,
     },
+    extensions: ['.ts', '.tsx', '.mjs', '.js', '.mts', '.jsx', '.json'],
   },
   build: {
+    outDir: outputDir,
     chunkSizeWarningLimit: 2200,
     rollupOptions: {
       output: {

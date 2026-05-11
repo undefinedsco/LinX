@@ -10,8 +10,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
-
-import { DEFAULT_AGENT_PROVIDERS } from "@linx/models"
+import { CHAT_AGENT_PROVIDERS } from "@/lib/agent-providers"
 
 // Capability Types
 export type ModelCapability = 'vision' | 'function_calling' | 'web_search' | 'reasoning' | 'embedding' | 'rerank' | 'free'
@@ -33,8 +32,8 @@ interface ModelSelectorProps {
   className?: string
 }
 
-// Generate Chat Models from DEFAULT_AGENT_PROVIDERS
-const CHAT_MODELS: ModelOption[] = DEFAULT_AGENT_PROVIDERS.flatMap(provider => 
+// Generate Chat Models from configured providers
+const CHAT_MODELS: ModelOption[] = CHAT_AGENT_PROVIDERS.flatMap(provider =>
   provider.models.map(model => ({
     id: model.id,
     name: model.displayName,
@@ -158,7 +157,7 @@ export function ModelSelector({ value, onChange, type = 'chat', placeholder, cla
         </Button>
       </PopoverTrigger>
       
-      <PopoverContent className="w-[400px] p-0 overflow-hidden flex flex-col max-h-[500px]" align="start">
+      <PopoverContent className="flex max-h-[500px] min-h-0 w-[400px] flex-col overflow-hidden p-0" align="start">
         {/* Header: Search + Tags */}
         <div className="p-3 pb-2 border-b border-border/40 space-y-2 bg-background">
           <div className="relative">
@@ -191,8 +190,8 @@ export function ModelSelector({ value, onChange, type = 'chat', placeholder, cla
         </div>
 
         {/* List */}
-        <ScrollArea className="flex-1 max-h-[350px]">
-          <div className="p-2 space-y-3">
+        <ScrollArea type="always" className="min-h-0 flex-1 max-h-[350px]">
+          <div className="space-y-3 p-2 pr-3">
             {Object.keys(groups).length === 0 ? (
               <div className="py-12 text-center text-sm text-muted-foreground flex flex-col items-center gap-2">
                 <Box className="w-8 h-8 opacity-20" />

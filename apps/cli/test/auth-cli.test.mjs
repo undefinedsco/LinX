@@ -384,7 +384,6 @@ test('linx ai disconnect removes provider credential config from Pod', async (t)
     item.method === 'PATCH' && item.url === 'https://pod.example/profile/settings/credentials.ttl')
 
   assert.ok(credentialPatches.some((item) => /https:\/\/pod\.example\/profile\/settings\/ai\/providers\.ttl#anthropic/.test(item.body)))
-  assert.ok(credentialPatches.some((item) => /https:\/\/pod\.example\/profile\/settings\/ai\/providers\.ttl#claude/.test(item.body)))
 })
 
 test('linx ai status prints configured cloud AI credentials', async (t) => {

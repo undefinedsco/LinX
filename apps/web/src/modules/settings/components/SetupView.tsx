@@ -1,385 +1,451 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
-import type { SetupConfig, DeploymentMode, TunnelProvider, NetworkDetectionResult, NetworkAccessMode } from '../types'
+import { AlertCircle, CheckCircle2, Loader2, RefreshCcw, Server } from 'lucide-react'
+import type { SetupConfig, DeploymentMode, TunnelProvider, NetworkAccessMode } from '../types'
+
+const LOCAL_DOMAIN_HELP_PATH = '/docs/local-sp-domain-and-tunnel.md'
+
+type DomainSource = 'manual'
+
+type SetupConfigResponse = {
+  dataDir?: string
+  port?: number
+  autoStart?: boolean
+  deploymentMode?: DeploymentMode
+  domainSource?: DomainSource
+  publicDomain?: string
+  autoDetectPublicIp?: boolean
+  httpsCertPath?: string
+  tunnelProvider?: TunnelProvider | ''
+  hasTunnelToken?: boolean
+}
 
 interface SetupViewProps {
   onComplete?: (config: SetupConfig) => void
 }
 
+function normalizeDomain(value: string): string {
+  return value.trim().replace(/^https?:\/\//, '').replace(/\/+$/, '')
+}
+
+function ensureLocalDomainSource(): DomainSource {
+  return 'manual'
+}
+
+async function parseError(response: Response): Promise<string> {
+  const data = await response.json().catch(() => null)
+  if (typeof data?.error === 'string' && data.error.trim()) return data.error
+  return `HTTP ${response.status}`
+}
+
 export function SetupView({ onComplete }: SetupViewProps) {
-  const [deploymentMode, setDeploymentMode] = useState<DeploymentMode>('local')
+  const navigate = useNavigate()
+  const isServiceMode =
+    typeof window !== 'undefined' && !!(window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__
+
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
+
+  const [port, setPort] = useState(5737)
   const [dataDir, setDataDir] = useState('')
   const [autoStart, setAutoStart] = useState(true)
-
-  // Local mode
-  const [localSubdomain, setLocalSubdomain] = useState('')
-  const [deviceId, setDeviceId] = useState('')
-  const [domainLoading, setDomainLoading] = useState(true)
-
-  // Standalone mode
-  const [standaloneDomain, setStandaloneDomain] = useState('')
-  const [certPath, setCertPath] = useState('')
-
-  // Network
-  const [networkStatus, setNetworkStatus] = useState<NetworkDetectionResult | null>(null)
-  const [networkLoading, setNetworkLoading] = useState(true)
+  const [deploymentMode, setDeploymentMode] = useState<DeploymentMode>('local')
+  const [domainSource, setDomainSource] = useState<DomainSource>('manual')
+  const [publicDomain, setPublicDomain] = useState('')
+  const [autoDetectPublicIp, setAutoDetectPublicIp] = useState(true)
+  const [httpsCertPath, setHttpsCertPath] = useState('')
   const [tunnelProvider, setTunnelProvider] = useState<TunnelProvider | ''>('')
   const [tunnelToken, setTunnelToken] = useState('')
+  const [initialTunnelProvider, setInitialTunnelProvider] = useState<TunnelProvider | ''>('')
+  const [initialHasTunnelToken, setInitialHasTunnelToken] = useState(false)
+  const useTunnel = deploymentMode === 'local' && !!tunnelProvider
 
-  const [submitting, setSubmitting] = useState(false)
-
-  // Initialize: allocate domain and detect network
   useEffect(() => {
-    initLocalMode()
+    const nextSource = ensureLocalDomainSource()
+    if (nextSource !== domainSource) {
+      setDomainSource(nextSource)
+    }
+  }, [deploymentMode, domainSource, useTunnel])
+
+  const loadConfig = async () => {
+    setLoading(true)
+    setError(null)
+    setSuccess(null)
+
+    if (!isServiceMode) {
+      setLoading(false)
+      return
+    }
+
+    try {
+      const response = await fetch('/api/setup/config')
+      if (!response.ok) {
+        throw new Error(await parseError(response))
+      }
+
+      const config = (await response.json()) as SetupConfigResponse
+      setPort(config.port ?? 5737)
+      setDataDir(config.dataDir ?? '')
+      setAutoStart(config.autoStart ?? true)
+      setDeploymentMode(config.deploymentMode ?? 'local')
+      const nextAutoDetect = config.autoDetectPublicIp ?? true
+      setAutoDetectPublicIp(nextAutoDetect)
+      setDomainSource(ensureLocalDomainSource())
+      setPublicDomain(config.publicDomain ?? '')
+      setHttpsCertPath(config.httpsCertPath ?? '')
+      setTunnelProvider(config.tunnelProvider ?? '')
+      setInitialTunnelProvider(config.tunnelProvider ?? '')
+      setInitialHasTunnelToken(Boolean(config.hasTunnelToken))
+      setTunnelToken('')
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : '读取配置失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadConfig()
   }, [])
 
-  async function initLocalMode() {
-    // 1. Get default data dir and allocate domain
-    setDomainLoading(true)
-    try {
-      // Generate device ID and subdomain
-      const id = generateDeviceId()
-      setDeviceId(id)
-      setLocalSubdomain(id.substring(0, 8))
+  const effectivePublicDomain = useMemo(() => {
+    return normalizeDomain(publicDomain)
+  }, [publicDomain])
 
-      // Set default data dir based on platform
-      const defaultDir = getDefaultDataDir()
-      setDataDir(defaultDir)
-    } catch (err) {
-      console.error('Failed to allocate domain:', err)
-    } finally {
-      setDomainLoading(false)
+  const validate = (): string | null => {
+    if (!dataDir.trim()) return '请填写数据目录'
+
+    if (useTunnel && !normalizeDomain(publicDomain)) {
+      return '使用隧道时请填写公网域名或隧道域名'
     }
 
-    // 2. Detect network
-    setNetworkLoading(true)
-    try {
-      const result = await detectNetwork()
-      setNetworkStatus(result)
-    } catch (err) {
-      setNetworkStatus({ reachable: false, method: 'none' })
-    } finally {
-      setNetworkLoading(false)
-    }
-  }
-
-  function generateDeviceId(): string {
-    // Generate a device fingerprint from random bytes
-    const array = new Uint8Array(8)
-    crypto.getRandomValues(array)
-    return Array.from(array, b => b.toString(16).padStart(2, '0')).join('')
-  }
-
-  function getDefaultDataDir(): string {
-    // In browser, we can't detect platform easily
-    // This would be set by Electron in desktop mode
-    if (typeof window !== 'undefined' && (window as any).__LINX_SERVICE__) {
-      return '~/Library/Application Support/LinX/pod'
-    }
-    return '~/.linx/pod'
-  }
-
-  async function detectNetwork(): Promise<NetworkDetectionResult> {
-    try {
-      // Try to get public IP via external service
-      const response = await fetch('https://api.ipify.org?format=json', {
-        signal: AbortSignal.timeout(5000)
-      })
-      const data = await response.json()
-
-      if (data.ip) {
-        // Check if it's a private IP
-        const isPrivate = /^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)/.test(data.ip)
-        if (!isPrivate) {
-          return { reachable: true, method: 'public-ip', ip: data.ip }
-        }
+    if (useTunnel) {
+      const canReuseToken =
+        initialHasTunnelToken && initialTunnelProvider === tunnelProvider && !tunnelToken.trim()
+      if (!canReuseToken && !tunnelToken.trim()) {
+        return '请填写隧道 Token，或沿用已配置 Token'
       }
-    } catch (err) {
-      console.error('Network detection failed:', err)
     }
 
-    return { reachable: false, method: 'none' }
+    return null
   }
 
-  async function handleSubmit() {
-    // Determine network access mode
-    const accessMode: NetworkAccessMode = tunnelProvider ? 'tunnel' : 'auto'
+  const buildPayload = () => {
+    const normalizedPublicDomain = normalizeDomain(publicDomain)
+    const accessMode: NetworkAccessMode = useTunnel ? 'tunnel' : 'auto'
+    const effectiveTunnelToken =
+      useTunnel && tunnelProvider
+        ? (tunnelToken.trim() || undefined)
+        : undefined
 
-    // Validate
-    if (deploymentMode === 'local' && !networkStatus?.reachable && !tunnelProvider) {
-      alert('网络不可达，请配置隧道服务')
-      return
+    return {
+      dataDir: dataDir.trim(),
+      port,
+      autoStart,
+      deploymentMode,
+      domainSource: 'manual',
+      publicDomain: deploymentMode === 'local' && normalizeDomain(publicDomain)
+        ? normalizedPublicDomain || undefined
+        : undefined,
+      autoDetectPublicIp,
+      httpsCertPath: deploymentMode === 'standalone' ? (httpsCertPath.trim() || undefined) : undefined,
+      network: {
+        accessMode,
+        tunnelProvider: useTunnel ? tunnelProvider || undefined : undefined,
+        tunnelToken: effectiveTunnelToken,
+      },
+      local: {
+        nodeId: undefined,
+        deviceId: undefined,
+      },
+      standalone: {
+        customDomain: deploymentMode === 'standalone' ? normalizedPublicDomain || undefined : undefined,
+      },
     }
+  }
 
-    if (deploymentMode === 'standalone' && !standaloneDomain) {
-      alert('请输入域名')
-      return
-    }
-
-    setSubmitting(true)
-
-    const config: SetupConfig = {
+  const buildCompleteConfig = (): SetupConfig => {
+    const payload = buildPayload()
+    return {
       edition: 'local',
       deploymentMode,
       pod: {
-        port: 5737,
-        dataDir,
+        port,
+        dataDir: payload.dataDir,
       },
       local: {
-        deviceId,
-        subdomain: localSubdomain,
+        nodeId: payload.local.nodeId,
+        deviceId: payload.local.deviceId,
       },
       standalone: {
-        customDomain: standaloneDomain || undefined,
-        certPath: certPath || undefined,
+        customDomain: payload.standalone.customDomain,
+        certPath: payload.httpsCertPath,
       },
       network: {
-        accessMode,
-        tunnelProvider: tunnelProvider || undefined,
-        tunnelToken: tunnelToken || undefined,
+        accessMode: payload.network.accessMode,
+        tunnelProvider: payload.network.tunnelProvider,
+        tunnelToken: payload.network.tunnelToken,
       },
       autoStart,
     }
-
-    // Check if running in LinX Service mode
-    const isServiceMode = typeof window !== 'undefined' && (window as any).__LINX_SERVICE__
-
-    if (isServiceMode) {
-      // Call API to save setup config
-      try {
-        const response = await fetch('/api/setup', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            dataDir,
-            autoStart,
-            network: config.network,
-          }),
-        })
-
-        if (!response.ok) {
-          throw new Error('保存配置失败')
-        }
-
-        console.log('[Setup] Configuration saved successfully')
-      } catch (err) {
-        console.error('[Setup] Failed to save config:', err)
-        alert('保存配置失败: ' + (err instanceof Error ? err.message : '未知错误'))
-        setSubmitting(false)
-        return
-      }
-    } else {
-      // Output as JSON config (matches LinxConfig structure)
-      console.log('Setup config:', JSON.stringify(config, null, 2))
-    }
-
-    onComplete?.(config)
-    setSubmitting(false)
   }
 
-  const needsTunnel = deploymentMode === 'local' && !networkStatus?.reachable
+  const handleSave = async () => {
+    setError(null)
+    setSuccess(null)
+
+    const validationError = validate()
+    if (validationError) {
+      setError(validationError)
+      return
+    }
+
+    setSaving(true)
+
+    try {
+      const payload = buildPayload()
+      const response = await fetch('/api/setup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        throw new Error(await parseError(response))
+      }
+
+      onComplete?.(buildCompleteConfig())
+      setSuccess('配置已保存，服务正在继续启动。')
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : '保存配置失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!isServiceMode) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-6">
+        <Card className="w-full max-w-lg rounded-2xl border-border/50">
+          <CardHeader>
+            <CardTitle>该入口仅用于 LinX Service</CardTitle>
+            <CardDescription>当前壳不会消费 `/setup` 首次引导页。</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={() => navigate({ to: '/$microAppId', params: { microAppId: 'chat' } })}>
+              返回主界面
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-6">
-      <Card className="w-full max-w-lg bg-card border-border/50 shadow-lg shadow-black/5 rounded-2xl">
-        <CardHeader className="text-center pb-2">
-          <div className="w-16 h-16 bg-gradient-to-br from-violet-600 to-purple-500 rounded-2xl mx-auto mb-4 flex items-center justify-center">
-            <span className="text-2xl font-bold text-white">L</span>
+      <Card className="w-full max-w-xl rounded-2xl border-border/50 shadow-lg shadow-black/5">
+        <CardHeader className="space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
+              <Server className="h-5 w-5" />
+            </div>
+            <div>
+              <CardTitle>首次配置 LinX Service</CardTitle>
+              <CardDescription>这里只做真实配置保存；保存后 service 会继续启动 xpod 与 Web UI。</CardDescription>
+            </div>
           </div>
-          <CardTitle className="text-2xl">欢迎使用 LinX</CardTitle>
-          <CardDescription>配置你的本地 Pod 服务</CardDescription>
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="secondary">真实写入 `/api/setup`</Badge>
+            <Badge variant="outline">Local 不自动分配公网域名</Badge>
+            <Badge variant="outline">说明见 {LOCAL_DOMAIN_HELP_PATH}</Badge>
+          </div>
         </CardHeader>
 
-        <CardContent className="space-y-6">
-          {/* Data Directory */}
+        <CardContent className="space-y-5">
+          {loading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              正在读取当前配置...
+            </div>
+          ) : null}
+
+          {error ? (
+            <div className="flex items-start gap-2 rounded-xl border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{error}</span>
+            </div>
+          ) : null}
+
+          {success ? (
+            <div className="flex items-start gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-600 dark:text-emerald-400">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{success}</span>
+            </div>
+          ) : null}
+
           <div className="space-y-2">
-            <Label>数据目录</Label>
+            <Label>部署模式</Label>
+            <Tabs value={deploymentMode} onValueChange={(value) => setDeploymentMode(value as DeploymentMode)}>
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="local">local</TabsTrigger>
+                <TabsTrigger value="standalone">standalone</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="setup-data-dir">数据目录</Label>
             <Input
+              id="setup-data-dir"
               value={dataDir}
-              onChange={(e) => setDataDir(e.target.value)}
+              onChange={(event) => setDataDir(event.target.value)}
               placeholder="~/Library/Application Support/LinX/pod"
-              className="rounded-xl border-border/60 bg-muted/50 focus:bg-background focus:border-primary/50"
-            />
-            <p className="text-xs text-muted-foreground">Pod 数据将存储在此目录</p>
-          </div>
-
-          {/* Auto Start */}
-          <div className="flex items-center justify-between p-3 bg-muted/30 rounded-xl">
-            <Label htmlFor="autoStart" className="cursor-pointer">开机时自动启动</Label>
-            <Switch
-              id="autoStart"
-              checked={autoStart}
-              onCheckedChange={setAutoStart}
             />
           </div>
 
-          {/* Deployment Mode Tabs */}
-          <Tabs value={deploymentMode} onValueChange={(v: string) => setDeploymentMode(v as DeploymentMode)}>
-            <TabsList className="grid w-full grid-cols-2 bg-muted/50 rounded-xl">
-              <TabsTrigger value="local" className="rounded-lg data-[state=active]:bg-primary/20">
-                本地模式
-                <Badge variant="secondary" className="ml-2 bg-primary text-primary-foreground text-[10px] px-1.5">
-                  推荐
-                </Badge>
-              </TabsTrigger>
-              <TabsTrigger value="standalone" className="rounded-lg data-[state=active]:bg-primary/20">
-                独立模式
-              </TabsTrigger>
-            </TabsList>
+          <div className="flex items-center justify-between rounded-xl border border-border/50 px-3 py-3">
+            <div className="space-y-1">
+              <Label htmlFor="setup-auto-start">开机自动启动</Label>
+              <div className="text-xs text-muted-foreground">仅写入 service 配置，不在这里直接拉起守护进程。</div>
+            </div>
+            <Switch id="setup-auto-start" checked={autoStart} onCheckedChange={setAutoStart} />
+          </div>
 
-            {/* Local Mode */}
-            <TabsContent value="local" className="space-y-4 mt-4">
-              {/* Domain */}
+          {deploymentMode === 'local' ? (
+            <div className="space-y-3 rounded-xl border border-border/50 p-4">
               <div className="space-y-2">
-                <Label>域名</Label>
-                <Input
-                  value={domainLoading ? '分配中...' : `${localSubdomain}.undefineds.xyz`}
-                  disabled
-                  className="rounded-xl border-border/60 bg-muted/50"
-                />
-                <p className="text-xs text-muted-foreground">系统自动分配 DDNS</p>
-              </div>
-
-              {/* Network Status */}
-              <div className="space-y-2">
-                <Label>网络状态</Label>
-                <div className={`flex items-center gap-3 p-3 rounded-xl border ${
-                  networkLoading
-                    ? 'bg-muted/30 border-border/50'
-                    : networkStatus?.reachable
-                      ? 'bg-emerald-500/10 border-emerald-500/30'
-                      : 'bg-amber-500/10 border-amber-500/30'
-                }`}>
-                  {networkLoading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                      <span className="text-sm text-muted-foreground">检测中...</span>
-                    </>
-                  ) : networkStatus?.reachable ? (
-                    <>
-                      <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                      <span className="text-sm text-emerald-400">
-                        公网 IP: {networkStatus.ip}，无需配置隧道
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <AlertCircle className="w-4 h-4 text-amber-500" />
-                      <span className="text-sm text-amber-400">
-                        未检测到公网 IP，需要配置隧道
-                      </span>
-                    </>
-                  )}
+                <Label>公网入口</Label>
+                <div className="text-sm text-foreground">
+                  不填写时只在本机或局域网使用。需要 Cloud 登录访问本地 SP 时，填写你自己的公网域名或隧道域名。
                 </div>
+                <div className="text-xs text-muted-foreground">配置说明：{LOCAL_DOMAIN_HELP_PATH}</div>
               </div>
-
-              {/* Tunnel Service */}
               <div className="space-y-2">
-                <Label>
-                  隧道服务
-                  {needsTunnel && (
-                    <span className="text-amber-500 text-xs ml-2">(必填)</span>
-                  )}
-                </Label>
-                <div className="flex gap-3">
-                  <Select value={tunnelProvider} onValueChange={(v) => setTunnelProvider(v as TunnelProvider)}>
-                    <SelectTrigger className="w-36 rounded-xl border-border/60 bg-muted/50">
-                      <SelectValue placeholder="不使用" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="">不使用</SelectItem>
-                      <SelectItem value="cloudflare">Cloudflare</SelectItem>
-                      <SelectItem value="sakura">SakuraFRP</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Input
-                    value={tunnelToken}
-                    onChange={(e) => setTunnelToken(e.target.value)}
-                    placeholder="Token"
-                    disabled={!tunnelProvider}
-                    className="flex-1 rounded-xl border-border/60 bg-muted/50"
-                  />
-                </div>
-                <p className="text-xs text-muted-foreground">如果网络不可达，需要配置隧道</p>
-              </div>
-            </TabsContent>
-
-            {/* Standalone Mode */}
-            <TabsContent value="standalone" className="space-y-4 mt-4">
-              {/* Domain */}
-              <div className="space-y-2">
-                <Label>域名</Label>
+                <Label htmlFor="setup-public-domain">公网域名{useTunnel ? '（隧道）' : '（可选）'}</Label>
                 <Input
-                  value={standaloneDomain}
-                  onChange={(e) => setStandaloneDomain(e.target.value)}
+                  id="setup-public-domain"
+                  value={publicDomain}
+                  onChange={(event) => setPublicDomain(event.target.value)}
                   placeholder="pod.example.com"
-                  className="rounded-xl border-border/60 bg-muted/50 focus:bg-background focus:border-primary/50"
                 />
-                <p className="text-xs text-muted-foreground">你的自定义域名</p>
               </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Label htmlFor="setup-public-domain">公网域名（可选）</Label>
+              <Input
+                id="setup-public-domain"
+                value={publicDomain}
+                onChange={(event) => setPublicDomain(event.target.value)}
+                placeholder="pod.example.com"
+              />
+              <div className="text-xs text-muted-foreground">留空时只在本机或局域网使用；需要公网访问时再填你自己的域名。</div>
+            </div>
+          )}
 
-              {/* Tunnel Service */}
+          {deploymentMode === 'standalone' ? (
+            <div className="space-y-2">
+              <Label htmlFor="setup-https-cert-path">HTTPS 证书路径（可选）</Label>
+              <Input
+                id="setup-https-cert-path"
+                value={httpsCertPath}
+                onChange={(event) => setHttpsCertPath(event.target.value)}
+                placeholder="/path/to/fullchain.pem"
+              />
+            </div>
+          ) : null}
+
+          {deploymentMode === 'local' ? (
+          <div className="space-y-3 rounded-xl border border-border/50 p-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <Label htmlFor="setup-auto-detect-public-ip">自动检测公网 IP</Label>
+                <div className="text-xs text-muted-foreground">只用于提示网络条件；没有公网 IP 时仍可先本机/局域网使用。</div>
+              </div>
+              <Switch
+                id="setup-auto-detect-public-ip"
+                checked={autoDetectPublicIp}
+                onCheckedChange={setAutoDetectPublicIp}
+              />
+            </div>
+
+            <div className="space-y-3">
               <div className="space-y-2">
-                <Label>隧道服务 (可选)</Label>
-                <div className="flex gap-3">
-                  <Select value={tunnelProvider} onValueChange={(v) => setTunnelProvider(v as TunnelProvider)}>
-                    <SelectTrigger className="w-36 rounded-xl border-border/60 bg-muted/50">
-                      <SelectValue placeholder="不使用" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="">不使用</SelectItem>
-                      <SelectItem value="cloudflare">Cloudflare</SelectItem>
-                      <SelectItem value="sakura">SakuraFRP</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Input
-                    value={tunnelToken}
-                    onChange={(e) => setTunnelToken(e.target.value)}
-                    placeholder="Token"
-                    disabled={!tunnelProvider}
-                    className="flex-1 rounded-xl border-border/60 bg-muted/50"
-                  />
+                <Label>隧道供应商（可选）</Label>
+                <Select
+                  value={tunnelProvider || 'none'}
+                  onValueChange={(value) =>
+                    setTunnelProvider(value === 'none' ? '' : (value as TunnelProvider))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">不使用隧道</SelectItem>
+                    <SelectItem value="cloudflare">cloudflare</SelectItem>
+                    <SelectItem value="sakura">sakura frp</SelectItem>
+                  </SelectContent>
+                </Select>
+                <div className="text-xs text-muted-foreground">
+                  不配置隧道时，Local 仍会启动并保证本机/局域网可用；之后可再补公网入口。
                 </div>
-                <p className="text-xs text-muted-foreground">如果没有公网 IP，可使用隧道服务</p>
               </div>
 
-              {/* Certificate Path */}
-              <div className="space-y-2">
-                <Label>证书路径 (可选)</Label>
-                <Input
-                  value={certPath}
-                  onChange={(e) => setCertPath(e.target.value)}
-                  placeholder="/path/to/cert.pem"
-                  className="rounded-xl border-border/60 bg-muted/50 focus:bg-background focus:border-primary/50"
-                />
-                <p className="text-xs text-muted-foreground">不填则自动申请 Let's Encrypt</p>
+              {tunnelProvider ? (
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <Label htmlFor="setup-tunnel-token">隧道 Token</Label>
+                  <Input
+                    id="setup-tunnel-token"
+                    type="password"
+                    value={tunnelToken}
+                    onChange={(event) => setTunnelToken(event.target.value)}
+                    placeholder={
+                      initialHasTunnelToken && initialTunnelProvider === tunnelProvider
+                        ? '留空则沿用已配置 Token'
+                        : '请输入 Token'
+                    }
+                  />
+                  {initialHasTunnelToken && initialTunnelProvider === tunnelProvider ? (
+                    <div className="text-xs text-muted-foreground">已检测到当前供应商的既有 Token。</div>
+                  ) : null}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  隧道启用后会使用上方公网域名作为 Cloud 可访问的 Local SP 地址。
+                </div>
               </div>
-            </TabsContent>
-          </Tabs>
+                ) : null}
+            </div>
+          </div>
+          ) : null}
 
-          {/* Submit Button */}
-          <Button
-            onClick={handleSubmit}
-            disabled={submitting}
-            className="w-full rounded-2xl h-12 bg-primary text-primary-foreground shadow-md shadow-primary/20 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200"
-          >
-            {submitting ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                设置中...
-              </>
-            ) : (
-              '开始使用 LinX'
-            )}
-          </Button>
+          <div className="rounded-xl border border-border/50 bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
+            生效地址：{deploymentMode === 'local'
+              ? (effectivePublicDomain ? `https://${effectivePublicDomain}` : `http://localhost:${port}`)
+              : (effectivePublicDomain ? `https://${effectivePublicDomain}` : `http://localhost:${port}`)}
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            <Button onClick={() => void loadConfig()} variant="outline" disabled={loading || saving}>
+              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCcw className="mr-2 h-4 w-4" />}
+              重新读取
+            </Button>
+            <Button onClick={handleSave} disabled={loading || saving}>
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              保存配置
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>

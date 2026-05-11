@@ -1,8 +1,10 @@
+import { toStringArray } from '@/lib/utils'
+
 export function getPrimaryParticipantUri(
-  chat: { participants?: string[] | null } | null | undefined,
+  chat: { participants?: unknown } | null | undefined,
   currentWebId?: string | null,
 ): string | null {
-  const participants = Array.isArray(chat?.participants) ? chat.participants : []
+  const participants = toStringArray(chat?.participants)
   const normalizedCurrentWebId = currentWebId ?? null
 
   const counterparts = participants.filter((participant) => participant && participant !== normalizedCurrentWebId)

@@ -1,8 +1,9 @@
 import { createCollection } from '@tanstack/react-db'
 import { queryCollectionOptions } from '@tanstack/query-db-collection'
 import { QueryClient } from '@tanstack/react-query'
-import { deleteExactRecord, updateExactRecord, type SolidDatabase } from '@linx/models'
+import type { SolidDatabase } from '@undefineds.co/models'
 import type { PodTable } from '@undefineds.co/drizzle-solid'
+import { deleteExactRecord, updateExactRecord } from './exact-records'
 
 interface PodCollectionOptions<TTable, TData> {
   table: TTable
@@ -59,25 +60,32 @@ export function createPodCollection<
   const fetchRows = async () => {
     const db = getDb()
     if (!db) return []
-    
-    // Build select with specific columns if provided
-    let query
-    if (columns && columns.length > 0) {
-      const selectObj: Record<string, any> = {}
-      for (const col of columns) {
-        selectObj[col as string] = (table as any)[col]
+
+    const buildQuery = () => {
+      let query
+      if (columns && columns.length > 0) {
+        const selectObj: Record<string, any> = {}
+        for (const col of columns) {
+          selectObj[col as string] = (table as any)[col]
+        }
+        query = db.select(selectObj).from(table)
+      } else {
+        query = db.select().from(table)
       }
-      query = db.select(selectObj).from(table)
-    } else {
-      query = db.select().from(table)
+      if (orderBy?.column) {
+        query = query.orderBy(orderBy.column, orderBy.direction ?? 'asc')
+      }
+      return query
     }
-    
-    if (orderBy?.column) {
-      query = query.orderBy(orderBy.column, orderBy.direction ?? 'asc')
+
+    let rows: TData[]
+    try {
+      rows = (await buildQuery().execute()) as TData[]
+    } catch (error) {
+      console.warn(`[PodCollection] ${queryKey.join('/')} fetch failed, returning empty:`, error)
+      return []
     }
-    
-    let rows = (await query.execute()) as TData[]
-    
+
     // Filter out rows with relative IRI-like ids (dirty data), but keep normal bare ids.
     rows = rows.filter(row => {
       const id = (row as any).id
@@ -98,7 +106,7 @@ export function createPodCollection<
         const ensured = seedRows.map((row) => ensureId(row))
         await db.insert(table).values(ensured as any).execute()
         didSeed = true
-        rows = (await query.execute()) as TData[]
+        rows = (await buildQuery().execute()) as TData[]
       } else {
         didSeed = true
       }

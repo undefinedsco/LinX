@@ -7,7 +7,7 @@
 import { render, screen } from '@testing-library/react'
 import { describe, it, expect } from 'vitest'
 import { ToolBlock } from '../ToolBlock'
-import { MessageBlockType, MessageBlockStatus } from '@linx/models'
+import { MessageBlockType, MessageBlockStatus } from '../../message-blocks'
 
 function createToolBlock(overrides = {}) {
   return {

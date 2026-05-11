@@ -25,8 +25,8 @@ import {
   ContactType,
   isGroupContact,
   resolveRowId,
-} from '@linx/models'
-import type { SolidDatabase } from '@linx/models'
+} from '@undefineds.co/models'
+import type { SolidDatabase } from '@undefineds.co/models'
 import { queryClient } from '@/providers/query-provider'
 import type { GroupContactInfo } from './types'
 import {
@@ -35,6 +35,7 @@ import {
   createSolidContactRecord,
   writeCollectionRow,
 } from '@/lib/data/direct-chat-records'
+import { toStringArray } from '@/lib/utils'
 // Import chat collection singleton from chat module
 import { chatCollection } from '@/modules/chat/collections'
 import { favoriteHooks } from '@/modules/favorites/collections'
@@ -141,7 +142,7 @@ export const agentCollection = createPodCollection<typeof agentTable, AgentRow, 
 // to avoid creating duplicate instances
 
 function hasParticipant(chat: Pick<ChatRow, 'participants'> | null | undefined, participantRefs: string[]): boolean {
-  const participants = Array.isArray(chat?.participants) ? chat.participants : []
+  const participants = toStringArray(chat?.participants)
   return participants.some((participant) => participantRefs.includes(participant))
 }
 
@@ -182,8 +183,7 @@ function buildGroupChatParticipants(participants: string[], ownerRef?: string): 
 }
 
 function getMemberParticipants(chat: Pick<ChatRow, 'participants'> | null | undefined): string[] {
-  const participants = Array.isArray(chat?.participants) ? chat.participants : []
-  return participants
+  return toStringArray(chat?.participants)
 }
 
 function getFallbackMemberLabel(memberRef: string): string {
@@ -381,8 +381,11 @@ export const contactOps = {
   /**
    * Update an agent
    */
-  async updateAgent(id: string, data: Partial<AgentRow>): Promise<void> {
-    const tx = agentCollection.update(id, (draft: any) => {
+  async updateAgent(idOrRef: string, data: Partial<AgentRow>): Promise<void> {
+    const targetAgent = this.getAgentById(idOrRef)
+    const targetId = targetAgent?.id ?? idOrRef
+
+    const tx = agentCollection.update(targetId, (draft: any) => {
       Object.assign(draft, data)
     })
     await tx.isPersisted.promise
@@ -419,7 +422,7 @@ export const contactOps = {
           return getChatRefs(chat).includes(groupChatRef)
         }
 
-        const participants = Array.isArray(chat.participants) ? chat.participants : []
+        const participants = toStringArray(chat.participants)
         return participants.length <= 1 && hasParticipant(chat, participantRefs)
       })
 
@@ -654,7 +657,7 @@ export const contactOps = {
         model: record.model || undefined,
         provider: record.provider || undefined,
         temperature: record.temperature || undefined,
-        tools: record.tools || undefined,
+        tools: toStringArray(record.tools),
       }
     } catch (error) {
       console.error('[contactOps] Error fetching remote agent:', error)
@@ -880,7 +883,7 @@ export const contactOps = {
     const chat = this.getGroupChat(groupContactId)
     if (!chat) throw new Error(`No chat found for group contact: ${groupContactId}`)
 
-    const current = chat.participants ?? []
+    const current = toStringArray(chat.participants)
     if (current.includes(memberId)) return // already a member
 
     const tx = chatCollection.update(chat.id, (draft: any) => {
@@ -898,11 +901,11 @@ export const contactOps = {
     const chat = this.getGroupChat(groupContactId)
     if (!chat) throw new Error(`No chat found for group contact: ${groupContactId}`)
 
-    const current = chat.participants ?? []
+    const current = toStringArray(chat.participants)
     if (!current.includes(memberId)) return // not a member
 
     const tx = chatCollection.update(chat.id, (draft: any) => {
-      draft.participants = current.filter((id: string) => id !== memberId)
+      draft.participants = current.filter((id) => id !== memberId)
       draft.updatedAt = new Date()
     })
     await tx.isPersisted.promise
@@ -964,7 +967,7 @@ export const contactOps = {
     const chat = this.getGroupChat(groupContactId)
     if (!chat) throw new Error(`No chat found for group contact: ${groupContactId}`)
 
-    const members = chat.participants ?? []
+    const members = toStringArray(chat.participants)
     if (!members.includes(memberId)) {
       throw new Error(`Contact ${memberId} is not a member of this group`)
     }

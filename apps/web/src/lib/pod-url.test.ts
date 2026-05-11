@@ -7,7 +7,7 @@ afterEach(() => {
 })
 
 describe('pod-url shared alignment', () => {
-  it('derives pod url from webId via shared @linx/models client helper', () => {
+  it('derives pod url from webId via shared @undefineds.co/models client helper', () => {
     expect(extractPodUrlFromWebId('https://pod.example/profile/card#me')).toBe('https://pod.example/profile')
     expect(extractPodUrlFromWebId('not-a-url')).toBe('')
   })

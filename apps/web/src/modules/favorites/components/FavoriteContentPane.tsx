@@ -8,7 +8,10 @@ import { useNavigate } from '@tanstack/react-router'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { useFavoriteStore } from '../store'
 import { useFavoriteList, useFavoriteMutations } from '../collections'
-import type { FavoriteRow } from '@linx/models'
+import type { FavoriteRow } from '@undefineds.co/models'
+import { useChatStore } from '@/modules/chat/store'
+import { useContactStore } from '@/modules/contacts/store'
+import { useFilesStore } from '@/modules/files/store'
 import {
   Star,
   ExternalLink,
@@ -24,6 +27,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { resolveFavoriteScene } from '../scene-restore'
 
 // ============================================================================
 // Helpers
@@ -181,6 +185,12 @@ function FavoriteDetail({
 function FavoriteContentEnabled() {
   const selectedFavoriteId = useFavoriteStore((s) => s.selectedFavoriteId)
   const select = useFavoriteStore((s) => s.select)
+  const selectChat = useChatStore((s) => s.selectChat)
+  const selectThread = useChatStore((s) => s.selectThread)
+  const setMessageAnchor = useChatStore((s) => s.setMessageAnchor)
+  const selectContact = useContactStore((s) => s.select)
+  const selectFile = useFilesStore((s) => s.selectFile)
+  const selectTreeNode = useFilesStore((s) => s.selectTreeNode)
   const { data: favorites } = useFavoriteList()
   const { removeFavorite } = useFavoriteMutations()
   const navigate = useNavigate()
@@ -198,11 +208,39 @@ function FavoriteContentEnabled() {
 
   const handleOpenSource = useCallback(() => {
     if (!favorite) return
-    const mod = favorite.sourceModule
-    if (mod && mod !== 'files') {
-      navigate({ to: '/', search: { app: mod } as any })
+    const scene = resolveFavoriteScene(favorite)
+    if (!scene) return
+
+    if (scene.microAppId === 'chat') {
+      if (scene.chatId) {
+        selectChat(scene.chatId)
+      }
+      if (scene.threadId) {
+        selectThread(scene.threadId)
+      }
+      setMessageAnchor(scene.messageId ?? null)
+    } else {
+      setMessageAnchor(null)
     }
-  }, [favorite, navigate])
+
+    if (scene.microAppId === 'contacts' && scene.contactId) {
+      selectContact(scene.contactId)
+    }
+
+    if (scene.microAppId === 'files') {
+      if (scene.treeNodeId) {
+        selectTreeNode(scene.treeNodeId)
+      }
+      if (scene.fileId) {
+        selectFile(scene.fileId)
+      }
+    }
+
+    navigate({
+      to: '/$microAppId',
+      params: { microAppId: scene.microAppId },
+    })
+  }, [favorite, navigate, selectChat, selectContact, selectFile, selectThread, selectTreeNode, setMessageAnchor])
 
   if (!favorite) return <EmptyState />
 

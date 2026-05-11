@@ -2,9 +2,9 @@
 
 This document illustrates how a micro app implements the data-layer interface described in `design-data-pipeline`.
 
-## 1. Model & Repository (packages/models)
+## 1. Model & Repository (`@undefineds.co/models`)
 ```ts
-// packages/models/src/contact/contact.schema.ts
+// @undefineds.co/models contact schema
 export const contactTable = podTable('contact', {
   id: uri('id').primary().notNull(),
   name: string('name').predicate(VCARD.fn).notNull(),
@@ -19,7 +19,7 @@ export type ContactInsert = InferModel<typeof contactTable, 'insert'>
 ```
 
 ```ts
-// packages/models/src/contact/contact.repository.ts
+// local repository adapter or collection layer
 import { contactTable, type ContactRow, type ContactInsert } from './contact.schema'
 
 export const contactRepository = createRepository({
@@ -40,7 +40,7 @@ export const contactRepository = createRepository({
 ```ts
 // apps/web/src/modules/contact/data-layer.ts
 import { registerMicroAppDataLayer } from '@/lib/micro-apps/registry'
-import { contactRepository } from '@linx/models/contact'
+import { contactRepository } from '@/modules/contact/repository'
 
 const contactListConfig: ListConfig<ContactFilters> = {
   searchable: true,

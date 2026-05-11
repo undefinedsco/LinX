@@ -1,16 +1,16 @@
 // @vitest-environment node
 import { afterAll, describe, expect, it } from 'vitest'
 import type { SolidDatabase } from '@undefineds.co/drizzle-solid'
-import { ContactClass, contactTable, linxSchema } from '@linx/models'
+import { ContactClass, contactTable, solidSchema } from '@undefineds.co/models'
 import { createXpodIntegrationContext, type XpodIntegrationContext } from '@/test/xpod-integration'
 
-let context: XpodIntegrationContext<typeof linxSchema> | null = null
+let context: XpodIntegrationContext<typeof solidSchema> | null = null
 const createdSubjects: string[] = []
 
-async function getContext(): Promise<XpodIntegrationContext<typeof linxSchema>> {
+async function getContext(): Promise<XpodIntegrationContext<typeof solidSchema>> {
   if (context) return context
   context = await createXpodIntegrationContext({
-    schema: linxSchema,
+    schema: solidSchema,
     tables: [contactTable],
   })
   return context

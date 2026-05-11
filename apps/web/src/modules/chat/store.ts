@@ -13,6 +13,7 @@ interface ChatStore {
   // Selection state
   selectedChatId: string | null
   selectedThreadId: string | null
+  messageAnchorId: string | null
   search: string
 
   // List view mode (WeChat-style navigation)
@@ -27,6 +28,8 @@ interface ChatStore {
   setSearch: (val: string) => void
   selectChat: (id: string | null) => void
   selectThread: (id: string | null) => void
+  setMessageAnchor: (id: string | null) => void
+  clearMessageAnchor: () => void
   openAddDialog: (mode?: AddDialogMode) => void
   closeAddDialog: () => void
   toggleRightSidebar: () => void
@@ -40,6 +43,7 @@ interface ChatStore {
 export const useChatStore = create<ChatStore>((set) => ({
   selectedChatId: null,
   selectedThreadId: null,
+  messageAnchorId: null,
   search: '',
   listViewMode: 'chats',
   isAddDialogOpen: false,
@@ -47,8 +51,10 @@ export const useChatStore = create<ChatStore>((set) => ({
   showRightSidebar: false,
 
   setSearch: (search) => set({ search }),
-  selectChat: (id) => set({ selectedChatId: id, selectedThreadId: null }),
-  selectThread: (id) => set({ selectedThreadId: id }),
+  selectChat: (id) => set({ selectedChatId: id, selectedThreadId: null, messageAnchorId: null }),
+  selectThread: (id) => set({ selectedThreadId: id, messageAnchorId: null }),
+  setMessageAnchor: (messageAnchorId) => set({ messageAnchorId }),
+  clearMessageAnchor: () => set({ messageAnchorId: null }),
   openAddDialog: (mode = 'ai') => set({ isAddDialogOpen: true, addDialogMode: mode }),
   closeAddDialog: () => set({ isAddDialogOpen: false }),
   toggleRightSidebar: () => set((state) => ({ showRightSidebar: !state.showRightSidebar })),
@@ -57,6 +63,7 @@ export const useChatStore = create<ChatStore>((set) => ({
   enterChat: (chatId) => set({ 
     selectedChatId: chatId, 
     selectedThreadId: null,
+    messageAnchorId: null,
     listViewMode: 'topics',
     search: '' // 清空搜索
   }),
@@ -65,11 +72,11 @@ export const useChatStore = create<ChatStore>((set) => ({
   goBackToChats: () => set({ 
     listViewMode: 'chats',
     selectedThreadId: null,
+    messageAnchorId: null,
     search: '' // 清空搜索
   }),
 
   setListViewMode: (mode) => set({ listViewMode: mode }),
 }))
-
 
 

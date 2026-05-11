@@ -8,7 +8,7 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactNode } from 'react'
-import { ContactClass } from '@linx/models'
+import { ContactClass } from '@undefineds.co/models'
 
 // Mock contacts data with mixed types
 const mockContacts = [
@@ -54,8 +54,6 @@ let mockStoreState = {
   viewMode: 'view',
   select: vi.fn(),
   openCreateDialog: vi.fn(),
-  showNewFriends: vi.fn(),
-  newFriendsCount: 0,
   listFilter: 'all' as string,
   setListFilter: vi.fn(),
 }
@@ -83,8 +81,6 @@ describe('ContactListPane CP1 Filtering', () => {
       viewMode: 'view',
       select: vi.fn(),
       openCreateDialog: vi.fn(),
-      showNewFriends: vi.fn(),
-      newFriendsCount: 0,
       listFilter: 'all',
       setListFilter: vi.fn(),
     }

@@ -1,5 +1,5 @@
 import { eq } from '@undefineds.co/drizzle-solid'
-import { resolveLinxPodBaseUrl } from '@linx/models/client'
+import { resolveLinxPodBaseUrl } from '@linx/client'
 import {
   ODRL,
   approvalTable,
@@ -7,7 +7,7 @@ import {
   inboxNotificationTable,
   type ApprovalRow,
   type SolidDatabase,
-} from '@linx/models'
+} from '@undefineds.co/models'
 import { queryClient } from '@/providers/query-provider'
 
 const POLICY_VERSION = 'phase4-inbox-v1'

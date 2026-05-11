@@ -1,14 +1,14 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { app } from 'electron';
+import { ensureLinxLocalHome } from './local-home';
 
 export interface ManagedPodConfig {
   status: 'stopped' | 'starting' | 'running' | 'error';
   dataDir: string;
   port: number;
   domain: {
-    type: 'none' | 'undefineds' | 'custom';
-    value?: string; // alice.pods.undefineds.co 或 pod.example.com
+    type: 'none' | 'custom';
+    value?: string; // 用户自备域名，例如 pod.example.com
   };
   tunnelToken?: string;
 }
@@ -45,8 +45,7 @@ export class ProviderManager {
   private data: ProvidersData;
 
   constructor(configDir?: string) {
-    const baseDir = configDir || app.getPath('userData');
-    this.dataPath = path.join(baseDir, 'providers.json');
+    this.dataPath = ensureLinxLocalHome(configDir).providersFile;
     this.data = this.load();
   }
 

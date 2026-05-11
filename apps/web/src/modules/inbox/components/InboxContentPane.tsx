@@ -5,10 +5,14 @@ import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Textarea } from '@/components/ui/textarea'
+import { useThreadIndex } from '@/modules/chat/collections'
 import { useChatStore } from '@/modules/chat/store'
+import { useFilesStore } from '@/modules/files/store'
 import { buildAuditPresentation, createResolvedAuthTimestampsIndex, formatAuditActorRole, formatInboxStatusLabel } from '../presentation'
+import { resolveInboxObjectTarget, resolveInboxScene, resolveInboxWorkspaceTarget, type InboxFilesTarget } from '../scene-restore'
 import { isActionableInboxItem } from '../utils'
 import { useInboxItems, useResolveInboxApproval } from '../collections'
 import { useInboxStore } from '../store'
@@ -31,16 +35,34 @@ function prettyContext(value: string | null | undefined) {
 
 export function InboxContentPane(_props: MicroAppPaneProps) {
   const [reason, setReason] = useState('')
+  const [grantPattern, setGrantPattern] = useState('')
   const navigate = useNavigate()
   const selectChat = useChatStore((state) => state.selectChat)
   const selectThread = useChatStore((state) => state.selectThread)
+  const selectTreeNode = useFilesStore((state) => state.selectTreeNode)
+  const selectFile = useFilesStore((state) => state.selectFile)
   const selectedItemId = useInboxStore((state) => state.selectedItemId)
+  const setFilter = useInboxStore((state) => state.setFilter)
+  const selectInboxItem = useInboxStore((state) => state.selectItem)
   const { data: items = [], isLoading } = useInboxItems()
+  const { data: threads = [] } = useThreadIndex({ enabled: !!selectedItemId })
   const resolveApproval = useResolveInboxApproval()
   const selectedItem = items.find((item) => item.id === selectedItemId) ?? null
   const resolvedAuthIndex = useMemo(
     () => createResolvedAuthTimestampsIndex(items.flatMap((item) => (item.audit ? [item.audit] : []))),
     [items],
+  )
+  const scene = useMemo(
+    () => (selectedItem ? resolveInboxScene(selectedItem, threads) : null),
+    [selectedItem, threads],
+  )
+  const workspaceTarget = useMemo(
+    () => (scene ? resolveInboxWorkspaceTarget(scene) : null),
+    [scene],
+  )
+  const objectTarget = useMemo(
+    () => (scene ? resolveInboxObjectTarget(scene) : null),
+    [scene],
   )
 
   const isPendingApproval = selectedItem?.kind === 'approval' && selectedItem.status === 'pending' && !!selectedItem.approval
@@ -60,6 +82,30 @@ export function InboxContentPane(_props: MicroAppPaneProps) {
     [resolvedAuthIndex, selectedItem],
   )
   const statusLabel = formatInboxStatusLabel(selectedItem?.status)
+  const canOpenConversation = !!scene?.chatId
+  const canOpenWorkspace = !!workspaceTarget
+  const canOpenRelatedApproval = objectTarget?.kind === 'approval' && objectTarget.approvalItemId !== selectedItem?.id
+  const canOpenObject = objectTarget?.kind === 'files'
+    && (
+      !workspaceTarget
+      || objectTarget.treeNodeId !== workspaceTarget.treeNodeId
+      || objectTarget.fileId !== workspaceTarget.fileId
+    )
+
+  const openFilesTarget = (target: InboxFilesTarget | null) => {
+    if (!scene || !target) return
+    if (scene.chatId) {
+      selectChat(scene.chatId)
+    }
+    if (scene.threadId) {
+      selectThread(scene.threadId)
+    }
+    selectTreeNode(target.treeNodeId)
+    if (target.fileId) {
+      selectFile(target.fileId)
+    }
+    navigate({ to: '/$microAppId', params: { microAppId: 'files' } })
+  }
 
   const handleResolve = async (decision: 'approved' | 'rejected') => {
     if (!selectedItem?.approval) return
@@ -67,17 +113,41 @@ export function InboxContentPane(_props: MicroAppPaneProps) {
       approval: selectedItem.approval,
       decision,
       reason,
+      grantPattern: decision === 'approved' ? grantPattern : undefined,
     })
     setReason('')
+    setGrantPattern('')
   }
 
   const handleOpenConversation = () => {
-    if (!selectedItem?.chatId) return
-    selectChat(selectedItem.chatId)
-    if (selectedItem.threadId) {
-      selectThread(selectedItem.threadId)
+    if (!scene?.chatId) return
+    selectChat(scene.chatId)
+    if (scene.threadId) {
+      selectThread(scene.threadId)
     }
     navigate({ to: '/$microAppId', params: { microAppId: 'chat' } })
+  }
+
+  const handleOpenWorkspace = () => {
+    openFilesTarget(workspaceTarget)
+  }
+
+  const handleOpenObject = () => {
+    if (!objectTarget) return
+
+    if (objectTarget.kind === 'chat') {
+      handleOpenConversation()
+      return
+    }
+
+    if (objectTarget.kind === 'approval') {
+      setFilter('all')
+      selectInboxItem(objectTarget.approvalItemId)
+      navigate({ to: '/$microAppId', params: { microAppId: 'inbox' } })
+      return
+    }
+
+    openFilesTarget(objectTarget)
   }
 
   if (isLoading) {
@@ -115,12 +185,27 @@ export function InboxContentPane(_props: MicroAppPaneProps) {
               <p className="mt-1 leading-6 text-foreground">{selectedItem.description}</p>
             </div>
 
-            {(selectedItem.chatId || selectedItem.authUrl) && (
+            {(canOpenConversation || canOpenWorkspace || canOpenObject || canOpenRelatedApproval || selectedItem.authUrl) && (
               <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/50 bg-muted/20 p-4">
-                {selectedItem.chatId && (
+                {canOpenConversation && (
                   <Button variant="outline" size="sm" onClick={handleOpenConversation}>
                     <MessageSquareText className="mr-1.5 h-4 w-4" />
                     打开会话
+                  </Button>
+                )}
+                {canOpenWorkspace && (
+                  <Button variant="outline" size="sm" onClick={handleOpenWorkspace}>
+                    打开工作区
+                  </Button>
+                )}
+                {canOpenObject && (
+                  <Button variant="outline" size="sm" onClick={handleOpenObject}>
+                    打开对象
+                  </Button>
+                )}
+                {canOpenRelatedApproval && (
+                  <Button variant="outline" size="sm" onClick={handleOpenObject}>
+                    打开原审批
                   </Button>
                 )}
                 {selectedItem.authUrl && (
@@ -130,6 +215,35 @@ export function InboxContentPane(_props: MicroAppPaneProps) {
                       打开认证页
                     </a>
                   </Button>
+                )}
+              </div>
+            )}
+
+            {(scene?.thread || scene?.workspace || scene?.about || canOpenRelatedApproval) && (
+              <div className="grid gap-4 rounded-xl border border-border/50 bg-muted/20 p-4 sm:grid-cols-2">
+                {scene?.thread && (
+                  <div className="sm:col-span-2">
+                    <div className="text-xs text-muted-foreground">关联话题</div>
+                    <div className="mt-1 break-all text-foreground">{scene.thread}</div>
+                  </div>
+                )}
+                {scene?.workspace && (
+                  <div className="sm:col-span-2">
+                    <div className="text-xs text-muted-foreground">工作区 / 容器</div>
+                    <div className="mt-1 break-all text-foreground">{scene.workspace}</div>
+                  </div>
+                )}
+                {scene?.about && (
+                  <div className="sm:col-span-2">
+                    <div className="text-xs text-muted-foreground">关联对象</div>
+                    <div className="mt-1 break-all text-foreground">{scene.about}</div>
+                  </div>
+                )}
+                {canOpenRelatedApproval && (
+                  <div>
+                    <div className="text-xs text-muted-foreground">关联审批</div>
+                    <div className="mt-1 text-foreground">{objectTarget.approvalItemId}</div>
+                  </div>
                 )}
               </div>
             )}
@@ -170,11 +284,27 @@ export function InboxContentPane(_props: MicroAppPaneProps) {
                 <div>
                   <div className="text-xs uppercase tracking-wide text-muted-foreground">处理备注</div>
                   <Textarea
+                    aria-label="处理备注"
                     value={reason}
                     onChange={(event) => setReason(event.target.value)}
                     placeholder="可选：补充批准 / 拒绝原因，便于后续审计。"
                     className="mt-2 min-h-[96px]"
                   />
+                </div>
+                <div>
+                  <label htmlFor="inbox-grant-pattern" className="text-xs uppercase tracking-wide text-muted-foreground">
+                    自动允许同类请求
+                  </label>
+                  <Input
+                    id="inbox-grant-pattern"
+                    value={grantPattern}
+                    onChange={(event) => setGrantPattern(event.target.value)}
+                    placeholder="可选：例如 shell:git status 或 tool:read_file"
+                    className="mt-2"
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    批准时可同时授权同类请求；拒绝时会忽略此项。
+                  </p>
                 </div>
                 <div className="flex items-center gap-2">
                   <Button onClick={() => void handleResolve('approved')} disabled={isMutating}>

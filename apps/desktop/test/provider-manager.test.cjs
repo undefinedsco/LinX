@@ -4,6 +4,7 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const Module = require('node:module')
+const { resolveCompiledDesktopModule } = require('./helpers.cjs')
 
 test('ProviderManager defaults to the official id.undefineds.co issuer', async (t) => {
   const originalLoad = Module._load
@@ -25,7 +26,7 @@ test('ProviderManager defaults to the official id.undefineds.co issuer', async (
   })
 
   const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'linx-provider-manager-'))
-  const providerManagerPath = path.resolve(__dirname, '../dist/apps/desktop/src/lib/provider-manager.js')
+  const providerManagerPath = resolveCompiledDesktopModule('lib/provider-manager.js')
   const { ProviderManager } = require(providerManagerPath)
   const manager = new ProviderManager(configDir)
 

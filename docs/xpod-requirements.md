@@ -1,414 +1,68 @@
 # xpod 需求：支持 LinX Desktop 本地部署
 
-## 背景
+> 状态：已按当前登录路径重写。旧版“平台为 Local SP 分配 `pods.undefineds.co` / `node-*.undefineds.co` 子域名并下发隧道”的方案已废弃。
 
-LinX Desktop 需要在本地启动 xpod 作为 Solid Pod 服务器，并支持通过 pods.undefineds.co 获得公网访问能力。
+## 权威路径
 
-本文档描述 xpod 及 undefineds.co 云端服务需要支持的功能。
+LinX 只保留四条登录/部署路线：
 
-## 架构概览
+| 路线 | IDP | SP | SP URL 来源 |
+| --- | --- | --- | --- |
+| Cloud | Cloud | Cloud | 平台提供 |
+| Local 直连 | Cloud | Local | 用户提供 |
+| Local 隧道 | Cloud | Local | 用户提供 |
+| Standalone / Local device-only | Local | Local | 默认 `localhost`，公网 URL 可选且用户提供 |
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  pods.undefineds.co（云端服务）                                   │
-│  ├── 子域名管理 API                                              │
-│  ├── DNS 管理（Cloudflare）                                      │
-│  ├── 隧道 Token 管理                                             │
-│  └── Solid OIDC 身份验证                                         │
-└─────────────────────────────────────────────────────────────────┘
-                              ↕
-┌─────────────────────────────────────────────────────────────────┐
-│  LinX Desktop                                                    │
-│  ├── 启动 xpod 子进程                                            │
-│  ├── 启动 cloudflared 隧道                                       │
-│  └── 调用 undefineds.co API                                      │
-└─────────────────────────────────────────────────────────────────┘
-                              ↕
-┌─────────────────────────────────────────────────────────────────┐
-│  xpod（本地）                                                    │
-│  └── 标准 CSS 功能                                               │
-└─────────────────────────────────────────────────────────────────┘
-```
+## xpod 必须支持
 
-## 需求清单
+### 1. 环境变量配置
 
-### 1. xpod 本体
-
-#### 1.1 支持环境变量配置
-
-xpod 已支持通过环境变量配置，LinX Desktop 会设置以下变量：
-
-**基础配置：**
+LinX 会为本地 xpod 写入基础配置：
 
 | 环境变量 | 说明 | 示例 |
-|---------|------|------|
+| --- | --- | --- |
 | `CSS_EDITION` | 运行模式 | `local` |
 | `XPOD_MODE` | 运行模式 | `local` |
 | `CSS_PORT` | 监听端口 | `5737` |
-| `CSS_LOGGING_LEVEL` | 日志级别 | `info` |
+| `CSS_BASE_URL` | xpod 对外 URL | `http://localhost:5737/` 或 `https://pod.example.com/` |
+| `CSS_ROOT_FILE_PATH` | 数据目录 | `/Users/alice/Library/Application Support/LinX/pod` |
+| `CSS_SPARQL_ENDPOINT` | SPARQL 存储 | `sqlite:/path/to/quadstore.sqlite` |
+| `CSS_IDENTITY_DB_URL` | 身份数据库 | `sqlite:/path/to/identity.sqlite` |
 
-**数据层：**
+### 2. Local 直连
 
-| 环境变量 | 说明 | 示例 |
-|---------|------|------|
-| `CSS_SPARQL_ENDPOINT` | SPARQL 存储 | `sqlite:./data/quadstore.sqlite` |
-| `CSS_IDENTITY_DB_URL` | 身份数据库 | `sqlite:./data/identity.sqlite` |
+当用户提供公网域名且本机可被外网直连时：
 
-**自管式域名（用户自己的域名）：**
+- LinX 设置 `CSS_BASE_URL=https://pod.example.com/`。
+- xpod 仍监听本机端口。
+- xpod 生成的 issuer、WebID、storage URL 必须使用 `CSS_BASE_URL`。
+- DNS、端口转发、反向代理、证书由用户负责。
 
-| 环境变量 | 说明 | 示例 |
-|---------|------|------|
-| `CSS_BASE_URL` | 对外 URL | `https://my-pod.example.com` |
-| `CLOUDFLARE_TUNNEL_TOKEN` | 隧道 Token（可选） | `eyJ...` |
+### 3. Local 隧道
 
-**托管式域名（使用 pods.undefineds.co）：**
+当用户提供公网域名并配置隧道时：
 
-| 环境变量 | 说明 | 示例 |
-|---------|------|------|
-| `XPOD_CLOUD_API_ENDPOINT` | 云端 API | `https://api.undefineds.co` |
-| `XPOD_NODE_ID` | 节点 ID | `alice-macbook` |
-| `XPOD_NODE_TOKEN` | 节点 Token | `eyJ...` |
-| `CLOUDFLARE_TUNNEL_TOKEN` | 隧道 Token | `eyJ...` |
+- LinX 设置 `CSS_BASE_URL=https://pod.example.com/`。
+- LinX 写入对应隧道 token，例如 `CLOUDFLARE_TUNNEL_TOKEN` 或 `SAKURA_TOKEN`。
+- 用户负责把域名接到隧道出口。
+- xpod 不需要知道平台分配域名，只需要按 `CSS_BASE_URL` 对外声明身份和 storage。
 
-**状态：** ✅ 已支持
+### 4. Standalone
 
-#### 1.2 支持动态 BASE_URL
+当用户选择全套本地：
 
-当用户配置子域名时，xpod 的 `CSS_BASE_URL` 会是公网域名（如 `https://alice.pods.undefineds.co`），但实际监听在 `localhost:3000`。
+- 默认 `CSS_BASE_URL=http://localhost:5737/`。
+- 不要求公网域名。
+- 不要求隧道。
+- 默认自动路径只保证本机/局域网可用；如果用户还想走 Cloud IDP 远程登录，必须改成 Local 远程路径并提供自己的公网 URL。
+- 如果用户填了公网域名，LinX 可设置 `CSS_BASE_URL=https://pod.example.com/`，但域名、网络入口和证书仍由用户负责。
 
-需要确保：
-- WebID 使用 `CSS_BASE_URL` 生成
-- OIDC issuer 使用 `CSS_BASE_URL`
-- 内部不校验 Host header（因为隧道会改写）
+## 不再支持的需求
 
-**状态：** ⚠️ 需要验证
+- 不再需要 `pods.undefineds.co` 子域名申请 API。
+- 不再需要 Cloud 为 Local SP 创建 DNS 记录。
+- 不再需要 Cloud 为 Local SP 分发隧道 token。
+- 不再要求用户填写平台生成的 Local 公网域名。
+- `CSS_BASE_STORAGE_DOMAIN` 不再是 Local onboarding 的用户配置项。
 
-#### 1.3 健康检查端点
-
-LinX Desktop 需要检测 xpod 是否就绪：
-
-```
-GET /health
-Response: { "status": "ok" }
-```
-
-**状态：** ⚠️ 需要添加（或使用现有的 `/.well-known/solid`）
-
----
-
-### 2. pods.undefineds.co 云端服务
-
-这是一个独立的管理服务，不是 xpod 的一部分。
-
-#### 2.1 子域名管理 API
-
-##### 检查子域名可用性
-
-```
-GET /api/subdomains/check?name=alice
-
-Response 200:
-{
-  "available": true,
-  "subdomain": "alice",
-  "fqdn": "alice.pods.undefineds.co"
-}
-
-Response 200 (已被占用):
-{
-  "available": false,
-  "subdomain": "alice",
-  "reason": "already-taken"
-}
-```
-
-##### 申请子域名
-
-```
-POST /api/subdomains/claim
-Authorization: DPoP <solid-oidc-token>
-Content-Type: application/json
-
-{
-  "subdomain": "alice"
-}
-
-Response 201:
-{
-  "subdomain": "alice",
-  "fqdn": "alice.pods.undefineds.co",
-  "tunnelToken": "eyJ...",
-  "ownerWebId": "https://someuser.inrupt.net/profile/card#me"
-}
-
-Response 409 (已被占用):
-{
-  "error": "subdomain-taken",
-  "message": "Subdomain 'alice' is already taken"
-}
-
-Response 401 (未认证):
-{
-  "error": "unauthorized",
-  "message": "Valid Solid OIDC token required"
-}
-```
-
-##### 获取我的子域名列表
-
-```
-GET /api/subdomains/mine
-Authorization: DPoP <solid-oidc-token>
-
-Response 200:
-{
-  "subdomains": [
-    {
-      "subdomain": "alice",
-      "fqdn": "alice.pods.undefineds.co",
-      "status": "active",
-      "createdAt": "2024-01-25T00:00:00Z",
-      "lastActiveAt": "2024-01-25T12:00:00Z"
-    }
-  ]
-}
-```
-
-##### 删除子域名
-
-```
-DELETE /api/subdomains/alice
-Authorization: DPoP <solid-oidc-token>
-
-Response 204: (no content)
-
-Response 403:
-{
-  "error": "forbidden",
-  "message": "You don't own this subdomain"
-}
-```
-
-##### 刷新隧道 Token
-
-```
-POST /api/subdomains/alice/refresh-token
-Authorization: DPoP <solid-oidc-token>
-
-Response 200:
-{
-  "tunnelToken": "eyJ..."
-}
-```
-
-#### 2.2 Solid OIDC 身份验证
-
-所有需要身份的 API 使用 Solid OIDC DPoP Token 验证：
-
-1. 客户端从任意 Solid Provider 获取 OIDC Token
-2. 使用 DPoP 格式发送请求
-3. 服务端验证 Token 并提取 WebID
-4. WebID 作为用户唯一标识
-
-验证流程：
-```
-Authorization: DPoP <access_token>
-DPoP: <dpop_proof>
-```
-
-服务端需要：
-- 验证 DPoP proof
-- 验证 access_token
-- 提取 WebID claim
-
-#### 2.3 DNS 管理
-
-申请子域名后，服务端自动配置 DNS 记录，将子域名指向隧道入口。
-
-**支持的 DNS 提供商：**
-- Cloudflare
-- 腾讯云 DNSPod
-
-**环境变量：**
-
-```bash
-# Cloudflare
-CLOUDFLARE_API_TOKEN=xxx
-CLOUDFLARE_ZONE_ID=xxx
-
-# 腾讯云
-TENCENT_DNS_SECRET_ID=xxx
-TENCENT_DNS_SECRET_KEY=xxx
-```
-
-#### 2.4 隧道管理
-
-为每个子域名创建隧道连接，使本地 xpod 可通过公网访问。
-
-**支持的隧道方案：**
-- Cloudflare Tunnel（优先）
-
-**流程：**
-1. 用户申请子域名
-2. 服务端创建 Cloudflare Tunnel
-3. 配置 DNS CNAME 指向 tunnel
-4. 返回 Tunnel Token 给客户端
-5. 客户端运行 `cloudflared tunnel run --token xxx`
-
-**环境变量：**
-
-```bash
-CLOUDFLARE_API_TOKEN=xxx
-CLOUDFLARE_ACCOUNT_ID=xxx
-```
-
-#### 2.5 HTTPS 证书管理
-
-**场景分析：**
-
-| 场景 | 证书来源 | 说明 |
-|------|---------|------|
-| pods.undefineds.co 子域名 + CF Tunnel | Cloudflare 自动 | 无需管理 |
-| 自定义域名 + CF Tunnel | Cloudflare 自动 | 无需管理 |
-| 自定义域名 + 直连（无隧道） | Let's Encrypt | 需要 ACME 自动续期 |
-
-**Let's Encrypt 集成（自定义域名直连场景）：**
-
-xpod 需要支持自动申请和续期 Let's Encrypt 证书：
-
-```bash
-# 环境变量
-CSS_BASE_URL=https://pod.example.com
-CSS_ACME_ENABLED=true
-CSS_ACME_EMAIL=admin@example.com
-CSS_ACME_DIRECTORY=https://acme-v02.api.letsencrypt.org/directory
-
-# 证书存储路径
-CSS_CERT_PATH=./data/certs/
-```
-
-**DNS-01 挑战（支持内网部署）：**
-
-如果 xpod 在内网且无法被外部访问，使用 DNS-01 挑战：
-
-```bash
-CSS_ACME_CHALLENGE=dns-01
-
-# DNS 提供商（用于自动添加 TXT 记录）
-CLOUDFLARE_API_TOKEN=xxx
-# 或
-TENCENT_DNS_SECRET_ID=xxx
-TENCENT_DNS_SECRET_KEY=xxx
-```
-
-**HTTP-01 挑战（公网直连场景）：**
-
-如果 xpod 可被外部访问，使用 HTTP-01 挑战（更简单）：
-
-```bash
-CSS_ACME_CHALLENGE=http-01
-```
-
----
-
-### 3. 数据模型
-
-#### 3.1 子域名记录
-
-```typescript
-interface SubdomainRecord {
-  id: string;                     // UUID
-  subdomain: string;              // alice
-  fqdn: string;                   // alice.pods.undefineds.co
-  ownerWebId: string;             // https://xxx/profile/card#me
-
-  // 隧道
-  tunnelId: string;               // 隧道 ID
-  tunnelToken: string;            // 加密存储
-
-  // 状态
-  status: 'active' | 'suspended' | 'deleted';
-
-  // 时间戳
-  createdAt: Date;
-  lastActiveAt: Date;             // 隧道最后连接时间
-  deletedAt?: Date;
-}
-```
-
-#### 3.2 存储
-
-- PostgreSQL 或 SQLite
-- tunnelToken 需要加密存储
-
----
-
-### 4. 安全考虑
-
-#### 4.1 子域名限制
-
-- 每个 WebID 最多申请 N 个子域名（可配置，如免费 3 个）
-- 子域名格式限制：`^[a-z0-9][a-z0-9-]{2,30}[a-z0-9]$`
-- 保留子域名列表：`www`, `api`, `admin`, `mail`, 等
-
-#### 4.2 隧道安全
-
-- Tunnel Token 仅在申请时返回一次
-- 支持 refresh-token 重新生成
-- Token 泄露后用户可以主动刷新
-
-#### 4.3 滥用防护
-
-- 速率限制
-- 长期不活跃的子域名可能被回收（提前通知）
-
----
-
-### 5. 部署
-
-#### 5.1 pods.undefineds.co 服务
-
-- 独立的 Node.js 服务
-- 需要 DNS 管理权限
-- 需要数据库（PostgreSQL 推荐）
-
-#### 5.2 依赖
-
-- Solid OIDC 验证库
-- DNS 管理（具体实现由 xpod 团队决定）
-- 隧道管理（具体实现由 xpod 团队决定）
-
----
-
-## 实现优先级
-
-### Phase 1：基础功能
-
-1. xpod 验证环境变量配置
-2. pods.undefineds.co 服务基础框架
-3. 子域名检查 + 申请 API
-4. DNS 集成
-5. 隧道集成
-
-### Phase 2：完善功能
-
-1. Solid OIDC 身份验证
-2. 子域名列表 + 删除
-3. Token 刷新
-4. 用量统计
-
-### Phase 3：运维功能
-
-1. 管理后台
-2. 不活跃子域名回收
-3. 付费套餐（更多子域名）
-
----
-
-## 设计决策
-
-1. **子域名配额**：暂不限制，随便用
-2. **不活跃回收**：暂不实现
-3. **自定义域名**：支持，用户使用自己的域名时不需要 pods.undefineds.co 服务
-4. **隧道方案**：先支持 Cloudflare Tunnel
-5. **DNS 方案**：支持 Cloudflare 和腾讯云 DNSPod
+如果 xpod/cloud 内部为了兼容仍保留这些字段，只能作为内部实现细节，不应暴露到 LinX 产品配置和用户文档。

@@ -1,17 +1,18 @@
 // @vitest-environment node
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import { QueryClient } from '@tanstack/react-query'
-import { aiProviderTable, deleteExactRecord, linxSchema } from '@linx/models'
+import { aiProviderTable, solidSchema } from '@undefineds.co/models'
+import { deleteExactRecord } from './exact-records'
 import { createPodCollection } from './pod-collection'
 import { createXpodIntegrationContext, type XpodIntegrationContext } from '../../test/xpod-integration'
 
-let context: XpodIntegrationContext<typeof linxSchema> | null = null
+let context: XpodIntegrationContext<typeof solidSchema> | null = null
 const createdSubjects: string[] = []
 
-async function getContext(): Promise<XpodIntegrationContext<typeof linxSchema>> {
+async function getContext(): Promise<XpodIntegrationContext<typeof solidSchema>> {
   if (context) return context
   context = await createXpodIntegrationContext({
-    schema: linxSchema,
+    schema: solidSchema,
     tables: [aiProviderTable],
   })
   return context
@@ -46,7 +47,7 @@ describe('pod-collection integration', () => {
       table: aiProviderTable,
       queryKey: ['model-providers-test-optimistic'],
       queryClient,
-      getDb: () => database,
+      getDb: () => database as any,
     })
 
     let optimisticCheck: ReturnType<typeof setInterval> | null = null
@@ -118,13 +119,13 @@ describe('pod-collection integration', () => {
       table: aiProviderTable,
       queryKey: ['model-providers-test-notify'],
       queryClient,
-      getDb: () => database,
+      getDb: () => database as any,
     })
 
     let unsubscribe: (() => void | Promise<void>) | null = null
 
     try {
-      unsubscribe = await collection.subscribeToPod(database)
+      unsubscribe = await collection.subscribeToPod(database as any)
 
       const id = crypto.randomUUID()
       const [created] = await (database as any)

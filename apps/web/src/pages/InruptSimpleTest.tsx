@@ -4,6 +4,9 @@ import { useEffect, useState } from 'react'
 export default function InruptSimpleTest() {
   const [logs, setLogs] = useState<string[]>([])
   const [session] = useState(() => new Session({}, 'inrupt-simple-test'))
+  const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null
+  const issuer = params?.get('issuer') ?? 'http://localhost:3000'
+  const tokenType = params?.get('tokenType') === 'Bearer' ? 'Bearer' : 'DPoP'
 
   const log = (msg: string) => {
     console.log(msg)
@@ -14,6 +17,8 @@ export default function InruptSimpleTest() {
     log('Session created: ' + session.info.sessionId)
     log('URL: ' + location.href)
     log('Has code: ' + location.search.includes('code='))
+    log('Issuer: ' + issuer)
+    log('TokenType: ' + tokenType)
 
     session.events.on('error', (code, err) => log('ERROR: ' + code + ' ' + err))
 
@@ -40,9 +45,10 @@ export default function InruptSimpleTest() {
   const handleLogin = () => {
     log('Starting login...')
     session.login({
-      oidcIssuer: 'http://localhost:3000',
+      oidcIssuer: issuer,
       redirectUrl: window.location.origin + '/test/inrupt-simple',
       clientName: 'InruptSimpleTest',
+      tokenType,
     })
   }
 

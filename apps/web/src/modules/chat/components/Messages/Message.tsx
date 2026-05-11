@@ -20,7 +20,7 @@ import {
   createMessageBlock,
   type MessageBlock,
   type MainTextMessageBlock,
-} from '@linx/models'
+} from './message-blocks'
 import { MessageBlockRenderer } from './Blocks'
 import { MessageHeader } from './MessageHeader'
 import { MessageMenubar } from './MessageMenubar'
@@ -102,7 +102,10 @@ export interface MessageProps {
  */
 function messageToBlocks(message: MessageData): MessageBlock[] {
   if (message.richContent) {
-    const blocks = parseMessageBlocks(message.richContent)
+    const blocks = parseMessageBlocks(message.richContent, {
+      messageId: message.id,
+      createdAt: message.createdAt,
+    })
     if (blocks.length > 0) return blocks
   }
 

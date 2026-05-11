@@ -23,15 +23,8 @@ import {
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import {
-  MessageBlockType,
-  type MessageBlock,
-  type ToolApprovalStatus,
-  type ToolRisk,
-} from '@linx/models'
-
-/** Extract ToolApprovalMessageBlock from the MessageBlock union */
-type ToolApprovalMessageBlock = Extract<MessageBlock, { type: MessageBlockType.TOOL_APPROVAL }>
+import type { ToolApprovalStatus, ToolRisk } from '@undefineds.co/models'
+import type { ToolApprovalMessageBlock } from '../message-blocks'
 
 interface ToolApprovalBlockProps {
   block: ToolApprovalMessageBlock
@@ -46,10 +39,10 @@ function getRiskIndicator(risk: ToolRisk) {
     case 'high':
       return { icon: <ShieldX className="w-5 h-5" />, color: 'text-destructive', bg: 'bg-destructive/10', label: '高风险' }
     case 'medium':
-      return { icon: <ShieldAlert className="w-5 h-5" />, color: 'text-amber-500', bg: 'bg-amber-500/10', label: '中风险' }
+      return { icon: <ShieldAlert className="w-5 h-5" />, color: 'text-warning', bg: 'bg-warning/10', label: '中风险' }
     case 'low':
     default:
-      return { icon: <ShieldCheck className="w-5 h-5" />, color: 'text-green-500', bg: 'bg-green-500/10', label: '低风险' }
+      return { icon: <ShieldCheck className="w-5 h-5" />, color: 'text-success', bg: 'bg-success/10', label: '低风险' }
   }
 }
 
@@ -57,14 +50,30 @@ function getRiskIndicator(risk: ToolRisk) {
 function getStatusDisplay(status: ToolApprovalStatus) {
   switch (status) {
     case 'approved':
-      return { icon: <CheckCircle className="w-4 h-4 text-green-500" />, text: '已批准' }
+      return {
+        icon: <CheckCircle className="w-4 h-4 text-success" />,
+        text: '已批准',
+        badgeClass: 'border-success/30 bg-success/10 text-success',
+      }
     case 'rejected':
-      return { icon: <XCircle className="w-4 h-4 text-destructive" />, text: '已拒绝' }
+      return {
+        icon: <XCircle className="w-4 h-4 text-destructive" />,
+        text: '已拒绝',
+        badgeClass: 'border-destructive/30 bg-destructive/10 text-destructive',
+      }
     case 'auto_approved':
-      return { icon: <CheckCircle className="w-4 h-4 text-blue-500" />, text: '自动批准' }
+      return {
+        icon: <CheckCircle className="w-4 h-4 text-lineage" />,
+        text: '自动批准',
+        badgeClass: 'border-lineage/30 bg-lineage/10 text-lineage',
+      }
     case 'pending':
     default:
-      return { icon: <Clock className="w-4 h-4 text-amber-500" />, text: '等待审批' }
+      return {
+        icon: <Clock className="w-4 h-4 text-warning" />,
+        text: '等待审批',
+        badgeClass: 'border-warning/30 bg-warning/10 text-warning',
+      }
   }
 }
 
@@ -156,7 +165,7 @@ export const ToolApprovalBlock = memo<ToolApprovalBlockProps>(({
         <span className="text-sm font-medium text-foreground/80 truncate flex-1">
           {block.toolName}
         </span>
-        <Badge variant="outline" className="text-[10px] gap-1 shrink-0">
+        <Badge variant="outline" className={cn('text-[10px] gap-1 shrink-0', statusDisplay.badgeClass)}>
           {statusDisplay.icon}
           {statusDisplay.text}
         </Badge>
@@ -199,7 +208,12 @@ export const ToolApprovalBlock = memo<ToolApprovalBlockProps>(({
               </Button>
             )}
             {onApprove && (
-              <Button size="sm" variant="default" className="h-7 text-xs" onClick={handleApprove}>
+              <Button
+                size="sm"
+                variant="default"
+                className="h-7 bg-success text-success-foreground hover:bg-success/90 text-xs"
+                onClick={handleApprove}
+              >
                 <CheckCircle className="w-3.5 h-3.5 mr-1" />
                 批准
               </Button>

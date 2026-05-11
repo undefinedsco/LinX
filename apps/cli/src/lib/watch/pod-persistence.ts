@@ -5,7 +5,7 @@ import {
   buildWatchTranscriptMessages,
   type WatchEventLogEntry,
   type WatchSessionRecord,
-} from '@undefineds.co/models/watch'
+} from '@linx/client/watch'
 import { loadWatchEvents } from './archive.js'
 
 const WATCH_CHAT_ID = 'linx-watch'
@@ -90,7 +90,7 @@ async function createDefaultRuntime(): Promise<WatchPodPersistenceRuntime> {
   const [credentialsStore, solidAuth, models] = await Promise.all([
     dynamicImport(new URL('../credentials-store.js', import.meta.url).href),
     dynamicImport(new URL('../solid-auth.js', import.meta.url).href),
-    dynamicImport(new URL('../models.js', import.meta.url).href),
+    dynamicImport(new URL('...co/models.js', import.meta.url).href),
   ])
 
   return {

@@ -1,2 +1,6 @@
 export { SetupView } from './components/SetupView'
+export { SettingsListPane } from './components/SettingsListPane'
+export { SettingsContentPane } from './components/SettingsContentPane'
 export * from './types'
+export * from './store'
+export * from './events'

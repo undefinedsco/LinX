@@ -9,7 +9,10 @@
  */
 
 import { and, eq } from '@undefineds.co/drizzle-solid'
-import { resolveLinxPodBaseUrl } from '@linx/models/client'
+import {
+  resolveLinxPodBaseUrl,
+  resolveLinxRuntimeApiBaseUrlForIssuerUrl,
+} from '@linx/client'
 import type { ChatKitStore, StoreContext } from '@/lib/vendor/xpod-chatkit'
 import {
   extractUserMessageText,
@@ -25,7 +28,17 @@ import {
 } from '@/lib/vendor/xpod-chatkit'
 import { Credential } from '@/lib/vendor/xpod-credential'
 import { CredentialStatus, ServiceType } from '@/lib/vendor/xpod-credential'
-import type { SolidDatabase } from '@linx/models'
+import {
+  agentTable,
+  chatTable,
+  contactTable,
+  normalizeAIConfigProviderId,
+  normalizeAIConfigResourceId,
+  resolveRowId,
+  type AgentRow,
+  type ContactRow,
+  type SolidDatabase,
+} from '@undefineds.co/models'
 import { RuntimeSidecarSink } from './runtime-sidecar'
 
 export interface LocalServiceOptions {
@@ -58,6 +71,12 @@ interface RuntimeThreadRecord {
   tool: string
   status: RuntimeThreadStatus
   tokenUsage: number
+}
+
+interface ThreadAgentConfig {
+  provider: string
+  model: string
+  instructions?: string
 }
 
 type RuntimeThreadEvent =
@@ -354,6 +373,32 @@ export class LocalChatKitService {
           yield event
         }
       } else {
+        const agentConfig = await this.resolveThreadAgentConfig(thread)
+        const platformModel = this.resolvePlatformModel(agentConfig)
+
+        if (platformModel) {
+          const stream = this.streamFromLinxRuntime(platformModel, messages, inferenceOptions)
+
+          for await (const chunk of stream) {
+            fullText += chunk
+            yield {
+              type: 'thread.item.updated',
+              item_id: assistantItemId,
+              update: {
+                type: 'assistant_message.content_part.text_delta',
+                part_index: 0,
+                delta: chunk,
+              },
+            } as ThreadStreamEvent
+          }
+
+          assistantItem.content = [{ type: 'output_text', text: fullText, annotations: [] }]
+          assistantItem.status = 'completed'
+          await this.store.saveItem(thread.id, assistantItem, context)
+          yield { type: 'thread.item.done', item: assistantItem }
+          return
+        }
+
         const aiConfig = await this.getAiConfig()
         if (!aiConfig) {
           assistantItem.content = [{ type: 'output_text', text: '请先在设置中配置 AI API Key。', annotations: [] }]
@@ -363,7 +408,7 @@ export class LocalChatKitService {
           return
         }
 
-        const model = inferenceOptions?.model ?? aiConfig.defaultModel ?? 'openai/gpt-4o-mini'
+        const model = inferenceOptions?.model ?? agentConfig?.model ?? aiConfig.defaultModel ?? 'openai/gpt-4o-mini'
         const stream = this.streamFromProvider(aiConfig, messages, model, inferenceOptions)
 
         for await (const chunk of stream) {
@@ -748,6 +793,198 @@ export class LocalChatKitService {
       console.warn('[LocalChatKitService] Direct credential fetch failed:', error)
       return null
     }
+  }
+
+  private async resolveThreadAgentConfig(thread: ThreadMetadata): Promise<ThreadAgentConfig | null> {
+    const chatId = typeof thread.metadata?.chat_id === 'string' ? thread.metadata.chat_id : null
+    if (!chatId) return null
+
+    try {
+      const chat = await this.findChatById(chatId)
+      const participantRefs = Array.isArray(chat?.participants)
+        ? chat.participants.filter((participant: unknown): participant is string => typeof participant === 'string' && participant.length > 0)
+        : []
+
+      if (participantRefs.length === 0) {
+        return null
+      }
+
+      const contacts = await this.db.select().from(contactTable).execute() as ContactRow[]
+      const agents = await this.db.select().from(agentTable).execute() as AgentRow[]
+
+      for (const participantRef of participantRefs) {
+        const contact = contacts.find((entry: any) => this.isSameRecordRef(entry, participantRef))
+        const agentRef = contact?.entityUri ?? participantRef
+        const agent = agents.find((entry: any) => this.isSameRecordRef(entry, agentRef))
+
+        if (!agent) {
+          continue
+        }
+
+        const provider = normalizeAIConfigProviderId(typeof agent.provider === 'string' ? agent.provider : '')
+        const model = normalizeAIConfigResourceId(typeof agent.model === 'string' ? agent.model : '')
+
+        if (!provider || !model) {
+          continue
+        }
+
+        return {
+          provider,
+          model,
+          instructions: typeof agent.instructions === 'string' ? agent.instructions : undefined,
+        }
+      }
+
+      return null
+    } catch (error) {
+      console.warn('[LocalChatKitService] Failed to resolve thread agent config:', error)
+      return null
+    }
+  }
+
+  private async findChatById(chatId: string): Promise<any | null> {
+    const direct = await (this.db as any).findByLocator?.(chatTable as any, { id: chatId } as any)
+    if (direct) return direct
+
+    const chats = await this.db.select().from(chatTable).execute()
+    return chats.find((entry: any) => entry.id === chatId || resolveRowId(entry) === chatId) ?? null
+  }
+
+  private isSameRecordRef(record: Record<string, unknown> | null | undefined, ref: string): boolean {
+    if (!record || !ref) return false
+    return (
+      record.id === ref
+      || record['@id'] === ref
+      || record.uri === ref
+      || resolveRowId(record) === ref
+    )
+  }
+
+  private resolvePlatformModel(agentConfig: ThreadAgentConfig | null): string | null {
+    if (!agentConfig || agentConfig.provider !== 'undefineds') {
+      return null
+    }
+
+    if (agentConfig.model === 'undefineds/linx-lite') {
+      return 'linx-lite'
+    }
+
+    if (agentConfig.model === 'undefineds/linx') {
+      return 'linx'
+    }
+
+    return agentConfig.model === 'linx-lite' || agentConfig.model === 'linx'
+      ? agentConfig.model
+      : null
+  }
+
+  private resolveRuntimeBaseUrl(): string {
+    let issuerUrl = this.webId
+    try {
+      issuerUrl = new URL(this.webId).origin
+    } catch {
+      if (this.webId.includes('/profile/card#me')) {
+        issuerUrl = this.webId.replace('/profile/card#me', '')
+      }
+    }
+
+    return resolveLinxRuntimeApiBaseUrlForIssuerUrl(issuerUrl).replace(/\/$/, '')
+  }
+
+  private async *streamFromLinxRuntime(
+    model: string,
+    messages: Array<{ role: string; content: string }>,
+    inferenceOptions?: any,
+  ): AsyncIterable<string> {
+    const endpoint = `${this.resolveRuntimeBaseUrl()}/chat/completions`
+    const response = await this.authFetch(endpoint, {
+      method: 'POST',
+      headers: {
+        Accept: 'text/event-stream, text/plain, application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        stream: true,
+        temperature: inferenceOptions?.temperature ?? 0.7,
+        max_tokens: inferenceOptions?.max_tokens ?? 2048,
+      }),
+    })
+
+    if (!response.ok) {
+      const text = await response.text()
+      throw new Error(`LinX runtime error ${response.status}: ${text.slice(0, 200)}`)
+    }
+
+    yield* this.readTextOrSseStream(response)
+  }
+
+  private async *readTextOrSseStream(response: Response): AsyncIterable<string> {
+    const reader = response.body?.getReader()
+    if (!reader) {
+      const data = await response.json().catch(() => null)
+      const text = data?.choices?.[0]?.message?.content
+      if (typeof text === 'string' && text) {
+        yield text
+      }
+      return
+    }
+
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+
+      for (const line of lines) {
+        const chunk = this.parseRuntimeStreamLine(line)
+        if (chunk) yield chunk
+      }
+    }
+
+    const tail = decoder.decode()
+    if (tail) buffer += tail
+    const finalChunk = this.parseRuntimeStreamLine(buffer)
+    if (finalChunk) yield finalChunk
+  }
+
+  private parseRuntimeStreamLine(line: string): string {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed === 'data: [DONE]' || trimmed === '[DONE]') {
+      return ''
+    }
+
+    const payload = trimmed.startsWith('data: ') ? trimmed.slice(6).trim() : trimmed
+    if (!payload || payload === '[DONE]') {
+      return ''
+    }
+
+    try {
+      const parsed = JSON.parse(payload)
+      const delta = parsed.choices?.[0]?.delta?.content
+      if (typeof delta === 'string') {
+        return delta
+      }
+
+      const text = parsed.choices?.[0]?.message?.content
+      if (typeof text === 'string') {
+        return text
+      }
+
+      if (typeof parsed.text === 'string') {
+        return parsed.text
+      }
+    } catch {
+      return payload
+    }
+
+    return ''
   }
 
   private parseCredentialFromTurtle(turtle: string): {

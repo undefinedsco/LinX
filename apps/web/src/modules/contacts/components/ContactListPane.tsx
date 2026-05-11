@@ -10,9 +10,7 @@ import {
   Search,
   Plus,
   Loader2,
-  UserPlus,
   Star,
-  ChevronRight,
   Bot,
   User,
   Users,
@@ -27,8 +25,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
-import type { ContactRow } from '@linx/models'
-import { ContactType, isGroupContact } from '@linx/models'
+import type { ContactRow } from '@undefineds.co/models'
+import { ContactType, isGroupContact } from '@undefineds.co/models'
 import { useQuery } from '@tanstack/react-query'
 
 // ============================================
@@ -45,6 +43,17 @@ function getInitial(name: string): string {
   if (/[A-Z]/.test(first)) return first
   // 中文逻辑后续通过 pinyin-pro 增强，目前先归类
   return '#'
+}
+
+function isUnifiedGroupContact(contact: Partial<UnifiedContact> | null | undefined): boolean {
+  if (!contact) {
+    return false
+  }
+
+  return isGroupContact({
+    contactType: typeof contact.contactType === 'string' ? contact.contactType : null,
+    rdfType: typeof contact.rdfType === 'string' ? contact.rdfType : null,
+  })
 }
 
 // ============================================
@@ -114,7 +123,7 @@ interface ContactItemProps {
 }
 
 function ContactItem({ contact, isActive, onClick }: ContactItemProps) {
-  const isGroup = isGroupContact(contact)
+  const isGroup = isUnifiedGroupContact(contact)
   const isAgent = contact.sourceType === 'agent'
 
   // Subtitle: group shows member count, agent shows model, personal shows note/WebID
@@ -190,44 +199,6 @@ function ContactItem({ contact, isActive, onClick }: ContactItemProps) {
   )
 }
 
-/**
- * 顶部固定功能项 (新的朋友)
- */
-function StaticEntry({
-  icon: Icon,
-  label,
-  badge,
-  onClick
-}: {
-  icon?: any,
-  label: string,
-  badge?: number,
-  onClick: () => void
-}) {
-  return (
-    <div
-      onClick={onClick}
-      className="flex items-center gap-3 h-14 px-3 cursor-pointer hover:bg-muted/50 transition-colors"
-    >
-      {Icon ? (
-        <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-          <Icon className="w-5 h-5" />
-        </div>
-      ) : (
-        <div className="w-10 shrink-0" /> /* 占位以保持文字对齐 */
-      )}
-      <span className="flex-1 text-sm font-medium">{label}</span>
-      {badge ? (
-        <span className="bg-destructive text-destructive-foreground text-[10px] px-1.5 py-0.5 rounded-full font-bold">
-          {badge}
-        </span>
-      ) : (
-        <ChevronRight className="w-4 h-4 text-muted-foreground/30" />
-      )}
-    </div>
-  )
-}
-
 // ============================================
 // Main Component
 // ============================================
@@ -239,8 +210,6 @@ export function ContactListPane({}: MicroAppPaneProps) {
   const selectedId = useContactStore((state) => state.selectedId)
   const select = useContactStore((state) => state.select)
   const openCreateDialog = useContactStore((state) => state.openCreateDialog)
-  const showNewFriends = useContactStore((state) => state.showNewFriends)
-  const newFriendsCount = useContactStore((state) => state.newFriendsCount)
   const listFilter = useContactStore((state) => state.listFilter)
   const setListFilter = useContactStore((state) => state.setListFilter)
 
@@ -301,7 +270,7 @@ export function ContactListPane({}: MicroAppPaneProps) {
 
     // 转换为 UnifiedContact 格式
     const unified: UnifiedContact[] = rawItems.map((c: ContactRow) => {
-      const isGroup = isGroupContact(c)
+      const isGroup = isUnifiedGroupContact(c)
       const base = {
         ...c,
         displayName: c.alias || c.name || 'Unknown',
@@ -326,19 +295,19 @@ export function ContactListPane({}: MicroAppPaneProps) {
     // Apply listFilter
     const filtered = listFilter !== 'all'
       ? unified.filter(c => {
-          if (listFilter === 'personal') return c.contactType === ContactType.SOLID && !isGroupContact(c)
+          if (listFilter === 'personal') return c.contactType === ContactType.SOLID && !isUnifiedGroupContact(c)
           if (listFilter === 'agents') return c.contactType === ContactType.AGENT
-          if (listFilter === 'groups') return isGroupContact(c)
+          if (listFilter === 'groups') return isUnifiedGroupContact(c)
           return true
         })
       : unified
 
     // Split by contactType
     const starredItems = filtered.filter(c => c.starred)
-    const groupItems = filtered.filter(c => isGroupContact(c) && !c.starred)
+    const groupItems = filtered.filter(c => isUnifiedGroupContact(c) && !c.starred)
     const agentItems = filtered.filter(c => c.contactType === ContactType.AGENT && !c.starred)
     const personalItems = filtered.filter(c =>
-      !isGroupContact(c) &&
+      !isUnifiedGroupContact(c) &&
       c.contactType !== ContactType.AGENT &&
       !c.starred
     )
@@ -434,17 +403,6 @@ export function ContactListPane({}: MicroAppPaneProps) {
       {/* List content */}
       <ScrollArea className="flex-1" ref={scrollRef}>
         <div className="pb-10">
-          {/* Static Top Entries */}
-          {!search && (
-            <div className="mb-2">
-              <StaticEntry 
-                icon={UserPlus} 
-                label="新的朋友" 
-                badge={newFriendsCount > 0 ? newFriendsCount : undefined}
-                onClick={showNewFriends} 
-              />
-            </div>
-          )}
           {/* Contact Sections */}
           {isLoading ? (
             <div className="p-8 flex justify-center"><Loader2 className="animate-spin text-muted-foreground" /></div>

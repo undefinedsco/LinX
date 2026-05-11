@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { agentTable } from '@linx/models'
+import { agentTable } from '@undefineds.co/models'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 
 export const AGENT_QUERY_KEYS = {

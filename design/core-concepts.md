@@ -765,13 +765,12 @@ LinX 向用户申请：
 - [主布局设计](./main-layout-design.md)
 - [AI 集成方案](./ai-integration.md)
 - [安全和加密](./security.md)
-- [数据模型](../packages/models/README.md)
+- [数据模型](../models/README.md)
 
 ---
 
 **最后更新**: 2025-11-07  
 **下次评审**: 待定
-
 
 
 

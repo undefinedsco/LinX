@@ -284,7 +284,7 @@ data: [DONE]
 
 ## LinX 改动方案
 
-### 1. Schema 改动（`packages/models`）
+### 1. Schema 改动（`@undefineds.co/models`）
 
 **新增**:
 - `credential.schema.ts` - 凭据表
@@ -368,7 +368,7 @@ const response = await authFetch(endpoint, {
 
 ## 文件改动清单
 
-### packages/models
+### @undefineds.co/models
 
 | 文件 | 改动类型 | 说明 |
 |------|----------|------|

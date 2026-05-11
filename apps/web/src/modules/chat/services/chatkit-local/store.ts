@@ -17,7 +17,8 @@ import {
   type ThreadMetadata, type ThreadItem, type Attachment,
   type Page, type StoreItemType,
 } from '@/lib/vendor/xpod-chatkit'
-import { contactTable, deleteExactRecord, resolveRowId, updateExactRecord, type SolidDatabase, UDFS } from '@linx/models'
+import { contactTable, resolveRowId, type SolidDatabase, UDFS } from '@undefineds.co/models'
+import { deleteExactRecord, updateExactRecord } from '@/lib/data/exact-records'
 
 const DEFAULT_CHAT_ID = 'default'
 

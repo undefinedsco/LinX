@@ -9,7 +9,7 @@ import { memo } from 'react'
 import { AlertCircle, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import type { ErrorMessageBlock } from '@linx/models'
+import type { ErrorMessageBlock } from '../message-blocks'
 
 interface ErrorBlockProps {
   block: ErrorMessageBlock

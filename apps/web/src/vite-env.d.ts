@@ -8,3 +8,6 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv
 }
+
+declare const __LINX_APP_VERSION__: string
+declare const __LINX_RELEASE_REPO__: string

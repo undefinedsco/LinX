@@ -1,66 +1,105 @@
-/**
- * Solid Session Provider Wrapper
- * 
- * 包装 @inrupt/solid-ui-react 的 SessionProvider，
- * 在渲染前检查 localStorage 是否有存储的 sessionId，有的话传入。
- * 
- * 这样可以确保页面刷新后，SessionProvider 使用之前的 sessionId，
- * 而不是每次生成新的，从而正确恢复 session。
- */
-
-import { SessionProvider } from '@inrupt/solid-ui-react'
+import {
+  EVENTS,
+} from '@inrupt/solid-client-authn-browser'
+import {
+  SessionContext,
+  SessionProvider as InruptSessionProvider,
+  useSession,
+} from '@inrupt/solid-ui-react'
 import type { ReactNode } from 'react'
-
-// Inrupt 存储 session 的 key
-const CURRENT_SESSION_KEY = 'solidClientAuthn:currentSession'
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { capturePendingCallbackError } from '@/modules/login/login-utils'
 
 interface SolidSessionProviderProps {
   children: ReactNode
+  sessionId?: string
   restorePreviousSession?: boolean
   onError?: (error: Error) => void
   onSessionRestore?: (url: string) => void
-  skipLoadingProfile?: boolean
-}
-
-// 获取存储的 sessionId（同步，在渲染前执行）
-function getStoredSessionId(): string | undefined {
-  if (typeof window === 'undefined') {
-    return undefined
-  }
-  
-  const storedSessionId = window.localStorage.getItem(CURRENT_SESSION_KEY)
-  
-  if (storedSessionId) {
-    console.log('🔑 检测到存储的 sessionId:', storedSessionId)
-    return storedSessionId
-  }
-  
-  console.log('🆕 未检测到存储的 sessionId，将创建新的')
-  return undefined
 }
 
 export function SolidSessionProvider({
   children,
+  sessionId,
   restorePreviousSession = true,
   onError,
   onSessionRestore,
-  skipLoadingProfile,
 }: SolidSessionProviderProps) {
-  // 在组件初次渲染时获取存储的 sessionId
-  const sessionId = getStoredSessionId()
+  capturePendingCallbackError()
 
   return (
-    <SessionProvider
+    <InruptSessionProvider
       sessionId={sessionId}
       restorePreviousSession={restorePreviousSession}
+      skipLoadingProfile
       onError={onError}
       onSessionRestore={onSessionRestore}
-      skipLoadingProfile={skipLoadingProfile}
     >
-      {children}
-    </SessionProvider>
+      <SessionEventBridge onError={onError}>
+        {children}
+      </SessionEventBridge>
+    </InruptSessionProvider>
   )
 }
 
-// 重新导出 useSession，这样其他文件可以从这里统一导入
-export { useSession } from '@inrupt/solid-ui-react'
+function SessionEventBridge({
+  children,
+  onError,
+}: {
+  children: ReactNode
+  onError?: (error: Error) => void
+}) {
+  const context = useContext(SessionContext)
+  const { session, setSessionRequestInProgress } = context
+  const [version, setVersion] = useState(0)
+  const bumpVersion = useCallback(() => setVersion((current) => current + 1), [])
+
+  useEffect(() => {
+    const handleLogin = () => {
+      setSessionRequestInProgress?.(false)
+      bumpVersion()
+    }
+    const handleLogout = () => {
+      setSessionRequestInProgress?.(false)
+      bumpVersion()
+    }
+    const handleError = (code: unknown, error?: unknown) => {
+      setSessionRequestInProgress?.(false)
+      bumpVersion()
+      console.warn('[solid-session] auth error', code, error)
+      if (error instanceof Error) {
+        onError?.(error)
+        return
+      }
+      if (typeof error === 'string') {
+        onError?.(new Error(error))
+        return
+      }
+      if (typeof code === 'string') {
+        onError?.(new Error(code))
+      }
+    }
+
+    session.events.on(EVENTS.LOGIN, handleLogin)
+    session.events.on(EVENTS.LOGOUT, handleLogout)
+    session.events.on(EVENTS.SESSION_RESTORED, handleLogin)
+    session.events.on(EVENTS.ERROR, handleError)
+
+    return () => {
+      session.events.off(EVENTS.LOGIN, handleLogin)
+      session.events.off(EVENTS.LOGOUT, handleLogout)
+      session.events.off(EVENTS.SESSION_RESTORED, handleLogin)
+      session.events.off(EVENTS.ERROR, handleError)
+    }
+  }, [bumpVersion, onError, session.events, setSessionRequestInProgress])
+
+  const value = useMemo(() => ({ ...context }), [context, version])
+
+  return (
+    <SessionContext.Provider value={value}>
+      {children}
+    </SessionContext.Provider>
+  )
+}
+
+export { useSession }

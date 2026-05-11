@@ -1,7 +1,7 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import type { Session } from '@inrupt/solid-client-authn-node'
 import type { ClientCredentialsSecrets, StoredCredentials } from '../credentials-store.js'
-import type { WatchApprovalDecision, WatchApprovalRequest, WatchSessionRecord } from '@undefineds.co/models/watch'
+import type { WatchApprovalDecision, WatchApprovalRequest, WatchSessionRecord } from '@linx/client/watch'
 
 const WATCH_CHAT_ID = 'linx-watch'
 const WATCH_AGENT_ID = 'linx-watch-assistant'
@@ -411,7 +411,7 @@ async function createDefaultRuntime(): Promise<WatchRemoteApprovalRuntime> {
   const [credentialsStore, solidAuth, models] = await Promise.all([
     dynamicImport(new URL('../credentials-store.js', import.meta.url).href),
     dynamicImport(new URL('../solid-auth.js', import.meta.url).href),
-    dynamicImport(new URL('../models.js', import.meta.url).href),
+    dynamicImport(new URL('...co/models.js', import.meta.url).href),
   ])
 
   return {
