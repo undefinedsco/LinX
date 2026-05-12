@@ -9822,10 +9822,10 @@
     "@typescript-eslint/types" "8.52.0"
     eslint-visitor-keys "^4.2.1"
 
-"@undefineds.co/drizzle-solid@^0.3.4", "@undefineds.co/drizzle-solid@^0.3.8":
-  version "0.3.8"
-  resolved "https://registry.yarnpkg.com/@undefineds.co/drizzle-solid/-/drizzle-solid-0.3.8.tgz#a987d4a48e84fbaa96dcce96507af5998c78a7ba"
-  integrity sha512-Afi2TkfSaybMElnM5PsVRTrR5fVOV/g8mQUSzbIhxfZBfH4HNqdKGFKW/G/XWNZYxugBIPBjkAVUj0gTYfIW1w==
+"@undefineds.co/drizzle-solid@^0.3.4", "@undefineds.co/drizzle-solid@^0.3.9":
+  version "0.3.9"
+  resolved "https://registry.yarnpkg.com/@undefineds.co/drizzle-solid/-/drizzle-solid-0.3.9.tgz#19fd2d28d78a0e354dbc7eebb8befcb260850907"
+  integrity sha512-OzHb7Ls1vXsKJOLL80sxVDumW/jwiMWTyKYd1Y9eBum15xSk8RMWrGXqab1pvwJy6QV1ng2RlX9g23tjJOsP3w==
   dependencies:
     "@inrupt/solid-client" "^3.0.0"
     "@inrupt/solid-client-authn-node" "^3.1.1"
