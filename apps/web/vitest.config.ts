@@ -2,6 +2,12 @@ import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 
+const repoRoot = path.resolve(__dirname, '../..')
+const inruptAuthnBrowser = path.resolve(
+  repoRoot,
+  'node_modules/@inrupt/solid-client-authn-browser/dist/index.mjs',
+)
+
 export default defineConfig({
   plugins: [react()],
   test: {
@@ -22,7 +28,9 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
+      '@': path.resolve(__dirname, './src'),
+      '@linx/stores': path.resolve(repoRoot, 'packages/stores/src'),
+      '@inrupt/solid-client-authn-browser': inruptAuthnBrowser,
     },
     extensions: ['.ts', '.tsx', '.mjs', '.js', '.mts', '.jsx', '.json'],
   },

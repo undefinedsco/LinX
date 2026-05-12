@@ -21,13 +21,14 @@ import {
   contactTable,
   extractChatIdFromChatRef,
   extractThreadIdFromThreadRef,
-  resolveRowId,
   type SolidDatabase,
   UDFS,
 } from '@undefineds.co/models'
+import { resolveRowSubject } from '@undefineds.co/drizzle-solid'
 import { deleteExactRecord, updateExactRecord } from '@/lib/data/exact-records'
 
 const DEFAULT_CHAT_ID = 'default'
+const POD_QUERY_TIMEOUT_MS = 15000
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -208,6 +209,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   // In-memory caches (per-instance, not per-context)
   private threadChatIdCache = new Map<string, string>()
   private threadMetadataCache = new Map<string, ThreadMetadata>()
+  private threadItemsCache = new Map<string, ThreadItem[]>()
 
   constructor(db: SolidDatabase, webId: string, authFetch: typeof fetch) {
     this.db = db
@@ -278,7 +280,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     const contacts = await this.db.select().from(contactTable).execute()
     const contact = contacts.find((entry: any) => (
       entry.entityUri === participantRef
-      || resolveRowId(entry) === participantRef
+      || resolveRowSubject(entry as Record<string, unknown>) === participantRef
       || entry.id === participantRef
     )) as { entityUri?: string | null } | undefined
 
@@ -287,12 +289,71 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
 
   private async selectMessagesForThread(threadId: string): Promise<any[]> {
     const chatId = await this.getThreadChatId(threadId)
-    const messages = await this.db.select().from(Message).execute()
+    const messages = await withTimeout(
+      this.db.select().from(Message).execute(),
+      POD_QUERY_TIMEOUT_MS,
+      `Timed out loading messages for thread ${threadId}`,
+    )
 
     return messages.filter((message: any) => (
       extractChatId(message.chat) === chatId
       && extractThreadId(message.thread) === threadId
     ))
+  }
+
+  private getCachedThreadItems(threadId: string): ThreadItem[] | null {
+    const cached = this.threadItemsCache.get(threadId)
+    return cached ? [...cached] : null
+  }
+
+  private upsertCachedThreadItem(threadId: string, item: ThreadItem): void {
+    const cached = this.threadItemsCache.get(threadId) ?? []
+    const index = cached.findIndex((entry) => entry.id === item.id)
+    if (index === -1) {
+      this.threadItemsCache.set(threadId, [...cached, item])
+      return
+    }
+
+    const next = [...cached]
+    next[index] = item
+    this.threadItemsCache.set(threadId, next)
+  }
+
+  private removeCachedThreadItem(threadId: string, itemId: string): void {
+    const cached = this.threadItemsCache.get(threadId)
+    if (!cached) return
+    const next = cached.filter((item) => item.id !== itemId)
+    if (next.length === 0) {
+      this.threadItemsCache.delete(threadId)
+      return
+    }
+    this.threadItemsCache.set(threadId, next)
+  }
+
+  private pageThreadItems(
+    items: ThreadItem[],
+    after: string | undefined,
+    limit: number,
+    order: string,
+  ): Page<ThreadItem> {
+    const sorted = [...items].sort((a: any, b: any) => {
+      const aTime = typeof a.created_at === 'number' ? a.created_at : 0
+      const bTime = typeof b.created_at === 'number' ? b.created_at : 0
+      return order === 'desc' ? bTime - aTime : aTime - bTime
+    })
+
+    let startIndex = 0
+    if (after) {
+      const idx = sorted.findIndex((item) => item.id === after)
+      if (idx !== -1) startIndex = idx + 1
+    }
+    const slice = sorted.slice(startIndex, startIndex + limit)
+    return {
+      data: slice,
+      has_more: startIndex + limit < sorted.length,
+      first_id: slice.length > 0 ? slice[0]?.id : undefined,
+      last_id: slice.length > 0 ? slice[slice.length - 1]?.id : undefined,
+    }
   }
 
   private async deleteMessageRecord(message: any): Promise<void> {
@@ -426,6 +487,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     }
     this.threadMetadataCache.delete(threadId)
     this.threadChatIdCache.delete(threadId)
+    this.threadItemsCache.delete(threadId)
   }
 
   // -----------------------------------------------------------------------
@@ -440,6 +502,11 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     _context: StoreContext,
   ): Promise<Page<ThreadItem>> {
     try {
+      const cachedItems = this.getCachedThreadItems(threadId)
+      if (cachedItems) {
+        return this.pageThreadItems(cachedItems, after, limit, order)
+      }
+
       const messages = await this.selectMessagesForThread(threadId)
 
       messages.sort((a: any, b: any) => {
@@ -487,6 +554,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     }).execute()
 
     this.recentlyCreatedIds.add(item.id)
+    this.upsertCachedThreadItem(threadId, item)
   }
 
   async saveItem(threadId: string, item: ThreadItem, _context: StoreContext): Promise<void> {
@@ -497,10 +565,17 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       ? new Date(item.created_at * 1000).toISOString()
       : undefined
 
-    // For recently created messages, use direct SPARQL PATCH to avoid drizzle-solid UPDATE bug
-    if (this.recentlyCreatedIds.has(item.id)) {
+    const cachedItem = this.getCachedThreadItems(threadId)?.find((entry) => entry.id === item.id)
+
+    // For recently created or in-memory messages, patch the known resource directly
+    // instead of issuing a broad message SELECT during the active stream.
+    if (this.recentlyCreatedIds.has(item.id) || cachedItem) {
       this.recentlyCreatedIds.delete(item.id)
-      await this.directPatchMessage(chatId, item.id, content, richContent, status, createdAt)
+      const cachedCreatedAt = cachedItem?.created_at
+        ? new Date(cachedItem.created_at * 1000).toISOString()
+        : undefined
+      await this.directPatchMessage(chatId, item.id, content, richContent, status, createdAt ?? cachedCreatedAt)
+      this.upsertCachedThreadItem(threadId, item)
       return
     }
 
@@ -514,6 +589,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
           : String((existing as any).createdAt))
         : undefined
       await this.directPatchMessage(chatId, item.id, content, richContent, status, existingCreatedAt)
+      this.upsertCachedThreadItem(threadId, item)
     } else {
       await this.addThreadItem(threadId, item, _context)
     }
@@ -601,6 +677,11 @@ WHERE { ${wherePatterns.join(' ')} }
   }
 
   async loadItem(threadId: string, itemId: string, _context: StoreContext): Promise<ThreadItem> {
+    const cachedItem = this.getCachedThreadItems(threadId)?.find((item) => item.id === itemId)
+    if (cachedItem) {
+      return cachedItem
+    }
+
     const messages = (await this.selectMessagesForThread(threadId))
       .filter((message: any) => message.id === itemId)
     if (messages.length === 0) throw new Error(`Item not found: ${itemId}`)
@@ -615,6 +696,7 @@ WHERE { ${wherePatterns.join(' ')} }
     }
 
     await this.deleteMessageRecord(message)
+    this.removeCachedThreadItem(threadId, itemId)
   }
 
   // -----------------------------------------------------------------------
@@ -631,5 +713,23 @@ WHERE { ${wherePatterns.join(' ')} }
 
   async deleteAttachment(_attachmentId: string, _context: StoreContext): Promise<void> {
     // no-op
+  }
+}
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  message: string,
+): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(message)), timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timeout) clearTimeout(timeout)
   }
 }

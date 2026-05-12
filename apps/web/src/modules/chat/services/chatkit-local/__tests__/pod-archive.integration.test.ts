@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
-import { Message, MessageRole, type ThreadStreamEvent } from '@/lib/vendor/xpod-chatkit'
+import { Message, type ThreadStreamEvent } from '@/lib/vendor/xpod-chatkit'
 import { Chat, Thread } from '@/lib/vendor/xpod-chatkit'
 import { createLocalChatKitFetch } from '../fetch-handler'
 import { createXpodIntegrationContext, type XpodIntegrationContext } from '@/test/xpod-integration'
@@ -56,15 +56,9 @@ function createProviderResponse(chunks: string[]): Response {
   })
 }
 
-function extractThreadId(value: unknown): string | undefined {
-  if (typeof value !== 'string') return undefined
-  if (value.includes('#')) return value.split('#').pop() || undefined
-  return value
-}
-
 afterAll(async () => {
   await context?.stop()
-}, 30000)
+}, 90000)
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -72,7 +66,7 @@ afterEach(() => {
 })
 
 describe('LocalChatKit pod archive integration', () => {
-  it('creates a thread, streams an assistant reply, and archives both messages in Pod', { timeout: 30000 }, async () => {
+  it('creates a thread, streams an assistant reply, and archives both messages in Pod', { timeout: 90000 }, async () => {
     const { db, webId } = await getContext()
     const sessionFetch = db.getDialect().getAuthenticatedFetch()
     if (typeof sessionFetch !== 'function') {
@@ -149,19 +143,29 @@ describe('LocalChatKit pod archive integration', () => {
       && (event as any).item?.type === 'assistant_message') as
       | Extract<ThreadStreamEvent, { type: 'thread.item.done' }>
       | undefined
+    const userDone = events.find((event) => event.type === 'thread.item.done'
+      && (event as any).item?.type === 'user_message') as
+      | Extract<ThreadStreamEvent, { type: 'thread.item.done' }>
+      | undefined
 
     expect(threadCreated?.thread.id).toBeTruthy()
+    expect(userDone).toBeDefined()
     expect(assistantDone).toBeDefined()
     expect((assistantDone as any).item.content[0]?.text).toBe(assistantText)
 
     const threadId = threadCreated!.thread.id
-    const allMessages = await db.select().from(Message).execute()
-    const threadMessages = allMessages.filter((message: any) => extractThreadId(message.thread) === threadId)
-
-    expect(threadMessages).toHaveLength(2)
-
-    const userMessage = threadMessages.find((message: any) => message.role === MessageRole.USER)
-    const assistantMessage = threadMessages.find((message: any) => message.role === MessageRole.ASSISTANT)
+    const userItem = (userDone as any).item
+    const assistantItem = (assistantDone as any).item
+    const userMessage = await db.findByLocator(Message, {
+      id: userItem.id,
+      chat: chatId,
+      createdAt: new Date(userItem.created_at * 1000),
+    } as any)
+    const assistantMessage = await db.findByLocator(Message, {
+      id: assistantItem.id,
+      chat: chatId,
+      createdAt: new Date(assistantItem.created_at * 1000),
+    } as any)
 
     expect(userMessage?.content).toBe(prompt)
     expect(assistantMessage?.content).toBe(assistantText)

@@ -42,6 +42,9 @@ const mockDb = {
       execute: vi.fn().mockResolvedValue(undefined),
     }),
   }),
+  resolveRowIri: vi.fn(),
+  resolveRowId: vi.fn(),
+  resolveResourceId: vi.fn(),
   // Add findFirst for remote profile/agent fetching
   findFirst: vi.fn().mockResolvedValue(null),
 }
@@ -61,6 +64,62 @@ const { mockCollectionState, mockInsert, mockUpdate, mockDelete, mockFetch, mock
   mockFetch: vi.fn().mockResolvedValue([]),
   mockSubscribeToPod: vi.fn().mockResolvedValue(() => {}),
 }))
+
+function persistedTx() {
+  return {
+    isPersisted: { promise: Promise.resolve() },
+  }
+}
+
+function resetCollectionMocks() {
+  mockInsert.mockReturnValue(persistedTx())
+  mockUpdate.mockReturnValue(persistedTx())
+  mockDelete.mockReturnValue(persistedTx())
+  mockFetch.mockResolvedValue([])
+  mockSubscribeToPod.mockResolvedValue(() => {})
+}
+
+function resetMockDb() {
+  mockDb.insert.mockImplementation(() => ({
+    values: vi.fn().mockReturnValue({
+      execute: vi.fn().mockResolvedValue(undefined),
+    }),
+  }))
+  mockDb.select.mockImplementation(() => ({
+    from: vi.fn().mockReturnValue({
+      where: vi.fn().mockReturnValue({
+        execute: vi.fn().mockImplementation(() => Promise.resolve(mockSearchResults)),
+      }),
+      orderBy: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue([]),
+      }),
+      execute: vi.fn().mockResolvedValue([]),
+    }),
+  }))
+  mockDb.update.mockImplementation(() => ({
+    set: vi.fn().mockReturnValue({
+      where: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+    }),
+  }))
+  mockDb.delete.mockImplementation(() => ({
+    where: vi.fn().mockReturnValue({
+      execute: vi.fn().mockResolvedValue(undefined),
+    }),
+  }))
+  mockDb.resolveRowIri.mockImplementation((_table, row: Record<string, unknown>) => {
+    return String(row.id ?? row['@id'] ?? row.subject ?? row.uri ?? row.source ?? 'mock-row')
+  })
+  mockDb.resolveRowId.mockImplementation((_table, row: Record<string, unknown>) => {
+    return String(row.id ?? row['@id'] ?? row.subject ?? row.uri ?? row.source ?? 'mock-row')
+  })
+  mockDb.resolveResourceId.mockImplementation((_table, target: string | Record<string, unknown>) => {
+    if (typeof target === 'string') return target
+    return String(target.id ?? target['@id'] ?? target.subject ?? target.uri ?? target.source ?? 'mock-row')
+  })
+  mockDb.findFirst.mockResolvedValue(null)
+}
 
 // Mock createPodCollection before importing collections
 vi.mock('@/lib/data/pod-collection', () => ({
@@ -105,6 +164,8 @@ describe('contactOps', () => {
   beforeEach(() => {
     uuidIndex = 0
     vi.clearAllMocks()
+    resetMockDb()
+    resetCollectionMocks()
     mockCollectionState.clear()
     // Set up mock database
     setContactsDatabaseGetter(() => mockDb as any)
@@ -384,6 +445,8 @@ describe('Contact + Chat Linkage Logic', () => {
   beforeEach(() => {
     uuidIndex = 0
     vi.clearAllMocks()
+    resetMockDb()
+    resetCollectionMocks()
     mockCollectionState.clear()
     setContactsDatabaseGetter(() => mockDb as any)
   })
@@ -446,6 +509,8 @@ describe('contactOps Query Operations', () => {
   beforeEach(() => {
     uuidIndex = 0
     vi.clearAllMocks()
+    resetMockDb()
+    resetCollectionMocks()
     mockCollectionState.clear()
     setContactsDatabaseGetter(() => mockDb as any)
   })

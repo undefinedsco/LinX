@@ -6,13 +6,11 @@ import {
   eq,
   extractChatIdFromChatRef,
   extractThreadIdFromThreadRef,
-  findPodRowByStorageId,
   initSolidTables,
   solidSchema,
   messageTable,
   sessionTable,
   threadTable,
-  whereByPodStorageId,
   type MessageRow,
   type SolidDatabase,
   type ThreadRow,
@@ -37,6 +35,20 @@ function getPodBaseUrl(webId: string): string {
 
 function buildAgentUri(webId: string, agentId: string): string {
   return `${getPodBaseUrl(webId)}/.data/agents/${agentId}.ttl`
+}
+
+function requireFindByLocator(db: SolidDatabase): NonNullable<SolidDatabase['findByLocator']> {
+  if (typeof db.findByLocator !== 'function') {
+    throw new Error('Solid database does not support findByLocator')
+  }
+  return db.findByLocator.bind(db)
+}
+
+function requireUpdateByLocator(db: SolidDatabase): NonNullable<SolidDatabase['updateByLocator']> {
+  if (typeof db.updateByLocator !== 'function') {
+    throw new Error('Solid database does not support updateByLocator')
+  }
+  return db.updateByLocator.bind(db)
 }
 
 export interface ThreadSummary {
@@ -73,7 +85,8 @@ export async function initPodData(session: Session): Promise<SolidDatabase> {
 }
 
 async function ensureCliAgent(db: SolidDatabase, webId: string): Promise<void> {
-  const existing = await findPodRowByStorageId(db, webId, agentTable, DEFAULT_AGENT_ID)
+  const findByLocator = requireFindByLocator(db)
+  const existing = await findByLocator(agentTable, { id: DEFAULT_AGENT_ID })
 
   if (existing) {
     return
@@ -99,7 +112,8 @@ export async function getOrCreateDefaultChat(session: Session): Promise<string> 
 
   await ensureCliAgent(db, webId)
 
-  const existing = await findPodRowByStorageId(db, webId, chatTable, DEFAULT_CHAT_ID)
+  const findByLocator = requireFindByLocator(db)
+  const existing = await findByLocator(chatTable, { id: DEFAULT_CHAT_ID })
   if (existing) {
     return DEFAULT_CHAT_ID
   }
@@ -154,11 +168,9 @@ export async function createThread(
 
 export async function touchThread(session: Session, threadId: string): Promise<void> {
   const db = await initPodData(session)
-  const webId = session.info.webId
-  if (!webId) {
-    throw new Error('Missing webId in Solid session')
-  }
-  await whereByPodStorageId(webId, threadTable, db.update(threadTable).set({ updatedAt: new Date() }), threadId).execute()
+  const chatId = extractChatId((await loadThread(session, threadId))?.chat) ?? DEFAULT_CHAT_ID
+  const updateByLocator = requireUpdateByLocator(db)
+  await updateByLocator(threadTable, { chat: chatId, id: threadId }, { updatedAt: new Date() })
 }
 
 export async function loadMessages(session: Session, threadId: string): Promise<StoredThreadMessage[]> {
@@ -197,6 +209,7 @@ export async function saveUserMessage(
   if (!webId) {
     throw new Error('Missing webId in Solid session')
   }
+  const updateByLocator = requireUpdateByLocator(db)
 
   await db.insert(messageTable).values({
     id: crypto.randomUUID(),
@@ -209,11 +222,11 @@ export async function saveUserMessage(
     createdAt: now,
   }).execute()
 
-  await whereByPodStorageId(webId, chatTable, db.update(chatTable).set({
+  await updateByLocator(chatTable, { id: chatId }, {
     lastActiveAt: now,
     lastMessagePreview: content.slice(0, 100),
     updatedAt: now,
-  }), chatId).execute()
+  })
 
   await touchThread(session, threadId)
 }
@@ -230,6 +243,7 @@ export async function saveAssistantMessage(
   if (!webId) {
     throw new Error('Missing webId in Solid session')
   }
+  const updateByLocator = requireUpdateByLocator(db)
 
   await db.insert(messageTable).values({
     id: crypto.randomUUID(),
@@ -242,22 +256,32 @@ export async function saveAssistantMessage(
     createdAt: now,
   }).execute()
 
-  await whereByPodStorageId(webId, chatTable, db.update(chatTable).set({
+  await updateByLocator(chatTable, { id: chatId }, {
     lastActiveAt: now,
     lastMessagePreview: content.slice(0, 100),
     updatedAt: now,
-  }), chatId).execute()
+  })
 
   await touchThread(session, threadId)
 }
 
 export async function loadThread(session: Session, threadId: string): Promise<ThreadRow | null> {
   const db = await initPodData(session)
-  const webId = session.info.webId
-  if (!webId) {
-    throw new Error('Missing webId in Solid session')
+  const findByLocator = requireFindByLocator(db)
+
+  const directChatId = extractChatId(threadId)
+  const directThreadId = extractThreadId(threadId)
+  if (directChatId && directThreadId) {
+    return await findByLocator<ThreadRow>(threadTable, {
+      chat: directChatId,
+      id: directThreadId,
+    })
   }
-  return await findPodRowByStorageId<ThreadRow>(db, webId, threadTable, threadId)
+
+  return await findByLocator<ThreadRow>(threadTable, {
+    chat: DEFAULT_CHAT_ID,
+    id: threadId,
+  })
 }
 
 export async function getLatestThreadId(session: Session, chatId: string): Promise<string | null> {

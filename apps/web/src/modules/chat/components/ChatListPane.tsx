@@ -26,7 +26,8 @@ import {
   useChatInit,
   useThreadIndex,
 } from '../collections'
-import { resolveRowId, resolveThreadChatId } from '@undefineds.co/models'
+import { resolveThreadChatId } from '@undefineds.co/models'
+import { resolveRowSubject } from '@undefineds.co/drizzle-solid'
 import { useInboxItems } from '@/modules/inbox/collections'
 import { isActionableInboxItem } from '@/modules/inbox/utils'
 import { useToast } from '@/components/ui/use-toast'
@@ -641,7 +642,7 @@ export function ChatListPane(_props: ChatListPaneProps) {
     const threadsByChatId = new Map<string, string[]>()
     const workspaceBackedChatIds = new Set<string>()
     for (const thread of threads) {
-      const threadId = resolveRowId(thread) ?? thread.id
+      const threadId = resolveRowSubject(thread as Record<string, unknown>) ?? thread.id
       const chatId = resolveThreadChatId(thread)
       if (!threadId || !chatId) continue
       const list = threadsByChatId.get(chatId) ?? []
@@ -661,7 +662,7 @@ export function ChatListPane(_props: ChatListPaneProps) {
     }
 
     const formatted = rawChats.map((chat): ChatItemData => {
-      const id = resolveRowId(chat) ?? 'unknown'
+      const id = resolveRowSubject(chat as Record<string, unknown>) ?? 'unknown'
       const pendingItems = inboxItems.filter((item) => item.chatId === id)
       const hasPendingApproval = pendingItems.some((item) => item.kind === 'approval' && item.status === 'pending')
       const hasAuthRequired = pendingItems.some((item) => item.category === 'auth_required')

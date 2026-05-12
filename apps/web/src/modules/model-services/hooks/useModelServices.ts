@@ -3,6 +3,7 @@ import { useLiveQuery } from '@tanstack/react-db'
 import {
   buildAIConfigMutationPlan,
   buildAIConfigProviderStateMap,
+  normalizeAIConfigModelId,
   sameAIConfigProviderFamily,
 } from '@undefineds.co/models'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
@@ -128,7 +129,9 @@ export function useModelServices() {
       updates,
     })
 
-    const existingProvider = providerRows.find((row) => row.id === plan.providerId)
+    const existingProvider = providerRows.find((row) =>
+      sameAIConfigProviderFamily(typeof row.id === 'string' ? row.id : '', plan.providerId),
+    )
     const existingCredential = credentialRows.find((row) =>
       sameAIConfigProviderFamily(typeof row.provider === 'string' ? row.provider : '', plan.providerId),
     )
@@ -160,7 +163,7 @@ export function useModelServices() {
       const existingById = new Map(
         existingModels
           .filter((row) => typeof row.id === 'string' && row.id.length > 0)
-          .map((row) => [row.id as string, row] as const),
+          .map((row) => [normalizeAIConfigModelId(row.id as string, plan.providerId), row] as const),
       )
 
       for (const modelPayload of plan.modelUpserts) {

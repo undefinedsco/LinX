@@ -87,9 +87,11 @@ export const providerTable = podTable('provider', {
 })
 ```
 
-#### 3. Model 表 - AI 模型配置
+#### 3. Model 资源 - 用户维护的 AI 模型配置
 
-**路径**: `/settings/ai/models.ttl`
+**路径**: `/settings/ai/models/{providerId}.ttl#{modelId}`
+
+LinX 自供模型来自 ai-gateway discovery/runtime，不写入用户 Pod。这里仅描述用户自己维护的第三方 provider/model 配置。
 
 **Namespace**: `https://vocab.xpod.dev/ai#`
 
@@ -104,9 +106,9 @@ export const modelTable = podTable('model', {
   createdAt: datetime('createdAt'),
   updatedAt: datetime('updatedAt'),
 }, {
-  base: '/settings/ai/models.ttl',
+  base: '/settings/ai/models/',
   type: 'https://vocab.xpod.dev/ai#Model',
-  subjectTemplate: '#{id}',
+  subjectTemplate: '{isProvidedBy|id}.ttl#{id}',
 })
 ```
 
@@ -144,14 +146,14 @@ export const modelTable = podTable('model', {
 
 <#openai> a ai:Provider ;
     ai:baseUrl "https://api.openai.com/v1" ;
-    ai:hasModel </settings/ai/models.ttl#gpt-4o> .
+    ai:hasModel </settings/ai/models/openai.ttl#gpt-4o> .
 
 <#anthropic> a ai:Provider ;
     ai:baseUrl "https://api.anthropic.com/v1" ;
     ai:proxyUrl "http://proxy.example.com:8080" .
 ```
 
-**`/settings/ai/models.ttl`**:
+**`/settings/ai/models/openai.ttl`**:
 ```turtle
 @prefix ai: <https://vocab.xpod.dev/ai#> .
 
@@ -184,7 +186,7 @@ export const modelTable = podTable('model', {
 LinX 将配置写入用户 Pod 的三个文件：
 - `/settings/credentials.ttl` - API Key
 - `/settings/ai/providers.ttl` - Provider 配置
-- `/settings/ai/models.ttl` - Model 列表
+- `/settings/ai/models/{providerId}.ttl` - 用户维护的 Model 列表分桶
 
 ### xpod 读取配置
 

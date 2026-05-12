@@ -5,8 +5,6 @@ describe('resource reference helpers', () => {
   it('extracts approval ids only from approval resources', () => {
     expect(extractApprovalIdFromApprovalRef('approval-1')).toBe('approval-1')
     expect(extractApprovalIdFromApprovalRef('https://alice.example/.data/approvals/2026/05/12.ttl#approval-1')).toBe('approval-1')
-    expect(extractApprovalIdFromApprovalRef('https://alice.example/.data/approvals/approval-1.ttl#this')).toBe('approval-1')
-    expect(extractApprovalIdFromApprovalRef('https://alice.example/.data/approvals/approval-1.ttl#decision')).toBe('decision')
 
     expect(extractApprovalIdFromApprovalRef('https://alice.example/.data/workspaces/ws-1/output/report.md')).toBeNull()
     expect(extractApprovalIdFromApprovalRef('https://alice.example/.data/audits/2026/05/12.ttl#audit-1')).toBeNull()

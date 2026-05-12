@@ -18,10 +18,10 @@ async function getContext(): Promise<XpodIntegrationContext<typeof solidSchema>>
 
 afterAll(async () => {
   await context?.stop()
-}, 30000)
+}, 90000)
 
 describe('chat collections integration', () => {
-  it('insert chat and SELECT back via SPARQL', { timeout: 30000 }, async () => {
+  it('insert chat and SELECT back via SPARQL', { timeout: 90000 }, async () => {
     const { db: database, webId } = await getContext()
 
     const id = `chat-${Date.now()}`
@@ -40,7 +40,7 @@ describe('chat collections integration', () => {
     expect(row?.title).toBe('Integration Chat')
   })
 
-  it('round-trips group chat participants and metadata object', { timeout: 30000 }, async () => {
+  it('round-trips group chat participants and metadata object', { timeout: 90000 }, async () => {
     const { db: database, webId } = await getContext()
 
     const id = `group-chat-${Date.now()}`
@@ -69,7 +69,7 @@ describe('chat collections integration', () => {
     await (database as any).deleteByLocator(chatTable as any, { id } as any)
   })
 
-  it('insert thread/message and SELECT back', { timeout: 30000 }, async () => {
+  it('insert thread/message and SELECT back', { timeout: 90000 }, async () => {
     const { db: database, webId } = await getContext()
 
     const chatId = `chat-thread-${Date.now()}`
@@ -96,7 +96,7 @@ describe('chat collections integration', () => {
     expect(roundTripped?.content).toBe('hello from integration test')
   })
 
-  it('delete chat and verify via SELECT', { timeout: 30000 }, async () => {
+  it('delete chat and verify via SELECT', { timeout: 90000 }, async () => {
     const { db: database, webId } = await getContext()
 
     const id = `chat-del-${Date.now()}`

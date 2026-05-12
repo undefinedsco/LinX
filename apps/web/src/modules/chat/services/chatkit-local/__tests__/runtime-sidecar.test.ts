@@ -48,6 +48,9 @@ function createMockDb(existingApprovals: Array<Record<string, unknown>> = []) {
           },
         }
       },
+      resolveRowIri(_table: unknown, row: Record<string, unknown>) {
+        return `https://alice.example/.data/mock/${String(row.id ?? 'row')}`
+      },
     },
     inserts,
   }

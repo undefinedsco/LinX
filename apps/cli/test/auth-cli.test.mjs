@@ -52,6 +52,12 @@ function isAuthorized(headers) {
     || headers.authorization === 'Bearer access-token'
 }
 
+function isAiModelResourcePath(pathname) {
+  const prefix = '/profile/settings/ai/models/'
+  if (!pathname.startsWith(prefix) || !pathname.endsWith('.ttl')) return false
+  return !pathname.slice(prefix.length, -'.ttl'.length).includes('/')
+}
+
 globalThis.fetch = async (input, init = {}) => {
   const url = typeof input === 'string' || input instanceof URL ? String(input) : String(input.url)
   const method = String(init.method || 'GET').toUpperCase()
@@ -156,7 +162,7 @@ globalThis.fetch = async (input, init = {}) => {
     && (
       pathname === '/profile/settings/ai/providers.ttl'
       || pathname === '/profile/settings/credentials.ttl'
-      || pathname === '/profile/settings/ai/models.ttl'
+      || isAiModelResourcePath(pathname)
     )
   ) {
     if (isAuthorized(headers)) {
@@ -202,7 +208,7 @@ globalThis.fetch = async (input, init = {}) => {
     })
   }
 
-  if (method === 'GET' && pathname === '/profile/settings/ai/models.ttl') {
+  if (method === 'GET' && isAiModelResourcePath(pathname)) {
     if (!isAuthorized(headers)) {
       return new Response('unauthorized', { status: 401 })
     }
@@ -415,7 +421,7 @@ test('linx ai connect writes provider and credential config to Pod', async (t) =
   const requests = readRequests(logFile)
   const providerPatch = requests.find((item) => item.method === 'PATCH' && item.url === 'https://pod.example/profile/settings/ai/providers.ttl')
   const credentialPatch = requests.find((item) => item.method === 'PATCH' && item.url === 'https://pod.example/profile/settings/credentials.ttl')
-  const modelPatch = requests.find((item) => item.method === 'PATCH' && item.url === 'https://pod.example/profile/settings/ai/models.ttl')
+  const modelPatch = requests.find((item) => item.method === 'PATCH' && item.url === 'https://pod.example/profile/settings/ai/models/anthropic.ttl')
 
   assert.ok(providerPatch)
   assert.ok(credentialPatch)
@@ -423,6 +429,7 @@ test('linx ai connect writes provider and credential config to Pod', async (t) =
   assert.match(providerPatch.body, /https:\/\/vocab\.xpod\.dev\/ai#Provider/)
   assert.match(providerPatch.body, /https:\/\/vocab\.xpod\.dev\/ai#baseUrl/)
   assert.match(providerPatch.body, /https:\/\/vocab\.xpod\.dev\/ai#hasModel/)
+  assert.match(providerPatch.body, /https:\/\/pod\.example\/profile\/settings\/ai\/models\/anthropic\.ttl#claude-sonnet-4-20250514/)
   assert.match(credentialPatch.body, /https:\/\/vocab\.xpod\.dev\/credential#Credential/)
   assert.match(credentialPatch.body, /https:\/\/vocab\.xpod\.dev\/credential#apiKey/)
   assert.doesNotMatch(credentialPatch.body, /defaultModel/)
@@ -494,7 +501,12 @@ test('linx ai status prints configured cloud AI credentials', async (t) => {
 `,
     FAKE_AI_STATUS_PROVIDERS_TTL: `<https://pod.example/profile/settings/ai/providers.ttl#anthropic> a <https://vocab.xpod.dev/ai#Provider> ;
   <https://vocab.xpod.dev/ai#baseUrl> "https://api.anthropic.com/v1" ;
-  <https://vocab.xpod.dev/ai#hasModel> <https://pod.example/profile/settings/ai/models.ttl#claude-sonnet-4-20250514> .
+  <https://vocab.xpod.dev/ai#hasModel> <https://pod.example/profile/settings/ai/models/anthropic.ttl#claude-sonnet-4-20250514> .
+`,
+    FAKE_AI_STATUS_MODELS_TTL: `<https://pod.example/profile/settings/ai/models/anthropic.ttl#claude-sonnet-4-20250514> a <https://vocab.xpod.dev/ai#Model> ;
+  <https://vocab.xpod.dev/ai#displayName> "Claude Sonnet 4" ;
+  <https://vocab.xpod.dev/ai#isProvidedBy> <https://pod.example/profile/settings/ai/providers.ttl#anthropic> ;
+  <https://vocab.xpod.dev/ai#status> "active" .
 `,
   }, modulePath)
 

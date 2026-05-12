@@ -1,15 +1,27 @@
-import type { AnyPodTable, SolidDatabase } from '@undefineds.co/models'
+import type { PodTable, SolidDatabase } from '@undefineds.co/drizzle-solid'
 
 type ExactRecordTarget = string | Record<string, unknown> | null | undefined
+type ExactPodTable = PodTable<any>
 
 type LocatorDatabase = SolidDatabase & {
-  findByLocator?: <T = unknown>(table: AnyPodTable, locator: Record<string, unknown>) => Promise<T | null>
+  findByResource?: <T = unknown>(table: unknown, target: string | Record<string, unknown>) => Promise<T | null>
+  findByLocator?: <T = unknown>(table: unknown, locator: Record<string, unknown>) => Promise<T | null>
+  updateByResource?: <T = unknown>(
+    table: unknown,
+    target: string | Record<string, unknown>,
+    data: Record<string, unknown>,
+  ) => Promise<T | null>
   updateByLocator?: <T = unknown>(
-    table: AnyPodTable,
+    table: unknown,
     locator: Record<string, unknown>,
     data: Record<string, unknown>,
   ) => Promise<T | null>
-  deleteByLocator?: (table: AnyPodTable, locator: Record<string, unknown>) => Promise<unknown>
+  deleteByResource?: (table: unknown, target: string | Record<string, unknown>) => Promise<unknown>
+  deleteByLocator?: (table: unknown, locator: Record<string, unknown>) => Promise<unknown>
+  resolveResourceIri?: (table: unknown, target: string | Record<string, unknown>) => string
+  resolveResourceId?: (table: unknown, target: string | Record<string, unknown>) => string
+  resolveRowIri?: (table: unknown, row: Record<string, unknown>) => string
+  resolveRowId?: (table: unknown, row: Record<string, unknown>) => string
 }
 
 const ABSOLUTE_IRI = /^[a-zA-Z][a-zA-Z\d+.-]*:/
@@ -17,11 +29,15 @@ const INTERNAL_FIELDS = new Set(['id', '@id', 'subject', 'source'])
 
 export async function findExactRecord<T>(
   db: SolidDatabase,
-  table: AnyPodTable,
+  table: ExactPodTable,
   target: ExactRecordTarget,
 ): Promise<T | null> {
   const locatorDb = db as LocatorDatabase
-  const iri = resolveRecordIri(target)
+  if (target && typeof locatorDb.findByResource === 'function') {
+    return locatorDb.findByResource<T>(table, target)
+  }
+
+  const iri = resolveRecordIriWithDb(locatorDb, table, target)
   if (iri && typeof locatorDb.findByIri === 'function') {
     return locatorDb.findByIri<T>(table, iri)
   }
@@ -31,20 +47,23 @@ export async function findExactRecord<T>(
     return locatorDb.findByLocator<T>(table, locator)
   }
 
-  const rows = await db.select().from(table).execute()
-  const expectedId = resolveRecordId(target)
-  return (rows.find((row) => rowMatchesTarget(row, expectedId, iri)) as T | undefined) ?? null
+  return null
 }
 
 export async function updateExactRecord(
   db: SolidDatabase,
-  table: AnyPodTable,
+  table: ExactPodTable,
   target: ExactRecordTarget,
   updates: Record<string, unknown>,
 ): Promise<void> {
   const locatorDb = db as LocatorDatabase
   const payload = sanitizeUpdatePayload(updates)
-  const iri = resolveRecordIri(target)
+  if (target && typeof locatorDb.updateByResource === 'function') {
+    await locatorDb.updateByResource(table, target, payload)
+    return
+  }
+
+  const iri = resolveRecordIriWithDb(locatorDb, table, target)
   if (iri && typeof locatorDb.updateByIri === 'function') {
     await locatorDb.updateByIri(table, iri, payload)
     return
@@ -70,11 +89,16 @@ export async function updateExactRecord(
 
 export async function deleteExactRecord(
   db: SolidDatabase,
-  table: AnyPodTable,
+  table: ExactPodTable,
   target: ExactRecordTarget,
 ): Promise<void> {
   const locatorDb = db as LocatorDatabase
-  const iri = resolveRecordIri(target)
+  if (target && typeof locatorDb.deleteByResource === 'function') {
+    await locatorDb.deleteByResource(table, target)
+    return
+  }
+
+  const iri = resolveRecordIriWithDb(locatorDb, table, target)
   if (iri && typeof locatorDb.deleteByIri === 'function') {
     await locatorDb.deleteByIri(table, iri)
     return
@@ -104,13 +128,34 @@ function resolveRecordIri(target: ExactRecordTarget): string | null {
   }
 
   const record = target ?? {}
-  for (const key of ['@id', 'subject', 'source']) {
+  for (const key of ['@id', 'subject', 'uri', 'source']) {
     const value = record[key]
     if (typeof value === 'string' && ABSOLUTE_IRI.test(value)) {
       return value
     }
   }
 
+  return null
+}
+
+function resolveRecordIriWithDb(db: LocatorDatabase, table: ExactPodTable, target: ExactRecordTarget): string | null {
+  if (target && typeof db.resolveResourceIri === 'function') {
+    try {
+      return db.resolveResourceIri(table, target)
+    } catch {
+      // Fall back to older exact-record compatibility paths below.
+    }
+  }
+
+  const directIri = resolveRecordIri(target)
+  if (directIri) return directIri
+  if (target && typeof target === 'object' && typeof db.resolveRowIri === 'function') {
+    try {
+      return db.resolveRowIri(table, target)
+    } catch {
+      return null
+    }
+  }
   return null
 }
 
@@ -126,23 +171,6 @@ function resolveRecordId(target: ExactRecordTarget): string | null {
 function resolveRecordLocator(target: ExactRecordTarget): Record<string, unknown> | null {
   const id = resolveRecordId(target)
   return id ? { id } : null
-}
-
-function rowMatchesTarget(row: unknown, expectedId: string | null, expectedIri: string | null): boolean {
-  if (!row || typeof row !== 'object') {
-    return false
-  }
-
-  const record = row as Record<string, unknown>
-  if (expectedId && record.id === expectedId) {
-    return true
-  }
-
-  if (!expectedIri) {
-    return false
-  }
-
-  return record['@id'] === expectedIri || record.subject === expectedIri || record.source === expectedIri
 }
 
 function sanitizeUpdatePayload(updates: Record<string, unknown>): Record<string, unknown> {

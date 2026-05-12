@@ -3,9 +3,11 @@ import { MODEL_PROVIDERS } from './constants'
 
 describe('model-services provider metadata', () => {
   it('hydrates shared provider metadata from builtin discovery', () => {
+    const undefineds = MODEL_PROVIDERS.find((provider) => provider.id === 'undefineds')
     const anthropic = MODEL_PROVIDERS.find((provider) => provider.id === 'anthropic')
     const ollama = MODEL_PROVIDERS.find((provider) => provider.id === 'ollama')
 
+    expect(undefineds).toBeUndefined()
     expect(anthropic).toMatchObject({
       id: 'anthropic',
       name: 'Anthropic',

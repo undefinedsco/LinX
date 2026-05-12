@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 export interface LocalXpodTestPod {
   webId: string
@@ -294,7 +295,7 @@ export async function startLocalXpod(): Promise<LocalXpodTestPod> {
     }
   }
 
-  const testDataRoot = path.resolve(process.cwd(), '../../.test-data')
+  const testDataRoot = fileURLToPath(new URL('../../../../.test-data/', import.meta.url))
   fs.mkdirSync(testDataRoot, { recursive: true })
   const runtimeRoot = fs.mkdtempSync(path.join(testDataRoot, 'linx-xpod-'))
   const spawned = await startExternalOpenXpod(runtimeRoot)

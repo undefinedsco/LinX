@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
-  aiConfigModelUri,
-  aiConfigProviderUri,
+  aiConfigModelRef,
+  aiConfigProviderRef,
   buildAIConfigMutationPlan,
   buildAIConfigProviderStateMap,
   getAIConfigProviderFamilyIds,
   getAIConfigProviderMetadata,
+  normalizeAIConfigModelId,
   normalizeAIConfigProviderId,
+  normalizeAIConfigResourceId,
   sameAIConfigProviderFamily,
 } from '../src/ai-config'
 
@@ -22,14 +24,8 @@ describe('ai-config shared core', () => {
     expect(sameAIConfigProviderFamily('xai', 'https://pod.example/settings/ai/providers.ttl#x-ai')).toBe(true)
   })
 
-  it('treats undefineds as a first-class shared AI provider', () => {
+  it('keeps LinX cloud models out of Pod-backed user AI config defaults', () => {
     expect(normalizeAIConfigProviderId('undefineds')).toBe('undefineds')
-    expect(getAIConfigProviderMetadata('undefineds')).toMatchObject({
-      id: 'undefineds',
-      displayName: 'undefineds',
-      defaultBaseUrl: 'https://api.undefineds.co/v1',
-      defaultModels: ['linx-lite', 'linx'],
-    })
 
     const states = buildAIConfigProviderStateMap({
       providerRows: [],
@@ -37,13 +33,19 @@ describe('ai-config shared core', () => {
       modelRows: [],
     })
 
-    expect(states.undefineds).toMatchObject({
+    expect(getAIConfigProviderMetadata('undefineds')).toMatchObject({
       id: 'undefineds',
-      enabled: false,
-      baseUrl: 'https://api.undefineds.co/v1',
-      selectedModelId: 'linx-lite',
+      displayName: 'Undefineds',
     })
-    expect(states.undefineds?.models.map((model) => model.id)).toEqual(['linx-lite', 'linx'])
+    expect(states.undefineds).toBeUndefined()
+  })
+
+  it('normalizes provider-qualified model ids only in provider context', () => {
+    expect(normalizeAIConfigResourceId('undefineds/linx')).toBe('undefineds/linx')
+    expect(normalizeAIConfigModelId('anthropic/claude-sonnet-4', 'anthropic')).toBe('claude-sonnet-4')
+    expect(normalizeAIConfigModelId('openrouter/openai/gpt-4o-mini', 'openrouter')).toBe('openai/gpt-4o-mini')
+    expect(normalizeAIConfigModelId('https://pod.example/settings/ai/models/anthropic.ttl#claude-sonnet-4', 'anthropic')).toBe('claude-sonnet-4')
+    expect(aiConfigModelRef('anthropic', 'claude-sonnet-4')).toBe('/settings/ai/models/anthropic.ttl#claude-sonnet-4')
   })
 
   it('builds provider state from split AI config tables', () => {
@@ -53,7 +55,7 @@ describe('ai-config shared core', () => {
         {
           id: 'anthropic',
           baseUrl: 'https://api.anthropic.com/v1',
-          hasModel: '/settings/ai/models.ttl#claude-sonnet-4',
+          hasModel: '/settings/ai/models/anthropic.ttl#claude-sonnet-4',
         },
       ],
       credentialRows: [
@@ -67,7 +69,7 @@ describe('ai-config shared core', () => {
       ],
       modelRows: [
         {
-          id: 'claude-sonnet-4',
+          id: 'anthropic.ttl#claude-sonnet-4',
           displayName: 'Claude Sonnet 4',
           isProvidedBy: '/settings/ai/providers.ttl#anthropic',
           status: 'active',
@@ -117,11 +119,11 @@ describe('ai-config shared core', () => {
     expect(plan.providerPayload).toMatchObject({
       id: 'anthropic',
       baseUrl: 'https://api.anthropic.com/v1',
-      hasModel: aiConfigModelUri('claude-sonnet-4'),
+      hasModel: aiConfigModelRef('anthropic', 'claude-sonnet-4'),
     })
     expect(plan.credentialPayload).toMatchObject({
       id: 'anthropic-default',
-      provider: aiConfigProviderUri('anthropic'),
+      provider: aiConfigProviderRef('anthropic'),
       service: 'ai',
       status: 'active',
       apiKey: 'sk-ant-test',
@@ -130,7 +132,7 @@ describe('ai-config shared core', () => {
     expect(plan.modelUpserts[0]).toMatchObject({
       id: 'claude-sonnet-4',
       displayName: 'Claude Sonnet 4',
-      isProvidedBy: aiConfigProviderUri('anthropic'),
+      isProvidedBy: aiConfigProviderRef('anthropic'),
       status: 'active',
     })
     expect(plan.modelDeleteIds).toEqual([])

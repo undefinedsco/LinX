@@ -74,10 +74,14 @@ vi.mock('@undefineds.co/models', async (importOriginal) => {
   }
 })
 
-vi.mock('@undefineds.co/drizzle-solid', () => ({
-  like: vi.fn(),
-  or: vi.fn(),
-}))
+vi.mock('@undefineds.co/drizzle-solid', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@undefineds.co/drizzle-solid')>()
+  return {
+    ...actual,
+    like: vi.fn(),
+    or: vi.fn(),
+  }
+})
 
 // ============================================================================
 // Imports (after mocks)

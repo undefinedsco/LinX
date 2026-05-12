@@ -3,14 +3,13 @@ import { Session } from '@inrupt/solid-client-authn-node'
 import { drizzle, eq, type SolidDatabase } from '@undefineds.co/drizzle-solid'
 import { aiModelTable } from '../src/ai-model.schema'
 import { aiProviderTable } from '../src/ai-provider.schema'
-import { buildApprovalSubjectPath } from '../src/approval.schema'
+import { approvalResource } from '../src/approval.schema'
 import { credentialTable } from '../src/credential.schema'
 import { favoriteTable } from '../src/favorite/favorite.schema'
 import { fileTable } from '../src/file/file.schema'
 import { inboxNotificationTable } from '../src/inbox-notification.schema'
 import { SCHEMA } from '../src/namespaces'
 import { solidProfileTable } from '../src/profile.schema'
-import { resolvePodUri } from '../src/repository'
 import { solidSchema } from '../src/schema'
 import { settingsTable } from '../src/settings/settings.schema'
 import { startLocalXpod, type LocalXpodTestPod } from './utils/local-xpod'
@@ -87,7 +86,7 @@ describe('Solid Pod secondary resource CRUD surfaces', () => {
     expect(profile?.id).toBeTruthy()
 
     const providerId = `provider-${crypto.randomUUID()}`
-    const providerIri = resolvePodUri(webId, aiProviderTable, providerId)
+    const providerIri = database.resolveLocatorIri(aiProviderTable, { id: providerId })
     await database.insert(aiProviderTable).values({
       id: providerId,
       baseUrl: 'https://api.provider.example/v1',
@@ -95,7 +94,7 @@ describe('Solid Pod secondary resource CRUD surfaces', () => {
     }).execute()
 
     const credentialId = `credential-${crypto.randomUUID()}`
-    const credentialIri = resolvePodUri(webId, credentialTable, credentialId)
+    const credentialIri = database.resolveLocatorIri(credentialTable, { id: credentialId })
     await database.insert(credentialTable).values({
       id: credentialId,
       provider: providerIri,
@@ -118,7 +117,8 @@ describe('Solid Pod secondary resource CRUD surfaces', () => {
     await expectDeleted(database, credentialTable, credentialIri)
 
     const modelId = `model-${crypto.randomUUID()}`
-    const modelIri = resolvePodUri(webId, aiModelTable, modelId)
+    const modelLocator = { id: modelId, isProvidedBy: providerIri }
+    const modelIri = database.resolveLocatorIri(aiModelTable, modelLocator)
     await database.insert(aiModelTable).values({
       id: modelId,
       displayName: 'Smoke Model',
@@ -169,7 +169,7 @@ describe('Solid Pod secondary resource CRUD surfaces', () => {
     await expectDeleted(database, settingsTable, settingIri)
 
     const fileId = `file-${crypto.randomUUID()}`
-    const fileIri = resolvePodUri(webId, fileTable, fileId)
+    const fileIri = database.resolveLocatorIri(fileTable, { id: fileId })
     await database.insert(fileTable).values({
       id: fileId,
       name: 'smoke.txt',
@@ -201,7 +201,7 @@ describe('Solid Pod secondary resource CRUD surfaces', () => {
     await expectDeleted(database, fileTable, fileIri)
 
     const favoriteId = `favorite-${crypto.randomUUID()}`
-    const favoriteIri = resolvePodUri(webId, favoriteTable, favoriteId)
+    const favoriteIri = database.resolveLocatorIri(favoriteTable, { id: favoriteId })
     await database.insert(favoriteTable).values({
       id: favoriteId,
       targetType: SCHEMA.CreativeWork,
@@ -227,8 +227,8 @@ describe('Solid Pod secondary resource CRUD surfaces', () => {
     await expectDeleted(database, favoriteTable, favoriteIri)
 
     const inboxId = `inbox-${crypto.randomUUID()}`
-    const inboxIri = resolvePodUri(webId, inboxNotificationTable, inboxId)
-    const approvalObjectIri = `${podBase}${buildApprovalSubjectPath('smoke', now)}`
+    const inboxIri = database.resolveLocatorIri(inboxNotificationTable, { id: inboxId })
+    const approvalObjectIri = database.resolveLocatorIri(approvalResource, { id: 'smoke', createdAt: now })
     await database.insert(inboxNotificationTable).values({
       id: inboxId,
       actor: webId,

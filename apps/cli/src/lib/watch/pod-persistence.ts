@@ -26,7 +26,12 @@ interface WatchPodPersistenceRuntime {
 
 interface PodPersistenceDb {
   init(tables: unknown[]): Promise<unknown>
-  findByIri?: (table: unknown, iri: string) => Promise<unknown | null>
+  findByLocator?: (table: unknown, locator: Record<string, unknown>) => Promise<unknown | null>
+  updateByLocator?: (
+    table: unknown,
+    locator: Record<string, unknown>,
+    data: Record<string, unknown>,
+  ) => Promise<unknown | null>
   select(): {
     from(table: unknown): {
       execute(): Promise<unknown[]>
@@ -139,24 +144,6 @@ function normalizeTitle(text: string, width = 72): string {
 
 function getPodBaseUrl(webId: string): string {
   return webId.replace('/profile/card#me', '').replace(/\/$/, '')
-}
-
-function buildPodIri(webId: string, relativeUri: string): string {
-  if (/^https?:\/\//.test(relativeUri)) return relativeUri
-  return new URL(relativeUri.replace(/^\//, ''), `${getPodBaseUrl(webId)}/`).toString()
-}
-
-function resolveRowIri(webId: string, table: { resolveUri?: (id: string) => string }, id: string): string {
-  const relativeUri = typeof table.resolveUri === 'function' ? table.resolveUri(id) : id
-  return buildPodIri(webId, relativeUri)
-}
-
-function whereByStorageId(webId: string, table: any, query: any, id: string): any {
-  const iri = resolveRowIri(webId, table, id)
-  if (typeof query.whereByIri === 'function') {
-    return query.whereByIri(iri)
-  }
-  return query.where({ id } as any)
 }
 
 function buildAgentUri(webId: string, agentId: string): string {
@@ -334,47 +321,68 @@ function buildWatchConversationMessages(
   })
 }
 
-async function selectById(db: PodPersistenceDb, webId: string, table: unknown, id: string): Promise<unknown | null> {
-  if (typeof db.findByIri === 'function') {
-    return await db.findByIri(table, resolveRowIri(webId, table as { resolveUri?: (id: string) => string }, id))
+function resolveWatchRowLocator(row: Record<string, unknown>): Record<string, unknown> {
+  const locator: Record<string, unknown> = { id: row.id }
+  if (row.chat) locator.chat = row.chat
+  if (row.createdAt) locator.createdAt = row.createdAt
+  return locator
+}
+
+async function selectById(db: PodPersistenceDb, table: unknown, id: string, context: Record<string, unknown> = {}): Promise<unknown | null> {
+  if (typeof db.findByLocator === 'function') {
+    return await db.findByLocator(table, { id, ...context })
   }
 
   const rows = await db.select().from(table as any).execute()
   return (rows as any[]).find((row) => row?.id === id) ?? null
 }
 
-async function ensureWatchConversationChat(db: PodPersistenceDb, runtime: WatchPodPersistenceRuntime, webId: string, row: WatchChatRow): Promise<void> {
-  const existing = await selectById(db, webId, runtime.chatTable, row.id)
+async function updateByLocator(
+  db: PodPersistenceDb,
+  table: unknown,
+  row: Record<string, unknown>,
+  data: Record<string, unknown>,
+): Promise<void> {
+  if (typeof db.updateByLocator === 'function') {
+    await db.updateByLocator(table, resolveWatchRowLocator(row), data)
+    return
+  }
+
+  await db.update(table).set(data).where({ id: row.id } as any).execute()
+}
+
+async function ensureWatchConversationChat(db: PodPersistenceDb, runtime: WatchPodPersistenceRuntime, _webId: string, row: WatchChatRow): Promise<void> {
+  const existing = await selectById(db, runtime.chatTable, row.id)
 
   if (!existing) {
     await db.insert(runtime.chatTable).values(row).execute()
     return
   }
 
-  await whereByStorageId(webId, runtime.chatTable, db.update(runtime.chatTable).set({
+  await updateByLocator(db, runtime.chatTable, row, {
     title: row.title,
     participants: row.participants,
     metadata: row.metadata,
     lastActiveAt: row.lastActiveAt,
     lastMessagePreview: row.lastMessagePreview,
     updatedAt: row.updatedAt,
-  }), row.id).execute()
+  })
 }
 
-async function ensureWatchConversationAgent(db: PodPersistenceDb, runtime: WatchPodPersistenceRuntime, webId: string, row: WatchAgentRow): Promise<void> {
-  const existing = await selectById(db, webId, runtime.agentTable, row.id)
+async function ensureWatchConversationAgent(db: PodPersistenceDb, runtime: WatchPodPersistenceRuntime, _webId: string, row: WatchAgentRow): Promise<void> {
+  const existing = await selectById(db, runtime.agentTable, row.id)
   if (!existing) {
     await db.insert(runtime.agentTable).values(row).execute()
     return
   }
 
-  await whereByStorageId(webId, runtime.agentTable, db.update(runtime.agentTable).set({
+  await updateByLocator(db, runtime.agentTable, row, {
     name: row.name,
     description: row.description,
     provider: row.provider,
     model: row.model,
     updatedAt: row.updatedAt,
-  }), row.id).execute()
+  })
 }
 
 async function ensureWatchConversationAgents(db: PodPersistenceDb, runtime: WatchPodPersistenceRuntime, webId: string, record: WatchSessionRecord): Promise<void> {
@@ -405,41 +413,44 @@ async function ensureWatchConversationAgents(db: PodPersistenceDb, runtime: Watc
   }
 }
 
-async function upsertWatchConversationThread(db: PodPersistenceDb, runtime: WatchPodPersistenceRuntime, webId: string, row: WatchThreadRow): Promise<void> {
+async function upsertWatchConversationThread(db: PodPersistenceDb, runtime: WatchPodPersistenceRuntime, _webId: string, row: WatchThreadRow): Promise<void> {
   const threadId = row.id
   if (!threadId) {
     return
   }
 
-  const existing = await selectById(db, webId, runtime.threadTable, threadId)
+  const existing = await selectById(db, runtime.threadTable, threadId, { chat: row.chat })
 
   if (!existing) {
     await db.insert(runtime.threadTable).values(row).execute()
     return
   }
 
-  await whereByStorageId(webId, runtime.threadTable, db.update(runtime.threadTable).set({
+  await updateByLocator(db, runtime.threadTable, row, {
     title: row.title,
     metadata: row.metadata,
     updatedAt: row.updatedAt,
-  }), threadId).execute()
+  })
 }
 
 async function upsertWatchConversationMessages(
   db: PodPersistenceDb,
   runtime: WatchPodPersistenceRuntime,
-  webId: string,
+  _webId: string,
   rows: PersistedWatchConversationMessage[],
 ): Promise<void> {
   for (const row of rows) {
-    const existing = await selectById(db, webId, runtime.messageTable, row.id)
+    const existing = await selectById(db, runtime.messageTable, row.id, {
+      chat: row.chat,
+      createdAt: row.createdAt,
+    })
 
     if (!existing) {
       await db.insert(runtime.messageTable).values(row).execute()
       continue
     }
 
-    await whereByStorageId(webId, runtime.messageTable, db.update(runtime.messageTable).set({
+    await updateByLocator(db, runtime.messageTable, row, {
       role: row.role,
       maker: row.maker,
       content: row.content,
@@ -450,7 +461,7 @@ async function upsertWatchConversationMessages(
       routeTargetAgentId: row.routeTargetAgentId,
       coordinationId: row.coordinationId,
       createdAt: row.createdAt,
-    }), row.id).execute()
+    })
   }
 }
 

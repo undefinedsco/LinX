@@ -46,6 +46,10 @@
 - CLI / App 的 native Pod helper 只能负责底层传输、缓存和运行时适配；对于 shared model 字段，它们必须消费 shared package 导出的 resource/repository/vocab/schema，不能再定义自己的业务 predicate、subject template、Turtle serializer 或同义字段。
 - 如果 `packages/models` 已经存在对应 resource 或 repository，CLI / App 必须直接使用；如果缺少查询、upsert、resolve-by-uri 等能力，先在 `packages/models` 补 repository/helper 和 contract tests，再由壳层调用。
 - 所有已进入 `packages/models` 的结构化 Pod 数据读写，主路径必须通过 `drizzle-solid` 和 shared resource/repository。壳层不得为了方便在 CLI / App 内部直接解析 shared resource 的 Turtle；如果当前 auth 形态只有 token/fetch，必须在 session 适配层包成 `drizzle-solid` 可接受的 Inrupt-compatible session，而不是让业务查询分叉。
+- `packages/models` 只负责 shared business truth：RDF class、predicate、vocab、schema、relation 字段、repository/use-case contract。通用数据访问机制属于 `drizzle-solid`，包括 locator 到 IRI/base-relative id 的解析、row 到 subject/IRI/id 的解析、known full IRI 精确查找、date bucket subject template 展开、base path 拼接和 resource document/fragment 定位。
+- `packages/models` 不得导出 `build*ResourceIri`、`build*SubjectPath`、`buildFragmentResourceIri`、`resolvePodUri`、`whereByPodStorageId`、`findPodRowByStorageId`、`normalizePodBaseUrl`、`extractPodResourceId` 这类通用 Pod resource/path helper。需要定位 shared resource 时，业务代码必须使用 `db.resolveLocatorIri/resolveLocatorId`、`db.resolveRowIri/resolveRowId`、`db.resolveResourceIri/resolveResourceId`、`db.findByResource`、`db.updateByResource`、`db.deleteByResource`、`db.findByIri`、`db.findByLocator`、`db.updateByIri`、`db.updateByLocator` 或在 ORM/repository 层补缺口。
+- `id()` 虚拟列语义归 ORM：它表示相对 resource id，可以是 base-relative subject id（例如 `2026/05/07.ttl#approval_123`），不能在 models 或壳层被偷换成 fragment-only id。调用方已持有 full IRI、base-relative id、row 或 locator 时优先走 `findByResource/updateByResource/deleteByResource`；只知道 full IRI 时可走 `findByIri/updateByIri/deleteByIri`；只知道 locator 且 subject template 变量齐全时可走 `findByLocator/updateByLocator/deleteByLocator`。
+- UI collection/cache 层可以把 ORM 返回的 row subject 用于选中态、Map key、乐观更新合并，但不能自定义 shared storage contract，也不能替代 `drizzle-solid` 的 locator/IRI API。需要跨端共享的 row identity/locator 行为必须下沉到 `drizzle-solid`。
 - Inrupt-compatible session 可以是真实 Inrupt `Session`，也可以是由已认证 `fetch` 适配出来的 inline session：至少包含 `info.isLoggedIn=true`、`info.webId` 和 `fetch`。client credentials 与 OIDC/browser consent 只影响这个 session 如何获得，不能影响后续 shared model 查询路径。
 - 允许留在 CLI / App 的逻辑只有壳层适配：TTY/GUI 渲染、快捷键、命令参数、Pi/Codex/Claude 协议事件到 shared insert/update DTO 的映射、本地缓存策略、错误展示。它不能决定 shared Pod resource 的存储路径、predicate、subject 或跨端状态机。
 - remote approval 的审批颗粒度必须跟原生运行时对齐：只有 Pi/Codex/Claude 等上游原生流程请求审批时，LinX 才写 `approval`/`inbox` 控制面；LinX CLI 不得用自己的工具名 allowlist/blocklist 额外发明一套审批策略。
@@ -54,6 +58,7 @@
 - grant 是用户可维护的 LLM Wiki 文档资源，不是隐藏的 request fingerprint。`grantResource` 以一页一个 TTL 文档存储在 `/settings/autonomy/grants/{id}.ttl`；文档 URI 本身就是 RDF subject，页面属性通过 `title/summary/body/schema/pageKind/wikiStatus/tags/source/sourceHash/compiledAt/compiledFrom/related/context` 等 predicate 描述。
 - grant 的 `schema` 是 Solid schema/shape URI 关系，对应 `dcterms:conformsTo </settings/autonomy/schema/grant.ttl#GrantWikiPage>`，不是 `path`/`wikiPath` 字符串；TTL wiki page 不需要 `.meta` subject。
 - grant 覆盖判断必须由 AI secretary 基于当前请求语义、grant wiki 页面正文、摘要、标签、来源、上下文和 provenance 判断；`target/action/riskCeiling` 只能用于候选排序或粗筛，不能单独作为自动审批依据。
+- AI provider/model 的接口 id 可以是 `provider/model` 形式，但这不是 Pod 存储路径约定。LinX 自供模型来自 ai-gateway discovery/runtime，不写入用户 Pod 的 AI provider/model 配置资源。用户自己维护的第三方 AI 配置按 provider 与 model 分开建模：provider 位于 `/settings/ai/providers.ttl#{providerId}`，model 位于 `/settings/ai/models/{providerId}.ttl#{modelId}`，两者通过 `xpod-ai:hasModel` / `xpod-ai:isProvidedBy` 的 IRI 关系关联。这里的 `{providerId}.ttl` 只是存储分桶，不代表接口层把 provider/model 合并成一个模型 id。
 - CLI/App 不得为 `approval/grant/audit` 字段定义自己的业务 predicate。shared 字段必须先在 `packages/models` 的 namespace/vocab/schema 中定义清楚，再由壳层消费。
 - structured user-input 是 watch 共享协议的一等请求类型，不是 CLI 私有 prompt。AI secretary 可以在答案能从 session context、Pod credential source 或请求选项中明确推出时代答；不能明确推出时必须展示建议并等待用户，不得捏造 secret、token、路径或用户偏好。
 - 端内私有模型可以在自己的 owning module/package 中定义专用 predicate，但必须明确作用域为私有、不能被另一端按 shared contract 读取；一旦字段需要跨 CLI / App / xpod 共享，必须先迁入 shared model，再由各端消费。
@@ -157,7 +162,7 @@
 - cloud identity / account 默认入口应指向身份域，例如 `https://id.undefineds.co/`；Pod 托管域如 `https://pods.undefineds.co/` 不能被当成默认 OIDC issuer
 - cloud runtime 的模型真相来自 live API，例如 `https://api.undefineds.co/v1/models`
 - cloud runtime 的对话主路径来自 live API，例如 `https://api.undefineds.co/v1/chat/completions`
-- LinX 云在 shared AI config 中只有一个 provider：`undefineds`。`linx-lite` 和 `linx` 是这个 provider 下的模型，不是另一套 provider，也不再允许出现 `undefineds-cloud`、`linx-cloud` 这类平行 provider id。
+- LinX 云在 runtime/discovery 中只有一个 provider：`undefineds`。`linx-lite` 和 `linx` 是 ai-gateway 暴露的自供模型，不经过用户 Pod 的 AI provider/model 配置资源，也不再允许出现 `undefineds-cloud`、`linx-cloud` 这类平行 provider id。
 - discovery 请求失败时，必须回退到 `@linx/models/discovery` 内置快照，不能让 provider 消失或阻塞主流程
 - 内置快照只是离线 fallback / 词典，不得替代 live cloud `/v1/models`
 - 内置快照应优先通过同步脚本更新，例如 `yarn workspace @linx/models sync:discovery:vercel`，而不是在多个端里各自手改 provider/model 词典

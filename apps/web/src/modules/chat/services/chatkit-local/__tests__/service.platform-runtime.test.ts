@@ -25,13 +25,14 @@ vi.mock('@undefineds.co/models', () => ({
   chatTable: mocked.chatTable,
   contactTable: mocked.contactTable,
   credentialTable: mocked.credentialTable,
-  extractAIConfigProviderId: (value?: string | null) => {
+  normalizeAIConfigProviderId: (value?: string | null) => {
     if (!value) return ''
     const tail = value.includes('#') ? value.split('#').pop() : value.split('/').pop()
     return (tail ?? value).replace(/\.ttl$/, '').toLowerCase()
   },
-  extractAIConfigResourceId: (value?: string | null) => {
+  normalizeAIConfigResourceId: (value?: string | null) => {
     if (!value) return ''
+    if (value.startsWith('undefineds/')) return value
     const tail = value.includes('#') ? value.split('#').pop() : value.split('/').pop()
     return (tail ?? value).replace(/\.ttl$/, '')
   },
@@ -245,7 +246,7 @@ describe('LocalChatKitService platform runtime routing', () => {
     const store = createMockStore()
     const db = createMockDb({
       provider: '/settings/ai/providers.ttl#undefineds',
-      model: '/settings/ai/models.ttl#undefineds/linx-lite',
+      model: 'undefineds/linx-lite',
     })
     const authFetch = vi.fn(async () => new Response('本地可聊', {
       status: 200,

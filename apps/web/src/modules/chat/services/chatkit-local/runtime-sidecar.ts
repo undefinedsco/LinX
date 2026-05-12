@@ -1,14 +1,11 @@
 import { eq } from '@undefineds.co/drizzle-solid'
-import { resolveLinxPodBaseUrl } from '@undefineds.co/models/client'
 import {
   ODRL,
   approvalTable,
   auditTable,
-  buildApprovalResourceIri,
-  buildAuditResourceIri,
   buildRuntimeSessionIri,
-  buildThreadResourceIri,
   inboxNotificationTable,
+  threadTable,
   type ApprovalRow,
   type AuditInsert,
   type SolidDatabase,
@@ -63,7 +60,6 @@ function inferRisk(toolName: string, rawArguments: string): 'low' | 'medium' | '
 }
 
 export class RuntimeSidecarSink {
-  private readonly podBaseUrl: string
   private readonly seenEventKeys = new Set<string>()
   private readonly latestSessionStatus = new Map<string, RuntimeThreadStatus>()
   private readonly pendingAuthBySession = new Map<string, PendingAuthState>()
@@ -71,9 +67,7 @@ export class RuntimeSidecarSink {
   constructor(
     private readonly db: SolidDatabase,
     private readonly webId: string,
-  ) {
-    this.podBaseUrl = resolveLinxPodBaseUrl(this.webId)
-  }
+  ) {}
 
   async persistRuntimeEvent(
     runtimeSession: RuntimeSessionRecord,
@@ -106,15 +100,22 @@ export class RuntimeSidecarSink {
   }
 
   private makeThreadUri(chatId: string, threadId: string): string {
-    return buildThreadResourceIri(this.podBaseUrl, chatId, threadId)
+    return this.resolveRowIri(threadTable as any, { id: threadId, chat: chatId })
   }
 
   private makeApprovalUri(id: string, createdAt: Date | string | number = new Date()): string {
-    return buildApprovalResourceIri(this.podBaseUrl, id, createdAt)
+    return this.resolveRowIri(approvalTable as any, { id, createdAt })
   }
 
   private makeAuditUri(id: string, createdAt: Date | string | number = new Date()): string {
-    return buildAuditResourceIri(this.podBaseUrl, id, createdAt)
+    return this.resolveRowIri(auditTable as any, { id, createdAt })
+  }
+
+  private resolveRowIri(table: Parameters<NonNullable<SolidDatabase['resolveRowIri']>>[0], row: Record<string, unknown>): string {
+    if (typeof this.db.resolveRowIri !== 'function') {
+      throw new Error('Database does not support ORM row IRI resolution')
+    }
+    return this.db.resolveRowIri(table, row)
   }
 
   private buildEventKey(type: string, runtimeSessionId: string, suffix: string): string {

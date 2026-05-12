@@ -45,7 +45,6 @@ interface ProviderUiExtras {
 }
 
 const MODEL_PROVIDER_ORDER = [
-  'undefineds',
   'openai',
   'anthropic',
   'google',
@@ -61,13 +60,6 @@ const MODEL_PROVIDER_ORDER = [
 ] as const
 
 const PROVIDER_UI_EXTRAS: Record<string, ProviderUiExtras> = {
-  undefineds: {
-    name: 'Undefineds Cloud',
-    description: 'LinX 官方云模型',
-    avatar: '/linx-logo.png',
-    homeUrl: 'https://undefineds.co',
-    defaultModels: ['undefineds/linx-lite', 'undefineds/linx'],
-  },
   openai: {
     name: 'OpenAI',
     description: 'GPT 系列',

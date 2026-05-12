@@ -1,23 +1,10 @@
-import { object, podTable, string, timestamp, uri, id, integer } from '@undefineds.co/drizzle-solid'
+import { extractPodResourceTemplateValue, object, podTable, string, timestamp, uri, id, integer } from '@undefineds.co/drizzle-solid'
 import { DCTerms, UDFS } from '../namespaces'
 import { chatResource } from '../chat.schema'
 import { threadResource } from '../thread.schema'
-import { buildFragmentResourceIri, extractPodResourceId } from '../resource-utils'
 
 export type SessionType = 'direct' | 'group' | 'imported-readonly'
 export type SessionStatus = 'active' | 'paused' | 'completed' | 'error' | 'archived'
-
-export function buildSessionSubjectPath(sessionId: string, createdAt: Date | string | number = new Date()): string {
-  const date = createdAt instanceof Date ? createdAt : new Date(createdAt)
-  const safeDate = Number.isFinite(date.getTime()) ? date : new Date()
-  const yyyy = String(safeDate.getUTCFullYear())
-  const mm = String(safeDate.getUTCMonth() + 1).padStart(2, '0')
-  return `/.data/sessions/${yyyy}/${mm}.ttl#${encodeURIComponent(sessionId)}`
-}
-
-export function buildSessionResourceIri(podBaseUrl: string, sessionId: string, createdAt: Date | string | number = new Date()): string {
-  return buildFragmentResourceIri(podBaseUrl, buildSessionSubjectPath(sessionId, createdAt))
-}
 
 export function buildRuntimeSessionIri(sessionId: string): string {
   return `urn:linx:runtime-session:${sessionId}`
@@ -27,7 +14,7 @@ export function extractRuntimeSessionId(sessionRef: string | null | undefined): 
   if (!sessionRef) return null
   const runtimeMatch = sessionRef.match(/^urn:linx:runtime-session:(.+)$/)
   if (runtimeMatch?.[1]) return runtimeMatch[1]
-  return extractPodResourceId(sessionRef)
+  return extractPodResourceTemplateValue(sessionResource, sessionRef)
 }
 
 /**

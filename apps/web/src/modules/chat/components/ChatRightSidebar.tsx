@@ -35,7 +35,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { useChatStore } from '../store'
 import { useChatList, useThreadList, useChatMutations } from '../collections'
-import { resolveRowId, contactTable, agentTable, ContactType } from '@undefineds.co/models'
+import { contactTable, agentTable, ContactType } from '@undefineds.co/models'
+import { resolveRowSubject } from '@undefineds.co/drizzle-solid'
 import { getPrimaryParticipantUri } from '../utils/chat-participants'
 import { useEntity } from '@/lib/data/use-entity'
 
@@ -313,7 +314,7 @@ export const ChatRightSidebar: FC<ChatRightSidebarProps> = () => {
   // 当前选中的 Chat
   const currentChat = useMemo(() => {
     if (!chats || !selectedChatId) return null
-    return chats.find((c) => resolveRowId(c) === selectedChatId)
+    return chats.find((c) => resolveRowSubject(c as Record<string, unknown>) === selectedChatId)
   }, [chats, selectedChatId])
 
   // 获取 Contact
@@ -331,7 +332,7 @@ export const ChatRightSidebar: FC<ChatRightSidebarProps> = () => {
   const threads: Thread[] = useMemo(() => {
     if (!rawThreads) return []
     return rawThreads.map((t) => ({
-      id: resolveRowId(t) ?? 'unknown',
+      id: resolveRowSubject(t as Record<string, unknown>) ?? 'unknown',
       title: t.title ?? '新话题',
       starred: t.starred ?? false,
       updatedAt: t.updatedAt ? String(t.updatedAt) : undefined,
@@ -380,7 +381,7 @@ export const ChatRightSidebar: FC<ChatRightSidebarProps> = () => {
         title: `话题 ${new Date().toLocaleTimeString()}`,
       })
       // chatOps.createThread returns ThreadRow with id directly
-      const threadId = newThread.id ?? resolveRowId(newThread)
+      const threadId = newThread.id ?? resolveRowSubject(newThread as Record<string, unknown>)
       if (threadId) selectThread(threadId)
     } catch (e) {
       console.error('Create thread failed:', e)

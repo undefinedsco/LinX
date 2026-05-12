@@ -8,7 +8,7 @@
  * No API server round-trip — fetch goes directly to the AI provider.
  */
 
-import { and, eq } from '@undefineds.co/drizzle-solid'
+import { and, eq, resolveRowSubject } from '@undefineds.co/drizzle-solid'
 import {
   resolveLinxPodBaseUrl,
   resolveLinxRuntimeApiBaseUrlForIssuerUrl,
@@ -34,7 +34,6 @@ import {
   contactTable,
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
-  resolveRowId,
   type AgentRow,
   type ContactRow,
   type SolidDatabase,
@@ -847,7 +846,7 @@ export class LocalChatKitService {
     if (direct) return direct
 
     const chats = await this.db.select().from(chatTable).execute()
-    return chats.find((entry: any) => entry.id === chatId || resolveRowId(entry) === chatId) ?? null
+    return chats.find((entry: any) => entry.id === chatId || resolveRowSubject(entry) === chatId) ?? null
   }
 
   private isSameRecordRef(record: Record<string, unknown> | null | undefined, ref: string): boolean {
@@ -856,7 +855,7 @@ export class LocalChatKitService {
       record.id === ref
       || record['@id'] === ref
       || record.uri === ref
-      || resolveRowId(record) === ref
+      || resolveRowSubject(record as Record<string, unknown>) === ref
     )
   }
 

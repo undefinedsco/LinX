@@ -5,7 +5,7 @@ export const aiProviderTable = podTable("aiProvider", {
   id: id("id"),
   baseUrl: string("baseUrl").predicate(XPOD_AI.baseUrl),
   proxyUrl: string("proxyUrl").predicate(XPOD_AI.proxyUrl),
-  hasModel: uri("hasModel").predicate(XPOD_AI.hasModel),
+  hasModel: uri("hasModel").predicate(XPOD_AI.hasModel).link("aiModel"),
 }, {
   base: "/settings/ai/providers.ttl",
   type: XPOD_AI.Provider,

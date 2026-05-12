@@ -2,15 +2,14 @@ import 'dotenv/config'
 import { afterAll, describe, expect, it } from 'vitest'
 import { Session } from '@inrupt/solid-client-authn-node'
 import { drizzle, type SolidDatabase } from '@undefineds.co/drizzle-solid'
-import { approvalResource, buildApprovalSubjectPath } from '../src/approval.schema'
-import { auditResource, buildAuditSubjectPath } from '../src/audit.schema'
+import { approvalResource } from '../src/approval.schema'
+import { auditResource } from '../src/audit.schema'
 import { chatTable } from '../src/chat.schema'
-import { grantResource, buildGrantSubjectPath } from '../src/grant.schema'
+import { grantResource } from '../src/grant.schema'
 import { messageTable } from '../src/message.schema'
 import { solidSchema } from '../src/schema'
-import { buildSessionSubjectPath, sessionTable } from '../src/session/session.schema'
+import { sessionTable } from '../src/session/session.schema'
 import { threadTable } from '../src/thread.schema'
-import { resolvePodUri } from '../src/repository'
 import { startLocalXpod, type LocalXpodTestPod } from './utils/local-xpod'
 
 let localXpod: LocalXpodTestPod | null = null
@@ -135,8 +134,8 @@ describe('Solid Pod live CRUD core surfaces', () => {
     const grantId = testId('grant')
     const auditId = testId('audit')
 
-    const chatIri = resolvePodUri(webId, chatTable, chatId)
-    const threadIri = `${baseUrl}/.data/chat/${chatId}/index.ttl#${threadId}`
+    const chatIri = database.resolveLocatorIri(chatTable, { id: chatId })
+    const threadIri = database.resolveLocatorIri(threadTable, { id: threadId, chat: chatIri })
 
     await step('chat.create', () => database.insert(chatTable).values({
       id: chatId,
@@ -185,7 +184,7 @@ describe('Solid Pod live CRUD core surfaces', () => {
       createdAt: now,
       updatedAt: now,
     }).execute())
-    const messageIri = `${baseUrl}/.data/chat/${chatId}/2026/01/02/messages.ttl#${messageId}`
+    const messageIri = database.resolveLocatorIri(messageTable, { id: messageId, chat: chatIri, createdAt: now })
     const messageDocUrl = messageIri.split('#')[0]
     await step('message.read', async () => expectResourceContains(session!, messageDocUrl, 'Pod CRUD message'))
     await step('message.update', async () => {
@@ -199,7 +198,7 @@ describe('Solid Pod live CRUD core surfaces', () => {
     })
     await step('message.verify-update', async () => expectResourceContains(session!, messageDocUrl, 'Pod CRUD message updated'))
 
-    const runtimeSessionIri = `${baseUrl}${buildSessionSubjectPath(runtimeSessionId, now)}`
+    const runtimeSessionIri = database.resolveLocatorIri(sessionTable, { id: runtimeSessionId, createdAt: now })
     const [createdSession] = await step('session.create', () => database.insert(sessionTable).values({
       id: runtimeSessionId,
       ownerWebId: webId,
@@ -228,7 +227,7 @@ describe('Solid Pod live CRUD core surfaces', () => {
       updatedAt: new Date('2026-01-02T04:07:05.000Z'),
     })).resolves.toMatchObject({ status: 'completed', tokenUsage: 34 }))
 
-    const approvalIri = `${baseUrl}${buildApprovalSubjectPath(approvalId, now)}`
+    const approvalIri = database.resolveLocatorIri(approvalResource, { id: approvalId, createdAt: now })
     await step('approval.create', () => database.insert(approvalResource).values({
       id: approvalId,
       session: runtimeSessionIri,
@@ -264,7 +263,7 @@ describe('Solid Pod live CRUD core surfaces', () => {
       resolvedAt: new Date('2026-01-02T04:08:05.000Z'),
     })).resolves.toMatchObject({ status: 'approved', decisionBy: webId }))
 
-    const grantIri = `${baseUrl}${buildGrantSubjectPath(grantId)}`
+    const grantIri = database.resolveLocatorIri(grantResource, { id: grantId })
     await step('grant.create', () => database.insert(grantResource).values({
       id: grantId,
       target: `${baseUrl}/workspace/${threadId}/`,
@@ -313,7 +312,7 @@ describe('Solid Pod live CRUD core surfaces', () => {
       wikiStatus: 'reviewed',
     })).resolves.toMatchObject({ riskCeiling: 'high', wikiStatus: 'reviewed' }))
 
-    const auditIri = `${baseUrl}${buildAuditSubjectPath(auditId, now)}`
+    const auditIri = database.resolveLocatorIri(auditResource, { id: auditId, createdAt: now })
     await step('audit.create', () => database.insert(auditResource).values({
       id: auditId,
       action: 'approval_requested',

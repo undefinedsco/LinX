@@ -499,7 +499,7 @@ describe('ChatListPane', () => {
         data: [
           {
             id: 'thread-1',
-            chatId: 'chat-1',
+            chat: 'https://alice.example/.data/chat/chat-1/index.ttl#this',
             title: '默认话题',
           },
         ],
@@ -548,7 +548,7 @@ describe('ChatListPane', () => {
         data: [
           {
             id: 'thread-1',
-            chatId: 'chat-1',
+            chat: 'https://alice.example/.data/chat/chat-1/index.ttl#this',
             title: '默认话题',
           },
         ],

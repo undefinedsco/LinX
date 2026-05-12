@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { SolidDatabase } from '../src/repository'
-import { createRepositoryDescriptor } from '../src/repository'
+import { createRepositoryDescriptor, type SolidDatabase } from '@undefineds.co/drizzle-solid'
 import {
   chatTable,
   type ChatInsert,
@@ -110,6 +109,23 @@ class MockDatabase<Row> {
     return this.selectRows.find((row) => (row as Record<string, unknown>)['@id'] === iri) ?? null
   }
 
+  async updateByIri(_table: unknown, iri: string, _data: Record<string, unknown>) {
+    return this.selectRows.find((row) => (row as Record<string, unknown>)['@id'] === iri) ?? null
+  }
+
+  async deleteByIri() {
+    return true
+  }
+
+  resolveRowIri(_table: unknown, row: Record<string, unknown>) {
+    if (typeof row['@id'] === 'string') return row['@id']
+    return typeof row.source === 'string' ? row.source : `generated/${String(row.id)}`
+  }
+
+  resolveRowId(_table: unknown, row: Record<string, unknown>) {
+    return typeof row.id === 'string' ? row.id : String(row['@id'] ?? row.source ?? '')
+  }
+
   delete() {
     const builder = new MockMutationBuilder()
     this.lastDeleteBuilder = builder
@@ -202,9 +218,9 @@ describe('createRepositoryDescriptor', () => {
       { title: 'Updated' } as ChatUpdate,
     )
 
-    expect(db.lastUpdateBuilder?.whereArgs[0]).toEqual({ '@id': 'chat-1' })
+    expect(db.lastUpdateBuilder).toBeNull()
 
     await descriptor.remove?.(db as unknown as SolidDatabase, 'chat-1')
-    expect(db.lastDeleteBuilder?.whereArgs[0]).toEqual({ '@id': 'chat-1' })
+    expect(db.lastDeleteBuilder).toBeNull()
   })
 })

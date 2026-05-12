@@ -24,11 +24,11 @@ import { useEntity } from '@/lib/data/use-entity'
 import {
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
-  resolveRowId,
   contactTable,
   agentTable,
   ContactType,
 } from '@undefineds.co/models'
+import { resolveRowSubject } from '@undefineds.co/drizzle-solid'
 import { findAgentProviderForModel, getAgentProviderInfo } from '@/lib/agent-providers'
 
 function resolvePersistedId(row?: Partial<Record<string, unknown>> | null): string | null {
@@ -38,7 +38,7 @@ function resolvePersistedId(row?: Partial<Record<string, unknown>> | null): stri
   if (typeof id === 'string' && id.length > 0) {
     return id
   }
-  return resolveRowId(record)
+  return resolveRowSubject(record) ?? null
 }
 
 export function ChatHeader() {
@@ -57,7 +57,7 @@ export function ChatHeader() {
   const mutations = useChatMutations()
 
   const chat = useMemo(
-    () => chats?.find((c) => resolveRowId(c) === selectedChatId) ?? null,
+    () => chats?.find((c) => resolveRowSubject(c as Record<string, unknown>) === selectedChatId) ?? null,
     [chats, selectedChatId],
   )
 

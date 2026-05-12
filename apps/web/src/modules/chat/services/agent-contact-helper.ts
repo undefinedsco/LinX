@@ -9,8 +9,6 @@
 
 import type { SolidDatabase } from '@undefineds.co/models'
 import {
-  aiConfigModelUri,
-  aiConfigProviderUri,
   agentTable,
   contactTable,
   agentRepository,
@@ -19,8 +17,6 @@ import {
   ContactType,
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
-  resolveRowId,
-  eq,
   type AgentRow,
   type ContactRow,
 } from '@undefineds.co/models'
@@ -66,8 +62,8 @@ export async function findOrCreateAgent(
   const agentName = name || `${provider}/${model}`
   const newAgent = await agentRepository.create!(db, {
     name: agentName,
-    provider: aiConfigProviderUri(provider),
-    model: aiConfigModelUri(model),
+    provider: normalizeAIConfigProviderId(provider),
+    model: normalizeAIConfigResourceId(model),
     instructions: instructions || '',
   })
 

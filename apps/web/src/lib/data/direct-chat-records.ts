@@ -1,13 +1,15 @@
 import {
   ContactClass,
   ContactType,
+  agentTable,
   agentRepository,
+  contactTable,
   contactRepository,
-  resolveRowId,
   type AgentRow,
   type ContactRow,
   type SolidDatabase,
 } from '@undefineds.co/models'
+import { resolveRowSubject } from '@undefineds.co/drizzle-solid'
 
 export interface CreateAgentContactRecordsInput {
   name: string
@@ -32,17 +34,38 @@ type CollectionStateLike<T extends Record<string, unknown>> =
   | Map<string, T>
   | { data?: T[] }
 
-function ensureRecordId(record: Partial<Record<string, unknown>>, fallback?: string): string {
+type CollectionInternalState<T extends Record<string, unknown>> = {
+  syncedData?: {
+    get?: (key: string) => T | undefined
+    set?: (key: string, value: T) => unknown
+    has?: (key: string) => boolean
+    size?: number
+  }
+  syncedKeys?: { add?: (key: string) => unknown }
+  optimisticDeletes?: Iterable<string>
+  optimisticUpserts?: { keys?: () => IterableIterator<string> }
+  size?: number
+}
+
+function ensureRecordId(
+  db: SolidDatabase,
+  table: unknown,
+  record: Partial<Record<string, unknown>>,
+  fallback?: string,
+): string {
   const directId = typeof record.id === 'string' && record.id.length > 0 ? record.id : undefined
   if (directId) {
     return directId
   }
 
-  const uri = resolveRowId(record)
-  if (uri) {
-    const match = uri.match(/\/([^/#]+?)(?:\.ttl)?(?:#.*)?$/)
-    if (match?.[1]) {
-      return match[1]
+  const resolver = db as SolidDatabase & {
+    resolveResourceId?: (table: unknown, target: string | Record<string, unknown>) => string
+  }
+  if (typeof resolver.resolveResourceId === 'function') {
+    try {
+      return resolver.resolveResourceId(table, record as Record<string, unknown>)
+    } catch {
+      // Fall back to the caller-provided id for compatibility with older ORM builds.
     }
   }
 
@@ -72,7 +95,7 @@ export async function createAgentContactRecords(
     instructions: input.instructions || undefined,
   })
 
-  const agentUri = resolveRowId(agent) ?? agentId
+  const agentUri = resolveRowSubject(agent as Record<string, unknown>) ?? agentId
   const contactId = crypto.randomUUID()
   const contact = await contactRepository.create!(db, {
     id: contactId,
@@ -86,9 +109,9 @@ export async function createAgentContactRecords(
   return {
     agent: agent as AgentRow,
     contact: contact as ContactRow,
-    agentId: ensureRecordId(agent as Record<string, unknown>, agentId),
-    contactId: ensureRecordId(contact as Record<string, unknown>, contactId),
-    contactUri: resolveRowId(contact) ?? contactId,
+    agentId: ensureRecordId(db, agentTable, agent as Record<string, unknown>, agentId),
+    contactId: ensureRecordId(db, contactTable, contact as Record<string, unknown>, contactId),
+    contactUri: resolveRowSubject(contact as Record<string, unknown>) ?? contactId,
   }
 }
 
@@ -113,8 +136,8 @@ export async function createSolidContactRecord(
 
   return {
     contact: contact as ContactRow,
-    contactId: ensureRecordId(contact as Record<string, unknown>, contactId),
-    contactUri: resolveRowId(contact) ?? contactId,
+    contactId: ensureRecordId(db, contactTable, contact as Record<string, unknown>, contactId),
+    contactUri: resolveRowSubject(contact as Record<string, unknown>) ?? contactId,
   }
 }
 
@@ -139,8 +162,8 @@ export async function createGroupContactRecord(
 
   return {
     contact: contact as ContactRow,
-    contactId: ensureRecordId(contact as Record<string, unknown>, contactId),
-    contactUri: resolveRowId(contact) ?? contactId,
+    contactId: ensureRecordId(db, contactTable, contact as Record<string, unknown>, contactId),
+    contactUri: resolveRowSubject(contact as Record<string, unknown>) ?? contactId,
   }
 }
 
@@ -153,7 +176,7 @@ export function upsertStateRow<T extends Record<string, unknown>>(
     return
   }
 
-  const resolvedId = rowId ?? resolveRowId(row)
+  const resolvedId = rowId ?? resolveRowSubject(row)
 
   if (state instanceof Map) {
     if (!resolvedId) {
@@ -175,7 +198,7 @@ export function upsertStateRow<T extends Record<string, unknown>>(
   }
 
   const index = state.data.findIndex((item) => {
-    const itemId = resolveRowId(item)
+    const itemId = resolveRowSubject(item)
     return itemId === resolvedId || (typeof (item as { id?: unknown }).id === 'string' && item.id === resolvedId)
   })
 
@@ -191,9 +214,65 @@ export function upsertStateRow<T extends Record<string, unknown>>(
 }
 
 export function writeCollectionRow<T extends Record<string, unknown>>(
-  collection: { state?: CollectionStateLike<T> } | null | undefined,
+  collection: {
+    state?: CollectionStateLike<T>
+    _state?: CollectionInternalState<T>
+    isReady?: () => boolean
+    utils?: { writeUpsert?: (row: T) => void }
+  } | null | undefined,
   row: T,
   rowId?: string,
 ): void {
-  upsertStateRow(collection?.state, row, rowId)
+  const resolvedId = rowId ?? resolveRowSubject(row)
+  if (resolvedId) {
+    upsertInternalStateRow(collection?._state, row, resolvedId)
+  } else {
+    upsertStateRow(collection?.state, row, rowId)
+  }
+
+  const canManualSync =
+    typeof collection?.utils?.writeUpsert === 'function'
+    && (typeof collection.isReady !== 'function' || collection.isReady())
+
+  if (canManualSync) {
+    try {
+      collection.utils?.writeUpsert?.(row)
+    } catch {
+      // The local state has already been updated. TanStack manual sync may not
+      // be initialized in headless integration tests or early app bootstrap.
+    }
+  }
+}
+
+function upsertInternalStateRow<T extends Record<string, unknown>>(
+  state: CollectionInternalState<T> | undefined,
+  row: T,
+  rowId: string,
+): void {
+  const syncedData = state?.syncedData
+  if (typeof syncedData?.set !== 'function') {
+    return
+  }
+
+  const existing = typeof syncedData.get === 'function' ? syncedData.get(rowId) : undefined
+  syncedData.set(rowId, existing ? { ...existing, ...row } : row)
+  state?.syncedKeys?.add?.(rowId)
+
+  if (typeof state?.size === 'number') {
+    state.size = getCollectionStateSize(state)
+  }
+}
+
+function getCollectionStateSize<T extends Record<string, unknown>>(
+  state: CollectionInternalState<T>,
+): number {
+  const syncedSize = state.syncedData?.size ?? 0
+  const optimisticDeletes = state.optimisticDeletes
+    ? Array.from(state.optimisticDeletes).filter((key) => state.syncedData?.has?.(key)).length
+    : 0
+  const optimisticUpserts = state.optimisticUpserts?.keys
+    ? Array.from(state.optimisticUpserts.keys()).filter((key) => !state.syncedData?.has?.(key)).length
+    : 0
+
+  return syncedSize - optimisticDeletes + optimisticUpserts
 }

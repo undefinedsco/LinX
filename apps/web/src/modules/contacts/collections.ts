@@ -8,7 +8,7 @@
  */
 
 import { createPodCollection } from '@/lib/data/pod-collection'
-import { like, or } from '@undefineds.co/drizzle-solid'
+import { like, or, resolveRowSubject } from '@undefineds.co/drizzle-solid'
 import {
   contactTable,
   agentTable,
@@ -24,7 +24,6 @@ import {
   type SolidProfileRow,
   ContactType,
   isGroupContact,
-  resolveRowId,
 } from '@undefineds.co/models'
 import type { SolidDatabase } from '@undefineds.co/models'
 import { queryClient } from '@/providers/query-provider'
@@ -149,7 +148,7 @@ function hasParticipant(chat: Pick<ChatRow, 'participants'> | null | undefined, 
 function getContactRefs(contact: Partial<ContactRow> | null | undefined): string[] {
   const refs = new Set<string>()
   if (contact?.id) refs.add(contact.id)
-  const uri = resolveRowId(contact ?? null)
+  const uri = contact ? resolveRowSubject(contact as Record<string, unknown>) : undefined
   if (uri) refs.add(uri)
   return Array.from(refs)
 }
@@ -161,7 +160,7 @@ function getChatRefs(chat: Partial<ChatRow> | null | undefined): string[] {
     refs.add(chat.id)
     refs.add(buildLocalChatUri(chat.id))
   }
-  const uri = resolveRowId(chat ?? null)
+  const uri = chat ? resolveRowSubject(chat as Record<string, unknown>) : undefined
   if (uri) refs.add(uri)
   return Array.from(refs)
 }
@@ -1005,7 +1004,7 @@ export const contactOps = {
         if (typeof member.entityUri === 'string' && member.entityUri.length > 0) {
           refs.add(member.entityUri)
         }
-        const resolved = resolveRowId(member)
+        const resolved = resolveRowSubject(member as Record<string, unknown>)
         if (resolved) refs.add(resolved)
         return Array.from(refs).map((ref) => [ref, member] as const)
       }),
@@ -1042,7 +1041,7 @@ export const contactOps = {
         if (typeof contact.entityUri === 'string' && contact.entityUri.length > 0) {
           refs.add(contact.entityUri)
         }
-        const resolved = resolveRowId(contact)
+        const resolved = resolveRowSubject(contact as Record<string, unknown>)
         if (resolved) refs.add(resolved)
         return Array.from(refs).map((ref) => [ref, contact] as const)
       }),

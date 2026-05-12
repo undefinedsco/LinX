@@ -8,9 +8,9 @@
  */
 
 import { useMemo } from 'react'
+import { resolveRowSubject } from '@undefineds.co/drizzle-solid'
 import { useChatStore } from '../store'
 import { useChatList } from '../collections'
-import { resolveRowId } from '@undefineds.co/models'
 import { ChatRightSidebar } from '../components/ChatRightSidebar'
 import { ChatHeader } from '../components/ChatHeader'
 
@@ -23,7 +23,7 @@ export const useChatLayoutConfig = () => {
 
   const activeChat = useMemo(() => {
     if (!chats || !selectedChatId) return null
-    return chats.find((chat) => resolveRowId(chat) === selectedChatId)
+    return chats.find((chat) => resolveRowSubject(chat as Record<string, unknown>) === selectedChatId)
   }, [chats, selectedChatId])
 
   return useMemo(

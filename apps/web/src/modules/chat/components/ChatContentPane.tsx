@@ -11,7 +11,7 @@ import { useSession } from '@inrupt/solid-ui-react'
 import { useNavigate } from '@tanstack/react-router'
 import { Bot, Loader2, LockKeyhole, PlayCircle, ShieldAlert } from 'lucide-react'
 import { useChatKit, ChatKit as ChatKitComponent } from '@openai/chatkit-react'
-import { resolveRowId } from '@undefineds.co/models'
+import { resolveRowSubject } from '@undefineds.co/drizzle-solid'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { Button } from '@/components/ui/button'
 import {
@@ -577,19 +577,19 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
 
   const activeChat = useMemo(() => {
     if (!selectedChatId || !chats) return null
-    return chats.find((chat) => resolveRowId(chat) === selectedChatId) ?? null
+    return chats.find((chat) => resolveRowSubject(chat as Record<string, unknown>) === selectedChatId) ?? null
   }, [chats, selectedChatId])
 
   const activeThread = useMemo(() => {
     if (!selectedThreadId) return null
-    return threads.find((thread) => (resolveRowId(thread) ?? thread.id) === selectedThreadId) ?? null
+    return threads.find((thread) => (resolveRowSubject(thread as Record<string, unknown>) ?? thread.id) === selectedThreadId) ?? null
   }, [selectedThreadId, threads])
 
   useEffect(() => {
     if (!selectedChatId || !isReady || isThreadsLoading) return
 
     const normalizedThreads = threads
-      .map((thread) => ({ ...thread, _id: resolveRowId(thread) ?? thread.id }))
+      .map((thread) => ({ ...thread, _id: resolveRowSubject(thread as Record<string, unknown>) ?? thread.id }))
       .filter((thread) => Boolean(thread._id))
 
     if (selectedThreadId && normalizedThreads.some((thread) => thread._id === selectedThreadId)) {
@@ -613,7 +613,7 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
       },
       {
         onSuccess: (thread) => {
-          const threadId = thread.id ?? resolveRowId(thread)
+          const threadId = thread.id ?? resolveRowSubject(thread as Record<string, unknown>)
           if (threadId) {
             selectThread(threadId)
           }

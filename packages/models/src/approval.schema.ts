@@ -1,44 +1,8 @@
-import { podTable, uri, string, text, timestamp, id } from '@undefineds.co/drizzle-solid'
+import { extractPodResourceTemplateValue, podTable, uri, string, text, timestamp, id } from '@undefineds.co/drizzle-solid'
 import { ODRL, UDFS, DCTerms } from './namespaces'
-import { buildFragmentResourceIri } from './resource-utils'
-
-const APPROVAL_DATE_BUCKET_REF_PATTERN = /\/\.data\/approvals\/\d{4}\/\d{2}\/\d{2}\.ttl#([^/?#]+)$/
-const APPROVAL_LEGACY_FILE_REF_PATTERN = /\/\.data\/approvals\/([^/?#]+)\.ttl(?:#([^/?#]+))?$/
-
-export function buildApprovalSubjectPath(approvalId: string, createdAt: Date | string | number = new Date()): string {
-  const date = createdAt instanceof Date ? createdAt : new Date(createdAt)
-  const safeDate = Number.isFinite(date.getTime()) ? date : new Date()
-  const yyyy = String(safeDate.getUTCFullYear())
-  const mm = String(safeDate.getUTCMonth() + 1).padStart(2, '0')
-  const dd = String(safeDate.getUTCDate()).padStart(2, '0')
-  return `/.data/approvals/${yyyy}/${mm}/${dd}.ttl#${encodeURIComponent(approvalId)}`
-}
-
-export function buildApprovalResourceIri(podBaseUrl: string, approvalId: string, createdAt: Date | string | number = new Date()): string {
-  return buildFragmentResourceIri(podBaseUrl, buildApprovalSubjectPath(approvalId, createdAt))
-}
 
 export function extractApprovalIdFromApprovalRef(approvalRef: string | null | undefined): string | null {
-  if (!approvalRef) return null
-
-  if (!approvalRef.includes('/') && !approvalRef.includes('#')) {
-    return approvalRef
-  }
-
-  const dateBucketMatch = approvalRef.match(APPROVAL_DATE_BUCKET_REF_PATTERN)
-  if (dateBucketMatch?.[1] && dateBucketMatch[1] !== 'this') {
-    return decodeURIComponent(dateBucketMatch[1])
-  }
-
-  const legacyFileMatch = approvalRef.match(APPROVAL_LEGACY_FILE_REF_PATTERN)
-  if (!legacyFileMatch?.[1]) return null
-
-  const fragmentId = legacyFileMatch[2]
-  if (fragmentId && fragmentId !== 'this') {
-    return decodeURIComponent(fragmentId)
-  }
-
-  return decodeURIComponent(legacyFileMatch[1])
+  return extractPodResourceTemplateValue(approvalResource, approvalRef)
 }
 
 // Approval request resource (separate from Solid inbox notifications).

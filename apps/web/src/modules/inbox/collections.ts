@@ -1,16 +1,12 @@
 import { useMemo } from 'react'
 import { useSession } from '@inrupt/solid-ui-react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { resolveLinxPodBaseUrl } from '@undefineds.co/models/client'
 import {
   approvalTable,
   auditTable,
-  buildApprovalResourceIri,
-  buildAuditResourceIri,
   buildRuntimeSessionIri,
   extractApprovalIdFromApprovalRef,
   extractChatThreadRef,
-  extractPodResourceId,
   extractRuntimeSessionId,
   extractThreadIdFromThreadRef,
   inboxNotificationTable,
@@ -92,20 +88,53 @@ function formatTimestamp(value: unknown): number {
   return Number.isFinite(time) ? time : 0
 }
 
-function extractPodBase(webId: string): string {
-  return resolveLinxPodBaseUrl(webId)
-}
-
-function makeApprovalUri(webId: string, approvalId: string, createdAt: Date | string | number = new Date()): string {
-  return buildApprovalResourceIri(extractPodBase(webId), approvalId, createdAt)
-}
-
-function makeAuditUri(webId: string, auditId: string, createdAt: Date | string | number = new Date()): string {
-  return buildAuditResourceIri(extractPodBase(webId), auditId, createdAt)
-}
-
 function extractThreadId(targetUri: string | null | undefined): string | null {
   return extractThreadIdFromThreadRef(targetUri)
+}
+
+function resolveRowIri(db: SolidDatabase, table: typeof approvalTable | typeof auditTable, row: Record<string, unknown>): string {
+  if (typeof db.resolveRowIri !== 'function') {
+    throw new Error('Database does not support ORM row IRI resolution')
+  }
+  return db.resolveRowIri(table as any, row)
+}
+
+function resolveNotificationObjectId(
+  db: SolidDatabase | null,
+  notification: InboxNotificationRow,
+  approvals: Map<string, ApprovalRow>,
+  audits: Map<string, AuditRow>,
+): { approval?: ApprovalRow; audit?: AuditRow } {
+  const object = notification.object
+  if (!object) return {}
+
+  for (const approval of approvals.values()) {
+    if (approval.id === object) return { approval }
+    if (db && typeof db.resolveRowIri === 'function') {
+      try {
+        if (db.resolveRowIri(approvalTable as any, approval as unknown as Record<string, unknown>) === object) {
+          return { approval }
+        }
+      } catch {
+        // Ignore incomplete legacy rows and continue matching other resources.
+      }
+    }
+  }
+
+  for (const audit of audits.values()) {
+    if (audit.id === object) return { audit }
+    if (db && typeof db.resolveRowIri === 'function') {
+      try {
+        if (db.resolveRowIri(auditTable as any, audit as unknown as Record<string, unknown>) === object) {
+          return { audit }
+        }
+      } catch {
+        // Ignore incomplete legacy rows and continue matching other resources.
+      }
+    }
+  }
+
+  return {}
 }
 
 export function buildRuntimeToolResponse(
@@ -158,6 +187,7 @@ function buildInboxItems(
   approvals: ApprovalRow[],
   audits: AuditRow[],
 ): InboxItem[] {
+  const db = getDb()
   const approvalById = new Map(approvals.map((item) => [item.id, item]))
   const auditById = new Map(audits.map((item) => [item.id, item]))
   const resolvedAuthTimestampsByKey = createResolvedAuthTimestampsIndex(audits)
@@ -165,10 +195,7 @@ function buildInboxItems(
   const items: InboxItem[] = []
 
   for (const notification of notifications) {
-    const resourceId = extractPodResourceId(notification.object)
-    if (!resourceId) continue
-
-    const approval = approvalById.get(resourceId)
+    const { approval, audit } = resolveNotificationObjectId(db, notification, approvalById, auditById)
     if (approval) {
       const itemId = `approval:${approval.id}`
       if (seen.has(itemId)) continue
@@ -193,7 +220,6 @@ function buildInboxItems(
       continue
     }
 
-    const audit = auditById.get(resourceId)
     if (audit) {
       const relatedApprovalId = extractApprovalIdFromApprovalRef(audit.approval)
       const relatedApproval = relatedApprovalId ? approvalById.get(relatedApprovalId) : undefined
@@ -297,7 +323,7 @@ export const inboxOps = {
 
     const now = new Date()
     const auditId = crypto.randomUUID()
-    const auditUri = makeAuditUri(input.actorWebId, auditId, now)
+    const auditUri = resolveRowIri(db, auditTable, { id: auditId, createdAt: now })
     const grantPattern = input.decision === 'approved' ? input.grantPattern?.trim() : undefined
 
     await updateExactRecord(db, approvalTable as any, input.approval as any, {
@@ -317,7 +343,7 @@ export const inboxOps = {
       session: input.approval.session,
       toolCallId: input.approval.toolCallId,
       toolName: input.approval.toolName,
-      approval: makeApprovalUri(input.actorWebId, input.approval.id, input.approval.createdAt ?? now),
+      approval: resolveRowIri(db, approvalTable, input.approval as unknown as Record<string, unknown>),
       entry: input.approval.target,
       policy: grantPattern ? `approve_pattern:${grantPattern}` : undefined,
       policyVersion: input.approval.policyVersion || 'phase4-inbox-v1',

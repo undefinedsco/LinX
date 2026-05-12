@@ -11,7 +11,7 @@ import {
   type SolidProfileRow,
 } from '../src/profile'
 import { extractProfileUsernameFromWebId } from '../src/client'
-import type { SolidDatabase } from '../src/repository'
+import type { SolidDatabase } from '@undefineds.co/drizzle-solid'
 
 describe('solid profile helpers', () => {
   it('prefers profile name over nick for display identity', () => {

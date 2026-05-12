@@ -3,7 +3,7 @@ import { XPOD_CREDENTIAL } from "./namespaces"
 
 export const credentialTable = podTable("credential", {
   id: id("id"),
-  provider: uri("provider").predicate(XPOD_CREDENTIAL.provider),
+  provider: uri("provider").predicate(XPOD_CREDENTIAL.provider).link("aiProvider"),
   service: string("service").predicate(XPOD_CREDENTIAL.service).notNull().default("ai"),
   status: string("status").predicate(XPOD_CREDENTIAL.status).notNull().default("active"),
   apiKey: string("apiKey").predicate(XPOD_CREDENTIAL.apiKey),

@@ -111,6 +111,8 @@ vi.mock('@/lib/data/use-entity', () => ({
 vi.mock('@undefineds.co/models', () => ({
   extractAIConfigProviderId: (value: string) => value || null,
   extractAIConfigResourceId: (value: string) => value || null,
+  normalizeAIConfigProviderId: (value: string) => value || 'openai',
+  normalizeAIConfigResourceId: (value: string) => value || null,
   resolveRowId: (row: Record<string, unknown> | null | undefined) => row?.id ?? row?.['@id'] ?? null,
   contactTable: { name: 'contact' },
   agentTable: { name: 'agent' },

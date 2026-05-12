@@ -9,21 +9,17 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getLiteral, getSolidDataset, getThing, getUrl, getUrlAll } from '@inrupt/solid-client'
-import { like, or } from '@undefineds.co/drizzle-solid'
+import { like, or, resolveRowSubject } from '@undefineds.co/drizzle-solid'
 import {
-  aiConfigModelUri,
-  aiConfigProviderUri,
   chatTable,
   threadTable,
   messageTable,
   agentTable,
   contactTable,
   credentialTable,
-  buildChatResourceIri,
-  buildThreadResourceIri,
   eq,
   normalizeAIConfigProviderId,
-  resolveRowId,
+  normalizeAIConfigResourceId,
   resolveThreadChatId as resolveThreadChatIdFromRow,
   UDFS,
   WF,
@@ -51,6 +47,7 @@ import {
 } from '@/lib/data/workspace-model'
 import { queryClient } from '@/providers/query-provider'
 import { createPodCollection } from '@/lib/data/pod-collection'
+import { updateExactRecord } from '@/lib/data/exact-records'
 import { favoriteHooks } from '@/modules/favorites/collections'
 import { createAgentContactRecords, writeCollectionRow } from '@/lib/data/direct-chat-records'
 import { getAgentProviderInfo } from '@/lib/agent-providers'
@@ -133,19 +130,6 @@ function getDb(): SolidDatabase | null {
   return dbGetter?.() ?? null
 }
 
-function getPodBaseUrl(db: SolidDatabase): string | null {
-  const podUrl = (db as any).getDialect?.()?.getPodUrl?.()
-  if (typeof podUrl === 'string' && podUrl.length > 0) {
-    return podUrl.replace(/\/$/, '')
-  }
-
-  const webId = (db as any).getSession?.()?.info?.webId
-  if (typeof webId !== 'string' || !webId.includes('/profile/card#me')) {
-    return null
-  }
-  return webId.replace('/profile/card#me', '')
-}
-
 function getCurrentWebId(db: SolidDatabase): string | null {
   const webId = (
     (db as any).getDialect?.()?.getWebId?.()
@@ -175,9 +159,26 @@ function hasHydratedChatMetadata(metadata: unknown): boolean {
 
 function buildChatSubjectIri(db: SolidDatabase, chatId: string | undefined): string | null {
   if (!chatId) return null
-  const podBaseUrl = getPodBaseUrl(db)
-  if (!podBaseUrl) return null
-  return buildChatResourceIri(podBaseUrl, chatId)
+  if (typeof db.resolveRowIri !== 'function') return null
+  return db.resolveRowIri(chatTable as any, { id: chatId })
+}
+
+function resolveAgentSubjectIri(db: SolidDatabase, agentId: string): string | null {
+  if (!agentId || typeof db.resolveRowIri !== 'function') return null
+  return db.resolveRowIri(agentTable as any, { id: agentId })
+}
+
+function getPodBaseUrl(db: SolidDatabase): string | null {
+  const podUrl = (db as any).getDialect?.()?.getPodUrl?.()
+  if (typeof podUrl === 'string' && podUrl.length > 0) {
+    return podUrl.replace(/\/$/, '')
+  }
+
+  const webId = (db as any).getSession?.()?.info?.webId
+  if (typeof webId !== 'string' || !webId.includes('/profile/card#me')) {
+    return null
+  }
+  return webId.replace('/profile/card#me', '')
 }
 
 function getCachedThreadChatId(threadId: string): string | null {
@@ -222,9 +223,8 @@ async function buildThreadSubjectIri(
   if (!threadId) return null
   const resolvedChatId = await resolveThreadChatId(db, threadId, chatId)
   if (!resolvedChatId) return null
-  const podBaseUrl = getPodBaseUrl(db)
-  if (!podBaseUrl) return null
-  return buildThreadResourceIri(podBaseUrl, resolvedChatId, threadId)
+  if (typeof db.resolveRowIri !== 'function') return null
+  return db.resolveRowIri(threadTable as any, { id: threadId, chat: resolvedChatId })
 }
 
 function extractLinkedEntityId(uri: string | null | undefined): string | null {
@@ -399,7 +399,7 @@ async function ensureDefaultThread(chatId: string): Promise<ThreadRow> {
   const threads = await chatOps.fetchThreads(chatId)
   const existing = threads.find((thread) => thread.title === LINX_DEFAULT_SECRETARY.threadTitle) ?? threads[0]
   if (existing) {
-    const threadId = resolveRowId(existing) ?? existing.id
+    const threadId = resolveRowSubject(existing as Record<string, unknown>) ?? existing.id
     if (threadId) {
       threadChatIdCache.set(threadId, chatId)
       writeCollectionRow(threadCollection, existing, threadId)
@@ -425,7 +425,7 @@ async function ensureLinxWelcomeInternal(): Promise<LinxWelcomeResult | null> {
   }
   const existingSecretary = chats.find((chat) => isLinxDefaultSecretaryChat(chat))
   if (existingSecretary) {
-    const chatId = resolveRowId(existingSecretary) ?? existingSecretary.id
+    const chatId = resolveRowSubject(existingSecretary as Record<string, unknown>) ?? existingSecretary.id
     if (!chatId) return null
 
     if (!getSecretaryMetadata(existingSecretary.metadata)?.linx?.role) {
@@ -435,7 +435,7 @@ async function ensureLinxWelcomeInternal(): Promise<LinxWelcomeResult | null> {
     }
 
     const thread = await ensureDefaultThread(chatId)
-    const threadId = resolveRowId(thread) ?? thread.id
+    const threadId = resolveRowSubject(thread as Record<string, unknown>) ?? thread.id
     const maker = await resolveAssistantMakerFromChat(db, existingSecretary)
     await ensureDefaultWelcomeMessage(chatId, threadId, maker ?? getCurrentWebId(db) ?? 'linx')
     return { chatId, threadId, created: false }
@@ -446,9 +446,9 @@ async function ensureLinxWelcomeInternal(): Promise<LinxWelcomeResult | null> {
     provider: LINX_DEFAULT_SECRETARY.provider,
     model: LINX_DEFAULT_SECRETARY.model,
   })
-  const chatId = resolveRowId(chat) ?? chat.id
+  const chatId = resolveRowSubject(chat as Record<string, unknown>) ?? chat.id
   const thread = await ensureDefaultThread(chatId)
-  const threadId = resolveRowId(thread) ?? thread.id
+  const threadId = resolveRowSubject(thread as Record<string, unknown>) ?? thread.id
   await ensureDefaultWelcomeMessage(
     chatId,
     threadId,
@@ -480,14 +480,13 @@ async function resolveAssistantMakerFromChat(db: SolidDatabase, chat: Pick<ChatR
 async function resolveAgentMaker(db: SolidDatabase, agentId: string): Promise<string> {
   try {
     const agent = await (db as any).findByLocator(agentTable as any, { id: agentId } as any)
-    const agentUri = resolveRowId(agent)
+    const agentUri = agent ? resolveRowSubject(agent as Record<string, unknown>) : undefined
     if (agentUri) return agentUri
   } catch (error) {
     console.warn('[chatOps] Failed to resolve default AI Secretary agent URI:', error)
   }
 
-  const podBaseUrl = getPodBaseUrl(db)
-  return podBaseUrl ? `${podBaseUrl}/.data/agents/${agentId}.ttl` : agentId
+  return resolveAgentSubjectIri(db, agentId) ?? agentId
 }
 
 async function ensureDefaultWelcomeMessage(
@@ -757,8 +756,8 @@ export const chatOps = {
       contactUri,
     } = await createAgentContactRecords(db, {
       name: title,
-      provider: aiConfigProviderUri(provider),
-      model: aiConfigModelUri(model),
+      provider: normalizeAIConfigProviderId(provider),
+      model: normalizeAIConfigResourceId(model),
       instructions: systemPrompt,
     })
 
@@ -810,6 +809,7 @@ export const chatOps = {
    */
   async updateChat(id: string, data: Partial<ChatRow>): Promise<void> {
     const db = getDb()
+    const updatedAt = new Date()
     if (!chatCollection.get(id)) {
       if (!db) {
         throw new Error('Solid database is not ready')
@@ -817,8 +817,22 @@ export const chatOps = {
       await ensureChatStateRow(db, id)
     }
 
+    if (db) {
+      const existing = chatCollection.get(id)
+      await updateExactRecord(db, chatTable as any, existing ?? { id }, {
+        ...data,
+        updatedAt,
+      } as Record<string, unknown>)
+      writeCollectionRow(chatCollection, {
+        ...(existing ?? { id }),
+        ...data,
+        updatedAt,
+      } as ChatRow, id)
+      return
+    }
+
     const tx = chatCollection.update(id, (draft: any) => {
-      Object.assign(draft, data, { updatedAt: new Date() })
+      Object.assign(draft, data, { updatedAt })
     })
     await tx.isPersisted.promise
   },
@@ -878,6 +892,7 @@ export const chatOps = {
    * Create a new thread
    */
   async createThread(chatId: string, title?: string): Promise<ThreadRow> {
+    const db = getDb()
     const threadId = crypto.randomUUID()
     const now = new Date()
     
@@ -889,8 +904,12 @@ export const chatOps = {
       updatedAt: now,
     }
     
-    const tx = threadCollection.insert(threadData as ThreadRow)
-    await tx.isPersisted.promise
+    if (db) {
+      await db.insert(threadTable).values(threadData as any).execute()
+    } else {
+      const tx = threadCollection.insert(threadData as ThreadRow)
+      await tx.isPersisted.promise
+    }
     threadChatIdCache.set(threadId, chatId)
     writeCollectionRow(threadCollection, { ...threadData, id: threadId } as ThreadRow, threadId)
     
@@ -1090,8 +1109,8 @@ export const chatOps = {
       createdAt: now,
     } as MessageInsert
     
-    const tx = messageCollection.insert(msgData as MessageRow)
-    await tx.isPersisted.promise
+    await db.insert(messageTable).values(msgData as any).execute()
+    writeCollectionRow(messageCollection, { ...msgData, id: msgId } as MessageRow, msgId)
     
     // Update chat last activity
     await this.updateChat(chatId, {
@@ -1138,8 +1157,8 @@ export const chatOps = {
       createdAt: now,
     } as MessageInsert
     
-    const tx = messageCollection.insert(msgData as MessageRow)
-    await tx.isPersisted.promise
+    await db.insert(messageTable).values(msgData as any).execute()
+    writeCollectionRow(messageCollection, { ...msgData, id: msgId } as MessageRow, msgId)
     
     // Update chat last activity
     await this.updateChat(chatId, {
@@ -1219,13 +1238,13 @@ export const chatOps = {
    */
   async updateAgentModel(agentId: string, provider: string, model: string, chatId?: string, contactId?: string): Promise<void> {
     const providerInfo = getAgentProviderInfo(provider)
-    const providerUri = aiConfigProviderUri(provider)
-    const modelUri = aiConfigModelUri(model)
+    const providerRef = normalizeAIConfigProviderId(provider)
+    const modelRef = normalizeAIConfigResourceId(model)
     const tx = agentCollection.update(agentId, (draft: any) => {
       const currentProviderId = normalizeAIConfigProviderId(typeof draft.provider === 'string' ? draft.provider : '')
       const providerChanged = currentProviderId !== provider
-      draft.provider = providerUri
-      draft.model = modelUri
+      draft.provider = providerRef
+      draft.model = modelRef
       // Update avatarUrl when provider changes (unless user set a custom one)
       if (providerChanged && providerInfo?.logoUrl) {
         draft.avatarUrl = providerInfo.logoUrl
@@ -1317,7 +1336,7 @@ export const chatOps = {
     const providerCol = (credentialTable as any).provider
     const rows = await db.select()
       .from(credentialTable)
-      .where(eq(providerCol, aiConfigProviderUri(provider)))
+      .where(eq(providerCol, normalizeAIConfigProviderId(provider)))
       .execute() as Array<{ apiKey?: string; baseUrl?: string; status?: string }>
 
     const cred = rows.find((row: any) => row?.status === 'active') ?? rows[0]
@@ -1395,7 +1414,8 @@ export const chatOps = {
    */
   async fetchMessages(threadId: string, chatId?: string | null): Promise<MessageRow[]> {
     const db = getDb()
-    if (!db) return chatOps.getMessages(threadId)
+    const cachedMessages = chatOps.getMessages(threadId)
+    if (!db || cachedMessages.length > 0) return cachedMessages
     const resolvedChatId = await resolveThreadChatId(db, threadId, chatId)
     if (!resolvedChatId) {
       console.warn('[chatOps] Failed to resolve thread IRI for message query:', threadId)

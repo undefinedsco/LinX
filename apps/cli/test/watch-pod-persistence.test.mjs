@@ -174,6 +174,7 @@ test('persistWatchConversationToPod upserts group chat, participants, agents, th
   const db = {
     init: async () => undefined,
     findByIri: async () => null,
+    findByLocator: async () => null,
     insert(table) {
       return {
         values(value) {

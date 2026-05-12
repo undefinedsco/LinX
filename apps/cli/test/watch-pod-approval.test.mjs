@@ -54,19 +54,54 @@ function createRuntime(module) {
     credentials,
     webId,
     fetch: async () => new Response(null, { status: 200 }),
+    solidSession: {
+      info: {
+        isLoggedIn: true,
+        webId,
+        sessionId: 'linx-watch-test',
+      },
+      fetch: async () => new Response(null, { status: 200 }),
+      logout: async () => {},
+    },
     close: async () => {},
   }
   let sessionCalls = 0
+  const resolveApprovalReference = (locator) => {
+    const createdAt = locator.createdAt ? new Date(locator.createdAt) : new Date('2026-03-18T00:00:00.000Z')
+    const yyyy = String(createdAt.getUTCFullYear())
+    const mm = String(createdAt.getUTCMonth() + 1).padStart(2, '0')
+    const dd = String(createdAt.getUTCDate()).padStart(2, '0')
+    const id = String(locator.id)
+    const resourceId = id.includes('/') || id.includes('#') ? id : `${yyyy}/${mm}/${dd}.ttl#${id}`
+    return {
+      id: resourceId,
+      iri: `https://alice.example/.data/approvals/${resourceId}`,
+    }
+  }
+  const resolveGrantReference = (locator) => {
+    const id = String(locator.id)
+    return {
+      id,
+      iri: `https://alice.example/settings/autonomy/grants/${encodeURIComponent(id)}.ttl`,
+    }
+  }
 
   const runtime = {
     getPodDataSession: async () => {
       sessionCalls += 1
       return podSession
     },
-    createStore: (storeWebId, fetcher) => {
-      storeInputs.push({ webId: storeWebId, fetcher })
+    createStore: (session, db) => {
+      storeInputs.push({ session, db })
       return {
         listApprovals: async () => approvals,
+        findApproval: async (id, options = {}) => {
+          const approvalUri = options.approvalUri
+          return approvals.find((entry) => {
+            return entry.id === id || (approvalUri && entry.approvalUri === approvalUri)
+          }) ?? null
+        },
+        resolveApprovalReference,
         insertApproval: async (row) => {
           approvals.push({ ...row })
         },
@@ -81,6 +116,7 @@ function createRuntime(module) {
           audits.push({ ...row })
         },
         listGrants: async () => grants,
+        resolveGrantReference,
         insertGrant: async (row) => {
           grants.push({ ...row })
         },
@@ -179,8 +215,8 @@ test('requestRemoteWatchApproval writes pending approval rows and waits for remo
   assert.equal(decision, 'accept_for_session')
   assert.equal(state.sessionCalls, 1)
   assert.equal(state.storeInputs.length, 1)
-  assert.equal(state.storeInputs.every((input) => input.webId === state.webId), true)
-  assert.equal(state.storeInputs.every((input) => typeof input.fetcher === 'function'), true)
+  assert.equal(state.storeInputs.every((input) => input.session.webId === state.webId), true)
+  assert.equal(state.storeInputs.every((input) => input.db), true)
   assert.equal(state.approvals.length, 1)
   assert.equal(state.approvals[0].toolCallId, 'tool_1')
   assert.equal(state.approvals[0].status, 'approved')
@@ -231,8 +267,8 @@ test('requestRemoteWatchApproval accepts OIDC-only credentials', async () => {
   assert.equal(decision, 'accept')
   assert.equal(state.sessionCalls, 1)
   assert.equal(state.storeInputs.length, 1)
-  assert.equal(state.storeInputs.every((input) => input.webId === state.webId), true)
-  assert.equal(state.storeInputs.every((input) => typeof input.fetcher === 'function'), true)
+  assert.equal(state.storeInputs.every((input) => input.session.webId === state.webId), true)
+  assert.equal(state.storeInputs.every((input) => input.db), true)
   assert.equal(state.approvals.length, 1)
   assert.equal(state.approvals[0].toolCallId, 'tool_oidc_1')
   assert.equal(state.audits.length, 1)
@@ -484,10 +520,10 @@ test('waitForRemoteWatchApproval direct-reads a known approval URI without listi
     async findApproval(id, options) {
       findCalls += 1
       assert.equal(id, 'approval_direct_1')
-      assert.equal(options.resourceUri, 'https://alice.example/.data/approvals/2026/03/18.ttl#approval_direct_1')
+      assert.equal(options.approvalUri, 'https://alice.example/.data/approvals/2026/03/18.ttl#approval_direct_1')
       return {
         id,
-        approvalUri: options.resourceUri,
+        approvalUri: options.approvalUri,
         session: WATCH_THREAD_URI,
         toolCallId: 'tool_direct_1',
         toolName: 'commandExecution',
@@ -509,6 +545,18 @@ test('waitForRemoteWatchApproval direct-reads a known approval URI without listi
     async listAudits() { return [] },
     async insertAudit() {},
     async listGrants() { return [] },
+    resolveApprovalReference(locator) {
+      return {
+        id: String(locator.id),
+        iri: `https://alice.example/.data/approvals/${String(locator.id)}`,
+      }
+    },
+    resolveGrantReference(locator) {
+      return {
+        id: String(locator.id),
+        iri: `https://alice.example/settings/autonomy/grants/${encodeURIComponent(String(locator.id))}.ttl`,
+      }
+    },
     async insertGrant() {},
     async insertInboxNotification() {},
   })
@@ -535,13 +583,13 @@ test('waitForRemoteWatchApproval retries temporary direct-read misses without li
     async findApproval(id, options) {
       findCalls += 1
       assert.equal(id, 'approval_direct_retry_1')
-      assert.equal(options.resourceUri, 'https://alice.example/.data/approvals/2026/03/18.ttl#approval_direct_retry_1')
+      assert.equal(options.approvalUri, 'https://alice.example/.data/approvals/2026/03/18.ttl#approval_direct_retry_1')
       if (findCalls === 1) {
         return null
       }
       return {
         id,
-        approvalUri: options.resourceUri,
+        approvalUri: options.approvalUri,
         session: WATCH_THREAD_URI,
         toolCallId: 'tool_direct_retry_1',
         toolName: 'commandExecution',
@@ -563,6 +611,18 @@ test('waitForRemoteWatchApproval retries temporary direct-read misses without li
     async listAudits() { return [] },
     async insertAudit() {},
     async listGrants() { return [] },
+    resolveApprovalReference(locator) {
+      return {
+        id: String(locator.id),
+        iri: `https://alice.example/.data/approvals/${String(locator.id)}`,
+      }
+    },
+    resolveGrantReference(locator) {
+      return {
+        id: String(locator.id),
+        iri: `https://alice.example/settings/autonomy/grants/${encodeURIComponent(String(locator.id))}.ttl`,
+      }
+    },
     async insertGrant() {},
     async insertInboxNotification() {},
   })
@@ -583,39 +643,103 @@ test('waitForRemoteWatchApproval retries temporary direct-read misses without li
   assert.equal(listCalls, 0)
 })
 
-test('native remote approval store writes and reads approval grant audit resources as Pod TTL', async () => {
-  const resources = new Map()
-  const writes = []
+test('native remote approval store writes and reads approval grant audit resources through ORM', async () => {
+  const approvals = []
+  const audits = []
+  const grants = []
+  const inbox = []
+  const insertedTables = []
+  const locatorReads = []
+  const locatorUpdates = []
   const webId = 'https://alice.example/profile/card#me'
 
-  const store = approvalModule.__podApprovalInternal.createNativeRemoteApprovalStore(webId, async (url, init = {}) => {
-    const method = init.method ?? 'GET'
-    if (method === 'GET') {
-      if (resources.has(url)) {
-        return new Response(resources.get(url), { status: 200, headers: { 'Content-Type': 'text/turtle' } })
+  const fakeDb = {
+    select() {
+      return {
+        from(table) {
+          return {
+            async execute() {
+              switch (table?.config?.name) {
+                case 'approval':
+                  return approvals
+                case 'audit':
+                  return audits
+                case 'grant':
+                  return grants
+                default:
+                  return []
+              }
+            },
+          }
+        },
       }
-      const children = [...resources.keys()]
-        .filter((entry) => entry.startsWith(url) && entry !== url)
-        .map((entry) => `<${entry}> .`)
-      if (children.length > 0 || url.endsWith('/')) {
-        return new Response(children.join('\n'), { status: 200, headers: { 'Content-Type': 'text/turtle' } })
+    },
+    insert(table) {
+      return {
+        values(row) {
+          return {
+            async execute() {
+              insertedTables.push(table?.config?.name)
+              switch (table?.config?.name) {
+                case 'approval':
+                  approvals.push({ ...row, '@id': `https://alice.example/.data/approvals/${row.id}` })
+                  return [approvals.at(-1)]
+                case 'audit':
+                  audits.push({ ...row, '@id': `https://alice.example/.data/audits/${row.id}` })
+                  return [audits.at(-1)]
+                case 'grant':
+                  grants.push({ ...row, '@id': `https://alice.example/settings/autonomy/grants/${row.id}.ttl` })
+                  return [grants.at(-1)]
+                case 'inbox_notification':
+                  inbox.push({ ...row, '@id': `https://alice.example/inbox/${row.id}.ttl` })
+                  return [inbox.at(-1)]
+                default:
+                  throw new Error(`unexpected table ${table?.config?.name}`)
+              }
+            },
+          }
+        },
       }
-      return new Response('missing', { status: 404 })
-    }
-    if (method === 'HEAD') {
-      return new Response(null, { status: resources.has(url) || url.endsWith('/') ? 200 : 404 })
-    }
-    if (method === 'PUT') {
-      const body = typeof init.body === 'string' ? init.body : ''
-      resources.set(url, body)
-      writes.push({ url, body })
-      return new Response(null, { status: 201 })
-    }
-    return new Response(null, { status: 405 })
-  })
+    },
+    resolveLocatorIri(table, locator) {
+      const id = String(locator.id)
+      switch (table?.config?.name) {
+        case 'approval':
+          return `https://alice.example/.data/approvals/${id}`
+        case 'grant':
+          return `https://alice.example/settings/autonomy/grants/${encodeURIComponent(id)}.ttl`
+        default:
+          return `https://alice.example/${encodeURIComponent(id)}`
+      }
+    },
+    resolveLocatorId(_table, locator) {
+      return String(locator.id)
+    },
+    async findByLocator(table, locator) {
+      locatorReads.push({ table: table?.config?.name, locator })
+      if (table?.config?.name !== 'approval') {
+        return null
+      }
+      return approvals.find((entry) => entry.id === locator.id) ?? null
+    },
+    async updateByLocator(table, locator, patch) {
+      locatorUpdates.push({ table: table?.config?.name, locator, patch })
+      if (table?.config?.name !== 'approval') {
+        return null
+      }
+      const row = approvals.find((entry) => entry.id === locator.id)
+      if (!row) {
+        return null
+      }
+      Object.assign(row, patch)
+      return row
+    },
+  }
+
+  const store = approvalModule.__podApprovalInternal.createNativeRemoteApprovalStore(webId, fakeDb)
 
   await store.insertApproval({
-    id: 'approval_native_1',
+    id: '2026/03/18.ttl#approval_native_1',
     session: 'https://alice.example/.data/chat/linx-watch/index.ttl#watch_1',
     toolCallId: 'tool_1',
     toolName: 'commandExecution',
@@ -633,7 +757,7 @@ test('native remote approval store writes and reads approval grant audit resourc
     expiresAt: '2026-03-18T00:00:45.000Z',
   })
   await store.insertAudit({
-    id: 'audit_native_1',
+    id: '2026/03/18.ttl#audit_native_1',
     action: 'approval_requested',
     actor: 'https://alice.example/.data/agents/linx-watch-assistant.ttl',
     actorRole: 'secretary',
@@ -646,6 +770,7 @@ test('native remote approval store writes and reads approval grant audit resourc
     policyVersion: 'linx-watch-remote-approval/v1',
     createdAt: '2026-03-18T00:00:00.000Z',
   })
+  assert.equal((await store.findApproval('2026/03/18.ttl#approval_native_1')).toolCallId, 'tool_1')
   await store.insertGrant({
     id: 'grant_native_1',
     target: 'https://alice.example/.data/chat/linx-watch/index.ttl#watch_1',
@@ -671,7 +796,7 @@ test('native remote approval store writes and reads approval grant audit resourc
     onBehalfOf: webId,
     createdAt: '2026-03-18T00:00:01.000Z',
   })
-  await store.updateApproval('approval_native_1', {
+  await store.updateApproval('2026/03/18.ttl#approval_native_1', {
     status: 'approved',
     decisionBy: webId,
     decisionRole: 'human',
@@ -680,40 +805,82 @@ test('native remote approval store writes and reads approval grant audit resourc
     resolvedAt: '2026-03-18T00:00:02.000Z',
   })
 
-  const [approvals, audits, grants] = await Promise.all([
+  const [approvalRows, auditRows, grantRows] = await Promise.all([
     store.listApprovals(),
     store.listAudits(),
     store.listGrants(),
   ])
 
-  assert.equal(approvals.length, 1)
-  assert.equal(approvals[0].status, 'approved')
-  assert.equal(approvals[0].toolCallId, 'tool_1')
-  assert.equal(approvals[0].expiresAt, '2026-03-18T00:00:45.000Z')
-  assert.deepEqual(JSON.parse(approvals[0].approvalOptions), [
+  assert.equal(approvalRows.length, 1)
+  assert.equal(approvalRows[0].status, 'approved')
+  assert.equal(approvalRows[0].toolCallId, 'tool_1')
+  assert.equal(new Date(approvalRows[0].expiresAt).toISOString(), '2026-03-18T00:00:45.000Z')
+  assert.deepEqual(JSON.parse(approvalRows[0].approvalOptions), [
     { optionId: 'allow_once', label: 'Allow once', kind: 'allow_once' },
     { optionId: 'allow_always', label: 'Always allow', kind: 'allow_always' },
   ])
-  assert.equal(audits.length, 1)
-  assert.equal(audits[0].approval, 'https://alice.example/.data/approvals/2026/03/18.ttl#approval_native_1')
-  assert.equal(audits[0].entry, 'https://alice.example/.data/chat/linx-watch/index.ttl#watch_1')
-  assert.equal(audits[0].toolName, 'commandExecution')
-  assert.equal(grants.length, 1)
-  assert.equal(grants[0].effect, 'allow')
-  assert.equal(grants[0].title, 'Native grant')
-  assert.equal(grants[0].summary, 'Native grant summary')
-  assert.equal(grants[0].body, 'Native grant wiki body.')
-  assert.equal(grants[0].schema, 'https://alice.example/settings/autonomy/schema/grant.ttl#GrantWikiPage')
-  assert.equal(grants[0].pageKind, 'autonomy-grant')
-  assert.equal(grants[0].wikiStatus, 'active')
-  assert.equal(grants[0].tags, JSON.stringify(['native', 'grant']))
-  assert.equal(grants[0].source, 'approval')
-  assert.equal(grants[0].sourceHash, 'approval:native')
-  assert.deepEqual(grants[0].compiledFrom, ['https://alice.example/.data/approvals/2026/03/18.ttl#approval_native_1'])
-  assert.deepEqual(grants[0].related, ['https://alice.example/.data/chat/linx-watch/index.ttl#watch_1'])
-  assert.equal(grants[0].policy, 'Allow semantically equivalent command approvals.')
-  assert.equal(grants[0].context, JSON.stringify({ approval: 'approval_native_1' }))
-  assert.equal(writes.some((write) => write.url.endsWith('/.data/approvals/2026/03/18.ttl')), true)
-  assert.equal(writes.some((write) => write.url.endsWith('/.data/audits/2026/03/18.ttl')), true)
-  assert.equal(writes.some((write) => write.url.endsWith('/settings/autonomy/grants/grant_native_1.ttl')), true)
+  assert.equal(auditRows.length, 1)
+  assert.equal(auditRows[0].approval, 'https://alice.example/.data/approvals/2026/03/18.ttl#approval_native_1')
+  assert.equal(auditRows[0].entry, 'https://alice.example/.data/chat/linx-watch/index.ttl#watch_1')
+  assert.equal(auditRows[0].toolName, 'commandExecution')
+  assert.equal(grantRows.length, 1)
+  assert.equal(grantRows[0].effect, 'allow')
+  assert.equal(grantRows[0].title, 'Native grant')
+  assert.equal(grantRows[0].summary, 'Native grant summary')
+  assert.equal(grantRows[0].body, 'Native grant wiki body.')
+  assert.equal(grantRows[0].schema, 'https://alice.example/settings/autonomy/schema/grant.ttl#GrantWikiPage')
+  assert.equal(grantRows[0].pageKind, 'autonomy-grant')
+  assert.equal(grantRows[0].wikiStatus, 'active')
+  assert.equal(grantRows[0].tags, JSON.stringify(['native', 'grant']))
+  assert.equal(grantRows[0].source, 'approval')
+  assert.equal(grantRows[0].sourceHash, 'approval:native')
+  assert.deepEqual(grantRows[0].compiledFrom, ['https://alice.example/.data/approvals/2026/03/18.ttl#approval_native_1'])
+  assert.deepEqual(grantRows[0].related, ['https://alice.example/.data/chat/linx-watch/index.ttl#watch_1'])
+  assert.equal(grantRows[0].policy, 'Allow semantically equivalent command approvals.')
+  assert.equal(grantRows[0].context, JSON.stringify({ approval: 'approval_native_1' }))
+  assert.deepEqual(insertedTables, ['approval', 'audit', 'grant'])
+  assert.deepEqual(locatorReads, [
+    { table: 'approval', locator: { id: '2026/03/18.ttl#approval_native_1' } },
+  ])
+  assert.equal(locatorUpdates.length, 1)
+  assert.deepEqual(locatorUpdates[0].locator, { id: '2026/03/18.ttl#approval_native_1' })
+  assert.equal('executeSPARQL' in fakeDb, false)
+})
+
+test('native remote approval store maps full approval IRI to base-relative locator without listing', async () => {
+  const iriReads = []
+  const webId = 'https://alice.example/profile/card#me'
+  const fakeDb = {
+    select() {
+      throw new Error('full approval IRI should not list approvals')
+    },
+    async findByIri(table, iri) {
+      iriReads.push({ table: table?.config?.name, iri })
+      return {
+        id: '2026/03/18.ttl#approval_direct_orm_1',
+        '@id': iri,
+        session: WATCH_THREAD_URI,
+        toolCallId: 'tool_direct_orm_1',
+        toolName: 'commandExecution',
+        target: WATCH_THREAD_URI,
+        action: 'https://undefineds.co/ns#commandExecution',
+        risk: 'medium',
+        status: 'approved',
+        reason: approvalModule.__podApprovalInternal.encodeDecisionReason('accept'),
+        createdAt: '2026-03-18T00:00:00.000Z',
+        resolvedAt: '2026-03-18T00:00:01.000Z',
+      }
+    },
+  }
+  const store = approvalModule.__podApprovalInternal.createNativeRemoteApprovalStore(webId, fakeDb)
+
+  const row = await store.findApproval('ignored-local-id', {
+    approvalUri: 'https://alice.example/.data/approvals/2026/03/18.ttl#approval_direct_orm_1',
+  })
+
+  assert.equal(row.id, '2026/03/18.ttl#approval_direct_orm_1')
+  assert.equal(row.approvalUri, 'https://alice.example/.data/approvals/2026/03/18.ttl#approval_direct_orm_1')
+  assert.deepEqual(iriReads, [
+    { table: 'approval', iri: 'https://alice.example/.data/approvals/2026/03/18.ttl#approval_direct_orm_1' },
+  ])
 })

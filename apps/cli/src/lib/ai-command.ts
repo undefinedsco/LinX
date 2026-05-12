@@ -1,7 +1,6 @@
 import type { CommandModule } from 'yargs'
 import { resolveLinxPodUrl } from '@undefineds.co/models/client'
 import {
-  aiConfigProviderUri,
   buildAIConfigMutationPlan,
   buildAIConfigProviderStateMap,
   getAIConfigProviderFamilyIds,
@@ -60,7 +59,6 @@ interface ParsedModelRow extends Record<string, unknown> {
 interface AiRuntime {
   XPOD_AI: typeof XPOD_AI
   XPOD_CREDENTIAL: typeof XPOD_CREDENTIAL
-  aiConfigProviderUri: (providerId: string) => string
   buildAIConfigMutationPlan: (input: {
     providerId: string
     currentProviderRows: ParsedProviderRow[]
@@ -130,7 +128,6 @@ async function loadAiRuntime(): Promise<AiRuntime> {
     aiRuntimePromise = Promise.resolve({
       XPOD_AI,
       XPOD_CREDENTIAL,
-      aiConfigProviderUri,
       buildAIConfigMutationPlan,
       buildAIConfigProviderStateMap,
       getAIConfigProviderFamilyIds,
@@ -151,6 +148,34 @@ function maskSecret(value: string): string {
 
 function absolutePodUri(podUrl: string, relativePath: string): string {
   return `${podUrl.replace(/\/?$/, '/')}${relativePath.replace(/^\/+/, '')}`
+}
+
+function resourceFragmentIri(resourceUrl: string, fragmentId: string): string {
+  if (/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(fragmentId)) {
+    return fragmentId
+  }
+  return `${resourceUrl}#${fragmentId}`
+}
+
+function resourceRefIri(podUrl: string, resourceUrl: string, ref: string): string {
+  if (/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(ref)) {
+    return ref
+  }
+  if (ref.startsWith('/')) {
+    return absolutePodUri(podUrl, ref)
+  }
+  if (ref.startsWith('#')) {
+    return `${resourceUrl}${ref}`
+  }
+  return `${resourceUrl}#${ref}`
+}
+
+function aiModelResourcePath(providerId: string): string {
+  return `/settings/ai/models/${normalizeAIConfigProviderId(providerId)}.ttl`
+}
+
+function aiModelResourceUrl(podUrl: string, providerId: string): string {
+  return absolutePodUri(podUrl, aiModelResourcePath(providerId))
 }
 
 function quoteLiteral(value: string): string {
@@ -272,7 +297,7 @@ async function fetchResourceText(resourceUrl: string, accessToken: string): Prom
   return res.text()
 }
 
-function buildProviderSparql(runtime: AiRuntime, resourceUrl: string, podUrl: string, payload: {
+function buildProviderSparql(runtime: AiRuntime, podUrl: string, resourceUrl: string, payload: {
   id: string
   baseUrl?: string
   proxyUrl?: string
@@ -293,7 +318,7 @@ function buildProviderSparql(runtime: AiRuntime, resourceUrl: string, podUrl: st
     inserts.push(`${subject} <${runtime.XPOD_AI.proxyUrl}> ${quoteLiteral(payload.proxyUrl)} .`)
   }
   if (payload.hasModel) {
-    inserts.push(`${subject} <${runtime.XPOD_AI.hasModel}> <${absolutePodUri(podUrl, payload.hasModel)}> .`)
+    inserts.push(`${subject} <${runtime.XPOD_AI.hasModel}> <${resourceRefIri(podUrl, resourceUrl, payload.hasModel)}> .`)
   }
 
   return `DELETE {
@@ -309,7 +334,7 @@ WHERE {
 }`
 }
 
-function buildCredentialSparql(runtime: AiRuntime, resourceUrl: string, podUrl: string, payload: {
+function buildCredentialSparql(runtime: AiRuntime, resourceUrl: string, providerResourceUrl: string, payload: {
   id: string
   provider: string
   service: string
@@ -329,7 +354,7 @@ function buildCredentialSparql(runtime: AiRuntime, resourceUrl: string, podUrl: 
   ]
   const inserts = [
     `${subject} a <${runtime.XPOD_CREDENTIAL.Credential}> .`,
-    `${subject} <${runtime.XPOD_CREDENTIAL.provider}> <${absolutePodUri(podUrl, payload.provider)}> .`,
+    `${subject} <${runtime.XPOD_CREDENTIAL.provider}> <${resourceFragmentIri(providerResourceUrl, payload.provider)}> .`,
     `${subject} <${runtime.XPOD_CREDENTIAL.service}> ${quoteLiteral(payload.service)} .`,
     `${subject} <${runtime.XPOD_CREDENTIAL.status}> ${quoteLiteral(payload.status)} .`,
   ]
@@ -360,7 +385,7 @@ WHERE {
 }`
 }
 
-function buildModelSparql(runtime: AiRuntime, resourceUrl: string, podUrl: string, payload: {
+function buildModelSparql(runtime: AiRuntime, resourceUrl: string, providerResourceUrl: string, payload: {
   id: string
   displayName?: string
   modelType?: string
@@ -382,7 +407,7 @@ function buildModelSparql(runtime: AiRuntime, resourceUrl: string, podUrl: strin
     `${subject} a <${runtime.XPOD_AI.Model}> .`,
     `${subject} <${runtime.XPOD_AI.displayName}> ${quoteLiteral(payload.displayName || payload.id)} .`,
     `${subject} <${runtime.XPOD_AI.modelType}> ${quoteLiteral(payload.modelType || 'chat')} .`,
-    `${subject} <${runtime.XPOD_AI.isProvidedBy}> <${absolutePodUri(podUrl, payload.isProvidedBy)}> .`,
+    `${subject} <${runtime.XPOD_AI.isProvidedBy}> <${resourceFragmentIri(providerResourceUrl, payload.isProvidedBy)}> .`,
     `${subject} <${runtime.XPOD_AI.status}> ${quoteLiteral(payload.status || 'active')} .`,
     `${subject} <${runtime.XPOD_AI.createdAt}> ${dateTimeLiteral(payload.createdAt)} .`,
     `${subject} <${runtime.XPOD_AI.updatedAt}> ${dateTimeLiteral(payload.updatedAt)} .`,
@@ -437,20 +462,39 @@ export const aiCommand: CommandModule<object, AiArgs> = {
     const { accessToken, podUrl } = await resolvePodWriteContext(argv.url)
     const providerResource = absolutePodUri(podUrl, '/settings/ai/providers.ttl')
     const credentialResource = absolutePodUri(podUrl, '/settings/credentials.ttl')
-    const modelResource = absolutePodUri(podUrl, '/settings/ai/models.ttl')
 
     if (action === 'status') {
-      const [credentialTurtle, providerTurtle, modelTurtle] = await Promise.all([
+      const [credentialTurtle, providerTurtle] = await Promise.all([
         fetchResourceText(credentialResource, accessToken),
         fetchResourceText(providerResource, accessToken),
-        fetchResourceText(modelResource, accessToken),
       ])
+      const credentialRows = parseCredentialRows(credentialTurtle, credentialResource, aiRuntime)
+      const providerRows = parseProviderRows(providerTurtle, providerResource, aiRuntime)
+      const requestedProvider = argv.provider ? aiRuntime.normalizeAIConfigProviderId(argv.provider) : ''
+      const modelProviderIds = new Set<string>()
+      if (requestedProvider) {
+        modelProviderIds.add(requestedProvider)
+      } else {
+        for (const row of providerRows) {
+          const providerId = aiRuntime.normalizeAIConfigProviderId(row.id)
+          if (providerId) modelProviderIds.add(providerId)
+        }
+        for (const row of credentialRows) {
+          const providerId = aiRuntime.normalizeAIConfigProviderId(String(row.provider ?? row.id ?? ''))
+          if (providerId) modelProviderIds.add(providerId)
+        }
+      }
+      const modelRows = (await Promise.all([...modelProviderIds].map(async (providerId) => {
+        const resourceUrl = aiModelResourceUrl(podUrl, providerId)
+        const turtle = await fetchResourceText(resourceUrl, accessToken)
+        return parseModelRows(turtle, resourceUrl, aiRuntime)
+      }))).flat()
 
       const states = aiRuntime.buildAIConfigProviderStateMap({
         fallbackToCatalogModels: false,
-        credentialRows: parseCredentialRows(credentialTurtle, credentialResource, aiRuntime),
-        providerRows: parseProviderRows(providerTurtle, providerResource, aiRuntime),
-        modelRows: parseModelRows(modelTurtle, modelResource, aiRuntime),
+        credentialRows,
+        providerRows,
+        modelRows,
       })
 
       const filtered = Object.values(states).filter((state) => {
@@ -489,7 +533,7 @@ export const aiCommand: CommandModule<object, AiArgs> = {
 
     if (action === 'disconnect') {
       const providerRefs = aiRuntime.getAIConfigProviderFamilyIds(provider).map((providerId) =>
-        absolutePodUri(podUrl, `/settings/ai/providers.ttl#${providerId}`),
+        resourceFragmentIri(providerResource, providerId),
       )
 
       for (const providerRef of providerRefs) {
@@ -526,7 +570,7 @@ export const aiCommand: CommandModule<object, AiArgs> = {
       await patchResource(
         providerResource,
         accessToken,
-        buildProviderSparql(aiRuntime, providerResource, podUrl, {
+        buildProviderSparql(aiRuntime, podUrl, providerResource, {
           id: plan.providerPayload.id,
           baseUrl: plan.providerPayload.baseUrl,
           proxyUrl: plan.providerPayload.proxyUrl,
@@ -544,7 +588,7 @@ export const aiCommand: CommandModule<object, AiArgs> = {
       await patchResource(
         credentialResource,
         accessToken,
-        buildCredentialSparql(aiRuntime, credentialResource, podUrl, {
+        buildCredentialSparql(aiRuntime, credentialResource, providerResource, {
           id: plan.credentialPayload.id,
           provider: plan.credentialPayload.provider,
           service: plan.credentialPayload.service,
@@ -560,10 +604,12 @@ export const aiCommand: CommandModule<object, AiArgs> = {
       if (!modelPayload.id || !modelPayload.isProvidedBy || !modelPayload.createdAt || !modelPayload.updatedAt) {
         continue
       }
+      const modelProvider = aiRuntime.normalizeAIConfigProviderId(modelPayload.isProvidedBy)
+      const modelResource = aiModelResourceUrl(podUrl, modelProvider || plan.providerId)
       await patchResource(
         modelResource,
         accessToken,
-        buildModelSparql(aiRuntime, modelResource, podUrl, {
+        buildModelSparql(aiRuntime, modelResource, providerResource, {
           id: modelPayload.id,
           displayName: modelPayload.displayName,
           modelType: modelPayload.modelType,

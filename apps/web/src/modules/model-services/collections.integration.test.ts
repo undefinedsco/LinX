@@ -121,21 +121,22 @@ describe('model services collections integration', () => {
       id: providerId,
       baseUrl: 'https://api.example.com/v1',
       proxyUrl: '',
-      hasModel: `/settings/ai/models.ttl#${modelId}`,
+      hasModel: `/settings/ai/models/${providerId}.ttl#${modelId}`,
     } as any).execute()
 
     await database.insert(aiModelTable).values({
       id: modelId,
       displayName: modelId,
       modelType: 'chat',
-      isProvidedBy: `/settings/ai/providers.ttl#${providerId}`,
+      isProvidedBy: providerId,
       status: 'active',
       createdAt: new Date(),
       updatedAt: new Date(),
     } as any).execute()
 
     const createdProvider = await (database as any).findByLocator(aiProviderTable as any, { id: providerId } as any)
-    const createdModel = await (database as any).findByLocator(aiModelTable as any, { id: modelId } as any)
+    const modelLocator = { id: modelId, isProvidedBy: providerId }
+    const createdModel = await (database as any).findByLocator(aiModelTable as any, modelLocator as any)
     expect(createdProvider?.baseUrl).toBe('https://api.example.com/v1')
     expect(createdModel?.status).toBe('active')
 
@@ -148,21 +149,21 @@ describe('model services collections integration', () => {
     await (database as any).updateByLocator(aiProviderTable as any, { id: providerId } as any, {
       baseUrl: 'https://api.changed.com/v1',
     })
-    await (database as any).updateByLocator(aiModelTable as any, { id: modelId } as any, {
+    await (database as any).updateByLocator(aiModelTable as any, modelLocator as any, {
       status: 'inactive',
     })
 
     const updatedProvider = await (database as any).findByLocator(aiProviderTable as any, { id: providerId } as any)
-    const updatedModel = await (database as any).findByLocator(aiModelTable as any, { id: modelId } as any)
+    const updatedModel = await (database as any).findByLocator(aiModelTable as any, modelLocator as any)
     expect(updatedProvider?.baseUrl).toBe('https://api.changed.com/v1')
     expect(updatedModel?.status).toBe('inactive')
 
     // DELETE
-    await (database as any).deleteByLocator(aiModelTable as any, { id: modelId } as any)
+    await (database as any).deleteByLocator(aiModelTable as any, modelLocator as any)
     await (database as any).deleteByLocator(aiProviderTable as any, { id: providerId } as any)
 
     const providerRow = await (database as any).findByLocator(aiProviderTable as any, { id: providerId } as any)
-    const modelRow = await (database as any).findByLocator(aiModelTable as any, { id: modelId } as any)
+    const modelRow = await (database as any).findByLocator(aiModelTable as any, modelLocator as any)
     expect(providerRow).toBeNull()
     expect(modelRow).toBeNull()
   })

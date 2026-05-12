@@ -71,8 +71,6 @@ export {
 } from './chat.schema'
 export { chatRepository } from './chat.repository'
 export {
-  buildChatResourceIri,
-  buildThreadResourceIri,
   extractChatIdFromChatRef,
   extractChatThreadRef,
   extractThreadIdFromThreadRef,
@@ -198,8 +196,6 @@ export {
   sessionResource,
   sessionTable,
   buildRuntimeSessionIri,
-  buildSessionResourceIri,
-  buildSessionSubjectPath,
   extractRuntimeSessionId,
   type SessionType,
   type SessionStatus,
@@ -213,8 +209,6 @@ export { sessionRepository } from './session.repository'
 export {
   approvalResource,
   approvalTable,
-  buildApprovalResourceIri,
-  buildApprovalSubjectPath,
   extractApprovalIdFromApprovalRef,
   type ApprovalRow,
   type ApprovalInsert,
@@ -224,8 +218,6 @@ export {
 export {
   auditResource,
   auditTable,
-  buildAuditResourceIri,
-  buildAuditSubjectPath,
   extractAuditIdFromAuditRef,
   type AuditRow,
   type AuditInsert,
@@ -243,7 +235,6 @@ export {
 export {
   grantResource,
   grantTable,
-  buildGrantSubjectPath,
   type GrantRow,
   type GrantInsert,
   type GrantUpdate,
@@ -293,8 +284,8 @@ export {
 } from "./ai-model.schema";
 
 export {
-  aiConfigModelUri,
-  aiConfigProviderUri,
+  aiConfigModelRef,
+  aiConfigProviderRef,
   buildAIConfigMutationPlan,
   buildAIConfigProviderStateMap,
   getAIConfigDefaultBaseUrl,
@@ -303,6 +294,7 @@ export {
   getAIConfigProviderMetadata,
   getDefaultAIConfigCredentialId,
   normalizeAIConfigProviderId,
+  normalizeAIConfigModelId,
   normalizeAIConfigResourceId,
   sameAIConfigProviderFamily,
   type AIConfigModel,
@@ -312,12 +304,6 @@ export {
   type AIConfigUpdate,
   type BuildAIConfigProviderStateMapOptions,
 } from './ai-config'
-
-export {
-  buildFragmentResourceIri,
-  extractPodResourceId,
-  normalizePodBaseUrl,
-} from './resource-utils'
 
 export {
   buildAcpPermissionResponse,
@@ -383,11 +369,7 @@ export {
 export {
   createRepositoryDescriptor,
   definePodRepository,
-  findPodRowByStorageId,
   initSolidTables,
-  resolveRowId,
-  resolvePodUri,
-  whereByPodStorageId,
   type AnyPodTable,
   type PodRepositoryDescriptor,
   type RepositoryCacheOptions,

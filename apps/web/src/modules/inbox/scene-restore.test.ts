@@ -42,7 +42,7 @@ describe('inbox scene restoration', () => {
       kind: 'audit',
       category: 'audit',
       audit: {
-        approval: 'https://alice.example/.data/approvals/approval-1.ttl#this',
+        approval: 'https://alice.example/.data/approvals/2026/05/12.ttl#approval-1',
       },
     } as any, [])
 

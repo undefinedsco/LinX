@@ -1,8 +1,23 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import type { StoredCredentials } from '../credentials-store.js'
 import { getDefaultPodDataSession, type PodDataSession } from '../pod-data-session.js'
-import { AS, ODRL, UDFS } from '@undefineds.co/models/namespaces'
-import { ApprovalVocab, AuditVocab, GrantVocab, InboxNotificationVocab } from '@undefineds.co/models/vocab/sidecar'
+import {
+  approvalResource,
+  auditResource,
+  drizzle,
+  grantResource,
+  inboxNotificationTable,
+  initSolidTables,
+  solidSchema,
+  type ApprovalInsert,
+  type ApprovalRow,
+  type AuditInsert,
+  type AuditRow,
+  type GrantInsert,
+  type GrantRow,
+  type InboxNotificationInsert,
+  type SolidDatabase,
+} from '../models.js'
 import type {
   WatchApprovalDecision,
   WatchApprovalOption,
@@ -11,33 +26,12 @@ import type {
   WatchSessionRecord,
 } from '@undefineds.co/models/watch'
 import { resolveWatchGrantCoverage, type WatchGrantCoverageInput } from './secretary.js'
-import {
-  buildApprovalDocumentUrl,
-  RDF_TYPE,
-  buildApprovalResourceUrl,
-  buildAuditDocumentUrl,
-  buildAuditResourceUrl,
-  buildGrantResourceUrl,
-  buildInboxResourceUrl,
-  firstIri,
-  firstLiteral,
-  iri,
-  listTurtleResources,
-  listTurtleResourcesRecursive,
-  literal,
-  parseManagedTurtleBlocks,
-  readTurtleResource,
-  subjectIdFromResourceUrl,
-  upsertManagedTurtleBlock,
-  type PodFetch,
-} from '../pi-adapter/pod-native.js'
 
 const WATCH_CHAT_ID_PREFIX = 'linx-watch'
 const WATCH_AGENT_ID = 'linx-watch-assistant'
 const REMOTE_APPROVAL_POLICY_VERSION = 'linx-watch-remote-approval/v1'
 const DEFAULT_REMOTE_APPROVAL_POLL_MS = 1000
 const DEFAULT_WARN_ONLY_TIMEOUT_MS = 5000
-const DEFAULT_APPROVAL_LIST_DAYS = 7
 const MAX_GRANT_POLICY_LENGTH = 1200
 const MAX_APPROVAL_CONTEXT_LENGTH = 1400
 const MIN_GRANT_COVERAGE_CONFIDENCE = 0.75
@@ -122,20 +116,22 @@ export interface WatchRemoteApprovalStore {
   listApprovals(): Promise<ApprovalRowLike[]>
   findApproval?(
     id: string,
-    options?: { resourceUri?: string; createdAt?: Date | string },
+    options?: { approvalUri?: string; createdAt?: Date | string },
   ): Promise<ApprovalRowLike | null>
+  resolveApprovalReference(locator: { id: string; createdAt?: Date | string }): { id: string; iri: string }
   insertApproval(row: ApprovalRowLike): Promise<void>
   updateApproval(id: string, patch: Partial<ApprovalRowLike>): Promise<void>
   listAudits(): Promise<AuditRowLike[]>
   insertAudit(row: AuditRowLike): Promise<void>
   listGrants(): Promise<GrantRowLike[]>
+  resolveGrantReference(locator: { id: string }): { id: string; iri: string }
   insertGrant(row: GrantRowLike): Promise<void>
   insertInboxNotification(row: InboxNotificationRowLike): Promise<void>
 }
 
 export interface WatchRemoteApprovalRuntime {
   getPodDataSession: () => Promise<PodDataSession | null>
-  createStore: (webId: string, fetcher: PodFetch) => WatchRemoteApprovalStore
+  createStore: (session: PodDataSession, db: SolidDatabase) => WatchRemoteApprovalStore
   sleep: (ms: number) => Promise<void>
   now: () => Date
   onWarning?: (error: unknown) => void
@@ -247,20 +243,8 @@ function buildThreadUri(webId: string, record: WatchSessionRecord): string {
   return `${getPodBaseUrl(webId)}/.data/chat/${buildWatchChatId(record)}/index.ttl#${record.id}`
 }
 
-function buildApprovalUri(webIdOrUri: string, approvalId: string): string {
-  return buildApprovalResourceUrl(webIdOrUri, approvalId)
-}
-
-function buildApprovalUriForDate(webIdOrUri: string, approvalId: string, createdAt: Date): string {
-  return buildApprovalResourceUrl(webIdOrUri, approvalId, createdAt)
-}
-
-function documentUrlFromResourceUri(resourceUri: string): string {
-  return resourceUri.split('#', 1)[0] ?? resourceUri
-}
-
-function buildGrantUri(webIdOrUri: string, grantId: string): string {
-  return buildGrantResourceUrl(webIdOrUri, grantId)
+function isAbsoluteIri(value: string): boolean {
+  return value.startsWith('http://') || value.startsWith('https://')
 }
 
 function buildGrantSchemaUri(webIdOrUri: string): string {
@@ -504,7 +488,7 @@ function grantWikiTagsFromApproval(row: ApprovalRowLike, explicitTags?: string[]
 
 function grantContextFromApproval(row: ApprovalRowLike): string {
   return safeCompactJson({
-    sourceApproval: buildApprovalUriForDate(row.session, row.id, new Date(toIsoString(row.createdAt, new Date().toISOString()))),
+    sourceApproval: row.approvalUri ?? row.id,
     session: row.session,
     toolCallId: row.toolCallId,
     toolName: row.toolName,
@@ -513,18 +497,6 @@ function grantContextFromApproval(row: ApprovalRowLike): string {
     risk: row.risk,
     approvalContext: row.context,
   }, MAX_APPROVAL_CONTEXT_LENGTH)
-}
-
-function literalValues(predicates: Map<string, unknown[]>, predicate: string): string[] {
-  return (predicates.get(predicate) ?? [])
-    .map((object) => isRecord(object) && object.type === 'literal' && typeof object.value === 'string' ? object.value : '')
-    .filter(Boolean)
-}
-
-function iriValues(predicates: Map<string, unknown[]>, predicate: string): string[] {
-  return (predicates.get(predicate) ?? [])
-    .map((object) => isRecord(object) && object.type === 'iri' && typeof object.value === 'string' ? object.value : '')
-    .filter(Boolean)
 }
 
 function grantSourceHash(row: ApprovalRowLike): string {
@@ -696,8 +668,8 @@ function missingRemoteApprovalCredentialsMessage(): string {
 async function createDefaultRuntime(): Promise<WatchRemoteApprovalRuntime> {
   return {
     getPodDataSession: getDefaultPodDataSession,
-    createStore(webId, fetcher) {
-      return createNativeRemoteApprovalStore(webId, fetcher)
+    createStore(session, db) {
+      return createNativeRemoteApprovalStore(session.webId, db)
     },
     sleep(ms: number) {
       return delay(ms)
@@ -754,184 +726,134 @@ async function createRemoteApprovalClient(runtime: WatchRemoteApprovalRuntime): 
   if (!session) {
     return null
   }
+  const db = createRemoteApprovalDb(session)
+  await initSolidTables(db, [
+    approvalResource,
+    auditResource,
+    grantResource,
+    inboxNotificationTable,
+  ])
 
   return {
     session,
-    store: runtime.createStore(session.webId, session.fetch),
+    store: runtime.createStore(session, db),
   }
 }
 
-function createNativeRemoteApprovalStore(webId: string, fetcher: PodFetch): WatchRemoteApprovalStore {
+function createRemoteApprovalDb(session: PodDataSession): SolidDatabase {
+  return drizzle(session.solidSession, {
+    logger: false,
+    disableInteropDiscovery: true,
+    schema: solidSchema,
+  }) as unknown as SolidDatabase
+}
+
+function createNativeRemoteApprovalStore(_webId: string, db: SolidDatabase): WatchRemoteApprovalStore {
   return {
-    listApprovals: () => listApprovalRows(webId, fetcher),
-    findApproval: (id, options) => findApprovalRow(webId, fetcher, id, options),
-    insertApproval: (row) => writeApprovalRow(webId, fetcher, row),
+    listApprovals: () => listApprovalRows(db),
+    findApproval: (id, options) => findApprovalRow(db, id, options),
+    resolveApprovalReference: (locator) => resolveResourceReference(db, approvalResource, locator),
+    insertApproval: (row) => writeApprovalRow(db, row),
     async updateApproval(id, patch): Promise<void> {
-      const existing = (await listApprovalRows(webId, fetcher)).find((row) => row.id === id)
-      if (!existing) {
+      const data = normalizeApprovalUpdate(patch)
+      const approvalUri = normalizeString(patch.approvalUri)
+      const targetIri = approvalUri ?? (isAbsoluteIri(id) ? id : undefined)
+      if (targetIri) {
+        const updateByIri = db.updateByIri
+        if (typeof updateByIri !== 'function') {
+          throw new Error('Solid database does not support updateByIri')
+        }
+        const updated = await updateByIri.call(db, approvalResource, targetIri, data)
+        if (!updated) {
+          throw new Error(`Remote approval not found: ${id}`)
+        }
+        return
+      }
+
+      const updateByLocator = db.updateByLocator
+      if (typeof updateByLocator !== 'function') {
+        throw new Error('Solid database does not support updateByLocator')
+      }
+      const updated = await updateByLocator.call(db, approvalResource, { id }, data)
+      if (!updated) {
         throw new Error(`Remote approval not found: ${id}`)
       }
-      await writeApprovalRow(webId, fetcher, { ...existing, ...patch })
     },
-    listAudits: () => listAuditRows(webId, fetcher),
-    insertAudit: (row) => writeAuditRow(webId, fetcher, row),
-    listGrants: () => listGrantRows(webId, fetcher),
-    insertGrant: (row) => writeGrantRow(webId, fetcher, row),
-    insertInboxNotification: (row) => writeInboxNotificationRow(webId, fetcher, row),
+    listAudits: () => listAuditRows(db),
+    insertAudit: (row) => writeAuditRow(db, row),
+    listGrants: () => listGrantRows(db),
+    resolveGrantReference: (locator) => resolveResourceReference(db, grantResource, locator),
+    insertGrant: (row) => writeGrantRow(db, row),
+    insertInboxNotification: (row) => writeInboxNotificationRow(db, row),
   }
 }
 
 async function findApprovalRow(
-  webId: string,
-  fetcher: PodFetch,
+  db: SolidDatabase,
   id: string,
-  options: { resourceUri?: string; createdAt?: Date | string } = {},
+  options: { approvalUri?: string; createdAt?: Date | string } = {},
 ): Promise<ApprovalRowLike | null> {
-  if (options.resourceUri) {
-    return readApprovalRowFromResource(fetcher, options.resourceUri)
-  }
-
-  if (options.createdAt) {
-    const createdAt = new Date(toIsoString(options.createdAt, new Date().toISOString()))
-    return readApprovalRowFromResource(fetcher, buildApprovalResourceUrl(webId, id, createdAt))
-  }
-
-  return (await listApprovalRows(webId, fetcher)).find((row) => row.id === id) ?? null
-}
-
-async function readApprovalRowFromResource(fetcher: PodFetch, resourceUri: string): Promise<ApprovalRowLike | null> {
-  const turtle = await readTurtleResource(fetcher, documentUrlFromResourceUri(resourceUri))
-  if (!turtle) {
-    return null
-  }
-
-  for (const [subject, predicates] of parseManagedTurtleBlocks(turtle, documentUrlFromResourceUri(resourceUri))) {
-    if (subject !== resourceUri) {
-      continue
+  const approvalUri = normalizeString(options.approvalUri) ?? (isAbsoluteIri(id) ? id : undefined)
+  if (approvalUri) {
+    const findByIri = db.findByIri
+    if (typeof findByIri !== 'function') {
+      throw new Error('Solid database does not support findByIri')
     }
-    const row = approvalRowFromPredicates(subject, predicates)
-    if (row) {
-      return row
-    }
+    const row = await findByIri.call(db, approvalResource, approvalUri)
+    return normalizeApprovalRow(row as (ApprovalRow & Record<string, unknown>) | null)
   }
 
-  return null
-}
-
-async function listApprovalRows(webId: string, fetcher: PodFetch): Promise<ApprovalRowLike[]> {
-  const urls = [
-    ...recentApprovalDocumentUrls(webId),
-    ...await listTurtleResources(fetcher, `${getPodBaseUrl(webId)}/.data/approvals/`).catch(() => []),
-  ]
-  const rows: ApprovalRowLike[] = []
-  for (const url of [...new Set(urls)].filter((entry) => entry.endsWith('.ttl'))) {
-    const turtle = await readTurtleResource(fetcher, url).catch(() => null)
-    if (!turtle) continue
-    for (const [subject, predicates] of parseManagedTurtleBlocks(turtle, url)) {
-      const row = approvalRowFromPredicates(subject, predicates)
-      if (row) rows.push(row)
-    }
+  const findByLocator = db.findByLocator
+  if (typeof findByLocator !== 'function') {
+    throw new Error('Solid database does not support findByLocator')
   }
-  return rows
-}
-
-function recentApprovalDocumentUrls(webId: string, days = DEFAULT_APPROVAL_LIST_DAYS): string[] {
-  const urls: string[] = []
-  const base = Date.now()
-  for (let offset = 0; offset < days; offset += 1) {
-    const date = new Date(base - offset * 24 * 60 * 60 * 1000)
-    urls.push(buildApprovalDocumentUrl(webId, date))
-  }
-  return urls
-}
-
-async function writeApprovalRow(webId: string, fetcher: PodFetch, row: ApprovalRowLike): Promise<void> {
-  const createdAt = new Date(toIsoString(row.createdAt, new Date().toISOString()))
-  const documentUrl = buildApprovalDocumentUrl(webId, createdAt)
-  const subjectUrl = buildApprovalResourceUrl(webId, row.id, createdAt)
-  await upsertManagedTurtleBlock(fetcher, documentUrl, {
-    subject: subjectUrl,
-    triples: [
-      { predicate: RDF_TYPE, object: iri(UDFS.ApprovalRequest) },
-      { predicate: ApprovalVocab.session, object: iri(row.session) },
-      { predicate: ApprovalVocab.toolCallId, object: literal(row.toolCallId) },
-      { predicate: ApprovalVocab.toolName, object: literal(row.toolName) },
-      { predicate: ApprovalVocab.target, object: iri(row.target) },
-      { predicate: ApprovalVocab.action, object: iri(row.action) },
-      { predicate: ApprovalVocab.risk, object: literal(row.risk) },
-      { predicate: ApprovalVocab.status, object: literal(row.status) },
-      ...(row.assignedTo ? [{ predicate: ApprovalVocab.assignedTo, object: iri(row.assignedTo) }] : []),
-      ...(row.decisionBy ? [{ predicate: ApprovalVocab.decisionBy, object: iri(row.decisionBy) }] : []),
-      ...(row.decisionRole ? [{ predicate: ApprovalVocab.decisionRole, object: literal(row.decisionRole) }] : []),
-      ...(row.onBehalfOf ? [{ predicate: ApprovalVocab.onBehalfOf, object: iri(row.onBehalfOf) }] : []),
-      ...(row.reason ? [{ predicate: ApprovalVocab.reason, object: literal(row.reason) }] : []),
-      ...(row.context ? [{ predicate: ApprovalVocab.context, object: literal(row.context) }] : []),
-      ...(row.approvalOptions ? [{ predicate: ApprovalVocab.approvalOptions, object: literal(row.approvalOptions) }] : []),
-      ...(row.policyVersion ? [{ predicate: ApprovalVocab.policyVersion, object: literal(row.policyVersion) }] : []),
-      { predicate: ApprovalVocab.createdAt, object: literal(toIsoString(row.createdAt, new Date().toISOString())) },
-      ...(row.expiresAt ? [{ predicate: ApprovalVocab.expiresAt, object: literal(toIsoString(row.expiresAt, new Date().toISOString())) }] : []),
-      ...(row.resolvedAt ? [{ predicate: ApprovalVocab.resolvedAt, object: literal(toIsoString(row.resolvedAt, new Date().toISOString())) }] : []),
-    ],
+  const row = await findByLocator.call(db, approvalResource, {
+    id,
+    ...(options.createdAt ? { createdAt: options.createdAt } : {}),
   })
+  return normalizeApprovalRow(row as (ApprovalRow & Record<string, unknown>) | null)
 }
 
-async function listAuditRows(webId: string, fetcher: PodFetch): Promise<AuditRowLike[]> {
-  const urls = await listTurtleResourcesRecursive(fetcher, `${getPodBaseUrl(webId)}/.data/audits/`)
-  const rows: AuditRowLike[] = []
-  for (const url of urls.filter((entry) => entry.endsWith('.ttl'))) {
-    const turtle = await readTurtleResource(fetcher, url).catch(() => null)
-    if (!turtle) continue
-    for (const [subject, predicates] of parseManagedTurtleBlocks(turtle, url)) {
-      const row = auditRowFromPredicates(subject, predicates)
-      if (row) rows.push(row)
-    }
+function resolveResourceReference(
+  db: SolidDatabase,
+  resource: Parameters<NonNullable<SolidDatabase['resolveLocatorIri']>>[0],
+  locator: Record<string, unknown>,
+): { id: string; iri: string } {
+  if (typeof db.resolveLocatorIri !== 'function' || typeof db.resolveLocatorId !== 'function') {
+    throw new Error('Solid database does not support locator reference resolution')
   }
-  return rows
-}
 
-async function writeAuditRow(webId: string, fetcher: PodFetch, row: AuditRowLike): Promise<void> {
-  const createdAt = new Date(toIsoString(row.createdAt, new Date().toISOString()))
-  const documentUrl = buildAuditDocumentUrl(webId, createdAt)
-  const subjectUrl = buildAuditResourceUrl(webId, row.id, createdAt)
-  await upsertManagedTurtleBlock(fetcher, documentUrl, {
-    subject: subjectUrl,
-    triples: [
-      { predicate: RDF_TYPE, object: iri(UDFS.AuditEntry) },
-      { predicate: AuditVocab.action, object: literal(row.action) },
-      { predicate: AuditVocab.actor, object: iri(row.actor) },
-      { predicate: AuditVocab.actorRole, object: literal(row.actorRole) },
-      ...(row.onBehalfOf ? [{ predicate: AuditVocab.onBehalfOf, object: iri(row.onBehalfOf) }] : []),
-      ...(row.session ? [{ predicate: AuditVocab.session, object: iri(row.session) }] : []),
-      ...(row.entry ? [{ predicate: AuditVocab.entry, object: iri(row.entry) }] : []),
-      ...(row.toolCallId ? [{ predicate: AuditVocab.toolCallId, object: literal(row.toolCallId) }] : []),
-      ...(row.toolName ? [{ predicate: AuditVocab.toolName, object: literal(row.toolName) }] : []),
-      ...(row.approval ? [{ predicate: AuditVocab.approval, object: iri(row.approval) }] : []),
-      ...(row.policyVersion ? [{ predicate: AuditVocab.policyVersion, object: literal(row.policyVersion) }] : []),
-      { predicate: AuditVocab.createdAt, object: literal(toIsoString(row.createdAt, new Date().toISOString())) },
-    ],
-  })
-}
-
-async function listGrantRows(webId: string, fetcher: PodFetch): Promise<GrantRowLike[]> {
-  const urls = [
-    ...await listTurtleResources(fetcher, `${getPodBaseUrl(webId)}/settings/autonomy/grants/`).catch(() => []),
-  ]
-  const rows: GrantRowLike[] = []
-  for (const url of urls.filter((entry) => entry.endsWith('.ttl'))) {
-    const turtle = await readTurtleResource(fetcher, url).catch(() => null)
-    if (!turtle) continue
-    for (const [subject, predicates] of parseManagedTurtleBlocks(turtle, url)) {
-      const row = grantRowFromPredicates(subject, predicates)
-      if (row) rows.push(row)
-    }
+  return {
+    id: db.resolveLocatorId(resource, locator),
+    iri: db.resolveLocatorIri(resource, locator),
   }
-  return rows
 }
 
-async function writeGrantRow(webId: string, fetcher: PodFetch, row: GrantRowLike): Promise<void> {
+async function listApprovalRows(db: SolidDatabase): Promise<ApprovalRowLike[]> {
+  const rows = await db.select().from(approvalResource).execute()
+  return (rows as ApprovalRow[]).map((row) => normalizeApprovalRow(row)).filter((row): row is ApprovalRowLike => row !== null)
+}
+
+async function writeApprovalRow(db: SolidDatabase, row: ApprovalRowLike): Promise<void> {
+  await db.insert(approvalResource).values(normalizeApprovalInsert(row)).execute()
+}
+
+async function listAuditRows(db: SolidDatabase): Promise<AuditRowLike[]> {
+  const rows = await db.select().from(auditResource).execute()
+  return (rows as AuditRow[]).map((row) => normalizeAuditRow(row)).filter((row): row is AuditRowLike => row !== null)
+}
+
+async function writeAuditRow(db: SolidDatabase, row: AuditRowLike): Promise<void> {
+  await db.insert(auditResource).values(normalizeAuditInsert(row)).execute()
+}
+
+async function listGrantRows(db: SolidDatabase): Promise<GrantRowLike[]> {
+  const rows = await db.select().from(grantResource).execute()
+  return (rows as GrantRow[]).map((row) => normalizeGrantRow(row)).filter((row): row is GrantRowLike => row !== null)
+}
+
+async function writeGrantRow(db: SolidDatabase, row: GrantRowLike): Promise<void> {
   const id = normalizeString(row.id) ?? crypto.randomUUID()
-  const subjectUrl = buildGrantResourceUrl(webId, id)
-  const documentUrl = subjectUrl
   const target = normalizeString(row.target)
   const action = normalizeString(row.action)
   const effect = normalizeString(row.effect)
@@ -940,145 +862,192 @@ async function writeGrantRow(webId: string, fetcher: PodFetch, row: GrantRowLike
   if (!target || !action || !effect || !decisionBy || !decisionRole) {
     throw new Error(`Invalid remote approval grant row: ${id}`)
   }
-  await upsertManagedTurtleBlock(fetcher, documentUrl, {
-    subject: subjectUrl,
-    triples: [
-      { predicate: RDF_TYPE, object: iri(ODRL.Policy) },
-      { predicate: RDF_TYPE, object: iri(UDFS.AutonomyGrant) },
-      { predicate: GrantVocab.target, object: iri(target) },
-      { predicate: GrantVocab.action, object: iri(action) },
-      ...(normalizeString(row.title) ? [{ predicate: GrantVocab.title, object: literal(truncatePodLiteral(normalizeString(row.title) as string, 160)) }] : []),
-      ...(normalizeString(row.summary) ? [{ predicate: GrantVocab.summary, object: literal(truncatePodLiteral(normalizeString(row.summary) as string, 500)) }] : []),
-      ...(normalizeString(row.body) ? [{ predicate: GrantVocab.body, object: literal(truncatePodLiteral(normalizeString(row.body) as string, MAX_GRANT_POLICY_LENGTH)) }] : []),
-      ...(normalizeString(row.schema) ? [{ predicate: GrantVocab.schema, object: iri(normalizeString(row.schema) as string) }] : []),
-      ...(normalizeString(row.pageKind) ? [{ predicate: GrantVocab.pageKind, object: literal(normalizeString(row.pageKind) as string) }] : []),
-      ...(normalizeString(row.wikiStatus) ? [{ predicate: GrantVocab.wikiStatus, object: literal(normalizeString(row.wikiStatus) as string) }] : []),
-      ...(normalizeString(row.tags) ? [{ predicate: GrantVocab.tags, object: literal(truncatePodLiteral(normalizeString(row.tags) as string, 500)) }] : []),
-      ...(normalizeString(row.source) ? [{ predicate: GrantVocab.source, object: literal(normalizeString(row.source) as string) }] : []),
-      ...(normalizeString(row.sourceHash) ? [{ predicate: GrantVocab.sourceHash, object: literal(normalizeString(row.sourceHash) as string) }] : []),
-      ...(row.compiledAt ? [{ predicate: GrantVocab.compiledAt, object: literal(toIsoString(row.compiledAt, new Date().toISOString())) }] : []),
-      ...(row.compiledFrom ?? []).map((value) => ({ predicate: GrantVocab.compiledFrom, object: iri(value) })),
-      ...(row.related ?? []).map((value) => ({ predicate: GrantVocab.related, object: iri(value) })),
-      { predicate: GrantVocab.effect, object: literal(effect) },
-      ...(normalizeString(row.riskCeiling) ? [{ predicate: GrantVocab.riskCeiling, object: literal(normalizeString(row.riskCeiling) as string) }] : []),
-      ...(normalizeString(row.policy) ? [{ predicate: GrantVocab.policy, object: literal(truncatePodLiteral(normalizeString(row.policy) as string, MAX_GRANT_POLICY_LENGTH)) }] : []),
-      ...(normalizeString(row.context) ? [{ predicate: GrantVocab.context, object: literal(truncatePodLiteral(normalizeString(row.context) as string, MAX_APPROVAL_CONTEXT_LENGTH)) }] : []),
-      { predicate: GrantVocab.decisionBy, object: iri(decisionBy) },
-      { predicate: GrantVocab.decisionRole, object: literal(decisionRole) },
-      ...(normalizeString(row.onBehalfOf) ? [{ predicate: GrantVocab.onBehalfOf, object: iri(normalizeString(row.onBehalfOf) as string) }] : []),
-      { predicate: GrantVocab.createdAt, object: literal(toIsoString(row.createdAt as Date | string | undefined, new Date().toISOString())) },
-      ...(normalizeString(row.revokedAt) ? [{ predicate: GrantVocab.revokedAt, object: literal(normalizeString(row.revokedAt) as string) }] : []),
-    ],
-  })
+  await db.insert(grantResource).values(normalizeGrantInsert({ ...row, id, target, action, effect, decisionBy, decisionRole })).execute()
 }
 
-async function writeInboxNotificationRow(webId: string, fetcher: PodFetch, row: InboxNotificationRowLike): Promise<void> {
-  const url = buildInboxResourceUrl(webId, row.id)
-  await upsertManagedTurtleBlock(fetcher, url, {
-    subject: url,
-    triples: [
-      { predicate: RDF_TYPE, object: iri(AS.Announce) },
-      ...(row.actor ? [{ predicate: InboxNotificationVocab.actor, object: iri(row.actor) }] : []),
-      { predicate: InboxNotificationVocab.object, object: iri(row.object) },
-      { predicate: InboxNotificationVocab.createdAt, object: literal(toIsoString(row.createdAt, new Date().toISOString())) },
-    ],
-  })
+async function writeInboxNotificationRow(db: SolidDatabase, row: InboxNotificationRowLike): Promise<void> {
+  await db.insert(inboxNotificationTable).values(normalizeInboxNotificationInsert(row)).execute()
 }
 
-function approvalRowFromPredicates(url: string, predicates: Map<string, unknown[]>): ApprovalRowLike | null {
-  const session = firstIri(predicates as never, ApprovalVocab.session)
-  const toolCallId = firstLiteral(predicates as never, ApprovalVocab.toolCallId)
-  const toolName = firstLiteral(predicates as never, ApprovalVocab.toolName)
-  const target = firstIri(predicates as never, ApprovalVocab.target)
-  const action = firstIri(predicates as never, ApprovalVocab.action)
-  const risk = firstLiteral(predicates as never, ApprovalVocab.risk)
-  const status = firstLiteral(predicates as never, ApprovalVocab.status)
-  const createdAt = firstLiteral(predicates as never, ApprovalVocab.createdAt)
-  if (!session || !toolCallId || !toolName || !target || !action || !risk || !status || !createdAt) {
-    return null
-  }
+function normalizeApprovalRow(row: (ApprovalRow & Record<string, unknown>) | null | undefined): ApprovalRowLike | null {
+  if (!row) return null
   return {
-    id: subjectIdFromResourceUrl(url),
-    session,
-    toolCallId,
-    toolName,
-    target,
-    action,
-    risk,
-    status,
-    assignedTo: firstIri(predicates as never, ApprovalVocab.assignedTo),
-    decisionBy: firstIri(predicates as never, ApprovalVocab.decisionBy),
-    decisionRole: firstLiteral(predicates as never, ApprovalVocab.decisionRole),
-    onBehalfOf: firstIri(predicates as never, ApprovalVocab.onBehalfOf),
-    reason: firstLiteral(predicates as never, ApprovalVocab.reason),
-    context: firstLiteral(predicates as never, ApprovalVocab.context),
-    approvalOptions: firstLiteral(predicates as never, ApprovalVocab.approvalOptions),
-    policyVersion: firstLiteral(predicates as never, ApprovalVocab.policyVersion),
-    createdAt,
-    expiresAt: firstLiteral(predicates as never, ApprovalVocab.expiresAt),
-    resolvedAt: firstLiteral(predicates as never, ApprovalVocab.resolvedAt),
+    id: String(row.id),
+    approvalUri: normalizeString(row['@id']) ?? normalizeString(row.subject) ?? normalizeString(row.uri),
+    session: row.session,
+    toolCallId: row.toolCallId,
+    toolName: row.toolName,
+    target: row.target,
+    action: row.action,
+    risk: row.risk,
+    status: row.status,
+    assignedTo: row.assignedTo,
+    decisionBy: row.decisionBy,
+    decisionRole: row.decisionRole,
+    onBehalfOf: row.onBehalfOf,
+    reason: row.reason,
+    context: row.context,
+    approvalOptions: row.approvalOptions,
+    policyVersion: row.policyVersion,
+    createdAt: row.createdAt,
+    expiresAt: row.expiresAt,
+    resolvedAt: row.resolvedAt,
   }
 }
 
-function auditRowFromPredicates(url: string, predicates: Map<string, unknown[]>): AuditRowLike | null {
-  const action = firstLiteral(predicates as never, AuditVocab.action)
-  const actor = firstIri(predicates as never, AuditVocab.actor)
-  const actorRole = firstLiteral(predicates as never, AuditVocab.actorRole)
-  const createdAt = firstLiteral(predicates as never, AuditVocab.createdAt)
-  if (!action || !actor || !actorRole || !createdAt) {
-    return null
-  }
+function normalizeAuditRow(row: (AuditRow & Record<string, unknown>) | null | undefined): AuditRowLike | null {
+  if (!row) return null
   return {
-    id: subjectIdFromResourceUrl(url),
-    action,
-    actor,
-    actorRole,
-    onBehalfOf: firstIri(predicates as never, AuditVocab.onBehalfOf),
-    session: firstIri(predicates as never, AuditVocab.session),
-    entry: firstIri(predicates as never, AuditVocab.entry),
-    toolCallId: firstLiteral(predicates as never, AuditVocab.toolCallId),
-    toolName: firstLiteral(predicates as never, AuditVocab.toolName),
-    approval: firstIri(predicates as never, AuditVocab.approval),
-    policyVersion: firstLiteral(predicates as never, AuditVocab.policyVersion),
-    createdAt,
+    id: String(row.id),
+    action: row.action,
+    actor: row.actor,
+    actorRole: row.actorRole,
+    onBehalfOf: row.onBehalfOf,
+    session: row.session,
+    entry: row.entry,
+    toolCallId: row.toolCallId,
+    toolName: row.toolName,
+    approval: row.approval,
+    policyVersion: row.policyVersion,
+    createdAt: row.createdAt,
   }
 }
 
-function grantRowFromPredicates(url: string, predicates: Map<string, unknown[]>): GrantRowLike | null {
-  const target = firstIri(predicates as never, GrantVocab.target)
-  const action = firstIri(predicates as never, GrantVocab.action)
-  const effect = firstLiteral(predicates as never, GrantVocab.effect)
-  const decisionBy = firstIri(predicates as never, GrantVocab.decisionBy)
-  const decisionRole = firstLiteral(predicates as never, GrantVocab.decisionRole)
-  const createdAt = firstLiteral(predicates as never, GrantVocab.createdAt)
-  if (!target || !action || !effect || !decisionBy || !decisionRole || !createdAt) {
-    return null
-  }
+function normalizeGrantRow(row: (GrantRow & Record<string, unknown>) | null | undefined): GrantRowLike | null {
+  if (!row) return null
   return {
-    id: subjectIdFromResourceUrl(url),
-    target,
-    action,
-    title: firstLiteral(predicates as never, GrantVocab.title),
-    summary: firstLiteral(predicates as never, GrantVocab.summary),
-    body: firstLiteral(predicates as never, GrantVocab.body),
-    schema: firstIri(predicates as never, GrantVocab.schema),
-    pageKind: firstLiteral(predicates as never, GrantVocab.pageKind),
-    wikiStatus: firstLiteral(predicates as never, GrantVocab.wikiStatus),
-    tags: firstLiteral(predicates as never, GrantVocab.tags),
-    source: firstLiteral(predicates as never, GrantVocab.source),
-    sourceHash: firstLiteral(predicates as never, GrantVocab.sourceHash),
-    compiledAt: firstLiteral(predicates as never, GrantVocab.compiledAt),
-    compiledFrom: iriValues(predicates, GrantVocab.compiledFrom),
-    related: iriValues(predicates, GrantVocab.related),
-    effect,
-    riskCeiling: firstLiteral(predicates as never, GrantVocab.riskCeiling),
-    policy: firstLiteral(predicates as never, GrantVocab.policy),
-    context: firstLiteral(predicates as never, GrantVocab.context),
-    decisionBy,
-    decisionRole,
-    onBehalfOf: firstIri(predicates as never, GrantVocab.onBehalfOf),
-    createdAt,
-    revokedAt: firstLiteral(predicates as never, GrantVocab.revokedAt),
+    id: String(row.id),
+    target: row.target,
+    action: row.action,
+    title: row.title,
+    summary: row.summary,
+    body: row.body,
+    schema: row.schema,
+    pageKind: row.pageKind,
+    wikiStatus: row.wikiStatus,
+    tags: row.tags,
+    source: row.source,
+    sourceHash: row.sourceHash,
+    compiledAt: row.compiledAt,
+    compiledFrom: row.compiledFrom,
+    related: row.related,
+    effect: row.effect,
+    riskCeiling: row.riskCeiling,
+    policy: row.policy,
+    context: row.context,
+    decisionBy: row.decisionBy,
+    decisionRole: row.decisionRole,
+    onBehalfOf: row.onBehalfOf,
+    createdAt: row.createdAt,
+    revokedAt: row.revokedAt,
+  }
+}
+
+function normalizeApprovalInsert(row: ApprovalRowLike): ApprovalInsert {
+  return {
+    id: row.id,
+    session: row.session,
+    toolCallId: row.toolCallId,
+    toolName: row.toolName,
+    target: row.target,
+    action: row.action,
+    risk: row.risk,
+    status: row.status,
+    ...(row.assignedTo ? { assignedTo: row.assignedTo } : {}),
+    ...(row.decisionBy ? { decisionBy: row.decisionBy } : {}),
+    ...(row.decisionRole ? { decisionRole: row.decisionRole } : {}),
+    ...(row.onBehalfOf ? { onBehalfOf: row.onBehalfOf } : {}),
+    ...(row.reason ? { reason: row.reason } : {}),
+    ...(row.context ? { context: row.context } : {}),
+    ...(row.approvalOptions ? { approvalOptions: row.approvalOptions } : {}),
+    ...(row.policyVersion ? { policyVersion: row.policyVersion } : {}),
+    createdAt: new Date(toIsoString(row.createdAt, new Date().toISOString())),
+    ...(row.expiresAt ? { expiresAt: new Date(toIsoString(row.expiresAt, new Date().toISOString())) } : {}),
+    ...(row.resolvedAt ? { resolvedAt: new Date(toIsoString(row.resolvedAt, new Date().toISOString())) } : {}),
+  }
+}
+
+function normalizeApprovalUpdate(patch: Partial<ApprovalRowLike>): Partial<ApprovalInsert> {
+  const next: Partial<ApprovalInsert> = {}
+  for (const key of [
+    'session',
+    'toolCallId',
+    'toolName',
+    'target',
+    'action',
+    'risk',
+    'status',
+    'assignedTo',
+    'decisionBy',
+    'decisionRole',
+    'onBehalfOf',
+    'reason',
+    'context',
+    'approvalOptions',
+    'policyVersion',
+  ] as const) {
+    if (patch[key] !== undefined) {
+      ;(next as Record<string, unknown>)[key] = patch[key]
+    }
+  }
+  if (patch.createdAt !== undefined) next.createdAt = new Date(toIsoString(patch.createdAt, new Date().toISOString()))
+  if (patch.expiresAt !== undefined) next.expiresAt = new Date(toIsoString(patch.expiresAt, new Date().toISOString()))
+  if (patch.resolvedAt !== undefined) next.resolvedAt = new Date(toIsoString(patch.resolvedAt, new Date().toISOString()))
+  return next
+}
+
+function normalizeAuditInsert(row: AuditRowLike): AuditInsert {
+  return {
+    id: row.id,
+    action: row.action,
+    actor: row.actor,
+    actorRole: row.actorRole,
+    ...(row.onBehalfOf ? { onBehalfOf: row.onBehalfOf } : {}),
+    ...(row.session ? { session: row.session } : {}),
+    ...(row.entry ? { entry: row.entry } : {}),
+    ...(row.toolCallId ? { toolCallId: row.toolCallId } : {}),
+    ...(row.toolName ? { toolName: row.toolName } : {}),
+    ...(row.approval ? { approval: row.approval } : {}),
+    ...(row.policyVersion ? { policyVersion: row.policyVersion } : {}),
+    createdAt: new Date(toIsoString(row.createdAt, new Date().toISOString())),
+  }
+}
+
+function normalizeGrantInsert(row: GrantRowLike): GrantInsert {
+  return {
+    id: row.id,
+    target: row.target,
+    action: row.action,
+    ...(row.title ? { title: truncatePodLiteral(row.title, 160) } : {}),
+    ...(row.summary ? { summary: truncatePodLiteral(row.summary, 500) } : {}),
+    ...(row.body ? { body: truncatePodLiteral(row.body, MAX_GRANT_POLICY_LENGTH) } : {}),
+    ...(row.schema ? { schema: row.schema } : {}),
+    ...(row.pageKind ? { pageKind: row.pageKind } : {}),
+    ...(row.wikiStatus ? { wikiStatus: row.wikiStatus } : {}),
+    ...(row.tags ? { tags: truncatePodLiteral(row.tags, 500) } : {}),
+    ...(row.source ? { source: row.source } : {}),
+    ...(row.sourceHash ? { sourceHash: row.sourceHash } : {}),
+    ...(row.compiledAt ? { compiledAt: new Date(toIsoString(row.compiledAt, new Date().toISOString())) } : {}),
+    ...(row.compiledFrom ? { compiledFrom: row.compiledFrom } : {}),
+    ...(row.related ? { related: row.related } : {}),
+    effect: row.effect,
+    ...(row.riskCeiling ? { riskCeiling: row.riskCeiling } : {}),
+    ...(row.policy ? { policy: truncatePodLiteral(row.policy, MAX_GRANT_POLICY_LENGTH) } : {}),
+    ...(row.context ? { context: truncatePodLiteral(row.context, MAX_APPROVAL_CONTEXT_LENGTH) } : {}),
+    decisionBy: row.decisionBy,
+    decisionRole: row.decisionRole,
+    ...(row.onBehalfOf ? { onBehalfOf: row.onBehalfOf } : {}),
+    createdAt: new Date(toIsoString(row.createdAt, new Date().toISOString())),
+    ...(row.revokedAt ? { revokedAt: new Date(toIsoString(row.revokedAt, new Date().toISOString())) } : {}),
+  }
+}
+
+function normalizeInboxNotificationInsert(row: InboxNotificationRowLike): InboxNotificationInsert {
+  return {
+    id: row.id,
+    ...(row.actor ? { actor: row.actor } : {}),
+    object: row.object,
+    createdAt: new Date(toIsoString(row.createdAt, new Date().toISOString())),
   }
 }
 
@@ -1234,10 +1203,12 @@ export async function createRemoteApproval(options: {
     const request = typeof options.request === 'function'
       ? options.request({ webId, stored, sessionUri: subject.sessionUri })
       : options.request
-    const approvalId = crypto.randomUUID()
+    const approvalLocalId = crypto.randomUUID()
     const now = activeRuntime.now()
+    const approvalReference = store.resolveApprovalReference({ id: approvalLocalId, createdAt: now })
+    const approvalId = approvalReference.id
     const sessionUri = subject.sessionUri
-    const approvalUri = buildApprovalUriForDate(webId, approvalId, now)
+    const approvalUri = approvalReference.iri
     const targetUri = subject.targetUri ?? sessionUri
     const assignedTo = subject.assignedTo ?? webId
     const onBehalfOf = subject.onBehalfOf ?? webId
@@ -1249,6 +1220,7 @@ export async function createRemoteApproval(options: {
 
     await store.insertApproval({
       id: approvalId,
+      approvalUri,
       session: sessionUri,
       toolCallId: request.toolCallId,
       toolName: request.toolName,
@@ -1504,14 +1476,15 @@ export async function resolveRemoteWatchApproval(options: {
     }
 
     const now = activeRuntime.now()
-    const approvalCreatedAt = new Date(toIsoString(row.createdAt, now.toISOString()))
-    const approvalUri = buildApprovalUriForDate(row.session, row.id, approvalCreatedAt)
+    const approvalUri = normalizeString(row.approvalUri)
+      ?? store.resolveApprovalReference({ id: row.id, createdAt: row.createdAt }).iri
     const nextStatus = options.decision === 'accept' || options.decision === 'accept_for_session'
       ? 'approved'
       : 'rejected'
     const decisionRole = options.decisionRole ?? 'human'
 
     await store.updateApproval(row.id, {
+      approvalUri,
       status: nextStatus,
       decisionBy: webId,
       decisionRole,
@@ -1567,7 +1540,7 @@ export async function resolveRemoteWatchApproval(options: {
       await warnOnly(activeRuntime, () => store.insertInboxNotification({
         id: crypto.randomUUID(),
         actor: webId,
-        object: buildGrantUri(row.session, grantId),
+        object: store.resolveGrantReference({ id: grantId }).iri,
         createdAt: now,
       }))
     }
@@ -1581,6 +1554,7 @@ export async function resolveRemoteWatchApproval(options: {
 
     const nextRow: ApprovalRowLike = {
       ...row,
+      approvalUri,
       status: nextStatus,
       decisionBy: webId,
       decisionRole,
@@ -1601,11 +1575,9 @@ async function readRemoteApprovalRow(
 ): Promise<ApprovalRowLike | null> {
   if (store.findApproval) {
     const row = await store.findApproval(options.approvalId, {
-      resourceUri: options.approvalUri,
+      approvalUri: options.approvalUri,
     })
-    if (row || options.approvalUri) {
-      return row
-    }
+    return row
   }
 
   const approvals = await store.listApprovals()

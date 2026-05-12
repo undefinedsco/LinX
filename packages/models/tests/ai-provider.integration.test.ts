@@ -74,7 +74,7 @@ describe('Solid Pod AIProvider CRUD', () => {
         id: providerId,
         baseUrl: 'https://api.test.com/v1',
         proxyUrl: 'https://proxy.test.com/v1',
-        hasModel: `/settings/ai/models.ttl#test-model`,
+        hasModel: `/settings/ai/models/${providerId}.ttl#test-model`,
       })
       .execute()
 

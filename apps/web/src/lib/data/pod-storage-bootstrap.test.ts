@@ -23,7 +23,7 @@ describe('initializeLinxPodStorage', () => {
 
     await initializeLinxPodStorage(db as any)
 
-    expect(connect).toHaveBeenCalledBefore(init)
+    expect(connect.mock.invocationCallOrder[0]).toBeLessThan(init.mock.invocationCallOrder[0])
     expect(init).toHaveBeenCalledTimes(1)
     expect(fetchMock).toHaveBeenCalledWith('https://node.example/alice/.data/', { method: 'HEAD' })
     expect(fetchMock).toHaveBeenCalledWith(

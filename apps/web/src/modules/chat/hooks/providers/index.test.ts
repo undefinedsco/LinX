@@ -31,9 +31,9 @@ describe('Provider Adapters', () => {
       expect(adapter.name).toBe('anthropic')
     })
 
-    it('returns openai adapter for claude provider without alias normalization', () => {
+    it('returns anthropic adapter for claude provider alias', () => {
       const adapter = getProviderAdapter('claude')
-      expect(adapter.name).toBe('openai-compatible')
+      expect(adapter.name).toBe('anthropic')
     })
 
     it('returns openai adapter for codex provider alias', () => {
