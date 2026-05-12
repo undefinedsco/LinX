@@ -24,8 +24,89 @@ function createSessionManager() {
 }
 
 function createFakePodRuntime() {
-  const resources = new Map()
+  const rows = new Map()
   const writes = []
+  const webId = 'https://id.undefineds.co/alice/profile/card#me'
+  const podBase = 'https://id.undefineds.co/alice'
+  const tableName = (table) => table?.config?.name ?? 'unknown'
+  const dateParts = (value, includeDay = false) => {
+    const date = value instanceof Date ? value : new Date(value)
+    const yyyy = String(date.getUTCFullYear())
+    const mm = String(date.getUTCMonth() + 1).padStart(2, '0')
+    const dd = String(date.getUTCDate()).padStart(2, '0')
+    return includeDay ? { yyyy, mm, dd } : { yyyy, mm }
+  }
+  const chatIdFromRef = (ref) => {
+    const value = String(ref ?? '')
+    const match = value.match(/\/\.data\/chat\/([^/]+)\/index\.ttl/)
+    return match ? decodeURIComponent(match[1]) : value
+  }
+  const resolveLocatorIri = (table, locator) => {
+    const name = tableName(table)
+    if (name === 'chats') {
+      return `${podBase}/.data/chat/${encodeURIComponent(locator.id)}/index.ttl#this`
+    }
+    if (name === 'thread') {
+      const chatId = chatIdFromRef(locator.chat)
+      return `${podBase}/.data/chat/${encodeURIComponent(chatId)}/index.ttl#${encodeURIComponent(locator.id)}`
+    }
+    if (name === 'agent') {
+      return `${podBase}/.data/agents/${encodeURIComponent(locator.id)}.ttl`
+    }
+    if (name === 'session') {
+      const { yyyy, mm } = dateParts(locator.createdAt)
+      return `${podBase}/.data/sessions/${yyyy}/${mm}.ttl#${encodeURIComponent(locator.id)}`
+    }
+    if (name === 'chat_message') {
+      const chatId = chatIdFromRef(locator.chat)
+      const { yyyy, mm, dd } = dateParts(locator.createdAt, true)
+      return `${podBase}/.data/chat/${encodeURIComponent(chatId)}/${yyyy}/${mm}/${dd}/messages.ttl#${encodeURIComponent(locator.id)}`
+    }
+    if (name === 'audit') {
+      const { yyyy, mm, dd } = dateParts(locator.createdAt, true)
+      return `${podBase}/.data/audits/${yyyy}/${mm}/${dd}.ttl#${encodeURIComponent(locator.id)}`
+    }
+    throw new Error(`Unsupported table in fake Pod DB: ${name}`)
+  }
+  const rowLocator = (table, row) => {
+    const name = tableName(table)
+    if (name === 'thread') return { id: row.id, chat: row.chat }
+    if (name === 'session') return { id: row.id, createdAt: row.createdAt }
+    if (name === 'chat_message') return { id: row.id, chat: row.chat, createdAt: row.createdAt }
+    if (name === 'audit') return { id: row.id, createdAt: row.createdAt }
+    return { id: row.id }
+  }
+  const db = {
+    async init() {},
+    resolveLocatorIri,
+    async findByLocator(table, locator) {
+      return rows.get(resolveLocatorIri(table, locator)) ?? null
+    },
+    async updateByLocator(table, locator, patch) {
+      const iri = resolveLocatorIri(table, locator)
+      const existing = rows.get(iri)
+      if (!existing) return null
+      const next = { ...existing, ...patch, '@id': iri, subject: iri, uri: iri }
+      rows.set(iri, next)
+      writes.push({ op: 'update', table: tableName(table), iri, row: next })
+      return next
+    },
+    insert(table) {
+      return {
+        values(row) {
+          return {
+            async execute() {
+              const iri = resolveLocatorIri(table, rowLocator(table, row))
+              const next = { ...row, '@id': iri, subject: iri, uri: iri }
+              rows.set(iri, next)
+              writes.push({ op: 'insert', table: tableName(table), iri, row: next })
+              return [next]
+            },
+          }
+        },
+      }
+    },
+  }
   return {
     runtime: {
       async getPodDataSession() {
@@ -33,36 +114,20 @@ function createFakePodRuntime() {
           credentials: {
             authType: 'oidc_oauth',
             url: 'https://id.undefineds.co/',
-            webId: 'https://id.undefineds.co/alice/profile/card#me',
+            webId,
           },
-          webId: 'https://id.undefineds.co/alice/profile/card#me',
+          webId,
           async close() {},
-          async fetch(url, init = {}) {
-            const method = init.method ?? 'GET'
-            if (method === 'GET') {
-              if (!resources.has(url)) {
-                return new Response('missing', { status: 404, statusText: 'Not Found' })
-              }
-              return new Response(resources.get(url), {
-                status: 200,
-                headers: { 'Content-Type': 'text/turtle' },
-              })
-            }
-            if (method === 'HEAD') {
-              return new Response(null, { status: resources.has(url) ? 200 : 404 })
-            }
-            if (method === 'PUT') {
-              const body = typeof init.body === 'string' ? init.body : ''
-              resources.set(url, body)
-              writes.push({ url, body })
-              return new Response(null, { status: 201 })
-            }
-            return new Response('unsupported', { status: 405 })
-          }
+          async fetch() {
+            return new Response('fake ORM runtime should not use raw fetch', { status: 500 })
+          },
         }
       },
+      createDb() {
+        return db
+      },
     },
-    resources,
+    rows,
     writes,
   }
 }
@@ -180,7 +245,7 @@ test('LinxPiPodMirror persists Pi session events into Pod tables', async (t) => 
     message,
   })
 
-  const { runtime, resources, writes } = createFakePodRuntime()
+  const { runtime, rows, writes } = createFakePodRuntime()
   const mirror = new module.LinxPiPodMirror({
     cwd: '/tmp/demo',
     sessionManager,
@@ -191,18 +256,15 @@ test('LinxPiPodMirror persists Pi session events into Pod tables', async (t) => 
   await mirror.flush()
   await mirror.close()
 
-  const allTurtle = [...resources.values()].join('\n')
-  assert.match(allTurtle, /https:\/\/undefineds\.co\/ns#Session/)
-  assert.match(allTurtle, /https:\/\/undefineds\.co\/ns#Agent/)
-  assert.match(allTurtle, /http:\/\/www\.w3\.org\/ns\/pim\/meeting#LongChat/)
-  assert.match(allTurtle, /http:\/\/rdfs\.org\/sioc\/ns#Thread/)
-  assert.match(allTurtle, /http:\/\/www\.w3\.org\/ns\/pim\/meeting#Message/)
-  assert.match(allTurtle, /persist through mirror/)
-  assert.match(allTurtle, new RegExp(`${sessionManager.getSessionId()}-u1`))
-  assert.equal(writes.some((write) => write.url.endsWith('/.data/chat/ai-secretary/index.ttl')), true)
-  assert.equal(writes.some((write) => /\/\.data\/sessions\/\d{4}\/\d{2}\.ttl$/.test(write.url)), true)
-  assert.equal(writes.some((write) => /\/\.data\/chat\/ai-secretary\/2026\/04\/01\/messages\.ttl$/.test(write.url)), true)
-  assert.equal(writes.some((write) => write.url.includes('/.data/audits/')), false)
+  const rowValues = [...rows.values()]
+  assert.equal(rowValues.some((row) => row.title === 'AI Secretary'), true)
+  assert.equal(rowValues.some((row) => row.name === 'LinX CLI Assistant'), true)
+  assert.equal(rowValues.some((row) => row.tool === 'linx' && row.status === 'completed'), true)
+  assert.equal(rowValues.some((row) => row.content === 'persist through mirror'), true)
+  assert.equal(writes.some((write) => write.table === 'chats' && write.iri.endsWith('/.data/chat/ai-secretary/index.ttl#this')), true)
+  assert.equal(writes.some((write) => write.table === 'session' && /\/\.data\/sessions\/2026\/04\.ttl#/.test(write.iri)), true)
+  assert.equal(writes.some((write) => write.table === 'chat_message' && /\/\.data\/chat\/ai-secretary\/2026\/04\/01\/messages\.ttl#/.test(write.iri)), true)
+  assert.equal(writes.some((write) => write.table === 'audit'), false)
 })
 
 test('LinxPiPodMirror writes tool execution audits to Pod tables', async (t) => {
@@ -210,7 +272,7 @@ test('LinxPiPodMirror writes tool execution audits to Pod tables', async (t) => 
   t.after(() => cleanup())
 
   const sessionManager = createSessionManager()
-  const { runtime, resources } = createFakePodRuntime()
+  const { runtime, rows } = createFakePodRuntime()
   const mirror = new module.LinxPiPodMirror({
     cwd: '/tmp/demo',
     sessionManager,
@@ -234,18 +296,14 @@ test('LinxPiPodMirror writes tool execution audits to Pod tables', async (t) => 
   await mirror.flush()
   await mirror.close()
 
-  const auditResources = [...resources.entries()].filter(([url]) => url.includes('/.data/audits/') && url.endsWith('.ttl'))
-  assert.equal(auditResources.length, 1)
-  assert.equal(auditResources.every(([url]) => /\/\.data\/audits\/\d{4}\/\d{2}\/\d{2}\.ttl$/.test(url)), true)
-  assert.equal(auditResources.some(([url]) => url.includes(sessionManager.getSessionId())), false)
-  assert.equal(auditResources.some(([url]) => url.includes('call-1')), false)
-  const auditTurtle = auditResources.map(([, body]) => body).join('\n')
-  assert.match(auditTurtle, /tool_execution_started/)
-  assert.match(auditTurtle, /tool_execution_completed/)
-  assert.match(auditTurtle, /call-1/)
-  assert.match(auditTurtle, /https:\/\/undefineds\.co\/ns#entry/)
-  assert.match(auditTurtle, /https:\/\/undefineds\.co\/ns#toolName/)
-  assert.match(auditTurtle, /"bash"/)
-  assert.doesNotMatch(auditTurtle, /https:\/\/undefineds\.co\/ns#context/)
-  assert.doesNotMatch(auditTurtle, /pwd/)
+  const auditRows = [...rows.entries()].filter(([iri, row]) => iri.includes('/.data/audits/') && row.toolCallId === 'call-1')
+  assert.equal(auditRows.length, 2)
+  assert.equal(auditRows.every(([iri]) => /\/\.data\/audits\/\d{4}\/\d{2}\/\d{2}\.ttl#/.test(iri)), true)
+  assert.equal(auditRows.some(([iri]) => iri.includes(sessionManager.getSessionId())), false)
+  assert.equal(auditRows.some(([iri]) => iri.includes('call-1')), false)
+  assert.equal(auditRows.some(([, row]) => row.action === 'tool_execution_started'), true)
+  assert.equal(auditRows.some(([, row]) => row.action === 'tool_execution_completed'), true)
+  assert.equal(auditRows.every(([, row]) => row.toolName === 'bash'), true)
+  assert.equal(auditRows.every(([, row]) => !('context' in row)), true)
+  assert.equal(auditRows.every(([, row]) => JSON.stringify(row).includes('pwd') === false), true)
 })

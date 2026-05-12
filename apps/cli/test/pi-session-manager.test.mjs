@@ -217,50 +217,54 @@ test('list and resume recover from Pod when local JSONL cache is missing', async
   assert.equal(resumed.getEntries()[0].message.content[0].text, 'from pod only')
 })
 
-test('native Pod session source reads session and messages directly from TTL resources', async (t) => {
-  const [{ module: sessionModule, cleanup: cleanupSession }, { module: podModule, cleanup: cleanupPod }] = await Promise.all([
-    loadWatchModule('lib/pi-adapter/session.ts'),
-    loadWatchModule('lib/pi-adapter/pod-native.ts'),
-  ])
-  t.after(() => {
-    cleanupSession()
-    cleanupPod()
-  })
+test('native Pod session source reads session and messages through shared ORM resources', async (t) => {
+  const { module: sessionModule, cleanup } = await loadWatchModule('lib/pi-adapter/session.ts')
+  t.after(() => cleanup())
 
   const sessionId = '019df222-native-pod'
   const cwd = '/tmp/native-pod-cwd'
-  const resources = new Map()
-  const sessionDocUrl = `${POD_BASE}/.data/sessions/2026/04.ttl`
-  const sessionSubject = `${sessionDocUrl}#${sessionId}`
-  const messageUrl = `${POD_BASE}/.data/chat/ai-secretary/2026/04/01/messages.ttl`
-  const messageSubject = `${messageUrl}#${sessionId}-u1`
   const chatUri = `${POD_BASE}/.data/chat/ai-secretary/index.ttl#this`
   const threadUri = `${POD_BASE}/.data/chat/ai-secretary/index.ttl#${sessionId}`
 
-  resources.set(`${POD_BASE}/.data/sessions/`, '<2026/> .')
-  resources.set(`${POD_BASE}/.data/sessions/2026/`, '<04.ttl> .')
-  resources.set(`${POD_BASE}/.data/chat/ai-secretary/`, '<2026/> .')
-  resources.set(`${POD_BASE}/.data/chat/ai-secretary/2026/`, '<04/> .')
-  resources.set(`${POD_BASE}/.data/chat/ai-secretary/2026/04/`, '<01/> .')
-  resources.set(`${POD_BASE}/.data/chat/ai-secretary/2026/04/01/`, '<messages.ttl> .')
-  resources.set(sessionDocUrl, podModule.mergeManagedBlock('', {
-    subject: sessionSubject,
-    triples: [
-      { predicate: podModule.UDFS_SESSION_TOOL, object: podModule.literal('linx') },
-      { predicate: podModule.UDFS_CONVERSATION, object: podModule.iri(chatUri) },
-      { predicate: podModule.UDFS_ACTOR, object: podModule.iri(WEB_ID) },
-      { predicate: podModule.UDFS_IN_THREAD, object: podModule.iri(threadUri) },
-      { predicate: podModule.UDFS_METADATA, object: podModule.literal(JSON.stringify({ cwd, threadUri, messageResources: [messageUrl] })) },
-      { predicate: podModule.DCT_CREATED, object: podModule.literal('2026-04-01T00:00:00.000Z') },
-      { predicate: podModule.DCT_MODIFIED, object: podModule.literal('2026-04-01T00:00:01.000Z') },
-    ],
-  }))
-  resources.set(messageUrl, podModule.mergeManagedBlock('', {
-    subject: messageSubject,
-    triples: [
-      { predicate: 'https://undefineds.co/ns#messageType', object: podModule.literal('user') },
-      { predicate: podModule.SIOC_CONTENT, object: podModule.literal('native ttl hello') },
-      { predicate: podModule.SIOC_RICH_CONTENT, object: podModule.literal(JSON.stringify({
+  const db = {
+    resolveLocatorIri(table, locator) {
+      if (table?.config?.name === 'chats') {
+        return `${POD_BASE}/.data/chat/${locator.id}/index.ttl#this`
+      }
+      throw new Error(`Unexpected table: ${table?.config?.name}`)
+    },
+    select() {
+      return {
+        from(table) {
+          const tableName = table?.config?.name
+          return {
+            where() {
+              return this
+            },
+            orderBy() {
+              return this
+            },
+            async execute() {
+              if (tableName === 'session') {
+                return [{
+                  id: sessionId,
+                  ownerWebId: WEB_ID,
+                  chat: chatUri,
+                  thread: threadUri,
+                  tool: 'linx',
+                  status: 'active',
+                  metadata: { cwd, threadUri },
+                  createdAt: new Date('2026-04-01T00:00:00.000Z'),
+                  updatedAt: new Date('2026-04-01T00:00:01.000Z'),
+                }]
+              }
+              if (tableName === 'chat_message') {
+                return [{
+                  id: `${sessionId}-u1`,
+                  thread: threadUri,
+                  role: 'user',
+                  content: 'native orm hello',
+                  richContent: JSON.stringify({
         linxPiSessionEntry: {
           type: 'message',
           id: 'u1',
@@ -268,34 +272,32 @@ test('native Pod session source reads session and messages directly from TTL res
           timestamp: '2026-04-01T00:00:00.000Z',
           message: {
             role: 'user',
-            content: [{ type: 'text', text: 'native ttl hello' }],
+            content: [{ type: 'text', text: 'native orm hello' }],
             timestamp: Date.parse('2026-04-01T00:00:00.000Z'),
           },
         },
-      })) },
-      { predicate: podModule.DCT_CREATED, object: podModule.literal('2026-04-01T00:00:00.000Z') },
-    ],
-    extraStatements: [`<${threadUri}> <${podModule.SIOC_HAS_MEMBER}> <${messageSubject}> .`],
-  }))
+                  }),
+                  createdAt: new Date('2026-04-01T00:00:00.000Z'),
+                }]
+              }
+              return []
+            },
+          }
+        },
+      }
+    },
+  }
 
   const source = sessionModule.createNativeLinxPiPodSessionSource({
     webId: WEB_ID,
-    async fetch(url, init = {}) {
-      const method = init.method ?? 'GET'
-      if (method === 'GET') {
-        return resources.has(url)
-          ? new Response(resources.get(url), { status: 200, headers: { 'Content-Type': 'text/turtle' } })
-          : new Response('missing', { status: 404 })
-      }
-      return new Response(null, { status: 405 })
-    },
+    db,
   })
 
   const sessions = await source.listSessions(cwd)
   assert.equal(sessions.length, 1)
   assert.equal(sessions[0].id, sessionId)
   assert.equal(sessions[0].messages.length, 1)
-  assert.equal(sessions[0].messages[0].content, 'native ttl hello')
+  assert.equal(sessions[0].messages[0].content, 'native orm hello')
 
   const found = await source.findSession('019df222', cwd)
   assert.equal(found.id, sessionId)

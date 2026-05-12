@@ -1,74 +1,40 @@
 import type { AgentMessage } from '@mariozechner/pi-agent-core'
 import type { SessionEntry, SessionManager } from '@mariozechner/pi-coding-agent'
-import { UDFS } from '@undefineds.co/models/namespaces'
-import { ChatBaseVocab } from '@undefineds.co/models/vocab'
-import { AuditVocab } from '@undefineds.co/models/vocab/sidecar'
-import type { StoredCredentials } from '../credentials-store.js'
 import { DEFAULT_LINX_CLOUD_MODEL_ID } from '../default-model.js'
 import { getDefaultPodDataSession, type PodDataSession } from '../pod-data-session.js'
+import {
+  agentTable,
+  auditResource,
+  chatTable,
+  drizzle,
+  initSolidTables,
+  messageTable,
+  sessionTable,
+  solidSchema,
+  threadTable,
+  type AuditInsert,
+  type ChatInsert,
+  type MessageInsert,
+  type SessionInsert,
+  type SolidDatabase,
+  type ThreadInsert,
+} from '../models.js'
 export { buildPodMessageRow } from './pod-mirror-mapping.js'
 import {
   DEFAULT_SECRETARY_CHAT_ID,
   PI_AGENT_ID,
-  buildAgentUri,
-  buildChatUri,
   buildPodMessageRow as buildPodMessageRowFromMapping,
   buildThreadTitle,
-  buildThreadUri,
   buildToolAuditId,
   calculateTokenUsage,
   pathToWorkspaceUri,
 } from './pod-mirror-mapping.js'
-import {
-  DCT_CREATED,
-  DCT_MODIFIED,
-  DCT_TITLE,
-  FOAF_MAKER,
-  MEETING_LONG_CHAT,
-  MEETING_MESSAGE,
-  RDF_TYPE,
-  SIOC_CONTENT,
-  SIOC_HAS_MEMBER,
-  SIOC_RICH_CONTENT,
-  SIOC_THREAD,
-  UDFS_AGENT,
-  UDFS_CHAT_TYPE,
-  UDFS_CONVERSATION,
-  UDFS_CONVERSATION_TITLE,
-  UDFS_CONVERSATION_TYPE,
-  UDFS_HAS_THREAD,
-  UDFS_IN_THREAD,
-  UDFS_LAST_ACTIVE_AT,
-  UDFS_MESSAGE_STATUS,
-  UDFS_MESSAGE_TYPE,
-  UDFS_METADATA,
-  UDFS_MODEL,
-  UDFS_PROVIDER,
-  UDFS_SESSION,
-  UDFS_SESSION_STATUS,
-  UDFS_SESSION_TOOL,
-  UDFS_TOKEN_USAGE,
-  UDFS_WORKSPACE,
-  WF_MESSAGE,
-  buildAgentResourceUrl,
-  buildAuditDocumentUrl,
-  buildAuditResourceUrl,
-  buildChatIndexResourceUrl,
-  buildMessageResourceUrl,
-  buildMessageSubjectUrl,
-  buildSessionResourceUrl,
-  dateLiteral,
-  integerLiteral,
-  iri,
-  literal,
-  upsertManagedTurtleBlock,
-  type PodFetch,
-} from './pod-native.js'
 
 const PI_POLICY_VERSION = 'linx-pi-pod-mirror/v1'
 
 interface PodMirrorRuntime {
   getPodDataSession(): Promise<PodDataSession | null>
+  createDb?: (session: PodDataSession) => SolidDatabase
 }
 
 export interface LinxPiPodMirrorOptions {
@@ -79,9 +45,15 @@ export interface LinxPiPodMirrorOptions {
 }
 
 interface PodMirrorContext {
-  credentials: StoredCredentials
-  fetch: PodFetch
+  db: SolidDatabase
   webId: string
+}
+
+interface PiResourceRefs {
+  agentUri: string
+  chatUri: string
+  sessionUri: string
+  threadUri: string
 }
 
 export class LinxPiPodMirror {
@@ -147,7 +119,13 @@ export class LinxPiPodMirror {
         return
       }
 
-      await persistRuntimeSession(context, this.options, 'completed', this.messageResourceUrls)
+      await persistRuntimeSession(
+        context,
+        this.options,
+        resolvePiResourceRefs(context, this.options),
+        'completed',
+        this.messageResourceUrls,
+      )
     })
     await this.queue
   }
@@ -195,18 +173,19 @@ export class LinxPiPodMirror {
       return
     }
 
-    await ensurePiConversationRoot(context, this.options)
-    await persistRuntimeSession(context, this.options, 'active', this.messageResourceUrls)
+    const refs = resolvePiResourceRefs(context, this.options)
+    await ensurePiConversationRoot(context, this.options, refs)
+    await persistRuntimeSession(context, this.options, refs, 'active', this.messageResourceUrls)
 
     const row = buildPodMessageRowFromMapping(context.webId, this.options, entry)
     if (!row) {
       return
     }
 
-    const resourceUrl = await persistMessage(context, row)
+    const resourceUrl = await persistMessage(context, normalizePodMessageRow(context, row, refs))
     this.messageResourceUrls.add(resourceUrl)
-    await persistRuntimeSession(context, this.options, 'active', this.messageResourceUrls)
-    await touchPiConversation(context, this.options, row.content)
+    await persistRuntimeSession(context, this.options, refs, 'active', this.messageResourceUrls)
+    await touchPiConversation(context, this.options, refs, row.content)
   }
 
   private async persistUnseenMessageEntries(): Promise<void> {
@@ -228,28 +207,34 @@ export class LinxPiPodMirror {
     const toolCallId = typeof event.toolCallId === 'string' && event.toolCallId
       ? event.toolCallId
       : crypto.randomUUID()
-    await ensurePiConversationRoot(context, this.options)
-    await persistRuntimeSession(context, this.options, 'active', this.messageResourceUrls)
+    const refs = resolvePiResourceRefs(context, this.options)
+    await ensurePiConversationRoot(context, this.options, refs)
+    await persistRuntimeSession(context, this.options, refs, 'active', this.messageResourceUrls)
 
     const id = buildToolAuditId(this.options.sessionManager.getSessionId(), toolCallId, action)
     const createdAt = new Date()
-    const documentUrl = buildAuditDocumentUrl(context.webId, createdAt)
-    const subjectUrl = buildAuditResourceUrl(context.webId, id, createdAt)
-    await upsertManagedTurtleBlock(context.fetch, documentUrl, {
-      subject: subjectUrl,
-      triples: [
-        { predicate: RDF_TYPE, object: iri(UDFS.AuditEntry) },
-        { predicate: AuditVocab.action, object: literal(action) },
-        { predicate: AuditVocab.actor, object: iri(buildAgentUri(context.webId)) },
-        { predicate: AuditVocab.actorRole, object: literal('assistant') },
-        { predicate: AuditVocab.onBehalfOf, object: iri(context.webId) },
-        { predicate: AuditVocab.session, object: iri(buildSessionResourceUrl(context.webId, this.options.sessionManager.getSessionId(), createdAt)) },
-        { predicate: AuditVocab.entry, object: iri(buildThreadUri(context.webId, DEFAULT_SECRETARY_CHAT_ID, this.options.sessionManager.getSessionId())) },
-        { predicate: AuditVocab.toolCallId, object: literal(toolCallId) },
-        ...(typeof event.toolName === 'string' && event.toolName ? [{ predicate: AuditVocab.toolName, object: literal(event.toolName) }] : []),
-        { predicate: AuditVocab.policyVersion, object: literal(PI_POLICY_VERSION) },
-        { predicate: AuditVocab.createdAt, object: dateLiteral(createdAt) },
-      ],
+    await upsertByLocator(context.db, auditResource, { id, createdAt }, {
+      id,
+      action,
+      actor: refs.agentUri,
+      actorRole: 'assistant',
+      onBehalfOf: context.webId,
+      session: refs.sessionUri,
+      entry: refs.threadUri,
+      toolCallId,
+      ...(typeof event.toolName === 'string' && event.toolName ? { toolName: event.toolName } : {}),
+      policyVersion: PI_POLICY_VERSION,
+      createdAt,
+    } satisfies AuditInsert, {
+      action,
+      actor: refs.agentUri,
+      actorRole: 'assistant',
+      onBehalfOf: context.webId,
+      session: refs.sessionUri,
+      entry: refs.threadUri,
+      toolCallId,
+      ...(typeof event.toolName === 'string' && event.toolName ? { toolName: event.toolName } : {}),
+      policyVersion: PI_POLICY_VERSION,
     })
   }
 
@@ -271,10 +256,21 @@ export class LinxPiPodMirror {
       return null
     }
 
+    const db = runtime.createDb?.(session) ?? createPodMirrorDb(session)
+    await initSolidTables(db, [
+      chatTable,
+      threadTable,
+      messageTable,
+      sessionTable,
+      agentTable,
+      auditResource,
+    ]).catch((error) => {
+      this.options.onError?.(error)
+    })
+
     return {
-      credentials: session.credentials,
+      db,
       webId: session.webId,
-      fetch: session.fetch,
     }
   }
 }
@@ -282,93 +278,106 @@ export class LinxPiPodMirror {
 async function ensurePiConversationRoot(
   context: PodMirrorContext,
   options: LinxPiPodMirrorOptions,
+  refs: PiResourceRefs,
 ): Promise<void> {
   const now = new Date()
   const threadId = options.sessionManager.getSessionId()
-  const chatUri = buildChatUri(context.webId)
-  const threadUri = buildThreadUri(context.webId, DEFAULT_SECRETARY_CHAT_ID, threadId)
 
-  await upsertManagedTurtleBlock(context.fetch, buildChatIndexResourceUrl(context.webId, DEFAULT_SECRETARY_CHAT_ID), {
-    subject: chatUri,
-    triples: [
-      { predicate: RDF_TYPE, object: iri(MEETING_LONG_CHAT) },
-      { predicate: UDFS_CHAT_TYPE, object: literal('ai-secretary') },
-      { predicate: UDFS_CONVERSATION_TITLE, object: literal('AI Secretary') },
-      { predicate: DCT_TITLE, object: literal('AI Secretary') },
-      { predicate: UDFS_HAS_THREAD, object: iri(threadUri) },
-      { predicate: UDFS_LAST_ACTIVE_AT, object: dateLiteral(now) },
-      { predicate: DCT_CREATED, object: dateLiteral(now) },
-      { predicate: DCT_MODIFIED, object: dateLiteral(now) },
-    ],
+  await upsertByLocator(context.db, chatTable, { id: DEFAULT_SECRETARY_CHAT_ID }, {
+    id: DEFAULT_SECRETARY_CHAT_ID,
+    title: 'AI Secretary',
+    participants: [context.webId, refs.agentUri],
+    metadata: {
+      kind: 'ai-secretary',
+      surface: 'cli',
+      agent: refs.agentUri,
+    },
+    lastActiveAt: now,
+    createdAt: now,
+    updatedAt: now,
+  } satisfies ChatInsert, {
+    title: 'AI Secretary',
+    participants: [context.webId, refs.agentUri],
+    metadata: {
+      kind: 'ai-secretary',
+      surface: 'cli',
+      agent: refs.agentUri,
+    },
+    lastActiveAt: now,
+    updatedAt: now,
   })
 
-  await upsertManagedTurtleBlock(context.fetch, buildChatIndexResourceUrl(context.webId, DEFAULT_SECRETARY_CHAT_ID), {
-    subject: threadUri,
-    triples: [
-      { predicate: RDF_TYPE, object: iri(SIOC_THREAD) },
-      { predicate: UDFS_CONVERSATION, object: iri(chatUri) },
-      { predicate: DCT_TITLE, object: literal(buildThreadTitle(options.sessionManager)) },
-      ...(pathToWorkspaceUri(options.cwd)
-        ? [{ predicate: UDFS_WORKSPACE, object: iri(pathToWorkspaceUri(options.cwd) as string) }]
-        : []),
-      { predicate: UDFS_METADATA, object: literal(JSON.stringify(buildThreadMetadata(options))) },
-      { predicate: DCT_CREATED, object: dateLiteral(now) },
-      { predicate: DCT_MODIFIED, object: dateLiteral(now) },
-    ],
+  await upsertByLocator(context.db, threadTable, { id: threadId, chat: refs.chatUri }, {
+    id: threadId,
+    chat: refs.chatUri,
+    title: buildThreadTitle(options.sessionManager),
+    workspace: pathToWorkspaceUri(options.cwd),
+    metadata: buildThreadMetadata(options),
+    createdAt: getSessionCreatedAt(options.sessionManager),
+    updatedAt: now,
+  } satisfies ThreadInsert, {
+    title: buildThreadTitle(options.sessionManager),
+    workspace: pathToWorkspaceUri(options.cwd),
+    metadata: buildThreadMetadata(options),
+    updatedAt: now,
   })
 
-  await upsertManagedTurtleBlock(context.fetch, buildAgentResourceUrl(context.webId, PI_AGENT_ID), {
-    subject: buildAgentUri(context.webId),
-    triples: [
-      { predicate: RDF_TYPE, object: iri(UDFS_AGENT) },
-      { predicate: DCT_TITLE, object: literal('LinX CLI Assistant') },
-      { predicate: UDFS_PROVIDER, object: literal('undefineds') },
-      { predicate: UDFS_MODEL, object: literal(DEFAULT_LINX_CLOUD_MODEL_ID) },
-      { predicate: DCT_CREATED, object: dateLiteral(now) },
-      { predicate: DCT_MODIFIED, object: dateLiteral(now) },
-    ],
+  await upsertByLocator(context.db, agentTable, { id: PI_AGENT_ID }, {
+    id: PI_AGENT_ID,
+    name: 'LinX CLI Assistant',
+    provider: 'undefineds',
+    model: DEFAULT_LINX_CLOUD_MODEL_ID,
+    createdAt: now,
+    updatedAt: now,
+  }, {
+    name: 'LinX CLI Assistant',
+    provider: 'undefineds',
+    model: DEFAULT_LINX_CLOUD_MODEL_ID,
+    updatedAt: now,
   })
 }
 
 async function persistRuntimeSession(
   context: PodMirrorContext,
   options: LinxPiPodMirrorOptions,
+  refs: PiResourceRefs,
   status: 'active' | 'completed' = 'active',
   messageResourceUrls: Set<string> = new Set(),
 ): Promise<void> {
   const now = new Date()
   const threadId = options.sessionManager.getSessionId()
   const runtimeSessionId = threadId
-  const chatUri = buildChatUri(context.webId)
-  const threadUri = buildThreadUri(context.webId, DEFAULT_SECRETARY_CHAT_ID, threadId)
+  const createdAt = getSessionCreatedAt(options.sessionManager)
   const metadata = {
     cwd: options.cwd,
     sessionFile: options.sessionManager.getSessionFile(),
     runtime: 'pi',
     runtimeSessionId,
     surface: 'cli',
-    threadUri,
+    threadUri: refs.threadUri,
     messageResources: [...messageResourceUrls],
   }
 
-  const sessionDocumentUrl = buildSessionResourceUrl(context.webId, runtimeSessionId, now).split('#')[0]
-  const sessionSubjectUrl = buildSessionResourceUrl(context.webId, runtimeSessionId, now)
-  await upsertManagedTurtleBlock(context.fetch, sessionDocumentUrl, {
-    subject: sessionSubjectUrl,
-    triples: [
-      { predicate: RDF_TYPE, object: iri(UDFS_SESSION) },
-      { predicate: UDFS.actor, object: iri(context.webId) },
-      { predicate: UDFS_CONVERSATION, object: iri(chatUri) },
-      { predicate: UDFS_IN_THREAD, object: iri(threadUri) },
-      { predicate: UDFS_CONVERSATION_TYPE, object: literal('direct') },
-      { predicate: UDFS_SESSION_STATUS, object: literal(status) },
-      { predicate: UDFS_SESSION_TOOL, object: literal('linx') },
-      { predicate: UDFS_TOKEN_USAGE, object: integerLiteral(calculateTokenUsage(options.sessionManager.getEntries())) },
-      { predicate: UDFS.policyVersion, object: literal(PI_POLICY_VERSION) },
-      { predicate: UDFS_METADATA, object: literal(JSON.stringify(metadata)) },
-      { predicate: DCT_CREATED, object: dateLiteral(now) },
-      { predicate: DCT_MODIFIED, object: dateLiteral(now) },
-    ],
+  const row = {
+    id: runtimeSessionId,
+    ownerWebId: context.webId,
+    chat: refs.chatUri,
+    thread: refs.threadUri,
+    sessionType: 'direct',
+    status,
+    tool: 'linx',
+    tokenUsage: calculateTokenUsage(options.sessionManager.getEntries()),
+    policyVersion: PI_POLICY_VERSION,
+    metadata,
+    createdAt,
+    updatedAt: now,
+  } satisfies SessionInsert
+
+  await upsertByLocator(context.db, sessionTable, { id: runtimeSessionId, createdAt }, row, {
+    status,
+    tokenUsage: row.tokenUsage,
+    metadata,
+    updatedAt: now,
   })
 }
 
@@ -376,62 +385,143 @@ async function persistMessage(
   context: PodMirrorContext,
   row: NonNullable<ReturnType<typeof buildPodMessageRowFromMapping>>,
 ): Promise<string> {
-  const resourceUrl = buildMessageResourceUrl(context.webId, DEFAULT_SECRETARY_CHAT_ID, row.createdAt)
-  const subject = buildMessageSubjectUrl(resourceUrl, row.id)
-  await upsertManagedTurtleBlock(context.fetch, resourceUrl, {
-    subject,
-    triples: [
-      { predicate: RDF_TYPE, object: iri(MEETING_MESSAGE) },
-      { predicate: FOAF_MAKER, object: iri(row.maker) },
-      { predicate: UDFS_MESSAGE_TYPE, object: literal(row.role) },
-      { predicate: SIOC_CONTENT, object: literal(row.content) },
-      ...(row.richContent ? [{ predicate: SIOC_RICH_CONTENT, object: literal(row.richContent) }] : []),
-      { predicate: UDFS_MESSAGE_STATUS, object: literal(row.status) },
-      { predicate: DCT_CREATED, object: dateLiteral(row.createdAt) },
-      { predicate: DCT_MODIFIED, object: dateLiteral(row.updatedAt) },
-    ],
-    extraStatements: [
-      `<${row.chat}> <${WF_MESSAGE}> <${subject}> .`,
-      `<${row.thread}> <${SIOC_HAS_MEMBER}> <${subject}> .`,
-    ],
+  const insert = {
+    id: row.id,
+    chat: row.chat,
+    thread: row.thread,
+    maker: row.maker,
+    role: row.role,
+    content: row.content,
+    ...(row.richContent ? { richContent: row.richContent } : {}),
+    status: row.status,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  } satisfies MessageInsert
+  await upsertByLocator(context.db, messageTable, { id: row.id, chat: row.chat, createdAt: row.createdAt }, insert, {
+    maker: row.maker,
+    role: row.role,
+    content: row.content,
+    richContent: row.richContent,
+    status: row.status,
+    updatedAt: row.updatedAt,
   })
-  return resourceUrl
+  return context.db.resolveLocatorIri(messageTable, { id: row.id, chat: row.chat, createdAt: row.createdAt }).split('#')[0]
 }
 
 async function touchPiConversation(
   context: PodMirrorContext,
   options: LinxPiPodMirrorOptions,
+  refs: PiResourceRefs,
   preview: string,
 ): Promise<void> {
   const now = new Date()
   const threadId = options.sessionManager.getSessionId()
-  const chatUri = buildChatUri(context.webId)
-  const threadUri = buildThreadUri(context.webId, DEFAULT_SECRETARY_CHAT_ID, threadId)
-  await upsertManagedTurtleBlock(context.fetch, buildChatIndexResourceUrl(context.webId, DEFAULT_SECRETARY_CHAT_ID), {
-    subject: chatUri,
-    triples: [
-      { predicate: RDF_TYPE, object: iri(MEETING_LONG_CHAT) },
-      { predicate: UDFS_CHAT_TYPE, object: literal('ai-secretary') },
-      { predicate: UDFS_CONVERSATION_TITLE, object: literal('AI Secretary') },
-      { predicate: ChatBaseVocab.lastMessagePreview, object: literal(preview.slice(0, 100)) },
-      { predicate: UDFS_HAS_THREAD, object: iri(threadUri) },
-      { predicate: UDFS_LAST_ACTIVE_AT, object: dateLiteral(now) },
-      { predicate: DCT_MODIFIED, object: dateLiteral(now) },
-    ],
+  await context.db.updateByLocator(chatTable, { id: DEFAULT_SECRETARY_CHAT_ID }, {
+    lastMessagePreview: preview.slice(0, 100),
+    lastActiveAt: now,
+    updatedAt: now,
   })
-  await upsertManagedTurtleBlock(context.fetch, buildChatIndexResourceUrl(context.webId, DEFAULT_SECRETARY_CHAT_ID), {
-    subject: threadUri,
-    triples: [
-      { predicate: RDF_TYPE, object: iri(SIOC_THREAD) },
-      { predicate: UDFS_CONVERSATION, object: iri(chatUri) },
-      { predicate: DCT_TITLE, object: literal(buildThreadTitle(options.sessionManager)) },
-      ...(pathToWorkspaceUri(options.cwd)
-        ? [{ predicate: UDFS_WORKSPACE, object: iri(pathToWorkspaceUri(options.cwd) as string) }]
-        : []),
-      { predicate: UDFS_METADATA, object: literal(JSON.stringify(buildThreadMetadata(options))) },
-      { predicate: DCT_MODIFIED, object: dateLiteral(now) },
-    ],
+  await context.db.updateByLocator(threadTable, { id: threadId, chat: refs.chatUri }, {
+    title: buildThreadTitle(options.sessionManager),
+    workspace: pathToWorkspaceUri(options.cwd),
+    metadata: buildThreadMetadata(options),
+    updatedAt: now,
   })
+}
+
+function createPodMirrorDb(session: PodDataSession): SolidDatabase {
+  const solidSession = session.solidSession ?? {
+    info: {
+      isLoggedIn: true,
+      webId: session.webId,
+    },
+    fetch: session.fetch,
+    logout: async () => {},
+  }
+
+  return drizzle(solidSession, {
+    logger: false,
+    disableInteropDiscovery: true,
+    schema: solidSchema,
+  }) as unknown as SolidDatabase
+}
+
+function resolvePiResourceRefs(context: PodMirrorContext, options: LinxPiPodMirrorOptions): PiResourceRefs {
+  const sessionId = options.sessionManager.getSessionId()
+  const createdAt = getSessionCreatedAt(options.sessionManager)
+  const chatUri = context.db.resolveLocatorIri(chatTable, { id: DEFAULT_SECRETARY_CHAT_ID })
+  return {
+    agentUri: context.db.resolveLocatorIri(agentTable, { id: PI_AGENT_ID }),
+    chatUri,
+    sessionUri: context.db.resolveLocatorIri(sessionTable, { id: sessionId, createdAt }),
+    threadUri: context.db.resolveLocatorIri(threadTable, { id: sessionId, chat: chatUri }),
+  }
+}
+
+type PodMirrorMessageRow = NonNullable<ReturnType<typeof buildPodMessageRowFromMapping>>
+
+function normalizePodMessageRow(
+  context: PodMirrorContext,
+  row: PodMirrorMessageRow,
+  refs: PiResourceRefs,
+): PodMirrorMessageRow {
+  return {
+    ...row,
+    chat: refs.chatUri,
+    thread: refs.threadUri,
+    maker: row.role === 'user' ? context.webId : refs.agentUri,
+  }
+}
+
+async function upsertByLocator(
+  db: SolidDatabase,
+  table: Parameters<SolidDatabase['resolveLocatorIri']>[0],
+  locator: Record<string, unknown>,
+  insert: Record<string, unknown>,
+  update: Record<string, unknown>,
+): Promise<void> {
+  const existing = await db.findByLocator(table, locator)
+  if (!existing) {
+    await db.insert(table).values(insert).execute()
+    return
+  }
+
+  await db.updateByLocator(table, locator, update)
+}
+
+function getSessionCreatedAt(sessionManager: SessionManager): Date {
+  const firstEntryDate = sessionManager.getEntries()
+    .map((entry) => toDate((entry as { timestamp?: unknown }).timestamp))
+    .find((date): date is Date => date instanceof Date)
+  if (firstEntryDate) {
+    return firstEntryDate
+  }
+
+  return parseTimestampFromUuidLikeId(sessionManager.getSessionId()) ?? new Date()
+}
+
+function parseTimestampFromUuidLikeId(id: string): Date | null {
+  const prefix = id.replace(/-/g, '').slice(0, 12)
+  if (!/^[\da-f]{12}$/i.test(prefix)) {
+    return null
+  }
+  const millis = Number.parseInt(prefix, 16)
+  if (!Number.isFinite(millis) || millis <= 0) {
+    return null
+  }
+  const date = new Date(millis)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function toDate(value: unknown): Date | null {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value
+  }
+  if (typeof value === 'number' || typeof value === 'string') {
+    const date = new Date(value)
+    return Number.isNaN(date.getTime()) ? null : date
+  }
+  return null
 }
 
 async function createDefaultRuntime(overrides: Partial<PodMirrorRuntime> | undefined): Promise<PodMirrorRuntime> {

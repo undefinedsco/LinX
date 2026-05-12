@@ -13,70 +13,49 @@ import {
   listLinxPiSessions,
 } from '../apps/cli/dist/lib/pi-adapter/session.js'
 import {
-  RDF_TYPE,
-  buildAuditResourceUrl,
-  buildMessageResourceUrl,
-  buildSessionResourceUrl,
-  deleteManagedTurtleSubject,
-  iri,
-  literal,
-  readTurtleResource,
-  upsertManagedTurtleBlock,
-} from '../apps/cli/dist/lib/pi-adapter/pod-native.js'
+  aiProviderTable,
+  approvalResource,
+  auditResource,
+  chatTable,
+  credentialTable,
+  drizzle,
+  grantResource,
+  inboxNotificationTable,
+  initSolidTables,
+  messageTable,
+  sessionTable,
+  solidSchema,
+} from '../apps/cli/dist/lib/models.js'
 import { __podApprovalInternal } from '../apps/cli/dist/lib/watch/pod-approval.js'
-import { loadCredentials, getClientCredentials } from '../apps/cli/dist/lib/credentials-store.js'
-import { getOidcAccessToken } from '../apps/cli/dist/lib/oidc-auth.js'
-import { authenticate, authenticatedFetch } from '../apps/cli/dist/lib/solid-auth.js'
+import { getDefaultPodDataSession } from '../apps/cli/dist/lib/pod-data-session.js'
 
 const runId = `linx-verify-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
 const cwd = mkdtempSync(join(tmpdir(), 'linx-verify-cwd-'))
 const agentDir = mkdtempSync(join(tmpdir(), 'linx-verify-agent-'))
 const recoveryAgentDir = mkdtempSync(join(tmpdir(), 'linx-verify-recovery-agent-'))
 let cleanupPodCredential = null
-const XPOD_AI_PROVIDER = 'https://vocab.xpod.dev/ai#Provider'
-const XPOD_CREDENTIAL = {
-  Credential: 'https://vocab.xpod.dev/credential#Credential',
-  provider: 'https://vocab.xpod.dev/credential#provider',
-  service: 'https://vocab.xpod.dev/credential#service',
-  status: 'https://vocab.xpod.dev/credential#status',
-  apiKey: 'https://vocab.xpod.dev/credential#apiKey',
-  baseUrl: 'https://vocab.xpod.dev/credential#baseUrl',
-  label: 'https://vocab.xpod.dev/credential#label',
-}
 
 function podBaseUrl(webId) {
   return webId.replace('/profile/card#me', '').replace(/\/$/, '')
 }
 
-async function createFetchContext() {
-  const credentials = loadCredentials()
-  if (!credentials) {
+async function createPodContext() {
+  const session = await getDefaultPodDataSession()
+  if (!session) {
     throw new Error('No ~/.linx credentials found. Run `linx login` first.')
   }
-  const clientCredentials = getClientCredentials(credentials)
-  if (clientCredentials) {
-    const { session } = await authenticate(clientCredentials.clientId, clientCredentials.clientSecret, credentials.url)
-    const webId = session.info.webId || credentials.webId
-    return {
-      credentials,
-      webId,
-      fetch: (url, init) => session.fetch(url, init),
-      logout: () => session.logout().catch(() => undefined),
-    }
+
+  return {
+    session,
+    webId: session.webId,
+    fetch: session.fetch,
+    db: drizzle(session.solidSession, {
+      logger: false,
+      disableInteropDiscovery: true,
+      schema: solidSchema,
+    }),
+    logout: () => session.close(),
   }
-  if (credentials.authType === 'oidc_oauth') {
-    const accessToken = await getOidcAccessToken(credentials)
-    if (!accessToken) {
-      throw new Error('OIDC credentials did not produce an access token. Run `linx login` again.')
-    }
-    return {
-      credentials,
-      webId: credentials.webId,
-      fetch: (url, init) => authenticatedFetch(url, accessToken, init),
-      logout: async () => {},
-    }
-  }
-  throw new Error(`Unsupported LinX auth type: ${credentials.authType}`)
 }
 
 function createSessionManager(sessionId) {
@@ -93,28 +72,47 @@ function createSessionManager(sessionId) {
   }
 }
 
-async function fetchText(fetcher, url) {
-  const response = await fetcher(url, { method: 'GET', headers: { Accept: 'text/turtle' } })
-  const text = await response.text().catch(() => '')
-  if (!response.ok) {
-    throw new Error(`GET ${url} failed: ${response.status} ${response.statusText}\n${text}`)
-  }
-  return text
-}
-
-function assertIncludes(label, text, expected) {
-  if (!text.includes(expected)) {
-    throw new Error(`${label} missing ${expected}\n${text}`)
-  }
-}
-
 function logStep(message) {
   console.error(`[verify-cli-pod-durable] ${message}`)
 }
 
+async function upsertByLocator(db, table, locator, insert, update) {
+  const existing = await db.findByLocator(table, locator)
+  if (!existing) {
+    await db.insert(table).values(insert).execute()
+    return
+  }
+  await db.updateByLocator(table, locator, update)
+}
+
+async function deleteByLocatorIfExists(db, table, locator) {
+  const existing = await db.findByLocator(table, locator)
+  if (existing) {
+    await db.deleteByLocator(table, locator)
+  }
+}
+
+function rowIri(row) {
+  if (!row || typeof row !== 'object') {
+    return undefined
+  }
+  return row['@id'] || row.subject || row.uri || undefined
+}
+
 async function main() {
   logStep('authenticating')
-  const context = await createFetchContext()
+  const context = await createPodContext()
+  await initSolidTables(context.db, [
+    approvalResource,
+    auditResource,
+    chatTable,
+    credentialTable,
+    grantResource,
+    inboxNotificationTable,
+    messageTable,
+    sessionTable,
+    aiProviderTable,
+  ])
   const sessionId = `${runId}-session`
   const sessionManager = createSessionManager(sessionId)
   const createdAt = new Date('2026-04-02T03:04:05.000Z')
@@ -134,6 +132,10 @@ async function main() {
   const mirror = new LinxPiPodMirror({
     cwd,
     sessionManager,
+    runtime: {
+      getPodDataSession: async () => context.session,
+      createDb: () => context.db,
+    },
     onError(error) {
       throw error
     },
@@ -149,35 +151,40 @@ async function main() {
   await mirror.flush()
   await mirror.close()
 
-  logStep('checking raw Pod TTL resources')
-  const sessionUrl = buildSessionResourceUrl(context.webId, sessionId)
-  const chatUrl = `${podBaseUrl(context.webId)}/.data/chat/${DEFAULT_SECRETARY_CHAT_ID}/index.ttl`
-  const messageUrl = buildMessageResourceUrl(context.webId, DEFAULT_SECRETARY_CHAT_ID, createdAt)
-  const auditUrl = buildAuditResourceUrl(
-    context.webId,
-    buildToolAuditId(sessionId, `${runId}-tool`, 'tool_execution_started'),
-  )
+  logStep('checking Pod ORM resources')
+  const chatUri = context.db.resolveLocatorIri(chatTable, { id: DEFAULT_SECRETARY_CHAT_ID })
+  const sessionUri = context.db.resolveLocatorIri(sessionTable, { id: sessionId, createdAt })
+  const messageUri = context.db.resolveLocatorIri(messageTable, {
+    id: `${sessionId}-u1`,
+    chat: chatUri,
+    createdAt,
+  })
+  const auditId = buildToolAuditId(sessionId, `${runId}-tool`, 'tool_execution_started')
 
-  const [sessionTtl, chatTtl, messageTtl, auditTtl] = await Promise.all([
-    fetchText(context.fetch, sessionUrl),
-    fetchText(context.fetch, chatUrl),
-    fetchText(context.fetch, messageUrl),
-    fetchText(context.fetch, auditUrl),
+  const [sessionRow, chatRow, messageRow, auditRows] = await Promise.all([
+    context.db.findByLocator(sessionTable, { id: sessionId, createdAt }),
+    context.db.findByLocator(chatTable, { id: DEFAULT_SECRETARY_CHAT_ID }),
+    context.db.findByLocator(messageTable, { id: `${sessionId}-u1`, chat: chatUri, createdAt }),
+    context.db.select().from(auditResource).execute(),
   ])
-  assertIncludes('session ttl', sessionTtl, sessionId)
-  assertIncludes('session ttl', sessionTtl, 'linx')
-  assertIncludes('chat ttl', chatTtl, '#this')
-  assertIncludes('chat ttl', chatTtl, sessionId)
-  assertIncludes('chat ttl', chatTtl, 'AI Secretary')
-  assertIncludes('message ttl', messageTtl, `verify pod durable ${runId}`)
-  assertIncludes('message ttl', messageTtl, `${sessionId}-u1`)
-  assertIncludes('audit ttl', auditTtl, 'tool_execution_started')
-  assertIncludes('audit ttl', auditTtl, 'verify-tool')
+  const auditRow = auditRows.find((row) => row.id === auditId)
+  if (!sessionRow || sessionRow.id !== sessionId || sessionRow.tool !== 'linx') {
+    throw new Error(`session was not read back from Pod ORM: ${sessionId}`)
+  }
+  if (!chatRow || chatRow.id !== DEFAULT_SECRETARY_CHAT_ID || chatRow.title !== 'AI Secretary') {
+    throw new Error(`chat was not read back from Pod ORM: ${DEFAULT_SECRETARY_CHAT_ID}`)
+  }
+  if (!messageRow?.content?.includes(`verify pod durable ${runId}`)) {
+    throw new Error(`message was not read back from Pod ORM: ${sessionId}-u1`)
+  }
+  if (!auditRow || auditRow.action !== 'tool_execution_started' || auditRow.toolName !== 'verify-tool') {
+    throw new Error(`audit was not read back from Pod ORM: ${auditId}`)
+  }
 
   logStep('reading session/message directly from Pod source')
   const source = createNativeLinxPiPodSessionSource({
     webId: context.webId,
-    fetch: context.fetch,
+    db: context.db,
   })
   const found = await source.findSession(sessionId, cwd)
   if (!found) {
@@ -216,43 +223,53 @@ async function main() {
 
   logStep('writing inactive auth/credential config resource')
   const credentialId = `${runId}-credential`
-  const credentialResourceUrl = `${podBaseUrl(context.webId)}/settings/credentials.ttl`
-  const credentialSubjectUrl = `${credentialResourceUrl}#${credentialId}`
-  const providerResourceUrl = `${podBaseUrl(context.webId)}/settings/ai/providers.ttl`
-  const providerSubjectUrl = `${providerResourceUrl}#linx-verify`
+  const providerId = `${runId}-provider`
+  const credentialUri = context.db.resolveLocatorIri(credentialTable, { id: credentialId })
+  const providerUri = context.db.resolveLocatorIri(aiProviderTable, { id: providerId })
   cleanupPodCredential = async () => {
     await Promise.allSettled([
-      deleteManagedTurtleSubject(context.fetch, credentialResourceUrl, credentialSubjectUrl),
-      deleteManagedTurtleSubject(context.fetch, providerResourceUrl, providerSubjectUrl),
+      deleteByLocatorIfExists(context.db, credentialTable, { id: credentialId }),
+      deleteByLocatorIfExists(context.db, aiProviderTable, { id: providerId }),
     ])
   }
-  await upsertManagedTurtleBlock(context.fetch, credentialResourceUrl, {
-    subject: credentialSubjectUrl,
-    triples: [
-      { predicate: RDF_TYPE, object: iri(XPOD_CREDENTIAL.Credential) },
-      { predicate: XPOD_CREDENTIAL.provider, object: iri(providerSubjectUrl) },
-      { predicate: XPOD_CREDENTIAL.service, object: literal('ai') },
-      { predicate: XPOD_CREDENTIAL.status, object: literal('inactive') },
-      { predicate: XPOD_CREDENTIAL.apiKey, object: literal(`linx-verify-not-a-secret-${runId}`) },
-      { predicate: XPOD_CREDENTIAL.baseUrl, object: literal('https://api.example.invalid/v1') },
-      { predicate: XPOD_CREDENTIAL.label, object: literal('LinX verifier inactive credential') },
-    ],
+  await upsertByLocator(context.db, aiProviderTable, { id: providerId }, {
+    id: providerId,
+    baseUrl: 'https://api.example.invalid/v1',
+  }, {
+    baseUrl: 'https://api.example.invalid/v1',
   })
-  await upsertManagedTurtleBlock(context.fetch, providerResourceUrl, {
-    subject: providerSubjectUrl,
-    triples: [
-      { predicate: RDF_TYPE, object: iri(XPOD_AI_PROVIDER) },
-    ],
+  await upsertByLocator(context.db, credentialTable, { id: credentialId }, {
+    id: credentialId,
+    provider: providerId,
+    service: 'ai',
+    status: 'inactive',
+    apiKey: `linx-verify-not-a-secret-${runId}`,
+    baseUrl: 'https://api.example.invalid/v1',
+    label: 'LinX verifier inactive credential',
+  }, {
+    provider: providerId,
+    service: 'ai',
+    status: 'inactive',
+    apiKey: `linx-verify-not-a-secret-${runId}`,
+    baseUrl: 'https://api.example.invalid/v1',
+    label: 'LinX verifier inactive credential',
   })
-  const credentialTtl = await readTurtleResource(context.fetch, credentialResourceUrl)
-  if (!credentialTtl?.includes(credentialId) || !credentialTtl.includes('linx-verify-not-a-secret')) {
-    throw new Error('inactive auth/credential config was not read back from Pod')
+  const credentialRow = await context.db.findByLocator(credentialTable, { id: credentialId })
+  if (credentialRow?.apiKey !== `linx-verify-not-a-secret-${runId}`) {
+    throw new Error('inactive auth/credential config was not read back from Pod ORM')
   }
 
   logStep('writing approval/grant/audit resources')
-  const store = __podApprovalInternal.createNativeRemoteApprovalStore(context.webId, context.fetch)
+  const store = __podApprovalInternal.createNativeRemoteApprovalStore(context.webId, context.db)
   const approvalId = `${runId}-approval`
   const grantId = `${runId}-grant`
+  const approvalCreatedAt = new Date('2026-04-02T03:04:06.000Z')
+  const grantCreatedAt = new Date('2026-04-02T03:04:07.000Z')
+  const approvalAuditCreatedAt = new Date('2026-04-02T03:04:08.000Z')
+  const approvalRef = store.resolveApprovalReference({
+    id: approvalId,
+    createdAt: approvalCreatedAt,
+  })
   const approvalSessionUri = `${podBaseUrl(context.webId)}/.data/chat/linx-watch/index.ttl#${runId}`
   await store.insertApproval({
     id: approvalId,
@@ -265,7 +282,7 @@ async function main() {
     status: 'pending',
     assignedTo: context.webId,
     policyVersion: 'linx-watch-remote-approval/v1',
-    createdAt: new Date('2026-04-02T03:04:06.000Z'),
+    createdAt: approvalCreatedAt,
   })
   await store.insertGrant({
     id: grantId,
@@ -276,7 +293,7 @@ async function main() {
     decisionBy: context.webId,
     decisionRole: 'human',
     onBehalfOf: context.webId,
-    createdAt: new Date('2026-04-02T03:04:07.000Z'),
+    createdAt: grantCreatedAt,
   })
   await store.insertAudit({
     id: `${runId}-approval-audit`,
@@ -286,10 +303,10 @@ async function main() {
     onBehalfOf: context.webId,
     session: approvalSessionUri,
     toolCallId: `${runId}-approval-tool`,
-    approval: `${podBaseUrl(context.webId)}/.data/approvals/${approvalId}.ttl`,
+    approval: approvalRef.iri,
     context: JSON.stringify({ runId }),
     policyVersion: 'linx-watch-remote-approval/v1',
-    createdAt: new Date('2026-04-02T03:04:08.000Z'),
+    createdAt: approvalAuditCreatedAt,
   })
 
   const [approvals, grants, audits] = await Promise.all([
@@ -306,26 +323,28 @@ async function main() {
   if (!audits.some((row) => row.id === `${runId}-approval-audit` && row.action === 'approval_requested')) {
     throw new Error('approval audit was not read back from Pod')
   }
+  const grantRef = store.resolveGrantReference({ id: grantId })
 
   console.log(JSON.stringify({
     ok: true,
     runId,
     webId: context.webId,
     resources: {
-      sessionUrl,
-      chatUrl,
-      messageUrl,
-      auditUrl,
-      approvalUrl: `${podBaseUrl(context.webId)}/.data/approvals/${approvalId}.ttl`,
-      grantUrl: `${podBaseUrl(context.webId)}/settings/autonomy/grants/${grantId}.ttl`,
-      credentialUrl: `${credentialResourceUrl}#${credentialId}`,
+      sessionUrl: sessionUri,
+      chatUrl: chatUri,
+      messageUrl: messageUri,
+      auditUrl: rowIri(auditRow) ?? auditId,
+      approvalUrl: approvalRef.iri,
+      grantUrl: grantRef.iri,
+      credentialUrl: credentialUri,
+      providerUrl: providerUri,
     },
     podReadback: {
       sessionMessages: found.messages.length,
       approvals: approvals.filter((row) => row.id === approvalId).length,
       grants: grants.filter((row) => row.id === grantId).length,
       audits: audits.filter((row) => row.id === `${runId}-approval-audit`).length,
-      credentials: credentialTtl.includes(credentialId) ? 1 : 0,
+      credentials: credentialRow?.id === credentialId ? 1 : 0,
     },
     emptyCacheRecovery: {
       listed: recoveredList.filter((session) => session.id === sessionId).length,

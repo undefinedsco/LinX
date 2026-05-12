@@ -13,7 +13,7 @@ const sourceRoot = join(cliRoot, 'src')
 const skillsRoot = fileURLToPath(new URL('../../../skills', import.meta.url))
 const wsRoot = fileURLToPath(new URL('../../../node_modules/ws', import.meta.url))
 const n3Root = fileURLToPath(new URL('../../../node_modules/n3', import.meta.url))
-const mariozechnerRoot = fileURLToPath(new URL('../node_modules/@mariozechner', import.meta.url))
+const mariozechnerRoot = fileURLToPath(new URL('../../../node_modules/@mariozechner', import.meta.url))
 const typeboxRoot = fileURLToPath(new URL('../../../node_modules/@sinclair/typebox', import.meta.url))
 
 export async function loadWatchModule(entryRelative = 'lib/watch/index.ts') {

@@ -8,7 +8,8 @@ import {
 } from './credentials-store.js'
 import { getOidcAccessToken } from './oidc-auth.js'
 import { authenticate, authenticatedFetch } from './solid-auth.js'
-import type { PodFetch } from './pi-adapter/pod-native.js'
+
+export type PodFetch = (url: string, init?: RequestInit) => Promise<Response>
 
 export interface SolidSessionLike {
   info: {

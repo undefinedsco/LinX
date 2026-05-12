@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -9,18 +9,6 @@ import { loadWatchModule } from './watch-test-bundle.mjs'
 
 const cliRoot = fileURLToPath(new URL('..', import.meta.url))
 const entryPath = join(cliRoot, 'dist', 'index.js')
-
-function readRequests(logFile) {
-  if (!existsSync(logFile)) {
-    return []
-  }
-
-  return readFileSync(logFile, 'utf-8')
-    .trim()
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => JSON.parse(line))
-}
 
 function createFetchMock(t) {
   const root = mkdtempSync(join(tmpdir(), 'linx-cli-fetch-mock-'))
@@ -45,17 +33,6 @@ function normalizeHeaders(input) {
   }
   for (const [key, value] of Object.entries(input)) headers[String(key).toLowerCase()] = String(value)
   return headers
-}
-
-function isAuthorized(headers) {
-  return headers.authorization === 'Bearer pod_access_token'
-    || headers.authorization === 'Bearer access-token'
-}
-
-function isAiModelResourcePath(pathname) {
-  const prefix = '/profile/settings/ai/models/'
-  if (!pathname.startsWith(prefix) || !pathname.endsWith('.ttl')) return false
-  return !pathname.slice(prefix.length, -'.ttl'.length).includes('/')
 }
 
 globalThis.fetch = async (input, init = {}) => {
@@ -157,72 +134,6 @@ globalThis.fetch = async (input, init = {}) => {
     })
   }
 
-  if (
-    method === 'PATCH'
-    && (
-      pathname === '/profile/settings/ai/providers.ttl'
-      || pathname === '/profile/settings/credentials.ttl'
-      || isAiModelResourcePath(pathname)
-    )
-  ) {
-    if (isAuthorized(headers)) {
-      return new Response(JSON.stringify({ ok: true }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      })
-    }
-
-    return new Response(JSON.stringify({ error: 'unauthorized' }), {
-      status: 401,
-      headers: { 'content-type': 'application/json' },
-    })
-  }
-
-  if (method === 'GET' && pathname === '/profile/settings/credentials.ttl') {
-    if (!isAuthorized(headers)) {
-      return new Response('unauthorized', { status: 401 })
-    }
-
-    if (!process.env.FAKE_AI_STATUS_TTL) {
-      return new Response('not_found', { status: 404 })
-    }
-
-    return new Response(process.env.FAKE_AI_STATUS_TTL, {
-      status: 200,
-      headers: { 'content-type': 'text/turtle' },
-    })
-  }
-
-  if (method === 'GET' && pathname === '/profile/settings/ai/providers.ttl') {
-    if (!isAuthorized(headers)) {
-      return new Response('unauthorized', { status: 401 })
-    }
-
-    if (!process.env.FAKE_AI_STATUS_PROVIDERS_TTL) {
-      return new Response('not_found', { status: 404 })
-    }
-
-    return new Response(process.env.FAKE_AI_STATUS_PROVIDERS_TTL, {
-      status: 200,
-      headers: { 'content-type': 'text/turtle' },
-    })
-  }
-
-  if (method === 'GET' && isAiModelResourcePath(pathname)) {
-    if (!isAuthorized(headers)) {
-      return new Response('unauthorized', { status: 401 })
-    }
-
-    if (!process.env.FAKE_AI_STATUS_MODELS_TTL) {
-      return new Response('not_found', { status: 404 })
-    }
-
-    return new Response(process.env.FAKE_AI_STATUS_MODELS_TTL, {
-      status: 200,
-      headers: { 'content-type': 'text/turtle' },
-    })
-  }
-
   return new Response(JSON.stringify({ error: 'not_found' }), {
     status: 404,
     headers: { 'content-type': 'application/json' },
@@ -249,27 +160,97 @@ function execCli(args, env, modulePath) {
   })
 }
 
+function createAiCommandHarness(rows = {}) {
+  const operations = []
+  const stored = new Map()
+  const tableName = (table) => table?.config?.name ?? table?.name ?? 'unknown'
+  const locatorKey = (name, locator) => `${name}:${JSON.stringify(locator)}`
+  const seed = (name, locator, row) => {
+    stored.set(locatorKey(name, locator), row)
+  }
+  const inferLocator = (name, row) => {
+    if (name === 'aiModel') return { id: row.id, isProvidedBy: row.isProvidedBy }
+    return { id: row.id }
+  }
 
-function writeClientCredentialsLogin(home) {
-  const linxDir = join(home, '.linx')
-  mkdirSync(linxDir, { recursive: true })
-  writeFileSync(join(linxDir, 'config.json'), JSON.stringify({
-    url: 'https://account.test/',
-    webId: 'https://pod.example/profile/card#me',
-    authType: 'client_credentials',
-  }))
-  writeFileSync(join(linxDir, 'secrets.json'), JSON.stringify({
-    clientId: 'cred_test',
-    clientSecret: 'secret_test',
-  }))
-  writeFileSync(join(linxDir, 'account.json'), JSON.stringify({
-    url: 'https://account.test/',
-    email: 'browser-consent',
-    token: 'oidc-session',
-    webId: 'https://pod.example/profile/card#me',
-    podUrl: 'https://pod.example/profile/',
-    createdAt: '2026-03-15T00:00:00.000Z',
-  }))
+  for (const row of rows.credentialRows ?? []) {
+    seed('credential', { id: row.id }, row)
+  }
+  for (const row of rows.providerRows ?? []) {
+    seed('aiProvider', { id: row.id }, row)
+  }
+  for (const row of rows.modelRows ?? []) {
+    seed('aiModel', { id: row.id, isProvidedBy: row.isProvidedBy }, row)
+  }
+
+  const db = {
+    async findByLocator(table, locator) {
+      return stored.get(locatorKey(tableName(table), locator)) ?? null
+    },
+    async updateByLocator(table, locator, update) {
+      const name = tableName(table)
+      const key = locatorKey(name, locator)
+      const next = { ...(stored.get(key) ?? {}), ...update }
+      stored.set(key, next)
+      operations.push({ op: 'update', table: name, locator, row: next })
+      return next
+    },
+    async deleteByLocator(table, locator) {
+      const name = tableName(table)
+      const key = locatorKey(name, locator)
+      const row = stored.get(key) ?? null
+      stored.delete(key)
+      operations.push({ op: 'delete', table: name, locator, row })
+      return row
+    },
+    insert(table) {
+      return {
+        values(row) {
+          return {
+            async execute() {
+              const name = tableName(table)
+              const locator = inferLocator(name, row)
+              stored.set(locatorKey(name, locator), row)
+              operations.push({ op: 'insert', table: name, locator, row })
+              return [row]
+            },
+          }
+        },
+      }
+    },
+  }
+  const output = []
+  const contexts = []
+
+  return {
+    db,
+    operations,
+    output,
+    contexts,
+    dependencies: {
+      async resolvePodWriteContext(urlOverride) {
+        contexts.push(urlOverride)
+        return {
+          accessToken: 'test-access-token',
+          podUrl: 'https://pod.example/profile/',
+          webId: 'https://pod.example/profile/card#me',
+        }
+      },
+      createDb() {
+        return db
+      },
+      async loadAiConfigRows() {
+        return {
+          credentialRows: rows.credentialRows ?? [],
+          providerRows: rows.providerRows ?? [],
+          modelRows: rows.modelRows ?? [],
+        }
+      },
+      write(chunk) {
+        output.push(chunk)
+      },
+    },
+  }
 }
 
 test('linx login command always starts a fresh browser consent flow', async (t) => {
@@ -394,173 +375,149 @@ test('linx logout removes account session and client credentials', async (t) => 
 })
 
 test('linx ai connect writes provider and credential config to Pod', async (t) => {
-  const home = mkdtempSync(join(tmpdir(), 'linx-cli-ai-connect-home-'))
-  t.after(() => {
-    rmSync(home, { recursive: true, force: true })
-  })
+  const { module, cleanup } = await loadWatchModule('lib/ai-command.ts')
+  t.after(() => cleanup())
 
-  const { logFile, modulePath } = createFetchMock(t)
-  writeClientCredentialsLogin(home)
+  const harness = createAiCommandHarness()
+  await module.runAiCommand({
+    action: 'connect',
+    provider: 'anthropic',
+    'api-key': 'sk-ant-test-key',
+    model: 'claude-sonnet-4-20250514',
+  }, harness.dependencies)
 
-  const output = execCli([
-    'ai',
-    'connect',
-    'anthropic',
-    '--api-key',
-    'sk-ant-test-key',
-    '--model',
-    'claude-sonnet-4-20250514',
-  ], {
-    HOME: home,
-    FAKE_FETCH_LOG: logFile,
-  }, modulePath)
-
+  const output = harness.output.join('')
   assert.match(output, /Connected AI provider: anthropic/)
   assert.match(output, /api-key: sk-a\*\*\*\*-key/)
 
-  const requests = readRequests(logFile)
-  const providerPatch = requests.find((item) => item.method === 'PATCH' && item.url === 'https://pod.example/profile/settings/ai/providers.ttl')
-  const credentialPatch = requests.find((item) => item.method === 'PATCH' && item.url === 'https://pod.example/profile/settings/credentials.ttl')
-  const modelPatch = requests.find((item) => item.method === 'PATCH' && item.url === 'https://pod.example/profile/settings/ai/models/anthropic.ttl')
+  const providerInsert = harness.operations.find((item) => item.op === 'insert' && item.table === 'aiProvider')
+  const credentialInsert = harness.operations.find((item) => item.op === 'insert' && item.table === 'credential')
+  const modelInsert = harness.operations.find((item) => item.op === 'insert' && item.table === 'aiModel')
 
-  assert.ok(providerPatch)
-  assert.ok(credentialPatch)
-  assert.ok(modelPatch)
-  assert.match(providerPatch.body, /https:\/\/vocab\.xpod\.dev\/ai#Provider/)
-  assert.match(providerPatch.body, /https:\/\/vocab\.xpod\.dev\/ai#baseUrl/)
-  assert.match(providerPatch.body, /https:\/\/vocab\.xpod\.dev\/ai#hasModel/)
-  assert.match(providerPatch.body, /https:\/\/pod\.example\/profile\/settings\/ai\/models\/anthropic\.ttl#claude-sonnet-4-20250514/)
-  assert.match(credentialPatch.body, /https:\/\/vocab\.xpod\.dev\/credential#Credential/)
-  assert.match(credentialPatch.body, /https:\/\/vocab\.xpod\.dev\/credential#apiKey/)
-  assert.doesNotMatch(credentialPatch.body, /defaultModel/)
-  assert.match(modelPatch.body, /https:\/\/vocab\.xpod\.dev\/ai#Model/)
-  assert.match(modelPatch.body, /https:\/\/vocab\.xpod\.dev\/ai#displayName/)
-  assert.match(modelPatch.body, /https:\/\/vocab\.xpod\.dev\/ai#isProvidedBy/)
+  assert.deepEqual(harness.contexts, [undefined])
+  assert.ok(providerInsert)
+  assert.ok(credentialInsert)
+  assert.ok(modelInsert)
+  assert.equal(providerInsert.row.id, 'anthropic')
+  assert.equal(providerInsert.row.baseUrl, 'https://api.anthropic.com/v1')
+  assert.equal(providerInsert.row.hasModel, '/settings/ai/models/anthropic.ttl#claude-sonnet-4-20250514')
+  assert.equal(credentialInsert.row.id, 'anthropic-default')
+  assert.equal(credentialInsert.row.provider, 'anthropic')
+  assert.equal(credentialInsert.row.service, 'ai')
+  assert.equal(credentialInsert.row.apiKey, 'sk-ant-test-key')
+  assert.equal(credentialInsert.row.defaultModel, undefined)
+  assert.equal(modelInsert.row.id, 'claude-sonnet-4-20250514')
+  assert.equal(modelInsert.row.displayName, 'claude-sonnet-4-20250514')
+  assert.equal(modelInsert.row.isProvidedBy, 'anthropic')
 })
 
 test('linx ai disconnect removes provider credential config from Pod', async (t) => {
-  const home = mkdtempSync(join(tmpdir(), 'linx-cli-ai-disconnect-home-'))
-  t.after(() => {
-    rmSync(home, { recursive: true, force: true })
+  const { module, cleanup } = await loadWatchModule('lib/ai-command.ts')
+  t.after(() => cleanup())
+
+  const harness = createAiCommandHarness({
+    credentialRows: [
+      {
+        id: 'anthropic-default',
+        provider: 'anthropic',
+        service: 'ai',
+        status: 'active',
+        apiKey: 'sk-ant-test-key',
+      },
+      {
+        id: 'claude-default',
+        provider: 'claude',
+        service: 'ai',
+        status: 'active',
+        apiKey: 'sk-claude-test-key',
+      },
+      {
+        id: 'openai-default',
+        provider: 'openai',
+        service: 'ai',
+        status: 'active',
+        apiKey: 'sk-openai-test-key',
+      },
+    ],
   })
 
-  const { logFile, modulePath } = createFetchMock(t)
-  writeClientCredentialsLogin(home)
+  await module.runAiCommand({
+    action: 'disconnect',
+    provider: 'claude',
+  }, harness.dependencies)
 
-  const output = execCli([
-    'ai',
-    'disconnect',
-    'claude',
-  ], {
-    HOME: home,
-    FAKE_FETCH_LOG: logFile,
-  }, modulePath)
-
-  assert.match(output, /Disconnected AI provider: anthropic/)
-
-  const requests = readRequests(logFile)
-  const credentialPatches = requests.filter((item) =>
-    item.method === 'PATCH' && item.url === 'https://pod.example/profile/settings/credentials.ttl')
-
-  assert.ok(credentialPatches.some((item) => /https:\/\/pod\.example\/profile\/settings\/ai\/providers\.ttl#anthropic/.test(item.body)))
-  assert.ok(credentialPatches.some((item) => /https:\/\/pod\.example\/profile\/settings\/ai\/providers\.ttl#claude/.test(item.body)))
+  assert.match(harness.output.join(''), /Disconnected AI provider: anthropic/)
+  const deletes = harness.operations.filter((item) => item.op === 'delete' && item.table === 'credential')
+  assert.deepEqual(deletes.map((item) => item.locator.id).sort(), ['anthropic-default', 'claude-default'])
 })
 
 test('linx ai status prints configured cloud AI credentials', async (t) => {
-  const home = mkdtempSync(join(tmpdir(), 'linx-cli-ai-status-home-'))
-  const linxDir = join(home, '.linx')
+  const { module, cleanup } = await loadWatchModule('lib/ai-command.ts')
+  t.after(() => cleanup())
 
-  t.after(() => {
-    rmSync(home, { recursive: true, force: true })
+  const harness = createAiCommandHarness({
+    credentialRows: [{
+      id: 'anthropic-default',
+      provider: 'anthropic',
+      service: 'ai',
+      status: 'active',
+      apiKey: 'sk-ant-test-key',
+    }],
+    providerRows: [{
+      id: 'anthropic',
+      baseUrl: 'https://api.anthropic.com/v1',
+      hasModel: '/settings/ai/models/anthropic.ttl#claude-sonnet-4-20250514',
+    }],
+    modelRows: [{
+      id: 'claude-sonnet-4-20250514',
+      displayName: 'Claude Sonnet 4',
+      isProvidedBy: 'anthropic',
+      status: 'active',
+    }],
   })
 
-  mkdirSync(linxDir, { recursive: true })
-  writeFileSync(join(linxDir, 'config.json'), JSON.stringify({
-    url: 'https://account.test/',
-    webId: 'https://pod.example/profile/card#me',
-    authType: 'client_credentials',
-  }))
-  writeFileSync(join(linxDir, 'secrets.json'), JSON.stringify({
-    clientId: 'cred_test',
-    clientSecret: 'secret_test',
-  }))
+  await module.runAiCommand({
+    action: 'status',
+    provider: 'anthropic',
+  }, harness.dependencies)
 
-  const { logFile, modulePath } = createFetchMock(t)
-  const output = execCli([
-    'ai',
-    'status',
-    'anthropic',
-  ], {
-    HOME: home,
-    FAKE_FETCH_LOG: logFile,
-    FAKE_AI_STATUS_TTL: `<https://pod.example/profile/settings/credentials.ttl#anthropic-default> a <https://vocab.xpod.dev/credential#Credential> ;
-  <https://vocab.xpod.dev/credential#service> "ai" ;
-  <https://vocab.xpod.dev/credential#status> "active" ;
-  <https://vocab.xpod.dev/credential#provider> <https://pod.example/profile/settings/ai/providers.ttl#anthropic> ;
-  <https://vocab.xpod.dev/credential#apiKey> "sk-ant-test-key" .
-`,
-    FAKE_AI_STATUS_PROVIDERS_TTL: `<https://pod.example/profile/settings/ai/providers.ttl#anthropic> a <https://vocab.xpod.dev/ai#Provider> ;
-  <https://vocab.xpod.dev/ai#baseUrl> "https://api.anthropic.com/v1" ;
-  <https://vocab.xpod.dev/ai#hasModel> <https://pod.example/profile/settings/ai/models/anthropic.ttl#claude-sonnet-4-20250514> .
-`,
-    FAKE_AI_STATUS_MODELS_TTL: `<https://pod.example/profile/settings/ai/models/anthropic.ttl#claude-sonnet-4-20250514> a <https://vocab.xpod.dev/ai#Model> ;
-  <https://vocab.xpod.dev/ai#displayName> "Claude Sonnet 4" ;
-  <https://vocab.xpod.dev/ai#isProvidedBy> <https://pod.example/profile/settings/ai/providers.ttl#anthropic> ;
-  <https://vocab.xpod.dev/ai#status> "active" .
-`,
-  }, modulePath)
+  const output = harness.output.join('')
 
   assert.match(output, /provider: anthropic/)
   assert.match(output, /model: claude-sonnet-4-20250514/)
   assert.match(output, /api-key: sk-a\*\*\*\*-key/)
 })
 
-test('linx ai connect accepts oidc oauth login and writes provider config to Pod', async (t) => {
-  const home = mkdtempSync(join(tmpdir(), 'linx-cli-ai-connect-oidc-home-'))
-  t.after(() => {
-    rmSync(home, { recursive: true, force: true })
+test('linx ai connect uses the resolved Pod context before ORM writes', async (t) => {
+  const { module, cleanup } = await loadWatchModule('lib/ai-command.ts')
+  t.after(() => cleanup())
+
+  const harness = createAiCommandHarness()
+  const createDbContexts = []
+
+  await module.runAiCommand({
+    action: 'connect',
+    provider: 'codex',
+    'api-key': 'sk-openai-test-key',
+    url: 'https://id.undefineds.co/',
+  }, {
+    ...harness.dependencies,
+    createDb(context) {
+      createDbContexts.push(context)
+      return harness.db
+    },
   })
 
-  const { logFile, modulePath } = createFetchMock(t)
-  const linxDir = join(home, '.linx')
-  mkdirSync(linxDir, { recursive: true })
-  writeFileSync(join(linxDir, 'config.json'), JSON.stringify({
-    url: 'https://id.undefineds.co/',
-    webId: 'https://pod.example/profile/card#me',
-    authType: 'oidc_oauth',
-  }))
-  writeFileSync(join(linxDir, 'secrets.json'), JSON.stringify({
-    oidcRefreshToken: 'refresh-token',
-    oidcAccessToken: 'access-token',
-    oidcExpiresAt: '2030-01-01T00:00:00.000Z',
-    oidcClientId: 'client-123',
-  }))
-  writeFileSync(join(linxDir, 'account.json'), JSON.stringify({
-    url: 'https://id.undefineds.co/',
-    email: 'browser-consent',
-    token: 'oidc-session',
-    webId: 'https://pod.example/profile/card#me',
+  assert.deepEqual(harness.contexts, ['https://id.undefineds.co/'])
+  assert.deepEqual(createDbContexts, [{
+    accessToken: 'test-access-token',
     podUrl: 'https://pod.example/profile/',
-    createdAt: '2026-03-15T00:00:00.000Z',
-  }))
-
-  const output = execCli([
-    'ai',
-    'connect',
-    'codex',
-    '--api-key',
-    'sk-openai-test-key',
-  ], {
-    HOME: home,
-    FAKE_FETCH_LOG: logFile,
-  }, modulePath)
-
-  assert.match(output, /Connected AI provider: openai/)
-  assert.match(output, /api-key: sk-o\*\*\*\*-key/)
-
-  const requests = readRequests(logFile)
-  const providerPatch = requests.find((item) => item.method === 'PATCH' && item.url === 'https://pod.example/profile/settings/ai/providers.ttl')
-  const credentialPatch = requests.find((item) => item.method === 'PATCH' && item.url === 'https://pod.example/profile/settings/credentials.ttl')
-  assert.equal(providerPatch?.headers.authorization, 'Bearer access-token')
-  assert.equal(credentialPatch?.headers.authorization, 'Bearer access-token')
+    webId: 'https://pod.example/profile/card#me',
+  }])
+  assert.match(harness.output.join(''), /Connected AI provider: openai/)
+  assert.ok(harness.operations.some((item) =>
+    item.op === 'insert'
+    && item.table === 'credential'
+    && item.row.provider === 'openai'
+    && item.row.apiKey === 'sk-openai-test-key'))
 })

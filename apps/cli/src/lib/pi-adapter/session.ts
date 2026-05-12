@@ -6,30 +6,22 @@ import {
   type SessionEntry,
   type SessionInfo,
 } from '@mariozechner/pi-coding-agent'
-import { getDefaultPodDataSession } from '../pod-data-session.js'
-import { PI_CHAT_ID, buildChatUri, buildThreadUri } from './pod-mirror-mapping.js'
 import {
-  DCT_CREATED,
-  DCT_MODIFIED,
-  SIOC_CONTENT,
-  SIOC_RICH_CONTENT,
-  UDFS_ACTOR,
-  UDFS_CONVERSATION,
-  UDFS_IN_THREAD,
-  UDFS_METADATA,
-  UDFS_SESSION_TOOL,
-  buildChatIndexResourceUrl,
-  buildMessageResourceUrl,
-  firstIri,
-  firstLiteral,
-  listTurtleResources,
-  listTurtleResourcesRecursive,
-  parseManagedTurtleBlocks,
-  podBaseUrlFromWebId,
-  readTurtleResource,
-  type PodFetch,
-  type TurtleObject,
-} from './pod-native.js'
+  getDefaultPodDataSession,
+  type PodDataSession,
+} from '../pod-data-session.js'
+import {
+  chatTable,
+  drizzle,
+  eq,
+  messageTable,
+  sessionTable,
+  solidSchema,
+  type MessageRow,
+  type SessionRow,
+  type SolidDatabase,
+} from '../models.js'
+import { PI_CHAT_ID } from './pod-mirror-mapping.js'
 
 export interface LinxPiSessionManagerOptions {
   cwd: string
@@ -73,7 +65,7 @@ export interface LinxPiPodMessageSnapshot {
 
 export function createNativeLinxPiPodSessionSource(context: {
   webId: string
-  fetch: PodFetch
+  db: SolidDatabase
 }): LinxPiPodSessionSource {
   const source: LinxPiPodSessionSource = {
     async listSessions(cwd?: string): Promise<LinxPiPodSessionSnapshot[]> {
@@ -657,7 +649,7 @@ function toDate(value: Date | string | number | undefined): Date | null {
 
 interface DefaultPodSessionContext {
   webId: string
-  fetch: PodFetch
+  db: SolidDatabase
 }
 
 async function createDefaultLinxPiPodSessionSource(): Promise<LinxPiPodSessionSource | null> {
@@ -682,7 +674,7 @@ async function createDefaultPodSessionContext(): Promise<DefaultPodSessionContex
 
   return {
     webId: session.webId,
-    fetch: session.fetch,
+    db: createSessionSourceDb(session),
   }
 }
 
@@ -690,15 +682,10 @@ async function listPodSessionSnapshots(
   context: DefaultPodSessionContext,
   cwd?: string,
 ): Promise<LinxPiPodSessionSnapshot[]> {
-  const podBaseUrl = podBaseUrlFromWebId(context.webId)
-  const [currentSessionUrls, legacySessionUrls] = await Promise.all([
-    listTurtleResourcesRecursive(context.fetch, `${podBaseUrl}/.data/sessions/`).catch(() => []),
-    listTurtleResources(context.fetch, `${podBaseUrl}/.data/session/`).catch(() => []),
-  ])
-  const sessionUrls = [...new Set([...currentSessionUrls, ...legacySessionUrls])]
-  const snapshots = (await mapWithConcurrency(sessionUrls, 6, (sessionUrl) => (
-    readPodSessionSnapshot(context, sessionUrl, { expectedCwd: cwd }).catch(() => null)
-  )))
+  const rows = await listPodSessionRows(context)
+  const snapshots = (await Promise.all(rows.map((row) => (
+    buildPodSessionSnapshot(context, row, { expectedCwd: cwd }).catch(() => null)
+  ))))
     .filter((snapshot): snapshot is LinxPiPodSessionSnapshot => snapshot !== null)
 
   return snapshots.sort((a, b) => {
@@ -708,131 +695,90 @@ async function listPodSessionSnapshots(
   })
 }
 
-async function readPodSessionSnapshot(
+function createSessionSourceDb(session: PodDataSession): SolidDatabase {
+  return drizzle(session.solidSession, {
+    logger: false,
+    disableInteropDiscovery: true,
+    schema: solidSchema,
+  }) as unknown as SolidDatabase
+}
+
+async function listPodSessionRows(context: DefaultPodSessionContext): Promise<SessionRow[]> {
+  const toolColumn = (sessionTable as any).tool
+  const rows = await context.db.select()
+    .from(sessionTable)
+    .where(eq(toolColumn, 'linx'))
+    .orderBy('updatedAt', 'desc')
+    .execute() as SessionRow[]
+  const secretaryChat = context.db.resolveLocatorIri(chatTable, { id: PI_CHAT_ID })
+  return rows.filter((row) => {
+    if (row.ownerWebId && row.ownerWebId !== context.webId) {
+      return false
+    }
+    if (row.chat && row.chat !== secretaryChat) {
+      return false
+    }
+    return true
+  })
+}
+
+async function buildPodSessionSnapshot(
   context: DefaultPodSessionContext,
-  sessionUrl: string,
+  row: SessionRow,
   options: { expectedCwd?: string } = {},
 ): Promise<LinxPiPodSessionSnapshot | null> {
-  const turtle = await readTurtleResource(context.fetch, sessionUrl)
-  if (!turtle) {
+  if (!row.id || row.tool !== 'linx') {
     return null
   }
-  const blocks = parseManagedTurtleBlocks(turtle, sessionUrl)
-  const blockEntries = [...blocks.entries()]
-  const blockEntry = blockEntries.find(([subject]) => subject === sessionUrl)
-    ?? blockEntries.find(([, entry]) => firstLiteral(entry, UDFS_SESSION_TOOL) === 'linx')
-  const subjectUrl = blockEntry?.[0] ?? sessionUrl
-  const predicates = blockEntry?.[1]
-  if (!(predicates instanceof Map)) {
-    return null
-  }
-  if (firstLiteral(predicates, UDFS_SESSION_TOOL) !== 'linx') {
-    return null
-  }
-  const chatUri = firstIri(predicates, UDFS_CONVERSATION)
-  const legacyChatId = firstLiteral(predicates, UDFS_CONVERSATION)
-  if (chatUri && chatUri !== buildChatUri(context.webId)) {
-    return null
-  }
-  if (!chatUri && legacyChatId !== PI_CHAT_ID) {
-    return null
-  }
-  const ownerWebId = firstIri(predicates, UDFS_ACTOR)
-  if (ownerWebId && ownerWebId !== context.webId) {
+  if (row.ownerWebId && row.ownerWebId !== context.webId) {
     return null
   }
 
-  const id = decodeURIComponent(subjectUrl.includes('#')
-    ? subjectUrl.split('#').pop() ?? ''
-    : sessionUrl.split('/').pop()?.replace(/\.ttl$/, '') ?? '')
-  if (!id) {
-    return null
-  }
-  const metadata = parseMetadataPredicates(predicates)
+  const metadata = isRecord(row.metadata) ? row.metadata : {}
   const sessionCwd = typeof metadata.cwd === 'string' ? metadata.cwd : undefined
   if (options.expectedCwd && sessionCwd !== options.expectedCwd) {
     return null
   }
-  const storedThreadUri = firstIri(predicates, UDFS_IN_THREAD)
-  const legacyThreadId = firstLiteral(predicates, UDFS_IN_THREAD)
-  const threadUri = storedThreadUri
-    ?? (typeof metadata.threadUri === 'string'
-      ? metadata.threadUri
-      : buildThreadUri(context.webId, PI_CHAT_ID, legacyThreadId ?? id))
-  const messages = await listPodSessionMessages(context, id, threadUri, metadata.messageResources)
+  const messages = await listPodSessionMessages(context, row)
   return {
-    id,
+    id: row.id,
     cwd: sessionCwd,
-    createdAt: normalizeUnknownDate(firstLiteral(predicates, DCT_CREATED)),
-    updatedAt: normalizeUnknownDate(firstLiteral(predicates, DCT_MODIFIED)),
+    createdAt: normalizeUnknownDate(row.createdAt),
+    updatedAt: normalizeUnknownDate(row.updatedAt),
     sessionFile: typeof metadata.sessionFile === 'string' ? metadata.sessionFile : undefined,
     messages,
   }
 }
 
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  concurrency: number,
-  mapper: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(items.length)
-  let nextIndex = 0
-  const workerCount = Math.min(Math.max(1, concurrency), items.length)
-  await Promise.all(Array.from({ length: workerCount }, async () => {
-    while (nextIndex < items.length) {
-      const index = nextIndex
-      nextIndex += 1
-      results[index] = await mapper(items[index])
-    }
-  }))
-  return results
-}
-
 async function listPodSessionMessages(
   context: DefaultPodSessionContext,
-  sessionId: string,
-  threadUri: unknown,
-  messageResources: unknown,
+  session: SessionRow,
 ): Promise<LinxPiPodMessageSnapshot[]> {
-  const resolvedThreadUri = typeof threadUri === 'string' && threadUri
-    ? threadUri
-    : buildThreadUri(context.webId, PI_CHAT_ID, sessionId)
-  const urls = normalizeMessageResourceUrls(messageResources)
-  if (urls.length === 0) {
-    urls.push(...await candidateMessageResourceUrls(context.fetch, context.webId))
+  if (!session.thread) {
+    return []
   }
-  const messages: LinxPiPodMessageSnapshot[] = []
-  for (const url of urls) {
-    const turtle = await readTurtleResource(context.fetch, url).catch(() => null)
-    if (!turtle) {
-      continue
-    }
-    for (const [subject, predicates] of parseManagedTurtleBlocks(turtle, url)) {
-      if (!subject.includes(`${sessionId}-`)) {
-        continue
-      }
-      const richContent = firstLiteral(predicates, SIOC_RICH_CONTENT)
-      if (richContent) {
-        const parsed = parsePodRichContent(richContent)
-        const entry = parsed.entry
-        if (entry?.id && !subject.endsWith(`${sessionId}-${entry.id}`)) {
-          continue
-        }
-      }
-      if (turtle.includes(`<${resolvedThreadUri}>`) || subject.includes(`${sessionId}-`)) {
-        messages.push({
-          id: decodeURIComponent(subject.split('#').pop() ?? subject),
-          role: firstLiteral(predicates, 'https://undefineds.co/ns#messageType'),
-          content: firstLiteral(predicates, SIOC_CONTENT),
-          richContent,
-          createdAt: normalizeUnknownDate(firstLiteral(predicates, DCT_CREATED)),
-          updatedAt: normalizeUnknownDate(firstLiteral(predicates, DCT_MODIFIED)),
-        })
-      }
-    }
-  }
+  const threadColumn = (messageTable as any).thread
+  const rows = await context.db.select()
+    .from(messageTable)
+    .where(eq(threadColumn, session.thread))
+    .orderBy('createdAt', 'asc')
+    .execute() as MessageRow[]
 
-  return messages
+  return rows
+    .filter((message) => {
+      if (!message.id || message.thread !== session.thread) {
+        return false
+      }
+      return message.id.startsWith(`${session.id}-`)
+    })
+    .map((message) => ({
+      id: message.id,
+      role: message.role,
+      content: message.content,
+      richContent: message.richContent,
+      createdAt: normalizeUnknownDate(message.createdAt),
+      updatedAt: normalizeUnknownDate(message.updatedAt),
+    }))
     .filter((message) => message.id)
     .sort((a, b) => {
       const aTime = toDate(a.createdAt)?.getTime() ?? 0
@@ -841,95 +787,11 @@ async function listPodSessionMessages(
     })
 }
 
-function normalizeMessageResourceUrls(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return []
-  }
-  return [...new Set(value.filter((entry): entry is string => (
-    typeof entry === 'string' && entry.startsWith('http') && entry.endsWith('.ttl')
-  )))]
-}
-
-async function candidateMessageResourceUrls(fetcher: PodFetch, webId: string): Promise<string[]> {
-  const chatBase = `${podBaseUrlFromWebId(webId)}/.data/chat/${PI_CHAT_ID}/`
-  const discovered = new Set<string>()
-  const yearContainers = await listChildContainers(fetcher, chatBase)
-  for (const yearContainer of yearContainers) {
-    const monthContainers = await listChildContainers(fetcher, yearContainer)
-    for (const monthContainer of monthContainers) {
-      const dayContainers = await listChildContainers(fetcher, monthContainer)
-      for (const dayContainer of dayContainers) {
-        discovered.add(new URL('messages.ttl', dayContainer).toString())
-      }
-    }
-  }
-  if (discovered.size === 0) {
-    const now = new Date()
-    discovered.add(buildMessageResourceUrl(webId, PI_CHAT_ID, now))
-  }
-  return [...discovered].sort()
-}
-
-async function listChildContainers(fetcher: PodFetch, containerUrl: string): Promise<string[]> {
-  const response = await fetcher(containerUrl, {
-    method: 'GET',
-    headers: { Accept: 'text/turtle, application/ld+json;q=0.8, */*;q=0.1' },
-  })
-  if (response.status === 404) {
-    return []
-  }
-  if (!response.ok) {
-    return []
-  }
-  const text = await response.text()
-  const urls = new Set<string>()
-  const base = new URL(containerUrl)
-  const relativeRegexp = /[<"]([^<>"']+\/)[>"]/g
-  let match: RegExpExecArray | null
-  while ((match = relativeRegexp.exec(text))) {
-    urls.add(new URL(match[1], base).toString())
-  }
-  const absoluteRegexp = /(https?:\/\/[^<>"'\s)]+\/)/g
-  for (const absolute of text.matchAll(absoluteRegexp)) {
-    const url = absolute[1]
-    if (url.startsWith(containerUrl) && url !== containerUrl) {
-      urls.add(url)
-    }
-  }
-  return [...urls].sort()
-}
-
 function normalizeUnknownDate(value: unknown): Date | string | number | undefined {
   if (value instanceof Date || typeof value === 'string' || typeof value === 'number') {
     return value
   }
   return undefined
-}
-
-function parseJsonObject(value: string | undefined): Record<string, unknown> {
-  if (!value) {
-    return {}
-  }
-  try {
-    const parsed = JSON.parse(value) as unknown
-    return isRecord(parsed) ? parsed : {}
-  } catch {
-    return {}
-  }
-}
-
-function parseMetadataPredicates(predicates: Map<string, TurtleObject[]>): Record<string, unknown> {
-  const values = predicates.get(UDFS_METADATA) ?? []
-  const parsed = values
-    .filter((entry): entry is Extract<TurtleObject, { type: 'literal' }> => entry.type === 'literal')
-    .map((entry) => parseJsonObject(entry.value))
-    .filter((entry) => Object.keys(entry).length > 0)
-  for (let index = parsed.length - 1; index >= 0; index -= 1) {
-    if (Array.isArray(parsed[index].messageResources)) {
-      return parsed[index]
-    }
-  }
-  return parsed[parsed.length - 1] ?? {}
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
