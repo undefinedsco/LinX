@@ -3,7 +3,7 @@ import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { readFileSync } from 'node:fs'
 import { LINX_HOME_DIRNAME } from '@undefineds.co/models/client'
-import { keyHint, LoginDialogComponent, rawKeyHint } from '@mariozechner/pi-coding-agent'
+import { initTheme, keyHint, LoginDialogComponent, rawKeyHint } from '@mariozechner/pi-coding-agent'
 import { Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from '@mariozechner/pi-tui'
 import type { OAuthCredentials } from '@mariozechner/pi-ai'
 import { loadCredentials } from '../credentials-store.js'
@@ -762,8 +762,15 @@ async function runLinxCloudBrowserLogin(
   reason: LinxAuthReason,
 ): Promise<void> {
   if (canRenderLinxLoginDialog(interactive)) {
-    await runLinxCloudLoginDialog(interactive, authStorage, reason)
-    return
+    try {
+      await runLinxCloudLoginDialog(interactive, authStorage, reason)
+      return
+    } catch (error) {
+      if (!isThemeInitializationError(error)) {
+        throw error
+      }
+      interactive.showStatus?.('LinX Cloud login prompt unavailable before TUI theme initialization; falling back to browser login.')
+    }
   }
 
   await runLinxCloudLogin(interactive, authStorage, reason)
@@ -774,6 +781,8 @@ function canRenderLinxLoginDialog(interactive: any): boolean {
     interactive.ui
       && typeof interactive.editorContainer?.clear === 'function'
       && typeof interactive.editorContainer?.addChild === 'function'
+      && typeof interactive.ui?.setFocus === 'function'
+      && typeof interactive.ui?.requestRender === 'function'
       && interactive.editor,
   )
 }
@@ -783,6 +792,7 @@ async function runLinxCloudLoginDialog(
   authStorage: { login(providerId: string, callbacks: unknown): Promise<unknown> },
   reason: LinxAuthReason,
 ): Promise<void> {
+  ensurePiThemeInitialized(interactive)
   const dialog = new LoginDialogComponent(interactive.ui, LINX_PROVIDER_ID, () => undefined)
   const restoreEditor = (): void => {
     interactive.editorContainer.clear()
@@ -1054,11 +1064,37 @@ export function buildLinxWelcomeCardState(interactive: any, profileDisplayName: 
     workspace,
     session,
     next: [
-      keyHint('tui.input.submit', 'send'),
-      keyHint('app.model.select', 'model'),
+      safeKeyHint('tui.input.submit', 'send', 'enter send'),
+      safeKeyHint('app.model.select', 'model', 'ctrl+l model'),
       rawKeyHint('/login', 'auth'),
       rawKeyHint('/hotkeys', 'keymap'),
     ].join(' \x1b[2m·\x1b[22m '),
+  }
+}
+
+function safeKeyHint(command: Parameters<typeof keyHint>[0], label: string, fallback: string): string {
+  try {
+    return keyHint(command, label)
+  } catch (error) {
+    if (isThemeInitializationError(error)) {
+      return fallback
+    }
+    throw error
+  }
+}
+
+function isThemeInitializationError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes('Theme not initialized')
+}
+
+function ensurePiThemeInitialized(interactive: any): void {
+  try {
+    keyHint('tui.select.cancel', 'cancel')
+  } catch (error) {
+    if (!isThemeInitializationError(error)) {
+      throw error
+    }
+    initTheme(interactive?.settingsManager?.getTheme?.())
   }
 }
 

@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
-import { cpSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -11,13 +12,21 @@ const agentRuntimeRoot = fileURLToPath(new URL('../../../packages/agent-runtime'
 const agentRuntimeDistRoot = join(agentRuntimeRoot, 'dist')
 const sourceRoot = join(cliRoot, 'src')
 const skillsRoot = fileURLToPath(new URL('../../../skills', import.meta.url))
-const wsRoot = fileURLToPath(new URL('../../../node_modules/ws', import.meta.url))
-const n3Root = fileURLToPath(new URL('../../../node_modules/n3', import.meta.url))
-const mariozechnerRoot = fileURLToPath(new URL('../../../node_modules/@mariozechner', import.meta.url))
-const typeboxRoot = fileURLToPath(new URL('../../../node_modules/@sinclair/typebox', import.meta.url))
+const requireFromCli = createRequire(join(cliRoot, 'package.json'))
 
 export async function loadWatchModule(entryRelative = 'lib/watch/index.ts') {
   return buildWatchBundle(entryRelative)
+}
+
+function resolveNodeModule(packageName) {
+  const segments = packageName.split('/')
+  for (const nodeModulesPath of requireFromCli.resolve.paths(packageName) ?? []) {
+    const packageRoot = join(nodeModulesPath, ...segments)
+    if (existsSync(join(packageRoot, 'package.json'))) {
+      return packageRoot
+    }
+  }
+  throw new Error(`Unable to resolve package root for ${packageName}`)
 }
 
 async function buildWatchBundle(entryRelative) {
@@ -102,16 +111,16 @@ async function buildWatchBundle(entryRelative) {
       './turn-controller': './dist/turn-controller.js',
     },
   }, null, 2))
-  symlinkSync(wsRoot, join(genericNodeModulesDir, 'ws'), 'dir')
-  symlinkSync(n3Root, join(genericNodeModulesDir, 'n3'), 'dir')
-  symlinkSync(typeboxRoot, join(sinclairNodeModulesDir, 'typebox'), 'dir')
-  symlinkSync(join(mariozechnerRoot, 'pi-ai'), join(scopedNodeModulesDir, 'pi-ai'), 'dir')
-  symlinkSync(join(mariozechnerRoot, 'pi-agent-core'), join(scopedNodeModulesDir, 'pi-agent-core'), 'dir')
-  symlinkSync(join(mariozechnerRoot, 'pi-coding-agent'), join(scopedNodeModulesDir, 'pi-coding-agent'), 'dir')
-  symlinkSync(join(mariozechnerRoot, 'pi-tui'), join(scopedNodeModulesDir, 'pi-tui'), 'dir')
+  symlinkSync(resolveNodeModule('ws'), join(genericNodeModulesDir, 'ws'), 'dir')
+  symlinkSync(resolveNodeModule('n3'), join(genericNodeModulesDir, 'n3'), 'dir')
+  symlinkSync(resolveNodeModule('@sinclair/typebox'), join(sinclairNodeModulesDir, 'typebox'), 'dir')
+  symlinkSync(resolveNodeModule('@mariozechner/pi-ai'), join(scopedNodeModulesDir, 'pi-ai'), 'dir')
+  symlinkSync(resolveNodeModule('@mariozechner/pi-agent-core'), join(scopedNodeModulesDir, 'pi-agent-core'), 'dir')
+  symlinkSync(resolveNodeModule('@mariozechner/pi-coding-agent'), join(scopedNodeModulesDir, 'pi-coding-agent'), 'dir')
+  symlinkSync(resolveNodeModule('@mariozechner/pi-tui'), join(scopedNodeModulesDir, 'pi-tui'), 'dir')
   mkdirSync(join(outdir, 'node_modules', '@inrupt'), { recursive: true })
   symlinkSync(
-    fileURLToPath(new URL('../../../node_modules/@inrupt/solid-client-authn-node', import.meta.url)),
+    resolveNodeModule('@inrupt/solid-client-authn-node'),
     join(outdir, 'node_modules', '@inrupt', 'solid-client-authn-node'),
     'dir',
   )
