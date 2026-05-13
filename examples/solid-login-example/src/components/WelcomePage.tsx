@@ -185,7 +185,7 @@ export default function WelcomePage() {
       await login({
         oidcIssuer: issuerForLogin,
         redirectUrl: validatedRedirect,
-        clientName: 'Linq Hello World'
+        clientName: 'LinX Hello World'
       });
     } catch (loginError) {
       console.error('Solid login failed', loginError);
@@ -231,7 +231,7 @@ export default function WelcomePage() {
     <div className="flex min-h-screen w-full items-center justify-center px-4 py-10">
       <Card className="w-full max-w-[420px] border-border/60 bg-card/80 shadow-2xl backdrop-blur-xl">
         <CardHeader className="space-y-2 text-center">
-          <CardTitle className="text-3xl font-semibold text-foreground">Linq Hello World</CardTitle>
+          <CardTitle className="text-3xl font-semibold text-foreground">LinX Hello World</CardTitle>
           <CardDescription className="text-base text-muted-foreground">
             Privacy-first productivity, powered by your Solid Pod.
           </CardDescription>

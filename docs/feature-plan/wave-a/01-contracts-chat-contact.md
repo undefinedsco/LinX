@@ -57,9 +57,7 @@
 
 ### 6A.1 Namespace 约定（UDFS 统一）
 
-Wave A CP0 的自定义 predicate **统一挂在公司级命名空间 `udfs:`**（代码中为 `UDFS` 常量，base URI 为 `https://undefineds.co/ns#`）。
-
-为避免下游 churn，仍导出 `LINX_CHAT` / `LINX_MSG`，但它们只是 `UDFS` 的别名（同一 base URI），用于语义分组/可读性。
+Wave A CP0 的自定义 predicate **统一挂在公司级命名空间 `udfs:`**（代码中为 `UDFS` 常量，base URI 为 `https://undefineds.co/ns#`）。不再导出按聊天/消息拆分的语义 namespace 别名，下游统一直接使用 `UDFS` 或 `*Vocab` 对象。
 
 注意（CP0 冻结但不必落表/不必在实例上写入）：
 
@@ -68,11 +66,10 @@ Wave A CP0 的自定义 predicate **统一挂在公司级命名空间 `udfs:`**�
 - `policyRef` / `policyVersion` / `parentThreadId` / `session*`：CP0 仅冻结词汇，不在 schema 落表；策略文档从 workspace 容器约定链接解析。
 
 ```ts
-import { UDFS, LINX_CHAT, LINX_MSG } from "@undefineds.co/models"
+import { UDFS } from "@undefineds.co/models"
 
-// Aliases (same base URI)
-LINX_CHAT.workspace === UDFS.workspace
-LINX_MSG.coordinationId === UDFS.coordinationId
+UDFS.workspace === "https://undefineds.co/ns#workspace"
+UDFS.coordinationId === "https://undefineds.co/ns#coordinationId"
 ```
 
 ### 6A.2 Chat 语义（CP0）
@@ -156,7 +153,7 @@ export const threadTable = podTable(
     // ... 现有字段保持不变 ...
 
     // Execution context: workspace container URI (Agent@workspace)
-    workspace: uri("workspace").predicate(LINX_CHAT.workspace),
+    workspace: uri("workspace").predicate(UDFS.workspace),
   },
   {
     base: "/.data/chat/",
@@ -173,7 +170,7 @@ export const threadTable = podTable(
 ```typescript
 // packages/models/src/vocab/message.vocab.ts
 
-import { LINX_MSG, SIOC, FOAF, DCTerms, UDFS, SCHEMA, MEETING, WF } from '../namespaces'
+import { SIOC, FOAF, DCTerms, UDFS, SCHEMA, MEETING, WF } from '../namespaces'
 
 export const MessageVocab = {
   // 现有
@@ -190,15 +187,15 @@ export const MessageVocab = {
   updatedAt: DCTerms.modified,
 
   // 新增：Group 消息扩展
-  senderName: LINX_MSG.senderName,
-  senderAvatarUrl: LINX_MSG.senderAvatarUrl,
-  mentions: LINX_MSG.mentions,
-  replyTo: LINX_MSG.replyTo,
+  senderName: UDFS.senderName,
+  senderAvatarUrl: UDFS.senderAvatarUrl,
+  mentions: UDFS.mentions,
+  replyTo: UDFS.replyTo,
 
   // 新增：多 AI 协同路由
-  routedBy: LINX_MSG.routedBy,
-  routeTargetAgentId: LINX_MSG.routeTargetAgentId,
-  coordinationId: LINX_MSG.coordinationId,
+  routedBy: UDFS.routedBy,
+  routeTargetAgentId: UDFS.routeTargetAgentId,
+  coordinationId: UDFS.coordinationId,
 } as const
 ```
 
@@ -208,15 +205,15 @@ export const MessageVocab = {
 // packages/models/src/message.schema.ts 新增字段
 
 // 新增：Group 消息扩展
-senderName: string('senderName').predicate(LINX_MSG.senderName),
-senderAvatarUrl: uri('senderAvatarUrl').predicate(LINX_MSG.senderAvatarUrl),
-mentions: uri('mentions').array().predicate(LINX_MSG.mentions),
-replyTo: uri('replyTo').predicate(LINX_MSG.replyTo),
+senderName: string('senderName').predicate(UDFS.senderName),
+senderAvatarUrl: uri('senderAvatarUrl').predicate(UDFS.senderAvatarUrl),
+mentions: uri('mentions').array().predicate(UDFS.mentions),
+replyTo: uri('replyTo').predicate(UDFS.replyTo),
 
 // 新增：多 AI 协同路由
-routedBy: uri('routedBy').predicate(LINX_MSG.routedBy),
-routeTargetAgentId: string('routeTargetAgentId').predicate(LINX_MSG.routeTargetAgentId),
-coordinationId: string('coordinationId').predicate(LINX_MSG.coordinationId),
+routedBy: uri('routedBy').predicate(UDFS.routedBy),
+routeTargetAgentId: string('routeTargetAgentId').predicate(UDFS.routeTargetAgentId),
+coordinationId: string('coordinationId').predicate(UDFS.coordinationId),
 ```
 
 ### 6A.4 Contact 扩展 Vocab
@@ -303,7 +300,7 @@ packages/models/src/vocab/
 | 06-web-contact-ui | ContactVocab (GROUP) | 群组联系人创建 |
 | 08-web-session-files-ui | ThreadVocab | 读取 Agent@workspace 上下文（policy 由 workspace 容器解析） |
 | 10-cli-collector | MessageVocab (richContent blocks) | Block 序列化写入 |
-| 02-sidecar-events | LINX_MSG (tool*) | 事件 → Block 字段映射 |
+| 02-sidecar-events | UDFS tool predicates | 事件 → Block 字段映射 |
 
 ---
 

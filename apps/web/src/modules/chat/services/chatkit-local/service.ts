@@ -8,7 +8,7 @@
  * No API server round-trip — fetch goes directly to the AI provider.
  */
 
-import { and, eq, resolveRowSubject } from '@undefineds.co/drizzle-solid'
+import { resolveRowSubject } from '@undefineds.co/drizzle-solid'
 import {
   resolveLinxPodBaseUrl,
   resolveLinxRuntimeApiBaseUrlForIssuerUrl,
@@ -27,13 +27,13 @@ import {
   type ThreadStreamEvent,
 } from '@/lib/vendor/xpod-chatkit'
 import { Credential } from '@/lib/vendor/xpod-credential'
-import { CredentialStatus, ServiceType } from '@/lib/vendor/xpod-credential'
 import {
   agentTable,
   chatTable,
   contactTable,
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
+  selectAIConfigCredential,
   type AgentRow,
   type ContactRow,
   type SolidDatabase,
@@ -398,7 +398,7 @@ export class LocalChatKitService {
           return
         }
 
-        const aiConfig = await this.getAiConfig()
+        const aiConfig = await this.getAiConfig(agentConfig?.provider)
         if (!aiConfig) {
           assistantItem.content = [{ type: 'output_text', text: '请先在设置中配置 AI API Key。', annotations: [] }]
           assistantItem.status = 'completed'
@@ -749,26 +749,23 @@ export class LocalChatKitService {
     )
   }
 
-  private async getAiConfig(): Promise<{
+  private async getAiConfig(provider = 'openai'): Promise<{
     baseUrl: string
     apiKey: string
     defaultModel?: string
   } | null> {
     try {
       const credentials = await this.db.select().from(Credential)
-        .where(
-          and(
-            eq(Credential.service as any, ServiceType.AI),
-            eq(Credential.status as any, CredentialStatus.ACTIVE),
-          ),
-        )
         .execute()
 
-      if (credentials.length > 0) {
-        const credential = credentials[0] as any
+      const selected = selectAIConfigCredential(provider, credentials as Array<Record<string, unknown>>)
+      if (selected) {
+        if (selected.credentialId) {
+          await (this.db as any).updateByLocator?.(Credential as any, { id: selected.credentialId }, { lastUsedAt: new Date() })
+        }
         return {
-          baseUrl: credential.baseUrl || 'https://openrouter.ai/api/v1',
-          apiKey: credential.apiKey as string,
+          baseUrl: selected.baseUrl || 'https://openrouter.ai/api/v1',
+          apiKey: selected.apiKey,
         }
       }
     } catch (error) {

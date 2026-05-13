@@ -126,7 +126,7 @@ test('pod ai selector prefers active anthropic credentials', async () => {
   assert.deepEqual(match, {
     providerId: 'anthropic',
     apiKey: 'sk-anthropic',
-    baseUrl: undefined,
+    baseUrl: 'https://api.anthropic.com/v1',
   })
 })
 

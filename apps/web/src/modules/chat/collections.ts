@@ -21,6 +21,7 @@ import {
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
   resolveThreadChatId as resolveThreadChatIdFromRow,
+  selectAIConfigCredential,
   UDFS,
   WF,
   type ChatRow,
@@ -1332,20 +1333,20 @@ export const chatOps = {
   async getCredential(provider: string): Promise<{ apiKey: string; baseUrl?: string } | null> {
     const db = getDb()
     if (!db) return null
-    
-    const providerCol = (credentialTable as any).provider
+
     const rows = await db.select()
       .from(credentialTable)
-      .where(eq(providerCol, normalizeAIConfigProviderId(provider)))
-      .execute() as Array<{ apiKey?: string; baseUrl?: string; status?: string }>
+      .execute() as Array<Record<string, unknown>>
+    const selected = selectAIConfigCredential(provider, rows)
+    if (!selected) return null
 
-    const cred = rows.find((row: any) => row?.status === 'active') ?? rows[0]
-
-    if (!cred || !cred.apiKey) return null
+    if (selected.credentialId) {
+      await (db as any).updateByLocator?.(credentialTable as any, { id: selected.credentialId }, { lastUsedAt: new Date() })
+    }
 
     return {
-      apiKey: cred.apiKey as string,
-      baseUrl: cred.baseUrl || undefined,
+      apiKey: selected.apiKey,
+      baseUrl: selected.baseUrl,
     }
   },
 

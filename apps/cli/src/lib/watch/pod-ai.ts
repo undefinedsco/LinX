@@ -1,5 +1,6 @@
 import type { WatchBackend } from './types.js'
 import { getDefaultPodDataSession, type PodDataSession } from '../pod-data-session.js'
+import { selectAIConfigCredential } from '../models.js'
 
 type SupportedPodWatchBackend = WatchBackend
 
@@ -9,18 +10,24 @@ interface PodQueryDb {
       execute(): Promise<unknown[]>
     }
   }
+  updateByLocator?: (table: unknown, locator: Record<string, unknown>, data: Record<string, unknown>) => Promise<unknown>
 }
 
-interface PodCredentialRow {
+interface PodCredentialRow extends Record<string, unknown> {
   id?: string
   service?: string
   status?: string
   apiKey?: string
   provider?: string
   baseUrl?: string
+  proxyUrl?: string
+  label?: string
+  isDefault?: boolean
+  lastUsedAt?: Date
+  failCount?: number
 }
 
-interface PodProviderRow {
+interface PodProviderRow extends Record<string, unknown> {
   id?: string
   '@id'?: string
   baseUrl?: string
@@ -51,50 +58,6 @@ const POD_PROVIDER_IDS: Record<SupportedPodWatchBackend, readonly string[]> = {
   codebuddy: ['codebuddy'],
 }
 
-function normalizeString(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim() ? value.trim() : undefined
-}
-
-function recordValue(record: Record<string, unknown>, key: string): string | undefined {
-  return normalizeString(record[key])
-}
-
-function isActiveAiCredential(row: PodCredentialRow): boolean {
-  return normalizeString(row.service)?.toLowerCase() === 'ai'
-    && normalizeString(row.status)?.toLowerCase() === 'active'
-    && typeof row.apiKey === 'string'
-    && row.apiKey.trim().length > 0
-}
-
-function matchesProviderReference(reference: string, providerIds: readonly string[], providers: PodProviderRow[]): string | null {
-  const normalizedReference = reference.trim()
-
-  for (const provider of providers) {
-    const providerRecord = provider as Record<string, unknown>
-    const providerId = normalizeString(provider.id)
-    if (!providerId || !providerIds.includes(providerId)) {
-      continue
-    }
-
-    const providerSubject = recordValue(providerRecord, '@id')
-    if (
-      normalizedReference === providerId
-      || normalizedReference === providerSubject
-      || normalizedReference.endsWith(`#${providerId}`)
-    ) {
-      return providerId
-    }
-  }
-
-  for (const providerId of providerIds) {
-    if (normalizedReference === providerId || normalizedReference.endsWith(`#${providerId}`)) {
-      return providerId
-    }
-  }
-
-  return null
-}
-
 function selectPodCredentialForBackend(
   backend: SupportedPodWatchBackend,
   credentials: PodCredentialRow[],
@@ -102,32 +65,26 @@ function selectPodCredentialForBackend(
 ): PodProviderMatch | null {
   const providerIds = POD_PROVIDER_IDS[backend]
 
-  for (const credential of credentials) {
-    if (!isActiveAiCredential(credential)) {
-      continue
-    }
-
-    const providerReference = normalizeString(credential.provider)
-    if (!providerReference) {
-      continue
-    }
-
-    const providerId = matchesProviderReference(providerReference, providerIds, providers)
-    if (!providerId) {
-      continue
-    }
-
-    const providerRow = providers.find((provider) => normalizeString(provider.id) === providerId)
-    const baseUrl = normalizeString(credential.baseUrl) ?? normalizeString(providerRow?.baseUrl)
-
+  for (const providerId of providerIds) {
+    const selected = selectAIConfigCredential(providerId, credentials, providers)
+    if (!selected) continue
     return {
-      providerId,
-      apiKey: credential.apiKey!.trim(),
-      baseUrl,
+      providerId: selected.providerId,
+      apiKey: selected.apiKey,
+      baseUrl: selected.baseUrl,
     }
   }
 
   return null
+}
+
+async function markCredentialUsed(
+  runtime: PodAiRuntime,
+  db: PodQueryDb,
+  row: PodCredentialRow | undefined,
+): Promise<void> {
+  if (!row?.id || !runtime.credentialTable) return
+  await db.updateByLocator?.(runtime.credentialTable, { id: row.id }, { lastUsedAt: new Date() })
 }
 
 function buildBackendEnv(match: PodProviderMatch, backend: SupportedPodWatchBackend): PodBackedWatchCredential {
@@ -206,7 +163,7 @@ async function createDefaultRuntime(): Promise<PodAiRuntime> {
 async function loadRowsWithDrizzle(
   runtime: PodAiRuntime,
   podSession: PodDataSession,
-): Promise<{ credentials: PodCredentialRow[]; providers: PodProviderRow[] } | null> {
+): Promise<{ db: PodQueryDb; credentials: PodCredentialRow[]; providers: PodProviderRow[] } | null> {
   if (!runtime.createDb || !runtime.credentialTable || !runtime.aiProviderTable) {
     return null
   }
@@ -217,7 +174,7 @@ async function loadRowsWithDrizzle(
     db.select().from(runtime.aiProviderTable).execute() as Promise<PodProviderRow[]>,
   ])
 
-  return { credentials, providers }
+  return { db, credentials, providers }
 }
 
 export async function loadPodBackendCredential(
@@ -240,12 +197,13 @@ export async function loadPodBackendCredential(
     return null
   }
 
+  const selected = selectAIConfigCredential(match.providerId, rows.credentials, rows.providers)
+  await markCredentialUsed(activeRuntime, rows.db, selected?.credential as PodCredentialRow | undefined)
+
   return buildBackendEnv(match, backend)
 }
 
 export const __podInternal = {
   POD_PROVIDER_IDS,
-  isActiveAiCredential,
-  matchesProviderReference,
   selectPodCredentialForBackend,
 }
