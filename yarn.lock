@@ -9838,18 +9838,10 @@
     sparqljs "^3.7.3"
     zod "^4.1.8"
 
-"@undefineds.co/models@0.1.1":
-  version "0.1.1"
-  resolved "https://registry.yarnpkg.com/@undefineds.co/models/-/models-0.1.1.tgz#322bbe9a7a679c5e788eca39ecca282c025f3b8e"
-  integrity sha512-H4xUnXq8KkrS+E7IdRO06MZ8LsFSGo2ZekQrb+fEUWXwLp/3G/H6bFt/ktyIGLAlUoPMA6HTs3JSsD9KhE4ifw==
-  dependencies:
-    "@undefineds.co/drizzle-solid" "^0.3.4"
-    zod "^3.22.4"
-
-"@undefineds.co/xpod@0.2.35":
-  version "0.2.35"
-  resolved "https://registry.yarnpkg.com/@undefineds.co/xpod/-/xpod-0.2.35.tgz#82ffe8b1dea9cc66c2bef682ae265daef25f699b"
-  integrity sha512-k/mKlw83sTV5+mSjFOVnA48hmnVkqPiaOhDF/9VrCtdGnydgueobphNFoeMOk7451U6XcRUXDMSaeV+HcST01g==
+"@undefineds.co/xpod@0.2.36":
+  version "0.2.36"
+  resolved "https://registry.yarnpkg.com/@undefineds.co/xpod/-/xpod-0.2.36.tgz#8b835000be14eb2d9fd69d9231230160de62d153"
+  integrity sha512-zCywaB4yHxkxLvINOs98WErCY+dalVq7ge9TfX3AYOIIXOEGbrtJaXneBZ4regFzr6g8XXgauZDxn+sYDpzCcA==
   dependencies:
     "@agentclientprotocol/sdk" "^0.14.1"
     "@ai-sdk/openai" "^3.0.2"
@@ -9864,7 +9856,7 @@
     "@mariozechner/pi-coding-agent" "^0.55.1"
     "@solid/community-server" "8.0.0-alpha.1"
     "@undefineds.co/drizzle-solid" "^0.3.4"
-    "@undefineds.co/models" "0.1.1"
+    "@undefineds.co/models" "0.2.21"
     abstract-level "^1.0.4"
     acme-client "^5.1.3"
     ai "^6.0.6"
