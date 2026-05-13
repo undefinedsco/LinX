@@ -1,6 +1,7 @@
 import type { Session } from '@inrupt/solid-client-authn-node'
 import {
   agentTable,
+  buildAgentResourceRef,
   chatTable,
   drizzle,
   eq,
@@ -29,12 +30,8 @@ function extractThreadId(threadIdOrUri: string | null | undefined): string | und
   return extractThreadIdFromThreadRef(threadIdOrUri) ?? undefined
 }
 
-function getPodBaseUrl(webId: string): string {
-  return webId.replace('/profile/card#me', '').replace(/\/$/, '')
-}
-
 function buildAgentUri(webId: string, agentId: string): string {
-  return `${getPodBaseUrl(webId)}/.data/agents/${agentId}.ttl`
+  return buildAgentResourceRef(webId, agentId)
 }
 
 function requireFindByLocator(db: SolidDatabase): NonNullable<SolidDatabase['findByLocator']> {

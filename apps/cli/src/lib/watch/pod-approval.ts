@@ -4,6 +4,8 @@ import { getDefaultPodDataSession, type PodDataSession } from '../pod-data-sessi
 import {
   approvalResource,
   auditResource,
+  buildAgentResourceRef,
+  buildThreadResourceRef,
   drizzle,
   grantResource,
   inboxNotificationTable,
@@ -240,7 +242,7 @@ function buildWatchChatId(record: WatchSessionRecord): string {
 }
 
 function buildThreadUri(webId: string, record: WatchSessionRecord): string {
-  return `${getPodBaseUrl(webId)}/.data/chat/${buildWatchChatId(record)}/index.ttl#${record.id}`
+  return buildThreadResourceRef(webId, buildWatchChatId(record), record.id)
 }
 
 function isAbsoluteIri(value: string): boolean {
@@ -252,7 +254,7 @@ function buildGrantSchemaUri(webIdOrUri: string): string {
 }
 
 function buildAgentUri(webId: string): string {
-  return `${getPodBaseUrl(webId)}/.data/agents/${WATCH_AGENT_ID}.ttl`
+  return buildAgentResourceRef(webId, WATCH_AGENT_ID)
 }
 
 function buildActionUri(request: WatchApprovalRequest): string {

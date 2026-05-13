@@ -1,67 +1,14 @@
-import {
-  id,
-  podTable,
-  string,
-  timestamp,
-  uri,
-  type InferInsertData,
-  type InferTableData,
-} from '@undefineds.co/drizzle-solid'
-import { DCTerms, UDFS } from '@undefineds.co/models'
-
-export type WorkspaceKind = 'folder' | 'git' | 'worktree'
-export type WorkspaceType = 'pod'
-
-export const workspaceTable = podTable('workspace', {
-  id: id('id'),
-  title: string('title').predicate(DCTerms.title).notNull(),
-  workspaceType: string('workspaceType').predicate(UDFS.term('workspaceType')).notNull().default('pod'),
-  kind: string('kind').predicate(UDFS.term('workspaceKind')).notNull().default('folder'),
-  rootUri: uri('rootUri').predicate(UDFS.term('rootUri')).notNull(),
-  repoRootUri: uri('repoRootUri').predicate(UDFS.term('repoRootUri')),
-  baseRef: string('baseRef').predicate(UDFS.term('baseRef')),
-  branch: string('branch').predicate(UDFS.term('branch')),
-  createdAt: timestamp('createdAt').predicate(DCTerms.created).notNull().defaultNow(),
-  updatedAt: timestamp('updatedAt').predicate(DCTerms.modified).notNull().defaultNow(),
-}, {
-  base: '/.data/workspaces/',
-  sparqlEndpoint: '/.data/workspaces/-/sparql',
-  type: UDFS.term('Workspace'),
-  namespace: UDFS,
-  subjectTemplate: '{id}/index.ttl#this',
-})
-
-export type WorkspaceRow = InferTableData<typeof workspaceTable> & {
-  workspaceType: WorkspaceType
-  kind: WorkspaceKind
-}
-export type WorkspaceInsert = InferInsertData<typeof workspaceTable> & {
-  workspaceType?: WorkspaceType
-  kind?: WorkspaceKind
-}
-
-export function resolveWorkspaceContainerUri(podBaseUrl: string, workspaceId: string): string {
-  return new URL(getWorkspaceContainerPath(workspaceId), normalizeContainerBase(podBaseUrl)).toString()
-}
-
-export function getWorkspaceContainerPath(workspaceId: string): string {
-  return `/.data/workspaces/${encodeURIComponent(workspaceId)}/`
-}
-
-export function parseWorkspaceIdFromContainerUri(uri?: string | null): string | null {
-  if (!uri) {
-    return null
-  }
-
-  try {
-    const parsed = new URL(uri)
-    const match = parsed.pathname.match(/\/\.data\/workspaces\/([^/]+)\/?/)
-    return match?.[1] ? decodeURIComponent(match[1]) : null
-  } catch {
-    const match = uri.match(/\/\.data\/workspaces\/([^/]+)\/?/)
-    return match?.[1] ? decodeURIComponent(match[1]) : null
-  }
-}
+export {
+  getWorkspaceContainerPath,
+  parseWorkspaceIdFromContainerUri,
+  resolveWorkspaceContainerUri,
+  workspaceResource,
+  workspaceTable,
+  type WorkspaceInsert,
+  type WorkspaceKind,
+  type WorkspaceRow,
+  type WorkspaceType,
+} from '@undefineds.co/models'
 
 export function normalizeLocalWorkspacePath(path?: string | null): string {
   const trimmed = path?.trim()
@@ -105,10 +52,6 @@ export function parseLocalWorkspaceUri(uri?: string | null): { nodeId: string; p
     nodeId: decodeURIComponent(match[1]),
     path: normalizeLocalWorkspacePath(decodePathname(match[2] ?? '/')),
   }
-}
-
-function normalizeContainerBase(baseUrl: string): string {
-  return baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`
 }
 
 function encodePathname(pathname: string): string {

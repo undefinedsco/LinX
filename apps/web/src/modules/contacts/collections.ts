@@ -10,6 +10,7 @@
 import { createPodCollection } from '@/lib/data/pod-collection'
 import { like, or, resolveRowSubject } from '@undefineds.co/drizzle-solid'
 import {
+  chatTable,
   contactTable,
   agentTable,
   solidProfileTable,
@@ -23,6 +24,7 @@ import {
   type ChatInsert,
   type SolidProfileRow,
   ContactType,
+  extractChatIdFromChatRef,
   isGroupContact,
 } from '@undefineds.co/models'
 import type { SolidDatabase } from '@undefineds.co/models'
@@ -63,8 +65,13 @@ async function findByIriCompat<T>(db: SolidDatabase, table: unknown, iri: string
   return null
 }
 
-function buildLocalChatUri(chatId: string): string {
-  return `/.data/chat/${chatId}/index.ttl#this`
+function resolveChatSubjectIri(db: SolidDatabase | null, chatId: string | undefined): string | null {
+  if (!db || !chatId || typeof db.resolveRowIri !== 'function') return null
+  try {
+    return db.resolveRowIri(chatTable as any, { id: chatId })
+  } catch {
+    return null
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -158,11 +165,17 @@ function getChatRefs(chat: Partial<ChatRow> | null | undefined): string[] {
   if (!chat) return []
   if (chat.id) {
     refs.add(chat.id)
-    refs.add(buildLocalChatUri(chat.id))
+    const chatIri = resolveChatSubjectIri(getDb(), chat.id)
+    if (chatIri) refs.add(chatIri)
   }
   const uri = chat ? resolveRowSubject(chat as Record<string, unknown>) : undefined
   if (uri) refs.add(uri)
   return Array.from(refs)
+}
+
+function isSameChatRef(chat: Partial<ChatRow> | null | undefined, ref: string | null | undefined): boolean {
+  if (!chat || !ref) return false
+  return getChatRefs(chat).includes(ref) || (!!chat.id && extractChatIdFromChatRef(ref) === chat.id)
 }
 
 function findContactRecord(contactIdOrRef: string): ContactRow | null {
@@ -418,7 +431,7 @@ export const contactOps = {
       const linkedChats = chats.filter((chat) => {
         if (isGroupContact(contact)) {
           const groupChatRef = contact.entityUri ?? contact.id
-          return getChatRefs(chat).includes(groupChatRef)
+          return isSameChatRef(chat, groupChatRef)
         }
 
         const participants = toStringArray(chat.participants)
@@ -785,7 +798,10 @@ export const contactOps = {
     }
 
     const chatId = crypto.randomUUID()
-    const chatUri = buildLocalChatUri(chatId)
+    const chatUri = resolveChatSubjectIri(db, chatId)
+    if (!chatUri) {
+      throw new Error('Solid database cannot resolve chat resource IRI')
+    }
 
     const { contact, contactId } = await createGroupContactRecord(db, {
       name,
@@ -862,7 +878,7 @@ export const contactOps = {
     const chats = Array.from(chatCollection.state.values())
     const groupContact = this.getById(groupContactId)
     const groupChatRef = groupContact?.entityUri ?? groupContactId
-    return chats.find((chat: ChatRow) => getChatRefs(chat).includes(groupChatRef)) ?? null
+    return chats.find((chat: ChatRow) => isSameChatRef(chat, groupChatRef)) ?? null
   },
 
   /**

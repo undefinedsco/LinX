@@ -1,4 +1,8 @@
-import type { FavoriteRow } from '@undefineds.co/models'
+import {
+  extractChatMessageRef,
+  extractChatThreadRef,
+  type FavoriteRow,
+} from '@undefineds.co/models'
 import type { MicroAppId } from '@/modules/layout/micro-app-registry'
 
 interface FavoriteSnapshotMeta {
@@ -37,22 +41,21 @@ function parseChatTargetUri(targetUri?: string | null): {
   messageId?: string | null
 } {
   if (!targetUri) return {}
+  if (!targetUri.includes('/.data/chat/')) return {}
 
-  const threadMatch = targetUri.match(/\/\.data\/chat\/([^/]+)\/index\.ttl#(.+)$/)
-  if (threadMatch) {
-    const [, chatId, fragment] = threadMatch
+  const threadRef = extractChatThreadRef(targetUri)
+  if (threadRef.chatId || threadRef.threadId) {
     return {
-      chatId,
-      threadId: fragment === 'this' ? null : fragment,
+      chatId: threadRef.chatId,
+      threadId: threadRef.threadId,
     }
   }
 
-  const messageMatch = targetUri.match(/\/\.data\/chat\/([^/]+)\/\d{4}\/\d{2}\/\d{2}\/messages\.ttl#(.+)$/)
-  if (messageMatch) {
-    const [, chatId, messageId] = messageMatch
+  const messageRef = extractChatMessageRef(targetUri)
+  if (messageRef.chatId || messageRef.messageId) {
     return {
-      chatId,
-      messageId,
+      chatId: messageRef.chatId,
+      messageId: messageRef.messageId,
     }
   }
 

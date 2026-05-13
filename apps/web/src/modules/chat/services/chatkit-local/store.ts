@@ -258,12 +258,30 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     return chatId
   }
 
-  private getPodBaseUrl(): string {
-    return this.webId.replace('/profile/card#me', '').replace(/\/$/, '')
+  private resolveResourceIri(
+    table: Parameters<NonNullable<SolidDatabase['resolveRowIri']>>[0],
+    row: Record<string, unknown>,
+  ): string {
+    if (typeof this.db.resolveRowIri !== 'function') {
+      throw new Error('Solid database does not support resolveRowIri')
+    }
+    return this.db.resolveRowIri(table, row)
+  }
+
+  private buildChatUri(chatId: string): string {
+    return this.resolveResourceIri(Chat as any, { id: chatId })
   }
 
   private buildThreadUri(chatId: string, threadId: string): string {
-    return `${this.getPodBaseUrl()}/.data/chat/${chatId}/index.ttl#${threadId}`
+    return this.resolveResourceIri(Thread as any, { id: threadId, chat: this.buildChatUri(chatId) })
+  }
+
+  private buildMessageUri(chatId: string, messageId: string, createdAt: Date): string {
+    return this.resolveResourceIri(Message as any, {
+      id: messageId,
+      chat: this.buildChatUri(chatId),
+      createdAt,
+    })
   }
 
   private async resolveCounterpartMaker(chatId: string): Promise<string> {
@@ -536,14 +554,13 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   async addThreadItem(threadId: string, item: ThreadItem, _context: StoreContext): Promise<void> {
     const chatId = await this.getThreadChatId(threadId)
     const { content, role, status, richContent } = threadItemToMessageRecord(item)
-    const podBaseUrl = this.getPodBaseUrl()
     const maker = role === MessageRole.USER
       ? this.webId
       : await this.resolveCounterpartMaker(chatId)
 
     await (this.db as any).insert(Message as any).values({
       id: item.id,
-      chat: `${podBaseUrl}/.data/chat/${chatId}/index.ttl#this`,
+      chat: this.buildChatUri(chatId),
       thread: this.buildThreadUri(chatId, threadId),
       maker,
       role,
@@ -607,15 +624,9 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     status: string | null,
     createdAt?: string,
   ): Promise<void> {
-    // The db instance already carries session.fetch with DPoP auth.
-    // Build resource URL from webId.
     const dateForPath = createdAt ? new Date(createdAt) : new Date()
-    const yyyy = dateForPath.getUTCFullYear()
-    const mm = String(dateForPath.getUTCMonth() + 1).padStart(2, '0')
-    const dd = String(dateForPath.getUTCDate()).padStart(2, '0')
-    const podBaseUrl = this.getPodBaseUrl()
-    const resourceUrl = `${podBaseUrl}/.data/chat/${chatId}/${yyyy}/${mm}/${dd}/messages.ttl`
-    const subjectUri = `${resourceUrl}#${messageId}`
+    const subjectUri = this.buildMessageUri(chatId, messageId, dateForPath)
+    const resourceUrl = subjectUri.split('#')[0]
 
     const escapeForSparql = (value: string): string => {
       const hasQuotes = value.includes('"')

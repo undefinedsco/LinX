@@ -1,5 +1,6 @@
 import type { PodDataSession } from '../pod-data-session.js'
 import { getDefaultPodDataSession } from '../pod-data-session.js'
+import { buildAgentResourceRef } from '../models.js'
 import {
   buildWatchThreadMetadata,
   buildWatchTranscriptMessages,
@@ -142,12 +143,8 @@ function normalizeTitle(text: string, width = 72): string {
   return `${normalized.slice(0, Math.max(0, width - 3))}...`
 }
 
-function getPodBaseUrl(webId: string): string {
-  return webId.replace('/profile/card#me', '').replace(/\/$/, '')
-}
-
 function buildAgentUri(webId: string, agentId: string): string {
-  return `${getPodBaseUrl(webId)}/.data/agents/${agentId}.ttl`
+  return buildAgentResourceRef(webId, agentId)
 }
 
 function buildWatchChatId(record: Pick<WatchSessionRecord, 'backend'>): string {
