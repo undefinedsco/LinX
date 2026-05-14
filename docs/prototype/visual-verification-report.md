@@ -11,7 +11,8 @@
 - 四个一级模块都可独立截图验收：`聊天`、`联系人`、`文件`、`收藏`。
 - `AI Secretary` 是默认入口，表现为会话、联系人和个人收纳助手。
 - `文件` 是 Finder/Pod resource 浏览视角，不按聊天来源组织。
-- `聊天文件` 是左下低频菜单二级入口，不成为一级模块。
+- `聊天文件` 是左下低频菜单弹窗入口，不成为一级模块。
+- `Inbox` 是右上角三栏通知弹窗，不成为一级模块；审批详情在中间列表项展开，右侧保留入口，Chat inline 审批卡和 Inbox 状态同步。
 - 视觉颜色使用现有全局 token，不在原型里另起品牌色。
 
 ## 设计产物
@@ -38,10 +39,10 @@ yarn workspace @linx/prototype build
 输出摘要：
 
 ```text
-✓ 1581 modules transformed.
-dist/assets/index-BJ-qxhh4.css   32.64 kB │ gzip:  6.49 kB
-dist/assets/index-1FvkEX0j.js   166.00 kB │ gzip: 53.28 kB
-✓ built in 2.74s
+✓ 1585 modules transformed.
+dist/assets/index-BbLHjnL1.css   41.79 kB │ gzip:  7.69 kB
+dist/assets/index-Br5i8mvO.js   182.42 kB │ gzip: 55.98 kB
+✓ built in 1.74s
 ```
 
 字重检查：
@@ -78,6 +79,8 @@ yarn workspace @linx/prototype dev --host 127.0.0.1 --port 5871
 | Contacts / 名片详情 | `docs/prototype/assets/prototype-contacts-redesign-1440x900.png` |
 | Files / Pod Finder | `docs/prototype/assets/prototype-files-redesign-1440x900.png` |
 | Favorites / 回跳索引 | `docs/prototype/assets/prototype-favorites-redesign-1440x900.png` |
+| Chat Files / 底部菜单弹窗 | `docs/prototype/assets/prototype-chat-files-modal-1440x900.png` |
+| Inbox / 三栏通知与审批弹窗 | `docs/prototype/assets/prototype-inbox-modal-1440x900.png` |
 
 ## DOM 断言
 
@@ -91,6 +94,10 @@ Playwright 同步断言：
   "detailPane": true,
   "filesNoSourceColumn": true,
   "secondaryChatFiles": true,
+  "chatFilesOpensAsModalFromBottomMenu": true,
+  "inboxOpensAsModalFromBell": true,
+  "inboxHasThreeColumns": true,
+  "approvalStatusSyncsBetweenInboxAndChat": true,
   "sampleTextColor": "rgb(15, 23, 42)"
 }
 ```
@@ -103,6 +110,11 @@ Playwright 同步断言：
 - 右侧 detail pane 存在，四栏结构成立。
 - Files 页面没有 `来源` 主视角列，避免退回“聊天来源文件”组织。
 - `聊天文件` 仍存在于左下菜单二级入口。
+- 点击左下菜单的 `聊天文件` 可以打开按来源会话组织的弹窗，不切换当前模块。
+- 点击右上角消息中心铃铛可以打开 Inbox 三栏弹窗，不切换当前模块。
+- Inbox 弹窗包含左侧分类、中间待处理列表、右侧来源入口和快捷动作。
+- 单个审批在中间列表项展开，完整展示动作、目标资源、风险说明、影响范围和批准/拒绝操作。
+- 在 Inbox 批准同一条审批后，回到 Chat inline 卡片能看到 `已批准`，证明两处不是两份互相漂移的 UI 状态。
 
 ## 视觉 Verdict
 

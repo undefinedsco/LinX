@@ -5,9 +5,11 @@ import {
   Bell,
   Bot,
   Check,
+  CheckCircle2,
   ChevronRight,
   Clock3,
   Contact,
+  ExternalLink,
   Download,
   FileArchive,
   FileText,
@@ -38,6 +40,7 @@ import '../../web/src/index.css'
 import './prototype.css'
 
 type ModuleId = 'chat' | 'contacts' | 'files' | 'favorites'
+type InboxItemStatus = 'pending' | 'approved' | 'denied'
 
 type IconType = typeof MessageSquare
 
@@ -67,6 +70,29 @@ interface FileRow {
   active?: boolean
 }
 
+interface ChatFileItem {
+  id: string
+  name: string
+  kind: string
+  source: string
+  path: string
+  time: string
+  size: string
+  icon: IconType
+  active?: boolean
+}
+
+interface InboxItem {
+  id: string
+  kind: 'approval' | 'auth' | 'notice'
+  title: string
+  source: string
+  target: string
+  risk: string
+  time: string
+  icon: IconType
+}
+
 const navItems: NavItem[] = [
   { id: 'chat', label: '聊天', icon: MessageSquare },
   { id: 'contacts', label: '联系人', icon: Contact },
@@ -74,8 +100,8 @@ const navItems: NavItem[] = [
   { id: 'favorites', label: '收藏', icon: Star },
 ]
 
-const menuItems = [
-  { label: '聊天文件', icon: FileArchive },
+const menuItems: Array<{ label: string; icon: IconType; action?: 'chatFiles' }> = [
+  { label: '聊天文件', icon: FileArchive, action: 'chatFiles' },
   { label: '聊天记录管理', icon: FileText },
   { label: '锁定', icon: LockKeyhole },
   { label: '设置', icon: Settings },
@@ -191,6 +217,83 @@ const favorites: Array<{ group: string; items: ListItem[] }> = [
   },
 ]
 
+const chatFileItems: ChatFileItem[] = [
+  {
+    id: 'layout',
+    name: 'prototype-layout.png',
+    kind: '图片',
+    source: 'AI Secretary · 原型调整',
+    path: '/files/images/prototype-layout.png',
+    time: '09:43',
+    size: '2.1 MB',
+    icon: Image,
+    active: true,
+  },
+  {
+    id: 'access',
+    name: 'multi-channel-access.md',
+    kind: '文档',
+    source: 'LinX 原型工作区',
+    path: '/files/docs/multi-channel-access.md',
+    time: '09:35',
+    size: '18 KB',
+    icon: FileText,
+  },
+  {
+    id: 'release',
+    name: 'xpod-0.2.36.tgz',
+    kind: '运行产物',
+    source: 'Cloud Node',
+    path: '/files/releases/xpod-0.2.36.tgz',
+    time: '昨天',
+    size: '412 KB',
+    icon: FileArchive,
+  },
+  {
+    id: 'draw',
+    name: 'right.codes/draw',
+    kind: '链接',
+    source: '我的空间',
+    path: 'https://www.right.codes/draw',
+    time: 'Tue',
+    size: 'URL',
+    icon: Link2,
+  },
+]
+
+const inboxItems: InboxItem[] = [
+  {
+    id: 'write-secretary-profile',
+    kind: 'approval',
+    title: '允许 AI Secretary 写入个人卡片',
+    source: 'AI Secretary · 原型调整',
+    target: '/.data/agents/secretary/profile.ttl',
+    risk: '会修改默认助手的名称、头像和欢迎语。',
+    time: '09:44',
+    icon: ShieldCheck,
+  },
+  {
+    id: 'connect-cloudflare',
+    kind: 'auth',
+    title: 'Cloudflare Tunnel 需要重新认证',
+    source: 'Local Provider',
+    target: 'node-0000.undefineds.co',
+    risk: '认证完成后外网访问路由会更新。',
+    time: '09:18',
+    icon: ExternalLink,
+  },
+  {
+    id: 'sync-finished',
+    kind: 'notice',
+    title: '工作区快照已同步',
+    source: 'linx-prototype workspace',
+    target: '/.data/workspaces/linx-prototype/.meta',
+    risk: '无操作要求，可回到 Chat 继续。',
+    time: '昨天',
+    icon: CheckCircle2,
+  },
+]
+
 function AvatarMark({ icon: Icon, active = false }: { icon: IconType; active?: boolean }) {
   return (
     <span className={`avatar-mark ${active ? 'active' : ''}`}>
@@ -202,9 +305,11 @@ function AvatarMark({ icon: Icon, active = false }: { icon: IconType; active?: b
 function Sidebar({
   activeModule,
   onChangeModule,
+  onOpenSecondary,
 }: {
   activeModule: ModuleId
   onChangeModule: (module: ModuleId) => void
+  onOpenSecondary: (surface: 'chatFiles') => void
 }) {
   return (
     <aside className="side-rail">
@@ -232,7 +337,13 @@ function Sidebar({
           {menuItems.map((item) => {
             const Icon = item.icon
             return (
-              <button key={item.label} role="menuitem">
+              <button
+                key={item.label}
+                role="menuitem"
+                onClick={() => {
+                  if (item.action) onOpenSecondary(item.action)
+                }}
+              >
                 <Icon size={16} />
                 <span>{item.label}</span>
               </button>
@@ -280,12 +391,12 @@ function ListRow({ item, dense = false }: { item: ListItem; dense?: boolean }) {
   )
 }
 
-function TopTools() {
+function TopTools({ pendingCount, onOpenInbox }: { pendingCount: number; onOpenInbox: () => void }) {
   return (
     <div className="top-tools">
-      <button className="icon-button" aria-label="消息中心">
+      <button className="icon-button" aria-label="消息中心" onClick={onOpenInbox}>
         <Bell size={16} />
-        <i />
+        {pendingCount > 0 ? <i /> : null}
       </button>
       <button className="icon-button" aria-label="更多">
         <MoreHorizontal size={17} />
@@ -312,7 +423,55 @@ function ChatList() {
   )
 }
 
-function ChatMain() {
+function ApprovalInlineCard({
+  status,
+  onApprove,
+  onDeny,
+  onOpenInbox,
+}: {
+  status: InboxItemStatus
+  onApprove: () => void
+  onDeny: () => void
+  onOpenInbox: () => void
+}) {
+  const isPending = status === 'pending'
+  return (
+    <article className="message-card secretary approval-inline">
+      <AvatarMark icon={ShieldCheck} active={isPending} />
+      <div>
+        <strong>需要你确认：写入 AI Secretary 个人卡片</strong>
+        <p>目标：/.data/agents/secretary/profile.ttl</p>
+        <p>影响：更新默认助手名称、头像和欢迎语。</p>
+        <div className="approval-actions">
+          {isPending ? (
+            <>
+              <button className="primary" onClick={onApprove}>批准</button>
+              <button onClick={onDeny}>拒绝</button>
+            </>
+          ) : (
+            <span className={`status-pill ${status}`}>{status === 'approved' ? '已批准' : '已拒绝'}</span>
+          )}
+          <button onClick={onOpenInbox}>查看 Inbox</button>
+        </div>
+        <time>09:44</time>
+      </div>
+    </article>
+  )
+}
+
+function ChatMain({
+  pendingCount,
+  approvalStatus,
+  onApprove,
+  onDeny,
+  onOpenInbox,
+}: {
+  pendingCount: number
+  approvalStatus: InboxItemStatus
+  onApprove: () => void
+  onDeny: () => void
+  onOpenInbox: () => void
+}) {
   return (
     <main className="work-pane chat-work">
       <header className="work-header">
@@ -320,7 +479,7 @@ function ChatMain() {
           <h1>AI Secretary</h1>
           <p>当前 Thread · 默认助手 · Pod 已同步</p>
         </div>
-        <TopTools />
+        <TopTools pendingCount={pendingCount} onOpenInbox={onOpenInbox} />
       </header>
       <section className="chat-stage">
         <div className="day-label">今天</div>
@@ -336,6 +495,12 @@ function ChatMain() {
             <time>09:41</time>
           </div>
         </article>
+        <ApprovalInlineCard
+          status={approvalStatus}
+          onApprove={onApprove}
+          onDeny={onDeny}
+          onOpenInbox={onOpenInbox}
+        />
         <article className="message-card mine">
           <p>按新模型继续重做原型，保持界面接近用户心智。</p>
           <time>09:42 ✓</time>
@@ -405,7 +570,7 @@ function ContactsList() {
   )
 }
 
-function ContactsMain() {
+function ContactsMain({ pendingCount, onOpenInbox }: { pendingCount: number; onOpenInbox: () => void }) {
   return (
     <main className="work-pane contact-work">
       <header className="work-header">
@@ -413,7 +578,7 @@ function ContactsMain() {
           <h1>AI Secretary</h1>
           <p>联系人投影，链接到默认 Agent</p>
         </div>
-        <TopTools />
+        <TopTools pendingCount={pendingCount} onOpenInbox={onOpenInbox} />
       </header>
       <section className="contact-profile-card">
         <AvatarMark icon={Bot} active />
@@ -574,7 +739,7 @@ function FavoritesList() {
   )
 }
 
-function FavoritesMain() {
+function FavoritesMain({ pendingCount, onOpenInbox }: { pendingCount: number; onOpenInbox: () => void }) {
   return (
     <main className="work-pane favorites-work">
       <header className="work-header">
@@ -582,7 +747,7 @@ function FavoritesMain() {
           <h1>Favorites</h1>
           <p>回到原消息、原文件、原联系人</p>
         </div>
-        <TopTools />
+        <TopTools pendingCount={pendingCount} onOpenInbox={onOpenInbox} />
       </header>
       <section className="saved-feed">
         {favorites.map((group) => (
@@ -635,6 +800,222 @@ function FavoritesDetail() {
   )
 }
 
+function ChatFilesDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  if (!open) return null
+
+  return (
+    <div className="modal-layer chat-files-layer" role="dialog" aria-label="聊天文件">
+      <button className="modal-backdrop" aria-label="关闭聊天文件" onClick={onClose} />
+      <section className="modal-panel chat-files-panel">
+        <header className="modal-header">
+          <div>
+            <h2>聊天文件</h2>
+            <p>按聊天来源查看附件、链接和运行产物</p>
+          </div>
+          <button className="icon-button" aria-label="关闭聊天文件弹窗" onClick={onClose}>
+            <ChevronRight size={17} />
+          </button>
+        </header>
+        <div className="chat-files-modal-body">
+          <aside className="chat-files-source">
+            <SearchHeader placeholder="搜索聊天文件、来源会话或链接" />
+            <div className="folder-tabs">
+              {['当前聊天', '最近', '图片', '文档', '链接'].map((tab, index) => (
+                <button className={index === 0 ? 'active' : ''} key={tab}>{tab}</button>
+              ))}
+            </div>
+            <div className="list-scroll grouped">
+              <div className="row-group">
+                <h3>来源会话</h3>
+                {chats.slice(0, 4).map((chat, index) => (
+                  <ListRow dense item={{ ...chat, active: index === 0 }} key={chat.id} />
+                ))}
+              </div>
+            </div>
+          </aside>
+          <main className="chat-files-content">
+            <div className="chat-file-summary">
+              <span>AI Secretary</span>
+              <strong>4 个文件</strong>
+              <small>只组织聊天来源；完整 Pod 浏览仍在「文件」模块。</small>
+            </div>
+            <div className="chat-file-list">
+              {chatFileItems.map((item) => {
+                const Icon = item.icon
+                return (
+                  <button className={item.active ? 'active' : ''} key={item.id}>
+                    <AvatarMark icon={Icon} active={item.active} />
+                    <span className="chat-file-main">
+                      <strong>{item.name}</strong>
+                      <small>{item.source}</small>
+                    </span>
+                    <span>{item.kind}</span>
+                    <time>{item.time}</time>
+                  </button>
+                )
+              })}
+            </div>
+          </main>
+          <aside className="chat-files-detail">
+            <section className="identity-card file-identity">
+              <AvatarMark icon={Image} active />
+              <h2>prototype-layout.png</h2>
+              <p>来自 AI Secretary 的文件消息</p>
+            </section>
+            <section className="detail-card">
+              <h3>来源</h3>
+              <DetailLine icon={MessageSquare} label="Thread" value="原型调整" />
+              <DetailLine icon={Bot} label="Agent" value="AI Secretary" />
+              <DetailLine icon={Clock3} label="Message" value="今天 09:43" />
+            </section>
+            <section className="info-stack">
+              <InfoRow label="Path" value="/files/images/prototype-layout.png" />
+              <InfoRow label="Size" value="2.1 MB" />
+              <InfoRow label="Type" value="image/png" />
+              <InfoRow label="Relation" value="source message URI" />
+            </section>
+            <div className="primary-actions vertical">
+              <button className="primary"><MessageSquare size={15} /> 回到消息</button>
+              <button><FolderOpen size={15} /> 在文件中打开</button>
+            </div>
+          </aside>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function InboxSheet({
+  open,
+  items,
+  approvalStatus,
+  onApprove,
+  onDeny,
+  onClose,
+}: {
+  open: boolean
+  items: InboxItem[]
+  approvalStatus: InboxItemStatus
+  onApprove: () => void
+  onDeny: () => void
+  onClose: () => void
+}) {
+  if (!open) return null
+  const activeItem = items[0]
+  const activeStatus = approvalStatus
+
+  return (
+    <div className="modal-layer inbox-layer" role="dialog" aria-label="Inbox">
+      <button className="modal-backdrop" aria-label="关闭 Inbox" onClick={onClose} />
+      <aside className="modal-panel inbox-panel">
+        <header className="modal-header">
+          <div>
+            <h2>Inbox</h2>
+            <p>待审批、待认证和异步通知</p>
+          </div>
+          <button className="icon-button" aria-label="关闭" onClick={onClose}>
+            <ChevronRight size={17} />
+          </button>
+        </header>
+        <div className="inbox-three-column">
+          <aside className="inbox-filter-column">
+            <div className="inbox-filter-title">分类</div>
+            {[
+              { label: '全部', count: 3, icon: Bell, active: true },
+              { label: '待审批', count: activeStatus === 'pending' ? 1 : 0, icon: ShieldCheck },
+              { label: '待认证', count: 1, icon: ExternalLink },
+              { label: '通知', count: 1, icon: CheckCircle2 },
+            ].map((filter) => {
+              const Icon = filter.icon
+              return (
+                <button className={filter.active ? 'active' : ''} key={filter.label}>
+                  <Icon size={15} />
+                  <span>{filter.label}</span>
+                  <strong>{filter.count}</strong>
+                </button>
+              )
+            })}
+          </aside>
+          <section className="inbox-list-column">
+            <div className="inbox-column-header">
+              <h3>待处理</h3>
+              <span>{activeStatus === 'pending' ? '2 pending' : '1 pending'}</span>
+            </div>
+            <div className="inbox-list-scroll">
+              {items.map((item, index) => {
+                const Icon = item.icon
+                const status = item.id === 'write-secretary-profile' ? approvalStatus : item.kind === 'notice' ? 'approved' : 'pending'
+                return (
+                  <article className={`inbox-item ${status} ${index === 0 ? 'active' : ''}`} key={item.id}>
+                    <AvatarMark icon={Icon} active={status === 'pending'} />
+                    <div>
+                      <span className="inbox-item-title">
+                        <strong>{item.title}</strong>
+                        <time>{item.time}</time>
+                      </span>
+                      <p>{item.source}</p>
+                      <small>{item.target}</small>
+                      {index === 0 ? (
+                        <div className="inbox-expanded-approval">
+                          <div className="approval-detail-row">
+                            <span>动作</span>
+                            <strong>写入 AI Secretary 个人卡片</strong>
+                          </div>
+                          <div className="approval-detail-row">
+                            <span>目标资源</span>
+                            <strong>{activeItem.target}</strong>
+                          </div>
+                          <div className="approval-detail-row">
+                            <span>风险说明</span>
+                            <strong>{activeItem.risk}</strong>
+                          </div>
+                          <div className="approval-detail-row">
+                            <span>影响范围</span>
+                            <strong>profile:name / profile:avatar / secretary:welcomeMessage</strong>
+                          </div>
+                          <p>只影响默认助手个人卡片，不会修改 Workspace、Repository 或聊天历史。</p>
+                          <div className="approval-actions inbox-expanded-actions">
+                            {activeStatus === 'pending' ? (
+                              <>
+                                <button className="primary" onClick={onApprove}>批准</button>
+                                <button onClick={onDeny}>拒绝</button>
+                              </>
+                            ) : (
+                              <span className={`status-pill ${activeStatus}`}>{activeStatus === 'approved' ? '已批准' : '已拒绝'}</span>
+                            )}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+          </section>
+          <aside className="inbox-detail-column">
+            <section className="inbox-entry-card">
+              <h3>入口</h3>
+              <button className="wide-action strong"><MessageSquare size={15} /> 回到来源消息</button>
+              <button className="wide-action"><Bot size={15} /> 打开 AI Secretary</button>
+              <button className="wide-action"><FileText size={15} /> 查看目标资源</button>
+            </section>
+            <section className="inbox-entry-card">
+              <h3>当前选择</h3>
+              <DetailLine icon={ShieldCheck} label="Type" value="Approval" />
+              <DetailLine icon={Clock3} label="Time" value={activeItem.time} />
+              <DetailLine icon={Bot} label="Source" value="AI Secretary" />
+            </section>
+            <section className="inbox-entry-card compact">
+              <h3>策略</h3>
+              <p>高风险写入手动确认；批准后 Chat inline 卡和 Inbox 同步更新。</p>
+            </section>
+          </aside>
+        </div>
+      </aside>
+    </div>
+  )
+}
+
 function DetailLine({ icon: Icon, label, value }: { icon: IconType; label: string; value: string }) {
   return (
     <div className="detail-line">
@@ -658,12 +1039,26 @@ function ExternalIcon() {
   return <ChevronRight size={15} />
 }
 
-function ModuleSurface({ activeModule }: { activeModule: ModuleId }) {
+function ModuleSurface({
+  activeModule,
+  pendingCount,
+  approvalStatus,
+  onApprove,
+  onDeny,
+  onOpenInbox,
+}: {
+  activeModule: ModuleId
+  pendingCount: number
+  approvalStatus: InboxItemStatus
+  onApprove: () => void
+  onDeny: () => void
+  onOpenInbox: () => void
+}) {
   if (activeModule === 'contacts') {
     return (
       <>
         <ContactsList />
-        <ContactsMain />
+        <ContactsMain pendingCount={pendingCount} onOpenInbox={onOpenInbox} />
         <ContactsDetail />
       </>
     )
@@ -681,7 +1076,7 @@ function ModuleSurface({ activeModule }: { activeModule: ModuleId }) {
     return (
       <>
         <FavoritesList />
-        <FavoritesMain />
+        <FavoritesMain pendingCount={pendingCount} onOpenInbox={onOpenInbox} />
         <FavoritesDetail />
       </>
     )
@@ -689,7 +1084,13 @@ function ModuleSurface({ activeModule }: { activeModule: ModuleId }) {
   return (
     <>
       <ChatList />
-      <ChatMain />
+      <ChatMain
+        pendingCount={pendingCount}
+        approvalStatus={approvalStatus}
+        onApprove={onApprove}
+        onDeny={onDeny}
+        onOpenInbox={onOpenInbox}
+      />
       <ChatDetail />
     </>
   )
@@ -697,13 +1098,37 @@ function ModuleSurface({ activeModule }: { activeModule: ModuleId }) {
 
 function PrototypeApp() {
   const [activeModule, setActiveModule] = useState<ModuleId>('chat')
+  const [chatFilesOpen, setChatFilesOpen] = useState(false)
+  const [inboxOpen, setInboxOpen] = useState(false)
+  const [approvalStatus, setApprovalStatus] = useState<InboxItemStatus>('pending')
+  const pendingCount = approvalStatus === 'pending' ? 2 : 1
 
   return (
     <div className="prototype-page light">
       <div className="principle-badge">Mindset prototype · chat-first</div>
       <div className="prototype-shell" data-module={activeModule}>
-        <Sidebar activeModule={activeModule} onChangeModule={setActiveModule} />
-        <ModuleSurface activeModule={activeModule} />
+        <Sidebar
+          activeModule={activeModule}
+          onChangeModule={setActiveModule}
+          onOpenSecondary={() => setChatFilesOpen(true)}
+        />
+        <ModuleSurface
+          activeModule={activeModule}
+          pendingCount={pendingCount}
+          approvalStatus={approvalStatus}
+          onApprove={() => setApprovalStatus('approved')}
+          onDeny={() => setApprovalStatus('denied')}
+          onOpenInbox={() => setInboxOpen(true)}
+        />
+        <InboxSheet
+          open={inboxOpen}
+          items={inboxItems}
+          approvalStatus={approvalStatus}
+          onApprove={() => setApprovalStatus('approved')}
+          onDeny={() => setApprovalStatus('denied')}
+          onClose={() => setInboxOpen(false)}
+        />
+        <ChatFilesDialog open={chatFilesOpen} onClose={() => setChatFilesOpen(false)} />
       </div>
     </div>
   )
