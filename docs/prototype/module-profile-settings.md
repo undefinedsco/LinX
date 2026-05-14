@@ -10,7 +10,8 @@ Profile 和 Settings 是低频入口。主流程不应该被账号说明、provi
 - 退出登录。
 - 账号摘要。
 - 服务状态。
-- 模型服务入口。
+- 密钥入口。
+- 模型入口。
 - Local/Cloud provider 管理入口。
 
 ## 不做
@@ -36,9 +37,36 @@ Profile 和 Settings 是低频入口。主流程不应该被账号说明、provi
 
 - 账号。
 - 服务。
-- 模型服务。
 - Local 供应商。
 - 关于。
+
+## 密钥与模型
+
+密钥和模型是与设置并列的左下底部菜单二级页面，不嵌在设置页里。两者共同构成共享 AI 配置池，不属于 Contact、Agent 个人卡片或 Session 详情。
+
+供应商只是密钥页和模型页里的分组，例如 OpenAI、RightCodes、OpenAI-compatible；不另做供应商设置页。
+
+密钥模块展示：
+
+- 命名密钥。
+- provider。
+- masked key。
+- 使用范围。
+- default / ready / paused 状态。
+- 当前是否 active。
+- 当前是否 in use。
+- 最近使用来源。
+- 异常状态，例如 HTTP 429 / rate limited、HTTP 500 / server error。
+
+模型模块展示：
+
+- 模型名称。
+- provider。
+- 路由用途。
+- 使用的 credential。
+- 默认模型与 fallback 策略。
+
+Agent 只保存默认偏好或运行策略：优先使用标记为 default 的 provider/model/credential；没有 default 时再按共享配置池策略轮询或提示配置。
 
 ## 退出登录
 
@@ -67,3 +95,7 @@ Local 服务只在用户选择 Local 路径时启动。
 - 退出后主界面消失。
 - 重新登录能恢复主界面。
 - Local 相关设置不影响 Cloud-only 登录。
+- 密钥和模型只在左下低频入口出现，不阻断 Chat 首屏。
+- 密钥不会展示明文 API key，也不会出现在联系人详情或 Session 详情里。
+- 密钥列表能看出当前激活、使用中、429/rate limited 和 500/server error 状态。
+- 供应商只作为密钥和模型的分组，不额外出现供应商设置页。

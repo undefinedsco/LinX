@@ -13,6 +13,7 @@
 - `文件` 是 Finder/Pod resource 浏览视角，不按聊天来源组织。
 - `聊天文件` 是左下低频菜单弹窗入口，不成为一级模块。
 - `Inbox` 是右上角三栏通知弹窗，不成为一级模块；审批详情在中间列表项展开，右侧保留入口，Chat inline 审批卡和 Inbox 状态同步。
+- `密钥` 和 `模型` 是左下底部菜单里与 `设置` 并列的二级页面；供应商只作为两者内部的分组。
 - 视觉颜色使用现有全局 token，不在原型里另起品牌色。
 
 ## 设计产物
@@ -81,6 +82,8 @@ yarn workspace @linx/prototype dev --host 127.0.0.1 --port 5871
 | Favorites / 回跳索引 | `docs/prototype/assets/prototype-favorites-redesign-1440x900.png` |
 | Chat Files / 底部菜单弹窗 | `docs/prototype/assets/prototype-chat-files-modal-1440x900.png` |
 | Inbox / 三栏通知与审批弹窗 | `docs/prototype/assets/prototype-inbox-modal-1440x900.png` |
+| Keys / 供应商分组密钥页 | `docs/prototype/assets/prototype-keys-1440x900.png` |
+| Models / 供应商分组模型页 | `docs/prototype/assets/prototype-models-1440x900.png` |
 
 ## DOM 断言
 
@@ -97,6 +100,9 @@ Playwright 同步断言：
   "chatFilesOpensAsModalFromBottomMenu": true,
   "inboxOpensAsModalFromBell": true,
   "inboxHasThreeColumns": true,
+  "keysOpensFromBottomMenu": true,
+  "modelsOpensFromBottomMenu": true,
+  "settingsRemainsSeparate": true,
   "approvalStatusSyncsBetweenInboxAndChat": true,
   "sampleTextColor": "rgb(15, 23, 42)"
 }
@@ -115,6 +121,11 @@ Playwright 同步断言：
 - Inbox 弹窗包含左侧分类、中间待处理列表、右侧来源入口和快捷动作。
 - 单个审批在中间列表项展开，完整展示动作、目标资源、风险说明、影响范围和批准/拒绝操作。
 - 在 Inbox 批准同一条审批后，回到 Chat inline 卡片能看到 `已批准`，证明两处不是两份互相漂移的 UI 状态。
+- 点击左下菜单的 `密钥` 可以打开供应商分组的密钥二级页面。
+- 点击左下菜单的 `模型` 可以打开供应商分组的模型二级页面。
+- `设置` 与 `密钥`、`模型` 并列，只保留账号、服务、Local 和通知等通用配置。
+- 密钥页面展示当前激活、使用中、429/rate limited 和 500/server error 等状态，并能看到密钥关联的模型路由。
+- 供应商只作为密钥和模型页面里的分组，不额外出现供应商设置页。
 
 ## 视觉 Verdict
 

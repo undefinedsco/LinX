@@ -41,6 +41,7 @@ import './prototype.css'
 
 type ModuleId = 'chat' | 'contacts' | 'files' | 'favorites'
 type InboxItemStatus = 'pending' | 'approved' | 'denied'
+type RailSurface = 'chatFiles' | 'keys' | 'models' | 'settings'
 
 type IconType = typeof MessageSquare
 
@@ -93,6 +94,30 @@ interface InboxItem {
   icon: IconType
 }
 
+interface SecretKeyItem {
+  id: string
+  name: string
+  provider: string
+  masked: string
+  usage: string
+  status: string
+  runtimeState: string
+  health: string
+  linkedModels: string
+  lastUsed: string
+  active?: boolean
+}
+
+interface ModelRouteItem {
+  id: string
+  name: string
+  provider: string
+  route: string
+  credential: string
+  note: string
+  active?: boolean
+}
+
 const navItems: NavItem[] = [
   { id: 'chat', label: '聊天', icon: MessageSquare },
   { id: 'contacts', label: '联系人', icon: Contact },
@@ -100,11 +125,12 @@ const navItems: NavItem[] = [
   { id: 'favorites', label: '收藏', icon: Star },
 ]
 
-const menuItems: Array<{ label: string; icon: IconType; action?: 'chatFiles' }> = [
+const menuItems: Array<{ label: string; icon: IconType; action?: RailSurface }> = [
   { label: '聊天文件', icon: FileArchive, action: 'chatFiles' },
   { label: '聊天记录管理', icon: FileText },
-  { label: '锁定', icon: LockKeyhole },
-  { label: '设置', icon: Settings },
+  { label: '密钥', icon: LockKeyhole, action: 'keys' },
+  { label: '模型', icon: Bot, action: 'models' },
+  { label: '设置', icon: Settings, action: 'settings' },
 ]
 
 const chatFolders = ['全部', '未读', '工作区', '个人']
@@ -294,6 +320,74 @@ const inboxItems: InboxItem[] = [
   },
 ]
 
+const secretKeys: SecretKeyItem[] = [
+  {
+    id: 'openai-team',
+    name: 'OpenAI Team Key',
+    provider: 'OpenAI',
+    masked: 'sk-•••• •••• 92A',
+    usage: 'Chat / Coding',
+    status: 'Default',
+    runtimeState: 'Active · In use',
+    health: 'OK',
+    linkedModels: 'gpt-5.5, gpt-5.3-codex-spark',
+    lastUsed: '正在使用 · AI Secretary',
+    active: true,
+  },
+  {
+    id: 'rightcodes-draw',
+    name: 'RightCodes Draw Key',
+    provider: 'RightCodes',
+    masked: 'rc-•••• •••• 41F',
+    usage: 'Image generation',
+    status: '429',
+    runtimeState: 'Rate limited',
+    health: 'HTTP 429',
+    linkedModels: 'rightcodes-image',
+    lastUsed: '2 分钟前 · 生图请求',
+  },
+  {
+    id: 'local-lab',
+    name: 'Local Lab Key',
+    provider: 'OpenAI-compatible',
+    masked: 'loc-•••• •••• 08C',
+    usage: 'Dev only',
+    status: '500',
+    runtimeState: 'Server error',
+    health: 'HTTP 500',
+    linkedModels: 'local fallback',
+    lastUsed: '7 分钟前 · fallback 运行',
+  },
+]
+
+const modelRoutes: ModelRouteItem[] = [
+  {
+    id: 'frontier',
+    name: 'gpt-5.5',
+    provider: 'OpenAI',
+    route: '默认对话 / coding',
+    credential: 'OpenAI Team Key',
+    note: '标记为 default，优先使用。',
+    active: true,
+  },
+  {
+    id: 'spark',
+    name: 'gpt-5.3-codex-spark',
+    provider: 'OpenAI',
+    route: '快速搜索 / explore',
+    credential: 'OpenAI Team Key',
+    note: '低延迟任务走 fast lane。',
+  },
+  {
+    id: 'image',
+    name: 'rightcodes-image',
+    provider: 'RightCodes',
+    route: '图片生成 / 修改',
+    credential: 'RightCodes Draw Key',
+    note: 'Base URL: /v1/images/generations。',
+  },
+]
+
 function AvatarMark({ icon: Icon, active = false }: { icon: IconType; active?: boolean }) {
   return (
     <span className={`avatar-mark ${active ? 'active' : ''}`}>
@@ -309,7 +403,7 @@ function Sidebar({
 }: {
   activeModule: ModuleId
   onChangeModule: (module: ModuleId) => void
-  onOpenSecondary: (surface: 'chatFiles') => void
+  onOpenSecondary: (surface: RailSurface) => void
 }) {
   return (
     <aside className="side-rail">
@@ -1016,6 +1110,236 @@ function InboxSheet({
   )
 }
 
+function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  if (!open) return null
+
+  return (
+    <div className="modal-layer settings-layer" role="dialog" aria-label="设置">
+      <button className="modal-backdrop" aria-label="关闭设置" onClick={onClose} />
+      <section className="modal-panel settings-panel">
+        <header className="modal-header">
+          <div>
+            <h2>设置</h2>
+            <p>账号、服务、Local 和通知；密钥与模型在底部菜单中独立打开</p>
+          </div>
+          <button className="icon-button" aria-label="关闭设置弹窗" onClick={onClose}>
+            <ChevronRight size={17} />
+          </button>
+        </header>
+        <div className="settings-three-column">
+          <aside className="settings-nav-column">
+            <div className="settings-nav-title">设置</div>
+            {[
+              { label: '账号', icon: UserRound, active: true },
+              { label: '服务状态', icon: ShieldCheck },
+              { label: 'Local Provider', icon: Home },
+              { label: '通知', icon: Bell },
+              { label: '关于', icon: FileText },
+            ].map((item) => {
+              const Icon = item.icon
+              return (
+                <button className={item.active ? 'active' : ''} key={item.label}>
+                  <Icon size={15} />
+                  <span>{item.label}</span>
+                </button>
+              )
+            })}
+          </aside>
+          <main className="settings-main-column">
+            <section className="settings-section-card">
+              <div className="settings-section-header">
+                <div>
+                  <h3>账号</h3>
+                  <p>登录状态、Pod 状态和基础资料。</p>
+                </div>
+              </div>
+              <div className="settings-info-list">
+                <InfoRow label="Account" value="gan@undefineds.co" />
+                <InfoRow label="Provider" value="Cloud" />
+                <InfoRow label="Pod" value="Connected" />
+                <InfoRow label="WebID" value="https://gan.undefineds.co/profile/card#me" />
+              </div>
+            </section>
+            <section className="settings-section-card">
+              <div className="settings-section-header">
+                <div>
+                  <h3>低频入口</h3>
+                  <p>密钥和模型是并列二级页面，不放进设置内部。</p>
+                </div>
+              </div>
+              <div className="settings-shortcut-list">
+                <button><LockKeyhole size={16} /> 密钥</button>
+                <button><Bot size={16} /> 模型</button>
+              </div>
+            </section>
+          </main>
+          <aside className="settings-detail-column">
+            <section className="settings-detail-card">
+              <h3>当前状态</h3>
+              <DetailLine icon={Check} label="Login" value="Active" />
+              <DetailLine icon={Home} label="Local" value="Off" />
+              <DetailLine icon={Bell} label="Notice" value="Enabled" />
+            </section>
+            <section className="settings-detail-card">
+              <h3>边界</h3>
+              <p>设置不管理供应商；供应商只是密钥和模型页面里的分组。</p>
+            </section>
+          </aside>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function KeysDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  if (!open) return null
+
+  return (
+    <div className="modal-layer settings-layer" role="dialog" aria-label="密钥">
+      <button className="modal-backdrop" aria-label="关闭密钥" onClick={onClose} />
+      <section className="modal-panel settings-panel">
+        <header className="modal-header">
+          <div>
+            <h2>密钥</h2>
+            <p>按供应商分组的共享 credential 池；不展示明文 API key</p>
+          </div>
+          <button className="icon-button" aria-label="关闭密钥弹窗" onClick={onClose}>
+            <ChevronRight size={17} />
+          </button>
+        </header>
+        <div className="settings-three-column keys-surface">
+          <aside className="settings-nav-column">
+            <div className="settings-nav-title">供应商</div>
+            {['全部', 'OpenAI', 'RightCodes', 'OpenAI-compatible'].map((label, index) => (
+              <button className={index === 0 ? 'active' : ''} key={label}>
+                <LockKeyhole size={15} />
+                <span>{label}</span>
+              </button>
+            ))}
+          </aside>
+          <main className="settings-main-column">
+            {['OpenAI', 'RightCodes', 'OpenAI-compatible'].map((provider) => (
+              <section className="settings-section-card" key={provider}>
+                <div className="settings-section-header">
+                  <div>
+                    <h3>{provider}</h3>
+                    <p>供应商只是分组，不是单独设置页。</p>
+                  </div>
+                  <button><Plus size={15} /> 新密钥</button>
+                </div>
+                <div className="secret-list">
+                  {secretKeys.filter((item) => item.provider === provider).map((item) => (
+                    <button className={item.active ? 'active' : ''} key={item.id}>
+                      <AvatarMark icon={LockKeyhole} active={item.active} />
+                      <span>
+                        <strong>{item.name}</strong>
+                        <small>{item.masked}</small>
+                        <small>{item.runtimeState} · {item.lastUsed}</small>
+                      </span>
+                      <em className={item.health === 'HTTP 429' || item.health === 'HTTP 500' ? 'danger' : item.active ? 'active' : ''}>{item.health.startsWith('HTTP') ? item.health : item.status}</em>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </main>
+          <aside className="settings-detail-column">
+            <section className="settings-detail-card">
+              <h3>当前激活</h3>
+              <InfoRow label="Key" value="OpenAI Team Key" />
+              <InfoRow label="State" value="Active · In use" />
+              <InfoRow label="Models" value="gpt-5.5 / spark" />
+            </section>
+            <section className="settings-detail-card warning">
+              <h3>异常记录</h3>
+              <InfoRow label="HTTP 429" value="RightCodes Draw Key" />
+              <InfoRow label="HTTP 500" value="Local Lab Key" />
+            </section>
+            <section className="settings-detail-card compact">
+              <h3>边界</h3>
+              <p>密钥只在这里维护；Agent 和 Session 只引用偏好，不保存 API key。</p>
+            </section>
+          </aside>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function ModelsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  if (!open) return null
+
+  return (
+    <div className="modal-layer settings-layer" role="dialog" aria-label="模型">
+      <button className="modal-backdrop" aria-label="关闭模型" onClick={onClose} />
+      <section className="modal-panel settings-panel">
+        <header className="modal-header">
+          <div>
+            <h2>模型</h2>
+            <p>按供应商分组的模型路由；引用密钥页面里的 credential</p>
+          </div>
+          <button className="icon-button" aria-label="关闭模型弹窗" onClick={onClose}>
+            <ChevronRight size={17} />
+          </button>
+        </header>
+        <div className="settings-three-column models-surface">
+          <aside className="settings-nav-column">
+            <div className="settings-nav-title">供应商</div>
+            {['全部', 'OpenAI', 'RightCodes'].map((label, index) => (
+              <button className={index === 0 ? 'active' : ''} key={label}>
+                <Bot size={15} />
+                <span>{label}</span>
+              </button>
+            ))}
+          </aside>
+          <main className="settings-main-column">
+            {['OpenAI', 'RightCodes'].map((provider) => (
+              <section className="settings-section-card" key={provider}>
+                <div className="settings-section-header">
+                  <div>
+                    <h3>{provider}</h3>
+                    <p>模型按供应商分组，credential 来自密钥池。</p>
+                  </div>
+                  <button><Plus size={15} /> 新模型</button>
+                </div>
+                <div className="model-route-list">
+                  {modelRoutes.filter((item) => item.provider === provider).map((item) => (
+                    <button className={item.active ? 'active' : ''} key={item.id}>
+                      <span>
+                        <strong>{item.name}</strong>
+                        <small>{item.route}</small>
+                      </span>
+                      <span>{item.credential}</span>
+                      <span>{item.note}</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </main>
+          <aside className="settings-detail-column">
+            <section className="settings-detail-card">
+              <h3>默认策略</h3>
+              <DetailLine icon={Check} label="Default" value="gpt-5.5" />
+              <DetailLine icon={LockKeyhole} label="Key" value="OpenAI Team Key" />
+              <DetailLine icon={Sparkles} label="Fallback" value="轮询可用模型" />
+            </section>
+            <section className="settings-detail-card warning">
+              <h3>受影响模型</h3>
+              <InfoRow label="HTTP 429" value="rightcodes-image" />
+              <InfoRow label="HTTP 500" value="local fallback" />
+            </section>
+            <section className="settings-detail-card compact">
+              <h3>边界</h3>
+              <p>模型页面只配置路由和默认偏好；供应商只是分组，不另设管理页。</p>
+            </section>
+          </aside>
+        </div>
+      </section>
+    </div>
+  )
+}
+
 function DetailLine({ icon: Icon, label, value }: { icon: IconType; label: string; value: string }) {
   return (
     <div className="detail-line">
@@ -1099,6 +1423,9 @@ function ModuleSurface({
 function PrototypeApp() {
   const [activeModule, setActiveModule] = useState<ModuleId>('chat')
   const [chatFilesOpen, setChatFilesOpen] = useState(false)
+  const [keysOpen, setKeysOpen] = useState(false)
+  const [modelsOpen, setModelsOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [inboxOpen, setInboxOpen] = useState(false)
   const [approvalStatus, setApprovalStatus] = useState<InboxItemStatus>('pending')
   const pendingCount = approvalStatus === 'pending' ? 2 : 1
@@ -1110,7 +1437,12 @@ function PrototypeApp() {
         <Sidebar
           activeModule={activeModule}
           onChangeModule={setActiveModule}
-          onOpenSecondary={() => setChatFilesOpen(true)}
+          onOpenSecondary={(surface) => {
+            if (surface === 'chatFiles') setChatFilesOpen(true)
+            if (surface === 'keys') setKeysOpen(true)
+            if (surface === 'models') setModelsOpen(true)
+            if (surface === 'settings') setSettingsOpen(true)
+          }}
         />
         <ModuleSurface
           activeModule={activeModule}
@@ -1129,6 +1461,9 @@ function PrototypeApp() {
           onClose={() => setInboxOpen(false)}
         />
         <ChatFilesDialog open={chatFilesOpen} onClose={() => setChatFilesOpen(false)} />
+        <KeysDialog open={keysOpen} onClose={() => setKeysOpen(false)} />
+        <ModelsDialog open={modelsOpen} onClose={() => setModelsOpen(false)} />
+        <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       </div>
     </div>
   )
