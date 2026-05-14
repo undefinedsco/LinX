@@ -1,6 +1,16 @@
-# Models Dependency Policy
+# Dependency Guide
 
-`packages/models` 是 LinX 对共享数据面依赖的本地 checkout。它是本仓库工程约束，不属于 Solid modeling skill 的临时判断范围。
+这个文档是 LinX 仓库的依赖入口。凡是涉及 workspace 依赖、submodule、npm package 版本、发版产物、`xpod` 或 `models` 升级，都先读这里。
+
+它是本仓库工程约束，不属于 Solid modeling skill 的临时判断范围。
+
+## 触发场景
+
+- 改 `package.json`、`yarn.lock`、workspace dependency 或 release dependency。
+- 升级 `@undefineds.co/xpod`、`@undefineds.co/models`、`@undefineds.co/drizzle-solid` 这类共享基础依赖。
+- 更新 `packages/models` submodule 指针。
+- 打包 CLI/App，或准备发布需要依赖版本一致的产物。
+- 补共享 schema、vocab、repository、runtime contract 或跨端 helper。
 
 ## 依赖形态
 

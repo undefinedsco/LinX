@@ -5,7 +5,8 @@
 ## Mandatory Rules
 
 - `@undefineds.co/models` 是共享数据面权威源；`apps/*` 不得重新定义跨端业务语义。
-- `packages/models` submodule 必须锁到与 `packages/models/package.json` 版本一致的精确 tag；细则见 `docs/models-dependency-policy.md`。
+- 涉及依赖升级、submodule、npm/workspace 版本、发版产物、`xpod` 或 `models` 联动时，先读 `docs/dependency-guide.md`。
+- `packages/models` submodule 必须锁到与 `packages/models/package.json` 版本一致的精确 tag。
 - 结构化 Pod 数据必须走 `drizzle-solid` + schema/repository/collection 路径；不要在 React 组件里直接写 `getSolidDataset`。
 - 查询失败时先修 repository / schema / permissions / SPARQL，不做 UI fallback 掩盖问题。
 - 涉及 Pod 登录、持久化、权限、通知的集成测试，必须跑在自举的 `xpod` + 真实 Pod 上。
@@ -27,10 +28,16 @@ Skill source of truth:
 - repo-local: `.agents/skills/gstack/`
 - fallback: `~/.codex/skills/gstack/`
 
+## Guide Routing
+
+- 依赖、升级、版本、发版、打包、submodule、workspace、npm、yarn lock、`xpod`、`models`、`drizzle-solid` → 先读 `docs/dependency-guide.md`。
+- Solid/RDF/Pod 数据建模、URI/id、schema、vocab、repository、collection → 先读 `docs/cli-app-shared-core.md`，必要时再用 `solid-modeling` skill。
+- UI 视觉、组件分层、样式规范 → 先读 `docs/ui-style-guide.md` 和 `docs/ui-component-architecture.md`。
+
 ## Doc Map
 
 - `docs/cli-app-shared-core.md` — `@undefineds.co/models` 共享数据面、client/watch helper 与 CLI/App 边界
-- `docs/models-dependency-policy.md` — `packages/models` submodule、tag 与 package version 的仓库级依赖规则
+- `docs/dependency-guide.md` — 依赖升级、workspace/npm 版本、`xpod`/`models` 联动与 submodule 锁定规则
 - `docs/desktop-product-strategy.md` — 桌面端 Chat-first + AI-native 产品策略
 - `docs/scene-restoration-solid-modeling.md` — `favorites / inbox / audit / workspace` 的场景恢复与 Solid 建模约束
 - `docs/chat-module-alignment.md` — Chat 模块对齐状态与待修复项
