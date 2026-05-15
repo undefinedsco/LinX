@@ -46,7 +46,6 @@ const slimModelsPkg = {
     './profile.schema': './dist/profile.schema.js',
     './vocab': './dist/vocab/index.js',
     './vocab/sidecar': './dist/vocab/sidecar.vocab.js',
-    './watch': './dist/watch/index.js',
   },
   dependencies: modelsPkg.dependencies,
 }
@@ -61,6 +60,8 @@ const slimAgentRuntimePkg = {
     '.': './dist/index.js',
     './acp': './dist/acp.js',
     './companion-model': './dist/companion-model.js',
+    './runtime': './dist/runtime.js',
+    './auto-mode': './dist/auto-mode.js',
     './turn-controller': './dist/turn-controller.js',
   },
 }
@@ -114,10 +115,11 @@ function rewriteVendorImports(root) {
       ["'@undefineds.co/models/profile.schema'", `'${modelsBase}/profile.schema.js'`],
       ["'@undefineds.co/models/vocab'", `'${modelsBase}/vocab/index.js'`],
       ["'@undefineds.co/models/vocab/sidecar'", `'${modelsBase}/vocab/sidecar.vocab.js'`],
-      ["'@undefineds.co/models/watch'", `'${modelsBase}/watch/index.js'`],
       ["'@linx/agent-runtime'", `'${agentRuntimeBase}/index.js'`],
       ["'@linx/agent-runtime/acp'", `'${agentRuntimeBase}/acp.js'`],
       ["'@linx/agent-runtime/companion-model'", `'${agentRuntimeBase}/companion-model.js'`],
+      ["'@linx/agent-runtime/runtime'", `'${agentRuntimeBase}/runtime.js'`],
+      ["'@linx/agent-runtime/auto-mode'", `'${agentRuntimeBase}/auto-mode.js'`],
       ["'@linx/agent-runtime/turn-controller'", `'${agentRuntimeBase}/turn-controller.js'`],
       ['"@undefineds.co/models"', `"${modelsBase}/index.js"`],
       ['"@undefineds.co/models/client"', `"${modelsBase}/client/index.js"`],
@@ -128,10 +130,11 @@ function rewriteVendorImports(root) {
       ['"@undefineds.co/models/profile.schema"', `"${modelsBase}/profile.schema.js"`],
       ['"@undefineds.co/models/vocab"', `"${modelsBase}/vocab/index.js"`],
       ['"@undefineds.co/models/vocab/sidecar"', `"${modelsBase}/vocab/sidecar.vocab.js"`],
-      ['"@undefineds.co/models/watch"', `"${modelsBase}/watch/index.js"`],
       ['"@linx/agent-runtime"', `"${agentRuntimeBase}/index.js"`],
       ['"@linx/agent-runtime/acp"', `"${agentRuntimeBase}/acp.js"`],
       ['"@linx/agent-runtime/companion-model"', `"${agentRuntimeBase}/companion-model.js"`],
+      ['"@linx/agent-runtime/runtime"', `"${agentRuntimeBase}/runtime.js"`],
+      ['"@linx/agent-runtime/auto-mode"', `"${agentRuntimeBase}/auto-mode.js"`],
       ['"@linx/agent-runtime/turn-controller"', `"${agentRuntimeBase}/turn-controller.js"`],
     ]
     for (const [from, to] of replacements) {

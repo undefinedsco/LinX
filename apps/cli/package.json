@@ -1,6 +1,6 @@
 {
   "name": "@undefineds.co/linx",
-  "version": "0.2.19",
+  "version": "0.2.22",
   "private": true,
   "type": "module",
   "bin": {
@@ -9,7 +9,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit && node ./scripts/build.mjs",
     "dev": "node ./scripts/dev.mjs",
-    "test": "yarn build && node --test test/**/*.test.mjs"
+    "test": "yarn build && node --test --test-concurrency=1 test/**/*.test.mjs"
   },
   "dependencies": {
     "@linx/agent-runtime": "*",

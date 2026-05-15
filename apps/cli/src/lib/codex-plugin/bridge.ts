@@ -1,23 +1,23 @@
 import {
   buildCodexApprovalResponse,
   normalizeCodexAppServerInteractionRequest,
-  type WatchApprovalDecision,
-  type WatchApprovalRequest,
-  type WatchInteractionRequest,
-  type WatchSessionRecord,
-} from '@undefineds.co/models/watch'
-import { createWatchSession, writeWatchSession } from '../watch/archive.js'
-import { createRemoteWatchApproval, waitForRemoteWatchApproval } from '../watch/pod-approval.js'
-import type { WatchRunOptions, WatchSpawnPlan } from '../watch/types.js'
+  type AutoModeApprovalDecision,
+  type AutoModeApprovalRequest,
+  type AutoModeInteractionRequest,
+  type AutoModeSessionRecord,
+} from '@linx/agent-runtime/auto-mode'
+import { createAutoModeSession, writeAutoModeSession } from '../auto-mode/archive.js'
+import { createRemoteAutoModeApproval, waitForRemoteAutoModeApproval } from '../auto-mode/pod-approval.js'
+import type { AutoRunOptions, AutoModeSpawnPlan } from '../auto-mode/types.js'
 
 export interface CodexAttachBridgeRuntime {
-  createRemoteWatchApproval: typeof createRemoteWatchApproval
-  waitForRemoteWatchApproval: typeof waitForRemoteWatchApproval
+  createRemoteAutoModeApproval: typeof createRemoteAutoModeApproval
+  waitForRemoteAutoModeApproval: typeof waitForRemoteAutoModeApproval
 }
 
 export interface CodexAttachDecisionResult {
-  request: WatchApprovalRequest
-  decision: WatchApprovalDecision
+  request: AutoModeApprovalRequest
+  decision: AutoModeApprovalDecision
   response: unknown
 }
 
@@ -32,12 +32,12 @@ export interface CodexAttachBridgeResponse {
 }
 
 export interface CodexAttachBridge {
-  readonly record: WatchSessionRecord
+  readonly record: AutoModeSessionRecord
   handleCodexRequest(message: Record<string, unknown>): Promise<CodexAttachDecisionResult | null>
   handleCodexRpcLine(line: string): Promise<CodexAttachBridgeResponse[]>
 }
 
-const defaultPlan: WatchSpawnPlan = {
+const defaultPlan: AutoModeSpawnPlan = {
   command: 'codex',
   args: [],
 }
@@ -65,9 +65,9 @@ export function createCodexAttachSessionRecord(input: {
   backendSessionId: string
   model?: string
   prompt?: string
-}): WatchSessionRecord {
+}): AutoModeSessionRecord {
   const workspacePath = resolveCodexAttachWorkspacePath(input)
-  const options: WatchRunOptions = {
+  const options: AutoRunOptions = {
     backend: 'codex',
     mode: 'manual',
     cwd: workspacePath,
@@ -76,22 +76,21 @@ export function createCodexAttachSessionRecord(input: {
     passthroughArgs: [],
     runtime: 'local',
     transport: 'acp',
-    credentialSource: 'local',
-    resolvedCredentialSource: 'local',
-    approvalSource: 'remote',
+    credentialSource: 'cloud',
+    resolvedCredentialSource: 'cloud',
   }
 
-  const record = createWatchSession(options, defaultPlan)
+  const record = createAutoModeSession(options, defaultPlan)
   record.backendSessionId = input.backendSessionId
-  writeWatchSession(record)
+  writeAutoModeSession(record)
   return record
 }
 
 export function createCodexAttachBridge(
-  record: WatchSessionRecord,
+  record: AutoModeSessionRecord,
   runtime: CodexAttachBridgeRuntime = {
-    createRemoteWatchApproval,
-    waitForRemoteWatchApproval,
+    createRemoteAutoModeApproval,
+    waitForRemoteAutoModeApproval,
   },
 ): CodexAttachBridge {
   return {
@@ -102,11 +101,11 @@ export function createCodexAttachBridge(
         return null
       }
 
-      const remote = await runtime.createRemoteWatchApproval({
+      const remote = await runtime.createRemoteAutoModeApproval({
         record,
         request: interaction,
       })
-      const decision = await runtime.waitForRemoteWatchApproval({
+      const decision = await runtime.waitForRemoteAutoModeApproval({
         approvalId: remote.id,
       })
 
@@ -163,7 +162,7 @@ export function createCodexAttachBridge(
 }
 
 export function isCodexAttachApprovalRequest(
-  interaction: WatchInteractionRequest | null,
-): interaction is WatchApprovalRequest {
+  interaction: AutoModeInteractionRequest | null,
+): interaction is AutoModeApprovalRequest {
   return Boolean(interaction && interaction.kind !== 'user-input')
 }

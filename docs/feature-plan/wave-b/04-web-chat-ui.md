@@ -65,7 +65,7 @@
 | 01 | `CLISessionVocab` | ChatListPane (Session 项) | `sessionStatus`, `sessionTool`, `tokenUsage` |
 | 01 | `MessageVocab` | MessageList, Message | `content`, `richContent`, `maker`, `role`, `senderName`, `mentions` |
 | 02 | `InboxVocab` | ToolApprovalCard | `toolName`, `toolArguments`, `risk`, `status` |
-| 02 | `AuditVocab` | AuditLogViewer (P2) | `action`, `actor`, `actorRole`, `session`, `entry`, `approval`, `policyVersion` |
+| 02 | `AuditVocab` | AuditLogViewer (P2) | `action`, `actor`, `actorRole`, `session`, `entry`, `toolCallId`, `toolName`, `approval` |
 
 ### 6A.2 chatType → UI 渲染映射
 
@@ -95,7 +95,7 @@ ChatListPane 根据 `chatType` 字段差异化渲染：
 
 ### 6A.4 不新增 Pod 表
 
-Web Chat UI 不新增任何 Pod 表。所有数据读写通过 `@undefineds.co/models` 导出的 schema / repository 合同完成。
+Web Chat UI 不新增任何 Pod 表。所有数据读写通过 `@undefineds.co/models` 导出的 resource 和 repository 完成。
 
 ---
 

@@ -6,10 +6,7 @@ const workspaceRoot = fileURLToPath(new URL('..', import.meta.url))
 const agentRuntimeTsconfig = fileURLToPath(new URL('../../../packages/agent-runtime/tsconfig.json', import.meta.url))
 const distDir = fileURLToPath(new URL('../dist', import.meta.url))
 const distIndex = fileURLToPath(new URL('../dist/index.js', import.meta.url))
-const distWatchCli = fileURLToPath(new URL('../dist/watch-cli.js', import.meta.url))
 const args = process.argv.slice(2)
-const watchMode = args[0] === 'watch'
-const targetEntry = watchMode ? distWatchCli : distIndex
 const compileArgs = [
   '-p',
   'tsconfig.json',
@@ -61,7 +58,7 @@ const compile = spawnSync('tsc', compileArgs, {
   stdio: 'inherit',
 })
 
-if ((compile.status ?? 1) !== 0 && !existsSync(targetEntry)) {
+if ((compile.status ?? 1) !== 0 && !existsSync(distIndex)) {
   process.exit(compile.status ?? 1)
 }
 
@@ -69,7 +66,7 @@ if ((compile.status ?? 1) !== 0) {
   process.stderr.write('[linx-cli] TypeScript emitted with errors; continuing with generated dist output.\n')
 }
 
-const runArgs = watchMode ? [targetEntry, ...args.slice(1)] : [targetEntry, ...args]
+const runArgs = [distIndex, ...args]
 const run = spawnSync(process.execPath, runArgs, {
   cwd: workspaceRoot,
   stdio: 'inherit',

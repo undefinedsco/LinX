@@ -1,10 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { get } from 'node:http'
-import { loadWatchModule } from './watch-test-bundle.mjs'
+import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 
 test('serializeOidcCredentials stores browser consent token set as oidc_oauth credentials', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/oidc-auth.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/oidc-auth.ts')
   t.after(() => cleanup())
 
   const credentials = module.serializeOidcCredentials(
@@ -33,7 +33,7 @@ test('serializeOidcCredentials stores browser consent token set as oidc_oauth cr
 })
 
 test('assertOidcCallbackDidNotReturnError surfaces identity provider callback errors', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/oidc-auth.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/oidc-auth.ts')
   t.after(() => cleanup())
 
   assert.throws(
@@ -49,7 +49,7 @@ test('assertOidcCallbackDidNotReturnError surfaces identity provider callback er
 })
 
 test('isOidcLoginExpiredError recognizes refresh credential failures', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/oidc-auth.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/oidc-auth.ts')
   t.after(() => cleanup())
 
   assert.equal(module.isOidcLoginExpiredError(new Error('Invalid refresh credentials: OPError: invalid_client (client authentication failed)')), true)
@@ -59,7 +59,7 @@ test('isOidcLoginExpiredError recognizes refresh credential failures', async (t)
 })
 
 test('loginWithBrowserConsent cancels manual redirect prompt after browser callback', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/oidc-auth.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/oidc-auth.ts')
   t.after(() => cleanup())
 
   const abortSignals = []
@@ -100,7 +100,7 @@ test('loginWithBrowserConsent cancels manual redirect prompt after browser callb
 })
 
 test('loginWithBrowserConsent keeps waiting when manual redirect prompt is cancelled first', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/oidc-auth.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/oidc-auth.ts')
   t.after(() => cleanup())
 
   let callbackUrl = ''
@@ -137,8 +137,51 @@ test('loginWithBrowserConsent keeps waiting when manual redirect prompt is cance
   assert.equal(callbackHandled, true)
 })
 
+test('loginWithBrowserConsent handles a manually pasted callback URL', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/oidc-auth.ts')
+  t.after(() => cleanup())
+
+  let callbackUrl = ''
+  let callbackHandled = false
+  await module.withCallbackServer(
+    '127.0.0.1',
+    '/auth/callback',
+    async (url) => {
+      callbackUrl = url
+    },
+    async (url) => {
+      callbackHandled = true
+      assert.match(url, /code=manual-code/)
+    },
+    async () => `${callbackUrl}?code=manual-code&state=state`,
+  )
+
+  assert.equal(callbackHandled, true)
+})
+
+test('loginWithBrowserConsent rejects a manually pasted OIDC error callback', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/oidc-auth.ts')
+  t.after(() => cleanup())
+
+  let callbackUrl = ''
+  await assert.rejects(
+    module.withCallbackServer(
+      '127.0.0.1',
+      '/auth/callback',
+      async (url) => {
+        callbackUrl = url
+      },
+      async () => {
+        throw new Error('callback handler should not run for OIDC errors')
+      },
+      async () => `${callbackUrl}?error=server_error&error_description=oops%21`,
+    ),
+    /OIDC callback returned server_error; description: oops!/,
+  )
+})
+
 test('loginWithBrowserConsent can be cancelled by the outer login signal', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/oidc-auth.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/oidc-auth.ts')
   t.after(() => cleanup())
 
   const abortController = new AbortController()

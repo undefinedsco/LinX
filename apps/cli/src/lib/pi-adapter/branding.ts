@@ -3,11 +3,14 @@ import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { readFileSync } from 'node:fs'
 import { LINX_HOME_DIRNAME } from '@undefineds.co/models/client'
-import { initTheme, keyHint, LoginDialogComponent, rawKeyHint } from '@mariozechner/pi-coding-agent'
+import { keyHint, LoginDialogComponent, rawKeyHint } from '@mariozechner/pi-coding-agent'
 import { Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from '@mariozechner/pi-tui'
 import type { OAuthCredentials } from '@mariozechner/pi-ai'
-import { loadCredentials } from '../credentials-store.js'
+import { clearAccountSession } from '../account-session.js'
+import { clearCredentials, loadCredentials } from '../credentials-store.js'
+import { clearOidcSessionStorage } from '../oidc-session-storage.js'
 import { extractUsernameFromWebId, resolveProfileDisplayName } from '../profile-identity.js'
+import { LINX_TUI_KEYMAP_COMMAND, LINX_TUI_KEYMAP_LABEL, LINX_TUI_LOGIN_COMMAND } from '../linx-tui-contract.js'
 
 export const LINX_AGENT_DIR = join(homedir(), LINX_HOME_DIRNAME, 'agent')
 export const LINX_UPDATE_PACKAGE_NAME = '@undefineds.co/linx'
@@ -231,6 +234,9 @@ function patchNativeOAuthSelectors(interactive: any): void {
       const authStorage = this.session?.modelRegistry?.authStorage
       authStorage?.logout?.(LINX_PROVIDER_ID)
       authStorage?.setRuntimeApiKey?.(LINX_PROVIDER_ID, '')
+      clearAccountSession()
+      clearCredentials()
+      clearOidcSessionStorage()
       await refreshLinxAuthState(this)
       this.showStatus?.('Logged out of LinX Cloud.')
       return
@@ -762,15 +768,8 @@ async function runLinxCloudBrowserLogin(
   reason: LinxAuthReason,
 ): Promise<void> {
   if (canRenderLinxLoginDialog(interactive)) {
-    try {
-      await runLinxCloudLoginDialog(interactive, authStorage, reason)
-      return
-    } catch (error) {
-      if (!isThemeInitializationError(error)) {
-        throw error
-      }
-      interactive.showStatus?.('LinX Cloud login prompt unavailable before TUI theme initialization; falling back to browser login.')
-    }
+    await runLinxCloudLoginDialog(interactive, authStorage, reason)
+    return
   }
 
   await runLinxCloudLogin(interactive, authStorage, reason)
@@ -781,8 +780,6 @@ function canRenderLinxLoginDialog(interactive: any): boolean {
     interactive.ui
       && typeof interactive.editorContainer?.clear === 'function'
       && typeof interactive.editorContainer?.addChild === 'function'
-      && typeof interactive.ui?.setFocus === 'function'
-      && typeof interactive.ui?.requestRender === 'function'
       && interactive.editor,
   )
 }
@@ -792,7 +789,6 @@ async function runLinxCloudLoginDialog(
   authStorage: { login(providerId: string, callbacks: unknown): Promise<unknown> },
   reason: LinxAuthReason,
 ): Promise<void> {
-  ensurePiThemeInitialized(interactive)
   const dialog = new LoginDialogComponent(interactive.ui, LINX_PROVIDER_ID, () => undefined)
   const restoreEditor = (): void => {
     interactive.editorContainer.clear()
@@ -1064,37 +1060,11 @@ export function buildLinxWelcomeCardState(interactive: any, profileDisplayName: 
     workspace,
     session,
     next: [
-      safeKeyHint('tui.input.submit', 'send', 'enter send'),
-      safeKeyHint('app.model.select', 'model', 'ctrl+l model'),
-      rawKeyHint('/login', 'auth'),
-      rawKeyHint('/hotkeys', 'keymap'),
+      keyHint('tui.input.submit', 'send'),
+      keyHint('app.model.select', 'model'),
+      rawKeyHint(LINX_TUI_LOGIN_COMMAND, 'auth'),
+      rawKeyHint(LINX_TUI_KEYMAP_COMMAND, LINX_TUI_KEYMAP_LABEL),
     ].join(' \x1b[2m·\x1b[22m '),
-  }
-}
-
-function safeKeyHint(command: Parameters<typeof keyHint>[0], label: string, fallback: string): string {
-  try {
-    return keyHint(command, label)
-  } catch (error) {
-    if (isThemeInitializationError(error)) {
-      return fallback
-    }
-    throw error
-  }
-}
-
-function isThemeInitializationError(error: unknown): boolean {
-  return error instanceof Error && error.message.includes('Theme not initialized')
-}
-
-function ensurePiThemeInitialized(interactive: any): void {
-  try {
-    keyHint('tui.select.cancel', 'cancel')
-  } catch (error) {
-    if (!isThemeInitializationError(error)) {
-      throw error
-    }
-    initTheme(interactive?.settingsManager?.getTheme?.())
   }
 }
 

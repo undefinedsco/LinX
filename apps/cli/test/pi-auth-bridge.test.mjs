@@ -1,9 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { loadWatchModule } from './watch-test-bundle.mjs'
+import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 
 test('resolveLinxPiCloudOAuthCredential maps linx client-credentials login into a pi oauth credential shape', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/auth.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/auth.ts')
   t.after(() => cleanup())
 
   const requestedIssuers = []
@@ -48,7 +48,7 @@ test('resolveLinxPiCloudOAuthCredential maps linx client-credentials login into 
 })
 
 test('resolveLinxPiCloudOAuthCredential falls back to stored issuer url when no override is passed', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/auth.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/auth.ts')
   t.after(() => cleanup())
 
   const requestedIssuers = []
@@ -87,7 +87,7 @@ test('resolveLinxPiCloudOAuthCredential falls back to stored issuer url when no 
 })
 
 test('resolveLinxPiCloudOAuthCredential supports legacy runtime as the second argument', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/auth.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/auth.ts')
   t.after(() => cleanup())
 
   const requestedIssuers = []
@@ -135,7 +135,7 @@ test('resolveLinxPiCloudOAuthCredential supports legacy runtime as the second ar
 })
 
 test('resolveLinxPiCloudOAuthCredential maps oidc oauth login into a pi oauth credential shape', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/auth.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/auth.ts')
   t.after(() => cleanup())
 
   const oidcCalls = []
@@ -177,7 +177,7 @@ test('resolveLinxPiCloudOAuthCredential maps oidc oauth login into a pi oauth cr
 })
 
 test('resolveLinxPiCloudOAuthCredential forwards forceRefresh to oidc oauth restoration', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/auth.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/auth.ts')
   t.after(() => cleanup())
 
   const forceRefreshValues = []
@@ -212,7 +212,7 @@ test('resolveLinxPiCloudOAuthCredential forwards forceRefresh to oidc oauth rest
 })
 
 test('resolveLinxPiCloudOAuthCredential uses updated oidc expiry after refresh', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/auth.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/auth.ts')
   t.after(() => cleanup())
 
   const secrets = {
@@ -253,7 +253,7 @@ test('resolveLinxPiCloudOAuthCredential uses updated oidc expiry after refresh',
 })
 
 test('resolveLinxPiCloudOAuthCredential propagates oidc login expiry for startup prompting', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/auth.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/auth.ts')
   t.after(() => cleanup())
 
   const expired = new Error('invalid_grant')
@@ -288,7 +288,7 @@ test('resolveLinxPiCloudOAuthCredential propagates oidc login expiry for startup
 })
 
 test('resolveLinxPiCloudOAuthCredential treats non-auth oidc restoration failures as missing credentials', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/auth.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/auth.ts')
   t.after(() => cleanup())
 
   const credential = await module.resolveLinxPiCloudOAuthCredential('https://api.undefineds.co/v1', {}, {

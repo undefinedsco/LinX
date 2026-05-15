@@ -1,4 +1,6 @@
 import type { Session } from '@inrupt/solid-client-authn-node'
+import { resolveLinxPodUrl } from '@undefineds.co/models/client'
+import { loadAccountSession } from './account-session.js'
 import {
   getClientCredentialId,
   getClientCredentialKey,
@@ -6,7 +8,7 @@ import {
   loadCredentials,
   type StoredCredentials,
 } from './credentials-store.js'
-import { getOidcAccessToken } from './oidc-auth.js'
+import { getOidcAccessToken, restoreStoredOidcSession } from './oidc-auth.js'
 import { authenticate, authenticatedFetch } from './solid-auth.js'
 
 export type PodFetch = (url: string, init?: RequestInit) => Promise<Response>
@@ -27,6 +29,7 @@ export interface SolidSessionLike {
 export interface PodDataSession {
   credentials: StoredCredentials
   webId: string
+  podUrl: string
   fetch: PodFetch
   solidSession: SolidSessionLike
   getRuntimeAuthToken(): Promise<string>
@@ -37,17 +40,24 @@ export interface PodDataSessionRuntime {
   loadCredentials(): StoredCredentials | null
   getClientCredentials(credentials: StoredCredentials): ReturnType<typeof getClientCredentials>
   getOidcAccessToken(credentials: StoredCredentials): Promise<string | null>
+  restoreStoredOidcSession(credentials: StoredCredentials, options?: { forceRefresh?: boolean }): Promise<Session | null>
   authenticate(clientId: string, clientSecret: string, oidcIssuer: string): Promise<{ session: Session; apiKey: string }>
   authenticatedFetch(url: string, token: string, init?: RequestInit): Promise<Response>
+  authTimeoutMs?: number
+  fetchTimeoutMs?: number
 }
 
 const defaultRuntime: PodDataSessionRuntime = {
   loadCredentials,
   getClientCredentials,
   getOidcAccessToken,
+  restoreStoredOidcSession,
   authenticate,
   authenticatedFetch,
 }
+
+const DEFAULT_POD_DATA_AUTH_TIMEOUT_MS = 15_000
+const DEFAULT_POD_DATA_FETCH_TIMEOUT_MS = 30_000
 
 let defaultSessionPromise: Promise<PodDataSession | null> | null = null
 
@@ -85,53 +95,82 @@ export async function createPodDataSession(
 
   const clientCredentials = runtime.getClientCredentials(credentials)
   if (clientCredentials) {
-    const { session, apiKey } = await runtime.authenticate(
-      getClientCredentialId(clientCredentials),
-      getClientCredentialKey(clientCredentials),
-      credentials.url,
+    const { session, apiKey } = await withTimeout(
+      runtime.authenticate(
+        getClientCredentialId(clientCredentials),
+        getClientCredentialKey(clientCredentials),
+        credentials.url,
+      ),
+      runtime.authTimeoutMs ?? DEFAULT_POD_DATA_AUTH_TIMEOUT_MS,
+      'LinX Pod client credentials authentication timed out.',
     )
     const webId = session.info.webId ?? credentials.webId
     if (!webId) {
       await session.logout().catch(() => undefined)
       throw new Error('Pod authentication succeeded without a WebID.')
     }
+    const podUrl = resolvePodDataSessionUrl(webId)
+
+    const fetchWithTimeout: PodFetch = (url, init) => withFetchTimeout(
+      (requestUrl, requestInit) => session.fetch(requestUrl, requestInit),
+      url,
+      init,
+      runtime.fetchTimeoutMs ?? DEFAULT_POD_DATA_FETCH_TIMEOUT_MS,
+    )
 
     return {
       credentials,
       webId,
-      solidSession: session,
-      fetch: (url, init) => session.fetch(url, init),
+      podUrl,
+      solidSession: createSessionLikeFromSolidSession(session, fetchWithTimeout, podUrl),
+      fetch: fetchWithTimeout,
       getRuntimeAuthToken: async () => apiKey,
       close: () => session.logout().catch(() => undefined),
     }
   }
 
   if (credentials.authType === 'oidc_oauth' && credentials.webId) {
-    const authFetch: PodFetch = async (url, init) => {
-      const accessToken = await runtime.getOidcAccessToken(credentials)
-      if (!accessToken) {
-        throw new Error('Failed to restore OIDC access token for Pod data access.')
-      }
-      return runtime.authenticatedFetch(url, accessToken, init)
+    const podUrl = resolvePodDataSessionUrl(credentials.webId)
+    const oidcSession = await withTimeout(
+      runtime.restoreStoredOidcSession(credentials),
+      runtime.authTimeoutMs ?? DEFAULT_POD_DATA_AUTH_TIMEOUT_MS,
+      'LinX Pod OIDC session restore timed out.',
+    )
+    if (!oidcSession?.info.isLoggedIn) {
+      throw new Error('Failed to restore OIDC session for Pod data access. Run `linx login` again.')
     }
-    const solidSession = createInlineSolidSession({
-      webId: credentials.webId,
-      fetcher: authFetch,
-      sessionId: 'linx-cli-oidc',
-    })
+    const webId = oidcSession.info.webId ?? credentials.webId
+
+    const fetchWithTimeout: PodFetch = (url, init) => withFetchTimeout(
+      (requestUrl, requestInit) => oidcSession.fetch(requestUrl, requestInit),
+      url,
+      init,
+      runtime.fetchTimeoutMs ?? DEFAULT_POD_DATA_FETCH_TIMEOUT_MS,
+    )
+    const solidSession = createSessionLikeFromSolidSession(oidcSession, fetchWithTimeout, podUrl)
 
     return {
       credentials,
-      webId: credentials.webId,
-      solidSession,
-      fetch: authFetch,
+      webId,
+      podUrl,
+      solidSession: {
+        ...solidSession,
+        info: { ...solidSession.info, webId, podUrl },
+      },
+      fetch: fetchWithTimeout,
       getRuntimeAuthToken: async () => {
-        const accessToken = await runtime.getOidcAccessToken(credentials)
+        const accessToken = await withTimeout(
+          runtime.getOidcAccessToken(credentials),
+          runtime.authTimeoutMs ?? DEFAULT_POD_DATA_AUTH_TIMEOUT_MS,
+          'LinX Pod OIDC token refresh timed out.',
+        )
         if (!accessToken) {
           throw new Error('Failed to restore OIDC access token for Pod data access.')
         }
         return accessToken
       },
+      // OIDC browser-login storage is the user's LinX login state. A short-lived
+      // data access handle must not clear it on close.
       close: async () => {},
     }
   }
@@ -139,22 +178,83 @@ export async function createPodDataSession(
   return null
 }
 
-function createInlineSolidSession(options: {
-  webId: string
-  fetcher: PodFetch
-  sessionId: string
-}): SolidSessionLike {
+function createSessionLikeFromSolidSession(session: Session, fetcher: PodFetch, podUrl: string): SolidSessionLike {
   return {
-    info: {
-      isLoggedIn: true,
-      webId: options.webId,
-      sessionId: options.sessionId,
-    },
-    fetch: (input, init) => options.fetcher(requestInputToUrl(input), init),
-    login: async () => {},
-    logout: async () => {},
-    handleIncomingRedirect: async (_url: string) => {},
+    info: { ...session.info, podUrl },
+    fetch: (input, init) => fetcher(requestInputToUrl(input), init),
+    login: (...args: Parameters<Session['login']>) => session.login(...args),
+    logout: () => session.logout(),
+    handleIncomingRedirect: (url: string) => session.handleIncomingRedirect(url),
   }
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timer) {
+      clearTimeout(timer)
+    }
+  }
+}
+
+async function withFetchTimeout(
+  fetcher: PodFetch,
+  url: string,
+  init: RequestInit | undefined,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController()
+  let timedOut = false
+  const timer = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, timeoutMs)
+  const signal = init?.signal
+    ? combineAbortSignals(init.signal, controller.signal)
+    : controller.signal
+
+  try {
+    return await Promise.race([
+      fetcher(url, { ...init, signal }),
+      new Promise<Response>((_resolve, reject) => {
+        controller.signal.addEventListener('abort', () => {
+          if (timedOut) {
+            const method = init?.method ?? 'GET'
+            reject(new Error(`LinX Pod request timed out after ${Math.round(timeoutMs / 1000)}s: ${method} ${url}`))
+          }
+        }, { once: true })
+      }),
+    ])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+function combineAbortSignals(left: AbortSignal, right: AbortSignal): AbortSignal {
+  if (typeof AbortSignal.any === 'function') {
+    return AbortSignal.any([left, right])
+  }
+  const controller = new AbortController()
+  const abort = () => controller.abort()
+  if (left.aborted || right.aborted) {
+    abort()
+    return controller.signal
+  }
+  left.addEventListener('abort', abort, { once: true })
+  right.addEventListener('abort', abort, { once: true })
+  return controller.signal
+}
+
+function resolvePodDataSessionUrl(webId: string): string {
+  const account = loadAccountSession()
+  return (account?.webId === webId ? account.podUrl : undefined) || resolveLinxPodUrl(webId)
 }
 
 function requestInputToUrl(input: Parameters<typeof fetch>[0]): string {

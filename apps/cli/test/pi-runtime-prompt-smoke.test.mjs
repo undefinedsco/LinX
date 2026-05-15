@@ -5,10 +5,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const cliRoot = process.cwd()
-import { loadWatchModule } from './watch-test-bundle.mjs'
+import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 
 test('pi runtime can prompt through the backend-shaped stream adapter contract', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/runtime.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@mariozechner/pi-coding-agent')
@@ -71,7 +71,7 @@ test('pi runtime can prompt through the backend-shaped stream adapter contract',
 })
 
 test('pi runtime executes tools returned by the cloud completion backend', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/runtime.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@mariozechner/pi-coding-agent')

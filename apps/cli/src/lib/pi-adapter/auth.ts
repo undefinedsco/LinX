@@ -1,4 +1,10 @@
-import { getClientCredentialId, getClientCredentialKey, getClientCredentials, loadCredentials } from '../credentials-store.js'
+import {
+  getClientCredentialId,
+  getClientCredentialKey,
+  getClientCredentials,
+  loadCredentials,
+  type StoredCredentials,
+} from '../credentials-store.js'
 import { getOidcAccessToken, isOidcLoginExpiredError } from '../oidc-auth.js'
 import { getAccessToken } from '../solid-auth.js'
 import type { OAuthCredentials } from '@mariozechner/pi-ai'
@@ -18,7 +24,7 @@ type ResolveLinxPiCloudOAuthOptions = {
   forceRefresh?: boolean
 }
 
-function isPiAuthBridgeRuntime(value: unknown): value is Partial<PiAuthBridgeRuntime> {
+function isRuntimeOverride(value: unknown): value is Partial<PiAuthBridgeRuntime> {
   return typeof value === 'object'
     && value !== null
     && (
@@ -29,27 +35,20 @@ function isPiAuthBridgeRuntime(value: unknown): value is Partial<PiAuthBridgeRun
     )
 }
 
-function resolveOidcExpiresAt(secrets: unknown): number {
-  const rawExpiresAt = typeof secrets === 'object'
-    && secrets !== null
-    && 'oidcExpiresAt' in secrets
-    ? secrets.oidcExpiresAt
-    : undefined
-  if (typeof rawExpiresAt !== 'string') {
-    return Date.now()
-  }
-
-  const expiresAt = new Date(rawExpiresAt).getTime()
+function resolveOidcExpiresAt(credentials: Pick<StoredCredentials, 'secrets'>): number {
+  const expiresAt = 'oidcExpiresAt' in credentials.secrets
+    ? new Date(credentials.secrets.oidcExpiresAt).getTime()
+    : NaN
   return Number.isFinite(expiresAt) ? expiresAt : Date.now()
 }
 
 export async function resolveLinxPiCloudOAuthCredential(
   issuerUrl?: string,
-  options?: ResolveLinxPiCloudOAuthOptions,
   runtime?: Partial<PiAuthBridgeRuntime>,
 ): Promise<PiCloudOAuthCredential | null>
 export async function resolveLinxPiCloudOAuthCredential(
   issuerUrl?: string,
+  options?: ResolveLinxPiCloudOAuthOptions,
   runtime?: Partial<PiAuthBridgeRuntime>,
 ): Promise<PiCloudOAuthCredential | null>
 export async function resolveLinxPiCloudOAuthCredential(
@@ -63,12 +62,12 @@ export async function resolveLinxPiCloudOAuthCredential(
     getAccessToken,
     getOidcAccessToken,
   }
-  const options = isPiAuthBridgeRuntime(optionsOrRuntime)
+  const options = isRuntimeOverride(optionsOrRuntime)
     ? {}
-    : optionsOrRuntime as ResolveLinxPiCloudOAuthOptions
-  const runtime = {
+    : optionsOrRuntime
+  const runtime: PiAuthBridgeRuntime = {
     ...defaultRuntime,
-    ...(isPiAuthBridgeRuntime(optionsOrRuntime) ? optionsOrRuntime : runtimeArg),
+    ...(isRuntimeOverride(optionsOrRuntime) ? optionsOrRuntime : runtimeArg),
   }
 
   const stored = runtime.loadCredentials()
@@ -92,7 +91,7 @@ export async function resolveLinxPiCloudOAuthCredential(
       type: 'oauth',
       refresh: 'linx-oidc-refresh',
       access: oidcAccessToken,
-      expires: resolveOidcExpiresAt(stored.secrets),
+      expires: resolveOidcExpiresAt(stored),
     }
   }
 

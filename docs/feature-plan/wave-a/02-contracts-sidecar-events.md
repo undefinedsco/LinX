@@ -94,7 +94,7 @@ inbox 仅做通知通道，不承载审批本体：
   - Pod 数据访问范围：`odrl:target`（Pod URI）+ `odrl:action`（例如 `acl:Read`）
   - 身份链：`decisionBy` + `decisionRole` + `onBehalfOf`
 - Audit（追加写审计）：`udfs:AuditEntry`（append-only intent）
-  - 仅记录结构化事件字段与资源指针（`action`、`actor`、`actorRole`、`session`、`entry`、`toolCallId`、`toolName`、`approval`、`policy`、`policyVersion`、`createdAt`）
+  - 只记录稳定事件字段和资源指针（如 `session`、`entry`、`toolCallId`、`toolName`、`approval`）；runtime 细节从 message/tool block 或关联 approval/grant 资源回放
 - Grant（"不再提醒" 的放权层）：主类型 `odrl:Policy`，并额外打 `rdf:type udfs:AutonomyGrant`
   - 最小字段：`odrl:target` + `odrl:action` + `udfs:effect`/`udfs:riskCeiling` + 身份链条
 
@@ -106,7 +106,7 @@ inbox 仅做通知通道，不承载审批本体：
 | `tool.call` (approved/rejected) | `approvalResource` UPDATE + `auditResource` INSERT + `inboxNotificationTable` INSERT | 同上 |
 | `inbox.approval` (resolved) | `approvalResource` UPDATE + `inboxNotificationTable` INSERT | 审批结果从 Web/Mobile 回写 |
 
-> 注意：runtime-only 字段（arguments、result/error、duration 等）不作为 Audit 稳定列，也不写入 `auditResource.context`。需要审批上下文时写入 `approvalResource.context`；需要回放细节时通过 `entry` 指向的消息 / tool block 恢复。
+> 注意：runtime-only 字段（arguments、result/error、duration 等）不作为 Pod 稳定列，也不写入 `auditResource.context`。Audit 仅保留可索引事件和资源指针；需要回放时读取 message/tool block 或关联 approval/grant 资源。
 
 Writer of Record（选型：B）：
 - **xpod/chatkit（服务端）** 负责把 action 的执行与 Approval/Audit/Grant/InboxNotification 的落盘绑定在一起（同一侧完成一致性与幂等）。

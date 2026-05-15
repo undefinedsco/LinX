@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, delimiter } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -6,13 +6,17 @@ import { fileURLToPath } from 'node:url'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const previewRoot = join(repoRoot, 'preview')
+const modelsPreviewRoot = join(repoRoot, 'packages', 'models', 'preview')
 const prefix = mkdtempSync(join(tmpdir(), 'linx-cli-release-prefix-'))
 const cache = mkdtempSync(join(tmpdir(), 'linx-cli-release-cache-'))
 const modelsVersion = JSON.parse(readFileSync(join(repoRoot, 'packages', 'models', 'package.json'), 'utf8')).version
 const cliVersion = JSON.parse(readFileSync(join(repoRoot, 'apps', 'cli', 'package.json'), 'utf8')).version
 
-const modelsTarball = findTarball(`undefineds-co-models-${modelsVersion}.tgz`, /^undefineds-co-models-.+\.tgz$/)
-const cliTarball = findTarball(`undefineds-co-linx-${cliVersion}.tgz`, /^undefineds-co-linx-.+\.tgz$/)
+const modelsTarball = findExactTarball(`undefineds-co-models-${modelsVersion}.tgz`, [
+  previewRoot,
+  modelsPreviewRoot,
+])
+const cliTarball = findExactTarball(`undefineds-co-linx-${cliVersion}.tgz`, [previewRoot])
 
 mkdirSync(prefix, { recursive: true })
 mkdirSync(cache, { recursive: true })
@@ -23,7 +27,7 @@ run('npm', [
   '--no-audit',
   '--no-fund',
   '--omit=peer',
-  '--loglevel=info',
+  '--loglevel=warn',
   '--fetch-timeout=30000',
   '--fetch-retries=2',
   '--prefix',
@@ -51,19 +55,14 @@ assertInstalledDrizzleSolidPatch()
 
 console.log(`release smoke install passed: ${linxBin}`)
 
-function findTarball(exactName, fallbackPattern) {
-  if (existsSync(join(previewRoot, exactName))) {
-    return join(previewRoot, exactName)
+function findExactTarball(exactName, roots) {
+  for (const root of roots) {
+    const candidate = join(root, exactName)
+    if (existsSync(candidate)) {
+      return candidate
+    }
   }
-
-  const matches = readdirSync(previewRoot)
-    .filter((name) => fallbackPattern.test(name))
-    .sort()
-  const latest = matches.at(-1)
-  if (!latest) {
-    throw new Error(`No tarball matching ${exactName} or ${fallbackPattern} in ${previewRoot}`)
-  }
-  return join(previewRoot, latest)
+  throw new Error(`No exact tarball ${exactName} in ${roots.join(', ')}`)
 }
 
 function run(command, args, options = {}) {

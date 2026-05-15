@@ -70,7 +70,7 @@ export const credentialTable = podTable('credential', {
 
 #### 2. Provider 表 - AI 供应商配置
 
-**路径**: `/settings/ai/providers.ttl`
+**路径**: `/settings/providers/{providerId}.ttl`
 
 **Namespace**: `https://vocab.xpod.dev/ai#`
 
@@ -81,15 +81,15 @@ export const providerTable = podTable('provider', {
   proxyUrl: string('proxyUrl'),     // 代理地址（可选）
   hasModel: uri('hasModel'),        // 关联的 model URI
 }, {
-  base: '/settings/ai/providers.ttl',
+  base: '/settings/providers/',
   type: 'https://vocab.xpod.dev/ai#Provider',
-  subjectTemplate: '#{id}',
+  subjectTemplate: '{id}.ttl',
 })
 ```
 
 #### 3. Model 资源 - 用户维护的 AI 模型配置
 
-**路径**: `/settings/ai/models/{providerId}.ttl#{modelId}`
+**路径**: `/settings/providers/{providerId}.ttl#{modelId}`
 
 LinX 自供模型来自 ai-gateway discovery/runtime，不写入用户 Pod。这里仅描述用户自己维护的第三方 provider/model 配置。
 
@@ -106,7 +106,7 @@ export const modelTable = podTable('model', {
   createdAt: datetime('createdAt'),
   updatedAt: datetime('updatedAt'),
 }, {
-  base: '/settings/ai/models/',
+  base: '/settings/providers/',
   type: 'https://vocab.xpod.dev/ai#Model',
   subjectTemplate: '{isProvidedBy|id}.ttl#{id}',
 })
@@ -133,34 +133,34 @@ export const modelTable = podTable('model', {
 @prefix cred: <https://vocab.xpod.dev/credential#> .
 
 <#openai-key-1> a cred:Credential ;
-    cred:provider </settings/ai/providers.ttl#openai> ;
+    cred:provider </settings/providers/openai.ttl> ;
     cred:service "ai" ;
     cred:status "active" ;
     cred:apiKey "sk-xxx..." ;
     cred:label "我的 OpenAI Key" .
 ```
 
-**`/settings/ai/providers.ttl`**:
+**`/settings/providers/openai.ttl`**:
 ```turtle
 @prefix ai: <https://vocab.xpod.dev/ai#> .
 
-<#openai> a ai:Provider ;
+</settings/providers/openai.ttl> a ai:Provider ;
     ai:baseUrl "https://api.openai.com/v1" ;
-    ai:hasModel </settings/ai/models/openai.ttl#gpt-4o> .
+    ai:hasModel </settings/providers/openai.ttl#gpt-4o> .
 
-<#anthropic> a ai:Provider ;
+</settings/providers/anthropic.ttl> a ai:Provider ;
     ai:baseUrl "https://api.anthropic.com/v1" ;
     ai:proxyUrl "http://proxy.example.com:8080" .
 ```
 
-**`/settings/ai/models/openai.ttl`**:
+**`/settings/providers/openai.ttl` 中的 model fragment**:
 ```turtle
 @prefix ai: <https://vocab.xpod.dev/ai#> .
 
 <#gpt-4o> a ai:Model ;
     ai:displayName "GPT-4o" ;
     ai:modelType "chat" ;
-    ai:isProvidedBy </settings/ai/providers.ttl#openai> ;
+    ai:isProvidedBy </settings/providers/openai.ttl> ;
     ai:status "active" .
 ```
 
@@ -185,8 +185,7 @@ export const modelTable = podTable('model', {
 
 LinX 将配置写入用户 Pod 的三个文件：
 - `/settings/credentials.ttl` - API Key
-- `/settings/ai/providers.ttl` - Provider 配置
-- `/settings/ai/models/{providerId}.ttl` - 用户维护的 Model 列表分桶
+- `/settings/providers/{providerId}.ttl` - Provider 配置和用户维护的 Model fragment
 
 ### xpod 读取配置
 

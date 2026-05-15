@@ -73,7 +73,7 @@ MCP Bridge 的运行时事件在以下时机触发 Pod 写入：
 | `MCPToolEvent` (waiting_approval) | INSERT | `inboxTable` | `toolCallRef`, `toolName`, `risk`, `status='pending'` |
 | `MCPControlCommand` (approve) | UPDATE | `inboxTable` | `status='approved'`, `decisionBy`, `decisionRole` |
 | `MCPControlCommand` (reject) | UPDATE | `inboxTable` | `status='rejected'`, `decisionBy`, `reason` |
-| `MCPControlCommand` (approve/reject) | INSERT | `auditResource` | `action`, `actor`, `actorRole`, `session`, `entry`, `approval`, `policyVersion` |
+| `MCPControlCommand` (approve/reject) | INSERT | `auditResource` | `action`, `actor`, `actorRole`, `session`, `entry`, `toolCallId`, `toolName`, `approval` |
 | `MCPControlCommand` (approve_pattern) | — | 内存 `ApprovalRule[]` | Session 结束时过期，不落 Pod |
 | `SessionStateSync` (completed/error) | UPDATE | `chatTable` | `sessionStatus` |
 | `MCPToolEvent` (done/error) | UPDATE | `messageTable.richContent` | 更新对应 ToolBlock 的 status/duration |
@@ -100,8 +100,8 @@ MCP Bridge 在处理 `MCPControlCommand` 时需要验证权限：
 
 | 验证项 | 数据来源 | 查询方式 |
 |--------|---------|---------|
-| Session owner | `sessionSchema.ownerWebId` | 比对发送者 WebID |
-| Group admin | `chatTable.metadata.memberRoles` | 检查发送者 WebID 是否具备 `owner/admin` 角色 |
+| Session owner | `chatTable.contact` → `contactTable.entityUri` | 比对发送者 WebID |
+| Group admin | `chatTable.groupAdmin` | 检查发送者 WebID 是否在 admin 列表中 |
 | Autonomy level | `settingsTable` (key=`autonomy.level`) | 判断是否允许自动审批 |
 | Command whitelist | `settingsTable` (key=`autonomy.commandWhitelist`) | 匹配 approve_pattern |
 

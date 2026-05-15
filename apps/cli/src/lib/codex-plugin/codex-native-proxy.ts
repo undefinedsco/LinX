@@ -5,13 +5,13 @@ import { WebSocketServer, type WebSocket } from 'ws'
 import {
   normalizeCodexAppServerNotification,
   normalizeCodexAppServerRequest,
-  type WatchNormalizedEvent,
-  type WatchSessionRecord,
-} from '@undefineds.co/models/watch'
-import { appendWatchEvent, createWatchSession, finishWatchSession, writeWatchSession } from '../watch/archive.js'
-import { persistWatchConversationToPod } from '../watch/pod-persistence.js'
+  type AutoModeNormalizedEvent,
+  type AutoModeSessionRecord,
+} from '@linx/agent-runtime/auto-mode'
+import { appendAutoModeEvent, createAutoModeSession, finishAutoModeSession, writeAutoModeSession } from '../auto-mode/archive.js'
+import { persistAutoModeConversationToPod } from '../auto-mode/pod-persistence.js'
 import { createCodexAttachBridge, type CodexAttachBridgeRuntime } from './bridge.js'
-import type { WatchRunOptions, WatchSpawnPlan } from '../watch/types.js'
+import type { AutoRunOptions, AutoModeSpawnPlan } from '../auto-mode/types.js'
 
 interface WritableLike {
   write(chunk: string): unknown
@@ -25,29 +25,29 @@ export interface CodexNativeProxyOptions {
   listenPort?: number
   log?: WritableLike
   runtime?: CodexAttachBridgeRuntime
-  persistToPod?: typeof persistWatchConversationToPod
+  persistToPod?: typeof persistAutoModeConversationToPod
   spawnProcess?: typeof spawn
 }
 
 export interface CodexNativeProxy {
-  readonly record: WatchSessionRecord
+  readonly record: AutoModeSessionRecord
   readonly remoteUrl: string
   start(): Promise<void>
   startThread(): Promise<string>
   sendTurn(input: string): Promise<void>
-  subscribe(listener: (event: WatchNormalizedEvent) => void): () => void
+  subscribe(listener: (event: AutoModeNormalizedEvent) => void): () => void
   close(): Promise<void>
 }
 
-function defaultPlan(options: CodexNativeProxyOptions): WatchSpawnPlan {
+function defaultPlan(options: CodexNativeProxyOptions): AutoModeSpawnPlan {
   return {
     command: 'codex',
     args: ['app-server', '--listen', 'stdio://', ...(options.passthroughArgs ?? [])],
   }
 }
 
-function appendProxyEvent(record: WatchSessionRecord, stream: 'stdout' | 'stderr' | 'system', line: string, events: WatchNormalizedEvent[] = []): void {
-  appendWatchEvent(record, {
+function appendProxyEvent(record: AutoModeSessionRecord, stream: 'stdout' | 'stderr' | 'system', line: string, events: AutoModeNormalizedEvent[] = []): void {
+  appendAutoModeEvent(record, {
     timestamp: new Date().toISOString(),
     stream,
     line,
@@ -55,8 +55,8 @@ function appendProxyEvent(record: WatchSessionRecord, stream: 'stdout' | 'stderr
   })
 }
 
-function createNativeProxySession(options: CodexNativeProxyOptions): WatchSessionRecord {
-  const runOptions: WatchRunOptions = {
+function createNativeProxySession(options: CodexNativeProxyOptions): AutoModeSessionRecord {
+  const runOptions: AutoRunOptions = {
     backend: 'codex',
     mode: 'manual',
     cwd: options.cwd ?? process.cwd(),
@@ -65,13 +65,12 @@ function createNativeProxySession(options: CodexNativeProxyOptions): WatchSessio
     passthroughArgs: options.passthroughArgs ?? [],
     runtime: 'local',
     transport: 'native',
-    credentialSource: 'local',
-    resolvedCredentialSource: 'local',
-    approvalSource: 'remote',
+    credentialSource: 'cloud',
+    resolvedCredentialSource: 'cloud',
   }
 
   const plan = defaultPlan(options)
-  return createWatchSession(runOptions, plan)
+  return createAutoModeSession(runOptions, plan)
 }
 
 function normalizeAccountReadResponse(): Record<string, unknown> {
@@ -101,7 +100,7 @@ export function createCodexNativeProxy(options: CodexNativeProxyOptions = {}): C
   const remoteUrl = `ws://${host}:${port}`
   const log = options.log ?? process.stderr
   const bridge = createCodexAttachBridge(record, options.runtime)
-  const persistToPod = options.persistToPod ?? persistWatchConversationToPod
+  const persistToPod = options.persistToPod ?? persistAutoModeConversationToPod
   let child: ChildProcessWithoutNullStreams | null = null
   let wsServer: WebSocketServer | null = null
   let activeClient: WebSocket | null = null
@@ -115,13 +114,13 @@ export function createCodexNativeProxy(options: CodexNativeProxyOptions = {}): C
     reject: (error: Error) => void
   }>()
   let internalRequestId = 1
-  const listeners = new Set<(event: WatchNormalizedEvent) => void>()
+  const listeners = new Set<(event: AutoModeNormalizedEvent) => void>()
   let serverReadyResolve: (() => void) | null = null
   const serverReady = new Promise<void>((resolve) => {
     serverReadyResolve = resolve
   })
 
-  const emitEvents = (events: WatchNormalizedEvent[]) => {
+  const emitEvents = (events: AutoModeNormalizedEvent[]) => {
     if (events.length === 0) {
       return
     }
@@ -270,7 +269,7 @@ export function createCodexNativeProxy(options: CodexNativeProxyOptions = {}): C
           if (typeof result.model === 'string') {
             record.model = result.model
           }
-          writeWatchSession(record)
+          writeAutoModeSession(record)
         }
       }
     }
@@ -333,13 +332,13 @@ export function createCodexNativeProxy(options: CodexNativeProxyOptions = {}): C
       })
 
       activeChild.on('exit', (code, signal) => {
-        const finalRecord = finishWatchSession(record, {
+        const finalRecord = finishAutoModeSession(record, {
           status: code === 0 ? 'completed' : 'failed',
           exitCode: code,
           signal,
           error: code === 0 ? undefined : `codex app-server exited (${code ?? signal ?? 'null'})`,
         })
-        writeWatchSession(finalRecord)
+        writeAutoModeSession(finalRecord)
         void persistToPod(finalRecord).catch(() => undefined)
         if (wsServer) {
           wsServer.close()
@@ -413,7 +412,7 @@ export function createCodexNativeProxy(options: CodexNativeProxyOptions = {}): C
         },
       })
     },
-    subscribe(listener: (event: WatchNormalizedEvent) => void): () => void {
+    subscribe(listener: (event: AutoModeNormalizedEvent) => void): () => void {
       listeners.add(listener)
       return () => {
         listeners.delete(listener)

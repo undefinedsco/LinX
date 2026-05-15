@@ -3,13 +3,13 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { loadWatchModule } from './watch-test-bundle.mjs'
+import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 
 const WEB_ID = 'https://id.undefineds.co/alice/profile/card#me'
 const POD_BASE = 'https://id.undefineds.co/alice'
 
 test('createLinxPiSessionManager creates persisted sessions by default', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/session.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/session.ts')
   t.after(() => cleanup())
 
   const cwd = mkdtempSync(join(tmpdir(), 'linx-pi-session-cwd-'))
@@ -27,7 +27,7 @@ test('createLinxPiSessionManager creates persisted sessions by default', async (
 })
 
 test('resolveLinxPiSession accepts full and short session ids', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/session.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/session.ts')
   t.after(() => cleanup())
 
   const cwd = mkdtempSync(join(tmpdir(), 'linx-pi-session-resume-cwd-'))
@@ -72,7 +72,7 @@ test('resolveLinxPiSession accepts full and short session ids', async (t) => {
 })
 
 test('resuming a session repairs dangling assistant tool calls before continuation', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/session.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/session.ts')
   t.after(() => cleanup())
 
   const cwd = mkdtempSync(join(tmpdir(), 'linx-pi-session-dangling-tool-cwd-'))
@@ -152,7 +152,7 @@ test('resuming a session repairs dangling assistant tool calls before continuati
 })
 
 test('list and resume recover from Pod when local JSONL cache is missing', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/session.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/session.ts')
   t.after(() => cleanup())
 
   const cwd = mkdtempSync(join(tmpdir(), 'linx-pi-pod-session-cwd-'))
@@ -167,7 +167,7 @@ test('list and resume recover from Pod when local JSONL cache is missing', async
       assert.equal(requestedCwd, cwd)
       return [{
         id: '019df111-pod-only-session',
-        cwd,
+        cwd: '/tmp/original-session-cwd',
         createdAt: '2026-04-01T00:00:00.000Z',
         updatedAt: '2026-04-01T00:00:02.000Z',
         messages: [{
@@ -213,30 +213,50 @@ test('list and resume recover from Pod when local JSONL cache is missing', async
     podSessionSource,
   })
   assert.equal(resumed.getSessionId(), '019df111-pod-only-session')
+  assert.equal(resumed.getCwd(), '/tmp/original-session-cwd')
   assert.equal(resumed.getEntries().length, 1)
   assert.equal(resumed.getEntries()[0].message.content[0].text, 'from pod only')
 })
 
 test('native Pod session source reads session and messages through shared ORM resources', async (t) => {
-  const { module: sessionModule, cleanup } = await loadWatchModule('lib/pi-adapter/session.ts')
+  const { module: sessionModule, cleanup } = await loadAutoModeModule('lib/pi-adapter/session.ts')
   t.after(() => cleanup())
 
-  const sessionId = '019df222-native-pod'
+  const sessionId = '019d4657-0000-7000-8000-000000000001'
+  const sessionResourceId = '2026/04/01/019d4657-0000-7000-8000-000000000001.ttl'
   const cwd = '/tmp/native-pod-cwd'
   const chatUri = `${POD_BASE}/.data/chat/ai-secretary/index.ttl#this`
   const threadUri = `${POD_BASE}/.data/chat/ai-secretary/index.ttl#${sessionId}`
+  const idReads = []
 
   const db = {
-    resolveLocatorIri(table, locator) {
-      if (table?.config?.name === 'chats') {
+    resolveLocatorIri(resource, locator) {
+      if (resource?.config?.name === 'chats') {
         return `${POD_BASE}/.data/chat/${locator.id}/index.ttl#this`
       }
-      throw new Error(`Unexpected table: ${table?.config?.name}`)
+      throw new Error(`Unexpected resource: ${resource?.config?.name}`)
+    },
+    async findById(resource, id) {
+      idReads.push({ resource: resource?.config?.name, id })
+      if (resource?.config?.name === 'session' && id === sessionResourceId) {
+        return {
+          id: sessionResourceId,
+          ownerWebId: WEB_ID,
+          chat: chatUri,
+          thread: threadUri,
+          tool: 'linx',
+          status: 'active',
+          metadata: { cwd, threadUri },
+          createdAt: new Date('2026-04-01T00:00:00.000Z'),
+          updatedAt: new Date('2026-04-01T00:00:01.000Z'),
+        }
+      }
+      return null
     },
     select() {
       return {
-        from(table) {
-          const tableName = table?.config?.name
+        from(resource) {
+          const resourceName = resource?.config?.name
           return {
             where() {
               return this
@@ -244,21 +264,31 @@ test('native Pod session source reads session and messages through shared ORM re
             orderBy() {
               return this
             },
-            async execute() {
-              if (tableName === 'session') {
-                return [{
-                  id: sessionId,
-                  ownerWebId: WEB_ID,
-                  chat: chatUri,
-                  thread: threadUri,
-                  tool: 'linx',
-                  status: 'active',
-                  metadata: { cwd, threadUri },
-                  createdAt: new Date('2026-04-01T00:00:00.000Z'),
-                  updatedAt: new Date('2026-04-01T00:00:01.000Z'),
-                }]
-              }
-              if (tableName === 'chat_message') {
+	            async execute() {
+	              if (resourceName === 'session') {
+	                return [
+	                  {
+	                    id: 'https://pod.example/.data/session/legacy-session.ttl',
+	                    ownerWebId: WEB_ID,
+	                    chat: chatUri,
+	                    tool: 'linx',
+	                    status: 'active',
+	                    metadata: { cwd },
+	                  },
+	                  {
+	                    id: sessionId,
+	                    ownerWebId: WEB_ID,
+	                    chat: 'ai-secretary',
+	                    thread: threadUri,
+	                    tool: 'linx',
+	                    status: 'active',
+	                    metadata: { cwd, threadUri },
+	                    createdAt: new Date('2026-04-01T00:00:00.000Z'),
+	                    updatedAt: new Date('2026-04-01T00:00:01.000Z'),
+	                  },
+	                ]
+	              }
+              if (resourceName === 'chat_message') {
                 return [{
                   id: `${sessionId}-u1`,
                   thread: threadUri,
@@ -293,12 +323,124 @@ test('native Pod session source reads session and messages through shared ORM re
     db,
   })
 
-  const sessions = await source.listSessions(cwd)
+  const sessions = await source.listSessions('/tmp/another-cwd')
   assert.equal(sessions.length, 1)
   assert.equal(sessions[0].id, sessionId)
   assert.equal(sessions[0].messages.length, 1)
   assert.equal(sessions[0].messages[0].content, 'native orm hello')
 
-  const found = await source.findSession('019df222', cwd)
+  const found = await source.findSession(sessionId, '/tmp/another-cwd')
   assert.equal(found.id, sessionId)
+  assert.deepEqual(idReads, [{ resource: 'session', id: sessionResourceId }])
+})
+
+test('native Pod session source uses session message resource refs before broad message scans', async (t) => {
+  const { module: sessionModule, cleanup } = await loadAutoModeModule('lib/pi-adapter/session.ts')
+  t.after(() => cleanup())
+
+  const sessionId = '019d4657-0000-7000-8000-000000000002'
+  const sessionResourceId = '2026/04/01/019d4657-0000-7000-8000-000000000002.ttl'
+  const cwd = '/tmp/native-pod-cwd'
+  const chatUri = `${POD_BASE}/.data/chat/ai-secretary/index.ttl#this`
+  const threadUri = `${POD_BASE}/.data/chat/ai-secretary/index.ttl#${sessionId}`
+  const messageUri = `${POD_BASE}/.data/chat/ai-secretary/2026/04/01/messages.ttl#${sessionId}-u1`
+  const idReads = []
+  const iriReads = []
+  let selectedMessages = false
+
+  const db = {
+    resolveLocatorIri(resource, locator) {
+      if (resource?.config?.name === 'chats') {
+        return `${POD_BASE}/.data/chat/${locator.id}/index.ttl#this`
+      }
+      throw new Error(`Unexpected resource: ${resource?.config?.name}`)
+    },
+    async findById(resource, id) {
+      idReads.push({ resource: resource?.config?.name, id })
+      if (resource?.config?.name === 'session' && id === sessionResourceId) {
+        return {
+          id: sessionResourceId,
+          ownerWebId: WEB_ID,
+          chat: chatUri,
+          thread: threadUri,
+          tool: 'linx',
+          status: 'active',
+          metadata: { cwd, threadUri, messageResources: [messageUri] },
+          createdAt: new Date('2026-04-01T00:00:00.000Z'),
+          updatedAt: new Date('2026-04-01T00:00:01.000Z'),
+        }
+      }
+      return null
+    },
+    async findByIri(resource, iri) {
+      iriReads.push({ resource: resource?.config?.name, iri })
+      if (resource?.config?.name === 'chat_message' && iri === messageUri) {
+        return {
+          id: '2026/04/01/messages.ttl#019d4657-0000-7000-8000-000000000002-u1',
+          role: 'user',
+          content: 'exact resource hello',
+          richContent: JSON.stringify({
+            linxPiSessionEntry: {
+              type: 'message',
+              id: 'u1',
+              parentId: null,
+              timestamp: '2026-04-01T00:00:00.000Z',
+              message: {
+                role: 'user',
+                content: [{ type: 'text', text: 'exact resource hello' }],
+                timestamp: Date.parse('2026-04-01T00:00:00.000Z'),
+              },
+            },
+          }),
+          createdAt: new Date('2026-04-01T00:00:00.000Z'),
+        }
+      }
+      return null
+    },
+    select() {
+      return {
+        from(resource) {
+          const resourceName = resource?.config?.name
+          if (resourceName === 'chat_message') {
+            selectedMessages = true
+          }
+          return {
+            where() {
+              return this
+            },
+            orderBy() {
+              return this
+            },
+            async execute() {
+              if (resourceName === 'session') {
+                return []
+              }
+              if (resourceName === 'chat_message') {
+                throw new Error('message fallback scan should not run when messageResources exist')
+              }
+              return []
+            },
+          }
+        },
+      }
+    },
+  }
+
+  const source = sessionModule.createNativeLinxPiPodSessionSource({
+    webId: WEB_ID,
+    db,
+  })
+
+  const found = await source.findSession(sessionId, '/tmp/another-cwd')
+  assert.equal(found.id, sessionId)
+  assert.equal(found.messages.length, 1)
+  assert.equal(found.messages[0].id, `${sessionId}-u1`)
+  assert.equal(found.messages[0].content, 'exact resource hello')
+  assert.equal(selectedMessages, false)
+  assert.deepEqual(idReads, [
+    { resource: 'session', id: sessionResourceId },
+  ])
+  assert.deepEqual(iriReads, [
+    { resource: 'chat_message', iri: messageUri },
+  ])
 })
