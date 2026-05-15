@@ -233,10 +233,16 @@ export class XpodPtyRuntimeRunner implements RuntimeRunner {
 
   private async ensureWorkspaceReady(): Promise<void> {
     const record = this.host.getRecord()
-    await this.gitService.assertGitRepo(record.repoPath)
 
     const usesDedicatedFolder = record.folderPath !== record.repoPath
-    if (!usesDedicatedFolder || fs.existsSync(record.folderPath)) {
+    if (!usesDedicatedFolder) {
+      fs.mkdirSync(record.repoPath, { recursive: true })
+      return
+    }
+
+    await this.gitService.assertGitRepo(record.repoPath)
+
+    if (fs.existsSync(record.folderPath)) {
       return
     }
 

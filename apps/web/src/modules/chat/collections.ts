@@ -53,6 +53,7 @@ import { favoriteHooks } from '@/modules/favorites/collections'
 import { createAgentContactRecords, writeCollectionRow } from '@/lib/data/direct-chat-records'
 import { getAgentProviderInfo } from '@/lib/agent-providers'
 import { toStringArray } from '@/lib/utils'
+import { ensureAgentHome } from './agent-home'
 
 // ============================================================================
 // Database Getter
@@ -438,6 +439,7 @@ async function ensureLinxWelcomeInternal(): Promise<LinxWelcomeResult | null> {
     const thread = await ensureDefaultThread(chatId)
     const threadId = resolveRowSubject(thread as Record<string, unknown>) ?? thread.id
     const maker = await resolveAssistantMakerFromChat(db, existingSecretary)
+    await ensureAgentHomeForChat(db, existingSecretary)
     await ensureDefaultWelcomeMessage(chatId, threadId, maker ?? getCurrentWebId(db) ?? 'linx')
     return { chatId, threadId, created: false }
   }
@@ -476,6 +478,39 @@ async function resolveAssistantMakerFromChat(db: SolidDatabase, chat: Pick<ChatR
   }
 
   return participant
+}
+
+function extractAgentIdFromRef(ref: string | null | undefined): string | null {
+  if (!ref) return null
+  const match = ref.match(/\/\.data\/agents\/([^/#]+)\.ttl(?:#.*)?$/)
+  if (match?.[1]) return decodeURIComponent(match[1])
+  return /^[a-zA-Z0-9_-]+$/.test(ref) ? ref : null
+}
+
+async function ensureAgentHomeForChat(db: SolidDatabase, chat: Pick<ChatRow, 'title' | 'participants'>): Promise<void> {
+  const [participant] = toStringArray(chat.participants)
+  if (!participant) return
+
+  try {
+    const contactId = extractLinkedEntityId(participant)
+    const contact = contactId
+      ? await (db as any).findByLocator(contactTable as any, { id: contactId } as any) as ContactRow | null
+      : null
+    const agentRef = contact?.entityUri ?? participant
+    const agentId = extractAgentIdFromRef(agentRef)
+    if (!agentId) return
+
+    const agent = await (db as any).findByLocator(agentTable as any, { id: agentId } as any) as AgentRow | null
+    await ensureAgentHome(db, {
+      agentId,
+      name: agent?.name || chat.title || agentId,
+      provider: normalizeAIConfigProviderId(typeof agent?.provider === 'string' ? agent.provider : LINX_DEFAULT_SECRETARY.provider),
+      model: normalizeAIConfigResourceId(typeof agent?.model === 'string' ? agent.model : LINX_DEFAULT_SECRETARY.model),
+      instructions: typeof agent?.instructions === 'string' ? agent.instructions : undefined,
+    })
+  } catch (error) {
+    console.warn('[chatOps] Failed to ensure Agent Home for chat:', error)
+  }
 }
 
 async function resolveAgentMaker(db: SolidDatabase, agentId: string): Promise<string> {
@@ -756,6 +791,13 @@ export const chatOps = {
       contactId,
       contactUri,
     } = await createAgentContactRecords(db, {
+      name: title,
+      provider: normalizeAIConfigProviderId(provider),
+      model: normalizeAIConfigResourceId(model),
+      instructions: systemPrompt,
+    })
+    await ensureAgentHome(db, {
+      agentId,
       name: title,
       provider: normalizeAIConfigProviderId(provider),
       model: normalizeAIConfigResourceId(model),

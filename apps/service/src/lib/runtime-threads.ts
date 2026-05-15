@@ -179,7 +179,6 @@ export class RuntimeThreadsModule {
     }
 
     this.threads.set(record.id, record)
-    this.runners.set(record.id, this.createRunner(record.id))
     this.save()
     return record
   }
