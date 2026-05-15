@@ -356,6 +356,7 @@ async function main() {
     for (const [table, iri] of created) {
       await deleteIfExists(db, table, iri)
     }
+    await session.logout?.()
   }
 }
 

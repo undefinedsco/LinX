@@ -8,7 +8,8 @@ const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const previewRoot = join(repoRoot, 'preview')
 const modelsPreviewRoot = join(repoRoot, 'packages', 'models', 'preview')
 const prefix = mkdtempSync(join(tmpdir(), 'linx-cli-release-prefix-'))
-const cache = mkdtempSync(join(tmpdir(), 'linx-cli-release-cache-'))
+const cache = process.env.LINX_RELEASE_SMOKE_CACHE || mkdtempSync(join(tmpdir(), 'linx-cli-release-cache-'))
+const installTimeoutMs = Number(process.env.LINX_RELEASE_SMOKE_INSTALL_TIMEOUT_MS || 20 * 60 * 1000)
 const modelsVersion = JSON.parse(readFileSync(join(repoRoot, 'packages', 'models', 'package.json'), 'utf8')).version
 const cliVersion = JSON.parse(readFileSync(join(repoRoot, 'apps', 'cli', 'package.json'), 'utf8')).version
 
@@ -30,13 +31,14 @@ run('npm', [
   '--loglevel=warn',
   '--fetch-timeout=30000',
   '--fetch-retries=2',
+  '--prefer-offline',
   '--prefix',
   prefix,
   '--cache',
   cache,
   modelsTarball,
   cliTarball,
-])
+], { timeout: installTimeoutMs })
 
 const binDir = process.platform === 'win32' ? prefix : join(prefix, 'bin')
 const linxBin = process.platform === 'win32' ? join(prefix, 'linx.cmd') : join(binDir, 'linx')
@@ -72,6 +74,9 @@ function run(command, args, options = {}) {
     shell: process.platform === 'win32',
     ...options,
   })
+  if (result.error) {
+    throw new Error(`${command} ${args.join(' ')} failed: ${result.error.message}`)
+  }
   if ((result.status ?? 1) !== 0) {
     throw new Error(`${command} ${args.join(' ')} failed with ${result.status ?? 1}`)
   }
@@ -82,20 +87,28 @@ function assertInstalledDrizzleSolidPatch() {
   const packageJson = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'))
   const resolverSource = readFileSync(join(packageRoot, 'dist', 'esm', 'core', 'uri', 'resolver.js'), 'utf8')
   const tripleBuilderSource = readFileSync(join(packageRoot, 'dist', 'esm', 'core', 'triple', 'builder.js'), 'utf8')
+  const podDatabaseSource = readFileSync(join(packageRoot, 'dist', 'esm', 'core', 'pod-database.js'), 'utf8')
+  const podDialectSource = readFileSync(join(packageRoot, 'dist', 'esm', 'core', 'pod-dialect.js'), 'utf8')
+  const podSessionSource = readFileSync(join(packageRoot, 'dist', 'esm', 'core', 'pod-session.js'), 'utf8')
 
   const hasCompoundTemplateResolver = resolverSource.includes('resolveTemplateVariable')
     && resolverSource.includes('Unresolved URI template variable')
   const hasCurrentRecordContext = tripleBuilderSource.includes('__currentRecord')
     && tripleBuilderSource.includes('createContext(record, currentTable)')
+  const hasShortIdSubjectIndex = podDialectSource.includes('shortIdSubjectIndex')
+    && podDialectSource.includes('lookupIndexedResourceSubject')
+    && podSessionSource.includes('updateSubjectIndex(operation, result)')
+    && podSessionSource.includes('generateSubjectUri')
+    && podDatabaseSource.includes('getIndexedSubject(resource, id)')
 
-  if (!hasCompoundTemplateResolver || !hasCurrentRecordContext) {
+  if (!hasCompoundTemplateResolver || !hasCurrentRecordContext || !hasShortIdSubjectIndex) {
     throw new Error(
-      `Installed @undefineds.co/drizzle-solid@${packageJson.version} does not include the compound URI template link-resolution patch. `
+      `Installed @undefineds.co/drizzle-solid@${packageJson.version} does not include the required LinX Pod resource patches. `
         + 'Publish/install a fixed drizzle-solid before publishing @undefineds.co/models or @undefineds.co/linx.',
     )
   }
 
-  console.log(`verified @undefineds.co/drizzle-solid@${packageJson.version} compound URI template patch`)
+  console.log(`verified @undefineds.co/drizzle-solid@${packageJson.version} LinX Pod resource patches`)
 }
 
 function findInstalledPackageRoot(packageName) {

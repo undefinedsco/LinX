@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -11,7 +11,7 @@ const sourceRoot = join(cliRoot, 'src')
 const entryPath = join(sourceRoot, 'index.ts')
 
 test('compiled cli default --print accepts a prompt argument and starts the pi path', async (t) => {
-  const outdir = mkdtempSync(join(tmpdir(), 'linx-cli-pi-print-'))
+  const outdir = mkdtempSync(join(cliRoot, '.tmp-pi-print-'))
   const home = mkdtempSync(join(tmpdir(), 'linx-cli-pi-print-home-'))
   const workspace = mkdtempSync(join(tmpdir(), 'linx-cli-pi-print-workspace-'))
   t.after(() => {
@@ -48,8 +48,6 @@ test('compiled cli default --print accepts a prompt argument and starts the pi p
   } catch {
     assert.ok(existsSync(join(outdir, 'index.js')))
   }
-  symlinkSync(join(cliRoot, '../../node_modules'), join(outdir, 'node_modules'), 'dir')
-
   const result = spawnSync(process.execPath, [
     join(outdir, 'index.js'),
     '--print',

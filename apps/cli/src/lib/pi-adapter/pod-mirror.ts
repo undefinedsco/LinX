@@ -359,7 +359,19 @@ async function persistRuntimeSession(
     updatedAt: now,
   } satisfies SessionInsert
 
-  await insertResource(context.db, sessionResource, row)
+  await upsertByIri(context.db, sessionResource, refs.sessionUri, row, {
+    ownerWebId: context.webId,
+    chat: refs.chatUri,
+    thread: refs.threadUri,
+    sessionType: 'direct',
+    status,
+    tool: 'linx',
+    tokenUsage: row.tokenUsage,
+    messageResources: [...messageResourceRefs],
+    policyVersion: PI_POLICY_VERSION,
+    metadata,
+    updatedAt: now,
+  })
 }
 
 async function persistMessage(
@@ -466,6 +478,21 @@ async function upsertByResource(
 
   if (id) {
     await db.updateById(resource, id, update)
+    return
+  }
+  await db.updateByIri(resource, iri, update)
+}
+
+async function upsertByIri(
+  db: SolidDatabase,
+  resource: Parameters<SolidDatabase['findByIri']>[0],
+  iri: string,
+  insert: Record<string, unknown>,
+  update: Record<string, unknown>,
+): Promise<void> {
+  const existing = await db.findByIri(resource, iri)
+  if (!existing) {
+    await db.insert(resource).values(insert).execute()
     return
   }
   await db.updateByIri(resource, iri, update)

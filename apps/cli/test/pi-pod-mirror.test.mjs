@@ -279,6 +279,8 @@ test('LinxPiPodMirror persists Pi session events into Pod tables', async (t) => 
   assert.equal(rowValues.some((row) => row.content === 'persist through mirror'), true)
   assert.equal(writes.some((write) => write.table === 'chats' && write.iri.endsWith('/.data/chat/ai-secretary/index.ttl#this')), true)
   assert.equal(writes.some((write) => write.table === 'session' && /\/\.data\/sessions\/2026\/04\/01\/[^/]+\.ttl$/.test(write.iri)), true)
+  assert.equal(writes.filter((write) => write.table === 'session' && write.op === 'insert').length, 1)
+  assert.equal(writes.filter((write) => write.table === 'session' && write.op === 'update').length, 1)
   assert.equal(writes.some((write) => write.table === 'chat_message' && /\/\.data\/chat\/ai-secretary\/2026\/04\/01\/messages\.ttl#/.test(write.iri)), true)
   assert.equal(writes.some((write) => write.table === 'audit'), false)
 })

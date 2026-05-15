@@ -468,7 +468,7 @@ async function main() {
       approvals: approvals.filter((row) => row.id === approvalResourceId).length,
       grants: grants.filter((row) => row.id === grantResourceId).length,
       audits: audits.filter((row) => row.id === approvalAuditResourceId).length,
-      credentials: credentialRow?.id === credentialId ? 1 : 0,
+      credentials: credentialRow?.apiKey === `linx-verify-not-a-secret-${runId}` ? 1 : 0,
     },
     emptyCacheRecovery: {
       listed: recoveredList.filter((session) => session.id === sessionId).length,

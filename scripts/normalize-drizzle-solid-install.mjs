@@ -29,6 +29,7 @@ patchDrizzleSolidExplicitPodUrlLock(packageDistRoot)
 patchDrizzleSolidResourceIdSemantics(packageDistRoot)
 patchDrizzleSolidBaseRelativeIdClassifier(packageDistRoot)
 patchDrizzleSolidExactResourceReads(packageDistRoot)
+patchDrizzleSolidShortIdSubjectIndex(packageDistRoot)
 patchDrizzleSolidResourcePreparation(packageDistRoot)
 stripEsmSourceMapUrls(packageEsmRoot)
 assertPatchedDrizzleSolid(packageDistRoot)
@@ -473,6 +474,253 @@ function patchPodExecutorExactResourceReads(source) {
                 ? descriptor.endpoint
                 : normalizedResourceUrl);`,
   )
+}
+
+function patchDrizzleSolidShortIdSubjectIndex(root) {
+  const files = [
+    path.join(root, 'core/pod-dialect.js'),
+    path.join(root, 'esm/core/pod-dialect.js'),
+    path.join(root, 'core/pod-session.js'),
+    path.join(root, 'esm/core/pod-session.js'),
+    path.join(root, 'core/pod-database.js'),
+    path.join(root, 'esm/core/pod-database.js'),
+  ]
+
+  for (const filePath of files) {
+    if (statSync(filePath, { throwIfNoEntry: false }) == null) {
+      continue
+    }
+
+    const source = readFileSync(filePath, 'utf8')
+    let patched = source
+    if (filePath.endsWith('pod-dialect.js')) {
+      patched = patchShortIdSubjectIndexPodDialectRuntime(patched, filePath.includes('/esm/'))
+    } else if (filePath.endsWith('pod-session.js')) {
+      patched = patchShortIdSubjectIndexPodSessionRuntime(patched, filePath.includes('/esm/'))
+    } else if (filePath.endsWith('pod-database.js')) {
+      patched = patchShortIdSubjectIndexPodDatabaseRuntime(patched)
+    }
+
+    if (patched !== source) {
+      writeFileSync(filePath, patched, 'utf8')
+    }
+  }
+}
+
+function ensureResourceReferenceImport(source, isEsm) {
+  if (isEsm) {
+    if (source.includes("from './resource-reference.js'")) {
+      return source
+    }
+    return source.replace(
+      /import \{ DebugLogger, setGlobalDebugLogger \} from '\.\/utils\/debug-logger\.js';\n/,
+      `$&import { parsePodResourceRef } from './resource-reference.js';\n`,
+    )
+  }
+
+  if (source.includes('resource_reference_1')) {
+    return source
+  }
+  return source.replace(
+    /const debug_logger_1 = require\("\.\/utils\/debug-logger"\);\n/,
+    `$&const resource_reference_1 = require("./resource-reference");\n`,
+  )
+}
+
+function patchShortIdSubjectIndexPodDialectRuntime(source, isEsm) {
+  let patched = ensureResourceReferenceImport(source, isEsm)
+
+  if (!patched.includes('this.shortIdSubjectIndex = new Map()')) {
+    patched = patched.replace(
+      /(\s+this\.preparedResources = new Set\(\);\n)/,
+      `$1        this.shortIdSubjectIndex = new Map();\n`,
+    )
+  }
+
+  if (patched.includes('lookupIndexedResourceSubject(table, id)')) {
+    return patched
+  }
+
+  const parseRef = isEsm
+    ? 'parsePodResourceRef(table, subject)?.templateValues.id'
+    : '(0, resource_reference_1.parsePodResourceRef)(table, subject)?.templateValues.id'
+  const methods = `
+    buildShortIdSubjectIndexKey(table, id) {
+        const base = table.config?.base ?? table.getResourcePath?.() ?? table.getContainerPath?.() ?? '';
+        const template = table.getSubjectTemplate?.() ?? table.config?.subjectTemplate ?? '{id}';
+        const type = table.getType?.() ?? table.config?.type ?? '';
+        const name = table.config?.name ?? '';
+        return \`\${name}|\${base}|\${template}|\${type}|\${id}\`;
+    }
+    registerResourceSubject(table, subject) {
+        const templateId = ${parseRef};
+        if (!templateId) {
+            return;
+        }
+        const key = this.buildShortIdSubjectIndexKey(table, templateId);
+        const subjects = this.shortIdSubjectIndex.get(key) ?? new Set();
+        subjects.add(subject);
+        this.shortIdSubjectIndex.set(key, subjects);
+    }
+    unregisterResourceSubject(table, subject) {
+        const templateId = ${parseRef};
+        if (!templateId) {
+            return;
+        }
+        const key = this.buildShortIdSubjectIndexKey(table, templateId);
+        const subjects = this.shortIdSubjectIndex.get(key);
+        if (!subjects) {
+            return;
+        }
+        subjects.delete(subject);
+        if (subjects.size === 0) {
+            this.shortIdSubjectIndex.delete(key);
+        }
+    }
+    lookupIndexedResourceSubject(table, id) {
+        const subjects = this.shortIdSubjectIndex.get(this.buildShortIdSubjectIndexKey(table, id));
+        if (!subjects || subjects.size === 0) {
+            return null;
+        }
+        if (subjects.size > 1) {
+            throw new Error(\`Indexed short id '\${id}' for resource '\${table.config?.name ?? 'resource'}' is ambiguous. \` +
+                'Use a base-relative resource id or full IRI to disambiguate.');
+        }
+        return Array.from(subjects)[0] ?? null;
+    }
+`
+
+  return patched.replace(
+    /(\s+\/\*\*\n\s+\* Get the ExecutionStrategy for a table\n\s+\*\/\n\s+getStrategy\(table\) \{)/,
+    `${methods}$1`,
+  )
+}
+
+function ensureGenerateSubjectUriImport(source, isEsm) {
+  if (isEsm) {
+    if (source.includes("from './sparql/helpers.js'")) {
+      return source
+    }
+    return source.replace(
+      /import \{ entityKind \} from 'drizzle-orm';\n/,
+      `$&import { generateSubjectUri } from './sparql/helpers.js';\n`,
+    )
+  }
+
+  if (source.includes('helpers_1')) {
+    return source
+  }
+  return source.replace(
+    /const drizzle_orm_1 = require\("drizzle-orm"\);\n/,
+    `$&const helpers_1 = require("./sparql/helpers");\n`,
+  )
+}
+
+function patchShortIdSubjectIndexPodSessionRuntime(source, isEsm) {
+  let patched = ensureGenerateSubjectUriImport(source, isEsm)
+
+  if (!patched.includes('this.updateSubjectIndex(operation, result);')) {
+    patched = patched.replace(
+      /(\s+const result = await this\.dialect\.query\(operation\);\n\s+)return result;/,
+      `$1this.updateSubjectIndex(operation, result);\n        return result;`,
+    )
+  }
+
+  if (patched.includes('updateSubjectIndex(operation, result)')) {
+    return patched
+  }
+
+  const generateSubject = isEsm
+    ? 'generateSubjectUri(row, operation.table, this.dialect.getUriResolver?.())'
+    : '(0, helpers_1.generateSubjectUri)(row, operation.table, this.dialect.getUriResolver?.())'
+  const methods = `
+    updateSubjectIndex(operation, result) {
+        if (operation.type === 'select') {
+            return;
+        }
+        const dialect = this.dialect;
+        if (typeof dialect.registerResourceSubject !== 'function'
+            && typeof dialect.unregisterResourceSubject !== 'function') {
+            return;
+        }
+        const subjects = this.resolveOperationSubjects(operation, result);
+        if (operation.type === 'delete') {
+            subjects.forEach((subject) => dialect.unregisterResourceSubject?.(operation.table, subject));
+            return;
+        }
+        subjects.forEach((subject) => dialect.registerResourceSubject?.(operation.table, subject));
+    }
+    resolveOperationSubjects(operation, result) {
+        const subjects = new Set();
+        for (const row of result) {
+            const subject = this.getKnownRowIri(row);
+            if (subject) {
+                subjects.add(subject);
+            }
+        }
+        if (operation.type === 'insert') {
+            const plan = operation.plan;
+            const rows = Array.isArray(plan?.rows) ? plan.rows : [];
+            rows.forEach((row) => {
+                try {
+                    subjects.add(${generateSubject});
+                }
+                catch {
+                    // Operation result rows remain the primary source when subject generation is unavailable.
+                }
+            });
+        }
+        return Array.from(subjects);
+    }
+    getKnownRowIri(row) {
+        if (!row || typeof row !== 'object' || Array.isArray(row)) {
+            return null;
+        }
+        const record = row;
+        for (const key of ['@id', 'subject', 'uri', 'source']) {
+            const value = record[key];
+            if (typeof value === 'string' && /^https?:\\/\\//.test(value)) {
+                return value;
+            }
+        }
+        return null;
+    }
+`
+
+  return patched.replace(
+    /(\s+\/\/ 执行 SQL（Drizzle AST）\n\s+async executeSql\(sql, table\) \{)/,
+    `${methods}$1`,
+  )
+}
+
+function patchShortIdSubjectIndexPodDatabaseRuntime(source) {
+  let patched = source
+
+  if (!patched.includes('lookupIndexedResourceSubject?:')) {
+    // Runtime JS does not need the TypeScript type alias; this marker is only
+    // present in source builds. Keep this branch intentionally empty.
+  }
+
+  if (!patched.includes('getIndexedSubject(resource, id)')) {
+    patched = patched.replace(
+      /(\s+subjectMatchesShortId\(resource, subject, id, suffix\) \{[\s\S]*?\n\s+\}\n)(\s+async lookupSubjectIriByShortId\(resource, id, methodName\) \{)/,
+      `$1    getIndexedSubject(resource, id) {
+        const dialect = this.dialect;
+        if (typeof dialect.lookupIndexedResourceSubject !== 'function') {
+            return null;
+        }
+        return dialect.lookupIndexedResourceSubject(resource, id);
+    }
+$2`,
+    )
+  }
+
+  patched = patched.replace(
+    /return subjects\[0\] \?\? null;/g,
+    'return subjects[0] ?? this.getIndexedSubject(resource, id);',
+  )
+
+  return patched
 }
 
 function patchPodDatabaseResourceIdSemantics(source, isEsm) {
