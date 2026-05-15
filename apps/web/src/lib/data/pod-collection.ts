@@ -86,13 +86,14 @@ export function createPodCollection<
       return []
     }
 
-    // Filter out rows with relative IRI-like ids (dirty data), but keep normal bare ids.
+    // Filter out path-traversal/absolute-path shaped ids only. Base-relative
+    // resource ids such as "#openai" and "chat-1/index.ttl#this" are valid.
     rows = rows.filter(row => {
       const id = (row as any).id
       if (!id) return true // Keep rows without id field
       if (
         typeof id === 'string'
-        && (id.startsWith('/') || id.startsWith('./') || id.startsWith('../') || id.startsWith('#'))
+        && (id.startsWith('/') || id.startsWith('./') || id.startsWith('../'))
       ) {
         console.warn(`[PodCollection] Skipping row with invalid id: ${id}`)
         return false
