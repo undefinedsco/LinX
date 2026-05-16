@@ -21,6 +21,7 @@ import {
   loadArchivedAutoModeSession,
   resumeAutoModeSession,
 } from './lib/auto-mode/index.js'
+import { symphonyCommand } from './lib/symphony-command.js'
 import { resolveRuntimeTarget } from './lib/runtime-target.js'
 import { createCodexNativeProxy } from './lib/codex-plugin/index.js'
 import { bootstrapPiInteractiveMode, createPiRuntimeAdapter, resolveLinxInteractiveLoginReason, resolveLinxStartupLoginPromptDecision, type LinxLoginReason } from './lib/pi-adapter/index.js'
@@ -690,6 +691,7 @@ const cli = yargs(hideBin(process.argv))
   .command(logoutCommand)
   .command(whoamiCommand)
   .command(aiCommand)
+  .command(symphonyCommand)
   .command(
     'install [source]',
     'Install a LinX package or extension',

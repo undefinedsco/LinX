@@ -181,6 +181,7 @@ async function buildAutoModeBundle(entryRelative) {
       './companion-model': './dist/companion-model.js',
       './runtime': './dist/runtime.js',
       './auto-mode': './dist/auto-mode.js',
+      './symphony': './dist/symphony.js',
       './turn-controller': './dist/turn-controller.js',
     },
   }, null, 2))
