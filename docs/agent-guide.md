@@ -41,6 +41,7 @@ Skill source of truth:
 - `docs/dependency-guide.md` — 依赖升级、workspace/npm 版本、`xpod`/`models` 联动与 submodule 锁定规则
 - `docs/desktop-product-strategy.md` — 桌面端 Chat-first + AI-native 产品策略
 - `docs/secretary/README.md` — AI Secretary 能力设计入口，包括存储建模、授权判断和用户请示边界
+- `docs/agent-collaboration-model.md` — Secretary 多工作现场、群聊、跨会话投递、auto 模式与 TUI 共用模型
 - `docs/scene-restoration-solid-modeling.md` — `favorites / inbox / audit / workspace` 的场景恢复与 Solid 建模约束
 - `docs/chat-module-alignment.md` — Chat 模块对齐状态与待修复项
 - `docs/ui-component-architecture.md` — 纯 UI / 逻辑 UI 分层
