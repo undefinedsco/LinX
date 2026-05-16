@@ -9,14 +9,13 @@ describe('inbox presentation', () => {
       actorRole: 'system',
       session: 'urn:linx:runtime-session:runtime-1',
       entry: 'https://alice.example/.data/chat/chat-1/index.ttl#thread-1',
-      toolName: 'codex',
       createdAt: '2026-03-12T12:00:00.000Z',
     }
 
     const presentation = buildAuditPresentation(audit as any, new Map())
 
     expect(presentation.title).toBe('运行时已完成')
-    expect(presentation.description).toBe('工具 codex')
+    expect(presentation.description).toBe('运行时会话已完成。')
     expect(presentation.status).toBe('completed')
     expect(presentation.chatId).toBe('chat-1')
     expect(presentation.threadId).toBe('thread-1')
@@ -29,18 +28,15 @@ describe('inbox presentation', () => {
       action: 'inbox.approval.approved',
       actorRole: 'human',
       session: 'urn:linx:runtime-session:runtime-1',
-      toolName: 'write_file',
       createdAt: '2026-03-12T12:00:00.000Z',
     }
-
-    const relatedApproval = {
-      target: 'https://alice.example/.data/chat/chat-1/index.ttl#thread-1',
+    const approval = {
       toolName: 'write_file',
       risk: 'high',
       reason: '确认路径安全',
     }
 
-    const presentation = buildAuditPresentation(audit as any, new Map(), relatedApproval as any)
+    const presentation = buildAuditPresentation(audit as any, new Map(), approval as any)
 
     expect(presentation.title).toBe('授权已批准')
     expect(presentation.description).toContain('收件箱已批准工具执行。')
@@ -48,28 +44,6 @@ describe('inbox presentation', () => {
     expect(presentation.description).toContain('high 风险')
     expect(presentation.description).toContain('确认路径安全')
     expect(presentation.status).toBe('approved')
-  })
-
-  it('falls back to related approval target for thread restoration', () => {
-    const audit = {
-      id: 'audit-approval-approved',
-      action: 'inbox.approval.approved',
-      actorRole: 'human',
-      session: 'urn:linx:runtime-session:runtime-1',
-      createdAt: '2026-03-12T12:00:00.000Z',
-    }
-
-    const relatedApproval = {
-      id: 'approval-1',
-      target: 'https://alice.example/.data/chat/chat-1/index.ttl#thread-1',
-    }
-
-    const presentation = buildAuditPresentation(audit as any, new Map(), relatedApproval as any)
-
-    expect(presentation.chatId).toBe('chat-1')
-    expect(presentation.threadId).toBe('thread-1')
-    expect(presentation.thread).toBe('https://alice.example/.data/chat/chat-1/index.ttl#thread-1')
-    expect(presentation.about).toBe('https://alice.example/.data/chat/chat-1/index.ttl#thread-1')
   })
 
   it('keeps tool-call timeline events informational instead of actionable', () => {
@@ -81,14 +55,9 @@ describe('inbox presentation', () => {
       toolName: 'write_file',
       createdAt: '2026-03-12T12:00:00.000Z',
     }
+    const approval = { risk: 'high' }
 
-    const relatedApproval = {
-      target: 'https://alice.example/.data/chat/chat-1/index.ttl#thread-1',
-      toolName: 'write_file',
-      risk: 'high',
-    }
-
-    const presentation = buildAuditPresentation(audit as any, new Map(), relatedApproval as any)
+    const presentation = buildAuditPresentation(audit as any, new Map(), approval as any)
 
     expect(presentation.title).toBe('工具请求 · write_file')
     expect(presentation.description).toContain('已进入审批队列')
@@ -102,8 +71,6 @@ describe('inbox presentation', () => {
       actorRole: 'system',
       session: 'urn:linx:runtime-session:runtime-1',
       entry: 'https://alice.example/.data/chat/chat-1/index.ttl#thread-1',
-      toolName: 'oauth2',
-      policy: 'https://example.com/auth',
       createdAt: '2026-03-12T12:00:00.000Z',
     }
 
@@ -113,8 +80,6 @@ describe('inbox presentation', () => {
       actorRole: 'system',
       session: 'urn:linx:runtime-session:runtime-1',
       entry: 'https://alice.example/.data/chat/chat-1/index.ttl#thread-1',
-      toolName: 'oauth2',
-      policy: 'https://example.com/auth',
       createdAt: '2026-03-12T12:01:00.000Z',
     }
 

@@ -1,15 +1,13 @@
 import { useMemo } from 'react'
 import { useSession } from '@inrupt/solid-ui-react'
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { resolveLinxPodBaseUrl } from '@undefineds.co/models/client'
 import {
-  approvalTable,
-  auditTable,
-  buildRuntimeSessionIri,
-  extractApprovalIdFromApprovalRef,
-  extractChatThreadRef,
-  extractRuntimeSessionId,
-  extractThreadIdFromThreadRef,
-  inboxNotificationTable,
+  approvalResource,
+  auditResource,
+  buildApprovalSubjectPath,
+  buildAuditSubjectPath,
+  inboxNotificationResource,
   type ApprovalInsert,
   type ApprovalRow,
   type AuditInsert,
@@ -18,7 +16,6 @@ import {
   type InboxNotificationRow,
   type SolidDatabase,
 } from '@undefineds.co/models'
-import { updateExactRecord } from '@/lib/data/exact-records'
 import { createPodCollection } from '@/lib/data/pod-collection'
 import { queryClient } from '@/providers/query-provider'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
@@ -37,8 +34,8 @@ function getDb(): SolidDatabase | null {
   return dbGetter?.() ?? null
 }
 
-export const approvalCollection = createPodCollection<typeof approvalTable, ApprovalRow, ApprovalInsert>({
-  table: approvalTable,
+export const approvalCollection = createPodCollection<typeof approvalResource, ApprovalRow, ApprovalInsert>({
+  table: approvalResource,
   queryKey: ['inbox', 'approvals'],
   queryClient,
   getDb,
@@ -49,8 +46,8 @@ export const approvalCollection = createPodCollection<typeof approvalTable, Appr
   },
 })
 
-export const auditCollection = createPodCollection<typeof auditTable, AuditRow, AuditInsert>({
-  table: auditTable,
+export const auditCollection = createPodCollection<typeof auditResource, AuditRow, AuditInsert>({
+  table: auditResource,
   queryKey: ['inbox', 'audit'],
   queryClient,
   getDb,
@@ -61,8 +58,8 @@ export const auditCollection = createPodCollection<typeof auditTable, AuditRow, 
   },
 })
 
-export const inboxNotificationCollection = createPodCollection<typeof inboxNotificationTable, InboxNotificationRow, InboxNotificationInsert>({
-  table: inboxNotificationTable,
+export const inboxNotificationCollection = createPodCollection<typeof inboxNotificationResource, InboxNotificationRow, InboxNotificationInsert>({
+  table: inboxNotificationResource,
   queryKey: ['inbox', 'notifications'],
   queryClient,
   getDb,
@@ -82,72 +79,99 @@ export function useInboxInit() {
   return { db, isReady: !!db }
 }
 
+function extractResourceId(uri: string | undefined): string | null {
+  if (!uri) return null
+  const hash = uri.split('#').pop()
+  if (hash) return hash
+  const match = uri.match(/\/([^/]+)\.ttl$/)
+  return match?.[1] ?? null
+}
+
 function formatTimestamp(value: unknown): number {
   if (!value) return 0
   const time = new Date(String(value)).getTime()
   return Number.isFinite(time) ? time : 0
 }
 
+function extractPodBase(webId: string): string {
+  return resolveLinxPodBaseUrl(webId)
+}
+
+function makeApprovalUri(webId: string, approvalId: string, createdAt: Date | string | number = new Date()): string {
+  return `${extractPodBase(webId)}${buildApprovalSubjectPath(approvalId, createdAt)}`
+}
+
+function resolveApprovalIri(actorWebId: string, approval: ApprovalRow): string {
+  const subject = (approval as Record<string, unknown>)['@id'] ?? (approval as Record<string, unknown>).subject
+  if (typeof subject === 'string' && /^https?:\/\//.test(subject)) {
+    return subject
+  }
+  return makeApprovalUri(actorWebId, approval.id, approval.createdAt ?? new Date())
+}
+
+function getApprovalSubject(approval: ApprovalRow): string | null {
+  const subject = (approval as Record<string, unknown>)['@id'] ?? (approval as Record<string, unknown>).subject
+  return typeof subject === 'string' && subject.length > 0 ? subject : null
+}
+
+function findLinkedApproval(approvals: ApprovalRow[], audit: AuditRow): ApprovalRow | null {
+  if (!audit.approval) return null
+  const approvalId = extractResourceId(audit.approval)
+  return approvals.find((item) => getApprovalSubject(item) === audit.approval || item.id === approvalId) ?? null
+}
+
+async function updateApprovalByIri(
+  db: SolidDatabase,
+  actorWebId: string,
+  approval: ApprovalRow,
+  patch: Record<string, unknown>,
+): Promise<void> {
+  const iri = resolveApprovalIri(actorWebId, approval)
+  const updateByIri = (db as unknown as { updateByIri?: (resource: typeof approvalResource, iri: string, data: Record<string, unknown>) => Promise<unknown> }).updateByIri
+  if (typeof updateByIri === 'function') {
+    await updateByIri.call(db, approvalResource, iri, patch)
+    return
+  }
+
+  const query = db.update(approvalResource).set(patch as any)
+  if (typeof (query as any).whereByIri === 'function') {
+    await (query as any).whereByIri(iri).execute()
+    return
+  }
+
+  await query.where({ id: approval.id } as any).execute()
+}
+
+function makeAuditUri(webId: string, auditId: string, createdAt: Date | string | number = new Date()): string {
+  return `${extractPodBase(webId)}${buildAuditSubjectPath(auditId, createdAt)}`
+}
+
+function extractRuntimeSessionId(sessionUri: string | null | undefined): string | null {
+  if (!sessionUri) return null
+  const match = sessionUri.match(/^urn:linx:runtime-session:(.+)$/)
+  if (match?.[1]) return match[1]
+
+  const currentPodMatch = sessionUri.match(/\/\.data\/sessions\/\d{4}\/\d{2}\.ttl#([^/#]+)$/)
+  if (currentPodMatch?.[1]) return decodeURIComponent(currentPodMatch[1])
+
+  const legacyPodMatch = sessionUri.match(/\/\.data\/session\/([^/#]+)\.ttl(?:#([^/#]+))?$/)
+  return legacyPodMatch?.[2]
+    ? decodeURIComponent(legacyPodMatch[2])
+    : legacyPodMatch?.[1]
+      ? decodeURIComponent(legacyPodMatch[1])
+      : null
+}
+
 function extractThreadId(targetUri: string | null | undefined): string | null {
-  return extractThreadIdFromThreadRef(targetUri)
+  if (!targetUri) return null
+  const hash = targetUri.split('#').pop()
+  return hash || null
 }
 
-function resolveRowIri(db: SolidDatabase, table: typeof approvalTable | typeof auditTable, row: Record<string, unknown>): string {
-  if (typeof db.resolveRowIri !== 'function') {
-    throw new Error('Database does not support ORM row IRI resolution')
-  }
-  return db.resolveRowIri(table as any, row)
-}
-
-function resolveNotificationObjectId(
-  db: SolidDatabase | null,
-  notification: InboxNotificationRow,
-  approvals: Map<string, ApprovalRow>,
-  audits: Map<string, AuditRow>,
-): { approval?: ApprovalRow; audit?: AuditRow } {
-  const object = notification.object
-  if (!object) return {}
-
-  for (const approval of approvals.values()) {
-    if (approval.id === object) return { approval }
-    if (db && typeof db.resolveRowIri === 'function') {
-      try {
-        if (db.resolveRowIri(approvalTable as any, approval as unknown as Record<string, unknown>) === object) {
-          return { approval }
-        }
-      } catch {
-        // Ignore incomplete legacy rows and continue matching other resources.
-      }
-    }
-  }
-
-  for (const audit of audits.values()) {
-    if (audit.id === object) return { audit }
-    if (db && typeof db.resolveRowIri === 'function') {
-      try {
-        if (db.resolveRowIri(auditTable as any, audit as unknown as Record<string, unknown>) === object) {
-          return { audit }
-        }
-      } catch {
-        // Ignore incomplete legacy rows and continue matching other resources.
-      }
-    }
-  }
-
-  return {}
-}
-
-export function buildRuntimeToolResponse(
-  decision: 'approved' | 'rejected',
-  reason?: string,
-  grantPattern?: string,
-): string {
-  const normalizedGrantPattern = grantPattern?.trim()
+export function buildRuntimeToolResponse(decision: 'approved' | 'rejected', reason?: string): string {
   return JSON.stringify({
     decision,
     reason: reason?.trim() || null,
-    command: decision === 'approved' && normalizedGrantPattern ? 'approve_pattern' : undefined,
-    pattern: decision === 'approved' && normalizedGrantPattern ? normalizedGrantPattern : undefined,
     source: 'linx-inbox',
   })
 }
@@ -166,11 +190,8 @@ export interface InboxItem {
   approval?: ApprovalRow
   audit?: AuditRow
   notification?: InboxNotificationRow
-  approvalId?: string | null
   chatId?: string | null
   threadId?: string | null
-  thread?: string | null
-  about?: string | null
   authUrl?: string | null
   authMethod?: string | null
   authMessage?: string | null
@@ -182,12 +203,21 @@ function buildApprovalDescription(approval: ApprovalRow): string {
   return `等待授权 · ${approval.risk} 风险`
 }
 
+function extractChatThreadRef(uri: string | null | undefined): { chatId: string | null; threadId: string | null } {
+  if (!uri) return { chatId: null, threadId: null }
+
+  const match = uri.match(/\.data\/chat\/([^/]+)\/index\.ttl#(.+)$/)
+  return {
+    chatId: match?.[1] ?? null,
+    threadId: match?.[2] ?? null,
+  }
+}
+
 function buildInboxItems(
   notifications: InboxNotificationRow[],
   approvals: ApprovalRow[],
   audits: AuditRow[],
 ): InboxItem[] {
-  const db = getDb()
   const approvalById = new Map(approvals.map((item) => [item.id, item]))
   const auditById = new Map(audits.map((item) => [item.id, item]))
   const resolvedAuthTimestampsByKey = createResolvedAuthTimestampsIndex(audits)
@@ -195,7 +225,10 @@ function buildInboxItems(
   const items: InboxItem[] = []
 
   for (const notification of notifications) {
-    const { approval, audit } = resolveNotificationObjectId(db, notification, approvalById, auditById)
+    const resourceId = extractResourceId(notification.object)
+    if (!resourceId) continue
+
+    const approval = approvalById.get(resourceId)
     if (approval) {
       const itemId = `approval:${approval.id}`
       if (seen.has(itemId)) continue
@@ -211,22 +244,19 @@ function buildInboxItems(
         status: approval.status,
         approval,
         notification,
-        approvalId: approval.id,
         chatId: threadRef.chatId,
         threadId: threadRef.threadId,
-        thread: threadRef.chatId || threadRef.threadId ? approval.target : null,
-        about: approval.target,
       })
       continue
     }
 
+    const audit = auditById.get(resourceId)
     if (audit) {
-      const relatedApprovalId = extractApprovalIdFromApprovalRef(audit.approval)
-      const relatedApproval = relatedApprovalId ? approvalById.get(relatedApprovalId) : undefined
       const itemId = `audit:${audit.id}`
       if (seen.has(itemId)) continue
       seen.add(itemId)
-      const presentation = buildAuditPresentation(audit, resolvedAuthTimestampsByKey, relatedApproval)
+      const linkedApproval = findLinkedApproval(approvals, audit)
+      const presentation = buildAuditPresentation(audit, resolvedAuthTimestampsByKey, linkedApproval)
       items.push({
         id: itemId,
         kind: 'audit',
@@ -236,12 +266,10 @@ function buildInboxItems(
         timestamp: String(notification.createdAt ?? audit.createdAt ?? ''),
         status: presentation.status,
         audit,
+        approval: linkedApproval ?? undefined,
         notification,
-        approvalId: relatedApprovalId,
         chatId: presentation.chatId,
         threadId: presentation.threadId,
-        thread: presentation.thread,
-        about: presentation.about,
         authUrl: presentation.authUrl,
         authMethod: presentation.authMethod,
         authMessage: presentation.authMessage,
@@ -262,20 +290,16 @@ function buildInboxItems(
       timestamp: String(approval.resolvedAt ?? approval.createdAt ?? ''),
       status: approval.status,
       approval,
-      approvalId: approval.id,
       chatId: threadRef.chatId,
       threadId: threadRef.threadId,
-      thread: threadRef.chatId || threadRef.threadId ? approval.target : null,
-      about: approval.target,
     })
   }
 
   for (const audit of audits) {
     const itemId = `audit:${audit.id}`
     if (seen.has(itemId)) continue
-    const relatedApprovalId = extractApprovalIdFromApprovalRef(audit.approval)
-    const relatedApproval = relatedApprovalId ? approvalById.get(relatedApprovalId) : undefined
-    const presentation = buildAuditPresentation(audit, resolvedAuthTimestampsByKey, relatedApproval)
+    const linkedApproval = findLinkedApproval(approvals, audit)
+    const presentation = buildAuditPresentation(audit, resolvedAuthTimestampsByKey, linkedApproval)
     items.push({
       id: itemId,
       kind: 'audit',
@@ -285,11 +309,9 @@ function buildInboxItems(
       timestamp: String(audit.createdAt ?? ''),
       status: presentation.status,
       audit,
-      approvalId: relatedApprovalId,
+      approval: linkedApproval ?? undefined,
       chatId: presentation.chatId,
       threadId: presentation.threadId,
-      thread: presentation.thread,
-      about: presentation.about,
       authUrl: presentation.authUrl,
       authMethod: presentation.authMethod,
       authMessage: presentation.authMessage,
@@ -314,7 +336,6 @@ export const inboxOps = {
     decision: 'approved' | 'rejected'
     actorWebId: string
     reason?: string
-    grantPattern?: string
   }) {
     const db = getDb()
     if (!db) {
@@ -323,34 +344,32 @@ export const inboxOps = {
 
     const now = new Date()
     const auditId = crypto.randomUUID()
-    const auditUri = resolveRowIri(db, auditTable, { id: auditId, createdAt: now })
-    const grantPattern = input.decision === 'approved' ? input.grantPattern?.trim() : undefined
+    const auditUri = makeAuditUri(input.actorWebId, auditId, now)
 
-    await updateExactRecord(db, approvalTable as any, input.approval as any, {
+    await updateApprovalByIri(db, input.actorWebId, input.approval, {
       status: input.decision,
       decisionBy: input.actorWebId,
       decisionRole: 'human',
       reason: input.reason?.trim() || null,
       resolvedAt: now,
       policyVersion: input.approval.policyVersion || 'phase4-inbox-v1',
-    } as any)
+    })
 
-    await (db as any).insert(auditTable as any).values({
+    await db.insert(auditResource).values({
       id: auditId,
       action: `inbox.approval.${input.decision}`,
       actor: input.actorWebId,
       actorRole: 'human',
       session: input.approval.session,
       toolCallId: input.approval.toolCallId,
+      approval: resolveApprovalIri(input.actorWebId, input.approval),
       toolName: input.approval.toolName,
-      approval: resolveRowIri(db, approvalTable, input.approval as unknown as Record<string, unknown>),
       entry: input.approval.target,
-      policy: grantPattern ? `approve_pattern:${grantPattern}` : undefined,
       policyVersion: input.approval.policyVersion || 'phase4-inbox-v1',
       createdAt: now,
     }).execute()
 
-    await (db as any).insert(inboxNotificationTable).values({
+    await db.insert(inboxNotificationResource).values({
       id: crypto.randomUUID(),
       actor: input.actorWebId,
       object: auditUri,
@@ -406,7 +425,6 @@ export function useResolveInboxApproval() {
       approval: ApprovalRow
       decision: 'approved' | 'rejected'
       reason?: string
-      grantPattern?: string
     }) => {
       const actorWebId = session.info.webId
       if (!actorWebId) {
@@ -418,10 +436,9 @@ export function useResolveInboxApproval() {
         decision: input.decision,
         actorWebId,
         reason: input.reason,
-        grantPattern: input.grantPattern,
       })
 
-      const runtimeSessionId = extractRuntimeSessionId(input.approval.session ?? buildRuntimeSessionIri(''))
+      const runtimeSessionId = extractRuntimeSessionId(input.approval.session)
       const threadId = extractThreadId(input.approval.target)
       const isServiceMode = typeof window !== 'undefined' && !!(window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__
       if (runtimeSessionId && threadId && isServiceMode && input.approval.toolCallId && db && session.fetch) {
@@ -432,7 +449,7 @@ export function useResolveInboxApproval() {
             authFetch: session.fetch,
             threadId,
             toolCallId: input.approval.toolCallId,
-            output: buildRuntimeToolResponse(input.decision, input.reason, input.grantPattern),
+            output: buildRuntimeToolResponse(input.decision, input.reason),
           })
 
           await queryClient.invalidateQueries({ queryKey: ['threads', threadId, 'messages'] })

@@ -13,11 +13,11 @@ It is the execution baseline for implementation, verification, and release claim
 
 | Surface | Current truth owner | Existing Solid resource/schema | Active writer(s) | Gap | Next action |
 |---|---|---|---|---|---|
-| chat | Pod-backed for CLI default TUI, legacy CLI chat, and watch conversation data | `chatTable` | `apps/cli/src/lib/pi-adapter/pod-mirror.ts`, `apps/cli/src/lib/pod-chat-store.ts`, `apps/cli/src/lib/watch/pod-persistence.ts` | Production CRUD must be verified against real Pod before release claim | Keep as authoritative conversation root |
-| thread | Pod-backed for CLI default TUI, legacy CLI chat, and watch conversation data | `threadTable` | `pod-mirror.ts`, `pod-chat-store.ts`, `watch/pod-persistence.ts` | Production CRUD must be verified against real Pod before release claim | Keep as authoritative workspace/session thread |
-| message | Pod-backed for CLI default TUI, legacy CLI chat, and watch conversation data | `messageTable` | `pod-mirror.ts`, `pod-chat-store.ts`, `watch/pod-persistence.ts` | Production CRUD must be verified against real Pod before release claim | Keep as authoritative message history |
+| chat | Pod-backed for CLI default TUI, legacy CLI chat, and auto-mode conversation data | `chatTable` | `apps/cli/src/lib/pi-adapter/pod-mirror.ts`, `apps/cli/src/lib/pod-chat-store.ts`, `apps/cli/src/lib/auto-mode/pod-persistence.ts` | Production CRUD must be verified against real Pod before release claim | Keep as authoritative conversation root |
+| thread | Pod-backed for CLI default TUI, legacy CLI chat, and auto-mode conversation data | `threadTable` | `pod-mirror.ts`, `pod-chat-store.ts`, `auto-mode/pod-persistence.ts` | Production CRUD must be verified against real Pod before release claim | Keep as authoritative workspace/session thread |
+| message | Pod-backed for CLI default TUI, legacy CLI chat, and auto-mode conversation data | `messageTable` | `pod-mirror.ts`, `pod-chat-store.ts`, `auto-mode/pod-persistence.ts` | Production CRUD must be verified against real Pod before release claim | Keep as authoritative message history |
 | session | Pod-backed lifecycle projection for default TUI and web sidecar; live runtime control still uses Pi/runtime state | `sessionTable` | `pod-mirror.ts`, `apps/web/src/modules/chat/services/chatkit-local/runtime-sidecar.ts`, `apps/web/src/modules/chat/collections.ts` | Production CRUD must be verified; live transport state is not yet Pod-first | Keep Pod as durable session projection, local state only for live controls |
-| approval | Pod-backed in real approval flows | `approvalResource`, `auditResource`, `inboxNotificationTable` | `apps/cli/src/lib/watch/pod-approval.ts`, `apps/web/src/modules/chat/services/chatkit-local/runtime-sidecar.ts` | Default Pi ordinary tool calls do not create approval rows unless an approval request actually exists | Keep approval rows tied to real approval semantics |
+| approval | Pod-backed in real approval flows | `approvalResource`, `auditResource`, `inboxNotificationTable` | `apps/cli/src/lib/auto-mode/pod-approval.ts`, `apps/web/src/modules/chat/services/chatkit-local/runtime-sidecar.ts` | Default Pi ordinary tool calls do not create approval rows unless an approval request actually exists | Keep approval rows tied to real approval semantics |
 | authorization / delegation | Pod-backed in remote approval grant flow | `grantResource` | `pod-approval.ts` writes `grantResource` for `accept_for_session` and reads active grants before creating new approvals | Broader Pi/web consumption still needs adoption; production CRUD must be verified | Keep grant as durable delegation policy |
 | audit | Pod-backed for default TUI tool execution and approval decisions | `auditResource` | `pod-mirror.ts`, `pod-approval.ts`, web sidecar | Production CRUD must be verified against real Pod before release claim | Keep as append-only audit/event surface |
 
@@ -67,7 +67,12 @@ Rules:
 5. The required proof for implementation readiness is local xpod-backed round-trip behavior for
    `chat`, `thread`, `message`, `session`, `approval`, `authorization/grant`, and `audit` surfaces.
 6. The required proof for release/user-facing completion is production Pod CRUD for the same
-   surfaces, using the real undefineds identity/runtime credentials.
+   surfaces, using a dedicated undefineds production smoke account. Do not run write smoke tests
+   against a developer's personal WebID or a customer account.
+
+Production write smoke scripts must fail closed unless the active WebID matches the explicit
+`LINX_PROD_SMOKE_WEBID` environment variable. Use an isolated `HOME` or credential directory for
+that account so local `~/.linx` state does not accidentally point production smoke at a personal Pod.
 
 Implication: the earlier attempt to adapt schemas to vanilla CSS was the wrong direction. The fix is
 to keep xpod semantics intact and make the test harness target local xpod.

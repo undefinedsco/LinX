@@ -16,12 +16,13 @@ import {
   messageTable,
   agentTable,
   contactTable,
-  credentialTable,
+  credentialResource,
+  aiProviderResource,
   eq,
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
-  resolveThreadChatId as resolveThreadChatIdFromRow,
   selectAIConfigCredential,
+  resolveThreadChatId as resolveThreadChatIdFromRow,
   UDFS,
   WF,
   type ChatRow,
@@ -200,11 +201,9 @@ async function resolveThreadChatId(
     return cachedChatId
   }
 
-  const cachedRow = cachedChatId
-    ? await (db as any).findByLocator(threadTable as any, { id: threadId, chat: cachedChatId } as any)
+  const row = typeof (db as any).findById === 'function'
+    ? await (db as any).findById(threadTable as any, threadId) as ThreadRow | null
     : null
-  const row = (cachedRow
-    ?? (await db.select().from(threadTable).execute()).find((entry: any) => entry.id === threadId)) as ThreadRow | undefined
   const rowChatId = resolveThreadChatIdFromRow(row)
   if (!rowChatId) {
     return null
@@ -327,7 +326,9 @@ async function ensureChatStateRow(db: SolidDatabase, chatId: string): Promise<Ch
     return cached
   }
 
-  const located = await (db as any).findByLocator(chatTable as any, { id: chatId } as any) as ChatRow | null
+  const located = typeof (db as any).findById === 'function'
+    ? await (db as any).findById(chatTable as any, chatId) as ChatRow | null
+    : null
   if (located) {
     if (!chatCollection.isReady()) {
       await chatCollection.preload()
@@ -355,12 +356,9 @@ async function ensureThreadStateRow(db: SolidDatabase, threadId: string): Promis
     return cached
   }
 
-  const cachedChatId = getCachedThreadChatId(threadId)
-  const cachedRow = cachedChatId
-    ? await (db as any).findByLocator(threadTable as any, { id: threadId, chat: cachedChatId } as any)
+  const row = typeof (db as any).findById === 'function'
+    ? await (db as any).findById(threadTable as any, threadId) as ThreadRow | null
     : null
-  const row = (cachedRow
-    ?? (await db.select().from(threadTable).execute()).find((entry: any) => entry.id === threadId)) as ThreadRow | undefined
 
   if (!row) {
     throw new Error(`Thread ${threadId} was not found in the Pod`)
@@ -468,7 +466,7 @@ async function resolveAssistantMakerFromChat(db: SolidDatabase, chat: Pick<ChatR
   try {
     const contactId = extractLinkedEntityId(participant)
     const contact = contactId
-      ? await (db as any).findByLocator(contactTable as any, { id: contactId } as any) as ContactRow | null
+      ? await (db as any).findById(contactTable as any, contactId) as ContactRow | null
       : null
     if (contact?.entityUri) {
       return contact.entityUri
@@ -515,7 +513,7 @@ async function ensureAgentHomeForChat(db: SolidDatabase, chat: Pick<ChatRow, 'ti
 
 async function resolveAgentMaker(db: SolidDatabase, agentId: string): Promise<string> {
   try {
-    const agent = await (db as any).findByLocator(agentTable as any, { id: agentId } as any)
+    const agent = await (db as any).findById(agentTable as any, agentId)
     const agentUri = agent ? resolveRowSubject(agent as Record<string, unknown>) : undefined
     if (agentUri) return agentUri
   } catch (error) {
@@ -1019,7 +1017,7 @@ export const chatOps = {
     const cachedWorkspace = workspaceCollection.get(workspaceId)
     const persistedWorkspaceRows: WorkspaceRow[] = []
     if (!cachedWorkspace) {
-      const persistedWorkspace = await (db as any).findByLocator(workspaceTable as any, { id: workspaceId } as any)
+      const persistedWorkspace = await (db as any).findById(workspaceTable as any, workspaceId)
       if (persistedWorkspace) {
         persistedWorkspaceRows.push(persistedWorkspace)
       }
@@ -1370,25 +1368,30 @@ export const chatOps = {
   },
 
   /**
-   * Get API credential for a provider from credentialTable
+   * Get API credential for a provider from Pod-backed AI config resources.
    */
   async getCredential(provider: string): Promise<{ apiKey: string; baseUrl?: string } | null> {
     const db = getDb()
     if (!db) return null
 
-    const rows = await db.select()
-      .from(credentialTable)
-      .execute() as Array<Record<string, unknown>>
-    const selected = selectAIConfigCredential(provider, rows)
-    if (!selected) return null
+    const providerId = normalizeAIConfigProviderId(provider)
+    const [credentialRows, providerRow] = await Promise.all([
+      db.select().from(credentialResource).execute(),
+      typeof (db as any).findById === 'function'
+        ? (db as any).findById(aiProviderResource as any, providerId).catch(() => null)
+        : Promise.resolve(null),
+    ])
+    const selected = selectAIConfigCredential(
+      providerId,
+      credentialRows as Array<Record<string, unknown>>,
+      providerRow ? [providerRow as Record<string, unknown>] : [],
+    )
 
-    if (selected.credentialId) {
-      await (db as any).updateByLocator?.(credentialTable as any, { id: selected.credentialId }, { lastUsedAt: new Date() })
-    }
+    if (!selected) return null
 
     return {
       apiKey: selected.apiKey,
-      baseUrl: selected.baseUrl,
+      baseUrl: selected.baseUrl || undefined,
     }
   },
 

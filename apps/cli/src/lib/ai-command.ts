@@ -1,18 +1,18 @@
 import type { CommandModule } from 'yargs'
 import { resolveLinxPodUrl } from '@undefineds.co/models/client'
 import {
-  aiModelTable,
-  aiProviderTable,
+  aiConfigProviderRef,
+  aiModelResource,
+  aiProviderResource,
+  buildAIConfigDisconnectPlan,
   buildAIConfigMutationPlan,
   buildAIConfigProviderStateMap,
-  credentialTable,
+  credentialResource,
   drizzle,
   getAIConfigProviderMetadata,
-  initSolidTables,
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
-  sameAIConfigProviderFamily,
-  solidSchema,
+  solidResources,
   type AIModelRow,
   type AIProviderRow,
   type CredentialRow,
@@ -33,6 +33,13 @@ interface AiArgs {
 }
 
 interface AiRuntime {
+  buildAIConfigDisconnectPlan: (input: {
+    providerId: string
+    currentCredentialRows: Array<Partial<CredentialRow> & Record<string, unknown>>
+  }) => {
+    providerId: string
+    credentialDeleteIds: string[]
+  }
   buildAIConfigMutationPlan: (input: {
     providerId: string
     currentProviderRows: Array<Partial<AIProviderRow> & Record<string, unknown>>
@@ -88,9 +95,9 @@ interface AiRuntime {
     selectedModelId?: string
   }>
   getAIConfigProviderMetadata: (providerId: string) => { id: string }
+  aiConfigProviderRef: (providerId: string) => string
   normalizeAIConfigProviderId: (value?: string | null) => string
   normalizeAIConfigResourceId: (value?: string | null) => string
-  sameAIConfigProviderFamily: (left?: string | null, right?: string | null) => boolean
 }
 
 interface AiConfigRows {
@@ -104,8 +111,8 @@ interface AiCommandDependencies {
   resolvePodWriteContext?: (urlOverride?: string) => Promise<{ accessToken: string; podUrl: string; webId: string }>
   createDb?: (context: { accessToken: string; podUrl: string; webId: string }) => SolidDatabase
   loadAiConfigRows?: (db: SolidDatabase) => Promise<AiConfigRows>
-  upsertByLocator?: typeof upsertByLocator
-  deleteByLocatorIfExists?: typeof deleteByLocatorIfExists
+  upsertById?: typeof upsertById
+  deleteByIdIfExists?: typeof deleteByIdIfExists
   requireApiKey?: (argv: AiArgs) => Promise<string>
   write?: (chunk: string) => void
 }
@@ -115,12 +122,13 @@ let aiRuntimePromise: Promise<AiRuntime> | null = null
 async function loadAiRuntime(): Promise<AiRuntime> {
   if (!aiRuntimePromise) {
     aiRuntimePromise = Promise.resolve({
+      buildAIConfigDisconnectPlan,
       buildAIConfigMutationPlan,
       buildAIConfigProviderStateMap,
+      aiConfigProviderRef,
       getAIConfigProviderMetadata,
       normalizeAIConfigProviderId,
       normalizeAIConfigResourceId,
-      sameAIConfigProviderFamily,
     })
   }
 
@@ -190,7 +198,8 @@ function createAiConfigDb(context: { accessToken: string; podUrl: string; webId:
   return drizzle(solidSession, {
     logger: false,
     disableInteropDiscovery: true,
-    schema: solidSchema,
+    resourcePreparation: 'best-effort' as never,
+    schema: solidResources,
   }) as unknown as SolidDatabase
 }
 
@@ -199,38 +208,37 @@ async function loadAiConfigRows(db: SolidDatabase): Promise<{
   providerRows: AIProviderRow[]
   modelRows: AIModelRow[]
 }> {
-  await initSolidTables(db, [credentialTable, aiProviderTable, aiModelTable])
   const [credentialRows, providerRows, modelRows] = await Promise.all([
-    db.select().from(credentialTable).execute() as Promise<CredentialRow[]>,
-    db.select().from(aiProviderTable).execute() as Promise<AIProviderRow[]>,
-    db.select().from(aiModelTable).execute() as Promise<AIModelRow[]>,
+    db.select().from(credentialResource).execute() as Promise<CredentialRow[]>,
+    db.select().from(aiProviderResource).execute() as Promise<AIProviderRow[]>,
+    db.select().from(aiModelResource).execute() as Promise<AIModelRow[]>,
   ])
   return { credentialRows, providerRows, modelRows }
 }
 
-async function upsertByLocator(
+async function upsertById(
   db: SolidDatabase,
-  table: Parameters<SolidDatabase['resolveLocatorIri']>[0],
-  locator: Record<string, unknown>,
+  resource: Parameters<SolidDatabase['findById']>[0],
+  id: string,
   insert: Record<string, unknown>,
   update: Record<string, unknown>,
 ): Promise<void> {
-  const existing = await db.findByLocator(table, locator)
+  const existing = await db.findById(resource, id)
   if (!existing) {
-    await db.insert(table).values(insert).execute()
+    await db.insert(resource).values(insert).execute()
     return
   }
-  await db.updateByLocator(table, locator, update)
+  await db.updateById(resource, id, update)
 }
 
-async function deleteByLocatorIfExists(
+async function deleteByIdIfExists(
   db: SolidDatabase,
-  table: Parameters<SolidDatabase['resolveLocatorIri']>[0],
-  locator: Record<string, unknown>,
+  resource: Parameters<SolidDatabase['findById']>[0],
+  id: string,
 ): Promise<void> {
-  const existing = await db.findByLocator(table, locator)
+  const existing = await db.findById(resource, id)
   if (existing) {
-    await db.deleteByLocator(table, locator)
+    await db.deleteById(resource, id)
   }
 }
 
@@ -248,8 +256,8 @@ export async function runAiCommand(argv: AiArgs, dependencies: AiCommandDependen
   const db = (dependencies.createDb ?? createAiConfigDb)(podContext)
   const { credentialRows, providerRows, modelRows } = await (dependencies.loadAiConfigRows ?? loadAiConfigRows)(db)
   const write = dependencies.write ?? ((chunk: string) => process.stdout.write(chunk))
-  const upsert = dependencies.upsertByLocator ?? upsertByLocator
-  const deleteIfExists = dependencies.deleteByLocatorIfExists ?? deleteByLocatorIfExists
+  const upsert = dependencies.upsertById ?? upsertById
+  const deleteIfExists = dependencies.deleteByIdIfExists ?? deleteByIdIfExists
   const getApiKey = dependencies.requireApiKey ?? requireApiKey
 
   if (action === 'status') {
@@ -263,7 +271,7 @@ export async function runAiCommand(argv: AiArgs, dependencies: AiCommandDependen
     const filtered = Object.values(states).filter((state) => {
       if (!state.apiKey) return false
       if (!argv.provider) return true
-      return aiRuntime.sameAIConfigProviderFamily(argv.provider, state.id)
+      return aiRuntime.normalizeAIConfigProviderId(argv.provider) === state.id
     })
 
     if (filtered.length === 0) {
@@ -295,15 +303,15 @@ export async function runAiCommand(argv: AiArgs, dependencies: AiCommandDependen
   const provider = aiRuntime.normalizeAIConfigProviderId(providerArg)
 
   if (action === 'disconnect') {
-    for (const row of credentialRows) {
-      const rowProvider = typeof row.provider === 'string' ? row.provider : row.id
-      if (!aiRuntime.sameAIConfigProviderFamily(rowProvider, provider)) {
-        continue
-      }
-      await deleteIfExists(db, credentialTable, { id: row.id })
+    const plan = aiRuntime.buildAIConfigDisconnectPlan({
+      providerId: provider,
+      currentCredentialRows: credentialRows,
+    })
+    for (const credentialId of plan.credentialDeleteIds) {
+      await deleteIfExists(db, credentialResource, credentialId)
     }
 
-    write(`Disconnected AI provider: ${provider}\n`)
+    write(`Disconnected AI provider: ${plan.providerId}\n`)
     return
   }
 
@@ -330,7 +338,7 @@ export async function runAiCommand(argv: AiArgs, dependencies: AiCommandDependen
   })
 
   if (plan.providerPayload?.id) {
-    await upsert(db, aiProviderTable, { id: plan.providerPayload.id }, plan.providerPayload, {
+    await upsert(db, aiProviderResource, plan.providerPayload.id, plan.providerPayload, {
       baseUrl: plan.providerPayload.baseUrl,
       proxyUrl: plan.providerPayload.proxyUrl,
       hasModel: plan.providerPayload.hasModel,
@@ -343,7 +351,7 @@ export async function runAiCommand(argv: AiArgs, dependencies: AiCommandDependen
     && plan.credentialPayload.service
     && plan.credentialPayload.status
   ) {
-    await upsert(db, credentialTable, { id: plan.credentialPayload.id }, plan.credentialPayload, {
+    await upsert(db, credentialResource, plan.credentialPayload.id, plan.credentialPayload, {
       provider: plan.credentialPayload.provider,
       service: plan.credentialPayload.service,
       status: plan.credentialPayload.status,
@@ -357,10 +365,11 @@ export async function runAiCommand(argv: AiArgs, dependencies: AiCommandDependen
     if (!modelPayload.id || !modelPayload.isProvidedBy || !modelPayload.createdAt || !modelPayload.updatedAt) {
       continue
     }
-    await upsert(db, aiModelTable, {
+    const modelResourceId = db.resolveLocatorId(aiModelResource, {
       id: modelPayload.id,
       isProvidedBy: modelPayload.isProvidedBy,
-    }, modelPayload, {
+    })
+    await upsert(db, aiModelResource, modelResourceId, modelPayload, {
       displayName: modelPayload.displayName,
       modelType: modelPayload.modelType,
       isProvidedBy: modelPayload.isProvidedBy,
@@ -370,10 +379,12 @@ export async function runAiCommand(argv: AiArgs, dependencies: AiCommandDependen
   }
 
   for (const modelIdToDelete of plan.modelDeleteIds) {
-    await deleteIfExists(db, aiModelTable, {
+    const providerRef = aiRuntime.aiConfigProviderRef(plan.providerId)
+    const modelResourceId = db.resolveLocatorId(aiModelResource, {
       id: modelIdToDelete,
-      isProvidedBy: plan.providerId,
+      isProvidedBy: providerRef,
     })
+    await deleteIfExists(db, aiModelResource, modelResourceId)
   }
 
   const metadata = aiRuntime.getAIConfigProviderMetadata(provider)

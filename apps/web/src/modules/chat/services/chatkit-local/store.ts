@@ -77,7 +77,10 @@ function parseThreadMetadata(metadata: unknown): Record<string, unknown> | undef
 
 async function findThreadRecord(db: SolidDatabase<any>, threadId: string, chatId?: string | null): Promise<any | null> {
   if (chatId) {
-    const exact = await (db as any).findByLocator(Thread as any, { id: threadId, chat: chatId } as any)
+    const resourceId = (db as any).resolveLocatorId?.(Thread as any, { id: threadId, chat: chatId } as any)
+    const exact = resourceId
+      ? await (db as any).findById(Thread as any, resourceId)
+      : null
     if (exact) return exact
   }
 
@@ -234,7 +237,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   // -----------------------------------------------------------------------
 
   private async ensureChat(chatId: string): Promise<void> {
-    const existingChat = await (this.db as any).findByLocator(Chat as any, { id: chatId } as any)
+    const existingChat = await (this.db as any).findById(Chat as any, chatId)
     if (!existingChat) {
       const now = new Date()
       await (this.db as any).insert(Chat as any).values({
@@ -267,7 +270,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   }
 
   private async resolveCounterpartMaker(chatId: string): Promise<string> {
-    const chat = await (this.db as any).findByLocator(Chat as any, { id: chatId } as any)
+    const chat = await (this.db as any).findById(Chat as any, chatId)
     const participants = Array.isArray(chat?.participants)
       ? chat.participants.filter((participant: unknown): participant is string => typeof participant === 'string' && participant.length > 0)
       : []

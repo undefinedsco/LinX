@@ -3,25 +3,25 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { loadWatchModule } from './watch-test-bundle.mjs'
+import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 
-function useTempWatchHome(t) {
-  const previous = process.env.LINX_WATCH_HOME
-  const dir = mkdtempSync(join(tmpdir(), 'linx-watch-home-'))
-  process.env.LINX_WATCH_HOME = dir
+function useTempAutoModeHome(t) {
+  const previous = process.env.LINX_AUTO_MODE_HOME
+  const dir = mkdtempSync(join(tmpdir(), 'linx-auto-mode-home-'))
+  process.env.LINX_AUTO_MODE_HOME = dir
   t.after(() => {
     if (previous === undefined) {
-      delete process.env.LINX_WATCH_HOME
+      delete process.env.LINX_AUTO_MODE_HOME
     } else {
-      process.env.LINX_WATCH_HOME = previous
+      process.env.LINX_AUTO_MODE_HOME = previous
     }
     rmSync(dir, { recursive: true, force: true })
   })
 }
 
 test('createCodexAttachSessionRecord creates a codex->xpod attach session', async (t) => {
-  useTempWatchHome(t)
-  const { module, cleanup } = await loadWatchModule('lib/codex-plugin/bridge.ts')
+  useTempAutoModeHome(t)
+  const { module, cleanup } = await loadAutoModeModule('lib/codex-plugin/bridge.ts')
   t.after(() => cleanup())
 
   const record = module.createCodexAttachSessionRecord({
@@ -35,12 +35,12 @@ test('createCodexAttachSessionRecord creates a codex->xpod attach session', asyn
   assert.equal(record.cwd, '/tmp/demo')
   assert.equal(record.backendSessionId, 'sess_codex_attach_123')
   assert.equal(record.transport, 'acp')
-  assert.equal(record.approvalSource, 'remote')
+  assert.equal(record.approvalSource, 'hybrid')
 })
 
 test('createCodexAttachSessionRecord prefers workspacePath over cwd and rejects missing path', async (t) => {
-  useTempWatchHome(t)
-  const { module, cleanup } = await loadWatchModule('lib/codex-plugin/bridge.ts')
+  useTempAutoModeHome(t)
+  const { module, cleanup } = await loadAutoModeModule('lib/codex-plugin/bridge.ts')
   t.after(() => cleanup())
 
   const preferred = module.createCodexAttachSessionRecord({
@@ -59,8 +59,8 @@ test('createCodexAttachSessionRecord prefers workspacePath over cwd and rejects 
 })
 
 test('codex attach bridge maps codex approval requests to xpod remote approvals and back', async (t) => {
-  useTempWatchHome(t)
-  const { module, cleanup } = await loadWatchModule('lib/codex-plugin/bridge.ts')
+  useTempAutoModeHome(t)
+  const { module, cleanup } = await loadAutoModeModule('lib/codex-plugin/bridge.ts')
   t.after(() => cleanup())
 
   const record = module.createCodexAttachSessionRecord({
@@ -69,12 +69,12 @@ test('codex attach bridge maps codex approval requests to xpod remote approvals 
   })
 
   const runtime = {
-    async createRemoteWatchApproval({ request }) {
+    async createRemoteAutoModeApproval({ request }) {
       assert.equal(request.kind, 'command-approval')
       assert.equal(request.command, 'pwd')
       return { id: 'approval_remote_1' }
     },
-    async waitForRemoteWatchApproval({ approvalId }) {
+    async waitForRemoteAutoModeApproval({ approvalId }) {
       assert.equal(approvalId, 'approval_remote_1')
       return 'accept_for_session'
     },
@@ -109,8 +109,8 @@ test('codex attach bridge maps codex approval requests to xpod remote approvals 
 })
 
 test('codex attach bridge handles JSON-RPC lines and emits codex responses', async (t) => {
-  useTempWatchHome(t)
-  const { module, cleanup } = await loadWatchModule('lib/codex-plugin/bridge.ts')
+  useTempAutoModeHome(t)
+  const { module, cleanup } = await loadAutoModeModule('lib/codex-plugin/bridge.ts')
   t.after(() => cleanup())
 
   const record = module.createCodexAttachSessionRecord({
@@ -119,10 +119,10 @@ test('codex attach bridge handles JSON-RPC lines and emits codex responses', asy
   })
 
   const bridge = module.createCodexAttachBridge(record, {
-    async createRemoteWatchApproval() {
+    async createRemoteAutoModeApproval() {
       return { id: 'approval_rpc_1' }
     },
-    async waitForRemoteWatchApproval() {
+    async waitForRemoteAutoModeApproval() {
       return 'decline'
     },
   })

@@ -10,7 +10,8 @@
 
 import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
 import { Type } from '@sinclair/typebox';
-import { getDefaultPodDataSession } from '../pod-data-session.js';
+import { resolveLinxPodBaseUrl } from '@undefineds.co/models/client';
+import { getDefaultPodDataSession, type PodDataSession } from '../pod-data-session.js';
 
 // ── Parameter Schemas ──────────────────────────────────────────────────────
 
@@ -37,6 +38,39 @@ function inferContentType(path: string): string {
   return 'text/plain';
 }
 
+export function resolvePodToolUrl(
+  path: string,
+  pod: { credentials?: { url?: string | null }; webId?: string | null },
+): string {
+  if (/^https?:\/\//i.test(path)) {
+    return path;
+  }
+
+  const webId = pod.webId?.trim() ?? '';
+  const origin = resolveUrlOrigin(webId) || resolveUrlOrigin(pod.credentials?.url);
+  if (path.startsWith('/')) {
+    if (!origin) {
+      throw new Error('Cannot resolve absolute Pod path without a WebID or issuer URL.');
+    }
+    return new URL(path, `${origin}/`).toString();
+  }
+
+  const podBase = webId ? resolveLinxPodBaseUrl(webId) : '';
+  const baseUrl = podBase || origin;
+  if (!baseUrl) {
+    throw new Error('Cannot resolve relative Pod path without a WebID or issuer URL.');
+  }
+  return new URL(path, `${baseUrl.replace(/\/+$/, '')}/`).toString();
+}
+
+function resolveUrlOrigin(url?: string | null): string {
+  try {
+    return typeof url === 'string' && url.trim() ? new URL(url).origin : '';
+  } catch {
+    return '';
+  }
+}
+
 // ── Tool Definitions ────────────────────────────────────────────────────────
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -49,25 +83,33 @@ export const podReadTool: any = {
   ].join('\n'),
   parameters: PodReadParams,
   async execute(_callId: string, params: PodReadParams) {
-    const path = params.path.trim();
-    if (!path) return { content: [{ type: 'text' as const, text: 'Error: path is required' }], isError: true };
-
-    const pod = await getDefaultPodDataSession();
-    if (!pod) return { content: [{ type: 'text' as const, text: 'Error: not connected to Pod' }], isError: true };
-
-    try {
-      const res = await pod.fetch(path);
-      if (!res.ok) {
-        const body = await res.text().catch(() => '');
-        return { content: [{ type: 'text' as const, text: `Pod read failed: HTTP ${res.status} — ${body.slice(0, 500)}` }], isError: true };
-      }
-      const text = await res.text();
-      return { content: [{ type: 'text' as const, text }] };
-    } catch (e) {
-      return { content: [{ type: 'text' as const, text: `Pod read error: ${e instanceof Error ? e.message : String(e)}` }], isError: true };
-    }
+    return executePodRead(params);
   },
 };
+
+export async function executePodRead(
+  params: PodReadParams,
+  getPodDataSession: () => Promise<PodDataSession | null> = getDefaultPodDataSession,
+) {
+  const path = params.path.trim();
+  if (!path) return { content: [{ type: 'text' as const, text: 'Error: path is required' }], isError: true };
+
+  const pod = await getPodDataSession();
+  if (!pod) return { content: [{ type: 'text' as const, text: 'Error: not connected to Pod' }], isError: true };
+
+  try {
+    const fullUrl = resolvePodToolUrl(path, pod);
+    const res = await pod.fetch(fullUrl);
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      return { content: [{ type: 'text' as const, text: `Pod read failed: HTTP ${res.status} — ${body.slice(0, 500)}` }], isError: true };
+    }
+    const text = await res.text();
+    return { content: [{ type: 'text' as const, text }] };
+  } catch (e) {
+    return { content: [{ type: 'text' as const, text: `Pod read error: ${e instanceof Error ? e.message : String(e)}` }], isError: true };
+  }
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const podWriteTool: any = {
@@ -80,30 +122,38 @@ export const podWriteTool: any = {
   ].join('\n'),
   parameters: PodWriteParams,
   async execute(_callId: string, params: PodWriteParams) {
-    const path = params.path.trim();
-    if (!path) return { content: [{ type: 'text' as const, text: 'Error: path is required' }], isError: true };
-
-    const pod = await getDefaultPodDataSession();
-    if (!pod) return { content: [{ type: 'text' as const, text: 'Error: not connected to Pod' }], isError: true };
-
-    const ct = params.contentType?.trim() || inferContentType(path);
-
-    try {
-      const res = await pod.fetch(path, {
-        method: 'PUT',
-        headers: { 'Content-Type': ct },
-        body: params.content,
-      });
-      if (!res.ok) {
-        const body = await res.text().catch(() => '');
-        return { content: [{ type: 'text' as const, text: `Pod write failed: HTTP ${res.status} — ${body.slice(0, 500)}` }], isError: true };
-      }
-      return { content: [{ type: 'text' as const, text: `Written: ${path}` }] };
-    } catch (e) {
-      return { content: [{ type: 'text' as const, text: `Pod write error: ${e instanceof Error ? e.message : String(e)}` }], isError: true };
-    }
+    return executePodWrite(params);
   },
 };
+
+export async function executePodWrite(
+  params: PodWriteParams,
+  getPodDataSession: () => Promise<PodDataSession | null> = getDefaultPodDataSession,
+) {
+  const path = params.path.trim();
+  if (!path) return { content: [{ type: 'text' as const, text: 'Error: path is required' }], isError: true };
+
+  const pod = await getPodDataSession();
+  if (!pod) return { content: [{ type: 'text' as const, text: 'Error: not connected to Pod' }], isError: true };
+
+  const ct = params.contentType?.trim() || inferContentType(path);
+
+  try {
+    const fullUrl = resolvePodToolUrl(path, pod);
+    const res = await pod.fetch(fullUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': ct },
+      body: params.content,
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      return { content: [{ type: 'text' as const, text: `Pod write failed: HTTP ${res.status} — ${body.slice(0, 500)}` }], isError: true };
+    }
+    return { content: [{ type: 'text' as const, text: `Written: ${path}` }] };
+  } catch (e) {
+    return { content: [{ type: 'text' as const, text: `Pod write error: ${e instanceof Error ? e.message : String(e)}` }], isError: true };
+  }
+}
 
 // ── Pi Extension ────────────────────────────────────────────────────────────
 

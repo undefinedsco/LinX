@@ -44,7 +44,6 @@ const mockDb = {
   }),
   resolveRowIri: vi.fn(),
   resolveRowId: vi.fn(),
-  resolveResourceId: vi.fn(),
   // Add findFirst for remote profile/agent fetching
   findFirst: vi.fn().mockResolvedValue(null),
 }
@@ -113,10 +112,6 @@ function resetMockDb() {
   })
   mockDb.resolveRowId.mockImplementation((_table, row: Record<string, unknown>) => {
     return String(row.id ?? row['@id'] ?? row.subject ?? row.uri ?? row.source ?? 'mock-row')
-  })
-  mockDb.resolveResourceId.mockImplementation((_table, target: string | Record<string, unknown>) => {
-    if (typeof target === 'string') return target
-    return String(target.id ?? target['@id'] ?? target.subject ?? target.uri ?? target.source ?? 'mock-row')
   })
   mockDb.findFirst.mockResolvedValue(null)
 }

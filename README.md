@@ -54,7 +54,7 @@ AI 越了解用户，就越有价值；但这只有在用户持续掌控数据�
 LinX 处在整个栈的用户产品层：
 
 - **xpod**：提供 Pod runtime、Solid 凭证、身份与服务基础设施
-- **`@undefineds.co/models` / drizzle-solid**：提供共享数据面 SDK、类型化 Pod schema、仓储合同，以及 LinX client/watch helper
+- **`@undefineds.co/models` / drizzle-solid**：提供共享数据面 SDK、类型化 Pod schema 与仓储合同；LinX 运行时适配由 `@linx/agent-runtime` 承载
 - **LinX**：提供最终面向用户的聊天、记忆、多端体验和工作流界面
 
 换句话说，LinX 是前门。它把 Pod-native 的身份、存储和 AI 服务，组织成用户每天真正能用的产品。
@@ -114,14 +114,14 @@ Web 是当前主产品面，也是迭代最快的环境。
 - **Web**：React 18.3 + TypeScript + Vite 5，使用 `@tanstack/react-router`、React Query、Tailwind，以及 `@openai/chatkit-react`
 - **Desktop**：Electron 32.x
 - **Mobile**：Capacitor 6
-- **Data**：`@undefineds.co/models` 统一管理 Pod schema / repository 合同与 client/watch helper
+- **Data**：`@undefineds.co/models` 统一管理 Pod schema / repository 合同；LinX client 与 auto-mode helper 由各自边界包承载
 - **Solid**：`@inrupt/solid-client(-authn)`、`@inrupt/solid-ui-react`、`@inrupt/vocab-common-rdf`、`@comunica/*`
 - **AI / Runtime**：ChatKit 交互层 + 本地/远程 runtime 会话 + xpod 兼容服务集成
 
 ## Solid 数据访问约定
 
 - 所有结构化数据（profile、contacts、chat、messages、approval、audit 等）都必须通过 `@undefineds.co/models` 暴露的 schema / repository 合同访问
-- LinX 专属客户端能力（本地账号配置、runtime URL、`watch` helper）统一从 `@undefineds.co/models/client` 或 `@undefineds.co/models/watch` 引入
+- LinX 专属客户端能力（本地账号配置、runtime URL、auto-mode helper）分别从 client/runtime 边界包引入，不挂在共享数据模型包上
 - UI 不允许直接调用 `getSolidDataset` 之类的低层 API 绕过模型层
 - 查询失败时，应该修正 schema、权限、SPARQL 或 repository，而不是在 UI 层做兜底分叉
 
@@ -163,7 +163,7 @@ yarn test
 - `apps/mobile`：Capacitor 壳
 - `apps/service`：本地服务进程 / xpod 兼容服务集成
 - `apps/cli`：CLI 入口
-- `packages/models`：`@undefineds.co/models` 共享数据面 SDK 与 LinX client/watch helper
+- `packages/models`：`@undefineds.co/models` 共享数据面 SDK
 - `packages/shared-ui`：跨端共享 UI
 - `packages/utils`：通用工具
 - `tests/*`：单元、集成和端到端测试

@@ -5,6 +5,7 @@ import {
 import { clearAccountSession, loadAccountSession } from './account-session.js'
 import { clearCredentials } from './credentials-store.js'
 import { ensureBrowserConsentLogin, openBrowser } from './oidc-auth.js'
+import { clearOidcSessionStorage } from './oidc-session-storage.js'
 import { resolveAccountBaseUrl } from './account-api.js'
 import { promptText } from './prompt.js'
 
@@ -20,6 +21,10 @@ interface LoginCommandDeps {
   ensureBrowserConsentLogin?: typeof ensureBrowserConsentLogin
   openBrowser?: typeof openBrowser
   promptText?: typeof promptText
+  write?: (chunk: string) => unknown
+}
+
+interface LogoutCommandDeps {
   write?: (chunk: string) => unknown
 }
 
@@ -58,6 +63,14 @@ export async function runLinxLoginCommand(
   write(`session: ${result.reusedExistingSession ? 'reused' : 'browser-consent'}\n`)
 }
 
+export function runLinxLogoutCommand(deps: LogoutCommandDeps = {}): void {
+  const write = deps.write ?? ((chunk: string) => process.stdout.write(chunk))
+  clearAccountSession()
+  clearCredentials()
+  clearOidcSessionStorage()
+  write('Logged out. Local LinX credentials removed.\n')
+}
+
 export const loginCommand: CommandModule<object, LoginArgs> = {
   command: 'login',
   describe: 'Login to LinX cloud in the browser and persist the local OIDC session',
@@ -79,9 +92,7 @@ export const logoutCommand: CommandModule = {
   command: 'logout',
   describe: 'Remove LinX cloud session and local credentials',
   handler: async () => {
-    clearAccountSession()
-    clearCredentials()
-    process.stdout.write('Logged out. Local LinX credentials removed.\n')
+    runLinxLogoutCommand()
   },
 }
 

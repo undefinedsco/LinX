@@ -1,5 +1,13 @@
-import type { ToolControlCommandName } from '@undefineds.co/models'
 import type { AgentRuntimeCapabilityName } from './acp.js'
+
+export type ToolControlCommandName =
+  | 'approve'
+  | 'reject'
+  | 'pause'
+  | 'resume'
+  | 'stop'
+  | 'inject_message'
+  | 'approve_pattern'
 
 export type AgentParticipantRole = 'user' | 'primary-agent' | 'secretary' | 'system'
 
@@ -186,8 +194,8 @@ export const GROUP_AGENT_TURN_RULE: AgentTurnControllerRule = {
   requiresUserVisibleTrace: false,
 }
 
-export const WATCH_SECRETARY_APPROVAL_RULE: AgentTurnControllerRule = {
-  id: 'watch.secretary.approval',
+export const AUTO_MODE_SECRETARY_APPROVAL_RULE: AgentTurnControllerRule = {
+  id: 'auto-mode.secretary.approval',
   trigger: 'approval.required',
   targetAgent: 'ai-secretary',
   targetRole: 'secretary',
@@ -205,8 +213,8 @@ export const WATCH_SECRETARY_APPROVAL_RULE: AgentTurnControllerRule = {
   requiresUserVisibleTrace: true,
 }
 
-export const WATCH_SECRETARY_INPUT_RULE: AgentTurnControllerRule = {
-  id: 'watch.secretary.input',
+export const AUTO_MODE_SECRETARY_INPUT_RULE: AgentTurnControllerRule = {
+  id: 'auto-mode.secretary.input',
   trigger: 'input.required',
   targetAgent: 'ai-secretary',
   targetRole: 'secretary',
@@ -224,7 +232,7 @@ export const WATCH_SECRETARY_INPUT_RULE: AgentTurnControllerRule = {
   requiresUserVisibleTrace: true,
 }
 
-export const DEFAULT_WATCH_SECRETARY_RULES: AgentTurnControllerRule[] = [
-  WATCH_SECRETARY_APPROVAL_RULE,
-  WATCH_SECRETARY_INPUT_RULE,
+export const DEFAULT_AUTO_MODE_SECRETARY_RULES: AgentTurnControllerRule[] = [
+  AUTO_MODE_SECRETARY_APPROVAL_RULE,
+  AUTO_MODE_SECRETARY_INPUT_RULE,
 ]

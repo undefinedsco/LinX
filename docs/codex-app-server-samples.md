@@ -93,7 +93,7 @@ Observed response shape:
     "data": [
       {
         "id": "019d9703-95f9-7cd2-b66d-95e8d767e232",
-        "preview": "读一下 .omx/handoffs/watch-codex-tui-issues-brief.md",
+        "preview": "读一下 .omx/handoffs/auto-mode-codex-tui-issues-brief.md",
         "cwd": "/Users/ganlu/develop/linx-cli",
         "status": {
           "type": "notLoaded"

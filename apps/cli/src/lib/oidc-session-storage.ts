@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import type { IStorage } from '@inrupt/solid-client-authn-node'
@@ -38,5 +38,12 @@ export function createOidcSessionStorage(): IStorage {
         unlinkSync(path)
       }
     },
+  }
+}
+
+export function clearOidcSessionStorage(): void {
+  const dir = storageDir()
+  if (existsSync(dir)) {
+    rmSync(dir, { recursive: true, force: true })
   }
 }

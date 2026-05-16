@@ -13,27 +13,31 @@ import {
   listLinxPiSessions,
 } from '../apps/cli/dist/lib/pi-adapter/session.js'
 import {
-  aiProviderTable,
+  aiProviderResource,
   approvalResource,
   auditResource,
-  chatTable,
-  credentialTable,
+  buildApprovalSubjectPath,
+  buildGrantSubjectPath,
+  buildSessionResourceId,
+  chatResource,
+  credentialResource,
   drizzle,
   grantResource,
-  inboxNotificationTable,
-  initSolidTables,
-  messageTable,
-  sessionTable,
-  solidSchema,
+  messageResource,
+  sessionResource,
+  solidResources,
 } from '../apps/cli/dist/lib/models.js'
-import { __podApprovalInternal } from '../apps/cli/dist/lib/watch/pod-approval.js'
+import { __podApprovalInternal } from '../apps/cli/dist/lib/auto-mode/pod-approval.js'
+import { loadCredentials } from '../apps/cli/dist/lib/credentials-store.js'
 import { getDefaultPodDataSession } from '../apps/cli/dist/lib/pod-data-session.js'
+import { assertDedicatedProdSmokeAccount } from './prod-smoke-account-guard.mjs'
 
 const runId = `linx-verify-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
 const cwd = mkdtempSync(join(tmpdir(), 'linx-verify-cwd-'))
 const agentDir = mkdtempSync(join(tmpdir(), 'linx-verify-agent-'))
 const recoveryAgentDir = mkdtempSync(join(tmpdir(), 'linx-verify-recovery-agent-'))
 let cleanupPodCredential = null
+const CLOUD_PREFLIGHT_TIMEOUT_MS = 8_000
 
 function podBaseUrl(webId) {
   return webId.replace('/profile/card#me', '').replace(/\/$/, '')
@@ -52,7 +56,9 @@ async function createPodContext() {
     db: drizzle(session.solidSession, {
       logger: false,
       disableInteropDiscovery: true,
-      schema: solidSchema,
+      podUrl: session.podUrl,
+      resourcePreparation: 'best-effort',
+      schema: solidResources,
     }),
     logout: () => session.close(),
   }
@@ -76,19 +82,53 @@ function logStep(message) {
   console.error(`[verify-cli-pod-durable] ${message}`)
 }
 
-async function upsertByLocator(db, table, locator, insert, update) {
-  const existing = await db.findByLocator(table, locator)
-  if (!existing) {
-    await db.insert(table).values(insert).execute()
-    return
+async function assertHttpReachable(url, label) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), CLOUD_PREFLIGHT_TIMEOUT_MS)
+  const startedAt = Date.now()
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      signal: controller.signal,
+    })
+    return {
+      ok: true,
+      status: response.status,
+      elapsedMs: Date.now() - startedAt,
+    }
+  } catch (error) {
+    const elapsedMs = Date.now() - startedAt
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `LinX Cloud verifier preflight failed: ${label} did not respond within `
+      + `${Math.round(CLOUD_PREFLIGHT_TIMEOUT_MS / 1000)}s (${url}). `
+      + `Original error after ${elapsedMs}ms: ${message}`,
+    )
+  } finally {
+    clearTimeout(timer)
   }
-  await db.updateByLocator(table, locator, update)
 }
 
-async function deleteByLocatorIfExists(db, table, locator) {
-  const existing = await db.findByLocator(table, locator)
+async function assertPodOriginReachable(webId) {
+  const origin = new URL(webId).origin
+  await assertHttpReachable(`${origin}/service/status`, 'Pod identity service status')
+  await assertHttpReachable(`${origin}/.well-known/openid-configuration`, 'Pod OIDC discovery')
+  await assertHttpReachable(webId.split('#')[0], 'Pod WebID profile')
+}
+
+async function upsertById(db, resource, id, insert, update) {
+  const existing = await db.findById(resource, id)
+  if (!existing) {
+    await db.insert(resource).values(insert).execute()
+    return
+  }
+  await db.updateById(resource, id, update)
+}
+
+async function deleteByIdIfExists(db, resource, id) {
+  const existing = await db.findById(resource, id)
   if (existing) {
-    await db.deleteByLocator(table, locator)
+    await db.deleteById(resource, id)
   }
 }
 
@@ -99,23 +139,41 @@ function rowIri(row) {
   return row['@id'] || row.subject || row.uri || undefined
 }
 
+function uuidV7LikeId(date, suffix = crypto.randomUUID().slice(13)) {
+  const millisHex = Math.max(1, date.getTime()).toString(16).padStart(12, '0').slice(-12)
+  return `${millisHex.slice(0, 8)}-${millisHex.slice(8, 12)}-7000-8000-${suffix.replace(/-/g, '').slice(0, 12).padEnd(12, '0')}`
+}
+
+function dateBucketResourceId(id, createdAt, includeDay = false) {
+  const date = createdAt instanceof Date ? createdAt : new Date(createdAt)
+  const yyyy = String(date.getUTCFullYear())
+  const mm = String(date.getUTCMonth() + 1).padStart(2, '0')
+  if (!includeDay) {
+    return `${yyyy}/${mm}.ttl#${encodeURIComponent(id)}`
+  }
+  const dd = String(date.getUTCDate()).padStart(2, '0')
+  return `${yyyy}/${mm}/${dd}.ttl#${encodeURIComponent(id)}`
+}
+
+function podResourceIri(webId, path) {
+  const base = `${podBaseUrl(webId).replace(/\/$/, '')}/`
+  return new URL(path.replace(/^\/+/, ''), base).toString()
+}
+
 async function main() {
   logStep('authenticating')
+  const configuredCredentials = loadCredentials()
+  if (!configuredCredentials) {
+    throw new Error('No ~/.linx credentials found. Run `linx login` with the dedicated smoke account first.')
+  }
+  assertDedicatedProdSmokeAccount(configuredCredentials.webId, { scriptName: 'scripts/verify-cli-pod-durable.mjs' })
   const context = await createPodContext()
-  await initSolidTables(context.db, [
-    approvalResource,
-    auditResource,
-    chatTable,
-    credentialTable,
-    grantResource,
-    inboxNotificationTable,
-    messageTable,
-    sessionTable,
-    aiProviderTable,
-  ])
-  const sessionId = `${runId}-session`
+  assertDedicatedProdSmokeAccount(context.webId, { scriptName: 'scripts/verify-cli-pod-durable.mjs' })
+  logStep('checking LinX Cloud reachability')
+  await assertPodOriginReachable(context.webId)
+  const createdAt = new Date()
+  const sessionId = uuidV7LikeId(createdAt)
   const sessionManager = createSessionManager(sessionId)
-  const createdAt = new Date('2026-04-02T03:04:05.000Z')
   const userMessage = {
     role: 'user',
     content: [{ type: 'text', text: `verify pod durable ${runId}` }],
@@ -147,32 +205,61 @@ async function main() {
     toolCallId: `${runId}-tool`,
     toolName: 'verify-tool',
     args: { runId },
+    createdAt,
   })
   await mirror.flush()
   await mirror.close()
 
   logStep('checking Pod ORM resources')
-  const chatUri = context.db.resolveLocatorIri(chatTable, { id: DEFAULT_SECRETARY_CHAT_ID })
-  const sessionUri = context.db.resolveLocatorIri(sessionTable, { id: sessionId, createdAt })
-  const messageUri = context.db.resolveLocatorIri(messageTable, {
+  const chatUri = context.db.resolveLocatorIri(chatResource, { id: DEFAULT_SECRETARY_CHAT_ID })
+  const chatResourceId = context.db.resolveResourceId(chatResource, { id: DEFAULT_SECRETARY_CHAT_ID })
+  const auditId = buildToolAuditId(sessionId, `${runId}-tool`, 'tool_execution_started')
+  const sessionResourceId = buildSessionResourceId(sessionId, createdAt)
+  const messageResourceId = context.db.resolveResourceId(messageResource, {
     id: `${sessionId}-u1`,
     chat: chatUri,
     createdAt,
   })
-  const auditId = buildToolAuditId(sessionId, `${runId}-tool`, 'tool_execution_started')
+  const auditResourceId = dateBucketResourceId(auditId, createdAt, true)
+  const sessionUri = podResourceIri(context.webId, `/.data/sessions/${sessionResourceId}`)
+  const messageUri = context.db.resolveLocatorIri(messageResource, {
+    id: `${sessionId}-u1`,
+    chat: chatUri,
+    createdAt,
+  })
 
-  const [sessionRow, chatRow, messageRow, auditRows] = await Promise.all([
-    context.db.findByLocator(sessionTable, { id: sessionId, createdAt }),
-    context.db.findByLocator(chatTable, { id: DEFAULT_SECRETARY_CHAT_ID }),
-    context.db.findByLocator(messageTable, { id: `${sessionId}-u1`, chat: chatUri, createdAt }),
-    context.db.select().from(auditResource).execute(),
+  const [sessionRow, messageRow, auditRow] = await Promise.all([
+    context.db.findById(sessionResource, sessionResourceId),
+    context.db.findById(messageResource, messageResourceId),
+    context.db.findById(auditResource, auditResourceId),
   ])
-  const auditRow = auditRows.find((row) => row.id === auditId)
-  if (!sessionRow || sessionRow.id !== sessionId || sessionRow.tool !== 'linx') {
+  const [sessionByResourceId, messageByResourceId, auditByResourceId] = await Promise.all([
+    context.db.findById(sessionResource, sessionResourceId),
+    context.db.findById(messageResource, messageResourceId),
+    context.db.findById(auditResource, auditResourceId),
+  ])
+  const [sessionByShortId, messageByShortId, auditByShortId] = await Promise.all([
+    context.db.findById(sessionResource, sessionId),
+    context.db.findById(messageResource, `${sessionId}-u1`),
+    context.db.findById(auditResource, auditId),
+  ])
+  const sessionRowId = String(sessionRow?.id ?? '')
+  const sessionRowLocalId = sessionRowId
+    .replace(/[#?].*$/, '')
+    .split('/')
+    .pop()
+    ?.replace(/\.ttl$/, '')
+  if (!sessionRow || sessionRowLocalId !== sessionId || sessionRow.tool !== 'linx') {
     throw new Error(`session was not read back from Pod ORM: ${sessionId}`)
   }
-  if (!chatRow || chatRow.id !== DEFAULT_SECRETARY_CHAT_ID || chatRow.title !== 'AI Secretary') {
-    throw new Error(`chat was not read back from Pod ORM: ${DEFAULT_SECRETARY_CHAT_ID}`)
+  const sessionMessageResources = Array.isArray(sessionRow.messageResources)
+    ? sessionRow.messageResources
+    : sessionRow.metadata?.messageResources
+  if (!Array.isArray(sessionMessageResources) || sessionMessageResources.length === 0) {
+    throw new Error(`session metadata did not include message resource refs: ${sessionId}`)
+  }
+  if (sessionRow.chat !== chatUri) {
+    throw new Error(`session did not point at the AI Secretary chat resource: ${chatResourceId}`)
   }
   if (!messageRow?.content?.includes(`verify pod durable ${runId}`)) {
     throw new Error(`message was not read back from Pod ORM: ${sessionId}-u1`)
@@ -180,11 +267,30 @@ async function main() {
   if (!auditRow || auditRow.action !== 'tool_execution_started' || auditRow.toolName !== 'verify-tool') {
     throw new Error(`audit was not read back from Pod ORM: ${auditId}`)
   }
+  if (!sessionByResourceId || sessionByResourceId.tool !== 'linx') {
+    throw new Error(`session was not read back from Pod ORM by base-relative id: ${sessionResourceId}`)
+  }
+  if (!messageByResourceId?.content?.includes(`verify pod durable ${runId}`)) {
+    throw new Error(`message was not read back from Pod ORM by base-relative id: ${messageResourceId}`)
+  }
+  if (!auditByResourceId || auditByResourceId.action !== 'tool_execution_started') {
+    throw new Error(`audit was not read back from Pod ORM by base-relative id: ${auditResourceId}`)
+  }
+  if (!sessionByShortId || sessionByShortId.tool !== 'linx') {
+    throw new Error(`session was not read back from Pod ORM by naked id: ${sessionId}`)
+  }
+  if (!messageByShortId?.content?.includes(`verify pod durable ${runId}`)) {
+    throw new Error(`message was not read back from Pod ORM by naked id: ${sessionId}-u1`)
+  }
+  if (!auditByShortId || auditByShortId.action !== 'tool_execution_started') {
+    throw new Error(`audit was not read back from Pod ORM by naked id: ${auditId}`)
+  }
 
   logStep('reading session/message directly from Pod source')
   const source = createNativeLinxPiPodSessionSource({
     webId: context.webId,
     db: context.db,
+    fetch: context.fetch,
   })
   const found = await source.findSession(sessionId, cwd)
   if (!found) {
@@ -224,21 +330,21 @@ async function main() {
   logStep('writing inactive auth/credential config resource')
   const credentialId = `${runId}-credential`
   const providerId = `${runId}-provider`
-  const credentialUri = context.db.resolveLocatorIri(credentialTable, { id: credentialId })
-  const providerUri = context.db.resolveLocatorIri(aiProviderTable, { id: providerId })
+  const credentialUri = context.db.resolveLocatorIri(credentialResource, { id: credentialId })
+  const providerUri = context.db.resolveLocatorIri(aiProviderResource, { id: providerId })
   cleanupPodCredential = async () => {
     await Promise.allSettled([
-      deleteByLocatorIfExists(context.db, credentialTable, { id: credentialId }),
-      deleteByLocatorIfExists(context.db, aiProviderTable, { id: providerId }),
+      deleteByIdIfExists(context.db, credentialResource, credentialId),
+      deleteByIdIfExists(context.db, aiProviderResource, providerId),
     ])
   }
-  await upsertByLocator(context.db, aiProviderTable, { id: providerId }, {
+  await upsertById(context.db, aiProviderResource, providerId, {
     id: providerId,
     baseUrl: 'https://api.example.invalid/v1',
   }, {
     baseUrl: 'https://api.example.invalid/v1',
   })
-  await upsertByLocator(context.db, credentialTable, { id: credentialId }, {
+  await upsertById(context.db, credentialResource, credentialId, {
     id: credentialId,
     provider: providerId,
     service: 'ai',
@@ -254,23 +360,22 @@ async function main() {
     baseUrl: 'https://api.example.invalid/v1',
     label: 'LinX verifier inactive credential',
   })
-  const credentialRow = await context.db.findByLocator(credentialTable, { id: credentialId })
+  const credentialRow = await context.db.findById(credentialResource, credentialId)
   if (credentialRow?.apiKey !== `linx-verify-not-a-secret-${runId}`) {
     throw new Error('inactive auth/credential config was not read back from Pod ORM')
   }
 
   logStep('writing approval/grant/audit resources')
-  const store = __podApprovalInternal.createNativeRemoteApprovalStore(context.webId, context.db)
+  const store = __podApprovalInternal.createSharedModelRemoteApprovalStore(context.webId, async () => context.db)
   const approvalId = `${runId}-approval`
   const grantId = `${runId}-grant`
   const approvalCreatedAt = new Date('2026-04-02T03:04:06.000Z')
   const grantCreatedAt = new Date('2026-04-02T03:04:07.000Z')
   const approvalAuditCreatedAt = new Date('2026-04-02T03:04:08.000Z')
-  const approvalRef = store.resolveApprovalReference({
-    id: approvalId,
-    createdAt: approvalCreatedAt,
-  })
-  const approvalSessionUri = `${podBaseUrl(context.webId)}/.data/chat/linx-watch/index.ttl#${runId}`
+  const approvalUri = podResourceIri(context.webId, buildApprovalSubjectPath(approvalId, approvalCreatedAt))
+  const approvalResourceId = context.db.resolveResourceId(approvalResource, approvalUri)
+  const grantResourceId = context.db.resolveResourceId(grantResource, podResourceIri(context.webId, buildGrantSubjectPath(grantId)))
+  const approvalSessionUri = `${podBaseUrl(context.webId)}/.data/chat/linx-auto-mode/index.ttl#${runId}`
   await store.insertApproval({
     id: approvalId,
     session: approvalSessionUri,
@@ -281,7 +386,7 @@ async function main() {
     risk: 'medium',
     status: 'pending',
     assignedTo: context.webId,
-    policyVersion: 'linx-watch-remote-approval/v1',
+    policyVersion: 'linx-auto-mode-remote-approval/v1',
     createdAt: approvalCreatedAt,
   })
   await store.insertGrant({
@@ -303,9 +408,9 @@ async function main() {
     onBehalfOf: context.webId,
     session: approvalSessionUri,
     toolCallId: `${runId}-approval-tool`,
-    approval: approvalRef.iri,
+    approval: approvalUri,
     context: JSON.stringify({ runId }),
-    policyVersion: 'linx-watch-remote-approval/v1',
+    policyVersion: 'linx-auto-mode-remote-approval/v1',
     createdAt: approvalAuditCreatedAt,
   })
 
@@ -314,16 +419,35 @@ async function main() {
     store.listGrants(),
     store.listAudits(),
   ])
-  if (!approvals.some((row) => row.id === approvalId && row.status === 'pending')) {
+  if (!approvals.some((row) => row.id === approvalResourceId && row.status === 'pending')) {
     throw new Error('approval was not read back from Pod')
   }
-  if (!grants.some((row) => row.id === grantId && row.effect === 'allow')) {
+  const approvalByResourceId = await store.findApproval?.(approvalResourceId)
+  if (!approvalByResourceId || approvalByResourceId.status !== 'pending') {
+    throw new Error(`approval was not read back from Pod by base-relative id: ${approvalResourceId}`)
+  }
+  const approvalByShortId = await store.findApproval?.(approvalId)
+  if (!approvalByShortId || approvalByShortId.status !== 'pending') {
+    throw new Error(`approval was not read back from Pod by naked id: ${approvalId}`)
+  }
+  await store.updateApproval(approvalId, {
+    status: 'approved',
+    decisionBy: context.webId,
+    decisionRole: 'human',
+    resolvedAt: new Date(),
+  })
+  const approvalUpdatedByShortId = await store.findApproval?.(approvalId)
+  if (!approvalUpdatedByShortId || approvalUpdatedByShortId.status !== 'approved') {
+    throw new Error(`approval was not updated in Pod by naked id: ${approvalId}`)
+  }
+  if (!grants.some((row) => row.id === grantResourceId && row.effect === 'allow')) {
     throw new Error('grant was not read back from Pod')
   }
-  if (!audits.some((row) => row.id === `${runId}-approval-audit` && row.action === 'approval_requested')) {
+  const approvalAuditResourceId = dateBucketResourceId(`${runId}-approval-audit`, approvalAuditCreatedAt, true)
+  if (!audits.some((row) => row.id === approvalAuditResourceId && row.action === 'approval_requested')) {
     throw new Error('approval audit was not read back from Pod')
   }
-  const grantRef = store.resolveGrantReference({ id: grantId })
+  const grantUri = podResourceIri(context.webId, buildGrantSubjectPath(grantId))
 
   console.log(JSON.stringify({
     ok: true,
@@ -334,17 +458,17 @@ async function main() {
       chatUrl: chatUri,
       messageUrl: messageUri,
       auditUrl: rowIri(auditRow) ?? auditId,
-      approvalUrl: approvalRef.iri,
-      grantUrl: grantRef.iri,
+      approvalUrl: approvalUri,
+      grantUrl: grantUri,
       credentialUrl: credentialUri,
       providerUrl: providerUri,
     },
     podReadback: {
       sessionMessages: found.messages.length,
-      approvals: approvals.filter((row) => row.id === approvalId).length,
-      grants: grants.filter((row) => row.id === grantId).length,
-      audits: audits.filter((row) => row.id === `${runId}-approval-audit`).length,
-      credentials: credentialRow?.id === credentialId ? 1 : 0,
+      approvals: approvals.filter((row) => row.id === approvalResourceId).length,
+      grants: grants.filter((row) => row.id === grantResourceId).length,
+      audits: audits.filter((row) => row.id === approvalAuditResourceId).length,
+      credentials: credentialRow?.apiKey === `linx-verify-not-a-secret-${runId}` ? 1 : 0,
     },
     emptyCacheRecovery: {
       listed: recoveredList.filter((session) => session.id === sessionId).length,

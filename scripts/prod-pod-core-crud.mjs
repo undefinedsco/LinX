@@ -1,21 +1,13 @@
 #!/usr/bin/env node
 import {
-  approvalTable,
-  auditTable,
-  chatTable,
-  applySolidComunicaPatches,
-  drizzle,
-  grantTable,
-  initSolidTables,
-  messageTable,
-  resolvePodUri,
-  sessionTable,
-  solidSchema,
-  threadTable,
-} from '../packages/models/src/index.ts'
-import { loadCredentials, getClientCredentials } from '../apps/cli/src/lib/credentials-store.ts'
-import { getOidcAccessToken } from '../apps/cli/src/lib/oidc-auth.ts'
-import { authenticate, authenticatedFetch } from '../apps/cli/src/lib/solid-auth.ts'
+  getClientCredentialId,
+  getClientCredentialKey,
+  getClientCredentials,
+  loadCredentials,
+} from '../apps/cli/dist/lib/credentials-store.js'
+import { getOidcAccessToken } from '../apps/cli/dist/lib/oidc-auth.js'
+import { authenticate, authenticatedFetch } from '../apps/cli/dist/lib/solid-auth.js'
+import { assertDedicatedProdSmokeAccount } from './prod-smoke-account-guard.mjs'
 
 const runId = `linx-prod-crud-${crypto.randomUUID()}`
 const created = []
@@ -46,12 +38,13 @@ async function createSession() {
   if (!credentials) {
     throw new Error('No ~/.linx credentials found. Run `linx login` first.')
   }
+  assertDedicatedProdSmokeAccount(credentials.webId, { scriptName: 'scripts/prod-pod-core-crud.mjs' })
 
   const clientCredentials = getClientCredentials(credentials)
   if (clientCredentials) {
     const { session } = await authenticate(
-      clientCredentials.clientId,
-      clientCredentials.clientSecret,
+      getClientCredentialId(clientCredentials),
+      getClientCredentialKey(clientCredentials),
       credentials.url,
     )
     return { credentials, session }
@@ -135,9 +128,22 @@ async function deleteIfExists(db, table, iri) {
 }
 
 async function main() {
-  applySolidComunicaPatches()
   const { credentials, session } = await createSession()
   const webId = session.info.webId || credentials.webId
+  assertDedicatedProdSmokeAccount(webId, { scriptName: 'scripts/prod-pod-core-crud.mjs' })
+  const {
+    approvalTable,
+    auditTable,
+    chatTable,
+    applySolidComunicaPatches,
+    drizzle,
+    grantTable,
+    messageTable,
+    sessionTable,
+    solidSchema,
+    threadTable,
+  } = await import('../packages/models/dist/index.js')
+  applySolidComunicaPatches()
   const baseUrl = podBaseUrl(webId)
   const db = drizzle(session, {
     logger: false,
@@ -164,13 +170,19 @@ async function main() {
   const grantId = `${runId}-grant`
   const auditId = `${runId}-audit`
 
-  const chatIri = resolvePodUri(webId, chatTable, chatId)
-  const threadIri = `${baseUrl}/.data/chat/${chatId}/index.ttl#${threadId}`
-  const messageIri = `${baseUrl}/.data/chat/${chatId}/2026/01/02/messages.ttl#${messageId}`
-  const runtimeSessionIri = resolvePodUri(webId, sessionTable, runtimeSessionId)
-  const approvalIri = resolvePodUri(webId, approvalTable, approvalId)
-  const grantIri = resolvePodUri(webId, grantTable, grantId)
-  const auditIri = resolvePodUri(webId, auditTable, auditId)
+  const chatIri = db.resolveLocatorIri(chatTable, { id: chatId })
+  const chatResourceId = db.resolveResourceId(chatTable, chatIri)
+  const threadIri = db.resolveLocatorIri(threadTable, { id: threadId, chat: chatIri })
+  const threadResourceId = db.resolveResourceId(threadTable, threadIri)
+  const messageIri = db.resolveLocatorIri(messageTable, { id: messageId, chat: chatIri, createdAt: now })
+  const runtimeSessionIri = db.resolveLocatorIri(sessionTable, { id: runtimeSessionId, createdAt: now })
+  const runtimeSessionResourceId = db.resolveResourceId(sessionTable, runtimeSessionIri)
+  const approvalIri = db.resolveLocatorIri(approvalTable, { id: approvalId, createdAt: now })
+  const approvalResourceId = db.resolveResourceId(approvalTable, approvalIri)
+  const grantIri = db.resolveLocatorIri(grantTable, { id: grantId })
+  const grantResourceId = db.resolveResourceId(grantTable, grantIri)
+  const auditIri = db.resolveLocatorIri(auditTable, { id: auditId, createdAt: now })
+  const auditResourceId = db.resolveResourceId(auditTable, auditIri)
 
   created.push([auditTable, auditIri], [grantTable, grantIri], [approvalTable, approvalIri], [messageTable, messageIri], [sessionTable, runtimeSessionIri], [threadTable, threadIri], [chatTable, chatIri])
 
@@ -186,7 +198,7 @@ async function main() {
     }).execute())
     didCreateAnyResource = true
     expectMatch('chat.read', await step('chat.read', () => db.findByIri(chatTable, chatIri)), {
-      id: chatId,
+      id: chatResourceId,
       title: 'Prod CRUD chat',
     })
     expectMatch('chat.update', await step('chat.update', () => db.updateByIri(chatTable, chatIri, {
@@ -204,7 +216,7 @@ async function main() {
       updatedAt: now,
     }).execute())
     expectMatch('thread.read', await step('thread.read', () => db.findByIri(threadTable, threadIri)), {
-      id: threadId,
+      id: threadResourceId,
       title: 'Prod CRUD thread',
     })
     expectMatch('thread.update', await step('thread.update', () => db.updateByIri(threadTable, threadIri, {
@@ -252,7 +264,7 @@ async function main() {
       updatedAt: now,
     }).execute())
     expectMatch('session.read', await step('session.read', () => db.findByIri(sessionTable, runtimeSessionIri)), {
-      id: runtimeSessionId,
+      id: runtimeSessionResourceId,
       chat: chatIri,
       thread: threadIri,
       status: 'active',
@@ -280,7 +292,7 @@ async function main() {
     const approvalRow = await step('approval.read', () => db.findByIri(approvalTable, approvalIri))
     try {
       expectMatch('approval.read', approvalRow, {
-        id: approvalId,
+        id: approvalResourceId,
         status: 'pending',
         toolName: 'shell',
       })
@@ -308,7 +320,7 @@ async function main() {
       createdAt: now,
     }).execute())
     expectMatch('grant.read', await step('grant.read', () => db.findByIri(grantTable, grantIri)), {
-      id: grantId,
+      id: grantResourceId,
       effect: 'allow',
       riskCeiling: 'medium',
     })
@@ -325,19 +337,18 @@ async function main() {
       session: runtimeSessionIri,
       toolCallId: `tool-${approvalId}`,
       approval: approvalIri,
-      context: JSON.stringify({ source: 'prod-pod-core-crud' }),
       policyVersion: 'prod-pod-core-crud/v1',
       createdAt: now,
     }).execute())
     expectMatch('audit.read', await step('audit.read', () => db.findByIri(auditTable, auditIri)), {
-      id: auditId,
+      id: auditResourceId,
       action: 'approval_requested',
       actor: webId,
     })
     expectMatch('audit.update', await step('audit.update', () => db.updateByIri(auditTable, auditIri, {
-      context: JSON.stringify({ source: 'prod-pod-core-crud', updated: true }),
+      policyVersion: 'prod-pod-core-crud/v2',
     })), {
-      context: JSON.stringify({ source: 'prod-pod-core-crud', updated: true }),
+      policyVersion: 'prod-pod-core-crud/v2',
     })
 
     console.log(`PROD_CRUD_PASS ${runId}`)
@@ -345,6 +356,7 @@ async function main() {
     for (const [table, iri] of created) {
       await deleteIfExists(db, table, iri)
     }
+    await session.logout?.()
   }
 }
 

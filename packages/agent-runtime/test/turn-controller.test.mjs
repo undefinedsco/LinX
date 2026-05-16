@@ -5,13 +5,17 @@ import {
   DEFAULT_AGENT_RUNTIME_COMPANION_MODEL_ID,
   DEFAULT_AGENT_RUNTIME_COMPANION_MODEL_POLICY,
   DEFAULT_LINX_CHATKIT_AGENT_CAPABILITIES,
-  DEFAULT_WATCH_SECRETARY_RULES,
+  DEFAULT_AUTO_MODE_SECRETARY_RULES,
   GROUP_AGENT_TURN_RULE,
-  WATCH_SECRETARY_APPROVAL_RULE,
-  WATCH_SECRETARY_INPUT_RULE,
+  LINX_RUNTIME_ENDPOINTS,
+  AUTO_MODE_SECRETARY_APPROVAL_RULE,
+  AUTO_MODE_SECRETARY_INPUT_RULE,
   createAcpAgentCapabilities,
   createLinxChatKitAgentCapabilities,
   findMentionedGroupAgents,
+  getLinxRuntimeEndpoint,
+  isLinxRuntimeEndpointId,
+  linxRuntimeEndpointForBackend,
   routeGroupTurn,
   supportsAgentRuntimeCapability,
 } from '../dist/index.js'
@@ -54,42 +58,58 @@ test('fast companion model policy is shared beyond turn control', () => {
   })
 })
 
-test('watch secretary turn-controller rules are explicit and user-visible', () => {
-  assert.deepEqual(DEFAULT_WATCH_SECRETARY_RULES, [
-    WATCH_SECRETARY_APPROVAL_RULE,
-    WATCH_SECRETARY_INPUT_RULE,
+test('LinX runtime endpoints treat ACP as an adapter instead of the internal bus', () => {
+  assert.deepEqual(LINX_RUNTIME_ENDPOINTS, ['linx', 'acp:codex', 'acp:claude', 'acp:codebuddy'])
+  assert.equal(linxRuntimeEndpointForBackend('linx'), 'linx')
+  assert.equal(linxRuntimeEndpointForBackend('codex'), 'acp:codex')
+  assert.equal(linxRuntimeEndpointForBackend('claude'), 'acp:claude')
+  assert.equal(linxRuntimeEndpointForBackend('codebuddy'), 'acp:codebuddy')
+  assert.equal(isLinxRuntimeEndpointId('automode'), false)
+  assert.equal(isLinxRuntimeEndpointId('acp:codex'), true)
+  assert.deepEqual(getLinxRuntimeEndpoint('linx'), {
+    id: 'linx',
+    protocol: 'linx',
+    backend: 'linx',
+    label: 'LinX',
+  })
+})
+
+test('auto-mode secretary turn-controller rules are explicit and user-visible', () => {
+  assert.deepEqual(DEFAULT_AUTO_MODE_SECRETARY_RULES, [
+    AUTO_MODE_SECRETARY_APPROVAL_RULE,
+    AUTO_MODE_SECRETARY_INPUT_RULE,
   ])
 
-  assert.equal(WATCH_SECRETARY_APPROVAL_RULE.trigger, 'approval.required')
-  assert.equal(WATCH_SECRETARY_APPROVAL_RULE.targetAgent, 'ai-secretary')
-  assert.deepEqual(WATCH_SECRETARY_APPROVAL_RULE.requiredCapabilities, [
+  assert.equal(AUTO_MODE_SECRETARY_APPROVAL_RULE.trigger, 'approval.required')
+  assert.equal(AUTO_MODE_SECRETARY_APPROVAL_RULE.targetAgent, 'ai-secretary')
+  assert.deepEqual(AUTO_MODE_SECRETARY_APPROVAL_RULE.requiredCapabilities, [
     'approval.request',
     'approval.options',
   ])
-  assert.equal(WATCH_SECRETARY_APPROVAL_RULE.context.includeCurrentApproval, true)
-  assert.equal(WATCH_SECRETARY_APPROVAL_RULE.context.includeMatchingGrants, true)
-  assert.deepEqual(WATCH_SECRETARY_APPROVAL_RULE.allowedOutputs, [
+  assert.equal(AUTO_MODE_SECRETARY_APPROVAL_RULE.context.includeCurrentApproval, true)
+  assert.equal(AUTO_MODE_SECRETARY_APPROVAL_RULE.context.includeMatchingGrants, true)
+  assert.deepEqual(AUTO_MODE_SECRETARY_APPROVAL_RULE.allowedOutputs, [
     'chat_message',
     'approval_decision',
     'control_command',
   ])
-  assert.deepEqual(WATCH_SECRETARY_APPROVAL_RULE.allowedControls, [
+  assert.deepEqual(AUTO_MODE_SECRETARY_APPROVAL_RULE.allowedControls, [
     'inject_message',
     'pause',
     'stop',
   ])
-  assert.equal(WATCH_SECRETARY_APPROVAL_RULE.requiresUserVisibleTrace, true)
+  assert.equal(AUTO_MODE_SECRETARY_APPROVAL_RULE.requiresUserVisibleTrace, true)
 
-  assert.equal(WATCH_SECRETARY_INPUT_RULE.trigger, 'input.required')
-  assert.deepEqual(WATCH_SECRETARY_INPUT_RULE.requiredCapabilities, ['input.structured'])
-  assert.equal(WATCH_SECRETARY_INPUT_RULE.context.includeCurrentApproval, false)
-  assert.deepEqual(WATCH_SECRETARY_INPUT_RULE.allowedOutputs, [
+  assert.equal(AUTO_MODE_SECRETARY_INPUT_RULE.trigger, 'input.required')
+  assert.deepEqual(AUTO_MODE_SECRETARY_INPUT_RULE.requiredCapabilities, ['input.structured'])
+  assert.equal(AUTO_MODE_SECRETARY_INPUT_RULE.context.includeCurrentApproval, false)
+  assert.deepEqual(AUTO_MODE_SECRETARY_INPUT_RULE.allowedOutputs, [
     'chat_message',
     'input_answer',
     'control_command',
   ])
-  assert.deepEqual(WATCH_SECRETARY_INPUT_RULE.allowedControls, ['inject_message'])
-  assert.equal(WATCH_SECRETARY_INPUT_RULE.requiresUserVisibleTrace, true)
+  assert.deepEqual(AUTO_MODE_SECRETARY_INPUT_RULE.allowedControls, ['inject_message'])
+  assert.equal(AUTO_MODE_SECRETARY_INPUT_RULE.requiresUserVisibleTrace, true)
 })
 
 test('group turn routing gives explicit mentions deterministic priority', async () => {

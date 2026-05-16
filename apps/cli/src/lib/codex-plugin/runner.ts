@@ -5,7 +5,7 @@ import {
   type CodexAttachBridge,
   type CodexAttachBridgeRuntime,
 } from './bridge.js'
-import type { WatchSessionRecord } from '../watch/types.js'
+import type { AutoModeSessionRecord } from '../auto-mode/types.js'
 
 interface WritableLike {
   write(chunk: string): unknown
@@ -24,7 +24,7 @@ export interface CodexAttachRunnerOptions {
 }
 
 export interface CodexAttachRunner {
-  readonly record: WatchSessionRecord
+  readonly record: AutoModeSessionRecord
   readonly bridge: CodexAttachBridge
   run(): Promise<number>
   handleLine(line: string): Promise<void>

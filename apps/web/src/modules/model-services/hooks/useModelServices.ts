@@ -19,7 +19,7 @@ import type { AIProvider, AIModel } from '../types'
 type AnyRow = Record<string, any>
 
 function rowKey(row: AnyRow): string {
-  return (row?.['@id'] as string) || (row?.id as string)
+  return (row?.id as string) || (row?.['@id'] as string)
 }
 
 function applyPayload(draft: AnyRow, payload: Record<string, unknown>) {
@@ -183,7 +183,8 @@ export function useModelServices() {
 
       for (const row of existingModels) {
         const modelId = typeof row.id === 'string' ? row.id : ''
-        if (!plan.modelDeleteIds.includes(modelId)) continue
+        const normalizedModelId = normalizeAIConfigModelId(modelId, plan.providerId)
+        if (!plan.modelDeleteIds.includes(normalizedModelId)) continue
         const deleteTx = modelCollection.delete(rowKey(row))
         await waitPersist(deleteTx)
       }

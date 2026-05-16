@@ -2,6 +2,7 @@
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import { Message, type ThreadStreamEvent } from '@/lib/vendor/xpod-chatkit'
 import { Chat, Thread } from '@/lib/vendor/xpod-chatkit'
+import { aiProviderTable, credentialTable } from '@undefineds.co/models'
 import { createLocalChatKitFetch } from '../fetch-handler'
 import { createXpodIntegrationContext, type XpodIntegrationContext } from '@/test/xpod-integration'
 
@@ -9,6 +10,8 @@ const chatkitSchema = {
   Chat,
   Thread,
   Message,
+  aiProviderTable,
+  credentialTable,
 }
 
 let context: XpodIntegrationContext<typeof chatkitSchema> | null = null
@@ -17,7 +20,7 @@ async function getContext(): Promise<XpodIntegrationContext<typeof chatkitSchema
   if (context) return context
   context = await createXpodIntegrationContext({
     schema: chatkitSchema,
-    tables: [Chat, Thread, Message],
+    tables: [Chat, Thread, Message, aiProviderTable, credentialTable],
   })
   return context
 }
@@ -79,24 +82,23 @@ describe('LocalChatKit pod archive integration', () => {
     const providerBase = 'https://provider.example/v1'
     const providerEndpoint = `${providerBase}/chat/completions`
     const podBase = webId.replace('/profile/card#me', '')
-    const credentialsUrl = `${podBase}/settings/credentials.ttl`
-    const credentialsTurtle = [
-      '<#cred>',
-      `  <https://undefineds.co/ns#service> "ai" ;`,
-      `  <https://undefineds.co/ns#status> "active" ;`,
-      `  <https://undefineds.co/ns#baseUrl> "${providerBase}" ;`,
-      `  <https://undefineds.co/ns#apiKey> "test-key" .`,
-      '',
-    ].join('\n')
+    const providerId = 'openai'
+    const credentialId = `credential-openai-${Date.now()}`
+
+    await db.insert(aiProviderTable).values({
+      id: providerId,
+      baseUrl: providerBase,
+    }).execute()
+
+    await db.insert(credentialTable).values({
+      id: credentialId,
+      provider: `/settings/providers/${providerId}.ttl`,
+      service: 'ai',
+      status: 'active',
+      apiKey: 'test-key',
+    }).execute()
 
     const authFetch: typeof fetch = async (input, init) => {
-      const url = typeof input === 'string' || input instanceof URL ? String(input) : input.url
-      if (url === credentialsUrl) {
-        return new Response(credentialsTurtle, {
-          status: 200,
-          headers: { 'Content-Type': 'text/turtle' },
-        })
-      }
       return sessionFetch(input as RequestInfo | URL, init)
     }
 
@@ -156,16 +158,8 @@ describe('LocalChatKit pod archive integration', () => {
     const threadId = threadCreated!.thread.id
     const userItem = (userDone as any).item
     const assistantItem = (assistantDone as any).item
-    const userMessage = await db.findByLocator(Message, {
-      id: userItem.id,
-      chat: chatId,
-      createdAt: new Date(userItem.created_at * 1000),
-    } as any)
-    const assistantMessage = await db.findByLocator(Message, {
-      id: assistantItem.id,
-      chat: chatId,
-      createdAt: new Date(assistantItem.created_at * 1000),
-    } as any)
+    const userMessage = await db.findById(Message, userItem.id)
+    const assistantMessage = await db.findById(Message, assistantItem.id)
 
     expect(userMessage?.content).toBe(prompt)
     expect(assistantMessage?.content).toBe(assistantText)

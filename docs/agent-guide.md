@@ -12,6 +12,7 @@
 - 涉及 Pod 登录、持久化、权限、通知的集成测试，必须跑在自举的 `xpod` + 真实 Pod 上。
 - 模块状态分工：Pod 数据走 TanStack DB Collection；Zustand 只管理纯 UI 状态。
 - 新增共享规则、RDF contract、归一化逻辑、跨端 use-case 时，优先放进 `@undefineds.co/models`。
+- `Table` 到 `Resource` 的语义迁移按功能边界推进：改到哪个 Pod/ORM 功能，就把该功能的命名、测试和文档叙事同步改成 `Resource`；不要为了“统一”做全仓机械重命名，底层兼容 API 可继续保留 `Table`。
 
 ## Skill Routing
 
@@ -36,9 +37,10 @@ Skill source of truth:
 
 ## Doc Map
 
-- `docs/cli-app-shared-core.md` — `@undefineds.co/models` 共享数据面、client/watch helper 与 CLI/App 边界
+- `docs/cli-app-shared-core.md` — `@undefineds.co/models` 共享数据面、client/auto-mode helper 与 CLI/App 边界
 - `docs/dependency-guide.md` — 依赖升级、workspace/npm 版本、`xpod`/`models` 联动与 submodule 锁定规则
 - `docs/desktop-product-strategy.md` — 桌面端 Chat-first + AI-native 产品策略
+- `docs/secretary/README.md` — AI Secretary 能力设计入口，包括存储建模、授权判断和用户请示边界
 - `docs/scene-restoration-solid-modeling.md` — `favorites / inbox / audit / workspace` 的场景恢复与 Solid 建模约束
 - `docs/chat-module-alignment.md` — Chat 模块对齐状态与待修复项
 - `docs/ui-component-architecture.md` — 纯 UI / 逻辑 UI 分层

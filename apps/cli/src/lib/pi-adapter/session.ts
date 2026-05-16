@@ -11,12 +11,14 @@ import {
   type PodDataSession,
 } from '../pod-data-session.js'
 import {
-  chatTable,
+  chatResource,
+  buildSessionResourceId,
   drizzle,
   eq,
-  messageTable,
-  sessionTable,
-  solidSchema,
+  extractSessionIdFromSessionRef,
+  messageResource,
+  sessionResource,
+  solidResources,
   type MessageRow,
   type SessionRow,
   type SolidDatabase,
@@ -63,20 +65,23 @@ export interface LinxPiPodMessageSnapshot {
   updatedAt?: Date | string | number
 }
 
+type PodSessionFetch = (url: string, init?: RequestInit) => Promise<Response>
+
 export function createNativeLinxPiPodSessionSource(context: {
   webId: string
   db: SolidDatabase
+  fetch?: PodSessionFetch
 }): LinxPiPodSessionSource {
   const source: LinxPiPodSessionSource = {
-    async listSessions(cwd?: string): Promise<LinxPiPodSessionSnapshot[]> {
-      return listPodSessionSnapshots(context, cwd)
+    async listSessions(_cwd?: string): Promise<LinxPiPodSessionSnapshot[]> {
+      return listPodSessionSnapshots(context)
     },
-    async findSession(input: string, cwd?: string): Promise<LinxPiPodSessionSnapshot | null> {
-      const sessions = await source.listSessions(cwd)
-      const exact = sessions.find((session: LinxPiPodSessionSnapshot) => session.id === input)
+    async findSession(input: string, _cwd?: string): Promise<LinxPiPodSessionSnapshot | null> {
+      const exact = await findPodSessionSnapshot(context, input)
       if (exact) {
         return exact
       }
+      const sessions = await source.listSessions()
       const matches = sessions.filter((session: LinxPiPodSessionSnapshot) => session.id.startsWith(input))
       if (matches.length === 1) {
         return matches[0]
@@ -208,9 +213,10 @@ function mergeSessions(localSessions: SessionInfo[], podSessions: SessionInfo[])
   return [...merged.values()]
 }
 
-function getDefaultLinxPiSessionDir(cwd: string, agentDir: string): string {
-  const safePath = `--${cwd.replace(/^[/\\]/, '').replace(/[/\\:]/g, '-')}--`
-  return join(agentDir, 'sessions', safePath)
+function getDefaultLinxPiSessionDir(_cwd: string, agentDir: string): string {
+  // Sessions are stored flat, not bound to workspace directory.
+  // Workspace (cwd) is tracked as session metadata, so `cd` doesn't break the session.
+  return join(agentDir, 'sessions')
 }
 
 async function hydratePodSessions(
@@ -650,7 +656,12 @@ function toDate(value: Date | string | number | undefined): Date | null {
 interface DefaultPodSessionContext {
   webId: string
   db: SolidDatabase
+  fetch?: PodSessionFetch
 }
+
+const POD_SESSION_LIST_LOOKBACK_DAYS = 90
+const POD_SESSION_LIST_LIMIT = 200
+const POD_CONTAINER_LIST_TIMEOUT_MS = 8_000
 
 async function createDefaultLinxPiPodSessionSource(): Promise<LinxPiPodSessionSource | null> {
   const contextPromise = createDefaultPodSessionContext()
@@ -675,16 +686,16 @@ async function createDefaultPodSessionContext(): Promise<DefaultPodSessionContex
   return {
     webId: session.webId,
     db: createSessionSourceDb(session),
+    fetch: session.fetch,
   }
 }
 
 async function listPodSessionSnapshots(
   context: DefaultPodSessionContext,
-  cwd?: string,
 ): Promise<LinxPiPodSessionSnapshot[]> {
   const rows = await listPodSessionRows(context)
   const snapshots = (await Promise.all(rows.map((row) => (
-    buildPodSessionSnapshot(context, row, { expectedCwd: cwd }).catch(() => null)
+    buildPodSessionSnapshot(context, row).catch(() => null)
   ))))
     .filter((snapshot): snapshot is LinxPiPodSessionSnapshot => snapshot !== null)
 
@@ -699,33 +710,246 @@ function createSessionSourceDb(session: PodDataSession): SolidDatabase {
   return drizzle(session.solidSession, {
     logger: false,
     disableInteropDiscovery: true,
-    schema: solidSchema,
+    podUrl: session.podUrl,
+    resourcePreparation: 'off' as never,
+    schema: solidResources,
   }) as unknown as SolidDatabase
 }
 
 async function listPodSessionRows(context: DefaultPodSessionContext): Promise<SessionRow[]> {
-  const toolColumn = (sessionTable as any).tool
+  const fetchFn = resolvePodFetch(context)
+  if (fetchFn) {
+    const rows = await listRecentSessionRowsFromContainers(context, fetchFn)
+    return filterPodSessionRows(context, rows)
+  }
+
+  const toolColumn = (sessionResource as any).tool
   const rows = await context.db.select()
-    .from(sessionTable)
+    .from(sessionResource)
     .where(eq(toolColumn, 'linx'))
     .orderBy('updatedAt', 'desc')
     .execute() as SessionRow[]
-  const secretaryChat = context.db.resolveLocatorIri(chatTable, { id: PI_CHAT_ID })
+  return filterPodSessionRows(context, rows)
+}
+
+function filterPodSessionRows(context: DefaultPodSessionContext, rows: SessionRow[]): SessionRow[] {
+  const secretaryChat = context.db.resolveLocatorIri(chatResource, { id: PI_CHAT_ID })
   return rows.filter((row) => {
+    if (typeof row.id !== 'string' || !buildSessionResourceIdFromInput(row.id)) {
+      return false
+    }
     if (row.ownerWebId && row.ownerWebId !== context.webId) {
       return false
     }
-    if (row.chat && row.chat !== secretaryChat) {
+    if (row.chat && !isSecretaryChatRef(row.chat, secretaryChat)) {
       return false
     }
     return true
   })
 }
 
+function resolvePodFetch(context: DefaultPodSessionContext): PodSessionFetch | null {
+  if (context.fetch) {
+    return context.fetch
+  }
+  const dialect = (context.db as { dialect?: { getAuthenticatedFetch?: () => PodSessionFetch } }).dialect
+  if (typeof dialect?.getAuthenticatedFetch === 'function') {
+    return dialect.getAuthenticatedFetch()
+  }
+  return null
+}
+
+async function listRecentSessionRowsFromContainers(
+  context: DefaultPodSessionContext,
+  fetchFn: PodSessionFetch,
+): Promise<SessionRow[]> {
+  const monthContainers = getRecentSessionMonthContainers(context.webId)
+  const dayContainers = new Set<string>()
+  for (const monthContainer of monthContainers) {
+    const contained = await listContainedPodResources(fetchFn, monthContainer)
+    for (const item of contained) {
+      if (item.endsWith('/')) {
+        dayContainers.add(item)
+      }
+    }
+  }
+
+  const sessionResources = new Set<string>()
+  for (const dayContainer of [...dayContainers].sort().reverse()) {
+    const contained = await listContainedPodResources(fetchFn, dayContainer)
+    for (const item of contained) {
+      if (item.endsWith('.ttl')) {
+        sessionResources.add(item)
+      }
+      if (sessionResources.size >= POD_SESSION_LIST_LIMIT) {
+        break
+      }
+    }
+    if (sessionResources.size >= POD_SESSION_LIST_LIMIT) {
+      break
+    }
+  }
+
+  const rows: SessionRow[] = []
+  for (const iri of [...sessionResources].sort().reverse()) {
+    try {
+      const row = await context.db.findByIri(sessionResource, iri) as SessionRow | null
+      if (row) {
+        rows.push(row)
+      }
+    } catch {
+      // A bad session resource should not prevent listing other resumable sessions.
+    }
+  }
+  return rows
+}
+
+function getRecentSessionMonthContainers(webId: string): string[] {
+  const base = getPodBaseUrl(webId)
+  const months = new Set<string>()
+  const now = new Date()
+  for (let offset = 0; offset < POD_SESSION_LIST_LOOKBACK_DAYS; offset += 1) {
+    const date = new Date(now.getTime() - offset * 24 * 60 * 60 * 1000)
+    const yyyy = String(date.getUTCFullYear())
+    const mm = String(date.getUTCMonth() + 1).padStart(2, '0')
+    months.add(`${base}/.data/sessions/${yyyy}/${mm}/`)
+  }
+  return [...months].sort().reverse()
+}
+
+async function listContainedPodResources(fetchFn: PodSessionFetch, containerUrl: string): Promise<string[]> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), POD_CONTAINER_LIST_TIMEOUT_MS)
+  try {
+    const response = await fetchFn(containerUrl, {
+      method: 'GET',
+      headers: { Accept: 'text/turtle' },
+      signal: controller.signal,
+    })
+    if (!response.ok) {
+      return []
+    }
+    const body = await response.text()
+    return extractContainedPodResources(containerUrl, body)
+  } catch {
+    return []
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+function extractContainedPodResources(containerUrl: string, turtle: string): string[] {
+  const urls = new Set<string>()
+  const pattern = /<([^>]+)>/g
+  let match: RegExpExecArray | null
+  while ((match = pattern.exec(turtle)) !== null) {
+    const raw = match[1]
+    try {
+      const url = new URL(raw, containerUrl).href
+      if (url.startsWith(containerUrl) && url !== containerUrl) {
+        urls.add(url)
+      }
+    } catch {
+      // Ignore malformed container entries.
+    }
+  }
+  return [...urls]
+}
+
+function isSecretaryChatRef(value: string, secretaryChat: string): boolean {
+  return value === secretaryChat
+    || value === PI_CHAT_ID
+    || value.endsWith(`/.data/chat/${PI_CHAT_ID}/index.ttl#this`)
+}
+
+async function findPodSessionSnapshot(
+  context: DefaultPodSessionContext,
+  input: string,
+): Promise<LinxPiPodSessionSnapshot | null> {
+  const sessionId = input.trim()
+  if (!sessionId) {
+    return null
+  }
+
+  const resourceId = buildSessionResourceIdFromInput(sessionId)
+  if (!resourceId) {
+    return null
+  }
+
+  const row = await context.db.findById(sessionResource, resourceId) as SessionRow | null
+  const expectedSessionId = extractResourceLocalId(resourceId)
+  if (!row || extractResourceLocalId(row.id) !== expectedSessionId || row.tool !== 'linx') {
+    return null
+  }
+  if (row.ownerWebId && row.ownerWebId !== context.webId) {
+    return null
+  }
+  return row ? buildPodSessionSnapshot(context, row) : null
+}
+
+function buildSessionResourceIdFromInput(input: string): string | null {
+  const trimmed = input.trim().replace(/^\/?\.data\/sessions\//, '')
+  if (!trimmed) {
+    return null
+  }
+  if (trimmed.includes('.ttl#')) {
+    return null
+  }
+  if (trimmed.includes('.ttl')) {
+    if (/^https?:\/\//.test(trimmed)) {
+      if (!new URL(trimmed).pathname.includes('/.data/sessions/')) {
+        return null
+      }
+      const sessionId = extractSessionIdFromSessionRef(trimmed)
+      const createdAt = sessionId ? parseTimestampFromUuidLikeId(sessionId) : null
+      return sessionId && createdAt ? buildSessionResourceId(sessionId, createdAt) : trimmed
+    }
+    if (!trimmed.startsWith('20')) {
+      return null
+    }
+    return trimmed
+  }
+
+  const createdAt = parseTimestampFromUuidLikeId(trimmed)
+  if (!createdAt) {
+    return null
+  }
+  return buildSessionResourceId(trimmed, createdAt)
+}
+
+function extractResourceLocalId(resourceId: string): string {
+  const sessionId = extractSessionIdFromSessionRef(resourceId)
+  if (sessionId) {
+    return sessionId
+  }
+  const hashIndex = resourceId.lastIndexOf('#')
+  if (hashIndex >= 0) {
+    return decodeURIComponent(resourceId.slice(hashIndex + 1))
+  }
+  const fileMatch = resourceId.match(/\/?([^/#?]+)\.ttl(?:$|[?#])/)
+  if (fileMatch?.[1]) {
+    return decodeURIComponent(fileMatch[1])
+  }
+  return resourceId
+}
+
+function parseTimestampFromUuidLikeId(id: string): Date | null {
+  const fragmentId = extractResourceLocalId(id)
+  const prefix = fragmentId.replace(/-/g, '').slice(0, 12)
+  if (!/^[\da-f]{12}$/i.test(prefix)) {
+    return null
+  }
+  const millis = Number.parseInt(prefix, 16)
+  if (!Number.isFinite(millis) || millis <= 0) {
+    return null
+  }
+  const date = new Date(millis)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
 async function buildPodSessionSnapshot(
   context: DefaultPodSessionContext,
   row: SessionRow,
-  options: { expectedCwd?: string } = {},
 ): Promise<LinxPiPodSessionSnapshot | null> {
   if (!row.id || row.tool !== 'linx') {
     return null
@@ -735,13 +959,11 @@ async function buildPodSessionSnapshot(
   }
 
   const metadata = isRecord(row.metadata) ? row.metadata : {}
+  const sessionId = extractResourceLocalId(row.id)
   const sessionCwd = typeof metadata.cwd === 'string' ? metadata.cwd : undefined
-  if (options.expectedCwd && sessionCwd !== options.expectedCwd) {
-    return null
-  }
   const messages = await listPodSessionMessages(context, row)
   return {
-    id: row.id,
+    id: sessionId,
     cwd: sessionCwd,
     createdAt: normalizeUnknownDate(row.createdAt),
     updatedAt: normalizeUnknownDate(row.updatedAt),
@@ -757,9 +979,49 @@ async function listPodSessionMessages(
   if (!session.thread) {
     return []
   }
-  const threadColumn = (messageTable as any).thread
+
+  const metadata = isRecord(session.metadata) ? session.metadata : {}
+  const rowMessageResources = Array.isArray((session as { messageResources?: unknown }).messageResources)
+    ? (session as { messageResources: unknown[] }).messageResources
+    : []
+  const metadataMessageResources = Array.isArray(metadata.messageResources)
+    ? metadata.messageResources
+    : []
+  const messageResources = [...rowMessageResources, ...metadataMessageResources]
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+  if (messageResources.length > 0) {
+    const rows = await Promise.all(messageResources.map(async (resource) => {
+      try {
+        return /^https?:\/\//.test(resource)
+          ? await context.db.findByIri(messageResource, resource) as MessageRow | null
+          : await context.db.findById(messageResource, resource) as MessageRow | null
+      } catch {
+        return null
+      }
+    }))
+    const messages = rows
+      .filter((message): message is MessageRow => {
+        if (!message?.id) {
+          return false
+        }
+        // Exact resource reads may not hydrate inverse thread links. The
+        // session-owned messageResources list is already the authoritative
+        // pointer set, so only reject rows that explicitly point elsewhere.
+        return !message.thread || message.thread === session.thread
+      })
+      .map(podMessageRowToSnapshot)
+      .filter((message) => message.id)
+      .sort(compareMessageSnapshots)
+    if (messages.length > 0) {
+      return messages
+    }
+
+    return []
+  }
+
+  const threadColumn = (messageResource as any).thread
   const rows = await context.db.select()
-    .from(messageTable)
+    .from(messageResource)
     .where(eq(threadColumn, session.thread))
     .orderBy('createdAt', 'asc')
     .execute() as MessageRow[]
@@ -769,22 +1031,31 @@ async function listPodSessionMessages(
       if (!message.id || message.thread !== session.thread) {
         return false
       }
-      return message.id.startsWith(`${session.id}-`)
+      return extractResourceLocalId(message.id).startsWith(`${extractResourceLocalId(session.id)}-`)
     })
-    .map((message) => ({
-      id: message.id,
-      role: message.role,
-      content: message.content,
-      richContent: message.richContent,
-      createdAt: normalizeUnknownDate(message.createdAt),
-      updatedAt: normalizeUnknownDate(message.updatedAt),
-    }))
+    .map(podMessageRowToSnapshot)
     .filter((message) => message.id)
-    .sort((a, b) => {
-      const aTime = toDate(a.createdAt)?.getTime() ?? 0
-      const bTime = toDate(b.createdAt)?.getTime() ?? 0
-      return aTime - bTime
-    })
+    .sort(compareMessageSnapshots)
+}
+
+function podMessageRowToSnapshot(message: MessageRow): LinxPiPodMessageSnapshot {
+  return {
+    id: extractResourceLocalId(message.id),
+    role: message.role,
+    content: message.content,
+    richContent: message.richContent,
+    createdAt: normalizeUnknownDate(message.createdAt),
+    updatedAt: normalizeUnknownDate(message.updatedAt),
+  }
+}
+
+function compareMessageSnapshots(
+  a: LinxPiPodMessageSnapshot,
+  b: LinxPiPodMessageSnapshot,
+): number {
+  const aTime = toDate(a.createdAt)?.getTime() ?? 0
+  const bTime = toDate(b.createdAt)?.getTime() ?? 0
+  return aTime - bTime
 }
 
 function normalizeUnknownDate(value: unknown): Date | string | number | undefined {
@@ -792,6 +1063,10 @@ function normalizeUnknownDate(value: unknown): Date | string | number | undefine
     return value
   }
   return undefined
+}
+
+function getPodBaseUrl(webId: string): string {
+  return webId.replace('/profile/card#me', '').replace(/\/$/, '')
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

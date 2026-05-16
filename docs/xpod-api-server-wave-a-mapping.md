@@ -342,10 +342,12 @@ export const auditResource = podTable(
     action: string('action'),           // tool_approved|tool_rejected|etc
     actor: uri('actor'),
     actorRole: string('actorRole'),     // human|secretary|system
-    sessionRef: uri('sessionRef'),
-    toolCallRef: string('toolCallRef'),
-    context: text('context'),           // JSON
-    policyRef: uri('policyRef'),
+    session: uri('session'),
+    entry: uri('entry'),
+    toolCallId: string('toolCallId'),
+    toolName: string('toolName'),
+    approval: uri('approval'),
+    policy: uri('policy'),
     policyVersion: string('policyVersion'),
     createdAt: timestamp('createdAt'),
   },
@@ -372,7 +374,7 @@ export const auditResource = podTable(
 - On tool execution completion, write to auditResource
   - action: 'tool_approved' | 'tool_rejected' | 'tool_completed'
   - actor: current user's webId
-  - context: JSON with trigger event and reasoning
+  - session/entry/toolCallId/toolName/approval pointers; runtime details are restored from message/tool blocks or the linked approval/grant resource when needed
 
 ---
 
@@ -630,7 +632,7 @@ Pod Solid Storage (RDF)
 
 ### Phase 3: Persistence & Audit
 1. Implement inboxTable CRUD (insert approval, update decision)
-2. Implement auditResource logging (action + actor + resource pointers)
+2. Implement auditResource logging (action + actor + stable resource pointers; no embedded context)
 3. Align with LinX's LINX_SIDECAR vocab
 
 ### Phase 4: Session Integration

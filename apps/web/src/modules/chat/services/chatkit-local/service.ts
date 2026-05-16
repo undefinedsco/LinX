@@ -2,17 +2,14 @@
  * Local (Browser) ChatKit Service
  *
  * Ports the xpod ChatKitService logic to run entirely in the browser.
- * Uses LocalChatKitStore for Pod persistence and chatOps.getCredential()
- * to read AI API keys from the Pod.
+ * Uses LocalChatKitStore for Pod persistence and shared models to read AI API
+ * keys from the Pod.
  *
  * No API server round-trip — fetch goes directly to the AI provider.
  */
 
 import { resolveRowSubject } from '@undefineds.co/drizzle-solid'
-import {
-  resolveLinxPodBaseUrl,
-  resolveLinxRuntimeApiBaseUrlForIssuerUrl,
-} from '@undefineds.co/models/client'
+import { resolveLinxRuntimeApiBaseUrlForIssuerUrl } from '@undefineds.co/models/client'
 import type { ChatKitStore, StoreContext } from '@/lib/vendor/xpod-chatkit'
 import {
   extractUserMessageText,
@@ -26,11 +23,12 @@ import {
   type ThreadMetadata,
   type ThreadStreamEvent,
 } from '@/lib/vendor/xpod-chatkit'
-import { Credential } from '@/lib/vendor/xpod-credential'
 import {
   agentTable,
+  aiProviderResource,
   chatTable,
   contactTable,
+  credentialResource,
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
   selectAIConfigCredential,
@@ -749,44 +747,39 @@ export class LocalChatKitService {
     )
   }
 
-  private async getAiConfig(provider = 'openai'): Promise<{
+  private async getAiConfig(provider: string | null | undefined): Promise<{
     baseUrl: string
     apiKey: string
     defaultModel?: string
   } | null> {
-    try {
-      const credentials = await this.db.select().from(Credential)
-        .execute()
-
-      const selected = selectAIConfigCredential(provider, credentials as Array<Record<string, unknown>>)
-      if (selected) {
-        if (selected.credentialId) {
-          await (this.db as any).updateByLocator?.(Credential as any, { id: selected.credentialId }, { lastUsedAt: new Date() })
-        }
-        return {
-          baseUrl: selected.baseUrl || 'https://openrouter.ai/api/v1',
-          apiKey: selected.apiKey,
-        }
-      }
-    } catch (error) {
-      console.warn('[LocalChatKitService] drizzle-solid credential query failed, trying direct fetch:', error)
+    const providerId = normalizeAIConfigProviderId(provider ?? 'openai')
+    if (!providerId) {
+      return null
     }
 
     try {
-      const podBase = resolveLinxPodBaseUrl(this.webId)
-      const credentialUrl = `${podBase}/settings/credentials.ttl`
-      const response = await this.authFetch(credentialUrl, {
-        headers: { Accept: 'text/turtle' },
-      })
+      const findProvider = typeof (this.db as any).findById === 'function'
+        ? (this.db as any).findById(aiProviderResource as any, providerId).catch(() => null)
+        : Promise.resolve(null)
+      const [credentialRows, providerRow] = await Promise.all([
+        this.db.select().from(credentialResource).execute(),
+        findProvider,
+      ])
 
-      if (!response.ok) {
-        return null
+      const selected = selectAIConfigCredential(
+        providerId,
+        credentialRows as Array<Record<string, unknown>>,
+        providerRow ? [providerRow as Record<string, unknown>] : [],
+      )
+
+      if (!selected) return null
+
+      return {
+        baseUrl: selected.baseUrl || 'https://openrouter.ai/api/v1',
+        apiKey: selected.apiKey,
       }
-
-      const turtle = await response.text()
-      return this.parseCredentialFromTurtle(turtle)
     } catch (error) {
-      console.warn('[LocalChatKitService] Direct credential fetch failed:', error)
+      console.warn('[LocalChatKitService] shared credential query failed:', error)
       return null
     }
   }
@@ -839,7 +832,7 @@ export class LocalChatKitService {
   }
 
   private async findChatById(chatId: string): Promise<any | null> {
-    const direct = await (this.db as any).findByLocator?.(chatTable as any, { id: chatId } as any)
+    const direct = await (this.db as any).findById?.(chatTable as any, chatId)
     if (direct) return direct
 
     const chats = await this.db.select().from(chatTable).execute()
@@ -981,40 +974,6 @@ export class LocalChatKitService {
     }
 
     return ''
-  }
-
-  private parseCredentialFromTurtle(turtle: string): {
-    baseUrl: string
-    apiKey: string
-    defaultModel?: string
-  } | null {
-    const lines = turtle.split('\n')
-    let apiKey: string | null = null
-    let baseUrl: string | null = null
-    let service: string | null = null
-    let status: string | null = null
-
-    for (const line of lines) {
-      const trimmed = line.trim()
-      const matchStr = (predicate: string) => {
-        const regex = new RegExp(`<https://undefineds\\.co/ns#${predicate}>\\s+\"([^\"]*)\"`)
-        const match = trimmed.match(regex)
-        return match ? match[1] : null
-      }
-      apiKey = matchStr('apiKey') ?? apiKey
-      baseUrl = matchStr('baseUrl') ?? baseUrl
-      service = matchStr('service') ?? service
-      status = matchStr('status') ?? status
-    }
-
-    if (service === 'ai' && status === 'active' && apiKey) {
-      return {
-        baseUrl: baseUrl || 'https://openrouter.ai/api/v1',
-        apiKey,
-      }
-    }
-
-    return null
   }
 
   private async *streamFromProvider(

@@ -60,9 +60,9 @@ These should be reused as the backend/data plane.
 The current repo state is now clearer:
 
 - `chat` / `thread` / `message` already have real Pod tables and active writers
-- `approval` / `audit` / `inbox` already have real Pod tables and active writers in watch/runtime-sidecar paths
-- `grant` exists as the durable delegation/authz layer; watch remote approval now writes and consumes active grants, while Pi/web coverage is still incomplete
-- `session` had been only a stub contract; it now has a real shared `sessionTable` baseline in `@linx/models`, exposed through neutral `solidSchema`, with runtime-sidecar write/read baseline in place
+- `approval` / `audit` / `inbox` already have real Pod tables and active writers in auto-mode/runtime-sidecar paths
+- `grant` exists as the durable delegation/authz layer; auto-mode remote approval now writes and consumes active grants, while Pi/web coverage is still incomplete
+- `session` had been only a stub contract; it now has a real shared `sessionResource` baseline in `@undefineds.co/models`, exposed through neutral `solidSchema`, with runtime-sidecar write/read baseline in place
 
 This means the next implementation target is **not** “just make Pi talk to a stream adapter”.
 The next correct target is:
