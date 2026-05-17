@@ -16,10 +16,11 @@ import {
   createCodingTools,
   createLocalBashOperations,
 } from '@mariozechner/pi-coding-agent'
-import { webFetchTool, webSearchTool } from './web-fetch.js'
+// web_fetch / web_search are now handled by pi-web-access
 import { podReadTool, podWriteTool } from './pod-tools.js'
 import { existsSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
+import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import type { Api, Model, OAuthCredentials } from '@mariozechner/pi-ai'
 import { isRemoteAuthExpiredError, type RemoteChatMessage, type RemoteChatTool } from '../chat-api.js'
@@ -31,6 +32,7 @@ const UNDEFINEDS_PROVIDER_API = 'openai-completions'
 const UNDEFINEDS_SESSION_ID = 'undefineds_pi_frontend'
 const UNDEFINEDS_AUTH_BRIDGE_ID = 'undefineds-cloud-oauth-bridge'
 const LINX_PACKAGE_SOURCE = '@undefineds.co/linx'
+const LINX_WEB_ACCESS_PACKAGE_SOURCE = 'pi-web-access'
 export const DEFAULT_LINX_PI_BASH_TIMEOUT_SECONDS = 15
 
 export interface PiRuntimeAdapterDependencies {
@@ -357,6 +359,9 @@ export function createPiRuntimeAdapter(
       const defaultModelId = sanitizeLinxCloudDefaults(settingsManager, requestedModel, providerModels)
       activeModelId = defaultModelId
       const bundledSkillsDir = resolveBundledLinxSkillsDir()
+      const bundledPackagePaths = [
+        resolveBundledPiPackageRoot(LINX_WEB_ACCESS_PACKAGE_SOURCE),
+      ].filter((path): path is string => Boolean(path))
       const services = await createAgentSessionServices({
         cwd: context.cwd,
         agentDir: context.agentDir,
@@ -364,6 +369,8 @@ export function createPiRuntimeAdapter(
         settingsManager,
         modelRegistry,
         resourceLoaderOptions: {
+          // Built-in: pi-web-access handles web_search, fetch_content, and related web tools.
+          additionalExtensionPaths: bundledPackagePaths,
           additionalSkillPaths: bundledSkillsDir ? [bundledSkillsDir] : [],
           skillsOverride: bundledSkillsDir
             ? (base) => withBundledLinxSkillSourceInfo(base, bundledSkillsDir)
@@ -382,7 +389,7 @@ export function createPiRuntimeAdapter(
         sessionStartEvent: context.sessionStartEvent as never,
         model: selectedModel,
         tools: createLinxPiCodingTools(context.cwd),
-        customTools: [webFetchTool, webSearchTool, podReadTool, podWriteTool],
+        customTools: [podReadTool, podWriteTool],
       })
       const session = created.session
       enableLinxXhighThinking(session)
@@ -537,6 +544,15 @@ export function resolveBundledLinxSkillsDir(importMetaUrl = import.meta.url): st
   }
 
   return null
+}
+
+export function resolveBundledPiPackageRoot(packageName: string, importMetaUrl = import.meta.url): string | null {
+  try {
+    const requireFromRuntime = createRequire(importMetaUrl)
+    return dirname(requireFromRuntime.resolve(`${packageName}/package.json`))
+  } catch {
+    return null
+  }
 }
 
 function withBundledLinxSkillSourceInfo<T extends {

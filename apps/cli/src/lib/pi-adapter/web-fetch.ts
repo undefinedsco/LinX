@@ -197,9 +197,12 @@ export const webSearchTool: any = {
   },
 };
 
-// ── Pi Extension ────────────────────────────────────────────────────────────
-
-export default function (pi: ExtensionAPI): void {
-  pi.registerTool(webFetchTool);
-  pi.registerTool(webSearchTool);
-}
+// ── Pi Extension (disabled; replaced by pi-web-access) ─────────────────────
+//
+// LinX now uses pi-web-access for web_search and fetch_content.
+// The Jina utility functions below are kept for potential fallback use.
+//
+// export default function (pi: ExtensionAPI): void {
+//   pi.registerTool(webFetchTool);
+//   pi.registerTool(webSearchTool);
+// }

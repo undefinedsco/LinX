@@ -18,6 +18,8 @@
     "@undefineds.co/models": "*",
     "@zed-industries/codex-acp": "0.14.0",
     "n3": "^1.26.0",
+    "pi-web-access": "^0.10.7",
+    "typebox": "^1.1.38",
     "yargs": "^17.7.2"
   },
   "devDependencies": {

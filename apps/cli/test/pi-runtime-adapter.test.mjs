@@ -337,26 +337,33 @@ test('pi runtime adapter exposes bundled LinX skills during initial resource loa
     sessionManager: SessionManager.inMemory(cwd),
   })
 
-  const skills = runtime.session.resourceLoader.getSkills().skills
-  assert.deepEqual(skills.map((skill) => skill.name).sort(), [
-    'drizzle-solid',
-    'pod-storage',
-    'solid-modeling',
-    'xpod-componentsjs',
-  ])
-  assert.equal(
-    skills.every((skill) => skill.sourceInfo?.source === '@undefineds.co/linx'),
-    true,
-  )
-  assert.equal(
-    skills.every((skill) => skill.sourceInfo?.origin === 'package'),
-    true,
-  )
-  assert.match(runtime.session.systemPrompt, /<skill>/)
-  assert.match(runtime.session.systemPrompt, /solid-modeling/)
-
-  await runtime.dispose()
-  process.chdir(cliRoot)
+  try {
+    const skills = runtime.session.resourceLoader.getSkills().skills
+    const skillNames = skills.map((skill) => skill.name).sort()
+    for (const name of ['drizzle-solid', 'pod-storage', 'solid-modeling', 'xpod-componentsjs']) {
+      assert.ok(skillNames.includes(name), `expected bundled LinX skill ${name}`)
+    }
+    assert.ok(skillNames.includes('librarian'), 'expected pi-web-access skill to be loaded from the bundled package')
+    const linxSkills = skills.filter((skill) => [
+      'drizzle-solid',
+      'pod-storage',
+      'solid-modeling',
+      'xpod-componentsjs',
+    ].includes(skill.name))
+    assert.equal(
+      linxSkills.every((skill) => skill.sourceInfo?.source === '@undefineds.co/linx'),
+      true,
+    )
+    assert.equal(
+      linxSkills.every((skill) => skill.sourceInfo?.origin === 'package'),
+      true,
+    )
+    assert.match(runtime.session.systemPrompt, /<skill>/)
+    assert.match(runtime.session.systemPrompt, /solid-modeling/)
+  } finally {
+    await runtime.dispose()
+    process.chdir(cliRoot)
+  }
 })
 
 test('pi runtime adapter configures undefineds models as openai chat completions', async (t) => {
@@ -1242,8 +1249,10 @@ test('pi runtime adapter keeps Pi native and LinX packaged tools active in the c
     'bash',
     'edit',
     'write',
-    'web_fetch',
     'web_search',
+    'code_search',
+    'fetch_content',
+    'get_search_content',
     'pod_read',
     'pod_write',
   ])

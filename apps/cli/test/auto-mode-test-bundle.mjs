@@ -187,6 +187,8 @@ async function buildAutoModeBundle(entryRelative) {
   }, null, 2))
   symlinkSync(resolveNodeModule('ws'), join(genericNodeModulesDir, 'ws'), 'dir')
   symlinkSync(resolveNodeModule('n3'), join(genericNodeModulesDir, 'n3'), 'dir')
+  symlinkSync(resolveNodeModule('pi-web-access'), join(genericNodeModulesDir, 'pi-web-access'), 'dir')
+  symlinkSync(resolveNodeModule('typebox'), join(genericNodeModulesDir, 'typebox'), 'dir')
   symlinkSync(resolveNodeModule('@sinclair/typebox'), join(sinclairNodeModulesDir, 'typebox'), 'dir')
   symlinkSync(resolveNodeModule('@mariozechner/pi-ai'), join(scopedNodeModulesDir, 'pi-ai'), 'dir')
   symlinkSync(resolveNodeModule('@mariozechner/pi-agent-core'), join(scopedNodeModulesDir, 'pi-agent-core'), 'dir')
