@@ -97,6 +97,7 @@ function copyAgentRuntimePackage(cliWorkRoot) {
       './auto-mode': './dist/auto-mode.js',
       './companion-model': './dist/companion-model.js',
       './runtime': './dist/runtime.js',
+      './symphony': './dist/symphony.js',
       './turn-controller': './dist/turn-controller.js',
     },
   })
@@ -115,12 +116,14 @@ function rewriteAgentRuntimeImports(root, cliWorkRoot) {
       ["'@linx/agent-runtime/auto-mode'", `'${base}/auto-mode.js'`],
       ["'@linx/agent-runtime/companion-model'", `'${base}/companion-model.js'`],
       ["'@linx/agent-runtime/runtime'", `'${base}/runtime.js'`],
+      ["'@linx/agent-runtime/symphony'", `'${base}/symphony.js'`],
       ["'@linx/agent-runtime/turn-controller'", `'${base}/turn-controller.js'`],
       ['"@linx/agent-runtime"', `"${base}/index.js"`],
       ['"@linx/agent-runtime/acp"', `"${base}/acp.js"`],
       ['"@linx/agent-runtime/auto-mode"', `"${base}/auto-mode.js"`],
       ['"@linx/agent-runtime/companion-model"', `"${base}/companion-model.js"`],
       ['"@linx/agent-runtime/runtime"', `"${base}/runtime.js"`],
+      ['"@linx/agent-runtime/symphony"', `"${base}/symphony.js"`],
       ['"@linx/agent-runtime/turn-controller"', `"${base}/turn-controller.js"`],
     ]
     for (const [from, to] of replacements) {

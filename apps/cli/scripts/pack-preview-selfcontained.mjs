@@ -61,6 +61,7 @@ const slimAgentRuntimePkg = {
     './acp': './dist/acp.js',
     './companion-model': './dist/companion-model.js',
     './runtime': './dist/runtime.js',
+    './symphony': './dist/symphony.js',
     './auto-mode': './dist/auto-mode.js',
     './turn-controller': './dist/turn-controller.js',
   },
@@ -119,6 +120,7 @@ function rewriteVendorImports(root) {
       ["'@linx/agent-runtime/acp'", `'${agentRuntimeBase}/acp.js'`],
       ["'@linx/agent-runtime/companion-model'", `'${agentRuntimeBase}/companion-model.js'`],
       ["'@linx/agent-runtime/runtime'", `'${agentRuntimeBase}/runtime.js'`],
+      ["'@linx/agent-runtime/symphony'", `'${agentRuntimeBase}/symphony.js'`],
       ["'@linx/agent-runtime/auto-mode'", `'${agentRuntimeBase}/auto-mode.js'`],
       ["'@linx/agent-runtime/turn-controller'", `'${agentRuntimeBase}/turn-controller.js'`],
       ['"@undefineds.co/models"', `"${modelsBase}/index.js"`],
@@ -134,6 +136,7 @@ function rewriteVendorImports(root) {
       ['"@linx/agent-runtime/acp"', `"${agentRuntimeBase}/acp.js"`],
       ['"@linx/agent-runtime/companion-model"', `"${agentRuntimeBase}/companion-model.js"`],
       ['"@linx/agent-runtime/runtime"', `"${agentRuntimeBase}/runtime.js"`],
+      ['"@linx/agent-runtime/symphony"', `"${agentRuntimeBase}/symphony.js"`],
       ['"@linx/agent-runtime/auto-mode"', `"${agentRuntimeBase}/auto-mode.js"`],
       ['"@linx/agent-runtime/turn-controller"', `"${agentRuntimeBase}/turn-controller.js"`],
     ]
