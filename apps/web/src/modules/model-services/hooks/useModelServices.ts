@@ -5,6 +5,7 @@ import {
   buildAIConfigProviderStateMap,
   normalizeAIConfigModelId,
   sameAIConfigProviderFamily,
+  selectAIConfigCredential,
 } from '@undefineds.co/models'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 import {
@@ -135,6 +136,8 @@ export function useModelServices() {
     const existingCredential = credentialRows.find((row) =>
       sameAIConfigProviderFamily(typeof row.provider === 'string' ? row.provider : '', plan.providerId),
     )
+    const selectedCredential = selectAIConfigCredential(plan.providerId, credentialRows, providerRows)?.credential
+    const credentialTarget = selectedCredential ?? existingCredential
     const existingModels = modelRows.filter((row) =>
       sameAIConfigProviderFamily(typeof row.isProvidedBy === 'string' ? row.isProvidedBy : '', plan.providerId),
     )
@@ -150,8 +153,8 @@ export function useModelServices() {
     }
 
     if (plan.credentialPayload) {
-      const credentialTx = existingCredential
-        ? credentialCollection.update(rowKey(existingCredential), (draft: AnyRow) => {
+      const credentialTx = credentialTarget
+        ? credentialCollection.update(rowKey(credentialTarget), (draft: AnyRow) => {
             applyPayload(draft, plan.credentialPayload as AnyRow)
           })
         : credentialCollection.insert(plan.credentialPayload as any)

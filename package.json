@@ -59,7 +59,7 @@
     "@radix-ui/react-select": "^2.0.0",
     "@radix-ui/react-slot": "^1.0.2",
     "@undefineds.co/drizzle-solid": "^0.3.12",
-    "@undefineds.co/xpod": "0.2.35",
+    "@undefineds.co/xpod": "0.2.36",
     "class-variance-authority": "^0.7.0",
     "clsx": "^1.2.1",
     "drizzle-orm": "^0.32.2",

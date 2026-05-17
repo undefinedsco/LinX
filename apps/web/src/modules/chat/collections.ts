@@ -21,8 +21,8 @@ import {
   eq,
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
-  selectAIConfigCredential,
   resolveThreadChatId as resolveThreadChatIdFromRow,
+  selectAIConfigCredential,
   UDFS,
   WF,
   type ChatRow,
@@ -1344,6 +1344,10 @@ export const chatOps = {
     )
 
     if (!selected) return null
+
+    if (selected.credentialId) {
+      await (db as any).updateByLocator?.(credentialResource as any, { id: selected.credentialId }, { lastUsedAt: new Date() })
+    }
 
     return {
       apiKey: selected.apiKey,

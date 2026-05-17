@@ -32,6 +32,25 @@ vi.mock('@undefineds.co/models', () => ({
     const tail = value.includes('#') ? value.split('#').pop() : value.split('/').pop()
     return (tail ?? value).replace(/\.ttl$/, '')
   },
+  selectAIConfigCredential: (provider: string, rows: Array<Record<string, any>>) => {
+    const normalizedProvider = provider.includes('#') ? provider.split('#').pop() : provider
+    const credential = rows.find((row) => {
+      const rowProvider = String(row.provider ?? '')
+      return rowProvider.endsWith(`#${normalizedProvider}`)
+        && (row.service ?? 'ai') === 'ai'
+        && (row.status ?? 'active') === 'active'
+        && row.apiKey
+    })
+    if (!credential) return undefined
+    return {
+      providerId: normalizedProvider,
+      credential,
+      credentialId: credential.id,
+      apiKey: credential.apiKey,
+      baseUrl: credential.baseUrl,
+      isDefault: Boolean(credential.isDefault),
+    }
+  },
   resolveRowId: (row: Record<string, unknown> | null | undefined) => row?.['@id'] ?? row?.uri ?? row?.id ?? null,
   selectAIConfigCredential: (
     provider: string,

@@ -123,9 +123,9 @@ CLI 原始输出 (stdout/stderr)
 
 ### 6A.4 解析器 → Vocab predicate 映射
 
-解析器内部字段与 LINX_MSG namespace 的对应关系：
+解析器内部字段与 UDFS predicate 的对应关系：
 
-| CLIBlock 字段 | LINX_MSG predicate | 说明 |
+| CLIBlock 字段 | UDFS predicate | 说明 |
 |--------------|-------------------|------|
 | `toolCallId` | `lxm:toolCallId` | 工具调用唯一 ID |
 | `toolName` | `lxm:toolName` | 工具名称 |

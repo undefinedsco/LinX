@@ -774,6 +774,10 @@ export class LocalChatKitService {
 
       if (!selected) return null
 
+      if (selected.credentialId) {
+        await (this.db as any).updateByLocator?.(credentialResource as any, { id: selected.credentialId }, { lastUsedAt: new Date() })
+      }
+
       return {
         baseUrl: selected.baseUrl || 'https://openrouter.ai/api/v1',
         apiKey: selected.apiKey,

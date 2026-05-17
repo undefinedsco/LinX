@@ -10,18 +10,24 @@ interface PodQueryDb {
       execute(): Promise<unknown[]>
     }
   }
+  updateByLocator?: (table: unknown, locator: Record<string, unknown>, data: Record<string, unknown>) => Promise<unknown>
 }
 
-interface PodCredentialRow {
+interface PodCredentialRow extends Record<string, unknown> {
   id?: string
   service?: string
   status?: string
   apiKey?: string
   provider?: string
   baseUrl?: string
+  proxyUrl?: string
+  label?: string
+  isDefault?: boolean
+  lastUsedAt?: Date
+  failCount?: number
 }
 
-interface PodProviderRow {
+interface PodProviderRow extends Record<string, unknown> {
   id?: string
   '@id'?: string
   baseUrl?: string
@@ -46,10 +52,10 @@ interface PodAiRuntime {
   aiProviderResource?: unknown
 }
 
-const BACKEND_PROVIDER_ID: Record<SupportedPodAutoModeBackend, 'anthropic' | 'openai' | 'codebuddy'> = {
-  claude: 'anthropic',
-  codex: 'openai',
-  codebuddy: 'codebuddy',
+const BACKEND_PROVIDER_IDS: Record<SupportedPodAutoModeBackend, readonly string[]> = {
+  claude: ['anthropic', 'claude'],
+  codex: ['openai', 'codex'],
+  codebuddy: ['codebuddy'],
 }
 
 function selectPodCredentialForBackend(
@@ -57,22 +63,28 @@ function selectPodCredentialForBackend(
   credentials: PodCredentialRow[],
   providers: PodProviderRow[],
 ): PodProviderMatch | null {
-  const providerId = BACKEND_PROVIDER_ID[backend]
-  const selected = selectAIConfigCredential(
-    providerId,
-    credentials as Array<Record<string, unknown>>,
-    providers as Array<Record<string, unknown>>,
-  )
+  const providerIds = BACKEND_PROVIDER_IDS[backend]
 
-  if (!selected) {
-    return null
+  for (const providerId of providerIds) {
+    const selected = selectAIConfigCredential(providerId, credentials, providers)
+    if (!selected) continue
+    return {
+      providerId: selected.providerId,
+      apiKey: selected.apiKey,
+      baseUrl: selected.baseUrl,
+    }
   }
 
-  return {
-    providerId,
-    apiKey: selected.apiKey,
-    baseUrl: selected.baseUrl,
-  }
+  return null
+}
+
+async function markCredentialUsed(
+  runtime: PodAiRuntime,
+  db: PodQueryDb,
+  row: PodCredentialRow | undefined,
+): Promise<void> {
+  if (!row?.id || !runtime.credentialResource) return
+  await db.updateByLocator?.(runtime.credentialResource, { id: row.id }, { lastUsedAt: new Date() })
 }
 
 function buildBackendEnv(match: PodProviderMatch, backend: SupportedPodAutoModeBackend): PodBackedAutoModeCredential {
@@ -154,7 +166,7 @@ async function createDefaultRuntime(): Promise<PodAiRuntime> {
 async function loadRowsWithDrizzle(
   runtime: PodAiRuntime,
   podSession: PodDataSession,
-): Promise<{ credentials: PodCredentialRow[]; providers: PodProviderRow[] } | null> {
+): Promise<{ db: PodQueryDb; credentials: PodCredentialRow[]; providers: PodProviderRow[] } | null> {
   if (!runtime.createDb || !runtime.credentialResource || !runtime.aiProviderResource) {
     return null
   }
@@ -165,7 +177,7 @@ async function loadRowsWithDrizzle(
     db.select().from(runtime.aiProviderResource).execute() as Promise<PodProviderRow[]>,
   ])
 
-  return { credentials, providers }
+  return { db, credentials, providers }
 }
 
 export async function loadPodBackendCredential(
@@ -188,10 +200,13 @@ export async function loadPodBackendCredential(
     return null
   }
 
+  const selected = selectAIConfigCredential(match.providerId, rows.credentials, rows.providers)
+  await markCredentialUsed(activeRuntime, rows.db, selected?.credential as PodCredentialRow | undefined)
+
   return buildBackendEnv(match, backend)
 }
 
 export const __podInternal = {
-  BACKEND_PROVIDER_ID,
+  BACKEND_PROVIDER_IDS,
   selectPodCredentialForBackend,
 }
