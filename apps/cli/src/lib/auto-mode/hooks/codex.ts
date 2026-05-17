@@ -2,6 +2,23 @@ import { createAcpAgentCapabilities, linxRuntimeEndpointForBackend } from '@linx
 import type { AutoModeBackendHook } from '../types.js'
 import { resolveCodexAcpCommand } from './shared.js'
 
+function encodeCodexConfigValue(value: string): string {
+  return JSON.stringify(value)
+}
+
+function buildCodexArgs(passthroughArgs: string[], commandEnv?: Record<string, string>): string[] {
+  const baseUrl = commandEnv?.CODEX_BASE_URL?.trim()
+  if (!baseUrl) {
+    return [...passthroughArgs]
+  }
+
+  return [
+    '-c',
+    `openai_base_url=${encodeCodexConfigValue(baseUrl)}`,
+    ...passthroughArgs,
+  ]
+}
+
 export const codexHook: AutoModeBackendHook = {
   id: 'codex',
   endpoint: linxRuntimeEndpointForBackend('codex'),
@@ -13,7 +30,7 @@ export const codexHook: AutoModeBackendHook = {
   buildSpawnPlan(options) {
     return {
       command: options.commandOverride ?? resolveCodexAcpCommand(),
-      args: [...options.passthroughArgs],
+      args: buildCodexArgs(options.passthroughArgs, options.commandEnv),
     }
   },
 }

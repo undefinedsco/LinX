@@ -1,16 +1,18 @@
 import type { AutoModeBackend } from './types.js'
 import { getDefaultPodDataSession, type PodDataSession } from '../pod-data-session.js'
-import { selectAIConfigCredential } from '../models.js'
+import {
+  getDefaultAIConfigCredentialId,
+  getAIConfigProviderFamilyIds,
+  normalizeAIConfigResourceId,
+  selectAIConfigCredential,
+} from '../models.js'
 
 type SupportedPodAutoModeBackend = AutoModeBackend
 
 interface PodQueryDb {
-  select(): {
-    from(resource: unknown): {
-      execute(): Promise<unknown[]>
-    }
-  }
+  updateById?: (resource: unknown, id: string, data: Record<string, unknown>) => Promise<unknown>
   updateByLocator?: (table: unknown, locator: Record<string, unknown>, data: Record<string, unknown>) => Promise<unknown>
+  findById<T = unknown>(resource: unknown, id: string): Promise<T | null>
 }
 
 interface PodCredentialRow extends Record<string, unknown> {
@@ -31,6 +33,7 @@ interface PodProviderRow extends Record<string, unknown> {
   id?: string
   '@id'?: string
   baseUrl?: string
+  proxyUrl?: string
 }
 
 export interface PodBackedAutoModeCredential {
@@ -84,6 +87,10 @@ async function markCredentialUsed(
   row: PodCredentialRow | undefined,
 ): Promise<void> {
   if (!row?.id || !runtime.credentialResource) return
+  if (db.updateById) {
+    await db.updateById(runtime.credentialResource, row.id, { lastUsedAt: new Date() })
+    return
+  }
   await db.updateByLocator?.(runtime.credentialResource, { id: row.id }, { lastUsedAt: new Date() })
 }
 
@@ -103,8 +110,8 @@ function buildBackendEnv(match: PodProviderMatch, backend: SupportedPodAutoModeB
       backend,
       provider: 'openai',
       env: {
-        OPENAI_API_KEY: match.apiKey,
         CODEX_API_KEY: match.apiKey,
+        ...(match.baseUrl ? { CODEX_BASE_URL: match.baseUrl } : {}),
       },
     }
   }
@@ -164,6 +171,7 @@ async function createDefaultRuntime(): Promise<PodAiRuntime> {
 }
 
 async function loadRowsWithDrizzle(
+  backend: SupportedPodAutoModeBackend,
   runtime: PodAiRuntime,
   podSession: PodDataSession,
 ): Promise<{ db: PodQueryDb; credentials: PodCredentialRow[]; providers: PodProviderRow[] } | null> {
@@ -172,12 +180,82 @@ async function loadRowsWithDrizzle(
   }
 
   const db = runtime.createDb(podSession)
+  return loadKnownBackendRowsWithDrizzle(backend, db, {
+    credentialResource: runtime.credentialResource,
+    aiProviderResource: runtime.aiProviderResource,
+  })
+}
+
+async function loadKnownBackendRowsWithDrizzle(
+  backend: SupportedPodAutoModeBackend,
+  db: PodQueryDb,
+  runtime: Required<Pick<PodAiRuntime, 'credentialResource' | 'aiProviderResource'>>,
+): Promise<{ db: PodQueryDb; credentials: PodCredentialRow[]; providers: PodProviderRow[] }> {
+  const providerId = BACKEND_PROVIDER_IDS[backend][0]
+  const providerIds = getAIConfigProviderFamilyIds(providerId)
+  const credentialIds = Array.from(new Set([
+    ...providerIds.flatMap((id) => credentialIdCandidates(getDefaultAIConfigCredentialId(id))),
+  ]))
+  const providerResourceIds = Array.from(new Set(providerIds.flatMap(providerIdCandidates)))
+
   const [credentials, providers] = await Promise.all([
-    db.select().from(runtime.credentialResource).execute() as Promise<PodCredentialRow[]>,
-    db.select().from(runtime.aiProviderResource).execute() as Promise<PodProviderRow[]>,
+    findRowsByIds<PodCredentialRow>(db, runtime.credentialResource, credentialIds),
+    findRowsByIds<PodProviderRow>(db, runtime.aiProviderResource, providerResourceIds),
   ])
 
   return { db, credentials, providers }
+}
+
+function credentialIdCandidates(id: string): string[] {
+  const normalized = normalizeAIConfigResourceId(id) || id
+  return [
+    normalized,
+    `credentials.ttl#${normalized}`,
+    `#${normalized}`,
+  ]
+}
+
+function providerIdCandidates(id: string): string[] {
+  const normalized = normalizeAIConfigResourceId(id) || id
+  return [
+    normalized,
+    `${normalized}.ttl`,
+  ]
+}
+
+async function findRowsByIds<T extends object>(
+  db: PodQueryDb,
+  resource: unknown,
+  ids: string[],
+): Promise<T[]> {
+  const rows: T[] = []
+  const seen = new Set<string>()
+
+  for (const id of ids) {
+    if (!id || seen.has(id)) {
+      continue
+    }
+    seen.add(id)
+    const row = await db.findById<T>(resource, id).catch((error) => {
+      if (isMissingExactReadError(error)) {
+        return null
+      }
+      throw error
+    })
+    if (row) {
+      rows.push(row)
+    }
+  }
+
+  return rows
+}
+
+function isMissingExactReadError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false
+  }
+  const message = 'message' in error && typeof error.message === 'string' ? error.message : ''
+  return /404|not found|missing/i.test(message)
 }
 
 export async function loadPodBackendCredential(
@@ -190,7 +268,7 @@ export async function loadPodBackendCredential(
     throw new Error(missingPodClientCredentialsMessage())
   }
 
-  const rows = await loadRowsWithDrizzle(activeRuntime, podSession)
+  const rows = await loadRowsWithDrizzle(backend, activeRuntime, podSession)
   if (!rows) {
     throw new Error('LinX cloud credential source requires shared models/drizzle-solid access.')
   }

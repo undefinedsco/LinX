@@ -201,6 +201,8 @@ export class RuntimeSidecarSink {
     id?: string
     action: string
     sessionId: string
+    chatUri?: string
+    threadUri?: string
     toolCallId?: string
     toolName?: string
     approvalUri?: string
@@ -216,6 +218,8 @@ export class RuntimeSidecarSink {
       actor: this.webId,
       actorRole: 'system',
       session: this.makeRuntimeSessionUri(input.sessionId, input.sessionCreatedAt ?? createdAt),
+      chat: input.chatUri,
+      thread: input.threadUri,
       toolCallId: input.toolCallId,
       toolName: input.toolName,
       approval: input.approvalUri,
@@ -270,6 +274,8 @@ export class RuntimeSidecarSink {
       sessionId: runtimeSession.id,
       createdAt: eventDate,
       sessionCreatedAt: eventDate,
+      chatUri: this.makeChatUri(context.chatId),
+      threadUri: this.makeThreadUri(context.chatId, context.threadId),
       entryUri: this.makeThreadUri(context.chatId, context.threadId),
     })
 
@@ -304,6 +310,8 @@ export class RuntimeSidecarSink {
       sessionId: runtimeSession.id,
       createdAt: eventDate,
       sessionCreatedAt: eventDate,
+      chatUri: this.makeChatUri(context.chatId),
+      threadUri: this.makeThreadUri(context.chatId, context.threadId),
       entryUri: this.makeThreadUri(context.chatId, context.threadId),
     })
 
@@ -324,6 +332,8 @@ export class RuntimeSidecarSink {
       await this.db.insert(approvalResource).values({
         id: approvalId,
         session: this.makeRuntimeSessionUri(runtimeSession.id, eventDate),
+        chat: this.makeChatUri(context.chatId),
+        thread: this.makeThreadUri(context.chatId, context.threadId),
         toolCallId: event.requestId,
         toolName: event.name,
         target: this.makeThreadUri(context.chatId, context.threadId),
@@ -346,6 +356,8 @@ export class RuntimeSidecarSink {
       approvalUri,
       createdAt: eventDate,
       sessionCreatedAt: eventDate,
+      chatUri: this.makeChatUri(context.chatId),
+      threadUri: this.makeThreadUri(context.chatId, context.threadId),
       entryUri: this.makeThreadUri(context.chatId, context.threadId),
     })
 
@@ -372,6 +384,8 @@ export class RuntimeSidecarSink {
       sessionId: runtimeSession.id,
       createdAt: eventDate,
       sessionCreatedAt: eventDate,
+      chatUri: this.makeChatUri(context.chatId),
+      threadUri: this.makeThreadUri(context.chatId, context.threadId),
       entryUri: this.makeThreadUri(context.chatId, context.threadId),
     })
 
@@ -405,6 +419,8 @@ export class RuntimeSidecarSink {
       sessionId: runtimeSession.id,
       createdAt: eventDate,
       sessionCreatedAt: eventDate,
+      chatUri: this.makeChatUri(context.chatId),
+      threadUri: this.makeThreadUri(context.chatId, context.threadId),
       entryUri: this.makeThreadUri(context.chatId, context.threadId),
     })
 

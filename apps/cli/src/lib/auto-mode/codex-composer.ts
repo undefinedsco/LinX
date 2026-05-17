@@ -107,6 +107,7 @@ export class CodexComposer {
   private draftBeforeHistory = ''
   private placeholder = DEFAULT_PLACEHOLDER
   private promptPrefix = DEFAULT_PROMPT_PREFIX
+  private secret = false
 
   beginPrompt(prompt: string): void {
     this.value = ''
@@ -115,6 +116,7 @@ export class CodexComposer {
     this.draftBeforeHistory = ''
     this.placeholder = placeholderForPrompt(prompt)
     this.promptPrefix = DEFAULT_PROMPT_PREFIX
+    this.secret = prompt.trim().toLowerCase().startsWith('secret')
   }
 
   text(): string {
@@ -253,7 +255,9 @@ export class CodexComposer {
   render(width: number): CodexComposerRenderResult {
     const safeWidth = Math.max(4, width)
     const contentWidth = Math.max(1, safeWidth - this.promptPrefix.length)
-    const visibleText = this.value.length > 0 ? this.value : this.placeholder
+    const visibleText = this.value.length > 0
+      ? (this.secret ? '*'.repeat(this.value.length) : this.value)
+      : this.placeholder
     const chunks = chunkText(visibleText, contentWidth, contentWidth)
     const lines = chunks.map((chunk, index) => ({
       prefix: index === 0 ? this.promptPrefix : ' '.repeat(this.promptPrefix.length),

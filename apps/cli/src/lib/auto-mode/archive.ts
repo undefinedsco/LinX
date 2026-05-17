@@ -128,6 +128,7 @@ export function createAutoModeSession(
     runtime: options.runtime ?? 'local',
     transport: options.transport ?? 'acp',
     mode: options.mode,
+    goalMode: options.goalMode || undefined,
     cwd: options.cwd,
     model: options.model,
     prompt: options.prompt,

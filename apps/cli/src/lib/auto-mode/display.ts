@@ -16,6 +16,7 @@ import type {
   AutoModeNormalizedEvent,
   AutoModePromptSubmission,
   AutoModeQueueState,
+  AutoModeSecretInputRequest,
   AutoModeSessionRecord,
   AutoModeUiActivityTone,
   AutoModeUiEntry,
@@ -65,6 +66,7 @@ export interface AutoModeDisplay {
   setDebugMode(enabled: boolean): void
   chooseOption(title: string, lines: string[], options: CodexOverlayOption[], signal?: AbortSignal): Promise<string>
   chooseQuestions(questions: AutoModeUserInputQuestion[]): Promise<AutoModeUserInputAnswers>
+  promptSecret(request: AutoModeSecretInputRequest): Promise<string>
   chooseQuestion(state: {
     header: string
     question: string
@@ -859,6 +861,12 @@ class PlainAutoModeDisplay implements AutoModeDisplay {
     return answers
   }
 
+  async promptSecret(request: AutoModeSecretInputRequest): Promise<string> {
+    stdout.write(`${request.header}\n`)
+    stdout.write(`${request.question}\n`)
+    return (await this.prompt('secret> ')).trim()
+  }
+
   showUserTurn(text: string): void {
     stdout.write(`you> ${text}\n`)
   }
@@ -929,10 +937,14 @@ class PlainAutoModeDisplay implements AutoModeDisplay {
   }
 
   async promptInput(prompt: string): Promise<AutoModePromptSubmission> {
-    return {
-      text: await this.prompt(prompt),
-      mode: 'send',
+    const text = await this.prompt(prompt)
+    if (text.startsWith('/follow-up ')) {
+      return {
+        text: text.slice('/follow-up '.length),
+        mode: 'follow-up',
+      }
     }
+    return { text, mode: 'send' }
   }
 
   finish(status: 'completed' | 'failed', record: AutoModeSessionRecord, error?: string): void {
@@ -1141,6 +1153,28 @@ class TuiAutoModeDisplay implements AutoModeDisplay {
 
     return new Promise((resolve) => {
       this.requestFormResolver = resolve
+    })
+  }
+
+  promptSecret(request: AutoModeSecretInputRequest): Promise<string> {
+    if (!this.active) {
+      return this.promptFallback('secret> ').then((value) => value.trim())
+    }
+
+    this.flushAssistant()
+    this.contextLines = [
+      request.header,
+      request.question,
+      'Input is hidden and will be saved to your LinX Pod AI settings.',
+    ]
+    this.overlay = null
+    this.composer.beginPrompt('secret> ')
+    this.render()
+
+    return new Promise((resolve) => {
+      this.promptResolver = (submission) => {
+        resolve(submission.text.trim())
+      }
     })
   }
 

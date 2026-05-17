@@ -9,7 +9,7 @@ import express, { Express, Request, Response } from 'express'
 import { Server } from 'http'
 import { getXpodModule } from './xpod'
 import { getRuntimeThreadsModule } from './runtime-threads'
-import { resolveLinxUserDataDir } from './linx-paths'
+import { resolveLinxDefaultWorkspaceDir, resolveLinxUserDataDir } from './linx-paths'
 
 interface SetupData {
   dataDir: string
@@ -271,6 +271,7 @@ export class WebServerModule {
             autoDetectPublicIp: env.LINX_AUTO_DETECT_PUBLIC_IP === 'true',
             httpsCertPath: env.LINX_HTTPS_CERT_PATH || '',
             nodeId: normalizeNodeId(env.LINX_NODE_ID || env.LINX_DEVICE_ID || env.CSS_NODE_ID || getDefaultNodeId()),
+            defaultWorkspacePath: resolveLinxDefaultWorkspaceDir(),
             tunnelProvider,
             hasTunnelToken: Boolean(env.CLOUDFLARE_TUNNEL_TOKEN || env.SAKURA_TOKEN),
           })
@@ -287,6 +288,7 @@ export class WebServerModule {
             autoDetectPublicIp: true,
             httpsCertPath: '',
             nodeId: getDefaultNodeId(),
+            defaultWorkspacePath: resolveLinxDefaultWorkspaceDir(),
             tunnelProvider: '',
             hasTunnelToken: false,
           })

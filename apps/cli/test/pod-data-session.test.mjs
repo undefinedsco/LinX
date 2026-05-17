@@ -19,8 +19,8 @@ test('createPodDataSession normalizes OIDC credentials into a lazy Pod fetch cap
   }
 
   let accessTokenCalls = 0
-  let restoredFetchCalls = 0
   let authenticatedFetchCalls = 0
+  const authenticatedFetchTokens = []
   const runtime = {
     loadCredentials() {
       return credentials
@@ -33,26 +33,14 @@ test('createPodDataSession normalizes OIDC credentials into a lazy Pod fetch cap
       return 'access-token'
     },
     async restoreStoredOidcSession() {
-      return {
-        info: {
-          isLoggedIn: true,
-          webId: credentials.webId,
-          sessionId: 'stored-oidc-session',
-        },
-        fetch: async () => {
-          restoredFetchCalls += 1
-          return new Response(null, { status: 200 })
-        },
-        login: async () => {},
-        logout: async () => {},
-        handleIncomingRedirect: async () => {},
-      }
+      throw new Error('OIDC data access should not restore a keepAlive Solid session')
     },
     async authenticate() {
       throw new Error('client credentials should not be used')
     },
-    authenticatedFetch: async () => {
+    authenticatedFetch: async (_url, token) => {
       authenticatedFetchCalls += 1
+      authenticatedFetchTokens.push(token)
       return new Response(null, { status: 200 })
     },
   }
@@ -67,9 +55,9 @@ test('createPodDataSession normalizes OIDC credentials into a lazy Pod fetch cap
   await session.fetch('https://id.undefineds.co/alice/.data/test.ttl')
   await session.fetch('https://id.undefineds.co/alice/.data/test.ttl')
 
-  assert.equal(accessTokenCalls, 0)
-  assert.equal(restoredFetchCalls, 2)
-  assert.equal(authenticatedFetchCalls, 0)
+  assert.equal(accessTokenCalls, 2)
+  assert.deepEqual(authenticatedFetchTokens, ['access-token', 'access-token'])
+  assert.equal(authenticatedFetchCalls, 2)
 })
 
 test('createPodDataSession fails fast when client credentials authentication hangs', async (t) => {
@@ -137,16 +125,7 @@ test('OIDC Pod fetch fails fast when token refresh hangs', async (t) => {
       return new Promise(() => undefined)
     },
     async restoreStoredOidcSession() {
-      return {
-        info: {
-          isLoggedIn: true,
-          webId: 'https://id.undefineds.co/alice/profile/card#me',
-        },
-        fetch: async () => new Response(null, { status: 200 }),
-        login: async () => {},
-        logout: async () => {},
-        handleIncomingRedirect: async () => {},
-      }
+      throw new Error('OIDC data access should not restore a keepAlive Solid session')
     },
     async authenticate() {
       throw new Error('client credentials should not be used')
@@ -161,10 +140,11 @@ test('OIDC Pod fetch fails fast when token refresh hangs', async (t) => {
   )
 })
 
-test('OIDC Pod data session fails fast when stored Solid session restore hangs', async (t) => {
+test('OIDC Pod data session does not restore a stored keepAlive Solid session', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pod-data-session.ts')
   t.after(() => cleanup())
 
+  let restoreCalls = 0
   const runtime = {
     authTimeoutMs: 5,
     loadCredentials() {
@@ -187,6 +167,7 @@ test('OIDC Pod data session fails fast when stored Solid session restore hangs',
       return 'access-token'
     },
     restoreStoredOidcSession() {
+      restoreCalls += 1
       return new Promise(() => undefined)
     },
     async authenticate() {
@@ -195,10 +176,10 @@ test('OIDC Pod data session fails fast when stored Solid session restore hangs',
     authenticatedFetch: async () => new Response(null, { status: 200 }),
   }
 
-  await assert.rejects(
-    () => module.createPodDataSession(runtime),
-    /LinX Pod OIDC session restore timed out/,
-  )
+  const session = await module.createPodDataSession(runtime)
+  assert.ok(session)
+  assert.equal(restoreCalls, 0)
+  assert.equal(session.solidSession.info.isLoggedIn, true)
 })
 
 test('closing an OIDC Pod data session does not clear the stored browser login', async (t) => {
@@ -228,18 +209,8 @@ test('closing an OIDC Pod data session does not clear the stored browser login',
       return 'access-token'
     },
     async restoreStoredOidcSession() {
-      return {
-        info: {
-          isLoggedIn: true,
-          webId: credentials.webId,
-        },
-        fetch: async () => new Response(null, { status: 200 }),
-        login: async () => {},
-        logout: async () => {
-          logoutCalls += 1
-        },
-        handleIncomingRedirect: async () => {},
-      }
+      logoutCalls += 1
+      throw new Error('OIDC data access should not restore a keepAlive Solid session')
     },
     async authenticate() {
       throw new Error('client credentials should not be used')

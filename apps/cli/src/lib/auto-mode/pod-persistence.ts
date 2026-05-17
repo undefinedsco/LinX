@@ -559,6 +559,7 @@ async function upsertAutoModeConversationMessages(
 export async function persistAutoModeConversationToPod(
   record: AutoModeSessionRecord,
   runtime?: AutoModePodPersistenceRuntime,
+  options: { signal?: AbortSignal } = {},
 ): Promise<boolean> {
   const activeRuntime = runtime ?? await createDefaultRuntime()
   const podSession = await activeRuntime.getPodDataSession()
@@ -566,11 +567,17 @@ export async function persistAutoModeConversationToPod(
     return false
   }
 
-  const db = activeRuntime.createDb(podSession)
+  const abortablePodSession = options.signal
+    ? withAbortablePodSession(podSession, options.signal)
+    : podSession
+  throwIfAborted(options.signal)
+
+  const db = activeRuntime.createDb(abortablePodSession)
   const entries = activeRuntime.loadAutoModeEvents(record.id)
-  const transcriptRows = buildAutoModeConversationMessages(record, podSession.webId, entries)
+  const transcriptRows = buildAutoModeConversationMessages(record, abortablePodSession.webId, entries)
   const lastPreview = transcriptRows.at(-1)?.content
 
+  throwIfAborted(options.signal)
   await db.init([
     activeRuntime.chatResource,
     activeRuntime.threadResource,
@@ -578,12 +585,66 @@ export async function persistAutoModeConversationToPod(
     activeRuntime.sessionResource,
     activeRuntime.agentResource,
   ]).catch(() => undefined)
-  await ensureAutoModeConversationChat(db, activeRuntime, podSession.webId, buildAutoModeConversationChatRow(record, podSession.webId, lastPreview))
-  await ensureAutoModeConversationAgents(db, activeRuntime, podSession.webId, record)
-  await upsertAutoModeConversationThread(db, activeRuntime, podSession.webId, buildAutoModeConversationThreadRow(record, transcriptRows), record)
-  await upsertAutoModeConversationSession(db, activeRuntime, podSession.webId, buildAutoModeConversationSessionRow(record, podSession.webId), record)
-  await upsertAutoModeConversationMessages(db, activeRuntime, podSession.webId, record, transcriptRows)
+  throwIfAborted(options.signal)
+  await ensureAutoModeConversationChat(db, activeRuntime, abortablePodSession.webId, buildAutoModeConversationChatRow(record, abortablePodSession.webId, lastPreview))
+  throwIfAborted(options.signal)
+  await ensureAutoModeConversationAgents(db, activeRuntime, abortablePodSession.webId, record)
+  throwIfAborted(options.signal)
+  await upsertAutoModeConversationThread(db, activeRuntime, abortablePodSession.webId, buildAutoModeConversationThreadRow(record, transcriptRows), record)
+  throwIfAborted(options.signal)
+  await upsertAutoModeConversationSession(db, activeRuntime, abortablePodSession.webId, buildAutoModeConversationSessionRow(record, abortablePodSession.webId), record)
+  throwIfAborted(options.signal)
+  await upsertAutoModeConversationMessages(db, activeRuntime, abortablePodSession.webId, record, transcriptRows)
   return true
+}
+
+function withAbortablePodSession(podSession: PodDataSession, signal: AbortSignal): PodDataSession {
+  return {
+    ...podSession,
+    fetch: (url, init) => {
+      throwIfAborted(signal)
+      return podSession.fetch(url, {
+        ...init,
+        signal: init?.signal ? combineAbortSignals(init.signal, signal) : signal,
+      })
+    },
+    solidSession: {
+      ...podSession.solidSession,
+      fetch: (input, init) => {
+        throwIfAborted(signal)
+        return podSession.solidSession.fetch(input, {
+          ...init,
+          signal: init?.signal ? combineAbortSignals(init.signal, signal) : signal,
+        })
+      },
+    },
+  }
+}
+
+function combineAbortSignals(left: AbortSignal, right: AbortSignal): AbortSignal {
+  if (typeof AbortSignal.any === 'function') {
+    return AbortSignal.any([left, right])
+  }
+  const controller = new AbortController()
+  const abort = () => controller.abort(left.reason ?? right.reason)
+  if (left.aborted || right.aborted) {
+    abort()
+    return controller.signal
+  }
+  left.addEventListener('abort', abort, { once: true })
+  right.addEventListener('abort', abort, { once: true })
+  return controller.signal
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) {
+    return
+  }
+  const reason = signal.reason
+  if (reason instanceof Error) {
+    throw reason
+  }
+  throw new Error(typeof reason === 'string' && reason.trim() ? reason : 'Pod sync aborted')
 }
 
 export const __podPersistenceInternal = {

@@ -10045,6 +10045,48 @@
   dependencies:
     whatwg-url "^5.0.0"
 
+"@zed-industries/codex-acp-darwin-arm64@0.14.0":
+  version "0.14.0"
+  resolved "https://registry.npmjs.org/@zed-industries/codex-acp-darwin-arm64/-/codex-acp-darwin-arm64-0.14.0.tgz#693e5f4010357b111b029cece4f3e8c487a79e39"
+  integrity sha512-FWjHKlNJTZmXWM/2/GAQAg0WJEjPlfxEQJgvfxuzK1xZh81CDg9U6uSgZ1ggBkkN2bOoCnOupvGAPOmBoL5m2Q==
+
+"@zed-industries/codex-acp-darwin-x64@0.14.0":
+  version "0.14.0"
+  resolved "https://registry.npmjs.org/@zed-industries/codex-acp-darwin-x64/-/codex-acp-darwin-x64-0.14.0.tgz#5283e6588f72c5ab46f8fd423f0da11c858bc69d"
+  integrity sha512-KgC92J5wxOJM2N0VMNX7UQSGHVKa7xQCFsniWcxClsLWleJGlUdGlde5Aefd/yoU0J86ii6HCK8RfalUC76Inw==
+
+"@zed-industries/codex-acp-linux-arm64@0.14.0":
+  version "0.14.0"
+  resolved "https://registry.npmjs.org/@zed-industries/codex-acp-linux-arm64/-/codex-acp-linux-arm64-0.14.0.tgz#a62eec11728e2dcc6f42306fa9ed2641cf831e87"
+  integrity sha512-KGfQq0/tdY31XBsdLe5nsKiV97pcsCruW28UDw7sgHUjPq8NPh9IiDdVj+xr1L4opihnswGelcoVvya+Vng8jQ==
+
+"@zed-industries/codex-acp-linux-x64@0.14.0":
+  version "0.14.0"
+  resolved "https://registry.npmjs.org/@zed-industries/codex-acp-linux-x64/-/codex-acp-linux-x64-0.14.0.tgz#ba29ebde79d83e3ed9ad080adfec9946dbf5baf0"
+  integrity sha512-y1wrDOTJ/OYjYNRVmrf9Jti2571DjSp1xe5lSiZ9pBohA4oUQk9YIhlnv7NzeI0PYWyrjLd6QpQ09wTfxZFC8w==
+
+"@zed-industries/codex-acp-win32-arm64@0.14.0":
+  version "0.14.0"
+  resolved "https://registry.npmjs.org/@zed-industries/codex-acp-win32-arm64/-/codex-acp-win32-arm64-0.14.0.tgz#ce858e1f8784c308467b8fea42f05173f63b92d1"
+  integrity sha512-mUNZYfcpkM9YSs0tFzH7j2NHlxpjScFz2lpyJKiMl8wcTHLU8HYzeJZ7xodHzsIJrb5YMKxZ44zkBM3FBGAVaw==
+
+"@zed-industries/codex-acp-win32-x64@0.14.0":
+  version "0.14.0"
+  resolved "https://registry.npmjs.org/@zed-industries/codex-acp-win32-x64/-/codex-acp-win32-x64-0.14.0.tgz#4e6b49d028b03c3d2f1b4e00081d0da2fe4dbdf9"
+  integrity sha512-KYckY87//om8Vsnb3fMUOkex76z2MF+e3H/n91tXnBep9ecnDT0rtEuoTvr4gP7evAf210YoSSGi0BB4ljse4w==
+
+"@zed-industries/codex-acp@0.14.0":
+  version "0.14.0"
+  resolved "https://registry.npmjs.org/@zed-industries/codex-acp/-/codex-acp-0.14.0.tgz#2ef890b9b2588f83cc017571b973d809ec58dd6b"
+  integrity sha512-IT9Zh9YDsRfXnc+RN9T00OCBFZrvQxzsWARWL9C1f0do4xB67eCZGildkJCHjoXmGAyYn1V7rIdRR6/+PzDdmw==
+  optionalDependencies:
+    "@zed-industries/codex-acp-darwin-arm64" "0.14.0"
+    "@zed-industries/codex-acp-darwin-x64" "0.14.0"
+    "@zed-industries/codex-acp-linux-arm64" "0.14.0"
+    "@zed-industries/codex-acp-linux-x64" "0.14.0"
+    "@zed-industries/codex-acp-win32-arm64" "0.14.0"
+    "@zed-industries/codex-acp-win32-x64" "0.14.0"
+
 "@zxing/text-encoding@0.9.0":
   version "0.9.0"
   resolved "https://registry.yarnpkg.com/@zxing/text-encoding/-/text-encoding-0.9.0.tgz#fb50ffabc6c7c66a0c96b4c03e3d9be74864b70b"

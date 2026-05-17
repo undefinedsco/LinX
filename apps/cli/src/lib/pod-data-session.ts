@@ -131,32 +131,31 @@ export async function createPodDataSession(
 
   if (credentials.authType === 'oidc_oauth' && credentials.webId) {
     const podUrl = resolvePodDataSessionUrl(credentials.webId)
-    const oidcSession = await withTimeout(
-      runtime.restoreStoredOidcSession(credentials),
-      runtime.authTimeoutMs ?? DEFAULT_POD_DATA_AUTH_TIMEOUT_MS,
-      'LinX Pod OIDC session restore timed out.',
-    )
-    if (!oidcSession?.info.isLoggedIn) {
-      throw new Error('Failed to restore OIDC session for Pod data access. Run `linx login` again.')
-    }
-    const webId = oidcSession.info.webId ?? credentials.webId
+    const webId = credentials.webId
 
-    const fetchWithTimeout: PodFetch = (url, init) => withFetchTimeout(
-      (requestUrl, requestInit) => oidcSession.fetch(requestUrl, requestInit),
-      url,
-      init,
-      runtime.fetchTimeoutMs ?? DEFAULT_POD_DATA_FETCH_TIMEOUT_MS,
-    )
-    const solidSession = createSessionLikeFromSolidSession(oidcSession, fetchWithTimeout, podUrl)
+    const fetchWithTimeout: PodFetch = async (url, init) => {
+      const accessToken = await withTimeout(
+        runtime.getOidcAccessToken(credentials),
+        runtime.authTimeoutMs ?? DEFAULT_POD_DATA_AUTH_TIMEOUT_MS,
+        'LinX Pod OIDC token refresh timed out.',
+      )
+      if (!accessToken) {
+        throw new Error('Failed to restore OIDC access token for Pod data access. Run `linx login` again.')
+      }
+
+      return withFetchTimeout(
+        (requestUrl, requestInit) => runtime.authenticatedFetch(requestUrl, accessToken, requestInit),
+        url,
+        init,
+        runtime.fetchTimeoutMs ?? DEFAULT_POD_DATA_FETCH_TIMEOUT_MS,
+      )
+    }
 
     return {
       credentials,
       webId,
       podUrl,
-      solidSession: {
-        ...solidSession,
-        info: { ...solidSession.info, webId, podUrl },
-      },
+      solidSession: createTokenBackedSessionLike(webId, fetchWithTimeout, podUrl),
       fetch: fetchWithTimeout,
       getRuntimeAuthToken: async () => {
         const accessToken = await withTimeout(
@@ -169,8 +168,8 @@ export async function createPodDataSession(
         }
         return accessToken
       },
-      // OIDC browser-login storage is the user's LinX login state. A short-lived
-      // data access handle must not clear it on close.
+      // OIDC browser-login storage is the user's LinX login state. Data access
+      // uses per-request Bearer fetches, so close has no storage or timer work.
       close: async () => {},
     }
   }
@@ -185,6 +184,18 @@ function createSessionLikeFromSolidSession(session: Session, fetcher: PodFetch, 
     login: (...args: Parameters<Session['login']>) => session.login(...args),
     logout: () => session.logout(),
     handleIncomingRedirect: (url: string) => session.handleIncomingRedirect(url),
+  }
+}
+
+function createTokenBackedSessionLike(webId: string, fetcher: PodFetch, podUrl: string): SolidSessionLike {
+  return {
+    info: {
+      isLoggedIn: true,
+      webId,
+      podUrl,
+    },
+    fetch: (input, init) => fetcher(requestInputToUrl(input), init),
+    logout: async () => {},
   }
 }
 
