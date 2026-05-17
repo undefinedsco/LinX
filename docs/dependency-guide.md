@@ -42,7 +42,71 @@ git tag: vX.Y.Z
 package version: X.Y.Z
 ```
 
-## 更新流程
+## Submodule 升级流程
+
+`packages/models` 是独立 git 仓库。父仓库只能记录一个 submodule commit 指针，不能记录子模块内部的未提交 diff。
+
+因此看到父仓库状态为：
+
+```text
+ m packages/models
+```
+
+只表示子模块 checkout 的内容或指针变化了，不表示这些改动已经进入 `models` 远端。凡是在 `packages/models` 里修 bug、补 schema、改 repository、改 runtime contract，都必须先在子模块自己的仓库完成提交、版本、tag 和 push，再回到 LinX 父仓库更新指针。
+
+### 子模块内有代码改动时
+
+1. 进入子模块并确认改动：
+
+   ```bash
+   cd packages/models
+   git status -sb
+   git diff --stat
+   ```
+
+2. 在 `packages/models/package.json` bump 到新的未发布版本。
+
+   不要复用 npm 上已经存在的版本，也不要把同一个版本 tag 指到不同 commit。
+
+3. 在 `packages/models` 内运行验证：
+
+   ```bash
+   yarn test:ci
+   yarn build
+   ```
+
+4. 在 `packages/models` 内提交、打 tag、推送：
+
+   ```bash
+   git add .
+   git commit
+   git tag vX.Y.Z
+   git push origin HEAD:main
+   git push origin vX.Y.Z
+   ```
+
+5. 回到 LinX 父仓库，把 submodule 锁到刚才的 tag：
+
+   ```bash
+   cd ../..
+   git -C packages/models fetch origin --tags
+   git -C packages/models checkout vX.Y.Z
+   git add packages/models
+   git commit
+   git push origin main
+   ```
+
+6. 最后确认父仓库没有 dirty submodule，且指针命中精确 tag：
+
+   ```bash
+   git status -sb
+   git submodule status packages/models
+   git -C packages/models describe --tags --exact-match HEAD
+   node -p "require('./packages/models/package.json').version"
+   yarn models:assert-release-safe
+   ```
+
+### 只消费 models 已发布新版本时
 
 当 models 有新版本时：
 
@@ -70,7 +134,7 @@ yarn build:models
 当前 LinX 父仓库应锁定：
 
 ```text
-packages/models package version: 0.2.24
-packages/models commit: acaa6064eea261d00d25377a40f6e27583e77432
-packages/models tag: pending v0.2.24
+packages/models package version: 0.2.26
+packages/models commit: 6cd449c90070dc8ec44bbc832afd37ca27f3c94c
+packages/models tag: v0.2.26
 ```
