@@ -47,15 +47,12 @@ yarn workspace @undefineds.co/linx dev --list-backends
 yarn workspace @undefineds.co/linx dev --sessions
 yarn workspace @undefineds.co/linx dev --show <sessionId>
 
-# 创建 Symphony task/delivery/session 控制面记录；dry-run 不启动后端
+# 调整 / 验证 Secretary 的 Symphony 委派能力；dry-run 不启动后端
 yarn workspace @undefineds.co/linx dev symphony run "检查登录链路" --backend codex --auto --dry-run
-
-# 安装后也可以用独立入口
-linx-symphony run "检查登录链路" --backend codex --auto --dry-run
-linx-symphony tasks
-linx-symphony sessions
-linx-symphony deliveries
-linx-symphony show <taskOrDeliveryOrSessionId>
+yarn workspace @undefineds.co/linx dev symphony issues
+yarn workspace @undefineds.co/linx dev symphony sessions
+yarn workspace @undefineds.co/linx dev symphony deliveries
+yarn workspace @undefineds.co/linx dev symphony show <issueOrDeliveryOrSessionId>
 ```
 
 ## Slash Commands
@@ -76,7 +73,7 @@ linx-symphony show <taskOrDeliveryOrSessionId>
 ## Backend Control Notes
 
 - Design contract: see [`docs/backend-pod-contract.md`](../../docs/backend-pod-contract.md)
-- Symphony control-plane MVP 见 [`docs/agent-collaboration-model.md`](../../docs/agent-collaboration-model.md)：`Task -> Delivery -> Session` 先落本地归档，再投影到现有 auto-mode backend
+- Symphony 是 AI Secretary 的内置委派能力，不是独立产品入口；控制面 MVP 见 [`docs/agent-collaboration-model.md`](../../docs/agent-collaboration-model.md)
 - `--backend <backend>` 当前直接依赖本机已经安装好的 `codex` / `claude` / `codebuddy`
 - 如果当前终端对全屏重绘支持不好，可加 `--plain`（等价于 `LINX_BACKEND_PLAIN=1`）关闭全屏 TUI，改用线性输出
 - LinX 负责统一 `manual | smart | auto` 审批模式，并把会话元数据写到 `~/.linx/backend/sessions/`
@@ -98,10 +95,14 @@ linx-symphony show <taskOrDeliveryOrSessionId>
 
 ## Symphony Control Plane
 
-- `linx symphony run <objective>` 会创建本地 `Task / Delivery / Session` 记录，然后把任务投影成 runtime prompt 交给 `linx --backend ...` 的同一套 auto-mode runner。
+- `linx symphony ...` 是 CLI 调试/验证入口，语义上等价于未来 TUI 里的 `/symphony ...`。
+- `Symphony` 是 AI Secretary 的全局委派控制面，不绑定从哪个 Chat/Thread 发起；在哪个界面触发只影响 UI 来源，不决定投递模型。
+- Chat/Thread 是过程展示和回看载体，由 Secretary 在产品层创建或选择，并把对应 URI 写进 `Issue / Delivery / Session`；headless CLI 不要求也不模拟用户填写这些 URI。
+- `symphony` 调整的是 Secretary 的行为：Secretary 自己不主要下场写代码，而是引用通用 Task，创建 `Issue / Delivery / Session` 编排记录，把工作投影给下面的 backend worker。
+- `linx symphony run <objective>` 会创建本地 `Issue / Delivery / Session` 归档，`task` 只作为通用 Task id 被引用，不再维护一套 Symphony 专属 TaskRecord。
 - `--dry-run` 只写归档并打印投影 prompt，用于验证建模和投递链路，不会启动 Codex/Claude/CodeBuddy。
 - 归档固定写在本地 LinX home 下的 `~/.linx/symphony/`，不新增单独的产品级 home 环境变量。
-- 当前 MVP 不做 daemon、不新增 Pod schema、不改 GUI/TUI 信息架构；后续正式 Pod resource 仍以 `@undefineds.co/models` 为权威。
+- 当前 MVP 不做独立 `linx-symphony` 产品入口、不做 daemon、不新增 Task/Delivery/Session Pod schema、不改 GUI/TUI 信息架构；新增 shared Pod resource 仍以 `@undefineds.co/models` 为权威。
 
 ## TODO
 

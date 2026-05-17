@@ -104,6 +104,8 @@
 
 - Pod schema 使用 `chat`、`thread` 这类 URI-valued RDF relation 字段。
 - `chatId`、`threadId` 只允许作为 UI 状态、函数参数、runtime protocol 字段或 metadata 中的兼容信息，不允许作为持久 RDF link 字段。
+- 同一规则适用于所有 shared relation：`issue`、`task`、`delivery`、`session`、`workspace` 等字段在 shared model / archive contract 中都表示 URI relation；不要用 `issueId`、`taskId`、`deliveryId`、`sessionId` 这类字段承载跨资源链接。
+- 壳层 API 可以继续接收短 id，例如 `chatId`、`threadId` 或 CLI 参数里的 task key，但写入 `packages/models`、shared archive 或跨端 runtime contract 前必须解析成语义 URI 字段。
 - 新增 shared model 代码优先使用 `chatResource`、`threadResource`、`messageResource`、`sessionResource` 等 Solid resource 命名；`*Table` 只作为兼容 alias 逐步退出。
 
 ## 3. Use Case Services
@@ -209,6 +211,8 @@ AI 配置以三类 Pod resource 为准，不允许再引入平行主线：
 2. session 适配层产出统一的 Inrupt-compatible session，供 `drizzle-solid` 使用。
 3. shared model 查询层读取 `credentialResource`、`aiProviderResource`、`aiModelResource`，并根据共享 provider alias 规则选择 active credential。
 4. Backend runner 只把选中的 credential 映射成子进程环境变量，不把 credential 复制到 archive、message、audit 或 TUI state。
+
+CLI credential 获取交互和 runtime 消费必须分开：缺 LinX/Solid 登录时延续 Pi 的浏览器 OIDC / manual redirect 体验；缺 provider key 时在当前 CLI/TUI flow 收集 API key，并通过 shared AI config mutation 写入 Pod。之后 backend runner 仍然从 Pod 读取并重试。详细原则见 `docs/cli-login-and-key-principles.md`。
 
 当前 backend env 映射规则：
 

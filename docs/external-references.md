@@ -46,16 +46,16 @@
 
 #### 值得参考的设计
 
-- **Task as control plane**: Symphony 把外部任务系统作为 agent 编排入口。LinX 对应落点是 Pod 里的 `Task`，不是另建 issue tracker。
+- **Task as control plane**: Symphony 把外部任务系统作为 agent 编排入口。LinX 对应落点是 `Issue -> 通用 Task 引用`，不能另建 Symphony 专属 `TaskRecord`。
 - **Workspace per active task**: 每个活跃任务有独立 workspace。LinX 对应 `Workspace/worktree + Session`，避免多个 Codex worker 写同一个目录。
 - **Agent runner loop**: runner 负责拉起、恢复、观察 coding agent。LinX MVP 对应 `LinX adapter -> Codex session`，先不自研完整 runner/runtime。
 - **Report/review boundary**: agent 完成后产出可审查结果。LinX 对应 `Report` 写回 Task/Thread，Secretary 或用户做验收。
 
 #### LinX 采用边界
 
-- 架构层参考 Symphony：`Task -> Workspace/worktree -> Session -> Report/Review`。
+- 架构层参考 Symphony：`Issue -> Task reference -> Workspace/worktree -> Session -> Report/Review`。
 - runtime 层直接用 Codex：worker 不重造，LinX 只发任务、收事件、处理 projection 和 approval/input request。
-- GUI/TUI 不因 Symphony 扩模型。后台任务列表只能从现有 `Task + Session` 派生。
+- GUI/TUI 不因 Symphony 扩出平行 Task 模型。后台任务列表只能从现有 `Issue + Task + Session` 派生。
 - Symphony 不是 Codex 内置 subagent/mailbox/guardian 协议；它是 Codex 之上的 orchestration/harness。
 
 ### OpenClaw (MIT)

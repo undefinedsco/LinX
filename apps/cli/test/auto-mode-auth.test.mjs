@@ -288,6 +288,7 @@ test('cloud credential source resolves pod-backed codex credentials and skips lo
       provider: 'openai',
       env: {
         OPENAI_API_KEY: 'sk-openai',
+        OPENAI_BASE_URL: 'https://api.openai.com/v1',
       },
     }
   })
@@ -305,6 +306,7 @@ test('cloud credential source resolves pod-backed codex credentials and skips lo
   assert.deepEqual(resolved.options.commandEnv, {
     OPENAI_API_KEY: 'sk-openai',
     CODEX_API_KEY: 'sk-openai',
+    OPENAI_BASE_URL: 'https://api.openai.com/v1',
   })
   assert.equal(resolved.authPreflight.state, 'authenticated')
 })
@@ -325,7 +327,6 @@ test('oidc pod data session exposes a drizzle-compatible solid session', async (
     },
   }
   const requests = []
-  const solidSessionRequests = []
 
   const podSession = await module.createPodDataSession({
     loadCredentials: () => credentials,
@@ -334,17 +335,9 @@ test('oidc pod data session exposes a drizzle-compatible solid session', async (
       assert.equal(stored, credentials)
       return 'access-token'
     },
-    restoreStoredOidcSession: async () => ({
-      info: {
-        isLoggedIn: true,
-        webId: credentials.webId,
-      },
-      fetch: async (url, init) => {
-        solidSessionRequests.push({ url: String(url), method: init?.method ?? 'GET' })
-        return new Response('ok', { status: 200 })
-      },
-      logout: async () => undefined,
-    }),
+    restoreStoredOidcSession: async () => {
+      throw new Error('OIDC data access should not restore a keepAlive Solid session')
+    },
     authenticate: async () => {
       throw new Error('client credentials auth should not be used')
     },
@@ -360,11 +353,11 @@ test('oidc pod data session exposes a drizzle-compatible solid session', async (
   assert.equal(podSession.solidSession.info.webId, credentials.webId)
 
   await podSession.solidSession.fetch('https://pod.example/settings/credentials.ttl', { method: 'HEAD' })
-  assert.deepEqual(solidSessionRequests, [{
+  assert.deepEqual(requests, [{
     url: 'https://pod.example/settings/credentials.ttl',
+    token: 'access-token',
     method: 'HEAD',
   }])
-  assert.deepEqual(requests, [])
   assert.equal(await podSession.getRuntimeAuthToken(), 'access-token')
 })
 
@@ -374,6 +367,8 @@ test('pod-backed codex credential is read through shared model db', async () => 
   const aiProviderResource = { name: 'aiProviderResource' }
   let createDbCalls = 0
   let fetchCalls = 0
+  const selectResources = []
+  const findByIds = []
   const runtime = {
     async getPodDataSession() {
       return {
@@ -415,6 +410,7 @@ test('pod-backed codex credential is read through shared model db', async () => 
             from(resource) {
               return {
                 async execute() {
+                  selectResources.push(resource)
                   if (resource === credentialResource) {
                     return [{
                       id: 'openai-default',
@@ -424,18 +420,22 @@ test('pod-backed codex credential is read through shared model db', async () => 
                       apiKey: 'sk-openai',
                     }]
                   }
-                  if (resource === aiProviderResource) {
-                    return [{
-                      id: 'openai',
-                      '@id': 'https://pod.example/settings/providers/openai.ttl',
-                      baseUrl: 'https://api.openai.com/v1',
-                    }]
-                  }
-                  throw new Error('unexpected resource')
+                  throw new Error('unexpected collection scan')
                 },
               }
             },
           }
+        },
+        async findById(resource, id) {
+          findByIds.push([resource, id])
+          if (resource === aiProviderResource && id === 'openai') {
+            return {
+              id: 'openai',
+              '@id': 'https://pod.example/settings/providers/openai.ttl',
+              baseUrl: 'https://api.openai.com/v1',
+            }
+          }
+          return null
         },
       }
     },
@@ -451,10 +451,13 @@ test('pod-backed codex credential is read through shared model db', async () => 
     env: {
       OPENAI_API_KEY: 'sk-openai',
       CODEX_API_KEY: 'sk-openai',
+      OPENAI_BASE_URL: 'https://api.openai.com/v1',
     },
   })
   assert.equal(createDbCalls, 1)
   assert.equal(fetchCalls, 0)
+  assert.deepEqual(selectResources, [credentialResource])
+  assert.deepEqual(findByIds, [[aiProviderResource, 'openai']])
 })
 
 test('cloud credential source resolves pod-backed codebuddy credentials and skips local auth preflight', async (t) => {

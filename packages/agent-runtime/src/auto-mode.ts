@@ -39,6 +39,7 @@ export interface AutoModeSessionRecord {
   runtime: AutoModeRuntime
   transport?: AutoModeTransport
   mode: AutoModeMode
+  goalMode?: boolean
   cwd: string
   model?: string
   prompt?: string
@@ -294,6 +295,7 @@ export interface AutoModeThreadMetadata extends Record<string, unknown> {
   runtime: AutoModeRuntime
   transport?: AutoModeTransport
   mode: AutoModeMode
+  goalMode?: boolean
   cwd: string
   model?: string
   credentialSource: AutoModeCredentialSource
@@ -1986,6 +1988,7 @@ export function buildAutoModeThreadMetadata(record: AutoModeSessionRecord): Auto
     runtime: record.runtime,
     transport: record.transport,
     mode: record.mode,
+    ...(record.goalMode !== undefined ? { goalMode: record.goalMode } : {}),
     cwd: record.cwd,
     model: record.model,
     credentialSource: record.credentialSource,

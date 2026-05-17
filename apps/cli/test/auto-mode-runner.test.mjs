@@ -352,6 +352,128 @@ rl.on('line', (line) => {
   assert.equal(session.transport, 'acp')
 })
 
+test('auto-mode prompts for missing Pod provider key, saves it, and retries startup without archiving the key', async (t) => {
+  const { root, binDir, autoModeHome } = createAutoModeSandbox('linx-auto-mode-missing-key-')
+  const logFile = join(root, 'missing-key-codex-log.jsonl')
+
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  writeExecutable(join(binDir, 'codex-acp'), `#!/usr/bin/env node
+const { appendFileSync } = require('node:fs')
+const readline = require('node:readline')
+
+function write(obj) {
+  process.stdout.write(JSON.stringify(obj) + '\\n')
+}
+
+appendFileSync(process.env.FAKE_ACP_LOG, JSON.stringify({
+  openaiKey: process.env.OPENAI_API_KEY ?? null,
+  codexKey: process.env.CODEX_API_KEY ?? null,
+}) + '\\n')
+
+const rl = readline.createInterface({ input: process.stdin })
+rl.on('line', (line) => {
+  const message = JSON.parse(line)
+  if (message.method === 'initialize') {
+    write({ jsonrpc: '2.0', id: message.id, result: { protocolVersion: 1 } })
+    return
+  }
+  if (message.method === 'session/new') {
+    write({ jsonrpc: '2.0', id: message.id, result: { sessionId: 'sess_missing_key_123' } })
+    return
+  }
+  if (message.method === 'session/prompt') {
+    write({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'sess_missing_key_123',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'started after key save' },
+        },
+      },
+    })
+    write({ jsonrpc: '2.0', id: message.id, result: { stopReason: 'end_turn' } })
+  }
+})
+`)
+
+  const { module, cleanup } = await loadAutoModeModule()
+  t.after(() => cleanup())
+
+  let loadCalls = 0
+  t.mock.method(module.autoModeRuntime, 'loadPodBackendCredential', async (backend) => {
+    assert.equal(backend, 'codex')
+    loadCalls += 1
+    if (loadCalls === 1) {
+      return null
+    }
+    return {
+      backend: 'codex',
+      provider: 'openai',
+      env: {
+        OPENAI_API_KEY: 'sk-entered-openai',
+      },
+    }
+  })
+
+  const savedCredentials = []
+  t.mock.method(module.autoModeRuntime, 'connectAiProviderCredential', async (input) => {
+    savedCredentials.push(input)
+    return {
+      providerId: input.provider,
+      maskedApiKey: 'sk-e****enai',
+    }
+  })
+  t.mock.method(module.autoModeRuntime, 'persistAutoModeConversationToPod', async () => {})
+
+  let promptCount = 0
+  t.mock.method(module.autoModeRuntime, 'promptText', async (prompt) => {
+    promptCount += 1
+    if (prompt === 'secret> ') {
+      return 'sk-entered-openai'
+    }
+    return '/exit'
+  })
+
+  await withPatchedEnv(t, {
+    PATH: `${binDir}:${process.env.PATH ?? ''}`,
+    LINX_AUTO_MODE_HOME: autoModeHome,
+    LINX_AUTO_MODE_PLAIN: '1',
+    FAKE_ACP_LOG: logFile,
+  }, async () => {
+    const exitCode = await module.runAutoMode({
+      backend: 'codex',
+      mode: 'smart',
+      cwd: process.cwd(),
+      prompt: 'hello after missing key',
+      passthroughArgs: [],
+      commandOverride: join(binDir, 'codex-acp'),
+    })
+
+    assert.equal(exitCode, 0)
+  })
+
+  assert.equal(loadCalls, 2)
+  assert.equal(promptCount, 1)
+  assert.deepEqual(savedCredentials, [{
+    provider: 'openai',
+    apiKey: 'sk-entered-openai',
+  }])
+
+  const invocation = JSON.parse(readFileSync(logFile, 'utf-8').trim())
+  assert.equal(invocation.openaiKey, 'sk-entered-openai')
+  assert.equal(invocation.codexKey, 'sk-entered-openai')
+
+  const sessionDirs = readdirSync(join(autoModeHome, 'sessions'))
+  assert.equal(sessionDirs.length, 1)
+  const events = readFileSync(join(autoModeHome, 'sessions', sessionDirs[0], 'events.jsonl'), 'utf-8')
+  assert.doesNotMatch(events, /sk-entered-openai/)
+})
+
 test('auto-mode injects cloud-backed codebuddy credentials into built-in ACP mode', async (t) => {
   const { root, binDir, autoModeHome } = createAutoModeSandbox('linx-auto-mode-acp-codebuddy-cloud-')
   const logFile = join(root, 'codebuddy-cloud-log.jsonl')
@@ -470,6 +592,7 @@ appendFileSync(process.env.FAKE_ACP_LOG, JSON.stringify({
   argv: process.argv.slice(2),
   openaiKey: process.env.OPENAI_API_KEY ?? null,
   codexKey: process.env.CODEX_API_KEY ?? null,
+  openaiBaseUrl: process.env.OPENAI_BASE_URL ?? null,
 }) + '\\n')
 
 const rl = readline.createInterface({ input: process.stdin })
@@ -512,6 +635,7 @@ rl.on('line', (line) => {
     provider: 'openai',
     env: {
       OPENAI_API_KEY: 'sk-openai-key',
+      OPENAI_BASE_URL: 'https://api.openai.com/v1',
     },
   }))
   t.mock.method(module.autoModeRuntime, 'persistAutoModeConversationToPod', async () => {})
@@ -545,6 +669,8 @@ rl.on('line', (line) => {
   assert.equal(invocations.length, 1)
   assert.equal(invocations[0].openaiKey, 'sk-openai-key')
   assert.equal(invocations[0].codexKey, 'sk-openai-key')
+  assert.equal(invocations[0].openaiBaseUrl, 'https://api.openai.com/v1')
+  assert.deepEqual(invocations[0].argv, ['-c', 'openai_base_url="https://api.openai.com/v1"'])
 })
 
 test('auto-mode runs every backend through Pod credentials, ACP chat, and Pod persistence', async (t) => {
@@ -1793,6 +1919,7 @@ rl.on('line', (line) => {
   await withPatchedEnv(t, {
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
     LINX_AUTO_MODE_HOME: autoModeHome,
+    FAKE_ACP_LOG: join(root, 'persist-timeout-log.jsonl'),
   }, async () => {
     const exitCode = await module.runAutoMode({
       backend: 'codex',
@@ -1808,6 +1935,119 @@ rl.on('line', (line) => {
   })
 
   assert.deepEqual(prompts, [])
+})
+
+test('auto-mode goal sessions keep running after the initial goal and apply steer before follow-up', async (t) => {
+  const { root, binDir, autoModeHome } = createAutoModeSandbox('linx-auto-mode-goal-queue-')
+  const logFile = join(root, 'goal-queue-log.jsonl')
+
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  writeExecutable(join(binDir, 'codex-acp'), `#!/usr/bin/env node
+const { appendFileSync } = require('node:fs')
+const readline = require('node:readline')
+
+function write(obj) {
+  process.stdout.write(JSON.stringify(obj) + '\\n')
+}
+
+const rl = readline.createInterface({ input: process.stdin })
+let promptCount = 0
+const sessionId = 'sess_goal_queue_123'
+
+rl.on('line', (line) => {
+  const message = JSON.parse(line)
+  if (message.method === 'initialize') {
+    write({ jsonrpc: '2.0', id: message.id, result: { protocolVersion: 1 } })
+    return
+  }
+  if (message.method === 'session/new') {
+    write({ jsonrpc: '2.0', id: message.id, result: { sessionId } })
+    return
+  }
+  if (message.method === 'session/prompt') {
+    promptCount += 1
+    const text = message.params?.prompt?.[0]?.text ?? ''
+    appendFileSync(process.env.FAKE_ACP_LOG, JSON.stringify({
+      kind: 'prompt',
+      index: promptCount,
+      text,
+    }) + '\\n')
+    setTimeout(() => {
+      write({
+        jsonrpc: '2.0',
+        method: 'session/update',
+        params: {
+          sessionId,
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            content: { type: 'text', text: 'turn ' + promptCount + ' complete' },
+          },
+        },
+      })
+      write({ jsonrpc: '2.0', id: message.id, result: { stopReason: 'end_turn' } })
+    }, promptCount === 1 ? 80 : 0)
+  }
+})
+`)
+
+  const { module, cleanup } = await loadAutoModeModule()
+  t.after(() => cleanup())
+
+  mockPodBackendCredential(t, module, 'codex')
+
+  const scriptedInputs = [
+    'Secretary steer: stay on the login recovery path',
+    '/follow-up Secretary follow-up delivery: also add a regression test',
+    '/exit',
+  ]
+  t.mock.method(module.autoModeRuntime, 'promptText', async (prompt) => {
+    if (prompt === 'you> ') {
+      return scriptedInputs.shift() ?? '/exit'
+    }
+    return '/exit'
+  })
+
+  await withPatchedEnv(t, {
+    PATH: `${binDir}:${process.env.PATH ?? ''}`,
+    LINX_AUTO_MODE_HOME: autoModeHome,
+    FAKE_ACP_LOG: logFile,
+  }, async () => {
+    const exitCode = await module.runAutoMode({
+      backend: 'codex',
+      mode: 'auto',
+      cwd: process.cwd(),
+      prompt: '# LinX Symphony Task\\n\\n## Goal\\nFix login',
+      goalMode: true,
+      passthroughArgs: [],
+      credentialSource: 'cloud',
+      commandOverride: join(binDir, 'codex-acp'),
+    })
+
+    assert.equal(exitCode, 0)
+  })
+
+  const prompts = readFileSync(logFile, 'utf-8')
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line))
+    .filter((entry) => entry.kind === 'prompt')
+
+  assert.equal(prompts.length, 3)
+  assert.match(prompts[0].text, /# LinX Symphony Task/)
+  assert.match(prompts[1].text, /Secretary steer: stay on the login recovery path/)
+  assert.match(prompts[2].text, /Secretary follow-up delivery: also add a regression test/)
+
+  const sessionDirs = readdirSync(join(autoModeHome, 'sessions'))
+  const session = JSON.parse(readFileSync(join(autoModeHome, 'sessions', sessionDirs[0], 'session.json'), 'utf-8'))
+  assert.equal(session.goalMode, true)
+
+  const events = readFileSync(join(autoModeHome, 'sessions', sessionDirs[0], 'events.jsonl'), 'utf-8')
+  assert.match(events, /Queued steering message/)
+  assert.match(events, /Queued follow-up message/)
 })
 
 test('auto-mode /model surfaces ACP failure without mutating the model state', async (t) => {
@@ -2134,6 +2374,7 @@ rl.on('line', (line) => {
   await withPatchedEnv(t, {
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
     LINX_AUTO_MODE_HOME: autoModeHome,
+    FAKE_ACP_LOG: join(root, 'persist-timeout-log.jsonl'),
   }, async () => {
     const exitCode = await module.runAutoMode({
       backend: 'codex',
@@ -2158,4 +2399,71 @@ rl.on('line', (line) => {
   const sessionDirs = readdirSync(join(autoModeHome, 'sessions'))
   const events = readFileSync(join(autoModeHome, 'sessions', sessionDirs[0], 'events.jsonl'), 'utf-8')
   assert.match(events, /Pod sync failed \| ignore pod persistence errors/)
+})
+
+test('auto-mode times out final Pod persistence without blocking local success', async (t) => {
+  const { root, binDir, autoModeHome } = createAutoModeSandbox('linx-auto-mode-pod-persist-timeout-')
+
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  writeFakeAcpBackend(join(binDir, 'codex-acp'), {
+    sessionId: 'sess_codex_persist_timeout_123',
+    reply: 'persist timeout turn',
+  })
+
+  const { module, cleanup } = await loadAutoModeModule()
+  t.after(() => cleanup())
+
+  const warnings = []
+  mockPodBackendCredential(t, module, 'codex', undefined, { persist: false })
+  t.mock.method(module.autoModeRuntime, 'promptText', async () => '/exit')
+  let syncSignal
+  let aborted = false
+  t.mock.method(module.autoModeRuntime, 'persistAutoModeConversationToPod', async (_record, _runtime, options) => {
+    syncSignal = options?.signal
+    await new Promise((_resolve, reject) => {
+      syncSignal?.addEventListener('abort', () => {
+        aborted = true
+        reject(syncSignal.reason ?? new Error('aborted'))
+      }, { once: true })
+    })
+  })
+  const warningListener = (warning) => {
+    warnings.push(warning)
+  }
+  process.on('warning', warningListener)
+  t.after(() => {
+    process.off('warning', warningListener)
+  })
+
+  await withPatchedEnv(t, {
+    PATH: `${binDir}:${process.env.PATH ?? ''}`,
+    LINX_AUTO_MODE_HOME: autoModeHome,
+    FAKE_ACP_LOG: join(root, 'persist-timeout-log.jsonl'),
+  }, async () => {
+    const startedAt = Date.now()
+    const exitCode = await module.runAutoMode({
+      backend: 'codex',
+      mode: 'smart',
+      cwd: process.cwd(),
+      prompt: 'persist timeout',
+      passthroughArgs: [],
+      credentialSource: 'cloud',
+      commandOverride: join(binDir, 'codex-acp'),
+    })
+
+    assert.equal(exitCode, 0)
+    assert.ok(Date.now() - startedAt < 8_000)
+  })
+
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(syncSignal instanceof AbortSignal, true)
+  assert.equal(aborted, true)
+  assert.equal(warnings.some((warning) => String(warning.message).includes('LinX auto-mode Pod sync failed: timed out after 5000ms')), true)
+
+  const sessionDirs = readdirSync(join(autoModeHome, 'sessions'))
+  const events = readFileSync(join(autoModeHome, 'sessions', sessionDirs[0], 'events.jsonl'), 'utf-8')
+  assert.match(events, /Pod sync failed \| timed out after 5000ms/)
 })

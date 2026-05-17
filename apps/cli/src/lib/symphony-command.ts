@@ -2,29 +2,29 @@ import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import type { Argv, CommandModule } from 'yargs'
 import type { AutoModeBackend, AutoModeMode } from '@linx/agent-runtime/auto-mode'
-import type { LinxSymphonyRunPlan, LinxSymphonyWorkspaceKind } from '@linx/agent-runtime/symphony'
+import type { SymphonyRunPlan, SymphonyWorkspaceKind } from '@linx/agent-runtime/symphony'
 import { runAutoMode, listArchivedAutoModeSessions, type AutoRunOptions } from './auto-mode/index.js'
 import {
-  createArchivedLinxSymphonyRunPlan,
-  formatLinxSymphonyRecordSummary,
-  getLinxSymphonyHome,
-  listLinxSymphonyDeliveries,
-  listLinxSymphonySessions,
-  listLinxSymphonyTasks,
-  resolveLinxSymphonyRecord,
-  updateLinxSymphonyDeliveryStatus,
-  updateLinxSymphonySessionStatus,
-  updateLinxSymphonyTaskStatus,
+  createArchivedSymphonyRunPlan,
+  formatSymphonyRecordSummary,
+  getSymphonyHome,
+  listSymphonyDeliveries,
+  listSymphonyIssues,
+  listSymphonySessions,
+  resolveSymphonyRecord,
+  updateSymphonyIssueStatus,
+  updateSymphonyDeliveryStatus,
+  updateSymphonySessionStatus,
 } from './symphony/archive.js'
 
 const SYMPHONY_BACKENDS = ['codex', 'claude', 'codebuddy'] as const
 
-export interface LinxSymphonyRuntime {
+export interface SymphonyRuntime {
   runAutoMode(options: AutoRunOptions): Promise<number>
   listAutoModeSessions(): ReturnType<typeof listArchivedAutoModeSessions>
 }
 
-interface LinxSymphonyRunArgs {
+interface SymphonyRunArgs {
   objective?: string[]
   backend?: AutoModeBackend
   auto?: boolean
@@ -37,26 +37,26 @@ interface LinxSymphonyRunArgs {
   repository?: string
   branch?: string
   worktree?: string
-  workspaceKind?: LinxSymphonyWorkspaceKind
+  workspaceKind?: SymphonyWorkspaceKind
   '--'?: string[]
 }
 
-interface LinxSymphonyShowArgs {
+interface SymphonyShowArgs {
   id?: string
 }
 
-const defaultRuntime: LinxSymphonyRuntime = {
+const defaultRuntime: SymphonyRuntime = {
   runAutoMode,
   listAutoModeSessions: listArchivedAutoModeSessions,
 }
 
-export function createLinxSymphonyCommand(runtime: LinxSymphonyRuntime = defaultRuntime): CommandModule<object, object> {
+export function createSymphonyCommand(runtime: SymphonyRuntime = defaultRuntime): CommandModule<object, object> {
   return {
     command: 'symphony <command>',
-    describe: 'Create and inspect LinX Symphony task deliveries',
+    describe: 'Inspect and tune AI Secretary Symphony delegation',
     builder(command): Argv<object> {
-      return buildLinxSymphonyCommandTree(command, runtime)
-        .demandCommand(1, 'Usage: linx symphony <run|tasks|sessions|deliveries|show>')
+      return buildSymphonyCommandTree(command, runtime)
+        .demandCommand(1, 'Usage: linx symphony <run|issues|sessions|deliveries|show>')
     },
     handler() {
       // Subcommands own execution.
@@ -64,46 +64,46 @@ export function createLinxSymphonyCommand(runtime: LinxSymphonyRuntime = default
   }
 }
 
-export const symphonyCommand = createLinxSymphonyCommand()
+export const symphonyCommand = createSymphonyCommand()
 
-export function buildLinxSymphonyCommandTree<T extends object>(
+export function buildSymphonyCommandTree<T extends object>(
   command: Argv<T>,
-  runtime: LinxSymphonyRuntime = defaultRuntime,
+  runtime: SymphonyRuntime = defaultRuntime,
 ): Argv<T> {
   return command
     .command(createRunCommand(runtime))
-    .command(createListCommand('tasks', 'List Symphony tasks', () => listLinxSymphonyTasks().map((record) => formatLinxSymphonyRecordSummary('task', record))))
-    .command(createListCommand('sessions', 'List Symphony sessions', () => listLinxSymphonySessions().map((record) => formatLinxSymphonyRecordSummary('session', record))))
-    .command(createListCommand('deliveries', 'List Symphony deliveries', () => listLinxSymphonyDeliveries().map((record) => formatLinxSymphonyRecordSummary('delivery', record))))
+    .command(createListCommand('issues', 'List Symphony issues', () => listSymphonyIssues().map((record) => formatSymphonyRecordSummary('issue', record))))
+    .command(createListCommand('sessions', 'List Symphony sessions', () => listSymphonySessions().map((record) => formatSymphonyRecordSummary('session', record))))
+    .command(createListCommand('deliveries', 'List Symphony deliveries', () => listSymphonyDeliveries().map((record) => formatSymphonyRecordSummary('delivery', record))))
     .command(createShowCommand())
 }
 
-function createRunCommand(runtime: LinxSymphonyRuntime): CommandModule<object, LinxSymphonyRunArgs> {
+function createRunCommand(runtime: SymphonyRuntime): CommandModule<object, SymphonyRunArgs> {
   return {
     command: 'run [objective..]',
-    describe: 'Create a Symphony task delivery and optionally run it through a backend',
-    builder(command): Argv<LinxSymphonyRunArgs> {
+    describe: 'Ask AI Secretary to delegate work through Symphony',
+    builder(command): Argv<SymphonyRunArgs> {
       return command
         .positional('objective', {
           array: true,
           type: 'string',
-          describe: 'Task objective to delegate',
+          describe: 'Task objective for Secretary to delegate',
         })
         .option('backend', {
           type: 'string',
           choices: SYMPHONY_BACKENDS,
           default: 'codex',
-          describe: 'External agent backend to receive the projected task',
+          describe: 'Worker backend receiving Secretary-projected work',
         })
         .option('auto', {
           type: 'boolean',
           default: false,
-          describe: 'Run backend in auto mode so AI Secretary handles in-policy confirmations',
+          describe: 'Let AI Secretary handle in-policy worker confirmations',
         })
         .option('dry-run', {
           type: 'boolean',
           default: false,
-          describe: 'Archive the task/delivery/session plan without launching a backend',
+          describe: 'Archive the issue/delivery/session plan without launching a backend',
         })
         .option('cwd', {
           type: 'string',
@@ -144,16 +144,16 @@ function createRunCommand(runtime: LinxSymphonyRuntime): CommandModule<object, L
           type: 'string',
           choices: ['git', 'folder'] as const,
           describe: 'Workspace kind metadata override',
-        }) as Argv<LinxSymphonyRunArgs>
+        }) as Argv<SymphonyRunArgs>
     },
     async handler(argv): Promise<void> {
-      await runLinxSymphony(argv, runtime)
+      await runSymphony(argv, runtime)
     },
   }
 }
 
 function createListCommand(
-  commandName: 'tasks' | 'sessions' | 'deliveries',
+  commandName: 'issues' | 'sessions' | 'deliveries',
   describe: string,
   loadLines: () => string[],
 ): CommandModule<object, object> {
@@ -175,39 +175,39 @@ function createListCommand(
   }
 }
 
-function createShowCommand(): CommandModule<object, LinxSymphonyShowArgs> {
+function createShowCommand(): CommandModule<object, SymphonyShowArgs> {
   return {
     command: 'show <id>',
-    describe: 'Show a Symphony task, delivery, or session by id/prefix',
-    builder(command): Argv<LinxSymphonyShowArgs> {
+    describe: 'Show a Symphony issue, delivery, or session by URI/key prefix',
+    builder(command): Argv<SymphonyShowArgs> {
       return command.positional('id', {
         type: 'string',
-        describe: 'Task, delivery, or session id/prefix',
-      }) as Argv<LinxSymphonyShowArgs>
+        describe: 'Issue, delivery, or session URI/key prefix',
+      }) as Argv<SymphonyShowArgs>
     },
     handler(argv) {
       const id = typeof argv.id === 'string' ? argv.id : ''
-      const resolved = resolveLinxSymphonyRecord(id)
+      const resolved = resolveSymphonyRecord(id)
       if (!resolved) {
         throw new Error(`Symphony record not found: ${id}`)
       }
 
-      process.stdout.write(`${formatLinxSymphonyRecordSummary(resolved.kind, resolved.record)}\n`)
+      process.stdout.write(`${formatSymphonyRecordSummary(resolved.kind, resolved.record)}\n`)
       process.stdout.write(`${JSON.stringify(resolved.record, null, 2)}\n`)
     },
   }
 }
 
-export async function runLinxSymphony(
-  argv: LinxSymphonyRunArgs,
-  runtime: LinxSymphonyRuntime = defaultRuntime,
-): Promise<LinxSymphonyRunPlan> {
+export async function runSymphony(
+  argv: SymphonyRunArgs,
+  runtime: SymphonyRuntime = defaultRuntime,
+): Promise<SymphonyRunPlan> {
   const objective = normalizeObjective(argv.objective)
   const cwd = resolve(argv.cwd || process.cwd())
   const workspace = resolveWorkspaceMetadata(cwd, argv)
   const backend = argv.backend ?? 'codex'
   const mode: AutoModeMode = argv.auto ? 'auto' : 'manual'
-  const plan = createArchivedLinxSymphonyRunPlan({
+  const plan = createArchivedSymphonyRunPlan({
     objective,
     title: normalizeOptional(argv.title),
     acceptanceCriteria: normalizeAcceptanceCriteria(argv.acceptance),
@@ -222,14 +222,14 @@ export async function runLinxSymphony(
   })
 
   if (argv.dryRun) {
-    updateLinxSymphonySessionStatus(plan.session, 'planned', { dryRun: true })
-    printLinxSymphonyRunPlan(plan, { dryRun: true })
+    updateSymphonySessionStatus(plan.session, 'planned', { dryRun: true })
+    printSymphonyRunPlan(plan, { dryRun: true })
     return plan
   }
 
-  let task = updateLinxSymphonyTaskStatus(plan.task, 'running')
-  let delivery = updateLinxSymphonyDeliveryStatus(plan.delivery, 'dispatched')
-  let session = updateLinxSymphonySessionStatus(plan.session, 'running')
+  let issue = updateSymphonyIssueStatus(plan.issue, 'in_progress')
+  let delivery = updateSymphonyDeliveryStatus(plan.delivery, 'dispatched')
+  let session = updateSymphonySessionStatus(plan.session, 'running')
   const beforeAutoModeIds = new Set(runtime.listAutoModeSessions().map((record) => record.id))
 
   try {
@@ -241,47 +241,49 @@ export async function runLinxSymphony(
       plain: Boolean(argv.plain),
       model: normalizeOptional(argv.model),
       prompt: plan.delivery.projection.prompt,
+      goalMode: true,
       passthroughArgs: ((argv['--'] as string[] | undefined) ?? []).map(String),
     })
     const autoModeSessionId = resolveCreatedAutoModeSessionId(beforeAutoModeIds, runtime)
     const status = exitCode === 0 ? 'completed' : 'failed'
-    task = updateLinxSymphonyTaskStatus(task, status, exitCode === 0 ? {} : { error: `Backend exited with code ${exitCode}` })
-    delivery = updateLinxSymphonyDeliveryStatus(delivery, status, {
+    issue = updateSymphonyIssueStatus(issue, exitCode === 0 ? 'resolved' : 'blocked', exitCode === 0 ? {} : { error: `Backend exited with code ${exitCode}` })
+    delivery = updateSymphonyDeliveryStatus(delivery, status, {
       autoModeSessionId,
       ...(exitCode === 0 ? {} : { error: `Backend exited with code ${exitCode}` }),
     })
-    session = updateLinxSymphonySessionStatus(session, status, {
+    session = updateSymphonySessionStatus(session, status, {
       autoModeSessionId,
       exitCode,
       ...(exitCode === 0 ? {} : { error: `Backend exited with code ${exitCode}` }),
     })
-    printLinxSymphonyRunPlan({ task, delivery, session }, { dryRun: false })
+    printSymphonyRunPlan({ issue, task: plan.task, delivery, session }, { dryRun: false })
     if (exitCode !== 0) {
       process.exitCode = exitCode
     }
-    return { task, delivery, session }
+    return { issue, task: plan.task, delivery, session }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    updateLinxSymphonyTaskStatus(task, 'failed', { error: message })
-    updateLinxSymphonyDeliveryStatus(delivery, 'failed', { error: message })
-    updateLinxSymphonySessionStatus(session, 'failed', { error: message, exitCode: 1 })
+    updateSymphonyIssueStatus(issue, 'blocked', { error: message })
+    updateSymphonyDeliveryStatus(delivery, 'failed', { error: message })
+    updateSymphonySessionStatus(session, 'failed', { error: message, exitCode: 1 })
     throw error
   }
 }
 
-function printLinxSymphonyRunPlan(plan: LinxSymphonyRunPlan, options: { dryRun: boolean }): void {
+function printSymphonyRunPlan(plan: SymphonyRunPlan, options: { dryRun: boolean }): void {
   process.stdout.write(options.dryRun ? 'LinX Symphony dry-run\n' : 'LinX Symphony run\n')
-  process.stdout.write(`task: ${formatLinxSymphonyRecordSummary('task', plan.task)}\n`)
-  process.stdout.write(`delivery: ${formatLinxSymphonyRecordSummary('delivery', plan.delivery)}\n`)
-  process.stdout.write(`session: ${formatLinxSymphonyRecordSummary('session', plan.session)}\n`)
-  process.stdout.write(`archive: ${getLinxSymphonyHome()}\n`)
+  process.stdout.write(`issue: ${formatSymphonyRecordSummary('issue', plan.issue)}\n`)
+  process.stdout.write(`task: ${plan.task}\n`)
+  process.stdout.write(`delivery: ${formatSymphonyRecordSummary('delivery', plan.delivery)}\n`)
+  process.stdout.write(`session: ${formatSymphonyRecordSummary('session', plan.session)}\n`)
+  process.stdout.write(`archive: ${getSymphonyHome()}\n`)
   if (options.dryRun) {
     process.stdout.write('\nProjected runtime prompt:\n')
     process.stdout.write(`${plan.delivery.projection.prompt}\n`)
   }
 }
 
-function resolveCreatedAutoModeSessionId(beforeIds: Set<string>, runtime: LinxSymphonyRuntime): string | undefined {
+function resolveCreatedAutoModeSessionId(beforeIds: Set<string>, runtime: SymphonyRuntime): string | undefined {
   const created = runtime.listAutoModeSessions()
     .filter((record) => !beforeIds.has(record.id))
     .sort((left, right) => right.startedAt.localeCompare(left.startedAt))
@@ -313,8 +315,8 @@ function normalizeOptional(value?: string | null): string | undefined {
   return normalized || undefined
 }
 
-function resolveWorkspaceMetadata(cwd: string, argv: LinxSymphonyRunArgs): {
-  kind: LinxSymphonyWorkspaceKind
+function resolveWorkspaceMetadata(cwd: string, argv: SymphonyRunArgs): {
+  kind: SymphonyWorkspaceKind
   repository?: string
   branch?: string
   worktree?: string

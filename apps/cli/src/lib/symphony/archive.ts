@@ -2,79 +2,80 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import {
-  createLinxSymphonyRunPlan,
-  formatLinxSymphonyDeliverySummary,
-  formatLinxSymphonySessionSummary,
-  formatLinxSymphonyTaskSummary,
-  getLinxSymphonyArchiveRelativePaths,
-  LINX_SYMPHONY_HOME_DIRNAME,
-  type CreateLinxSymphonyRunPlanInput,
-  type LinxSymphonyDeliveryRecord,
-  type LinxSymphonyDeliveryStatus,
-  type LinxSymphonyRunPlan,
-  type LinxSymphonySessionRecord,
-  type LinxSymphonySessionStatus,
-  type LinxSymphonyTaskRecord,
-  type LinxSymphonyTaskStatus,
+  createRunPlan,
+  formatSymphonyDeliverySummary,
+  formatSymphonyIssueSummary,
+  formatSymphonySessionSummary,
+  getSymphonyArchiveKey,
+  getSymphonyArchiveRelativePaths,
+  SYMPHONY_HOME_DIRNAME,
+  type CreateSymphonyRunPlanInput,
+  type SymphonyDeliveryRecord,
+  type SymphonyDeliveryStatus,
+  type SymphonyIssueRecord,
+  type SymphonyIssueStatus,
+  type SymphonyRunPlan,
+  type SymphonySessionRecord,
+  type SymphonySessionStatus,
 } from '@linx/agent-runtime/symphony'
 import { LINX_HOME_DIRNAME } from '@undefineds.co/models/client'
 
-type SymphonyKind = 'task' | 'delivery' | 'session'
+type SymphonyKind = 'issue' | 'delivery' | 'session'
 
 interface SymphonyRecordMap {
-  task: LinxSymphonyTaskRecord
-  delivery: LinxSymphonyDeliveryRecord
-  session: LinxSymphonySessionRecord
+  issue: SymphonyIssueRecord
+  delivery: SymphonyDeliveryRecord
+  session: SymphonySessionRecord
 }
 
-export function getLinxSymphonyHome(): string {
-  return join(homedir(), LINX_HOME_DIRNAME, LINX_SYMPHONY_HOME_DIRNAME)
+export function getSymphonyHome(): string {
+  return join(homedir(), LINX_HOME_DIRNAME, SYMPHONY_HOME_DIRNAME)
 }
 
-export function createArchivedLinxSymphonyRunPlan(input: CreateLinxSymphonyRunPlanInput): LinxSymphonyRunPlan {
-  const plan = createLinxSymphonyRunPlan(input)
-  writeLinxSymphonyTask(plan.task)
-  writeLinxSymphonyDelivery(plan.delivery)
-  writeLinxSymphonySession(plan.session)
+export function createArchivedSymphonyRunPlan(input: CreateSymphonyRunPlanInput): SymphonyRunPlan {
+  const plan = createRunPlan(input)
+  writeSymphonyIssue(plan.issue)
+  writeSymphonyDelivery(plan.delivery)
+  writeSymphonySession(plan.session)
   return plan
 }
 
-export function writeLinxSymphonyTask(record: LinxSymphonyTaskRecord): void {
-  writeLinxSymphonyRecord('task', record.id, record)
+export function writeSymphonyIssue(record: SymphonyIssueRecord): void {
+  writeSymphonyRecord('issue', record.uri, record)
 }
 
-export function writeLinxSymphonyDelivery(record: LinxSymphonyDeliveryRecord): void {
-  writeLinxSymphonyRecord('delivery', record.id, record)
+export function writeSymphonyDelivery(record: SymphonyDeliveryRecord): void {
+  writeSymphonyRecord('delivery', record.uri, record)
 }
 
-export function writeLinxSymphonySession(record: LinxSymphonySessionRecord): void {
-  writeLinxSymphonyRecord('session', record.id, record)
+export function writeSymphonySession(record: SymphonySessionRecord): void {
+  writeSymphonyRecord('session', record.uri, record)
 }
 
-export function updateLinxSymphonyTaskStatus(
-  record: LinxSymphonyTaskRecord,
-  status: LinxSymphonyTaskStatus,
-  updates: { error?: string; completedAt?: string } = {},
-): LinxSymphonyTaskRecord {
+export function updateSymphonyIssueStatus(
+  record: SymphonyIssueRecord,
+  status: SymphonyIssueStatus,
+  updates: { error?: string; closedAt?: string } = {},
+): SymphonyIssueRecord {
   const now = new Date().toISOString()
-  const next: LinxSymphonyTaskRecord = {
+  const next: SymphonyIssueRecord = {
     ...record,
     status,
     updatedAt: now,
     ...(updates.error ? { error: updates.error } : {}),
-    ...((updates.completedAt || status === 'completed' || status === 'failed') ? { completedAt: updates.completedAt ?? now } : {}),
+    ...((updates.closedAt || status === 'resolved' || status === 'closed') ? { closedAt: updates.closedAt ?? now } : {}),
   }
-  writeLinxSymphonyTask(next)
+  writeSymphonyIssue(next)
   return next
 }
 
-export function updateLinxSymphonyDeliveryStatus(
-  record: LinxSymphonyDeliveryRecord,
-  status: LinxSymphonyDeliveryStatus,
+export function updateSymphonyDeliveryStatus(
+  record: SymphonyDeliveryRecord,
+  status: SymphonyDeliveryStatus,
   updates: { error?: string; autoModeSessionId?: string; completedAt?: string } = {},
-): LinxSymphonyDeliveryRecord {
+): SymphonyDeliveryRecord {
   const now = new Date().toISOString()
-  const next: LinxSymphonyDeliveryRecord = {
+  const next: SymphonyDeliveryRecord = {
     ...record,
     status,
     updatedAt: now,
@@ -82,13 +83,13 @@ export function updateLinxSymphonyDeliveryStatus(
     ...(updates.error ? { error: updates.error } : {}),
     ...((updates.completedAt || status === 'completed' || status === 'failed') ? { completedAt: updates.completedAt ?? now } : {}),
   }
-  writeLinxSymphonyDelivery(next)
+  writeSymphonyDelivery(next)
   return next
 }
 
-export function updateLinxSymphonySessionStatus(
-  record: LinxSymphonySessionRecord,
-  status: LinxSymphonySessionStatus,
+export function updateSymphonySessionStatus(
+  record: SymphonySessionRecord,
+  status: SymphonySessionStatus,
   updates: {
     error?: string
     autoModeSessionId?: string
@@ -96,9 +97,9 @@ export function updateLinxSymphonySessionStatus(
     dryRun?: boolean
     completedAt?: string
   } = {},
-): LinxSymphonySessionRecord {
+): SymphonySessionRecord {
   const now = new Date().toISOString()
-  const next: LinxSymphonySessionRecord = {
+  const next: SymphonySessionRecord = {
     ...record,
     status,
     updatedAt: now,
@@ -108,52 +109,52 @@ export function updateLinxSymphonySessionStatus(
     ...(updates.error ? { error: updates.error } : {}),
     ...((updates.completedAt || status === 'completed' || status === 'failed') ? { completedAt: updates.completedAt ?? now } : {}),
   }
-  writeLinxSymphonySession(next)
+  writeSymphonySession(next)
   return next
 }
 
-export function listLinxSymphonyTasks(): LinxSymphonyTaskRecord[] {
-  return listLinxSymphonyRecords('task')
+export function listSymphonyIssues(): SymphonyIssueRecord[] {
+  return listSymphonyRecords('issue')
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
 }
 
-export function listLinxSymphonyDeliveries(): LinxSymphonyDeliveryRecord[] {
-  return listLinxSymphonyRecords('delivery')
+export function listSymphonyDeliveries(): SymphonyDeliveryRecord[] {
+  return listSymphonyRecords('delivery')
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
 }
 
-export function listLinxSymphonySessions(): LinxSymphonySessionRecord[] {
-  return listLinxSymphonyRecords('session')
+export function listSymphonySessions(): SymphonySessionRecord[] {
+  return listSymphonyRecords('session')
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
 }
 
-export function loadLinxSymphonyTask(id: string): LinxSymphonyTaskRecord | null {
-  return loadLinxSymphonyRecord('task', id)
+export function loadSymphonyIssue(uriOrKey: string): SymphonyIssueRecord | null {
+  return loadSymphonyRecord('issue', uriOrKey)
 }
 
-export function loadLinxSymphonyDelivery(id: string): LinxSymphonyDeliveryRecord | null {
-  return loadLinxSymphonyRecord('delivery', id)
+export function loadSymphonyDelivery(uriOrKey: string): SymphonyDeliveryRecord | null {
+  return loadSymphonyRecord('delivery', uriOrKey)
 }
 
-export function loadLinxSymphonySession(id: string): LinxSymphonySessionRecord | null {
-  return loadLinxSymphonyRecord('session', id)
+export function loadSymphonySession(uriOrKey: string): SymphonySessionRecord | null {
+  return loadSymphonyRecord('session', uriOrKey)
 }
 
-export function resolveLinxSymphonyRecord(id: string): {
+export function resolveSymphonyRecord(uriOrKey: string): {
   kind: SymphonyKind
-  record: LinxSymphonyTaskRecord | LinxSymphonyDeliveryRecord | LinxSymphonySessionRecord
+  record: SymphonyIssueRecord | SymphonyDeliveryRecord | SymphonySessionRecord
 } | null {
-  const task = loadLinxSymphonyTask(id)
-  if (task) {
-    return { kind: 'task', record: task }
+  const issue = loadSymphonyIssue(uriOrKey)
+  if (issue) {
+    return { kind: 'issue', record: issue }
   }
 
-  const delivery = loadLinxSymphonyDelivery(id)
+  const delivery = loadSymphonyDelivery(uriOrKey)
   if (delivery) {
     return { kind: 'delivery', record: delivery }
   }
 
-  const session = loadLinxSymphonySession(id)
+  const session = loadSymphonySession(uriOrKey)
   if (session) {
     return { kind: 'session', record: session }
   }
@@ -161,17 +162,17 @@ export function resolveLinxSymphonyRecord(id: string): {
   return null
 }
 
-export function formatLinxSymphonyRecordSummary(
+export function formatSymphonyRecordSummary(
   kind: SymphonyKind,
-  record: LinxSymphonyTaskRecord | LinxSymphonyDeliveryRecord | LinxSymphonySessionRecord,
+  record: SymphonyIssueRecord | SymphonyDeliveryRecord | SymphonySessionRecord,
 ): string {
-  if (kind === 'task') {
-    return formatLinxSymphonyTaskSummary(record as LinxSymphonyTaskRecord)
+  if (kind === 'issue') {
+    return formatSymphonyIssueSummary(record as SymphonyIssueRecord)
   }
   if (kind === 'delivery') {
-    return formatLinxSymphonyDeliverySummary(record as LinxSymphonyDeliveryRecord)
+    return formatSymphonyDeliverySummary(record as SymphonyDeliveryRecord)
   }
-  return formatLinxSymphonySessionSummary(record as LinxSymphonySessionRecord)
+  return formatSymphonySessionSummary(record as SymphonySessionRecord)
 }
 
 function ensureDir(path: string): void {
@@ -181,62 +182,62 @@ function ensureDir(path: string): void {
 }
 
 function kindRoot(kind: SymphonyKind): string {
-  const paths = getLinxSymphonyArchiveRelativePaths('__placeholder__', kind)
+  const paths = getSymphonyArchiveRelativePaths('urn:undefineds:linx:placeholder:placeholder', kind)
   const dirName = paths.dir.split('/')[0]
-  const dir = join(getLinxSymphonyHome(), dirName)
+  const dir = join(getSymphonyHome(), dirName)
   ensureDir(dir)
   return dir
 }
 
-function recordDir(kind: SymphonyKind, id: string): string {
-  const paths = getLinxSymphonyArchiveRelativePaths(id, kind)
-  const dir = join(getLinxSymphonyHome(), paths.dir)
+function recordDir(kind: SymphonyKind, uri: string): string {
+  const paths = getSymphonyArchiveRelativePaths(uri, kind)
+  const dir = join(getSymphonyHome(), paths.dir)
   ensureDir(dir)
   return dir
 }
 
-function recordFile(kind: SymphonyKind, id: string): string {
-  const paths = getLinxSymphonyArchiveRelativePaths(id, kind)
-  return join(getLinxSymphonyHome(), paths.file)
+function recordFile(kind: SymphonyKind, uri: string): string {
+  const paths = getSymphonyArchiveRelativePaths(uri, kind)
+  return join(getSymphonyHome(), paths.file)
 }
 
-function writeLinxSymphonyRecord<K extends SymphonyKind>(kind: K, id: string, record: SymphonyRecordMap[K]): void {
-  recordDir(kind, id)
-  writeFileSync(recordFile(kind, id), `${JSON.stringify(record, null, 2)}\n`)
+function writeSymphonyRecord<K extends SymphonyKind>(kind: K, uri: string, record: SymphonyRecordMap[K]): void {
+  recordDir(kind, uri)
+  writeFileSync(recordFile(kind, uri), `${JSON.stringify(record, null, 2)}\n`)
 }
 
-function readLinxSymphonyRecordFromDirectory<K extends SymphonyKind>(kind: K, id: string): SymphonyRecordMap[K] | null {
+function readSymphonyRecordFromDirectory<K extends SymphonyKind>(kind: K, uriOrKey: string): SymphonyRecordMap[K] | null {
   try {
-    const raw = readFileSync(recordFile(kind, id), 'utf-8')
+    const raw = readFileSync(recordFile(kind, uriOrKey), 'utf-8')
     return JSON.parse(raw) as SymphonyRecordMap[K]
   } catch {
     return null
   }
 }
 
-function listLinxSymphonyRecords<K extends SymphonyKind>(kind: K): SymphonyRecordMap[K][] {
+function listSymphonyRecords<K extends SymphonyKind>(kind: K): SymphonyRecordMap[K][] {
   return readdirSync(kindRoot(kind))
-    .map((name) => readLinxSymphonyRecordFromDirectory(kind, name))
+    .map((name) => readSymphonyRecordFromDirectory(kind, name))
     .filter((item): item is SymphonyRecordMap[K] => item !== null)
 }
 
-function loadLinxSymphonyRecord<K extends SymphonyKind>(kind: K, id: string): SymphonyRecordMap[K] | null {
-  const normalized = id.trim()
+function loadSymphonyRecord<K extends SymphonyKind>(kind: K, uriOrKey: string): SymphonyRecordMap[K] | null {
+  const normalized = uriOrKey.trim()
   if (!normalized) {
     return null
   }
 
-  const direct = readLinxSymphonyRecordFromDirectory(kind, normalized)
+  const direct = readSymphonyRecordFromDirectory(kind, normalized)
   if (direct) {
     return direct
   }
 
-  const exact = listLinxSymphonyRecords(kind).filter((record) => record.id === normalized)
+  const exact = listSymphonyRecords(kind).filter((record) => record.uri === normalized || getSymphonyArchiveKey(record.uri) === normalized)
   if (exact.length === 1) {
     return exact[0]
   }
 
-  const prefix = listLinxSymphonyRecords(kind).filter((record) => record.id.startsWith(normalized))
+  const prefix = listSymphonyRecords(kind).filter((record) => getSymphonyArchiveKey(record.uri).startsWith(normalized))
   if (prefix.length === 1) {
     return prefix[0]
   }

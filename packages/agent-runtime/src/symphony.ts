@@ -1,57 +1,65 @@
 import type { AutoModeBackend, AutoModeMode } from './auto-mode.js'
 
-export const LINX_SYMPHONY_HOME_DIRNAME = 'symphony'
-export const LINX_SYMPHONY_TASKS_DIRNAME = 'tasks'
-export const LINX_SYMPHONY_DELIVERIES_DIRNAME = 'deliveries'
-export const LINX_SYMPHONY_SESSIONS_DIRNAME = 'sessions'
+export const SYMPHONY_HOME_DIRNAME = 'symphony'
+export const SYMPHONY_ISSUES_DIRNAME = 'issues'
+export const SYMPHONY_DELIVERIES_DIRNAME = 'deliveries'
+export const SYMPHONY_SESSIONS_DIRNAME = 'sessions'
 
-export const LINX_SYMPHONY_TASK_FILE_NAME = 'task.json'
-export const LINX_SYMPHONY_DELIVERY_FILE_NAME = 'delivery.json'
-export const LINX_SYMPHONY_SESSION_FILE_NAME = 'session.json'
+export const SYMPHONY_ISSUE_FILE_NAME = 'issue.json'
+export const SYMPHONY_DELIVERY_FILE_NAME = 'delivery.json'
+export const SYMPHONY_SESSION_FILE_NAME = 'session.json'
 
-export type LinxSymphonyWorkspaceKind = 'git' | 'folder'
-export type LinxSymphonyTaskStatus = 'pending' | 'running' | 'completed' | 'failed'
-export type LinxSymphonyDeliveryStatus = 'pending' | 'dispatched' | 'completed' | 'failed'
-export type LinxSymphonySessionStatus = 'planned' | 'running' | 'completed' | 'failed'
-export type LinxSymphonyProjectionRole = 'user' | 'system' | 'tool'
+const SYMPHONY_URI_PREFIX = 'urn:undefineds:linx'
 
-export interface LinxSymphonyWorkspaceRef {
+export type SymphonyWorkspaceKind = 'git' | 'folder'
+export type SymphonyIssueStatus = 'open' | 'triaging' | 'in_progress' | 'blocked' | 'resolved' | 'closed'
+export type SymphonyDeliveryStatus = 'pending' | 'dispatched' | 'completed' | 'failed'
+export type SymphonySessionStatus = 'planned' | 'running' | 'completed' | 'failed'
+export type SymphonyProjectionRole = 'user' | 'system' | 'tool'
+export type SymphonyResourceKind = 'issue' | 'task' | 'delivery' | 'session'
+
+export interface SymphonyWorkspaceRef {
   path: string
-  kind: LinxSymphonyWorkspaceKind
+  kind: SymphonyWorkspaceKind
   repository?: string
   branch?: string
   worktree?: string
 }
 
-export interface LinxSymphonyTaskRecord {
-  id: string
+export interface SymphonyChatThreadRef {
+  chat?: string
+  thread?: string
+  messages?: string[]
+}
+
+export interface SymphonyIssueRecord extends SymphonyChatThreadRef {
+  uri: string
   title: string
-  objective: string
-  acceptanceCriteria: string[]
-  status: LinxSymphonyTaskStatus
-  workspace: LinxSymphonyWorkspaceRef
+  description?: string
+  status: SymphonyIssueStatus
+  priority: 'low' | 'medium' | 'high' | 'urgent'
   source: 'cli'
-  deliveryIds: string[]
-  sessionIds: string[]
+  tasks: string[]
   createdAt: string
   updatedAt: string
-  completedAt?: string
+  closedAt?: string
   error?: string
 }
 
-export interface LinxSymphonyDeliveryRecord {
-  id: string
-  taskId: string
+export interface SymphonyDeliveryRecord extends SymphonyChatThreadRef {
+  uri: string
+  issue: string
+  task: string
   type: 'task_dispatch'
-  status: LinxSymphonyDeliveryStatus
+  status: SymphonyDeliveryStatus
   sourceAgent: 'ai-secretary'
   targetBackend: AutoModeBackend
   targetAgent: string
   projection: {
-    runtimeRole: LinxSymphonyProjectionRole
+    runtimeRole: SymphonyProjectionRole
     prompt: string
   }
-  sessionId?: string
+  session?: string
   autoModeSessionId?: string
   createdAt: string
   updatedAt: string
@@ -59,13 +67,14 @@ export interface LinxSymphonyDeliveryRecord {
   error?: string
 }
 
-export interface LinxSymphonySessionRecord {
-  id: string
-  taskId: string
-  deliveryId: string
+export interface SymphonySessionRecord extends SymphonyChatThreadRef {
+  uri: string
+  issue: string
+  task: string
+  delivery: string
   backend: AutoModeBackend
   mode: AutoModeMode
-  status: LinxSymphonySessionStatus
+  status: SymphonySessionStatus
   cwd: string
   model?: string
   autoModeSessionId?: string
@@ -77,105 +86,121 @@ export interface LinxSymphonySessionRecord {
   error?: string
 }
 
-export interface LinxSymphonyRunPlan {
-  task: LinxSymphonyTaskRecord
-  delivery: LinxSymphonyDeliveryRecord
-  session: LinxSymphonySessionRecord
+export interface SymphonyRunPlan {
+  issue: SymphonyIssueRecord
+  task: string
+  delivery: SymphonyDeliveryRecord
+  session: SymphonySessionRecord
 }
 
-export interface CreateLinxSymphonyRunPlanInput {
+export interface CreateSymphonyRunPlanInput {
   objective: string
   title?: string
   acceptanceCriteria?: string[]
   workspacePath: string
-  workspaceKind?: LinxSymphonyWorkspaceKind
+  workspaceKind?: SymphonyWorkspaceKind
   repository?: string
   branch?: string
   worktree?: string
   backend: AutoModeBackend
   mode: AutoModeMode
   model?: string
+  chat?: string
+  thread?: string
+  messages?: string[]
   now?: Date
   randomId?: string
 }
 
-export function createLinxSymphonyTaskId(options: { now?: Date; randomId?: string } = {}): string {
-  return `sym_task_${formatLinxSymphonyTimestamp(options.now)}_${normalizeLinxSymphonyRandomId(options.randomId)}`
+export function createSymphonyIssueUri(options: { now?: Date; randomId?: string } = {}): string {
+  return createSymphonyResourceUri('issue', options)
 }
 
-export function createLinxSymphonyDeliveryId(options: { now?: Date; randomId?: string } = {}): string {
-  return `sym_delivery_${formatLinxSymphonyTimestamp(options.now)}_${normalizeLinxSymphonyRandomId(options.randomId)}`
+export function createTaskUri(options: { now?: Date; randomId?: string } = {}): string {
+  return createSymphonyResourceUri('task', options)
 }
 
-export function createLinxSymphonySessionId(options: { now?: Date; randomId?: string } = {}): string {
-  return `sym_session_${formatLinxSymphonyTimestamp(options.now)}_${normalizeLinxSymphonyRandomId(options.randomId)}`
+export function createSymphonyDeliveryUri(options: { now?: Date; randomId?: string } = {}): string {
+  return createSymphonyResourceUri('delivery', options)
 }
 
-export function getLinxSymphonyArchiveRelativePaths(id: string, kind: 'task' | 'delivery' | 'session'): {
+export function createSymphonySessionUri(options: { now?: Date; randomId?: string } = {}): string {
+  return createSymphonyResourceUri('session', options)
+}
+
+export function getSymphonyArchiveRelativePaths(uri: string, kind: 'issue' | 'delivery' | 'session'): {
   dir: string
   file: string
 } {
-  const dirName = kind === 'task'
-    ? LINX_SYMPHONY_TASKS_DIRNAME
+  const key = getSymphonyArchiveKey(uri)
+  const dirName = kind === 'issue'
+    ? SYMPHONY_ISSUES_DIRNAME
     : kind === 'delivery'
-      ? LINX_SYMPHONY_DELIVERIES_DIRNAME
-      : LINX_SYMPHONY_SESSIONS_DIRNAME
-  const fileName = kind === 'task'
-    ? LINX_SYMPHONY_TASK_FILE_NAME
+      ? SYMPHONY_DELIVERIES_DIRNAME
+      : SYMPHONY_SESSIONS_DIRNAME
+  const fileName = kind === 'issue'
+    ? SYMPHONY_ISSUE_FILE_NAME
     : kind === 'delivery'
-      ? LINX_SYMPHONY_DELIVERY_FILE_NAME
-      : LINX_SYMPHONY_SESSION_FILE_NAME
+      ? SYMPHONY_DELIVERY_FILE_NAME
+      : SYMPHONY_SESSION_FILE_NAME
 
   return {
-    dir: `${dirName}/${id}`,
-    file: `${dirName}/${id}/${fileName}`,
+    dir: `${dirName}/${key}`,
+    file: `${dirName}/${key}/${fileName}`,
   }
 }
 
-export function createLinxSymphonyRunPlan(input: CreateLinxSymphonyRunPlanInput): LinxSymphonyRunPlan {
+export function createRunPlan(input: CreateSymphonyRunPlanInput): SymphonyRunPlan {
   const now = input.now ?? new Date()
   const timestamp = now.toISOString()
-  const randomId = normalizeLinxSymphonyRandomId(input.randomId)
-  const idOptions = { now, randomId }
+  const randomId = normalizeSymphonyRandomId(input.randomId)
+  const uriOptions = { now, randomId }
   const objective = normalizeRequiredText(input.objective, 'objective')
-  const title = normalizeOptionalText(input.title) ?? createLinxSymphonyTitle(objective)
-  const acceptanceCriteria = normalizeLinxSymphonyAcceptanceCriteria(input.acceptanceCriteria)
-  const workspace: LinxSymphonyWorkspaceRef = {
+  const title = normalizeOptionalText(input.title) ?? createSymphonyTitle(objective)
+  const acceptanceCriteria = normalizeSymphonyAcceptanceCriteria(input.acceptanceCriteria)
+  const chatThread = normalizeSymphonyChatThreadRef(input)
+  const workspace: SymphonyWorkspaceRef = {
     path: normalizeRequiredText(input.workspacePath, 'workspacePath'),
     kind: input.workspaceKind ?? 'folder',
     ...(normalizeOptionalText(input.repository) ? { repository: normalizeOptionalText(input.repository) } : {}),
     ...(normalizeOptionalText(input.branch) ? { branch: normalizeOptionalText(input.branch) } : {}),
     ...(normalizeOptionalText(input.worktree) ? { worktree: normalizeOptionalText(input.worktree) } : {}),
   }
+  const issueUri = createSymphonyIssueUri(uriOptions)
+  const taskUri = createTaskUri(uriOptions)
+  const deliveryUri = createSymphonyDeliveryUri(uriOptions)
+  const sessionUri = createSymphonySessionUri(uriOptions)
 
-  const task: LinxSymphonyTaskRecord = {
-    id: createLinxSymphonyTaskId(idOptions),
+  const issue: SymphonyIssueRecord = {
+    uri: issueUri,
     title,
-    objective,
-    acceptanceCriteria,
-    status: 'pending',
-    workspace,
+    description: objective,
+    status: 'open',
+    priority: 'medium',
     source: 'cli',
-    deliveryIds: [],
-    sessionIds: [],
+    tasks: [taskUri],
+    ...chatThread,
     createdAt: timestamp,
     updatedAt: timestamp,
   }
-  const session: LinxSymphonySessionRecord = {
-    id: createLinxSymphonySessionId(idOptions),
-    taskId: task.id,
-    deliveryId: createLinxSymphonyDeliveryId(idOptions),
+  const session: SymphonySessionRecord = {
+    uri: sessionUri,
+    issue: issueUri,
+    task: taskUri,
+    delivery: deliveryUri,
     backend: input.backend,
     mode: input.mode,
     status: 'planned',
     cwd: workspace.path,
     ...(normalizeOptionalText(input.model) ? { model: normalizeOptionalText(input.model) } : {}),
+    ...chatThread,
     createdAt: timestamp,
     updatedAt: timestamp,
   }
-  const delivery: LinxSymphonyDeliveryRecord = {
-    id: session.deliveryId,
-    taskId: task.id,
+  const delivery: SymphonyDeliveryRecord = {
+    uri: deliveryUri,
+    issue: issueUri,
+    task: taskUri,
     type: 'task_dispatch',
     status: 'pending',
     sourceAgent: 'ai-secretary',
@@ -183,77 +208,109 @@ export function createLinxSymphonyRunPlan(input: CreateLinxSymphonyRunPlanInput)
     targetAgent: `${input.backend}-worker`,
     projection: {
       runtimeRole: 'user',
-      prompt: renderLinxSymphonyRuntimePrompt({
-        task,
+      prompt: renderSymphonyRuntimePrompt({
+        issue,
+        task: taskUri,
+        objective,
+        acceptanceCriteria,
+        workspace,
         backend: input.backend,
         mode: input.mode,
-        sessionId: session.id,
+        session: sessionUri,
       }),
     },
-    sessionId: session.id,
+    session: sessionUri,
+    ...chatThread,
     createdAt: timestamp,
     updatedAt: timestamp,
   }
 
-  task.deliveryIds = [delivery.id]
-  task.sessionIds = [session.id]
-
-  return { task, delivery, session }
+  return { issue, task: taskUri, delivery, session }
 }
 
-export function renderLinxSymphonyRuntimePrompt(input: {
-  task: LinxSymphonyTaskRecord
+export function renderSymphonyRuntimePrompt(input: {
+  issue?: SymphonyIssueRecord
+  task: string
+  objective: string
+  acceptanceCriteria?: string[]
+  workspace: SymphonyWorkspaceRef
   backend: AutoModeBackend
   mode: AutoModeMode
-  sessionId: string
+  session: string
 }): string {
-  const criteria = input.task.acceptanceCriteria.length > 0
-    ? input.task.acceptanceCriteria.map((item, index) => `${index + 1}. ${item}`).join('\n')
+  const acceptanceCriteria = normalizeSymphonyAcceptanceCriteria(input.acceptanceCriteria)
+  const criteria = acceptanceCriteria.length > 0
+    ? acceptanceCriteria.map((item, index) => `${index + 1}. ${item}`).join('\n')
     : '1. Complete the objective and report concrete verification evidence.'
 
   return [
     '# LinX Symphony Task',
     '',
-    `Task ID: ${input.task.id}`,
-    `Session ID: ${input.sessionId}`,
+    ...(input.issue ? [`Issue URI: ${input.issue.uri}`] : []),
+    `Task URI: ${input.task}`,
+    `Session URI: ${input.session}`,
     `Backend: ${input.backend}`,
     `Mode: ${input.mode}`,
-    `Workspace: ${input.task.workspace.path}`,
-    `Workspace kind: ${input.task.workspace.kind}`,
+    `Workspace: ${input.workspace.path}`,
+    `Workspace kind: ${input.workspace.kind}`,
     '',
     '## Objective',
-    input.task.objective,
+    input.objective,
     '',
     '## Acceptance Criteria',
     criteria,
     '',
     '## Execution Contract',
+    '- Start and maintain this as the active goal for the worker session until the acceptance criteria are met.',
     '- Work only inside the workspace unless the task explicitly requires otherwise.',
     '- Treat this prompt as a delegated task from the user via AI Secretary.',
+    '- Treat later Secretary messages in this session as Steer or follow-up Delivery updates, not as a replacement for the Goal.',
     '- Preserve a concise report with changed files, commands run, and remaining risks.',
     '- If blocked by missing credentials, destructive actions, or unclear scope, report the blocker instead of guessing.',
   ].join('\n')
 }
 
-export function formatLinxSymphonyTaskSummary(task: LinxSymphonyTaskRecord): string {
-  return `${task.id} ${task.status} ${task.title} (${task.workspace.path})`
-}
-
-export function formatLinxSymphonySessionSummary(session: LinxSymphonySessionRecord): string {
+export function formatSymphonySessionSummary(session: SymphonySessionRecord): string {
   const linked = session.autoModeSessionId ? ` -> ${session.autoModeSessionId}` : ''
-  return `${session.id} ${session.status} ${session.backend}/${session.mode}${linked} (${session.cwd})`
+  return `${formatSymphonyUri(session.uri)} ${session.status} ${session.backend}/${session.mode}${linked} (${session.cwd})`
 }
 
-export function formatLinxSymphonyDeliverySummary(delivery: LinxSymphonyDeliveryRecord): string {
-  return `${delivery.id} ${delivery.status} ${delivery.sourceAgent} -> ${delivery.targetBackend} (${delivery.taskId})`
+export function formatSymphonyDeliverySummary(delivery: SymphonyDeliveryRecord): string {
+  return `${formatSymphonyUri(delivery.uri)} ${delivery.status} ${delivery.sourceAgent} -> ${delivery.targetBackend} (${formatSymphonyUri(delivery.issue)}/${formatSymphonyUri(delivery.task)})`
 }
 
-function createLinxSymphonyTitle(objective: string): string {
+export function formatSymphonyIssueSummary(issue: SymphonyIssueRecord): string {
+  return `${formatSymphonyUri(issue.uri)} ${issue.status} ${issue.title} (${issue.tasks.length} task${issue.tasks.length === 1 ? '' : 's'})`
+}
+
+export function getSymphonyArchiveKey(uri: string): string {
+  const trimmed = uri.trim()
+  if (!trimmed) {
+    throw new Error('Missing Symphony resource URI')
+  }
+  const tail = trimmed.match(/[:/#]([^:/#]+)$/u)?.[1] ?? trimmed
+  const key = decodeURIComponent(tail)
+    .replace(/[^a-zA-Z0-9._-]/gu, '-')
+    .replace(/-+/gu, '-')
+    .replace(/^-|-$/gu, '')
+  return key || Buffer.from(trimmed).toString('base64url')
+}
+
+function createSymphonyResourceUri(kind: SymphonyResourceKind, options: { now?: Date; randomId?: string } = {}): string {
+  const key = `${kind}_${formatSymphonyTimestamp(options.now)}_${normalizeSymphonyRandomId(options.randomId)}`
+  return `${SYMPHONY_URI_PREFIX}:${kind}:${key}`
+}
+
+function formatSymphonyUri(uri: string): string {
+  return getSymphonyArchiveKey(uri)
+}
+
+function createSymphonyTitle(objective: string): string {
   const compact = objective.replace(/\s+/gu, ' ').trim()
   return compact.length > 80 ? `${compact.slice(0, 77)}...` : compact
 }
 
-function normalizeLinxSymphonyAcceptanceCriteria(criteria?: string[]): string[] {
+function normalizeSymphonyAcceptanceCriteria(criteria?: string[]): string[] {
   return (criteria ?? [])
     .flatMap((item) => item.split(/\r?\n/u))
     .map((item) => item.trim())
@@ -263,7 +320,7 @@ function normalizeLinxSymphonyAcceptanceCriteria(criteria?: string[]): string[] 
 function normalizeRequiredText(value: string | undefined, name: string): string {
   const normalized = normalizeOptionalText(value)
   if (!normalized) {
-    throw new Error(`Missing LinX Symphony ${name}`)
+    throw new Error(`Missing Symphony ${name}`)
   }
   return normalized
 }
@@ -273,11 +330,26 @@ function normalizeOptionalText(value: string | undefined | null): string | undef
   return normalized || undefined
 }
 
-function formatLinxSymphonyTimestamp(now: Date = new Date()): string {
+function normalizeSymphonyChatThreadRef(
+  input: Pick<CreateSymphonyRunPlanInput, 'chat' | 'thread' | 'messages'>,
+): SymphonyChatThreadRef {
+  const chat = normalizeOptionalText(input.chat)
+  const thread = normalizeOptionalText(input.thread)
+  const messages = (input.messages ?? [])
+    .map((item) => normalizeOptionalText(item))
+    .filter((item): item is string => Boolean(item))
+  return {
+    ...(chat ? { chat } : {}),
+    ...(thread ? { thread } : {}),
+    ...(messages.length > 0 ? { messages } : {}),
+  }
+}
+
+function formatSymphonyTimestamp(now: Date = new Date()): string {
   return now.toISOString().replace(/[:.]/gu, '-')
 }
 
-function normalizeLinxSymphonyRandomId(randomId?: string): string {
+function normalizeSymphonyRandomId(randomId?: string): string {
   const normalized = typeof randomId === 'string'
     ? randomId.replace(/[^a-zA-Z0-9_-]/gu, '').slice(0, 12)
     : ''

@@ -390,6 +390,21 @@ test('linx logout removes account session and client credentials', async (t) => 
   assert.equal(existsSync(oidcStorageDir), false)
 })
 
+test('linx logout does not clear Pod-backed AI provider credentials', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/login-command.ts')
+  t.after(() => cleanup())
+
+  const output = []
+  module.runLinxLogoutCommand({
+    write(chunk) {
+      output.push(chunk)
+    },
+  })
+
+  assert.match(output.join(''), /Local LinX credentials removed/)
+  assert.doesNotMatch(output.join(''), /AI provider|API key|provider credential/i)
+})
+
 test('linx ai connect writes provider and credential config to Pod', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/ai-command.ts')
   t.after(() => cleanup())
@@ -502,6 +517,94 @@ test('linx ai status prints configured cloud AI credentials', async (t) => {
   assert.match(output, /provider: anthropic/)
   assert.match(output, /model: claude-sonnet-4-20250514/)
   assert.match(output, /api-key: sk-a\*\*\*\*-key/)
+})
+
+test('linx ai status reads explicit provider config without provider/model collection scans', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/ai-command.ts')
+  t.after(() => cleanup())
+
+  const output = []
+  const selectResources = []
+  const findByIds = []
+  const tableName = (table) => table?.config?.name ?? table?.name ?? 'unknown'
+  const db = {
+    resolveLocatorId(table, locator) {
+      assert.equal(tableName(table), 'aiModel')
+      assert.deepEqual(locator, {
+        id: 'gpt-5.5',
+        isProvidedBy: '/settings/providers/openai.ttl',
+      })
+      return 'openai.ttl#gpt-5.5'
+    },
+    select() {
+      return {
+        from(resource) {
+          return {
+            async execute() {
+              selectResources.push(tableName(resource))
+              if (tableName(resource) !== 'credential') {
+                throw new Error(`unexpected collection scan: ${tableName(resource)}`)
+              }
+              return [{
+                id: 'openai-default',
+                provider: '/settings/providers/openai.ttl',
+                service: 'ai',
+                status: 'active',
+                apiKey: 'sk-openai-test-key',
+              }]
+            },
+          }
+        },
+      }
+    },
+    async findById(resource, id) {
+      findByIds.push([tableName(resource), id])
+      if (tableName(resource) === 'aiProvider' && id === 'openai') {
+        return {
+          id: 'openai',
+          baseUrl: 'https://api.openai.com/v1',
+          hasModel: '/settings/providers/openai.ttl#gpt-5.5',
+        }
+      }
+      if (tableName(resource) === 'aiModel' && id === 'openai.ttl#gpt-5.5') {
+        return {
+          id: 'gpt-5.5',
+          displayName: 'GPT-5.5',
+          isProvidedBy: '/settings/providers/openai.ttl',
+          status: 'active',
+        }
+      }
+      return null
+    },
+  }
+
+  await module.runAiCommand({
+    action: 'status',
+    provider: 'codex',
+  }, {
+    async resolvePodWriteContext() {
+      return {
+        accessToken: 'test-access-token',
+        podUrl: 'https://pod.example/profile/',
+        webId: 'https://pod.example/profile/card#me',
+      }
+    },
+    createDb() {
+      return db
+    },
+    write(chunk) {
+      output.push(chunk)
+    },
+  })
+
+  assert.deepEqual(selectResources, ['credential'])
+  assert.deepEqual(findByIds, [
+    ['aiProvider', 'openai'],
+    ['aiModel', 'openai.ttl#gpt-5.5'],
+  ])
+  assert.match(output.join(''), /provider: openai/)
+  assert.match(output.join(''), /model: gpt-5\.5/)
+  assert.match(output.join(''), /api-key: sk-o\*\*\*\*-key/)
 })
 
 test('linx ai connect deletes replaced provider-scoped model config', async (t) => {

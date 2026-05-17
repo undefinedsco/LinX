@@ -81,6 +81,11 @@ Backend provider credentials and provider-level config are Pod data.
 - Provider API keys for Codex/OpenAI, Claude/Anthropic, CodeBuddy, and similar
   external app providers must be read from the user's Pod through the shared
   AI config model.
+- In CLI flows, credential acquisition should reuse the current Pi-style
+  interaction: browser OIDC for LinX/Solid access, and current CLI/TUI API-key
+  entry when a provider key is missing. The durable difference is that the
+  acquired provider key is written to Pod AI config, not kept as a local
+  provider-key source.
 - The local machine may keep only LinX/Solid auth material needed to obtain a
   Pod session, plus local cache/archive data.
 - Backend API keys must not be copied into session archive, messages, audits,
@@ -92,6 +97,8 @@ Backend provider credentials and provider-level config are Pod data.
   AI config after LinX/Solid auth has produced an Inrupt-compatible session.
   There is no user-facing `credential-source` choice and no local provider key
   fallback.
+
+Detailed CLI interaction rules are in `docs/cli-login-and-key-principles.md`.
 
 The shared query path is:
 

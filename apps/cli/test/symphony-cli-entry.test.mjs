@@ -56,24 +56,12 @@ test('compiled main cli exposes symphony command help', (t) => {
 
   assert.match(output, /linx symphony <command>/)
   assert.match(output, /run \[objective\.\.\]/)
-  assert.match(output, /tasks/)
+  assert.match(output, /issues/)
   assert.match(output, /sessions/)
   assert.match(output, /deliveries/)
 })
 
-test('compiled linx-symphony entry exposes dedicated command help', (t) => {
-  const entry = compileCliEntry(t, 'symphony.ts')
-  const output = execFileSync(process.execPath, [entry, '--help'], {
-    cwd: cliRoot,
-    encoding: 'utf-8',
-  })
-
-  assert.match(output, /linx-symphony <command>/)
-  assert.match(output, /run \[objective\.\.\]/)
-  assert.match(output, /show <id>/)
-})
-
-test('linx symphony dry-run archives task delivery session and prints projection', (t) => {
+test('linx symphony dry-run archives issue delivery session and prints projection', (t) => {
   const entry = compileCliEntry(t)
   const home = mkdtempSync(join(tmpdir(), 'linx-symphony-cli-home-'))
   const symphonyHome = join(home, '.linx', 'symphony')
@@ -104,40 +92,55 @@ test('linx symphony dry-run archives task delivery session and prints projection
   })
 
   assert.match(output, /LinX Symphony dry-run/)
-  assert.match(output, /sym_task_/)
-  assert.match(output, /sym_delivery_/)
-  assert.match(output, /sym_session_/)
+  assert.match(output, /issue_/)
+  assert.match(output, /urn:undefineds:linx:task:task_/)
+  assert.match(output, /delivery_/)
+  assert.match(output, /session_/)
   assert.match(output, /Projected runtime prompt/)
   assert.match(output, /inspect repo/)
   assert.match(output, /archives records/)
 
-  const tasksDir = join(symphonyHome, 'tasks')
+  const issuesDir = join(symphonyHome, 'issues')
   const deliveriesDir = join(symphonyHome, 'deliveries')
   const sessionsDir = join(symphonyHome, 'sessions')
-  assert.equal(existsSync(tasksDir), true)
+  assert.equal(existsSync(issuesDir), true)
   assert.equal(existsSync(deliveriesDir), true)
   assert.equal(existsSync(sessionsDir), true)
 
-  const taskId = output.match(/sym_task_[^\s]+/)?.[0]
-  const deliveryId = output.match(/sym_delivery_[^\s]+/)?.[0]
-  const sessionId = output.match(/sym_session_[^\s]+/)?.[0]
-  assert.ok(taskId)
-  assert.ok(deliveryId)
-  assert.ok(sessionId)
+  const issueKey = output.match(/issue_[^\s]+/)?.[0]
+  const taskUri = output.match(/urn:undefineds:linx:task:task_[^\s]+/)?.[0]
+  const deliveryKey = output.match(/delivery_[^\s]+/)?.[0]
+  const sessionKey = output.match(/session_[^\s]+/)?.[0]
+  assert.ok(issueKey)
+  assert.ok(taskUri)
+  assert.ok(deliveryKey)
+  assert.ok(sessionKey)
 
-  const task = JSON.parse(readFileSync(join(tasksDir, taskId, 'task.json'), 'utf-8'))
-  const delivery = JSON.parse(readFileSync(join(deliveriesDir, deliveryId, 'delivery.json'), 'utf-8'))
-  const session = JSON.parse(readFileSync(join(sessionsDir, sessionId, 'session.json'), 'utf-8'))
-  assert.equal(task.objective, 'inspect repo')
-  assert.equal(task.status, 'pending')
+  const issue = JSON.parse(readFileSync(join(issuesDir, issueKey, 'issue.json'), 'utf-8'))
+  const delivery = JSON.parse(readFileSync(join(deliveriesDir, deliveryKey, 'delivery.json'), 'utf-8'))
+  const session = JSON.parse(readFileSync(join(sessionsDir, sessionKey, 'session.json'), 'utf-8'))
+  assert.equal(issue.description, 'inspect repo')
+  assert.deepEqual(issue.tasks, [taskUri])
   assert.equal(delivery.status, 'pending')
+  assert.equal(delivery.issue, issue.uri)
+  assert.equal(delivery.task, taskUri)
   assert.equal(delivery.projection.runtimeRole, 'user')
   assert.equal(session.status, 'planned')
+  assert.equal(session.issue, issue.uri)
+  assert.equal(session.delivery, delivery.uri)
+  assert.equal(session.task, taskUri)
   assert.equal(session.dryRun, true)
+  assert.equal(Object.hasOwn(issue, 'chat'), false)
+  assert.equal(Object.hasOwn(issue, 'thread'), false)
+  assert.equal(Object.hasOwn(issue, 'messages'), false)
+  assert.equal(Object.hasOwn(delivery, 'issueId'), false)
+  assert.equal(Object.hasOwn(delivery, 'sessionId'), false)
+  assert.equal(Object.hasOwn(session, 'issueId'), false)
+  assert.equal(Object.hasOwn(session, 'deliveryId'), false)
 })
 
-test('linx-symphony dry-run can show an archived record by prefix', (t) => {
-  const entry = compileCliEntry(t, 'symphony.ts')
+test('linx symphony dry-run can show an archived record by prefix', (t) => {
+  const entry = compileCliEntry(t)
   const home = mkdtempSync(join(tmpdir(), 'linx-symphony-bin-home-'))
   t.after(() => {
     rmSync(home, { recursive: true, force: true })
@@ -145,8 +148,9 @@ test('linx-symphony dry-run can show an archived record by prefix', (t) => {
 
   const runOutput = execFileSync(process.execPath, [
     entry,
+    'symphony',
     'run',
-    'verify dedicated bin',
+    'verify Secretary Symphony',
     '--dry-run',
     '--cwd',
     cliRoot,
@@ -158,10 +162,10 @@ test('linx-symphony dry-run can show an archived record by prefix', (t) => {
     },
     encoding: 'utf-8',
   })
-  const taskId = runOutput.match(/sym_task_[^\s]+/)?.[0]
-  assert.ok(taskId)
+  const deliveryKey = runOutput.match(/delivery_[^\s]+/)?.[0]
+  assert.ok(deliveryKey)
 
-  const showOutput = execFileSync(process.execPath, [entry, 'show', taskId.slice(0, 24)], {
+  const showOutput = execFileSync(process.execPath, [entry, 'symphony', 'show', deliveryKey.slice(0, 24)], {
     cwd: cliRoot,
     env: {
       ...process.env,
@@ -170,6 +174,6 @@ test('linx-symphony dry-run can show an archived record by prefix', (t) => {
     encoding: 'utf-8',
   })
 
-  assert.match(showOutput, /verify dedicated bin/)
-  assert.match(showOutput, /"objective": "verify dedicated bin"/)
+  assert.match(showOutput, /verify Secretary Symphony/)
+  assert.match(showOutput, /"type": "task_dispatch"/)
 })

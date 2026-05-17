@@ -10,6 +10,7 @@ interface PodQueryDb {
       execute(): Promise<unknown[]>
     }
   }
+  findById?: (resource: unknown, id: string) => Promise<unknown | null>
   updateById?: (resource: unknown, id: string, data: Record<string, unknown>) => Promise<unknown>
 }
 
@@ -108,6 +109,7 @@ function buildBackendEnv(match: PodProviderMatch, backend: SupportedPodAutoModeB
       env: {
         OPENAI_API_KEY: match.apiKey,
         CODEX_API_KEY: match.apiKey,
+        ...(match.baseUrl ? { OPENAI_BASE_URL: match.baseUrl } : {}),
       },
     }
   }
@@ -169,18 +171,18 @@ async function createDefaultRuntime(): Promise<PodAiRuntime> {
 async function loadRowsWithDrizzle(
   runtime: PodAiRuntime,
   podSession: PodDataSession,
+  backend: SupportedPodAutoModeBackend,
 ): Promise<{ db: PodQueryDb; credentials: PodCredentialRow[]; providers: PodProviderRow[] } | null> {
   if (!runtime.createDb || !runtime.credentialResource || !runtime.aiProviderResource) {
     return null
   }
 
   const db = runtime.createDb(podSession)
-  const [credentials, providers] = await Promise.all([
-    db.select().from(runtime.credentialResource).execute() as Promise<PodCredentialRow[]>,
-    db.select().from(runtime.aiProviderResource).execute() as Promise<PodProviderRow[]>,
-  ])
+  const credentials = await db.select().from(runtime.credentialResource).execute() as PodCredentialRow[]
+  const providerId = BACKEND_PROVIDER_ID[backend]
+  const provider = await db.findById?.(runtime.aiProviderResource, providerId) as PodProviderRow | null | undefined
 
-  return { db, credentials, providers }
+  return { db, credentials, providers: provider ? [provider] : [] }
 }
 
 export async function loadPodBackendCredential(
@@ -193,7 +195,7 @@ export async function loadPodBackendCredential(
     throw new Error(missingPodClientCredentialsMessage())
   }
 
-  const rows = await loadRowsWithDrizzle(activeRuntime, podSession)
+  const rows = await loadRowsWithDrizzle(activeRuntime, podSession, backend)
   if (!rows) {
     throw new Error('LinX cloud credential source requires shared models/drizzle-solid access.')
   }

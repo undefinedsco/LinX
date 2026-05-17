@@ -44,29 +44,47 @@ Codex / worker blocks on approval or input
 
 架构层参考 Symphony：
 
-- `Task` 是可恢复、可验收的工作单元。
+- `Issue` 是用户/产品可见的工作项，承载需求、bug、调查和支持事项。
+- `Task` 是已有的通用可执行工作单元；Symphony 只能引用 Task，不能另起一套 `TaskRecord`。
+- `Issue.tasks` 只能保存 Task URI reference；不能新增 `taskRefs`、`taskIds` 或 Symphony 专属 task row。
 - `Workspace/worktree` 是任务执行现场。
 - `Session` 是一次 runtime 生命周期。
 - `Report/Review` 是任务完成后的上升和验收入口。
 
+建模硬约束：
+
+- Shared Pod resource 和 shared archive contract 使用语义 URI 字段：`issue`、`task`、`delivery`、`session`、`chat`、`thread`。
+- `issueId`、`taskId`、`deliveryId`、`sessionId`、`chatId`、`threadId` 只允许出现在 UI 选中态、CLI 参数、本地文件 key、runtime wire protocol 或兼容 metadata 中，不能作为持久关系字段。
+- 本地 archive 文件夹名可以从 URI 派生短 key，但 JSON 内容必须保留 URI 语义字段。
+- LinX 项目内的编排 API 不需要重复 `Linx` 前缀，例如使用 `createRunPlan` / `SymphonySessionRecord`，不要新增 `createLinxSymphonyRunPlan` 或 `LinxSymphonyTaskRecord`。
+
+产品入口上，`Symphony` 不是独立产品，也不是一个新的 worker。它是 `AI Secretary` 的内置委派/编排能力：
+
+- 用户感知的是 Secretary 能不能把活派给下面的人干。
+- `/symphony ...` 用来调整或检查 Secretary 的委派行为、任务切分、worker 投影和状态归档。
+- `Symphony` 是 Secretary 的全局控制面，不绑定从哪个 Chat/Thread 发起；在哪个界面触发只提供来源上下文，不决定投递模型。
+- Chat/Thread 是过程展示和回看载体，由 Secretary 在产品层创建或选择，并把对应 URI 写进 `Issue / Delivery / Session`。用户不需要选择或填写 Chat/Thread/Message URI，headless CLI 也不模拟这层产品上下文。
+- CLI 里的 `linx symphony ...` 只是 `/symphony ...` 的 headless 验证入口。
+- 不提供独立 `linx-symphony` 产品入口，避免把内置能力误解成另一个应用。
+
 runtime 层先做半套，直接使用 Codex：
 
-- LinX 负责 `Task / Thread / Workspace / Session / Delivery / Projection` 的持久化和产品语义。
+- LinX 负责 `Issue / Task reference / Thread / Workspace / Session / Delivery / Projection` 的持久化和产品语义。
 - Codex 负责实际 coding runtime、工具调用、subagent/task thread、approval event。
 - LinX adapter 只做必要桥接：投递输入、接收输出、处理 approval/input request、保存 projection。
 - 不在 MVP 里复制 Codex 的完整 mailbox、guardian、subagent scheduler。
 
 后台任务 UI 先不扩模型：
 
-- 不引入独立 issue tracker、runner dashboard 或新的 background-agent resource。
-- Web UI 只展示当前模型已经有的 `Task / Session / Delivery / Report / Inbox`。
+- 只新增 `Issue` 作为用户可见工作项，不引入 runner dashboard 或新的 background-agent resource。
+- Web UI 只展示当前模型已经有的 `Issue / Task reference / Session / Delivery / Report / Inbox`。
 - TUI 可以先作为 headless 能力验证入口，而不是单独产品形态。
-- 如果后续需要后台任务列表，也只能从现有 `Task + Session` 派生，不能反向创造一套新模型。
+- 如果后续需要后台任务列表，也只能从现有 `Issue + Task + Session` 派生，不能反向创造一套新的 Task 模型。
 
 MVP 落地顺序：
 
 1. 不改 GUI，不改 TUI 信息架构。
-2. 先实现后台主链路：`Task -> Delivery -> Codex Session -> Runtime Events -> Projection -> Report/Inbox`。
+2. 先实现后台主链路：`Issue -> Task reference -> Delivery -> Codex Session -> Runtime Events -> Projection -> Report/Inbox`。
 3. worker 直接用 Codex；LinX 只负责发任务、管状态、存上下文、做投递和代理审批。
 4. 用现有 TUI 验证 headless 能力：创建任务、查看 session/delivery、发送 follow-up、查看输出和 report、处理无法自动代理的 approval/input。
 5. GUI/TUI 后续只消费已经稳定的数据模型，不反向驱动新增模型。
@@ -141,7 +159,8 @@ AI Secretary Agent
 | `Thread` | Chat 内的一条具体时间线/工作现场 | 绑定 workspace，可承载 group/private timeline |
 | `Session` | 一次 runtime 生命周期投影 | 绑定 Agent + Thread + Workspace |
 | `Workspace` | 真实工作目录或 worktree | 同目录可被多个 Session 引用 |
-| `Task` | 可派发、可验收的工作单元 | 记录目标、边界、状态、验收条件 |
+| `Issue` | 用户/产品可见的工作项 | 新增 shared Pod resource，必须关联 chat/thread 以便回看过程 |
+| `Task` | 通用可执行工作单元 | 复用既有 Task，不新增 Symphony 专属 TaskRecord |
 | `Delivery` | 跨 Thread/Session 的消息投递信封 | 记录 source、target、payload、projection、状态 |
 
 ## 聊天模式矩阵

@@ -38,6 +38,7 @@ Skill source of truth:
 ## Doc Map
 
 - `docs/cli-app-shared-core.md` — `@undefineds.co/models` 共享数据面、client/auto-mode helper 与 CLI/App 边界
+- `docs/cli-login-and-key-principles.md` — CLI 登录、provider key 获取、Pod AI config 存储与 backend runtime 消费边界
 - `docs/dependency-guide.md` — 依赖升级、workspace/npm 版本、`xpod`/`models` 联动与 submodule 锁定规则
 - `docs/desktop-product-strategy.md` — 桌面端 Chat-first + AI-native 产品策略
 - `docs/secretary/README.md` — AI Secretary 能力设计入口，包括存储建模、授权判断和用户请示边界

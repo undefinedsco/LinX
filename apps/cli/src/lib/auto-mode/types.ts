@@ -38,6 +38,7 @@ export interface AutoRunOptions {
   plain?: boolean
   model?: string
   prompt?: string
+  goalMode?: boolean
   passthroughArgs: string[]
   runtime?: AutoModeRuntime
   transport?: AutoModeTransport
@@ -79,6 +80,11 @@ export type AutoModeUiEntry =
 export interface AutoModePromptSubmission {
   text: string
   mode: AutoModePromptSubmissionMode
+}
+
+export interface AutoModeSecretInputRequest {
+  header: string
+  question: string
 }
 
 export interface AutoModeQueueState {

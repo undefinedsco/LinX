@@ -4,8 +4,7 @@
   "private": true,
   "type": "module",
   "bin": {
-    "linx": "dist/index.js",
-    "linx-symphony": "dist/symphony.js"
+    "linx": "dist/index.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit && node ./scripts/build.mjs",
@@ -13,10 +12,11 @@
     "test": "yarn build && node --test --test-concurrency=1 test/**/*.test.mjs"
   },
   "dependencies": {
-    "@linx/agent-runtime": "*",
-    "@undefineds.co/models": "*",
     "@inrupt/solid-client-authn-node": "^3.1.1",
+    "@linx/agent-runtime": "*",
     "@mariozechner/pi-coding-agent": "^0.67.6",
+    "@undefineds.co/models": "*",
+    "@zed-industries/codex-acp": "0.14.0",
     "n3": "^1.26.0",
     "yargs": "^17.7.2"
   },

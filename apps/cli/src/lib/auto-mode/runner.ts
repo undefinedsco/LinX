@@ -48,6 +48,7 @@ import { resolveAutoModeSecretaryRecommendation } from './secretary.js'
 import { promptText } from '../prompt.js'
 import { runLinxLoginCommand, runLinxLogoutCommand } from '../login-command.js'
 import { clearDefaultPodDataSession } from '../pod-data-session.js'
+import { connectAiProviderCredential } from '../ai-command.js'
 import type { AgentRuntimeCapabilities } from '@linx/agent-runtime'
 import type {
   AutoModeBackendHook,
@@ -92,11 +93,13 @@ interface ResolvedAutoModeRun {
 
 const AUTO_MODE_SECRETARY_COUNTDOWN_BAR_WIDTH = 10
 const AUTO_MODE_SECRETARY_COUNTDOWN_TICK_MS = 250
+const POD_PERSISTENCE_TIMEOUT_MS = 5_000
 
 export const autoModeRuntime = {
   promptText,
   preflightAutoModeAuth,
   loadPodBackendCredential,
+  connectAiProviderCredential,
   createRemoteAutoModeApproval,
   resolveExistingRemoteAutoModeGrant,
   waitForRemoteAutoModeApproval,
@@ -137,6 +140,29 @@ function createLineSplitter(
       buffer = ''
     },
   }
+}
+
+function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  message: string,
+  onTimeout?: () => void,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      onTimeout?.()
+      reject(new Error(message))
+    }, ms)
+    promise
+      .then((value) => {
+        clearTimeout(timer)
+        resolve(value)
+      })
+      .catch((error) => {
+        clearTimeout(timer)
+        reject(error)
+      })
+  })
 }
 
 function appendEntry(record: AutoModeSessionRecord, stream: AutoModeEventLogEntry['stream'], line: string, events: AutoModeNormalizedEvent[]): void {
@@ -451,6 +477,46 @@ function isRecoverableLinxCloudAuthError(message: string): boolean {
     || normalized.includes('unauthorized')
 }
 
+function backendProviderLabel(backend: AutoRunOptions['backend']): string {
+  if (backend === 'claude') return 'Anthropic'
+  if (backend === 'codex') return 'OpenAI/Codex'
+  return 'CodeBuddy'
+}
+
+function backendProviderId(backend: AutoRunOptions['backend']): 'anthropic' | 'openai' | 'codebuddy' {
+  if (backend === 'claude') return 'anthropic'
+  if (backend === 'codex') return 'openai'
+  return 'codebuddy'
+}
+
+function isMissingProviderCredentialError(backend: AutoRunOptions['backend'], message: string): boolean {
+  return message === podCredentialMissingMessage(backend)
+}
+
+async function promptBackendProviderKey(
+  display: AutoModeDisplay,
+  backend: AutoRunOptions['backend'],
+): Promise<'saved' | 'cancel'> {
+  const provider = backendProviderId(backend)
+  const label = backendProviderLabel(backend)
+  display.setPhase('question', `${label} API key required`)
+  const apiKey = await display.promptSecret({
+    header: `${label} key`,
+    question: `Enter the ${label} API key to save in your LinX Pod AI settings.`,
+  })
+  if (!apiKey) {
+    display.showActivity(`${label} API key was not provided. Backend startup cancelled.`, 'error')
+    return 'cancel'
+  }
+
+  const result = await autoModeRuntime.connectAiProviderCredential({
+    provider,
+    apiKey,
+  })
+  display.showActivity(`Saved ${result.providerId} credential to LinX Pod AI settings.`, 'success')
+  return 'saved'
+}
+
 function approvalPromptMessage(request: AutoModeApprovalRequest): string {
   if (request.kind === 'command-approval') {
     return request.command ? `Approve command: ${request.command}` : 'Approve command execution'
@@ -533,6 +599,7 @@ function syncRecordFromOptions(
     backend: options.backend,
     runtime: requestedRuntime(options),
     mode: requestedAutoModeMode(options),
+    goalMode: options.goalMode || undefined,
     cwd: options.cwd,
     model: options.model,
     prompt: options.prompt,
@@ -614,6 +681,8 @@ abstract class BaseSession implements AutoModeConversationSession {
   protected child: ChildProcessWithoutNullStreams | null = null
   private activeExitPromise: Promise<{ code: number | null; signal: NodeJS.Signals | null }> | null = null
   private activeExitResolve: ((result: { code: number | null; signal: NodeJS.Signals | null }) => void) | null = null
+  private activeClosePromise: Promise<{ code: number | null; signal: NodeJS.Signals | null }> | null = null
+  private activeCloseResolve: ((result: { code: number | null; signal: NodeJS.Signals | null }) => void) | null = null
   protected closed = false
   protected lastExit: { code: number | null; signal: NodeJS.Signals | null } | null = null
 
@@ -625,6 +694,9 @@ abstract class BaseSession implements AutoModeConversationSession {
   protected spawnProcess(command: string, args: string[], cwd: string, env?: Record<string, string>): ChildProcessWithoutNullStreams {
     this.activeExitPromise = new Promise((resolve) => {
       this.activeExitResolve = resolve
+    })
+    this.activeClosePromise = new Promise((resolve) => {
+      this.activeCloseResolve = resolve
     })
 
     const child = spawn(command, args, {
@@ -648,10 +720,15 @@ abstract class BaseSession implements AutoModeConversationSession {
       this.lastExit = { code, signal }
       this.activeExitResolve?.({ code, signal })
       this.activeExitResolve = null
+      this.onProcessExit(code, signal)
+    })
+
+    child.on('close', (code, signal) => {
+      this.activeCloseResolve?.({ code, signal })
+      this.activeCloseResolve = null
       if (this.child === child) {
         this.child = null
       }
-      this.onProcessExit(code, signal)
     })
 
     return child
@@ -703,6 +780,18 @@ abstract class BaseSession implements AutoModeConversationSession {
     return Promise.resolve({ code: null, signal: null })
   }
 
+  protected waitForActiveClose(): Promise<{ code: number | null; signal: NodeJS.Signals | null }> {
+    if (this.child === null) {
+      return Promise.resolve(this.lastExit ?? { code: null, signal: null })
+    }
+
+    if (this.activeClosePromise) {
+      return this.activeClosePromise
+    }
+
+    return Promise.resolve(this.lastExit ?? { code: null, signal: null })
+  }
+
   protected abstract onProcessExit(code: number | null, signal: NodeJS.Signals | null): void
   protected abstract onProcessFailure(error: Error): void
 
@@ -719,15 +808,19 @@ abstract class BaseSession implements AutoModeConversationSession {
       return
     }
 
-    child.stdin.end()
+    if (!child.stdin.destroyed && !child.stdin.writableEnded) {
+      child.stdin.end()
+    }
     const settled = await Promise.race([
-      this.waitForActiveExit().then(() => true),
+      this.waitForActiveClose().then(() => true),
       delay(1500).then(() => false),
     ])
 
     if (!settled) {
-      child.kill('SIGTERM')
-      await this.waitForActiveExit()
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill('SIGTERM')
+      }
+      await this.waitForActiveClose()
     }
   }
 }
@@ -1432,6 +1525,7 @@ async function handleAutoModeShellCommand(args: {
       model: record.model,
       prompt: record.prompt,
       passthroughArgs: record.passthroughArgs,
+      goalMode: record.goalMode,
       runtime: record.runtime,
       transport: record.transport,
       credentialSource: record.credentialSource,
@@ -1444,6 +1538,10 @@ async function handleAutoModeShellCommand(args: {
   if (input === '/queue') {
     appendAndDisplaySessionNote(record, display, `queue | steer=${queueState.steeringCount} | follow-up=${queueState.followUpCount}`)
     return 'handled'
+  }
+
+  if (input.startsWith('/follow-up ')) {
+    return 'pass'
   }
 
   if (input === '/sessions') {
@@ -1540,6 +1638,18 @@ export async function runAutoMode(options: AutoRunOptions): Promise<number> {
           requestedCredentialSource: requestedOptions.credentialSource,
           error: message,
         }), [])
+        if (isMissingProviderCredentialError(requestedOptions.backend, message)) {
+          if (attempt >= 2) {
+            throw error
+          }
+
+          const keyAction = await promptBackendProviderKey(activeSession.display, requestedOptions.backend)
+          if (keyAction !== 'saved') {
+            throw error
+          }
+          continue
+        }
+
         if (attempt >= 2 || !isRecoverableLinxCloudAuthError(message)) {
           throw error
         }
@@ -1743,10 +1853,12 @@ export async function runAutoMode(options: AutoRunOptions): Promise<number> {
         text: resolvedRun.options.prompt,
         mode: 'send',
       })
-      stopRequested = true
-    } else {
+      stopRequested = !resolvedRun.options.goalMode
+    }
+
+    if (!resolvedRun.options.prompt || resolvedRun.options.goalMode) {
       inputLoop = (async () => {
-        activeSession.display.setPhase('ready', 'Waiting for input')
+        activeSession.display.setPhase('ready', resolvedRun.options.goalMode ? 'Pursuing goal' : 'Waiting for input')
         while (!fatalError && !stopRequested) {
           const submission = await activeSession.display.promptInput('you> ')
           await dispatchSubmission(submission)
@@ -1776,7 +1888,16 @@ export async function runAutoMode(options: AutoRunOptions): Promise<number> {
     if (session) {
       await session.close()
       const finalRecord = await session.finalizeAndClose(fatalError ? 'failed' : 'completed', fatalError?.message)
-      await autoModeRuntime.persistAutoModeConversationToPod(finalRecord).catch((error) => {
+      const podSyncAbort = new AbortController()
+      const podSyncTimeoutMessage = `timed out after ${POD_PERSISTENCE_TIMEOUT_MS}ms`
+      await withTimeout(
+        autoModeRuntime.persistAutoModeConversationToPod(finalRecord, undefined, {
+          signal: podSyncAbort.signal,
+        }),
+        POD_PERSISTENCE_TIMEOUT_MS,
+        podSyncTimeoutMessage,
+        () => podSyncAbort.abort(new Error(podSyncTimeoutMessage)),
+      ).catch((error) => {
         const message = error instanceof Error ? error.message : String(error)
         appendSessionNote(finalRecord, `Pod sync failed | ${message}`, { error: message })
         process.emitWarning(`LinX auto-mode Pod sync failed: ${message}`)
@@ -1810,6 +1931,7 @@ export function resumeAutoModeSession(record: AutoModeSessionRecord, options: {
   model?: string
   plain?: boolean
   prompt?: string
+  goalMode?: boolean
 } = {}): Promise<number> {
   const sessionId = record.backendSessionId?.trim() || record.id
   return runAutoMode({
@@ -1821,6 +1943,7 @@ export function resumeAutoModeSession(record: AutoModeSessionRecord, options: {
     plain: Boolean(options.plain),
     model: options.model || record.model,
     prompt: options.prompt,
+    goalMode: options.goalMode ?? record.goalMode,
     passthroughArgs: [...record.passthroughArgs],
     runtime: record.runtime,
     transport: record.transport ?? 'acp',

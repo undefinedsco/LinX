@@ -7,6 +7,7 @@ import {
   auditResource,
   buildApprovalSubjectPath,
   buildAuditSubjectPath,
+  extractChatThreadRef,
   inboxNotificationResource,
   type ApprovalInsert,
   type ApprovalRow,
@@ -162,9 +163,10 @@ function extractRuntimeSessionId(sessionUri: string | null | undefined): string 
       : null
 }
 
-function extractThreadId(targetUri: string | null | undefined): string | null {
-  if (!targetUri) return null
-  const hash = targetUri.split('#').pop()
+function extractThreadId(approval: ApprovalRow): string | null {
+  const threadUri = approval.thread || approval.target
+  if (!threadUri) return null
+  const hash = threadUri.split('#').pop()
   return hash || null
 }
 
@@ -192,6 +194,9 @@ export interface InboxItem {
   notification?: InboxNotificationRow
   chatId?: string | null
   threadId?: string | null
+  thread?: string | null
+  about?: string | null
+  approvalId?: string | null
   authUrl?: string | null
   authMethod?: string | null
   authMessage?: string | null
@@ -203,13 +208,13 @@ function buildApprovalDescription(approval: ApprovalRow): string {
   return `等待授权 · ${approval.risk} 风险`
 }
 
-function extractChatThreadRef(uri: string | null | undefined): { chatId: string | null; threadId: string | null } {
-  if (!uri) return { chatId: null, threadId: null }
+function extractApprovalChatThreadRef(approval: ApprovalRow): { chatId: string | null; threadId: string | null } {
+  const threadRef = extractChatThreadRef(approval.thread || approval.target)
+  const chatRef = extractChatThreadRef(approval.chat)
 
-  const match = uri.match(/\.data\/chat\/([^/]+)\/index\.ttl#(.+)$/)
   return {
-    chatId: match?.[1] ?? null,
-    threadId: match?.[2] ?? null,
+    chatId: threadRef.chatId ?? chatRef.chatId,
+    threadId: threadRef.threadId,
   }
 }
 
@@ -233,7 +238,7 @@ function buildInboxItems(
       const itemId = `approval:${approval.id}`
       if (seen.has(itemId)) continue
       seen.add(itemId)
-      const threadRef = extractChatThreadRef(approval.target)
+      const threadRef = extractApprovalChatThreadRef(approval)
       items.push({
         id: itemId,
         kind: 'approval',
@@ -246,6 +251,9 @@ function buildInboxItems(
         notification,
         chatId: threadRef.chatId,
         threadId: threadRef.threadId,
+        thread: approval.thread || approval.target,
+        about: approval.target,
+        approvalId: approval.id,
       })
       continue
     }
@@ -270,6 +278,9 @@ function buildInboxItems(
         notification,
         chatId: presentation.chatId,
         threadId: presentation.threadId,
+        thread: presentation.thread,
+        about: presentation.about,
+        approvalId: linkedApproval?.id ?? extractResourceId(audit.approval),
         authUrl: presentation.authUrl,
         authMethod: presentation.authMethod,
         authMessage: presentation.authMessage,
@@ -280,7 +291,7 @@ function buildInboxItems(
   for (const approval of approvals) {
     const itemId = `approval:${approval.id}`
     if (seen.has(itemId)) continue
-    const threadRef = extractChatThreadRef(approval.target)
+    const threadRef = extractApprovalChatThreadRef(approval)
     items.push({
       id: itemId,
       kind: 'approval',
@@ -292,6 +303,9 @@ function buildInboxItems(
       approval,
       chatId: threadRef.chatId,
       threadId: threadRef.threadId,
+      thread: approval.thread || approval.target,
+      about: approval.target,
+      approvalId: approval.id,
     })
   }
 
@@ -312,6 +326,9 @@ function buildInboxItems(
       approval: linkedApproval ?? undefined,
       chatId: presentation.chatId,
       threadId: presentation.threadId,
+      thread: presentation.thread,
+      about: presentation.about,
+      approvalId: linkedApproval?.id ?? extractResourceId(audit.approval),
       authUrl: presentation.authUrl,
       authMethod: presentation.authMethod,
       authMessage: presentation.authMessage,
@@ -361,10 +378,12 @@ export const inboxOps = {
       actor: input.actorWebId,
       actorRole: 'human',
       session: input.approval.session,
+      chat: input.approval.chat,
+      thread: input.approval.thread,
       toolCallId: input.approval.toolCallId,
       approval: resolveApprovalIri(input.actorWebId, input.approval),
       toolName: input.approval.toolName,
-      entry: input.approval.target,
+      entry: input.approval.thread || input.approval.target,
       policyVersion: input.approval.policyVersion || 'phase4-inbox-v1',
       createdAt: now,
     }).execute()
@@ -439,7 +458,7 @@ export function useResolveInboxApproval() {
       })
 
       const runtimeSessionId = extractRuntimeSessionId(input.approval.session)
-      const threadId = extractThreadId(input.approval.target)
+      const threadId = extractThreadId(input.approval)
       const isServiceMode = typeof window !== 'undefined' && !!(window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__
       if (runtimeSessionId && threadId && isServiceMode && input.approval.toolCallId && db && session.fetch) {
         try {
