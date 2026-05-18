@@ -54,7 +54,7 @@ test('compiled main cli exposes symphony command help', (t) => {
     encoding: 'utf-8',
   })
 
-  assert.match(output, /linx symphony <command>/)
+  assert.match(output, /linx symphony \[objective\.\.\]/)
   assert.match(output, /run \[objective\.\.\]/)
   assert.match(output, /issues/)
   assert.match(output, /sessions/)
@@ -137,6 +137,42 @@ test('linx symphony dry-run archives issue delivery session and prints projectio
   assert.equal(Object.hasOwn(delivery, 'sessionId'), false)
   assert.equal(Object.hasOwn(session, 'issueId'), false)
   assert.equal(Object.hasOwn(session, 'deliveryId'), false)
+})
+
+test('linx symphony defaults to run when objective is provided without subcommand', (t) => {
+  const entry = compileCliEntry(t)
+  const home = mkdtempSync(join(tmpdir(), 'linx-symphony-direct-home-'))
+  t.after(() => {
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  const output = execFileSync(process.execPath, [
+    entry,
+    'symphony',
+    '--backend',
+    'codex',
+    '--auto',
+    '--dry-run',
+    '--cwd',
+    cliRoot,
+    'verify symphony local package',
+    '--acceptance',
+    'auto-mode receives projected prompt',
+    '--acceptance',
+    'archives completed records',
+  ], {
+    cwd: cliRoot,
+    env: {
+      ...process.env,
+      HOME: home,
+    },
+    encoding: 'utf-8',
+  })
+
+  assert.match(output, /LinX Symphony dry-run/)
+  assert.match(output, /verify symphony local package/)
+  assert.match(output, /auto-mode receives projected prompt/)
+  assert.match(output, /archives completed records/)
 })
 
 test('linx symphony dry-run can show an archived record by prefix', (t) => {

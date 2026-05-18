@@ -52,14 +52,13 @@ const defaultRuntime: SymphonyRuntime = {
 
 export function createSymphonyCommand(runtime: SymphonyRuntime = defaultRuntime): CommandModule<object, object> {
   return {
-    command: 'symphony <command>',
+    command: 'symphony [objective..]',
     describe: 'Inspect and tune AI Secretary Symphony delegation',
     builder(command): Argv<object> {
-      return buildSymphonyCommandTree(command, runtime)
-        .demandCommand(1, 'Usage: linx symphony <run|issues|sessions|deliveries|show>')
+      return buildSymphonyCommandTree(buildSymphonyRunArgs(command), runtime)
     },
-    handler() {
-      // Subcommands own execution.
+    async handler(argv): Promise<void> {
+      await runSymphony(argv as SymphonyRunArgs, runtime)
     },
   }
 }
@@ -83,73 +82,77 @@ function createRunCommand(runtime: SymphonyRuntime): CommandModule<object, Symph
     command: 'run [objective..]',
     describe: 'Ask AI Secretary to delegate work through Symphony',
     builder(command): Argv<SymphonyRunArgs> {
-      return command
-        .positional('objective', {
-          array: true,
-          type: 'string',
-          describe: 'Task objective for Secretary to delegate',
-        })
-        .option('backend', {
-          type: 'string',
-          choices: SYMPHONY_BACKENDS,
-          default: 'codex',
-          describe: 'Worker backend receiving Secretary-projected work',
-        })
-        .option('auto', {
-          type: 'boolean',
-          default: false,
-          describe: 'Let AI Secretary handle in-policy worker confirmations',
-        })
-        .option('dry-run', {
-          type: 'boolean',
-          default: false,
-          describe: 'Archive the issue/delivery/session plan without launching a backend',
-        })
-        .option('cwd', {
-          type: 'string',
-          describe: 'Workspace path for the target runtime session',
-        })
-        .option('title', {
-          type: 'string',
-          describe: 'Human-readable task title',
-        })
-        .option('acceptance', {
-          alias: 'a',
-          array: true,
-          type: 'string',
-          describe: 'Acceptance criterion; repeat for multiple criteria',
-        })
-        .option('model', {
-          type: 'string',
-          describe: 'Model id forwarded to the backend',
-        })
-        .option('plain', {
-          type: 'boolean',
-          default: false,
-          describe: 'Disable full-screen backend UI and use plain output',
-        })
-        .option('repository', {
-          type: 'string',
-          describe: 'Repository URL metadata override',
-        })
-        .option('branch', {
-          type: 'string',
-          describe: 'Git branch metadata override',
-        })
-        .option('worktree', {
-          type: 'string',
-          describe: 'Git worktree metadata override',
-        })
-        .option('workspace-kind', {
-          type: 'string',
-          choices: ['git', 'folder'] as const,
-          describe: 'Workspace kind metadata override',
-        }) as Argv<SymphonyRunArgs>
+      return buildSymphonyRunArgs(command)
     },
     async handler(argv): Promise<void> {
       await runSymphony(argv, runtime)
     },
   }
+}
+
+function buildSymphonyRunArgs(command: Argv<object>): Argv<SymphonyRunArgs> {
+  return command
+    .positional('objective', {
+      array: true,
+      type: 'string',
+      describe: 'Task objective for Secretary to delegate',
+    })
+    .option('backend', {
+      type: 'string',
+      choices: SYMPHONY_BACKENDS,
+      default: 'codex',
+      describe: 'Worker backend receiving Secretary-projected work',
+    })
+    .option('auto', {
+      type: 'boolean',
+      default: false,
+      describe: 'Let AI Secretary handle in-policy worker confirmations',
+    })
+    .option('dry-run', {
+      type: 'boolean',
+      default: false,
+      describe: 'Archive the issue/delivery/session plan without launching a backend',
+    })
+    .option('cwd', {
+      type: 'string',
+      describe: 'Workspace path for the target runtime session',
+    })
+    .option('title', {
+      type: 'string',
+      describe: 'Human-readable task title',
+    })
+    .option('acceptance', {
+      alias: 'a',
+      array: true,
+      type: 'string',
+      describe: 'Acceptance criterion; repeat for multiple criteria',
+    })
+    .option('model', {
+      type: 'string',
+      describe: 'Model id forwarded to the backend',
+    })
+    .option('plain', {
+      type: 'boolean',
+      default: false,
+      describe: 'Disable full-screen backend UI and use plain output',
+    })
+    .option('repository', {
+      type: 'string',
+      describe: 'Repository URL metadata override',
+    })
+    .option('branch', {
+      type: 'string',
+      describe: 'Git branch metadata override',
+    })
+    .option('worktree', {
+      type: 'string',
+      describe: 'Git worktree metadata override',
+    })
+    .option('workspace-kind', {
+      type: 'string',
+      choices: ['git', 'folder'] as const,
+      describe: 'Workspace kind metadata override',
+    }) as Argv<SymphonyRunArgs>
 }
 
 function createListCommand(
@@ -297,7 +300,7 @@ function normalizeObjective(parts?: string[]): string {
     .replace(/\s+/g, ' ')
     .trim()
   if (!objective) {
-    throw new Error('Usage: linx symphony run <objective> [--backend codex] [--dry-run]')
+    throw new Error('Usage: linx symphony [run] <objective> [--backend codex] [--dry-run]')
   }
   return objective
 }
