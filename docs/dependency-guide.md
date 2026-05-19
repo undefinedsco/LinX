@@ -18,6 +18,23 @@
 - `apps/web` 和 `apps/cli` 通过 workspace 依赖 `@undefineds.co/models`，但 release artifact 必须依赖发布后的精确 npm 版本。
 - `@undefineds.co/models` 是跨端 schema、vocab、repository、runtime contract 和轻量 client helper 的 authority。
 
+## Models 修改入口
+
+LinX 任务中需要修改 `@undefineds.co/models` 时，必须在本仓库的 submodule 工作区里改：
+
+```bash
+cd packages/models
+```
+
+不要绕到 sibling checkout（例如 `../models` 或 `~/develop/models`）里改完再试图同步回来。原因是 LinX 父仓库只能记录 `packages/models` 的 submodule commit 指针；如果实际改动发生在别的 checkout，很容易出现：
+
+- LinX 里 `packages/models` 仍然是旧代码或 dirty patch；
+- `models` 远端已经有 tag，但 LinX 子模块没有锁到这个 tag；
+- 本地测试用了一个 checkout，CI/release 用了另一个 checkout；
+- 父仓库提交了 submodule 指针，但没有包含真正的 models 改动。
+
+可以用外部 `../models` 做只读参考、diff 对比或恢复历史，但 LinX 相关的 models 代码修改、测试、提交、tag、push 都应发生在 `packages/models` 这个 submodule checkout 内。
+
 ## 版本锁定规则
 
 父仓库锁定的 `packages/models` submodule commit 必须和 `packages/models/package.json` 的版本一致：
@@ -52,17 +69,20 @@ package version: X.Y.Z
  m packages/models
 ```
 
-只表示子模块 checkout 的内容或指针变化了，不表示这些改动已经进入 `models` 远端。凡是在 `packages/models` 里修 bug、补 schema、改 repository、改 runtime contract，都必须先在子模块自己的仓库完成提交、版本、tag 和 push，再回到 LinX 父仓库更新指针。
+只表示子模块 checkout 的内容或指针变化了，不表示这些改动已经进入 `models` 远端。凡是 LinX 任务需要修 bug、补 schema、改 repository、改 runtime contract，都必须先在 `packages/models` 这个 submodule 内完成修改、提交、版本、tag 和 push，再回到 LinX 父仓库更新指针。
 
-### 子模块内有代码改动时
+### 需要修改 models 代码时
 
-1. 进入子模块并确认改动：
+1. 进入 LinX 的 submodule 工作区，并确认是在 `packages/models` 里改：
 
    ```bash
    cd packages/models
+   git rev-parse --show-toplevel
    git status -sb
    git diff --stat
    ```
+
+   `git rev-parse --show-toplevel` 应该输出 `.../linx/packages/models`，而不是 `.../develop/models`。
 
 2. 在 `packages/models/package.json` bump 到新的未发布版本。
 
@@ -78,12 +98,14 @@ package version: X.Y.Z
 4. 在 `packages/models` 内提交、打 tag、推送：
 
    ```bash
-   git add .
+   git add <changed-files>
    git commit
    git tag vX.Y.Z
    git push origin HEAD:main
    git push origin vX.Y.Z
    ```
+
+   不要从外部 checkout 复制一个 tag 过来后直接更新 LinX 指针；tag 对应的 commit 必须就是 `packages/models` 当前 HEAD。
 
 5. 回到 LinX 父仓库，把 submodule 锁到刚才的 tag：
 
@@ -106,6 +128,14 @@ package version: X.Y.Z
    yarn models:assert-release-safe
    ```
 
+7. 如果 LinX 运行时依赖发布包而不只是 workspace/submodule，还要确认 npm 已发布：
+
+   ```bash
+   npm view @undefineds.co/models version
+   ```
+
+   只有 npm、tag、`packages/models/package.json`、LinX submodule 指针四者一致，才算 models 升级完成。
+
 ### 只消费 models 已发布新版本时
 
 当 models 有新版本时：
@@ -125,6 +155,7 @@ yarn build:models
 ## 禁止事项
 
 - 不要为了“拿最新”把父仓库锁到 models `main` 的非 tag commit。
+- 不要在 LinX 任务中绕过 `packages/models` 去 sibling checkout 修改 models，然后再手工搬运。
 - 不要在 LinX `apps/*` 中复制 models 已有的跨端业务语义。
 - 不要在 LinX 内部绕开 `@undefineds.co/models` 重新定义 schema、vocab、repository 或 shared helper。
 - 不要把 provider/model/credential 的跨端语义直接散落到 UI 或 CLI 壳层；缺少 contract 时先补 models 并发布对应版本。
@@ -134,7 +165,7 @@ yarn build:models
 当前 LinX 父仓库应锁定：
 
 ```text
-packages/models package version: 0.2.26
-packages/models commit: 6cd449c90070dc8ec44bbc832afd37ca27f3c94c
-packages/models tag: v0.2.26
+packages/models package version: 0.2.27
+packages/models commit: bd9c589ff7f97bbd62e61315d1ab31fed57a2243
+packages/models tag: v0.2.27
 ```
