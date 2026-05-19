@@ -72,21 +72,27 @@ unclear, the request falls back to the normal visible approval path.
 ## Storage Planning
 
 When the user asks the secretary to save something, the secretary must request a
-storage plan instead of guessing a location.
+descriptor-backed storage plan instead of guessing a location.
 
 The planning layer should:
 
-- classify the intent into a supported resource type,
+- classify the intent into a supported resource type or call Consensus
+  `/v1/responses` when the descriptor choice is ambiguous,
 - inspect existing matching Pod resources,
 - decide create, update, link, ask, or unsupported,
 - explain the target resource and mutation,
 - require user confirmation for ambiguity, conflicts, low confidence, missing
   required fields, or missing authority.
 
-The secretary may reason over the returned plan and user-facing summary. Shared
-model/runtime code owns exact resource resolution and writes.
+The secretary may reason over returned descriptors, clarification questions,
+validation errors, and user-facing summaries. Shared model/runtime code owns
+exact resource resolution and writes.
 
-See [Storage modeling TODO](./storage-modeling-todo.md).
+For the full target design, including `pod_schema`, `pod_storage`, Consensus
+Responses conversations, official/developer/user model sources, and model
+proposal flow, see [Pod Storage Consensus](./pod-storage-consensus.md). The older
+[Storage modeling TODO](./storage-modeling-todo.md) remains a checklist for the
+near-term implementation gaps.
 
 ## Turn Controller Boundary
 

@@ -1,4 +1,4 @@
-import { cpSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { cpSync, realpathSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 
@@ -36,6 +36,10 @@ assertPatchedDrizzleSolid(packageDistRoot)
 
 function syncLocalDrizzleSolidDist(root) {
   if (statSync(localDrizzleSolidDistRoot, { throwIfNoEntry: false }) == null) {
+    return
+  }
+
+  if (realpathSync(localDrizzleSolidDistRoot) === realpathSync(root)) {
     return
   }
 

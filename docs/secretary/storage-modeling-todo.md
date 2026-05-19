@@ -1,5 +1,11 @@
 # AI Secretary Storage Modeling TODO
 
+This page tracks implementation gaps. The full product and architecture target
+is now [Pod Storage Consensus](./pod-storage-consensus.md): descriptor-backed
+storage contracts in `@undefineds.co/models`, `pod_schema` / `pod_storage`
+tools, Consensus Responses conversations, official/developer/user descriptors,
+and model proposal flow for unmodeled data.
+
 ## Problem
 
 When AI Secretary helps a user save configuration, credentials, grants, preferences, or other durable state, the act is itself a modeling decision.
@@ -54,8 +60,28 @@ Before writing on behalf of the user, AI Secretary needs a storage modeling cont
 
 This should be a shared capability used by CLI and App, not a TUI-only helper.
 
+The capability should not be a static prompt or a one-shot search. It should be
+backed by machine-readable descriptors and, when local descriptors are
+insufficient or ambiguous, by a Consensus `/v1/responses` modeling
+conversation.
+
 ## TODO
 
+- Add official descriptors for existing `@undefineds.co/models` resources.
+- Add `pod_schema.describe`, `pod_schema.classes`, `pod_schema.predicates`,
+  and a local descriptor registry.
+- Do not add explicit resource shortcut commands such as `udfs credential plan`;
+  keep low-level schema/storage commands deterministic and generic.
+- Add `pod_storage.validate` for descriptor-backed mutations.
+- Add `pod_storage.commit` helpers that write only through repositories and
+  drizzle-solid.
+- Expose a `udfs` tool for LinX shell and other coding-agent tool use, backed
+  by injected runtime context when remote Consensus/Pod access is available and
+  by the same local descriptor/storage APIs as deterministic fallback.
+- Add Consensus client support for `/v1/responses` continuation using persisted
+  conversation ids.
+- Add generic credential requirement handling for runtime/tool/MCP credentials.
+- Add ModelProposal validation for user/developer-created descriptors.
 - Define a shared storage-planning API that turns user intent into a typed plan before any Pod mutation.
 - Add model-owned lookup helpers for each supported save target so the secretary can inspect existing resources before deciding create vs merge/update.
 - Make the plan explain the target resource type, matched existing resource if any, proposed mutation, and confidence.
@@ -65,6 +91,12 @@ This should be a shared capability used by CLI and App, not a TUI-only helper.
 
 ## Decision Points To Resolve
 
+- How official descriptors are generated from current resources without losing
+  hand-authored write rules such as `uniqueBy`, `mergePolicy`, and examples.
+- How Consensus stores and versions official, verified community, developer,
+  and user descriptors.
+- How model proposals are reviewed, activated, and later promoted.
+- How descriptor fingerprints should normalize "same model" semantics.
 - How the secretary discovers candidate resource types for an intent.
 - How it retrieves enough existing Pod state to decide merge vs new.
 - How it explains the proposed write to the user before committing.
@@ -78,22 +110,56 @@ This should be a shared capability used by CLI and App, not a TUI-only helper.
 - Do not put CLI/App-specific predicate or subject-template knowledge into prompts.
 - Do not add another credential/config storage format.
 - Do not rely on static prompt text as the source of truth for storage paths.
+- Do not treat unmodeled durable data as a permanent catch-all note bucket.
+  Unmodeled data should become a descriptor proposal or remain an explicit
+  unsupported/clarification result.
 
 ## Near-Term Implementation Direction
 
-Create a shared storage-intent API in `@undefineds.co/models` or a nearby shared runtime package:
+Create descriptor-backed storage APIs in `@undefineds.co/models` or a nearby
+shared runtime package:
 
 ```ts
-type StorageIntent =
-  | { kind: 'ai-credential'; providerId: string; apiKey: string; baseUrl?: string }
-  | { kind: 'ai-model'; providerId: string; modelId: string; displayName?: string }
-  | { kind: 'grant'; title: string; body: string; tags?: string[] }
+pod_schema.describe({ uri: 'https://vocab.xpod.dev/credential#Credential' })
 
-type StoragePlan =
-  | { action: 'create'; resource: string; summary: string; dto: unknown }
-  | { action: 'update'; resource: string; target: string; summary: string; patch: unknown }
-  | { action: 'ask'; reason: string; options: string[] }
-  | { action: 'unsupported'; reason: string }
+pod_storage.validate({
+  schemaUri: 'https://vocab.xpod.dev/credential#Credential',
+  operation: 'upsert',
+  match: {
+    service: 'infra',
+    providerId: 'cloudflare',
+    secretType: 'tunnel-token',
+  },
+  set: {
+    label: 'Cloudflare Tunnel Token',
+    status: 'active',
+  },
+})
+
+// Actual commits go through model-owned ORM/repository APIs.
+
+const conversation = await consensus.conversations.create({
+  metadata: {
+    product: 'linx',
+    purpose: 'pod-storage',
+    activeRuntime: 'cloudflared',
+    knownRequirements: 'cloudflare.tunnel-token',
+  },
+})
+
+consensus.responses.create({
+  model: 'consensus-modeling',
+  conversation: conversation.id,
+  input: '我要保存这个 Cloudflare token',
+  metadata: {
+    product: 'linx',
+    purpose: 'pod-storage',
+    activeRuntime: 'cloudflared',
+    knownRequirements: 'cloudflare.tunnel-token',
+  },
+})
 ```
 
-The secretary can reason over the returned plan and user-facing summary, while the shared implementation owns exact resource writes.
+The secretary can reason over descriptors, Consensus questions, validation
+errors, and user-facing summaries, while the shared implementation owns exact
+resource writes.

@@ -19,7 +19,7 @@ import {
 import { webFetchTool, webSearchTool } from './web-fetch.js'
 import { podReadTool, podWriteTool } from './pod-tools.js'
 import { existsSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { delimiter, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Api, Model, OAuthCredentials } from '@mariozechner/pi-ai'
 import { isRemoteAuthExpiredError, type RemoteChatMessage, type RemoteChatTool } from '../chat-api.js'
@@ -573,10 +573,12 @@ export function createLinxPiCodingTools(cwd: string, options: {
   const bashTimeoutSeconds = options.bashTimeoutSeconds ?? DEFAULT_LINX_PI_BASH_TIMEOUT_SECONDS
   return createCodingTools(cwd, {
     bash: {
+      commandPrefix: buildLinxToolCommandPrefix(),
       operations: {
         exec(command, workingDirectory, options) {
           return localBashOperations.exec(command, workingDirectory ?? process.cwd(), {
             ...options,
+            env: withLinxToolPath(options.env),
             timeout: typeof options.timeout === 'number'
               ? options.timeout
               : bashTimeoutSeconds,
@@ -585,6 +587,57 @@ export function createLinxPiCodingTools(cwd: string, options: {
       },
     },
   })
+}
+
+function buildLinxToolCommandPrefix(): string | undefined {
+  const udfsBin = resolveUdfsToolBinFile()
+  if (!udfsBin) {
+    return undefined
+  }
+
+  return `udfs() { node ${shellQuote(udfsBin)} "$@"; }`
+}
+
+function withLinxToolPath(env: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv {
+  const nextEnv = { ...(env ?? process.env) }
+  const udfsBinDir = resolveUdfsToolBinDir()
+  if (!udfsBinDir) {
+    return nextEnv
+  }
+
+  const pathKey = Object.keys(nextEnv).find((key) => key.toLowerCase() === 'path') ?? 'PATH'
+  const currentPath = nextEnv[pathKey] ?? ''
+  const entries = currentPath.split(delimiter).filter(Boolean)
+  if (!entries.includes(udfsBinDir)) {
+    nextEnv[pathKey] = [udfsBinDir, currentPath].filter(Boolean).join(delimiter)
+  }
+  return nextEnv
+}
+
+function resolveUdfsToolBinFile(importMetaUrl = import.meta.url): string | null {
+  const udfsBinDir = resolveUdfsToolBinDir(importMetaUrl)
+  if (!udfsBinDir) {
+    return null
+  }
+  return join(udfsBinDir, 'udfs.js')
+}
+
+function resolveUdfsToolBinDir(importMetaUrl = import.meta.url): string | null {
+  const moduleDir = dirname(fileURLToPath(importMetaUrl))
+  const candidates = [
+    // Published package: @undefineds.co/models dependency next to @undefineds.co/linx.
+    resolve(moduleDir, '..', '..', '..', '..', '@undefineds.co', 'models', 'dist', 'bin'),
+    // Workspace/dev tree: apps/cli/dist/lib/pi-adapter/runtime.js -> packages/models/dist/bin
+    resolve(moduleDir, '..', '..', '..', '..', '..', 'packages', 'models', 'dist', 'bin'),
+    // Source-tree fallback when running through a TS loader.
+    resolve(moduleDir, '..', '..', '..', '..', '..', '..', 'packages', 'models', 'dist', 'bin'),
+  ]
+
+  return candidates.find((candidate) => existsSync(join(candidate, 'udfs.js'))) ?? null
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`
 }
 
 function enableLinxXhighThinking(session: {

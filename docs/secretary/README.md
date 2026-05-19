@@ -8,6 +8,8 @@ AI Secretary documents should cover what the secretary can decide or do on behal
 
 - [Capability contract](./capability-contract.md) — what AI Secretary may decide, what context it needs, and when it must defer to the user.
 - [Storage modeling TODO](./storage-modeling-todo.md) — how the secretary plans durable Pod writes instead of guessing paths or blindly appending data.
+- [Pod Storage Consensus](./pod-storage-consensus.md) — descriptor-backed Pod storage, Consensus Responses conversations, official/developer/user model sources, and unmodeled data proposal flow.
+- [Consensus tools and skills](./consensus-tools-and-skills.md) — LinX-side Secretary tool flow, `pod_schema` / `pod_storage` usage, and CLI verification command.
 
 ## Documentation Boundary
 

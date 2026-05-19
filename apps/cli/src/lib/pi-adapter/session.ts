@@ -1000,7 +1000,7 @@ async function listPodSessionMessages(
       }
     }))
     const messages = rows
-      .filter((message): message is MessageRow => {
+      .filter((message: MessageRow | null): message is MessageRow => {
         if (!message?.id) {
           return false
         }
@@ -1010,7 +1010,7 @@ async function listPodSessionMessages(
         return !message.thread || message.thread === session.thread
       })
       .map(podMessageRowToSnapshot)
-      .filter((message) => message.id)
+      .filter((message: LinxPiPodMessageSnapshot): message is LinxPiPodMessageSnapshot => Boolean(message.id))
       .sort(compareMessageSnapshots)
     if (messages.length > 0) {
       return messages
@@ -1034,7 +1034,7 @@ async function listPodSessionMessages(
       return extractResourceLocalId(message.id).startsWith(`${extractResourceLocalId(session.id)}-`)
     })
     .map(podMessageRowToSnapshot)
-    .filter((message) => message.id)
+    .filter((message: LinxPiPodMessageSnapshot): message is LinxPiPodMessageSnapshot => Boolean(message.id))
     .sort(compareMessageSnapshots)
 }
 
