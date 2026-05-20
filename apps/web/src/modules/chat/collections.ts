@@ -9,7 +9,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getLiteral, getSolidDataset, getThing, getUrl, getUrlAll } from '@inrupt/solid-client'
-import { like, or, resolveRowSubject } from '@undefineds.co/drizzle-solid'
+import { like, or, parsePodResourceRef, resolveRowSubject } from '@undefineds.co/drizzle-solid'
 import {
   chatTable,
   threadTable,
@@ -23,6 +23,10 @@ import {
   normalizeAIConfigResourceId,
   selectAIConfigCredential,
   resolveThreadChatId as resolveThreadChatIdFromRow,
+  extractChatIdFromChatRef,
+  chatResourceId,
+  messageResourceId,
+  threadResourceId,
   UDFS,
   WF,
   type ChatRow,
@@ -186,6 +190,45 @@ function getPodBaseUrl(db: SolidDatabase): string | null {
 
 function getCachedThreadChatId(threadId: string): string | null {
   return threadChatIdCache.get(threadId) ?? resolveThreadChatIdFromRow(threadCollection.get(threadId)) ?? null
+}
+
+function resolveChatSurfaceId(chatIdOrRef: string): string {
+  const chatId = extractChatIdFromChatRef(chatIdOrRef) ?? chatIdOrRef
+  const match = chatId.match(/^([^/]+)\/index\.ttl#this$/)
+  return match?.[1] ?? chatId
+}
+
+function normalizeChatResourceId(chatIdOrRef: string | null | undefined): string | null {
+  if (!chatIdOrRef) return null
+  const direct = chatIdOrRef.match(/^([^/]+)\/index\.ttl#this$/)
+  if (direct) return chatIdOrRef
+  const extracted = extractChatIdFromChatRef(chatIdOrRef)
+  if (!extracted) return chatIdOrRef
+  return extracted.endsWith('/index.ttl#this') ? extracted : chatResourceId(extracted)
+}
+
+function chatIdsMatch(left: string | null | undefined, right: string | null | undefined): boolean {
+  const normalizedLeft = normalizeChatResourceId(left)
+  const normalizedRight = normalizeChatResourceId(right)
+  return !!normalizedLeft && normalizedLeft === normalizedRight
+}
+
+function normalizeThreadResourceId(threadIdOrRef: string | null | undefined): string | null {
+  if (!threadIdOrRef) return null
+  return parsePodResourceRef({ config: { base: '/.data/' } } as any, threadIdOrRef)?.resourceId ?? threadIdOrRef
+}
+
+function isScopedThreadResourceId(value: string | null | undefined): boolean {
+  return !!value && /^(chat|task)\/[^/]+\/index\.ttl#[^#/]+$/.test(value)
+}
+
+function threadIdsMatch(left: string | null | undefined, right: string | null | undefined): boolean {
+  const normalizedLeft = normalizeThreadResourceId(left)
+  const normalizedRight = normalizeThreadResourceId(right)
+  if (!normalizedLeft || !normalizedRight) return false
+  if (normalizedLeft === normalizedRight) return true
+  if (isScopedThreadResourceId(normalizedLeft) && isScopedThreadResourceId(normalizedRight)) return false
+  return extractLinkedEntityId(normalizedLeft) === extractLinkedEntityId(normalizedRight)
 }
 
 async function resolveThreadChatId(
@@ -741,7 +784,7 @@ export const chatOps = {
   getThreads(chatId: string): ThreadRow[] {
     const stateMap = threadCollection.state
     const items = Array.from(stateMap.values())
-    return items.filter((t: ThreadRow) => resolveThreadChatIdFromRow(t) === chatId)
+    return items.filter((t: ThreadRow) => chatIdsMatch(resolveThreadChatIdFromRow(t), chatId))
   },
 
   /**
@@ -751,7 +794,7 @@ export const chatOps = {
     const stateMap = messageCollection.state
     const items = Array.from(stateMap.values())
     return items
-      .filter((m: MessageRow) => extractLinkedEntityId(m.thread) === threadId)
+      .filter((m: MessageRow) => threadIdsMatch(m.thread, threadId))
       .sort((a, b) => {
         const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0
         const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0
@@ -802,7 +845,7 @@ export const chatOps = {
       instructions: systemPrompt,
     })
 
-    const chatId = crypto.randomUUID()
+    const chatId = chatResourceId(crypto.randomUUID())
     const now = new Date()
 
     writeCollectionRow(agentCollection, agent as AgentRow, agentId)
@@ -934,7 +977,10 @@ export const chatOps = {
    */
   async createThread(chatId: string, title?: string): Promise<ThreadRow> {
     const db = getDb()
-    const threadId = crypto.randomUUID()
+    const threadId = threadResourceId(crypto.randomUUID(), {
+      commandKind: 'chat',
+      surfaceId: resolveChatSurfaceId(chatId),
+    })
     const now = new Date()
     
     const threadData: ThreadInsert = {
@@ -1132,8 +1178,12 @@ export const chatOps = {
     const db = getDb()
     if (!db) throw new Error('Database not connected')
 
-    const msgId = crypto.randomUUID()
     const now = new Date()
+    const msgId = messageResourceId(crypto.randomUUID(), {
+      commandKind: 'chat',
+      surfaceId: resolveChatSurfaceId(chatId),
+      createdAt: now,
+    })
     const threadRef = await buildThreadSubjectIri(db, threadId, chatId)
     if (!threadRef) {
       throw new Error(`Failed to resolve thread IRI for thread ${threadId}`)
@@ -1179,8 +1229,12 @@ export const chatOps = {
     const db = getDb()
     if (!db) throw new Error('Database not connected')
 
-    const msgId = crypto.randomUUID()
     const now = new Date()
+    const msgId = messageResourceId(crypto.randomUUID(), {
+      commandKind: 'chat',
+      surfaceId: resolveChatSurfaceId(chatId),
+      createdAt: now,
+    })
     const threadRef = await buildThreadSubjectIri(db, threadId, chatId)
     if (!threadRef) {
       throw new Error(`Failed to resolve thread IRI for thread ${threadId}`)
@@ -1437,7 +1491,7 @@ export const chatOps = {
     try {
       rows = await db.select()
         .from(threadTable)
-        .where(eq(chatCol, chatId))
+        .where(eq(chatCol, buildChatSubjectIri(db, chatId) ?? chatId))
         .orderBy('updatedAt', 'desc')
         .execute() as ThreadRow[]
     } catch (error) {

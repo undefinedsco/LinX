@@ -7,6 +7,7 @@ import {
   threadTable,
   messageTable,
   solidSchema,
+  chatResourceId,
   extractChatIdFromChatRef,
 } from '@undefineds.co/models'
 import { createXpodIntegrationContext, type XpodIntegrationContext } from '../../test/xpod-integration'
@@ -28,11 +29,18 @@ afterAll(async () => {
   await context?.stop()
 }, 90000)
 
+function normalizeChatResourceId(chatIdOrRef: string | null | undefined): string | null {
+  if (!chatIdOrRef) return null
+  if (/^[^/]+\/index\.ttl#this$/.test(chatIdOrRef)) return chatIdOrRef
+  const extracted = extractChatIdFromChatRef(chatIdOrRef)
+  return extracted ? chatResourceId(extracted) : chatIdOrRef
+}
+
 describe('chat collections integration', () => {
   it('insert chat and SELECT back via SPARQL', { timeout: 90000 }, async () => {
     const { db: database, webId } = await getContext()
 
-    const id = `chat-${Date.now()}`
+    const id = chatResourceId(`chat-${Date.now()}`)
     const [created] = await database.insert(chatTable).values({
       id,
       title: 'Integration Chat',
@@ -51,7 +59,7 @@ describe('chat collections integration', () => {
   it('round-trips group chat participants and metadata object', { timeout: 90000 }, async () => {
     const { db: database, webId } = await getContext()
 
-    const id = `group-chat-${Date.now()}`
+    const id = chatResourceId(`group-chat-${Date.now()}`)
     const podBase = webId.replace('/profile/card#me', '')
     const assistantUri = `${podBase}/.data/agents/assistant-${id}.ttl#this`
     const metadata = {
@@ -69,7 +77,7 @@ describe('chat collections integration', () => {
     }).execute()
 
     const chats = await chatOps.fetchChats()
-    const roundTripped = chats.find((row) => extractChatIdFromChatRef(row.id) === id)
+    const roundTripped = chats.find((row) => normalizeChatResourceId(row.id) === id)
     expect(roundTripped).toBeDefined()
     expect(roundTripped?.participants).toEqual(expect.arrayContaining([assistantUri]))
     expect(roundTripped?.metadata).toMatchObject(metadata)
@@ -80,7 +88,7 @@ describe('chat collections integration', () => {
   it('insert thread/message and SELECT back', { timeout: 90000 }, async () => {
     const { db: database, webId } = await getContext()
 
-    const chatId = `chat-thread-${Date.now()}`
+    const chatId = chatResourceId(`chat-thread-${Date.now()}`)
     await database.insert(chatTable).values({
       id: chatId,
       title: 'Thread Test Chat',
@@ -89,6 +97,8 @@ describe('chat collections integration', () => {
 
     const thread = await chatOps.createThread(chatId, 'Thread One')
     expect(thread).toBeDefined()
+    expect(thread.id).toMatch(/^chat\/chat-thread-\d+\/index\.ttl#[^#]+$/)
+    expect(normalizeChatResourceId(thread.chat)).toBe(chatId)
 
     const message = await chatOps.createUserMessage(
       chatId,
@@ -135,7 +145,7 @@ describe('chat collections integration', () => {
   it('delete chat and verify via SELECT', { timeout: 90000 }, async () => {
     const { db: database, webId } = await getContext()
 
-    const id = `chat-del-${Date.now()}`
+    const id = chatResourceId(`chat-del-${Date.now()}`)
     await database.insert(chatTable).values({
       id,
       title: 'Delete Me',

@@ -10822,6 +10822,16 @@
     sparqljs "^3.7.3"
     zod "^4.1.8"
 
+"@undefineds.co/models@0.2.27":
+  version "0.2.28"
+  dependencies:
+    "@comunica/query-sparql-solid" "^4.0.2"
+    "@inrupt/vocab-common-rdf" "^1.0.5"
+    "@undefineds.co/drizzle-solid" "^0.3.13"
+    drizzle-orm "^0.32.0"
+    n3 "^1.26.0"
+    zod "^3.22.4"
+
 "@undefineds.co/xpod@0.3.1":
   version "0.3.1"
   resolved "https://registry.yarnpkg.com/@undefineds.co/xpod/-/xpod-0.3.1.tgz#af029378cd9a9d53786d787b5ef02342672b4278"
