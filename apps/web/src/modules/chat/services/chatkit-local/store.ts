@@ -77,7 +77,10 @@ function parseThreadMetadata(metadata: unknown): Record<string, unknown> | undef
 
 async function findThreadRecord(db: SolidDatabase<any>, threadId: string, chatId?: string | null): Promise<any | null> {
   if (chatId) {
-    const exact = await (db as any).findByLocator(Thread as any, { id: threadId, chat: chatId } as any)
+    const resourceId = (db as any).resolveLocatorId?.(Thread as any, { id: threadId, chat: chatId } as any)
+    const exact = resourceId
+      ? await (db as any).findById(Thread as any, resourceId)
+      : null
     if (exact) return exact
   }
 
@@ -234,7 +237,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   // -----------------------------------------------------------------------
 
   private async ensureChat(chatId: string): Promise<void> {
-    const existingChat = await (this.db as any).findByLocator(Chat as any, { id: chatId } as any)
+    const existingChat = await (this.db as any).findById(Chat as any, chatId)
     if (!existingChat) {
       const now = new Date()
       await (this.db as any).insert(Chat as any).values({
@@ -258,34 +261,16 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     return chatId
   }
 
-  private resolveResourceIri(
-    table: Parameters<NonNullable<SolidDatabase['resolveRowIri']>>[0],
-    row: Record<string, unknown>,
-  ): string {
-    if (typeof this.db.resolveRowIri !== 'function') {
-      throw new Error('Solid database does not support resolveRowIri')
-    }
-    return this.db.resolveRowIri(table, row)
-  }
-
-  private buildChatUri(chatId: string): string {
-    return this.resolveResourceIri(Chat as any, { id: chatId })
+  private getPodBaseUrl(): string {
+    return this.webId.replace('/profile/card#me', '').replace(/\/$/, '')
   }
 
   private buildThreadUri(chatId: string, threadId: string): string {
-    return this.resolveResourceIri(Thread as any, { id: threadId, chat: this.buildChatUri(chatId) })
-  }
-
-  private buildMessageUri(chatId: string, messageId: string, createdAt: Date): string {
-    return this.resolveResourceIri(Message as any, {
-      id: messageId,
-      chat: this.buildChatUri(chatId),
-      createdAt,
-    })
+    return `${this.getPodBaseUrl()}/.data/chat/${chatId}/index.ttl#${threadId}`
   }
 
   private async resolveCounterpartMaker(chatId: string): Promise<string> {
-    const chat = await (this.db as any).findByLocator(Chat as any, { id: chatId } as any)
+    const chat = await (this.db as any).findById(Chat as any, chatId)
     const participants = Array.isArray(chat?.participants)
       ? chat.participants.filter((participant: unknown): participant is string => typeof participant === 'string' && participant.length > 0)
       : []
@@ -554,13 +539,14 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   async addThreadItem(threadId: string, item: ThreadItem, _context: StoreContext): Promise<void> {
     const chatId = await this.getThreadChatId(threadId)
     const { content, role, status, richContent } = threadItemToMessageRecord(item)
+    const podBaseUrl = this.getPodBaseUrl()
     const maker = role === MessageRole.USER
       ? this.webId
       : await this.resolveCounterpartMaker(chatId)
 
     await (this.db as any).insert(Message as any).values({
       id: item.id,
-      chat: this.buildChatUri(chatId),
+      chat: `${podBaseUrl}/.data/chat/${chatId}/index.ttl#this`,
       thread: this.buildThreadUri(chatId, threadId),
       maker,
       role,
@@ -624,9 +610,15 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     status: string | null,
     createdAt?: string,
   ): Promise<void> {
+    // The db instance already carries session.fetch with DPoP auth.
+    // Build resource URL from webId.
     const dateForPath = createdAt ? new Date(createdAt) : new Date()
-    const subjectUri = this.buildMessageUri(chatId, messageId, dateForPath)
-    const resourceUrl = subjectUri.split('#')[0]
+    const yyyy = dateForPath.getUTCFullYear()
+    const mm = String(dateForPath.getUTCMonth() + 1).padStart(2, '0')
+    const dd = String(dateForPath.getUTCDate()).padStart(2, '0')
+    const podBaseUrl = this.getPodBaseUrl()
+    const resourceUrl = `${podBaseUrl}/.data/chat/${chatId}/${yyyy}/${mm}/${dd}/messages.ttl`
+    const subjectUri = `${resourceUrl}#${messageId}`
 
     const escapeForSparql = (value: string): string => {
       const hasQuotes = value.includes('"')

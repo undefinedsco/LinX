@@ -59,6 +59,20 @@ The required `@undefineds.co/drizzle-solid` runtime fix has two externally visib
 
 If the smoke script fails on the drizzle-solid check, publish a fixed `@undefineds.co/drizzle-solid` first and then rebuild the models and CLI tarballs. Do not publish `@undefineds.co/models` or `@undefineds.co/linx` against a registry drizzle-solid version that still only replaces `{id}` in linked table templates.
 
+## Production Pod Smoke Account
+
+Production smoke scripts that write to a real Pod must use a dedicated smoke-test account, not a developer or customer account. The scripts refuse to run unless the active LinX login WebID exactly matches `LINX_PROD_SMOKE_WEBID`.
+
+Recommended setup:
+
+```bash
+export LINX_PROD_SMOKE_WEBID=https://id.undefineds.co/<smoke-user>/profile/card#me
+HOME=/tmp/linx-prod-smoke-home linx login
+HOME=/tmp/linx-prod-smoke-home LINX_PROD_SMOKE_WEBID=$LINX_PROD_SMOKE_WEBID node scripts/verify-cli-pod-durable.mjs
+```
+
+The isolated `HOME` keeps the smoke account's `~/.linx` credentials separate from the user's normal LinX account. `scripts/verify-cli-pod-durable.mjs` and `scripts/prod-pod-core-crud.mjs` are write smoke tests; they should never default to the currently logged-in personal account.
+
 ## npm Registry Publish
 
 Publish models first, then CLI:

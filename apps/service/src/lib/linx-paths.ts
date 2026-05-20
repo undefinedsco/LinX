@@ -27,3 +27,11 @@ export function resolveLinxUserDataDir(): string {
 
   return getLegacyLinxUserDataDir()
 }
+
+export function resolveLinxLocalHomeDir(): string {
+  return process.env.LINX_LOCAL_HOME?.trim() || path.join(resolveLinxUserDataDir(), 'local')
+}
+
+export function resolveLinxDefaultWorkspaceDir(): string {
+  return process.env.LINX_DEFAULT_WORKSPACE_PATH?.trim() || path.join(resolveLinxLocalHomeDir(), 'workspace')
+}

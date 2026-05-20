@@ -2,6 +2,7 @@
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import { QueryClient } from '@tanstack/react-query'
 import { aiProviderTable, solidSchema } from '@undefineds.co/models'
+import { extractPodResourceTemplateValue } from '@undefineds.co/drizzle-solid'
 import { deleteExactRecord } from './exact-records'
 import { createPodCollection } from './pod-collection'
 import { createXpodIntegrationContext, type XpodIntegrationContext } from '../../test/xpod-integration'
@@ -70,7 +71,7 @@ describe('pod-collection integration', () => {
         id,
         baseUrl: 'https://api.test.com',
         proxyUrl: 'https://proxy.test.com',
-        hasModel: `/settings/ai/models/${id}.ttl#model-1`,
+        hasModel: `/settings/providers/${id}.ttl#model-1`,
       } as any)
 
       const optimisticPromise = new Promise<'optimistic'>((resolve) => {
@@ -92,11 +93,12 @@ describe('pod-collection integration', () => {
 
       await tx.isPersisted.promise
 
-      const created = await (database as any).findByLocator(aiProviderTable as any, { id } as any)
+      const created = await (database as any).findById(aiProviderTable as any, id)
       const subject = (created as any)?.['@id']
-      const expectedModelUri = new URL(`/settings/ai/models/${id}.ttl#model-1`, baseUrl).href
+      const expectedModelUri = new URL(`/settings/providers/${id}.ttl#model-1`, baseUrl).href
       if (subject) createdSubjects.push(subject)
-      expect(created?.id).toBe(id)
+      expect(created?.id).toBe(`${id}.ttl`)
+      expect(extractPodResourceTemplateValue(aiProviderTable as any, created?.id)).toBe(id)
       expect(created?.baseUrl).toBe('https://api.test.com')
       expect(created?.proxyUrl).toBe('https://proxy.test.com')
       expect(created?.hasModel).toBe(expectedModelUri)
@@ -134,7 +136,7 @@ describe('pod-collection integration', () => {
           id,
           baseUrl: 'https://api.test.com',
           proxyUrl: 'https://proxy.test.com',
-          hasModel: `/settings/ai/models/${id}.ttl#model-1`,
+          hasModel: `/settings/providers/${id}.ttl#model-1`,
         })
         .execute()
 
@@ -152,10 +154,10 @@ describe('pod-collection integration', () => {
         }, 100)
       })
 
-      await (database as any).updateByLocator(aiProviderTable as any, { id } as any, {
+      await (database as any).updateById(aiProviderTable as any, id, {
         proxyUrl: 'https://proxy.changed.test.com',
       })
-      await (database as any).deleteByLocator(aiProviderTable as any, { id } as any)
+      await (database as any).deleteById(aiProviderTable as any, id)
 
       expect(await notified).toBe(true)
     } finally {

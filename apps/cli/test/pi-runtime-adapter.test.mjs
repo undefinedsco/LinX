@@ -5,7 +5,7 @@ import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { loadWatchModule } from './watch-test-bundle.mjs'
+import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 
 const cliRoot = fileURLToPath(new URL('..', import.meta.url))
 
@@ -19,7 +19,7 @@ function createMockCredential(access = 'access-token') {
 }
 
 test('linx startup login prompt decision covers the auth state matrix', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/runtime.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
   t.after(() => cleanup())
 
   assert.deepEqual(await module.resolveLinxStartupLoginPromptDecision({
@@ -84,7 +84,7 @@ test('linx startup login prompt decision covers the auth state matrix', async (t
 })
 
 test('linx interactive login reason preserves startup vs expired auth semantics', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/runtime.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
   t.after(() => cleanup())
 
   assert.equal(module.resolveLinxInteractiveLoginReason({
@@ -107,7 +107,7 @@ test('linx interactive login reason preserves startup vs expired auth semantics'
 })
 
 test('pi runtime adapter defaults to cloud backend without creating a native proxy', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/runtime.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
   t.after(() => cleanup())
 
   let proxyCreated = false
@@ -159,7 +159,7 @@ test('pi runtime adapter defaults to cloud backend without creating a native pro
 })
 
 test('pi runtime adapter can still wrap the native proxy when explicitly requested', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/runtime.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
   t.after(() => cleanup())
 
   let started = false
@@ -172,7 +172,7 @@ test('pi runtime adapter can still wrap the native proxy when explicitly request
       return {
         remoteUrl: 'ws://127.0.0.1:8877',
         record: {
-          id: 'watch_native_proxy_123',
+          id: 'auto_native_proxy_123',
           cwd: '/tmp/demo',
           model: 'gpt-5-codex',
           backend: 'codex',
@@ -216,7 +216,7 @@ test('pi runtime adapter can still wrap the native proxy when explicitly request
   })
 
   assert.equal(adapter.remoteUrl, 'ws://127.0.0.1:8877')
-  assert.equal(adapter.sessionId, 'watch_native_proxy_123')
+  assert.equal(adapter.sessionId, 'auto_native_proxy_123')
   assert.equal(adapter.backend, 'codex')
 
   await adapter.start()
@@ -227,7 +227,7 @@ test('pi runtime adapter can still wrap the native proxy when explicitly request
 })
 
 test('pi runtime adapter createRuntime builds a minimal pi runtime around the cloud stream adapter', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/runtime.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@mariozechner/pi-coding-agent')
@@ -292,7 +292,7 @@ test('pi runtime adapter createRuntime builds a minimal pi runtime around the cl
 })
 
 test('pi runtime adapter exposes bundled LinX skills during initial resource loading', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/runtime.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@mariozechner/pi-coding-agent')
@@ -360,7 +360,7 @@ test('pi runtime adapter exposes bundled LinX skills during initial resource loa
 })
 
 test('pi runtime adapter configures undefineds models as openai chat completions', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/runtime.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@mariozechner/pi-coding-agent')
@@ -417,7 +417,7 @@ test('pi runtime adapter configures undefineds models as openai chat completions
 })
 
 test('pi runtime adapter lets interactive sessions start without a user API key', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/runtime.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@mariozechner/pi-coding-agent')
@@ -451,7 +451,7 @@ test('pi runtime adapter lets interactive sessions start without a user API key'
 })
 
 test('pi runtime adapter prefers linx-lite when cloud model discovery returns multiple models', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/runtime.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@mariozechner/pi-coding-agent')
@@ -516,7 +516,7 @@ test('pi runtime adapter prefers linx-lite when cloud model discovery returns mu
 })
 
 test('pi runtime adapter keeps both LinX fallback models when cloud discovery is unavailable', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/runtime.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@mariozechner/pi-coding-agent')
@@ -575,7 +575,7 @@ test('pi runtime adapter keeps both LinX fallback models when cloud discovery is
 })
 
 test('pi runtime adapter enables xhigh thinking for LinX cloud models', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/runtime.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@mariozechner/pi-coding-agent')
@@ -631,7 +631,7 @@ test('pi runtime adapter enables xhigh thinking for LinX cloud models', async (t
 })
 
 test('pi runtime adapter ignores stale undefineds defaults that point to gpt-5-codex', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/runtime.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@mariozechner/pi-coding-agent')
@@ -700,7 +700,7 @@ test('pi runtime adapter ignores stale undefineds defaults that point to gpt-5-c
 })
 
 test('pi runtime adapter preserves the last valid LinX model and thinking defaults', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/runtime.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@mariozechner/pi-coding-agent')
@@ -766,7 +766,7 @@ test('pi runtime adapter preserves the last valid LinX model and thinking defaul
 })
 
 test('pi runtime adapter brands the default system prompt as LinX AI Secretary', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/runtime.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@mariozechner/pi-coding-agent')
@@ -822,8 +822,8 @@ test('pi runtime adapter brands the default system prompt as LinX AI Secretary',
 
 test('pi runtime adapter marks expired cloud auth during startup model preflight', async (t) => {
   const [{ module, cleanup }, { module: chatApiModule, cleanup: chatApiCleanup }] = await Promise.all([
-    loadWatchModule('lib/pi-adapter/runtime.ts'),
-    loadWatchModule('lib/chat-api.ts'),
+    loadAutoModeModule('lib/pi-adapter/runtime.ts'),
+    loadAutoModeModule('lib/chat-api.ts'),
   ])
   t.after(() => cleanup())
   t.after(() => chatApiCleanup())
@@ -880,8 +880,8 @@ test('pi runtime adapter marks expired cloud auth during startup model preflight
 
 test('pi runtime adapter silently refreshes stored auth before prompting for login', async (t) => {
   const [{ module, cleanup }, { module: chatApiModule, cleanup: chatApiCleanup }] = await Promise.all([
-    loadWatchModule('lib/pi-adapter/runtime.ts'),
-    loadWatchModule('lib/chat-api.ts'),
+    loadAutoModeModule('lib/pi-adapter/runtime.ts'),
+    loadAutoModeModule('lib/chat-api.ts'),
   ])
   t.after(() => cleanup())
   t.after(() => chatApiCleanup())
@@ -952,14 +952,14 @@ test('pi runtime adapter silently refreshes stored auth before prompting for log
   const { SessionManager } = await import('@mariozechner/pi-coding-agent')
   const cwd = mkdtempSync(join(tmpdir(), 'linx-pi-runtime-refresh-auth-'))
   const agentDir = mkdtempSync(join(tmpdir(), 'linx-pi-runtime-refresh-auth-agent-'))
-  t.after(() => {
+  t.after(async () => {
     globalThis.fetch = originalFetch
     if (originalHome === undefined) {
       delete process.env.HOME
     } else {
       process.env.HOME = originalHome
     }
-    tokenServer.close()
+    await closeHttpServer(tokenServer)
     process.chdir(cliRoot)
     rmSync(home, { recursive: true, force: true })
     rmSync(cwd, { recursive: true, force: true })
@@ -1006,8 +1006,8 @@ test('pi runtime adapter silently refreshes stored auth before prompting for log
 
 test('pi runtime adapter silently refreshes stored auth when chat completion rejects the token', async (t) => {
   const [{ module, cleanup }, { module: chatApiModule, cleanup: chatApiCleanup }] = await Promise.all([
-    loadWatchModule('lib/pi-adapter/runtime.ts'),
-    loadWatchModule('lib/chat-api.ts'),
+    loadAutoModeModule('lib/pi-adapter/runtime.ts'),
+    loadAutoModeModule('lib/chat-api.ts'),
   ])
   t.after(() => cleanup())
   t.after(() => chatApiCleanup())
@@ -1066,14 +1066,14 @@ test('pi runtime adapter silently refreshes stored auth when chat completion rej
   const { SessionManager } = await import('@mariozechner/pi-coding-agent')
   const cwd = mkdtempSync(join(tmpdir(), 'linx-pi-runtime-chat-refresh-'))
   const agentDir = mkdtempSync(join(tmpdir(), 'linx-pi-runtime-chat-refresh-agent-'))
-  t.after(() => {
+  t.after(async () => {
     globalThis.fetch = originalFetch
     if (originalHome === undefined) {
       delete process.env.HOME
     } else {
       process.env.HOME = originalHome
     }
-    tokenServer.close()
+    await closeHttpServer(tokenServer)
     process.chdir(cliRoot)
     rmSync(home, { recursive: true, force: true })
     rmSync(cwd, { recursive: true, force: true })
@@ -1119,7 +1119,7 @@ test('pi runtime adapter silently refreshes stored auth when chat completion rej
 })
 
 test('pi runtime adapter overrides restored non-LinX session models', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/runtime.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@mariozechner/pi-coding-agent')
@@ -1192,7 +1192,7 @@ test('pi runtime adapter overrides restored non-LinX session models', async (t) 
 })
 
 test('pi runtime adapter keeps Pi native and LinX packaged tools active in the cloud path', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/runtime.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@mariozechner/pi-coding-agent')
@@ -1251,7 +1251,7 @@ test('pi runtime adapter keeps Pi native and LinX packaged tools active in the c
 })
 
 test('pi runtime adapter applies a default timeout to bash when the model omits one', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/runtime.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
   t.after(() => cleanup())
 
   const cwd = mkdtempSync(join(tmpdir(), 'linx-pi-runtime-bash-timeout-'))
@@ -1279,7 +1279,7 @@ test('pi runtime adapter applies a default timeout to bash when the model omits 
 })
 
 test('linx pi remote approval preserves existing Pi extension beforeToolCall blocks', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/pod-approval.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/pod-approval.ts')
   t.after(() => cleanup())
 
   const runtime = createApprovalRuntime()
@@ -1303,7 +1303,7 @@ test('linx pi remote approval preserves existing Pi extension beforeToolCall blo
 })
 
 test('linx pi remote approval does not create approvals for Pi-native allowed tool calls', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/pod-approval.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/pod-approval.ts')
   t.after(() => cleanup())
 
   const runtime = createApprovalRuntime()
@@ -1331,6 +1331,79 @@ test('linx pi remote approval does not create approvals for Pi-native allowed to
   assert.equal(runtime.state.approvals.length, 0)
   assert.equal(runtime.state.audits.length, 0)
   assert.equal(runtime.state.inbox.length, 0)
+})
+
+test('linx pi auto approval uses the same secretary path outside auto-mode', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/pod-approval.ts')
+  t.after(() => cleanup())
+
+  const runtime = createApprovalRuntime()
+  const session = createFakePiSession('019df-test-pi-secretary')
+
+  module.installLinxPiRemoteApproval({
+    session,
+    cwd: '/tmp/linx-work',
+    runtime,
+    mode: 'smart',
+    resolveSecretaryRecommendation: async ({ request }) => ({
+      kind: request.kind,
+      canAutoDecide: true,
+      decision: 'accept',
+      confidence: 0.95,
+      reason: 'safe enough for AI secretary',
+      source: 'model',
+    }),
+  })
+
+  const result = await session.agent.beforeToolCall(createToolContext({
+    id: 'tool_bash_secretary',
+    name: 'bash',
+    args: { command: 'node --version' },
+  }))
+
+  assert.equal(result, undefined)
+  assert.equal(runtime.state.approvals.length, 1)
+  assert.equal(runtime.state.approvals[0].status, 'approved')
+  assert.equal(runtime.state.approvals[0].toolCallId, 'tool_bash_secretary')
+  assert.match(runtime.state.approvals[0].session, /\/\.data\/chat\/ai-secretary\/index\.ttl#019df-test-pi-secretary$/)
+  assert.doesNotMatch(runtime.state.approvals[0].session, /linx-auto-mode/)
+  assert.equal(runtime.state.audits.at(-1).action, 'approval_approved')
+})
+
+test('linx pi approval blocks unsafe tool calls when remote approval rejects', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/pod-approval.ts')
+  t.after(() => cleanup())
+
+  const runtime = createApprovalRuntime({
+    onSleep(state) {
+      for (const approval of state.approvals) {
+        if (approval.status === 'pending') {
+          approval.status = 'rejected'
+          approval.resolvedAt = new Date('2026-05-05T00:00:01.000Z')
+        }
+      }
+    },
+  })
+  const session = createFakePiSession('019df-test-pi-block')
+
+  module.installLinxPiRemoteApproval({
+    session,
+    cwd: '/tmp/linx-work',
+    runtime,
+    mode: 'smart',
+    resolveSecretaryRecommendation: async () => null,
+  })
+
+  const result = await session.agent.beforeToolCall(createToolContext({
+    id: 'tool_write_block',
+    name: 'write',
+    args: { path: '/tmp/linx-work/out.txt', content: 'hello' },
+  }))
+
+  assert.equal(result?.block, true)
+  assert.match(result?.reason ?? '', /LinX denied/)
+  assert.equal(runtime.state.approvals.length, 1)
+  assert.equal(runtime.state.approvals[0].status, 'rejected')
 })
 
 function createToolContext({ id, name, args }) {
@@ -1425,4 +1498,18 @@ function createApprovalRuntime(options = {}) {
     },
   }
   return runtime
+}
+
+async function closeHttpServer(server) {
+  await new Promise((resolve, reject) => {
+    server.close((error) => {
+      if (error && error.code !== 'ERR_SERVER_NOT_RUNNING') {
+        reject(error)
+        return
+      }
+      resolve()
+    })
+    server.closeIdleConnections?.()
+    server.closeAllConnections?.()
+  })
 }

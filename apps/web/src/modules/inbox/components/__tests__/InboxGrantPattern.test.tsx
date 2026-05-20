@@ -58,7 +58,7 @@ const pendingApproval = {
   },
 }
 
-describe('InboxContentPane grant pattern', () => {
+describe('InboxContentPane approval resolution', () => {
   beforeEach(() => {
     vi.clearAllMocks()
 
@@ -95,10 +95,11 @@ describe('InboxContentPane grant pattern', () => {
     }))
   })
 
-  it('submits grant pattern when approving a pending approval', async () => {
+  it('submits the approval decision and reason without granting a reusable pattern', async () => {
     render(<InboxContentPane />)
 
-    fireEvent.change(screen.getByLabelText('自动允许同类请求'), { target: { value: 'shell:git status' } })
+    expect(screen.queryByLabelText('自动允许同类请求')).toBeNull()
+
     fireEvent.change(screen.getByLabelText('处理备注'), { target: { value: '可以执行' } })
     fireEvent.click(screen.getByText('批准'))
 
@@ -107,7 +108,6 @@ describe('InboxContentPane grant pattern', () => {
         approval: expect.objectContaining({ id: 'approval-1' }),
         decision: 'approved',
         reason: '可以执行',
-        grantPattern: 'shell:git status',
       })
     })
   })

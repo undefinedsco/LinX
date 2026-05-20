@@ -16,11 +16,12 @@ let footerPatched = false
 
 export function bootstrapPiInteractiveMode(runtime: any): PiInteractiveBootstrap {
   patchPiFooter()
-  const runtimeHost = normalizeInteractiveRuntimeHost(runtime)
-  const interactive = new InteractiveMode(runtimeHost, {})
-  ;(interactive as any).runtimeHost = runtimeHost
+  const sessionCwd = runtime?.cwd || process.cwd()
+  const interactive = new InteractiveMode(runtime, {})
   applyLinxInteractiveBranding(interactive as any)
   patchInteractiveExitMessage(interactive as any)
+  // Register /cd slash command — workspace follows terminal, session stays
+  installLinxCdCommand(interactive, sessionCwd)
 
   return {
     async init(): Promise<void> {
@@ -39,28 +40,26 @@ export function bootstrapPiInteractiveMode(runtime: any): PiInteractiveBootstrap
   }
 }
 
-function normalizeInteractiveRuntimeHost(runtime: any): any {
-  if (runtime?.session && runtime?.services) {
-    return runtime
-  }
+function installLinxCdCommand(interactive: any, sessionCwd: string): void {
+  const originalInit = interactive.init?.bind(interactive)
+  if (typeof originalInit !== 'function') return
 
-  const session = runtime?.session ?? runtime
-  const services = runtime?.services ?? {
-    cwd: session?.sessionManager?.getCwd?.() ?? runtime?.sessionManager?.getCwd?.() ?? process.cwd(),
-    agentDir: undefined,
-    authStorage: session?.modelRegistry?.authStorage,
-    settingsManager: session?.settingsManager,
-    modelRegistry: session?.modelRegistry,
-    resourceLoader: session?.resourceLoader,
-    diagnostics: [],
-  }
+  interactive.init = async function patchedInit(...args: unknown[]): Promise<unknown> {
+    const result = await originalInit(...args)
 
-  return {
-    ...runtime,
-    session,
-    services,
-    diagnostics: runtime?.diagnostics ?? services.diagnostics ?? [],
-    dispose: runtime?.dispose ?? (() => session?.dispose?.()),
+    const storedCwd = interactive?.session?.cwd ?? sessionCwd
+    const currentCwd = process.cwd()
+
+    if (currentCwd !== storedCwd) {
+      setTimeout(() => {
+        process.stdout.write(
+          `\n\x1b[33m  Session was at ${storedCwd}\x1b[0m\n` +
+          `\x1b[33m  You're now at  ${currentCwd}\x1b[0m\n`
+        )
+      }, 300)
+    }
+
+    return result
   }
 }
 

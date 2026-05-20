@@ -5,6 +5,7 @@ import {
   buildAIConfigProviderStateMap,
   normalizeAIConfigModelId,
   sameAIConfigProviderFamily,
+  selectAIConfigCredential,
 } from '@undefineds.co/models'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 import {
@@ -18,7 +19,7 @@ import type { AIProvider, AIModel } from '../types'
 type AnyRow = Record<string, any>
 
 function rowKey(row: AnyRow): string {
-  return (row?.['@id'] as string) || (row?.id as string)
+  return (row?.id as string) || (row?.['@id'] as string)
 }
 
 function applyPayload(draft: AnyRow, payload: Record<string, unknown>) {
@@ -135,6 +136,8 @@ export function useModelServices() {
     const existingCredential = credentialRows.find((row) =>
       sameAIConfigProviderFamily(typeof row.provider === 'string' ? row.provider : '', plan.providerId),
     )
+    const selectedCredential = selectAIConfigCredential(plan.providerId, credentialRows, providerRows)?.credential
+    const credentialTarget = selectedCredential ?? existingCredential
     const existingModels = modelRows.filter((row) =>
       sameAIConfigProviderFamily(typeof row.isProvidedBy === 'string' ? row.isProvidedBy : '', plan.providerId),
     )
@@ -150,8 +153,8 @@ export function useModelServices() {
     }
 
     if (plan.credentialPayload) {
-      const credentialTx = existingCredential
-        ? credentialCollection.update(rowKey(existingCredential), (draft: AnyRow) => {
+      const credentialTx = credentialTarget
+        ? credentialCollection.update(rowKey(credentialTarget), (draft: AnyRow) => {
             applyPayload(draft, plan.credentialPayload as AnyRow)
           })
         : credentialCollection.insert(plan.credentialPayload as any)
@@ -180,7 +183,8 @@ export function useModelServices() {
 
       for (const row of existingModels) {
         const modelId = typeof row.id === 'string' ? row.id : ''
-        if (!plan.modelDeleteIds.includes(modelId)) continue
+        const normalizedModelId = normalizeAIConfigModelId(modelId, plan.providerId)
+        if (!plan.modelDeleteIds.includes(normalizedModelId)) continue
         const deleteTx = modelCollection.delete(rowKey(row))
         await waitPersist(deleteTx)
       }

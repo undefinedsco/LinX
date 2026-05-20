@@ -4,32 +4,26 @@ import { ensureBrowserConsentLogin, isOidcLoginExpiredError } from '../oidc-auth
 import { DEFAULT_LINX_CLOUD_MODEL_ID, FALLBACK_LINX_CLOUD_MODEL_IDS, resolvePreferredLinxCloudModelId } from '../default-model.js'
 import { ensureLinxPiTheme } from './theme.js'
 import {
-  type AgentSession,
-  type AgentSessionRuntime,
   type BashOperations,
+  type AgentSessionRuntime,
   AuthStorage,
   ModelRegistry,
   SessionManager,
   SettingsManager,
-  createCodingTools,
   createAgentSessionFromServices,
   createAgentSessionRuntime,
   createAgentSessionServices,
+  createCodingTools,
   createLocalBashOperations,
 } from '@mariozechner/pi-coding-agent'
 import { webFetchTool, webSearchTool } from './web-fetch.js'
 import { podReadTool, podWriteTool } from './pod-tools.js'
 import { existsSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { delimiter, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { ThinkingLevel } from '@mariozechner/pi-agent-core'
 import type { Api, Model, OAuthCredentials } from '@mariozechner/pi-ai'
 import { isRemoteAuthExpiredError, type RemoteChatMessage, type RemoteChatTool } from '../chat-api.js'
 import { installLinxPiRemoteApproval } from './pod-approval.js'
-
-type LinxAgentSessionRuntime = AgentSessionRuntime & {
-  linxAuthBridge?: LinxCloudPiAuthBridge & { authMode: 'oauth' | 'apiKey' }
-}
 
 const UNDEFINEDS_PROVIDER_ID = 'undefineds'
 const UNDEFINEDS_PROVIDER_LABEL = 'undefineds'
@@ -54,7 +48,7 @@ export interface PiRuntimeAdapterDependencies {
     }
     start(): Promise<void>
     sendTurn(input: string): Promise<void>
-    subscribe(listener: (event: import('../watch/types.js').WatchNormalizedEvent) => void): () => void
+    subscribe(listener: (event: import('../auto-mode/types.js').AutoModeNormalizedEvent) => void): () => void
     close(): Promise<void>
   }
   createRemoteCompletion?: (options: {
@@ -83,7 +77,7 @@ export interface PiRuntimeFactoryContext {
   sessionStartEvent?: unknown
 }
 
-export type PiCreateRuntimeFactory = (context: PiRuntimeFactoryContext) => Promise<LinxAgentSessionRuntime>
+export type PiCreateRuntimeFactory = (context: PiRuntimeFactoryContext) => Promise<AgentSessionRuntime>
 
 export interface PiRuntimeAdapterOptions {
   cwd?: string
@@ -266,7 +260,7 @@ export function createPiRuntimeAdapter(
     model: proxy?.record.model ?? activeModelId,
     backend: proxy?.record.backend ?? UNDEFINEDS_PROVIDER_ID,
     streamAdapter,
-    createRuntime: async (context: PiRuntimeFactoryContext): Promise<LinxAgentSessionRuntime> => {
+    createRuntime: async (context: PiRuntimeFactoryContext): Promise<AgentSessionRuntime> => {
       const authStorage = AuthStorage.inMemory()
       const modelRegistry = ModelRegistry.inMemory(authStorage)
       const originalIsUsingOAuth = modelRegistry.isUsingOAuth.bind(modelRegistry)
@@ -350,8 +344,6 @@ export function createPiRuntimeAdapter(
       })
       if (!options.providerConfig?.oauth && !resolvedOAuth && !explicitApiKey) {
         authStorage.setRuntimeApiKey(UNDEFINEDS_PROVIDER_ID, 'linx-runtime-managed-auth')
-      } else if (explicitApiKey) {
-        authStorage.setRuntimeApiKey(UNDEFINEDS_PROVIDER_ID, explicitApiKey)
       }
       if (options.providerConfig?.oauth && explicitOAuthCredential) {
         authStorage.set(UNDEFINEDS_PROVIDER_ID, { type: 'oauth', ...explicitOAuthCredential })
@@ -398,7 +390,7 @@ export function createPiRuntimeAdapter(
         session,
         cwd: context.cwd,
       })
-      if (session.model?.provider !== selectedModel.provider || session.model?.id !== selectedModel.id) {
+      if (session.model?.provider !== selectedModel.provider || session.model.id !== selectedModel.id) {
         await session.setModel(selectedModel)
       }
       const runtime = await createAgentSessionRuntime(async () => ({
@@ -420,7 +412,7 @@ export function createPiRuntimeAdapter(
         runtimeUrl: baseUrl,
         shouldPromptLoginOnStart,
       } satisfies LinxCloudPiAuthBridge & { authMode: 'oauth' | 'apiKey' }
-      return runtime as LinxAgentSessionRuntime
+      return runtime
     },
     async start(): Promise<void> {
       await proxy?.start()
@@ -464,7 +456,7 @@ export function createPiRuntimeAdapter(
       }
 
       if (recoveryOptions.refreshOnAuthExpired) {
-        const refreshed = await resolveLinxPiCloudOAuthCredential(options.providerConfig?.issuerUrl, { forceRefresh: true }).catch((refreshError) => {
+        const refreshed = await resolveLinxPiCloudOAuthCredential(options.providerConfig?.issuerUrl).catch((refreshError) => {
           if (isOidcLoginExpiredError(refreshError)) {
             return null
           }
@@ -509,7 +501,7 @@ export function createPiRuntimeAdapter(
         throw error
       }
 
-      const refreshed = await resolveLinxPiCloudOAuthCredential(options.providerConfig?.issuerUrl, { forceRefresh: true }).catch((refreshError) => {
+      const refreshed = await resolveLinxPiCloudOAuthCredential(options.providerConfig?.issuerUrl).catch((refreshError) => {
         if (isOidcLoginExpiredError(refreshError)) {
           return null
         }
@@ -581,12 +573,14 @@ export function createLinxPiCodingTools(cwd: string, options: {
   const bashTimeoutSeconds = options.bashTimeoutSeconds ?? DEFAULT_LINX_PI_BASH_TIMEOUT_SECONDS
   return createCodingTools(cwd, {
     bash: {
+      commandPrefix: buildLinxToolCommandPrefix(),
       operations: {
-        exec(command, workingDirectory, execOptions) {
+        exec(command, workingDirectory, options) {
           return localBashOperations.exec(command, workingDirectory ?? process.cwd(), {
-            ...execOptions,
-            timeout: typeof execOptions.timeout === 'number'
-              ? execOptions.timeout
+            ...options,
+            env: withLinxToolPath(options.env),
+            timeout: typeof options.timeout === 'number'
+              ? options.timeout
               : bashTimeoutSeconds,
           })
         },
@@ -595,111 +589,82 @@ export function createLinxPiCodingTools(cwd: string, options: {
   })
 }
 
-function hasLinxXhighThinking(session: {
-  model?: { provider?: string; reasoning?: boolean }
-}): boolean {
-  return session.model?.provider === UNDEFINEDS_PROVIDER_ID && session.model.reasoning === true
-}
-
-function isThinkingLevel(level: string): level is ThinkingLevel {
-  return level === 'off'
-    || level === 'minimal'
-    || level === 'low'
-    || level === 'medium'
-    || level === 'high'
-    || level === 'xhigh'
-}
-
-function clampLinxThinkingLevel(level: ThinkingLevel, availableLevels: ThinkingLevel[]): ThinkingLevel {
-  if (availableLevels.includes(level)) {
-    return level
-  }
-  return availableLevels.includes('high') ? 'high' : (availableLevels.at(-1) ?? 'off')
-}
-
-type LinxThinkingSession = {
-  model?: { provider?: string; reasoning?: boolean }
-  thinkingLevel?: ThinkingLevel
-  supportsXhighThinking?: () => boolean
-  setThinkingLevel?: (level: ThinkingLevel) => unknown
-  getAvailableThinkingLevels?: () => ThinkingLevel[]
-  agent?: { state?: { thinkingLevel?: ThinkingLevel } }
-  sessionManager?: { appendThinkingLevelChange?: (level: string) => void }
-  settingsManager?: { setDefaultThinkingLevel?: (level: ThinkingLevel) => void }
-}
-
-function patchLinxThinkingLevelSetter(session: {
-  model?: { provider?: string; reasoning?: boolean }
-  thinkingLevel?: ThinkingLevel
-  setThinkingLevel?: (level: ThinkingLevel) => unknown
-  getAvailableThinkingLevels?: () => ThinkingLevel[]
-  agent?: { state?: { thinkingLevel?: ThinkingLevel } }
-  sessionManager?: { appendThinkingLevelChange?: (level: string) => void }
-  settingsManager?: { setDefaultThinkingLevel?: (level: ThinkingLevel) => void }
-}): void {
-  const originalSetThinkingLevel = session.setThinkingLevel?.bind(session)
-  if (!originalSetThinkingLevel) {
-    return
-  }
-  session.setThinkingLevel = (level: ThinkingLevel): unknown => {
-    if (!hasLinxXhighThinking(session)) {
-      return originalSetThinkingLevel(level)
-    }
-    const effectiveLevel = clampLinxThinkingLevel(level, session.getAvailableThinkingLevels?.() ?? [])
-    const isChanging = effectiveLevel !== session.thinkingLevel
-    if (session.agent?.state) {
-      session.agent.state.thinkingLevel = effectiveLevel
-    }
-    if (isChanging) {
-      session.sessionManager?.appendThinkingLevelChange?.(effectiveLevel)
-      session.settingsManager?.setDefaultThinkingLevel?.(effectiveLevel)
-    }
+function buildLinxToolCommandPrefix(): string | undefined {
+  const udfsBin = resolveUdfsToolBinFile()
+  if (!udfsBin) {
     return undefined
   }
+
+  return `udfs() { node ${shellQuote(udfsBin)} "$@"; }`
 }
 
-function normalizeInitialLinxThinkingLevel(session: {
+function withLinxToolPath(env: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv {
+  const nextEnv = { ...(env ?? process.env) }
+  const udfsBinDir = resolveUdfsToolBinDir()
+  if (!udfsBinDir) {
+    return nextEnv
+  }
+
+  const pathKey = Object.keys(nextEnv).find((key) => key.toLowerCase() === 'path') ?? 'PATH'
+  const currentPath = nextEnv[pathKey] ?? ''
+  const entries = currentPath.split(delimiter).filter(Boolean)
+  if (!entries.includes(udfsBinDir)) {
+    nextEnv[pathKey] = [udfsBinDir, currentPath].filter(Boolean).join(delimiter)
+  }
+  return nextEnv
+}
+
+function resolveUdfsToolBinFile(importMetaUrl = import.meta.url): string | null {
+  const udfsBinDir = resolveUdfsToolBinDir(importMetaUrl)
+  if (!udfsBinDir) {
+    return null
+  }
+  return join(udfsBinDir, 'udfs.js')
+}
+
+function resolveUdfsToolBinDir(importMetaUrl = import.meta.url): string | null {
+  const moduleDir = dirname(fileURLToPath(importMetaUrl))
+  const candidates = [
+    // Published package: @undefineds.co/models dependency next to @undefineds.co/linx.
+    resolve(moduleDir, '..', '..', '..', '..', '@undefineds.co', 'models', 'dist', 'bin'),
+    // Workspace/dev tree: apps/cli/dist/lib/pi-adapter/runtime.js -> packages/models/dist/bin
+    resolve(moduleDir, '..', '..', '..', '..', '..', 'packages', 'models', 'dist', 'bin'),
+    // Source-tree fallback when running through a TS loader.
+    resolve(moduleDir, '..', '..', '..', '..', '..', '..', 'packages', 'models', 'dist', 'bin'),
+  ]
+
+  return candidates.find((candidate) => existsSync(join(candidate, 'udfs.js'))) ?? null
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`
+}
+
+function enableLinxXhighThinking(session: {
   model?: { provider?: string; reasoning?: boolean }
-  thinkingLevel?: ThinkingLevel
-  getAvailableThinkingLevels?: () => ThinkingLevel[]
-  agent?: { state?: { thinkingLevel?: ThinkingLevel } }
+  supportsXhighThinking?: () => boolean
+  getAvailableThinkingLevels?: () => string[]
 }): void {
-  if (!hasLinxXhighThinking(session) || typeof session.thinkingLevel !== 'string' || !isThinkingLevel(session.thinkingLevel)) {
-    return
-  }
-  const effectiveLevel = clampLinxThinkingLevel(session.thinkingLevel, session.getAvailableThinkingLevels?.() ?? [])
-  if (effectiveLevel !== session.thinkingLevel) {
-    if (session.agent?.state) {
-      session.agent.state.thinkingLevel = effectiveLevel
-    }
-  }
-}
-
-function enableLinxXhighThinking(session: AgentSession): void {
-  const linxSession = session as unknown as LinxThinkingSession
   const originalSupportsXhighThinking = session.supportsXhighThinking?.bind(session)
   const originalGetAvailableThinkingLevels = session.getAvailableThinkingLevels?.bind(session)
 
   if (originalSupportsXhighThinking) {
-    linxSession.supportsXhighThinking = () => (
-      hasLinxXhighThinking(linxSession)
+    session.supportsXhighThinking = () => (
+      session.model?.provider === UNDEFINEDS_PROVIDER_ID && session.model.reasoning
         ? true
         : originalSupportsXhighThinking()
     )
   }
 
   if (originalGetAvailableThinkingLevels) {
-    linxSession.getAvailableThinkingLevels = () => {
+    session.getAvailableThinkingLevels = () => {
       const levels = originalGetAvailableThinkingLevels()
-      if (hasLinxXhighThinking(linxSession) && !levels.includes('xhigh')) {
+      if (session.model?.provider === UNDEFINEDS_PROVIDER_ID && session.model.reasoning && !levels.includes('xhigh')) {
         return [...levels, 'xhigh']
       }
       return levels
     }
   }
-
-  patchLinxThinkingLevelSetter(linxSession)
-  normalizeInitialLinxThinkingLevel(linxSession)
 }
 
 function isAuthExpiredError(error: unknown): boolean {

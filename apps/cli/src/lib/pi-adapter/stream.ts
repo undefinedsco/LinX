@@ -1,6 +1,6 @@
 import { createAssistantMessageEventStream, type AssistantMessage, type AssistantMessageEventStream } from '@mariozechner/pi-ai'
 import type { RemoteChatMessage, RemoteChatTool, RemoteChatToolCall } from '../chat-api.js'
-import type { WatchNormalizedEvent } from '../watch/types.js'
+import type { AutoModeNormalizedEvent } from '../auto-mode/types.js'
 import { DEFAULT_LINX_CLOUD_MODEL_ID } from '../default-model.js'
 
 const UNDEFINEDS_PROVIDER_ID = 'undefineds'
@@ -43,10 +43,10 @@ export interface PiAgentStreamAdapterOptions {
   sessionId?: string
   cwd?: string
   model?: string
-  eventSource?: () => AsyncIterable<WatchNormalizedEvent> | Iterable<WatchNormalizedEvent>
+  eventSource?: () => AsyncIterable<AutoModeNormalizedEvent> | Iterable<AutoModeNormalizedEvent>
   backend?: {
     sendTurn(input: string): Promise<void>
-    subscribe(listener: (event: WatchNormalizedEvent) => void): () => void
+    subscribe(listener: (event: AutoModeNormalizedEvent) => void): () => void
   }
   completionBackend?: {
     complete(input: {
@@ -565,11 +565,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 async function* createBackendEventSource(
   backend: {
     sendTurn(input: string): Promise<void>
-    subscribe(listener: (event: WatchNormalizedEvent) => void): () => void
+    subscribe(listener: (event: AutoModeNormalizedEvent) => void): () => void
   },
   prompt: string,
-): AsyncIterable<WatchNormalizedEvent> {
-  const queue: WatchNormalizedEvent[] = []
+): AsyncIterable<AutoModeNormalizedEvent> {
+  const queue: AutoModeNormalizedEvent[] = []
   let notify: (() => void) | null = null
   let done = false
   const unsubscribe = backend.subscribe((event) => {

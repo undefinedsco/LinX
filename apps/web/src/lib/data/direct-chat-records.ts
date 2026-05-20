@@ -1,9 +1,7 @@
 import {
   ContactClass,
   ContactType,
-  agentTable,
   agentRepository,
-  contactTable,
   contactRepository,
   type AgentRow,
   type ContactRow,
@@ -48,25 +46,12 @@ type CollectionInternalState<T extends Record<string, unknown>> = {
 }
 
 function ensureRecordId(
-  db: SolidDatabase,
-  table: unknown,
   record: Partial<Record<string, unknown>>,
   fallback?: string,
 ): string {
   const directId = typeof record.id === 'string' && record.id.length > 0 ? record.id : undefined
   if (directId) {
     return directId
-  }
-
-  const resolver = db as SolidDatabase & {
-    resolveResourceId?: (table: unknown, target: string | Record<string, unknown>) => string
-  }
-  if (typeof resolver.resolveResourceId === 'function') {
-    try {
-      return resolver.resolveResourceId(table, record as Record<string, unknown>)
-    } catch {
-      // Fall back to the caller-provided id for compatibility with older ORM builds.
-    }
   }
 
   if (fallback) {
@@ -109,8 +94,8 @@ export async function createAgentContactRecords(
   return {
     agent: agent as AgentRow,
     contact: contact as ContactRow,
-    agentId: ensureRecordId(db, agentTable, agent as Record<string, unknown>, agentId),
-    contactId: ensureRecordId(db, contactTable, contact as Record<string, unknown>, contactId),
+    agentId: ensureRecordId(agent as Record<string, unknown>, agentId),
+    contactId: ensureRecordId(contact as Record<string, unknown>, contactId),
     contactUri: resolveRowSubject(contact as Record<string, unknown>) ?? contactId,
   }
 }
@@ -136,7 +121,7 @@ export async function createSolidContactRecord(
 
   return {
     contact: contact as ContactRow,
-    contactId: ensureRecordId(db, contactTable, contact as Record<string, unknown>, contactId),
+    contactId: ensureRecordId(contact as Record<string, unknown>, contactId),
     contactUri: resolveRowSubject(contact as Record<string, unknown>) ?? contactId,
   }
 }
@@ -162,7 +147,7 @@ export async function createGroupContactRecord(
 
   return {
     contact: contact as ContactRow,
-    contactId: ensureRecordId(db, contactTable, contact as Record<string, unknown>, contactId),
+    contactId: ensureRecordId(contact as Record<string, unknown>, contactId),
     contactUri: resolveRowSubject(contact as Record<string, unknown>) ?? contactId,
   }
 }

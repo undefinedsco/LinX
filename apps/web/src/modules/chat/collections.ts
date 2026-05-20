@@ -16,10 +16,12 @@ import {
   messageTable,
   agentTable,
   contactTable,
-  credentialTable,
+  credentialResource,
+  aiProviderResource,
   eq,
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
+  selectAIConfigCredential,
   resolveThreadChatId as resolveThreadChatIdFromRow,
   UDFS,
   WF,
@@ -52,6 +54,7 @@ import { favoriteHooks } from '@/modules/favorites/collections'
 import { createAgentContactRecords, writeCollectionRow } from '@/lib/data/direct-chat-records'
 import { getAgentProviderInfo } from '@/lib/agent-providers'
 import { toStringArray } from '@/lib/utils'
+import { ensureAgentHome } from './agent-home'
 
 // ============================================================================
 // Database Getter
@@ -198,11 +201,9 @@ async function resolveThreadChatId(
     return cachedChatId
   }
 
-  const cachedRow = cachedChatId
-    ? await (db as any).findByLocator(threadTable as any, { id: threadId, chat: cachedChatId } as any)
+  const row = typeof (db as any).findById === 'function'
+    ? await (db as any).findById(threadTable as any, threadId) as ThreadRow | null
     : null
-  const row = (cachedRow
-    ?? (await db.select().from(threadTable).execute()).find((entry: any) => entry.id === threadId)) as ThreadRow | undefined
   const rowChatId = resolveThreadChatIdFromRow(row)
   if (!rowChatId) {
     return null
@@ -325,7 +326,9 @@ async function ensureChatStateRow(db: SolidDatabase, chatId: string): Promise<Ch
     return cached
   }
 
-  const located = await (db as any).findByLocator(chatTable as any, { id: chatId } as any) as ChatRow | null
+  const located = typeof (db as any).findById === 'function'
+    ? await (db as any).findById(chatTable as any, chatId) as ChatRow | null
+    : null
   if (located) {
     if (!chatCollection.isReady()) {
       await chatCollection.preload()
@@ -353,12 +356,9 @@ async function ensureThreadStateRow(db: SolidDatabase, threadId: string): Promis
     return cached
   }
 
-  const cachedChatId = getCachedThreadChatId(threadId)
-  const cachedRow = cachedChatId
-    ? await (db as any).findByLocator(threadTable as any, { id: threadId, chat: cachedChatId } as any)
+  const row = typeof (db as any).findById === 'function'
+    ? await (db as any).findById(threadTable as any, threadId) as ThreadRow | null
     : null
-  const row = (cachedRow
-    ?? (await db.select().from(threadTable).execute()).find((entry: any) => entry.id === threadId)) as ThreadRow | undefined
 
   if (!row) {
     throw new Error(`Thread ${threadId} was not found in the Pod`)
@@ -437,6 +437,7 @@ async function ensureLinxWelcomeInternal(): Promise<LinxWelcomeResult | null> {
     const thread = await ensureDefaultThread(chatId)
     const threadId = resolveRowSubject(thread as Record<string, unknown>) ?? thread.id
     const maker = await resolveAssistantMakerFromChat(db, existingSecretary)
+    await ensureAgentHomeForChat(db, existingSecretary)
     await ensureDefaultWelcomeMessage(chatId, threadId, maker ?? getCurrentWebId(db) ?? 'linx')
     return { chatId, threadId, created: false }
   }
@@ -465,7 +466,7 @@ async function resolveAssistantMakerFromChat(db: SolidDatabase, chat: Pick<ChatR
   try {
     const contactId = extractLinkedEntityId(participant)
     const contact = contactId
-      ? await (db as any).findByLocator(contactTable as any, { id: contactId } as any) as ContactRow | null
+      ? await (db as any).findById(contactTable as any, contactId) as ContactRow | null
       : null
     if (contact?.entityUri) {
       return contact.entityUri
@@ -477,9 +478,42 @@ async function resolveAssistantMakerFromChat(db: SolidDatabase, chat: Pick<ChatR
   return participant
 }
 
+function extractAgentIdFromRef(ref: string | null | undefined): string | null {
+  if (!ref) return null
+  const match = ref.match(/\/\.data\/agents\/([^/#]+)\.ttl(?:#.*)?$/)
+  if (match?.[1]) return decodeURIComponent(match[1])
+  return /^[a-zA-Z0-9_-]+$/.test(ref) ? ref : null
+}
+
+async function ensureAgentHomeForChat(db: SolidDatabase, chat: Pick<ChatRow, 'title' | 'participants'>): Promise<void> {
+  const [participant] = toStringArray(chat.participants)
+  if (!participant) return
+
+  try {
+    const contactId = extractLinkedEntityId(participant)
+    const contact = contactId
+      ? await (db as any).findByLocator(contactTable as any, { id: contactId } as any) as ContactRow | null
+      : null
+    const agentRef = contact?.entityUri ?? participant
+    const agentId = extractAgentIdFromRef(agentRef)
+    if (!agentId) return
+
+    const agent = await (db as any).findByLocator(agentTable as any, { id: agentId } as any) as AgentRow | null
+    await ensureAgentHome(db, {
+      agentId,
+      name: agent?.name || chat.title || agentId,
+      provider: normalizeAIConfigProviderId(typeof agent?.provider === 'string' ? agent.provider : LINX_DEFAULT_SECRETARY.provider),
+      model: normalizeAIConfigResourceId(typeof agent?.model === 'string' ? agent.model : LINX_DEFAULT_SECRETARY.model),
+      instructions: typeof agent?.instructions === 'string' ? agent.instructions : undefined,
+    })
+  } catch (error) {
+    console.warn('[chatOps] Failed to ensure Agent Home for chat:', error)
+  }
+}
+
 async function resolveAgentMaker(db: SolidDatabase, agentId: string): Promise<string> {
   try {
-    const agent = await (db as any).findByLocator(agentTable as any, { id: agentId } as any)
+    const agent = await (db as any).findById(agentTable as any, agentId)
     const agentUri = agent ? resolveRowSubject(agent as Record<string, unknown>) : undefined
     if (agentUri) return agentUri
   } catch (error) {
@@ -760,6 +794,13 @@ export const chatOps = {
       model: normalizeAIConfigResourceId(model),
       instructions: systemPrompt,
     })
+    await ensureAgentHome(db, {
+      agentId,
+      name: title,
+      provider: normalizeAIConfigProviderId(provider),
+      model: normalizeAIConfigResourceId(model),
+      instructions: systemPrompt,
+    })
 
     const chatId = crypto.randomUUID()
     const now = new Date()
@@ -976,7 +1017,7 @@ export const chatOps = {
     const cachedWorkspace = workspaceCollection.get(workspaceId)
     const persistedWorkspaceRows: WorkspaceRow[] = []
     if (!cachedWorkspace) {
-      const persistedWorkspace = await (db as any).findByLocator(workspaceTable as any, { id: workspaceId } as any)
+      const persistedWorkspace = await (db as any).findById(workspaceTable as any, workspaceId)
       if (persistedWorkspace) {
         persistedWorkspaceRows.push(persistedWorkspace)
       }
@@ -1327,25 +1368,30 @@ export const chatOps = {
   },
 
   /**
-   * Get API credential for a provider from credentialTable
+   * Get API credential for a provider from Pod-backed AI config resources.
    */
   async getCredential(provider: string): Promise<{ apiKey: string; baseUrl?: string } | null> {
     const db = getDb()
     if (!db) return null
-    
-    const providerCol = (credentialTable as any).provider
-    const rows = await db.select()
-      .from(credentialTable)
-      .where(eq(providerCol, normalizeAIConfigProviderId(provider)))
-      .execute() as Array<{ apiKey?: string; baseUrl?: string; status?: string }>
 
-    const cred = rows.find((row: any) => row?.status === 'active') ?? rows[0]
+    const providerId = normalizeAIConfigProviderId(provider)
+    const [credentialRows, providerRow] = await Promise.all([
+      db.select().from(credentialResource).execute(),
+      typeof (db as any).findById === 'function'
+        ? (db as any).findById(aiProviderResource as any, providerId).catch(() => null)
+        : Promise.resolve(null),
+    ])
+    const selected = selectAIConfigCredential(
+      providerId,
+      credentialRows as Array<Record<string, unknown>>,
+      providerRow ? [providerRow as Record<string, unknown>] : [],
+    )
 
-    if (!cred || !cred.apiKey) return null
+    if (!selected) return null
 
     return {
-      apiKey: cred.apiKey as string,
-      baseUrl: cred.baseUrl || undefined,
+      apiKey: selected.apiKey,
+      baseUrl: selected.baseUrl || undefined,
     }
   },
 

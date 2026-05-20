@@ -9,6 +9,19 @@ import { loadCredentials } from './lib/credentials-store.js'
 import { loginCommand, logoutCommand, whoamiCommand } from './lib/login-command.js'
 import { DefaultPackageManager, SettingsManager, runPrintMode } from '@mariozechner/pi-coding-agent'
 import { promptText } from './lib/prompt.js'
+import {
+  buildAutoModeOptions,
+  isAutoModeRequest,
+  runAutoModeCommand,
+  type AutoModeCommandArgs,
+} from './lib/auto-mode-command.js'
+import {
+  formatAutoModeSessionSummary,
+  listArchivedAutoModeSessions,
+  loadArchivedAutoModeSession,
+  resumeAutoModeSession,
+} from './lib/auto-mode/index.js'
+import { symphonyCommand } from './lib/symphony-command.js'
 import { resolveRuntimeTarget } from './lib/runtime-target.js'
 import { createCodexNativeProxy } from './lib/codex-plugin/index.js'
 import { bootstrapPiInteractiveMode, createPiRuntimeAdapter, resolveLinxInteractiveLoginReason, resolveLinxStartupLoginPromptDecision, type LinxLoginReason } from './lib/pi-adapter/index.js'
@@ -20,23 +33,11 @@ import {
   createLinxPiSessionManager,
   formatLinxPiSessionSummary,
   listLinxPiSessions,
+  resolveLinxPiSession,
 } from './lib/pi-adapter/session.js'
 import { LinxPiPodMirror } from './lib/pi-adapter/pod-mirror.js'
 import type { RemoteChatMessage, RemoteChatTool } from './lib/chat-api.js'
 import { LINX_AGENT_DIR } from './lib/pi-adapter/branding.js'
-import {
-  formatArchivedWatchSession,
-  formatWatchSessionSummary,
-  loadArchivedWatchEvents,
-  listArchivedWatchSessions,
-  listSupportedWatchBackends,
-  loadArchivedWatchSession,
-  runWatch,
-  type WatchBackend,
-  type WatchApprovalSource,
-  type WatchCredentialSource,
-  type WatchMode,
-} from './lib/watch/index.js'
 
 type ChatRole = 'system' | 'user' | 'assistant'
 
@@ -409,15 +410,25 @@ function printConfiguredLinxPackages(packageManager: {
 async function runPiCommand(argv: {
   cwd?: string
   model?: string
-  backend?: string
   port?: number
   'runtime-url'?: string
   print?: boolean
   session?: string
   last?: boolean
   prompt?: string[]
-}): Promise<void> {
-  const backend = (argv.backend as 'cloud' | 'native' | undefined) ?? 'cloud'
+} & AutoModeCommandArgs): Promise<void> {
+  const firstPromptToken = Array.isArray(argv.prompt) ? argv.prompt[0] : undefined
+  // Reject old command aliases explicitly; auto-mode is only selected through flags.
+  if (firstPromptToken === 'automode' || firstPromptToken === 'watch') {
+    throw new Error(`Unknown command: ${firstPromptToken}`)
+  }
+
+  if (isAutoModeRequest(argv)) {
+    await runAutoModeCommand(argv)
+    return
+  }
+
+  const backend = 'cloud'
   const startupLoginPrompt = await resolveLinxStartupLoginPromptDecision({
     backend,
     print: argv.print,
@@ -509,10 +520,89 @@ async function runPiCommand(argv: {
   }
 }
 
+async function runResumeCommand(argv: {
+  session?: string
+  last?: boolean
+  cwd?: string
+  model?: string
+  'runtime-url'?: string
+}): Promise<void> {
+  const cwd = typeof argv.cwd === 'string' ? argv.cwd : process.cwd()
+  const session = typeof argv.session === 'string' ? argv.session : undefined
+  const piSessions = await listLinxPiSessions(cwd, LINX_AGENT_DIR)
+  const autoModeSessions = listArchivedAutoModeSessions()
+
+  if (!session && !argv.last) {
+    if (piSessions.length === 0 && autoModeSessions.length === 0) {
+      process.stdout.write('No LinX sessions found.\n')
+      return
+    }
+    if (piSessions.length > 0) {
+      process.stdout.write('LinX sessions:\n')
+      process.stdout.write(`${piSessions.map((item) => `  ${formatLinxPiSessionSummary(item)}`).join('\n')}\n`)
+    }
+    if (autoModeSessions.length > 0) {
+      process.stdout.write('Auto-mode sessions:\n')
+      process.stdout.write(`${autoModeSessions.map((item) => `  ${formatAutoModeSessionSummary(item)}`).join('\n')}\n`)
+    }
+    return
+  }
+
+  if (argv.last && !session) {
+    const latestPi = piSessions[0]
+    const latestAutoMode = autoModeSessions[0]
+    const latestPiTime = latestPi?.modified.getTime() ?? 0
+    const latestAutoModeTime = latestAutoMode ? Date.parse(latestAutoMode.endedAt ?? latestAutoMode.startedAt) : 0
+    if (latestAutoMode && latestAutoModeTime > latestPiTime) {
+      const exitCode = await resumeAutoModeSession(latestAutoMode, {
+        cwd,
+        model: argv.model,
+      })
+      if (exitCode !== 0) {
+        process.exitCode = exitCode
+      }
+      return
+    }
+  }
+
+  if (session) {
+    try {
+      await resolveLinxPiSession(session, cwd, undefined)
+      await runPiCommand({
+        cwd,
+        model: typeof argv.model === 'string' ? argv.model : undefined,
+        'runtime-url': typeof argv['runtime-url'] === 'string' ? argv['runtime-url'] : undefined,
+        session,
+        last: false,
+      })
+      return
+    } catch {
+      const autoModeSession = loadArchivedAutoModeSession(session)
+      if (autoModeSession) {
+        const exitCode = await resumeAutoModeSession(autoModeSession, {
+          cwd,
+          model: argv.model,
+        })
+        if (exitCode !== 0) {
+          process.exitCode = exitCode
+        }
+        return
+      }
+    }
+  }
+
+  await runPiCommand({
+    cwd,
+    model: typeof argv.model === 'string' ? argv.model : undefined,
+    'runtime-url': typeof argv['runtime-url'] === 'string' ? argv['runtime-url'] : undefined,
+    session,
+    last: Boolean(argv.last) || !session,
+  })
+}
+
 interface PiCommandArgs {
   cwd?: string
   model?: string
-  backend?: 'cloud' | 'native'
   port?: number
   'runtime-url'?: string
   print?: boolean
@@ -521,8 +611,10 @@ interface PiCommandArgs {
   prompt?: string[]
 }
 
-function buildPiCommand(command: Argv<object>): Argv<PiCommandArgs> {
-  const configured = command
+type LinxDefaultCommandArgs = PiCommandArgs & AutoModeCommandArgs
+
+function buildPiCommand(command: Argv<object>): Argv<LinxDefaultCommandArgs> {
+  const configured = buildAutoModeOptions(command)
     .option('cwd', {
       type: 'string',
       describe: 'Workspace path for the Pi session',
@@ -530,17 +622,6 @@ function buildPiCommand(command: Argv<object>): Argv<PiCommandArgs> {
     .option('model', {
       type: 'string',
       describe: 'Model id to expose through the Pi runtime adapter; defaults to the last LinX selection',
-    })
-    .option('backend', {
-      type: 'string',
-      default: 'cloud',
-      choices: ['cloud', 'native'] as const,
-      describe: 'Backend mode. Default is cloud; native keeps the local Codex proxy for debugging only.',
-    })
-    .option('port', {
-      type: 'number',
-      default: 8787,
-      describe: 'Local websocket port used only when --backend native',
     })
     .option('runtime-url', {
       type: 'string',
@@ -566,31 +647,31 @@ function buildPiCommand(command: Argv<object>): Argv<PiCommandArgs> {
       type: 'string',
       describe: 'Single-shot prompt when --print is enabled',
     })
-  return configured as Argv<PiCommandArgs>
+  return configured as Argv<LinxDefaultCommandArgs>
 }
 
-const defaultPiCommand: CommandModule<object, PiCommandArgs> = {
+const defaultPiCommand: CommandModule<object, LinxDefaultCommandArgs> = {
   command: '$0 [prompt..]',
-  describe: 'Run the native Pi TUI on top of the LinX cloud auth + Pod storage backend',
+  describe: 'Run LinX, or control an external agent backend with --backend',
   builder: buildPiCommand,
   handler: runPiCommand,
 }
 
-const hiddenPiAliasCommand: CommandModule<object, PiCommandArgs> = {
+const hiddenPiAliasCommand: CommandModule<object, LinxDefaultCommandArgs> = {
   command: 'pi [prompt..]',
   describe: false,
   builder: buildPiCommand,
   handler: runPiCommand,
 }
 
-const hiddenPiFrontendAliasCommand: CommandModule<object, PiCommandArgs> = {
+const hiddenPiFrontendAliasCommand: CommandModule<object, LinxDefaultCommandArgs> = {
   command: 'pi-frontend [prompt..]',
   describe: false,
   builder: buildPiCommand,
   handler: runPiCommand,
 }
 
-const execCommand: CommandModule<object, PiCommandArgs> = {
+const execCommand: CommandModule<object, LinxDefaultCommandArgs> = {
   command: 'exec [prompt..]',
   aliases: ['e'],
   describe: 'Run LinX non-interactively',
@@ -610,6 +691,7 @@ const cli = yargs(hideBin(process.argv))
   .command(logoutCommand)
   .command(whoamiCommand)
   .command(aiCommand)
+  .command(symphonyCommand)
   .command(
     'install [source]',
     'Install a LinX package or extension',
@@ -714,40 +796,20 @@ const cli = yargs(hideBin(process.argv))
   )
   .command(
     'resume [session]',
-    'Resume a previous interactive LinX session',
+    'Resume a previous LinX or auto-mode session',
     (command) => command
       .positional('session', { type: 'string', describe: 'Session id/prefix or JSONL file to resume' })
-      .option('last', { type: 'boolean', default: false, describe: 'Resume the most recent local session for this workspace' })
+      .option('last', { type: 'boolean', default: false, describe: 'Resume the most recent LinX or auto-mode session' })
       .option('cwd', { type: 'string', describe: 'Workspace path for the resumed session' })
       .option('model', { type: 'string', describe: 'Model id to expose through the Pi runtime adapter' })
-      .option('backend', {
-        type: 'string',
-        default: 'cloud',
-        choices: ['cloud', 'native'] as const,
-        describe: 'Backend mode. Default is cloud; native keeps the local Codex proxy for debugging only.',
-      })
-      .option('port', { type: 'number', default: 8787, describe: 'Local websocket port used only when --backend native' })
       .option('runtime-url', { type: 'string', default: 'https://api.undefineds.co/v1', describe: 'Cloud runtime API base URL' }),
     async (argv) => {
-      const session = typeof argv.session === 'string' ? argv.session : undefined
-      if (!session && !argv.last) {
-        const sessions = await listLinxPiSessions(argv.cwd || process.cwd(), LINX_AGENT_DIR)
-        if (sessions.length === 0) {
-          process.stdout.write('No LinX sessions found.\n')
-          return
-        }
-        process.stdout.write(`${sessions.map(formatLinxPiSessionSummary).join('\n')}\n`)
-        return
-      }
-
-      await runPiCommand({
-        cwd: argv.cwd,
-        model: argv.model,
-        backend: argv.backend,
-        port: argv.port,
-        'runtime-url': argv['runtime-url'],
-        session,
-        last: argv.last || !session,
+      await runResumeCommand({
+        cwd: typeof argv.cwd === 'string' ? argv.cwd : undefined,
+        model: typeof argv.model === 'string' ? argv.model : undefined,
+        'runtime-url': typeof argv['runtime-url'] === 'string' ? argv['runtime-url'] : undefined,
+        session: typeof argv.session === 'string' ? argv.session : undefined,
+        last: Boolean(argv.last),
       })
     },
   )
@@ -805,120 +867,6 @@ const cli = yargs(hideBin(process.argv))
       })
 
       await new Promise(() => {})
-    },
-  )
-  .command(
-    'watch <action> [backend] [prompt..]',
-    'Run or inspect local watch backends',
-    (command) =>
-      command
-        .positional('action', {
-          type: 'string',
-          choices: ['run', 'backends', 'sessions', 'show', 'codex', 'claude', 'codebuddy'] as const,
-        })
-        .positional('backend', {
-          type: 'string',
-          describe: 'Watch backend for `run` or session id for `show`',
-        })
-        .option('mode', {
-          type: 'string',
-          default: 'smart',
-          choices: ['manual', 'smart', 'auto'] as const,
-          describe: 'Unified autonomy mode',
-        })
-        .option('model', {
-          type: 'string',
-          describe: 'Backend-native model override',
-        })
-        .option('cwd', {
-          type: 'string',
-          describe: 'Working directory for local backend execution',
-        })
-        .option('plain', {
-          type: 'boolean',
-          default: false,
-          describe: 'Disable full-screen TUI and use plain streaming output',
-        })
-        .option('credential-source', {
-          type: 'string',
-          default: 'auto',
-          choices: ['auto', 'local', 'cloud'] as const,
-          describe: 'Resolve credentials only: local CLI login, LinX cloud config, or auto fallback. Runtime still runs locally.',
-        })
-        .option('approval-source', {
-          type: 'string',
-          default: 'hybrid',
-          choices: ['local', 'remote', 'hybrid'] as const,
-          describe: 'Resolve backend approval requests locally, through Pod remote approvals, or whichever answers first.',
-        }),
-    async (argv) => {
-      const rawAction = String(argv.action)
-      const directBackend = ['codex', 'claude', 'codebuddy'].includes(rawAction)
-      const action = directBackend ? 'run' : rawAction
-
-      if (action === 'backends') {
-        const backends = listSupportedWatchBackends()
-        for (const backend of backends) {
-          process.stdout.write(`- ${backend.backend} (${backend.label})\n`)
-          process.stdout.write(`  ${backend.description}\n`)
-          process.stdout.write(`  manual: ${backend.modes.manual}\n`)
-          process.stdout.write(`  smart: ${backend.modes.smart}\n`)
-          process.stdout.write(`  auto: ${backend.modes.auto}\n`)
-        }
-        return
-      }
-
-      if (action === 'sessions') {
-        const sessions = listArchivedWatchSessions()
-        if (sessions.length === 0) {
-          process.stdout.write('No watch sessions found.\n')
-          return
-        }
-
-        process.stdout.write(`${sessions.map(formatWatchSessionSummary).join('\n')}\n`)
-        return
-      }
-
-      if (action === 'show') {
-        const sessionId = argv.backend ? String(argv.backend) : ''
-        if (!sessionId) {
-          throw new Error('Usage: linx watch show <sessionId>')
-        }
-
-        const session = loadArchivedWatchSession(sessionId)
-        if (!session) {
-          throw new Error(`Watch session not found: ${sessionId}`)
-        }
-
-        process.stdout.write(formatArchivedWatchSession(session, loadArchivedWatchEvents(sessionId)))
-        return
-      }
-
-      const backend = (directBackend ? rawAction : argv.backend) as WatchBackend | undefined
-      if (!backend || !['codex', 'claude', 'codebuddy'].includes(backend)) {
-        throw new Error('Usage: linx watch run <codex|claude|codebuddy> <prompt> [-- backend args]\n   or: linx watch <codex|claude|codebuddy> <prompt>')
-      }
-
-      const plain = Boolean(argv.plain)
-      const prompt = ((directBackend ? [argv.backend, ...(argv.prompt as string[] | undefined ?? [])] : (argv.prompt as string[] | undefined)) ?? [])
-        .filter((item): item is string => typeof item === 'string')
-        .join(' ')
-        .trim() || undefined
-      const exitCode = await runWatch({
-        backend,
-        mode: argv.mode as WatchMode,
-        cwd: argv.cwd || process.cwd(),
-        plain,
-        model: argv.model,
-        prompt,
-        passthroughArgs: ((argv['--'] as string[] | undefined) ?? []).map(String),
-        credentialSource: argv['credential-source'] as WatchCredentialSource,
-        approvalSource: argv['approval-source'] as WatchApprovalSource,
-      })
-
-      if (exitCode !== 0) {
-        process.exitCode = exitCode
-      }
     },
   )
   .strict()

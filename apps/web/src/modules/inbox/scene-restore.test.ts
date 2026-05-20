@@ -52,6 +52,38 @@ describe('inbox scene restoration', () => {
     })
   })
 
+  it('uses explicit inbox item thread, about, and approval id fields for scene restoration', () => {
+    const approvalScene = resolveInboxScene({
+      id: 'approval:approval-2',
+      kind: 'approval',
+      category: 'approval',
+      chatId: 'chat-2',
+      threadId: 'thread-2',
+      thread: 'https://alice.example/.data/chat/chat-2/index.ttl#thread-2',
+      about: 'https://alice.example/.data/approvals/2026/05/12.ttl#approval-2',
+      approvalId: 'approval-2',
+    } as any, [])
+
+    expect(approvalScene.chatId).toBe('chat-2')
+    expect(approvalScene.threadId).toBe('thread-2')
+    expect(resolveInboxObjectTarget(approvalScene)).toEqual({
+      kind: 'approval',
+      approvalItemId: 'approval:approval-2',
+    })
+
+    const auditScene = resolveInboxScene({
+      id: 'audit:thread-2',
+      kind: 'audit',
+      category: 'audit',
+      thread: 'https://alice.example/.data/chat/chat-2/index.ttl#thread-2',
+      about: 'https://alice.example/.data/chat/chat-2/index.ttl#thread-2',
+    } as any, [])
+
+    expect(auditScene.chatId).toBe('chat-2')
+    expect(auditScene.threadId).toBe('thread-2')
+    expect(resolveInboxObjectTarget(auditScene)).toEqual({ kind: 'chat' })
+  })
+
   it('maps local workspace to local files tree node', () => {
     const scene = resolveInboxScene({
       id: 'audit:local-1',

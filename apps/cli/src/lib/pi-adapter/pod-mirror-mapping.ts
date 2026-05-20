@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto'
 import type { AgentMessage } from '@mariozechner/pi-agent-core'
 import type { SessionEntry, SessionManager } from '@mariozechner/pi-coding-agent'
-import { buildAgentResourceRef, buildChatResourceRef, buildThreadResourceRef } from '../models.js'
 
 export const DEFAULT_SECRETARY_CHAT_ID = 'ai-secretary'
 export const DEFAULT_SECRETARY_AGENT_ID = 'ai-secretary'
@@ -61,15 +60,15 @@ export function buildPodMessageRow(
 }
 
 export function buildThreadUri(webId: string, chatId: string, threadId: string): string {
-  return buildThreadResourceRef(webId, chatId, threadId)
+  return `${getPodBaseUrl(webId)}/.data/chat/${chatId}/index.ttl#${threadId}`
 }
 
 export function buildAgentUri(webId: string): string {
-  return buildAgentResourceRef(webId, DEFAULT_SECRETARY_AGENT_ID)
+  return `${getPodBaseUrl(webId)}/.data/agents/${DEFAULT_SECRETARY_AGENT_ID}.ttl`
 }
 
 export function buildChatUri(webId: string): string {
-  return buildChatResourceRef(webId, DEFAULT_SECRETARY_CHAT_ID)
+  return `${getPodBaseUrl(webId)}/.data/chat/${DEFAULT_SECRETARY_CHAT_ID}/index.ttl#this`
 }
 
 export function buildToolAuditId(sessionId: string, toolCallId: string, action: string): string {
@@ -218,6 +217,10 @@ function messageTimestampToDate(message: AgentMessage, fallback: string): Date {
 function isAssistantError(message: AgentMessage): boolean {
   return (message as { role?: unknown; stopReason?: unknown }).role === 'assistant'
     && (message as { stopReason?: unknown }).stopReason === 'error'
+}
+
+function getPodBaseUrl(webId: string): string {
+  return webId.replace('/profile/card#me', '').replace(/\/$/, '')
 }
 
 function shortStableId(parts: string[]): string {

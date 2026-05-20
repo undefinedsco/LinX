@@ -4,22 +4,22 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
-import { loadWatchModule } from './watch-test-bundle.mjs'
+import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 
 test('codex attach runner pumps codex request lines through xpod bridge responses', async (t) => {
-  const previousWatchHome = process.env.LINX_WATCH_HOME
-  const watchHome = mkdtempSync(join(tmpdir(), 'linx-watch-home-'))
-  process.env.LINX_WATCH_HOME = watchHome
+  const previousAutoModeHome = process.env.LINX_AUTO_MODE_HOME
+  const autoModeHome = mkdtempSync(join(tmpdir(), 'linx-auto-mode-home-'))
+  process.env.LINX_AUTO_MODE_HOME = autoModeHome
   t.after(() => {
-    if (previousWatchHome === undefined) {
-      delete process.env.LINX_WATCH_HOME
+    if (previousAutoModeHome === undefined) {
+      delete process.env.LINX_AUTO_MODE_HOME
     } else {
-      process.env.LINX_WATCH_HOME = previousWatchHome
+      process.env.LINX_AUTO_MODE_HOME = previousAutoModeHome
     }
-    rmSync(watchHome, { recursive: true, force: true })
+    rmSync(autoModeHome, { recursive: true, force: true })
   })
 
-  const { module, cleanup } = await loadWatchModule('lib/codex-plugin/runner.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/codex-plugin/runner.ts')
   t.after(() => cleanup())
 
   const input = new PassThrough()
@@ -43,10 +43,10 @@ test('codex attach runner pumps codex request lines through xpod bridge response
       },
     },
     runtime: {
-      async createRemoteWatchApproval() {
+      async createRemoteAutoModeApproval() {
         return { id: 'approval_runner_1' }
       },
-      async waitForRemoteWatchApproval() {
+      async waitForRemoteAutoModeApproval() {
         return 'accept_for_session'
       },
     },

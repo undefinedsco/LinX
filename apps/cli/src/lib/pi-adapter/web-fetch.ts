@@ -1,58 +1,99 @@
 /**
  * Web Fetch & Web Search tools via Jina.ai
  *
- * These tools need a Jina API key. They do NOT read/write Pod themselves.
- * Instead they accept an apiKey parameter. The LLM is responsible for:
- *   1. Reading /alice/settings/credentials.ttl for <#jina> xpod:apiKey "..."
- *   2. Passing it as the apiKey parameter
- *   3. If absent, asking the user and writing it to the same path
- *
- * This follows the standard credential convention:
- *   Path:  /alice/settings/credentials.ttl
- *   Entry: <#credential-id> xpod:apiKey "value" .
+ * These tools need a Jina API key. The tool runtime resolves that key from the
+ * user's Pod-backed shared credential model. The LLM must not read or write
+ * credential Turtle directly.
  */
 
 import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
 import { Type } from '@sinclair/typebox';
+import { getDefaultPodDataSession, type PodDataSession } from '../pod-data-session.js';
+import {
+  aiProviderResource,
+  credentialResource,
+  drizzle,
+  selectAIConfigCredential,
+  solidResources,
+  type SolidDatabase,
+} from '../models.js';
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
 const JINA_READER_BASE = 'https://r.jina.ai';
 const JINA_SEARCH_BASE = 'https://s.jina.ai';
 const FETCH_TIMEOUT_MS = 30_000;
+const JINA_PROVIDER_ID = 'jina';
 
 // ── Parameter Schemas ──────────────────────────────────────────────────────
 
 const WebFetchParams = Type.Object({
   url: Type.String({ description: 'Fully-formed URL to fetch (e.g., https://example.com/page)' }),
-  apiKey: Type.Optional(Type.String({ description: 'Jina API key from Pod credentials (<#jina> xpod:apiKey). If missing, ask user to get one at https://jina.ai and save to credentials.' })),
 });
 
 const WebSearchParams = Type.Object({
   query: Type.String({ description: 'Search query' }),
-  apiKey: Type.Optional(Type.String({ description: 'Jina API key from Pod credentials (<#jina> xpod:apiKey). If missing, ask user to get one at https://jina.ai and save to credentials.' })),
 });
 
 type WebFetchParams = typeof WebFetchParams.infer;
 type WebSearchParams = typeof WebSearchParams.infer;
 
-// ── Helpers ─────────────────────────────────────────────────────────────────
+// ── Credential runtime ──────────────────────────────────────────────────────
 
-function resolveKey(explicit?: string): string | null {
-  if (explicit?.trim()) return explicit.trim();
-  if (process.env.JINA_API_KEY?.trim()) return process.env.JINA_API_KEY.trim();
-  return null;
+interface JinaCredentialRuntime {
+  getPodDataSession: () => Promise<PodDataSession | null>;
+  createDb: (session: PodDataSession) => SolidDatabase;
+  fetch: typeof fetch;
+}
+
+const defaultCredentialRuntime: JinaCredentialRuntime = {
+  getPodDataSession: getDefaultPodDataSession,
+  createDb(session) {
+    return drizzle(session.solidSession, {
+      logger: false,
+      disableInteropDiscovery: true,
+      podUrl: session.podUrl,
+      resourcePreparation: 'off' as never,
+      schema: solidResources,
+    }) as unknown as SolidDatabase;
+  },
+  fetch,
+};
+
+let activeCredentialRuntime: JinaCredentialRuntime = defaultCredentialRuntime;
+
+export function setJinaCredentialRuntime(runtime: Partial<JinaCredentialRuntime> | null): void {
+  activeCredentialRuntime = runtime
+    ? { ...defaultCredentialRuntime, ...runtime }
+    : defaultCredentialRuntime;
+}
+
+export async function resolveJinaApiKey(runtime: JinaCredentialRuntime = activeCredentialRuntime): Promise<string | null> {
+  const session = await runtime.getPodDataSession();
+  if (!session) return null;
+
+  const db = runtime.createDb(session) as any;
+  const [credentialRows, providerRow] = await Promise.all([
+    db.select().from(credentialResource).execute() as Promise<Array<Record<string, unknown>>>,
+    typeof db.findById === 'function'
+      ? db.findById(aiProviderResource, JINA_PROVIDER_ID).catch(() => null) as Promise<Record<string, unknown> | null>
+      : Promise.resolve(null),
+  ]);
+
+  const selected = selectAIConfigCredential(
+    JINA_PROVIDER_ID,
+    credentialRows,
+    providerRow ? [providerRow] : [],
+  );
+  return selected?.apiKey ?? null;
 }
 
 function missingKeyMessage(): string {
   return [
-    'No Jina API key provided.',
+    'No active Jina API key found in LinX Pod credentials.',
     '',
-    '1. Read /alice/settings/credentials.ttl and look for <#jina>.',
-    '2. If found, pass its xpod:apiKey value as the apiKey parameter.',
-    '3. If not, ask the user to get a free key at https://jina.ai,',
-    '   then save it:  <#jina> xpod:apiKey "jina_xxx" .',
-    '4. Retry with the key.',
+    'Configure a Pod credential for provider `jina`, then retry.',
+    'The tool resolves credentials through @undefineds.co/models; tool calls should omit secret values.',
   ].join('\n');
 }
 
@@ -68,7 +109,7 @@ async function jinaFetch(url: string, apiKey: string, signal?: AbortSignal): Pro
     const c = new AbortController();
     const t = setTimeout(() => c.abort(), FETCH_TIMEOUT_MS);
     if (signal) signal.addEventListener('abort', () => c.abort(), { once: true });
-    const r = await fetch(`${JINA_READER_BASE}/${url}`, {
+    const r = await activeCredentialRuntime.fetch(`${JINA_READER_BASE}/${url}`, {
       headers: { Accept: 'text/markdown', Authorization: `Bearer ${apiKey}` },
       signal: c.signal,
     });
@@ -88,7 +129,7 @@ async function jinaSearch(query: string, apiKey: string, signal?: AbortSignal): 
     const c = new AbortController();
     const t = setTimeout(() => c.abort(), FETCH_TIMEOUT_MS);
     if (signal) signal.addEventListener('abort', () => c.abort(), { once: true });
-    const r = await fetch(`${JINA_SEARCH_BASE}/?q=${encodeURIComponent(query)}`, {
+    const r = await activeCredentialRuntime.fetch(`${JINA_SEARCH_BASE}/?q=${encodeURIComponent(query)}`, {
       headers: { Accept: 'application/json', Authorization: `Bearer ${apiKey}` },
       signal: c.signal,
     });
@@ -112,7 +153,7 @@ export const webFetchTool: any = {
   label: 'Web Fetch',
   description: [
     'Fetch a web page as clean Markdown via Jina Reader.',
-    'Requires apiKey from Pod credentials (<#jina> xpod:apiKey).',
+    'Uses the active Jina credential from the user Pod.',
     'Use for documentation, API references, blog posts, search results.',
     'Not for GitHub (use gh CLI) or local files (use read).',
   ].join('\n'),
@@ -123,7 +164,7 @@ export const webFetchTool: any = {
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       return { content: [{ type: 'text' as const, text: 'Error: URL must start with http:// or https://' }], isError: true };
     }
-    const apiKey = resolveKey(params.apiKey);
+    const apiKey = await resolveJinaApiKey();
     if (!apiKey) return { content: [{ type: 'text' as const, text: missingKeyMessage() }], isError: true };
 
     onUpdate?.({ content: [{ type: 'text' as const, text: `Fetching ${url}...` }] });
@@ -139,14 +180,14 @@ export const webSearchTool: any = {
   label: 'Web Search',
   description: [
     'Search the web via Jina Search. Returns titles, URLs, descriptions.',
-    'Requires apiKey from Pod credentials (<#jina> xpod:apiKey).',
+    'Uses the active Jina credential from the user Pod.',
     'Use to find pages, then web_fetch for full content.',
   ].join('\n'),
   parameters: WebSearchParams,
   async execute(_callId: string, params: WebSearchParams, signal?: AbortSignal, onUpdate?: (u: unknown) => void) {
     const query = params.query.trim();
     if (!query) return { content: [{ type: 'text' as const, text: 'Error: query is required' }], isError: true };
-    const apiKey = resolveKey(params.apiKey);
+    const apiKey = await resolveJinaApiKey();
     if (!apiKey) return { content: [{ type: 'text' as const, text: missingKeyMessage() }], isError: true };
 
     onUpdate?.({ content: [{ type: 'text' as const, text: `Searching "${query}"...` }] });

@@ -1,13 +1,13 @@
-import { eq } from '@undefineds.co/drizzle-solid'
 import {
   ODRL,
-  approvalTable,
-  auditTable,
-  buildRuntimeSessionIri,
+  approvalResource,
+  auditResource,
+  buildApprovalSubjectPath,
+  buildAuditSubjectPath,
+  buildSessionSubjectPath,
   inboxNotificationTable,
-  threadTable,
+  sessionTable,
   type ApprovalRow,
-  type AuditInsert,
   type SolidDatabase,
 } from '@undefineds.co/models'
 import { queryClient } from '@/providers/query-provider'
@@ -59,7 +59,12 @@ function inferRisk(toolName: string, rawArguments: string): 'low' | 'medium' | '
   return 'medium'
 }
 
+function eventDateFromTs(ts: number): Date {
+  return Number.isFinite(ts) ? new Date(ts) : new Date()
+}
+
 export class RuntimeSidecarSink {
+  private readonly podBaseUrl: string
   private readonly seenEventKeys = new Set<string>()
   private readonly latestSessionStatus = new Map<string, RuntimeThreadStatus>()
   private readonly pendingAuthBySession = new Map<string, PendingAuthState>()
@@ -67,7 +72,27 @@ export class RuntimeSidecarSink {
   constructor(
     private readonly db: SolidDatabase,
     private readonly webId: string,
-  ) {}
+  ) {
+    this.podBaseUrl = this.resolvePodBaseUrl(this.webId)
+  }
+
+  private resolvePodBaseUrl(webId: string): string {
+    return webId.replace('/profile/card#me', '').replace(/\/$/, '')
+  }
+
+  private async findByStorageId<T>(resource: any, id: string): Promise<T | null> {
+    if (typeof (this.db as any).findById !== 'function') {
+      throw new Error('Solid database does not support findById.')
+    }
+    return await (this.db as any).findById(resource, id) as T | null
+  }
+
+  private async updateByStorageId(resource: any, id: string, payload: Record<string, unknown>): Promise<void> {
+    if (typeof (this.db as any).updateById !== 'function') {
+      throw new Error('Solid database does not support updateById.')
+    }
+    await (this.db as any).updateById(resource, id, payload)
+  }
 
   async persistRuntimeEvent(
     runtimeSession: RuntimeSessionRecord,
@@ -99,23 +124,64 @@ export class RuntimeSidecarSink {
     }
   }
 
+  private makeRuntimeSessionUri(sessionId: string, createdAt: Date = new Date()): string {
+    return `${this.podBaseUrl}${buildSessionSubjectPath(sessionId, createdAt)}`
+  }
+
+  private makeChatUri(chatId: string): string {
+    return `${this.podBaseUrl}/.data/chat/${chatId}/index.ttl#this`
+  }
+
   private makeThreadUri(chatId: string, threadId: string): string {
-    return this.resolveRowIri(threadTable as any, { id: threadId, chat: chatId })
+    return `${this.podBaseUrl}/.data/chat/${chatId}/index.ttl#${threadId}`
   }
 
-  private makeApprovalUri(id: string, createdAt: Date | string | number = new Date()): string {
-    return this.resolveRowIri(approvalTable as any, { id, createdAt })
-  }
+  private async upsertSessionState(
+    runtimeSession: RuntimeSessionRecord,
+    event: Extract<RuntimeSessionEvent, { type: 'status' }>,
+    context: RuntimeEventContext,
+    previousStatus: RuntimeThreadStatus | undefined,
+  ): Promise<void> {
+    const eventDate = eventDateFromTs(event.ts)
+    const existing = await this.findByStorageId<Record<string, unknown>>(sessionTable, runtimeSession.id)
 
-  private makeAuditUri(id: string, createdAt: Date | string | number = new Date()): string {
-    return this.resolveRowIri(auditTable as any, { id, createdAt })
-  }
+    const payload = {
+      ownerWebId: this.webId,
+      chat: this.makeChatUri(context.chatId),
+      thread: this.makeThreadUri(context.chatId, context.threadId),
+      sessionType: 'direct',
+      status: event.status,
+      tool: runtimeSession.tool,
+      tokenUsage: runtimeSession.tokenUsage,
+      metadata: {
+        title: runtimeSession.title,
+        previousStatus: previousStatus ?? null,
+        chatId: context.chatId,
+        threadId: context.threadId,
+        threadUri: this.makeThreadUri(context.chatId, context.threadId),
+        lastEventTs: event.ts,
+      },
+      updatedAt: eventDate,
+    } as const
 
-  private resolveRowIri(table: Parameters<NonNullable<SolidDatabase['resolveRowIri']>>[0], row: Record<string, unknown>): string {
-    if (typeof this.db.resolveRowIri !== 'function') {
-      throw new Error('Database does not support ORM row IRI resolution')
+    if (!existing) {
+      await this.db.insert(sessionTable).values({
+        id: runtimeSession.id,
+        ...payload,
+        createdAt: eventDate,
+      }).execute()
+      return
     }
-    return this.db.resolveRowIri(table, row)
+
+    await this.updateByStorageId(sessionTable, runtimeSession.id, payload)
+  }
+
+  private makeApprovalUri(id: string, createdAt: Date = new Date()): string {
+    return `${this.podBaseUrl}${buildApprovalSubjectPath(id, createdAt)}`
+  }
+
+  private makeAuditUri(id: string, createdAt: Date = new Date()): string {
+    return `${this.podBaseUrl}${buildAuditSubjectPath(id, createdAt)}`
   }
 
   private buildEventKey(type: string, runtimeSessionId: string, suffix: string): string {
@@ -135,51 +201,54 @@ export class RuntimeSidecarSink {
     id?: string
     action: string
     sessionId: string
+    chatUri?: string
+    threadUri?: string
     toolCallId?: string
-    approvalUri?: string
-    entry?: string
     toolName?: string
-    policy?: string
+    approvalUri?: string
+    entryUri?: string
     createdAt?: Date
+    sessionCreatedAt?: Date
   }): Promise<string> {
     const id = input.id ?? crypto.randomUUID()
     const createdAt = input.createdAt ?? new Date()
-    await (this.db as any).insert(auditTable).values({
+    await this.db.insert(auditResource).values({
       id,
       action: input.action,
       actor: this.webId,
       actorRole: 'system',
-      session: buildRuntimeSessionIri(input.sessionId),
-      entry: input.entry,
+      session: this.makeRuntimeSessionUri(input.sessionId, input.sessionCreatedAt ?? createdAt),
+      chat: input.chatUri,
+      thread: input.threadUri,
       toolCallId: input.toolCallId,
       toolName: input.toolName,
       approval: input.approvalUri,
-      policy: input.policy,
+      entry: input.entryUri,
       policyVersion: POLICY_VERSION,
       createdAt,
-    } satisfies AuditInsert).execute()
+    }).execute()
     return id
   }
 
-  private async insertInboxNotification(objectUri: string, dedupeKey: string): Promise<void> {
+  private async insertInboxNotification(objectUri: string, dedupeKey: string, createdAt: Date = new Date()): Promise<void> {
     if (this.seenEventKeys.has(dedupeKey)) {
       return
     }
 
     this.seenEventKeys.add(dedupeKey)
-    await (this.db as any).insert(inboxNotificationTable).values({
+    await this.db.insert(inboxNotificationTable).values({
       id: crypto.randomUUID(),
       actor: this.webId,
       object: objectUri,
-      createdAt: new Date(),
+      createdAt,
     }).execute()
   }
 
   private async findApprovalByToolCall(toolCallId: string): Promise<ApprovalRow | null> {
-    const rows = await this.db.select().from(approvalTable)
-      .where(eq(approvalTable.toolCallId as any, toolCallId))
+    const rows = await this.db.select().from(approvalResource)
+      .where({ toolCallId } as any)
       .execute()
-    return (rows[0] as ApprovalRow | undefined) ?? null
+    return (rows as ApprovalRow[]).find((row) => row.toolCallId === toolCallId) ?? null
   }
 
   private async persistAuthResolved(
@@ -199,16 +268,18 @@ export class RuntimeSidecarSink {
     }
     this.seenEventKeys.add(dedupeKey)
 
+    const eventDate = eventDateFromTs(eventTs)
     const auditId = await this.insertAuditEntry({
       action: 'runtime.auth_resolved',
       sessionId: runtimeSession.id,
-      entry: this.makeThreadUri(context.chatId, context.threadId),
-      toolName: pendingAuth.method,
-      policy: pendingAuth.url,
-      createdAt: new Date(eventTs),
+      createdAt: eventDate,
+      sessionCreatedAt: eventDate,
+      chatUri: this.makeChatUri(context.chatId),
+      threadUri: this.makeThreadUri(context.chatId, context.threadId),
+      entryUri: this.makeThreadUri(context.chatId, context.threadId),
     })
 
-    await this.insertInboxNotification(this.makeAuditUri(auditId), this.buildEventKey('auth-resolved-notification', runtimeSession.id, auditId))
+    await this.insertInboxNotification(this.makeAuditUri(auditId, eventDate), this.buildEventKey('auth-resolved-notification', runtimeSession.id, auditId), eventDate)
     this.pendingAuthBySession.delete(runtimeSession.id)
     await this.invalidateInboxQueries()
   }
@@ -231,12 +302,17 @@ export class RuntimeSidecarSink {
     }
     this.seenEventKeys.add(eventKey)
 
+    await this.upsertSessionState(runtimeSession, event, context, previousStatus)
+
+    const eventDate = eventDateFromTs(event.ts)
     await this.insertAuditEntry({
       action: `runtime.session.${event.status}`,
       sessionId: runtimeSession.id,
-      entry: this.makeThreadUri(context.chatId, context.threadId),
-      toolName: runtimeSession.tool,
-      createdAt: new Date(event.ts),
+      createdAt: eventDate,
+      sessionCreatedAt: eventDate,
+      chatUri: this.makeChatUri(context.chatId),
+      threadUri: this.makeThreadUri(context.chatId, context.threadId),
+      entryUri: this.makeThreadUri(context.chatId, context.threadId),
     })
 
     await this.invalidateInboxQueries()
@@ -247,14 +323,17 @@ export class RuntimeSidecarSink {
     event: Extract<RuntimeSessionEvent, { type: 'tool_call' }>,
     context: RuntimeEventContext,
   ): Promise<void> {
+    const eventDate = eventDateFromTs(event.ts)
     const existingApproval = await this.findApprovalByToolCall(event.requestId)
     let approvalId = existingApproval?.id
 
     if (!approvalId) {
       approvalId = crypto.randomUUID()
-      await (this.db as any).insert(approvalTable).values({
+      await this.db.insert(approvalResource).values({
         id: approvalId,
-        session: buildRuntimeSessionIri(runtimeSession.id),
+        session: this.makeRuntimeSessionUri(runtimeSession.id, eventDate),
+        chat: this.makeChatUri(context.chatId),
+        thread: this.makeThreadUri(context.chatId, context.threadId),
         toolCallId: event.requestId,
         toolName: event.name,
         target: this.makeThreadUri(context.chatId, context.threadId),
@@ -262,30 +341,28 @@ export class RuntimeSidecarSink {
         risk: inferRisk(event.name, event.arguments),
         status: 'pending',
         assignedTo: this.webId,
-        // Approval keeps request context for the human decision UI; audit stores only stable pointers.
-        context: JSON.stringify({
-          arguments: event.arguments,
-          runtimeSessionTitle: runtimeSession.title,
-          runtimeTool: runtimeSession.tool,
-        }),
         policyVersion: POLICY_VERSION,
-        createdAt: new Date(),
+        createdAt: eventDate,
       }).execute()
     }
 
-    const approvalUri = this.makeApprovalUri(approvalId)
+    const approvalCreatedAt = eventDateFromTs(Date.parse(String(existingApproval?.createdAt ?? eventDate.toISOString())))
+    const approvalUri = this.makeApprovalUri(approvalId, existingApproval ? approvalCreatedAt : eventDate)
     const auditId = await this.insertAuditEntry({
       action: 'runtime.tool_call.waiting_approval',
       sessionId: runtimeSession.id,
       toolCallId: event.requestId,
-      approvalUri,
-      entry: this.makeThreadUri(context.chatId, context.threadId),
       toolName: event.name,
-      createdAt: new Date(event.ts),
+      approvalUri,
+      createdAt: eventDate,
+      sessionCreatedAt: eventDate,
+      chatUri: this.makeChatUri(context.chatId),
+      threadUri: this.makeThreadUri(context.chatId, context.threadId),
+      entryUri: this.makeThreadUri(context.chatId, context.threadId),
     })
 
-    await this.insertInboxNotification(approvalUri, this.buildEventKey('approval', runtimeSession.id, event.requestId))
-    await this.insertInboxNotification(this.makeAuditUri(auditId), this.buildEventKey('audit', runtimeSession.id, `tool-call-${event.requestId}`))
+    await this.insertInboxNotification(approvalUri, this.buildEventKey('approval', runtimeSession.id, event.requestId), eventDate)
+    await this.insertInboxNotification(this.makeAuditUri(auditId, eventDate), this.buildEventKey('audit', runtimeSession.id, `tool-call-${event.requestId}`), eventDate)
 
     await this.invalidateInboxQueries()
   }
@@ -301,13 +378,15 @@ export class RuntimeSidecarSink {
     }
     this.seenEventKeys.add(dedupeKey)
 
+    const eventDate = eventDateFromTs(event.ts)
     const auditId = await this.insertAuditEntry({
       action: 'runtime.auth_required',
       sessionId: runtimeSession.id,
-      entry: this.makeThreadUri(context.chatId, context.threadId),
-      toolName: event.method,
-      policy: event.url,
-      createdAt: new Date(event.ts),
+      createdAt: eventDate,
+      sessionCreatedAt: eventDate,
+      chatUri: this.makeChatUri(context.chatId),
+      threadUri: this.makeThreadUri(context.chatId, context.threadId),
+      entryUri: this.makeThreadUri(context.chatId, context.threadId),
     })
 
     this.pendingAuthBySession.set(runtimeSession.id, {
@@ -318,7 +397,7 @@ export class RuntimeSidecarSink {
       eventTs: event.ts,
     })
 
-    await this.insertInboxNotification(this.makeAuditUri(auditId), this.buildEventKey('auth-notification', runtimeSession.id, auditId))
+    await this.insertInboxNotification(this.makeAuditUri(auditId, eventDate), this.buildEventKey('auth-notification', runtimeSession.id, auditId), eventDate)
 
     await this.invalidateInboxQueries()
   }
@@ -334,16 +413,18 @@ export class RuntimeSidecarSink {
     }
     this.seenEventKeys.add(dedupeKey)
 
+    const eventDate = eventDateFromTs(event.ts)
     const auditId = await this.insertAuditEntry({
       action: 'runtime.session.error',
       sessionId: runtimeSession.id,
-      entry: this.makeThreadUri(context.chatId, context.threadId),
-      toolName: runtimeSession.tool,
-      policy: event.message,
-      createdAt: new Date(event.ts),
+      createdAt: eventDate,
+      sessionCreatedAt: eventDate,
+      chatUri: this.makeChatUri(context.chatId),
+      threadUri: this.makeThreadUri(context.chatId, context.threadId),
+      entryUri: this.makeThreadUri(context.chatId, context.threadId),
     })
 
-    await this.insertInboxNotification(this.makeAuditUri(auditId), this.buildEventKey('error-notification', runtimeSession.id, auditId))
+    await this.insertInboxNotification(this.makeAuditUri(auditId, eventDate), this.buildEventKey('error-notification', runtimeSession.id, auditId), eventDate)
 
     await this.invalidateInboxQueries()
   }

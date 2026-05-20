@@ -36,7 +36,7 @@ const DCTerms = createNamespace('dcterms', 'http://purl.org/dc/terms/', {
   modified: 'modified',
   isReplacedBy: 'isReplacedBy',
 })
-const LINQ = createNamespace('linx', 'https://linx.ai/ns#', {
+const UDFS = createNamespace('udfs', 'https://undefineds.co/ns#', {
   aiProvider: 'aiProvider',
   aiModel: 'aiModel',
   systemPrompt: 'systemPrompt',
@@ -69,16 +69,16 @@ const chatTable = podTable(
   {
     title: string('title').predicate(DCTerms.title).notNull(),
     description: string('description').predicate(DCTerms.description),
-    provider: string('provider').predicate(LINQ.aiProvider).notNull(),
-    model: string('model').predicate(LINQ.aiModel).notNull(),
-    systemPrompt: text('systemPrompt').predicate(LINQ.systemPrompt),
-    starred: boolean('starred').predicate(LINQ.favorite).default(false),
+    provider: string('provider').predicate(UDFS.aiProvider).notNull(),
+    model: string('model').predicate(UDFS.aiModel).notNull(),
+    systemPrompt: text('systemPrompt').predicate(UDFS.systemPrompt),
+    starred: boolean('starred').predicate(UDFS.favorite).default(false),
     participants: uri('participants')
       .array()
       .predicate(SCHEMA.participant)
       .notNull()
-      .reference(LINQ.Contact),
-    lastActiveAt: timestamp('lastActiveAt').predicate(LINQ.lastActiveAt),
+      .reference(UDFS.Contact),
+    lastActiveAt: timestamp('lastActiveAt').predicate(UDFS.lastActiveAt),
     lastMessageId: uri('lastMessageId').predicate(WF.message),
     lastMessagePreview: text('lastMessagePreview').predicate(SCHEMA.text),
     createdAt: timestamp('createdAt').predicate(DCTerms.created).notNull().defaultNow(),
@@ -87,7 +87,7 @@ const chatTable = podTable(
   {
     base: 'idp:///.data/chats/',
     rdfClass: MEETING.LongChat,
-    namespace: LINQ,
+    namespace: UDFS,
   },
 )
 
@@ -95,19 +95,19 @@ const threadTable = podTable(
   'thread',
   {
     chatId: uri('chatId')
-      .predicate(LINQ.hasThread)
+      .predicate(UDFS.hasThread)
       .inverse()
       .notNull()
       .reference(MEETING.LongChat),
     title: string('title').predicate(DCTerms.title),
-    starred: boolean('starred').predicate(LINQ.favorite).default(false),
+    starred: boolean('starred').predicate(UDFS.favorite).default(false),
     createdAt: timestamp('createdAt').predicate(DCTerms.created).notNull().defaultNow(),
     updatedAt: timestamp('updatedAt').predicate(DCTerms.modified).notNull().defaultNow(),
   },
   {
     base: 'idp:///.data/threads/',
     rdfClass: SIOC.Thread,
-    namespace: LINQ,
+    namespace: UDFS,
   },
 )
 
@@ -124,11 +124,11 @@ const messageTable = podTable(
       .inverse()
       .notNull()
       .reference(MEETING.LongChat),
-    maker: uri('maker').predicate(FOAF.maker).notNull().reference(LINQ.Contact),
-    role: string('role').predicate(LINQ.messageType).notNull().default('user'),
+    maker: uri('maker').predicate(FOAF.maker).notNull().reference(UDFS.Contact),
+    role: string('role').predicate(UDFS.messageType).notNull().default('user'),
     content: text('content').predicate(SIOC.content).notNull(),
     richContent: text('richContent').predicate(SIOC.richContent),
-    status: string('status').predicate(LINQ.messageStatus).notNull().default('sent'),
+    status: string('status').predicate(UDFS.messageStatus).notNull().default('sent'),
     replacedBy: string('replacedBy').predicate(DCTerms.isReplacedBy),
     deletedAt: timestamp('deletedAt').predicate(SCHEMA.dateDeleted),
     createdAt: timestamp('createdAt').predicate(DCTerms.created).notNull().defaultNow(),
@@ -137,7 +137,7 @@ const messageTable = podTable(
   {
     base: 'idp:///.data/messages/',
     rdfClass: MEETING.Message,
-    namespace: LINQ,
+    namespace: UDFS,
   },
 )
 

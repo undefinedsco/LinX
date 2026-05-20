@@ -1,3 +1,6 @@
 export * from './acp.js'
+export * from './auto-mode.js'
 export * from './companion-model.js'
+export * from './runtime.js'
+export * from './symphony.js'
 export * from './turn-controller.js'

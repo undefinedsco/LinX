@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { afterAll, describe, expect, it } from 'vitest'
 import type { SolidDatabase } from '@undefineds.co/drizzle-solid'
+import { extractPodResourceTemplateValue } from '@undefineds.co/drizzle-solid'
 import {
   aiModelTable,
   aiProviderTable,
@@ -77,7 +78,7 @@ describe('model services collections integration', () => {
     const id = crypto.randomUUID()
     const newCredential = {
       id,
-      provider: '/settings/ai/providers.ttl#openai',
+      provider: '/settings/providers/openai.ttl',
       service: 'ai',
       status: 'active',
       apiKey: 'sk-test',
@@ -103,11 +104,12 @@ describe('model services collections integration', () => {
 
     await tx.isPersisted.promise
 
-    const created = await (database as any).findByLocator(credentialTable as any, { id } as any)
+    const created = await (database as any).findById(credentialTable as any, id)
     const subject = (created as any)?.['@id']
     if (subject) createdSubjects.push({ table: 'credential', id: subject })
-    expect(created?.id).toBe(id)
-    expect(created?.provider).toContain('#openai')
+    expect(created?.id).toBe(`#${id}`)
+    expect(extractPodResourceTemplateValue(credentialTable as any, created?.id)).toBe(id)
+    expect(created?.provider).toContain('/settings/providers/openai.ttl')
   })
 
   it('provider/model CRUD via drizzle-solid persists to Pod', { timeout: 30000 }, async () => {
@@ -121,7 +123,7 @@ describe('model services collections integration', () => {
       id: providerId,
       baseUrl: 'https://api.example.com/v1',
       proxyUrl: '',
-      hasModel: `/settings/ai/models/${providerId}.ttl#${modelId}`,
+      hasModel: `/settings/providers/${providerId}.ttl#${modelId}`,
     } as any).execute()
 
     await database.insert(aiModelTable).values({
@@ -134,9 +136,10 @@ describe('model services collections integration', () => {
       updatedAt: new Date(),
     } as any).execute()
 
-    const createdProvider = await (database as any).findByLocator(aiProviderTable as any, { id: providerId } as any)
+    const createdProvider = await (database as any).findById(aiProviderTable as any, providerId)
     const modelLocator = { id: modelId, isProvidedBy: providerId }
-    const createdModel = await (database as any).findByLocator(aiModelTable as any, modelLocator as any)
+    const modelResourceId = (database as any).resolveLocatorId(aiModelTable as any, modelLocator as any)
+    const createdModel = await (database as any).findById(aiModelTable as any, modelResourceId)
     expect(createdProvider?.baseUrl).toBe('https://api.example.com/v1')
     expect(createdModel?.status).toBe('active')
 
@@ -146,24 +149,24 @@ describe('model services collections integration', () => {
     if (modelSubject) createdSubjects.push({ table: 'model', id: modelSubject })
 
     // UPDATE
-    await (database as any).updateByLocator(aiProviderTable as any, { id: providerId } as any, {
+    await (database as any).updateById(aiProviderTable as any, providerId, {
       baseUrl: 'https://api.changed.com/v1',
     })
-    await (database as any).updateByLocator(aiModelTable as any, modelLocator as any, {
+    await (database as any).updateById(aiModelTable as any, modelResourceId, {
       status: 'inactive',
     })
 
-    const updatedProvider = await (database as any).findByLocator(aiProviderTable as any, { id: providerId } as any)
-    const updatedModel = await (database as any).findByLocator(aiModelTable as any, modelLocator as any)
+    const updatedProvider = await (database as any).findById(aiProviderTable as any, providerId)
+    const updatedModel = await (database as any).findById(aiModelTable as any, modelResourceId)
     expect(updatedProvider?.baseUrl).toBe('https://api.changed.com/v1')
     expect(updatedModel?.status).toBe('inactive')
 
     // DELETE
-    await (database as any).deleteByLocator(aiModelTable as any, modelLocator as any)
-    await (database as any).deleteByLocator(aiProviderTable as any, { id: providerId } as any)
+    await (database as any).deleteById(aiModelTable as any, modelResourceId)
+    await (database as any).deleteById(aiProviderTable as any, providerId)
 
-    const providerRow = await (database as any).findByLocator(aiProviderTable as any, { id: providerId } as any)
-    const modelRow = await (database as any).findByLocator(aiModelTable as any, modelLocator as any)
+    const providerRow = await (database as any).findById(aiProviderTable as any, providerId)
+    const modelRow = await (database as any).findById(aiModelTable as any, modelResourceId)
     expect(providerRow).toBeNull()
     expect(modelRow).toBeNull()
   })

@@ -38,13 +38,21 @@ yarn workspace @undefineds.co/linx dev
 # 继续最近一次 thread
 yarn workspace @undefineds.co/linx dev chat --continue
 
-# 本地 watch（多轮 REPL + 结构化留档）
-yarn workspace @undefineds.co/linx dev watch run codex
-yarn workspace @undefineds.co/linx dev watch run claude "先总结这个目录的职责"
-yarn workspace @undefineds.co/linx dev watch run codebuddy -- --tools Read,Edit
-yarn workspace @undefineds.co/linx dev watch backends
-yarn workspace @undefineds.co/linx dev watch sessions
-yarn workspace @undefineds.co/linx dev watch show <sessionId>
+# 选择外部 agent backend 后进入多轮控制界面
+yarn workspace @undefineds.co/linx dev --backend codex
+yarn workspace @undefineds.co/linx dev --backend claude "先总结这个目录的职责"
+yarn workspace @undefineds.co/linx dev --backend codebuddy -- --tools Read,Edit
+yarn workspace @undefineds.co/linx dev --backend codex --auto
+yarn workspace @undefineds.co/linx dev --list-backends
+yarn workspace @undefineds.co/linx dev --sessions
+yarn workspace @undefineds.co/linx dev --show <sessionId>
+
+# 调整 / 验证 Secretary 的 Symphony 委派能力；dry-run 不启动后端
+yarn workspace @undefineds.co/linx dev symphony run "检查登录链路" --backend codex --auto --dry-run
+yarn workspace @undefineds.co/linx dev symphony issues
+yarn workspace @undefineds.co/linx dev symphony sessions
+yarn workspace @undefineds.co/linx dev symphony deliveries
+yarn workspace @undefineds.co/linx dev symphony show <issueOrDeliveryOrSessionId>
 ```
 
 ## Slash Commands
@@ -62,27 +70,40 @@ yarn workspace @undefineds.co/linx dev watch show <sessionId>
 
 1. `~/.linx/config.json` + `~/.linx/secrets.json`
 
-## Local Watch Notes
+## Backend Control Notes
 
-- `watch run` 当前直接依赖本机已经安装好的 `codex` / `claude` / `codebuddy`
-- 如果当前终端对全屏重绘支持不好，可加 `--plain`（等价于 `LINX_WATCH_PLAIN=1`）关闭全屏 TUI，改用线性输出
-- LinX 负责统一 `manual | smart | auto` 模式，并把会话元数据写到 `~/.linx/watch/sessions/`
-- `--credential-source local|cloud|auto` 只决定凭据来源；`watch` 当前运行时始终是本地，不会因为选 cloud credential source 就切成 cloud runtime
-- `--credential-source cloud` 当前可显式用于 `codex` / `claude` / `codebuddy`，前提是对应 API key 已写进 Pod
-- 单本地会话时，approval 主路径是在当前 watch TUI 内直接处理；不会依赖额外的 approval inbox
-- 默认人工审批同时支持当前本地 watch 和 Pod 远端控制面，谁先决策谁生效；低上下文的 CLI approval inbox 命令已移除，远端审批队列由 App/Inbox 承载
+- Design contract: see [`docs/backend-pod-contract.md`](../../docs/backend-pod-contract.md)
+- Symphony 是 AI Secretary 的内置委派能力，不是独立产品入口；控制面 MVP 见 [`docs/agent-collaboration-model.md`](../../docs/agent-collaboration-model.md)
+- `--backend <backend>` 当前直接依赖本机已经安装好的 `codex` / `claude` / `codebuddy`
+- 如果当前终端对全屏重绘支持不好，可加 `--plain`（等价于 `LINX_BACKEND_PLAIN=1`）关闭全屏 TUI，改用线性输出
+- LinX 负责统一 `manual | smart | auto` 审批模式，并把会话元数据写到 `~/.linx/backend/sessions/`
+- 进入默认是 `manual`；可用 `--auto` 直接启用自动审批，或进入后用 `/manual`、`/smart`、`/auto` 切换
+- backend 凭据只从 Pod AI 配置读取；本地只保存 LinX/Solid auth，不提供 `credential-source` 选择
+- 单本地会话时，approval 主路径是在当前 backend 控制界面内直接处理；不会依赖额外的 approval inbox
+- 默认人工审批同时支持当前本地 backend 控制界面和 Pod 远端控制面，谁先决策谁生效；低上下文的 CLI approval inbox 命令已移除，远端审批队列由 App/Inbox 承载
 - 如果本地已 `linx login`，LinX 会把 pending approval 写进 Pod 的 `approval / audit / inbox_notification`，供 App/Inbox 读取和处理
 - 当前是最小多轮版：本地 REPL、统一 ACP 会话、归档结构化事件
-- 在交互式 TTY 里，`watch run` 会默认进入全屏 TUI；非 TTY / 管道输出会自动降级到 plain mode
-- `linx watch show <sessionId>` 现在会回放归档 timeline，而不是直接输出 `session.json`
+- 在交互式 TTY 里，`--backend ...` 会默认进入全屏 TUI；非 TTY / 管道输出会自动降级到 plain mode
+- `linx --show <sessionId>` 现在会回放归档 timeline，而不是直接输出 `session.json`
 - `codex` 走 `codex-acp`，`claude` 走 `claude-code-acp`，`codebuddy` 走内置 `--acp --acp-transport stdio`
-- 当前 `linx watch run codex` 的前台仍是 LinX watch TUI，不是 Codex 原生 TUI；真正执行任务与工具调用的是 `codex-acp`
-- Codex 原生壳相关集成不放在 LinX watch 壳里维护；后台桥接能力位于 `apps/cli/src/lib/codex-plugin/*`，按 plugin/sidecar 语义组织
+- 当前 `linx --backend codex` 的前台是 Codex 控制界面；真正执行任务与工具调用的是 `codex-acp`
+- Codex 原生壳相关集成不放在 backend 控制界面里维护；后台桥接能力位于 `apps/cli/src/lib/codex-plugin/*`，按 plugin/sidecar 语义组织
 - LinX 不再维护各家 native / 非 ACP JSON 输出兼容层，统一按 ACP 处理多轮会话、权限请求和结构化输入
-- 仓库内 `yarn workspace @undefineds.co/linx dev watch ...` 不再依赖 `tsx`，会直接编译并运行独立 watch 入口
+- 仓库内 `yarn workspace @undefineds.co/linx dev --backend ...` 不再依赖 `tsx`，会直接编译并运行主 CLI 入口
 - `--` 后面的参数会原样透传给对应后端 CLI
 - 当前只支持 `local runtime + remote approval`；不支持本地 runtime 退出后由云端接管执行
 
+## Symphony Control Plane
+
+- `linx symphony ...` 是 CLI 调试/验证入口，语义上等价于未来 TUI 里的 `/symphony ...`。
+- `Symphony` 是 AI Secretary 的全局委派控制面，不绑定从哪个 Chat/Thread 发起；在哪个界面触发只影响 UI 来源，不决定投递模型。
+- Chat/Thread 是过程展示和回看载体，由 Secretary 在产品层创建或选择，并把对应 URI 写进 `Issue / Delivery / Session`；headless CLI 不要求也不模拟用户填写这些 URI。
+- `symphony` 调整的是 Secretary 的行为：Secretary 自己不主要下场写代码，而是引用通用 Task，创建 `Issue / Delivery / Session` 编排记录，把工作投影给下面的 backend worker。
+- `linx symphony run <objective>` 会创建本地 `Issue / Delivery / Session` 归档，`task` 只作为通用 Task id 被引用，不再维护一套 Symphony 专属 TaskRecord。
+- `--dry-run` 只写归档并打印投影 prompt，用于验证建模和投递链路，不会启动 Codex/Claude/CodeBuddy。
+- 归档固定写在本地 LinX home 下的 `~/.linx/symphony/`，不新增单独的产品级 home 环境变量。
+- 当前 MVP 不做独立 `linx-symphony` 产品入口、不做 daemon、不新增 Task/Delivery/Session Pod schema、不改 GUI/TUI 信息架构；新增 shared Pod resource 仍以 `@undefineds.co/models` 为权威。
+
 ## TODO
 
-- blocked by xpod: `watch --runtime cloud`
+- blocked by xpod: cloud-hosted backend runtime

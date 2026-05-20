@@ -1,6 +1,6 @@
 {
   "name": "@undefineds.co/linx",
-  "version": "0.2.19",
+  "version": "0.2.24",
   "private": true,
   "type": "module",
   "bin": {
@@ -9,13 +9,14 @@
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit && node ./scripts/build.mjs",
     "dev": "node ./scripts/dev.mjs",
-    "test": "yarn build && node --test test/**/*.test.mjs"
+    "test": "yarn build && node --test --test-concurrency=1 test/**/*.test.mjs"
   },
   "dependencies": {
-    "@linx/agent-runtime": "*",
-    "@undefineds.co/models": "*",
     "@inrupt/solid-client-authn-node": "^3.1.1",
+    "@linx/agent-runtime": "*",
     "@mariozechner/pi-coding-agent": "^0.67.6",
+    "@undefineds.co/models": "*",
+    "@zed-industries/codex-acp": "0.14.0",
     "n3": "^1.26.0",
     "yargs": "^17.7.2"
   },

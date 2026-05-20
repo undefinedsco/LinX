@@ -13,7 +13,7 @@
 
 - repository / service / collection 逻辑
 - CLI / web / runtime 适配层
-- discovery / client / watch 等产品侧辅助模块
+- discovery / client / auto-mode 等产品侧辅助模块
 
 ## Naming Decision
 
@@ -36,7 +36,7 @@
 3. 共享数据面与 Linx 专属适配逻辑此前曾混放在同一包内：
    - 纯 Pod schema
    - repository
-   - client/discovery/watch
+   - client/discovery/auto-mode
    - 一部分 UI / runtime 合同
 
 因此要先切边界，再抽仓。
@@ -59,7 +59,7 @@
 
 - SQL 身份库 schema
 - quint / task / CSS 内部运行时 schema
-- repository / collection / hook / client / watch
+- repository / collection / hook / client / auto-mode
 
 ## Extraction Strategy
 
@@ -95,7 +95,7 @@
 `@linx/client` 收缩为 Linx 客户端层，只保留：
 
 - repositories
-- discovery / client / watch
+- discovery / client / auto-mode
 - Linx 特有 runtime 合同
 - 像 `favorite/starred-sync` 这类带副作用的应用层 hook
 

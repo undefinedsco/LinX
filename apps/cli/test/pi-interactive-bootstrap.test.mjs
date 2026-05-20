@@ -3,20 +3,24 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { loadWatchModule } from './watch-test-bundle.mjs'
+import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 
-test('pi interactive bootstrap can instantiate and init/stop with the LinX runtime adapter', async (t) => {
+process.env.PI_OFFLINE = '1'
+
+test('pi interactive bootstrap can instantiate with the LinX runtime adapter', async (t) => {
   const [{ module: runtimeModule, cleanup: runtimeCleanup }, { module: interactiveModule, cleanup: interactiveCleanup }] = await Promise.all([
-    loadWatchModule('lib/pi-adapter/runtime.ts'),
-    loadWatchModule('lib/pi-adapter/interactive.ts'),
+    loadAutoModeModule('lib/pi-adapter/runtime.ts'),
+    loadAutoModeModule('lib/pi-adapter/interactive.ts'),
   ])
   t.after(() => runtimeCleanup())
   t.after(() => interactiveCleanup())
 
   const { SessionManager } = await import('@mariozechner/pi-coding-agent')
+  const originalCwd = process.cwd()
   const cwd = mkdtempSync(join(tmpdir(), 'linx-pi-interactive-'))
   const agentDir = mkdtempSync(join(tmpdir(), 'linx-pi-interactive-agent-'))
   t.after(() => {
+    process.chdir(originalCwd)
     rmSync(cwd, { recursive: true, force: true })
     rmSync(agentDir, { recursive: true, force: true })
   })
@@ -26,7 +30,7 @@ test('pi interactive bootstrap can instantiate and init/stop with the LinX runti
       return {
         remoteUrl: 'ws://127.0.0.1:8877',
         record: {
-          id: 'watch_native_proxy_789',
+          id: 'auto_native_proxy_789',
           cwd,
           model: 'gpt-5-codex',
           backend: 'codex',
@@ -71,16 +75,16 @@ test('pi interactive bootstrap can instantiate and init/stop with the LinX runti
 
   const interactive = interactiveModule.bootstrapPiInteractiveMode(runtime)
   assert.equal(typeof interactive.init, 'function')
+  assert.equal(typeof interactive.run, 'function')
+  assert.equal(typeof interactive.requestLogin, 'function')
   assert.equal(typeof interactive.stop, 'function')
-
-  await interactive.init()
-  interactive.stop()
+  process.chdir(originalCwd)
 })
 
 test('linx interactive branding stores agent state under .linx and patches update checks', async (t) => {
   const [{ module: brandingModule, cleanup: brandingCleanup }, { module: interactiveModule, cleanup: interactiveCleanup }] = await Promise.all([
-    loadWatchModule('lib/pi-adapter/branding.ts'),
-    loadWatchModule('lib/pi-adapter/interactive.ts'),
+    loadAutoModeModule('lib/pi-adapter/branding.ts'),
+    loadAutoModeModule('lib/pi-adapter/interactive.ts'),
   ])
   t.after(() => brandingCleanup())
   t.after(() => interactiveCleanup())
@@ -140,7 +144,7 @@ test('linx interactive branding stores agent state under .linx and patches updat
 })
 
 test('linx escape interrupt aborts streaming session before Pi default handler', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
   t.after(() => cleanup())
 
   const calls = []
@@ -165,7 +169,7 @@ test('linx escape interrupt aborts streaming session before Pi default handler',
 })
 
 test('linx escape interrupt aborts bash and preserves idle escape behavior', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
   t.after(() => cleanup())
 
   const calls = []
@@ -192,7 +196,7 @@ test('linx escape interrupt aborts bash and preserves idle escape behavior', asy
 })
 
 test('linx escape interrupt keeps wrapping later Pi escape handler assignments', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
   t.after(() => cleanup())
 
   const calls = []
@@ -223,8 +227,8 @@ test('linx escape interrupt keeps wrapping later Pi escape handler assignments',
 
 test('linx footer patch adds cache rate from assistant usage', async (t) => {
   const [{ module: runtimeModule, cleanup: runtimeCleanup }, { module: interactiveModule, cleanup: interactiveCleanup }] = await Promise.all([
-    loadWatchModule('lib/pi-adapter/runtime.ts'),
-    loadWatchModule('lib/pi-adapter/interactive.ts'),
+    loadAutoModeModule('lib/pi-adapter/runtime.ts'),
+    loadAutoModeModule('lib/pi-adapter/interactive.ts'),
   ])
   t.after(() => runtimeCleanup())
   t.after(() => interactiveCleanup())
@@ -321,8 +325,8 @@ test('linx footer patch adds cache rate from assistant usage', async (t) => {
 
 test('linx footer patch keeps cache rate line within terminal width', async (t) => {
   const [{ module: runtimeModule, cleanup: runtimeCleanup }, { module: interactiveModule, cleanup: interactiveCleanup }] = await Promise.all([
-    loadWatchModule('lib/pi-adapter/runtime.ts'),
-    loadWatchModule('lib/pi-adapter/interactive.ts'),
+    loadAutoModeModule('lib/pi-adapter/runtime.ts'),
+    loadAutoModeModule('lib/pi-adapter/interactive.ts'),
   ])
   t.after(() => runtimeCleanup())
   t.after(() => interactiveCleanup())
@@ -416,7 +420,7 @@ test('linx footer patch keeps cache rate line within terminal width', async (t) 
 })
 
 test('linx interactive exit message prints resume command and token usage', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
   t.after(() => cleanup())
 
   const output = module.buildLinxExitMessage({
@@ -482,7 +486,7 @@ test('linx interactive exit message prints resume command and token usage', asyn
 })
 
 test('linx welcome header keeps the full session id instead of truncating it', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/branding.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/branding.ts')
   t.after(() => cleanup())
 
   const interactive = {
@@ -512,7 +516,7 @@ test('linx welcome header keeps the full session id instead of truncating it', a
 })
 
 test('linx update notification uses an action selector instead of a static npm command', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/branding.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/branding.ts')
   t.after(() => cleanup())
 
   const selectorCalls = []
@@ -554,7 +558,7 @@ test('linx update notification uses an action selector instead of a static npm c
 })
 
 test('linx update version comparison handles preview builds', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/branding.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/branding.ts')
   t.after(() => cleanup())
 
   assert.equal(module.isVersionNewer('0.2.3', '0.2.4-preview.1777478039135'), false)
@@ -565,7 +569,7 @@ test('linx update version comparison handles preview builds', async (t) => {
 })
 
 test('linx /login command shows a LinX-only auth selector before browser login', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/branding.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/branding.ts')
   t.after(() => cleanup())
 
   const submitted = []
@@ -649,7 +653,7 @@ test('linx /login command shows a LinX-only auth selector before browser login',
 })
 
 test('linx browser login fallback passes a manual redirect input callback to auth storage', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/branding.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/branding.ts')
   t.after(() => cleanup())
 
   const loginCalls = []
@@ -718,7 +722,7 @@ test('linx browser login fallback passes a manual redirect input callback to aut
 })
 
 test('linx browser login dialog also forces a fresh consent flow', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/branding.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/branding.ts')
   t.after(() => cleanup())
 
   const loginCalls = []
@@ -788,7 +792,7 @@ test('linx browser login dialog also forces a fresh consent flow', async (t) => 
 })
 
 test('linx /login command can store a direct LinX API key from the selector', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/branding.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/branding.ts')
   t.after(() => cleanup())
 
   const stored = []
@@ -846,8 +850,20 @@ test('linx /login command can store a direct LinX API key from the selector', as
 })
 
 test('linx native oauth selector is replaced with LinX-only login', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/branding.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/branding.ts')
   t.after(() => cleanup())
+
+  const originalHome = process.env.HOME
+  const home = mkdtempSync(join(tmpdir(), 'linx-pi-logout-home-'))
+  process.env.HOME = home
+  t.after(() => {
+    if (originalHome === undefined) {
+      delete process.env.HOME
+    } else {
+      process.env.HOME = originalHome
+    }
+    rmSync(home, { recursive: true, force: true })
+  })
 
   const selectorCalls = []
   const loginCalls = []
@@ -912,7 +928,7 @@ test('linx native oauth selector is replaced with LinX-only login', async (t) =>
 })
 
 test('linx startup login prompt uses the required-login copy and can exit', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/branding.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/branding.ts')
   t.after(() => cleanup())
 
   const selectorCalls = []
@@ -963,7 +979,7 @@ test('linx startup login prompt uses the required-login copy and can exit', asyn
 })
 
 test('linx expired login prompt is deferred until interactive init completes', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/branding.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/branding.ts')
   t.after(() => cleanup())
 
   const selectorCalls = []
@@ -1018,7 +1034,7 @@ test('linx expired login prompt is deferred until interactive init completes', a
 })
 
 test('linx interactive branding shows the LinX auth selector when cloud auth expires', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/branding.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/branding.ts')
   t.after(() => cleanup())
 
   const errors = []
@@ -1101,7 +1117,7 @@ test('linx interactive branding shows the LinX auth selector when cloud auth exp
 })
 
 test('linx interactive branding reacts to assistant stream auth-expired events', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/branding.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/branding.ts')
   t.after(() => cleanup())
 
   const loginCalls = []
@@ -1246,7 +1262,7 @@ test('linx interactive branding reacts to assistant stream auth-expired events',
 })
 
 test('linx auth-expired branch restore still runs when reauth is cancelled', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/branding.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/branding.ts')
   t.after(() => cleanup())
 
   const branches = []

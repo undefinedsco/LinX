@@ -3,15 +3,14 @@ import type { SessionEntry, SessionManager } from '@mariozechner/pi-coding-agent
 import { DEFAULT_LINX_CLOUD_MODEL_ID } from '../default-model.js'
 import { getDefaultPodDataSession, type PodDataSession } from '../pod-data-session.js'
 import {
-  agentTable,
+  agentResource,
   auditResource,
-  chatTable,
+  chatResource,
   drizzle,
-  initSolidTables,
-  messageTable,
-  sessionTable,
-  solidSchema,
-  threadTable,
+  messageResource,
+  sessionResource,
+  solidResources,
+  threadResource,
   type AuditInsert,
   type ChatInsert,
   type MessageInsert,
@@ -42,6 +41,7 @@ export interface LinxPiPodMirrorOptions {
   sessionManager: SessionManager
   runtime?: Partial<PodMirrorRuntime>
   onError?: (error: unknown) => void
+  syncConversationRoot?: boolean
 }
 
 interface PodMirrorContext {
@@ -60,7 +60,7 @@ export class LinxPiPodMirror {
   private contextPromise: Promise<PodMirrorContext | null> | null = null
   private queue: Promise<void> = Promise.resolve()
   private readonly seenMessageIds = new Set<string>()
-  private readonly messageResourceUrls = new Set<string>()
+  private readonly messageResourceRefs = new Set<string>()
   private readonly runtimePromise: Promise<PodMirrorRuntime>
   private closed = false
 
@@ -124,7 +124,7 @@ export class LinxPiPodMirror {
         this.options,
         resolvePiResourceRefs(context, this.options),
         'completed',
-        this.messageResourceUrls,
+        this.messageResourceRefs,
       )
     })
     await this.queue
@@ -174,18 +174,21 @@ export class LinxPiPodMirror {
     }
 
     const refs = resolvePiResourceRefs(context, this.options)
-    await ensurePiConversationRoot(context, this.options, refs)
-    await persistRuntimeSession(context, this.options, refs, 'active', this.messageResourceUrls)
+    if (this.options.syncConversationRoot) {
+      await ensurePiConversationRoot(context, this.options, refs)
+    }
 
     const row = buildPodMessageRowFromMapping(context.webId, this.options, entry)
     if (!row) {
       return
     }
 
-    const resourceUrl = await persistMessage(context, normalizePodMessageRow(context, row, refs))
-    this.messageResourceUrls.add(resourceUrl)
-    await persistRuntimeSession(context, this.options, refs, 'active', this.messageResourceUrls)
-    await touchPiConversation(context, this.options, refs, row.content)
+    const resourceRef = await persistMessage(context, normalizePodMessageRow(context, row, refs))
+    this.messageResourceRefs.add(resourceRef)
+    await persistRuntimeSession(context, this.options, refs, 'active', this.messageResourceRefs)
+    if (this.options.syncConversationRoot) {
+      await touchPiConversation(context, this.options, refs, row.content)
+    }
   }
 
   private async persistUnseenMessageEntries(): Promise<void> {
@@ -208,12 +211,14 @@ export class LinxPiPodMirror {
       ? event.toolCallId
       : crypto.randomUUID()
     const refs = resolvePiResourceRefs(context, this.options)
-    await ensurePiConversationRoot(context, this.options, refs)
-    await persistRuntimeSession(context, this.options, refs, 'active', this.messageResourceUrls)
+    if (this.options.syncConversationRoot) {
+      await ensurePiConversationRoot(context, this.options, refs)
+    }
+    await persistRuntimeSession(context, this.options, refs, 'active', this.messageResourceRefs)
 
     const id = buildToolAuditId(this.options.sessionManager.getSessionId(), toolCallId, action)
-    const createdAt = new Date()
-    await upsertByLocator(context.db, auditResource, { id, createdAt }, {
+    const createdAt = toDate(event.createdAt) ?? toDate(event.timestamp) ?? new Date()
+    await insertResource(context.db, auditResource, {
       id,
       action,
       actor: refs.agentUri,
@@ -225,17 +230,7 @@ export class LinxPiPodMirror {
       ...(typeof event.toolName === 'string' && event.toolName ? { toolName: event.toolName } : {}),
       policyVersion: PI_POLICY_VERSION,
       createdAt,
-    } satisfies AuditInsert, {
-      action,
-      actor: refs.agentUri,
-      actorRole: 'assistant',
-      onBehalfOf: context.webId,
-      session: refs.sessionUri,
-      entry: refs.threadUri,
-      toolCallId,
-      ...(typeof event.toolName === 'string' && event.toolName ? { toolName: event.toolName } : {}),
-      policyVersion: PI_POLICY_VERSION,
-    })
+    } satisfies AuditInsert)
   }
 
   private async getContext(): Promise<PodMirrorContext | null> {
@@ -257,16 +252,6 @@ export class LinxPiPodMirror {
     }
 
     const db = runtime.createDb?.(session) ?? createPodMirrorDb(session)
-    await initSolidTables(db, [
-      chatTable,
-      threadTable,
-      messageTable,
-      sessionTable,
-      agentTable,
-      auditResource,
-    ]).catch((error) => {
-      this.options.onError?.(error)
-    })
 
     return {
       db,
@@ -283,7 +268,7 @@ async function ensurePiConversationRoot(
   const now = new Date()
   const threadId = options.sessionManager.getSessionId()
 
-  await upsertByLocator(context.db, chatTable, { id: DEFAULT_SECRETARY_CHAT_ID }, {
+  await upsertByResource(context.db, chatResource, { id: DEFAULT_SECRETARY_CHAT_ID }, {
     id: DEFAULT_SECRETARY_CHAT_ID,
     title: 'AI Secretary',
     participants: [context.webId, refs.agentUri],
@@ -307,7 +292,7 @@ async function ensurePiConversationRoot(
     updatedAt: now,
   })
 
-  await upsertByLocator(context.db, threadTable, { id: threadId, chat: refs.chatUri }, {
+  await upsertByResource(context.db, threadResource, { id: threadId, chat: refs.chatUri }, {
     id: threadId,
     chat: refs.chatUri,
     title: buildThreadTitle(options.sessionManager),
@@ -322,7 +307,7 @@ async function ensurePiConversationRoot(
     updatedAt: now,
   })
 
-  await upsertByLocator(context.db, agentTable, { id: PI_AGENT_ID }, {
+  await upsertByResource(context.db, agentResource, { id: PI_AGENT_ID }, {
     id: PI_AGENT_ID,
     name: 'LinX CLI Assistant',
     provider: 'undefineds',
@@ -342,7 +327,7 @@ async function persistRuntimeSession(
   options: LinxPiPodMirrorOptions,
   refs: PiResourceRefs,
   status: 'active' | 'completed' = 'active',
-  messageResourceUrls: Set<string> = new Set(),
+  messageResourceRefs: Set<string> = new Set(),
 ): Promise<void> {
   const now = new Date()
   const threadId = options.sessionManager.getSessionId()
@@ -355,7 +340,7 @@ async function persistRuntimeSession(
     runtimeSessionId,
     surface: 'cli',
     threadUri: refs.threadUri,
-    messageResources: [...messageResourceUrls],
+    messageResources: [...messageResourceRefs],
   }
 
   const row = {
@@ -367,15 +352,23 @@ async function persistRuntimeSession(
     status,
     tool: 'linx',
     tokenUsage: calculateTokenUsage(options.sessionManager.getEntries()),
+    messageResources: [...messageResourceRefs],
     policyVersion: PI_POLICY_VERSION,
     metadata,
     createdAt,
     updatedAt: now,
   } satisfies SessionInsert
 
-  await upsertByLocator(context.db, sessionTable, { id: runtimeSessionId, createdAt }, row, {
+  await upsertByIri(context.db, sessionResource, refs.sessionUri, row, {
+    ownerWebId: context.webId,
+    chat: refs.chatUri,
+    thread: refs.threadUri,
+    sessionType: 'direct',
     status,
+    tool: 'linx',
     tokenUsage: row.tokenUsage,
+    messageResources: [...messageResourceRefs],
+    policyVersion: PI_POLICY_VERSION,
     metadata,
     updatedAt: now,
   })
@@ -397,15 +390,8 @@ async function persistMessage(
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   } satisfies MessageInsert
-  await upsertByLocator(context.db, messageTable, { id: row.id, chat: row.chat, createdAt: row.createdAt }, insert, {
-    maker: row.maker,
-    role: row.role,
-    content: row.content,
-    richContent: row.richContent,
-    status: row.status,
-    updatedAt: row.updatedAt,
-  })
-  return context.db.resolveLocatorIri(messageTable, { id: row.id, chat: row.chat, createdAt: row.createdAt }).split('#')[0]
+  await insertResource(context.db, messageResource, insert)
+  return context.db.resolveLocatorIri(messageResource, { id: row.id, chat: row.chat, createdAt: row.createdAt })
 }
 
 async function touchPiConversation(
@@ -416,12 +402,12 @@ async function touchPiConversation(
 ): Promise<void> {
   const now = new Date()
   const threadId = options.sessionManager.getSessionId()
-  await context.db.updateByLocator(chatTable, { id: DEFAULT_SECRETARY_CHAT_ID }, {
+  await context.db.updateById(chatResource, DEFAULT_SECRETARY_CHAT_ID, {
     lastMessagePreview: preview.slice(0, 100),
     lastActiveAt: now,
     updatedAt: now,
   })
-  await context.db.updateByLocator(threadTable, { id: threadId, chat: refs.chatUri }, {
+  await context.db.updateByIri(threadResource, refs.threadUri, {
     title: buildThreadTitle(options.sessionManager),
     workspace: pathToWorkspaceUri(options.cwd),
     metadata: buildThreadMetadata(options),
@@ -442,19 +428,21 @@ function createPodMirrorDb(session: PodDataSession): SolidDatabase {
   return drizzle(solidSession, {
     logger: false,
     disableInteropDiscovery: true,
-    schema: solidSchema,
+    podUrl: session.podUrl,
+    resourcePreparation: 'best-effort' as never,
+    schema: solidResources,
   }) as unknown as SolidDatabase
 }
 
 function resolvePiResourceRefs(context: PodMirrorContext, options: LinxPiPodMirrorOptions): PiResourceRefs {
   const sessionId = options.sessionManager.getSessionId()
   const createdAt = getSessionCreatedAt(options.sessionManager)
-  const chatUri = context.db.resolveLocatorIri(chatTable, { id: DEFAULT_SECRETARY_CHAT_ID })
+  const chatUri = context.db.resolveLocatorIri(chatResource, { id: DEFAULT_SECRETARY_CHAT_ID })
   return {
-    agentUri: context.db.resolveLocatorIri(agentTable, { id: PI_AGENT_ID }),
+    agentUri: context.db.resolveLocatorIri(agentResource, { id: PI_AGENT_ID }),
     chatUri,
-    sessionUri: context.db.resolveLocatorIri(sessionTable, { id: sessionId, createdAt }),
-    threadUri: context.db.resolveLocatorIri(threadTable, { id: sessionId, chat: chatUri }),
+    sessionUri: context.db.resolveLocatorIri(sessionResource, { id: sessionId, createdAt }),
+    threadUri: context.db.resolveLocatorIri(threadResource, { id: sessionId, chat: chatUri }),
   }
 }
 
@@ -473,20 +461,49 @@ function normalizePodMessageRow(
   }
 }
 
-async function upsertByLocator(
+async function upsertByResource(
   db: SolidDatabase,
-  table: Parameters<SolidDatabase['resolveLocatorIri']>[0],
-  locator: Record<string, unknown>,
+  resource: Parameters<SolidDatabase['resolveLocatorIri']>[0],
+  target: Record<string, unknown>,
   insert: Record<string, unknown>,
   update: Record<string, unknown>,
 ): Promise<void> {
-  const existing = await db.findByLocator(table, locator)
+  const id = String(target.id ?? '')
+  const iri = db.resolveLocatorIri(resource, target)
+  const existing = id ? await db.findById(resource, id) : await db.findByIri(resource, iri)
   if (!existing) {
-    await db.insert(table).values(insert).execute()
+    await db.insert(resource).values(insert).execute()
     return
   }
 
-  await db.updateByLocator(table, locator, update)
+  if (id) {
+    await db.updateById(resource, id, update)
+    return
+  }
+  await db.updateByIri(resource, iri, update)
+}
+
+async function upsertByIri(
+  db: SolidDatabase,
+  resource: Parameters<SolidDatabase['findByIri']>[0],
+  iri: string,
+  insert: Record<string, unknown>,
+  update: Record<string, unknown>,
+): Promise<void> {
+  const existing = await db.findByIri(resource, iri)
+  if (!existing) {
+    await db.insert(resource).values(insert).execute()
+    return
+  }
+  await db.updateByIri(resource, iri, update)
+}
+
+async function insertResource(
+  db: SolidDatabase,
+  resource: Parameters<SolidDatabase['insert']>[0],
+  insert: Record<string, unknown>,
+): Promise<void> {
+  await db.insert(resource).values(insert).execute()
 }
 
 function getSessionCreatedAt(sessionManager: SessionManager): Date {

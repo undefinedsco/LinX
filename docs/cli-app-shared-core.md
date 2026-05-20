@@ -19,21 +19,21 @@
 - Pod schema
 - RDF namespace / predicate / subject 规则
 - 本地 `~/.linx` 配置文件结构
-- watch session archive 格式
+- auto-mode session archive 格式
 - sidecar / approval / tool-call 事件格式
 
 推荐落点：
 
 - `packages/models`: Pod schema、repository、runtime contracts
-- 后续独立 shared package: 本地配置 schema、watch archive schema、client session schema
+- 后续独立 shared package: 本地配置 schema、auto-mode archive schema、client session schema
 
 当前主线：
 
-- `packages/models/watch`: watch session/event/archive contract
-- `packages/models/watch`: `credential-source=local|cloud|auto` 解析 helper
-- `packages/models/watch`: auth failure / auth status normalization helper
-- `packages/models/watch`: generic JSON line / codex JSON-RPC event normalization helper
-- `packages/models/watch`: approval request / structured user-input / auto-approval decision helper
+- `packages/agent-runtime/auto-mode`: auto-mode session/event/archive contract
+- `packages/agent-runtime/auto-mode`: backend credential/config helper
+- `packages/agent-runtime/auto-mode`: auth failure / auth status normalization helper
+- `packages/agent-runtime/auto-mode`: generic JSON line / codex JSON-RPC event normalization helper
+- `packages/agent-runtime/auto-mode`: approval request / structured user-input / auto-approval decision helper
 - `packages/models`: `approval / audit / inbox_notification` 是跨端 remote approval 的共享真相
 - `packages/models/client`: `~/.linx` account/config/secrets contract
 - `packages/models/client`: linx cloud login bootstrap / whoami field helper
@@ -58,9 +58,9 @@
 - grant 是用户可维护的 LLM Wiki 文档资源，不是隐藏的 request fingerprint。`grantResource` 以一页一个 TTL 文档存储在 `/settings/autonomy/grants/{id}.ttl`；文档 URI 本身就是 RDF subject，页面属性通过 `title/summary/body/schema/pageKind/wikiStatus/tags/source/sourceHash/compiledAt/compiledFrom/related/context` 等 predicate 描述。
 - grant 的 `schema` 是 Solid schema/shape URI 关系，对应 `dcterms:conformsTo </settings/autonomy/schema/grant.ttl#GrantWikiPage>`，不是 `path`/`wikiPath` 字符串；TTL wiki page 不需要 `.meta` subject。
 - grant 覆盖判断必须由 AI secretary 基于当前请求语义、grant wiki 页面正文、摘要、标签、来源、上下文和 provenance 判断；`target/action/riskCeiling` 只能用于候选排序或粗筛，不能单独作为自动审批依据。
-- AI provider/model 的接口 id 可以是 `provider/model` 形式，但这不是 Pod 存储路径约定。LinX 自供模型来自 ai-gateway discovery/runtime，不写入用户 Pod 的 AI provider/model 配置资源。用户自己维护的第三方 AI 配置按 provider 与 model 分开建模：provider 位于 `/settings/ai/providers.ttl#{providerId}`，model 位于 `/settings/ai/models/{providerId}.ttl#{modelId}`，两者通过 `xpod-ai:hasModel` / `xpod-ai:isProvidedBy` 的 IRI 关系关联。这里的 `{providerId}.ttl` 只是存储分桶，不代表接口层把 provider/model 合并成一个模型 id。
+- AI provider/model 的接口 id 可以是 `provider/model` 形式，但这不是 Pod 存储路径约定。LinX 自供模型来自 ai-gateway discovery/runtime，不写入用户 Pod 的 AI provider/model 配置资源。用户自己维护的第三方 AI 配置按 provider-scoped 文档建模：provider 位于 `/settings/providers/{providerId}.ttl`，model 位于同一文档的 `/settings/providers/{providerId}.ttl#{modelId}` fragment，两者通过 `xpod-ai:hasModel` / `xpod-ai:isProvidedBy` 的 IRI 关系关联。这里的 `{providerId}.ttl` 是 provider 文档，不代表接口层把 provider/model 合并成一个模型 id。
 - CLI/App 不得为 `approval/grant/audit` 字段定义自己的业务 predicate。shared 字段必须先在 `packages/models` 的 namespace/vocab/schema 中定义清楚，再由壳层消费。
-- structured user-input 是 watch 共享协议的一等请求类型，不是 CLI 私有 prompt。AI secretary 可以在答案能从 session context、Pod credential source 或请求选项中明确推出时代答；不能明确推出时必须展示建议并等待用户，不得捏造 secret、token、路径或用户偏好。
+- structured user-input 是 backend 共享协议的一等请求类型，不是 CLI 私有 prompt。AI secretary 可以在答案能从 session context、Pod credential source 或请求选项中明确推出时代答；不能明确推出时必须展示建议并等待用户，不得捏造 secret、token、路径或用户偏好。
 - 端内私有模型可以在自己的 owning module/package 中定义专用 predicate，但必须明确作用域为私有、不能被另一端按 shared contract 读取；一旦字段需要跨 CLI / App / xpod 共享，必须先迁入 shared model，再由各端消费。
 - 不允许一端写 `udfs:*`，另一端读 `cred:*` / `ai:*`
 - 不允许新功能继续建立平行 schema
@@ -96,7 +96,7 @@
 这些语义属于 `packages/models` 的 shared truth，CLI 和 App 不能各自重定义：
 
 - `Chat` 只表示对话对象/counterpart：用户正在和谁或什么对话，例如默认 AI secretary、某个人、群组、Codex、Claude Code，或后续具体 AI 身份。
-- `Thread` 表示具体场所、时间线和 runtime context：workspace、watch 场景、AI 产品运行时 session、外部 agent session 等上下文都归在 thread 上。
+- `Thread` 表示具体场所、时间线和 runtime context：workspace、backend 控制场景、AI 产品运行时 session、外部 agent session 等上下文都归在 thread 上。
 - `Session` 表示通用 AI 产品/agent runtime 的运行生命周期投影：它必须指向对应的 `chat` URI 和 `thread` URI，不能作为另一套对话根。
 - `Message` 同时属于一个 `chat` 和一个 `thread`：chat 回答“跟谁聊”，thread 回答“在哪个运行/时间线里聊”。
 
@@ -104,6 +104,8 @@
 
 - Pod schema 使用 `chat`、`thread` 这类 URI-valued RDF relation 字段。
 - `chatId`、`threadId` 只允许作为 UI 状态、函数参数、runtime protocol 字段或 metadata 中的兼容信息，不允许作为持久 RDF link 字段。
+- 同一规则适用于所有 shared relation：`issue`、`task`、`delivery`、`session`、`workspace` 等字段在 shared model / archive contract 中都表示 URI relation；不要用 `issueId`、`taskId`、`deliveryId`、`sessionId` 这类字段承载跨资源链接。
+- 壳层 API 可以继续接收短 id，例如 `chatId`、`threadId` 或 CLI 参数里的 task key，但写入 `packages/models`、shared archive 或跨端 runtime contract 前必须解析成语义 URI 字段。
 - 新增 shared model 代码优先使用 `chatResource`、`threadResource`、`messageResource`、`sessionResource` 等 Solid resource 命名；`*Table` 只作为兼容 alias 逐步退出。
 
 ## 3. Use Case Services
@@ -112,9 +114,9 @@
 
 - `login / logout / whoami`
 - `ai connect / disconnect / status`
-- `resolve credential-source local | cloud | auto`
+- `resolve backend credential/config from Pod AI settings`
 - `create thread / append turn / continue thread`
-- `watch` 后端事件归一化
+- backend 事件归一化
 - `local runtime + remote approval` 的 pending / resolve 控制面
 - approval / tool-call / archive 持久化
 
@@ -128,8 +130,8 @@
 
 必须共享：
 
-- 本地后端统一事件格式
-- watch session record 结构
+- 本地 backend 统一事件格式
+- auto-mode session record 结构
 - provider alias 规则
 - auth failure / approval / tool-call 的归一化规则
 - structured user-input / approval response payload 规则
@@ -140,15 +142,16 @@
 
 - `claude` 与 `anthropic` 的 alias 规则必须只有一份
 - `codex` 与 `openai` 的 alias 规则必须只有一份
-- `credential-source=local|cloud|auto` 的解析逻辑必须只有一份
+- backend credential/config 的 Pod 读取与 provider alias 逻辑必须只有一份
 
 当前落点：
 
 - `packages/agent-runtime` 是 CLI/App 共用的公共运行时组件包，负责描述 ACP、LinX ChatKit、LinX Cloud 等 agent runtime 的能力边界。
-- `packages/agent-runtime` 可以定义 turn-controller 这类公共调度策略，例如 watch 场景下何时让 AI secretary 观察 approval/input 请求并产出审批、输入答案或控制命令。
+- `packages/agent-runtime` 可以定义 turn-controller 这类公共调度策略，例如 auto-mode 场景下何时让 AI secretary 观察 approval/input 请求并产出审批、输入答案或控制命令。
 - `packages/agent-runtime` 统一定义 fast companion model，当前默认是 `linx-lite`。它是类似 Claude Code 快速旁路模型的公共能力，可用于 turn routing、审批判断、structured input 代答、上下文摘要/压缩、标题生成、检索排序等低延迟辅助任务。
 - `Agent Turn Controller` 默认使用 fast companion model 做轻量仲裁；`AI Secretary` 本身的回复/判断模型仍使用用户配置，不由 controller package 硬编码。
 - `apps/cli` 只保留子进程、TTY、ACP stdio 适配；`apps/web` 只保留 React/GUI/runtime-sidecar 适配。两端不得再各自定义一份 runtime capability schema。
+- AI Secretary 的产品能力、授权判断、用户请示和存储建模边界见 `docs/secretary/README.md`；本文档只记录 CLI/App 共享内核和数据面约束。
 
 ## 5. Discovery Boundary
 
@@ -163,9 +166,9 @@
 - cloud runtime 的模型真相来自 live API，例如 `https://api.undefineds.co/v1/models`
 - cloud runtime 的对话主路径来自 live API，例如 `https://api.undefineds.co/v1/chat/completions`
 - LinX 云在 runtime/discovery 中只有一个 provider：`undefineds`。`linx-lite` 和 `linx` 是 ai-gateway 暴露的自供模型，不经过用户 Pod 的 AI provider/model 配置资源，也不再允许出现 `undefineds-cloud`、`linx-cloud` 这类平行 provider id。
-- discovery 请求失败时，必须回退到 `@linx/models/discovery` 内置快照，不能让 provider 消失或阻塞主流程
+- discovery 请求失败时，必须回退到 `@undefineds.co/models/discovery` 内置快照，不能让 provider 消失或阻塞主流程
 - 内置快照只是离线 fallback / 词典，不得替代 live cloud `/v1/models`
-- 内置快照应优先通过同步脚本更新，例如 `yarn workspace @linx/models sync:discovery:vercel`，而不是在多个端里各自手改 provider/model 词典
+- 内置快照应优先通过同步脚本更新，例如 `yarn workspace @undefineds.co/models sync:discovery:vercel`，而不是在多个端里各自手改 provider/model 词典
 
 ## Non-Shared Layers
 
@@ -186,28 +189,30 @@
 
 ## AI Config Specification
 
-AI 配置以三张表为准，不允许再引入平行主线：
+AI 配置以三类 Pod resource 为准，不允许再引入平行主线：
 
-- `credentialTable`: 凭据状态，如 `provider`、`service`、`status`、`apiKey`、`baseUrl`
-- `aiProviderTable`: provider 级配置，如 `baseUrl`、`proxyUrl`、`hasModel`
-- `aiModelTable`: model 级配置，如 `displayName`、`isProvidedBy`、`status`
+- `credentialResource`: 凭据状态，如 `provider`、`service`、`status`、`apiKey`、`baseUrl`
+- `aiProviderResource`: provider 级配置，如 `baseUrl`、`proxyUrl`、`hasModel`
+- `aiModelResource`: model 级配置，如 `displayName`、`isProvidedBy`、`status`
 
 规则：
 
-- 三张表保持分离，不合并成单表
+- 三类 resource 保持分离，不合并成单一 resource
 - 上层可以构造一个聚合读模型给 CLI 或 App 使用
 - 这个聚合读模型必须是共享 domain object，不是某个 UI hook 的私有产物
 
-`ai connect / disconnect / status` 的语义必须基于这三张表定义，而不是各端自行拼凑。
+`ai connect / disconnect / status` 的语义必须基于这三类 resource 定义，而不是各端自行拼凑。
 
-### Watch Credential Injection
+### Backend Credential Injection
 
-`linx watch --credential-source cloud` 的职责分层必须固定：
+`linx --backend <backend>` 的 credential injection 职责分层必须固定：
 
 1. 认证层从本地 Solid auth 恢复 Pod 访问能力；本地只保留 Solid auth 所需材料，不保存其它 app/provider 的 API key。
 2. session 适配层产出统一的 Inrupt-compatible session，供 `drizzle-solid` 使用。
-3. shared model 查询层读取 `credentialTable`、`aiProviderTable`、`aiModelTable`，并根据共享 provider alias 规则选择 active credential。
-4. watch runner 只把选中的 credential 映射成子进程环境变量，不把 credential 复制到 watch archive、message、audit 或 TUI state。
+3. shared model 查询层读取 `credentialResource`、`aiProviderResource`、`aiModelResource`，并根据共享 provider alias 规则选择 active credential。
+4. Backend runner 只把选中的 credential 映射成子进程环境变量，不把 credential 复制到 archive、message、audit 或 TUI state。
+
+CLI credential 获取交互和 runtime 消费必须分开：缺 LinX/Solid 登录时延续 Pi 的浏览器 OIDC / manual redirect 体验；缺 provider key 时在当前 CLI/TUI flow 收集 API key，并通过 shared AI config mutation 写入 Pod。之后 backend runner 仍然从 Pod 读取并重试。详细原则见 `docs/cli-login-and-key-principles.md`。
 
 当前 backend env 映射规则：
 
@@ -215,7 +220,9 @@ AI 配置以三张表为准，不允许再引入平行主线：
 - `codex` / OpenAI: 注入 `OPENAI_API_KEY`，并为 Codex 兼容补 `CODEX_API_KEY`
 - `codebuddy`: 注入 `CODEBUDDY_API_KEY`，如 credential/provider 配置了 base URL 再注入 `CODEBUDDY_BASE_URL`
 
-这条链路不允许出现第二套 credential 读取器。若 OIDC 场景、测试夹具或某个 runtime 不能直接传真实 Inrupt `Session`，修 session 适配层；若 shared model 缺少方便的聚合查询，修 `packages/models` repository/helper；不要在 `apps/cli` 或 `apps/web` 里手写 `credentialTable` 的 Turtle parser。
+这条链路不允许出现第二套 credential 读取器。若 OIDC 场景、测试夹具或某个 runtime 不能直接传真实 Inrupt `Session`，修 session 适配层；若 shared model 缺少方便的聚合查询，修 `packages/models` repository/helper；不要在 `apps/cli` 或 `apps/web` 里手写 `credentialResource` 的 Turtle parser。
+
+完整 backend / Pod 原则见 `docs/backend-pod-contract.md`。该文档是 CLI/App backend 改动的验收口径：backend 选择只改变外部 agent runtime；凭据/config、关键数据、local-first sync、approval/auth 语义必须继续走 shared model 和 Pod。
 
 ## Removed Path
 
@@ -224,7 +231,7 @@ AI 配置以三张表为准，不允许再引入平行主线：
 要求：
 
 - 新功能不得重新引入 `modelProviderTable`
-- AI 配置共享导出只允许使用 `credentialTable`、`aiProviderTable`、`aiModelTable`
+- AI 配置共享导出只允许使用 `credentialResource`、`aiProviderResource`、`aiModelResource`，`*Table` 仅作为兼容 alias
 - 评审时发现单表回流，视为架构回退
 
 ## Package Boundary
@@ -259,7 +266,7 @@ AI 配置以三张表为准，不允许再引入平行主线：
 - 是否改动了共享 schema 或 namespace
 - 是否把业务语义偷偷放进了 `apps/cli` 或 `apps/web`
 - 是否在壳层手写了 shared resource 的 predicate、subject template、Turtle 读写、URI builder、approval/grant/audit/session 状态机
-- 是否为了 OIDC、测试或 watch 场景绕开了 `drizzle-solid` shared model 查询；正确做法是把认证结果适配成 Inrupt-compatible session
+- 是否为了 OIDC、测试或 backend 控制场景绕开了 `drizzle-solid` shared model 查询；正确做法是把认证结果适配成 Inrupt-compatible session
 - 是否把 cloud credential 注入到了子进程 env 以外的位置，或把 provider API key 写进了 archive/message/audit/TUI state
 - approval 处理是否保持 known `approvalUri` 精确读取，App/Inbox 列表是否保持有界日期分桶发现，且没有恢复无界 recursive list
 - ACP / ChatKit / LinX Cloud runtime 的 capability、fast companion model、turn-controller、事件/控制能力是否复用 `packages/agent-runtime`，没有在 CLI/App 壳层复制一份 schema

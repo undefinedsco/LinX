@@ -20,12 +20,6 @@ vi.mock('@/lib/vendor/xpod-chatkit', () => ({
   nowTimestamp: () => 1,
 }))
 
-vi.mock('@/lib/vendor/xpod-credential', () => ({
-  Credential: {},
-  CredentialStatus: { ACTIVE: 'active' },
-  ServiceType: { AI: 'ai' },
-}))
-
 import { LocalChatKitService } from '../service'
 
 function createSseResponse(events: unknown[]) {

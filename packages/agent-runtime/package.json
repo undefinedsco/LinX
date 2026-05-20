@@ -17,10 +17,25 @@
       "node": "./dist/acp.js",
       "default": "./src/acp.ts"
     },
+    "./auto-mode": {
+      "types": "./src/auto-mode.ts",
+      "node": "./dist/auto-mode.js",
+      "default": "./src/auto-mode.ts"
+    },
     "./companion-model": {
       "types": "./src/companion-model.ts",
       "node": "./dist/companion-model.js",
       "default": "./src/companion-model.ts"
+    },
+    "./runtime": {
+      "types": "./src/runtime.ts",
+      "node": "./dist/runtime.js",
+      "default": "./src/runtime.ts"
+    },
+    "./symphony": {
+      "types": "./src/symphony.ts",
+      "node": "./dist/symphony.js",
+      "default": "./src/symphony.ts"
     },
     "./turn-controller": {
       "types": "./src/turn-controller.ts",
@@ -29,12 +44,10 @@
     }
   },
   "scripts": {
+    "prebuild": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "build": "tsc -p tsconfig.json",
-    "test": "yarn build && node --test test/*.test.mjs",
+    "test": "yarn build && node --test test/*.test.mjs && node --import tsx --test test/*.test.ts",
     "lint": "echo \"lint not configured\""
-  },
-  "dependencies": {
-    "@undefineds.co/models": "*"
   },
   "devDependencies": {
     "typescript": "^5.4.0"

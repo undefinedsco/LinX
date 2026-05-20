@@ -38,9 +38,9 @@ UI Components
 // packages/models/src/chat/chat.schema.ts
 export const chatTable = podTable("chat", {
   title: string("title").predicate(DCTerms.title).notNull(),
-  conversationType: string("conversationType").predicate(LINQ.conversationType).notNull(),
-  participants: uri("participants").array().predicate(LINQ.participants).notNull(),
-  status: string("status").predicate(LINQ.status).notNull().default("active"),
+  conversationType: string("conversationType").predicate(UDFS.conversationType).notNull(),
+  participants: uri("participants").array().predicate(UDFS.participants).notNull(),
+  status: string("status").predicate(UDFS.status).notNull().default("active"),
   // ...
 })
 

@@ -1,17 +1,14 @@
 import type { Session } from '@inrupt/solid-client-authn-node'
 import {
-  agentTable,
-  buildAgentResourceRef,
-  chatTable,
+  agentResource,
+  chatResource,
   drizzle,
   eq,
   extractChatIdFromChatRef,
   extractThreadIdFromThreadRef,
-  initSolidTables,
-  solidSchema,
-  messageTable,
-  sessionTable,
-  threadTable,
+  solidResources,
+  messageResource,
+  threadResource,
   type MessageRow,
   type SolidDatabase,
   type ThreadRow,
@@ -30,22 +27,26 @@ function extractThreadId(threadIdOrUri: string | null | undefined): string | und
   return extractThreadIdFromThreadRef(threadIdOrUri) ?? undefined
 }
 
+function getPodBaseUrl(webId: string): string {
+  return webId.replace('/profile/card#me', '').replace(/\/$/, '')
+}
+
 function buildAgentUri(webId: string, agentId: string): string {
-  return buildAgentResourceRef(webId, agentId)
+  return `${getPodBaseUrl(webId)}/.data/agents/${agentId}.ttl`
 }
 
-function requireFindByLocator(db: SolidDatabase): NonNullable<SolidDatabase['findByLocator']> {
-  if (typeof db.findByLocator !== 'function') {
-    throw new Error('Solid database does not support findByLocator')
+function requireFindById(db: SolidDatabase): NonNullable<SolidDatabase['findById']> {
+  if (typeof db.findById !== 'function') {
+    throw new Error('Solid database does not support findById')
   }
-  return db.findByLocator.bind(db)
+  return db.findById.bind(db)
 }
 
-function requireUpdateByLocator(db: SolidDatabase): NonNullable<SolidDatabase['updateByLocator']> {
-  if (typeof db.updateByLocator !== 'function') {
-    throw new Error('Solid database does not support updateByLocator')
+function requireUpdateById(db: SolidDatabase): NonNullable<SolidDatabase['updateById']> {
+  if (typeof db.updateById !== 'function') {
+    throw new Error('Solid database does not support updateById')
   }
-  return db.updateByLocator.bind(db)
+  return db.updateById.bind(db)
 }
 
 export interface ThreadSummary {
@@ -65,32 +66,27 @@ function createDb(session: Session): SolidDatabase {
   return drizzle(session, {
     logger: false,
     disableInteropDiscovery: true,
-    schema: solidSchema,
+    resourcePreparation: 'best-effort' as never,
+    schema: solidResources,
   }) as unknown as SolidDatabase
 }
 
 export async function initPodData(session: Session): Promise<SolidDatabase> {
   const db = createDb(session)
 
-  try {
-    await initSolidTables(db, [chatTable, threadTable, messageTable, sessionTable, agentTable])
-  } catch {
-    // 容器可能已存在，MVP 允许继续。
-  }
-
   return db
 }
 
 async function ensureCliAgent(db: SolidDatabase, webId: string): Promise<void> {
-  const findByLocator = requireFindByLocator(db)
-  const existing = await findByLocator(agentTable, { id: DEFAULT_AGENT_ID })
+  const findById = requireFindById(db)
+  const existing = await findById(agentResource, DEFAULT_AGENT_ID)
 
   if (existing) {
     return
   }
 
   const now = new Date()
-  await db.insert(agentTable).values({
+  await db.insert(agentResource).values({
     id: DEFAULT_AGENT_ID,
     name: 'LinX CLI Assistant',
     provider: 'xpod',
@@ -109,14 +105,14 @@ export async function getOrCreateDefaultChat(session: Session): Promise<string> 
 
   await ensureCliAgent(db, webId)
 
-  const findByLocator = requireFindByLocator(db)
-  const existing = await findByLocator(chatTable, { id: DEFAULT_CHAT_ID })
+  const findById = requireFindById(db)
+  const existing = await findById(chatResource, DEFAULT_CHAT_ID)
   if (existing) {
     return DEFAULT_CHAT_ID
   }
 
   const now = new Date()
-  await db.insert(chatTable).values({
+  await db.insert(chatResource).values({
     id: DEFAULT_CHAT_ID,
     title: 'LinX CLI',
     participants: [],
@@ -130,8 +126,8 @@ export async function getOrCreateDefaultChat(session: Session): Promise<string> 
 
 export async function listThreads(session: Session, chatId: string): Promise<ThreadSummary[]> {
   const db = await initPodData(session)
-  const chatCol = (threadTable as any).chat
-  const rows = await db.select().from(threadTable).where(eq(chatCol, chatId)).orderBy('updatedAt', 'desc').execute()
+  const chatCol = (threadResource as any).chat
+  const rows = await db.select().from(threadResource).where(eq(chatCol, chatId)).orderBy('updatedAt', 'desc').execute()
 
   return rows.map((row: any) => ({
     id: String(row.id),
@@ -151,7 +147,7 @@ export async function createThread(
   const threadId = crypto.randomUUID()
   const now = new Date()
 
-  await db.insert(threadTable).values({
+  await db.insert(threadResource).values({
     id: threadId,
     chat: chatId,
     title: title || 'CLI Session',
@@ -166,20 +162,21 @@ export async function createThread(
 export async function touchThread(session: Session, threadId: string): Promise<void> {
   const db = await initPodData(session)
   const chatId = extractChatId((await loadThread(session, threadId))?.chat) ?? DEFAULT_CHAT_ID
-  const updateByLocator = requireUpdateByLocator(db)
-  await updateByLocator(threadTable, { chat: chatId, id: threadId }, { updatedAt: new Date() })
+  const updateById = requireUpdateById(db)
+  const threadResourceId = db.resolveLocatorId(threadResource, { chat: chatId, id: threadId })
+  await updateById(threadResource, threadResourceId, { updatedAt: new Date() })
 }
 
 export async function loadMessages(session: Session, threadId: string): Promise<StoredThreadMessage[]> {
   const db = await initPodData(session)
-  const createdAtCol = (messageTable as any).createdAt
+  const createdAtCol = (messageResource as any).createdAt
   const thread = await loadThread(session, threadId)
   if (!thread) {
     return []
   }
 
   const chatId = extractChatId((thread as any).chat)
-  const rows = await db.select().from(messageTable).orderBy(createdAtCol).execute()
+  const rows = await db.select().from(messageResource).orderBy(createdAtCol).execute()
 
   return rows
     .filter((row: any) => (
@@ -206,9 +203,9 @@ export async function saveUserMessage(
   if (!webId) {
     throw new Error('Missing webId in Solid session')
   }
-  const updateByLocator = requireUpdateByLocator(db)
+  const updateById = requireUpdateById(db)
 
-  await db.insert(messageTable).values({
+  await db.insert(messageResource).values({
     id: crypto.randomUUID(),
     chat: chatId,
     thread: threadId,
@@ -219,7 +216,7 @@ export async function saveUserMessage(
     createdAt: now,
   }).execute()
 
-  await updateByLocator(chatTable, { id: chatId }, {
+  await updateById(chatResource, chatId, {
     lastActiveAt: now,
     lastMessagePreview: content.slice(0, 100),
     updatedAt: now,
@@ -240,9 +237,9 @@ export async function saveAssistantMessage(
   if (!webId) {
     throw new Error('Missing webId in Solid session')
   }
-  const updateByLocator = requireUpdateByLocator(db)
+  const updateById = requireUpdateById(db)
 
-  await db.insert(messageTable).values({
+  await db.insert(messageResource).values({
     id: crypto.randomUUID(),
     chat: chatId,
     thread: threadId,
@@ -253,7 +250,7 @@ export async function saveAssistantMessage(
     createdAt: now,
   }).execute()
 
-  await updateByLocator(chatTable, { id: chatId }, {
+  await updateById(chatResource, chatId, {
     lastActiveAt: now,
     lastMessagePreview: content.slice(0, 100),
     updatedAt: now,
@@ -264,21 +261,23 @@ export async function saveAssistantMessage(
 
 export async function loadThread(session: Session, threadId: string): Promise<ThreadRow | null> {
   const db = await initPodData(session)
-  const findByLocator = requireFindByLocator(db)
+  const findById = requireFindById(db)
 
   const directChatId = extractChatId(threadId)
   const directThreadId = extractThreadId(threadId)
   if (directChatId && directThreadId) {
-    return await findByLocator<ThreadRow>(threadTable, {
+    const resourceId = db.resolveLocatorId(threadResource, {
       chat: directChatId,
       id: directThreadId,
     })
+    return await findById<ThreadRow>(threadResource, resourceId)
   }
 
-  return await findByLocator<ThreadRow>(threadTable, {
+  const resourceId = db.resolveLocatorId(threadResource, {
     chat: DEFAULT_CHAT_ID,
     id: threadId,
   })
+  return await findById<ThreadRow>(threadResource, resourceId)
 }
 
 export async function getLatestThreadId(session: Session, chatId: string): Promise<string | null> {

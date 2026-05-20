@@ -1,15 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { loadWatchModule } from './watch-test-bundle.mjs'
+import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 
 test('pi agent stream adapter captures session metadata and exposes a streamFn hook', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/stream.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/stream.ts')
   t.after(() => cleanup())
 
   const sentTurns = []
   let listener = null
   const adapter = module.createPiAgentStreamAdapter({
-    sessionId: 'watch_native_proxy_123',
+    sessionId: 'auto_native_proxy_123',
     cwd: '/tmp/demo',
     model: 'gpt-5-codex',
     backend: {
@@ -30,7 +30,7 @@ test('pi agent stream adapter captures session metadata and exposes a streamFn h
     },
   })
 
-  assert.equal(adapter.sessionId, 'watch_native_proxy_123')
+  assert.equal(adapter.sessionId, 'auto_native_proxy_123')
   assert.equal(adapter.cwd, '/tmp/demo')
   assert.equal(adapter.model, 'gpt-5-codex')
   assert.equal(typeof adapter.streamFn, 'function')
@@ -58,7 +58,7 @@ test('pi agent stream adapter captures session metadata and exposes a streamFn h
 })
 
 test('pi agent stream adapter can use a direct completion backend with full context', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/stream.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/stream.ts')
   t.after(() => cleanup())
 
   const completionCalls = []
@@ -101,7 +101,7 @@ test('pi agent stream adapter can use a direct completion backend with full cont
 })
 
 test('pi agent stream adapter forwards abort signal to completion backend', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/stream.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/stream.ts')
   t.after(() => cleanup())
 
   const controller = new AbortController()
@@ -135,7 +135,7 @@ test('pi agent stream adapter forwards abort signal to completion backend', asyn
 })
 
 test('pi agent stream adapter defaults assistant metadata to linx-lite', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/stream.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/stream.ts')
   t.after(() => cleanup())
 
   const adapter = module.createPiAgentStreamAdapter({
@@ -162,7 +162,7 @@ test('pi agent stream adapter defaults assistant metadata to linx-lite', async (
 })
 
 test('pi agent stream adapter uses the current session model instead of the bootstrap model', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/stream.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/stream.ts')
   t.after(() => cleanup())
 
   const completionCalls = []
@@ -192,7 +192,7 @@ test('pi agent stream adapter uses the current session model instead of the boot
 })
 
 test('pi agent stream adapter forwards tools and emits tool calls for Pi agent loop', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/stream.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/stream.ts')
   t.after(() => cleanup())
 
   const completionCalls = []
@@ -241,7 +241,7 @@ test('pi agent stream adapter forwards tools and emits tool calls for Pi agent l
 })
 
 test('pi agent stream adapter emits Pi thinking events from remote reasoning content', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/stream.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/stream.ts')
   t.after(() => cleanup())
 
   const adapter = module.createPiAgentStreamAdapter({
@@ -285,7 +285,7 @@ test('pi agent stream adapter emits Pi thinking events from remote reasoning con
 })
 
 test('pi agent stream adapter attaches remote usage for Pi footer context and cache stats', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/stream.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/stream.ts')
   t.after(() => cleanup())
 
   const adapter = module.createPiAgentStreamAdapter({
@@ -323,7 +323,7 @@ test('pi agent stream adapter attaches remote usage for Pi footer context and ca
 })
 
 test('pi agent stream adapter preserves assistant tool calls and tool results in history', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/stream.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/stream.ts')
   t.after(() => cleanup())
 
   const completionCalls = []
@@ -371,7 +371,7 @@ test('pi agent stream adapter preserves assistant tool calls and tool results in
 })
 
 test('pi agent stream adapter drops interrupted dangling tool calls from resumed history', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/stream.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/stream.ts')
   t.after(() => cleanup())
 
   const completionCalls = []
@@ -418,7 +418,7 @@ test('pi agent stream adapter drops interrupted dangling tool calls from resumed
 })
 
 test('pi agent stream adapter preserves DeepSeek reasoning content for tool-result history', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/stream.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/stream.ts')
   t.after(() => cleanup())
 
   const completionCalls = []
@@ -456,7 +456,7 @@ test('pi agent stream adapter preserves DeepSeek reasoning content for tool-resu
 })
 
 test('pi agent stream adapter maps expired LinX cloud auth errors to a compact TUI error', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/stream.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/stream.ts')
   t.after(() => cleanup())
 
   const adapter = module.createPiAgentStreamAdapter({

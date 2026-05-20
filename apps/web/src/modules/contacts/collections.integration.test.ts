@@ -52,7 +52,7 @@ describe('contact collections integration', () => {
     expect(created).toBeDefined()
 
     // Round-trip: SELECT back via SPARQL endpoint
-    const row = await (database as any).findByLocator(contactTable as any, { id } as any)
+    const row = await (database as any).findById(contactTable as any, id)
     expect(row).toBeTruthy()
     expect(row?.name).toBe('Integration Contact')
     expect(row?.contactType).toBe('solid')
@@ -75,11 +75,11 @@ describe('contact collections integration', () => {
     }
 
     // Verify both contacts via SPARQL SELECT
-    const solidRow = await (database as any).findByLocator(contactTable as any, { id: `solid-${timestamp}` } as any)
+    const solidRow = await (database as any).findById(contactTable as any, `solid-${timestamp}`)
     expect(solidRow).toBeTruthy()
     expect(solidRow?.contactType).toBe('solid')
 
-    const extRow = await (database as any).findByLocator(contactTable as any, { id: `ext-${timestamp}` } as any)
+    const extRow = await (database as any).findById(contactTable as any, `ext-${timestamp}`)
     expect(extRow).toBeTruthy()
     expect(extRow?.contactType).toBe('external')
   })
@@ -97,10 +97,10 @@ describe('contact collections integration', () => {
 
     expect(created).toBeDefined()
 
-    await (database as any).deleteByLocator(contactTable as any, { id } as any)
+    await (database as any).deleteById(contactTable as any, id)
 
     // Verify deletion via SPARQL SELECT
-    const row = await (database as any).findByLocator(contactTable as any, { id } as any)
+    const row = await (database as any).findById(contactTable as any, id)
     expect(row).toBeNull()
   })
 })

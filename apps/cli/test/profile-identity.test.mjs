@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { loadWatchModule } from './watch-test-bundle.mjs'
+import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 
 function credentials(overrides = {}) {
   return {
@@ -31,7 +31,7 @@ function podSession(overrides = {}) {
 }
 
 test('extractUsernameFromWebId uses the profile path owner as fallback identity', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/profile-identity.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/profile-identity.ts')
   t.after(() => cleanup())
 
   assert.equal(module.extractUsernameFromWebId('https://id.undefineds.co/ganbb/profile/card#me'), 'ganbb')
@@ -40,7 +40,7 @@ test('extractUsernameFromWebId uses the profile path owner as fallback identity'
 })
 
 test('resolveProfileDisplayName reads the configured WebID through solidProfileTable', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/profile-identity.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/profile-identity.ts')
   t.after(() => cleanup())
 
   const calls = []
@@ -68,7 +68,7 @@ test('resolveProfileDisplayName reads the configured WebID through solidProfileT
 })
 
 test('resolveProfileDisplayName reuses the per-login profile db resource', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/profile-identity.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/profile-identity.ts')
   t.after(() => cleanup())
 
   const cache = new Map()
@@ -103,7 +103,7 @@ test('resolveProfileDisplayName reuses the per-login profile db resource', async
 })
 
 test('resolveProfileDisplayName returns null when profile lookup fails', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/profile-identity.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/profile-identity.ts')
   t.after(() => cleanup())
 
   const displayName = await module.resolveProfileDisplayName({
@@ -122,7 +122,7 @@ test('resolveProfileDisplayName returns null when profile lookup fails', async (
 })
 
 test('resolveProfileDisplayName default path reads the WebID document directly', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/profile-identity.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/profile-identity.ts')
   const originalFetch = globalThis.fetch
   t.after(() => {
     globalThis.fetch = originalFetch

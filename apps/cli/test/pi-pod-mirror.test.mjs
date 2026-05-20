@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { loadWatchModule } from './watch-test-bundle.mjs'
+import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 
 function createSessionManager() {
   const entries = []
@@ -54,8 +54,8 @@ function createFakePodRuntime() {
       return `${podBase}/.data/agents/${encodeURIComponent(locator.id)}.ttl`
     }
     if (name === 'session') {
-      const { yyyy, mm } = dateParts(locator.createdAt)
-      return `${podBase}/.data/sessions/${yyyy}/${mm}.ttl#${encodeURIComponent(locator.id)}`
+      const { yyyy, mm, dd } = dateParts(locator.createdAt, true)
+      return `${podBase}/.data/sessions/${yyyy}/${mm}/${dd}/${encodeURIComponent(locator.id)}.ttl`
     }
     if (name === 'chat_message') {
       const chatId = chatIdFromRef(locator.chat)
@@ -79,11 +79,26 @@ function createFakePodRuntime() {
   const db = {
     async init() {},
     resolveLocatorIri,
-    async findByLocator(table, locator) {
-      return rows.get(resolveLocatorIri(table, locator)) ?? null
+    async findById(table, id) {
+      const exact = [...rows.values()].find((row) => row.id === id)
+      if (exact) return exact
+      const suffix = `#${encodeURIComponent(id)}`
+      const documentSuffix = `/${encodeURIComponent(id)}.ttl`
+      return [...rows.entries()].find(([iri]) => iri.endsWith(suffix) || iri.endsWith(documentSuffix))?.[1] ?? null
     },
-    async updateByLocator(table, locator, patch) {
-      const iri = resolveLocatorIri(table, locator)
+    async findByIri(_table, iri) {
+      return rows.get(iri) ?? null
+    },
+    async updateById(table, id, patch) {
+      const existing = await this.findById(table, id)
+      const iri = existing?.['@id'] ?? existing?.subject ?? existing?.uri
+      if (typeof iri !== 'string') return null
+      const next = { ...existing, ...patch, '@id': iri, subject: iri, uri: iri }
+      rows.set(iri, next)
+      writes.push({ op: 'update', table: tableName(table), iri, row: next })
+      return next
+    },
+    async updateByIri(table, iri, patch) {
       const existing = rows.get(iri)
       if (!existing) return null
       const next = { ...existing, ...patch, '@id': iri, subject: iri, uri: iri }
@@ -133,7 +148,7 @@ function createFakePodRuntime() {
 }
 
 test('buildPodMessageRow maps Pi user and assistant messages into standard Pod message rows', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/pod-mirror-mapping.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/pod-mirror-mapping.ts')
   t.after(() => cleanup())
 
   const userRow = module.buildPodMessageRow(
@@ -199,7 +214,7 @@ test('buildPodMessageRow maps Pi user and assistant messages into standard Pod m
 })
 
 test('buildPodMessageRow keeps tool results as system messages linked to the same chat/thread', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/pod-mirror-mapping.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/pod-mirror-mapping.ts')
   t.after(() => cleanup())
 
   const row = module.buildPodMessageRow(
@@ -228,7 +243,7 @@ test('buildPodMessageRow keeps tool results as system messages linked to the sam
 })
 
 test('LinxPiPodMirror persists Pi session events into Pod tables', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/pod-mirror.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/pod-mirror.ts')
   t.after(() => cleanup())
 
   const sessionManager = createSessionManager()
@@ -250,6 +265,7 @@ test('LinxPiPodMirror persists Pi session events into Pod tables', async (t) => 
     cwd: '/tmp/demo',
     sessionManager,
     runtime,
+    syncConversationRoot: true,
   })
 
   mirror.handleEvent({ type: 'message_end', message })
@@ -262,13 +278,15 @@ test('LinxPiPodMirror persists Pi session events into Pod tables', async (t) => 
   assert.equal(rowValues.some((row) => row.tool === 'linx' && row.status === 'completed'), true)
   assert.equal(rowValues.some((row) => row.content === 'persist through mirror'), true)
   assert.equal(writes.some((write) => write.table === 'chats' && write.iri.endsWith('/.data/chat/ai-secretary/index.ttl#this')), true)
-  assert.equal(writes.some((write) => write.table === 'session' && /\/\.data\/sessions\/2026\/04\.ttl#/.test(write.iri)), true)
+  assert.equal(writes.some((write) => write.table === 'session' && /\/\.data\/sessions\/2026\/04\/01\/[^/]+\.ttl$/.test(write.iri)), true)
+  assert.equal(writes.filter((write) => write.table === 'session' && write.op === 'insert').length, 1)
+  assert.equal(writes.filter((write) => write.table === 'session' && write.op === 'update').length, 1)
   assert.equal(writes.some((write) => write.table === 'chat_message' && /\/\.data\/chat\/ai-secretary\/2026\/04\/01\/messages\.ttl#/.test(write.iri)), true)
   assert.equal(writes.some((write) => write.table === 'audit'), false)
 })
 
 test('LinxPiPodMirror writes tool execution audits to Pod tables', async (t) => {
-  const { module, cleanup } = await loadWatchModule('lib/pi-adapter/pod-mirror.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/pod-mirror.ts')
   t.after(() => cleanup())
 
   const sessionManager = createSessionManager()
@@ -277,6 +295,7 @@ test('LinxPiPodMirror writes tool execution audits to Pod tables', async (t) => 
     cwd: '/tmp/demo',
     sessionManager,
     runtime,
+    syncConversationRoot: true,
   })
 
   mirror.handleEvent({
