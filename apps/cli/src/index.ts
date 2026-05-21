@@ -64,6 +64,7 @@ interface ChatRuntime {
     model?: string
     messages: RemoteChatMessage[]
     tools?: RemoteChatTool[]
+    reasoning?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
   }): Promise<string | PiCompletionBackendResult>
   listRemoteModels(session: unknown, runtimeUrl: string, apiKey: string, options?: { fallback?: boolean; timeoutMs?: number }): Promise<Array<{
     id: string

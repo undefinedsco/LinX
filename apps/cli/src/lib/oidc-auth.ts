@@ -619,7 +619,11 @@ async function waitForManualRedirect(
     await new Promise(() => undefined)
     return
   }
-  if (signal?.aborted || !requestUrl) {
+  if (signal?.aborted) {
+    return
+  }
+  if (!requestUrl) {
+    await new Promise(() => undefined)
     return
   }
   assertOidcCallbackDidNotReturnError(requestUrl)

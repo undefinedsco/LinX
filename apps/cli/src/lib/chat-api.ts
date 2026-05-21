@@ -200,9 +200,10 @@ export async function createRemoteCompletionResult(options: {
   model?: string
   messages: RemoteChatMessage[]
   tools?: RemoteChatTool[]
+  reasoning?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
   signal?: AbortSignal
 }): Promise<RemoteCompletionResult> {
-  const { runtimeUrl, apiKey, model, messages, tools } = options
+  const { runtimeUrl, apiKey, model, messages, tools, reasoning } = options
   const url = `${resolveRuntimeBaseUrl(runtimeUrl)}/chat/completions`
   const resolvedModel = model || DEFAULT_LINX_CLOUD_MODEL_ID
   const requestBody: {
@@ -211,10 +212,14 @@ export async function createRemoteCompletionResult(options: {
     messages: RemoteChatMessage[]
     tools?: RemoteChatTool[]
     tool_choice?: 'auto'
+    reasoning_effort?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
   } = {
     model: resolvedModel,
     stream: false,
     messages,
+  }
+  if (reasoning) {
+    requestBody.reasoning_effort = reasoning
   }
   if (tools && tools.length > 0) {
     requestBody.tools = tools
@@ -424,6 +429,7 @@ export async function createRemoteCompletion(options: {
   model?: string
   messages: RemoteChatMessage[]
   tools?: RemoteChatTool[]
+  reasoning?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
   signal?: AbortSignal
 }): Promise<string> {
   const result = await createRemoteCompletionResult(options)

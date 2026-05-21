@@ -14,6 +14,7 @@ const agentRuntimeDistRoot = join(agentRuntimeRoot, 'dist')
 const sourceRoot = join(cliRoot, 'src')
 const skillsRoot = fileURLToPath(new URL('../../../skills', import.meta.url))
 const requireFromCli = createRequire(join(cliRoot, 'package.json'))
+const localTscBin = requireFromCli.resolve('typescript/bin/tsc')
 const bundleCache = new Map()
 const cachedBundleRoots = new Set()
 let cleanupRegistered = false
@@ -114,12 +115,13 @@ async function buildAutoModeBundle(entryRelative) {
   const entryPath = join(sourceRoot, entryRelative)
   const compiledEntry = join(outdir, entryRelative.replace(/\.ts$/, '.js'))
 
-  execFileSync('tsc', ['-p', join(agentRuntimeRoot, 'tsconfig.json')], {
+  execFileSync(process.execPath, [localTscBin, '-p', join(agentRuntimeRoot, 'tsconfig.json')], {
     cwd: cliRoot,
     stdio: 'pipe',
   })
 
-  execFileSync('tsc', [
+  execFileSync(process.execPath, [
+    localTscBin,
     '--outDir',
     outdir,
     '--rootDir',
@@ -134,6 +136,7 @@ async function buildAutoModeBundle(entryRelative) {
     'ES2022',
     '--types',
     'node',
+    '--ignoreConfig',
     '--skipLibCheck',
     'true',
     '--verbatimModuleSyntax',

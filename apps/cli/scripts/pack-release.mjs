@@ -15,9 +15,7 @@ const modelsPkg = JSON.parse(readFileSync(join(modelsRoot, 'package.json'), 'utf
 const agentRuntimeRoot = join(repoRoot, 'packages', 'agent-runtime')
 const agentRuntimePkg = JSON.parse(readFileSync(join(agentRuntimeRoot, 'package.json'), 'utf-8'))
 const version = args.version ?? cliPkg.version
-if (modelsPkg.version !== cliPkg.version && !args.version) {
-  throw new Error(`CLI and models versions must match for release: cli=${cliPkg.version}, models=${modelsPkg.version}`)
-}
+const modelsVersion = args.modelsVersion ?? modelsPkg.version
 
 const workRoot = join(tmpdir(), `linx-cli-release-${Date.now()}`)
 const cliWorkRoot = join(workRoot, 'cli')
@@ -61,8 +59,7 @@ function shouldCopyPackagePath(root, path) {
 function createPublishableCliPackage(pkg, packageVersion) {
   const dependencies = {
     ...(pkg.dependencies ?? {}),
-    '@undefineds.co/models': packageVersion,
-    '@zed-industries/codex-acp': '^0.9.5',
+    '@undefineds.co/models': modelsVersion,
   }
   delete dependencies['@linx/agent-runtime']
 
@@ -110,24 +107,40 @@ function rewriteAgentRuntimeImports(root, cliWorkRoot) {
     const rel = relative(dirname(file), join(cliWorkRoot, 'vendor', 'agent-runtime', 'dist')).replaceAll('\\', '/')
     const base = rel.startsWith('.') ? rel : `./${rel}`
     const replacements = [
-      ["'@linx/agent-runtime'", `'${base}/index.js'`],
-      ["'@linx/agent-runtime/acp'", `'${base}/acp.js'`],
-      ["'@linx/agent-runtime/auto-mode'", `'${base}/auto-mode.js'`],
-      ["'@linx/agent-runtime/companion-model'", `'${base}/companion-model.js'`],
-      ["'@linx/agent-runtime/runtime'", `'${base}/runtime.js'`],
-      ["'@linx/agent-runtime/turn-controller'", `'${base}/turn-controller.js'`],
-      ['"@linx/agent-runtime"', `"${base}/index.js"`],
-      ['"@linx/agent-runtime/acp"', `"${base}/acp.js"`],
-      ['"@linx/agent-runtime/auto-mode"', `"${base}/auto-mode.js"`],
-      ['"@linx/agent-runtime/companion-model"', `"${base}/companion-model.js"`],
-      ['"@linx/agent-runtime/runtime"', `"${base}/runtime.js"`],
-      ['"@linx/agent-runtime/turn-controller"', `"${base}/turn-controller.js"`],
+      ...agentRuntimeExports().flatMap(({ specifier, file }) => [
+        [`'${specifier}'`, `'${base}/${file}'`],
+        [`"${specifier}"`, `"${base}/${file}"`],
+      ]),
     ]
     for (const [from, to] of replacements) {
       source = source.split(from).join(to)
     }
     writeFileSync(file, source)
   }
+}
+
+function agentRuntimeExports() {
+  return [
+    { specifier: '@linx/agent-runtime', file: 'index.js' },
+    ...Object.entries(agentRuntimePkg.exports ?? {})
+      .filter(([specifier]) => specifier !== '.')
+      .map(([specifier, target]) => ({
+        specifier: `@linx/agent-runtime/${specifier.slice(2)}`,
+        file: runtimeExportFile(target),
+      })),
+  ]
+}
+
+function runtimeExportFile(target) {
+  if (typeof target === 'string') {
+    return target.replace(/^\.\/dist\//, '')
+  }
+
+  const nodeTarget = target?.node ?? target?.default
+  if (typeof nodeTarget !== 'string') {
+    throw new Error(`Unsupported @linx/agent-runtime export target: ${JSON.stringify(target)}`)
+  }
+  return nodeTarget.replace(/^\.\/dist\//, '')
 }
 
 function walkJs(dir, files = []) {
@@ -211,6 +224,7 @@ function writeJson(path, value) {
 function parseArgs(argv) {
   const parsed = {
     version: undefined,
+    modelsVersion: undefined,
   }
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -222,6 +236,15 @@ function parseArgs(argv) {
     }
     if (arg.startsWith('--version=')) {
       parsed.version = arg.slice('--version='.length)
+      continue
+    }
+    if (arg === '--models-version') {
+      parsed.modelsVersion = argv[i + 1]
+      i += 1
+      continue
+    }
+    if (arg.startsWith('--models-version=')) {
+      parsed.modelsVersion = arg.slice('--models-version='.length)
       continue
     }
     throw new Error(`Unknown option: ${arg}`)

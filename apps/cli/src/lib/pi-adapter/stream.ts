@@ -36,6 +36,7 @@ export interface PiCompletionBackendResult {
 type PiStreamOptions = {
   apiKey?: string
   modelId?: string
+  reasoning?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
   signal?: AbortSignal
 }
 
@@ -55,6 +56,7 @@ export interface PiAgentStreamAdapterOptions {
       messages: RemoteChatMessage[]
       tools?: RemoteChatTool[]
       systemPrompt?: string
+      reasoning?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
       signal?: AbortSignal
     }): Promise<string | PiCompletionBackendResult>
   }
@@ -114,6 +116,7 @@ export function createPiAgentStreamAdapter(options: PiAgentStreamAdapterOptions 
             messages: normalizedMessages,
             tools: normalizedTools,
             systemPrompt: context?.systemPrompt,
+            reasoning: streamOptions?.reasoning,
             signal: streamOptions?.signal,
           })
           throwIfAborted(streamOptions?.signal)

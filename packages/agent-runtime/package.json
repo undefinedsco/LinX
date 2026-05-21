@@ -50,6 +50,6 @@
     "lint": "echo \"lint not configured\""
   },
   "devDependencies": {
-    "typescript": "^5.4.0"
+    "typescript": "^6.0.3"
   }
 }

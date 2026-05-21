@@ -13,6 +13,7 @@ import {
   createAgentSessionFromServices,
   createAgentSessionRuntime,
   createAgentSessionServices,
+  createBashToolDefinition,
   createCodingTools,
   createLocalBashOperations,
 } from '@mariozechner/pi-coding-agent'
@@ -58,6 +59,7 @@ export interface PiRuntimeAdapterDependencies {
     messages: RemoteChatMessage[]
     tools?: RemoteChatTool[]
     systemPrompt?: string
+    reasoning?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
     signal?: AbortSignal
   }) => Promise<string | PiCompletionBackendResult>
   listRemoteModels?: (
@@ -246,6 +248,7 @@ export function createPiRuntimeAdapter(
             model: input.model,
             messages: withSystemPrompt(input.systemPrompt, input.messages),
             tools: input.tools,
+            reasoning: input.reasoning,
             signal: input.signal,
           })
         },
@@ -381,11 +384,27 @@ export function createPiRuntimeAdapter(
         sessionManager: context.sessionManager as SessionManager,
         sessionStartEvent: context.sessionStartEvent as never,
         model: selectedModel,
-        tools: createLinxPiCodingTools(context.cwd),
-        customTools: [webFetchTool, webSearchTool, podReadTool, podWriteTool],
+        tools: [
+          'read',
+          'bash',
+          'edit',
+          'write',
+          'web_fetch',
+          'web_search',
+          'pod_read',
+          'pod_write',
+        ],
+        customTools: [
+          createLinxPiBashToolDefinition(context.cwd),
+          webFetchTool,
+          webSearchTool,
+          podReadTool,
+          podWriteTool,
+        ],
       })
       const session = created.session
       enableLinxXhighThinking(session)
+      restoreLinxThinkingDefault(session, settingsManager)
       installLinxPiRemoteApproval({
         session,
         cwd: context.cwd,
@@ -488,6 +507,7 @@ export function createPiRuntimeAdapter(
       model?: string
       messages: RemoteChatMessage[]
       tools?: RemoteChatTool[]
+      reasoning?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
       signal?: AbortSignal
     },
   ): Promise<string | PiCompletionBackendResult> {
@@ -589,6 +609,28 @@ export function createLinxPiCodingTools(cwd: string, options: {
   })
 }
 
+export function createLinxPiBashToolDefinition(cwd: string, options: {
+  bashTimeoutSeconds?: number
+  bashOperations?: BashOperations
+} = {}): ReturnType<typeof createBashToolDefinition> {
+  const localBashOperations = options.bashOperations ?? createLocalBashOperations()
+  const bashTimeoutSeconds = options.bashTimeoutSeconds ?? DEFAULT_LINX_PI_BASH_TIMEOUT_SECONDS
+  return createBashToolDefinition(cwd, {
+    commandPrefix: buildLinxToolCommandPrefix(),
+    operations: {
+      exec(command, workingDirectory, options) {
+        return localBashOperations.exec(command, workingDirectory ?? process.cwd(), {
+          ...options,
+          env: withLinxToolPath(options.env),
+          timeout: typeof options.timeout === 'number'
+            ? options.timeout
+            : bashTimeoutSeconds,
+        })
+      },
+    },
+  })
+}
+
 function buildLinxToolCommandPrefix(): string | undefined {
   const udfsBin = resolveUdfsToolBinFile()
   if (!udfsBin) {
@@ -643,27 +685,56 @@ function shellQuote(value: string): string {
 function enableLinxXhighThinking(session: {
   model?: { provider?: string; reasoning?: boolean }
   supportsXhighThinking?: () => boolean
+  supportsThinking?: () => boolean
   getAvailableThinkingLevels?: () => string[]
 }): void {
   const originalSupportsXhighThinking = session.supportsXhighThinking?.bind(session)
+  const originalSupportsThinking = session.supportsThinking?.bind(session)
   const originalGetAvailableThinkingLevels = session.getAvailableThinkingLevels?.bind(session)
 
-  if (originalSupportsXhighThinking) {
-    session.supportsXhighThinking = () => (
+  const supportsLinxXhigh = () => (
+    session.model?.provider === UNDEFINEDS_PROVIDER_ID && session.model.reasoning
+      ? true
+      : originalSupportsXhighThinking?.() ?? false
+  )
+
+  session.supportsXhighThinking = supportsLinxXhigh
+
+  if (originalSupportsThinking) {
+    session.supportsThinking = () => (
       session.model?.provider === UNDEFINEDS_PROVIDER_ID && session.model.reasoning
         ? true
-        : originalSupportsXhighThinking()
+        : originalSupportsThinking()
     )
   }
 
   if (originalGetAvailableThinkingLevels) {
     session.getAvailableThinkingLevels = () => {
       const levels = originalGetAvailableThinkingLevels()
-      if (session.model?.provider === UNDEFINEDS_PROVIDER_ID && session.model.reasoning && !levels.includes('xhigh')) {
+      if (supportsLinxXhigh() && !levels.includes('xhigh')) {
         return [...levels, 'xhigh']
       }
       return levels
     }
+  }
+}
+
+function restoreLinxThinkingDefault(session: {
+  model?: { provider?: string; reasoning?: boolean }
+  getAvailableThinkingLevels?: () => string[]
+  setThinkingLevel?: (level: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh') => void
+}, settingsManager: SettingsManager): void {
+  if (session.model?.provider !== UNDEFINEDS_PROVIDER_ID || !session.model.reasoning) {
+    return
+  }
+
+  const defaultThinkingLevel = settingsManager.getDefaultThinkingLevel()
+  if (!defaultThinkingLevel || defaultThinkingLevel === 'off') {
+    return
+  }
+
+  if (session.getAvailableThinkingLevels?.().includes(defaultThinkingLevel)) {
+    session.setThinkingLevel?.(defaultThinkingLevel)
   }
 }
 

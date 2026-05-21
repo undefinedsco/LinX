@@ -12,9 +12,9 @@
     "lint": "echo \"lint not configured\""
   },
   "dependencies": {
-    "react": "18.2.0"
+    "react": "19.2.6"
   },
   "devDependencies": {
-    "typescript": "^5.4.0"
+    "typescript": "^6.0.3"
   }
 }

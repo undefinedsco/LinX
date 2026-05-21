@@ -137,6 +137,42 @@ test('loginWithBrowserConsent keeps waiting when manual redirect prompt is cance
   assert.equal(callbackHandled, true)
 })
 
+test('loginWithBrowserConsent keeps waiting after empty manual redirect input', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/oidc-auth.ts')
+  t.after(() => cleanup())
+
+  let callbackUrl = ''
+  let callbackHandled = false
+  const resultPromise = module.withCallbackServer(
+    '127.0.0.1',
+    '/auth/callback',
+    async (url) => {
+      callbackUrl = url
+    },
+    async () => {
+      callbackHandled = true
+    },
+    async () => '',
+  )
+
+  while (!callbackUrl) {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+  await new Promise((resolve) => setTimeout(resolve, 20))
+
+  assert.equal(callbackHandled, false)
+
+  await new Promise((resolve, reject) => {
+    get(`${callbackUrl}?code=abc&state=state`, (response) => {
+      response.resume()
+      response.on('end', resolve)
+    }).on('error', reject)
+  })
+
+  await resultPromise
+  assert.equal(callbackHandled, true)
+})
+
 test('loginWithBrowserConsent handles a manually pasted callback URL', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/oidc-auth.ts')
   t.after(() => cleanup())

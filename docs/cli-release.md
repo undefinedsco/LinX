@@ -1,15 +1,14 @@
 # LinX CLI Release
 
-LinX CLI release publishes two npm packages under the Undefineds scope:
+LinX CLI release publishes the product CLI package under the Undefineds scope:
 
-- `@undefineds.co/models`
 - `@undefineds.co/linx`
 
-The CLI package depends on `@undefineds.co/models` at the same exact version. Do not publish the raw workspace package directly unless the package metadata has been converted to its publish form; the workspace package uses development exports and wildcard workspace dependencies.
+The CLI release package depends on the exact `@undefineds.co/models` version pinned by the `packages/models` submodule. LinX and models no longer need to share the same semver. Do not publish the raw workspace package directly; the workspace package uses development exports and wildcard workspace dependencies.
 
 ## Current Release Path
 
-Build both packages and emit npm-installable tarballs:
+Build models for the workspace, build the CLI, and emit an npm-installable CLI tarball:
 
 ```bash
 yarn pack:cli:release
@@ -18,16 +17,15 @@ yarn pack:cli:release
 The outputs are:
 
 ```text
-preview/undefineds-co-models-<version>.tgz
 preview/undefineds-co-linx-<version>.tgz
 ```
 
-The release pack script converts `packages/models` exports from `src/*.ts` to `dist/*.js` and makes `apps/cli` depend on the exact same `@undefineds.co/models` version.
+The release pack script converts the workspace dependency into an exact published npm dependency. By default it reads the models version from `packages/models/package.json`, so the LinX parent repository must keep `packages/models` checked out at the exact `vX.Y.Z` tag matching that version.
 
 `@undefineds.co/models` is a shared contract package for xpod and LinX. It is not owned by the CLI release script. The root `pack:cli:release` command only orchestrates the order:
 
 ```text
-build models -> pack @undefineds.co/models -> build CLI -> pack @undefineds.co/linx
+build models -> build CLI -> pack @undefineds.co/linx
 ```
 
 xpod can use the same models package by depending on `@undefineds.co/models` and running the models pack command directly:
@@ -57,7 +55,7 @@ The required `@undefineds.co/drizzle-solid` runtime fix has two externally visib
 - Inserting a message with `message.chat` and `message.thread` resolves inverse links to concrete chat/thread IRIs.
 - Generated triples must never contain unresolved template variables such as `{chat}`.
 
-If the smoke script fails on the drizzle-solid check, publish a fixed `@undefineds.co/drizzle-solid` first and then rebuild the models and CLI tarballs. Do not publish `@undefineds.co/models` or `@undefineds.co/linx` against a registry drizzle-solid version that still only replaces `{id}` in linked table templates.
+If the smoke script fails on the drizzle-solid check, publish a fixed `@undefineds.co/drizzle-solid` first, then publish a fixed `@undefineds.co/models`, update the LinX submodule to that exact tag, and rebuild the CLI tarball. Do not publish `@undefineds.co/linx` against a registry models/drizzle-solid combination that still only replaces `{id}` in linked table templates.
 
 ## Production Pod Smoke Account
 
@@ -75,10 +73,9 @@ The isolated `HOME` keeps the smoke account's `~/.linx` credentials separate fro
 
 ## npm Registry Publish
 
-Publish models first, then CLI:
+Publish the CLI tarball:
 
 ```bash
-npm publish --access public preview/undefineds-co-models-<version>.tgz
 npm publish --access public preview/undefineds-co-linx-<version>.tgz
 ```
 
@@ -206,7 +203,7 @@ Release publishing is handled by:
 It verifies the same release tarballs on Linux, macOS, and Windows. Only the Linux artifact is uploaded for publish. Publishing runs in order:
 
 ```text
-@undefineds.co/models -> @undefineds.co/linx
+@undefineds.co/linx
 ```
 
 Automatic publish happens on tags matching `linx-v*`. Manual `workflow_dispatch` can verify without publish, or publish when `publish=true`. npm publishing requires `NPM_TOKEN` in GitHub Actions secrets.
@@ -217,7 +214,7 @@ Automatic publish happens on tags matching `linx-v*`. Manual `workflow_dispatch`
 
 - Use semver for compatibility: patch for fixes, minor for additive schema/API, major for breaking schema/API.
 - Publish models before publishing xpod or LinX releases that depend on new model APIs.
-- Pin runtime packages to an exact models version for release artifacts. The generated CLI package uses `"@undefineds.co/models": "<same-version>"`.
+- Pin runtime packages to an exact models version for release artifacts. The generated CLI package uses the exact version from `packages/models/package.json`; it does not use the LinX CLI version.
 - Keep `packages/models` as the shared models checkout. In the final layout, this path should be a git submodule in both LinX and xpod.
 - Do not vendor models into production packages except for emergency preview builds.
 
@@ -266,7 +263,7 @@ curl -fsSL https://undefineds.co/linx/install.sh | sh
 
 For `https://undefineds.co/linx/latest.tgz`, the server must return the exact tarball produced by `yarn pack:cli:release` with a stable content type and no HTML redirect page.
 
-If the domain hosts a tarball, the endpoint should serve the CLI tarball only after the matching `@undefineds.co/models` version is already published to npm. Otherwise npm cannot satisfy the CLI dependency from the registry.
+If the domain hosts a tarball, the endpoint should serve the CLI tarball only after the exact `@undefineds.co/models` version pinned by the release has already been published to npm. Otherwise npm cannot satisfy the CLI dependency from the registry.
 
 ## Self-Contained Fallback
 

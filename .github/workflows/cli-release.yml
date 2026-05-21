@@ -50,7 +50,6 @@ jobs:
         with:
           name: cli-release-tarballs
           path: |
-            preview/undefineds-co-models-*.tgz
             preview/undefineds-co-linx-*.tgz
           if-no-files-found: error
 
@@ -85,27 +84,15 @@ jobs:
         id: tarballs
         shell: bash
         run: |
-          models_version="$(node -p "require('./packages/models/package.json').version")"
           cli_version="$(node -p "require('./apps/cli/package.json').version")"
-          models_tgz="preview/undefineds-co-models-${models_version}.tgz"
           cli_tgz="preview/undefineds-co-linx-${cli_version}.tgz"
 
           find preview -type f -name '*.tgz' -print
-          test -f "$models_tgz"
           test -f "$cli_tgz"
-          echo "models=./$models_tgz" >> "$GITHUB_OUTPUT"
           echo "cli=./$cli_tgz" >> "$GITHUB_OUTPUT"
-
-      - name: Dry-run publish models
-        run: npm publish --access public --dry-run "${{ steps.tarballs.outputs.models }}"
 
       - name: Dry-run publish CLI
         run: npm publish --access public --dry-run "${{ steps.tarballs.outputs.cli }}"
-
-      - name: Publish models
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --access public "${{ steps.tarballs.outputs.models }}"
 
       - name: Publish CLI
         env:
@@ -117,6 +104,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            ${{ steps.tarballs.outputs.models }}
             ${{ steps.tarballs.outputs.cli }}
           generate_release_notes: true

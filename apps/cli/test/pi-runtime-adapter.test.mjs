@@ -691,9 +691,11 @@ test('pi runtime adapter ignores stale undefineds defaults that point to gpt-5-c
   })
 
   assert.equal(runtime.session.model.id, 'linx-lite')
+  runtime.session.setThinkingLevel('xhigh')
   await runtime.session.prompt('say hi')
   assert.equal(completionCalls.length, 1)
   assert.equal(completionCalls[0].model, 'linx-lite')
+  assert.equal(completionCalls[0].reasoning, 'xhigh')
 
   await runtime.dispose()
   process.chdir(cliRoot)
