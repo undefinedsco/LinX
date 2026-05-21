@@ -12,7 +12,9 @@ test('EmbeddedAuthorizationSheet waits for auth page load before showing Browser
   global.setTimeout = () => 0
 
   class FakeBrowserWindow {
-    constructor() {
+    constructor(options) {
+      actions.push(`title:${options.title}`)
+      this.title = options.title
       this.webContents = {
         loadURL: async (url) => {
           actions.push(`loadURL:${url}`)
@@ -35,6 +37,10 @@ test('EmbeddedAuthorizationSheet waits for auth page load before showing Browser
       }
     }
 
+    setTitle(title) {
+      this.title = title
+      actions.push(`setTitle:${title}`)
+    }
     focus() {
       actions.push('focus')
     }
@@ -86,7 +92,9 @@ test('EmbeddedAuthorizationSheet waits for auth page load before showing Browser
     },
   })
 
-  const openPromise = sheet.open('http://localhost:3000/.account/oidc/consent/')
+  const openPromise = sheet.open('http://localhost:3000/.account/oidc/consent/', {
+    providerLabel: 'Cloud',
+  })
   await Promise.resolve()
 
   assert.deepEqual(states.at(-1), { open: true, reason: 'opened', ready: false })
@@ -97,6 +105,7 @@ test('EmbeddedAuthorizationSheet waits for auth page load before showing Browser
   await openPromise
 
   assert.deepEqual(states.at(-1), { open: true, reason: 'opened', ready: true })
+  assert.equal(actions.includes('title:Cloud 登录'), true)
   assert.equal(actions.includes('installAuthEnhancer'), true)
   assert.equal(actions.includes('show'), true)
   assert.equal(actions.indexOf('show') > actions.findIndex((entry) => entry.startsWith('loadURL:')), true)

@@ -7,6 +7,7 @@ const {
   AUTHORIZATION_SURFACE_WIDTH,
   EmbeddedAuthorizationSheet,
   extractProvisionCode,
+  resolveAuthorizationWindowTitle,
 } = require(resolveCompiledDesktopModule('lib/embedded-auth-sheet.js'))
 
 test('EmbeddedAuthorizationSheet exposes dismissed closed state before opening', () => {
@@ -30,4 +31,10 @@ test('extractProvisionCode reads valid authorization query values', () => {
   )
   assert.equal(extractProvisionCode('https://id.undefineds.co/.oidc/auth/abc'), null)
   assert.equal(extractProvisionCode('not a url'), null)
+})
+
+test('resolveAuthorizationWindowTitle shows the active login provider', () => {
+  assert.equal(resolveAuthorizationWindowTitle('Cloud'), 'Cloud 登录')
+  assert.equal(resolveAuthorizationWindowTitle('Local'), 'Local 登录')
+  assert.equal(resolveAuthorizationWindowTitle(''), 'LinX 登录')
 })

@@ -107,6 +107,7 @@ Cloud IDP
 行为：
 
 - `CSS_BASE_URL` 使用本地 URL，例如 `http://localhost:5737/`。
+- 如果使用局域网 URL，例如 `http://192.168.1.10:5737/`，监听开放由 LinX/xpod 从 `CSS_BASE_URL` 内部推导；用户只配置入口 URL。
 - 不设置 Cloud `oidcIssuer`。
 - 不注册 Cloud node。
 - 不写入 `XPOD_NODE_ID`、`XPOD_NODE_TOKEN`、`XPOD_SERVICE_TOKEN`。
@@ -127,7 +128,7 @@ Cloud IDP
 
 - `publicUrl` 使用用户自有 HTTPS origin。
 - LinX 向 Cloud 注册 Local node。
-- xpod 使用 Cloud IDP 作为 `oidcIssuer`。
+- xpod 使用 Cloud IDP 作为 `oidcIssuer`，并通过 CSS Components shorthand 注入外部 IdP。
 - Cloud 通过 provision code 把 Cloud WebID 和 Local SP 绑定。
 - 如果配置了 Cloudflare token，xpod / local runtime 可以启动 tunnel client。
 
@@ -157,16 +158,31 @@ Cloud IDP + Local SP 时，Cloud 是身份权威，Local SP 是存储权威。Li
 
 Standalone 是 Local IDP + Local SP。它不经过 Cloud provisioning，WebID 和 Cloud WebID 分离。
 
-## 后续多渠道优化
+## 当前多渠道优化
 
-“同一个 URI 在本机、局域网、外网之间自动选最优访问渠道”是后续优化，不是当前已经完成的产品承诺。
+Local 登录后，LinX 会在后台自动探测同一个 Local SP 的可达入口，用户不需要再次选择网络路径。
 
-后续可以考虑的方向：
+实现边界：
 
-- xpod 在 capabilities 或 well-known 响应里暴露候选地址。
-- LinX Desktop / CLI 后台用 HTTP HEAD 探测候选地址可达性。
-- 只有在 same-node proof、canonical WebID 稳定、Inrupt SDK 兼容都验证后，才允许透明改写 transport route。
-- 浏览器 Web 不做透明 DNS 劫持；最多使用用户实际输入的地址或系统 hosts。
+- 用户账号、空间选择、`storedAccount.providerUrl` 和 Solid DB 的 canonical Pod URL 不变。
+- xpod 通过 `/api/linx/capabilities` 返回 `contract=linx-local-onboarding/v1` 和 canonical `baseUrl`。
+- LinX 只在返回的 `baseUrl` 与当前 canonical SP URL 一致时，才把候选入口视为 same-node。
+- LinX 并发探测 `localUrl`、`baseUrl`、`publicUrl` 和 canonical URL，选择延迟最低且 same-node 校验通过的入口。
+- 数据层仍用 canonical Pod URL 初始化。只有在浏览器 fetch 语义安全时，前端 fetch 层才把 canonical URL 的请求静默转发到选中的入口；DPoP/资源 URI 仍按 canonical URL 生成。
+- `https` canonical SP 不会被浏览器直接改写到 `http://localhost` / `http://LAN`。这种情况下 LinX 仍记录探测结果，但静默保留 canonical HTTPS 传输，避免 SPARQL identifier-space、CORS 和 mixed-content 问题。
+- xpod gateway 会把请求的 Host / `x-forwarded-host` 还原到 `CSS_BASE_URL`，所以本机/LAN 入口不会变成新的身份或资源 IRI。
+- 普通浏览器不做系统 DNS 劫持；优化只发生在 LinX App/Web Runtime 内部。
+
+验证要求：
+
+- 单测覆盖 localhost 优先、localhost 不通时 LAN 降级、localhost/LAN 都不通时保留 public/canonical、same-node proof 不匹配时拒绝、HTTP canonical 请求静默改走 Local 入口、HTTPS canonical 到 HTTP Local 时禁用改写。
+- Docker LAN e2e 覆盖同一 Local xpod 从宿主和 Docker 容器都能访问 `/api/linx/capabilities`，并返回同一个 canonical `baseUrl`。
+
+未承诺：
+
+- 不承诺任意第三方浏览器访问 canonical URL 时自动走 LAN。
+- 不在没有 same-node proof 时把局域网 URL 和公网 URL 当成同一个 SP。
+- 不通过内嵌 DNS server 或路由器 DNS 修改来实现透明切换。
 
 当前不采用：
 
@@ -189,4 +205,4 @@ Standalone 是 Local IDP + Local SP。它不经过 Cloud provisioning，WebID �
 已知风险：
 
 - Local tunnel 验证日志里仍能看到部分容器创建 400/404 重试噪声；最终 Solid DB ready 和 `/chat` 通过，但需要后续把 root/container provisioning 行为收敛到更干净的服务端语义。
-- 自动 LAN / 外网 route 透明切换尚未完成，不能在产品文案里承诺“同一 URI 自动本机、局域网、外网全切换”。
+- LinX 内部数据访问已补充 best-route 探测与安全 fetch 级静默转发；第三方浏览器级透明 DNS 切换仍不属于当前承诺。

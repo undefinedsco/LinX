@@ -47,6 +47,9 @@ export function LocalOnboardingCard({
   const autoBootstrapStartedRef = useRef(false)
   const autoSignInKeyRef = useRef<string | null>(null)
   const localIssuerUrl = snapshot.localUrl ?? snapshot.baseUrl
+  const localProviderUrl = snapshot.mode === 'device-only'
+    ? localIssuerUrl
+    : snapshot.publicUrl ?? snapshot.baseUrl ?? snapshot.localUrl
   const previousConfigOpen = useRef(configWindow.open)
 
   const handleBack = useCallback(() => {
@@ -63,7 +66,7 @@ export function LocalOnboardingCard({
   }, [chooseMode, continueLocal])
 
   const handleSignIn = useCallback(async () => {
-    if (!localIssuerUrl) {
+    if (!localProviderUrl) {
       setAuthError('Local 服务还没有准备好。')
       return
     }
@@ -77,15 +80,15 @@ export function LocalOnboardingCard({
 
     try {
       if (snapshot.mode === 'device-only') {
-        await oidc.connect(localIssuerUrl, {
+        await oidc.connect(localProviderUrl, {
           authorizationSurface: 'embedded',
-          providerUrl: localIssuerUrl,
+          providerUrl: localProviderUrl,
           providerLabel: 'Local',
         })
       } else {
         await oidc.connect(snapshot.cloudIdentityUrl ?? LINX_CLOUD_IDENTITY_ORIGIN, {
           authorizationSurface: 'embedded',
-          providerUrl: localIssuerUrl,
+          providerUrl: localProviderUrl,
           providerLabel: 'Local',
           authorizationQuery: {
             provisionCode: snapshot.provisionCode,
@@ -97,7 +100,7 @@ export function LocalOnboardingCard({
     } finally {
       setLaunchingAuth(false)
     }
-  }, [localIssuerUrl, oidc, snapshot.cloudIdentityUrl, snapshot.mode, snapshot.provisionCode])
+  }, [localProviderUrl, oidc, snapshot.cloudIdentityUrl, snapshot.mode, snapshot.provisionCode])
 
   const handleOpenAdvancedSettings = useCallback(async () => {
     setActionError(null)
@@ -168,8 +171,8 @@ export function LocalOnboardingCard({
   useEffect(() => {
     if (loading || acting || launchingAuth) return
     if (configWindow.open) return
-    if (snapshot.state !== 'ready' || !localIssuerUrl) return
-    const autoSignInKey = `${localIssuerUrl}|${snapshot.provisionCode ?? ''}`
+    if (snapshot.state !== 'ready' || !localProviderUrl) return
+    const autoSignInKey = `${localProviderUrl}|${snapshot.provisionCode ?? ''}`
     if (autoSignInKeyRef.current === autoSignInKey) return
 
     autoSignInKeyRef.current = autoSignInKey
@@ -180,7 +183,7 @@ export function LocalOnboardingCard({
     handleSignIn,
     launchingAuth,
     loading,
-    localIssuerUrl,
+    localProviderUrl,
     snapshot.provisionCode,
     snapshot.state,
   ])

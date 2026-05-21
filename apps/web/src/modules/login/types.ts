@@ -33,6 +33,13 @@ export interface AuthWindowStatus {
   ready: boolean
 }
 
+export interface ConnectingProviderInfo {
+  issuerLabel: string
+  issuerUrl: string
+  providerLabel: string
+  providerUrl: string
+}
+
 export interface LoginModalProps {
   view: 'default' | 'local'
   state: LoginState
@@ -46,10 +53,12 @@ export interface LoginModalProps {
   onSwitchAccount: () => void
   onContinueStoredAccount: () => void
   onConnect: (providerUrl: string) => void
+  onCancelConnecting: () => void
   onAddProvider: (url: string, label?: string) => void
   onClearError: () => void
   onDismissStorageConflict: () => void
   onOpenCurrentSpacePodSetup: () => void
   localLoginStatus: LocalLoginStatus
   authWindowStatus: AuthWindowStatus
+  connectingProvider: ConnectingProviderInfo | null
 }

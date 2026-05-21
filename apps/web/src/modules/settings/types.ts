@@ -42,8 +42,8 @@ export interface LocalConfig {
 export interface StandaloneConfig {
   /** 自定义域名 (CSS_BASE_URL) */
   customDomain?: string
-  /** 自建 IdP URL (CSS_OIDC_ISSUER) */
-  idpUrl?: string
+  /** 外部 OIDC issuer，用于 SP 模式 */
+  oidcIssuer?: string
   /** 证书路径 */
   certPath?: string
 }
@@ -71,7 +71,7 @@ export interface NetworkConfig {
  * - local.deviceId -> XPOD_NODE_ID (legacy alias)
  * - local.nodeToken -> XPOD_NODE_TOKEN
  * - standalone.customDomain -> CSS_BASE_URL
- * - standalone.idpUrl -> CSS_OIDC_ISSUER
+ * - standalone.oidcIssuer -> oidcIssuer
  * - network.tunnelToken -> CLOUDFLARE_TUNNEL_TOKEN / SAKURA_TOKEN
  */
 export interface SetupConfig {

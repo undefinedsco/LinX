@@ -28,6 +28,10 @@ export async function detectStorageConflict(
     return null
   }
 
+  if (isIssuerStorageFallback(input.webId, actualStorageUrl, expectedStorageUrl)) {
+    return null
+  }
+
   return {
     expectedStorageUrl,
     actualStorageUrl,
@@ -180,4 +184,16 @@ function normalizeBaseUrl(url?: string | null): string | null {
 
 function normalizeUrl(url: string): string {
   return url.replace(/\/+$/, '')
+}
+
+function isIssuerStorageFallback(webId: string, actualStorageUrl: string, expectedStorageUrl: string): boolean {
+  try {
+    const issuer = new URL(webId)
+    const actual = new URL(actualStorageUrl)
+    const expected = new URL(expectedStorageUrl)
+
+    return actual.origin === issuer.origin && expected.origin !== issuer.origin
+  } catch {
+    return false
+  }
 }

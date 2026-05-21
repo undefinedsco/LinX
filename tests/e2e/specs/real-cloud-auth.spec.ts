@@ -70,7 +70,7 @@ test.describe('Cloud IDP + Cloud SP auth flow', () => {
             onConfigWindowState: () => () => undefined,
           },
           auth: {
-            prepareLoopbackRedirect: async () => 'http://localhost:5173/auth/callback',
+            prepareLoopbackRedirect: async () => `${window.location.origin}/auth/callback`,
             getEmbeddedAuthorizationState: async () => ({ open: false, reason: 'dismissed', ready: false }),
             openAuthorizationWindow: async (url: string) => {
               window.location.assign(url)

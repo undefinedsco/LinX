@@ -17,8 +17,12 @@ interface AuthCallbackProps {
   onError?: (error: string) => void
 }
 
+const CURRENT_SOLID_SESSION_KEY = 'solidClientAuthn:currentSession'
+const SESSION_CURRENT_KEY_TIMEOUT_MS = 10_000
+const SESSION_CURRENT_KEY_POLL_MS = 100
+
 export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackProps) {
-  const { session } = useSession()
+  const { session, sessionRequestInProgress } = useSession()
   const oidc = useOidcConnect()
   const [error, setError] = useState<string | null>(null)
   const [retrying, setRetrying] = useState(false)
@@ -46,15 +50,37 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
     }
   }, [callbackError])
 
-  // Wait for session to resolve
+  // Wait for the Inrupt callback to finish persisting auth metadata before
+  // leaving /auth/callback. Navigating on the first LOGIN event can interrupt
+  // storage writes and leave LinX with a remembered account but no Solid session.
   useEffect(() => {
     if (error || navigatedRef.current) return
+    if (!session.info.isLoggedIn) return
 
-    if (session.info.isLoggedIn) {
-      navigatedRef.current = true
-      onSuccess?.()
+    let cancelled = false
+
+    const finishAfterSessionIsPersisted = async () => {
+      const stored = await waitForCurrentSessionKey(
+        session.info.sessionId,
+        SESSION_CURRENT_KEY_TIMEOUT_MS,
+      )
+      if (cancelled || navigatedRef.current) return
+
+      if (stored && session.info.isLoggedIn) {
+        navigatedRef.current = true
+        onSuccess?.()
+        return
+      }
+
+      setError('登录未完成，请重试。')
     }
-  }, [session.info.isLoggedIn, onSuccess, error])
+
+    void finishAfterSessionIsPersisted()
+
+    return () => {
+      cancelled = true
+    }
+  }, [session.info.isLoggedIn, sessionRequestInProgress, onSuccess, error])
 
   const retryLabel = pendingAttempt
     ? isLocalIssuer(pendingAttempt.issuerUrl) || pendingAttempt.authorizationSurface === 'embedded'
@@ -72,6 +98,9 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
       await oidc.connect(pendingAttempt.issuerUrl, {
         authorizationSurface: pendingAttempt.authorizationSurface,
         returnToMicroAppId: pendingAttempt.returnToMicroAppId,
+        providerUrl: pendingAttempt.providerUrl,
+        providerLabel: pendingAttempt.providerLabel,
+        authorizationQuery: pendingAttempt.authorizationQuery,
       })
     } catch (retryError: any) {
       setError(retryError?.message || '重新发起登录失败。')
@@ -129,4 +158,21 @@ function isLocalIssuer(issuerUrl: string): boolean {
   } catch {
     return false
   }
+}
+
+async function waitForCurrentSessionKey(sessionId: string | undefined, timeoutMs: number): Promise<boolean> {
+  if (!sessionId) {
+    return false
+  }
+
+  const deadline = Date.now() + timeoutMs
+
+  while (Date.now() < deadline) {
+    if (window.localStorage.getItem(CURRENT_SOLID_SESSION_KEY) === sessionId) {
+      return true
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, SESSION_CURRENT_KEY_POLL_MS))
+  }
+
+  return window.localStorage.getItem(CURRENT_SOLID_SESSION_KEY) === sessionId
 }

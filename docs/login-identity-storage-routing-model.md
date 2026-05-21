@@ -70,7 +70,7 @@ LinX is responsible for:
 Rules:
 - LinX does not invent identity semantics
 - LinX only optimizes transport choice between equivalent SP entrypoints
-- auto LAN-priority is blocked until same-node alignment, Inrupt SDK compatibility, and canonical WebID stability are proven
+- LinX App/Web Runtime may rewrite canonical SP fetches to a proven same-node Local access route; user-facing provider/account state and canonical Pod URL remain unchanged
 
 ## Contract Summary
 
@@ -88,7 +88,7 @@ Rules:
 - Local startup shell UX
 - inline startup status in the main login card
 - launch/handoff into xpod auth flow
-- candidate probing, ranking, and silent fallback
+- candidate probing, ranking, and silent fallback inside LinX runtime
 - storage mismatch detection and honest blocking copy in the MVP
 
 ## Anti-goals
@@ -135,7 +135,14 @@ Therefore, the current model supports:
 But it does **not** yet support:
 - transparent preservation of previously published absolute resource IRIs after SP changes
 
-## Blocking Gates for Auto Route Selection
-1. Same-node alignment is provable
-2. Inrupt SDK remains compatible when transport endpoint changes
-3. Canonical WebID and data identity semantics remain stable
+## Auto Route Selection Gate
+
+Current implementation only enables automatic route selection after all of these are true:
+
+1. xpod `/api/linx/capabilities` returns `contract=linx-local-onboarding/v1`.
+2. The candidate route reports the same canonical `baseUrl` as the Local provider.
+3. LinX keeps Solid DB `podUrl` canonical and rewrites only the network fetch target.
+4. Browser fetch rewrite is enabled only when the transport does not downgrade an `https` canonical SP to plain `http` localhost/LAN.
+5. xpod gateway preserves canonical Host / forwarded headers for DPoP verification.
+
+This is intentionally scoped to LinX runtime. Plain third-party browsers still use the URL they actually open.

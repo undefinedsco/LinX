@@ -16,14 +16,14 @@ dotenv.config({ path: '../../.env' })
 const WEBID = process.env.SOLID_WEBID!
 const CLIENT_ID = process.env.SOLID_CLIENT_ID!
 const CLIENT_SECRET = process.env.SOLID_CLIENT_SECRET!
-const OIDC_ISSUER = process.env.SOLID_OIDC_ISSUER!
+const oidcIssuer = process.env.SOLID_OIDC_ISSUER!
 
 async function getAccessToken(): Promise<{ accessToken: string; dpopKey: any }> {
   // 生成 DPoP key pair
   const dpopKey = await generateDpopKeyPair()
   
   // 获取 access token
-  const tokenUrl = `${OIDC_ISSUER}/.oidc/token`
+  const tokenUrl = `${oidcIssuer}/.oidc/token`
   const dpopHeader = await createDpopHeader(tokenUrl, 'POST', dpopKey)
   
   const tokenRes = await fetch(tokenUrl, {
@@ -55,7 +55,7 @@ async function main() {
   console.log('='.repeat(60))
   console.log('')
   console.log(`WebID: ${WEBID}`)
-  console.log(`OIDC Issuer: ${OIDC_ISSUER}`)
+  console.log(`OIDC Issuer: ${oidcIssuer}`)
   console.log('')
 
   // 1. 获取 access token

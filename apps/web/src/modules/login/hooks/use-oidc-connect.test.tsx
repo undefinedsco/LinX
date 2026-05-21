@@ -45,6 +45,8 @@ function EmbeddedTestComponent() {
   return (
     <button onClick={() => void connect('http://localhost:5737/', {
       authorizationSurface: 'embedded',
+      issuerLabel: 'Cloud',
+      providerLabel: 'Local',
       authorizationQuery: {
         provisionCode: 'pc-123',
       },
@@ -140,7 +142,9 @@ describe('useOidcConnect', () => {
     expect(consumePendingPostLoginMicroAppId()).toBe('files')
 
     await options.handleRedirect('https://idp.example.com/authorize')
-    expect(openAuthorizationWindowMock).toHaveBeenCalledWith('https://idp.example.com/authorize')
+    expect(openAuthorizationWindowMock).toHaveBeenCalledWith('https://idp.example.com/authorize', {
+      providerLabel: undefined,
+    })
   })
 
   it('falls back to the configured HTTPS issuer when discovery times out', async () => {
@@ -188,7 +192,9 @@ describe('useOidcConnect', () => {
     fireEvent.click(screen.getByRole('button', { name: 'connect' }))
 
     await waitFor(() => {
-      expect(openAuthorizationWindowMock).toHaveBeenCalledWith('https://idp.example.com/authorize')
+      expect(openAuthorizationWindowMock).toHaveBeenCalledWith('https://idp.example.com/authorize', {
+        providerLabel: undefined,
+      })
     })
 
     fireEvent.click(screen.getByRole('button', { name: 'connect' }))
@@ -209,7 +215,9 @@ describe('useOidcConnect', () => {
     fireEvent.click(screen.getByRole('button', { name: 'connect safely' }))
 
     await waitFor(() => {
-      expect(openAuthorizationWindowMock).toHaveBeenCalledWith('https://idp.example.com/authorize')
+      expect(openAuthorizationWindowMock).toHaveBeenCalledWith('https://idp.example.com/authorize', {
+        providerLabel: undefined,
+      })
     })
     await waitFor(() => {
       expect(window.sessionStorage.getItem('linx-post-login-micro-app')).toBeNull()
@@ -254,9 +262,15 @@ describe('useOidcConnect', () => {
       authorizationSurface: 'embedded',
       returnToMicroAppId: 'contacts',
       providerUrl: 'http://localhost:5737',
+      providerLabel: 'Local',
+      authorizationQuery: {
+        provisionCode: 'pc-123',
+      },
     })
     await options.handleRedirect('https://idp.example.com/authorize')
-    expect(openEmbeddedAuthorizationMock).toHaveBeenCalledWith('https://idp.example.com/authorize?provisionCode=pc-123')
+    expect(openEmbeddedAuthorizationMock).toHaveBeenCalledWith('https://idp.example.com/authorize?provisionCode=pc-123', {
+      providerLabel: 'Cloud',
+    })
   })
 
   it('clears the pending target and attempt when login setup fails', async () => {

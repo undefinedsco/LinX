@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Loader2, Plus, X, AlertCircle, ChevronRight, Cloud, HardDrive, Globe2, ArrowLeft } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { LoginModalProps, LoginProviderOption } from './types'
@@ -28,7 +28,11 @@ export function LoginModal(props: LoginModalProps) {
       ) : state === 'restoring' ? (
         <RestoringView storedAccount={props.storedAccount} />
       ) : state === 'connecting' ? (
-        <ConnectingView authWindowStatus={props.authWindowStatus} />
+        <ConnectingView
+          authWindowStatus={props.authWindowStatus}
+          connectingProvider={props.connectingProvider}
+          onCancel={props.onCancelConnecting}
+        />
       ) : view === 'local' ? (
         <LocalOnboardingView
           localOnboarding={props.localOnboarding}
@@ -330,24 +334,56 @@ function ProviderSection({
 
 function ConnectingView({
   authWindowStatus,
+  connectingProvider,
+  onCancel,
 }: {
   authWindowStatus: LoginModalProps['authWindowStatus']
+  connectingProvider: LoginModalProps['connectingProvider']
+  onCancel: () => void
 }) {
   let title = '正在连接'
-  let detail = '请稍候...'
+  let detail = connectingProvider
+    ? `正在使用 ${connectingProvider.issuerLabel}`
+    : '请稍候...'
 
   if (authWindowStatus.open) {
-    title = '等待登录完成'
-    detail = '请在登录窗口完成登录'
+    title = connectingProvider
+      ? `等待 ${connectingProvider.issuerLabel} 登录完成`
+      : '等待登录完成'
+    detail = '请在登录窗口完成'
   } else if (authWindowStatus.reason === 'completed') {
     title = '正在验证身份'
+    detail = connectingProvider?.providerLabel
+      ? `正在进入 ${connectingProvider.providerLabel}`
+      : detail
   }
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center p-6">
-      <Loader2 className="w-8 h-8 text-primary animate-spin mb-4" />
-      <p className="text-sm text-foreground font-medium">{title}</p>
-      <p className="text-xs text-muted-foreground mt-1">{detail}</p>
+    <div className="flex-1 flex flex-col h-full">
+      <div className="flex-1 flex flex-col items-center justify-center px-6 py-8 text-center">
+        <Loader2 className="w-8 h-8 text-primary animate-spin mb-4" />
+        <p className="text-sm text-foreground font-medium">{title}</p>
+        <p className="text-xs text-muted-foreground mt-1">{detail}</p>
+        {connectingProvider ? (
+          <div className="mt-4 w-full max-w-[18rem] rounded-2xl border border-border/60 bg-muted/30 px-3 py-2">
+            <p className="truncate text-xs font-medium text-foreground">
+              {connectingProvider.providerLabel}
+            </p>
+            <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+              {formatProviderHost(connectingProvider.providerUrl)}
+            </p>
+          </div>
+        ) : null}
+      </div>
+      <div className="px-5 pb-5 shrink-0">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="w-full h-9 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors cursor-pointer"
+        >
+          换一个空间
+        </button>
+      </div>
     </div>
   )
 }
@@ -373,6 +409,27 @@ function LocalOnboardingView({
   const isRepair = onboardingState === 'repair_required'
   const isError = onboardingState === 'error'
   const isStarting = onboardingState === 'starting' || onboardingState === 'checking' || onboardingState === 'idle' || onboardingState === 'mode_required'
+  const autoContinueKeyRef = useRef<string | null>(null)
+  const autoContinueKey = isReady && snapshot
+    ? [
+        snapshot.mode ?? '',
+        snapshot.localUrl ?? '',
+        snapshot.baseUrl ?? '',
+        snapshot.publicUrl ?? '',
+        snapshot.provisionCode ?? '',
+      ].join('|')
+    : null
+
+  useEffect(() => {
+    if (!autoContinueKey) {
+      autoContinueKeyRef.current = null
+      return
+    }
+    if (autoContinueKeyRef.current === autoContinueKey) return
+
+    autoContinueKeyRef.current = autoContinueKey
+    onContinue()
+  }, [autoContinueKey, onContinue])
 
   return (
     <div className="flex-1 flex flex-col h-full">
@@ -548,9 +605,11 @@ function ProviderItem({
       onClick={onSelect}
     >
       <div
+        data-provider-source={provider.source}
         className={cn(
-          'rounded-[22%] flex items-center justify-center shrink-0 overflow-hidden border border-border/60',
-          isProductLogo ? 'border-violet-400/90 bg-violet-200/90 p-0.5' : 'bg-background',
+          'relative rounded-[22%] flex items-center justify-center shrink-0 overflow-hidden border border-border/60',
+          isProductLogo && 'border-violet-400/90 bg-violet-200/90 p-0.5',
+          !isProductLogo && 'bg-background',
           isPrimary ? 'h-11 w-11' : 'h-9 w-9',
         )}
       >
@@ -567,6 +626,14 @@ function ProviderItem({
         ) : (
           <ProviderIcon provider={provider} />
         )}
+        {provider.source === 'local' ? (
+          <span
+            data-provider-local-marker
+            className="absolute bottom-0.5 right-0.5 flex h-4 w-4 items-center justify-center rounded-[6px] border border-white/80 bg-emerald-500 text-white shadow-sm dark:border-zinc-900/80"
+          >
+            <HardDrive className="h-2.5 w-2.5" aria-hidden="true" />
+          </span>
+        ) : null}
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-foreground truncate">{label}</p>
@@ -670,6 +737,14 @@ function isLinxLogoUrl(url?: string): boolean {
     || url.includes('/src/assets/')
     || url.includes('/assets/linx-logo')
   )
+}
+
+function formatProviderHost(url: string): string {
+  try {
+    return new URL(url).host
+  } catch {
+    return url
+  }
 }
 
 function StorageDetail({ label, value }: { label: string; value: string }) {

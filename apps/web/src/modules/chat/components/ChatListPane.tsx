@@ -16,7 +16,7 @@
  * - 右键: 上下文菜单 (置顶、静音、标记未读、删除)
  * - 悬停: 显示更多操作按钮
  */
-import { useMemo, useState, useCallback } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { useChatStore } from '../store'
 import {
@@ -607,6 +607,20 @@ export function ChatListPane(_props: ChatListPaneProps) {
   })
 
   const mutations = useChatMutations()
+  const [welcomeProblem, setWelcomeProblem] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!mutations.ensureLinxWelcome.isPending) {
+      setWelcomeProblem(null)
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      setWelcomeProblem('AI Secretary 暂时还没准备好，可以先进入 LinX。')
+    }, 12_000)
+
+    return () => window.clearTimeout(timer)
+  }, [mutations.ensureLinxWelcome.isPending])
 
   // 格式化 Chat 列表 - 添加标星排序
   const chats: ChatItemData[] = useMemo(() => {
@@ -795,6 +809,15 @@ export function ChatListPane(_props: ChatListPaneProps) {
           <div className="flex items-center gap-2 text-sm text-muted-foreground px-4 py-8 justify-center animate-fade-in">
             <Loader2 className="w-4 h-4 animate-spin" />
             正在加载...
+          </div>
+        ) : chats.length === 0 && mutations.ensureLinxWelcome.isPending && !welcomeProblem ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground px-4 py-8 justify-center animate-fade-in">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            正在准备 AI Secretary...
+          </div>
+        ) : chats.length === 0 && welcomeProblem ? (
+          <div className="px-4 py-12 text-center animate-fade-in">
+            <p className="text-sm text-muted-foreground">{welcomeProblem}</p>
           </div>
         ) : chats.length === 0 ? (
           <div className="px-4 py-12 text-center text-sm text-muted-foreground animate-fade-in">

@@ -15,6 +15,10 @@ interface EmbeddedAuthorizationSheetOptions {
   onStateChange?: (state: EmbeddedAuthorizationState) => void;
 }
 
+export interface EmbeddedAuthorizationOpenOptions {
+  providerLabel?: string;
+}
+
 export const AUTHORIZATION_SURFACE_WIDTH = 480;
 export const AUTHORIZATION_SURFACE_HEIGHT = 720;
 
@@ -36,7 +40,7 @@ export class EmbeddedAuthorizationSheet {
     this.onStateChange = options.onStateChange;
   }
 
-  public async open(url: string): Promise<void> {
+  public async open(url: string, options?: EmbeddedAuthorizationOpenOptions): Promise<void> {
     const mainWindow = this.getMainWindow();
     if (!mainWindow || mainWindow.isDestroyed()) {
       throw new Error('Main window is not ready.');
@@ -45,8 +49,10 @@ export class EmbeddedAuthorizationSheet {
     const openToken = ++this.openToken;
     this.pendingProvisionCode = extractProvisionCode(url);
     const targetUrl = addEmbeddedAuthQuery(url);
+    const title = resolveAuthorizationWindowTitle(options?.providerLabel);
 
     if (this.window && !this.window.isDestroyed()) {
+      this.window.setTitle(title);
       this.window.focus();
       this.window.loadURL(targetUrl);
       this.emitState({ open: true, reason: 'opened', ready: true });
@@ -58,7 +64,7 @@ export class EmbeddedAuthorizationSheet {
       height: AUTHORIZATION_SURFACE_HEIGHT,
       minWidth: 380,
       minHeight: 500,
-      title: 'LinX 登录',
+      title,
       autoHideMenuBar: true,
       resizable: true,
       maximizable: false,
@@ -191,6 +197,17 @@ export class EmbeddedAuthorizationSheet {
       console.warn('[Desktop] Failed to persist provision code in auth surface:', error);
     }
   }
+}
+
+export function resolveAuthorizationWindowTitle(providerLabel?: string): string {
+  const label = sanitizeProviderLabel(providerLabel);
+  return label ? `${label} 登录` : 'LinX 登录';
+}
+
+function sanitizeProviderLabel(providerLabel?: string): string | null {
+  const trimmed = providerLabel?.trim();
+  if (!trimmed) return null;
+  return trimmed.slice(0, 32);
 }
 
 export function extractProvisionCode(url: string): string | null {

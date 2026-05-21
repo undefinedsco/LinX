@@ -51,6 +51,7 @@ test('buildXpodAuthEnhancerScript includes pending pod and username coordination
 
   assert.match(script, /pending-pod-creation/)
   assert.match(script, /pending-username/)
+  assert.match(script, /submitted-username/)
   assert.match(script, /confirmPassword/)
   assert.match(script, /login\/password/)
   assert.match(script, /input\[name="username"\]/)
@@ -65,10 +66,108 @@ test('buildXpodAuthEnhancerScript includes pending pod and username coordination
   assert.match(script, /正在检查可用性/)
   assert.match(script, /Pod 地址可用/)
   assert.match(script, /linxValidatedUsername/)
+  assert.match(script, /handleAuthFormError/)
+  assert.match(script, /characterData: true/)
   assert.match(script, /nativeFetch/)
   assert.match(script, /attachProvisionCodeToPodCreate/)
   assert.match(script, /sessionStorage\.getItem\("provisionCode"\)/)
   assert.doesNotMatch(script, /window\.location\.assign/)
+})
+
+test('buildXpodAuthEnhancerScript waits for account page before pending pod creation', () => {
+  const script = buildXpodAuthEnhancerScript()
+
+  assert.match(script, /sessionStorage\.setItem\(SUBMITTED_USERNAME_KEY, username\)/)
+  assert.match(script, /currentPathname\(\) === ACCOUNT_PATH/)
+  assert.match(script, /setPendingUsername\(submittedUsername\)/)
+  assert.doesNotMatch(script, /setPendingUsername\(username\);\s*return;/)
+})
+
+test('buildXpodAuthEnhancerScript clears submitted username when register page shows an error', () => {
+  const script = buildXpodAuthEnhancerScript()
+
+  assert.match(script, /handleAuthFormError\(target\.textContent\)/)
+  assert.match(script, /window\.sessionStorage\.removeItem\(SUBMITTED_USERNAME_KEY\)/)
+  assert.match(script, /clearPendingUsername\(\)/)
+})
+
+test('buildXpodAuthEnhancerScript injects provisionCode into pod create requests', async () => {
+  const script = buildXpodAuthEnhancerScript()
+  const calls = []
+  const context = {
+    globalThis: {},
+    window: {
+      location: {
+        pathname: '/.account/account/',
+        href: 'https://id.undefineds.co/.account/account/',
+        origin: 'https://id.undefineds.co',
+      },
+      sessionStorage: {
+        getItem: (key) => key === 'provisionCode' ? 'pc-123' : null,
+        setItem: () => undefined,
+        removeItem: () => undefined,
+      },
+      history: {
+        pushState: () => undefined,
+        replaceState: () => undefined,
+      },
+      fetch: async (resource, init) => {
+        calls.push({ resource, init })
+        return { ok: true }
+      },
+      setTimeout,
+      clearTimeout,
+      addEventListener: () => undefined,
+      dispatchEvent: () => undefined,
+      locationAssign: () => undefined,
+    },
+    document: {
+      addEventListener: () => undefined,
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      createElement: () => ({
+        style: {},
+        dataset: {},
+        classList: { add: () => undefined, remove: () => undefined },
+        append: () => undefined,
+        appendChild: () => undefined,
+        setAttribute: () => undefined,
+      }),
+      documentElement: {},
+      body: {
+        appendChild: () => undefined,
+      },
+    },
+    MutationObserver: class {
+      observe() {}
+    },
+    URL,
+    Request: class {},
+    FormData: class {},
+    HTMLFormElement: class {},
+    HTMLButtonElement: class {},
+    HTMLInputElement: class {},
+    HTMLAnchorElement: class {},
+    PopStateEvent: class {},
+    setTimeout,
+    clearTimeout,
+  }
+  context.globalThis = context
+  context.window.fetch = context.window.fetch.bind(context.window)
+
+  const vm = require('node:vm')
+  vm.runInNewContext(script, context)
+
+  await context.window.fetch('/.account/api/pod', {
+    method: 'POST',
+    body: JSON.stringify({ name: 'alice' }),
+  })
+
+  assert.equal(calls.length, 1)
+  assert.deepEqual(JSON.parse(calls[0].init.body), {
+    name: 'alice',
+    settings: { provisionCode: 'pc-123' },
+  })
 })
 
 test('installXpodAuthEnhancer skips non xpod auth pages', async () => {

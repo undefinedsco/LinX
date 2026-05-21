@@ -11,6 +11,10 @@ import { getXpodModule } from './xpod'
 import { getRuntimeThreadsModule } from './runtime-threads'
 import { resolveLinxDefaultWorkspaceDir, resolveLinxUserDataDir } from './linx-paths'
 
+const OFFICIAL_CLOUD_IDENTITY_ORIGIN = 'https://id.undefineds.co'
+const OFFICIAL_CLOUD_API_ORIGIN = 'https://api.undefineds.co'
+const MANAGED_CLOUD_REGISTRATION_TIMEOUT_MS = 30000
+
 interface SetupData {
   dataDir: string
   port: number
@@ -28,7 +32,7 @@ interface SetupData {
   }
   standalone?: {
     customDomain?: string
-    idpUrl?: string
+    oidcIssuer?: string
   }
   publicDomain?: string
   autoDetectPublicIp?: boolean
@@ -40,7 +44,7 @@ function normalizeSetupData(data: SetupData): SetupData {
     return {
       ...data,
       domainSource: 'manual',
-      publicDomain: data.publicDomain?.trim() || undefined,
+      publicDomain: normalizeDomain(data.publicDomain),
       httpsCertPath: undefined,
       standalone: undefined,
     }
@@ -49,7 +53,96 @@ function normalizeSetupData(data: SetupData): SetupData {
   return {
     ...data,
     domainSource: 'manual',
+    publicDomain: normalizeDomain(data.publicDomain),
+    standalone: data.standalone
+      ? {
+          ...data.standalone,
+          customDomain: normalizeDomain(data.standalone.customDomain),
+        }
+      : data.standalone,
   }
+}
+
+interface ManagedCloudRegistration {
+  nodeId: string
+  nodeToken: string
+  serviceToken: string
+  provisionCode: string
+  publicUrl: string
+  provisionUrl: string
+  cloudIdentityUrl: string
+  cloudApiUrl: string
+  spDomain?: string
+  tunnelToken?: string
+  tunnelProvider?: string
+  tunnelEndpoint?: string
+}
+
+interface ProvisionNodeRequest {
+  publicUrl: string
+  nodeId?: string
+  nodeToken?: string
+  serviceToken?: string
+  localPort?: number
+  tunnelToken?: string
+  tunnelMode?: 'client'
+  domainMode?: 'self-managed'
+  spDomain?: string
+}
+
+interface ProvisionNodeResponse {
+  nodeId?: string
+  nodeToken?: string
+  serviceToken?: string
+  provisionCode?: string
+  spDomain?: string
+  tunnelToken?: string
+  tunnelProvider?: string
+  tunnelEndpoint?: string
+}
+
+function normalizeUrl(value: string): string {
+  return value.replace(/\/$/, '')
+}
+
+function ensureTrailingSlash(value: string): string {
+  return value.endsWith('/') ? value : `${value}/`
+}
+
+function normalizeDomain(value?: string | null): string | undefined {
+  const normalized = (value || '').trim().replace(/^https?:\/\//, '').replace(/\/+$/, '')
+  return normalized || undefined
+}
+
+function publicUrlFromDomain(domain: string): string {
+  const normalized = normalizeDomain(domain)
+  if (!normalized) {
+    throw new Error('publicDomain is required for managed Local provisioning')
+  }
+  return ensureTrailingSlash(`https://${normalized}`)
+}
+
+function parseEnvLine(line: string): [string, string] | undefined {
+  const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/)
+  return match ? [match[1], match[2]] : undefined
+}
+
+function buildProvisionUrl(cloudIdentityUrl: string, provisionCode: string): string {
+  const url = new URL('/.account/', `${normalizeUrl(cloudIdentityUrl)}/`)
+  url.searchParams.set('provisionCode', provisionCode)
+  return url.toString()
+}
+
+function routeParam(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? value[0] ?? '' : value ?? ''
+}
+
+function readProvisionPublicUrlFromEnv(env: Record<string, string>): string | undefined {
+  const domain = normalizeDomain(env.LINX_PUBLIC_DOMAIN)
+  if (domain) return publicUrlFromDomain(domain)
+
+  const baseUrl = env.CSS_BASE_URL?.trim()
+  return baseUrl ? ensureTrailingSlash(baseUrl) : undefined
 }
 
 function getConfigDir(): string {
@@ -126,7 +219,7 @@ export class WebServerModule {
   /**
    * Generate .env file content
    */
-  private generateEnvContent(data: SetupData): string {
+  private generateEnvContent(data: SetupData, provisioning?: ManagedCloudRegistration): string {
     const normalized = normalizeSetupData(data)
     const { port, dataDir, deploymentMode, domainSource, network, local, standalone, publicDomain } = normalized
 
@@ -161,6 +254,18 @@ export class WebServerModule {
       lines.push(`CSS_NODE_ID=${localNodeId}`)
     }
 
+    if (provisioning) {
+      lines.push(`oidcIssuer=${provisioning.cloudIdentityUrl}`)
+      lines.push(`XPOD_CLOUD_API_ENDPOINT=${provisioning.cloudApiUrl}`)
+      lines.push(`XPOD_NODE_ID=${provisioning.nodeId}`)
+      lines.push(`XPOD_NODE_TOKEN=${provisioning.nodeToken}`)
+      lines.push(`XPOD_SERVICE_TOKEN=${provisioning.serviceToken}`)
+      lines.push(`LINX_PROVISION_CODE=${provisioning.provisionCode}`)
+      lines.push(`LINX_PROVISION_URL=${provisioning.provisionUrl}`)
+      if (provisioning.spDomain) lines.push(`LINX_SP_DOMAIN=${provisioning.spDomain}`)
+      if (provisioning.tunnelEndpoint) lines.push(`LINX_TUNNEL_ENDPOINT=${provisioning.tunnelEndpoint}`)
+    }
+
     // LinX service metadata for runtime UX and future automation
     lines.push(`LINX_DEPLOYMENT_MODE=${deploymentMode}`)
     lines.push(`LINX_DOMAIN_SOURCE=${domainSource || 'manual'}`)
@@ -172,19 +277,21 @@ export class WebServerModule {
       lines.push(`LINX_NODE_ID=${localNodeId}`)
       lines.push(`LINX_DEVICE_ID=${localNodeId}`)
     }
-    if (network.tunnelProvider) lines.push(`LINX_TUNNEL_PROVIDER=${network.tunnelProvider}`)
+    const effectiveTunnelProvider = provisioning?.tunnelProvider || network.tunnelProvider
+    if (effectiveTunnelProvider) lines.push(`LINX_TUNNEL_PROVIDER=${effectiveTunnelProvider}`)
 
-    // IdP URL for standalone mode
-    if (deploymentMode === 'standalone' && standalone?.idpUrl) {
-      lines.push(`CSS_OIDC_ISSUER=${standalone.idpUrl}`)
+    // oidcIssuer means "external IdP". Standalone without this remains full Local.
+    if (!provisioning && deploymentMode === 'standalone' && standalone?.oidcIssuer) {
+      lines.push(`oidcIssuer=${standalone.oidcIssuer}`)
     }
 
     // Tunnel configuration
-    if (network.accessMode === 'tunnel' && network.tunnelToken) {
-      if (network.tunnelProvider === 'cloudflare') {
-        lines.push(`CLOUDFLARE_TUNNEL_TOKEN=${network.tunnelToken}`)
-      } else if (network.tunnelProvider === 'sakura') {
-        lines.push(`SAKURA_TOKEN=${network.tunnelToken}`)
+    const effectiveTunnelToken = provisioning?.tunnelToken || network.tunnelToken
+    if (network.accessMode === 'tunnel' && effectiveTunnelToken) {
+      if (effectiveTunnelProvider === 'cloudflare') {
+        lines.push(`CLOUDFLARE_TUNNEL_TOKEN=${effectiveTunnelToken}`)
+      } else if (effectiveTunnelProvider === 'sakura') {
+        lines.push(`SAKURA_TOKEN=${effectiveTunnelToken}`)
       }
     }
 
@@ -201,13 +308,150 @@ export class WebServerModule {
     const env: Record<string, string> = {}
 
     for (const line of envContent.split('\n')) {
-      const match = line.match(/^([A-Z_]+)=(.+)$/)
-      if (match) {
-        env[match[1]] = match[2]
+      const entry = parseEnvLine(line)
+      if (entry) {
+        env[entry[0]] = entry[1]
       }
     }
 
     return env
+  }
+
+  private async ensureManagedCloudRegistration(data: SetupData): Promise<ManagedCloudRegistration | undefined> {
+    const normalized = normalizeSetupData(data)
+    if (normalized.deploymentMode !== 'local' || !normalized.publicDomain) {
+      return undefined
+    }
+
+    const env = this.readEnvMap()
+    const existing = this.readManagedCloudRegistration()
+    const cloudIdentityUrl = normalizeUrl(env.oidcIssuer || process.env.oidcIssuer || OFFICIAL_CLOUD_IDENTITY_ORIGIN)
+    const cloudApiUrl = normalizeUrl(env.XPOD_CLOUD_API_ENDPOINT || process.env.XPOD_CLOUD_API_ENDPOINT || OFFICIAL_CLOUD_API_ORIGIN)
+    const publicUrl = publicUrlFromDomain(normalized.publicDomain)
+
+    if (
+      existing
+      && existing.cloudIdentityUrl === cloudIdentityUrl
+      && existing.cloudApiUrl === cloudApiUrl
+      && existing.publicUrl === publicUrl
+      && existing.nodeId
+      && existing.nodeToken
+      && existing.serviceToken
+      && existing.provisionCode
+    ) {
+      return existing
+    }
+
+    const request: ProvisionNodeRequest = {
+      publicUrl,
+      nodeId: existing?.nodeId,
+      nodeToken: existing?.nodeToken,
+      serviceToken: existing?.serviceToken,
+      localPort: normalized.port,
+      tunnelToken: normalized.network.tunnelToken || existing?.tunnelToken,
+      tunnelMode: normalized.network.tunnelToken || existing?.tunnelToken ? 'client' : undefined,
+      domainMode: 'self-managed',
+      spDomain: undefined,
+    }
+    const response = await this.registerProvisionedNode(cloudApiUrl, request)
+    return {
+      nodeId: response.nodeId,
+      nodeToken: response.nodeToken,
+      serviceToken: response.serviceToken,
+      provisionCode: response.provisionCode,
+      spDomain: response.spDomain,
+      tunnelToken: response.tunnelToken,
+      tunnelProvider: response.tunnelProvider,
+      tunnelEndpoint: response.tunnelEndpoint,
+      publicUrl,
+      provisionUrl: buildProvisionUrl(cloudIdentityUrl, response.provisionCode),
+      cloudIdentityUrl,
+      cloudApiUrl,
+    }
+  }
+
+  private readManagedCloudRegistration(): ManagedCloudRegistration | undefined {
+    const env = this.readEnvMap()
+    if (!env.XPOD_NODE_ID || !env.XPOD_NODE_TOKEN || !env.XPOD_SERVICE_TOKEN || !env.LINX_PROVISION_CODE) {
+      return undefined
+    }
+
+    const cloudIdentityUrl = normalizeUrl(env.oidcIssuer || OFFICIAL_CLOUD_IDENTITY_ORIGIN)
+    const cloudApiUrl = normalizeUrl(env.XPOD_CLOUD_API_ENDPOINT || OFFICIAL_CLOUD_API_ORIGIN)
+    const publicUrl = readProvisionPublicUrlFromEnv(env)
+    if (!publicUrl) {
+      return undefined
+    }
+
+    return {
+      nodeId: env.XPOD_NODE_ID,
+      nodeToken: env.XPOD_NODE_TOKEN,
+      serviceToken: env.XPOD_SERVICE_TOKEN,
+      provisionCode: env.LINX_PROVISION_CODE,
+      publicUrl,
+      provisionUrl: env.LINX_PROVISION_URL || buildProvisionUrl(cloudIdentityUrl, env.LINX_PROVISION_CODE),
+      cloudIdentityUrl,
+      cloudApiUrl,
+      spDomain: env.LINX_SP_DOMAIN,
+      tunnelToken: env.CLOUDFLARE_TUNNEL_TOKEN || env.SAKURA_TOKEN,
+      tunnelProvider: env.LINX_TUNNEL_PROVIDER,
+      tunnelEndpoint: env.LINX_TUNNEL_ENDPOINT,
+    }
+  }
+
+  private async registerProvisionedNode(
+    cloudApiUrl: string,
+    request: ProvisionNodeRequest,
+  ): Promise<Required<Pick<ManagedCloudRegistration, 'nodeId' | 'nodeToken' | 'serviceToken' | 'provisionCode'>>
+    & Pick<ManagedCloudRegistration, 'spDomain' | 'tunnelToken' | 'tunnelProvider' | 'tunnelEndpoint'>> {
+    const endpoint = new URL('/provision/nodes', ensureTrailingSlash(cloudApiUrl)).toString()
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), MANAGED_CLOUD_REGISTRATION_TIMEOUT_MS)
+
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(request),
+        signal: controller.signal,
+      })
+
+      if (!response.ok) {
+        const detail = await response.text().catch(() => '')
+        throw new Error(detail || `HTTP ${response.status}`)
+      }
+
+      const payload = await response.json() as ProvisionNodeResponse
+      if (
+        typeof payload.nodeId !== 'string'
+        || typeof payload.nodeToken !== 'string'
+        || typeof payload.serviceToken !== 'string'
+        || typeof payload.provisionCode !== 'string'
+      ) {
+        throw new Error('Cloud 返回的节点注册结果不完整。')
+      }
+
+      return {
+        nodeId: payload.nodeId,
+        nodeToken: payload.nodeToken,
+        serviceToken: payload.serviceToken,
+        provisionCode: payload.provisionCode,
+        spDomain: typeof payload.spDomain === 'string' ? payload.spDomain : undefined,
+        tunnelToken: typeof payload.tunnelToken === 'string' ? payload.tunnelToken : undefined,
+        tunnelProvider: typeof payload.tunnelProvider === 'string' ? payload.tunnelProvider : undefined,
+        tunnelEndpoint: typeof payload.tunnelEndpoint === 'string' ? payload.tunnelEndpoint : undefined,
+      }
+    } catch (error) {
+      if ((error as Error & { name?: string })?.name === 'AbortError') {
+        throw new Error('连接 Cloud 注册 Local 节点超时。')
+      }
+      throw new Error(`无法完成 Local 的 Cloud 绑定：${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      clearTimeout(timeoutId)
+    }
   }
 
   private applyAutoStart(enabled: boolean): void {
@@ -300,7 +544,7 @@ export class WebServerModule {
     })
 
     // Save setup config - directly write .env file
-    this.app.post('/api/setup', (req: Request, res: Response) => {
+    this.app.post('/api/setup', async (req: Request, res: Response) => {
       try {
         const data = normalizeSetupData(req.body as SetupData)
 
@@ -324,9 +568,9 @@ export class WebServerModule {
           const envContent = fs.readFileSync(envPath, 'utf-8')
           const env: Record<string, string> = {}
           for (const line of envContent.split('\n')) {
-            const match = line.match(/^([A-Z_]+)=(.+)$/)
-            if (match) {
-              env[match[1]] = match[2]
+            const entry = parseEnvLine(line)
+            if (entry) {
+              env[entry[0]] = entry[1]
             }
           }
 
@@ -352,8 +596,10 @@ export class WebServerModule {
           fs.mkdirSync(data.dataDir, { recursive: true })
         }
 
+        const provisioning = await this.ensureManagedCloudRegistration(data)
+
         // Write .env file
-        const envContent = this.generateEnvContent(data)
+        const envContent = this.generateEnvContent(data, provisioning)
         fs.writeFileSync(envPath, envContent)
         console.log('[WebServer] Generated .env file:', envPath)
         this.applyAutoStart(data.autoStart)
@@ -361,10 +607,20 @@ export class WebServerModule {
         // Mark setup as complete
         fs.writeFileSync(setupFlagPath, new Date().toISOString())
 
-        res.json({ success: true, envPath })
+        res.json({ success: true, envPath, provisioning: provisioning ? {
+          nodeId: provisioning.nodeId,
+          publicUrl: provisioning.publicUrl,
+          provisionCode: provisioning.provisionCode,
+          provisionUrl: provisioning.provisionUrl,
+          cloudIdentityUrl: provisioning.cloudIdentityUrl,
+          cloudApiUrl: provisioning.cloudApiUrl,
+          spDomain: provisioning.spDomain,
+          tunnelProvider: provisioning.tunnelProvider,
+          tunnelEndpoint: provisioning.tunnelEndpoint,
+        } : undefined })
       } catch (error) {
         console.error('[WebServer] Failed to save setup:', error)
-        res.status(500).json({ error: 'Failed to save configuration' })
+        res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to save configuration' })
       }
     })
 
@@ -373,6 +629,7 @@ export class WebServerModule {
       const xpodStatus = getXpodModule().getStatus()
       const setupCompleted = fs.existsSync(getSetupFlagPath())
       const envPath = getEnvPath()
+      const provisioning = this.readManagedCloudRegistration()
 
       res.json({
         pod: {
@@ -381,6 +638,17 @@ export class WebServerModule {
           publicUrl: xpodStatus.publicUrl,
           running: xpodStatus.running,
         },
+        provisioning: provisioning ? {
+          nodeId: provisioning.nodeId,
+          publicUrl: provisioning.publicUrl,
+          provisionCode: provisioning.provisionCode,
+          provisionUrl: provisioning.provisionUrl,
+          cloudIdentityUrl: provisioning.cloudIdentityUrl,
+          cloudApiUrl: provisioning.cloudApiUrl,
+          spDomain: provisioning.spDomain,
+          tunnelProvider: provisioning.tunnelProvider,
+          tunnelEndpoint: provisioning.tunnelEndpoint,
+        } : undefined,
         setupCompleted,
         envPath,
       })
@@ -426,7 +694,7 @@ export class WebServerModule {
     })
 
     this.app.get('/api/runtime/threads/:id', (req: Request, res: Response) => {
-      const session = getRuntimeThreadsModule().getSession(req.params.id)
+      const session = getRuntimeThreadsModule().getSession(routeParam(req.params.id))
       if (!session) {
         res.status(404).json({ error: 'Runtime session not found' })
         return
@@ -462,7 +730,7 @@ export class WebServerModule {
 
     this.app.post('/api/runtime/threads/:id/start', async (req: Request, res: Response) => {
       try {
-        const session = await getRuntimeThreadsModule().startSession(req.params.id)
+        const session = await getRuntimeThreadsModule().startSession(routeParam(req.params.id))
         res.json(session)
       } catch (error) {
         console.error('[WebServer] Failed to start runtime session:', error)
@@ -472,7 +740,7 @@ export class WebServerModule {
 
     this.app.post('/api/runtime/threads/:id/pause', async (req: Request, res: Response) => {
       try {
-        const session = await getRuntimeThreadsModule().pauseSession(req.params.id)
+        const session = await getRuntimeThreadsModule().pauseSession(routeParam(req.params.id))
         res.json(session)
       } catch (error) {
         console.error('[WebServer] Failed to pause runtime session:', error)
@@ -482,7 +750,7 @@ export class WebServerModule {
 
     this.app.post('/api/runtime/threads/:id/resume', async (req: Request, res: Response) => {
       try {
-        const session = await getRuntimeThreadsModule().resumeSession(req.params.id)
+        const session = await getRuntimeThreadsModule().resumeSession(routeParam(req.params.id))
         res.json(session)
       } catch (error) {
         console.error('[WebServer] Failed to resume runtime session:', error)
@@ -492,7 +760,7 @@ export class WebServerModule {
 
     this.app.post('/api/runtime/threads/:id/stop', async (req: Request, res: Response) => {
       try {
-        const session = await getRuntimeThreadsModule().stopSession(req.params.id)
+        const session = await getRuntimeThreadsModule().stopSession(routeParam(req.params.id))
         res.json(session)
       } catch (error) {
         console.error('[WebServer] Failed to stop runtime session:', error)
@@ -508,7 +776,7 @@ export class WebServerModule {
           return
         }
 
-        const session = await getRuntimeThreadsModule().sendSessionMessage(req.params.id, text)
+        const session = await getRuntimeThreadsModule().sendSessionMessage(routeParam(req.params.id), text)
         res.json(session)
       } catch (error) {
         console.error('[WebServer] Failed to send runtime session message:', error)
@@ -524,7 +792,11 @@ export class WebServerModule {
           return
         }
 
-        const session = await getRuntimeThreadsModule().respondToSessionToolCall(req.params.id, req.params.requestId, output)
+        const session = await getRuntimeThreadsModule().respondToSessionToolCall(
+          routeParam(req.params.id),
+          routeParam(req.params.requestId),
+          output,
+        )
         res.json(session)
       } catch (error) {
         console.error('[WebServer] Failed to respond runtime tool call:', error)
@@ -534,7 +806,7 @@ export class WebServerModule {
 
     this.app.get('/api/runtime/threads/:id/log', (req: Request, res: Response) => {
       try {
-        const log = getRuntimeThreadsModule().getSessionLog(req.params.id)
+        const log = getRuntimeThreadsModule().getSessionLog(routeParam(req.params.id))
         res.type('text/plain').send(log)
       } catch (error) {
         console.error('[WebServer] Failed to get runtime session log:', error)
@@ -544,7 +816,8 @@ export class WebServerModule {
 
     this.app.get('/api/runtime/threads/:id/events', (req: Request, res: Response) => {
       const runtimeSessions = getRuntimeThreadsModule()
-      const session = runtimeSessions.getSession(req.params.id)
+      const sessionId = routeParam(req.params.id)
+      const session = runtimeSessions.getSession(sessionId)
       if (!session) {
         res.status(404).json({ error: 'Runtime session not found' })
         return
@@ -555,7 +828,7 @@ export class WebServerModule {
       res.setHeader('Connection', 'keep-alive')
       res.flushHeaders?.()
 
-      const unsubscribe = runtimeSessions.subscribeSession(req.params.id, (event) => {
+      const unsubscribe = runtimeSessions.subscribeSession(sessionId, (event) => {
         res.write(`data: ${JSON.stringify(event)}\n\n`)
       })
 
@@ -584,7 +857,7 @@ export class WebServerModule {
       this.app.use(express.static(distDir))
 
       // SPA fallback - also inject for deep links
-      this.app.get('*', (req, res) => {
+      this.app.use((req, res) => {
         // Skip API routes
         if (req.path.startsWith('/api/')) {
           res.status(404).json({ error: 'Not found' })
@@ -602,7 +875,7 @@ export class WebServerModule {
     } else {
       // Development: proxy to Vite dev server
       console.log('[WebServer] Production build not found, running in dev mode')
-      this.app.get('*', (_req, res) => {
+      this.app.use((_req, res) => {
         res.redirect('http://localhost:5174')
       })
     }

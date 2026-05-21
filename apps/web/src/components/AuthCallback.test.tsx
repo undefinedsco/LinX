@@ -14,6 +14,7 @@ const onErrorMock = vi.fn()
 const sessionState = {
   info: {
     isLoggedIn: false,
+    sessionId: 'session-1',
   },
   sessionRequestInProgress: false,
 }
@@ -39,14 +40,17 @@ describe('AuthCallback', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     sessionState.info.isLoggedIn = false
+    sessionState.info.sessionId = 'session-1'
     sessionState.sessionRequestInProgress = false
     clearPendingLoginAttempt()
     clearPendingPostLoginMicroAppId()
+    window.localStorage.removeItem('solidClientAuthn:currentSession')
     window.history.replaceState({}, '', '/auth/callback')
   })
 
   it('calls onSuccess when the session resolves', async () => {
     sessionState.info.isLoggedIn = true
+    window.localStorage.setItem('solidClientAuthn:currentSession', 'session-1')
 
     render(<SolidAuthCallback onSuccess={onSuccessMock} onError={onErrorMock} />)
 
@@ -58,8 +62,23 @@ describe('AuthCallback', () => {
   it('calls onSuccess once login is established even if the provider is still finishing background work', async () => {
     sessionState.info.isLoggedIn = true
     sessionState.sessionRequestInProgress = true
+    window.localStorage.setItem('solidClientAuthn:currentSession', 'session-1')
 
     render(<SolidAuthCallback onSuccess={onSuccessMock} onError={onErrorMock} />)
+
+    await waitFor(() => {
+      expect(onSuccessMock).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('waits for the current session key before calling onSuccess', async () => {
+    sessionState.info.isLoggedIn = true
+
+    render(<SolidAuthCallback onSuccess={onSuccessMock} onError={onErrorMock} />)
+
+    expect(onSuccessMock).not.toHaveBeenCalled()
+
+    window.localStorage.setItem('solidClientAuthn:currentSession', 'session-1')
 
     await waitFor(() => {
       expect(onSuccessMock).toHaveBeenCalledTimes(1)
@@ -83,6 +102,39 @@ describe('AuthCallback', () => {
       expect(connectMock).toHaveBeenCalledWith('https://cloud.example.com', {
         authorizationSurface: 'window',
         returnToMicroAppId: 'files',
+        providerUrl: undefined,
+        providerLabel: undefined,
+        authorizationQuery: undefined,
+      })
+    })
+  })
+
+  it('preserves Local provisioning context when retrying a Cloud IDP + Local SP attempt', async () => {
+    setPendingLoginAttempt({
+      issuerUrl: 'https://id.undefineds.co',
+      authorizationSurface: 'embedded',
+      returnToMicroAppId: 'chat',
+      providerUrl: 'https://node-0000.undefineds.co',
+      providerLabel: 'Local',
+      authorizationQuery: {
+        provisionCode: 'pc-123',
+      },
+    })
+    window.history.replaceState({}, '', '/auth/callback?error=access_denied')
+
+    render(<SolidAuthCallback onSuccess={onSuccessMock} onError={onErrorMock} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '重试 Local' }))
+
+    await waitFor(() => {
+      expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', {
+        authorizationSurface: 'embedded',
+        returnToMicroAppId: 'chat',
+        providerUrl: 'https://node-0000.undefineds.co',
+        providerLabel: 'Local',
+        authorizationQuery: {
+          provisionCode: 'pc-123',
+        },
       })
     })
   })

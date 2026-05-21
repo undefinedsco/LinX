@@ -20,7 +20,7 @@ import {
   resolvePostLoginMicroAppId,
   SIGN_OUT_EVENT,
 } from './login-utils'
-import type { LoginProviderOption } from './types'
+import type { ConnectingProviderInfo, LoginProviderOption } from './types'
 import { detectStorageConflict, type StorageConflict } from './storage-reconciliation'
 
 const LOCAL_RESTORE_TIMEOUT_MS = 5000
@@ -74,6 +74,7 @@ export function useLoginController() {
   } = useProviders()
   const [localLoginActive, setLocalLoginActive] = useState(false)
   const [storageConflict, setStorageConflict] = useState<StorageConflict | null>(null)
+  const [connectingProvider, setConnectingProvider] = useState<ConnectingProviderInfo | null>(null)
   const isDesktop = typeof window !== 'undefined' && Boolean(window.xpodDesktop?.auth)
   const resetDesktopAuthState = useCallback((): void => {
     desktopAuthPendingRef.current = false
@@ -123,6 +124,7 @@ export function useLoginController() {
 
     clearPendingLoginAttempt()
     clearPendingPostLoginMicroAppId()
+    setConnectingProvider(null)
     setError('登录未完成，请重试。')
 
     navigate({
@@ -156,6 +158,7 @@ export function useLoginController() {
     if (state === 'connecting') {
       clearPendingLoginAttempt()
       clearPendingPostLoginMicroAppId()
+      setConnectingProvider(null)
       setError('登录已取消。')
       setState('idle')
     }
@@ -206,6 +209,7 @@ export function useLoginController() {
         setStoredAccount(account)
         setView('default')
         setLocalLoginActive(false)
+        setConnectingProvider(null)
         localConnectKeyRef.current = null
         resetDesktopAuthState()
         clearPendingCallbackError()
@@ -225,6 +229,7 @@ export function useLoginController() {
       loginSuccess(account)
       setView('default')
       setLocalLoginActive(false)
+      setConnectingProvider(null)
       localConnectKeyRef.current = null
       resetDesktopAuthState()
       clearPendingCallbackError()
@@ -241,6 +246,7 @@ export function useLoginController() {
       if (cancelled) return
       setStoredAccount(account)
       resetDesktopAuthState()
+      setConnectingProvider(null)
       setState('idle')
       setError(error?.message || '登录后校验空间失败，请重试。')
     })
@@ -271,6 +277,7 @@ export function useLoginController() {
     setStorageConflict(null)
     setError(null)
     setState('idle')
+    setConnectingProvider(null)
     resetDesktopAuthState()
     ensurePendingPostLoginMicroAppId(resolvePostLoginMicroAppId())
     setView('local')
@@ -337,6 +344,12 @@ export function useLoginController() {
     setView('default')
     setState('connecting')
     setError(null)
+    setConnectingProvider({
+      issuerLabel: resolveProviderDisplayName(provider, normalizedProviderUrl),
+      issuerUrl: normalizedProviderUrl,
+      providerLabel: resolveProviderDisplayName(provider, normalizedProviderUrl),
+      providerUrl: normalizedProviderUrl,
+    })
 
     try {
       const desktopApi = typeof window !== 'undefined' ? window.xpodDesktop : undefined
@@ -349,9 +362,11 @@ export function useLoginController() {
         authorizationSurface: surface,
         providerUrl: normalizedProviderUrl,
         providerLabel: provider?.label,
+        issuerLabel: resolveProviderDisplayName(provider, normalizedProviderUrl),
       })
     } catch (err: any) {
       resetDesktopAuthState()
+      setConnectingProvider(null)
       setError(err.message || '连接失败')
       setState('idle')
     }
@@ -475,18 +490,26 @@ export function useLoginController() {
     setLocalLoginActive(false)
     setState('connecting')
     setError(null)
+    setConnectingProvider({
+      issuerLabel: isDeviceOnly ? 'Local' : 'Cloud',
+      issuerUrl,
+      providerLabel: 'Local',
+      providerUrl: localProviderUrl,
+    })
 
     try {
       await oidc.connect(issuerUrl, {
         authorizationSurface: 'embedded',
         providerUrl: localProviderUrl,
         providerLabel: 'Local',
+        issuerLabel: isDeviceOnly ? 'Local' : 'Cloud',
         authorizationQuery: isDeviceOnly
           ? undefined
           : { provisionCode: localOnboarding.provisionCode },
       })
     } catch (error: any) {
       localConnectKeyRef.current = null
+      setConnectingProvider(null)
       setState('idle')
       setError(error?.message || (isDeviceOnly ? '打开 Local 登录失败。' : '打开 Cloud 登录失败。'))
     }
@@ -504,9 +527,26 @@ export function useLoginController() {
     setStorageConflict(null)
     setView('default')
     setLocalLoginActive(false)
+    setConnectingProvider(null)
     localConnectKeyRef.current = null
     resetDesktopAuthState()
   }, [resetDesktopAuthState, setError])
+
+  const cancelConnecting = useCallback(() => {
+    setError(null)
+    setStorageConflict(null)
+    setView('default')
+    setLocalLoginActive(false)
+    setConnectingProvider(null)
+    localConnectKeyRef.current = null
+    resetDesktopAuthState()
+    clearPendingLoginAttempt()
+    clearPendingPostLoginMicroAppId()
+    if (state === 'connecting') {
+      setState('idle')
+    }
+    void Promise.resolve(embeddedAuthorization.close()).catch(() => undefined)
+  }, [embeddedAuthorization, resetDesktopAuthState, setError, setState, state])
 
   const switchAccount = useCallback(async () => {
     suppressAutoLoginRef.current = true
@@ -524,6 +564,7 @@ export function useLoginController() {
     setState('idle')
     setView('default')
     setLocalLoginActive(false)
+    setConnectingProvider(null)
     localConnectKeyRef.current = null
     resetDesktopAuthState()
   }, [logout, resetDesktopAuthState, setError, setState, setStoredAccount])
@@ -541,6 +582,7 @@ export function useLoginController() {
     setStorageConflict(null)
     setView('default')
     setLocalLoginActive(false)
+    setConnectingProvider(null)
     localConnectKeyRef.current = null
     resetDesktopAuthState()
     reset()
@@ -561,6 +603,7 @@ export function useLoginController() {
     setState('idle')
     setView('default')
     setLocalLoginActive(false)
+    setConnectingProvider(null)
     localConnectKeyRef.current = null
     resetDesktopAuthState()
   }, [resetDesktopAuthState, setError, setState, setStoredAccount])
@@ -601,11 +644,13 @@ export function useLoginController() {
       reason: embeddedAuthorization.reason,
       ready: embeddedAuthorization.ready,
     },
+    connectingProvider,
     isRestoring: restore.isRestoring,
     connect,
     continueStoredAccount,
     continueLocalLogin: signInLocalOnboarding,
     backFromLocal,
+    cancelConnecting,
     switchAccount,
     addProvider,
     removeProvider,
@@ -703,10 +748,26 @@ function resolveProviderLabel(
     return 'Local'
   }
 
+  if (fallback === 'Local') {
+    return 'Local'
+  }
+
   try {
     return new URL(providerUrl).hostname
   } catch {
     return fallback
+  }
+}
+
+function resolveProviderDisplayName(provider: LoginProviderOption | undefined, fallbackUrl: string): string {
+  if (provider?.source === 'cloud') return 'Cloud'
+  if (provider?.source === 'local') return 'Local'
+  if (provider?.label) return provider.label
+
+  try {
+    return new URL(fallbackUrl).hostname
+  } catch {
+    return fallbackUrl
   }
 }
 

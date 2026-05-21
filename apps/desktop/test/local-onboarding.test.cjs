@@ -3,7 +3,27 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
+const Module = require('node:module')
 const { resolveCompiledDesktopModule } = require('./helpers.cjs')
+
+const originalLoad = Module._load
+Module._load = function patchedLoad(request, parent, isMain) {
+  if (request === 'electron') {
+    return {
+      app: {
+        getPath: () => fs.mkdtempSync(path.join(os.tmpdir(), 'linx-local-onboarding-electron-')),
+        setPath: () => {},
+        isPackaged: false,
+      },
+    }
+  }
+
+  return originalLoad.call(this, request, parent, isMain)
+}
+
+process.once('exit', () => {
+  Module._load = originalLoad
+})
 
 function createProvider(domain = { type: 'none' }) {
   return {
@@ -207,6 +227,38 @@ test('LocalOnboardingController upgrades a persisted device-only Local when a pu
   assert.equal(persisted.providerId, 'local')
 })
 
+test('LocalOnboardingController preserves start errors across refreshes until retry context changes', async () => {
+  const { LocalOnboardingController } = require(resolveCompiledDesktopModule('lib/local-onboarding.js'))
+  const controller = new LocalOnboardingController({
+    stateDir: fs.mkdtempSync(path.join(os.tmpdir(), 'linx-local-onboarding-')),
+    ensureBootstrapProvider: () => createProvider({ type: 'custom', value: 'pod.example.com' }),
+    xpodManager: {
+      getStatus: async () => ({
+        running: false,
+        status: 'stopped',
+        providerId: 'local',
+        localUrl: 'http://localhost:5737/',
+        baseUrl: 'http://localhost:5737/',
+      }),
+      start: async () => {
+        throw new Error('无法完成 Local 的 Cloud 绑定：{"error":"Service Unavailable","details":""}')
+      },
+    },
+  })
+
+  const failed = await controller.continue()
+  assert.equal(failed.state, 'error')
+  assert.equal(failed.mode, 'remote-ready')
+  assert.equal(failed.errorCode, 'LOCAL_START_FAILED')
+  assert.match(failed.message, /Service Unavailable/)
+
+  const refreshed = await controller.refresh()
+  assert.equal(refreshed.state, 'error')
+  assert.equal(refreshed.mode, 'remote-ready')
+  assert.equal(refreshed.errorCode, 'LOCAL_START_FAILED')
+  assert.equal(refreshed.message, failed.message)
+})
+
 test('LocalOnboardingController infers device-only mode for an existing local instance', async () => {
   const { LocalOnboardingController } = require(resolveCompiledDesktopModule('lib/local-onboarding.js'))
   const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'linx-local-onboarding-'))
@@ -296,6 +348,40 @@ test('LocalOnboardingController marks an already running local service as ready'
   assert.equal(snapshot.localUrl, 'http://localhost:5737/')
   assert.equal(snapshot.cloudIdentityUrl, 'https://id.undefineds.co')
   assert.equal(snapshot.provisionCode, 'pc-123')
+})
+
+test('LocalOnboardingController probes device-only capabilities on local URL while preserving LAN canonical URL', async () => {
+  const { LocalOnboardingController } = require(resolveCompiledDesktopModule('lib/local-onboarding.js'))
+  const capabilityUrls = []
+  const controller = new LocalOnboardingController({
+    stateDir: fs.mkdtempSync(path.join(os.tmpdir(), 'linx-local-onboarding-')),
+    ensureBootstrapProvider: () => createProvider({ type: 'none' }),
+    xpodManager: {
+      getStatus: async () => ({
+        running: true,
+        status: 'running',
+        localUrl: 'http://localhost:5737/',
+        baseUrl: 'http://host.docker.internal:5737/',
+      }),
+      start: async () => {
+        throw new Error('should not start')
+      },
+    },
+    fetchCapabilities: async (url) => {
+      capabilityUrls.push(url)
+      return {
+        supported: true,
+        contract: 'linx-local-onboarding/v1',
+        baseUrl: 'http://host.docker.internal:5737/',
+        version: '0.2.2',
+      }
+    },
+  })
+
+  const snapshot = await controller.refresh()
+  assert.equal(snapshot.state, 'ready')
+  assert.equal(snapshot.baseUrl, 'http://host.docker.internal:5737/')
+  assert.deepEqual(capabilityUrls, ['http://localhost:5737/'])
 })
 
 test('LocalOnboardingController still becomes ready when the capability probe times out', async (t) => {

@@ -120,6 +120,56 @@ describe('useProviders', () => {
     })
   })
 
+  it('projects Service mode provisioning into a remote-ready Local snapshot', async () => {
+    delete window.xpodDesktop
+    ;(window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__ = true
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === '/api/service/status') {
+        return {
+          ok: true,
+          json: async () => ({
+            pod: {
+              running: true,
+              port: 5737,
+              baseUrl: 'https://pod.example.com/',
+              publicUrl: 'https://pod.example.com/',
+            },
+            provisioning: {
+              nodeId: 'node-1',
+              publicUrl: 'https://pod.example.com/',
+              provisionCode: 'pc-123',
+              provisionUrl: 'https://id.undefineds.co/.account/?provisionCode=pc-123',
+              cloudIdentityUrl: 'https://id.undefineds.co',
+            },
+          }),
+        } as Response
+      }
+
+      if (String(input) === '/api/setup/config') {
+        return {
+          ok: true,
+          json: async () => ({ port: 5737 }),
+        } as Response
+      }
+
+      throw new Error(`Unexpected fetch: ${String(input)}`)
+    }))
+
+    const { result } = renderHook(() => useProviders())
+
+    await waitFor(() => {
+      expect(result.current.localOnboarding).toMatchObject({
+        state: 'ready',
+        mode: 'remote-ready',
+        publicUrl: 'https://pod.example.com/',
+        cloudIdentityUrl: 'https://id.undefineds.co',
+        provisionCode: 'pc-123',
+        nodeId: 'node-1',
+      })
+    })
+  })
+
   it('preserves a configured remote-ready desktop Local mode', async () => {
     const remoteReadySnapshot = {
       state: 'ready',

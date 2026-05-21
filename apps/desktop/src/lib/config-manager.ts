@@ -6,6 +6,41 @@ export interface EnvConfig {
   [key: string]: string;
 }
 
+function isOidcIssuerPollutionKey(key: string): boolean {
+  if (key === 'oidcIssuer') return false;
+  const normalized = key.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return normalized.includes('OIDCISSUER') ||
+    normalized.includes('IDPURL') ||
+    normalized.includes('IDPJWKSURL') ||
+    normalized.includes('IDENTITYPROVIDERURL') ||
+    normalized.includes('IDENTITYPROVIDERJWKSURL');
+}
+
+function sanitizeConfig(config: EnvConfig): EnvConfig {
+  const sanitized: EnvConfig = {};
+
+  for (const [key, value] of Object.entries(config)) {
+    if (isOidcIssuerPollutionKey(key)) {
+      continue;
+    }
+    sanitized[key] = value;
+  }
+
+  return sanitized;
+}
+
+function containsOidcIssuerPollution(content: string): boolean {
+  return content
+    .split('\n')
+    .some((line) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) return false;
+      const eqIndex = trimmed.indexOf('=');
+      if (eqIndex <= 0) return false;
+      return isOidcIssuerPollutionKey(trimmed.substring(0, eqIndex).trim());
+    });
+}
+
 // 默认环境变量配置
 const DEFAULT_CONFIG: EnvConfig = {
   // 运行模式
@@ -110,6 +145,9 @@ export class ConfigManager {
       if (fs.existsSync(this.configPath)) {
         const content = fs.readFileSync(this.configPath, 'utf-8');
         this.config = this.parseEnvFile(content);
+        if (containsOidcIssuerPollution(content)) {
+          this.save();
+        }
       } else {
         // 使用默认配置
         this.config = { ...DEFAULT_CONFIG };
@@ -164,7 +202,7 @@ export class ConfigManager {
    * 批量更新配置
    */
   update(updates: EnvConfig): void {
-    this.config = { ...this.config, ...updates };
+    this.config = sanitizeConfig({ ...this.config, ...updates });
     this.save();
   }
 
@@ -172,7 +210,7 @@ export class ConfigManager {
    * 用完整配置替换当前配置
    */
   replace(config: EnvConfig): void {
-    this.config = { ...config };
+    this.config = sanitizeConfig(config);
     this.save();
   }
 
@@ -220,7 +258,7 @@ export class ConfigManager {
       }
     }
 
-    return config;
+    return sanitizeConfig(config);
   }
 
   /**
@@ -248,7 +286,7 @@ export class ConfigManager {
     const schemaKeys = new Set(
       Object.values(ENV_SCHEMA).flatMap(g => Object.keys(g.vars))
     );
-    const customKeys = Object.keys(config).filter(k => !schemaKeys.has(k));
+    const customKeys = Object.keys(sanitizeConfig(config)).filter(k => !schemaKeys.has(k));
     if (customKeys.length > 0) {
       lines.push('# 自定义配置');
       for (const key of customKeys) {

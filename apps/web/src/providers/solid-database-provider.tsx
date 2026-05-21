@@ -4,6 +4,11 @@ import { useSession } from '@inrupt/solid-ui-react'
 import { useLoginStore } from '@linx/stores/login'
 import type { SolidDatabase } from '@undefineds.co/models'
 import { createLinxSolidDatabase } from '@/lib/data/linx-solid-database'
+import {
+  hasLocalAccessRouteSource,
+  installLocalAccessRoute,
+  resolveBestLocalAccessRoute,
+} from '@/lib/local-access-route'
 import { getPendingLoginAttempt } from '@/modules/login/login-utils'
 
 interface SolidDatabaseContextValue {
@@ -95,9 +100,10 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
     const isLoggedIn = session.info.isLoggedIn
     const webId = session.info.webId
     const sessionKey = isLoggedIn && webId ? getSessionKey(session.info.sessionId, webId) : null
-    const podUrl = webId
-      ? resolveLoginPodUrl(webId, storedAccount, resolvedLocalPodUrlRef.current)
-      : resolvedLocalPodUrlRef.current
+    const localContext = webId
+      ? resolveLoginPodContext(webId, storedAccount, resolvedLocalPodUrlRef.current)
+      : null
+    const podUrl = localContext?.podUrl ?? resolvedLocalPodUrlRef.current
     if (podUrl) {
       resolvedLocalPodUrlRef.current = podUrl
     }
@@ -106,6 +112,7 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
     if (!databaseKey) {
       initGenerationRef.current += 1
       inFlightSessionKeyRef.current = null
+      installLocalAccessRoute(null)
       if (dbInstanceRef.current) {
         dbInstanceRef.current = null
         initializedSessionKeyRef.current = null
@@ -153,6 +160,18 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
     const initDatabase = async () => {
       try {
         publishValue({ db: null, status: 'initializing', error: null })
+
+        const accessRoute = hasLocalAccessRouteSource()
+          ? await resolveBestLocalAccessRoute({
+              canonicalPodUrl: podUrl,
+              providerLabel: localContext?.providerLabel,
+              providerUrl: localContext?.providerUrl,
+            })
+          : null
+        if (!isCurrentSession(session.info, sessionKey, generation, initGenerationRef.current)) {
+          return
+        }
+        installLocalAccessRoute(accessRoute)
 
         const initTimeoutMs = resolveDatabaseInitTimeoutMs(podUrl)
         const instance = await createLinxSolidDatabase(session, {
@@ -232,11 +251,17 @@ function isCurrentSession(
   )
 }
 
-function resolveLoginPodUrl(
+interface LoginPodContext {
+  podUrl: string
+  providerUrl: string
+  providerLabel?: string
+}
+
+function resolveLoginPodContext(
   webId: string,
   storedAccount: { providerUrl?: string; providerLabel?: string; issuerUrl?: string; issuerLabel?: string } | null,
   fallbackPodUrl: string | null = null,
-): string | null {
+): LoginPodContext | null {
   const pendingLoginAttempt = getPendingLoginAttempt()
   const candidates: Array<{ providerUrl?: string; providerLabel?: string; issuerUrl?: string }> = [
     {
@@ -258,11 +283,21 @@ function resolveLoginPodUrl(
 
     const normalized = resolveProviderPodUrl(candidate.providerUrl, webId)
     if (normalized) {
-      return normalized
+      return {
+        podUrl: normalized,
+        providerUrl: candidate.providerUrl ?? normalized,
+        providerLabel: candidate.providerLabel,
+      }
     }
   }
 
   return fallbackPodUrl
+    ? {
+        podUrl: fallbackPodUrl,
+        providerUrl: fallbackPodUrl,
+        providerLabel: 'Local',
+      }
+    : null
 }
 
 function resolveProviderPodUrl(providerUrl: string | undefined, webId: string): string | null {

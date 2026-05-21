@@ -39,6 +39,7 @@ LinX 行为：
 - 不要求选择隧道供应商。
 - 不因为公网 IP 检测失败而阻断 Local 启动。
 - xpod 默认监听本机端口，例如 `http://localhost:5737/`。
+- 如果 `CSS_BASE_URL` 配成局域网地址，例如 `http://192.168.1.10:5737/`，LinX/xpod 内部开放监听；用户不需要也不应该再填写单独的 listen host 字段。
 - 用户之后需要 Cloud IDP 或外网访问时，再补充公网 URL 和 route 配置。
 
 ## 3. Cloud IDP + Local SP，外网可直连
@@ -57,6 +58,7 @@ LinX 行为：
 - LinX 用这个 URL 向 Cloud 注册 Local SP，例如 `publicUrl=https://pod.example.com/`。
 - xpod 本地仍监听本机端口，例如 `http://localhost:5737/`。
 - `CSS_BASE_URL` 使用用户提供的 URL，例如 `https://pod.example.com/`。
+- `CSS_BASE_URL` 是身份和 Pod 的对外入口 URL，不是裸监听地址；监听地址由 LinX/xpod 根据入口 URL 内部推导。
 - Cloud 不分配 Local SP 域名，也不把平台域名指向用户 IP。
 
 ## 4. Cloud IDP + Local SP，外网不可直连，用隧道

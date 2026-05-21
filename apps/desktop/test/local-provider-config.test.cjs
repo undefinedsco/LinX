@@ -20,6 +20,15 @@ test('local provider config keeps localhost CSS_BASE_URL device-only', () => {
   )
 })
 
+test('local provider config keeps HTTP LAN CSS_BASE_URL device-only for LAN verification', () => {
+  const { resolveManagedDomainFromEnv } = require(resolveCompiledDesktopModule('lib/local-provider-config.js'))
+
+  assert.deepEqual(
+    resolveManagedDomainFromEnv({ CSS_BASE_URL: 'http://192.168.1.10:5737/' }),
+    { type: 'none' },
+  )
+})
+
 test('local provider config preserves an existing managed custom domain when CSS_BASE_URL is local', () => {
   const {
     resolveEffectiveManagedDomain,

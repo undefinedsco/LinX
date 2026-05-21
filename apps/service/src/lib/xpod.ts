@@ -12,6 +12,39 @@ import { getWebServerModule } from './web-server'
 import { resolveLinxUserDataDir } from './linx-paths'
 
 const XPOD_PACKAGE_CANDIDATES = ['@undefineds.co/xpod', 'xpod']
+const CANONICAL_OIDC_ISSUER_ENV_KEY = 'oidcIssuer'
+
+function readOidcIssuerEnv(env: Record<string, string | undefined>): string | undefined {
+  const canonical = env[CANONICAL_OIDC_ISSUER_ENV_KEY]?.trim()
+  return canonical || undefined
+}
+
+function isOidcIssuerPollutionKey(key: string): boolean {
+  if (key === CANONICAL_OIDC_ISSUER_ENV_KEY) return false
+  const normalized = key.toUpperCase().replace(/[^A-Z0-9]/g, '')
+  return normalized.includes('OIDCISSUER') ||
+    normalized.includes('IDPURL') ||
+    normalized.includes('IDPJWKSURL') ||
+    normalized.includes('IDENTITYPROVIDERURL') ||
+    normalized.includes('IDENTITYPROVIDERJWKSURL')
+}
+
+function removeOidcIssuerEnv(env: Record<string, string | undefined>): void {
+  for (const key of Object.keys(env)) {
+    if (key === CANONICAL_OIDC_ISSUER_ENV_KEY) delete env[key]
+    if (isOidcIssuerPollutionKey(key)) {
+      delete env[key]
+    }
+  }
+}
+
+function normalizeOidcIssuerEnv(env: Record<string, string | undefined>): void {
+  const oidcIssuer = readOidcIssuerEnv(env)
+  removeOidcIssuerEnv(env)
+  if (oidcIssuer) {
+    env[CANONICAL_OIDC_ISSUER_ENV_KEY] = oidcIssuer
+  }
+}
 
 export interface XpodStatus {
   running: boolean
@@ -77,12 +110,66 @@ function parseEnvFile(envPath: string): Record<string, string> {
 
   const content = fs.readFileSync(envPath, 'utf-8')
   for (const line of content.split('\n')) {
-    const match = line.match(/^([A-Z_]+)=(.+)$/)
+    const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/)
     if (match) {
       env[match[1]] = match[2]
     }
   }
   return env
+}
+
+export function buildRuntimeEnv(env: Record<string, string>, overrides: Record<string, string> = {}): Record<string, string> {
+  const inherited = { ...process.env } as Record<string, string>
+  removeOidcIssuerEnv(inherited)
+  const runtimeEnv = {
+    ...inherited,
+    ...env,
+    ...overrides,
+  }
+  normalizeOidcIssuerEnv(runtimeEnv)
+  return runtimeEnv
+}
+
+export function buildCssRuntimeEnv(env: Record<string, string>, overrides: Record<string, string> = {}): Record<string, string> {
+  const runtimeEnv = buildRuntimeEnv(env, overrides)
+  delete runtimeEnv[CANONICAL_OIDC_ISSUER_ENV_KEY]
+  return runtimeEnv
+}
+
+export function createEmbeddedCssRuntimeConfig(options: {
+  configPath: string
+  runtimeRoot: string
+  externalOidcIssuer?: string
+}): { configPath: string; cwd?: string } {
+  fs.mkdirSync(options.runtimeRoot, { recursive: true })
+  const runtimeConfigPath = path.join(options.runtimeRoot, 'css-runtime.config.json')
+  const relativeConfigPath = path.relative(options.runtimeRoot, options.configPath).replace(/\\/g, '/')
+  fs.writeFileSync(runtimeConfigPath, JSON.stringify({
+    '@context': [
+      'https://linkedsoftwaredependencies.org/bundles/npm/@solid/community-server/^8.0.0/components/context.jsonld',
+      'https://linkedsoftwaredependencies.org/bundles/npm/@undefineds.co/xpod/^0.0.0/components/context.jsonld',
+      'https://linkedsoftwaredependencies.org/bundles/npm/asynchronous-handlers/^1.0.0/components/context.jsonld',
+    ],
+    import: [
+      relativeConfigPath.startsWith('.') ? relativeConfigPath : `./${relativeConfigPath}`,
+    ],
+    '@graph': [],
+  }, null, 2), 'utf-8')
+
+  if (options.externalOidcIssuer) {
+    fs.writeFileSync(path.join(options.runtimeRoot, 'package.json'), JSON.stringify({
+      private: true,
+      name: 'linx-xpod-css-runtime',
+    }, null, 2), 'utf-8')
+    fs.writeFileSync(path.join(options.runtimeRoot, '.community-solid-server.config.json'), JSON.stringify({
+      oidcIssuer: options.externalOidcIssuer,
+    }, null, 2), 'utf-8')
+  }
+
+  return {
+    configPath: runtimeConfigPath,
+    cwd: options.externalOidcIssuer ? options.runtimeRoot : undefined,
+  }
 }
 
 function getPackageBinEntry(packageDir: string, pkg: any): string | null {
@@ -115,10 +202,36 @@ function ensureTrailingSlash(url: string): string {
   return url.endsWith('/') ? url : `${url}/`
 }
 
-function getBindHost(baseUrl: string): string {
-  const forced = process.env.XPOD_LISTEN_HOST
-  if (forced) return forced
+function canonicalizeIssuerUrl(url: string): string {
+  return ensureTrailingSlash(new URL(url).href)
+}
 
+export function resolveExternalOidcIssuer(env: Record<string, string>): string | undefined {
+  const issuer = readOidcIssuerEnv(env)
+  return issuer ? canonicalizeIssuerUrl(issuer) : undefined
+}
+
+export function oidcTokenEndpoint(issuer: string): string {
+  return new URL('/.oidc/token', canonicalizeIssuerUrl(issuer)).toString()
+}
+
+export function buildEmbeddedCssArgs(options: {
+  cssBinary: string
+  configPath: string
+  cssModuleRoot: string
+  cssPort: number
+  hostBaseUrl: string
+}): string[] {
+  return [
+    options.cssBinary,
+    '-c', options.configPath,
+    '-m', options.cssModuleRoot,
+    '-p', options.cssPort.toString(),
+    '-b', options.hostBaseUrl,
+  ]
+}
+
+export function getBindHost(baseUrl: string): string {
   try {
     const hostname = new URL(baseUrl).hostname
     if (hostname === 'localhost') return '127.0.0.1'
@@ -128,7 +241,7 @@ function getBindHost(baseUrl: string): string {
     // ignore
   }
 
-  return '127.0.0.1'
+  return '0.0.0.0'
 }
 
 export class XpodModule {
@@ -259,6 +372,7 @@ export class XpodModule {
     const requestedPort = parseInt(env.CSS_PORT || '5737', 10)
     const hostBaseUrl = ensureTrailingSlash(env.CSS_BASE_URL || `http://127.0.0.1:${requestedPort}`)
     const bindHost = getBindHost(hostBaseUrl)
+    const externalOidcIssuer = resolveExternalOidcIssuer(env)
     const cssPort = await runtimeModule.getFreePort(requestedPort + 1)
     const apiPort = await runtimeModule.getFreePort(cssPort + 1)
 
@@ -273,23 +387,28 @@ export class XpodModule {
     const configPath = path.join(runtime.packageDir, 'config', 'local.json')
     const apiMain = path.join(runtime.packageDir, 'dist', 'api', 'main.js')
 
+    const cssRuntimeConfig = createEmbeddedCssRuntimeConfig({
+      configPath,
+      runtimeRoot: path.join(resolveLinxUserDataDir(), 'xpod-css-runtime'),
+      externalOidcIssuer,
+    })
+    const cssArgs = buildEmbeddedCssArgs({
+      cssBinary,
+      configPath: cssRuntimeConfig.configPath,
+      cssModuleRoot,
+      cssPort,
+      hostBaseUrl,
+    })
+
     supervisor.register({
       name: 'css',
       command: process.execPath,
-      args: [
-        cssBinary,
-        '-c', configPath,
-        '-m', cssModuleRoot,
-        '-p', cssPort.toString(),
-        '-b', hostBaseUrl,
-      ],
-      cwd: runtime.packageDir,
-      env: {
-        ...process.env,
-        ...env,
+      args: cssArgs,
+      cwd: cssRuntimeConfig.cwd ?? runtime.packageDir,
+      env: buildCssRuntimeEnv(env, {
         CSS_PORT: cssPort.toString(),
         CSS_BASE_URL: hostBaseUrl,
-      } as Record<string, string>,
+      }),
     })
 
     supervisor.register({
@@ -297,15 +416,13 @@ export class XpodModule {
       command: process.execPath,
       args: [apiMain],
       cwd: runtime.packageDir,
-      env: {
-        ...process.env,
-        ...env,
+      env: buildRuntimeEnv(env, {
         API_PORT: apiPort.toString(),
         XPOD_MAIN_PORT: requestedPort.toString(),
         CSS_INTERNAL_URL: `http://localhost:${cssPort}`,
         CSS_BASE_URL: hostBaseUrl,
-        CSS_TOKEN_ENDPOINT: `${hostBaseUrl}.oidc/token`,
-      } as Record<string, string>,
+        CSS_TOKEN_ENDPOINT: externalOidcIssuer ? oidcTokenEndpoint(externalOidcIssuer) : `${hostBaseUrl}.oidc/token`,
+      }),
     })
 
     proxy.setTargets({
@@ -351,10 +468,9 @@ export class XpodModule {
 
     this.process = spawn(nodePath, args, {
       cwd: runtime.cwd,
-      env: {
-        ...process.env,
+      env: buildRuntimeEnv(env, {
         CSS_PORT: port.toString(),
-      },
+      }),
       stdio: ['ignore', 'pipe', 'pipe'],
     })
 
@@ -503,7 +619,7 @@ export class XpodModule {
         return false
       }
       const status = await response.json() as Array<{ name: string; status: string }>
-      return status.some((item) => item.name === 'css' && item.status === 'running')
+      return isXpodStatusReady(status)
     } catch {
       return false
     }
@@ -520,10 +636,14 @@ export class XpodModule {
         })
         if (gatewayResponse.ok) {
           const status = await gatewayResponse.json() as Array<{ name: string; status: string }>
-          const cssStatus = status.find((item) => item.name === 'css')
-          if (cssStatus?.status === 'running') {
+          if (isXpodStatusReady(status)) {
             return
           }
+        } else {
+          // /service/status exists but reports a degraded runtime; do not
+          // hide API child failures behind the root CSS fallback.
+          await new Promise((resolve) => setTimeout(resolve, 1000))
+          continue
         }
       } catch {
         try {
@@ -544,6 +664,12 @@ export class XpodModule {
 
     throw new Error('xpod failed to start within timeout')
   }
+}
+
+export function isXpodStatusReady(status: Array<{ name?: string; status?: string }>): boolean {
+  const cssStatus = status.find((item) => item.name === 'css')
+  const apiStatus = status.find((item) => item.name === 'api')
+  return cssStatus?.status === 'running' && apiStatus?.status === 'running'
 }
 
 let instance: XpodModule | null = null

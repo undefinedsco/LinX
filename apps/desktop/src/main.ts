@@ -16,6 +16,7 @@ import {
   AUTHORIZATION_SURFACE_HEIGHT,
   AUTHORIZATION_SURFACE_WIDTH,
   EmbeddedAuthorizationSheet,
+  resolveAuthorizationWindowTitle,
 } from './lib/embedded-auth-sheet';
 import { EmbeddedXpodSettingsSheet } from './lib/embedded-xpod-settings-sheet';
 import { installSingleSurfaceWindowOpenHandler } from './lib/window-open-routing';
@@ -393,12 +394,18 @@ async function createConfigWindow(): Promise<void> {
   }
 }
 
-async function openAuthorizationWindow(url: string): Promise<void> {
+interface AuthorizationWindowOptions {
+  providerLabel?: string;
+}
+
+async function openAuthorizationWindow(url: string, options?: AuthorizationWindowOptions): Promise<void> {
   closeEmbeddedAuthorizationIfOpen('dismissed')
   closeConfigWindowIfOpen()
   const authUrl = addEmbeddedAuthQuery(url)
+  const title = resolveAuthorizationWindowTitle(options?.providerLabel)
 
   if (authWindow && !authWindow.isDestroyed()) {
+    authWindow.setTitle(title);
     authWindow.hide();
     await loadURLWithRetry(authWindow, authUrl, 5);
     await fitAuthWindowToContent(authWindow);
@@ -413,7 +420,7 @@ async function openAuthorizationWindow(url: string): Promise<void> {
     height: AUTHORIZATION_SURFACE_HEIGHT,
     minWidth: 380,
     minHeight: 500,
-    title: 'LinX 登录',
+    title,
     autoHideMenuBar: true,
     icon: desktopAppIcon && !desktopAppIcon.isEmpty() ? desktopAppIcon : undefined,
     resizable: true,
@@ -484,10 +491,10 @@ async function openAuthorizationWindow(url: string): Promise<void> {
   authWindow.focus();
 }
 
-async function openEmbeddedAuthorization(url: string): Promise<void> {
+async function openEmbeddedAuthorization(url: string, options?: AuthorizationWindowOptions): Promise<void> {
   closeAuthWindowIfOpen('dismissed');
   closeConfigWindowIfOpen();
-  await embeddedAuthorizationSheet.open(url);
+  await embeddedAuthorizationSheet.open(url, options);
 }
 
 async function fitAuthWindowToContent(window: BrowserWindow): Promise<void> {
@@ -694,6 +701,7 @@ async function refreshTrayState(): Promise<void> {
   }
 
   tray.setImage(createTrayIcon(presentation.tone));
+  tray.setTitle(presentation.title);
   tray.setToolTip(tooltip);
   tray.setContextMenu(
     Menu.buildFromTemplate([
@@ -990,12 +998,12 @@ function setupIPC(): void {
     return embeddedAuthorizationSheet.getState();
   });
 
-  ipcMain.handle('auth:openAuthorizationWindow', (_event, url: string) => {
-    return openAuthorizationWindow(url);
+  ipcMain.handle('auth:openAuthorizationWindow', (_event, url: string, options?: AuthorizationWindowOptions) => {
+    return openAuthorizationWindow(url, options);
   });
 
-  ipcMain.handle('auth:openEmbeddedAuthorization', (_event, url: string) => {
-    return openEmbeddedAuthorization(url);
+  ipcMain.handle('auth:openEmbeddedAuthorization', (_event, url: string, options?: AuthorizationWindowOptions) => {
+    return openEmbeddedAuthorization(url, options);
   });
 
   ipcMain.handle('auth:closeEmbeddedAuthorization', () => {

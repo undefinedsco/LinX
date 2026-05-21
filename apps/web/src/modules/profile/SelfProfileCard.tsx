@@ -13,6 +13,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useSolidDatabase } from "@/providers/solid-database-provider";
+import { useLoginStore } from "@linx/stores/login";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -75,11 +76,44 @@ function InfoRow({ label, value, last }: { label: string; value: string; last?: 
   );
 }
 
+function SpaceBadge({ label }: { label: string }) {
+  const isLocal = label.toLowerCase() === "local";
+
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium",
+        isLocal
+          ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+          : "border-sky-500/20 bg-sky-500/10 text-sky-700 dark:text-sky-300",
+      )}
+    >
+      <span
+        className={cn(
+          "h-1.5 w-1.5 rounded-full",
+          isLocal ? "bg-emerald-500" : "bg-sky-500",
+        )}
+      />
+      {label}
+    </span>
+  );
+}
+
+function formatProviderHost(url?: string): string {
+  if (!url) return "";
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
+
 // ── Main Component ───────────────────────────────────────────────────
 
 export function SelfProfileCard() {
   const { session } = useSession();
   const { db } = useSolidDatabase();
+  const storedAccount = useLoginStore((state) => state.storedAccount);
   const webId = session.info.webId || "";
   const authFetch = session.fetch;
 
@@ -126,6 +160,8 @@ export function SelfProfileCard() {
   const phone = useMemo(() => readField(profile ?? null, "phone").trim(), [profile]);
   const region = useMemo(() => readField(profile ?? null, "region").trim(), [profile]);
   const note = useMemo(() => readField(profile ?? null, "note").trim(), [profile]);
+  const providerLabel = storedAccount?.providerLabel ?? storedAccount?.issuerLabel ?? "";
+  const providerHost = formatProviderHost(storedAccount?.providerUrl ?? storedAccount?.issuerUrl);
 
   // ── Avatar with auth fetch ─────────────────────────────────────────
 
@@ -298,6 +334,17 @@ export function SelfProfileCard() {
               {syncStatusNode}
             </div>
           )}
+
+          {providerLabel ? (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <SpaceBadge label={providerLabel} />
+              {providerHost ? (
+                <span className="min-w-0 truncate" title={providerHost}>
+                  {providerHost}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </div>
 

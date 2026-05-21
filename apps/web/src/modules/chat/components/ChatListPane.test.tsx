@@ -1,6 +1,6 @@
-import { render, screen, fireEvent } from '@testing-library/react'
+import { act, render, screen, fireEvent } from '@testing-library/react'
 import { waitFor } from '@testing-library/react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ChatListPane } from './ChatListPane'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactNode } from 'react'
@@ -115,6 +115,7 @@ const createDefaultStoreState = (overrides = {}) => ({
 describe('ChatListPane', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.useRealTimers()
 
     // Default store state
     mockUseChatStore.mockImplementation((selector: (state: unknown) => unknown) => {
@@ -144,6 +145,10 @@ describe('ChatListPane', () => {
     mockMutations.ensureLinxWelcome.mutate.mockReset()
     mockMutations.ensureLinxWelcome.mutateAsync.mockReset()
     mockMutations.ensureLinxWelcome.isPending = false
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   describe('Chat List Mode', () => {
@@ -217,6 +222,27 @@ describe('ChatListPane', () => {
       expect(mockMutations.ensureLinxWelcome.mutate).not.toHaveBeenCalled()
       expect(mockSelectChat).not.toHaveBeenCalled()
       expect(mockSelectThread).not.toHaveBeenCalled()
+    })
+
+    it('does not leave the empty chat list stuck on AI Secretary preparation', async () => {
+      vi.useFakeTimers()
+      mockUseChatList.mockReturnValue({
+        data: [],
+        isLoading: false,
+        error: null,
+        fetchStatus: 'idle',
+      })
+      mockMutations.ensureLinxWelcome.isPending = true
+
+      render(<ChatListPane theme="light" />, { wrapper: createWrapper() })
+
+      expect(screen.getByText('正在准备 AI Secretary...')).toBeInTheDocument()
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(12_000)
+      })
+
+      expect(screen.getByText('AI Secretary 暂时还没准备好，可以先进入 LinX。')).toBeInTheDocument()
     })
 
     it('does not prepare AI Secretary from the chat list for existing accounts without it', () => {

@@ -1,6 +1,7 @@
 import { act, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useLoginStore } from '@linx/stores/login'
+import { clearLocalAccessRoutesForTests } from '@/lib/local-access-route'
 import { SolidDatabaseProvider, useSolidDatabase } from './solid-database-provider'
 
 const onMock = vi.fn()
@@ -93,8 +94,12 @@ describe('SolidDatabaseProvider', () => {
   })
 
   afterEach(() => {
+    clearLocalAccessRoutesForTests()
+    vi.unstubAllGlobals()
     vi.useRealTimers()
     delete (window as any).__SOLID_DB__
+    delete (window as any).__LINX_ACCESS_ROUTE__
+    delete window.xpodDesktop
     window.sessionStorage.clear()
   })
 
@@ -233,6 +238,178 @@ describe('SolidDatabaseProvider', () => {
     })
   })
 
+  it('keeps http Local account and DB URLs canonical while silently routing same-node fetches to the best local entry', async () => {
+    const nativeFetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = input.toString()
+      if (url.startsWith('http://localhost:5737/api/linx/capabilities')) {
+        return jsonResponse({ contract: 'linx-local-onboarding/v1', baseUrl: 'http://192.168.1.10:5737/' })
+      }
+      if (url.startsWith('http://192.168.1.10:5737/api/linx/capabilities')) {
+        return jsonResponse({ contract: 'linx-local-onboarding/v1', baseUrl: 'http://192.168.1.10:5737/' })
+      }
+      if (url.startsWith('http://localhost:5737/alice/.data/bootstrap')) {
+        return new Response('ok')
+      }
+      throw new Error(`unexpected fetch: ${url}`)
+    }) as unknown as typeof fetch
+    vi.stubGlobal('fetch', nativeFetch)
+
+    Object.defineProperty(window, 'xpodDesktop', {
+      configurable: true,
+      value: {
+        localOnboarding: {
+          getSnapshot: vi.fn(async () => ({
+            state: 'ready',
+            mode: 'remote-ready',
+            localUrl: 'http://localhost:5737/',
+            baseUrl: 'http://192.168.1.10:5737/',
+            publicUrl: null,
+            capabilities: null,
+            cloudIdentityUrl: null,
+            provisionCode: null,
+            provisionUrl: null,
+            nodeId: 'node-1',
+            message: null,
+            errorCode: null,
+            canRetry: true,
+            canOpenSettings: true,
+          })),
+        },
+      },
+    })
+    useLoginStore.setState({
+      state: 'authenticated',
+      error: null,
+      storedAccount: {
+        displayName: 'Ganlu',
+        issuerUrl: 'http://192.168.1.10:5737/',
+        issuerLabel: 'Local',
+        providerUrl: 'http://192.168.1.10:5737/',
+        providerLabel: 'Local',
+        webId: 'http://192.168.1.10:5737/alice/profile/card#me',
+      },
+      customProviders: [],
+    })
+    createLinxSolidDatabaseMock.mockImplementation(async (_session, options) => {
+      await fetch('http://192.168.1.10:5737/alice/.data/bootstrap')
+      return {
+        getDialect: () => ({
+          getPodUrl: () => options.podUrl,
+        }),
+      }
+    })
+
+    render(
+      <SolidDatabaseProvider>
+        <Probe />
+      </SolidDatabaseProvider>,
+    )
+
+    await flushAsyncWork()
+
+    expect(screen.getByTestId('status').textContent).toBe('ready')
+    expect(createLinxSolidDatabaseMock).toHaveBeenCalledWith(sessionState.session, {
+      podUrl: 'http://192.168.1.10:5737/alice/',
+    })
+    expect((window as any).__SOLID_DB_POD_URL__).toBe('http://192.168.1.10:5737/alice/')
+    expect((window as any).__LINX_ACCESS_ROUTE__).toMatchObject({
+      canonicalBaseUrl: 'http://192.168.1.10:5737/',
+      canonicalPodUrl: 'http://192.168.1.10:5737/alice/',
+      accessBaseUrl: 'http://localhost:5737/',
+      accessPodUrl: 'http://localhost:5737/alice/',
+      kind: 'local',
+      rewriteEnabled: true,
+      rewriteDisabledReason: null,
+    })
+    expect(nativeFetch).toHaveBeenCalledWith('http://localhost:5737/alice/.data/bootstrap', undefined)
+  })
+
+  it('keeps https remote-ready spaces on canonical transport when local access would break browser fetch semantics', async () => {
+    const nativeFetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = input.toString()
+      if (url.startsWith('http://localhost:5737/api/linx/capabilities')) {
+        return jsonResponse({ contract: 'linx-local-onboarding/v1', baseUrl: 'https://node.example/' })
+      }
+      if (url.startsWith('https://node.example/api/linx/capabilities')) {
+        return jsonResponse({ contract: 'linx-local-onboarding/v1', baseUrl: 'https://node.example/' })
+      }
+      if (url.startsWith('https://node.example/alice/.data/bootstrap')) {
+        return new Response('ok')
+      }
+      throw new Error(`unexpected fetch: ${url}`)
+    }) as unknown as typeof fetch
+    vi.stubGlobal('fetch', nativeFetch)
+
+    Object.defineProperty(window, 'xpodDesktop', {
+      configurable: true,
+      value: {
+        localOnboarding: {
+          getSnapshot: vi.fn(async () => ({
+            state: 'ready',
+            mode: 'remote-ready',
+            localUrl: 'http://localhost:5737/',
+            baseUrl: 'https://node.example/',
+            publicUrl: 'https://node.example/',
+            capabilities: null,
+            cloudIdentityUrl: 'https://id.undefineds.co',
+            provisionCode: 'code',
+            provisionUrl: null,
+            nodeId: 'node-1',
+            message: null,
+            errorCode: null,
+            canRetry: true,
+            canOpenSettings: true,
+          })),
+        },
+      },
+    })
+    useLoginStore.setState({
+      state: 'authenticated',
+      error: null,
+      storedAccount: {
+        displayName: 'Ganlu',
+        issuerUrl: 'https://id.undefineds.co',
+        issuerLabel: 'Cloud',
+        providerUrl: 'https://node.example/',
+        providerLabel: 'Local',
+        webId: 'https://id.undefineds.co/alice/profile/card#me',
+      },
+      customProviders: [],
+    })
+    createLinxSolidDatabaseMock.mockImplementation(async (_session, options) => {
+      await fetch('https://node.example/alice/.data/bootstrap')
+      return {
+        getDialect: () => ({
+          getPodUrl: () => options.podUrl,
+        }),
+      }
+    })
+
+    render(
+      <SolidDatabaseProvider>
+        <Probe />
+      </SolidDatabaseProvider>,
+    )
+
+    await flushAsyncWork()
+
+    expect(createLinxSolidDatabaseMock).toHaveBeenCalledWith(sessionState.session, {
+      initTimeoutMs: 90_000,
+      podUrl: 'https://node.example/alice/',
+    })
+    expect((window as any).__SOLID_DB_POD_URL__).toBe('https://node.example/alice/')
+    expect((window as any).__LINX_ACCESS_ROUTE__).toMatchObject({
+      canonicalBaseUrl: 'https://node.example/',
+      canonicalPodUrl: 'https://node.example/alice/',
+      accessBaseUrl: 'http://localhost:5737/',
+      accessPodUrl: 'http://localhost:5737/alice/',
+      kind: 'local',
+      rewriteEnabled: false,
+      rewriteDisabledReason: 'https-canonical-to-http-access',
+    })
+    expect(nativeFetch).toHaveBeenCalledWith('https://node.example/alice/.data/bootstrap')
+  })
+
   it('does not override ordinary custom localhost providers without the Local label', async () => {
     const db = {}
     createLinxSolidDatabaseMock.mockResolvedValue(db)
@@ -356,3 +533,18 @@ describe('SolidDatabaseProvider', () => {
     expect((window as any).__SOLID_DB__).toBe(db)
   })
 })
+
+function jsonResponse(body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
+async function flushAsyncWork(): Promise<void> {
+  await act(async () => {
+    for (let index = 0; index < 8; index += 1) {
+      await Promise.resolve()
+    }
+  })
+}

@@ -29,9 +29,8 @@ test.describe('Real Local device-only auth flow', () => {
       await expect(page.getByRole('heading', { name: '选择空间' })).toBeVisible({ timeout: 15_000 })
 
       await page.getByRole('button', { name: /Local/ }).click()
-      await page.getByRole('button', { name: '继续登录' }).click()
 
-      await page.waitForURL(/127\.0\.0\.1|localhost|\/\.account\//, { timeout: 90_000 })
+      await waitForLocalAccountPage(page, 90_000)
 
       await registerOnLocal(page, runtime)
       await provisionAndAuthorizeLocal(page, runtime.username)
@@ -58,11 +57,44 @@ test.describe('Real Local device-only auth flow', () => {
       expect(normalizeUrl(debug.loginStore?.state?.storedAccount?.issuerUrl)).toBe(normalizeUrl(localOrigin))
       expect(normalizeUrl(debug.loginStore?.state?.storedAccount?.providerUrl)).toBe(normalizeUrl(localOrigin))
       expect(debug.dbPodUrl).toMatch(new RegExp(`^${escapeRegExp(normalizeUrl(localOrigin))}`))
+      expect(debug.accessRoute?.canonicalPodUrl).toBe(debug.dbPodUrl)
+      expect(debug.accessRoute?.kind).toBe('local')
+      expect(normalizeUrl(debug.accessRoute?.canonicalBaseUrl)).toBe(normalizeUrl(localOrigin))
+      expect(normalizeUrl(debug.accessRoute?.accessBaseUrl)).toBe(normalizeUrl(localOrigin))
+      expect(debug.accessRoute?.accessPodUrl).toBe(debug.dbPodUrl)
     } finally {
       await runtime.stop()
     }
   })
 })
+
+async function waitForLocalAccountPage(page: Page, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+
+  while (Date.now() < deadline) {
+    if (page.url().includes('/.account/')) {
+      return
+    }
+
+    const continueButton = page.getByRole('button', { name: '继续登录' })
+    if (await continueButton.isVisible({ timeout: 250 }).catch(() => false)) {
+      await continueButton.dispatchEvent('click')
+    }
+
+    const emailInput = page.getByPlaceholder(/Email(?: address)?/i)
+    const signUpButton = page.getByRole('button', { name: /^Sign up$/i })
+    if (
+      await emailInput.isVisible({ timeout: 500 }).catch(() => false)
+      || await signUpButton.isVisible({ timeout: 500 }).catch(() => false)
+    ) {
+      return
+    }
+
+    await page.waitForTimeout(250)
+  }
+
+  throw new Error(`timed out waiting for Local account page\n${JSON.stringify(await readPageState(page), null, 2)}`)
+}
 
 async function registerOnLocal(
   page: Page,
@@ -73,15 +105,10 @@ async function registerOnLocal(
     await signInGate.click()
   }
 
+  await ensureLocalRegisterPage(page)
+
   const emailInput = page.getByPlaceholder(/Email(?: address)?/i)
-  await emailInput.waitFor({ state: 'visible', timeout: 30_000 })
-
   const confirmPasswordInput = page.getByPlaceholder(/Confirm password/i)
-  if (!await confirmPasswordInput.isVisible().catch(() => false)) {
-    await page.getByRole('button', { name: /^Sign up$/i }).click()
-    await expect(confirmPasswordInput).toBeVisible({ timeout: 20_000 })
-  }
-
   const usernameInput = page.getByPlaceholder(/^Username$/i)
   if (await usernameInput.isVisible().catch(() => false)) {
     await usernameInput.fill(runtime.username)
@@ -92,8 +119,27 @@ async function registerOnLocal(
 
   await Promise.all([
     page.waitForURL(/\/\.account\/(account|oidc\/consent)\//, { timeout: 90_000 }),
-    page.getByRole('button', { name: /^Sign up$/i }).click(),
+    page.getByRole('button', { name: /^Sign up$/i }).click({ noWaitAfter: true }),
   ])
+}
+
+async function ensureLocalRegisterPage(page: Page): Promise<void> {
+  const confirmPasswordInput = page.getByPlaceholder(/Confirm password/i)
+
+  if (await confirmPasswordInput.isVisible().catch(() => false)) {
+    return
+  }
+
+  const signUpButton = page.getByRole('button', { name: /^Sign up$/i })
+  if (await signUpButton.isVisible({ timeout: 2_000 }).catch(() => false)) {
+    await signUpButton.click({ noWaitAfter: true })
+    if (await confirmPasswordInput.isVisible({ timeout: 10_000 }).catch(() => false)) {
+      return
+    }
+  }
+
+  await page.goto(new URL('/.account/login/password/register/', page.url()).toString())
+  await expect(confirmPasswordInput).toBeVisible({ timeout: 20_000 })
 }
 
 async function provisionAndAuthorizeLocal(page: Page, podName: string): Promise<void> {
@@ -187,6 +233,7 @@ async function readPageState(page: Page) {
     dbStatus: (window as any).__SOLID_DB_STATUS__ ?? null,
     dbError: (window as any).__SOLID_DB_ERROR__ ?? null,
     dbPodUrl: (window as any).__SOLID_DB_POD_URL__ ?? null,
+    accessRoute: (window as any).__LINX_ACCESS_ROUTE__ ?? null,
     loginStore: JSON.parse(window.localStorage.getItem('linx-login') ?? 'null'),
     localStorage: Object.fromEntries(
       Object.keys(window.localStorage)

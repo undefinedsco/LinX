@@ -80,6 +80,15 @@ export class LocalOnboardingController {
   private readonly fetchCapabilities: (baseUrl: string) => Promise<LocalOnboardingCapabilities>
   private state: PersistedLocalOnboardingState
   private snapshot: LocalOnboardingSnapshot
+  private lastStartError: {
+    mode: LocalOnboardingMode
+    providerId: string
+    localUrl: string | null
+    baseUrl: string | null
+    publicUrl: string | null
+    message: string
+    errorCode: string
+  } | null = null
 
   public constructor(options: LocalOnboardingControllerOptions) {
     const baseDir = ensureLinxLocalHome(options.stateDir).home
@@ -122,6 +131,24 @@ export class LocalOnboardingController {
       provisionCode: provisioning?.provisionCode ?? null,
       provisionUrl: provisioning?.provisionUrl ?? null,
       nodeId: provisioning?.nodeId ?? null,
+    }
+
+    const startError = this.matchesLastStartError(provider.id, mode, localUrl, baseUrl, publicUrl)
+      ? this.lastStartError
+      : null
+    if (!status.running && startError) {
+      return this.updateSnapshot({
+        state: 'error',
+        mode,
+        localUrl,
+        baseUrl,
+        ...bindingFields,
+        capabilities: null,
+        message: startError.message,
+        errorCode: startError.errorCode,
+        canRetry: true,
+        canOpenSettings: true,
+      })
     }
 
     if (!mode) {
@@ -184,7 +211,8 @@ export class LocalOnboardingController {
       })
     }
 
-    const capabilities = await this.fetchCapabilities(localUrl ?? baseUrl ?? provider.issuerUrl)
+    const localEntryUrl = localUrl ?? baseUrl ?? provider.issuerUrl
+    const capabilities = await this.fetchCapabilities(localEntryUrl)
 
     return this.updateSnapshot({
       state: 'ready',
@@ -255,6 +283,7 @@ export class LocalOnboardingController {
         throw new Error(`Provider '${provider.id}' is not a managed pod`)
       }
 
+      this.lastStartError = null
       await this.xpodManager.start({
         providerId: provider.id,
         dataDir: provider.managed.dataDir,
@@ -266,6 +295,15 @@ export class LocalOnboardingController {
 
       return this.refresh()
     } catch (error) {
+      this.lastStartError = {
+        mode,
+        providerId: provider.id,
+        localUrl,
+        baseUrl,
+        publicUrl,
+        message: error instanceof Error ? error.message : '启动 Local 失败。',
+        errorCode: 'LOCAL_START_FAILED',
+      }
       return this.updateSnapshot({
         state: 'error',
         mode,
@@ -371,8 +409,26 @@ export class LocalOnboardingController {
       return
     }
 
+    this.lastStartError = null
     this.state = next
     this.writeState(this.state)
+  }
+
+  private matchesLastStartError(
+    providerId: string,
+    mode: LocalOnboardingMode | null,
+    localUrl: string | null,
+    baseUrl: string | null,
+    publicUrl: string | null,
+  ): boolean {
+    return Boolean(
+      this.lastStartError
+      && this.lastStartError.providerId === providerId
+      && this.lastStartError.mode === mode
+      && urlsEqual(this.lastStartError.localUrl, localUrl)
+      && urlsEqual(this.lastStartError.baseUrl, baseUrl)
+      && urlsEqual(this.lastStartError.publicUrl, publicUrl),
+    )
   }
 
   private readState(): PersistedLocalOnboardingState {

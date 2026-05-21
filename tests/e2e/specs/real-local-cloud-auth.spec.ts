@@ -13,6 +13,11 @@ test.describe('Real Local -> Cloud auth flow', () => {
     test.setTimeout(240_000)
 
     const runtime = await startRealLocalCloudRuntime(page)
+    const podCreateRequests: Array<{
+      target: string
+      hasName: boolean
+      hasProvisionCode: boolean
+    }> = []
 
     page.on('console', (message) => {
       console.log(`[browser:${message.type()}] ${message.text()}`)
@@ -22,6 +27,32 @@ test.describe('Real Local -> Cloud auth flow', () => {
     })
     page.on('requestfailed', (request) => {
       console.error(`[requestfailed] ${request.method()} ${request.url()} ${request.failure()?.errorText ?? ''}`)
+    })
+    page.on('request', (request) => {
+      const method = request.method().toUpperCase()
+      if (method !== 'POST') {
+        return
+      }
+      const body = request.postData() ?? ''
+      if (!body.includes('"name"')) {
+        return
+      }
+      let parsed: any = null
+      try {
+        parsed = JSON.parse(body)
+      } catch {
+        // ignore non-JSON requests
+      }
+      if (!parsed?.name) {
+        return
+      }
+      const entry = {
+        target: request.url(),
+        hasName: true,
+        hasProvisionCode: Boolean(parsed?.settings?.provisionCode),
+      }
+      podCreateRequests.push(entry)
+      console.log(`[real-local-cloud] pod-create target=${entry.target} hasProvisionCode=${entry.hasProvisionCode}`)
     })
     page.on('response', (response) => {
       if (response.status() >= 400) {
@@ -40,12 +71,15 @@ test.describe('Real Local -> Cloud auth flow', () => {
       await expect(page.getByRole('heading', { name: '选择空间' })).toBeVisible({ timeout: 15_000 })
 
       await page.getByRole('button', { name: /Local/ }).click()
-      await expect(page.getByRole('button', { name: '继续登录' })).toBeVisible({ timeout: 180_000 })
-      await page.getByRole('button', { name: '继续登录' }).click()
-      await page.waitForURL(/id\.undefineds\.co|\/\.account\//, { timeout: 180_000 })
+      await waitForLocalReady(page, runtime, 180_000)
+      await page.waitForURL(/id\.undefineds\.co|\/\.account\//, { timeout: 30_000 })
 
       const registerResult = await registerOnProductionCloud(page, runtime)
       const consentResult = await provisionAndAuthorize(page, runtime)
+      expect(
+        podCreateRequests.some((request) => request.hasProvisionCode),
+        `Cloud pod create request must include provisionCode\n${JSON.stringify(podCreateRequests, null, 2)}`,
+      ).toBe(true)
 
       const landedOnChat = await waitForChatPath(page, 60_000)
       if (!landedOnChat) {
@@ -66,6 +100,13 @@ test.describe('Real Local -> Cloud auth flow', () => {
       expect(normalizeUrl(debug.loginStore?.state?.storedAccount?.providerUrl)).toBe(normalizeUrl(debug.snapshot.publicUrl))
       expect(debug.dbPodUrl).toMatch(new RegExp(`^${escapeRegExp(normalizeUrl(debug.snapshot.publicUrl))}`))
       expect(debug.dbPodUrl).not.toMatch(/^https:\/\/id\.undefineds\.co\//)
+      expect(debug.accessRoute?.canonicalPodUrl).toBe(debug.dbPodUrl)
+      expect(normalizeUrl(debug.accessRoute?.canonicalBaseUrl)).toBe(normalizeUrl(debug.snapshot.publicUrl))
+      expect(['local', 'lan', 'public', 'canonical']).toContain(debug.accessRoute?.kind)
+      expect(debug.accessRoute?.accessBaseUrl).toBeTruthy()
+      if (debug.accessRoute?.kind !== 'canonical') {
+        expect(normalizeUrl(debug.accessRoute?.accessBaseUrl)).not.toBe(normalizeUrl(debug.accessRoute?.canonicalBaseUrl))
+      }
       expect(
         Object.keys(debug.localStorage).some((key) => key.startsWith('solidClientAuthn:') || key.startsWith('solidClientAuthenticationUser:')),
       ).toBe(true)
@@ -187,6 +228,27 @@ async function ensureProvisionCodeOnCloudPage(
   ).toBe(provisionCode)
 }
 
+async function waitForLocalReady(
+  page: Page,
+  runtime: Awaited<ReturnType<typeof startRealLocalCloudRuntime>>,
+  timeoutMs: number,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+
+  while (Date.now() < deadline) {
+    const snapshot = await runtime.getSnapshot()
+    if (snapshot.state === 'ready') {
+      return
+    }
+    if (snapshot.state === 'error' || snapshot.state === 'repair_required') {
+      throw new Error(`Local failed before Cloud login\n${JSON.stringify(await collectDebugState(page, runtime), null, 2)}`)
+    }
+    await page.waitForTimeout(500)
+  }
+
+  throw new Error(`Local did not become ready\n${JSON.stringify(await collectDebugState(page, runtime), null, 2)}`)
+}
+
 async function waitForChatPath(page: Page, timeoutMs: number): Promise<boolean> {
   const deadline = Date.now() + timeoutMs
 
@@ -239,6 +301,7 @@ async function readPageState(page: Page) {
       dbStatus: (window as any).__SOLID_DB_STATUS__ ?? null,
       dbError: (window as any).__SOLID_DB_ERROR__ ?? null,
       dbPodUrl: (window as any).__SOLID_DB_POD_URL__ ?? null,
+      accessRoute: (window as any).__LINX_ACCESS_ROUTE__ ?? null,
       loginStore: JSON.parse(window.localStorage.getItem('linx-login') ?? 'null'),
       localStorage: Object.fromEntries(
         Object.keys(window.localStorage)

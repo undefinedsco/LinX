@@ -73,6 +73,25 @@ describe('storage-reconciliation', () => {
     })
   })
 
+  it('does not block a Cloud+Local login while Cloud profile still points at Cloud storage', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({ 'content-type': 'application/ld+json' }),
+      text: async () => JSON.stringify({
+        '@id': 'https://id.undefineds.co/alice/profile/card#me',
+        'solid:storage': { '@id': 'https://id.undefineds.co/alice/' },
+      }),
+    }))
+
+    await expect(
+      detectStorageConflict({
+        webId: 'https://id.undefineds.co/alice/profile/card#me',
+        providerUrl: 'http://localhost:5737',
+        providerPublicUrl: 'https://node-abc123.undefineds.co/',
+      }),
+    ).resolves.toBeNull()
+  })
+
   it('treats profiles without solid:storage as non-blocking for now', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,

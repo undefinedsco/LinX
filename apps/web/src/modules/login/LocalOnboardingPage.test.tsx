@@ -160,6 +160,43 @@ describe('LocalOnboardingPage', () => {
     })
   })
 
+  it('starts Cloud IDP sign-in with the Local public SP URL when remote-ready runtime is ready', async () => {
+    localOnboardingState.snapshot = {
+      state: 'ready',
+      mode: 'remote-ready',
+      localUrl: 'http://localhost:5737/',
+      baseUrl: 'https://pod.example.com/',
+      publicUrl: 'https://pod.example.com/',
+      capabilities: {
+        supported: true,
+        contract: 'linx-local-onboarding/v1',
+        baseUrl: 'https://pod.example.com/',
+        version: '0.2.2',
+      },
+      cloudIdentityUrl: 'https://id.undefineds.co',
+      provisionCode: 'pc-123',
+      provisionUrl: 'https://id.undefineds.co/.account/?provisionCode=pc-123',
+      nodeId: 'node-123',
+      message: 'Local 已准备好，可以继续登录。',
+      errorCode: null,
+      canRetry: true,
+      canOpenSettings: true,
+    } as any
+
+    render(<LocalOnboardingPage />)
+
+    await waitFor(() => {
+      expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', {
+        authorizationSurface: 'embedded',
+        providerUrl: 'https://pod.example.com/',
+        providerLabel: 'Local',
+        authorizationQuery: {
+          provisionCode: 'pc-123',
+        },
+      })
+    })
+  })
+
   it('auto starts Local sign-in after Local becomes ready', async () => {
     continueLocalMock.mockImplementation(async () => {
       localOnboardingState.snapshot = {

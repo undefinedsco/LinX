@@ -26,6 +26,17 @@ vi.mock('@/providers/solid-database-provider', () => ({
   }),
 }))
 
+vi.mock('@linx/stores/login', () => ({
+  useLoginStore: (selector: any) => selector({
+    storedAccount: {
+      issuerLabel: 'Cloud',
+      issuerUrl: 'https://id.undefineds.co',
+      providerLabel: 'Local',
+      providerUrl: 'https://node-0000.undefineds.co/',
+    },
+  }),
+}))
+
 function renderCard() {
   const client = new QueryClient({
     defaultOptions: {
@@ -50,6 +61,8 @@ describe('SelfProfileCard', () => {
 
     expect(await screen.findByText('LinX 用户')).toBeTruthy()
     expect(screen.getByText('alice')).toBeTruthy()
+    expect(screen.getByText('Local')).toBeTruthy()
+    expect(screen.getByText('node-0000.undefineds.co')).toBeTruthy()
     expect(screen.getAllByText('未填写').length).toBeGreaterThan(0)
   })
 

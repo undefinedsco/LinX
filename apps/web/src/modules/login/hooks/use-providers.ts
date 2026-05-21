@@ -15,6 +15,13 @@ interface ServiceStatusResponse {
     baseUrl?: string
     publicUrl?: string
   }
+  provisioning?: {
+    nodeId?: string
+    publicUrl?: string
+    provisionCode?: string
+    provisionUrl?: string
+    cloudIdentityUrl?: string
+  }
   setupCompleted?: boolean
 }
 
@@ -365,22 +372,33 @@ function buildServiceLocalSnapshot(
   const port = status.pod?.port ?? config?.port ?? 5737
   const localUrl = ensureTrailingSlash(`http://localhost:${port}`)
   const baseUrl = status.pod?.baseUrl ? ensureTrailingSlash(status.pod.baseUrl) : localUrl
-  const publicUrl = status.pod?.publicUrl ? ensureTrailingSlash(status.pod.publicUrl) : null
+  const publicUrl = status.provisioning?.publicUrl
+    ? ensureTrailingSlash(status.provisioning.publicUrl)
+    : status.pod?.publicUrl
+      ? ensureTrailingSlash(status.pod.publicUrl)
+      : null
+  const remoteReady = Boolean(
+    status.provisioning?.cloudIdentityUrl
+    && status.provisioning.provisionCode
+    && publicUrl,
+  )
   const running = Boolean(status.pod?.running)
 
   return {
     state: running ? 'ready' : 'idle',
-    mode: 'device-only',
+    mode: remoteReady ? 'remote-ready' : 'device-only',
     localUrl,
     baseUrl,
     publicUrl,
     capabilities: null,
-    cloudIdentityUrl: null,
-    provisionCode: null,
-    provisionUrl: null,
-    nodeId: null,
+    cloudIdentityUrl: status.provisioning?.cloudIdentityUrl ?? null,
+    provisionCode: status.provisioning?.provisionCode ?? null,
+    provisionUrl: status.provisioning?.provisionUrl ?? null,
+    nodeId: status.provisioning?.nodeId ?? null,
     message: running
-      ? 'Local 已准备好，接下来会打开本地 Local 登录页。'
+      ? remoteReady
+        ? 'Local 已准备好，接下来会通过 Cloud 登录并写入本地空间。'
+        : 'Local 已准备好，接下来会打开本地 Local 登录页。'
       : 'Local 尚未运行。你可以先启动 Local。',
     errorCode: null,
     canRetry: true,

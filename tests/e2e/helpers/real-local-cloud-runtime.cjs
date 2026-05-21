@@ -113,6 +113,10 @@ function resolveOptionalTunnelToken() {
   return trimmed || undefined
 }
 
+function ensureTrailingSlash(url) {
+  return url.endsWith('/') ? url : `${url}/`
+}
+
 function readFileIfExists(filePath) {
   try {
     return fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : ''
@@ -174,19 +178,21 @@ function installElectronStub(baseDir) {
   }
 }
 
-async function startRealLocalCloudRuntime(page) {
+async function startRealLocalCloudRuntime(page, overrides = {}) {
   return startRealLocalRuntime(page, {
     requirePublicDomain: true,
     startupMode: 'remote-ready',
     tmpPrefix: 'linx-prod-local-cloud-',
+    ...overrides,
   })
 }
 
-async function startRealLocalDeviceRuntime(page) {
+async function startRealLocalDeviceRuntime(page, overrides = {}) {
   return startRealLocalRuntime(page, {
     requirePublicDomain: false,
     startupMode: 'device-only',
     tmpPrefix: 'linx-prod-local-device-',
+    ...overrides,
   })
 }
 
@@ -196,6 +202,9 @@ async function startRealLocalRuntime(page, options) {
   // xpod uses the requested port as a gateway, then allocates CSS/API on the
   // next ports. Pick a free block so CSS does not collide with another process.
   const port = await resolveRuntimePort()
+  const configuredBaseUrl = typeof options.baseUrl === 'function'
+    ? options.baseUrl(port)
+    : options.baseUrl
   const publicDomain = options.requirePublicDomain ? resolveRequiredPublicDomain() : null
   const tunnelToken = options.requirePublicDomain ? resolveOptionalTunnelToken() : undefined
   const provider = {
@@ -220,6 +229,7 @@ async function startRealLocalRuntime(page, options) {
   let addEmbeddedAuthQuery
   let installXpodAuthEnhancer
   let pendingProvisionCode = null
+  const bridgeCalls = []
 
   try {
     const { xpodManagerPath, localOnboardingPath, xpodAuthEnhancerPath } = ensureDesktopModules()
@@ -259,6 +269,7 @@ async function startRealLocalRuntime(page, options) {
         getAll: () => ({
           CSS_EDITION: 'local',
           XPOD_MODE: 'local',
+          ...(configuredBaseUrl ? { CSS_BASE_URL: configuredBaseUrl } : {}),
         }),
       },
       providerManager,
@@ -307,6 +318,11 @@ async function startRealLocalRuntime(page, options) {
 
   await page.exposeBinding('__linxDesktopInvoke', async (_source, payload) => {
     const args = payload.args ?? []
+    bridgeCalls.push({
+      method: payload.method,
+      args: redactBridgeArgs(payload.method, args),
+      at: new Date().toISOString(),
+    })
     switch (payload.method) {
       case 'provider:list':
         return [provider]
@@ -388,7 +404,7 @@ async function startRealLocalRuntime(page, options) {
         const snapshot = await controller.refresh()
         return {
           snapshot,
-          provider,
+          provider: redactProvider(provider),
           logPaths,
           stdoutLog: readFileIfExists(logPaths.stdout),
           stderrLog: readFileIfExists(logPaths.stderr),
@@ -501,13 +517,17 @@ async function startRealLocalRuntime(page, options) {
     email: `linx-prod-${runId}@example.com`,
     password: 'TestIntegration123!',
     username: `linx${runId.replace(/[^a-z0-9]/gi, '').toLowerCase()}`.slice(0, 20),
+    port,
+    baseUrl: configuredBaseUrl ? ensureTrailingSlash(configuredBaseUrl) : null,
+    start: () => controller.continue(),
     getSnapshot: () => controller.refresh(),
     getDebugState: async () => {
       const logPaths = manager.getLogPaths()
       const snapshot = await controller.refresh()
       return {
         snapshot,
-        provider,
+        provider: redactProvider(provider),
+        bridgeCalls,
         logPaths,
         stdoutLog: readFileIfExists(logPaths.stdout),
         stderrLog: readFileIfExists(logPaths.stderr),
@@ -522,6 +542,32 @@ async function startRealLocalRuntime(page, options) {
       }
       fs.rmSync(tmpDir, { recursive: true, force: true })
     },
+  }
+}
+
+function redactBridgeArgs(method, args) {
+  if (!Array.isArray(args)) return []
+  if (!String(method).includes('xpod:start')) return args
+  return args.map((arg) => {
+    if (!arg || typeof arg !== 'object') return arg
+    return {
+      ...arg,
+      tunnelToken: arg.tunnelToken ? '<redacted>' : arg.tunnelToken,
+    }
+  })
+}
+
+function redactProvider(provider) {
+  if (!provider || typeof provider !== 'object') return provider
+  const managed = provider.managed && typeof provider.managed === 'object'
+    ? {
+        ...provider.managed,
+        tunnelToken: provider.managed.tunnelToken ? '<redacted>' : provider.managed.tunnelToken,
+      }
+    : provider.managed
+  return {
+    ...provider,
+    managed,
   }
 }
 

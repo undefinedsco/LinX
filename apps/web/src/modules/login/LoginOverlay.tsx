@@ -29,12 +29,14 @@ export function LoginOverlay() {
       onContinueLocalLogin={controller.continueLocalLogin}
       onSwitchAccount={controller.switchAccount}
       onConnect={controller.connect}
+      onCancelConnecting={controller.cancelConnecting}
       onAddProvider={controller.addProvider}
       onClearError={controller.clearError}
       onDismissStorageConflict={controller.dismissStorageConflict}
       onOpenCurrentSpacePodSetup={controller.openCurrentSpacePodSetup}
       localLoginStatus={controller.localLoginStatus}
       authWindowStatus={controller.authWindowStatus}
+      connectingProvider={controller.connectingProvider}
     />
   )
 }

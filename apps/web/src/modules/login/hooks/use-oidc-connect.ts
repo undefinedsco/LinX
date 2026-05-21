@@ -19,6 +19,7 @@ interface OidcConnectOptions {
   returnToMicroAppId?: Parameters<typeof ensurePendingPostLoginMicroAppId>[0]
   providerUrl?: string
   providerLabel?: string
+  issuerLabel?: string
   authorizationQuery?: Record<string, string | null | undefined>
 }
 
@@ -83,6 +84,7 @@ export function useOidcConnect() {
         returnToMicroAppId,
         providerUrl: options?.providerUrl ?? normalizedEntryUrl,
         providerLabel: options?.providerLabel,
+        authorizationQuery: normalizeAuthorizationQuery(options?.authorizationQuery),
       })
 
       const desktopApi = typeof window !== 'undefined' ? window.xpodDesktop : undefined
@@ -93,13 +95,17 @@ export function useOidcConnect() {
 
       const redirectHandler =
         authorizationSurface === 'embedded' && desktopApi?.auth?.openEmbeddedAuthorization
-          ? (url: string) => desktopApi.auth.openEmbeddedAuthorization(appendAuthorizationQuery(url, options?.authorizationQuery))
+          ? (url: string) => desktopApi.auth.openEmbeddedAuthorization(appendAuthorizationQuery(url, options?.authorizationQuery), {
+              providerLabel: options?.issuerLabel ?? options?.providerLabel,
+            })
           : authorizationSurface === 'external'
           ? desktopApi?.app?.openExternal
             ? (url: string) => desktopApi.app.openExternal(appendAuthorizationQuery(url, options?.authorizationQuery))
             : undefined
           : desktopApi?.auth?.openAuthorizationWindow
-          ? (url: string) => desktopApi.auth.openAuthorizationWindow(appendAuthorizationQuery(url, options?.authorizationQuery))
+          ? (url: string) => desktopApi.auth.openAuthorizationWindow(appendAuthorizationQuery(url, options?.authorizationQuery), {
+              providerLabel: options?.issuerLabel ?? options?.providerLabel,
+            })
           : desktopApi?.app?.openExternal
           ? (url: string) => desktopApi.app.openExternal(appendAuthorizationQuery(url, options?.authorizationQuery))
           : undefined
@@ -190,6 +196,18 @@ function createDeferred<T>() {
     reject = rejectPromise
   })
   return { promise, resolve, reject }
+}
+
+function normalizeAuthorizationQuery(
+  query?: Record<string, string | null | undefined>,
+): Record<string, string> | undefined {
+  if (!query) return undefined
+
+  const entries = Object.entries(query).filter(
+    ([key, value]) => key.length > 0 && typeof value === 'string' && value.length > 0,
+  ) as Array<[string, string]>
+  if (entries.length === 0) return undefined
+  return Object.fromEntries(entries)
 }
 
 function appendAuthorizationQuery(

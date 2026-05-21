@@ -12,6 +12,39 @@ import { ensureLinxLocalHome } from './local-home';
 const OFFICIAL_CLOUD_IDENTITY_ORIGIN = 'https://id.undefineds.co';
 const OFFICIAL_CLOUD_API_ORIGIN = 'https://api.undefineds.co';
 const MANAGED_CLOUD_REGISTRATION_TIMEOUT_MS = 30000;
+const CANONICAL_OIDC_ISSUER_ENV_KEY = 'oidcIssuer';
+
+function readOidcIssuerEnv(env: NodeJS.ProcessEnv | Record<string, string | undefined>): string | undefined {
+  const canonical = env[CANONICAL_OIDC_ISSUER_ENV_KEY]?.trim();
+  return canonical || undefined;
+}
+
+function isOidcIssuerPollutionKey(key: string): boolean {
+  if (key === CANONICAL_OIDC_ISSUER_ENV_KEY) return false;
+  const normalized = key.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return normalized.includes('OIDCISSUER') ||
+    normalized.includes('IDPURL') ||
+    normalized.includes('IDPJWKSURL') ||
+    normalized.includes('IDENTITYPROVIDERURL') ||
+    normalized.includes('IDENTITYPROVIDERJWKSURL');
+}
+
+function removeOidcIssuerEnv(env: NodeJS.ProcessEnv | Record<string, string | undefined>): void {
+  for (const key of Object.keys(env)) {
+    if (key === CANONICAL_OIDC_ISSUER_ENV_KEY) delete env[key];
+    if (isOidcIssuerPollutionKey(key)) {
+      delete env[key];
+    }
+  }
+}
+
+function normalizeOidcIssuerEnv(env: NodeJS.ProcessEnv | Record<string, string | undefined>): void {
+  const oidcIssuer = readOidcIssuerEnv(env);
+  removeOidcIssuerEnv(env);
+  if (oidcIssuer) {
+    env[CANONICAL_OIDC_ISSUER_ENV_KEY] = oidcIssuer;
+  }
+}
 
 export interface XpodStartOptions {
   providerId: string;
@@ -499,7 +532,29 @@ export class XpodManager {
       return this.ensureTrailingSlash(`https://${options.domain.value}`);
     }
 
+    const localBaseUrl = this.resolveConfiguredLocalBaseUrl();
+    if (localBaseUrl) {
+      return localBaseUrl;
+    }
+
     return this.ensureTrailingSlash(`http://localhost:${options.port}`);
+  }
+
+  private resolveConfiguredLocalBaseUrl(): string | null {
+    const configured = this.configManager.getAll().CSS_BASE_URL?.trim();
+    if (!configured) {
+      return null;
+    }
+
+    try {
+      const parsed = new URL(configured);
+      if (parsed.protocol !== 'http:') {
+        return null;
+      }
+      return this.ensureTrailingSlash(parsed.toString());
+    } catch {
+      return null;
+    }
   }
 
   private buildLaunchSpec(
@@ -515,8 +570,6 @@ export class XpodManager {
       envPath,
       '--port',
       String(port),
-      '--host',
-      '127.0.0.1',
     ];
 
     switch (target.kind) {
@@ -562,10 +615,14 @@ export class XpodManager {
           provisioning,
         )
       : (runtimeEnvOrOptions as Record<string, string>)
+    const inheritedEnv: NodeJS.ProcessEnv = { ...process.env };
+    removeOidcIssuerEnv(inheritedEnv);
+
     const env: NodeJS.ProcessEnv = {
-      ...process.env,
+      ...inheritedEnv,
       ...runtimeEnv,
     };
+    normalizeOidcIssuerEnv(env);
 
     const nodePathEntries = new Set<string>();
     const existingNodePath = env.NODE_PATH;
@@ -593,10 +650,6 @@ export class XpodManager {
     if (nodePathEntries.size > 0) {
       env.NODE_PATH = Array.from(nodePathEntries).join(path.delimiter);
     }
-
-    delete env.CSS_IDP_URL;
-    delete env.XPOD_OIDC_ISSUER;
-    delete env.idpUrl;
 
     return env;
   }
@@ -731,7 +784,7 @@ export class XpodManager {
 
     if (this.requiresManagedCloudRegistration(options)) {
       const managedCloudIdentityOrigin = normalizeUrl(
-        env.CSS_OIDC_ISSUER
+        readOidcIssuerEnv(env)
         || OFFICIAL_CLOUD_IDENTITY_ORIGIN,
       );
       const managedCloudApiOrigin = normalizeUrl(
@@ -741,14 +794,9 @@ export class XpodManager {
 
       env.oidcIssuer = managedCloudIdentityOrigin;
       env.XPOD_CLOUD_API_ENDPOINT = managedCloudApiOrigin;
-      delete env.CSS_IDP_URL;
-      delete env.CSS_OIDC_ISSUER;
-      delete env.XPOD_OIDC_ISSUER;
+      normalizeOidcIssuerEnv(env);
     } else {
-      delete env.CSS_IDP_URL;
-      delete env.CSS_OIDC_ISSUER;
-      delete env.XPOD_OIDC_ISSUER;
-      delete env.oidcIssuer;
+      removeOidcIssuerEnv(env);
       delete env.XPOD_CLOUD_API_ENDPOINT;
     }
 
@@ -786,7 +834,7 @@ export class XpodManager {
   ): Promise<XpodManagedCloudRegistration> {
     const env = this.configManager.getAll();
     const cloudIdentityUrl = normalizeUrl(
-      env.CSS_OIDC_ISSUER
+      readOidcIssuerEnv(env)
       || OFFICIAL_CLOUD_IDENTITY_ORIGIN,
     );
     const managedCloudApiOrigin = normalizeUrl(

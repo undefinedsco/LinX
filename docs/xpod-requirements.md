@@ -29,6 +29,8 @@ LinX 会为本地 xpod 写入基础配置：
 | `CSS_SPARQL_ENDPOINT` | SPARQL 存储 | `sqlite:/path/to/quadstore.sqlite` |
 | `CSS_IDENTITY_DB_URL` | 身份数据库 | `sqlite:/path/to/identity.sqlite` |
 
+`CSS_BASE_URL` 是 xpod 生成 WebID、issuer、storage URL 的 canonical 入口。需要局域网访问时，把 `CSS_BASE_URL` 设成局域网 URL，监听开放由 LinX/xpod 内部推导。
+
 ### 2. Local 直连
 
 当用户提供公网域名且本机可被外网直连时：

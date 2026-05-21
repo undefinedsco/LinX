@@ -101,8 +101,8 @@ export interface LocalOnboardingSnapshot {
 export interface AuthAPI {
   prepareLoopbackRedirect: () => Promise<string>;
   getEmbeddedAuthorizationState: () => Promise<{ open: boolean; reason: 'opened' | 'completed' | 'dismissed'; ready: boolean }>;
-  openAuthorizationWindow: (url: string) => Promise<void>;
-  openEmbeddedAuthorization: (url: string) => Promise<void>;
+  openAuthorizationWindow: (url: string, options?: { providerLabel?: string }) => Promise<void>;
+  openEmbeddedAuthorization: (url: string, options?: { providerLabel?: string }) => Promise<void>;
   closeEmbeddedAuthorization: () => Promise<void>;
   consumePendingRedirect: () => Promise<string | null>;
   onAuthorizationWindowState: (
@@ -221,10 +221,10 @@ contextBridge.exposeInMainWorld('xpodDesktop', {
       ipcRenderer.invoke('auth:prepareLoopbackRedirect'),
     getEmbeddedAuthorizationState: (): Promise<{ open: boolean; reason: 'opened' | 'completed' | 'dismissed'; ready: boolean }> =>
       ipcRenderer.invoke('auth:getEmbeddedAuthorizationState'),
-    openAuthorizationWindow: (url: string): Promise<void> =>
-      ipcRenderer.invoke('auth:openAuthorizationWindow', url),
-    openEmbeddedAuthorization: (url: string): Promise<void> =>
-      ipcRenderer.invoke('auth:openEmbeddedAuthorization', url),
+    openAuthorizationWindow: (url: string, options?: { providerLabel?: string }): Promise<void> =>
+      ipcRenderer.invoke('auth:openAuthorizationWindow', url, options),
+    openEmbeddedAuthorization: (url: string, options?: { providerLabel?: string }): Promise<void> =>
+      ipcRenderer.invoke('auth:openEmbeddedAuthorization', url, options),
     closeEmbeddedAuthorization: (): Promise<void> =>
       ipcRenderer.invoke('auth:closeEmbeddedAuthorization'),
     consumePendingRedirect: (): Promise<string | null> =>

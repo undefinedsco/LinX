@@ -12,6 +12,7 @@ export interface PendingLoginAttempt {
   returnToMicroAppId: MicroAppId
   providerUrl?: string
   providerLabel?: string
+  authorizationQuery?: Record<string, string>
 }
 
 export interface PendingCallbackError {
@@ -162,6 +163,10 @@ export function getPendingLoginAttempt(): PendingLoginAttempt | null {
       if (typeof parsed.providerLabel === 'string') {
         attempt.providerLabel = parsed.providerLabel
       }
+      const authorizationQuery = sanitizeAuthorizationQuery(parsed.authorizationQuery)
+      if (authorizationQuery) {
+        attempt.authorizationQuery = authorizationQuery
+      }
       return {
         ...attempt,
       }
@@ -176,7 +181,22 @@ export function getPendingLoginAttempt(): PendingLoginAttempt | null {
 
 export function setPendingLoginAttempt(attempt: PendingLoginAttempt) {
   if (typeof window === 'undefined') return
-  window.sessionStorage.setItem(PENDING_LOGIN_ATTEMPT_KEY, JSON.stringify(attempt))
+  const persisted: PendingLoginAttempt = {
+    issuerUrl: attempt.issuerUrl,
+    authorizationSurface: attempt.authorizationSurface,
+    returnToMicroAppId: attempt.returnToMicroAppId,
+  }
+  if (attempt.providerUrl) {
+    persisted.providerUrl = attempt.providerUrl
+  }
+  if (attempt.providerLabel) {
+    persisted.providerLabel = attempt.providerLabel
+  }
+  const authorizationQuery = sanitizeAuthorizationQuery(attempt.authorizationQuery)
+  if (authorizationQuery) {
+    persisted.authorizationQuery = authorizationQuery
+  }
+  window.sessionStorage.setItem(PENDING_LOGIN_ATTEMPT_KEY, JSON.stringify(persisted))
 }
 
 export function consumePendingLoginAttempt(): PendingLoginAttempt | null {
@@ -188,6 +208,16 @@ export function consumePendingLoginAttempt(): PendingLoginAttempt | null {
 export function clearPendingLoginAttempt() {
   if (typeof window === 'undefined') return
   window.sessionStorage.removeItem(PENDING_LOGIN_ATTEMPT_KEY)
+}
+
+function sanitizeAuthorizationQuery(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+
+  const entries = Object.entries(value as Record<string, unknown>).filter(
+    ([key, entryValue]) => key.length > 0 && typeof entryValue === 'string' && entryValue.length > 0,
+  ) as Array<[string, string]>
+  if (entries.length === 0) return undefined
+  return Object.fromEntries(entries)
 }
 
 export function capturePendingCallbackError(url?: string): PendingCallbackError | null {

@@ -59,17 +59,33 @@ describe('login-utils post-login target helpers', () => {
       issuerUrl: 'https://cloud.example.com',
       authorizationSurface: 'window',
       returnToMicroAppId: 'contacts',
+      providerUrl: 'https://node.example.com',
+      providerLabel: 'Local',
+      authorizationQuery: {
+        provisionCode: 'pc-123',
+        ignored: '',
+      },
     })
 
     expect(getPendingLoginAttempt()).toEqual({
       issuerUrl: 'https://cloud.example.com',
       authorizationSurface: 'window',
       returnToMicroAppId: 'contacts',
+      providerUrl: 'https://node.example.com',
+      providerLabel: 'Local',
+      authorizationQuery: {
+        provisionCode: 'pc-123',
+      },
     })
     expect(consumePendingLoginAttempt()).toEqual({
       issuerUrl: 'https://cloud.example.com',
       authorizationSurface: 'window',
       returnToMicroAppId: 'contacts',
+      providerUrl: 'https://node.example.com',
+      providerLabel: 'Local',
+      authorizationQuery: {
+        provisionCode: 'pc-123',
+      },
     })
     expect(getPendingLoginAttempt()).toBeNull()
   })

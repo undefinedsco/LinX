@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { LoginModal } from './LoginModal'
@@ -37,6 +37,7 @@ function createProps(overrides: Partial<LoginModalProps> = {}): LoginModalProps 
     onSwitchAccount: vi.fn(),
     onContinueStoredAccount: vi.fn(),
     onConnect: vi.fn(),
+    onCancelConnecting: vi.fn(),
     onAddProvider: vi.fn(),
     onClearError: vi.fn(),
     onDismissStorageConflict: vi.fn(),
@@ -50,6 +51,7 @@ function createProps(overrides: Partial<LoginModalProps> = {}): LoginModalProps 
       reason: 'dismissed',
       ready: false,
     },
+    connectingProvider: null,
     localOnboarding: null,
     ...overrides,
   }
@@ -152,7 +154,7 @@ describe('LoginModal', () => {
   it('shows provider selection when idle without stored account', () => {
     const props = createProps()
 
-    render(<LoginModal {...props} />)
+    const { container } = render(<LoginModal {...props} />)
 
     expect(screen.getByText('选择空间')).toBeTruthy()
     expect(screen.getByText('Cloud / Local')).toBeTruthy()
@@ -161,6 +163,9 @@ describe('LoginModal', () => {
     expect(screen.getByText('首次')).toBeTruthy()
     expect(screen.getAllByText('登录').length).toBeGreaterThan(0)
     expect(screen.getByText('官方云端空间')).toBeTruthy()
+    expect(container.querySelector('[data-provider-source="cloud"] img')).toBeTruthy()
+    expect(container.querySelector('[data-provider-source="local"] img')).toBeTruthy()
+    expect(container.querySelector('[data-provider-source="local"] [data-provider-local-marker]')).toBeTruthy()
 
     fireEvent.click(screen.getByText('Cloud'))
     expect(props.onConnect).toHaveBeenCalledWith('https://cloud.example.com')
@@ -230,7 +235,7 @@ describe('LoginModal', () => {
     expect(screen.getByText('设置')).toBeTruthy()
   })
 
-  it('continues Local login from the ready onboarding view', () => {
+  it('automatically continues Local login from the ready onboarding view', async () => {
     const props = createProps({
       view: 'local',
       localOnboarding: {
@@ -253,8 +258,9 @@ describe('LoginModal', () => {
 
     render(<LoginModal {...props} />)
 
-    fireEvent.click(screen.getByRole('button', { name: '继续登录' }))
-    expect(props.onContinueLocalLogin).toHaveBeenCalledTimes(1)
+    await waitFor(() => {
+      expect(props.onContinueLocalLogin).toHaveBeenCalledTimes(1)
+    })
     expect(props.onBackFromLocal).not.toHaveBeenCalled()
   })
 
@@ -269,9 +275,35 @@ describe('LoginModal', () => {
     expect(screen.getByText('正在连接')).toBeTruthy()
   })
 
+  it('shows the selected provider while connecting and can return to provider selection', () => {
+    const props = createProps({
+      state: 'connecting',
+      connectingProvider: {
+        issuerLabel: 'Cloud',
+        issuerUrl: 'https://id.undefineds.co',
+        providerLabel: 'Local',
+        providerUrl: 'https://node-0000.undefineds.co/',
+      },
+    })
+    render(<LoginModal {...props} />)
+
+    expect(screen.getByText('正在使用 Cloud')).toBeTruthy()
+    expect(screen.getByText('Local')).toBeTruthy()
+    expect(screen.getByText('node-0000.undefineds.co')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: '换一个空间' }))
+    expect(props.onCancelConnecting).toHaveBeenCalledTimes(1)
+  })
+
   it('tells the user to finish login in the auth window while embedded auth is open', () => {
     const props = createProps({
       state: 'connecting',
+      connectingProvider: {
+        issuerLabel: 'Cloud',
+        issuerUrl: 'https://id.undefineds.co',
+        providerLabel: 'Cloud',
+        providerUrl: 'https://id.undefineds.co',
+      },
       authWindowStatus: {
         open: true,
         reason: 'opened',
@@ -279,8 +311,8 @@ describe('LoginModal', () => {
       },
     })
     render(<LoginModal {...props} />)
-    expect(screen.getByText('等待登录完成')).toBeTruthy()
-    expect(screen.getByText('请在登录窗口完成登录')).toBeTruthy()
+    expect(screen.getByText('等待 Cloud 登录完成')).toBeTruthy()
+    expect(screen.getByText('请在登录窗口完成')).toBeTruthy()
   })
 
   it('shows verification copy after the auth window completes', () => {

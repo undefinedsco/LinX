@@ -109,7 +109,7 @@ export function getProviderStatusBadge(provider: LoginProviderOption): ProviderS
         case 'repair_required':
           return { label: '需设置', tone: 'warning' }
         case 'ready':
-          return { label: '已就绪', tone: 'success' }
+          return { label: '就绪', tone: 'success' }
         case 'error':
           return { label: '需修复', tone: 'danger' }
       }
@@ -119,7 +119,7 @@ export function getProviderStatusBadge(provider: LoginProviderOption): ProviderS
       case 'starting':
         return { label: '准备中', tone: 'primary' }
       case 'running':
-        return { label: '已就绪', tone: 'success' }
+        return { label: '就绪', tone: 'success' }
       case 'error':
         return { label: '需修复', tone: 'danger' }
       case 'stopped':

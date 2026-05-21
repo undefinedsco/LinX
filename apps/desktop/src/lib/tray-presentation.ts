@@ -4,6 +4,7 @@ export type TrayTone = 'running' | 'starting' | 'stopped' | 'error';
 
 export interface TrayPresentation {
   tone: TrayTone;
+  title: string;
   tooltip: string;
   statusLabel: string;
 }
@@ -16,26 +17,30 @@ export function getTrayPresentation(status: XpodStatus): TrayPresentation {
     case 'running':
       return {
         tone,
-        tooltip: `LinX · Pod 运行中${portText}`,
-        statusLabel: `Pod 运行中${portText}`,
+        title: 'xpod',
+        tooltip: `xpod · 运行${portText}`,
+        statusLabel: `xpod 运行${portText}`,
       };
     case 'starting':
       return {
         tone,
-        tooltip: `LinX · Pod 启动中${portText}`,
-        statusLabel: `Pod 启动中${portText}`,
+        title: 'xpod',
+        tooltip: `xpod · 启动${portText}`,
+        statusLabel: `xpod 启动${portText}`,
       };
     case 'error':
       return {
         tone,
-        tooltip: 'LinX · Pod 异常',
-        statusLabel: 'Pod 异常',
+        title: 'xpod',
+        tooltip: 'xpod · 异常',
+        statusLabel: 'xpod 异常',
       };
     default:
       return {
         tone,
-        tooltip: 'LinX · Pod 已停止',
-        statusLabel: 'Pod 已停止',
+        title: 'xpod',
+        tooltip: 'xpod · 停止',
+        statusLabel: 'xpod 停止',
       };
   }
 }

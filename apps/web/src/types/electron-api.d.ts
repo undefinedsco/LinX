@@ -161,8 +161,8 @@ export interface AppAPI {
 export interface AuthAPI {
   prepareLoopbackRedirect: () => Promise<string>
   getEmbeddedAuthorizationState: () => Promise<{ open: boolean; reason: 'opened' | 'completed' | 'dismissed'; ready: boolean }>
-  openAuthorizationWindow: (url: string) => Promise<void>
-  openEmbeddedAuthorization: (url: string) => Promise<void>
+  openAuthorizationWindow: (url: string, options?: { providerLabel?: string }) => Promise<void>
+  openEmbeddedAuthorization: (url: string, options?: { providerLabel?: string }) => Promise<void>
   closeEmbeddedAuthorization: () => Promise<void>
   consumePendingRedirect: () => Promise<string | null>
   onAuthorizationWindowState: (

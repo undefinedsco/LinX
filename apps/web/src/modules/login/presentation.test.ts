@@ -154,7 +154,7 @@ describe('getProviderStatusBadge', () => {
     })
 
     expect(getProviderStatusBadge(provider)).toEqual({
-      label: '已就绪',
+      label: '就绪',
       tone: 'success',
     })
   })

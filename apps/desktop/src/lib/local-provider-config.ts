@@ -15,8 +15,8 @@ export function resolveManagedDomainFromEnv(env: Record<string, string>): {
   }
 
   try {
-    const { hostname } = new URL(baseUrl);
-    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    const { hostname, protocol } = new URL(baseUrl);
+    if (protocol !== 'https:') {
       return { type: 'none' };
     }
     return { type: 'custom', value: hostname };
