@@ -82,6 +82,10 @@ export interface LinxWelcomeResult {
   created: boolean
 }
 
+export interface EnsureLinxWelcomeOptions {
+  force?: boolean
+}
+
 type SecretaryMetadata = {
   linx?: {
     role?: string
@@ -877,12 +881,26 @@ export const chatOps = {
    * xpod remains generic storage/runtime infrastructure; LinX owns the
    * product-specific default assistant and records completion in LinX settings.
    */
-  async ensureLinxWelcome(): Promise<LinxWelcomeResult | null> {
+  async ensureLinxWelcome(options: EnsureLinxWelcomeOptions = {}): Promise<LinxWelcomeResult | null> {
+    if (options.force) {
+      linxWelcomeInFlight = null
+    }
+
     if (!linxWelcomeInFlight) {
-      linxWelcomeInFlight = ensureLinxWelcomeInternal()
-        .finally(() => {
-          linxWelcomeInFlight = null
-        })
+      const inFlight = ensureLinxWelcomeInternal()
+      linxWelcomeInFlight = inFlight
+      void inFlight.then(
+        () => {
+          if (linxWelcomeInFlight === inFlight) {
+            linxWelcomeInFlight = null
+          }
+        },
+        () => {
+          if (linxWelcomeInFlight === inFlight) {
+            linxWelcomeInFlight = null
+          }
+        },
+      )
     }
 
     return linxWelcomeInFlight
@@ -1780,7 +1798,7 @@ export function useChatMutations() {
   })
 
   const ensureLinxWelcome = useMutation({
-    mutationFn: () => chatOps.ensureLinxWelcome(),
+    mutationFn: (options?: EnsureLinxWelcomeOptions) => chatOps.ensureLinxWelcome(options),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: QUERY_KEYS.chats })
     },

@@ -23,10 +23,11 @@ export function AppRuntime() {
       onError={(error) => console.warn('🔴 SessionProvider error (ignored):', error)}
     >
       <SolidDatabaseProvider>
-        <PodCollectionsBootstrap />
-        <TelemetryProvider>
-          <RouterProvider router={router} />
-        </TelemetryProvider>
+        <PodCollectionsBootstrap>
+          <TelemetryProvider>
+            <RouterProvider router={router} />
+          </TelemetryProvider>
+        </PodCollectionsBootstrap>
       </SolidDatabaseProvider>
     </SolidSessionProvider>
   )

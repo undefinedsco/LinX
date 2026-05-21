@@ -16,7 +16,7 @@
  * - 右键: 上下文菜单 (置顶、静音、标记未读、删除)
  * - 悬停: 显示更多操作按钮
  */
-import { useMemo, useState, useCallback, useEffect, useRef } from 'react'
+import { useMemo, useState, useCallback } from 'react'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { useChatStore } from '../store'
 import {
@@ -585,18 +585,17 @@ export interface ChatListPaneProps extends MicroAppPaneProps {}
 
 export function ChatListPane(_props: ChatListPaneProps) {
   // Initialize chat collections with database
-  const { isReady } = useChatInit()
+  useChatInit()
   const { toast } = useToast()
   
   const search = useChatStore((state) => state.search)
   const setSearch = useChatStore((state) => state.setSearch)
   const selectedChatId = useChatStore((state) => state.selectedChatId)
   const selectChat = useChatStore((state) => state.selectChat)
-  const selectThread = useChatStore((state) => state.selectThread)
   const openAddDialog = useChatStore((state) => state.openAddDialog)
 
   // Use new collection-based hooks
-  const { data: rawChats, isLoading: isChatsLoading, isError: isChatsError } = useChatList(search ? { search } : undefined)
+  const { data: rawChats, isLoading: isChatsLoading } = useChatList(search ? { search } : undefined)
   const runtimeMode = isRuntimeSessionMode()
   const { data: threads = [] } = useThreadIndex({ enabled: runtimeMode })
   const { data: inboxItems = [] } = useInboxItems('all')
@@ -608,32 +607,6 @@ export function ChatListPane(_props: ChatListPaneProps) {
   })
 
   const mutations = useChatMutations()
-  const didRequestWelcomeRef = useRef(false)
-
-  useEffect(() => {
-    if (search.trim()) return
-    if (isChatsLoading) return
-    if (!isReady) return
-    const loadedChats = rawChats ?? []
-    if (!rawChats && !isChatsError) return
-    if (loadedChats.some(isLinxDefaultSecretaryChat)) return
-    if (didRequestWelcomeRef.current || mutations.ensureLinxWelcome.isPending) return
-
-    didRequestWelcomeRef.current = true
-    mutations.ensureLinxWelcome.mutate(undefined, {
-      onSuccess: (result) => {
-        if (!result) return
-        selectChat(result.chatId)
-        if (result.threadId) {
-          selectThread(result.threadId)
-        }
-      },
-      onError: (error) => {
-        console.error('Prepare LinX welcome failed:', error)
-        didRequestWelcomeRef.current = false
-      },
-    })
-  }, [isChatsError, isChatsLoading, isReady, mutations.ensureLinxWelcome, rawChats, search, selectChat, selectThread])
 
   // 格式化 Chat 列表 - 添加标星排序
   const chats: ChatItemData[] = useMemo(() => {
@@ -822,11 +795,6 @@ export function ChatListPane(_props: ChatListPaneProps) {
           <div className="flex items-center gap-2 text-sm text-muted-foreground px-4 py-8 justify-center animate-fade-in">
             <Loader2 className="w-4 h-4 animate-spin" />
             正在加载...
-          </div>
-        ) : chats.length === 0 && mutations.ensureLinxWelcome.isPending ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground px-4 py-8 justify-center animate-fade-in">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            正在准备 AI Secretary...
           </div>
         ) : chats.length === 0 ? (
           <div className="px-4 py-12 text-center text-sm text-muted-foreground animate-fade-in">
