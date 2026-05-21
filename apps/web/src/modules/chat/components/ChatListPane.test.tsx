@@ -195,7 +195,7 @@ describe('ChatListPane', () => {
       expect(screen.getByText('正在加载...')).toBeInTheDocument()
     })
 
-    it('prepares AI Secretary when chat list is empty', async () => {
+    it('does not prepare AI Secretary from the chat list when chat list is empty', () => {
       const mockSelectChat = vi.fn()
       const mockSelectThread = vi.fn()
       mockUseChatStore.mockImplementation((selector: (state: unknown) => unknown) => {
@@ -210,20 +210,16 @@ describe('ChatListPane', () => {
         error: null,
         fetchStatus: 'idle',
       })
-      mockMutations.ensureLinxWelcome.mutate.mockImplementation((_input, options) => {
-        options?.onSuccess?.({ chatId: 'secretary-chat', threadId: 'secretary-thread', created: true })
-      })
 
       render(<ChatListPane theme="light" />, { wrapper: createWrapper() })
 
-      await waitFor(() => {
-        expect(mockMutations.ensureLinxWelcome.mutate).toHaveBeenCalled()
-      })
-      expect(mockSelectChat).toHaveBeenCalledWith('secretary-chat')
-      expect(mockSelectThread).toHaveBeenCalledWith('secretary-thread')
+      expect(screen.getByText('暂无聊天')).toBeInTheDocument()
+      expect(mockMutations.ensureLinxWelcome.mutate).not.toHaveBeenCalled()
+      expect(mockSelectChat).not.toHaveBeenCalled()
+      expect(mockSelectThread).not.toHaveBeenCalled()
     })
 
-    it('prepares AI Secretary for existing accounts without it', async () => {
+    it('does not prepare AI Secretary from the chat list for existing accounts without it', () => {
       mockUseChatList.mockReturnValue({
         data: [
           {
@@ -240,9 +236,8 @@ describe('ChatListPane', () => {
 
       render(<ChatListPane theme="light" />, { wrapper: createWrapper() })
 
-      await waitFor(() => {
-        expect(mockMutations.ensureLinxWelcome.mutate).toHaveBeenCalled()
-      })
+      expect(screen.getByText('Existing Chat')).toBeInTheDocument()
+      expect(mockMutations.ensureLinxWelcome.mutate).not.toHaveBeenCalled()
     })
 
     it('does not prepare AI Secretary when it already exists', async () => {

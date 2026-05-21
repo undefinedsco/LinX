@@ -1,5 +1,5 @@
-import { act, render } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PodCollectionsBootstrap } from './pod-collections-bootstrap'
 
 const useSolidDatabaseMock = vi.fn()
@@ -9,6 +9,13 @@ const initializeFavoriteCollectionsMock = vi.fn()
 const initializeInboxCollectionsMock = vi.fn()
 const initializeModelCollectionsMock = vi.fn()
 const ensureLinxWelcomeMock = vi.fn()
+const invalidateQueriesMock = vi.fn()
+const selectChatMock = vi.fn()
+const selectThreadMock = vi.fn()
+let chatStoreState = {
+  selectedChatId: null as string | null,
+  selectedThreadId: null as string | null,
+}
 
 vi.mock('./solid-database-provider', () => ({
   useSolidDatabase: () => useSolidDatabaseMock(),
@@ -18,6 +25,22 @@ vi.mock('@/modules/chat/collections', () => ({
   initializeChatCollections: (...args: unknown[]) => initializeChatCollectionsMock(...args),
   chatOps: {
     ensureLinxWelcome: (...args: unknown[]) => ensureLinxWelcomeMock(...args),
+  },
+}))
+
+vi.mock('./query-provider', () => ({
+  queryClient: {
+    invalidateQueries: (...args: unknown[]) => invalidateQueriesMock(...args),
+  },
+}))
+
+vi.mock('@/modules/chat/store', () => ({
+  useChatStore: {
+    getState: () => ({
+      ...chatStoreState,
+      selectChat: selectChatMock,
+      selectThread: selectThreadMock,
+    }),
   },
 }))
 
@@ -42,6 +65,15 @@ describe('PodCollectionsBootstrap', () => {
     vi.clearAllMocks()
     useSolidDatabaseMock.mockReturnValue({ db: null })
     ensureLinxWelcomeMock.mockResolvedValue(null)
+    invalidateQueriesMock.mockResolvedValue(undefined)
+    chatStoreState = {
+      selectedChatId: null,
+      selectedThreadId: null,
+    }
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('initializes collection database getters without preparing welcome when db is absent', async () => {
@@ -59,11 +91,16 @@ describe('PodCollectionsBootstrap', () => {
     expect(ensureLinxWelcomeMock).not.toHaveBeenCalled()
   })
 
-  it('prepares the LinX welcome chat after collections receive a ready database', async () => {
+  it('prepares the LinX welcome chat before rendering children after collections receive a ready database', async () => {
     const db = { id: 'db' }
+    let resolveWelcome: ((value: { chatId: string; threadId: string; created: boolean }) => void) | undefined
+    const welcomePromise = new Promise<{ chatId: string; threadId: string; created: boolean }>((resolve) => {
+      resolveWelcome = resolve
+    })
     useSolidDatabaseMock.mockReturnValue({ db })
+    ensureLinxWelcomeMock.mockReturnValue(welcomePromise)
 
-    render(<PodCollectionsBootstrap />)
+    render(<PodCollectionsBootstrap><div>ready app</div></PodCollectionsBootstrap>)
 
     await act(async () => {
       await Promise.resolve()
@@ -75,5 +112,78 @@ describe('PodCollectionsBootstrap', () => {
     expect(initializeInboxCollectionsMock).toHaveBeenCalledWith(db)
     expect(initializeModelCollectionsMock).toHaveBeenCalledWith(db)
     expect(ensureLinxWelcomeMock).toHaveBeenCalledTimes(1)
+    expect(ensureLinxWelcomeMock).toHaveBeenCalledWith({ force: false })
+    expect(screen.getByText('正在初始化 AI Secretary')).toBeTruthy()
+    expect(screen.queryByText('ready app')).toBeNull()
+
+    await act(async () => {
+      resolveWelcome?.({ chatId: 'secretary-chat', threadId: 'secretary-thread', created: true })
+      await welcomePromise
+    })
+
+    expect(selectChatMock).toHaveBeenCalledWith('secretary-chat')
+    expect(selectThreadMock).toHaveBeenCalledWith('secretary-thread')
+    expect(invalidateQueriesMock).toHaveBeenCalledWith({ queryKey: ['chats'] })
+    expect(invalidateQueriesMock).toHaveBeenCalledWith({ queryKey: ['chats', 'secretary-chat', 'threads'] })
+    expect(screen.getByText('ready app')).toBeTruthy()
+  })
+
+  it('does not steal selection when another chat is already selected', async () => {
+    const db = { id: 'db' }
+    chatStoreState = {
+      selectedChatId: 'user-chat',
+      selectedThreadId: 'user-thread',
+    }
+    useSolidDatabaseMock.mockReturnValue({ db })
+    ensureLinxWelcomeMock.mockResolvedValue({ chatId: 'secretary-chat', threadId: 'secretary-thread', created: false })
+
+    render(<PodCollectionsBootstrap><div>ready app</div></PodCollectionsBootstrap>)
+
+    await waitFor(() => {
+      expect(screen.getByText('ready app')).toBeTruthy()
+    })
+
+    expect(selectChatMock).not.toHaveBeenCalled()
+    expect(selectThreadMock).not.toHaveBeenCalled()
+  })
+
+  it('shows a retryable error instead of spinning forever when LinX welcome preparation fails', async () => {
+    const db = { id: 'db' }
+    useSolidDatabaseMock.mockReturnValue({ db })
+    ensureLinxWelcomeMock
+      .mockRejectedValueOnce(new Error('Pod write failed'))
+      .mockResolvedValueOnce({ chatId: 'secretary-chat', threadId: 'secretary-thread', created: true })
+
+    render(<PodCollectionsBootstrap><div>ready app</div></PodCollectionsBootstrap>)
+
+    expect(await screen.findByText('AI Secretary 初始化失败')).toBeTruthy()
+    expect(screen.getByText('Pod write failed')).toBeTruthy()
+    expect(screen.queryByText('ready app')).toBeNull()
+
+    fireEvent.click(screen.getByText('重试'))
+
+    await waitFor(() => {
+      expect(screen.getByText('ready app')).toBeTruthy()
+    })
+
+    expect(ensureLinxWelcomeMock).toHaveBeenCalledTimes(2)
+    expect(ensureLinxWelcomeMock).toHaveBeenLastCalledWith({ force: true })
+  })
+
+  it('times out a stuck LinX welcome preparation so the user can retry', async () => {
+    vi.useFakeTimers()
+    const db = { id: 'db' }
+    useSolidDatabaseMock.mockReturnValue({ db })
+    ensureLinxWelcomeMock.mockReturnValue(new Promise(() => {}))
+
+    render(<PodCollectionsBootstrap><div>ready app</div></PodCollectionsBootstrap>)
+
+    await act(async () => {
+      vi.advanceTimersByTime(45_000)
+      await Promise.resolve()
+    })
+
+    expect(screen.getByText('AI Secretary 初始化失败')).toBeTruthy()
+    expect(screen.getByText('AI Secretary 初始化超时，请检查 Pod 连接后重试。')).toBeTruthy()
   })
 })
