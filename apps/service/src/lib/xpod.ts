@@ -231,6 +231,23 @@ export function buildEmbeddedCssArgs(options: {
   ]
 }
 
+export function assertXpodLoginRuntimeCapabilities(packageDir: string): void {
+  const hasScopedPickWebIdHandler =
+    fs.existsSync(path.join(packageDir, 'src', 'identity', 'oidc', 'ScopedPickWebIdHandler.ts')) ||
+    fs.existsSync(path.join(packageDir, 'dist', 'identity', 'oidc', 'ScopedPickWebIdHandler.js'))
+  const hasScopedPickerConfig = fs.existsSync(path.join(packageDir, 'config', 'xpod.base.json'))
+
+  if (hasScopedPickWebIdHandler && hasScopedPickerConfig) {
+    return
+  }
+
+  throw new Error([
+    `xpod runtime at ${packageDir} does not include scoped WebID selection.`,
+    'Cloud IDP + Local SP login would be able to expose Pods from the wrong storage provider.',
+    'Install an @undefineds.co/xpod version that contains ScopedPickWebIdHandler before enabling oidcIssuer.',
+  ].join('\n'))
+}
+
 export function getBindHost(baseUrl: string): string {
   try {
     const hostname = new URL(baseUrl).hostname
@@ -518,6 +535,9 @@ export class XpodModule {
     }
 
     const runtime = this.resolveRuntime()
+    if (resolveExternalOidcIssuer(env)) {
+      assertXpodLoginRuntimeCapabilities(runtime.packageDir)
+    }
 
     try {
       await this.startEmbedded(runtime, envPath, env)

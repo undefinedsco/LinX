@@ -156,6 +156,24 @@ test('service xpod token endpoint follows external oidcIssuer for Cloud+Local', 
   )
 })
 
+test('service xpod rejects Cloud+Local runtimes without scoped WebID selection', (t) => {
+  const { assertXpodLoginRuntimeCapabilities } = loadXpodWithStubs(t)
+  const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'linx-xpod-runtime-capability-'))
+
+  assert.throws(
+    () => assertXpodLoginRuntimeCapabilities(runtimeRoot),
+    /does not include scoped WebID selection/,
+  )
+
+  const handlerPath = path.join(runtimeRoot, 'dist', 'identity', 'oidc')
+  fs.mkdirSync(handlerPath, { recursive: true })
+  fs.writeFileSync(path.join(handlerPath, 'ScopedPickWebIdHandler.js'), '', 'utf-8')
+  fs.mkdirSync(path.join(runtimeRoot, 'config'), { recursive: true })
+  fs.writeFileSync(path.join(runtimeRoot, 'config', 'xpod.base.json'), '{}', 'utf-8')
+
+  assert.doesNotThrow(() => assertXpodLoginRuntimeCapabilities(runtimeRoot))
+})
+
 test('service embedded CSS args do not pass oidcIssuer as unsupported CSS CLI arg', (t) => {
   const { buildEmbeddedCssArgs } = loadXpodWithStubs(t)
 
