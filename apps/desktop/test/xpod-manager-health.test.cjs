@@ -207,7 +207,7 @@ test('XpodManager stops a stale managed runtime when dev now prefers sibling xpo
   }), 'utf8')
 
   let killedPid = null
-  manager.resolvePreferredLaunchTarget = () => ({
+  manager.resolveComparableLaunchTarget = () => ({
     kind: 'dev-source',
     rootDir: '/Users/ganlu/develop/xpod-cli',
     entryPath: '/Users/ganlu/develop/xpod-cli/src/main.ts',
@@ -221,6 +221,53 @@ test('XpodManager stops a stale managed runtime when dev now prefers sibling xpo
   const status = await manager.getStatus()
 
   assert.equal(killedPid, 424242)
+  assert.equal(status.running, false)
+  assert.equal(status.status, 'stopped')
+  assert.equal(fs.existsSync(statePath), false)
+})
+
+test('XpodManager stops an old dev-source runtime from a different xpod checkout', { concurrency: false }, async (t) => {
+  installElectronStub(t)
+  const manager = createManager({
+    config: {
+      CSS_PORT: '5737',
+      CSS_BASE_URL: 'https://node-0000.undefineds.co/',
+    },
+    providerManager: {
+      getManagedPods: () => [],
+      updateManagedStatus: () => {},
+    },
+  })
+
+  const statePath = path.join(path.dirname(manager.getLogPaths().directory), 'xpod-service.json')
+  fs.writeFileSync(statePath, JSON.stringify({
+    providerId: 'local',
+    dataDir: '/tmp/local-pod',
+    port: 5737,
+    mode: 'local',
+    baseUrl: 'https://node-0000.undefineds.co/',
+    localUrl: 'http://localhost:5737/',
+    startedAt: Date.now(),
+    pid: 40670,
+    launchKind: 'dev-source',
+    runtimeId: 'dev-source|/Users/ganlu/develop/xpod-cli|/Users/ganlu/develop/xpod-cli/src/main.ts|',
+  }), 'utf8')
+
+  let killedPid = null
+  manager.resolveComparableLaunchTarget = () => ({
+    kind: 'dev-source',
+    rootDir: '/Users/ganlu/develop/xpod',
+    entryPath: '/Users/ganlu/develop/xpod/src/main.ts',
+  })
+  manager.isProcessAlive = () => true
+  manager.killProcess = async (pid) => {
+    killedPid = pid
+  }
+  manager.waitForShutdown = async () => {}
+
+  const status = await manager.getStatus()
+
+  assert.equal(killedPid, 40670)
   assert.equal(status.running, false)
   assert.equal(status.status, 'stopped')
   assert.equal(fs.existsSync(statePath), false)

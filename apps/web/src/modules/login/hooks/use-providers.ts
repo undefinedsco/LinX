@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLoginStore, getAllProviders } from '@linx/stores/login'
 import type { LoginProviderOption } from '../types'
-import type { LocalOnboardingSnapshot, SolidProvider } from '@/types/electron-api'
+import type { LocalOnboardingMode, LocalOnboardingSnapshot, SolidProvider } from '@/types/electron-api'
 
-const LOCAL_POD_LABEL = '本地空间'
+const CLOUD_IDENTITY_URL = 'https://id.undefineds.co'
+const LOCAL_POD_LABEL = 'Local'
+const STANDALONE_POD_LABEL = 'Standalone'
 const REFRESH_INTERVAL = 4000
 const SERVICE_LOCAL_POLL_INTERVAL = 500
 const SERVICE_LOCAL_POLL_ATTEMPTS = 20
@@ -143,6 +145,16 @@ export function useProviders() {
     const cloud = getAllProviders(customProviders).map<LoginProviderOption>((p) => ({
       ...p,
       source: p.isDefault ? 'cloud' : 'custom',
+      oidcProvider: {
+        kind: p.isDefault ? 'cloud' : 'custom',
+        url: normalizeUrl(p.url),
+        label: p.isDefault ? 'Cloud' : p.label,
+      },
+      storageProvider: {
+        kind: p.isDefault ? 'cloud' : 'custom',
+        url: normalizeUrl(p.url),
+        label: p.isDefault ? 'Cloud' : p.label,
+      },
     }))
 
     // Local providers
@@ -152,57 +164,61 @@ export function useProviders() {
       const runtimeStatus = resolveRuntimeStatus(localOnboarding)
       if (managed.length > 0) {
         for (const p of managed) {
-          local.push({
-            id: p.id,
-            url: normalizeUrl(p.issuerUrl),
-            label: p.name || LOCAL_POD_LABEL,
-            source: 'local',
-            runtime: {
-              kind: 'local-pod',
+          local.push(
+            createLocalLoginProvider({
+              id: `${p.id}:local`,
               providerId: p.id,
-              status: runtimeStatus,
-              canStart: !['running', 'starting'].includes(runtimeStatus),
-              canCreate: localOnboarding?.state === 'mode_required',
-              onboarding: localOnboarding
-                ? {
-                    state: localOnboarding.state,
-                    mode: localOnboarding.mode,
-                    message: localOnboarding.message,
-                  }
-                : undefined,
-            },
-          })
+              source: 'local',
+              label: LOCAL_POD_LABEL,
+              storageUrl: resolveLocalStorageUrl(localOnboarding, p.issuerUrl, 'local'),
+              runtimeStatus,
+              localOnboarding,
+            }),
+            createLocalLoginProvider({
+              id: `${p.id}:standalone`,
+              providerId: p.id,
+              source: 'standalone',
+              label: STANDALONE_POD_LABEL,
+              storageUrl: resolveLocalStorageUrl(localOnboarding, p.issuerUrl, 'standalone'),
+              runtimeStatus,
+              localOnboarding,
+            }),
+          )
         }
       } else {
         const fallbackUrl = localOnboarding?.localUrl ?? localOnboarding?.baseUrl ?? 'http://localhost'
-        local.push({
-          id: 'desktop-local',
-          url: normalizeUrl(fallbackUrl),
-          label: LOCAL_POD_LABEL,
-          source: 'local',
-          runtime: {
-            kind: 'local-pod',
-            status: runtimeStatus,
-            canStart: !['running', 'starting'].includes(runtimeStatus),
-            canCreate: localOnboarding?.state === 'mode_required',
-            onboarding: localOnboarding
-              ? {
-                  state: localOnboarding.state,
-                  mode: localOnboarding.mode,
-                  message: localOnboarding.message,
-                }
-              : undefined,
-          },
-        })
+        local.push(
+          createLocalLoginProvider({
+            id: 'desktop-local',
+            source: 'local',
+            label: LOCAL_POD_LABEL,
+            storageUrl: resolveLocalStorageUrl(localOnboarding, fallbackUrl, 'local'),
+            runtimeStatus,
+            localOnboarding,
+          }),
+          createLocalLoginProvider({
+            id: 'desktop-standalone',
+            source: 'standalone',
+            label: STANDALONE_POD_LABEL,
+            storageUrl: resolveLocalStorageUrl(localOnboarding, fallbackUrl, 'standalone'),
+            runtimeStatus,
+            localOnboarding,
+          }),
+        )
       }
     } else if (isServiceMode) {
       const runtimeStatus = resolveRuntimeStatus(localOnboarding)
       const fallbackUrl = localOnboarding?.localUrl ?? localOnboarding?.baseUrl ?? 'http://localhost:5737'
+      const source = localOnboarding?.mode === 'local' ? 'local' : 'standalone'
       local.push({
-        id: 'service-local',
-        url: normalizeUrl(fallbackUrl),
-        label: LOCAL_POD_LABEL,
-        source: 'local',
+        ...createLocalLoginProvider({
+          id: source === 'local' ? 'service-local' : 'service-standalone',
+          source,
+          label: source === 'local' ? LOCAL_POD_LABEL : STANDALONE_POD_LABEL,
+          storageUrl: resolveLocalStorageUrl(localOnboarding, fallbackUrl, source),
+          runtimeStatus,
+          localOnboarding,
+        }),
         runtime: {
           kind: 'local-pod',
           status: runtimeStatus,
@@ -225,7 +241,7 @@ export function useProviders() {
 
     const seen = new Set<string>()
     return [...primary, ...local, ...custom].filter((p) => {
-      const key = normalizeUrl(p.url)
+      const key = p.id
       if (seen.has(key)) return false
       seen.add(key)
       return true
@@ -249,12 +265,11 @@ export function useProviders() {
     [removeCustomProvider],
   )
 
-  const startLocal = useCallback(async () => {
+  const startLocal = useCallback(async (mode: LocalOnboardingMode) => {
     if (desktopApi?.localOnboarding) {
       const current = await desktopApi.localOnboarding.getSnapshot()
-      const mode = current.mode ?? 'device-only'
 
-      if (!current.mode) {
+      if (current.mode !== mode) {
         const chosen = await desktopApi.localOnboarding.chooseMode(mode)
         publishLocalOnboarding(chosen)
       }
@@ -278,9 +293,9 @@ export function useProviders() {
           },
           errorCode: null,
         }
-      : {
+        : {
           state: 'starting',
-          mode: 'device-only',
+          mode,
           localUrl: 'http://localhost:5737/',
           baseUrl: 'http://localhost:5737/',
           publicUrl: null,
@@ -337,6 +352,62 @@ export function useProviders() {
     localOnboarding,
     startLocal,
   }
+}
+
+function createLocalLoginProvider(input: {
+  id: string
+  providerId?: string
+  source: Extract<LoginProviderOption['source'], 'local' | 'standalone'>
+  label: string
+  storageUrl: string
+  runtimeStatus: NonNullable<LoginProviderOption['runtime']>['status']
+  localOnboarding: LocalOnboardingSnapshot | null
+}): LoginProviderOption {
+  const isStandalone = input.source === 'standalone'
+  const normalizedStorageUrl = normalizeUrl(input.storageUrl)
+
+  return {
+    id: input.id,
+    url: normalizedStorageUrl,
+    label: input.label,
+    source: input.source,
+    oidcProvider: {
+      kind: isStandalone ? 'local' : 'cloud',
+      url: isStandalone ? normalizedStorageUrl : CLOUD_IDENTITY_URL,
+      label: isStandalone ? STANDALONE_POD_LABEL : 'Cloud',
+    },
+    storageProvider: {
+      kind: 'local',
+      url: normalizedStorageUrl,
+      label: input.label,
+    },
+    runtime: {
+      kind: 'local-pod',
+      providerId: input.providerId,
+      status: input.runtimeStatus,
+      canStart: !['running', 'starting'].includes(input.runtimeStatus),
+      canCreate: input.localOnboarding?.state === 'mode_required',
+      onboarding: input.localOnboarding
+        ? {
+            state: input.localOnboarding.state,
+            mode: input.localOnboarding.mode,
+            message: input.localOnboarding.message,
+          }
+        : undefined,
+    },
+  }
+}
+
+function resolveLocalStorageUrl(
+  snapshot: LocalOnboardingSnapshot | null,
+  fallbackUrl: string,
+  source: Extract<LoginProviderOption['source'], 'local' | 'standalone'>,
+): string {
+  if (source === 'standalone') {
+    return snapshot?.localUrl ?? snapshot?.baseUrl ?? fallbackUrl
+  }
+
+  return snapshot?.publicUrl ?? snapshot?.baseUrl ?? snapshot?.localUrl ?? fallbackUrl
 }
 
 function areSolidProvidersEqual(current: SolidProvider[], next: SolidProvider[]): boolean {
@@ -397,7 +468,7 @@ function buildServiceLocalSnapshot(
 
   return {
     state: running ? 'ready' : 'idle',
-    mode: remoteReady ? 'remote-ready' : 'device-only',
+    mode: remoteReady ? 'local' : 'standalone',
     localUrl,
     baseUrl,
     publicUrl,

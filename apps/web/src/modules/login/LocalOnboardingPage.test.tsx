@@ -95,12 +95,12 @@ describe('LocalOnboardingPage', () => {
     } as any
   })
 
-  it('starts Local with device-only mode by default', async () => {
+  it('starts Local by default', async () => {
     render(<LocalOnboardingPage />)
 
     expect(screen.getByText('正在启动 Local…')).toBeTruthy()
     await waitFor(() => {
-      expect(chooseModeMock).toHaveBeenCalledWith('device-only')
+      expect(chooseModeMock).toHaveBeenCalledWith('local')
       expect(continueLocalMock).toHaveBeenCalledTimes(1)
     })
   })
@@ -108,7 +108,7 @@ describe('LocalOnboardingPage', () => {
   it('auto starts Local when a mode has already been selected', async () => {
     localOnboardingState.snapshot = {
       state: 'idle',
-      mode: 'device-only',
+      mode: 'standalone',
       localUrl: 'http://localhost:5737/',
       baseUrl: 'http://localhost:5737/',
       capabilities: null,
@@ -129,7 +129,7 @@ describe('LocalOnboardingPage', () => {
   it('starts standard Local sign-in when runtime is ready', async () => {
     localOnboardingState.snapshot = {
       state: 'ready',
-      mode: 'device-only',
+      mode: 'standalone',
       localUrl: 'http://localhost:5737/',
       baseUrl: 'http://localhost:5737/',
       publicUrl: null,
@@ -154,16 +154,16 @@ describe('LocalOnboardingPage', () => {
     await waitFor(() => {
       expect(connectMock).toHaveBeenCalledWith('http://localhost:5737/', {
         authorizationSurface: 'embedded',
-        providerUrl: 'http://localhost:5737/',
-        providerLabel: 'Local',
+        storageProviderUrl: 'http://localhost:5737/',
+        storageProviderLabel: 'Local',
       })
     })
   })
 
-  it('starts Cloud IDP sign-in with the Local public SP URL when remote-ready runtime is ready', async () => {
+  it('starts Cloud IDP sign-in with the Local public SP URL when Local runtime is ready', async () => {
     localOnboardingState.snapshot = {
       state: 'ready',
-      mode: 'remote-ready',
+      mode: 'local',
       localUrl: 'http://localhost:5737/',
       baseUrl: 'https://pod.example.com/',
       publicUrl: 'https://pod.example.com/',
@@ -188,8 +188,8 @@ describe('LocalOnboardingPage', () => {
     await waitFor(() => {
       expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', {
         authorizationSurface: 'embedded',
-        providerUrl: 'https://pod.example.com/',
-        providerLabel: 'Local',
+        storageProviderUrl: 'https://pod.example.com/',
+        storageProviderLabel: 'Local',
         authorizationQuery: {
           provisionCode: 'pc-123',
         },
@@ -201,7 +201,7 @@ describe('LocalOnboardingPage', () => {
     continueLocalMock.mockImplementation(async () => {
       localOnboardingState.snapshot = {
         state: 'ready',
-        mode: 'device-only',
+        mode: 'standalone',
         localUrl: 'http://localhost:5737/',
         baseUrl: 'http://localhost:5737/',
         publicUrl: null,
@@ -233,8 +233,8 @@ describe('LocalOnboardingPage', () => {
     await waitFor(() => {
       expect(connectMock).toHaveBeenCalledWith('http://localhost:5737/', {
         authorizationSurface: 'embedded',
-        providerUrl: 'http://localhost:5737/',
-        providerLabel: 'Local',
+        storageProviderUrl: 'http://localhost:5737/',
+        storageProviderLabel: 'Local',
       })
     })
   })
@@ -252,7 +252,7 @@ describe('LocalOnboardingPage', () => {
   it('opens Local settings from the repair state', async () => {
     localOnboardingState.snapshot = {
       state: 'repair_required',
-      mode: 'remote-ready',
+      mode: 'local',
       localUrl: 'http://localhost:5737/',
       baseUrl: 'http://localhost:5737/',
       publicUrl: null,
@@ -270,7 +270,7 @@ describe('LocalOnboardingPage', () => {
     render(<LocalOnboardingPage />)
 
     expect(screen.getByText('还差一步让其他设备接入 Local')).toBeTruthy()
-    expect(screen.getByText('如果你现在只是想先开始使用，也可以直接切回“只给这台设备用”，不需要额外设置。')).toBeTruthy()
+    expect(screen.getByText('如果只想账号和数据都留在本机，请回到空间选择并选择 Standalone。')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: '去完成 Local 设置' }))
     expect(openAdvancedSettingsMock).toHaveBeenCalledTimes(1)
@@ -280,7 +280,7 @@ describe('LocalOnboardingPage', () => {
     openAdvancedSettingsMock.mockRejectedValueOnce(new Error('xpod dashboard unavailable'))
     localOnboardingState.snapshot = {
       state: 'repair_required',
-      mode: 'remote-ready',
+      mode: 'local',
       localUrl: 'http://localhost:5737/',
       baseUrl: 'http://localhost:5737/',
       publicUrl: null,
@@ -304,10 +304,10 @@ describe('LocalOnboardingPage', () => {
     })
   })
 
-  it('lets the user downgrade remote-ready to device-only from the repair state', async () => {
+  it('does not silently downgrade Local to Standalone from the repair state', async () => {
     localOnboardingState.snapshot = {
       state: 'repair_required',
-      mode: 'remote-ready',
+      mode: 'local',
       localUrl: 'http://localhost:5737/',
       baseUrl: 'http://localhost:5737/',
       publicUrl: null,
@@ -324,11 +324,15 @@ describe('LocalOnboardingPage', () => {
 
     render(<LocalOnboardingPage />)
 
-    fireEvent.click(screen.getByRole('button', { name: '改为只给这台设备用' }))
+    expect(screen.queryByRole('button', { name: '改为只给这台设备用' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '返回空间选择' }))
 
     await waitFor(() => {
-      expect(chooseModeMock).toHaveBeenCalledWith('device-only')
-      expect(continueLocalMock).toHaveBeenCalledTimes(1)
+      expect(chooseModeMock).not.toHaveBeenCalled()
+      expect(navigateMock).toHaveBeenCalledWith({
+        to: '/$microAppId',
+        params: { microAppId: 'chat' },
+      })
     })
   })
 

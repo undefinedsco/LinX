@@ -57,7 +57,7 @@ export interface XpodStartOptions {
   providerId: string;
   dataDir: string;
   port: number;
-  startupMode?: 'device-only' | 'remote-ready';
+  mode: 'local' | 'standalone';
   domain?: {
     type: 'none' | 'custom';
     value?: string;
@@ -112,6 +112,7 @@ interface XpodServiceState {
   providerId: string;
   dataDir: string;
   port: number;
+  mode: XpodStartOptions['mode'];
   baseUrl: string;
   localUrl: string;
   startedAt: number;
@@ -300,6 +301,7 @@ export class XpodManager {
         startedAt: Date.now(),
         pid: child.pid,
         launchKind: target.kind,
+        runtimeId: this.buildRuntimeId(target),
         logPath: stdoutPath,
         errorLogPath: stderrPath,
       });
@@ -382,6 +384,7 @@ export class XpodManager {
         providerId: provider.id,
         dataDir: provider.managed.dataDir,
         port: provider.managed.port,
+        mode: state?.provisioning ? 'local' : 'standalone',
         domain: provider.managed.domain,
         tunnelToken: provider.managed.tunnelToken,
       });
@@ -604,6 +607,7 @@ export class XpodManager {
       providerId: options.providerId,
       dataDir: path.resolve(options.dataDir),
       port: options.port,
+      mode: options.mode,
       baseUrl,
       localUrl: this.ensureTrailingSlash(`http://localhost:${options.port}`),
       provisioning: undefined,
@@ -915,7 +919,9 @@ export class XpodManager {
       delete env.XPOD_PROVISION_URL;
     }
 
-    const effectiveTunnelToken = options.tunnelToken || provisioning?.tunnelToken;
+    const effectiveTunnelToken = options.mode === 'local'
+      ? options.tunnelToken || provisioning?.tunnelToken
+      : undefined;
     if (effectiveTunnelToken) {
       env.CLOUDFLARE_TUNNEL_TOKEN = effectiveTunnelToken;
     } else {
@@ -927,8 +933,7 @@ export class XpodManager {
   }
 
   private requiresManagedCloudRegistration(options: XpodStartOptions): boolean {
-    return options.startupMode === 'remote-ready'
-      || (options.domain?.type ?? 'none') !== 'none';
+    return options.mode === 'local';
   }
 
   private async ensureManagedCloudRegistration(
@@ -1206,12 +1211,13 @@ export class XpodManager {
   }
 
   private matchesDesiredState(
-    current: Pick<XpodServiceState, 'providerId' | 'dataDir' | 'port' | 'baseUrl'>,
-    desired: Pick<XpodServiceState, 'providerId' | 'dataDir' | 'port' | 'baseUrl'>
+    current: Pick<XpodServiceState, 'providerId' | 'dataDir' | 'port' | 'mode' | 'baseUrl'>,
+    desired: Pick<XpodServiceState, 'providerId' | 'dataDir' | 'port' | 'mode' | 'baseUrl'>
   ): boolean {
     return current.providerId === desired.providerId
       && current.dataDir === desired.dataDir
       && current.port === desired.port
+      && current.mode === desired.mode
       && current.baseUrl === desired.baseUrl;
   }
 
@@ -1270,8 +1276,8 @@ export class XpodManager {
   }
 
   private shouldReplaceManagedRuntime(
-    state: Pick<XpodServiceState, 'launchKind'>,
-    preferredTarget: Pick<XpodLaunchTarget, 'kind'>,
+    state: Pick<XpodServiceState, 'launchKind' | 'runtimeId'>,
+    preferredTarget: XpodLaunchTarget,
   ): boolean {
     if (app.isPackaged) {
       return false;
@@ -1281,7 +1287,21 @@ export class XpodManager {
       return false;
     }
 
-    return state.launchKind !== preferredTarget.kind;
+    if (state.launchKind !== preferredTarget.kind) {
+      return true;
+    }
+
+    const preferredRuntimeId = this.buildRuntimeId(preferredTarget);
+    return state.runtimeId !== preferredRuntimeId;
+  }
+
+  private buildRuntimeId(target: XpodLaunchTarget): string {
+    return [
+      target.kind,
+      path.resolve(target.rootDir),
+      path.resolve(target.entryPath),
+      target.runtimeVersion ?? '',
+    ].join('|');
   }
 
   private async disposeManagedRuntime(state: Pick<XpodServiceState, 'providerId' | 'pid' | 'localUrl'>): Promise<void> {
@@ -1350,6 +1370,7 @@ function toStartOptions(provider: ReturnType<ProviderManager['getManagedPods']>[
     providerId: provider.id,
     dataDir: provider.managed.dataDir,
     port: provider.managed.port,
+    mode: provider.managed.domain?.type === 'custom' ? 'local' : 'standalone',
     domain: provider.managed.domain,
     tunnelToken: provider.managed.tunnelToken,
   };

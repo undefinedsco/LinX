@@ -25,6 +25,7 @@ export function LoginOverlay() {
       hasRestorableSession={controller.hasRestorableSession}
       providers={controller.providers}
       localOnboarding={controller.localOnboarding}
+      localProviderSource={controller.localProviderSource}
       onContinueStoredAccount={controller.continueStoredAccount}
       onBackFromLocal={controller.backFromLocal}
       onContinueLocalLogin={controller.continueLocalLogin}

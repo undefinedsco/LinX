@@ -119,13 +119,13 @@ function formatProviderHost(url?: string): string {
   }
 }
 
-function isLocalSpace(providerLabel?: string, providerUrl?: string): boolean {
-  const label = providerLabel?.trim().toLowerCase();
+function isLocalSpace(storageProviderLabel?: string, storageProviderUrl?: string): boolean {
+  const label = storageProviderLabel?.trim().toLowerCase();
   if (label === "local" || label === "本地空间") return true;
-  if (!providerUrl) return false;
+  if (!storageProviderUrl) return false;
 
   try {
-    const hostname = new URL(providerUrl).hostname;
+    const hostname = new URL(storageProviderUrl).hostname;
     return (
       hostname === "localhost" ||
       hostname === "127.0.0.1" ||
@@ -189,10 +189,10 @@ export function SelfProfileCard() {
   const phone = useMemo(() => readField(profile ?? null, "phone").trim(), [profile]);
   const region = useMemo(() => readField(profile ?? null, "region").trim(), [profile]);
   const note = useMemo(() => readField(profile ?? null, "note").trim(), [profile]);
-  const providerLabel = storedAccount?.providerLabel ?? storedAccount?.issuerLabel ?? "";
-  const providerUrl = storedAccount?.providerUrl ?? storedAccount?.issuerUrl;
-  const providerHost = formatProviderHost(providerUrl);
-  const isLocalProvider = isLocalSpace(providerLabel, providerUrl);
+  const storageProviderLabel = storedAccount?.storageProviderLabel ?? storedAccount?.issuerLabel ?? "";
+  const storageProviderUrl = storedAccount?.storageProviderUrl ?? storedAccount?.issuerUrl;
+  const providerHost = formatProviderHost(storageProviderUrl);
+  const isLocalProvider = isLocalSpace(storageProviderLabel, storageProviderUrl);
 
   // ── Avatar with auth fetch ─────────────────────────────────────────
 
@@ -367,9 +367,9 @@ export function SelfProfileCard() {
             </div>
           )}
 
-          {providerLabel ? (
+          {storageProviderLabel ? (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <SpaceBadge label={providerLabel} />
+              <SpaceBadge label={storageProviderLabel} />
               {providerHost ? (
                 <span className="min-w-0 truncate" title={providerHost}>
                   {providerHost}

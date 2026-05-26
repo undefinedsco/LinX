@@ -10521,10 +10521,10 @@
     n3 "^1.26.0"
     zod "^3.22.4"
 
-"@undefineds.co/xpod@0.3.6":
-  version "0.3.6"
-  resolved "https://registry.npmmirror.com/@undefineds.co/xpod/-/xpod-0.3.6.tgz#ee54721d43c4cfd2d0432a7d3b529452884f3836"
-  integrity sha512-XhhOcocNqWFcxUA62/TBFbymL77GX5b6LlWQ/iGvNLhz89TjhG4dhYNPjkPToJ4H85Kno+Byk8eRnH8ufaZ/zQ==
+"@undefineds.co/xpod@0.3.7":
+  version "0.3.7"
+  resolved "https://registry.npmmirror.com/@undefineds.co/xpod/-/xpod-0.3.7.tgz#fc981d1bf89feebf8396aaf2d1ccae9a7311de59"
+  integrity sha512-wswUBvt6N7samuRBcD9A54LrRx0foY5KafUuKqozrZbu6h6yejyEAU6a9aJ4rzcyWXqyChsckgXIiey/dvANDw==
   dependencies:
     "@agentclientprotocol/sdk" "^0.14.1"
     "@ai-sdk/openai" "^3.0.2"

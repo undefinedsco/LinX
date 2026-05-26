@@ -17,8 +17,8 @@ const LOGIN_SETUP_TIMEOUT_MS = 10000
 interface OidcConnectOptions {
   authorizationSurface?: 'window' | 'embedded' | 'external'
   returnToMicroAppId?: Parameters<typeof ensurePendingPostLoginMicroAppId>[0]
-  providerUrl?: string
-  providerLabel?: string
+  storageProviderUrl?: string
+  storageProviderLabel?: string
   issuerLabel?: string
   authorizationQuery?: Record<string, string | null | undefined>
   prompt?: 'none' | 'consent'
@@ -83,8 +83,8 @@ export function useOidcConnect() {
         issuerUrl: resolvedIssuerUrl,
         authorizationSurface: options?.authorizationSurface ?? 'window',
         returnToMicroAppId,
-        providerUrl: options?.providerUrl ?? normalizedEntryUrl,
-        providerLabel: options?.providerLabel,
+        storageProviderUrl: options?.storageProviderUrl ?? normalizedEntryUrl,
+        storageProviderLabel: options?.storageProviderLabel,
         authorizationQuery: normalizeAuthorizationQuery(options?.authorizationQuery),
         prompt: options?.prompt,
       })
@@ -98,7 +98,7 @@ export function useOidcConnect() {
       const redirectHandler =
         authorizationSurface === 'embedded' && desktopApi?.auth?.openEmbeddedAuthorization
           ? (url: string) => desktopApi.auth.openEmbeddedAuthorization(appendAuthorizationQuery(url, options?.authorizationQuery), {
-              providerLabel: options?.issuerLabel ?? options?.providerLabel,
+              providerLabel: options?.issuerLabel ?? options?.storageProviderLabel,
             })
           : authorizationSurface === 'external'
           ? desktopApi?.app?.openExternal
@@ -106,7 +106,7 @@ export function useOidcConnect() {
             : undefined
           : desktopApi?.auth?.openAuthorizationWindow
           ? (url: string) => desktopApi.auth.openAuthorizationWindow(appendAuthorizationQuery(url, options?.authorizationQuery), {
-              providerLabel: options?.issuerLabel ?? options?.providerLabel,
+              providerLabel: options?.issuerLabel ?? options?.storageProviderLabel,
             })
           : desktopApi?.app?.openExternal
           ? (url: string) => desktopApi.app.openExternal(appendAuthorizationQuery(url, options?.authorizationQuery))

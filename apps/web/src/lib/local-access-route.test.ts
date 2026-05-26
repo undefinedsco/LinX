@@ -27,11 +27,11 @@ describe('Local access route selection', () => {
 
     const selection = await resolveBestLocalAccessRoute({
       canonicalPodUrl: 'https://node.example/alice/',
-      providerLabel: 'Local',
-      providerUrl: 'https://node.example/',
+      storageProviderLabel: 'Local',
+      storageProviderUrl: 'https://node.example/',
       snapshot: {
         state: 'ready',
-        mode: 'remote-ready',
+        mode: 'local',
         localUrl: 'http://localhost:5737/',
         baseUrl: 'https://node.example/',
         publicUrl: 'https://node.example/',
@@ -76,11 +76,11 @@ describe('Local access route selection', () => {
 
     const selection = await resolveBestLocalAccessRoute({
       canonicalPodUrl: 'https://node.example/alice/',
-      providerLabel: 'Local',
-      providerUrl: 'https://node.example/',
+      storageProviderLabel: 'Local',
+      storageProviderUrl: 'https://node.example/',
       snapshot: {
         state: 'ready',
-        mode: 'remote-ready',
+        mode: 'local',
         localUrl: 'http://localhost:5737/',
         baseUrl: 'http://192.168.1.10:5737/',
         publicUrl: 'https://node.example/',
@@ -118,11 +118,11 @@ describe('Local access route selection', () => {
 
     const selection = await resolveBestLocalAccessRoute({
       canonicalPodUrl: 'https://node.example/alice/',
-      providerLabel: 'Local',
-      providerUrl: 'https://node.example/',
+      storageProviderLabel: 'Local',
+      storageProviderUrl: 'https://node.example/',
       snapshot: {
         state: 'ready',
-        mode: 'remote-ready',
+        mode: 'local',
         localUrl: 'http://localhost:5737/',
         baseUrl: 'http://192.168.1.10:5737/',
         publicUrl: 'https://node.example/',
@@ -158,11 +158,11 @@ describe('Local access route selection', () => {
 
     const selection = await resolveBestLocalAccessRoute({
       canonicalPodUrl: 'https://node.example/alice/',
-      providerLabel: 'Local',
-      providerUrl: 'https://node.example/',
+      storageProviderLabel: 'Local',
+      storageProviderUrl: 'https://node.example/',
       snapshot: {
         state: 'ready',
-        mode: 'remote-ready',
+        mode: 'local',
         localUrl: 'http://localhost:5737/',
         baseUrl: 'http://192.168.1.10:5737/',
         publicUrl: 'https://node.example/',
@@ -193,11 +193,11 @@ describe('Local access route selection', () => {
 
     await expect(resolveBestLocalAccessRoute({
       canonicalPodUrl: 'https://node.example/alice/',
-      providerLabel: 'Local',
-      providerUrl: 'https://node.example/',
+      storageProviderLabel: 'Local',
+      storageProviderUrl: 'https://node.example/',
       snapshot: {
         state: 'ready',
-        mode: 'remote-ready',
+        mode: 'local',
         localUrl: 'http://localhost:5737/',
         baseUrl: 'http://192.168.1.10:5737/',
         publicUrl: 'https://node.example/',

@@ -11,7 +11,7 @@ LinX 只保留四条登录/部署路线：
 | Cloud | Cloud | Cloud | 平台提供 |
 | Local 直连 | Cloud | Local | 用户提供 |
 | Local 隧道 | Cloud | Local | 用户提供 |
-| Standalone / Local device-only | Local | Local | 默认 `localhost`，公网 URL 可选且用户提供 |
+| Standalone | Local | Local | 默认 `localhost`，公网 URL 可选且用户提供 |
 
 ## xpod 必须支持
 

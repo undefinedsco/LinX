@@ -1,4 +1,5 @@
 import type { LoginProviderOption } from './types'
+import { resolveLoginProviderSource } from './provider-model'
 
 export interface ProviderStatusBadge {
   label: string
@@ -6,11 +7,17 @@ export interface ProviderStatusBadge {
 }
 
 export function getProviderDisplayLabel(provider: LoginProviderOption): string {
-  if (provider.source === 'local') {
+  const source = resolveLoginProviderSource(provider)
+
+  if (source === 'local') {
     return 'Local'
   }
 
-  if (provider.source === 'cloud') {
+  if (source === 'standalone') {
+    return 'Standalone'
+  }
+
+  if (source === 'cloud') {
     return 'Cloud'
   }
 
@@ -18,11 +25,13 @@ export function getProviderDisplayLabel(provider: LoginProviderOption): string {
 }
 
 export function getProviderSourceLabel(provider: LoginProviderOption): string {
-  switch (provider.source) {
+  switch (resolveLoginProviderSource(provider)) {
     case 'cloud':
       return '云端'
     case 'local':
       return '本地'
+    case 'standalone':
+      return '独立'
     default:
       return '其他'
   }
@@ -33,8 +42,18 @@ export function getProviderSubtitle(provider: LoginProviderOption, isFailed: boo
     return '连接失败，请重试'
   }
 
-  if (provider.source === 'cloud') {
+  const source = resolveLoginProviderSource(provider)
+
+  if (source === 'cloud') {
     return '官方云端空间'
+  }
+
+  if (source === 'local') {
+    return 'Cloud 账号，本地空间'
+  }
+
+  if (source === 'standalone') {
+    return '账号和数据都在本机'
   }
 
   if (provider.runtime?.kind === 'local-pod') {
@@ -45,11 +64,13 @@ export function getProviderSubtitle(provider: LoginProviderOption, isFailed: boo
 }
 
 export function getProviderActionLabel(provider: LoginProviderOption): string {
-  if (provider.source === 'cloud') {
+  const source = resolveLoginProviderSource(provider)
+
+  if (source === 'cloud') {
     return '登录'
   }
 
-  if (provider.source === 'custom') {
+  if (source === 'custom') {
     return '连接'
   }
 
@@ -91,8 +112,18 @@ export function getProviderActionLabel(provider: LoginProviderOption): string {
 }
 
 export function getProviderStatusBadge(provider: LoginProviderOption): ProviderStatusBadge | null {
-  if (provider.source === 'cloud') {
+  const source = resolveLoginProviderSource(provider)
+
+  if (source === 'cloud') {
     return { label: '官方', tone: 'primary' }
+  }
+
+  if (source === 'local' && provider.runtime?.onboarding?.state === 'ready') {
+    return { label: '可用', tone: 'success' }
+  }
+
+  if (source === 'standalone' && provider.runtime?.onboarding?.state === 'ready') {
+    return { label: '可用', tone: 'success' }
   }
 
   if (provider.runtime?.kind === 'local-pod') {

@@ -1,13 +1,13 @@
 export interface StorageConflictDetectionInput {
   webId: string
-  providerUrl?: string
-  providerPublicUrl?: string | null
+  storageProviderUrl?: string
+  storageProviderPublicUrl?: string | null
 }
 
 export interface StorageConflict {
   expectedStorageUrl: string
   actualStorageUrl: string | null
-  providerUrl: string | null
+  storageProviderUrl: string | null
   managementUrl: string | null
 }
 
@@ -16,7 +16,7 @@ const SOLID_STORAGE_IRI = 'http://www.w3.org/ns/solid/terms#storage'
 export async function detectStorageConflict(
   input: StorageConflictDetectionInput,
 ): Promise<StorageConflict | null> {
-  const expectedStorageUrl = resolveExpectedStorageUrl(input.webId, input.providerPublicUrl)
+  const expectedStorageUrl = resolveExpectedStorageUrl(input.webId, input.storageProviderPublicUrl)
   if (!expectedStorageUrl) {
     return null
   }
@@ -29,16 +29,16 @@ export async function detectStorageConflict(
   return {
     expectedStorageUrl,
     actualStorageUrl,
-    providerUrl: input.providerUrl ?? null,
-    managementUrl: buildAccountManagementUrl(input.providerUrl),
+    storageProviderUrl: input.storageProviderUrl ?? null,
+    managementUrl: buildAccountManagementUrl(input.storageProviderUrl),
   }
 }
 
 export function resolveExpectedStorageUrl(
   webId: string,
-  providerPublicUrl?: string | null,
+  storageProviderPublicUrl?: string | null,
 ): string | null {
-  const baseUrl = normalizeBaseUrl(providerPublicUrl)
+  const baseUrl = normalizeBaseUrl(storageProviderPublicUrl)
   const podSlug = derivePodSlugFromWebId(webId)
   if (!baseUrl || !podSlug) {
     return null
@@ -56,8 +56,8 @@ export function derivePodSlugFromWebId(webId: string): string | null {
   }
 }
 
-export function buildAccountManagementUrl(providerUrl?: string | null): string | null {
-  const baseUrl = normalizeBaseUrl(providerUrl)
+export function buildAccountManagementUrl(storageProviderUrl?: string | null): string | null {
+  const baseUrl = normalizeBaseUrl(storageProviderUrl)
   if (!baseUrl) {
     return null
   }

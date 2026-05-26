@@ -158,7 +158,7 @@ describe('SolidDatabaseProvider', () => {
     createLinxSolidDatabaseMock.mockResolvedValue(db)
     window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
       issuerUrl: 'https://id.undefineds.co',
-      providerUrl: 'https://id.undefineds.co',
+      storageProviderUrl: 'https://id.undefineds.co',
       authorizationSurface: 'window',
       returnToMicroAppId: 'chat',
     }))
@@ -169,8 +169,8 @@ describe('SolidDatabaseProvider', () => {
         displayName: 'Ganlu05',
         issuerUrl: 'https://id.undefineds.co',
         issuerLabel: 'Cloud',
-        providerUrl: 'https://node-0000.undefineds.co/',
-        providerLabel: 'Local',
+        storageProviderUrl: 'https://node-0000.undefineds.co/',
+        storageProviderLabel: 'Local',
         webId: 'https://id.undefineds.co/ganlu05/profile/card#me',
       },
       customProviders: [],
@@ -196,8 +196,8 @@ describe('SolidDatabaseProvider', () => {
     createLinxSolidDatabaseMock.mockResolvedValue(db)
     window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
       issuerUrl: 'https://id.undefineds.co',
-      providerUrl: 'http://127.0.0.1:5737',
-      providerLabel: 'Local',
+      storageProviderUrl: 'http://127.0.0.1:5737',
+      storageProviderLabel: 'Local',
       authorizationSurface: 'embedded',
       returnToMicroAppId: 'chat',
     }))
@@ -222,7 +222,7 @@ describe('SolidDatabaseProvider', () => {
     createLinxSolidDatabaseMock.mockResolvedValue(db)
     window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
       issuerUrl: 'https://id.undefineds.co',
-      providerUrl: 'https://node-0000.undefineds.co/',
+      storageProviderUrl: 'https://node-0000.undefineds.co/',
       authorizationSurface: 'embedded',
       returnToMicroAppId: 'chat',
     }))
@@ -253,8 +253,8 @@ describe('SolidDatabaseProvider', () => {
         displayName: 'Ganlu',
         issuerUrl: 'https://id.undefineds.co',
         issuerLabel: 'Cloud',
-        providerUrl: 'http://localhost:5737',
-        providerLabel: 'Local',
+        storageProviderUrl: 'http://localhost:5737',
+        storageProviderLabel: 'Local',
         webId: 'https://id.undefineds.co/ganlu/profile/card#me',
       },
       customProviders: [],
@@ -286,8 +286,8 @@ describe('SolidDatabaseProvider', () => {
         displayName: 'Ganlu05',
         issuerUrl: 'https://id.undefineds.co',
         issuerLabel: 'Cloud',
-        providerUrl: 'https://node-0000.undefineds.co/',
-        providerLabel: 'Local',
+        storageProviderUrl: 'https://node-0000.undefineds.co/',
+        storageProviderLabel: 'Local',
         webId: 'https://id.undefineds.co/ganlu05/profile/card#me',
       },
       customProviders: [],
@@ -314,8 +314,8 @@ describe('SolidDatabaseProvider', () => {
     createLinxSolidDatabaseMock.mockResolvedValue(db)
     window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
       issuerUrl: 'https://id.undefineds.co',
-      providerUrl: 'https://node-0000.undefineds.co/',
-      providerLabel: 'Local',
+      storageProviderUrl: 'https://node-0000.undefineds.co/',
+      storageProviderLabel: 'Local',
       authorizationSurface: 'embedded',
       returnToMicroAppId: 'chat',
     }))
@@ -358,7 +358,7 @@ describe('SolidDatabaseProvider', () => {
         localOnboarding: {
           getSnapshot: vi.fn(async () => ({
             state: 'ready',
-            mode: 'remote-ready',
+            mode: 'local',
             localUrl: 'http://localhost:5737/',
             baseUrl: 'http://192.168.1.10:5737/',
             publicUrl: null,
@@ -382,8 +382,8 @@ describe('SolidDatabaseProvider', () => {
         displayName: 'Ganlu',
         issuerUrl: 'http://192.168.1.10:5737/',
         issuerLabel: 'Local',
-        providerUrl: 'http://192.168.1.10:5737/',
-        providerLabel: 'Local',
+        storageProviderUrl: 'http://192.168.1.10:5737/',
+        storageProviderLabel: 'Local',
         webId: 'http://192.168.1.10:5737/alice/profile/card#me',
       },
       customProviders: [],
@@ -422,7 +422,7 @@ describe('SolidDatabaseProvider', () => {
     expect(nativeFetch).toHaveBeenCalledWith('http://localhost:5737/alice/.data/bootstrap', undefined)
   })
 
-  it('keeps https remote-ready spaces on canonical transport when local access would break browser fetch semantics', async () => {
+  it('keeps https Local spaces on canonical transport when local access would break browser fetch semantics', async () => {
     const nativeFetch = vi.fn(async (input: RequestInfo | URL) => {
       const url = input.toString()
       if (url.startsWith('http://localhost:5737/api/linx/capabilities')) {
@@ -444,7 +444,7 @@ describe('SolidDatabaseProvider', () => {
         localOnboarding: {
           getSnapshot: vi.fn(async () => ({
             state: 'ready',
-            mode: 'remote-ready',
+            mode: 'local',
             localUrl: 'http://localhost:5737/',
             baseUrl: 'https://node.example/',
             publicUrl: 'https://node.example/',
@@ -468,8 +468,8 @@ describe('SolidDatabaseProvider', () => {
         displayName: 'Ganlu',
         issuerUrl: 'https://id.undefineds.co',
         issuerLabel: 'Cloud',
-        providerUrl: 'https://node.example/',
-        providerLabel: 'Local',
+        storageProviderUrl: 'https://node.example/',
+        storageProviderLabel: 'Local',
         webId: 'https://id.undefineds.co/alice/profile/card#me',
       },
       customProviders: [],
@@ -513,7 +513,7 @@ describe('SolidDatabaseProvider', () => {
     createLinxSolidDatabaseMock.mockResolvedValue(db)
     window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
       issuerUrl: 'http://localhost:30250',
-      providerUrl: 'http://localhost:30250',
+      storageProviderUrl: 'http://localhost:30250',
       authorizationSurface: 'window',
       returnToMicroAppId: 'chat',
     }))
@@ -549,8 +549,8 @@ describe('SolidDatabaseProvider', () => {
       .mockResolvedValueOnce(cloudDb)
     window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
       issuerUrl: 'https://id.undefineds.co',
-      providerUrl: 'https://node-0000.undefineds.co/',
-      providerLabel: 'Local',
+      storageProviderUrl: 'https://node-0000.undefineds.co/',
+      storageProviderLabel: 'Local',
       authorizationSurface: 'embedded',
       returnToMicroAppId: 'chat',
     }))
@@ -576,8 +576,8 @@ describe('SolidDatabaseProvider', () => {
         displayName: 'Alice',
         issuerUrl: 'https://id.undefineds.co',
         issuerLabel: 'Cloud',
-        providerUrl: 'https://id.undefineds.co',
-        providerLabel: 'Cloud',
+        storageProviderUrl: 'https://id.undefineds.co',
+        storageProviderLabel: 'Cloud',
         webId: 'https://id.undefineds.co/alice/profile/card#me',
       },
       customProviders: [],

@@ -46,7 +46,7 @@ function EmbeddedTestComponent() {
     <button onClick={() => void connect('http://localhost:5737/', {
       authorizationSurface: 'embedded',
       issuerLabel: 'Cloud',
-      providerLabel: 'Local',
+      storageProviderLabel: 'Local',
       authorizationQuery: {
         provisionCode: 'pc-123',
       },
@@ -261,8 +261,8 @@ describe('useOidcConnect', () => {
       issuerUrl: 'http://127.0.0.1:5737',
       authorizationSurface: 'embedded',
       returnToMicroAppId: 'contacts',
-      providerUrl: 'http://localhost:5737',
-      providerLabel: 'Local',
+      storageProviderUrl: 'http://localhost:5737',
+      storageProviderLabel: 'Local',
       authorizationQuery: {
         provisionCode: 'pc-123',
       },

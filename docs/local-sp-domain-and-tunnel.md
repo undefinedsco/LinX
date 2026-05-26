@@ -5,11 +5,11 @@
 ## 结论
 
 - `cloud`：IDP 和 SP 都在 Cloud，用户不配置 Local SP 域名。
-- `local`：SP 运行在本机。默认先保证本机/局域网可用；只要 Local SP 需要被 Cloud 或外网访问，公网 URL 都由用户自己提供。
+- `local`：IDP 使用 Cloud，SP 运行在本机。要完成登录必须有用户自己的公网 HTTPS URL；缺少 URL 时只做本机/LAN 连通性检查，不静默降级。
 - `standalone`：IDP 和 SP 都在本机；默认只保证本机/局域网可用，公网 URL 可选。
 - LinX 不再为 Local SP 自动分配 `node-*.undefineds.co`，也不再要求用户手填平台生成的公网域名。
 - `CSS_BASE_STORAGE_DOMAIN` 不再是用户可配置的 Local 登录路径。
-- Local 默认自动路径是本机/LAN：启动本机 xpod，不要求公网 URL，不要求隧道 token。
+- Standalone 默认自动路径是本机/LAN：启动本机 xpod，不要求公网 URL，不要求隧道 token。
 - Local 远程路径的公网 URL 必须是用户真实可访问的 HTTPS origin。LinX 只使用这个 URL 注册 Local SP，不提供中间转发域名。
 - 用户后续补充公网域名、直连入口或隧道后，可以把同一个 Local SP 切换为 Cloud/外网可访问 route；切换 route 不应要求重建本地数据目录。
 
@@ -26,7 +26,7 @@
 
 ## 2. Local 本机 / 局域网基础路径
 
-这是用户没有公网域名、没有公网 IP 或暂时不配置隧道时的默认路径。
+这是用户没有公网域名、没有公网 IP 或暂时不配置隧道时的完整本地登录路径，对应 Standalone。
 
 用户需要准备：
 
@@ -40,7 +40,7 @@ LinX 行为：
 - 不因为公网 IP 检测失败而阻断 Local 启动。
 - xpod 默认监听本机端口，例如 `http://localhost:5737/`。
 - 如果 `CSS_BASE_URL` 配成局域网地址，例如 `http://192.168.1.10:5737/`，LinX/xpod 内部开放监听；用户不需要也不应该再填写单独的 listen host 字段。
-- 用户之后需要 Cloud IDP 或外网访问时，再补充公网 URL 和 route 配置。
+- 用户之后需要 Cloud IDP 或外网访问时，再选择 Local 并补充公网 URL 和 route 配置。
 
 ## 3. Cloud IDP + Local SP，外网可直连
 
@@ -77,7 +77,7 @@ LinX 行为：
 - LinX 仍然只使用用户填写的公网 URL 注册 Local SP。
 - LinX 不会把 `node-*.undefineds.co` 转发到用户隧道。
 - 隧道域名的 DNS、证书、出口绑定由用户或隧道供应商负责。
-- 如果用户没有公网域名，不能完成 Cloud IDP + Local SP 的远程路径；可以先使用 Local 本机/局域网路径或 Standalone。
+- 如果用户没有公网域名，不能完成 Cloud IDP + Local SP；可以先使用 Standalone，或只做 Local 本机/LAN 连通性检查。
 
 ## 5. 全套 Local / Standalone
 
@@ -96,7 +96,7 @@ LinX 行为：
 > 我是否需要让本机 SP 被当前设备之外的地方访问？
 
 - 不需要 Cloud IDP：选 Standalone，不填公网域名，只在本机/局域网使用。
-- 只想先验证本机 Local：选 Local 默认自动路径，不填公网域名，只在本机/局域网使用。
+- 只想先完成本机登录：选 Standalone，不填公网域名，只在本机/局域网使用。
 - 需要 Cloud IDP，而且本机外网可直连：选 Local 远程路径，填自己的公网 URL。
 - 需要 Cloud IDP，但本机外网不可直连：选 Local 远程路径，填自己的公网 URL，并配置隧道。
 - 不想用 Cloud 身份：选 standalone；是否公网可访问仍由用户自己的网络和域名决定。
@@ -104,7 +104,7 @@ LinX 行为：
 ## 产品文案建议
 
 - `cloud`：`账号和数据都由 LinX Cloud 托管。`
-- `local` 默认：`数据存在本机；不填写公网域名时，仅本机/局域网可用。`
+- `local`：`Cloud 账号，数据存在本机；需要你自己的公网域名或隧道域名。`
 - `local` 公网：`如需 Cloud 登录访问本机数据，请填写你自己的公网域名或隧道域名。`
 - `standalone`：`账号和数据都在本机；公网访问需要你自己的域名和网络入口。`
 
@@ -112,5 +112,5 @@ LinX 行为：
 
 - Local 直连和 Local 隧道都必须用用户提供的 `publicUrl` 作为 Pod URL。
 - Cloud 回调 Local SP 创建 Pod 时，Local SP 必须创建 Pod 目录和结构化 root metadata，确保 `HEAD /<pod>/` 返回存在。
-- 如果 `publicUrl` 缺失，不能启动 Cloud IDP + Local SP 远程路径；但必须允许用户先启动 Local 本机/局域网路径或 Standalone。
+- 如果 `publicUrl` 缺失，不能完成 Cloud IDP + Local SP；但必须允许用户先启动本机 xpod 做连通性检查，或选择 Standalone 完整登录。
 - 现网回归需要至少验证一次真实 Cloud + 用户提供隧道 URL，确认登录后进入 `/chat` 且 Solid DB ready。

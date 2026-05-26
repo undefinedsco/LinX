@@ -54,7 +54,7 @@ describe('useProviders', () => {
       localOnboarding: {
         getSnapshot: vi.fn().mockResolvedValue({
           state: 'repair_required',
-          mode: 'remote-ready',
+          mode: 'local',
           localUrl: 'http://localhost:5737/',
           baseUrl: 'http://localhost:5737/',
           capabilities: null,
@@ -76,7 +76,8 @@ describe('useProviders', () => {
     render(<TestComponent />)
 
     await waitFor(() => {
-      expect(screen.getByText('这台设备上的本地空间')).toBeTruthy()
+      expect(screen.getByText('Cloud 账号，本地空间')).toBeTruthy()
+      expect(screen.getByText('账号和数据都在本机')).toBeTruthy()
     })
 
     expect(detectMock).not.toHaveBeenCalled()
@@ -84,7 +85,7 @@ describe('useProviders', () => {
     expect(getAllMock).not.toHaveBeenCalled()
   })
 
-  it('creates a Local provider in LinX Service mode without desktop bridge', async () => {
+  it('creates a Standalone provider in LinX Service mode without Cloud provisioning', async () => {
     delete window.xpodDesktop
     ;(window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__ = true
 
@@ -115,12 +116,12 @@ describe('useProviders', () => {
     render(<TestComponent />)
 
     await waitFor(() => {
-      expect(screen.getByText('本地空间')).toBeTruthy()
-      expect(screen.getByText('这台设备上的本地空间')).toBeTruthy()
+      expect(screen.getByText('Standalone')).toBeTruthy()
+      expect(screen.getByText('账号和数据都在本机')).toBeTruthy()
     })
   })
 
-  it('projects Service mode provisioning into a remote-ready Local snapshot', async () => {
+  it('projects Service mode provisioning into a Local snapshot', async () => {
     delete window.xpodDesktop
     ;(window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__ = true
 
@@ -161,7 +162,7 @@ describe('useProviders', () => {
     await waitFor(() => {
       expect(result.current.localOnboarding).toMatchObject({
         state: 'ready',
-        mode: 'remote-ready',
+        mode: 'local',
         publicUrl: 'https://pod.example.com/',
         cloudIdentityUrl: 'https://id.undefineds.co',
         provisionCode: 'pc-123',
@@ -170,10 +171,10 @@ describe('useProviders', () => {
     })
   })
 
-  it('preserves a configured remote-ready desktop Local mode', async () => {
-    const remoteReadySnapshot = {
+  it('preserves a configured desktop Local source', async () => {
+    const localSnapshot = {
       state: 'ready',
-      mode: 'remote-ready',
+      mode: 'local',
       localUrl: 'http://localhost:5737/',
       baseUrl: 'https://pod.example.com/',
       publicUrl: 'https://pod.example.com/',
@@ -188,9 +189,9 @@ describe('useProviders', () => {
       canOpenSettings: true,
     }
     const chooseModeMock = vi.fn()
-    const continueMock = vi.fn().mockResolvedValue(remoteReadySnapshot)
+    const continueMock = vi.fn().mockResolvedValue(localSnapshot)
     ;(window.xpodDesktop as any).localOnboarding = {
-      getSnapshot: vi.fn().mockResolvedValue(remoteReadySnapshot),
+      getSnapshot: vi.fn().mockResolvedValue(localSnapshot),
       chooseMode: chooseModeMock,
       continue: continueMock,
       onStateChange: vi.fn(() => () => {}),
@@ -200,20 +201,20 @@ describe('useProviders', () => {
 
     let snapshot: unknown
     await act(async () => {
-      snapshot = await result.current.startLocal()
+      snapshot = await result.current.startLocal('local')
     })
 
     expect(chooseModeMock).not.toHaveBeenCalled()
     expect(continueMock).toHaveBeenCalledTimes(1)
     expect(snapshot).toMatchObject({
       state: 'ready',
-      mode: 'remote-ready',
+      mode: 'local',
       baseUrl: 'https://pod.example.com/',
       cloudIdentityUrl: 'https://id.undefineds.co',
     })
   })
 
-  it('chooses device-only mode for first-run desktop Local', async () => {
+  it('chooses Local for first-run desktop Local', async () => {
     const initialSnapshot = {
       state: 'mode_required',
       mode: null,
@@ -233,7 +234,7 @@ describe('useProviders', () => {
     const readySnapshot = {
       ...initialSnapshot,
       state: 'ready',
-      mode: 'device-only',
+      mode: 'local',
       message: 'Local 已准备好。',
       canRetry: true,
     }
@@ -250,14 +251,14 @@ describe('useProviders', () => {
 
     let snapshot: unknown
     await act(async () => {
-      snapshot = await result.current.startLocal()
+      snapshot = await result.current.startLocal('local')
     })
 
-    expect(chooseModeMock).toHaveBeenCalledWith('device-only')
+    expect(chooseModeMock).toHaveBeenCalledWith('local')
     expect(continueMock).toHaveBeenCalledTimes(1)
     expect(snapshot).toMatchObject({
       state: 'ready',
-      mode: 'device-only',
+      mode: 'local',
     })
   })
 })

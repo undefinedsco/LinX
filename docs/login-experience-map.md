@@ -4,32 +4,30 @@
 
 LinX 的登录路径由两个维度决定：
 
-- `IDP`：账号、登录、OIDC consent、WebID 由哪里签发。
-- `SP`：Pod 数据存在哪里，以及通过哪个 URL 被访问。
+- `oidcProvider`：账号、登录、OIDC consent、WebID 由哪里签发。
+- `storageProvider`：Pod 数据存在哪里，以及通过哪个 URL 被访问。
 
-最终产品路径收敛为四类。用户侧最重要的感知是：`Local 是否先能启动使用`，以及 `SP 公网地址是否已经配置`。当前结论是：Cloud SP 域名由 Cloud 提供；Local SP 域名不由 LinX 自动生成。Local 即使没有公网域名或隧道，也必须先保证本机/局域网可用，后续再补公网 route。
+最终产品路径收敛为四类用户入口：Cloud、Local、Standalone、Custom。Local 固定表示 Cloud OIDC Provider + Local Storage Provider；Standalone 固定表示 Local OIDC Provider + Local Storage Provider；Custom 表示第三方 Solid provider 的 OIDC/storage 一体入口。产品层只使用这四个入口名，不再引入第二套技术模式名。
 
-| 编号 | 产品路径 | IDP | SP | SP 域名 / URL | 适用场景 |
+| 编号 | 产品路径 | OIDC Provider | Storage Provider | Storage Provider 域名 / URL | 适用场景 |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Cloud | Cloud | Cloud | Cloud SP 自动提供 | 账号和数据都托管在 Cloud |
-| 2 | Local 基础 / LAN | Local 或 Cloud 后续绑定 | Local | 默认 `localhost` / LAN URL | 数据在本机，没有公网或隧道时也能先使用 |
-| 3 | Local 公网直连 | Cloud | Local | 用户自己的公网 URL | 数据在本机，本机可被外网直连 |
-| 4 | Local 隧道 / Standalone | Cloud 或 Local | Local | 用户自己的公网 URL / 隧道域名；Standalone 可留空 | 不可直连时用隧道；全套本地时用 Standalone |
+| 1 | Cloud | Cloud | Cloud | Cloud 自动提供 | 账号和数据都托管在 Cloud |
+| 2 | Local | Cloud | Local | 用户自己的公网 URL 或隧道稳定 HTTPS 域名 | Cloud 账号，数据在本机 |
+| 3 | Standalone | Local | Local | 默认 `localhost` / LAN URL | 账号和数据都在本机 |
 
 重要规则：
 
-- LinX 不再为 Local SP 自动分配 `node-*.undefineds.co`。
+- LinX 不再为 Local Storage Provider 自动分配 `node-*.undefineds.co`。
 - `CSS_BASE_STORAGE_DOMAIN` 不再是 Local onboarding 的用户路径。
-- Cloud IDP + Local SP 只要需要 Cloud 或外网访问 Local SP，SP URL 必须由用户自己提供。
+- Cloud OIDC Provider + Local Storage Provider 只要需要 Cloud 或外网访问本地数据空间，Storage Provider URL 必须由用户自己提供。
 - 用户不再填写“平台分配的 Local 公网域名”；因为这条产品路径已经下线。
-- Local 默认自动路径不要求用户填写公网域名，只启动本机 xpod，默认保证本机/局域网可用。
-- 如果用户没有公网域名，也不配置隧道，Local 仍然可以启动并本机/局域网使用；但这不等同于完成 Cloud IDP + Local SP 远程登录。
-- 用户后来配置公网域名、直连入口或隧道后，可以把同一个 Local SP 升级为 Cloud 可访问 route；升级 route 不应该要求用户重建本地数据目录。
+- Local 缺少用户公网 URL 时可以启动本机 xpod 做环境检查和本机/LAN 连通性验证，但不能完成 Cloud OIDC Provider + Local Storage Provider 登录，也不能静默降级成 Standalone。
+- 用户后来配置公网域名、直连入口或隧道后，可以把同一个 Local Storage Provider 升级为 Cloud 可访问 route；升级 route 不应该要求用户重建本地数据目录。
 - Local 远程路径的 `publicUrl` 必须是用户实际可访问的 HTTPS origin；本机端口和公网入口可以不同，但 Pod URL、OIDC redirect 后的数据访问都以 `publicUrl` 为准。
 
 ---
 
-## 1. Cloud：IDP + SP 全套 Cloud
+## 1. Cloud：OIDC Provider + Storage Provider 全套 Cloud
 
 ```
 LinX 选择 Cloud
@@ -43,35 +41,31 @@ LinX 选择 Cloud
 进入 Chat
 ```
 
-数据位置：Cloud SP。
+数据位置：Cloud Storage Provider。
 
 - LinX 不启动本地 xpod。
 - 用户不需要配置数据目录、公网域名、隧道或本机端口。
 - 这是默认推荐路径。
-- SP URL 由 Cloud 自己提供，不进入 Local SP 域名配置。
+- Storage Provider URL 由 Cloud 自己提供，不进入 Local 域名配置。
 
 ---
 
-## 2. Local 基础 / LAN：先保证本机和局域网可用
+## 2. Local 入口：Cloud OIDC Provider + Local Storage Provider
 
 ```
 LinX 选择 Local
-  ↓ 不填写公网域名，也不配置隧道
-  ↓ LinX 启动本地 xpod，CSS_BASE_URL=http://localhost:5737/
-  ↓ 打开本地账号页，或作为 Local 基础验证路径
-回调到 LinX
-  ↓
-进入 Chat，数据写入本地 SP
+  ↓ 根据 oidcProvider=Cloud、storageProvider=Local 启动本地 xpod
+  ↓ 如果缺 publicUrl：启动本机 xpod 做环境检查，但阻断 Cloud 登录
+  ↓ 如果有 publicUrl：进入 Local 直连或 Local 隧道流程
 ```
 
 配置要求：
 
-- 不要求公网 URL。
-- 不要求隧道 token。
-- 默认本机可用；如果 `CSS_BASE_URL` 配成局域网 URL，LinX/xpod 内部开放监听，局域网访问仍取决于用户网络和防火墙。
-- 用户只配置入口 URL；监听地址由 LinX/xpod 根据入口 URL 内部推导。
-- 这条路径是 Local 供应商的自动路径，不能因为没有公网 IP 或没有隧道而阻断启动。
-- 如果用户之后需要 Cloud IDP 或外网访问同一个 Local SP，再补充公网域名和 route 配置。
+- Local 不是本地账号模式；本地账号模式叫 Standalone。
+- Local 的 OIDC Provider 永远是 Cloud，Storage Provider 永远是 Local。
+- 缺少公网 URL 时，不能完成 Cloud OIDC Provider + Local Storage Provider，因为 Cloud 无法确认和 provision 用户内网数据空间。
+- 缺少公网 URL 时，不允许静默切到 Standalone，只能提示用户配置公网 route，或返回空间选择后选 Standalone。
+- 默认本机/LAN 入口只用于本地 xpod 连通性检查；完整登录写入必须等 `publicUrl` 就绪。
 
 ---
 
@@ -100,7 +94,7 @@ LinX 选择 Local
 
 ---
 
-## 3. Local 隧道：Cloud IDP + Local SP，外网不可直连
+## 4. Local 隧道：Cloud IDP + Local SP，外网不可直连
 
 ```
 LinX 选择 Local
@@ -121,15 +115,15 @@ LinX 选择 Local
 - 用户必须提供自己的公网域名或隧道域名。
 - 用户负责按隧道供应商要求完成 DNS、证书和出口绑定。
 - LinX 只保存并使用用户提供的 `publicUrl`，不会提供统一转发域名。
-- 如果没有公网域名，不能走 Cloud IDP + Local SP 远程路径；应先走 Standalone 或 Local 本机验证。
+- 如果没有公网域名，不能走 Cloud IDP + Local SP；应先走 Standalone，或只做 Local 本机/LAN 连通性检查。
 - 隧道供应商如果能稳定分配 HTTPS 域名，可以直接使用供应商分配的域名；否则用户需要购买或配置自己的域名。
 
 ---
 
-## 4. Standalone：IDP + SP 全套 Local
+## 5. Standalone：IDP + SP 全套 Local
 
 ```
-LinX 选择 Standalone，或 Local 默认自动路径
+LinX 选择 Standalone
   ↓ LinX 启动本地 xpod
   ↓ 打开本地账号页，例如 http://localhost:5737/.account/
   ↓ 用户注册或登录本地账号
@@ -168,14 +162,14 @@ LinX 主界面
 
 ## 实现验收口径
 
-- Cloud 路径：不启动本地 xpod，登录后 `storedAccount.providerLabel` 为 `Cloud`，Pod URL 不依赖本机地址。
-- Local 直连 / 隧道路径：启动本地 xpod，向 Cloud 注册用户提供的 `publicUrl`，Cloud 登录后 `storedAccount.providerLabel` 为 `Local`，Solid DB 的 Pod URL 必须以该 `publicUrl` 开头。
+- Cloud 路径：不启动本地 xpod，登录后 `storedAccount.storageProviderLabel` 为 `Cloud`，Pod URL 不依赖本机地址。
+- Local 直连 / 隧道路径：启动本地 xpod，向 Cloud 注册用户提供的 `publicUrl`，Cloud 登录后 `storedAccount.storageProviderLabel` 为 `Local`，Solid DB 的 Pod URL 必须以该 `publicUrl` 开头。
 - Local 直连 / 隧道路径：登录完成只代表身份授权完成；验收还必须证明第一个业务写入和后续所有业务写入都落在所选 Local SP。`/.data/*` bootstrap、chat/message、inbox、Agent Home、runtime session ref、AI 配置、Secretary 初始化数据和内置 runtime API 都必须从 Solid DB 当前 Pod URL 推导，不能从 Cloud WebID origin、issuer URL 或 profile URL 推导。
 - Local 直连 / 隧道路径：新增、更新、删除都按同一规则验收；如果当前 Solid DB 没有可确认的 Pod URL，业务写入必须失败，不允许静默回退到 WebID 所在的 Cloud。
 - Local 直连 / 隧道路径：后续 update/delete 如果拿到的是绝对资源 IRI，该 IRI 必须位于当前 Solid DB Pod URL 前缀下；旧 Cloud 空间或旧 Local 节点的缓存 IRI 不能继续作为当前会话写目标。
 - Local 直连 / 隧道路径：Cloud provision 回调创建 Pod 时，Local SP 必须同时创建文件目录和结构化 root metadata；`HEAD /<pod>/` 必须返回存在，不能让前端自己创建顶层 Pod root。
-- Local 基础 / LAN：不要求公网 URL，不要求隧道；必须能启动本地 xpod 并完成本机登录验证。
-- Standalone：不要求公网 URL，不走 Cloud provisioning；只承诺本机/局域网验证。
+- Local 缺少公网 URL：可以启动本地 xpod 做本机/LAN 连通性检查，但必须阻断 Cloud IDP + Local SP 登录，不能自动降级。
+- Standalone：不要求公网 URL，不走 Cloud provisioning；必须能完成本机/局域网登录验证。
 
 现网回归记录：
 
@@ -204,7 +198,7 @@ LinX 主界面
 - Local 隧道：必填。
 - Standalone：可选；不填则使用 `localhost`。
 - Cloud：不填。
-- Local 基础 / LAN：不填。
+- Local：Cloud IDP + Local SP 登录必填；缺失时只能做本机/LAN 连通性检查。
 
 ### `domainSource`
 
@@ -214,13 +208,13 @@ LinX 主界面
 
 ## 错误边界
 
-### Local remote-ready 缺少公网 URL
+### Local 缺少公网 URL
 
 直接阻断启动并提示：
 
 > Local 远程访问需要先配置用户自己的公网域名或隧道域名。
 
-用户可以先走 Local 基础 / LAN 或 Standalone，本机验证不需要公网 URL。后续补齐公网 URL 和 route 后，再切到 Cloud IDP + Local SP。
+用户可以先走 Standalone，本机验证不需要公网 URL。后续补齐公网 URL 和 route 后，再切到 Cloud IDP + Local SP。
 
 ### Local 隧道缺少域名
 

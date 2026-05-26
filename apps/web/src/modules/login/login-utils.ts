@@ -10,8 +10,8 @@ export interface PendingLoginAttempt {
   issuerUrl: string
   authorizationSurface: 'window' | 'embedded' | 'external'
   returnToMicroAppId: MicroAppId
-  providerUrl?: string
-  providerLabel?: string
+  storageProviderUrl?: string
+  storageProviderLabel?: string
   authorizationQuery?: Record<string, string>
   prompt?: 'none' | 'consent'
 }
@@ -160,11 +160,17 @@ export function getPendingLoginAttempt(): PendingLoginAttempt | null {
         authorizationSurface: parsed.authorizationSurface,
         returnToMicroAppId: parsed.returnToMicroAppId,
       }
-      if (typeof parsed.providerUrl === 'string') {
-        attempt.providerUrl = parsed.providerUrl
+      const storageProviderUrl = typeof parsed.storageProviderUrl === 'string'
+        ? parsed.storageProviderUrl
+        : undefined
+      if (storageProviderUrl) {
+        attempt.storageProviderUrl = storageProviderUrl
       }
-      if (typeof parsed.providerLabel === 'string') {
-        attempt.providerLabel = parsed.providerLabel
+      const storageProviderLabel = typeof parsed.storageProviderLabel === 'string'
+        ? parsed.storageProviderLabel
+        : undefined
+      if (storageProviderLabel) {
+        attempt.storageProviderLabel = storageProviderLabel
       }
       const authorizationQuery = sanitizeAuthorizationQuery(parsed.authorizationQuery)
       if (authorizationQuery) {
@@ -192,11 +198,11 @@ export function setPendingLoginAttempt(attempt: PendingLoginAttempt) {
     authorizationSurface: attempt.authorizationSurface,
     returnToMicroAppId: attempt.returnToMicroAppId,
   }
-  if (attempt.providerUrl) {
-    persisted.providerUrl = attempt.providerUrl
+  if (attempt.storageProviderUrl) {
+    persisted.storageProviderUrl = attempt.storageProviderUrl
   }
-  if (attempt.providerLabel) {
-    persisted.providerLabel = attempt.providerLabel
+  if (attempt.storageProviderLabel) {
+    persisted.storageProviderLabel = attempt.storageProviderLabel
   }
   const authorizationQuery = sanitizeAuthorizationQuery(attempt.authorizationQuery)
   if (authorizationQuery) {

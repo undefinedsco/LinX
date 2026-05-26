@@ -9,6 +9,7 @@ import {
   getProviderStatusBadge,
   getProviderSubtitle,
 } from './presentation'
+import { isLocalLoginProvider, resolveLoginProviderSource } from './provider-model'
 import { LoginCardShell } from './LoginCardShell'
 
 export function LoginModal(props: LoginModalProps) {
@@ -36,6 +37,7 @@ export function LoginModal(props: LoginModalProps) {
       ) : view === 'local' ? (
         <LocalOnboardingView
           localOnboarding={props.localOnboarding}
+          localProviderSource={props.localProviderSource}
           error={props.error}
           onBack={props.onBackFromLocal}
           onContinue={props.onContinueLocalLogin}
@@ -215,14 +217,14 @@ function ProviderSelectionView({
   providers: LoginProviderOption[]
   error: string | null
   localLoginStatus: LoginModalProps['localLoginStatus']
-  onConnect: (url: string) => void
+  onConnect: (providerKey: string) => void
   onAddProvider: (url: string, label?: string) => void
   onClearError: () => void
 }) {
   const [isAdding, setIsAdding] = useState(false)
   const [customUrl, setCustomUrl] = useState('')
-  const primaryProviders = providers.filter((provider) => provider.source !== 'custom')
-  const customProviders = providers.filter((provider) => provider.source === 'custom')
+  const primaryProviders = providers.filter((provider) => resolveLoginProviderSource(provider) !== 'custom')
+  const customProviders = providers.filter((provider) => resolveLoginProviderSource(provider) === 'custom')
 
   const handleAdd = () => {
     if (!customUrl.trim()) return
@@ -261,10 +263,10 @@ function ProviderSelectionView({
             <div className="space-y-2">
               {primaryProviders.map((provider) => (
                 <ProviderItem
-                  key={provider.url}
+                  key={provider.id}
                   provider={provider}
                   variant="primary"
-                  onSelect={() => onConnect(provider.url)}
+                  onSelect={() => onConnect(provider.id)}
                 />
               ))}
             </div>
@@ -275,10 +277,10 @@ function ProviderSelectionView({
               <div className="bg-muted/40 rounded-xl overflow-hidden divide-y divide-border/40">
                 {customProviders.map((provider) => (
                   <ProviderItem
-                    key={provider.url}
+                    key={provider.id}
                     provider={provider}
                     variant="secondary"
-                    onSelect={() => onConnect(provider.url)}
+                    onSelect={() => onConnect(provider.id)}
                   />
                 ))}
               </div>
@@ -371,8 +373,8 @@ function ConnectingView({
     detail = '请在登录窗口完成'
   } else if (authWindowStatus.reason === 'completed') {
     title = '正在验证身份'
-    detail = connectingProvider?.providerLabel
-      ? `正在进入 ${connectingProvider.providerLabel}`
+    detail = connectingProvider?.storageProviderLabel
+      ? `正在进入 ${connectingProvider.storageProviderLabel}`
       : detail
   }
 
@@ -385,10 +387,10 @@ function ConnectingView({
         {connectingProvider ? (
           <div className="mt-4 w-full max-w-[18rem] rounded-2xl border border-border/60 bg-muted/30 px-3 py-2">
             <p className="truncate text-xs font-medium text-foreground">
-              {connectingProvider.providerLabel}
+              {connectingProvider.storageProviderLabel}
             </p>
             <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-              {formatProviderHost(connectingProvider.providerUrl)}
+              {formatProviderHost(connectingProvider.storageProviderUrl)}
             </p>
           </div>
         ) : null}
@@ -410,18 +412,22 @@ function ConnectingView({
 
 function LocalOnboardingView({
   localOnboarding,
+  localProviderSource,
   error,
   onBack,
   onContinue,
   onClearError,
 }: {
   localOnboarding: LoginModalProps['localOnboarding']
+  localProviderSource: LoginModalProps['localProviderSource']
   error: string | null
   onBack: () => void
   onContinue: () => void
   onClearError: () => void
 }) {
   const snapshot = localOnboarding
+  const isStandalone = localProviderSource === 'standalone'
+  const productLabel = isStandalone ? 'Standalone' : 'Local'
   const onboardingState = snapshot?.state ?? 'idle'
   const isReady = onboardingState === 'ready'
   const isRepair = onboardingState === 'repair_required'
@@ -440,7 +446,7 @@ function LocalOnboardingView({
         >
           <ArrowLeft className="w-4 h-4" />
         </button>
-        <h2 className="text-lg font-semibold text-foreground">Local</h2>
+        <h2 className="text-lg font-semibold text-foreground">{productLabel}</h2>
       </div>
 
       <ErrorBanner error={error} onClearError={onClearError} />
@@ -460,7 +466,7 @@ function LocalOnboardingView({
 
         {isReady && (
           <div className="flex flex-col gap-3">
-            <p className="text-sm font-medium text-foreground text-center">Local 已准备好</p>
+            <p className="text-sm font-medium text-foreground text-center">{productLabel} 已准备好</p>
             {snapshot?.capabilities?.contract && (
               <p className="text-[11px] text-muted-foreground/70 text-center font-mono">
                 {snapshot.capabilities.contract}
@@ -478,13 +484,10 @@ function LocalOnboardingView({
         {isRepair && (
           <div className="flex flex-col gap-3">
             <p className="text-sm text-foreground leading-relaxed">
-              还差一步让其他设备接入 Local
+              {isStandalone ? 'Standalone 启动失败' : '还差一步让 Local 接入 Cloud'}
             </p>
             <p className="text-xs text-muted-foreground leading-relaxed">
               {snapshot?.message ?? '需要完成额外设置才能从其他设备访问。'}
-            </p>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              如果你现在只是想先开始使用，也可以直接切回{'\u201c'}只给这台设备用{'\u201d'}，不需要额外设置。
             </p>
             <button
               onClick={() => {
@@ -629,7 +632,7 @@ function ProviderItem({
       onClick={onSelect}
     >
       <div
-        data-provider-source={provider.source}
+        data-provider-source={resolveLoginProviderSource(provider)}
         className={cn(
           'relative rounded-[22%] flex items-center justify-center shrink-0 overflow-hidden border border-border/60',
           isProductLogo && 'border-violet-400/90 bg-violet-200/90 p-0.5',
@@ -650,7 +653,7 @@ function ProviderItem({
         ) : (
           <ProviderIcon provider={provider} />
         )}
-        {provider.source === 'local' ? (
+        {isLocalLoginProvider(provider) ? (
           <span
             data-provider-local-marker
             className="absolute bottom-0.5 right-0.5 flex h-4 w-4 items-center justify-center rounded-[6px] border border-white/80 bg-emerald-500 text-white shadow-sm dark:border-zinc-900/80"
@@ -677,12 +680,18 @@ function ProviderItem({
 }
 
 function ProviderIcon({ provider }: { provider: LoginProviderOption }) {
-  if (provider.source === 'cloud') {
+  const source = resolveLoginProviderSource(provider)
+
+  if (source === 'cloud') {
     return <Cloud className="h-4 w-4 text-sky-600 dark:text-sky-400" aria-hidden="true" />
   }
 
-  if (provider.source === 'local') {
+  if (source === 'local') {
     return <HardDrive className="h-4 w-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+  }
+
+  if (source === 'standalone') {
+    return <HardDrive className="h-4 w-4 text-zinc-600 dark:text-zinc-300" aria-hidden="true" />
   }
 
   return <Globe2 className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
@@ -732,7 +741,8 @@ function Footer() {
 }
 
 function resolveProviderLogoUrl(provider: LoginProviderOption): string | undefined {
-  if (provider.source === 'cloud' || provider.source === 'local') {
+  const source = resolveLoginProviderSource(provider)
+  if (source === 'cloud' || source === 'local' || source === 'standalone') {
     return linxLogoUrl
   }
 
@@ -744,11 +754,16 @@ function isLocalStoredAccount(account: LoginModalProps['storedAccount']): boolea
     return false
   }
 
-  if (account.providerLabel === 'Local' || account.issuerLabel === 'Local') {
+  if (
+    account.storageProviderLabel === 'Local'
+    || account.issuerLabel === 'Local'
+    || account.storageProviderLabel === 'Standalone'
+    || account.issuerLabel === 'Standalone'
+  ) {
     return true
   }
 
-  return isLocalAccountUrl(account.providerUrl)
+  return isLocalAccountUrl(account.storageProviderUrl)
     || isLocalAccountUrl(account.issuerUrl)
     || isLocalAccountUrl(account.webId)
 }

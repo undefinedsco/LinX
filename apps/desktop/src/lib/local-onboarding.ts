@@ -4,7 +4,7 @@ import type { SolidProvider } from './provider-manager'
 import type { XpodManager, XpodStartProgress } from './xpod-manager'
 import { ensureLinxLocalHome } from './local-home'
 
-export type LocalOnboardingMode = 'device-only' | 'remote-ready'
+export type LocalOnboardingMode = 'local' | 'standalone'
 
 export type LocalOnboardingState =
   | 'mode_required'
@@ -130,7 +130,7 @@ export class LocalOnboardingController {
     const baseUrl = status.baseUrl ?? provider.issuerUrl ?? null
     const provisioning = status.provisioning
     const configuredPublicUrl = this.resolveConfiguredPublicUrl(provider)
-    const publicUrl = mode === 'remote-ready'
+    const publicUrl = mode === 'local'
       ? provisioning?.publicUrl ?? configuredPublicUrl ?? status.baseUrl ?? null
       : null
     const bindingFields = {
@@ -206,7 +206,7 @@ export class LocalOnboardingController {
       })
     }
 
-    if (mode === 'remote-ready' && (!provisioning?.provisionCode || !provisioning?.cloudIdentityUrl)) {
+    if (mode === 'local' && (!provisioning?.provisionCode || !provisioning?.cloudIdentityUrl)) {
       return this.updateSnapshot({
         state: 'repair_required',
         mode,
@@ -260,7 +260,7 @@ export class LocalOnboardingController {
     const baseUrl = status.baseUrl ?? provider.issuerUrl ?? null
     const provisioning = status.provisioning
     const configuredPublicUrl = this.resolveConfiguredPublicUrl(provider)
-    const publicUrl = mode === 'remote-ready'
+    const publicUrl = mode === 'local'
       ? provisioning?.publicUrl ?? configuredPublicUrl ?? status.baseUrl ?? null
       : null
     const bindingFields = {
@@ -304,7 +304,7 @@ export class LocalOnboardingController {
           providerId: provider.id,
           dataDir: provider.managed.dataDir,
           port: provider.managed.port,
-          startupMode: mode,
+          mode,
           domain: provider.managed.domain,
           tunnelToken: provider.managed.tunnelToken,
         },
@@ -359,32 +359,14 @@ export class LocalOnboardingController {
   }
 
   private resolveMode(
-    provider: SolidProvider,
-    status: LocalXpodStatus,
+    _provider: SolidProvider,
+    _status: LocalXpodStatus,
   ): LocalOnboardingMode | null {
-    const configuredDomainType = provider.managed?.domain.type ?? 'none'
-    if (configuredDomainType !== 'none') {
-      this.persistResolvedMode('remote-ready', provider.id)
-      return 'remote-ready'
-    }
-
     if (this.state.mode) {
       return this.state.mode
     }
 
-    const hasExistingLocalInstance = Boolean(
-      status.providerId
-      || status.running
-      || status.status === 'starting',
-    )
-
-    if (hasExistingLocalInstance) {
-      this.persistResolvedMode('device-only', provider.id)
-      return 'device-only'
-    }
-
-    this.persistResolvedMode('device-only', provider.id)
-    return 'device-only'
+    return null
   }
 
   private shouldRestartForMode(
@@ -396,7 +378,7 @@ export class LocalOnboardingController {
       return true
     }
 
-    if (mode !== 'remote-ready') {
+    if (mode !== 'local') {
       return false
     }
 
@@ -473,7 +455,7 @@ export class LocalOnboardingController {
       const raw = fs.readFileSync(this.statePath, 'utf8')
       const parsed = JSON.parse(raw) as Partial<PersistedLocalOnboardingState>
       return {
-        mode: parsed.mode === 'device-only' || parsed.mode === 'remote-ready' ? parsed.mode : null,
+        mode: parsePersistedMode(parsed.mode),
         providerId: typeof parsed.providerId === 'string' && parsed.providerId.trim().length > 0
           ? parsed.providerId
           : null,
@@ -487,6 +469,14 @@ export class LocalOnboardingController {
     fs.mkdirSync(path.dirname(this.statePath), { recursive: true })
     fs.writeFileSync(this.statePath, JSON.stringify(state, null, 2), 'utf8')
   }
+}
+
+function parsePersistedMode(value: unknown): LocalOnboardingMode | null {
+  if (value === 'local' || value === 'standalone') {
+    return value
+  }
+
+  return null
 }
 
 async function fetchLocalCapabilities(baseUrl: string, timeoutMs = 3000): Promise<LocalOnboardingCapabilities> {

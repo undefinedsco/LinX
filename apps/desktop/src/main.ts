@@ -381,6 +381,7 @@ async function createConfigWindow(): Promise<void> {
       providerId: bootstrapProvider.id,
       dataDir: bootstrapProvider.managed!.dataDir,
       port: bootstrapProvider.managed!.port,
+      mode: bootstrapProvider.managed!.domain?.type === 'custom' ? 'local' : 'standalone',
       domain: bootstrapProvider.managed!.domain,
       tunnelToken: bootstrapProvider.managed!.tunnelToken,
     });

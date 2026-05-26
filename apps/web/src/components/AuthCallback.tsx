@@ -40,8 +40,8 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
       await oidc.connect(pendingAttempt.issuerUrl, {
         authorizationSurface: pendingAttempt.authorizationSurface,
         returnToMicroAppId: pendingAttempt.returnToMicroAppId,
-        providerUrl: pendingAttempt.providerUrl,
-        providerLabel: pendingAttempt.providerLabel,
+        storageProviderUrl: pendingAttempt.storageProviderUrl,
+        storageProviderLabel: pendingAttempt.storageProviderLabel,
         authorizationQuery: pendingAttempt.authorizationQuery,
       })
     } catch (retryError: any) {
@@ -132,8 +132,8 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
       await oidc.connect(pendingAttempt.issuerUrl, {
         authorizationSurface: pendingAttempt.authorizationSurface,
         returnToMicroAppId: pendingAttempt.returnToMicroAppId,
-        providerUrl: pendingAttempt.providerUrl,
-        providerLabel: pendingAttempt.providerLabel,
+        storageProviderUrl: pendingAttempt.storageProviderUrl,
+        storageProviderLabel: pendingAttempt.storageProviderLabel,
         authorizationQuery: pendingAttempt.authorizationQuery,
         prompt: pendingAttempt.prompt,
       })

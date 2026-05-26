@@ -158,8 +158,8 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
         const accessRoute = hasLocalAccessRouteSource()
           ? await resolveBestLocalAccessRoute({
               canonicalPodUrl: podUrl,
-              providerLabel: podContext?.providerLabel,
-              providerUrl: podContext?.providerUrl,
+              storageProviderLabel: podContext?.storageProviderLabel,
+              storageProviderUrl: podContext?.storageProviderUrl,
             })
           : null
         if (!isCurrentSession(session.info, sessionKey, generation, initGenerationRef.current)) {
@@ -247,21 +247,21 @@ function isCurrentSession(
 
 interface LoginPodContext {
   podUrl: string
-  providerUrl: string
-  providerLabel?: string
+  storageProviderUrl: string
+  storageProviderLabel?: string
 }
 
 function resolveLoginPodContext(
   webId: string,
-  storedAccount: { providerUrl?: string; providerLabel?: string; issuerUrl?: string; issuerLabel?: string } | null,
+  storedAccount: { storageProviderUrl?: string; storageProviderLabel?: string; issuerUrl?: string; issuerLabel?: string } | null,
 ): LoginPodContext | null {
   const pendingLoginAttempt = getPendingLoginAttempt()
   if (pendingLoginAttempt) {
     return resolveCandidatePodContext(
       webId,
       {
-        providerUrl: pendingLoginAttempt.providerUrl,
-        providerLabel: pendingLoginAttempt.providerLabel,
+        storageProviderUrl: pendingLoginAttempt.storageProviderUrl,
+        storageProviderLabel: pendingLoginAttempt.storageProviderLabel,
         issuerUrl: pendingLoginAttempt.issuerUrl,
       },
     )
@@ -270,8 +270,8 @@ function resolveLoginPodContext(
   return resolveCandidatePodContext(
     webId,
     {
-      providerUrl: storedAccount?.providerUrl,
-      providerLabel: storedAccount?.providerLabel,
+      storageProviderUrl: storedAccount?.storageProviderUrl,
+      storageProviderLabel: storedAccount?.storageProviderLabel,
       issuerUrl: storedAccount?.issuerUrl,
     },
   )
@@ -279,31 +279,31 @@ function resolveLoginPodContext(
 
 function resolveCandidatePodContext(
   webId: string,
-  candidate: { providerUrl?: string; providerLabel?: string; issuerUrl?: string },
+  candidate: { storageProviderUrl?: string; storageProviderLabel?: string; issuerUrl?: string },
 ): LoginPodContext | null {
-  if (!isSplitStorageProvider(candidate.providerUrl, candidate.issuerUrl, webId, candidate.providerLabel)) {
+  if (!isSplitStorageProvider(candidate.storageProviderUrl, candidate.issuerUrl, webId, candidate.storageProviderLabel)) {
     return null
   }
 
-  const normalized = resolveProviderPodUrl(candidate.providerUrl, webId)
+  const normalized = resolveProviderPodUrl(candidate.storageProviderUrl, webId)
   if (!normalized) {
     return null
   }
 
   return {
     podUrl: normalized,
-    providerUrl: candidate.providerUrl ?? normalized,
-    providerLabel: candidate.providerLabel,
+    storageProviderUrl: candidate.storageProviderUrl ?? normalized,
+    storageProviderLabel: candidate.storageProviderLabel,
   }
 }
 
-function resolveProviderPodUrl(providerUrl: string | undefined, webId: string): string | null {
+function resolveProviderPodUrl(storageProviderUrl: string | undefined, webId: string): string | null {
   try {
-    if (typeof providerUrl !== 'string' || !providerUrl.trim()) {
+    if (typeof storageProviderUrl !== 'string' || !storageProviderUrl.trim()) {
       return null
     }
 
-    const provider = new URL(providerUrl)
+    const provider = new URL(storageProviderUrl)
     const webIdUrl = new URL(webId)
     const podName = webIdUrl.pathname.match(/^\/([^/]+)\/profile\/card\/?$/)?.[1]
     if (!podName) {
@@ -320,20 +320,20 @@ function resolveProviderPodUrl(providerUrl: string | undefined, webId: string): 
 }
 
 function isSplitStorageProvider(
-  providerUrl: string | undefined,
+  storageProviderUrl: string | undefined,
   issuerUrl: string | undefined,
   _webId: string,
-  providerLabel?: string,
+  storageProviderLabel?: string,
 ): boolean {
-  if (typeof providerUrl !== 'string' || !providerUrl.trim()) {
+  if (typeof storageProviderUrl !== 'string' || !storageProviderUrl.trim()) {
     return false
   }
 
-  if (providerLabel?.trim().toLowerCase() === 'local') {
+  if (storageProviderLabel?.trim().toLowerCase() === 'local') {
     return true
   }
 
-  const providerOrigin = normalizeOrigin(providerUrl)
+  const providerOrigin = normalizeOrigin(storageProviderUrl)
   if (!providerOrigin) {
     return false
   }

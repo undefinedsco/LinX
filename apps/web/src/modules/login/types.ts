@@ -17,8 +17,20 @@ export interface LocalPodRuntime {
   }
 }
 
+export type LoginProviderSource = 'cloud' | 'custom' | 'local' | 'standalone'
+export type LocalLoginProviderSource = Extract<LoginProviderSource, 'local' | 'standalone'>
+export type LoginEndpointKind = 'cloud' | 'custom' | 'local'
+
+export interface LoginEndpoint {
+  kind: LoginEndpointKind
+  url: string
+  label: string
+}
+
 export interface LoginProviderOption extends ProviderOption {
-  source: 'cloud' | 'custom' | 'local'
+  source: LoginProviderSource
+  oidcProvider: LoginEndpoint
+  storageProvider: LoginEndpoint
   runtime?: LocalPodRuntime
 }
 
@@ -36,8 +48,8 @@ export interface AuthWindowStatus {
 export interface ConnectingProviderInfo {
   issuerLabel: string
   issuerUrl: string
-  providerLabel: string
-  providerUrl: string
+  storageProviderLabel: string
+  storageProviderUrl: string
 }
 
 export interface LoginModalProps {
@@ -49,11 +61,12 @@ export interface LoginModalProps {
   hasRestorableSession: boolean
   providers: LoginProviderOption[]
   localOnboarding: LocalOnboardingSnapshot | null
+  localProviderSource: LocalLoginProviderSource
   onBackFromLocal: () => void
   onContinueLocalLogin: () => void
   onSwitchAccount: () => void
   onContinueStoredAccount: () => void
-  onConnect: (providerUrl: string) => void
+  onConnect: (providerKey: string) => void
   onCancelConnecting: () => void
   onAddProvider: (url: string, label?: string) => void
   onClearError: () => void

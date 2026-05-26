@@ -3,7 +3,7 @@ type ManagedDomainConfig = {
   value?: string;
 }
 
-type LocalProviderMode = 'device-only' | 'remote-ready' | null
+type LocalProviderMode = 'local' | 'standalone' | null
 
 export function resolveManagedDomainFromEnv(env: Record<string, string>): {
   type: 'none' | 'custom';
@@ -34,7 +34,7 @@ export function resolveEffectiveManagedDomain(options: {
     return options.envDomain
   }
 
-  if (options.mode === 'device-only') {
+  if (options.mode === 'standalone') {
     return { type: 'none' }
   }
 
@@ -45,7 +45,7 @@ export function resolveManagedTunnelTokenFromEnv(
   env: Record<string, string>,
   mode: LocalProviderMode,
 ): string | undefined {
-  if (mode === 'device-only') {
+  if (mode === 'standalone') {
     return undefined;
   }
 
@@ -63,10 +63,9 @@ export function resolveEffectiveManagedTunnelToken(options: {
   domain: ManagedDomainConfig
   existingTunnelToken?: string
 }): string | undefined {
-  const effectiveMode = options.domain.type === 'custom' ? 'remote-ready' : options.mode
-  if (effectiveMode === 'device-only') {
+  if (options.mode === 'standalone') {
     return undefined
   }
 
-  return resolveManagedTunnelTokenFromEnv(options.env, effectiveMode) ?? options.existingTunnelToken
+  return resolveManagedTunnelTokenFromEnv(options.env, options.mode) ?? options.existingTunnelToken
 }

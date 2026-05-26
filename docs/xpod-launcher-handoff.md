@@ -86,8 +86,10 @@ LinX 目前产品配置采用 5 项主配置：
 补充原则：
 
 - `cloud` 路线不启动本地 xpod，不需要 Local SP 域名
-- `local` 默认自动路径是 device-only，只启动本地 xpod，不要求公网域名，只保证本机/局域网验证
-- `local` + Cloud IDP 需要外网可访问时，公网域名必须由用户自己提供
+- `local` 固定表示 Cloud IDP + Local SP，启动本地 xpod 并要求用户自己的公网 URL 才能完成 Cloud 登录
+- `local` 缺少公网域名时只允许本地 xpod 环境检查，不能静默降级为 `standalone`
+- `standalone` 固定表示 Local IDP + Local SP，启动本地 xpod 但不做 Cloud provisioning
+- Cloud IDP + Local SP 需要外网可访问时，公网域名必须由用户自己提供
 - 当用户确认本机外网可直连时，可以不走隧道，但如果要走 Cloud IDP + Local SP，仍需要用户自己的公网 URL
 - 当外网不可直连时，用户需要自己的公网 URL 或隧道供应商稳定分配的 HTTPS 域名，并把它接到隧道出口
 - `standalone` 默认使用 `localhost`，公网域名可选

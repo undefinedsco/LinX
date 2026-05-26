@@ -10,6 +10,16 @@ function createLocalProvider(
     url: 'http://localhost:5737',
     label: 'Local',
     source: 'local',
+    oidcProvider: {
+      kind: 'cloud',
+      url: 'https://id.undefineds.co',
+      label: 'Cloud',
+    },
+    storageProvider: {
+      kind: 'local',
+      url: 'http://localhost:5737',
+      label: 'Local',
+    },
     runtime: {
       kind: 'local-pod',
       status: 'missing',
@@ -28,6 +38,16 @@ describe('getProviderSubtitle', () => {
       label: 'Cloud',
       source: 'cloud',
       isDefault: true,
+      oidcProvider: {
+        kind: 'cloud',
+        url: 'https://cloud.example.com',
+        label: 'Cloud',
+      },
+      storageProvider: {
+        kind: 'cloud',
+        url: 'https://cloud.example.com',
+        label: 'Cloud',
+      },
     }
 
     expect(getProviderSubtitle(provider, false)).toBe('官方云端空间')
@@ -48,7 +68,7 @@ describe('getProviderSubtitle', () => {
       },
     })
 
-    expect(getProviderSubtitle(provider, false)).toBe('这台设备上的本地空间')
+    expect(getProviderSubtitle(provider, false)).toBe('Cloud 账号，本地空间')
   })
 
   it('uses onboarding state for resumable Local setup', () => {
@@ -60,13 +80,13 @@ describe('getProviderSubtitle', () => {
         canCreate: false,
         onboarding: {
           state: 'idle',
-          mode: 'device-only',
+          mode: 'local',
           message: null,
         },
       },
     })
 
-    expect(getProviderSubtitle(provider, false)).toBe('这台设备上的本地空间')
+    expect(getProviderSubtitle(provider, false)).toBe('Cloud 账号，本地空间')
   })
 
   it('uses onboarding state for Local repair flow', () => {
@@ -78,13 +98,13 @@ describe('getProviderSubtitle', () => {
         canCreate: false,
         onboarding: {
           state: 'repair_required',
-          mode: 'remote-ready',
+          mode: 'local',
           message: null,
         },
       },
     })
 
-    expect(getProviderSubtitle(provider, false)).toBe('这台设备上的本地空间')
+    expect(getProviderSubtitle(provider, false)).toBe('Cloud 账号，本地空间')
   })
 
   it('falls back to runtime status when onboarding state is unavailable', () => {
@@ -97,7 +117,7 @@ describe('getProviderSubtitle', () => {
       },
     })
 
-    expect(getProviderSubtitle(provider, false)).toBe('这台设备上的本地空间')
+    expect(getProviderSubtitle(provider, false)).toBe('Cloud 账号，本地空间')
   })
 })
 
@@ -109,6 +129,16 @@ describe('getProviderStatusBadge', () => {
       label: 'Cloud',
       source: 'cloud',
       isDefault: true,
+      oidcProvider: {
+        kind: 'cloud',
+        url: 'https://cloud.example.com',
+        label: 'Cloud',
+      },
+      storageProvider: {
+        kind: 'cloud',
+        url: 'https://cloud.example.com',
+        label: 'Cloud',
+      },
     }
 
     expect(getProviderStatusBadge(provider)).toEqual({
@@ -126,7 +156,7 @@ describe('getProviderStatusBadge', () => {
         canCreate: false,
         onboarding: {
           state: 'repair_required',
-          mode: 'remote-ready',
+          mode: 'local',
           message: null,
         },
       },
@@ -147,14 +177,14 @@ describe('getProviderStatusBadge', () => {
         canCreate: false,
         onboarding: {
           state: 'ready',
-          mode: 'device-only',
+          mode: 'local',
           message: null,
         },
       },
     })
 
     expect(getProviderStatusBadge(provider)).toEqual({
-      label: '就绪',
+      label: '可用',
       tone: 'success',
     })
   })
@@ -168,6 +198,16 @@ describe('getProviderActionLabel', () => {
       label: 'Cloud',
       source: 'cloud',
       isDefault: true,
+      oidcProvider: {
+        kind: 'cloud',
+        url: 'https://cloud.example.com',
+        label: 'Cloud',
+      },
+      storageProvider: {
+        kind: 'cloud',
+        url: 'https://cloud.example.com',
+        label: 'Cloud',
+      },
     }
 
     expect(getProviderActionLabel(provider)).toBe('登录')
@@ -200,7 +240,7 @@ describe('getProviderActionLabel', () => {
         canCreate: false,
         onboarding: {
           state: 'repair_required',
-          mode: 'remote-ready',
+          mode: 'local',
           message: null,
         },
       },
@@ -218,7 +258,7 @@ describe('getProviderActionLabel', () => {
         canCreate: false,
         onboarding: {
           state: 'ready',
-          mode: 'device-only',
+          mode: 'local',
           message: null,
         },
       },

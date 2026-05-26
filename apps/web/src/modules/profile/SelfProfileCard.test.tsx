@@ -31,8 +31,8 @@ vi.mock('@linx/stores/login', () => ({
     storedAccount: {
       issuerLabel: 'Cloud',
       issuerUrl: 'https://id.undefineds.co',
-      providerLabel: 'Local',
-      providerUrl: 'https://node-0000.undefineds.co/',
+      storageProviderLabel: 'Local',
+      storageProviderUrl: 'https://node-0000.undefineds.co/',
     },
   }),
 }))

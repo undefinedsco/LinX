@@ -104,7 +104,7 @@ all later business writes for the same session must continue to use that same
 selected SP as their storage base.
 
 Implementation invariant:
-- `StoredAccount.providerUrl` represents the selected SP/data space.
+- `StoredAccount.storageProviderUrl` represents the selected Storage Provider/data space.
 - `SolidDatabase.getDialect().getPodUrl()` is the only accepted base for LinX
   business resources (`/.data/*`, `/settings/*`, `/inbox/*`).
 - WebID/Profile URLs may be fetched for identity display and mismatch checks,
@@ -145,7 +145,7 @@ Acceptance:
   Agent Home files, inbox approvals/audits, and runtime session refs must all
   resolve under the Local SP Pod URL. Built-in platform chat runtime calls must
   also target the Local SP runtime endpoint.
-- Standalone / Local device-only path: local xpod starts before auth handoff,
+- Standalone path: local xpod starts before auth handoff,
   and both identity and data writes resolve under the local xpod SP.
 - Network optimization may change the fetch transport to a proven same-node
   route, but canonical resource URIs and database Pod URL remain the selected

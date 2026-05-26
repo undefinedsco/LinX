@@ -42,7 +42,7 @@ describe('SetupView', () => {
     expect(screen.getByText(/不填写时只在本机或局域网使用/)).toBeInTheDocument()
   })
 
-  it('saves a local device-only setup payload without a generated public domain', async () => {
+  it('saves a local setup payload without a generated public domain', async () => {
     const onComplete = vi.fn()
 
     fetchMock.mockResolvedValueOnce(jsonResponse({

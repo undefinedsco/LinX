@@ -59,8 +59,8 @@ describe('login-utils post-login target helpers', () => {
       issuerUrl: 'https://cloud.example.com',
       authorizationSurface: 'window',
       returnToMicroAppId: 'contacts',
-      providerUrl: 'https://node.example.com',
-      providerLabel: 'Local',
+      storageProviderUrl: 'https://node.example.com',
+      storageProviderLabel: 'Local',
       authorizationQuery: {
         provisionCode: 'pc-123',
         ignored: '',
@@ -71,8 +71,8 @@ describe('login-utils post-login target helpers', () => {
       issuerUrl: 'https://cloud.example.com',
       authorizationSurface: 'window',
       returnToMicroAppId: 'contacts',
-      providerUrl: 'https://node.example.com',
-      providerLabel: 'Local',
+      storageProviderUrl: 'https://node.example.com',
+      storageProviderLabel: 'Local',
       authorizationQuery: {
         provisionCode: 'pc-123',
       },
@@ -81,8 +81,8 @@ describe('login-utils post-login target helpers', () => {
       issuerUrl: 'https://cloud.example.com',
       authorizationSurface: 'window',
       returnToMicroAppId: 'contacts',
-      providerUrl: 'https://node.example.com',
-      providerLabel: 'Local',
+      storageProviderUrl: 'https://node.example.com',
+      storageProviderLabel: 'Local',
       authorizationQuery: {
         provisionCode: 'pc-123',
       },
@@ -108,8 +108,8 @@ describe('login-utils post-login target helpers', () => {
       issuerUrl: 'https://id.undefineds.co',
       authorizationSurface: 'embedded',
       returnToMicroAppId: 'chat',
-      providerUrl: 'https://node-0000.undefineds.co',
-      providerLabel: 'Local',
+      storageProviderUrl: 'https://node-0000.undefineds.co',
+      storageProviderLabel: 'Local',
       prompt: 'none',
     })
 
@@ -117,8 +117,8 @@ describe('login-utils post-login target helpers', () => {
       issuerUrl: 'https://id.undefineds.co',
       authorizationSurface: 'embedded',
       returnToMicroAppId: 'chat',
-      providerUrl: 'https://node-0000.undefineds.co',
-      providerLabel: 'Local',
+      storageProviderUrl: 'https://node-0000.undefineds.co',
+      storageProviderLabel: 'Local',
       prompt: 'none',
     })
   })
@@ -217,8 +217,8 @@ describe('login-utils post-login target helpers', () => {
       displayName: 'Ganlu',
       issuerUrl: 'https://cloud.example.com',
       issuerLabel: 'Cloud',
-      providerUrl: 'https://cloud.example.com',
-      providerLabel: 'Cloud',
+      storageProviderUrl: 'https://cloud.example.com',
+      storageProviderLabel: 'Cloud',
       webId: 'https://alice.example/profile/card#me',
     }))
 
@@ -226,8 +226,8 @@ describe('login-utils post-login target helpers', () => {
       displayName: 'Ganlu',
       issuerUrl: 'https://cloud.example.com',
       issuerLabel: 'Cloud',
-      providerUrl: 'https://cloud.example.com',
-      providerLabel: 'Cloud',
+      storageProviderUrl: 'https://cloud.example.com',
+      storageProviderLabel: 'Cloud',
       webId: 'https://alice.example/profile/card#me',
     })
   })

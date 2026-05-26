@@ -102,8 +102,8 @@ describe('AuthCallback', () => {
       expect(connectMock).toHaveBeenCalledWith('https://cloud.example.com', {
         authorizationSurface: 'window',
         returnToMicroAppId: 'files',
-        providerUrl: undefined,
-        providerLabel: undefined,
+        storageProviderUrl: undefined,
+        storageProviderLabel: undefined,
         authorizationQuery: undefined,
       })
     })
@@ -114,8 +114,8 @@ describe('AuthCallback', () => {
       issuerUrl: 'https://id.undefineds.co',
       authorizationSurface: 'embedded',
       returnToMicroAppId: 'chat',
-      providerUrl: 'https://node-0000.undefineds.co',
-      providerLabel: 'Local',
+      storageProviderUrl: 'https://node-0000.undefineds.co',
+      storageProviderLabel: 'Local',
       authorizationQuery: {
         provisionCode: 'pc-123',
       },
@@ -130,8 +130,8 @@ describe('AuthCallback', () => {
       expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', {
         authorizationSurface: 'embedded',
         returnToMicroAppId: 'chat',
-        providerUrl: 'https://node-0000.undefineds.co',
-        providerLabel: 'Local',
+        storageProviderUrl: 'https://node-0000.undefineds.co',
+        storageProviderLabel: 'Local',
         authorizationQuery: {
           provisionCode: 'pc-123',
         },
@@ -144,8 +144,8 @@ describe('AuthCallback', () => {
       issuerUrl: 'https://id.undefineds.co',
       authorizationSurface: 'embedded',
       returnToMicroAppId: 'chat',
-      providerUrl: 'https://node-0000.undefineds.co',
-      providerLabel: 'Local',
+      storageProviderUrl: 'https://node-0000.undefineds.co',
+      storageProviderLabel: 'Local',
       authorizationQuery: {
         provisionCode: 'pc-123',
       },
@@ -159,8 +159,8 @@ describe('AuthCallback', () => {
       expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', {
         authorizationSurface: 'embedded',
         returnToMicroAppId: 'chat',
-        providerUrl: 'https://node-0000.undefineds.co',
-        providerLabel: 'Local',
+        storageProviderUrl: 'https://node-0000.undefineds.co',
+        storageProviderLabel: 'Local',
         authorizationQuery: {
           provisionCode: 'pc-123',
         },

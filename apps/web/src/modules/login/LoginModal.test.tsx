@@ -19,12 +19,32 @@ function createProps(overrides: Partial<LoginModalProps> = {}): LoginModalProps 
         label: 'Cloud',
         source: 'cloud',
         isDefault: true,
+        oidcProvider: {
+          kind: 'cloud',
+          url: 'https://cloud.example.com',
+          label: 'Cloud',
+        },
+        storageProvider: {
+          kind: 'cloud',
+          url: 'https://cloud.example.com',
+          label: 'Cloud',
+        },
       },
       {
         id: 'local',
         url: 'http://localhost:5737',
-        label: '本地空间',
+        label: 'Local',
         source: 'local',
+        oidcProvider: {
+          kind: 'cloud',
+          url: 'https://id.undefineds.co',
+          label: 'Cloud',
+        },
+        storageProvider: {
+          kind: 'local',
+          url: 'http://localhost:5737',
+          label: 'Local',
+        },
         runtime: {
           kind: 'local-pod',
           status: 'missing',
@@ -54,6 +74,7 @@ function createProps(overrides: Partial<LoginModalProps> = {}): LoginModalProps 
     },
     connectingProvider: null,
     localOnboarding: null,
+    localProviderSource: 'local',
     ...overrides,
   }
 }
@@ -77,14 +98,14 @@ describe('LoginModal', () => {
       storedAccount: {
         displayName: 'Ganlu',
         issuerUrl: 'https://id.undefineds.co',
-        providerUrl: 'http://localhost:5737',
-        providerLabel: 'Local',
+        storageProviderUrl: 'http://localhost:5737',
+        storageProviderLabel: 'Local',
         webId: 'https://id.undefineds.co/ganlu/profile/card#me',
       },
       storageConflict: {
         expectedStorageUrl: 'https://node-abc123.undefineds.co/ganlu/',
         actualStorageUrl: 'https://node-old999.undefineds.co/ganlu/',
-        providerUrl: 'http://localhost:5737',
+        storageProviderUrl: 'http://localhost:5737',
         managementUrl: 'http://localhost:5737/.account/account/',
       },
     })
@@ -185,7 +206,7 @@ describe('LoginModal', () => {
     expect(container.querySelector('[data-provider-source="local"] [data-provider-local-marker]')).toBeTruthy()
 
     fireEvent.click(screen.getByText('Cloud'))
-    expect(props.onConnect).toHaveBeenCalledWith('https://cloud.example.com')
+    expect(props.onConnect).toHaveBeenCalledWith('cloud')
   })
 
   it('shows Local startup status inline inside the same modal', () => {
@@ -207,7 +228,7 @@ describe('LoginModal', () => {
       view: 'local',
       localOnboarding: {
         state: 'starting',
-        mode: 'device-only',
+        mode: 'standalone',
         localUrl: 'http://localhost:5737/',
         baseUrl: 'http://localhost:5737/',
         publicUrl: null,
@@ -241,8 +262,8 @@ describe('LoginModal', () => {
         displayName: 'Ganlu',
         issuerUrl: 'https://id.undefineds.co',
         issuerLabel: 'Cloud',
-        providerUrl: 'https://node-0000.undefineds.co/',
-        providerLabel: 'Local',
+        storageProviderUrl: 'https://node-0000.undefineds.co/',
+        storageProviderLabel: 'Local',
       },
     })
 
@@ -260,6 +281,16 @@ describe('LoginModal', () => {
           url: 'https://pod.example.com',
           label: 'pod.example.com',
           source: 'custom',
+          oidcProvider: {
+            kind: 'custom',
+            url: 'https://pod.example.com',
+            label: 'pod.example.com',
+          },
+          storageProvider: {
+            kind: 'custom',
+            url: 'https://pod.example.com',
+            label: 'pod.example.com',
+          },
         },
       ],
     })
@@ -278,6 +309,16 @@ describe('LoginModal', () => {
           url: 'http://localhost:5737',
           label: '本地空间',
           source: 'local',
+          oidcProvider: {
+            kind: 'cloud',
+            url: 'https://id.undefineds.co',
+            label: 'Cloud',
+          },
+          storageProvider: {
+            kind: 'local',
+            url: 'http://localhost:5737',
+            label: 'Local',
+          },
           runtime: {
             kind: 'local-pod',
             status: 'stopped',
@@ -285,7 +326,7 @@ describe('LoginModal', () => {
             canCreate: false,
             onboarding: {
               state: 'repair_required',
-              mode: 'remote-ready',
+              mode: 'local',
               message: '要让其他设备接入 Local，首次启动前需要先准备固定公网地址。',
             },
           },
@@ -296,7 +337,7 @@ describe('LoginModal', () => {
     render(<LoginModal {...props} />)
 
     expect(screen.getByText('Local')).toBeTruthy()
-    expect(screen.getByText('这台设备上的本地空间')).toBeTruthy()
+    expect(screen.getByText('Cloud 账号，本地空间')).toBeTruthy()
     expect(screen.getByText('需设置')).toBeTruthy()
     expect(screen.getByText('设置')).toBeTruthy()
   })
@@ -306,7 +347,7 @@ describe('LoginModal', () => {
       view: 'local',
       localOnboarding: {
         state: 'ready',
-        mode: 'device-only',
+        mode: 'standalone',
         localUrl: 'http://localhost:5737/',
         baseUrl: 'http://localhost:5737/',
         publicUrl: null,
@@ -349,8 +390,8 @@ describe('LoginModal', () => {
       connectingProvider: {
         issuerLabel: 'Cloud',
         issuerUrl: 'https://id.undefineds.co',
-        providerLabel: 'Local',
-        providerUrl: 'https://node-0000.undefineds.co/',
+        storageProviderLabel: 'Local',
+        storageProviderUrl: 'https://node-0000.undefineds.co/',
       },
     })
     render(<LoginModal {...props} />)
@@ -369,8 +410,8 @@ describe('LoginModal', () => {
       connectingProvider: {
         issuerLabel: 'Cloud',
         issuerUrl: 'https://id.undefineds.co',
-        providerLabel: 'Cloud',
-        providerUrl: 'https://id.undefineds.co',
+        storageProviderLabel: 'Cloud',
+        storageProviderUrl: 'https://id.undefineds.co',
       },
       authWindowStatus: {
         open: true,

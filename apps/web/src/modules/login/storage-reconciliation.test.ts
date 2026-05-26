@@ -29,29 +29,29 @@ describe('storage-reconciliation', () => {
     {
       route: 'Cloud IDP + Cloud SP',
       webId: 'https://id.undefineds.co/alice/profile/card#me',
-      providerPublicUrl: 'https://id.undefineds.co/',
+      storageProviderPublicUrl: 'https://id.undefineds.co/',
       expectedStorageUrl: 'https://id.undefineds.co/alice/',
     },
     {
       route: 'Cloud IDP + Local SP',
       webId: 'https://id.undefineds.co/alice/profile/card#me',
-      providerPublicUrl: 'https://node-abc123.undefineds.co/',
+      storageProviderPublicUrl: 'https://node-abc123.undefineds.co/',
       expectedStorageUrl: 'https://node-abc123.undefineds.co/alice/',
     },
     {
       route: 'Standalone Local IDP + Local SP',
       webId: 'http://localhost:5737/alice/profile/card#me',
-      providerPublicUrl: 'http://localhost:5737/',
+      storageProviderPublicUrl: 'http://localhost:5737/',
       expectedStorageUrl: 'http://localhost:5737/alice/',
     },
     {
       route: 'custom Solid provider',
       webId: 'https://solid.example.net/bob/profile/card#me',
-      providerPublicUrl: 'https://solid.example.net/',
+      storageProviderPublicUrl: 'https://solid.example.net/',
       expectedStorageUrl: 'https://solid.example.net/bob/',
     },
-  ])('resolves expected storage for $route', ({ webId, providerPublicUrl, expectedStorageUrl }) => {
-    expect(resolveExpectedStorageUrl(webId, providerPublicUrl)).toBe(expectedStorageUrl)
+  ])('resolves expected storage for $route', ({ webId, storageProviderPublicUrl, expectedStorageUrl }) => {
+    expect(resolveExpectedStorageUrl(webId, storageProviderPublicUrl)).toBe(expectedStorageUrl)
   })
 
   it('builds the current-space management URL', () => {
@@ -71,8 +71,8 @@ describe('storage-reconciliation', () => {
     await expect(
       detectStorageConflict({
         webId: 'https://id.undefineds.co/alice/profile/card#me',
-        providerUrl: 'http://localhost:5737',
-        providerPublicUrl: 'https://node-abc123.undefineds.co/',
+        storageProviderUrl: 'http://localhost:5737',
+        storageProviderPublicUrl: 'https://node-abc123.undefineds.co/',
       }),
     ).resolves.toBeNull()
   })
@@ -91,13 +91,13 @@ describe('storage-reconciliation', () => {
     await expect(
       detectStorageConflict({
         webId: 'https://id.undefineds.co/alice/profile/card#me',
-        providerUrl: 'http://localhost:5737',
-        providerPublicUrl: 'https://node-abc123.undefineds.co/',
+        storageProviderUrl: 'http://localhost:5737',
+        storageProviderPublicUrl: 'https://node-abc123.undefineds.co/',
       }),
     ).resolves.toEqual({
       expectedStorageUrl: 'https://node-abc123.undefineds.co/alice/',
       actualStorageUrl: 'https://node-old999.undefineds.co/alice/',
-      providerUrl: 'http://localhost:5737',
+      storageProviderUrl: 'http://localhost:5737',
       managementUrl: 'http://localhost:5737/.account/account/',
     })
   })
@@ -117,8 +117,8 @@ describe('storage-reconciliation', () => {
     await expect(
       detectStorageConflict({
         webId: 'https://id.undefineds.co/alice/profile/card#me',
-        providerUrl: 'http://localhost:5737',
-        providerPublicUrl: 'https://node-abc123.undefineds.co/',
+        storageProviderUrl: 'http://localhost:5737',
+        storageProviderPublicUrl: 'https://node-abc123.undefineds.co/',
       }),
     ).resolves.toBeNull()
   })
@@ -136,13 +136,13 @@ describe('storage-reconciliation', () => {
     await expect(
       detectStorageConflict({
         webId: 'https://id.undefineds.co/alice/profile/card#me',
-        providerUrl: 'http://localhost:5737',
-        providerPublicUrl: 'https://node-abc123.undefineds.co/',
+        storageProviderUrl: 'http://localhost:5737',
+        storageProviderPublicUrl: 'https://node-abc123.undefineds.co/',
       }),
     ).resolves.toEqual({
       expectedStorageUrl: 'https://node-abc123.undefineds.co/alice/',
       actualStorageUrl: 'https://node-old999.undefineds.co/alice/',
-      providerUrl: 'http://localhost:5737',
+      storageProviderUrl: 'http://localhost:5737',
       managementUrl: 'http://localhost:5737/.account/account/',
     })
   })
@@ -160,13 +160,13 @@ describe('storage-reconciliation', () => {
     await expect(
       detectStorageConflict({
         webId: 'https://id.undefineds.co/alice/profile/card#me',
-        providerUrl: 'http://localhost:5737',
-        providerPublicUrl: 'https://node-abc123.undefineds.co/',
+        storageProviderUrl: 'http://localhost:5737',
+        storageProviderPublicUrl: 'https://node-abc123.undefineds.co/',
       }),
     ).resolves.toEqual({
       expectedStorageUrl: 'https://node-abc123.undefineds.co/alice/',
       actualStorageUrl: 'https://id.undefineds.co/alice/',
-      providerUrl: 'http://localhost:5737',
+      storageProviderUrl: 'http://localhost:5737',
       managementUrl: 'http://localhost:5737/.account/account/',
     })
   })
@@ -184,13 +184,13 @@ describe('storage-reconciliation', () => {
     await expect(
       detectStorageConflict({
         webId: 'https://id.undefineds.co/alice/profile/card#me',
-        providerUrl: 'http://localhost:5737',
-        providerPublicUrl: 'https://node-abc123.undefineds.co/',
+        storageProviderUrl: 'http://localhost:5737',
+        storageProviderPublicUrl: 'https://node-abc123.undefineds.co/',
       }),
     ).resolves.toEqual({
       expectedStorageUrl: 'https://node-abc123.undefineds.co/alice/',
       actualStorageUrl: null,
-      providerUrl: 'http://localhost:5737',
+      storageProviderUrl: 'http://localhost:5737',
       managementUrl: 'http://localhost:5737/.account/account/',
     })
   })

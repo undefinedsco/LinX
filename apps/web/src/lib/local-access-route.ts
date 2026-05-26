@@ -28,8 +28,8 @@ export interface LocalAccessRouteSelection {
 
 interface ResolveLocalAccessRouteOptions {
   canonicalPodUrl: string | null
-  providerLabel?: string | null
-  providerUrl?: string | null
+  storageProviderLabel?: string | null
+  storageProviderUrl?: string | null
   snapshot?: LocalOnboardingSnapshot | null
   fetchImpl?: typeof fetch
   timeoutMs?: number
@@ -63,7 +63,7 @@ export function hasLocalAccessRouteSource(): boolean {
 export async function resolveBestLocalAccessRoute(
   options: ResolveLocalAccessRouteOptions,
 ): Promise<LocalAccessRouteSelection | null> {
-  if (!isLocalProvider(options.providerLabel) || !options.canonicalPodUrl) {
+  if (!isLocalProvider(options.storageProviderLabel) || !options.canonicalPodUrl) {
     return null
   }
 
@@ -72,7 +72,7 @@ export async function resolveBestLocalAccessRoute(
     return null
   }
 
-  const canonicalBaseUrl = normalizeBaseUrl(options.providerUrl)
+  const canonicalBaseUrl = normalizeBaseUrl(options.storageProviderUrl)
     ?? baseUrlFromPodUrl(options.canonicalPodUrl)
   const canonicalPodUrl = normalizePodUrl(options.canonicalPodUrl)
   if (!canonicalBaseUrl || !canonicalPodUrl) {
@@ -195,7 +195,7 @@ async function loadLocalOnboardingSnapshot(): Promise<LocalOnboardingSnapshot | 
 
     return {
       state: running ? 'ready' : 'idle',
-      mode: publicUrl ? 'remote-ready' : 'device-only',
+      mode: publicUrl ? 'local' : 'standalone',
       localUrl,
       baseUrl,
       publicUrl,
@@ -418,8 +418,8 @@ function routePriority(kind: LocalAccessRouteKind): number {
   }
 }
 
-function isLocalProvider(providerLabel?: string | null): boolean {
-  return providerLabel?.trim().toLowerCase() === 'local'
+function isLocalProvider(storageProviderLabel?: string | null): boolean {
+  return storageProviderLabel?.trim().toLowerCase() === 'local'
 }
 
 function isLoopbackUrl(url?: string | null): boolean {

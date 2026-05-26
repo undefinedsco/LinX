@@ -25,8 +25,8 @@ export interface StoredAccount {
   avatarUrl?: string
   issuerUrl: string
   issuerLabel?: string
-  providerUrl?: string
-  providerLabel?: string
+  storageProviderUrl?: string
+  storageProviderLabel?: string
   webId?: string
 }
 
@@ -75,8 +75,12 @@ export function getRememberedAccount(): StoredAccount | null {
       avatarUrl: typeof parsed.avatarUrl === 'string' ? parsed.avatarUrl : undefined,
       issuerUrl: parsed.issuerUrl,
       issuerLabel: typeof parsed.issuerLabel === 'string' ? parsed.issuerLabel : undefined,
-      providerUrl: typeof parsed.providerUrl === 'string' ? parsed.providerUrl : undefined,
-      providerLabel: typeof parsed.providerLabel === 'string' ? parsed.providerLabel : undefined,
+      storageProviderUrl: typeof parsed.storageProviderUrl === 'string'
+        ? parsed.storageProviderUrl
+        : undefined,
+      storageProviderLabel: typeof parsed.storageProviderLabel === 'string'
+        ? parsed.storageProviderLabel
+        : undefined,
       webId: typeof parsed.webId === 'string' ? parsed.webId : undefined,
     }
   } catch {

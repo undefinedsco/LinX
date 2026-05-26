@@ -24,6 +24,7 @@ export interface XpodStartOptions {
   providerId: string;
   dataDir: string;
   port: number;
+  mode: 'local' | 'standalone';
   domain?: {
     type: 'none' | 'custom';
     value?: string;
@@ -63,7 +64,7 @@ export interface AppUpdateStatus {
   error: string | null;
 }
 
-export type LocalOnboardingMode = 'device-only' | 'remote-ready';
+export type LocalOnboardingMode = 'local' | 'standalone';
 
 export type LocalOnboardingState =
   | 'mode_required'

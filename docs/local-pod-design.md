@@ -14,17 +14,17 @@
 | Cloud | Cloud | Cloud | 平台提供 |
 | Local 直连 | Cloud | Local | 用户提供 |
 | Local 隧道 | Cloud | Local | 用户提供 |
-| Standalone / Local device-only | Local | Local | 可选，用户提供 |
+| Standalone | Local | Local | 可选，用户提供 |
 
 ## 本地 Pod 配置规则
 
 - LinX 不再为 Local SP 自动分配平台域名。
 - 用户不再手填平台生成的 Local 公网域名。
 - `CSS_BASE_STORAGE_DOMAIN` 不再是 Local onboarding 的用户配置项。
-- Local 默认自动路径只保证本机/局域网可用，不要求公网域名。
+- Standalone 默认路径只保证本机/局域网可用，不要求公网域名。
 - Local 直连需要用户自己的公网域名，并由用户完成 DNS、端口转发、反向代理和 HTTPS 入口。
 - Local 隧道需要用户自己的公网域名，并由用户把域名接到隧道出口。
-- Standalone / Local device-only 默认使用 `http://localhost:5737/`，只承诺本机可用；局域网和公网访问由用户自行配置。
+- Standalone 默认使用 `http://localhost:5737/`，只承诺本机可用；局域网和公网访问由用户自行配置。
 
 ## LinX 与 xpod 分工
 

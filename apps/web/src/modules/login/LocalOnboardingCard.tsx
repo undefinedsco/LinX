@@ -47,7 +47,7 @@ export function LocalOnboardingCard({
   const autoBootstrapStartedRef = useRef(false)
   const autoSignInKeyRef = useRef<string | null>(null)
   const localIssuerUrl = snapshot.localUrl ?? snapshot.baseUrl
-  const localProviderUrl = snapshot.mode === 'device-only'
+  const localProviderUrl = snapshot.mode === 'standalone'
     ? localIssuerUrl
     : snapshot.publicUrl ?? snapshot.baseUrl ?? snapshot.localUrl
   const previousConfigOpen = useRef(configWindow.open)
@@ -58,19 +58,12 @@ export function LocalOnboardingCard({
     onBack()
   }, [onBack])
 
-  const handleDowngradeToDeviceOnly = useCallback(async () => {
-    setAuthError(null)
-    setActionError(null)
-    await chooseMode('device-only')
-    await continueLocal()
-  }, [chooseMode, continueLocal])
-
   const handleSignIn = useCallback(async () => {
     if (!localProviderUrl) {
       setAuthError('Local 服务还没有准备好。')
       return
     }
-    if (snapshot.mode !== 'device-only' && !snapshot.provisionCode) {
+    if (snapshot.mode !== 'standalone' && !snapshot.provisionCode) {
       setAuthError('Local 还没完成 Cloud 绑定，暂时无法继续登录。')
       return
     }
@@ -79,17 +72,17 @@ export function LocalOnboardingCard({
     setLaunchingAuth(true)
 
     try {
-      if (snapshot.mode === 'device-only') {
+      if (snapshot.mode === 'standalone') {
         await oidc.connect(localProviderUrl, {
           authorizationSurface: 'embedded',
-          providerUrl: localProviderUrl,
-          providerLabel: 'Local',
+          storageProviderUrl: localProviderUrl,
+          storageProviderLabel: 'Local',
         })
       } else {
         await oidc.connect(snapshot.cloudIdentityUrl ?? LINX_CLOUD_IDENTITY_ORIGIN, {
           authorizationSurface: 'embedded',
-          providerUrl: localProviderUrl,
-          providerLabel: 'Local',
+          storageProviderUrl: localProviderUrl,
+          storageProviderLabel: 'Local',
           authorizationQuery: {
             provisionCode: snapshot.provisionCode,
           },
@@ -147,7 +140,7 @@ export function LocalOnboardingCard({
     setActionError(null)
 
     void (async () => {
-      const continueMode: LocalOnboardingMode = snapshot.mode ?? 'device-only'
+      const continueMode: LocalOnboardingMode = snapshot.mode ?? 'local'
 
       try {
         if (snapshot.mode !== continueMode) {
@@ -221,11 +214,6 @@ export function LocalOnboardingCard({
             backLabel={backLabel}
             onRetry={() => void refresh()}
             onAdvancedSettings={snapshot.canOpenSettings ? () => void handleOpenAdvancedSettings() : undefined}
-            onUseDeviceOnly={
-              snapshot.errorCode === 'LOCAL_REMOTE_READY_REQUIRES_SETUP'
-                ? () => void handleDowngradeToDeviceOnly()
-                : undefined
-            }
             onBack={handleBack}
           />
         ) : (
@@ -267,7 +255,6 @@ function RepairCard({
   backLabel,
   onRetry,
   onAdvancedSettings,
-  onUseDeviceOnly,
   onBack,
 }: {
   title: string
@@ -280,7 +267,6 @@ function RepairCard({
   backLabel: string
   onRetry: () => void
   onAdvancedSettings?: () => void
-  onUseDeviceOnly?: () => void
   onBack: () => void
 }) {
   return (
@@ -300,11 +286,6 @@ function RepairCard({
         {onAdvancedSettings ? (
           <Button onClick={onAdvancedSettings}>
             {settingsLabel ?? '打开 Local 设置'}
-          </Button>
-        ) : null}
-        {onUseDeviceOnly ? (
-          <Button variant="outline" disabled={busy} onClick={onUseDeviceOnly}>
-            改为只给这台设备用
           </Button>
         ) : null}
         <Button variant={onAdvancedSettings ? 'outline' : 'default'} disabled={busy} onClick={onRetry}>
@@ -351,8 +332,8 @@ function ReadyCard({
         <p className="text-sm font-medium">Local 已准备好</p>
         <p className="mt-2 text-sm text-muted-foreground leading-6">{message}</p>
         <p className="mt-2 text-xs text-muted-foreground">
-          {mode === 'device-only'
-            ? '下一步会打开本地 Local 登录页，完成后会回到 LinX。'
+          {mode === 'standalone'
+            ? '下一步会打开 Standalone 登录页，完成后会回到 LinX。'
             : '下一步会打开 Cloud 登录页，流程完成后会回到 LinX。'}
         </p>
         {detail ? <p className="mt-2 text-xs text-muted-foreground break-all">{detail}</p> : null}
@@ -366,7 +347,7 @@ function ReadyCard({
 
       <div className="flex flex-col gap-3">
         <Button disabled={busy} onClick={onSignIn}>
-          {busy ? (mode === 'device-only' ? '正在打开 Local 登录…' : '正在打开 Cloud 登录…') : '继续登录'}
+          {busy ? (mode === 'standalone' ? '正在打开 Standalone 登录…' : '正在打开 Cloud 登录…') : '继续登录'}
         </Button>
         <div className="flex gap-3">
           <Button variant="outline" className="flex-1" onClick={onBack}>
@@ -390,7 +371,7 @@ function getRepairContent(snapshot: {
     return {
       title: '还差一步让其他设备接入 Local',
       message: '你当前选择了多设备接入。要让手机或其他电脑也能访问，需要先给 Local 配一个固定可访问地址。',
-      detail: '如果你现在只是想先开始使用，也可以直接切回“只给这台设备用”，不需要额外设置。',
+      detail: '如果只想账号和数据都留在本机，请回到空间选择并选择 Standalone。',
       retryLabel: '完成后重新检查',
       settingsLabel: '去完成 Local 设置',
     }
