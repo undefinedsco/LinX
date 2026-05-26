@@ -45,22 +45,44 @@ export function getProviderSubtitle(provider: LoginProviderOption, isFailed: boo
   const source = resolveLoginProviderSource(provider)
 
   if (source === 'cloud') {
-    return '官方云端空间'
+    return '云端空间'
   }
 
   if (source === 'local') {
-    return 'Cloud 账号，本地空间'
+    return '本地空间'
   }
 
   if (source === 'standalone') {
-    return '账号和数据都在本机'
+    return '本机空间'
   }
 
   if (provider.runtime?.kind === 'local-pod') {
-    return '这台设备上的本地空间'
+    return '本地空间'
   }
 
   return new URL(provider.url).hostname
+}
+
+export function getProviderInfoText(provider: LoginProviderOption, isFailed: boolean): string {
+  if (isFailed) {
+    return '连接失败，请检查网络或服务状态后重试。'
+  }
+
+  const source = resolveLoginProviderSource(provider)
+
+  if (source === 'cloud') {
+    return '使用 Cloud 登录，数据写入 Cloud 空间。'
+  }
+
+  if (source === 'local') {
+    return '使用 Cloud 登录，数据写入这台设备上的 Local 空间。'
+  }
+
+  if (source === 'standalone') {
+    return '账号和数据都在本机的 Standalone 空间。'
+  }
+
+  return '使用这个 Solid Provider 完成登录和数据存储。'
 }
 
 export function getProviderActionLabel(provider: LoginProviderOption): string {
@@ -131,7 +153,7 @@ export function getProviderStatusBadge(provider: LoginProviderOption): ProviderS
     if (onboarding) {
       switch (onboarding.state) {
         case 'mode_required':
-          return { label: '首次', tone: 'primary' }
+          return { label: '未配置', tone: 'primary' }
         case 'idle':
           return { label: '继续', tone: 'neutral' }
         case 'checking':
@@ -158,7 +180,7 @@ export function getProviderStatusBadge(provider: LoginProviderOption): ProviderS
           ? { label: '继续', tone: 'neutral' }
           : null
       case 'missing':
-        return { label: '首次', tone: 'primary' }
+        return { label: '未配置', tone: 'primary' }
     }
   }
 

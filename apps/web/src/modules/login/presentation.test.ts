@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getProviderActionLabel, getProviderStatusBadge, getProviderSubtitle } from './presentation'
+import { getProviderActionLabel, getProviderInfoText, getProviderStatusBadge, getProviderSubtitle } from './presentation'
 import type { LoginProviderOption } from './types'
 
 function createLocalProvider(
@@ -50,7 +50,8 @@ describe('getProviderSubtitle', () => {
       },
     }
 
-    expect(getProviderSubtitle(provider, false)).toBe('官方云端空间')
+    expect(getProviderSubtitle(provider, false)).toBe('云端空间')
+    expect(getProviderInfoText(provider, false)).toBe('使用 Cloud 登录，数据写入 Cloud 空间。')
   })
 
   it('uses onboarding state for first-time Local setup', () => {
@@ -68,7 +69,8 @@ describe('getProviderSubtitle', () => {
       },
     })
 
-    expect(getProviderSubtitle(provider, false)).toBe('Cloud 账号，本地空间')
+    expect(getProviderSubtitle(provider, false)).toBe('本地空间')
+    expect(getProviderInfoText(provider, false)).toBe('使用 Cloud 登录，数据写入这台设备上的 Local 空间。')
   })
 
   it('uses onboarding state for resumable Local setup', () => {
@@ -86,7 +88,7 @@ describe('getProviderSubtitle', () => {
       },
     })
 
-    expect(getProviderSubtitle(provider, false)).toBe('Cloud 账号，本地空间')
+    expect(getProviderSubtitle(provider, false)).toBe('本地空间')
   })
 
   it('uses onboarding state for Local repair flow', () => {
@@ -104,7 +106,7 @@ describe('getProviderSubtitle', () => {
       },
     })
 
-    expect(getProviderSubtitle(provider, false)).toBe('Cloud 账号，本地空间')
+    expect(getProviderSubtitle(provider, false)).toBe('本地空间')
   })
 
   it('falls back to runtime status when onboarding state is unavailable', () => {
@@ -117,7 +119,7 @@ describe('getProviderSubtitle', () => {
       },
     })
 
-    expect(getProviderSubtitle(provider, false)).toBe('Cloud 账号，本地空间')
+    expect(getProviderSubtitle(provider, false)).toBe('本地空间')
   })
 })
 

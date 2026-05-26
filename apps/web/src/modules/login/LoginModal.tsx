@@ -1,15 +1,16 @@
 import { useState, type ReactNode } from 'react'
-import { Loader2, Plus, X, AlertCircle, ChevronRight, Cloud, HardDrive, Globe2, ArrowLeft } from 'lucide-react'
+import { Loader2, Plus, X, AlertCircle, ChevronRight, Cloud, HardDrive, Globe2, ArrowLeft, Link2, Info, type LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { LoginModalProps, LoginProviderOption } from './types'
 import linxLogoUrl from '@/assets/linx-logo.png'
 import {
   getProviderActionLabel,
   getProviderDisplayLabel,
+  getProviderInfoText,
   getProviderStatusBadge,
   getProviderSubtitle,
 } from './presentation'
-import { isLocalLoginProvider, resolveLoginProviderSource } from './provider-model'
+import { resolveLoginProviderSource } from './provider-model'
 import { LoginCardShell } from './LoginCardShell'
 
 export function LoginModal(props: LoginModalProps) {
@@ -93,7 +94,7 @@ function StorageConflictView({
           name={accountName}
           avatarUrl={storedAccount?.avatarUrl}
           size="lg"
-          localMarker={isLocalStoredAccount(storedAccount)}
+          spaceMarker={resolveStoredAccountSpaceMarker(storedAccount)}
         />
         <p className="text-base font-semibold text-foreground">{accountName}</p>
         <p className="max-w-[19rem] text-center text-sm leading-6 text-muted-foreground">
@@ -142,7 +143,7 @@ function RestoringView({ storedAccount }: Pick<LoginModalProps, 'storedAccount'>
             name={storedAccount.displayName}
             avatarUrl={storedAccount.avatarUrl}
             size="lg"
-            localMarker={isLocalStoredAccount(storedAccount)}
+            spaceMarker={resolveStoredAccountSpaceMarker(storedAccount)}
           />
           <p className="text-sm font-medium text-foreground">{storedAccount.displayName}</p>
         </>
@@ -177,7 +178,7 @@ function AccountView({
           name={storedAccount.displayName}
           avatarUrl={storedAccount.avatarUrl}
           size="lg"
-          localMarker={isLocalStoredAccount(storedAccount)}
+          spaceMarker={resolveStoredAccountSpaceMarker(storedAccount)}
         />
         <p className="text-base font-semibold text-foreground">{storedAccount.displayName}</p>
       </div>
@@ -524,12 +525,12 @@ function AccountAvatar({
   name,
   avatarUrl,
   size = 'md',
-  localMarker = false,
+  spaceMarker = null,
 }: {
   name: string
   avatarUrl?: string
   size?: 'md' | 'lg'
-  localMarker?: boolean
+  spaceMarker?: SpaceMarkerKind | null
 }) {
   const [productLogoFailed, setProductLogoFailed] = useState(false)
   const dim = size === 'lg' ? 'w-16 h-16' : 'w-11 h-11'
@@ -538,7 +539,7 @@ function AccountAvatar({
   const effectiveAvatarUrl = resolveAccountAvatarUrl(avatarUrl)
   const isProductLogo = isLinxLogoUrl(effectiveAvatarUrl)
   const productLogoInnerScale = size === 'lg' ? 'scale-[1.24]' : 'scale-[1.24]'
-  const marker = localMarker ? <LocalMarker size={size} /> : null
+  const marker = spaceMarker ? <SpaceMarker kind={spaceMarker} size={size} /> : null
 
   if (effectiveAvatarUrl) {
     return (
@@ -587,16 +588,24 @@ function AccountAvatar({
   )
 }
 
-function LocalMarker({ size }: { size: 'md' | 'lg' }) {
+type SpaceMarkerKind = 'local' | 'standalone'
+
+function SpaceMarker({ kind, size }: { kind: SpaceMarkerKind; size: 'md' | 'lg' }) {
+  const isStandalone = kind === 'standalone'
+  const Icon = isStandalone ? HardDrive : Link2
+
   return (
     <span
-      data-account-local-marker
+      data-account-space-marker={kind}
+      data-account-local-marker={kind === 'local' ? true : undefined}
+      data-account-standalone-marker={kind === 'standalone' ? true : undefined}
       className={cn(
-        'absolute flex items-center justify-center border border-white/80 bg-emerald-500 text-white shadow-sm dark:border-zinc-900/80',
+        'absolute flex items-center justify-center border border-white/80 text-white shadow-sm dark:border-zinc-900/80',
+        isStandalone ? 'bg-emerald-500' : 'bg-sky-500',
         size === 'lg' ? 'bottom-1 right-1 h-5 w-5 rounded-[7px]' : 'bottom-0.5 right-0.5 h-4 w-4 rounded-[6px]',
       )}
     >
-      <HardDrive className={size === 'lg' ? 'h-3 w-3' : 'h-2.5 w-2.5'} aria-hidden="true" />
+      <Icon className={size === 'lg' ? 'h-3 w-3' : 'h-2.5 w-2.5'} aria-hidden="true" />
     </span>
   )
 }
@@ -613,12 +622,15 @@ function ProviderItem({
   const [imgError, setImgError] = useState(false)
   const label = getProviderDisplayLabel(provider)
   const subtitle = getProviderSubtitle(provider, false)
+  const infoText = getProviderInfoText(provider, false)
   const statusBadge = getProviderStatusBadge(provider)
   const actionLabel = getProviderActionLabel(provider)
   const isPrimary = variant === 'primary'
   const logoUrl = resolveProviderLogoUrl(provider)
   const isProductLogo = isLinxLogoUrl(logoUrl)
   const productLogoInnerScale = 'scale-[1.24]'
+  const source = resolveLoginProviderSource(provider)
+  const spaceMarker = resolveProviderSpaceMarker(provider)
 
   return (
     <button
@@ -632,7 +644,7 @@ function ProviderItem({
       onClick={onSelect}
     >
       <div
-        data-provider-source={resolveLoginProviderSource(provider)}
+        data-provider-source={source}
         className={cn(
           'relative rounded-[22%] flex items-center justify-center shrink-0 overflow-hidden border border-border/60',
           isProductLogo && 'border-violet-400/90 bg-violet-200/90 p-0.5',
@@ -653,20 +665,32 @@ function ProviderItem({
         ) : (
           <ProviderIcon provider={provider} />
         )}
-        {isLocalLoginProvider(provider) ? (
+        {spaceMarker ? (
           <span
-            data-provider-local-marker
-            className="absolute bottom-0.5 right-0.5 flex h-4 w-4 items-center justify-center rounded-[6px] border border-white/80 bg-emerald-500 text-white shadow-sm dark:border-zinc-900/80"
+            data-provider-space-marker={spaceMarker.kind}
+            data-provider-local-marker={spaceMarker.kind === 'local' ? true : undefined}
+            data-provider-standalone-marker={spaceMarker.kind === 'standalone' ? true : undefined}
+            className={cn(
+              'absolute bottom-0.5 right-0.5 flex h-4 w-4 items-center justify-center rounded-[6px] border border-white/80 text-white shadow-sm dark:border-zinc-900/80',
+              spaceMarker.kind === 'standalone' ? 'bg-emerald-500' : 'bg-sky-500',
+            )}
           >
-            <HardDrive className="h-2.5 w-2.5" aria-hidden="true" />
+            <spaceMarker.Icon className="h-2.5 w-2.5" aria-hidden="true" />
           </span>
         ) : null}
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-foreground truncate">{label}</p>
-        <p className={cn('text-muted-foreground/80 truncate mt-0.5', isPrimary ? 'text-xs' : 'text-[11px]')}>
-          {subtitle}
-        </p>
+        <div className={cn('mt-0.5 flex min-w-0 items-center gap-1.5 text-muted-foreground/80', isPrimary ? 'text-xs' : 'text-[11px]')}>
+          <span className="truncate">{subtitle}</span>
+          <span
+            aria-label={infoText}
+            title={infoText}
+            className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full text-muted-foreground/60"
+          >
+            <Info className="h-3 w-3" aria-hidden="true" />
+          </span>
+        </div>
       </div>
       <div className="flex items-center gap-2 shrink-0">
         {statusBadge ? <ProviderStatusBadge badge={statusBadge} /> : null}
@@ -687,11 +711,11 @@ function ProviderIcon({ provider }: { provider: LoginProviderOption }) {
   }
 
   if (source === 'local') {
-    return <HardDrive className="h-4 w-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+    return <Link2 className="h-4 w-4 text-sky-600 dark:text-sky-400" aria-hidden="true" />
   }
 
   if (source === 'standalone') {
-    return <HardDrive className="h-4 w-4 text-zinc-600 dark:text-zinc-300" aria-hidden="true" />
+    return <HardDrive className="h-4 w-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
   }
 
   return <Globe2 className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
@@ -749,23 +773,41 @@ function resolveProviderLogoUrl(provider: LoginProviderOption): string | undefin
   return provider.logoUrl
 }
 
-function isLocalStoredAccount(account: LoginModalProps['storedAccount']): boolean {
+function resolveProviderSpaceMarker(provider: LoginProviderOption): { kind: SpaceMarkerKind; Icon: LucideIcon } | null {
+  const source = resolveLoginProviderSource(provider)
+  if (source === 'local') {
+    return { kind: 'local', Icon: Link2 }
+  }
+  if (source === 'standalone') {
+    return { kind: 'standalone', Icon: HardDrive }
+  }
+  return null
+}
+
+function resolveStoredAccountSpaceMarker(account: LoginModalProps['storedAccount']): SpaceMarkerKind | null {
   if (!account) {
-    return false
+    return null
+  }
+
+  if (
+    account.storageProviderLabel === 'Standalone'
+    || account.issuerLabel === 'Standalone'
+  ) {
+    return 'standalone'
   }
 
   if (
     account.storageProviderLabel === 'Local'
     || account.issuerLabel === 'Local'
-    || account.storageProviderLabel === 'Standalone'
-    || account.issuerLabel === 'Standalone'
   ) {
-    return true
+    return 'local'
   }
 
   return isLocalAccountUrl(account.storageProviderUrl)
     || isLocalAccountUrl(account.issuerUrl)
     || isLocalAccountUrl(account.webId)
+    ? 'local'
+    : null
 }
 
 function isLocalAccountUrl(url?: string): boolean {

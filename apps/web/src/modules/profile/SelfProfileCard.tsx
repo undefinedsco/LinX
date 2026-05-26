@@ -8,7 +8,7 @@ import {
   type SolidProfileRow,
   type SolidProfileUpdate,
 } from "@undefineds.co/models";
-import { Copy, RefreshCw, CheckCircle2, AlertCircle, Loader2, HardDrive } from "lucide-react";
+import { Copy, RefreshCw, CheckCircle2, AlertCircle, Loader2, HardDrive, Link2 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -76,22 +76,52 @@ function InfoRow({ label, value, last }: { label: string; value: string; last?: 
   );
 }
 
-function SpaceBadge({ label }: { label: string }) {
-  const isLocal = label.toLowerCase() === "local";
+type SpaceMarkerKind = "local" | "standalone";
+
+function resolveSpaceMarkerKind(storageProviderLabel?: string, storageProviderUrl?: string): SpaceMarkerKind | null {
+  const label = storageProviderLabel?.trim().toLowerCase();
+  if (label === "standalone") return "standalone";
+  if (label === "local" || label === "本地空间") return "local";
+  if (!storageProviderUrl) return null;
+
+  try {
+    const hostname = new URL(storageProviderUrl).hostname;
+    if (
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname.endsWith(".local")
+    ) {
+      return "standalone";
+    }
+    if (hostname.startsWith("node-") && hostname.endsWith(".undefineds.co")) {
+      return "local";
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function SpaceBadge({ label, markerKind }: { label: string; markerKind: SpaceMarkerKind | null }) {
+  const isLocal = markerKind === "local";
+  const isStandalone = markerKind === "standalone";
 
   return (
     <span
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium",
         isLocal
-          ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-          : "border-sky-500/20 bg-sky-500/10 text-sky-700 dark:text-sky-300",
+          ? "border-sky-500/20 bg-sky-500/10 text-sky-700 dark:text-sky-300"
+          : isStandalone
+            ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+            : "border-sky-500/20 bg-sky-500/10 text-sky-700 dark:text-sky-300",
       )}
     >
       <span
         className={cn(
           "h-1.5 w-1.5 rounded-full",
-          isLocal ? "bg-emerald-500" : "bg-sky-500",
+          isLocal ? "bg-sky-500" : isStandalone ? "bg-emerald-500" : "bg-sky-500",
         )}
       />
       {label}
@@ -99,13 +129,21 @@ function SpaceBadge({ label }: { label: string }) {
   );
 }
 
-function LocalSpaceMarker() {
+function SpaceMarker({ kind }: { kind: SpaceMarkerKind }) {
+  const isStandalone = kind === "standalone";
+  const Icon = isStandalone ? HardDrive : Link2;
+
   return (
     <span
-      data-profile-local-marker
-      className="absolute bottom-1.5 right-1.5 z-10 flex h-5 w-5 items-center justify-center rounded-[7px] border border-white/80 bg-emerald-500 text-white shadow-sm dark:border-zinc-900/80"
+      data-profile-space-marker={kind}
+      data-profile-local-marker={kind === "local" ? true : undefined}
+      data-profile-standalone-marker={kind === "standalone" ? true : undefined}
+      className={cn(
+        "absolute bottom-1.5 right-1.5 z-10 flex h-5 w-5 items-center justify-center rounded-[7px] border border-white/80 text-white shadow-sm dark:border-zinc-900/80",
+        isStandalone ? "bg-emerald-500" : "bg-sky-500",
+      )}
     >
-      <HardDrive className="h-3 w-3" aria-hidden="true" />
+      <Icon className="h-3 w-3" aria-hidden="true" />
     </span>
   );
 }
@@ -116,24 +154,6 @@ function formatProviderHost(url?: string): string {
     return new URL(url).host;
   } catch {
     return url;
-  }
-}
-
-function isLocalSpace(storageProviderLabel?: string, storageProviderUrl?: string): boolean {
-  const label = storageProviderLabel?.trim().toLowerCase();
-  if (label === "local" || label === "本地空间") return true;
-  if (!storageProviderUrl) return false;
-
-  try {
-    const hostname = new URL(storageProviderUrl).hostname;
-    return (
-      hostname === "localhost" ||
-      hostname === "127.0.0.1" ||
-      hostname.endsWith(".local") ||
-      (hostname.startsWith("node-") && hostname.endsWith(".undefineds.co"))
-    );
-  } catch {
-    return false;
   }
 }
 
@@ -192,7 +212,7 @@ export function SelfProfileCard() {
   const storageProviderLabel = storedAccount?.storageProviderLabel ?? storedAccount?.issuerLabel ?? "";
   const storageProviderUrl = storedAccount?.storageProviderUrl ?? storedAccount?.issuerUrl;
   const providerHost = formatProviderHost(storageProviderUrl);
-  const isLocalProvider = isLocalSpace(storageProviderLabel, storageProviderUrl);
+  const spaceMarkerKind = resolveSpaceMarkerKind(storageProviderLabel, storageProviderUrl);
 
   // ── Avatar with auth fetch ─────────────────────────────────────────
 
@@ -317,7 +337,7 @@ export function SelfProfileCard() {
               {primaryName.charAt(0).toUpperCase()}
             </AvatarFallback>
           )}
-          {isLocalProvider ? <LocalSpaceMarker /> : null}
+          {spaceMarkerKind ? <SpaceMarker kind={spaceMarkerKind} /> : null}
         </Avatar>
 
         <div className="flex-1 min-w-0 py-0.5 space-y-1.5">
@@ -369,7 +389,7 @@ export function SelfProfileCard() {
 
           {storageProviderLabel ? (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <SpaceBadge label={storageProviderLabel} />
+              <SpaceBadge label={storageProviderLabel} markerKind={spaceMarkerKind} />
               {providerHost ? (
                 <span className="min-w-0 truncate" title={providerHost}>
                   {providerHost}

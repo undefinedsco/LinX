@@ -15,11 +15,13 @@ LinX currently exposes four deployment/login routes:
 | Local direct | Cloud | Local | User-provided |
 | Local tunnel | Cloud | Local | User-provided public URL or tunnel domain |
 | Standalone | Local | Local | None by default; optional user-provided |
+| Custom | User-entered Solid provider | Same user-entered Solid provider | Same user-entered URL |
 
 Rules:
 - LinX does not generate a Local SP domain such as `node-*.undefineds.co`.
 - `CSS_BASE_STORAGE_DOMAIN` is not a user-facing Local onboarding input.
 - Cloud IDP + Local SP requires a user-provided SP URL when the SP must be externally reachable.
+- Custom is a combined third-party Solid provider route. The product asks for one URL only and internally mirrors that URL into issuer/storage fields for route invariants.
 - Local base / LAN starts the local xpod and guarantees localhost/LAN validation without public URL or tunnel.
 - If the user has no public URL or tunnel domain, Local must still start for localhost/LAN use; it simply does not complete Cloud IDP + Local SP remote login until a public route is added.
 - Adding a direct-public or tunnel route later must reuse the same local data directory and node configuration where possible.

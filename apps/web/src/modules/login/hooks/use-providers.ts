@@ -141,7 +141,8 @@ export function useProviders() {
   }, [desktopApi, isServiceMode, publishLocalOnboarding, refreshProviders])
 
   const providers = useMemo<LoginProviderOption[]>(() => {
-    // Cloud providers
+    // Cloud and Custom providers are combined Solid providers: one URL is both
+    // the OIDC issuer and the storage provider.
     const cloud = getAllProviders(customProviders).map<LoginProviderOption>((p) => ({
       ...p,
       source: p.isDefault ? 'cloud' : 'custom',

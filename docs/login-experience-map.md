@@ -7,13 +7,14 @@ LinX 的登录路径由两个维度决定：
 - `oidcProvider`：账号、登录、OIDC consent、WebID 由哪里签发。
 - `storageProvider`：Pod 数据存在哪里，以及通过哪个 URL 被访问。
 
-最终产品路径收敛为四类用户入口：Cloud、Local、Standalone、Custom。Local 固定表示 Cloud OIDC Provider + Local Storage Provider；Standalone 固定表示 Local OIDC Provider + Local Storage Provider；Custom 表示第三方 Solid provider 的 OIDC/storage 一体入口。产品层只使用这四个入口名，不再引入第二套技术模式名。
+最终产品路径收敛为四类用户入口：Cloud、Local、Standalone、Custom。Local 固定表示 Cloud OIDC Provider + Local Storage Provider；Standalone 固定表示 Local OIDC Provider + Local Storage Provider；Custom 表示第三方 Solid provider 的 OIDC/storage 一体入口。Custom 只让用户填写一个 Solid provider URL，不拆成两次选择或两个输入。产品层只使用这四个入口名，不再引入第二套技术模式名。
 
 | 编号 | 产品路径 | OIDC Provider | Storage Provider | Storage Provider 域名 / URL | 适用场景 |
 | --- | --- | --- | --- | --- | --- |
 | 1 | Cloud | Cloud | Cloud | Cloud 自动提供 | 账号和数据都托管在 Cloud |
 | 2 | Local | Cloud | Local | 用户自己的公网 URL 或隧道稳定 HTTPS 域名 | Cloud 账号，数据在本机 |
 | 3 | Standalone | Local | Local | 默认 `localhost` / LAN URL | 账号和数据都在本机 |
+| 4 | Custom | 用户填写的 Solid provider | 同一个 Solid provider | 用户填写的同一个 URL | 第三方 Solid provider，一体化账号和数据空间 |
 
 重要规则：
 

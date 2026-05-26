@@ -76,13 +76,37 @@ describe('useProviders', () => {
     render(<TestComponent />)
 
     await waitFor(() => {
-      expect(screen.getByText('Cloud 账号，本地空间')).toBeTruthy()
-      expect(screen.getByText('账号和数据都在本机')).toBeTruthy()
+      expect(screen.getByText('本地空间')).toBeTruthy()
+      expect(screen.getByText('本机空间')).toBeTruthy()
     })
 
     expect(detectMock).not.toHaveBeenCalled()
     expect(statusMock).not.toHaveBeenCalled()
     expect(getAllMock).not.toHaveBeenCalled()
+  })
+
+  it('treats a custom Solid provider as one combined issuer and storage URL', async () => {
+    useLoginStore.setState({
+      customProviders: [{
+        id: 'custom-solid',
+        url: 'https://solid.example.net',
+        label: 'Example Solid',
+      }],
+    })
+
+    const { result } = renderHook(() => useProviders())
+
+    await waitFor(() => {
+      const provider = result.current.providers.find((item) => item.id === 'custom-solid')
+      expect(provider).toBeTruthy()
+      expect(provider?.source).toBe('custom')
+      expect(provider?.oidcProvider).toEqual({
+        kind: 'custom',
+        url: 'https://solid.example.net',
+        label: 'Example Solid',
+      })
+      expect(provider?.storageProvider).toEqual(provider?.oidcProvider)
+    })
   })
 
   it('creates a Standalone provider in LinX Service mode without Cloud provisioning', async () => {
@@ -117,7 +141,7 @@ describe('useProviders', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Standalone')).toBeTruthy()
-      expect(screen.getByText('账号和数据都在本机')).toBeTruthy()
+      expect(screen.getByText('本机空间')).toBeTruthy()
     })
   })
 

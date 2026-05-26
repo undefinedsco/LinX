@@ -1,9 +1,17 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { SelfProfileCard } from './SelfProfileCard'
 
 const findByIriMock = vi.fn()
+const loginStoreState = vi.hoisted(() => ({
+  storedAccount: {
+    issuerLabel: 'Cloud',
+    issuerUrl: 'https://id.undefineds.co',
+    storageProviderLabel: 'Local',
+    storageProviderUrl: 'https://node-0000.undefineds.co/',
+  },
+}))
 
 vi.mock('@inrupt/solid-ui-react', () => ({
   useSession: () => ({
@@ -28,12 +36,7 @@ vi.mock('@/providers/solid-database-provider', () => ({
 
 vi.mock('@linx/stores/login', () => ({
   useLoginStore: (selector: any) => selector({
-    storedAccount: {
-      issuerLabel: 'Cloud',
-      issuerUrl: 'https://id.undefineds.co',
-      storageProviderLabel: 'Local',
-      storageProviderUrl: 'https://node-0000.undefineds.co/',
-    },
+    storedAccount: loginStoreState.storedAccount,
   }),
 }))
 
@@ -54,6 +57,16 @@ function renderCard() {
 }
 
 describe('SelfProfileCard', () => {
+  beforeEach(() => {
+    findByIriMock.mockReset()
+    loginStoreState.storedAccount = {
+      issuerLabel: 'Cloud',
+      issuerUrl: 'https://id.undefineds.co',
+      storageProviderLabel: 'Local',
+      storageProviderUrl: 'https://node-0000.undefineds.co/',
+    }
+  })
+
   it('renders a default card when the Solid profile record is missing', async () => {
     findByIriMock.mockResolvedValueOnce(null)
 
@@ -64,7 +77,24 @@ describe('SelfProfileCard', () => {
     expect(screen.getByText('Local')).toBeTruthy()
     expect(screen.getByText('node-0000.undefineds.co')).toBeTruthy()
     expect(container.querySelector('[data-profile-local-marker]')).toBeTruthy()
+    expect(container.querySelector('[data-profile-standalone-marker]')).toBeNull()
     expect(screen.getAllByText('未填写').length).toBeGreaterThan(0)
+  })
+
+  it('renders a standalone badge when the account and storage are local-only', async () => {
+    loginStoreState.storedAccount = {
+      issuerLabel: 'Standalone',
+      issuerUrl: 'http://127.0.0.1:5737',
+      storageProviderLabel: 'Standalone',
+      storageProviderUrl: 'http://127.0.0.1:5737',
+    }
+    findByIriMock.mockResolvedValueOnce(null)
+
+    const { container } = renderCard()
+
+    expect(await screen.findByText('Standalone')).toBeTruthy()
+    expect(container.querySelector('[data-profile-standalone-marker]')).toBeTruthy()
+    expect(container.querySelector('[data-profile-local-marker]')).toBeNull()
   })
 
   it('renders profile fields when they exist', async () => {

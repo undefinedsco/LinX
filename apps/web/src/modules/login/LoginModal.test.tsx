@@ -190,7 +190,33 @@ describe('LoginModal', () => {
   })
 
   it('shows provider selection when idle without stored account', () => {
-    const props = createProps()
+    const props = createProps({
+      providers: [
+        ...createProps().providers,
+        {
+          id: 'standalone',
+          url: 'http://localhost:5737',
+          label: 'Standalone',
+          source: 'standalone',
+          oidcProvider: {
+            kind: 'local',
+            url: 'http://localhost:5737',
+            label: 'Standalone',
+          },
+          storageProvider: {
+            kind: 'local',
+            url: 'http://localhost:5737',
+            label: 'Standalone',
+          },
+          runtime: {
+            kind: 'local-pod',
+            status: 'missing',
+            canStart: true,
+            canCreate: true,
+          },
+        },
+      ],
+    })
 
     const { container } = render(<LoginModal {...props} />)
 
@@ -198,12 +224,16 @@ describe('LoginModal', () => {
     expect(screen.getByText('Cloud / Local')).toBeTruthy()
     expect(screen.getByText('Cloud')).toBeTruthy()
     expect(screen.getByText('官方')).toBeTruthy()
-    expect(screen.getByText('首次')).toBeTruthy()
+    expect(screen.getAllByText('未配置').length).toBeGreaterThan(0)
     expect(screen.getAllByText('登录').length).toBeGreaterThan(0)
-    expect(screen.getByText('官方云端空间')).toBeTruthy()
+    expect(screen.getByText('云端空间')).toBeTruthy()
+    expect(screen.getByLabelText('使用 Cloud 登录，数据写入 Cloud 空间。')).toBeTruthy()
+    expect(screen.getByLabelText('使用 Cloud 登录，数据写入这台设备上的 Local 空间。')).toBeTruthy()
+    expect(screen.getByLabelText('账号和数据都在本机的 Standalone 空间。')).toBeTruthy()
     expect(container.querySelector('[data-provider-source="cloud"] img')).toBeTruthy()
     expect(container.querySelector('[data-provider-source="local"] img')).toBeTruthy()
     expect(container.querySelector('[data-provider-source="local"] [data-provider-local-marker]')).toBeTruthy()
+    expect(container.querySelector('[data-provider-source="standalone"] [data-provider-standalone-marker]')).toBeTruthy()
 
     fireEvent.click(screen.getByText('Cloud'))
     expect(props.onConnect).toHaveBeenCalledWith('cloud')
@@ -272,6 +302,24 @@ describe('LoginModal', () => {
     expect(container.querySelector('[data-account-local-marker]')).toBeTruthy()
   })
 
+  it('marks remembered Standalone accounts with the standalone avatar badge', () => {
+    const props = createProps({
+      state: 'idle',
+      storedAccount: {
+        displayName: 'Ganlu',
+        issuerUrl: 'http://localhost:5737',
+        issuerLabel: 'Standalone',
+        storageProviderUrl: 'http://localhost:5737',
+        storageProviderLabel: 'Standalone',
+      },
+    })
+
+    const { container } = render(<LoginModal {...props} />)
+
+    expect(container.querySelector('[data-account-standalone-marker]')).toBeTruthy()
+    expect(container.querySelector('[data-account-local-marker]')).toBeNull()
+  })
+
   it('shows custom providers in a separate section', () => {
     const props = createProps({
       providers: [
@@ -337,7 +385,8 @@ describe('LoginModal', () => {
     render(<LoginModal {...props} />)
 
     expect(screen.getByText('Local')).toBeTruthy()
-    expect(screen.getByText('Cloud 账号，本地空间')).toBeTruthy()
+    expect(screen.getByText('本地空间')).toBeTruthy()
+    expect(screen.getByLabelText('使用 Cloud 登录，数据写入这台设备上的 Local 空间。')).toBeTruthy()
     expect(screen.getByText('需设置')).toBeTruthy()
     expect(screen.getByText('设置')).toBeTruthy()
   })
