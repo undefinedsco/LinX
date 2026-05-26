@@ -124,6 +124,27 @@ describe('getProviderSubtitle', () => {
 })
 
 describe('getProviderStatusBadge', () => {
+  it('maps first-time Local setup to a neutral unconfigured badge', () => {
+    const provider = createLocalProvider({
+      runtime: {
+        kind: 'local-pod',
+        status: 'missing',
+        canStart: true,
+        canCreate: true,
+        onboarding: {
+          state: 'mode_required',
+          mode: null,
+          message: null,
+        },
+      },
+    })
+
+    expect(getProviderStatusBadge(provider)).toEqual({
+      label: '未配置',
+      tone: 'neutral',
+    })
+  })
+
   it('maps Cloud to an official badge', () => {
     const provider: LoginProviderOption = {
       id: 'cloud',
@@ -188,6 +209,22 @@ describe('getProviderStatusBadge', () => {
     expect(getProviderStatusBadge(provider)).toEqual({
       label: '可用',
       tone: 'success',
+    })
+  })
+
+  it('maps Local error flow to a danger badge', () => {
+    const provider = createLocalProvider({
+      runtime: {
+        kind: 'local-pod',
+        status: 'error',
+        canStart: true,
+        canCreate: false,
+      },
+    })
+
+    expect(getProviderStatusBadge(provider)).toEqual({
+      label: '需修复',
+      tone: 'danger',
     })
   })
 })

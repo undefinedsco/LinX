@@ -153,7 +153,7 @@ export function getProviderStatusBadge(provider: LoginProviderOption): ProviderS
     if (onboarding) {
       switch (onboarding.state) {
         case 'mode_required':
-          return { label: '未配置', tone: 'primary' }
+          return { label: '未配置', tone: 'neutral' }
         case 'idle':
           return { label: '继续', tone: 'neutral' }
         case 'checking':
@@ -180,7 +180,7 @@ export function getProviderStatusBadge(provider: LoginProviderOption): ProviderS
           ? { label: '继续', tone: 'neutral' }
           : null
       case 'missing':
-        return { label: '未配置', tone: 'primary' }
+        return { label: '未配置', tone: 'neutral' }
     }
   }
 

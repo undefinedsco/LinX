@@ -728,16 +728,29 @@ function ProviderStatusBadge({
 }) {
   return (
     <span
+      aria-label={badge.label}
+      title={badge.label}
       className={cn(
-        'inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium',
+        'inline-flex h-2.5 w-2.5 items-center justify-center rounded-full',
         badge.tone === 'primary' && 'border-primary/20 bg-primary/10 text-primary',
         badge.tone === 'success' && 'border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
         badge.tone === 'warning' && 'border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-400',
         badge.tone === 'danger' && 'border-destructive/20 bg-destructive/10 text-destructive',
-        badge.tone === 'neutral' && 'border-border/60 bg-background text-muted-foreground',
+        badge.tone === 'neutral' && 'bg-muted text-muted-foreground',
       )}
     >
-      {badge.label}
+      <span
+        data-provider-status-dot={badge.tone}
+        aria-hidden="true"
+        className={cn(
+          'h-1.5 w-1.5 rounded-full',
+          badge.tone === 'primary' && 'bg-primary',
+          badge.tone === 'success' && 'bg-emerald-500',
+          badge.tone === 'warning' && 'bg-amber-500',
+          badge.tone === 'danger' && 'bg-destructive',
+          badge.tone === 'neutral' && 'bg-muted-foreground/60',
+        )}
+      />
     </span>
   )
 }
