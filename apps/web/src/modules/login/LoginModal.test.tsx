@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { LoginModal } from './LoginModal'
@@ -11,6 +11,7 @@ function createProps(overrides: Partial<LoginModalProps> = {}): LoginModalProps 
     error: null,
     storedAccount: null,
     storageConflict: null,
+    hasRestorableSession: false,
     providers: [
       {
         id: 'cloud',
@@ -126,15 +127,31 @@ describe('LoginModal', () => {
     render(<LoginModal {...props} />)
 
     expect(screen.getByText('Ganlu')).toBeTruthy()
-    expect(screen.getByText('进入 LinX')).toBeTruthy()
+    expect(screen.getByText('继续登录')).toBeTruthy()
     expect(screen.queryByText('选择空间')).toBeNull()
     expect(screen.queryByText('继续进入你上次使用的空间。如果需要换账号或换空间，再点下面的“切换账号”。')).toBeNull()
 
-    fireEvent.click(screen.getByRole('button', { name: '进入 LinX' }))
+    fireEvent.click(screen.getByRole('button', { name: '继续登录' }))
     expect(props.onContinueStoredAccount).toHaveBeenCalledTimes(1)
 
     fireEvent.click(screen.getByRole('button', { name: '切换账号' }))
     expect(props.onSwitchAccount).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows enter action only when a restorable session exists', () => {
+    const props = createProps({
+      hasRestorableSession: true,
+      state: 'idle',
+      storedAccount: {
+        displayName: 'Ganlu',
+        issuerUrl: 'https://cloud.example.com',
+        issuerLabel: 'Cloud',
+      },
+    })
+
+    render(<LoginModal {...props} />)
+
+    expect(screen.getByRole('button', { name: '进入 LinX' })).toBeTruthy()
   })
 
   it('renders LinX logo avatars with a visible framed background on white surfaces', () => {
@@ -183,6 +200,55 @@ describe('LoginModal', () => {
 
     expect(screen.getByText('正在启动 Local…')).toBeTruthy()
     expect(screen.getByText('选择空间')).toBeTruthy()
+  })
+
+  it('shows detailed Local startup progress after selecting Local', () => {
+    const props = createProps({
+      view: 'local',
+      localOnboarding: {
+        state: 'starting',
+        mode: 'device-only',
+        localUrl: 'http://localhost:5737/',
+        baseUrl: 'http://localhost:5737/',
+        publicUrl: null,
+        capabilities: null,
+        cloudIdentityUrl: null,
+        provisionCode: null,
+        provisionUrl: null,
+        nodeId: null,
+        message: '下载 xpod runtime',
+        progress: {
+          phase: 'install-bun',
+          label: '下载 xpod runtime',
+          detail: '@undefineds.co/xpod@0.3.4',
+        },
+        errorCode: null,
+        canRetry: false,
+        canOpenSettings: false,
+      },
+    })
+
+    render(<LoginModal {...props} />)
+
+    expect(screen.getByText('下载 xpod runtime')).toBeTruthy()
+    expect(screen.getByText('@undefineds.co/xpod@0.3.4')).toBeTruthy()
+  })
+
+  it('marks remembered Local accounts on the avatar', () => {
+    const props = createProps({
+      state: 'idle',
+      storedAccount: {
+        displayName: 'Ganlu',
+        issuerUrl: 'https://id.undefineds.co',
+        issuerLabel: 'Cloud',
+        providerUrl: 'https://node-0000.undefineds.co/',
+        providerLabel: 'Local',
+      },
+    })
+
+    const { container } = render(<LoginModal {...props} />)
+
+    expect(container.querySelector('[data-account-local-marker]')).toBeTruthy()
   })
 
   it('shows custom providers in a separate section', () => {
@@ -235,7 +301,7 @@ describe('LoginModal', () => {
     expect(screen.getByText('设置')).toBeTruthy()
   })
 
-  it('automatically continues Local login from the ready onboarding view', async () => {
+  it('waits for an explicit click before continuing from the ready Local view', () => {
     const props = createProps({
       view: 'local',
       localOnboarding: {
@@ -258,9 +324,11 @@ describe('LoginModal', () => {
 
     render(<LoginModal {...props} />)
 
-    await waitFor(() => {
-      expect(props.onContinueLocalLogin).toHaveBeenCalledTimes(1)
-    })
+    expect(props.onContinueLocalLogin).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: '继续登录' }))
+
+    expect(props.onContinueLocalLogin).toHaveBeenCalledTimes(1)
     expect(props.onBackFromLocal).not.toHaveBeenCalled()
   })
 

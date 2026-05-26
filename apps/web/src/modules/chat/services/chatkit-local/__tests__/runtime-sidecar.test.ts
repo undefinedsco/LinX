@@ -28,6 +28,11 @@ function createMockDb(
 
   return {
     db: {
+      getDialect() {
+        return {
+          getPodUrl: () => 'https://alice.example/',
+        }
+      },
       insert(table: unknown) {
         return {
           values(values: Record<string, unknown>) {
@@ -126,6 +131,37 @@ describe('RuntimeSidecarSink', () => {
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['inbox', 'audit'] })
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['inbox', 'notifications'] })
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['inbox', 'items'] })
+  })
+
+  it('stores runtime resource refs under the selected SP Pod while keeping Cloud WebID as actor', async () => {
+    const { db, inserts } = createMockDb()
+    ;(db as any).getDialect = () => ({
+      getPodUrl: () => 'https://node-0000.undefineds.co/alice/',
+    })
+    const sink = new RuntimeSidecarSink(db as any, 'https://id.undefineds.co/alice/profile/card#me')
+
+    await sink.persistRuntimeEvent(runtimeSession, {
+      type: 'tool_call',
+      ts: 1,
+      threadId: 'runtime-1',
+      requestId: 'call-1',
+      name: 'write_file',
+      arguments: '{"path":"/tmp/demo.txt"}',
+    }, context)
+
+    const approval = inserts.find((item) => item.table === approvalResource)?.values
+    const audit = inserts.find((item) => item.table === auditResource)?.values
+    const notifications = inserts
+      .filter((item) => item.table === inboxNotificationTable)
+      .map((item) => item.values.object)
+
+    expect(approval?.session).toBe('https://node-0000.undefineds.co/alice/.data/sessions/1970/01/01/runtime-1.ttl')
+    expect(approval?.chat).toBe('https://node-0000.undefineds.co/alice/.data/chat/chat-1/index.ttl#this')
+    expect(approval?.thread).toBe('https://node-0000.undefineds.co/alice/.data/chat/chat-1/index.ttl#thread-1')
+    expect(approval?.assignedTo).toBe('https://id.undefineds.co/alice/profile/card#me')
+    expect(audit?.actor).toBe('https://id.undefineds.co/alice/profile/card#me')
+    expect(audit?.session).toBe('https://node-0000.undefineds.co/alice/.data/sessions/1970/01/01/runtime-1.ttl')
+    expect(notifications.every((uri) => String(uri).startsWith('https://node-0000.undefineds.co/alice/'))).toBe(true)
   })
 
   it('dedupes repeated status events and avoids redundant invalidation', async () => {

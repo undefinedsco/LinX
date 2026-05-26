@@ -57,12 +57,13 @@ describe('SelfProfileCard', () => {
   it('renders a default card when the Solid profile record is missing', async () => {
     findByIriMock.mockResolvedValueOnce(null)
 
-    renderCard()
+    const { container } = renderCard()
 
     expect(await screen.findByText('LinX 用户')).toBeTruthy()
     expect(screen.getByText('alice')).toBeTruthy()
     expect(screen.getByText('Local')).toBeTruthy()
     expect(screen.getByText('node-0000.undefineds.co')).toBeTruthy()
+    expect(container.querySelector('[data-profile-local-marker]')).toBeTruthy()
     expect(screen.getAllByText('未填写').length).toBeGreaterThan(0)
   })
 

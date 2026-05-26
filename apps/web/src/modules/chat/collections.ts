@@ -49,6 +49,7 @@ import {
 } from '@/lib/data/workspace-model'
 import { queryClient } from '@/providers/query-provider'
 import { createPodCollection } from '@/lib/data/pod-collection'
+import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { updateExactRecord } from '@/lib/data/exact-records'
 import { favoriteHooks } from '@/modules/favorites/collections'
 import { createAgentContactRecords, writeCollectionRow } from '@/lib/data/direct-chat-records'
@@ -176,16 +177,7 @@ function resolveAgentSubjectIri(db: SolidDatabase, agentId: string): string | nu
 }
 
 function getPodBaseUrl(db: SolidDatabase): string | null {
-  const podUrl = (db as any).getDialect?.()?.getPodUrl?.()
-  if (typeof podUrl === 'string' && podUrl.length > 0) {
-    return podUrl.replace(/\/$/, '')
-  }
-
-  const webId = (db as any).getSession?.()?.info?.webId
-  if (typeof webId !== 'string' || !webId.includes('/profile/card#me')) {
-    return null
-  }
-  return webId.replace('/profile/card#me', '')
+  return resolveCurrentPodBaseUrl(db)
 }
 
 function getCachedThreadChatId(threadId: string): string | null {

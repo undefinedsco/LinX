@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useSession } from '@inrupt/solid-ui-react'
 import { Loader2, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -27,8 +27,29 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
   const [error, setError] = useState<string | null>(null)
   const [retrying, setRetrying] = useState(false)
   const navigatedRef = useRef(false)
+  const silentFallbackStartedRef = useRef(false)
   const pendingAttempt = useMemo(() => getPendingLoginAttempt(), [])
   const callbackError = useMemo(() => getPendingCallbackError(), [])
+  const retryInteractiveFromSilentAttempt = useCallback(async () => {
+    if (!pendingAttempt || retrying) return
+
+    setRetrying(true)
+    setError(null)
+
+    try {
+      await oidc.connect(pendingAttempt.issuerUrl, {
+        authorizationSurface: pendingAttempt.authorizationSurface,
+        returnToMicroAppId: pendingAttempt.returnToMicroAppId,
+        providerUrl: pendingAttempt.providerUrl,
+        providerLabel: pendingAttempt.providerLabel,
+        authorizationQuery: pendingAttempt.authorizationQuery,
+      })
+    } catch (retryError: any) {
+      setError(retryError?.message || '重新发起登录失败。')
+    } finally {
+      setRetrying(false)
+    }
+  }, [oidc, pendingAttempt, retrying])
 
   // Check for OIDC errors in URL
   useEffect(() => {
@@ -39,6 +60,11 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
     if (errorParam) {
       if (errorParam === 'email_unverified' || errorParam === 'verify_required') {
         setError('请先验证邮箱后再登录。')
+      } else if (pendingAttempt?.prompt === 'none' && isSilentAuthError(errorParam)) {
+        if (!silentFallbackStartedRef.current) {
+          silentFallbackStartedRef.current = true
+          void retryInteractiveFromSilentAttempt()
+        }
       } else {
         setError(errorDesc ? decodeURIComponent(errorDesc) : '认证服务器拒绝了请求')
       }
@@ -46,9 +72,17 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
     }
 
     if (callbackError?.error) {
+      if (pendingAttempt?.prompt === 'none' && isSilentAuthError(callbackError.error)) {
+        if (!silentFallbackStartedRef.current) {
+          silentFallbackStartedRef.current = true
+          void retryInteractiveFromSilentAttempt()
+        }
+        return
+      }
+
       setError(callbackError.description ? decodeURIComponent(callbackError.description) : '认证服务器拒绝了请求')
     }
-  }, [callbackError])
+  }, [callbackError, pendingAttempt, retryInteractiveFromSilentAttempt])
 
   // Wait for the Inrupt callback to finish persisting auth metadata before
   // leaving /auth/callback. Navigating on the first LOGIN event can interrupt
@@ -101,6 +135,7 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
         providerUrl: pendingAttempt.providerUrl,
         providerLabel: pendingAttempt.providerLabel,
         authorizationQuery: pendingAttempt.authorizationQuery,
+        prompt: pendingAttempt.prompt,
       })
     } catch (retryError: any) {
       setError(retryError?.message || '重新发起登录失败。')
@@ -158,6 +193,13 @@ function isLocalIssuer(issuerUrl: string): boolean {
   } catch {
     return false
   }
+}
+
+function isSilentAuthError(error: string): boolean {
+  return error === 'login_required'
+    || error === 'interaction_required'
+    || error === 'consent_required'
+    || error === 'account_selection_required'
 }
 
 async function waitForCurrentSessionKey(sessionId: string | undefined, timeoutMs: number): Promise<boolean> {

@@ -103,6 +103,26 @@ describe('login-utils post-login target helpers', () => {
     })
   })
 
+  it('persists prompt mode in pending login attempts', () => {
+    setPendingLoginAttempt({
+      issuerUrl: 'https://id.undefineds.co',
+      authorizationSurface: 'embedded',
+      returnToMicroAppId: 'chat',
+      providerUrl: 'https://node-0000.undefineds.co',
+      providerLabel: 'Local',
+      prompt: 'none',
+    })
+
+    expect(getPendingLoginAttempt()).toEqual({
+      issuerUrl: 'https://id.undefineds.co',
+      authorizationSurface: 'embedded',
+      returnToMicroAppId: 'chat',
+      providerUrl: 'https://node-0000.undefineds.co',
+      providerLabel: 'Local',
+      prompt: 'none',
+    })
+  })
+
   it('detects a stored Solid session from the current-session pointer', () => {
     window.localStorage.setItem('solidClientAuthn:currentSession', 'linx-session')
     window.localStorage.setItem(
@@ -170,6 +190,7 @@ describe('login-utils post-login target helpers', () => {
       redirectUrl: 'http://127.0.0.1:43123/auth/callback',
       clientId: 'http://127.0.0.1:43123/client',
       tokenType: 'Bearer',
+      webId: null,
     })
   })
 

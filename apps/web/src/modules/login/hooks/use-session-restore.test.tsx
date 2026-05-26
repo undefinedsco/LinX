@@ -31,6 +31,7 @@ vi.mock('../login-utils', () => ({
   clearStoredSolidSession: () => clearStoredSolidSessionMock(),
   hasStoredSolidSession: () => hasStoredSolidSessionMock(),
   getStoredSolidSession: () => getStoredSolidSessionMock(),
+  getPendingLoginAttempt: () => null,
 }))
 
 function TestComponent() {

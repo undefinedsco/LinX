@@ -36,6 +36,7 @@ import {
   type ContactRow,
   type SolidDatabase,
 } from '@undefineds.co/models'
+import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { RuntimeSidecarSink } from './runtime-sidecar'
 
 export interface LocalServiceOptions {
@@ -868,12 +869,12 @@ export class LocalChatKitService {
   }
 
   private resolveRuntimeBaseUrl(): string {
-    let issuerUrl = this.webId
+    let issuerUrl = resolveCurrentPodBaseUrl(this.db) ?? this.webId
     try {
-      issuerUrl = new URL(this.webId).origin
+      issuerUrl = new URL(issuerUrl).origin
     } catch {
-      if (this.webId.includes('/profile/card#me')) {
-        issuerUrl = this.webId.replace('/profile/card#me', '')
+      if (issuerUrl.includes('/profile/card#me')) {
+        issuerUrl = issuerUrl.replace('/profile/card#me', '')
       }
     }
 

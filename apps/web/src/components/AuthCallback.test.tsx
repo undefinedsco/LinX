@@ -139,6 +139,36 @@ describe('AuthCallback', () => {
     })
   })
 
+  it('falls back to interactive Local auth after a silent Local attempt returns login_required', async () => {
+    setPendingLoginAttempt({
+      issuerUrl: 'https://id.undefineds.co',
+      authorizationSurface: 'embedded',
+      returnToMicroAppId: 'chat',
+      providerUrl: 'https://node-0000.undefineds.co',
+      providerLabel: 'Local',
+      authorizationQuery: {
+        provisionCode: 'pc-123',
+      },
+      prompt: 'none',
+    })
+    window.history.replaceState({}, '', '/auth/callback?error=login_required')
+
+    render(<SolidAuthCallback onSuccess={onSuccessMock} onError={onErrorMock} />)
+
+    await waitFor(() => {
+      expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', {
+        authorizationSurface: 'embedded',
+        returnToMicroAppId: 'chat',
+        providerUrl: 'https://node-0000.undefineds.co',
+        providerLabel: 'Local',
+        authorizationQuery: {
+          provisionCode: 'pc-123',
+        },
+      })
+    })
+    expect(screen.queryByText('认证服务器拒绝了请求')).toBeNull()
+  })
+
   it('renders a retry action for the last Local attempt', async () => {
     setPendingLoginAttempt({
       issuerUrl: 'http://localhost:5737',

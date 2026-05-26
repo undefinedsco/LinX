@@ -1,5 +1,5 @@
-import { act, renderHook, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useLoginStore } from '@linx/stores/login'
 
 const navigateMock = vi.fn()
@@ -74,6 +74,10 @@ vi.mock('./hooks/use-providers', () => ({
 import { useLoginController } from './controller'
 
 describe('useLoginController', () => {
+  afterEach(() => {
+    cleanup()
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     vi.unstubAllGlobals()
@@ -116,6 +120,14 @@ describe('useLoginController', () => {
     window.sessionStorage.clear()
     window.localStorage.removeItem('linx-remembered-account')
     window.history.replaceState({}, '', '/')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({ 'content-type': 'application/ld+json' }),
+      text: async () => JSON.stringify({
+        '@id': 'https://id.example.com/alice/profile/card#me',
+        'solid:storage': { '@id': 'https://id.example.com/alice/' },
+      }),
+    }))
     useLoginStore.setState({
       state: 'idle',
       error: null,
@@ -177,6 +189,41 @@ describe('useLoginController', () => {
         webId: 'https://alice.example/profile/card#me',
       })
     })
+  })
+
+  it('only marks a remembered account restorable when the stored Solid session matches its WebID', () => {
+    window.localStorage.setItem('solidClientAuthn:currentSession', 'session-1')
+    window.localStorage.setItem('solidClientAuthenticationUser:session-1', JSON.stringify({
+      issuer: 'https://id.undefineds.co',
+      isLoggedIn: 'true',
+      webId: 'https://id.undefineds.co/other/profile/card#me',
+    }))
+    useLoginStore.setState({
+      state: 'idle',
+      error: null,
+      storedAccount: {
+        displayName: 'Ganlu05',
+        issuerUrl: 'https://id.undefineds.co',
+        issuerLabel: 'Cloud',
+        providerUrl: 'https://node-0000.undefineds.co/',
+        providerLabel: 'Local',
+        webId: 'https://id.undefineds.co/ganlu05/profile/card#me',
+      },
+      customProviders: [],
+    })
+
+    const { result, rerender } = renderHook(() => useLoginController())
+
+    expect(result.current.hasRestorableSession).toBe(false)
+
+    window.localStorage.setItem('solidClientAuthenticationUser:session-1', JSON.stringify({
+      issuer: 'https://id.undefineds.co',
+      isLoggedIn: 'true',
+      webId: 'https://id.undefineds.co/ganlu05/profile/card#me',
+    }))
+    rerender()
+
+    expect(result.current.hasRestorableSession).toBe(true)
   })
 
   it('enters connecting state for Cloud providers and reports connection errors', async () => {
@@ -404,6 +451,110 @@ describe('useLoginController', () => {
     expect(connectMock).not.toHaveBeenCalled()
   })
 
+  it('does not reuse an active Cloud session when the user selects Local from provider selection', async () => {
+    providersState.providers = [
+      {
+        id: 'local',
+        url: 'http://localhost:5737',
+        label: 'Local',
+        source: 'local',
+        runtime: {
+          kind: 'local-pod',
+          status: 'running',
+          canStart: false,
+          canCreate: false,
+        },
+      },
+    ]
+    sessionState.info.isLoggedIn = true
+    sessionState.info.webId = 'https://id.undefineds.co/ganbb/profile/card#me'
+    useLoginStore.setState({
+      state: 'idle',
+      error: null,
+      storedAccount: {
+        displayName: 'Ganbb',
+        issuerUrl: 'https://id.undefineds.co',
+        issuerLabel: 'Cloud',
+        providerUrl: 'https://id.undefineds.co',
+        providerLabel: 'Cloud',
+        webId: 'https://id.undefineds.co/ganbb/profile/card#me',
+      },
+      customProviders: [],
+    })
+
+    const { result } = renderHook(() => useLoginController())
+
+    await act(async () => {
+      await result.current.connect('http://localhost:5737')
+    })
+
+    expect(startLocalMock).toHaveBeenCalledTimes(1)
+    expect(result.current.view).toBe('local')
+    expect(result.current.localLoginStatus.active).toBe(true)
+    expect(navigateMock).not.toHaveBeenCalled()
+    expect(connectMock).not.toHaveBeenCalled()
+  })
+
+  it('blocks a remembered Local space when the active session is still bound to Cloud storage', async () => {
+    providersState.providers = [
+      {
+        id: 'local',
+        url: 'http://localhost:5737',
+        label: 'Local',
+        source: 'local',
+        runtime: {
+          kind: 'local-pod',
+          status: 'running',
+          canStart: false,
+          canCreate: false,
+        },
+      },
+    ]
+    sessionState.info.isLoggedIn = true
+    sessionState.info.webId = 'https://id.undefineds.co/ganlu05/profile/card#me'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({ 'content-type': 'application/ld+json' }),
+      text: async () => JSON.stringify({
+        '@id': 'https://id.undefineds.co/ganlu05/profile/card#me',
+        'solid:storage': { '@id': 'https://id.undefineds.co/ganbb/' },
+      }),
+    }))
+    useLoginStore.setState({
+      state: 'idle',
+      error: null,
+      storedAccount: {
+        displayName: 'Ganlu05',
+        issuerUrl: 'https://id.undefineds.co',
+        issuerLabel: 'Cloud',
+        providerUrl: 'http://localhost:5737',
+        providerLabel: 'Local',
+        webId: 'https://id.undefineds.co/ganlu05/profile/card#me',
+      },
+      customProviders: [],
+    })
+
+    const { result } = renderHook(() => useLoginController())
+
+    await act(async () => {
+      result.current.continueStoredAccount()
+    })
+
+    await waitFor(() => {
+      expect(result.current.storageConflict).toEqual({
+        expectedStorageUrl: 'http://localhost:5737/ganlu05/',
+        actualStorageUrl: 'https://id.undefineds.co/ganbb/',
+        providerUrl: 'http://localhost:5737',
+        managementUrl: 'http://localhost:5737/.account/account/',
+      })
+    })
+
+    expect(startLocalMock).toHaveBeenCalledTimes(1)
+    expect(logoutMock).toHaveBeenCalledTimes(1)
+    expect(navigateMock).not.toHaveBeenCalled()
+    expect(connectMock).not.toHaveBeenCalled()
+  })
+
   it('starts Local before restoring a remembered Local session outside Desktop', async () => {
     providersState.providers = [
       {
@@ -454,7 +605,7 @@ describe('useLoginController', () => {
     expect(connectMock).not.toHaveBeenCalled()
   })
 
-  it('starts remembered Local in Desktop without silent-redirecting the main window', async () => {
+  it('starts remembered Local in Desktop but does not reuse stored auth without an active matching session', async () => {
     window.xpodDesktop = {
       auth: {},
     } as any
@@ -506,6 +657,65 @@ describe('useLoginController', () => {
     expect(handleIncomingRedirectMock).not.toHaveBeenCalled()
     expect(connectMock).not.toHaveBeenCalled()
     expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBe('session-1')
+  })
+
+  it('does not use silent Local auth when the stored Solid session belongs to another Cloud account', async () => {
+    window.xpodDesktop = {
+      auth: {},
+    } as any
+    window.localStorage.setItem('solidClientAuthn:currentSession', 'session-1')
+    window.localStorage.setItem('solidClientAuthenticationUser:session-1', JSON.stringify({
+      issuer: 'https://id.undefineds.co',
+      redirectUrl: 'http://127.0.0.1:43123/auth/callback',
+      isLoggedIn: 'true',
+      webId: 'https://id.undefineds.co/ganbb/profile/card#me',
+    }))
+    providersState.localOnboarding = {
+      state: 'ready',
+      mode: 'remote-ready',
+      localUrl: 'http://localhost:5737',
+      baseUrl: 'https://pod.example.com/',
+      publicUrl: 'https://pod.example.com/',
+      capabilities: null,
+      cloudIdentityUrl: 'https://id.undefineds.co',
+      provisionCode: 'pc-123',
+      provisionUrl: 'https://id.undefineds.co/.account/?provisionCode=pc-123',
+      nodeId: 'abc',
+      message: null,
+      errorCode: null,
+      canRetry: true,
+      canOpenSettings: true,
+    }
+    useLoginStore.setState({
+      state: 'idle',
+      error: null,
+      storedAccount: {
+        displayName: 'Ganlu05',
+        issuerUrl: 'https://id.undefineds.co',
+        issuerLabel: 'Cloud',
+        providerUrl: 'https://pod.example.com/',
+        providerLabel: 'Local',
+        webId: 'https://id.undefineds.co/ganlu05/profile/card#me',
+      },
+      customProviders: [],
+    })
+    connectMock.mockResolvedValue(undefined)
+
+    const { result } = renderHook(() => useLoginController())
+
+    await act(async () => {
+      await result.current.continueLocalLogin()
+    })
+
+    expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', expect.objectContaining({
+      authorizationSurface: 'embedded',
+      providerUrl: 'https://pod.example.com/',
+      providerLabel: 'Local',
+      authorizationQuery: {
+        provisionCode: 'pc-123',
+      },
+    }))
+    expect(connectMock.mock.calls[0]?.[1]).not.toHaveProperty('prompt')
   })
 
   it('enters interactive Local login for a remembered Desktop Local session when no session is active', async () => {
@@ -561,7 +771,7 @@ describe('useLoginController', () => {
     expect(handleIncomingRedirectMock).not.toHaveBeenCalled()
   })
 
-  it('continues a remembered Desktop Local session when the Inrupt session is already active', async () => {
+  it('revalidates a remembered Desktop Local session before entering LinX when the Inrupt session is already active', async () => {
     window.xpodDesktop = {
       auth: {},
     } as any
@@ -582,6 +792,14 @@ describe('useLoginController', () => {
     sessionState.info.isLoggedIn = true
     sessionState.info.webId = 'http://localhost:5737/profile/card#me'
     window.history.replaceState({}, '', '/files')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({ 'content-type': 'application/ld+json' }),
+      text: async () => JSON.stringify({
+        '@id': 'http://localhost:5737/profile/card#me',
+        'solid:storage': { '@id': 'http://localhost:5737/profile/' },
+      }),
+    }))
     useLoginStore.setState({
       state: 'idle',
       error: null,
@@ -605,11 +823,75 @@ describe('useLoginController', () => {
     expect(startLocalMock).toHaveBeenCalledTimes(1)
     expect(handleIncomingRedirectMock).not.toHaveBeenCalled()
     expect(connectMock).not.toHaveBeenCalled()
-    expect(navigateMock).toHaveBeenCalledWith({
-      to: '/$microAppId',
-      params: { microAppId: 'files' },
-      replace: true,
+    await waitFor(() => {
+      expect(useLoginStore.getState().state).toBe('authenticated')
     })
+    expect(useLoginStore.getState().state).toBe('authenticated')
+    expect(navigateMock).not.toHaveBeenCalled()
+  })
+
+  it('blocks a remembered active Local session when its profile storage points at another SP', async () => {
+    window.xpodDesktop = {
+      auth: {},
+    } as any
+    providersState.providers = [
+      {
+        id: 'local',
+        url: 'http://localhost:5737',
+        label: 'Local',
+        source: 'local',
+        runtime: {
+          kind: 'local-pod',
+          status: 'stopped',
+          canStart: true,
+          canCreate: false,
+        },
+      },
+    ]
+    sessionState.info.isLoggedIn = true
+    sessionState.info.webId = 'http://localhost:5737/profile/card#me'
+    window.history.replaceState({}, '', '/files')
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({ 'content-type': 'application/ld+json' }),
+      text: async () => JSON.stringify({
+        '@id': 'http://localhost:5737/profile/card#me',
+        'solid:storage': { '@id': 'http://old-local.example/profile/' },
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    useLoginStore.setState({
+      state: 'idle',
+      error: null,
+      storedAccount: {
+        displayName: 'Ganlu',
+        issuerUrl: 'http://localhost:5737',
+        issuerLabel: 'Local',
+        providerUrl: 'http://localhost:5737',
+        providerLabel: 'Local',
+        webId: 'http://localhost:5737/profile/card#me',
+      },
+      customProviders: [],
+    })
+
+    const { result } = renderHook(() => useLoginController())
+
+    await act(async () => {
+      result.current.continueStoredAccount()
+    })
+
+    await waitFor(() => {
+      expect(result.current.storageConflict).toEqual({
+        expectedStorageUrl: 'http://localhost:5737/profile/',
+        actualStorageUrl: 'http://old-local.example/profile/',
+        providerUrl: 'http://localhost:5737',
+        managementUrl: 'http://localhost:5737/.account/account/',
+      })
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith('http://localhost:5737/profile/card#me', expect.anything())
+    expect(logoutMock).toHaveBeenCalledTimes(1)
+    expect(navigateMock).not.toHaveBeenCalled()
   })
 
   it('keeps Solid auth storage before continuing a remembered Local account', async () => {
@@ -721,6 +1003,19 @@ describe('useLoginController', () => {
       canRetry: true,
       canOpenSettings: true,
     }
+    useLoginStore.setState({
+      state: 'idle',
+      error: null,
+      storedAccount: {
+        displayName: 'Ganlu',
+        issuerUrl: 'https://id.undefineds.co',
+        issuerLabel: 'Cloud',
+        providerUrl: 'https://pod.example.com/',
+        providerLabel: 'Local',
+        webId: 'https://id.undefineds.co/ganlu/profile/card#me',
+      },
+      customProviders: [],
+    })
     connectMock.mockResolvedValue(undefined)
 
     const { result } = renderHook(() => useLoginController())
@@ -745,6 +1040,155 @@ describe('useLoginController', () => {
       providerUrl: 'https://pod.example.com/',
     })
     expect(connectMock).not.toHaveBeenCalledWith('http://localhost:5737', expect.anything())
+  })
+
+  it('opens interactive auth for a remembered Desktop Local account without a restorable Solid session', async () => {
+    window.xpodDesktop = {
+      auth: {},
+    } as any
+    providersState.localOnboarding = {
+      state: 'ready',
+      mode: 'remote-ready',
+      localUrl: 'http://localhost:5737',
+      baseUrl: 'https://pod.example.com/',
+      publicUrl: 'https://pod.example.com/',
+      capabilities: null,
+      cloudIdentityUrl: 'https://id.undefineds.co',
+      provisionCode: 'pc-123',
+      provisionUrl: 'https://id.undefineds.co/.account/?provisionCode=pc-123',
+      nodeId: 'abc',
+      message: null,
+      errorCode: null,
+      canRetry: true,
+      canOpenSettings: true,
+    }
+    useLoginStore.setState({
+      state: 'idle',
+      error: null,
+      storedAccount: {
+        displayName: 'Ganlu',
+        issuerUrl: 'https://id.undefineds.co',
+        issuerLabel: 'Cloud',
+        providerUrl: 'https://pod.example.com/',
+        providerLabel: 'Local',
+        webId: 'https://id.undefineds.co/ganlu/profile/card#me',
+      },
+      customProviders: [],
+    })
+    connectMock.mockResolvedValue(undefined)
+
+    const { result } = renderHook(() => useLoginController())
+
+    await act(async () => {
+      await result.current.continueLocalLogin()
+    })
+
+    expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', expect.objectContaining({
+      authorizationSurface: 'embedded',
+      providerUrl: 'https://pod.example.com/',
+      providerLabel: 'Local',
+      authorizationQuery: {
+        provisionCode: 'pc-123',
+      },
+    }))
+    expect(connectMock.mock.calls[0]?.[1]).not.toHaveProperty('prompt')
+  })
+
+  it('tries silent desktop auth for remote-ready Local only when a restorable Solid session exists', async () => {
+    window.xpodDesktop = {
+      auth: {},
+    } as any
+    window.localStorage.setItem('solidClientAuthn:currentSession', 'session-1')
+    window.localStorage.setItem('solidClientAuthenticationUser:session-1', JSON.stringify({
+      issuer: 'https://id.undefineds.co',
+      redirectUrl: 'http://127.0.0.1:43123/auth/callback',
+      isLoggedIn: 'true',
+      webId: 'https://id.undefineds.co/ganlu/profile/card#me',
+    }))
+    providersState.localOnboarding = {
+      state: 'ready',
+      mode: 'remote-ready',
+      localUrl: 'http://localhost:5737',
+      baseUrl: 'https://pod.example.com/',
+      publicUrl: 'https://pod.example.com/',
+      capabilities: null,
+      cloudIdentityUrl: 'https://id.undefineds.co',
+      provisionCode: 'pc-123',
+      provisionUrl: 'https://id.undefineds.co/.account/?provisionCode=pc-123',
+      nodeId: 'abc',
+      message: null,
+      errorCode: null,
+      canRetry: true,
+      canOpenSettings: true,
+    }
+    useLoginStore.setState({
+      state: 'idle',
+      error: null,
+      storedAccount: {
+        displayName: 'Ganlu',
+        issuerUrl: 'https://id.undefineds.co',
+        issuerLabel: 'Cloud',
+        providerUrl: 'https://pod.example.com/',
+        providerLabel: 'Local',
+        webId: 'https://id.undefineds.co/ganlu/profile/card#me',
+      },
+      customProviders: [],
+    })
+    connectMock.mockResolvedValue(undefined)
+
+    const { result } = renderHook(() => useLoginController())
+
+    await act(async () => {
+      await result.current.continueLocalLogin()
+    })
+
+    expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', expect.objectContaining({
+      authorizationSurface: 'embedded',
+      providerUrl: 'https://pod.example.com/',
+      providerLabel: 'Local',
+      authorizationQuery: {
+        provisionCode: 'pc-123',
+      },
+      prompt: 'none',
+    }))
+  })
+
+  it('falls back to interactive auth when a desktop silent Local attempt returns login_required', async () => {
+    window.xpodDesktop = {
+      auth: {},
+    } as any
+    restoreState.restoreFailed = true
+    window.sessionStorage.setItem('linx-post-login-micro-app', 'chat')
+    window.sessionStorage.setItem('linx-pending-callback-error', JSON.stringify({
+      error: 'login_required',
+      description: null,
+    }))
+    window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
+      issuerUrl: 'https://id.undefineds.co',
+      providerUrl: 'https://node-0000.undefineds.co/',
+      providerLabel: 'Local',
+      authorizationSurface: 'embedded',
+      returnToMicroAppId: 'chat',
+      authorizationQuery: {
+        provisionCode: 'pc-123',
+      },
+      prompt: 'none',
+    }))
+
+    renderHook(() => useLoginController())
+
+    await waitFor(() => {
+      expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', {
+        authorizationSurface: 'embedded',
+        returnToMicroAppId: 'chat',
+        providerUrl: 'https://node-0000.undefineds.co/',
+        providerLabel: 'Local',
+        authorizationQuery: {
+          provisionCode: 'pc-123',
+        },
+      })
+    })
+    expect(useLoginStore.getState().error).toBeNull()
   })
 
   it('uses the local issuer when continuing a device-only Local login', async () => {
@@ -799,6 +1243,14 @@ describe('useLoginController', () => {
     window.history.replaceState({}, '', '/auth/callback?code=abc&state=xyz')
     sessionState.info.isLoggedIn = true
     sessionState.info.webId = 'https://alice.example/profile/card#me'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({ 'content-type': 'application/ld+json' }),
+      text: async () => JSON.stringify({
+        '@id': 'https://alice.example/profile/card#me',
+        'solid:storage': { '@id': 'https://cloud.example.com/profile/' },
+      }),
+    }))
 
     renderHook(() => useLoginController())
 
@@ -860,6 +1312,14 @@ describe('useLoginController', () => {
     })
     sessionState.info.isLoggedIn = true
     sessionState.info.webId = 'https://alice.example/profile/card#me'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({ 'content-type': 'application/ld+json' }),
+      text: async () => JSON.stringify({
+        '@id': 'https://alice.example/profile/card#me',
+        'solid:storage': { '@id': 'https://cloud.example.com/profile/' },
+      }),
+    }))
 
     renderHook(() => useLoginController())
 
@@ -904,6 +1364,14 @@ describe('useLoginController', () => {
     }))
     sessionState.info.isLoggedIn = true
     sessionState.info.webId = 'https://alice.example/profile/card#me'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({ 'content-type': 'application/ld+json' }),
+      text: async () => JSON.stringify({
+        '@id': 'https://alice.example/profile/card#me',
+        'solid:storage': { '@id': 'http://localhost:5737/profile/' },
+      }),
+    }))
 
     renderHook(() => useLoginController())
 
@@ -917,7 +1385,7 @@ describe('useLoginController', () => {
     expect(useLoginStore.getState().storedAccount?.providerLabel).toBe('Local')
   })
 
-  it('does not block device-only Local login on profile storage conflict checks', async () => {
+  it('completes device-only Local login when profile storage points at the local SP', async () => {
     providersState.providers = [
       {
         id: 'local',
@@ -949,16 +1417,23 @@ describe('useLoginController', () => {
       canOpenSettings: false,
     }
     window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
-      issuerUrl: 'http://127.0.0.1:5737',
+      issuerUrl: 'http://localhost:5737',
       providerUrl: 'http://localhost:5737',
       providerLabel: 'Local',
       authorizationSurface: 'embedded',
       returnToMicroAppId: 'chat',
     }))
-    const fetchMock = vi.fn()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({ 'content-type': 'application/ld+json' }),
+      text: async () => JSON.stringify({
+        '@id': 'http://localhost:5737/alice/profile/card#me',
+        'solid:storage': { '@id': 'http://localhost:5737/alice/' },
+      }),
+    })
     vi.stubGlobal('fetch', fetchMock)
     sessionState.info.isLoggedIn = true
-    sessionState.info.webId = 'http://127.0.0.1:5737/alice/profile/card#me'
+    sessionState.info.webId = 'http://localhost:5737/alice/profile/card#me'
 
     renderHook(() => useLoginController())
 
@@ -966,12 +1441,12 @@ describe('useLoginController', () => {
       expect(useLoginStore.getState().state).toBe('authenticated')
     })
 
-    expect(fetchMock).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledWith('http://localhost:5737/alice/profile/card#me', expect.anything())
     expect(useLoginStore.getState().storedAccount?.providerUrl).toBe('http://localhost:5737')
     expect(useLoginStore.getState().storedAccount?.providerLabel).toBe('Local')
   })
 
-  it('blocks access when the current Local space does not match the profile storage pointer', async () => {
+  it('blocks Cloud IDP + Local SP login when the profile storage points at another SP', async () => {
     providersState.providers = [
       {
         id: 'cloud',
@@ -1017,14 +1492,15 @@ describe('useLoginController', () => {
     }))
     sessionState.info.isLoggedIn = true
     sessionState.info.webId = 'https://id.undefineds.co/alice/profile/card#me'
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+    const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       headers: new Headers({ 'content-type': 'application/ld+json' }),
       text: async () => JSON.stringify({
         '@id': 'https://id.undefineds.co/alice/profile/card#me',
         'solid:storage': { '@id': 'https://node-old999.undefineds.co/alice/' },
       }),
-    }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
 
     const { result } = renderHook(() => useLoginController())
 
@@ -1037,14 +1513,14 @@ describe('useLoginController', () => {
       })
     })
 
+    expect(fetchMock).toHaveBeenCalledWith('https://id.undefineds.co/alice/profile/card#me', expect.anything())
     expect(useLoginStore.getState().state).toBe('idle')
     expect(useLoginStore.getState().storedAccount?.providerUrl).toBe('http://localhost:5737')
-    expect(navigateMock).not.toHaveBeenCalled()
+    expect(useLoginStore.getState().storedAccount?.providerLabel).toBe('Local')
     expect(logoutMock).toHaveBeenCalledTimes(1)
-    expect(window.sessionStorage.getItem('linx-pending-login-attempt')).toBeNull()
   })
 
-  it('continues Cloud+Local login when Cloud profile still points at Cloud storage', async () => {
+  it('blocks Cloud IDP + Local SP login when the profile still points at Cloud storage', async () => {
     providersState.providers = [
       {
         id: 'cloud',
@@ -1090,25 +1566,70 @@ describe('useLoginController', () => {
     }))
     sessionState.info.isLoggedIn = true
     sessionState.info.webId = 'https://id.undefineds.co/alice/profile/card#me'
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+    const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       headers: new Headers({ 'content-type': 'application/ld+json' }),
       text: async () => JSON.stringify({
         '@id': 'https://id.undefineds.co/alice/profile/card#me',
         'solid:storage': { '@id': 'https://id.undefineds.co/alice/' },
       }),
-    }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
 
     const { result } = renderHook(() => useLoginController())
+
+    await waitFor(() => {
+      expect(result.current.storageConflict).toEqual({
+        expectedStorageUrl: 'https://node-abc123.undefineds.co/alice/',
+        actualStorageUrl: 'https://id.undefineds.co/alice/',
+        providerUrl: 'https://node-abc123.undefineds.co/',
+        managementUrl: 'https://node-abc123.undefineds.co/.account/account/',
+      })
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith('https://id.undefineds.co/alice/profile/card#me', expect.anything())
+    expect(useLoginStore.getState().state).toBe('idle')
+    expect(logoutMock).toHaveBeenCalledTimes(1)
+    expect(useLoginStore.getState().storedAccount?.providerLabel).toBe('Local')
+    expect(useLoginStore.getState().storedAccount?.providerUrl).toBe('https://node-abc123.undefineds.co/')
+  })
+
+  it('completes a custom provider login only when storage stays inside that provider', async () => {
+    providersState.providers = [
+      {
+        id: 'custom-solid',
+        url: 'https://solid.example.net',
+        label: 'Example Solid',
+        source: 'custom',
+      },
+    ]
+    window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
+      issuerUrl: 'https://solid.example.net',
+      authorizationSurface: 'window',
+      returnToMicroAppId: 'chat',
+    }))
+    sessionState.info.isLoggedIn = true
+    sessionState.info.webId = 'https://solid.example.net/bob/profile/card#me'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({ 'content-type': 'text/turtle' }),
+      text: async () => `
+        @prefix solid: <http://www.w3.org/ns/solid/terms#>.
+        <https://solid.example.net/bob/profile/card#me>
+          solid:storage <https://solid.example.net/bob/> .
+      `,
+    }))
+
+    renderHook(() => useLoginController())
 
     await waitFor(() => {
       expect(useLoginStore.getState().state).toBe('authenticated')
     })
 
-    expect(result.current.storageConflict).toBeNull()
     expect(logoutMock).not.toHaveBeenCalled()
-    expect(useLoginStore.getState().storedAccount?.providerLabel).toBe('Local')
-    expect(useLoginStore.getState().storedAccount?.providerUrl).toBe('https://node-abc123.undefineds.co/')
+    expect(useLoginStore.getState().storedAccount?.issuerUrl).toBe('https://solid.example.net')
+    expect(useLoginStore.getState().storedAccount?.providerUrl).toBe('https://solid.example.net')
+    expect(useLoginStore.getState().storedAccount?.providerLabel).toBe('Example Solid')
   })
 
   it('dismissing a storage conflict returns to provider choice flow', async () => {

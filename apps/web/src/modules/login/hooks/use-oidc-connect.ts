@@ -21,6 +21,7 @@ interface OidcConnectOptions {
   providerLabel?: string
   issuerLabel?: string
   authorizationQuery?: Record<string, string | null | undefined>
+  prompt?: 'none' | 'consent'
 }
 
 export function useOidcConnect() {
@@ -85,6 +86,7 @@ export function useOidcConnect() {
         providerUrl: options?.providerUrl ?? normalizedEntryUrl,
         providerLabel: options?.providerLabel,
         authorizationQuery: normalizeAuthorizationQuery(options?.authorizationQuery),
+        prompt: options?.prompt,
       })
 
       const desktopApi = typeof window !== 'undefined' ? window.xpodDesktop : undefined
@@ -135,13 +137,18 @@ export function useOidcConnect() {
         }
         : undefined
 
-      const loginPromise = Promise.resolve(login({
+      const loginOptions = {
         oidcIssuer: resolvedIssuerUrl,
         redirectUrl,
         clientName: 'LinX',
         tokenType: 'DPoP',
         handleRedirect,
-      }))
+      } satisfies Parameters<typeof login>[0]
+      if (options?.prompt) {
+        ;(loginOptions as Parameters<typeof login>[0] & { prompt: 'none' | 'consent' }).prompt = options.prompt
+      }
+
+      const loginPromise = Promise.resolve(login(loginOptions))
 
       if (redirectStarted) {
         void loginPromise.catch(() => {

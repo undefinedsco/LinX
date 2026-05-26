@@ -15,6 +15,8 @@ export interface LinxLocalPaths {
   stateFile: string
   logsDir: string
   podDir: string
+  runtimesDir: string
+  xpodRuntimeDir: string
 }
 
 export function resolveLinxLocalHome(explicitBaseDir?: string): string {
@@ -43,6 +45,8 @@ export function resolveLinxLocalPaths(explicitBaseDir?: string): LinxLocalPaths 
     stateFile: path.join(home, 'xpod-service.json'),
     logsDir: path.join(home, 'logs'),
     podDir: path.join(home, 'pod'),
+    runtimesDir: path.join(home, 'runtimes'),
+    xpodRuntimeDir: path.join(home, 'runtimes', 'xpod'),
   }
 }
 

@@ -88,6 +88,12 @@ export interface LocalOnboardingCapabilities {
   version: string | null
 }
 
+export interface LocalOnboardingProgress {
+  phase: string
+  label: string
+  detail?: string | null
+}
+
 export interface LocalOnboardingSnapshot {
   state: LocalOnboardingState
   mode: LocalOnboardingMode | null
@@ -100,6 +106,7 @@ export interface LocalOnboardingSnapshot {
   provisionUrl: string | null
   nodeId: string | null
   message: string | null
+  progress?: LocalOnboardingProgress | null
   errorCode: string | null
   canRetry: boolean
   canOpenSettings: boolean

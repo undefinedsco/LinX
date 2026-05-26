@@ -1,11 +1,18 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
 const { resolveCompiledDesktopModule } = require('./helpers.cjs')
 
-const { resolveXpodLaunchTarget } = require(resolveCompiledDesktopModule('lib/xpod-launch.js'))
+const {
+  resolveManagedXpodLaunchTarget,
+  resolveXpodLaunchTarget,
+  resolveXpodRuntimeVersion,
+} = require(resolveCompiledDesktopModule('lib/xpod-launch.js'))
 
-test('resolveXpodLaunchTarget prefers sibling xpod-cli source by default in dev', () => {
-  const sourceRoot = '/work/xpod-cli'
+test('resolveXpodLaunchTarget prefers sibling xpod source by default in dev', () => {
+  const sourceRoot = '/work/xpod'
   const target = resolveXpodLaunchTarget({
     appIsPackaged: false,
     desktopDir: '/work/linx/apps/desktop/dist',
@@ -14,6 +21,8 @@ test('resolveXpodLaunchTarget prefers sibling xpod-cli source by default in dev'
     existsSync: (filePath) => (
       filePath === `${sourceRoot}/package.json`
       || filePath === `${sourceRoot}/src/main.ts`
+      || filePath === `${sourceRoot}/src/identity/oidc/ScopedPickWebIdHandler.ts`
+      || filePath === `${sourceRoot}/config/xpod.base.json`
     ),
   })
 
@@ -24,8 +33,8 @@ test('resolveXpodLaunchTarget prefers sibling xpod-cli source by default in dev'
   })
 })
 
-test('resolveXpodLaunchTarget can disable sibling xpod-cli source and fall back to package bin', () => {
-  const sourceRoot = '/work/xpod-cli'
+test('resolveXpodLaunchTarget can disable sibling xpod source and fall back to package bin', () => {
+  const sourceRoot = '/work/xpod'
   const repoRoot = '/work/linx/node_modules/@undefineds.co/xpod'
   const packageBin = `${repoRoot}/bin/xpod.js`
   const target = resolveXpodLaunchTarget({
@@ -37,6 +46,8 @@ test('resolveXpodLaunchTarget can disable sibling xpod-cli source and fall back 
       filePath === `${sourceRoot}/package.json`
       || filePath === `${sourceRoot}/src/main.ts`
       || filePath === `${repoRoot}/package.json`
+      || filePath === `${repoRoot}/dist/identity/oidc/ScopedPickWebIdHandler.js`
+      || filePath === `${repoRoot}/config/xpod.base.json`
       || filePath === packageBin
     ),
   })
@@ -58,6 +69,8 @@ test('resolveXpodLaunchTarget honors explicit LINX_XPOD_ROOT source path', () =>
     existsSync: (filePath) => (
       filePath === `${sourceRoot}/package.json`
       || filePath === `${sourceRoot}/src/main.ts`
+      || filePath === `${sourceRoot}/src/identity/oidc/ScopedPickWebIdHandler.ts`
+      || filePath === `${sourceRoot}/config/xpod.base.json`
     ),
   })
 
@@ -79,6 +92,8 @@ test('resolveXpodLaunchTarget prefers packaged single-file runtime when present'
     env: {},
     existsSync: (filePath) => (
       filePath === `${packagedRoot}/package.json`
+      || filePath === `${packagedRoot}/dist/identity/oidc/ScopedPickWebIdHandler.js`
+      || filePath === `${packagedRoot}/config/xpod.base.json`
       || filePath === singleFile
     ),
   })
@@ -101,6 +116,8 @@ test('resolveXpodLaunchTarget falls back to package bin in repo installs', () =>
     env: {},
     existsSync: (filePath) => (
       filePath === `${repoRoot}/package.json`
+      || filePath === `${repoRoot}/dist/identity/oidc/ScopedPickWebIdHandler.js`
+      || filePath === `${repoRoot}/config/xpod.base.json`
       || filePath === packageBin
     ),
   })
@@ -110,4 +127,253 @@ test('resolveXpodLaunchTarget falls back to package bin in repo installs', () =>
     rootDir: repoRoot,
     entryPath: packageBin,
   })
+})
+
+test('resolveManagedXpodLaunchTarget installs with Bun before npm when Bun is compatible', async () => {
+  const writes = new Map()
+  const mkdirs = []
+  const spawns = []
+  const progress = []
+  const runtimeRoot = '/home/linx/local/runtimes/xpod'
+  const entryPath = `${runtimeRoot}/0.3.4/bun/node_modules/@undefineds.co/xpod/bin/xpod.js`
+  let installed = false
+
+  const target = await resolveManagedXpodLaunchTarget({
+    appIsPackaged: true,
+    desktopDir: '/Applications/LinX.app/Contents/Resources/app/dist',
+    cwd: '/repo',
+    env: {
+      PATH: '/usr/local/bin',
+    },
+    resourcesPath: '/Applications/LinX.app/Contents/Resources',
+    xpodRuntimeDir: runtimeRoot,
+    defaultXpodVersion: '0.3.4',
+    commandExistsSync: (filePath) => filePath === '/usr/local/bin/bun' || filePath === entryPath,
+    mkdirSync: (dirPath) => mkdirs.push(dirPath),
+    writeFileSync: (filePath, content) => writes.set(filePath, content),
+    spawnSync: (command, args, options) => {
+      spawns.push({ command, args, cwd: options?.cwd })
+      if (args[0] === '--version') {
+        return { status: 0, stdout: '1.3.8\n', stderr: '' }
+      }
+      installed = true
+      return { status: 0, stdout: '', stderr: '' }
+    },
+    existsSync: (filePath) => {
+      if (filePath === entryPath) return installed
+      if (installed && filePath === `${runtimeRoot}/0.3.4/bun/node_modules/@undefineds.co/xpod/dist/identity/oidc/ScopedPickWebIdHandler.js`) return true
+      if (installed && filePath === `${runtimeRoot}/0.3.4/bun/node_modules/@undefineds.co/xpod/config/xpod.base.json`) return true
+      return false
+    },
+    onProgress: (item) => progress.push(item),
+    which: (command) => command === 'bun' ? '/usr/local/bin/bun' : null,
+  })
+
+  assert.equal(target.kind, 'managed-bun-package')
+  assert.equal(target.rootDir, `${runtimeRoot}/0.3.4/bun`)
+  assert.equal(target.entryPath, entryPath)
+  assert.equal(target.runtimeBinary, '/usr/local/bin/bun')
+  assert.equal(mkdirs.includes(`${runtimeRoot}/0.3.4/bun`), true)
+  assert.equal(writes.has(`${runtimeRoot}/0.3.4/bun/package.json`), true)
+  assert.deepEqual(spawns.map((call) => call.command), ['/usr/local/bin/bun', '/usr/local/bin/bun'])
+  assert.deepEqual(spawns[1].args, ['install', '--production', '--omit=optional', '--no-progress'])
+  assert.deepEqual(progress.map((item) => item.phase), [
+    'version',
+    'check-bun',
+    'check-bun',
+    'install-bun',
+    'runtime-ready',
+  ])
+})
+
+test('resolveXpodRuntimeVersion prefers build metadata over stale root package dependency', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'linx-xpod-version-'))
+  try {
+    const repoRoot = path.join(tempRoot, 'repo')
+    const desktopCwd = path.join(repoRoot, 'apps', 'desktop')
+    fs.mkdirSync(desktopCwd, { recursive: true })
+    fs.writeFileSync(
+      path.join(repoRoot, 'package.json'),
+      JSON.stringify({
+        dependencies: {
+          '@undefineds.co/xpod': '0.3.6',
+        },
+      }),
+      'utf-8',
+    )
+
+    assert.equal(resolveXpodRuntimeVersion({
+      cwd: desktopCwd,
+      desktopDir: path.join(desktopCwd, 'dist'),
+      env: {},
+      defaultXpodVersion: '0.3.7',
+    }), '0.3.7')
+
+    assert.equal(resolveXpodRuntimeVersion({
+      cwd: desktopCwd,
+      desktopDir: path.join(desktopCwd, 'dist'),
+      env: { LINX_XPOD_VERSION: '0.3.8' },
+      defaultXpodVersion: '0.3.7',
+    }), '0.3.8')
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true })
+  }
+})
+
+test('resolveManagedXpodLaunchTarget falls back to npm when Bun is missing', async () => {
+  const runtimeRoot = '/home/linx/local/runtimes/xpod'
+  const entryPath = `${runtimeRoot}/0.3.4/npm/node_modules/@undefineds.co/xpod/bin/xpod.js`
+  const spawns = []
+  const progress = []
+  let installed = false
+
+  const target = await resolveManagedXpodLaunchTarget({
+    appIsPackaged: true,
+    desktopDir: '/Applications/LinX.app/Contents/Resources/app/dist',
+    cwd: '/repo',
+    env: {
+      PATH: '/usr/local/bin',
+    },
+    resourcesPath: '/Applications/LinX.app/Contents/Resources',
+    xpodRuntimeDir: runtimeRoot,
+    defaultXpodVersion: '0.3.4',
+    existsSync: (filePath) => {
+      if (filePath === entryPath) return installed
+      if (installed && filePath === `${runtimeRoot}/0.3.4/npm/node_modules/@undefineds.co/xpod/dist/identity/oidc/ScopedPickWebIdHandler.js`) return true
+      if (installed && filePath === `${runtimeRoot}/0.3.4/npm/node_modules/@undefineds.co/xpod/config/xpod.base.json`) return true
+      return false
+    },
+    commandExistsSync: (filePath) => (
+      filePath === '/usr/local/bin/node'
+      || filePath === '/usr/local/bin/npm'
+      || filePath === entryPath
+    ),
+    mkdirSync: () => {},
+    writeFileSync: () => {},
+    spawnSync: (command, args, options) => {
+      spawns.push({ command, args, cwd: options?.cwd })
+      if (command === '/usr/local/bin/node' && args[0] === '--version') {
+        return { status: 0, stdout: 'v22.21.1\n', stderr: '' }
+      }
+      installed = true
+      return { status: 0, stdout: '', stderr: '' }
+    },
+    which: (command) => {
+      if (command === 'node') return '/usr/local/bin/node'
+      if (command === 'npm') return '/usr/local/bin/npm'
+      return null
+    },
+    onProgress: (item) => progress.push(item),
+  })
+
+  assert.equal(target.kind, 'managed-node-package')
+  assert.equal(target.rootDir, `${runtimeRoot}/0.3.4/npm`)
+  assert.equal(target.entryPath, entryPath)
+  assert.equal(target.runtimeBinary, '/usr/local/bin/node')
+  assert.deepEqual(spawns.map((call) => call.command), ['/usr/local/bin/node', '/usr/local/bin/npm'])
+  assert.deepEqual(spawns[1].args, ['install', '--omit=dev', '--omit=optional', '--no-audit', '--no-fund'])
+  assert.deepEqual(progress.map((item) => item.phase), [
+    'version',
+    'check-bun',
+    'check-node',
+    'check-node',
+    'install-npm',
+    'runtime-ready',
+  ])
+})
+
+test('resolveManagedXpodLaunchTarget uses embedded package only after runtime managers are unavailable', async () => {
+  const packagedRoot = '/Applications/LinX.app/Contents/Resources/xpod'
+  const packageBin = `${packagedRoot}/bin/xpod.js`
+
+  const target = await resolveManagedXpodLaunchTarget({
+    appIsPackaged: true,
+    desktopDir: '/Applications/LinX.app/Contents/Resources/app/dist',
+    cwd: '/repo',
+    env: {
+      PATH: '/usr/local/bin',
+      LINX_XPOD_VERSION: '0.3.4',
+    },
+    resourcesPath: '/Applications/LinX.app/Contents/Resources',
+    xpodRuntimeDir: '/home/linx/local/runtimes/xpod',
+    existsSync: (filePath) => (
+      filePath === `${packagedRoot}/package.json`
+      || filePath === `${packagedRoot}/dist/identity/oidc/ScopedPickWebIdHandler.js`
+      || filePath === `${packagedRoot}/config/xpod.base.json`
+      || filePath === packageBin
+    ),
+    commandExistsSync: () => false,
+    which: () => null,
+  })
+
+  assert.deepEqual(target, {
+    kind: 'package-bin',
+    rootDir: packagedRoot,
+    entryPath: packageBin,
+  })
+})
+
+test('resolveManagedXpodLaunchTarget falls back to embedded package when managed install lacks login capabilities', async () => {
+  const runtimeRoot = '/home/linx/local/runtimes/xpod'
+  const packagedRoot = '/Applications/LinX.app/Contents/Resources/xpod'
+  const packageBin = `${packagedRoot}/bin/xpod.js`
+  const managedEntry = `${runtimeRoot}/0.3.7/bun/node_modules/@undefineds.co/xpod/bin/xpod.js`
+  const progress = []
+  let installed = false
+
+  const target = await resolveManagedXpodLaunchTarget({
+    appIsPackaged: true,
+    desktopDir: '/Applications/LinX.app/Contents/Resources/app/dist',
+    cwd: '/repo',
+    env: {
+      PATH: '/usr/local/bin',
+    },
+    resourcesPath: '/Applications/LinX.app/Contents/Resources',
+    xpodRuntimeDir: runtimeRoot,
+    defaultXpodVersion: '0.3.7',
+    commandExistsSync: (filePath) => filePath === '/usr/local/bin/bun',
+    mkdirSync: () => {},
+    writeFileSync: () => {},
+    spawnSync: (_command, args) => {
+      if (args[0] === '--version') {
+        return { status: 0, stdout: '1.3.8\n', stderr: '' }
+      }
+      installed = true
+      return { status: 0, stdout: '', stderr: '' }
+    },
+    existsSync: (filePath) => {
+      if (filePath === managedEntry) return installed
+      if (filePath === `${packagedRoot}/package.json`) return true
+      if (filePath === `${packagedRoot}/dist/identity/oidc/ScopedPickWebIdHandler.js`) return true
+      if (filePath === `${packagedRoot}/config/xpod.base.json`) return true
+      if (filePath === packageBin) return true
+      return false
+    },
+    onProgress: (item) => progress.push(item),
+    which: (command) => command === 'bun' ? '/usr/local/bin/bun' : null,
+  })
+
+  assert.deepEqual(target, {
+    kind: 'package-bin',
+    rootDir: packagedRoot,
+    entryPath: packageBin,
+  })
+  assert.equal(progress.some((item) => item.label === 'Bun xpod runtime 不可用'), true)
+  assert.equal(progress.at(-1).label, '使用内置 xpod runtime')
+})
+
+test('resolveXpodLaunchTarget rejects old xpod runtimes without scoped WebID selection', () => {
+  const repoRoot = '/repo/node_modules/@undefineds.co/xpod'
+  const packageBin = `${repoRoot}/bin/xpod.js`
+
+  assert.throws(() => resolveXpodLaunchTarget({
+    appIsPackaged: false,
+    desktopDir: '/repo/apps/desktop/dist',
+    cwd: '/repo',
+    env: {},
+    existsSync: (filePath) => (
+      filePath === `${repoRoot}/package.json`
+      || filePath === packageBin
+    ),
+  }), /does not include scoped WebID selection/)
 })

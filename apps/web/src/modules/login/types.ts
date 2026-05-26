@@ -46,6 +46,7 @@ export interface LoginModalProps {
   error: string | null
   storedAccount: StoredAccount | null
   storageConflict: StorageConflict | null
+  hasRestorableSession: boolean
   providers: LoginProviderOption[]
   localOnboarding: LocalOnboardingSnapshot | null
   onBackFromLocal: () => void

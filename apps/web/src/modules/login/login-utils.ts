@@ -13,6 +13,7 @@ export interface PendingLoginAttempt {
   providerUrl?: string
   providerLabel?: string
   authorizationQuery?: Record<string, string>
+  prompt?: 'none' | 'consent'
 }
 
 export interface PendingCallbackError {
@@ -26,6 +27,7 @@ export interface StoredSolidSessionInfo {
   redirectUrl: string | null
   clientId: string | null
   tokenType: string | null
+  webId: string | null
 }
 
 /**
@@ -56,6 +58,7 @@ export function getStoredSolidSession(): StoredSolidSessionInfo | null {
       redirectUrl: typeof parsed.redirectUrl === 'string' ? parsed.redirectUrl : null,
       clientId: typeof parsed.clientId === 'string' ? parsed.clientId : null,
       tokenType: typeof parsed.tokenType === 'string' ? parsed.tokenType : null,
+      webId: typeof parsed.webId === 'string' ? parsed.webId : null,
     }
   } catch {
     return null
@@ -167,6 +170,9 @@ export function getPendingLoginAttempt(): PendingLoginAttempt | null {
       if (authorizationQuery) {
         attempt.authorizationQuery = authorizationQuery
       }
+      if (parsed.prompt === 'none' || parsed.prompt === 'consent') {
+        attempt.prompt = parsed.prompt
+      }
       return {
         ...attempt,
       }
@@ -195,6 +201,9 @@ export function setPendingLoginAttempt(attempt: PendingLoginAttempt) {
   const authorizationQuery = sanitizeAuthorizationQuery(attempt.authorizationQuery)
   if (authorizationQuery) {
     persisted.authorizationQuery = authorizationQuery
+  }
+  if (attempt.prompt === 'none' || attempt.prompt === 'consent') {
+    persisted.prompt = attempt.prompt
   }
   window.sessionStorage.setItem(PENDING_LOGIN_ATTEMPT_KEY, JSON.stringify(persisted))
 }

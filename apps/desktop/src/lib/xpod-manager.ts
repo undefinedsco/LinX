@@ -6,13 +6,20 @@ import { app } from 'electron';
 import { Supervisor } from '../../../../lib/supervisor';
 import { ConfigManager } from './config-manager';
 import { ProviderManager } from './provider-manager';
-import { resolveXpodLaunchTarget, type XpodLaunchTarget } from './xpod-launch';
+import {
+  resolveManagedXpodLaunchTarget,
+  resolveXpodLaunchTarget,
+  type XpodLaunchProgress,
+  type XpodLaunchTarget,
+} from './xpod-launch';
 import { ensureLinxLocalHome } from './local-home';
+import buildMeta from '../generated/build-meta.json';
 
 const OFFICIAL_CLOUD_IDENTITY_ORIGIN = 'https://id.undefineds.co';
 const OFFICIAL_CLOUD_API_ORIGIN = 'https://api.undefineds.co';
 const MANAGED_CLOUD_REGISTRATION_TIMEOUT_MS = 30000;
 const CANONICAL_OIDC_ISSUER_ENV_KEY = 'oidcIssuer';
+const desktopBuildMeta = buildMeta as { xpodVersion?: string };
 
 function readOidcIssuerEnv(env: NodeJS.ProcessEnv | Record<string, string | undefined>): string | undefined {
   const canonical = env[CANONICAL_OIDC_ISSUER_ENV_KEY]?.trim();
@@ -57,6 +64,24 @@ export interface XpodStartOptions {
   };
   tunnelToken?: string;
 }
+
+export type XpodStartProgressPhase =
+  | 'resolve-runtime'
+  | 'register-cloud'
+  | 'prepare-data'
+  | 'write-env'
+  | 'spawn'
+  | 'wait-ready'
+  | 'ready'
+  | XpodLaunchProgress['phase'];
+
+export interface XpodStartProgress {
+  phase: XpodStartProgressPhase;
+  label: string;
+  detail?: string | null;
+}
+
+export type XpodStartProgressHandler = (progress: XpodStartProgress) => void;
 
 export interface XpodStatus {
   running: boolean;
@@ -132,6 +157,7 @@ export class XpodManager {
   private readonly statePath: string;
   private readonly runtimeEnvPath: string;
   private readonly logsDir: string;
+  private readonly xpodRuntimeDir: string;
   private readonly desktopDir: string;
   private currentProviderId: string | null = null;
   private childProcess: ChildProcess | null = null;
@@ -151,15 +177,40 @@ export class XpodManager {
     this.statePath = localPaths.stateFile;
     this.runtimeEnvPath = localPaths.runtimeEnvFile;
     this.logsDir = localPaths.logsDir;
+    this.xpodRuntimeDir = localPaths.xpodRuntimeDir;
     this.desktopDir = path.resolve(__dirname, '../../../..');
   }
 
-  async start(options: XpodStartOptions): Promise<void> {
+  async start(options: XpodStartOptions, onProgress?: XpodStartProgressHandler): Promise<void> {
     const existing = this.readState();
-    const preferredTarget = this.resolvePreferredLaunchTarget();
+    this.reportStartProgress(onProgress, {
+      phase: 'resolve-runtime',
+      label: '检查 xpod 运行环境',
+      detail: 'Bun 优先，Node/npm 作为 fallback',
+    });
+    const preferredTarget = await this.resolvePreferredLaunchTarget(onProgress);
+    this.reportStartProgress(onProgress, {
+      phase: 'resolve-runtime',
+      label: 'xpod 启动方式已确定',
+      detail: preferredTarget.kind,
+    });
+    if (this.requiresManagedCloudRegistration(options)) {
+      this.reportStartProgress(onProgress, {
+        phase: 'register-cloud',
+        label: '绑定 Cloud 身份',
+        detail: '准备 Local 公网接入凭证',
+      });
+    }
     const provisioning = this.requiresManagedCloudRegistration(options)
       ? await this.ensureManagedCloudRegistration(options, existing?.provisioning)
       : undefined;
+    if (provisioning) {
+      this.reportStartProgress(onProgress, {
+        phase: 'register-cloud',
+        label: 'Cloud 绑定已完成',
+        detail: provisioning.publicUrl,
+      });
+    }
     const desiredState = this.createDesiredState(options, provisioning?.publicUrl);
 
     if (existing) {
@@ -170,6 +221,11 @@ export class XpodManager {
         && this.matchesProvisioning(existing.provisioning, provisioning)
         && !this.shouldReplaceManagedRuntime(existing, preferredTarget)
       ) {
+        this.reportStartProgress(onProgress, {
+          phase: 'ready',
+          label: 'Local 已运行',
+          detail: existing.localUrl,
+        });
         this.currentProviderId = existing.providerId;
         this.providerManager.updateManagedStatus(existing.providerId, 'running');
         return;
@@ -182,6 +238,11 @@ export class XpodManager {
       }
     }
 
+    this.reportStartProgress(onProgress, {
+      phase: 'prepare-data',
+      label: '准备 Local 数据目录',
+      detail: desiredState.dataDir,
+    });
     fs.mkdirSync(desiredState.dataDir, { recursive: true });
     fs.mkdirSync(this.logsDir, { recursive: true });
     this.ensureEnvFileExists();
@@ -197,6 +258,11 @@ export class XpodManager {
       const stdoutPath = path.join(this.logsDir, 'xpod.out.log');
       stderrPath = path.join(this.logsDir, 'xpod.err.log');
       const runtimeEnv = this.buildServiceEnv(options, desiredState, provisioning);
+      this.reportStartProgress(onProgress, {
+        phase: 'write-env',
+        label: '写入 xpod 启动配置',
+        detail: desiredState.baseUrl,
+      });
       const runtimeEnvPath = this.writeRuntimeEnvFile(runtimeEnv);
       runtimeEnv.XPOD_ENV_PATH = runtimeEnvPath;
       const launchSpec = this.buildLaunchSpec(target, desiredState.port, runtimeEnvPath);
@@ -209,6 +275,11 @@ export class XpodManager {
       let child: ChildProcess;
 
       try {
+        this.reportStartProgress(onProgress, {
+          phase: 'spawn',
+          label: '启动 xpod 进程',
+          detail: launchSpec.command,
+        });
         child = spawn(launchSpec.command, launchSpec.args, {
           ...spawnOptions,
         });
@@ -232,11 +303,21 @@ export class XpodManager {
         logPath: stdoutPath,
         errorLogPath: stderrPath,
       });
+      this.reportStartProgress(onProgress, {
+        phase: 'wait-ready',
+        label: '等待 Local 服务就绪',
+        detail: desiredState.localUrl,
+      });
       await this.waitForReady(
         desiredState.localUrl,
         child.pid,
         target.kind === 'dev-source' ? 90 : 30,
       );
+      this.reportStartProgress(onProgress, {
+        phase: 'ready',
+        label: 'Local 已就绪',
+        detail: desiredState.localUrl,
+      });
       this.providerManager.updateManagedStatus(options.providerId, 'running');
     } catch (error) {
       this.lastProcessErrorOutput = this.readLogTail(stderrPath ?? this.lastErrorLogPath);
@@ -318,19 +399,21 @@ export class XpodManager {
       return { running: false, status: 'stopped' };
     }
 
-    const preferredTarget = this.resolvePreferredLaunchTarget();
-    if (this.shouldReplaceManagedRuntime(state, preferredTarget)) {
-      await this.disposeManagedRuntime(state);
-      return {
-        running: false,
-        status: 'stopped',
-        providerId: state.providerId,
-        port: state.port,
-        baseUrl: state.baseUrl,
-        localUrl: state.localUrl,
-        pid: state.pid,
-        provisioning: toProvisioningInfo(state.provisioning),
-      };
+    if (!app.isPackaged) {
+      const preferredTarget = this.resolveComparableLaunchTarget();
+      if (this.shouldReplaceManagedRuntime(state, preferredTarget)) {
+        await this.disposeManagedRuntime(state);
+        return {
+          running: false,
+          status: 'stopped',
+          providerId: state.providerId,
+          port: state.port,
+          baseUrl: state.baseUrl,
+          localUrl: state.localUrl,
+          pid: state.pid,
+          provisioning: toProvisioningInfo(state.provisioning),
+        };
+      }
     }
 
     const healthy = await this.isServiceReady(state.localUrl);
@@ -562,7 +645,7 @@ export class XpodManager {
     port: number,
     envPath: string,
   ): { command: string; args: string[]; cwd: string } {
-    const configPath = path.join(target.rootDir, 'config', 'local.json');
+    const configPath = path.join(this.resolveXpodPackageRoot(target), 'config', 'local.json');
     const sharedArgs = [
       '--config',
       configPath,
@@ -585,6 +668,18 @@ export class XpodManager {
           args: [target.entryPath, ...sharedArgs],
           cwd: target.rootDir,
         };
+      case 'managed-bun-package':
+        return {
+          command: target.runtimeBinary ?? process.env.LINX_BUN_BINARY ?? process.env.LINX_XPOD_BUN_BINARY ?? 'bun',
+          args: [target.entryPath, 'start', ...sharedArgs],
+          cwd: target.rootDir,
+        };
+      case 'managed-node-package':
+        return {
+          command: target.runtimeBinary ?? process.env.XPOD_NODE_BINARY ?? process.env.LINX_NODE_BINARY ?? 'node',
+          args: [target.entryPath, 'start', ...sharedArgs],
+          cwd: target.rootDir,
+        };
       case 'single-file':
         return {
           command: process.env.XPOD_NODE_BINARY ?? 'node',
@@ -600,6 +695,14 @@ export class XpodManager {
       default:
         throw new Error(`Unsupported xpod launch target: ${String(target)}`);
     }
+  }
+
+  private resolveXpodPackageRoot(target: XpodLaunchTarget): string {
+    if (target.kind === 'managed-bun-package' || target.kind === 'managed-node-package') {
+      return path.resolve(path.dirname(target.entryPath), '..');
+    }
+
+    return target.rootDir;
   }
 
   private buildProcessEnv(
@@ -1062,7 +1165,11 @@ export class XpodManager {
     }
 
     if (message.includes('spawn bun ENOENT')) {
-      return new Error('未找到 bun，可执行本地 xpod 源码。请先安装 bun，或改用带单文件/平台二进制的 xpod 发行包。');
+      return new Error('未找到 bun，无法启动 Local。请安装 bun，或确保本机可用 Node/npm 作为 fallback。');
+    }
+
+    if (message.includes('Unable to install @undefineds.co/xpod')) {
+      return new Error(`无法准备本地 xpod runtime。请检查网络或 npm registry 配置。\n${message}`);
     }
 
     if (this.lastProcessErrorOutput.includes('ERR_REQUIRE_ESM')) {
@@ -1132,7 +1239,27 @@ export class XpodManager {
       && current.cloudApiUrl === desired.cloudApiUrl;
   }
 
-  private resolvePreferredLaunchTarget(): XpodLaunchTarget {
+  private reportStartProgress(
+    onProgress: XpodStartProgressHandler | undefined,
+    progress: XpodStartProgress,
+  ): void {
+    onProgress?.(progress);
+  }
+
+  private async resolvePreferredLaunchTarget(onProgress?: XpodStartProgressHandler): Promise<XpodLaunchTarget> {
+    return resolveManagedXpodLaunchTarget({
+      appIsPackaged: app.isPackaged,
+      desktopDir: this.desktopDir,
+      cwd: process.cwd(),
+      env: process.env,
+      resourcesPath: process.resourcesPath,
+      defaultXpodVersion: desktopBuildMeta.xpodVersion,
+      xpodRuntimeDir: this.xpodRuntimeDir,
+      onProgress,
+    });
+  }
+
+  private resolveComparableLaunchTarget(): XpodLaunchTarget {
     return resolveXpodLaunchTarget({
       appIsPackaged: app.isPackaged,
       desktopDir: this.desktopDir,

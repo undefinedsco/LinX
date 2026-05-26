@@ -10,6 +10,7 @@ import {
   type ApprovalRow,
   type SolidDatabase,
 } from '@undefineds.co/models'
+import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { queryClient } from '@/providers/query-provider'
 
 const POLICY_VERSION = 'phase4-inbox-v1'
@@ -73,11 +74,15 @@ export class RuntimeSidecarSink {
     private readonly db: SolidDatabase,
     private readonly webId: string,
   ) {
-    this.podBaseUrl = this.resolvePodBaseUrl(this.webId)
+    this.podBaseUrl = this.resolvePodBaseUrl()
   }
 
-  private resolvePodBaseUrl(webId: string): string {
-    return webId.replace('/profile/card#me', '').replace(/\/$/, '')
+  private resolvePodBaseUrl(): string {
+    const podBaseUrl = resolveCurrentPodBaseUrl(this.db)
+    if (!podBaseUrl) {
+      throw new Error('Unable to resolve current Pod URL for runtime sidecar.')
+    }
+    return podBaseUrl
   }
 
   private async findByStorageId<T>(resource: any, id: string): Promise<T | null> {

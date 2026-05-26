@@ -271,6 +271,11 @@ export function useProviders() {
           ...current,
           state: 'starting',
           message: '正在启动 Local…',
+          progress: {
+            phase: 'spawn',
+            label: '正在启动 Local…',
+            detail: null,
+          },
           errorCode: null,
         }
       : {
@@ -285,6 +290,11 @@ export function useProviders() {
           provisionUrl: null,
           nodeId: null,
           message: '正在启动 Local…',
+          progress: {
+            phase: 'spawn',
+            label: '正在启动 Local…',
+            detail: null,
+          },
           errorCode: null,
           canRetry: false,
           canOpenSettings: true,
@@ -298,6 +308,7 @@ export function useProviders() {
             ...localOnboarding,
             state: 'error' as const,
             message: error,
+            progress: null,
             errorCode: 'LOCAL_START_FAILED',
           }
         : null
@@ -400,6 +411,7 @@ function buildServiceLocalSnapshot(
         ? 'Local 已准备好，接下来会通过 Cloud 登录并写入本地空间。'
         : 'Local 已准备好，接下来会打开本地 Local 登录页。'
       : 'Local 尚未运行。你可以先启动 Local。',
+    progress: null,
     errorCode: null,
     canRetry: true,
     canOpenSettings: true,

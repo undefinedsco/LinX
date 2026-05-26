@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSession } from '@inrupt/solid-ui-react'
-import { getStoredSolidSession, clearStoredSolidSession } from '../login-utils'
+import {
+  capturePendingCallbackError,
+  getPendingLoginAttempt,
+  getStoredSolidSession,
+  clearStoredSolidSession,
+} from '../login-utils'
 
 const CALLBACK_RESTORE_TIMEOUT = 15000
 
@@ -42,6 +47,12 @@ export function useSessionRestore() {
     const timeoutMs = CALLBACK_RESTORE_TIMEOUT
 
     try {
+      if (isSilentAuthFailureRedirect(redirectUrl)) {
+        capturePendingCallbackError(redirectUrl)
+        setRestoreFailed(true)
+        return
+      }
+
       const restored = await Promise.race<any>([
         session.handleIncomingRedirect({
           url: redirectUrl,
@@ -169,6 +180,23 @@ export function useSessionRestore() {
     hasStoredSession: desktopApi?.auth
       ? shouldAttemptCurrentLocationRestore()
       : hasStoredSession || shouldAttemptCurrentLocationRestore(),
+  }
+}
+
+function isSilentAuthFailureRedirect(url: string): boolean {
+  const pendingAttempt = getPendingLoginAttempt()
+  if (pendingAttempt?.prompt !== 'none') {
+    return false
+  }
+
+  try {
+    const error = new URL(url).searchParams.get('error')
+    return error === 'login_required'
+      || error === 'interaction_required'
+      || error === 'consent_required'
+      || error === 'account_selection_required'
+  } catch {
+    return false
   }
 }
 

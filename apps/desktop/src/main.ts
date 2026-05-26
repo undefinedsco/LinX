@@ -194,6 +194,11 @@ function notifyConfigWindowState(state: { open: boolean; reason: 'opened' | 'clo
 
 function notifyLocalOnboardingState(snapshot: LocalOnboardingSnapshot): void {
   mainWindow?.webContents.send('localOnboarding:state', snapshot);
+  if (snapshot.state === 'starting' || snapshot.state === 'ready' || snapshot.state === 'error') {
+    void refreshTrayState().catch((error) => {
+      console.error('[Desktop] Failed to refresh tray after Local onboarding state changed:', error);
+    });
+  }
 }
 
 function isRendererWindowLoaded(window: BrowserWindow): boolean {
@@ -671,10 +676,18 @@ function createTrayIcon(tone: TrayTone) {
     : tone === 'error'
     ? '#ef4444'
     : '#6b7280';
+  const mark = tone === 'running'
+    ? '<circle cx="12" cy="12" r="3" fill="#ffffff" opacity="0.92" />'
+    : tone === 'starting'
+    ? '<path d="M8 4a4 4 0 0 1 4 4" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" />'
+    : tone === 'error'
+    ? '<path d="M8 4.5v4.5M8 11.5h.01" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" />'
+    : '<circle cx="8" cy="8" r="3.4" fill="none" stroke="#ffffff" stroke-width="1.8" />';
 
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
-      <circle cx="8" cy="8" r="5" fill="${color}" />
+      <rect x="2" y="2" width="12" height="12" rx="3.5" fill="${color}" />
+      ${mark}
     </svg>
   `.trim();
 

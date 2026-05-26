@@ -6,10 +6,12 @@ export interface StorageConflictDetectionInput {
 
 export interface StorageConflict {
   expectedStorageUrl: string
-  actualStorageUrl: string
+  actualStorageUrl: string | null
   providerUrl: string | null
   managementUrl: string | null
 }
+
+const SOLID_STORAGE_IRI = 'http://www.w3.org/ns/solid/terms#storage'
 
 export async function detectStorageConflict(
   input: StorageConflictDetectionInput,
@@ -20,15 +22,7 @@ export async function detectStorageConflict(
   }
 
   const actualStorageUrl = await fetchProfileStorageUrl(input.webId)
-  if (!actualStorageUrl) {
-    return null
-  }
-
-  if (normalizeUrl(expectedStorageUrl) === normalizeUrl(actualStorageUrl)) {
-    return null
-  }
-
-  if (isIssuerStorageFallback(input.webId, actualStorageUrl, expectedStorageUrl)) {
+  if (actualStorageUrl && normalizeUrl(expectedStorageUrl) === normalizeUrl(actualStorageUrl)) {
     return null
   }
 
@@ -115,11 +109,13 @@ function findStorageUrl(value: unknown): string | null {
   }
 
   const record = value as Record<string, unknown>
-  const direct = record['solid:storage']
-  if (direct) {
-    const resolved = unwrapStorageValue(direct)
-    if (resolved) {
-      return resolved
+  for (const key of ['solid:storage', SOLID_STORAGE_IRI]) {
+    const direct = record[key]
+    if (direct) {
+      const resolved = unwrapStorageValue(direct)
+      if (resolved) {
+        return resolved
+      }
     }
   }
 
@@ -166,7 +162,9 @@ function unwrapStorageValue(value: unknown): string | null {
 }
 
 function extractStorageUrlFromTurtle(body: string): string | null {
-  const match = body.match(/solid:storage\s+<([^>]+)>/i)
+  const match = body.match(
+    /(?:solid:storage|<http:\/\/www\.w3\.org\/ns\/solid\/terms#storage>)\s+<([^>]+)>/i,
+  )
   return match?.[1] ?? null
 }
 
@@ -184,16 +182,4 @@ function normalizeBaseUrl(url?: string | null): string | null {
 
 function normalizeUrl(url: string): string {
   return url.replace(/\/+$/, '')
-}
-
-function isIssuerStorageFallback(webId: string, actualStorageUrl: string, expectedStorageUrl: string): boolean {
-  try {
-    const issuer = new URL(webId)
-    const actual = new URL(actualStorageUrl)
-    const expected = new URL(expectedStorageUrl)
-
-    return actual.origin === issuer.origin && expected.origin !== issuer.origin
-  } catch {
-    return false
-  }
 }

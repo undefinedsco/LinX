@@ -59,4 +59,36 @@ describe('initializeLinxPodStorage', () => {
       expect.objectContaining({ method: 'PUT' }),
     )
   })
+
+  it('creates LinX containers under the selected SP Pod URL even when the WebID belongs to Cloud', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString()
+      expect(url.startsWith('https://id.undefineds.co/')).toBe(false)
+      expect(url.startsWith('https://node-0000.undefineds.co/alice/')).toBe(true)
+
+      if (init?.method === 'HEAD') {
+        return new Response(null, { status: 404 })
+      }
+      return new Response(null, { status: 201 })
+    })
+    const db = {
+      getDialect: () => ({
+        getPodUrl: () => 'https://node-0000.undefineds.co/alice/',
+        getAuthenticatedFetch: () => fetchMock,
+      }),
+      getSession: () => ({
+        info: {
+          webId: 'https://id.undefineds.co/alice/profile/card#me',
+        },
+      }),
+    }
+
+    await initializeLinxPodStorage(db as any)
+
+    expect(fetchMock).toHaveBeenCalledWith('https://node-0000.undefineds.co/alice/.data/', { method: 'HEAD' })
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://node-0000.undefineds.co/alice/.data/chat/',
+      expect.objectContaining({ method: 'PUT' }),
+    )
+  })
 })

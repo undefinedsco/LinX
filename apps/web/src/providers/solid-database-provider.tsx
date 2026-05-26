@@ -33,7 +33,6 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
   const initGenerationRef = useRef(0)
   const inFlightSessionKeyRef = useRef<string | null>(null)
   const observedSessionKeyRef = useRef<string | null>(null)
-  const resolvedLocalPodUrlRef = useRef<string | null>(null)
 
   const [value, setValue] = useState<SolidDatabaseContextValue>({
     db: null,
@@ -100,13 +99,8 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
     const isLoggedIn = session.info.isLoggedIn
     const webId = session.info.webId
     const sessionKey = isLoggedIn && webId ? getSessionKey(session.info.sessionId, webId) : null
-    const localContext = webId
-      ? resolveLoginPodContext(webId, storedAccount, resolvedLocalPodUrlRef.current)
-      : null
-    const podUrl = localContext?.podUrl ?? resolvedLocalPodUrlRef.current
-    if (podUrl) {
-      resolvedLocalPodUrlRef.current = podUrl
-    }
+    const podContext = webId ? resolveLoginPodContext(webId, storedAccount) : null
+    const podUrl = podContext?.podUrl ?? null
     const databaseKey = sessionKey ? getDatabaseKey(sessionKey, podUrl) : null
 
     if (!databaseKey) {
@@ -164,8 +158,8 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
         const accessRoute = hasLocalAccessRouteSource()
           ? await resolveBestLocalAccessRoute({
               canonicalPodUrl: podUrl,
-              providerLabel: localContext?.providerLabel,
-              providerUrl: localContext?.providerUrl,
+              providerLabel: podContext?.providerLabel,
+              providerUrl: podContext?.providerUrl,
             })
           : null
         if (!isCurrentSession(session.info, sessionKey, generation, initGenerationRef.current)) {
@@ -260,44 +254,47 @@ interface LoginPodContext {
 function resolveLoginPodContext(
   webId: string,
   storedAccount: { providerUrl?: string; providerLabel?: string; issuerUrl?: string; issuerLabel?: string } | null,
-  fallbackPodUrl: string | null = null,
 ): LoginPodContext | null {
   const pendingLoginAttempt = getPendingLoginAttempt()
-  const candidates: Array<{ providerUrl?: string; providerLabel?: string; issuerUrl?: string }> = [
-    {
-      providerUrl: pendingLoginAttempt?.providerUrl,
-      providerLabel: pendingLoginAttempt?.providerLabel,
-      issuerUrl: pendingLoginAttempt?.issuerUrl,
-    },
+  if (pendingLoginAttempt) {
+    return resolveCandidatePodContext(
+      webId,
+      {
+        providerUrl: pendingLoginAttempt.providerUrl,
+        providerLabel: pendingLoginAttempt.providerLabel,
+        issuerUrl: pendingLoginAttempt.issuerUrl,
+      },
+    )
+  }
+
+  return resolveCandidatePodContext(
+    webId,
     {
       providerUrl: storedAccount?.providerUrl,
       providerLabel: storedAccount?.providerLabel,
       issuerUrl: storedAccount?.issuerUrl,
     },
-  ]
+  )
+}
 
-  for (const candidate of candidates) {
-    if (candidate.providerLabel?.trim().toLowerCase() !== 'local') {
-      continue
-    }
-
-    const normalized = resolveProviderPodUrl(candidate.providerUrl, webId)
-    if (normalized) {
-      return {
-        podUrl: normalized,
-        providerUrl: candidate.providerUrl ?? normalized,
-        providerLabel: candidate.providerLabel,
-      }
-    }
+function resolveCandidatePodContext(
+  webId: string,
+  candidate: { providerUrl?: string; providerLabel?: string; issuerUrl?: string },
+): LoginPodContext | null {
+  if (!isSplitStorageProvider(candidate.providerUrl, candidate.issuerUrl, webId, candidate.providerLabel)) {
+    return null
   }
 
-  return fallbackPodUrl
-    ? {
-        podUrl: fallbackPodUrl,
-        providerUrl: fallbackPodUrl,
-        providerLabel: 'Local',
-      }
-    : null
+  const normalized = resolveProviderPodUrl(candidate.providerUrl, webId)
+  if (!normalized) {
+    return null
+  }
+
+  return {
+    podUrl: normalized,
+    providerUrl: candidate.providerUrl ?? normalized,
+    providerLabel: candidate.providerLabel,
+  }
 }
 
 function resolveProviderPodUrl(providerUrl: string | undefined, webId: string): string | null {
@@ -320,6 +317,29 @@ function resolveProviderPodUrl(providerUrl: string | undefined, webId: string): 
   } catch {
     return null
   }
+}
+
+function isSplitStorageProvider(
+  providerUrl: string | undefined,
+  issuerUrl: string | undefined,
+  _webId: string,
+  providerLabel?: string,
+): boolean {
+  if (typeof providerUrl !== 'string' || !providerUrl.trim()) {
+    return false
+  }
+
+  if (providerLabel?.trim().toLowerCase() === 'local') {
+    return true
+  }
+
+  const providerOrigin = normalizeOrigin(providerUrl)
+  if (!providerOrigin) {
+    return false
+  }
+
+  const issuerOrigin = normalizeOrigin(issuerUrl)
+  return Boolean(issuerOrigin && providerOrigin !== issuerOrigin)
 }
 
 function resolveDatabaseInitTimeoutMs(podUrl: string | null): number | undefined {
@@ -355,4 +375,16 @@ function normalizePodUrl(url?: string): string | null {
   }
 
   return trimmed.endsWith('/') ? trimmed : `${trimmed}/`
+}
+
+function normalizeOrigin(url?: string): string | null {
+  if (typeof url !== 'string' || !url.trim()) {
+    return null
+  }
+
+  try {
+    return new URL(url).origin
+  } catch {
+    return null
+  }
 }

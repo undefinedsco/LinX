@@ -1,7 +1,7 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import type { SolidProvider } from './provider-manager'
-import type { XpodManager } from './xpod-manager'
+import type { XpodManager, XpodStartProgress } from './xpod-manager'
 import { ensureLinxLocalHome } from './local-home'
 
 export type LocalOnboardingMode = 'device-only' | 'remote-ready'
@@ -22,6 +22,12 @@ export interface LocalOnboardingCapabilities {
   version: string | null
 }
 
+export interface LocalOnboardingProgress {
+  phase: XpodStartProgress['phase']
+  label: string
+  detail?: string | null
+}
+
 export interface LocalOnboardingSnapshot {
   state: LocalOnboardingState
   mode: LocalOnboardingMode | null
@@ -34,6 +40,7 @@ export interface LocalOnboardingSnapshot {
   provisionUrl: string | null
   nodeId: string | null
   message: string | null
+  progress?: LocalOnboardingProgress | null
   errorCode: string | null
   canRetry: boolean
   canOpenSettings: boolean
@@ -67,6 +74,7 @@ const DEFAULT_SNAPSHOT: LocalOnboardingSnapshot = {
   provisionUrl: null,
   nodeId: null,
   message: null,
+  progress: null,
   errorCode: null,
   canRetry: false,
   canOpenSettings: true,
@@ -167,6 +175,7 @@ export class LocalOnboardingController {
     }
 
     if (status.status === 'starting') {
+      const progress = this.snapshot.state === 'starting' ? this.snapshot.progress ?? null : null
       return this.updateSnapshot({
         state: 'starting',
         mode,
@@ -174,7 +183,8 @@ export class LocalOnboardingController {
         baseUrl,
         ...bindingFields,
         capabilities: null,
-        message: '正在启动 Local…',
+        message: progress?.label ?? '正在启动 Local…',
+        progress,
         errorCode: null,
         canRetry: false,
         canOpenSettings: false,
@@ -272,7 +282,12 @@ export class LocalOnboardingController {
       baseUrl,
       ...bindingFields,
       capabilities: null,
-      message: '正在启动 Local…',
+      message: '检查 xpod 运行环境',
+      progress: {
+        phase: 'resolve-runtime',
+        label: '检查 xpod 运行环境',
+        detail: '准备启动 Local',
+      },
       errorCode: null,
       canRetry: false,
       canOpenSettings: false,
@@ -284,14 +299,31 @@ export class LocalOnboardingController {
       }
 
       this.lastStartError = null
-      await this.xpodManager.start({
-        providerId: provider.id,
-        dataDir: provider.managed.dataDir,
-        port: provider.managed.port,
-        startupMode: mode,
-        domain: provider.managed.domain,
-        tunnelToken: provider.managed.tunnelToken,
-      })
+      await this.xpodManager.start(
+        {
+          providerId: provider.id,
+          dataDir: provider.managed.dataDir,
+          port: provider.managed.port,
+          startupMode: mode,
+          domain: provider.managed.domain,
+          tunnelToken: provider.managed.tunnelToken,
+        },
+        (progress) => {
+          this.updateSnapshot({
+            state: 'starting',
+            mode,
+            localUrl,
+            baseUrl,
+            ...bindingFields,
+            capabilities: null,
+            message: progress.label,
+            progress,
+            errorCode: null,
+            canRetry: false,
+            canOpenSettings: false,
+          })
+        },
+      )
 
       return this.refresh()
     } catch (error) {
@@ -312,6 +344,7 @@ export class LocalOnboardingController {
         ...bindingFields,
         capabilities: null,
         message: error instanceof Error ? error.message : '启动 Local 失败。',
+        progress: null,
         errorCode: 'LOCAL_START_FAILED',
         canRetry: true,
         canOpenSettings: true,

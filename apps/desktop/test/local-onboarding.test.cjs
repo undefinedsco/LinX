@@ -100,6 +100,50 @@ test('LocalOnboardingController starts device-only Local and becomes ready witho
   assert.deepEqual(calls, ['status', 'status', 'start', 'status'])
 })
 
+test('LocalOnboardingController publishes xpod startup progress while starting Local', async () => {
+  const { LocalOnboardingController } = require(resolveCompiledDesktopModule('lib/local-onboarding.js'))
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'linx-local-onboarding-progress-'))
+  const snapshots = []
+  let started = false
+
+  const controller = new LocalOnboardingController({
+    stateDir,
+    ensureBootstrapProvider: () => createProvider(),
+    onSnapshotChange: (snapshot) => snapshots.push(snapshot),
+    xpodManager: {
+      getStatus: async () => started
+        ? {
+            running: true,
+            status: 'running',
+            localUrl: 'http://localhost:5737/',
+            baseUrl: 'http://localhost:5737/',
+          }
+        : {
+            running: false,
+            status: 'stopped',
+            localUrl: 'http://localhost:5737/',
+            baseUrl: 'http://localhost:5737/',
+          },
+      start: async (_options, onProgress) => {
+        onProgress?.({
+          phase: 'install-bun',
+          label: '下载 xpod runtime',
+          detail: '@undefineds.co/xpod@0.3.4',
+        })
+        started = true
+      },
+    },
+  })
+
+  await controller.chooseMode('device-only')
+  await controller.continue()
+
+  const progressSnapshot = snapshots.find((snapshot) => snapshot.progress?.phase === 'install-bun')
+  assert.ok(progressSnapshot)
+  assert.equal(progressSnapshot.message, '下载 xpod runtime')
+  assert.equal(progressSnapshot.progress.detail, '@undefineds.co/xpod@0.3.4')
+})
+
 test('LocalOnboardingController treats a running device-only Local service as ready without Cloud binding', async () => {
   const { LocalOnboardingController } = require(resolveCompiledDesktopModule('lib/local-onboarding.js'))
   const controller = new LocalOnboardingController({

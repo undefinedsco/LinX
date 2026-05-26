@@ -1,4 +1,5 @@
 import type { PodTable, SolidDatabase } from '@undefineds.co/drizzle-solid'
+import { assertCurrentPodBaseUrl, assertIriBelongsToCurrentPod, assertUpdateValuesBelongToCurrentPod } from './pod-write-guard'
 
 type ExactRecordTarget = string | Record<string, unknown> | null | undefined
 type ExactPodTable = PodTable<any>
@@ -39,7 +40,12 @@ export async function updateExactRecord(
 ): Promise<void> {
   const locatorDb = db as LocatorDatabase
   const payload = sanitizeUpdatePayload(updates)
+  assertCurrentPodBaseUrl(db, 'update')
+  assertUpdateValuesBelongToCurrentPod(db, payload)
   const iri = resolveRecordIri(target)
+  if (iri) {
+    assertIriBelongsToCurrentPod(db, iri, 'update')
+  }
   if (iri && typeof locatorDb.updateByIri === 'function') {
     await locatorDb.updateByIri(table, iri, payload)
     return
@@ -60,7 +66,11 @@ export async function deleteExactRecord(
   target: ExactRecordTarget,
 ): Promise<void> {
   const locatorDb = db as LocatorDatabase
+  assertCurrentPodBaseUrl(db, 'delete')
   const iri = resolveRecordIri(target)
+  if (iri) {
+    assertIriBelongsToCurrentPod(db, iri, 'delete')
+  }
   if (iri && typeof locatorDb.deleteByIri === 'function') {
     await locatorDb.deleteByIri(table, iri)
     return

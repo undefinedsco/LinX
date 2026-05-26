@@ -25,6 +25,7 @@ import {
   UDFS,
 } from '@undefineds.co/models'
 import { resolveRowSubject } from '@undefineds.co/drizzle-solid'
+import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { deleteExactRecord, updateExactRecord } from '@/lib/data/exact-records'
 
 const DEFAULT_CHAT_ID = 'default'
@@ -262,7 +263,11 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   }
 
   private getPodBaseUrl(): string {
-    return this.webId.replace('/profile/card#me', '').replace(/\/$/, '')
+    const podBaseUrl = resolveCurrentPodBaseUrl(this.db)
+    if (!podBaseUrl) {
+      throw new Error('Unable to resolve current Pod URL for LocalChatKitStore.')
+    }
+    return podBaseUrl
   }
 
   private buildThreadUri(chatId: string, threadId: string): string {
@@ -610,8 +615,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     status: string | null,
     createdAt?: string,
   ): Promise<void> {
-    // The db instance already carries session.fetch with DPoP auth.
-    // Build resource URL from webId.
+    // The db instance carries the selected SP Pod URL; WebID remains identity only.
     const dateForPath = createdAt ? new Date(createdAt) : new Date()
     const yyyy = dateForPath.getUTCFullYear()
     const mm = String(dateForPath.getUTCMonth() + 1).padStart(2, '0')

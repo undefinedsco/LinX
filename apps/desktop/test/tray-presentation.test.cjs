@@ -13,7 +13,7 @@ test('getTrayPresentation formats running status with port', () => {
 
   assert.deepEqual(presentation, {
     tone: 'running',
-    title: 'xpod',
+    title: 'xpod ●',
     tooltip: 'xpod · 运行 · 5737',
     statusLabel: 'xpod 运行 · 5737',
   })
@@ -27,7 +27,7 @@ test('getTrayPresentation formats starting status', () => {
 
   assert.deepEqual(presentation, {
     tone: 'starting',
-    title: 'xpod',
+    title: 'xpod ◐',
     tooltip: 'xpod · 启动',
     statusLabel: 'xpod 启动',
   })
@@ -41,7 +41,7 @@ test('getTrayPresentation formats stopped status', () => {
 
   assert.deepEqual(presentation, {
     tone: 'stopped',
-    title: 'xpod',
+    title: 'xpod ○',
     tooltip: 'xpod · 停止',
     statusLabel: 'xpod 停止',
   })

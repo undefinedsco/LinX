@@ -170,6 +170,9 @@ LinX 主界面
 
 - Cloud 路径：不启动本地 xpod，登录后 `storedAccount.providerLabel` 为 `Cloud`，Pod URL 不依赖本机地址。
 - Local 直连 / 隧道路径：启动本地 xpod，向 Cloud 注册用户提供的 `publicUrl`，Cloud 登录后 `storedAccount.providerLabel` 为 `Local`，Solid DB 的 Pod URL 必须以该 `publicUrl` 开头。
+- Local 直连 / 隧道路径：登录完成只代表身份授权完成；验收还必须证明第一个业务写入和后续所有业务写入都落在所选 Local SP。`/.data/*` bootstrap、chat/message、inbox、Agent Home、runtime session ref、AI 配置、Secretary 初始化数据和内置 runtime API 都必须从 Solid DB 当前 Pod URL 推导，不能从 Cloud WebID origin、issuer URL 或 profile URL 推导。
+- Local 直连 / 隧道路径：新增、更新、删除都按同一规则验收；如果当前 Solid DB 没有可确认的 Pod URL，业务写入必须失败，不允许静默回退到 WebID 所在的 Cloud。
+- Local 直连 / 隧道路径：后续 update/delete 如果拿到的是绝对资源 IRI，该 IRI 必须位于当前 Solid DB Pod URL 前缀下；旧 Cloud 空间或旧 Local 节点的缓存 IRI 不能继续作为当前会话写目标。
 - Local 直连 / 隧道路径：Cloud provision 回调创建 Pod 时，Local SP 必须同时创建文件目录和结构化 root metadata；`HEAD /<pod>/` 必须返回存在，不能让前端自己创建顶层 Pod root。
 - Local 基础 / LAN：不要求公网 URL，不要求隧道；必须能启动本地 xpod 并完成本机登录验证。
 - Standalone：不要求公网 URL，不走 Cloud provisioning；只承诺本机/局域网验证。
@@ -229,4 +232,6 @@ LinX 主界面
 
 ### StorageConflict
 
-如果 WebID 的 `solid:storage` 指向的 SP 与当前登录入口不一致，阻断进入并提示用户回到正确空间或创建新 Pod。MVP 不做静默迁移。
+同源 provider 下，如果 WebID 的 `solid:storage` 指向的 SP 与当前登录入口不一致，阻断进入并提示用户回到正确空间或创建新 Pod。MVP 不做静默迁移。
+
+Cloud IDP + Local SP 也是 split 路径，但 WebID profile 里的 `solid:storage` 仍然必须指向当前 Local SP。`provisionCode` 和 SP-scoped consent 只负责限制候选 Pod，不能作为跳过 profile/storage 校验的理由。如果 Cloud profile 仍指向 Cloud、旧节点，或缺少 `solid:storage` 绑定，必须阻断进入，避免后续业务数据写到错误空间。

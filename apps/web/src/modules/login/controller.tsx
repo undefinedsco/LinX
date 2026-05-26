@@ -24,7 +24,6 @@ import type { ConnectingProviderInfo, LoginProviderOption } from './types'
 import { detectStorageConflict, type StorageConflict } from './storage-reconciliation'
 
 const LOCAL_RESTORE_TIMEOUT_MS = 5000
-
 function normalizeUrl(url: string): string {
   return url.replace(/\/$/, '')
 }
@@ -62,6 +61,8 @@ export function useLoginController() {
   const localConnectKeyRef = useRef<string | null>(null)
   const desktopAuthPendingRef = useRef(false)
   const desktopAuthSurfaceOpenedRef = useRef(false)
+  const silentLocalFallbackStartedRef = useRef(false)
+  const loginFinalizeGenerationRef = useRef(0)
   const restore = useSessionRestore()
   const oidc = useOidcConnect()
   const embeddedAuthorization = useEmbeddedAuthorizationState()
@@ -114,6 +115,30 @@ export function useLoginController() {
       || Boolean(getPendingCallbackError())
     const callbackRestoreFailed = path.startsWith('/auth/callback') && !hasCallbackError
 
+    const pendingAttempt = getPendingLoginAttempt()
+    const callbackError = getPendingCallbackError()
+    if (
+      pendingAttempt?.prompt === 'none'
+      && callbackError?.error
+      && isSilentAuthError(callbackError.error)
+      && !silentLocalFallbackStartedRef.current
+    ) {
+      silentLocalFallbackStartedRef.current = true
+      void oidc.connect(pendingAttempt.issuerUrl, {
+        authorizationSurface: pendingAttempt.authorizationSurface,
+        returnToMicroAppId: pendingAttempt.returnToMicroAppId,
+        providerUrl: pendingAttempt.providerUrl,
+        providerLabel: pendingAttempt.providerLabel,
+        authorizationQuery: pendingAttempt.authorizationQuery,
+      }).catch((error: any) => {
+        resetDesktopAuthState()
+        setConnectingProvider(null)
+        setError(error?.message || '重新发起登录失败。')
+        setState('idle')
+      })
+      return
+    }
+
     // Only act on callback restore failures — don't interfere with user-initiated connecting state
     if (!callbackRestoreFailed && state === 'restoring') {
       setState('idle')
@@ -134,7 +159,16 @@ export function useLoginController() {
     })
 
     setState('idle')
-  }, [navigate, restore.restoreComplete, restore.restoreFailed, setError, setState, state])
+  }, [
+    navigate,
+    oidc,
+    resetDesktopAuthState,
+    restore.restoreComplete,
+    restore.restoreFailed,
+    setError,
+    setState,
+    state,
+  ])
 
   useEffect(() => {
     if (!isDesktop || !desktopAuthPendingRef.current) return
@@ -191,18 +225,23 @@ export function useLoginController() {
 
     let cancelled = false
 
+    const finalizeGeneration = loginFinalizeGenerationRef.current
+    const isFinalizeCurrent = () => finalizeGeneration === loginFinalizeGenerationRef.current
+
     const finalizeLogin = async () => {
-      const providerPublicUrl =
-        providerLabel === 'Local'
-          ? resolveConflictCheckPublicUrl(localOnboarding?.publicUrl, localOnboarding?.baseUrl)
-          : null
+      const providerPublicUrl = resolveConflictCheckPublicUrl({
+        providerLabel,
+        providerUrl,
+        localPublicUrl: localOnboarding?.publicUrl,
+        localBaseUrl: localOnboarding?.baseUrl,
+      })
       const conflict = await detectStorageConflict({
         webId: session.info.webId ?? '',
         providerUrl,
         providerPublicUrl,
       })
 
-      if (cancelled) return
+      if (cancelled || !isFinalizeCurrent()) return
 
       if (conflict) {
         setStorageConflict(conflict)
@@ -243,7 +282,7 @@ export function useLoginController() {
     }
 
     void finalizeLogin().catch((error: any) => {
-      if (cancelled) return
+      if (cancelled || !isFinalizeCurrent()) return
       setStoredAccount(account)
       resetDesktopAuthState()
       setConnectingProvider(null)
@@ -272,7 +311,8 @@ export function useLoginController() {
     resetDesktopAuthState,
   ])
 
-  const startLocalLogin = useCallback(async (options?: { preferRestore?: boolean }) => {
+  const startLocalLogin = useCallback(async (options?: { restoreAccount?: StoredAccount | null }) => {
+    loginFinalizeGenerationRef.current += 1
     suppressAutoLoginRef.current = false
     setStorageConflict(null)
     setError(null)
@@ -283,8 +323,28 @@ export function useLoginController() {
     setView('local')
     setLocalLoginActive(false)
     localConnectKeyRef.current = null
+    silentLocalFallbackStartedRef.current = false
 
     try {
+      const canRestoreLocalSession = Boolean(
+        options?.restoreAccount
+        && canReuseSessionForLocalSpace({
+          account: options.restoreAccount,
+          providers,
+          activeWebId: session.info.webId,
+          storedSolidSession: getStoredSolidSession(),
+        }),
+      )
+
+      if (!canRestoreLocalSession && session.info.isLoggedIn) {
+        try {
+          suppressAutoLoginRef.current = true
+          await logout()
+        } finally {
+          suppressAutoLoginRef.current = false
+        }
+      }
+
       const snapshot = await startLocal()
 
       if (snapshot?.state === 'error') {
@@ -298,10 +358,9 @@ export function useLoginController() {
         return
       }
 
-      if (options?.preferRestore && snapshot?.state === 'ready') {
+      if (canRestoreLocalSession && snapshot?.state === 'ready') {
         if (session.info.isLoggedIn) {
-          const microAppId = consumePendingPostLoginMicroAppId()
-          navigate({ to: '/$microAppId', params: { microAppId }, replace: true })
+          setState('restoring')
           return
         }
 
@@ -312,8 +371,7 @@ export function useLoginController() {
             const restored = await restoreStoredSolidSession(session)
 
             if (restored?.isLoggedIn || session.info.isLoggedIn) {
-              const microAppId = consumePendingPostLoginMicroAppId()
-              navigate({ to: '/$microAppId', params: { microAppId }, replace: true })
+              setState('restoring')
               return
             }
           } catch {
@@ -329,15 +387,16 @@ export function useLoginController() {
       setLocalLoginActive(false)
       setError(error?.message || '启动 Local 失败。')
     }
-  }, [isDesktop, navigate, resetDesktopAuthState, session, setError, setState, startLocal])
+  }, [isDesktop, logout, navigate, providers, resetDesktopAuthState, session, setError, setState, startLocal])
 
   const connect = useCallback(async (providerUrl: string) => {
+    loginFinalizeGenerationRef.current += 1
     suppressAutoLoginRef.current = false
     setStorageConflict(null)
     const normalizedProviderUrl = normalizeUrl(providerUrl)
     const provider = providers.find((item) => normalizeUrl(item.url) === normalizedProviderUrl)
     if (provider?.source === 'local') {
-      await startLocalLogin()
+      await startLocalLogin({ restoreAccount: isLocalStoredAccount(storedAccount, providers) ? storedAccount : null })
       return
     }
 
@@ -370,7 +429,7 @@ export function useLoginController() {
       setError(err.message || '连接失败')
       setState('idle')
     }
-  }, [oidc, providers, resetDesktopAuthState, setError, setState, startLocalLogin])
+  }, [oidc, providers, resetDesktopAuthState, setError, setState, startLocalLogin, storedAccount])
 
   const continueStoredAccount = useCallback(() => {
     suppressAutoLoginRef.current = false
@@ -394,13 +453,12 @@ export function useLoginController() {
       || storedAccount?.providerLabel === 'Local'
       || storedAccount?.issuerLabel === 'Local'
     if (isRememberedLocal) {
-      void startLocalLogin({ preferRestore: true })
+      void startLocalLogin({ restoreAccount: storedAccount })
       return
     }
 
     if (session.info.isLoggedIn) {
-      const microAppId = consumePendingPostLoginMicroAppId()
-      navigate({ to: '/$microAppId', params: { microAppId }, replace: true })
+      setState('restoring')
       return
     }
 
@@ -412,8 +470,7 @@ export function useLoginController() {
         restorePreviousSession: true,
       }).then((restored) => {
         if (restored?.isLoggedIn || session.info.isLoggedIn) {
-          const microAppId = consumePendingPostLoginMicroAppId()
-          navigate({ to: '/$microAppId', params: { microAppId }, replace: true })
+          setState('restoring')
           return
         }
 
@@ -459,9 +516,19 @@ export function useLoginController() {
 
   const signInLocalOnboarding = useCallback(async () => {
     if (!localOnboarding || localOnboarding.state !== 'ready') {
-      void startLocalLogin({ preferRestore: Boolean(storedAccount) })
+      void startLocalLogin({ restoreAccount: isLocalStoredAccount(storedAccount, providers) ? storedAccount : null })
       return
     }
+
+    const storedSolidSession = getStoredSolidSession()
+    const shouldTrySilentDesktopAuth = isDesktop
+      && session.info.isLoggedIn !== true
+      && canReuseSessionForLocalSpace({
+        account: storedAccount,
+        providers,
+        activeWebId: session.info.webId,
+        storedSolidSession,
+      })
 
     const isDeviceOnly = localOnboarding.mode === 'device-only'
     const localProviderUrl = isDeviceOnly
@@ -486,10 +553,16 @@ export function useLoginController() {
     const connectKey = `${issuerUrl}|${localProviderUrl}|${localOnboarding.provisionCode ?? ''}`
     if (localConnectKeyRef.current === connectKey) return
     localConnectKeyRef.current = connectKey
+    silentLocalFallbackStartedRef.current = false
 
     setLocalLoginActive(false)
     setState('connecting')
     setError(null)
+    clearPendingCallbackError()
+    if (isDesktop) {
+      desktopAuthPendingRef.current = true
+      desktopAuthSurfaceOpenedRef.current = false
+    }
     setConnectingProvider({
       issuerLabel: isDeviceOnly ? 'Local' : 'Cloud',
       issuerUrl,
@@ -497,17 +570,21 @@ export function useLoginController() {
       providerUrl: localProviderUrl,
     })
 
+    const connectOptions = {
+      authorizationSurface: 'embedded',
+      providerUrl: localProviderUrl,
+      providerLabel: 'Local',
+      issuerLabel: isDeviceOnly ? 'Local' : 'Cloud',
+      authorizationQuery: isDeviceOnly
+        ? undefined
+        : { provisionCode: localOnboarding.provisionCode },
+      ...(shouldTrySilentDesktopAuth ? { prompt: 'none' as const } : {}),
+    } as const
+
     try {
-      await oidc.connect(issuerUrl, {
-        authorizationSurface: 'embedded',
-        providerUrl: localProviderUrl,
-        providerLabel: 'Local',
-        issuerLabel: isDeviceOnly ? 'Local' : 'Cloud',
-        authorizationQuery: isDeviceOnly
-          ? undefined
-          : { provisionCode: localOnboarding.provisionCode },
-      })
+      await oidc.connect(issuerUrl, connectOptions)
     } catch (error: any) {
+      resetDesktopAuthState()
       localConnectKeyRef.current = null
       setConnectingProvider(null)
       setState('idle')
@@ -516,6 +593,11 @@ export function useLoginController() {
   }, [
     localOnboarding,
     oidc,
+    isDesktop,
+    resetDesktopAuthState,
+    session.info.isLoggedIn,
+    session.info.webId,
+    providers,
     setError,
     setState,
     startLocalLogin,
@@ -525,6 +607,9 @@ export function useLoginController() {
   const backFromLocal = useCallback(() => {
     setError(null)
     setStorageConflict(null)
+    clearPendingCallbackError()
+    clearPendingLoginAttempt()
+    clearPendingPostLoginMicroAppId()
     setView('default')
     setLocalLoginActive(false)
     setConnectingProvider(null)
@@ -539,6 +624,7 @@ export function useLoginController() {
     setLocalLoginActive(false)
     setConnectingProvider(null)
     localConnectKeyRef.current = null
+    silentLocalFallbackStartedRef.current = false
     resetDesktopAuthState()
     clearPendingLoginAttempt()
     clearPendingPostLoginMicroAppId()
@@ -633,6 +719,11 @@ export function useLoginController() {
     error,
     storedAccount,
     storageConflict,
+    hasRestorableSession: hasRestorableSessionForStoredAccount(
+      storedAccount,
+      session.info.webId,
+      getStoredSolidSession(),
+    ),
     providers,
     localOnboarding,
     localLoginStatus: {
@@ -661,6 +752,13 @@ export function useLoginController() {
   }
 }
 
+function isSilentAuthError(error: string): boolean {
+  return error === 'login_required'
+    || error === 'interaction_required'
+    || error === 'consent_required'
+    || error === 'account_selection_required'
+}
+
 function resolveStoredAccountProvider(
   issuerUrl: string,
   providers: LoginProviderOption[],
@@ -674,6 +772,72 @@ function resolveStoredAccountProvider(
   }
 
   return null
+}
+
+function isLocalStoredAccount(
+  account: StoredAccount | null,
+  providers: LoginProviderOption[],
+): account is StoredAccount {
+  if (!account) {
+    return false
+  }
+
+  const providerUrl = normalizeRememberedUrl(account.providerUrl)
+    ?? normalizeRememberedUrl(account.issuerUrl)
+    ?? (account.webId && isLocalUrl(account.webId) ? account.webId : null)
+  if (!providerUrl) {
+    return false
+  }
+
+  const matched = resolveStoredAccountProvider(providerUrl, providers)
+  return matched?.source === 'local'
+    || account.providerLabel === 'Local'
+    || isLocalUrl(providerUrl)
+}
+
+function canReuseSessionForLocalSpace(input: {
+  account: StoredAccount | null | undefined
+  providers: LoginProviderOption[]
+  activeWebId?: string
+  storedSolidSession: ReturnType<typeof getStoredSolidSession>
+}): boolean {
+  if (!isLocalStoredAccount(input.account ?? null, input.providers)) {
+    return false
+  }
+
+  const accountWebId = normalizeRememberedUrl(input.account?.webId)
+  if (!accountWebId) {
+    return false
+  }
+
+  if (input.activeWebId && normalizeWebId(input.activeWebId) === normalizeWebId(accountWebId)) {
+    return true
+  }
+
+  const storedWebId = normalizeRememberedUrl(input.storedSolidSession?.webId)
+  return Boolean(storedWebId && normalizeWebId(storedWebId) === normalizeWebId(accountWebId))
+}
+
+function hasRestorableSessionForStoredAccount(
+  account: StoredAccount | null,
+  activeWebId: string | undefined,
+  storedSolidSession: ReturnType<typeof getStoredSolidSession>,
+): boolean {
+  const accountWebId = normalizeRememberedUrl(account?.webId)
+  if (!accountWebId) {
+    return false
+  }
+
+  if (activeWebId && normalizeWebId(activeWebId) === normalizeWebId(accountWebId)) {
+    return true
+  }
+
+  const storedWebId = normalizeRememberedUrl(storedSolidSession?.webId)
+  return Boolean(storedWebId && normalizeWebId(storedWebId) === normalizeWebId(accountWebId))
+}
+
+function normalizeWebId(webId: string): string {
+  return webId.trim()
 }
 
 function resolveAccountContext(
@@ -789,10 +953,19 @@ function normalizeRememberedUrl(url?: string | null): string | null {
   return trimmed.length > 0 ? trimmed : null
 }
 
-function resolveConflictCheckPublicUrl(...urls: Array<string | null | undefined>): string | null {
+function resolveConflictCheckPublicUrl(input: {
+  providerLabel?: string
+  providerUrl?: string
+  localPublicUrl?: string | null
+  localBaseUrl?: string | null
+}): string | null {
+  const urls = input.providerLabel === 'Local'
+    ? [input.localPublicUrl, input.localBaseUrl, input.providerUrl]
+    : [input.providerUrl]
+
   for (const url of urls) {
     const normalized = normalizeRememberedUrl(url)
-    if (!normalized || isLocalUrl(normalized)) {
+    if (!normalized) {
       continue
     }
     return normalized

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Loader2, Plus, X, AlertCircle, ChevronRight, Cloud, HardDrive, Globe2, ArrowLeft } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { LoginModalProps, LoginProviderOption } from './types'
@@ -44,6 +44,7 @@ export function LoginModal(props: LoginModalProps) {
       ) : props.storedAccount ? (
         <AccountView
           storedAccount={props.storedAccount}
+          hasRestorableSession={props.hasRestorableSession}
           onContinueStoredAccount={props.onContinueStoredAccount}
           onSwitchAccount={props.onSwitchAccount}
           error={props.error}
@@ -86,7 +87,12 @@ function StorageConflictView({
       </div>
 
       <div className="px-5 pb-4 flex flex-col items-center justify-center gap-3 shrink-0">
-        <AccountAvatar name={accountName} avatarUrl={storedAccount?.avatarUrl} size="lg" />
+        <AccountAvatar
+          name={accountName}
+          avatarUrl={storedAccount?.avatarUrl}
+          size="lg"
+          localMarker={isLocalStoredAccount(storedAccount)}
+        />
         <p className="text-base font-semibold text-foreground">{accountName}</p>
         <p className="max-w-[19rem] text-center text-sm leading-6 text-muted-foreground">
           当前登录到了另一个数据空间。此版本暂不支持自动迁移，请返回正确空间重新登录，
@@ -96,7 +102,7 @@ function StorageConflictView({
 
       <div className="mx-4 space-y-3 rounded-2xl border border-border/60 bg-muted/25 p-4">
         <StorageDetail label="当前空间应写入" value={storageConflict.expectedStorageUrl} />
-        <StorageDetail label="账号当前绑定" value={storageConflict.actualStorageUrl} />
+        <StorageDetail label="账号当前绑定" value={storageConflict.actualStorageUrl ?? '未绑定'} />
       </div>
 
       <div className="mt-auto px-4 pb-4 pt-5 space-y-2">
@@ -130,7 +136,12 @@ function RestoringView({ storedAccount }: Pick<LoginModalProps, 'storedAccount'>
     <div className="flex-1 flex flex-col items-center justify-center p-6 gap-4">
       {storedAccount ? (
         <>
-          <AccountAvatar name={storedAccount.displayName} avatarUrl={storedAccount.avatarUrl} size="lg" />
+          <AccountAvatar
+            name={storedAccount.displayName}
+            avatarUrl={storedAccount.avatarUrl}
+            size="lg"
+            localMarker={isLocalStoredAccount(storedAccount)}
+          />
           <p className="text-sm font-medium text-foreground">{storedAccount.displayName}</p>
         </>
       ) : null}
@@ -144,12 +155,14 @@ function RestoringView({ storedAccount }: Pick<LoginModalProps, 'storedAccount'>
 
 function AccountView({
   storedAccount,
+  hasRestorableSession,
   onContinueStoredAccount,
   onSwitchAccount,
   error,
   onClearError,
 }: {
   storedAccount: NonNullable<LoginModalProps['storedAccount']>
+  hasRestorableSession: boolean
   onContinueStoredAccount: () => void
   onSwitchAccount: () => void
   error: string | null
@@ -158,7 +171,12 @@ function AccountView({
   return (
     <div className="flex-1 flex flex-col h-full">
       <div className="flex-1 px-5 py-8 flex flex-col items-center justify-center gap-4">
-        <AccountAvatar name={storedAccount.displayName} avatarUrl={storedAccount.avatarUrl} size="lg" />
+        <AccountAvatar
+          name={storedAccount.displayName}
+          avatarUrl={storedAccount.avatarUrl}
+          size="lg"
+          localMarker={isLocalStoredAccount(storedAccount)}
+        />
         <p className="text-base font-semibold text-foreground">{storedAccount.displayName}</p>
       </div>
 
@@ -169,7 +187,7 @@ function AccountView({
           onClick={onContinueStoredAccount}
           className="w-full h-10 rounded-xl bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
         >
-          进入 LinX
+          {hasRestorableSession ? '进入 LinX' : '继续登录'}
         </button>
         <button
           onClick={onSwitchAccount}
@@ -409,27 +427,8 @@ function LocalOnboardingView({
   const isRepair = onboardingState === 'repair_required'
   const isError = onboardingState === 'error'
   const isStarting = onboardingState === 'starting' || onboardingState === 'checking' || onboardingState === 'idle' || onboardingState === 'mode_required'
-  const autoContinueKeyRef = useRef<string | null>(null)
-  const autoContinueKey = isReady && snapshot
-    ? [
-        snapshot.mode ?? '',
-        snapshot.localUrl ?? '',
-        snapshot.baseUrl ?? '',
-        snapshot.publicUrl ?? '',
-        snapshot.provisionCode ?? '',
-      ].join('|')
-    : null
-
-  useEffect(() => {
-    if (!autoContinueKey) {
-      autoContinueKeyRef.current = null
-      return
-    }
-    if (autoContinueKeyRef.current === autoContinueKey) return
-
-    autoContinueKeyRef.current = autoContinueKey
-    onContinue()
-  }, [autoContinueKey, onContinue])
+  const progressLabel = snapshot?.progress?.label ?? snapshot?.message ?? '正在启动 Local…'
+  const progressDetail = snapshot?.progress?.detail
 
   return (
     <div className="flex-1 flex flex-col h-full">
@@ -450,7 +449,12 @@ function LocalOnboardingView({
         {isStarting && (
           <div className="flex flex-col items-center gap-3 text-center">
             <Loader2 className="w-6 h-6 text-primary animate-spin" />
-            <p className="text-sm text-muted-foreground">正在启动 Local…</p>
+            <p className="text-sm font-medium text-foreground">{progressLabel}</p>
+            {progressDetail ? (
+              <p className="max-w-[18rem] break-all text-[11px] leading-5 text-muted-foreground">
+                {progressDetail}
+              </p>
+            ) : null}
           </div>
         )}
 
@@ -517,10 +521,12 @@ function AccountAvatar({
   name,
   avatarUrl,
   size = 'md',
+  localMarker = false,
 }: {
   name: string
   avatarUrl?: string
   size?: 'md' | 'lg'
+  localMarker?: boolean
 }) {
   const [productLogoFailed, setProductLogoFailed] = useState(false)
   const dim = size === 'lg' ? 'w-16 h-16' : 'w-11 h-11'
@@ -529,6 +535,7 @@ function AccountAvatar({
   const effectiveAvatarUrl = resolveAccountAvatarUrl(avatarUrl)
   const isProductLogo = isLinxLogoUrl(effectiveAvatarUrl)
   const productLogoInnerScale = size === 'lg' ? 'scale-[1.24]' : 'scale-[1.24]'
+  const marker = localMarker ? <LocalMarker size={size} /> : null
 
   if (effectiveAvatarUrl) {
     return (
@@ -536,7 +543,7 @@ function AccountAvatar({
         className={cn(
           dim,
           radius,
-          'overflow-hidden shadow-sm',
+          'relative overflow-hidden shadow-sm',
           isProductLogo && 'border border-violet-400/90 bg-violet-200/90 p-0.5',
         )}
       >
@@ -548,29 +555,46 @@ function AccountAvatar({
             isProductLogo ? `object-cover ${productLogoInnerScale}` : 'object-cover',
           )}
         />
+        {marker}
       </div>
     )
   }
 
   if (!productLogoFailed) {
     return (
-      <div className={cn(dim, radius, 'overflow-hidden border border-violet-400/90 bg-violet-200/90 p-0.5 shadow-sm')}>
+      <div className={cn(dim, radius, 'relative overflow-hidden border border-violet-400/90 bg-violet-200/90 p-0.5 shadow-sm')}>
         <img
           src={linxLogoUrl}
           alt="LinX"
           className={cn('h-full w-full object-cover', productLogoInnerScale)}
           onError={() => setProductLogoFailed(true)}
         />
+        {marker}
       </div>
     )
   }
 
   return (
-    <div className={cn(dim, radius, 'bg-primary/10 flex items-center justify-center shadow-sm')}>
+    <div className={cn(dim, radius, 'relative bg-primary/10 flex items-center justify-center shadow-sm')}>
       <span className={cn(textSize, 'font-semibold text-primary')}>
         {name.charAt(0).toUpperCase()}
       </span>
+      {marker}
     </div>
+  )
+}
+
+function LocalMarker({ size }: { size: 'md' | 'lg' }) {
+  return (
+    <span
+      data-account-local-marker
+      className={cn(
+        'absolute flex items-center justify-center border border-white/80 bg-emerald-500 text-white shadow-sm dark:border-zinc-900/80',
+        size === 'lg' ? 'bottom-1 right-1 h-5 w-5 rounded-[7px]' : 'bottom-0.5 right-0.5 h-4 w-4 rounded-[6px]',
+      )}
+    >
+      <HardDrive className={size === 'lg' ? 'h-3 w-3' : 'h-2.5 w-2.5'} aria-hidden="true" />
+    </span>
   )
 }
 
@@ -713,6 +737,36 @@ function resolveProviderLogoUrl(provider: LoginProviderOption): string | undefin
   }
 
   return provider.logoUrl
+}
+
+function isLocalStoredAccount(account: LoginModalProps['storedAccount']): boolean {
+  if (!account) {
+    return false
+  }
+
+  if (account.providerLabel === 'Local' || account.issuerLabel === 'Local') {
+    return true
+  }
+
+  return isLocalAccountUrl(account.providerUrl)
+    || isLocalAccountUrl(account.issuerUrl)
+    || isLocalAccountUrl(account.webId)
+}
+
+function isLocalAccountUrl(url?: string): boolean {
+  if (!url) {
+    return false
+  }
+
+  try {
+    const hostname = new URL(url).hostname
+    return hostname === 'localhost'
+      || hostname === '127.0.0.1'
+      || hostname.endsWith('.local')
+      || hostname.endsWith('.undefineds.co') && hostname.startsWith('node-')
+  } catch {
+    return false
+  }
 }
 
 function resolveAccountAvatarUrl(avatarUrl?: string): string | undefined {

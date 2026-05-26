@@ -1,7 +1,6 @@
 import { useMemo } from 'react'
 import { useSession } from '@inrupt/solid-ui-react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { resolveLinxPodBaseUrl } from '@undefineds.co/models/client'
 import {
   approvalResource,
   auditResource,
@@ -17,6 +16,8 @@ import {
   type InboxNotificationRow,
   type SolidDatabase,
 } from '@undefineds.co/models'
+import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
+import { updateExactRecord } from '@/lib/data/exact-records'
 import { createPodCollection } from '@/lib/data/pod-collection'
 import { queryClient } from '@/providers/query-provider'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
@@ -94,20 +95,24 @@ function formatTimestamp(value: unknown): number {
   return Number.isFinite(time) ? time : 0
 }
 
-function extractPodBase(webId: string): string {
-  return resolveLinxPodBaseUrl(webId)
+function extractPodBase(db: SolidDatabase): string {
+  const podBaseUrl = resolveCurrentPodBaseUrl(db)
+  if (!podBaseUrl) {
+    throw new Error('Unable to resolve current Pod URL for inbox resources.')
+  }
+  return podBaseUrl
 }
 
-function makeApprovalUri(webId: string, approvalId: string, createdAt: Date | string | number = new Date()): string {
-  return `${extractPodBase(webId)}${buildApprovalSubjectPath(approvalId, createdAt)}`
+function makeApprovalUri(db: SolidDatabase, approvalId: string, createdAt: Date | string | number = new Date()): string {
+  return `${extractPodBase(db)}${buildApprovalSubjectPath(approvalId, createdAt)}`
 }
 
-function resolveApprovalIri(actorWebId: string, approval: ApprovalRow): string {
+function resolveApprovalIri(db: SolidDatabase, approval: ApprovalRow): string {
   const subject = (approval as Record<string, unknown>)['@id'] ?? (approval as Record<string, unknown>).subject
   if (typeof subject === 'string' && /^https?:\/\//.test(subject)) {
     return subject
   }
-  return makeApprovalUri(actorWebId, approval.id, approval.createdAt ?? new Date())
+  return makeApprovalUri(db, approval.id, approval.createdAt ?? new Date())
 }
 
 function getApprovalSubject(approval: ApprovalRow): string | null {
@@ -123,28 +128,17 @@ function findLinkedApproval(approvals: ApprovalRow[], audit: AuditRow): Approval
 
 async function updateApprovalByIri(
   db: SolidDatabase,
-  actorWebId: string,
   approval: ApprovalRow,
   patch: Record<string, unknown>,
 ): Promise<void> {
-  const iri = resolveApprovalIri(actorWebId, approval)
-  const updateByIri = (db as unknown as { updateByIri?: (resource: typeof approvalResource, iri: string, data: Record<string, unknown>) => Promise<unknown> }).updateByIri
-  if (typeof updateByIri === 'function') {
-    await updateByIri.call(db, approvalResource, iri, patch)
-    return
-  }
-
-  const query = db.update(approvalResource).set(patch as any)
-  if (typeof (query as any).whereByIri === 'function') {
-    await (query as any).whereByIri(iri).execute()
-    return
-  }
-
-  await query.where({ id: approval.id } as any).execute()
+  await updateExactRecord(db, approvalResource as any, {
+    ...approval,
+    '@id': resolveApprovalIri(db, approval),
+  } as any, patch)
 }
 
-function makeAuditUri(webId: string, auditId: string, createdAt: Date | string | number = new Date()): string {
-  return `${extractPodBase(webId)}${buildAuditSubjectPath(auditId, createdAt)}`
+function makeAuditUri(db: SolidDatabase, auditId: string, createdAt: Date | string | number = new Date()): string {
+  return `${extractPodBase(db)}${buildAuditSubjectPath(auditId, createdAt)}`
 }
 
 function extractRuntimeSessionId(sessionUri: string | null | undefined): string | null {
@@ -361,9 +355,9 @@ export const inboxOps = {
 
     const now = new Date()
     const auditId = crypto.randomUUID()
-    const auditUri = makeAuditUri(input.actorWebId, auditId, now)
+    const auditUri = makeAuditUri(db, auditId, now)
 
-    await updateApprovalByIri(db, input.actorWebId, input.approval, {
+    await updateApprovalByIri(db, input.approval, {
       status: input.decision,
       decisionBy: input.actorWebId,
       decisionRole: 'human',
@@ -381,7 +375,7 @@ export const inboxOps = {
       chat: input.approval.chat,
       thread: input.approval.thread,
       toolCallId: input.approval.toolCallId,
-      approval: resolveApprovalIri(input.actorWebId, input.approval),
+      approval: resolveApprovalIri(db, input.approval),
       toolName: input.approval.toolName,
       entry: input.approval.thread || input.approval.target,
       policyVersion: input.approval.policyVersion || 'phase4-inbox-v1',

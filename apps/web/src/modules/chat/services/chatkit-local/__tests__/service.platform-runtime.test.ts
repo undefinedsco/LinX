@@ -199,6 +199,9 @@ function createMockDb(agent: { provider: string; model: string }, credentialRows
   }
 
   return {
+    getDialect: () => ({
+      getPodUrl: () => null,
+    }),
     findById: vi.fn(async (table: unknown, id?: string) => {
       if (table === mocked.chatTable) return chat
       if (table === mocked.aiProviderResource) {
@@ -225,6 +228,19 @@ function createMockDb(agent: { provider: string; model: string }, credentialRows
         }
       },
     })),
+  }
+}
+
+function createMockDbWithPodUrl(
+  agent: { provider: string; model: string },
+  podUrl: string,
+  credentialRows: Array<Record<string, unknown>> = [],
+) {
+  return {
+    ...createMockDb(agent, credentialRows),
+    getDialect: () => ({
+      getPodUrl: () => podUrl,
+    }),
   }
 }
 
@@ -307,6 +323,38 @@ describe('LocalChatKitService platform runtime routing', () => {
       }),
     )
     expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === '本地可聊')).toBe(true)
+  })
+
+  it('routes platform runtime calls through the selected Local SP, not the Cloud WebID origin', async () => {
+    const store = createMockStore()
+    const db = createMockDbWithPodUrl({
+      provider: '/settings/providers/undefineds.ttl',
+      model: 'undefineds/linx-lite',
+    }, 'https://node-0000.undefineds.co/alice/')
+    const authFetch = vi.fn(async () => createSseResponse([
+      'data: {"choices":[{"delta":{"content":"本地空间"}}]}\n\n',
+      'data: [DONE]\n\n',
+    ]))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/alice/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service)
+
+    expect(authFetch).toHaveBeenCalledWith(
+      'https://node-0000.undefineds.co/v1/chat/completions',
+      expect.objectContaining({
+        method: 'POST',
+      }),
+    )
+    expect(authFetch).not.toHaveBeenCalledWith(
+      'https://api.undefineds.co/v1/chat/completions',
+      expect.anything(),
+    )
+    expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === '本地空间')).toBe(true)
   })
 
   it('keeps non-platform providers on the user API key path', async () => {

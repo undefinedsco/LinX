@@ -8,7 +8,7 @@ import {
   type SolidProfileRow,
   type SolidProfileUpdate,
 } from "@undefineds.co/models";
-import { Copy, RefreshCw, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import { Copy, RefreshCw, CheckCircle2, AlertCircle, Loader2, HardDrive } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -99,12 +99,41 @@ function SpaceBadge({ label }: { label: string }) {
   );
 }
 
+function LocalSpaceMarker() {
+  return (
+    <span
+      data-profile-local-marker
+      className="absolute bottom-1.5 right-1.5 z-10 flex h-5 w-5 items-center justify-center rounded-[7px] border border-white/80 bg-emerald-500 text-white shadow-sm dark:border-zinc-900/80"
+    >
+      <HardDrive className="h-3 w-3" aria-hidden="true" />
+    </span>
+  );
+}
+
 function formatProviderHost(url?: string): string {
   if (!url) return "";
   try {
     return new URL(url).host;
   } catch {
     return url;
+  }
+}
+
+function isLocalSpace(providerLabel?: string, providerUrl?: string): boolean {
+  const label = providerLabel?.trim().toLowerCase();
+  if (label === "local" || label === "本地空间") return true;
+  if (!providerUrl) return false;
+
+  try {
+    const hostname = new URL(providerUrl).hostname;
+    return (
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname.endsWith(".local") ||
+      (hostname.startsWith("node-") && hostname.endsWith(".undefineds.co"))
+    );
+  } catch {
+    return false;
   }
 }
 
@@ -161,7 +190,9 @@ export function SelfProfileCard() {
   const region = useMemo(() => readField(profile ?? null, "region").trim(), [profile]);
   const note = useMemo(() => readField(profile ?? null, "note").trim(), [profile]);
   const providerLabel = storedAccount?.providerLabel ?? storedAccount?.issuerLabel ?? "";
-  const providerHost = formatProviderHost(storedAccount?.providerUrl ?? storedAccount?.issuerUrl);
+  const providerUrl = storedAccount?.providerUrl ?? storedAccount?.issuerUrl;
+  const providerHost = formatProviderHost(providerUrl);
+  const isLocalProvider = isLocalSpace(providerLabel, providerUrl);
 
   // ── Avatar with auth fetch ─────────────────────────────────────────
 
@@ -286,6 +317,7 @@ export function SelfProfileCard() {
               {primaryName.charAt(0).toUpperCase()}
             </AvatarFallback>
           )}
+          {isLocalProvider ? <LocalSpaceMarker /> : null}
         </Avatar>
 
         <div className="flex-1 min-w-0 py-0.5 space-y-1.5">

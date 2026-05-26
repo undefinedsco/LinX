@@ -1,6 +1,5 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@config "../tailwind.config.ts";
 
 /**
  * LinX 颜色系统 - 基于 Shadcn 结构，主紫对齐 Solid Royal Lavender

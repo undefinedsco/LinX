@@ -262,6 +262,86 @@ test('XpodManager device-only env keeps local base URL without managed Cloud pro
   assert.equal(env.XPOD_SERVICE_TOKEN, undefined)
 })
 
+test('XpodManager remote-ready env keeps Local SP public URL while binding Cloud IdP and node tokens', (t) => {
+  const originalLoad = Module._load
+
+  Module._load = function patchedLoad(request, parent, isMain) {
+    if (request === 'electron') {
+      return {
+        app: {
+          getPath: () => fs.mkdtempSync(path.join(os.tmpdir(), 'linx-xpod-manager-')),
+          isPackaged: false,
+        },
+      }
+    }
+
+    return originalLoad.call(this, request, parent, isMain)
+  }
+
+  t.after(() => {
+    Module._load = originalLoad
+  })
+
+  const { XpodManager } = require(resolveCompiledDesktopModule('lib/xpod-manager.js'))
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'linx-xpod-manager-remote-ready-'))
+  const manager = new XpodManager(
+    {},
+    {
+      getConfigPath: () => path.join(tmpDir, '.env'),
+      getAll: () => ({
+        CSS_EDITION: 'local',
+        XPOD_MODE: 'local',
+        oidcIssuer: 'https://id.undefineds.co',
+        XPOD_CLOUD_API_ENDPOINT: 'https://api.undefineds.co',
+      }),
+    },
+    { updateManagedStatus: () => {} },
+    tmpDir,
+  )
+
+  const state = manager.createDesiredState(
+    {
+      providerId: 'local',
+      dataDir: tmpDir,
+      port: 5737,
+      startupMode: 'remote-ready',
+      domain: { type: 'custom', value: 'node-0000.undefineds.co' },
+    },
+    'https://node-0000.undefineds.co/',
+  )
+  const env = manager.buildProcessEnv(
+    { kind: 'dev-source', rootDir: '/Users/example/xpod-cli', entryPath: '/Users/example/xpod-cli/src/main.ts' },
+    {
+      providerId: 'local',
+      dataDir: tmpDir,
+      port: 5737,
+      startupMode: 'remote-ready',
+      domain: { type: 'custom', value: 'node-0000.undefineds.co' },
+    },
+    state,
+    {
+      nodeId: 'node-0000',
+      nodeToken: 'node-token',
+      serviceToken: 'service-token',
+      provisionCode: 'provision-code',
+      publicUrl: 'https://node-0000.undefineds.co/',
+      provisionUrl: 'https://id.undefineds.co/.account/?provisionCode=provision-code',
+      cloudIdentityUrl: 'https://id.undefineds.co',
+      cloudApiUrl: 'https://api.undefineds.co',
+      registeredAt: Date.now(),
+    },
+  )
+
+  assert.equal(state.baseUrl, 'https://node-0000.undefineds.co/')
+  assert.equal(state.localUrl, 'http://localhost:5737/')
+  assert.equal(env.CSS_BASE_URL, 'https://node-0000.undefineds.co/')
+  assert.equal(env.oidcIssuer, 'https://id.undefineds.co')
+  assert.equal(env.XPOD_CLOUD_API_ENDPOINT, 'https://api.undefineds.co')
+  assert.equal(env.XPOD_NODE_ID, 'node-0000')
+  assert.equal(env.XPOD_NODE_TOKEN, 'node-token')
+  assert.equal(env.XPOD_SERVICE_TOKEN, 'service-token')
+})
+
 test('XpodManager device-only desired state keeps HTTP LAN CSS_BASE_URL as the canonical Local URL', (t) => {
   const originalLoad = Module._load
 
@@ -635,4 +715,59 @@ test('XpodManager launch spec leaves bind host derivation to xpod BASE_URL seman
   )
 
   assert.equal(spec.args.includes('--host'), false)
+})
+
+test('XpodManager managed Bun launch spec uses cached package config and Bun binary', (t) => {
+  const originalLoad = Module._load
+
+  Module._load = function patchedLoad(request, parent, isMain) {
+    if (request === 'electron') {
+      return {
+        app: {
+          getPath: () => fs.mkdtempSync(path.join(os.tmpdir(), 'linx-xpod-manager-')),
+          isPackaged: true,
+        },
+      }
+    }
+
+    return originalLoad.call(this, request, parent, isMain)
+  }
+
+  t.after(() => {
+    Module._load = originalLoad
+  })
+
+  const { XpodManager } = require(resolveCompiledDesktopModule('lib/xpod-manager.js'))
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'linx-xpod-manager-managed-bun-'))
+  const manager = new XpodManager(
+    {},
+    {
+      getConfigPath: () => path.join(tmpDir, '.env'),
+      getAll: () => ({ CSS_EDITION: 'local', XPOD_MODE: 'local' }),
+    },
+    { updateManagedStatus: () => {} },
+    tmpDir,
+  )
+
+  const runtimeRoot = path.join(tmpDir, 'runtimes/xpod/0.3.4/bun')
+  const entryPath = path.join(runtimeRoot, 'node_modules/@undefineds.co/xpod/bin/xpod.js')
+  const spec = manager.buildLaunchSpec(
+    {
+      kind: 'managed-bun-package',
+      rootDir: runtimeRoot,
+      entryPath,
+      runtimeBinary: '/usr/local/bin/bun',
+      runtimeVersion: '0.3.4',
+    },
+    5737,
+    '/tmp/linx-xpod.env',
+  )
+
+  assert.equal(spec.command, '/usr/local/bin/bun')
+  assert.equal(spec.cwd, runtimeRoot)
+  assert.deepEqual(spec.args.slice(0, 2), [entryPath, 'start'])
+  assert.equal(
+    spec.args[spec.args.indexOf('--config') + 1],
+    path.join(runtimeRoot, 'node_modules/@undefineds.co/xpod/config/local.json'),
+  )
 })

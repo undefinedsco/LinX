@@ -22,6 +22,7 @@ export function LoginOverlay() {
       error={controller.error}
       storedAccount={controller.storedAccount}
       storageConflict={controller.storageConflict}
+      hasRestorableSession={controller.hasRestorableSession}
       providers={controller.providers}
       localOnboarding={controller.localOnboarding}
       onContinueStoredAccount={controller.continueStoredAccount}

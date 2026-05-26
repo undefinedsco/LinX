@@ -1,4 +1,5 @@
 import type { SolidDatabase } from '@undefineds.co/models'
+import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 
 export interface EnsureAgentHomeInput {
   agentId: string
@@ -9,16 +10,7 @@ export interface EnsureAgentHomeInput {
 }
 
 function getPodBaseUrl(db: SolidDatabase): string | null {
-  const podUrl = (db as any).getDialect?.()?.getPodUrl?.()
-  if (typeof podUrl === 'string' && podUrl.length > 0) {
-    return podUrl.replace(/\/$/, '')
-  }
-
-  const webId = (db as any).getSession?.()?.info?.webId
-  if (typeof webId !== 'string' || !webId.includes('/profile/card#me')) {
-    return null
-  }
-  return webId.replace('/profile/card#me', '')
+  return resolveCurrentPodBaseUrl(db)
 }
 
 function getAuthenticatedFetch(db: SolidDatabase): typeof fetch | null {
