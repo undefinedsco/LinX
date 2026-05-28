@@ -29,7 +29,7 @@ export function resolveLinxUserDataDir(): string {
 }
 
 export function resolveLinxLocalHomeDir(): string {
-  return process.env.LINX_LOCAL_HOME?.trim() || path.join(resolveLinxUserDataDir(), 'local')
+  return process.env.LINX_HOME?.trim() || path.join(resolveLinxUserDataDir(), 'local')
 }
 
 export function resolveLinxDefaultWorkspaceDir(): string {

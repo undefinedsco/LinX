@@ -6,9 +6,9 @@ const path = require('node:path')
 const Module = require('node:module')
 const { resolveCompiledDesktopModule } = require('./helpers.cjs')
 
-test('resolveLinxLocalPaths uses LINX_LOCAL_HOME when provided', (t) => {
+test('resolveLinxLocalPaths uses LINX_HOME when provided', (t) => {
   const originalLoad = Module._load
-  const previousLocalHome = process.env.LINX_LOCAL_HOME
+  const previousLinxHome = process.env.LINX_HOME
   const modulePath = resolveCompiledDesktopModule('lib/local-home.js')
 
   Module._load = function patchedLoad(request, parent, isMain) {
@@ -25,33 +25,107 @@ test('resolveLinxLocalPaths uses LINX_LOCAL_HOME when provided', (t) => {
 
   t.after(() => {
     Module._load = originalLoad
-    if (previousLocalHome === undefined) {
-      delete process.env.LINX_LOCAL_HOME
+    if (previousLinxHome === undefined) {
+      delete process.env.LINX_HOME
     } else {
-      process.env.LINX_LOCAL_HOME = previousLocalHome
+      process.env.LINX_HOME = previousLinxHome
     }
   })
 
-  process.env.LINX_LOCAL_HOME = '/tmp/linx-local-home'
+  process.env.LINX_HOME = '/tmp/linx-home'
 
   delete require.cache[modulePath]
   const { resolveLinxLocalPaths } = require(modulePath)
   const paths = resolveLinxLocalPaths()
 
-  assert.equal(paths.home, '/tmp/linx-local-home')
-  assert.equal(paths.electronUserDataDir, '/tmp/linx-local-home/electron')
-  assert.equal(paths.envFile, '/tmp/linx-local-home/.env')
-  assert.equal(paths.runtimeEnvFile, '/tmp/linx-local-home/xpod.runtime.env')
-  assert.equal(paths.providersFile, '/tmp/linx-local-home/providers.json')
-  assert.equal(paths.onboardingFile, '/tmp/linx-local-home/local-onboarding.json')
-  assert.equal(paths.stateFile, '/tmp/linx-local-home/xpod-service.json')
-  assert.equal(paths.logsDir, '/tmp/linx-local-home/logs')
-  assert.equal(paths.podDir, '/tmp/linx-local-home/pod')
+  assert.equal(paths.home, '/tmp/linx-home')
+  assert.equal(paths.electronUserDataDir, '/tmp/linx-home/electron')
+  assert.equal(paths.envFile, '/tmp/linx-home/.env')
+  assert.equal(paths.runtimeEnvFile, '/tmp/linx-home/xpod.runtime.env')
+  assert.equal(paths.providersFile, '/tmp/linx-home/providers.json')
+  assert.equal(paths.onboardingFile, '/tmp/linx-home/local-onboarding.json')
+  assert.equal(paths.stateFile, '/tmp/linx-home/xpod-service.json')
+  assert.equal(paths.logsDir, '/tmp/linx-home/logs')
+  assert.equal(paths.podDir, '/tmp/linx-home/pod')
+  assert.equal(paths.runtimesDir, '/tmp/linx-home/runtimes')
+  assert.equal(paths.xpodRuntimeDir, '/tmp/linx-home/runtimes/xpod')
 })
 
-test('applyLinxLocalHomeToElectronUserData scopes Electron storage under LINX_LOCAL_HOME', (t) => {
+test('resolveLinxLocalPaths keeps default xpod runtime under LINX home', (t) => {
   const originalLoad = Module._load
-  const previousLocalHome = process.env.LINX_LOCAL_HOME
+  const previousLinxHome = process.env.LINX_HOME
+  const modulePath = resolveCompiledDesktopModule('lib/local-home.js')
+
+  Module._load = function patchedLoad(request, parent, isMain) {
+    if (request === 'electron') {
+      return {
+        app: {
+          getPath: () => '/Users/alice/Library/Application Support/@linx/desktop',
+        },
+      }
+    }
+
+    return originalLoad.call(this, request, parent, isMain)
+  }
+
+  t.after(() => {
+    Module._load = originalLoad
+    if (previousLinxHome === undefined) {
+      delete process.env.LINX_HOME
+    } else {
+      process.env.LINX_HOME = previousLinxHome
+    }
+  })
+
+  delete process.env.LINX_HOME
+  delete require.cache[modulePath]
+  const { resolveLinxLocalPaths } = require(modulePath)
+  const paths = resolveLinxLocalPaths()
+
+  assert.equal(paths.home, '/Users/alice/Library/Application Support/@linx/desktop/local')
+  assert.equal(paths.runtimesDir, '/Users/alice/Library/Application Support/@linx/desktop/local/runtimes')
+  assert.equal(paths.xpodRuntimeDir, '/Users/alice/Library/Application Support/@linx/desktop/local/runtimes/xpod')
+})
+
+test('resolveLinxLocalPaths keeps xpod runtime under explicit homes with spaces', (t) => {
+  const originalLoad = Module._load
+  const previousLinxHome = process.env.LINX_HOME
+  const modulePath = resolveCompiledDesktopModule('lib/local-home.js')
+
+  Module._load = function patchedLoad(request, parent, isMain) {
+    if (request === 'electron') {
+      return {
+        app: {
+          getPath: () => '/Users/alice/Library/Application Support/@linx/desktop',
+        },
+      }
+    }
+
+    return originalLoad.call(this, request, parent, isMain)
+  }
+
+  t.after(() => {
+    Module._load = originalLoad
+    if (previousLinxHome === undefined) {
+      delete process.env.LINX_HOME
+    } else {
+      process.env.LINX_HOME = previousLinxHome
+    }
+  })
+
+  process.env.LINX_HOME = '/tmp/linx home'
+  delete require.cache[modulePath]
+  const { resolveLinxLocalPaths } = require(modulePath)
+  const paths = resolveLinxLocalPaths()
+
+  assert.equal(paths.home, '/tmp/linx home')
+  assert.equal(paths.runtimesDir, '/tmp/linx home/runtimes')
+  assert.equal(paths.xpodRuntimeDir, '/tmp/linx home/runtimes/xpod')
+})
+
+test('applyLinxLocalHomeToElectronUserData scopes Electron storage under LINX_HOME', (t) => {
+  const originalLoad = Module._load
+  const previousLinxHome = process.env.LINX_HOME
   const modulePath = resolveCompiledDesktopModule('lib/local-home.js')
   const calls = []
 
@@ -72,31 +146,31 @@ test('applyLinxLocalHomeToElectronUserData scopes Electron storage under LINX_LO
 
   t.after(() => {
     Module._load = originalLoad
-    if (previousLocalHome === undefined) {
-      delete process.env.LINX_LOCAL_HOME
+    if (previousLinxHome === undefined) {
+      delete process.env.LINX_HOME
     } else {
-      process.env.LINX_LOCAL_HOME = previousLocalHome
+      process.env.LINX_HOME = previousLinxHome
     }
-    fs.rmSync('/tmp/linx-local-home-user-data', { recursive: true, force: true })
+    fs.rmSync('/tmp/linx-home-user-data', { recursive: true, force: true })
   })
 
-  process.env.LINX_LOCAL_HOME = '/tmp/linx-local-home-user-data'
+  process.env.LINX_HOME = '/tmp/linx-home-user-data'
 
   delete require.cache[modulePath]
   const { applyLinxLocalHomeToElectronUserData } = require(modulePath)
   const userDataDir = applyLinxLocalHomeToElectronUserData()
 
-  assert.equal(userDataDir, '/tmp/linx-local-home-user-data/electron')
+  assert.equal(userDataDir, '/tmp/linx-home-user-data/electron')
   assert.deepEqual(calls, [
-    { name: 'userData', value: '/tmp/linx-local-home-user-data/electron' },
+    { name: 'userData', value: '/tmp/linx-home-user-data/electron' },
   ])
-  assert.equal(fs.existsSync('/tmp/linx-local-home-user-data/electron'), true)
+  assert.equal(fs.existsSync('/tmp/linx-home-user-data/electron'), true)
 })
 
 test('ensureLinxLocalHome migrates legacy local artifacts into the unified local home', (t) => {
   const originalLoad = Module._load
   const legacyRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'linx-local-legacy-'))
-  const previousLocalHome = process.env.LINX_LOCAL_HOME
+  const previousLinxHome = process.env.LINX_HOME
   const customLocalHome = path.join(legacyRoot, 'local-home')
   const modulePath = resolveCompiledDesktopModule('lib/local-home.js')
 
@@ -119,15 +193,15 @@ test('ensureLinxLocalHome migrates legacy local artifacts into the unified local
 
   t.after(() => {
     Module._load = originalLoad
-    if (previousLocalHome === undefined) {
-      delete process.env.LINX_LOCAL_HOME
+    if (previousLinxHome === undefined) {
+      delete process.env.LINX_HOME
     } else {
-      process.env.LINX_LOCAL_HOME = previousLocalHome
+      process.env.LINX_HOME = previousLinxHome
     }
     fs.rmSync(legacyRoot, { recursive: true, force: true })
   })
 
-  process.env.LINX_LOCAL_HOME = customLocalHome
+  process.env.LINX_HOME = customLocalHome
 
   delete require.cache[modulePath]
   const { ensureLinxLocalHome } = require(modulePath)

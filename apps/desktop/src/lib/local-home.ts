@@ -3,7 +3,7 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { app } from 'electron'
 
-const LOCAL_HOME_ENV_KEY = 'LINX_LOCAL_HOME'
+const LINX_HOME_ENV_KEY = 'LINX_HOME'
 
 export interface LinxLocalPaths {
   home: string
@@ -24,7 +24,7 @@ export function resolveLinxLocalHome(explicitBaseDir?: string): string {
     return path.resolve(explicitBaseDir)
   }
 
-  const configured = process.env[LOCAL_HOME_ENV_KEY]
+  const configured = process.env[LINX_HOME_ENV_KEY]
   if (configured && configured.trim()) {
     return path.resolve(configured)
   }
@@ -34,6 +34,7 @@ export function resolveLinxLocalHome(explicitBaseDir?: string): string {
 
 export function resolveLinxLocalPaths(explicitBaseDir?: string): LinxLocalPaths {
   const home = resolveLinxLocalHome(explicitBaseDir)
+  const runtimesDir = path.join(home, 'runtimes')
 
   return {
     home,
@@ -45,13 +46,13 @@ export function resolveLinxLocalPaths(explicitBaseDir?: string): LinxLocalPaths 
     stateFile: path.join(home, 'xpod-service.json'),
     logsDir: path.join(home, 'logs'),
     podDir: path.join(home, 'pod'),
-    runtimesDir: path.join(home, 'runtimes'),
-    xpodRuntimeDir: path.join(home, 'runtimes', 'xpod'),
+    runtimesDir,
+    xpodRuntimeDir: path.join(runtimesDir, 'xpod'),
   }
 }
 
 export function applyLinxLocalHomeToElectronUserData(explicitBaseDir?: string): string | null {
-  const configured = explicitBaseDir ?? process.env[LOCAL_HOME_ENV_KEY]
+  const configured = explicitBaseDir ?? process.env[LINX_HOME_ENV_KEY]
   if (!configured || !configured.trim()) {
     return null
   }

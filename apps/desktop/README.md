@@ -42,9 +42,9 @@ yarn dist:linux
 Local / Standalone 启动采用 Bun-first 的按需 runtime 策略：
 
 - 优先探测本机 `bun`，版本需满足 `LINX_MIN_BUN_VERSION`，默认 `>=1.3.0`
-- 有 Bun 时，将 `@undefineds.co/xpod@<version>` 安装到 `LINX_LOCAL_HOME/runtimes/xpod/<version>/bun`
+- 有 Bun 时，将 `@undefineds.co/xpod@<version>` 安装到 `LINX_HOME/runtimes/xpod/<version>/bun`
 - 没有 Bun 时，回退到本机 `node` + `npm`，Node 版本需满足 `LINX_MIN_NODE_VERSION`，默认 `>=22.0.0`
-- npm fallback 安装到 `LINX_LOCAL_HOME/runtimes/xpod/<version>/npm`
+- npm fallback 安装到 `LINX_HOME/runtimes/xpod/<version>/npm`
 - `LINX_XPOD_VERSION` 可覆盖 xpod 版本；默认使用 LinX 根依赖中声明的精确 `@undefineds.co/xpod` 版本
 - 不使用 `npm i -g`，不会污染用户全局 npm/bun 环境
 - 开发态仍可用 `LINX_XPOD_ROOT` 指向本地 xpod checkout，或用 `LINX_XPOD_DEV_SOURCE=0` 禁用源码优先
@@ -77,4 +77,4 @@ xpod 的配置通过 ConfigManager 管理，存储在：
 - Windows: `%APPDATA%/LinX/.env`
 - Linux: `~/.config/LinX/.env`
 
-`xpod` 的运行状态、日志、Pod 数据和 runtime 缓存都放在对应的 `LinX` userData 目录下；可用 `LINX_LOCAL_HOME` 统一改到自定义目录。
+`xpod` 的运行状态、日志、Pod 数据和 runtime 缓存都放在对应的 `LinX` userData 目录下；可用 `LINX_HOME` 统一改到自定义目录。
