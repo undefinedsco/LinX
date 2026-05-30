@@ -1,23 +1,28 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
+import { createRequire } from 'node:module'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const cliRoot = fileURLToPath(new URL('..', import.meta.url))
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
+const requireFromCli = createRequire(join(cliRoot, 'package.json'))
+const localTscBin = requireFromCli.resolve('typescript/bin/tsc')
 const sourceRoot = join(cliRoot, 'src')
 const entryPath = join(sourceRoot, 'index.ts')
 
-test('compiled cli entry prints package version instead of unknown', async (t) => {
-  const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-version-'))
+function compileMainCliEntry(t, tempPrefix) {
+  const outdir = mkdtempSync(join(cliRoot, tempPrefix))
+  let compileOutput = ''
   t.after(() => {
     rmSync(outdir, { recursive: true, force: true })
   })
 
   try {
-    execFileSync('tsc', [
+    execFileSync(process.execPath, [localTscBin,
+      '--ignoreConfig',
       '--outDir',
       outdir,
       '--rootDir',
@@ -41,11 +46,45 @@ test('compiled cli entry prints package version instead of unknown', async (t) =
       cwd: cliRoot,
       stdio: 'pipe',
     })
-  } catch {
-    assert.ok(existsSync(join(outdir, 'index.js')))
+  } catch (error) {
+    compileOutput = `${error.stdout ?? ''}${error.stderr ?? ''}`.trim()
   }
 
-  const output = execFileSync(process.execPath, [join(outdir, 'index.js'), '--version'], {
+  return resolveEmittedEntry(outdir, 'index.js', compileOutput)
+}
+
+function resolveEmittedEntry(outdir, entryName, compileOutput = '') {
+  const direct = join(outdir, entryName)
+  if (existsSync(direct)) return direct
+
+  const matches = findFiles(outdir, entryName)
+  const preferred = matches.find((file) => file.endsWith(`/src/${entryName}`))
+    ?? matches.find((file) => file.endsWith(`\\src\\${entryName}`))
+    ?? matches.sort((a, b) => a.length - b.length)[0]
+
+  assert.ok(
+    preferred,
+    `Expected emitted ${entryName}; emitted files: ${findFiles(outdir).join(', ') || '(none)'}${compileOutput ? `\n${compileOutput}` : ''}`,
+  )
+  return preferred
+}
+
+function findFiles(dir, basename) {
+  const files = []
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name)
+    if (entry.isDirectory()) {
+      files.push(...findFiles(path, basename))
+    } else if (!basename || entry.name === basename) {
+      files.push(path)
+    }
+  }
+  return files
+}
+
+test('compiled cli entry prints package version instead of unknown', async (t) => {
+  const entry = compileMainCliEntry(t, '.tmp-linx-cli-version-')
+  const output = execFileSync(process.execPath, [entry, '--version'], {
     cwd: cliRoot,
     encoding: 'utf-8',
   }).trim()
@@ -55,41 +94,8 @@ test('compiled cli entry prints package version instead of unknown', async (t) =
 })
 
 test('compiled cli entry can serve auto-mode flags without chat dependencies', async (t) => {
-  const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-entry-'))
-  t.after(() => {
-    rmSync(outdir, { recursive: true, force: true })
-  })
-
-  try {
-    execFileSync('tsc', [
-      '--outDir',
-      outdir,
-      '--rootDir',
-      sourceRoot,
-      '--module',
-      'nodenext',
-      '--moduleResolution',
-      'nodenext',
-      '--target',
-      'ES2022',
-      '--lib',
-      'ES2022',
-      '--types',
-      'node',
-      '--skipLibCheck',
-      'true',
-      '--noEmitOnError',
-      'false',
-      entryPath,
-    ], {
-      cwd: cliRoot,
-      stdio: 'pipe',
-    })
-  } catch {
-    assert.ok(existsSync(join(outdir, 'index.js')))
-  }
-
-  const output = execFileSync(process.execPath, [join(outdir, 'index.js'), '--list-backends'], {
+  const entry = compileMainCliEntry(t, '.tmp-linx-cli-entry-')
+  const output = execFileSync(process.execPath, [entry, '--list-backends'], {
     cwd: cliRoot,
     encoding: 'utf-8',
   })
@@ -100,42 +106,10 @@ test('compiled cli entry can serve auto-mode flags without chat dependencies', a
 })
 
 test('compiled cli auto-mode rejects retired command surfaces', async (t) => {
-  const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-auto-mode-usage-'))
-  t.after(() => {
-    rmSync(outdir, { recursive: true, force: true })
-  })
-
-  try {
-    execFileSync('tsc', [
-      '--outDir',
-      outdir,
-      '--rootDir',
-      sourceRoot,
-      '--module',
-      'nodenext',
-      '--moduleResolution',
-      'nodenext',
-      '--target',
-      'ES2022',
-      '--lib',
-      'ES2022',
-      '--types',
-      'node',
-      '--skipLibCheck',
-      'true',
-      '--noEmitOnError',
-      'false',
-      entryPath,
-    ], {
-      cwd: cliRoot,
-      stdio: 'pipe',
-    })
-  } catch {
-    assert.ok(existsSync(join(outdir, 'index.js')))
-  }
+  const entry = compileMainCliEntry(t, '.tmp-linx-cli-auto-mode-usage-')
 
   assert.throws(
-    () => execFileSync(process.execPath, [join(outdir, 'index.js'), 'automode', 'codex'], {
+    () => execFileSync(process.execPath, [entry, 'automode', 'codex'], {
       cwd: cliRoot,
       encoding: 'utf-8',
       stdio: 'pipe',
@@ -144,7 +118,7 @@ test('compiled cli auto-mode rejects retired command surfaces', async (t) => {
   )
 
   assert.throws(
-    () => execFileSync(process.execPath, [join(outdir, 'index.js'), 'watch', 'codex'], {
+    () => execFileSync(process.execPath, [entry, 'watch', 'codex'], {
       cwd: cliRoot,
       encoding: 'utf-8',
       stdio: 'pipe',
@@ -165,41 +139,8 @@ test('dev script routes auto-mode through the main cli command', async (t) => {
 })
 
 test('compiled cli entry exposes codex-native-proxy command help', async (t) => {
-  const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-native-proxy-'))
-  t.after(() => {
-    rmSync(outdir, { recursive: true, force: true })
-  })
-
-  try {
-    execFileSync('tsc', [
-      '--outDir',
-      outdir,
-      '--rootDir',
-      sourceRoot,
-      '--module',
-      'nodenext',
-      '--moduleResolution',
-      'nodenext',
-      '--target',
-      'ES2022',
-      '--lib',
-      'ES2022',
-      '--types',
-      'node',
-      '--skipLibCheck',
-      'true',
-      '--noEmitOnError',
-      'false',
-      entryPath,
-    ], {
-      cwd: cliRoot,
-      stdio: 'pipe',
-    })
-  } catch {
-    assert.ok(existsSync(join(outdir, 'index.js')))
-  }
-
-  const output = execFileSync(process.execPath, [join(outdir, 'index.js'), 'codex-native-proxy', '--help'], {
+  const entry = compileMainCliEntry(t, '.tmp-linx-cli-native-proxy-')
+  const output = execFileSync(process.execPath, [entry, 'codex-native-proxy', '--help'], {
     cwd: cliRoot,
     encoding: 'utf-8',
   })
@@ -210,41 +151,8 @@ test('compiled cli entry exposes codex-native-proxy command help', async (t) => 
 })
 
 test('compiled cli default entry is Pi TUI and hides explicit frontend aliases', async (t) => {
-  const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-pi-'))
-  t.after(() => {
-    rmSync(outdir, { recursive: true, force: true })
-  })
-
-  try {
-    execFileSync('tsc', [
-      '--outDir',
-      outdir,
-      '--rootDir',
-      sourceRoot,
-      '--module',
-      'nodenext',
-      '--moduleResolution',
-      'nodenext',
-      '--target',
-      'ES2022',
-      '--lib',
-      'ES2022',
-      '--types',
-      'node',
-      '--skipLibCheck',
-      'true',
-      '--noEmitOnError',
-      'false',
-      entryPath,
-    ], {
-      cwd: cliRoot,
-      stdio: 'pipe',
-    })
-  } catch {
-    assert.ok(existsSync(join(outdir, 'index.js')))
-  }
-
-  const output = execFileSync(process.execPath, [join(outdir, 'index.js'), '--help'], {
+  const entry = compileMainCliEntry(t, '.tmp-linx-cli-pi-')
+  const output = execFileSync(process.execPath, [entry, '--help'], {
     cwd: cliRoot,
     encoding: 'utf-8',
   })
@@ -262,41 +170,8 @@ test('compiled cli default entry is Pi TUI and hides explicit frontend aliases',
 })
 
 test('compiled cli exposes LinX package commands in help', async (t) => {
-  const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-package-help-'))
-  t.after(() => {
-    rmSync(outdir, { recursive: true, force: true })
-  })
-
-  try {
-    execFileSync('tsc', [
-      '--outDir',
-      outdir,
-      '--rootDir',
-      sourceRoot,
-      '--module',
-      'nodenext',
-      '--moduleResolution',
-      'nodenext',
-      '--target',
-      'ES2022',
-      '--lib',
-      'ES2022',
-      '--types',
-      'node',
-      '--skipLibCheck',
-      'true',
-      '--noEmitOnError',
-      'false',
-      entryPath,
-    ], {
-      cwd: cliRoot,
-      stdio: 'pipe',
-    })
-  } catch {
-    assert.ok(existsSync(join(outdir, 'index.js')))
-  }
-
-  const output = execFileSync(process.execPath, [join(outdir, 'index.js'), '--help'], {
+  const entry = compileMainCliEntry(t, '.tmp-linx-cli-package-help-')
+  const output = execFileSync(process.execPath, [entry, '--help'], {
     cwd: cliRoot,
     encoding: 'utf-8',
   })
@@ -309,41 +184,8 @@ test('compiled cli exposes LinX package commands in help', async (t) => {
 })
 
 test('compiled cli login help exposes browser consent flow and no password options', async (t) => {
-  const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-login-help-'))
-  t.after(() => {
-    rmSync(outdir, { recursive: true, force: true })
-  })
-
-  try {
-    execFileSync('tsc', [
-      '--outDir',
-      outdir,
-      '--rootDir',
-      sourceRoot,
-      '--module',
-      'nodenext',
-      '--moduleResolution',
-      'nodenext',
-      '--target',
-      'ES2022',
-      '--lib',
-      'ES2022',
-      '--types',
-      'node',
-      '--skipLibCheck',
-      'true',
-      '--noEmitOnError',
-      'false',
-      entryPath,
-    ], {
-      cwd: cliRoot,
-      stdio: 'pipe',
-    })
-  } catch {
-    assert.ok(existsSync(join(outdir, 'index.js')))
-  }
-
-  const output = execFileSync(process.execPath, [join(outdir, 'index.js'), 'login', '--help'], {
+  const entry = compileMainCliEntry(t, '.tmp-linx-cli-login-help-')
+  const output = execFileSync(process.execPath, [entry, 'login', '--help'], {
     cwd: cliRoot,
     encoding: 'utf-8',
   })
@@ -376,42 +218,13 @@ test('cli build ships repository skills for the Pi resource loader', async (t) =
 })
 
 test('compiled cli auto-mode show replays archived timeline instead of raw json', async (t) => {
-  const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-show-'))
   const autoModeHome = mkdtempSync(join(cliRoot, '.tmp-linx-auto-mode-home-'))
 
   t.after(() => {
-    rmSync(outdir, { recursive: true, force: true })
     rmSync(autoModeHome, { recursive: true, force: true })
   })
 
-  try {
-    execFileSync('tsc', [
-      '--outDir',
-      outdir,
-      '--rootDir',
-      sourceRoot,
-      '--module',
-      'nodenext',
-      '--moduleResolution',
-      'nodenext',
-      '--target',
-      'ES2022',
-      '--lib',
-      'ES2022',
-      '--types',
-      'node',
-      '--skipLibCheck',
-      'true',
-      '--noEmitOnError',
-      'false',
-      entryPath,
-    ], {
-      cwd: cliRoot,
-      stdio: 'pipe',
-    })
-  } catch {
-    assert.ok(existsSync(join(outdir, 'index.js')))
-  }
+  const entry = compileMainCliEntry(t, '.tmp-linx-cli-show-')
 
   const sessionId = 'auto_demo_123'
   const sessionDir = join(autoModeHome, 'sessions', sessionId)
@@ -445,7 +258,7 @@ test('compiled cli auto-mode show replays archived timeline instead of raw json'
     events: [{ type: 'assistant.done', text: 'hi there' }],
   })}\n`)
 
-  const output = execFileSync(process.execPath, [join(outdir, 'index.js'), '--show', sessionId], {
+  const output = execFileSync(process.execPath, [entry, '--show', sessionId], {
     cwd: cliRoot,
     env: {
       ...process.env,

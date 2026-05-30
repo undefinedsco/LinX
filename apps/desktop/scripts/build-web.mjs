@@ -1,8 +1,14 @@
 import { spawnSync } from 'node:child_process'
 
-const yarn = process.platform === 'win32' ? 'yarn.cmd' : 'yarn'
-const result = spawnSync(yarn, ['workspace', '@linx/web', 'build'], {
+const yarnCli = process.env.npm_execpath
+const command = yarnCli ? process.execPath : 'yarn'
+const args = yarnCli
+  ? [yarnCli, 'workspace', '@linx/web', 'build']
+  : ['workspace', '@linx/web', 'build']
+
+const result = spawnSync(command, args, {
   stdio: 'inherit',
+  shell: !yarnCli && process.platform === 'win32',
   env: {
     ...process.env,
     LINX_VITE_BASE: './',

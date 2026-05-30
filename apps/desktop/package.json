@@ -79,7 +79,9 @@
       "icon": "build/icon.png",
       "target": ["AppImage", "deb"],
       "category": "Office",
-      "maintainer": "developer@undefineds.co"
+      "maintainer": "developer@undefineds.co",
+      "executableName": "linx",
+      "artifactName": "LinX-${version}-${arch}.${ext}"
     }
   }
 }

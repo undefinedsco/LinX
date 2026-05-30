@@ -1,22 +1,27 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const cliRoot = fileURLToPath(new URL('..', import.meta.url))
+const requireFromCli = createRequire(join(cliRoot, 'package.json'))
+const localTscBin = requireFromCli.resolve('typescript/bin/tsc')
 const sourceRoot = join(cliRoot, 'src')
 
 function compileCliEntry(t, entryName = 'index.ts') {
   const outdir = mkdtempSync(join(cliRoot, `.tmp-linx-symphony-${entryName.replace(/\W+/g, '-')}-`))
+  let compileOutput = ''
   t.after(() => {
     rmSync(outdir, { recursive: true, force: true })
   })
 
   try {
-    execFileSync('tsc', [
+    execFileSync(process.execPath, [localTscBin,
+      '--ignoreConfig',
       '--outDir',
       outdir,
       '--rootDir',
@@ -40,11 +45,40 @@ function compileCliEntry(t, entryName = 'index.ts') {
       cwd: cliRoot,
       stdio: 'pipe',
     })
-  } catch {
-    assert.ok(existsSync(join(outdir, entryName.replace(/\.ts$/, '.js'))))
+  } catch (error) {
+    compileOutput = `${error.stdout ?? ''}${error.stderr ?? ''}`.trim()
   }
 
-  return join(outdir, entryName.replace(/\.ts$/, '.js'))
+  return resolveEmittedEntry(outdir, entryName.replace(/\.ts$/, '.js'), compileOutput)
+}
+
+function resolveEmittedEntry(outdir, entryName, compileOutput = '') {
+  const direct = join(outdir, entryName)
+  if (existsSync(direct)) return direct
+
+  const matches = findFiles(outdir, entryName)
+  const preferred = matches.find((file) => file.endsWith(`/src/${entryName}`))
+    ?? matches.find((file) => file.endsWith(`\\src\\${entryName}`))
+    ?? matches.sort((a, b) => a.length - b.length)[0]
+
+  assert.ok(
+    preferred,
+    `Expected emitted ${entryName}; emitted files: ${findFiles(outdir).join(', ') || '(none)'}${compileOutput ? `\n${compileOutput}` : ''}`,
+  )
+  return preferred
+}
+
+function findFiles(dir, basename) {
+  const files = []
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name)
+    if (entry.isDirectory()) {
+      files.push(...findFiles(path, basename))
+    } else if (!basename || entry.name === basename) {
+      files.push(path)
+    }
+  }
+  return files
 }
 
 test('compiled main cli exposes symphony command help', (t) => {

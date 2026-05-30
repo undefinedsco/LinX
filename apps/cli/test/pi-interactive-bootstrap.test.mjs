@@ -7,6 +7,14 @@ import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 
 process.env.PI_OFFLINE = '1'
 
+function addInteractiveRuntimeHooks(runtime) {
+  return {
+    ...runtime,
+    setBeforeSessionInvalidate() {},
+    setRebindSession() {},
+  }
+}
+
 test('pi interactive bootstrap can instantiate with the LinX runtime adapter', async (t) => {
   const [{ module: runtimeModule, cleanup: runtimeCleanup }, { module: interactiveModule, cleanup: interactiveCleanup }] = await Promise.all([
     loadAutoModeModule('lib/pi-adapter/runtime.ts'),
@@ -91,7 +99,7 @@ test('linx interactive branding stores agent state under .linx and patches updat
 
   assert.equal(brandingModule.LINX_AGENT_DIR.endsWith('/.linx/agent'), true)
 
-  const runtime = {
+  const runtime = addInteractiveRuntimeHooks({
     sessionManager: {
       getCwd() {
         return '/tmp/demo'
@@ -135,7 +143,7 @@ test('linx interactive branding stores agent state under .linx and patches updat
     },
     services: {},
     diagnostics: [],
-  }
+  })
 
   const interactive = interactiveModule.bootstrapPiInteractiveMode(runtime)
   assert.equal(typeof interactive.init, 'function')
@@ -236,7 +244,7 @@ test('linx footer patch adds cache rate from assistant usage', async (t) => {
   const { FooterComponent } = await import('@mariozechner/pi-coding-agent')
   const { visibleWidth } = await import('@mariozechner/pi-tui')
 
-  const runtime = {
+  const runtime = addInteractiveRuntimeHooks({
     sessionManager: {
       getCwd() {
         return '/tmp/demo'
@@ -304,7 +312,7 @@ test('linx footer patch adds cache rate from assistant usage', async (t) => {
     },
     services: {},
     diagnostics: [],
-  }
+  })
 
   const interactive = interactiveModule.bootstrapPiInteractiveMode(runtime)
   assert.equal(typeof interactive.init, 'function')
@@ -334,7 +342,7 @@ test('linx footer patch keeps cache rate line within terminal width', async (t) 
   const { FooterComponent } = await import('@mariozechner/pi-coding-agent')
   const { visibleWidth } = await import('@mariozechner/pi-tui')
 
-  const runtime = {
+  const runtime = addInteractiveRuntimeHooks({
     sessionManager: {
       getCwd() {
         return '/Users/ganlu'
@@ -402,7 +410,7 @@ test('linx footer patch keeps cache rate line within terminal width', async (t) 
     },
     services: {},
     diagnostics: [],
-  }
+  })
 
   const interactive = interactiveModule.bootstrapPiInteractiveMode(runtime)
   assert.equal(typeof runtimeModule.createPiRuntimeAdapter, 'function')
