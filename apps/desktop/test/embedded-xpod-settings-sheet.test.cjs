@@ -1,6 +1,40 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
+const Module = require('node:module')
 const { resolveCompiledDesktopModule } = require('./helpers.cjs')
+
+const originalLoad = Module._load
+class FakeBrowserView {
+  constructor() {
+    this.webContents = {
+      close: () => undefined,
+      focus: () => undefined,
+      isDestroyed: () => false,
+      loadURL: async () => undefined,
+      on: () => undefined,
+      setWindowOpenHandler: () => undefined,
+    }
+  }
+
+  setBounds() {}
+}
+
+Module._load = function patchedLoad(request, parent, isMain) {
+  if (request === 'electron') {
+    return {
+      BrowserView: FakeBrowserView,
+      shell: {
+        openExternal: async () => undefined,
+      },
+    }
+  }
+
+  return originalLoad.call(this, request, parent, isMain)
+}
+
+process.once('exit', () => {
+  Module._load = originalLoad
+})
 
 const {
   EmbeddedXpodSettingsSheet,
