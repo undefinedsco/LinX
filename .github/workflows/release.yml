@@ -2,6 +2,20 @@ name: Release
 
 on:
   workflow_dispatch:
+    inputs:
+      release_ref:
+        description: 'Git ref to build, for example linx-v0.3.1. Defaults to the workflow ref.'
+        required: false
+        type: string
+        default: ''
+      release_tag:
+        description: 'GitHub release tag to publish assets to. Defaults to release_ref or the workflow ref name.'
+        required: false
+        type: string
+        default: ''
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:
   contents: write
@@ -17,6 +31,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_ref || github.ref }}
+          submodules: recursive
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -29,22 +46,27 @@ jobs:
 
       - name: Build web shell
         env:
-          VITE_APP_VERSION: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ inputs.release_tag || inputs.release_ref || github.ref_name }}
           VITE_RELEASE_REPO: ${{ github.repository }}
         run: |
-          export VITE_APP_VERSION="${VITE_APP_VERSION#v}"
+          release_version="${RELEASE_TAG#refs/tags/}"
+          release_version="${release_version#linx-v}"
+          release_version="${release_version#v}"
+          export VITE_APP_VERSION="$release_version"
           yarn build:models
           yarn workspace @linx/web build
           yarn workspace @linx/mobile smoke
 
       - name: Archive web dist
-        run: tar -czf linx-web-${{ github.ref_name }}.tar.gz -C apps/web dist
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || inputs.release_ref || github.ref_name }}
+        run: tar -czf "linx-web-${RELEASE_TAG}.tar.gz" -C apps/web dist
 
       - name: Upload web artifact
         uses: actions/upload-artifact@v4
         with:
-          name: linx-web-${{ github.ref_name }}
-          path: linx-web-${{ github.ref_name }}.tar.gz
+          name: linx-web-${{ inputs.release_tag || inputs.release_ref || github.ref_name }}
+          path: linx-web-${{ inputs.release_tag || inputs.release_ref || github.ref_name }}.tar.gz
 
   desktop:
     name: Desktop Release (${{ matrix.os }})
@@ -59,6 +81,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_ref || github.ref }}
+          submodules: recursive
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -71,11 +96,14 @@ jobs:
 
       - name: Build desktop release artifacts
         env:
-          LINX_APP_VERSION: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ inputs.release_tag || inputs.release_ref || github.ref_name }}
           LINX_RELEASE_REPO: ${{ github.repository }}
         shell: bash
         run: |
-          export LINX_APP_VERSION="${LINX_APP_VERSION#v}"
+          release_version="${RELEASE_TAG#refs/tags/}"
+          release_version="${release_version#linx-v}"
+          release_version="${release_version#v}"
+          export LINX_APP_VERSION="$release_version"
           if [ "${{ matrix.os }}" = "macos-latest" ]; then
             yarn workspace @linx/desktop run dist:mac:zip -- --config.extraMetadata.version="$LINX_APP_VERSION"
           elif [ "${{ matrix.os }}" = "windows-latest" ]; then
@@ -105,7 +133,7 @@ jobs:
       - name: Upload desktop artifact
         uses: actions/upload-artifact@v4
         with:
-          name: linx-desktop-${{ matrix.os }}-${{ github.ref_name }}
+          name: linx-desktop-${{ matrix.os }}-${{ inputs.release_tag || inputs.release_ref || github.ref_name }}
           path: desktop-release-assets
 
   publish:
@@ -126,6 +154,7 @@ jobs:
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.release_tag || inputs.release_ref || github.ref_name }}
           files: |
             *.tar.gz
             *.zip
@@ -136,7 +165,7 @@ jobs:
             latest*.yml
           generate_release_notes: true
           body: |
-            LinX release `${{ github.ref_name }}`
+            LinX release `${{ inputs.release_tag || inputs.release_ref || github.ref_name }}`
 
             Included artifacts:
             - Web shell bundle
@@ -154,11 +183,12 @@ jobs:
         env:
           WEBHOOK_URL: ${{ secrets.RELEASE_WEBHOOK_URL }}
         run: |
+          release_tag="${{ inputs.release_tag || inputs.release_ref || github.ref_name }}"
           payload=$(printf '{"project":"linx","tag":"%s","releaseUrl":"%s/%s/releases/tag/%s"}' \
-            "${{ github.ref_name }}" \
+            "$release_tag" \
             "${{ github.server_url }}" \
             "${{ github.repository }}" \
-            "${{ github.ref_name }}")
+            "$release_tag")
           curl -X POST "$WEBHOOK_URL" \
             -H 'Content-Type: application/json' \
             -d "$payload"
