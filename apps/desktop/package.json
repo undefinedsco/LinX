@@ -2,10 +2,15 @@
   "name": "@linx/desktop",
   "version": "0.1.0",
   "description": "LinX Desktop Application",
+  "homepage": "https://undefineds.co",
+  "author": {
+    "name": "Undefineds",
+    "email": "developer@undefineds.co"
+  },
   "main": "dist/apps/desktop/src/main.js",
   "scripts": {
     "build": "yarn run build:web && node ./scripts/generate-icons.mjs && node ./scripts/prepare-xpod-resource.mjs && node ./scripts/prepare-build-meta.mjs && tsc",
-    "build:web": "LINX_VITE_BASE=./ LINX_VITE_OUT_DIR=dist-desktop yarn workspace @linx/web build",
+    "build:web": "node ./scripts/build-web.mjs",
     "test": "yarn build && node --test test/**/*.test.cjs",
     "test:xpod-smoke": "yarn build && node --test test/xpod-local-onboarding.smoke.cjs",
     "start": "node ./scripts/start-desktop.mjs",
@@ -73,7 +78,8 @@
     "linux": {
       "icon": "build/icon.png",
       "target": ["AppImage", "deb"],
-      "category": "Office"
+      "category": "Office",
+      "maintainer": "developer@undefineds.co"
     }
   }
 }
