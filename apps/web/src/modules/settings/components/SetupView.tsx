@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { AlertCircle, CheckCircle2, Loader2, RefreshCcw, Server } from 'lucide-react'
-import type { SetupConfig, DeploymentMode, TunnelProvider, NetworkAccessMode } from '../types'
+import type { SetupConfig, ServiceSpaceKind, TunnelProvider, NetworkAccessMode } from '../types'
 
 const LOCAL_DOMAIN_HELP_PATH = '/docs/local-sp-domain-and-tunnel.md'
 
@@ -19,7 +19,7 @@ type SetupConfigResponse = {
   dataDir?: string
   port?: number
   autoStart?: boolean
-  deploymentMode?: DeploymentMode
+  spaceKind?: ServiceSpaceKind
   domainSource?: DomainSource
   publicDomain?: string
   autoDetectPublicIp?: boolean
@@ -59,7 +59,7 @@ export function SetupView({ onComplete }: SetupViewProps) {
   const [port, setPort] = useState(5737)
   const [dataDir, setDataDir] = useState('')
   const [autoStart, setAutoStart] = useState(true)
-  const [deploymentMode, setDeploymentMode] = useState<DeploymentMode>('local')
+  const [spaceKind, setSpaceKind] = useState<ServiceSpaceKind>('local')
   const [domainSource, setDomainSource] = useState<DomainSource>('manual')
   const [publicDomain, setPublicDomain] = useState('')
   const [autoDetectPublicIp, setAutoDetectPublicIp] = useState(true)
@@ -68,14 +68,14 @@ export function SetupView({ onComplete }: SetupViewProps) {
   const [tunnelToken, setTunnelToken] = useState('')
   const [initialTunnelProvider, setInitialTunnelProvider] = useState<TunnelProvider | ''>('')
   const [initialHasTunnelToken, setInitialHasTunnelToken] = useState(false)
-  const useTunnel = deploymentMode === 'local' && !!tunnelProvider
+  const useTunnel = spaceKind === 'local' && !!tunnelProvider
 
   useEffect(() => {
     const nextSource = ensureLocalDomainSource()
     if (nextSource !== domainSource) {
       setDomainSource(nextSource)
     }
-  }, [deploymentMode, domainSource, useTunnel])
+  }, [spaceKind, domainSource, useTunnel])
 
   const loadConfig = async () => {
     setLoading(true)
@@ -97,7 +97,7 @@ export function SetupView({ onComplete }: SetupViewProps) {
       setPort(config.port ?? 5737)
       setDataDir(config.dataDir ?? '')
       setAutoStart(config.autoStart ?? true)
-      setDeploymentMode(config.deploymentMode ?? 'local')
+      setSpaceKind(config.spaceKind ?? 'local')
       const nextAutoDetect = config.autoDetectPublicIp ?? true
       setAutoDetectPublicIp(nextAutoDetect)
       setDomainSource(ensureLocalDomainSource())
@@ -125,10 +125,6 @@ export function SetupView({ onComplete }: SetupViewProps) {
   const validate = (): string | null => {
     if (!dataDir.trim()) return '请填写数据目录'
 
-    if (useTunnel && !normalizeDomain(publicDomain)) {
-      return '使用隧道时请填写公网域名或隧道域名'
-    }
-
     if (useTunnel) {
       const canReuseToken =
         initialHasTunnelToken && initialTunnelProvider === tunnelProvider && !tunnelToken.trim()
@@ -152,13 +148,13 @@ export function SetupView({ onComplete }: SetupViewProps) {
       dataDir: dataDir.trim(),
       port,
       autoStart,
-      deploymentMode,
+      spaceKind,
       domainSource: 'manual',
-      publicDomain: deploymentMode === 'local' && normalizeDomain(publicDomain)
+      publicDomain: spaceKind === 'local' && normalizeDomain(publicDomain)
         ? normalizedPublicDomain || undefined
         : undefined,
       autoDetectPublicIp,
-      httpsCertPath: deploymentMode === 'standalone' ? (httpsCertPath.trim() || undefined) : undefined,
+      httpsCertPath: spaceKind === 'standalone' ? (httpsCertPath.trim() || undefined) : undefined,
       network: {
         accessMode,
         tunnelProvider: useTunnel ? tunnelProvider || undefined : undefined,
@@ -169,7 +165,7 @@ export function SetupView({ onComplete }: SetupViewProps) {
         deviceId: undefined,
       },
       standalone: {
-        customDomain: deploymentMode === 'standalone' ? normalizedPublicDomain || undefined : undefined,
+        customDomain: spaceKind === 'standalone' ? normalizedPublicDomain || undefined : undefined,
       },
     }
   }
@@ -178,7 +174,7 @@ export function SetupView({ onComplete }: SetupViewProps) {
     const payload = buildPayload()
     return {
       edition: 'local',
-      deploymentMode,
+      spaceKind,
       pod: {
         port,
         dataDir: payload.dataDir,
@@ -266,7 +262,7 @@ export function SetupView({ onComplete }: SetupViewProps) {
           </div>
           <div className="flex flex-wrap gap-2">
             <Badge variant="secondary">真实写入 `/api/setup`</Badge>
-            <Badge variant="outline">Local 不自动分配公网域名</Badge>
+            <Badge variant="outline">Local 默认 Cloud-managed canonical URL</Badge>
             <Badge variant="outline">说明见 {LOCAL_DOMAIN_HELP_PATH}</Badge>
           </div>
         </CardHeader>
@@ -294,8 +290,8 @@ export function SetupView({ onComplete }: SetupViewProps) {
           ) : null}
 
           <div className="space-y-2">
-            <Label>部署模式</Label>
-            <Tabs value={deploymentMode} onValueChange={(value) => setDeploymentMode(value as DeploymentMode)}>
+            <Label>空间类型</Label>
+            <Tabs value={spaceKind} onValueChange={(value) => setSpaceKind(value as ServiceSpaceKind)}>
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="local">local</TabsTrigger>
                 <TabsTrigger value="standalone">standalone</TabsTrigger>
@@ -321,17 +317,17 @@ export function SetupView({ onComplete }: SetupViewProps) {
             <Switch id="setup-auto-start" checked={autoStart} onCheckedChange={setAutoStart} />
           </div>
 
-          {deploymentMode === 'local' ? (
+          {spaceKind === 'local' ? (
             <div className="space-y-3 rounded-xl border border-border/50 p-4">
               <div className="space-y-2">
                 <Label>公网入口</Label>
                 <div className="text-sm text-foreground">
-                  不填写时只在本机或局域网使用。需要 Cloud 登录访问本地 SP 时，填写你自己的公网域名或隧道域名。
+                  留空时由 Cloud provisioning 分配 Cloud-managed canonical URL；只有要使用自有 HTTPS origin 时才填写。
                 </div>
                 <div className="text-xs text-muted-foreground">配置说明：{LOCAL_DOMAIN_HELP_PATH}</div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="setup-public-domain">公网域名{useTunnel ? '（隧道）' : '（可选）'}</Label>
+                <Label htmlFor="setup-public-domain">自有公网域名（可选）</Label>
                 <Input
                   id="setup-public-domain"
                   value={publicDomain}
@@ -353,7 +349,7 @@ export function SetupView({ onComplete }: SetupViewProps) {
             </div>
           )}
 
-          {deploymentMode === 'standalone' ? (
+          {spaceKind === 'standalone' ? (
             <div className="space-y-2">
               <Label htmlFor="setup-https-cert-path">HTTPS 证书路径（可选）</Label>
               <Input
@@ -365,7 +361,7 @@ export function SetupView({ onComplete }: SetupViewProps) {
             </div>
           ) : null}
 
-          {deploymentMode === 'local' ? (
+          {spaceKind === 'local' ? (
           <div className="space-y-3 rounded-xl border border-border/50 p-4">
             <div className="flex items-center justify-between">
               <div className="space-y-1">
@@ -422,7 +418,7 @@ export function SetupView({ onComplete }: SetupViewProps) {
                   ) : null}
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  隧道启用后会使用上方公网域名作为 Cloud 可访问的 Local SP 地址。
+                  未填写自有域名时，隧道会服务于 Cloud 分配的 Cloud-managed canonical URL。
                 </div>
               </div>
                 ) : null}
@@ -431,8 +427,8 @@ export function SetupView({ onComplete }: SetupViewProps) {
           ) : null}
 
           <div className="rounded-xl border border-border/50 bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
-            生效地址：{deploymentMode === 'local'
-              ? (effectivePublicDomain ? `https://${effectivePublicDomain}` : `http://localhost:${port}`)
+            生效地址：{spaceKind === 'local'
+              ? (effectivePublicDomain ? `https://${effectivePublicDomain}` : 'Cloud-managed canonical URL')
               : (effectivePublicDomain ? `https://${effectivePublicDomain}` : `http://localhost:${port}`)}
           </div>
 

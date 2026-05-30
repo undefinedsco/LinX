@@ -17,6 +17,10 @@ const forbiddenArtifactPaths = new Set([
   'dist/xpod-single.cjs',
   'dist/xpod.single.cjs',
 ])
+const embeddedRuntimeDependencyRoots = [
+  'jsonld',
+]
+const copiedRuntimeDependencies = new Set()
 
 const candidateRoots = explicitSourceRoot
   ? [path.resolve(explicitSourceRoot)]
@@ -48,6 +52,7 @@ for (const entry of ['bin', 'dist', 'config', 'templates', 'static', 'package.js
   })
 }
 
+copyEmbeddedRuntimeDependencies()
 assertNoForbiddenArtifacts(resourceRoot)
 assertNoLegacyOidcContract(resourceRoot)
 const resourceSizeBytes = assertResourceSize(resourceRoot, maxResourceSizeMb)
@@ -61,7 +66,7 @@ function shouldCopyXpodResource(source) {
     return true
   }
 
-  if (isForbiddenResourcePath(relative)) {
+  if (isForbiddenSourceResourcePath(relative)) {
     return false
   }
 
@@ -70,6 +75,80 @@ function shouldCopyXpodResource(source) {
   }
 
   if (relative.startsWith('dist/test-utils/') || relative.startsWith('dist/npm/')) {
+    return false
+  }
+
+  return true
+}
+
+function copyEmbeddedRuntimeDependencies() {
+  for (const packageName of embeddedRuntimeDependencyRoots) {
+    copyEmbeddedRuntimeDependency(packageName)
+  }
+}
+
+function copyEmbeddedRuntimeDependency(packageName) {
+  if (copiedRuntimeDependencies.has(packageName)) {
+    return
+  }
+
+  const packageDir = resolveDependencyPackageDir(packageName)
+  if (!packageDir) {
+    const sourcePkg = readJsonIfExists(path.join(sourceRoot, 'package.json'))
+    const hasRuntimeDependency = Boolean(sourcePkg?.dependencies?.[packageName])
+    if (hasRuntimeDependency) {
+      throw new Error(`xpod runtime dependency '${packageName}' is declared but not installed near ${sourceRoot}`)
+    }
+    return
+  }
+
+  copiedRuntimeDependencies.add(packageName)
+  const targetDir = path.join(resourceRoot, 'node_modules', ...packageName.split('/'))
+  cpSync(packageDir, targetDir, {
+    recursive: true,
+    force: true,
+    errorOnExist: false,
+    dereference: true,
+    filter: shouldCopyRuntimeDependencyFile,
+  })
+
+  const packageJson = readJsonIfExists(path.join(packageDir, 'package.json'))
+  for (const dependencyName of Object.keys(packageJson?.dependencies ?? {})) {
+    copyEmbeddedRuntimeDependency(dependencyName)
+  }
+}
+
+function resolveDependencyPackageDir(packageName) {
+  let current = path.resolve(sourceRoot)
+  while (true) {
+    const candidates = [
+      path.join(current, 'node_modules', ...packageName.split('/')),
+    ]
+    if (path.basename(current) === 'node_modules') {
+      candidates.push(path.join(current, ...packageName.split('/')))
+    }
+
+    for (const candidate of candidates) {
+      if (existsSync(path.join(candidate, 'package.json'))) {
+        return candidate
+      }
+    }
+
+    const parent = path.dirname(current)
+    if (parent === current) {
+      return null
+    }
+    current = parent
+  }
+}
+
+function shouldCopyRuntimeDependencyFile(source) {
+  const basename = path.basename(source)
+  if (basename === 'node_modules') {
+    return false
+  }
+
+  if (source.endsWith('.map') || source.endsWith('.d.ts') || source.endsWith('.tsbuildinfo')) {
     return false
   }
 
@@ -95,7 +174,39 @@ function assertNoForbiddenArtifacts(root) {
 }
 
 function isForbiddenResourcePath(relative) {
+  if (forbiddenArtifactPaths.has(relative)) {
+    return true
+  }
+
+  if (relative === 'node_modules') {
+    return false
+  }
+
+  if (relative.startsWith('node_modules/')) {
+    return !isAllowedRuntimeDependencyPath(relative)
+  }
+
+  return false
+}
+
+function isForbiddenSourceResourcePath(relative) {
   return forbiddenArtifactPaths.has(relative) || relative === 'node_modules' || relative.startsWith('node_modules/')
+}
+
+function isAllowedRuntimeDependencyPath(relative) {
+  const parts = relative.split('/')
+  if (parts.length < 2 || parts[0] !== 'node_modules') {
+    return false
+  }
+
+  if (parts[1]?.startsWith('@')) {
+    if (parts.length === 2) {
+      return Array.from(copiedRuntimeDependencies).some((name) => name.startsWith(`${parts[1]}/`))
+    }
+    return copiedRuntimeDependencies.has(`${parts[1]}/${parts[2]}`)
+  }
+
+  return copiedRuntimeDependencies.has(parts[1])
 }
 
 function assertResourceSize(root, maxSizeMb) {
@@ -185,4 +296,11 @@ function walk(dir, visit) {
       visit(file)
     }
   }
+}
+
+function readJsonIfExists(file) {
+  if (!existsSync(file)) {
+    return null
+  }
+  return JSON.parse(readFileSync(file, 'utf8'))
 }

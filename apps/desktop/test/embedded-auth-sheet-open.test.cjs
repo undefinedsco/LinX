@@ -23,6 +23,11 @@ test('EmbeddedAuthorizationSheet waits for auth page load before showing Browser
           })
         },
         executeJavaScript: async (script) => {
+          if (script.includes('linx-embedded-auth-controls')) {
+            actions.push('installAuthControls')
+            return 'installed'
+          }
+
           if (script.includes('__LINX_XPOD_AUTH_ENHANCER__')) {
             actions.push('installAuthEnhancer')
             return 'installed'
@@ -106,6 +111,7 @@ test('EmbeddedAuthorizationSheet waits for auth page load before showing Browser
 
   assert.deepEqual(states.at(-1), { open: true, reason: 'opened', ready: true })
   assert.equal(actions.includes('title:Cloud 登录'), true)
+  assert.equal(actions.includes('installAuthControls'), true)
   assert.equal(actions.includes('installAuthEnhancer'), true)
   assert.equal(actions.includes('show'), true)
   assert.equal(actions.indexOf('show') > actions.findIndex((entry) => entry.startsWith('loadURL:')), true)

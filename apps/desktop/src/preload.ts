@@ -5,8 +5,9 @@ export interface ManagedPodConfig {
   status: 'stopped' | 'starting' | 'running' | 'error';
   dataDir: string;
   port: number;
+  spaceKind?: 'local' | 'standalone' | null;
   domain: {
-    type: 'none' | 'custom';
+    type: 'none' | 'managed' | 'custom';
     value?: string;
   };
   tunnelToken?: string;
@@ -24,9 +25,9 @@ export interface XpodStartOptions {
   providerId: string;
   dataDir: string;
   port: number;
-  mode: 'local' | 'standalone';
+  spaceKind: 'local' | 'standalone';
   domain?: {
-    type: 'none' | 'custom';
+    type: 'none' | 'managed' | 'custom';
     value?: string;
   };
   tunnelToken?: string;
@@ -64,10 +65,10 @@ export interface AppUpdateStatus {
   error: string | null;
 }
 
-export type LocalOnboardingMode = 'local' | 'standalone';
+export type LocalSpaceKind = 'local' | 'standalone';
 
 export type LocalOnboardingState =
-  | 'mode_required'
+  | 'space_required'
   | 'idle'
   | 'checking'
   | 'starting'
@@ -90,7 +91,7 @@ export interface LocalOnboardingProgress {
 
 export interface LocalOnboardingSnapshot {
   state: LocalOnboardingState;
-  mode: LocalOnboardingMode | null;
+  spaceKind: LocalSpaceKind | null;
   localUrl: string | null;
   baseUrl: string | null;
   publicUrl: string | null;
@@ -124,7 +125,7 @@ export interface AuthAPI {
 
 export interface LocalOnboardingAPI {
   getSnapshot: () => Promise<LocalOnboardingSnapshot>;
-  chooseMode: (mode: LocalOnboardingMode) => Promise<LocalOnboardingSnapshot>;
+  chooseSpace: (spaceKind: LocalSpaceKind) => Promise<LocalOnboardingSnapshot>;
   continue: () => Promise<LocalOnboardingSnapshot>;
   refresh: () => Promise<LocalOnboardingSnapshot>;
   onStateChange: (callback: (snapshot: LocalOnboardingSnapshot) => void) => () => void;
@@ -273,8 +274,8 @@ contextBridge.exposeInMainWorld('xpodDesktop', {
   localOnboarding: {
     getSnapshot: (): Promise<LocalOnboardingSnapshot> =>
       ipcRenderer.invoke('localOnboarding:getSnapshot'),
-    chooseMode: (mode: LocalOnboardingMode): Promise<LocalOnboardingSnapshot> =>
-      ipcRenderer.invoke('localOnboarding:chooseMode', mode),
+    chooseSpace: (spaceKind: LocalSpaceKind): Promise<LocalOnboardingSnapshot> =>
+      ipcRenderer.invoke('localOnboarding:chooseSpace', spaceKind),
     continue: (): Promise<LocalOnboardingSnapshot> =>
       ipcRenderer.invoke('localOnboarding:continue'),
     refresh: (): Promise<LocalOnboardingSnapshot> =>

@@ -1,5 +1,10 @@
 # LinX 桌面端 (含 xPod 内核) 架构设计
 
+> 本文描述 Desktop 外壳、进程和本地 xpod 启动架构，不定义登录/存储语义。
+> IDP/SP、注册、`solid:storage` 和业务写入规则以
+> `docs/login-identity-storage-routing-model.md` 为准；Local canonical URL、
+> tunnel、localhost/LAN 规则以 `docs/local-sp-domain-and-tunnel.md` 为准。
+
 ## 1. 概述
 
 LinX 桌面端是面向用户的统一 AI 客户端，基于 Electron 构建。它不仅提供 AI 对话、文件管理等应用功能，还内置集成了 xPod 核心内核，使其能够作为本地数据节点运行。
@@ -93,24 +98,34 @@ LinX 桌面端是面向用户的统一 AI 客户端，基于 Electron 构建。�
 └───────────────┘    └───────────────┘    └───────────────┘
 ```
 
-### 2.2 运行模式
+### 2.2 产品入口与本地运行能力
 
-LinX 只有两种运行模式：
+Desktop 外壳只关心是否需要启动本机 xpod。具体 IDP/SP 绑定、Pod
+选择和业务写入 base 不在本文重复定义。
 
-| 模式 | 数据存储位置 | AI 引擎 | 适用场景 |
-|------|------------|---------|---------|
-| **Cloud** | 远程 Pod（官方托管或自建 xPod Server） | 远程供应商 | 快速上手，跨设备同步 |
-| **Local** | 本地 xPod 核心 | 本地 Ollama / 远程 | 隐私至上，完全掌控 |
+| 入口 | 是否启动本地 xpod | Desktop 外壳职责 |
+|------|------------------|---------|
+| **Cloud** | 否 | 打开普通 Solid/OIDC 登录流程。 |
+| **Local** | 是 | 启动本机 xpod，并把启动/provisioning 状态交给 Web 登录层。 |
+| **Standalone** | 是 | 启动本机 xpod，并打开本机账号流程。 |
+| **Custom** | 否 | 让 Web 登录层使用用户填写的第三方 Solid provider。 |
+
+规则：
+
+- Local 和 Standalone 都会启动本机 xpod，但身份/存储语义不在 Desktop 架构文档定义。
+- Local 的 canonical SP URL、canonical domain 策略、tunnel 和 same-node route
+  优化见 `docs/local-sp-domain-and-tunnel.md`。
+- LinX Desktop 产品层只使用 Cloud / Local / Standalone / Custom。
 
 ### 2.3 各端支持
 
 | 端 | Cloud | Local | 说明 |
 |---|---|---|---|
-| **Web** | ✓ | ✓ | Local 模式需连接本机运行的 xPod |
-| **Desktop** | ✓ | ✓ | 可启动内置 xPod 核心 |
-| **Mobile** | ✓ | ✗ | 手机不运行 xPod，但可连接 PC 上的 xPod |
+| **Web** | ✓ | ✓ | Local 需连接已经运行的 xpod；Web 不启动本地进程 |
+| **Desktop** | ✓ | ✓ | 可启动内置 xpod 核心 |
+| **Mobile** | ✓ | ✗ | 手机不运行 xpod，但可连接 PC 上的 xpod |
 
-> **注**：Mobile 连接 PC 桌面版的 xPod 时，从 Mobile 视角看仍是 Cloud 模式（连接远程 Pod），只是这个"远程"是用户自己的 PC。
+> **注**：Mobile 连接 PC 桌面版的 xpod 时，是访问一个远程 Storage Provider；不改变该 SP 的 canonical URL 或 `solid:storage` 绑定。
 
 ### 2.4 项目结构
 

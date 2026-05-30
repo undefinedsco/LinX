@@ -8,7 +8,7 @@ import { XpodManager, XpodStartOptions } from './lib/xpod-manager';
 import { resolveRendererTarget } from './lib/renderer-target';
 import { RendererStaticServer, resolveRendererServerPort } from './lib/renderer-server';
 import { formatXpodStatusDetail, getXpodDashboardUrl } from './lib/xpod-ui';
-import { getTrayPresentation, type TrayTone } from './lib/tray-presentation';
+import { getTrayPresentation } from './lib/tray-presentation';
 import { extractLinxAuthCallbackUrl, isDesktopAuthCallbackUrl } from './lib/auth-protocol';
 import { AuthLoopbackServer } from './lib/auth-loopback';
 import { addEmbeddedAuthQuery, installXpodAuthEnhancer } from './lib/xpod-auth-enhancer';
@@ -27,7 +27,7 @@ import {
 } from './lib/local-provider-config';
 import {
   LocalOnboardingController,
-  type LocalOnboardingMode,
+  type LocalSpaceKind,
   type LocalOnboardingSnapshot,
 } from './lib/local-onboarding';
 import { applyLinxLocalHomeToElectronUserData, ensureLinxLocalHome } from './lib/local-home';
@@ -82,7 +82,7 @@ const embeddedXpodSettingsSheet = new EmbeddedXpodSettingsSheet({
 });
 const localOnboarding = new LocalOnboardingController({
   xpodManager,
-  ensureBootstrapProvider: (mode) => ensureBootstrapLocalProvider(mode),
+  ensureBootstrapProvider: (spaceKind) => ensureBootstrapLocalProvider(spaceKind),
   stateDir: localPaths.home,
   onSnapshotChange: (snapshot) => {
     notifyLocalOnboardingState(snapshot);
@@ -381,7 +381,7 @@ async function createConfigWindow(): Promise<void> {
       providerId: bootstrapProvider.id,
       dataDir: bootstrapProvider.managed!.dataDir,
       port: bootstrapProvider.managed!.port,
-      mode: bootstrapProvider.managed!.domain?.type === 'custom' ? 'local' : 'standalone',
+      spaceKind: bootstrapProvider.managed!.spaceKind ?? 'standalone',
       domain: bootstrapProvider.managed!.domain,
       tunnelToken: bootstrapProvider.managed!.tunnelToken,
     });
@@ -541,8 +541,8 @@ async function openXpodDashboardWindow(): Promise<void> {
   if (!status.running || !dashboardUrl) {
     await dialog.showMessageBox({
       type: 'info',
-      title: 'Pod 未运行',
-      message: '当前没有可用的 Pod 管理界面。',
+      title: 'xpod 未运行',
+      message: '当前没有可用的 xpod 管理界面。',
       detail: formatXpodStatusDetail(status),
     });
     return;
@@ -552,7 +552,7 @@ async function openXpodDashboardWindow(): Promise<void> {
     xpodWindow = new BrowserWindow({
       width: 1120,
       height: 800,
-      title: 'LinX Pod 管理',
+      title: 'xpod 管理',
       icon: desktopAppIcon && !desktopAppIcon.isEmpty() ? desktopAppIcon : undefined,
       webPreferences: {
         nodeIntegration: false,
@@ -575,8 +575,8 @@ async function showXpodStatusDialog(): Promise<void> {
   const status = await xpodManager.getStatus();
   await dialog.showMessageBox({
     type: status.running ? 'info' : 'warning',
-    title: 'Pod 状态',
-    message: status.running ? 'Pod 服务运行中' : 'Pod 服务未运行',
+    title: 'xpod 状态',
+    message: status.running ? 'xpod 运行中' : 'xpod 未运行',
     detail: formatXpodStatusDetail(status),
   });
 }
@@ -659,9 +659,9 @@ async function startXpodFromTray(): Promise<void> {
   if (!resumed) {
     await dialog.showMessageBox({
       type: 'info',
-      title: '没有可启动的 Pod',
-      message: '当前没有已配置的托管 Pod。',
-      detail: '请先在 LinX 中完成 Pod 配置。',
+      title: '没有可启动的 xpod',
+      message: '当前没有已配置的 xpod。',
+      detail: '请先在 LinX 中完成 Local 配置。',
     });
     return;
   }
@@ -669,26 +669,15 @@ async function startXpodFromTray(): Promise<void> {
   await showXpodStatusDialog();
 }
 
-function createTrayIcon(tone: TrayTone) {
-  const color = tone === 'running'
-    ? '#22c55e'
-    : tone === 'starting'
-    ? '#f59e0b'
-    : tone === 'error'
-    ? '#ef4444'
-    : '#6b7280';
-  const mark = tone === 'running'
-    ? '<circle cx="12" cy="12" r="3" fill="#ffffff" opacity="0.92" />'
-    : tone === 'starting'
-    ? '<path d="M8 4a4 4 0 0 1 4 4" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" />'
-    : tone === 'error'
-    ? '<path d="M8 4.5v4.5M8 11.5h.01" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" />'
-    : '<circle cx="8" cy="8" r="3.4" fill="none" stroke="#ffffff" stroke-width="1.8" />';
+function createTrayIcon() {
+  if (desktopAppIcon && !desktopAppIcon.isEmpty()) {
+    return desktopAppIcon.resize({ width: 18, height: 18 });
+  }
 
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
-      <rect x="2" y="2" width="12" height="12" rx="3.5" fill="${color}" />
-      ${mark}
+      <rect x="2" y="2" width="12" height="12" rx="3.5" fill="#7c3aed" />
+      <path d="M5 4.5v7h5.8" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
     </svg>
   `.trim();
 
@@ -714,7 +703,7 @@ async function refreshTrayState(): Promise<void> {
     notifyAvailableUpdate(updateStatus);
   }
 
-  tray.setImage(createTrayIcon(presentation.tone));
+  tray.setImage(createTrayIcon());
   tray.setTitle(presentation.title);
   tray.setToolTip(tooltip);
   tray.setContextMenu(
@@ -731,7 +720,7 @@ async function refreshTrayState(): Promise<void> {
         },
       },
       {
-        label: '打开 Pod 管理',
+        label: '打开 xpod 管理',
         enabled: Boolean(status.running && dashboardUrl),
         click: () => {
           void openXpodDashboardWindow().catch((error) => {
@@ -741,7 +730,7 @@ async function refreshTrayState(): Promise<void> {
       },
       { type: 'separator' },
       {
-        label: '查看 Pod 状态',
+        label: '查看 xpod 状态',
         click: () => {
           void showXpodStatusDialog().catch((error) => {
             console.error('[Desktop] Failed to show xpod status:', error);
@@ -749,7 +738,7 @@ async function refreshTrayState(): Promise<void> {
         },
       },
       {
-        label: status.running || status.status === 'starting' ? '重启 Pod' : '启动 Pod',
+        label: status.running || status.status === 'starting' ? '重启 xpod' : '启动 xpod',
         enabled: Boolean((status.running || status.status === 'starting') || resumable),
         click: () => {
           const action = status.running || status.status === 'starting'
@@ -763,7 +752,7 @@ async function refreshTrayState(): Promise<void> {
         },
       },
       {
-        label: '停止 Pod',
+        label: '停止 xpod',
         enabled: Boolean(status.running || status.status === 'starting'),
         click: () => {
           void stopXpodFromTray()
@@ -774,7 +763,7 @@ async function refreshTrayState(): Promise<void> {
         },
       },
       {
-        label: '打开 Pod 日志目录',
+        label: '打开 xpod 日志目录',
         click: () => {
           void openXpodLogsDirectory().catch((error) => {
             console.error('[Desktop] Failed to open xpod logs:', error);
@@ -835,7 +824,7 @@ async function refreshTrayState(): Promise<void> {
 }
 
 function createTray(): void {
-  tray = new Tray(createTrayIcon('stopped'));
+  tray = new Tray(createTrayIcon());
   void refreshTrayState().catch((error) => {
     console.error('[Desktop] Failed to initialize tray state:', error);
   });
@@ -846,7 +835,18 @@ function createTray(): void {
   }, 5000);
 
   tray.on('click', () => {
-    revealMainWindow();
+    void (async () => {
+      const status = await xpodManager.getStatus();
+      if (status.running && getXpodDashboardUrl(status)) {
+        await openXpodDashboardWindow();
+        return;
+      }
+
+      revealMainWindow();
+    })().catch((error) => {
+      console.error('[Desktop] Failed to handle xpod tray click:', error);
+      revealMainWindow();
+    });
   });
 
   tray.on('right-click', () => {
@@ -992,8 +992,8 @@ function setupIPC(): void {
     return localOnboarding.refresh();
   });
 
-  ipcMain.handle('localOnboarding:chooseMode', async (_event, mode: LocalOnboardingMode) => {
-    return localOnboarding.chooseMode(mode);
+  ipcMain.handle('localOnboarding:chooseSpace', async (_event, spaceKind: LocalSpaceKind) => {
+    return localOnboarding.chooseSpace(spaceKind);
   });
 
   ipcMain.handle('localOnboarding:continue', async () => {
@@ -1098,7 +1098,7 @@ app.on('before-quit', async () => {
   await supervisor.stopAll();
 });
 
-function ensureBootstrapLocalProvider(mode: LocalOnboardingMode | null = null): SolidProvider {
+function ensureBootstrapLocalProvider(spaceKind: LocalSpaceKind | null = null): SolidProvider {
   const managedProviders = providerManager.getManagedPods();
   const existingManaged = managedProviders[0];
   const env = configManager.getAll();
@@ -1109,14 +1109,18 @@ function ensureBootstrapLocalProvider(mode: LocalOnboardingMode | null = null): 
   const envDomain = resolveManagedDomainFromEnv(env);
   const existingDomain = existingManaged?.managed?.domain;
   const existingTunnelToken = existingManaged?.managed?.tunnelToken;
+  const existingSpaceKind = existingManaged?.managed?.spaceKind === 'local' || existingManaged?.managed?.spaceKind === 'standalone'
+    ? existingManaged.managed.spaceKind
+    : null;
+  const selectedSpaceKind = spaceKind ?? existingSpaceKind;
   const managedDomain = resolveEffectiveManagedDomain({
-    mode,
+    spaceKind: selectedSpaceKind,
     envDomain,
     existingDomain,
   });
   const managedTunnelToken = resolveEffectiveManagedTunnelToken({
     env,
-    mode,
+    spaceKind: selectedSpaceKind,
     domain: managedDomain,
     existingTunnelToken,
   });
@@ -1130,6 +1134,7 @@ function ensureBootstrapLocalProvider(mode: LocalOnboardingMode | null = null): 
       status,
       dataDir,
       port,
+      spaceKind: selectedSpaceKind,
       domain: managedDomain,
       tunnelToken: managedTunnelToken,
     },

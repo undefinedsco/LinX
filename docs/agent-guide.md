@@ -37,9 +37,12 @@ Skill source of truth:
 
 ## Doc Map
 
+- 登录/存储文档归属：`docs/login-identity-storage-routing-model.md` 是 IDP/SP、注册绑定、`solid:storage` 和业务写入的唯一主文档；`docs/local-sp-domain-and-tunnel.md` 是 Local canonical URL、canonical domain 策略、localhost/LAN/tunnel 的唯一主文档。其他文档只能引用或记录本文件职责，不要重新定义这两套语义。
 - `docs/cli-app-shared-core.md` — `@undefineds.co/models` 共享数据面、client/auto-mode helper 与 CLI/App 边界
 - `docs/cli-login-and-key-principles.md` — CLI 登录、provider key 获取、Pod AI config 存储与 backend runtime 消费边界
 - `docs/dependency-guide.md` — 依赖升级、workspace/npm 版本、`xpod`/`models` 联动与 submodule 锁定规则
+- `docs/login-identity-storage-routing-model.md` — 登录 IDP/SP、注册绑定、`solid:storage` 与业务写入边界主文档
+- `docs/local-sp-domain-and-tunnel.md` — Local canonical URL、canonical domain 策略、localhost/LAN/tunnel 主文档
 - `docs/desktop-product-strategy.md` — 桌面端 Chat-first + AI-native 产品策略
 - `docs/secretary/README.md` — AI Secretary 能力设计入口，包括存储建模、授权判断和用户请示边界
 - `docs/agent-collaboration-model.md` — Secretary 多工作现场、群聊、跨会话投递、auto 模式与 TUI 共用模型

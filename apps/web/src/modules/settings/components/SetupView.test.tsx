@@ -29,7 +29,7 @@ describe('SetupView', () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({
       dataDir: '/tmp/linx-pod',
       port: 5737,
-      deploymentMode: 'local',
+      spaceKind: 'local',
       domainSource: 'manual',
       autoDetectPublicIp: true,
       tunnelProvider: '',
@@ -39,7 +39,7 @@ describe('SetupView', () => {
     render(<SetupView />)
 
     expect(await screen.findByDisplayValue('/tmp/linx-pod')).toBeInTheDocument()
-    expect(screen.getByText(/不填写时只在本机或局域网使用/)).toBeInTheDocument()
+    expect(screen.getByText(/Cloud provisioning 分配 Cloud-managed canonical URL/)).toBeInTheDocument()
   })
 
   it('saves a local setup payload without a generated public domain', async () => {
@@ -48,7 +48,7 @@ describe('SetupView', () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({
       dataDir: '/tmp/linx-pod',
       port: 5737,
-      deploymentMode: 'local',
+      spaceKind: 'local',
       domainSource: 'manual',
       autoDetectPublicIp: true,
       tunnelProvider: '',
@@ -72,7 +72,7 @@ describe('SetupView', () => {
       dataDir: '/tmp/linx-pod',
       port: 5737,
       autoStart: true,
-      deploymentMode: 'local',
+      spaceKind: 'local',
       domainSource: 'manual',
       autoDetectPublicIp: true,
       network: {
@@ -81,7 +81,7 @@ describe('SetupView', () => {
       local: {},
     })
     expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({
-      deploymentMode: 'local',
+      spaceKind: 'local',
       pod: expect.objectContaining({ dataDir: '/tmp/linx-pod' }),
     }))
     expect(await screen.findByText('配置已保存，服务正在继续启动。')).toBeInTheDocument()
@@ -91,7 +91,7 @@ describe('SetupView', () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({
       dataDir: '/tmp/linx-pod',
       port: 5737,
-      deploymentMode: 'local',
+      spaceKind: 'local',
       domainSource: 'manual',
       autoDetectPublicIp: true,
       tunnelProvider: '',
@@ -114,11 +114,11 @@ describe('SetupView', () => {
     expect(body.domainSource).toBe('manual')
   })
 
-  it('requires a manual public domain when local setup uses tunnel access', async () => {
+  it('uses a manual public domain as Local user-managed canonical domain when provided with tunnel access', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({
       dataDir: '/tmp/linx-pod',
       port: 5737,
-      deploymentMode: 'local',
+      spaceKind: 'local',
       domainSource: 'manual',
       publicDomain: 'pod.example.com',
       autoDetectPublicIp: false,
@@ -141,11 +141,40 @@ describe('SetupView', () => {
     expect(body.publicDomain).toBe('pod.example.com')
   })
 
+  it('allows Local Cloud-managed canonical domain tunnel setup without a manual public domain', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({
+      dataDir: '/tmp/linx-pod',
+      port: 5737,
+      spaceKind: 'local',
+      domainSource: 'manual',
+      publicDomain: '',
+      autoDetectPublicIp: false,
+      tunnelProvider: 'cloudflare',
+      hasTunnelToken: true,
+    }))
+    fetchMock.mockResolvedValueOnce(jsonResponse({ success: true }))
+
+    render(<SetupView />)
+
+    expect(await screen.findByDisplayValue('/tmp/linx-pod')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('保存配置'))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+
+    const [, requestInit] = fetchMock.mock.calls[1] as [string, RequestInit]
+    const body = JSON.parse(String(requestInit.body))
+
+    expect(body.spaceKind).toBe('local')
+    expect(body.publicDomain).toBeUndefined()
+    expect(body.network.accessMode).toBe('tunnel')
+    expect(body.network.tunnelProvider).toBe('cloudflare')
+  })
+
   it('saves a standalone setup without a public domain', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({
       dataDir: '/tmp/linx-pod',
       port: 5737,
-      deploymentMode: 'standalone',
+      spaceKind: 'standalone',
       domainSource: 'manual',
       autoDetectPublicIp: true,
       tunnelProvider: '',
@@ -163,7 +192,7 @@ describe('SetupView', () => {
     const [, requestInit] = fetchMock.mock.calls[1] as [string, RequestInit]
     const body = JSON.parse(String(requestInit.body))
 
-    expect(body.deploymentMode).toBe('standalone')
+    expect(body.spaceKind).toBe('standalone')
     expect(body.publicDomain).toBeUndefined()
     expect(body.standalone.customDomain).toBeUndefined()
     expect(body.network.accessMode).toBe('auto')
@@ -173,7 +202,7 @@ describe('SetupView', () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({
       dataDir: '/tmp/linx-pod',
       port: 5737,
-      deploymentMode: 'local',
+      spaceKind: 'local',
       domainSource: 'manual',
       publicDomain: 'pod.example.com',
       autoDetectPublicIp: false,
@@ -201,7 +230,7 @@ describe('SetupView', () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({
       dataDir: '/tmp/linx-pod',
       port: 5737,
-      deploymentMode: 'local',
+      spaceKind: 'local',
       domainSource: 'manual',
       publicDomain: 'pod.example.com',
       autoDetectPublicIp: false,

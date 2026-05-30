@@ -9,11 +9,18 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Session } from '@inrupt/solid-client-authn-node'
 import { drizzle, type SolidAuthSession, type SolidDatabase } from '@undefineds.co/drizzle-solid'
+import { initializeLinxPodStorage } from '@/lib/data/pod-storage-bootstrap'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 const XPOD_RUNTIME_MODULE_URL = pathToFileURL(
   resolve(__dirname, '../../../../node_modules/@undefineds.co/xpod/dist/runtime/index.js'),
+).href
+const XPOD_LOCAL_PROVISIONING_SERVICE_MODULE_URL = pathToFileURL(
+  resolve(__dirname, '../../../../node_modules/@undefineds.co/xpod/dist/provision/LocalPodProvisioningService.js'),
+).href
+const XPOD_RDF_QUAD_INDEX_MODULE_URL = pathToFileURL(
+  resolve(__dirname, '../../../../node_modules/@undefineds.co/xpod/dist/storage/rdf/RdfQuadIndex.js'),
 ).href
 dotenv.config({ path: resolve(__dirname, '../../../../.env') })
 
@@ -24,6 +31,7 @@ type RuntimeMode = 'local-seeded-auth' | 'external-auth'
 interface StoredConfig {
   url: string
   webId: string
+  podUrl?: string
   authType: AuthType
 }
 
@@ -35,6 +43,7 @@ interface StoredSecrets {
 interface ExternalAuthConfig {
   url: string
   webId: string
+  podUrl?: string
   clientId: string
   clientSecret: string
   source: 'env' | 'cli'
@@ -57,6 +66,7 @@ interface AccountPayload {
   controls?: {
     account?: {
       clientCredentials?: string
+      pod?: string
     }
   }
   webIds?: Record<string, string>
@@ -67,6 +77,7 @@ export interface XpodIntegrationContext<TSchema extends Record<string, unknown>>
   db: SolidDatabase<TSchema>
   baseUrl: string
   webId: string
+  podUrl: string
   apiKey?: string
   stop: () => Promise<void>
 }
@@ -437,6 +448,136 @@ async function createSeedClientCredentials(fetchFn: typeof fetch, options: {
   }
 }
 
+async function ensureSeedPod(fetchFn: typeof fetch, options: {
+  accountToken: string
+  accountPayload: AccountPayload
+  baseUrl: string
+  podName: string
+  runtimeRoot: string
+}): Promise<{ webId: string; podUrl: string }> {
+  const fallback = {
+    webId: resolveSeedWebId(options.accountPayload, options.baseUrl, options.podName),
+    podUrl: new URL(`${options.podName}/`, options.baseUrl).href,
+  }
+  const endpoint = options.accountPayload.controls?.account?.pod
+  if (!endpoint) {
+    return fallback
+  }
+
+  const response = await fetchFn(endpoint, {
+    method: 'POST',
+    headers: closeConnectionHeaders({
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      Authorization: `CSS-Account-Token ${options.accountToken}`,
+    }),
+    body: JSON.stringify({ name: options.podName }),
+  })
+
+  if (response.ok) {
+    const payload = await response.json().catch(() => ({})) as { webId?: string; pod?: string }
+    return {
+      webId: payload.webId ? new URL(payload.webId, options.baseUrl).href : fallback.webId,
+      podUrl: payload.pod ? new URL(payload.pod, options.baseUrl).href : fallback.podUrl,
+    }
+  }
+
+  if (response.status === 409) {
+    await ensureLocalSeedPodFiles(options)
+    return fallback
+  }
+
+  if (response.status === 400) {
+    await ensureLocalSeedPodFiles(options)
+    return fallback
+  }
+
+  const text = await response.text().catch(() => '')
+  throw new Error(`Failed to ensure seeded Pod ${options.podName}: ${response.status} ${text}`)
+}
+
+async function ensureLocalSeedPodFiles(options: {
+  baseUrl: string
+  podName: string
+  runtimeRoot: string
+  accountPayload: AccountPayload
+}): Promise<void> {
+  const module = await import(XPOD_LOCAL_PROVISIONING_SERVICE_MODULE_URL) as {
+    LocalPodProvisioningService: new (options: {
+      baseUrl: string
+      rootDir: string
+      sparqlEndpoint: string
+      identityDbUrl: string
+      oidcIssuer?: string
+    }) => {
+      createPodFiles: (podName: string, initialResources?: Record<string, string>) => Promise<void>
+      writeQuints: (input: { podUrl: string; webId: string; oidcIssuer: string }) => void
+      buildPodQuads: (input: { podUrl: string; webId: string; oidcIssuer: string }) => unknown[]
+    }
+  }
+  const service = new module.LocalPodProvisioningService({
+    baseUrl: options.baseUrl,
+    rootDir: join(options.runtimeRoot, 'data'),
+    sparqlEndpoint: `sqlite:${join(options.runtimeRoot, 'quadstore.sqlite')}`,
+    identityDbUrl: `sqlite:${join(options.runtimeRoot, 'identity.sqlite')}`,
+    oidcIssuer: options.baseUrl,
+  })
+  const webId = resolveSeedWebId(options.accountPayload, options.baseUrl, options.podName)
+  const podUrl = new URL(`${options.podName}/`, options.baseUrl).href
+  await service.createPodFiles(options.podName)
+  service.writeQuints({
+    podUrl,
+    webId,
+    oidcIssuer: options.baseUrl,
+  })
+  await writeSeedPodRdfIndex({
+    runtimeRoot: options.runtimeRoot,
+    quads: service.buildPodQuads({
+      podUrl,
+      webId,
+      oidcIssuer: options.baseUrl,
+    }),
+    source: `local-provision:${podUrl}`,
+  })
+}
+
+async function writeSeedPodRdfIndex(options: {
+  runtimeRoot: string
+  quads: unknown[]
+  source: string
+}): Promise<void> {
+  const module = await import(XPOD_RDF_QUAD_INDEX_MODULE_URL) as {
+    RdfQuadIndex: new (options: { path: string }) => {
+      open: () => void
+      close: () => void
+      multiPut: (
+        quads: unknown[],
+        options?: {
+          source?: {
+            source: string
+            workspace: string
+            localPath?: string
+            contentType?: string
+          }
+        },
+      ) => void
+    }
+  }
+  const index = new module.RdfQuadIndex({ path: join(options.runtimeRoot, 'rdf-index.sqlite') })
+  index.open()
+  try {
+    index.multiPut(options.quads, {
+      source: {
+        source: options.source,
+        workspace: 'local-seeded-auth',
+        contentType: 'internal/quads',
+      },
+    })
+  } finally {
+    index.close()
+  }
+}
+
 async function exchangeClientCredentialsForAccessToken(fetchFn: typeof fetch, options: {
   baseUrl: string
   clientId: string
@@ -493,9 +634,26 @@ function resolveSeedWebId(accountPayload: AccountPayload, baseUrl: string, podNa
   return matchedWebId ?? webIds[0] ?? new URL(`${podName}/profile/card#me`, baseUrl).href
 }
 
+function resolvePodUrlFromWebId(webId: string, providerBaseUrl?: string): string {
+  try {
+    const webIdUrl = new URL(webId)
+    const podName = webIdUrl.pathname.match(/^\/([^/]+)\/profile\/card\/?$/)?.[1]
+    if (podName && providerBaseUrl) {
+      return new URL(`${podName}/`, providerBaseUrl).href
+    }
+    webIdUrl.pathname = webIdUrl.pathname.replace(/\/profile\/card\/?$/, '/')
+    webIdUrl.search = ''
+    webIdUrl.hash = ''
+    return webIdUrl.href.endsWith('/') ? webIdUrl.href : `${webIdUrl.href}/`
+  } catch {
+    return new URL('test/', providerBaseUrl ?? 'http://localhost/').href
+  }
+}
+
 function readCredentialsFromEnv(): ExternalAuthConfig | null {
   const url = process.env.XPOD_TEST_URL
   const webId = process.env.XPOD_TEST_WEBID
+  const podUrl = process.env.XPOD_TEST_POD_URL
   const clientId = process.env.XPOD_TEST_CLIENT_ID
   const clientSecret = process.env.XPOD_TEST_CLIENT_SECRET
 
@@ -506,6 +664,7 @@ function readCredentialsFromEnv(): ExternalAuthConfig | null {
   return {
     url,
     webId,
+    podUrl,
     clientId,
     clientSecret,
     source: 'env',
@@ -543,6 +702,7 @@ function readCredentialsFromCli(): ExternalAuthConfig | null {
     return {
       url: config.url,
       webId: config.webId,
+      podUrl: config.podUrl,
       clientId: secrets.clientId,
       clientSecret: secrets.clientSecret,
       source: 'cli',
@@ -554,6 +714,15 @@ function readCredentialsFromCli(): ExternalAuthConfig | null {
 
 function resolveExternalAuthConfig(): ExternalAuthConfig | null {
   return readCredentialsFromEnv() ?? readCredentialsFromCli()
+}
+
+async function initializeIntegrationDatabase<TSchema extends Record<string, unknown>>(
+  db: SolidDatabase<TSchema>,
+  options: XpodIntegrationOptions<TSchema>,
+): Promise<void> {
+  await initializeLinxPodStorage(db as any)
+  await db.init(options.tables as never[])
+  await options.initialize?.(db)
 }
 
 async function createAuthenticatedContext<TSchema extends Record<string, unknown>>(
@@ -573,19 +742,21 @@ async function createAuthenticatedContext<TSchema extends Record<string, unknown
   }
 
   const webId = session.info.webId ?? config.webId
+  const podUrl = config.podUrl ?? resolvePodUrlFromWebId(webId, config.url)
   const db = drizzle<TSchema>(session as unknown as SolidAuthSession, {
     disableInteropDiscovery: true,
+    podUrl,
     schema: options.schema,
   })
 
-  await db.init(options.tables as never[])
-  await options.initialize?.(db)
+  await initializeIntegrationDatabase(db, options)
 
   return {
     mode: 'external-auth',
     db,
     baseUrl: config.url,
     webId,
+    podUrl,
     apiKey: buildApiKey(config.clientId, config.clientSecret),
     stop: async () => {
       await db.disconnect().catch(() => undefined)
@@ -639,7 +810,13 @@ async function createLocalSeededContext<TSchema extends Record<string, unknown>>
 
     const accountToken = await loginSeedAccount(fetchFn, activeRuntime.baseUrl, seed.email, seed.password)
     const accountPayload = await getAccountPayload(fetchFn, activeRuntime.baseUrl, accountToken)
-    const webId = resolveSeedWebId(accountPayload, activeRuntime.baseUrl, seed.podName)
+    const { webId, podUrl } = await ensureSeedPod(fetchFn, {
+      accountToken,
+      accountPayload,
+      baseUrl: activeRuntime.baseUrl,
+      podName: seed.podName,
+      runtimeRoot,
+    })
     const credentials = await createSeedClientCredentials(fetchFn, {
       accountToken,
       accountPayload,
@@ -669,17 +846,18 @@ async function createLocalSeededContext<TSchema extends Record<string, unknown>>
 
     const db = drizzle<TSchema>(session, {
       disableInteropDiscovery: true,
+      podUrl,
       schema: options.schema,
     })
 
-    await db.init(options.tables as never[])
-    await options.initialize?.(db)
+    await initializeIntegrationDatabase(db, options)
 
     return {
       mode: 'local-seeded-auth',
       db,
       baseUrl: runtime.baseUrl,
       webId,
+      podUrl,
       apiKey: buildApiKey(credentials.clientId, credentials.clientSecret),
       stop: async () => {
         await db.disconnect().catch(() => undefined)

@@ -2,6 +2,7 @@ export interface StorageConflictDetectionInput {
   webId: string
   storageProviderUrl?: string
   storageProviderPublicUrl?: string | null
+  strictStoragePath?: boolean
 }
 
 export interface StorageConflict {
@@ -16,14 +17,22 @@ const SOLID_STORAGE_IRI = 'http://www.w3.org/ns/solid/terms#storage'
 export async function detectStorageConflict(
   input: StorageConflictDetectionInput,
 ): Promise<StorageConflict | null> {
-  const expectedStorageUrl = resolveExpectedStorageUrl(input.webId, input.storageProviderPublicUrl)
+  const strictStoragePath = input.strictStoragePath ?? true
+  const expectedStorageUrl = strictStoragePath
+    ? resolveExpectedStorageUrl(input.webId, input.storageProviderPublicUrl)
+    : normalizeBaseUrl(input.storageProviderPublicUrl)
   if (!expectedStorageUrl) {
     return null
   }
 
   const actualStorageUrl = await fetchProfileStorageUrl(input.webId)
-  if (actualStorageUrl && normalizeUrl(expectedStorageUrl) === normalizeUrl(actualStorageUrl)) {
-    return null
+  if (actualStorageUrl) {
+    if (strictStoragePath && normalizeUrl(expectedStorageUrl) === normalizeUrl(actualStorageUrl)) {
+      return null
+    }
+    if (!strictStoragePath && isStorageUrlWithinProviderBase(actualStorageUrl, expectedStorageUrl)) {
+      return null
+    }
   }
 
   return {
@@ -64,7 +73,7 @@ export function buildAccountManagementUrl(storageProviderUrl?: string | null): s
   return `${baseUrl}.account/account/`
 }
 
-async function fetchProfileStorageUrl(webId: string): Promise<string | null> {
+export async function fetchProfileStorageUrl(webId: string): Promise<string | null> {
   const response = await fetch(webId, {
     headers: {
       Accept: 'application/ld+json, application/json;q=0.9, text/turtle;q=0.8',
@@ -182,4 +191,19 @@ function normalizeBaseUrl(url?: string | null): string | null {
 
 function normalizeUrl(url: string): string {
   return url.replace(/\/+$/, '')
+}
+
+export function isStorageUrlWithinProviderBase(url: string, baseUrl: string): boolean {
+  try {
+    const normalizedUrl = new URL(url)
+    const normalizedBase = new URL(baseUrl)
+    const basePath = normalizedBase.pathname.endsWith('/')
+      ? normalizedBase.pathname
+      : `${normalizedBase.pathname}/`
+
+    return normalizedUrl.origin === normalizedBase.origin
+      && (normalizedUrl.pathname === normalizedBase.pathname || normalizedUrl.pathname.startsWith(basePath))
+  } catch {
+    return false
+  }
 }

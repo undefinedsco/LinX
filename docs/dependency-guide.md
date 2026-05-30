@@ -165,7 +165,7 @@ yarn build:models
 当前 LinX 父仓库应锁定：
 
 ```text
-packages/models package version: 0.2.33
-packages/models commit: 0ce0e6b9b1120efe4b513c2ccc2ded7019e989d5
-packages/models tag: v0.2.33
+packages/models package version: 0.2.34
+packages/models commit: a0ba1379e981a6815bb25f195904dbbe55817b6d
+packages/models tag: v0.2.34
 ```

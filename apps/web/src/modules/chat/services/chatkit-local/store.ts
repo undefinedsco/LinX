@@ -76,6 +76,27 @@ function parseThreadMetadata(metadata: unknown): Record<string, unknown> | undef
   return undefined
 }
 
+function extractLocalSubjectId(value: string | null | undefined): string | null {
+  if (!value) return null
+  const hashIndex = value.lastIndexOf('#')
+  if (hashIndex >= 0 && hashIndex < value.length - 1) {
+    return value.slice(hashIndex + 1)
+  }
+  const slashIndex = value.lastIndexOf('/')
+  return slashIndex >= 0 ? value.slice(slashIndex + 1) : value
+}
+
+function matchesMessageItemId(record: any, itemId: string): boolean {
+  return record?.id === itemId
+    || extractLocalSubjectId(typeof record?.id === 'string' ? record.id : null) === itemId
+    || extractLocalSubjectId(resolveRowSubject(record as Record<string, unknown>)) === itemId
+}
+
+function resourceUrlFromSubject(subjectUri: string): string {
+  const hashIndex = subjectUri.indexOf('#')
+  return hashIndex >= 0 ? subjectUri.slice(0, hashIndex) : subjectUri
+}
+
 async function findThreadRecord(db: SolidDatabase<any>, threadId: string, chatId?: string | null): Promise<any | null> {
   if (chatId) {
     const resourceId = (db as any).resolveLocatorId?.(Thread as any, { id: threadId, chat: chatId } as any)
@@ -214,6 +235,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   private threadChatIdCache = new Map<string, string>()
   private threadMetadataCache = new Map<string, ThreadMetadata>()
   private threadItemsCache = new Map<string, ThreadItem[]>()
+  private messageSubjectCache = new Map<string, string>()
 
   constructor(db: SolidDatabase, webId: string, authFetch: typeof fetch) {
     this.db = db
@@ -336,6 +358,47 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       return
     }
     this.threadItemsCache.set(threadId, next)
+  }
+
+  private cacheMessageSubject(messageId: string, rowOrSubject: unknown): string | null {
+    const subject = typeof rowOrSubject === 'string'
+      ? rowOrSubject
+      : resolveRowSubject(rowOrSubject as Record<string, unknown>)
+    if (!subject) return null
+    this.messageSubjectCache.set(messageId, subject)
+    return subject
+  }
+
+  private async resolveMessageSubject(messageId: string): Promise<string | null> {
+    const cached = this.messageSubjectCache.get(messageId)
+    if (cached) return cached
+
+    try {
+      const direct = await (this.db as any).findById(Message as any, messageId)
+      const subject = this.cacheMessageSubject(messageId, direct)
+      if (subject) return subject
+    } catch {
+      // Continue with a narrow fallback below. findById only works when callers
+      // hold the exact base-relative id, while ChatKit item ids are local ids.
+    }
+
+    try {
+      const messages = await withTimeout(
+        this.db.select().from(Message).execute(),
+        POD_QUERY_TIMEOUT_MS,
+        `Timed out resolving message subject ${messageId}`,
+      )
+      const existing = messages.find((message: any) => matchesMessageItemId(message, messageId))
+      const subject = this.cacheMessageSubject(messageId, existing)
+      if (subject) return subject
+    } catch {
+      // Fall through to the resolver prediction.
+    }
+
+    const predicted = typeof (this.db as any).resolveRowIri === 'function'
+      ? (this.db as any).resolveRowIri(Message as any, { id: messageId })
+      : null
+    return predicted ? this.cacheMessageSubject(messageId, predicted) : null
   }
 
   private pageThreadItems(
@@ -561,17 +624,14 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       createdAt: new Date(item.created_at * 1000),
     }).execute()
 
+    const inserted = await (this.db as any).findById(Message as any, item.id).catch(() => null)
+    this.cacheMessageSubject(item.id, inserted)
     this.recentlyCreatedIds.add(item.id)
     this.upsertCachedThreadItem(threadId, item)
   }
 
   async saveItem(threadId: string, item: ThreadItem, _context: StoreContext): Promise<void> {
-    const chatId = await this.getThreadChatId(threadId)
     const { content, status, richContent } = threadItemToMessageRecord(item)
-
-    const createdAt = item.created_at
-      ? new Date(item.created_at * 1000).toISOString()
-      : undefined
 
     const cachedItem = this.getCachedThreadItems(threadId)?.find((entry) => entry.id === item.id)
 
@@ -579,24 +639,24 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     // instead of issuing a broad message SELECT during the active stream.
     if (this.recentlyCreatedIds.has(item.id) || cachedItem) {
       this.recentlyCreatedIds.delete(item.id)
-      const cachedCreatedAt = cachedItem?.created_at
-        ? new Date(cachedItem.created_at * 1000).toISOString()
-        : undefined
-      await this.directPatchMessage(chatId, item.id, content, richContent, status, createdAt ?? cachedCreatedAt)
+      const subjectUri = await this.resolveMessageSubject(item.id)
+      if (!subjectUri) {
+        throw new Error(`Cannot resolve Pod subject for ChatKit message ${item.id}`)
+      }
+      await this.directPatchMessage(subjectUri, content, richContent, status)
       this.upsertCachedThreadItem(threadId, item)
       return
     }
 
     const existing = (await this.selectMessagesForThread(threadId))
-      .find((entry: any) => entry.id === item.id) ?? null
+      .find((entry: any) => matchesMessageItemId(entry, item.id)) ?? null
 
     if (existing) {
-      const existingCreatedAt = (existing as any).createdAt
-        ? (typeof (existing as any).createdAt === 'string'
-          ? (existing as any).createdAt
-          : String((existing as any).createdAt))
-        : undefined
-      await this.directPatchMessage(chatId, item.id, content, richContent, status, existingCreatedAt)
+      const subjectUri = this.cacheMessageSubject(item.id, existing)
+      if (!subjectUri) {
+        throw new Error(`Cannot resolve Pod subject for ChatKit message ${item.id}`)
+      }
+      await this.directPatchMessage(subjectUri, content, richContent, status)
       this.upsertCachedThreadItem(threadId, item)
     } else {
       await this.addThreadItem(threadId, item, _context)
@@ -608,21 +668,13 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
    * Avoids drizzle-solid UPDATE bug (same approach as PodChatKitStore).
    */
   private async directPatchMessage(
-    chatId: string,
-    messageId: string,
+    subjectUri: string,
     content: string,
     richContent: string | null,
     status: string | null,
-    createdAt?: string,
   ): Promise<void> {
-    // The db instance carries the selected SP Pod URL; WebID remains identity only.
-    const dateForPath = createdAt ? new Date(createdAt) : new Date()
-    const yyyy = dateForPath.getUTCFullYear()
-    const mm = String(dateForPath.getUTCMonth() + 1).padStart(2, '0')
-    const dd = String(dateForPath.getUTCDate()).padStart(2, '0')
-    const podBaseUrl = this.getPodBaseUrl()
-    const resourceUrl = `${podBaseUrl}/.data/chat/${chatId}/${yyyy}/${mm}/${dd}/messages.ttl`
-    const subjectUri = `${resourceUrl}#${messageId}`
+    const resourceUrl = resourceUrlFromSubject(subjectUri)
+    const graphUri = resourceUrl
 
     const escapeForSparql = (value: string): string => {
       const hasQuotes = value.includes('"')
@@ -651,6 +703,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       `<${subjectUri}> <http://rdfs.org/sioc/ns#content> ${escapeForSparql(content)} .`,
     ]
     const wherePatterns = [
+      `<${subjectUri}> ?existingPredicate ?existingObject .`,
       `OPTIONAL { <${subjectUri}> <http://rdfs.org/sioc/ns#content> ?oldContent . }`,
       `OPTIONAL { <${subjectUri}> <http://rdfs.org/sioc/ns#richContent> ?oldRichContent . }`,
       `OPTIONAL { <${subjectUri}> <${UDFS.messageStatus}> ?oldStatus . }`,
@@ -665,9 +718,9 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     }
 
     const sparql = `
-DELETE { ${deleteTriples.join(' ')} }
-INSERT { ${insertTriples.join(' ')} }
-WHERE { ${wherePatterns.join(' ')} }
+DELETE { GRAPH <${graphUri}> { ${deleteTriples.join(' ')} } }
+INSERT { GRAPH <${graphUri}> { ${insertTriples.join(' ')} } }
+WHERE { GRAPH <${graphUri}> { ${wherePatterns.join(' ')} } }
     `.trim()
 
     // Use the auth fetch passed in at construction time

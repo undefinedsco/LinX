@@ -43,9 +43,8 @@ function containsOidcIssuerPollution(content: string): boolean {
 
 // 默认环境变量配置
 const DEFAULT_CONFIG: EnvConfig = {
-  // 运行模式
+  // 运行类型
   CSS_EDITION: 'local',
-  XPOD_MODE: 'local',
   CSS_PORT: '5737',
 
   // 存储配置
@@ -65,14 +64,8 @@ export const ENV_SCHEMA = {
     label: '服务配置',
     vars: {
       CSS_EDITION: {
-        label: '运行模式',
-        description: 'local = 本地模式',
-        placeholder: 'local',
-        options: ['local'],
-      },
-      XPOD_MODE: {
-        label: 'xpod 模式',
-        description: 'local = 本地模式',
+        label: '运行类型',
+        description: 'local = 本地运行',
         placeholder: 'local',
         options: ['local'],
       },

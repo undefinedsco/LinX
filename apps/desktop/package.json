@@ -32,6 +32,7 @@
     "appId": "co.undefineds.linx",
     "productName": "LinX",
     "npmRebuild": false,
+    "afterPack": "scripts/after-pack-xpod-resource.cjs",
     "protocols": [
       {
         "name": "LinX Auth",

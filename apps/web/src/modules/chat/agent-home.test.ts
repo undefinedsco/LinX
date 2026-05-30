@@ -25,6 +25,7 @@ describe('agent-home', () => {
     })
 
     expect(buildAgentHomePath('agent-1')).toBe('/.data/agents/agent-1/')
+    expect(buildAgentHomePath('__secretary__')).toBe('/.data/agents/__secretary__/')
 
     const putTargets = fetchMock.mock.calls
       .filter(([, init]) => init?.method === 'PUT')
@@ -32,6 +33,7 @@ describe('agent-home', () => {
 
     expect(putTargets).toContain('https://alice.example/.data/agents/agent-1/')
     expect(putTargets).toContain('https://alice.example/.data/agents/agent-1/skills/')
+    expect(putTargets).not.toContain('https://alice.example/.data/agents/agent-1.ttl/skills/')
     expect(putTargets).toContain('https://alice.example/.data/agents/agent-1/AGENTS.md')
     expect(putTargets).toContain('https://alice.example/.data/agents/agent-1/config.json')
     expect(putTargets).toContain('https://alice.example/.data/agents/agent-1/rules.md')

@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const navigateMock = vi.fn()
-const chooseModeMock = vi.fn()
+const chooseSpaceMock = vi.fn()
 const continueLocalMock = vi.fn()
 const refreshMock = vi.fn()
 const openAdvancedSettingsMock = vi.fn()
@@ -13,8 +13,8 @@ const configWindowState = {
 }
 const localOnboardingState = {
   snapshot: {
-    state: 'mode_required',
-    mode: null,
+    state: 'space_required',
+    spaceKind: null,
     localUrl: 'http://localhost:5737/',
     baseUrl: 'http://localhost:5737/',
     publicUrl: null,
@@ -31,7 +31,7 @@ const localOnboardingState = {
   loading: false,
   acting: false,
   refresh: refreshMock,
-  chooseMode: chooseModeMock,
+  chooseSpace: chooseSpaceMock,
   continueLocal: continueLocalMock,
   openAdvancedSettings: openAdvancedSettingsMock,
   isDesktop: true,
@@ -78,8 +78,8 @@ describe('LocalOnboardingPage', () => {
     configWindowState.open = false
     configWindowState.ready = false
     localOnboardingState.snapshot = {
-      state: 'mode_required',
-      mode: null,
+      state: 'space_required',
+      spaceKind: null,
       localUrl: 'http://localhost:5737/',
       baseUrl: 'http://localhost:5737/',
       publicUrl: null,
@@ -100,15 +100,15 @@ describe('LocalOnboardingPage', () => {
 
     expect(screen.getByText('正在启动 Local…')).toBeTruthy()
     await waitFor(() => {
-      expect(chooseModeMock).toHaveBeenCalledWith('local')
+      expect(chooseSpaceMock).toHaveBeenCalledWith('local')
       expect(continueLocalMock).toHaveBeenCalledTimes(1)
     })
   })
 
-  it('auto starts Local when a mode has already been selected', async () => {
+  it('auto starts Local when a space has already been selected', async () => {
     localOnboardingState.snapshot = {
       state: 'idle',
-      mode: 'standalone',
+      spaceKind: 'standalone',
       localUrl: 'http://localhost:5737/',
       baseUrl: 'http://localhost:5737/',
       capabilities: null,
@@ -129,7 +129,7 @@ describe('LocalOnboardingPage', () => {
   it('starts standard Local sign-in when runtime is ready', async () => {
     localOnboardingState.snapshot = {
       state: 'ready',
-      mode: 'standalone',
+      spaceKind: 'standalone',
       localUrl: 'http://localhost:5737/',
       baseUrl: 'http://localhost:5737/',
       publicUrl: null,
@@ -155,15 +155,16 @@ describe('LocalOnboardingPage', () => {
       expect(connectMock).toHaveBeenCalledWith('http://localhost:5737/', {
         authorizationSurface: 'embedded',
         storageProviderUrl: 'http://localhost:5737/',
-        storageProviderLabel: 'Local',
+        storageProviderLabel: 'Standalone',
+        issuerLabel: 'Standalone',
       })
     })
   })
 
-  it('starts Cloud IDP sign-in with the Local public SP URL when Local runtime is ready', async () => {
+  it('starts Local sign-in with the Cloud issuer and Local public SP URL when Local runtime is ready', async () => {
     localOnboardingState.snapshot = {
       state: 'ready',
-      mode: 'local',
+      spaceKind: 'local',
       localUrl: 'http://localhost:5737/',
       baseUrl: 'https://pod.example.com/',
       publicUrl: 'https://pod.example.com/',
@@ -190,6 +191,7 @@ describe('LocalOnboardingPage', () => {
         authorizationSurface: 'embedded',
         storageProviderUrl: 'https://pod.example.com/',
         storageProviderLabel: 'Local',
+        issuerLabel: 'Cloud',
         authorizationQuery: {
           provisionCode: 'pc-123',
         },
@@ -201,7 +203,7 @@ describe('LocalOnboardingPage', () => {
     continueLocalMock.mockImplementation(async () => {
       localOnboardingState.snapshot = {
         state: 'ready',
-        mode: 'standalone',
+        spaceKind: 'standalone',
         localUrl: 'http://localhost:5737/',
         baseUrl: 'http://localhost:5737/',
         publicUrl: null,
@@ -234,7 +236,8 @@ describe('LocalOnboardingPage', () => {
       expect(connectMock).toHaveBeenCalledWith('http://localhost:5737/', {
         authorizationSurface: 'embedded',
         storageProviderUrl: 'http://localhost:5737/',
-        storageProviderLabel: 'Local',
+        storageProviderLabel: 'Standalone',
+        issuerLabel: 'Standalone',
       })
     })
   })
@@ -252,7 +255,7 @@ describe('LocalOnboardingPage', () => {
   it('opens Local settings from the repair state', async () => {
     localOnboardingState.snapshot = {
       state: 'repair_required',
-      mode: 'local',
+      spaceKind: 'local',
       localUrl: 'http://localhost:5737/',
       baseUrl: 'http://localhost:5737/',
       publicUrl: null,
@@ -280,7 +283,7 @@ describe('LocalOnboardingPage', () => {
     openAdvancedSettingsMock.mockRejectedValueOnce(new Error('xpod dashboard unavailable'))
     localOnboardingState.snapshot = {
       state: 'repair_required',
-      mode: 'local',
+      spaceKind: 'local',
       localUrl: 'http://localhost:5737/',
       baseUrl: 'http://localhost:5737/',
       publicUrl: null,
@@ -307,7 +310,7 @@ describe('LocalOnboardingPage', () => {
   it('does not silently downgrade Local to Standalone from the repair state', async () => {
     localOnboardingState.snapshot = {
       state: 'repair_required',
-      mode: 'local',
+      spaceKind: 'local',
       localUrl: 'http://localhost:5737/',
       baseUrl: 'http://localhost:5737/',
       publicUrl: null,
@@ -328,7 +331,7 @@ describe('LocalOnboardingPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '返回空间选择' }))
 
     await waitFor(() => {
-      expect(chooseModeMock).not.toHaveBeenCalled()
+      expect(chooseSpaceMock).not.toHaveBeenCalled()
       expect(navigateMock).toHaveBeenCalledWith({
         to: '/$microAppId',
         params: { microAppId: 'chat' },

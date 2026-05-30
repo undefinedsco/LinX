@@ -4,6 +4,12 @@
 
 > 术语约定：xpod/linx 是应用名；Pod 指 Solid Pod 资源。
 
+> 本文保留产品与管理端架构背景，不作为登录/存储语义主文档。
+> IDP/SP、注册、`solid:storage`、业务写入规则以
+> `docs/login-identity-storage-routing-model.md` 为准；Local canonical URL、
+> canonical domain 策略、tunnel 和 localhost/LAN 访问渠道以
+> `docs/local-sp-domain-and-tunnel.md` 为准。
+
 ## 项目架构
 
 ```
@@ -24,8 +30,8 @@
 │  linx (统一客户端)                                               │
 │  ├── Web 版 (访问 Cloud 或 Server xpod)                          │
 │  └── 桌面版 (All-in-One)                                         │
-│      ├── Cloud 模式 (连云端)                                     │
-│      └── Local 模式 (内置 xpod 核心，数据存本地)                   │
+│      ├── Cloud 空间 (账号和数据都在 Cloud)                         │
+│      └── Local 空间 (Cloud 账号，本机 xpod 存储)                    │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 
@@ -52,9 +58,8 @@ LinX 是唯一的"产品"，xPod 是其背后的"技术"。
 
 用户视角：
   - 我下载 LinX。
-  - 我选模式：
-    1. 连云端 (Cloud) -> 连接远程 Pod（官方托管或自建 xPod）
-    2. 存本地 (Local) -> LinX Desktop 启动内置 xPod 引擎
+  - 我只选择一个空间入口：Cloud / Local / Standalone / Custom。
+  - 入口背后的 IDP/SP 和 storage 绑定语义见登录主文档。
 
 各端支持：
   ┌──────────┬───────┬───────┬─────────────────────────────────┐
@@ -62,7 +67,7 @@ LinX 是唯一的"产品"，xPod 是其背后的"技术"。
   ├──────────┼───────┼───────┼─────────────────────────────────┤
   │ Web      │  ✓    │  ✓    │ Local 需连接本机运行的 xPod      │
   │ Desktop  │  ✓    │  ✓    │ 可启动内置 xPod 核心             │
-  │ Mobile   │  ✓    │  ✗    │ 可连接 PC 上的 xPod（仍是 Cloud）│
+  │ Mobile   │  ✓    │  ✗    │ 可连接 PC 上的 xPod              │
   └──────────┴───────┴───────┴─────────────────────────────────┘
 
 技术视角：
@@ -79,7 +84,7 @@ LinX 桌面版（全功能）：
 │   ├── Files
 │   └── Memory
 │
-└── 节点管理 (Node Manager) - 仅 Local/Server 模式可见
+└── 节点管理 (Node Manager) - 仅 Local 空间 / Server 部署可见
     ├── 服务状态 (启动/停止)
     ├── 网络配置 (端口/FRP)
     └── 密钥/Pod 设置
@@ -244,11 +249,14 @@ CSS 自带界面：
 └─────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────┐
-│  Local 模式（纯本地，不连 Center）       │
+│  Standalone（纯本地，不连 Center）       │
 │  - 完全独立运行                         │
 │  - 本地 Account / Pod 管理              │
 │  - 桌面端 + 本地 Web                    │
 └─────────────────────────────────────────┘
+
+注：当前产品命名以 `docs/login-identity-storage-routing-model.md` 为准。
+本文只保留管理端背景，不重新定义 Local / Standalone 语义。
 ```
 
 ---
@@ -298,15 +306,15 @@ CSS 的结构：
 │  管理层 (Management Layer)               │
 │  - Account 管理 (我的 Pods)              │
 │  - Pod 设置 (密钥/权限)                  │
-│  - 仅 Local/Server 模式：节点管理         │
+│  - 仅 Local 空间 / Server 部署：节点管理  │
 │    (启动服务、端口、网络配置)             │
 └─────────────────────────────────────────┘
               │
               ▼
 ┌─────────────────────────────────────────┐
 │  核心层 (Core Layer)                     │
-│  - Local 模式：内置 xpod 进程             │
-│  - Cloud 模式：远程 API 调用              │
+│  - Local 空间：内置 xpod 进程             │
+│  - Cloud 空间：远程 API 调用              │
 └─────────────────────────────────────────┘
 ```
 
@@ -314,7 +322,7 @@ CSS 的结构：
 
 ## 功能详细设计
 
-### 一、节点管理 (LinX Local 模式特有)
+### 一、节点管理 (LinX Local 空间特有)
 
 > 原“xpod 桌面版”功能，现为 LinX 的高级设置模块
 
@@ -342,7 +350,8 @@ CSS 的结构：
 
 ```
 Pods 列表：
-  - 显示我的所有 Pods (Cloud + Local)
+  - 只显示当前 selected provider 可选择/可管理的 Pods
+  - Split-route Pod picker 过滤规则见登录主文档
   - 存储用量
 ```
 
@@ -898,7 +907,7 @@ Tab 差异：
 | **一级入口** | Chat/Contacts/Files/收藏 | Tab 切换 |
 | **头像** | 个人卡片 (WebID 切换) | WebID 切换 |
 | **Pod 管理** | 弹窗 (需登录) | 主界面 |
-| **Node 管理** | 弹窗 (仅 Local 模式) | Tab (Server 模式) |
+| **Node 管理** | 弹窗 (仅 Local 空间) | Tab (Server 部署) |
 
 ---
 
@@ -1351,7 +1360,7 @@ API 层：
 
 #### 基础配置
 ```bash
-CSS_EDITION=local|server           # 部署模式
+CSS_EDITION=local|server           # 运行类型
 CSS_BASE_URL=http://localhost:3000 # 基础 URL
 CSS_PORT=3000                      # 端口
 ```

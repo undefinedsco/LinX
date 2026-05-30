@@ -57,9 +57,9 @@ export interface XpodStartOptions {
   providerId: string;
   dataDir: string;
   port: number;
-  mode: 'local' | 'standalone';
+  spaceKind: 'local' | 'standalone';
   domain?: {
-    type: 'none' | 'custom';
+    type: 'none' | 'managed' | 'custom';
     value?: string;
   };
   tunnelToken?: string;
@@ -112,7 +112,7 @@ interface XpodServiceState {
   providerId: string;
   dataDir: string;
   port: number;
-  mode: XpodStartOptions['mode'];
+  spaceKind: XpodStartOptions['spaceKind'];
   baseUrl: string;
   localUrl: string;
   startedAt: number;
@@ -130,14 +130,15 @@ interface XpodManagedCloudRegistration extends XpodProvisioningInfo {
 }
 
 interface ProvisionNodeRequest {
-  publicUrl: string;
+  publicUrl?: string;
   nodeId?: string;
   nodeToken?: string;
   serviceToken?: string;
   localPort?: number;
   tunnelToken?: string;
+  // Cloud provisioning API fields, not LinX Local/Standalone runtime modes.
   tunnelMode?: 'client';
-  domainMode?: 'self-managed';
+  domainMode?: 'managed' | 'self-managed';
   spDomain?: string;
 }
 
@@ -146,6 +147,7 @@ interface ProvisionNodeResponse {
   nodeToken?: string;
   serviceToken?: string;
   provisionCode?: string;
+  publicUrl?: string;
   spDomain?: string;
   tunnelToken?: string;
   tunnelProvider?: string;
@@ -156,6 +158,7 @@ export class XpodManager {
   private readonly configManager: ConfigManager;
   private readonly providerManager: ProviderManager;
   private readonly statePath: string;
+  private readonly cloudRegistrationPath: string;
   private readonly runtimeEnvPath: string;
   private readonly logsDir: string;
   private readonly xpodRuntimeDir: string;
@@ -176,6 +179,7 @@ export class XpodManager {
     this.configManager = configManager;
     this.providerManager = providerManager;
     this.statePath = localPaths.stateFile;
+    this.cloudRegistrationPath = path.join(localPaths.home, 'xpod-cloud-registration.json');
     this.runtimeEnvPath = localPaths.runtimeEnvFile;
     this.logsDir = localPaths.logsDir;
     this.xpodRuntimeDir = localPaths.xpodRuntimeDir;
@@ -202,10 +206,14 @@ export class XpodManager {
         detail: '准备 Local 公网接入凭证',
       });
     }
+    const existingRegistration = existing?.providerId === options.providerId
+      ? existing.provisioning ?? this.readPersistedManagedCloudRegistration(options.providerId)
+      : this.readPersistedManagedCloudRegistration(options.providerId);
     const provisioning = this.requiresManagedCloudRegistration(options)
-      ? await this.ensureManagedCloudRegistration(options, existing?.provisioning)
+      ? await this.ensureManagedCloudRegistration(options, existingRegistration)
       : undefined;
     if (provisioning) {
+      this.persistManagedCloudRegistration(options.providerId, provisioning);
       this.reportStartProgress(onProgress, {
         phase: 'register-cloud',
         label: 'Cloud 绑定已完成',
@@ -380,11 +388,16 @@ export class XpodManager {
     await this.stop();
 
     if (provider?.managed) {
+      const spaceKind = state?.spaceKind ?? provider.managed.spaceKind;
+      if (!spaceKind) {
+        return;
+      }
+
       await this.start({
         providerId: provider.id,
         dataDir: provider.managed.dataDir,
         port: provider.managed.port,
-        mode: state?.provisioning ? 'local' : 'standalone',
+        spaceKind,
         domain: provider.managed.domain,
         tunnelToken: provider.managed.tunnelToken,
       });
@@ -477,7 +490,10 @@ export class XpodManager {
   }
 
   private async detectExternalService(): Promise<XpodStatus | null> {
-    const candidates: Array<Required<Pick<XpodStatus, 'port' | 'baseUrl' | 'localUrl'>> & Pick<XpodStatus, 'providerId'>> = [];
+    const candidates: Array<
+      Required<Pick<XpodStatus, 'port' | 'baseUrl' | 'localUrl'>>
+      & Pick<XpodStatus, 'providerId' | 'provisioning'>
+    > = [];
     const seen = new Set<string>();
 
     const addCandidate = (candidate: {
@@ -485,6 +501,7 @@ export class XpodManager {
       port?: number;
       baseUrl?: string;
       localUrl?: string;
+      provisioning?: XpodProvisioningInfo;
     }) => {
       const port = candidate.port;
       const localUrl = candidate.localUrl ? this.ensureTrailingSlash(candidate.localUrl) : null;
@@ -504,6 +521,7 @@ export class XpodManager {
         port,
         baseUrl,
         localUrl,
+        provisioning: candidate.provisioning,
       });
     };
 
@@ -512,12 +530,18 @@ export class XpodManager {
         continue;
       }
 
-      const desiredState = this.createDesiredState(toStartOptions(provider));
+      const registration = this.readPersistedManagedCloudRegistration(provider.id);
+      const providerBaseUrl = registration?.publicUrl ?? this.resolveProviderBaseUrl(provider.managed);
+      if (provider.managed.spaceKind === 'local' && !registration && !provider.managed.domain.value) {
+        continue;
+      }
+
       addCandidate({
         providerId: provider.id,
-        port: desiredState.port,
-        baseUrl: desiredState.baseUrl,
-        localUrl: desiredState.localUrl,
+        port: provider.managed.port,
+        baseUrl: providerBaseUrl,
+        localUrl: `http://localhost:${provider.managed.port}/`,
+        provisioning: toProvisioningInfo(registration),
       });
     }
 
@@ -543,7 +567,7 @@ export class XpodManager {
         port: candidate.port,
         baseUrl: candidate.baseUrl,
         localUrl: candidate.localUrl,
-        provisioning: undefined,
+        provisioning: candidate.provisioning,
       };
     }
 
@@ -571,17 +595,17 @@ export class XpodManager {
   getResumableStartOptions(): XpodStartOptions | null {
     const state = this.readState();
     const fromState = state?.providerId ? this.providerManager.get(state.providerId) : null;
-    if (fromState?.managed) {
-      return toStartOptions(fromState);
+    if (fromState?.managed && state?.spaceKind) {
+      return toStartOptions(fromState, state.spaceKind);
     }
 
     const defaultProvider = this.providerManager.getDefault();
-    if (defaultProvider?.managed) {
+    if (defaultProvider?.managed?.spaceKind) {
       return toStartOptions(defaultProvider);
     }
 
     const firstManagedProvider = this.providerManager.getManagedPods()[0];
-    if (firstManagedProvider?.managed) {
+    if (firstManagedProvider?.managed?.spaceKind) {
       return toStartOptions(firstManagedProvider);
     }
 
@@ -607,7 +631,7 @@ export class XpodManager {
       providerId: options.providerId,
       dataDir: path.resolve(options.dataDir),
       port: options.port,
-      mode: options.mode,
+      spaceKind: options.spaceKind,
       baseUrl,
       localUrl: this.ensureTrailingSlash(`http://localhost:${options.port}`),
       provisioning: undefined,
@@ -625,6 +649,19 @@ export class XpodManager {
     }
 
     return this.ensureTrailingSlash(`http://localhost:${options.port}`);
+  }
+
+  private resolveProviderBaseUrl(managed: NonNullable<ReturnType<ProviderManager['getManagedPods']>[number]['managed']>): string {
+    if (managed.domain.value) {
+      return this.ensureTrailingSlash(`https://${managed.domain.value}`);
+    }
+
+    const localBaseUrl = this.resolveConfiguredLocalBaseUrl();
+    if (localBaseUrl) {
+      return localBaseUrl;
+    }
+
+    return this.ensureTrailingSlash(`http://localhost:${managed.port}`);
   }
 
   private resolveConfiguredLocalBaseUrl(): string | null {
@@ -662,7 +699,7 @@ export class XpodManager {
     switch (target.kind) {
       case 'dev-source':
         return {
-          command: process.env.LINX_XPOD_BUN_BINARY ?? 'bun',
+          command: target.runtimeBinary ?? process.env.LINX_BUN_BINARY ?? process.env.LINX_XPOD_BUN_BINARY ?? 'bun',
           args: ['--no-env-file', target.entryPath, ...sharedArgs],
           cwd: target.rootDir,
         };
@@ -872,11 +909,10 @@ export class XpodManager {
     const env: Record<string, string> = {
       NODE_ENV: 'production',
       ...envConfig,
-      XPOD_MODE: envConfig.XPOD_MODE ?? 'local',
       XPOD_PORT: String(state.port),
       PORT: String(state.port),
       CSS_EDITION: envConfig.CSS_EDITION ?? 'local',
-      edition: envConfig.CSS_EDITION ?? envConfig.XPOD_MODE ?? 'local',
+      edition: envConfig.CSS_EDITION ?? 'local',
       edgeNodesEnabled: envConfig.CSS_EDGE_NODES_ENABLED ?? 'false',
       CSS_BASE_URL: state.baseUrl,
       CSS_ROOT_FILE_PATH: state.dataDir,
@@ -919,7 +955,7 @@ export class XpodManager {
       delete env.XPOD_PROVISION_URL;
     }
 
-    const effectiveTunnelToken = options.mode === 'local'
+    const effectiveTunnelToken = options.spaceKind === 'local'
       ? options.tunnelToken || provisioning?.tunnelToken
       : undefined;
     if (effectiveTunnelToken) {
@@ -933,7 +969,7 @@ export class XpodManager {
   }
 
   private requiresManagedCloudRegistration(options: XpodStartOptions): boolean {
-    return options.mode === 'local';
+    return options.spaceKind === 'local';
   }
 
   private async ensureManagedCloudRegistration(
@@ -949,13 +985,22 @@ export class XpodManager {
       env.XPOD_CLOUD_API_ENDPOINT
       || OFFICIAL_CLOUD_API_ORIGIN,
     );
-    const expectedPublicUrl = this.resolveExpectedProvisionPublicUrl(options);
+    const configuredPublicUrl = this.resolveConfiguredProvisionPublicUrl(options);
+    const expectedPublicUrl = configuredPublicUrl ?? existing?.publicUrl;
+    const canReuseExistingRegistration = Boolean(
+      existing
+      && (
+        configuredPublicUrl
+          ? existing.publicUrl === configuredPublicUrl
+          : existing.publicUrl && existing.publicUrl === expectedPublicUrl
+      ),
+    );
 
     if (
       existing
       && existing.cloudApiUrl === managedCloudApiOrigin
       && existing.cloudIdentityUrl === cloudIdentityUrl
-      && existing.publicUrl === expectedPublicUrl
+      && canReuseExistingRegistration
       && existing.nodeId
       && existing.nodeToken
       && existing.serviceToken
@@ -969,19 +1014,29 @@ export class XpodManager {
       nodeId: existing?.nodeId,
       nodeToken: existing?.nodeToken,
       serviceToken: existing?.serviceToken,
+      spDomain: existing?.spDomain,
       tunnelToken: options.tunnelToken || existing?.tunnelToken,
     });
     const registration = await this.registerProvisionedNode(managedCloudApiOrigin, {
       ...provisionRequest,
       localPort: options.port,
     });
+    const spDomain = registration.spDomain ?? provisionRequest.spDomain;
+    const publicUrl = derivePublicUrlFromSpDomain(spDomain)
+      ?? registration.publicUrl
+      ?? provisionRequest.publicUrl;
+
+    if (!publicUrl) {
+      throw new Error('Cloud 返回的 Local canonical URL 不完整。');
+    }
 
     return {
       nodeId: registration.nodeId,
       nodeToken: registration.nodeToken,
       serviceToken: registration.serviceToken,
       provisionCode: registration.provisionCode,
-      publicUrl: expectedPublicUrl,
+      publicUrl,
+      spDomain,
       tunnelToken: registration.tunnelToken,
       tunnelProvider: registration.tunnelProvider,
       tunnelEndpoint: registration.tunnelEndpoint,
@@ -992,12 +1047,12 @@ export class XpodManager {
     };
   }
 
-  private resolveExpectedProvisionPublicUrl(options: XpodStartOptions): string {
-    if (options.domain?.value) {
+  private resolveConfiguredProvisionPublicUrl(options: XpodStartOptions): string | undefined {
+    if (options.domain?.type === 'custom' && options.domain.value?.trim()) {
       return this.ensureTrailingSlash(`https://${options.domain.value}`);
     }
 
-    throw new Error('Local 远程访问需要先配置用户自己的公网域名或隧道域名。');
+    return undefined;
   }
 
   private async registerProvisionedNode(
@@ -1006,6 +1061,7 @@ export class XpodManager {
   ): Promise<
     Required<Pick<XpodManagedCloudRegistration, 'nodeId' | 'nodeToken' | 'serviceToken' | 'provisionCode'>>
     & Pick<XpodManagedCloudRegistration, 'spDomain' | 'tunnelToken' | 'tunnelProvider' | 'tunnelEndpoint'>
+    & { publicUrl?: string }
   > {
     const endpoint = new URL('/provision/nodes', this.ensureTrailingSlash(cloudApiUrl)).toString();
     const controller = new AbortController();
@@ -1042,6 +1098,7 @@ export class XpodManager {
         nodeToken: payload.nodeToken,
         serviceToken: payload.serviceToken,
         provisionCode: payload.provisionCode,
+        publicUrl: typeof payload.publicUrl === 'string' ? this.ensureTrailingSlash(payload.publicUrl) : undefined,
         spDomain: typeof payload.spDomain === 'string' ? payload.spDomain : undefined,
         tunnelToken: typeof payload.tunnelToken === 'string' ? payload.tunnelToken : undefined,
         tunnelProvider: typeof payload.tunnelProvider === 'string' ? payload.tunnelProvider : undefined,
@@ -1061,12 +1118,61 @@ export class XpodManager {
     options: XpodStartOptions,
     fields: Omit<ProvisionNodeRequest, 'localPort' | 'domainMode' | 'tunnelMode'>,
   ): Omit<ProvisionNodeRequest, 'localPort'> {
+    if (options.domain?.type === 'custom' && options.domain.value?.trim()) {
+      return {
+        ...fields,
+        publicUrl: this.ensureTrailingSlash(`https://${options.domain.value}`),
+        domainMode: 'self-managed',
+        spDomain: undefined,
+        tunnelMode: fields.tunnelToken ? 'client' : undefined,
+      };
+    }
+
     return {
       ...fields,
-      domainMode: 'self-managed',
-      spDomain: undefined,
+      domainMode: 'managed',
       tunnelMode: fields.tunnelToken ? 'client' : undefined,
     };
+  }
+
+  private readPersistedManagedCloudRegistration(providerId: string): XpodManagedCloudRegistration | undefined {
+    try {
+      if (!fs.existsSync(this.cloudRegistrationPath)) {
+        return undefined;
+      }
+
+      const raw = fs.readFileSync(this.cloudRegistrationPath, 'utf-8');
+      const payload = JSON.parse(raw) as unknown;
+      if (!payload || typeof payload !== 'object') {
+        return undefined;
+      }
+
+      const record = (payload as Record<string, unknown>)[providerId];
+      return parseManagedCloudRegistration(record);
+    } catch (error) {
+      console.error('[XpodManager] Failed to read managed Cloud registration:', error);
+      return undefined;
+    }
+  }
+
+  private persistManagedCloudRegistration(
+    providerId: string,
+    registration: XpodManagedCloudRegistration,
+  ): void {
+    try {
+      const existing = readJsonObjectFile(this.cloudRegistrationPath);
+      existing[providerId] = registration;
+      fs.mkdirSync(path.dirname(this.cloudRegistrationPath), { recursive: true });
+      fs.writeFileSync(
+        this.cloudRegistrationPath,
+        JSON.stringify(existing, null, 2),
+        { encoding: 'utf-8', mode: 0o600 },
+      );
+      fs.chmodSync(this.cloudRegistrationPath, 0o600);
+    } catch (error) {
+      console.error('[XpodManager] Failed to persist managed Cloud registration:', error);
+      throw error;
+    }
   }
 
   private readState(): XpodServiceState | null {
@@ -1211,13 +1317,13 @@ export class XpodManager {
   }
 
   private matchesDesiredState(
-    current: Pick<XpodServiceState, 'providerId' | 'dataDir' | 'port' | 'mode' | 'baseUrl'>,
-    desired: Pick<XpodServiceState, 'providerId' | 'dataDir' | 'port' | 'mode' | 'baseUrl'>
+    current: Pick<XpodServiceState, 'providerId' | 'dataDir' | 'port' | 'spaceKind' | 'baseUrl'>,
+    desired: Pick<XpodServiceState, 'providerId' | 'dataDir' | 'port' | 'spaceKind' | 'baseUrl'>
   ): boolean {
     return current.providerId === desired.providerId
       && current.dataDir === desired.dataDir
       && current.port === desired.port
-      && current.mode === desired.mode
+      && current.spaceKind === desired.spaceKind
       && current.baseUrl === desired.baseUrl;
   }
 
@@ -1241,6 +1347,7 @@ export class XpodManager {
       && current.nodeToken === desired.nodeToken
       && current.serviceToken === desired.serviceToken
       && current.publicUrl === desired.publicUrl
+      && current.spDomain === desired.spDomain
       && current.cloudIdentityUrl === desired.cloudIdentityUrl
       && current.cloudApiUrl === desired.cloudApiUrl;
   }
@@ -1339,6 +1446,11 @@ function buildProvisionUrl(cloudIdentityUrl: string, provisionCode: string): str
   return url.toString();
 }
 
+function derivePublicUrlFromSpDomain(spDomain?: string): string | undefined {
+  const domain = spDomain?.trim();
+  return domain ? `https://${domain}/` : undefined;
+}
+
 function toProvisioningInfo(
   provisioning: XpodManagedCloudRegistration | undefined,
 ): XpodProvisioningInfo | undefined {
@@ -1361,16 +1473,24 @@ function toProvisioningInfo(
   };
 }
 
-function toStartOptions(provider: ReturnType<ProviderManager['getManagedPods']>[number]): XpodStartOptions {
+function toStartOptions(
+  provider: ReturnType<ProviderManager['getManagedPods']>[number],
+  spaceKindOverride?: XpodStartOptions['spaceKind'],
+): XpodStartOptions {
   if (!provider.managed) {
     throw new Error(`Provider '${provider.id}' is not managed`);
+  }
+
+  const spaceKind = spaceKindOverride ?? provider.managed.spaceKind;
+  if (!spaceKind) {
+    throw new Error(`Provider '${provider.id}' has no selected Local space`);
   }
 
   return {
     providerId: provider.id,
     dataDir: provider.managed.dataDir,
     port: provider.managed.port,
-    mode: provider.managed.domain?.type === 'custom' ? 'local' : 'standalone',
+    spaceKind,
     domain: provider.managed.domain,
     tunnelToken: provider.managed.tunnelToken,
   };
@@ -1378,4 +1498,81 @@ function toStartOptions(provider: ReturnType<ProviderManager['getManagedPods']>[
 
 function toSqliteUrl(filePath: string): string {
   return `sqlite:${path.resolve(filePath)}`;
+}
+
+function readJsonObjectFile(filePath: string): Record<string, unknown> {
+  try {
+    if (!fs.existsSync(filePath)) {
+      return {};
+    }
+
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return {};
+    }
+
+    return parsed as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+function parseManagedCloudRegistration(value: unknown): XpodManagedCloudRegistration | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  const nodeId = readString(record.nodeId);
+  const nodeToken = readString(record.nodeToken);
+  const serviceToken = readString(record.serviceToken);
+  const provisionCode = readString(record.provisionCode);
+  const publicUrl = readString(record.publicUrl);
+  const provisionUrl = readString(record.provisionUrl);
+  const cloudIdentityUrl = readString(record.cloudIdentityUrl);
+  const cloudApiUrl = readString(record.cloudApiUrl);
+
+  if (
+    !nodeId
+    || !nodeToken
+    || !serviceToken
+    || !provisionCode
+    || !publicUrl
+    || !provisionUrl
+    || !cloudIdentityUrl
+    || !cloudApiUrl
+  ) {
+    return undefined;
+  }
+
+  const registeredAt = typeof record.registeredAt === 'number' && Number.isFinite(record.registeredAt)
+    ? record.registeredAt
+    : Date.now();
+
+  const canonicalPublicUrl = derivePublicUrlFromSpDomain(readString(record.spDomain))
+    ?? ensureTrailingSlashValue(publicUrl);
+
+  return {
+    nodeId,
+    nodeToken,
+    serviceToken,
+    provisionCode,
+    publicUrl: canonicalPublicUrl,
+    provisionUrl,
+    spDomain: readString(record.spDomain),
+    tunnelToken: readString(record.tunnelToken),
+    tunnelProvider: readString(record.tunnelProvider),
+    tunnelEndpoint: readString(record.tunnelEndpoint),
+    cloudIdentityUrl: normalizeUrl(cloudIdentityUrl),
+    cloudApiUrl: normalizeUrl(cloudApiUrl),
+    registeredAt,
+  };
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function ensureTrailingSlashValue(url: string): string {
+  return url.endsWith('/') ? url : `${url}/`;
 }

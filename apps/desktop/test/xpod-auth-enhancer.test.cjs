@@ -70,6 +70,9 @@ test('buildXpodAuthEnhancerScript includes pending pod and username coordination
   assert.match(script, /characterData: true/)
   assert.match(script, /nativeFetch/)
   assert.match(script, /attachProvisionCodeToPodCreate/)
+  assert.match(script, /lookupScopedWebIdEntries/)
+  assert.match(script, /provision\/webids/)
+  assert.match(script, /scopeAccountResourceResponse/)
   assert.match(script, /sessionStorage\.getItem\("provisionCode"\)/)
   assert.doesNotMatch(script, /window\.location\.assign/)
 })
@@ -170,6 +173,315 @@ test('buildXpodAuthEnhancerScript injects provisionCode into pod create requests
   })
 })
 
+test('buildXpodAuthEnhancerScript scopes Cloud WebID picker results to Local SP', async () => {
+  const script = buildXpodAuthEnhancerScript()
+  const provisionPayload = Buffer.from(JSON.stringify({
+    spUrl: 'https://node-0000.undefineds.co/',
+    serviceToken: 'service-token',
+  })).toString('base64url')
+  const provisionCode = `${provisionPayload}.signature`
+  const calls = []
+  const context = createScriptContext({
+    pathname: '/.account/oidc/pick-webid/',
+    provisionCode,
+    fetch: async (resource, init) => {
+      calls.push({ resource: String(resource), init })
+      if (String(resource) === 'https://node-0000.undefineds.co/provision/webids') {
+        return jsonResponse({
+          entries: [
+            {
+              webId: 'https://id.undefineds.co/alice/profile/card#me',
+              storageUrl: 'https://node-0000.undefineds.co/alice/',
+            },
+          ],
+        })
+      }
+      return jsonResponse({
+        webIds: [
+          'https://id.undefineds.co/alice/profile/card#me',
+          'https://id.undefineds.co/bob/profile/card#me',
+        ],
+        entries: [
+          {
+            webId: 'https://id.undefineds.co/alice/profile/card#me',
+            storageUrl: 'https://id.undefineds.co/alice/',
+          },
+          {
+            webId: 'https://id.undefineds.co/bob/profile/card#me',
+            storageUrl: 'https://id.undefineds.co/bob/',
+          },
+        ],
+      })
+    },
+  })
+
+  const vm = require('node:vm')
+  vm.runInNewContext(script, context)
+
+  const response = await context.window.fetch('/.account/oidc/pick-webid/', {
+    headers: { Accept: 'application/json' },
+  })
+  const body = await response.json()
+
+  assert.deepEqual(body.webIds, ['https://id.undefineds.co/alice/profile/card#me'])
+  assert.deepEqual(body.entries, [
+    {
+      webId: 'https://id.undefineds.co/alice/profile/card#me',
+      storageUrl: 'https://node-0000.undefineds.co/alice/',
+    },
+  ])
+  assert.equal(calls[1].resource, 'https://node-0000.undefineds.co/provision/webids')
+  assert.equal(calls[1].init.headers.Authorization, 'Bearer service-token')
+})
+
+test('buildXpodAuthEnhancerScript blocks unscoped Cloud WebID picker submissions', async () => {
+  const script = buildXpodAuthEnhancerScript()
+  const provisionPayload = Buffer.from(JSON.stringify({
+    spUrl: 'https://node-0000.undefineds.co/',
+    serviceToken: 'service-token',
+  })).toString('base64url')
+  const context = createScriptContext({
+    pathname: '/.account/oidc/pick-webid/',
+    provisionCode: `${provisionPayload}.signature`,
+    fetch: async (resource, init) => {
+      if (String(resource) === 'https://node-0000.undefineds.co/provision/webids') {
+        return jsonResponse({ entries: [] })
+      }
+      return jsonResponse({ accepted: true })
+    },
+  })
+
+  const vm = require('node:vm')
+  vm.runInNewContext(script, context)
+
+  const response = await context.window.fetch('/.account/oidc/pick-webid/', {
+    method: 'POST',
+    body: JSON.stringify({ webId: 'https://id.undefineds.co/bob/profile/card#me', remember: false }),
+  })
+
+  assert.equal(response.status, 400)
+  assert.deepEqual(await response.json(), {
+    error: 'WebID does not belong to this storage provider.',
+  })
+})
+
+test('buildXpodAuthEnhancerScript scopes Cloud account WebID resources to Local SP', async () => {
+  const script = buildXpodAuthEnhancerScript()
+  const provisionPayload = Buffer.from(JSON.stringify({
+    spUrl: 'http://127.0.0.1:5737/',
+    spDomain: 'node-0000.undefineds.co',
+    serviceToken: 'service-token',
+  })).toString('base64url')
+  const calls = []
+  const context = createScriptContext({
+    pathname: '/.account/account/',
+    provisionCode: `${provisionPayload}.signature`,
+    fetch: async (resource, init) => {
+      calls.push({ resource: String(resource), init })
+      if (String(resource) === 'http://127.0.0.1:5737/provision/webids') {
+        return jsonResponse({
+          entries: [
+            {
+              webId: 'https://id.undefineds.co/alice/profile/card#me',
+              podUrl: 'https://node-0000.undefineds.co/alice/',
+              storageUrl: 'https://node-0000.undefineds.co/alice/',
+            },
+          ],
+        })
+      }
+      return jsonResponse({
+        webIdLinks: {
+          'https://id.undefineds.co/alice/profile/card#me': '/.account/account/link-local',
+          'https://id.undefineds.co/bob/profile/card#me': '/.account/account/link-cloud',
+        },
+      })
+    },
+  })
+
+  const vm = require('node:vm')
+  vm.runInNewContext(script, context)
+
+  const response = await context.window.fetch('/.account/account/account-1/webid/', {
+    headers: { Accept: 'application/json' },
+  })
+  const body = await response.json()
+
+  assert.deepEqual(body.webIdLinks, {
+    'https://id.undefineds.co/alice/profile/card#me': '/.account/account/link-local',
+  })
+  assert.equal(calls[1].resource, 'http://127.0.0.1:5737/provision/webids')
+})
+
+test('buildXpodAuthEnhancerScript replaces Cloud account Pods with scoped Local Pods', async () => {
+  const script = buildXpodAuthEnhancerScript()
+  const provisionPayload = Buffer.from(JSON.stringify({
+    spUrl: 'http://127.0.0.1:5737/',
+    spDomain: 'node-0000.undefineds.co',
+    serviceToken: 'service-token',
+  })).toString('base64url')
+  const context = createScriptContext({
+    pathname: '/.account/account/',
+    provisionCode: `${provisionPayload}.signature`,
+    fetch: async (resource) => {
+      if (String(resource) === 'http://127.0.0.1:5737/provision/webids') {
+        return jsonResponse({
+          entries: [
+            {
+              webId: 'https://id.undefineds.co/alice/profile/card#me',
+              podUrl: 'https://node-0000.undefineds.co/alice/',
+              storageUrl: 'https://node-0000.undefineds.co/alice/',
+            },
+          ],
+        })
+      }
+      if (String(resource).includes('/webid/')) {
+        return jsonResponse({
+          webIdLinks: {
+            'https://id.undefineds.co/alice/profile/card#me': '/.account/account/link-local',
+            'https://id.undefineds.co/bob/profile/card#me': '/.account/account/link-cloud',
+          },
+        })
+      }
+      return jsonResponse({
+        pods: {
+          'https://id.undefineds.co/alice/': '/.account/account/cloud-pod',
+          'https://node-0000.undefineds.co/charlie/': '/.account/account/other-local-pod',
+        },
+      })
+    },
+  })
+
+  const vm = require('node:vm')
+  vm.runInNewContext(script, context)
+
+  await context.window.fetch('/.account/account/account-1/webid/', {
+    headers: { Accept: 'application/json' },
+  })
+  const response = await context.window.fetch('/.account/account/account-1/pod/', {
+    headers: { Accept: 'application/json' },
+  })
+  const body = await response.json()
+
+  assert.deepEqual(body.pods, {
+    'https://node-0000.undefineds.co/charlie/': '/.account/account/other-local-pod',
+  })
+})
+
+test('buildXpodAuthEnhancerScript derives Local Pods when Cloud account Pod list has no Local entries', async () => {
+  const script = buildXpodAuthEnhancerScript()
+  const provisionPayload = Buffer.from(JSON.stringify({
+    spUrl: 'http://127.0.0.1:5737/',
+    spDomain: 'node-0000.undefineds.co',
+    serviceToken: 'service-token',
+  })).toString('base64url')
+  const context = createScriptContext({
+    pathname: '/.account/account/',
+    provisionCode: `${provisionPayload}.signature`,
+    fetch: async (resource) => {
+      if (String(resource) === 'http://127.0.0.1:5737/provision/webids') {
+        return jsonResponse({
+          entries: [
+            {
+              webId: 'https://id.undefineds.co/alice/profile/card#me',
+              podUrl: 'https://node-0000.undefineds.co/alice/',
+              storageUrl: 'https://node-0000.undefineds.co/alice/',
+            },
+          ],
+        })
+      }
+      if (String(resource).includes('/webid/')) {
+        return jsonResponse({
+          webIdLinks: {
+            'https://id.undefineds.co/alice/profile/card#me': '/.account/account/link-local',
+            'https://id.undefineds.co/bob/profile/card#me': '/.account/account/link-cloud',
+          },
+        })
+      }
+      return jsonResponse({
+        pods: {
+          'https://id.undefineds.co/alice/': '/.account/account/cloud-pod',
+        },
+      })
+    },
+  })
+
+  const vm = require('node:vm')
+  vm.runInNewContext(script, context)
+
+  await context.window.fetch('/.account/account/account-1/webid/', {
+    headers: { Accept: 'application/json' },
+  })
+  const response = await context.window.fetch('/.account/account/account-1/pod/', {
+    headers: { Accept: 'application/json' },
+  })
+  const body = await response.json()
+
+  assert.deepEqual(body.pods, {
+    'https://node-0000.undefineds.co/alice/': '',
+  })
+})
+
+test('buildXpodAuthEnhancerScript filters account client credentials by scoped WebIDs', async () => {
+  const script = buildXpodAuthEnhancerScript()
+  const provisionPayload = Buffer.from(JSON.stringify({
+    spUrl: 'http://127.0.0.1:5737/',
+    spDomain: 'node-0000.undefineds.co',
+    serviceToken: 'service-token',
+  })).toString('base64url')
+  const context = createScriptContext({
+    pathname: '/.account/account/',
+    provisionCode: `${provisionPayload}.signature`,
+    fetch: async (resource) => {
+      if (String(resource) === 'http://127.0.0.1:5737/provision/webids') {
+        return jsonResponse({
+          entries: [
+            {
+              webId: 'https://id.undefineds.co/alice/profile/card#me',
+              podUrl: 'https://node-0000.undefineds.co/alice/',
+              storageUrl: 'https://node-0000.undefineds.co/alice/',
+            },
+          ],
+        })
+      }
+      if (String(resource).endsWith('/cred-local')) {
+        return jsonResponse({ webId: 'https://id.undefineds.co/alice/profile/card#me' })
+      }
+      if (String(resource).endsWith('/cred-cloud')) {
+        return jsonResponse({ webId: 'https://id.undefineds.co/bob/profile/card#me' })
+      }
+      if (String(resource).includes('/webid/')) {
+        return jsonResponse({
+          webIdLinks: {
+            'https://id.undefineds.co/alice/profile/card#me': '/.account/account/link-local',
+            'https://id.undefineds.co/bob/profile/card#me': '/.account/account/link-cloud',
+          },
+        })
+      }
+      return jsonResponse({
+        clientCredentials: {
+          local: 'https://id.undefineds.co/.account/account/cred-local',
+          cloud: 'https://id.undefineds.co/.account/account/cred-cloud',
+        },
+      })
+    },
+  })
+
+  const vm = require('node:vm')
+  vm.runInNewContext(script, context)
+
+  await context.window.fetch('/.account/account/account-1/webid/', {
+    headers: { Accept: 'application/json' },
+  })
+  const response = await context.window.fetch('/.account/account/account-1/client-credentials/', {
+    headers: { Accept: 'application/json' },
+  })
+  const body = await response.json()
+
+  assert.deepEqual(body.clientCredentials, {
+    local: 'https://id.undefineds.co/.account/account/cred-local',
+  })
+})
+
 test('installXpodAuthEnhancer skips non xpod auth pages', async () => {
   let executed = false
   const installed = await installXpodAuthEnhancer({
@@ -196,3 +508,74 @@ test('installXpodAuthEnhancer injects script on xpod auth pages', async () => {
   assert.equal(installed, true)
   assert.match(executedScript, /__LINX_XPOD_AUTH_ENHANCER__/)
 })
+
+function jsonResponse(body, init = {}) {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+    ...init,
+  })
+}
+
+function createScriptContext({ pathname, provisionCode, fetch }) {
+  const context = {
+    globalThis: {},
+    window: {
+      location: {
+        pathname,
+        href: `https://id.undefineds.co${pathname}`,
+        origin: 'https://id.undefineds.co',
+      },
+      atob: (value) => Buffer.from(value, 'base64').toString('binary'),
+      sessionStorage: {
+        getItem: (key) => key === 'provisionCode' ? provisionCode : null,
+        setItem: () => undefined,
+        removeItem: () => undefined,
+      },
+      history: {
+        pushState: () => undefined,
+        replaceState: () => undefined,
+      },
+      fetch,
+      setTimeout,
+      clearTimeout,
+      addEventListener: () => undefined,
+      dispatchEvent: () => undefined,
+      locationAssign: () => undefined,
+    },
+    document: {
+      addEventListener: () => undefined,
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      createElement: () => ({
+        style: {},
+        dataset: {},
+        classList: { add: () => undefined, remove: () => undefined },
+        append: () => undefined,
+        appendChild: () => undefined,
+        setAttribute: () => undefined,
+      }),
+      documentElement: {},
+      body: {
+        appendChild: () => undefined,
+      },
+    },
+    MutationObserver: class {
+      observe() {}
+    },
+    URL,
+    Request: class {},
+    Response,
+    FormData: class {},
+    HTMLFormElement: class {},
+    HTMLButtonElement: class {},
+    HTMLInputElement: class {},
+    HTMLAnchorElement: class {},
+    PopStateEvent: class {},
+    setTimeout,
+    clearTimeout,
+  }
+  context.globalThis = context
+  context.window.fetch = context.window.fetch.bind(context.window)
+  return context
+}

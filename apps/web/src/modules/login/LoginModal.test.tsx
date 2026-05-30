@@ -52,6 +52,28 @@ function createProps(overrides: Partial<LoginModalProps> = {}): LoginModalProps 
           canCreate: true,
         },
       },
+      {
+        id: 'standalone',
+        url: 'http://localhost:5737',
+        label: 'Standalone',
+        source: 'standalone',
+        oidcProvider: {
+          kind: 'local',
+          url: 'http://localhost:5737',
+          label: 'Standalone',
+        },
+        storageProvider: {
+          kind: 'local',
+          url: 'http://localhost:5737',
+          label: 'Standalone',
+        },
+        runtime: {
+          kind: 'local-pod',
+          status: 'missing',
+          canStart: true,
+          canCreate: true,
+        },
+      },
     ],
     onBackFromLocal: vi.fn(),
     onContinueLocalLogin: vi.fn(),
@@ -98,15 +120,15 @@ describe('LoginModal', () => {
       storedAccount: {
         displayName: 'Ganlu',
         issuerUrl: 'https://id.undefineds.co',
-        storageProviderUrl: 'http://localhost:5737',
+        storageProviderUrl: 'https://node-abc123.undefineds.co/',
         storageProviderLabel: 'Local',
         webId: 'https://id.undefineds.co/ganlu/profile/card#me',
       },
       storageConflict: {
         expectedStorageUrl: 'https://node-abc123.undefineds.co/ganlu/',
         actualStorageUrl: 'https://node-old999.undefineds.co/ganlu/',
-        storageProviderUrl: 'http://localhost:5737',
-        managementUrl: 'http://localhost:5737/.account/account/',
+        storageProviderUrl: 'https://node-abc123.undefineds.co/',
+        managementUrl: 'https://node-abc123.undefineds.co/.account/account/',
       },
     })
 
@@ -190,46 +212,21 @@ describe('LoginModal', () => {
   })
 
   it('shows provider selection when idle without stored account', () => {
-    const props = createProps({
-      providers: [
-        ...createProps().providers,
-        {
-          id: 'standalone',
-          url: 'http://localhost:5737',
-          label: 'Standalone',
-          source: 'standalone',
-          oidcProvider: {
-            kind: 'local',
-            url: 'http://localhost:5737',
-            label: 'Standalone',
-          },
-          storageProvider: {
-            kind: 'local',
-            url: 'http://localhost:5737',
-            label: 'Standalone',
-          },
-          runtime: {
-            kind: 'local-pod',
-            status: 'missing',
-            canStart: true,
-            canCreate: true,
-          },
-        },
-      ],
-    })
+    const props = createProps()
 
     const { container } = render(<LoginModal {...props} />)
 
     expect(screen.getByText('选择空间')).toBeTruthy()
-    expect(screen.getByText('Cloud / Local')).toBeTruthy()
+    expect(screen.getByText('登录方式')).toBeTruthy()
     expect(screen.getByText('Cloud')).toBeTruthy()
     expect(screen.queryByText('官方')).toBeNull()
     expect(screen.queryByText('未配置')).toBeNull()
     expect(screen.getAllByText('登录').length).toBeGreaterThan(0)
     expect(screen.getByText('云端空间')).toBeTruthy()
-    expect(screen.getByLabelText('使用 Cloud 登录，数据写入 Cloud 空间。')).toBeTruthy()
-    expect(screen.getByLabelText('使用 Cloud 登录，数据写入这台设备上的 Local 空间。')).toBeTruthy()
-    expect(screen.getByLabelText('账号和数据都在本机的 Standalone 空间。')).toBeTruthy()
+    expect(screen.getByText('本机空间')).toBeTruthy()
+    expect(screen.getByLabelText('Cloud 账号登录，数据写入 Cloud Pod。账号、授权和数据都在 Cloud。')).toBeTruthy()
+    expect(screen.getByLabelText('Cloud 账号登录，数据写入当前本机 xpod 的 Local Pod。Cloud 只做身份授权。')).toBeTruthy()
+    expect(screen.getByLabelText('本机 xpod 登录，数据也写入本机 Standalone Pod；不绑定 Cloud 账号。')).toBeTruthy()
     expect(container.querySelector('[data-provider-source="cloud"] img')).toBeTruthy()
     expect(container.querySelector('[data-provider-status-dot="primary"]')).toBeTruthy()
     expect(container.querySelector('[data-provider-status-dot="neutral"]')).toBeTruthy()
@@ -239,6 +236,17 @@ describe('LoginModal', () => {
 
     fireEvent.click(screen.getByText('Cloud'))
     expect(props.onConnect).toHaveBeenCalledWith('cloud')
+  })
+
+  it('exposes Standalone as its own product login entry', () => {
+    const props = createProps()
+
+    const { container } = render(<LoginModal {...props} />)
+
+    expect(screen.getByText('Cloud')).toBeTruthy()
+    expect(screen.getByText('Local')).toBeTruthy()
+    expect(screen.getByText('Standalone')).toBeTruthy()
+    expect(container.querySelector('[data-provider-source="standalone"] [data-provider-standalone-marker]')).toBeTruthy()
   })
 
   it('shows Local startup status inline inside the same modal', () => {
@@ -260,7 +268,7 @@ describe('LoginModal', () => {
       view: 'local',
       localOnboarding: {
         state: 'starting',
-        mode: 'standalone',
+        spaceKind: 'standalone',
         localUrl: 'http://localhost:5737/',
         baseUrl: 'http://localhost:5737/',
         publicUrl: null,
@@ -313,6 +321,38 @@ describe('LoginModal', () => {
         issuerLabel: 'Standalone',
         storageProviderUrl: 'http://localhost:5737',
         storageProviderLabel: 'Standalone',
+      },
+    })
+
+    const { container } = render(<LoginModal {...props} />)
+
+    expect(container.querySelector('[data-account-standalone-marker]')).toBeTruthy()
+    expect(container.querySelector('[data-account-local-marker]')).toBeNull()
+  })
+
+  it('treats localhost fallback accounts as Standalone instead of Local', () => {
+    const props = createProps({
+      state: 'idle',
+      storedAccount: {
+        displayName: 'Ganlu',
+        issuerUrl: 'http://localhost:5737',
+        webId: 'http://localhost:5737/profile/card#me',
+      },
+    })
+
+    const { container } = render(<LoginModal {...props} />)
+
+    expect(container.querySelector('[data-account-standalone-marker]')).toBeTruthy()
+    expect(container.querySelector('[data-account-local-marker]')).toBeNull()
+  })
+
+  it('treats LAN fallback accounts as Standalone instead of Local', () => {
+    const props = createProps({
+      state: 'idle',
+      storedAccount: {
+        displayName: 'Ganlu',
+        issuerUrl: 'http://192.168.1.23:5737',
+        webId: 'http://192.168.1.23:5737/profile/card#me',
       },
     })
 
@@ -376,7 +416,7 @@ describe('LoginModal', () => {
             canCreate: false,
             onboarding: {
               state: 'repair_required',
-              mode: 'local',
+              spaceKind: 'local',
               message: '要让其他设备接入 Local，首次启动前需要先准备固定公网地址。',
             },
           },
@@ -388,7 +428,7 @@ describe('LoginModal', () => {
 
     expect(screen.getByText('Local')).toBeTruthy()
     expect(screen.getByText('本地空间')).toBeTruthy()
-    expect(screen.getByLabelText('使用 Cloud 登录，数据写入这台设备上的 Local 空间。')).toBeTruthy()
+    expect(screen.getByLabelText('Cloud 账号登录，数据写入当前本机 xpod 的 Local Pod。Cloud 只做身份授权。')).toBeTruthy()
     expect(screen.queryByText('需设置')).toBeNull()
     expect(screen.getByText('设置')).toBeTruthy()
   })
@@ -398,7 +438,7 @@ describe('LoginModal', () => {
       view: 'local',
       localOnboarding: {
         state: 'ready',
-        mode: 'standalone',
+        spaceKind: 'standalone',
         localUrl: 'http://localhost:5737/',
         baseUrl: 'http://localhost:5737/',
         publicUrl: null,

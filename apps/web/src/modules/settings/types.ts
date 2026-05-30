@@ -6,11 +6,11 @@
 export type XpodEdition = 'local' | 'cloud'
 
 /**
- * 部署模式
+ * 空间类型
  * - local: 本地托管模式，IdP 在 Cloud，SP 在本地（推荐）
  * - standalone: 独立模式，IdP + SP 都在本地
  */
-export type DeploymentMode = 'local' | 'standalone'
+export type ServiceSpaceKind = 'local' | 'standalone'
 
 /**
  * 网络接入方式
@@ -77,8 +77,8 @@ export interface NetworkConfig {
 export interface SetupConfig {
   /** xpod 运行版本 */
   edition: XpodEdition
-  /** 部署模式 */
-  deploymentMode: DeploymentMode
+  /** 空间类型 */
+  spaceKind: ServiceSpaceKind
   pod: {
     port: number
     dataDir: string

@@ -2,29 +2,81 @@
 
 ## Purpose
 
-This document fixes the product and implementation boundary for Local login, Cloud identity, SP storage, and multi-address routing.
+This is the source-of-truth document for LinX IDP/SP semantics: who owns
+identity, who owns storage, how Cloud registration binds a WebID to a selected
+SP, and how post-login writes choose their storage base.
+
+Do not duplicate these rules in flow, launcher, or networking documents. Those
+documents should link here when they need identity/storage behavior.
+
+For Local canonical URL, tunnel, localhost/LAN, and access-route details, use
+`docs/local-sp-domain-and-tunnel.md`. For runtime route probing and same-node
+transport optimization, use `docs/multi-channel-access.md`.
 
 ## Supported Product Routes
 
-LinX currently exposes four deployment/login routes:
+LinX currently exposes three product provider choices in the normal login
+card: Cloud, Local, and Standalone. Local has two canonical URL ownership
+strategies, but the login/storage semantics stay the same. Custom remains a
+secondary route for third-party Solid providers; no route should force the
+normal user through an IDP/SP two-step picker.
 
-| Route | IDP | SP | SP public URL |
+| Route | OIDC issuer | Storage Provider | Canonical SP URL |
 | --- | --- | --- | --- |
 | Cloud | Cloud | Cloud | Cloud SP provided |
-| Local base / LAN | Local first; Cloud route can be added later | Local | None by default; localhost/LAN |
-| Local direct | Cloud | Local | User-provided |
-| Local tunnel | Cloud | Local | User-provided public URL or tunnel domain |
-| Standalone | Local | Local | None by default; optional user-provided |
+| Local + Cloud-managed canonical domain | Cloud | Local xpod | Cloud-allocated `node-*.undefineds.co` |
+| Local + user-managed canonical domain | Cloud | Local xpod | User-owned HTTPS origin |
+| Standalone | Local xpod | Local xpod | Default localhost/LAN; optional user-owned URL |
 | Custom | User-entered Solid provider | Same user-entered Solid provider | Same user-entered URL |
 
 Rules:
-- LinX does not generate a Local SP domain such as `node-*.undefineds.co`.
+- The normal login UX is a one-step product choice: Cloud, Local, or
+  Standalone. Cloud means Cloud issuer + Cloud storage. Local means Cloud
+  issuer + the current Local xpod/SP storage. Standalone means local xpod
+  issuer + local xpod storage.
+- Local is always Cloud issuer + Local storage. It is not the local-account
+  route; the local-account route is Standalone.
+- With the Cloud-managed canonical domain strategy, Cloud allocates the
+  canonical Local SP URL. LinX does not ask the user to type a
+  platform-generated `node-*.undefineds.co` domain.
+- With the user-managed canonical domain strategy, the user provides a HTTPS
+  origin that becomes the canonical Local SP URL.
+- Local localhost/LAN addresses are access channels for the same Local SP; they
+  are not identity URLs and must not be written into Cloud WebID profiles.
 - `CSS_BASE_STORAGE_DOMAIN` is not a user-facing Local onboarding input.
-- Cloud IDP + Local SP requires a user-provided SP URL when the SP must be externally reachable.
-- Custom is a combined third-party Solid provider route. The product asks for one URL only and internally mirrors that URL into issuer/storage fields for route invariants.
-- Local base / LAN starts the local xpod and guarantees localhost/LAN validation without public URL or tunnel.
-- If the user has no public URL or tunnel domain, Local must still start for localhost/LAN use; it simply does not complete Cloud IDP + Local SP remote login until a public route is added.
-- Adding a direct-public or tunnel route later must reuse the same local data directory and node configuration where possible.
+- Custom is a combined third-party Solid provider route. The product asks for
+  one URL only and internally mirrors that URL into issuer/storage fields for
+  route invariants.
+- Standalone is a separate product entry, not an internal fallback for Local.
+  Local canonical URL failures must not silently downgrade into Standalone.
+- If the Local canonical URL has no working external route yet, LinX may still
+  start xpod and validate localhost/LAN reachability. It must not silently
+  degrade the login to Standalone or write localhost/LAN into `solid:storage`.
+- Adding a tunnel or self-managed route later must reuse the same local data
+  directory and node configuration where possible.
+
+## Local SP Visibility
+
+Local SP visibility is scoped; LinX must not globally discover every storage
+provider that happens to share the Cloud issuer.
+
+Current MVP rule:
+- The visible Local entry represents the currently provisioned local node/SP
+  from LinX desktop/service state and its short-lived `provisionCode`.
+- During provision-scoped login, consent/Pod selection must be filtered by the
+  selected SP. If that scope is missing, expired, or cannot be resolved, the
+  flow fails closed instead of showing Cloud Pods.
+
+Future cluster/invite rule:
+- Additional Local/cluster spaces should appear only through durable
+  membership/invite resources, not global account lookup.
+- These resources should be modeled as Solid resources with URI relations, for
+  example a Storage Provider resource, invite resource, membership resource,
+  and optional cluster resource. They must reference people, nodes, and
+  providers by URI rather than hidden `xxxId` links.
+- A node owner sharing their Solid server with another account is a membership
+  or invite operation. It is not equivalent to listing all Pods reachable from
+  the same IDP.
 
 ## Layer 1 — Identity Authority
 
@@ -39,6 +91,9 @@ Cloud is the canonical authority for Cloud and Local routes:
 
 Rules:
 - Cloud/Local-route canonical identity is issued by Cloud
+- Inrupt login receives the Cloud `oidcIssuer`; there is no second Inrupt
+  parameter for "SP". The target SP must be carried through provisioning/
+  onboarding state.
 - Standalone identity is issued by the local xpod and is intentionally separate from Cloud identity
 - canonical WebID must remain stable across equivalent access paths
 - switching LAN / FRP / public transport must not create a second identity model
@@ -58,6 +113,46 @@ Rules:
 - SP may change where/how data is reached
 - SP must not redefine canonical identity
 - storage upgrades must not invalidate existing data
+- `solid:storage` is the durable binding from the Cloud WebID to the selected
+  SP Pod. In Local routes it must point to the Local SP, not to the Cloud SP and
+  not to localhost/LAN transport URLs.
+
+## Registration / Onboarding Binding
+
+Cloud registration and existing-account binding must be scoped to a target SP.
+The root of the SP is sufficient as the user-facing entrypoint:
+`https://node-0000.undefineds.co/` may show onboarding, dashboard, or redirect
+to the Cloud account flow.
+
+The split Local flow is:
+
+1. User selects or opens a Local SP.
+2. The SP or LinX obtains a Cloud-recognized provision intent/code for that SP.
+3. The browser goes through Cloud login/registration with that provision scope.
+4. Cloud authenticates the user and creates or selects the Cloud WebID.
+5. Cloud and the target SP create/confirm the Pod under the selected SP.
+6. Cloud writes the WebID profile storage binding:
+
+```ttl
+<https://id.undefineds.co/alice/profile/card#me>
+  solid:oidcIssuer <https://id.undefineds.co/> ;
+  solid:storage <https://node-0000.undefineds.co/alice/> .
+```
+
+Security and product rules:
+- Cloud must trust a short-lived signed provision intent/code or a registered
+  SP relationship, not a raw `storageUrl` supplied by arbitrary front-end code.
+- The same onboarding mechanism must be available from LinX, from the SP root
+  URL, and from future third-party products. It must not be a LinX-private
+  registration path.
+- Consent/WebID/Pod selection in a split route must be scoped to the selected
+  SP. If the scope is missing, expired, or cannot be resolved, the flow fails
+  closed instead of showing Cloud Pods.
+- Existing Cloud accounts follow the same path: they do not re-register their
+  identity; they bind or create a Pod under the selected SP and update
+  `solid:storage`.
+- Inrupt SDKs discover the result after login by reading `session.info.webId`
+  and the WebID profile. They do not decide the storage provider by themselves.
 
 ## Layer 3 — Routing / Connectivity Optimization
 
@@ -79,11 +174,16 @@ Rules:
 ### Cloud must provide
 - canonical login / consent / token flow
 - stable WebID semantics
+- provision-scoped registration/binding for Cloud issuer + external/Local SP
+- WebID profile updates where `solid:storage` points at the selected SP
 
 ### SP/xpod must provide
 - Pod creation and storage behavior
 - candidate address set for the same node when available
-- post-login or post-setup direct/tunnel upgrade path using the user's own public URL
+- a root/onboarding entry that can produce or consume a Cloud-recognized
+  provision intent
+- post-login or post-setup direct/tunnel upgrade path without changing the
+  selected canonical SP URL
 - enough proof material to show multiple addresses belong to the same node
 
 ### LinX must provide
@@ -155,6 +255,13 @@ Acceptance:
 - For same-origin providers, a missing profile `solid:storage` binding or a
   current SP mismatch with profile `solid:storage` blocks entry rather than
   silently writing to a different provider.
+- For Custom third-party providers, LinX only knows the single provider origin
+  the user entered. It must verify that profile `solid:storage` exists and is
+  inside that selected provider origin, but it must not assume the provider
+  uses xpod's `/{webIdSlug}/` Pod path convention.
+- Custom database initialization must use the actual profile `solid:storage`
+  URL as the Pod URL. It must not derive a Pod URL from the WebID path unless
+  the provider itself published that path as `solid:storage`.
 - For split Cloud IDP + Local SP routes, the selected provider is the SP/data
   space and the Cloud WebID profile `solid:storage` must point at that SP. The
   provisioning/consent flow constrains which Pod can be selected, but it does
@@ -167,7 +274,7 @@ Acceptance:
   setting, or Secretary record under the IDP/WebID origin is a failure.
 - The same smoke test must exercise a later mutation path. At minimum one
   update/delete target must be proven to stay under the selected SP, and a stale
-  Cloud-origin absolute IRI must fail closed in split Cloud IDP + Local SP mode.
+  Cloud-origin absolute IRI must fail closed in the split Cloud IDP + Local SP route.
 - Regression coverage for any new Pod-backed feature must include a split
   Cloud IDP + Local SP case when the feature creates durable business data.
   The expected assertion is that the durable resource URI starts with the
@@ -197,7 +304,8 @@ Consent / Pod selection invariant:
 
 ## Anti-goals
 - LinX must not own username / WebID / Pod / consent semantics
-- LinX must not provide or imply a platform-generated Local SP public domain
+- LinX may use a Cloud-allocated canonical Local SP domain, but must not imply
+  that this is a platform-hosted forwarding service to arbitrary user domains
 - SP must not become a second identity authority
 - routing optimization must not mutate canonical WebID meaning
 - the MVP must not claim automatic migration or seamless old-resource continuity across SP changes

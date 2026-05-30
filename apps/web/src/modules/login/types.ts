@@ -1,5 +1,5 @@
 import type { LoginState, StoredAccount, ProviderOption } from '@linx/stores/login'
-import type { LocalOnboardingMode, LocalOnboardingSnapshot, LocalOnboardingState } from '@/types/electron-api'
+import type { LocalSpaceKind, LocalOnboardingSnapshot, LocalOnboardingState } from '@/types/electron-api'
 import type { StorageConflict } from './storage-reconciliation'
 
 export type { LoginState, StoredAccount, ProviderOption }
@@ -12,7 +12,7 @@ export interface LocalPodRuntime {
   canCreate: boolean
   onboarding?: {
     state: LocalOnboardingState
-    mode: LocalOnboardingMode | null
+    spaceKind: LocalSpaceKind | null
     message: string | null
   }
 }

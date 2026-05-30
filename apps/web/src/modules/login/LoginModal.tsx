@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { Loader2, Plus, X, AlertCircle, ChevronRight, Cloud, HardDrive, Globe2, ArrowLeft, Link2, Info, type LucideIcon } from 'lucide-react'
+import { isLocalAccessHostname } from '@/lib/local-access-url'
 import { cn } from '@/lib/utils'
 import type { LoginModalProps, LoginProviderOption } from './types'
 import linxLogoUrl from '@/assets/linx-logo.png'
@@ -260,7 +261,7 @@ function ProviderSelectionView({
 
       <div className="flex-1 px-4 min-h-0 overflow-y-auto">
         <div className="space-y-4 pb-1">
-          <ProviderSection title="Cloud / Local">
+          <ProviderSection title="登录方式">
             <div className="space-y-2">
               {primaryProviders.map((provider) => (
                 <ProviderItem
@@ -433,8 +434,8 @@ function LocalOnboardingView({
   const isReady = onboardingState === 'ready'
   const isRepair = onboardingState === 'repair_required'
   const isError = onboardingState === 'error'
-  const isStarting = onboardingState === 'starting' || onboardingState === 'checking' || onboardingState === 'idle' || onboardingState === 'mode_required'
-  const progressLabel = snapshot?.progress?.label ?? snapshot?.message ?? '正在启动 Local…'
+  const isStarting = onboardingState === 'starting' || onboardingState === 'checking' || onboardingState === 'idle' || onboardingState === 'space_required'
+  const progressLabel = snapshot?.progress?.label ?? snapshot?.message ?? `正在启动 ${productLabel}…`
   const progressDetail = snapshot?.progress?.detail
 
   return (
@@ -488,7 +489,7 @@ function LocalOnboardingView({
               {isStandalone ? 'Standalone 启动失败' : '还差一步让 Local 接入 Cloud'}
             </p>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              {snapshot?.message ?? '需要完成额外设置才能从其他设备访问。'}
+              {snapshot?.message ?? (isStandalone ? '请检查本机 xpod 启动状态。' : '需要完成额外设置才能从其他设备访问。')}
             </p>
             <button
               onClick={() => {
@@ -497,7 +498,7 @@ function LocalOnboardingView({
               }}
               className="w-full h-10 rounded-xl bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
             >
-              去完成 Local 设置
+              {isStandalone ? '打开设置' : '去完成 Local 设置'}
             </button>
           </div>
         )}
@@ -506,7 +507,7 @@ function LocalOnboardingView({
           <div className="flex flex-col items-center gap-3 text-center">
             <AlertCircle className="w-6 h-6 text-destructive" />
             <p className="text-sm text-destructive">
-              {snapshot?.message ?? 'Local 启动失败'}
+              {snapshot?.message ?? `${productLabel} 启动失败`}
             </p>
           </div>
         )}
@@ -811,29 +812,50 @@ function resolveStoredAccountSpaceMarker(account: LoginModalProps['storedAccount
 
   if (
     account.storageProviderLabel === 'Local'
-    || account.issuerLabel === 'Local'
   ) {
     return 'local'
   }
 
-  return isLocalAccountUrl(account.storageProviderUrl)
-    || isLocalAccountUrl(account.issuerUrl)
-    || isLocalAccountUrl(account.webId)
+  if (account.issuerLabel === 'Local') {
+    return 'standalone'
+  }
+
+  if (
+    isStandaloneAccountUrl(account.storageProviderUrl)
+    || isStandaloneAccountUrl(account.issuerUrl)
+    || isStandaloneAccountUrl(account.webId)
+  ) {
+    return 'standalone'
+  }
+
+  return isManagedLocalAccountUrl(account.storageProviderUrl)
+    || isManagedLocalAccountUrl(account.issuerUrl)
+    || isManagedLocalAccountUrl(account.webId)
     ? 'local'
     : null
 }
 
-function isLocalAccountUrl(url?: string): boolean {
+function isStandaloneAccountUrl(url?: string): boolean {
   if (!url) {
     return false
   }
 
   try {
     const hostname = new URL(url).hostname
-    return hostname === 'localhost'
-      || hostname === '127.0.0.1'
-      || hostname.endsWith('.local')
-      || hostname.endsWith('.undefineds.co') && hostname.startsWith('node-')
+    return isLocalAccessHostname(hostname)
+  } catch {
+    return false
+  }
+}
+
+function isManagedLocalAccountUrl(url?: string): boolean {
+  if (!url) {
+    return false
+  }
+
+  try {
+    const hostname = new URL(url).hostname
+    return hostname.endsWith('.undefineds.co') && hostname.startsWith('node-')
   } catch {
     return false
   }

@@ -49,11 +49,50 @@ test('prepare-xpod-resource fails when copied resource exceeds the release size 
   assert.match(result.stderr, /xpod desktop resource is too large/)
 })
 
-function createXpodFixture(t) {
+test('prepare-xpod-resource copies the allowlisted runtime dependency tree', (t) => {
+  const fixtureRoot = createXpodFixture(t, {
+    dependencies: {
+      jsonld: '0.0.0-test',
+    },
+  })
+  const resourceRoot = createOutputRoot(t)
+  writeFile(fixtureRoot, 'node_modules/jsonld/package.json', JSON.stringify({
+    name: 'jsonld',
+    version: '0.0.0-test',
+    dependencies: {
+      canonicalize: '0.0.0-test',
+    },
+  }))
+  writeFile(fixtureRoot, 'node_modules/jsonld/lib/index.js', 'module.exports = {}\n')
+  writeFile(fixtureRoot, 'node_modules/jsonld/node_modules/huge-package/index.js', 'nested dependency should not be copied directly')
+  writeFile(fixtureRoot, 'node_modules/canonicalize/package.json', JSON.stringify({
+    name: 'canonicalize',
+    version: '0.0.0-test',
+  }))
+  writeFile(fixtureRoot, 'node_modules/canonicalize/lib/index.js', 'module.exports = {}\n')
+
+  const result = runPrepare({
+    LINX_DESKTOP_XPOD_RESOURCE_ROOT: fixtureRoot,
+    LINX_DESKTOP_XPOD_RESOURCE_OUTPUT_ROOT: resourceRoot,
+    LINX_DESKTOP_MAX_XPOD_RESOURCE_MB: '1',
+  })
+
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(fs.existsSync(path.join(resourceRoot, 'node_modules/jsonld/package.json')), true)
+  assert.equal(fs.existsSync(path.join(resourceRoot, 'node_modules/jsonld/lib/index.js')), true)
+  assert.equal(fs.existsSync(path.join(resourceRoot, 'node_modules/canonicalize/package.json')), true)
+  assert.equal(fs.existsSync(path.join(resourceRoot, 'node_modules/jsonld/node_modules/huge-package/index.js')), false)
+})
+
+function createXpodFixture(t, packageFields = {}) {
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'linx-xpod-resource-fixture-'))
   const fixtureRoot = path.join(tmpRoot, 'xpod')
   fs.mkdirSync(fixtureRoot, { recursive: true })
-  writeFile(fixtureRoot, 'package.json', JSON.stringify({ name: '@undefineds.co/xpod', version: '0.0.0-test' }))
+  writeFile(fixtureRoot, 'package.json', JSON.stringify({
+    name: '@undefineds.co/xpod',
+    version: '0.0.0-test',
+    ...packageFields,
+  }))
   writeFile(fixtureRoot, 'bin/xpod.js', '#!/usr/bin/env node\n')
   writeFile(fixtureRoot, 'dist/main.js', 'console.log("xpod")\n')
   writeFile(fixtureRoot, 'dist/identity/oidc/ScopedPickWebIdHandler.js', 'exports.ScopedPickWebIdHandler = class {}\n')

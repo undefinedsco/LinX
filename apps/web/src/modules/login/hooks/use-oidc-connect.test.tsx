@@ -269,7 +269,7 @@ describe('useOidcConnect', () => {
     })
     await options.handleRedirect('https://idp.example.com/authorize')
     expect(openEmbeddedAuthorizationMock).toHaveBeenCalledWith('https://idp.example.com/authorize?provisionCode=pc-123', {
-      providerLabel: 'Cloud',
+      providerLabel: 'Local',
     })
   })
 

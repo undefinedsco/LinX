@@ -121,7 +121,6 @@ test('Local onboarding reaches ready state against a real self-bootstrapped xpod
       getConfigPath: () => path.join(tmpDir, '.env.local'),
       getAll: () => ({
         CSS_EDITION: 'local',
-        XPOD_MODE: 'local',
       }),
     },
     providerManager,
@@ -138,8 +137,8 @@ test('Local onboarding reaches ready state against a real self-bootstrapped xpod
     ensureBootstrapProvider: () => provider,
   })
 
-  const chosen = await controller.chooseMode('remote-ready')
-  assert.equal(chosen.mode, 'remote-ready')
+  const chosen = await controller.chooseSpace('local')
+  assert.equal(chosen.spaceKind, 'local')
 
   const snapshot = await controller.continue()
   const logPaths = manager.getLogPaths()
@@ -179,7 +178,7 @@ test('Local onboarding reaches ready state against a real self-bootstrapped xpod
   assert.equal(capabilities.contract, 'linx-local-onboarding/v1')
 })
 
-test('Local onboarding upgrades a running device-only xpod to remote-ready after adding a public domain', {
+test('Local onboarding upgrades a running Standalone xpod to Local after adding a public domain', {
   concurrency: false,
   timeout: 240000,
 }, async (t) => {
@@ -248,7 +247,6 @@ test('Local onboarding upgrades a running device-only xpod to remote-ready after
       getConfigPath: () => path.join(tmpDir, '.env.local'),
       getAll: () => ({
         CSS_EDITION: 'local',
-        XPOD_MODE: 'local',
       }),
     },
     providerManager,
@@ -265,12 +263,12 @@ test('Local onboarding upgrades a running device-only xpod to remote-ready after
     ensureBootstrapProvider: () => provider,
   })
 
-  const deviceOnly = await controller.chooseMode('device-only')
-  assert.equal(deviceOnly.mode, 'device-only')
+  const standalone = await controller.chooseSpace('standalone')
+  assert.equal(standalone.spaceKind, 'standalone')
 
   const localSnapshot = await controller.continue()
   assert.equal(localSnapshot.state, 'ready')
-  assert.equal(localSnapshot.mode, 'device-only')
+  assert.equal(localSnapshot.spaceKind, 'standalone')
   assert.equal(localSnapshot.localUrl, `http://localhost:${port}/`)
   assert.equal(localSnapshot.baseUrl, `http://localhost:${port}/`)
   assert.equal(localSnapshot.publicUrl, null)
@@ -278,9 +276,9 @@ test('Local onboarding upgrades a running device-only xpod to remote-ready after
 
   provider.managed.domain = { type: 'custom', value: 'pod.example.com' }
 
-  const needsBinding = await controller.refresh()
+  const needsBinding = await controller.chooseSpace('local')
   assert.equal(needsBinding.state, 'repair_required')
-  assert.equal(needsBinding.mode, 'remote-ready')
+  assert.equal(needsBinding.spaceKind, 'local')
   assert.equal(needsBinding.publicUrl, 'https://pod.example.com/')
   assert.equal(needsBinding.errorCode, 'LOCAL_CLOUD_BINDING_REQUIRED')
 
@@ -302,7 +300,7 @@ test('Local onboarding upgrades a running device-only xpod to remote-ready after
       stderrLog ? `stderr:\n${stderrLog}` : '',
     ].filter(Boolean).join('\n\n'),
   )
-  assert.equal(remoteSnapshot.mode, 'remote-ready')
+  assert.equal(remoteSnapshot.spaceKind, 'local')
   assert.equal(remoteSnapshot.localUrl, `http://localhost:${port}/`)
   assert.equal(remoteSnapshot.baseUrl, 'https://pod.example.com/')
   assert.equal(remoteSnapshot.publicUrl, 'https://pod.example.com/')

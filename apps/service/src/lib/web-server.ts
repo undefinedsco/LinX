@@ -19,7 +19,7 @@ interface SetupData {
   dataDir: string
   port: number
   autoStart: boolean
-  deploymentMode: 'local' | 'standalone'
+  spaceKind: 'local' | 'standalone'
   domainSource?: 'manual'
   network: {
     accessMode: 'auto' | 'tunnel'
@@ -39,8 +39,20 @@ interface SetupData {
   httpsCertPath?: string
 }
 
+type ServiceSpaceKind = SetupData['spaceKind']
+
+interface RuntimeStatusSummary {
+  total: number
+  running: number
+  idle: number
+  active: number
+  paused: number
+  completed: number
+  error: number
+}
+
 function normalizeSetupData(data: SetupData): SetupData {
-  if (data.deploymentMode === 'local') {
+  if (data.spaceKind === 'local') {
     return {
       ...data,
       domainSource: 'manual',
@@ -79,14 +91,15 @@ interface ManagedCloudRegistration {
 }
 
 interface ProvisionNodeRequest {
-  publicUrl: string
+  publicUrl?: string
   nodeId?: string
   nodeToken?: string
   serviceToken?: string
   localPort?: number
   tunnelToken?: string
+  // Cloud provisioning API fields, not LinX Local/Standalone runtime modes.
   tunnelMode?: 'client'
-  domainMode?: 'self-managed'
+  domainMode?: 'managed' | 'self-managed'
   spDomain?: string
 }
 
@@ -95,6 +108,7 @@ interface ProvisionNodeResponse {
   nodeToken?: string
   serviceToken?: string
   provisionCode?: string
+  publicUrl?: string
   spDomain?: string
   tunnelToken?: string
   tunnelProvider?: string
@@ -117,7 +131,7 @@ function normalizeDomain(value?: string | null): string | undefined {
 function publicUrlFromDomain(domain: string): string {
   const normalized = normalizeDomain(domain)
   if (!normalized) {
-    throw new Error('publicDomain is required for managed Local provisioning')
+    throw new Error('publicDomain is required for Local user-managed canonical domain provisioning')
   }
   return ensureTrailingSlash(`https://${normalized}`)
 }
@@ -137,12 +151,61 @@ function routeParam(value: string | string[] | undefined): string {
   return Array.isArray(value) ? value[0] ?? '' : value ?? ''
 }
 
+function parseServiceSpaceKind(value: unknown): ServiceSpaceKind | undefined {
+  return value === 'local' || value === 'standalone' ? value : undefined
+}
+
+function isInvalidServiceSpaceKind(value: unknown): boolean {
+  return value !== undefined && value !== null && value !== '' && !parseServiceSpaceKind(value)
+}
+
+function summarizeRuntimeWorkers(rows: Array<{ status?: string }>): RuntimeStatusSummary {
+  const summary: RuntimeStatusSummary = {
+    total: rows.length,
+    running: 0,
+    idle: 0,
+    active: 0,
+    paused: 0,
+    completed: 0,
+    error: 0,
+  }
+
+  for (const row of rows) {
+    switch (row.status) {
+      case 'active':
+        summary.active += 1
+        summary.running += 1
+        break
+      case 'paused':
+        summary.paused += 1
+        break
+      case 'completed':
+        summary.completed += 1
+        break
+      case 'error':
+        summary.error += 1
+        break
+      case 'idle':
+      default:
+        summary.idle += 1
+        break
+    }
+  }
+
+  return summary
+}
+
 function readProvisionPublicUrlFromEnv(env: Record<string, string>): string | undefined {
   const domain = normalizeDomain(env.LINX_PUBLIC_DOMAIN)
   if (domain) return publicUrlFromDomain(domain)
 
   const baseUrl = env.CSS_BASE_URL?.trim()
   return baseUrl ? ensureTrailingSlash(baseUrl) : undefined
+}
+
+function derivePublicUrlFromSpDomain(spDomain?: string): string | undefined {
+  const domain = normalizeDomain(spDomain)
+  return domain ? publicUrlFromDomain(domain) : undefined
 }
 
 function getConfigDir(): string {
@@ -221,15 +284,17 @@ export class WebServerModule {
    */
   private generateEnvContent(data: SetupData, provisioning?: ManagedCloudRegistration): string {
     const normalized = normalizeSetupData(data)
-    const { port, dataDir, deploymentMode, domainSource, network, local, standalone, publicDomain } = normalized
+    const { port, dataDir, spaceKind, domainSource, network, local, standalone, publicDomain } = normalized
 
     // Build base URL
     let baseUrl: string
     const localNodeId = normalizeNodeId(local?.nodeId || local?.deviceId)
 
-    if (publicDomain) {
+    if (provisioning) {
+      baseUrl = normalizeUrl(provisioning.publicUrl)
+    } else if (spaceKind === 'local' && publicDomain) {
       baseUrl = `https://${publicDomain}`
-    } else if (deploymentMode === 'standalone' && standalone?.customDomain) {
+    } else if (spaceKind === 'standalone' && standalone?.customDomain) {
       baseUrl = `https://${standalone.customDomain}`
     } else {
       baseUrl = `http://localhost:${port}`
@@ -267,7 +332,7 @@ export class WebServerModule {
     }
 
     // LinX service metadata for runtime UX and future automation
-    lines.push(`LINX_DEPLOYMENT_MODE=${deploymentMode}`)
+    lines.push(`LINX_SPACE_KIND=${spaceKind}`)
     lines.push(`LINX_DOMAIN_SOURCE=${domainSource || 'manual'}`)
     lines.push(`LINX_AUTO_START=${normalized.autoStart ? 'true' : 'false'}`)
     if (normalized.publicDomain) lines.push(`LINX_PUBLIC_DOMAIN=${normalized.publicDomain}`)
@@ -281,7 +346,7 @@ export class WebServerModule {
     if (effectiveTunnelProvider) lines.push(`LINX_TUNNEL_PROVIDER=${effectiveTunnelProvider}`)
 
     // oidcIssuer means "external IdP". Standalone without this remains full Local.
-    if (!provisioning && deploymentMode === 'standalone' && standalone?.oidcIssuer) {
+    if (!provisioning && spaceKind === 'standalone' && standalone?.oidcIssuer) {
       lines.push(`oidcIssuer=${standalone.oidcIssuer}`)
     }
 
@@ -317,9 +382,13 @@ export class WebServerModule {
     return env
   }
 
+  private readConfiguredSpaceKind(): ServiceSpaceKind | undefined {
+    return parseServiceSpaceKind(this.readEnvMap().LINX_SPACE_KIND)
+  }
+
   private async ensureManagedCloudRegistration(data: SetupData): Promise<ManagedCloudRegistration | undefined> {
     const normalized = normalizeSetupData(data)
-    if (normalized.deploymentMode !== 'local' || !normalized.publicDomain) {
+    if (normalized.spaceKind !== 'local') {
       return undefined
     }
 
@@ -327,13 +396,15 @@ export class WebServerModule {
     const existing = this.readManagedCloudRegistration()
     const cloudIdentityUrl = normalizeUrl(env.oidcIssuer || process.env.oidcIssuer || OFFICIAL_CLOUD_IDENTITY_ORIGIN)
     const cloudApiUrl = normalizeUrl(env.XPOD_CLOUD_API_ENDPOINT || process.env.XPOD_CLOUD_API_ENDPOINT || OFFICIAL_CLOUD_API_ORIGIN)
-    const publicUrl = publicUrlFromDomain(normalized.publicDomain)
+    const configuredPublicUrl = normalized.publicDomain ? publicUrlFromDomain(normalized.publicDomain) : undefined
+    const expectedPublicUrl = configuredPublicUrl ?? existing?.publicUrl
 
     if (
       existing
       && existing.cloudIdentityUrl === cloudIdentityUrl
       && existing.cloudApiUrl === cloudApiUrl
-      && existing.publicUrl === publicUrl
+      && existing.publicUrl
+      && existing.publicUrl === expectedPublicUrl
       && existing.nodeId
       && existing.nodeToken
       && existing.serviceToken
@@ -343,17 +414,26 @@ export class WebServerModule {
     }
 
     const request: ProvisionNodeRequest = {
-      publicUrl,
+      publicUrl: expectedPublicUrl,
       nodeId: existing?.nodeId,
       nodeToken: existing?.nodeToken,
       serviceToken: existing?.serviceToken,
       localPort: normalized.port,
       tunnelToken: normalized.network.tunnelToken || existing?.tunnelToken,
       tunnelMode: normalized.network.tunnelToken || existing?.tunnelToken ? 'client' : undefined,
-      domainMode: 'self-managed',
-      spDomain: undefined,
+      domainMode: configuredPublicUrl ? 'self-managed' : 'managed',
+      spDomain: configuredPublicUrl ? undefined : existing?.spDomain,
     }
     const response = await this.registerProvisionedNode(cloudApiUrl, request)
+    const resolvedPublicUrl =
+      response.publicUrl
+      ?? request.publicUrl
+      ?? derivePublicUrlFromSpDomain(response.spDomain)
+    if (!resolvedPublicUrl) {
+      throw new Error('Cloud 返回的 Local canonical URL 不完整。')
+    }
+    const publicUrl = ensureTrailingSlash(resolvedPublicUrl)
+
     return {
       nodeId: response.nodeId,
       nodeToken: response.nodeToken,
@@ -403,7 +483,8 @@ export class WebServerModule {
     cloudApiUrl: string,
     request: ProvisionNodeRequest,
   ): Promise<Required<Pick<ManagedCloudRegistration, 'nodeId' | 'nodeToken' | 'serviceToken' | 'provisionCode'>>
-    & Pick<ManagedCloudRegistration, 'spDomain' | 'tunnelToken' | 'tunnelProvider' | 'tunnelEndpoint'>> {
+    & Pick<ManagedCloudRegistration, 'spDomain' | 'tunnelToken' | 'tunnelProvider' | 'tunnelEndpoint'>
+    & { publicUrl?: string }> {
     const endpoint = new URL('/provision/nodes', ensureTrailingSlash(cloudApiUrl)).toString()
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), MANAGED_CLOUD_REGISTRATION_TIMEOUT_MS)
@@ -439,6 +520,7 @@ export class WebServerModule {
         nodeToken: payload.nodeToken,
         serviceToken: payload.serviceToken,
         provisionCode: payload.provisionCode,
+        publicUrl: typeof payload.publicUrl === 'string' ? ensureTrailingSlash(payload.publicUrl) : undefined,
         spDomain: typeof payload.spDomain === 'string' ? payload.spDomain : undefined,
         tunnelToken: typeof payload.tunnelToken === 'string' ? payload.tunnelToken : undefined,
         tunnelProvider: typeof payload.tunnelProvider === 'string' ? payload.tunnelProvider : undefined,
@@ -508,7 +590,7 @@ export class WebServerModule {
             dataDir: env.CSS_ROOT_FILE_PATH || path.join(configDir, 'pod'),
             port: parseInt(env.CSS_PORT || '5737', 10),
             baseUrl: env.CSS_BASE_URL || 'http://localhost:5737',
-            deploymentMode: (env.LINX_DEPLOYMENT_MODE as 'local' | 'standalone') || 'local',
+            spaceKind: (env.LINX_SPACE_KIND as 'local' | 'standalone') || 'local',
             domainSource: 'manual',
             autoStart: env.LINX_AUTO_START ? env.LINX_AUTO_START === 'true' : app.getLoginItemSettings().openAtLogin,
             publicDomain: env.LINX_PUBLIC_DOMAIN || '',
@@ -525,7 +607,7 @@ export class WebServerModule {
             dataDir: path.join(configDir, 'pod'),
             port: 5737,
             baseUrl: 'http://localhost:5737',
-            deploymentMode: 'local',
+            spaceKind: 'local',
             domainSource: 'manual',
             autoStart: app.getLoginItemSettings().openAtLogin,
             publicDomain: '',
@@ -547,11 +629,6 @@ export class WebServerModule {
     this.app.post('/api/setup', async (req: Request, res: Response) => {
       try {
         const data = normalizeSetupData(req.body as SetupData)
-
-        if (data.deploymentMode === 'local' && data.network?.accessMode === 'tunnel' && !data.publicDomain?.trim()) {
-          res.status(400).json({ error: 'publicDomain is required when Local uses tunnel access' })
-          return
-        }
 
         if (data.network?.accessMode === 'tunnel' && !data.network.tunnelProvider) {
           res.status(400).json({ error: 'tunnelProvider is required when accessMode=tunnel' })
@@ -630,6 +707,7 @@ export class WebServerModule {
       const setupCompleted = fs.existsSync(getSetupFlagPath())
       const envPath = getEnvPath()
       const provisioning = this.readManagedCloudRegistration()
+      const runtimeWorkers = summarizeRuntimeWorkers(getRuntimeThreadsModule().listSessions())
 
       res.json({
         pod: {
@@ -637,6 +715,10 @@ export class WebServerModule {
           baseUrl: xpodStatus.baseUrl || 'http://localhost:5737',
           publicUrl: xpodStatus.publicUrl,
           running: xpodStatus.running,
+        },
+        spaceKind: this.readConfiguredSpaceKind(),
+        runtime: {
+          workers: runtimeWorkers,
         },
         provisioning: provisioning ? {
           nodeId: provisioning.nodeId,
@@ -655,8 +737,24 @@ export class WebServerModule {
     })
 
     // Service controls
-    this.app.post('/api/service/start', async (_req: Request, res: Response) => {
+    this.app.post('/api/service/start', async (req: Request, res: Response) => {
       try {
+        if (isInvalidServiceSpaceKind(req.body?.spaceKind)) {
+          res.status(400).json({ error: 'spaceKind must be "local" or "standalone"' })
+          return
+        }
+
+        const requestedSpaceKind = parseServiceSpaceKind(req.body?.spaceKind)
+        const configuredSpaceKind = this.readConfiguredSpaceKind()
+        if (requestedSpaceKind && configuredSpaceKind && requestedSpaceKind !== configuredSpaceKind) {
+          res.status(409).json({
+            error: `当前 Service 配置为 ${configuredSpaceKind}，不能按 ${requestedSpaceKind} 启动。请先在设置中切换空间。`,
+            configuredSpaceKind,
+            requestedSpaceKind,
+          })
+          return
+        }
+
         await getXpodModule().start()
         res.json({ success: true })
       } catch (error) {

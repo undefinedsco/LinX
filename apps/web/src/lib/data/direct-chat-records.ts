@@ -10,6 +10,8 @@ import {
 import { resolveRowSubject } from '@undefineds.co/drizzle-solid'
 
 export interface CreateAgentContactRecordsInput {
+  agentId?: string
+  contactId?: string
   name: string
   provider: string
   model: string
@@ -71,7 +73,7 @@ export async function createAgentContactRecords(
   contactId: string
   contactUri: string
 }> {
-  const agentId = crypto.randomUUID()
+  const agentId = input.agentId?.trim() || crypto.randomUUID()
   const agent = await agentRepository.create!(db, {
     id: agentId,
     name: input.name,
@@ -81,7 +83,7 @@ export async function createAgentContactRecords(
   })
 
   const agentUri = resolveRowSubject(agent as Record<string, unknown>) ?? agentId
-  const contactId = crypto.randomUUID()
+  const contactId = input.contactId?.trim() || crypto.randomUUID()
   const contact = await contactRepository.create!(db, {
     id: contactId,
     name: input.name,

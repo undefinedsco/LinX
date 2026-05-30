@@ -195,7 +195,7 @@ async function loadLocalOnboardingSnapshot(): Promise<LocalOnboardingSnapshot | 
 
     return {
       state: running ? 'ready' : 'idle',
-      mode: publicUrl ? 'local' : 'standalone',
+      spaceKind: publicUrl ? 'local' : 'standalone',
       localUrl,
       baseUrl,
       publicUrl,
@@ -419,7 +419,8 @@ function routePriority(kind: LocalAccessRouteKind): number {
 }
 
 function isLocalProvider(storageProviderLabel?: string | null): boolean {
-  return storageProviderLabel?.trim().toLowerCase() === 'local'
+  const normalized = storageProviderLabel?.trim().toLowerCase()
+  return normalized === 'local' || normalized === 'standalone'
 }
 
 function isLoopbackUrl(url?: string | null): boolean {

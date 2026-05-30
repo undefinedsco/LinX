@@ -26,6 +26,12 @@ export interface XpodManagedRuntimeOptions extends XpodLaunchResolutionOptions {
   which?: (command: string, env: NodeJS.ProcessEnv) => string | null;
 }
 
+type CommandResolutionOptions = Pick<XpodLaunchResolutionOptions, 'env' | 'existsSync'> & {
+  commandExistsSync?: (filePath: string) => boolean;
+  spawnSync?: typeof spawnSync;
+  which?: (command: string, env: NodeJS.ProcessEnv) => string | null;
+};
+
 export type XpodLaunchProgressPhase =
   | 'source'
   | 'version'
@@ -218,10 +224,12 @@ function resolveXpodSourceTarget(options: XpodLaunchResolutionOptions): XpodLaun
   assertXpodLoginRuntimeCapabilities(sourceRoot, existsSync);
 
   if (shouldPreferSourceRuntime(sourceRoot)) {
+    const runtimeBinary = detectBunRuntime(options)?.binary ?? resolveBunRuntimeBinary(options);
     return {
       kind: 'dev-source',
       rootDir: sourceRoot,
       entryPath: path.join(sourceRoot, 'src', 'main.ts'),
+      ...(runtimeBinary ? { runtimeBinary } : {}),
     };
   }
 
@@ -234,10 +242,12 @@ function resolveXpodSourceTarget(options: XpodLaunchResolutionOptions): XpodLaun
     };
   }
 
+  const runtimeBinary = detectBunRuntime(options)?.binary ?? resolveBunRuntimeBinary(options);
   return {
     kind: 'dev-source',
     rootDir: sourceRoot,
     entryPath: path.join(sourceRoot, 'src', 'main.ts'),
+    ...(runtimeBinary ? { runtimeBinary } : {}),
   };
 }
 
@@ -350,23 +360,36 @@ function resolveXpodPackageRoot(options: XpodLaunchResolutionOptions): string {
   throw new Error(`Unable to locate xpod package. Checked: ${candidates.join(', ')}`);
 }
 
-function detectBunRuntime(options: XpodManagedRuntimeOptions): { binary: string; version: string } | null {
+function detectBunRuntime(options: CommandResolutionOptions): { binary: string; version: string } | null {
   const env = options.env ?? process.env;
-  const binary = resolveCommand(
-    env.LINX_BUN_BINARY ?? env.LINX_XPOD_BUN_BINARY ?? 'bun',
-    options,
-  );
-  if (!binary) {
-    return null;
-  }
-
-  const version = readCommandVersion(binary, ['--version'], options);
   const minVersion = resolveMinBunVersion(env);
-  if (!version || compareSemver(version, minVersion) < 0) {
-    return null;
+  for (const binary of resolveBunRuntimeBinaryCandidates(options)) {
+    const version = readCommandVersion(binary, ['--version'], options);
+    if (version && compareSemver(version, minVersion) >= 0) {
+      return { binary, version };
+    }
   }
 
-  return { binary, version };
+  return null;
+}
+
+export function resolveBunRuntimeBinary(options: CommandResolutionOptions): string | null {
+  return resolveBunRuntimeBinaryCandidates(options)[0] ?? null;
+}
+
+function resolveBunRuntimeBinaryCandidates(options: CommandResolutionOptions): string[] {
+  const env = options.env ?? process.env;
+  const explicit = env.LINX_BUN_BINARY ?? env.LINX_XPOD_BUN_BINARY;
+  if (explicit) {
+    const explicitBinary = resolveCommand(explicit, options);
+    return explicitBinary ? [explicitBinary] : [];
+  }
+
+  return Array.from(new Set([
+    resolveCommand('bun', options),
+    ...getKnownBunBinaryCandidates(env),
+  ].filter((candidate): candidate is string => Boolean(candidate))))
+    .filter((candidate) => (options.commandExistsSync ?? options.existsSync ?? fs.existsSync)(candidate));
 }
 
 function detectNodeRuntime(options: XpodManagedRuntimeOptions): { nodeBinary: string; nodeVersion: string; npmBinary: string } | null {
@@ -518,7 +541,7 @@ function resolveMinNodeVersion(env: NodeJS.ProcessEnv): string {
   return env.LINX_MIN_NODE_VERSION?.trim() || DEFAULT_MIN_NODE_VERSION;
 }
 
-function resolveCommand(command: string, options: XpodManagedRuntimeOptions): string | null {
+function resolveCommand(command: string, options: CommandResolutionOptions): string | null {
   if (path.isAbsolute(command)) {
     const existsSync = options.commandExistsSync ?? options.existsSync ?? fs.existsSync;
     return existsSync(command) ? command : null;
@@ -529,6 +552,48 @@ function resolveCommand(command: string, options: XpodManagedRuntimeOptions): st
   }
 
   return findOnPath(command, options.env ?? process.env, options.commandExistsSync ?? fs.existsSync);
+}
+
+function getKnownBunBinaryCandidates(env: NodeJS.ProcessEnv): string[] {
+  const candidates: string[] = [];
+  const home = env.HOME;
+  const bunInstall = env.BUN_INSTALL;
+  const nvmDir = env.NVM_DIR ?? (home ? path.join(home, '.nvm') : undefined);
+
+  if (env.NVM_BIN) {
+    candidates.push(path.join(env.NVM_BIN, 'bun'));
+  }
+
+  if (nvmDir) {
+    candidates.push(...getNvmBunBinaryCandidates(nvmDir));
+  }
+
+  if (bunInstall) {
+    candidates.push(path.join(bunInstall, 'bin', 'bun'));
+  }
+
+  if (home) {
+    candidates.push(path.join(home, '.bun', 'bin', 'bun'));
+  }
+
+  candidates.push('/opt/homebrew/bin/bun', '/usr/local/bin/bun');
+
+  return Array.from(new Set(candidates));
+}
+
+function getNvmBunBinaryCandidates(nvmDir: string): string[] {
+  const nodeVersionsDir = path.join(nvmDir, 'versions', 'node');
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(nodeVersionsDir);
+  } catch {
+    return [];
+  }
+
+  return entries
+    .filter((entry) => /^v?\d+\.\d+\.\d+/.test(entry))
+    .sort((left, right) => compareSemver(right.replace(/^v/, ''), left.replace(/^v/, '')))
+    .map((entry) => path.join(nodeVersionsDir, entry, 'bin', 'bun'));
 }
 
 function findOnPath(
@@ -560,7 +625,7 @@ function findOnPath(
 function readCommandVersion(
   command: string,
   args: string[],
-  options: XpodManagedRuntimeOptions,
+  options: CommandResolutionOptions,
 ): string | null {
   const spawn = options.spawnSync ?? spawnSync;
   const result = spawn(command, args, {

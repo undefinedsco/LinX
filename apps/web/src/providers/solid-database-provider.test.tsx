@@ -191,7 +191,34 @@ describe('SolidDatabaseProvider', () => {
     })
   })
 
-  it('passes the pending Local provider URL for Cloud IDP + Local SP login', async () => {
+  it('passes the pending canonical Local provider URL for Cloud IDP + Local SP login', async () => {
+    const db = {}
+    createLinxSolidDatabaseMock.mockResolvedValue(db)
+    window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
+      issuerUrl: 'https://id.undefineds.co',
+      storageProviderUrl: 'https://node-0000.undefineds.co/',
+      storageProviderLabel: 'Local',
+      authorizationSurface: 'embedded',
+      returnToMicroAppId: 'chat',
+    }))
+
+    render(
+      <SolidDatabaseProvider>
+        <Probe />
+      </SolidDatabaseProvider>,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(createLinxSolidDatabaseMock).toHaveBeenCalledWith(sessionState.session, {
+      initTimeoutMs: 90_000,
+      podUrl: 'https://node-0000.undefineds.co/alice/',
+    })
+  })
+
+  it('fails closed when Cloud IDP + Local SP only has a localhost storage URL', async () => {
     const db = {}
     createLinxSolidDatabaseMock.mockResolvedValue(db)
     window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
@@ -212,9 +239,37 @@ describe('SolidDatabaseProvider', () => {
       await Promise.resolve()
     })
 
-    expect(createLinxSolidDatabaseMock).toHaveBeenCalledWith(sessionState.session, {
-      podUrl: 'http://127.0.0.1:5737/alice/',
+    expect(createLinxSolidDatabaseMock).not.toHaveBeenCalled()
+    expect(screen.getByTestId('status').textContent).toBe('error')
+    expect(screen.getByTestId('has-db').textContent).toBe('false')
+    expect((window as any).__SOLID_DB_ERROR__).toContain('canonical')
+  })
+
+  it('fails closed when a Local login points storage back at the Cloud issuer', async () => {
+    const db = {}
+    createLinxSolidDatabaseMock.mockResolvedValue(db)
+    window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
+      issuerUrl: 'https://id.undefineds.co',
+      storageProviderUrl: 'https://id.undefineds.co',
+      storageProviderLabel: 'Local',
+      authorizationSurface: 'embedded',
+      returnToMicroAppId: 'chat',
+    }))
+
+    render(
+      <SolidDatabaseProvider>
+        <Probe />
+      </SolidDatabaseProvider>,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
     })
+
+    expect(createLinxSolidDatabaseMock).not.toHaveBeenCalled()
+    expect(screen.getByTestId('status').textContent).toBe('error')
+    expect(screen.getByTestId('has-db').textContent).toBe('false')
+    expect((window as any).__SOLID_DB_ERROR__).toContain('selected Local SP')
   })
 
   it('uses a split SP provider URL even when the provider label is missing', async () => {
@@ -243,7 +298,7 @@ describe('SolidDatabaseProvider', () => {
     })
   })
 
-  it('passes the remembered Local provider URL after pending login state is consumed', async () => {
+  it('passes the remembered canonical Local provider URL after pending login state is consumed', async () => {
     const db = {}
     createLinxSolidDatabaseMock.mockResolvedValue(db)
     useLoginStore.setState({
@@ -253,7 +308,7 @@ describe('SolidDatabaseProvider', () => {
         displayName: 'Ganlu',
         issuerUrl: 'https://id.undefineds.co',
         issuerLabel: 'Cloud',
-        storageProviderUrl: 'http://localhost:5737',
+        storageProviderUrl: 'https://node-0000.undefineds.co/',
         storageProviderLabel: 'Local',
         webId: 'https://id.undefineds.co/ganlu/profile/card#me',
       },
@@ -271,7 +326,8 @@ describe('SolidDatabaseProvider', () => {
     })
 
     expect(createLinxSolidDatabaseMock).toHaveBeenCalledWith(sessionState.session, {
-      podUrl: 'http://localhost:5737/alice/',
+      initTimeoutMs: 90_000,
+      podUrl: 'https://node-0000.undefineds.co/alice/',
     })
   })
 
@@ -336,7 +392,7 @@ describe('SolidDatabaseProvider', () => {
     })
   })
 
-  it('keeps http Local account and DB URLs canonical while silently routing same-node fetches to the best local entry', async () => {
+  it('keeps Standalone account and DB URLs canonical while silently routing same-node fetches to the best local entry', async () => {
     const nativeFetch = vi.fn(async (input: RequestInfo | URL) => {
       const url = input.toString()
       if (url.startsWith('http://localhost:5737/api/linx/capabilities')) {
@@ -351,6 +407,7 @@ describe('SolidDatabaseProvider', () => {
       throw new Error(`unexpected fetch: ${url}`)
     }) as unknown as typeof fetch
     vi.stubGlobal('fetch', nativeFetch)
+    sessionState.session.info.webId = 'http://192.168.1.10:5737/alice/profile/card#me'
 
     Object.defineProperty(window, 'xpodDesktop', {
       configurable: true,
@@ -358,7 +415,7 @@ describe('SolidDatabaseProvider', () => {
         localOnboarding: {
           getSnapshot: vi.fn(async () => ({
             state: 'ready',
-            mode: 'local',
+            spaceKind: 'standalone',
             localUrl: 'http://localhost:5737/',
             baseUrl: 'http://192.168.1.10:5737/',
             publicUrl: null,
@@ -381,9 +438,9 @@ describe('SolidDatabaseProvider', () => {
       storedAccount: {
         displayName: 'Ganlu',
         issuerUrl: 'http://192.168.1.10:5737/',
-        issuerLabel: 'Local',
+        issuerLabel: 'Standalone',
         storageProviderUrl: 'http://192.168.1.10:5737/',
-        storageProviderLabel: 'Local',
+        storageProviderLabel: 'Standalone',
         webId: 'http://192.168.1.10:5737/alice/profile/card#me',
       },
       customProviders: [],
@@ -444,7 +501,7 @@ describe('SolidDatabaseProvider', () => {
         localOnboarding: {
           getSnapshot: vi.fn(async () => ({
             state: 'ready',
-            mode: 'local',
+            spaceKind: 'local',
             localUrl: 'http://localhost:5737/',
             baseUrl: 'https://node.example/',
             publicUrl: 'https://node.example/',
@@ -531,6 +588,109 @@ describe('SolidDatabaseProvider', () => {
     expect(createLinxSolidDatabaseMock).toHaveBeenCalledWith(sessionState.session, {
       podUrl: null,
     })
+  })
+
+  it('uses profile solid:storage as the Pod URL for a custom provider', async () => {
+    const db = {}
+    createLinxSolidDatabaseMock.mockResolvedValue(db)
+    sessionState.session.info.webId = 'https://solid.example.net/bob/profile/card#me'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({ 'content-type': 'text/turtle' }),
+      text: async () => `
+        @prefix solid: <http://www.w3.org/ns/solid/terms#>.
+        <https://solid.example.net/bob/profile/card#me>
+          solid:storage <https://solid.example.net/users/bob/> .
+      `,
+    }))
+    window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
+      issuerUrl: 'https://solid.example.net',
+      storageProviderUrl: 'https://solid.example.net',
+      storageProviderLabel: 'Example Solid',
+      authorizationSurface: 'window',
+      returnToMicroAppId: 'chat',
+    }))
+
+    render(
+      <SolidDatabaseProvider>
+        <Probe />
+      </SolidDatabaseProvider>,
+    )
+
+    await flushAsyncWork()
+
+    expect(createLinxSolidDatabaseMock).toHaveBeenCalledWith(sessionState.session, {
+      initTimeoutMs: 90_000,
+      podUrl: 'https://solid.example.net/users/bob/',
+    })
+  })
+
+  it('uses profile solid:storage for a same-origin custom provider even when the label is missing', async () => {
+    const db = {}
+    createLinxSolidDatabaseMock.mockResolvedValue(db)
+    sessionState.session.info.webId = 'https://solid.example.net/bob/profile/card#me'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({ 'content-type': 'application/ld+json' }),
+      text: async () => JSON.stringify({
+        '@id': 'https://solid.example.net/bob/profile/card#me',
+        'solid:storage': { '@id': 'https://solid.example.net/users/bob/' },
+      }),
+    }))
+    window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
+      issuerUrl: 'https://solid.example.net',
+      storageProviderUrl: 'https://solid.example.net',
+      authorizationSurface: 'window',
+      returnToMicroAppId: 'chat',
+    }))
+
+    render(
+      <SolidDatabaseProvider>
+        <Probe />
+      </SolidDatabaseProvider>,
+    )
+
+    await flushAsyncWork()
+
+    expect(createLinxSolidDatabaseMock).toHaveBeenCalledWith(sessionState.session, {
+      initTimeoutMs: 90_000,
+      podUrl: 'https://solid.example.net/users/bob/',
+    })
+  })
+
+  it('fails closed when a custom provider profile storage points outside the selected provider', async () => {
+    const db = {}
+    createLinxSolidDatabaseMock.mockResolvedValue(db)
+    sessionState.session.info.webId = 'https://solid.example.net/bob/profile/card#me'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({ 'content-type': 'text/turtle' }),
+      text: async () => `
+        @prefix solid: <http://www.w3.org/ns/solid/terms#>.
+        <https://solid.example.net/bob/profile/card#me>
+          solid:storage <https://other.example.net/users/bob/> .
+      `,
+    }))
+    window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
+      issuerUrl: 'https://solid.example.net',
+      storageProviderUrl: 'https://solid.example.net',
+      storageProviderLabel: 'Example Solid',
+      authorizationSurface: 'window',
+      returnToMicroAppId: 'chat',
+    }))
+
+    render(
+      <SolidDatabaseProvider>
+        <Probe />
+      </SolidDatabaseProvider>,
+    )
+
+    await flushAsyncWork()
+
+    expect(createLinxSolidDatabaseMock).not.toHaveBeenCalled()
+    expect(screen.getByTestId('status').textContent).toBe('error')
+    expect(screen.getByTestId('has-db').textContent).toBe('false')
+    expect((window as any).__SOLID_DB_ERROR__).toContain('不在当前 provider')
   })
 
   it('does not reuse a previous Local SP when the current login selects Cloud only', async () => {

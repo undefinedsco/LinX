@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type {
-  LocalOnboardingMode,
+  LocalSpaceKind,
   LocalOnboardingSnapshot,
 } from '@/types/electron-api'
 
@@ -12,7 +12,7 @@ export function useLocalOnboarding() {
 
   const unavailableSnapshot = useMemo<LocalOnboardingSnapshot>(() => ({
     state: 'error',
-    mode: null,
+    spaceKind: null,
     localUrl: null,
     baseUrl: null,
     publicUrl: null,
@@ -58,11 +58,11 @@ export function useLocalOnboarding() {
     })
   }, [desktopApi, refresh, unavailableSnapshot])
 
-  const chooseMode = useCallback(async (mode: LocalOnboardingMode) => {
+  const chooseSpace = useCallback(async (spaceKind: LocalSpaceKind) => {
     if (!desktopApi?.localOnboarding) return unavailableSnapshot
     setActing(true)
     try {
-      const next = await desktopApi.localOnboarding.chooseMode(mode)
+      const next = await desktopApi.localOnboarding.chooseSpace(spaceKind)
       setSnapshot(next)
       return next
     } finally {
@@ -92,7 +92,7 @@ export function useLocalOnboarding() {
     loading,
     acting,
     refresh,
-    chooseMode,
+    chooseSpace,
     continueLocal,
     openAdvancedSettings,
     isDesktop: Boolean(desktopApi?.localOnboarding),

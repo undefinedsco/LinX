@@ -65,7 +65,7 @@ test('XpodManager adds workspace node_modules to child NODE_PATH', (t) => {
     {},
     {
       getConfigPath: () => path.join(tmpDir, '.env'),
-      getAll: () => ({ CSS_EDITION: 'local', XPOD_MODE: 'local' }),
+      getAll: () => ({}),
     },
     { updateManagedStatus: () => {} },
     tmpDir,
@@ -87,7 +87,7 @@ test('XpodManager adds workspace node_modules to child NODE_PATH', (t) => {
   assert.match(env.NODE_PATH, /node_modules/)
 })
 
-test('XpodManager managed env pins Cloud IdP URL for local managed SP mode', (t) => {
+test('XpodManager managed env pins Cloud IdP URL for Local storage space', (t) => {
   const originalLoad = Module._load
 
   Module._load = function patchedLoad(request, parent, isMain) {
@@ -115,7 +115,6 @@ test('XpodManager managed env pins Cloud IdP URL for local managed SP mode', (t)
       getConfigPath: () => path.join(tmpDir, '.env'),
       getAll: () => ({
         CSS_EDITION: 'local',
-        XPOD_MODE: 'local',
         oidcIssuer: 'https://id.undefineds.co',
         XPOD_CLOUD_API_ENDPOINT: 'https://api.undefineds.co',
       }),
@@ -126,7 +125,7 @@ test('XpodManager managed env pins Cloud IdP URL for local managed SP mode', (t)
 
   const env = manager.buildProcessEnv(
     { kind: 'dev-source', rootDir: '/Users/example/xpod-cli', entryPath: '/Users/example/xpod-cli/src/main.ts' },
-    { providerId: 'local', dataDir: tmpDir, port: 5737, startupMode: 'remote-ready' },
+    { providerId: 'local', dataDir: tmpDir, port: 5737, spaceKind: 'local' },
     {
       providerId: 'local',
       dataDir: tmpDir,
@@ -180,7 +179,6 @@ test('XpodManager keeps oidcIssuer as the xpod external IdP env contract', (t) =
       getConfigPath: () => path.join(tmpDir, '.env'),
       getAll: () => ({
         CSS_EDITION: 'local',
-        XPOD_MODE: 'local',
         oidcIssuer: 'https://id.undefineds.co',
       }),
     },
@@ -190,7 +188,7 @@ test('XpodManager keeps oidcIssuer as the xpod external IdP env contract', (t) =
 
   const env = manager.buildProcessEnv(
     { kind: 'dev-source', rootDir: '/Users/example/xpod-cli', entryPath: '/Users/example/xpod-cli/src/main.ts' },
-    { providerId: 'local', dataDir: tmpDir, port: 5737, startupMode: 'remote-ready' },
+    { providerId: 'local', dataDir: tmpDir, port: 5737, spaceKind: 'local' },
     {
       providerId: 'local',
       dataDir: tmpDir,
@@ -204,7 +202,7 @@ test('XpodManager keeps oidcIssuer as the xpod external IdP env contract', (t) =
   assert.equal(env[['OIDC', 'ISSUER'].join('_')], undefined)
 })
 
-test('XpodManager device-only env keeps local base URL without managed Cloud provisioning keys', (t) => {
+test('XpodManager Standalone env keeps local base URL without managed Cloud provisioning keys', (t) => {
   const originalLoad = Module._load
 
   Module._load = function patchedLoad(request, parent, isMain) {
@@ -225,14 +223,13 @@ test('XpodManager device-only env keeps local base URL without managed Cloud pro
   })
 
   const { XpodManager } = require(resolveCompiledDesktopModule('lib/xpod-manager.js'))
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'linx-xpod-manager-device-only-'))
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'linx-xpod-manager-standalone-'))
   const manager = new XpodManager(
     {},
     {
       getConfigPath: () => path.join(tmpDir, '.env'),
       getAll: () => ({
         CSS_EDITION: 'local',
-        XPOD_MODE: 'local',
         oidcIssuer: 'https://id.undefineds.co',
         XPOD_CLOUD_API_ENDPOINT: 'https://api.undefineds.co',
       }),
@@ -243,7 +240,7 @@ test('XpodManager device-only env keeps local base URL without managed Cloud pro
 
   const env = manager.buildProcessEnv(
     { kind: 'dev-source', rootDir: '/Users/example/xpod-cli', entryPath: '/Users/example/xpod-cli/src/main.ts' },
-    { providerId: 'local', dataDir: tmpDir, port: 5737, startupMode: 'device-only' },
+    { providerId: 'local', dataDir: tmpDir, port: 5737, spaceKind: 'standalone' },
     {
       providerId: 'local',
       dataDir: tmpDir,
@@ -262,7 +259,7 @@ test('XpodManager device-only env keeps local base URL without managed Cloud pro
   assert.equal(env.XPOD_SERVICE_TOKEN, undefined)
 })
 
-test('XpodManager remote-ready env keeps Local SP public URL while binding Cloud IdP and node tokens', (t) => {
+test('XpodManager Local env keeps Local SP public URL while binding Cloud issuer and node tokens', (t) => {
   const originalLoad = Module._load
 
   Module._load = function patchedLoad(request, parent, isMain) {
@@ -283,14 +280,13 @@ test('XpodManager remote-ready env keeps Local SP public URL while binding Cloud
   })
 
   const { XpodManager } = require(resolveCompiledDesktopModule('lib/xpod-manager.js'))
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'linx-xpod-manager-remote-ready-'))
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'linx-xpod-manager-local-'))
   const manager = new XpodManager(
     {},
     {
       getConfigPath: () => path.join(tmpDir, '.env'),
       getAll: () => ({
         CSS_EDITION: 'local',
-        XPOD_MODE: 'local',
         oidcIssuer: 'https://id.undefineds.co',
         XPOD_CLOUD_API_ENDPOINT: 'https://api.undefineds.co',
       }),
@@ -304,8 +300,8 @@ test('XpodManager remote-ready env keeps Local SP public URL while binding Cloud
       providerId: 'local',
       dataDir: tmpDir,
       port: 5737,
-      startupMode: 'remote-ready',
-      domain: { type: 'custom', value: 'node-0000.undefineds.co' },
+      spaceKind: 'local',
+      domain: { type: 'managed', value: 'node-0000.undefineds.co' },
     },
     'https://node-0000.undefineds.co/',
   )
@@ -315,8 +311,8 @@ test('XpodManager remote-ready env keeps Local SP public URL while binding Cloud
       providerId: 'local',
       dataDir: tmpDir,
       port: 5737,
-      startupMode: 'remote-ready',
-      domain: { type: 'custom', value: 'node-0000.undefineds.co' },
+      spaceKind: 'local',
+      domain: { type: 'managed', value: 'node-0000.undefineds.co' },
     },
     state,
     {
@@ -342,7 +338,7 @@ test('XpodManager remote-ready env keeps Local SP public URL while binding Cloud
   assert.equal(env.XPOD_SERVICE_TOKEN, 'service-token')
 })
 
-test('XpodManager device-only desired state keeps HTTP LAN CSS_BASE_URL as the canonical Local URL', (t) => {
+test('XpodManager Standalone desired state keeps HTTP LAN CSS_BASE_URL as the canonical URL', (t) => {
   const originalLoad = Module._load
 
   Module._load = function patchedLoad(request, parent, isMain) {
@@ -370,7 +366,6 @@ test('XpodManager device-only desired state keeps HTTP LAN CSS_BASE_URL as the c
       getConfigPath: () => path.join(tmpDir, '.env'),
       getAll: () => ({
         CSS_EDITION: 'local',
-        XPOD_MODE: 'local',
         CSS_BASE_URL: 'http://192.168.1.10:5737',
       }),
     },
@@ -382,12 +377,12 @@ test('XpodManager device-only desired state keeps HTTP LAN CSS_BASE_URL as the c
     providerId: 'local',
     dataDir: tmpDir,
     port: 5737,
-    startupMode: 'device-only',
+    spaceKind: 'standalone',
     domain: { type: 'none' },
   })
   const env = manager.buildProcessEnv(
     { kind: 'dev-source', rootDir: '/Users/example/xpod-cli', entryPath: '/Users/example/xpod-cli/src/main.ts' },
-    { providerId: 'local', dataDir: tmpDir, port: 5737, startupMode: 'device-only' },
+    { providerId: 'local', dataDir: tmpDir, port: 5737, spaceKind: 'standalone' },
     state,
   )
 
@@ -397,7 +392,7 @@ test('XpodManager device-only desired state keeps HTTP LAN CSS_BASE_URL as the c
   assert.equal(env.XPOD_CLOUD_API_ENDPOINT, undefined)
 })
 
-test('XpodManager device-only desired state ignores HTTPS CSS_BASE_URL unless remote-ready provisioning owns it', (t) => {
+test('XpodManager Standalone desired state ignores HTTPS CSS_BASE_URL unless explicit domain config owns it', (t) => {
   const originalLoad = Module._load
 
   Module._load = function patchedLoad(request, parent, isMain) {
@@ -425,7 +420,6 @@ test('XpodManager device-only desired state ignores HTTPS CSS_BASE_URL unless re
       getConfigPath: () => path.join(tmpDir, '.env'),
       getAll: () => ({
         CSS_EDITION: 'local',
-        XPOD_MODE: 'local',
         CSS_BASE_URL: 'https://pod.example.com',
       }),
     },
@@ -437,7 +431,7 @@ test('XpodManager device-only desired state ignores HTTPS CSS_BASE_URL unless re
     providerId: 'local',
     dataDir: tmpDir,
     port: 5737,
-    startupMode: 'device-only',
+    spaceKind: 'standalone',
     domain: { type: 'none' },
   })
 
@@ -502,7 +496,6 @@ test('XpodManager removes inherited OIDC env unless runtime config explicitly se
       getConfigPath: () => path.join(tmpDir, '.env'),
       getAll: () => ({
         CSS_EDITION: 'local',
-        XPOD_MODE: 'local',
       }),
     },
     { updateManagedStatus: () => {} },
@@ -511,7 +504,7 @@ test('XpodManager removes inherited OIDC env unless runtime config explicitly se
 
   const env = manager.buildProcessEnv(
     { kind: 'dev-source', rootDir: '/Users/example/xpod-cli', entryPath: '/Users/example/xpod-cli/src/main.ts' },
-    { providerId: 'local', dataDir: tmpDir, port: 5737, startupMode: 'device-only' },
+    { providerId: 'local', dataDir: tmpDir, port: 5737, spaceKind: 'standalone' },
     {
       providerId: 'local',
       dataDir: tmpDir,
@@ -557,7 +550,6 @@ test('XpodManager runtime env path points to the generated local runtime env fil
       getConfigPath: () => path.join(tmpDir, '.env'),
       getAll: () => ({
         CSS_EDITION: 'local',
-        XPOD_MODE: 'local',
       }),
     },
     { updateManagedStatus: () => {} },
@@ -565,7 +557,7 @@ test('XpodManager runtime env path points to the generated local runtime env fil
   )
 
   const runtimeEnv = manager.buildServiceEnv(
-    { providerId: 'local', dataDir: tmpDir, port: 5737, startupMode: 'device-only' },
+    { providerId: 'local', dataDir: tmpDir, port: 5737, spaceKind: 'standalone' },
     {
       providerId: 'local',
       dataDir: tmpDir,
@@ -607,7 +599,6 @@ test('XpodManager spawns detached xpod process with direct log fds', (t) => {
     {},
     {
       getConfigPath: () => path.join(tmpDir, '.env'),
-      getAll: () => ({ CSS_EDITION: 'local', XPOD_MODE: 'local' }),
     },
     { updateManagedStatus: () => {} },
     tmpDir,
@@ -658,7 +649,6 @@ test('XpodManager dev-source launch disables bun dotenv auto-loading', (t) => {
     {},
     {
       getConfigPath: () => path.join(tmpDir, '.env'),
-      getAll: () => ({ CSS_EDITION: 'local', XPOD_MODE: 'local' }),
     },
     { updateManagedStatus: () => {} },
     tmpDir,
@@ -702,7 +692,6 @@ test('XpodManager launch spec leaves bind host derivation to xpod BASE_URL seman
     {},
     {
       getConfigPath: () => path.join(tmpDir, '.env'),
-      getAll: () => ({ CSS_EDITION: 'local', XPOD_MODE: 'local' }),
     },
     { updateManagedStatus: () => {} },
     tmpDir,
@@ -743,7 +732,6 @@ test('XpodManager managed Bun launch spec uses cached package config and Bun bin
     {},
     {
       getConfigPath: () => path.join(tmpDir, '.env'),
-      getAll: () => ({ CSS_EDITION: 'local', XPOD_MODE: 'local' }),
     },
     { updateManagedStatus: () => {} },
     tmpDir,

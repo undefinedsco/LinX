@@ -1,48 +1,23 @@
 # 本地 Pod 部署设计
 
-> 状态：已收敛。历史版本里的 `pods.undefineds.co` / `node-*.undefineds.co` 自动分配 Local SP 域名方案已废弃。
+这份文档是本地 Pod 相关文档索引，不再作为 Local 语义主文档。
 
-当前权威文档：
+主文档：
 
-- `docs/login-experience-map.md`：登录路径和部署配置边界。
-- `docs/local-sp-domain-and-tunnel.md`：Local SP 域名与隧道规则。
+- Local canonical URL、canonical domain 策略、tunnel、localhost/LAN：`docs/local-sp-domain-and-tunnel.md`
+- IDP/SP、注册、`solid:storage`、业务写入边界：`docs/login-identity-storage-routing-model.md`
+- 登录产品流程和验收：`docs/login-experience-map.md`
+- 多渠道访问和 same-node 探测：`docs/multi-channel-access.md`
 
-## 当前产品路线
+## 本文件职责
 
-| 路线 | IDP | SP | SP 公网 URL |
-| --- | --- | --- | --- |
-| Cloud | Cloud | Cloud | 平台提供 |
-| Local 直连 | Cloud | Local | 用户提供 |
-| Local 隧道 | Cloud | Local | 用户提供 |
-| Standalone | Local | Local | 可选，用户提供 |
+本文只作为本地 Pod 文档索引和职责摘要。不要在这里新增 Local/Standalone
+身份语义、registration flow、`solid:storage` 规则或 canonical URL 规则；需要修改时改主文档。
 
-## 本地 Pod 配置规则
+## 分工摘要
 
-- LinX 不再为 Local SP 自动分配平台域名。
-- 用户不再手填平台生成的 Local 公网域名。
-- `CSS_BASE_STORAGE_DOMAIN` 不再是 Local onboarding 的用户配置项。
-- Standalone 默认路径只保证本机/局域网可用，不要求公网域名。
-- Local 直连需要用户自己的公网域名，并由用户完成 DNS、端口转发、反向代理和 HTTPS 入口。
-- Local 隧道需要用户自己的公网域名，并由用户把域名接到隧道出口。
-- Standalone 默认使用 `http://localhost:5737/`，只承诺本机可用；局域网和公网访问由用户自行配置。
+LinX 负责启动 xpod、采集本地配置、调用 Cloud provisioning、展示运行状态和执行 same-node route 探测。
 
-## LinX 与 xpod 分工
+xpod 负责 Pod 创建、数据持久化、root/onboarding 入口、候选访问地址和 canonical URL 对外声明。
 
-LinX 负责：
-
-- 采集数据目录、端口、部署模式、用户公网域名、隧道供应商和 token。
-- 启动或停止本地 xpod。
-- 将用户提供的 public URL 写入 xpod 配置。
-- 在 Cloud IDP + Local SP 路径下，把用户提供的 public URL 注册给 Cloud。
-
-xpod 负责：
-
-- 本地 IDP/SP 能力。
-- Pod 创建、登录、consent 和数据持久化。
-- 按 `CSS_BASE_URL` 生成 WebID、OIDC issuer 和 storage URL。
-
-Cloud 负责：
-
-- Cloud 路径的账号、登录、consent 和 Cloud SP。
-- Local 路径的 Cloud IDP 登录和 Local SP provisioning。
-- 不负责为 Local SP 分配或转发用户可感知的公网域名。
+Cloud 负责 Cloud 账号、登录、consent、Cloud-managed canonical URL 分配和 provision scope 校验；具体 profile/storage 绑定规则见登录主文档。

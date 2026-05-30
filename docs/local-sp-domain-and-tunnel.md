@@ -1,116 +1,103 @@
 # Local SP 域名与隧道说明
 
-这份文档说明 LinX 在 `local` 和 `standalone` 两种部署模式下，SP URL 如何确定，以及用户什么时候需要自己准备公网域名和隧道。
+这份文档说明 LinX 在 `local` 和 `standalone` 两种空间类型下，SP URL 如何确定，以及 tunnel / LAN / localhost 这些访问渠道和 canonical storage URL 的边界。
 
-## 结论
+这是 Local canonical URL 和访问渠道的主文档。IDP/SP 身份、注册、
+`solid:storage` 绑定和业务写入规则以
+`docs/login-identity-storage-routing-model.md` 为准；本文只在必要处摘要引用。
 
-- `cloud`：IDP 和 SP 都在 Cloud，用户不配置 Local SP 域名。
-- `local`：IDP 使用 Cloud，SP 运行在本机。要完成登录必须有用户自己的公网 HTTPS URL；缺少 URL 时只做本机/LAN 连通性检查，不静默降级。
-- `standalone`：IDP 和 SP 都在本机；默认只保证本机/局域网可用，公网 URL 可选。
-- LinX 不再为 Local SP 自动分配 `node-*.undefineds.co`，也不再要求用户手填平台生成的公网域名。
-- `CSS_BASE_STORAGE_DOMAIN` 不再是用户可配置的 Local 登录路径。
-- Standalone 默认自动路径是本机/LAN：启动本机 xpod，不要求公网 URL，不要求隧道 token。
-- Local 远程路径的公网 URL 必须是用户真实可访问的 HTTPS origin。LinX 只使用这个 URL 注册 Local SP，不提供中间转发域名。
-- 用户后续补充公网域名、直连入口或隧道后，可以把同一个 Local SP 切换为 Cloud/外网可访问 route；切换 route 不应要求重建本地数据目录。
+权威原则：
 
-## 1. 全套 Cloud
+- `cloud`：OIDC issuer 和 Storage Provider 都在 Cloud。
+- `local`：OIDC issuer 使用 Cloud，Storage Provider 运行在本机 xpod。
+- `standalone`：OIDC issuer 和 Storage Provider 都在本机 xpod。
+- `custom`：第三方 Solid provider 的 issuer/storage 一体入口，用户只填写一个 provider URL。
+- Local 的 canonical SP URL 必须稳定，并写入 Cloud WebID profile 的 `solid:storage`。
+- `localhost` / LAN / tunnel 都是访问渠道；除非它们就是 selected canonical URL，否则不能写入 `solid:storage`。
 
-这是最简单的路径。
+## Local URL 类型
 
-- `IDP` 使用 Cloud。
-- `SP` 使用 Cloud。
-- 用户只需要登录 `id.undefineds.co`。
-- 数据存储在 Cloud SP。
-- 本地不启动 Local SP，不需要本机域名、隧道或公网 IP。
-- SP 域名由 Cloud SP 自己提供，不属于 Local SP 域名配置。
+| 类型 | Canonical SP URL 来源 | 用户是否填写域名 | 说明 |
+| --- | --- | --- | --- |
+| Local + Cloud-managed canonical domain | Cloud provisioning 返回 `node-*.undefineds.co` | 否 | 默认 Local 路径。Cloud 分配 canonical URL，LinX 保存并传给 xpod。 |
+| Local + user-managed canonical domain | 用户自有 HTTPS origin | 是 | 高级路径。用户负责 DNS、HTTPS、反代、端口转发或隧道出口绑定。 |
+| Standalone | 默认 `http://localhost:5737/` 或用户本地配置 | 可选 | 不走 Cloud provisioning，WebID 与 Cloud WebID 分离。 |
 
-## 2. Local 本机 / 局域网基础路径
+`CSS_BASE_STORAGE_DOMAIN` 不再是用户可配置项。xpod 的 `CSS_BASE_URL` 应使用 selected canonical SP URL。
 
-这是用户没有公网域名、没有公网 IP 或暂时不配置隧道时的完整本地登录路径，对应 Standalone。
+## Local + Cloud-managed Canonical Domain
 
-用户需要准备：
+这是默认的 `local` 空间路径：Cloud issuer + Local storage。它不是一个新的
+LinX 内部模式，只是 Local canonical SP URL 的分配策略。
 
-- 一个本机数据目录。
-- 可选的局域网访问环境。
+流程：
 
-LinX 行为：
+```text
+LinX 选择 Local
+  -> LinX 向 Cloud /provision/nodes 注册 Local node，请求 Cloud 分配 canonical 域名
+  -> Cloud 返回 spDomain/publicUrl，例如 https://node-0000.undefineds.co/
+  -> LinX 启动 xpod，CSS_BASE_URL=https://node-0000.undefineds.co/
+  -> 用户走 Cloud 登录 / 注册 / consent
+  -> Cloud 根据 provision scope 把 WebID solid:storage 写到 Local SP Pod
+```
 
-- 不要求填写公网域名。
-- 不要求选择隧道供应商。
-- 不因为公网 IP 检测失败而阻断 Local 启动。
-- xpod 默认监听本机端口，例如 `http://localhost:5737/`。
-- 如果 `CSS_BASE_URL` 配成局域网地址，例如 `http://192.168.1.10:5737/`，LinX/xpod 内部开放监听；用户不需要也不应该再填写单独的 listen host 字段。
-- 用户之后需要 Cloud IDP 或外网访问时，再选择 Local 并补充公网 URL 和 route 配置。
+规则：
 
-## 3. Cloud IDP + Local SP，外网可直连
+- 用户不手填 `node-*.undefineds.co`。
+- Cloud-managed canonical URL 是存储 URL，不等于 Cloud 托管用户数据。
+- 如果暂时没有外网 route，LinX 仍可启动 xpod 做 localhost/LAN 连通性检查。
+- 无外网 route 时，第三方设备不能假设 canonical URL 已可达；但不能因此把 `localhost` 写成 storage。
+- 后续补 tunnel token 或可达 route 时，应复用同一个 dataDir 和 canonical URL。
 
-这是用户希望身份在 Cloud、数据存在本机，并且本机有可被外网访问入口的路径。
+## Local + User-managed Canonical Domain
 
-用户需要准备：
-
-- 一个自己控制的公网域名，例如 `pod.example.com`。
-- 让该域名解析到本机可访问的公网地址。
-- 本机网络、防火墙、端口转发或反向代理配置正确。
-
-LinX 行为：
-
-- 用户在 Local 远程配置里填写自己的公网 URL。
-- LinX 用这个 URL 向 Cloud 注册 Local SP，例如 `publicUrl=https://pod.example.com/`。
-- xpod 本地仍监听本机端口，例如 `http://localhost:5737/`。
-- `CSS_BASE_URL` 使用用户提供的 URL，例如 `https://pod.example.com/`。
-- `CSS_BASE_URL` 是身份和 Pod 的对外入口 URL，不是裸监听地址；监听地址由 LinX/xpod 根据入口 URL 内部推导。
-- Cloud 不分配 Local SP 域名，也不把平台域名指向用户 IP。
-
-## 4. Cloud IDP + Local SP，外网不可直连，用隧道
-
-这是本机在 NAT、家庭宽带、内网或防火墙后面的路径。
+这是用户明确要使用自有域名时的 Local canonical SP URL 策略。
 
 用户需要准备：
 
-- 一个自己控制的公网域名，或隧道供应商稳定分配的 HTTPS 域名，例如 `pod.example.com`。
-- 一个隧道服务，例如 Cloudflare Tunnel、Sakura FRP 或其他可稳定暴露本地服务的供应商。
-- 将自己的域名按隧道供应商要求接到隧道出口。
-- 在 LinX 中填写公网域名、隧道供应商和 token。
+- 一个自己控制的 HTTPS origin，例如 `https://pod.example.com/`。
+- DNS、证书、反向代理、防火墙、端口转发或隧道出口。
 
 LinX 行为：
 
-- LinX 仍然只使用用户填写的公网 URL 注册 Local SP。
-- LinX 不会把 `node-*.undefineds.co` 转发到用户隧道。
-- 隧道域名的 DNS、证书、出口绑定由用户或隧道供应商负责。
-- 如果用户没有公网域名，不能完成 Cloud IDP + Local SP；可以先使用 Standalone，或只做 Local 本机/LAN 连通性检查。
+- 向 Cloud provisioning 发送用户提供的 `publicUrl`，域名策略为 user-managed。
+- xpod 使用该 URL 作为 `CSS_BASE_URL`。
+- 登录、注册、Pod picker、`solid:storage` 都以该 URL 为 selected SP canonical URL。
 
-## 5. 全套 Local / Standalone
+## 隧道
 
-这是 IDP 和 SP 都在本机的路径。
+隧道只解决访问渠道，不改变身份和存储语义。
 
-- 默认只保证本机可用，例如 `http://localhost:5737/`。
-- 局域网访问可以由用户自行暴露局域网地址。
-- 公网访问是可选项；如果要公网访问，用户仍需要自己准备公网域名；不可直连时还需要隧道。
-- 不经过 Cloud IDP，不需要 Cloud provisioning。
-- WebID 由本地 xpod 签发，和 Cloud WebID 分离。
+Local + Cloud-managed canonical domain 可以使用 Cloudflare Tunnel 或其他隧道把 Cloud 分配的 canonical URL 接到本机 xpod。Local + user-managed canonical domain 也可以由用户把自己的域名接到隧道出口。
+
+规则：
+
+- LinX 可以保存 tunnel token 并随 xpod 启动 tunnel client。
+- tunnel token 不决定 WebID 或 storage；selected canonical SP URL 才决定 storage。
+- tunnel 可用性失败时，应展示 route 状态，不得 fallback 到 Cloud Pod 或 Standalone Pod。
+
+## 登录 / 注册边界
+
+本文不定义登录模型。Local flow 的 Cloud issuer、provision scope、
+consent/Pod picker 过滤、WebID profile `solid:storage` 绑定，以及 LinX
+登录后如何选择 Solid DB base，全部以
+`docs/login-identity-storage-routing-model.md` 为准。
 
 ## 用户侧判断
 
-用户只需要判断一个问题：
+用户只需要判断：
 
-> 我是否需要让本机 SP 被当前设备之外的地方访问？
-
-- 不需要 Cloud IDP：选 Standalone，不填公网域名，只在本机/局域网使用。
-- 只想先完成本机登录：选 Standalone，不填公网域名，只在本机/局域网使用。
-- 需要 Cloud IDP，而且本机外网可直连：选 Local 远程路径，填自己的公网 URL。
-- 需要 Cloud IDP，但本机外网不可直连：选 Local 远程路径，填自己的公网 URL，并配置隧道。
-- 不想用 Cloud 身份：选 standalone；是否公网可访问仍由用户自己的网络和域名决定。
-
-## 产品文案建议
-
-- `cloud`：`账号和数据都由 LinX Cloud 托管。`
-- `local`：`Cloud 账号，数据存在本机；需要你自己的公网域名或隧道域名。`
-- `local` 公网：`如需 Cloud 登录访问本机数据，请填写你自己的公网域名或隧道域名。`
-- `standalone`：`账号和数据都在本机；公网访问需要你自己的域名和网络入口。`
+- 想账号和数据都托管：选 Cloud。
+- 想 Cloud 账号、数据在本机：选 Local，默认使用 Cloud-managed canonical domain。
+- 想 Cloud 账号、数据在本机且使用自有域名：选 Local，并在高级配置里使用 user-managed canonical domain。
+- 想账号和数据都在本机：选 Standalone。
+- 想使用第三方 Solid provider：选 Custom。
 
 ## 验收要求
 
-- Local 直连和 Local 隧道都必须用用户提供的 `publicUrl` 作为 Pod URL。
-- Cloud 回调 Local SP 创建 Pod 时，Local SP 必须创建 Pod 目录和结构化 root metadata，确保 `HEAD /<pod>/` 返回存在。
-- 如果 `publicUrl` 缺失，不能完成 Cloud IDP + Local SP；但必须允许用户先启动本机 xpod 做连通性检查，或选择 Standalone 完整登录。
-- 现网回归需要至少验证一次真实 Cloud + 用户提供隧道 URL，确认登录后进入 `/chat` 且 Solid DB ready。
+- Local + Cloud-managed canonical domain：Cloud provisioning 返回 canonical `publicUrl`，xpod 使用该 URL 作为 `CSS_BASE_URL`，Cloud profile 的 `solid:storage` 指向该 URL 下的 Pod。
+- Local + user-managed canonical domain：用户提供的 HTTPS URL 是 canonical SP URL，Cloud profile 的 `solid:storage` 指向该 URL 下的 Pod。
+- Local route 优化：localhost/LAN/tunnel 只能作为 same-node 访问渠道，不能改变 canonical resource URI。
+- Pod 创建：Local SP 必须创建 Pod root 和结构化 root metadata，`HEAD /<pod>/` 返回存在。
+- 登录后：Solid DB Pod URL、首个业务写入、后续 update/delete 都必须在 selected SP Pod URL 前缀下。
+- 错误路径：Cloud profile 仍指向 Cloud、旧 Local 节点、缺少 `solid:storage` 或缺少 SP-scoped provision 时，必须阻断进入。

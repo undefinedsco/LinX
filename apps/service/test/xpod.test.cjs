@@ -134,7 +134,7 @@ test('service embedded CSS runtime config injects oidcIssuer through CSS package
   const runtimeConfig = createEmbeddedCssRuntimeConfig({
     configPath,
     runtimeRoot,
-    externalOidcIssuer: 'https://id.undefineds.co/',
+    oidcIssuer: 'https://id.undefineds.co/',
   })
 
   assert.deepEqual(runtimeConfig, {

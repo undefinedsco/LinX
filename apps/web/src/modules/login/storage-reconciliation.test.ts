@@ -45,7 +45,7 @@ describe('storage-reconciliation', () => {
       expectedStorageUrl: 'http://localhost:5737/alice/',
     },
     {
-      route: 'custom Solid provider',
+      route: 'strict same-origin provider',
       webId: 'https://solid.example.net/bob/profile/card#me',
       storageProviderPublicUrl: 'https://solid.example.net/',
       expectedStorageUrl: 'https://solid.example.net/bob/',
@@ -171,6 +171,31 @@ describe('storage-reconciliation', () => {
     })
   })
 
+  it('keeps Local storage path strict even when the profile storage is under the same origin', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({ 'content-type': 'application/ld+json' }),
+      text: async () => JSON.stringify({
+        '@id': 'https://id.undefineds.co/alice/profile/card#me',
+        'solid:storage': { '@id': 'https://node-abc123.undefineds.co/users/alice/' },
+      }),
+    }))
+
+    await expect(
+      detectStorageConflict({
+        webId: 'https://id.undefineds.co/alice/profile/card#me',
+        storageProviderUrl: 'http://localhost:5737',
+        storageProviderPublicUrl: 'https://node-abc123.undefineds.co/',
+        strictStoragePath: true,
+      }),
+    ).resolves.toEqual({
+      expectedStorageUrl: 'https://node-abc123.undefineds.co/alice/',
+      actualStorageUrl: 'https://node-abc123.undefineds.co/users/alice/',
+      storageProviderUrl: 'http://localhost:5737',
+      managementUrl: 'http://localhost:5737/.account/account/',
+    })
+  })
+
   it('returns a conflict when the profile has no solid:storage binding', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
@@ -192,6 +217,53 @@ describe('storage-reconciliation', () => {
       actualStorageUrl: null,
       storageProviderUrl: 'http://localhost:5737',
       managementUrl: 'http://localhost:5737/.account/account/',
+    })
+  })
+
+  it('accepts custom provider storage under the selected provider base', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({ 'content-type': 'text/turtle' }),
+      text: async () => `
+        @prefix solid: <http://www.w3.org/ns/solid/terms#>.
+        <https://solid.example.net/bob/profile/card#me>
+          solid:storage <https://solid.example.net/users/bob/> .
+      `,
+    }))
+
+    await expect(
+      detectStorageConflict({
+        webId: 'https://solid.example.net/bob/profile/card#me',
+        storageProviderUrl: 'https://solid.example.net/',
+        storageProviderPublicUrl: 'https://solid.example.net/',
+        strictStoragePath: false,
+      }),
+    ).resolves.toBeNull()
+  })
+
+  it('rejects custom provider storage outside the selected provider base', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({ 'content-type': 'text/turtle' }),
+      text: async () => `
+        @prefix solid: <http://www.w3.org/ns/solid/terms#>.
+        <https://solid.example.net/bob/profile/card#me>
+          solid:storage <https://other.example.net/users/bob/> .
+      `,
+    }))
+
+    await expect(
+      detectStorageConflict({
+        webId: 'https://solid.example.net/bob/profile/card#me',
+        storageProviderUrl: 'https://solid.example.net/',
+        storageProviderPublicUrl: 'https://solid.example.net/',
+        strictStoragePath: false,
+      }),
+    ).resolves.toEqual({
+      expectedStorageUrl: 'https://solid.example.net/',
+      actualStorageUrl: 'https://other.example.net/users/bob/',
+      storageProviderUrl: 'https://solid.example.net/',
+      managementUrl: 'https://solid.example.net/.account/account/',
     })
   })
 })

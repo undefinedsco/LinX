@@ -66,6 +66,10 @@ const threadChatIdCache = new Map<string, string>()
 let linxWelcomeInFlight: Promise<LinxWelcomeResult | null> | null = null
 
 export const LINX_DEFAULT_SECRETARY = {
+  agentId: '__secretary__',
+  contactId: '__secretary__',
+  chatId: '__secretary__',
+  threadId: 'default',
   title: 'AI Secretary',
   provider: 'undefineds',
   model: 'undefineds/linx-lite',
@@ -403,7 +407,9 @@ async function ensureDefaultThread(chatId: string): Promise<ThreadRow> {
     return existing
   }
 
-  return chatOps.createThread(chatId, LINX_DEFAULT_SECRETARY.threadTitle)
+  return chatOps.createThread(chatId, LINX_DEFAULT_SECRETARY.threadTitle, {
+    threadId: LINX_DEFAULT_SECRETARY.threadId,
+  })
 }
 
 async function ensureLinxWelcomeInternal(): Promise<LinxWelcomeResult | null> {
@@ -439,6 +445,9 @@ async function ensureLinxWelcomeInternal(): Promise<LinxWelcomeResult | null> {
   }
 
   const chat = await chatOps.createAIChat({
+    agentId: LINX_DEFAULT_SECRETARY.agentId,
+    contactId: LINX_DEFAULT_SECRETARY.contactId,
+    chatId: LINX_DEFAULT_SECRETARY.chatId,
     title: LINX_DEFAULT_SECRETARY.title,
     provider: LINX_DEFAULT_SECRETARY.provider,
     model: LINX_DEFAULT_SECRETARY.model,
@@ -685,6 +694,9 @@ export interface CreateAIChatInput {
   provider: string
   model: string
   systemPrompt?: string
+  agentId?: string
+  contactId?: string
+  chatId?: string
 }
 
 export interface UpdateAgentProfileInput {
@@ -785,6 +797,8 @@ export const chatOps = {
       contactId,
       contactUri,
     } = await createAgentContactRecords(db, {
+      agentId: input.agentId,
+      contactId: input.contactId,
       name: title,
       provider: normalizeAIConfigProviderId(provider),
       model: normalizeAIConfigResourceId(model),
@@ -798,7 +812,7 @@ export const chatOps = {
       instructions: systemPrompt,
     })
 
-    const chatId = crypto.randomUUID()
+    const chatId = input.chatId?.trim() || crypto.randomUUID()
     const now = new Date()
 
     writeCollectionRow(agentCollection, agent as AgentRow, agentId)
@@ -942,9 +956,9 @@ export const chatOps = {
   /**
    * Create a new thread
    */
-  async createThread(chatId: string, title?: string): Promise<ThreadRow> {
+  async createThread(chatId: string, title?: string, options?: { threadId?: string }): Promise<ThreadRow> {
     const db = getDb()
-    const threadId = crypto.randomUUID()
+    const threadId = options?.threadId?.trim() || crypto.randomUUID()
     const now = new Date()
     
     const threadData: ThreadInsert = {

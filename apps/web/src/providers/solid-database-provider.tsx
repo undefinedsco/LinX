@@ -3,13 +3,19 @@ import { EVENTS } from '@inrupt/solid-client-authn-browser'
 import { useSession } from '@inrupt/solid-ui-react'
 import { useLoginStore } from '@linx/stores/login'
 import type { SolidDatabase } from '@undefineds.co/models'
+import { LINX_CLOUD_IDENTITY_ORIGIN } from '@undefineds.co/models/client'
 import { createLinxSolidDatabase } from '@/lib/data/linx-solid-database'
+import { isLocalAccessUrl } from '@/lib/local-access-url'
 import {
   hasLocalAccessRouteSource,
   installLocalAccessRoute,
   resolveBestLocalAccessRoute,
 } from '@/lib/local-access-route'
 import { getPendingLoginAttempt } from '@/modules/login/login-utils'
+import {
+  fetchProfileStorageUrl,
+  isStorageUrlWithinProviderBase,
+} from '@/modules/login/storage-reconciliation'
 
 interface SolidDatabaseContextValue {
   db: SolidDatabase | null
@@ -99,9 +105,19 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
     const isLoggedIn = session.info.isLoggedIn
     const webId = session.info.webId
     const sessionKey = isLoggedIn && webId ? getSessionKey(session.info.sessionId, webId) : null
-    const podContext = webId ? resolveLoginPodContext(webId, storedAccount) : null
-    const podUrl = podContext?.podUrl ?? null
-    const databaseKey = sessionKey ? getDatabaseKey(sessionKey, podUrl) : null
+    const podContextResolution = webId ? resolveLoginPodContext(webId, storedAccount) : { context: null }
+    const databasePodKey = getDatabasePodKey(podContextResolution)
+    const databaseKey = sessionKey ? getDatabaseKey(sessionKey, databasePodKey) : null
+
+    if (sessionKey && podContextResolution.error) {
+      initGenerationRef.current += 1
+      inFlightSessionKeyRef.current = null
+      installLocalAccessRoute(null)
+      dbInstanceRef.current = null
+      initializedSessionKeyRef.current = null
+      publishValue({ db: null, status: 'error', error: podContextResolution.error })
+      return
+    }
 
     if (!databaseKey) {
       initGenerationRef.current += 1
@@ -154,6 +170,13 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
     const initDatabase = async () => {
       try {
         publishValue({ db: null, status: 'initializing', error: null })
+
+        const runtimePodContext = await resolveRuntimePodContext(webId ?? '', podContextResolution)
+        if (runtimePodContext.error) {
+          throw runtimePodContext.error
+        }
+        const podContext = runtimePodContext.context
+        const podUrl = podContext?.podUrl ?? null
 
         const accessRoute = hasLocalAccessRouteSource()
           ? await resolveBestLocalAccessRoute({
@@ -226,6 +249,18 @@ function getDatabaseKey(sessionKey: string, podUrl: string | null): string {
   return `${sessionKey}:pod=${podUrl ?? 'default'}`
 }
 
+function getDatabasePodKey(resolution: LoginPodContextResolution): string | null {
+  if (resolution.context) {
+    return resolution.context.podUrl
+  }
+
+  if (resolution.profileStorageProvider) {
+    return `profile-storage:${normalizePodUrl(resolution.profileStorageProvider.storageProviderUrl) ?? resolution.profileStorageProvider.storageProviderUrl}`
+  }
+
+  return null
+}
+
 function resolveDatabasePodUrl(db: SolidDatabase | null): string | null {
   const podUrl = (db as any)?.getDialect?.()?.getPodUrl?.()
   return typeof podUrl === 'string' && podUrl.trim() ? normalizePodUrl(podUrl) : null
@@ -251,10 +286,19 @@ interface LoginPodContext {
   storageProviderLabel?: string
 }
 
+interface LoginPodContextResolution {
+  context: LoginPodContext | null
+  error?: Error
+  profileStorageProvider?: {
+    storageProviderUrl: string
+    storageProviderLabel?: string
+  }
+}
+
 function resolveLoginPodContext(
   webId: string,
   storedAccount: { storageProviderUrl?: string; storageProviderLabel?: string; issuerUrl?: string; issuerLabel?: string } | null,
-): LoginPodContext | null {
+): LoginPodContextResolution {
   const pendingLoginAttempt = getPendingLoginAttempt()
   if (pendingLoginAttempt) {
     return resolveCandidatePodContext(
@@ -277,24 +321,112 @@ function resolveLoginPodContext(
   )
 }
 
+async function resolveRuntimePodContext(
+  webId: string,
+  resolution: LoginPodContextResolution,
+): Promise<LoginPodContextResolution> {
+  if (!resolution.profileStorageProvider) {
+    return resolution
+  }
+
+  const profileStorageUrl = await fetchProfileStorageUrl(webId)
+  const providerBaseUrl = normalizePodUrl(resolution.profileStorageProvider.storageProviderUrl)
+  if (!profileStorageUrl || !providerBaseUrl) {
+    return {
+      context: null,
+      error: new Error('Custom provider profile 缺少 solid:storage，已阻止进入，避免写入错误空间。'),
+    }
+  }
+
+  if (!isStorageUrlWithinProviderBase(profileStorageUrl, providerBaseUrl)) {
+    return {
+      context: null,
+      error: new Error('Custom provider profile 的 solid:storage 不在当前 provider 下，已阻止进入。'),
+    }
+  }
+
+  const podUrl = normalizePodUrl(profileStorageUrl)
+  if (!podUrl) {
+    return {
+      context: null,
+      error: new Error('Custom provider storage URL 无法解析，已阻止进入，避免写入错误空间。'),
+    }
+  }
+
+  return {
+    context: {
+      podUrl,
+      storageProviderUrl: resolution.profileStorageProvider.storageProviderUrl,
+      storageProviderLabel: resolution.profileStorageProvider.storageProviderLabel,
+    },
+  }
+}
+
 function resolveCandidatePodContext(
   webId: string,
   candidate: { storageProviderUrl?: string; storageProviderLabel?: string; issuerUrl?: string },
-): LoginPodContext | null {
-  if (!isSplitStorageProvider(candidate.storageProviderUrl, candidate.issuerUrl, webId, candidate.storageProviderLabel)) {
-    return null
+): LoginPodContextResolution {
+  const classification = classifyStorageProvider(candidate.storageProviderUrl, candidate.issuerUrl, webId, candidate.storageProviderLabel)
+  if (classification.kind === 'default') {
+    if (shouldUseProfileStorageForProvider(candidate)) {
+      return {
+        context: null,
+        profileStorageProvider: {
+          storageProviderUrl: candidate.storageProviderUrl ?? '',
+          storageProviderLabel: candidate.storageProviderLabel,
+        },
+      }
+    }
+    return { context: null }
+  }
+
+  if (classification.kind === 'invalid') {
+    return {
+      context: null,
+      error: new Error(classification.message),
+    }
   }
 
   const normalized = resolveProviderPodUrl(candidate.storageProviderUrl, webId)
   if (!normalized) {
-    return null
+    return {
+      context: null,
+      error: new Error('Local storage URL 无法解析，已阻止进入，避免写入错误空间。'),
+    }
   }
 
   return {
-    podUrl: normalized,
-    storageProviderUrl: candidate.storageProviderUrl ?? normalized,
-    storageProviderLabel: candidate.storageProviderLabel,
+    context: {
+      podUrl: normalized,
+      storageProviderUrl: candidate.storageProviderUrl ?? normalized,
+      storageProviderLabel: candidate.storageProviderLabel,
+    },
   }
+}
+
+function shouldUseProfileStorageForProvider(
+  candidate: { storageProviderUrl?: string; storageProviderLabel?: string; issuerUrl?: string },
+): boolean {
+  if (typeof candidate.storageProviderUrl !== 'string' || !candidate.storageProviderUrl.trim()) {
+    return false
+  }
+
+  if (isLocalAccessUrl(candidate.storageProviderUrl)) {
+    return false
+  }
+
+  const normalizedLabel = candidate.storageProviderLabel?.trim().toLowerCase()
+  if (normalizedLabel === 'cloud' || normalizedLabel === 'local' || normalizedLabel === 'standalone') {
+    return false
+  }
+  if (!normalizedLabel) {
+    const providerOrigin = normalizeOrigin(candidate.storageProviderUrl)
+    const issuerOrigin = normalizeOrigin(candidate.issuerUrl)
+    const cloudOrigin = normalizeOrigin(LINX_CLOUD_IDENTITY_ORIGIN)
+    return Boolean(providerOrigin && issuerOrigin && providerOrigin === issuerOrigin && providerOrigin !== cloudOrigin)
+  }
+
+  return true
 }
 
 function resolveProviderPodUrl(storageProviderUrl: string | undefined, webId: string): string | null {
@@ -319,27 +451,56 @@ function resolveProviderPodUrl(storageProviderUrl: string | undefined, webId: st
   }
 }
 
-function isSplitStorageProvider(
+function classifyStorageProvider(
   storageProviderUrl: string | undefined,
   issuerUrl: string | undefined,
   _webId: string,
   storageProviderLabel?: string,
-): boolean {
+): { kind: 'default' } | { kind: 'selected' } | { kind: 'invalid'; message: string } {
   if (typeof storageProviderUrl !== 'string' || !storageProviderUrl.trim()) {
-    return false
+    return { kind: 'default' }
   }
 
-  if (storageProviderLabel?.trim().toLowerCase() === 'local') {
-    return true
-  }
-
+  const normalizedLabel = storageProviderLabel?.trim().toLowerCase()
   const providerOrigin = normalizeOrigin(storageProviderUrl)
   if (!providerOrigin) {
-    return false
+    return normalizedLabel === 'local' || normalizedLabel === 'standalone'
+      ? { kind: 'invalid', message: 'Local storage URL 无法解析，已阻止进入，避免写入错误空间。' }
+      : { kind: 'default' }
   }
 
   const issuerOrigin = normalizeOrigin(issuerUrl)
-  return Boolean(issuerOrigin && providerOrigin !== issuerOrigin)
+  const providerIsAccessRoute = isLocalAccessUrl(storageProviderUrl)
+  const issuerIsAccessRoute = isLocalAccessUrl(issuerUrl)
+  const explicitlyLocal = normalizedLabel === 'local'
+  const explicitlyStandalone = normalizedLabel === 'standalone'
+
+  if (explicitlyStandalone) {
+    return { kind: 'selected' }
+  }
+
+  if (explicitlyLocal && issuerOrigin && providerOrigin === issuerOrigin) {
+    return issuerIsAccessRoute
+      ? { kind: 'default' }
+      : {
+          kind: 'invalid',
+          message: 'Local storage URL 必须指向 selected Local SP，不能等于 OIDC issuer。',
+        }
+  }
+
+  const splitByOrigin = Boolean(issuerOrigin && providerOrigin !== issuerOrigin)
+  if (!explicitlyLocal && !splitByOrigin) {
+    return { kind: 'default' }
+  }
+
+  if (providerIsAccessRoute) {
+    return {
+      kind: 'invalid',
+      message: 'Local storage URL 必须是 canonical 域名，不能使用 localhost 或局域网访问地址。',
+    }
+  }
+
+  return { kind: 'selected' }
 }
 
 function resolveDatabaseInitTimeoutMs(podUrl: string | null): number | undefined {

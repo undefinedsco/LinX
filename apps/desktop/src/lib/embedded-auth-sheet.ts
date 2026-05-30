@@ -29,6 +29,7 @@ export class EmbeddedAuthorizationSheet {
   private isOpen = false;
   private openToken = 0;
   private pendingProvisionCode: string | null = null;
+  private currentProviderLabel: string | null = null;
   private state: EmbeddedAuthorizationState = {
     open: false,
     reason: 'dismissed',
@@ -49,17 +50,19 @@ export class EmbeddedAuthorizationSheet {
     const openToken = ++this.openToken;
     this.pendingProvisionCode = extractProvisionCode(url);
     const targetUrl = addEmbeddedAuthQuery(url);
-    const title = resolveAuthorizationWindowTitle(options?.providerLabel);
+    this.currentProviderLabel = sanitizeProviderLabel(options?.providerLabel);
+    const title = resolveAuthorizationWindowTitle(this.currentProviderLabel ?? undefined);
 
     if (this.window && !this.window.isDestroyed()) {
       this.window.setTitle(title);
-      this.window.focus();
       this.window.loadURL(targetUrl);
+      this.showWindow();
       this.emitState({ open: true, reason: 'opened', ready: true });
       return;
     }
 
     this.window = new BrowserWindow({
+      parent: mainWindow,
       width: AUTHORIZATION_SURFACE_WIDTH,
       height: AUTHORIZATION_SURFACE_HEIGHT,
       minWidth: 380,
@@ -85,11 +88,13 @@ export class EmbeddedAuthorizationSheet {
     });
 
     this.window.webContents.on('did-finish-load', () => {
+      void this.installNavigationControls();
       void this.installProvisionCode();
       void this.installAuthEnhancer();
     });
 
     this.window.webContents.on('did-navigate-in-page', () => {
+      void this.installNavigationControls();
       void this.installProvisionCode();
       void this.installAuthEnhancer();
     });
@@ -116,9 +121,10 @@ export class EmbeddedAuthorizationSheet {
         return;
       }
 
+      await this.installNavigationControls();
       await this.installProvisionCode();
       await this.installAuthEnhancer();
-      this.window.show();
+      this.showWindow();
       this.emitState({ open: true, reason: 'opened', ready: true });
     } catch (error) {
       if (this.isRequestCurrent(openToken)) {
@@ -149,6 +155,19 @@ export class EmbeddedAuthorizationSheet {
       this.window.close();
     }
     this.window = null;
+  }
+
+  private showWindow(): void {
+    const window = this.window;
+    if (!window || window.isDestroyed()) {
+      return;
+    }
+
+    window.show();
+    if (typeof window.moveTop === 'function') {
+      window.moveTop();
+    }
+    window.focus();
   }
 
   private emitState(state: EmbeddedAuthorizationState): void {
@@ -182,6 +201,22 @@ export class EmbeddedAuthorizationSheet {
     }
   }
 
+  private async installNavigationControls(): Promise<void> {
+    const window = this.window;
+    if (!window || window.isDestroyed()) {
+      return;
+    }
+
+    try {
+      await window.webContents.executeJavaScript(
+        buildEmbeddedAuthorizationControlsScript(this.currentProviderLabel ?? undefined),
+        true,
+      );
+    } catch (error) {
+      console.warn('[Desktop] Failed to install embedded auth controls:', error);
+    }
+  }
+
   private async installProvisionCode(): Promise<void> {
     const window = this.window;
     if (!window || window.isDestroyed() || !this.pendingProvisionCode) {
@@ -202,6 +237,99 @@ export class EmbeddedAuthorizationSheet {
 export function resolveAuthorizationWindowTitle(providerLabel?: string): string {
   const label = sanitizeProviderLabel(providerLabel);
   return label ? `${label} 登录` : 'LinX 登录';
+}
+
+export function buildEmbeddedAuthorizationControlsScript(providerLabel?: string): string {
+  const label = sanitizeProviderLabel(providerLabel);
+  return [
+    '(() => {',
+    '  const ROOT_ID = "linx-embedded-auth-controls";',
+    `  const providerLabel = ${JSON.stringify(label)};`,
+    '  const install = () => {',
+    '    const host = document.body || document.documentElement;',
+    '    if (!host) return "no-host";',
+    '    let root = document.getElementById(ROOT_ID);',
+    '    if (!root) {',
+    '      root = document.createElement("div");',
+    '      root.id = ROOT_ID;',
+    '      root.setAttribute("data-linx-role", "embedded-auth-controls");',
+    '      Object.assign(root.style, {',
+    '        position: "fixed",',
+    '        top: "10px",',
+    '        left: "10px",',
+    '        right: "10px",',
+    '        zIndex: "2147483647",',
+    '        display: "flex",',
+    '        alignItems: "center",',
+    '        justifyContent: "space-between",',
+    '        pointerEvents: "none",',
+    '        fontFamily: "-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",',
+    '      });',
+    '      const button = document.createElement("button");',
+    '      button.type = "button";',
+    '      button.textContent = "← 换空间";',
+    '      button.setAttribute("aria-label", "返回空间选择");',
+    '      button.title = "返回空间选择";',
+    '      button.setAttribute("data-linx-role", "embedded-auth-back");',
+    '      Object.assign(button.style, {',
+    '        pointerEvents: "auto",',
+    '        height: "30px",',
+    '        padding: "0 10px",',
+    '        borderRadius: "999px",',
+    '        border: "1px solid rgba(24, 24, 27, 0.12)",',
+    '        background: "rgba(255, 255, 255, 0.92)",',
+    '        color: "#27272a",',
+    '        boxShadow: "0 8px 24px rgba(24, 24, 27, 0.12)",',
+    '        fontSize: "12px",',
+    '        lineHeight: "30px",',
+    '        cursor: "pointer",',
+    '      });',
+    '      button.addEventListener("click", (event) => {',
+    '        event.preventDefault();',
+    '        event.stopPropagation();',
+    '        window.close();',
+    '      });',
+    '      const badge = document.createElement("span");',
+    '      badge.setAttribute("data-linx-role", "embedded-auth-space");',
+    '      Object.assign(badge.style, {',
+    '        pointerEvents: "none",',
+    '        minWidth: "0",',
+    '        maxWidth: "180px",',
+    '        height: "30px",',
+    '        padding: "0 10px",',
+    '        borderRadius: "999px",',
+    '        border: "1px solid rgba(24, 24, 27, 0.10)",',
+    '        background: "rgba(255, 255, 255, 0.86)",',
+    '        color: "#52525b",',
+    '        boxShadow: "0 8px 24px rgba(24, 24, 27, 0.08)",',
+    '        fontSize: "12px",',
+    '        lineHeight: "30px",',
+    '        overflow: "hidden",',
+    '        textOverflow: "ellipsis",',
+    '        whiteSpace: "nowrap",',
+    '      });',
+    '      root.append(button, badge);',
+    '      host.appendChild(root);',
+    '    }',
+    '    const badge = root.querySelector(\'[data-linx-role="embedded-auth-space"]\');',
+    '    if (badge instanceof HTMLElement) {',
+    '      if (providerLabel) {',
+    '        badge.textContent = `空间：${providerLabel}`;',
+    '        badge.style.display = "inline-block";',
+    '      } else {',
+    '        badge.textContent = "";',
+    '        badge.style.display = "none";',
+    '      }',
+    '    }',
+    '    return "installed";',
+    '  };',
+    '  if (document.readyState === "loading") {',
+    '    document.addEventListener("DOMContentLoaded", install, { once: true });',
+    '    return "scheduled";',
+    '  }',
+    '  return install();',
+    '})();',
+  ].join('\n');
 }
 
 function sanitizeProviderLabel(providerLabel?: string): string | null {

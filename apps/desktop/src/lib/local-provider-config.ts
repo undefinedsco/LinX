@@ -1,12 +1,12 @@
 type ManagedDomainConfig = {
-  type: 'none' | 'custom';
+  type: 'none' | 'managed' | 'custom';
   value?: string;
 }
 
-type LocalProviderMode = 'local' | 'standalone' | null
+type LocalProviderSpaceKind = 'local' | 'standalone' | null
 
 export function resolveManagedDomainFromEnv(env: Record<string, string>): {
-  type: 'none' | 'custom';
+  type: 'none' | 'managed' | 'custom';
   value?: string;
 } {
   const baseUrl = env.CSS_BASE_URL;
@@ -19,33 +19,36 @@ export function resolveManagedDomainFromEnv(env: Record<string, string>): {
     if (protocol !== 'https:') {
       return { type: 'none' };
     }
-    return { type: 'custom', value: hostname };
+    return normalizeManagedDomain({ type: resolveDomainType(hostname), value: hostname });
   } catch {
     return { type: 'none' };
   }
 }
 
 export function resolveEffectiveManagedDomain(options: {
-  mode: LocalProviderMode
+  spaceKind: LocalProviderSpaceKind
   envDomain: ManagedDomainConfig
   existingDomain?: ManagedDomainConfig
 }): ManagedDomainConfig {
-  if (options.envDomain.type === 'custom' && options.envDomain.value?.trim()) {
-    return options.envDomain
+  const envDomain = normalizeManagedDomain(options.envDomain)
+  if (envDomain.type !== 'none' && envDomain.value?.trim()) {
+    return envDomain
   }
 
-  if (options.mode === 'standalone') {
+  if (options.spaceKind === 'standalone') {
     return { type: 'none' }
   }
 
-  return options.existingDomain ?? { type: 'none' }
+  return options.existingDomain
+    ? normalizeManagedDomain(options.existingDomain)
+    : { type: 'none' }
 }
 
 export function resolveManagedTunnelTokenFromEnv(
   env: Record<string, string>,
-  mode: LocalProviderMode,
+  spaceKind: LocalProviderSpaceKind,
 ): string | undefined {
-  if (mode === 'standalone') {
+  if (spaceKind === 'standalone') {
     return undefined;
   }
 
@@ -59,13 +62,36 @@ export function resolveManagedTunnelTokenFromEnv(
 
 export function resolveEffectiveManagedTunnelToken(options: {
   env: Record<string, string>
-  mode: LocalProviderMode
+  spaceKind: LocalProviderSpaceKind
   domain: ManagedDomainConfig
   existingTunnelToken?: string
 }): string | undefined {
-  if (options.mode === 'standalone') {
+  if (options.spaceKind === 'standalone') {
     return undefined
   }
 
-  return resolveManagedTunnelTokenFromEnv(options.env, options.mode) ?? options.existingTunnelToken
+  return resolveManagedTunnelTokenFromEnv(options.env, options.spaceKind) ?? options.existingTunnelToken
+}
+
+function normalizeManagedDomain(domain: ManagedDomainConfig): ManagedDomainConfig {
+  if (domain.type === 'none') {
+    return { type: 'none' }
+  }
+
+  if (!domain.value?.trim()) {
+    return { type: 'none' }
+  }
+
+  const value = domain.value.trim()
+  if (domain.type === 'custom' && resolveDomainType(value) === 'managed') {
+    return { type: 'managed', value }
+  }
+
+  return { type: domain.type, value }
+}
+
+function resolveDomainType(hostname: string): 'managed' | 'custom' {
+  return /^node-[a-z0-9-]+\.undefineds\.co$/i.test(hostname)
+    ? 'managed'
+    : 'custom'
 }

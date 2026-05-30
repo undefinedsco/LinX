@@ -6,7 +6,7 @@ import { LoginCardShell } from './LoginCardShell'
 import { useConfigWindowState } from './hooks/use-config-window-state'
 import { useLocalOnboarding } from './hooks/use-local-onboarding'
 import { useOidcConnect } from './hooks/use-oidc-connect'
-import type { LocalOnboardingMode } from '@/types/electron-api'
+import type { LocalSpaceKind } from '@/types/electron-api'
 
 export interface LocalOnboardingCardProps {
   onBack: () => void
@@ -36,7 +36,7 @@ export function LocalOnboardingCard({
     snapshot,
     loading,
     acting,
-    chooseMode,
+    chooseSpace,
     continueLocal,
     refresh,
     openAdvancedSettings,
@@ -47,9 +47,9 @@ export function LocalOnboardingCard({
   const autoBootstrapStartedRef = useRef(false)
   const autoSignInKeyRef = useRef<string | null>(null)
   const localIssuerUrl = snapshot.localUrl ?? snapshot.baseUrl
-  const localProviderUrl = snapshot.mode === 'standalone'
+  const localProviderUrl = snapshot.spaceKind === 'standalone'
     ? localIssuerUrl
-    : snapshot.publicUrl ?? snapshot.baseUrl ?? snapshot.localUrl
+    : snapshot.publicUrl
   const previousConfigOpen = useRef(configWindow.open)
 
   const handleBack = useCallback(() => {
@@ -60,10 +60,12 @@ export function LocalOnboardingCard({
 
   const handleSignIn = useCallback(async () => {
     if (!localProviderUrl) {
-      setAuthError('Local 服务还没有准备好。')
+      setAuthError(snapshot.spaceKind === 'standalone'
+        ? 'Standalone 服务还没有准备好。'
+        : 'Local canonical storage URL 尚未准备好。请重新启动 Local 完成 Cloud 绑定。')
       return
     }
-    if (snapshot.mode !== 'standalone' && !snapshot.provisionCode) {
+    if (snapshot.spaceKind !== 'standalone' && !snapshot.provisionCode) {
       setAuthError('Local 还没完成 Cloud 绑定，暂时无法继续登录。')
       return
     }
@@ -72,28 +74,30 @@ export function LocalOnboardingCard({
     setLaunchingAuth(true)
 
     try {
-      if (snapshot.mode === 'standalone') {
+      if (snapshot.spaceKind === 'standalone') {
         await oidc.connect(localProviderUrl, {
           authorizationSurface: 'embedded',
           storageProviderUrl: localProviderUrl,
-          storageProviderLabel: 'Local',
+          storageProviderLabel: 'Standalone',
+          issuerLabel: 'Standalone',
         })
       } else {
         await oidc.connect(snapshot.cloudIdentityUrl ?? LINX_CLOUD_IDENTITY_ORIGIN, {
           authorizationSurface: 'embedded',
           storageProviderUrl: localProviderUrl,
           storageProviderLabel: 'Local',
+          issuerLabel: 'Cloud',
           authorizationQuery: {
             provisionCode: snapshot.provisionCode,
           },
         })
       }
     } catch (error: any) {
-      setAuthError(error?.message || '打开 Cloud 登录失败。')
+      setAuthError(error?.message || '打开 Local 登录失败。')
     } finally {
       setLaunchingAuth(false)
     }
-  }, [localProviderUrl, oidc, snapshot.cloudIdentityUrl, snapshot.mode, snapshot.provisionCode])
+  }, [localProviderUrl, oidc, snapshot.cloudIdentityUrl, snapshot.spaceKind, snapshot.provisionCode])
 
   const handleOpenAdvancedSettings = useCallback(async () => {
     setActionError(null)
@@ -115,7 +119,7 @@ export function LocalOnboardingCard({
   }, [configWindow.open, refresh])
 
   useEffect(() => {
-    if (snapshot.state !== 'mode_required' && snapshot.state !== 'idle') {
+    if (snapshot.state !== 'space_required' && snapshot.state !== 'idle') {
       autoBootstrapStartedRef.current = false
     }
   }, [snapshot.state])
@@ -130,7 +134,7 @@ export function LocalOnboardingCard({
     if (loading || acting) return
     if (configWindow.open) return
 
-    const shouldAutoBootstrap = snapshot.state === 'mode_required' || snapshot.state === 'idle'
+    const shouldAutoBootstrap = snapshot.state === 'space_required' || snapshot.state === 'idle'
     if (!shouldAutoBootstrap || autoBootstrapStartedRef.current) {
       return
     }
@@ -140,11 +144,11 @@ export function LocalOnboardingCard({
     setActionError(null)
 
     void (async () => {
-      const continueMode: LocalOnboardingMode = snapshot.mode ?? 'local'
+      const continueSpaceKind: LocalSpaceKind = snapshot.spaceKind ?? 'local'
 
       try {
-        if (snapshot.mode !== continueMode) {
-          await chooseMode(continueMode)
+        if (snapshot.spaceKind !== continueSpaceKind) {
+          await chooseSpace(continueSpaceKind)
         }
         await continueLocal()
       } catch (error: any) {
@@ -153,11 +157,11 @@ export function LocalOnboardingCard({
     })()
   }, [
     acting,
-    chooseMode,
+    chooseSpace,
     configWindow.open,
     continueLocal,
     loading,
-    snapshot.mode,
+    snapshot.spaceKind,
     snapshot.state,
   ])
 
@@ -193,7 +197,7 @@ export function LocalOnboardingCard({
       <div className="px-6 pb-6">
         {loading ? (
           <LoadingCard label="正在检查 Local…" />
-        ) : snapshot.state === 'mode_required' || snapshot.state === 'idle' ? (
+        ) : snapshot.state === 'space_required' || snapshot.state === 'idle' ? (
           <div className="space-y-4">
             <LoadingCard label="正在启动 Local…" detail={snapshot.localUrl ?? snapshot.baseUrl ?? undefined} />
             <Button variant="ghost" className="w-full" onClick={handleBack}>
@@ -218,9 +222,11 @@ export function LocalOnboardingCard({
           />
         ) : (
           <ReadyCard
-            mode={snapshot.mode}
             message={snapshot.message ?? 'Local 已准备好。'}
-            detail={snapshot.publicUrl ?? snapshot.capabilities?.contract ?? snapshot.baseUrl ?? snapshot.localUrl ?? undefined}
+            spaceKind={snapshot.spaceKind}
+            detail={snapshot.spaceKind === 'standalone'
+              ? snapshot.localUrl ?? snapshot.baseUrl ?? snapshot.capabilities?.contract ?? undefined
+              : snapshot.publicUrl ?? undefined}
             error={authError}
             busy={launchingAuth}
             backLabel={backLabel}
@@ -306,7 +312,7 @@ function RepairCard({
 }
 
 function ReadyCard({
-  mode,
+  spaceKind,
   message,
   detail,
   error,
@@ -316,7 +322,7 @@ function ReadyCard({
   onConfigure,
   onBack,
 }: {
-  mode: LocalOnboardingMode | null
+  spaceKind: LocalSpaceKind | null
   message: string
   detail?: string
   error: string | null
@@ -332,7 +338,7 @@ function ReadyCard({
         <p className="text-sm font-medium">Local 已准备好</p>
         <p className="mt-2 text-sm text-muted-foreground leading-6">{message}</p>
         <p className="mt-2 text-xs text-muted-foreground">
-          {mode === 'standalone'
+          {spaceKind === 'standalone'
             ? '下一步会打开 Standalone 登录页，完成后会回到 LinX。'
             : '下一步会打开 Cloud 登录页，流程完成后会回到 LinX。'}
         </p>
@@ -347,7 +353,7 @@ function ReadyCard({
 
       <div className="flex flex-col gap-3">
         <Button disabled={busy} onClick={onSignIn}>
-          {busy ? (mode === 'standalone' ? '正在打开 Standalone 登录…' : '正在打开 Cloud 登录…') : '继续登录'}
+          {busy ? (spaceKind === 'standalone' ? '正在打开 Standalone 登录…' : '正在打开 Cloud 登录…') : '继续登录'}
         </Button>
         <div className="flex gap-3">
           <Button variant="outline" className="flex-1" onClick={onBack}>

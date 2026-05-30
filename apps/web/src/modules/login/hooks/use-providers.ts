@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLoginStore, getAllProviders } from '@linx/stores/login'
+import { isLocalAccessHostname } from '@/lib/local-access-url'
 import type { LoginProviderOption } from '../types'
-import type { LocalOnboardingMode, LocalOnboardingSnapshot, SolidProvider } from '@/types/electron-api'
+import type { LocalSpaceKind, LocalOnboardingSnapshot, SolidProvider } from '@/types/electron-api'
 
 const CLOUD_IDENTITY_URL = 'https://id.undefineds.co'
 const LOCAL_POD_LABEL = 'Local'
@@ -17,6 +18,18 @@ interface ServiceStatusResponse {
     baseUrl?: string
     publicUrl?: string
   }
+  spaceKind?: LocalSpaceKind
+  runtime?: {
+    workers?: {
+      total?: number
+      running?: number
+      idle?: number
+      active?: number
+      paused?: number
+      completed?: number
+      error?: number
+    }
+  }
   provisioning?: {
     nodeId?: string
     publicUrl?: string
@@ -29,6 +42,7 @@ interface ServiceStatusResponse {
 
 interface SetupConfigResponse {
   port?: number
+  spaceKind?: LocalSpaceKind
 }
 
 function normalizeUrl(url: string): string {
@@ -49,7 +63,7 @@ function resolveRuntimeStatus(snapshot: LocalOnboardingSnapshot | null): NonNull
     case 'error':
     case 'repair_required':
       return 'error'
-    case 'mode_required':
+    case 'space_required':
       return 'missing'
     case 'idle':
     default:
@@ -158,82 +172,69 @@ export function useProviders() {
       },
     }))
 
-    // Local providers
+    // Local and Standalone are product-level local entries. Do not collapse
+    // them into device-only/remote-ready runtime states.
     const local: LoginProviderOption[] = []
     if (desktopApi) {
       const managed = desktopProviders.filter((p) => p.managed)
-      const runtimeStatus = resolveRuntimeStatus(localOnboarding)
       if (managed.length > 0) {
         for (const p of managed) {
-          local.push(
-            createLocalLoginProvider({
-              id: `${p.id}:local`,
+          for (const source of ['local', 'standalone'] as const) {
+            const providerSnapshot = projectLocalOnboardingForSource(localOnboarding, source)
+            local.push(createLocalLoginProvider({
+            id: source,
               providerId: p.id,
-              source: 'local',
-              label: LOCAL_POD_LABEL,
-              storageUrl: resolveLocalStorageUrl(localOnboarding, p.issuerUrl, 'local'),
-              runtimeStatus,
-              localOnboarding,
-            }),
-            createLocalLoginProvider({
-              id: `${p.id}:standalone`,
-              providerId: p.id,
-              source: 'standalone',
-              label: STANDALONE_POD_LABEL,
-              storageUrl: resolveLocalStorageUrl(localOnboarding, p.issuerUrl, 'standalone'),
-              runtimeStatus,
-              localOnboarding,
-            }),
-          )
+              source,
+              label: source === 'local' ? LOCAL_POD_LABEL : STANDALONE_POD_LABEL,
+              storageUrl: resolveLocalStorageUrl(providerSnapshot, p.issuerUrl, source),
+              runtimeStatus: resolveRuntimeStatus(providerSnapshot),
+              localOnboarding: providerSnapshot,
+            }))
+          }
         }
       } else {
         const fallbackUrl = localOnboarding?.localUrl ?? localOnboarding?.baseUrl ?? 'http://localhost'
-        local.push(
-          createLocalLoginProvider({
-            id: 'desktop-local',
-            source: 'local',
-            label: LOCAL_POD_LABEL,
-            storageUrl: resolveLocalStorageUrl(localOnboarding, fallbackUrl, 'local'),
-            runtimeStatus,
-            localOnboarding,
-          }),
-          createLocalLoginProvider({
-            id: 'desktop-standalone',
-            source: 'standalone',
-            label: STANDALONE_POD_LABEL,
-            storageUrl: resolveLocalStorageUrl(localOnboarding, fallbackUrl, 'standalone'),
-            runtimeStatus,
-            localOnboarding,
-          }),
-        )
+        for (const source of ['local', 'standalone'] as const) {
+          const providerSnapshot = projectLocalOnboardingForSource(localOnboarding, source)
+          local.push(createLocalLoginProvider({
+            id: source,
+            source,
+            label: source === 'local' ? LOCAL_POD_LABEL : STANDALONE_POD_LABEL,
+            storageUrl: resolveLocalStorageUrl(providerSnapshot, fallbackUrl, source),
+            runtimeStatus: resolveRuntimeStatus(providerSnapshot),
+            localOnboarding: providerSnapshot,
+          }))
+        }
       }
     } else if (isServiceMode) {
-      const runtimeStatus = resolveRuntimeStatus(localOnboarding)
       const fallbackUrl = localOnboarding?.localUrl ?? localOnboarding?.baseUrl ?? 'http://localhost:5737'
-      const source = localOnboarding?.mode === 'local' ? 'local' : 'standalone'
-      local.push({
-        ...createLocalLoginProvider({
-          id: source === 'local' ? 'service-local' : 'service-standalone',
-          source,
-          label: source === 'local' ? LOCAL_POD_LABEL : STANDALONE_POD_LABEL,
-          storageUrl: resolveLocalStorageUrl(localOnboarding, fallbackUrl, source),
-          runtimeStatus,
-          localOnboarding,
-        }),
-        runtime: {
-          kind: 'local-pod',
-          status: runtimeStatus,
-          canStart: !['running', 'starting'].includes(runtimeStatus),
-          canCreate: false,
-          onboarding: localOnboarding
-            ? {
-                state: localOnboarding.state,
-                mode: localOnboarding.mode,
-                message: localOnboarding.message,
-              }
-            : undefined,
-        },
-      })
+      for (const source of ['local', 'standalone'] as const) {
+        const providerSnapshot = projectLocalOnboardingForSource(localOnboarding, source)
+        const runtimeStatus = resolveRuntimeStatus(providerSnapshot)
+        local.push({
+          ...createLocalLoginProvider({
+            id: source,
+            source,
+            label: source === 'local' ? LOCAL_POD_LABEL : STANDALONE_POD_LABEL,
+            storageUrl: resolveLocalStorageUrl(providerSnapshot, fallbackUrl, source),
+            runtimeStatus,
+            localOnboarding: providerSnapshot,
+          }),
+          runtime: {
+            kind: 'local-pod',
+            status: runtimeStatus,
+            canStart: !['running', 'starting'].includes(runtimeStatus),
+            canCreate: false,
+            onboarding: providerSnapshot
+              ? {
+                  state: providerSnapshot.state,
+                  spaceKind: source,
+                  message: providerSnapshot.message,
+                }
+              : undefined,
+          },
+        })
+      }
     }
 
     // Merge: Cloud first, then Local, then custom
@@ -266,12 +267,12 @@ export function useProviders() {
     [removeCustomProvider],
   )
 
-  const startLocal = useCallback(async (mode: LocalOnboardingMode) => {
+  const startLocal = useCallback(async (spaceKind: LocalSpaceKind) => {
     if (desktopApi?.localOnboarding) {
       const current = await desktopApi.localOnboarding.getSnapshot()
 
-      if (current.mode !== mode) {
-        const chosen = await desktopApi.localOnboarding.chooseMode(mode)
+      if (current.spaceKind !== spaceKind) {
+        const chosen = await desktopApi.localOnboarding.chooseSpace(spaceKind)
         publishLocalOnboarding(chosen)
       }
 
@@ -285,18 +286,19 @@ export function useProviders() {
     setLocalOnboarding((current) => current
       ? {
           ...current,
+          spaceKind,
           state: 'starting',
-          message: '正在启动 Local…',
+          message: spaceKind === 'standalone' ? '正在启动 Standalone…' : '正在启动 Local…',
           progress: {
             phase: 'spawn',
-            label: '正在启动 Local…',
+            label: spaceKind === 'standalone' ? '正在启动 Standalone…' : '正在启动 Local…',
             detail: null,
           },
           errorCode: null,
         }
         : {
           state: 'starting',
-          mode,
+          spaceKind,
           localUrl: 'http://localhost:5737/',
           baseUrl: 'http://localhost:5737/',
           publicUrl: null,
@@ -305,10 +307,10 @@ export function useProviders() {
           provisionCode: null,
           provisionUrl: null,
           nodeId: null,
-          message: '正在启动 Local…',
+          message: spaceKind === 'standalone' ? '正在启动 Standalone…' : '正在启动 Local…',
           progress: {
             phase: 'spawn',
-            label: '正在启动 Local…',
+            label: spaceKind === 'standalone' ? '正在启动 Standalone…' : '正在启动 Local…',
             detail: null,
           },
           errorCode: null,
@@ -316,12 +318,18 @@ export function useProviders() {
           canOpenSettings: true,
         })
 
-    const response = await fetch('/api/service/start', { method: 'POST' })
+    const response = await fetch('/api/service/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ spaceKind }),
+    })
     if (!response.ok) {
-      const error = `start local: HTTP ${response.status}`
+      const detail = await response.json().catch(() => null) as { error?: string } | null
+      const error = detail?.error || `start ${spaceKind}: HTTP ${response.status}`
       const failedSnapshot = localOnboarding
         ? {
             ...localOnboarding,
+            spaceKind,
             state: 'error' as const,
             message: error,
             progress: null,
@@ -387,11 +395,11 @@ function createLocalLoginProvider(input: {
       providerId: input.providerId,
       status: input.runtimeStatus,
       canStart: !['running', 'starting'].includes(input.runtimeStatus),
-      canCreate: input.localOnboarding?.state === 'mode_required',
+      canCreate: input.localOnboarding?.state === 'space_required',
       onboarding: input.localOnboarding
         ? {
             state: input.localOnboarding.state,
-            mode: input.localOnboarding.mode,
+            spaceKind: input.localOnboarding.spaceKind,
             message: input.localOnboarding.message,
           }
         : undefined,
@@ -408,7 +416,23 @@ function resolveLocalStorageUrl(
     return snapshot?.localUrl ?? snapshot?.baseUrl ?? fallbackUrl
   }
 
-  return snapshot?.publicUrl ?? snapshot?.baseUrl ?? snapshot?.localUrl ?? fallbackUrl
+  return snapshot?.publicUrl
+    ?? resolveExternalCanonicalUrl(snapshot?.baseUrl)
+    ?? resolveExternalCanonicalUrl(fallbackUrl)
+    ?? ''
+}
+
+function resolveExternalCanonicalUrl(url?: string | null): string | null {
+  if (!url) return null
+  try {
+    const parsed = new URL(url)
+    if (isLocalAccessHostname(parsed.hostname)) {
+      return null
+    }
+    return url
+  } catch {
+    return null
+  }
 }
 
 function areSolidProvidersEqual(current: SolidProvider[], next: SolidProvider[]): boolean {
@@ -460,32 +484,101 @@ function buildServiceLocalSnapshot(
     : status.pod?.publicUrl
       ? ensureTrailingSlash(status.pod.publicUrl)
       : null
-  const remoteReady = Boolean(
+  const hasLocalCloudBinding = Boolean(
     status.provisioning?.cloudIdentityUrl
     && status.provisioning.provisionCode
     && publicUrl,
   )
   const running = Boolean(status.pod?.running)
+  const spaceKind = status.spaceKind ?? config?.spaceKind ?? (hasLocalCloudBinding ? 'local' : 'standalone')
 
   return {
     state: running ? 'ready' : 'idle',
-    mode: remoteReady ? 'local' : 'standalone',
+    spaceKind,
     localUrl,
     baseUrl,
-    publicUrl,
+    publicUrl: spaceKind === 'local' ? publicUrl : null,
     capabilities: null,
     cloudIdentityUrl: status.provisioning?.cloudIdentityUrl ?? null,
     provisionCode: status.provisioning?.provisionCode ?? null,
     provisionUrl: status.provisioning?.provisionUrl ?? null,
     nodeId: status.provisioning?.nodeId ?? null,
     message: running
-      ? remoteReady
+      ? spaceKind === 'local'
         ? 'Local 已准备好，接下来会通过 Cloud 登录并写入本地空间。'
-        : 'Local 已准备好，接下来会打开本地 Local 登录页。'
-      : 'Local 尚未运行。你可以先启动 Local。',
+        : 'Standalone 已准备好，接下来会打开本地登录页。'
+      : '本地服务尚未运行。选择 Local 后会启动本地 xpod。',
     progress: null,
     errorCode: null,
     canRetry: true,
     canOpenSettings: true,
   }
+}
+
+function projectLocalOnboardingForSource(
+  snapshot: LocalOnboardingSnapshot | null,
+  source: Extract<LoginProviderOption['source'], 'local' | 'standalone'>,
+): LocalOnboardingSnapshot | null {
+  if (!snapshot) return null
+  if (
+    snapshot.spaceKind
+    && snapshot.spaceKind !== source
+    && ['ready', 'starting', 'checking'].includes(snapshot.state)
+  ) {
+    return {
+      ...snapshot,
+      state: 'repair_required',
+      spaceKind: source,
+      publicUrl: source === 'local' ? snapshot.publicUrl : null,
+      message: source === 'local'
+        ? '当前按 Standalone 运行。要使用 Local，请先切换为空间类型 Local。'
+        : '当前按 Local 运行。要使用 Standalone，请先切换为空间类型 Standalone。',
+      errorCode: 'SERVICE_MODE_MISMATCH',
+      canRetry: false,
+      canOpenSettings: true,
+    }
+  }
+
+  if (
+    source === 'local'
+    && snapshot.state === 'ready'
+    && (!snapshot.publicUrl || !snapshot.provisionCode || !snapshot.cloudIdentityUrl)
+  ) {
+    return {
+      ...snapshot,
+      state: 'repair_required',
+      spaceKind: 'local',
+      publicUrl: snapshot.publicUrl,
+      message: 'Local 已运行，但还没拿到 Cloud 分配的 canonical URL 或绑定信息。请重新启动 Local，再继续登录。',
+      errorCode: 'LOCAL_CLOUD_BINDING_REQUIRED',
+      canRetry: true,
+      canOpenSettings: true,
+    }
+  }
+
+  return {
+    ...snapshot,
+    spaceKind: source,
+    publicUrl: source === 'local' ? snapshot.publicUrl : null,
+    message: resolveLocalProviderMessage(snapshot, source),
+  }
+}
+
+function resolveLocalProviderMessage(
+  snapshot: LocalOnboardingSnapshot,
+  source: Extract<LoginProviderOption['source'], 'local' | 'standalone'>,
+): string | null {
+  if (snapshot.state === 'ready') {
+    return source === 'local'
+      ? 'Local 已准备好，接下来会通过 Cloud 登录并写入本地空间。'
+      : 'Standalone 已准备好，接下来会打开本地登录页。'
+  }
+
+  if (snapshot.state === 'idle') {
+    return source === 'local'
+      ? 'Local 尚未运行。选择后会按 Cloud issuer + 本地 storage 启动。'
+      : 'Standalone 尚未运行。选择后会按本地 issuer + 本地 storage 启动。'
+  }
+
+  return snapshot.message
 }

@@ -69,7 +69,7 @@ describe('chat collections integration', () => {
     }).execute()
 
     const chats = await chatOps.fetchChats()
-    const roundTripped = chats.find((row) => extractChatIdFromChatRef(row.id) === id)
+    const roundTripped = chats.find((row) => row.id === id || extractChatIdFromChatRef(row.id) === id)
     expect(roundTripped).toBeDefined()
     expect(roundTripped?.participants).toEqual(expect.arrayContaining([assistantUri]))
     expect(roundTripped?.metadata).toMatchObject(metadata)

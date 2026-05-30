@@ -52,7 +52,7 @@ function createProvisioning(overrides = {}) {
   }
 }
 
-test('LocalOnboardingController starts device-only Local and becomes ready without blocking on contract support', async () => {
+test('LocalOnboardingController starts Local with Cloud binding and becomes ready without blocking on contract support', async () => {
   const { LocalOnboardingController } = require(resolveCompiledDesktopModule('lib/local-onboarding.js'))
   const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'linx-local-onboarding-'))
   const calls = []
@@ -90,9 +90,9 @@ test('LocalOnboardingController starts device-only Local and becomes ready witho
     }),
   })
 
-  const modeSnapshot = await controller.chooseMode('device-only')
-  assert.equal(modeSnapshot.state, 'idle')
-  assert.equal(modeSnapshot.mode, 'device-only')
+  const spaceSnapshot = await controller.chooseSpace('local')
+  assert.equal(spaceSnapshot.state, 'idle')
+  assert.equal(spaceSnapshot.spaceKind, 'local')
 
   const finalSnapshot = await controller.continue()
   assert.equal(finalSnapshot.state, 'ready')
@@ -135,7 +135,7 @@ test('LocalOnboardingController publishes xpod startup progress while starting L
     },
   })
 
-  await controller.chooseMode('device-only')
+  await controller.chooseSpace('standalone')
   await controller.continue()
 
   const progressSnapshot = snapshots.find((snapshot) => snapshot.progress?.phase === 'install-bun')
@@ -144,7 +144,7 @@ test('LocalOnboardingController publishes xpod startup progress while starting L
   assert.equal(progressSnapshot.progress.detail, '@undefineds.co/xpod@0.3.4')
 })
 
-test('LocalOnboardingController treats a running device-only Local service as ready without Cloud binding', async () => {
+test('LocalOnboardingController treats a running Standalone service as ready without Cloud binding', async () => {
   const { LocalOnboardingController } = require(resolveCompiledDesktopModule('lib/local-onboarding.js'))
   const controller = new LocalOnboardingController({
     stateDir: fs.mkdtempSync(path.join(os.tmpdir(), 'linx-local-onboarding-')),
@@ -162,13 +162,13 @@ test('LocalOnboardingController treats a running device-only Local service as re
     },
   })
 
-  const snapshot = await controller.refresh()
+  const snapshot = await controller.chooseSpace('standalone')
   assert.equal(snapshot.state, 'ready')
   assert.equal(snapshot.errorCode, null)
-  assert.equal(snapshot.mode, 'device-only')
+  assert.equal(snapshot.spaceKind, 'standalone')
 })
 
-test('LocalOnboardingController infers remote-ready mode from configured public address', async () => {
+test('LocalOnboardingController does not infer Local space from configured public address', async () => {
   const { LocalOnboardingController } = require(resolveCompiledDesktopModule('lib/local-onboarding.js'))
   const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'linx-local-onboarding-'))
   const controller = new LocalOnboardingController({
@@ -188,15 +188,15 @@ test('LocalOnboardingController infers remote-ready mode from configured public 
   })
 
   const snapshot = await controller.refresh()
-  assert.equal(snapshot.state, 'idle')
-  assert.equal(snapshot.mode, 'remote-ready')
+  assert.equal(snapshot.state, 'space_required')
+  assert.equal(snapshot.spaceKind, null)
 
   const persisted = JSON.parse(fs.readFileSync(path.join(stateDir, 'local-onboarding.json'), 'utf8'))
-  assert.equal(persisted.mode, 'remote-ready')
+  assert.equal(persisted.spaceKind, null)
   assert.equal(persisted.providerId, 'local')
 })
 
-test('LocalOnboardingController upgrades a persisted device-only Local when a public domain is added', async () => {
+test('LocalOnboardingController restarts a running Standalone service when the user switches to Local with a public domain', async () => {
   const { LocalOnboardingController } = require(resolveCompiledDesktopModule('lib/local-onboarding.js'))
   const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'linx-local-onboarding-'))
   let domain = { type: 'none' }
@@ -237,21 +237,21 @@ test('LocalOnboardingController upgrades a persisted device-only Local when a pu
     }),
   })
 
-  const deviceOnlySnapshot = await controller.refresh()
-  assert.equal(deviceOnlySnapshot.state, 'ready')
-  assert.equal(deviceOnlySnapshot.mode, 'device-only')
+  const standaloneSnapshot = await controller.chooseSpace('standalone')
+  assert.equal(standaloneSnapshot.state, 'ready')
+  assert.equal(standaloneSnapshot.spaceKind, 'standalone')
   assert.equal(startCalls.length, 0)
 
   domain = { type: 'custom', value: 'pod.example.com' }
-  const upgradedSnapshot = await controller.refresh()
+  const upgradedSnapshot = await controller.chooseSpace('local')
   assert.equal(upgradedSnapshot.state, 'repair_required')
-  assert.equal(upgradedSnapshot.mode, 'remote-ready')
+  assert.equal(upgradedSnapshot.spaceKind, 'local')
   assert.equal(upgradedSnapshot.publicUrl, 'https://pod.example.com/')
   assert.equal(upgradedSnapshot.errorCode, 'LOCAL_CLOUD_BINDING_REQUIRED')
 
   const finalSnapshot = await controller.continue()
   assert.equal(finalSnapshot.state, 'ready')
-  assert.equal(finalSnapshot.mode, 'remote-ready')
+  assert.equal(finalSnapshot.spaceKind, 'local')
   assert.equal(finalSnapshot.publicUrl, 'https://pod.example.com/')
   assert.equal(finalSnapshot.cloudIdentityUrl, 'https://id.undefineds.co')
   assert.equal(finalSnapshot.provisionCode, 'pc-123')
@@ -261,13 +261,13 @@ test('LocalOnboardingController upgrades a persisted device-only Local when a pu
     providerId: 'local',
     dataDir: '/tmp/local-pod',
     port: 5737,
-    startupMode: 'remote-ready',
+    spaceKind: 'local',
     domain: { type: 'custom', value: 'pod.example.com' },
     tunnelToken: undefined,
   })
 
   const persisted = JSON.parse(fs.readFileSync(path.join(stateDir, 'local-onboarding.json'), 'utf8'))
-  assert.equal(persisted.mode, 'remote-ready')
+  assert.equal(persisted.spaceKind, 'local')
   assert.equal(persisted.providerId, 'local')
 })
 
@@ -290,20 +290,22 @@ test('LocalOnboardingController preserves start errors across refreshes until re
     },
   })
 
+  await controller.chooseSpace('local')
+
   const failed = await controller.continue()
   assert.equal(failed.state, 'error')
-  assert.equal(failed.mode, 'remote-ready')
+  assert.equal(failed.spaceKind, 'local')
   assert.equal(failed.errorCode, 'LOCAL_START_FAILED')
   assert.match(failed.message, /Service Unavailable/)
 
   const refreshed = await controller.refresh()
   assert.equal(refreshed.state, 'error')
-  assert.equal(refreshed.mode, 'remote-ready')
+  assert.equal(refreshed.spaceKind, 'local')
   assert.equal(refreshed.errorCode, 'LOCAL_START_FAILED')
   assert.equal(refreshed.message, failed.message)
 })
 
-test('LocalOnboardingController infers device-only mode for an existing local instance', async () => {
+test('LocalOnboardingController requires an explicit space for an existing local instance', async () => {
   const { LocalOnboardingController } = require(resolveCompiledDesktopModule('lib/local-onboarding.js'))
   const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'linx-local-onboarding-'))
   const controller = new LocalOnboardingController({
@@ -324,15 +326,15 @@ test('LocalOnboardingController infers device-only mode for an existing local in
   })
 
   const snapshot = await controller.refresh()
-  assert.equal(snapshot.state, 'idle')
-  assert.equal(snapshot.mode, 'device-only')
+  assert.equal(snapshot.state, 'space_required')
+  assert.equal(snapshot.spaceKind, null)
 
   const persisted = JSON.parse(fs.readFileSync(path.join(stateDir, 'local-onboarding.json'), 'utf8'))
-  assert.equal(persisted.mode, 'device-only')
+  assert.equal(persisted.spaceKind, null)
   assert.equal(persisted.providerId, 'local')
 })
 
-test('LocalOnboardingController defaults first-run Local to device-only', async () => {
+test('LocalOnboardingController requires explicit first-run space selection', async () => {
   const { LocalOnboardingController } = require(resolveCompiledDesktopModule('lib/local-onboarding.js'))
   const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'linx-local-onboarding-'))
   const controller = new LocalOnboardingController({
@@ -352,11 +354,11 @@ test('LocalOnboardingController defaults first-run Local to device-only', async 
   })
 
   const snapshot = await controller.refresh()
-  assert.equal(snapshot.state, 'idle')
-  assert.equal(snapshot.mode, 'device-only')
+  assert.equal(snapshot.state, 'space_required')
+  assert.equal(snapshot.spaceKind, null)
 
   const persisted = JSON.parse(fs.readFileSync(path.join(stateDir, 'local-onboarding.json'), 'utf8'))
-  assert.equal(persisted.mode, 'device-only')
+  assert.equal(persisted.spaceKind, null)
   assert.equal(persisted.providerId, 'local')
 })
 
@@ -386,15 +388,15 @@ test('LocalOnboardingController marks an already running local service as ready'
     }),
   })
 
-  const snapshot = await controller.refresh()
+  const snapshot = await controller.chooseSpace('local')
   assert.equal(snapshot.state, 'ready')
-  assert.equal(snapshot.mode, 'device-only')
+  assert.equal(snapshot.spaceKind, 'local')
   assert.equal(snapshot.localUrl, 'http://localhost:5737/')
   assert.equal(snapshot.cloudIdentityUrl, 'https://id.undefineds.co')
   assert.equal(snapshot.provisionCode, 'pc-123')
 })
 
-test('LocalOnboardingController probes device-only capabilities on local URL while preserving LAN canonical URL', async () => {
+test('LocalOnboardingController probes Standalone capabilities on local URL while preserving LAN canonical URL', async () => {
   const { LocalOnboardingController } = require(resolveCompiledDesktopModule('lib/local-onboarding.js'))
   const capabilityUrls = []
   const controller = new LocalOnboardingController({
@@ -422,7 +424,7 @@ test('LocalOnboardingController probes device-only capabilities on local URL whi
     },
   })
 
-  const snapshot = await controller.refresh()
+  const snapshot = await controller.chooseSpace('standalone')
   assert.equal(snapshot.state, 'ready')
   assert.equal(snapshot.baseUrl, 'http://host.docker.internal:5737/')
   assert.deepEqual(capabilityUrls, ['http://localhost:5737/'])
@@ -461,7 +463,7 @@ test('LocalOnboardingController still becomes ready when the capability probe ti
     fetchCapabilitiesTimeoutMs: 10,
   })
 
-  const snapshot = await controller.refresh()
+  const snapshot = await controller.chooseSpace('local')
   assert.equal(snapshot.state, 'ready')
   assert.equal(snapshot.errorCode, null)
 })

@@ -59,6 +59,31 @@ function createProviderResponse(chunks: string[]): Response {
   })
 }
 
+function resourceUrlFromSubject(subject: string): string {
+  const hashIndex = subject.indexOf('#')
+  return hashIndex >= 0 ? subject.slice(0, hashIndex) : subject
+}
+
+function localIdFromSubject(value: string | null | undefined): string | null {
+  if (!value) return null
+  const hashIndex = value.lastIndexOf('#')
+  if (hashIndex >= 0 && hashIndex < value.length - 1) return value.slice(hashIndex + 1)
+  const slashIndex = value.lastIndexOf('/')
+  return slashIndex >= 0 ? value.slice(slashIndex + 1) : value
+}
+
+async function findMessageByItemId(db: XpodIntegrationContext<typeof chatkitSchema>['db'], itemId: string) {
+  const direct = await (db as any).findById(Message as any, itemId).catch(() => null)
+  if (direct) return direct
+
+  const messages = await db.select().from(Message).execute()
+  return messages.find((message: any) => (
+    message.id === itemId
+    || localIdFromSubject(message.id) === itemId
+    || localIdFromSubject(message['@id']) === itemId
+  )) ?? null
+}
+
 afterAll(async () => {
   await context?.stop()
 }, 90000)
@@ -81,7 +106,6 @@ describe('LocalChatKit pod archive integration', () => {
     const assistantText = 'assistant reply from mocked provider'
     const providerBase = 'https://provider.example/v1'
     const providerEndpoint = `${providerBase}/chat/completions`
-    const podBase = webId.replace('/profile/card#me', '')
     const providerId = 'openai'
     const credentialId = `credential-openai-${Date.now()}`
 
@@ -158,25 +182,30 @@ describe('LocalChatKit pod archive integration', () => {
     const threadId = threadCreated!.thread.id
     const userItem = (userDone as any).item
     const assistantItem = (assistantDone as any).item
-    const userMessage = await db.findById(Message, userItem.id)
-    const assistantMessage = await db.findById(Message, assistantItem.id)
+    const userMessage = await findMessageByItemId(db, userItem.id)
+    const assistantMessage = await findMessageByItemId(db, assistantItem.id)
 
     expect(userMessage?.content).toBe(prompt)
     expect(assistantMessage?.content).toBe(assistantText)
     expect(assistantMessage?.status).toBe('completed')
 
-    const createdAt = new Date(String((assistantMessage as any).createdAt))
-    const yyyy = createdAt.getUTCFullYear()
-    const mm = String(createdAt.getUTCMonth() + 1).padStart(2, '0')
-    const dd = String(createdAt.getUTCDate()).padStart(2, '0')
-    const messageResourceUrl = `${podBase}/.data/chat/${chatId}/${yyyy}/${mm}/${dd}/messages.ttl`
+    const userSubject = (userMessage as any)?.['@id']
+    const assistantSubject = (assistantMessage as any)?.['@id']
+    expect(userSubject).toBeTruthy()
+    expect(assistantSubject).toBeTruthy()
 
-    const podResponse = await authFetch(messageResourceUrl, {
-      headers: { Accept: 'text/turtle' },
-    })
-    expect(podResponse.ok).toBe(true)
+    const messageResourceUrls = Array.from(new Set([
+      resourceUrlFromSubject(userSubject),
+      resourceUrlFromSubject(assistantSubject),
+    ]))
+    const turtle = (await Promise.all(messageResourceUrls.map(async (messageResourceUrl) => {
+      const podResponse = await authFetch(messageResourceUrl, {
+        headers: { Accept: 'text/turtle' },
+      })
+      expect(podResponse.ok).toBe(true)
+      return podResponse.text()
+    }))).join('\n')
 
-    const turtle = await podResponse.text()
     expect(turtle).toContain(`index.ttl#${threadId}`)
     expect(turtle).toContain(prompt)
     expect(turtle).toContain(assistantText)

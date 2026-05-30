@@ -2,16 +2,16 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const { resolveCompiledDesktopModule } = require('./helpers.cjs')
 
-test('local provider config maps public CSS_BASE_URL to a managed custom domain', () => {
+test('local provider config maps Cloud allocated CSS_BASE_URL to a managed domain', () => {
   const { resolveManagedDomainFromEnv } = require(resolveCompiledDesktopModule('lib/local-provider-config.js'))
 
   assert.deepEqual(
     resolveManagedDomainFromEnv({ CSS_BASE_URL: 'https://node-0000.undefineds.co/' }),
-    { type: 'custom', value: 'node-0000.undefineds.co' },
+    { type: 'managed', value: 'node-0000.undefineds.co' },
   )
 })
 
-test('local provider config keeps localhost CSS_BASE_URL device-only', () => {
+test('local provider config keeps localhost CSS_BASE_URL standalone-local', () => {
   const { resolveManagedDomainFromEnv } = require(resolveCompiledDesktopModule('lib/local-provider-config.js'))
 
   assert.deepEqual(
@@ -20,7 +20,7 @@ test('local provider config keeps localhost CSS_BASE_URL device-only', () => {
   )
 })
 
-test('local provider config keeps HTTP LAN CSS_BASE_URL device-only for LAN verification', () => {
+test('local provider config keeps HTTP LAN CSS_BASE_URL standalone-local for LAN verification', () => {
   const { resolveManagedDomainFromEnv } = require(resolveCompiledDesktopModule('lib/local-provider-config.js'))
 
   assert.deepEqual(
@@ -38,13 +38,28 @@ test('local provider config preserves an existing managed custom domain when CSS
   const envDomain = resolveManagedDomainFromEnv({ CSS_BASE_URL: 'http://127.0.0.1:5737/' })
   assert.deepEqual(envDomain, { type: 'none' })
   assert.deepEqual(resolveEffectiveManagedDomain({
-    mode: 'remote-ready',
+    spaceKind: 'local',
     envDomain,
     existingDomain: { type: 'custom', value: 'pod.example.com' },
   }), { type: 'custom', value: 'pod.example.com' })
 })
 
-test('local provider config lets a new public CSS_BASE_URL override persisted device-only state', () => {
+test('local provider config normalizes an old persisted node domain to managed', () => {
+  const {
+    resolveEffectiveManagedDomain,
+    resolveManagedDomainFromEnv,
+  } = require(resolveCompiledDesktopModule('lib/local-provider-config.js'))
+
+  const domain = resolveEffectiveManagedDomain({
+    spaceKind: 'local',
+    envDomain: resolveManagedDomainFromEnv({ CSS_BASE_URL: 'http://127.0.0.1:5737/' }),
+    existingDomain: { type: 'custom', value: 'node-0000.undefineds.co' },
+  })
+
+  assert.deepEqual(domain, { type: 'managed', value: 'node-0000.undefineds.co' })
+})
+
+test('local provider config lets a new public CSS_BASE_URL override persisted standalone state', () => {
   const {
     resolveEffectiveManagedDomain,
     resolveEffectiveManagedTunnelToken,
@@ -57,7 +72,7 @@ test('local provider config lets a new public CSS_BASE_URL override persisted de
     CLOUDFLARE_TUNNEL_TOKEN: 'cf-token',
   }
   const domain = resolveEffectiveManagedDomain({
-    mode: 'device-only',
+    spaceKind: 'local',
     envDomain: resolveManagedDomainFromEnv(env),
     existingDomain: { type: 'none' },
   })
@@ -65,27 +80,27 @@ test('local provider config lets a new public CSS_BASE_URL override persisted de
   assert.deepEqual(domain, { type: 'custom', value: 'pod.example.com' })
   assert.equal(resolveEffectiveManagedTunnelToken({
     env,
-    mode: 'device-only',
+    spaceKind: 'local',
     domain,
     existingTunnelToken: undefined,
   }), 'cf-token')
 })
 
-test('local provider config forwards Cloudflare token only for remote-ready local startup', () => {
+test('local provider config forwards Cloudflare token only for Local startup', () => {
   const { resolveManagedTunnelTokenFromEnv } = require(resolveCompiledDesktopModule('lib/local-provider-config.js'))
 
   assert.equal(
     resolveManagedTunnelTokenFromEnv({
       LINX_TUNNEL_PROVIDER: 'cloudflare',
       CLOUDFLARE_TUNNEL_TOKEN: ' cf-token ',
-    }, 'remote-ready'),
+    }, 'local'),
     'cf-token',
   )
   assert.equal(
     resolveManagedTunnelTokenFromEnv({
       LINX_TUNNEL_PROVIDER: 'cloudflare',
       CLOUDFLARE_TUNNEL_TOKEN: 'cf-token',
-    }, 'device-only'),
+    }, 'standalone'),
     undefined,
   )
 })
@@ -97,7 +112,7 @@ test('local provider config ignores non-Cloudflare tunnel providers for cloudfla
     resolveManagedTunnelTokenFromEnv({
       LINX_TUNNEL_PROVIDER: 'sakura',
       CLOUDFLARE_TUNNEL_TOKEN: 'cf-token',
-    }, 'remote-ready'),
+    }, 'local'),
     undefined,
   )
 })

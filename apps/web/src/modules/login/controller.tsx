@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSession } from '@inrupt/solid-ui-react'
 import { useNavigate } from '@tanstack/react-router'
+import { LINX_CLOUD_IDENTITY_ORIGIN } from '@undefineds.co/models/client'
 import { defaultMicroAppId } from '@/modules/layout/micro-app-registry'
+import { isLocalAccessUrl } from '@/lib/local-access-url'
 import { getRememberedAccount, useLoginStore, type StoredAccount } from '@linx/stores/login'
 import { useSessionRestore } from './hooks/use-session-restore'
 import { useOidcConnect } from './hooks/use-oidc-connect'
@@ -217,7 +219,16 @@ export function useLoginController() {
     if (storageConflict) return
     if (suppressAutoLoginRef.current) return
 
-    const { issuerUrl, issuerLabel, storageProviderUrl, storageProviderLabel } = resolveAccountContext(storedAccount, providers)
+    const resolvedAccountContext = resolveAccountContext(storedAccount, providers)
+    const storageProviderLabel = resolvedAccountContext.storageProviderLabel
+    const storageProviderUrl = storageProviderLabel === 'Local'
+      ? resolveCanonicalLocalStorageProviderUrl({
+          storageProviderUrl: resolvedAccountContext.storageProviderUrl,
+          localPublicUrl: localOnboarding?.publicUrl,
+        })
+      : resolvedAccountContext.storageProviderUrl
+    const issuerUrl = resolvedAccountContext.issuerUrl
+    const issuerLabel = resolvedAccountContext.issuerLabel
     const account: StoredAccount = {
       displayName: storedAccount?.displayName || 'LinX 用户',
       avatarUrl: storedAccount?.avatarUrl,
@@ -238,12 +249,19 @@ export function useLoginController() {
         storageProviderLabel,
         storageProviderUrl,
         localPublicUrl: localOnboarding?.publicUrl,
-        localBaseUrl: localOnboarding?.baseUrl,
       })
+      if (storageProviderLabel === 'Local' && !storageProviderPublicUrl) {
+        throw new Error('Local canonical storage URL 缺失，已阻止进入。请重新启动 Local 完成 Cloud 绑定。')
+      }
       const conflict = await detectStorageConflict({
         webId: session.info.webId ?? '',
         storageProviderUrl,
         storageProviderPublicUrl,
+        strictStoragePath: shouldUseStrictStoragePath({
+          storageProviderLabel,
+          storageProviderUrl,
+          providers,
+        }),
       })
 
       if (cancelled || !isFinalizeCurrent()) return
@@ -288,11 +306,23 @@ export function useLoginController() {
       }
     }
 
-    void finalizeLogin().catch((error: any) => {
+    void finalizeLogin().catch(async (error: any) => {
       if (cancelled || !isFinalizeCurrent()) return
-      setStoredAccount(account)
+      suppressAutoLoginRef.current = true
+      if (account.storageProviderUrl) {
+        setStoredAccount(account)
+      }
       resetDesktopAuthState()
       setConnectingProvider(null)
+      clearPendingCallbackError()
+      clearPendingLoginAttempt()
+      clearPendingPostLoginMicroAppId()
+      try {
+        await logout()
+      } catch {
+        // ignore logout failures; local cleanup still runs below.
+      }
+      clearStoredSolidSession()
       setState('idle')
       setError(error?.message || '登录后校验空间失败，请重试。')
     })
@@ -301,7 +331,6 @@ export function useLoginController() {
       cancelled = true
     }
   }, [
-    localOnboarding?.baseUrl,
     localOnboarding?.publicUrl,
     loginSuccess,
     logout,
@@ -409,7 +438,7 @@ export function useLoginController() {
     const source = resolveLoginProviderSource(provider)
     if (isLocalLoginProviderSource(source)) {
       await startLocalLogin(source, {
-        restoreAccount: isLocalStoredAccount(storedAccount, providers) ? storedAccount : null,
+        restoreAccount: getReusableLocalStoredAccount(storedAccount, providers, source),
       })
       return
     }
@@ -456,7 +485,7 @@ export function useLoginController() {
     const targetStorageProviderUrl =
       normalizeRememberedUrl(storedAccount?.storageProviderUrl)
       ?? normalizeRememberedUrl(storedAccount?.issuerUrl)
-      ?? (storedAccount?.webId && isLocalUrl(storedAccount.webId) ? 'http://localhost:5737' : null)
+      ?? (storedAccount?.webId && isLocalAccessUrl(storedAccount.webId) ? 'http://localhost:5737' : null)
     if (!targetStorageProviderUrl) {
       setState('idle')
       return
@@ -465,7 +494,7 @@ export function useLoginController() {
     const matched = resolveStoredAccountProvider(targetStorageProviderUrl, providers)
     const isRememberedLocal =
       isLocalLoginProviderSource(resolveLoginProviderSource(matched))
-      || isLocalUrl(targetStorageProviderUrl)
+      || isLocalAccessUrl(targetStorageProviderUrl)
       || storedAccount?.storageProviderLabel === 'Local'
       || storedAccount?.storageProviderLabel === 'Standalone'
       || storedAccount?.issuerLabel === 'Local'
@@ -504,7 +533,7 @@ export function useLoginController() {
           return
         }
 
-        if (isLocalUrl(targetStorageProviderUrl)) {
+        if (isLocalAccessUrl(targetStorageProviderUrl)) {
           void startLocalLogin('standalone')
           return
         }
@@ -526,7 +555,7 @@ export function useLoginController() {
       return
     }
 
-    if (isLocalUrl(targetStorageProviderUrl)) {
+    if (isLocalAccessUrl(targetStorageProviderUrl)) {
       void startLocalLogin('standalone')
       return
     }
@@ -537,7 +566,7 @@ export function useLoginController() {
   const signInLocalOnboarding = useCallback(async () => {
     if (!localOnboarding || localOnboarding.state !== 'ready') {
       void startLocalLogin(activeLocalProviderSource, {
-        restoreAccount: isLocalStoredAccount(storedAccount, providers) ? storedAccount : null,
+        restoreAccount: getReusableLocalStoredAccount(storedAccount, providers, activeLocalProviderSource),
       })
       return
     }
@@ -553,9 +582,9 @@ export function useLoginController() {
       })
 
     const isStandalone = activeLocalProviderSource === 'standalone'
-    if (localOnboarding.mode !== activeLocalProviderSource) {
+    if (localOnboarding.spaceKind !== activeLocalProviderSource) {
       void startLocalLogin(activeLocalProviderSource, {
-        restoreAccount: isLocalStoredAccount(storedAccount, providers) ? storedAccount : null,
+        restoreAccount: getReusableLocalStoredAccount(storedAccount, providers, activeLocalProviderSource),
       })
       return
     }
@@ -563,16 +592,16 @@ export function useLoginController() {
     const localProviderUrl = isStandalone
       ? normalizeRememberedUrl(localOnboarding.localUrl) ?? normalizeRememberedUrl(localOnboarding.baseUrl)
       : normalizeRememberedUrl(localOnboarding.publicUrl)
-        ?? normalizeRememberedUrl(localOnboarding.baseUrl)
-        ?? normalizeRememberedUrl(localOnboarding.localUrl)
     if (!localProviderUrl) {
-      setError('Local 已启动，但本地登录入口尚未准备好。')
+      setError(isStandalone
+        ? 'Standalone 已启动，但本地登录入口尚未准备好。'
+        : 'Local 已启动，但 canonical storage URL 尚未准备好。请重新启动 Local 完成 Cloud 绑定。')
       return
     }
 
     const issuerUrl = isStandalone
       ? localProviderUrl
-      : normalizeRememberedUrl(localOnboarding.cloudIdentityUrl) ?? 'https://id.undefineds.co'
+      : normalizeRememberedUrl(localOnboarding.cloudIdentityUrl) ?? LINX_CLOUD_IDENTITY_ORIGIN
 
     if (!isStandalone && !localOnboarding.provisionCode) {
       setError('Local 还没完成 Cloud 绑定，暂时无法继续登录。')
@@ -617,7 +646,7 @@ export function useLoginController() {
       localConnectKeyRef.current = null
       setConnectingProvider(null)
       setState('idle')
-      setError(error?.message || (isStandalone ? '打开 Standalone 登录失败。' : '打开 Cloud 登录失败。'))
+      setError(error?.message || (isStandalone ? '打开 Standalone 登录失败。' : '打开 Local 登录失败。'))
     }
   }, [
     activeLocalProviderSource,
@@ -801,14 +830,13 @@ function resolveStoredAccountProvider(
   providers: LoginProviderOption[],
 ): LoginProviderOption | null {
   const normalized = normalizeUrl(issuerUrl)
-  const exact = providers.find((provider) => normalizeUrl(provider.url) === normalized)
-  if (exact) return exact
-
-  if (isLocalUrl(normalized)) {
+  if (isLocalAccessUrl(normalized)) {
     return providers.find((provider) => resolveLoginProviderSource(provider) === 'standalone')
-      ?? providers.find((provider) => resolveLoginProviderSource(provider) === 'local')
       ?? null
   }
+
+  const exact = providers.find((provider) => normalizeUrl(provider.url) === normalized)
+  if (exact) return exact
 
   return null
 }
@@ -830,46 +858,111 @@ function resolveLocalSourceForStoredAccount(
   account: StoredAccount | null,
   matched: LoginProviderOption | null,
 ): 'local' | 'standalone' {
+  const resolved = resolveStoredAccountLocalSource(account, matched)
+  if (resolved) {
+    return resolved
+  }
+
   const matchedSource = resolveLoginProviderSource(matched)
   if (isLocalLoginProviderSource(matchedSource)) {
     return matchedSource
   }
 
-  if (account?.storageProviderLabel === 'Standalone' || account?.issuerLabel === 'Standalone') {
-    return 'standalone'
-  }
-
-  if (account?.storageProviderLabel === 'Local') {
-    return 'local'
-  }
-
-  if (account?.issuerLabel === 'Local' && account?.storageProviderLabel !== 'Local') {
-    return 'standalone'
-  }
-
   return 'standalone'
+}
+
+function getReusableLocalStoredAccount(
+  account: StoredAccount | null,
+  providers: LoginProviderOption[],
+  source: 'local' | 'standalone',
+): StoredAccount | null {
+  if (!account) {
+    return null
+  }
+
+  return resolveStoredAccountLocalSource(account, resolveStoredAccountProviderForAccount(account, providers)) === source
+    ? account
+    : null
 }
 
 function isLocalStoredAccount(
   account: StoredAccount | null,
   providers: LoginProviderOption[],
 ): account is StoredAccount {
+  return Boolean(account && resolveStoredAccountLocalSource(account, resolveStoredAccountProviderForAccount(account, providers)))
+}
+
+function resolveStoredAccountProviderForAccount(
+  account: StoredAccount,
+  providers: LoginProviderOption[],
+): LoginProviderOption | null {
+  const storageProviderUrl = normalizeRememberedUrl(account.storageProviderUrl)
+    ?? normalizeRememberedUrl(account.issuerUrl)
+    ?? (account.webId && isLocalAccessUrl(account.webId) ? account.webId : null)
+  if (!storageProviderUrl) {
+    return null
+  }
+
+  return resolveStoredAccountProvider(storageProviderUrl, providers)
+}
+
+function resolveStoredAccountLocalSource(
+  account: StoredAccount | null,
+  matched: LoginProviderOption | null,
+): 'local' | 'standalone' | null {
   if (!account) {
-    return false
+    return null
   }
 
   const storageProviderUrl = normalizeRememberedUrl(account.storageProviderUrl)
     ?? normalizeRememberedUrl(account.issuerUrl)
-    ?? (account.webId && isLocalUrl(account.webId) ? account.webId : null)
-  if (!storageProviderUrl) {
-    return false
+    ?? (account.webId && isLocalAccessUrl(account.webId) ? account.webId : null)
+  const issuerUrl = normalizeRememberedUrl(account.issuerUrl)
+  const webId = normalizeRememberedUrl(account.webId)
+  const storageProviderLabel = account.storageProviderLabel?.trim().toLowerCase()
+  const issuerLabel = account.issuerLabel?.trim().toLowerCase()
+
+  if (storageProviderLabel === 'standalone' || issuerLabel === 'standalone') {
+    return 'standalone'
   }
 
-  const matched = resolveStoredAccountProvider(storageProviderUrl, providers)
-  return isLocalLoginProviderSource(resolveLoginProviderSource(matched))
-    || account.storageProviderLabel === 'Local'
-    || account.storageProviderLabel === 'Standalone'
-    || isLocalUrl(storageProviderUrl)
+  if (storageProviderLabel === 'local') {
+    if (issuerLabel === 'standalone' || (issuerUrl && isLocalAccessUrl(issuerUrl))) {
+      return 'standalone'
+    }
+    if (
+      issuerLabel === 'cloud'
+      || (issuerUrl && !isLocalAccessUrl(issuerUrl))
+      || (storageProviderUrl && !isLocalAccessUrl(storageProviderUrl))
+    ) {
+      return 'local'
+    }
+    return 'standalone'
+  }
+
+  if (issuerLabel === 'local') {
+    return 'standalone'
+  }
+
+  if (
+    issuerUrl
+    && storageProviderUrl
+    && !sameUrlOrigin(issuerUrl, storageProviderUrl)
+    && !isLocalAccessUrl(issuerUrl)
+  ) {
+    return 'local'
+  }
+
+  const matchedSource = resolveLoginProviderSource(matched)
+  if (isLocalLoginProviderSource(matchedSource)) {
+    return matchedSource
+  }
+
+  if ((issuerUrl && isLocalAccessUrl(issuerUrl)) || (webId && isLocalAccessUrl(webId)) || (storageProviderUrl && isLocalAccessUrl(storageProviderUrl))) {
+    return 'standalone'
+  }
+
+  return null
 }
 
 function canReuseSessionForLocalSpace(input: {
@@ -951,6 +1044,10 @@ function resolveIssuerLabel(
     return fallback
   }
 
+  if (isLocalAccessUrl(issuerUrl)) {
+    return 'Standalone'
+  }
+
   const matched = resolveStoredAccountProvider(issuerUrl, providers)
   if (matched) {
     const source = resolveLoginProviderSource(matched)
@@ -958,10 +1055,6 @@ function resolveIssuerLabel(
     if (source === 'local') return 'Local'
     if (source === 'standalone') return 'Standalone'
     return matched.label
-  }
-
-  if (isLocalUrl(issuerUrl)) {
-    return 'Local'
   }
 
   try {
@@ -997,8 +1090,8 @@ function resolveStorageProviderLabel(
     return 'Standalone'
   }
 
-  if (isLocalUrl(storageProviderUrl)) {
-    return 'Local'
+  if (isLocalAccessUrl(storageProviderUrl)) {
+    return 'Standalone'
   }
 
   try {
@@ -1022,10 +1115,9 @@ function resolveProviderDisplayName(provider: LoginProviderOption | undefined, f
   }
 }
 
-function isLocalUrl(url: string): boolean {
+function sameUrlOrigin(left: string, right: string): boolean {
   try {
-    const { hostname } = new URL(url)
-    return hostname === 'localhost' || hostname === '127.0.0.1'
+    return new URL(left).origin === new URL(right).origin
   } catch {
     return false
   }
@@ -1044,10 +1136,9 @@ function resolveConflictCheckPublicUrl(input: {
   storageProviderLabel?: string
   storageProviderUrl?: string
   localPublicUrl?: string | null
-  localBaseUrl?: string | null
 }): string | null {
   const urls = input.storageProviderLabel === 'Local'
-    ? [input.localPublicUrl, input.localBaseUrl, input.storageProviderUrl]
+    ? [input.localPublicUrl, input.storageProviderUrl && !isLocalAccessUrl(input.storageProviderUrl) ? input.storageProviderUrl : null]
     : [input.storageProviderUrl]
 
   for (const url of urls) {
@@ -1058,4 +1149,37 @@ function resolveConflictCheckPublicUrl(input: {
     return normalized
   }
   return null
+}
+
+function shouldUseStrictStoragePath(input: {
+  storageProviderLabel?: string
+  storageProviderUrl?: string
+  providers: LoginProviderOption[]
+}): boolean {
+  const matchedProvider = input.storageProviderUrl
+    ? resolveStoredAccountProvider(input.storageProviderUrl, input.providers)
+    : null
+  if (matchedProvider && resolveLoginProviderSource(matchedProvider) === 'custom') {
+    return false
+  }
+
+  const normalized = input.storageProviderLabel?.trim().toLowerCase()
+  return normalized === 'cloud' || normalized === 'local' || normalized === 'standalone'
+}
+
+function resolveCanonicalLocalStorageProviderUrl(input: {
+  storageProviderUrl?: string
+  localPublicUrl?: string | null
+}): string {
+  const publicUrl = normalizeRememberedUrl(input.localPublicUrl)
+  if (publicUrl) {
+    return publicUrl
+  }
+
+  const storageProviderUrl = normalizeRememberedUrl(input.storageProviderUrl)
+  if (storageProviderUrl && !isLocalAccessUrl(storageProviderUrl)) {
+    return storageProviderUrl
+  }
+
+  return ''
 }

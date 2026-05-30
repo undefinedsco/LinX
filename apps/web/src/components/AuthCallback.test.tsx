@@ -109,7 +109,7 @@ describe('AuthCallback', () => {
     })
   })
 
-  it('preserves Local provisioning context when retrying a Cloud IDP + Local SP attempt', async () => {
+  it('preserves Local provisioning context when retrying a Local SP attempt', async () => {
     setPendingLoginAttempt({
       issuerUrl: 'https://id.undefineds.co',
       authorizationSurface: 'embedded',

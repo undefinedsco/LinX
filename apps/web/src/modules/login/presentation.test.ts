@@ -51,7 +51,7 @@ describe('getProviderSubtitle', () => {
     }
 
     expect(getProviderSubtitle(provider, false)).toBe('云端空间')
-    expect(getProviderInfoText(provider, false)).toBe('使用 Cloud 登录，数据写入 Cloud 空间。')
+    expect(getProviderInfoText(provider, false)).toBe('Cloud 账号登录，数据写入 Cloud Pod。账号、授权和数据都在 Cloud。')
   })
 
   it('uses onboarding state for first-time Local setup', () => {
@@ -62,15 +62,15 @@ describe('getProviderSubtitle', () => {
         canStart: true,
         canCreate: true,
         onboarding: {
-          state: 'mode_required',
-          mode: null,
+          state: 'space_required',
+          spaceKind: null,
           message: null,
         },
       },
     })
 
     expect(getProviderSubtitle(provider, false)).toBe('本地空间')
-    expect(getProviderInfoText(provider, false)).toBe('使用 Cloud 登录，数据写入这台设备上的 Local 空间。')
+    expect(getProviderInfoText(provider, false)).toBe('Cloud 账号登录，数据写入当前本机 xpod 的 Local Pod。Cloud 只做身份授权。')
   })
 
   it('uses onboarding state for resumable Local setup', () => {
@@ -82,7 +82,7 @@ describe('getProviderSubtitle', () => {
         canCreate: false,
         onboarding: {
           state: 'idle',
-          mode: 'local',
+          spaceKind: 'local',
           message: null,
         },
       },
@@ -100,7 +100,7 @@ describe('getProviderSubtitle', () => {
         canCreate: false,
         onboarding: {
           state: 'repair_required',
-          mode: 'local',
+          spaceKind: 'local',
           message: null,
         },
       },
@@ -132,8 +132,8 @@ describe('getProviderStatusBadge', () => {
         canStart: true,
         canCreate: true,
         onboarding: {
-          state: 'mode_required',
-          mode: null,
+          state: 'space_required',
+          spaceKind: null,
           message: null,
         },
       },
@@ -179,7 +179,7 @@ describe('getProviderStatusBadge', () => {
         canCreate: false,
         onboarding: {
           state: 'repair_required',
-          mode: 'local',
+          spaceKind: 'local',
           message: null,
         },
       },
@@ -200,7 +200,7 @@ describe('getProviderStatusBadge', () => {
         canCreate: false,
         onboarding: {
           state: 'ready',
-          mode: 'local',
+          spaceKind: 'local',
           message: null,
         },
       },
@@ -260,8 +260,8 @@ describe('getProviderActionLabel', () => {
         canStart: true,
         canCreate: true,
         onboarding: {
-          state: 'mode_required',
-          mode: null,
+          state: 'space_required',
+          spaceKind: null,
           message: null,
         },
       },
@@ -279,7 +279,7 @@ describe('getProviderActionLabel', () => {
         canCreate: false,
         onboarding: {
           state: 'repair_required',
-          mode: 'local',
+          spaceKind: 'local',
           message: null,
         },
       },
@@ -297,7 +297,7 @@ describe('getProviderActionLabel', () => {
         canCreate: false,
         onboarding: {
           state: 'ready',
-          mode: 'local',
+          spaceKind: 'local',
           message: null,
         },
       },

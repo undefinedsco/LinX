@@ -6,6 +6,7 @@ const {
   AUTHORIZATION_SURFACE_HEIGHT,
   AUTHORIZATION_SURFACE_WIDTH,
   EmbeddedAuthorizationSheet,
+  buildEmbeddedAuthorizationControlsScript,
   extractProvisionCode,
   resolveAuthorizationWindowTitle,
 } = require(resolveCompiledDesktopModule('lib/embedded-auth-sheet.js'))
@@ -37,4 +38,15 @@ test('resolveAuthorizationWindowTitle shows the active login provider', () => {
   assert.equal(resolveAuthorizationWindowTitle('Cloud'), 'Cloud 登录')
   assert.equal(resolveAuthorizationWindowTitle('Local'), 'Local 登录')
   assert.equal(resolveAuthorizationWindowTitle(''), 'LinX 登录')
+})
+
+test('buildEmbeddedAuthorizationControlsScript exposes a visible space switch action', () => {
+  const script = buildEmbeddedAuthorizationControlsScript('Local')
+
+  assert.match(script, /linx-embedded-auth-controls/)
+  assert.match(script, /返回空间选择/)
+  assert.match(script, /换空间/)
+  assert.match(script, /空间：/)
+  assert.match(script, /Local/)
+  assert.match(script, /window\.close\(\)/)
 })

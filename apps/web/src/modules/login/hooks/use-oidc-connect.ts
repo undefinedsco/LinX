@@ -98,7 +98,7 @@ export function useOidcConnect() {
       const redirectHandler =
         authorizationSurface === 'embedded' && desktopApi?.auth?.openEmbeddedAuthorization
           ? (url: string) => desktopApi.auth.openEmbeddedAuthorization(appendAuthorizationQuery(url, options?.authorizationQuery), {
-              providerLabel: options?.issuerLabel ?? options?.storageProviderLabel,
+              providerLabel: options?.storageProviderLabel ?? options?.issuerLabel,
             })
           : authorizationSurface === 'external'
           ? desktopApi?.app?.openExternal
@@ -106,7 +106,7 @@ export function useOidcConnect() {
             : undefined
           : desktopApi?.auth?.openAuthorizationWindow
           ? (url: string) => desktopApi.auth.openAuthorizationWindow(appendAuthorizationQuery(url, options?.authorizationQuery), {
-              providerLabel: options?.issuerLabel ?? options?.storageProviderLabel,
+              providerLabel: options?.storageProviderLabel ?? options?.issuerLabel,
             })
           : desktopApi?.app?.openExternal
           ? (url: string) => desktopApi.app.openExternal(appendAuthorizationQuery(url, options?.authorizationQuery))

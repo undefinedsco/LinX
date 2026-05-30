@@ -129,13 +129,16 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
     setError(null)
 
     try {
-      await oidc.connect(pendingAttempt.issuerUrl, {
+      const retryOptions = {
         authorizationSurface: pendingAttempt.authorizationSurface,
         returnToMicroAppId: pendingAttempt.returnToMicroAppId,
         storageProviderUrl: pendingAttempt.storageProviderUrl,
         storageProviderLabel: pendingAttempt.storageProviderLabel,
         authorizationQuery: pendingAttempt.authorizationQuery,
-        prompt: pendingAttempt.prompt,
+        ...(pendingAttempt.prompt ? { prompt: pendingAttempt.prompt } : {}),
+      }
+      await oidc.connect(pendingAttempt.issuerUrl, {
+        ...retryOptions,
       })
     } catch (retryError: any) {
       setError(retryError?.message || '重新发起登录失败。')

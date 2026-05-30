@@ -4,10 +4,10 @@ import type { SolidProvider } from './provider-manager'
 import type { XpodManager, XpodStartProgress } from './xpod-manager'
 import { ensureLinxLocalHome } from './local-home'
 
-export type LocalOnboardingMode = 'local' | 'standalone'
+export type LocalSpaceKind = 'local' | 'standalone'
 
 export type LocalOnboardingState =
-  | 'mode_required'
+  | 'space_required'
   | 'idle'
   | 'checking'
   | 'starting'
@@ -30,7 +30,7 @@ export interface LocalOnboardingProgress {
 
 export interface LocalOnboardingSnapshot {
   state: LocalOnboardingState
-  mode: LocalOnboardingMode | null
+  spaceKind: LocalSpaceKind | null
   localUrl: string | null
   baseUrl: string | null
   publicUrl: string | null
@@ -47,13 +47,13 @@ export interface LocalOnboardingSnapshot {
 }
 
 interface PersistedLocalOnboardingState {
-  mode: LocalOnboardingMode | null
+  spaceKind: LocalSpaceKind | null
   providerId: string | null
 }
 
 interface LocalOnboardingControllerOptions {
   xpodManager: Pick<XpodManager, 'getStatus' | 'start'>
-  ensureBootstrapProvider: (mode: LocalOnboardingMode | null) => SolidProvider
+  ensureBootstrapProvider: (spaceKind: LocalSpaceKind | null) => SolidProvider
   stateDir?: string
   onSnapshotChange?: (snapshot: LocalOnboardingSnapshot) => void
   fetchCapabilities?: (baseUrl: string) => Promise<LocalOnboardingCapabilities>
@@ -63,8 +63,8 @@ interface LocalOnboardingControllerOptions {
 type LocalXpodStatus = Awaited<ReturnType<LocalOnboardingControllerOptions['xpodManager']['getStatus']>>
 
 const DEFAULT_SNAPSHOT: LocalOnboardingSnapshot = {
-  state: 'mode_required',
-  mode: null,
+  state: 'space_required',
+  spaceKind: null,
   localUrl: null,
   baseUrl: null,
   publicUrl: null,
@@ -82,14 +82,14 @@ const DEFAULT_SNAPSHOT: LocalOnboardingSnapshot = {
 
 export class LocalOnboardingController {
   private readonly xpodManager: Pick<XpodManager, 'getStatus' | 'start'>
-  private readonly ensureBootstrapProvider: (mode: LocalOnboardingMode | null) => SolidProvider
+  private readonly ensureBootstrapProvider: (spaceKind: LocalSpaceKind | null) => SolidProvider
   private readonly statePath: string
   private readonly onSnapshotChange?: (snapshot: LocalOnboardingSnapshot) => void
   private readonly fetchCapabilities: (baseUrl: string) => Promise<LocalOnboardingCapabilities>
   private state: PersistedLocalOnboardingState
   private snapshot: LocalOnboardingSnapshot
   private lastStartError: {
-    mode: LocalOnboardingMode
+    spaceKind: LocalSpaceKind
     providerId: string
     localUrl: string | null
     baseUrl: string | null
@@ -109,8 +109,8 @@ export class LocalOnboardingController {
     this.state = this.readState()
     this.snapshot = {
       ...DEFAULT_SNAPSHOT,
-      mode: this.state.mode,
-      state: this.state.mode ? 'idle' : 'mode_required',
+      spaceKind: this.state.spaceKind,
+      state: this.state.spaceKind ? 'idle' : 'space_required',
     }
   }
 
@@ -119,19 +119,20 @@ export class LocalOnboardingController {
   }
 
   public async refresh(): Promise<LocalOnboardingSnapshot> {
-    const provider = this.ensureBootstrapProvider(this.state.mode)
+    const provider = this.ensureBootstrapProvider(this.state.spaceKind)
     this.persistResolvedState({
-      mode: this.state.mode,
+      spaceKind: this.state.spaceKind,
       providerId: provider.id,
     })
     const status = await this.xpodManager.getStatus()
-    const mode = this.resolveMode(provider, status)
+    const spaceKind = this.resolveSpaceKind(provider, status)
+    const productLabel = spaceKind === 'standalone' ? 'Standalone' : 'Local'
     const localUrl = status.localUrl ?? provider.issuerUrl ?? null
     const baseUrl = status.baseUrl ?? provider.issuerUrl ?? null
     const provisioning = status.provisioning
     const configuredPublicUrl = this.resolveConfiguredPublicUrl(provider)
-    const publicUrl = mode === 'local'
-      ? provisioning?.publicUrl ?? configuredPublicUrl ?? status.baseUrl ?? null
+    const publicUrl = spaceKind === 'local'
+      ? provisioning?.publicUrl ?? configuredPublicUrl ?? null
       : null
     const bindingFields = {
       publicUrl,
@@ -141,13 +142,13 @@ export class LocalOnboardingController {
       nodeId: provisioning?.nodeId ?? null,
     }
 
-    const startError = this.matchesLastStartError(provider.id, mode, localUrl, baseUrl, publicUrl)
+    const startError = this.matchesLastStartError(provider.id, spaceKind, localUrl, baseUrl, publicUrl)
       ? this.lastStartError
       : null
     if (!status.running && startError) {
       return this.updateSnapshot({
         state: 'error',
-        mode,
+        spaceKind,
         localUrl,
         baseUrl,
         ...bindingFields,
@@ -159,15 +160,15 @@ export class LocalOnboardingController {
       })
     }
 
-    if (!mode) {
+    if (!spaceKind) {
       return this.updateSnapshot({
-        state: 'mode_required',
-        mode: null,
+        state: 'space_required',
+        spaceKind: null,
         localUrl,
         baseUrl,
         ...bindingFields,
         capabilities: null,
-        message: '首次使用时先确认 Local 的启动方式。服务准备好后，再继续登录。',
+        message: '首次使用时先确认本地空间的启动方式。服务准备好后，再继续登录。',
         errorCode: null,
         canRetry: false,
         canOpenSettings: true,
@@ -178,12 +179,12 @@ export class LocalOnboardingController {
       const progress = this.snapshot.state === 'starting' ? this.snapshot.progress ?? null : null
       return this.updateSnapshot({
         state: 'starting',
-        mode,
+        spaceKind,
         localUrl,
         baseUrl,
         ...bindingFields,
         capabilities: null,
-        message: progress?.label ?? '正在启动 Local…',
+        message: progress?.label ?? `正在启动 ${productLabel}…`,
         progress,
         errorCode: null,
         canRetry: false,
@@ -194,27 +195,27 @@ export class LocalOnboardingController {
     if (!status.running) {
       return this.updateSnapshot({
         state: 'idle',
-        mode,
+        spaceKind,
         localUrl,
         baseUrl,
         ...bindingFields,
         capabilities: null,
-        message: 'Local 尚未运行。你可以先启动 Local，或先配置启动参数。',
+        message: `${productLabel} 尚未运行。你可以先启动服务，或先配置启动参数。`,
         errorCode: null,
         canRetry: true,
         canOpenSettings: true,
       })
     }
 
-    if (mode === 'local' && (!provisioning?.provisionCode || !provisioning?.cloudIdentityUrl)) {
+    if (spaceKind === 'local' && (!publicUrl || !provisioning?.provisionCode || !provisioning?.cloudIdentityUrl)) {
       return this.updateSnapshot({
         state: 'repair_required',
-        mode,
+        spaceKind,
         localUrl,
         baseUrl,
         ...bindingFields,
         capabilities: null,
-        message: 'Local 已运行，但还没完成 Cloud 绑定。请通过 LinX 重新启动 Local，再继续登录。',
+        message: 'Local 已运行，但还没拿到 Cloud 分配的 canonical URL 或绑定信息。请通过 LinX 重新启动 Local，再继续登录。',
         errorCode: 'LOCAL_CLOUD_BINDING_REQUIRED',
         canRetry: true,
         canOpenSettings: true,
@@ -226,33 +227,36 @@ export class LocalOnboardingController {
 
     return this.updateSnapshot({
       state: 'ready',
-      mode,
+      spaceKind,
       localUrl,
       baseUrl,
       ...bindingFields,
       capabilities,
-      message: 'Local 已准备好，接下来会打开 xpod 登录页。',
+      message: spaceKind === 'standalone'
+        ? 'Standalone 已准备好，接下来会打开本机登录页。'
+        : 'Local 已准备好，接下来会通过 Cloud 登录并写入本地空间。',
       errorCode: null,
       canRetry: true,
       canOpenSettings: true,
     })
   }
 
-  public async chooseMode(mode: LocalOnboardingMode): Promise<LocalOnboardingSnapshot> {
-    const provider = this.ensureBootstrapProvider(mode)
+  public async chooseSpace(spaceKind: LocalSpaceKind): Promise<LocalOnboardingSnapshot> {
+    const provider = this.ensureBootstrapProvider(spaceKind)
     this.persistResolvedState({
-      mode,
+      spaceKind,
       providerId: provider.id,
     })
     return this.refresh()
   }
 
   public async continue(): Promise<LocalOnboardingSnapshot> {
-    const provider = this.ensureBootstrapProvider(this.state.mode)
+    const provider = this.ensureBootstrapProvider(this.state.spaceKind)
     const status = await this.xpodManager.getStatus()
-    const mode = this.resolveMode(provider, status)
+    const spaceKind = this.resolveSpaceKind(provider, status)
+    const productLabel = spaceKind === 'standalone' ? 'Standalone' : 'Local'
 
-    if (!mode) {
+    if (!spaceKind) {
       return this.refresh()
     }
 
@@ -260,8 +264,8 @@ export class LocalOnboardingController {
     const baseUrl = status.baseUrl ?? provider.issuerUrl ?? null
     const provisioning = status.provisioning
     const configuredPublicUrl = this.resolveConfiguredPublicUrl(provider)
-    const publicUrl = mode === 'local'
-      ? provisioning?.publicUrl ?? configuredPublicUrl ?? status.baseUrl ?? null
+    const publicUrl = spaceKind === 'local'
+      ? provisioning?.publicUrl ?? configuredPublicUrl ?? null
       : null
     const bindingFields = {
       publicUrl,
@@ -271,13 +275,13 @@ export class LocalOnboardingController {
       nodeId: provisioning?.nodeId ?? null,
     }
 
-    if (status.running && !this.shouldRestartForMode(provider, status, mode)) {
+    if (status.running && !this.shouldRestartForSpaceKind(provider, status, spaceKind)) {
       return this.refresh()
     }
 
     this.updateSnapshot({
       state: 'starting',
-      mode,
+      spaceKind,
       localUrl,
       baseUrl,
       ...bindingFields,
@@ -286,7 +290,7 @@ export class LocalOnboardingController {
       progress: {
         phase: 'resolve-runtime',
         label: '检查 xpod 运行环境',
-        detail: '准备启动 Local',
+        detail: `准备启动 ${productLabel}`,
       },
       errorCode: null,
       canRetry: false,
@@ -304,14 +308,14 @@ export class LocalOnboardingController {
           providerId: provider.id,
           dataDir: provider.managed.dataDir,
           port: provider.managed.port,
-          mode,
+          spaceKind,
           domain: provider.managed.domain,
           tunnelToken: provider.managed.tunnelToken,
         },
         (progress) => {
           this.updateSnapshot({
             state: 'starting',
-            mode,
+            spaceKind,
             localUrl,
             baseUrl,
             ...bindingFields,
@@ -328,7 +332,7 @@ export class LocalOnboardingController {
       return this.refresh()
     } catch (error) {
       this.lastStartError = {
-        mode,
+        spaceKind,
         providerId: provider.id,
         localUrl,
         baseUrl,
@@ -338,7 +342,7 @@ export class LocalOnboardingController {
       }
       return this.updateSnapshot({
         state: 'error',
-        mode,
+        spaceKind,
         localUrl,
         baseUrl,
         ...bindingFields,
@@ -358,28 +362,32 @@ export class LocalOnboardingController {
     return this.getSnapshot()
   }
 
-  private resolveMode(
+  private resolveSpaceKind(
     _provider: SolidProvider,
     _status: LocalXpodStatus,
-  ): LocalOnboardingMode | null {
-    if (this.state.mode) {
-      return this.state.mode
+  ): LocalSpaceKind | null {
+    if (this.state.spaceKind) {
+      return this.state.spaceKind
     }
 
     return null
   }
 
-  private shouldRestartForMode(
+  private shouldRestartForSpaceKind(
     provider: SolidProvider,
     status: LocalXpodStatus,
-    mode: LocalOnboardingMode,
+    spaceKind: LocalSpaceKind,
   ): boolean {
     if (!status.running) {
       return true
     }
 
-    if (mode !== 'local') {
+    if (spaceKind !== 'local') {
       return false
+    }
+
+    if (!status.provisioning?.publicUrl || !status.provisioning?.provisionCode || !status.provisioning?.cloudIdentityUrl) {
+      return true
     }
 
     const configuredPublicUrl = this.resolveConfiguredPublicUrl(provider)
@@ -395,32 +403,20 @@ export class LocalOnboardingController {
       return true
     }
 
-    return !status.provisioning?.provisionCode || !status.provisioning?.cloudIdentityUrl
+    return false
   }
 
   private resolveConfiguredPublicUrl(provider: SolidProvider): string | null {
     const domain = provider.managed?.domain
-    if (domain?.type !== 'custom' || !domain.value?.trim()) {
+    if (!domain || domain.type === 'none' || !domain.value?.trim()) {
       return null
     }
 
     return domainToPublicUrl(domain.value)
   }
 
-  private persistResolvedMode(mode: LocalOnboardingMode, providerId?: string | null): void {
-    const nextProviderId = providerId ?? this.state.providerId
-    if (this.state.mode === mode && this.state.providerId === nextProviderId) {
-      return
-    }
-
-    this.persistResolvedState({
-      mode,
-      providerId: nextProviderId,
-    })
-  }
-
   private persistResolvedState(next: PersistedLocalOnboardingState): void {
-    if (this.state.mode === next.mode && this.state.providerId === next.providerId) {
+    if (this.state.spaceKind === next.spaceKind && this.state.providerId === next.providerId) {
       return
     }
 
@@ -431,7 +427,7 @@ export class LocalOnboardingController {
 
   private matchesLastStartError(
     providerId: string,
-    mode: LocalOnboardingMode | null,
+    spaceKind: LocalSpaceKind | null,
     localUrl: string | null,
     baseUrl: string | null,
     publicUrl: string | null,
@@ -439,7 +435,7 @@ export class LocalOnboardingController {
     return Boolean(
       this.lastStartError
       && this.lastStartError.providerId === providerId
-      && this.lastStartError.mode === mode
+      && this.lastStartError.spaceKind === spaceKind
       && urlsEqual(this.lastStartError.localUrl, localUrl)
       && urlsEqual(this.lastStartError.baseUrl, baseUrl)
       && urlsEqual(this.lastStartError.publicUrl, publicUrl),
@@ -449,19 +445,19 @@ export class LocalOnboardingController {
   private readState(): PersistedLocalOnboardingState {
     try {
       if (!fs.existsSync(this.statePath)) {
-        return { mode: null, providerId: null }
+        return { spaceKind: null, providerId: null }
       }
 
       const raw = fs.readFileSync(this.statePath, 'utf8')
       const parsed = JSON.parse(raw) as Partial<PersistedLocalOnboardingState>
       return {
-        mode: parsePersistedMode(parsed.mode),
+        spaceKind: parsePersistedSpaceKind(parsed.spaceKind),
         providerId: typeof parsed.providerId === 'string' && parsed.providerId.trim().length > 0
           ? parsed.providerId
           : null,
       }
     } catch {
-      return { mode: null, providerId: null }
+      return { spaceKind: null, providerId: null }
     }
   }
 
@@ -471,7 +467,7 @@ export class LocalOnboardingController {
   }
 }
 
-function parsePersistedMode(value: unknown): LocalOnboardingMode | null {
+function parsePersistedSpaceKind(value: unknown): LocalSpaceKind | null {
   if (value === 'local' || value === 'standalone') {
     return value
   }

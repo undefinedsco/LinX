@@ -18,6 +18,8 @@ function loadWebServerWithStubs(t, options = {}) {
     baseUrl: 'http://localhost:5737',
     publicUrl: undefined,
   }
+  const startCalls = []
+  const runtimeSessions = options.runtimeSessions ?? []
 
   global.fetch = async (url, init = {}) => {
     fetchCalls.push({ url: String(url), init })
@@ -30,6 +32,8 @@ function loadWebServerWithStubs(t, options = {}) {
           nodeToken: 'node-token',
           serviceToken: 'service-token',
           provisionCode: 'provision-code',
+          publicUrl: 'https://node-0000.undefineds.co/',
+          spDomain: 'node-0000.undefineds.co',
           tunnelProvider: 'cloudflare',
           tunnelEndpoint: 'https://tunnel.example.com',
         }
@@ -56,7 +60,9 @@ function loadWebServerWithStubs(t, options = {}) {
       return {
         getXpodModule: () => ({
           getStatus: () => status,
-          start: async () => {},
+          start: async () => {
+            startCalls.push({})
+          },
           stop: async () => {},
           restart: async () => {},
         }),
@@ -66,7 +72,7 @@ function loadWebServerWithStubs(t, options = {}) {
     if (request.endsWith('/runtime-threads') || request === './runtime-threads') {
       return {
         getRuntimeThreadsModule: () => ({
-          listSessions: () => [],
+          listSessions: () => runtimeSessions,
           getSession: () => null,
           createSession: () => ({}),
           startSession: async () => ({}),
@@ -99,7 +105,7 @@ function loadWebServerWithStubs(t, options = {}) {
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  return { server, tmpDir, fetchCalls }
+  return { server, tmpDir, fetchCalls, startCalls }
 }
 
 function setupPayload(overrides = {}) {
@@ -108,7 +114,7 @@ function setupPayload(overrides = {}) {
     dataDir: tmpDataDir,
     port: 5737,
     autoStart: false,
-    deploymentMode: 'local',
+    spaceKind: 'local',
     network: {
       accessMode: 'auto',
     },
@@ -163,7 +169,7 @@ async function requestJson(origin, pathname, options = {}) {
   })
 }
 
-test('setup writes Cloud+Local provisioning env when Local has a public domain', async (t) => {
+test('setup writes Cloud+Local user-managed canonical domain env when Local has a public domain', async (t) => {
   const { server, tmpDir, fetchCalls } = loadWebServerWithStubs(t)
   const { listener, origin } = await listenOnRandomPort(server.app)
   t.after(() => listener.close())
@@ -195,6 +201,7 @@ test('setup writes Cloud+Local provisioning env when Local has a public domain',
     tunnelMode: 'client',
     domainMode: 'self-managed',
   })
+  assert.equal(Object.hasOwn(JSON.parse(cloudCall.init.body), 'spDomain'), false)
 
   const env = fs.readFileSync(path.join(tmpDir, '.env'), 'utf-8')
   assert.match(env, /^CSS_BASE_URL=https:\/\/node-0000\.undefineds\.co$/m)
@@ -211,7 +218,7 @@ test('setup writes Cloud+Local provisioning env when Local has a public domain',
   assert.match(env, /^CLOUDFLARE_TUNNEL_TOKEN=cf-token$/m)
 })
 
-test('setup does not switch Local device-only into Cloud+Local without a public domain', async (t) => {
+test('setup writes Cloud+Local Cloud-managed canonical domain env without a user domain', async (t) => {
   const { server, tmpDir, fetchCalls } = loadWebServerWithStubs(t)
   const { listener, origin } = await listenOnRandomPort(server.app)
   t.after(() => listener.close())
@@ -224,14 +231,26 @@ test('setup does not switch Local device-only into Cloud+Local without a public 
   assert.equal(response.status, 200)
   const body = response.body
   assert.equal(body.success, true)
-  assert.equal(body.provisioning, undefined)
-  assert.equal(fetchCalls.length, 0)
+  assert.equal(body.provisioning.cloudIdentityUrl, 'https://id.undefineds.co')
+  assert.equal(body.provisioning.publicUrl, 'https://node-0000.undefineds.co/')
+
+  const cloudCall = fetchCalls.find((call) => call.url === 'https://api.undefineds.co/provision/nodes')
+  assert.ok(cloudCall)
+  assert.deepEqual(JSON.parse(cloudCall.init.body), {
+    localPort: 5737,
+    domainMode: 'managed',
+  })
 
   const env = fs.readFileSync(path.join(tmpDir, '.env'), 'utf-8')
-  assert.doesNotMatch(env, /^oidcIssuer=/m)
+  assert.match(env, /^CSS_BASE_URL=https:\/\/node-0000\.undefineds\.co$/m)
+  assert.match(env, /^oidcIssuer=https:\/\/id\.undefineds\.co$/m)
   assert.doesNotMatch(env, new RegExp(`^${['OIDC', 'ISSUER'].join('_')}=`, 'm'))
-  assert.doesNotMatch(env, /^XPOD_NODE_ID=/m)
-  assert.match(env, /^CSS_BASE_URL=http:\/\/localhost:5737$/m)
+  assert.match(env, /^XPOD_NODE_ID=node-123$/m)
+  assert.match(env, /^XPOD_NODE_TOKEN=node-token$/m)
+  assert.match(env, /^XPOD_SERVICE_TOKEN=service-token$/m)
+  assert.match(env, /^LINX_PROVISION_CODE=provision-code$/m)
+  assert.match(env, /^LINX_SP_DOMAIN=node-0000\.undefineds\.co$/m)
+  assert.doesNotMatch(env, /^LINX_PUBLIC_DOMAIN=/m)
 })
 
 test('service status exposes provisioning from generated env', async (t) => {
@@ -242,6 +261,13 @@ test('service status exposes provisioning from generated env', async (t) => {
       baseUrl: 'https://node-0000.undefineds.co/',
       publicUrl: 'https://node-0000.undefineds.co/',
     },
+    runtimeSessions: [
+      { id: 'idle', status: 'idle' },
+      { id: 'active-1', status: 'active' },
+      { id: 'active-2', status: 'active' },
+      { id: 'paused', status: 'paused' },
+      { id: 'error', status: 'error' },
+    ],
   })
   const { listener, origin } = await listenOnRandomPort(server.app)
   t.after(() => listener.close())
@@ -257,15 +283,82 @@ test('service status exposes provisioning from generated env', async (t) => {
     'LINX_PROVISION_CODE=provision-code',
     'LINX_PROVISION_URL=https://id.undefineds.co/.account/?provisionCode=provision-code',
     'LINX_PUBLIC_DOMAIN=node-0000.undefineds.co',
+    'LINX_SPACE_KIND=local',
   ].join('\n'))
 
   const response = await requestJson(origin, '/api/service/status')
   assert.equal(response.status, 200)
   const body = response.body
   assert.equal(body.pod.running, true)
+  assert.equal(body.spaceKind, 'local')
   assert.equal(body.provisioning.publicUrl, 'https://node-0000.undefineds.co/')
   assert.equal(body.provisioning.cloudIdentityUrl, 'https://id.undefineds.co')
   assert.equal(body.provisioning.provisionCode, 'provision-code')
+  assert.deepEqual(body.runtime.workers, {
+    total: 5,
+    running: 2,
+    idle: 1,
+    active: 2,
+    paused: 1,
+    completed: 0,
+    error: 1,
+  })
+})
+
+test('service start accepts the configured Local space', async (t) => {
+  const { server, tmpDir, startCalls } = loadWebServerWithStubs(t)
+  const { listener, origin } = await listenOnRandomPort(server.app)
+  t.after(() => listener.close())
+
+  fs.writeFileSync(path.join(tmpDir, '.env'), [
+    'LINX_SPACE_KIND=local',
+    'CSS_PORT=5737',
+  ].join('\n'))
+
+  const response = await requestJson(origin, '/api/service/start', {
+    method: 'POST',
+    body: { spaceKind: 'local' },
+  })
+
+  assert.equal(response.status, 200)
+  assert.equal(response.body.success, true)
+  assert.equal(startCalls.length, 1)
+})
+
+test('service start rejects a requested space that does not match generated config', async (t) => {
+  const { server, tmpDir, startCalls } = loadWebServerWithStubs(t)
+  const { listener, origin } = await listenOnRandomPort(server.app)
+  t.after(() => listener.close())
+
+  fs.writeFileSync(path.join(tmpDir, '.env'), [
+    'LINX_SPACE_KIND=local',
+    'CSS_PORT=5737',
+  ].join('\n'))
+
+  const response = await requestJson(origin, '/api/service/start', {
+    method: 'POST',
+    body: { spaceKind: 'standalone' },
+  })
+
+  assert.equal(response.status, 409)
+  assert.equal(response.body.configuredSpaceKind, 'local')
+  assert.equal(response.body.requestedSpaceKind, 'standalone')
+  assert.equal(startCalls.length, 0)
+})
+
+test('service start rejects invalid space values', async (t) => {
+  const { server, startCalls } = loadWebServerWithStubs(t)
+  const { listener, origin } = await listenOnRandomPort(server.app)
+  t.after(() => listener.close())
+
+  const response = await requestJson(origin, '/api/service/start', {
+    method: 'POST',
+    body: { spaceKind: 'legacy-local' },
+  })
+
+  assert.equal(response.status, 400)
+  assert.match(response.body.error, /spaceKind must/)
+  assert.equal(startCalls.length, 0)
 })
 
 test('stored Cloud registration is ignored when no public URL can be recovered', (t) => {

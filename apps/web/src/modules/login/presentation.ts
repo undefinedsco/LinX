@@ -71,18 +71,18 @@ export function getProviderInfoText(provider: LoginProviderOption, isFailed: boo
   const source = resolveLoginProviderSource(provider)
 
   if (source === 'cloud') {
-    return '使用 Cloud 登录，数据写入 Cloud 空间。'
+    return 'Cloud 账号登录，数据写入 Cloud Pod。账号、授权和数据都在 Cloud。'
   }
 
   if (source === 'local') {
-    return '使用 Cloud 登录，数据写入这台设备上的 Local 空间。'
+    return 'Cloud 账号登录，数据写入当前本机 xpod 的 Local Pod。Cloud 只做身份授权。'
   }
 
   if (source === 'standalone') {
-    return '账号和数据都在本机的 Standalone 空间。'
+    return '本机 xpod 登录，数据也写入本机 Standalone Pod；不绑定 Cloud 账号。'
   }
 
-  return '使用这个 Solid Provider 完成登录和数据存储。'
+  return '使用这个 Solid Provider 同时作为账号入口和数据空间。'
 }
 
 export function getProviderActionLabel(provider: LoginProviderOption): string {
@@ -100,7 +100,7 @@ export function getProviderActionLabel(provider: LoginProviderOption): string {
     const onboarding = provider.runtime.onboarding
     if (onboarding) {
       switch (onboarding.state) {
-        case 'mode_required':
+        case 'space_required':
           return '开始'
         case 'idle':
           return '启动'
@@ -152,7 +152,7 @@ export function getProviderStatusBadge(provider: LoginProviderOption): ProviderS
     const onboarding = provider.runtime.onboarding
     if (onboarding) {
       switch (onboarding.state) {
-        case 'mode_required':
+        case 'space_required':
           return { label: '未配置', tone: 'neutral' }
         case 'idle':
           return { label: '继续', tone: 'neutral' }

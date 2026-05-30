@@ -91,7 +91,7 @@ describe('useLoginController', () => {
     startLocalMock.mockReset()
     startLocalMock.mockResolvedValue({
       state: 'ready',
-      mode: 'standalone',
+      spaceKind: 'standalone',
       localUrl: 'http://localhost:5737/',
       baseUrl: 'http://localhost:5737/',
       publicUrl: null,
@@ -156,7 +156,7 @@ describe('useLoginController', () => {
     const { result } = renderHook(() => useLoginController())
 
     await act(async () => {
-      await result.current.connect('http://localhost:5737')
+      await result.current.connect('local')
     })
 
     expect(window.sessionStorage.getItem('linx-post-login-micro-app')).toBe('files')
@@ -455,9 +455,19 @@ describe('useLoginController', () => {
     providersState.providers = [
       {
         id: 'local',
-        url: 'http://localhost:5737',
+        url: 'https://node-abc123.undefineds.co/',
         label: 'Local',
         source: 'local',
+        oidcProvider: {
+          kind: 'cloud',
+          url: 'https://id.undefineds.co',
+          label: 'Cloud',
+        },
+        storageProvider: {
+          kind: 'local',
+          url: 'https://node-abc123.undefineds.co/',
+          label: 'Local',
+        },
         runtime: {
           kind: 'local-pod',
           status: 'running',
@@ -485,7 +495,7 @@ describe('useLoginController', () => {
     const { result } = renderHook(() => useLoginController())
 
     await act(async () => {
-      await result.current.connect('http://localhost:5737')
+      await result.current.connect('local')
     })
 
     expect(startLocalMock).toHaveBeenCalledTimes(1)
@@ -527,7 +537,7 @@ describe('useLoginController', () => {
         displayName: 'Ganlu05',
         issuerUrl: 'https://id.undefineds.co',
         issuerLabel: 'Cloud',
-        storageProviderUrl: 'http://localhost:5737',
+        storageProviderUrl: 'https://node-abc123.undefineds.co/',
         storageProviderLabel: 'Local',
         webId: 'https://id.undefineds.co/ganlu05/profile/card#me',
       },
@@ -542,10 +552,10 @@ describe('useLoginController', () => {
 
     await waitFor(() => {
       expect(result.current.storageConflict).toEqual({
-        expectedStorageUrl: 'http://localhost:5737/ganlu05/',
+        expectedStorageUrl: 'https://node-abc123.undefineds.co/ganlu05/',
         actualStorageUrl: 'https://id.undefineds.co/ganbb/',
-        storageProviderUrl: 'http://localhost:5737',
-        managementUrl: 'http://localhost:5737/.account/account/',
+        storageProviderUrl: 'https://node-abc123.undefineds.co/',
+        managementUrl: 'https://node-abc123.undefineds.co/.account/account/',
       })
     })
 
@@ -583,9 +593,9 @@ describe('useLoginController', () => {
       storedAccount: {
         displayName: 'Ganlu',
         issuerUrl: 'http://localhost:5737',
-        issuerLabel: 'Local',
+        issuerLabel: 'Standalone',
         storageProviderUrl: 'http://localhost:5737',
-        storageProviderLabel: 'Local',
+        storageProviderLabel: 'Standalone',
         webId: 'http://localhost:5737/profile/card#me',
       },
       customProviders: [],
@@ -636,9 +646,9 @@ describe('useLoginController', () => {
       storedAccount: {
         displayName: 'Ganlu',
         issuerUrl: 'http://localhost:5737',
-        issuerLabel: 'Local',
+        issuerLabel: 'Standalone',
         storageProviderUrl: 'http://localhost:5737',
-        storageProviderLabel: 'Local',
+        storageProviderLabel: 'Standalone',
         webId: 'http://localhost:5737/profile/card#me',
       },
       customProviders: [],
@@ -672,7 +682,7 @@ describe('useLoginController', () => {
     }))
     providersState.localOnboarding = {
       state: 'ready',
-      mode: 'local',
+      spaceKind: 'local',
       localUrl: 'http://localhost:5737',
       baseUrl: 'https://pod.example.com/',
       publicUrl: 'https://pod.example.com/',
@@ -711,11 +721,82 @@ describe('useLoginController', () => {
       authorizationSurface: 'embedded',
       storageProviderUrl: 'https://pod.example.com/',
       storageProviderLabel: 'Local',
+      issuerLabel: 'Cloud',
       authorizationQuery: {
         provisionCode: 'pc-123',
       },
     }))
     expect(connectMock.mock.calls[0]?.[1]).not.toHaveProperty('prompt')
+  })
+
+  it('blocks Local login when Cloud binding has no canonical storage URL', async () => {
+    providersState.localOnboarding = {
+      state: 'ready',
+      spaceKind: 'local',
+      localUrl: 'http://localhost:5737',
+      baseUrl: 'http://localhost:5737/',
+      publicUrl: null,
+      capabilities: null,
+      cloudIdentityUrl: 'https://id.undefineds.co',
+      provisionCode: 'pc-123',
+      provisionUrl: 'https://id.undefineds.co/.account/?provisionCode=pc-123',
+      nodeId: 'abc',
+      message: null,
+      errorCode: null,
+      canRetry: true,
+      canOpenSettings: true,
+    }
+
+    const { result } = renderHook(() => useLoginController())
+
+    await act(async () => {
+      await result.current.continueLocalLogin()
+    })
+
+    expect(connectMock).not.toHaveBeenCalled()
+    expect(result.current.error).toContain('canonical storage URL')
+    expect(useLoginStore.getState().state).toBe('idle')
+  })
+
+  it('does not treat a LAN Local access route as the canonical storage URL', async () => {
+    providersState.localOnboarding = {
+      state: 'ready',
+      spaceKind: 'local',
+      localUrl: 'http://localhost:5737',
+      baseUrl: 'http://192.168.1.23:5737/',
+      publicUrl: null,
+      capabilities: null,
+      cloudIdentityUrl: 'https://id.undefineds.co',
+      provisionCode: 'pc-123',
+      provisionUrl: 'https://id.undefineds.co/.account/?provisionCode=pc-123',
+      nodeId: 'abc',
+      message: null,
+      errorCode: null,
+      canRetry: true,
+      canOpenSettings: true,
+    }
+    window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
+      issuerUrl: 'https://id.undefineds.co',
+      storageProviderUrl: 'http://192.168.1.23:5737/',
+      storageProviderLabel: 'Local',
+      authorizationSurface: 'embedded',
+      returnToMicroAppId: 'chat',
+    }))
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    sessionState.info.isLoggedIn = true
+    sessionState.info.webId = 'https://id.undefineds.co/alice/profile/card#me'
+
+    const { result } = renderHook(() => useLoginController())
+
+    await waitFor(() => {
+      expect(result.current.error).toContain('canonical storage URL')
+    })
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(useLoginStore.getState().state).toBe('idle')
+    expect(useLoginStore.getState().storedAccount).toBeNull()
+    expect(logoutMock).toHaveBeenCalledTimes(1)
   })
 
   it('enters interactive Local login for a remembered Desktop Local session when no session is active', async () => {
@@ -750,9 +831,9 @@ describe('useLoginController', () => {
       storedAccount: {
         displayName: 'Ganlu',
         issuerUrl: 'http://localhost:5737',
-        issuerLabel: 'Local',
+        issuerLabel: 'Standalone',
         storageProviderUrl: 'http://localhost:5737',
-        storageProviderLabel: 'Local',
+        storageProviderLabel: 'Standalone',
         webId: 'http://localhost:5737/profile/card#me',
       },
       customProviders: [],
@@ -771,16 +852,26 @@ describe('useLoginController', () => {
     expect(handleIncomingRedirectMock).not.toHaveBeenCalled()
   })
 
-  it('revalidates a remembered Desktop Local session before entering LinX when the Inrupt session is already active', async () => {
+  it('revalidates a remembered Desktop Standalone session before entering LinX when the Inrupt session is already active', async () => {
     window.xpodDesktop = {
       auth: {},
     } as any
     providersState.providers = [
       {
-        id: 'local',
+        id: 'standalone',
         url: 'http://localhost:5737',
-        label: 'Local',
-        source: 'local',
+        label: 'Standalone',
+        source: 'standalone',
+        oidcProvider: {
+          kind: 'local',
+          url: 'http://localhost:5737',
+          label: 'Standalone',
+        },
+        storageProvider: {
+          kind: 'local',
+          url: 'http://localhost:5737',
+          label: 'Standalone',
+        },
         runtime: {
           kind: 'local-pod',
           status: 'stopped',
@@ -806,9 +897,9 @@ describe('useLoginController', () => {
       storedAccount: {
         displayName: 'Ganlu',
         issuerUrl: 'http://localhost:5737',
-        issuerLabel: 'Local',
+        issuerLabel: 'Standalone',
         storageProviderUrl: 'http://localhost:5737',
-        storageProviderLabel: 'Local',
+        storageProviderLabel: 'Standalone',
         webId: 'http://localhost:5737/profile/card#me',
       },
       customProviders: [],
@@ -830,16 +921,26 @@ describe('useLoginController', () => {
     expect(navigateMock).not.toHaveBeenCalled()
   })
 
-  it('blocks a remembered active Local session when its profile storage points at another SP', async () => {
+  it('blocks a remembered active Standalone session when its profile storage points at another SP', async () => {
     window.xpodDesktop = {
       auth: {},
     } as any
     providersState.providers = [
       {
-        id: 'local',
+        id: 'standalone',
         url: 'http://localhost:5737',
-        label: 'Local',
-        source: 'local',
+        label: 'Standalone',
+        source: 'standalone',
+        oidcProvider: {
+          kind: 'local',
+          url: 'http://localhost:5737',
+          label: 'Standalone',
+        },
+        storageProvider: {
+          kind: 'local',
+          url: 'http://localhost:5737',
+          label: 'Standalone',
+        },
         runtime: {
           kind: 'local-pod',
           status: 'stopped',
@@ -866,9 +967,9 @@ describe('useLoginController', () => {
       storedAccount: {
         displayName: 'Ganlu',
         issuerUrl: 'http://localhost:5737',
-        issuerLabel: 'Local',
+        issuerLabel: 'Standalone',
         storageProviderUrl: 'http://localhost:5737',
-        storageProviderLabel: 'Local',
+        storageProviderLabel: 'Standalone',
         webId: 'http://localhost:5737/profile/card#me',
       },
       customProviders: [],
@@ -936,13 +1037,23 @@ describe('useLoginController', () => {
     expect(startLocalMock).toHaveBeenCalledTimes(1)
   })
 
-  it('treats a remembered local webId without issuer metadata as Local and starts Local login', async () => {
+  it('treats a remembered localhost webId without issuer metadata as Standalone and starts Standalone login', async () => {
     providersState.providers = [
       {
-        id: 'local',
+        id: 'standalone',
         url: 'http://localhost:5737',
-        label: 'Local',
-        source: 'local',
+        label: 'Standalone',
+        source: 'standalone',
+        oidcProvider: {
+          kind: 'local',
+          url: 'http://localhost:5737',
+          label: 'Standalone',
+        },
+        storageProvider: {
+          kind: 'local',
+          url: 'http://localhost:5737',
+          label: 'Standalone',
+        },
         runtime: {
           kind: 'local-pod',
           status: 'running',
@@ -989,7 +1100,7 @@ describe('useLoginController', () => {
     ]
     providersState.localOnboarding = {
       state: 'ready',
-      mode: 'local',
+      spaceKind: 'local',
       localUrl: 'http://localhost:5737',
       baseUrl: 'https://pod.example.com/',
       publicUrl: 'https://pod.example.com/',
@@ -1029,6 +1140,7 @@ describe('useLoginController', () => {
       authorizationSurface: 'embedded',
       storageProviderUrl: 'https://pod.example.com/',
       storageProviderLabel: 'Local',
+      issuerLabel: 'Cloud',
       authorizationQuery: {
         provisionCode: 'pc-123',
       },
@@ -1048,7 +1160,7 @@ describe('useLoginController', () => {
     } as any
     providersState.localOnboarding = {
       state: 'ready',
-      mode: 'local',
+      spaceKind: 'local',
       localUrl: 'http://localhost:5737',
       baseUrl: 'https://pod.example.com/',
       publicUrl: 'https://pod.example.com/',
@@ -1087,6 +1199,7 @@ describe('useLoginController', () => {
       authorizationSurface: 'embedded',
       storageProviderUrl: 'https://pod.example.com/',
       storageProviderLabel: 'Local',
+      issuerLabel: 'Cloud',
       authorizationQuery: {
         provisionCode: 'pc-123',
       },
@@ -1107,7 +1220,7 @@ describe('useLoginController', () => {
     }))
     providersState.localOnboarding = {
       state: 'ready',
-      mode: 'local',
+      spaceKind: 'local',
       localUrl: 'http://localhost:5737',
       baseUrl: 'https://pod.example.com/',
       publicUrl: 'https://pod.example.com/',
@@ -1146,6 +1259,7 @@ describe('useLoginController', () => {
       authorizationSurface: 'embedded',
       storageProviderUrl: 'https://pod.example.com/',
       storageProviderLabel: 'Local',
+      issuerLabel: 'Cloud',
       authorizationQuery: {
         provisionCode: 'pc-123',
       },
@@ -1194,7 +1308,7 @@ describe('useLoginController', () => {
   it('does not treat Standalone as Local when continuing a Local login', async () => {
     providersState.localOnboarding = {
       state: 'ready',
-      mode: 'standalone',
+      spaceKind: 'standalone',
       localUrl: 'http://localhost:5737',
       baseUrl: 'http://localhost:5737/',
       publicUrl: null,
@@ -1300,7 +1414,7 @@ describe('useLoginController', () => {
       storedAccount: {
         displayName: 'Ganlu',
         issuerUrl: 'http://localhost:5737',
-        issuerLabel: 'Local',
+        issuerLabel: 'Standalone',
         webId: 'http://localhost:5737/profile/card#me',
       },
       customProviders: [],
@@ -1352,7 +1466,7 @@ describe('useLoginController', () => {
     window.sessionStorage.setItem('linx-post-login-micro-app', 'chat')
     window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
       issuerUrl: 'https://cloud.example.com',
-      storageProviderUrl: 'http://localhost:5737',
+      storageProviderUrl: 'https://node-0000.undefineds.co/',
       storageProviderLabel: 'Local',
       authorizationSurface: 'embedded',
       returnToMicroAppId: 'chat',
@@ -1364,7 +1478,7 @@ describe('useLoginController', () => {
       headers: new Headers({ 'content-type': 'application/ld+json' }),
       text: async () => JSON.stringify({
         '@id': 'https://alice.example/profile/card#me',
-        'solid:storage': { '@id': 'http://localhost:5737/profile/' },
+        'solid:storage': { '@id': 'https://node-0000.undefineds.co/profile/' },
       }),
     }))
 
@@ -1376,7 +1490,7 @@ describe('useLoginController', () => {
 
     expect(useLoginStore.getState().storedAccount?.issuerUrl).toBe('https://cloud.example.com')
     expect(useLoginStore.getState().storedAccount?.issuerLabel).toBe('Cloud')
-    expect(useLoginStore.getState().storedAccount?.storageProviderUrl).toBe('http://localhost:5737')
+    expect(useLoginStore.getState().storedAccount?.storageProviderUrl).toBe('https://node-0000.undefineds.co/')
     expect(useLoginStore.getState().storedAccount?.storageProviderLabel).toBe('Local')
   })
 
@@ -1407,7 +1521,7 @@ describe('useLoginController', () => {
     ]
     providersState.localOnboarding = {
       state: 'ready',
-      mode: 'standalone',
+      spaceKind: 'standalone',
       localUrl: 'http://localhost:5737',
       baseUrl: 'http://localhost:5737/',
       publicUrl: null,
@@ -1474,7 +1588,7 @@ describe('useLoginController', () => {
     ]
     providersState.localOnboarding = {
       state: 'ready',
-      mode: 'standalone',
+      spaceKind: 'standalone',
       localUrl: 'http://localhost:5737',
       baseUrl: 'http://localhost:5737/',
       publicUrl: 'https://node-abc123.undefineds.co/',
@@ -1513,14 +1627,14 @@ describe('useLoginController', () => {
       expect(result.current.storageConflict).toEqual({
         expectedStorageUrl: 'https://node-abc123.undefineds.co/alice/',
         actualStorageUrl: 'https://node-old999.undefineds.co/alice/',
-        storageProviderUrl: 'http://localhost:5737',
-        managementUrl: 'http://localhost:5737/.account/account/',
+        storageProviderUrl: 'https://node-abc123.undefineds.co/',
+        managementUrl: 'https://node-abc123.undefineds.co/.account/account/',
       })
     })
 
     expect(fetchMock).toHaveBeenCalledWith('https://id.undefineds.co/alice/profile/card#me', expect.anything())
     expect(useLoginStore.getState().state).toBe('idle')
-    expect(useLoginStore.getState().storedAccount?.storageProviderUrl).toBe('http://localhost:5737')
+    expect(useLoginStore.getState().storedAccount?.storageProviderUrl).toBe('https://node-abc123.undefineds.co/')
     expect(useLoginStore.getState().storedAccount?.storageProviderLabel).toBe('Local')
     expect(logoutMock).toHaveBeenCalledTimes(1)
   })
@@ -1548,7 +1662,7 @@ describe('useLoginController', () => {
     ]
     providersState.localOnboarding = {
       state: 'ready',
-      mode: 'local',
+      spaceKind: 'local',
       localUrl: 'http://localhost:5737',
       baseUrl: 'http://localhost:5737/',
       publicUrl: 'https://node-abc123.undefineds.co/',
@@ -1621,7 +1735,7 @@ describe('useLoginController', () => {
       text: async () => `
         @prefix solid: <http://www.w3.org/ns/solid/terms#>.
         <https://solid.example.net/bob/profile/card#me>
-          solid:storage <https://solid.example.net/bob/> .
+          solid:storage <https://solid.example.net/users/bob/> .
       `,
     }))
 
@@ -1645,7 +1759,7 @@ describe('useLoginController', () => {
         displayName: 'Ganlu',
         issuerUrl: 'https://id.undefineds.co',
         issuerLabel: 'Cloud',
-        storageProviderUrl: 'http://localhost:5737',
+        storageProviderUrl: 'https://node-abc123.undefineds.co/',
         storageProviderLabel: 'Local',
         webId: 'https://id.undefineds.co/ganlu/profile/card#me',
       },

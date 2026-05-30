@@ -139,7 +139,7 @@ export function buildCssRuntimeEnv(env: Record<string, string>, overrides: Recor
 export function createEmbeddedCssRuntimeConfig(options: {
   configPath: string
   runtimeRoot: string
-  externalOidcIssuer?: string
+  oidcIssuer?: string
 }): { configPath: string; cwd?: string } {
   fs.mkdirSync(options.runtimeRoot, { recursive: true })
   const runtimeConfigPath = path.join(options.runtimeRoot, 'css-runtime.config.json')
@@ -156,19 +156,19 @@ export function createEmbeddedCssRuntimeConfig(options: {
     '@graph': [],
   }, null, 2), 'utf-8')
 
-  if (options.externalOidcIssuer) {
+  if (options.oidcIssuer) {
     fs.writeFileSync(path.join(options.runtimeRoot, 'package.json'), JSON.stringify({
       private: true,
       name: 'linx-xpod-css-runtime',
     }, null, 2), 'utf-8')
     fs.writeFileSync(path.join(options.runtimeRoot, '.community-solid-server.config.json'), JSON.stringify({
-      oidcIssuer: options.externalOidcIssuer,
+      oidcIssuer: options.oidcIssuer,
     }, null, 2), 'utf-8')
   }
 
   return {
     configPath: runtimeConfigPath,
-    cwd: options.externalOidcIssuer ? options.runtimeRoot : undefined,
+    cwd: options.oidcIssuer ? options.runtimeRoot : undefined,
   }
 }
 
@@ -389,7 +389,7 @@ export class XpodModule {
     const requestedPort = parseInt(env.CSS_PORT || '5737', 10)
     const hostBaseUrl = ensureTrailingSlash(env.CSS_BASE_URL || `http://127.0.0.1:${requestedPort}`)
     const bindHost = getBindHost(hostBaseUrl)
-    const externalOidcIssuer = resolveExternalOidcIssuer(env)
+    const oidcIssuer = resolveExternalOidcIssuer(env)
     const cssPort = await runtimeModule.getFreePort(requestedPort + 1)
     const apiPort = await runtimeModule.getFreePort(cssPort + 1)
 
@@ -407,7 +407,7 @@ export class XpodModule {
     const cssRuntimeConfig = createEmbeddedCssRuntimeConfig({
       configPath,
       runtimeRoot: path.join(resolveLinxUserDataDir(), 'xpod-css-runtime'),
-      externalOidcIssuer,
+      oidcIssuer,
     })
     const cssArgs = buildEmbeddedCssArgs({
       cssBinary,
@@ -438,7 +438,7 @@ export class XpodModule {
         XPOD_MAIN_PORT: requestedPort.toString(),
         CSS_INTERNAL_URL: `http://localhost:${cssPort}`,
         CSS_BASE_URL: hostBaseUrl,
-        CSS_TOKEN_ENDPOINT: externalOidcIssuer ? oidcTokenEndpoint(externalOidcIssuer) : `${hostBaseUrl}.oidc/token`,
+        CSS_TOKEN_ENDPOINT: oidcIssuer ? oidcTokenEndpoint(oidcIssuer) : `${hostBaseUrl}.oidc/token`,
       }),
     })
 
@@ -475,7 +475,6 @@ export class XpodModule {
 
     const args = [
       runtime.entry,
-      '--mode', 'local',
       '--port', port.toString(),
       '--env', envPath,
     ]

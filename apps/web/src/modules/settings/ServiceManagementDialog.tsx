@@ -11,7 +11,7 @@ import { ExternalLink, Loader2, Server, CircleDot, Play, Square, RotateCw } from
 
 const LOCAL_DOMAIN_HELP_PATH = '/docs/local-sp-domain-and-tunnel.md'
 
-type DeploymentMode = 'local' | 'standalone'
+type ServiceSpaceKind = 'local' | 'standalone'
 type DomainSource = 'manual'
 
 type ServiceStatus = {
@@ -26,7 +26,7 @@ type ServiceStatus = {
 type SetupConfigResponse = {
   dataDir?: string
   autoStart?: boolean
-  deploymentMode?: DeploymentMode
+  spaceKind?: ServiceSpaceKind
   domainSource?: DomainSource
   publicDomain?: string
   autoDetectPublicIp?: boolean
@@ -71,7 +71,7 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
   const [status, setStatus] = useState<ServiceStatus | null>(null)
 
   // Parameters
-  const [deploymentMode, setDeploymentMode] = useState<DeploymentMode>('local')
+  const [spaceKind, setSpaceKind] = useState<ServiceSpaceKind>('local')
   const [dataDir, setDataDir] = useState('')
   const [autoStart, setAutoStart] = useState(true)
   const [domainSource, setDomainSource] = useState<DomainSource>('manual')
@@ -88,8 +88,8 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
 
   const running = !!status?.pod?.running
   const podBaseUrl = useMemo(() => trimSlash(status?.pod?.publicUrl || status?.pod?.baseUrl || ''), [status])
-  const tunnelSuggested = deploymentMode === 'local' && (!autoDetectPublicIp || hasPublicIp === false)
-  const useTunnel = deploymentMode === 'local' && !!tunnelProvider
+  const tunnelSuggested = spaceKind === 'local' && (!autoDetectPublicIp || hasPublicIp === false)
+  const useTunnel = spaceKind === 'local' && !!tunnelProvider
 
   const effectivePublicDomain = useMemo(() => {
     return publicDomain.trim()
@@ -100,7 +100,7 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
     if (nextSource !== domainSource) {
       setDomainSource(nextSource)
     }
-  }, [deploymentMode, domainSource, tunnelSuggested])
+  }, [spaceKind, domainSource, tunnelSuggested])
 
   const refreshStatus = async () => {
     if (!isServiceMode) return
@@ -139,7 +139,7 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
           const cfg = (await configRes.json()) as SetupConfigResponse
           if (cfg.dataDir) setDataDir(cfg.dataDir)
           if (typeof cfg.autoStart === 'boolean') setAutoStart(cfg.autoStart)
-          if (cfg.deploymentMode) setDeploymentMode(cfg.deploymentMode)
+          if (cfg.spaceKind) setSpaceKind(cfg.spaceKind)
           setDomainSource(ensureLocalDomainSource())
           if (cfg.publicDomain) setPublicDomain(cfg.publicDomain)
           if (typeof cfg.autoDetectPublicIp === 'boolean') setAutoDetectPublicIp(cfg.autoDetectPublicIp)
@@ -168,8 +168,8 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
   }, [open, isServiceMode])
 
   useEffect(() => {
-    if (!open || deploymentMode !== 'local' || !autoDetectPublicIp || running) {
-      if (deploymentMode !== 'local') setHasPublicIp(null)
+    if (!open || spaceKind !== 'local' || !autoDetectPublicIp || running) {
+      if (spaceKind !== 'local') setHasPublicIp(null)
       if (!autoDetectPublicIp) setHasPublicIp(false)
       return
     }
@@ -184,7 +184,7 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
     return () => {
       cancelled = true
     }
-  }, [open, deploymentMode, autoDetectPublicIp, running])
+  }, [open, spaceKind, autoDetectPublicIp, running])
 
   const postServiceAction = async (path: '/api/service/start' | '/api/service/stop' | '/api/service/restart') => {
     setSubmitting(true)
@@ -205,10 +205,6 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
       setError('请填写数据地址')
       return
     }
-    if (useTunnel && !effectivePublicDomain) {
-      setError('使用隧道时请填写公网域名或隧道域名')
-      return
-    }
 
     if (useTunnel) {
       const canReuseToken = initialHasTunnelToken && tunnelProvider === initialTunnelProvider && !tunnelToken
@@ -224,11 +220,11 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
       const payload = {
         dataDir,
         port: 5737,
-        deploymentMode,
+        spaceKind,
         domainSource: 'manual',
-        publicDomain: deploymentMode === 'local' && effectivePublicDomain ? effectivePublicDomain || undefined : undefined,
+        publicDomain: spaceKind === 'local' && effectivePublicDomain ? effectivePublicDomain || undefined : undefined,
         autoDetectPublicIp,
-        httpsCertPath: deploymentMode === 'standalone' ? (httpsCertPath || undefined) : undefined,
+        httpsCertPath: spaceKind === 'standalone' ? (httpsCertPath || undefined) : undefined,
         network: {
           accessMode: useTunnel ? 'tunnel' : 'auto',
           tunnelProvider: useTunnel ? tunnelProvider : undefined,
@@ -239,7 +235,7 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
           deviceId: undefined,
         },
         standalone: {
-          customDomain: deploymentMode === 'standalone' ? effectivePublicDomain : undefined,
+          customDomain: spaceKind === 'standalone' ? effectivePublicDomain : undefined,
         },
         autoStart,
       }
@@ -298,8 +294,8 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
           {!running ? (
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label>部署模式</Label>
-                <Tabs value={deploymentMode} onValueChange={(v) => setDeploymentMode(v as DeploymentMode)}>
+                <Label>空间类型</Label>
+                <Tabs value={spaceKind} onValueChange={(v) => setSpaceKind(v as ServiceSpaceKind)}>
                   <TabsList className="grid w-full grid-cols-2">
                     <TabsTrigger value="local">local</TabsTrigger>
                     <TabsTrigger value="standalone">standalone</TabsTrigger>
@@ -319,12 +315,12 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
                 </div>
               </div>
 
-              {deploymentMode === 'local' ? (
+              {spaceKind === 'local' ? (
                 <>
                   <div className="space-y-2">
                     <Label>3) 公网域名（可选）</Label>
                     <Input value={publicDomain} onChange={(e) => setPublicDomain(e.target.value)} placeholder="pod.example.com" />
-                    <div className="text-xs text-muted-foreground">不填写时先保证本机/局域网可用；需要 Cloud 或外网访问本地 SP 时，再填你自己的公网域名或隧道域名。</div>
+                    <div className="text-xs text-muted-foreground">留空时由 Cloud provisioning 分配 Cloud-managed canonical URL；只有要使用自有 HTTPS origin 时才填写。</div>
                     <div className="text-xs text-muted-foreground">配置说明：{LOCAL_DOMAIN_HELP_PATH}</div>
                   </div>
                 </>
@@ -336,7 +332,7 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
                 </div>
               )}
 
-              {deploymentMode === 'local' ? (
+              {spaceKind === 'local' ? (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label htmlFor="auto-check">4) 自动检查公网 IP</Label>
@@ -352,7 +348,7 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
               </div>
               ) : null}
 
-              {deploymentMode === 'local' ? (
+              {spaceKind === 'local' ? (
               <div className="space-y-2">
                   <Label>5) 隧道供应商{tunnelSuggested ? '（建议，外网访问时需要）' : '（可选）'}</Label>
                 <Select
@@ -384,7 +380,7 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
               ) : null}
 
               <div className="space-y-2">
-                <Label>{deploymentMode === 'local' ? '6) HTTPS 证书' : '4) HTTPS 证书（可选）'}</Label>
+                <Label>{spaceKind === 'local' ? '6) HTTPS 证书' : '4) HTTPS 证书（可选）'}</Label>
                 <Input value={httpsCertPath} onChange={(e) => setHttpsCertPath(e.target.value)} placeholder="证书路径（例如 /path/to/fullchain.pem）" />
               </div>
 

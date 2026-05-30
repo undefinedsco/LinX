@@ -3,13 +3,18 @@
 > 用途：将当前 LinX 内部的 xpod 启动编排能力，收敛到 xpod 官方实现；LinX 仅保留薄调用层。
 > 日期：2026-02-10
 
+本文是 launcher 交付文档，不定义登录模型。IDP/SP、注册、
+`solid:storage` 和业务写入规则以
+`docs/login-identity-storage-routing-model.md` 为准；Local canonical URL、
+tunnel 和 localhost/LAN 规则以 `docs/local-sp-domain-and-tunnel.md` 为准。
+
 ## 1. 背景
 
 目前 LinX 为了满足“产品内可本地启动 xpod”，在 `@linx/service` 中实现了启动封装（runtime 解析、进程拉起、ready 检测、状态聚合）。
 
 该能力已跑通，但边界上更适合由 xpod 官方维护：
 
-- xpod 的启动参数、模式语义、进程编排应由 xpod 自己定义
+- xpod 的启动参数、运行类型语义、进程编排应由 xpod 自己定义
 - LinX 不应长期维护 launcher 细节，避免与 xpod 漂移
 - xpod 升级后，LinX 应无需同步改内部启动逻辑
 
@@ -24,7 +29,7 @@ LinX 当前涉及 xpod 启动的关键代码：
 当前行为摘要：
 
 1. npm-first 解析 xpod 入口（`@undefineds.co/xpod` / `xpod`），找不到才 fallback 本地路径
-2. 用 node 子进程启动 xpod，并传 `--mode --port --env`
+2. 用 node 子进程启动 xpod，并传 `--port --env`
 3. 用 `/_gateway/status` + `HEAD /` 轮询 ready
 4. LinX 暴露 `/api/service/start|stop|restart|status`
 
@@ -50,7 +55,7 @@ LinX 当前涉及 xpod 启动的关键代码：
 
 提供并文档化稳定命令（示例）：
 
-- `xpod run --env <path> --mode <local|cloud> --port <number>`
+- `xpod run --env <path> --port <number>`
 - `xpod status --env <path> --json`
 - `xpod health --env <path> --json`
 
@@ -75,29 +80,22 @@ LinX 直接调用 API，而不是自己 `spawn` + 猜测 ready。
 
 ## 5. 配置契约（LinX 视角）
 
-LinX 目前产品配置采用 5 项主配置：
+LinX 采集产品配置，xpod 只需要稳定消费 env/参数。登录、注册、
+`solid:storage`、Local canonical domain 策略、tunnel 和访问渠道语义不在
+本文重新定义，见：
 
-1. 数据地址
-2. 公网域名（用户自己的域名，可选或必填取决于部署路线）
-3. 本机/局域网或公网直连选择
-4. 隧道供应商（cloudflare / sakura frp）
-5. HTTPS 证书
+- `docs/login-identity-storage-routing-model.md`
+- `docs/local-sp-domain-and-tunnel.md`
 
-补充原则：
+LinX 当前会传给 xpod 的核心配置：
 
-- `cloud` 路线不启动本地 xpod，不需要 Local SP 域名
-- `local` 固定表示 Cloud IDP + Local SP，启动本地 xpod 并要求用户自己的公网 URL 才能完成 Cloud 登录
-- `local` 缺少公网域名时只允许本地 xpod 环境检查，不能静默降级为 `standalone`
-- `standalone` 固定表示 Local IDP + Local SP，启动本地 xpod 但不做 Cloud provisioning
-- Cloud IDP + Local SP 需要外网可访问时，公网域名必须由用户自己提供
-- 当用户确认本机外网可直连时，可以不走隧道，但如果要走 Cloud IDP + Local SP，仍需要用户自己的公网 URL
-- 当外网不可直连时，用户需要自己的公网 URL 或隧道供应商稳定分配的 HTTPS 域名，并把它接到隧道出口
-- `standalone` 默认使用 `localhost`，公网域名可选
-- LinX 不再提供 `node-*.undefineds.co` 或 `pods.undefineds.co` 这类 Local SP 自动分配域名
-- `CSS_BASE_STORAGE_DOMAIN` 不再是 Local onboarding 的用户配置路径
-- 隧道供应商与隧道 token 必须成对配置（或允许复用已有 token）
-
-这些属于“LinX 产品配置层”，xpod 侧只需保证对 env/参数的消费语义稳定。
+| 配置 | 作用 |
+| --- | --- |
+| 数据目录 | xpod 本地持久化位置 |
+| `CSS_BASE_URL` | selected canonical xpod URL |
+| `oidcIssuer` | Local 路径的 Cloud issuer；Standalone 不设置 |
+| `CLOUDFLARE_TUNNEL_TOKEN` | 可选访问渠道 token |
+| `XPOD_NODE_ID` / `XPOD_NODE_TOKEN` / `XPOD_SERVICE_TOKEN` | Local provision 后的节点凭据 |
 
 ## 6. 与 xpod Dashboard 的关系
 

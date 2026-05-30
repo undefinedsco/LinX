@@ -6,9 +6,10 @@ export interface ManagedPodConfig {
   status: 'stopped' | 'starting' | 'running' | 'error';
   dataDir: string;
   port: number;
+  spaceKind?: 'local' | 'standalone' | null;
   domain: {
-    type: 'none' | 'custom';
-    value?: string; // 用户自备域名，例如 pod.example.com
+    type: 'none' | 'managed' | 'custom';
+    value?: string;
   };
   tunnelToken?: string;
 }

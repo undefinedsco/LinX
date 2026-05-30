@@ -54,7 +54,7 @@ describe('useProviders', () => {
       localOnboarding: {
         getSnapshot: vi.fn().mockResolvedValue({
           state: 'repair_required',
-          mode: 'local',
+          spaceKind: 'local',
           localUrl: 'http://localhost:5737/',
           baseUrl: 'http://localhost:5737/',
           capabilities: null,
@@ -70,6 +70,8 @@ describe('useProviders', () => {
 
   afterEach(() => {
     delete window.xpodDesktop
+    delete (window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__
+    vi.unstubAllGlobals()
   })
 
   it('projects Local onboarding state into the Local provider subtitle', async () => {
@@ -109,7 +111,7 @@ describe('useProviders', () => {
     })
   })
 
-  it('creates a Standalone provider in LinX Service mode without Cloud provisioning', async () => {
+  it('creates explicit Local and Standalone providers in LinX Service space without Cloud provisioning', async () => {
     delete window.xpodDesktop
     ;(window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__ = true
 
@@ -130,7 +132,7 @@ describe('useProviders', () => {
       if (String(input) === '/api/setup/config') {
         return {
           ok: true,
-          json: async () => ({ port: 5737 }),
+          json: async () => ({ port: 5737, spaceKind: 'local' }),
         } as Response
       }
 
@@ -140,12 +142,14 @@ describe('useProviders', () => {
     render(<TestComponent />)
 
     await waitFor(() => {
+      expect(screen.getByText('Local')).toBeTruthy()
       expect(screen.getByText('Standalone')).toBeTruthy()
+      expect(screen.getByText('本地空间')).toBeTruthy()
       expect(screen.getByText('本机空间')).toBeTruthy()
     })
   })
 
-  it('projects Service mode provisioning into a Local snapshot', async () => {
+  it('projects Service space provisioning into a Local snapshot', async () => {
     delete window.xpodDesktop
     ;(window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__ = true
 
@@ -154,6 +158,7 @@ describe('useProviders', () => {
         return {
           ok: true,
           json: async () => ({
+            spaceKind: 'local',
             pod: {
               running: true,
               port: 5737,
@@ -186,19 +191,175 @@ describe('useProviders', () => {
     await waitFor(() => {
       expect(result.current.localOnboarding).toMatchObject({
         state: 'ready',
-        mode: 'local',
+        spaceKind: 'local',
         publicUrl: 'https://pod.example.com/',
         cloudIdentityUrl: 'https://id.undefineds.co',
         provisionCode: 'pc-123',
         nodeId: 'node-1',
       })
     })
+
+    const localProvider = result.current.providers.find((item) => item.id === 'local')
+    const standaloneProvider = result.current.providers.find((item) => item.id === 'standalone')
+    expect(localProvider?.storageProvider.url).toBe('https://pod.example.com')
+    expect(localProvider?.oidcProvider.url).toBe('https://id.undefineds.co')
+    expect(standaloneProvider?.runtime?.onboarding?.state).toBe('repair_required')
+  })
+
+  it('does not project localhost as the Local storage provider before canonical URL exists', async () => {
+    delete window.xpodDesktop
+    ;(window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__ = true
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === '/api/service/status') {
+        return {
+          ok: true,
+          json: async () => ({
+            spaceKind: 'local',
+            pod: {
+              running: true,
+              port: 5737,
+              baseUrl: 'http://localhost:5737',
+              publicUrl: null,
+            },
+          }),
+        } as Response
+      }
+
+      if (String(input) === '/api/setup/config') {
+        return {
+          ok: true,
+          json: async () => ({ port: 5737, spaceKind: 'local' }),
+        } as Response
+      }
+
+      throw new Error(`Unexpected fetch: ${String(input)}`)
+    }))
+
+    const { result } = renderHook(() => useProviders())
+
+    await waitFor(() => {
+      const localProvider = result.current.providers.find((item) => item.id === 'local')
+      const standaloneProvider = result.current.providers.find((item) => item.id === 'standalone')
+      expect(localProvider?.storageProvider.url).toBe('')
+      expect(localProvider?.url).toBe('')
+      expect(localProvider?.runtime?.onboarding?.state).toBe('repair_required')
+      expect(standaloneProvider?.storageProvider.url).toBe('http://localhost:5737')
+    })
+  })
+
+  it('does not project LAN addresses as the Local storage provider before canonical URL exists', async () => {
+    delete window.xpodDesktop
+    ;(window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__ = true
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === '/api/service/status') {
+        return {
+          ok: true,
+          json: async () => ({
+            spaceKind: 'local',
+            pod: {
+              running: true,
+              port: 5737,
+              baseUrl: 'http://192.168.1.23:5737',
+              publicUrl: null,
+            },
+          }),
+        } as Response
+      }
+
+      if (String(input) === '/api/setup/config') {
+        return {
+          ok: true,
+          json: async () => ({ port: 5737, spaceKind: 'local' }),
+        } as Response
+      }
+
+      throw new Error(`Unexpected fetch: ${String(input)}`)
+    }))
+
+    const { result } = renderHook(() => useProviders())
+
+    await waitFor(() => {
+      const localProvider = result.current.providers.find((item) => item.id === 'local')
+      const standaloneProvider = result.current.providers.find((item) => item.id === 'standalone')
+      expect(localProvider?.storageProvider.url).toBe('')
+      expect(localProvider?.url).toBe('')
+      expect(localProvider?.runtime?.onboarding?.state).toBe('repair_required')
+      expect(standaloneProvider?.storageProvider.url).toBe('http://localhost:5737')
+    })
+  })
+
+  it('passes the selected Service space when starting Local', async () => {
+    delete window.xpodDesktop
+    ;(window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__ = true
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === '/api/service/status') {
+        return {
+          ok: true,
+          json: async () => ({
+            spaceKind: 'local',
+            pod: {
+              running: true,
+              port: 5737,
+              baseUrl: 'https://pod.example.com/',
+              publicUrl: 'https://pod.example.com/',
+            },
+            provisioning: {
+              nodeId: 'node-1',
+              publicUrl: 'https://pod.example.com/',
+              provisionCode: 'pc-123',
+              provisionUrl: 'https://id.undefineds.co/.account/?provisionCode=pc-123',
+              cloudIdentityUrl: 'https://id.undefineds.co',
+            },
+          }),
+        } as Response
+      }
+
+      if (String(input) === '/api/setup/config') {
+        return {
+          ok: true,
+          json: async () => ({ port: 5737, spaceKind: 'local' }),
+        } as Response
+      }
+
+      if (String(input) === '/api/service/start') {
+        expect(init?.method).toBe('POST')
+        expect(JSON.parse(String(init?.body))).toEqual({ spaceKind: 'local' })
+        return {
+          ok: true,
+          json: async () => ({ success: true }),
+        } as Response
+      }
+
+      throw new Error(`Unexpected fetch: ${String(input)}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { result } = renderHook(() => useProviders())
+
+    let snapshot: unknown
+    await act(async () => {
+      snapshot = await result.current.startLocal('local')
+    })
+
+    expect(snapshot).toMatchObject({
+      state: 'ready',
+      spaceKind: 'local',
+      publicUrl: 'https://pod.example.com/',
+      provisionCode: 'pc-123',
+    })
+    expect(fetchMock).toHaveBeenCalledWith('/api/service/start', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ spaceKind: 'local' }),
+    }))
   })
 
   it('preserves a configured desktop Local source', async () => {
     const localSnapshot = {
       state: 'ready',
-      mode: 'local',
+      spaceKind: 'local',
       localUrl: 'http://localhost:5737/',
       baseUrl: 'https://pod.example.com/',
       publicUrl: 'https://pod.example.com/',
@@ -212,11 +373,11 @@ describe('useProviders', () => {
       canRetry: true,
       canOpenSettings: true,
     }
-    const chooseModeMock = vi.fn()
+    const chooseSpaceMock = vi.fn()
     const continueMock = vi.fn().mockResolvedValue(localSnapshot)
     ;(window.xpodDesktop as any).localOnboarding = {
       getSnapshot: vi.fn().mockResolvedValue(localSnapshot),
-      chooseMode: chooseModeMock,
+      chooseSpace: chooseSpaceMock,
       continue: continueMock,
       onStateChange: vi.fn(() => () => {}),
     }
@@ -228,11 +389,11 @@ describe('useProviders', () => {
       snapshot = await result.current.startLocal('local')
     })
 
-    expect(chooseModeMock).not.toHaveBeenCalled()
+    expect(chooseSpaceMock).not.toHaveBeenCalled()
     expect(continueMock).toHaveBeenCalledTimes(1)
     expect(snapshot).toMatchObject({
       state: 'ready',
-      mode: 'local',
+      spaceKind: 'local',
       baseUrl: 'https://pod.example.com/',
       cloudIdentityUrl: 'https://id.undefineds.co',
     })
@@ -240,8 +401,8 @@ describe('useProviders', () => {
 
   it('chooses Local for first-run desktop Local', async () => {
     const initialSnapshot = {
-      state: 'mode_required',
-      mode: null,
+      state: 'space_required',
+      spaceKind: null,
       localUrl: 'http://localhost:5737/',
       baseUrl: 'http://localhost:5737/',
       publicUrl: null,
@@ -258,15 +419,15 @@ describe('useProviders', () => {
     const readySnapshot = {
       ...initialSnapshot,
       state: 'ready',
-      mode: 'local',
+      spaceKind: 'local',
       message: 'Local 已准备好。',
       canRetry: true,
     }
-    const chooseModeMock = vi.fn().mockResolvedValue(readySnapshot)
+    const chooseSpaceMock = vi.fn().mockResolvedValue(readySnapshot)
     const continueMock = vi.fn().mockResolvedValue(readySnapshot)
     ;(window.xpodDesktop as any).localOnboarding = {
       getSnapshot: vi.fn().mockResolvedValue(initialSnapshot),
-      chooseMode: chooseModeMock,
+      chooseSpace: chooseSpaceMock,
       continue: continueMock,
       onStateChange: vi.fn(() => () => {}),
     }
@@ -278,11 +439,11 @@ describe('useProviders', () => {
       snapshot = await result.current.startLocal('local')
     })
 
-    expect(chooseModeMock).toHaveBeenCalledWith('local')
+    expect(chooseSpaceMock).toHaveBeenCalledWith('local')
     expect(continueMock).toHaveBeenCalledTimes(1)
     expect(snapshot).toMatchObject({
       state: 'ready',
-      mode: 'local',
+      spaceKind: 'local',
     })
   })
 })
