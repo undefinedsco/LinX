@@ -3,12 +3,18 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join, relative } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
+import {
+  assertBundledPiPluginConfigPaths,
+  assertBundledPiPluginsInstalled,
+  copyBundledPiPlugins,
+} from './bundled-pi-plugins.mjs'
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 const cliRoot = fileURLToPath(new URL('..', import.meta.url))
 const previewRoot = join(repoRoot, 'preview')
 const args = parseArgs(process.argv.slice(2))
 const baseCliPkg = JSON.parse(readFileSync(join(cliRoot, 'package.json'), 'utf-8'))
+const codexAcpDependencyVersion = baseCliPkg.dependencies?.['@zed-industries/codex-acp']
 const packageVersion = args.version ?? (args.release ? baseCliPkg.version : createPreviewVersion(baseCliPkg.version))
 const artifactKind = args.release ? 'release' : 'preview'
 const workRoot = join(tmpdir(), `linx-cli-${artifactKind}-${Date.now()}`)
@@ -30,6 +36,13 @@ cpSync(join(repoRoot, 'packages', 'models', 'dist'), join(vendorModelsRoot, 'dis
 const vendorAgentRuntimeRoot = join(workRoot, 'vendor', 'agent-runtime')
 mkdirSync(vendorAgentRuntimeRoot, { recursive: true })
 cpSync(join(repoRoot, 'packages', 'agent-runtime', 'dist'), join(vendorAgentRuntimeRoot, 'dist'), { recursive: true })
+
+copyBundledPiPlugins({
+  repoRoot,
+  targetRoot: workRoot,
+})
+assertBundledPiPluginsInstalled(workRoot)
+assertBundledPiPluginConfigPaths(workRoot)
 
 const modelsPkg = JSON.parse(readFileSync(join(repoRoot, 'packages', 'models', 'package.json'), 'utf-8'))
 const slimModelsPkg = {
@@ -60,10 +73,16 @@ const slimAgentRuntimePkg = {
     '.': './dist/index.js',
     './acp': './dist/acp.js',
     './companion-model': './dist/companion-model.js',
+    './control-plane': './dist/control-plane.js',
+    './file-sync': './dist/file-sync.js',
+    './reconciler': './dist/reconciler.js',
     './runtime': './dist/runtime.js',
     './symphony': './dist/symphony.js',
     './auto-mode': './dist/auto-mode.js',
+    './sync': './dist/sync.js',
+    './thread-reconciler-controller': './dist/thread-reconciler-controller.js',
     './turn-controller': './dist/turn-controller.js',
+    './wake-scheduler': './dist/wake-scheduler.js',
   },
 }
 writeFileSync(join(vendorAgentRuntimeRoot, 'package.json'), `${JSON.stringify(slimAgentRuntimePkg, null, 2)}\n`)
@@ -85,7 +104,10 @@ if (cliPkg.dependencies) {
   delete cliPkg.dependencies['@undefineds.co/models']
   delete cliPkg.dependencies['@linx/agent-runtime']
   Object.assign(cliPkg.dependencies, modelsPkg.dependencies)
-  cliPkg.dependencies['@zed-industries/codex-acp'] = '^0.9.5'
+  if (!codexAcpDependencyVersion) {
+    throw new Error('Missing @zed-industries/codex-acp dependency version in apps/cli/package.json')
+  }
+  cliPkg.dependencies['@zed-industries/codex-acp'] = codexAcpDependencyVersion
 }
 writeFileSync(cliPkgPath, `${JSON.stringify(cliPkg, null, 2)}\n`)
 
@@ -119,10 +141,16 @@ function rewriteVendorImports(root) {
       ["'@linx/agent-runtime'", `'${agentRuntimeBase}/index.js'`],
       ["'@linx/agent-runtime/acp'", `'${agentRuntimeBase}/acp.js'`],
       ["'@linx/agent-runtime/companion-model'", `'${agentRuntimeBase}/companion-model.js'`],
+      ["'@linx/agent-runtime/control-plane'", `'${agentRuntimeBase}/control-plane.js'`],
+      ["'@linx/agent-runtime/file-sync'", `'${agentRuntimeBase}/file-sync.js'`],
+      ["'@linx/agent-runtime/reconciler'", `'${agentRuntimeBase}/reconciler.js'`],
       ["'@linx/agent-runtime/runtime'", `'${agentRuntimeBase}/runtime.js'`],
       ["'@linx/agent-runtime/symphony'", `'${agentRuntimeBase}/symphony.js'`],
       ["'@linx/agent-runtime/auto-mode'", `'${agentRuntimeBase}/auto-mode.js'`],
+      ["'@linx/agent-runtime/sync'", `'${agentRuntimeBase}/sync.js'`],
+      ["'@linx/agent-runtime/thread-reconciler-controller'", `'${agentRuntimeBase}/thread-reconciler-controller.js'`],
       ["'@linx/agent-runtime/turn-controller'", `'${agentRuntimeBase}/turn-controller.js'`],
+      ["'@linx/agent-runtime/wake-scheduler'", `'${agentRuntimeBase}/wake-scheduler.js'`],
       ['"@undefineds.co/models"', `"${modelsBase}/index.js"`],
       ['"@undefineds.co/models/client"', `"${modelsBase}/client/index.js"`],
       ['"@undefineds.co/models/ai-config"', `"${modelsBase}/ai-config/index.js"`],
@@ -135,10 +163,16 @@ function rewriteVendorImports(root) {
       ['"@linx/agent-runtime"', `"${agentRuntimeBase}/index.js"`],
       ['"@linx/agent-runtime/acp"', `"${agentRuntimeBase}/acp.js"`],
       ['"@linx/agent-runtime/companion-model"', `"${agentRuntimeBase}/companion-model.js"`],
+      ['"@linx/agent-runtime/control-plane"', `"${agentRuntimeBase}/control-plane.js"`],
+      ['"@linx/agent-runtime/file-sync"', `"${agentRuntimeBase}/file-sync.js"`],
+      ['"@linx/agent-runtime/reconciler"', `"${agentRuntimeBase}/reconciler.js"`],
       ['"@linx/agent-runtime/runtime"', `"${agentRuntimeBase}/runtime.js"`],
       ['"@linx/agent-runtime/symphony"', `"${agentRuntimeBase}/symphony.js"`],
       ['"@linx/agent-runtime/auto-mode"', `"${agentRuntimeBase}/auto-mode.js"`],
+      ['"@linx/agent-runtime/sync"', `"${agentRuntimeBase}/sync.js"`],
+      ['"@linx/agent-runtime/thread-reconciler-controller"', `"${agentRuntimeBase}/thread-reconciler-controller.js"`],
       ['"@linx/agent-runtime/turn-controller"', `"${agentRuntimeBase}/turn-controller.js"`],
+      ['"@linx/agent-runtime/wake-scheduler"', `"${agentRuntimeBase}/wake-scheduler.js"`],
     ]
     for (const [from, to] of replacements) {
       source = source.split(from).join(to)
@@ -149,9 +183,23 @@ function rewriteVendorImports(root) {
 
 rewriteVendorImports(join(workRoot, 'dist'))
 rewriteVendorImports(join(workRoot, 'vendor', 'agent-runtime', 'dist'))
+assertNoBareAgentRuntimeImports(join(workRoot, 'dist'))
 fixExtensionlessRelativeImports(join(workRoot, 'vendor', 'models', 'dist'))
 fixExtensionlessRelativeImports(join(workRoot, 'vendor', 'agent-runtime', 'dist'))
 fixJsonImportAttributes(join(workRoot, 'vendor', 'models', 'dist'))
+
+function assertNoBareAgentRuntimeImports(root) {
+  const leftovers = []
+  for (const file of walkJs(root)) {
+    const source = readFileSync(file, 'utf8')
+    if (source.includes('@linx/agent-runtime')) {
+      leftovers.push(relative(workRoot, file))
+    }
+  }
+  if (leftovers.length > 0) {
+    throw new Error(`Unrewritten @linx/agent-runtime imports remain:\n${leftovers.join('\n')}`)
+  }
+}
 
 function fixExtensionlessRelativeImports(root) {
   const jsFiles = walkJs(root)

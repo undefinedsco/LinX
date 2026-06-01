@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process'
-import { cpSync, existsSync, renameSync, rmSync } from 'node:fs'
+import { existsSync, renameSync, rmSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { copyProductSkills } from './product-skills.mjs'
 
 const workspaceRoot = fileURLToPath(new URL('..', import.meta.url))
 const agentRuntimeTsconfig = fileURLToPath(new URL('../../../packages/agent-runtime/tsconfig.json', import.meta.url))
@@ -63,8 +64,5 @@ if ((compile.status ?? 1) !== 0) {
 }
 
 if (existsSync(skillsSourceDir)) {
-  cpSync(skillsSourceDir, skillsDistDir, {
-    recursive: true,
-    filter: (src) => !src.includes('/node_modules/') && !src.includes('/.git/'),
-  })
+  copyProductSkills(skillsSourceDir, skillsDistDir)
 }

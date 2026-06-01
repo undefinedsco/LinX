@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const cliRoot = fileURLToPath(new URL('..', import.meta.url))
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
@@ -20,6 +20,7 @@ test('drizzle-solid install includes the required URI-template runtime patch', (
   const podDialectSource = readFileSync(join(packageRoot, 'dist', 'esm', 'core', 'pod-dialect.js'), 'utf-8')
   const podSessionSource = readFileSync(join(packageRoot, 'dist', 'esm', 'core', 'pod-session.js'), 'utf-8')
   const podExecutorSource = readFileSync(join(packageRoot, 'dist', 'esm', 'core', 'execution', 'pod-executor.js'), 'utf-8')
+  const sparqlStrategySource = readFileSync(join(packageRoot, 'dist', 'esm', 'core', 'execution', 'sparql-strategy.js'), 'utf-8')
   const comunicaPatchSource = readFileSync(comunicaPatchPath, 'utf-8')
   const sparqlEngineSource = readFileSync(sparqlEnginePath, 'utf-8')
 
@@ -58,6 +59,8 @@ test('drizzle-solid install includes the required URI-template runtime patch', (
   assert.equal(registerTableSkipBlocks.length, 1)
   assert.match(podExecutorSource, /Exact resource reads already know the concrete Pod document/)
   assert.match(podExecutorSource, /skipResourceExistenceCheck/)
+  assert.match(sparqlStrategySource, /resolvePodResourceIri\(value\)/)
+  assert.match(sparqlStrategySource, /return this\.resolvePodResourceIri\(table\.config\?\.base\)/)
   const ldpExecutorSource = readFileSync(join(packageRoot, 'dist', 'esm', 'core', 'execution', 'ldp-executor.js'), 'utf-8')
   assert.match(ldpExecutorSource, /if \(options\.skipResourceExistenceCheck\) \{[\s\S]*?method: 'PATCH'/)
   assert.doesNotMatch(ldpExecutorSource, /skipResourceExistenceCheck && !group\.hasFragmentSubject/)
@@ -66,4 +69,25 @@ test('drizzle-solid install includes the required URI-template runtime patch', (
   assert.match(sparqlEngineSource, /await import\('@comunica\/query-sparql-solid'\)/)
   assert.match(sparqlEngineSource, /applyComunicaPatches/)
   assert.match(sparqlEngineSource, /createNodeModuleSparqlEngineFactory/)
+})
+
+test('drizzle-solid SPARQL strategy resolves root-relative graph IRIs against Pod root', async () => {
+  const { SparqlStrategy } = await import(pathToFileURL(join(packageRoot, 'dist', 'esm', 'core', 'execution', 'sparql-strategy.js')))
+  const strategy = new SparqlStrategy({
+    sparqlExecutor: {},
+    sparqlConverter: {},
+    podUrl: 'https://id.undefineds.co/ganbb/',
+    uriResolver: {
+      getResourceMode() {
+        return 'fragment'
+      },
+    },
+  })
+  const graph = strategy.resolveTargetGraph({
+    config: {
+      base: '/settings/credentials.ttl',
+    },
+  })
+
+  assert.equal(graph, 'https://id.undefineds.co/ganbb/settings/credentials.ttl')
 })

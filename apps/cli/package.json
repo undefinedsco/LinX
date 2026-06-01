@@ -14,11 +14,15 @@
   "dependencies": {
     "@inrupt/solid-client-authn-node": "^3.1.1",
     "@linx/agent-runtime": "*",
-    "@mariozechner/pi-coding-agent": "^0.67.6",
+    "@earendil-works/pi-agent-core": "0.78.0",
+    "@earendil-works/pi-ai": "0.78.0",
+    "@earendil-works/pi-coding-agent": "0.78.0",
+    "@earendil-works/pi-tui": "0.78.0",
     "@undefineds.co/models": "*",
     "@zed-industries/codex-acp": "0.14.0",
     "n3": "^1.26.0",
     "pi-web-access": "^0.10.7",
+    "ws": "^8.20.0",
     "typebox": "^1.1.38",
     "yargs": "^17.7.2"
   },

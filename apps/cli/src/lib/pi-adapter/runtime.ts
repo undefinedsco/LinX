@@ -775,7 +775,7 @@ async function resolveLinxPiCloudAuthFetch(options: {
     return session.runtimeFetch
   }
 
-  throw new Error('No LinX cloud session found. Interactive TUI supports /login in-app. For non-interactive --print mode, run `linx login` first.')
+  throw new Error('No LinX cloud login found. Interactive TUI supports /login in-app. For non-interactive --print mode, run `linx login` first.')
 }
 
 function createPodDataSessionAuthFetch(
@@ -792,7 +792,7 @@ function createPodDataSessionAuthFetch(
         }
       }
 
-      throw new Error('No LinX cloud session found. Interactive TUI supports /login in-app. For non-interactive --print mode, run `linx login` first.')
+      throw new Error('No LinX cloud login found. Interactive TUI supports /login in-app. For non-interactive --print mode, run `linx login` first.')
     }
   }
 
@@ -820,7 +820,7 @@ function createPodDataSessionAuthFetch(
       return await session.runtimeFetch(url, init)
     }
 
-    throw new Error('No LinX cloud session found. Interactive TUI supports /login in-app. For non-interactive --print mode, run `linx login` first.')
+    throw new Error('No LinX cloud login found. Interactive TUI supports /login in-app. For non-interactive --print mode, run `linx login` first.')
   }
 }
 

@@ -3,6 +3,11 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join, relative, sep } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
+import {
+  assertBundledPiPluginConfigPaths,
+  assertBundledPiPluginsInstalled,
+  copyBundledPiPlugins,
+} from './bundled-pi-plugins.mjs'
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 const cliRoot = fileURLToPath(new URL('..', import.meta.url))
@@ -14,6 +19,7 @@ const cliPkg = JSON.parse(readFileSync(join(cliRoot, 'package.json'), 'utf-8'))
 const modelsPkg = JSON.parse(readFileSync(join(modelsRoot, 'package.json'), 'utf-8'))
 const agentRuntimeRoot = join(repoRoot, 'packages', 'agent-runtime')
 const agentRuntimePkg = JSON.parse(readFileSync(join(agentRuntimeRoot, 'package.json'), 'utf-8'))
+const codexAcpDependencyVersion = cliPkg.dependencies?.['@zed-industries/codex-acp']
 const version = args.version ?? cliPkg.version
 if (modelsPkg.version !== cliPkg.version && !args.version) {
   throw new Error(`CLI and models versions must match for release: cli=${cliPkg.version}, models=${modelsPkg.version}`)
@@ -28,9 +34,15 @@ mkdirSync(cliWorkRoot, { recursive: true })
 
 copyPackage(cliRoot, cliWorkRoot)
 copyAgentRuntimePackage(cliWorkRoot)
+copyBundledPiPlugins({
+  repoRoot,
+  targetRoot: cliWorkRoot,
+})
+assertBundledPiPluginsInstalled(cliWorkRoot)
+assertBundledPiPluginConfigPaths(cliWorkRoot)
 rewriteAgentRuntimeImports(join(cliWorkRoot, 'dist'), cliWorkRoot)
 
-writeJson(join(cliWorkRoot, 'package.json'), createPublishableCliPackage(cliPkg, version))
+writeJson(join(cliWorkRoot, 'package.json'), createPublishableCliPackage(cliPkg, version, modelsPkg.version))
 
 const cliTarball = npmPack(cliWorkRoot, workRoot)
 
@@ -58,11 +70,15 @@ function shouldCopyPackagePath(root, path) {
     && !segments.includes('src')
 }
 
-function createPublishableCliPackage(pkg, packageVersion) {
+function createPublishableCliPackage(pkg, packageVersion, modelsVersion) {
+  if (!codexAcpDependencyVersion) {
+    throw new Error('Missing @zed-industries/codex-acp dependency version in apps/cli/package.json')
+  }
+
   const dependencies = {
     ...(pkg.dependencies ?? {}),
-    '@undefineds.co/models': packageVersion,
-    '@zed-industries/codex-acp': '^0.9.5',
+    '@undefineds.co/models': modelsVersion,
+    '@zed-industries/codex-acp': codexAcpDependencyVersion,
   }
   delete dependencies['@linx/agent-runtime']
 
@@ -96,9 +112,15 @@ function copyAgentRuntimePackage(cliWorkRoot) {
       './acp': './dist/acp.js',
       './auto-mode': './dist/auto-mode.js',
       './companion-model': './dist/companion-model.js',
+      './control-plane': './dist/control-plane.js',
+      './file-sync': './dist/file-sync.js',
+      './reconciler': './dist/reconciler.js',
       './runtime': './dist/runtime.js',
       './symphony': './dist/symphony.js',
+      './sync': './dist/sync.js',
+      './thread-reconciler-controller': './dist/thread-reconciler-controller.js',
       './turn-controller': './dist/turn-controller.js',
+      './wake-scheduler': './dist/wake-scheduler.js',
     },
   })
   fixExtensionlessRelativeImports(join(vendorRoot, 'dist'))
@@ -115,21 +137,47 @@ function rewriteAgentRuntimeImports(root, cliWorkRoot) {
       ["'@linx/agent-runtime/acp'", `'${base}/acp.js'`],
       ["'@linx/agent-runtime/auto-mode'", `'${base}/auto-mode.js'`],
       ["'@linx/agent-runtime/companion-model'", `'${base}/companion-model.js'`],
+      ["'@linx/agent-runtime/control-plane'", `'${base}/control-plane.js'`],
+      ["'@linx/agent-runtime/file-sync'", `'${base}/file-sync.js'`],
+      ["'@linx/agent-runtime/reconciler'", `'${base}/reconciler.js'`],
       ["'@linx/agent-runtime/runtime'", `'${base}/runtime.js'`],
       ["'@linx/agent-runtime/symphony'", `'${base}/symphony.js'`],
+      ["'@linx/agent-runtime/sync'", `'${base}/sync.js'`],
+      ["'@linx/agent-runtime/thread-reconciler-controller'", `'${base}/thread-reconciler-controller.js'`],
       ["'@linx/agent-runtime/turn-controller'", `'${base}/turn-controller.js'`],
+      ["'@linx/agent-runtime/wake-scheduler'", `'${base}/wake-scheduler.js'`],
       ['"@linx/agent-runtime"', `"${base}/index.js"`],
       ['"@linx/agent-runtime/acp"', `"${base}/acp.js"`],
       ['"@linx/agent-runtime/auto-mode"', `"${base}/auto-mode.js"`],
       ['"@linx/agent-runtime/companion-model"', `"${base}/companion-model.js"`],
+      ['"@linx/agent-runtime/control-plane"', `"${base}/control-plane.js"`],
+      ['"@linx/agent-runtime/file-sync"', `"${base}/file-sync.js"`],
+      ['"@linx/agent-runtime/reconciler"', `"${base}/reconciler.js"`],
       ['"@linx/agent-runtime/runtime"', `"${base}/runtime.js"`],
       ['"@linx/agent-runtime/symphony"', `"${base}/symphony.js"`],
+      ['"@linx/agent-runtime/sync"', `"${base}/sync.js"`],
+      ['"@linx/agent-runtime/thread-reconciler-controller"', `"${base}/thread-reconciler-controller.js"`],
       ['"@linx/agent-runtime/turn-controller"', `"${base}/turn-controller.js"`],
+      ['"@linx/agent-runtime/wake-scheduler"', `"${base}/wake-scheduler.js"`],
     ]
     for (const [from, to] of replacements) {
       source = source.split(from).join(to)
     }
     writeFileSync(file, source)
+  }
+  assertNoBareAgentRuntimeImports(root)
+}
+
+function assertNoBareAgentRuntimeImports(root) {
+  const leftovers = []
+  for (const file of walkJs(root)) {
+    const source = readFileSync(file, 'utf8')
+    if (source.includes('@linx/agent-runtime')) {
+      leftovers.push(relative(root, file))
+    }
+  }
+  if (leftovers.length > 0) {
+    throw new Error(`Unrewritten @linx/agent-runtime imports remain:\n${leftovers.join('\n')}`)
   }
 }
 
