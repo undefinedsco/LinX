@@ -13,7 +13,9 @@ const sessionState = {
     isLoggedIn: false,
     webId: undefined as string | undefined,
   },
+  fetch: vi.fn(),
   handleIncomingRedirect: handleIncomingRedirectMock,
+  sessionRequestInProgress: false,
 }
 
 const restoreState = {
@@ -42,6 +44,7 @@ vi.mock('@inrupt/solid-ui-react', () => ({
   useSession: () => ({
     session: sessionState,
     logout: logoutMock,
+    sessionRequestInProgress: sessionState.sessionRequestInProgress,
   }),
 }))
 
@@ -95,6 +98,8 @@ describe('useLoginController', () => {
       localUrl: 'http://localhost:5737/',
       baseUrl: 'http://localhost:5737/',
       publicUrl: null,
+      tunnel: null,
+      connectivity: null,
       capabilities: null,
       cloudIdentityUrl: null,
       provisionCode: null,
@@ -107,6 +112,8 @@ describe('useLoginController', () => {
     })
     sessionState.info.isLoggedIn = false
     sessionState.info.webId = undefined
+    sessionState.fetch.mockReset()
+    sessionState.sessionRequestInProgress = false
     restoreState.isRestoring = false
     restoreState.restoreComplete = false
     restoreState.restoreFailed = false
@@ -128,6 +135,7 @@ describe('useLoginController', () => {
         'solid:storage': { '@id': 'https://id.example.com/alice/' },
       }),
     }))
+    sessionState.fetch.mockImplementation((...args: Parameters<typeof fetch>) => fetch(...args))
     useLoginStore.setState({
       state: 'idle',
       error: null,
@@ -556,6 +564,8 @@ describe('useLoginController', () => {
         actualStorageUrl: 'https://id.undefineds.co/ganbb/',
         storageProviderUrl: 'https://node-abc123.undefineds.co/',
         managementUrl: 'https://node-abc123.undefineds.co/.account/account/',
+        setupUrl: 'https://node-abc123.undefineds.co/.account/account/',
+        setupKind: 'account-management',
       })
     })
 
@@ -736,6 +746,8 @@ describe('useLoginController', () => {
       localUrl: 'http://localhost:5737',
       baseUrl: 'http://localhost:5737/',
       publicUrl: null,
+      tunnel: null,
+      connectivity: null,
       capabilities: null,
       cloudIdentityUrl: 'https://id.undefineds.co',
       provisionCode: 'pc-123',
@@ -765,6 +777,8 @@ describe('useLoginController', () => {
       localUrl: 'http://localhost:5737',
       baseUrl: 'http://192.168.1.23:5737/',
       publicUrl: null,
+      tunnel: null,
+      connectivity: null,
       capabilities: null,
       cloudIdentityUrl: 'https://id.undefineds.co',
       provisionCode: 'pc-123',
@@ -987,6 +1001,8 @@ describe('useLoginController', () => {
         actualStorageUrl: 'http://old-local.example/profile/',
         storageProviderUrl: 'http://localhost:5737',
         managementUrl: 'http://localhost:5737/.account/account/',
+        setupUrl: 'http://localhost:5737/.account/account/',
+        setupKind: 'account-management',
       })
     })
 
@@ -1312,6 +1328,8 @@ describe('useLoginController', () => {
       localUrl: 'http://localhost:5737',
       baseUrl: 'http://localhost:5737/',
       publicUrl: null,
+      tunnel: null,
+      connectivity: null,
       capabilities: null,
       cloudIdentityUrl: null,
       provisionCode: null,
@@ -1379,6 +1397,109 @@ describe('useLoginController', () => {
     expect(useLoginStore.getState().storedAccount?.storageProviderLabel).toBe('Cloud')
     expect(window.sessionStorage.getItem('linx-post-login-micro-app')).toBeNull()
     expect(window.sessionStorage.getItem('linx-pending-login-attempt')).toBeNull()
+  })
+
+  it('uses the authenticated session fetch for callback profile storage checks', async () => {
+    providersState.providers = [
+      {
+        id: 'cloud',
+        url: 'https://id.undefineds.co',
+        label: 'Cloud',
+        source: 'cloud',
+      },
+    ]
+    const anonymousFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      headers: new Headers(),
+      text: async () => 'unauthorized',
+    })
+    vi.stubGlobal('fetch', anonymousFetch)
+    sessionState.fetch.mockResolvedValueOnce({
+      ok: true,
+      headers: new Headers({ 'content-type': 'application/ld+json' }),
+      text: async () => JSON.stringify({
+        '@id': 'https://id.undefineds.co/ganbb/profile/card#me',
+        'solid:storage': { '@id': 'https://id.undefineds.co/ganbb/' },
+      }),
+    })
+    window.sessionStorage.setItem('linx-post-login-micro-app', 'chat')
+    window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
+      issuerUrl: 'https://id.undefineds.co',
+      authorizationSurface: 'window',
+      returnToMicroAppId: 'chat',
+    }))
+    window.history.replaceState({}, '', '/auth/callback?code=abc&state=xyz')
+    sessionState.info.isLoggedIn = true
+    sessionState.info.webId = 'https://id.undefineds.co/ganbb/profile/card#me'
+
+    renderHook(() => useLoginController())
+
+    await waitFor(() => {
+      expect(useLoginStore.getState().state).toBe('authenticated')
+    })
+
+    expect(sessionState.fetch).toHaveBeenCalledWith(
+      'https://id.undefineds.co/ganbb/profile/card#me',
+      expect.anything(),
+    )
+    expect(anonymousFetch).not.toHaveBeenCalled()
+    expect(useLoginStore.getState().error).toBeNull()
+    expect(useLoginStore.getState().storedAccount?.webId).toBe('https://id.undefineds.co/ganbb/profile/card#me')
+  })
+
+  it('waits for SolidSessionProvider to finish before checking callback profile storage', async () => {
+    providersState.providers = [
+      {
+        id: 'cloud',
+        url: 'https://id.undefineds.co',
+        label: 'Cloud',
+        source: 'cloud',
+      },
+    ]
+    const anonymousFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      headers: new Headers(),
+      text: async () => 'unauthorized',
+    })
+    vi.stubGlobal('fetch', anonymousFetch)
+    sessionState.fetch.mockResolvedValue({
+      ok: true,
+      headers: new Headers({ 'content-type': 'application/ld+json' }),
+      text: async () => JSON.stringify({
+        '@id': 'https://id.undefineds.co/ganbb/profile/card#me',
+        'solid:storage': { '@id': 'https://id.undefineds.co/ganbb/' },
+      }),
+    })
+    window.sessionStorage.setItem('linx-post-login-micro-app', 'chat')
+    window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
+      issuerUrl: 'https://id.undefineds.co',
+      authorizationSurface: 'window',
+      returnToMicroAppId: 'chat',
+    }))
+    window.history.replaceState({}, '', '/auth/callback?code=abc&state=xyz')
+    sessionState.info.isLoggedIn = true
+    sessionState.info.webId = 'https://id.undefineds.co/ganbb/profile/card#me'
+    sessionState.sessionRequestInProgress = true
+
+    const { rerender } = renderHook(() => useLoginController())
+
+    expect(sessionState.fetch).not.toHaveBeenCalled()
+    expect(useLoginStore.getState().state).toBe('idle')
+
+    sessionState.sessionRequestInProgress = false
+    rerender()
+
+    await waitFor(() => {
+      expect(useLoginStore.getState().state).toBe('authenticated')
+    })
+
+    expect(sessionState.fetch).toHaveBeenCalledWith(
+      'https://id.undefineds.co/ganbb/profile/card#me',
+      expect.anything(),
+    )
+    expect(anonymousFetch).not.toHaveBeenCalled()
   })
 
   it('prefers the current pending provider over the remembered account when login completes', async () => {
@@ -1525,6 +1646,8 @@ describe('useLoginController', () => {
       localUrl: 'http://localhost:5737',
       baseUrl: 'http://localhost:5737/',
       publicUrl: null,
+      tunnel: null,
+      connectivity: null,
       capabilities: null,
       cloudIdentityUrl: null,
       provisionCode: null,
@@ -1629,6 +1752,8 @@ describe('useLoginController', () => {
         actualStorageUrl: 'https://node-old999.undefineds.co/alice/',
         storageProviderUrl: 'https://node-abc123.undefineds.co/',
         managementUrl: 'https://node-abc123.undefineds.co/.account/account/',
+        setupUrl: 'https://id.undefineds.co/.account/create-pod/?provisionCode=pc-123',
+        setupKind: 'create-pod',
       })
     })
 
@@ -1703,6 +1828,8 @@ describe('useLoginController', () => {
         actualStorageUrl: 'https://id.undefineds.co/alice/',
         storageProviderUrl: 'https://node-abc123.undefineds.co/',
         managementUrl: 'https://node-abc123.undefineds.co/.account/account/',
+        setupUrl: 'https://id.undefineds.co/.account/create-pod/?provisionCode=pc-123',
+        setupKind: 'create-pod',
       })
     })
 
@@ -1711,6 +1838,83 @@ describe('useLoginController', () => {
     expect(logoutMock).toHaveBeenCalledTimes(1)
     expect(useLoginStore.getState().storedAccount?.storageProviderLabel).toBe('Local')
     expect(useLoginStore.getState().storedAccount?.storageProviderUrl).toBe('https://node-abc123.undefineds.co/')
+  })
+
+  it('opens the Cloud create-pod page with provisionCode for Local first-Pod setup', async () => {
+    const openEmbeddedAuthorization = vi.fn().mockResolvedValue(undefined)
+    window.xpodDesktop = {
+      auth: {
+        openEmbeddedAuthorization,
+      },
+    } as any
+    providersState.providers = [
+      {
+        id: 'cloud',
+        url: 'https://id.undefineds.co',
+        label: 'Cloud',
+        source: 'cloud',
+      },
+      {
+        id: 'local',
+        url: 'http://localhost:5737',
+        label: 'Local',
+        source: 'local',
+        runtime: {
+          kind: 'local-pod',
+          status: 'running',
+          canStart: false,
+          canCreate: false,
+        },
+      },
+    ]
+    providersState.localOnboarding = {
+      state: 'ready',
+      spaceKind: 'local',
+      localUrl: 'http://localhost:5737',
+      baseUrl: 'http://localhost:5737/',
+      publicUrl: 'https://node-abc123.undefineds.co/',
+      capabilities: null,
+      cloudIdentityUrl: 'https://id.undefineds.co',
+      provisionCode: 'pc-123',
+      provisionUrl: 'https://id.undefineds.co/.account/?provisionCode=pc-123',
+      nodeId: 'abc123',
+      message: null,
+      errorCode: null,
+      canRetry: true,
+      canOpenSettings: false,
+    }
+    window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
+      issuerUrl: 'https://id.undefineds.co',
+      storageProviderUrl: 'https://node-abc123.undefineds.co/',
+      storageProviderLabel: 'Local',
+      authorizationSurface: 'embedded',
+      returnToMicroAppId: 'chat',
+    }))
+    sessionState.info.isLoggedIn = true
+    sessionState.info.webId = 'https://id.undefineds.co/alice/profile/card#me'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({ 'content-type': 'application/ld+json' }),
+      text: async () => JSON.stringify({
+        '@id': 'https://id.undefineds.co/alice/profile/card#me',
+        'solid:storage': { '@id': 'https://id.undefineds.co/alice/' },
+      }),
+    }))
+
+    const { result } = renderHook(() => useLoginController())
+
+    await waitFor(() => {
+      expect(result.current.storageConflict?.setupKind).toBe('create-pod')
+    })
+
+    act(() => {
+      result.current.openCurrentSpacePodSetup()
+    })
+
+    expect(openEmbeddedAuthorization).toHaveBeenCalledWith(
+      'https://id.undefineds.co/.account/create-pod/?provisionCode=pc-123',
+      { providerLabel: 'Local' },
+    )
   })
 
   it('completes a custom provider login only when storage stays inside that provider', async () => {

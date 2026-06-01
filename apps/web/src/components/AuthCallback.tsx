@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSession } from '@inrupt/solid-ui-react'
 import { Loader2, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { useState } from 'react'
 import { useOidcConnect } from '@/modules/login/hooks/use-oidc-connect'
 import {
   clearPendingCallbackError,
@@ -18,6 +17,8 @@ interface AuthCallbackProps {
 }
 
 const CURRENT_SOLID_SESSION_KEY = 'solidClientAuthn:currentSession'
+const SOLID_SESSION_PREFIX = 'solidClientAuthenticationUser:'
+const CALLBACK_RESTORE_TIMEOUT_MS = 15_000
 const SESSION_CURRENT_KEY_TIMEOUT_MS = 10_000
 const SESSION_CURRENT_KEY_POLL_MS = 100
 
@@ -84,9 +85,23 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
     }
   }, [callbackError, pendingAttempt, retryInteractiveFromSilentAttempt])
 
+  useEffect(() => {
+    if (error || navigatedRef.current) return
+    if (session.info.isLoggedIn) return
+
+    const timeoutId = window.setTimeout(() => {
+      if (navigatedRef.current) return
+      setError('登录未完成，请重试。')
+    }, CALLBACK_RESTORE_TIMEOUT_MS)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [error, session.info.isLoggedIn])
+
   // Wait for the Inrupt callback to finish persisting auth metadata before
   // leaving /auth/callback. Navigating on the first LOGIN event can interrupt
   // storage writes and leave LinX with a remembered account but no Solid session.
+  // If Inrupt already reports a logged-in session, do not hard-fail the callback
+  // solely because its browser-only currentSession key is late or missing.
   useEffect(() => {
     if (error || navigatedRef.current) return
     if (!session.info.isLoggedIn) return
@@ -94,13 +109,16 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
     let cancelled = false
 
     const finishAfterSessionIsPersisted = async () => {
-      const stored = await waitForCurrentSessionKey(
+      const persistence = await ensureCurrentSessionPersistence(
         session.info.sessionId,
         SESSION_CURRENT_KEY_TIMEOUT_MS,
       )
       if (cancelled || navigatedRef.current) return
 
-      if (stored && session.info.isLoggedIn) {
+      if (session.info.isLoggedIn) {
+        if (persistence === 'missing') {
+          console.warn('[auth-callback] continuing after login before currentSession was persisted')
+        }
         navigatedRef.current = true
         onSuccess?.()
         return
@@ -114,7 +132,7 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
     return () => {
       cancelled = true
     }
-  }, [session.info.isLoggedIn, sessionRequestInProgress, onSuccess, error])
+  }, [session.info.isLoggedIn, session.info.sessionId, sessionRequestInProgress, onSuccess, error])
 
   const retryLabel = pendingAttempt
     ? isLocalIssuer(pendingAttempt.issuerUrl) || pendingAttempt.authorizationSurface === 'embedded'
@@ -205,19 +223,55 @@ function isSilentAuthError(error: string): boolean {
     || error === 'account_selection_required'
 }
 
-async function waitForCurrentSessionKey(sessionId: string | undefined, timeoutMs: number): Promise<boolean> {
+type CurrentSessionPersistence = 'ready' | 'repaired' | 'missing'
+
+async function ensureCurrentSessionPersistence(
+  sessionId: string | undefined,
+  timeoutMs: number,
+): Promise<CurrentSessionPersistence> {
   if (!sessionId) {
-    return false
+    return 'missing'
   }
 
   const deadline = Date.now() + timeoutMs
 
   while (Date.now() < deadline) {
-    if (window.localStorage.getItem(CURRENT_SOLID_SESSION_KEY) === sessionId) {
-      return true
+    const status = getCurrentSessionPersistence(sessionId)
+    if (status !== 'missing') {
+      return status
     }
     await new Promise((resolve) => window.setTimeout(resolve, SESSION_CURRENT_KEY_POLL_MS))
   }
 
-  return window.localStorage.getItem(CURRENT_SOLID_SESSION_KEY) === sessionId
+  return getCurrentSessionPersistence(sessionId)
+}
+
+function getCurrentSessionPersistence(sessionId: string): CurrentSessionPersistence {
+  if (window.localStorage.getItem(CURRENT_SOLID_SESSION_KEY) === sessionId) {
+    return 'ready'
+  }
+
+  if (hasStoredSolidSessionRecord(sessionId)) {
+    window.localStorage.setItem(CURRENT_SOLID_SESSION_KEY, sessionId)
+    return 'repaired'
+  }
+
+  return 'missing'
+}
+
+function hasStoredSolidSessionRecord(sessionId: string): boolean {
+  const raw = window.localStorage.getItem(`${SOLID_SESSION_PREFIX}${sessionId}`)
+  if (!raw) {
+    return false
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    return parsed.isLoggedIn === 'true'
+      || parsed.isLoggedIn === true
+      || typeof parsed.webId === 'string'
+      || typeof parsed.refreshToken === 'string'
+  } catch {
+    return false
+  }
 }

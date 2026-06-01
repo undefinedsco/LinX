@@ -65,27 +65,65 @@ export function getRememberedAccount(): StoredAccount | null {
   if (!raw) return null
 
   try {
-    const parsed = JSON.parse(raw) as Partial<StoredAccount>
-    if (typeof parsed.displayName !== 'string' || typeof parsed.issuerUrl !== 'string') {
+    const parsed = JSON.parse(raw) as Partial<StoredAccount> & {
+      providerUrl?: string
+      providerLabel?: string
+    }
+    const issuerUrl = normalizeStoredUrl(parsed.issuerUrl)
+      ?? normalizeStoredUrl(parsed.providerUrl)
+    if (typeof parsed.displayName !== 'string' || !issuerUrl) {
       return null
     }
 
     return {
       displayName: parsed.displayName,
       avatarUrl: typeof parsed.avatarUrl === 'string' ? parsed.avatarUrl : undefined,
-      issuerUrl: parsed.issuerUrl,
+      issuerUrl,
       issuerLabel: typeof parsed.issuerLabel === 'string' ? parsed.issuerLabel : undefined,
       storageProviderUrl: typeof parsed.storageProviderUrl === 'string'
         ? parsed.storageProviderUrl
-        : undefined,
+        : normalizeStoredUrl(parsed.providerUrl) ?? undefined,
       storageProviderLabel: typeof parsed.storageProviderLabel === 'string'
         ? parsed.storageProviderLabel
+        : typeof parsed.providerLabel === 'string'
+          ? parsed.providerLabel
         : undefined,
       webId: typeof parsed.webId === 'string' ? parsed.webId : undefined,
     }
   } catch {
     storage.removeItem(REMEMBERED_ACCOUNT_KEY)
     return null
+  }
+}
+
+function migrateStoredAccount(value: unknown): StoredAccount | null {
+  if (!value || typeof value !== 'object') return null
+
+  const parsed = value as Partial<StoredAccount> & {
+    providerUrl?: string
+    providerLabel?: string
+  }
+  const issuerUrl = normalizeStoredUrl(parsed.issuerUrl)
+    ?? normalizeStoredUrl(parsed.providerUrl)
+  const storageProviderUrl = normalizeStoredUrl(parsed.storageProviderUrl)
+    ?? normalizeStoredUrl(parsed.providerUrl)
+
+  if (typeof parsed.displayName !== 'string' || !issuerUrl) {
+    return null
+  }
+
+  return {
+    displayName: parsed.displayName,
+    avatarUrl: typeof parsed.avatarUrl === 'string' ? parsed.avatarUrl : undefined,
+    issuerUrl,
+    issuerLabel: typeof parsed.issuerLabel === 'string' ? parsed.issuerLabel : undefined,
+    storageProviderUrl: storageProviderUrl ?? undefined,
+    storageProviderLabel: typeof parsed.storageProviderLabel === 'string'
+      ? parsed.storageProviderLabel
+      : typeof parsed.providerLabel === 'string'
+        ? parsed.providerLabel
+        : undefined,
+    webId: typeof parsed.webId === 'string' ? parsed.webId : undefined,
   }
 }
 
@@ -163,6 +201,14 @@ export const useLoginStore = create<LoginStore>()(
     }),
     {
       name: 'linx-login',
+      version: 1,
+      migrate: (persistedState) => {
+        const state = persistedState as { storedAccount?: unknown; customProviders?: unknown }
+        return {
+          storedAccount: migrateStoredAccount(state.storedAccount),
+          customProviders: Array.isArray(state.customProviders) ? state.customProviders : [],
+        }
+      },
       storage: createJSONStorage(() => {
         if (typeof window !== 'undefined' && window.localStorage) {
           return window.localStorage
@@ -212,4 +258,10 @@ export function getAllProviders(customProviders: ProviderOption[]): ProviderOpti
   customProviders.forEach(p => map.set(p.url, { ...p, isDefault: false }))
 
   return Array.from(map.values())
+}
+
+function normalizeStoredUrl(url?: string | null): string | null {
+  if (typeof url !== 'string') return null
+  const trimmed = url.trim()
+  return trimmed.length > 0 ? trimmed : null
 }

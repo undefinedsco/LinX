@@ -55,7 +55,7 @@ import { favoriteHooks } from '@/modules/favorites/collections'
 import { createAgentContactRecords, writeCollectionRow } from '@/lib/data/direct-chat-records'
 import { getAgentProviderInfo } from '@/lib/agent-providers'
 import { toStringArray } from '@/lib/utils'
-import { ensureAgentHome } from './agent-home'
+import { ensureAgentHome, normalizeAgentHomeId } from './agent-home'
 
 // ============================================================================
 // Database Getter
@@ -485,9 +485,8 @@ async function resolveAssistantMakerFromChat(db: SolidDatabase, chat: Pick<ChatR
 
 function extractAgentIdFromRef(ref: string | null | undefined): string | null {
   if (!ref) return null
-  const match = ref.match(/\/\.data\/agents\/([^/#]+)\.ttl(?:#.*)?$/)
-  if (match?.[1]) return decodeURIComponent(match[1])
-  return /^[a-zA-Z0-9_-]+$/.test(ref) ? ref : null
+  const normalized = normalizeAgentHomeId(ref)
+  return /^[a-zA-Z0-9_-]+$/.test(normalized) ? normalized : null
 }
 
 async function ensureAgentHomeForChat(db: SolidDatabase, chat: Pick<ChatRow, 'title' | 'participants'>): Promise<void> {

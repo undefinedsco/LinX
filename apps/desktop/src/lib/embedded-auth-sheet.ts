@@ -1,5 +1,9 @@
 import { BrowserWindow } from 'electron';
-import { addEmbeddedAuthQuery, installXpodAuthEnhancer } from './xpod-auth-enhancer';
+import {
+  addEmbeddedAuthQuery,
+  installXpodAuthEnhancer,
+  installXpodAuthEnhancerOnNewDocument,
+} from './xpod-auth-enhancer';
 import { installSingleSurfaceWindowOpenHandler } from './window-open-routing';
 
 export type EmbeddedAuthorizationCloseReason = 'opened' | 'completed' | 'dismissed';
@@ -86,6 +90,8 @@ export class EmbeddedAuthorizationSheet {
     installSingleSurfaceWindowOpenHandler(this.window.webContents, {
       prepareSameOriginUrl: addEmbeddedAuthQuery,
     });
+    this.emitState({ open: true, reason: 'opened', ready: false });
+    await this.installAuthEnhancerOnNewDocument();
 
     this.window.webContents.on('did-finish-load', () => {
       void this.installNavigationControls();
@@ -112,8 +118,6 @@ export class EmbeddedAuthorizationSheet {
         this.close('dismissed');
       }
     });
-
-    this.emitState({ open: true, reason: 'opened', ready: false });
 
     try {
       await loadURLWithRetry(this.window.webContents, targetUrl, 5);
@@ -198,6 +202,19 @@ export class EmbeddedAuthorizationSheet {
       await installXpodAuthEnhancer(window.webContents);
     } catch (error) {
       console.warn('[Desktop] Failed to install xpod auth enhancer:', error);
+    }
+  }
+
+  private async installAuthEnhancerOnNewDocument(): Promise<void> {
+    const window = this.window;
+    if (!window || window.isDestroyed()) {
+      return;
+    }
+
+    try {
+      await installXpodAuthEnhancerOnNewDocument(window.webContents, this.pendingProvisionCode);
+    } catch (error) {
+      console.warn('[Desktop] Failed to install xpod auth enhancer preload:', error);
     }
   }
 

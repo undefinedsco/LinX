@@ -10,6 +10,7 @@ import {
 describe('storage-reconciliation', () => {
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.useRealTimers()
   })
 
   it('derives the pod slug from a Cloud WebID', () => {
@@ -75,6 +76,111 @@ describe('storage-reconciliation', () => {
         storageProviderPublicUrl: 'https://node-abc123.undefineds.co/',
       }),
     ).resolves.toBeNull()
+  })
+
+  it('uses the provided authenticated fetch when the profile is not publicly readable', async () => {
+    const anonymousFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      headers: new Headers(),
+      text: async () => 'unauthorized',
+    })
+    const authenticatedFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({ 'content-type': 'application/ld+json' }),
+      text: async () => JSON.stringify({
+        '@id': 'https://id.undefineds.co/alice/profile/card#me',
+        'solid:storage': { '@id': 'https://id.undefineds.co/alice/' },
+      }),
+    })
+    vi.stubGlobal('fetch', anonymousFetch)
+
+    await expect(
+      detectStorageConflict({
+        webId: 'https://id.undefineds.co/alice/profile/card#me',
+        storageProviderUrl: 'https://id.undefineds.co',
+        storageProviderPublicUrl: 'https://id.undefineds.co/',
+        fetch: authenticatedFetch as typeof fetch,
+      }),
+    ).resolves.toBeNull()
+
+    expect(authenticatedFetch).toHaveBeenCalledWith(
+      'https://id.undefineds.co/alice/profile/card#me',
+      expect.anything(),
+    )
+    expect(anonymousFetch).not.toHaveBeenCalled()
+  })
+
+  it('falls back to public profile fetch when authenticated profile fetch is rejected by token audience', async () => {
+    vi.useFakeTimers()
+    const anonymousFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({ 'content-type': 'application/ld+json' }),
+      text: async () => JSON.stringify({
+        '@id': 'https://id.undefineds.co/alice/profile/card#me',
+        'solid:storage': { '@id': 'https://node-abc123.undefineds.co/alice/' },
+      }),
+    })
+    const authenticatedFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      headers: new Headers(),
+      text: async () => 'unauthorized',
+    })
+    vi.stubGlobal('fetch', anonymousFetch)
+
+    const resultPromise = detectStorageConflict({
+        webId: 'https://id.undefineds.co/alice/profile/card#me',
+        storageProviderUrl: 'https://node-abc123.undefineds.co/',
+        storageProviderPublicUrl: 'https://node-abc123.undefineds.co/',
+        fetch: authenticatedFetch as typeof fetch,
+    })
+
+    await vi.advanceTimersByTimeAsync(1_000)
+    await expect(resultPromise).resolves.toBeNull()
+
+    expect(authenticatedFetch).toHaveBeenCalledWith(
+      'https://id.undefineds.co/alice/profile/card#me',
+      expect.anything(),
+    )
+    expect(anonymousFetch).toHaveBeenCalledWith(
+      'https://id.undefineds.co/alice/profile/card#me',
+      expect.anything(),
+    )
+  })
+
+  it('retries authenticated profile reads before falling back to anonymous fetch', async () => {
+    vi.useFakeTimers()
+    const anonymousFetch = vi.fn()
+    const authenticatedFetch = vi.fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        headers: new Headers(),
+        text: async () => 'unauthorized',
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ 'content-type': 'application/ld+json' }),
+        text: async () => JSON.stringify({
+          '@id': 'https://id.undefineds.co/alice/profile/card#me',
+          'solid:storage': { '@id': 'https://node-abc123.undefineds.co/alice/' },
+        }),
+      })
+    vi.stubGlobal('fetch', anonymousFetch)
+
+    const resultPromise = detectStorageConflict({
+      webId: 'https://id.undefineds.co/alice/profile/card#me',
+      storageProviderUrl: 'https://node-abc123.undefineds.co/',
+      storageProviderPublicUrl: 'https://node-abc123.undefineds.co/',
+      fetch: authenticatedFetch as typeof fetch,
+    })
+
+    await vi.advanceTimersByTimeAsync(250)
+    await expect(resultPromise).resolves.toBeNull()
+
+    expect(authenticatedFetch).toHaveBeenCalledTimes(2)
+    expect(anonymousFetch).not.toHaveBeenCalled()
   })
 
   it('returns a conflict when profile storage points at another provider', async () => {

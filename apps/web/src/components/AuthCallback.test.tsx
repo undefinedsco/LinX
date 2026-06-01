@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   clearPendingLoginAttempt,
   clearPendingPostLoginMicroAppId,
@@ -45,7 +45,12 @@ describe('AuthCallback', () => {
     clearPendingLoginAttempt()
     clearPendingPostLoginMicroAppId()
     window.localStorage.removeItem('solidClientAuthn:currentSession')
+    window.localStorage.removeItem('solidClientAuthenticationUser:session-1')
     window.history.replaceState({}, '', '/auth/callback')
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('calls onSuccess when the session resolves', async () => {
@@ -83,6 +88,40 @@ describe('AuthCallback', () => {
     await waitFor(() => {
       expect(onSuccessMock).toHaveBeenCalledTimes(1)
     })
+  })
+
+  it('repairs the current session key from persisted Inrupt session metadata', async () => {
+    sessionState.info.isLoggedIn = true
+    window.localStorage.setItem(
+      'solidClientAuthenticationUser:session-1',
+      JSON.stringify({
+        isLoggedIn: 'true',
+        webId: 'https://id.undefineds.co/alice/profile/card#me',
+      }),
+    )
+
+    render(<SolidAuthCallback onSuccess={onSuccessMock} onError={onErrorMock} />)
+
+    await waitFor(() => {
+      expect(onSuccessMock).toHaveBeenCalledTimes(1)
+    })
+    expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBe('session-1')
+  })
+
+  it('does not stay on the callback spinner forever when no session is restored', async () => {
+    vi.useFakeTimers()
+
+    render(<SolidAuthCallback onSuccess={onSuccessMock} onError={onErrorMock} />)
+
+    expect(screen.getByText('正在验证身份')).toBeTruthy()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000)
+    })
+
+    expect(screen.getByText('登录未完成')).toBeTruthy()
+    expect(screen.getByText('登录未完成，请重试。')).toBeTruthy()
+    expect(onSuccessMock).not.toHaveBeenCalled()
   })
 
   it('renders a retry action for the last Cloud attempt', async () => {

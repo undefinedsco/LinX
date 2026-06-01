@@ -64,6 +64,8 @@ export interface LoginModalProps {
   localProviderSource: LocalLoginProviderSource
   onBackFromLocal: () => void
   onContinueLocalLogin: () => void
+  onSaveLocalTunnelToken: (token: string) => Promise<void> | void
+  onTestLocalConnectivity: () => Promise<void> | void
   onSwitchAccount: () => void
   onContinueStoredAccount: () => void
   onConnect: (providerKey: string) => void

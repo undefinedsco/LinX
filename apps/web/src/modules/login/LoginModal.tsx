@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { Loader2, Plus, X, AlertCircle, ChevronRight, Cloud, HardDrive, Globe2, ArrowLeft, Link2, Info, type LucideIcon } from 'lucide-react'
+import { Loader2, Plus, X, AlertCircle, ChevronRight, Cloud, HardDrive, Globe2, ArrowLeft, Link2, Info, Copy, CheckCircle2, type LucideIcon } from 'lucide-react'
 import { isLocalAccessHostname } from '@/lib/local-access-url'
 import { cn } from '@/lib/utils'
 import type { LoginModalProps, LoginProviderOption } from './types'
@@ -43,6 +43,8 @@ export function LoginModal(props: LoginModalProps) {
           error={props.error}
           onBack={props.onBackFromLocal}
           onContinue={props.onContinueLocalLogin}
+          onSaveTunnelToken={props.onSaveLocalTunnelToken}
+          onTestConnectivity={props.onTestLocalConnectivity}
           onClearError={props.onClearError}
         />
       ) : props.storedAccount ? (
@@ -80,13 +82,14 @@ function StorageConflictView({
   onOpenCurrentSpacePodSetup: () => void
 }) {
   const accountName = storedAccount?.displayName || 'LinX 用户'
-  const canCreateHere = Boolean(storageConflict.managementUrl)
+  const canCreateHere = Boolean(storageConflict.setupUrl ?? storageConflict.managementUrl)
+  const isCreatePodSetup = storageConflict.setupKind === 'create-pod'
 
   return (
     <div className="flex-1 flex flex-col h-full">
       <div className="px-5 pt-6 pb-4 shrink-0">
         <p className="text-[11px] font-medium tracking-wide text-muted-foreground/70 text-center">
-          空间不匹配
+          {isCreatePodSetup ? '需要创建 Pod' : '空间不匹配'}
         </p>
       </div>
 
@@ -99,8 +102,9 @@ function StorageConflictView({
         />
         <p className="text-base font-semibold text-foreground">{accountName}</p>
         <p className="max-w-[19rem] text-center text-sm leading-6 text-muted-foreground">
-          当前登录到了另一个数据空间。此版本暂不支持自动迁移，请返回正确空间重新登录，
-          或在当前空间新建一个 Pod 后再继续。
+          {isCreatePodSetup
+            ? '这个 Cloud 账号还没有绑定当前 Local 空间的 Pod。先为当前 Local 空间创建 Pod，之后数据会写入这里。'
+            : '当前登录到了另一个数据空间。此版本暂不支持自动迁移，请返回正确空间重新登录，或在当前空间新建一个 Pod 后再继续。'}
         </p>
       </div>
 
@@ -116,7 +120,7 @@ function StorageConflictView({
             onClick={onOpenCurrentSpacePodSetup}
             className="w-full h-10 rounded-xl border border-border/60 bg-muted/30 text-sm font-medium text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
           >
-            在当前空间新建 Pod
+            {isCreatePodSetup ? '为当前 Local 创建 Pod' : '在当前空间新建 Pod'}
           </button>
         ) : null}
         <button
@@ -418,6 +422,8 @@ function LocalOnboardingView({
   error,
   onBack,
   onContinue,
+  onSaveTunnelToken,
+  onTestConnectivity,
   onClearError,
 }: {
   localOnboarding: LoginModalProps['localOnboarding']
@@ -425,9 +431,13 @@ function LocalOnboardingView({
   error: string | null
   onBack: () => void
   onContinue: () => void
+  onSaveTunnelToken: LoginModalProps['onSaveLocalTunnelToken']
+  onTestConnectivity: LoginModalProps['onTestLocalConnectivity']
   onClearError: () => void
 }) {
   const snapshot = localOnboarding
+  const [tunnelToken, setTunnelToken] = useState('')
+  const [copyState, setCopyState] = useState<'idle' | 'copied'>('idle')
   const isStandalone = localProviderSource === 'standalone'
   const productLabel = isStandalone ? 'Standalone' : 'Local'
   const onboardingState = snapshot?.state ?? 'idle'
@@ -437,6 +447,26 @@ function LocalOnboardingView({
   const isStarting = onboardingState === 'starting' || onboardingState === 'checking' || onboardingState === 'idle' || onboardingState === 'space_required'
   const progressLabel = snapshot?.progress?.label ?? snapshot?.message ?? `正在启动 ${productLabel}…`
   const progressDetail = snapshot?.progress?.detail
+  const publicUrl = snapshot?.publicUrl ?? null
+  const localUrl = snapshot?.localUrl ?? snapshot?.baseUrl ?? null
+  const localServiceUrl = formatRouteOrigin(localUrl ?? 'http://localhost:5737/')
+  const hasTunnelToken = Boolean(snapshot?.tunnel?.hasToken)
+  const connectivity = snapshot?.connectivity ?? null
+
+  const handleCopy = async (value: string) => {
+    try {
+      await navigator.clipboard?.writeText(value)
+      setCopyState('copied')
+      window.setTimeout(() => setCopyState('idle'), 1200)
+    } catch {
+      setCopyState('idle')
+    }
+  }
+
+  const saveTunnelToken = async () => {
+    await Promise.resolve(onSaveTunnelToken(tunnelToken))
+    setTunnelToken('')
+  }
 
   return (
     <div className="flex-1 flex flex-col h-full">
@@ -453,64 +483,89 @@ function LocalOnboardingView({
 
       <ErrorBanner error={error} onClearError={onClearError} />
 
-      <div className="flex-1 px-5 flex flex-col justify-center gap-4">
-        {isStarting && (
-          <div className="flex flex-col items-center gap-3 text-center">
-            <Loader2 className="w-6 h-6 text-primary animate-spin" />
-            <p className="text-sm font-medium text-foreground">{progressLabel}</p>
-            {progressDetail ? (
-              <p className="max-w-[18rem] break-all text-[11px] leading-5 text-muted-foreground">
-                {progressDetail}
+      <div className="flex-1 min-h-0 overflow-y-auto px-5 py-2">
+        <div className="flex min-h-full flex-col justify-center gap-4">
+          {isStarting && (
+            <div className="flex flex-col items-center gap-3 text-center">
+              <Loader2 className="w-6 h-6 text-primary animate-spin" />
+              <p className="text-sm font-medium text-foreground">{progressLabel}</p>
+              {progressDetail ? (
+                <p className="max-w-[18rem] break-all text-[11px] leading-5 text-muted-foreground">
+                  {progressDetail}
+                </p>
+              ) : null}
+            </div>
+          )}
+
+          {isReady && (
+            <div className="flex flex-col gap-3">
+              <p className="text-sm font-medium text-foreground text-center">{productLabel} 已准备好</p>
+              {snapshot?.capabilities?.contract && (
+                <p className="text-[11px] text-muted-foreground/70 text-center font-mono">
+                  {snapshot.capabilities.contract}
+                </p>
+              )}
+              {isStandalone ? (
+                <RouteInfoCard title="本机入口" value={localUrl} />
+              ) : (
+                <>
+                  <LocalDomainCard
+                    publicUrl={publicUrl}
+                    copyState={copyState}
+                    onCopy={publicUrl ? () => void handleCopy(publicUrl) : undefined}
+                  />
+                  <TunnelSetupCard
+                    publicUrl={publicUrl}
+                    localServiceUrl={localServiceUrl}
+                    hasTunnelToken={hasTunnelToken}
+                    token={tunnelToken}
+                    onTokenChange={setTunnelToken}
+                    onSaveToken={() => void saveTunnelToken()}
+                  />
+                  <ConnectivityCard
+                    connectivity={connectivity}
+                    onTest={() => void onTestConnectivity()}
+                  />
+                </>
+              )}
+              <button
+                onClick={onContinue}
+                className="w-full h-10 rounded-xl bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
+              >
+                继续登录
+              </button>
+            </div>
+          )}
+
+          {isRepair && (
+            <div className="flex flex-col gap-3">
+              <p className="text-sm text-foreground leading-relaxed">
+                {isStandalone ? 'Standalone 启动失败' : '还差一步让 Local 接入 Cloud'}
               </p>
-            ) : null}
-          </div>
-        )}
-
-        {isReady && (
-          <div className="flex flex-col gap-3">
-            <p className="text-sm font-medium text-foreground text-center">{productLabel} 已准备好</p>
-            {snapshot?.capabilities?.contract && (
-              <p className="text-[11px] text-muted-foreground/70 text-center font-mono">
-                {snapshot.capabilities.contract}
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                {snapshot?.message ?? (isStandalone ? '请检查本机 xpod 启动状态。' : '需要完成额外设置才能从其他设备访问。')}
               </p>
-            )}
-            <button
-              onClick={onContinue}
-              className="w-full h-10 rounded-xl bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
-            >
-              继续登录
-            </button>
-          </div>
-        )}
+              <button
+                onClick={() => {
+                  const desktopApi = typeof window !== 'undefined' ? window.xpodDesktop : undefined
+                  desktopApi?.app?.openConfigWindow?.()
+                }}
+                className="w-full h-10 rounded-xl bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
+              >
+                {isStandalone ? '打开设置' : '去完成 Local 设置'}
+              </button>
+            </div>
+          )}
 
-        {isRepair && (
-          <div className="flex flex-col gap-3">
-            <p className="text-sm text-foreground leading-relaxed">
-              {isStandalone ? 'Standalone 启动失败' : '还差一步让 Local 接入 Cloud'}
-            </p>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              {snapshot?.message ?? (isStandalone ? '请检查本机 xpod 启动状态。' : '需要完成额外设置才能从其他设备访问。')}
-            </p>
-            <button
-              onClick={() => {
-                const desktopApi = typeof window !== 'undefined' ? window.xpodDesktop : undefined
-                desktopApi?.app?.openConfigWindow?.()
-              }}
-              className="w-full h-10 rounded-xl bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
-            >
-              {isStandalone ? '打开设置' : '去完成 Local 设置'}
-            </button>
-          </div>
-        )}
-
-        {isError && (
-          <div className="flex flex-col items-center gap-3 text-center">
-            <AlertCircle className="w-6 h-6 text-destructive" />
-            <p className="text-sm text-destructive">
-              {snapshot?.message ?? `${productLabel} 启动失败`}
-            </p>
-          </div>
-        )}
+          {isError && (
+            <div className="flex flex-col items-center gap-3 text-center">
+              <AlertCircle className="w-6 h-6 text-destructive" />
+              <p className="text-sm text-destructive">
+                {snapshot?.message ?? `${productLabel} 启动失败`}
+              </p>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="px-5 pb-5 shrink-0" />
@@ -518,6 +573,242 @@ function LocalOnboardingView({
       <Footer />
     </div>
   )
+}
+
+function LocalDomainCard({
+  publicUrl,
+  copyState,
+  onCopy,
+}: {
+  publicUrl: string | null
+  copyState: 'idle' | 'copied'
+  onCopy?: () => void
+}) {
+  return (
+    <div className="rounded-2xl border border-border/60 bg-muted/25 p-3">
+      <div className="flex items-start gap-3">
+        <StepNumber value={1} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs font-medium text-foreground">拿到 Local 域名</p>
+            {onCopy ? (
+              <button
+                type="button"
+                onClick={onCopy}
+                className="inline-flex items-center gap-1 rounded-lg border border-border/60 px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+              >
+                {copyState === 'copied' ? <CheckCircle2 className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                {copyState === 'copied' ? '已复制' : '复制'}
+              </button>
+            ) : null}
+          </div>
+          <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
+            这是 Cloud 分配给这台设备的 Local canonical URL，会写入账号的 storage。
+          </p>
+          <p className="mt-2 break-all font-mono text-[11px] leading-5 text-foreground">
+            {publicUrl ?? '等待 Cloud 分配'}
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function RouteInfoCard({
+  title,
+  value,
+  action,
+}: {
+  title: string
+  value: string | null
+  action?: ReactNode
+}) {
+  return (
+    <div className="rounded-2xl border border-border/60 bg-muted/25 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[11px] font-medium tracking-wide text-muted-foreground/70">{title}</p>
+        {action}
+      </div>
+      <p className="mt-2 break-all font-mono text-[11px] leading-5 text-foreground">
+        {value ?? '等待 xpod 返回'}
+      </p>
+    </div>
+  )
+}
+
+function TunnelSetupCard({
+  publicUrl,
+  localServiceUrl,
+  hasTunnelToken,
+  token,
+  onTokenChange,
+  onSaveToken,
+}: {
+  publicUrl: string | null
+  localServiceUrl: string
+  hasTunnelToken: boolean
+  token: string
+  onTokenChange: (value: string) => void
+  onSaveToken: () => void
+}) {
+  return (
+    <div className="rounded-2xl border border-border/60 bg-muted/20 p-3">
+      <div className="flex items-start gap-3">
+        <StepNumber value={2} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs font-medium text-foreground">配置 Cloudflare Tunnel</p>
+            <span className={cn(
+              'rounded-full px-2 py-0.5 text-[10px] font-medium',
+              hasTunnelToken
+                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                : 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
+            )}>
+              {hasTunnelToken ? '已保存' : '未配置'}
+            </span>
+          </div>
+          <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
+            在 Cloudflare Zero Trust 创建 Tunnel，Public Hostname 填 {publicUrl ? formatProviderHost(publicUrl) : '上方 Local 域名'}，Service URL 填 {localServiceUrl}。
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              const desktopApi = typeof window !== 'undefined' ? window.xpodDesktop : undefined
+              void desktopApi?.app?.openExternal?.('https://one.dash.cloudflare.com/')
+            }}
+            className="mt-2 inline-flex h-7 items-center rounded-lg border border-border/60 px-2 text-[11px] text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+          >
+            打开 Cloudflare
+          </button>
+        </div>
+      </div>
+      <div className="mt-3 flex gap-2">
+        <input
+          type="password"
+          value={token}
+          onChange={(event) => onTokenChange(event.target.value)}
+          placeholder={hasTunnelToken ? '粘贴新 token 或完整命令覆盖' : '粘贴 tunnel token 或完整命令'}
+          className="min-w-0 flex-1 rounded-lg border border-border/60 bg-background px-3 py-2 text-xs outline-none transition-colors focus:border-primary/50 focus:ring-2 focus:ring-primary/20"
+        />
+        <button
+          type="button"
+          disabled={!token.trim()}
+          onClick={onSaveToken}
+          className="rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          保存
+        </button>
+      </div>
+      {hasTunnelToken ? (
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          需要更换时直接粘贴新 token 覆盖保存。
+        </p>
+      ) : (
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          token 在 Cloudflare 给出的 `cloudflared tunnel run --token ...` 命令里；整条命令也可以直接粘贴。
+        </p>
+      )}
+    </div>
+  )
+}
+
+function ConnectivityCard({
+  connectivity,
+  onTest,
+}: {
+  connectivity: NonNullable<LoginModalProps['localOnboarding']>['connectivity']
+  onTest: () => void
+}) {
+  const status = connectivity?.status ?? 'unknown'
+  const tone = resolveConnectivityTone(status)
+  const local = connectivity?.local
+  const publicProbe = connectivity?.public
+
+  return (
+    <div className="rounded-2xl border border-border/60 bg-muted/20 p-3">
+      <div className="flex items-start gap-3">
+        <StepNumber value={3} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <p className="text-xs font-medium text-foreground">测试联通性</p>
+              <p className={cn('mt-1 text-[11px] leading-5', tone.textClass)}>
+                {connectivity?.message ?? '会同时测试本机入口和公网入口，并确认是不是同一个 Local 节点。'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onTest}
+              disabled={status === 'checking'}
+              className="shrink-0 rounded-lg border border-border/60 px-3 py-2 text-xs font-medium text-foreground hover:bg-muted/50 disabled:cursor-wait disabled:opacity-60"
+            >
+              {status === 'checking' ? '测试中' : '测试'}
+            </button>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
+            <ProbePill label="本机" probe={local ?? null} />
+            <ProbePill label="公网" probe={publicProbe ?? null} />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function StepNumber({ value }: { value: number }) {
+  return (
+    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary">
+      {value}
+    </span>
+  )
+}
+
+function ProbePill({
+  label,
+  probe,
+}: {
+  label: string
+  probe: NonNullable<NonNullable<LoginModalProps['localOnboarding']>['connectivity']>['local']
+}) {
+  const reachable = probe?.reachable
+  const sameNode = probe?.sameNode
+  const value = !probe
+    ? '未测'
+    : reachable && sameNode !== false
+      ? probe.latencyMs !== null ? `${probe.latencyMs}ms` : '可达'
+      : '失败'
+
+  return (
+    <div className="rounded-xl border border-border/50 bg-background/60 px-2 py-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-muted-foreground">{label}</span>
+        <span className={cn(
+          'font-medium',
+          reachable && sameNode !== false ? 'text-emerald-600 dark:text-emerald-400' : probe ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground',
+        )}>
+          {value}
+        </span>
+      </div>
+      {probe?.url ? (
+        <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
+          {formatProviderHost(probe.url)}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+function resolveConnectivityTone(status: string): { textClass: string } {
+  if (status === 'ready') {
+    return { textClass: 'text-emerald-600 dark:text-emerald-400' }
+  }
+  if (status === 'failed' || status === 'mismatch') {
+    return { textClass: 'text-destructive' }
+  }
+  if (status === 'local-only') {
+    return { textClass: 'text-amber-700 dark:text-amber-400' }
+  }
+  return { textClass: 'text-muted-foreground' }
 }
 
 // ── Shared Components ─────────────────────────────────────────────────
@@ -890,6 +1181,15 @@ function formatProviderHost(url: string): string {
     return new URL(url).host
   } catch {
     return url
+  }
+}
+
+function formatRouteOrigin(url: string): string {
+  try {
+    const parsed = new URL(url)
+    return parsed.origin
+  } catch {
+    return url.replace(/\/+$/, '')
   }
 }
 

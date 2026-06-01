@@ -55,6 +55,16 @@ describe('PrimaryLayout', () => {
         dispatchEvent: vi.fn(),
       })),
     })
+    class ResizeObserverMock {
+      observe = vi.fn()
+      unobserve = vi.fn()
+      disconnect = vi.fn()
+    }
+
+    Object.defineProperty(window, 'ResizeObserver', {
+      writable: true,
+      value: ResizeObserverMock,
+    })
   })
 
   beforeEach(() => {
@@ -89,6 +99,15 @@ describe('PrimaryLayout', () => {
     render(<PrimaryLayout microAppId="chat" />)
 
     expect(screen.getByRole('button', { name: '个人资料' })).toBeTruthy()
+  })
+
+  it('keeps the module list pane at a usable desktop width', () => {
+    render(<PrimaryLayout microAppId="chat" />)
+
+    const listPanel = screen.getByTestId('micro-app-list-panel')
+    expect(listPanel.style.minWidth).toBe('180px')
+    expect(listPanel.style.width).toBe('100%')
+    expect(listPanel.style.maxWidth).toBe('400px')
   })
 
   it('hides the application shell after sign out', () => {

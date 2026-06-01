@@ -100,7 +100,7 @@ test('EmbeddedAuthorizationSheet waits for auth page load before showing Browser
   const openPromise = sheet.open('http://localhost:3000/.account/oidc/consent/', {
     providerLabel: 'Cloud',
   })
-  await Promise.resolve()
+  await waitFor(() => actions.includes('loadURL:http://localhost:3000/.account/oidc/consent/?embedded=1'))
 
   assert.deepEqual(states.at(-1), { open: true, reason: 'opened', ready: false })
   assert.equal(actions.includes('show'), false)
@@ -116,3 +116,13 @@ test('EmbeddedAuthorizationSheet waits for auth page load before showing Browser
   assert.equal(actions.includes('show'), true)
   assert.equal(actions.indexOf('show') > actions.findIndex((entry) => entry.startsWith('loadURL:')), true)
 })
+
+async function waitFor(predicate, attempts = 10) {
+  for (let index = 0; index < attempts; index += 1) {
+    if (predicate()) {
+      return
+    }
+
+    await Promise.resolve()
+  }
+}

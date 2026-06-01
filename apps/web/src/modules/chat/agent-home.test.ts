@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { buildAgentHomePath, ensureAgentHome } from './agent-home'
+import { buildAgentHomePath, ensureAgentHome, normalizeAgentHomeId } from './agent-home'
 
 describe('agent-home', () => {
   it('creates default Agent Home containers and files in the Pod', async () => {
@@ -46,5 +46,38 @@ describe('agent-home', () => {
     )
     expect(String(agentsMdPut?.[1]?.body)).toContain('This directory is the Agent Home')
     expect(String(agentsMdPut?.[1]?.body)).toContain('Help the user.')
+  })
+
+  it('normalizes Agent resource IRIs before creating Agent Home folders', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'HEAD') {
+        return new Response('', { status: 404 })
+      }
+      return new Response('', { status: 201 })
+    })
+    const db = {
+      getDialect: () => ({
+        getPodUrl: () => 'https://alice.example/',
+        getAuthenticatedFetch: () => fetchMock,
+      }),
+    } as any
+
+    expect(normalizeAgentHomeId('https://alice.example/.data/agents/__secretary__.ttl#this')).toBe('__secretary__')
+    expect(buildAgentHomePath('__secretary__.ttl')).toBe('/.data/agents/__secretary__/')
+
+    await ensureAgentHome(db, {
+      agentId: 'https://alice.example/.data/agents/__secretary__.ttl#this',
+      name: 'AI Secretary',
+      provider: 'undefineds',
+      model: 'undefineds/linx-lite',
+    })
+
+    const putTargets = fetchMock.mock.calls
+      .filter(([, init]) => init?.method === 'PUT')
+      .map(([input]) => String(input))
+
+    expect(putTargets).toContain('https://alice.example/.data/agents/__secretary__/')
+    expect(putTargets).toContain('https://alice.example/.data/agents/__secretary__/skills/')
+    expect(putTargets).not.toContain('https://alice.example/.data/agents/__secretary__.ttl/skills/')
   })
 })

@@ -96,6 +96,11 @@ function createXpodFixture(t, packageFields = {}) {
   writeFile(fixtureRoot, 'bin/xpod.js', '#!/usr/bin/env node\n')
   writeFile(fixtureRoot, 'dist/main.js', 'console.log("xpod")\n')
   writeFile(fixtureRoot, 'dist/identity/oidc/ScopedPickWebIdHandler.js', 'exports.ScopedPickWebIdHandler = class {}\n')
+  writeFile(fixtureRoot, 'dist/runtime/css-process.js', [
+    'function rewriteConfigForFileUrlImportsIfNeeded() {}',
+    'function rewriteConfigImports() {}',
+    'pathToFileURL()',
+  ].join('\n'))
   writeFile(fixtureRoot, 'config/local.json', '{}\n')
   writeFile(fixtureRoot, 'config/xpod.base.json', '{}\n')
   writeFile(fixtureRoot, 'templates/main.html.ejs', '<html></html>\n')

@@ -171,7 +171,11 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
       try {
         publishValue({ db: null, status: 'initializing', error: null })
 
-        const runtimePodContext = await resolveRuntimePodContext(webId ?? '', podContextResolution)
+        const runtimePodContext = await resolveRuntimePodContext(
+          webId ?? '',
+          podContextResolution,
+          session.fetch,
+        )
         if (runtimePodContext.error) {
           throw runtimePodContext.error
         }
@@ -324,12 +328,13 @@ function resolveLoginPodContext(
 async function resolveRuntimePodContext(
   webId: string,
   resolution: LoginPodContextResolution,
+  fetcher: typeof fetch,
 ): Promise<LoginPodContextResolution> {
   if (!resolution.profileStorageProvider) {
     return resolution
   }
 
-  const profileStorageUrl = await fetchProfileStorageUrl(webId)
+  const profileStorageUrl = await fetchProfileStorageUrl(webId, fetcher)
   const providerBaseUrl = normalizePodUrl(resolution.profileStorageProvider.storageProviderUrl)
   if (!profileStorageUrl || !providerBaseUrl) {
     return {

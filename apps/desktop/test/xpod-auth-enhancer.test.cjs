@@ -1,16 +1,21 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
+const { JSDOM } = require('jsdom')
 const { resolveCompiledDesktopModule } = require('./helpers.cjs')
 
 const {
   normalizeXpodPathname,
+  isXpodIndexPageUrl,
   isXpodAccountPageUrl,
+  isXpodCreatePodPageUrl,
   isXpodConsentPageUrl,
   isXpodPasswordLoginPageUrl,
   isXpodPasswordRegisterPageUrl,
   isXpodAuthPageUrl,
   addEmbeddedAuthQuery,
   buildXpodAuthEnhancerScript,
+  buildXpodAuthEnhancerPreloadScript,
+  installXpodAuthEnhancerOnNewDocument,
   installXpodAuthEnhancer,
 } = require(resolveCompiledDesktopModule('lib/xpod-auth-enhancer.js'))
 
@@ -19,12 +24,16 @@ test('normalizeXpodPathname keeps trailing slash semantics stable', () => {
   assert.equal(normalizeXpodPathname('/.account/oidc/consent/'), '/.account/oidc/consent/')
 })
 
-test('xpod auth page url matchers detect account, consent, and register pages', () => {
+test('xpod auth page url matchers detect index, account, create-pod, consent, and register pages', () => {
+  assert.equal(isXpodIndexPageUrl('http://localhost:3000/.account/'), true)
   assert.equal(isXpodAccountPageUrl('http://localhost:3000/.account/account/'), true)
+  assert.equal(isXpodCreatePodPageUrl('http://localhost:3000/.account/create-pod/'), true)
   assert.equal(isXpodConsentPageUrl('http://localhost:3000/.account/oidc/consent/'), true)
   assert.equal(isXpodPasswordLoginPageUrl('http://localhost:3000/.account/login/password/'), true)
   assert.equal(isXpodPasswordRegisterPageUrl('http://localhost:3000/.account/login/password/register/'), true)
+  assert.equal(isXpodAuthPageUrl('http://localhost:3000/.account/'), true)
   assert.equal(isXpodAuthPageUrl('http://localhost:3000/.account/account/'), true)
+  assert.equal(isXpodAuthPageUrl('http://localhost:3000/.account/create-pod/'), true)
   assert.equal(isXpodAuthPageUrl('http://localhost:3000/.account/oidc/consent/'), true)
   assert.equal(isXpodAuthPageUrl('http://localhost:3000/.account/login/password/'), true)
   assert.equal(isXpodAuthPageUrl('http://localhost:3000/.account/login/password/register/'), true)
@@ -37,8 +46,16 @@ test('addEmbeddedAuthQuery forces compact auth mode only on xpod auth pages', ()
     'http://localhost:3000/.account/oidc/consent/?embedded=1',
   )
   assert.equal(
+    addEmbeddedAuthQuery('http://localhost:3000/.account/'),
+    'http://localhost:3000/.account/?embedded=1',
+  )
+  assert.equal(
     addEmbeddedAuthQuery('http://localhost:3000/.account/login/password/?returnTo=%2Ffoo'),
     'http://localhost:3000/.account/login/password/?returnTo=%2Ffoo&embedded=1',
+  )
+  assert.equal(
+    addEmbeddedAuthQuery('http://localhost:3000/.account/create-pod/'),
+    'http://localhost:3000/.account/create-pod/?embedded=1',
   )
   assert.equal(
     addEmbeddedAuthQuery('http://localhost:3000/.account/login/'),
@@ -72,6 +89,10 @@ test('buildXpodAuthEnhancerScript includes pending pod and username coordination
   assert.match(script, /attachProvisionCodeToPodCreate/)
   assert.match(script, /lookupScopedWebIdEntries/)
   assert.match(script, /provision\/webids/)
+  assert.match(script, /ensureLocalFirstPodPrompt/)
+  assert.match(script, /local-first-pod/)
+  assert.match(script, /provision\/pods/)
+  assert.match(script, /deriveUsernameFromWebId/)
   assert.match(script, /scopeAccountResourceResponse/)
   assert.match(script, /sessionStorage\.getItem\("provisionCode"\)/)
   assert.doesNotMatch(script, /window\.location\.assign/)
@@ -81,7 +102,7 @@ test('buildXpodAuthEnhancerScript waits for account page before pending pod crea
   const script = buildXpodAuthEnhancerScript()
 
   assert.match(script, /sessionStorage\.setItem\(SUBMITTED_USERNAME_KEY, username\)/)
-  assert.match(script, /currentPathname\(\) === ACCOUNT_PATH/)
+  assert.match(script, /isAccountDashboardPath\(\)/)
   assert.match(script, /setPendingUsername\(submittedUsername\)/)
   assert.doesNotMatch(script, /setPendingUsername\(username\);\s*return;/)
 })
@@ -92,6 +113,70 @@ test('buildXpodAuthEnhancerScript clears submitted username when register page s
   assert.match(script, /handleAuthFormError\(target\.textContent\)/)
   assert.match(script, /window\.sessionStorage\.removeItem\(SUBMITTED_USERNAME_KEY\)/)
   assert.match(script, /clearPendingUsername\(\)/)
+})
+
+test('buildXpodAuthEnhancerPreloadScript persists provisionCode before installing enhancer', () => {
+  const script = buildXpodAuthEnhancerPreloadScript('pc-preload')
+
+  assert.match(script, /sessionStorage\.setItem\("provisionCode", nextProvisionCode\)/)
+  assert.match(script, /pc-preload/)
+  assert.match(script, /__LINX_XPOD_AUTH_ENHANCER__/)
+})
+
+test('installXpodAuthEnhancerOnNewDocument registers a preload script through devtools protocol', async () => {
+  const commands = []
+  const target = {
+    debugger: {
+      isAttached: () => false,
+      attach: (version) => {
+        commands.push({ command: 'attach', version })
+      },
+      sendCommand: async (command, params) => {
+        commands.push({ command, params })
+        if (command === 'Page.addScriptToEvaluateOnNewDocument') {
+          return { identifier: 'script-1' }
+        }
+        return {}
+      },
+    },
+  }
+
+  const installed = await installXpodAuthEnhancerOnNewDocument(target, 'pc-preload')
+
+  assert.equal(installed, true)
+  assert.deepEqual(commands[0], { command: 'attach', version: '1.3' })
+  assert.equal(commands[1].command, 'Page.enable')
+  assert.equal(commands[2].command, 'Page.addScriptToEvaluateOnNewDocument')
+  assert.match(commands[2].params.source, /pc-preload/)
+  assert.match(commands[2].params.source, /__LINX_XPOD_AUTH_ENHANCER__/)
+})
+
+test('installXpodAuthEnhancerOnNewDocument replaces previous preload script', async () => {
+  const commands = []
+  const target = {
+    debugger: {
+      isAttached: () => true,
+      attach: () => {
+        throw new Error('should not attach twice')
+      },
+      sendCommand: async (command, params) => {
+        commands.push({ command, params })
+        if (command === 'Page.addScriptToEvaluateOnNewDocument') {
+          return { identifier: `script-${commands.length}` }
+        }
+        return {}
+      },
+    },
+  }
+
+  await installXpodAuthEnhancerOnNewDocument(target, 'pc-1')
+  await installXpodAuthEnhancerOnNewDocument(target, 'pc-2')
+
+  assert.equal(commands[2].command, 'Page.enable')
+  assert.equal(commands[3].command, 'Page.removeScriptToEvaluateOnNewDocument')
+  assert.equal(commands[3].params.identifier, 'script-2')
+  assert.equal(commands[4].command, 'Page.addScriptToEvaluateOnNewDocument')
+  assert.match(commands[4].params.source, /pc-2/)
 })
 
 test('buildXpodAuthEnhancerScript injects provisionCode into pod create requests', async () => {
@@ -150,6 +235,7 @@ test('buildXpodAuthEnhancerScript injects provisionCode into pod create requests
     HTMLFormElement: class {},
     HTMLButtonElement: class {},
     HTMLInputElement: class {},
+    HTMLElement: class {},
     HTMLAnchorElement: class {},
     PopStateEvent: class {},
     setTimeout,
@@ -421,6 +507,88 @@ test('buildXpodAuthEnhancerScript derives Local Pods when Cloud account Pod list
   })
 })
 
+test('buildXpodAuthEnhancerScript injects first Local Pod creation prompt for old Cloud account UI', async () => {
+  const script = buildXpodAuthEnhancerScript()
+  const provisionPayload = Buffer.from(JSON.stringify({
+    spUrl: 'http://127.0.0.1:5737/',
+    spDomain: 'node-0000.undefineds.co',
+    serviceToken: 'service-token',
+  })).toString('base64url')
+  const provisionCode = `${provisionPayload}.signature`
+  const calls = []
+  let createBody = null
+  let navigatedTo = null
+  const dom = new JSDOM(`
+    <main>
+      <div>
+        <p>No Pods found. Create one to get started.</p>
+      </div>
+    </main>
+  `, {
+    url: 'https://id.undefineds.co/.account/account/',
+    runScripts: 'outside-only',
+  })
+  const { window } = dom
+  window.Response = Response
+  window.Request = Request
+  window.fetch = async (resource, init) => {
+    calls.push({ resource: String(resource), init })
+    if (String(resource) === 'http://127.0.0.1:5737/provision/webids') {
+      return jsonResponse({ entries: [] })
+    }
+    if (String(resource) === 'http://127.0.0.1:5737/provision/pods/alice') {
+      return new Response(JSON.stringify({ error: 'not found' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+    if (String(resource) === '/.account/account/account-1/pod/') {
+      createBody = JSON.parse(init.body)
+      return jsonResponse({ ok: true })
+    }
+    return jsonResponse({
+      controls: {
+        account: {
+          pod: '/.account/account/account-1/pod/',
+        },
+      },
+      webIdLinks: {
+        'https://id.undefineds.co/alice/profile/card#me': '/.account/account/link-cloud',
+      },
+    })
+  }
+  const originalPushState = window.history.pushState.bind(window.history)
+  window.history.pushState = (_state, _title, url) => {
+    navigatedTo = String(url)
+    originalPushState(_state, _title, url)
+  }
+  window.sessionStorage.setItem('provisionCode', provisionCode)
+
+  window.eval(script)
+  await window.fetch('/.account/account/account-1/webid/', {
+    headers: { Accept: 'application/json' },
+  })
+  window.document.body.appendChild(window.document.createElement('span'))
+  await nextTick()
+
+  const prompt = window.document.querySelector('[data-linx-role="local-first-pod-prompt"]')
+  assert.ok(prompt)
+  const input = prompt.querySelector('input[name="username"]')
+  assert.ok(input)
+  input.value = 'alice'
+  assert.equal(input.value, 'alice')
+
+  prompt.querySelector('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }))
+  await waitFor(() => createBody !== null)
+
+  assert.deepEqual(createBody, {
+    name: 'alice',
+    settings: { provisionCode },
+  })
+  await waitFor(() => navigatedTo === '/.account/oidc/consent/')
+  assert.equal(navigatedTo, '/.account/oidc/consent/')
+})
+
 test('buildXpodAuthEnhancerScript filters account client credentials by scoped WebIDs', async () => {
   const script = buildXpodAuthEnhancerScript()
   const provisionPayload = Buffer.from(JSON.stringify({
@@ -517,6 +685,19 @@ function jsonResponse(body, init = {}) {
   })
 }
 
+function nextTick() {
+  return new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+async function waitFor(predicate, timeoutMs = 1000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (predicate()) return
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+  throw new Error('Timed out waiting for condition')
+}
+
 function createScriptContext({ pathname, provisionCode, fetch }) {
   const context = {
     globalThis: {},
@@ -570,6 +751,7 @@ function createScriptContext({ pathname, provisionCode, fetch }) {
     HTMLFormElement: class {},
     HTMLButtonElement: class {},
     HTMLInputElement: class {},
+    HTMLElement: class {},
     HTMLAnchorElement: class {},
     PopStateEvent: class {},
     setTimeout,

@@ -28,12 +28,11 @@ const candidateRoots = explicitSourceRoot
   ? [siblingXpodRoot, packageXpodRoot]
   : [packageXpodRoot, siblingXpodRoot]
 
-const sourceRoot = candidateRoots.find((candidate) => existsSync(path.join(candidate, 'package.json')))
+const sourceRoot = candidateRoots.find(isUsableXpodResourceRoot)
 
 if (!sourceRoot || !existsSync(path.join(sourceRoot, 'package.json'))) {
   throw new Error(`Unable to locate xpod source. Checked: ${siblingXpodRoot}, ${packageXpodRoot}`)
 }
-assertXpodLoginRuntimeCapabilities(sourceRoot)
 
 rmSync(resourceRoot, { recursive: true, force: true })
 mkdirSync(resourceRoot, { recursive: true })
@@ -263,15 +262,64 @@ function assertXpodLoginRuntimeCapabilities(root) {
   const hasScopedPickWebIdHandler = existsSync(path.join(root, 'src', 'identity', 'oidc', 'ScopedPickWebIdHandler.ts'))
     || existsSync(path.join(root, 'dist', 'identity', 'oidc', 'ScopedPickWebIdHandler.js'))
   const hasScopedPickerConfig = existsSync(path.join(root, 'config', 'xpod.base.json'))
+  const hasEscapedCssRuntimeConfigImports = hasCssRuntimeConfigImportRewrite(root)
 
-  if (hasScopedPickWebIdHandler && hasScopedPickerConfig) {
+  if (hasScopedPickWebIdHandler && hasScopedPickerConfig && hasEscapedCssRuntimeConfigImports) {
     return
   }
 
+  const missing = [
+    !hasScopedPickWebIdHandler ? 'scoped WebID selection handler' : null,
+    !hasScopedPickerConfig ? 'scoped WebID picker config' : null,
+    !hasEscapedCssRuntimeConfigImports ? 'escaped recursive CSS runtime config imports' : null,
+  ].filter(Boolean)
+
   throw new Error([
-    `xpod source at ${root} does not include scoped WebID selection.`,
-    'Desktop Local login must not ship a runtime that can expose Cloud Pods in Local consent.',
+    `xpod source at ${root} is missing required Desktop Local capabilities.`,
+    ...missing.map((item) => `Missing: ${item}`),
+    'Desktop Local must not ship a runtime that can expose Cloud Pods in Local consent or hang under paths with spaces.',
   ].join('\n'))
+}
+
+function isUsableXpodResourceRoot(root) {
+  if (!existsSync(path.join(root, 'package.json'))) {
+    return false
+  }
+
+  try {
+    assertXpodLoginRuntimeCapabilities(root)
+    return true
+  } catch (error) {
+    if (explicitSourceRoot) {
+      throw error
+    }
+    console.warn(`[desktop] skipping xpod resource at ${root}: ${error.message}`)
+    return false
+  }
+}
+
+function hasCssRuntimeConfigImportRewrite(root) {
+  for (const relative of [
+    'src/runtime/css-process.ts',
+    'dist/runtime/css-process.js',
+    'dist/runtime/css-process.cjs',
+  ]) {
+    const file = path.join(root, relative)
+    if (!existsSync(file)) {
+      continue
+    }
+
+    const content = readFileSync(file, 'utf8')
+    if (
+      content.includes('rewriteConfigForFileUrlImportsIfNeeded') &&
+      content.includes('rewriteConfigImports') &&
+      content.includes('pathToFileURL')
+    ) {
+      return true
+    }
+  }
+
+  return false
 }
 
 function buildLegacyOidcContractPatterns() {

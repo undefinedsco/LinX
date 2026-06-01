@@ -51,13 +51,13 @@ function ensureRecordId(
   record: Partial<Record<string, unknown>>,
   fallback?: string,
 ): string {
-  const directId = typeof record.id === 'string' && record.id.length > 0 ? record.id : undefined
-  if (directId) {
-    return directId
+  if (fallback) {
+    return normalizeResourceId(fallback)
   }
 
-  if (fallback) {
-    return fallback
+  const directId = typeof record.id === 'string' && record.id.length > 0 ? record.id : undefined
+  if (directId) {
+    return normalizeResourceId(directId)
   }
 
   throw new Error('Record is missing an identifier')
@@ -229,6 +229,16 @@ export function writeCollectionRow<T extends Record<string, unknown>>(
       // be initialized in headless integration tests or early app bootstrap.
     }
   }
+}
+
+export function normalizeResourceId(id: string): string {
+  const trimmed = id.trim()
+  const withoutFragment = trimmed.replace(/#.*$/, '')
+  const resourceMatch = withoutFragment.match(/\/([^/]+)\.ttl$/)
+  if (resourceMatch?.[1]) {
+    return decodeURIComponent(resourceMatch[1])
+  }
+  return withoutFragment.replace(/\.ttl$/, '')
 }
 
 function upsertInternalStateRow<T extends Record<string, unknown>>(

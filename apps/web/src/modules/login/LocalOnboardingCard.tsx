@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Loader2, Wrench } from 'lucide-react'
+import { CheckCircle2, Copy, Loader2, Wrench } from 'lucide-react'
 import { LINX_CLOUD_IDENTITY_ORIGIN } from '@undefineds.co/models/client'
 import { Button } from '@/components/ui/button'
 import { LoginCardShell } from './LoginCardShell'
+import { cn } from '@/lib/utils'
 import { useConfigWindowState } from './hooks/use-config-window-state'
 import { useLocalOnboarding } from './hooks/use-local-onboarding'
 import { useOidcConnect } from './hooks/use-oidc-connect'
-import type { LocalSpaceKind } from '@/types/electron-api'
+import type { LocalOnboardingSnapshot, LocalSpaceKind } from '@/types/electron-api'
 
 export interface LocalOnboardingCardProps {
   onBack: () => void
@@ -38,14 +39,17 @@ export function LocalOnboardingCard({
     acting,
     chooseSpace,
     continueLocal,
+    saveTunnelToken,
+    testConnectivity,
     refresh,
     openAdvancedSettings,
   } = useLocalOnboarding()
   const [launchingAuth, setLaunchingAuth] = useState(false)
   const [authError, setAuthError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [tunnelToken, setTunnelToken] = useState('')
+  const [copyState, setCopyState] = useState<'idle' | 'copied'>('idle')
   const autoBootstrapStartedRef = useRef(false)
-  const autoSignInKeyRef = useRef<string | null>(null)
   const localIssuerUrl = snapshot.localUrl ?? snapshot.baseUrl
   const localProviderUrl = snapshot.spaceKind === 'standalone'
     ? localIssuerUrl
@@ -109,6 +113,39 @@ export function LocalOnboardingCard({
     }
   }, [openAdvancedSettings])
 
+  const handleCopyPublicUrl = useCallback(async () => {
+    if (!snapshot.publicUrl) return
+
+    try {
+      await navigator.clipboard?.writeText(snapshot.publicUrl)
+      setCopyState('copied')
+      window.setTimeout(() => setCopyState('idle'), 1200)
+    } catch {
+      setCopyState('idle')
+    }
+  }, [snapshot.publicUrl])
+
+  const handleSaveTunnelToken = useCallback(async () => {
+    setActionError(null)
+
+    try {
+      await saveTunnelToken(tunnelToken)
+      setTunnelToken('')
+    } catch (error: any) {
+      setActionError(error?.message || '保存 Tunnel token 失败。')
+    }
+  }, [saveTunnelToken, tunnelToken])
+
+  const handleTestConnectivity = useCallback(async () => {
+    setActionError(null)
+
+    try {
+      await testConnectivity()
+    } catch (error: any) {
+      setActionError(error?.message || '测试 Local 联通性失败。')
+    }
+  }, [testConnectivity])
+
   useEffect(() => {
     const wasOpen = previousConfigOpen.current
     previousConfigOpen.current = configWindow.open
@@ -121,12 +158,6 @@ export function LocalOnboardingCard({
   useEffect(() => {
     if (snapshot.state !== 'space_required' && snapshot.state !== 'idle') {
       autoBootstrapStartedRef.current = false
-    }
-  }, [snapshot.state])
-
-  useEffect(() => {
-    if (snapshot.state !== 'ready') {
-      autoSignInKeyRef.current = null
     }
   }, [snapshot.state])
 
@@ -162,26 +193,6 @@ export function LocalOnboardingCard({
     continueLocal,
     loading,
     snapshot.spaceKind,
-    snapshot.state,
-  ])
-
-  useEffect(() => {
-    if (loading || acting || launchingAuth) return
-    if (configWindow.open) return
-    if (snapshot.state !== 'ready' || !localProviderUrl) return
-    const autoSignInKey = `${localProviderUrl}|${snapshot.provisionCode ?? ''}`
-    if (autoSignInKeyRef.current === autoSignInKey) return
-
-    autoSignInKeyRef.current = autoSignInKey
-    void handleSignIn()
-  }, [
-    acting,
-    configWindow.open,
-    handleSignIn,
-    launchingAuth,
-    loading,
-    localProviderUrl,
-    snapshot.provisionCode,
     snapshot.state,
   ])
 
@@ -222,14 +233,22 @@ export function LocalOnboardingCard({
           />
         ) : (
           <ReadyCard
+            snapshot={snapshot}
             message={snapshot.message ?? 'Local 已准备好。'}
             spaceKind={snapshot.spaceKind}
             detail={snapshot.spaceKind === 'standalone'
               ? snapshot.localUrl ?? snapshot.baseUrl ?? snapshot.capabilities?.contract ?? undefined
               : snapshot.publicUrl ?? undefined}
-            error={authError}
+            error={authError ?? actionError}
             busy={launchingAuth}
+            acting={acting}
             backLabel={backLabel}
+            tunnelToken={tunnelToken}
+            copyState={copyState}
+            onCopyPublicUrl={() => void handleCopyPublicUrl()}
+            onTunnelTokenChange={setTunnelToken}
+            onSaveTunnelToken={() => void handleSaveTunnelToken()}
+            onTestConnectivity={() => void handleTestConnectivity()}
             onSignIn={() => void handleSignIn()}
             onConfigure={() => void handleOpenAdvancedSettings()}
             onBack={handleBack}
@@ -312,22 +331,38 @@ function RepairCard({
 }
 
 function ReadyCard({
+  snapshot,
   spaceKind,
   message,
   detail,
   error,
   busy,
+  acting,
   backLabel,
+  tunnelToken,
+  copyState,
+  onCopyPublicUrl,
+  onTunnelTokenChange,
+  onSaveTunnelToken,
+  onTestConnectivity,
   onSignIn,
   onConfigure,
   onBack,
 }: {
+  snapshot: LocalOnboardingSnapshot
   spaceKind: LocalSpaceKind | null
   message: string
   detail?: string
   error: string | null
   busy: boolean
+  acting: boolean
   backLabel: string
+  tunnelToken: string
+  copyState: 'idle' | 'copied'
+  onCopyPublicUrl: () => void
+  onTunnelTokenChange: (value: string) => void
+  onSaveTunnelToken: () => void
+  onTestConnectivity: () => void
   onSignIn: () => void
   onConfigure: () => void
   onBack: () => void
@@ -344,6 +379,19 @@ function ReadyCard({
         </p>
         {detail ? <p className="mt-2 text-xs text-muted-foreground break-all">{detail}</p> : null}
       </div>
+
+      {spaceKind === 'local' ? (
+        <LocalRouteSetup
+          snapshot={snapshot}
+          tunnelToken={tunnelToken}
+          copyState={copyState}
+          busy={acting}
+          onCopyPublicUrl={onCopyPublicUrl}
+          onTunnelTokenChange={onTunnelTokenChange}
+          onSaveTunnelToken={onSaveTunnelToken}
+          onTestConnectivity={onTestConnectivity}
+        />
+      ) : null}
 
       {error ? (
         <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
@@ -366,6 +414,205 @@ function ReadyCard({
       </div>
     </div>
   )
+}
+
+function LocalRouteSetup({
+  snapshot,
+  tunnelToken,
+  copyState,
+  busy,
+  onCopyPublicUrl,
+  onTunnelTokenChange,
+  onSaveTunnelToken,
+  onTestConnectivity,
+}: {
+  snapshot: LocalOnboardingSnapshot
+  tunnelToken: string
+  copyState: 'idle' | 'copied'
+  busy: boolean
+  onCopyPublicUrl: () => void
+  onTunnelTokenChange: (value: string) => void
+  onSaveTunnelToken: () => void
+  onTestConnectivity: () => void
+}) {
+  const publicUrl = snapshot.publicUrl
+  const hasTunnelToken = Boolean(snapshot.tunnel?.hasToken)
+  const localServiceUrl = formatRouteOrigin(snapshot.localUrl ?? snapshot.baseUrl ?? 'http://localhost:5737/')
+  const connectivity = snapshot.connectivity
+  const connectivityStatus = connectivity?.status ?? 'unknown'
+  const tone = resolveConnectivityTone(connectivityStatus)
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-2xl border border-border/60 bg-muted/25 p-4">
+        <div className="flex items-start gap-3">
+          <StepNumber value={1} />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-medium">拿到 Local 域名</p>
+              {publicUrl ? (
+                <button
+                  type="button"
+                  onClick={onCopyPublicUrl}
+                  className="inline-flex items-center gap-1 rounded-lg border border-border/60 px-2 py-1 text-xs text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                >
+                  {copyState === 'copied' ? <CheckCircle2 className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                  {copyState === 'copied' ? '已复制' : '复制'}
+                </button>
+              ) : null}
+            </div>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              Cloud 分配的 canonical URL 会写入账号 storage。
+            </p>
+            <p className="mt-2 break-all font-mono text-xs text-foreground">
+              {publicUrl ?? '等待 Cloud 分配'}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+        <div className="flex items-start gap-3">
+          <StepNumber value={2} />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-medium">配置 Cloudflare Tunnel</p>
+              <span className={cn(
+                'rounded-full px-2 py-0.5 text-[10px] font-medium',
+                hasTunnelToken
+                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                  : 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
+              )}>
+                {hasTunnelToken ? '已保存' : '未配置'}
+              </span>
+            </div>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              Public Hostname 填 {publicUrl ? formatProviderHost(publicUrl) : '上方 Local 域名'}，Service URL 填 {localServiceUrl}。
+            </p>
+            <div className="mt-3 flex gap-2">
+              <input
+                type="password"
+                value={tunnelToken}
+                onChange={(event) => onTunnelTokenChange(event.target.value)}
+                placeholder={hasTunnelToken ? '粘贴新 token 或完整命令覆盖' : '粘贴 tunnel token 或完整命令'}
+                className="min-w-0 flex-1 rounded-lg border border-border/60 bg-background px-3 py-2 text-xs outline-none transition-colors focus:border-primary/50 focus:ring-2 focus:ring-primary/20"
+              />
+              <Button
+                size="sm"
+                disabled={!tunnelToken.trim() || busy}
+                onClick={onSaveTunnelToken}
+              >
+                保存
+              </Button>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              token 在 Cloudflare 的 `cloudflared tunnel run --token ...` 命令里；整条命令可直接粘贴。
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+        <div className="flex items-start gap-3">
+          <StepNumber value={3} />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium">测试联通性</p>
+                <p className={cn('mt-1 text-xs leading-5', tone)}>
+                  {connectivity?.message ?? '会同时测试本机入口和公网入口，并确认是不是同一个 Local 节点。'}
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={busy || connectivityStatus === 'checking'}
+                onClick={onTestConnectivity}
+              >
+                {connectivityStatus === 'checking' ? '测试中' : '测试'}
+              </Button>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+              <ProbePill label="本机" probe={connectivity?.local ?? null} />
+              <ProbePill label="公网" probe={connectivity?.public ?? null} />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function StepNumber({ value }: { value: number }) {
+  return (
+    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary">
+      {value}
+    </span>
+  )
+}
+
+function ProbePill({
+  label,
+  probe,
+}: {
+  label: string
+  probe: NonNullable<LocalOnboardingSnapshot['connectivity']>['local']
+}) {
+  const reachable = probe?.reachable
+  const sameNode = probe?.sameNode
+  const value = !probe
+    ? '未测'
+    : reachable && sameNode !== false
+      ? probe.latencyMs !== null ? `${probe.latencyMs}ms` : '可达'
+      : '失败'
+
+  return (
+    <div className="rounded-xl border border-border/50 bg-background/60 px-2 py-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-muted-foreground">{label}</span>
+        <span className={cn(
+          'font-medium',
+          reachable && sameNode !== false ? 'text-emerald-600 dark:text-emerald-400' : probe ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground',
+        )}>
+          {value}
+        </span>
+      </div>
+      {probe?.url ? (
+        <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
+          {formatProviderHost(probe.url)}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+function resolveConnectivityTone(status: string): string {
+  if (status === 'ready') {
+    return 'text-emerald-600 dark:text-emerald-400'
+  }
+  if (status === 'failed' || status === 'mismatch') {
+    return 'text-destructive'
+  }
+  if (status === 'local-only') {
+    return 'text-amber-700 dark:text-amber-400'
+  }
+  return 'text-muted-foreground'
+}
+
+function formatProviderHost(url: string): string {
+  try {
+    return new URL(url).host
+  } catch {
+    return url
+  }
+}
+
+function formatRouteOrigin(url: string): string {
+  try {
+    return new URL(url).origin
+  } catch {
+    return url.replace(/\/+$/, '')
+  }
 }
 
 function getRepairContent(snapshot: {

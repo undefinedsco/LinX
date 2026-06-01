@@ -11,7 +11,11 @@ import { formatXpodStatusDetail, getXpodDashboardUrl } from './lib/xpod-ui';
 import { getTrayPresentation } from './lib/tray-presentation';
 import { extractLinxAuthCallbackUrl, isDesktopAuthCallbackUrl } from './lib/auth-protocol';
 import { AuthLoopbackServer } from './lib/auth-loopback';
-import { addEmbeddedAuthQuery, installXpodAuthEnhancer } from './lib/xpod-auth-enhancer';
+import {
+  addEmbeddedAuthQuery,
+  installXpodAuthEnhancer,
+  installXpodAuthEnhancerOnNewDocument,
+} from './lib/xpod-auth-enhancer';
 import {
   AUTHORIZATION_SURFACE_HEIGHT,
   AUTHORIZATION_SURFACE_WIDTH,
@@ -83,6 +87,7 @@ const embeddedXpodSettingsSheet = new EmbeddedXpodSettingsSheet({
 const localOnboarding = new LocalOnboardingController({
   xpodManager,
   ensureBootstrapProvider: (spaceKind) => ensureBootstrapLocalProvider(spaceKind),
+  updateProvider: (id, updates) => providerManager.update(id, updates),
   stateDir: localPaths.home,
   onSnapshotChange: (snapshot) => {
     notifyLocalOnboardingState(snapshot);
@@ -447,6 +452,9 @@ async function openAuthorizationWindow(url: string, options?: AuthorizationWindo
   notifyAuthWindowState({ open: true, reason: 'opened' });
   installSingleSurfaceWindowOpenHandler(authWindow.webContents, {
     prepareSameOriginUrl: addEmbeddedAuthQuery,
+  });
+  await installXpodAuthEnhancerOnNewDocument(authWindow.webContents).catch((error) => {
+    console.warn('[Desktop] Failed to install xpod auth enhancer preload:', error);
   });
 
   authWindow.on('closed', () => {
@@ -1002,6 +1010,17 @@ function setupIPC(): void {
 
   ipcMain.handle('localOnboarding:refresh', async () => {
     return localOnboarding.refresh();
+  });
+
+  ipcMain.handle('localOnboarding:saveTunnelToken', async (_event, input: { token?: string }) => {
+    return localOnboarding.saveTunnelToken({
+      provider: 'cloudflare',
+      token: input?.token ?? '',
+    });
+  });
+
+  ipcMain.handle('localOnboarding:testConnectivity', async () => {
+    return localOnboarding.testConnectivity();
   });
 
   ipcMain.handle('auth:prepareLoopbackRedirect', () => {

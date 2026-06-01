@@ -29,6 +29,8 @@ export function LoginOverlay() {
       onContinueStoredAccount={controller.continueStoredAccount}
       onBackFromLocal={controller.backFromLocal}
       onContinueLocalLogin={controller.continueLocalLogin}
+      onSaveLocalTunnelToken={controller.saveLocalTunnelToken}
+      onTestLocalConnectivity={controller.testLocalConnectivity}
       onSwitchAccount={controller.switchAccount}
       onConnect={controller.connect}
       onCancelConnecting={controller.cancelConnecting}

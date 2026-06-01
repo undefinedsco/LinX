@@ -467,3 +467,119 @@ test('LocalOnboardingController still becomes ready when the capability probe ti
   assert.equal(snapshot.state, 'ready')
   assert.equal(snapshot.errorCode, null)
 })
+
+test('LocalOnboardingController saves a Cloudflare command token and restarts Local with it', async () => {
+  const { LocalOnboardingController } = require(resolveCompiledDesktopModule('lib/local-onboarding.js'))
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'linx-local-onboarding-token-'))
+  const provider = createProvider({ type: 'managed', value: 'node-0000.undefineds.co' })
+  let status = {
+    running: true,
+    status: 'running',
+    localUrl: 'http://localhost:5737/',
+    baseUrl: 'https://node-0000.undefineds.co/',
+    provisioning: createProvisioning({
+      publicUrl: 'https://node-0000.undefineds.co/',
+      spDomain: 'node-0000.undefineds.co',
+    }),
+  }
+  const updates = []
+  const startCalls = []
+
+  const controller = new LocalOnboardingController({
+    stateDir,
+    ensureBootstrapProvider: () => provider,
+    updateProvider: (_id, update) => {
+      updates.push(update)
+      provider.managed = update.managed
+    },
+    xpodManager: {
+      getStatus: async () => status,
+      start: async (options) => {
+        startCalls.push(options)
+        status = {
+          running: true,
+          status: 'running',
+          localUrl: 'http://localhost:5737/',
+          baseUrl: 'https://node-0000.undefineds.co/',
+          provisioning: createProvisioning({
+            publicUrl: 'https://node-0000.undefineds.co/',
+            spDomain: 'node-0000.undefineds.co',
+            tunnelToken: options.tunnelToken,
+            tunnelProvider: 'cloudflare',
+          }),
+        }
+      },
+    },
+    fetchCapabilities: async () => ({
+      supported: true,
+      contract: 'linx-local-onboarding/v1',
+      baseUrl: 'https://node-0000.undefineds.co/',
+      version: '0.3.29',
+    }),
+  })
+
+  await controller.chooseSpace('local')
+  const snapshot = await controller.saveTunnelToken({
+    token: 'cloudflared tunnel run --token token-123',
+  })
+
+  assert.equal(updates.length, 1)
+  assert.equal(updates[0].managed.tunnelToken, 'token-123')
+  assert.equal(startCalls.length, 1)
+  assert.equal(startCalls[0].tunnelToken, 'token-123')
+  assert.equal(snapshot.state, 'ready')
+  assert.equal(snapshot.tunnel.hasToken, true)
+  assert.equal(snapshot.tunnel.provider, 'cloudflare')
+})
+
+test('LocalOnboardingController reports public route mismatch during connectivity test', async (t) => {
+  const { LocalOnboardingController } = require(resolveCompiledDesktopModule('lib/local-onboarding.js'))
+  const originalFetch = global.fetch
+  global.fetch = async (url) => {
+    const requestUrl = String(url)
+    const baseUrl = requestUrl.startsWith('http://localhost:5737/')
+      ? 'https://node-0000.undefineds.co/'
+      : 'https://wrong-node.undefineds.co/'
+
+    return {
+      ok: true,
+      json: async () => ({
+        contract: 'linx-local-onboarding/v1',
+        baseUrl,
+        version: '0.3.29',
+      }),
+    }
+  }
+
+  t.after(() => {
+    global.fetch = originalFetch
+  })
+
+  const controller = new LocalOnboardingController({
+    stateDir: fs.mkdtempSync(path.join(os.tmpdir(), 'linx-local-onboarding-connectivity-')),
+    ensureBootstrapProvider: () => createProvider({ type: 'managed', value: 'node-0000.undefineds.co' }),
+    xpodManager: {
+      getStatus: async () => ({
+        running: true,
+        status: 'running',
+        localUrl: 'http://localhost:5737/',
+        baseUrl: 'https://node-0000.undefineds.co/',
+        provisioning: createProvisioning({
+          publicUrl: 'https://node-0000.undefineds.co/',
+          spDomain: 'node-0000.undefineds.co',
+        }),
+      }),
+      start: async () => {
+        throw new Error('should not start')
+      },
+    },
+  })
+
+  await controller.chooseSpace('local')
+  const snapshot = await controller.testConnectivity()
+
+  assert.equal(snapshot.connectivity.status, 'mismatch')
+  assert.equal(snapshot.connectivity.local.reachable, true)
+  assert.equal(snapshot.connectivity.public.reachable, true)
+  assert.equal(snapshot.connectivity.public.sameNode, false)
+})

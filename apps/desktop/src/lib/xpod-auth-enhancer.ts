@@ -1,4 +1,6 @@
+const XPOD_INDEX_PATH = '/.account/'
 const XPOD_ACCOUNT_PATH = '/.account/account/'
+const XPOD_CREATE_POD_PATH = '/.account/create-pod/'
 const XPOD_CONSENT_PATH = '/.account/oidc/consent/'
 const XPOD_PASSWORD_LOGIN_PATH = '/.account/login/password/'
 const XPOD_PASSWORD_REGISTER_PATH = '/.account/login/password/register/'
@@ -9,11 +11,22 @@ const INSTALL_FLAG = '__LINX_XPOD_AUTH_ENHANCER__'
 const PENDING_POD_KEY = 'linx:xpod:pending-pod-creation'
 const PENDING_USERNAME_KEY = 'linx:xpod:pending-username'
 const SUBMITTED_USERNAME_KEY = 'linx:xpod:submitted-username'
+const NEW_DOCUMENT_SCRIPT_TIMEOUT_MS = 750
 
 export interface ScriptInjectionTarget {
   getURL(): string
   executeJavaScript(code: string, userGesture?: boolean): Promise<unknown>
 }
+
+export interface NewDocumentScriptInjectionTarget {
+  debugger?: {
+    isAttached(): boolean
+    attach(protocolVersion?: string): void
+    sendCommand(command: string, params?: Record<string, unknown>): Promise<unknown>
+  }
+}
+
+const newDocumentScriptIdentifiers = new WeakMap<object, string>()
 
 export function normalizeXpodPathname(pathname: string): string {
   if (!pathname) {
@@ -26,6 +39,22 @@ export function normalizeXpodPathname(pathname: string): string {
 export function isXpodAccountPageUrl(url: string): boolean {
   try {
     return normalizeXpodPathname(new URL(url).pathname) === XPOD_ACCOUNT_PATH
+  } catch {
+    return false
+  }
+}
+
+export function isXpodIndexPageUrl(url: string): boolean {
+  try {
+    return normalizeXpodPathname(new URL(url).pathname) === XPOD_INDEX_PATH
+  } catch {
+    return false
+  }
+}
+
+export function isXpodCreatePodPageUrl(url: string): boolean {
+  try {
+    return normalizeXpodPathname(new URL(url).pathname) === XPOD_CREATE_POD_PATH
   } catch {
     return false
   }
@@ -57,7 +86,9 @@ export function isXpodPasswordLoginPageUrl(url: string): boolean {
 
 export function isXpodAuthPageUrl(url: string): boolean {
   return (
-    isXpodAccountPageUrl(url)
+    isXpodIndexPageUrl(url)
+    || isXpodAccountPageUrl(url)
+    || isXpodCreatePodPageUrl(url)
     || isXpodConsentPageUrl(url)
     || isXpodPasswordLoginPageUrl(url)
     || isXpodPasswordRegisterPageUrl(url)
@@ -89,7 +120,9 @@ export function buildXpodAuthEnhancerScript(): string {
     "    return 'already-installed';",
     '  }',
     '  globalThis[INSTALL_FLAG] = true;',
+    `  const INDEX_PATH = ${JSON.stringify(XPOD_INDEX_PATH)};`,
     `  const ACCOUNT_PATH = ${JSON.stringify(XPOD_ACCOUNT_PATH)};`,
+    `  const CREATE_POD_PATH = ${JSON.stringify(XPOD_CREATE_POD_PATH)};`,
     `  const CONSENT_PATH = ${JSON.stringify(XPOD_CONSENT_PATH)};`,
     `  const LOGIN_PATH = ${JSON.stringify(XPOD_PASSWORD_LOGIN_PATH)};`,
     `  const REGISTER_PATH = ${JSON.stringify(XPOD_PASSWORD_REGISTER_PATH)};`,
@@ -108,6 +141,8 @@ export function buildXpodAuthEnhancerScript(): string {
     '    usernameCheckSerial: 0,',
     '    registerSubmitUsername: null,',
     '    scopedEntries: null,',
+    '    accountWebIds: null,',
+    '    accountPodUrl: null,',
     '  };',
     '  const wait = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));',
     '  const nativePushState = window.history.pushState.bind(window.history);',
@@ -118,6 +153,14 @@ export function buildXpodAuthEnhancerScript(): string {
     "    return pathname.endsWith('/') ? pathname : `${pathname}/`;",
     '  };',
     '  const currentPathname = () => normalizePathname(window.location.pathname);',
+    '  const isAccountDashboardPath = () => {',
+    '    const pathname = currentPathname();',
+    '    return pathname === INDEX_PATH || pathname === ACCOUNT_PATH;',
+    '  };',
+    '  const isAccountManagementPath = () => {',
+    '    const pathname = currentPathname();',
+    '    return pathname === INDEX_PATH || pathname === ACCOUNT_PATH || pathname === CREATE_POD_PATH;',
+    '  };',
     '  const normalizeUsername = (value) => value.trim().toLowerCase();',
     '  const isValidUsername = (value) => /^[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])$/.test(value);',
     '  const getProvisionCode = () => {',
@@ -139,6 +182,16 @@ export function buildXpodAuthEnhancerScript(): string {
     '  const normalizeWebIds = (webIds) => Array.isArray(webIds)',
     '    ? webIds.filter((value) => typeof value === "string" && value.length > 0)',
     '    : [];',
+    '  const deriveUsernameFromWebId = (webId) => {',
+    '    if (typeof webId !== "string" || !webId.trim()) return null;',
+    '    try {',
+    '      const parsed = new URL(webId);',
+    '      const [slug] = parsed.pathname.split("/").filter(Boolean);',
+    '      return slug && isValidUsername(slug) ? slug : null;',
+    '    } catch {',
+    '      return null;',
+    '    }',
+    '  };',
     '  const lookupScopedWebIdEntries = async (webIds) => {',
     '    const payload = decodeProvisionPayload();',
     '    const candidates = normalizeWebIds(webIds);',
@@ -190,13 +243,38 @@ export function buildXpodAuthEnhancerScript(): string {
     '    if (!target) return false;',
     '    return getProvisionStorageRoots().some((root) => target === root || target.startsWith(root));',
     '  };',
+    '  const resolveUsernameProbeUrl = (username) => {',
+    '    const payload = decodeProvisionPayload();',
+    '    const root = typeof payload?.spUrl === "string" && payload.spUrl.trim()',
+    '      ? payload.spUrl.trim()',
+    '      : getProvisionStorageRoots()[0] || window.location.origin;',
+    '    return new URL(`${username}/`, root).toString();',
+    '  };',
+    '  const checkLocalUsernameAvailability = async (username) => {',
+    '    const payload = decodeProvisionPayload();',
+    '    if (!payload || typeof payload.spUrl !== "string" || typeof payload.serviceToken !== "string") {',
+    '      return null;',
+    '    }',
+    '    const targetUrl = new URL(`/provision/pods/${encodeURIComponent(username)}`, payload.spUrl).toString();',
+    '    const response = await nativeFetch(targetUrl, {',
+    '      method: "GET",',
+    '      headers: {',
+    '        Accept: "application/json",',
+    '        Authorization: `Bearer ${payload.serviceToken}`,',
+    '      },',
+    '    });',
+    '    if (response.status === 404) return true;',
+    '    if (response.ok || response.status === 409) return false;',
+    '    return null;',
+    '  };',
     '  const isAccountResourceRequest = (resource, init) => {',
     '    if (!getProvisionCode()) return false;',
-    '    if (currentPathname() !== ACCOUNT_PATH) return false;',
+    '    if (!isAccountManagementPath()) return false;',
     '    if (getRequestMethod(resource, init) !== "GET") return false;',
     '    try {',
     '      const target = new URL(getRequestUrl(resource), window.location.href);',
-    '      return target.origin === window.location.origin && normalizePathname(target.pathname).startsWith(ACCOUNT_PATH);',
+    '      const targetPath = normalizePathname(target.pathname);',
+    '      return target.origin === window.location.origin && (targetPath === INDEX_PATH || targetPath.startsWith(ACCOUNT_PATH));',
     '    } catch {',
     '      return false;',
     '    }',
@@ -213,7 +291,8 @@ export function buildXpodAuthEnhancerScript(): string {
     '  const scopeAccountWebIdPayload = async (payload) => {',
     '    const links = payload?.webIdLinks;',
     '    if (!links || typeof links !== "object" || Array.isArray(links)) return payload;',
-    '    const entries = await getScopedEntries(Object.keys(links));',
+    '    state.accountWebIds = Object.keys(links);',
+    '    const entries = await getScopedEntries(state.accountWebIds);',
     '    const allowed = new Set(entries.map((entry) => entry.webId));',
     '    return {',
     '      ...payload,',
@@ -232,6 +311,13 @@ export function buildXpodAuthEnhancerScript(): string {
     '      ...payload,',
     '      pods: Object.fromEntries(entries.map((entry) => [ensureTrailingSlash(entry.storageUrl) || entry.storageUrl, ""])),',
     '    };',
+    '  };',
+    '  const captureAccountPodControl = (payload) => {',
+    '    const podUrl = payload?.controls?.account?.pod;',
+    '    if (typeof podUrl === "string" && podUrl.length > 0) {',
+    '      state.accountPodUrl = podUrl;',
+    '    }',
+    '    return payload;',
     '  };',
     '  const scopeAccountCredentialPayload = async (payload) => {',
     '    const credentials = payload?.clientCredentials;',
@@ -262,6 +348,7 @@ export function buildXpodAuthEnhancerScript(): string {
     '    const payload = await response.clone().json().catch(() => null);',
     '    if (!payload || typeof payload !== "object") return response;',
     '    let nextPayload = payload;',
+    '    nextPayload = captureAccountPodControl(nextPayload);',
     '    if ("webIdLinks" in nextPayload) nextPayload = await scopeAccountWebIdPayload(nextPayload);',
     '    if ("pods" in nextPayload) nextPayload = await scopeAccountPodPayload(nextPayload);',
     '    if ("clientCredentials" in nextPayload) nextPayload = await scopeAccountCredentialPayload(nextPayload);',
@@ -311,7 +398,7 @@ export function buildXpodAuthEnhancerScript(): string {
     '  };',
     '  const shouldAttachProvisionCode = (resource, init) => {',
     '    if (!getProvisionCode()) return false;',
-    '    if (currentPathname() !== ACCOUNT_PATH) return false;',
+    '    if (!isAccountManagementPath()) return false;',
     '    const method = getRequestMethod(resource, init);',
     '    if (method !== "POST") return false;',
     '    try {',
@@ -442,6 +529,9 @@ export function buildXpodAuthEnhancerScript(): string {
     '      if (!response.ok) return [];',
     '      const payload = await response.json().catch(() => ({}));',
     '      if (!Array.isArray(payload.webIds)) return [];',
+    '      if (Array.isArray(payload.entries)) {',
+    '        state.scopedEntries = payload.entries.filter((entry) => entry && typeof entry.webId === "string");',
+    '      }',
     '      return payload.webIds.filter((value) => typeof value === "string" && value.length > 0);',
     '    } catch (error) {',
     '      console.warn("[LinX] Failed to query WebIDs during auth enhancement:", error);',
@@ -483,7 +573,7 @@ export function buildXpodAuthEnhancerScript(): string {
     '  };',
     '  const isCreatePodForm = (form) => {',
     '    if (!(form instanceof HTMLFormElement)) return false;',
-    '    const nameInput = form.querySelector(\'input[placeholder="my-pod"]\');',
+    '    const nameInput = form.querySelector(\'input[placeholder="my-pod"], input[name="username"]\');',
     '    if (!(nameInput instanceof HTMLInputElement) || !nameInput.value.trim()) return false;',
     '    return Array.from(form.querySelectorAll("button")).some((button) => /create/i.test(button.textContent || ""));',
     '  };',
@@ -567,7 +657,21 @@ export function buildXpodAuthEnhancerScript(): string {
     '    input.dataset.linxUsernameState = "checking";',
     '    updateRegisterUsernameStatus(input, "checking", "正在检查可用性…");',
     '    try {',
-    '      const targetUrl = new URL(`${username}/`, window.location.origin).toString();',
+    '      const localAvailable = await checkLocalUsernameAvailability(username);',
+    '      if (input.dataset.linxUsernameRequestId !== requestId) {',
+    '        return null;',
+    '      }',
+    '      if (localAvailable !== null) {',
+    '        const nextState = localAvailable ? "available" : "unavailable";',
+    '        input.dataset.linxUsernameState = nextState;',
+    '        updateRegisterUsernameStatus(',
+    '          input,',
+    '          localAvailable ? "available" : "error",',
+    '          localAvailable ? "Pod 地址可用" : "这个 Pod 地址已存在。",',
+    '        );',
+    '        return localAvailable;',
+    '      }',
+    '      const targetUrl = resolveUsernameProbeUrl(username);',
     '      const response = await window.fetch(targetUrl, {',
     '        method: "GET",',
     '        redirect: "manual",',
@@ -688,6 +792,122 @@ export function buildXpodAuthEnhancerScript(): string {
     '      scheduleUsernameAvailabilityCheck(input);',
     '    }',
     '  };',
+    '  const ensureLocalFirstPodPrompt = () => {',
+    '    if (!getProvisionCode()) return;',
+    '    if (!isAccountManagementPath()) return;',
+    '    const existing = document.querySelector(\'[data-linx-role="local-first-pod-prompt"]\');',
+    '    const { emptyState } = getAccountPodElements();',
+    '    const hasScopedEntries = Array.isArray(state.scopedEntries) && state.scopedEntries.length > 0;',
+    '    const hasVisiblePod = Array.from(document.querySelectorAll("a")).some((link) =>',
+    '      link instanceof HTMLAnchorElement && urlMatchesProvisionStorage(link.href),',
+    '    );',
+    '    if (hasScopedEntries || hasVisiblePod) {',
+    '      if (existing instanceof HTMLElement) existing.remove();',
+    '      return;',
+    '    }',
+    '    const accountSection = emptyState instanceof HTMLElement',
+    '      ? emptyState.closest("section") || emptyState.closest("div")',
+    '      : null;',
+    '    const fallbackHost = document.querySelector("main");',
+    '    const host = accountSection instanceof HTMLElement ? accountSection : fallbackHost;',
+    '    if (!(host instanceof HTMLElement)) return;',
+    '    const candidate = getPendingUsername() || deriveUsernameFromWebId((state.accountWebIds || [])[0]);',
+    '    if (existing instanceof HTMLElement && existing.isConnected) {',
+    '      const existingInput = existing.querySelector(\'input[name="username"]\');',
+    '      if (existingInput instanceof HTMLInputElement && !existingInput.value.trim() && candidate) {',
+    '        existingInput.value = candidate;',
+    '        scheduleUsernameAvailabilityCheck(existingInput);',
+    '      }',
+    '      return;',
+    '    }',
+    '    const prompt = document.createElement("div");',
+    '    prompt.dataset.linxRole = "local-first-pod-prompt";',
+    '    prompt.className = "mb-4 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm";',
+    '    const heading = document.createElement("p");',
+    '    heading.className = "text-sm font-medium text-zinc-700";',
+    '    heading.textContent = "Create storage for this Local space";',
+    '    const hint = document.createElement("p");',
+    '    hint.className = "mt-1 text-[11px] leading-relaxed text-zinc-500";',
+    '    hint.textContent = "This Cloud account has no Pod in the selected Local space yet. Pick a short name and LinX will bind it to this Local storage provider."; ',
+    '    const form = document.createElement("form");',
+    '    form.dataset.linxRole = "local-first-pod-form";',
+    '    form.className = "mt-3 space-y-2";',
+    '    const input = document.createElement("input");',
+    '    input.name = "username";',
+    '    input.type = "text";',
+    '    input.required = true;',
+    '    input.autocomplete = "username";',
+    '    input.placeholder = "alice";',
+    '    input.className = "w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm text-zinc-700 focus:border-[#7C4DFF] focus:outline-none";',
+    '    if (candidate) input.value = candidate;',
+    '    const button = document.createElement("button");',
+    '    button.type = "submit";',
+    '    button.className = "w-full py-2.5 bg-[#7C4DFF] hover:bg-[#6B3FE8] text-white rounded-xl text-xs font-medium disabled:opacity-50 transition-colors";',
+    '    button.textContent = "Create Local storage";',
+    '    form.appendChild(input);',
+    '    form.appendChild(button);',
+    '    form.addEventListener("submit", (event) => {',
+    '      event.preventDefault();',
+    '      clearInlineAlert("local-first-pod");',
+    '      const username = normalizeUsername(input.value);',
+    '      input.value = username;',
+    '      if (!isValidUsername(username)) {',
+    '        showInlineAlert("local-first-pod", "Username 只能包含小写字母、数字和连字符。");',
+    '        return;',
+    '      }',
+    '      void (async () => {',
+    '        button.disabled = true;',
+    '        button.textContent = "Checking…";',
+    '        const available = await checkUsernameAvailability(input, true);',
+    '        if (available !== true) {',
+    '          button.disabled = false;',
+    '          button.textContent = "Create Local storage";',
+    '          showInlineAlert("local-first-pod", available === false ? "这个 Pod 地址已存在，请换一个用户名。" : "暂时无法验证 username 可用性，请稍后重试。");',
+    '          return;',
+    '        }',
+    '        setPendingUsername(username);',
+    '        button.textContent = "Preparing…";',
+    '        markPendingPodCreation();',
+    '        const createUrl = state.accountPodUrl;',
+    '        if (typeof createUrl === "string" && createUrl.length > 0) {',
+    '          try {',
+    '            const response = await window.fetch(createUrl, {',
+    '              method: "POST",',
+    '              headers: { "Content-Type": "application/json", Accept: "application/json" },',
+    '              credentials: "include",',
+    '              body: JSON.stringify({ name: username }),',
+    '            });',
+    '            if (!response.ok) {',
+    '              const payload = await response.json().catch(() => ({}));',
+    '              throw new Error(payload?.message || `Failed to create pod: HTTP ${response.status}`);',
+    '            }',
+    '            clearPendingUsername();',
+    '            await wait(POLL_INTERVAL_MS);',
+    '            navigateWithinSpa(CONSENT_PATH);',
+    '            return;',
+    '          } catch (error) {',
+    '            clearPendingPodCreation();',
+    '            button.disabled = false;',
+    '            button.textContent = "Create Local storage";',
+    '            showInlineAlert("local-first-pod", error?.message || "Pod 创建失败，请稍后重试。");',
+    '            return;',
+    '          }',
+    '        }',
+    '        maybeAutoCreatePod();',
+    '      })();',
+    '    });',
+    '    prompt.appendChild(heading);',
+    '    prompt.appendChild(hint);',
+    '    prompt.appendChild(form);',
+    '    if (emptyState instanceof HTMLElement) {',
+    '      const wrapper = emptyState.closest("div");',
+    '      if (wrapper instanceof HTMLElement) wrapper.innerHTML = "";',
+    '      (wrapper instanceof HTMLElement ? wrapper : emptyState).appendChild(prompt);',
+    '    } else {',
+    '      host.insertAdjacentElement("afterbegin", prompt);',
+    '    }',
+    '    scheduleUsernameAvailabilityCheck(input);',
+    '  };',
     '  const ensureRegisterUsernameField = () => {',
     '    if (!isRegisterView()) {',
     '      return;',
@@ -729,7 +949,7 @@ export function buildXpodAuthEnhancerScript(): string {
     '    bindRegisterUsernameFieldBehavior();',
     '  };',
     '  const maybeAutoCreatePod = () => {',
-    '    if (currentPathname() !== ACCOUNT_PATH) {',
+    '    if (!isAccountDashboardPath()) {',
     '      return;',
     '    }',
     '    const username = getPendingUsername();',
@@ -737,13 +957,13 @@ export function buildXpodAuthEnhancerScript(): string {
     '      return;',
     '    }',
     '    const { addButton, form, nameInput, emptyState } = getAccountPodElements();',
-    '    if (!emptyState && !(form instanceof HTMLFormElement)) {',
-    '      clearPendingUsername();',
-    '      return;',
-    '    }',
     '    if (!(form instanceof HTMLFormElement)) {',
     '      if (addButton instanceof HTMLButtonElement) {',
     '        addButton.click();',
+    '        return;',
+    '      }',
+    '      if (!emptyState) {',
+    '        clearPendingUsername();',
     '      }',
     '      return;',
     '    }',
@@ -770,7 +990,7 @@ export function buildXpodAuthEnhancerScript(): string {
     '    }, 0);',
     '  };',
     '  const maybeContinuePendingConsent = () => {',
-    '    if (currentPathname() !== ACCOUNT_PATH || !hasPendingPodCreation()) {',
+    '    if (!isAccountDashboardPath() || !hasPendingPodCreation()) {',
     '      return;',
     '    }',
     '    const { continueLink } = getAccountPodElements();',
@@ -801,6 +1021,10 @@ export function buildXpodAuthEnhancerScript(): string {
     '    button.style.opacity = disabled ? "0.6" : "";',
     '  };',
     '  const getInlineAlertHost = (scope) => {',
+    '    if (scope === "local-first-pod") {',
+    '      const form = document.querySelector(\'[data-linx-role="local-first-pod-form"]\');',
+    '      return form instanceof HTMLFormElement ? form : null;',
+    '    }',
     '    if (scope === "pod-form") {',
     '      const { form } = getAccountPodElements();',
     '      return form instanceof HTMLFormElement ? form : null;',
@@ -817,10 +1041,12 @@ export function buildXpodAuthEnhancerScript(): string {
     '    if (alert instanceof HTMLElement) {',
     '      alert.remove();',
     '    }',
-    '    if (scope === "pod-form") {',
+    '    if (scope === "pod-form" || scope === "local-first-pod") {',
     '      const { nameInput } = getAccountPodElements();',
-    '      if (nameInput instanceof HTMLInputElement) {',
-    '        nameInput.classList.remove("border-destructive", "focus:border-destructive", "focus:ring-destructive/15");',
+    '      const localInput = document.querySelector(\'[data-linx-role="local-first-pod-form"] input[name="username"]\');',
+    '      const targetInput = nameInput instanceof HTMLInputElement ? nameInput : localInput;',
+    '      if (targetInput instanceof HTMLInputElement) {',
+    '        targetInput.classList.remove("border-destructive", "focus:border-destructive", "focus:ring-destructive/15");',
     '      }',
     '    }',
     '  };',
@@ -832,7 +1058,7 @@ export function buildXpodAuthEnhancerScript(): string {
     '    if (text.includes("There already is a login for this e-mail address")) {',
     '      return "这个邮箱已经注册，请直接登录或换一个邮箱。";',
     '    }',
-    '    if (text.includes("There already is a resource at")) {',
+    '    if (text.includes("There already is a resource at") || /Pod .+ already exists/i.test(text) || text.includes("Failed to create pod on SP: 409")) {',
     '      return "这个 Pod 地址已存在，请换一个用户名或 Pod 名称。";',
     '    }',
     '    if (text.includes("Passwords do not match")) {',
@@ -876,19 +1102,24 @@ export function buildXpodAuthEnhancerScript(): string {
     '    alert.className = "mb-3 rounded-xl border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs leading-relaxed text-destructive";',
     '    alert.textContent = normalizeAlertMessage(message);',
     '    host.insertAdjacentElement("afterbegin", alert);',
-    '    if (scope === "pod-form") {',
+    '    if (scope === "pod-form" || scope === "local-first-pod") {',
     '      const { nameInput } = getAccountPodElements();',
-    '      if (nameInput instanceof HTMLInputElement) {',
-    '        nameInput.classList.add("border-destructive", "focus:border-destructive", "focus:ring-destructive/15");',
-    '        nameInput.focus();',
-    '        nameInput.select();',
+    '      const localInput = document.querySelector(\'[data-linx-role="local-first-pod-form"] input[name="username"]\');',
+    '      const targetInput = nameInput instanceof HTMLInputElement ? nameInput : localInput;',
+    '      if (targetInput instanceof HTMLInputElement) {',
+    '        targetInput.classList.add("border-destructive", "focus:border-destructive", "focus:ring-destructive/15");',
+    '        targetInput.focus();',
+    '        targetInput.select();',
     '      }',
     '    }',
     '    alert.scrollIntoView({ block: "nearest" });',
     '    return true;',
     '  };',
     '  const resolveAlertScope = () => {',
-    '    if (currentPathname() === ACCOUNT_PATH && getInlineAlertHost("pod-form")) {',
+    '    if (isAccountManagementPath() && getInlineAlertHost("local-first-pod")) {',
+    '      return "local-first-pod";',
+    '    }',
+    '    if (isAccountManagementPath() && getInlineAlertHost("pod-form")) {',
     '      return "pod-form";',
     '    }',
     '    if ((currentPathname() === LOGIN_PATH || currentPathname() === REGISTER_PATH) && getInlineAlertHost("auth-form")) {',
@@ -1000,6 +1231,7 @@ export function buildXpodAuthEnhancerScript(): string {
     '    const form = event.target;',
     '    clearInlineAlert("auth-form");',
     '    clearInlineAlert("pod-form");',
+    '    clearInlineAlert("local-first-pod");',
     '    if (isRegisterView()) {',
       '      if (!(form instanceof HTMLFormElement)) {',
     '        return;',
@@ -1029,7 +1261,7 @@ export function buildXpodAuthEnhancerScript(): string {
     '      void ensureUsernameAvailabilityForSubmit(form, usernameInput);',
     '      return;',
     '    }',
-    '    if (currentPathname() !== ACCOUNT_PATH) {',
+    '    if (!isAccountManagementPath()) {',
     '      return;',
     '    }',
     '    if (isCreatePodForm(form)) {',
@@ -1037,8 +1269,9 @@ export function buildXpodAuthEnhancerScript(): string {
     '    }',
     '  }, true);',
     '  document.addEventListener("input", () => {',
-    '    if (currentPathname() === ACCOUNT_PATH) {',
+    '    if (isAccountManagementPath()) {',
     '      clearInlineAlert("pod-form");',
+    '      clearInlineAlert("local-first-pod");',
     '      return;',
     '    }',
     '    if (currentPathname() === LOGIN_PATH || currentPathname() === REGISTER_PATH) {',
@@ -1091,7 +1324,7 @@ export function buildXpodAuthEnhancerScript(): string {
     '        handleAuthFormError(errorNode.textContent);',
     '      }',
     '    }',
-    '    if (currentPathname() === ACCOUNT_PATH) {',
+    '    if (isAccountDashboardPath()) {',
     '      const submittedUsername = state.registerSubmitUsername || window.sessionStorage.getItem(SUBMITTED_USERNAME_KEY);',
     '      if (submittedUsername) {',
     '        setPendingUsername(submittedUsername);',
@@ -1099,6 +1332,7 @@ export function buildXpodAuthEnhancerScript(): string {
     '        window.sessionStorage.removeItem(SUBMITTED_USERNAME_KEY);',
     '      }',
     '      cleanupAccountPodHelperText();',
+    '      ensureLocalFirstPodPrompt();',
     '      maybeAutoCreatePod();',
     '      maybeContinuePendingConsent();',
     '    }',
@@ -1111,7 +1345,7 @@ export function buildXpodAuthEnhancerScript(): string {
     '  if (isRegisterView()) {',
     '    ensureRegisterUsernameField();',
     '  }',
-    '  if (currentPathname() === ACCOUNT_PATH) {',
+    '  if (isAccountDashboardPath()) {',
     '    const submittedUsername = state.registerSubmitUsername || window.sessionStorage.getItem(SUBMITTED_USERNAME_KEY);',
     '    if (submittedUsername) {',
     '      setPendingUsername(submittedUsername);',
@@ -1119,6 +1353,7 @@ export function buildXpodAuthEnhancerScript(): string {
     '      window.sessionStorage.removeItem(SUBMITTED_USERNAME_KEY);',
     '    }',
     '    cleanupAccountPodHelperText();',
+    '    ensureLocalFirstPodPrompt();',
     '    maybeAutoCreatePod();',
     '    maybeContinuePendingConsent();',
     '  }',
@@ -1129,6 +1364,81 @@ export function buildXpodAuthEnhancerScript(): string {
     "  return 'installed';",
     '})();',
   ].join('\n')
+}
+
+export function buildXpodAuthEnhancerPreloadScript(provisionCode?: string | null): string {
+  return [
+    '(() => {',
+    `  const providedProvisionCode = ${JSON.stringify(provisionCode ?? null)};`,
+    '  try {',
+    '    const urlProvisionCode = new URL(window.location.href).searchParams.get("provisionCode");',
+    '    const nextProvisionCode = providedProvisionCode || urlProvisionCode;',
+    '    if (nextProvisionCode) window.sessionStorage.setItem("provisionCode", nextProvisionCode);',
+    '  } catch {}',
+    '})();',
+    buildXpodAuthEnhancerScript(),
+  ].join('\n')
+}
+
+export async function installXpodAuthEnhancerOnNewDocument(
+  target: NewDocumentScriptInjectionTarget,
+  provisionCode?: string | null,
+): Promise<boolean> {
+  const pageDebugger = target.debugger
+  if (!pageDebugger) {
+    return false
+  }
+
+  if (!pageDebugger.isAttached()) {
+    pageDebugger.attach('1.3')
+  }
+
+  await withTimeout(
+    pageDebugger.sendCommand('Page.enable'),
+    NEW_DOCUMENT_SCRIPT_TIMEOUT_MS,
+  )
+
+  const previousIdentifier = newDocumentScriptIdentifiers.get(target)
+  if (previousIdentifier) {
+    await withTimeout(
+      pageDebugger.sendCommand('Page.removeScriptToEvaluateOnNewDocument', {
+        identifier: previousIdentifier,
+      }),
+      NEW_DOCUMENT_SCRIPT_TIMEOUT_MS,
+    ).catch(() => undefined)
+  }
+
+  const result = await withTimeout(
+    pageDebugger.sendCommand('Page.addScriptToEvaluateOnNewDocument', {
+      source: buildXpodAuthEnhancerPreloadScript(provisionCode),
+    }) as Promise<{ identifier?: string }>,
+    NEW_DOCUMENT_SCRIPT_TIMEOUT_MS,
+  )
+
+  if (typeof result.identifier === 'string') {
+    newDocumentScriptIdentifiers.set(target, result.identifier)
+  }
+
+  return true
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      reject(new Error(`Timed out installing xpod auth preload after ${timeoutMs}ms`))
+    }, timeoutMs)
+
+    promise.then(
+      (value) => {
+        clearTimeout(timeoutId)
+        resolve(value)
+      },
+      (error) => {
+        clearTimeout(timeoutId)
+        reject(error)
+      },
+    )
+  })
 }
 
 export async function installXpodAuthEnhancer(target: ScriptInjectionTarget): Promise<boolean> {

@@ -90,6 +90,30 @@ describe('login-utils post-login target helpers', () => {
     expect(getPendingLoginAttempt()).toBeNull()
   })
 
+  it('migrates legacy pending login attempts that used providerUrl/providerLabel', () => {
+    window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
+      issuerUrl: 'https://id.undefineds.co',
+      authorizationSurface: 'embedded',
+      returnToMicroAppId: 'chat',
+      providerUrl: 'https://node-0000.undefineds.co',
+      providerLabel: 'Local',
+      authorizationQuery: {
+        provisionCode: 'pc-legacy',
+      },
+    }))
+
+    expect(getPendingLoginAttempt()).toEqual({
+      issuerUrl: 'https://id.undefineds.co',
+      authorizationSurface: 'embedded',
+      returnToMicroAppId: 'chat',
+      storageProviderUrl: 'https://node-0000.undefineds.co',
+      storageProviderLabel: 'Local',
+      authorizationQuery: {
+        provisionCode: 'pc-legacy',
+      },
+    })
+  })
+
   it('captures callback errors before the auth library cleans the URL', () => {
     const captured = capturePendingCallbackError('http://localhost:5173/auth/callback?error=access_denied&error_description=Denied')
 
@@ -229,6 +253,24 @@ describe('login-utils post-login target helpers', () => {
       storageProviderUrl: 'https://cloud.example.com',
       storageProviderLabel: 'Cloud',
       webId: 'https://alice.example/profile/card#me',
+    })
+  })
+
+  it('migrates legacy remembered accounts that used providerUrl/providerLabel', () => {
+    window.localStorage.setItem('linx-remembered-account', JSON.stringify({
+      displayName: 'Ganlu05',
+      providerUrl: 'https://node-0000.undefineds.co',
+      providerLabel: 'Local',
+      webId: 'https://id.undefineds.co/ganlu05/profile/card#me',
+    }))
+
+    expect(getRememberedAccount()).toEqual({
+      displayName: 'Ganlu05',
+      issuerUrl: 'https://node-0000.undefineds.co',
+      issuerLabel: undefined,
+      storageProviderUrl: 'https://node-0000.undefineds.co',
+      storageProviderLabel: 'Local',
+      webId: 'https://id.undefineds.co/ganlu05/profile/card#me',
     })
   })
 

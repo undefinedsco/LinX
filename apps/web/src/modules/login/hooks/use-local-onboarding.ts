@@ -16,6 +16,8 @@ export function useLocalOnboarding() {
     localUrl: null,
     baseUrl: null,
     publicUrl: null,
+    tunnel: null,
+    connectivity: null,
     capabilities: null,
     cloudIdentityUrl: null,
     provisionCode: null,
@@ -87,6 +89,30 @@ export function useLocalOnboarding() {
     await desktopApi.app.openConfigWindow()
   }, [desktopApi])
 
+  const saveTunnelToken = useCallback(async (token: string) => {
+    if (!desktopApi?.localOnboarding?.saveTunnelToken) return unavailableSnapshot
+    setActing(true)
+    try {
+      const next = await desktopApi.localOnboarding.saveTunnelToken({ token })
+      setSnapshot(next)
+      return next
+    } finally {
+      setActing(false)
+    }
+  }, [desktopApi, unavailableSnapshot])
+
+  const testConnectivity = useCallback(async () => {
+    if (!desktopApi?.localOnboarding?.testConnectivity) return unavailableSnapshot
+    setActing(true)
+    try {
+      const next = await desktopApi.localOnboarding.testConnectivity()
+      setSnapshot(next)
+      return next
+    } finally {
+      setActing(false)
+    }
+  }, [desktopApi, unavailableSnapshot])
+
   return {
     snapshot: snapshot ?? unavailableSnapshot,
     loading,
@@ -94,6 +120,8 @@ export function useLocalOnboarding() {
     refresh,
     chooseSpace,
     continueLocal,
+    saveTunnelToken,
+    testConnectivity,
     openAdvancedSettings,
     isDesktop: Boolean(desktopApi?.localOnboarding),
   }

@@ -12,6 +12,12 @@ const {
   resolveXpodRuntimeVersion,
 } = require(resolveCompiledDesktopModule('lib/xpod-launch.js'))
 
+const cssImportRewriteRuntimeSource = `
+function rewriteConfigForFileUrlImportsIfNeeded() {}
+function rewriteConfigImports() {}
+pathToFileURL()
+`
+
 test('resolveXpodLaunchTarget prefers sibling xpod source by default in dev', () => {
   const sourceRoot = '/work/xpod'
   const target = resolveXpodLaunchTarget({
@@ -23,8 +29,10 @@ test('resolveXpodLaunchTarget prefers sibling xpod source by default in dev', ()
       filePath === `${sourceRoot}/package.json`
       || filePath === `${sourceRoot}/src/main.ts`
       || filePath === `${sourceRoot}/src/identity/oidc/ScopedPickWebIdHandler.ts`
+      || filePath === `${sourceRoot}/src/runtime/css-process.ts`
       || filePath === `${sourceRoot}/config/xpod.base.json`
     ),
+    readFileSync: () => cssImportRewriteRuntimeSource,
   })
 
   assert.deepEqual(target, {
@@ -55,9 +63,11 @@ test('resolveXpodLaunchTarget resolves nvm Bun when GUI PATH omits nvm', () => {
         filePath === `${sourceRoot}/package.json`
         || filePath === `${sourceRoot}/src/main.ts`
         || filePath === `${sourceRoot}/src/identity/oidc/ScopedPickWebIdHandler.ts`
+        || filePath === `${sourceRoot}/src/runtime/css-process.ts`
         || filePath === `${sourceRoot}/config/xpod.base.json`
         || fs.existsSync(filePath)
       ),
+      readFileSync: () => cssImportRewriteRuntimeSource,
     })
 
     assert.equal(target.kind, 'dev-source')
@@ -92,9 +102,11 @@ test('resolveXpodLaunchTarget can disable sibling xpod source and fall back to p
       || filePath === `${sourceRoot}/src/main.ts`
       || filePath === `${repoRoot}/package.json`
       || filePath === `${repoRoot}/dist/identity/oidc/ScopedPickWebIdHandler.js`
+      || filePath === `${repoRoot}/dist/runtime/css-process.js`
       || filePath === `${repoRoot}/config/xpod.base.json`
       || filePath === packageBin
     ),
+    readFileSync: () => cssImportRewriteRuntimeSource,
   })
 
   assert.deepEqual(target, {
@@ -115,8 +127,10 @@ test('resolveXpodLaunchTarget honors explicit LINX_XPOD_ROOT source path', () =>
       filePath === `${sourceRoot}/package.json`
       || filePath === `${sourceRoot}/src/main.ts`
       || filePath === `${sourceRoot}/src/identity/oidc/ScopedPickWebIdHandler.ts`
+      || filePath === `${sourceRoot}/src/runtime/css-process.ts`
       || filePath === `${sourceRoot}/config/xpod.base.json`
     ),
+    readFileSync: () => cssImportRewriteRuntimeSource,
   })
 
   assert.deepEqual(target, {
@@ -138,9 +152,11 @@ test('resolveXpodLaunchTarget prefers packaged single-file runtime when present'
     existsSync: (filePath) => (
       filePath === `${packagedRoot}/package.json`
       || filePath === `${packagedRoot}/dist/identity/oidc/ScopedPickWebIdHandler.js`
+      || filePath === `${packagedRoot}/dist/runtime/css-process.js`
       || filePath === `${packagedRoot}/config/xpod.base.json`
       || filePath === singleFile
     ),
+    readFileSync: () => cssImportRewriteRuntimeSource,
   })
 
   assert.deepEqual(target, {
@@ -162,9 +178,11 @@ test('resolveXpodLaunchTarget falls back to package bin in repo installs', () =>
     existsSync: (filePath) => (
       filePath === `${repoRoot}/package.json`
       || filePath === `${repoRoot}/dist/identity/oidc/ScopedPickWebIdHandler.js`
+      || filePath === `${repoRoot}/dist/runtime/css-process.js`
       || filePath === `${repoRoot}/config/xpod.base.json`
       || filePath === packageBin
     ),
+    readFileSync: () => cssImportRewriteRuntimeSource,
   })
 
   assert.deepEqual(target, {
@@ -207,9 +225,11 @@ test('resolveManagedXpodLaunchTarget installs with Bun before npm when Bun is co
     existsSync: (filePath) => {
       if (filePath === entryPath) return installed
       if (installed && filePath === `${runtimeRoot}/0.3.4/bun/node_modules/@undefineds.co/xpod/dist/identity/oidc/ScopedPickWebIdHandler.js`) return true
+      if (installed && filePath === `${runtimeRoot}/0.3.4/bun/node_modules/@undefineds.co/xpod/dist/runtime/css-process.js`) return true
       if (installed && filePath === `${runtimeRoot}/0.3.4/bun/node_modules/@undefineds.co/xpod/config/xpod.base.json`) return true
       return false
     },
+    readFileSync: () => cssImportRewriteRuntimeSource,
     onProgress: (item) => progress.push(item),
     which: (command) => command === 'bun' ? '/usr/local/bin/bun' : null,
   })
@@ -268,9 +288,11 @@ test('resolveManagedXpodLaunchTarget finds Bun outside GUI PATH for packaged app
       existsSync: (filePath) => {
         if (filePath === entryPath) return installed
         if (installed && filePath === `${runtimeRoot}/0.3.4/bun/node_modules/@undefineds.co/xpod/dist/identity/oidc/ScopedPickWebIdHandler.js`) return true
+        if (installed && filePath === `${runtimeRoot}/0.3.4/bun/node_modules/@undefineds.co/xpod/dist/runtime/css-process.js`) return true
         if (installed && filePath === `${runtimeRoot}/0.3.4/bun/node_modules/@undefineds.co/xpod/config/xpod.base.json`) return true
         return fs.existsSync(filePath)
       },
+      readFileSync: () => cssImportRewriteRuntimeSource,
     })
 
     assert.equal(target.kind, 'managed-bun-package')
@@ -321,9 +343,11 @@ test('resolveManagedXpodLaunchTarget skips old Bun candidates', async () => {
       existsSync: (filePath) => {
         if (filePath === entryPath) return installed
         if (installed && filePath === `${runtimeRoot}/0.3.4/bun/node_modules/@undefineds.co/xpod/dist/identity/oidc/ScopedPickWebIdHandler.js`) return true
+        if (installed && filePath === `${runtimeRoot}/0.3.4/bun/node_modules/@undefineds.co/xpod/dist/runtime/css-process.js`) return true
         if (installed && filePath === `${runtimeRoot}/0.3.4/bun/node_modules/@undefineds.co/xpod/config/xpod.base.json`) return true
         return fs.existsSync(filePath)
       },
+      readFileSync: () => cssImportRewriteRuntimeSource,
     })
 
     assert.equal(target.kind, 'managed-bun-package')
@@ -388,9 +412,11 @@ test('resolveManagedXpodLaunchTarget falls back to npm when Bun is missing', asy
     existsSync: (filePath) => {
       if (filePath === entryPath) return installed
       if (installed && filePath === `${runtimeRoot}/0.3.4/npm/node_modules/@undefineds.co/xpod/dist/identity/oidc/ScopedPickWebIdHandler.js`) return true
+      if (installed && filePath === `${runtimeRoot}/0.3.4/npm/node_modules/@undefineds.co/xpod/dist/runtime/css-process.js`) return true
       if (installed && filePath === `${runtimeRoot}/0.3.4/npm/node_modules/@undefineds.co/xpod/config/xpod.base.json`) return true
       return false
     },
+    readFileSync: () => cssImportRewriteRuntimeSource,
     commandExistsSync: (filePath) => (
       filePath === '/usr/local/bin/node'
       || filePath === '/usr/local/bin/npm'
@@ -447,9 +473,11 @@ test('resolveManagedXpodLaunchTarget uses embedded package only after runtime ma
     existsSync: (filePath) => (
       filePath === `${packagedRoot}/package.json`
       || filePath === `${packagedRoot}/dist/identity/oidc/ScopedPickWebIdHandler.js`
+      || filePath === `${packagedRoot}/dist/runtime/css-process.js`
       || filePath === `${packagedRoot}/config/xpod.base.json`
       || filePath === packageBin
     ),
+    readFileSync: () => cssImportRewriteRuntimeSource,
     commandExistsSync: () => false,
     which: () => null,
   })
@@ -493,10 +521,14 @@ test('resolveManagedXpodLaunchTarget falls back to embedded package when managed
       if (filePath === managedEntry) return installed
       if (filePath === `${packagedRoot}/package.json`) return true
       if (filePath === `${packagedRoot}/dist/identity/oidc/ScopedPickWebIdHandler.js`) return true
+      if (filePath === `${packagedRoot}/dist/runtime/css-process.js`) return true
       if (filePath === `${packagedRoot}/config/xpod.base.json`) return true
       if (filePath === packageBin) return true
       return false
     },
+    readFileSync: (filePath) => filePath.startsWith(packagedRoot)
+      ? cssImportRewriteRuntimeSource
+      : '',
     onProgress: (item) => progress.push(item),
     which: (command) => command === 'bun' ? '/usr/local/bin/bun' : null,
   })
@@ -523,5 +555,51 @@ test('resolveXpodLaunchTarget rejects old xpod runtimes without scoped WebID sel
       filePath === `${repoRoot}/package.json`
       || filePath === packageBin
     ),
-  }), /does not include scoped WebID selection/)
+  }), /scoped WebID selection/)
+})
+
+test('resolveXpodLaunchTarget rejects xpod runtimes without escaped CSS config import support', () => {
+  const repoRoot = '/repo/node_modules/@undefineds.co/xpod'
+  const packageBin = `${repoRoot}/bin/xpod.js`
+
+  assert.throws(() => resolveXpodLaunchTarget({
+    appIsPackaged: false,
+    desktopDir: '/repo/apps/desktop/dist',
+    cwd: '/repo',
+    env: {},
+    existsSync: (filePath) => (
+      filePath === `${repoRoot}/package.json`
+      || filePath === `${repoRoot}/dist/identity/oidc/ScopedPickWebIdHandler.js`
+      || filePath === `${repoRoot}/config/xpod.base.json`
+      || filePath === `${repoRoot}/dist/runtime/css-process.js`
+      || filePath === packageBin
+    ),
+    readFileSync: () => 'function oldRuntime() {}',
+  }), /escaped recursive CSS runtime config imports/)
+})
+
+test('resolveXpodLaunchTarget accepts package runtimes with escaped CSS config import support', () => {
+  const repoRoot = '/repo/node_modules/@undefineds.co/xpod'
+  const packageBin = `${repoRoot}/bin/xpod.js`
+
+  const target = resolveXpodLaunchTarget({
+    appIsPackaged: false,
+    desktopDir: '/repo/apps/desktop/dist',
+    cwd: '/repo',
+    env: {},
+    existsSync: (filePath) => (
+      filePath === `${repoRoot}/package.json`
+      || filePath === `${repoRoot}/dist/identity/oidc/ScopedPickWebIdHandler.js`
+      || filePath === `${repoRoot}/config/xpod.base.json`
+      || filePath === packageBin
+      || filePath === `${repoRoot}/dist/runtime/css-process.js`
+    ),
+    readFileSync: () => cssImportRewriteRuntimeSource,
+  })
+
+  assert.deepEqual(target, {
+    kind: 'package-bin',
+    rootDir: repoRoot,
+    entryPath: packageBin,
+  })
 })

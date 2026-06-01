@@ -1,6 +1,6 @@
 # xpod 需求：支持 LinX Desktop 本地部署
 
-> 状态：已按当前登录路径重写。旧版“用户手填平台分配域名”方案已废弃；当前 Local 默认由 Cloud provisioning 返回 Cloud-managed canonical `node-*.undefineds.co`，高级配置才使用用户自有域名。
+> 状态：已按当前登录路径重写。旧版“用户手填平台分配域名”方案已废弃；当前 Local 默认由 Cloud provisioning 分配 managed canonical，注册后与设备 nodeId 绑定并稳定复用，高级配置才使用用户自有域名。
 
 本文是 xpod 交付需求，不是登录模型主文档；只记录 LinX 需要 xpod
 稳定提供的配置和运行契约。
@@ -39,7 +39,7 @@ Standalone 下的取值规则以 `docs/local-sp-domain-and-tunnel.md` 为准。
 默认 Local 路径的 xpod 运行要求：
 
 - LinX 向 Cloud `/provision/nodes` 注册 Local node，请求 Cloud 分配 canonical 域名。
-- Cloud 返回 `spDomain` / `publicUrl`，例如 `https://node-0000.undefineds.co/`。
+- Cloud 返回 `spDomain` / `publicUrl`，例如 `https://node-0000.undefineds.co/` 或 `https://868c9f63-6b0e-4255-8f7f-f2e347908ba4.nodes.undefineds.co/`。
 - LinX 设置 `CSS_BASE_URL` 为 Cloud 返回的 canonical URL。
 - xpod 仍监听本机端口。
 - xpod 生成的 issuer、WebID、storage URL 必须使用 `CSS_BASE_URL`。
@@ -77,6 +77,7 @@ Standalone 下的取值规则以 `docs/local-sp-domain-and-tunnel.md` 为准。
 ## 不再支持的需求
 
 - 不再需要用户手填 `pods.undefineds.co` / `node-*.undefineds.co`。
+- 当前没有 Cloud 自动维护 Cloudflare CNAME/route 时，测试路径可继续使用已在 Cloudflare/tunnel 后台配置好的 `node-0000.undefineds.co`，但它仍是 Cloud-managed `spDomain`，不是用户自有 `publicUrl`。
 - 不再需要 Cloud 为 Local SP 分发隧道 token。
 - 不再要求用户填写平台生成的 Local 公网域名。
 - `CSS_BASE_STORAGE_DOMAIN` 不再是 Local onboarding 的用户配置项。

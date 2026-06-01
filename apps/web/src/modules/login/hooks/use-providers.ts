@@ -271,6 +271,11 @@ export function useProviders() {
     if (desktopApi?.localOnboarding) {
       const current = await desktopApi.localOnboarding.getSnapshot()
 
+      if (current.state === 'ready' && current.spaceKind === spaceKind) {
+        publishLocalOnboarding(current)
+        return current
+      }
+
       if (current.spaceKind !== spaceKind) {
         const chosen = await desktopApi.localOnboarding.chooseSpace(spaceKind)
         publishLocalOnboarding(chosen)
@@ -302,6 +307,8 @@ export function useProviders() {
           localUrl: 'http://localhost:5737/',
           baseUrl: 'http://localhost:5737/',
           publicUrl: null,
+          tunnel: null,
+          connectivity: null,
           capabilities: null,
           cloudIdentityUrl: null,
           provisionCode: null,
@@ -498,6 +505,8 @@ function buildServiceLocalSnapshot(
     localUrl,
     baseUrl,
     publicUrl: spaceKind === 'local' ? publicUrl : null,
+    tunnel: null,
+    connectivity: null,
     capabilities: null,
     cloudIdentityUrl: status.provisioning?.cloudIdentityUrl ?? null,
     provisionCode: status.provisioning?.provisionCode ?? null,

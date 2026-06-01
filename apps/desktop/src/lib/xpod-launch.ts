@@ -13,6 +13,7 @@ export interface XpodLaunchResolutionOptions {
   env?: NodeJS.ProcessEnv;
   resourcesPath?: string;
   existsSync?: (filePath: string) => boolean;
+  readFileSync?: (filePath: string, encoding: BufferEncoding) => string;
 }
 
 export interface XpodManagedRuntimeOptions extends XpodLaunchResolutionOptions {
@@ -221,7 +222,7 @@ function resolveXpodSourceTarget(options: XpodLaunchResolutionOptions): XpodLaun
     return null;
   }
 
-  assertXpodLoginRuntimeCapabilities(sourceRoot, existsSync);
+  assertXpodLoginRuntimeCapabilities(sourceRoot, existsSync, options.readFileSync);
 
   if (shouldPreferSourceRuntime(sourceRoot)) {
     const runtimeBinary = detectBunRuntime(options)?.binary ?? resolveBunRuntimeBinary(options);
@@ -262,7 +263,7 @@ function resolveEmbeddedOrInstalledPackageTarget(options: XpodLaunchResolutionOp
 
   const singleFile = singleFileCandidates.find(candidate => existsSync(candidate));
   if (singleFile) {
-    assertXpodLoginRuntimeCapabilities(rootDir, existsSync);
+    assertXpodLoginRuntimeCapabilities(rootDir, existsSync, options.readFileSync);
     return {
       kind: 'single-file',
       rootDir,
@@ -272,7 +273,7 @@ function resolveEmbeddedOrInstalledPackageTarget(options: XpodLaunchResolutionOp
 
   const packageBin = path.join(rootDir, 'bin', 'xpod.js');
   if (existsSync(packageBin)) {
-    assertXpodLoginRuntimeCapabilities(rootDir, existsSync);
+    assertXpodLoginRuntimeCapabilities(rootDir, existsSync, options.readFileSync);
     return {
       kind: 'package-bin',
       rootDir,
@@ -454,6 +455,7 @@ function ensureManagedPackageTarget(options: XpodManagedRuntimeOptions & {
   assertXpodLoginRuntimeCapabilities(
     path.join(rootDir, 'node_modules', '@undefineds.co', 'xpod'),
     existsSync,
+    options.readFileSync,
   );
 
   reportProgress(options, {
@@ -681,19 +683,62 @@ function shouldPreferSourceRuntime(sourceRoot: string): boolean {
 function assertXpodLoginRuntimeCapabilities(
   rootDir: string,
   existsSync: (filePath: string) => boolean,
+  readFileSync: (filePath: string, encoding: BufferEncoding) => string = fs.readFileSync,
 ): void {
   const hasScopedPickWebIdHandler =
     existsSync(path.join(rootDir, 'src', 'identity', 'oidc', 'ScopedPickWebIdHandler.ts'))
     || existsSync(path.join(rootDir, 'dist', 'identity', 'oidc', 'ScopedPickWebIdHandler.js'));
   const hasScopedPickerConfig = existsSync(path.join(rootDir, 'config', 'xpod.base.json'));
+  const hasEscapedCssRuntimeConfigImports =
+    hasCssRuntimeConfigImportRewrite(rootDir, existsSync, readFileSync);
 
-  if (hasScopedPickWebIdHandler && hasScopedPickerConfig) {
+  if (hasScopedPickWebIdHandler && hasScopedPickerConfig && hasEscapedCssRuntimeConfigImports) {
     return;
   }
 
+  const missing = [
+    !hasScopedPickWebIdHandler ? 'scoped WebID selection handler' : null,
+    !hasScopedPickerConfig ? 'scoped WebID picker config' : null,
+    !hasEscapedCssRuntimeConfigImports ? 'escaped recursive CSS runtime config imports' : null,
+  ].filter((item): item is string => Boolean(item));
+
   throw new Error([
-    `xpod runtime at ${rootDir} does not include scoped WebID selection.`,
-    'Local login would be able to expose Cloud Pods from the same IdP account.',
-    'Use a current xpod checkout via LINX_XPOD_ROOT or install an @undefineds.co/xpod version that contains ScopedPickWebIdHandler.',
+    `xpod runtime at ${rootDir} is missing required Local login/startup capabilities.`,
+    ...missing.map((item) => `Missing: ${item}`),
+    'Local login would be able to expose Cloud Pods from the same IdP account or hang when CSS config paths contain spaces.',
+    'Use a current xpod checkout via LINX_XPOD_ROOT or install an @undefineds.co/xpod version that contains these capabilities.',
   ].join('\n'));
+}
+
+function hasCssRuntimeConfigImportRewrite(
+  rootDir: string,
+  existsSync: (filePath: string) => boolean,
+  readFileSync: (filePath: string, encoding: BufferEncoding) => string,
+): boolean {
+  const candidates = [
+    path.join(rootDir, 'src', 'runtime', 'css-process.ts'),
+    path.join(rootDir, 'dist', 'runtime', 'css-process.js'),
+    path.join(rootDir, 'dist', 'runtime', 'css-process.cjs'),
+  ];
+
+  for (const candidate of candidates) {
+    if (!existsSync(candidate)) {
+      continue;
+    }
+
+    try {
+      const content = readFileSync(candidate, 'utf-8');
+      if (
+        content.includes('rewriteConfigForFileUrlImportsIfNeeded') &&
+        content.includes('rewriteConfigImports') &&
+        content.includes('pathToFileURL')
+      ) {
+        return true;
+      }
+    } catch {
+      // Try the next candidate. A package without readable runtime helpers is not usable here.
+    }
+  }
+
+  return false;
 }

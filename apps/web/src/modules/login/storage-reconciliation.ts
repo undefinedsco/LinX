@@ -3,6 +3,7 @@ export interface StorageConflictDetectionInput {
   storageProviderUrl?: string
   storageProviderPublicUrl?: string | null
   strictStoragePath?: boolean
+  fetch?: typeof fetch
 }
 
 export interface StorageConflict {
@@ -10,9 +11,14 @@ export interface StorageConflict {
   actualStorageUrl: string | null
   storageProviderUrl: string | null
   managementUrl: string | null
+  setupUrl?: string | null
+  setupKind?: 'account-management' | 'create-pod'
 }
 
 const SOLID_STORAGE_IRI = 'http://www.w3.org/ns/solid/terms#storage'
+const PROFILE_AUTH_FALLBACK_STATUSES = new Set([401, 403])
+const PROFILE_AUTH_RETRY_ATTEMPTS = 4
+const PROFILE_AUTH_RETRY_DELAY_MS = 250
 
 export async function detectStorageConflict(
   input: StorageConflictDetectionInput,
@@ -25,7 +31,7 @@ export async function detectStorageConflict(
     return null
   }
 
-  const actualStorageUrl = await fetchProfileStorageUrl(input.webId)
+  const actualStorageUrl = await fetchProfileStorageUrl(input.webId, input.fetch)
   if (actualStorageUrl) {
     if (strictStoragePath && normalizeUrl(expectedStorageUrl) === normalizeUrl(actualStorageUrl)) {
       return null
@@ -73,17 +79,66 @@ export function buildAccountManagementUrl(storageProviderUrl?: string | null): s
   return `${baseUrl}.account/account/`
 }
 
-export async function fetchProfileStorageUrl(webId: string): Promise<string | null> {
-  const response = await fetch(webId, {
-    headers: {
-      Accept: 'application/ld+json, application/json;q=0.9, text/turtle;q=0.8',
-    },
-  })
+export async function fetchProfileStorageUrl(
+  webId: string,
+  fetcher: typeof fetch = fetch,
+): Promise<string | null> {
+  let response = await fetchProfile(webId, fetcher)
+
+  if (fetcher !== fetch && isProfileAuthFailure(response)) {
+    response = await retryAuthenticatedProfileFetch(webId, fetcher, response)
+  }
+
+  if (!response.ok && fetcher !== fetch && isProfileAuthFailure(response)) {
+    const publicResponse = await fetchProfile(webId, fetch)
+    if (publicResponse.ok) {
+      return parseProfileStorageUrl(publicResponse)
+    }
+  }
 
   if (!response.ok) {
     throw new Error(`读取 WebID Profile 失败：HTTP ${response.status}`)
   }
 
+  return parseProfileStorageUrl(response)
+}
+
+async function retryAuthenticatedProfileFetch(
+  webId: string,
+  fetcher: typeof fetch,
+  initialResponse: Response,
+): Promise<Response> {
+  let response = initialResponse
+
+  for (let attempt = 1; attempt < PROFILE_AUTH_RETRY_ATTEMPTS; attempt += 1) {
+    if (!isProfileAuthFailure(response)) {
+      return response
+    }
+
+    await delay(PROFILE_AUTH_RETRY_DELAY_MS)
+    response = await fetchProfile(webId, fetcher)
+  }
+
+  return response
+}
+
+function isProfileAuthFailure(response: Response): boolean {
+  return !response.ok && PROFILE_AUTH_FALLBACK_STATUSES.has(response.status)
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function fetchProfile(webId: string, fetcher: typeof fetch): Promise<Response> {
+  return fetcher(webId, {
+    headers: {
+      Accept: 'application/ld+json, application/json;q=0.9, text/turtle;q=0.8',
+    },
+  })
+}
+
+async function parseProfileStorageUrl(response: Response): Promise<string | null> {
   const contentType = response.headers.get('content-type') || ''
   const body = await response.text()
 

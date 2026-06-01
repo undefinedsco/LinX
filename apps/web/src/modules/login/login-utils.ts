@@ -147,7 +147,10 @@ export function getPendingLoginAttempt(): PendingLoginAttempt | null {
   if (!raw) return null
 
   try {
-    const parsed = JSON.parse(raw) as Partial<PendingLoginAttempt>
+    const parsed = JSON.parse(raw) as Partial<PendingLoginAttempt> & {
+      providerUrl?: string
+      providerLabel?: string
+    }
     if (
       typeof parsed.issuerUrl === 'string'
       && (parsed.authorizationSurface === 'window'
@@ -155,21 +158,18 @@ export function getPendingLoginAttempt(): PendingLoginAttempt | null {
         || parsed.authorizationSurface === 'external')
       && isValidMicroAppId(parsed.returnToMicroAppId)
     ) {
+      const storageProviderUrl = normalizeStoredUrl(parsed.storageProviderUrl)
+        ?? normalizeStoredUrl(parsed.providerUrl)
+      const storageProviderLabel = parsed.storageProviderLabel ?? parsed.providerLabel
       const attempt: PendingLoginAttempt = {
         issuerUrl: parsed.issuerUrl,
         authorizationSurface: parsed.authorizationSurface,
         returnToMicroAppId: parsed.returnToMicroAppId,
       }
-      const storageProviderUrl = typeof parsed.storageProviderUrl === 'string'
-        ? parsed.storageProviderUrl
-        : undefined
       if (storageProviderUrl) {
         attempt.storageProviderUrl = storageProviderUrl
       }
-      const storageProviderLabel = typeof parsed.storageProviderLabel === 'string'
-        ? parsed.storageProviderLabel
-        : undefined
-      if (storageProviderLabel) {
+      if (typeof storageProviderLabel === 'string' && storageProviderLabel.trim().length > 0) {
         attempt.storageProviderLabel = storageProviderLabel
       }
       const authorizationQuery = sanitizeAuthorizationQuery(parsed.authorizationQuery)
@@ -233,6 +233,12 @@ function sanitizeAuthorizationQuery(value: unknown): Record<string, string> | un
   ) as Array<[string, string]>
   if (entries.length === 0) return undefined
   return Object.fromEntries(entries)
+}
+
+function normalizeStoredUrl(url?: string | null): string | null {
+  if (typeof url !== 'string') return null
+  const trimmed = url.trim()
+  return trimmed.length > 0 ? trimmed : null
 }
 
 export function capturePendingCallbackError(url?: string): PendingCallbackError | null {

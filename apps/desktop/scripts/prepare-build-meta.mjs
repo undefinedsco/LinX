@@ -29,11 +29,13 @@ function normalizeVersion(raw) {
 }
 
 function resolveXpodVersion(rootPackageJson, desktopRoot) {
-  const resourcePackageVersion = readXpodResourcePackageVersion(desktopRoot)
-  const version = resourcePackageVersion
-    || rootPackageJson.dependencies?.['@undefineds.co/xpod']
+  const dependencyVersion = rootPackageJson.dependencies?.['@undefineds.co/xpod']
     || rootPackageJson.optionalDependencies?.['@undefineds.co/xpod']
     || rootPackageJson.devDependencies?.['@undefineds.co/xpod']
+  const resourcePackageVersion = shouldUseResourcePackageVersion()
+    ? readXpodResourcePackageVersion(desktopRoot)
+    : null
+  const version = resourcePackageVersion || dependencyVersion
 
   if (typeof version !== 'string' || !/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version)) {
     throw new Error('Root package.json must declare an exact @undefineds.co/xpod version for desktop runtime packaging.')
@@ -50,4 +52,8 @@ function readXpodResourcePackageVersion(desktopRoot) {
   } catch {
     return null
   }
+}
+
+function shouldUseResourcePackageVersion() {
+  return process.env.LINX_DESKTOP_USE_XPOD_RESOURCE_VERSION === '1'
 }

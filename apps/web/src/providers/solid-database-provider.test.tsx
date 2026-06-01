@@ -83,6 +83,8 @@ describe('SolidDatabaseProvider', () => {
     sessionState.session.info.isLoggedIn = true
     sessionState.session.info.sessionId = 'session-1'
     sessionState.session.info.webId = 'https://id.example.com/alice/profile/card#me'
+    sessionState.session.fetch.mockReset()
+    sessionState.session.fetch.mockImplementation((...args: Parameters<typeof fetch>) => fetch(...args))
     sessionState.sessionRequestInProgress = false
     window.sessionStorage.clear()
     useLoginStore.setState({
@@ -619,6 +621,53 @@ describe('SolidDatabaseProvider', () => {
 
     await flushAsyncWork()
 
+    expect(createLinxSolidDatabaseMock).toHaveBeenCalledWith(sessionState.session, {
+      initTimeoutMs: 90_000,
+      podUrl: 'https://solid.example.net/users/bob/',
+    })
+  })
+
+  it('uses authenticated session fetch when resolving a custom provider profile storage', async () => {
+    const db = {}
+    createLinxSolidDatabaseMock.mockResolvedValue(db)
+    sessionState.session.info.webId = 'https://solid.example.net/bob/profile/card#me'
+    const anonymousFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      headers: new Headers(),
+      text: async () => 'unauthorized',
+    })
+    vi.stubGlobal('fetch', anonymousFetch)
+    sessionState.session.fetch.mockResolvedValueOnce({
+      ok: true,
+      headers: new Headers({ 'content-type': 'text/turtle' }),
+      text: async () => `
+        @prefix solid: <http://www.w3.org/ns/solid/terms#>.
+        <https://solid.example.net/bob/profile/card#me>
+          solid:storage <https://solid.example.net/users/bob/> .
+      `,
+    })
+    window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
+      issuerUrl: 'https://solid.example.net',
+      storageProviderUrl: 'https://solid.example.net',
+      storageProviderLabel: 'Example Solid',
+      authorizationSurface: 'window',
+      returnToMicroAppId: 'chat',
+    }))
+
+    render(
+      <SolidDatabaseProvider>
+        <Probe />
+      </SolidDatabaseProvider>,
+    )
+
+    await flushAsyncWork()
+
+    expect(sessionState.session.fetch).toHaveBeenCalledWith(
+      'https://solid.example.net/bob/profile/card#me',
+      expect.anything(),
+    )
+    expect(anonymousFetch).not.toHaveBeenCalled()
     expect(createLinxSolidDatabaseMock).toHaveBeenCalledWith(sessionState.session, {
       initTimeoutMs: 90_000,
       podUrl: 'https://solid.example.net/users/bob/',

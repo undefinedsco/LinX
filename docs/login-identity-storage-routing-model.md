@@ -39,6 +39,10 @@ Rules:
 - With the Cloud-managed canonical domain strategy, Cloud allocates the
   canonical Local SP URL. LinX does not ask the user to type a
   platform-generated `node-*.undefineds.co` domain.
+- Cloud-managed allocation is random but stable: the allocated domain is bound
+  to the Local device nodeId after registration, and later provision-code
+  refreshes reuse that nodeId/domain instead of treating the domain as a user
+  input.
 - With the user-managed canonical domain strategy, the user provides a HTTPS
   origin that becomes the canonical Local SP URL.
 - Local localhost/LAN addresses are access channels for the same Local SP; they
@@ -121,8 +125,8 @@ Rules:
 
 Cloud registration and existing-account binding must be scoped to a target SP.
 The root of the SP is sufficient as the user-facing entrypoint:
-`https://node-0000.undefineds.co/` may show onboarding, dashboard, or redirect
-to the Cloud account flow.
+`https://<device-node-id>.nodes.undefineds.co/` may show onboarding, dashboard,
+or redirect to the Cloud account flow.
 
 The split Local flow is:
 
@@ -136,7 +140,7 @@ The split Local flow is:
 ```ttl
 <https://id.undefineds.co/alice/profile/card#me>
   solid:oidcIssuer <https://id.undefineds.co/> ;
-  solid:storage <https://node-0000.undefineds.co/alice/> .
+  solid:storage <https://<device-node-id>.nodes.undefineds.co/alice/> .
 ```
 
 Security and product rules:

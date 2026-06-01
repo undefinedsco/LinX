@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const navigateMock = vi.fn()
 const chooseSpaceMock = vi.fn()
 const continueLocalMock = vi.fn()
+const saveTunnelTokenMock = vi.fn()
+const testConnectivityMock = vi.fn()
 const refreshMock = vi.fn()
 const openAdvancedSettingsMock = vi.fn()
 const connectMock = vi.fn()
@@ -18,6 +20,8 @@ const localOnboardingState = {
     localUrl: 'http://localhost:5737/',
     baseUrl: 'http://localhost:5737/',
     publicUrl: null,
+    tunnel: null,
+    connectivity: null,
     capabilities: null,
     cloudIdentityUrl: null,
     provisionCode: null,
@@ -33,6 +37,8 @@ const localOnboardingState = {
   refresh: refreshMock,
   chooseSpace: chooseSpaceMock,
   continueLocal: continueLocalMock,
+  saveTunnelToken: saveTunnelTokenMock,
+  testConnectivity: testConnectivityMock,
   openAdvancedSettings: openAdvancedSettingsMock,
   isDesktop: true,
 }
@@ -82,9 +88,11 @@ describe('LocalOnboardingPage', () => {
       spaceKind: null,
       localUrl: 'http://localhost:5737/',
       baseUrl: 'http://localhost:5737/',
-      publicUrl: null,
-      capabilities: null,
-      cloudIdentityUrl: null,
+    publicUrl: null,
+    tunnel: null,
+    connectivity: null,
+    capabilities: null,
+    cloudIdentityUrl: null,
       provisionCode: null,
       provisionUrl: null,
       nodeId: null,
@@ -126,13 +134,15 @@ describe('LocalOnboardingPage', () => {
     })
   })
 
-  it('starts standard Local sign-in when runtime is ready', async () => {
+  it('waits for an explicit click before starting Standalone sign-in when runtime is ready', async () => {
     localOnboardingState.snapshot = {
       state: 'ready',
       spaceKind: 'standalone',
       localUrl: 'http://localhost:5737/',
       baseUrl: 'http://localhost:5737/',
       publicUrl: null,
+      tunnel: null,
+      connectivity: null,
       capabilities: {
         supported: true,
         contract: 'linx-local-onboarding/v1',
@@ -151,23 +161,31 @@ describe('LocalOnboardingPage', () => {
 
     render(<LocalOnboardingPage />)
 
-    await waitFor(() => {
-      expect(connectMock).toHaveBeenCalledWith('http://localhost:5737/', {
-        authorizationSurface: 'embedded',
-        storageProviderUrl: 'http://localhost:5737/',
-        storageProviderLabel: 'Standalone',
-        issuerLabel: 'Standalone',
-      })
+    expect(connectMock).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: '继续登录' }))
+
+    expect(connectMock).toHaveBeenCalledWith('http://localhost:5737/', {
+      authorizationSurface: 'embedded',
+      storageProviderUrl: 'http://localhost:5737/',
+      storageProviderLabel: 'Standalone',
+      issuerLabel: 'Standalone',
     })
   })
 
-  it('starts Local sign-in with the Cloud issuer and Local public SP URL when Local runtime is ready', async () => {
+  it('waits for an explicit click before starting Local sign-in with the Cloud issuer and Local public SP URL', async () => {
     localOnboardingState.snapshot = {
       state: 'ready',
       spaceKind: 'local',
       localUrl: 'http://localhost:5737/',
       baseUrl: 'https://pod.example.com/',
       publicUrl: 'https://pod.example.com/',
+      tunnel: {
+        provider: 'cloudflare',
+        hasToken: false,
+        endpoint: null,
+      },
+      connectivity: null,
       capabilities: {
         supported: true,
         contract: 'linx-local-onboarding/v1',
@@ -186,20 +204,22 @@ describe('LocalOnboardingPage', () => {
 
     render(<LocalOnboardingPage />)
 
-    await waitFor(() => {
-      expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', {
-        authorizationSurface: 'embedded',
-        storageProviderUrl: 'https://pod.example.com/',
-        storageProviderLabel: 'Local',
-        issuerLabel: 'Cloud',
-        authorizationQuery: {
-          provisionCode: 'pc-123',
-        },
-      })
+    expect(connectMock).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: '继续登录' }))
+
+    expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', {
+      authorizationSurface: 'embedded',
+      storageProviderUrl: 'https://pod.example.com/',
+      storageProviderLabel: 'Local',
+      issuerLabel: 'Cloud',
+      authorizationQuery: {
+        provisionCode: 'pc-123',
+      },
     })
   })
 
-  it('auto starts Local sign-in after Local becomes ready', async () => {
+  it('does not auto start Local sign-in after Local becomes ready', async () => {
     continueLocalMock.mockImplementation(async () => {
       localOnboardingState.snapshot = {
         state: 'ready',
@@ -207,6 +227,8 @@ describe('LocalOnboardingPage', () => {
         localUrl: 'http://localhost:5737/',
         baseUrl: 'http://localhost:5737/',
         publicUrl: null,
+        tunnel: null,
+        connectivity: null,
         capabilities: {
           supported: true,
           contract: 'linx-local-onboarding/v1',
@@ -232,14 +254,75 @@ describe('LocalOnboardingPage', () => {
 
     view.rerender(<LocalOnboardingPage />)
 
-    await waitFor(() => {
-      expect(connectMock).toHaveBeenCalledWith('http://localhost:5737/', {
-        authorizationSurface: 'embedded',
-        storageProviderUrl: 'http://localhost:5737/',
-        storageProviderLabel: 'Standalone',
-        issuerLabel: 'Standalone',
-      })
+    expect(screen.getByRole('button', { name: '继续登录' })).toBeTruthy()
+    expect(connectMock).not.toHaveBeenCalled()
+  })
+
+  it('shows Local domain, Cloudflare tunnel token input, and connectivity controls', () => {
+    localOnboardingState.snapshot = {
+      state: 'ready',
+      spaceKind: 'local',
+      localUrl: 'http://localhost:5737/',
+      baseUrl: 'https://node-0000.undefineds.co/',
+      publicUrl: 'https://node-0000.undefineds.co/',
+      tunnel: {
+        provider: 'cloudflare',
+        hasToken: false,
+        endpoint: null,
+      },
+      connectivity: {
+        status: 'local-only',
+        checkedAt: Date.now(),
+        local: {
+          kind: 'local',
+          url: 'http://localhost:5737/',
+          reachable: true,
+          sameNode: true,
+          latencyMs: 3,
+          baseUrl: 'https://node-0000.undefineds.co/',
+          message: '本机入口可达。',
+        },
+        public: {
+          kind: 'public',
+          url: 'https://node-0000.undefineds.co/',
+          reachable: false,
+          sameNode: false,
+          latencyMs: null,
+          baseUrl: null,
+          message: '公网入口不可达。',
+        },
+        message: '本机入口可用，公网入口暂不可达。配置并启动 tunnel 后再重试。',
+      },
+      capabilities: null,
+      cloudIdentityUrl: 'https://id.undefineds.co',
+      provisionCode: 'pc-123',
+      provisionUrl: 'https://id.undefineds.co/.account/?provisionCode=pc-123',
+      nodeId: 'node-123',
+      message: 'Local 已准备好，可以继续登录。',
+      errorCode: null,
+      canRetry: true,
+      canOpenSettings: true,
+    } as any
+
+    render(<LocalOnboardingPage />)
+
+    expect(screen.getByText('拿到 Local 域名')).toBeTruthy()
+    expect(screen.getAllByText('https://node-0000.undefineds.co/').length).toBeGreaterThan(0)
+    expect(screen.getByText('配置 Cloudflare Tunnel')).toBeTruthy()
+    expect(screen.getByText(/Service URL 填 http:\/\/localhost:5737/)).toBeTruthy()
+    expect(screen.getByText(/cloudflared tunnel run --token/)).toBeTruthy()
+    expect(screen.getByText('测试联通性')).toBeTruthy()
+    expect(screen.getByText('3ms')).toBeTruthy()
+    expect(screen.getByText('失败')).toBeTruthy()
+
+    fireEvent.change(screen.getByPlaceholderText('粘贴 tunnel token 或完整命令'), {
+      target: { value: 'cloudflared tunnel run --token token-123' },
     })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    expect(saveTunnelTokenMock).toHaveBeenCalledWith('cloudflared tunnel run --token token-123')
+
+    fireEvent.click(screen.getByRole('button', { name: '测试' }))
+    expect(testConnectivityMock).toHaveBeenCalledTimes(1)
   })
 
   it('returns to the main login surface when the user goes back', async () => {

@@ -47,7 +47,7 @@ function restoreStoredSolidSession(session: ReturnType<typeof useSession>['sessi
 }
 
 export function useLoginController() {
-  const { session, logout } = useSession()
+  const { session, logout, sessionRequestInProgress } = useSession()
   const navigate = useNavigate()
   const [view, setView] = useState<'default' | 'local'>('default')
 
@@ -214,6 +214,7 @@ export function useLoginController() {
   ])
 
   useEffect(() => {
+    if (sessionRequestInProgress) return
     if (!session.info.isLoggedIn) return
     if (state === 'authenticated') return
     if (storageConflict) return
@@ -262,12 +263,17 @@ export function useLoginController() {
           storageProviderUrl,
           providers,
         }),
+        fetch: session.fetch,
       })
 
       if (cancelled || !isFinalizeCurrent()) return
 
       if (conflict) {
-        setStorageConflict(conflict)
+        setStorageConflict(resolveStorageConflictAction(conflict, {
+          storageProviderLabel,
+          cloudIdentityUrl: localOnboarding?.cloudIdentityUrl,
+          provisionCode: localOnboarding?.provisionCode,
+        }))
         setStoredAccount(account)
         setView('default')
         setActiveLocalProviderSource('local')
@@ -336,6 +342,7 @@ export function useLoginController() {
     logout,
     navigate,
     providers,
+    sessionRequestInProgress,
     session.info.isLoggedIn,
     session.info.webId,
     setError,
@@ -663,6 +670,42 @@ export function useLoginController() {
     storedAccount,
   ])
 
+  const saveLocalTunnelToken = useCallback(async (token: string) => {
+    const desktopApi = typeof window !== 'undefined' ? window.xpodDesktop : undefined
+    if (!desktopApi?.localOnboarding?.saveTunnelToken) {
+      setError('当前桌面壳不支持保存 Tunnel token。')
+      return
+    }
+
+    setError(null)
+    setLocalLoginActive(true)
+    try {
+      await desktopApi.localOnboarding.saveTunnelToken({ token })
+    } catch (error: any) {
+      setError(error?.message || '保存 Tunnel token 失败。')
+    } finally {
+      setLocalLoginActive(false)
+    }
+  }, [setError])
+
+  const testLocalConnectivity = useCallback(async () => {
+    const desktopApi = typeof window !== 'undefined' ? window.xpodDesktop : undefined
+    if (!desktopApi?.localOnboarding?.testConnectivity) {
+      setError('当前桌面壳不支持测试 Local 联通性。')
+      return
+    }
+
+    setError(null)
+    setLocalLoginActive(true)
+    try {
+      await desktopApi.localOnboarding.testConnectivity()
+    } catch (error: any) {
+      setError(error?.message || '测试 Local 联通性失败。')
+    } finally {
+      setLocalLoginActive(false)
+    }
+  }, [setError])
+
   const backFromLocal = useCallback(() => {
     setError(null)
     setStorageConflict(null)
@@ -757,24 +800,26 @@ export function useLoginController() {
     resetDesktopAuthState()
   }, [resetDesktopAuthState, setError, setState, setStoredAccount])
   const openCurrentSpacePodSetup = useCallback(() => {
-    const managementUrl = storageConflict?.managementUrl
-    if (!managementUrl || typeof window === 'undefined') {
+    const setupUrl = storageConflict?.setupUrl ?? storageConflict?.managementUrl
+    if (!setupUrl || typeof window === 'undefined') {
       return
     }
 
     const desktopApi = window.xpodDesktop
     if (desktopApi?.auth?.openEmbeddedAuthorization) {
-      void desktopApi.auth.openEmbeddedAuthorization(managementUrl)
+      void desktopApi.auth.openEmbeddedAuthorization(setupUrl, {
+        providerLabel: storageConflict?.setupKind === 'create-pod' ? 'Local' : undefined,
+      })
       return
     }
 
     if (desktopApi?.app?.openExternal) {
-      void desktopApi.app.openExternal(managementUrl)
+      void desktopApi.app.openExternal(setupUrl)
       return
     }
 
-    window.open(managementUrl, '_blank', 'noopener,noreferrer')
-  }, [storageConflict?.managementUrl])
+    window.open(setupUrl, '_blank', 'noopener,noreferrer')
+  }, [storageConflict?.managementUrl, storageConflict?.setupKind, storageConflict?.setupUrl])
 
   return {
     view,
@@ -806,6 +851,8 @@ export function useLoginController() {
     connect,
     continueStoredAccount,
     continueLocalLogin: signInLocalOnboarding,
+    saveLocalTunnelToken,
+    testLocalConnectivity,
     backFromLocal,
     cancelConnecting,
     switchAccount,
@@ -823,6 +870,54 @@ function isSilentAuthError(error: string): boolean {
     || error === 'interaction_required'
     || error === 'consent_required'
     || error === 'account_selection_required'
+}
+
+function resolveStorageConflictAction(
+  conflict: StorageConflict,
+  input: {
+    storageProviderLabel?: string
+    cloudIdentityUrl?: string | null
+    provisionCode?: string | null
+  },
+): StorageConflict {
+  if (input.storageProviderLabel !== 'Local' || !input.provisionCode) {
+    return {
+      ...conflict,
+      setupUrl: conflict.managementUrl,
+      setupKind: 'account-management',
+    }
+  }
+
+  const createPodUrl = buildCloudScopedAccountUrl(input.cloudIdentityUrl, input.provisionCode)
+  if (!createPodUrl) {
+    return {
+      ...conflict,
+      setupUrl: conflict.managementUrl,
+      setupKind: 'account-management',
+    }
+  }
+
+  return {
+    ...conflict,
+    setupUrl: createPodUrl,
+    setupKind: 'create-pod',
+  }
+}
+
+function buildCloudScopedAccountUrl(
+  cloudIdentityUrl: string | null | undefined,
+  provisionCode: string,
+): string | null {
+  const normalizedCloudIdentityUrl = normalizeRememberedUrl(cloudIdentityUrl) ?? LINX_CLOUD_IDENTITY_ORIGIN
+  try {
+    const url = new URL('/.account/create-pod/', normalizedCloudIdentityUrl.endsWith('/')
+      ? normalizedCloudIdentityUrl
+      : `${normalizedCloudIdentityUrl}/`)
+    url.searchParams.set('provisionCode', provisionCode)
+    return url.toString()
+  } catch {
+    return null
+  }
 }
 
 function resolveStoredAccountProvider(

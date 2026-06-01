@@ -22,10 +22,42 @@ export interface LocalOnboardingCapabilities {
   version: string | null
 }
 
+interface CapabilityPayload {
+  contract?: string
+  baseUrl?: string
+  version?: string
+}
+
 export interface LocalOnboardingProgress {
   phase: XpodStartProgress['phase']
   label: string
   detail?: string | null
+}
+
+export type LocalOnboardingRouteKind = 'local' | 'public'
+
+export interface LocalOnboardingRouteProbe {
+  kind: LocalOnboardingRouteKind
+  url: string | null
+  reachable: boolean
+  sameNode: boolean | null
+  latencyMs: number | null
+  baseUrl: string | null
+  message: string | null
+}
+
+export interface LocalOnboardingConnectivity {
+  status: 'unknown' | 'checking' | 'ready' | 'local-only' | 'failed' | 'mismatch'
+  checkedAt: number | null
+  local: LocalOnboardingRouteProbe | null
+  public: LocalOnboardingRouteProbe | null
+  message: string | null
+}
+
+export interface LocalOnboardingTunnel {
+  provider: 'cloudflare' | null
+  hasToken: boolean
+  endpoint: string | null
 }
 
 export interface LocalOnboardingSnapshot {
@@ -34,6 +66,8 @@ export interface LocalOnboardingSnapshot {
   localUrl: string | null
   baseUrl: string | null
   publicUrl: string | null
+  tunnel: LocalOnboardingTunnel | null
+  connectivity: LocalOnboardingConnectivity | null
   capabilities: LocalOnboardingCapabilities | null
   cloudIdentityUrl: string | null
   provisionCode: string | null
@@ -54,6 +88,7 @@ interface PersistedLocalOnboardingState {
 interface LocalOnboardingControllerOptions {
   xpodManager: Pick<XpodManager, 'getStatus' | 'start'>
   ensureBootstrapProvider: (spaceKind: LocalSpaceKind | null) => SolidProvider
+  updateProvider?: (id: string, updates: Partial<SolidProvider>) => void
   stateDir?: string
   onSnapshotChange?: (snapshot: LocalOnboardingSnapshot) => void
   fetchCapabilities?: (baseUrl: string) => Promise<LocalOnboardingCapabilities>
@@ -68,6 +103,8 @@ const DEFAULT_SNAPSHOT: LocalOnboardingSnapshot = {
   localUrl: null,
   baseUrl: null,
   publicUrl: null,
+  tunnel: null,
+  connectivity: null,
   capabilities: null,
   cloudIdentityUrl: null,
   provisionCode: null,
@@ -83,6 +120,7 @@ const DEFAULT_SNAPSHOT: LocalOnboardingSnapshot = {
 export class LocalOnboardingController {
   private readonly xpodManager: Pick<XpodManager, 'getStatus' | 'start'>
   private readonly ensureBootstrapProvider: (spaceKind: LocalSpaceKind | null) => SolidProvider
+  private readonly updateProvider?: (id: string, updates: Partial<SolidProvider>) => void
   private readonly statePath: string
   private readonly onSnapshotChange?: (snapshot: LocalOnboardingSnapshot) => void
   private readonly fetchCapabilities: (baseUrl: string) => Promise<LocalOnboardingCapabilities>
@@ -102,6 +140,7 @@ export class LocalOnboardingController {
     const baseDir = ensureLinxLocalHome(options.stateDir).home
     this.xpodManager = options.xpodManager
     this.ensureBootstrapProvider = options.ensureBootstrapProvider
+    this.updateProvider = options.updateProvider
     this.statePath = path.join(baseDir, 'local-onboarding.json')
     this.onSnapshotChange = options.onSnapshotChange
     this.fetchCapabilities = options.fetchCapabilities
@@ -136,6 +175,8 @@ export class LocalOnboardingController {
       : null
     const bindingFields = {
       publicUrl,
+      tunnel: this.resolveTunnel(provider, provisioning),
+      connectivity: this.resolveConnectivityForSnapshot(localUrl, publicUrl),
       cloudIdentityUrl: provisioning?.cloudIdentityUrl ?? null,
       provisionCode: provisioning?.provisionCode ?? null,
       provisionUrl: provisioning?.provisionUrl ?? null,
@@ -269,6 +310,8 @@ export class LocalOnboardingController {
       : null
     const bindingFields = {
       publicUrl,
+      tunnel: this.resolveTunnel(provider, provisioning),
+      connectivity: this.resolveConnectivityForSnapshot(localUrl, publicUrl),
       cloudIdentityUrl: provisioning?.cloudIdentityUrl ?? null,
       provisionCode: provisioning?.provisionCode ?? null,
       provisionUrl: provisioning?.provisionUrl ?? null,
@@ -356,6 +399,92 @@ export class LocalOnboardingController {
     }
   }
 
+  public async saveTunnelToken(input: {
+    provider?: 'cloudflare'
+    token: string
+  }): Promise<LocalOnboardingSnapshot> {
+    const token = extractCloudflareTunnelToken(input.token)
+    if (!token) {
+      return this.updateSnapshot({
+        ...this.snapshot,
+        state: this.snapshot.state === 'space_required' ? 'idle' : this.snapshot.state,
+        message: '请粘贴 Cloudflare Tunnel token，或粘贴完整的 cloudflared run 命令。',
+        errorCode: 'LOCAL_TUNNEL_TOKEN_REQUIRED',
+        canRetry: true,
+        canOpenSettings: true,
+      })
+    }
+
+    const provider = this.ensureBootstrapProvider('local')
+    if (!provider.managed) {
+      throw new Error(`Provider '${provider.id}' is not a managed pod`)
+    }
+
+    const nextManaged = {
+      ...provider.managed,
+      spaceKind: 'local' as const,
+      tunnelToken: token,
+    }
+    this.updateProvider?.(provider.id, { managed: nextManaged })
+    this.persistResolvedState({
+      spaceKind: 'local',
+      providerId: provider.id,
+    })
+
+    return this.continue()
+  }
+
+  public async testConnectivity(): Promise<LocalOnboardingSnapshot> {
+    const provider = this.ensureBootstrapProvider(this.state.spaceKind)
+    const status = await this.xpodManager.getStatus()
+    const spaceKind = this.resolveSpaceKind(provider, status)
+    const localUrl = status.localUrl ?? provider.issuerUrl ?? null
+    const baseUrl = status.baseUrl ?? provider.issuerUrl ?? null
+    const provisioning = status.provisioning
+    const configuredPublicUrl = this.resolveConfiguredPublicUrl(provider)
+    const publicUrl = spaceKind === 'local'
+      ? provisioning?.publicUrl ?? configuredPublicUrl ?? null
+      : null
+    const expectedBaseUrl = spaceKind === 'local'
+      ? publicUrl
+      : baseUrl
+
+    this.updateSnapshot({
+      ...this.snapshot,
+      spaceKind,
+      localUrl,
+      baseUrl,
+      publicUrl,
+      tunnel: this.resolveTunnel(provider, provisioning),
+      connectivity: {
+        status: 'checking',
+        checkedAt: null,
+        local: null,
+        public: null,
+        message: '正在测试本机入口和公网入口...',
+      },
+      message: this.snapshot.message,
+    })
+
+    const [localProbe, publicProbe] = await Promise.all([
+      probeRoute(localUrl, expectedBaseUrl, 'local'),
+      spaceKind === 'local' && publicUrl
+        ? probeRoute(publicUrl, expectedBaseUrl, 'public')
+        : Promise.resolve(null),
+    ])
+    const connectivity = summarizeConnectivity(spaceKind, localProbe, publicProbe)
+
+    return this.updateSnapshot({
+      ...this.snapshot,
+      spaceKind,
+      localUrl,
+      baseUrl,
+      publicUrl,
+      tunnel: this.resolveTunnel(provider, provisioning),
+      connectivity,
+    })
+  }
+
   private updateSnapshot(next: LocalOnboardingSnapshot): LocalOnboardingSnapshot {
     this.snapshot = next
     this.onSnapshotChange?.(this.getSnapshot())
@@ -386,6 +515,11 @@ export class LocalOnboardingController {
       return false
     }
 
+    const desiredTunnelToken = provider.managed?.tunnelToken
+    if (desiredTunnelToken && status.provisioning?.tunnelToken !== desiredTunnelToken) {
+      return true
+    }
+
     if (!status.provisioning?.publicUrl || !status.provisioning?.provisionCode || !status.provisioning?.cloudIdentityUrl) {
       return true
     }
@@ -408,11 +542,43 @@ export class LocalOnboardingController {
 
   private resolveConfiguredPublicUrl(provider: SolidProvider): string | null {
     const domain = provider.managed?.domain
-    if (!domain || domain.type === 'none' || !domain.value?.trim()) {
+    if (!domain || domain.type !== 'custom' || !domain.value?.trim()) {
       return null
     }
 
     return domainToPublicUrl(domain.value)
+  }
+
+  private resolveTunnel(
+    provider: SolidProvider,
+    provisioning: LocalXpodStatus['provisioning'],
+  ): LocalOnboardingTunnel | null {
+    const hasToken = Boolean(provider.managed?.tunnelToken || provisioning?.tunnelToken)
+    const providerName = hasToken || provisioning?.tunnelProvider === 'cloudflare'
+      ? 'cloudflare'
+      : null
+
+    return {
+      provider: providerName,
+      hasToken,
+      endpoint: provisioning?.tunnelEndpoint ?? null,
+    }
+  }
+
+  private resolveConnectivityForSnapshot(
+    localUrl: string | null,
+    publicUrl: string | null,
+  ): LocalOnboardingConnectivity | null {
+    const current = this.snapshot.connectivity
+    if (!current) {
+      return unknownConnectivity()
+    }
+
+    if (current.local?.url !== localUrl || current.public?.url !== publicUrl) {
+      return unknownConnectivity()
+    }
+
+    return current
   }
 
   private persistResolvedState(next: PersistedLocalOnboardingState): void {
@@ -475,6 +641,19 @@ function parsePersistedSpaceKind(value: unknown): LocalSpaceKind | null {
   return null
 }
 
+function extractCloudflareTunnelToken(input: string): string {
+  const raw = input.trim()
+  if (!raw) return ''
+
+  const tokenFlagMatch = raw.match(/(?:^|\s)--token(?:=|\s+)(?:"([^"]+)"|'([^']+)'|([^\s]+))/)
+  const token = tokenFlagMatch?.[1] ?? tokenFlagMatch?.[2] ?? tokenFlagMatch?.[3]
+  if (token) {
+    return token.trim()
+  }
+
+  return raw
+}
+
 async function fetchLocalCapabilities(baseUrl: string, timeoutMs = 3000): Promise<LocalOnboardingCapabilities> {
   const deadline = Date.now() + timeoutMs
   let lastResult = unsupportedCapabilities()
@@ -516,11 +695,7 @@ async function fetchLocalCapabilitiesOnce(baseUrl: string, timeoutMs: number): P
       return unsupportedCapabilities()
     }
 
-    const payload = await response.json() as {
-      contract?: string
-      baseUrl?: string
-      version?: string
-    }
+    const payload = await response.json() as CapabilityPayload
 
     return {
       supported: payload.contract === 'linx-local-onboarding/v1',
@@ -550,6 +725,178 @@ function unsupportedCapabilities(): LocalOnboardingCapabilities {
 
 function domainToPublicUrl(domain: string): string {
   return ensureTrailingSlash(`https://${domain.trim().replace(/^https?:\/\//, '').replace(/\/+$/, '')}`)
+}
+
+function unknownConnectivity(): LocalOnboardingConnectivity {
+  return {
+    status: 'unknown',
+    checkedAt: null,
+    local: null,
+    public: null,
+    message: '尚未测试公网联通性。',
+  }
+}
+
+async function probeRoute(
+  url: string | null,
+  expectedBaseUrl: string | null,
+  kind: LocalOnboardingRouteKind,
+): Promise<LocalOnboardingRouteProbe> {
+  if (!url) {
+    return {
+      kind,
+      url: null,
+      reachable: false,
+      sameNode: null,
+      latencyMs: null,
+      baseUrl: null,
+      message: kind === 'local' ? '本机入口未准备好。' : '公网入口未准备好。',
+    }
+  }
+
+  const start = Date.now()
+  const capability = await fetchCapabilitiesOnce(url, 5000)
+  const latencyMs = Date.now() - start
+  const expected = normalizeComparableUrl(expectedBaseUrl)
+  const actual = normalizeComparableUrl(capability.baseUrl)
+  const sameNode = capability.supported && expected && actual
+    ? expected === actual
+    : capability.supported
+      ? null
+      : false
+
+  return {
+    kind,
+    url: ensureTrailingSlash(url),
+    reachable: capability.supported,
+    sameNode,
+    latencyMs: capability.supported ? latencyMs : null,
+    baseUrl: capability.baseUrl,
+    message: buildProbeMessage(kind, capability, sameNode),
+  }
+}
+
+function summarizeConnectivity(
+  spaceKind: LocalSpaceKind | null,
+  localProbe: LocalOnboardingRouteProbe,
+  publicProbe: LocalOnboardingRouteProbe | null,
+): LocalOnboardingConnectivity {
+  if (spaceKind !== 'local') {
+    return {
+      status: localProbe.reachable ? 'ready' : 'failed',
+      checkedAt: Date.now(),
+      local: localProbe,
+      public: null,
+      message: localProbe.reachable
+        ? 'Standalone 本机入口可用。'
+        : 'Standalone 本机入口不可达。',
+    }
+  }
+
+  if (!localProbe.reachable) {
+    return {
+      status: 'failed',
+      checkedAt: Date.now(),
+      local: localProbe,
+      public: publicProbe,
+      message: 'Local 本机入口不可达，请先确认 xpod 已启动。',
+    }
+  }
+
+  if (!publicProbe?.url) {
+    return {
+      status: 'local-only',
+      checkedAt: Date.now(),
+      local: localProbe,
+      public: publicProbe,
+      message: '本机入口可用，但还没有公网 canonical URL。',
+    }
+  }
+
+  if (!publicProbe.reachable) {
+    return {
+      status: 'local-only',
+      checkedAt: Date.now(),
+      local: localProbe,
+      public: publicProbe,
+      message: '本机入口可用，公网入口暂不可达。配置并启动 tunnel 后再重试。',
+    }
+  }
+
+  if (localProbe.sameNode === false || publicProbe.sameNode === false) {
+    return {
+      status: 'mismatch',
+      checkedAt: Date.now(),
+      local: localProbe,
+      public: publicProbe,
+      message: '入口可达，但返回的 canonical baseUrl 不一致，已阻止当作同一 Local 节点。',
+    }
+  }
+
+  return {
+    status: 'ready',
+    checkedAt: Date.now(),
+    local: localProbe,
+    public: publicProbe,
+    message: '本机入口和公网入口都可达，且指向同一个 Local 节点。',
+  }
+}
+
+async function fetchCapabilitiesOnce(baseUrl: string, timeoutMs: number): Promise<LocalOnboardingCapabilities> {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    const url = new URL('/api/linx/capabilities', ensureTrailingSlash(baseUrl))
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    })
+
+    if (!response.ok) {
+      return unsupportedCapabilities()
+    }
+
+    return parseCapabilities(await response.json() as CapabilityPayload)
+  } catch {
+    return unsupportedCapabilities()
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+
+function parseCapabilities(payload: CapabilityPayload): LocalOnboardingCapabilities {
+  return {
+    supported: payload.contract === 'linx-local-onboarding/v1',
+    contract: payload.contract ?? null,
+    baseUrl: payload.baseUrl ?? null,
+    version: payload.version ?? null,
+  }
+}
+
+function buildProbeMessage(
+  kind: LocalOnboardingRouteKind,
+  capability: LocalOnboardingCapabilities,
+  sameNode: boolean | null,
+): string {
+  const label = kind === 'local' ? '本机入口' : '公网入口'
+  if (!capability.supported) {
+    return `${label}不可达或未返回 Local capabilities。`
+  }
+  if (sameNode === false) {
+    return `${label}可达，但不是当前 Local canonical 节点。`
+  }
+  return `${label}可达。`
+}
+
+function normalizeComparableUrl(value: string | null | undefined): string | null {
+  if (!value) return null
+  try {
+    return ensureTrailingSlash(new URL(value).toString())
+  } catch {
+    return ensureTrailingSlash(value)
+  }
 }
 
 function urlsEqual(left: string | null | undefined, right: string | null | undefined): boolean {

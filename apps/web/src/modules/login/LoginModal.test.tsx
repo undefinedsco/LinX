@@ -77,6 +77,8 @@ function createProps(overrides: Partial<LoginModalProps> = {}): LoginModalProps 
     ],
     onBackFromLocal: vi.fn(),
     onContinueLocalLogin: vi.fn(),
+    onSaveLocalTunnelToken: vi.fn(),
+    onTestLocalConnectivity: vi.fn(),
     onSwitchAccount: vi.fn(),
     onContinueStoredAccount: vi.fn(),
     onConnect: vi.fn(),
@@ -142,6 +144,35 @@ describe('LoginModal', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '返回登录并重新选择空间' }))
     expect(props.onDismissStorageConflict).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows the Local first-Pod setup copy when Local needs a provisioned Pod', () => {
+    const props = createProps({
+      state: 'authenticated',
+      storedAccount: {
+        displayName: 'Ganlu',
+        issuerUrl: 'https://id.undefineds.co',
+        storageProviderUrl: 'https://node-abc123.undefineds.co/',
+        storageProviderLabel: 'Local',
+        webId: 'https://id.undefineds.co/ganlu/profile/card#me',
+      },
+      storageConflict: {
+        expectedStorageUrl: 'https://node-abc123.undefineds.co/ganlu/',
+        actualStorageUrl: 'https://id.undefineds.co/ganlu/',
+        storageProviderUrl: 'https://node-abc123.undefineds.co/',
+        managementUrl: 'https://node-abc123.undefineds.co/.account/account/',
+        setupUrl: 'https://id.undefineds.co/.account/create-pod/?provisionCode=pc-123',
+        setupKind: 'create-pod',
+      },
+    })
+
+    render(<LoginModal {...props} />)
+
+    expect(screen.getByText('需要创建 Pod')).toBeTruthy()
+    expect(screen.getByText(/这个 Cloud 账号还没有绑定当前 Local 空间的 Pod/)).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: '为当前 Local 创建 Pod' }))
+    expect(props.onOpenCurrentSpacePodSetup).toHaveBeenCalledTimes(1)
   })
 
   it('shows restoring view with account avatar when stored account exists', () => {
@@ -272,6 +303,8 @@ describe('LoginModal', () => {
         localUrl: 'http://localhost:5737/',
         baseUrl: 'http://localhost:5737/',
         publicUrl: null,
+        tunnel: null,
+        connectivity: null,
         capabilities: null,
         cloudIdentityUrl: null,
         provisionCode: null,
@@ -442,6 +475,8 @@ describe('LoginModal', () => {
         localUrl: 'http://localhost:5737/',
         baseUrl: 'http://localhost:5737/',
         publicUrl: null,
+        tunnel: null,
+        connectivity: null,
         capabilities: null,
         cloudIdentityUrl: null,
         provisionCode: null,
@@ -462,6 +497,76 @@ describe('LoginModal', () => {
 
     expect(props.onContinueLocalLogin).toHaveBeenCalledTimes(1)
     expect(props.onBackFromLocal).not.toHaveBeenCalled()
+  })
+
+  it('shows managed Local domain, tunnel token input, and connectivity testing controls', () => {
+    const props = createProps({
+      view: 'local',
+      localProviderSource: 'local',
+      localOnboarding: {
+        state: 'ready',
+        spaceKind: 'local',
+        localUrl: 'http://localhost:5737/',
+        baseUrl: 'https://node-0000.undefineds.co/',
+        publicUrl: 'https://node-0000.undefineds.co/',
+        tunnel: {
+          provider: 'cloudflare',
+          hasToken: false,
+          endpoint: null,
+        },
+        connectivity: {
+          status: 'local-only',
+          checkedAt: Date.now(),
+          local: {
+            kind: 'local',
+            url: 'http://localhost:5737/',
+            reachable: true,
+            sameNode: true,
+            latencyMs: 3,
+            baseUrl: 'https://node-0000.undefineds.co/',
+            message: '本机入口可达。',
+          },
+          public: {
+            kind: 'public',
+            url: 'https://node-0000.undefineds.co/',
+            reachable: false,
+            sameNode: false,
+            latencyMs: null,
+            baseUrl: null,
+            message: '公网入口不可达。',
+          },
+          message: '本机入口可用，公网入口暂不可达。配置并启动 tunnel 后再重试。',
+        },
+        capabilities: null,
+        cloudIdentityUrl: 'https://id.undefineds.co',
+        provisionCode: 'pc-123',
+        provisionUrl: 'https://id.undefineds.co/.account/?provisionCode=pc-123',
+        nodeId: 'node-123',
+        message: null,
+        errorCode: null,
+        canRetry: true,
+        canOpenSettings: true,
+      },
+    })
+
+    render(<LoginModal {...props} />)
+
+    expect(screen.getByText('拿到 Local 域名')).toBeTruthy()
+    expect(screen.getByText(/Cloud 分配给这台设备的 Local canonical URL/)).toBeTruthy()
+    expect(screen.getByText('https://node-0000.undefineds.co/')).toBeTruthy()
+    expect(screen.getByText('配置 Cloudflare Tunnel')).toBeTruthy()
+    expect(screen.getByText(/Service URL 填 http:\/\/localhost:5737/)).toBeTruthy()
+    expect(screen.getByText(/cloudflared tunnel run --token/)).toBeTruthy()
+    expect(screen.getByText('测试联通性')).toBeTruthy()
+
+    fireEvent.change(screen.getByPlaceholderText('粘贴 tunnel token 或完整命令'), {
+      target: { value: 'cloudflared tunnel run --token token-123' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    expect(props.onSaveLocalTunnelToken).toHaveBeenCalledWith('cloudflared tunnel run --token token-123')
+
+    fireEvent.click(screen.getByRole('button', { name: '测试' }))
+    expect(props.onTestLocalConnectivity).toHaveBeenCalledTimes(1)
   })
 
   it('does not render the old footer copy', () => {

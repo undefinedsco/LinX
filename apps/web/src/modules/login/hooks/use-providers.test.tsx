@@ -390,7 +390,7 @@ describe('useProviders', () => {
     })
 
     expect(chooseSpaceMock).not.toHaveBeenCalled()
-    expect(continueMock).toHaveBeenCalledTimes(1)
+    expect(continueMock).not.toHaveBeenCalled()
     expect(snapshot).toMatchObject({
       state: 'ready',
       spaceKind: 'local',

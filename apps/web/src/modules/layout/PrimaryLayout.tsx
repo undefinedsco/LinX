@@ -82,6 +82,9 @@ function MicroAppContentRenderer({
   )
 
   const rightSidebarWidth = layoutConfig?.rightSidebar ? layoutConfig.rightSidebarWidth ?? 320 : 0
+  const listPanelWidth = linxLayout.listPanel.defaultWidth
+  const listPanelMinWidth = linxLayout.listPanel.minWidth
+  const listPanelMaxWidth = linxLayout.listPanel.maxWidth
 
   return (
     <>
@@ -91,8 +94,26 @@ function MicroAppContentRenderer({
         </Suspense>
       ) : null}
       <ResizablePanelGroup direction="horizontal" className="h-full w-full">
-        <ResizablePanel defaultSize={20} minSize={15} maxSize={30}>
-          <section className="flex h-full flex-col border-r border-border/40 bg-layout-list-item">
+        <ResizablePanel
+          defaultSize={20}
+          minSize={15}
+          maxSize={30}
+          className="shrink-0"
+          style={{
+            minWidth: listPanelMinWidth,
+            width: listPanelWidth,
+            maxWidth: listPanelMaxWidth,
+          }}
+        >
+          <section
+            className="flex h-full flex-col border-r border-border/40 bg-layout-list-item"
+            data-testid="micro-app-list-panel"
+            style={{
+              minWidth: listPanelMinWidth,
+              width: '100%',
+              maxWidth: listPanelMaxWidth,
+            }}
+          >
             <Suspense fallback={<PaneFallback />}>
               <ListPane theme={theme} />
             </Suspense>

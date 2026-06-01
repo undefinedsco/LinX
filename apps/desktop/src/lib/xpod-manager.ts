@@ -19,6 +19,7 @@ const OFFICIAL_CLOUD_IDENTITY_ORIGIN = 'https://id.undefineds.co';
 const OFFICIAL_CLOUD_API_ORIGIN = 'https://api.undefineds.co';
 const MANAGED_CLOUD_REGISTRATION_TIMEOUT_MS = 30000;
 const CANONICAL_OIDC_ISSUER_ENV_KEY = 'oidcIssuer';
+const PROVISION_CODE_REFRESH_GRACE_SECONDS = 5 * 60;
 const desktopBuildMeta = buildMeta as { xpodVersion?: string };
 
 function readOidcIssuerEnv(env: NodeJS.ProcessEnv | Record<string, string | undefined>): string | undefined {
@@ -51,6 +52,109 @@ function normalizeOidcIssuerEnv(env: NodeJS.ProcessEnv | Record<string, string |
   if (oidcIssuer) {
     env[CANONICAL_OIDC_ISSUER_ENV_KEY] = oidcIssuer;
   }
+}
+
+function getProvisionCodeExpirationSeconds(code: string): number | null {
+  const dotIndex = code.indexOf('.');
+  if (dotIndex <= 0) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(Buffer.from(code.slice(0, dotIndex), 'base64url').toString('utf8')) as {
+      exp?: unknown;
+    };
+    return typeof payload.exp === 'number' && Number.isFinite(payload.exp) ? payload.exp : null;
+  } catch {
+    return null;
+  }
+}
+
+function isProvisionCodeReusable(code: string, nowMs = Date.now()): boolean {
+  const expiresAt = getProvisionCodeExpirationSeconds(code);
+  if (expiresAt === null) {
+    // Older test/dev control planes used opaque codes. Only force refresh when
+    // the current self-contained code format proves the code is stale.
+    return true;
+  }
+
+  return expiresAt > Math.floor(nowMs / 1000) + PROVISION_CODE_REFRESH_GRACE_SECONDS;
+}
+
+function decodeProvisionCodePayload(code: string): Record<string, unknown> | null {
+  const dotIndex = code.indexOf('.');
+  if (dotIndex <= 0) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(Buffer.from(code.slice(0, dotIndex), 'base64url').toString('utf8'));
+    return payload && typeof payload === 'object' && !Array.isArray(payload)
+      ? payload as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeUrlWithTrailingSlash(value: string | undefined): string | null {
+  if (!value?.trim()) {
+    return null;
+  }
+
+  try {
+    const url = new URL(value.trim());
+    return url.toString().replace(/\/+$/, '') + '/';
+  } catch {
+    return value.trim().replace(/\/+$/, '') + '/';
+  }
+}
+
+function isProvisionCodeScopedToCanonicalUrl(code: string, canonicalUrl: string | undefined): boolean {
+  const payload = decodeProvisionCodePayload(code);
+  if (!payload) {
+    return true;
+  }
+
+  const expectedCanonicalUrl = normalizeUrlWithTrailingSlash(canonicalUrl);
+  if (!expectedCanonicalUrl) {
+    return true;
+  }
+
+  const canonicalPayloadUrl = resolveProvisionPayloadCanonicalPublicUrl(payload);
+  if (canonicalPayloadUrl) {
+    return canonicalPayloadUrl === expectedCanonicalUrl;
+  }
+
+  return false;
+}
+
+function resolveProvisionPayloadCanonicalPublicUrl(payload: Record<string, unknown> | null): string | null {
+  if (!payload) {
+    return null;
+  }
+
+  const payloadSpDomain = typeof payload.spDomain === 'string' && payload.spDomain.trim()
+    ? normalizeUrlWithTrailingSlash(`https://${payload.spDomain.trim()}`)
+    : null;
+  if (payloadSpDomain) {
+    return payloadSpDomain;
+  }
+
+  const payloadSpUrl = typeof payload.spUrl === 'string'
+    ? normalizeUrlWithTrailingSlash(payload.spUrl)
+    : null;
+  return payloadSpUrl;
+}
+
+function resolveRegistrationCanonicalPublicUrl(
+  registration: Pick<XpodManagedCloudRegistration, 'provisionCode' | 'publicUrl' | 'spDomain'>,
+  overridePublicUrl?: string,
+): string | null {
+  return normalizeUrlWithTrailingSlash(overridePublicUrl)
+    ?? (registration.spDomain ? normalizeUrlWithTrailingSlash(`https://${registration.spDomain}`) : null)
+    ?? normalizeUrlWithTrailingSlash(registration.publicUrl)
+    ?? resolveProvisionPayloadCanonicalPublicUrl(decodeProvisionCodePayload(registration.provisionCode));
 }
 
 export interface XpodStartOptions {
@@ -986,45 +1090,63 @@ export class XpodManager {
       || OFFICIAL_CLOUD_API_ORIGIN,
     );
     const configuredPublicUrl = this.resolveConfiguredProvisionPublicUrl(options);
-    const expectedPublicUrl = configuredPublicUrl ?? existing?.publicUrl;
+    const configuredManagedSpDomain = this.resolveConfiguredManagedSpDomain(options);
+    const existingCanonicalPublicUrl = existing
+      ? resolveRegistrationCanonicalPublicUrl(existing, configuredPublicUrl)
+      : null;
+    const normalizedExisting = existing && existingCanonicalPublicUrl
+      ? {
+          ...existing,
+          publicUrl: existingCanonicalPublicUrl,
+          provisionUrl: buildProvisionUrl(cloudIdentityUrl, existing.provisionCode),
+        }
+      : existing;
+    const expectedPublicUrl = configuredPublicUrl ?? existingCanonicalPublicUrl ?? undefined;
     const canReuseExistingRegistration = Boolean(
-      existing
+      normalizedExisting
       && (
         configuredPublicUrl
-          ? existing.publicUrl === configuredPublicUrl
-          : existing.publicUrl && existing.publicUrl === expectedPublicUrl
+          ? normalizedExisting.publicUrl === configuredPublicUrl
+          : normalizedExisting.publicUrl && normalizedExisting.publicUrl === expectedPublicUrl
       ),
     );
 
     if (
-      existing
-      && existing.cloudApiUrl === managedCloudApiOrigin
-      && existing.cloudIdentityUrl === cloudIdentityUrl
+      normalizedExisting
+      && normalizedExisting.cloudApiUrl === managedCloudApiOrigin
+      && normalizedExisting.cloudIdentityUrl === cloudIdentityUrl
       && canReuseExistingRegistration
-      && existing.nodeId
-      && existing.nodeToken
-      && existing.serviceToken
-      && existing.provisionCode
+      && normalizedExisting.nodeId
+      && normalizedExisting.nodeToken
+      && normalizedExisting.serviceToken
+      && normalizedExisting.provisionCode
+      && isProvisionCodeReusable(normalizedExisting.provisionCode)
+      && isProvisionCodeScopedToCanonicalUrl(normalizedExisting.provisionCode, expectedPublicUrl)
     ) {
-      return existing;
+      return {
+        ...normalizedExisting,
+        tunnelToken: options.tunnelToken || normalizedExisting.tunnelToken,
+      };
     }
 
     const provisionRequest = this.buildProvisionNodeRequest(options, {
-      publicUrl: expectedPublicUrl,
-      nodeId: existing?.nodeId,
-      nodeToken: existing?.nodeToken,
-      serviceToken: existing?.serviceToken,
-      spDomain: existing?.spDomain,
-      tunnelToken: options.tunnelToken || existing?.tunnelToken,
+      publicUrl: configuredPublicUrl,
+      nodeId: normalizedExisting?.nodeId,
+      nodeToken: normalizedExisting?.nodeToken,
+      serviceToken: normalizedExisting?.serviceToken,
+      spDomain: normalizedExisting?.spDomain ?? configuredManagedSpDomain,
+      tunnelToken: options.tunnelToken || normalizedExisting?.tunnelToken,
     });
     const registration = await this.registerProvisionedNode(managedCloudApiOrigin, {
       ...provisionRequest,
       localPort: options.port,
     });
     const spDomain = registration.spDomain ?? provisionRequest.spDomain;
-    const publicUrl = derivePublicUrlFromSpDomain(spDomain)
-      ?? registration.publicUrl
-      ?? provisionRequest.publicUrl;
+    const publicUrl = resolveRegistrationCanonicalPublicUrl({
+      provisionCode: registration.provisionCode,
+      publicUrl: registration.publicUrl ?? provisionRequest.publicUrl ?? '',
+      spDomain,
+    }, configuredPublicUrl) ?? registration.publicUrl ?? provisionRequest.publicUrl;
 
     if (!publicUrl) {
       throw new Error('Cloud 返回的 Local canonical URL 不完整。');
@@ -1037,7 +1159,7 @@ export class XpodManager {
       provisionCode: registration.provisionCode,
       publicUrl,
       spDomain,
-      tunnelToken: registration.tunnelToken,
+      tunnelToken: registration.tunnelToken ?? provisionRequest.tunnelToken,
       tunnelProvider: registration.tunnelProvider,
       tunnelEndpoint: registration.tunnelEndpoint,
       provisionUrl: buildProvisionUrl(cloudIdentityUrl, registration.provisionCode),
@@ -1053,6 +1175,14 @@ export class XpodManager {
     }
 
     return undefined;
+  }
+
+  private resolveConfiguredManagedSpDomain(options: XpodStartOptions): string | undefined {
+    if (options.domain?.type !== 'managed' || !options.domain.value?.trim()) {
+      return undefined;
+    }
+
+    return normalizeHostname(options.domain.value);
   }
 
   private async registerProvisionedNode(
@@ -1348,6 +1478,9 @@ export class XpodManager {
       && current.serviceToken === desired.serviceToken
       && current.publicUrl === desired.publicUrl
       && current.spDomain === desired.spDomain
+      && current.tunnelToken === desired.tunnelToken
+      && current.tunnelProvider === desired.tunnelProvider
+      && current.tunnelEndpoint === desired.tunnelEndpoint
       && current.cloudIdentityUrl === desired.cloudIdentityUrl
       && current.cloudApiUrl === desired.cloudApiUrl;
   }
@@ -1408,7 +1541,42 @@ export class XpodManager {
       path.resolve(target.rootDir),
       path.resolve(target.entryPath),
       target.runtimeVersion ?? '',
+      this.buildDevSourceRuntimeFingerprint(target),
     ].join('|');
+  }
+
+  private buildDevSourceRuntimeFingerprint(target: XpodLaunchTarget): string {
+    if (target.kind !== 'dev-source') {
+      return '';
+    }
+
+    const watchedPaths = [
+      target.entryPath,
+      path.join(target.rootDir, 'package.json'),
+      path.join(target.rootDir, 'config', 'local.json'),
+      path.join(target.rootDir, 'config', 'main.json'),
+      path.join(target.rootDir, 'config', 'xpod.base.json'),
+      path.join(target.rootDir, 'src', 'identity', 'ReactAppViewHandler.ts'),
+      path.join(target.rootDir, 'static', 'app', 'auth.html'),
+      path.join(target.rootDir, 'static', 'app', 'assets', 'main.js'),
+      path.join(target.rootDir, 'static', 'app', 'assets', 'index.css'),
+    ];
+
+    const fingerprint = watchedPaths
+      .map((filePath) => this.readRuntimeFileFingerprint(filePath))
+      .filter((value): value is string => Boolean(value))
+      .join(',');
+
+    return fingerprint ? `dev-mtime:${fingerprint}` : 'dev-mtime:none';
+  }
+
+  private readRuntimeFileFingerprint(filePath: string): string | null {
+    try {
+      const stat = fs.statSync(filePath);
+      return `${path.relative(process.cwd(), filePath)}=${stat.mtimeMs}:${stat.size}`;
+    } catch {
+      return null;
+    }
   }
 
   private async disposeManagedRuntime(state: Pick<XpodServiceState, 'providerId' | 'pid' | 'localUrl'>): Promise<void> {
@@ -1438,6 +1606,21 @@ export class XpodManager {
 
 function normalizeUrl(url: string): string {
   return url.replace(/\/+$/, '');
+}
+
+function normalizeHostname(value: string): string | undefined {
+  try {
+    const parsed = value.includes('://') ? new URL(value) : new URL(`https://${value}`);
+    return parsed.hostname.trim().toLowerCase() || undefined;
+  } catch {
+    const hostname = value
+      .trim()
+      .toLowerCase()
+      .replace(/^https?:\/\//u, '')
+      .replace(/\/.*$/u, '')
+      .replace(/\.$/u, '');
+    return hostname || undefined;
+  }
 }
 
 function buildProvisionUrl(cloudIdentityUrl: string, provisionCode: string): string {
@@ -1549,8 +1732,11 @@ function parseManagedCloudRegistration(value: unknown): XpodManagedCloudRegistra
     ? record.registeredAt
     : Date.now();
 
-  const canonicalPublicUrl = derivePublicUrlFromSpDomain(readString(record.spDomain))
-    ?? ensureTrailingSlashValue(publicUrl);
+  const canonicalPublicUrl = resolveRegistrationCanonicalPublicUrl({
+    provisionCode,
+    publicUrl,
+    spDomain: readString(record.spDomain),
+  }) ?? ensureTrailingSlashValue(publicUrl);
 
   return {
     nodeId,

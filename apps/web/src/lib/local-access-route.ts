@@ -199,6 +199,8 @@ async function loadLocalOnboardingSnapshot(): Promise<LocalOnboardingSnapshot | 
       localUrl,
       baseUrl,
       publicUrl,
+      tunnel: null,
+      connectivity: null,
       capabilities: null,
       cloudIdentityUrl: status?.provisioning?.cloudIdentityUrl ?? null,
       provisionCode: status?.provisioning?.provisionCode ?? null,
