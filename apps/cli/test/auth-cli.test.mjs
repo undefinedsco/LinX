@@ -233,12 +233,14 @@ function createAiCommandHarness(rows = {}) {
   }
   const output = []
   const contexts = []
+  const syncResults = []
 
   return {
     db,
     operations,
     output,
     contexts,
+    syncResults,
     dependencies: {
       async resolvePodWriteContext(urlOverride) {
         contexts.push(urlOverride)
@@ -261,11 +263,53 @@ function createAiCommandHarness(rows = {}) {
       write(chunk) {
         output.push(chunk)
       },
+      syncNow() {
+        return new Date('2026-05-21T00:00:00.000Z')
+      },
+      onSyncResult(result) {
+        syncResults.push(result)
+      },
     },
   }
 }
 
-test('linx login command always starts a fresh browser consent flow', async (t) => {
+test('linx login command reuses an existing browser consent session by default', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/login-command.ts')
+  t.after(() => cleanup())
+
+  const loginOptions = []
+  const output = []
+
+  await module.runLinxLoginCommand({ url: 'https://id.undefineds.co/' }, {
+    write(chunk) {
+      output.push(chunk)
+    },
+    async openBrowser(url) {
+      throw new Error(`browser should not open when existing session is reused: ${url}`)
+    },
+    async promptText(prompt) {
+      throw new Error(`manual redirect prompt should not open when existing session is reused: ${prompt}`)
+    },
+    async ensureBrowserConsentLogin(options) {
+      loginOptions.push(options)
+      return {
+        url: 'https://id.undefineds.co/',
+        webId: 'https://id.undefineds.co/ganbb/profile/card#me',
+        reusedExistingSession: true,
+        tokenSet: {},
+        credentialsToSave: {},
+      }
+    },
+  })
+
+  assert.equal(loginOptions.length, 1)
+  assert.equal(loginOptions[0].issuerUrl, 'https://id.undefineds.co/')
+  assert.equal(loginOptions[0].forceFresh, false)
+  assert.match(output.join(''), /LinX login successful\./)
+  assert.match(output.join(''), /session: reused/)
+})
+
+test('linx login --fresh starts a fresh browser consent flow', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/login-command.ts')
   t.after(() => cleanup())
 
@@ -274,7 +318,7 @@ test('linx login command always starts a fresh browser consent flow', async (t) 
   const opened = []
   const output = []
 
-  await module.runLinxLoginCommand({ url: 'https://id.undefineds.co/' }, {
+  await module.runLinxLoginCommand({ url: 'https://id.undefineds.co/', fresh: true }, {
     write(chunk) {
       output.push(chunk)
     },
@@ -300,35 +344,12 @@ test('linx login command always starts a fresh browser consent flow', async (t) 
     },
   })
 
-  assert.equal(loginOptions.length, 1)
-  assert.equal(loginOptions[0].issuerUrl, 'https://id.undefineds.co/')
   assert.equal(loginOptions[0].forceFresh, true)
+  assert.equal(loginOptions[0].forceRefreshExisting, undefined)
   assert.deepEqual(opened, ['https://id.undefineds.co/.oidc/auth?client_id=test'])
   assert.deepEqual(prompts, ['redirect URL (leave empty to keep waiting): '])
   assert.match(output.join(''), /LinX login successful\./)
   assert.match(output.join(''), /session: browser-consent/)
-})
-
-test('linx login command does not reuse an existing browser session when forceFresh is enabled', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/login-command.ts')
-  t.after(() => cleanup())
-
-  const loginOptions = []
-  await module.runLinxLoginCommand({ url: 'https://id.undefineds.co/' }, {
-    async ensureBrowserConsentLogin(options) {
-      loginOptions.push(options)
-      return {
-        url: 'https://id.undefineds.co/',
-        webId: 'https://id.undefineds.co/ganbb/profile/card#me',
-        reusedExistingSession: true,
-        tokenSet: {},
-        credentialsToSave: {},
-      }
-    },
-  })
-
-  assert.equal(loginOptions[0].forceFresh, true)
-  assert.equal(loginOptions[0].forceRefreshExisting, undefined)
 })
 
 test('linx whoami reads the saved LinX account session', async (t) => {
@@ -394,6 +415,18 @@ test('linx logout does not clear Pod-backed AI provider credentials', async (t) 
   const { module, cleanup } = await loadAutoModeModule('lib/login-command.ts')
   t.after(() => cleanup())
 
+  const originalHome = process.env.HOME
+  const home = mkdtempSync(join(tmpdir(), 'linx-cli-logout-ai-home-'))
+  process.env.HOME = home
+  t.after(() => {
+    if (originalHome === undefined) {
+      delete process.env.HOME
+    } else {
+      process.env.HOME = originalHome
+    }
+    rmSync(home, { recursive: true, force: true })
+  })
+
   const output = []
   module.runLinxLogoutCommand({
     write(chunk) {
@@ -440,6 +473,35 @@ test('linx ai connect writes provider and credential config to Pod', async (t) =
   assert.equal(modelInsert.row.id, 'claude-sonnet-4-20250514')
   assert.equal(modelInsert.row.displayName, 'claude-sonnet-4-20250514')
   assert.equal(modelInsert.row.isProvidedBy, '/settings/providers/anthropic.ttl')
+  assert.equal(harness.syncResults.length, 1)
+  assert.deepEqual(harness.syncResults[0], {
+    source: 'cli-ai-command',
+    target: 'pod',
+    direction: 'local-to-core',
+    plane: 'control-plane',
+    authority: 'core',
+    attempted: 1,
+    applied: 1,
+    skipped: 0,
+    failed: 0,
+    failures: [],
+    startedAt: '2026-05-21T00:00:00.000Z',
+    completedAt: '2026-05-21T00:00:00.000Z',
+    status: 'completed',
+    metadata: {
+      action: 'ai.connect',
+      resourceBindings: {
+        provider: {
+          uri: '/settings/providers/anthropic.ttl',
+          local: 'anthropic',
+        },
+        model: {
+          uri: '/settings/providers/anthropic.ttl#claude-sonnet-4-20250514',
+          local: 'claude-sonnet-4-20250514',
+        },
+      },
+    },
+  })
 })
 
 test('linx ai disconnect removes provider credential config from Pod', async (t) => {
@@ -480,6 +542,31 @@ test('linx ai disconnect removes provider credential config from Pod', async (t)
   assert.match(harness.output.join(''), /Disconnected AI provider: anthropic/)
   const deletes = harness.operations.filter((item) => item.op === 'delete' && item.table === 'credential')
   assert.deepEqual(deletes.map((item) => item.id).sort(), ['anthropic-default', 'claude-default'])
+  assert.equal(harness.syncResults.length, 1)
+  assert.deepEqual(harness.syncResults[0], {
+    source: 'cli-ai-command',
+    target: 'pod',
+    direction: 'local-to-core',
+    plane: 'control-plane',
+    authority: 'core',
+    attempted: 1,
+    applied: 1,
+    skipped: 0,
+    failed: 0,
+    failures: [],
+    startedAt: '2026-05-21T00:00:00.000Z',
+    completedAt: '2026-05-21T00:00:00.000Z',
+    status: 'completed',
+    metadata: {
+      action: 'ai.disconnect',
+      resourceBindings: {
+        provider: {
+          uri: '/settings/providers/anthropic.ttl',
+          local: 'anthropic',
+        },
+      },
+    },
+  })
 })
 
 test('linx ai status prints configured cloud AI credentials', async (t) => {

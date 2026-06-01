@@ -6,10 +6,11 @@ import {
   getClientCredentialKey,
   getClientCredentials,
   loadCredentials,
+  getOidcOAuthSecrets,
   type StoredCredentials,
 } from './credentials-store.js'
 import { getOidcAccessToken, restoreStoredOidcSession } from './oidc-auth.js'
-import { authenticate, authenticatedFetch } from './solid-auth.js'
+import { authenticate } from './solid-auth.js'
 
 export type PodFetch = (url: string, init?: RequestInit) => Promise<Response>
 
@@ -32,6 +33,7 @@ export interface PodDataSession {
   podUrl: string
   fetch: PodFetch
   solidSession: SolidSessionLike
+  runtimeFetch: PodFetch
   getRuntimeAuthToken(): Promise<string>
   close(): Promise<void>
 }
@@ -39,10 +41,9 @@ export interface PodDataSession {
 export interface PodDataSessionRuntime {
   loadCredentials(): StoredCredentials | null
   getClientCredentials(credentials: StoredCredentials): ReturnType<typeof getClientCredentials>
-  getOidcAccessToken(credentials: StoredCredentials): Promise<string | null>
   restoreStoredOidcSession(credentials: StoredCredentials, options?: { forceRefresh?: boolean }): Promise<Session | null>
-  authenticate(clientId: string, clientSecret: string, oidcIssuer: string): Promise<{ session: Session; apiKey: string }>
-  authenticatedFetch(url: string, token: string, init?: RequestInit): Promise<Response>
+  getOidcAccessToken(credentials: Pick<StoredCredentials, 'authType' | 'secrets' | 'webId' | 'url'>, options?: { forceRefresh?: boolean }): ReturnType<typeof getOidcAccessToken>
+  authenticate(clientId: string, clientSecret: string, oidcIssuer: string): Promise<{ session: Session }>
   authTimeoutMs?: number
   fetchTimeoutMs?: number
 }
@@ -50,39 +51,84 @@ export interface PodDataSessionRuntime {
 const defaultRuntime: PodDataSessionRuntime = {
   loadCredentials,
   getClientCredentials,
-  getOidcAccessToken,
   restoreStoredOidcSession,
+  getOidcAccessToken,
   authenticate,
-  authenticatedFetch,
 }
 
 const DEFAULT_POD_DATA_AUTH_TIMEOUT_MS = 15_000
 const DEFAULT_POD_DATA_FETCH_TIMEOUT_MS = 30_000
 
 let defaultSessionPromise: Promise<PodDataSession | null> | null = null
+let defaultSessionCredentialKey: string | null = null
 
 export function clearDefaultPodDataSession(): void {
   const existing = defaultSessionPromise
   defaultSessionPromise = null
+  defaultSessionCredentialKey = null
   void existing?.then((session) => session?.close()).catch(() => undefined)
 }
 
 export async function getDefaultPodDataSession(): Promise<PodDataSession | null> {
-  if (!defaultSessionPromise) {
+  const credentials = defaultRuntime.loadCredentials()
+  const credentialKey = createPodDataSessionCacheKey(credentials)
+  if (!credentialKey) {
+    clearDefaultPodDataSession()
+    return null
+  }
+
+  if (!defaultSessionPromise || defaultSessionCredentialKey !== credentialKey) {
+    clearDefaultPodDataSession()
+    defaultSessionCredentialKey = credentialKey
     defaultSessionPromise = createPodDataSession(defaultRuntime)
       .then((session) => {
         if (!session) {
           defaultSessionPromise = null
+          defaultSessionCredentialKey = null
         }
         return session
       })
       .catch((error) => {
         defaultSessionPromise = null
+        defaultSessionCredentialKey = null
         throw error
       })
   }
 
   return defaultSessionPromise
+}
+
+function createPodDataSessionCacheKey(credentials: StoredCredentials | null): string | null {
+  if (!credentials) {
+    return null
+  }
+
+  const base = [
+    credentials.sourceDir,
+    credentials.url,
+    credentials.webId,
+    credentials.authType,
+  ]
+
+  const clientCredentials = getClientCredentials(credentials)
+  if (clientCredentials) {
+    return JSON.stringify([
+      ...base,
+      getClientCredentialId(clientCredentials),
+      getClientCredentialKey(clientCredentials),
+    ])
+  }
+
+  const oidcSecrets = getOidcOAuthSecrets(credentials)
+  if (oidcSecrets) {
+    return JSON.stringify([
+      ...base,
+      oidcSecrets.oidcClientId ?? '',
+      oidcSecrets.oidcRefreshToken,
+    ])
+  }
+
+  return JSON.stringify([...base, credentials.secrets])
 }
 
 export async function createPodDataSession(
@@ -95,19 +141,17 @@ export async function createPodDataSession(
 
   const clientCredentials = runtime.getClientCredentials(credentials)
   if (clientCredentials) {
-    const { session, apiKey } = await withTimeout(
-      runtime.authenticate(
-        getClientCredentialId(clientCredentials),
-        getClientCredentialKey(clientCredentials),
-        credentials.url,
-      ),
+    const clientId = getClientCredentialId(clientCredentials)
+    const clientSecret = getClientCredentialKey(clientCredentials)
+    const { session } = await withTimeout(
+      runtime.authenticate(clientId, clientSecret, credentials.url),
       runtime.authTimeoutMs ?? DEFAULT_POD_DATA_AUTH_TIMEOUT_MS,
       'LinX Pod client credentials authentication timed out.',
     )
     const webId = session.info.webId ?? credentials.webId
     if (!webId) {
       await session.logout().catch(() => undefined)
-      throw new Error('Pod authentication succeeded without a WebID.')
+      throw new Error('Pod client credentials login succeeded without a WebID. Run `linx login` again.')
     }
     const podUrl = resolvePodDataSessionUrl(webId)
 
@@ -124,42 +168,43 @@ export async function createPodDataSession(
       podUrl,
       solidSession: createSessionLikeFromSolidSession(session, fetchWithTimeout, podUrl),
       fetch: fetchWithTimeout,
-      getRuntimeAuthToken: async () => apiKey,
+      runtimeFetch: fetchWithTimeout,
+      async getRuntimeAuthToken() {
+        throw new Error('LinX runtime auth is session-managed. Use runtimeFetch instead of requesting a raw token.')
+      },
       close: () => session.logout().catch(() => undefined),
     }
   }
 
   if (credentials.authType === 'oidc_oauth' && credentials.webId) {
-    const podUrl = resolvePodDataSessionUrl(credentials.webId)
-    const webId = credentials.webId
-
-    const fetchWithTimeout: PodFetch = async (url, init) => {
-      const accessToken = await withTimeout(
-        runtime.getOidcAccessToken(credentials),
-        runtime.authTimeoutMs ?? DEFAULT_POD_DATA_AUTH_TIMEOUT_MS,
-        'LinX Pod OIDC token refresh timed out.',
-      )
-      if (!accessToken) {
-        throw new Error('Failed to restore OIDC access token for Pod data access. Run `linx login` again.')
-      }
-
-      return withFetchTimeout(
-        (requestUrl, requestInit) => runtime.authenticatedFetch(requestUrl, accessToken, requestInit),
-        url,
-        init,
-        runtime.fetchTimeoutMs ?? DEFAULT_POD_DATA_FETCH_TIMEOUT_MS,
-      )
+    const session = await withTimeout(
+      runtime.restoreStoredOidcSession(credentials, { forceRefresh: true }),
+      runtime.authTimeoutMs ?? DEFAULT_POD_DATA_AUTH_TIMEOUT_MS,
+      'LinX Pod OIDC session restoration timed out.',
+    )
+    if (!session) {
+      throw new Error('Failed to restore OIDC session for Pod data access. Run `linx login` again.')
     }
+
+    const webId = session.info.webId ?? credentials.webId
+    const podUrl = resolvePodDataSessionUrl(webId)
+    const fetchWithTimeout: PodFetch = (url, init) => withFetchTimeout(
+      (requestUrl, requestInit) => session.fetch(requestUrl, requestInit),
+      url,
+      init,
+      runtime.fetchTimeoutMs ?? DEFAULT_POD_DATA_FETCH_TIMEOUT_MS,
+    )
 
     return {
       credentials,
       webId,
       podUrl,
-      solidSession: createTokenBackedSessionLike(webId, fetchWithTimeout, podUrl),
+      solidSession: createSessionLikeFromSolidSession(session, fetchWithTimeout, podUrl),
       fetch: fetchWithTimeout,
-      getRuntimeAuthToken: async () => {
+      runtimeFetch: fetchWithTimeout,
+      async getRuntimeAuthToken() {
         const accessToken = await withTimeout(
-          runtime.getOidcAccessToken(credentials),
+          runtime.getOidcAccessToken(credentials, { forceRefresh: true }),
           runtime.authTimeoutMs ?? DEFAULT_POD_DATA_AUTH_TIMEOUT_MS,
           'LinX Pod OIDC token refresh timed out.',
         )
@@ -168,9 +213,7 @@ export async function createPodDataSession(
         }
         return accessToken
       },
-      // OIDC browser-login storage is the user's LinX login state. Data access
-      // uses per-request Bearer fetches, so close has no storage or timer work.
-      close: async () => {},
+      close: () => closeRestoredOidcSession(session),
     }
   }
 
@@ -187,15 +230,10 @@ function createSessionLikeFromSolidSession(session: Session, fetcher: PodFetch, 
   }
 }
 
-function createTokenBackedSessionLike(webId: string, fetcher: PodFetch, podUrl: string): SolidSessionLike {
-  return {
-    info: {
-      isLoggedIn: true,
-      webId,
-      podUrl,
-    },
-    fetch: (input, init) => fetcher(requestInputToUrl(input), init),
-    logout: async () => {},
+async function closeRestoredOidcSession(session: Session): Promise<void> {
+  const timeoutHandle = (session as unknown as { lastTimeoutHandle?: ReturnType<typeof setTimeout> | number }).lastTimeoutHandle
+  if (timeoutHandle) {
+    clearTimeout(timeoutHandle as ReturnType<typeof setTimeout>)
   }
 }
 

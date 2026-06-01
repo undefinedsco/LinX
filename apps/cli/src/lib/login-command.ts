@@ -11,6 +11,8 @@ import { promptText } from './prompt.js'
 
 interface LoginArgs {
   url?: string
+  fresh?: boolean
+  force?: boolean
 }
 
 interface WhoAmIArgs {
@@ -38,9 +40,10 @@ export async function runLinxLoginCommand(
   const write = deps.write ?? ((chunk: string) => process.stdout.write(chunk))
 
   let browserLoginStarted = false
+  const forceFresh = argv.fresh === true || argv.force === true
   const result = await doBrowserConsentLogin({
     issuerUrl: argv.url,
-    forceFresh: true,
+    forceFresh,
     onAuthUrl(url) {
       browserLoginStarted = true
       write('Opening LinX Cloud login in your browser...\n')
@@ -81,6 +84,12 @@ export const loginCommand: CommandModule<object, LoginArgs> = {
         type: 'string',
         default: resolveAccountBaseUrl(),
         description: 'Solid / account issuer URL',
+      })
+      .option('fresh', {
+        alias: 'force',
+        type: 'boolean',
+        default: false,
+        description: 'Ignore saved LinX OIDC session and start a fresh browser consent flow',
       }),
   handler: async (argv) => {
     await runLinxLoginCommand(argv)
