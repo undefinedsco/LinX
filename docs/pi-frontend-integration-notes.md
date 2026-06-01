@@ -6,7 +6,7 @@ Date: 2026-04-17
 
 Integrating the `pi` frontend is **not** primarily a `pi-tui` problem.
 
-The `@mariozechner/pi-coding-agent` interactive frontend (`InteractiveMode`) is tightly coupled to:
+The `@earendil-works/pi-coding-agent` interactive frontend (`InteractiveMode`) is tightly coupled to:
 
 - `AgentSessionRuntime`
 - `AgentSession`

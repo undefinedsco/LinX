@@ -4,10 +4,18 @@
 
 LinX CLI 当前的登录目标是：
 
-- 默认前端是 `linx` 命令进入的 Pi 原生 TUI
-- 使用 LinX Cloud 的浏览器 OIDC / consent 流登录
+- 默认前端是 `linx` 命令进入的 LinX TUI
+- 使用 LinX/xPod/Solid 的浏览器 OIDC / consent 流登录
 - 登录态保存在本地 `~/.linx`
 - 运行时优先复用已有登录态，避免每次重复打开浏览器
+- 登录获取和运行时消费是两条边界：`linx login` / 浏览器回调 / 手工 redirect
+  只负责拿到可复用 session；`linx`、`--backend <backend>`、模型读取和 Pod
+  访问只消费这个 session，不再自建一套登录流程。
+
+这里的“登录”只表示 xPod / LinX / Solid 身份登录。OpenAI、Claude、
+Codex-compatible、CodeBuddy 等 AI provider 的 API key 不叫登录，走
+`linx ai connect <provider>` 或 TUI/backend credential repair，并写入 Pod
+AI config。
 
 ## 当前入口
 
@@ -21,7 +29,7 @@ linx
 
 行为：
 
-1. 启动 Pi 原生 TUI
+1. 启动 LinX TUI
 2. 若本地已有有效 LinX Cloud 登录态，直接复用
 3. 若没有有效登录态，当前实现会在进入 TUI 前给出一个显式选项，询问是否现在打开浏览器登录
 4. 用户确认后，拉起浏览器授权
@@ -37,6 +45,22 @@ linx login
 1. 优先尝试复用已有登录态
 2. 如果已有登录态仍有效，直接返回成功
 3. 如果没有登录态或旧登录态不可复用，则走浏览器授权
+
+如果需要强制重新授权：
+
+```bash
+linx login --fresh
+# 或
+linx login --force
+```
+
+如果使用 Solid client credentials，它必须是 LinX/xPod 自己签发的
+client_id:client_secret 形式，不是 OpenAI / Anthropic / gateway key。
+普通 AI provider key 应使用：
+
+```bash
+linx ai connect <provider> --api-key <key>
+```
 
 ### 非交互模式
 
@@ -150,14 +174,24 @@ linx --print "..."
 
 ## TUI 运行时认证语义
 
-Pi runtime 里的 `undefineds` provider 不是普通“让用户自己填 API key”的 provider。
+LinX runtime 里的 `undefineds` provider 不是普通“让用户自己填 API key”的 provider。
 
 当前语义是：
 
-1. TUI / runtime 自身只需要 LinX Cloud 登录态
-2. 对 cloud `/v1/models`、`/v1/chat/completions` 的请求使用 LinX OIDC access token
-3. 用户自己的 OpenAI / Anthropic / 其他供应商 key 不应在 CLI 本地直接输入
-4. 这些供应商凭据应由 Pod / cloud 侧管理与解析
+1. TUI / runtime 自身只需要 LinX/xPod/Solid 登录态
+2. 对 cloud `/v1/models`、`/v1/chat/completions` 的请求使用恢复出的 Solid session/runtime fetch
+3. 用户自己的 OpenAI / Anthropic / 其他供应商 key 不属于 `/login`
+4. 这些供应商凭据应由 `linx ai connect` 或 backend credential repair 写入
+   Pod AI config，再由 Pod / cloud 侧管理与解析
+
+### 会话边界
+
+- 登录模块负责：OIDC / consent / loopback callback / manual redirect /
+  session refresh
+- CLI/backend 运行时负责：读取并复用 session，消费 Pod 数据，启动
+  backend/model 流
+- backend 不应再次向用户发起一套独立登录；它只在 session 失效或
+  credential 缺失时触发修复流程
 
 ## `/models` 语义
 

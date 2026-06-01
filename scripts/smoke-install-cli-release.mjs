@@ -54,6 +54,7 @@ const smokeEnv = {
 run(linxBin, ['--help'], { env: smokeEnv })
 run(linxBin, ['--version'], { env: smokeEnv })
 assertInstalledDrizzleSolidPatch()
+assertInstalledPiWebAccessPatch()
 
 console.log(`release smoke install passed: ${linxBin}`)
 
@@ -109,6 +110,29 @@ function assertInstalledDrizzleSolidPatch() {
   }
 
   console.log(`verified @undefineds.co/drizzle-solid@${packageJson.version} LinX Pod resource patches`)
+}
+
+function assertInstalledPiWebAccessPatch() {
+  const packageRoot = findInstalledPackageRoot('@undefineds.co/linx')
+  const vendorRoot = join(packageRoot, 'vendor', 'pi-web-access')
+  const packageJsonPath = join(vendorRoot, 'package.json')
+  const indexSourcePath = join(vendorRoot, 'index.ts')
+  const configSourcePath = join(vendorRoot, 'gemini-web-config.ts')
+
+  if (!existsSync(packageJsonPath)) {
+    throw new Error(`Installed vendored pi-web-access package missing: ${packageJsonPath}`)
+  }
+
+  const indexSource = readFileSync(indexSourcePath, 'utf8')
+  const configSource = readFileSync(configSourcePath, 'utf8')
+  if (
+    !indexSource.includes('~/.linx/pi-web-access.json')
+    || !configSource.includes('~/.linx/pi-web-access.json')
+  ) {
+    throw new Error('Installed vendored pi-web-access package does not target ~/.linx/pi-web-access.json')
+  }
+
+  console.log('verified vendored pi-web-access package targets ~/.linx/pi-web-access.json')
 }
 
 function findInstalledPackageRoot(packageName) {

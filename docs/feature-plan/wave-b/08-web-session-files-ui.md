@@ -59,7 +59,7 @@
 
 | 上游 Wave | Vocab | UI 组件 | 消费字段 |
 |-----------|-------|---------|---------|
-| 01 | `CLISessionVocab` | SessionHeader | `sessionStatus`, `sessionTool`, `tokenUsage`, `parentThreadId` |
+| 01 | `CLISessionVocab` | SessionHeader | `sessionStatus`, `sessionTool`, `tokenUsage`, `parentThread` |
 | 01 | `ChatBaseVocab` | SessionListItem | `chatType='cli_session'`, `title`, `lastActiveAt` |
 | 01 | `MessageVocab` | SessionMessageList | `richContent` (ToolBlock, ThinkingBlock, DiffBlock) |
 | 02 | `InboxVocab` | SessionControlBar | 待审批数量 badge, 审批操作 |

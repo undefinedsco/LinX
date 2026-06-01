@@ -1,0 +1,1135 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>LinX Reconciler / Automode / Symphony 讲解</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #17202a;
+        --muted: #5d6875;
+        --paper: #ffffff;
+        --page: #f5f7fa;
+        --line: #cfd8e3;
+        --soft: #edf2f7;
+        --thread: #2f5aa8;
+        --secretary: #0f766e;
+        --worker: #995f00;
+        --user: #6f45a6;
+        --danger: #a63a3a;
+        --ok: #287245;
+        --shadow: 0 16px 36px rgba(23, 32, 42, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+          sans-serif;
+        color: var(--ink);
+        background: var(--page);
+        line-height: 1.55;
+      }
+
+      main {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 44px 28px 72px;
+      }
+
+      header {
+        padding: 22px 0 28px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        max-width: 960px;
+        font-size: clamp(34px, 6vw, 64px);
+        line-height: 1.05;
+        letter-spacing: 0;
+      }
+
+      h2 {
+        margin-top: 58px;
+        font-size: 30px;
+        line-height: 1.16;
+        letter-spacing: 0;
+      }
+
+      h3 {
+        font-size: 18px;
+        line-height: 1.25;
+      }
+
+      .lead {
+        max-width: 820px;
+        margin-top: 18px;
+        font-size: 19px;
+        color: var(--muted);
+      }
+
+      .tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 22px;
+      }
+
+      .tag {
+        min-height: 30px;
+        padding: 4px 10px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--paper);
+        color: #3d4857;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .section-copy {
+        max-width: 860px;
+        margin-top: 12px;
+        color: var(--muted);
+      }
+
+      .panel,
+      .story-card,
+      .mode-card,
+      .thread-diagram,
+      .symphony-map,
+      .callout {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--paper);
+        box-shadow: var(--shadow);
+      }
+
+      .story-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+        margin-top: 24px;
+      }
+
+      .story-card {
+        padding: 18px;
+      }
+
+      .story-card strong {
+        display: block;
+        margin-bottom: 8px;
+      }
+
+      .story-card p {
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .thread-diagram {
+        margin-top: 26px;
+        padding: 24px;
+      }
+
+      .thread-map {
+        display: grid;
+        gap: 16px;
+      }
+
+      .source-grid {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .source-card,
+      .dispatch-target,
+      .thread-box,
+      .control-box,
+      .reconciler-box {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcfe;
+      }
+
+      .source-card,
+      .dispatch-target {
+        min-height: 94px;
+        padding: 13px;
+      }
+
+      .source-card b,
+      .dispatch-target b {
+        display: block;
+        margin-bottom: 5px;
+      }
+
+      .source-card span,
+      .dispatch-target span {
+        display: block;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .source-card.user {
+        border-top: 5px solid var(--user);
+      }
+
+      .source-card.ai {
+        border-top: 5px solid var(--secretary);
+      }
+
+      .source-card.worker {
+        border-top: 5px solid var(--worker);
+      }
+
+      .source-card.event {
+        border-top: 5px solid #4b6b88;
+      }
+
+      .source-card.delivery {
+        border-top: 5px solid #45556b;
+      }
+
+      .join-arrows {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 12px;
+        min-height: 42px;
+        align-items: end;
+        color: var(--thread);
+        font-size: 28px;
+        font-weight: 900;
+        text-align: center;
+      }
+
+      .control-box {
+        padding: 18px;
+        border-color: #9db3d4;
+        background: #edf4ff;
+        text-align: center;
+      }
+
+      .control-box b,
+      .reconciler-box b {
+        display: block;
+        font-size: 20px;
+      }
+
+      .control-box span,
+      .reconciler-box span {
+        color: #49657f;
+        font-size: 14px;
+      }
+
+      .thread-box {
+        padding: 18px;
+        text-align: center;
+        border-color: #9db3d4;
+        background: #ffffff;
+      }
+
+      .thread-box b {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 19px;
+      }
+
+      .thread-box span {
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .reconciler-flow {
+        display: grid;
+        grid-template-columns: 1fr minmax(260px, 0.72fr) 1fr;
+        gap: 16px;
+        align-items: center;
+      }
+
+      .vertical-arrow {
+        display: grid;
+        place-items: center;
+        min-height: 58px;
+        color: var(--thread);
+        font-size: 34px;
+        font-weight: 800;
+      }
+
+      .reconciler-box {
+        padding: 18px;
+        border-color: #9db3d4;
+        background: #edf4ff;
+        text-align: center;
+      }
+
+      .fanout {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        min-height: 42px;
+        align-items: start;
+        color: var(--thread);
+        font-size: 28px;
+        font-weight: 900;
+        text-align: center;
+      }
+
+      .diagram-caption {
+        margin-top: 12px;
+        color: var(--muted);
+        font-size: 14px;
+        text-align: center;
+      }
+
+      .targets {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 18px;
+      }
+
+      .dispatch-target {
+        min-height: 84px;
+        text-align: center;
+      }
+
+      .dispatch-target.user {
+        border-top: 4px solid var(--user);
+      }
+
+      .dispatch-target.secretary {
+        border-top: 4px solid var(--secretary);
+      }
+
+      .dispatch-target.worker {
+        border-top: 4px solid var(--worker);
+      }
+
+      .dispatch-target.review {
+        border-top: 4px solid #45556b;
+      }
+
+      .rules {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+        margin-top: 22px;
+      }
+
+      .panel {
+        padding: 20px;
+      }
+
+      .panel h3 {
+        margin-bottom: 12px;
+      }
+
+      .panel ul,
+      .panel ol {
+        margin: 0;
+        padding-left: 20px;
+      }
+
+      .panel li {
+        margin: 8px 0;
+      }
+
+      .mode-switch {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+        margin-top: 24px;
+      }
+
+      .mode-card {
+        padding: 20px;
+      }
+
+      .mode-card .label {
+        display: inline-block;
+        margin-bottom: 14px;
+        padding: 4px 9px;
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: 800;
+        background: var(--soft);
+      }
+
+      .chat-line {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        gap: 10px;
+        align-items: center;
+        margin: 10px 0;
+        padding: 12px;
+        border-radius: 8px;
+        background: #f8fafc;
+        border: 1px solid var(--line);
+      }
+
+      .bubble {
+        padding: 9px 10px;
+        border-radius: 7px;
+        background: var(--paper);
+        border: 1px solid var(--line);
+        font-weight: 700;
+        text-align: center;
+      }
+
+      .bubble.user {
+        color: var(--user);
+      }
+
+      .bubble.secretary {
+        color: var(--secretary);
+      }
+
+      .bubble.worker {
+        color: var(--worker);
+      }
+
+      .arrow-text {
+        color: var(--muted);
+        font-weight: 800;
+      }
+
+      .product-note {
+        margin-top: 14px;
+        padding: 14px;
+        border-radius: 8px;
+        background: #edf7f5;
+        color: #245c54;
+        font-weight: 650;
+      }
+
+      .approval-flow {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 20px;
+      }
+
+      .approval-flow div {
+        min-height: 108px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--paper);
+      }
+
+      .approval-flow b {
+        display: block;
+        margin-bottom: 7px;
+      }
+
+      .approval-flow span {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .spine-flow {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 20px;
+      }
+
+      .spine-flow div {
+        min-height: 112px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--paper);
+      }
+
+      .spine-flow b {
+        display: block;
+        margin-bottom: 7px;
+      }
+
+      .spine-flow span {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .group-chat-map {
+        display: grid;
+        grid-template-columns: minmax(220px, 1fr) minmax(340px, 1.25fr) minmax(220px, 1fr);
+        gap: 18px;
+        align-items: center;
+        margin-top: 24px;
+      }
+
+      .participant-column {
+        display: grid;
+        gap: 10px;
+      }
+
+      .participant {
+        min-height: 72px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--paper);
+      }
+
+      .participant b {
+        display: block;
+        margin-bottom: 5px;
+      }
+
+      .participant span {
+        display: block;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .participant.human {
+        border-left: 5px solid var(--user);
+      }
+
+      .participant.ai {
+        border-left: 5px solid var(--secretary);
+      }
+
+      .participant.worker {
+        border-left: 5px solid var(--worker);
+      }
+
+      .group-thread {
+        padding: 18px;
+        border: 1px solid #9db3d4;
+        border-radius: 8px;
+        background: #f8fbff;
+        text-align: center;
+      }
+
+      .group-thread b {
+        display: block;
+        margin-bottom: 8px;
+        font-size: 20px;
+      }
+
+      .group-thread span {
+        display: block;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .group-policy-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 18px;
+      }
+
+      .group-policy-grid div {
+        min-height: 92px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--paper);
+      }
+
+      .group-policy-grid b {
+        display: block;
+        margin-bottom: 5px;
+      }
+
+      .group-policy-grid span {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .symphony-map {
+        margin-top: 24px;
+        padding: 24px;
+      }
+
+      .thread-clusters {
+        display: grid;
+        grid-template-columns: minmax(260px, 1fr) 70px minmax(420px, 1.5fr);
+        gap: 18px;
+        align-items: center;
+      }
+
+      .cluster {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcfe;
+        padding: 18px;
+      }
+
+      .cluster h3 {
+        margin-bottom: 12px;
+      }
+
+      .cluster-row {
+        display: grid;
+        gap: 10px;
+      }
+
+      .mini-thread {
+        padding: 13px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--paper);
+      }
+
+      .mini-thread b {
+        display: block;
+        margin-bottom: 5px;
+      }
+
+      .mini-thread span {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .wide-arrow {
+        display: grid;
+        place-items: center;
+        color: var(--thread);
+        font-size: 34px;
+        font-weight: 900;
+      }
+
+      .callout {
+        margin-top: 38px;
+        padding: 24px;
+        border: 1px solid #b9c7dc;
+        border-left: 7px solid var(--thread);
+        border-radius: 8px;
+        background: #ffffff;
+        color: var(--ink);
+      }
+
+      .callout h2 {
+        margin-top: 0;
+        font-size: 22px;
+      }
+
+      .callout p {
+        max-width: 920px;
+        margin-top: 10px;
+        color: #2f3a48;
+        font-size: 19px;
+        line-height: 1.5;
+      }
+
+      .takeaway-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 18px;
+      }
+
+      .takeaway-grid div {
+        min-height: 78px;
+        padding: 12px;
+        border-radius: 8px;
+        background: #f4f7fb;
+        border: 1px solid var(--line);
+      }
+
+      .takeaway-grid b {
+        display: block;
+        margin-bottom: 5px;
+      }
+
+      .takeaway-grid span {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      code {
+        padding: 2px 5px;
+        border-radius: 4px;
+        background: var(--soft);
+        color: #253447;
+        font-size: 0.92em;
+      }
+
+      footer {
+        margin-top: 56px;
+        padding-top: 18px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      @media (max-width: 940px) {
+        main {
+          padding: 30px 18px 56px;
+        }
+
+        .story-grid,
+        .source-grid,
+        .join-arrows,
+        .reconciler-flow,
+        .fanout,
+        .rules,
+        .mode-switch,
+        .approval-flow,
+        .spine-flow,
+        .group-chat-map,
+        .group-policy-grid,
+        .takeaway-grid,
+        .thread-clusters,
+        .targets {
+          grid-template-columns: 1fr;
+        }
+
+        .wide-arrow {
+          min-height: 34px;
+          transform: rotate(90deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>先讲 Reconciler，再讲 Automode，最后讲 Symphony</h1>
+        <p class="lead">
+          这套 spec 的故事线是：所有协作先进入 Thread；Reconciler 观察 Thread 里的每条消息和事件，并决定下一步投递给谁；Automode 和 Symphony 都只是不同规模下的投递策略。
+        </p>
+        <div class="tags" aria-label="文档标签">
+          <span class="tag">Thread-first</span>
+          <span class="tag">AI Secretary</span>
+          <span class="tag">Automode</span>
+          <span class="tag">Symphony</span>
+        </div>
+      </header>
+
+      <section class="story-grid" aria-label="核心故事线">
+        <article class="story-card">
+          <strong>1. Reconciler</strong>
+          <p>每条进入 Thread 的消息、事件、审批、交付都先被 Reconciler 观察，再按当前模式投递给合适的人或 AI。</p>
+        </article>
+        <article class="story-card">
+          <strong>2. Automode</strong>
+          <p>在最简单的三人群聊里，只改变“用户和 worker 聊”还是“Secretary 和 worker 聊”。</p>
+        </article>
+        <article class="story-card">
+          <strong>3. Symphony</strong>
+          <p>把一个 Thread 扩展成多组 Threads：main thread 管用户和 Secretary，worker threads 管 Secretary 和 workers。</p>
+        </article>
+      </section>
+
+      <section>
+        <h2>1. Reconciler：所有来源都能往 Thread 投消息</h2>
+        <p class="section-copy">
+          Reconciler 不代替 Secretary 做语义判断。它的角色是观察 Thread：谁往里面投了消息，是什么事件，当前 Thread policy 是什么，然后决定下一步要唤醒谁。
+        </p>
+
+        <div class="thread-diagram">
+          <div class="thread-map">
+            <div class="source-grid" aria-label="可以向 Thread 投消息的来源">
+              <div class="source-card user">
+                <b>User</b>
+                <span>人类直接把消息投进 Thread。</span>
+              </div>
+              <div class="source-card ai">
+                <b>AI Chat Reply</b>
+                <span>Secretary 或 assistant 响应他人后，把回复投进 Thread。</span>
+              </div>
+              <div class="source-card worker">
+                <b>Worker Reply</b>
+                <span>worker 执行、询问、汇报后，把结果投进 Thread。</span>
+              </div>
+              <div class="source-card event">
+                <b>Task / Schedule</b>
+                <span>时间触发，或者时间触发后产生 task event。</span>
+              </div>
+              <div class="source-card delivery">
+                <b>Runtime / Delivery</b>
+                <span>审批、输入、工具请求、阶段交付和证据都能进入 Thread。</span>
+              </div>
+            </div>
+
+            <div class="join-arrows" aria-hidden="true">
+              <div>↓</div>
+              <div>↓</div>
+              <div>↓</div>
+              <div>↓</div>
+              <div>↓</div>
+            </div>
+
+            <div class="thread-box">
+              <b>Thread Timeline</b>
+              <span>所有 Message / ControlEvent / Approval / Delivery 先落到同一个可观察工作现场</span>
+            </div>
+
+            <div class="vertical-arrow" aria-hidden="true">↓</div>
+
+            <div class="reconciler-flow">
+              <div></div>
+              <div class="reconciler-box">
+                <b>Reconciler</b>
+                <span>读取 Thread 事件 + Thread policy，去重并决定投递目标</span>
+              </div>
+              <div></div>
+            </div>
+
+            <div class="fanout" aria-hidden="true">
+              <div>↙</div>
+              <div>↓</div>
+              <div>↓</div>
+              <div>↘</div>
+            </div>
+          </div>
+
+          <div class="targets" aria-label="Reconciler 投递目标">
+            <div class="dispatch-target user">
+              <b>投给 User</b>
+              <span>需要人类决策、授权或最终确认。</span>
+            </div>
+            <div class="dispatch-target secretary">
+              <b>投给 Secretary</b>
+              <span>需要语义判断、授权判断、分派或收口。</span>
+            </div>
+            <div class="dispatch-target worker">
+              <b>投给 Worker</b>
+              <span>需要执行具体任务或继续 runtime。</span>
+            </div>
+            <div class="dispatch-target review">
+              <b>投给 Reviewer / Scheduler</b>
+              <span>需要验收、排队、重试或定时处理。</span>
+            </div>
+          </div>
+          <p class="diagram-caption">关键点：来源很多，但都先写入 Thread；Reconciler 只做路由和唤醒，不替代 Secretary 做复杂语义判断。</p>
+        </div>
+
+        <div class="rules">
+          <article class="panel">
+            <h3>最简单的模型：三人群聊</h3>
+            <ul>
+              <li>一个 Thread 里有 User、Secretary、Worker 三个参与者。</li>
+              <li>User 可以直接发消息进 Thread。</li>
+              <li>Secretary 和 Worker 都是 AI participant，响应别人之后再把消息投进 Thread。</li>
+              <li>不同模式不需要换产品形态，只需要改 Reconciler 的投递行为。</li>
+            </ul>
+          </article>
+          <article class="panel">
+            <h3>Thread policy 改变的是投递</h3>
+            <ul>
+              <li><code>direct</code>：用户消息投给默认 assistant 或 worker。</li>
+              <li><code>auto</code>：审批、输入、阻塞先投给 Secretary。</li>
+              <li><code>symphony</code>：Issue、Task、Delivery、Run 事件投给 Secretary 或 assigned worker。</li>
+              <li><code>review</code>：Delivery 边界投给 Secretary 或 reviewer。</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section>
+        <h2>多人多 AI 群聊：Thread 是共享房间，不是点对点链路</h2>
+        <p class="section-copy">
+          三人群聊只是最小模型。真实产品里，一个 Thread 可以同时有多个人、多个 AI、多个 worker 或 reviewer。所有参与者都往同一个 Thread 里写消息；Reconciler 根据 mention、订阅、角色、风险和当前 policy 决定谁需要被唤醒。
+        </p>
+
+        <div class="thread-diagram">
+          <div class="group-chat-map">
+            <div class="participant-column">
+              <div class="participant human">
+                <b>User A</b>
+                <span>直接发问题、目标、确认和反馈。</span>
+              </div>
+              <div class="participant human">
+                <b>User B</b>
+                <span>可以补充上下文、提出约束或做验收。</span>
+              </div>
+              <div class="participant ai">
+                <b>Secretary</b>
+                <span>负责解释意图、协调权限、归纳状态。</span>
+              </div>
+            </div>
+
+            <div class="group-thread">
+              <b>One Chat / One Thread</b>
+              <span>所有人和 AI 看到的是同一个可审计时间线。Reconciler 不让 agent 彼此私下直接叫醒，而是统一从 Thread 事件做投递。</span>
+            </div>
+
+            <div class="participant-column">
+              <div class="participant ai">
+                <b>Research AI</b>
+                <span>被 mention、订阅或任务策略唤醒后回复。</span>
+              </div>
+              <div class="participant worker">
+                <b>Worker AI</b>
+                <span>负责执行具体任务、提交进度和 Delivery。</span>
+              </div>
+              <div class="participant worker">
+                <b>Reviewer AI</b>
+                <span>在 review policy 或 Delivery 边界上被唤醒。</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="group-policy-grid" aria-label="多人多 AI 群聊投递规则">
+            <div>
+              <b>Mention</b>
+              <span><code>@research</code> 或明确点名时，Reconciler 唤醒对应 AI。</span>
+            </div>
+            <div>
+              <b>Subscription</b>
+              <span>订阅这个 Thread 的 AI 可以被特定事件或关键词唤醒。</span>
+            </div>
+            <div>
+              <b>Role policy</b>
+              <span>approval 给 Secretary，delivery 给 reviewer，task dispatch 给 worker。</span>
+            </div>
+            <div>
+              <b>Noise control</b>
+              <span>不是每条消息都唤醒所有 AI；Reconciler 要去重、限流和选择目标。</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>2. Automode：三人群聊里换谁在和 Worker 聊</h2>
+        <p class="section-copy">
+          Automode 不需要先想成“高级自动化”。它就是同一个三人群聊里的投递策略：off 的时候主要是 User 和 Worker 聊；on 的时候主要是 Secretary 和 Worker 聊。产品侧仍然可以看成一个单聊。
+        </p>
+
+        <div class="mode-switch">
+          <article class="mode-card">
+            <span class="label">Auto off</span>
+            <h3>User 和 Worker 直接聊</h3>
+            <div class="chat-line">
+              <div class="bubble user">User</div>
+              <div class="arrow-text">↔</div>
+              <div class="bubble worker">Worker</div>
+            </div>
+            <div class="chat-line">
+              <div class="bubble secretary">Secretary</div>
+              <div class="arrow-text">旁路</div>
+              <div class="bubble worker">Worker</div>
+            </div>
+            <p class="product-note">产品侧：用户感觉自己在和一个 AI 工作会话直接对话。</p>
+          </article>
+
+          <article class="mode-card">
+            <span class="label">Auto on</span>
+            <h3>Secretary 和 Worker 聊</h3>
+            <div class="chat-line">
+              <div class="bubble secretary">Secretary</div>
+              <div class="arrow-text">↔</div>
+              <div class="bubble worker">Worker</div>
+            </div>
+            <div class="chat-line">
+              <div class="bubble user">User</div>
+              <div class="arrow-text">阻塞时</div>
+              <div class="bubble secretary">Secretary</div>
+            </div>
+            <p class="product-note">产品侧：仍然是一个单聊，只是输入托管给 Secretary，用户只在需要时介入。</p>
+          </article>
+        </div>
+
+        <h2>Automode 下的 Approval 和 Grant</h2>
+        <p class="section-copy">
+          Approval 是一次 runtime 请求，Grant 是可复用的授权事实。Automode 打开后，这些请求不是直接打断用户，而是先被 Reconciler 投给 Secretary；Secretary 根据已有 grant、风险和上下文决定是否处理，处理不了再问用户。
+        </p>
+        <div class="approval-flow">
+          <div>
+            <b>1. Worker 请求</b>
+            <span>runtime 发出 command / file / permission / input approval。</span>
+          </div>
+          <div>
+            <b>2. 进入 Thread</b>
+            <span>请求成为 Thread 里的 control event 或 Inbox item。</span>
+          </div>
+          <div>
+            <b>3. Reconciler 投递</b>
+            <span>auto policy 把请求投给同 Thread Secretary。</span>
+          </div>
+          <div>
+            <b>4. Secretary 查 Grant</b>
+            <span>已有授权就按范围处理；没有或风险过高就问用户。</span>
+          </div>
+          <div>
+            <b>5. 回写结果</b>
+            <span>approval 决策、grant 变化、证据和审计写回控制记录。</span>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>3. Symphony：从一个三人 Thread 变成多组 Threads</h2>
+        <p class="section-copy">
+          Symphony 不是 Automode 的升级版，而是把工作拆到多组 Thread 里。Main thread 是 User 和 Secretary 聊；其他 worker threads 是 Secretary 和 Worker 聊。main 以外默认都是 automode，approval 和 grant 由各自对端 Secretary 安排。
+        </p>
+
+        <div class="symphony-map">
+          <div class="thread-clusters">
+            <div class="cluster">
+              <h3>Main Thread</h3>
+              <div class="mini-thread">
+                <b>User ↔ Secretary</b>
+                <span>识别目标、查重、确认范围、接收汇总和最终请示。</span>
+              </div>
+              <div class="mini-thread">
+                <b>也可以开 Automode</b>
+                <span>如果 main thread 也 <code>auto on</code>，Secretary 可以继续推进当前主线并在阻塞时问人。</span>
+              </div>
+            </div>
+
+            <div class="wide-arrow">→</div>
+
+            <div class="cluster">
+              <h3>Worker Threads</h3>
+              <div class="cluster-row">
+                <div class="mini-thread">
+                  <b>Thread A：Secretary ↔ Worker A</b>
+                  <span>自动托管执行；approval / grant 先由这个 Thread 的 Secretary 处理。</span>
+                </div>
+                <div class="mini-thread">
+                  <b>Thread B：Secretary ↔ Worker B</b>
+                  <span>独立任务、独立证据、独立 Delivery，必要时回 main thread 协调。</span>
+                </div>
+                <div class="mini-thread">
+                  <b>Thread C：Secretary ↔ Worker C</b>
+                  <span>可以共享 workspace，也可以按 Thread 分配不同 worktree。</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="rules">
+          <article class="panel">
+            <h3><code>/symphony off</code>：Secretary 是普通会话助手</h3>
+            <ul>
+              <li>把用户输入当成当前 chat 的普通消息处理。</li>
+              <li>可以回答问题、继续对话、处理当前会话上下文。</li>
+              <li>不会默认把一句话升级成 Issue，也不会默认拆 Task 或派 worker。</li>
+              <li>如果要委派，需要用户显式给出对应动作或已有产品路径触发。</li>
+            </ul>
+          </article>
+          <article class="panel">
+            <h3><code>/symphony on</code>：Secretary 带控制面 skills</h3>
+            <ul>
+              <li>先判断这句话是普通聊天、新 Issue、已有 Issue 更新、steering，还是需要追问。</li>
+              <li>先查 open Issues，能归并就归并，避免重复创建工作。</li>
+              <li>把目标拆成 worker 可执行的 Task，并选择目标 worker Thread。</li>
+              <li>跟踪 Delivery、Evidence、Run 状态，把阻塞和变更带回 main thread。</li>
+            </ul>
+          </article>
+        </div>
+
+        <div class="rules">
+          <article class="panel">
+            <h3>Secretary skills：判断、编排、收口</h3>
+            <ul>
+              <li>读 main thread 用户意图，决定是否进入 Symphony 工作流。</li>
+              <li>维护 Issue 的范围、状态、优先级、拆分和验收边界。</li>
+              <li>给 worker 投递任务 brief，并处理 approval / grant 的升级路径。</li>
+              <li>验收 Delivery 和 Evidence，决定完成、重开、变更或继续派工。</li>
+            </ul>
+          </article>
+          <article class="panel">
+            <h3>Worker skills：执行、验证、报告</h3>
+            <ul>
+              <li>读取被分配的 Task / brief，不重新定义 Issue 范围。</li>
+              <li>在自己的 worker thread 和 workspace 内完成实现、调试或研究。</li>
+              <li>需要权限、输入或范围变更时，先报告给对端 Secretary。</li>
+              <li>用 Delivery / Evidence 汇报结果、测试、风险和变更请求。</li>
+            </ul>
+          </article>
+        </div>
+
+        <h2>Issue 是穿针引线的主线对象</h2>
+        <p class="section-copy">
+          Symphony 不是把多个聊天窗口简单堆起来。Issue 是把 main thread 的用户意图、多个 worker threads 的执行、Delivery 的交付和 Evidence 的证明串成一条线的控制记录。
+        </p>
+        <div class="spine-flow" aria-label="Issue 串联 Symphony 工作流">
+          <div>
+            <b>Main Thread</b>
+            <span>User 和 Secretary 确认目标、范围、歧义和最终接受。</span>
+          </div>
+          <div>
+            <b>Issue</b>
+            <span>记录当前工作主线：要解决什么、属于哪个范围、现在状态如何。</span>
+          </div>
+          <div>
+            <b>Tasks</b>
+            <span>Issue 被拆成 worker 可执行的任务，每个任务有明确验收边界。</span>
+          </div>
+          <div>
+            <b>Worker Threads</b>
+            <span>Secretary 和 worker 在独立 Thread 中执行，默认 automode。</span>
+          </div>
+          <div>
+            <b>Delivery / Evidence</b>
+            <span>worker 提交阶段结果、证据、测试、风险和变更请求。</span>
+          </div>
+          <div>
+            <b>Back To Issue</b>
+            <span>Secretary 根据交付更新 Issue：完成、阻塞、继续、重开或改范围。</span>
+          </div>
+        </div>
+
+        <div class="rules">
+          <article class="panel">
+            <h3>Symphony 负责什么</h3>
+            <ul>
+              <li>判断用户输入是普通聊天、新 Issue、已有 Issue 更新、steering，还是需要追问。</li>
+              <li>把复杂工作拆成 Task，并选择目标 worker Thread。</li>
+              <li>用 Delivery / Evidence / Run 状态收口 worker 输出。</li>
+              <li>把无法自动处理的审批、授权、范围变化带回 main thread。</li>
+            </ul>
+          </article>
+          <article class="panel">
+            <h3>每个 worker Thread 的默认行为</h3>
+            <ul>
+              <li>默认是 automode：Secretary 与 Worker 对话，用户不直接参与。</li>
+              <li>Worker 需要 approval 或 input 时，先问同 Thread Secretary。</li>
+              <li>Secretary 能按 grant 和策略处理就处理，不能处理就升级给 main thread 或用户。</li>
+              <li>Worker 的结果通过 Delivery 和 Evidence 回到控制面，而不是靠零散聊天记忆。</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="callout">
+        <h2>最后要记住的关系</h2>
+        <p>
+          Thread 是消息现场，Reconciler 是投递器，Automode 和 Symphony 只是不同规模下的投递策略。
+        </p>
+        <div class="takeaway-grid" aria-label="结论拆解">
+          <div>
+            <b>Automode</b>
+            <span>三人 Thread 中，决定 User 跟 Worker 聊，还是 Secretary 跟 Worker 聊。</span>
+          </div>
+          <div>
+            <b>Symphony</b>
+            <span>多组 Threads 中，让 Secretary 带控制面 skills 去拆分、派工和收口。</span>
+          </div>
+          <div>
+            <b>Issue</b>
+            <span>把 main thread、worker threads、Delivery 和 Evidence 串成一条主线。</span>
+          </div>
+        </div>
+      </section>
+
+      <footer>
+        Source specs: docs/secretary/auto-symphony-contract.md and docs/symphony-system-evolution-control-plane.md. This page is an explanatory artifact, not an implementation status report.
+      </footer>
+    </main>
+  </body>
+</html>

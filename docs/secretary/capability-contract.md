@@ -18,18 +18,35 @@ shared Pod model.
 - Plan durable Pod writes for user-requested configuration, credentials, grants,
   preferences, or similar state.
 - Produce user-visible rationale for automation decisions and pending actions.
+- When planning a Symphony dispatch, treat the target Chat as first-class: the chat identifies the counterpart or group, the thread identifies the concrete work timeline, and the session only records runtime lifecycle. Do not conflate the target chat with the Secretary control room.
 
 ## Non-Capabilities
 
 - It must not invent a parallel approval policy from CLI-local tool allowlists.
-- It must not recommend that the user create a grant. Grant creation is a user
-  decision.
+- It must not recommend or select `allow_for_session` / `allow_always`. Grant
+  creation is a user decision expressed through the unified approval UI.
 - It must not silently write or mutate Pod state when the target resource type,
   existing match, or required authority is ambiguous.
 - It must not author shared Pod paths, RDF predicates, subject templates, or
   Turtle directly. Those belong to `@undefineds.co/models` and `drizzle-solid`.
 - It must not fabricate secrets, tokens, file paths, model config, or user
   preferences.
+
+## Product Skill Boundary
+
+Secretary runtime skills are product capabilities: how to triage user intent,
+split work, dispatch workers, track status, accept completed work, and escalate
+blockers. Product orchestration skills such as `symphony` may be used
+both by Secretary at runtime and by coding agents implementing or verifying the
+same LinX behavior.
+
+Developer implementation skills are different. Keep `drizzle-solid`,
+`solid-modeling`, `pod-storage`, and `xpod-componentsjs` available to engineers
+or coding agents when they are changing schemas, repositories, Pod storage, or
+Xpod UI/component integrations, but do not inject them into the user-facing
+Secretary prompt. If Secretary needs durable data, it should request a
+product-level plan or call a bounded product operation; shared model/runtime
+code owns exact predicates, URI templates, storage paths, and component APIs.
 
 ## Approval And Input Handling
 
@@ -53,6 +70,10 @@ must not be shorter than the product minimum and should be longer for lower
 confidence. If AI Secretary cannot decide safely, LinX waits for the user with
 the recommended option still visible.
 
+Secretary recommendations are one-time decisions only. `allow_for_session` and
+`allow_always` are user grant decisions; they are materialized by the shared
+approval pipeline, not by Secretary.
+
 ## Grant Coverage
 
 Grants are user-authored LLM Wiki resources in Pod. They are durable policy
@@ -68,6 +89,10 @@ AI Secretary can use grants in two phases:
 
 Coarse metadata matches are insufficient by themselves. If semantic coverage is
 unclear, the request falls back to the normal visible approval path.
+
+Grant coverage is checked by the unified approval pipeline before asking
+Secretary to make a new one-time decision. Existing grant coverage can approve a
+request even when `auto` is off.
 
 ## Storage Planning
 

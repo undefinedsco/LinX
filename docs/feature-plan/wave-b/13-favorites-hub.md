@@ -34,17 +34,17 @@
 ### 3.3 交互规则
 
 - 搜索默认模糊匹配 `searchText`。
-- 打开原对象优先按 `sourceModule + sourceId` 导航；失败时回退 `targetUri`。
+- 打开原对象优先按 `target` 的 URI 关系恢复场景；`sourceModule` 只用于分类和回退映射。
+- `sourceId` 仅保留为历史数据的兼容输入，不再作为新写入的 canonical 导航键。
 - 取消收藏后列表即时移除（乐观更新）。
 
 ## 4. 数据模型设计
 
 基于现有 `favoriteTable` 升级为 Favorites V2：
 
-- 保留：`id`, `targetType`, `targetUri`, `title`, `snapshotContent`, `snapshotAuthor`, `favoredAt`
+- 保留：`id`, `targetType`, `target`, `title`, `snapshotContent`, `snapshotAuthor`, `favoredAt`
 - 新增：
   - `sourceModule`：来源模块（chat/contacts/files/messages/thread）
-  - `sourceId`：来源对象业务 ID
   - `searchText`：归一化检索文本
   - `snapshotMeta`：JSON 字符串（头像、标签、副标题等）
   - `updatedAt`：快照更新时间
@@ -114,7 +114,6 @@ export const UDFS = createNamespace('udfs', 'https://undefineds.co/ns#', {
 
   // Favorites V2 新增
   sourceModule: 'sourceModule',         // 来源模块：'chat' | 'contacts' | 'files' | 'messages' | 'thread'
-  sourceId: 'sourceId',                 // 来源对象业务 ID
   searchText: 'searchText',             // 归一化检索文本
   snapshotMeta: 'snapshotMeta',         // JSON: 头像、标签、副标题等
 })
@@ -130,7 +129,7 @@ import { UDFS, DCTerms, SCHEMA, RDF } from '../namespaces'
 export const FavoriteVocab = {
   // 现有
   targetType: RDF.type,
-  targetUri: UDFS.favoriteTarget,
+  target: UDFS.favoriteTarget,
   title: DCTerms.title,
   snapshotContent: SCHEMA.text,
   snapshotAuthor: SCHEMA.author,
@@ -138,7 +137,6 @@ export const FavoriteVocab = {
 
   // V2 新增
   sourceModule: UDFS.sourceModule,
-  sourceId: UDFS.sourceId,
   searchText: UDFS.searchText,
   snapshotMeta: UDFS.snapshotMeta,
   updatedAt: DCTerms.modified,
@@ -152,7 +150,6 @@ export const FavoriteVocab = {
 
 // V2 新增：来源追踪
 sourceModule: string('sourceModule').predicate(UDFS.sourceModule),
-sourceId: string('sourceId').predicate(UDFS.sourceId),
 
 // V2 新增：检索
 searchText: text('searchText').predicate(UDFS.searchText),
@@ -168,10 +165,10 @@ updatedAt: timestamp('updatedAt').predicate(DCTerms.modified),
 
 | 源表 starred 变化 | favoriteTable 写入 | 说明 |
 |------------------|-------------------|------|
-| `chatTable.starred = true` | `{ sourceModule: 'chat', sourceId: chatId, targetType: MEETING.LongChat, title: chat.title, searchText: chat.title }` | Chat 收藏 |
-| `threadTable.starred = true` | `{ sourceModule: 'thread', sourceId: threadId, targetType: SIOC.Thread, title: thread.title }` | Thread 收藏 |
-| `contactTable.starred = true` | `{ sourceModule: 'contacts', sourceId: contactId, targetType: VCARD.Individual, title: contact.name }` | Contact 收藏 |
-| `*.starred = false` | DELETE from favoriteTable WHERE sourceModule + sourceId | 取消收藏 |
+| `chatTable.starred = true` | `{ sourceModule: 'chat', target: chatUri, targetType: MEETING.LongChat, title: chat.title, searchText: chat.title }` | Chat 收藏 |
+| `threadTable.starred = true` | `{ sourceModule: 'thread', target: threadUri, targetType: SIOC.Thread, title: thread.title }` | Thread 收藏 |
+| `contactTable.starred = true` | `{ sourceModule: 'contacts', target: contactUri, targetType: VCARD.Individual, title: contact.name }` | Contact 收藏 |
+| `*.starred = false` | DELETE from favoriteTable WHERE target | 取消收藏 |
 
 ### 9A.5 存储路径
 
@@ -179,5 +176,6 @@ updatedAt: timestamp('updatedAt').predicate(DCTerms.modified),
 |------|---------|----------|------|
 | Favorite | `/.data/favorites/{id}.ttl` | `schema:CreativeWork` | 新增 V2 字段（向后兼容） |
 
-> **向后兼容**：V2 新增字段均为可选。旧数据缺少 `sourceModule`/`sourceId` 时，
-> reconcile 任务会根据 `targetUri` 反查填充。
+> **向后兼容**：V2 新增字段均为可选。旧数据缺少 `sourceModule` 时，
+> reconcile 任务会根据 `target` URI 反查填充；历史 `sourceId` 只作为旧数据兼容输入，
+> 不再作为新写入字段。

@@ -16,6 +16,35 @@ LinX 要支持一个用户 Pod 里只有一个默认 `AI Secretary`，但它可�
 
 `Secretary` 是用户在系统里的操作分身和长期配置根，不是每个工作组复制一份。
 
+## 已锁定决策：群 Reconciler 与 Thread
+
+LinX 的群协作不建成“成员直接唤醒成员”的网状模型，而是统一走
+`Chat -> Thread -> Reconciler -> Scheduler -> Run`。
+
+- `Chat` 是长期可分组的协作空间，回答“和谁/什么在聊”。
+- `Thread` 是 Chat 下的一条具体工作现场和时间线，回答“这件事在哪里发生”。
+- `ThreadBus` 只负责 append / subscribe，不做语义判断。
+- `Reconciler` 是程序控制器，观察 Thread 里的 Message、ControlEvent、InboxItem、Delivery、schedule tick，去重、分类、应用 Thread policy，并生成或跳过 WakeJob。
+- `Scheduler` 消费 WakeJob，处理锁、优先级、重试、超时，并启动对应 Agent Runtime / Run。
+- `Secretary` 是 Thread 内的重要 agent 角色，不是 Reconciler。Reconciler 可以唤醒 Secretary；Secretary 再做意图判断、审批代理、worker steering、验收或上升。
+
+`WakeJob` 是 Reconciler 生成的内存态唤醒意图，不是 Pod 资源，也不进入共享模型。持久事实只记录 Thread 事件、Delivery、Approval/InputRequest、Run、RunStep 和对应 Evidence；Scheduler 可以把 WakeJob 物化为 `Run(status=queued/running/...)`，但不能把 WakeJob 队列本身当成权威状态。
+
+默认流转：
+
+```text
+Message / ControlEvent / InboxItem / Delivery appended to Thread
+  -> Reconciler classifies and applies Thread policy
+  -> Scheduler starts selected Agent Runtime
+  -> Agent output appends back to Thread
+```
+
+`auto` 和 Symphony worker Thread 复用同一条路径：当 runtime 需要 input、approval 或 blocker 处理时，事件先落到当前 Thread；Reconciler 唤醒同 Thread 的 Secretary；Secretary 在 policy 内处理，处理不了才进入 Inbox/控制态等待用户或上级 Secretary。
+
+`Delivery` 不是普通聊天、steer、approval/input request 的通用运输层。普通问题、回答、纠偏、checkpoint 都是 Message 或 ControlEvent。Delivery 只用于阶段边界：任务派发包、异步交接、最终报告、patch/artifact/evidence/risk package、需要验收的结果包。
+
+周期性任务也不是特殊执行容器。Schedule 只周期性地产生 `schedule.tick` ControlEvent；tick 进入稳定的 schedule main Thread，由 Reconciler 决定是在原 Thread 内处理，还是分裂出 child execution Thread。
+
 ## 已锁定决策：Secretary 承接用户依赖
 
 LinX 的 runtime/worker 不直接面对用户做确认或索取输入。所有“需要用户”的阻塞点统一交给 `Secretary` 处理：
@@ -23,8 +52,8 @@ LinX 的 runtime/worker 不直接面对用户做确认或索取输入。所有�
 - 如果请求落在当前 `autoPolicy` / `delegatedAuthority` 内，Secretary 直接代用户确认、代用户填写、代用户继续推进。
 - 如果请求超出 policy、预算、风险或可推导范围，Secretary 才把它投影成用户可见的 Inbox / Approval / InputRequest。
 - 用户回答后，仍由 Secretary 把答案写成结构化 `DelegatedResponse`，再由 runtime adapter 投影回目标 backend。
-- Pod timeline 不伪造 `UserMessage`。Secretary 代办时仍写 `AssistantMessage`，并记录 `onBehalfOf = User WebID`。
-- runtime backend 如果要求 `user` 或 `tool` role，只能由 `MessageProjection` / adapter 层转换，不能改变 Pod 里的真实 maker。
+- Pod timeline 不伪造 `UserMessage`。Secretary 代办时仍写 `AssistantMessage`，`maker` 就是 Secretary。
+- runtime backend 如果要求 `user` 或 `tool` role，只能由 `Delivery.projection` / runtime adapter 层转换，不能改变 Pod 里的真实 maker。
 
 因此，Secretary 是 LinX 产品层的“人类依赖适配器”：
 
@@ -49,27 +78,43 @@ Codex / worker blocks on approval or input
 - `Issue.tasks` 只能保存 Task URI reference；不能新增 `taskRefs`、`taskIds` 或 Symphony 专属 task row。
 - `Workspace/worktree` 是任务执行现场。
 - `Session` 是一次 runtime 生命周期。
-- `Report/Review` 是任务完成后的上升和验收入口。
+- `Report` 是任务完成后的上升和验收入口；`Evidence` 记录测试、日志、diff、Pod 投影、用户验证、review finding 等支撑事实。
 
 建模硬约束：
 
-- Shared Pod resource 和 shared archive contract 使用语义 URI 字段：`issue`、`task`、`delivery`、`session`、`chat`、`thread`。
-- `issueId`、`taskId`、`deliveryId`、`sessionId`、`chatId`、`threadId` 只允许出现在 UI 选中态、CLI 参数、本地文件 key、runtime wire protocol 或兼容 metadata 中，不能作为持久关系字段。
-- 本地 archive 文件夹名可以从 URI 派生短 key，但 JSON 内容必须保留 URI 语义字段。
+- Shared Pod resource 和本地 RDF/JSON-LD mirror 使用语义 URI 字段：`issue`、`task`、`delivery`、`session`、`chat`、`thread`。
+- `issueId`、`taskId`、`deliveryId`、`sessionId`、`chatId`、`threadId` 只允许出现在 UI 选中态、CLI 参数、本地文件 key、runtime wire protocol 或只读兼容迁移层中，不能作为持久关系字段；只要这些值用于关联 Pod 资源，就必须进入同步账本 metadata 的 `resourceBindings.{name}.local`，并和 `resourceBindings.{name}.uri` 放在同一条边上。
+- 同步账本 metadata 是本地/app-scoped 恢复材料，必须按 `source` 或 app namespace 分开；不要把某个 app 的同步 metadata 写回 `Issue / Task / Chat / Message` 等共享业务资源。
+- 本地 cache 文件夹名可以从 URI 派生短 key；LinX 共享事实的持久镜像应来自 Pod RDF 的 JSON-LD，而不是另一套业务 JSON schema。
 - LinX 项目内的编排 API 不需要重复 `Linx` 前缀，例如使用 `createRunPlan` / `SymphonySessionRecord`，不要新增 `createLinxSymphonyRunPlan` 或 `LinxSymphonyTaskRecord`。
 
 产品入口上，`Symphony` 不是独立产品，也不是一个新的 worker。它是 `AI Secretary` 的内置委派/编排能力：
 
 - 用户感知的是 Secretary 能不能把活派给下面的人干。
-- `/symphony ...` 用来调整或检查 Secretary 的委派行为、任务切分、worker 投影和状态归档。
+- `/symphony on|off|status` 用来调整或检查 Secretary 的委派行为、任务切分、worker 投影和状态归档。
+- TUI 里的 `/symphony` 是主入口：无参数或 `on` 时切换当前 Secretary 会话进入委派模式，`status` 查看状态，`off` 回到普通聊天；该命令不投递给 Codex/Claude/CodeBuddy backend。
+- Objective 必须来自用户正常发送的聊天消息；`/symphony` 不接收一次性 objective，也不把 slash 参数预填或伪造成用户输入。
+- Symphony 是一组可共享的产品编排 skills：Secretary runtime 用它做 issue triage、现有 Issue 查重、create/update/ask 决策、task split、worker dispatch、status/report tracking；Codex/Claude 等 coding agent 在实现或验证 LinX Symphony 时也使用同一套 skill，避免产品运行时和工程实现各自发明一套模型。
+- 普通对话只记录为 `Message`，不能因为 `/symphony` 开启就把每句话都变成 `Issue`。只有可跟踪工作项才进入 Issue 生命周期。
+- 创建新 Issue 前必须先比较当前 open Issues；明显同一个工作项时更新原 Issue，是否新建不明确时由 Secretary 向用户追问。
 - `Symphony` 是 Secretary 的全局控制面，不绑定从哪个 Chat/Thread 发起；在哪个界面触发只提供来源上下文，不决定投递模型。
 - Chat/Thread 是过程展示和回看载体，由 Secretary 在产品层创建或选择，并把对应 URI 写进 `Issue / Delivery / Session`。用户不需要选择或填写 Chat/Thread/Message URI，headless CLI 也不模拟这层产品上下文。
-- CLI 里的 `linx symphony ...` 只是 `/symphony ...` 的 headless 验证入口。
-- 不提供独立 `linx-symphony` 产品入口，避免把内置能力误解成另一个应用。
+- 派活必须有一个目标 `Chat`：可以是某个 AI contact 的工作私聊，也可以是一个任务群聊。`Thread` 是这次派活在该 Chat 下的具体协作时间线和 workspace 分组，`Session` 只记录 backend runtime 生命周期。不要把派活永远写进固定控制室，也不要把 `Session` 当成 Chat。
+- 不提供 `linx symphony` 或独立 `linx-symphony` 产品入口，避免把内置能力误解成另一个应用。
+
+当前 CLI/TUI 落地策略：
+
+- `/symphony` 触发后的派活必须先把过程投影到 Pod 的既有 `Chat / Thread / Message / Session / Agent / Contact` 资源，不能新增一套 Symphony 专属 UI 表。
+- 有产品上下文时，`/symphony` 应投影到被委派对象对应的 Chat，并为该次派活创建或复用 Thread；没有显式目标时才回退到 `AI Secretary · Symphony` 控制室。
+- planned/running/completed/failed 状态写成 Secretary 发出的 assistant message，message.richContent 带 `task_progress`，让 App 在运行中可见。
+- planned/running/completed/failed 同时写 `Audit` 检查点：`symphony.planned`、`symphony.dispatched`、`symphony.completed`、`symphony.failed`。审计 entry 指向对应状态 message，session 指向通用 runtime Session，actor 是 AI Secretary，onBehalfOf 是用户 WebID。
+- `Issue / Delivery / Session` 的本地缓存只能是 Pod/RDF mirror 或无 Pod recovery material；跨端回看和调试必须依赖 `chat / thread / messages` URI。
+- Pod 投影失败只告警，不阻塞 worker 启动；本地 cache 是恢复和降级路径，不是共享事实源。
+- Symphony 派发本身不创建 `Approval` 或 `Grant`。`Approval` 只在 Codex/Pi/Claude 等 backend 原生请求确认或结构化输入时产生；`Grant` 只在用户选择会话级/长期授权后由 auto-mode / AI Secretary 授权层物化为 LLM Wiki 文档。后台 worker 的审批、授权和对应审计继续复用 auto-mode 的 `approval / grant / audit / inbox_notification` 链路。
 
 runtime 层先做半套，直接使用 Codex：
 
-- LinX 负责 `Issue / Task reference / Thread / Workspace / Session / Delivery / Projection` 的持久化和产品语义。
+- LinX 负责 `Issue / Task reference / Thread / Workspace / Session / Delivery / Run / RunStep` 的持久化和产品语义。
 - Codex 负责实际 coding runtime、工具调用、subagent/task thread、approval event。
 - LinX adapter 只做必要桥接：投递输入、接收输出、处理 approval/input request、保存 projection。
 - 不在 MVP 里复制 Codex 的完整 mailbox、guardian、subagent scheduler。
@@ -77,14 +122,14 @@ runtime 层先做半套，直接使用 Codex：
 后台任务 UI 先不扩模型：
 
 - 只新增 `Issue` 作为用户可见工作项，不引入 runner dashboard 或新的 background-agent resource。
-- Web UI 只展示当前模型已经有的 `Issue / Task reference / Session / Delivery / Report / Inbox`。
+- Web UI 只展示当前模型已经有的 `Issue / Task reference / Session / Delivery / Evidence / Report / Inbox`。
 - TUI 可以先作为 headless 能力验证入口，而不是单独产品形态。
 - 如果后续需要后台任务列表，也只能从现有 `Issue + Task + Session` 派生，不能反向创造一套新的 Task 模型。
 
 MVP 落地顺序：
 
 1. 不改 GUI，不改 TUI 信息架构。
-2. 先实现后台主链路：`Issue -> Task reference -> Delivery -> Codex Session -> Runtime Events -> Projection -> Report/Inbox`。
+2. 先实现后台主链路：`Issue -> Task reference -> Delivery -> Codex Session -> Run/RunStep -> Report/Inbox`。
 3. worker 直接用 Codex；LinX 只负责发任务、管状态、存上下文、做投递和代理审批。
 4. 用现有 TUI 验证 headless 能力：创建任务、查看 session/delivery、发送 follow-up、查看输出和 report、处理无法自动代理的 approval/input。
 5. GUI/TUI 后续只消费已经稳定的数据模型，不反向驱动新增模型。
@@ -97,9 +142,26 @@ MVP 验收标准：
 - Codex 发出的 approval/input request 先进入 Secretary 处理链路。
 - Secretary 可在 policy 内生成 `DelegatedResponse` 并回填给 Codex。
 - Secretary 不能代理时，请求进入用户 Inbox，而不是 worker 直接等待用户。
-- 任务完成后能生成结构化 Report，并关联原 Task/Session/Delivery。
+- 任务完成后能生成结构化 `Report`，关联原 `Issue / Task / Session / Delivery / Run`，并引用支撑 `Evidence`。
 
-## Codex subagents 调研结论
+## Backend multiple-agent 调研结论
+
+Claude Code、Codex、OpenAI Symphony 和 Multica 都支持多 agent 工作流，但它们不是同一层模型。LinX 只能借鉴能力边界，不能把任何一个 backend 的 runtime 对象直接当成产品层 `Chat / Thread / Message`。
+
+| 维度 | Claude Code Subagents | Claude Code Agent Teams | Codex Subagents | OpenAI Symphony | Multica |
+| --- | --- | --- | --- | --- | --- |
+| 核心定位 | 单个 Claude 会话里的专用子助手，用于隔离上下文和工具输出 | 多个 Claude Code session 组成一个临时团队 | Codex 主 agent fan-out 多个子 agent，再 fan-in 汇总 | 长跑 daemon，把 issue tracker 变成 coding agents 的控制面 | 人类 + agent 共用的任务协作平台，把 coding agents 变成 workspace teammate |
+| 工作单位 | 一次 delegated task | shared task list 里的 task | parent prompt 拆出的 subtask 或批处理项 | issue tracker 里的每个 issue | issue、comment、assignment、mention 触发的 agent task |
+| 拓扑 | parent -> subagent -> summary | lead + teammates，可通过 mailbox 协调 | parent -> child agent threads -> consolidated result | orchestrator -> per-issue workspace -> agent session | workspace/server -> task queue -> local daemon -> selected coding tool runtime |
+| 是否产品级协作 | 否，主要是上下文隔离 | 接近，但仍是 Claude runtime 本地/team 状态 | 否，主要是并行执行和汇总 | 是工作管理层，但不是聊天或群聊协议 | 是任务协作和可视化管理层，但不是 backend runtime 协议 |
+| agent 间通信 | 子 agent 主要回报给主会话 | teammate 可互发 message | 主要由 parent 路由 follow-up，最后汇总 | 不强调 agent 互聊；issue/workspace/session 是核心 | agent 作为 workspace member 评论、改状态、被 `@` 提及；server 协调任务，不等于 runtime 互聊 |
+| 上下文模型 | 每个 subagent fresh context，返回 summary | 每个 teammate 独立 context | 每个 child agent thread 独立 context | 每个 issue 一个隔离 workspace/session | issue/comment thread、agent instructions、skills、runtime config 组成任务上下文 |
+| 并发方式 | 主会话同时 spawn 多个 subagents | 多个 Claude Code 实例并行 | 并行 specialized agents，显式触发 | poll issue tracker，按 concurrency dispatch | daemon 扫描本地 tools 并注册 runtimes；agent 有 concurrency limit，可多机器并行 |
+| 持久化 | Claude transcript / subagent transcript | Claude 本地 team/task 状态 | Codex agent thread / job state | workspace、logs、orchestrator state、tracker 状态 | server 持久化 workspace、issues、members、agent definitions、task queue、comments；执行留在 daemon/本机 |
+| 权限/审批 | subagent 继承或受限于父会话权限 | teammate 继承 lead 权限 | subagent 继承 sandbox/approval policy | 不规定统一审批策略，交给实现和 runtime 配置 | 通过 workspace/private visibility 控制谁能 assign；代码、keys、toolchain 留在本机 daemon |
+| 适合场景 | 查代码、跑测试、独立 review、避免污染主上下文 | 多角色讨论、并行调查、跨层 feature | 并行 review、探索、批处理、多步骤 feature plan | 无人值守地消化 backlog，从 ticket 到 PR/review | 管理多种 coding tools、队列、状态、blockers、skill reuse 和团队可见性 |
+| 不适合场景 | 频繁交互、共享大量上下文、强顺序任务 | 同文件强冲突、强依赖顺序、小任务 | 产品层群聊、长期团队状态、agent 互聊 | 用户聊天、实时多人协作、通用 workflow engine | 直接表达 Pod 语义、替代 Chat timeline、或把 runtime transcript 当共享事实源 |
+| 对 LinX 的启发 | runtime input projection 只投必要 summary / context pack | `Delivery / mailbox / task list` 有参考价值 | `Run / RunStep` 对应 child thread 执行事实 | `Issue -> Workspace -> Session -> Review` 主链路值得借鉴 | `Agent as member`、assignment/comment/status、daemon/runtime 分离、vendor-neutral agent 管理值得借鉴 |
 
 Codex 原生 subagent 不是“多个 agent 在同一个群聊里互相发消息”的模型，而是主 agent 编排多个独立 `Agent thread` 的 fan-out / fan-in 模型。
 
@@ -126,15 +188,15 @@ leader
 
 LinX 的建模边界：
 
-- 不把 Codex 原生 subagent 当作产品群聊协议。
-- Pod 里的 `Thread / Delivery / MessageProjection` 是 LinX 自己的产品层协作模型。
-- Codex runtime adapter 负责把 LinX 的 `Delivery` 投影为 Codex child thread 的输入，并把 Codex 输出投影回 LinX Thread。
+- 不把 Codex 原生 subagent、Claude Code subagent、Claude Agent Team、OpenAI Symphony 的内部 session 或 Multica runtime task 当作产品群聊协议。
+- Pod 里的 `Thread / Delivery / Run / RunStep` 是 LinX 自己的产品层协作模型。
+- Runtime adapter 负责把 LinX 的 `Delivery` 投影为 Codex child thread、Claude subagent/team task、Symphony-style issue session 或 Multica-style runtime task 的输入，并把 backend 输出投影回 LinX Thread。
 - worker 横向沟通默认走 Secretary/router，不直接互写对方 transcript。
+- `Issue / Task / Workspace / Session / Run / RunStep` 保留 backend-neutral 语义；backend 原生对象只作为 runtime execution detail 或外部 reference。
 
 在交互心智里，Secretary 可以代表用户阅读、整理、派发、确认和上升；在审计语义里，仍然要区分：
 
 - `actor`：实际做出动作的 Secretary Agent。
-- `onBehalfOf`：被代理的用户 WebID。
 - `policy`：允许 Secretary 这么做的授权或自动化策略。
 - `source`：触发这次动作的消息、任务或 delivery。
 
@@ -142,12 +204,20 @@ LinX 的建模边界：
 
 ```text
 AI Secretary Agent
-  ├─ Thread A + Session A + Workspace/worktree A
-  ├─ Thread B + Session B + Workspace/worktree B
-  └─ Thread C + Session C + Workspace/worktree C
+  ├─ Control Thread + Secretary Session + shared Pod control records
+  ├─ Worker Thread A + Runtime Session A + Workspace X
+  ├─ Worker Thread B + Runtime Session B + Workspace X
+  └─ Worker Thread C + Runtime Session C + Workspace/worktree Y
 ```
 
-如果 `Workspace` 是 git repository，同一 repo 下多个运行现场默认使用不同 worktree。不要把 Agent 身份塞进 workspace URI；workspace 是“在哪里工作”，Agent 是“谁在工作”。
+主理人和 worker 共享的是 Pod/control records，不是同一个 runtime transcript。
+runtime transcript 是否相同由 Thread 拓扑决定：有些 worker 和主理人在同一个
+Thread/room 里协作，有些 worker 通过 Delivery 投递到独立 Session。workspace
+按 Thread 分配，不按 Agent 身份分配：一条独立 Thread 可以一个 worker 一个
+worktree；同一 Thread 需要多个 AI 协作时，应默认共享同一个 workspace。只有跨
+环境、需要隔离未提交修改、并行冲突风险高或 runtime 不能安全共享目录时，才创建
+独立 worktree。不要把 Agent 身份塞进 workspace URI；workspace 是“在哪里工作”，
+Agent 是“谁在工作”。
 
 ## 对象边界
 
@@ -161,7 +231,7 @@ AI Secretary Agent
 | `Workspace` | 真实工作目录或 worktree | 同目录可被多个 Session 引用 |
 | `Issue` | 用户/产品可见的工作项 | 新增 shared Pod resource，必须关联 chat/thread 以便回看过程 |
 | `Task` | 通用可执行工作单元 | 复用既有 Task，不新增 Symphony 专属 TaskRecord |
-| `Delivery` | 跨 Thread/Session 的消息投递信封 | 记录 source、target、payload、projection、状态 |
+| `Delivery` | 阶段/结果/异步交接包，不是普通消息通道 | 记录 source、target、payload、projection、状态和验收结果 |
 
 ## 聊天模式矩阵
 
@@ -179,9 +249,9 @@ AI Secretary Agent
 | --- | --- | --- | --- |
 | 主私聊 | User + Secretary | 用户表达目标、看总结、做最终决策 | 否 |
 | 工作私聊 | Secretary + Codex/runtime，User 可旁观 | 单个 worker 执行明确任务 | 是，经过 projection |
-| 任务群聊 | User + Secretary + 多个 worker 摘要身份 | 多 worker 协调、状态看板、上升报告 | 否，只通过 Delivery 喂给目标 runtime |
+| 任务群聊 | User + Secretary + 多个 worker 摘要身份 | 多 worker 协调、状态看板、上升报告 | 否，只通过 Reconciler/dispatch 投影给目标 runtime |
 
-跨会话不是用户看到的第四种聊天产品形态，而是底层投递机制。它把一个 timeline 里的消息、目标、steer 或确认结果投影到另一个 Thread/Session。
+跨会话不是用户看到的第四种聊天产品形态，而是底层 reconciliation / projection 机制。它把一个 timeline 里的消息、目标、steer、确认结果或阶段包落到正确的 Thread，再由 Reconciler 决定是否投影到另一个 Thread/Session/runtime。
 
 ## 自动 / 非自动
 
@@ -190,12 +260,12 @@ AI Secretary Agent
 | 场景 | 非自动 | 自动 |
 | --- | --- | --- |
 | 主私聊收到任务 | Secretary 生成计划或建议，等用户确认 | Secretary 在 policy 内创建 Task、Thread、Session |
-| 群聊里 `@codex-a` | 生成待投递草稿，等用户点发送 | 直接创建 Delivery 给 codex-a |
+| 群聊里 `@codex-a` | 生成待投递草稿，等用户点发送 | 写 mention/dispatch control event；形成任务包时创建 Delivery |
 | Codex 请求选项确认 | 显示给用户选择 | policy 覆盖时 Secretary 代选 |
 | Codex 请求自由输入 | 显示给用户填写 | 可由上下文、模板、偏好推导时 Secretary 代填 |
 | worker 完成 | 等用户或 Secretary 手动转发总结 | Secretary 自动生成 report delivery 并上升 |
 
-自动模式下，Secretary 是用户分身；但每次代理确认、代理输入和自动派发都必须留下 AssistantMessage + Audit/Approval/Delivery 记录。
+自动模式下，Secretary 是用户分身；但每次代理确认、代理输入和自动派发都必须留下 AssistantMessage + Audit/Approval/InputRequest/Delivery 等对应记录。
 
 ## 2x2 行为矩阵
 
@@ -204,9 +274,9 @@ AI Secretary Agent
 | 模式 | 用户看到 | Secretary 行为 | Codex/runtime 行为 | 上下文策略 |
 | --- | --- | --- | --- | --- |
 | 私聊 + 非自动 | User 和 Secretary 对话 | 生成计划、任务草稿、投递草稿 | 不启动，除非用户确认 | 只使用当前私聊上下文 |
-| 私聊 + 自动 | User 和 Secretary 对话，看到 Secretary 代办说明 | policy 内自动建 Task/Session/Delivery，并代确认/代输入 | 收到投影后的 user/tool 输入并执行 | Goal 进 stable prefix，Steer/Delivery 进 suffix |
+| 私聊 + 自动 | User 和 Secretary 对话，看到 Secretary 代办说明 | policy 内自动建 Task/Thread/Session，必要时创建 Delivery，并代确认/代输入 | 收到投影后的 user/tool 输入并执行 | Goal 进 stable prefix，Steer/Delivery 进 suffix |
 | 群聊 + 非自动 | 多 worker 状态和摘要在一个房间 | 生成分工建议和待投递项 | 只在用户确认投递后执行 | 群聊历史不自动进 runtime |
-| 群聊 + 自动 | 群聊像任务指挥室，自动出现派发和报告 | policy 内按 mention/plan 自动路由、派发、收报告 | 只消费发给自己的 Delivery | 默认只见任务包、context pack、授权片段 |
+| 群聊 + 自动 | 群聊像任务指挥室，自动出现派发和报告 | policy 内按 mention/plan 自动路由、派发、收报告 | 只消费投影给自己的任务包/context pack/runtime input | 默认只见任务包、context pack、授权片段 |
 
 产品默认应先采用：
 
@@ -223,7 +293,7 @@ AI Secretary Agent
 - Pod timeline 永远记录真实 `maker`，不要伪造用户消息。
 - Secretary 作为用户分身时，Pod 里仍然是 `maker = Secretary Agent URI`。
 - 只有 runtime adapter 可以把 Secretary 的派发/确认/输入投影成 Codex backend 需要的 `user` 或 `tool` role。
-- 任何投影都必须有 `MessageProjection` 或 `Delivery` 记录，不能只靠消息 role 猜。
+- 任何投影都必须有 `Delivery.projection`、`Run.input` 或对应 `RunStep` 记录，不能只靠消息 role 猜。
 
 | 事实 | Pod message maker | 用户可见 role | 投给 runtime 的 role | 说明 |
 | --- | --- | --- | --- | --- |
@@ -232,21 +302,29 @@ AI Secretary Agent
 | Secretary 派发给 Codex | Secretary Agent URI | assistant 或 system note | user | 对 Codex 来说这是来自“用户代理”的任务输入 |
 | Codex 回复任务结果 | Codex/session actor URI | assistant | assistant | 进入工作私聊 timeline |
 | Secretary 上升 worker 结果 | Secretary Agent URI | assistant | 不直接投递 | 摘要报告进入父级 Thread |
-| Secretary 代用户确认 | Secretary Agent URI | assistant | tool/user response | 审计上 `onBehalfOf = User WebID` |
+| Secretary 代用户确认 | Secretary Agent URI | assistant | tool/user response | 审计上记录 `decisionBy = Secretary`、`decisionSource = policy` |
 | Secretary 代用户输入 | Secretary Agent URI | assistant | user input response | 必须记录 `valueSource` |
 
-runtime adapter 需要显式保存 projection：
+runtime adapter 需要显式保存 projection；第一版直接落在 `Delivery.projection` 或执行侧 `Run.input` / `RunStep.data`，不新增一等 Message projection resource：
 
 ```ts
-type MessageProjection = {
-  sourceMessage: string
-  sourceMaker: string
-  targetSession: string
-  projectedRole: 'system' | 'user' | 'assistant' | 'tool'
-  projectedContent: string
-  projectionReason: 'task_dispatch' | 'delegated_response' | 'report' | 'steer'
+type RuntimeProjection = {
+  source: string
+  target: string
+  targetRole: 'system' | 'user' | 'assistant' | 'tool'
+  content: string
+  reason: 'task_dispatch' | 'delegated_response' | 'report' | 'steer'
 }
 ```
+
+Thread 中的 `Message` 是事实层：记录谁说了什么、在哪个 Chat/Thread 中说、
+由哪个 maker 产生。发给 backend LLM 的 `system/user/assistant/tool` 输入是
+runtime projection 层：adapter 根据 Thread facts、Goal、Steer、Run 状态和
+backend 协议重写角色、上下文窗口和最后一条输入。不要把 projection 伪装成
+用户在 Thread 里说过的话；如果 Secretary 代用户输入，Thread 里仍记录为
+Secretary 的 runtime intent；真正的 LLM 输入再在 `Run.input` / `RunStep.data` /
+`Delivery.projection` 中记录它被投影成 backend 所需的 `user` 或 `tool`
+输入。
 
 这样才能同时满足：
 
@@ -306,26 +384,27 @@ Codex feedback
 
 ## 消息编码总表
 
-这张表是实现时的判定表。先判断“谁给谁发”，再决定写什么 Pod 消息、是否创建 Delivery、是否投影到 runtime。
+这张表是实现时的判定表。先判断“什么事件落到哪个 Thread”，再由
+Reconciler 根据 Thread policy 决定是否唤醒 Secretary、worker、reviewer 或
+runtime。不要先假设“谁直接唤醒谁”。
 
-| 发送方 -> 接收方 | 场景 | Pod timeline 写入 | Delivery | Runtime projection | Inbox |
+Delivery 只在阶段/结果/异步交接边界创建。普通聊天、steer、approval/input
+request、worker checkpoint 都先写成 Message、ControlEvent、InboxItem、
+Approval/InputRequest、RunStep 或 Evidence。
+
+| 事件 | Pod / Thread 写入 | Delivery | Reconciler 默认动作 | Runtime projection | Inbox |
 | --- | --- | --- | --- | --- | --- |
-| User -> Secretary | 主私聊输入目标、补充约束、纠偏 | `UserMessage`；`maker = User WebID`；`role = user` | 不创建，除非 Secretary 后续派发 | 不投给 Codex | 不进 |
-| Secretary -> User | 回复、解释、总结、询问用户 | `AssistantMessage`；`maker = Secretary Agent URI`；`role = assistant` | 不创建 | 不投给 Codex | 需要用户回答时可创建 Inbox/InputRequest |
-| Parent Secretary -> Child Secretary | 分治后派发子目标、上下文、policy | 父级 Thread 写 `AssistantMessage` 或 system event；`maker = Secretary`；子级 Thread 写 `delivery_received` event | 创建 `Delivery(type=task_dispatch, target=child Secretary role)` | 不直接投给 Codex | 非自动或越界时先进 Inbox/待确认 |
-| Child Secretary -> Codex | 根据 Goal 生成首条 runtime 输入 | 子级 Thread 写 `AssistantMessage` 或 system event；`maker = Secretary`；metadata 标记 `roleScope=child` | 更新/消费 task Delivery，或创建 `Delivery(type=runtime_intent)` | `projectedRole = user`；content = task payload + Goal + ContextPack suffix | 通常不进 |
-| Child Secretary -> Codex | 根据 Codex 反馈生成下一步输入 | 子级 Thread 写 `AssistantMessage` 或 compact system event；`maker = Secretary`；引用 Codex feedback | 创建 `Delivery(type=runtime_followup)` 或追加到当前 runtime session | `projectedRole = user/tool`；content = follow-up payload / approval / input | policy 不覆盖时进 Inbox |
-| Child Secretary -> Codex | 发送短期纠偏 steer | 子级 Thread 可写 `AssistantMessage` 或 system event；`maker = Secretary` | 创建 `Delivery(type=steer)` | `projectedRole = user` 或 backend 支持时 `system`；Steer 放 dynamic suffix | 通常不进 |
-| Codex -> Child Secretary | 普通执行输出、阶段性状态 | 子级工作 Thread 写 `AssistantMessage`；`maker = Codex/session actor`；`role = assistant`；引用 runtime event | 不创建，除非需要上升 | backend 原生 assistant 输出映射到 Pod | 不进 |
-| Codex -> Secretary/User | 需要选项确认 | 工作 Thread 写 approval block 或 system event；`maker = Codex/session actor` | 可创建 `Delivery(type=approval_request)` 指向 Secretary | runtime 暂停等待 response | 需要用户或 Secretary 处理时进 Inbox/Approval |
-| Child Secretary -> Codex | 代用户做选择型确认 | 子级 Thread 写 `AssistantMessage`；`maker = Secretary`；richContent 含 `delegated_decision` | 更新原 Delivery 或创建 `Delivery(type=delegated_response)` | `projectedRole = tool` 或 backend 协议要求的 approval response | auto policy 覆盖时不进用户 Inbox；越界才进 |
-| Codex -> Secretary/User | 需要自由输入 | 工作 Thread 写 input request block；`maker = Codex/session actor` | 可创建 `Delivery(type=input_request)` 指向 Secretary | runtime 暂停等待 input response | 需要用户或 Secretary 处理时进 Inbox/InputRequest |
-| Child Secretary -> Codex | 代用户填写输入 | 子级 Thread 写 `AssistantMessage`；`maker = Secretary`；richContent 含 `delegated_input` 和 `valueSource` | 更新原 Delivery 或创建 `Delivery(type=delegated_response)` | `projectedRole = user` 或 backend input response；content = 填写值 | policy 可推导时不进用户 Inbox；敏感/不可推导才进 |
-| Codex -> Group Thread | worker 完成后上升报告 | 群聊写 `AssistantMessage` 或 report block；`maker = Codex/session actor` 或 Secretary 汇总时 `maker = Secretary` | 创建 `Delivery(type=report)` 到父级 Thread | 不再投给其他 runtime，除非 Secretary 再路由 | 通常不进；失败/需决策才进 |
-| Child Secretary -> Parent Secretary | 上升报告、阻塞、验收证据 | 子级 Thread 写 report；父级 Thread 写 `AssistantMessage` 或 report block；`maker = Secretary`；metadata 标记 source child scope | 创建 `Delivery(type=report, target=parent Secretary role)` | 不投给 Codex | 失败/需决策才进 |
-| Parent Secretary -> Group Thread | 汇总多个 worker 状态 | 群聊写 `AssistantMessage`；`maker = Secretary` | 可创建 report Delivery 给上级 Thread | 不投给 Codex | 不进 |
-| Group Thread -> Codex | 群聊里 `@codex-a` | 群聊保留原消息；`maker` 是真实发言者 | Secretary/router 创建 `Delivery(type=mention_dispatch)` | `projectedRole = user`；只投递给目标 Codex | 非自动时可进待确认 |
-| Worker A -> Worker B | 横向请求协作 | 不直接互写 transcript；A 所在线程写请求，父级/Secretary 线程写路由记录 | 经 Secretary 创建 Delivery 给 B | B 看到的是 Secretary/router 投递的 user payload | 越权或冲突时进 |
+| 用户输入目标、补充约束、纠偏 | 当前 Thread 写 `UserMessage`，`maker = User WebID` | 不创建 | 唤醒当前 Thread 的 Secretary/default assistant | 不直接投给 backend，除非后续生成 runtime intent | 不进 |
+| Secretary 回复、解释、总结、询问用户 | 当前 Thread 写 `AssistantMessage`，`maker = Secretary Agent URI` | 不创建 | 不额外唤醒，除非有待处理控制事件 | 不投给 backend | 需要用户回答时可创建 Inbox/InputRequest |
+| Secretary 分治派发子目标 | 父级 Thread 写 assistant/control event；目标 child Thread 写 `task.dispatch` event | 可创建 `Delivery(type=task_dispatch)`，作为任务包/异步交接包 | 唤醒 child Thread 的 Secretary 或 assigned worker | child Secretary/runtime adapter 渲染为首条 runtime input | 非自动或越界时进待确认 |
+| Secretary 发送 steer / follow-up | 目标 Thread 写 `AssistantMessage` 或 `ControlEvent(type=steer|change.requested)` | 通常不创建；只有跨 Thread 异步交接才创建 | 唤醒目标 Thread 的 Secretary/worker/runtime | adapter 投影为 backend 支持的 `user`/`system`/input response | 越权、敏感或不可推导时进 |
+| backend 普通输出、工具状态、checkpoint | 工作 Thread 写 AssistantMessage、RuntimeEvent projection、RunStep 或 Evidence | 不创建，除非形成阶段报告 | 可触发巡检、状态更新或批处理，不必每条都唤醒 Secretary | backend 原生输出映射到 Pod/runtime event | 不进 |
+| backend 需要 approval/input | 工作 Thread 写 `ControlEvent(type=approval.required|input.required)` 和 Approval/InputRequest | 不创建 | 唤醒同 Thread Secretary 先处理 | backend 暂停等待 adapter 回填 | 创建或更新 Inbox；Secretary 已处理也要留 resolved 记录 |
+| Secretary 代 approval/input | 工作 Thread 写 AssistantMessage + DelegatedResponse，`maker = Secretary` | 不创建 | 更新 Inbox/Approval/InputRequest 状态，唤醒等待中的 Run | adapter 投影为 backend 协议要求的 response | policy 覆盖则 resolved；越界则 pending |
+| worker 提交阶段/最终结果 | 工作 Thread 写 `Delivery(type=report|result|artifact_package)` 和 `delivery.submitted` event | 创建 | 唤醒 Secretary/reviewer 做验收或排队批处理 | 不再投给原 runtime，除非验收后产生 follow-up | 失败、风险或需决策时进 |
+| 群聊 `@worker` 或显式指派 | 群 Thread 保留原 Message，另写 mention/dispatch control event | 只有形成任务包时创建 `task_dispatch` Delivery | 唤醒 Reconciler 选择目标 Thread/worker | 目标 runtime 只收到投影后的任务包/context pack | 非自动时可进待确认 |
+| worker 横向请求协作 | 源 Thread 写请求 Message/control event；父级/群 Thread 写路由记录 | 只有异步交接包或结果包才创建 | 由共同父级 Reconciler/Secretary 路由，避免 worker 网状互改 transcript | 目标 worker 看到 Secretary/router 投影后的 payload | 越权、冲突或无人负责时进 |
+| schedule tick | schedule main Thread 写 `ControlEvent(type=schedule.tick)` | 不创建 | 复用原 Thread 或分裂 child execution Thread | 按 policy 渲染为 runtime input | 需要用户/authority 时进 |
 
 `Secretary + Codex` 这条线的统一解释：
 
@@ -335,17 +414,18 @@ Pod 中：
 
 Runtime 中：
   下级 Secretary 根据 Codex 反馈生成 runtime intent。
-  runtime intent 经过 MessageProjection 后变成 Codex 的 user/tool input。
+  runtime intent 经过 Run.input、RunStep.data 或 adapter projection 变成 Codex 的 user/tool input。
+  只有当来源本身是 Delivery 时，才在 Delivery.projection 上记录投影。
 
 审计中：
-  记录 decisionBy/sourceMaker = Secretary，onBehalfOf = User WebID。
+  记录 decisionBy/sourceMaker = Secretary，以及 policy/source。
 ```
 
-所以不要在 Pod 里把 Secretary 派发伪造成 `UserMessage`。如果 UI 想表达“Secretary 代表你说”，用 AssistantMessage 文案和 `onBehalfOf` metadata 表达；如果 runtime 需要 `user` role，由 projection 层负责。
+所以不要在 Pod 里把 Secretary 派发伪造成 `UserMessage`。如果 UI 想表达“Secretary 代表你说”，用 AssistantMessage 文案、policy 和 source 表达；如果 runtime 需要 `user` role，由 projection 层负责。
 
 ## 私聊
 
-私聊是 Secretary 和一个目标 runtime/worker 的工作线程。
+私聊是 Secretary 和一个目标 runtime/worker 的 Thread。
 
 Pod 消息里保留真实发言者：
 
@@ -376,12 +456,12 @@ Group Chat / Thread
 
 ```text
 Delivery
-  sourceThread = group thread
-  sourceMessage = group message
+  source = group message URI
+  target = worker or runtime URI
+  thread = source group thread
   targetThread = codex-a private/runtime thread
   targetSession = codex-a runtime session
-  targetAgent = Secretary or worker identity
-  projectedRole = user
+  projection.targetRole = user
   payload = 修复登录问题...
 ```
 
@@ -411,48 +491,49 @@ Delivery
 
 不要让新加入的 worker 自动吃完整群聊历史。
 
-## 跨会话沟通
+## 跨 Thread / Session 协调
 
-跨会话沟通统一走 `Delivery / Handoff`，不要直接改对方 transcript。
+跨 Thread / Session 协调统一走 Thread 事件和 Reconciler，不直接改对方 transcript。
+Delivery / Handoff 只用于阶段边界或异步交接包，不是普通消息、steer、approval/input request 的必经通道。
 
 ```text
-source Thread/Session
-  -> Delivery envelope
-  -> target Thread/Session
-  -> target runtime receives projected message
+source Thread appends Message / ControlEvent / Delivery
+  -> Reconciler selects target Thread / Agent / runtime
+  -> Scheduler starts or resumes Run when needed
+  -> target Thread records projected Message / ControlEvent / runtime input
 ```
 
-最小字段：
+Delivery 的最小字段只描述阶段/结果/异步交接包：
 
 ```ts
 type Delivery = {
-  sourceThread: string
-  sourceSession?: string
-  sourceMessage?: string
-  goal?: string
-  steer?: string
-  targetThread: string
+  task?: string
+  source?: string
+  target?: string
+  thread?: string
+  targetThread?: string
   targetSession?: string
-  targetAgent: string
-  routedBy: string
-  coordinationId: string
-  projectedRole: 'user' | 'system' | 'assistant'
-  visibility: 'private' | 'group' | 'report'
-  status: 'pending' | 'delivered' | 'loaded' | 'consumed' | 'failed' | 'cancelled'
-  payload: string
-  contextPack?: string
-  contextPackHash?: string
-  summary?: string
+  actor?: string
+  object?: string
+  objective?: string
+  status: 'pending' | 'dispatched' | 'consumed' | 'completed' | 'failed' | 'cancelled'
+  payload: Record<string, unknown>
+  projection?: RuntimeProjection
+  metadata?: Record<string, unknown>
   createdAt: string
+  dispatchedAt?: string
   consumedAt?: string
+  completedAt?: string
 }
 ```
 
-分治、派发、上升、横向沟通都用同一套机制：
+分治、派发、上升、横向沟通共享同一条 Reconciler 路径，但不都创建 Delivery：
 
-- `派发`：父级 Secretary 创建 Task + Delivery 给下级工作现场。
-- `上升`：子级 Secretary 发布 Report Delivery 给父级 Thread。
-- `横向沟通`：默认经共同父级 Secretary 路由，不鼓励 worker 之间直接网状互发。
+- `派发`：父级 Secretary 创建或更新 Task/Thread；形成明确任务包时创建 `Delivery(type=task_dispatch)`。
+- `上升`：子级 worker/Secretary 发布 `Delivery(type=report|result)` 给父级 Thread，由父级 Reconciler 唤醒验收。
+- `steer/follow-up`：写 Message 或 ControlEvent；只有跨 Thread 异步交接且需要包化时才创建 Delivery。
+- `approval/input`：写 Approval/InputRequest + InboxItem；同 Thread Secretary 先处理。
+- `横向沟通`：默认经共同父级 Reconciler/Secretary 路由，不鼓励 worker 之间直接网状互发。
 
 ## Delivery 消费模型
 
@@ -484,11 +565,11 @@ Delivery resource
 
 完整内容仍在 Delivery 和关联资源里：
 
-- `Delivery.payload`：本次投递的任务包或 follow-up。
+- `Delivery.payload`：本次投递的任务包、结果包、artifact/evidence/risk package 或异步交接包。
 - `Delivery.contextPackHash`：可缓存上下文前缀。
 - `Delivery.goal`：稳定目标和验收条件。
-- `Delivery.steer`：短期纠偏。
-- `Delivery.delegatedResponse`：代理确认或代理输入。
+- `Delivery.steer`：仅当短期纠偏作为本次阶段包的一部分交付时使用；普通 steer 写 Message/ControlEvent。
+- `Delivery.delegatedResponse`：仅当代理确认/输入作为本次阶段包的证据一起交付时引用；权威状态仍在 Approval/InputRequest/Inbox/Audit。
 
 Child Secretary 处理 Codex 反馈时也是同一套机制：
 
@@ -498,7 +579,7 @@ Codex runtime event
   -> child Secretary 在 Secretary+Codex 聊天里看到 Codex AssistantMessage
   -> 必要时 tool.getRuntimeEvent / tool.getDelivery / tool.getGoal 取原始细节
   -> child Secretary decides next action
-  -> Delivery(type=runtime_followup) or delegated_response
+  -> Message/ControlEvent/DelegatedResponse/Run.input
   -> adapter projects to Codex user/tool input
 ```
 
@@ -515,8 +596,9 @@ Child Work Thread
 runtime event 是底层事实流；聊天消息是给 Secretary、用户和 TUI 消费的语义投影。两者通过 URI/id 关联：
 
 ```ts
-type RuntimeMessageProjection = {
-  runtimeEvent: string
+type RuntimeEventProjection = {
+  run: string
+  runStep: string
   message: string
   thread: string
   maker: string
@@ -536,9 +618,9 @@ type RuntimeMessageProjection = {
 | 状态 | 含义 |
 | --- | --- |
 | `pending` | 已创建，目标还没处理 |
-| `delivered` | 目标 Thread/Session 已看到 notice |
-| `loaded` | child Secretary 或 adapter 已通过 tool 读取完整内容 |
+| `dispatched` | 已投递到目标 Thread/Session 或目标 runtime |
 | `consumed` | 已生成 runtime intent 或 report |
+| `completed` | 投递目标已完成对应动作 |
 | `failed` | 投递或消费失败 |
 | `cancelled` | 被用户或 policy 取消 |
 
@@ -592,38 +674,48 @@ type RuntimeMessageProjection = {
 
 ## auto 模式
 
-auto 模式不是“所有消息自动广播给所有 worker”，而是用户先授予一段自动执行策略，然后 Secretary 在策略约束内代替用户确认，自动创建 Task、Delivery 和 Session。
+auto 模式不是“所有消息自动广播给所有 worker”，也不是 backend 原生 approval policy。它只有开和关：
 
-auto 模式下的确认主体是 Secretary，但语义上是用户授权后的代理确认或代理输入：
+- `auto off`：用户直接驱动当前会话；Secretary 仍可记录和展示状态，但不接管输入或调度。
+- `auto on`：Secretary 接管当前会话输入、任务拆分、投递和 worker 调度；能在已有授权和上下文内继续推进，搞不定、越权、凭据缺失、破坏性操作或需要人类产品判断时再等用户。
+
+backend 原生审批策略独立保存和生效。`auto on/off` 只描述 LinX Secretary 是否主驾当前会话，不等同于 Codex `approvalPolicy` 或任何 backend 内部 sandbox/approval 开关。
+
+`auto on/off` 本身是控制面状态变化，不是业务会话消息。开启 auto 时必须新建或复用独立的 Secretary control session，并记录它和当前业务 `Chat / Thread / Session / Workspace` 的关系；不能把“Auto on”控制指令作为 user message、prompt、follow-up 或 steer 写进当前聊天 transcript。
+
+进 Chat 仍然可以是一个会话，但要区分两类事实：
+
+- 产品层 `Message`：真实发生在 `Chat / Thread` 里的用户、Secretary、worker、系统可见发言或事件。
+- 模型层 input：为了让某个 backend/agent 执行而临时组装的 prompt/context/projection。
+
+二者不能互相冒充。Secretary 在 auto 下的 control session 是临时控制面，可以保存状态、指针、投影和 blocked request，但不应该因为给模型组装了 prompt 就创建产品层 message。只有真的需要用户或用户可见审计的行为，才写入对应 Chat/Thread 的真实 message 或 audit。
+
+控制面按 multiple agents 建模，backend 只是 runtime participant 的实现细节。Codex、Claude、CodeBuddy、LinX Cloud runtime 或后续本地 agent 都通过同一套 `Delivery / Session / Run / RunStep / blocked event` 边界接入；不要把 auto 或 Symphony 设计成某个 backend 的私有模式。
+
+auto on 下的确认主体是 Secretary，但语义上是用户授权后的代理确认或代理输入：
 
 ```text
 decisionBy = Secretary Agent URI
-onBehalfOf = User WebID
 decisionSource = autoPolicy
 ```
 
 也就是说，worker 或 runtime 收到的是“已确认 / 已填写”的操作，不需要再次等用户点按钮；但审计里必须能看出这次响应是 Secretary 依据哪条 auto policy 代用户做出的。
 
-| 模式 | 行为 | 需要用户介入 |
-| --- | --- | --- |
-| `manual` | 用户显式创建 task、启动 session、投递消息 | 每次派发/启动都需要 |
-| `assisted` | Secretary 可以建议分治、生成 task plan、准备 delivery | 启动 runtime 或高风险操作前确认 |
-| `auto` | Secretary 可在 policy 内自动分治、派发、启动/恢复 session、收集报告，并代替用户确认普通操作 | 超出 policy、预算或风险边界时才问用户 |
-| `autopilot` | 用户授予更长时段目标后，Secretary 按预算循环执行、验证，并持续代替用户确认 policy 内操作 | 只在策略、预算或风险边界触发用户确认 |
-
-auto 模式必须记录：
+auto on 必须记录：
 
 - `autoPolicy`：允许自动做什么。
 - `budget`：时间、token、并发数、成本。
 - `concurrencyLimit`：每一级最多并发几个下级任务。
 - `riskGate`：哪些动作必须审批。
-- `delegatedResponse`：Secretary 是否可代替用户确认或输入，以及响应时要写入的 `decisionBy / onBehalfOf / decisionSource / valueSource`。
+- `delegatedResponse`：Secretary 是否可代替用户确认或输入，以及响应时要写入的 `decisionBy / decisionSource / valueSource`。
 - `contextPolicy`：可共享哪些上下文，是否允许读取 sibling report。
 - `stopCondition`：何时停止、上升或询问用户。
 
-auto 模式中的上下文投递仍然遵守可见性规则。Secretary 可以读取任务状态和报告来做路由，但 worker 不能因为 auto 模式而自动看到兄弟 session 的完整 transcript。
+auto on 中的上下文投递仍然遵守可见性规则。Secretary 可以读取任务状态和报告来做路由，但 worker 不能因为 auto on 而自动看到兄弟 session 的完整 transcript。
 
-auto 模式的边界是 policy，不是按钮。只要动作落在 policy 内，Secretary 就应该直接确认并继续推进；如果动作越界，才上升给用户。
+auto on 的边界是 policy 和能力，不是“永不等待用户”。只要动作落在 policy 内，Secretary 就应该直接确认并继续推进；如果动作越界、信息不足或能力不足，必须上升给用户。
+
+Secretary 的触发点是 blocked 控制事件，不是每一次工具调用。普通 tool call 和 tool result 留在对应 runtime/session archive；当 runtime 发出 `approval.required`、`input.required` 或等价阻塞事件时，控制事件只携带指向业务 session、runtime session、archive、request 和最近工具历史的 URI/本地 key。Secretary 需要判断时再按指针打开证据，而不是持续消费完整工具流。
 
 ## 选择型确认和输入型确认
 
@@ -644,7 +736,6 @@ runtime 的阻塞请求分两类：
   "inputRequest": "request-uri-or-id",
   "inputKind": "freeform_text",
   "decisionBy": "agent:secretary",
-  "onBehalfOf": "https://user.example/profile/card#me",
   "decisionSource": "autoPolicy",
   "valueSource": "derived_from_task_context",
   "value": "Fix login session restoration",
@@ -713,7 +804,6 @@ Dynamic suffix
   "type": "delegated_decision",
   "decision": "approved",
   "decisionBy": "agent:secretary",
-  "onBehalfOf": "https://user.example/profile/card#me",
   "decisionSource": "autoPolicy",
   "policy": "policy-uri-or-hash",
   "scope": {
@@ -856,7 +946,7 @@ TUI 命令可以先收敛为：
 /assign <task> <session>
 /tell <session> ...
 /group <thread>
-/auto manual|assisted|auto|autopilot
+/auto on|off|status
 /status
 /approve
 /report
@@ -866,14 +956,16 @@ TUI 命令可以先收敛为：
 
 第一版实现可以按“先 metadata，后正式 resource”推进，但语义必须先稳定。
 
+`metadata` 只能承载协议 opaque id、局部 cache key、UI 选中态、兼容迁移信息或尚未正式化的附加上下文。它不是逃避建模的垃圾桶：凡是跨端需要查询、恢复、投递、审批、审计或授权判断的事实，都必须沉到 `@undefineds.co/models` 的语义字段或 resource。外部 runtime id 如果只是 provider 句柄，可以叫 `externalRunId`、`toolCallId` 这类明确的 opaque 字段；如果它表达的是 Pod 资源关系，就必须解析成 `task`、`delivery`、`thread`、`message`、`workspace` 等 URI relation。
+
 | 能力 | 第一版落点 | 后续正式化 |
 | --- | --- | --- |
 | `Goal` | Task metadata 或 Thread metadata | `goalResource` 或 Task 子资源 |
-| `Steer` | Delivery metadata 或 latest runtime instruction | `steerResource` 或 Delivery 子资源 |
-| `Delivery` | 新 shared model resource；若未 ready，先用 message richContent block + metadata mirror | `deliveryResource` |
+| `Steer` | Thread/Run latest runtime instruction；随 task dispatch 包交付时可放 Delivery metadata | `steerResource` 或 Task/Thread 子资源 |
+| `Delivery` | `deliveryResource` | 已正式化为 shared model resource |
 | `ContextPack` | runtime 本地 cache + Pod URI/hash 引用 | `contextPackResource` 或 Task/Session snapshot |
 | `DelegatedResponse` | approval/audit/inbox + message richContent block | approval/audit 结构化字段 |
-| `MessageProjection` | runtime adapter 内部记录 + audit entry | projection/audit shared helper |
+| `Runtime projection` | `Delivery.projection`、`Run.input`、`RunStep.data` | 如确需查询优化，再补 projection helper |
 
 不要为了赶 UI 在 React 组件里私造 predicate。跨端语义进入 `@undefineds.co/models`，Web/TUI/CLI 只做协议适配和展示。
 
@@ -882,11 +974,11 @@ TUI 命令可以先收敛为：
 优先级从高到低：
 
 1. Runtime session 变成 Agent-aware：记录 `agent / agentHome / thread / workspace / folderPath / tool`。
-2. Delivery/Handoff 资源：支持跨 Thread/Session 投递和 role projection。
+2. Delivery/Handoff 资源：支持跨 Thread/Session 阶段包、结果包、异步交接和 role projection。
 3. Task 资源：支持分治、状态、验收条件、上升报告。
 4. Context policy：定义群聊、私聊、runtime transcript 的默认可见性和共享动作。
 5. Worktree 管理：同 repo 多 session 自动分配 worktree。
-6. Auto policy：manual / assisted / auto / autopilot 的权限、预算、并发、风险门。
+6. Auto policy：auto on/off 下的权限、预算、并发、风险门和上升条件。
 7. Headless API：Web 和 TUI 共用，不把行为写死在 React 组件里。
 8. UI/TUI 展示：任务树、群聊 timeline、私聊 runtime、delivery 状态、审批入口。
 
@@ -915,9 +1007,9 @@ TUI 命令可以先收敛为：
 
 - `Agent`、`Thread`、`Session`、`Workspace` 边界清楚：Agent Home 跟 Agent，git/worktree 跟 Workspace，runtime lifecycle 跟 Session。
 - Chat role 和 runtime role 分离：Pod 保留真实 maker，runtime adapter 显式保存 projection。
-- 跨会话只走 Delivery/Handoff，不直接互改 transcript。
+- 跨会话不直接互改 transcript；普通事件先落 Thread/Reconciler，阶段/异步交接才走 Delivery/Handoff。
 - ContextPack 有稳定 prefix 和动态 suffix，`Goal` 进入 prefix，`Steer` 进入 suffix。
 - auto 模式有结构化 `DelegatedResponse`，同时覆盖选择型确认和输入型确认。
-- audit 可还原代理语义：`decisionBy = Secretary`、`onBehalfOf = User`、`decisionSource = policy`。
+- audit 可还原代理语义：`decisionBy = Secretary`、`decisionSource = policy`，并能从 source/policy 追到触发事实。
 - TUI 不需要新模型，只调用同一套 headless API。
 - 第一版允许 metadata 过渡，但正式共享语义必须沉到 `@undefineds.co/models`。

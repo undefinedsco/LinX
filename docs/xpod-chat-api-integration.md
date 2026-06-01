@@ -47,7 +47,7 @@ LinX 当前已经以三表为 AI 配置主线，与 xpod schema 对齐；旧的�
 
 **路径**: `/settings/credentials.ttl`
 
-**Namespace**: `https://vocab.xpod.dev/credential#`
+**Namespace**: `https://undefineds.co/ns#`
 
 ```typescript
 export const credentialTable = podTable('credential', {
@@ -63,7 +63,7 @@ export const credentialTable = podTable('credential', {
   rateLimitResetAt: datetime('rateLimitResetAt'),
 }, {
   base: '/settings/credentials.ttl',
-  type: 'https://vocab.xpod.dev/credential#Credential',
+  type: 'https://undefineds.co/ns#Credential',
   subjectTemplate: '#{id}',
 })
 ```
@@ -72,7 +72,7 @@ export const credentialTable = podTable('credential', {
 
 **路径**: `/settings/providers/{providerId}.ttl`
 
-**Namespace**: `https://vocab.xpod.dev/ai#`
+**Namespace**: `https://undefineds.co/ns#`
 
 ```typescript
 export const providerTable = podTable('provider', {
@@ -82,7 +82,7 @@ export const providerTable = podTable('provider', {
   hasModel: uri('hasModel'),        // 关联的 model URI
 }, {
   base: '/settings/providers/',
-  type: 'https://vocab.xpod.dev/ai#Provider',
+  type: 'https://undefineds.co/ns#Provider',
   subjectTemplate: '{id}.ttl',
 })
 ```
@@ -93,7 +93,7 @@ export const providerTable = podTable('provider', {
 
 LinX 自供模型来自 ai-gateway discovery/runtime，不写入用户 Pod。这里仅描述用户自己维护的第三方 provider/model 配置。
 
-**Namespace**: `https://vocab.xpod.dev/ai#`
+**Namespace**: `https://undefineds.co/ns#`
 
 ```typescript
 export const modelTable = podTable('model', {
@@ -107,7 +107,7 @@ export const modelTable = podTable('model', {
   updatedAt: datetime('updatedAt'),
 }, {
   base: '/settings/providers/',
-  type: 'https://vocab.xpod.dev/ai#Model',
+  type: 'https://undefineds.co/ns#Model',
   subjectTemplate: '{isProvidedBy|id}.ttl#{id}',
 })
 ```
@@ -130,38 +130,38 @@ export const modelTable = podTable('model', {
 
 **`/settings/credentials.ttl`**:
 ```turtle
-@prefix cred: <https://vocab.xpod.dev/credential#> .
+@prefix udfs: <https://undefineds.co/ns#> .
 
-<#openai-key-1> a cred:Credential ;
-    cred:provider </settings/providers/openai.ttl> ;
-    cred:service "ai" ;
-    cred:status "active" ;
-    cred:apiKey "sk-xxx..." ;
-    cred:label "我的 OpenAI Key" .
+<#openai-key-1> a udfs:Credential ;
+    udfs:provider </settings/providers/openai.ttl> ;
+    udfs:service "ai" ;
+    udfs:status "active" ;
+    udfs:apiKey "sk-xxx..." ;
+    udfs:label "我的 OpenAI Key" .
 ```
 
 **`/settings/providers/openai.ttl`**:
 ```turtle
-@prefix ai: <https://vocab.xpod.dev/ai#> .
+@prefix udfs: <https://undefineds.co/ns#> .
 
-</settings/providers/openai.ttl> a ai:Provider ;
-    ai:baseUrl "https://api.openai.com/v1" ;
-    ai:hasModel </settings/providers/openai.ttl#gpt-4o> .
+</settings/providers/openai.ttl> a udfs:Provider ;
+    udfs:baseUrl "https://api.openai.com/v1" ;
+    udfs:hasModel </settings/providers/openai.ttl#gpt-4o> .
 
-</settings/providers/anthropic.ttl> a ai:Provider ;
-    ai:baseUrl "https://api.anthropic.com/v1" ;
-    ai:proxyUrl "http://proxy.example.com:8080" .
+</settings/providers/anthropic.ttl> a udfs:Provider ;
+    udfs:baseUrl "https://api.anthropic.com/v1" ;
+    udfs:proxyUrl "http://proxy.example.com:8080" .
 ```
 
 **`/settings/providers/openai.ttl` 中的 model fragment**:
 ```turtle
-@prefix ai: <https://vocab.xpod.dev/ai#> .
+@prefix udfs: <https://undefineds.co/ns#> .
 
-<#gpt-4o> a ai:Model ;
-    ai:displayName "GPT-4o" ;
-    ai:modelType "chat" ;
-    ai:isProvidedBy </settings/providers/openai.ttl> ;
-    ai:status "active" .
+<#gpt-4o> a udfs:Model ;
+    udfs:displayName "GPT-4o" ;
+    udfs:modelType "chat" ;
+    udfs:isProvidedBy </settings/providers/openai.ttl> ;
+    udfs:status "active" .
 ```
 
 ---
@@ -431,5 +431,5 @@ const response = await authFetch(endpoint, {
 - [xpod Sidecar API](../../../xpod/docs/sidecar-api.md)
 - [xpod ChatHandler](../../../xpod/src/api/handlers/ChatHandler.ts)
 - [xpod VercelChatService](../../../xpod/src/api/service/VercelChatService.ts)
-- [xpod Credential Schema](../../../xpod/src/credential/schema/tables.ts)
-- [xpod AI Schema](../../../xpod/src/embedding/schema/tables.ts)
+- [shared Credential schema](../packages/models/src/credential.schema.ts)
+- [shared AI schema](../packages/models/src/ai-provider.schema.ts)

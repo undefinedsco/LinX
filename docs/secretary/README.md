@@ -7,6 +7,7 @@ AI Secretary documents should cover what the secretary can decide or do on behal
 ## Current Notes
 
 - [Capability contract](./capability-contract.md) — what AI Secretary may decide, what context it needs, and when it must defer to the user.
+- [Approval and grant design](../approval-grant-design.md) — unified approval pipeline, grant scopes, and Secretary's authorization boundary.
 - [Storage modeling TODO](./storage-modeling-todo.md) — how the secretary plans durable Pod writes instead of guessing paths or blindly appending data.
 
 ## Documentation Boundary

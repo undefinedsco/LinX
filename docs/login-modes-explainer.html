@@ -1,0 +1,1689 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>LinX 登录模式讲解</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #17202a;
+        --muted: #5d6875;
+        --paper: #ffffff;
+        --page: #f5f7fa;
+        --line: #cfd8e3;
+        --soft: #edf2f7;
+        --cloud: #2f5aa8;
+        --local: #0f766e;
+        --standalone: #995f00;
+        --linx: #6f45a6;
+        --idp: #7c3aed;
+        --sp: #0e7490;
+        --route: #45556b;
+        --ok: #287245;
+        --warn: #a66321;
+        --danger: #a63a3a;
+        --shadow: 0 16px 36px rgba(23, 32, 42, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+          sans-serif;
+        color: var(--ink);
+        background: var(--page);
+        line-height: 1.55;
+        overflow-x: hidden;
+      }
+
+      main {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 44px 28px 72px;
+      }
+
+      header {
+        padding: 22px 0 30px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        max-width: 960px;
+        font-size: 56px;
+        line-height: 1.06;
+        letter-spacing: 0;
+        overflow-wrap: anywhere;
+      }
+
+      .title-modes {
+        display: block;
+        margin-top: 8px;
+        color: #3d4857;
+        font-size: 0.66em;
+        line-height: 1.18;
+      }
+
+      h2 {
+        margin-top: 58px;
+        font-size: 30px;
+        line-height: 1.16;
+        letter-spacing: 0;
+      }
+
+      h3 {
+        font-size: 18px;
+        line-height: 1.25;
+      }
+
+      .lead {
+        max-width: 840px;
+        margin-top: 18px;
+        font-size: 19px;
+        color: var(--muted);
+        overflow-wrap: anywhere;
+      }
+
+      .tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 22px;
+      }
+
+      .tag {
+        max-width: 100%;
+        min-height: 30px;
+        padding: 4px 10px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--paper);
+        color: #3d4857;
+        font-size: 13px;
+        font-weight: 700;
+        overflow-wrap: anywhere;
+      }
+
+      .section-copy {
+        max-width: 880px;
+        margin-top: 12px;
+        color: var(--muted);
+        overflow-wrap: anywhere;
+      }
+
+      .panel,
+      .principle-card,
+      .mode-card,
+      .flow-card,
+      .route-card,
+      .note-box,
+      .path-visual,
+      .domain-entry,
+      .summary-strip {
+        min-width: 0;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--paper);
+        box-shadow: var(--shadow);
+        overflow-wrap: anywhere;
+      }
+
+      .principles {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+        margin-top: 24px;
+      }
+
+      .principle-card {
+        padding: 18px;
+      }
+
+      .principle-card b {
+        display: block;
+        margin-bottom: 8px;
+      }
+
+      .principle-card p {
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .principle-card.idp {
+        border-top: 5px solid var(--idp);
+      }
+
+      .principle-card.sp {
+        border-top: 5px solid var(--sp);
+      }
+
+      .principle-card.linx {
+        border-top: 5px solid var(--linx);
+      }
+
+      .split-grid {
+        display: grid;
+        grid-template-columns: 1.05fr 0.95fr;
+        gap: 18px;
+        margin-top: 24px;
+      }
+
+      .panel {
+        padding: 22px;
+      }
+
+      .panel.offset {
+        margin-top: 28px;
+      }
+
+      .legend-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 16px;
+      }
+
+      .legend {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 30px;
+        padding: 4px 10px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        color: #3d4857;
+        background: #fbfcfe;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--route);
+      }
+
+      .dot.idp {
+        background: var(--idp);
+      }
+
+      .dot.sp {
+        background: var(--sp);
+      }
+
+      .dot.linx {
+        background: var(--linx);
+      }
+
+      .dot.cloud {
+        background: var(--cloud);
+      }
+
+      .dot.local {
+        background: var(--local);
+      }
+
+      .dot.standalone {
+        background: var(--standalone);
+      }
+
+      .stack-diagram {
+        display: grid;
+        gap: 12px;
+        margin-top: 18px;
+      }
+
+      .layer {
+        display: grid;
+        grid-template-columns: 120px minmax(0, 1fr);
+        gap: 14px;
+        align-items: stretch;
+      }
+
+      .layer-label,
+      .layer-body {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcfe;
+      }
+
+      .layer-label {
+        display: grid;
+        place-items: center;
+        min-height: 74px;
+        padding: 12px;
+        text-align: center;
+        font-weight: 800;
+      }
+
+      .layer-body {
+        min-width: 0;
+        padding: 14px 16px;
+      }
+
+      .layer-body b {
+        display: block;
+        margin-bottom: 4px;
+      }
+
+      .layer-body span {
+        display: block;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .layer.identity .layer-label {
+        border-color: #c4b5fd;
+        color: var(--idp);
+      }
+
+      .layer.storage .layer-label {
+        border-color: #9bd4df;
+        color: var(--sp);
+      }
+
+      .layer.routing .layer-label {
+        border-color: #d8bfd8;
+        color: var(--linx);
+      }
+
+      .mode-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+        margin-top: 24px;
+      }
+
+      .mode-card {
+        display: grid;
+        grid-template-rows: auto auto 1fr;
+        min-width: 0;
+        min-height: 360px;
+        overflow: hidden;
+      }
+
+      .mode-head {
+        padding: 18px 18px 16px;
+        color: #ffffff;
+      }
+
+      .mode-head.cloud {
+        background: var(--cloud);
+      }
+
+      .mode-head.local {
+        background: var(--local);
+      }
+
+      .mode-head.standalone {
+        background: var(--standalone);
+      }
+
+      .mode-head h3 {
+        font-size: 24px;
+      }
+
+      .mode-head p {
+        margin-top: 8px;
+        color: rgba(255, 255, 255, 0.86);
+        font-size: 14px;
+      }
+
+      .mode-facts {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .fact {
+        min-height: 72px;
+        padding: 13px 14px;
+        border-right: 1px solid var(--line);
+        background: #fbfcfe;
+      }
+
+      .fact:last-child {
+        border-right: 0;
+      }
+
+      .fact b {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 13px;
+      }
+
+      .fact span {
+        display: block;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .mode-body {
+        padding: 16px 18px 18px;
+      }
+
+      .mode-body ul,
+      .compact-list {
+        margin: 10px 0 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .mode-body li,
+      .compact-list li {
+        position: relative;
+        padding-left: 18px;
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .mode-body li::before,
+      .compact-list li::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 9px;
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--route);
+      }
+
+      .comparison {
+        width: 100%;
+        margin-top: 22px;
+        border-collapse: collapse;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--paper);
+        box-shadow: var(--shadow);
+      }
+
+      .comparison th,
+      .comparison td {
+        padding: 13px 14px;
+        border-bottom: 1px solid var(--line);
+        border-right: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+        font-size: 14px;
+      }
+
+      .comparison th {
+        background: #eef3f8;
+        color: #344255;
+        font-size: 13px;
+      }
+
+      .comparison tr:last-child td {
+        border-bottom: 0;
+      }
+
+      .comparison th:last-child,
+      .comparison td:last-child {
+        border-right: 0;
+      }
+
+      .comparison b {
+        color: var(--ink);
+      }
+
+      .flow-grid {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 24px;
+      }
+
+      .flow-card {
+        position: relative;
+        min-height: 168px;
+        padding: 16px;
+      }
+
+      .flow-card::after {
+        content: "→";
+        position: absolute;
+        top: 50%;
+        right: -18px;
+        transform: translateY(-50%);
+        color: var(--route);
+        font-size: 26px;
+        font-weight: 900;
+      }
+
+      .flow-card:last-child::after {
+        content: "";
+      }
+
+      .flow-number {
+        display: grid;
+        place-items: center;
+        width: 30px;
+        height: 30px;
+        margin-bottom: 12px;
+        border-radius: 50%;
+        color: #ffffff;
+        background: var(--linx);
+        font-size: 13px;
+        font-weight: 900;
+      }
+
+      .flow-card h3 {
+        margin-bottom: 8px;
+      }
+
+      .flow-card p {
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .variant-map {
+        display: grid;
+        gap: 12px;
+        margin-top: 18px;
+      }
+
+      .variant-row {
+        display: grid;
+        grid-template-columns: 120px 1fr 1fr 1.2fr;
+        gap: 10px;
+        align-items: stretch;
+      }
+
+      .variant-cell {
+        display: flex;
+        align-items: center;
+        min-width: 0;
+        min-height: 58px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcfe;
+        font-size: 14px;
+        overflow-wrap: anywhere;
+      }
+
+      .variant-cell strong {
+        color: var(--ink);
+      }
+
+      .variant-cell.muted {
+        color: var(--muted);
+      }
+
+      .process-diagram {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 70px minmax(0, 1.2fr);
+        gap: 14px;
+        align-items: stretch;
+        margin-top: 24px;
+      }
+
+      .process-side {
+        display: grid;
+        gap: 12px;
+      }
+
+      .process-box {
+        min-height: 88px;
+        padding: 15px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcfe;
+      }
+
+      .process-box b {
+        display: block;
+        margin-bottom: 5px;
+      }
+
+      .process-box span {
+        display: block;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .process-box.cloud {
+        border-top: 5px solid var(--cloud);
+      }
+
+      .process-box.local {
+        border-top: 5px solid var(--local);
+      }
+
+      .process-box.standalone {
+        border-top: 5px solid var(--standalone);
+      }
+
+      .process-arrow {
+        display: grid;
+        place-items: center;
+        color: var(--linx);
+        font-size: 34px;
+        font-weight: 900;
+      }
+
+      .linx-manager {
+        min-width: 0;
+        min-height: 288px;
+        padding: 18px;
+        border: 2px solid #d8bfd8;
+        border-radius: 8px;
+        background: #fffafe;
+      }
+
+      .linx-manager h3 {
+        color: var(--linx);
+      }
+
+      .manager-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .manager-item {
+        min-width: 0;
+        min-height: 84px;
+        padding: 12px;
+        border: 1px solid #dbc8dc;
+        border-radius: 8px;
+        background: #ffffff;
+      }
+
+      .manager-item b {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 14px;
+      }
+
+      .manager-item span {
+        display: block;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .routes-grid {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 24px;
+      }
+
+      .route-card {
+        min-height: 194px;
+        padding: 15px;
+      }
+
+      .route-rank {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        margin-bottom: 12px;
+        border-radius: 50%;
+        background: var(--route);
+        color: #ffffff;
+        font-weight: 900;
+        font-size: 13px;
+      }
+
+      .route-card h3 {
+        margin-bottom: 8px;
+      }
+
+      .route-card p {
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .route-card.best {
+        border-top: 5px solid var(--ok);
+      }
+
+      .route-card.lan {
+        border-top: 5px solid var(--local);
+      }
+
+      .route-card.public {
+        border-top: 5px solid var(--cloud);
+      }
+
+      .route-card.tunnel {
+        border-top: 5px solid var(--warn);
+      }
+
+      .route-card.cloud {
+        border-top: 5px solid var(--sp);
+      }
+
+      .note-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+        margin-top: 24px;
+      }
+
+      .note-box {
+        padding: 18px;
+      }
+
+      .note-box h3 {
+        margin-bottom: 10px;
+      }
+
+      .note-box p {
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .note-box.warn {
+        border-top: 5px solid var(--warn);
+      }
+
+      .note-box.danger {
+        border-top: 5px solid var(--danger);
+      }
+
+      .path-visual {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 210px;
+        gap: 18px;
+        align-items: start;
+        margin-top: 22px;
+        padding: 18px;
+      }
+
+      .path-visual.two-shots {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 434px);
+      }
+
+      .path-visual-text {
+        min-width: 0;
+        max-width: 760px;
+      }
+
+      .path-visual-text h3 {
+        margin-bottom: 8px;
+      }
+
+      .path-visual-text p,
+      .mini-shot figcaption,
+      .domain-entry p {
+        color: var(--muted);
+        font-size: 14px;
+        overflow-wrap: anywhere;
+      }
+
+      .mini-shot-row {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 14px;
+        width: 100%;
+        max-width: 100%;
+      }
+
+      .mini-shot {
+        flex: 0 0 auto;
+        width: min(210px, 100%);
+        margin: 0;
+      }
+
+      .mini-shot img {
+        display: block;
+        width: 100%;
+        height: auto;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #eef3f8;
+        box-shadow: 0 12px 26px rgba(24, 37, 55, 0.12);
+      }
+
+      .mini-shot figcaption {
+        margin-top: 8px;
+        text-align: center;
+      }
+
+      .domain-entry {
+        margin-top: 18px;
+        padding: 18px;
+      }
+
+      .domain-entry h3 {
+        margin-bottom: 8px;
+      }
+
+      .domain-entry-list {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 14px;
+      }
+
+      .domain-entry-item {
+        min-width: 0;
+        padding: 13px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #f7fafc;
+      }
+
+      .domain-entry-item b {
+        display: block;
+        margin-bottom: 6px;
+      }
+
+      .domain-entry-item span {
+        color: var(--muted);
+        font-size: 13px;
+        overflow-wrap: anywhere;
+      }
+
+      .action-steps {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 16px;
+      }
+
+      .action-step {
+        min-width: 0;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcfe;
+      }
+
+      .action-step b {
+        display: block;
+        margin-bottom: 7px;
+      }
+
+      .action-step p {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .summary-strip {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 20px;
+        align-items: center;
+        margin-top: 58px;
+        padding: 22px;
+        background: #ffffff;
+      }
+
+      .summary-strip h2 {
+        margin-top: 0;
+        font-size: 24px;
+      }
+
+      .summary-strip p {
+        margin-top: 8px;
+        color: var(--muted);
+      }
+
+      .summary-badge {
+        min-width: 154px;
+        padding: 12px 16px;
+        border-radius: 8px;
+        background: #eef3f8;
+        text-align: center;
+        color: #344255;
+        font-weight: 900;
+      }
+
+      code {
+        padding: 1px 5px;
+        border-radius: 4px;
+        background: var(--soft);
+        color: #25364a;
+        font-family:
+          ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          "Liberation Mono", monospace;
+        font-size: 0.92em;
+      }
+
+      .rdf-code {
+        margin: 14px 0 0;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #f7fafc;
+        overflow-x: auto;
+        white-space: pre;
+      }
+
+      .rdf-code code {
+        padding: 0;
+        background: transparent;
+        color: #25364a;
+        font-size: 13px;
+      }
+
+      @media (max-width: 980px) {
+        h1 {
+          font-size: 42px;
+        }
+
+        .principles,
+        .mode-grid,
+        .split-grid,
+        .note-grid,
+        .path-visual,
+        .action-steps,
+        .routes-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .path-visual.two-shots {
+          grid-template-columns: 1fr;
+        }
+
+        .path-visual-text {
+          max-width: none;
+        }
+
+        .mini-shot-row {
+          width: 100%;
+        }
+
+        .domain-entry-list {
+          grid-template-columns: 1fr;
+        }
+
+        .flow-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .flow-card::after {
+          top: auto;
+          right: 50%;
+          bottom: -25px;
+          transform: translateX(50%) rotate(90deg);
+        }
+
+        .process-diagram {
+          grid-template-columns: 1fr;
+        }
+
+        .process-arrow {
+          min-height: 42px;
+          transform: rotate(90deg);
+        }
+
+        .variant-row {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+
+      @media (max-width: 640px) {
+        main {
+          padding: 30px 16px 54px;
+        }
+
+        h1 {
+          font-size: 34px;
+        }
+
+        .title-modes {
+          font-size: 0.72em;
+        }
+
+        h2 {
+          margin-top: 42px;
+          font-size: 24px;
+        }
+
+        .lead {
+          font-size: 17px;
+        }
+
+        .layer,
+        .mode-facts,
+        .manager-grid,
+        .variant-row,
+        .summary-strip {
+          grid-template-columns: 1fr;
+        }
+
+        .fact {
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+
+        .fact:last-child {
+          border-bottom: 0;
+        }
+
+        .comparison {
+          display: block;
+          overflow-x: auto;
+          white-space: nowrap;
+        }
+
+        .summary-badge {
+          min-width: 0;
+          width: 100%;
+        }
+
+        .mini-shot {
+          width: min(190px, 100%);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>
+          LinX 登录模式
+          <span class="title-modes">Cloud / Local / Standalone</span>
+        </h1>
+        <p class="lead">
+          这里的登录不是填 AI provider key，而是让 LinX 拿到一个可以访问 Pod
+          的身份和会话。三种模式的核心差异只有两个问题：谁签发身份，数据放在哪个
+          xpod / SP。
+        </p>
+        <div class="tags" aria-label="关键概念">
+          <span class="tag">IDP 管身份</span>
+          <span class="tag">SP / xpod 管数据</span>
+          <span class="tag">LinX 管入口、进程和路由</span>
+          <span class="tag">Local 默认可用 Cloud 分配 canonical SP URL</span>
+        </div>
+      </header>
+
+      <section aria-labelledby="mental-model">
+        <h2 id="mental-model">先看三层分工</h2>
+        <p class="section-copy">
+          登录页面要避免把“账号”“Pod 存储”“网络可达性”揉成一个按钮。正确叙事是三层：
+          IDP 是身份权威，SP 是数据权威，LinX 是本机入口和路由协调者。
+        </p>
+
+        <div class="principles">
+          <div class="principle-card idp">
+            <b>IDP：Identity Provider</b>
+            <p>
+              负责账号、登录、OIDC consent、token、WebID 语义。Cloud 和
+              Local 模式通常使用 Cloud IDP；Standalone 使用本地 xpod 的 IDP。
+            </p>
+          </div>
+          <div class="principle-card sp">
+            <b>SP：Storage Provider / xpod</b>
+            <p>
+              负责 Pod 存储、资源读写、Pod URL、数据目录和服务可达性。Cloud
+              的 SP 在云端，Local / Standalone 的 SP 在本机 xpod。
+            </p>
+          </div>
+          <div class="principle-card linx">
+            <b>LinX：Launcher + Router</b>
+            <p>
+              负责选择登录路径、启动或复用本地 xpod、打开浏览器授权、保存本地会话，
+              并在多个等价入口中选择最优访问路径。
+            </p>
+          </div>
+        </div>
+
+        <div class="split-grid">
+          <div class="panel">
+            <h3>这三层分别回答什么</h3>
+            <div class="stack-diagram" aria-label="登录三层模型">
+              <div class="layer identity">
+                <div class="layer-label">身份层</div>
+                <div class="layer-body">
+                  <b>我是谁？谁给我签 token？</b>
+                  <span>
+                    由 IDP 回答。Cloud 身份和 Standalone 本地身份不是同一个 WebID。
+                  </span>
+                </div>
+              </div>
+              <div class="layer storage">
+                <div class="layer-label">存储层</div>
+                <div class="layer-body">
+                  <b>我的 Pod 数据在哪里？通过哪个 base URL 写入？</b>
+                  <span>
+                    由 SP / xpod 回答。切换 Cloud SP 和 Local SP 不是普通路由优化。
+                  </span>
+                </div>
+              </div>
+              <div class="layer routing">
+                <div class="layer-label">入口层</div>
+                <div class="layer-body">
+                  <b>当前设备走 localhost、LAN、公网直连还是隧道？</b>
+                  <span>
+                    由 LinX 基于 SP 暴露的候选入口和探测结果选择，但不能发明新的身份语义。
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h3>一致的用户心智</h3>
+            <ul class="compact-list">
+              <li>都是先选空间，再走浏览器登录 / consent，再回到 LinX。</li>
+              <li>LinX 保存的是访问 Pod 的登录态，不把 AI provider key 当登录。</li>
+              <li>登录成功后，业务数据都通过当前 SP 的 Pod URL 读写。</li>
+              <li>Local 的多个网络入口只是同一个 Local SP 的访问路径，不是多个 Pod。</li>
+              <li>如果 WebID 的 storage 指向另一个 SP，MVP 应阻断而不是静默迁移。</li>
+            </ul>
+            <div class="legend-row">
+              <span class="legend"><span class="dot idp"></span>IDP</span>
+              <span class="legend"><span class="dot sp"></span>SP / xpod</span>
+              <span class="legend"><span class="dot linx"></span>LinX</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="three-modes">
+        <h2 id="three-modes">三种登录模式</h2>
+        <p class="section-copy">
+          三个按钮的差别不应该靠长说明堆出来。每个模式都可以用“IDP 在哪里、SP 在哪里、
+          LinX 是否需要启动 xpod”讲清楚。
+        </p>
+
+        <div class="mode-grid">
+          <article class="mode-card">
+            <div class="mode-head cloud">
+              <h3>Cloud</h3>
+              <p>账号和数据都托管在 Cloud，是最省心的默认路径。</p>
+            </div>
+            <div class="mode-facts">
+              <div class="fact">
+                <b>IDP</b>
+                <span>Cloud IDP</span>
+              </div>
+              <div class="fact">
+                <b>SP</b>
+                <span>Cloud SP</span>
+              </div>
+            </div>
+            <div class="mode-body">
+              <ul>
+                <li>LinX 不启动本地 xpod。</li>
+                <li>用户不需要数据目录、公网域名、隧道或端口配置。</li>
+                <li>登录、consent、Pod provisioning 都发生在 Cloud 路径。</li>
+                <li>适合新用户、跨设备访问、希望最少网络配置的场景。</li>
+              </ul>
+            </div>
+          </article>
+
+          <article class="mode-card">
+            <div class="mode-head local">
+              <h3>Local</h3>
+              <p>身份接入 LinX / Cloud，数据落在本机 xpod。</p>
+            </div>
+            <div class="mode-facts">
+              <div class="fact">
+                <b>IDP</b>
+                <span>Cloud IDP</span>
+              </div>
+              <div class="fact">
+                <b>SP</b>
+                <span>Local xpod</span>
+              </div>
+            </div>
+            <div class="mode-body">
+              <ul>
+                <li>LinX 负责启动或复用本机 xpod。</li>
+                <li>默认可由 Cloud 分配 <code>node-*.undefineds.co</code> 作为 canonical SP URL。</li>
+                <li>用户自有 HTTPS origin 是高级路径，不是普通用户必须填写的入口。</li>
+                <li>localhost、LAN、隧道只是同一个 Local SP 的访问渠道。</li>
+              </ul>
+            </div>
+          </article>
+
+          <article class="mode-card">
+            <div class="mode-head standalone">
+              <h3>Standalone</h3>
+              <p>身份和数据都在本机，默认不依赖 Cloud。</p>
+            </div>
+            <div class="mode-facts">
+              <div class="fact">
+                <b>IDP</b>
+                <span>Local xpod IDP</span>
+              </div>
+              <div class="fact">
+                <b>SP</b>
+                <span>Local xpod</span>
+              </div>
+            </div>
+            <div class="mode-body">
+              <ul>
+                <li>LinX 启动本地 xpod，并打开本地账号页。</li>
+                <li>默认只承诺本机可用，局域网和公网由用户网络决定。</li>
+                <li>本地 WebID 和 Cloud WebID 分离，不能当作同一个身份偷偷合并。</li>
+                <li>适合离线、本地试用、私有环境或不想接入 Cloud 身份的场景。</li>
+              </ul>
+            </div>
+          </article>
+        </div>
+
+        <table class="comparison" aria-label="三种登录模式差异">
+          <thead>
+            <tr>
+              <th>问题</th>
+              <th>Cloud</th>
+              <th>Local</th>
+              <th>Standalone</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><b>谁签发身份</b></td>
+              <td>Cloud IDP</td>
+              <td>Cloud IDP</td>
+              <td>本地 xpod IDP</td>
+            </tr>
+            <tr>
+              <td><b>数据写到哪里</b></td>
+              <td>Cloud SP</td>
+              <td>本机 xpod / Local SP</td>
+              <td>本机 xpod / Local SP</td>
+            </tr>
+            <tr>
+              <td><b>LinX 是否启动 xpod</b></td>
+              <td>不启动</td>
+              <td>启动或复用</td>
+              <td>启动或复用</td>
+            </tr>
+            <tr>
+              <td><b>canonical SP URL 怎么来</b></td>
+              <td>不需要用户配置</td>
+              <td>默认 Cloud 分配；高级路径可用用户自有 HTTPS origin</td>
+              <td>默认本机 URL；公网访问时用户自己提供</td>
+            </tr>
+            <tr>
+              <td><b>最容易踩坑</b></td>
+              <td>把 AI provider key 当成 LinX 登录</td>
+              <td>把 LAN、隧道、公网域名误认为不同 Pod</td>
+              <td>把本地 WebID 当成 Cloud WebID</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="path-visual">
+          <div class="path-visual-text">
+            <h3>登录入口先做空间选择</h3>
+            <p>
+              当前登录页先让用户选择 Cloud、Local 或 Standalone。这里不让用户手填
+              <code>node-*.undefineds.co</code>，也不把自有公网域名塞进默认登录路径；
+              域名只在 Local / Standalone 的高级服务配置里出现。
+            </p>
+          </div>
+          <figure class="mini-shot">
+            <img
+              src="assets/login/login-space-selection.png"
+              alt="LinX 登录 overlay 的空间选择页面，显示 Cloud、Local、Standalone 三个入口。"
+            >
+            <figcaption>空间选择页</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section aria-labelledby="idp-sp-flow">
+        <h2 id="idp-sp-flow">IDP 和 SP 的登录流程</h2>
+        <p class="section-copy">
+          用户看到的是“浏览器登录”，但背后其实有两条线：IDP 负责签发身份和授权，
+          SP 负责提供 Pod 存储。LinX 把这两条线接回当前应用。
+        </p>
+
+        <div class="flow-grid" aria-label="IDP SP 登录流程">
+          <div class="flow-card">
+            <div class="flow-number">1</div>
+            <h3>LinX 选择模式</h3>
+            <p>
+              用户选择 Cloud、Local 或 Standalone。Local / Standalone 会先准备本地
+              xpod 进程和 base URL。
+            </p>
+          </div>
+          <div class="flow-card">
+            <div class="flow-number">2</div>
+            <h3>浏览器去 IDP</h3>
+            <p>
+              Cloud / Local 去 Cloud IDP；Standalone 去本地 xpod 的账号页和 OIDC
+              入口。
+            </p>
+          </div>
+          <div class="flow-card">
+            <div class="flow-number">3</div>
+            <h3>IDP 登录授权</h3>
+            <p>
+              用户完成账号登录、Pod 选择或 consent。IDP 签发 token，并保持 WebID
+              语义稳定。
+            </p>
+          </div>
+          <div class="flow-card">
+            <div class="flow-number">4</div>
+            <h3>回调到 LinX</h3>
+            <p>
+              LinX 通过本机 callback 或等价桥接完成 token exchange，并保存可恢复的本地会话。
+            </p>
+          </div>
+          <div class="flow-card">
+            <div class="flow-number">5</div>
+            <h3>通过 SP 读写 Pod</h3>
+            <p>
+              后续业务数据写入当前 SP。Cloud 写 Cloud SP，Local / Standalone 写本机 xpod。
+            </p>
+          </div>
+        </div>
+
+        <div class="panel offset">
+          <h3>同一套流程在三种模式下怎么落点</h3>
+          <div class="variant-map" aria-label="三种模式下的 IDP SP 落点">
+            <div class="variant-row">
+              <div class="variant-cell"><strong>Cloud</strong></div>
+              <div class="variant-cell muted">浏览器访问 Cloud IDP</div>
+              <div class="variant-cell muted">SP 是 Cloud SP</div>
+              <div class="variant-cell muted">LinX 只保存 Cloud 会话，不管理本地 xpod</div>
+            </div>
+            <div class="variant-row">
+              <div class="variant-cell"><strong>Local</strong></div>
+              <div class="variant-cell muted">浏览器访问 Cloud IDP</div>
+              <div class="variant-cell muted">SP 是本机 xpod</div>
+              <div class="variant-cell muted">默认使用 Cloud 分配的 Local SP canonical URL；用户自有 URL 是高级路径</div>
+            </div>
+            <div class="variant-row">
+              <div class="variant-cell"><strong>Standalone</strong></div>
+              <div class="variant-cell muted">浏览器访问本地 xpod IDP</div>
+              <div class="variant-cell muted">SP 是同一个本地 xpod</div>
+              <div class="variant-cell muted">不依赖 Cloud 身份，本地 WebID 独立存在</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel offset">
+          <h3>选择 SP 空间后，后台实际做什么</h3>
+          <p class="section-copy">
+            用户点的是一个空间入口，但 LinX 后台会把“身份 issuer”和“数据 storage provider”
+            固定成一组登录尝试，避免登录成功后写错 Pod。
+          </p>
+          <div class="action-steps" aria-label="选择 SP 空间后的后台动作">
+            <div class="action-step">
+              <b>1. 记录目标空间</b>
+              <p>
+                Cloud 记录 Cloud SP；Local / Standalone 记录本地 xpod 空间类型和本机服务状态。
+              </p>
+            </div>
+            <div class="action-step">
+              <b>2. 准备本地 SP</b>
+              <p>
+                Local / Standalone 会启动或复用 xpod，并等待端口、数据目录和健康检查 ready。
+              </p>
+            </div>
+            <div class="action-step">
+              <b>3. 取得 canonical URL</b>
+              <p>
+                Local 从 Cloud provisioning 取得 <code>publicUrl</code> 和 <code>provisionCode</code>；
+                Standalone 使用本地 xpod URL。
+              </p>
+            </div>
+            <div class="action-step">
+              <b>4. 发起 OIDC 登录</b>
+              <p>
+                Local 用 Cloud issuer 加 <code>provisionCode</code> 打开授权；Standalone 打开本地 issuer。
+              </p>
+            </div>
+            <div class="action-step">
+              <b>5. 绑定 WebID storage</b>
+              <p>
+                Local 登录完成时 Cloud 和目标 SP 确认 Pod，Cloud WebID 的
+                <code>profile/card#me</code> 会写入 <code>solid:oidcIssuer</code> 和
+                <code>solid:storage</code>，其中 <code>solid:storage</code> 指向选中的 Local SP。
+              </p>
+            </div>
+            <div class="action-step">
+              <b>6. 回调并保存会话</b>
+              <p>
+                LinX 通过本机 callback 完成 token exchange，保存 issuer、storageProviderUrl
+                和可恢复的 Solid 会话。
+              </p>
+            </div>
+            <div class="action-step">
+              <b>7. 校验写入目标</b>
+              <p>
+                如果 WebID profile 的 <code>solid:storage</code> 不等于当前选中的 SP，阻断进入，
+                不静默改写到 Cloud。
+              </p>
+            </div>
+            <div class="action-step">
+              <b>8. 后续读写走该 SP</b>
+              <p>
+                业务数据、Solid DB base 和首个写入都使用 selected SP Pod URL 前缀。
+              </p>
+            </div>
+          </div>
+
+          <div class="note-grid" aria-label="注册时 storage 的判定依据">
+            <div class="note-box">
+              <h3>注册时怎么区分 storage</h3>
+              <p>
+                LinX 不让用户在登录框里手填 storage。系统先选定空间，再用
+                <code>spaceKind</code>、<code>provisionCode</code>、<code>publicUrl</code>
+                和 canonical SP URL 推导目标 storage。Cloud / Local 走选中的 SP canonical URL 加
+                WebID slug；Standalone 走本机 xpod URL；Custom 则必须先读 profile 里的
+                <code>solid:storage</code>，再校验它仍落在当前 provider 下。
+              </p>
+            </div>
+            <div class="note-box warn">
+              <h3>Inrupt SDK 负责什么</h3>
+              <p>
+                SDK 只负责 OIDC 登录，不负责决定 storage。它主要吃
+                <code>oidcIssuer</code>、<code>redirectUrl</code>、<code>clientName</code>、
+                <code>tokenType</code>，登录完成后 LinX 再从
+                <code>session.info.webId</code> 和 WebID profile 读取结果。
+              </p>
+            </div>
+          </div>
+
+          <div class="domain-entry">
+            <h3>Inrupt SDK 入参按模式怎么填</h3>
+            <p>
+              SDK 的 <code>login()</code> 入参不包含 storage provider。LinX 自己保存
+              <code>storageProviderUrl</code> 作为当前登录尝试的上下文；Cloud 侧注册 / 绑定则通过
+              <code>provisionCode</code> 找到目标 SP。
+            </p>
+            <div class="domain-entry-list" aria-label="Inrupt SDK login 参数">
+              <div class="domain-entry-item">
+                <b>Cloud</b>
+                <span>
+                  <code>oidcIssuer</code> 填 Cloud issuer，<code>redirectUrl</code> 填 LinX callback；
+                  无 <code>provisionCode</code>，登录后 storage 应该落在 Cloud SP。
+                </span>
+              </div>
+              <div class="domain-entry-item">
+                <b>Local</b>
+                <span>
+                  <code>oidcIssuer</code> 仍填 Cloud issuer；授权 URL 追加 <code>provisionCode</code>。
+                  LinX pending state 记录 Local canonical <code>storageProviderUrl</code>，用于回调后校验。
+                </span>
+              </div>
+              <div class="domain-entry-item">
+                <b>Standalone</b>
+                <span>
+                  <code>oidcIssuer</code> 填本地 xpod issuer，<code>redirectUrl</code> 仍回 LinX；
+                  没有 Cloud provision，WebID 和 storage 都由本地 xpod 提供。
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div class="domain-entry">
+            <h3>profile/card RDF 示例</h3>
+            <p>
+              下面是 Local 模式下最关键的 profile/card 片段：WebID 在 Cloud，
+              <code>solid:storage</code> 指向选中的 Local SP Pod。这里写的是 canonical storage，
+              不是 <code>localhost</code>、LAN 或隧道访问地址。
+            </p>
+            <pre class="rdf-code"><code>@prefix foaf: &lt;http://xmlns.com/foaf/0.1/&gt; .
+@prefix solid: &lt;http://www.w3.org/ns/solid/terms#&gt; .
+
+&lt;https://id.undefineds.co/alice/profile/card#me&gt;
+  a foaf:Person ;
+  foaf:name "Alice" ;
+  solid:oidcIssuer &lt;https://id.undefineds.co/&gt; ;
+  solid:storage &lt;https://node-0000.undefineds.co/alice/&gt; .</code></pre>
+            <p>
+              解释时抓住两点：<code>solid:oidcIssuer</code> 回到身份签发方；
+              <code>solid:storage</code> 回到数据所在的 SP。LinX 登录成功后要读取并校验这两个事实，
+              再决定业务数据写到哪里。
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="process-manager">
+        <h2 id="process-manager">LinX 怎么管理 xpod 进程</h2>
+        <p class="section-copy">
+          LinX 不应该重新定义 IDP 或 SP 的语义。它的职责更像本机 launcher 和 process
+          manager：该启动时启动，该复用时复用，该检查时检查。
+        </p>
+
+        <div class="process-diagram" aria-label="LinX 管理 xpod 进程图">
+          <div class="process-side">
+            <div class="process-box cloud">
+              <b>Cloud</b>
+              <span>没有本地 xpod 进程。LinX 只打开 Cloud 登录并保存会话。</span>
+            </div>
+            <div class="process-box local">
+              <b>Local</b>
+              <span>需要本地 xpod 作为 SP。LinX 准备配置、端口、数据目录和可达入口。</span>
+            </div>
+            <div class="process-box standalone">
+              <b>Standalone</b>
+              <span>本地 xpod 同时是 IDP 和 SP。LinX 打开本地账号与授权流程。</span>
+            </div>
+          </div>
+
+          <div class="process-arrow" aria-hidden="true">→</div>
+
+          <div class="linx-manager">
+            <h3>LinX Process Manager</h3>
+            <div class="manager-grid">
+              <div class="manager-item">
+                <b>启动 / 复用</b>
+                <span>检查本地 xpod 是否已运行；没有则按当前模式启动。</span>
+              </div>
+              <div class="manager-item">
+                <b>配置边界</b>
+                <span>写入端口、base URL、canonical public URL、数据目录和模式配置。</span>
+              </div>
+              <div class="manager-item">
+                <b>健康检查</b>
+                <span>等待 xpod ready，再打开账号页或继续登录回调。</span>
+              </div>
+              <div class="manager-item">
+                <b>隧道协作</b>
+                <span>把 selected canonical URL 接到本机 xpod；隧道只改变访问渠道。</span>
+              </div>
+              <div class="manager-item">
+                <b>会话保存</b>
+                <span>保存 LinX / Solid 登录态，后续尽量 refresh 和复用。</span>
+              </div>
+              <div class="manager-item">
+                <b>访问路由</b>
+                <span>在同一 SP 的等价入口中探测、排序并选择最快可用路径。</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="path-visual two-shots">
+          <div class="path-visual-text">
+            <h3>Local 路径会先等 xpod ready</h3>
+            <p>
+              用户选择 Local 后，LinX 先启动或复用本机 xpod，再继续 Cloud 登录。
+              <code>localhost</code> 是本机访问渠道；登录完成后业务数据写入 Local SP，
+              canonical URL 由 Cloud provisioning 或用户自有 HTTPS origin 决定。
+            </p>
+          </div>
+          <div class="mini-shot-row" aria-label="Local 登录准备截图">
+            <figure class="mini-shot">
+              <img
+                src="assets/login/login-local-starting.png"
+                alt="LinX Local 登录页正在启动本机 xpod，显示 localhost 本机入口。"
+              >
+              <figcaption>Local 启动中</figcaption>
+            </figure>
+            <figure class="mini-shot">
+              <img
+                src="assets/login/login-local-ready.png"
+                alt="LinX Local 登录页显示 Local 已准备好，并提供继续登录按钮。"
+              >
+              <figcaption>Local 就绪</figcaption>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="routes">
+        <h2 id="routes">Local / Standalone 的网络可达性</h2>
+        <p class="section-copy">
+          Local 和 Standalone 的复杂度不在登录按钮，而在“同一个本地 xpod 可以通过哪些地址到达”。
+          LinX 可以优化访问路径，但只能在同一 SP、同一数据目录、同一身份语义成立时优化。
+        </p>
+
+        <div class="routes-grid" aria-label="Local Standalone 最优访问路径">
+          <div class="route-card best">
+            <span class="route-rank">1</span>
+            <h3>localhost</h3>
+            <p>
+              当前设备访问本机 xpod 的最优路径。最快、最少网络依赖，适合 CLI、TUI、桌面端。
+            </p>
+          </div>
+          <div class="route-card lan">
+            <span class="route-rank">2</span>
+            <h3>LAN</h3>
+            <p>
+              同一局域网设备访问本机 xpod。需要监听地址、防火墙和局域网路由允许访问。
+            </p>
+          </div>
+          <div class="route-card public">
+            <span class="route-rank">3</span>
+            <h3>公网直连</h3>
+            <p>
+              高级 Local 路径下，用户自己的 HTTPS 域名直接打到本机或反代。
+            </p>
+          </div>
+          <div class="route-card tunnel">
+            <span class="route-rank">4</span>
+            <h3>隧道</h3>
+            <p>
+              本机不可公网直连时使用。隧道把 selected canonical URL 接到本机 xpod，
+              不改变身份或 storage URL。
+            </p>
+          </div>
+          <div class="route-card cloud">
+            <span class="route-rank">5</span>
+            <h3>Cloud SP</h3>
+            <p>
+              只属于 Cloud 模式。它不是 Local SP 的自动 fallback，除非明确做迁移或同步方案。
+            </p>
+          </div>
+        </div>
+
+        <div class="note-grid">
+          <div class="note-box warn">
+            <h3>最优路径选择规则</h3>
+            <p>
+              当前设备能走 <code>localhost</code> 就优先走本机；同网设备优先 LAN；
+              远程设备走公网直连或隧道。这个排序只在多个 URL 被证明属于同一个
+              xpod / SP 时成立。
+            </p>
+          </div>
+          <div class="note-box danger">
+            <h3>不能做的事</h3>
+            <p>
+              不能因为 Local 入口不可达就静默切到 Cloud SP；不能把 localhost、LAN、
+              隧道临时入口写成 <code>solid:storage</code>；也不能把 Standalone 的本地 WebID
+              偷偷当成 Cloud WebID。
+            </p>
+          </div>
+        </div>
+
+        <div class="domain-entry">
+          <h3>外网域名在哪里录入</h3>
+          <p>
+            默认登录 overlay 不直接录入外网域名。Local 的默认路径是 Cloud provisioning
+            分配 Cloud-managed canonical URL；只有用户要使用自有 HTTPS origin 时，才在服务配置里填写
+            <code>pod.example.com</code> 这类域名。
+          </p>
+          <div class="domain-entry-list" aria-label="外网域名录入位置">
+            <div class="domain-entry-item">
+              <b>Local 首次配置</b>
+              <span>
+                设置页的“公网入口”区块提供“自有公网域名（可选）”输入框；留空就使用 Cloud 分配的 canonical URL。
+              </span>
+            </div>
+            <div class="domain-entry-item">
+              <b>Service 管理</b>
+              <span>
+                服务管理弹窗里有“公网域名（可选）”，用于修改 Local 服务的 user-managed canonical domain。
+              </span>
+            </div>
+            <div class="domain-entry-item">
+              <b>Standalone</b>
+              <span>
+                Standalone 也有“公网域名（可选）”，但它不接 Cloud 身份；留空时只承诺本机或局域网可用。
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="how-to-explain">
+        <h2 id="how-to-explain">对外讲解时的顺序</h2>
+        <p class="section-copy">
+          不要从“我们支持多少 URL”开始讲。先讲三层模型，再讲三个模式，最后再讲 Local
+          的网络路径，这样用户不会把公网、隧道、LAN 误解成新的登录身份。
+        </p>
+
+        <table class="comparison" aria-label="讲解顺序">
+          <thead>
+            <tr>
+              <th>顺序</th>
+              <th>要讲清楚的事</th>
+              <th>一句话</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><b>1</b></td>
+              <td>IDP / SP / LinX 三层</td>
+              <td>IDP 管身份，SP 管数据，LinX 管入口和进程。</td>
+            </tr>
+            <tr>
+              <td><b>2</b></td>
+              <td>Cloud / Local / Standalone</td>
+              <td>三个模式的差别，是身份权威和数据权威放在哪里。</td>
+            </tr>
+            <tr>
+              <td><b>3</b></td>
+              <td>LinX 管理 xpod</td>
+              <td>Cloud 不启动本地 xpod；Local 和 Standalone 由 LinX 启动、检查和复用。</td>
+            </tr>
+            <tr>
+              <td><b>4</b></td>
+              <td>Local / Standalone 网络可达性</td>
+              <td>localhost、LAN、公网直连、隧道只是同一个本地 SP 的不同访问路径。</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="summary-strip" aria-label="总结">
+        <div>
+          <h2>一句话总结</h2>
+          <p>
+            Cloud 是云端身份加云端数据；Local 是 Cloud 身份加本机数据；
+            Standalone 是本机身份加本机数据。LinX 只负责把正确的 IDP、SP、xpod
+            进程和访问路径接起来。
+          </p>
+        </div>
+        <div class="summary-badge">IDP × SP × Route</div>
+      </section>
+    </main>
+  </body>
+</html>

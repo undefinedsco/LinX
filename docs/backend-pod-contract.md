@@ -13,6 +13,12 @@ These principles are the review baseline for auto-mode work:
 - Backend selection is a runtime adapter choice, not a product fork. Choosing
   Codex, Claude Code, CodeBuddy, Pi, or a future ACP backend must only change
   the external worker command/protocol.
+- Auto control is a separate dimension. Auto off keeps the user driving the
+  session directly. Auto on lets AI Secretary drive ordinary session control,
+  backend approval, structured input, and delegation, while still asking the
+  user when it is blocked, out of authority, or needs a human decision. It must
+  not select, imply, or replace the backend runtime or the backend-native
+  approval configuration.
 - Pod remains the durable source of truth. Credentials, provider config,
   model config, chats, threads, sessions, messages, approvals, grants, audits,
   and inbox notifications must converge to shared Pod resources.
@@ -23,6 +29,10 @@ These principles are the review baseline for auto-mode work:
   injected environment differently; after that boundary, credential lookup,
   event normalization, approval handling, archive, and Pod sync must use the
   same shared path.
+- Login acquisition and runtime consumption are separate. The login layer is
+  responsible for acquiring or refreshing a usable session; the backend layer
+  is responsible for consuming that session and must not re-implement login
+  ceremony, credential prompts, or session bootstrap state machines.
 - ACP/ChatKit/Pi integration code is protocol adaptation only. It may map
   runtime events into shared DTOs and render TUI/App controls, but it must not
   define shared business predicates, subject templates, provider aliases, or a
@@ -35,10 +45,26 @@ Use these invariants when reviewing an auto-mode design or implementation:
 - One product surface, multiple backend runtimes. `linx --backend codex` and
   `linx --backend claude` are different worker adapters for the same LinX
   product state, not separate products with separate persistence semantics.
+- One backend control surface. CLI backend mode must use the shared LinX
+  auto-mode ACP controller. Do not introduce a parallel backend-native TUI to
+  imitate the same header, login, keymap, archive, or approval UI. Backend
+  differences belong in ACP hooks, event projection, and approval policy
+  handlers.
+- Runtime, auto control, and backend-native approval stay orthogonal.
+  `--backend <backend>` selects the external runtime service; `--auto` only
+  starts the selected runtime with auto on.
+  Backend-native approval policy remains the backend adapter's own
+  configuration. `--auto` without `--backend` must not enter an external
+  backend session.
 - Backend command language stays native. After a backend is selected, commands,
   flags, approval prompts, and runtime behavior should follow that backend's
   native protocol as far as possible; LinX wraps and records the interaction
   without inventing a second command language.
+- Slash command interception is unified. The backend controller first preserves
+  global LinX shell commands such as `/login`, `/logout`, `/auto`, `/hotkeys`,
+  and `/exit`, then delegates backend work through ACP. Do not add a second
+  backend TUI or hard-code Codex/Claude/CodeBuddy command semantics in the
+  generic TUI layer.
 - The shell is not the domain layer. CLI/TUI and App/GUI may differ in
   rendering and interaction, but they must call the same shared models,
   repositories, runtime contracts, and approval semantics.
@@ -70,9 +96,16 @@ Use these invariants when reviewing an auto-mode design or implementation:
 - LinX may wrap the backend with TUI, approval, archive, sync, and controller
   behavior, but it must not replace the selected backend's command language or
   native runtime semantics.
+- Backend command projection is ACP-owned. `linx --backend codex` must not
+  enter the Codex app-server/native-proxy path; Codex backend work is executed
+  through `codex-acp`. Unsupported commands fall through to the controller
+  instead of being fabricated by LinX.
 
-`linx` without `--backend` remains the default LinX/Pi experience. External
-agent control is selected only through `--backend` plus the relevant flags.
+`linx` without `--backend` remains the default LinX experience. External agent
+control is selected only through `--backend` plus the relevant flags.
+`--auto` is not an external-agent entry point; it asks LinX/AI Secretary to
+actively control the selected backend session after a backend has been
+selected.
 
 ## Credential And Config Source
 
@@ -86,6 +119,8 @@ Backend provider credentials and provider-level config are Pod data.
   entry when a provider key is missing. The durable difference is that the
   acquired provider key is written to Pod AI config, not kept as a local
   provider-key source.
+- The runtime must not prompt for browser login as part of backend startup when
+  a usable session already exists; it should consume the session and continue.
 - The local machine may keep only LinX/Solid auth material needed to obtain a
   Pod session, plus local cache/archive data.
 - Backend API keys must not be copied into session archive, messages, audits,
@@ -173,12 +208,25 @@ Approval follows upstream runtime semantics.
   allowlists.
 - When the backend emits an approval or structured input request, LinX may
   display it locally, mirror it to Pod, and let App/Inbox resolve it remotely.
-- AI Secretary may recommend allow/deny/input. It must not recommend creating
-  grants on its own; grant creation is a user decision.
+- Approval and grant are separate layers that must stay mutually compatible
+  without collapsing into each other. `approval` records one concrete runtime
+  decision and may carry upstream options such as `allow_once`,
+  `allow_for_session`, or `allow_always`; the unified approval pipeline
+  materializes user-selected grant options into `grant`, not CLI, Web, a
+  backend adapter, or Secretary by themselves.
+- Existing grants are checked before Secretary/user handling. A covered request
+  is approved directly whether `auto` is on or off.
+- Pi extension UI approvals are an interaction bridge for extension-owned
+  `ctx.ui.select/confirm` prompts. They must preserve the selected option for
+  TUI/GUI compatibility, but they must not create reusable LinX grants.
+- AI Secretary may recommend allow/deny/input for one concrete request. It must
+  not recommend or select `allow_for_session` / `allow_always` on its own;
+  grant creation is a user decision.
 - Existing grants are durable user-authored wiki resources in Pod. AI Secretary
   can evaluate whether a request is covered by an existing grant, but this
   judgement is semantic and must not be reduced to request fingerprint matching.
 
+Detailed approval/grant behavior lives in `docs/approval-grant-design.md`.
 Detailed AI Secretary capability boundaries live in
 `docs/secretary/capability-contract.md`. This document only fixes the backend /
 Pod invariants that CLI/App implementations must preserve.

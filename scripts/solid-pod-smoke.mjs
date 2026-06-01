@@ -79,7 +79,7 @@ const chatTable = podTable(
       .notNull()
       .reference(UDFS.Contact),
     lastActiveAt: timestamp('lastActiveAt').predicate(UDFS.lastActiveAt),
-    lastMessageId: uri('lastMessageId').predicate(WF.message),
+    lastMessage: uri('lastMessage').predicate(WF.message),
     lastMessagePreview: text('lastMessagePreview').predicate(SCHEMA.text),
     createdAt: timestamp('createdAt').predicate(DCTerms.created).notNull().defaultNow(),
     updatedAt: timestamp('updatedAt').predicate(DCTerms.modified).notNull().defaultNow(),
@@ -94,7 +94,7 @@ const chatTable = podTable(
 const threadTable = podTable(
   'thread',
   {
-    chatId: uri('chatId')
+    chat: uri('chat')
       .predicate(UDFS.hasThread)
       .inverse()
       .notNull()
@@ -114,12 +114,12 @@ const threadTable = podTable(
 const messageTable = podTable(
   'chat_message',
   {
-    threadId: uri('threadId')
+    thread: uri('thread')
       .predicate(SIOC.has_member)
       .inverse()
       .notNull()
       .reference(SIOC.Thread),
-    chatId: uri('chatId')
+    chat: uri('chat')
       .predicate(WF.message)
       .inverse()
       .notNull()

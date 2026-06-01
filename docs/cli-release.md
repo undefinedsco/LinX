@@ -1,15 +1,14 @@
 # LinX CLI Release
 
-LinX CLI release publishes two npm packages under the Undefineds scope:
+LinX CLI release publishes the CLI package under the Undefineds scope:
 
-- `@undefineds.co/models`
 - `@undefineds.co/linx`
 
-The CLI package depends on `@undefineds.co/models` at the same exact version. Do not publish the raw workspace package directly unless the package metadata has been converted to its publish form; the workspace package uses development exports and wildcard workspace dependencies.
+The CLI package depends on a published exact `@undefineds.co/models` version, but the CLI and models package versions are independent. Models is owned and released from the independent models repository; LinX release automation may still build or pack a local models checkout during migration, but that is not the ownership boundary.
 
 ## Current Release Path
 
-Build both packages and emit npm-installable tarballs:
+Current migration-era scripts can build the local models checkout and emit npm-installable tarballs:
 
 ```bash
 yarn pack:cli:release
@@ -18,11 +17,11 @@ yarn pack:cli:release
 The outputs are:
 
 ```text
-preview/undefineds-co-models-<version>.tgz
-preview/undefineds-co-linx-<version>.tgz
+preview/undefineds-co-models-<models-version>.tgz
+preview/undefineds-co-linx-<cli-version>.tgz
 ```
 
-The release pack script converts `packages/models` exports from `src/*.ts` to `dist/*.js` and makes `apps/cli` depend on the exact same `@undefineds.co/models` version.
+The release pack script converts a local `packages/models` checkout from workspace metadata to package metadata and makes `apps/cli` depend on the exact `@undefineds.co/models` version from that checkout. This is a transition path until LinX release consumes the already-published models package directly.
 
 `@undefineds.co/models` is a shared contract package for xpod and LinX. It is not owned by the CLI release script. The root `pack:cli:release` command only orchestrates the order:
 
@@ -59,6 +58,22 @@ The required `@undefineds.co/drizzle-solid` runtime fix has two externally visib
 
 If the smoke script fails on the drizzle-solid check, publish a fixed `@undefineds.co/drizzle-solid` first and then rebuild the models and CLI tarballs. Do not publish `@undefineds.co/models` or `@undefineds.co/linx` against a registry drizzle-solid version that still only replaces `{id}` in linked table templates.
 
+## Bundled Pi Plugins
+
+The CLI release package may vendor Pi plugins that must ship with LinX-specific patches. Keep that list in:
+
+```text
+apps/cli/scripts/bundled-pi-plugins.mjs
+```
+
+To copy a specific plugin into a package staging root:
+
+```bash
+node apps/cli/scripts/bundled-pi-plugins.mjs --target-root /tmp/linx-cli-package pi-web-access
+```
+
+`pack-release.mjs` and `pack-preview-selfcontained.mjs` use the same helper, so release and preview packages share one plugin manifest. For `pi-web-access`, the helper also verifies the packaged source no longer points at `~/.pi/web-search.json` and does point at `~/.linx/pi-web-access.json`.
+
 ## Production Pod Smoke Account
 
 Production smoke scripts that write to a real Pod must use a dedicated smoke-test account, not a developer or customer account. The scripts refuse to run unless the active LinX login WebID exactly matches `LINX_PROD_SMOKE_WEBID`.
@@ -78,8 +93,8 @@ The isolated `HOME` keeps the smoke account's `~/.linx` credentials separate fro
 Publish models first, then CLI:
 
 ```bash
-npm publish --access public preview/undefineds-co-models-<version>.tgz
-npm publish --access public preview/undefineds-co-linx-<version>.tgz
+npm publish --access public preview/undefineds-co-models-<models-version>.tgz
+npm publish --access public preview/undefineds-co-linx-<cli-version>.tgz
 ```
 
 After registry publication, users install:
@@ -147,7 +162,7 @@ Current direct CLI runtime dependencies are:
 ```text
 @undefineds.co/models
 @inrupt/solid-client-authn-node
-@mariozechner/pi-coding-agent
+@earendil-works/pi-coding-agent
 yargs
 ```
 
@@ -163,7 +178,7 @@ npm i -g --omit=peer @undefineds.co/linx
 
 The remaining install-time cost is mostly transitive:
 
-- `@mariozechner/pi-coding-agent` brings the native Pi TUI/runtime stack.
+- `@earendil-works/pi-coding-agent` brings the native Pi TUI/runtime stack.
 - `@inrupt/solid-client-authn-node` brings browser-consent OIDC support.
 - `@undefineds.co/models` brings `@undefineds.co/drizzle-solid` and the Solid SPARQL query engine needed by the current Pod/profile read path.
 
@@ -217,36 +232,27 @@ Automatic publish happens on tags matching `linx-v*`. Manual `workflow_dispatch`
 
 - Use semver for compatibility: patch for fixes, minor for additive schema/API, major for breaking schema/API.
 - Publish models before publishing xpod or LinX releases that depend on new model APIs.
-- Pin runtime packages to an exact models version for release artifacts. The generated CLI package uses `"@undefineds.co/models": "<same-version>"`.
-- Keep `packages/models` as the shared models checkout. In the final layout, this path should be a git submodule in both LinX and xpod.
+- Pin runtime packages to an exact models version for release artifacts. During migration, the generated CLI package reads the version from `packages/models/package.json`; the target shape is to read/verify the published version dependency directly.
+- Do not maintain `packages/models` as a long-lived LinX submodule. Treat it as a temporary local checkout/link while the release scripts are being decoupled.
 - Do not vendor models into production packages except for emergency preview builds.
 
 The default community path should stay simple:
 
 ```bash
-git clone --recurse-submodules <repo>
+git clone <repo>
 yarn install
 yarn dev
 ```
 
-If the checkout was cloned without submodules:
+Core developers who need to change shared model code should work in the independent models repository first:
 
 ```bash
-yarn models:update
+git clone https://github.com/undefinedsco/models.git ../models
 ```
 
-Core developers can edit shared model code directly in `packages/models`, then commit in two places:
+Then publish/tag models and update LinX to consume that exact version. If a temporary local workspace checkout/link is needed for development, keep that as local wiring and do not treat it as the source of truth.
 
-```bash
-cd packages/models
-git add .
-git commit -m "..."
-cd ../..
-git add packages/models
-git commit -m "Update shared models"
-```
-
-`yarn models:status` shows whether `packages/models` is currently a workspace directory, submodule, or symlink. Release packing runs `yarn models:assert-release-safe`; when `packages/models` is a submodule, it refuses to pack while that submodule has uncommitted changes.
+`yarn models:status` shows whether `packages/models` is currently a workspace directory, submodule, or symlink. A submodule status means the checkout is still on the legacy migration path and should not be used as the recommended maintenance model.
 
 ## undefineds.co/linx
 

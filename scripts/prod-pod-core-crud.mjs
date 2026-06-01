@@ -251,7 +251,7 @@ async function main() {
 
     await step('session.create', () => db.insert(sessionTable).values({
       id: runtimeSessionId,
-      ownerWebId: webId,
+      owner: webId,
       chat: chatIri,
       thread: threadIri,
       sessionType: 'direct',

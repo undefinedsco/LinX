@@ -63,7 +63,7 @@ Wave A CP0 的自定义 predicate **统一挂在公司级命名空间 `udfs:`**�
 
 - `chatType`：仅冻结词汇（`udfs:chatType`），CP0 不在 `ChatRow` 落表；交互差异统一通过 Message widgets（`richContent.blocks`）表达。
 - `agentWorkspaceRef`：旧命名/元模型中出现过；CP0 最终字段名为 `workspace`（Thread 上）。**不再保留 alias**，下游统一使用 `workspace`。
-- `policyRef` / `policyVersion` / `parentThreadId` / `session*`：CP0 仅冻结词汇，不在 schema 落表；策略文档从 workspace 容器约定链接解析。
+- `policyRef` / `policyVersion` / `parentThread` / `session*`：CP0 仅冻结词汇，不在 schema 落表；策略文档从 workspace 容器约定链接解析。
 
 ```ts
 import { UDFS } from "@undefineds.co/models"
@@ -106,7 +106,7 @@ export const ChatBaseVocab = {
 
   // Activity
   lastActiveAt: UDFS.lastActiveAt,
-  lastMessageId: WF.message,
+  lastMessage: UDFS.lastMessage,
   lastMessagePreview: SCHEMA.text,
 
   // Timestamps
@@ -174,8 +174,8 @@ import { SIOC, FOAF, DCTerms, UDFS, SCHEMA, MEETING, WF } from '../namespaces'
 
 export const MessageVocab = {
   // 现有
-  threadId: SIOC.has_member,
-  chatId: WF.message,
+  thread: SIOC.has_member,
+  chat: WF.message,
   maker: FOAF.maker,
   role: UDFS.messageType,
   content: SIOC.content,
@@ -194,7 +194,7 @@ export const MessageVocab = {
 
   // 新增：多 AI 协同路由
   routedBy: UDFS.routedBy,
-  routeTargetAgentId: UDFS.routeTargetAgentId,
+  routeTargetAgent: UDFS.routeTargetAgent,
   coordinationId: UDFS.coordinationId,
 } as const
 ```
@@ -212,7 +212,7 @@ replyTo: uri('replyTo').predicate(UDFS.replyTo),
 
 // 新增：多 AI 协同路由
 routedBy: uri('routedBy').predicate(UDFS.routedBy),
-routeTargetAgentId: string('routeTargetAgentId').predicate(UDFS.routeTargetAgentId),
+routeTargetAgent: uri('routeTargetAgent').predicate(UDFS.routeTargetAgent),
 coordinationId: string('coordinationId').predicate(UDFS.coordinationId),
 ```
 
@@ -227,7 +227,7 @@ export const ContactVocab = {
   // 现有（不变）
   name: VCARD.fn,
   avatarUrl: VCARD.hasPhoto,
-  entityUri: FOAF.primaryTopic,
+  entity: FOAF.primaryTopic,
   contactType: UDFS.contactType,
   isPublic: AS.audience,
   externalPlatform: UDFS.externalPlatform,
@@ -274,7 +274,7 @@ Wave A 阶段仅定义 JSON schema，不做 RDF 提取。
 | 实体 | Pod 路径 | RDF Type | Namespace | 变更 |
 |------|---------|----------|-----------|------|
 | Chat | `/.data/chat/{chatId}/index.ttl#this` | `mee:LongChat` | UDFS | Chat 元数据与 thread 共享 index.ttl；participants 使用 `wf:participant` |
-| Message | `/.data/chat/{chatId}/{yyyy}/{MM}/{dd}/messages.ttl#{id}` | `mee:Message` | UDFS | 按日期分桶；`chatId/threadId` 保留字符串键但带 canonical predicate |
+| Message | `/.data/chat/{chatId}/{yyyy}/{MM}/{dd}/messages.ttl#{id}` | `mee:Message` | UDFS | 按日期分桶；`chat`/`thread` 字段存完整 RDF URI，API helper 可接收本地 id 并解析 |
 | Contact | `/.data/contacts/{id}.ttl` | `vcard:Individual` | UDFS | 新增 `GROUP` 枚举值 |
 | Thread | `/.data/chat/{chatId}/index.ttl#{threadId}` | `sioc:Thread` | UDFS | 与 chat 共用 index.ttl；CP0 仅新增 `workspace` 字段 |
 | Agent | `/.data/agents/{id}.ttl` | `foaf:Agent` | UDFS | 无变更 |
@@ -350,7 +350,7 @@ AI 执行多步骤任务时的进度模型。
 ```typescript
 interface TaskProgressBlock {
   type: 'task_progress'
-  taskId: string
+  task: string
   title: string
   steps: Array<{
     id: string
@@ -415,7 +415,7 @@ interface GroupMessageExtension {
 
   // 多 AI 协同路由（新增）
   routedBy?: string         // 路由者（通常为 SecretaryAI）
-  routeTargetAgentId?: string // 被分派回答的 workerAI
+  routeTargetAgent?: string // 被分派回答的 workerAI URI
   coordinationId?: string   // 跨 AI 协同链路 ID
 }
 ```

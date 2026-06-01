@@ -127,7 +127,7 @@
 |------|------|------|
 | useThreadList 参数类型 | ChatContentPane.tsx | ✅ 使用 `selectedChatId ?? ''` |
 | toolsToSave 未使用变量 | useAIChat.ts | ✅ 已删除 |
-| lastMessageId 类型不匹配 | useAIChatV2.ts:171, 295 | ✅ 使用确定的 ID 变量 |
+| lastMessage 类型不匹配 | useAIChatV2.ts:171, 295 | ✅ 使用确定的消息 URI relation |
 | dialogMode 未使用 | AddChatDialog.tsx | ✅ 重命名为 `_dialogMode` |
 
 ### 3.2 其他模块错误

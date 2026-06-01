@@ -332,6 +332,7 @@ linx://{node-id}/path/to/directory
 - `containerUri`
 - `targetId`
 - `chatId`（当真实身份已经是 IRI 时）
+- `sourceId`（当它只是旧本地关联键时应迁到同步账本 metadata 的 `resourceBindings.*.local`）
 
 ### 7.3 何时需要更具体的名字
 
@@ -439,6 +440,7 @@ udfs:ContainerScopedAutoApprovalPolicy rdfs:subClassOf udfs:ApprovalPolicy .
 - `threadUri`
 - `workspaceIri`
 - `targetRdfId`
+- `sourceId`（除非只是旧本地兼容键，否则应迁到 URI relation 或同步账本 metadata 的 `resourceBindings.*`）
 
 这些都会削弱共享模型的可读性和一致性。
 

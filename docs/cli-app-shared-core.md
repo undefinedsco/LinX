@@ -55,13 +55,18 @@
 - remote approval 的审批颗粒度必须跟原生运行时对齐：只有 Pi/Codex/Claude 等上游原生流程请求审批时，LinX 才写 `approval`/`inbox` 控制面；LinX CLI 不得用自己的工具名 allowlist/blocklist 额外发明一套审批策略。
 - remote approval 的读取分两类：等待/处理一个已知 approval 时，优先使用持久化的 `approvalUri` 做精确 subject lookup；App/Inbox 这类列表界面可以做最近日期分桶的有界发现，但不得对 `/.data/approvals/` 做无界递归扫描，也不得把列表优化理解成改变 approval URI 存储语义。
 - remote approval 的倒计时和 auto/session 决策能力必须来自 shared model 字段：`approval.expiresAt` 表示截止时间，`approval.approvalOptions` 表示上游原生协议提供的选项。AI secretary/App 可以据此判断是否有倒计时、是否支持一次同意或 session 级同意；CLI/App 不得用本地私有字段重新推断。
+- approval 与 grant 是互相兼容的两层语义：approval 只表达本次 runtime/extension 交互的决策，grant 才表达可复用授权。grant materialization 只能发生在统一 approval 流水线里：`allow_once` 不创建 grant，`allow_for_session` 创建 session-scoped grant，`allow_always` 创建 durable grant。CLI/Web 都只是这条流水线的 producer/consumer UI，不各自拥有 grant 策略。
 - grant 是用户可维护的 LLM Wiki 文档资源，不是隐藏的 request fingerprint。`grantResource` 以一页一个 TTL 文档存储在 `/settings/autonomy/grants/{id}.ttl`；文档 URI 本身就是 RDF subject，页面属性通过 `title/summary/body/schema/pageKind/wikiStatus/tags/source/sourceHash/compiledAt/compiledFrom/related/context` 等 predicate 描述。
+- 所有 grant 都必须同时保存 exact provenance anchor 和用户授权的泛化边界。source approval URI、runtime/backend、tool/action、target/command、workspace/session/thread、risk、原始 prompt/options 等能拿到的上下文必须进入 shared 字段或 grant context；body/policy/tags 描述可泛化范围。
 - grant 的 `schema` 是 Solid schema/shape URI 关系，对应 `dcterms:conformsTo </settings/autonomy/schema/grant.ttl#GrantWikiPage>`，不是 `path`/`wikiPath` 字符串；TTL wiki page 不需要 `.meta` subject。
-- grant 覆盖判断必须由 AI secretary 基于当前请求语义、grant wiki 页面正文、摘要、标签、来源、上下文和 provenance 判断；`target/action/riskCeiling` 只能用于候选排序或粗筛，不能单独作为自动审批依据。
-- AI provider/model 的接口 id 可以是 `provider/model` 形式，但这不是 Pod 存储路径约定。LinX 自供模型来自 ai-gateway discovery/runtime，不写入用户 Pod 的 AI provider/model 配置资源。用户自己维护的第三方 AI 配置按 provider-scoped 文档建模：provider 位于 `/settings/providers/{providerId}.ttl`，model 位于同一文档的 `/settings/providers/{providerId}.ttl#{modelId}` fragment，两者通过 `xpod-ai:hasModel` / `xpod-ai:isProvidedBy` 的 IRI 关系关联。这里的 `{providerId}.ttl` 是 provider 文档，不代表接口层把 provider/model 合并成一个模型 id。
+- grant 覆盖判断属于统一 approval 流水线。已有 grant 覆盖请求时直接通过，且不依赖 `auto`；没有 grant 覆盖时，`auto on` 只允许 Secretary 做一次性 approve/decline/cancel/input 或等待用户，不能替用户选择 `allow_for_session` / `allow_always`。`target/action/riskCeiling` 只能用于候选排序或粗筛，不能单独作为自动审批依据。
+- approval/grant/auto 质检上报必须从 shared `Approval` / `Grant` / `Audit` / `Inbox` / runtime result 事实派生；CLI/Web 可以展示或导出报表，但不能各自维护私有 telemetry 作为质量真相。
+- AI provider/model 的接口 id 可以是 `provider/model` 形式，但这不是 Pod 存储路径约定。LinX 自供模型来自 ai-gateway discovery/runtime，不写入用户 Pod 的 AI provider/model 配置资源。用户自己维护的第三方 AI 配置按 provider-scoped 文档建模：provider 位于 `/settings/providers/{providerId}.ttl`，model 位于同一文档的 `/settings/providers/{providerId}.ttl#{modelId}` fragment，两者通过 `udfs:hasModel` / `udfs:isProvidedBy` 的 IRI 关系关联。这里的 `{providerId}.ttl` 是 provider 文档，不代表接口层把 provider/model 合并成一个模型 id。
 - CLI/App 不得为 `approval/grant/audit` 字段定义自己的业务 predicate。shared 字段必须先在 `packages/models` 的 namespace/vocab/schema 中定义清楚，再由壳层消费。
+- Symphony 的 `Idea / Issue / Task / Delivery / Session / Run / RunStep` 在 LinX 产品运行时必须以 shared Pod TTL resource 为权威。本地持久镜像应从 Pod RDF 拉取为 JSON-LD；`~/.linx/symphony/*.json` 这类 runtime 私有 JSON 只允许作为 portable runtime、无 Pod 离线恢复或测试缓存，不得替代 `@undefineds.co/models` + `drizzle-solid` 主路径。
 - structured user-input 是 backend 共享协议的一等请求类型，不是 CLI 私有 prompt。AI secretary 可以在答案能从 session context、Pod credential source 或请求选项中明确推出时代答；不能明确推出时必须展示建议并等待用户，不得捏造 secret、token、路径或用户偏好。
 - 端内私有模型可以在自己的 owning module/package 中定义专用 predicate，但必须明确作用域为私有、不能被另一端按 shared contract 读取；一旦字段需要跨 CLI / App / xpod 共享，必须先迁入 shared model，再由各端消费。
+- `metadata` 只承载 opaque 协议 id、局部 cache key、UI 选中态、兼容迁移信息或尚未正式化的附加上下文。凡是跨端需要查询、恢复、投递、审批、审计或授权判断的事实，都必须沉到 shared 语义字段或 URI relation；不要把关系字段后缀成 `Id` / `Uri` 再伪装成普通 metadata。
 - 不允许一端写 `udfs:*`，另一端读 `cred:*` / `ai:*`
 - 不允许新功能继续建立平行 schema
 
@@ -106,6 +111,11 @@
 - `chatId`、`threadId` 只允许作为 UI 状态、函数参数、runtime protocol 字段或 metadata 中的兼容信息，不允许作为持久 RDF link 字段。
 - 同一规则适用于所有 shared relation：`issue`、`task`、`delivery`、`session`、`workspace` 等字段在 shared model / archive contract 中都表示 URI relation；不要用 `issueId`、`taskId`、`deliveryId`、`sessionId` 这类字段承载跨资源链接。
 - 壳层 API 可以继续接收短 id，例如 `chatId`、`threadId` 或 CLI 参数里的 task key，但写入 `packages/models`、shared archive 或跨端 runtime contract 前必须解析成语义 URI 字段。
+- runtime provider 的 opaque id 可以保留成明确字段，例如 `externalRunId`、`toolCallId`、`providerId`、`webId`。这些字段不能伪装成 RDF link，也不能用来替代 `task`、`delivery`、`thread`、`message`、`workspace` 这类 shared relation。
+- 本地队列、checkpoint、cache 的 operation key 可以进 metadata，但命名必须暴露本地属性，例如 `syncTask`、`operationId`、`cacheKey`。不要把本地队列 key 写成 `taskId`、`threadId` 这类会和 shared resource 关系混淆的名字。
+- local-first 同步中的本地关联键必须放在同步账本 metadata 的 `resourceBindings.{name}.local`，对应的 Pod 资源放在 `resourceBindings.{name}.uri`。不要把这类边关系扁平成 `sourceId`、`targetUri`、`localSource` 或 `localTarget`。
+- 同步账本 metadata 不是 shared model 字段；多个 app 共享同一个 Pod 或本地 store 时，必须按 `source` / app namespace 查询和落盘，不能把多个 app 的恢复状态混进同一条业务资源 metadata。
+- 历史字段名像 `sourceId`、`targetUri`、`chatId` 时，兼容层可以读取；canonical 写入必须改成 URI relation 或 `resourceBindings.*` 边。
 - 新增 shared model 代码优先使用 `chatResource`、`threadResource`、`messageResource`、`sessionResource` 等 Solid resource 命名；`*Table` 只作为兼容 alias 逐步退出。
 
 ## 3. Use Case Services
@@ -209,7 +219,7 @@ AI 配置以三类 Pod resource 为准，不允许再引入平行主线：
 
 1. 认证层从本地 Solid auth 恢复 Pod 访问能力；本地只保留 Solid auth 所需材料，不保存其它 app/provider 的 API key。
 2. session 适配层产出统一的 Inrupt-compatible session，供 `drizzle-solid` 使用。
-3. shared model 查询层读取 `credentialResource`、`aiProviderResource`、`aiModelResource`，并根据共享 provider alias 规则选择 active credential。
+3. shared model 查询层读取 `credentialResource`、`aiProviderResource`、`aiModelResource`，并根据共享 provider alias / backend binding 规则选择 active credential。
 4. Backend runner 只把选中的 credential 映射成子进程环境变量，不把 credential 复制到 archive、message、audit 或 TUI state。
 
 CLI credential 获取交互和 runtime 消费必须分开：缺 LinX/Solid 登录时延续 Pi 的浏览器 OIDC / manual redirect 体验；缺 provider key 时在当前 CLI/TUI flow 收集 API key，并通过 shared AI config mutation 写入 Pod。之后 backend runner 仍然从 Pod 读取并重试。详细原则见 `docs/cli-login-and-key-principles.md`。
@@ -217,12 +227,14 @@ CLI credential 获取交互和 runtime 消费必须分开：缺 LinX/Solid 登�
 当前 backend env 映射规则：
 
 - `claude` / Anthropic: 注入 `ANTHROPIC_API_KEY`
-- `codex` / OpenAI: 注入 Codex 专用 `CODEX_API_KEY`，如 provider 配置了 base URL 再通过 Codex config 注入
+- `codex`: 注入 Codex 专用 `CODEX_API_KEY`；provider 可以是 OpenAI、DeepSeek、OpenRouter、LiteLLM gateway 等任意 `supportsBackend=codex` 的 Pod provider，如 provider 配置了 base URL 再通过 Codex config 注入
 - `codebuddy`: 注入 `CODEBUDDY_API_KEY`，如 credential/provider 配置了 base URL 再注入 `CODEBUDDY_BASE_URL`
 
 这条链路不允许出现第二套 credential 读取器。若 OIDC 场景、测试夹具或某个 runtime 不能直接传真实 Inrupt `Session`，修 session 适配层；若 shared model 缺少方便的聚合查询，修 `packages/models` repository/helper；不要在 `apps/cli` 或 `apps/web` 里手写 `credentialResource` 的 Turtle parser。
 
 完整 backend / Pod 原则见 `docs/backend-pod-contract.md`。该文档是 CLI/App backend 改动的验收口径：backend 选择只改变外部 agent runtime；凭据/config、关键数据、local-first sync、approval/auth 语义必须继续走 shared model 和 Pod。
+
+完整 approval / grant 产品契约见 `docs/approval-grant-design.md`。
 
 ## Removed Path
 

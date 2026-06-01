@@ -252,8 +252,10 @@ async function main() {
   if (!sessionRow || sessionRowLocalId !== sessionId || sessionRow.tool !== 'linx') {
     throw new Error(`session was not read back from Pod ORM: ${sessionId}`)
   }
-  const sessionMessageResources = Array.isArray(sessionRow.messageResources)
-    ? sessionRow.messageResources
+  const sessionMessageResources = Array.isArray(sessionRow.messages)
+    ? sessionRow.messages
+    : Array.isArray(sessionRow.messageResources)
+      ? sessionRow.messageResources
     : sessionRow.metadata?.messageResources
   if (!Array.isArray(sessionMessageResources) || sessionMessageResources.length === 0) {
     throw new Error(`session metadata did not include message resource refs: ${sessionId}`)
