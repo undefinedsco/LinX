@@ -7,11 +7,30 @@ import { join } from 'node:path'
 const cliRoot = process.cwd()
 import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 
+async function readAuthHeader(authFetch, url = 'https://api.undefineds.co/v1/probe') {
+  const originalFetch = globalThis.fetch
+  let authorization = null
+  globalThis.fetch = async (_url, init = {}) => {
+    authorization = new Headers(init.headers).get('Authorization')
+    return new Response(null, { status: 204 })
+  }
+  try {
+    await authFetch(url, {
+      headers: {
+        Accept: 'application/json',
+      },
+    })
+    return authorization
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+}
+
 test('pi runtime can prompt through the backend-shaped stream adapter contract', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
   t.after(() => cleanup())
 
-  const { SessionManager } = await import('@mariozechner/pi-coding-agent')
+  const { SessionManager } = await import('@earendil-works/pi-coding-agent')
   const cwd = mkdtempSync(join(tmpdir(), 'linx-pi-runtime-prompt-'))
   const agentDir = mkdtempSync(join(tmpdir(), 'linx-pi-runtime-prompt-agent-'))
   t.after(() => {
@@ -63,7 +82,7 @@ test('pi runtime can prompt through the backend-shaped stream adapter contract',
   await runtime.session.prompt('say hi')
 
   assert.equal(completionCalls.length, 1)
-  assert.equal(completionCalls[0].apiKey, 'cloud-access-token')
+  assert.equal(await readAuthHeader(completionCalls[0].authFetch), 'Bearer cloud-access-token')
   assert.deepEqual(completionCalls[0].messages.at(-1), { role: 'user', content: 'say hi' })
   const assistantMessages = runtime.session.messages.filter((message) => message.role === 'assistant')
   assert.ok(assistantMessages.length > 0)
@@ -74,7 +93,7 @@ test('pi runtime executes tools returned by the cloud completion backend', async
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
   t.after(() => cleanup())
 
-  const { SessionManager } = await import('@mariozechner/pi-coding-agent')
+  const { SessionManager } = await import('@earendil-works/pi-coding-agent')
   const cwd = mkdtempSync(join(tmpdir(), 'linx-pi-runtime-tool-prompt-'))
   const agentDir = mkdtempSync(join(tmpdir(), 'linx-pi-runtime-tool-prompt-agent-'))
   t.after(() => {

@@ -1,9 +1,10 @@
 import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { copyProductSkills } from '../scripts/product-skills.mjs'
 
 const cliRoot = fileURLToPath(new URL('..', import.meta.url))
 const cliDistRoot = join(cliRoot, 'dist')
@@ -109,7 +110,7 @@ async function buildAutoModeBundle(entryRelative) {
   const modelsPackageDir = join(undefinedsNodeModulesDir, 'models')
   const agentRuntimePackageDir = join(linxNodeModulesDir, 'agent-runtime')
   const genericNodeModulesDir = join(outdir, 'node_modules')
-  const scopedNodeModulesDir = join(outdir, 'node_modules', '@mariozechner')
+  const scopedNodeModulesDir = join(outdir, 'node_modules', '@earendil-works')
   const sinclairNodeModulesDir = join(outdir, 'node_modules', '@sinclair')
   const entryPath = join(sourceRoot, entryRelative)
   const compiledEntry = join(outdir, entryRelative.replace(/\.ts$/, '.js'))
@@ -143,10 +144,7 @@ async function buildAutoModeBundle(entryRelative) {
     cwd: cliRoot,
     stdio: 'pipe',
   })
-  cpSync(skillsRoot, join(outdir, 'skills'), {
-    recursive: true,
-    filter: (src) => !src.includes('/node_modules/') && !src.includes('/.git/'),
-  })
+  copyProductSkills(skillsRoot, join(outdir, 'skills'))
 
   mkdirSync(undefinedsNodeModulesDir, { recursive: true })
   mkdirSync(linxNodeModulesDir, { recursive: true })
@@ -179,10 +177,16 @@ async function buildAutoModeBundle(entryRelative) {
       '.': './dist/index.js',
       './acp': './dist/acp.js',
       './companion-model': './dist/companion-model.js',
+      './control-plane': './dist/control-plane.js',
+      './file-sync': './dist/file-sync.js',
+      './reconciler': './dist/reconciler.js',
       './runtime': './dist/runtime.js',
       './auto-mode': './dist/auto-mode.js',
       './symphony': './dist/symphony.js',
+      './sync': './dist/sync.js',
+      './thread-reconciler-controller': './dist/thread-reconciler-controller.js',
       './turn-controller': './dist/turn-controller.js',
+      './wake-scheduler': './dist/wake-scheduler.js',
     },
   }, null, 2))
   symlinkSync(resolveNodeModule('ws'), join(genericNodeModulesDir, 'ws'), 'dir')
@@ -190,10 +194,10 @@ async function buildAutoModeBundle(entryRelative) {
   symlinkSync(resolveNodeModule('pi-web-access'), join(genericNodeModulesDir, 'pi-web-access'), 'dir')
   symlinkSync(resolveNodeModule('typebox'), join(genericNodeModulesDir, 'typebox'), 'dir')
   symlinkSync(resolveNodeModule('@sinclair/typebox'), join(sinclairNodeModulesDir, 'typebox'), 'dir')
-  symlinkSync(resolveNodeModule('@mariozechner/pi-ai'), join(scopedNodeModulesDir, 'pi-ai'), 'dir')
-  symlinkSync(resolveNodeModule('@mariozechner/pi-agent-core'), join(scopedNodeModulesDir, 'pi-agent-core'), 'dir')
-  symlinkSync(resolveNodeModule('@mariozechner/pi-coding-agent'), join(scopedNodeModulesDir, 'pi-coding-agent'), 'dir')
-  symlinkSync(resolveNodeModule('@mariozechner/pi-tui'), join(scopedNodeModulesDir, 'pi-tui'), 'dir')
+  symlinkSync(resolveNodeModule('@earendil-works/pi-ai'), join(scopedNodeModulesDir, 'pi-ai'), 'dir')
+  symlinkSync(resolveNodeModule('@earendil-works/pi-agent-core'), join(scopedNodeModulesDir, 'pi-agent-core'), 'dir')
+  symlinkSync(resolveNodeModule('@earendil-works/pi-coding-agent'), join(scopedNodeModulesDir, 'pi-coding-agent'), 'dir')
+  symlinkSync(resolveNodeModule('@earendil-works/pi-tui'), join(scopedNodeModulesDir, 'pi-tui'), 'dir')
   mkdirSync(join(outdir, 'node_modules', '@inrupt'), { recursive: true })
   symlinkSync(
     resolveNodeModule('@inrupt/solid-client-authn-node'),

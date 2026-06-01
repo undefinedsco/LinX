@@ -1,4 +1,4 @@
-import { createAssistantMessageEventStream, type AssistantMessage, type AssistantMessageEventStream } from '@mariozechner/pi-ai'
+import { createAssistantMessageEventStream, type AssistantMessage, type AssistantMessageEventStream } from '@earendil-works/pi-ai'
 import type { RemoteChatMessage, RemoteChatTool, RemoteChatToolCall } from '../chat-api.js'
 import type { AutoModeNormalizedEvent } from '../auto-mode/types.js'
 import { DEFAULT_LINX_CLOUD_MODEL_ID } from '../default-model.js'
@@ -35,6 +35,7 @@ export interface PiCompletionBackendResult {
 
 type PiStreamOptions = {
   apiKey?: string
+  authFetch?: (url: string, init?: RequestInit) => Promise<Response>
   modelId?: string
   signal?: AbortSignal
 }
@@ -52,6 +53,7 @@ export interface PiAgentStreamAdapterOptions {
     complete(input: {
       model?: string
       apiKey?: string
+      authFetch?: (url: string, init?: RequestInit) => Promise<Response>
       messages: RemoteChatMessage[]
       tools?: RemoteChatTool[]
       systemPrompt?: string
@@ -111,6 +113,7 @@ export function createPiAgentStreamAdapter(options: PiAgentStreamAdapterOptions 
           const reply = await options.completionBackend.complete({
             model: resolvedModelId,
             apiKey: streamOptions?.apiKey,
+            authFetch: streamOptions?.authFetch,
             messages: normalizedMessages,
             tools: normalizedTools,
             systemPrompt: context?.systemPrompt,
@@ -259,7 +262,7 @@ function normalizeContextMessages(context?: { messages?: PiStreamContextMessage[
       if (content || toolCalls.length > 0) {
         normalized.push({
           role: 'assistant',
-          content: content || null,
+          content: content || '',
           ...(reasoningContent && toolCalls.length > 0 ? { reasoning_content: reasoningContent } : {}),
           ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
         })
@@ -466,7 +469,6 @@ function emitCompletionResult(
   reply: string | PiCompletionBackendResult,
 ): void {
   const content = typeof reply === 'string' ? reply : reply.content ?? ''
-  const reasoningContent = typeof reply === 'string' ? '' : reply.reasoningContent ?? ''
   const toolCalls = typeof reply === 'string' ? [] : reply.toolCalls ?? []
   if (!isStringReply(reply) && reply.usage) {
     message.usage = {
@@ -477,33 +479,6 @@ function emitCompletionResult(
       totalTokens: reply.usage.totalTokens,
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
     }
-  }
-
-  if (reasoningContent) {
-    const contentIndex = message.content.length
-    message.content.push({
-      type: 'thinking',
-      thinking: '',
-      thinkingSignature: 'reasoning_content',
-    })
-    stream.push({ type: 'thinking_start', contentIndex, partial: { ...message } })
-    message.content[contentIndex] = {
-      type: 'thinking',
-      thinking: reasoningContent,
-      thinkingSignature: 'reasoning_content',
-    }
-    stream.push({
-      type: 'thinking_delta',
-      contentIndex,
-      delta: reasoningContent,
-      partial: { ...message },
-    })
-    stream.push({
-      type: 'thinking_end',
-      contentIndex,
-      content: reasoningContent,
-      partial: { ...message },
-    })
   }
 
   if (content) {

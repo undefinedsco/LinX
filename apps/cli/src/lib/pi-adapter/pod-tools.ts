@@ -8,8 +8,8 @@
  * with a Pod root (e.g., /alice/). For local files, use read/write.
  */
 
-import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
-import { Type } from '@sinclair/typebox';
+import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import { Type, type Static } from 'typebox';
 import { resolveLinxPodBaseUrl } from '@undefineds.co/models/client';
 import { getDefaultPodDataSession, type PodDataSession } from '../pod-data-session.js';
 
@@ -25,8 +25,8 @@ const PodWriteParams = Type.Object({
   contentType: Type.Optional(Type.String({ description: 'Content-Type header. Default: text/turtle for .ttl, text/markdown for .md, application/json for .json' })),
 });
 
-type PodReadParams = typeof PodReadParams.infer;
-type PodWriteParams = typeof PodWriteParams.infer;
+type PodReadParams = Static<typeof PodReadParams>;
+type PodWriteParams = Static<typeof PodWriteParams>;
 
 // ── Content-Type inference ──────────────────────────────────────────────────
 

@@ -240,7 +240,7 @@ test('pi agent stream adapter forwards tools and emits tool calls for Pi agent l
   assert.equal(events[4].message.stopReason, 'toolUse')
 })
 
-test('pi agent stream adapter emits Pi thinking events from remote reasoning content', async (t) => {
+test('pi agent stream adapter keeps remote reasoning content out of visible TUI output', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/stream.ts')
   t.after(() => cleanup())
 
@@ -264,23 +264,13 @@ test('pi agent stream adapter emits Pi thinking events from remote reasoning con
     events.push(event)
   }
 
-  assert.equal(events[1].type, 'thinking_start')
-  assert.equal(events[2].type, 'thinking_delta')
-  assert.equal(events[2].delta, 'model reasoning trace')
-  assert.equal(events[3].type, 'thinking_end')
-  assert.equal(events[3].content, 'model reasoning trace')
-  assert.equal(events[4].type, 'text_start')
+  assert.equal(events.some((event) => event.type.startsWith('thinking_')), false)
+  assert.equal(events[1].type, 'text_start')
+  assert.equal(events[2].type, 'text_delta')
+  assert.equal(events[2].delta, 'final answer')
   assert.equal(events.at(-1).type, 'done')
-  assert.deepEqual(events.at(-1).message.content.slice(0, 2), [
-    {
-      type: 'thinking',
-      thinking: 'model reasoning trace',
-      thinkingSignature: 'reasoning_content',
-    },
-    {
-      type: 'text',
-      text: 'final answer',
-    },
+  assert.deepEqual(events.at(-1).message.content, [
+    { type: 'text', text: 'final answer' },
   ])
 })
 
@@ -349,7 +339,7 @@ test('pi agent stream adapter preserves assistant tool calls and tool results in
   assert.deepEqual(completionCalls[0].messages.slice(0, 2), [
     {
       role: 'assistant',
-      content: null,
+      content: '',
       tool_calls: [
         {
           id: 'call_1',
@@ -452,6 +442,7 @@ test('pi agent stream adapter preserves DeepSeek reasoning content for tool-resu
   }
 
   assert.equal(completionCalls[0].messages[0].reasoning_content, 'need to inspect cwd')
+  assert.equal(completionCalls[0].messages[0].content, '')
   assert.equal(completionCalls[0].messages[0].tool_calls[0].id, 'call_1')
 })
 

@@ -6,8 +6,8 @@
  * credential Turtle directly.
  */
 
-import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
-import { Type } from '@sinclair/typebox';
+import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import { Type, type Static } from 'typebox';
 import { getDefaultPodDataSession, type PodDataSession } from '../pod-data-session.js';
 import {
   aiProviderResource,
@@ -35,8 +35,8 @@ const WebSearchParams = Type.Object({
   query: Type.String({ description: 'Search query' }),
 });
 
-type WebFetchParams = typeof WebFetchParams.infer;
-type WebSearchParams = typeof WebSearchParams.infer;
+type WebFetchParams = Static<typeof WebFetchParams>;
+type WebSearchParams = Static<typeof WebSearchParams>;
 
 // ── Credential runtime ──────────────────────────────────────────────────────
 

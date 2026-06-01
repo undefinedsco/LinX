@@ -3,14 +3,17 @@ import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { readFileSync } from 'node:fs'
 import { LINX_HOME_DIRNAME } from '@undefineds.co/models/client'
-import { keyHint, LoginDialogComponent, rawKeyHint } from '@mariozechner/pi-coding-agent'
-import { Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from '@mariozechner/pi-tui'
-import type { OAuthCredentials } from '@mariozechner/pi-ai'
+import { keyHint, LoginDialogComponent, rawKeyHint } from '@earendil-works/pi-coding-agent'
+import { Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui'
+import type { OAuthCredentials } from '@earendil-works/pi-ai'
 import { clearAccountSession } from '../account-session.js'
 import { clearCredentials, loadCredentials } from '../credentials-store.js'
 import { clearOidcSessionStorage } from '../oidc-session-storage.js'
+import { persistSolidClientCredentialsLogin } from '../solid-client-credentials-login.js'
 import { extractUsernameFromWebId, resolveProfileDisplayName } from '../profile-identity.js'
 import { LINX_TUI_KEYMAP_COMMAND, LINX_TUI_KEYMAP_LABEL, LINX_TUI_LOGIN_COMMAND } from '../linx-tui-contract.js'
+import { suppressPodStatusOutput } from './pod-status-output.js'
+import { LINX_RUNTIME_MANAGED_AUTH_KEY } from './runtime.js'
 
 export const LINX_AGENT_DIR = join(homedir(), LINX_HOME_DIRNAME, 'agent')
 export const LINX_UPDATE_PACKAGE_NAME = '@undefineds.co/linx'
@@ -22,9 +25,11 @@ const LINX_AUTH_PENDING_RETRY = Symbol.for('linx.tui.authPendingRetry')
 const LINX_AUTH_LOGIN_SCHEDULED = Symbol.for('linx.tui.authLoginScheduled')
 const LINX_AUTH_REPORTING_ERROR = Symbol.for('linx.tui.authReportingError')
 const LINX_UPDATE_IN_PROGRESS = Symbol.for('linx.tui.updateInProgress')
+const LINX_UPDATE_CHECK_SCHEDULED = Symbol.for('linx.tui.updateCheckScheduled')
+const LINX_SUPPRESS_UPSTREAM_PI_UPDATE = Symbol.for('linx.tui.suppressUpstreamPiUpdate')
 const LINX_PROVIDER_ID = 'undefineds'
 const AUTH_OPTION_BROWSER = 'Authorize in browser'
-const AUTH_OPTION_API_KEY = 'Enter API key'
+const AUTH_OPTION_CLIENT_CREDENTIALS = 'Enter Solid client credentials'
 const AUTH_OPTION_EXIT = 'Exit'
 const UPDATE_OPTION_INSTALL = 'Install update and restart'
 const UPDATE_OPTION_CHANGELOG = 'Open changelog'
@@ -69,34 +74,85 @@ function patchTerminalTitle(interactive: any): void {
 }
 
 function patchVersionCheck(interactive: any): void {
+  const originalRun = interactive.run?.bind(interactive)
+  if (typeof originalRun === 'function') {
+    interactive.run = async function patchedLinxRun(...args: unknown[]): Promise<unknown> {
+      this[LINX_SUPPRESS_UPSTREAM_PI_UPDATE] = true
+      return originalRun(...args)
+    }
+  }
+
+  const originalInit = interactive.init?.bind(interactive)
+  if (typeof originalInit === 'function') {
+    interactive.init = async function patchedLinxVersionInit(...args: unknown[]): Promise<void> {
+      await originalInit(...args)
+      scheduleLinxVersionCheck(this)
+    }
+  }
+
   interactive.checkForNewVersion = async function patchedCheckForNewVersion(): Promise<string | undefined> {
-    if (process.env.PI_OFFLINE) {
-      return undefined
-    }
-
-    try {
-      const response = await fetch(`https://registry.npmjs.org/${encodeURIComponent(LINX_UPDATE_PACKAGE_NAME)}/latest`, {
-        signal: AbortSignal.timeout(5000),
-      })
-      if (!response.ok) {
-        return undefined
-      }
-
-      const body = await response.json() as { version?: string }
-      const latest = typeof body.version === 'string' ? body.version.trim() : ''
-      if (!latest || !isVersionNewer(latest, LINX_CLI_VERSION)) {
-        return undefined
-      }
-      return latest
-    } catch {
-      return undefined
-    }
+    return checkForNewLinxVersion()
   }
 }
 
 function patchUpdateNotification(interactive: any): void {
-  interactive.showNewVersionNotification = function patchedShowNewVersionNotification(newVersion: string): void {
-    void showLinxUpdateSelector(this, newVersion)
+  interactive.showNewVersionNotification = function patchedShowNewVersionNotification(newVersion: unknown): void {
+    if (this[LINX_SUPPRESS_UPSTREAM_PI_UPDATE]) {
+      return
+    }
+
+    if (shouldDeferLinxUpdateNotification(this)) {
+      return
+    }
+
+    const normalizedVersion = normalizeLinxUpdateVersion(newVersion)
+    if (!normalizedVersion) {
+      return
+    }
+
+    void showLinxUpdateSelector(this, normalizedVersion)
+  }
+}
+
+function scheduleLinxVersionCheck(interactive: any): void {
+  if (interactive[LINX_UPDATE_CHECK_SCHEDULED]) {
+    return
+  }
+
+  interactive[LINX_UPDATE_CHECK_SCHEDULED] = true
+  queueMicrotask(() => {
+    void checkForNewLinxVersion()
+      .then((latest) => {
+        if (!latest || shouldDeferLinxUpdateNotification(interactive)) {
+          return
+        }
+        void showLinxUpdateSelector(interactive, latest)
+      })
+      .catch(() => undefined)
+  })
+}
+
+async function checkForNewLinxVersion(): Promise<string | undefined> {
+  if (process.env.PI_OFFLINE) {
+    return undefined
+  }
+
+  try {
+    const response = await fetch(`https://registry.npmjs.org/${encodeURIComponent(LINX_UPDATE_PACKAGE_NAME)}/latest`, {
+      signal: AbortSignal.timeout(5000),
+    })
+    if (!response.ok) {
+      return undefined
+    }
+
+    const body = await response.json() as { version?: string }
+    const latest = typeof body.version === 'string' ? body.version.trim() : ''
+    if (!latest || !isVersionNewer(latest, LINX_CLI_VERSION)) {
+      return undefined
+    }
+    return latest
+  } catch {
+    return undefined
   }
 }
 
@@ -112,9 +168,10 @@ async function showLinxUpdateSelector(interactive: any, newVersion: string): Pro
       'Choose how to handle this update.',
     ].join('\n')
     const options = [UPDATE_OPTION_INSTALL, UPDATE_OPTION_CHANGELOG, UPDATE_OPTION_LATER]
-    const selected = typeof interactive.showExtensionSelector === 'function'
+    const rawSelected = typeof interactive.showExtensionSelector === 'function'
       ? await interactive.showExtensionSelector(title, options)
       : undefined
+    const selected = normalizeSelectorChoice(rawSelected, options)
 
     if (selected === UPDATE_OPTION_INSTALL) {
       await installLinxUpdateAndRestart(interactive, newVersion)
@@ -136,6 +193,35 @@ async function showLinxUpdateSelector(interactive: any, newVersion: string): Pro
   } finally {
     interactive[LINX_UPDATE_IN_PROGRESS] = false
   }
+}
+
+function shouldDeferLinxUpdateNotification(interactive: any): boolean {
+  return Boolean(
+    interactive[LINX_AUTH_LOGIN_IN_PROGRESS]
+      || interactive[LINX_AUTH_LOGIN_ON_INIT]
+      || interactive[LINX_AUTH_PENDING_RETRY]
+      || interactive[LINX_AUTH_LOGIN_SCHEDULED],
+  )
+}
+
+function normalizeLinxUpdateVersion(value: unknown): string | undefined {
+  const direct = normalizeNonEmptyString(value)
+  if (direct) {
+    return direct
+  }
+
+  if (!isRecord(value)) {
+    return undefined
+  }
+
+  for (const key of ['version', 'latest', 'latestVersion', 'packageVersion', 'newVersion']) {
+    const nested = normalizeNonEmptyString(value[key])
+    if (nested) {
+      return nested
+    }
+  }
+
+  return undefined
 }
 
 async function installLinxUpdateAndRestart(interactive: any, newVersion: string): Promise<void> {
@@ -264,6 +350,7 @@ function patchAuthExpiredSessionEvents(interactive: any): void {
 
   interactive.handleEvent = async function patchedHandleEvent(event: unknown): Promise<unknown> {
     if (eventHasLinxAuthExpiredError(event)) {
+      showLinxAuthExpiredRecoveryNotice(this)
       prepareLinxAuthExpiredRetry(this)
       suppressLinxAuthExpiredAssistantError(this)
       scheduleLinxCloudLogin(this, 'expired')
@@ -283,10 +370,12 @@ function patchAuthExpiredLoginPrompt(interactive: any): void {
 
   interactive.showError = function patchedShowError(errorMessage: unknown): unknown {
     const text = typeof errorMessage === 'string' ? errorMessage : String(errorMessage)
-    if (!isLinxAuthExpiredError(text)) {
+    if (this[LINX_AUTH_REPORTING_ERROR] || !isLinxAuthExpiredError(text)) {
       return originalShowError(errorMessage)
     }
 
+    showLinxAuthExpiredRecoveryNotice(this)
+    prepareLinxAuthExpiredRetry(this)
     scheduleLinxCloudLogin(this, 'expired')
     return undefined
   }
@@ -304,10 +393,20 @@ function eventHasLinxAuthExpiredError(event: unknown): boolean {
     return false
   }
   const message = isRecord(event.message) ? event.message : undefined
+  const topLevelErrorMessage = typeof event.errorMessage === 'string' ? event.errorMessage : ''
   const errorMessage = typeof message?.errorMessage === 'string' ? message.errorMessage : ''
   const error = isRecord(event.error) ? event.error : undefined
   const nestedErrorMessage = typeof error?.errorMessage === 'string' ? error.errorMessage : ''
-  return isLinxAuthExpiredError(`${errorMessage}\n${nestedErrorMessage}`)
+  return isLinxAuthExpiredError(`${topLevelErrorMessage}\n${errorMessage}\n${nestedErrorMessage}`)
+}
+
+function showLinxAuthExpiredRecoveryNotice(interactive: any): void {
+  interactive.showStatus?.([
+    'LinX Cloud login expired.',
+    'Your message reached LinX, but the Cloud token was rejected.',
+    'Choose a sign-in method below, or run /login if the selector is not visible.',
+  ].join('\n'))
+  interactive.ui?.requestRender?.()
 }
 
 async function startLinxCloudLogin(interactive: any, options: { reason?: LinxAuthReason } = {}): Promise<void> {
@@ -341,8 +440,8 @@ async function startLinxCloudLogin(interactive: any, options: { reason?: LinxAut
       return
     }
 
-    if (selected === AUTH_OPTION_API_KEY) {
-      await promptForLinxApiKey(interactive, reason)
+    if (selected === AUTH_OPTION_CLIENT_CREDENTIALS) {
+      await promptForLinxClientCredentials(interactive, reason)
       return
     }
 
@@ -405,13 +504,43 @@ function normalizeLinxLoginError(message: string): string {
 
 async function selectLinxAuthMethod(interactive: any, reason: LinxAuthReason): Promise<string | undefined> {
   const title = buildLinxAuthPromptTitle(reason, resolveRuntimeProviderLabel(interactive))
-  const options = [AUTH_OPTION_BROWSER, AUTH_OPTION_API_KEY, AUTH_OPTION_EXIT]
+  const options = [AUTH_OPTION_BROWSER, AUTH_OPTION_CLIENT_CREDENTIALS, AUTH_OPTION_EXIT]
   if (typeof interactive.showExtensionSelector === 'function') {
-    return await interactive.showExtensionSelector(title, options)
+    return normalizeSelectorChoice(await interactive.showExtensionSelector(title, options), options)
   }
 
   showLinxAuthFallback(interactive, title, options)
   return undefined
+}
+
+function normalizeSelectorChoice(value: unknown, options: readonly string[]): string | undefined {
+  const direct = matchSelectorChoice(value, options)
+  if (direct) {
+    return direct
+  }
+
+  if (!isRecord(value)) {
+    return undefined
+  }
+
+  for (const key of ['value', 'label', 'title', 'name', 'display', 'text', 'option', 'id']) {
+    const match = matchSelectorChoice(value[key], options)
+    if (match) {
+      return match
+    }
+  }
+
+  return undefined
+}
+
+function matchSelectorChoice(value: unknown, options: readonly string[]): string | undefined {
+  const normalized = normalizeNonEmptyString(value)
+  if (!normalized) {
+    return undefined
+  }
+
+  return options.find((option) => option === normalized)
+    ?? options.find((option) => stripAnsi(option).trim() === stripAnsi(normalized).trim())
 }
 
 function buildLinxAuthPromptTitle(reason: LinxAuthReason, providerLabel: string): string {
@@ -427,7 +556,7 @@ function buildLinxAuthPromptTitle(reason: LinxAuthReason, providerLabel: string)
     return [
       'LinX Cloud login expired',
       'Your current Solid token was rejected by LinX Cloud.',
-      'Re-authorize or provide an API key, then retry your message.',
+      'Re-authorize or enter Solid client credentials, then retry your message.',
     ].join('\n')
   }
 
@@ -448,30 +577,43 @@ function showLinxAuthFallback(interactive: any, title: string, options: string[]
   interactive.ui?.requestRender?.()
 }
 
-async function promptForLinxApiKey(interactive: any, reason: LinxAuthReason): Promise<void> {
+async function promptForLinxClientCredentials(interactive: any, reason: LinxAuthReason): Promise<void> {
   if (typeof interactive.showExtensionInput !== 'function') {
-    interactive.showError?.('This terminal build cannot collect an API key inside the TUI.')
+    interactive.showError?.('This terminal build cannot collect Solid client credentials inside the TUI.')
     return
   }
 
-  const apiKey = await interactive.showExtensionInput(
+  const credentials = await interactive.showExtensionInput(
     [
-      reason === 'expired' ? 'Enter LinX Cloud API key' : 'Use LinX Cloud API key',
-      'Paste a key for this TUI session. Press Escape to cancel.',
+      reason === 'expired' ? 'Enter Solid client credentials' : 'Use Solid client credentials',
+      'This is only for Solid/LinX identity. AI provider keys belong in `linx ai connect`.',
+      'Format: client_id:client_secret',
+      'Press Escape to cancel.',
     ].join('\n'),
-    'linx API key',
+    'client_id:client_secret',
   )
-  const trimmed = typeof apiKey === 'string' ? apiKey.trim() : ''
+  const trimmed = typeof credentials === 'string' ? credentials.trim() : ''
   if (!trimmed) {
-    interactive.showStatus?.('LinX Cloud API key entry cancelled.')
+    interactive.showStatus?.('Solid client credentials entry cancelled.')
     return
   }
 
+  const result = await resolveSolidClientCredentialsLogin(interactive)(trimmed)
   const authStorage = interactive.session?.modelRegistry?.authStorage
-  authStorage?.setRuntimeApiKey?.(LINX_PROVIDER_ID, trimmed)
-  authStorage?.set?.(LINX_PROVIDER_ID, { type: 'api_key', key: trimmed })
+  authStorage?.setRuntimeApiKey?.(LINX_PROVIDER_ID, LINX_RUNTIME_MANAGED_AUTH_KEY)
+  authStorage?.set?.(LINX_PROVIDER_ID, {
+    type: 'api_key',
+    key: LINX_RUNTIME_MANAGED_AUTH_KEY,
+    webId: result.webId,
+    podUrl: result.podUrl,
+  })
   await refreshLinxAuthState(interactive)
-  await finishLinxAuthSuccess(interactive, reason, 'API key saved for this TUI session.')
+  await finishLinxAuthSuccess(interactive, reason, 'Solid client credentials saved to ~/.linx.')
+}
+
+function resolveSolidClientCredentialsLogin(interactive: any): typeof persistSolidClientCredentialsLogin {
+  const override = interactive?.__linxPersistSolidClientCredentialsLogin ?? interactive?.__linxPersistSolidSecretLogin
+  return typeof override === 'function' ? override : persistSolidClientCredentialsLogin
 }
 
 async function finishLinxAuthSuccess(interactive: any, reason: LinxAuthReason, detail: string): Promise<void> {
@@ -717,10 +859,14 @@ function extractUserMessageText(message: unknown): string | undefined {
 }
 
 async function refreshLinxAuthState(interactive: any): Promise<void> {
+  clearLinxAuthPromptOnStart(interactive)
+  syncRuntimeCredential(interactive)
   interactive.session?.modelRegistry?.refresh?.()
   await interactive.updateAvailableProviderCount?.()
   interactive.ui?.requestRender?.()
 }
+
+export const __testRefreshLinxAuthState = refreshLinxAuthState
 
 function authStatusPrefix(reason: LinxAuthReason): string {
   if (reason === 'expired') {
@@ -759,7 +905,6 @@ async function runLinxCloudLogin(
     onProgress(message: string): void
     onManualCodeInput?: (signal?: AbortSignal) => Promise<string>
   })
-  syncRuntimeCredential(interactive)
 }
 
 async function runLinxCloudBrowserLogin(
@@ -844,7 +989,6 @@ async function runLinxCloudLoginDialog(
       onManualCodeInput?: (signal?: AbortSignal) => Promise<string>
       signal?: AbortSignal
     })
-    syncRuntimeCredential(interactive)
   } finally {
     restoreEditor()
   }
@@ -901,13 +1045,21 @@ async function promptForLinxManualRedirectUrl(
 
 function syncRuntimeCredential(interactive: any): void {
   const authStorage = interactive.session?.modelRegistry?.authStorage
-  const credential = authStorage?.get?.(LINX_PROVIDER_ID) as (Partial<OAuthCredentials> & { type?: string; key?: string }) | undefined
-  if (credential?.type === 'oauth' && typeof credential.access === 'string' && credential.access) {
-    authStorage.setRuntimeApiKey?.(LINX_PROVIDER_ID, credential.access)
-    return
-  }
-  if (credential?.type === 'api_key' && typeof credential.key === 'string' && credential.key) {
-    authStorage.setRuntimeApiKey?.(LINX_PROVIDER_ID, credential.key)
+  authStorage?.setRuntimeApiKey?.(LINX_PROVIDER_ID, LINX_RUNTIME_MANAGED_AUTH_KEY)
+}
+
+function clearLinxAuthPromptOnStart(interactive: any): void {
+  const candidates = [
+    interactive,
+    interactive?.runtimeHost,
+    interactive?.runtime,
+    interactive?.session,
+  ]
+  for (const candidate of candidates) {
+    const bridge = candidate?.linxAuthBridge
+    if (bridge && typeof bridge === 'object') {
+      bridge.shouldPromptLoginOnStart = false
+    }
   }
 }
 
@@ -1060,11 +1212,27 @@ export function buildLinxWelcomeCardState(interactive: any, profileDisplayName: 
     workspace,
     session,
     next: [
-      keyHint('tui.input.submit', 'send'),
-      keyHint('app.model.select', 'model'),
-      rawKeyHint(LINX_TUI_LOGIN_COMMAND, 'auth'),
-      rawKeyHint(LINX_TUI_KEYMAP_COMMAND, LINX_TUI_KEYMAP_LABEL),
+      safeKeyHint('tui.input.submit', 'send'),
+      safeKeyHint('app.model.select', 'model'),
+      safeRawKeyHint(LINX_TUI_LOGIN_COMMAND, 'auth'),
+      safeRawKeyHint(LINX_TUI_KEYMAP_COMMAND, LINX_TUI_KEYMAP_LABEL),
     ].join(' \x1b[2m·\x1b[22m '),
+  }
+}
+
+function safeKeyHint(keybinding: string, description: string): string {
+  try {
+    return keyHint(keybinding as never, description)
+  } catch {
+    return `\x1b[2m${keybinding}\x1b[22m \x1b[2m${description}\x1b[22m`
+  }
+}
+
+function safeRawKeyHint(key: string, description: string): string {
+  try {
+    return rawKeyHint(key, description)
+  } catch {
+    return `\x1b[2m${key}\x1b[22m \x1b[2m${description}\x1b[22m`
   }
 }
 
@@ -1152,63 +1320,19 @@ function resolveRuntimeProviderLabel(interactive: any): string {
   if (bridge?.providerLabel) {
     return bridge.providerLabel
   }
-  return 'undefineds'
-}
-
-async function suppressPodStatusOutput<T>(operation: () => Promise<T>): Promise<T> {
-  if (process.env.LINX_TUI_SHOW_POD_STATUS === '1') {
-    return await operation()
-  }
-
-  const restoreStdout = patchPodStatusWriter(process.stdout)
-  const restoreStderr = patchPodStatusWriter(process.stderr)
-  try {
-    return await operation()
-  } finally {
-    restoreStdout()
-    restoreStderr()
-  }
-}
-
-function patchPodStatusWriter(stream: NodeJS.WriteStream): () => void {
-  const originalWrite = stream.write.bind(stream) as typeof stream.write
-  ;(stream as unknown as { write: typeof stream.write }).write = function patchedWrite(
-    chunk: string | Uint8Array,
-    encodingOrCallback?: BufferEncoding | ((error?: Error | null) => void),
-    callback?: (error?: Error | null) => void,
-  ): boolean {
-    const encoding = typeof encodingOrCallback === 'string' ? encodingOrCallback : undefined
-    const onComplete = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback
-    const text = typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString(encoding)
-    const filtered = stripPodStatusLines(text)
-
-    if (!filtered) {
-      onComplete?.()
-      return true
-    }
-
-    if (typeof chunk === 'string') {
-      return originalWrite(filtered, encodingOrCallback as BufferEncoding, callback)
-    }
-    return originalWrite(Buffer.from(filtered, encoding), callback)
-  } as typeof stream.write
-
-  return () => {
-    ;(stream as unknown as { write: typeof stream.write }).write = originalWrite
-  }
-}
-
-function stripPodStatusLines(input: string): string {
-  const urlPattern = String.raw`https?:\/\/[A-Za-z0-9._~:/?#[\]@!$&'()*+,;=%-]+`
-  return input
-    .replace(new RegExp(String.raw`\[Container\]\s*容器已存在:\s*${urlPattern}[ \t]*(?:\r?\n)?`, 'g'), '')
-    .replace(new RegExp(String.raw`Connecting to Solid Pod:\s*${urlPattern}[ \t]*(?:\r?\n)?`, 'g'), '')
-    .replace(new RegExp(String.raw`Using WebID:\s*${urlPattern}[ \t]*(?:\r?\n)?`, 'g'), '')
-    .replace(/Successfully connected to Solid Pod[ \t]*(?:\r?\n)?/g, '')
+  return 'LinX Cloud'
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
+}
+
+function normalizeNonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined
+  }
+  const normalized = value.trim()
+  return normalized || undefined
 }
 
 function stripAnsi(text: string): string {
