@@ -1,32 +1,49 @@
 import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
-import type { Argv, CommandModule } from 'yargs'
-import type { AutoModeBackend, AutoModeMode } from '@linx/agent-runtime/auto-mode'
-import type { SymphonyRunPlan, SymphonyWorkspaceKind } from '@linx/agent-runtime/symphony'
+import {
+  runThreadReconcilerCycle,
+  summarizeWakeJobExecutionRecord,
+  type ReconcileDecisionSummary,
+  type ThreadControlEvent,
+  type WakeJobSchedulerSnapshotSummary,
+} from '@linx/agent-runtime'
+import type { AutoModeMode, AutoModeWorkerBackend } from '@linx/agent-runtime/auto-mode'
+import {
+  appendSymphonyReconcilerDecision,
+  createRunPlan,
+  renderSymphonyRuntimePrompt,
+  type CreateSymphonyRunPlanInput,
+  type SymphonyDelegationTarget,
+  type SymphonyRunPlan,
+  type SymphonyWorkspaceKind,
+  type SymphonyWorkerPlan,
+} from '@linx/agent-runtime/symphony'
 import { runAutoMode, listArchivedAutoModeSessions, type AutoRunOptions } from './auto-mode/index.js'
 import {
-  createArchivedSymphonyRunPlan,
   formatSymphonyRecordSummary,
   getSymphonyHome,
-  listSymphonyDeliveries,
-  listSymphonyIssues,
-  listSymphonySessions,
-  resolveSymphonyRecord,
-  updateSymphonyIssueStatus,
-  updateSymphonyDeliveryStatus,
-  updateSymphonySessionStatus,
+  attachSymphonyRunPlanToIssue,
+  createSymphonyRunPlanDraft,
+  triageSymphonyIssue,
+  withSymphonyIssueStatus,
+  withSymphonyDeliveryStatus,
+  withSymphonySessionStatus,
+  withSymphonyTaskStatus,
+  writeSymphonyRunPlan,
 } from './symphony/archive.js'
-
-const SYMPHONY_BACKENDS = ['codex', 'claude', 'codebuddy'] as const
+import { listOpenSymphonyIssuesFromPod, mirrorSymphonyProjectionJsonLdFromPod, persistSymphonyProjectionToPod } from './symphony/pod-projection.js'
 
 export interface SymphonyRuntime {
   runAutoMode(options: AutoRunOptions): Promise<number>
   listAutoModeSessions(): ReturnType<typeof listArchivedAutoModeSessions>
+  persistSymphonyProjectionToPod?: typeof persistSymphonyProjectionToPod
+  listOpenSymphonyIssuesFromPod?: typeof listOpenSymphonyIssuesFromPod
+  mirrorSymphonyProjectionJsonLdFromPod?: typeof mirrorSymphonyProjectionJsonLdFromPod
 }
 
 interface SymphonyRunArgs {
   objective?: string[]
-  backend?: AutoModeBackend
+  backend?: AutoModeWorkerBackend
   auto?: boolean
   dryRun?: boolean
   cwd?: string
@@ -38,167 +55,20 @@ interface SymphonyRunArgs {
   branch?: string
   worktree?: string
   workspaceKind?: SymphonyWorkspaceKind
+  chat?: string
+  thread?: string
+  messages?: string[]
+  target?: Partial<SymphonyDelegationTarget>
+  worker?: string[]
   '--'?: string[]
-}
-
-interface SymphonyShowArgs {
-  id?: string
 }
 
 const defaultRuntime: SymphonyRuntime = {
   runAutoMode,
   listAutoModeSessions: listArchivedAutoModeSessions,
-}
-
-export function createSymphonyCommand(runtime: SymphonyRuntime = defaultRuntime): CommandModule<object, object> {
-  return {
-    command: 'symphony [objective..]',
-    describe: 'Inspect and tune AI Secretary Symphony delegation',
-    builder(command): Argv<object> {
-      return buildSymphonyCommandTree(buildSymphonyRunArgs(command), runtime)
-    },
-    async handler(argv): Promise<void> {
-      await runSymphony(argv as SymphonyRunArgs, runtime)
-    },
-  }
-}
-
-export const symphonyCommand = createSymphonyCommand()
-
-export function buildSymphonyCommandTree<T extends object>(
-  command: Argv<T>,
-  runtime: SymphonyRuntime = defaultRuntime,
-): Argv<T> {
-  return command
-    .command(createRunCommand(runtime))
-    .command(createListCommand('issues', 'List Symphony issues', () => listSymphonyIssues().map((record) => formatSymphonyRecordSummary('issue', record))))
-    .command(createListCommand('sessions', 'List Symphony sessions', () => listSymphonySessions().map((record) => formatSymphonyRecordSummary('session', record))))
-    .command(createListCommand('deliveries', 'List Symphony deliveries', () => listSymphonyDeliveries().map((record) => formatSymphonyRecordSummary('delivery', record))))
-    .command(createShowCommand())
-}
-
-function createRunCommand(runtime: SymphonyRuntime): CommandModule<object, SymphonyRunArgs> {
-  return {
-    command: 'run [objective..]',
-    describe: 'Ask AI Secretary to delegate work through Symphony',
-    builder(command): Argv<SymphonyRunArgs> {
-      return buildSymphonyRunArgs(command)
-    },
-    async handler(argv): Promise<void> {
-      await runSymphony(argv, runtime)
-    },
-  }
-}
-
-function buildSymphonyRunArgs(command: Argv<object>): Argv<SymphonyRunArgs> {
-  return command
-    .positional('objective', {
-      array: true,
-      type: 'string',
-      describe: 'Task objective for Secretary to delegate',
-    })
-    .option('backend', {
-      type: 'string',
-      choices: SYMPHONY_BACKENDS,
-      default: 'codex',
-      describe: 'Worker backend receiving Secretary-projected work',
-    })
-    .option('auto', {
-      type: 'boolean',
-      default: false,
-      describe: 'Let AI Secretary handle in-policy worker confirmations',
-    })
-    .option('dry-run', {
-      type: 'boolean',
-      default: false,
-      describe: 'Archive the issue/delivery/session plan without launching a backend',
-    })
-    .option('cwd', {
-      type: 'string',
-      describe: 'Workspace path for the target runtime session',
-    })
-    .option('title', {
-      type: 'string',
-      describe: 'Human-readable task title',
-    })
-    .option('acceptance', {
-      alias: 'a',
-      array: true,
-      type: 'string',
-      describe: 'Acceptance criterion; repeat for multiple criteria',
-    })
-    .option('model', {
-      type: 'string',
-      describe: 'Model id forwarded to the backend',
-    })
-    .option('plain', {
-      type: 'boolean',
-      default: false,
-      describe: 'Disable full-screen backend UI and use plain output',
-    })
-    .option('repository', {
-      type: 'string',
-      describe: 'Repository URL metadata override',
-    })
-    .option('branch', {
-      type: 'string',
-      describe: 'Git branch metadata override',
-    })
-    .option('worktree', {
-      type: 'string',
-      describe: 'Git worktree metadata override',
-    })
-    .option('workspace-kind', {
-      type: 'string',
-      choices: ['git', 'folder'] as const,
-      describe: 'Workspace kind metadata override',
-    }) as Argv<SymphonyRunArgs>
-}
-
-function createListCommand(
-  commandName: 'issues' | 'sessions' | 'deliveries',
-  describe: string,
-  loadLines: () => string[],
-): CommandModule<object, object> {
-  return {
-    command: commandName,
-    describe,
-    builder(command): Argv<object> {
-      return command
-    },
-    handler() {
-      const lines = loadLines()
-      if (lines.length === 0) {
-        process.stdout.write(`No Symphony ${commandName} found.\n`)
-        return
-      }
-
-      process.stdout.write(`${lines.join('\n')}\n`)
-    },
-  }
-}
-
-function createShowCommand(): CommandModule<object, SymphonyShowArgs> {
-  return {
-    command: 'show <id>',
-    describe: 'Show a Symphony issue, delivery, or session by URI/key prefix',
-    builder(command): Argv<SymphonyShowArgs> {
-      return command.positional('id', {
-        type: 'string',
-        describe: 'Issue, delivery, or session URI/key prefix',
-      }) as Argv<SymphonyShowArgs>
-    },
-    handler(argv) {
-      const id = typeof argv.id === 'string' ? argv.id : ''
-      const resolved = resolveSymphonyRecord(id)
-      if (!resolved) {
-        throw new Error(`Symphony record not found: ${id}`)
-      }
-
-      process.stdout.write(`${formatSymphonyRecordSummary(resolved.kind, resolved.record)}\n`)
-      process.stdout.write(`${JSON.stringify(resolved.record, null, 2)}\n`)
-    },
-  }
+  persistSymphonyProjectionToPod,
+  listOpenSymphonyIssuesFromPod,
+  mirrorSymphonyProjectionJsonLdFromPod,
 }
 
 export async function runSymphony(
@@ -209,8 +79,10 @@ export async function runSymphony(
   const cwd = resolve(argv.cwd || process.cwd())
   const workspace = resolveWorkspaceMetadata(cwd, argv)
   const backend = argv.backend ?? 'codex'
-  const mode: AutoModeMode = argv.auto ? 'auto' : 'manual'
-  const plan = createArchivedSymphonyRunPlan({
+  const mode: AutoModeMode = 'off'
+  const secretaryAutoEnabled = Boolean(argv.auto)
+  const workers = normalizeWorkers(argv.worker, backend, argv.target)
+  const planInput: CreateSymphonyRunPlanInput = {
     objective,
     title: normalizeOptional(argv.title),
     acceptanceCriteria: normalizeAcceptanceCriteria(argv.acceptance),
@@ -219,67 +91,445 @@ export async function runSymphony(
     repository: workspace.repository,
     branch: workspace.branch,
     worktree: workspace.worktree,
+    baseRevision: workspace.baseRevision,
+    environment: {
+      kind: 'local-shell',
+      label: 'linx-cli',
+      runtime: backend,
+    },
     backend,
     mode,
+    secretaryAutoEnabled,
     model: normalizeOptional(argv.model),
-  })
+    chat: normalizeOptional(argv.chat),
+    thread: normalizeOptional(argv.thread),
+    messages: normalizeMessages(argv.messages),
+    issuer: {
+      source: 'user',
+      chat: normalizeOptional(argv.chat),
+      thread: normalizeOptional(argv.thread),
+      messages: normalizeMessages(argv.messages),
+    },
+    target: argv.target,
+    workers,
+  }
+  const plan = await createSymphonyRunPlanForRuntime(planInput, runtime)
+  let currentPlan = await persistSymphonyProjectionBestEffort(plan, 'planned', runtime)
 
   if (argv.dryRun) {
-    updateSymphonySessionStatus(plan.session, 'planned', { dryRun: true })
-    printSymphonyRunPlan(plan, { dryRun: true })
-    return plan
+    currentPlan = withUpdatedIssue({
+      ...currentPlan,
+      workers: currentPlan.workers.map((worker) => ({
+        ...worker,
+        session: withSymphonySessionStatus(worker.session, 'planned', { dryRun: true }),
+      })),
+    })
+    currentPlan = await persistSymphonyProjectionBestEffort(currentPlan, 'planned', runtime)
+    printSymphonyRunPlan(currentPlan, { dryRun: true })
+    return currentPlan
   }
 
-  let issue = updateSymphonyIssueStatus(plan.issue, 'in_progress')
-  let delivery = updateSymphonyDeliveryStatus(plan.delivery, 'dispatched')
-  let session = updateSymphonySessionStatus(plan.session, 'running')
-  const beforeAutoModeIds = new Set(runtime.listAutoModeSessions().map((record) => record.id))
+  let issue = withSymphonyIssueStatus(currentPlan.issue, 'in_progress')
+  currentPlan = { ...currentPlan, issue }
+  currentPlan = await persistSymphonyProjectionBestEffort(currentPlan, 'running', runtime)
+  issue = currentPlan.issue
 
   try {
-    const exitCode = await runtime.runAutoMode({
-      backend,
-      mode,
-      autoModeEnabled: argv.auto,
-      cwd,
-      plain: Boolean(argv.plain),
-      model: normalizeOptional(argv.model),
-      prompt: plan.delivery.projection.prompt,
-      goalMode: true,
-      passthroughArgs: ((argv['--'] as string[] | undefined) ?? []).map(String),
-    })
-    const autoModeSessionId = resolveCreatedAutoModeSessionId(beforeAutoModeIds, runtime)
-    const status = exitCode === 0 ? 'completed' : 'failed'
-    issue = updateSymphonyIssueStatus(issue, exitCode === 0 ? 'resolved' : 'blocked', exitCode === 0 ? {} : { error: `Backend exited with code ${exitCode}` })
-    delivery = updateSymphonyDeliveryStatus(delivery, status, {
-      autoModeSessionId,
-      ...(exitCode === 0 ? {} : { error: `Backend exited with code ${exitCode}` }),
-    })
-    session = updateSymphonySessionStatus(session, status, {
-      autoModeSessionId,
-      exitCode,
-      ...(exitCode === 0 ? {} : { error: `Backend exited with code ${exitCode}` }),
-    })
-    printSymphonyRunPlan({ issue, task: plan.task, delivery, session }, { dryRun: false })
-    if (exitCode !== 0) {
-      process.exitCode = exitCode
+    const dispatchedWorkers: SymphonyWorkerPlan[] = []
+    let firstFailure: { exitCode: number; error: string } | null = null
+    for (const [index, worker] of currentPlan.workers.entries()) {
+      const dispatched = await runSymphonyWorker({
+        worker,
+        issue: currentPlan.issue,
+        workerIndex: index + 1,
+        workerCount: currentPlan.workers.length,
+        secretaryAutoEnabled,
+        cwd,
+        plain: Boolean(argv.plain),
+        model: normalizeOptional(argv.model),
+        passthroughArgs: ((argv['--'] as string[] | undefined) ?? []).map(String),
+        runtime,
+      })
+      dispatchedWorkers.push(dispatched.worker)
+      currentPlan = withUpdatedWorker(currentPlan, dispatched.worker)
+      if (currentPlan.workers.length > 1) {
+        currentPlan = await persistSymphonyProjectionBestEffort(currentPlan, 'running', runtime)
+      }
+      if (dispatched.exitCode !== 0 && !firstFailure) {
+        firstFailure = {
+          exitCode: dispatched.exitCode,
+          error: `Backend ${dispatched.worker.session.backend} exited with code ${dispatched.exitCode}`,
+        }
+      }
     }
-    return { issue, task: plan.task, delivery, session }
+
+    const status = firstFailure ? 'failed' : 'completed'
+    issue = withSymphonyIssueStatus(issue, firstFailure ? 'blocked' : 'resolved', firstFailure ? { error: firstFailure.error } : {})
+    currentPlan = withUpdatedIssue({
+      ...currentPlan,
+      issue,
+      workers: dispatchedWorkers,
+    })
+    currentPlan = await persistSymphonyProjectionBestEffort(currentPlan, status, runtime)
+    printSymphonyRunPlan(currentPlan, { dryRun: false })
+    if (firstFailure) {
+      process.exitCode = firstFailure.exitCode
+    }
+    return currentPlan
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    updateSymphonyIssueStatus(issue, 'blocked', { error: message })
-    updateSymphonyDeliveryStatus(delivery, 'failed', { error: message })
-    updateSymphonySessionStatus(session, 'failed', { error: message, exitCode: 1 })
+    issue = withSymphonyIssueStatus(issue, 'blocked', { error: message })
+    const failedWorker = currentPlan.workers[0]
+    if (failedWorker) {
+      const worker = {
+        task: failedWorker.task,
+        taskRecord: withSymphonyTaskStatus(failedWorker.taskRecord, 'failed', { error: message }),
+        delivery: withSymphonyDeliveryStatus(failedWorker.delivery, 'failed', { error: message }),
+        session: withSymphonySessionStatus(failedWorker.session, 'failed', { error: message, exitCode: 1 }),
+      }
+      currentPlan = withUpdatedWorker({ ...currentPlan, issue }, worker)
+    } else {
+      currentPlan = { ...currentPlan, issue }
+    }
+    await persistSymphonyProjectionBestEffort(currentPlan, 'failed', runtime)
     throw error
   }
 }
 
+async function createSymphonyRunPlanForRuntime(
+  input: CreateSymphonyRunPlanInput,
+  runtime: SymphonyRuntime,
+): Promise<SymphonyRunPlan> {
+  const listIssues = runtime.listOpenSymphonyIssuesFromPod
+  if (!listIssues) {
+    return createSymphonyRunPlanDraft(input)
+  }
+
+  let podIssues: Awaited<ReturnType<typeof listOpenSymphonyIssuesFromPod>>
+  try {
+    podIssues = await listIssues()
+  } catch {
+    podIssues = null
+  }
+
+  if (!podIssues) {
+    return createSymphonyRunPlanDraft(input)
+  }
+
+  const plan = createRunPlan(input)
+  const triage = triageSymphonyIssue({
+    objective: input.objective,
+    chat: input.chat,
+    thread: input.thread,
+    workspacePath: input.workspacePath,
+    issues: podIssues,
+  })
+
+  return triage.action === 'update' && triage.issue
+    ? attachSymphonyRunPlanToIssue(plan, triage.issue)
+    : plan
+}
+
+async function runSymphonyWorker(input: {
+  worker: SymphonyWorkerPlan
+  issue: SymphonyRunPlan['issue']
+  workerIndex: number
+  workerCount: number
+  secretaryAutoEnabled: boolean
+  cwd: string
+  plain: boolean
+  model?: string
+  passthroughArgs: string[]
+  runtime: SymphonyRuntime
+}): Promise<{ worker: SymphonyWorkerPlan; status: 'completed' | 'failed'; exitCode: number }> {
+  const beforeAutoModeIds = new Set(input.runtime.listAutoModeSessions().map((record) => record.id))
+  const cwd = input.worker.session.cwd || input.cwd
+  const workspace = input.worker.session.workspace ?? {
+    path: cwd,
+    kind: 'folder' as const,
+  }
+  const prompt = renderSymphonyRuntimePrompt({
+    issue: input.issue,
+    task: input.worker.task,
+    objective: input.worker.taskRecord.objective,
+    acceptanceCriteria: input.worker.taskRecord.acceptanceCriteria,
+    workspace,
+    backend: input.worker.session.backend,
+    mode: input.worker.session.mode,
+    secretaryAutoEnabled: input.worker.session.secretaryAutoEnabled ?? input.secretaryAutoEnabled,
+    session: input.worker.session.uri,
+    target: input.worker.session.target,
+    issuer: input.issue.issuer,
+    ...(input.workerCount > 1 ? {
+      workerIndex: input.workerIndex,
+      workerCount: input.workerCount,
+    } : {}),
+  })
+
+  let exitCode: number | null = null
+  let wakeError: unknown
+  let runningDelivery = input.worker.delivery
+  let runningSession = input.worker.session
+  let runningTask = input.worker.taskRecord
+  const cycle = await runThreadReconcilerCycle({
+    policy: {
+      kind: 'symphony',
+      assignedWorkerAgent: input.worker.delivery.targetAgent,
+      secretaryAgent: 'ai-secretary',
+    },
+    handleWakeJob: async ({ decisionSummary, record }) => {
+      try {
+        exitCode = await input.runtime.runAutoMode({
+          backend: input.worker.session.backend,
+          autoEnabled: input.secretaryAutoEnabled,
+          mode: 'off',
+          cwd,
+          plain: input.plain,
+          model: input.model,
+          prompt,
+          goalMode: true,
+          passthroughArgs: input.passthroughArgs,
+          metadata: {
+            symphony: {
+              issue: input.issue.uri,
+              task: input.worker.task,
+              delivery: input.worker.delivery.uri,
+              session: input.worker.session.uri,
+            },
+            reconciler: decisionSummary,
+            scheduler: {
+              wakeRecord: summarizeWakeJobExecutionRecord(record),
+            },
+          },
+        })
+        return { exitCode }
+      } catch (error) {
+        wakeError = error
+        throw error
+      }
+    },
+    event: createSymphonyWorkerDispatchEvent(input.worker),
+    dispatchOptions: {
+      randomId: `${input.worker.delivery.uri}-dispatch`,
+    },
+    onDispatched: (dispatch) => {
+      runningDelivery = appendSymphonyReconcilerDecision(withSymphonyDeliveryStatus(input.worker.delivery, 'dispatched'), dispatch.summary)
+      runningSession = appendSymphonyReconcilerDecision(withSymphonySessionStatus(input.worker.session, 'running'), dispatch.summary)
+      runningTask = appendSymphonyReconcilerDecision(withSymphonyTaskStatus(input.worker.taskRecord, 'running'), dispatch.summary)
+    },
+  })
+  const dispatchScheduler = cycle.schedulerSummary
+  if (dispatchScheduler.failed.length > 0) {
+    throw wakeError ?? new Error(String(dispatchScheduler.failed[0]?.error ?? 'Symphony worker wake job failed'))
+  }
+  if (exitCode === null) {
+    throw new Error('Symphony worker was not awakened by the Thread Reconciler.')
+  }
+
+  const autoModeSessionId = resolveCreatedAutoModeSessionId(beforeAutoModeIds, input.runtime)
+  const status = exitCode === 0 ? 'completed' : 'failed'
+  const statusDecision = await dispatchSymphonyWorkerStatusDecision({
+    worker: {
+      task: input.worker.task,
+      taskRecord: runningTask,
+      delivery: runningDelivery,
+      session: runningSession,
+    },
+    status,
+    exitCode,
+    autoModeSessionId,
+  })
+  return {
+    status,
+    exitCode,
+    worker: {
+      task: input.worker.task,
+      taskRecord: appendSymphonyReconcilerDecision(withSymphonyTaskStatus(runningTask, status, {
+        ...(exitCode === 0 ? {} : { error: `Backend exited with code ${exitCode}` }),
+      }), statusDecision.decision),
+      delivery: appendSymphonyReconcilerDecision(withSymphonyDeliveryStatus(runningDelivery, status, {
+        autoModeSessionId,
+        ...(exitCode === 0 ? {} : { error: `Backend exited with code ${exitCode}` }),
+      }), statusDecision.decision),
+      session: appendSymphonyReconcilerDecision(withSymphonySessionStatus(runningSession, status, {
+        autoModeSessionId,
+        exitCode,
+        ...(exitCode === 0 ? {} : { error: `Backend exited with code ${exitCode}` }),
+      }), statusDecision.decision),
+    },
+  }
+}
+
+function createSymphonyWorkerDispatchEvent(worker: SymphonyWorkerPlan): ThreadControlEvent {
+  return {
+    type: 'delivery.submitted',
+    ...(worker.delivery.chat ? { chat: worker.delivery.chat } : {}),
+    ...(worker.delivery.thread ? { thread: worker.delivery.thread } : {}),
+    resource: worker.delivery.uri,
+    actor: {
+      id: 'ai-secretary',
+      role: 'secretary',
+    },
+    data: {
+      deliveryType: worker.delivery.type,
+      issue: worker.delivery.issue,
+      task: worker.delivery.task,
+      delivery: worker.delivery.uri,
+      session: worker.session.uri,
+    },
+  }
+}
+
+async function dispatchSymphonyWorkerStatusDecision(input: {
+  worker: SymphonyWorkerPlan
+  status: 'completed' | 'failed'
+  exitCode: number
+  autoModeSessionId?: string
+}): Promise<{ decision: ReconcileDecisionSummary; scheduler: WakeJobSchedulerSnapshotSummary }> {
+  let wakeError: unknown
+  const cycle = await runThreadReconcilerCycle({
+    policy: {
+      kind: 'symphony',
+      secretaryAgent: 'ai-secretary',
+    },
+    handleWakeJob: ({ job }) => {
+      try {
+        return {
+          targetAgent: job.targetAgent,
+          targetRole: job.targetRole,
+          status: input.status,
+        }
+      } catch (error) {
+        wakeError = error
+        throw error
+      }
+    },
+    event: createSymphonyWorkerStatusEvent(input),
+    dispatchOptions: {
+      randomId: `${input.worker.delivery.uri}-${input.status}`,
+    },
+  })
+  const scheduler = cycle.schedulerSummary
+  if (scheduler.failed.length > 0) {
+    throw wakeError ?? new Error(String(scheduler.failed[0]?.error ?? 'Symphony status wake job failed'))
+  }
+  return {
+    decision: cycle.summary,
+    scheduler,
+  }
+}
+
+function createSymphonyWorkerStatusEvent(input: {
+  worker: SymphonyWorkerPlan
+  status: 'completed' | 'failed'
+  exitCode: number
+  autoModeSessionId?: string
+}): ThreadControlEvent {
+  return {
+    type: input.status === 'completed' ? 'delivery.completed' : 'delivery.failed',
+    ...(input.worker.delivery.chat ? { chat: input.worker.delivery.chat } : {}),
+    ...(input.worker.delivery.thread ? { thread: input.worker.delivery.thread } : {}),
+    resource: input.worker.delivery.uri,
+    actor: {
+      id: input.worker.delivery.targetAgent,
+      role: 'worker',
+    },
+    data: {
+      issue: input.worker.delivery.issue,
+      task: input.worker.delivery.task,
+      delivery: input.worker.delivery.uri,
+      session: input.worker.session.uri,
+      autoModeSessionId: input.autoModeSessionId,
+      exitCode: input.exitCode,
+    },
+  }
+}
+
+async function persistSymphonyProjectionBestEffort(
+  plan: SymphonyRunPlan,
+  stage: 'planned' | 'running' | 'completed' | 'failed',
+  runtime: SymphonyRuntime,
+): Promise<SymphonyRunPlan> {
+  const persist = runtime.persistSymphonyProjectionToPod
+  if (!persist) {
+    writeSymphonyRunPlan(plan)
+    return plan
+  }
+
+  try {
+    const result = await persist(plan, { stage })
+    if (!result) {
+      writeSymphonyRunPlan(plan)
+      return plan
+    }
+    await mirrorSymphonyProjectionBestEffort(result, runtime)
+    return result.plan
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    process.stderr.write(`[symphony] Pod projection skipped: ${message}\n`)
+    writeSymphonyRunPlan(plan)
+    return plan
+  }
+}
+
+async function mirrorSymphonyProjectionBestEffort(
+  result: Awaited<ReturnType<typeof persistSymphonyProjectionToPod>>,
+  runtime: SymphonyRuntime,
+): Promise<void> {
+  if (!result) {
+    return
+  }
+
+  const mirror = runtime.mirrorSymphonyProjectionJsonLdFromPod
+  if (!mirror) {
+    return
+  }
+
+  try {
+    await mirror(result)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    process.stderr.write(`[symphony] Pod JSON-LD mirror skipped: ${message}\n`)
+  }
+}
+
+function withUpdatedIssue(plan: SymphonyRunPlan): SymphonyRunPlan {
+  const primary = plan.workers[0]
+  if (!primary) {
+    return plan
+  }
+
+  return {
+    ...plan,
+    task: primary.task,
+    delivery: primary.delivery,
+    session: primary.session,
+  }
+}
+
+function withUpdatedWorker(plan: SymphonyRunPlan, worker: SymphonyWorkerPlan): SymphonyRunPlan {
+  const workers = plan.workers.map((candidate) => (
+    candidate.session.uri === worker.session.uri ? worker : candidate
+  ))
+  return withUpdatedIssue({
+    ...plan,
+    workers,
+  })
+}
+
 function printSymphonyRunPlan(plan: SymphonyRunPlan, options: { dryRun: boolean }): void {
-  process.stdout.write(options.dryRun ? 'LinX Symphony dry-run\n' : 'LinX Symphony run\n')
-  process.stdout.write(`issue: ${formatSymphonyRecordSummary('issue', plan.issue)}\n`)
-  process.stdout.write(`task: ${plan.task}\n`)
-  process.stdout.write(`delivery: ${formatSymphonyRecordSummary('delivery', plan.delivery)}\n`)
-  process.stdout.write(`session: ${formatSymphonyRecordSummary('session', plan.session)}\n`)
-  process.stdout.write(`archive: ${getSymphonyHome()}\n`)
+  process.stdout.write(options.dryRun ? 'LinX Secretary Symphony dry-run\n' : 'LinX Secretary Symphony dispatch\n')
+  process.stdout.write(`work: ${formatSymphonyRecordSummary('issue', plan.issue)}\n`)
+  for (const [index, worker] of plan.workers.entries()) {
+    const prefix = plan.workers.length > 1 ? `worker ${index + 1}/${plan.workers.length}` : 'worker'
+    if (worker.taskRecord) {
+      process.stdout.write(`${prefix}: ${formatSymphonyRecordSummary('task', worker.taskRecord)}\n`)
+    }
+    process.stdout.write(`task: ${worker.task}\n`)
+    process.stdout.write(`dispatch: ${formatSymphonyRecordSummary('delivery', worker.delivery)}\n`)
+    process.stdout.write(`session: ${formatSymphonyRecordSummary('session', worker.session)}\n`)
+  }
+  process.stdout.write(`local mirror/cache: ${getSymphonyHome()}\n`)
   if (options.dryRun) {
     process.stdout.write('\nProjected runtime prompt:\n')
     process.stdout.write(`${plan.delivery.projection.prompt}\n`)
@@ -293,6 +543,36 @@ function resolveCreatedAutoModeSessionId(beforeIds: Set<string>, runtime: Sympho
   return created[0]?.id
 }
 
+function normalizeWorkers(
+  values: string[] | undefined,
+  fallbackBackend: AutoModeWorkerBackend,
+  explicitTarget?: Partial<SymphonyDelegationTarget>,
+): Partial<SymphonyDelegationTarget>[] | undefined {
+  if (!values || values.length === 0) {
+    return explicitTarget ? [explicitTarget] : undefined
+  }
+
+  return values.map((value) => {
+    const [backendPart, agentPart] = value.split(':', 2)
+    const backend = normalizeBackend(backendPart) ?? fallbackBackend
+    const agent = normalizeOptional(agentPart) ?? `${backend}-worker`
+    return {
+      source: 'explicit-backend',
+      backend,
+      agent,
+      label: agent,
+    }
+  })
+}
+
+function normalizeBackend(value: string | undefined): AutoModeWorkerBackend | undefined {
+  const normalized = normalizeOptional(value)
+  if (normalized === 'codex' || normalized === 'claude' || normalized === 'codebuddy') {
+    return normalized
+  }
+  return undefined
+}
+
 function normalizeObjective(parts?: string[]): string {
   const objective = (parts ?? [])
     .filter((item): item is string => typeof item === 'string')
@@ -300,7 +580,7 @@ function normalizeObjective(parts?: string[]): string {
     .replace(/\s+/g, ' ')
     .trim()
   if (!objective) {
-    throw new Error('Usage: linx symphony [run] <objective> [--backend codex] [--dry-run]')
+    throw new Error('Symphony objective is required')
   }
   return objective
 }
@@ -313,6 +593,13 @@ function normalizeAcceptanceCriteria(value?: string | string[]): string[] {
     .filter(Boolean)
 }
 
+function normalizeMessages(value?: string[]): string[] | undefined {
+  const messages = (value ?? [])
+    .map((item) => normalizeOptional(item))
+    .filter((item): item is string => Boolean(item))
+  return messages.length > 0 ? messages : undefined
+}
+
 function normalizeOptional(value?: string | null): string | undefined {
   const normalized = typeof value === 'string' ? value.trim() : ''
   return normalized || undefined
@@ -323,6 +610,7 @@ function resolveWorkspaceMetadata(cwd: string, argv: SymphonyRunArgs): {
   repository?: string
   branch?: string
   worktree?: string
+  baseRevision?: string
 } {
   const git = isGitWorkspace(cwd)
   return {
@@ -330,6 +618,7 @@ function resolveWorkspaceMetadata(cwd: string, argv: SymphonyRunArgs): {
     repository: normalizeOptional(argv.repository) ?? (git ? gitOutput(cwd, ['remote', 'get-url', 'origin']) : undefined),
     branch: normalizeOptional(argv.branch) ?? (git ? gitOutput(cwd, ['branch', '--show-current']) : undefined),
     worktree: normalizeOptional(argv.worktree) ?? (git ? gitOutput(cwd, ['rev-parse', '--show-toplevel']) : undefined),
+    baseRevision: git ? gitOutput(cwd, ['rev-parse', 'HEAD']) : undefined,
   }
 }
 

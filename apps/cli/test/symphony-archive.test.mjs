@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -55,16 +55,23 @@ test('symphony archive creates, updates, lists, and resolves URI records', async
   t.after(() => cleanup())
 
   const {
+    captureSymphonyIdea,
     createArchivedSymphonyRunPlan,
+    listSymphonyIdeas,
     listSymphonyDeliveries,
     listSymphonyIssues,
     listSymphonySessions,
+    listSymphonyTasks,
+    loadSymphonyIdea,
     loadSymphonyDelivery,
     loadSymphonyIssue,
     loadSymphonySession,
+    loadSymphonyTask,
     resolveSymphonyRecord,
+    updateSymphonyIdeaStatus,
     updateSymphonyDeliveryStatus,
     updateSymphonySessionStatus,
+    updateSymphonyTaskStatus,
   } = module
 
   const chat = 'https://alice.example/.data/chat/chat-1/index.ttl#this'
@@ -88,26 +95,63 @@ test('symphony archive creates, updates, lists, and resolves URI records', async
   })
 
   const delivery = updateSymphonyDeliveryStatus(plan.delivery, 'dispatched')
+  const task = updateSymphonyTaskStatus(plan.taskRecord, 'running')
   const session = updateSymphonySessionStatus(plan.session, 'running', { dryRun: false })
+  const idea = captureSymphonyIdea({
+    input: '我觉得 Symphony 应该先把碎片想法记录成 Idea，而不是直接派工。',
+    affectedArea: 'symphony',
+    chat,
+    thread,
+    messages,
+    now: new Date('2026-04-02T00:02:00.000Z'),
+    randomId: 'idea',
+  })
+  const candidateIdea = updateSymphonyIdeaStatus(idea, 'candidate', {
+    commitment: 'direction',
+    relatedRecords: [plan.issue.uri],
+    nextStep: 'Compare against active Symphony records before promotion.',
+  })
 
   assert.equal(delivery.status, 'dispatched')
+  assert.equal(task.status, 'running')
   assert.equal(session.status, 'running')
   assert.equal(session.dryRun, false)
+  assert.equal(candidateIdea.status, 'candidate')
+  assert.equal(candidateIdea.commitment, 'direction')
+  assert.deepEqual(candidateIdea.relatedRecords, [plan.issue.uri])
 
+  assert.equal(listSymphonyIdeas().length, 1)
   assert.equal(listSymphonyIssues().length, 1)
+  assert.equal(listSymphonyTasks().length, 1)
   assert.equal(listSymphonyDeliveries().length, 1)
   assert.equal(listSymphonySessions().length, 1)
+  assert.equal(loadSymphonyIdea(idea.uri)?.uri, idea.uri)
   assert.equal(loadSymphonyIssue(plan.issue.uri)?.uri, plan.issue.uri)
+  assert.equal(loadSymphonyTask(plan.task)?.uri, plan.task)
   assert.equal(loadSymphonyDelivery('delivery_2026-04-02T00-00-00-000Z')?.uri, plan.delivery.uri)
   assert.equal(loadSymphonySession(plan.session.uri)?.uri, plan.session.uri)
 
   assert.deepEqual(plan.issue.tasks, [plan.task])
+  assert.equal(plan.taskRecord.issue, plan.issue.uri)
+  assert.equal(plan.taskRecord.delivery, plan.delivery.uri)
+  assert.equal(plan.taskRecord.session, plan.session.uri)
+  assert.equal(plan.taskRecord.objective, 'verify symphony archive')
+  assert.deepEqual(plan.taskRecord.acceptanceCriteria, ['task exists', 'session is loadable'])
   assert.equal(plan.delivery.issue, plan.issue.uri)
   assert.equal(plan.session.issue, plan.issue.uri)
   assert.equal(plan.session.delivery, plan.delivery.uri)
   assert.equal(plan.delivery.task, plan.task)
   assert.equal(plan.session.task, plan.task)
   assert.equal(plan.delivery.session, plan.session.uri)
+  assert.deepEqual(plan.delivery.target, {
+    source: 'active-session',
+    backend: 'codex',
+    agent: 'codex-worker',
+    chat,
+    thread,
+    messages,
+  })
+  assert.deepEqual(plan.session.target, plan.delivery.target)
   assert.equal(plan.issue.chat, chat)
   assert.equal(plan.delivery.chat, chat)
   assert.equal(plan.session.chat, chat)
@@ -121,13 +165,20 @@ test('symphony archive creates, updates, lists, and resolves URI records', async
   const resolved = resolveSymphonyRecord('delivery_2026-04-02T00-00-00-000Z')
   assert.equal(resolved?.kind, 'delivery')
   assert.equal(resolved?.record.uri, plan.delivery.uri)
+  const resolvedIdea = resolveSymphonyRecord('idea_2026-04-02T00-02-00-000Z')
+  assert.equal(resolvedIdea?.kind, 'idea')
+  assert.equal(resolvedIdea?.record.uri, idea.uri)
 
+  const ideaKey = 'idea_2026-04-02T00-02-00-000Z_idea'
   const issueKey = 'issue_2026-04-02T00-00-00-000Z_archive'
   const deliveryKey = 'delivery_2026-04-02T00-00-00-000Z_archive'
   const sessionKey = 'session_2026-04-02T00-00-00-000Z_archive'
+  const ideaFile = readFileSync(join(symphonyHome, 'ideas', ideaKey, 'idea.json'), 'utf-8')
   const issueFile = readFileSync(join(symphonyHome, 'issues', issueKey, 'issue.json'), 'utf-8')
   const deliveryFile = readFileSync(join(symphonyHome, 'deliveries', deliveryKey, 'delivery.json'), 'utf-8')
   const sessionFile = readFileSync(join(symphonyHome, 'sessions', sessionKey, 'session.json'), 'utf-8')
+  assert.match(ideaFile, /"status": "candidate"/)
+  assert.match(ideaFile, /"commitment": "direction"/)
   assert.match(issueFile, /verify symphony archive/)
   assert.match(deliveryFile, /task_dispatch/)
   assert.match(sessionFile, /"status": "running"/)
@@ -163,7 +214,8 @@ test('symphony archive ignores legacy worker overrides and defaults under ~/.lin
     objective: 'default home check',
     workspacePath: '/tmp/linx',
     backend: 'claude',
-    mode: 'manual',
+autoEnabled: false,
+mode: 'off',
     randomId: 'home',
   })
 
@@ -173,7 +225,132 @@ test('symphony archive ignores legacy worker overrides and defaults under ~/.lin
   assert.equal(plan.task.startsWith('urn:undefineds:linx:task:'), true)
 })
 
-test('symphony run bridges non-dry-run plans into the auto-mode runtime and records completion', async (t) => {
+test('symphony archive triages obvious follow-up work into an existing open issue', async (t) => {
+  const originalHome = process.env.HOME
+  const root = mkdtempSync(join(tmpdir(), 'linx-symphony-triage-home-'))
+  process.env.HOME = root
+
+  t.after(() => {
+    if (originalHome === undefined) {
+      delete process.env.HOME
+    } else {
+      process.env.HOME = originalHome
+    }
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  const { module, cleanup } = await loadAutoModeModule('lib/symphony/archive.ts')
+  t.after(() => cleanup())
+
+  const { createArchivedSymphonyRunPlan, listSymphonyIssues, triageSymphonyIssue } = module
+  const chat = 'https://alice.example/.data/chat/ai-secretary/index.ttl#this'
+  const thread = 'https://alice.example/.data/chat/ai-secretary/index.ttl#session-triage'
+  const first = createArchivedSymphonyRunPlan({
+    objective: 'fix login redirect bug',
+    workspacePath: '/tmp/linx',
+    backend: 'codex',
+    mode: 'auto',
+    chat,
+    thread,
+    now: new Date('2026-04-02T00:00:00.000Z'),
+    randomId: 'login-a',
+  })
+
+  const decision = triageSymphonyIssue({
+    objective: 'fix login redirect bug and add regression test',
+    chat,
+    thread,
+  })
+  assert.equal(decision.action, 'update')
+  assert.equal(decision.issue.uri, first.issue.uri)
+
+  const second = createArchivedSymphonyRunPlan({
+    objective: 'fix login redirect bug and add regression test',
+    workspacePath: '/tmp/linx',
+    backend: 'codex',
+    mode: 'auto',
+    chat,
+    thread,
+    now: new Date('2026-04-02T00:01:00.000Z'),
+    randomId: 'login-b',
+  })
+
+  assert.equal(second.issue.uri, first.issue.uri)
+  assert.notEqual(second.task, first.task)
+  assert.equal(second.taskRecord.issue, first.issue.uri)
+  assert.equal(second.delivery.issue, first.issue.uri)
+  assert.equal(second.session.issue, first.issue.uri)
+  assert.match(second.delivery.projection.prompt, new RegExp(first.issue.uri))
+  assert.doesNotMatch(second.delivery.projection.prompt, /issue_2026-04-02T00-01-00-000Z_login-b/)
+  assert.deepEqual(second.issue.tasks, [first.task, second.task])
+  assert.deepEqual(second.issue.deliveries, [first.delivery.uri, second.delivery.uri])
+  assert.deepEqual(second.issue.sessions, [first.session.uri, second.session.uri])
+  assert.equal(listSymphonyIssues().length, 1)
+})
+
+test('symphony archive does not merge closed or unrelated issues', async (t) => {
+  const originalHome = process.env.HOME
+  const root = mkdtempSync(join(tmpdir(), 'linx-symphony-no-merge-home-'))
+  process.env.HOME = root
+
+  t.after(() => {
+    if (originalHome === undefined) {
+      delete process.env.HOME
+    } else {
+      process.env.HOME = originalHome
+    }
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  const { module, cleanup } = await loadAutoModeModule('lib/symphony/archive.ts')
+  t.after(() => cleanup())
+
+  const { createArchivedSymphonyRunPlan, listSymphonyIssues, triageSymphonyIssue, updateSymphonyIssueStatus } = module
+  const first = createArchivedSymphonyRunPlan({
+    objective: 'repair sync checkpoint restore',
+    workspacePath: '/tmp/linx',
+    backend: 'codex',
+    mode: 'auto',
+    now: new Date('2026-04-02T00:00:00.000Z'),
+    randomId: 'sync-a',
+  })
+  updateSymphonyIssueStatus(first.issue, 'closed', { closedAt: '2026-04-02T00:00:10.000Z' })
+
+  const closedDecision = triageSymphonyIssue({
+    objective: 'repair sync checkpoint restore',
+  })
+  assert.equal(closedDecision.action, 'create')
+
+  const second = createArchivedSymphonyRunPlan({
+    objective: 'repair sync checkpoint restore',
+    workspacePath: '/tmp/linx',
+    backend: 'codex',
+    mode: 'auto',
+    now: new Date('2026-04-02T00:01:00.000Z'),
+    randomId: 'sync-b',
+  })
+  assert.notEqual(second.issue.uri, first.issue.uri)
+
+  const unrelatedDecision = triageSymphonyIssue({
+    objective: 'design billing invoice export',
+  })
+  assert.equal(unrelatedDecision.action, 'create')
+  assert.notEqual(unrelatedDecision.issue?.uri, second.issue.uri)
+
+  const third = createArchivedSymphonyRunPlan({
+    objective: 'design billing invoice export',
+    workspacePath: '/tmp/linx',
+    backend: 'codex',
+    mode: 'auto',
+    now: new Date('2026-04-02T00:02:00.000Z'),
+    randomId: 'billing',
+  })
+  assert.notEqual(third.issue.uri, first.issue.uri)
+  assert.notEqual(third.issue.uri, second.issue.uri)
+  assert.equal(listSymphonyIssues().length, 3)
+})
+
+test('symphony dispatch bridges non-dry-run plans into the auto-mode runtime and records completion', async (t) => {
   const originalHome = process.env.HOME
   const root = mkdtempSync(join(tmpdir(), 'linx-symphony-run-home-'))
   process.env.HOME = root
@@ -191,6 +368,8 @@ test('symphony run bridges non-dry-run plans into the auto-mode runtime and reco
   t.after(() => cleanup())
 
   const runCalls = []
+  const projectionCalls = []
+  const mirrorCalls = []
   let autoSessions = []
   const plan = await module.runSymphony({
     objective: ['bridge', 'runtime'],
@@ -223,24 +402,329 @@ test('symphony run bridges non-dry-run plans into the auto-mode runtime and reco
     listAutoModeSessions() {
       return autoSessions
     },
+    async persistSymphonyProjectionToPod(plan, options) {
+      if (projectionCalls.length === 0) {
+        assert.equal(existsSync(join(root, '.linx', 'symphony')), false)
+      }
+      projectionCalls.push({ plan, stage: options?.stage })
+      const chat = 'https://alice.example/.data/chat/ai-secretary-symphony/index.ttl#this'
+      const thread = 'https://alice.example/.data/chat/ai-secretary-symphony/index.ttl#thread-bridge'
+      const messages = ['https://alice.example/.data/chat/ai-secretary-symphony/2026/04/02/messages.ttl#bridge-planned']
+    const workers = plan.workers.map((worker) => ({
+        task: worker.task,
+        taskRecord: { ...worker.taskRecord, chat, thread, messages },
+        delivery: { ...worker.delivery, chat, thread, messages },
+        session: { ...worker.session, chat, thread, messages },
+      }))
+      const primary = workers[0]
+      return {
+        plan: {
+          issue: {
+            ...plan.issue,
+            chat,
+            thread,
+            messages,
+          },
+          task: primary?.task ?? plan.task,
+          delivery: primary?.delivery ?? { ...plan.delivery, chat, thread, messages },
+          session: primary?.session ?? { ...plan.session, chat, thread, messages },
+          workers,
+        },
+        chat,
+        thread,
+        messages,
+      }
+    },
+    async mirrorSymphonyProjectionJsonLdFromPod(result) {
+      mirrorCalls.push(result)
+      const dir = join(root, '.linx', 'symphony', 'jsonld')
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, `mirror-${mirrorCalls.length}.jsonld`), `${JSON.stringify({
+        '@context': {},
+        '@id': result.thread,
+        status: result.plan.session.status,
+      })}\n`)
+    },
   })
 
   assert.equal(runCalls.length, 1)
   assert.equal(runCalls[0].backend, 'codex')
-  assert.equal(runCalls[0].mode, 'auto')
-  assert.equal(runCalls[0].autoModeEnabled, true)
+  assert.equal(runCalls[0].mode, 'off')
+  assert.equal(runCalls[0].autoEnabled, true)
   assert.equal(runCalls[0].cwd, '/tmp/linx')
   assert.equal(runCalls[0].model, 'gpt-5.5')
   assert.match(runCalls[0].prompt, /# LinX Symphony Task/)
   assert.match(runCalls[0].prompt, /bridge runtime/)
   assert.match(runCalls[0].prompt, /runtime called/)
+  assert.equal(runCalls[0].metadata?.symphony?.issue, plan.issue.uri)
+  assert.equal(runCalls[0].metadata?.symphony?.delivery, plan.delivery.uri)
+  assert.equal(runCalls[0].metadata?.reconciler?.policyKind, 'symphony')
+  assert.equal(runCalls[0].metadata?.reconciler?.eventType, 'delivery.submitted')
+  assert.equal(runCalls[0].metadata?.reconciler?.thread, 'https://alice.example/.data/chat/ai-secretary-symphony/index.ttl#thread-bridge')
+  assert.equal(runCalls[0].metadata?.reconciler?.wakeJobs?.[0]?.targetAgent, 'codex-worker')
+  assert.equal(runCalls[0].metadata?.scheduler?.wakeRecord?.status, 'running')
+  assert.equal(runCalls[0].metadata?.scheduler?.wakeRecord?.targetRole, 'worker')
 
   assert.equal(plan.issue.status, 'resolved')
   assert.equal(plan.delivery.status, 'completed')
   assert.equal(plan.delivery.autoModeSessionId, 'auto_bridge_123')
   assert.equal(plan.session.status, 'completed')
+  assert.equal(plan.session.mode, 'off')
+  assert.equal(plan.session.secretaryAutoEnabled, true)
   assert.equal(plan.session.autoModeSessionId, 'auto_bridge_123')
   assert.equal(plan.session.exitCode, 0)
+  assert.equal(plan.delivery.reconciler?.decisions.at(-1)?.eventType, 'delivery.completed')
+  assert.equal(plan.delivery.reconciler?.decisions.at(-1)?.wakeJobs?.[0]?.targetAgent, 'ai-secretary')
+  assert.equal(plan.session.reconciler?.decisions.at(-1)?.eventType, 'delivery.completed')
+  assert.deepEqual(projectionCalls.map((call) => call.stage), ['planned', 'running', 'completed'])
+  assert.equal(mirrorCalls.length, 3)
+  assert.equal(existsSync(join(root, '.linx', 'symphony')), true)
+  assert.equal(existsSync(join(root, '.linx', 'symphony', 'issues')), false)
+  assert.equal(existsSync(join(root, '.linx', 'symphony', 'jsonld', 'mirror-3.jsonld')), true)
+  assert.equal(plan.issue.chat, 'https://alice.example/.data/chat/ai-secretary-symphony/index.ttl#this')
+  assert.equal(plan.delivery.thread, 'https://alice.example/.data/chat/ai-secretary-symphony/index.ttl#thread-bridge')
+  assert.deepEqual(plan.session.messages, ['https://alice.example/.data/chat/ai-secretary-symphony/2026/04/02/messages.ttl#bridge-planned'])
+})
+
+test('symphony dispatch uses the worker session workspace resolved by control records', async (t) => {
+  const originalHome = process.env.HOME
+  const root = mkdtempSync(join(tmpdir(), 'linx-symphony-worker-workspace-home-'))
+  process.env.HOME = root
+
+  t.after(() => {
+    if (originalHome === undefined) {
+      delete process.env.HOME
+    } else {
+      process.env.HOME = originalHome
+    }
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  const { module, cleanup } = await loadAutoModeModule('lib/symphony-command.ts')
+  t.after(() => cleanup())
+
+  const secretaryWorkspace = '/tmp/secretary-linx'
+  const workerWorkspace = '/tmp/worker-linx'
+  const runCalls = []
+  let autoSessions = []
+  const plan = await module.runSymphony({
+    objective: ['use', 'worker', 'workspace'],
+    backend: 'codex',
+    auto: true,
+    cwd: secretaryWorkspace,
+  }, {
+    async runAutoMode(options) {
+      runCalls.push(options)
+      autoSessions = [{
+        id: 'auto_worker_workspace_123',
+        startedAt: '2026-04-02T00:00:01.000Z',
+      }]
+      return 0
+    },
+    listAutoModeSessions() {
+      return autoSessions
+    },
+    async persistSymphonyProjectionToPod(plan) {
+      const workers = plan.workers.map((worker) => ({
+        ...worker,
+        session: {
+          ...worker.session,
+          cwd: workerWorkspace,
+          workspace: {
+            ...worker.session.workspace,
+            path: workerWorkspace,
+            workspaceUri: 'urn:undefineds:workspace:worker-linx',
+            environment: {
+              kind: 'remote-container',
+              id: 'worker-container-a',
+              label: 'Worker container checkout',
+              runtime: worker.session.backend,
+            },
+          },
+        },
+      }))
+      const primary = workers[0]
+      return {
+        plan: {
+          ...plan,
+          task: primary?.task ?? plan.task,
+          taskRecord: primary?.taskRecord ?? plan.taskRecord,
+          delivery: primary?.delivery ?? plan.delivery,
+          session: primary?.session ?? plan.session,
+          workers,
+        },
+        chat: 'https://alice.example/.data/chat/ai-secretary-symphony/index.ttl#this',
+        thread: 'https://alice.example/.data/chat/ai-secretary-symphony/index.ttl#thread-worker-workspace',
+        messages: ['https://alice.example/.data/chat/ai-secretary-symphony/2026/04/02/messages.ttl#worker-workspace'],
+      }
+    },
+  })
+
+  assert.equal(runCalls.length, 1)
+  assert.equal(runCalls[0].cwd, workerWorkspace)
+  assert.notEqual(runCalls[0].cwd, secretaryWorkspace)
+  assert.match(runCalls[0].prompt, /Workspace: \/tmp\/worker-linx/)
+  assert.match(runCalls[0].prompt, /Workspace environment: remote-container runtime=codex id=worker-container-a label=Worker container checkout/)
+  assert.equal(plan.session.cwd, workerWorkspace)
+  assert.equal(plan.session.workspace.path, workerWorkspace)
+  assert.equal(plan.session.workspace.workspaceUri, 'urn:undefineds:workspace:worker-linx')
+  assert.equal(plan.session.autoModeSessionId, 'auto_worker_workspace_123')
+})
+
+test('symphony dispatch merges follow-up work against Pod issues before local cache fallback', async (t) => {
+  const originalHome = process.env.HOME
+  const root = mkdtempSync(join(tmpdir(), 'linx-symphony-pod-issue-home-'))
+  process.env.HOME = root
+
+  t.after(() => {
+    if (originalHome === undefined) {
+      delete process.env.HOME
+    } else {
+      process.env.HOME = originalHome
+    }
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  const { module, cleanup } = await loadAutoModeModule('lib/symphony-command.ts')
+  t.after(() => cleanup())
+
+  const existingIssue = {
+    uri: 'urn:undefineds:linx:issue:issue_existing_login',
+    title: 'fix login redirect bug',
+    description: 'redirect drops state',
+    status: 'open',
+    priority: 'high',
+    source: 'cli',
+    issuer: {
+      source: 'user',
+      webId: 'https://alice.example/profile/card#me',
+      chat: 'https://alice.example/.data/chat/ai-secretary/index.ttl#this',
+      thread: 'https://alice.example/.data/chat/ai-secretary/index.ttl#thread-login',
+    },
+    chat: 'https://alice.example/.data/chat/ai-secretary/index.ttl#this',
+    thread: 'https://alice.example/.data/chat/ai-secretary/index.ttl#thread-login',
+    tasks: ['https://alice.example/.data/task/index.ttl#task_existing_login'],
+    deliveries: ['urn:undefineds:linx:delivery:delivery_existing_login'],
+    sessions: ['urn:undefineds:linx:session:session_existing_login'],
+    createdAt: '2026-04-02T00:00:00.000Z',
+    updatedAt: '2026-04-02T00:01:00.000Z',
+  }
+  const runCalls = []
+  const projectionCalls = []
+  const mirrorCalls = []
+  let autoSessions = []
+
+  const plan = await module.runSymphony({
+    objective: ['fix', 'login', 'redirect', 'bug'],
+    backend: 'codex',
+    auto: true,
+    cwd: root,
+  }, {
+    async listOpenSymphonyIssuesFromPod() {
+      return [existingIssue]
+    },
+    async runAutoMode(options) {
+      runCalls.push(options)
+      autoSessions = [{
+        id: 'auto_pod_issue_merge',
+        startedAt: '2026-04-02T00:02:00.000Z',
+      }]
+      return 0
+    },
+    listAutoModeSessions() {
+      return autoSessions
+    },
+    async persistSymphonyProjectionToPod(plan, options) {
+      if (projectionCalls.length === 0) {
+        assert.equal(existsSync(join(root, '.linx', 'symphony')), false)
+      }
+      projectionCalls.push({ plan, stage: options?.stage })
+      return {
+        plan,
+        chat: existingIssue.chat,
+        thread: existingIssue.thread,
+        messages: ['https://alice.example/.data/chat/ai-secretary/2026/04/02/messages.ttl#merge'],
+      }
+    },
+    async mirrorSymphonyProjectionJsonLdFromPod(result) {
+      mirrorCalls.push(result)
+      const dir = join(root, '.linx', 'symphony', 'jsonld')
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, `merge-${mirrorCalls.length}.jsonld`), `${JSON.stringify({
+        '@context': {},
+        '@id': result.thread,
+        issue: result.plan.issue.uri,
+      })}\n`)
+    },
+  })
+
+  assert.equal(plan.issue.uri, existingIssue.uri)
+  assert.equal(projectionCalls[0].plan.issue.uri, existingIssue.uri)
+  assert.ok(projectionCalls[0].plan.issue.tasks.includes(existingIssue.tasks[0]))
+  assert.ok(projectionCalls[0].plan.issue.deliveries.includes(existingIssue.deliveries[0]))
+  assert.ok(projectionCalls[0].plan.issue.sessions.includes(existingIssue.sessions[0]))
+  assert.match(runCalls[0].prompt, new RegExp(existingIssue.uri))
+  assert.equal(existsSync(join(root, '.linx', 'symphony')), true)
+  assert.equal(mirrorCalls.length, 3)
+  assert.equal(existsSync(join(root, '.linx', 'symphony', 'issues')), false)
+  assert.equal(existsSync(join(root, '.linx', 'symphony', 'jsonld', 'merge-3.jsonld')), true)
+})
+
+test('symphony run preserves caller-provided delegation target chat and thread', async (t) => {
+  const originalHome = process.env.HOME
+  const root = mkdtempSync(join(tmpdir(), 'linx-symphony-target-home-'))
+  process.env.HOME = root
+
+  t.after(() => {
+    if (originalHome === undefined) {
+      delete process.env.HOME
+    } else {
+      process.env.HOME = originalHome
+    }
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  const { module, cleanup } = await loadAutoModeModule('lib/symphony-command.ts')
+  t.after(() => cleanup())
+
+  const target = {
+    source: 'ai-contact',
+    backend: 'codex',
+    agent: 'codex-worker',
+    chat: 'https://alice.example/.data/chat/codex-worker/index.ttl#this',
+    thread: 'https://alice.example/.data/chat/codex-worker/index.ttl#thread-target',
+    messages: ['https://alice.example/.data/chat/codex-worker/2026/04/02/messages.ttl#message-1'],
+  }
+
+  const plan = await module.runSymphony({
+    objective: ['delegate', 'to', 'target', 'chat'],
+    backend: 'codex',
+    auto: true,
+    dryRun: true,
+    cwd: root,
+    target,
+  }, {
+    async runAutoMode() {
+      throw new Error('dry-run must not launch auto-mode')
+    },
+    listAutoModeSessions() {
+      return []
+    },
+    async persistSymphonyProjectionToPod(plan) {
+      return {
+        plan,
+        chat: target.chat,
+        thread: target.thread,
+        messages: target.messages,
+      }
+    },
+  })
+
+  assert.equal(plan.issue.chat, target.chat)
+  assert.equal(plan.delivery.thread, target.thread)
+  assert.deepEqual(plan.session.messages, target.messages)
+  assert.deepEqual(plan.delivery.target, target)
+  assert.deepEqual(plan.session.target, target)
 })
 
 test('symphony non-dry-run dispatches through auto-mode ACP and archives completion', async (t) => {
@@ -331,6 +815,46 @@ rl.on('line', (line) => {
   })
   t.mock.method(autoModeModule.autoModeRuntime, 'persistAutoModeConversationToPod', async () => {})
 
+  const mirrorCalls = []
+  const persistSymphonyProjectionToPod = async (plan, options) => {
+    const stage = options?.stage ?? 'planned'
+    const chat = 'https://alice.example/.data/chat/ai-secretary-symphony/index.ttl#this'
+    const thread = 'https://alice.example/.data/chat/ai-secretary-symphony/index.ttl#thread-integration'
+    const messages = [`https://alice.example/.data/chat/ai-secretary-symphony/2026/04/02/messages.ttl#${stage}`]
+    const workers = plan.workers.map((worker) => ({
+      task: worker.task,
+      taskRecord: { ...worker.taskRecord, chat, thread, messages },
+      delivery: { ...worker.delivery, chat, thread, messages },
+      session: { ...worker.session, chat, thread, messages },
+    }))
+    const primary = workers[0]
+    return {
+      plan: {
+        issue: { ...plan.issue, chat, thread, messages },
+        task: primary?.task ?? plan.task,
+        delivery: primary?.delivery ?? { ...plan.delivery, chat, thread, messages },
+        session: primary?.session ?? { ...plan.session, chat, thread, messages },
+        workers,
+      },
+      chat,
+      thread,
+      messages,
+    }
+  }
+  const mirrorSymphonyProjectionJsonLdFromPod = async (result) => {
+    mirrorCalls.push(result)
+    const dir = join(root, '.linx', 'symphony', 'jsonld')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, `integration-${mirrorCalls.length}.jsonld`), `${JSON.stringify({
+      '@context': {},
+      '@id': result.thread,
+      issue: result.plan.issue.uri,
+      sessionStatus: result.plan.session.status,
+      deliveryStatus: result.plan.delivery.status,
+      autoModeSessionId: result.plan.session.autoModeSessionId,
+    })}\n`)
+  }
+
   let plan
   await withPatchedEnv(t, {
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
@@ -352,6 +876,8 @@ rl.on('line', (line) => {
         })
       },
       listAutoModeSessions: autoModeModule.listArchivedAutoModeSessions,
+      persistSymphonyProjectionToPod,
+      mirrorSymphonyProjectionJsonLdFromPod,
     })
   })
 
@@ -361,22 +887,22 @@ rl.on('line', (line) => {
   assert.equal(plan.session.status, 'completed')
   assert.equal(plan.session.autoModeSessionId, 'sess_symphony_integration_123')
   assert.equal(plan.session.exitCode, 0)
-  assert.equal(Object.hasOwn(plan.issue, 'chat'), false)
-  assert.equal(Object.hasOwn(plan.delivery, 'thread'), false)
-  assert.equal(Object.hasOwn(plan.session, 'messages'), false)
+  assert.equal(plan.issue.chat, 'https://alice.example/.data/chat/ai-secretary-symphony/index.ttl#this')
+  assert.equal(plan.delivery.thread, 'https://alice.example/.data/chat/ai-secretary-symphony/index.ttl#thread-integration')
+  assert.deepEqual(plan.session.messages, ['https://alice.example/.data/chat/ai-secretary-symphony/2026/04/02/messages.ttl#completed'])
 
   const symphonyHome = join(root, '.linx', 'symphony')
-  const issueFile = readFileSync(join(symphonyHome, 'issues', plan.issue.uri.split(':').at(-1), 'issue.json'), 'utf-8')
-  const deliveryFile = readFileSync(join(symphonyHome, 'deliveries', plan.delivery.uri.split(':').at(-1), 'delivery.json'), 'utf-8')
-  const sessionFile = readFileSync(join(symphonyHome, 'sessions', plan.session.uri.split(':').at(-1), 'session.json'), 'utf-8')
-  assert.match(issueFile, /"status": "resolved"/)
-  assert.match(deliveryFile, /"status": "completed"/)
-  assert.match(sessionFile, /"status": "completed"/)
-  assert.match(sessionFile, /"autoModeSessionId": "sess_symphony_integration_123"/)
+  const finalMirrorFile = readFileSync(join(symphonyHome, 'jsonld', 'integration-3.jsonld'), 'utf-8')
+  assert.equal(mirrorCalls.length, 3)
+  assert.equal(existsSync(join(symphonyHome, 'issues')), false)
+  assert.match(finalMirrorFile, /"sessionStatus":"completed"/)
+  assert.match(finalMirrorFile, /"deliveryStatus":"completed"/)
+  assert.match(finalMirrorFile, /"autoModeSessionId":"sess_symphony_integration_123"/)
 
   const autoSession = JSON.parse(readFileSync(join(autoModeHome, 'sessions', 'sess_symphony_integration_123', 'session.json'), 'utf-8'))
   assert.equal(autoSession.backend, 'codex')
-  assert.equal(autoSession.mode, 'auto')
+  assert.equal(autoSession.mode, 'off')
+  assert.equal(autoSession.autoEnabled, true)
   assert.equal(autoSession.status, 'completed')
   assert.equal(autoSession.credentialSource, 'cloud')
   assert.equal(autoSession.resolvedCredentialSource, 'cloud')
@@ -439,8 +965,8 @@ test('symphony launches codex as a goal session so Secretary can keep steering a
 
   assert.equal(runCalls.length, 1)
   assert.equal(runCalls[0].backend, 'codex')
-  assert.equal(runCalls[0].mode, 'auto')
-  assert.equal(runCalls[0].autoModeEnabled, true)
+  assert.equal(runCalls[0].mode, 'off')
+  assert.equal(runCalls[0].autoEnabled, true)
   assert.equal(runCalls[0].goalMode, true)
   assert.match(runCalls[0].prompt, /# LinX Symphony Task/)
   assert.match(runCalls[0].prompt, /Start and maintain this as the active goal/)
