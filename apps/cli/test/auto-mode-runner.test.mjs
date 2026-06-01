@@ -197,7 +197,8 @@ rl.on('line', (line) => {
   }, async () => {
     const exitCode = await module.runAutoMode({
       backend: 'claude',
-      mode: 'smart',
+autoEnabled: true,
+mode: 'auto',
       cwd: process.cwd(),
       passthroughArgs: [],
     })
@@ -325,7 +326,8 @@ rl.on('line', (line) => {
   }, async () => {
     const exitCode = await module.runAutoMode({
       backend: 'claude',
-      mode: 'smart',
+autoEnabled: true,
+mode: 'auto',
       cwd: process.cwd(),
       prompt: 'hello from cloud',
       passthroughArgs: [],
@@ -413,9 +415,10 @@ rl.on('line', (line) => {
     }
     return {
       backend: 'codex',
-      provider: 'openai',
+      provider: 'deepseek',
       env: {
-        CODEX_API_KEY: 'sk-entered-openai',
+        CODEX_API_KEY: 'sk-entered-deepseek',
+        CODEX_BASE_URL: 'https://api.deepseek.com/v1',
       },
     }
   })
@@ -431,11 +434,12 @@ rl.on('line', (line) => {
   t.mock.method(module.autoModeRuntime, 'persistAutoModeConversationToPod', async () => {})
 
   let promptCount = 0
+  const promptCalls = []
   t.mock.method(module.autoModeRuntime, 'promptText', async (prompt) => {
+    promptCalls.push(prompt)
     promptCount += 1
-    if (prompt === 'secret> ') {
-      return 'sk-entered-openai'
-    }
+    if (prompt === 'answer> ') return 'deepseek'
+    if (prompt === 'secret> ') return 'sk-entered-deepseek'
     return '/exit'
   })
 
@@ -447,7 +451,8 @@ rl.on('line', (line) => {
   }, async () => {
     const exitCode = await module.runAutoMode({
       backend: 'codex',
-      mode: 'smart',
+autoEnabled: true,
+mode: 'auto',
       cwd: process.cwd(),
       prompt: 'hello after missing key',
       passthroughArgs: [],
@@ -458,20 +463,82 @@ rl.on('line', (line) => {
   })
 
   assert.equal(loadCalls, 2)
-  assert.equal(promptCount, 1)
+  assert.equal(promptCount, 2)
+  assert.deepEqual(promptCalls, ['answer> ', 'secret> '])
   assert.deepEqual(savedCredentials, [{
-    provider: 'openai',
-    apiKey: 'sk-entered-openai',
+    provider: 'deepseek',
+    apiKey: 'sk-entered-deepseek',
+    supportsBackend: 'codex',
+    rotationPolicy: 'round_robin',
   }])
 
   const invocation = JSON.parse(readFileSync(logFile, 'utf-8').trim())
   assert.equal(invocation.openaiKey, null)
-  assert.equal(invocation.codexKey, 'sk-entered-openai')
+  assert.equal(invocation.codexKey, 'sk-entered-deepseek')
 
   const sessionDirs = readdirSync(join(autoModeHome, 'sessions'))
   assert.equal(sessionDirs.length, 1)
   const events = readFileSync(join(autoModeHome, 'sessions', sessionDirs[0], 'events.jsonl'), 'utf-8')
-  assert.doesNotMatch(events, /sk-entered-openai/)
+  assert.doesNotMatch(events, /sk-entered-deepseek/)
+})
+
+test('auto-mode exits cleanly when LinX Cloud auth recovery is cancelled', async (t) => {
+  const { root, binDir, autoModeHome } = createAutoModeSandbox('linx-auto-mode-cancel-auth-')
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  writeFakeAcpBackend(join(binDir, 'codex-acp'), {
+    sessionId: 'sess_cancel_auth_123',
+    reply: 'should not start backend',
+  })
+
+  const { module, cleanup } = await loadAutoModeModule()
+  t.after(() => cleanup())
+
+  t.mock.method(module.autoModeRuntime, 'loadPodBackendCredential', async () => {
+    throw new Error('LinX cloud credential source is not connected yet. Run `linx login` first.')
+  })
+  const persisted = []
+  t.mock.method(module.autoModeRuntime, 'persistAutoModeConversationToPod', async (record) => {
+    persisted.push(record)
+  })
+
+  const prompts = []
+  t.mock.method(module.autoModeRuntime, 'promptText', async (prompt) => {
+    prompts.push(prompt)
+    return '3'
+  })
+
+  await withPatchedEnv(t, {
+    PATH: `${binDir}:${process.env.PATH ?? ''}`,
+    LINX_AUTO_MODE_HOME: autoModeHome,
+    LINX_AUTO_MODE_PLAIN: '1',
+    FAKE_ACP_LOG: join(root, 'cancel-auth-log.jsonl'),
+  }, async () => {
+    const exitCode = await module.runAutoMode({
+      backend: 'codex',
+autoEnabled: false,
+mode: 'off',
+      cwd: process.cwd(),
+      prompt: 'should not run',
+      passthroughArgs: [],
+      commandOverride: join(binDir, 'codex-acp'),
+    })
+
+    assert.equal(exitCode, 1)
+  })
+
+  assert.deepEqual(prompts, ['select> '])
+  const sessionDirs = readdirSync(join(autoModeHome, 'sessions'))
+  assert.equal(sessionDirs.length, 1)
+  const session = JSON.parse(readFileSync(join(autoModeHome, 'sessions', sessionDirs[0], 'session.json'), 'utf-8'))
+  assert.equal(session.status, 'failed')
+  assert.equal(session.error, 'Backend startup cancelled before LinX Cloud authorization.')
+  assert.equal(persisted.length, 1)
+  assert.equal(persisted[0].status, 'failed')
+  const events = readFileSync(join(autoModeHome, 'sessions', sessionDirs[0], 'events.jsonl'), 'utf-8')
+  assert.match(events, /Backend startup cancelled before LinX Cloud authorization/)
 })
 
 test('auto-mode injects cloud-backed codebuddy credentials into built-in ACP mode', async (t) => {
@@ -550,7 +617,8 @@ rl.on('line', (line) => {
   }, async () => {
     const exitCode = await module.runAutoMode({
       backend: 'codebuddy',
-      mode: 'smart',
+autoEnabled: true,
+mode: 'auto',
       cwd: process.cwd(),
       prompt: 'hello from codebuddy cloud',
       passthroughArgs: [],
@@ -649,7 +717,8 @@ rl.on('line', (line) => {
   }, async () => {
     const exitCode = await module.runAutoMode({
       backend: 'codex',
-      mode: 'smart',
+autoEnabled: true,
+mode: 'auto',
       cwd: process.cwd(),
       prompt: 'hello from codex cloud',
       passthroughArgs: [],
@@ -757,7 +826,8 @@ test('auto-mode runs every backend through Pod credentials, ACP chat, and Pod pe
       }, async () => {
         const exitCode = await module.runAutoMode({
           backend: item.backend,
-          mode: 'smart',
+autoEnabled: true,
+mode: 'auto',
           cwd: process.cwd(),
           prompt: `matrix ${item.backend}`,
           passthroughArgs: [],
@@ -931,7 +1001,7 @@ rl.on('line', (line) => {
       })
       t.mock.method(module.autoModeRuntime, 'resolveExistingRemoteAutoModeGrant', async () => null)
       t.mock.method(module.autoModeRuntime, 'resolveAutoModeSecretaryRecommendation', async (input) => {
-        assert.equal(input.mode, 'smart')
+        assert.equal(input.mode, 'auto')
         assert.equal(input.request.kind, 'command-approval')
         assert.equal(input.request.command, 'pwd')
         return {
@@ -966,7 +1036,8 @@ rl.on('line', (line) => {
       }, async () => {
         const exitCode = await module.runAutoMode({
           backend: item.backend,
-          mode: 'smart',
+autoEnabled: true,
+mode: 'auto',
           cwd: process.cwd(),
           prompt: `approval matrix ${item.backend}`,
           passthroughArgs: [],
@@ -1015,6 +1086,10 @@ rl.on('line', (line) => {
       assert.match(events, new RegExp(`approval matrix ${item.backend}`))
       assert.match(events, /"type":"approval.required"/)
       assert.match(events, /"command":"pwd"/)
+      assert.match(events, /Thread Reconciler dispatched command-approval/)
+      assert.match(events, /"policyKind":"auto"/)
+      assert.match(events, /"eventType":"approval.required"/)
+      assert.match(events, /"targetAgent":"ai-secretary"/)
       assert.match(events, new RegExp(`Remote approval opened \\| approval_matrix_${item.backend}_1`))
       assert.match(events, /Local approval resolved \| accept/)
       assert.match(events, new RegExp(`${item.backend} approval applied`))
@@ -1140,7 +1215,8 @@ rl.on('line', (line) => {
   }, async () => {
     const exitCode = await module.runAutoMode({
       backend: 'codex',
-      mode: 'smart',
+autoEnabled: true,
+mode: 'auto',
       cwd: process.cwd(),
       prompt: 'inspect trusted command',
       passthroughArgs: [],
@@ -1251,6 +1327,7 @@ rl.on('line', (line) => {
   const createdApprovals = []
   const waitedApprovals = []
   const resolvedApprovals = []
+  const materializedGrants = []
 
   mockPodBackendCredential(t, module, 'codex')
 
@@ -1280,6 +1357,10 @@ rl.on('line', (line) => {
     resolvedApprovals.push(payload)
     return { id: payload.approvalId, decision: payload.decision }
   })
+  t.mock.method(module.autoModeRuntime, 'materializeRemoteAutoModeGrant', async (payload) => {
+    materializedGrants.push(payload)
+    return { id: 'grant_remote_1' }
+  })
 
   await withPatchedEnv(t, {
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
@@ -1288,7 +1369,8 @@ rl.on('line', (line) => {
   }, async () => {
     const exitCode = await module.runAutoMode({
       backend: 'codex',
-      mode: 'manual',
+autoEnabled: false,
+mode: 'off',
       cwd: process.cwd(),
       prompt: 'request remote approval',
       passthroughArgs: [],
@@ -1305,6 +1387,8 @@ rl.on('line', (line) => {
   assert.equal(waitedApprovals.length, 1)
   assert.equal(waitedApprovals[0].approvalId, 'approval_remote_1')
   assert.equal(resolvedApprovals.length, 0)
+  assert.equal(materializedGrants.length, 1)
+  assert.equal(materializedGrants[0].approvalId, 'approval_remote_1')
   assert.equal(prompts.includes('select> '), true)
 
   const responses = readFileSync(logFile, 'utf-8')
@@ -1325,6 +1409,137 @@ rl.on('line', (line) => {
   const events = readFileSync(join(autoModeHome, 'sessions', sessionDirs[0], 'events.jsonl'), 'utf-8')
   assert.match(events, /Remote approval opened \| approval_remote_1/)
   assert.match(events, /Remote approval resolved \| accept_for_session/)
+})
+
+test('auto-mode can force remote-only approval from run options', async (t) => {
+  const { root, binDir, autoModeHome } = createAutoModeSandbox('linx-auto-mode-acp-remote-only-')
+  const logFile = join(root, 'remote-only-approval-log.jsonl')
+
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  writeExecutable(join(binDir, 'codex-acp'), `#!/usr/bin/env node
+const { appendFileSync } = require('node:fs')
+const readline = require('node:readline')
+
+function write(obj) {
+  process.stdout.write(JSON.stringify(obj) + '\\n')
+}
+
+const rl = readline.createInterface({ input: process.stdin })
+let pendingPromptId = null
+let pendingPermissionId = null
+
+rl.on('line', (line) => {
+  const message = JSON.parse(line)
+  if (message.method === 'initialize') {
+    write({ jsonrpc: '2.0', id: message.id, result: { protocolVersion: 1 } })
+    return
+  }
+  if (message.method === 'session/new') {
+    write({ jsonrpc: '2.0', id: message.id, result: { sessionId: 'sess_remote_only_approval_123' } })
+    return
+  }
+  if (message.method === 'session/prompt') {
+    pendingPromptId = message.id
+    pendingPermissionId = 712
+    write({
+      jsonrpc: '2.0',
+      id: pendingPermissionId,
+      method: 'session/request_permission',
+      params: {
+        sessionId: 'sess_remote_only_approval_123',
+        toolCall: {
+          toolCallId: 'tool_remote_only_1',
+          title: 'Run shell command',
+          kind: 'execute',
+          rawInput: { command: 'pwd', cwd: '/tmp/demo' },
+        },
+        options: [
+          { optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' },
+          { optionId: 'reject_once', name: 'Reject once', kind: 'reject_once' }
+        ],
+      },
+    })
+    return
+  }
+  if (pendingPermissionId !== null && message.id === pendingPermissionId) {
+    appendFileSync(process.env.FAKE_ACP_LOG, JSON.stringify(message) + '\\n')
+    write({ jsonrpc: '2.0', id: pendingPromptId, result: { stopReason: 'end_turn' } })
+  }
+})
+`)
+
+  const { module, cleanup } = await loadAutoModeModule()
+  t.after(() => cleanup())
+
+  const prompts = []
+  const createdApprovals = []
+  const waitedApprovals = []
+
+  mockPodBackendCredential(t, module, 'codex')
+
+  t.mock.method(module.autoModeRuntime, 'resolveExistingRemoteAutoModeGrant', async () => null)
+  t.mock.method(module.autoModeRuntime, 'promptText', async (prompt) => {
+    prompts.push(prompt)
+    return '/exit'
+  })
+  t.mock.method(module.autoModeRuntime, 'createRemoteAutoModeApproval', async (payload) => {
+    createdApprovals.push(payload)
+    return { id: 'approval_remote_only_1', approvalUri: 'https://pod.example/.data/approvals/approval_remote_only_1.ttl#it' }
+  })
+  t.mock.method(module.autoModeRuntime, 'waitForRemoteAutoModeApproval', async (payload) => {
+    waitedApprovals.push(payload)
+    return 'accept'
+  })
+
+  await withPatchedEnv(t, {
+    PATH: `${binDir}:${process.env.PATH ?? ''}`,
+    LINX_AUTO_MODE_HOME: autoModeHome,
+    FAKE_ACP_LOG: logFile,
+  }, async () => {
+    const exitCode = await module.runAutoMode({
+      backend: 'codex',
+      autoEnabled: false,
+      mode: 'off',
+      cwd: process.cwd(),
+      prompt: 'request remote-only approval',
+      passthroughArgs: [],
+      credentialSource: 'cloud',
+      approvalStrategy: 'remote',
+      commandOverride: join(binDir, 'codex-acp'),
+    })
+
+    assert.equal(exitCode, 0)
+  })
+
+  assert.equal(prompts.includes('select> '), false)
+  assert.equal(createdApprovals.length, 1)
+  assert.equal(createdApprovals[0].record.approvalSource, 'hybrid')
+  assert.equal(waitedApprovals.length, 1)
+  assert.equal(waitedApprovals[0].approvalId, 'approval_remote_only_1')
+
+  const responses = readFileSync(logFile, 'utf-8')
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line))
+
+  assert.equal(responses.length, 1)
+  assert.deepEqual(responses[0].result, {
+    outcome: {
+      outcome: 'selected',
+      optionId: 'allow_once',
+    },
+  })
+
+  const sessionDirs = readdirSync(join(autoModeHome, 'sessions'))
+  const session = JSON.parse(readFileSync(join(autoModeHome, 'sessions', sessionDirs[0], 'session.json'), 'utf-8'))
+  assert.equal(session.approvalSource, 'hybrid')
+  const events = readFileSync(join(autoModeHome, 'sessions', sessionDirs[0], 'events.jsonl'), 'utf-8')
+  assert.match(events, /Waiting for remote approval \| Approve command: pwd/)
+  assert.match(events, /Remote approval resolved \| accept/)
 })
 
 test('auto-mode mirrors a local approval decision back into Pod remote approval state by default', async (t) => {
@@ -1405,6 +1620,7 @@ rl.on('line', (line) => {
   const createdApprovals = []
   const waitedApprovals = []
   const resolvedApprovals = []
+  const materializedGrants = []
 
   mockPodBackendCredential(t, module, 'codex')
 
@@ -1427,6 +1643,10 @@ rl.on('line', (line) => {
     resolvedApprovals.push(payload)
     return { id: payload.approvalId, decision: payload.decision }
   })
+  t.mock.method(module.autoModeRuntime, 'materializeRemoteAutoModeGrant', async (payload) => {
+    materializedGrants.push(payload)
+    return { id: 'grant_local_1' }
+  })
 
   await withPatchedEnv(t, {
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
@@ -1435,7 +1655,8 @@ rl.on('line', (line) => {
   }, async () => {
     const exitCode = await module.runAutoMode({
       backend: 'codex',
-      mode: 'manual',
+autoEnabled: false,
+mode: 'off',
       cwd: process.cwd(),
       prompt: 'request local approval first',
       passthroughArgs: [],
@@ -1451,6 +1672,8 @@ rl.on('line', (line) => {
   assert.equal(resolvedApprovals.length, 1)
   assert.equal(resolvedApprovals[0].approvalId, 'approval_local_1')
   assert.equal(resolvedApprovals[0].decision, 'accept_for_session')
+  assert.equal(materializedGrants.length, 1)
+  assert.equal(materializedGrants[0].approvalId, 'approval_local_1')
 
   const responses = readFileSync(logFile, 'utf-8')
     .trim()
@@ -1575,7 +1798,8 @@ rl.on('line', (line) => {
   }, async () => {
     const exitCode = await module.runAutoMode({
       backend: 'codex',
-      mode: 'smart',
+autoEnabled: true,
+mode: 'auto',
       cwd: process.cwd(),
       prompt: 'request secretary approval',
       passthroughArgs: [],
@@ -1705,7 +1929,8 @@ rl.on('line', (line) => {
   }, async () => {
     const exitCode = await module.runAutoMode({
       backend: 'codex',
-      mode: 'manual',
+autoEnabled: false,
+mode: 'off',
       cwd: process.cwd(),
       prompt: 'answer multiple questions',
       passthroughArgs: [],
@@ -1742,6 +1967,10 @@ rl.on('line', (line) => {
   assert.match(events, /"type":"input.required"/)
   assert.match(events, /"question":"Choose runtime"/)
   assert.match(events, /"question":"Describe the goal"/)
+  assert.match(events, /Thread Reconciler dispatched user-input/)
+  assert.match(events, /"policyKind":"direct"/)
+  assert.match(events, /"eventType":"input.required"/)
+  assert.match(events, /"skippedReason":"Policy direct does not wake an agent for input.required."/)
 })
 
 test('auto-mode lets AI secretary answer ACP user input after a reaction window', async (t) => {
@@ -1844,7 +2073,8 @@ rl.on('line', (line) => {
   }, async () => {
     const exitCode = await module.runAutoMode({
       backend: 'codex',
-      mode: 'smart',
+autoEnabled: true,
+mode: 'auto',
       cwd: process.cwd(),
       prompt: 'answer runtime for me',
       passthroughArgs: [],
@@ -1869,6 +2099,13 @@ rl.on('line', (line) => {
       },
     },
   })
+
+  const sessionDirs = readdirSync(join(autoModeHome, 'sessions'))
+  const events = readFileSync(join(autoModeHome, 'sessions', sessionDirs[0], 'events.jsonl'), 'utf-8')
+  assert.match(events, /Thread Reconciler dispatched user-input/)
+  assert.match(events, /"policyKind":"auto"/)
+  assert.match(events, /"eventType":"input.required"/)
+  assert.match(events, /"targetAgent":"ai-secretary"/)
 })
 
 
@@ -1921,7 +2158,8 @@ rl.on('line', (line) => {
   }, async () => {
     const exitCode = await module.runAutoMode({
       backend: 'codex',
-      mode: 'smart',
+autoEnabled: true,
+mode: 'auto',
       cwd: process.cwd(),
       prompt: 'Reply with exactly hi',
       passthroughArgs: [],
@@ -2065,7 +2303,8 @@ test('auto-mode /model surfaces ACP failure without mutating the model state', a
     backend: 'codex',
     runtime: 'local',
     transport: 'acp',
-    mode: 'manual',
+autoEnabled: false,
+mode: 'off',
     cwd: '/tmp/demo',
     model: 'gpt-5-codex',
     prompt: undefined,
@@ -2138,7 +2377,8 @@ test('auto-mode exposes /hotkeys as the LinX keymap help command', async (t) => 
     backend: 'codex',
     runtime: 'local',
     transport: 'acp',
-    mode: 'manual',
+autoEnabled: false,
+mode: 'off',
     cwd: '/tmp/demo',
     model: 'gpt-5-codex',
     prompt: undefined,
@@ -2171,7 +2411,7 @@ test('auto-mode exposes /hotkeys as the LinX keymap help command', async (t) => 
   assert.equal(helpCalls, 1)
 })
 
-test('auto-mode shell can switch approval mode after entering an auto-mode session', async (t) => {
+test('auto-mode shell can switch auto after entering an auto-mode session', async (t) => {
   const { module, cleanup } = await loadAutoModeModule()
   t.after(() => cleanup())
 
@@ -2188,7 +2428,8 @@ test('auto-mode shell can switch approval mode after entering an auto-mode sessi
     backend: 'codex',
     runtime: 'local',
     transport: 'acp',
-    mode: 'manual',
+autoEnabled: false,
+mode: 'off',
     cwd: '/tmp/demo',
     model: 'gpt-5-codex',
     prompt: undefined,
@@ -2205,11 +2446,12 @@ test('auto-mode shell can switch approval mode after entering an auto-mode sessi
   }
 
   const result = await module.__testHandleAutoModeShellCommand({
-    input: '/auto',
+    input: '/auto on',
     session: {
       async setModel() {},
       applyResolvedOptions(options) {
         record.mode = options.mode
+        record.autoEnabled = options.autoEnabled
       },
     },
     display: {
@@ -2227,8 +2469,136 @@ test('auto-mode shell can switch approval mode after entering an auto-mode sessi
 
   assert.equal(result, 'handled')
   assert.equal(record.mode, 'auto')
+  assert.equal(record.autoEnabled, true)
   assert.deepEqual(activity, [
-    { message: 'Approval mode set to auto', tone: 'success' },
+    {
+      message: 'Auto on: Secretary drives the session and asks when blocked.',
+      tone: 'success',
+    },
+  ])
+})
+
+test('auto-mode shell reports auto status and retires old mode commands', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule()
+  t.after(() => cleanup())
+
+  const root = mkdtempSync(join(tmpdir(), 'linx-auto-mode-status-command-'))
+  const archiveDir = join(root, 'session')
+  mkdirSync(archiveDir, { recursive: true })
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  const activity = []
+  const record = {
+    id: 'auto_status_command_123',
+    backend: 'codex',
+    runtime: 'local',
+    transport: 'acp',
+autoEnabled: false,
+mode: 'off',
+    cwd: '/tmp/demo',
+    model: 'gpt-5-codex',
+    prompt: undefined,
+    passthroughArgs: [],
+    credentialSource: 'cloud',
+    resolvedCredentialSource: 'cloud',
+    approvalSource: 'hybrid',
+    command: 'codex-acp',
+    args: [],
+    status: 'running',
+    startedAt: '2026-04-17T00:00:00.000Z',
+    archiveDir,
+    eventsFile: join(archiveDir, 'events.jsonl'),
+  }
+  const base = {
+    session: {
+      async setModel() {},
+      applyResolvedOptions(options) {
+        record.mode = options.mode
+        record.autoEnabled = options.autoEnabled
+      },
+    },
+    display: {
+      showHelp() {},
+      showActivity(message, tone = 'note') {
+        activity.push({ message, tone })
+      },
+      setPhase() {},
+      updateRecord() {},
+    },
+    queueState: { steeringCount: 0, followUpCount: 0 },
+    backend: 'codex',
+    record,
+  }
+
+  assert.equal(await module.__testHandleAutoModeShellCommand({ ...base, input: '/auto status' }), 'handled')
+  assert.equal(await module.__testHandleAutoModeShellCommand({ ...base, input: '/manual' }), 'pass')
+
+  assert.deepEqual(activity, [
+    { message: 'Auto is off. Use /auto on or /auto off.', tone: 'note' },
+  ])
+})
+
+test('auto-mode keeps Secretary control separate from worker mode', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule()
+  t.after(() => cleanup())
+
+  const root = mkdtempSync(join(tmpdir(), 'linx-auto-mode-control-command-'))
+  const archiveDir = join(root, 'session')
+  mkdirSync(archiveDir, { recursive: true })
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  const activity = []
+  const record = {
+    id: 'auto_control_command_123',
+    backend: 'codex',
+    runtime: 'local',
+    transport: 'acp',
+    autoEnabled: true,
+    mode: 'off',
+    cwd: '/tmp/demo',
+    model: 'gpt-5-codex',
+    prompt: undefined,
+    passthroughArgs: [],
+    credentialSource: 'cloud',
+    resolvedCredentialSource: 'cloud',
+    approvalSource: 'hybrid',
+    command: 'codex-acp',
+    args: [],
+    status: 'running',
+    startedAt: '2026-04-17T00:00:00.000Z',
+    archiveDir,
+    eventsFile: join(archiveDir, 'events.jsonl'),
+  }
+
+  const result = await module.__testHandleAutoModeShellCommand({
+    input: '/auto status',
+    session: {
+      async setModel() {},
+      applyResolvedOptions() {
+        throw new Error('status must not rewrite worker mode')
+      },
+    },
+    display: {
+      showHelp() {},
+      showActivity(message, tone = 'note') {
+        activity.push({ message, tone })
+      },
+      setPhase() {},
+      updateRecord() {},
+    },
+    queueState: { steeringCount: 0, followUpCount: 0 },
+    backend: 'codex',
+    record,
+  })
+
+  assert.equal(result, 'handled')
+  assert.equal(record.mode, 'off')
+  assert.deepEqual(activity, [
+    { message: 'Auto is on. Use /auto on or /auto off.', tone: 'note' },
   ])
 })
 
@@ -2249,7 +2619,8 @@ test('auto-mode /debug toggles full-fidelity protocol view without affecting the
     backend: 'codex',
     runtime: 'local',
     transport: 'acp',
-    mode: 'manual',
+autoEnabled: false,
+mode: 'off',
     cwd: '/tmp/demo',
     model: 'gpt-5-codex',
     prompt: undefined,
@@ -2376,7 +2747,8 @@ rl.on('line', (line) => {
   }, async () => {
     const exitCode = await module.runAutoMode({
       backend: 'codex',
-      mode: 'smart',
+autoEnabled: true,
+mode: 'auto',
       cwd: process.cwd(),
       prompt: 'persist conversation',
       passthroughArgs: [],
@@ -2395,8 +2767,12 @@ rl.on('line', (line) => {
   assert.equal(warnings.some((warning) => String(warning.message).includes('LinX auto-mode Pod sync failed: ignore pod persistence errors')), true)
 
   const sessionDirs = readdirSync(join(autoModeHome, 'sessions'))
-  const events = readFileSync(join(autoModeHome, 'sessions', sessionDirs[0], 'events.jsonl'), 'utf-8')
+  const sessionDir = join(autoModeHome, 'sessions', sessionDirs[0])
+  const events = readFileSync(join(sessionDir, 'events.jsonl'), 'utf-8')
   assert.match(events, /Pod sync failed \| ignore pod persistence errors/)
+  const sync = JSON.parse(readFileSync(join(sessionDir, 'sync.json'), 'utf-8'))
+  assert.equal(sync['auto-mode-archive:pod:projection'].status, 'failed')
+  assert.equal(sync['auto-mode-archive:pod:projection'].failures[0].message, 'ignore pod persistence errors')
 })
 
 test('auto-mode times out final Pod persistence without blocking local success', async (t) => {
@@ -2444,7 +2820,8 @@ test('auto-mode times out final Pod persistence without blocking local success',
     const startedAt = Date.now()
     const exitCode = await module.runAutoMode({
       backend: 'codex',
-      mode: 'smart',
+autoEnabled: true,
+mode: 'auto',
       cwd: process.cwd(),
       prompt: 'persist timeout',
       passthroughArgs: [],
@@ -2462,6 +2839,10 @@ test('auto-mode times out final Pod persistence without blocking local success',
   assert.equal(warnings.some((warning) => String(warning.message).includes('LinX auto-mode Pod sync failed: timed out after 5000ms')), true)
 
   const sessionDirs = readdirSync(join(autoModeHome, 'sessions'))
-  const events = readFileSync(join(autoModeHome, 'sessions', sessionDirs[0], 'events.jsonl'), 'utf-8')
+  const sessionDir = join(autoModeHome, 'sessions', sessionDirs[0])
+  const events = readFileSync(join(sessionDir, 'events.jsonl'), 'utf-8')
   assert.match(events, /Pod sync failed \| timed out after 5000ms/)
+  const sync = JSON.parse(readFileSync(join(sessionDir, 'sync.json'), 'utf-8'))
+  assert.equal(sync['auto-mode-archive:pod:projection'].status, 'failed')
+  assert.equal(sync['auto-mode-archive:pod:projection'].failures[0].message, 'timed out after 5000ms')
 })

@@ -184,7 +184,7 @@ export function renderAutoModeTranscript(entries: AutoModeEventLogEntry[]): stri
 }
 
 export function formatArchivedAutoModeSession(record: AutoModeSessionRecord, entries: AutoModeEventLogEntry[]): string {
-  const label = getAutoModeBackendLabel(record.backend)
+  const label = record.backend === 'linx' ? 'LinX' : getAutoModeBackendLabel(record.backend)
   const header = [
     `${label} session history`,
     'controlled by: LinX',

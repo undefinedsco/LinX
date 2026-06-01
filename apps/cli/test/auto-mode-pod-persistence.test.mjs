@@ -11,7 +11,8 @@ function createRecord(overrides = {}) {
     backend: 'codex',
     runtime: 'local',
     transport: 'acp',
-    mode: 'smart',
+autoEnabled: true,
+mode: 'auto',
     cwd: '/tmp/demo',
     model: 'gpt-5-codex',
     prompt: 'inspect workspace',
@@ -81,7 +82,7 @@ test('buildAutoModeConversationMessages maps archived transcript into standard P
     content: row.content,
     senderName: row.senderName,
     routedBy: row.routedBy,
-    routeTargetAgentId: row.routeTargetAgentId,
+    routeTargetAgent: row.routeTargetAgent,
     coordinationId: row.coordinationId,
   })), [
     {
@@ -93,7 +94,7 @@ test('buildAutoModeConversationMessages maps archived transcript into standard P
       content: 'inspect workspace',
       senderName: 'User',
       routedBy: undefined,
-      routeTargetAgentId: undefined,
+      routeTargetAgent: undefined,
       coordinationId: 'auto_2026-03-18T00-00-00-000Z_deadbeef',
     },
     {
@@ -105,7 +106,7 @@ test('buildAutoModeConversationMessages maps archived transcript into standard P
       content: 'I found two issues.',
       senderName: 'Codex',
       routedBy: undefined,
-      routeTargetAgentId: undefined,
+      routeTargetAgent: undefined,
       coordinationId: 'auto_2026-03-18T00-00-00-000Z_deadbeef',
     },
     {
@@ -117,7 +118,7 @@ test('buildAutoModeConversationMessages maps archived transcript into standard P
       content: '[approval] Allow bash?',
       senderName: 'AI Secretary',
       routedBy: 'https://alice.example/.data/agents/linx-auto-mode-assistant.ttl',
-      routeTargetAgentId: 'linx-auto-mode-codex-agent',
+      routeTargetAgent: 'https://alice.example/.data/agents/linx-auto-mode-codex-agent.ttl',
       coordinationId: 'auto_2026-03-18T00-00-00-000Z_deadbeef',
     },
     {
@@ -129,7 +130,7 @@ test('buildAutoModeConversationMessages maps archived transcript into standard P
       content: '[tool] bash {"command":"pwd"}',
       senderName: 'Codex Tool',
       routedBy: 'https://alice.example/.data/agents/linx-auto-mode-codex-agent.ttl',
-      routeTargetAgentId: 'linx-auto-mode-codex-agent',
+      routeTargetAgent: 'https://alice.example/.data/agents/linx-auto-mode-codex-agent.ttl',
       coordinationId: 'auto_2026-03-18T00-00-00-000Z_deadbeef',
     },
   ])
@@ -162,7 +163,7 @@ test('buildAutoModeConversationSessionRow stores auto-mode lifecycle as a Pod se
   )
 
   assert.equal(row.id, 'auto_2026-03-18T00-00-00-000Z_deadbeef')
-  assert.equal(row.ownerWebId, 'https://alice.example/profile/card#me')
+  assert.equal(row.owner, 'https://alice.example/profile/card#me')
   assert.equal(row.chat, 'https://alice.example/.data/chat/linx-auto-mode-codex/index.ttl#this')
   assert.equal(row.thread, 'https://alice.example/.data/chat/linx-auto-mode-codex/index.ttl#auto_2026-03-18T00-00-00-000Z_deadbeef')
   assert.equal(row.sessionType, 'group')
@@ -171,6 +172,8 @@ test('buildAutoModeConversationSessionRow stores auto-mode lifecycle as a Pod se
   assert.equal(row.policyVersion, 'linx-auto-mode-session/v1')
   assert.equal(row.metadata.backend, 'codex')
   assert.equal(row.metadata.backendSessionId, 'sess_codex_123')
+  assert.equal(row.metadata.controlPlane.linxSession.autoEnabled, true)
+  assert.equal(row.metadata.controlPlane.linxSession.updatedBy, 'cli')
   assert.equal(row.archivedAt.toISOString(), '2026-03-18T00:01:00.000Z')
 })
 
@@ -211,6 +214,7 @@ test('persistAutoModeConversationToPod is skipped when linx login credentials ar
 test('persistAutoModeConversationToPod upserts group chat, participants, agents, thread, and sender metadata', async () => {
   const inserts = []
   const findIds = []
+  const checkpoints = []
   const resources = {
     chat: {
       name: 'chat',
@@ -284,9 +288,17 @@ test('persistAutoModeConversationToPod upserts group chat, participants, agents,
         events: [{ type: 'assistant.done', text: 'I found two issues.' }],
       },
     ],
+    writeSyncCheckpoint: async (_record, checkpoint) => {
+      checkpoints.push(checkpoint)
+    },
   })
 
   assert.equal(persisted, true)
+  assert.equal(checkpoints.length, 1)
+  assert.equal(checkpoints[0].id, 'auto-mode-archive:pod:projection')
+  assert.equal(checkpoints[0].status, 'completed')
+  assert.equal(checkpoints[0].metadata.sessionId, 'auto_2026-03-18T00-00-00-000Z_deadbeef')
+  assert.equal(checkpoints[0].metadata.backend, 'codex')
   assert.ok(findIds.includes('linx-auto-mode-codex'))
   assert.ok(findIds.includes('auto_2026-03-18T00-00-00-000Z_deadbeef'))
   assert.ok(findIds.includes('auto_2026-03-18T00-00-00-000Z_deadbeef-m0001'))
@@ -319,6 +331,7 @@ test('persistAutoModeConversationToPod upserts group chat, participants, agents,
   assert.equal(session.status, 'completed')
   assert.equal(session.tool, 'codex')
   assert.equal(session.metadata.backendSessionId, 'sess_codex_123')
+  assert.equal(session.metadata.controlPlane.linxSession.autoEnabled, true)
 
   const messages = inserts
     .filter((item) => item.resource === resources.message)

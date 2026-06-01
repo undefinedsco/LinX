@@ -13,7 +13,8 @@ function createRecord(overrides = {}) {
     backend: 'codex',
     runtime: 'local',
     transport: 'acp',
-    mode: 'manual',
+autoEnabled: false,
+mode: 'off',
     cwd: '/tmp/demo',
     model: 'gpt-5-codex',
     prompt: 'inspect workspace',
@@ -191,8 +192,10 @@ test('requestRemoteAutoModeApproval writes pending approval rows and waits for r
   ])
   assert.equal(state.audits.length, 1)
   assert.equal(state.audits[0].action, 'approval_requested')
-  assert.equal(state.grants.length, 0)
-  assert.equal(state.inbox.length, 1)
+  assert.equal(state.grants.length, 1)
+  assert.equal(state.grants[0].target, AUTO_MODE_THREAD_URI)
+  assert.equal(state.grants[0].source, 'approval')
+  assert.equal(state.inbox.length, 2)
 })
 
 test('requestRemoteAutoModeApproval accepts OIDC-only credentials', async () => {
@@ -401,7 +404,7 @@ test('requestRemoteAutoModeApproval does not use coarse grant matches without se
   assert.equal(state.approvals[0].toolCallId, 'tool_2')
 })
 
-test('resolveRemoteAutoModeApproval updates Pod approval state and listRemoteAutoModeApprovals reads the enriched summary', async () => {
+test('resolveRemoteAutoModeApproval updates only Pod approval state and listRemoteAutoModeApprovals reads the enriched summary', async () => {
   const state = createRuntime(approvalModule)
 
   state.approvals.push({
@@ -448,15 +451,7 @@ test('resolveRemoteAutoModeApproval updates Pod approval state and listRemoteAut
   assert.equal(resolved.decision, 'accept_for_session')
   assert.equal(state.approvals[0].status, 'approved')
   assert.equal(state.audits.at(-1).action, 'approval_approved')
-  assert.equal(state.grants.length, 1)
-  assert.equal(state.grants[0].target, AUTO_MODE_THREAD_URI)
-  assert.equal(state.grants[0].effect, 'allow')
-  assert.equal(state.grants[0].schema, 'https://alice.example/settings/autonomy/schema/grant.ttl#GrantWikiPage')
-  assert.equal(state.grants[0].pageKind, 'autonomy-grant')
-  assert.equal(state.grants[0].wikiStatus, 'active')
-  assert.match(state.grants[0].title, /commandExecution grant wiki/)
-  assert.match(state.grants[0].body, /LLM Wiki pattern/)
-  assert.match(state.grants[0].context, /approval_123/)
+  assert.equal(state.grants.length, 0)
 
   const listed = await approvalModule.listRemoteAutoModeApprovals({
     status: 'all',
@@ -473,6 +468,54 @@ test('resolveRemoteAutoModeApproval updates Pod approval state and listRemoteAut
     { optionId: 'allow_once', label: 'Allow once', kind: 'allow_once' },
     { optionId: 'allow_always', label: 'Always allow', kind: 'allow_always' },
   ])
+})
+
+test('materializeRemoteAutoModeGrant creates a reusable grant only for auto-mode session decisions', async () => {
+  const state = createRuntime(approvalModule)
+
+  state.approvals.push({
+    id: 'approval_123',
+    approvalUri: 'https://alice.example/.data/approvals/2026/03/18.ttl#approval_123',
+    session: AUTO_MODE_THREAD_URI,
+    toolCallId: 'tool_rm_1',
+    toolName: 'commandExecution',
+    target: AUTO_MODE_THREAD_URI,
+    action: 'https://undefineds.co/ns#commandExecution',
+    risk: 'high',
+    status: 'approved',
+    decisionBy: state.webId,
+    decisionRole: 'human',
+    reason: state.encodeDecisionReason('accept_for_session', 'delegate to this session'),
+    policyVersion: 'linx-auto-mode-remote-approval/v1',
+    createdAt: '2026-03-18T00:00:00.000Z',
+    resolvedAt: '2026-03-18T00:00:05.000Z',
+  })
+
+  const grant = await approvalModule.materializeRemoteAutoModeGrant({
+    approvalId: 'approval_123',
+    approvalUri: 'https://alice.example/.data/approvals/2026/03/18.ttl#approval_123',
+    runtime: state.runtime,
+  })
+
+  assert.equal(grant.effect, 'allow')
+  assert.equal(state.grants.length, 1)
+  assert.equal(state.grants[0].target, AUTO_MODE_THREAD_URI)
+  assert.equal(state.grants[0].effect, 'allow')
+  assert.equal(state.grants[0].schema, 'https://alice.example/settings/autonomy/schema/grant.ttl#GrantWikiPage')
+  assert.equal(state.grants[0].pageKind, 'autonomy-grant')
+  assert.equal(state.grants[0].wikiStatus, 'active')
+  assert.match(state.grants[0].title, /commandExecution grant wiki/)
+  assert.match(state.grants[0].body, /LLM Wiki pattern/)
+  assert.match(state.grants[0].context, /approval_123/)
+
+  const repeated = await approvalModule.materializeRemoteAutoModeGrant({
+    approvalId: 'approval_123',
+    approvalUri: 'https://alice.example/.data/approvals/2026/03/18.ttl#approval_123',
+    runtime: state.runtime,
+  })
+
+  assert.equal(repeated.id, state.grants[0].id)
+  assert.equal(state.grants.length, 1)
 })
 
 test('waitForRemoteAutoModeApproval direct-reads a known approval URI without listing approvals', async () => {

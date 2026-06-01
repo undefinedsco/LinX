@@ -1,14 +1,29 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const cliRoot = fileURLToPath(new URL('..', import.meta.url))
-const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 const sourceRoot = join(cliRoot, 'src')
 const entryPath = join(sourceRoot, 'index.ts')
+
+function execFileResult(command, args, options = {}) {
+  try {
+    return {
+      status: 0,
+      stdout: execFileSync(command, args, options),
+      stderr: '',
+    }
+  } catch (error) {
+    return {
+      status: error.status ?? 1,
+      stdout: error.stdout?.toString?.() ?? '',
+      stderr: error.stderr?.toString?.() ?? String(error),
+    }
+  }
+}
 
 test('compiled cli entry prints package version instead of unknown', async (t) => {
   const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-version-'))
@@ -97,6 +112,184 @@ test('compiled cli entry can serve auto-mode flags without chat dependencies', a
   assert.match(output, /codex/i)
   assert.match(output, /claude/i)
   assert.match(output, /codebuddy/i)
+})
+
+test('compiled cli keeps --auto as auto control, not backend entry', async (t) => {
+  const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-auto-flag-'))
+  t.after(() => {
+    rmSync(outdir, { recursive: true, force: true })
+  })
+
+  try {
+    execFileSync('tsc', [
+      '--outDir',
+      outdir,
+      '--rootDir',
+      sourceRoot,
+      '--module',
+      'nodenext',
+      '--moduleResolution',
+      'nodenext',
+      '--target',
+      'ES2022',
+      '--lib',
+      'ES2022',
+      '--types',
+      'node',
+      '--skipLibCheck',
+      'true',
+      '--noEmitOnError',
+      'false',
+      entryPath,
+    ], {
+      cwd: cliRoot,
+      stdio: 'pipe',
+    })
+  } catch {
+    assert.ok(existsSync(join(outdir, 'index.js')))
+  }
+
+  assert.throws(
+    () => execFileSync(process.execPath, [join(outdir, 'index.js'), '--auto', '--print', 'hello'], {
+      cwd: cliRoot,
+      env: {
+        ...process.env,
+        HOME: join(outdir, 'empty-home'),
+      },
+      encoding: 'utf-8',
+      stdio: 'pipe',
+    }),
+    (error) => {
+      const output = String(error)
+      assert.match(output, /run `linx login` first/i)
+      assert.doesNotMatch(output, /Usage: linx --backend/)
+      return true
+    },
+  )
+})
+
+test('compiled cli routes Codex --backend through the ACP auto-mode path', async (t) => {
+  const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-backend-flag-'))
+  t.after(() => {
+    rmSync(outdir, { recursive: true, force: true })
+  })
+
+  try {
+    execFileSync('tsc', [
+      '--outDir',
+      outdir,
+      '--rootDir',
+      sourceRoot,
+      '--module',
+      'nodenext',
+      '--moduleResolution',
+      'nodenext',
+      '--target',
+      'ES2022',
+      '--lib',
+      'ES2022',
+      '--types',
+      'node',
+      '--skipLibCheck',
+      'true',
+      '--noEmitOnError',
+      'false',
+      entryPath,
+    ], {
+      cwd: cliRoot,
+      stdio: 'pipe',
+    })
+  } catch {
+    assert.ok(existsSync(join(outdir, 'index.js')))
+  }
+
+  const result = execFileResult(process.execPath, [join(outdir, 'index.js'), '--backend', 'codex', '--print', 'hello'], {
+    cwd: cliRoot,
+    env: {
+      ...process.env,
+      HOME: join(outdir, 'empty-home'),
+      LINX_AUTO_MODE_HOME: join(outdir, 'auto-mode-home'),
+    },
+    encoding: 'utf-8',
+    stdio: 'pipe',
+  })
+  const output = [result.stdout, result.stderr].join('')
+
+  assert.match(output, /Codex/)
+  assert.match(output, /backend: codex/)
+  assert.match(output, /cmd: .*codex-acp/)
+  assert.doesNotMatch(output, /native codex proxy/i)
+  assert.doesNotMatch(output, /Usage: linx --backend/)
+})
+
+test('compiled cli keeps explicit backend entry points on auto-mode path', async (t) => {
+  const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-non-codex-backends-'))
+  t.after(() => {
+    rmSync(outdir, { recursive: true, force: true })
+  })
+
+  try {
+    execFileSync('tsc', [
+      '--outDir',
+      outdir,
+      '--rootDir',
+      sourceRoot,
+      '--module',
+      'nodenext',
+      '--moduleResolution',
+      'nodenext',
+      '--target',
+      'ES2022',
+      '--lib',
+      'ES2022',
+      '--types',
+      'node',
+      '--skipLibCheck',
+      'true',
+      '--noEmitOnError',
+      'false',
+      entryPath,
+    ], {
+      cwd: cliRoot,
+      stdio: 'pipe',
+    })
+  } catch {
+    assert.ok(existsSync(join(outdir, 'index.js')))
+  }
+
+  for (const [backend, label] of [
+    ['codex', 'Codex'],
+    ['claude', 'Claude Code'],
+    ['codebuddy', 'CodeBuddy Code'],
+  ]) {
+    assert.throws(
+      () => execFileSync(process.execPath, [join(outdir, 'index.js'), '--backend', backend, '--plain', 'hello'], {
+        cwd: cliRoot,
+        env: {
+          ...process.env,
+          HOME: join(outdir, `${backend}-empty-home`),
+          LINX_AUTO_MODE_HOME: join(outdir, `${backend}-auto-mode-home`),
+          LINX_BACKEND_PLAIN: '1',
+        },
+        input: '3\n',
+        encoding: 'utf-8',
+        stdio: 'pipe',
+      }),
+      (error) => {
+        const output = [
+          error.stdout?.toString?.() ?? '',
+          error.stderr?.toString?.() ?? '',
+          String(error),
+        ].join('')
+        assert.match(output, new RegExp(label))
+        assert.match(output, new RegExp(`backend: ${backend}`))
+        assert.match(output, /LinX Cloud login required|run `linx login` first/i)
+        assert.doesNotMatch(output, /is not available in the unified LinX TUI yet/)
+        assert.doesNotMatch(output, /Usage: linx --backend/)
+        return true
+      },
+    )
+  }
 })
 
 test('compiled cli auto-mode rejects retired command surfaces', async (t) => {
@@ -250,11 +443,15 @@ test('compiled cli default entry is Pi TUI and hides explicit frontend aliases',
   })
 
   assert.match(output, /linx \[prompt\.\.\]/)
-  assert.match(output, /Run LinX, or control an external agent backend/i)
+  assert.match(output, /Run LinX with the selected runtime backend/i)
   assert.match(output, /runtime-url/)
   assert.match(output, /--backend/)
   assert.match(output, /--print/)
   assert.doesNotMatch(output, /automode/)
+  assert.doesNotMatch(output, /auto-mode/)
+  assert.doesNotMatch(output, /--plain/)
+  assert.doesNotMatch(output, /--sessions/)
+  assert.doesNotMatch(output, /--show/)
   assert.doesNotMatch(output, /cloud, native/)
   assert.doesNotMatch(output, /native keeps/)
   assert.doesNotMatch(output, /pi-frontend/)
@@ -354,23 +551,19 @@ test('compiled cli login help exposes browser consent flow and no password optio
   assert.doesNotMatch(output, /password/i)
 })
 
-test('cli build ships repository skills for the Pi resource loader', async (t) => {
+test('cli build ships product skills for the Pi resource loader', async (t) => {
   execFileSync('node', ['scripts/build.mjs'], {
     cwd: cliRoot,
     stdio: 'pipe',
   })
 
-  const sourceSkills = readdirSync(join(repoRoot, 'skills'), { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .sort()
   const distSkills = readdirSync(join(cliRoot, 'dist', 'skills'), { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort()
 
-  assert.deepEqual(distSkills, sourceSkills)
-  for (const skill of sourceSkills) {
+  assert.deepEqual(distSkills, ['symphony'])
+  for (const skill of distSkills) {
     assert.ok(existsSync(join(cliRoot, 'dist', 'skills', skill, 'SKILL.md')), `${skill} should include SKILL.md`)
   }
 })
@@ -420,7 +613,8 @@ test('compiled cli auto-mode show replays archived timeline instead of raw json'
     id: sessionId,
     backend: 'claude',
     runtime: 'local',
-    mode: 'smart',
+autoEnabled: true,
+mode: 'auto',
     cwd: '/tmp/demo',
     passthroughArgs: [],
     credentialSource: 'cloud',
@@ -460,4 +654,181 @@ test('compiled cli auto-mode show replays archived timeline instead of raw json'
   assert.match(output, /you> hello/)
   assert.match(output, /assistant> hi there/)
   assert.doesNotMatch(output, /"backend": "claude"/)
+})
+
+test('compiled cli can list archived auto-mode sessions with pending Pod sync', async (t) => {
+  const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-sync-status-'))
+  const autoModeHome = mkdtempSync(join(cliRoot, '.tmp-linx-auto-mode-sync-status-'))
+
+  t.after(() => {
+    rmSync(outdir, { recursive: true, force: true })
+    rmSync(autoModeHome, { recursive: true, force: true })
+  })
+
+  try {
+    execFileSync('tsc', [
+      '--outDir',
+      outdir,
+      '--rootDir',
+      sourceRoot,
+      '--module',
+      'nodenext',
+      '--moduleResolution',
+      'nodenext',
+      '--target',
+      'ES2022',
+      '--lib',
+      'ES2022',
+      '--types',
+      'node',
+      '--skipLibCheck',
+      'true',
+      '--noEmitOnError',
+      'false',
+      entryPath,
+    ], {
+      cwd: cliRoot,
+      stdio: 'pipe',
+    })
+  } catch {
+    assert.ok(existsSync(join(outdir, 'index.js')))
+  }
+
+  const failedSessionId = 'auto_failed_sync_123'
+  const completedSessionId = 'auto_completed_sync_123'
+  for (const [sessionId, status] of [[failedSessionId, 'failed'], [completedSessionId, 'completed']]) {
+    const sessionDir = join(autoModeHome, 'sessions', sessionId)
+    mkdirSync(sessionDir, { recursive: true })
+    writeFileSync(join(sessionDir, 'session.json'), JSON.stringify({
+      id: sessionId,
+      backend: 'codex',
+      runtime: 'local',
+      transport: 'acp',
+      autoEnabled: true,
+      mode: 'auto',
+      cwd: '/tmp/demo',
+      passthroughArgs: [],
+      credentialSource: 'cloud',
+      command: 'codex-acp',
+      args: [],
+      status: 'completed',
+      startedAt: sessionId === failedSessionId ? '2026-03-17T00:00:00.000Z' : '2026-03-16T00:00:00.000Z',
+      endedAt: sessionId === failedSessionId ? '2026-03-17T00:01:00.000Z' : '2026-03-16T00:01:00.000Z',
+      archiveDir: sessionDir,
+      eventsFile: join(sessionDir, 'events.jsonl'),
+    }, null, 2))
+    writeFileSync(join(sessionDir, 'events.jsonl'), '')
+    writeFileSync(join(sessionDir, 'sync.json'), JSON.stringify({
+      'auto-mode-archive:pod:projection': {
+        id: 'auto-mode-archive:pod:projection',
+        source: 'auto-mode-archive',
+        target: 'pod',
+        direction: 'local-to-core',
+        plane: 'projection',
+        authority: 'core',
+        status,
+        attempted: 1,
+        applied: status === 'completed' ? 1 : 0,
+        skipped: 0,
+        failed: status === 'completed' ? 0 : 1,
+        failures: status === 'completed' ? [] : [{ operationId: 'test', message: 'failed' }],
+        startedAt: '2026-03-17T00:00:00.000Z',
+        completedAt: '2026-03-17T00:00:01.000Z',
+      },
+    }, null, 2))
+  }
+
+  const output = execFileSync(process.execPath, [join(outdir, 'index.js'), '--sync-status'], {
+    cwd: cliRoot,
+    env: {
+      ...process.env,
+      LINX_AUTO_MODE_HOME: autoModeHome,
+    },
+    encoding: 'utf-8',
+  })
+
+  assert.match(output, new RegExp(failedSessionId))
+  assert.doesNotMatch(output, new RegExp(completedSessionId))
+})
+
+test('compiled cli can list Pi sessions with pending Pod mirror sync', async (t) => {
+  const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-pi-sync-status-'))
+  const home = mkdtempSync(join(cliRoot, '.tmp-linx-pi-sync-home-'))
+
+  t.after(() => {
+    rmSync(outdir, { recursive: true, force: true })
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  try {
+    execFileSync('tsc', [
+      '--outDir',
+      outdir,
+      '--rootDir',
+      sourceRoot,
+      '--module',
+      'nodenext',
+      '--moduleResolution',
+      'nodenext',
+      '--target',
+      'ES2022',
+      '--lib',
+      'ES2022',
+      '--types',
+      'node',
+      '--skipLibCheck',
+      'true',
+      '--noEmitOnError',
+      'false',
+      entryPath,
+    ], {
+      cwd: cliRoot,
+      stdio: 'pipe',
+    })
+  } catch {
+    assert.ok(existsSync(join(outdir, 'index.js')))
+  }
+
+  const failedSessionId = '019df000-aaaa-bbbb-cccc-000000000001'
+  const completedSessionId = '019df000-aaaa-bbbb-cccc-000000000002'
+  for (const [sessionId, status] of [[failedSessionId, 'failed'], [completedSessionId, 'completed']]) {
+    const syncDir = join(home, '.linx', 'agent', 'sync', 'pi-pod-mirror', sessionId)
+    mkdirSync(syncDir, { recursive: true })
+    const checkpointId = `pi-pod-mirror:${sessionId}:2026-04-01T00-00-00-000Z:1`
+    writeFileSync(join(syncDir, `${encodeURIComponent(checkpointId)}.json`), JSON.stringify({
+      id: checkpointId,
+      source: 'pi-runtime',
+      target: 'pod',
+      direction: 'local-to-core',
+      plane: 'projection',
+      authority: 'core',
+      status,
+      attempted: 1,
+      applied: status === 'completed' ? 1 : 0,
+      skipped: 0,
+      failed: status === 'completed' ? 0 : 1,
+      failures: status === 'completed' ? [] : [{ operationId: 'test', message: 'failed' }],
+      startedAt: '2026-04-01T00:00:00.000Z',
+      completedAt: '2026-04-01T00:00:01.000Z',
+      metadata: {
+        resourceBindings: {
+          session: {
+            local: sessionId,
+          },
+        },
+      },
+    }, null, 2))
+  }
+
+  const output = execFileSync(process.execPath, [join(outdir, 'index.js'), '--pi-sync-status'], {
+    cwd: cliRoot,
+    env: {
+      ...process.env,
+      HOME: home,
+    },
+    encoding: 'utf-8',
+  })
+
+  assert.match(output, new RegExp(failedSessionId))
+  assert.doesNotMatch(output, new RegExp(completedSessionId))
 })

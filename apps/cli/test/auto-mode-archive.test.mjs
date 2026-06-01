@@ -22,14 +22,18 @@ test('auto-mode archive creates, updates, and lists sessions', async (t) => {
     createAutoModeSession,
     finishAutoModeSession,
     loadAutoModeEvents,
+    loadAutoModeSyncCheckpoints,
+    listAutoModeSessionsWithPendingSync,
     listAutoModeSessions,
     loadAutoModeSession,
+    writeAutoModeSyncCheckpoint,
   } = module
 
   const record = createAutoModeSession(
     {
       backend: 'codex',
-      mode: 'smart',
+autoEnabled: true,
+mode: 'auto',
       cwd: '/tmp/demo',
       prompt: 'fix tests',
       passthroughArgs: [],
@@ -63,6 +67,27 @@ test('auto-mode archive creates, updates, and lists sessions', async (t) => {
   assert.equal(listed.length, 1)
   assert.equal(listed[0].id, record.id)
   assert.equal(loadAutoModeEvents(record.id).length, 1)
+  assert.deepEqual(listAutoModeSessionsWithPendingSync().map((item) => item.id), [record.id])
+
+  writeAutoModeSyncCheckpoint(record, {
+    id: 'auto-mode-archive:pod:projection',
+    source: 'auto-mode-archive',
+    target: 'pod',
+    direction: 'local-to-core',
+    plane: 'projection',
+    authority: 'core',
+    status: 'completed',
+    attempted: 1,
+    applied: 1,
+    skipped: 0,
+    failed: 0,
+    failures: [],
+    startedAt: '2026-03-14T00:00:01.000Z',
+    completedAt: '2026-03-14T00:00:02.000Z',
+    metadata: { sessionId: record.id },
+  })
+  assert.equal(loadAutoModeSyncCheckpoints(record.id)['auto-mode-archive:pod:projection'].status, 'completed')
+  assert.deepEqual(listAutoModeSessionsWithPendingSync(), [])
 
   const eventsFile = readFileSync(record.eventsFile, 'utf-8').trim().split('\n')
   assert.equal(eventsFile.length, 1)
@@ -94,7 +119,8 @@ test('auto-mode archive ignores legacy LINX_WORKER_HOME override', async (t) => 
   const record = createAutoModeSession(
     {
       backend: 'claude',
-      mode: 'smart',
+autoEnabled: true,
+mode: 'auto',
       cwd: '/tmp/demo',
       prompt: 'legacy path',
       passthroughArgs: [],

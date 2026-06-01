@@ -8,8 +8,18 @@ import {
   type AutoModeSessionRecord,
   type AutoModeTranscriptMessageSource,
 } from '@linx/agent-runtime/auto-mode'
+import {
+  buildLinxSessionControlState,
+  mergeLinxSessionControlMetadata,
+} from '@linx/agent-runtime/control-plane'
+import {
+  createLinxPodSyncScope,
+  type LinxSyncCheckpoint,
+  type LinxSyncCheckpointStore,
+  type LinxSyncOperation,
+} from '@linx/agent-runtime/sync'
 import { DEFAULT_AGENT_RUNTIME_COMPANION_MODEL_ID } from '@linx/agent-runtime/companion-model'
-import { loadAutoModeEvents } from './archive.js'
+import { loadAutoModeEvents, writeAutoModeSyncCheckpoint } from './archive.js'
 
 const AUTO_MODE_CHAT_ID_PREFIX = 'linx-auto-mode'
 const AUTO_MODE_CHAT_TITLE = 'LinX Auto Mode'
@@ -24,6 +34,7 @@ interface AutoModePodPersistenceRuntime {
   sessionResource: unknown
   agentResource: unknown
   loadAutoModeEvents: (id: string) => AutoModeEventLogEntry[]
+  writeSyncCheckpoint?: (record: AutoModeSessionRecord, checkpoint: LinxSyncCheckpoint) => void | Promise<void>
 }
 
 interface PodPersistenceDb {
@@ -76,7 +87,7 @@ interface AutoModeThreadRow extends Record<string, unknown> {
 
 interface AutoModeSessionRow extends Record<string, unknown> {
   id: string
-  ownerWebId: string
+  owner: string
   chat: string
   thread: string
   sessionType: 'group'
@@ -101,7 +112,7 @@ interface PersistedAutoModeConversationMessage extends Record<string, unknown> {
   senderName?: string
   senderAvatarUrl?: string
   routedBy?: string
-  routeTargetAgentId?: string
+  routeTargetAgent?: string
   coordinationId?: string
   createdAt: Date
 }
@@ -143,6 +154,7 @@ async function createDefaultRuntime(): Promise<AutoModePodPersistenceRuntime> {
     sessionResource: models.sessionResource,
     agentResource: models.agentResource,
     loadAutoModeEvents,
+    writeSyncCheckpoint: writeAutoModeSyncCheckpoint,
   }
 }
 
@@ -298,10 +310,26 @@ function buildAutoModeConversationSessionRow(
     : record.status === 'completed'
       ? 'completed'
       : 'active'
+  const metadata = mergeLinxSessionControlMetadata({
+    ...buildAutoModeThreadMetadata(record),
+    backendSessionId: record.backendSessionId,
+    command: record.command,
+    args: record.args,
+    credentialSource: record.credentialSource,
+    resolvedCredentialSource: record.resolvedCredentialSource,
+    approvalSource: record.approvalSource,
+    exitCode: record.exitCode,
+    signal: record.signal,
+    error: record.error,
+  }, buildLinxSessionControlState({
+    autoEnabled: record.autoEnabled ?? record.mode === 'auto',
+    updatedAt,
+    updatedBy: 'cli',
+  }))
 
   return {
     id: record.id,
-    ownerWebId: webId,
+    owner: webId,
     chat: buildAutoModeChatUri(webId, record),
     thread: buildAutoModeThreadUri(webId, record),
     sessionType: 'group',
@@ -309,18 +337,7 @@ function buildAutoModeConversationSessionRow(
     tool: record.backend,
     tokenUsage: 0,
     policyVersion: 'linx-auto-mode-session/v1',
-    metadata: {
-      ...buildAutoModeThreadMetadata(record),
-      backendSessionId: record.backendSessionId,
-      command: record.command,
-      args: record.args,
-      credentialSource: record.credentialSource,
-      resolvedCredentialSource: record.resolvedCredentialSource,
-      approvalSource: record.approvalSource,
-      exitCode: record.exitCode,
-      signal: record.signal,
-      error: record.error,
-    },
+    metadata,
     createdAt: startedAt,
     updatedAt,
     ...(record.endedAt ? { archivedAt: updatedAt } : {}),
@@ -335,7 +352,7 @@ function resolveMessageSender(input: {
   maker: string
   senderName: string
   routedBy?: string
-  routeTargetAgentId?: string
+  routeTargetAgent?: string
 } {
   const secretaryAgentUri = buildAgentUri(input.webId, AUTO_MODE_SECRETARY_AGENT_ID)
   const primaryAgentId = buildAutoModePrimaryAgentId(input.record)
@@ -360,7 +377,7 @@ function resolveMessageSender(input: {
       maker: primaryAgentUri,
       senderName: `${autoModeBackendDisplayName(input.record.backend)} Tool`,
       routedBy: primaryAgentUri,
-      routeTargetAgentId: primaryAgentId,
+      routeTargetAgent: primaryAgentUri,
     }
   }
 
@@ -368,7 +385,7 @@ function resolveMessageSender(input: {
     maker: secretaryAgentUri,
     senderName: input.source === 'secretary' ? 'AI Secretary' : 'LinX AutoMode',
     routedBy: secretaryAgentUri,
-    routeTargetAgentId: primaryAgentId,
+    routeTargetAgent: primaryAgentUri,
   }
 }
 
@@ -397,7 +414,7 @@ function buildAutoModeConversationMessages(
       status: 'sent',
       senderName: sender.senderName,
       routedBy: sender.routedBy,
-      routeTargetAgentId: sender.routeTargetAgentId,
+      routeTargetAgent: sender.routeTargetAgent,
       coordinationId: record.id,
       createdAt: new Date(message.createdAt),
     }
@@ -512,7 +529,7 @@ async function upsertAutoModeConversationSession(db: PodPersistenceDb, runtime: 
   }
 
   await requireUpdateById(db)(runtime.sessionResource, row.id, {
-    ownerWebId: row.ownerWebId,
+    owner: row.owner,
     chat: row.chat,
     thread: row.thread,
     sessionType: row.sessionType,
@@ -549,7 +566,7 @@ async function upsertAutoModeConversationMessages(
       senderName: row.senderName,
       senderAvatarUrl: row.senderAvatarUrl,
       routedBy: row.routedBy,
-      routeTargetAgentId: row.routeTargetAgentId,
+      routeTargetAgent: row.routeTargetAgent,
       coordinationId: row.coordinationId,
       createdAt: row.createdAt,
     })
@@ -578,24 +595,121 @@ export async function persistAutoModeConversationToPod(
   const lastPreview = transcriptRows.at(-1)?.content
 
   throwIfAborted(options.signal)
-  await db.init([
-    activeRuntime.chatResource,
-    activeRuntime.threadResource,
-    activeRuntime.messageResource,
-    activeRuntime.sessionResource,
-    activeRuntime.agentResource,
-  ]).catch(() => undefined)
-  throwIfAborted(options.signal)
-  await ensureAutoModeConversationChat(db, activeRuntime, abortablePodSession.webId, buildAutoModeConversationChatRow(record, abortablePodSession.webId, lastPreview))
-  throwIfAborted(options.signal)
-  await ensureAutoModeConversationAgents(db, activeRuntime, abortablePodSession.webId, record)
-  throwIfAborted(options.signal)
-  await upsertAutoModeConversationThread(db, activeRuntime, abortablePodSession.webId, buildAutoModeConversationThreadRow(record, transcriptRows), record)
-  throwIfAborted(options.signal)
-  await upsertAutoModeConversationSession(db, activeRuntime, abortablePodSession.webId, buildAutoModeConversationSessionRow(record, abortablePodSession.webId), record)
-  throwIfAborted(options.signal)
-  await upsertAutoModeConversationMessages(db, activeRuntime, abortablePodSession.webId, record, transcriptRows)
+  const checkpoint: LinxSyncCheckpointStore | undefined = activeRuntime.writeSyncCheckpoint
+    ? {
+      writeCheckpoint: (value) => activeRuntime.writeSyncCheckpoint?.(record, value),
+    }
+    : undefined
+  const projectionSync = createLinxPodSyncScope({
+    source: 'auto-mode-archive',
+    signal: options.signal,
+    checkpoint,
+  })
+  await projectionSync.runOperations({
+    action: 'conversation.project',
+    resourceBindings: {
+      session: {
+        uri: buildAutoModeSessionUri(abortablePodSession.webId, record),
+        local: record.id,
+      },
+      chat: {
+        uri: buildAutoModeChatUri(abortablePodSession.webId, record),
+        local: buildAutoModeChatId(record),
+      },
+      thread: {
+        uri: buildAutoModeThreadUri(abortablePodSession.webId, record),
+        local: record.id,
+      },
+    },
+    metadata: {
+      sessionId: record.id,
+      backend: record.backend,
+    },
+    operations: buildAutoModeConversationProjectionOperations({
+      db,
+      runtime: activeRuntime,
+      record,
+      webId: abortablePodSession.webId,
+      transcriptRows,
+      lastPreview,
+    }),
+  })
   return true
+}
+
+function buildAutoModeConversationProjectionOperations(input: {
+  db: PodPersistenceDb
+  runtime: AutoModePodPersistenceRuntime
+  record: AutoModeSessionRecord
+  webId: string
+  transcriptRows: PersistedAutoModeConversationMessage[]
+  lastPreview?: string
+}): LinxSyncOperation[] {
+  return [
+    {
+      id: 'auto-mode.prepare-resources',
+      kind: 'prepare',
+      apply: async () => {
+        await input.db.init([
+          input.runtime.chatResource,
+          input.runtime.threadResource,
+          input.runtime.messageResource,
+          input.runtime.sessionResource,
+          input.runtime.agentResource,
+        ]).catch(() => undefined)
+      },
+    },
+    {
+      id: 'auto-mode.upsert-chat',
+      kind: 'upsert',
+      apply: () => ensureAutoModeConversationChat(
+        input.db,
+        input.runtime,
+        input.webId,
+        buildAutoModeConversationChatRow(input.record, input.webId, input.lastPreview),
+      ),
+    },
+    {
+      id: 'auto-mode.upsert-agents',
+      kind: 'upsert',
+      apply: () => ensureAutoModeConversationAgents(input.db, input.runtime, input.webId, input.record),
+    },
+    {
+      id: 'auto-mode.upsert-thread',
+      kind: 'upsert',
+      apply: () => upsertAutoModeConversationThread(
+        input.db,
+        input.runtime,
+        input.webId,
+        buildAutoModeConversationThreadRow(input.record, input.transcriptRows),
+        input.record,
+      ),
+    },
+    {
+      id: 'auto-mode.upsert-session',
+      kind: 'upsert',
+      plane: 'control-plane',
+      authority: 'core',
+      apply: () => upsertAutoModeConversationSession(
+        input.db,
+        input.runtime,
+        input.webId,
+        buildAutoModeConversationSessionRow(input.record, input.webId),
+        input.record,
+      ),
+    },
+    {
+      id: 'auto-mode.upsert-messages',
+      kind: 'upsert',
+      apply: () => upsertAutoModeConversationMessages(
+        input.db,
+        input.runtime,
+        input.webId,
+        input.record,
+        input.transcriptRows,
+      ),
+    },
+  ]
 }
 
 function withAbortablePodSession(podSession: PodDataSession, signal: AbortSignal): PodDataSession {

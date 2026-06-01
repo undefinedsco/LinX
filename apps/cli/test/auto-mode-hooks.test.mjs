@@ -20,7 +20,8 @@ test('codex hook maps to codex-acp transport', async () => {
   assert.equal(hook.capabilities.canSetModel, false)
   const plan = hook.buildSpawnPlan({
     backend: 'codex',
-    mode: 'smart',
+autoEnabled: true,
+mode: 'auto',
     cwd: '/tmp/demo',
     model: 'o3',
     prompt: 'fix lint',
@@ -56,7 +57,8 @@ test('codebuddy hook maps to built-in ACP mode and preserves model arg', async (
   assert.equal(hook.capabilities.protocol, 'acp')
   const plan = hook.buildSpawnPlan({
     backend: 'codebuddy',
-    mode: 'manual',
+autoEnabled: false,
+mode: 'off',
     cwd: '/tmp/demo',
     model: 'deepseek-v3.1-thinking',
     prompt: 'inspect repo',

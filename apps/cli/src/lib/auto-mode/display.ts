@@ -166,7 +166,7 @@ function applyAnsi(text: string, ...styles: string[]): string {
 }
 
 function backendDisplayName(record: Pick<AutoModeSessionRecord, 'backend'>): string {
-  return getAutoModeBackendLabel(record.backend)
+  return record.backend === 'linx' ? 'LinX' : getAutoModeBackendLabel(record.backend)
 }
 
 export function formatAutoModeElapsed(elapsedMs: number): string {
@@ -429,8 +429,9 @@ function renderBorderBox(lines: string[], width: number, title: string, color: s
 
 export function formatAutoModeHeaderLine(record: AutoModeSessionRecord, width: number): string {
   const title = backendDisplayName(record)
+  const autoState = record.autoEnabled === true ? 'auto=on' : 'auto=off'
   return clipLine(
-    ` ${title} | controlled by LinX | ${record.status} | mode=${record.mode} | runtime=${record.runtime} | credentials=pod | ${shortSessionId(resolveAutoModeSessionDisplayId(record))} `,
+    ` ${title} | controlled by LinX | ${record.status} | ${autoState} | mode=${record.mode} | runtime=${record.runtime} | credentials=pod | ${shortSessionId(resolveAutoModeSessionDisplayId(record))} `,
     width,
   )
 }
@@ -756,8 +757,9 @@ class PlainAutoModeDisplay implements AutoModeDisplay {
 
   start(): void {
     const title = backendDisplayName(this.record)
+    const autoState = this.record.autoEnabled === true ? 'on' : 'off'
     stdout.write(
-      `${title}\ncontrolled by: LinX\nsession: ${resolveAutoModeSessionDisplayId(this.record)}\nbackend: ${this.record.backend}\nruntime: ${this.record.runtime}\nmode: ${this.record.mode}\ncmd: ${this.record.command} ${this.record.args.join(' ')}\n\n`,
+      `${title}\ncontrolled by: LinX\nsession: ${resolveAutoModeSessionDisplayId(this.record)}\nbackend: ${this.record.backend}\nruntime: ${this.record.runtime}\nauto: ${autoState}\nmode: ${this.record.mode}\ncmd: ${this.record.command} ${this.record.args.join(' ')}\n\n`,
     )
   }
 
@@ -864,6 +866,9 @@ class PlainAutoModeDisplay implements AutoModeDisplay {
   async promptSecret(request: AutoModeSecretInputRequest): Promise<string> {
     stdout.write(`${request.header}\n`)
     stdout.write(`${request.question}\n`)
+    if (request.note) {
+      stdout.write(`${request.note}\n`)
+    }
     return (await this.prompt('secret> ')).trim()
   }
 
@@ -1165,7 +1170,7 @@ class TuiAutoModeDisplay implements AutoModeDisplay {
     this.contextLines = [
       request.header,
       request.question,
-      'Input is hidden and will be saved to your LinX Pod AI settings.',
+      request.note ?? 'Input is hidden and will be saved to your LinX Pod AI settings.',
     ]
     this.overlay = null
     this.composer.beginPrompt('secret> ')
@@ -1700,42 +1705,6 @@ class TuiAutoModeDisplay implements AutoModeDisplay {
     }
 
     return lines.flatMap((line) => formatAutoModeTranscriptLine(line, width))
-  }
-
-  private buildActivityLines(width: number, maxLines: number): string[] {
-    if (maxLines <= 0) {
-      return []
-    }
-
-    const sourceEntries = this.hideToolOutput
-      ? this.activityEntries.filter((entry) => entry.kind !== 'tool')
-      : this.activityEntries
-
-    return sourceEntries
-      .flatMap((entry) => {
-        if (entry.kind === 'tool') {
-          return [applyAnsi(clipLine(`[tool] ${entry.text}`, width), ANSI.green)]
-        }
-
-        if (entry.kind === 'success') {
-          return [applyAnsi(clipLine(`[ok] ${entry.text}`, width), ANSI.green)]
-        }
-
-        if (entry.kind === 'error') {
-          return wrapText(`[error] ${entry.text}`, width).map((line) => applyAnsi(clipLine(line, width), ANSI.red))
-        }
-
-        if (entry.kind === 'debug') {
-          const debugLines = wrapText(`[debug] ${entry.text}`, width)
-          if (entry.detail) {
-            debugLines.push(...wrapText(`        ${entry.detail}`, width))
-          }
-          return debugLines.map((line) => applyAnsi(clipLine(line, width), ANSI.dim))
-        }
-
-        return wrapText(`[note] ${entry.text}`, width).map((line) => applyAnsi(clipLine(line, width), ANSI.dim))
-      })
-      .slice(-maxLines)
   }
 
   private buildActivityPanel(width: number, maxHeight: number): string[] {

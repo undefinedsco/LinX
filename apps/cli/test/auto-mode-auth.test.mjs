@@ -255,7 +255,8 @@ test('auto-mode run options always resolve backend credentials from LinX Cloud P
 
   const resolved = await module.resolveAutoRunOptions({
     backend: 'claude',
-    mode: 'smart',
+autoEnabled: true,
+mode: 'auto',
     cwd: process.cwd(),
     prompt: 'hello',
     passthroughArgs: [],
@@ -295,7 +296,8 @@ test('cloud credential source resolves pod-backed codex credentials and skips lo
 
   const resolved = await module.resolveAutoRunOptions({
     backend: 'codex',
-    mode: 'smart',
+autoEnabled: true,
+mode: 'auto',
     cwd: process.cwd(),
     passthroughArgs: [],
     credentialSource: 'cloud',
@@ -308,6 +310,116 @@ test('cloud credential source resolves pod-backed codex credentials and skips lo
     CODEX_BASE_URL: 'https://api.openai.com/v1',
   })
   assert.equal(resolved.authPreflight.state, 'authenticated')
+})
+
+test('backend startup LinX Cloud auth prompt matches TUI sign-in choices', async (t) => {
+  const { module } = await getAutoModeBundle()
+  const calls = []
+  const display = {
+    setPhase() {},
+    showActivity() {},
+    async chooseOption(title, lines, options) {
+      calls.push({ title, lines, options })
+      return 'exit'
+    },
+  }
+
+  const action = await module.__testPromptLinxCloudAuth(display, [
+    'LinX cloud credential source is not connected yet.',
+  ], 'startup')
+
+  assert.equal(action, 'cancel')
+  assert.equal(calls.length, 1)
+  assert.deepEqual(calls[0].options.map((option) => option.label), [
+    'Authorize in browser',
+    'Enter Solid client credentials',
+    'Exit',
+  ])
+  assert.equal(calls[0].options.some((option) => option.label === 'Logout'), false)
+  assert.equal(calls[0].options.some((option) => option.description?.includes('auto-mode')), false)
+})
+
+test('backend startup Solid client credentials auth saves validated client credentials', async (t) => {
+  const { module } = await getAutoModeBundle()
+  const savedCredentials = []
+  const savedAccounts = []
+  const clearedSessions = []
+  const key = 'linx-client:linx-secret'
+  let chooseCount = 0
+
+  t.mock.method(module.autoModeRuntime, 'loadCredentials', () => ({
+    url: 'https://id.undefineds.co/',
+    webId: 'https://id.undefineds.co/alice/profile/card#me',
+    authType: 'oidc_oauth',
+    sourceDir: '/tmp/linx',
+    secrets: {
+      oidcAccessToken: 'old-access',
+      oidcRefreshToken: 'old-refresh',
+      oidcExpiresAt: '2020-01-01T00:00:00.000Z',
+    },
+  }))
+  t.mock.method(module.autoModeRuntime, 'saveCredentials', (credentials) => {
+    savedCredentials.push(credentials)
+  })
+  t.mock.method(module.autoModeRuntime, 'saveAccountSession', (account) => {
+    savedAccounts.push(account)
+  })
+  t.mock.method(module.autoModeRuntime, 'clearDefaultPodDataSession', () => {
+    clearedSessions.push(true)
+  })
+  t.mock.method(module.autoModeRuntime, 'createPodDataSession', async () => ({
+    webId: 'https://id.undefineds.co/alice/profile/card#me',
+    podUrl: 'https://id.undefineds.co/alice/',
+    async getRuntimeAuthToken() {
+      return 'access-token'
+    },
+    async close() {},
+  }))
+
+  const activities = []
+  const display = {
+    setPhase() {},
+    showActivity(text, tone) {
+      activities.push({ text, tone })
+    },
+    async chooseOption(_title, _lines, options) {
+      chooseCount += 1
+      assert.equal(options[1].label, 'Enter Solid client credentials')
+      return 'client-credentials'
+    },
+    async promptSecret(request) {
+      assert.equal(request.header, 'Solid client credentials')
+      assert.match(request.note, /client credentials/)
+      return key
+    },
+  }
+
+  const action = await module.__testPromptLinxCloudAuth(display, [
+    'LinX cloud credential source is not connected yet.',
+  ], 'startup')
+
+  assert.equal(action, 'retry')
+  assert.equal(chooseCount, 1)
+  assert.equal(clearedSessions.length, 2)
+  assert.deepEqual(savedCredentials.at(-1), {
+    url: 'https://id.undefineds.co/',
+    webId: 'https://id.undefineds.co/alice/profile/card#me',
+    authType: 'client_credentials',
+    secrets: {
+      clientId: 'linx-client',
+      clientSecret: 'linx-secret',
+    },
+  })
+  assert.deepEqual(savedAccounts.at(-1), {
+    url: 'https://id.undefineds.co/',
+    email: 'client-credentials',
+    token: 'client-credentials',
+    webId: 'https://id.undefineds.co/alice/profile/card#me',
+    podUrl: 'https://id.undefineds.co/alice/',
+    createdAt: savedAccounts.at(-1).createdAt,
+  })
+  assert.match(savedAccounts.at(-1).createdAt, /^\d{4}-\d{2}-\d{2}T/)
+  assert.equal(activities.some((entry) => entry.tone === 'success'), true)
 })
 
 test('oidc pod data session exposes a drizzle-compatible solid session', async (t) => {
@@ -334,15 +446,19 @@ test('oidc pod data session exposes a drizzle-compatible solid session', async (
       assert.equal(stored, credentials)
       return 'access-token'
     },
-    restoreStoredOidcSession: async () => {
-      throw new Error('OIDC data access should not restore a keepAlive Solid session')
-    },
+    restoreStoredOidcSession: async () => ({
+      info: {
+        isLoggedIn: true,
+        webId: credentials.webId,
+      },
+      async fetch(url, init) {
+        requests.push({ url: String(url), token: 'session-token', method: init?.method ?? 'GET' })
+        return new Response('ok', { status: 200 })
+      },
+      async logout() {},
+    }),
     authenticate: async () => {
       throw new Error('client credentials auth should not be used')
-    },
-    authenticatedFetch: async (url, token, init) => {
-      requests.push({ url: String(url), token, method: init?.method ?? 'GET' })
-      return new Response('ok', { status: 200 })
     },
   })
 
@@ -354,7 +470,7 @@ test('oidc pod data session exposes a drizzle-compatible solid session', async (
   await podSession.solidSession.fetch('https://pod.example/settings/credentials.ttl', { method: 'HEAD' })
   assert.deepEqual(requests, [{
     url: 'https://pod.example/settings/credentials.ttl',
-    token: 'access-token',
+    token: 'session-token',
     method: 'HEAD',
   }])
   assert.equal(await podSession.getRuntimeAuthToken(), 'access-token')
@@ -364,6 +480,7 @@ test('pod-backed codex credential is read through shared model db', async () => 
   const { module } = await getAutoModeBundle()
   const credentialResource = { name: 'credentialResource' }
   const aiProviderResource = { name: 'aiProviderResource' }
+  const resourceName = (resource) => resource?.config?.name ?? resource?.name ?? 'unknown'
   let createDbCalls = 0
   let fetchCalls = 0
   const findByIds = []
@@ -404,20 +521,26 @@ test('pod-backed codex credential is read through shared model db', async () => 
       assert.equal(session.solidSession.info.isLoggedIn, true)
       return {
         select() {
-          throw new Error('unexpected collection scan')
+          return {
+            from(resource) {
+              return {
+                async execute() {
+                  assert.equal(resourceName(resource), 'credential')
+                  return [{
+                    id: 'openai-default',
+                    service: 'ai',
+                    status: 'active',
+                    provider: 'https://pod.example/settings/providers/openai.ttl',
+                    apiKey: 'sk-openai',
+                  }]
+                },
+              }
+            },
+          }
         },
         async findById(resource, id) {
-          findByIds.push([resource, id])
-          if (resource === credentialResource && id === 'openai-default') {
-            return {
-              id: 'openai-default',
-              service: 'ai',
-              status: 'active',
-              provider: 'https://pod.example/settings/providers/openai.ttl',
-              apiKey: 'sk-openai',
-            }
-          }
-          if (resource === aiProviderResource && id === 'openai') {
+          findByIds.push([resourceName(resource), id])
+          if (resourceName(resource) === 'aiProvider' && id === 'openai') {
             return {
               id: 'openai',
               '@id': 'https://pod.example/settings/providers/openai.ttl',
@@ -445,17 +568,12 @@ test('pod-backed codex credential is read through shared model db', async () => 
   assert.equal(createDbCalls, 1)
   assert.equal(fetchCalls, 0)
   assert.deepEqual(findByIds
-    .filter(([resource]) => resource === credentialResource)
-    .map(([, id]) => id), [
-      'openai-default',
-      'credentials.ttl#openai-default',
-      '#openai-default',
-    ])
+    .filter(([resource]) => resource === 'credential')
+    .map(([, id]) => id), [])
   assert.deepEqual(findByIds
-    .filter(([resource]) => resource === aiProviderResource)
+    .filter(([resource]) => resource === 'aiProvider')
     .map(([, id]) => id), [
       'openai',
-      'openai.ttl',
       'codex',
       'codex.ttl',
     ])
@@ -484,7 +602,8 @@ test('cloud credential source resolves pod-backed codebuddy credentials and skip
 
   const resolved = await module.resolveAutoRunOptions({
     backend: 'codebuddy',
-    mode: 'smart',
+autoEnabled: true,
+mode: 'auto',
     cwd: process.cwd(),
     passthroughArgs: [],
     credentialSource: 'cloud',
@@ -518,7 +637,8 @@ test('auto-mode credential resolution ignores local backend auth status', async 
 
   const resolved = await module.resolveAutoRunOptions({
     backend: 'claude',
-    mode: 'smart',
+autoEnabled: true,
+mode: 'auto',
     cwd: process.cwd(),
     passthroughArgs: [],
   })
@@ -612,7 +732,8 @@ rl.on('line', (line) => {
     try {
       await module.runAutoMode({
         backend: 'codebuddy',
-        mode: 'smart',
+autoEnabled: true,
+mode: 'auto',
         cwd: process.cwd(),
         prompt: 'hello',
         passthroughArgs: [],

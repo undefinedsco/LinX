@@ -14,7 +14,8 @@ function createRecord(overrides = {}) {
     id: 'auto_2026-03-17T00-00-00-000Z_deadbeef',
     backend: 'codex',
     runtime: 'local',
-    mode: 'smart',
+    autoEnabled: true,
+    mode: 'auto',
     cwd: '/tmp/demo',
     model: 'gpt-5-codex',
     prompt: 'hello',
@@ -48,12 +49,11 @@ test('formatAutoModeElapsed keeps compact codex-like durations', () => {
   assert.equal(displayModule.formatAutoModeElapsed(3_661_000), '1h 01m 01s')
 })
 
-test('formatAutoModeHeaderLine keeps runtime metadata on one clipped row', () => {
+test('formatAutoModeHeaderLine keeps backend and Secretary control state separate', () => {
   const line = displayModule.formatAutoModeHeaderLine(createRecord(), 88)
 
-  assert.match(line, /Codex \| controlled by LinX \| running/)
-  assert.match(line, /credentials=pod/)
-  assert.doesNotMatch(line, /source=/)
+  assert.match(line, /Codex \| controlled by LinX \| running \| auto=on \| mode=auto/)
+  assert.doesNotMatch(line, /smart/)
   assert.equal(line.length, 88)
 })
 

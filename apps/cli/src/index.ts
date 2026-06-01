@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 import './lib/node-warning-filter.js'
 import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import yargs, { type Argv, type CommandModule } from 'yargs'
 import { hideBin } from 'yargs/helpers'
 import { aiCommand } from './lib/ai-command.js'
 import { resolveAccountBaseUrl } from './lib/account-api.js'
 import { loadCredentials } from './lib/credentials-store.js'
 import { loginCommand, logoutCommand, whoamiCommand } from './lib/login-command.js'
-import { DefaultPackageManager, SettingsManager, runPrintMode } from '@mariozechner/pi-coding-agent'
+import { DefaultPackageManager, SettingsManager, runPrintMode } from '@earendil-works/pi-coding-agent'
 import { promptText } from './lib/prompt.js'
 import {
   buildAutoModeOptions,
@@ -21,12 +22,11 @@ import {
   loadArchivedAutoModeSession,
   resumeAutoModeSession,
 } from './lib/auto-mode/index.js'
-import { symphonyCommand } from './lib/symphony-command.js'
 import { resolveRuntimeTarget } from './lib/runtime-target.js'
 import { createCodexNativeProxy } from './lib/codex-plugin/index.js'
 import { bootstrapPiInteractiveMode, createPiRuntimeAdapter, resolveLinxInteractiveLoginReason, resolveLinxStartupLoginPromptDecision, type LinxLoginReason } from './lib/pi-adapter/index.js'
 import { isOidcLoginExpiredError } from './lib/oidc-auth.js'
-import { createPodDataSession, type PodDataSession } from './lib/pod-data-session.js'
+import { clearDefaultPodDataSession, createPodDataSession, getDefaultPodDataSession, type PodDataSession } from './lib/pod-data-session.js'
 import { DEFAULT_LINX_CLOUD_MODEL_ID, FALLBACK_LINX_CLOUD_MODEL_IDS } from './lib/default-model.js'
 import type { PiCompletionBackendResult } from './lib/pi-adapter/stream.js'
 import {
@@ -36,8 +36,13 @@ import {
   resolveLinxPiSession,
 } from './lib/pi-adapter/session.js'
 import { LinxPiPodMirror } from './lib/pi-adapter/pod-mirror.js'
+import { listPendingPiPodMirrorSync, retryPendingPiPodMirrorSync } from './lib/pi-adapter/sync-recovery.js'
 import type { RemoteChatMessage, RemoteChatTool } from './lib/chat-api.js'
 import { LINX_AGENT_DIR } from './lib/pi-adapter/branding.js'
+import { createFileSyncCheckpointStore } from './lib/sync-checkpoint-store.js'
+import { deriveLinxPiStartupControlState, hydrateLinxPiControlState } from './lib/pi-adapter/control-state.js'
+import { drizzle, solidResources, type SolidDatabase } from './lib/models.js'
+import type { RemoteAuthFetch } from './lib/chat-api.js'
 
 type ChatRole = 'system' | 'user' | 'assistant'
 
@@ -60,12 +65,12 @@ interface SessionLike {
 interface ChatRuntime {
   createRemoteCompletion(options: {
     runtimeUrl: string
-    apiKey: string
+    authFetch: RemoteAuthFetch
     model?: string
     messages: RemoteChatMessage[]
     tools?: RemoteChatTool[]
   }): Promise<string | PiCompletionBackendResult>
-  listRemoteModels(session: unknown, runtimeUrl: string, apiKey: string, options?: { fallback?: boolean; timeoutMs?: number }): Promise<Array<{
+  listRemoteModels(authFetch: RemoteAuthFetch, runtimeUrl: string, options?: { fallback?: boolean; timeoutMs?: number }): Promise<Array<{
     id: string
     provider?: string
     ownedBy?: string
@@ -84,14 +89,13 @@ interface ChatRuntime {
   toOpenAiMessages(history: ChatMessage[]): Array<{ role: ChatRole; content: string }>
   authenticate(clientId: string, clientSecret: string, oidcIssuer: string): Promise<{
     session: SessionLike
-    apiKey: string
   }>
   authenticatedFetch(url: string, token: string, init?: RequestInit): Promise<Response>
 }
 
 interface RuntimeContext {
   runtimeUrl: string
-  apiKey: string
+  authFetch: RemoteAuthFetch
   session: SessionLike
   podSession: PodDataSession
   chatId: string
@@ -100,7 +104,7 @@ interface RuntimeContext {
 
 interface RuntimeAuthContext {
   runtimeUrl: string
-  apiKey: string
+  authFetch: RemoteAuthFetch
   session: SessionLike
   podSession: PodDataSession
   runtime: ChatRuntime
@@ -170,13 +174,12 @@ async function resolveContext(urlOverride?: string): Promise<RuntimeContext> {
     issuerUrl: podSession.credentials.url,
     runtimeUrlOverride: urlOverride,
   })
-  const apiKey = await resolvePodRuntimeAuthToken(podSession)
   const session = podSession.solidSession
 
   await runtime.initPodData(session)
   const chatId = await runtime.getOrCreateDefaultChat(session)
 
-  return { runtimeUrl: target.runtimeUrl, apiKey, session, podSession, chatId, runtime }
+  return { runtimeUrl: target.runtimeUrl, authFetch: podSession.runtimeFetch, session, podSession, chatId, runtime }
 }
 
 async function resolveRuntimeAuthContext(urlOverride?: string): Promise<RuntimeAuthContext> {
@@ -186,11 +189,10 @@ async function resolveRuntimeAuthContext(urlOverride?: string): Promise<RuntimeA
     issuerUrl: podSession.credentials.url,
     runtimeUrlOverride: urlOverride,
   })
-  const apiKey = await resolvePodRuntimeAuthToken(podSession)
 
   return {
     runtimeUrl: target.runtimeUrl,
-    apiKey,
+    authFetch: podSession.runtimeFetch,
     session: podSession.solidSession,
     podSession,
     runtime,
@@ -210,17 +212,6 @@ async function createLinxPodDataSession(): Promise<PodDataSession> {
   return podSession
 }
 
-async function resolvePodRuntimeAuthToken(podSession: PodDataSession): Promise<string> {
-  try {
-    return await podSession.getRuntimeAuthToken()
-  } catch (error) {
-    if (isOidcLoginExpiredError(error)) {
-      throw new Error('LinX Cloud login expired. Run `linx login` to re-authorize.')
-    }
-    throw error
-  }
-}
-
 async function runSingleTurn(options: {
   ctx: RuntimeContext
   threadId: string
@@ -234,7 +225,7 @@ async function runSingleTurn(options: {
 
   const reply = await ctx.runtime.createRemoteCompletion({
     runtimeUrl: ctx.runtimeUrl,
-    apiKey: ctx.apiKey,
+    authFetch: ctx.authFetch,
     model,
     messages: [...ctx.runtime.toOpenAiMessages(history), { role: 'user', content: prompt }],
   })
@@ -415,6 +406,8 @@ async function runPiCommand(argv: {
   print?: boolean
   session?: string
   last?: boolean
+  'pi-sync-status'?: boolean
+  'pi-sync-retry'?: string
   prompt?: string[]
 } & AutoModeCommandArgs): Promise<void> {
   const firstPromptToken = Array.isArray(argv.prompt) ? argv.prompt[0] : undefined
@@ -428,33 +421,67 @@ async function runPiCommand(argv: {
     return
   }
 
-  const backend = 'cloud'
+  if (argv['pi-sync-status']) {
+    await runPiSyncStatusCommand()
+    return
+  }
+
+  if (argv['pi-sync-retry']) {
+    await runPiSyncRetryCommand({
+      cwd: argv.cwd || process.cwd(),
+      sessionId: argv['pi-sync-retry'],
+    })
+    return
+  }
+
+  if (argv.backend) {
+    await runAutoModeCommand({
+      ...argv,
+      plain: Boolean(argv.plain || argv.print),
+    })
+    return
+  }
+
+  const cwd = argv.cwd || process.cwd()
   const startupLoginPrompt = await resolveLinxStartupLoginPromptDecision({
-    backend,
+    backend: 'cloud',
     print: argv.print,
     issuerUrl: resolveAccountBaseUrl(),
+    resolveSession: createLinxPodDataSession,
   })
 
+  const sessionManager = await createLinxPiSessionManager({
+    cwd,
+    agentDir: LINX_AGENT_DIR,
+    session: argv.session,
+    last: argv.last,
+  })
+  const restoreAutoFromHydration = Boolean(argv.session || argv.last)
+  const controlState = await resolvePiStartupControlState({
+    requestedAuto: typeof argv.auto === 'boolean' ? argv.auto : undefined,
+    hydrateFromPod: !argv.print && !startupLoginPrompt.shouldPrompt,
+    restoreAutoFromHydration,
+    sessionManager,
+  })
+  const autoEnabled = controlState.autoEnabled
+  const symphonyEnabled = controlState.symphonyEnabled
+
   const adapter = createPiRuntimeAdapter({
-    createNativeProxy(options) {
-      return createCodexNativeProxy({
-        cwd: options?.cwd,
-        model: options?.model,
-        listenPort: options?.listenPort,
-      })
-    },
     async createRemoteCompletion(options) {
       const chatApi = await import('./lib/chat-api.js')
       return chatApi.createRemoteCompletionResult(options)
     },
-    async listRemoteModels(session, runtimeUrl, apiKey) {
+    async listRemoteModels(authFetch, runtimeUrl, options) {
       const chatApi = await import('./lib/chat-api.js')
-      return chatApi.listRemoteModels(session, runtimeUrl, apiKey, { fallback: false, timeoutMs: 5000 })
+      return chatApi.listRemoteModels(authFetch, runtimeUrl, options ?? { fallback: false, timeoutMs: 5000 })
     },
   }, {
-    cwd: argv.cwd || process.cwd(),
+    cwd,
     model: argv.model,
-    backend,
+    backend: 'cloud',
+    autoEnabled,
+    symphonyEnabled,
+    getPodDataSession: getDefaultPodDataSession,
     port: argv.port,
     providerConfig: {
       baseUrl: String(argv['runtime-url'] ?? 'https://api.undefineds.co/v1'),
@@ -464,43 +491,14 @@ async function runPiCommand(argv: {
 
   await adapter.start()
 
-  const sessionManager = await createLinxPiSessionManager({
-    cwd: adapter.cwd,
-    agentDir: LINX_AGENT_DIR,
-    session: argv.session,
-    last: argv.last,
-  })
   const runtime = await adapter.createRuntime({
     cwd: adapter.cwd,
     agentDir: LINX_AGENT_DIR,
     sessionManager,
   })
-  const podMirror = new LinxPiPodMirror({
-    cwd: adapter.cwd,
-    sessionManager,
-    onError(error) {
-      if (process.env.LINX_DEBUG === '1') {
-        const message = error instanceof Error ? error.stack || error.message : String(error)
-        process.stderr.write(`[linx pod mirror] ${message}\n`)
-      }
-    },
-  })
-  const unsubscribePodMirror = runtime.session.subscribe((event: unknown) => {
-    podMirror.handleEvent(event)
-  })
-
-  const interactive = bootstrapPiInteractiveMode(runtime)
-  const bridge = runtime as unknown as { linxAuthBridge?: { shouldPromptLoginOnStart?: boolean } }
-  const loginPromptReason: LinxLoginReason | null = resolveLinxInteractiveLoginReason({
-    startupDecision: startupLoginPrompt,
-    runtimePromptOnStart: bridge.linxAuthBridge?.shouldPromptLoginOnStart,
-  })
-  if (loginPromptReason) {
-    interactive.requestLogin?.(loginPromptReason)
-  }
+  const prompt = ((argv.prompt as string[] | undefined) ?? []).join(' ').trim()
   try {
     if (argv.print) {
-      const prompt = ((argv.prompt as string[] | undefined) ?? []).join(' ').trim()
       const exitCode = await runPrintMode(runtime, {
         mode: 'text',
         initialMessage: prompt || undefined,
@@ -511,13 +509,137 @@ async function runPiCommand(argv: {
       return
     }
 
-    await interactive.run()
+    const podMirror = new LinxPiPodMirror({
+      cwd: adapter.cwd,
+      sessionManager,
+      autoEnabled,
+      symphonyEnabled,
+      checkpointStore: createFileSyncCheckpointStore({
+        dir: join(LINX_AGENT_DIR, 'sync', 'pi-pod-mirror', sessionManager.getSessionId()),
+      }),
+      onError(error) {
+        if (process.env.LINX_DEBUG === '1') {
+          const message = error instanceof Error ? error.stack || error.message : String(error)
+          process.stderr.write(`[linx pod mirror] ${message}\n`)
+        }
+      },
+    })
+    const unsubscribePodMirror = runtime.session.subscribe((event: unknown) => {
+      podMirror.handleEvent(event)
+    })
+    const interactive = bootstrapPiInteractiveMode(runtime, {
+      initialMessage: prompt || undefined,
+      restoredAuto: autoEnabled && restoreAutoFromHydration,
+      onAutoControlChange(enabled) {
+        void podMirror.syncAutoControlState(enabled)
+      },
+      onSymphonyControlChange(enabled) {
+        void podMirror.syncSymphonyControlState(enabled)
+      },
+    })
+    const bridge = runtime as unknown as { linxAuthBridge?: { shouldPromptLoginOnStart?: boolean } }
+    const loginPromptReason: LinxLoginReason | null = resolveLinxInteractiveLoginReason({
+      startupDecision: startupLoginPrompt,
+      runtimePromptOnStart: bridge.linxAuthBridge?.shouldPromptLoginOnStart,
+    })
+    if (loginPromptReason) {
+      interactive.requestLogin?.(loginPromptReason)
+    }
+
+    try {
+      await interactive.run()
+    } finally {
+      unsubscribePodMirror()
+      await podMirror.close().catch(() => undefined)
+      interactive.stop()
+    }
   } finally {
-    unsubscribePodMirror()
-    await podMirror.close().catch(() => undefined)
-    interactive.stop()
     await adapter.close()
+    clearDefaultPodDataSession()
   }
+}
+
+async function resolvePiStartupControlState(options: {
+  requestedAuto?: boolean
+  hydrateFromPod: boolean
+  restoreAutoFromHydration?: boolean
+  sessionManager: { getSessionId(): string; getEntries(): Array<{ timestamp?: unknown }> }
+}): Promise<{ autoEnabled: boolean; symphonyEnabled: boolean }> {
+  if (!options.hydrateFromPod) {
+    return {
+      autoEnabled: options.requestedAuto === true,
+      symphonyEnabled: false,
+    }
+  }
+
+  const session = await createLinxPodDataSession().catch(() => null)
+  if (!session) {
+    return {
+      autoEnabled: options.requestedAuto === true,
+      symphonyEnabled: false,
+    }
+  }
+
+  try {
+    const db = drizzle(session.solidSession, {
+      logger: false,
+      disableInteropDiscovery: true,
+      podUrl: session.podUrl,
+      resourcePreparation: 'off' as never,
+      schema: solidResources,
+    }) as unknown as SolidDatabase
+    const hydration = await hydrateLinxPiControlState({
+      db,
+      sessionId: options.sessionManager.getSessionId(),
+      createdAt: getPiSessionCreatedAt(options.sessionManager),
+      onError(error) {
+        if (process.env.LINX_DEBUG === '1') {
+          const message = error instanceof Error ? error.stack || error.message : String(error)
+          process.stderr.write(`[linx control state] ${message}\n`)
+        }
+      },
+    })
+    return {
+      ...deriveLinxPiStartupControlState({
+        requestedAuto: options.requestedAuto,
+        hydration,
+        restoreAutoFromHydration: options.restoreAutoFromHydration,
+      }),
+    }
+  } finally {
+    await session.close().catch(() => undefined)
+  }
+}
+
+function getPiSessionCreatedAt(sessionManager: { getSessionId(): string; getEntries(): Array<{ timestamp?: unknown }> }): Date {
+  const entryDate = sessionManager.getEntries()
+    .map((entry) => toDate(entry.timestamp))
+    .find((date): date is Date => date instanceof Date)
+  return entryDate ?? parseTimestampFromUuidLikeId(sessionManager.getSessionId()) ?? new Date()
+}
+
+function parseTimestampFromUuidLikeId(id: string): Date | null {
+  const prefix = id.replace(/-/g, '').slice(0, 12)
+  if (!/^[\da-f]{12}$/i.test(prefix)) {
+    return null
+  }
+  const millis = Number.parseInt(prefix, 16)
+  if (!Number.isFinite(millis) || millis <= 0) {
+    return null
+  }
+  const date = new Date(millis)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function toDate(value: unknown): Date | null {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value
+  }
+  if (typeof value === 'number' || typeof value === 'string') {
+    const date = new Date(value)
+    return Number.isNaN(date.getTime()) ? null : date
+  }
+  return null
 }
 
 async function runResumeCommand(argv: {
@@ -600,6 +722,43 @@ async function runResumeCommand(argv: {
   })
 }
 
+async function runPiSyncStatusCommand(): Promise<void> {
+  const sessions = await listPendingPiPodMirrorSync(LINX_AGENT_DIR)
+  if (sessions.length === 0) {
+    process.stdout.write('No pending LinX Pod sync sessions.\n')
+    return
+  }
+
+  process.stdout.write(`${sessions.map((session) => {
+    const failed = session.checkpoints.filter((checkpoint) => checkpoint.status === 'failed').length
+    const partial = session.checkpoints.filter((checkpoint) => checkpoint.status === 'partial').length
+    const latest = session.checkpoints.at(-1)?.completedAt ?? 'unknown'
+    return `${session.sessionId} · failed=${failed} partial=${partial} latest=${latest}`
+  }).join('\n')}\n`)
+}
+
+async function runPiSyncRetryCommand(options: {
+  cwd: string
+  sessionId: string
+}): Promise<void> {
+  const result = await retryPendingPiPodMirrorSync({
+    cwd: options.cwd,
+    agentDir: LINX_AGENT_DIR,
+    sessionId: options.sessionId,
+  })
+  if (!result.attempted) {
+    process.stdout.write(`LinX Pod sync skipped: ${options.sessionId}\n`)
+    return
+  }
+
+  const status = result.results.map((item) => item.status).join(', ') || 'none'
+  process.stdout.write(
+    status === 'none'
+      ? `LinX Pod sync has no replayable local projections: ${options.sessionId}\n`
+      : `Retried LinX Pod sync: ${options.sessionId} (${status})\n`,
+  )
+}
+
 interface PiCommandArgs {
   cwd?: string
   model?: string
@@ -608,6 +767,8 @@ interface PiCommandArgs {
   print?: boolean
   session?: string
   last?: boolean
+  'pi-sync-status'?: boolean
+  'pi-sync-retry'?: string
   prompt?: string[]
 }
 
@@ -617,11 +778,11 @@ function buildPiCommand(command: Argv<object>): Argv<LinxDefaultCommandArgs> {
   const configured = buildAutoModeOptions(command)
     .option('cwd', {
       type: 'string',
-      describe: 'Workspace path for the Pi session',
+      describe: 'Workspace path for the LinX session',
     })
     .option('model', {
       type: 'string',
-      describe: 'Model id to expose through the Pi runtime adapter; defaults to the last LinX selection',
+      describe: 'Model id to expose through the LinX runtime adapter; defaults to the last LinX selection',
     })
     .option('runtime-url', {
       type: 'string',
@@ -635,12 +796,20 @@ function buildPiCommand(command: Argv<object>): Argv<LinxDefaultCommandArgs> {
     })
     .option('session', {
       type: 'string',
-      describe: 'Resume a specific LinX/Pi session id or JSONL file',
+      describe: 'Resume a specific LinX session id or JSONL file',
     })
     .option('last', {
       type: 'boolean',
       default: false,
-      describe: 'Continue the most recent local LinX/Pi session for this workspace',
+      describe: 'Continue the most recent local LinX session for this workspace',
+    })
+    .option('pi-sync-status', {
+      type: 'boolean',
+      hidden: true,
+    })
+    .option('pi-sync-retry', {
+      type: 'string',
+      hidden: true,
     })
     .positional('prompt', {
       array: true,
@@ -652,7 +821,7 @@ function buildPiCommand(command: Argv<object>): Argv<LinxDefaultCommandArgs> {
 
 const defaultPiCommand: CommandModule<object, LinxDefaultCommandArgs> = {
   command: '$0 [prompt..]',
-  describe: 'Run LinX, or control an external agent backend with --backend',
+  describe: 'Run LinX with the selected runtime backend',
   builder: buildPiCommand,
   handler: runPiCommand,
 }
@@ -681,6 +850,24 @@ const execCommand: CommandModule<object, LinxDefaultCommandArgs> = {
   },
 }
 
+const retiredSymphonyCommand: CommandModule<object, { args?: string[] }> = {
+  command: 'symphony [args..]',
+  describe: false,
+  builder(command) {
+    return command
+      .help(false)
+      .version(false)
+      .positional('args', {
+        array: true,
+        type: 'string',
+        describe: 'Retired Symphony CLI arguments',
+      })
+  },
+  handler(): void {
+    throw new Error('`linx symphony` is not a product command. Enter the TUI, run `/symphony on`, then send the objective as normal chat.')
+  },
+}
+
 const cli = yargs(hideBin(process.argv))
   .scriptName('linx')
   .version(readPackageVersion())
@@ -691,7 +878,7 @@ const cli = yargs(hideBin(process.argv))
   .command(logoutCommand)
   .command(whoamiCommand)
   .command(aiCommand)
-  .command(symphonyCommand)
+  .command(retiredSymphonyCommand)
   .command(
     'install [source]',
     'Install a LinX package or extension',
@@ -776,7 +963,7 @@ const cli = yargs(hideBin(process.argv))
       const ctx = await resolveRuntimeAuthContext(argv.url)
       let models
       try {
-        models = await ctx.runtime.listRemoteModels(ctx.session, ctx.runtimeUrl, ctx.apiKey, { fallback: false })
+        models = await ctx.runtime.listRemoteModels(ctx.authFetch, ctx.runtimeUrl, { fallback: false })
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         throw new Error(`Failed to load cloud models from ${ctx.runtimeUrl}: ${message}`)
@@ -796,12 +983,12 @@ const cli = yargs(hideBin(process.argv))
   )
   .command(
     'resume [session]',
-    'Resume a previous LinX or auto-mode session',
+    'Resume a previous LinX session',
     (command) => command
       .positional('session', { type: 'string', describe: 'Session id/prefix or JSONL file to resume' })
       .option('last', { type: 'boolean', default: false, describe: 'Resume the most recent LinX or auto-mode session' })
       .option('cwd', { type: 'string', describe: 'Workspace path for the resumed session' })
-      .option('model', { type: 'string', describe: 'Model id to expose through the Pi runtime adapter' })
+      .option('model', { type: 'string', describe: 'Model id to expose through the LinX runtime adapter' })
       .option('runtime-url', { type: 'string', default: 'https://api.undefineds.co/v1', describe: 'Cloud runtime API base URL' }),
     async (argv) => {
       await runResumeCommand({
@@ -820,7 +1007,7 @@ const cli = yargs(hideBin(process.argv))
       .positional('thread', { type: 'string', describe: 'Thread ID to fork' })
       .option('last', { type: 'boolean', default: false, describe: 'Fork the most recent thread' }),
     () => {
-      throw new Error('Fork is not implemented yet for LinX Pod-backed Pi sessions.')
+      throw new Error('Fork is not implemented yet for LinX Pod-backed sessions.')
     },
   )
   .command(hiddenPiAliasCommand)

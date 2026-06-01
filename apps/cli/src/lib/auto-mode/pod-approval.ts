@@ -16,15 +16,22 @@ import { AS, ODRL, UDFS } from '@undefineds.co/models/namespaces'
 import { ApprovalVocab, AuditVocab, GrantVocab, InboxNotificationVocab } from '@undefineds.co/models/vocab/sidecar'
 import {
   autoModeApprovalActionUri,
+  autoModeApprovalDecisionForStoredApproval,
   autoModeApprovalRequestMessage,
   autoModeApprovalRisk,
   autoModeApprovalToolName,
+  buildAutoModeApprovalDecisionReason,
+  encodeAutoModeApprovalOptions,
+  parseAutoModeApprovalDecisionReason,
+  parseAutoModeApprovalOptions,
+  shouldMaterializeAutoModeGrant,
   type AutoModeApprovalDecision,
   type AutoModeApprovalOption,
   type AutoModeApprovalRequest,
   type AutoModeGrantCoverageDecision,
   type AutoModeSessionRecord,
 } from '@linx/agent-runtime/auto-mode'
+import type { LinxSyncOperationKind, LinxSyncRunResult } from '@linx/agent-runtime/sync'
 import { resolveAutoModeGrantCoverage, type AutoModeGrantCoverageInput } from './secretary.js'
 import {
   buildApprovalDocumentUrl,
@@ -158,6 +165,7 @@ export interface AutoModeRemoteApprovalRuntime {
   sleep: (ms: number) => Promise<void>
   now: () => Date
   onWarning?: (error: unknown) => void
+  onSyncResult?: (result: LinxSyncRunResult) => void
   resolveGrantCoverage?: (input: AutoModeGrantCoverageInput) => Promise<AutoModeGrantCoverageDecision>
 }
 
@@ -167,6 +175,7 @@ interface RemoteApprovalClient {
 }
 
 const remoteApprovalClientCache = new WeakMap<AutoModeRemoteApprovalRuntime, Promise<RemoteApprovalClient | null>>()
+let remoteApprovalSyncSeq = 0
 
 export interface RemoteAutoModeApprovalSummary {
   id: string
@@ -189,17 +198,12 @@ export interface RemoteAutoModeApprovalSummary {
   resolvedAt?: string
 }
 
-interface DecisionAuditContext {
-  decision: AutoModeApprovalDecision
-  note?: string
-}
-
 export interface RemoteApprovalSubjectContext {
   sessionUri: string
   actorUri: string
   assignedTo?: string
   onBehalfOf?: string
-  targetUri?: string
+  target?: string
   policyVersion?: string
 }
 
@@ -333,38 +337,6 @@ function extractToolCallId(request: AutoModeApprovalRequest): string {
   return normalizeString(toolCall?.toolCallId)
     ?? normalizeString(params?.toolCallId)
     ?? crypto.randomUUID()
-}
-
-function encodeDecisionReason(decision: AutoModeApprovalDecision, note?: string): string {
-  return safeJsonStringify({
-    decision,
-    ...(note?.trim() ? { note: note.trim() } : {}),
-  })
-}
-
-function parseDecisionReason(value: unknown): DecisionAuditContext | null {
-  if (typeof value !== 'string' || !value.trim()) {
-    return null
-  }
-
-  try {
-    const parsed = JSON.parse(value) as unknown
-    if (!isRecord(parsed)) {
-      return null
-    }
-
-    const decision = normalizeString(parsed.decision)
-    if (!decision || !['accept', 'accept_for_session', 'decline', 'cancel'].includes(decision)) {
-      return null
-    }
-
-    return {
-      decision: decision as AutoModeApprovalDecision,
-      ...(normalizeString(parsed.note) ? { note: normalizeString(parsed.note) } : {}),
-    }
-  } catch {
-    return null
-  }
 }
 
 async function warnOnly(runtime: AutoModeRemoteApprovalRuntime, task: () => Promise<void>): Promise<void> {
@@ -514,50 +486,7 @@ function grantSourceHash(row: ApprovalRowLike): string {
 }
 
 function encodeApprovalOptions(options: AutoModeApprovalOption[] | undefined): string | undefined {
-  if (!options || options.length === 0) {
-    return undefined
-  }
-  return safeJsonStringify(options)
-}
-
-function parseApprovalOptions(value: unknown): AutoModeApprovalOption[] | undefined {
-  if (typeof value !== 'string' || !value.trim()) {
-    return undefined
-  }
-
-  try {
-    const parsed = JSON.parse(value) as unknown
-    if (!Array.isArray(parsed)) {
-      return undefined
-    }
-
-    const options = parsed
-      .map((option): AutoModeApprovalOption | null => {
-        if (!isRecord(option)) {
-          return null
-        }
-
-        const optionId = normalizeString(option.optionId)
-        const label = normalizeString(option.label)
-        if (!optionId || !label) {
-          return null
-        }
-
-        const kind = normalizeString(option.kind)
-        const description = normalizeString(option.description)
-        return {
-          optionId,
-          label,
-          ...(kind ? { kind } : {}),
-          ...(description ? { description } : {}),
-        }
-      })
-      .filter((option): option is AutoModeApprovalOption => option !== null)
-
-    return options.length > 0 ? options : undefined
-  } catch {
-    return undefined
-  }
+  return encodeAutoModeApprovalOptions(options)
 }
 
 function normalizeDateLike(value: Date | string | undefined): string | undefined {
@@ -595,29 +524,18 @@ function extractSessionId(sessionUri: string): string {
 }
 
 function decisionFromApprovalRow(row: ApprovalRowLike): AutoModeApprovalDecision | null {
-  const status = normalizeString(row.status)
-  if (status === 'pending') {
-    return null
-  }
-
-  const parsed = parseDecisionReason(row.reason)
-
-  if (status === 'rejected') {
-    return parsed?.decision === 'cancel' ? 'cancel' : 'decline'
-  }
-
-  if (parsed?.decision === 'accept_for_session') {
-    return 'accept_for_session'
-  }
-
-  return 'accept'
+  return autoModeApprovalDecisionForStoredApproval({
+    status: normalizeString(row.status),
+    reason: row.reason,
+    approvalOptions: row.approvalOptions,
+  })
 }
 
 function normalizeApprovalSummary(row: ApprovalRowLike): RemoteAutoModeApprovalSummary {
   const createdAt = toIsoString(row.createdAt, new Date(0).toISOString())
   const sessionUri = row.session
   const decision = decisionFromApprovalRow(row)
-  const approvalOptions = parseApprovalOptions(row.approvalOptions)
+  const approvalOptions = parseAutoModeApprovalOptions(row.approvalOptions)
 
   return {
     id: row.id,
@@ -632,7 +550,7 @@ function normalizeApprovalSummary(row: ApprovalRowLike): RemoteAutoModeApprovalS
     ...(normalizeString(row.assignedTo) ? { assignedTo: normalizeString(row.assignedTo) } : {}),
     ...(normalizeString(row.decisionBy) ? { decisionBy: normalizeString(row.decisionBy) } : {}),
     ...(decision ? { decision } : {}),
-    ...(approvalOptions ? { approvalOptions } : {}),
+    ...(approvalOptions.length > 0 ? { approvalOptions } : {}),
     createdAt,
     ...(row.expiresAt ? { expiresAt: toIsoString(row.expiresAt, createdAt) } : {}),
     ...(row.resolvedAt ? { resolvedAt: toIsoString(row.resolvedAt, createdAt) } : {}),
@@ -1355,7 +1273,7 @@ function buildGenericGrantRequestContext(input: {
 }): Record<string, unknown> {
   return {
     session: input.subject.sessionUri,
-    target: input.subject.targetUri ?? input.subject.sessionUri,
+    target: input.subject.target ?? input.subject.sessionUri,
     action: input.request.action,
     risk: input.request.risk,
     toolName: input.request.toolName,
@@ -1413,7 +1331,7 @@ export async function createRemoteApproval(options: {
     const now = activeRuntime.now()
     const sessionUri = subject.sessionUri
     const approvalUri = buildApprovalUriForDate(webId, approvalId, now)
-    const targetUri = subject.targetUri ?? sessionUri
+    const target = subject.target ?? sessionUri
     const assignedTo = subject.assignedTo ?? webId
     const onBehalfOf = subject.onBehalfOf ?? webId
     const policyVersion = subject.policyVersion ?? REMOTE_APPROVAL_POLICY_VERSION
@@ -1427,7 +1345,7 @@ export async function createRemoteApproval(options: {
       session: sessionUri,
       toolCallId: request.toolCallId,
       toolName: request.toolName,
-      target: targetUri,
+      target,
       action: request.action,
       risk: request.risk,
       status: 'pending',
@@ -1469,7 +1387,7 @@ export async function createRemoteApproval(options: {
       session: sessionUri,
       toolCallId: request.toolCallId,
       toolName: request.toolName,
-      target: targetUri,
+      target,
       action: request.action,
       risk: request.risk,
       status: 'pending',
@@ -1551,13 +1469,23 @@ export async function requestRemoteAutoModeApproval(options: {
     runtime: activeRuntime,
   })
 
-  return waitForRemoteAutoModeApproval({
+  const decision = await waitForRemoteAutoModeApproval({
     approvalId: summary.id,
     approvalUri: summary.approvalUri,
     pollMs: options.pollMs,
     signal: options.signal,
     runtime: activeRuntime,
   })
+
+  if (decision === 'accept_for_session') {
+    await materializeRemoteAutoModeGrant({
+      approvalId: summary.id,
+      approvalUri: summary.approvalUri,
+      runtime: activeRuntime,
+    })
+  }
+
+  return decision
 }
 
 export async function resolveExistingRemoteAutoModeGrant(options: {
@@ -1657,10 +1585,6 @@ export async function resolveRemoteAutoModeApproval(options: {
   decision: AutoModeApprovalDecision
   decisionRole?: 'human' | 'secretary'
   note?: string
-  grantWikiTitle?: string
-  grantWikiSummary?: string
-  grantWikiBody?: string
-  grantWikiTags?: string[]
   runtime?: AutoModeRemoteApprovalRuntime
 }): Promise<RemoteAutoModeApprovalSummary> {
   const activeRuntime = options.runtime ?? await createDefaultRuntime()
@@ -1691,7 +1615,7 @@ export async function resolveRemoteAutoModeApproval(options: {
       decisionBy: webId,
       decisionRole,
       onBehalfOf: webId,
-      reason: encodeDecisionReason(options.decision, options.note),
+      reason: buildAutoModeApprovalDecisionReason(options.decision, options.note),
       resolvedAt: now,
     }, {
       resourceUri: options.approvalUri ?? row.approvalUri ?? approvalUri,
@@ -1712,43 +1636,6 @@ export async function resolveRemoteAutoModeApproval(options: {
       createdAt: now,
     }))
 
-    if (options.decision === 'accept_for_session') {
-      const grantId = crypto.randomUUID()
-      const body = grantWikiBodyFromApproval(row, options.grantWikiBody)
-      await store.insertGrant({
-        id: grantId,
-        target: row.target,
-        action: row.action,
-        title: grantWikiTitleFromApproval(row, options.grantWikiTitle),
-        summary: grantWikiSummaryFromApproval(row, options.grantWikiSummary),
-        body,
-        schema: buildGrantSchemaUri(webId),
-        pageKind: 'autonomy-grant',
-        wikiStatus: 'active',
-        tags: grantWikiTagsFromApproval(row, options.grantWikiTags),
-        source: 'approval',
-        sourceHash: grantSourceHash(row),
-        compiledAt: now,
-        compiledFrom: [approvalUri],
-        related: [row.session],
-        effect: 'allow',
-        riskCeiling: row.risk,
-        policy: grantIndexTextFromWikiBody(body),
-        context: grantContextFromApproval(row),
-        decisionBy: webId,
-        decisionRole,
-        onBehalfOf: webId,
-        createdAt: now,
-      })
-
-      await warnOnly(activeRuntime, () => store.insertInboxNotification({
-        id: crypto.randomUUID(),
-        actor: webId,
-        object: buildGrantUri(row.session, grantId),
-        createdAt: now,
-      }))
-    }
-
     await warnOnly(activeRuntime, () => store.insertInboxNotification({
       id: crypto.randomUUID(),
       actor: webId,
@@ -1762,10 +1649,88 @@ export async function resolveRemoteAutoModeApproval(options: {
       decisionBy: webId,
       decisionRole,
       onBehalfOf: webId,
-      reason: encodeDecisionReason(options.decision, options.note),
+      reason: buildAutoModeApprovalDecisionReason(options.decision, options.note),
       resolvedAt: now,
     }
     return normalizeApprovalSummary(nextRow)
+  })
+}
+
+export async function materializeRemoteAutoModeGrant(options: {
+  approvalId: string
+  approvalUri?: string
+  decisionRole?: 'human' | 'secretary'
+  grantWikiTitle?: string
+  grantWikiSummary?: string
+  grantWikiBody?: string
+  grantWikiTags?: string[]
+  runtime?: AutoModeRemoteApprovalRuntime
+}): Promise<GrantRowLike | null> {
+  const activeRuntime = options.runtime ?? await createDefaultRuntime()
+
+  return withRemoteApprovalStore(activeRuntime, async ({ store, webId }) => {
+    const row = await readRemoteApprovalRow(store, {
+      approvalId: options.approvalId,
+      approvalUri: options.approvalUri,
+    })
+    if (!row || row.status !== 'approved') {
+      return null
+    }
+
+    const decision = decisionFromApprovalRow(row)
+    if (!shouldMaterializeAutoModeGrant(decision)) {
+      return null
+    }
+
+    const existing = await store.listGrants()
+    const sourceHash = grantSourceHash(row)
+    const existingGrant = existing.find((grant) => grant.source === 'approval' && grant.sourceHash === sourceHash)
+    if (existingGrant) {
+      return existingGrant
+    }
+
+    const now = activeRuntime.now()
+    const decisionRole = options.decisionRole ?? (row.decisionRole === 'secretary' ? 'secretary' : 'human')
+    const grantId = crypto.randomUUID()
+    const body = grantWikiBodyFromApproval(row, options.grantWikiBody)
+    const approvalCreatedAt = new Date(toIsoString(row.createdAt, now.toISOString()))
+    const approvalUri = options.approvalUri ?? row.approvalUri ?? buildApprovalUriForDate(row.session, row.id, approvalCreatedAt)
+    const grant: GrantRowLike = {
+      id: grantId,
+      target: row.target,
+      action: row.action,
+      title: grantWikiTitleFromApproval(row, options.grantWikiTitle),
+      summary: grantWikiSummaryFromApproval(row, options.grantWikiSummary),
+      body,
+      schema: buildGrantSchemaUri(webId),
+      pageKind: 'autonomy-grant',
+      wikiStatus: 'active',
+      tags: grantWikiTagsFromApproval(row, options.grantWikiTags),
+      source: 'approval',
+      sourceHash,
+      compiledAt: now,
+      compiledFrom: [approvalUri],
+      related: [row.session],
+      effect: 'allow',
+      riskCeiling: row.risk,
+      policy: grantIndexTextFromWikiBody(body),
+      context: grantContextFromApproval(row),
+      decisionBy: row.decisionBy ?? webId,
+      decisionRole,
+      onBehalfOf: row.onBehalfOf ?? webId,
+      createdAt: now,
+    }
+
+    await store.insertGrant(grant)
+
+    await warnOnly(activeRuntime, () => store.insertInboxNotification({
+      id: crypto.randomUUID(),
+      actor: webId,
+      object: buildGrantUri(row.session, grantId),
+      createdAt: now,
+    }))
+
+    return grant
   })
 }
 
@@ -1799,10 +1764,11 @@ export const __podApprovalInternal = {
   createNativeRemoteApprovalStore,
   extractToolCallId,
   decisionFromApprovalRow,
-  encodeDecisionReason,
+  encodeDecisionReason: buildAutoModeApprovalDecisionReason,
   formatSummaryHeadline,
+  grantSourceHash,
   readRemoteApprovalRow,
   isRemoteApprovalAbortError,
   normalizeApprovalSummary,
-  parseDecisionReason,
+  parseDecisionReason: parseAutoModeApprovalDecisionReason,
 }
