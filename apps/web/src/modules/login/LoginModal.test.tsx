@@ -499,7 +499,7 @@ describe('LoginModal', () => {
     expect(props.onBackFromLocal).not.toHaveBeenCalled()
   })
 
-  it('shows managed Local domain, tunnel token input, and connectivity testing controls', () => {
+  it('does not expose managed Local network configuration in the login path', () => {
     const props = createProps({
       view: 'local',
       localProviderSource: 'local',
@@ -551,22 +551,15 @@ describe('LoginModal', () => {
 
     render(<LoginModal {...props} />)
 
-    expect(screen.getByText('拿到 Local 域名')).toBeTruthy()
-    expect(screen.getByText(/Cloud 分配给这台设备的 Local canonical URL/)).toBeTruthy()
-    expect(screen.getByText('https://node-0000.undefineds.co/')).toBeTruthy()
-    expect(screen.getByText('配置 Cloudflare Tunnel')).toBeTruthy()
-    expect(screen.getByText(/Service URL 填 http:\/\/localhost:5737/)).toBeTruthy()
-    expect(screen.getByText(/cloudflared tunnel run --token/)).toBeTruthy()
-    expect(screen.getByText('测试联通性')).toBeTruthy()
-
-    fireEvent.change(screen.getByPlaceholderText('粘贴 tunnel token 或完整命令'), {
-      target: { value: 'cloudflared tunnel run --token token-123' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: '保存' }))
-    expect(props.onSaveLocalTunnelToken).toHaveBeenCalledWith('cloudflared tunnel run --token token-123')
-
-    fireEvent.click(screen.getByRole('button', { name: '测试' }))
-    expect(props.onTestLocalConnectivity).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: '继续登录' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /高级配置/ })).toBeNull()
+    expect(screen.queryByText('拿到 Local 域名')).toBeNull()
+    expect(screen.queryByText('配置 Cloudflare Tunnel')).toBeNull()
+    expect(screen.queryByText('测试联通性')).toBeNull()
+    expect(screen.queryByText('https://node-0000.undefineds.co/')).toBeNull()
+    expect(screen.queryByPlaceholderText('粘贴 tunnel token 或完整命令')).toBeNull()
+    expect(props.onSaveLocalTunnelToken).not.toHaveBeenCalled()
+    expect(props.onTestLocalConnectivity).not.toHaveBeenCalled()
   })
 
   it('does not render the old footer copy', () => {

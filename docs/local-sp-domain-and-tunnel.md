@@ -85,18 +85,21 @@ Local + Cloud-managed canonical domain 可以使用 Cloudflare Tunnel 或其他�
 
 ## 桌面交互
 
-Local onboarding 必须把网络配置拆成用户能执行的四步，不能只在配置文件里隐藏字段：
+Local 登录路径必须无配置：
 
-1. 选择 Local 后，LinX 启动 xpod 并向 Cloud provisioning 申请或续约
-   canonical URL。
-2. Local ready 后，登录面展示 Cloud 分配的 Local 域名，例如
-   `https://node-0000.undefineds.co/`，并提供复制入口。
-3. 页面给出 Cloudflare Tunnel 指引：在 Cloudflare Zero Trust 创建
-   Tunnel，把 Public Hostname 指到上面的 Local 域名，Service URL 指向
-   `http://localhost:5737`，然后把 tunnel token 粘贴回 LinX。
-4. LinX 保存 token 后重启/续跑 xpod，并提供联通性测试。测试必须同时探测
-   本机入口和公网 canonical URL，并用 `/api/linx/capabilities.baseUrl`
-   判断是否同一个 Local 节点。
+1. 用户选择 Local。
+2. LinX 自动启动 xpod，并向 Cloud provisioning 申请或续约 canonical URL。
+3. 服务 ready 后，登录面只展示 Local 已准备好、返回空间选择、继续登录。
+4. 用户继续登录；登录、注册、Pod 创建和 storage 绑定按
+   `docs/login-identity-storage-routing-model.md` 执行。
+
+Local 网络配置属于设置 / Local 管理路径，不出现在登录路径。设置里可以展示：
+
+- Cloud 分配的 Local 域名，例如 `https://node-0000.undefineds.co/`，并提供复制入口。
+- Cloudflare Tunnel 指引：Public Hostname 填 Local 域名，Service URL 指向
+  `http://localhost:5737`，然后把 tunnel token 粘贴回 LinX。
+- 联通性测试：同时探测本机入口和公网 canonical URL，并用
+  `/api/linx/capabilities.baseUrl` 判断是否同一个 Local 节点。
 
 交互状态：
 

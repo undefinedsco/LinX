@@ -8,28 +8,28 @@
 
 ## Brand
 - Personality: Warm guardian, calm technical guidance, no mystery around local infrastructure.
-- Trust signals: Show the selected space, canonical URL, local/public route status, and next action before opening auth.
+- Trust signals: Show the selected space, runtime readiness, and next action before opening auth. Keep canonical URL and route diagnostics in settings.
 - Avoid: Hidden auto-upgrades, ambiguous provider names, pretending tunnel is required when local/LAN can still work.
 
 ## Product goals
 - Goals: Let users understand where data is stored, start Local without blocking on tunnel setup, and add public reachability later without changing canonical storage identity.
 - Non-goals: Replacing Cloudflare dashboard configuration, router DNS automation, or general network diagnostics.
-- Success signals: User can see the assigned Local domain, paste tunnel token, test same-node reachability, and still continue login if only local access is ready.
+- Success signals: User can select Local, see it start without configuration, continue login, and later manage canonical domain, tunnel token, and same-node reachability in settings.
 
 ## Personas and jobs
 - Primary personas: Individual desktop user running Local xpod; advanced user adding public access; developer verifying Local login routes.
-- User jobs: Choose Cloud/Local/Standalone/Custom; obtain Local canonical URL; configure Cloudflare Tunnel; verify Local is reachable; complete login.
+- User jobs: Choose Cloud/Local/Standalone/Custom; complete login with no network form in the login path; use settings for Local canonical URL, Cloudflare Tunnel, and reachability diagnostics.
 - Key contexts of use: First-run desktop login, post-install local runtime setup, later public-access upgrade.
 
 ## Information architecture
 - Primary navigation: Login overlay remains the first decision point. Settings owns deeper service configuration.
 - Core routes/screens: Provider selection, Local onboarding detail, auth waiting surface, `/setup` for service mode.
-- Content hierarchy: Space choice first, then runtime status, then domain/tunnel/connectivity, then login.
+- Content hierarchy: Space choice first, then runtime status, then login. Domain/tunnel/connectivity belong to settings or Local management.
 
 ## Design principles
 - Principle 1: Provider selection is a storage-space choice, not a low-level IDP/SP form.
-- Principle 2: Local infrastructure is progressive. Local/LAN can work first; tunnel is a visible upgrade path.
-- Tradeoffs: Keep a compact login overlay, but allow scroll inside Local details instead of hiding critical setup.
+- Principle 2: Local infrastructure is progressive. Local/LAN can work first; tunnel is a visible upgrade path in settings, not a login prerequisite.
+- Tradeoffs: Keep the login overlay compact and non-technical; expose diagnostics only after the user enters settings.
 
 ## Visual language
 - Color: Follow existing warm-card, primary purple, emerald success, amber warning, destructive failure.
@@ -41,13 +41,13 @@
 
 ## Components
 - Existing components to reuse: `LoginCardShell`, login provider rows, settings form controls, existing buttons/input styling.
-- New/changed components: Local route info card, tunnel setup card, connectivity card.
+- New/changed components: Local runtime status card in login; Local route info, tunnel setup, and connectivity cards in settings/local management.
 - Variants and states: Unknown, checking, ready, local-only, failed, mismatch.
 - Token/component ownership: Login overlay owns first-run guidance; settings/service setup owns persistent advanced config.
 
 ## Accessibility
 - Target standard: Keyboard-accessible buttons and form controls, readable compact text.
-- Keyboard/focus behavior: Token input, save, test, copy, and continue are reachable in order.
+- Keyboard/focus behavior: Login path focuses on back and continue. Settings path exposes token input, save, test, and copy controls.
 - Contrast/readability: Status text uses existing semantic colors and does not rely only on icons.
 - Screen-reader semantics: Buttons have textual labels.
 - Reduced motion and sensory considerations: No new looping motion beyond existing spinners.
@@ -61,21 +61,21 @@
 - Loading: Show concrete xpod startup progress and details.
 - Empty: No public URL yet shows "waiting for xpod/Cloud".
 - Error: Explain whether the failure is local startup, Cloud binding, or public route reachability.
-- Success: Show assigned domain and route readiness before continuing.
+- Success: Show Local readiness before continuing. Assigned domain and route readiness are visible in settings.
 - Disabled: Save token is disabled until token text is provided.
 - Offline/slow network: Public route can be `local-only`; do not silently switch to Cloud Pod.
 
 ## Content voice
 - Tone: Direct, concise, operational.
 - Terminology: Use Cloud, Local, Standalone, Custom; use `canonical URL` only where storage identity matters.
-- Microcopy rules: Say "Cloud 分配的 Local 域名", "Cloudflare Tunnel", "联通性测试", and "继续登录".
+- Microcopy rules: Login path says "Local 已准备好" and "继续登录". Settings path can say "Cloud 分配的 Local 域名", "Cloudflare Tunnel", and "联通性测试".
 
 ## Implementation constraints
 - Framework/styling system: React + existing Tailwind/shadcn-style primitives.
 - Design-token constraints: Reuse existing tokens and modal shell.
 - Performance constraints: Connectivity probes are explicit user actions or startup status, not background polling loops in the login component.
 - Compatibility constraints: Local canonical URL semantics must stay aligned with `docs/local-sp-domain-and-tunnel.md`.
-- Test/screenshot expectations: Add unit tests for Local domain/tunnel/connectivity controls; use Electron debugger for desktop visual verification when needed.
+- Test/screenshot expectations: Add unit tests proving Local login does not expose network configuration. Use Electron debugger for desktop visual verification when needed.
 
 ## Open questions
 - [ ] Whether Cloud will later return a Cloudflare one-click setup URL for the assigned domain.

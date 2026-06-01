@@ -258,7 +258,7 @@ describe('LocalOnboardingPage', () => {
     expect(connectMock).not.toHaveBeenCalled()
   })
 
-  it('shows Local domain, Cloudflare tunnel token input, and connectivity controls', () => {
+  it('does not expose Local network configuration in the login path', () => {
     localOnboardingState.snapshot = {
       state: 'ready',
       spaceKind: 'local',
@@ -306,23 +306,15 @@ describe('LocalOnboardingPage', () => {
 
     render(<LocalOnboardingPage />)
 
-    expect(screen.getByText('拿到 Local 域名')).toBeTruthy()
-    expect(screen.getAllByText('https://node-0000.undefineds.co/').length).toBeGreaterThan(0)
-    expect(screen.getByText('配置 Cloudflare Tunnel')).toBeTruthy()
-    expect(screen.getByText(/Service URL 填 http:\/\/localhost:5737/)).toBeTruthy()
-    expect(screen.getByText(/cloudflared tunnel run --token/)).toBeTruthy()
-    expect(screen.getByText('测试联通性')).toBeTruthy()
-    expect(screen.getByText('3ms')).toBeTruthy()
-    expect(screen.getByText('失败')).toBeTruthy()
-
-    fireEvent.change(screen.getByPlaceholderText('粘贴 tunnel token 或完整命令'), {
-      target: { value: 'cloudflared tunnel run --token token-123' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: '保存' }))
-    expect(saveTunnelTokenMock).toHaveBeenCalledWith('cloudflared tunnel run --token token-123')
-
-    fireEvent.click(screen.getByRole('button', { name: '测试' }))
-    expect(testConnectivityMock).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: '继续登录' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /高级配置/ })).toBeNull()
+    expect(screen.queryByText('拿到 Local 域名')).toBeNull()
+    expect(screen.queryByText('配置 Cloudflare Tunnel')).toBeNull()
+    expect(screen.queryByText('测试联通性')).toBeNull()
+    expect(screen.queryByText('https://node-0000.undefineds.co/')).toBeNull()
+    expect(screen.queryByPlaceholderText('粘贴 tunnel token 或完整命令')).toBeNull()
+    expect(saveTunnelTokenMock).not.toHaveBeenCalled()
+    expect(testConnectivityMock).not.toHaveBeenCalled()
   })
 
   it('returns to the main login surface when the user goes back', async () => {
