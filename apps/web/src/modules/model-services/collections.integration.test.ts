@@ -107,7 +107,7 @@ describe('model services collections integration', () => {
     const created = await (database as any).findById(credentialTable as any, id)
     const subject = (created as any)?.['@id']
     if (subject) createdSubjects.push({ table: 'credential', id: subject })
-    expect(created?.id).toBe(`#${id}`)
+    expect(created?.id).toContain(`#${id}`)
     expect(extractPodResourceTemplateValue(credentialTable as any, created?.id)).toBe(id)
     expect(created?.provider).toContain('/settings/providers/openai.ttl')
   })

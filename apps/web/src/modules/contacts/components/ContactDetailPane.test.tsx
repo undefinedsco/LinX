@@ -65,8 +65,8 @@ vi.mock('@/modules/chat/store', () => ({
 }))
 
 vi.mock('@/lib/data/use-entity', () => ({
-  useEntity: (_table: unknown, entityUri: string | null) => ({
-    data: entityUri ? (mockEntityByUri.get(entityUri) ?? null) : null,
+  useEntity: (_table: unknown, entity: string | null) => ({
+    data: entity ? (mockEntityByUri.get(entity) ?? null) : null,
     isLoading: false,
     error: null,
     refresh: vi.fn(),
@@ -174,7 +174,7 @@ describe('ContactDetailPane', () => {
       id: 'contact-solid-1',
       name: 'Alice Smith',
       alias: 'Alice',
-      entityUri: 'https://alice.solidcommunity.net/profile/card#me',
+      entity: 'https://alice.solidcommunity.net/profile/card#me',
       inbox: 'https://alice.solidcommunity.net/inbox/',
       province: '北京',
       city: '海淀',
@@ -197,7 +197,7 @@ describe('ContactDetailPane', () => {
   it('starts chat from a persisted contact instead of using fake ids', async () => {
     const contact = makeContact({
       id: 'contact-solid-1',
-      entityUri: 'https://alice.solidcommunity.net/profile/card#me',
+      entity: 'https://alice.solidcommunity.net/profile/card#me',
     })
 
     mockContactState.set(contact.id, contact)
@@ -219,20 +219,20 @@ describe('ContactDetailPane', () => {
   })
 
   it('renders local agent configuration and allows opening tools editor', async () => {
-    const entityUri = '/.data/agents/agent-1.ttl#this'
+    const entity = '/.data/agents/agent-1.ttl#this'
     const contact = makeContact({
       id: 'contact-agent-1',
       name: '智能翻译官',
       alias: '翻译助手',
       contactType: ContactType.AGENT,
-      entityUri,
+      entity,
       province: '广东',
       city: '深圳',
       gender: 'bot',
     })
 
     mockContactState.set(contact.id, contact)
-    mockEntityByUri.set(entityUri, {
+    mockEntityByUri.set(entity, {
       model: 'openai/gpt-4o',
       instructions: '你是一个精通 12 国语言的翻译专家。',
       ttsModel: 'openai/tts-1',
@@ -262,7 +262,7 @@ describe('ContactDetailPane', () => {
     const contact = makeContact({
       id: 'contact-solid-1',
       alias: 'Alice',
-      entityUri: 'https://alice.solidcommunity.net/profile/card#me',
+      entity: 'https://alice.solidcommunity.net/profile/card#me',
     })
 
     mockContactState.set(contact.id, contact)

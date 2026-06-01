@@ -807,7 +807,7 @@ export class LocalChatKitService {
 
       for (const participantRef of participantRefs) {
         const contact = contacts.find((entry: any) => this.isSameRecordRef(entry, participantRef))
-        const agentRef = contact?.entityUri ?? participantRef
+        const agentRef = contact?.entity ?? participantRef
         const agent = agents.find((entry: any) => this.isSameRecordRef(entry, agentRef))
 
         if (!agent) {

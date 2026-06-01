@@ -105,6 +105,7 @@ export default defineConfig({
     preserveSymlinks: true,
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@linx/agent-runtime': path.resolve(__dirname, '../../packages/agent-runtime/src'),
       '@linx/stores': path.resolve(__dirname, '../../packages/stores/src'),
       '@undefineds.co/models/client': path.resolve(modelsRoot, 'client/index.ts'),
       '@undefineds.co/models': path.resolve(modelsRoot, 'index.ts'),

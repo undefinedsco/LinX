@@ -11,6 +11,13 @@ import {
   Chat, Thread, Message,
   MessageRole, MessageStatus,
 } from '@/lib/vendor/xpod-chatkit'
+import {
+  createLinxPodSyncScope,
+  type LinxPodSyncResourceBindings,
+  type LinxPodSyncScope,
+  type LinxSyncOperationKind,
+  type LinxSyncRunResult,
+} from '@linx/agent-runtime/sync'
 import type { ChatKitStore, StoreContext } from '@/lib/vendor/xpod-chatkit'
 import {
   generateId, nowTimestamp,
@@ -18,9 +25,12 @@ import {
   type Page, type StoreItemType,
 } from '@/lib/vendor/xpod-chatkit'
 import {
+  chatResourceId,
   contactTable,
   extractChatIdFromChatRef,
   extractThreadIdFromThreadRef,
+  messageResourceId,
+  threadResourceId,
   type SolidDatabase,
   UDFS,
 } from '@undefineds.co/models'
@@ -29,6 +39,11 @@ import { deleteExactRecord, updateExactRecord } from '@/lib/data/exact-records'
 
 const DEFAULT_CHAT_ID = 'default'
 const POD_QUERY_TIMEOUT_MS = 15000
+
+export interface LocalChatKitStoreOptions {
+  now?: () => Date
+  onSyncResult?: (result: LinxSyncRunResult) => void
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -75,17 +90,34 @@ function parseThreadMetadata(metadata: unknown): Record<string, unknown> | undef
   return undefined
 }
 
+function chatResourceIdForChat(chatId: string): string {
+  return chatResourceId(chatId)
+}
+
+function chatRefForChat(chatId: string): string {
+  return `chat/${chatResourceIdForChat(chatId)}`
+}
+
+function threadResourceIdForThread(chatId: string, threadId: string): string {
+  return threadResourceId(threadId, {
+    chat: chatRefForChat(chatId),
+  })
+}
+
 async function findThreadRecord(db: SolidDatabase<any>, threadId: string, chatId?: string | null): Promise<any | null> {
   if (chatId) {
-    const resourceId = (db as any).resolveLocatorId?.(Thread as any, { id: threadId, chat: chatId } as any)
-    const exact = resourceId
+    const localChatId = extractChatId(chatId)
+    const resourceId = threadResourceIdForThread(localChatId, threadId)
+    const exact = typeof (db as any).findById === 'function'
       ? await (db as any).findById(Thread as any, resourceId)
       : null
     if (exact) return exact
   }
 
   const rows = await db.select().from(Thread).execute()
-  return rows.find((entry: any) => entry.id === threadId) ?? null
+  return rows.find((entry: any) => (
+    entry.id === threadId || extractThreadId(entry.id) === threadId
+  )) ?? null
 }
 
 // ---------------------------------------------------------------------------
@@ -96,7 +128,7 @@ function threadRecordToMetadata(record: any): ThreadMetadata {
   const chatId = extractChatId(record.chat)
   const extra = parseThreadMetadata(record.metadata)
   return {
-    id: record.id,
+    id: extractThreadId(record.id) ?? record.id,
     title: record.title || undefined,
     status: stringToStatus(record.status || 'active'),
     created_at: record.createdAt
@@ -172,6 +204,7 @@ function messageRecordToItem(record: any, threadId: string): ThreadItem {
   const createdAt = record.createdAt
     ? Math.floor(new Date(record.createdAt).getTime() / 1000)
     : nowTimestamp()
+  const itemId = messageRecordItemId(record)
 
   const storedThreadItem = parseStoredThreadItem(record.richContent, threadId, createdAt)
     ?? parseStoredThreadItem(record.content, threadId, createdAt)
@@ -181,7 +214,7 @@ function messageRecordToItem(record: any, threadId: string): ThreadItem {
 
   if (record.role === MessageRole.USER) {
     return {
-      id: record.id,
+      id: itemId,
       thread_id: threadId,
       type: 'user_message',
       content: [{ type: 'input_text', text: record.content || '' }],
@@ -190,7 +223,7 @@ function messageRecordToItem(record: any, threadId: string): ThreadItem {
     } as ThreadItem
   }
   return {
-    id: record.id,
+    id: itemId,
     thread_id: threadId,
     type: 'assistant_message',
     content: [{ type: 'output_text', text: record.content || '', annotations: [] } as any],
@@ -198,6 +231,20 @@ function messageRecordToItem(record: any, threadId: string): ThreadItem {
     status: record.status || 'completed',
     created_at: createdAt,
   } as ThreadItem
+}
+
+function messageRecordItemId(record: any): string {
+  const candidate = [record?.id, record?.subject, record?.['@id'], record?.uri]
+    .find((value): value is string => typeof value === 'string' && value.length > 0)
+  if (!candidate) return ''
+  const hashIndex = candidate.lastIndexOf('#')
+  return hashIndex >= 0 && hashIndex < candidate.length - 1
+    ? candidate.slice(hashIndex + 1)
+    : candidate
+}
+
+function messageRecordMatchesItemId(record: any, itemId: string): boolean {
+  return record?.id === itemId || messageRecordItemId(record) === itemId
 }
 
 // ---------------------------------------------------------------------------
@@ -208,16 +255,41 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   private db: SolidDatabase
   private webId: string
   private authFetch: typeof fetch
+  private readonly sync: LinxPodSyncScope
   private recentlyCreatedIds = new Set<string>()
+  private readonly syncResults: LinxSyncRunResult[] = []
+  private syncSeq = 0
   // In-memory caches (per-instance, not per-context)
   private threadChatIdCache = new Map<string, string>()
   private threadMetadataCache = new Map<string, ThreadMetadata>()
   private threadItemsCache = new Map<string, ThreadItem[]>()
 
-  constructor(db: SolidDatabase, webId: string, authFetch: typeof fetch) {
+  constructor(
+    db: SolidDatabase,
+    webId: string,
+    authFetch: typeof fetch,
+    private readonly options: LocalChatKitStoreOptions = {},
+  ) {
     this.db = db
     this.webId = webId
     this.authFetch = authFetch
+    this.sync = createLinxPodSyncScope({
+      source: 'chatkit-local-store',
+      target: 'pod',
+      direction: 'local-to-core',
+      plane: 'projection',
+      authority: 'core',
+      now: this.options.now,
+      metadata: { webId: this.webId },
+      onResult: (result) => {
+        this.syncResults.push(result)
+        this.options.onSyncResult?.(result)
+      },
+    })
+  }
+
+  getSyncResults(): LinxSyncRunResult[] {
+    return [...this.syncResults]
   }
 
   // -----------------------------------------------------------------------
@@ -237,11 +309,12 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   // -----------------------------------------------------------------------
 
   private async ensureChat(chatId: string): Promise<void> {
-    const existingChat = await (this.db as any).findById(Chat as any, chatId)
+    const existingChat = await (this.db as any).findById(Chat as any, this.buildChatResourceId(chatId))
+      ?? await (this.db as any).findById(Chat as any, chatId)
     if (!existingChat) {
       const now = new Date()
       await (this.db as any).insert(Chat as any).values({
-        id: chatId,
+        id: this.buildChatResourceId(chatId),
         title: chatId === DEFAULT_CHAT_ID ? 'Default Chat' : chatId,
         createdAt: now,
         updatedAt: now,
@@ -265,12 +338,55 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     return this.webId.replace('/profile/card#me', '').replace(/\/$/, '')
   }
 
+  private buildChatResourceId(chatId: string): string {
+    return chatResourceIdForChat(chatId)
+  }
+
+  private buildThreadResourceId(chatId: string, threadId: string): string {
+    return threadResourceIdForThread(chatId, threadId)
+  }
+
+  private buildMessageResourceId(chatId: string, messageId: string, createdAt: Date): string {
+    return messageResourceId(messageId, {
+      chat: this.buildChatUri(chatId),
+      createdAt,
+    })
+  }
+
   private buildThreadUri(chatId: string, threadId: string): string {
-    return `${this.getPodBaseUrl()}/.data/chat/${chatId}/index.ttl#${threadId}`
+    return `${this.getPodBaseUrl()}/.data/${this.buildThreadResourceId(chatId, threadId)}`
+  }
+
+  private buildChatUri(chatId: string): string {
+    return `${this.getPodBaseUrl()}/.data/chat/${this.buildChatResourceId(chatId)}`
+  }
+
+  private buildMessageUri(chatId: string, messageId: string, createdAt: Date): string {
+    return `${this.getPodBaseUrl()}/.data/${this.buildMessageResourceId(chatId, messageId, createdAt)}`
+  }
+
+  private buildSyncRefs(input: {
+    chatId?: string
+    threadId?: string
+    itemId?: string
+    itemCreatedAt?: Date
+  }): LinxPodSyncResourceBindings {
+    const chatUri = input.chatId ? this.buildChatUri(input.chatId) : undefined
+    const threadUri = input.threadId && input.chatId ? this.buildThreadUri(input.chatId, input.threadId) : undefined
+    const messageUri = input.itemId && input.chatId && input.itemCreatedAt
+      ? this.buildMessageUri(input.chatId, input.itemId, input.itemCreatedAt)
+      : undefined
+
+    return {
+      chat: input.chatId ? { uri: chatUri, local: input.chatId } : undefined,
+      thread: input.threadId ? { uri: threadUri, local: input.threadId } : undefined,
+      message: input.itemId ? { uri: messageUri, local: input.itemId } : undefined,
+    }
   }
 
   private async resolveCounterpartMaker(chatId: string): Promise<string> {
-    const chat = await (this.db as any).findById(Chat as any, chatId)
+    const chat = await (this.db as any).findById(Chat as any, this.buildChatResourceId(chatId))
+      ?? await (this.db as any).findById(Chat as any, chatId)
     const participants = Array.isArray(chat?.participants)
       ? chat.participants.filter((participant: unknown): participant is string => typeof participant === 'string' && participant.length > 0)
       : []
@@ -282,12 +398,12 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
 
     const contacts = await this.db.select().from(contactTable).execute()
     const contact = contacts.find((entry: any) => (
-      entry.entityUri === participantRef
+      entry.entity === participantRef
       || resolveRowSubject(entry as Record<string, unknown>) === participantRef
       || entry.id === participantRef
-    )) as { entityUri?: string | null } | undefined
+    )) as { entity?: string | null } | undefined
 
-    return contact?.entityUri || participantRef
+    return contact?.entity || participantRef
   }
 
   private async selectMessagesForThread(threadId: string): Promise<any[]> {
@@ -380,6 +496,15 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   }
 
   async saveThread(thread: ThreadMetadata, _context: StoreContext): Promise<void> {
+    await this.runStoreProjection({
+      action: 'thread.save',
+      kind: 'upsert',
+      threadId: thread.id,
+      chatId: getChatIdFromMetadata(thread.metadata),
+    }, () => this.saveThreadProjection(thread))
+  }
+
+  private async saveThreadProjection(thread: ThreadMetadata): Promise<void> {
     const now = new Date()
     const chatId = getChatIdFromMetadata(thread.metadata)
 
@@ -403,8 +528,8 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       } as any)
     } else {
       await (this.db as any).insert(Thread as any).values({
-        id: thread.id,
-        chat: chatId,
+        id: this.buildThreadResourceId(chatId, thread.id),
+        chat: this.buildChatUri(chatId),
         title: thread.title || undefined,
         status: statusToString(thread.status),
         metadata: metadataValue,
@@ -439,11 +564,12 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
         if (idx !== -1) startIndex = idx + 1
       }
       const slice = threads.slice(startIndex, startIndex + limit)
+      const data = slice.map((t: any) => threadRecordToMetadata(t))
       return {
-        data: slice.map((t: any) => threadRecordToMetadata(t)),
+        data,
         has_more: startIndex + limit < threads.length,
-        first_id: slice.length > 0 ? (slice[0] as any).id : undefined,
-        last_id: slice.length > 0 ? (slice[slice.length - 1] as any).id : undefined,
+        first_id: data.length > 0 ? data[0]?.id : undefined,
+        last_id: data.length > 0 ? data[data.length - 1]?.id : undefined,
       }
     } catch (error) {
       console.error('[LocalStore] Failed to load threads:', error)
@@ -452,6 +578,15 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   }
 
   async deleteThread(threadId: string, _context: StoreContext): Promise<void> {
+    await this.runStoreProjection({
+      action: 'thread.delete',
+      kind: 'delete',
+      threadId,
+      chatId: this.threadChatIdCache.get(threadId),
+    }, () => this.deleteThreadProjection(threadId))
+  }
+
+  private async deleteThreadProjection(threadId: string): Promise<void> {
     let chatId = this.threadChatIdCache.get(threadId)
     if (!chatId) {
       try {
@@ -524,11 +659,12 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
         if (idx !== -1) startIndex = idx + 1
       }
       const slice = messages.slice(startIndex, startIndex + limit)
+      const data = slice.map((m: any) => messageRecordToItem(m, threadId))
       return {
-        data: slice.map((m: any) => messageRecordToItem(m, threadId)),
+        data,
         has_more: startIndex + limit < messages.length,
-        first_id: slice.length > 0 ? (slice[0] as any).id : undefined,
-        last_id: slice.length > 0 ? (slice[slice.length - 1] as any).id : undefined,
+        first_id: data.length > 0 ? data[0]?.id : undefined,
+        last_id: data.length > 0 ? data[data.length - 1]?.id : undefined,
       }
     } catch (error) {
       console.error('[LocalStore] Failed to load thread items:', error)
@@ -538,22 +674,35 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
 
   async addThreadItem(threadId: string, item: ThreadItem, _context: StoreContext): Promise<void> {
     const chatId = await this.getThreadChatId(threadId)
+    await this.runStoreProjection({
+      action: 'item.add',
+      kind: 'insert',
+      threadId,
+      chatId,
+      itemId: item.id,
+      itemCreatedAt: new Date(item.created_at * 1000),
+      itemType: item.type,
+    }, () => this.addThreadItemProjection(threadId, item))
+  }
+
+  private async addThreadItemProjection(threadId: string, item: ThreadItem): Promise<void> {
+    const chatId = await this.getThreadChatId(threadId)
     const { content, role, status, richContent } = threadItemToMessageRecord(item)
-    const podBaseUrl = this.getPodBaseUrl()
+    const createdAt = new Date(item.created_at * 1000)
     const maker = role === MessageRole.USER
       ? this.webId
       : await this.resolveCounterpartMaker(chatId)
 
     await (this.db as any).insert(Message as any).values({
-      id: item.id,
-      chat: `${podBaseUrl}/.data/chat/${chatId}/index.ttl#this`,
+      id: this.buildMessageResourceId(chatId, item.id, createdAt),
+      chat: this.buildChatUri(chatId),
       thread: this.buildThreadUri(chatId, threadId),
       maker,
       role,
       content,
       richContent: richContent ?? undefined,
       status: status ?? undefined,
-      createdAt: new Date(item.created_at * 1000),
+      createdAt,
     }).execute()
 
     this.recentlyCreatedIds.add(item.id)
@@ -561,6 +710,19 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   }
 
   async saveItem(threadId: string, item: ThreadItem, _context: StoreContext): Promise<void> {
+    const chatId = await this.getThreadChatId(threadId)
+    await this.runStoreProjection({
+      action: 'item.save',
+      kind: 'upsert',
+      threadId,
+      chatId,
+      itemId: item.id,
+      itemCreatedAt: new Date(item.created_at * 1000),
+      itemType: item.type,
+    }, () => this.saveItemProjection(threadId, item))
+  }
+
+  private async saveItemProjection(threadId: string, item: ThreadItem): Promise<void> {
     const chatId = await this.getThreadChatId(threadId)
     const { content, status, richContent } = threadItemToMessageRecord(item)
 
@@ -583,7 +745,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     }
 
     const existing = (await this.selectMessagesForThread(threadId))
-      .find((entry: any) => entry.id === item.id) ?? null
+      .find((entry: any) => messageRecordMatchesItemId(entry, item.id)) ?? null
 
     if (existing) {
       const existingCreatedAt = (existing as any).createdAt
@@ -594,7 +756,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       await this.directPatchMessage(chatId, item.id, content, richContent, status, existingCreatedAt)
       this.upsertCachedThreadItem(threadId, item)
     } else {
-      await this.addThreadItem(threadId, item, _context)
+      await this.addThreadItemProjection(threadId, item)
     }
   }
 
@@ -686,20 +848,65 @@ WHERE { ${wherePatterns.join(' ')} }
     }
 
     const messages = (await this.selectMessagesForThread(threadId))
-      .filter((message: any) => message.id === itemId)
+      .filter((message: any) => messageRecordMatchesItemId(message, itemId))
     if (messages.length === 0) throw new Error(`Item not found: ${itemId}`)
     return messageRecordToItem(messages[0], threadId)
   }
 
   async deleteThreadItem(threadId: string, itemId: string, _context: StoreContext): Promise<void> {
+    const chatId = await this.getThreadChatId(threadId)
+    const message = (await this.selectMessagesForThread(threadId)).find((entry: any) => messageRecordMatchesItemId(entry, itemId))
+    await this.runStoreProjection({
+      action: 'item.delete',
+      kind: 'delete',
+      threadId,
+      chatId,
+      itemId,
+      itemCreatedAt: message?.createdAt ? new Date(message.createdAt as string | number | Date) : undefined,
+    }, () => this.deleteThreadItemProjection(threadId, itemId))
+  }
+
+  private async deleteThreadItemProjection(threadId: string, itemId: string): Promise<void> {
     const messages = await this.selectMessagesForThread(threadId)
-    const message = messages.find((entry: any) => entry.id === itemId)
+    const message = messages.find((entry: any) => messageRecordMatchesItemId(entry, itemId))
     if (!message) {
       return
     }
 
     await this.deleteMessageRecord(message)
     this.removeCachedThreadItem(threadId, itemId)
+  }
+
+  private async runStoreProjection(
+    input: {
+      action: string
+      kind: LinxSyncOperationKind
+      threadId?: string
+      chatId?: string
+      itemId?: string
+      itemCreatedAt?: Date
+      itemType?: string
+    },
+    project: () => Promise<void>,
+  ): Promise<void> {
+    await this.sync.run({
+      action: input.action,
+      operationId: this.nextSyncOperationId(input),
+      kind: input.kind,
+      description: `local-chatkit-store:${input.action}`,
+      subject: input.itemId ?? input.threadId ?? input.chatId,
+      resourceBindings: this.buildSyncRefs(input),
+      metadata: {
+        itemType: input.itemType,
+      },
+      task: project,
+    })
+  }
+
+  private nextSyncOperationId(input: { action: string; threadId?: string; itemId?: string }): string {
+    const timestamp = (this.options.now?.() ?? new Date()).toISOString().replace(/[:.]/g, '-')
+    const subject = input.itemId ?? input.threadId ?? 'store'
+    return `chatkit-store:${input.action}:${subject}:${timestamp}:${++this.syncSeq}`
   }
 
   // -----------------------------------------------------------------------

@@ -101,7 +101,11 @@ describe('RuntimeSidecarSink', () => {
 
   it('invalidates inbox queries after a new tool approval event', async () => {
     const { db, inserts } = createMockDb()
-    const sink = new RuntimeSidecarSink(db as any, 'https://alice.example/profile/card#me')
+    const onSyncResult = vi.fn()
+    const sink = new RuntimeSidecarSink(db as any, 'https://alice.example/profile/card#me', {
+      now: () => new Date('2026-05-21T00:00:00.000Z'),
+      onSyncResult,
+    })
 
     await sink.persistRuntimeEvent(runtimeSession, {
       type: 'tool_call',
@@ -126,6 +130,20 @@ describe('RuntimeSidecarSink', () => {
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['inbox', 'audit'] })
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['inbox', 'notifications'] })
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['inbox', 'items'] })
+
+    expect(sink.getSyncResults()).toHaveLength(1)
+    expect(onSyncResult).toHaveBeenCalledTimes(1)
+    expect(sink.getSyncResults()[0]).toMatchObject({
+      source: 'chatkit-local-runtime',
+      target: 'pod',
+      direction: 'local-to-core',
+      plane: 'projection',
+      authority: 'core',
+      attempted: 1,
+      applied: 1,
+      failed: 0,
+      status: 'completed',
+    })
   })
 
   it('dedupes repeated status events and avoids redundant invalidation', async () => {
@@ -158,6 +176,30 @@ describe('RuntimeSidecarSink', () => {
     expect(inserts.find((item) => item.table === sessionTable)?.values).not.toHaveProperty('threadId')
     expect(inserts.find((item) => item.table === auditResource)?.values).not.toHaveProperty('context')
     expect(queryClient.invalidateQueries).toHaveBeenCalledTimes(4)
+    expect(sink.getSyncResults()).toHaveLength(1)
+    expect(sink.getSyncResults()[0]).toMatchObject({
+      source: 'chatkit-local-runtime',
+      target: 'pod',
+      direction: 'local-to-core',
+      plane: 'projection',
+      authority: 'core',
+    })
+  })
+
+  it('ignores runtime events without core projection state', async () => {
+    const { db, inserts } = createMockDb()
+    const onSyncResult = vi.fn()
+    const sink = new RuntimeSidecarSink(db as any, 'https://alice.example/profile/card#me', { onSyncResult })
+
+    await sink.persistRuntimeEvent(runtimeSession, {
+      type: 'stdout',
+      ts: 1,
+      threadId: 'runtime-1',
+    }, context)
+
+    expect(inserts).toHaveLength(0)
+    expect(sink.getSyncResults()).toHaveLength(0)
+    expect(onSyncResult).not.toHaveBeenCalled()
   })
 
   it('updates an existing session row when runtime status changes', async () => {

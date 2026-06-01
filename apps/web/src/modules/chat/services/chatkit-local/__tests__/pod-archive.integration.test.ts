@@ -158,14 +158,21 @@ describe('LocalChatKit pod archive integration', () => {
     const threadId = threadCreated!.thread.id
     const userItem = (userDone as any).item
     const assistantItem = (assistantDone as any).item
-    const userMessage = await db.findById(Message, userItem.id)
-    const assistantMessage = await db.findById(Message, assistantItem.id)
+    const messageIri = (item: { id: string; created_at: number }) => {
+      const createdAt = new Date(item.created_at * 1000)
+      const yyyy = createdAt.getUTCFullYear()
+      const mm = String(createdAt.getUTCMonth() + 1).padStart(2, '0')
+      const dd = String(createdAt.getUTCDate()).padStart(2, '0')
+      return `${podBase}/.data/chat/${chatId}/${yyyy}/${mm}/${dd}/messages.ttl#${item.id}`
+    }
+    const userMessage = await db.findByIri(Message, messageIri(userItem))
+    const assistantMessage = await db.findByIri(Message, messageIri(assistantItem))
 
     expect(userMessage?.content).toBe(prompt)
     expect(assistantMessage?.content).toBe(assistantText)
     expect(assistantMessage?.status).toBe('completed')
 
-    const createdAt = new Date(String((assistantMessage as any).createdAt))
+    const createdAt = new Date(assistantItem.created_at * 1000)
     const yyyy = createdAt.getUTCFullYear()
     const mm = String(createdAt.getUTCMonth() + 1).padStart(2, '0')
     const dd = String(createdAt.getUTCDate()).padStart(2, '0')

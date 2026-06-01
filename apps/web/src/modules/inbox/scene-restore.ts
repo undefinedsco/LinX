@@ -112,14 +112,18 @@ export function resolveInboxObjectTarget(scene: InboxSceneTarget): InboxObjectTa
       : null
   }
 
-  const threadRef = extractChatThreadRef(scene.about)
-  if (threadRef.chatId || threadRef.threadId) {
-    return { kind: 'chat' }
-  }
-
   const approvalId = parseApprovalId(scene.about)
   if (approvalId) {
     return { kind: 'approval', approvalItemId: `approval:${approvalId}` }
+  }
+
+  const threadRef = extractChatThreadRef(scene.about)
+  const aboutIsThread =
+    Boolean(threadRef.chatId)
+    || scene.about === scene.thread
+    || scene.about === scene.threadId
+  if (aboutIsThread && (threadRef.chatId || threadRef.threadId)) {
+    return { kind: 'chat' }
   }
 
   if (isLocalWorkspaceUri(scene.about)) {

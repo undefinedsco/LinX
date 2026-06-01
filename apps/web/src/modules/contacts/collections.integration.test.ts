@@ -42,7 +42,7 @@ describe('contact collections integration', () => {
     const [created] = await database.insert(contactTable).values({
       id,
       name: 'Integration Contact',
-      entityUri: webId,
+      entity: webId,
       contactType: 'solid',
     }).execute()
 
@@ -63,8 +63,8 @@ describe('contact collections integration', () => {
 
     const timestamp = Date.now()
     const contacts = [
-      { id: `solid-${timestamp}`, name: 'Solid User', contactType: 'solid', entityUri: `https://solid-${timestamp}.pod/#me` },
-      { id: `ext-${timestamp}`, name: 'External User', contactType: 'external', externalId: `wxid_${timestamp}`, entityUri: `wxid_${timestamp}` },
+      { id: `solid-${timestamp}`, name: 'Solid User', contactType: 'solid', entity: `https://solid-${timestamp}.pod/#me` },
+      { id: `ext-${timestamp}`, name: 'External User', contactType: 'external', externalId: `wxid_${timestamp}`, entity: `wxid_${timestamp}` },
     ]
 
     for (const contact of contacts) {
@@ -91,7 +91,7 @@ describe('contact collections integration', () => {
     const [created] = await database.insert(contactTable).values({
       id,
       name: 'Delete Me',
-      entityUri: webId,
+      entity: webId,
       contactType: 'solid',
     }).execute()
 

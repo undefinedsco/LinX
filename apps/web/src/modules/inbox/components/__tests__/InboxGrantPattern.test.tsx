@@ -33,6 +33,23 @@ vi.mock('../../store', () => ({
 vi.mock('../../collections', () => ({
   useInboxItems: () => mockUseInboxItems(),
   useResolveInboxApproval: () => mockUseResolveInboxApproval(),
+  parseApprovalOptions(value: unknown) {
+    if (typeof value !== 'string' || !value.trim()) return []
+    return JSON.parse(value)
+  },
+  approvalDecisionForOption(option: { kind?: string }) {
+    return option.kind === 'reject_once' || option.kind === 'reject_always' || option.kind === 'cancel'
+      ? 'rejected'
+      : 'approved'
+  },
+  buildApprovalOptionReason(option: { optionId: string; label: string }, extraReason?: string) {
+    return JSON.stringify({
+      source: 'linx-inbox',
+      selectedOptionId: option.optionId,
+      selectedLabel: option.label,
+      ...(extraReason?.trim() ? { note: extraReason.trim() } : {}),
+    })
+  },
 }))
 
 import { InboxContentPane } from '../InboxContentPane'
@@ -42,7 +59,7 @@ const pendingApproval = {
   kind: 'approval' as const,
   category: 'approval' as const,
   title: 'write_file',
-  description: '等待授权 · 高 风险',
+  description: '待审批 · 高 风险',
   timestamp: '2026-03-10T12:00:00.000Z',
   status: 'pending' as const,
   approval: {
@@ -108,6 +125,40 @@ describe('InboxContentPane approval resolution', () => {
         approval: expect.objectContaining({ id: 'approval-1' }),
         decision: 'approved',
         reason: '可以执行',
+      })
+    })
+  })
+
+  it('renders stored approval options as the resolution buttons', async () => {
+    mockUseInboxItems.mockReturnValue({
+      data: [{
+        ...pendingApproval,
+        approval: {
+          ...pendingApproval.approval,
+          approvalOptions: JSON.stringify([
+            { optionId: '0', label: 'Allow', kind: 'allow_once' },
+            { optionId: '1', label: 'Block', kind: 'reject_once' },
+          ]),
+        },
+      }],
+      isLoading: false,
+    })
+
+    render(<InboxContentPane />)
+
+    fireEvent.change(screen.getByLabelText('处理备注'), { target: { value: '风险太高' } })
+    fireEvent.click(screen.getByText('Block'))
+
+    await waitFor(() => {
+      expect(mockMutateAsync).toHaveBeenCalledWith({
+        approval: expect.objectContaining({ id: 'approval-1' }),
+        decision: 'rejected',
+        reason: JSON.stringify({
+          source: 'linx-inbox',
+          selectedOptionId: '1',
+          selectedLabel: 'Block',
+          note: '风险太高',
+        }),
       })
     })
   })

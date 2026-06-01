@@ -11,6 +11,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getLiteral, getSolidDataset, getThing, getUrl, getUrlAll } from '@inrupt/solid-client'
 import { like, or, resolveRowSubject } from '@undefineds.co/drizzle-solid'
 import {
+  createLinxPodSyncScope,
+  type LinxSyncOperationKind,
+  type LinxSyncRunResult,
+} from '@linx/agent-runtime/sync'
+import {
   chatTable,
   threadTable,
   messageTable,
@@ -18,10 +23,16 @@ import {
   contactTable,
   credentialResource,
   aiProviderResource,
+  chatResourceId,
   eq,
+  extractChatIdFromChatRef,
+  messageResourceId,
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
   resolveThreadChatId as resolveThreadChatIdFromRow,
+  selectAIConfigCredential,
+  threadResourceId,
+  MEETING,
   UDFS,
   WF,
   type ChatRow,
@@ -62,6 +73,7 @@ import { ensureAgentHome } from './agent-home'
 let dbGetter: (() => SolidDatabase | null) | null = null
 const threadChatIdCache = new Map<string, string>()
 let linxWelcomeInFlight: Promise<LinxWelcomeResult | null> | null = null
+const chatOpsSync = createLinxPodSyncScope({ source: 'app-chat-ops' })
 
 export const LINX_DEFAULT_SECRETARY = {
   title: 'AI Secretary',
@@ -132,6 +144,88 @@ function getDb(): SolidDatabase | null {
   return dbGetter?.() ?? null
 }
 
+export function getChatOpsSyncResults(): LinxSyncRunResult[] {
+  return chatOpsSync.getResults()
+}
+
+export function clearChatOpsSyncResults(): void {
+  chatOpsSync.clearResults()
+}
+
+async function runChatOpsProjection<T>(
+  input: {
+    action: string
+    kind: LinxSyncOperationKind
+    chatId?: string
+    threadId?: string
+    messageId?: string
+    agentId?: string
+    contactId?: string
+    workspaceId?: string
+    chatUri?: string
+    threadUri?: string
+    messageUri?: string
+    agentUri?: string
+    contactUri?: string
+    workspaceUri?: string
+    role?: string
+    metadata?: Record<string, unknown> | ((value: T) => Record<string, unknown>)
+  },
+  project: () => T | Promise<T>,
+): Promise<T> {
+  return chatOpsSync.run({
+    action: input.action,
+    kind: input.kind,
+    description: `chat-ops:${input.action}`,
+    subject: input.messageId
+      ?? input.threadId
+      ?? input.chatId
+      ?? input.agentId
+      ?? input.contactId
+      ?? input.workspaceId,
+    resourceBindings: (value) => ({
+      chat: {
+        uri: input.chatUri ?? readResultString(value, 'chatUri'),
+        local: input.chatId ?? readResultString(value, 'id') ?? readResultString(value, 'chatId') ?? readResultString(value, 'localChat'),
+      },
+      thread: {
+        uri: input.threadUri ?? readResultString(value, 'threadUri'),
+        local: input.threadId ?? readResultString(value, 'threadId') ?? readResultString(value, 'localThread'),
+      },
+      message: {
+        uri: input.messageUri ?? readResultString(value, 'messageUri'),
+        local: input.messageId ?? readResultString(value, 'messageId') ?? readResultString(value, 'localMessage'),
+      },
+      agent: {
+        uri: input.agentUri ?? readResultString(value, 'agentUri'),
+        local: input.agentId ?? readResultString(value, 'agentId') ?? readResultString(value, 'localAgent'),
+      },
+      contact: {
+        uri: input.contactUri ?? readResultString(value, 'contactUri'),
+        local: input.contactId ?? readResultString(value, 'contactId') ?? readResultString(value, 'localContact'),
+      },
+      workspace: {
+        uri: input.workspaceUri ?? readResultString(value, 'workspaceUri'),
+        local: input.workspaceId ?? readResultString(value, 'workspaceId') ?? readResultString(value, 'localWorkspace'),
+      },
+    }),
+    metadata: (value) => {
+      const extraMetadata = typeof input.metadata === 'function'
+        ? input.metadata(value)
+        : input.metadata
+      return {
+        role: input.role,
+        ...extraMetadata,
+      }
+    },
+    task: project,
+  })
+}
+
+function readResultString(value: unknown, key: string): string | undefined {
+  return isRecord(value) && typeof value[key] === 'string' ? value[key] : undefined
+}
+
 function getCurrentWebId(db: SolidDatabase): string | null {
   const webId = (
     (db as any).getDialect?.()?.getWebId?.()
@@ -159,15 +253,45 @@ function hasHydratedChatMetadata(metadata: unknown): boolean {
     )
 }
 
+function buildChatResourceId(chatId: string): string {
+  return chatResourceId(extractChatIdFromChatRef(chatId) ?? chatId)
+}
+
+function buildChatRef(chatId: string): string {
+  return `chat/${buildChatResourceId(chatId)}`
+}
+
+function buildThreadResourceId(chatId: string, threadId: string): string {
+  return threadResourceId(threadId, {
+    chat: buildChatRef(chatId),
+  })
+}
+
+function buildMessageResourceId(input: {
+  chatId: string
+  messageId: string
+  createdAt?: Date | string | number
+}): string {
+  return messageResourceId(input.messageId, {
+    chat: buildChatRef(input.chatId),
+    createdAt: input.createdAt ?? new Date(),
+  })
+}
+
 function buildChatSubjectIri(db: SolidDatabase, chatId: string | undefined): string | null {
   if (!chatId) return null
   if (typeof db.resolveRowIri !== 'function') return null
-  return db.resolveRowIri(chatTable as any, { id: chatId })
+  return db.resolveRowIri(chatTable as any, { id: buildChatResourceId(chatId) })
 }
 
 function resolveAgentSubjectIri(db: SolidDatabase, agentId: string): string | null {
   if (!agentId || typeof db.resolveRowIri !== 'function') return null
   return db.resolveRowIri(agentTable as any, { id: agentId })
+}
+
+function resolveContactSubjectIri(db: SolidDatabase, contactId: string): string | null {
+  if (!contactId || typeof db.resolveRowIri !== 'function') return null
+  return db.resolveRowIri(contactTable as any, { id: contactId })
 }
 
 function getPodBaseUrl(db: SolidDatabase): string | null {
@@ -201,7 +325,9 @@ async function resolveThreadChatId(
   }
 
   const row = typeof (db as any).findById === 'function'
-    ? await (db as any).findById(threadTable as any, threadId) as ThreadRow | null
+    ? await (db as any).findById(threadTable as any, chatId
+      ? buildThreadResourceId(chatId, threadId)
+      : threadId) as ThreadRow | null
     : null
   const rowChatId = resolveThreadChatIdFromRow(row)
   if (!rowChatId) {
@@ -224,7 +350,29 @@ async function buildThreadSubjectIri(
   const resolvedChatId = await resolveThreadChatId(db, threadId, chatId)
   if (!resolvedChatId) return null
   if (typeof db.resolveRowIri !== 'function') return null
-  return db.resolveRowIri(threadTable as any, { id: threadId, chat: resolvedChatId })
+  return db.resolveRowIri(threadTable as any, { id: buildThreadResourceId(resolvedChatId, threadId) })
+}
+
+async function buildMessageSubjectIri(
+  db: SolidDatabase,
+  input: {
+    messageId: string | undefined
+    chatId?: string | null
+    threadId?: string | null
+    createdAt?: Date | string | number
+  },
+): Promise<string | null> {
+  if (!input.messageId) return null
+  const resolvedChatId = await resolveThreadChatId(db, input.threadId ?? undefined, input.chatId)
+  if (!resolvedChatId) return null
+  if (typeof db.resolveRowIri !== 'function') return null
+  return db.resolveRowIri(messageTable as any, {
+    id: buildMessageResourceId({
+      chatId: resolvedChatId,
+      messageId: input.messageId,
+      createdAt: input.createdAt,
+    }),
+  })
 }
 
 function extractLinkedEntityId(uri: string | null | undefined): string | null {
@@ -326,7 +474,7 @@ async function ensureChatStateRow(db: SolidDatabase, chatId: string): Promise<Ch
   }
 
   const located = typeof (db as any).findById === 'function'
-    ? await (db as any).findById(chatTable as any, chatId) as ChatRow | null
+    ? await (db as any).findById(chatTable as any, buildChatResourceId(chatId)) as ChatRow | null
     : null
   if (located) {
     if (!chatCollection.isReady()) {
@@ -339,7 +487,9 @@ async function ensureChatStateRow(db: SolidDatabase, chatId: string): Promise<Ch
   }
 
   const rows = await chatCollection.fetch()
-  const [row] = await hydrateChatRows(db, rows.filter((candidate) => candidate.id === chatId))
+  const [row] = await hydrateChatRows(db, rows.filter((candidate) => (
+    candidate.id === chatId || extractChatIdFromChatRef(candidate.id) === chatId
+  )))
 
   if (!row) {
     throw new Error(`Chat ${chatId} was not found in the Pod`)
@@ -356,7 +506,9 @@ async function ensureThreadStateRow(db: SolidDatabase, threadId: string): Promis
   }
 
   const row = typeof (db as any).findById === 'function'
-    ? await (db as any).findById(threadTable as any, threadId) as ThreadRow | null
+    ? await (db as any).findById(threadTable as any, getCachedThreadChatId(threadId)
+      ? buildThreadResourceId(getCachedThreadChatId(threadId) as string, threadId)
+      : threadId) as ThreadRow | null
     : null
 
   if (!row) {
@@ -467,8 +619,8 @@ async function resolveAssistantMakerFromChat(db: SolidDatabase, chat: Pick<ChatR
     const contact = contactId
       ? await (db as any).findById(contactTable as any, contactId) as ContactRow | null
       : null
-    if (contact?.entityUri) {
-      return contact.entityUri
+    if (contact?.entity) {
+      return contact.entity
     }
   } catch (error) {
     console.warn('[chatOps] Failed to resolve AI Secretary contact:', error)
@@ -493,7 +645,7 @@ async function ensureAgentHomeForChat(db: SolidDatabase, chat: Pick<ChatRow, 'ti
     const contact = contactId
       ? await (db as any).findByLocator(contactTable as any, { id: contactId } as any) as ContactRow | null
       : null
-    const agentRef = contact?.entityUri ?? participant
+    const agentRef = contact?.entity ?? participant
     const agentId = extractAgentIdFromRef(agentRef)
     if (!agentId) return
 
@@ -598,8 +750,8 @@ const workspaceListColumns: (keyof WorkspaceRow)[] = [
   'title',
   'workspaceType',
   'kind',
-  'rootUri',
-  'repoRootUri',
+  'root',
+  'repoRoot',
   'baseRef',
   'branch',
   'updatedAt',
@@ -767,7 +919,7 @@ export const chatOps = {
    * 
    * Flow:
    * 1. Create Agent record (with avatarUrl from provider)
-   * 2. Create Contact record (type: agent, entityUri → Agent)
+   * 2. Create Contact record (type: agent, entity → Agent)
    * 3. Create Chat record (participants → Contact URI)
    * 
    * @returns The created Chat with related IDs
@@ -780,51 +932,71 @@ export const chatOps = {
       throw new Error('Solid database is not ready')
     }
 
-    const providerInfo = getAgentProviderInfo(provider)
-    const {
-      agent,
-      contact,
-      agentId,
-      contactId,
-      contactUri,
-    } = await createAgentContactRecords(db, {
-      name: title,
-      provider: normalizeAIConfigProviderId(provider),
-      model: normalizeAIConfigResourceId(model),
-      instructions: systemPrompt,
+    return await runChatOpsProjection({
+      action: 'ai-chat.create',
+      kind: 'insert',
+      metadata: (value) => ({
+        chatUri: readResultString(value, 'chatUri') ?? resolveRowSubject(value as Record<string, unknown>),
+        agentUri: readResultString(value, 'agentUri'),
+        contactUri: readResultString(value, 'contactUri'),
+        provider: normalizeAIConfigProviderId(provider),
+        model: normalizeAIConfigResourceId(model),
+      }),
+    }, async () => {
+      const providerInfo = getAgentProviderInfo(provider)
+      const {
+        agent,
+        contact,
+        agentId,
+        contactId,
+        contactUri,
+      } = await createAgentContactRecords(db, {
+        name: title,
+        provider: normalizeAIConfigProviderId(provider),
+        model: normalizeAIConfigResourceId(model),
+        instructions: systemPrompt,
+      })
+      await ensureAgentHome(db, {
+        agentId,
+        name: title,
+        provider: normalizeAIConfigProviderId(provider),
+        model: normalizeAIConfigResourceId(model),
+        instructions: systemPrompt,
+      })
+
+      const chatId = crypto.randomUUID()
+      const now = new Date()
+
+      writeCollectionRow(agentCollection, agent as AgentRow, agentId)
+      writeCollectionRow(_contactCollection, contact as ContactRow, contactId)
+
+      const chatData: ChatInsert = {
+        id: chatId,
+        title,
+        avatarUrl: providerInfo?.logoUrl,
+        metadata: title === LINX_DEFAULT_SECRETARY.title
+          ? createSecretaryMetadata()
+          : undefined,
+        participants: [contactUri],
+        createdAt: now,
+        updatedAt: now,
+        lastActiveAt: now,
+      }
+      const chatTx = chatCollection.insert(chatData as ChatRow)
+      await chatTx.isPersisted.promise
+      writeCollectionRow(chatCollection, { ...chatData, id: chatId } as ChatRow, chatId)
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.chats })
+
+      return {
+        ...chatData,
+        id: chatId,
+        agentId,
+        contactId,
+        chatUri: buildChatSubjectIri(db, chatId) ?? undefined,
+        agentUri: resolveRowSubject(agent as Record<string, unknown>) ?? resolveAgentSubjectIri(db, agentId) ?? undefined,
+        contactUri,
+      } as ChatRow & { agentId: string; contactId: string }
     })
-    await ensureAgentHome(db, {
-      agentId,
-      name: title,
-      provider: normalizeAIConfigProviderId(provider),
-      model: normalizeAIConfigResourceId(model),
-      instructions: systemPrompt,
-    })
-
-    const chatId = crypto.randomUUID()
-    const now = new Date()
-
-    writeCollectionRow(agentCollection, agent as AgentRow, agentId)
-    writeCollectionRow(_contactCollection, contact as ContactRow, contactId)
-
-    const chatData: ChatInsert = {
-      id: chatId,
-      title,
-      avatarUrl: providerInfo?.logoUrl,
-      metadata: title === LINX_DEFAULT_SECRETARY.title
-        ? createSecretaryMetadata()
-        : undefined,
-      participants: [contactUri],
-      createdAt: now,
-      updatedAt: now,
-      lastActiveAt: now,
-    }
-    const chatTx = chatCollection.insert(chatData as ChatRow)
-    await chatTx.isPersisted.promise
-    writeCollectionRow(chatCollection, { ...chatData, id: chatId } as ChatRow, chatId)
-    queryClient.invalidateQueries({ queryKey: QUERY_KEYS.chats })
-
-    return { ...chatData, id: chatId, agentId, contactId } as ChatRow & { agentId: string; contactId: string }
   },
 
   /**
@@ -848,33 +1020,43 @@ export const chatOps = {
    * Update a chat
    */
   async updateChat(id: string, data: Partial<ChatRow>): Promise<void> {
-    const db = getDb()
-    const updatedAt = new Date()
-    if (!chatCollection.get(id)) {
-      if (!db) {
-        throw new Error('Solid database is not ready')
+    await runChatOpsProjection({
+      action: 'chat.update',
+      kind: 'update',
+      chatId: id,
+      chatUri: getDb() ? buildChatSubjectIri(getDb() as SolidDatabase, id) ?? undefined : undefined,
+      metadata: {
+        fieldKeys: Object.keys(data),
+      },
+    }, async () => {
+      const db = getDb()
+      const updatedAt = new Date()
+      if (!chatCollection.get(id)) {
+        if (!db) {
+          throw new Error('Solid database is not ready')
+        }
+        await ensureChatStateRow(db, id)
       }
-      await ensureChatStateRow(db, id)
-    }
 
-    if (db) {
-      const existing = chatCollection.get(id)
-      await updateExactRecord(db, chatTable as any, existing ?? { id }, {
-        ...data,
-        updatedAt,
-      } as Record<string, unknown>)
-      writeCollectionRow(chatCollection, {
-        ...(existing ?? { id }),
-        ...data,
-        updatedAt,
-      } as ChatRow, id)
-      return
-    }
+      if (db) {
+        const existing = chatCollection.get(id)
+        await updateExactRecord(db, chatTable as any, buildChatSubjectIri(db, id) ?? existing ?? { id: buildChatResourceId(id) }, {
+          ...data,
+          updatedAt,
+        } as Record<string, unknown>)
+        writeCollectionRow(chatCollection, {
+          ...(existing ?? { id }),
+          ...data,
+          updatedAt,
+        } as ChatRow, id)
+        return
+      }
 
-    const tx = chatCollection.update(id, (draft: any) => {
-      Object.assign(draft, data, { updatedAt })
+      const tx = chatCollection.update(id, (draft: any) => {
+        Object.assign(draft, data, { updatedAt })
+      })
+      await tx.isPersisted.promise
     })
-    await tx.isPersisted.promise
   },
 
   /**
@@ -888,6 +1070,7 @@ export const chatOps = {
     const chat = this.getById(id)
     favoriteHooks.onStarredChange('chat', id, newStarred, {
       title: chat?.title ?? id,
+      targetType: MEETING.LongChat,
       searchText: chat?.title ?? undefined,
       snapshotContent: chat?.lastMessagePreview ?? undefined,
     })
@@ -913,15 +1096,22 @@ export const chatOps = {
       throw new Error('AI Secretary 是默认助手，不能删除。')
     }
 
-    // Delete all threads first
-    const threads = this.getThreads(id)
-    for (const thread of threads) {
-      await this.deleteThread(thread.id, id)
-    }
-    
-    // Delete chat
-    const tx = chatCollection.delete(id)
-    await tx.isPersisted.promise
+    await runChatOpsProjection({
+      action: 'chat.delete',
+      kind: 'delete',
+      chatId: id,
+      chatUri: buildChatSubjectIri(db, id) ?? undefined,
+    }, async () => {
+      // Delete all threads first
+      const threads = this.getThreads(id)
+      for (const thread of threads) {
+        await this.deleteThread(thread.id, id)
+      }
+
+      // Delete chat
+      const tx = chatCollection.delete(id)
+      await tx.isPersisted.promise
+    })
   },
 
   // ==========================================================================
@@ -935,17 +1125,25 @@ export const chatOps = {
     const db = getDb()
     const threadId = crypto.randomUUID()
     const now = new Date()
+    const chatUri = db ? buildChatSubjectIri(db, chatId) : null
     
     const threadData: ThreadInsert = {
-      id: threadId,
-      chat: chatId,
+      id: db ? buildThreadResourceId(chatId, threadId) : threadId,
+      chat: chatUri ?? chatId,
       title: title || `话题 ${now.toLocaleTimeString()}`,
       createdAt: now,
       updatedAt: now,
     }
     
     if (db) {
-      await db.insert(threadTable).values(threadData as any).execute()
+      await runChatOpsProjection({
+        action: 'thread.create',
+        kind: 'insert',
+        chatId,
+        threadId,
+        chatUri: chatUri ?? undefined,
+        threadUri: await buildThreadSubjectIri(db, threadId, chatId) ?? undefined,
+      }, () => db.insert(threadTable).values(threadData as any).execute())
     } else {
       const tx = threadCollection.insert(threadData as ThreadRow)
       await tx.isPersisted.promise
@@ -956,7 +1154,7 @@ export const chatOps = {
     // Invalidate threads query
     queryClient.invalidateQueries({ queryKey: ['chats', chatId, 'threads'] })
     
-    return { ...threadData, id: threadId } as ThreadRow
+    return { ...threadData, id: threadId, chat: chatUri ?? chatId } as ThreadRow
   },
 
   async ensureThreadWorkspace(input: {
@@ -968,124 +1166,147 @@ export const chatOps = {
     baseRef?: string
     branch?: string
   }): Promise<string> {
-    const db = getDb()
-    if (!db) {
-      throw new Error('数据库未就绪，无法创建 workspace。')
-    }
+    return await runChatOpsProjection({
+      action: 'thread.workspace.ensure',
+      kind: 'upsert',
+      threadId: input.threadId,
+      workspaceId: input.workspaceUri ? parseWorkspaceIdFromContainerUri(input.workspaceUri) ?? undefined : undefined,
+      workspaceUri: input.workspaceUri,
+      metadata: (value) => ({
+        workspaceUri: typeof value === 'string' ? value : input.workspaceUri,
+        hasLocalPath: Boolean(input.repoPath || input.folderPath),
+      }),
+    }, async () => {
+      const db = getDb()
+      if (!db) {
+        throw new Error('数据库未就绪，无法创建 workspace。')
+      }
 
-    const thread = await ensureThreadStateRow(db, input.threadId)
-    const requestedWorkspaceUri = input.workspaceUri?.trim()
+      const thread = await ensureThreadStateRow(db, input.threadId)
+      const requestedWorkspaceUri = input.workspaceUri?.trim()
 
-    if (requestedWorkspaceUri && isLocalWorkspaceUri(requestedWorkspaceUri)) {
-      if (thread.workspace !== requestedWorkspaceUri) {
-        await this.updateThread(input.threadId, { workspace: requestedWorkspaceUri })
+      if (requestedWorkspaceUri && isLocalWorkspaceUri(requestedWorkspaceUri)) {
+        if (thread.workspace !== requestedWorkspaceUri) {
+          await this.updateThread(input.threadId, { workspace: requestedWorkspaceUri })
+          const chatId = resolveThreadChatIdFromRow(thread)
+          if (chatId) {
+            queryClient.invalidateQueries({ queryKey: QUERY_KEYS.threads(chatId) })
+          }
+        }
+        return requestedWorkspaceUri
+      }
+
+      if (!requestedWorkspaceUri && thread.workspace && isLocalWorkspaceUri(thread.workspace)) {
+        return thread.workspace
+      }
+
+      const podBaseUrl = getPodBaseUrl(db)
+      if (!podBaseUrl) {
+        throw new Error('无法解析 Pod 地址，无法创建 workspace。')
+      }
+
+      const currentPodWorkspaceUri =
+        thread.workspace && !isLocalWorkspaceUri(thread.workspace) ? thread.workspace : undefined
+      const workspaceUri =
+        requestedWorkspaceUri
+        ?? currentPodWorkspaceUri
+        ?? resolveWorkspaceContainerUri(podBaseUrl, input.threadId)
+      const workspaceId = parseWorkspaceIdFromContainerUri(workspaceUri) ?? input.threadId
+      const normalizedRepoPath = normalizeLocalWorkspacePath(input.repoPath)
+      const normalizedFolderPath = normalizeLocalWorkspacePath(input.folderPath)
+      const kind: WorkspaceKind =
+        normalizedFolderPath && normalizedRepoPath && normalizedFolderPath !== normalizedRepoPath
+          ? 'worktree'
+          : normalizedRepoPath
+            ? 'git'
+            : 'folder'
+      const now = new Date()
+
+      const cachedWorkspace = workspaceCollection.get(workspaceId)
+      const persistedWorkspaceRows: WorkspaceRow[] = []
+      if (!cachedWorkspace) {
+        const persistedWorkspace = await (db as any).findById(workspaceTable as any, workspaceId)
+        if (persistedWorkspace) {
+          persistedWorkspaceRows.push(persistedWorkspace)
+        }
+      }
+      const existingWorkspace = cachedWorkspace ?? persistedWorkspaceRows[0] as WorkspaceRow | undefined
+
+      const nextWorkspaceCreate: WorkspaceInsert = {
+        id: workspaceId,
+        title: input.title?.trim() || thread.title || 'Workspace',
+        workspaceType: 'pod',
+        kind,
+        root: workspaceUri,
+        repoRoot: existingWorkspace?.repoRoot || undefined,
+        baseRef: input.baseRef?.trim() || existingWorkspace?.baseRef || '',
+        branch: input.branch?.trim() || existingWorkspace?.branch || '',
+        createdAt: existingWorkspace?.createdAt ?? now,
+        updatedAt: now,
+      }
+      const nextWorkspaceRow = {
+        ...existingWorkspace,
+        ...nextWorkspaceCreate,
+        id: workspaceId,
+        createdAt: existingWorkspace?.createdAt ?? now,
+        updatedAt: now,
+      } as WorkspaceRow
+
+      if (existingWorkspace) {
+        if (!cachedWorkspace) {
+          writeCollectionRow(workspaceCollection, existingWorkspace, workspaceId)
+        }
+        const tx = workspaceCollection.update(workspaceId, (draft: any) => {
+          Object.assign(draft, {
+            title: nextWorkspaceCreate.title,
+            workspaceType: nextWorkspaceCreate.workspaceType,
+            kind: nextWorkspaceCreate.kind,
+            root: nextWorkspaceCreate.root,
+            repoRoot: nextWorkspaceCreate.repoRoot,
+            baseRef: nextWorkspaceCreate.baseRef,
+            branch: nextWorkspaceCreate.branch,
+            updatedAt: now,
+          })
+        })
+        await tx.isPersisted.promise
+      } else {
+        const tx = workspaceCollection.insert(nextWorkspaceCreate as WorkspaceRow)
+        await tx.isPersisted.promise
+      }
+
+      writeCollectionRow(workspaceCollection, nextWorkspaceRow, workspaceId)
+
+      if (thread.workspace !== workspaceUri) {
+        await this.updateThread(input.threadId, { workspace: workspaceUri })
         const chatId = resolveThreadChatIdFromRow(thread)
         if (chatId) {
           queryClient.invalidateQueries({ queryKey: QUERY_KEYS.threads(chatId) })
         }
       }
-      return requestedWorkspaceUri
-    }
 
-    if (!requestedWorkspaceUri && thread.workspace && isLocalWorkspaceUri(thread.workspace)) {
-      return thread.workspace
-    }
-
-    const podBaseUrl = getPodBaseUrl(db)
-    if (!podBaseUrl) {
-      throw new Error('无法解析 Pod 地址，无法创建 workspace。')
-    }
-
-    const currentPodWorkspaceUri =
-      thread.workspace && !isLocalWorkspaceUri(thread.workspace) ? thread.workspace : undefined
-    const workspaceUri =
-      requestedWorkspaceUri
-      ?? currentPodWorkspaceUri
-      ?? resolveWorkspaceContainerUri(podBaseUrl, input.threadId)
-    const workspaceId = parseWorkspaceIdFromContainerUri(workspaceUri) ?? input.threadId
-    const normalizedRepoPath = normalizeLocalWorkspacePath(input.repoPath)
-    const normalizedFolderPath = normalizeLocalWorkspacePath(input.folderPath)
-    const kind: WorkspaceKind =
-      normalizedFolderPath && normalizedRepoPath && normalizedFolderPath !== normalizedRepoPath
-        ? 'worktree'
-        : normalizedRepoPath
-          ? 'git'
-          : 'folder'
-    const now = new Date()
-
-    const cachedWorkspace = workspaceCollection.get(workspaceId)
-    const persistedWorkspaceRows: WorkspaceRow[] = []
-    if (!cachedWorkspace) {
-      const persistedWorkspace = await (db as any).findById(workspaceTable as any, workspaceId)
-      if (persistedWorkspace) {
-        persistedWorkspaceRows.push(persistedWorkspace)
-      }
-    }
-    const existingWorkspace = cachedWorkspace ?? persistedWorkspaceRows[0] as WorkspaceRow | undefined
-
-    const nextWorkspaceCreate: WorkspaceInsert = {
-      id: workspaceId,
-      title: input.title?.trim() || thread.title || 'Workspace',
-      workspaceType: 'pod',
-      kind,
-      rootUri: workspaceUri,
-      repoRootUri: existingWorkspace?.repoRootUri || undefined,
-      baseRef: input.baseRef?.trim() || existingWorkspace?.baseRef || '',
-      branch: input.branch?.trim() || existingWorkspace?.branch || '',
-      createdAt: existingWorkspace?.createdAt ?? now,
-      updatedAt: now,
-    }
-    const nextWorkspaceRow = {
-      ...existingWorkspace,
-      ...nextWorkspaceCreate,
-      id: workspaceId,
-      createdAt: existingWorkspace?.createdAt ?? now,
-      updatedAt: now,
-    } as WorkspaceRow
-
-    if (existingWorkspace) {
-      if (!cachedWorkspace) {
-        writeCollectionRow(workspaceCollection, existingWorkspace, workspaceId)
-      }
-      const tx = workspaceCollection.update(workspaceId, (draft: any) => {
-        Object.assign(draft, {
-          title: nextWorkspaceCreate.title,
-          workspaceType: nextWorkspaceCreate.workspaceType,
-          kind: nextWorkspaceCreate.kind,
-          rootUri: nextWorkspaceCreate.rootUri,
-          repoRootUri: nextWorkspaceCreate.repoRootUri,
-          baseRef: nextWorkspaceCreate.baseRef,
-          branch: nextWorkspaceCreate.branch,
-          updatedAt: now,
-        })
-      })
-      await tx.isPersisted.promise
-    } else {
-      const tx = workspaceCollection.insert(nextWorkspaceCreate as WorkspaceRow)
-      await tx.isPersisted.promise
-    }
-
-    writeCollectionRow(workspaceCollection, nextWorkspaceRow, workspaceId)
-
-    if (thread.workspace !== workspaceUri) {
-      await this.updateThread(input.threadId, { workspace: workspaceUri })
-      const chatId = resolveThreadChatIdFromRow(thread)
-      if (chatId) {
-        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.threads(chatId) })
-      }
-    }
-
-    return workspaceUri
+      return workspaceUri
+    })
   },
 
   /**
    * Update a thread
    */
   async updateThread(id: string, data: Partial<ThreadRow>): Promise<void> {
-    const tx = threadCollection.update(id, (draft: any) => {
-      Object.assign(draft, data, { updatedAt: new Date() })
+    await runChatOpsProjection({
+      action: 'thread.update',
+      kind: 'update',
+      threadId: id,
+      metadata: (value) => ({
+        threadUri: resolveRowSubject(value as Record<string, unknown>) ?? readResultString(value, 'threadUri'),
+        fieldKeys: Object.keys(data),
+      }),
+    }, async () => {
+      const tx = threadCollection.update(id, (draft: any) => {
+        Object.assign(draft, data, { updatedAt: new Date() })
+      })
+      await tx.isPersisted.promise
+      return threadCollection.get(id) ?? { id, ...data }
     })
-    await tx.isPersisted.promise
   },
 
   /**
@@ -1100,19 +1321,28 @@ export const chatOps = {
    * Delete a thread (and its messages)
    */
   async deleteThread(id: string, chatId: string): Promise<void> {
-    // Delete all messages first
-    const messages = this.getMessages(id)
-    for (const msg of messages) {
-      const tx = messageCollection.delete(msg.id)
+    await runChatOpsProjection({
+      action: 'thread.delete',
+      kind: 'delete',
+      chatId,
+      threadId: id,
+      chatUri: getDb() ? buildChatSubjectIri(getDb() as SolidDatabase, chatId) ?? undefined : undefined,
+      threadUri: getDb() ? await buildThreadSubjectIri(getDb() as SolidDatabase, id, chatId) ?? undefined : undefined,
+    }, async () => {
+      // Delete all messages first
+      const messages = this.getMessages(id)
+      for (const msg of messages) {
+        const tx = messageCollection.delete(msg.id)
+        await tx.isPersisted.promise
+      }
+
+      // Delete thread
+      const tx = threadCollection.delete(id)
       await tx.isPersisted.promise
-    }
-    
-    // Delete thread
-    const tx = threadCollection.delete(id)
-    await tx.isPersisted.promise
-    
-    // Invalidate threads query
-    queryClient.invalidateQueries({ queryKey: ['chats', chatId, 'threads'] })
+
+      // Invalidate threads query
+      queryClient.invalidateQueries({ queryKey: ['chats', chatId, 'threads'] })
+    })
   },
 
   // ==========================================================================
@@ -1137,10 +1367,16 @@ export const chatOps = {
     if (!threadRef) {
       throw new Error(`Failed to resolve thread IRI for thread ${threadId}`)
     }
+    const chatRef = buildChatSubjectIri(db, chatId) ?? chatId
+    const messageResource = buildMessageResourceId({
+      chatId,
+      messageId: msgId,
+      createdAt: now,
+    })
     
     const msgData = {
-      id: msgId,
-      chat: buildChatSubjectIri(db, chatId) ?? chatId,
+      id: messageResource,
+      chat: chatRef,
       thread: threadRef,
       maker,
       role: 'user',
@@ -1149,13 +1385,33 @@ export const chatOps = {
       createdAt: now,
     } as MessageInsert
     
-    await db.insert(messageTable).values(msgData as any).execute()
+    await runChatOpsProjection({
+      action: 'message.create',
+      kind: 'insert',
+      chatId,
+      threadId,
+      messageId: msgId,
+      chatUri: chatRef,
+      threadUri: threadRef,
+      messageUri: await buildMessageSubjectIri(db, {
+        messageId: msgId,
+        chatId,
+        threadId,
+        createdAt: now,
+      }) ?? undefined,
+      role: 'user',
+    }, () => db.insert(messageTable).values(msgData as any).execute())
     writeCollectionRow(messageCollection, { ...msgData, id: msgId } as MessageRow, msgId)
     
     // Update chat last activity
     await this.updateChat(chatId, {
       lastActiveAt: now,
-      lastMessageId: msgId,
+      lastMessage: await buildMessageSubjectIri(db, {
+        messageId: msgId,
+        chatId,
+        threadId,
+        createdAt: now,
+      }) ?? undefined,
       lastMessagePreview: content.slice(0, 100),
     })
     
@@ -1184,10 +1440,16 @@ export const chatOps = {
     if (!threadRef) {
       throw new Error(`Failed to resolve thread IRI for thread ${threadId}`)
     }
+    const chatRef = buildChatSubjectIri(db, chatId) ?? chatId
+    const messageResource = buildMessageResourceId({
+      chatId,
+      messageId: msgId,
+      createdAt: now,
+    })
     
     const msgData = {
-      id: msgId,
-      chat: buildChatSubjectIri(db, chatId) ?? chatId,
+      id: messageResource,
+      chat: chatRef,
       thread: threadRef,
       maker,
       role: 'assistant',
@@ -1197,13 +1459,33 @@ export const chatOps = {
       createdAt: now,
     } as MessageInsert
     
-    await db.insert(messageTable).values(msgData as any).execute()
+    await runChatOpsProjection({
+      action: 'message.create',
+      kind: 'insert',
+      chatId,
+      threadId,
+      messageId: msgId,
+      chatUri: chatRef,
+      threadUri: threadRef,
+      messageUri: await buildMessageSubjectIri(db, {
+        messageId: msgId,
+        chatId,
+        threadId,
+        createdAt: now,
+      }) ?? undefined,
+      role: 'assistant',
+    }, () => db.insert(messageTable).values(msgData as any).execute())
     writeCollectionRow(messageCollection, { ...msgData, id: msgId } as MessageRow, msgId)
     
     // Update chat last activity
     await this.updateChat(chatId, {
       lastActiveAt: now,
-      lastMessageId: msgId,
+      lastMessage: await buildMessageSubjectIri(db, {
+        messageId: msgId,
+        chatId,
+        threadId,
+        createdAt: now,
+      }) ?? undefined,
       lastMessagePreview: content.slice(0, 100),
     })
     
@@ -1217,11 +1499,22 @@ export const chatOps = {
    * Delete a message
    */
   async deleteMessage(id: string, threadId: string): Promise<void> {
-    const tx = messageCollection.delete(id)
-    await tx.isPersisted.promise
-
     const chatId = getCachedThreadChatId(threadId) || ''
-    queryClient.invalidateQueries({ queryKey: QUERY_KEYS.messages(chatId, threadId) })
+    const db = getDb()
+    await runChatOpsProjection({
+      action: 'message.delete',
+      kind: 'delete',
+      chatId,
+      threadId,
+      messageId: id,
+      chatUri: db ? buildChatSubjectIri(db, chatId) ?? undefined : undefined,
+      threadUri: db ? await buildThreadSubjectIri(db, threadId, chatId) ?? undefined : undefined,
+    }, async () => {
+      const tx = messageCollection.delete(id)
+      await tx.isPersisted.promise
+
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.messages(chatId, threadId) })
+    })
   },
 
   // ==========================================================================
@@ -1232,44 +1525,71 @@ export const chatOps = {
    * Update agent profile and keep related contact/chat display fields in sync.
    */
   async updateAgentProfile(input: UpdateAgentProfileInput): Promise<void> {
-    const { agentId, name, instructions, chatId, contactId } = input
-    const normalizedName = name?.trim()
-    const nextInstructions = instructions?.trim() ?? ''
+    await runChatOpsProjection({
+      action: 'agent.profile.update',
+      kind: 'update',
+      agentId: input.agentId,
+      chatId: input.chatId,
+      contactId: input.contactId,
+      metadata: {
+        agentUri: getDb() ? resolveAgentSubjectIri(getDb() as SolidDatabase, input.agentId) ?? undefined : undefined,
+        chatUri: input.chatId && getDb() ? buildChatSubjectIri(getDb() as SolidDatabase, input.chatId) ?? undefined : undefined,
+        contactUri: input.contactId && getDb() ? resolveContactSubjectIri(getDb() as SolidDatabase, input.contactId) ?? undefined : undefined,
+        fieldKeys: [
+          ...(input.name !== undefined ? ['name'] : []),
+          ...(input.instructions !== undefined ? ['instructions'] : []),
+        ],
+      },
+    }, async () => {
+      const { agentId, name, instructions, chatId, contactId } = input
+      const normalizedName = name?.trim()
+      const nextInstructions = instructions?.trim() ?? ''
 
-    const tx = agentCollection.update(agentId, (draft: any) => {
-      if (normalizedName) {
-        draft.name = normalizedName
-      }
-      if (instructions !== undefined) {
-        draft.instructions = nextInstructions || undefined
-      }
-      draft.updatedAt = new Date()
-    })
-    await tx.isPersisted.promise
-
-    if (contactId && normalizedName) {
-      const contactTx = _contactCollection.update(contactId, (draft: any) => {
-        draft.name = normalizedName
+      const tx = agentCollection.update(agentId, (draft: any) => {
+        if (normalizedName) {
+          draft.name = normalizedName
+        }
+        if (instructions !== undefined) {
+          draft.instructions = nextInstructions || undefined
+        }
         draft.updatedAt = new Date()
       })
-      await contactTx.isPersisted.promise
-    }
+      await tx.isPersisted.promise
 
-    if (chatId && normalizedName) {
-      await this.updateChat(chatId, { title: normalizedName })
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.chats })
-    }
+      if (contactId && normalizedName) {
+        const contactTx = _contactCollection.update(contactId, (draft: any) => {
+          draft.name = normalizedName
+          draft.updatedAt = new Date()
+        })
+        await contactTx.isPersisted.promise
+      }
+
+      if (chatId && normalizedName) {
+        await this.updateChat(chatId, { title: normalizedName })
+        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.chats })
+      }
+    })
   },
 
   /**
    * Update an agent's instructions (system prompt)
    */
   async updateAgentInstructions(agentId: string, instructions: string): Promise<void> {
-    const tx = agentCollection.update(agentId, (draft: any) => {
-      draft.instructions = instructions
-      draft.updatedAt = new Date()
+    await runChatOpsProjection({
+      action: 'agent.instructions.update',
+      kind: 'update',
+      agentId,
+      metadata: {
+        agentUri: getDb() ? resolveAgentSubjectIri(getDb() as SolidDatabase, agentId) ?? undefined : undefined,
+        fieldKeys: ['instructions'],
+      },
+    }, async () => {
+      const tx = agentCollection.update(agentId, (draft: any) => {
+        draft.instructions = instructions
+        draft.updatedAt = new Date()
+      })
+      await tx.isPersisted.promise
     })
-    await tx.isPersisted.promise
   },
 
   /**
@@ -1277,35 +1597,50 @@ export const chatOps = {
    * Also updates the related Chat's avatarUrl for list display
    */
   async updateAgentModel(agentId: string, provider: string, model: string, chatId?: string, contactId?: string): Promise<void> {
-    const providerInfo = getAgentProviderInfo(provider)
-    const providerRef = normalizeAIConfigProviderId(provider)
-    const modelRef = normalizeAIConfigResourceId(model)
-    const tx = agentCollection.update(agentId, (draft: any) => {
-      const currentProviderId = normalizeAIConfigProviderId(typeof draft.provider === 'string' ? draft.provider : '')
-      const providerChanged = currentProviderId !== provider
-      draft.provider = providerRef
-      draft.model = modelRef
-      // Update avatarUrl when provider changes (unless user set a custom one)
-      if (providerChanged && providerInfo?.logoUrl) {
-        draft.avatarUrl = providerInfo.logoUrl
-      }
-      draft.updatedAt = new Date()
-    })
-    await tx.isPersisted.promise
-
-    if (contactId && providerInfo?.logoUrl) {
-      const contactTx = _contactCollection.update(contactId, (draft: any) => {
-        draft.avatarUrl = providerInfo.logoUrl
+    await runChatOpsProjection({
+      action: 'agent.model.update',
+      kind: 'update',
+      agentId,
+      chatId,
+      contactId,
+      metadata: {
+        agentUri: getDb() ? resolveAgentSubjectIri(getDb() as SolidDatabase, agentId) ?? undefined : undefined,
+        chatUri: chatId && getDb() ? buildChatSubjectIri(getDb() as SolidDatabase, chatId) ?? undefined : undefined,
+        contactUri: contactId && getDb() ? resolveContactSubjectIri(getDb() as SolidDatabase, contactId) ?? undefined : undefined,
+        provider: normalizeAIConfigProviderId(provider),
+        model: normalizeAIConfigResourceId(model),
+      },
+    }, async () => {
+      const providerInfo = getAgentProviderInfo(provider)
+      const providerRef = normalizeAIConfigProviderId(provider)
+      const modelRef = normalizeAIConfigResourceId(model)
+      const tx = agentCollection.update(agentId, (draft: any) => {
+        const currentProviderId = normalizeAIConfigProviderId(typeof draft.provider === 'string' ? draft.provider : '')
+        const providerChanged = currentProviderId !== provider
+        draft.provider = providerRef
+        draft.model = modelRef
+        // Update avatarUrl when provider changes (unless user set a custom one)
+        if (providerChanged && providerInfo?.logoUrl) {
+          draft.avatarUrl = providerInfo.logoUrl
+        }
         draft.updatedAt = new Date()
       })
-      await contactTx.isPersisted.promise
-    }
-    
-    // Also update Chat avatarUrl if chatId provided and provider changed
-    if (chatId && providerInfo?.logoUrl) {
-      await this.updateChat(chatId, { avatarUrl: providerInfo.logoUrl })
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.chats })
-    }
+      await tx.isPersisted.promise
+
+      if (contactId && providerInfo?.logoUrl) {
+        const contactTx = _contactCollection.update(contactId, (draft: any) => {
+          draft.avatarUrl = providerInfo.logoUrl
+          draft.updatedAt = new Date()
+        })
+        await contactTx.isPersisted.promise
+      }
+
+      // Also update Chat avatarUrl if chatId provided and provider changed
+      if (chatId && providerInfo?.logoUrl) {
+        await this.updateChat(chatId, { avatarUrl: providerInfo.logoUrl })
+        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.chats })
+      }
+    })
   },
 
   // ==========================================================================

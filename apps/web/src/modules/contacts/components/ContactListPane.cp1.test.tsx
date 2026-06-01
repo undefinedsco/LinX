@@ -12,10 +12,10 @@ import { ContactClass } from '@undefineds.co/models'
 
 // Mock contacts data with mixed types
 const mockContacts = [
-  { id: 's-1', name: 'Alice', rdfType: ContactClass.PERSON, contactType: 'solid', starred: false, avatarUrl: null, entityUri: 'https://alice.example/profile/card#me' },
-  { id: 's-2', name: 'Bob', rdfType: ContactClass.PERSON, contactType: 'solid', starred: true, avatarUrl: null, entityUri: 'https://bob.example/profile/card#me' },
-  { id: 'a-1', name: 'GPT Helper', rdfType: ContactClass.AGENT, contactType: 'agent', starred: false, avatarUrl: null, entityUri: 'https://pod.example/.data/agents/gpt-helper.ttl#this' },
-  { id: 'g-1', name: 'Dev Team', rdfType: ContactClass.GROUP, contactType: 'solid', starred: false, avatarUrl: null, entityUri: '/.data/contacts/g-1.ttl' },
+  { id: 's-1', name: 'Alice', rdfType: ContactClass.PERSON, contactType: 'solid', starred: false, avatarUrl: null, entity: 'https://alice.example/profile/card#me' },
+  { id: 's-2', name: 'Bob', rdfType: ContactClass.PERSON, contactType: 'solid', starred: true, avatarUrl: null, entity: 'https://bob.example/profile/card#me' },
+  { id: 'a-1', name: 'GPT Helper', rdfType: ContactClass.AGENT, contactType: 'agent', starred: false, avatarUrl: null, entity: 'https://pod.example/.data/agents/gpt-helper.ttl#this' },
+  { id: 'g-1', name: 'Dev Team', rdfType: ContactClass.GROUP, contactType: 'solid', starred: false, avatarUrl: null, entity: '/.data/contacts/g-1.ttl' },
 ]
 
 vi.mock('../collections', () => ({

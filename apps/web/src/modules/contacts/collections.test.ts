@@ -151,6 +151,8 @@ import {
   contactOps, 
   contactCollection, 
   agentCollection,
+  clearContactOpsSyncResults,
+  getContactOpsSyncResults,
   setContactsDatabaseGetter,
 } from './collections'
 import { queryClient } from '@/providers/query-provider'
@@ -162,6 +164,7 @@ describe('contactOps', () => {
     resetMockDb()
     resetCollectionMocks()
     mockCollectionState.clear()
+    clearContactOpsSyncResults()
     // Set up mock database
     setContactsDatabaseGetter(() => mockDb as any)
   })
@@ -187,7 +190,7 @@ describe('contactOps', () => {
       expect(result.chatId).toBe('uuid-3') // Chat ID (third UUID)
       expect(result.name).toBe('Test Agent')
       expect(result.contactType).toBe(ContactType.AGENT)
-      expect(result.entityUri).toBe('uuid-1') // Agent ID (first UUID)
+      expect(result.entity).toBe('uuid-1') // Agent ID (first UUID)
       
       // Repositories create Agent + Contact via db.insert; collection persists Chat
       expect(mockDb.insert).toHaveBeenCalledTimes(2)
@@ -196,6 +199,24 @@ describe('contactOps', () => {
       // Verify query invalidation
       expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['chats'] })
       expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['contacts'] })
+      expect(getContactOpsSyncResults()).toHaveLength(1)
+      expect(getContactOpsSyncResults()[0]).toMatchObject({
+        source: 'app-contact-ops',
+        target: 'pod',
+        direction: 'local-to-core',
+        plane: 'projection',
+        authority: 'core',
+        status: 'completed',
+        metadata: {
+          action: 'agent.create',
+          contactType: ContactType.AGENT,
+          resourceBindings: {
+            contact: { uri: 'uuid-2', local: 'uuid-2' },
+            chat: { uri: '/.data/chat/uuid-3/index.ttl#this', local: 'uuid-3' },
+            agent: { uri: 'uuid-1', local: 'uuid-1' },
+          },
+        },
+      })
     })
 
     it('should use default model and provider if not provided', async () => {
@@ -233,7 +254,7 @@ describe('contactOps', () => {
       expect(result.chatId).toBe('uuid-2') // Chat ID (second UUID)
       expect(result.name).toBe('Alice')
       expect(result.contactType).toBe(ContactType.SOLID)
-      expect(result.entityUri).toBe('https://alice.solidcommunity.net/profile/card#me')
+      expect(result.entity).toBe('https://alice.solidcommunity.net/profile/card#me')
       expect(result.avatarUrl).toBe('https://alice.solidcommunity.net/avatar.png')
       
       // Repository creates Contact; collection persists Chat
@@ -243,6 +264,23 @@ describe('contactOps', () => {
       // Verify query invalidation
       expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['chats'] })
       expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['contacts'] })
+      expect(getContactOpsSyncResults()).toHaveLength(1)
+      expect(getContactOpsSyncResults()[0]).toMatchObject({
+        source: 'app-contact-ops',
+        target: 'pod',
+        direction: 'local-to-core',
+        plane: 'projection',
+        authority: 'core',
+        status: 'completed',
+        metadata: {
+          action: 'friend.create',
+          contactType: ContactType.SOLID,
+          resourceBindings: {
+            contact: { uri: 'uuid-1', local: 'uuid-1' },
+            chat: { uri: '/.data/chat/uuid-2/index.ttl#this', local: 'uuid-2' },
+          },
+        },
+      })
     })
 
     it('should work without avatarUrl', async () => {
@@ -298,6 +336,21 @@ describe('contactOps', () => {
       await contactOps.deleteContact('contact-1')
 
       expect(mockDelete).toHaveBeenCalledWith('contact-1')
+      expect(getContactOpsSyncResults()).toHaveLength(1)
+      expect(getContactOpsSyncResults()[0]).toMatchObject({
+        source: 'app-contact-ops',
+        target: 'pod',
+        direction: 'local-to-core',
+        plane: 'projection',
+        authority: 'core',
+        status: 'completed',
+        metadata: {
+          action: 'contact.delete',
+          resourceBindings: {
+            contact: { local: 'contact-1' },
+          },
+        },
+      })
     })
   })
 
@@ -348,6 +401,22 @@ describe('contactOps', () => {
 
       expect(result).toBe('chat-1')
       expect(mockInsert).not.toHaveBeenCalled()
+      expect(getContactOpsSyncResults()).toHaveLength(1)
+      expect(getContactOpsSyncResults()[0]).toMatchObject({
+        source: 'app-contact-ops',
+        target: 'pod',
+        direction: 'local-to-core',
+        plane: 'projection',
+        authority: 'core',
+        status: 'completed',
+        metadata: {
+          action: 'contact.chat.ensure',
+          resourceBindings: {
+            contact: { local: 'contact-1' },
+            chat: { uri: '/.data/chat/chat-1/index.ttl#this', local: 'chat-1' },
+          },
+        },
+      })
     })
 
     it('should create a new chat using the persisted contact reference', async () => {
@@ -368,6 +437,22 @@ describe('contactOps', () => {
           participants: ['https://pod.example/.data/contacts/contact-1.ttl'],
         }),
       )
+      expect(getContactOpsSyncResults()).toHaveLength(1)
+      expect(getContactOpsSyncResults()[0]).toMatchObject({
+        source: 'app-contact-ops',
+        target: 'pod',
+        direction: 'local-to-core',
+        plane: 'projection',
+        authority: 'core',
+        status: 'completed',
+        metadata: {
+          action: 'contact.chat.ensure',
+          resourceBindings: {
+            contact: { local: 'contact-1' },
+            chat: { uri: '/.data/chat/uuid-1/index.ttl#this', local: 'uuid-1' },
+          },
+        },
+      })
     })
   })
 
@@ -399,20 +484,20 @@ describe('contactOps', () => {
         id: 'group-1',
         name: '产品群',
         rdfType: ContactClass.GROUP,
-        entityUri: '/.data/chat/chat-1/index.ttl#this',
+        entity: '/.data/chat/chat-1/index.ttl#this',
         contactType: ContactType.SOLID,
       })
       mockCollectionState.set('owner-contact', {
         id: 'owner-contact',
         name: 'Me',
-        entityUri: ownerRef,
+        entity: ownerRef,
         contactType: ContactType.SOLID,
       })
       mockCollectionState.set('member-1', {
         id: 'member-1',
         name: 'Bob',
         alias: '老鲍',
-        entityUri: memberRef,
+        entity: memberRef,
         contactType: ContactType.SOLID,
       })
       mockCollectionState.set('chat-1', {
@@ -450,7 +535,7 @@ describe('Contact + Chat Linkage Logic', () => {
     setContactsDatabaseGetter(() => null)
   })
 
-  it('createAgent: Agent.id → Contact.entityUri, Contact reference → Chat.participants', async () => {
+  it('createAgent: Agent.id → Contact.entity, Contact reference → Chat.participants', async () => {
     const result = await contactOps.createAgent({ name: 'AI Assistant' })
 
     // UUID allocation: uuid-1 (Agent), uuid-2 (Contact), uuid-3 (Chat)
@@ -459,12 +544,12 @@ describe('Contact + Chat Linkage Logic', () => {
     const chatId = 'uuid-3'
 
     // Verify linkage
-    expect(result.entityUri).toBe(agentId) // Contact → Agent
+    expect(result.entity).toBe(agentId) // Contact → Agent
     expect(result.id).toBe(contactId)
     expect(result.chatId).toBe(chatId)
   })
 
-  it('addFriend: WebID → Contact.entityUri, Contact reference → Chat.participants', async () => {
+  it('addFriend: WebID → Contact.entity, Contact reference → Chat.participants', async () => {
     const webId = 'https://friend.pod/profile/card#me'
     const result = await contactOps.addFriend({ name: 'Friend', webId })
 
@@ -473,7 +558,7 @@ describe('Contact + Chat Linkage Logic', () => {
     const chatId = 'uuid-2'
 
     // Verify linkage
-    expect(result.entityUri).toBe(webId) // Contact → WebID
+    expect(result.entity).toBe(webId) // Contact → WebID
     expect(result.id).toBe(contactId)
     expect(result.chatId).toBe(chatId)
   })
@@ -552,7 +637,7 @@ describe('contactOps Query Operations', () => {
 
   describe('search', () => {
     const mockContacts = [
-      { id: '1', name: 'Alice Smith', alias: 'Ali', entityUri: 'https://alice.pod/#me' },
+      { id: '1', name: 'Alice Smith', alias: 'Ali', entity: 'https://alice.pod/#me' },
       { id: '2', name: 'Bob Johnson', alias: null, note: 'Friend from work' },
       { id: '3', name: 'Charlie Brown', alias: 'Chuck', externalId: 'wxid_charlie' },
     ]
@@ -610,8 +695,8 @@ describe('contactOps Query Operations', () => {
       expect(mockDb.select).toHaveBeenCalled()
     })
 
-    it('should search by entityUri using drizzle-solid ilike', async () => {
-      mockSearchResults = [mockContacts[0]] // Alice (entityUri: https://alice.pod/#me)
+    it('should search by entity using drizzle-solid ilike', async () => {
+      mockSearchResults = [mockContacts[0]] // Alice (entity: https://alice.pod/#me)
       
       const result = await contactOps.search('alice.pod')
       
@@ -643,9 +728,9 @@ describe('contactOps Query Operations', () => {
   describe('findByEntityUri', () => {
     beforeEach(() => {
       const mockContacts = [
-        { id: '1', name: 'Alice', entityUri: 'https://alice.pod/#me' },
-        { id: '2', name: 'Bob', entityUri: 'https://bob.pod/#me' },
-        { id: '3', name: 'Agent', entityUri: 'agent-uuid-1' },
+        { id: '1', name: 'Alice', entity: 'https://alice.pod/#me' },
+        { id: '2', name: 'Bob', entity: 'https://bob.pod/#me' },
+        { id: '3', name: 'Agent', entity: 'agent-uuid-1' },
       ]
       mockContacts.forEach(c => mockCollectionState.set(c.id, c))
     })
@@ -736,7 +821,7 @@ describe('contactOps Solid Profile Operations', () => {
         id: 'contact-1', 
         name: 'Old Name', 
         contactType: 'solid',
-        entityUri: 'https://alice.pod/profile/card#me' 
+        entity: 'https://alice.pod/profile/card#me' 
       }
       mockCollectionState.set('contact-1', mockContact)
       
@@ -767,7 +852,7 @@ describe('contactOps Solid Profile Operations', () => {
         id: 'contact-1', 
         name: 'Old Agent', 
         contactType: 'agent',
-        entityUri: 'https://other.pod/agents/agent-1' 
+        entity: 'https://other.pod/agents/agent-1' 
       }
       mockCollectionState.set('contact-1', mockContact)
       
@@ -784,12 +869,12 @@ describe('contactOps Solid Profile Operations', () => {
       expect(result.data?.name).toBe('Updated Agent')
     })
 
-    it('should skip sync for local agent (non-http entityUri)', async () => {
+    it('should skip sync for local agent (non-http entity)', async () => {
       const mockContact = { 
         id: 'contact-1', 
         name: 'Local Agent', 
         contactType: 'agent',
-        entityUri: 'local-agent-uuid-1'  // Not http
+        entity: 'local-agent-uuid-1'  // Not http
       }
       mockCollectionState.set('contact-1', mockContact)
 
@@ -813,7 +898,7 @@ describe('contactOps Solid Profile Operations', () => {
         id: 'contact-1', 
         name: 'Alice', 
         contactType: 'solid',
-        entityUri: 'https://alice.pod/profile/card#me' 
+        entity: 'https://alice.pod/profile/card#me' 
       }
       mockCollectionState.set('contact-1', mockContact)
       vi.spyOn(contactOps, 'fetchSolidProfile').mockResolvedValue(null)
@@ -826,13 +911,13 @@ describe('contactOps Solid Profile Operations', () => {
   })
 
   describe('isRemoteContact', () => {
-    it('should return true for http entityUri', () => {
-      const contact = { entityUri: 'https://alice.pod/profile/card#me' } as any
+    it('should return true for http entity', () => {
+      const contact = { entity: 'https://alice.pod/profile/card#me' } as any
       expect(contactOps.isRemoteContact(contact)).toBe(true)
     })
 
-    it('should return false for local entityUri', () => {
-      const contact = { entityUri: 'local-uuid-123' } as any
+    it('should return false for local entity', () => {
+      const contact = { entity: 'local-uuid-123' } as any
       expect(contactOps.isRemoteContact(contact)).toBe(false)
     })
 

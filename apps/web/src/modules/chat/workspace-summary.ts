@@ -45,11 +45,11 @@ function inferRuntimeWorkspaceKind(runtimeSession?: RuntimeSessionRecord | null)
 
 function resolvePodWorkspaceSummary(workspaceUri: string, workspaces: WorkspaceRow[]): WorkspaceSummary {
   const workspaceId = parseWorkspaceIdFromContainerUri(workspaceUri)
-  const workspace = workspaces.find((item) => item.id === workspaceId || item.rootUri === workspaceUri) ?? null
-  const primaryText = workspace?.title?.trim() || workspace?.rootUri?.trim() || workspaceUri
-  const rootUri = workspace?.rootUri?.trim()
+  const workspace = workspaces.find((item) => item.id === workspaceId || item.root === workspaceUri) ?? null
+  const primaryText = workspace?.title?.trim() || workspace?.root?.trim() || workspaceUri
+  const root = workspace?.root?.trim()
   const secondaryText = joinMeta([
-    rootUri && rootUri !== primaryText ? rootUri : undefined,
+    root && root !== primaryText ? root : undefined,
     workspace?.branch,
     workspace?.baseRef ? `基于 ${workspace.baseRef}` : undefined,
   ])

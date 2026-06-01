@@ -98,7 +98,7 @@ export function InboxListPane(_props: MicroAppPaneProps) {
             const isResolvedAuth = item.category === 'auth_required' && item.status === 'resolved'
             const isPendingAuthRequired = item.category === 'auth_required' && item.status !== 'resolved'
             const statusLabel = isPendingApproval
-              ? '待授权'
+              ? '待审批'
               : isPendingAuthRequired
                 ? '待认证'
                 : isResolvedAuth

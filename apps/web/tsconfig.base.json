@@ -24,6 +24,8 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
+      "@linx/agent-runtime": ["../../packages/agent-runtime/src/index.ts"],
+      "@linx/agent-runtime/*": ["../../packages/agent-runtime/src/*"],
       "@linx/stores": ["../../packages/stores/src/index.ts"],
       "@linx/stores/*": ["../../packages/stores/src/*"]
     }

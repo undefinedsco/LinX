@@ -140,8 +140,8 @@ function ContactItem({ contact, isActive, onClick }: ContactItemProps) {
     if (contact.note) {
       return contact.note
     }
-    if (contact.entityUri && contact.contactType === ContactType.SOLID) {
-      return contact.entityUri
+    if (contact.entity && contact.contactType === ContactType.SOLID) {
+      return contact.entity
     }
     return undefined
   }, [contact, isGroup, isAgent])
@@ -284,7 +284,7 @@ export function ContactListPane({}: MicroAppPaneProps) {
 
       // Populate groupInfo for group contacts
       if (isGroup) {
-        const groupRef = c.entityUri || c.id
+        const groupRef = c.entity || c.id
         return {
           ...base,
           groupInfo: contactOps.getGroupDisplayInfo(groupRef, session.info.webId ?? undefined),

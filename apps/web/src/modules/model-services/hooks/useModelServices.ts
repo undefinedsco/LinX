@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo } from 'react'
 import { useLiveQuery } from '@tanstack/react-db'
+import { createLinxPodSyncScope, type LinxSyncRunResult } from '@linx/agent-runtime/sync'
 import {
+  aiConfigModelUri,
+  aiConfigProviderRef,
   buildAIConfigMutationPlan,
   buildAIConfigProviderStateMap,
   normalizeAIConfigModelId,
@@ -17,6 +20,18 @@ import { MODEL_PROVIDERS } from '../constants'
 import type { AIProvider, AIModel } from '../types'
 
 type AnyRow = Record<string, any>
+
+const modelServicesSyncResults: LinxSyncRunResult[] = []
+let modelServicesSyncSeq = 0
+
+export function getModelServicesSyncResults(): LinxSyncRunResult[] {
+  return [...modelServicesSyncResults]
+}
+
+export function clearModelServicesSyncResults(): void {
+  modelServicesSyncResults.length = 0
+  modelServicesSyncSeq = 0
+}
 
 function rowKey(row: AnyRow): string {
   return (row?.id as string) || (row?.['@id'] as string)
@@ -36,6 +51,62 @@ async function waitPersist(tx: any) {
   if (tx?.isPersisted?.promise) {
     await tx.isPersisted.promise
   }
+}
+
+async function runModelServicesControlSync<T>(
+  input: {
+    action: string
+    providerId: string
+    providerPayload: boolean
+    credentialPayload: boolean
+    modelUpsertCount: number
+    modelDeleteCount: number
+    updateKeys: string[]
+    modelIds?: string[]
+  },
+  operation: () => T | Promise<T>,
+): Promise<T> {
+  const sync = createLinxPodSyncScope({
+    source: 'app-model-services',
+    target: 'pod',
+    direction: 'local-to-core',
+    plane: 'control-plane',
+    authority: 'core',
+    onResult(result) {
+      modelServicesSyncResults.push(result)
+    },
+  })
+  const primaryModelId = input.modelIds?.[0]
+
+  return await sync.run({
+    action: input.action,
+    operationId: nextModelServicesSyncOperationId(input),
+    kind: 'upsert',
+    description: `model-services:${input.action}`,
+    subject: primaryModelId ?? input.providerId,
+    resourceBindings: {
+      provider: { uri: aiConfigProviderRef(input.providerId), local: input.providerId },
+      model: primaryModelId ? { uri: aiConfigModelUri(primaryModelId, input.providerId), local: primaryModelId } : undefined,
+    },
+    metadata: {
+      providerPayload: input.providerPayload,
+      credentialPayload: input.credentialPayload,
+      modelUpsertCount: input.modelUpsertCount,
+      modelDeleteCount: input.modelDeleteCount,
+      updateKeys: input.updateKeys,
+      modelIds: input.modelIds,
+    },
+    task: operation,
+  })
+}
+
+function nextModelServicesSyncOperationId(input: { action: string; providerId: string }): string {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+  return `model-services:${input.action}:${input.providerId}:${timestamp}:${++modelServicesSyncSeq}`
+}
+
+function publicUpdateKeys(updates: Partial<AIProvider>): string[] {
+  return Object.keys(updates).filter((key) => key !== 'apiKey' && key !== 'credentialId')
 }
 
 export function useModelServices() {
@@ -142,53 +213,67 @@ export function useModelServices() {
       sameAIConfigProviderFamily(typeof row.isProvidedBy === 'string' ? row.isProvidedBy : '', plan.providerId),
     )
 
-    if (plan.providerPayload) {
-      const providerTx = existingProvider
-        ? providerCollection.update(rowKey(existingProvider), (draft: AnyRow) => {
-            applyPayload(draft, plan.providerPayload as AnyRow)
-          })
-        : providerCollection.insert(plan.providerPayload as any)
-
-      await waitPersist(providerTx)
-    }
-
-    if (plan.credentialPayload) {
-      const credentialTx = credentialTarget
-        ? credentialCollection.update(rowKey(credentialTarget), (draft: AnyRow) => {
-            applyPayload(draft, plan.credentialPayload as AnyRow)
-          })
-        : credentialCollection.insert(plan.credentialPayload as any)
-
-      await waitPersist(credentialTx)
-    }
-
-    if (plan.modelUpserts.length > 0 || plan.modelDeleteIds.length > 0) {
-      const existingById = new Map(
-        existingModels
-          .filter((row) => typeof row.id === 'string' && row.id.length > 0)
-          .map((row) => [normalizeAIConfigModelId(row.id as string, plan.providerId), row] as const),
-      )
-
-      for (const modelPayload of plan.modelUpserts) {
-        if (!modelPayload.id) continue
-        const existing = existingById.get(modelPayload.id)
-        const modelTx = existing
-          ? modelCollection.update(rowKey(existing), (draft: AnyRow) => {
-              applyPayload(draft, modelPayload as AnyRow)
+    await runModelServicesControlSync({
+      action: 'provider.update',
+      providerId: plan.providerId,
+      providerPayload: Boolean(plan.providerPayload),
+      credentialPayload: Boolean(plan.credentialPayload),
+      modelUpsertCount: plan.modelUpserts.length,
+      modelDeleteCount: plan.modelDeleteIds.length,
+      updateKeys: publicUpdateKeys(updates),
+      modelIds: [
+        ...plan.modelUpserts.map((model) => model.id),
+        ...plan.modelDeleteIds,
+      ].filter((modelId): modelId is string => typeof modelId === 'string' && modelId.length > 0),
+    }, async () => {
+      if (plan.providerPayload) {
+        const providerTx = existingProvider
+          ? providerCollection.update(rowKey(existingProvider), (draft: AnyRow) => {
+              applyPayload(draft, plan.providerPayload as AnyRow)
             })
-          : modelCollection.insert(modelPayload as any)
+          : providerCollection.insert(plan.providerPayload as any)
 
-        await waitPersist(modelTx)
+        await waitPersist(providerTx)
       }
 
-      for (const row of existingModels) {
-        const modelId = typeof row.id === 'string' ? row.id : ''
-        const normalizedModelId = normalizeAIConfigModelId(modelId, plan.providerId)
-        if (!plan.modelDeleteIds.includes(normalizedModelId)) continue
-        const deleteTx = modelCollection.delete(rowKey(row))
-        await waitPersist(deleteTx)
+      if (plan.credentialPayload) {
+        const credentialTx = credentialTarget
+          ? credentialCollection.update(rowKey(credentialTarget), (draft: AnyRow) => {
+              applyPayload(draft, plan.credentialPayload as AnyRow)
+            })
+          : credentialCollection.insert(plan.credentialPayload as any)
+
+        await waitPersist(credentialTx)
       }
-    }
+
+      if (plan.modelUpserts.length > 0 || plan.modelDeleteIds.length > 0) {
+        const existingById = new Map(
+          existingModels
+            .filter((row) => typeof row.id === 'string' && row.id.length > 0)
+            .map((row) => [normalizeAIConfigModelId(row.id as string, plan.providerId), row] as const),
+        )
+
+        for (const modelPayload of plan.modelUpserts) {
+          if (!modelPayload.id) continue
+          const existing = existingById.get(modelPayload.id)
+          const modelTx = existing
+            ? modelCollection.update(rowKey(existing), (draft: AnyRow) => {
+                applyPayload(draft, modelPayload as AnyRow)
+              })
+            : modelCollection.insert(modelPayload as any)
+
+          await waitPersist(modelTx)
+        }
+
+        for (const row of existingModels) {
+          const modelId = typeof row.id === 'string' ? row.id : ''
+          const normalizedModelId = normalizeAIConfigModelId(modelId, plan.providerId)
+          if (!plan.modelDeleteIds.includes(normalizedModelId)) continue
+          const deleteTx = modelCollection.delete(rowKey(row))
+          await waitPersist(deleteTx)
+        }
+      }
+    })
   }, [credentialRows, modelRows, providerRows])
 
   return {

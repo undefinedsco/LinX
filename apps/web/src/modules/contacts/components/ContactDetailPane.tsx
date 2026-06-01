@@ -170,8 +170,8 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
     : null
   const isContactLoading = false // Collections handle loading state
   
-  // 确定 entityUri 和对应的 table
-  const entityUri = realContact && !isGroupContact(realContact) ? realContact.entityUri || null : null
+  // 确定 entity 和对应的 table
+  const entity = realContact && !isGroupContact(realContact) ? realContact.entity || null : null
   const entityTable = realContact?.contactType === ContactType.AGENT ? agentTable : solidProfileTable
 
   // 使用 useEntity 获取源数据（本地或远程，统一处理）
@@ -180,7 +180,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
     isLoading: isSyncing, 
     error: syncError, 
     refresh: handleManualSync 
-  } = useEntity(entityTable, entityUri, {
+  } = useEntity(entityTable, entity, {
     onUpdate: (data) => {
       // 同步成功后更新本地 Contact 缓存
       if (realContact?.id && data) {
@@ -228,7 +228,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
     const record = contact as Record<string, unknown> | null
     return typeof record?.inbox === 'string' && record.inbox.length > 0 ? record.inbox : null
   }, [contact])
-  const groupContactRef = isGroup ? realContact?.entityUri || realContact?.id || null : null
+  const groupContactRef = isGroup ? realContact?.entity || realContact?.id || null : null
   const groupMemberRoleMap = useMemo(
     () => (groupContactRef ? contactOps.getGroupMemberRoles(groupContactRef) : {}),
     [groupContactRef, contacts],
@@ -241,7 +241,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
       contactOps.resolveMembers(memberRefs).flatMap((member) => {
         const refs = new Set<string>()
         if (member.id) refs.add(member.id)
-        if (typeof member.entityUri === 'string' && member.entityUri.length > 0) refs.add(member.entityUri)
+        if (typeof member.entity === 'string' && member.entity.length > 0) refs.add(member.entity)
         return Array.from(refs).map((ref) => [ref, member] as const)
       }),
     )
@@ -252,7 +252,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
         id: memberRef,
         name: getShortId(memberRef),
         contactType: ContactType.SOLID,
-        entityUri: memberRef,
+        entity: memberRef,
         createdAt: new Date(0),
         updatedAt: new Date(0),
       } as any),
@@ -276,7 +276,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
     return inviteContacts
       .filter((candidate) => !isGroupContact(candidate) && !candidate.deletedAt)
       .filter((candidate) => {
-        const memberRef = candidate.entityUri || candidate.id
+        const memberRef = candidate.entity || candidate.id
         return typeof memberRef === 'string' && memberRef.length > 0 && !existingMembers.has(memberRef)
       })
       .filter((candidate) => {
@@ -294,7 +294,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
     
     try {
       if (realContact && isGroupContact(realContact)) {
-        const chat = contactOps.getGroupChat(realContact.entityUri || realContact.id)
+        const chat = contactOps.getGroupChat(realContact.entity || realContact.id)
         if (!chat) {
           throw new Error('群聊不存在')
         }
@@ -379,10 +379,10 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
 
   // 保存 Prompt
   const handleSavePrompt = useCallback(async () => {
-    if (!contact || !entityUri) return
+    if (!contact || !entity) return
     setIsSaving(true)
     try {
-      await contactOps.updateAgent(entityUri, { instructions: editingPrompt.trim() })
+      await contactOps.updateAgent(entity, { instructions: editingPrompt.trim() })
       notify.success('系统提示词已更新')
       setEditMode('none')
     } catch (e) {
@@ -390,7 +390,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
     } finally {
       setIsSaving(false)
     }
-  }, [contact, selectedId, entityUri, editingPrompt, notify])
+  }, [contact, selectedId, entity, editingPrompt, notify])
 
   // 删除联系人
   const handleDelete = useCallback(async () => {
@@ -411,7 +411,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
   // 分享联系人
   const handleShare = useCallback(() => {
     if (!contact) return
-    const shareUrl = contact.entityUri || `linx://contact/${contact.id}`
+    const shareUrl = contact.entity || `linx://contact/${contact.id}`
     navigator.clipboard.writeText(shareUrl)
     notify.success('联系人链接已复制')
   }, [contact, notify])
@@ -422,7 +422,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
   }, [contact])
 
   const handleSaveTools = useCallback(async () => {
-    if (!contact || !entityUri) return
+    if (!contact || !entity) return
 
     const nextTools = Array.from(
       new Set(
@@ -435,7 +435,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
 
     setIsSaving(true)
     try {
-      await contactOps.updateAgent(entityUri, {
+      await contactOps.updateAgent(entity, {
         tools: nextTools.length > 0 ? nextTools : [],
       })
       notify.success('工具配置已更新')
@@ -445,7 +445,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
     } finally {
       setIsSaving(false)
     }
-  }, [contact, editingToolsText, entityUri, notify])
+  }, [contact, editingToolsText, entity, notify])
 
   // 搜索 WebID - 使用 contactOps.fetchSolidProfile
   const handleSearchWebId = useCallback(async () => {
@@ -594,7 +594,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
       const candidatesById = new Map(inviteContacts.map((candidate) => [candidate.id, candidate]))
       for (const inviteeId of selectedInvitees) {
         const candidate = candidatesById.get(inviteeId)
-        const memberRef = candidate?.entityUri || candidate?.id
+        const memberRef = candidate?.entity || candidate?.id
         if (typeof memberRef === 'string' && memberRef.length > 0) {
           await contactOps.addMemberToGroup(inviteTargetGroupId, memberRef)
         }
@@ -630,7 +630,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
     </div>
   ) : (() => {
     const displayName = contact.alias || contact.name || 'Unknown'
-    const rawId = contact.externalId || contact.entityUri || contact.id
+    const rawId = contact.externalId || contact.entity || contact.id
     const displayId = getShortId(rawId ?? '')
     const region = contact.province ? `${contact.province} ${contact.city || ''}` : '未知地区'
     const gender = contact.gender || (contact.contactType === 'agent' ? 'bot' : 'unknown')
@@ -776,7 +776,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
                 </span>
               </InfoRow>
               <InfoRow label="群聊资源" hideArrow last>
-                <span className="font-mono text-xs break-all">{realContact?.entityUri || realContact?.id}</span>
+                <span className="font-mono text-xs break-all">{realContact?.entity || realContact?.id}</span>
               </InfoRow>
             </div>
           ) : (
@@ -845,11 +845,11 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
           )}
 
           {/* BLOCK 3: Contact Details (Humans Only) */}
-          {!isAgent && !isGroup && (contact.entityUri || contactInbox) && (
+          {!isAgent && !isGroup && (contact.entity || contactInbox) && (
             <div className="bg-card rounded-xl border border-border/40 overflow-hidden shadow-sm">
-              {contact.entityUri && (
+              {contact.entity && (
                 <InfoRow label={contact.sourceType === 'solid' ? 'WebID' : '资源'} hideArrow last={!contactInbox}>
-                  <span className="font-mono text-xs break-all">{contact.entityUri}</span>
+                  <span className="font-mono text-xs break-all">{contact.entity}</span>
                 </InfoRow>
               )}
               {contactInbox && (
@@ -894,7 +894,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
               onMention={handleMentionMember}
               onRemoveMember={handleRemoveGroupMember}
               onUpdateRole={handleUpdateGroupMemberRole}
-              onInvite={() => realContact && openInviteMemberDialog(realContact.entityUri || realContact.id)}
+              onInvite={() => realContact && openInviteMemberDialog(realContact.entity || realContact.id)}
             />
           )}
         </div>

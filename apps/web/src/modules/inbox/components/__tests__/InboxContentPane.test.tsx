@@ -26,6 +26,15 @@ vi.mock('../../store', () => ({
 vi.mock('../../collections', () => ({
   useInboxItems: () => mockUseInboxItems(),
   useResolveInboxApproval: () => mockUseResolveInboxApproval(),
+  parseApprovalOptions() {
+    return []
+  },
+  approvalDecisionForOption() {
+    return 'approved'
+  },
+  buildApprovalOptionReason() {
+    return ''
+  },
 }))
 
 import { InboxContentPane } from '../InboxContentPane'

@@ -63,7 +63,7 @@ export function ChatHeader() {
 
   const contactUri = getPrimaryParticipantUri(chat, session.info.webId)
   const { data: contact, refresh: refreshContact } = useEntity(contactTable, contactUri)
-  const agentUri = contact?.contactType === ContactType.AGENT ? contact.entityUri : null
+  const agentUri = contact?.contactType === ContactType.AGENT ? contact.entity : null
   const { data: agent, refresh: refreshAgent } = useEntity(agentTable, agentUri)
   const agentId = useMemo(() => resolvePersistedId(agent), [agent])
   const contactId = useMemo(() => resolvePersistedId(contact), [contact])

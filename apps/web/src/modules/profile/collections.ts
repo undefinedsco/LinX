@@ -14,6 +14,7 @@ import {
   type SolidProfileUpdate,
 } from '@undefineds.co/models'
 import type { SolidDatabase } from '@undefineds.co/models'
+import { createLinxPodSyncScope, type LinxSyncRunResult } from '@linx/agent-runtime/sync'
 import { queryClient } from '@/providers/query-provider'
 
 // ============================================================================
@@ -22,6 +23,8 @@ import { queryClient } from '@/providers/query-provider'
 
 let dbGetter: (() => SolidDatabase | null) | null = null
 let webIdGetter: (() => string | null) | null = null
+const profileOpsSyncResults: LinxSyncRunResult[] = []
+let profileOpsSyncSeq = 0
 
 export function setProfileDatabaseGetter(getter: () => SolidDatabase | null) {
   dbGetter = getter
@@ -31,12 +34,61 @@ export function setProfileWebIdGetter(getter: () => string | null) {
   webIdGetter = getter
 }
 
+export function getProfileOpsSyncResults(): LinxSyncRunResult[] {
+  return [...profileOpsSyncResults]
+}
+
+export function clearProfileOpsSyncResults(): void {
+  profileOpsSyncResults.length = 0
+  profileOpsSyncSeq = 0
+}
+
 function getDb(): SolidDatabase | null {
   return dbGetter?.() ?? null
 }
 
 function getWebId(): string | null {
   return webIdGetter?.() ?? null
+}
+
+async function runProfileControlSync<T>(
+  input: {
+    action: string
+    webId: string
+    fieldKeys: string[]
+  },
+  operation: () => T | Promise<T>,
+): Promise<T> {
+  const sync = createLinxPodSyncScope({
+    source: 'app-profile',
+    target: 'pod',
+    direction: 'local-to-core',
+    plane: 'control-plane',
+    authority: 'core',
+    onResult(result) {
+      profileOpsSyncResults.push(result)
+    },
+  })
+
+  return await sync.run({
+    action: input.action,
+    operationId: nextProfileOpsSyncOperationId(input),
+    kind: 'update',
+    description: `profile-ops:${input.action}`,
+    subject: input.webId,
+    resourceBindings: {
+      profile: { uri: input.webId, local: input.webId },
+    },
+    metadata: {
+      fieldKeys: input.fieldKeys,
+    },
+    task: operation,
+  })
+}
+
+function nextProfileOpsSyncOperationId(input: { action: string; webId: string }): string {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+  return `profile-ops:${input.action}:${input.webId}:${timestamp}:${++profileOpsSyncSeq}`
 }
 
 // ============================================================================
@@ -83,13 +135,19 @@ export const profileOps = {
     }
     
     try {
-      await db.updateByIri(solidProfileTable, webId, data)
-      
-      // Invalidate query cache
-      queryClient.invalidateQueries({ queryKey: ['profile'] })
-      
-      // Return updated profile
-      return await this.fetch()
+      return await runProfileControlSync({
+        action: 'profile.update',
+        webId,
+        fieldKeys: Object.keys(data),
+      }, async () => {
+        await db.updateByIri(solidProfileTable, webId, data)
+
+        // Invalidate query cache
+        queryClient.invalidateQueries({ queryKey: ['profile'] })
+
+        // Return updated profile
+        return await this.fetch()
+      })
     } catch (error) {
       console.error('[profileOps] Failed to update profile:', error)
       throw error

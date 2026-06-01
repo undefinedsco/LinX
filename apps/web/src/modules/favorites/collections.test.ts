@@ -57,10 +57,13 @@ vi.stubGlobal('crypto', {
 // ============================================================================
 
 import {
+  clearFavoriteOpsSyncResults,
   favoriteHooks,
   favoriteOps,
+  getFavoriteOpsSyncResults,
   setFavoritesDatabaseGetter,
 } from './collections'
+import { MEETING, SCHEMA, VCARD } from '@undefineds.co/models'
 import { queryClient } from '@/providers/query-provider'
 
 // ============================================================================
@@ -72,6 +75,7 @@ describe('favoriteHooks.onStarredChange', () => {
     uuidIndex = 0
     vi.clearAllMocks()
     mockCollectionState.clear()
+    clearFavoriteOpsSyncResults()
   })
 
   afterEach(() => {
@@ -79,7 +83,7 @@ describe('favoriteHooks.onStarredChange', () => {
   })
 
   describe('starred = true (upsert)', () => {
-    it('should insert a new favorite when none exists for sourceModule+sourceId', async () => {
+    it('should insert a new favorite when none exists for sourceModule+target', async () => {
       await favoriteHooks.onStarredChange('chat', 'chat-1', true, {
         title: 'Test Chat',
         searchText: 'Test Chat search',
@@ -90,7 +94,9 @@ describe('favoriteHooks.onStarredChange', () => {
       const insertedData = mockInsert.mock.calls[0][0]
       expect(insertedData.id).toBe('fav-uuid-1')
       expect(insertedData.sourceModule).toBe('chat')
-      expect(insertedData.sourceId).toBe('chat-1')
+      expect(insertedData.sourceId).toBeUndefined()
+      expect(insertedData.targetType).toBe(MEETING.LongChat)
+      expect(insertedData.target).toBe('/.data/chat/chat-1/index.ttl#this')
       expect(insertedData.title).toBe('Test Chat')
       expect(insertedData.searchText).toBe('Test Chat search')
       expect(insertedData.snapshotContent).toBe('Last message preview')
@@ -99,6 +105,28 @@ describe('favoriteHooks.onStarredChange', () => {
       expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
         queryKey: ['favorites'],
       })
+      expect(getFavoriteOpsSyncResults()).toHaveLength(1)
+      expect(getFavoriteOpsSyncResults()[0]).toMatchObject({
+        source: 'app-favorites',
+        target: 'pod',
+        direction: 'local-to-core',
+        plane: 'projection',
+        authority: 'core',
+        status: 'completed',
+        metadata: {
+          action: 'favorite.star',
+          resourceBindings: {
+            favorite: { local: 'fav-uuid-1' },
+            target: {
+              uri: '/.data/chat/chat-1/index.ttl#this',
+              local: 'chat-1',
+            },
+          },
+          sourceModule: 'chat',
+          targetType: MEETING.LongChat,
+          starred: true,
+        },
+      })
     })
 
     it('should update existing favorite when one already exists', async () => {
@@ -106,7 +134,7 @@ describe('favoriteHooks.onStarredChange', () => {
       mockCollectionState.set('existing-fav', {
         id: 'existing-fav',
         sourceModule: 'chat',
-        sourceId: 'chat-1',
+        target: '/.data/chat/chat-1/index.ttl#this',
         title: 'Old Title',
       })
 
@@ -122,24 +150,69 @@ describe('favoriteHooks.onStarredChange', () => {
       expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
         queryKey: ['favorites'],
       })
+      expect(getFavoriteOpsSyncResults()).toHaveLength(1)
+      expect(getFavoriteOpsSyncResults()[0]).toMatchObject({
+        source: 'app-favorites',
+        target: 'pod',
+        direction: 'local-to-core',
+        plane: 'projection',
+        authority: 'core',
+        status: 'completed',
+        metadata: {
+          action: 'favorite.star',
+          resourceBindings: {
+            favorite: { local: 'existing-fav' },
+            target: {
+              uri: '/.data/chat/chat-1/index.ttl#this',
+              local: 'chat-1',
+            },
+          },
+          sourceModule: 'chat',
+          starred: true,
+        },
+      })
     })
 
-    it('should use sourceId as fallback title when metadata.title is missing', async () => {
+    it('should use the local target as fallback title when metadata.title is missing', async () => {
       await favoriteHooks.onStarredChange('contacts', 'contact-1', true)
 
       expect(mockInsert).toHaveBeenCalledTimes(1)
       const insertedData = mockInsert.mock.calls[0][0]
+      expect(insertedData.targetType).toBe(VCARD.Individual)
       expect(insertedData.title).toBe('contact-1')
       expect(insertedData.searchText).toBe('contact-1')
+    })
+
+    it('preserves explicit RDF target type from the caller', async () => {
+      await favoriteHooks.onStarredChange('files', 'https://pod.example/public/README.md', true, {
+        title: 'README.md',
+        targetType: SCHEMA.MediaObject,
+      })
+
+      expect(mockInsert).toHaveBeenCalledTimes(1)
+      const insertedData = mockInsert.mock.calls[0][0]
+      expect(insertedData.targetType).toBe(SCHEMA.MediaObject)
+      expect(insertedData.target).toBe('https://pod.example/public/README.md')
+      expect(getFavoriteOpsSyncResults()[0]).toMatchObject({
+        metadata: {
+          resourceBindings: {
+            target: {
+              uri: 'https://pod.example/public/README.md',
+              local: 'https://pod.example/public/README.md',
+            },
+          },
+          targetType: SCHEMA.MediaObject,
+        },
+      })
     })
   })
 
   describe('starred = false (delete)', () => {
-    it('should delete the favorite matching sourceModule+sourceId', async () => {
+    it('should delete the favorite matching sourceModule+target', async () => {
       mockCollectionState.set('fav-to-delete', {
         id: 'fav-to-delete',
         sourceModule: 'chat',
-        sourceId: 'chat-1',
+        target: '/.data/chat/chat-1/index.ttl#this',
         title: 'Chat to unfavorite',
       })
 
@@ -151,6 +224,27 @@ describe('favoriteHooks.onStarredChange', () => {
       expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
         queryKey: ['favorites'],
       })
+      expect(getFavoriteOpsSyncResults()).toHaveLength(1)
+      expect(getFavoriteOpsSyncResults()[0]).toMatchObject({
+        source: 'app-favorites',
+        target: 'pod',
+        direction: 'local-to-core',
+        plane: 'projection',
+        authority: 'core',
+        status: 'completed',
+        metadata: {
+          action: 'favorite.unstar',
+          resourceBindings: {
+            favorite: { local: 'fav-to-delete' },
+            target: {
+              uri: '/.data/chat/chat-1/index.ttl#this',
+              local: 'chat-1',
+            },
+          },
+          sourceModule: 'chat',
+          starred: false,
+        },
+      })
     })
 
     it('should do nothing if no matching favorite exists', async () => {
@@ -160,6 +254,26 @@ describe('favoriteHooks.onStarredChange', () => {
 
       expect(mockDelete).not.toHaveBeenCalled()
       expect(queryClient.invalidateQueries).not.toHaveBeenCalled()
+      expect(getFavoriteOpsSyncResults()).toHaveLength(1)
+      expect(getFavoriteOpsSyncResults()[0]).toMatchObject({
+        source: 'app-favorites',
+        target: 'pod',
+        direction: 'local-to-core',
+        plane: 'projection',
+        authority: 'core',
+        status: 'completed',
+        metadata: {
+          action: 'favorite.unstar',
+          resourceBindings: {
+            target: {
+              uri: '/.data/chat/nonexistent/index.ttl#this',
+              local: 'nonexistent',
+            },
+          },
+          sourceModule: 'chat',
+          starred: false,
+        },
+      })
     })
   })
 })
@@ -168,6 +282,7 @@ describe('favoriteOps', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockCollectionState.clear()
+    clearFavoriteOpsSyncResults()
   })
 
   describe('getAll', () => {
@@ -203,6 +318,21 @@ describe('favoriteOps', () => {
     it('should call collection delete', async () => {
       await favoriteOps.removeFavorite('f1')
       expect(mockDelete).toHaveBeenCalledWith('f1')
+      expect(getFavoriteOpsSyncResults()).toHaveLength(1)
+      expect(getFavoriteOpsSyncResults()[0]).toMatchObject({
+        source: 'app-favorites',
+        target: 'pod',
+        direction: 'local-to-core',
+        plane: 'projection',
+        authority: 'core',
+        status: 'completed',
+        metadata: {
+          action: 'favorite.remove',
+          resourceBindings: {
+            favorite: { local: 'f1' },
+          },
+        },
+      })
     })
   })
 })

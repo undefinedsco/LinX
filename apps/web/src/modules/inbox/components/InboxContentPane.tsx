@@ -10,7 +10,14 @@ import { Textarea } from '@/components/ui/textarea'
 import { useChatStore } from '@/modules/chat/store'
 import { buildAuditPresentation, createResolvedAuthTimestampsIndex, formatAuditActorRole, formatInboxStatusLabel } from '../presentation'
 import { isActionableInboxItem } from '../utils'
-import { useInboxItems, useResolveInboxApproval } from '../collections'
+import {
+  approvalDecisionForOption,
+  buildApprovalOptionReason,
+  parseApprovalOptions,
+  useInboxItems,
+  useResolveInboxApproval,
+  type ApprovalOption,
+} from '../collections'
 import { useInboxStore } from '../store'
 
 function formatTime(value: string | undefined) {
@@ -52,12 +59,16 @@ export function InboxContentPane(_props: MicroAppPaneProps) {
   )
   const statusLabel = formatInboxStatusLabel(selectedItem?.status)
 
-  const handleResolve = async (decision: 'approved' | 'rejected') => {
+  const approvalOptions = useMemo(
+    () => parseApprovalOptions(selectedItem?.approval?.approvalOptions),
+    [selectedItem?.approval?.approvalOptions],
+  )
+  const handleResolve = async (decision: 'approved' | 'rejected', selectedOption?: ApprovalOption) => {
     if (!selectedItem?.approval) return
     await resolveApproval.mutateAsync({
       approval: selectedItem.approval,
       decision,
-      reason,
+      reason: selectedOption ? buildApprovalOptionReason(selectedOption, reason) : reason,
     })
     setReason('')
   }
@@ -168,14 +179,32 @@ export function InboxContentPane(_props: MicroAppPaneProps) {
                     className="mt-2 min-h-[96px]"
                   />
                 </div>
-                <div className="flex items-center gap-2">
-                  <Button onClick={() => void handleResolve('approved')} disabled={isMutating}>
-                    {isMutating ? '处理中...' : '批准'}
-                  </Button>
-                  <Button variant="outline" onClick={() => void handleResolve('rejected')} disabled={isMutating}>
-                    拒绝
-                  </Button>
-                </div>
+                {approvalOptions.length > 0 ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {approvalOptions.map((option) => {
+                      const decision = approvalDecisionForOption(option)
+                      return (
+                        <Button
+                          key={option.optionId}
+                          variant={decision === 'approved' ? 'default' : 'outline'}
+                          onClick={() => void handleResolve(decision, option)}
+                          disabled={isMutating}
+                        >
+                          {isMutating ? '处理中...' : option.label}
+                        </Button>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Button onClick={() => void handleResolve('approved')} disabled={isMutating}>
+                      {isMutating ? '处理中...' : '批准'}
+                    </Button>
+                    <Button variant="outline" onClick={() => void handleResolve('rejected')} disabled={isMutating}>
+                      拒绝
+                    </Button>
+                  </div>
+                )}
                 {resolveApproval.error && (
                   <p className="text-xs text-destructive">
                     {resolveApproval.error instanceof Error ? resolveApproval.error.message : '处理审批失败'}

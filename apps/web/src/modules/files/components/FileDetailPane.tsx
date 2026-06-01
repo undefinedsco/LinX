@@ -15,6 +15,7 @@ import { useFilesStore, type FileDetailTab } from '../store'
 import { useFavoriteList, favoriteHooks } from '@/modules/favorites/collections'
 import { useFileDetail } from '../queries'
 import type { FilesDetail } from '../browser'
+import { LDP, SCHEMA } from '@undefineds.co/models'
 
 const TABS: { value: FileDetailTab; label: string; icon: typeof Eye }[] = [
   { value: 'preview', label: '预览', icon: Eye },
@@ -128,7 +129,7 @@ export function FileDetailPane() {
   const { data: file, isLoading, error } = useFileDetail(selectedFileId)
   const { data: favorites = [] } = useFavoriteList({ sourceModule: 'files' })
 
-  const isFavorite = !!file && favorites.some((favorite) => favorite.sourceId === file.uri)
+  const isFavorite = !!file && favorites.some((favorite) => favorite.target === file.uri)
 
   if (!selectedFileId) return <EmptyState />
   if (isLoading) return <EmptyState />
@@ -145,6 +146,7 @@ export function FileDetailPane() {
   const handleToggleFavorite = useCallback(async () => {
     await favoriteHooks.onStarredChange('files', file.uri, !isFavorite, {
       title: file.name,
+      targetType: file.kind === 'container' ? LDP.Container : SCHEMA.MediaObject,
       searchText: file.name,
       snapshotContent: file.previewText ?? undefined,
       snapshotMeta: JSON.stringify({
@@ -152,7 +154,7 @@ export function FileDetailPane() {
         treeNodeId: selectedTreeNodeId,
       }),
     })
-  }, [file.name, file.previewText, file.uri, isFavorite, selectedTreeNodeId])
+  }, [file.kind, file.name, file.previewText, file.uri, isFavorite, selectedTreeNodeId])
 
   return (
     <div className="flex flex-col h-full">

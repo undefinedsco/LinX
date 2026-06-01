@@ -24,7 +24,7 @@ export interface CreateSolidContactRecordInput {
 
 export interface CreateGroupContactRecordInput {
   name: string
-  entityUri: string
+  entity: string
   avatarUrl?: string
 }
 
@@ -85,7 +85,7 @@ export async function createAgentContactRecords(
   const contact = await contactRepository.create!(db, {
     id: contactId,
     name: input.name,
-    entityUri: agentUri,
+    entity: agentUri,
     rdfType: ContactClass.AGENT,
     contactType: ContactType.AGENT,
     isPublic: false,
@@ -113,7 +113,7 @@ export async function createSolidContactRecord(
     id: contactId,
     name: input.name,
     avatarUrl: input.avatarUrl,
-    entityUri: input.webId,
+    entity: input.webId,
     rdfType: ContactClass.PERSON,
     contactType: ContactType.SOLID,
     isPublic: false,
@@ -139,7 +139,7 @@ export async function createGroupContactRecord(
     id: contactId,
     name: input.name,
     avatarUrl: input.avatarUrl,
-    entityUri: input.entityUri,
+    entity: input.entity,
     rdfType: ContactClass.GROUP,
     contactType: ContactType.SOLID,
     isPublic: false,

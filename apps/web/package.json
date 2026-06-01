@@ -15,6 +15,7 @@
     "@inrupt/solid-client": "^3.0.0",
     "@inrupt/solid-client-authn-browser": "^3.0.0",
     "@inrupt/vocab-common-rdf": "^1.0.5",
+    "@linx/agent-runtime": "*",
     "@linx/stores": "^0.1.0",
     "@lobehub/icons": "^2.44.0",
     "@openai/chatkit-react": "^1.4.1",

@@ -49,13 +49,13 @@ export interface UseEntityResult<T> {
  * // 查询联系人的 Profile（可能是远程的）
  * const { data: profile, isLoading, refresh } = useEntity(
  *   solidProfileTable,
- *   contact.entityUri
+ *   contact.entity
  * )
  * 
  * // 查询 Agent（可能是本地或远程的）
  * const { data: agent } = useEntity(
  *   agentTable,
- *   contact.entityUri,
+ *   contact.entity,
  *   {
  *     onUpdate: (data) => {
  *       // 同步更新本地缓存

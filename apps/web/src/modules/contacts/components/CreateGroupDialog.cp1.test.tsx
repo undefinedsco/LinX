@@ -16,9 +16,9 @@ const {
   mockCreateGroup,
 } = vi.hoisted(() => ({
   mockContacts: [
-    { id: 'p-1', name: 'Alice', alias: null, rdfType: 'https://undefineds.co/ns#PersonContact', contactType: 'solid', deletedAt: null, avatarUrl: null, entityUri: 'https://alice.example/profile/card#me' },
-    { id: 'p-2', name: 'Bob', alias: null, rdfType: 'https://undefineds.co/ns#PersonContact', contactType: 'solid', deletedAt: null, avatarUrl: null, entityUri: 'https://bob.example/profile/card#me' },
-    { id: 'a-1', name: 'GPT Helper', alias: null, rdfType: 'https://undefineds.co/ns#AgentContact', contactType: 'agent', deletedAt: null, avatarUrl: null, entityUri: 'https://pod.example/.data/agents/gpt-helper.ttl#this' },
+    { id: 'p-1', name: 'Alice', alias: null, rdfType: 'https://undefineds.co/ns#PersonContact', contactType: 'solid', deletedAt: null, avatarUrl: null, entity: 'https://alice.example/profile/card#me' },
+    { id: 'p-2', name: 'Bob', alias: null, rdfType: 'https://undefineds.co/ns#PersonContact', contactType: 'solid', deletedAt: null, avatarUrl: null, entity: 'https://bob.example/profile/card#me' },
+    { id: 'a-1', name: 'GPT Helper', alias: null, rdfType: 'https://undefineds.co/ns#AgentContact', contactType: 'agent', deletedAt: null, avatarUrl: null, entity: 'https://pod.example/.data/agents/gpt-helper.ttl#this' },
   ],
   mockCreateGroupWithChat: vi.fn().mockResolvedValue({ id: 'g-1', chatId: 'ch-1' }),
   mockCreateGroup: vi.fn().mockResolvedValue({ id: 'g-1', chatId: 'ch-1' }),

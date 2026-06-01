@@ -86,14 +86,13 @@ const mockFavorite = {
   id: 'fav-1',
   title: 'Starred Chat',
   sourceModule: 'chat',
-  sourceId: 'chat-1',
   snapshotContent: 'Hello world preview',
   snapshotAuthor: 'Alice',
   snapshotMeta: null,
   favoredAt: new Date('2026-01-15T10:30:00Z'),
   updatedAt: null,
   targetType: 'chat',
-  targetUri: 'chat-1',
+  target: 'https://alice.example/.data/chat/chat-1/index.ttl#this',
   searchText: 'Starred Chat',
 }
 
@@ -211,8 +210,7 @@ describe('FavoriteContentPane', () => {
         data: [{
           ...mockFavorite,
           sourceModule: 'messages',
-          sourceId: 'msg-3',
-          targetUri: 'https://alice.example/.data/chat/chat-1/2026/03/27/messages.ttl#msg-3',
+          target: 'https://alice.example/.data/chat/chat-1/2026/03/27/messages.ttl#msg-3',
           snapshotMeta: JSON.stringify({
             chatId: 'chat-1',
             threadId: 'thread-2',

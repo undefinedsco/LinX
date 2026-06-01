@@ -31,14 +31,14 @@ function parseSnapshotMeta(raw?: string | null): FavoriteSnapshotMeta | null {
   }
 }
 
-function parseChatTargetUri(targetUri?: string | null): {
+function parseChatTargetUri(target?: string | null): {
   chatId?: string | null
   threadId?: string | null
   messageId?: string | null
 } {
-  if (!targetUri) return {}
+  if (!target) return {}
 
-  const threadMatch = targetUri.match(/\/\.data\/chat\/([^/]+)\/index\.ttl#(.+)$/)
+  const threadMatch = target.match(/\/\.data\/chat\/([^/]+)\/index\.ttl#(.+)$/)
   if (threadMatch) {
     const [, chatId, fragment] = threadMatch
     return {
@@ -47,7 +47,7 @@ function parseChatTargetUri(targetUri?: string | null): {
     }
   }
 
-  const messageMatch = targetUri.match(/\/\.data\/chat\/([^/]+)\/\d{4}\/\d{2}\/\d{2}\/messages\.ttl#(.+)$/)
+  const messageMatch = target.match(/\/\.data\/chat\/([^/]+)\/\d{4}\/\d{2}\/\d{2}\/messages\.ttl#(.+)$/)
   if (messageMatch) {
     const [, chatId, messageId] = messageMatch
     return {
@@ -59,50 +59,55 @@ function parseChatTargetUri(targetUri?: string | null): {
   return {}
 }
 
+function legacySourceId(favorite: FavoriteRow): string | null {
+  const record = favorite as FavoriteRow & { sourceId?: string | null }
+  return record.sourceId ?? null
+}
+
 function resolveChatScene(favorite: FavoriteRow, meta: FavoriteSnapshotMeta | null): FavoriteSceneTarget {
-  const uriTarget = parseChatTargetUri(favorite.targetUri)
+  const uriTarget = parseChatTargetUri(favorite.target)
 
   return {
     microAppId: 'chat',
-    chatId: meta?.chatId ?? favorite.sourceId ?? uriTarget.chatId ?? null,
+    chatId: meta?.chatId ?? uriTarget.chatId ?? legacySourceId(favorite),
     threadId: meta?.threadId ?? uriTarget.threadId ?? null,
     messageId: meta?.messageId ?? uriTarget.messageId ?? null,
   }
 }
 
 function resolveThreadScene(favorite: FavoriteRow, meta: FavoriteSnapshotMeta | null): FavoriteSceneTarget {
-  const uriTarget = parseChatTargetUri(favorite.targetUri)
+  const uriTarget = parseChatTargetUri(favorite.target)
 
   return {
     microAppId: 'chat',
     chatId: meta?.chatId ?? uriTarget.chatId ?? null,
-    threadId: meta?.threadId ?? favorite.sourceId ?? uriTarget.threadId ?? null,
+    threadId: meta?.threadId ?? uriTarget.threadId ?? legacySourceId(favorite),
     messageId: meta?.messageId ?? null,
   }
 }
 
 function resolveMessageScene(favorite: FavoriteRow, meta: FavoriteSnapshotMeta | null): FavoriteSceneTarget {
-  const uriTarget = parseChatTargetUri(favorite.targetUri)
+  const uriTarget = parseChatTargetUri(favorite.target)
 
   return {
     microAppId: 'chat',
     chatId: meta?.chatId ?? uriTarget.chatId ?? null,
     threadId: meta?.threadId ?? null,
-    messageId: meta?.messageId ?? favorite.sourceId ?? uriTarget.messageId ?? null,
+    messageId: meta?.messageId ?? uriTarget.messageId ?? legacySourceId(favorite),
   }
 }
 
 function resolveContactScene(favorite: FavoriteRow, meta: FavoriteSnapshotMeta | null): FavoriteSceneTarget {
   return {
     microAppId: 'contacts',
-    contactId: meta?.contactId ?? favorite.sourceId ?? favorite.targetUri ?? null,
+    contactId: meta?.contactId ?? legacySourceId(favorite) ?? favorite.target ?? null,
   }
 }
 
 function resolveFileScene(favorite: FavoriteRow, meta: FavoriteSnapshotMeta | null): FavoriteSceneTarget {
   return {
     microAppId: 'files',
-    fileId: meta?.fileId ?? favorite.sourceId ?? null,
+    fileId: meta?.fileId ?? favorite.target ?? legacySourceId(favorite),
     treeNodeId: meta?.treeNodeId ?? null,
   }
 }
@@ -122,7 +127,7 @@ export function resolveFavoriteScene(favorite: FavoriteRow): FavoriteSceneTarget
     case 'files':
       return resolveFileScene(favorite, meta)
     default: {
-      const uriTarget = parseChatTargetUri(favorite.targetUri)
+      const uriTarget = parseChatTargetUri(favorite.target)
       if (uriTarget.chatId || uriTarget.threadId || uriTarget.messageId) {
         return {
           microAppId: 'chat',
@@ -132,10 +137,11 @@ export function resolveFavoriteScene(favorite: FavoriteRow): FavoriteSceneTarget
         }
       }
 
-      if (favorite.sourceId) {
+      const legacySource = legacySourceId(favorite)
+      if (legacySource) {
         return {
           microAppId: 'chat',
-          chatId: favorite.sourceId,
+          chatId: legacySource,
         }
       }
 

@@ -8,6 +8,7 @@
  */
 
 import { createPodCollection } from '@/lib/data/pod-collection'
+import { createLinxPodSyncScope, type LinxSyncOperationKind, type LinxSyncRunResult } from '@linx/agent-runtime/sync'
 import { like, or, resolveRowSubject } from '@undefineds.co/drizzle-solid'
 import {
   contactTable,
@@ -22,6 +23,7 @@ import {
   type ChatRow,
   type ChatInsert,
   type SolidProfileRow,
+  ContactClass,
   ContactType,
   isGroupContact,
 } from '@undefineds.co/models'
@@ -44,13 +46,73 @@ import { favoriteHooks } from '@/modules/favorites/collections'
 // ============================================================================
 
 let dbGetter: (() => SolidDatabase | null) | null = null
+const contactOpsSync = createLinxPodSyncScope({ source: 'app-contact-ops' })
 
 export function setContactsDatabaseGetter(getter: () => SolidDatabase | null) {
   dbGetter = getter
 }
 
+export function getContactOpsSyncResults(): LinxSyncRunResult[] {
+  return contactOpsSync.getResults()
+}
+
+export function clearContactOpsSyncResults(): void {
+  contactOpsSync.clearResults()
+}
+
 function getDb(): SolidDatabase | null {
   return dbGetter?.() ?? null
+}
+
+async function runContactDomainSync<T>(
+  input: {
+    action: string
+    kind: LinxSyncOperationKind
+    contactId?: string
+    chatId?: string
+    agentId?: string
+    contactUri?: string
+    chatUri?: string
+    agentUri?: string
+    contactType?: string
+    metadata?: Record<string, unknown> | ((value: T) => Record<string, unknown>)
+  },
+  operation: () => T | Promise<T>,
+): Promise<T> {
+  return contactOpsSync.run({
+    action: input.action,
+    kind: input.kind,
+    description: `contact-ops:${input.action}`,
+    subject: input.contactId ?? input.agentId ?? input.chatId,
+    resourceBindings: (value) => ({
+      contact: {
+        uri: input.contactUri ?? readResultString(value, 'contactUri'),
+        local: input.contactId ?? readResultString(value, 'id') ?? readResultString(value, 'contactId') ?? readResultString(value, 'localContact'),
+      },
+      chat: {
+        uri: input.chatUri ?? readResultString(value, 'chatUri'),
+        local: input.chatId ?? readResultString(value, 'chatId') ?? readResultString(value, 'localChat'),
+      },
+      agent: {
+        uri: input.agentUri ?? readResultString(value, 'agentUri'),
+        local: input.agentId ?? readResultString(value, 'agentId') ?? readResultString(value, 'localAgent'),
+      },
+    }),
+    metadata: (value) => {
+      const extraMetadata = typeof input.metadata === 'function'
+        ? input.metadata(value)
+        : input.metadata
+      return {
+        contactType: input.contactType,
+        ...extraMetadata,
+      }
+    },
+    task: operation,
+  })
+}
+
+function readResultString(value: unknown, key: string): string | undefined {
+  return isRecord(value) && typeof value[key] === 'string' ? value[key] : undefined
 }
 
 async function findByIriCompat<T>(db: SolidDatabase, table: unknown, iri: string): Promise<T | null> {
@@ -65,6 +127,33 @@ async function findByIriCompat<T>(db: SolidDatabase, table: unknown, iri: string
 
 function buildLocalChatUri(chatId: string): string {
   return `/.data/chat/${chatId}/index.ttl#this`
+}
+
+function resolveChatUri(chat: Partial<ChatRow> | null | undefined): string | undefined {
+  if (!chat) return undefined
+  const subject = resolveRowSubject(chat as Record<string, unknown>)
+  if (subject && subject !== chat.id) return subject
+  return chat.id ? buildLocalChatUri(chat.id) : subject ?? undefined
+}
+
+function isUriRef(value: string): boolean {
+  return /^(https?:|urn:|\/)/.test(value)
+}
+
+function buildMemberRefMetadata(memberRef: string): Record<string, string> {
+  return isUriRef(memberRef)
+    ? { memberUri: memberRef }
+    : { localMember: memberRef }
+}
+
+function resolveContactUri(contact: Partial<ContactRow> | null | undefined): string | undefined {
+  const subject = contact ? resolveRowSubject(contact as Record<string, unknown>) : undefined
+  return subject ?? undefined
+}
+
+function resolveAgentUri(agent: Partial<AgentRow> | null | undefined): string | undefined {
+  const subject = agent ? resolveRowSubject(agent as Record<string, unknown>) : undefined
+  return subject ?? undefined
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -276,7 +365,7 @@ export const contactOps = {
    * 
    * Flow:
    * 1. Create Agent record
-   * 2. Create Contact record (type: agent, entityUri → Agent)
+   * 2. Create Contact record (type: agent, entity → Agent)
    * 3. Create Chat record (participants → Contact)
    * 
    * @returns The created Contact (with chatId attached)
@@ -289,45 +378,58 @@ export const contactOps = {
       throw new Error('Solid database is not ready')
     }
 
-    const { agent, contact, contactId, contactUri } = await createAgentContactRecords(db, {
-      name,
-      provider,
-      model,
-      instructions,
+    return await runContactDomainSync({
+      action: 'agent.create',
+      kind: 'insert',
+      contactType: ContactType.AGENT,
+    }, async () => {
+      const { agent, contact, contactId, contactUri } = await createAgentContactRecords(db, {
+        name,
+        provider,
+        model,
+        instructions,
+      })
+
+      const chatId = crypto.randomUUID()
+      const now = new Date()
+
+      writeCollectionRow(agentCollection, agent as AgentRow)
+      writeCollectionRow(contactCollection, contact as ContactRow, contactId)
+
+      const chatData: ChatInsert = {
+        id: chatId,
+        title: name,
+        avatarUrl: contact.avatarUrl || undefined,
+        participants: buildDirectChatParticipants(contactUri),
+        createdAt: now,
+        updatedAt: now,
+        lastActiveAt: now,
+      }
+      const chatTx = chatCollection.insert(chatData as ChatRow)
+
+      await chatTx.isPersisted.promise
+      writeCollectionRow(chatCollection, { ...chatData, id: chatId } as ChatRow, chatId)
+
+      queryClient.invalidateQueries({ queryKey: ['chats'] })
+      queryClient.invalidateQueries({ queryKey: ['contacts'] })
+
+      return {
+        ...(contact as ContactRow),
+        id: contactId,
+        chatId,
+        contactUri,
+        agentUri: resolveAgentUri(agent as AgentRow),
+        localAgent: typeof agent.id === 'string' ? agent.id : undefined,
+        chatUri: buildLocalChatUri(chatId),
+      }
     })
-
-    const chatId = crypto.randomUUID()
-    const now = new Date()
-
-    writeCollectionRow(agentCollection, agent as AgentRow)
-    writeCollectionRow(contactCollection, contact as ContactRow, contactId)
-
-    const chatData: ChatInsert = {
-      id: chatId,
-      title: name,
-      avatarUrl: contact.avatarUrl || undefined,
-      participants: buildDirectChatParticipants(contactUri),
-      createdAt: now,
-      updatedAt: now,
-      lastActiveAt: now,
-    }
-    const chatTx = chatCollection.insert(chatData as ChatRow)
-    
-    await chatTx.isPersisted.promise
-    writeCollectionRow(chatCollection, { ...chatData, id: chatId } as ChatRow, chatId)
-    
-    // Invalidate chat query to refresh list
-    queryClient.invalidateQueries({ queryKey: ['chats'] })
-    queryClient.invalidateQueries({ queryKey: ['contacts'] })
-    
-    return { ...(contact as ContactRow), id: contactId, chatId }
   },
   
   /**
    * Add a Solid friend (create Contact and Chat)
    * 
    * Flow:
-   * 1. Create Contact record (type: solid, entityUri → WebID)
+   * 1. Create Contact record (type: solid, entity → WebID)
    * 2. Create Chat record (participants → Contact)
    * 
    * @returns The created Contact (with chatId attached)
@@ -340,31 +442,42 @@ export const contactOps = {
       throw new Error('Solid database is not ready')
     }
 
-    const { contact, contactId, contactUri } = await createSolidContactRecord(db, input)
-    writeCollectionRow(contactCollection, contact as ContactRow, contactId)
+    return await runContactDomainSync({
+      action: 'friend.create',
+      kind: 'insert',
+      contactType: ContactType.SOLID,
+    }, async () => {
+      const { contact, contactId, contactUri } = await createSolidContactRecord(db, input)
+      writeCollectionRow(contactCollection, contact as ContactRow, contactId)
 
-    const chatId = crypto.randomUUID()
-    const now = new Date()
+      const chatId = crypto.randomUUID()
+      const now = new Date()
 
-    const chatData: ChatInsert = {
-      id: chatId,
-      title: name,
-      avatarUrl: contact.avatarUrl || undefined,
-      participants: buildDirectChatParticipants(contactUri),
-      createdAt: now,
-      updatedAt: now,
-      lastActiveAt: now,
-    }
-    const chatTx = chatCollection.insert(chatData as ChatRow)
-    
-    await chatTx.isPersisted.promise
-    writeCollectionRow(chatCollection, { ...chatData, id: chatId } as ChatRow, chatId)
-    
-    // Invalidate chat query
-    queryClient.invalidateQueries({ queryKey: ['chats'] })
-    queryClient.invalidateQueries({ queryKey: ['contacts'] })
-    
-    return { ...(contact as ContactRow), id: contactId, chatId }
+      const chatData: ChatInsert = {
+        id: chatId,
+        title: name,
+        avatarUrl: contact.avatarUrl || undefined,
+        participants: buildDirectChatParticipants(contactUri),
+        createdAt: now,
+        updatedAt: now,
+        lastActiveAt: now,
+      }
+      const chatTx = chatCollection.insert(chatData as ChatRow)
+
+      await chatTx.isPersisted.promise
+      writeCollectionRow(chatCollection, { ...chatData, id: chatId } as ChatRow, chatId)
+
+      queryClient.invalidateQueries({ queryKey: ['chats'] })
+      queryClient.invalidateQueries({ queryKey: ['contacts'] })
+
+      return {
+        ...(contact as ContactRow),
+        id: contactId,
+        chatId,
+        contactUri,
+        chatUri: buildLocalChatUri(chatId),
+      }
+    })
   },
   
   /**
@@ -401,6 +514,7 @@ export const contactOps = {
     const contact = this.getById(id)
     favoriteHooks.onStarredChange('contacts', id, newStarred, {
       title: contact?.name ?? id,
+      targetType: contact?.rdfType ?? ContactClass.PERSON,
       searchText: contact?.name ?? undefined,
       snapshotContent: contact?.note ?? undefined,
     })
@@ -410,32 +524,39 @@ export const contactOps = {
    * Delete a contact (and associated chat if any)
    */
   async deleteContact(id: string): Promise<void> {
-    const contact = this.getById(id)
-    if (contact) {
-      const chats = Array.from(chatCollection.state.values()) as ChatRow[]
-      const participantRefs = getContactRefs(contact)
+    await runContactDomainSync({
+      action: 'contact.delete',
+      kind: 'delete',
+      contactId: id,
+    }, async () => {
+      const contact = this.getById(id)
+      if (contact) {
+        const chats = Array.from(chatCollection.state.values()) as ChatRow[]
+        const participantRefs = getContactRefs(contact)
 
-      const linkedChats = chats.filter((chat) => {
-        if (isGroupContact(contact)) {
-          const groupChatRef = contact.entityUri ?? contact.id
-          return getChatRefs(chat).includes(groupChatRef)
+        const linkedChats = chats.filter((chat) => {
+          if (isGroupContact(contact)) {
+            const groupChatRef = contact.entity ?? contact.id
+            return getChatRefs(chat).includes(groupChatRef)
+          }
+
+          const participants = toStringArray(chat.participants)
+          return participants.length <= 1 && hasParticipant(chat, participantRefs)
+        })
+
+        for (const chat of linkedChats) {
+          const chatTx = chatCollection.delete(chat.id)
+          await chatTx.isPersisted.promise
         }
-
-        const participants = toStringArray(chat.participants)
-        return participants.length <= 1 && hasParticipant(chat, participantRefs)
-      })
-
-      for (const chat of linkedChats) {
-        const chatTx = chatCollection.delete(chat.id)
-        await chatTx.isPersisted.promise
       }
-    }
 
-    const tx = contactCollection.delete(id)
-    await tx.isPersisted.promise
+      const tx = contactCollection.delete(id)
+      await tx.isPersisted.promise
 
-    queryClient.invalidateQueries({ queryKey: ['chats'] })
-    queryClient.invalidateQueries({ queryKey: ['contacts'] })
+      queryClient.invalidateQueries({ queryKey: ['chats'] })
+      queryClient.invalidateQueries({ queryKey: ['contacts'] })
+      return { id }
+    })
   },
   
   /**
@@ -482,7 +603,7 @@ export const contactOps = {
 
   /**
    * Search contacts by query string using drizzle-solid ilike
-   * Searches in: name, alias, externalId, note, entityUri
+   * Searches in: name, alias, externalId, note, entity
    */
   async search(query: string): Promise<ContactRow[]> {
     if (!query.trim()) return this.getAll()
@@ -502,7 +623,7 @@ export const contactOps = {
             like(contactTable.alias as any, pattern),
             like(contactTable.externalId as any, pattern),
             like(contactTable.note as any, pattern),
-            like(contactTable.entityUri as any, pattern)
+            like(contactTable.entity as any, pattern)
           )
         )
         .execute()
@@ -519,17 +640,17 @@ export const contactOps = {
         c.alias?.toLowerCase().includes(searchLower) ||
         c.externalId?.toLowerCase().includes(searchLower) ||
         c.note?.toLowerCase().includes(searchLower) ||
-        c.entityUri?.toLowerCase().includes(searchLower)
+        c.entity?.toLowerCase().includes(searchLower)
       )
     }
   },
 
   /**
-   * Find contact by entityUri (WebID or Agent ID)
+   * Find contact by entity (WebID or Agent ID)
    */
-  findByEntityUri(entityUri: string): ContactRow | null {
+  findByEntityUri(entity: string): ContactRow | null {
     const all = this.getAll()
-    return all.find(c => c.entityUri === entityUri) || null
+    return all.find(c => c.entity === entity) || null
   },
 
   // ==========================================================================
@@ -542,42 +663,54 @@ export const contactOps = {
    * @returns chatId
    */
   async findOrCreateChat(contactId: string): Promise<string> {
-    const contact = this.getById(contactId)
-    if (!contact) {
-      throw new Error(`Contact not found: ${contactId}`)
-    }
+    const { chatId } = await runContactDomainSync({
+      action: 'contact.chat.ensure',
+      kind: 'upsert',
+      contactId,
+    }, async () => {
+      const contact = this.getById(contactId)
+      if (!contact) {
+        throw new Error(`Contact not found: ${contactId}`)
+      }
 
-    const participantRefs = getContactRefs(contact)
+      const participantRefs = getContactRefs(contact)
 
-    // First, try to find existing chat
-    const chats = Array.from(chatCollection.state.values())
-    const existingChat = chats.find((chat: ChatRow) => hasParticipant(chat, participantRefs))
-    
-    if (existingChat) {
-      return existingChat.id
-    }
-    
-    // No existing chat, create one
-    const chatId = crypto.randomUUID()
-    const now = new Date()
-    const primaryParticipant = participantRefs.find((ref) => ref !== contact.id) ?? contact.id
-    
-    const chatData: ChatInsert = {
-      id: chatId,
-      title: contact.alias || contact.name,
-      avatarUrl: contact.avatarUrl || undefined,
-      participants: buildDirectChatParticipants(primaryParticipant),
-      createdAt: now,
-      updatedAt: now,
-      lastActiveAt: now,
-    }
-    
-    const tx = chatCollection.insert(chatData as ChatRow)
-    await tx.isPersisted.promise
-    writeCollectionRow(chatCollection, { ...chatData, id: chatId } as ChatRow, chatId)
-    
-    queryClient.invalidateQueries({ queryKey: ['chats'] })
-    
+      // First, try to find existing chat
+      const chats = Array.from(chatCollection.state.values())
+      const existingChat = chats.find((chat: ChatRow) => hasParticipant(chat, participantRefs))
+
+      if (existingChat) {
+        return {
+          chatId: existingChat.id,
+          chatUri: resolveChatUri(existingChat),
+          created: false,
+        }
+      }
+
+      // No existing chat, create one
+      const chatId = crypto.randomUUID()
+      const now = new Date()
+      const primaryParticipant = participantRefs.find((ref) => ref !== contact.id) ?? contact.id
+
+      const chatData: ChatInsert = {
+        id: chatId,
+        title: contact.alias || contact.name,
+        avatarUrl: contact.avatarUrl || undefined,
+        participants: buildDirectChatParticipants(primaryParticipant),
+        createdAt: now,
+        updatedAt: now,
+        lastActiveAt: now,
+      }
+
+      const tx = chatCollection.insert(chatData as ChatRow)
+      await tx.isPersisted.promise
+      writeCollectionRow(chatCollection, { ...chatData, id: chatId } as ChatRow, chatId)
+
+      queryClient.invalidateQueries({ queryKey: ['chats'] })
+
+      return { chatId, chatUri: buildLocalChatUri(chatId), created: true }
+    })
+
     return chatId
   },
 
@@ -668,7 +801,7 @@ export const contactOps = {
    * Sync a contact from its remote source (WebID or Agent URL)
    * 
    * Implements Solid "source control" principle:
-   * - Fetches fresh data from entityUri
+   * - Fetches fresh data from entity
    * - Updates cached fields (name, avatarUrl, lastSyncedAt)
    * - Returns the fetched data for detail display
    * 
@@ -681,13 +814,13 @@ export const contactOps = {
       return { success: false, error: '联系人不存在' }
     }
     
-    const entityUri = contact.entityUri
-    if (!entityUri) {
+    const entity = contact.entity
+    if (!entity) {
       return { success: false, error: '没有关联的远程资源' }
     }
     
-    // Check if entityUri is remote (starts with http)
-    const isRemote = entityUri.startsWith('http://') || entityUri.startsWith('https://')
+    // Check if entity is remote (starts with http)
+    const isRemote = entity.startsWith('http://') || entity.startsWith('https://')
     if (!isRemote) {
       // Local entity (e.g., local agent), no sync needed
       return { success: true, data: undefined }
@@ -698,10 +831,10 @@ export const contactOps = {
       
       if (contact.contactType === ContactType.SOLID) {
         // Fetch Solid Profile
-        data = await this.fetchSolidProfile(entityUri)
+        data = await this.fetchSolidProfile(entity)
       } else if (contact.contactType === ContactType.AGENT) {
         // Fetch Remote Agent
-        data = await this.fetchRemoteAgent(entityUri)
+        data = await this.fetchRemoteAgent(entity)
       }
       
       if (!data) {
@@ -737,11 +870,11 @@ export const contactOps = {
   },
 
   /**
-   * Check if a contact needs sync (has remote entityUri)
+   * Check if a contact needs sync (has remote entity)
    */
   isRemoteContact(contact: ContactRow | null): boolean {
-    if (!contact?.entityUri) return false
-    return contact.entityUri.startsWith('http://') || contact.entityUri.startsWith('https://')
+    if (!contact?.entity) return false
+    return contact.entity.startsWith('http://') || contact.entity.startsWith('https://')
   },
 
   /**
@@ -771,7 +904,7 @@ export const contactOps = {
    * Create a Group Contact with associated Chat
    *
    * Flow:
-   * 1. Create Contact record (rdfType: GroupContact, entityUri → Chat URI)
+   * 1. Create Contact record (rdfType: GroupContact, entity → Chat URI)
    * 2. Create Chat record (participants → member URIs)
    *
    * @returns The created Contact with chatId
@@ -787,41 +920,54 @@ export const contactOps = {
     const chatId = crypto.randomUUID()
     const chatUri = buildLocalChatUri(chatId)
 
-    const { contact, contactId } = await createGroupContactRecord(db, {
-      name,
-      avatarUrl,
-      entityUri: chatUri,
+    return await runContactDomainSync({
+      action: 'group.create',
+      kind: 'insert',
+      chatId,
+      chatUri,
+      contactType: ContactClass.GROUP,
+    }, async () => {
+      const { contact, contactId } = await createGroupContactRecord(db, {
+        name,
+        avatarUrl,
+        entity: chatUri,
+      })
+      const now = new Date()
+
+      const chatData: ChatInsert = {
+        id: chatId,
+        title: name,
+        participants: buildGroupChatParticipants(participants, ownerRef),
+        avatarUrl: avatarUrl || undefined,
+        metadata: ownerRef
+          ? {
+              memberRoles: {
+                [ownerRef]: 'owner',
+              },
+            }
+          : undefined,
+        createdAt: now,
+        updatedAt: now,
+        lastActiveAt: now,
+      }
+      const chatTx = chatCollection.insert(chatData as ChatRow)
+
+      writeCollectionRow(contactCollection, contact as ContactRow, contactId)
+
+      await chatTx.isPersisted.promise
+      writeCollectionRow(chatCollection, { ...chatData, id: chatId } as ChatRow, chatId)
+
+      queryClient.invalidateQueries({ queryKey: ['chats'] })
+      queryClient.invalidateQueries({ queryKey: ['contacts'] })
+
+      return {
+        ...(contact as ContactRow),
+        id: contactId,
+        chatId,
+        chatUri,
+        contactUri: resolveContactUri(contact as ContactRow),
+      }
     })
-    const now = new Date()
-
-    // 2. Create Chat linked to group contact
-    const chatData: ChatInsert = {
-      id: chatId,
-      title: name,
-      participants: buildGroupChatParticipants(participants, ownerRef),
-      avatarUrl: avatarUrl || undefined,
-      metadata: ownerRef
-        ? {
-            memberRoles: {
-              [ownerRef]: 'owner',
-            },
-          }
-        : undefined,
-      createdAt: now,
-      updatedAt: now,
-      lastActiveAt: now,
-    }
-    const chatTx = chatCollection.insert(chatData as ChatRow)
-
-    writeCollectionRow(contactCollection, contact as ContactRow, contactId)
-
-    await chatTx.isPersisted.promise
-    writeCollectionRow(chatCollection, { ...chatData, id: chatId } as ChatRow, chatId)
-
-    queryClient.invalidateQueries({ queryKey: ['chats'] })
-    queryClient.invalidateQueries({ queryKey: ['contacts'] })
-
-    return { ...(contact as ContactRow), id: contactId, chatId }
   },
 
   /**
@@ -861,7 +1007,7 @@ export const contactOps = {
   getGroupChat(groupContactId: string): ChatRow | null {
     const chats = Array.from(chatCollection.state.values())
     const groupContact = this.getById(groupContactId)
-    const groupChatRef = groupContact?.entityUri ?? groupContactId
+    const groupChatRef = groupContact?.entity ?? groupContactId
     return chats.find((chat: ChatRow) => getChatRefs(chat).includes(groupChatRef)) ?? null
   },
 
@@ -879,55 +1025,75 @@ export const contactOps = {
    * Add a member to a group (appends to Chat.participants).
    */
   async addMemberToGroup(groupContactId: string, memberId: string): Promise<void> {
-    const chat = this.getGroupChat(groupContactId)
-    if (!chat) throw new Error(`No chat found for group contact: ${groupContactId}`)
+    await runContactDomainSync({
+      action: 'group.member.add',
+      kind: 'update',
+      contactId: groupContactId,
+      metadata: buildMemberRefMetadata(memberId),
+    }, async () => {
+      const chat = this.getGroupChat(groupContactId)
+      if (!chat) throw new Error(`No chat found for group contact: ${groupContactId}`)
 
-    const current = toStringArray(chat.participants)
-    if (current.includes(memberId)) return // already a member
+      const current = toStringArray(chat.participants)
+      if (current.includes(memberId)) return
 
-    const tx = chatCollection.update(chat.id, (draft: any) => {
-      draft.participants = buildGroupChatParticipants([...current, memberId])
-      draft.updatedAt = new Date()
+      const tx = chatCollection.update(chat.id, (draft: any) => {
+        draft.participants = buildGroupChatParticipants([...current, memberId])
+        draft.updatedAt = new Date()
+      })
+      await tx.isPersisted.promise
+      queryClient.invalidateQueries({ queryKey: ['contacts'] })
     })
-    await tx.isPersisted.promise
-    queryClient.invalidateQueries({ queryKey: ['contacts'] })
   },
 
   /**
    * Remove a member from a group (removes from Chat.participants).
    */
   async removeMemberFromGroup(groupContactId: string, memberId: string): Promise<void> {
-    const chat = this.getGroupChat(groupContactId)
-    if (!chat) throw new Error(`No chat found for group contact: ${groupContactId}`)
+    await runContactDomainSync({
+      action: 'group.member.remove',
+      kind: 'update',
+      contactId: groupContactId,
+      metadata: buildMemberRefMetadata(memberId),
+    }, async () => {
+      const chat = this.getGroupChat(groupContactId)
+      if (!chat) throw new Error(`No chat found for group contact: ${groupContactId}`)
 
-    const current = toStringArray(chat.participants)
-    if (!current.includes(memberId)) return // not a member
+      const current = toStringArray(chat.participants)
+      if (!current.includes(memberId)) return
 
-    const tx = chatCollection.update(chat.id, (draft: any) => {
-      draft.participants = current.filter((id) => id !== memberId)
-      draft.updatedAt = new Date()
+      const tx = chatCollection.update(chat.id, (draft: any) => {
+        draft.participants = current.filter((id) => id !== memberId)
+        draft.updatedAt = new Date()
+      })
+      await tx.isPersisted.promise
+      queryClient.invalidateQueries({ queryKey: ['contacts'] })
     })
-    await tx.isPersisted.promise
-    queryClient.invalidateQueries({ queryKey: ['contacts'] })
   },
 
   /**
    * Update group name (updates both Contact.name and Chat.title).
    */
   async updateGroupName(groupContactId: string, newName: string): Promise<void> {
-    // Update contact
-    await this.updateContact(groupContactId, { name: newName })
+    await runContactDomainSync({
+      action: 'group.name.update',
+      kind: 'update',
+      contactId: groupContactId,
+    }, async () => {
+      // Update contact
+      await this.updateContact(groupContactId, { name: newName })
 
-    // Update linked chat title
-    const chat = this.getGroupChat(groupContactId)
-    if (chat) {
-      const tx = chatCollection.update(chat.id, (draft: any) => {
-        draft.title = newName
-        draft.updatedAt = new Date()
-      })
-      await tx.isPersisted.promise
-      queryClient.invalidateQueries({ queryKey: ['chats'] })
-    }
+      // Update linked chat title
+      const chat = this.getGroupChat(groupContactId)
+      if (chat) {
+        const tx = chatCollection.update(chat.id, (draft: any) => {
+          draft.title = newName
+          draft.updatedAt = new Date()
+        })
+        await tx.isPersisted.promise
+        queryClient.invalidateQueries({ queryKey: ['chats'] })
+      }
+    })
   },
 
   // ==========================================================================
@@ -963,23 +1129,30 @@ export const contactOps = {
     memberId: string,
     role: 'admin' | 'member',
   ): Promise<void> {
-    const chat = this.getGroupChat(groupContactId)
-    if (!chat) throw new Error(`No chat found for group contact: ${groupContactId}`)
+    await runContactDomainSync({
+      action: 'group.member.role.update',
+      kind: 'update',
+      contactId: groupContactId,
+      metadata: { ...buildMemberRefMetadata(memberId), role },
+    }, async () => {
+      const chat = this.getGroupChat(groupContactId)
+      if (!chat) throw new Error(`No chat found for group contact: ${groupContactId}`)
 
-    const members = toStringArray(chat.participants)
-    if (!members.includes(memberId)) {
-      throw new Error(`Contact ${memberId} is not a member of this group`)
-    }
+      const members = toStringArray(chat.participants)
+      if (!members.includes(memberId)) {
+        throw new Error(`Contact ${memberId} is not a member of this group`)
+      }
 
-    const tx = chatCollection.update(chat.id, (draft: any) => {
-      const meta = readChatMetadata(draft.metadata)
-      const roles = readMemberRoles(draft.metadata)
-      roles[memberId] = role
-      writeChatMetadata(draft, { ...meta, memberRoles: roles })
-      draft.updatedAt = new Date()
+      const tx = chatCollection.update(chat.id, (draft: any) => {
+        const meta = readChatMetadata(draft.metadata)
+        const roles = readMemberRoles(draft.metadata)
+        roles[memberId] = role
+        writeChatMetadata(draft, { ...meta, memberRoles: roles })
+        draft.updatedAt = new Date()
+      })
+      await tx.isPersisted.promise
+      queryClient.invalidateQueries({ queryKey: ['contacts'] })
     })
-    await tx.isPersisted.promise
-    queryClient.invalidateQueries({ queryKey: ['contacts'] })
   },
 
   /**
@@ -1001,8 +1174,8 @@ export const contactOps = {
       this.resolveMembers(memberRefs).flatMap((member) => {
         const refs = new Set<string>()
         if (member.id) refs.add(member.id)
-        if (typeof member.entityUri === 'string' && member.entityUri.length > 0) {
-          refs.add(member.entityUri)
+        if (typeof member.entity === 'string' && member.entity.length > 0) {
+          refs.add(member.entity)
         }
         const resolved = resolveRowSubject(member as Record<string, unknown>)
         if (resolved) refs.add(resolved)
@@ -1038,8 +1211,8 @@ export const contactOps = {
       all.flatMap((contact) => {
         const refs = new Set<string>()
         if (contact.id) refs.add(contact.id)
-        if (typeof contact.entityUri === 'string' && contact.entityUri.length > 0) {
-          refs.add(contact.entityUri)
+        if (typeof contact.entity === 'string' && contact.entity.length > 0) {
+          refs.add(contact.entity)
         }
         const resolved = resolveRowSubject(contact as Record<string, unknown>)
         if (resolved) refs.add(resolved)

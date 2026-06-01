@@ -1,6 +1,13 @@
 import { useMemo } from 'react'
 import { useSession } from '@inrupt/solid-ui-react'
 import { useMutation, useQuery } from '@tanstack/react-query'
+import {
+  autoModeApprovalDecisionForOption,
+  buildAutoModeApprovalDecisionReason,
+  parseAutoModeApprovalOptions,
+  type AutoModeApprovalOption,
+} from '@linx/agent-runtime/auto-mode'
+import { createLinxPodSyncScope, type LinxSyncRunResult } from '@linx/agent-runtime/sync'
 import { resolveLinxPodBaseUrl } from '@undefineds.co/models/client'
 import {
   approvalResource,
@@ -26,6 +33,10 @@ import { buildAuditPresentation, createResolvedAuthTimestampsIndex } from './pre
 import { countActionableInboxItems, filterInboxItems } from './utils'
 
 let dbGetter: (() => SolidDatabase | null) | null = null
+const inboxOpsSync = createLinxPodSyncScope({
+  source: 'app-inbox',
+  plane: 'control-plane',
+})
 
 export function setInboxDatabaseGetter(getter: () => SolidDatabase | null) {
   dbGetter = getter
@@ -33,6 +44,14 @@ export function setInboxDatabaseGetter(getter: () => SolidDatabase | null) {
 
 function getDb(): SolidDatabase | null {
   return dbGetter?.() ?? null
+}
+
+export function getInboxOpsSyncResults(): LinxSyncRunResult[] {
+  return inboxOpsSync.getResults()
+}
+
+export function clearInboxOpsSyncResults(): void {
+  inboxOpsSync.clearResults()
 }
 
 export const approvalCollection = createPodCollection<typeof approvalResource, ApprovalRow, ApprovalInsert>({
@@ -45,6 +64,7 @@ export const approvalCollection = createPodCollection<typeof approvalResource, A
     if (!item.id) throw new Error('Approval record is missing id')
     return item.id
   },
+  onPodChange: () => queryClient.invalidateQueries({ queryKey: ['inbox', 'items'] }),
 })
 
 export const auditCollection = createPodCollection<typeof auditResource, AuditRow, AuditInsert>({
@@ -57,6 +77,7 @@ export const auditCollection = createPodCollection<typeof auditResource, AuditRo
     if (!item.id) throw new Error('Audit record is missing id')
     return item.id
   },
+  onPodChange: () => queryClient.invalidateQueries({ queryKey: ['inbox', 'items'] }),
 })
 
 export const inboxNotificationCollection = createPodCollection<typeof inboxNotificationResource, InboxNotificationRow, InboxNotificationInsert>({
@@ -69,6 +90,7 @@ export const inboxNotificationCollection = createPodCollection<typeof inboxNotif
     if (!item.id) throw new Error('Inbox notification record is missing id')
     return item.id
   },
+  onPodChange: () => queryClient.invalidateQueries({ queryKey: ['inbox', 'items'] }),
 })
 
 export function initializeInboxCollections(db: SolidDatabase | null) {
@@ -147,6 +169,39 @@ function makeAuditUri(webId: string, auditId: string, createdAt: Date | string |
   return `${extractPodBase(webId)}${buildAuditSubjectPath(auditId, createdAt)}`
 }
 
+async function runInboxControlSync<T>(
+  input: {
+    action: string
+    approvalId?: string
+    approvalUri?: string
+    decision?: 'approved' | 'rejected'
+    auditId?: string
+    auditUri?: string
+  },
+  operation: () => T | Promise<T>,
+): Promise<T> {
+  return inboxOpsSync.run({
+    action: input.action,
+    kind: 'update',
+    description: `inbox:${input.action}`,
+    subject: input.auditId ?? input.approvalId,
+    resourceBindings: {
+      approval: {
+        uri: input.approvalUri,
+        local: input.approvalId,
+      },
+      audit: {
+        uri: input.auditUri,
+        local: input.auditId,
+      },
+    },
+    metadata: {
+      decision: input.decision,
+    },
+    task: operation,
+  })
+}
+
 function extractRuntimeSessionId(sessionUri: string | null | undefined): string | null {
   if (!sessionUri) return null
   const match = sessionUri.match(/^urn:linx:runtime-session:(.+)$/)
@@ -164,7 +219,7 @@ function extractRuntimeSessionId(sessionUri: string | null | undefined): string 
 }
 
 function extractThreadId(approval: ApprovalRow): string | null {
-  const threadUri = approval.thread || approval.target
+  const threadUri = approval.target
   if (!threadUri) return null
   const hash = threadUri.split('#').pop()
   return hash || null
@@ -175,6 +230,32 @@ export function buildRuntimeToolResponse(decision: 'approved' | 'rejected', reas
     decision,
     reason: reason?.trim() || null,
     source: 'linx-inbox',
+  })
+}
+
+export interface ApprovalOption {
+  optionId: string
+  label: string
+  kind?: string
+  description?: string
+}
+
+export function parseApprovalOptions(value: unknown): ApprovalOption[] {
+  return parseAutoModeApprovalOptions(value)
+}
+
+export function approvalDecisionForOption(option: ApprovalOption): 'approved' | 'rejected' {
+  const decision = autoModeApprovalDecisionForOption(option as AutoModeApprovalOption)
+  return decision === 'decline' || decision === 'cancel'
+    ? 'rejected'
+    : 'approved'
+}
+
+export function buildApprovalOptionReason(option: ApprovalOption, extraReason?: string): string {
+  return buildAutoModeApprovalDecisionReason({
+    source: 'linx-inbox',
+    selectedOption: option as AutoModeApprovalOption,
+    note: extraReason,
   })
 }
 
@@ -205,17 +286,11 @@ export interface InboxItem {
 function buildApprovalDescription(approval: ApprovalRow): string {
   if (approval.status === 'approved') return `已批准 · ${approval.risk} 风险`
   if (approval.status === 'rejected') return `已拒绝 · ${approval.risk} 风险`
-  return `等待授权 · ${approval.risk} 风险`
+  return `待审批 · ${approval.risk} 风险`
 }
 
 function extractApprovalChatThreadRef(approval: ApprovalRow): { chatId: string | null; threadId: string | null } {
-  const threadRef = extractChatThreadRef(approval.thread || approval.target)
-  const chatRef = extractChatThreadRef(approval.chat)
-
-  return {
-    chatId: threadRef.chatId ?? chatRef.chatId,
-    threadId: threadRef.threadId,
-  }
+  return extractChatThreadRef(approval.target)
 }
 
 function buildInboxItems(
@@ -251,7 +326,7 @@ function buildInboxItems(
         notification,
         chatId: threadRef.chatId,
         threadId: threadRef.threadId,
-        thread: approval.thread || approval.target,
+        thread: approval.target,
         about: approval.target,
         approvalId: approval.id,
       })
@@ -303,7 +378,7 @@ function buildInboxItems(
       approval,
       chatId: threadRef.chatId,
       threadId: threadRef.threadId,
-      thread: approval.thread || approval.target,
+      thread: approval.target,
       about: approval.target,
       approvalId: approval.id,
     })
@@ -339,6 +414,27 @@ function buildInboxItems(
 }
 
 export const inboxOps = {
+  async subscribeToPod(): Promise<() => void> {
+    const db = getDb()
+    if (!db) {
+      return () => undefined
+    }
+
+    const unsubs = await Promise.all([
+      approvalCollection.subscribeToPod(db),
+      auditCollection.subscribeToPod(db),
+      inboxNotificationCollection.subscribeToPod(db),
+    ])
+
+    await queryClient.invalidateQueries({ queryKey: ['inbox', 'items'] })
+
+    return () => {
+      for (const unsubscribe of unsubs) {
+        unsubscribe()
+      }
+      void queryClient.invalidateQueries({ queryKey: ['inbox', 'items'] })
+    }
+  },
   async fetchApprovals() {
     return approvalCollection.fetch()
   },
@@ -363,37 +459,44 @@ export const inboxOps = {
     const auditId = crypto.randomUUID()
     const auditUri = makeAuditUri(input.actorWebId, auditId, now)
 
-    await updateApprovalByIri(db, input.actorWebId, input.approval, {
-      status: input.decision,
-      decisionBy: input.actorWebId,
-      decisionRole: 'human',
-      reason: input.reason?.trim() || null,
-      resolvedAt: now,
-      policyVersion: input.approval.policyVersion || 'phase4-inbox-v1',
+    await runInboxControlSync({
+      action: 'approval.resolve',
+      approvalId: input.approval.id,
+      approvalUri: resolveApprovalIri(input.actorWebId, input.approval),
+      decision: input.decision,
+      auditId,
+      auditUri,
+    }, async () => {
+      await updateApprovalByIri(db, input.actorWebId, input.approval, {
+        status: input.decision,
+        decisionBy: input.actorWebId,
+        decisionRole: 'human',
+        reason: input.reason?.trim() || null,
+        resolvedAt: now,
+        policyVersion: input.approval.policyVersion || 'phase4-inbox-v1',
+      })
+
+      await db.insert(auditResource).values({
+        id: auditId,
+        action: `inbox.approval.${input.decision}`,
+        actor: input.actorWebId,
+        actorRole: 'human',
+        session: input.approval.session,
+        toolCallId: input.approval.toolCallId,
+        approval: resolveApprovalIri(input.actorWebId, input.approval),
+        toolName: input.approval.toolName,
+        entry: input.approval.target,
+        policyVersion: input.approval.policyVersion || 'phase4-inbox-v1',
+        createdAt: now,
+      }).execute()
+
+      await db.insert(inboxNotificationResource).values({
+        id: crypto.randomUUID(),
+        actor: input.actorWebId,
+        object: auditUri,
+        createdAt: now,
+      }).execute()
     })
-
-    await db.insert(auditResource).values({
-      id: auditId,
-      action: `inbox.approval.${input.decision}`,
-      actor: input.actorWebId,
-      actorRole: 'human',
-      session: input.approval.session,
-      chat: input.approval.chat,
-      thread: input.approval.thread,
-      toolCallId: input.approval.toolCallId,
-      approval: resolveApprovalIri(input.actorWebId, input.approval),
-      toolName: input.approval.toolName,
-      entry: input.approval.thread || input.approval.target,
-      policyVersion: input.approval.policyVersion || 'phase4-inbox-v1',
-      createdAt: now,
-    }).execute()
-
-    await db.insert(inboxNotificationResource).values({
-      id: crypto.randomUUID(),
-      actor: input.actorWebId,
-      object: auditUri,
-      createdAt: now,
-    }).execute()
 
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['inbox', 'approvals'] }),

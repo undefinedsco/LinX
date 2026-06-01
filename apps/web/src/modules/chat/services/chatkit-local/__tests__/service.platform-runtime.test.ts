@@ -189,7 +189,7 @@ function createMockDb(agent: { provider: string; model: string }, credentialRows
   }
   const contact = {
     id: 'contact-1',
-    entityUri: 'agent-1',
+    entity: 'agent-1',
     contactType: 'agent',
   }
   const agentRow = {

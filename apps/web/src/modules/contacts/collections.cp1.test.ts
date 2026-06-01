@@ -104,7 +104,12 @@ vi.stubGlobal('crypto', {
 })
 
 // Import after mocks
-import { contactOps, setContactsDatabaseGetter } from './collections'
+import {
+  clearContactOpsSyncResults,
+  contactOps,
+  getContactOpsSyncResults,
+  setContactsDatabaseGetter,
+} from './collections'
 
 function seedGroupContact(groupId = 'group-1', chatId = 'chat-1') {
   mockCollectionState.set(groupId, {
@@ -112,7 +117,7 @@ function seedGroupContact(groupId = 'group-1', chatId = 'chat-1') {
     name: 'Test Group',
     rdfType: ContactClass.GROUP,
     contactType: ContactType.SOLID,
-    entityUri: `/.data/chat/${chatId}/index.ttl#this`,
+    entity: `/.data/chat/${chatId}/index.ttl#this`,
   })
 }
 
@@ -124,6 +129,7 @@ describe('CP1: createGroupWithChat', () => {
     resetCollectionMocks()
     mockCollectionState.clear()
     mockChatState.clear()
+    clearContactOpsSyncResults()
     setContactsDatabaseGetter(() => mockDb as any)
   })
 
@@ -144,6 +150,23 @@ describe('CP1: createGroupWithChat', () => {
     expect(result.rdfType).toBe(ContactClass.GROUP)
     expect(mockDb.insert).toHaveBeenCalledTimes(1)
     expect(mockInsert).toHaveBeenCalledTimes(1)
+    expect(getContactOpsSyncResults()).toHaveLength(1)
+    expect(getContactOpsSyncResults()[0]).toMatchObject({
+      source: 'app-contact-ops',
+      target: 'pod',
+      direction: 'local-to-core',
+      plane: 'projection',
+      authority: 'core',
+      status: 'completed',
+      metadata: {
+        action: 'group.create',
+        contactType: ContactClass.GROUP,
+        resourceBindings: {
+          contact: { uri: 'uuid-2', local: 'uuid-2' },
+          chat: { uri: '/.data/chat/uuid-1/index.ttl#this', local: 'uuid-1' },
+        },
+      },
+    })
   })
 
   it('should include ownerRef in participants and metadata', async () => {
@@ -205,6 +228,7 @@ describe('CP1: updateMemberRole', () => {
     vi.clearAllMocks()
     mockCollectionState.clear()
     mockChatState.clear()
+    clearContactOpsSyncResults()
   })
 
   it('should update role in chat metadata', async () => {
@@ -219,6 +243,23 @@ describe('CP1: updateMemberRole', () => {
     await contactOps.updateMemberRole('group-1', 'https://pod.example/profile/member-a#me', 'admin')
 
     expect(mockUpdate).toHaveBeenCalledWith('chat-1', expect.any(Function))
+    expect(getContactOpsSyncResults()).toHaveLength(1)
+    expect(getContactOpsSyncResults()[0]).toMatchObject({
+      source: 'app-contact-ops',
+      target: 'pod',
+      direction: 'local-to-core',
+      plane: 'projection',
+      authority: 'core',
+      status: 'completed',
+      metadata: {
+        action: 'group.member.role.update',
+        resourceBindings: {
+          contact: { local: 'group-1' },
+        },
+        memberUri: 'https://pod.example/profile/member-a#me',
+        role: 'admin',
+      },
+    })
   })
 
   it('should write member role into metadata object', async () => {
@@ -351,9 +392,9 @@ describe('CP1: resolveMembers', () => {
   })
 
   it('should resolve member IDs to ContactRow objects', () => {
-    mockCollectionState.set('c-1', { id: 'c-1', name: 'Alice', entityUri: 'https://pod.example/profile/c-1#me' })
-    mockCollectionState.set('c-2', { id: 'c-2', name: 'Bob', entityUri: 'https://pod.example/profile/c-2#me' })
-    mockCollectionState.set('c-3', { id: 'c-3', name: 'Charlie', entityUri: 'https://pod.example/profile/c-3#me' })
+    mockCollectionState.set('c-1', { id: 'c-1', name: 'Alice', entity: 'https://pod.example/profile/c-1#me' })
+    mockCollectionState.set('c-2', { id: 'c-2', name: 'Bob', entity: 'https://pod.example/profile/c-2#me' })
+    mockCollectionState.set('c-3', { id: 'c-3', name: 'Charlie', entity: 'https://pod.example/profile/c-3#me' })
 
     const result = contactOps.resolveMembers([
       'https://pod.example/profile/c-1#me',
@@ -366,7 +407,7 @@ describe('CP1: resolveMembers', () => {
   })
 
   it('should skip unknown IDs', () => {
-    mockCollectionState.set('c-1', { id: 'c-1', name: 'Alice', entityUri: 'https://pod.example/profile/c-1#me' })
+    mockCollectionState.set('c-1', { id: 'c-1', name: 'Alice', entity: 'https://pod.example/profile/c-1#me' })
 
     const result = contactOps.resolveMembers(['https://pod.example/profile/c-1#me', 'unknown'])
 
@@ -377,12 +418,12 @@ describe('CP1: resolveMembers', () => {
   it('should resolve member entity URIs back to contacts', () => {
     mockCollectionState.set('c-1', {
       id: 'c-1',
-      entityUri: 'https://pod.example/profile/c-1#me',
+      entity: 'https://pod.example/profile/c-1#me',
       name: 'Alice',
     })
     mockCollectionState.set('c-2', {
       id: 'c-2',
-      entityUri: 'https://pod.example/profile/c-2#me',
+      entity: 'https://pod.example/profile/c-2#me',
       name: 'Bob',
     })
 

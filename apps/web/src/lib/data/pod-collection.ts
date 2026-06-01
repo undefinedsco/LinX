@@ -4,6 +4,7 @@ import { QueryClient } from '@tanstack/react-query'
 import type { SolidDatabase } from '@undefineds.co/models'
 import type { PodTable } from '@undefineds.co/drizzle-solid'
 import { deleteExactRecord, updateExactRecord } from './exact-records'
+import { createPodCollectionSyncTracker, type PodCollectionSyncTracker } from './pod-collection-sync'
 
 interface PodCollectionOptions<TTable, TData> {
   table: TTable
@@ -22,6 +23,12 @@ interface PodCollectionOptions<TTable, TData> {
   getKey?: (item: TData) => string
   // Optional: seed data when the collection is empty
   seed?: TData[] | (() => TData[])
+  // Optional: invalidate aggregate queries or projections when Pod events arrive.
+  onPodChange?: (input: { action: 'create' | 'update' | 'delete'; activity: any; queryKey: string[] }) => void | Promise<void>
+}
+
+export interface PodCollectionSyncDebug {
+  sync: PodCollectionSyncTracker
 }
 
 /**
@@ -35,7 +42,7 @@ export function createPodCollection<
 >(
   options: PodCollectionOptions<TTable, TData>
 ) {
-  const { table, queryKey, queryClient, getDb, columns, orderBy, getKey: customGetKey, seed } = options
+  const { table, queryKey, queryClient, getDb, columns, orderBy, getKey: customGetKey, seed, onPodChange } = options
 
   const ensureId = (item: TData): TData => {
     if (item.id) return item
@@ -56,8 +63,9 @@ export function createPodCollection<
   })
 
   let didSeed = false
+  const sync = createPodCollectionSyncTracker({ queryKey })
 
-  const fetchRows = async () => {
+  const fetchRows = () => sync.runCoreRead('fetch', async () => {
     const db = getDb()
     if (!db) return []
 
@@ -114,7 +122,7 @@ export function createPodCollection<
     }
 
     return rows
-  }
+  })
 
   // 1. Create the base collection
   const collection = createCollection<TData, string>(
@@ -130,33 +138,39 @@ export function createPodCollection<
 
       // CREATE
       onInsert: async ({ transaction }) => {
-        const db = getDb()
-        if (!db) throw new Error('Database not connected')
-        const { modified } = transaction.mutations[0]
-        const ensured = ensureId(modified as TData)
-        await db.insert(table).values(ensured as any).execute()
+        await sync.runCoreWrite('insert', async () => {
+          const db = getDb()
+          if (!db) throw new Error('Database not connected')
+          const { modified } = transaction.mutations[0]
+          const ensured = ensureId(modified as TData)
+          await db.insert(table).values(ensured as any).execute()
+        })
       },
 
       // UPDATE
       onUpdate: async ({ transaction }) => {
-        const db = getDb()
-        if (!db) throw new Error('Database not connected')
-        const { original, modified } = transaction.mutations[0]
+        await sync.runCoreWrite('update', async () => {
+          const db = getDb()
+          if (!db) throw new Error('Database not connected')
+          const { original, modified } = transaction.mutations[0]
 
-        try {
-          await updateExactRecord(db, table as any, (original ?? modified) as any, modified as any)
-        } catch (error) {
-          console.error(`[PodCollection] Update failed for ${queryKey.join('/')}:`, error)
-          throw error
-        }
+          try {
+            await updateExactRecord(db, table as any, (original ?? modified) as any, modified as any)
+          } catch (error) {
+            console.error(`[PodCollection] Update failed for ${queryKey.join('/')}:`, error)
+            throw error
+          }
+        })
       },
 
       // DELETE
       onDelete: async ({ transaction }) => {
-        const db = getDb()
-        if (!db) throw new Error('Database not connected')
-        const { original } = transaction.mutations[0]
-        await deleteExactRecord(db, table as any, original as any)
+        await sync.runCoreWrite('delete', async () => {
+          const db = getDb()
+          if (!db) throw new Error('Database not connected')
+          const { original } = transaction.mutations[0]
+          await deleteExactRecord(db, table as any, original as any)
+        })
       }
     })
   )
@@ -187,16 +201,30 @@ export function createPodCollection<
       const sub = await (db as any).subscribe(table, {
         onCreate: async (activity: any) => {
           console.log(`[PodCollection] onCreate: ${activity.object}`)
-          // 直接 invalidate，让 useQuery 重新获取完整列表
-          queryClient.invalidateQueries({ queryKey })
+          await sync.runCoreRead('subscription.create', async () => {
+            await queryClient.invalidateQueries({ queryKey })
+            await onPodChange?.({ action: 'create', activity, queryKey })
+          }, {
+            object: activity.object,
+          })
         },
         onUpdate: async (activity: any) => {
           console.log(`[PodCollection] onUpdate: ${activity.object}`)
-          queryClient.invalidateQueries({ queryKey })
+          await sync.runCoreRead('subscription.update', async () => {
+            await queryClient.invalidateQueries({ queryKey })
+            await onPodChange?.({ action: 'update', activity, queryKey })
+          }, {
+            object: activity.object,
+          })
         },
-        onDelete: (activity: any) => {
+        onDelete: async (activity: any) => {
           console.log(`[PodCollection] onDelete: ${activity.object}`)
-          queryClient.invalidateQueries({ queryKey })
+          await sync.runCoreRead('subscription.delete', async () => {
+            await queryClient.invalidateQueries({ queryKey })
+            await onPodChange?.({ action: 'delete', activity, queryKey })
+          }, {
+            object: activity.object,
+          })
         }
       })
       
@@ -212,5 +240,5 @@ export function createPodCollection<
   const baseInsert = collection.insert.bind(collection)
   const insert = (item: TData) => baseInsert(ensureId(item))
 
-  return Object.assign(collection, { insert, subscribeToPod, fetch })
+  return Object.assign(collection, { insert, subscribeToPod, fetch, sync })
 }

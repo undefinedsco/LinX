@@ -128,7 +128,9 @@ export interface ToolApprovalMessageBlock extends BaseMessageBlock {
 
 export interface TaskProgressMessageBlock extends BaseMessageBlock {
   type: MessageBlockType.TASK_PROGRESS
-  taskId: string
+  task: string
+  /** @deprecated Use `task`; retained only for older richContent payloads. */
+  taskId?: string
   title: string
   steps: Array<{
     id: string
@@ -363,6 +365,7 @@ function mapItemToBlock(
         status: MessageBlockStatus.SUCCESS,
         model: item.model,
         metadata: item.metadata,
+        task: progressItem.task ?? progressItem.taskId,
         taskId: progressItem.taskId,
         title: progressItem.title,
         steps: progressItem.steps,
@@ -495,7 +498,7 @@ function mapBlockToItem(block: MessageBlock): MessageRichContentItem | null {
         type: RichContentItemType.TASK_PROGRESS,
         model: block.model,
         metadata: block.metadata,
-        taskId: block.taskId,
+        task: block.task,
         title: block.title,
         steps: block.steps,
         currentStep: block.currentStep,

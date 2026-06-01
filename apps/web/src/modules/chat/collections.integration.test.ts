@@ -4,6 +4,7 @@ import {
   chatTable,
   aiProviderTable,
   credentialTable,
+  chatResourceId,
   threadTable,
   messageTable,
   solidSchema,
@@ -34,7 +35,7 @@ describe('chat collections integration', () => {
 
     const id = `chat-${Date.now()}`
     const [created] = await database.insert(chatTable).values({
-      id,
+      id: chatResourceId(id),
       title: 'Integration Chat',
       description: 'chat insert test',
       participants: [webId],
@@ -43,7 +44,7 @@ describe('chat collections integration', () => {
     expect(created).toBeDefined()
 
     // Round-trip: SELECT back via SPARQL endpoint
-    const row = await (database as any).findById(chatTable as any, id)
+    const row = await (database as any).findById(chatTable as any, chatResourceId(id))
     expect(row).toBeTruthy()
     expect(row?.title).toBe('Integration Chat')
   })
@@ -62,7 +63,7 @@ describe('chat collections integration', () => {
     } as const
 
     await database.insert(chatTable).values({
-      id,
+      id: chatResourceId(id),
       title: 'Group Round Trip',
       participants: [webId, assistantUri],
       metadata,
@@ -74,7 +75,7 @@ describe('chat collections integration', () => {
     expect(roundTripped?.participants).toEqual(expect.arrayContaining([assistantUri]))
     expect(roundTripped?.metadata).toMatchObject(metadata)
 
-    await (database as any).deleteById(chatTable as any, id)
+    await (database as any).deleteById(chatTable as any, chatResourceId(id))
   })
 
   it('insert thread/message and SELECT back', { timeout: 90000 }, async () => {
@@ -82,7 +83,7 @@ describe('chat collections integration', () => {
 
     const chatId = `chat-thread-${Date.now()}`
     await database.insert(chatTable).values({
-      id: chatId,
+      id: chatResourceId(chatId),
       title: 'Thread Test Chat',
       participants: [webId],
     }).execute()
@@ -137,15 +138,15 @@ describe('chat collections integration', () => {
 
     const id = `chat-del-${Date.now()}`
     await database.insert(chatTable).values({
-      id,
+      id: chatResourceId(id),
       title: 'Delete Me',
       participants: [webId],
     }).execute()
 
-    await (database as any).deleteById(chatTable as any, id)
+    await (database as any).deleteById(chatTable as any, chatResourceId(id))
 
     // Verify deletion via SPARQL SELECT
-    const row = await (database as any).findById(chatTable as any, id)
+    const row = await (database as any).findById(chatTable as any, chatResourceId(id))
     expect(row).toBeNull()
   })
 })

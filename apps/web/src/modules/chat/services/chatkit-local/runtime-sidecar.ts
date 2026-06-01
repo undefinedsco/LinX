@@ -1,4 +1,10 @@
 import {
+  createLinxPodSyncScope,
+  type LinxPodSyncScope,
+  type LinxSyncOperationKind,
+  type LinxSyncRunResult,
+} from '@linx/agent-runtime/sync'
+import {
   ODRL,
   approvalResource,
   auditResource,
@@ -45,6 +51,11 @@ interface PendingAuthState {
   eventTs: number
 }
 
+interface RuntimeSidecarSinkOptions {
+  now?: () => Date
+  onSyncResult?: (result: LinxSyncRunResult) => void
+}
+
 function inferRisk(toolName: string, rawArguments: string): 'low' | 'medium' | 'high' {
   const source = `${toolName} ${rawArguments}`.toLowerCase()
 
@@ -68,12 +79,33 @@ export class RuntimeSidecarSink {
   private readonly seenEventKeys = new Set<string>()
   private readonly latestSessionStatus = new Map<string, RuntimeThreadStatus>()
   private readonly pendingAuthBySession = new Map<string, PendingAuthState>()
+  private readonly sync: LinxPodSyncScope
+  private readonly syncResults: LinxSyncRunResult[] = []
+  private syncSeq = 0
 
   constructor(
     private readonly db: SolidDatabase,
     private readonly webId: string,
+    private readonly options: RuntimeSidecarSinkOptions = {},
   ) {
     this.podBaseUrl = this.resolvePodBaseUrl(this.webId)
+    this.sync = createLinxPodSyncScope({
+      source: 'chatkit-local-runtime',
+      target: 'pod',
+      direction: 'local-to-core',
+      plane: 'projection',
+      authority: 'core',
+      now: this.options.now,
+      metadata: { webId: this.webId },
+      onResult: (result) => {
+        this.syncResults.push(result)
+        this.options.onSyncResult?.(result)
+      },
+    })
+  }
+
+  getSyncResults(): LinxSyncRunResult[] {
+    return [...this.syncResults]
   }
 
   private resolvePodBaseUrl(webId: string): string {
@@ -99,29 +131,96 @@ export class RuntimeSidecarSink {
     event: RuntimeSessionEvent,
     context: RuntimeEventContext,
   ): Promise<void> {
+    const shouldResolveAuth = this.shouldResolvePendingAuth(runtimeSession, event)
+    if (!shouldResolveAuth && !this.shouldProjectRuntimeEvent(runtimeSession, event)) {
+      return
+    }
+
+    await this.runRuntimeProjection(runtimeSession, event, context, async () => {
+      if (shouldResolveAuth) {
+        await this.persistAuthResolved(runtimeSession, event.ts, context)
+      }
+
+      switch (event.type) {
+        case 'status':
+          await this.persistSessionStatus(runtimeSession, event, context)
+          return
+        case 'tool_call':
+          await this.persistToolCall(runtimeSession, event, context)
+          return
+        case 'auth_required':
+          await this.persistAuthRequired(runtimeSession, event, context)
+          return
+        case 'error':
+          await this.persistSessionError(runtimeSession, event, context)
+          return
+        default:
+          return
+      }
+    })
+  }
+
+  private shouldResolvePendingAuth(runtimeSession: RuntimeSessionRecord, event: RuntimeSessionEvent): boolean {
     if (
       this.pendingAuthBySession.has(runtimeSession.id)
       && (event.type === 'assistant_delta' || event.type === 'assistant_done' || event.type === 'tool_call')
     ) {
-      await this.persistAuthResolved(runtimeSession, event.ts, context)
+      return true
     }
 
+    return false
+  }
+
+  private shouldProjectRuntimeEvent(runtimeSession: RuntimeSessionRecord, event: RuntimeSessionEvent): boolean {
     switch (event.type) {
       case 'status':
-        await this.persistSessionStatus(runtimeSession, event, context)
-        return
+        return this.latestSessionStatus.get(runtimeSession.id) !== event.status
+          && !this.seenEventKeys.has(this.buildEventKey('status', runtimeSession.id, event.status))
       case 'tool_call':
-        await this.persistToolCall(runtimeSession, event, context)
-        return
+        return true
       case 'auth_required':
-        await this.persistAuthRequired(runtimeSession, event, context)
-        return
+        return !this.seenEventKeys.has(this.buildEventKey('auth', runtimeSession.id, `${event.method}:${event.url ?? ''}`))
       case 'error':
-        await this.persistSessionError(runtimeSession, event, context)
-        return
+        return !this.seenEventKeys.has(this.buildEventKey('error', runtimeSession.id, event.message))
       default:
-        return
+        return false
     }
+  }
+
+  private async runRuntimeProjection(
+    runtimeSession: RuntimeSessionRecord,
+    event: RuntimeSessionEvent,
+    context: RuntimeEventContext,
+    project: () => Promise<void>,
+  ): Promise<void> {
+    const eventDate = eventDateFromTs(event.ts)
+    await this.sync.run({
+      action: `runtime.${event.type}`,
+      operationId: this.nextSyncOperationId(runtimeSession.id, event),
+      kind: this.syncKindForEvent(event),
+      description: `chatkit-local-runtime:${event.type}`,
+      subject: runtimeSession.id,
+      resourceBindings: {
+        session: { uri: this.makeRuntimeSessionUri(runtimeSession.id, eventDate), local: runtimeSession.id },
+        chat: { uri: this.makeChatUri(context.chatId), local: context.chatId },
+        thread: { uri: this.makeThreadUri(context.chatId, context.threadId), local: context.threadId },
+      },
+      metadata: {
+        eventType: event.type,
+        eventTs: event.ts,
+        localRuntimeThread: runtimeSession.threadId,
+      },
+      task: project,
+    })
+  }
+
+  private syncKindForEvent(event: RuntimeSessionEvent): LinxSyncOperationKind {
+    return event.type === 'status' ? 'upsert' : 'insert'
+  }
+
+  private nextSyncOperationId(runtimeSessionId: string, event: RuntimeSessionEvent): string {
+    const timestamp = (this.options.now?.() ?? new Date()).toISOString().replace(/[:.]/g, '-')
+    return `chatkit-runtime:${runtimeSessionId}:${event.type}:${timestamp}:${++this.syncSeq}`
   }
 
   private makeRuntimeSessionUri(sessionId: string, createdAt: Date = new Date()): string {
@@ -146,7 +245,7 @@ export class RuntimeSidecarSink {
     const existing = await this.findByStorageId<Record<string, unknown>>(sessionTable, runtimeSession.id)
 
     const payload = {
-      ownerWebId: this.webId,
+      owner: this.webId,
       chat: this.makeChatUri(context.chatId),
       thread: this.makeThreadUri(context.chatId, context.threadId),
       sessionType: 'direct',
@@ -156,8 +255,8 @@ export class RuntimeSidecarSink {
       metadata: {
         title: runtimeSession.title,
         previousStatus: previousStatus ?? null,
-        chatId: context.chatId,
-        threadId: context.threadId,
+        localChat: context.chatId,
+        localThread: context.threadId,
         threadUri: this.makeThreadUri(context.chatId, context.threadId),
         lastEventTs: event.ts,
       },
@@ -218,12 +317,10 @@ export class RuntimeSidecarSink {
       actor: this.webId,
       actorRole: 'system',
       session: this.makeRuntimeSessionUri(input.sessionId, input.sessionCreatedAt ?? createdAt),
-      chat: input.chatUri,
-      thread: input.threadUri,
       toolCallId: input.toolCallId,
       toolName: input.toolName,
       approval: input.approvalUri,
-      entry: input.entryUri,
+      entry: input.entryUri ?? input.threadUri ?? input.chatUri,
       policyVersion: POLICY_VERSION,
       createdAt,
     }).execute()
@@ -332,8 +429,6 @@ export class RuntimeSidecarSink {
       await this.db.insert(approvalResource).values({
         id: approvalId,
         session: this.makeRuntimeSessionUri(runtimeSession.id, eventDate),
-        chat: this.makeChatUri(context.chatId),
-        thread: this.makeThreadUri(context.chatId, context.threadId),
         toolCallId: event.requestId,
         toolName: event.name,
         target: this.makeThreadUri(context.chatId, context.threadId),

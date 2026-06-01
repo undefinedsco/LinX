@@ -322,7 +322,7 @@ export const ChatRightSidebar: FC<ChatRightSidebarProps> = () => {
   const { data: contact } = useEntity(contactTable, contactUri)
 
   // 获取 Agent（当 contactType 是 agent 时）
-  const agentUri = contact?.contactType === ContactType.AGENT ? contact.entityUri : null
+  const agentUri = contact?.contactType === ContactType.AGENT ? contact.entity : null
   const { data: agent, refresh: refreshAgent } = useEntity(agentTable, agentUri)
   const agentId = typeof agent?.id === 'string' && agent.id.length > 0
     ? agent.id
