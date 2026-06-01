@@ -17,10 +17,31 @@ import buildMeta from '../generated/build-meta.json';
 
 const OFFICIAL_CLOUD_IDENTITY_ORIGIN = 'https://id.undefineds.co';
 const OFFICIAL_CLOUD_API_ORIGIN = 'https://api.undefineds.co';
+const OFFICIAL_PREALLOCATED_MANAGED_SP_DOMAIN = 'node-0000.undefineds.co';
 const MANAGED_CLOUD_REGISTRATION_TIMEOUT_MS = 30000;
 const CANONICAL_OIDC_ISSUER_ENV_KEY = 'oidcIssuer';
 const PROVISION_CODE_REFRESH_GRACE_SECONDS = 5 * 60;
 const desktopBuildMeta = buildMeta as { xpodVersion?: string };
+
+function isXpodDebugEnabled(): boolean {
+  return process.env.LINX_XPOD_DEBUG === '1' || process.env.LINX_XPOD_DEBUG === 'true';
+}
+
+function debugXpodManager(message: string, payload?: Record<string, unknown>): void {
+  if (!isXpodDebugEnabled()) {
+    return;
+  }
+
+  if (payload) {
+    console.log(`[XpodManager:debug] ${message}`, payload);
+  } else {
+    console.log(`[XpodManager:debug] ${message}`);
+  }
+}
+
+function isErrnoException(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error;
+}
 
 function readOidcIssuerEnv(env: NodeJS.ProcessEnv | Record<string, string | undefined>): string | undefined {
   const canonical = env[CANONICAL_OIDC_ISSUER_ENV_KEY]?.trim();
@@ -385,6 +406,18 @@ export class XpodManager {
         stdoutPath,
         stderrPath,
       );
+      debugXpodManager('spawning xpod', {
+        command: launchSpec.command,
+        args: launchSpec.args,
+        cwd: launchSpec.cwd,
+        envPath: runtimeEnvPath,
+        launchKind: target.kind,
+        runtimeId: this.buildRuntimeId(target),
+        path: spawnOptions.env.PATH,
+        nodeBinary: spawnOptions.env.XPOD_NODE_BINARY,
+        electronRunAsNode: spawnOptions.env.ELECTRON_RUN_AS_NODE,
+        nodeOptions: spawnOptions.env.NODE_OPTIONS,
+      });
       let child: ChildProcess;
 
       try {
@@ -404,6 +437,7 @@ export class XpodManager {
       this.childProcess = child;
       this.stoppingPid = null;
       this.lastErrorLogPath = stderrPath;
+      debugXpodManager('spawned xpod', { pid: child.pid });
       child.unref();
       this.attachProcessHandlers(child, options.providerId);
 
@@ -434,6 +468,10 @@ export class XpodManager {
       });
       this.providerManager.updateManagedStatus(options.providerId, 'running');
     } catch (error) {
+      debugXpodManager('xpod start failed before ready', {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
       this.lastProcessErrorOutput = this.readLogTail(stderrPath ?? this.lastErrorLogPath);
       const pid = this.childProcess?.pid;
       if (pid && this.isProcessAlive(pid)) {
@@ -519,7 +557,13 @@ export class XpodManager {
       return { running: false, status: 'stopped' };
     }
 
-    if (!app.isPackaged) {
+    const isCurrentChildProcess = Boolean(
+      this.childProcess?.pid
+      && state.pid
+      && this.childProcess.pid === state.pid,
+    );
+
+    if (!app.isPackaged && !isCurrentChildProcess) {
       const preferredTarget = this.resolveComparableLaunchTarget();
       if (this.shouldReplaceManagedRuntime(state, preferredTarget)) {
         await this.disposeManagedRuntime(state);
@@ -1137,16 +1181,34 @@ export class XpodManager {
       spDomain: normalizedExisting?.spDomain ?? configuredManagedSpDomain,
       tunnelToken: options.tunnelToken || normalizedExisting?.tunnelToken,
     });
-    const registration = await this.registerProvisionedNode(managedCloudApiOrigin, {
-      ...provisionRequest,
-      localPort: options.port,
-    });
-    const spDomain = registration.spDomain ?? provisionRequest.spDomain;
+    let effectiveProvisionRequest = provisionRequest;
+    let registration: Awaited<ReturnType<XpodManager['registerProvisionedNode']>>;
+    try {
+      registration = await this.registerProvisionedNode(managedCloudApiOrigin, {
+        ...effectiveProvisionRequest,
+        localPort: options.port,
+      });
+    } catch (error) {
+      const fallbackRequest = this.buildManagedPublicUrlFallbackRequest(
+        effectiveProvisionRequest,
+        managedCloudApiOrigin,
+      );
+      if (!fallbackRequest || !isMissingPublicUrlProvisionError(error)) {
+        throw error;
+      }
+
+      effectiveProvisionRequest = fallbackRequest;
+      registration = await this.registerProvisionedNode(managedCloudApiOrigin, {
+        ...effectiveProvisionRequest,
+        localPort: options.port,
+      });
+    }
+    const spDomain = registration.spDomain ?? effectiveProvisionRequest.spDomain;
     const publicUrl = resolveRegistrationCanonicalPublicUrl({
       provisionCode: registration.provisionCode,
-      publicUrl: registration.publicUrl ?? provisionRequest.publicUrl ?? '',
+      publicUrl: registration.publicUrl ?? effectiveProvisionRequest.publicUrl ?? '',
       spDomain,
-    }, configuredPublicUrl) ?? registration.publicUrl ?? provisionRequest.publicUrl;
+    }, configuredPublicUrl) ?? registration.publicUrl ?? effectiveProvisionRequest.publicUrl;
 
     if (!publicUrl) {
       throw new Error('Cloud 返回的 Local canonical URL 不完整。');
@@ -1159,7 +1221,7 @@ export class XpodManager {
       provisionCode: registration.provisionCode,
       publicUrl,
       spDomain,
-      tunnelToken: registration.tunnelToken ?? provisionRequest.tunnelToken,
+      tunnelToken: registration.tunnelToken ?? effectiveProvisionRequest.tunnelToken,
       tunnelProvider: registration.tunnelProvider,
       tunnelEndpoint: registration.tunnelEndpoint,
       provisionUrl: buildProvisionUrl(cloudIdentityUrl, registration.provisionCode),
@@ -1265,6 +1327,31 @@ export class XpodManager {
     };
   }
 
+  private buildManagedPublicUrlFallbackRequest(
+    request: Omit<ProvisionNodeRequest, 'localPort'>,
+    cloudApiUrl: string,
+  ): Omit<ProvisionNodeRequest, 'localPort'> | null {
+    if (request.domainMode !== 'managed' || request.publicUrl) {
+      return null;
+    }
+
+    const spDomain = (request.spDomain
+      ? normalizeHostname(request.spDomain)
+      : undefined)
+      ?? (isOfficialCloudApiOrigin(cloudApiUrl) ? OFFICIAL_PREALLOCATED_MANAGED_SP_DOMAIN : undefined);
+
+    if (!spDomain) {
+      return null;
+    }
+
+    return {
+      ...request,
+      domainMode: 'self-managed',
+      spDomain,
+      publicUrl: this.ensureTrailingSlash(`https://${spDomain}`),
+    };
+  }
+
   private readPersistedManagedCloudRegistration(providerId: string): XpodManagedCloudRegistration | undefined {
     try {
       if (!fs.existsSync(this.cloudRegistrationPath)) {
@@ -1331,15 +1418,24 @@ export class XpodManager {
   }
 
   private isProcessAlive(pid: number): boolean {
+    const child = this.childProcess;
+    if (child?.pid === pid) {
+      return !child.killed && child.exitCode === null && child.signalCode === null;
+    }
+
     try {
       process.kill(pid, 0);
       return true;
-    } catch {
+    } catch (error) {
+      if (isErrnoException(error) && error.code === 'EPERM') {
+        return true;
+      }
       return false;
     }
   }
 
   private async killProcess(pid: number): Promise<void> {
+    debugXpodManager('sending SIGTERM to xpod process tree', { pid });
     await new Promise<void>((resolve) => {
       kill(pid, 'SIGTERM', () => resolve());
     });
@@ -1632,6 +1728,15 @@ function buildProvisionUrl(cloudIdentityUrl: string, provisionCode: string): str
 function derivePublicUrlFromSpDomain(spDomain?: string): string | undefined {
   const domain = spDomain?.trim();
   return domain ? `https://${domain}/` : undefined;
+}
+
+function isMissingPublicUrlProvisionError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes('publicUrl is required');
+}
+
+function isOfficialCloudApiOrigin(value: string): boolean {
+  return normalizeUrl(value) === OFFICIAL_CLOUD_API_ORIGIN;
 }
 
 function toProvisioningInfo(

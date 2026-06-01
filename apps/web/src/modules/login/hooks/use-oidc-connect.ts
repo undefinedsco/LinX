@@ -13,6 +13,7 @@ import {
 const PROVIDER_CHECK_TIMEOUT = 5000
 const AUTH_SURFACE_HANDOFF_TIMEOUT_MS = 250
 const LOGIN_SETUP_TIMEOUT_MS = 10000
+const CANCELLED = Symbol('oidc-connect-cancelled')
 
 interface OidcConnectOptions {
   authorizationSurface?: 'window' | 'embedded' | 'external'
@@ -27,6 +28,8 @@ interface OidcConnectOptions {
 export function useOidcConnect() {
   const { login } = useSession()
   const connectingRef = useRef(false)
+  const generationRef = useRef(0)
+  const cancelRef = useRef<{ generation: number; resolve: () => void } | null>(null)
 
   const resolveOidcIssuer = useCallback(async (url: string): Promise<string> => {
     const controller = new AbortController()
@@ -68,12 +71,23 @@ export function useOidcConnect() {
   const connect = useCallback(async (issuerUrl: string, options?: OidcConnectOptions) => {
     if (connectingRef.current) return
     connectingRef.current = true
+    const generation = ++generationRef.current
 
     try {
       clearUnrestorableSolidAuthState()
 
       const normalizedEntryUrl = issuerUrl.replace(/\/$/, '')
-      const resolvedIssuerUrl = await resolveOidcIssuer(normalizedEntryUrl)
+      const cancelSignal = createDeferred<typeof CANCELLED>()
+      cancelRef.current = {
+        generation,
+        resolve: () => cancelSignal.resolve(CANCELLED),
+      }
+      const resolvedIssuerResult = await Promise.race([
+        resolveOidcIssuer(normalizedEntryUrl),
+        cancelSignal.promise,
+      ])
+      if (resolvedIssuerResult === CANCELLED) return
+      const resolvedIssuerUrl = resolvedIssuerResult
       const returnToMicroAppId =
         options?.returnToMicroAppId
         ?? getPendingPostLoginMicroAppId()
@@ -91,9 +105,14 @@ export function useOidcConnect() {
 
       const desktopApi = typeof window !== 'undefined' ? window.xpodDesktop : undefined
       const authorizationSurface = options?.authorizationSurface ?? 'window'
-      const redirectUrl = desktopApi?.auth?.prepareLoopbackRedirect
-        ? await desktopApi.auth.prepareLoopbackRedirect()
+      const redirectUrlResult = desktopApi?.auth?.prepareLoopbackRedirect
+        ? await Promise.race([
+            desktopApi.auth.prepareLoopbackRedirect(),
+            cancelSignal.promise,
+          ])
         : `${window.location.origin}/auth/callback`
+      if (redirectUrlResult === CANCELLED) return
+      const redirectUrl = redirectUrlResult
 
       const redirectHandler =
         authorizationSurface === 'embedded' && desktopApi?.auth?.openEmbeddedAuthorization
@@ -115,6 +134,10 @@ export function useOidcConnect() {
       const handleRedirect = redirectHandler
         ? (url: string) => {
             try {
+              if (generationRef.current !== generation) {
+                redirectStarted?.resolve()
+                return undefined
+              }
               const result = redirectHandler(url)
               const handoffTimeoutId = window.setTimeout(() => {
                 redirectStarted?.resolve()
@@ -149,21 +172,23 @@ export function useOidcConnect() {
       }
 
       const loginPromise = Promise.resolve(login(loginOptions))
+      void loginPromise.catch(() => {
+        // Setup failures are handled by the races below. If a cancelled stale
+        // login later rejects, it must not surface as an unhandled rejection.
+      })
 
       if (redirectStarted) {
-        void loginPromise.catch(() => {
-          // The setup path is handled by the race below. After the auth surface
-          // opens, Inrupt intentionally keeps the login promise pending.
-        })
         await Promise.race([
           redirectStarted.promise,
           loginPromise,
           timeout(LOGIN_SETUP_TIMEOUT_MS, '登录窗口打开超时，请重试。'),
+          cancelSignal.promise,
         ])
       } else {
         await Promise.race([
           loginPromise,
           timeout(LOGIN_SETUP_TIMEOUT_MS, '登录跳转超时，请重试。'),
+          cancelSignal.promise,
         ])
       }
     } catch (error) {
@@ -171,11 +196,23 @@ export function useOidcConnect() {
       clearPendingPostLoginMicroAppId()
       throw error
     } finally {
-      connectingRef.current = false
+      if (generationRef.current === generation) {
+        connectingRef.current = false
+        cancelRef.current = null
+      } else if (cancelRef.current?.generation === generation) {
+        cancelRef.current = null
+      }
     }
   }, [login, resolveOidcIssuer])
 
-  return { connect }
+  const cancel = useCallback(() => {
+    cancelRef.current?.resolve()
+    cancelRef.current = null
+    generationRef.current += 1
+    connectingRef.current = false
+  }, [])
+
+  return { connect, cancel }
 }
 
 function isLoopbackUrl(url: string): boolean {

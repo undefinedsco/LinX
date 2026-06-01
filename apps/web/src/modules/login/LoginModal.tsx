@@ -371,10 +371,17 @@ function ConnectingView({
     : '请稍候...'
 
   if (authWindowStatus.open) {
+    const isSplitProvider = Boolean(
+      connectingProvider
+      && connectingProvider.storageProviderLabel
+      && connectingProvider.storageProviderLabel !== connectingProvider.issuerLabel,
+    )
     title = connectingProvider
-      ? `等待 ${connectingProvider.issuerLabel} 登录完成`
+      ? `等待 ${isSplitProvider ? connectingProvider.storageProviderLabel : connectingProvider.issuerLabel} ${isSplitProvider ? '授权' : '登录'}完成`
       : '等待登录完成'
-    detail = '请在登录窗口完成'
+    detail = isSplitProvider
+      ? `请在 ${connectingProvider?.issuerLabel} 登录窗口完成`
+      : '请在登录窗口完成'
   } else if (authWindowStatus.reason === 'completed') {
     title = '正在验证身份'
     detail = connectingProvider?.storageProviderLabel
@@ -446,10 +453,11 @@ function LocalOnboardingView({
       <div className="px-5 pt-5 pb-3 shrink-0 flex items-center gap-2">
         <button
           onClick={onBack}
-          className="p-1.5 -ml-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
+          className="-ml-1.5 inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
           aria-label="返回空间选择"
         >
           <ArrowLeft className="w-4 h-4" />
+          返回
         </button>
         <h2 className="text-lg font-semibold text-foreground">{productLabel}</h2>
       </div>

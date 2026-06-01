@@ -613,6 +613,26 @@ describe('LoginModal', () => {
     expect(screen.getByText('请在登录窗口完成')).toBeTruthy()
   })
 
+  it('labels split Cloud IDP and Local SP auth as Local authorization', () => {
+    const props = createProps({
+      state: 'connecting',
+      connectingProvider: {
+        issuerLabel: 'Cloud',
+        issuerUrl: 'https://id.undefineds.co',
+        storageProviderLabel: 'Local',
+        storageProviderUrl: 'https://node-0000.undefineds.co',
+      },
+      authWindowStatus: {
+        open: true,
+        reason: 'opened',
+        ready: true,
+      },
+    })
+    render(<LoginModal {...props} />)
+    expect(screen.getByText('等待 Local 授权完成')).toBeTruthy()
+    expect(screen.getByText('请在 Cloud 登录窗口完成')).toBeTruthy()
+  })
+
   it('shows verification copy after the auth window completes', () => {
     const props = createProps({
       state: 'connecting',

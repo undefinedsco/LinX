@@ -5,6 +5,7 @@ import { useLoginStore } from '@linx/stores/login'
 const navigateMock = vi.fn()
 const logoutMock = vi.fn()
 const connectMock = vi.fn()
+const cancelMock = vi.fn()
 const startLocalMock = vi.fn()
 const handleIncomingRedirectMock = vi.fn()
 
@@ -63,6 +64,7 @@ vi.mock('./hooks/use-session-restore', () => ({
 vi.mock('./hooks/use-oidc-connect', () => ({
   useOidcConnect: () => ({
     connect: connectMock,
+    cancel: cancelMock,
   }),
 }))
 
@@ -334,6 +336,94 @@ describe('useLoginController', () => {
     expect(window.sessionStorage.getItem('linx-post-login-micro-app')).toBeNull()
   })
 
+  it('clears a remembered account when cancelling Local auth so provider selection can be used again', async () => {
+    window.xpodDesktop = {
+      auth: {},
+    } as any
+    providersState.providers = [
+      {
+        id: 'local',
+        url: 'https://node-abc123.undefineds.co/',
+        label: 'Local',
+        source: 'local',
+        oidcProvider: {
+          kind: 'cloud',
+          url: 'https://id.undefineds.co',
+          label: 'Cloud',
+        },
+        storageProvider: {
+          kind: 'local',
+          url: 'https://node-abc123.undefineds.co/',
+          label: 'Local',
+        },
+        runtime: {
+          kind: 'local-pod',
+          status: 'running',
+          canStart: false,
+          canCreate: false,
+        },
+      },
+    ]
+    providersState.localOnboarding = {
+      state: 'ready',
+      spaceKind: 'local',
+      localUrl: 'http://localhost:5737',
+      baseUrl: 'https://node-abc123.undefineds.co/',
+      publicUrl: 'https://node-abc123.undefineds.co/',
+      capabilities: null,
+      cloudIdentityUrl: 'https://id.undefineds.co',
+      provisionCode: 'pc-123',
+      provisionUrl: 'https://id.undefineds.co/.account/?provisionCode=pc-123',
+      nodeId: 'abc123',
+      message: null,
+      errorCode: null,
+      canRetry: true,
+      canOpenSettings: false,
+    }
+    useLoginStore.setState({
+      state: 'idle',
+      error: null,
+      storedAccount: {
+        displayName: 'Ganlu',
+        issuerUrl: 'https://id.undefineds.co',
+        issuerLabel: 'Cloud',
+        storageProviderUrl: 'https://node-abc123.undefineds.co/',
+        storageProviderLabel: 'Local',
+        webId: 'https://id.undefineds.co/ganlu/profile/card#me',
+      },
+      customProviders: [],
+    })
+    connectMock.mockResolvedValue(undefined)
+
+    const { result } = renderHook(() => useLoginController())
+
+    await act(async () => {
+      await result.current.connect('local')
+    })
+    await act(async () => {
+      await result.current.continueLocalLogin()
+    })
+
+    expect(useLoginStore.getState().state).toBe('connecting')
+
+    act(() => {
+      result.current.cancelConnecting()
+    })
+
+    expect(useLoginStore.getState().state).toBe('idle')
+    expect(useLoginStore.getState().storedAccount).toBeNull()
+    expect(window.localStorage.getItem('linx-remembered-account')).toBeNull()
+    expect(result.current.view).toBe('default')
+    expect(result.current.connectingProvider).toBeNull()
+
+    await act(async () => {
+      await result.current.connect('local')
+    })
+
+    expect(result.current.view).toBe('local')
+    expect(startLocalMock).toHaveBeenCalledTimes(2)
+  })
+
   it('returns Desktop Cloud connect to idle when the embedded authorization is dismissed', async () => {
     window.xpodDesktop = {
       auth: {},
@@ -371,8 +461,10 @@ describe('useLoginController', () => {
     await waitFor(() => {
       expect(useLoginStore.getState().state).toBe('idle')
     })
-    expect(useLoginStore.getState().error).toBe('登录已取消。')
+    expect(useLoginStore.getState().error).toBeNull()
+    expect(result.current.view).toBe('default')
     expect(result.current.connectingProvider).toBeNull()
+    expect(cancelMock).toHaveBeenCalledTimes(1)
     expect(startLocalMock).not.toHaveBeenCalled()
     expect(window.sessionStorage.getItem('linx-post-login-micro-app')).toBeNull()
     expect(window.sessionStorage.getItem('linx-pending-login-attempt')).toBeNull()
@@ -1168,6 +1260,186 @@ describe('useLoginController', () => {
       storageProviderUrl: 'https://pod.example.com/',
     })
     expect(connectMock).not.toHaveBeenCalledWith('http://localhost:5737', expect.anything())
+  })
+
+  it('can restart Local login after the embedded authorization sheet is dismissed', async () => {
+    window.xpodDesktop = {
+      auth: {},
+    } as any
+    providersState.providers = [
+      {
+        id: 'local',
+        url: 'https://node-abc123.undefineds.co/',
+        label: 'Local',
+        source: 'local',
+        oidcProvider: {
+          kind: 'cloud',
+          url: 'https://id.undefineds.co',
+          label: 'Cloud',
+        },
+        storageProvider: {
+          kind: 'local',
+          url: 'https://node-abc123.undefineds.co/',
+          label: 'Local',
+        },
+        runtime: {
+          kind: 'local-pod',
+          status: 'running',
+          canStart: false,
+          canCreate: false,
+        },
+      },
+    ]
+    providersState.localOnboarding = {
+      state: 'ready',
+      spaceKind: 'local',
+      localUrl: 'http://localhost:5737',
+      baseUrl: 'https://node-abc123.undefineds.co/',
+      publicUrl: 'https://node-abc123.undefineds.co/',
+      capabilities: null,
+      cloudIdentityUrl: 'https://id.undefineds.co',
+      provisionCode: 'pc-123',
+      provisionUrl: 'https://id.undefineds.co/.account/?provisionCode=pc-123',
+      nodeId: 'abc123',
+      message: null,
+      errorCode: null,
+      canRetry: true,
+      canOpenSettings: false,
+    }
+    connectMock.mockResolvedValue(undefined)
+
+    const { result, rerender } = renderHook(() => useLoginController())
+
+    await act(async () => {
+      await result.current.connect('local')
+    })
+    await act(async () => {
+      await result.current.continueLocalLogin()
+    })
+
+    expect(connectMock).toHaveBeenCalledTimes(1)
+    expect(useLoginStore.getState().state).toBe('connecting')
+
+    embeddedAuthorizationState.open = true
+    embeddedAuthorizationState.reason = 'opened'
+    embeddedAuthorizationState.ready = true
+    rerender()
+
+    embeddedAuthorizationState.open = false
+    embeddedAuthorizationState.reason = 'dismissed'
+    embeddedAuthorizationState.ready = false
+    rerender()
+
+    await waitFor(() => {
+      expect(useLoginStore.getState().state).toBe('idle')
+    })
+    expect(result.current.view).toBe('default')
+    expect(result.current.connectingProvider).toBeNull()
+    expect(useLoginStore.getState().error).toBeNull()
+    expect(cancelMock).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      await result.current.connect('local')
+    })
+    await act(async () => {
+      await result.current.continueLocalLogin()
+    })
+
+    expect(connectMock).toHaveBeenCalledTimes(2)
+    expect(connectMock.mock.calls[1]).toEqual([
+      'https://id.undefineds.co',
+      expect.objectContaining({
+        authorizationSurface: 'embedded',
+        storageProviderUrl: 'https://node-abc123.undefineds.co/',
+        storageProviderLabel: 'Local',
+        issuerLabel: 'Cloud',
+        authorizationQuery: {
+          provisionCode: 'pc-123',
+        },
+      }),
+    ])
+  })
+
+  it('returns to provider selection when a Local embedded auth sheet is dismissed after OIDC setup falls back to idle', async () => {
+    window.xpodDesktop = {
+      auth: {},
+    } as any
+    providersState.providers = [
+      {
+        id: 'local',
+        url: 'https://node-abc123.undefineds.co/',
+        label: 'Local',
+        source: 'local',
+        oidcProvider: {
+          kind: 'cloud',
+          url: 'https://id.undefineds.co',
+          label: 'Cloud',
+        },
+        storageProvider: {
+          kind: 'local',
+          url: 'https://node-abc123.undefineds.co/',
+          label: 'Local',
+        },
+        runtime: {
+          kind: 'local-pod',
+          status: 'running',
+          canStart: false,
+          canCreate: false,
+        },
+      },
+    ]
+    providersState.localOnboarding = {
+      state: 'ready',
+      spaceKind: 'local',
+      localUrl: 'http://localhost:5737',
+      baseUrl: 'https://node-abc123.undefineds.co/',
+      publicUrl: 'https://node-abc123.undefineds.co/',
+      capabilities: null,
+      cloudIdentityUrl: 'https://id.undefineds.co',
+      provisionCode: 'pc-123',
+      provisionUrl: 'https://id.undefineds.co/.account/?provisionCode=pc-123',
+      nodeId: 'abc123',
+      message: null,
+      errorCode: null,
+      canRetry: true,
+      canOpenSettings: false,
+    }
+    connectMock.mockResolvedValue(undefined)
+
+    const { result, rerender } = renderHook(() => useLoginController())
+
+    await act(async () => {
+      await result.current.connect('local')
+    })
+    await act(async () => {
+      await result.current.continueLocalLogin()
+    })
+
+    embeddedAuthorizationState.open = true
+    embeddedAuthorizationState.reason = 'opened'
+    embeddedAuthorizationState.ready = true
+    rerender()
+
+    act(() => {
+      useLoginStore.setState({ state: 'idle' })
+    })
+
+    expect(result.current.view).toBe('local')
+
+    embeddedAuthorizationState.open = false
+    embeddedAuthorizationState.reason = 'dismissed'
+    embeddedAuthorizationState.ready = false
+    rerender()
+
+    await waitFor(() => {
+      expect(result.current.view).toBe('default')
+    })
+    expect(useLoginStore.getState().state).toBe('idle')
+    expect(result.current.connectingProvider).toBeNull()
+    expect(useLoginStore.getState().error).toBeNull()
+    expect(cancelMock).toHaveBeenCalledTimes(1)
+    expect(window.sessionStorage.getItem('linx-post-login-micro-app')).toBeNull()
+    expect(window.sessionStorage.getItem('linx-pending-login-attempt')).toBeNull()
   })
 
   it('opens interactive auth for a remembered Desktop Local account without a restorable Solid session', async () => {
@@ -2072,6 +2344,20 @@ describe('useLoginController', () => {
   })
 
   it('returns from the Local sub-view without changing routes', () => {
+    useLoginStore.setState({
+      state: 'idle',
+      error: null,
+      storedAccount: {
+        displayName: 'Ganlu',
+        issuerUrl: 'https://id.undefineds.co',
+        issuerLabel: 'Cloud',
+        storageProviderUrl: 'https://node-abc123.undefineds.co/',
+        storageProviderLabel: 'Local',
+        webId: 'https://id.undefineds.co/ganlu/profile/card#me',
+      },
+      customProviders: [],
+    })
+
     const { result } = renderHook(() => useLoginController())
 
     act(() => {
@@ -2079,6 +2365,8 @@ describe('useLoginController', () => {
     })
 
     expect(result.current.view).toBe('default')
+    expect(useLoginStore.getState().storedAccount).toBeNull()
+    expect(window.localStorage.getItem('linx-remembered-account')).toBeNull()
     expect(navigateMock).not.toHaveBeenCalled()
   })
 

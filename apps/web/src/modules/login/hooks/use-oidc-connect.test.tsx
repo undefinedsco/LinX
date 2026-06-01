@@ -66,6 +66,21 @@ function ErrorHandledTestComponent() {
   )
 }
 
+function CancelableTestComponent() {
+  const { connect, cancel } = useOidcConnect()
+
+  return (
+    <>
+      <button onClick={() => { void connect('http://localhost:5737/').catch(() => undefined) }}>
+        connect
+      </button>
+      <button onClick={cancel}>
+        cancel
+      </button>
+    </>
+  )
+}
+
 describe('useOidcConnect', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -242,6 +257,24 @@ describe('useOidcConnect', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('allows retrying after a pending login setup is cancelled', async () => {
+    loginMock.mockImplementation(() => new Promise(() => {}))
+    render(<CancelableTestComponent />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'connect' }))
+
+    await waitFor(() => {
+      expect(loginMock).toHaveBeenCalledTimes(1)
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'cancel' }))
+    fireEvent.click(screen.getByRole('button', { name: 'connect' }))
+
+    await waitFor(() => {
+      expect(loginMock).toHaveBeenCalledTimes(2)
+    })
   })
 
   it('uses embedded desktop authorization when requested', async () => {

@@ -196,21 +196,34 @@ export function useLoginController() {
       return
     }
 
-    if (state === 'connecting') {
+    if (state === 'connecting' || view === 'local' || connectingProvider) {
+      oidc.cancel()
       clearPendingLoginAttempt()
       clearPendingPostLoginMicroAppId()
+      clearPendingCallbackError()
+      setStorageConflict(null)
+      setStoredAccount(null)
       setConnectingProvider(null)
-      setError('登录已取消。')
+      setError(null)
+      setView('default')
+      setActiveLocalProviderSource('local')
+      setLocalLoginActive(false)
+      localConnectKeyRef.current = null
+      silentLocalFallbackStartedRef.current = false
       setState('idle')
     }
   }, [
     embeddedAuthorization.open,
     embeddedAuthorization.reason,
+    connectingProvider,
     isDesktop,
+    oidc,
     setError,
     resetDesktopAuthState,
     setState,
+    setStoredAccount,
     state,
+    view,
   ])
 
   useEffect(() => {
@@ -707,6 +720,7 @@ export function useLoginController() {
   }, [setError])
 
   const backFromLocal = useCallback(() => {
+    oidc.cancel()
     setError(null)
     setStorageConflict(null)
     clearPendingCallbackError()
@@ -715,14 +729,19 @@ export function useLoginController() {
     setView('default')
     setActiveLocalProviderSource('local')
     setLocalLoginActive(false)
+    setStoredAccount(null)
     setConnectingProvider(null)
     localConnectKeyRef.current = null
+    setState('idle')
     resetDesktopAuthState()
-  }, [resetDesktopAuthState, setError])
+    void Promise.resolve(embeddedAuthorization.close()).catch(() => undefined)
+  }, [embeddedAuthorization, oidc, resetDesktopAuthState, setError, setState, setStoredAccount])
 
   const cancelConnecting = useCallback(() => {
+    oidc.cancel()
     setError(null)
     setStorageConflict(null)
+    setStoredAccount(null)
     setView('default')
     setActiveLocalProviderSource('local')
     setLocalLoginActive(false)
@@ -736,9 +755,10 @@ export function useLoginController() {
       setState('idle')
     }
     void Promise.resolve(embeddedAuthorization.close()).catch(() => undefined)
-  }, [embeddedAuthorization, resetDesktopAuthState, setError, setState, state])
+  }, [embeddedAuthorization, oidc, resetDesktopAuthState, setError, setState, setStoredAccount, state])
 
   const switchAccount = useCallback(async () => {
+    oidc.cancel()
     suppressAutoLoginRef.current = true
     try {
       await logout()
@@ -758,9 +778,11 @@ export function useLoginController() {
     setConnectingProvider(null)
     localConnectKeyRef.current = null
     resetDesktopAuthState()
-  }, [logout, resetDesktopAuthState, setError, setState, setStoredAccount])
+    void Promise.resolve(embeddedAuthorization.close()).catch(() => undefined)
+  }, [embeddedAuthorization, logout, oidc, resetDesktopAuthState, setError, setState, setStoredAccount])
 
   const signOut = useCallback(async () => {
+    oidc.cancel()
     suppressAutoLoginRef.current = true
     try {
       await logout()
@@ -777,8 +799,9 @@ export function useLoginController() {
     setConnectingProvider(null)
     localConnectKeyRef.current = null
     resetDesktopAuthState()
+    void Promise.resolve(embeddedAuthorization.close()).catch(() => undefined)
     reset()
-  }, [logout, reset, resetDesktopAuthState])
+  }, [embeddedAuthorization, logout, oidc, reset, resetDesktopAuthState])
 
   // Listen for sign-out events from other components (e.g. PrimaryLayout)
   useEffect(() => {
@@ -789,6 +812,7 @@ export function useLoginController() {
 
   const clearError = useCallback(() => setError(null), [setError])
   const dismissStorageConflict = useCallback(() => {
+    oidc.cancel()
     setStoredAccount(null)
     setError(null)
     setStorageConflict(null)
@@ -798,7 +822,8 @@ export function useLoginController() {
     setConnectingProvider(null)
     localConnectKeyRef.current = null
     resetDesktopAuthState()
-  }, [resetDesktopAuthState, setError, setState, setStoredAccount])
+    void Promise.resolve(embeddedAuthorization.close()).catch(() => undefined)
+  }, [embeddedAuthorization, oidc, resetDesktopAuthState, setError, setState, setStoredAccount])
   const openCurrentSpacePodSetup = useCallback(() => {
     const setupUrl = storageConflict?.setupUrl ?? storageConflict?.managementUrl
     if (!setupUrl || typeof window === 'undefined') {
