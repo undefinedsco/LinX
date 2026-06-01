@@ -1,5 +1,7 @@
-export type AutoModeBackend = 'codex' | 'claude' | 'codebuddy'
-export type AutoModeMode = 'manual' | 'smart' | 'auto'
+export type AutoModeBackend = 'linx' | 'codex' | 'claude' | 'codebuddy'
+export type AutoModeWorkerBackend = Exclude<AutoModeBackend, 'linx'>
+export type AutoModeMode = 'off' | 'auto'
+export type LegacyAutoModeMode = AutoModeMode | 'manual' | 'smart'
 export type AutoModeSessionStatus = 'running' | 'completed' | 'failed'
 export type AutoModeOutputStream = 'stdout' | 'stderr' | 'system'
 export type AutoModeCredentialSource = 'cloud'
@@ -38,7 +40,8 @@ export interface AutoModeSessionRecord {
   backend: AutoModeBackend
   runtime: AutoModeRuntime
   transport?: AutoModeTransport
-  mode: AutoModeMode
+  mode: LegacyAutoModeMode
+  autoEnabled?: boolean
   goalMode?: boolean
   cwd: string
   model?: string
@@ -56,6 +59,7 @@ export interface AutoModeSessionRecord {
   signal?: string | null
   error?: string
   backendSessionId?: string
+  metadata?: Record<string, unknown>
   archiveDir: string
   eventsFile: string
 }
@@ -67,16 +71,36 @@ export type AutoModeApprovalRequestKind =
   | 'codex-approval'
 
 export type AutoModeInteractionRequestKind = AutoModeApprovalRequestKind | 'user-input'
-export type AutoModeApprovalDecision = 'accept' | 'accept_for_session' | 'decline' | 'cancel'
+export type AutoModeApprovalDecision = 'accept' | 'accept_for_session' | 'accept_always' | 'decline' | 'cancel'
 export type AutoModeSecretaryApprovalDecision = 'accept' | 'decline' | 'cancel'
-export type AutoModeApprovalOptionKind = 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always' | (string & {})
+export type AutoModeApprovalOptionKind = 'allow_once' | 'allow_for_session' | 'allow_always' | 'reject_once' | 'reject_always' | (string & {})
 export type AutoModeApprovalRisk = 'low' | 'medium' | 'high'
+export type AutoModeGrantScope = 'session' | 'durable'
 
 export interface AutoModeApprovalOption {
   optionId: string
   label: string
   kind?: AutoModeApprovalOptionKind
   description?: string
+}
+
+export type AutoModeStoredApprovalStatus = 'pending' | 'approved' | 'rejected' | (string & {})
+
+export interface AutoModeApprovalDecisionReason {
+  source?: string
+  decision?: AutoModeApprovalDecision
+  note?: string
+  selectedOptionId?: string
+  selectedLabel?: string
+}
+
+export interface BuildAutoModeApprovalDecisionReasonOptions {
+  source?: string
+  decision?: AutoModeApprovalDecision
+  note?: string
+  selectedOption?: AutoModeApprovalOption
+  selectedOptionId?: string
+  selectedLabel?: string
 }
 
 interface AutoModeInteractionRequestBase {
@@ -224,7 +248,8 @@ export function autoModeApprovalRequestMessage(request: AutoModeApprovalRequest)
 }
 
 export interface ParseAutoModeSecretaryRecommendationOptions {
-  mode: AutoModeMode
+  mode: LegacyAutoModeMode
+  autoEnabled?: boolean
   request: AutoModeInteractionRequest
   defaultReactionWindowMs?: number
 }
@@ -294,7 +319,8 @@ export interface AutoModeThreadMetadata extends Record<string, unknown> {
   backend: AutoModeBackend
   runtime: AutoModeRuntime
   transport?: AutoModeTransport
-  mode: AutoModeMode
+  mode: LegacyAutoModeMode
+  autoEnabled?: boolean
   goalMode?: boolean
   cwd: string
   model?: string
@@ -542,6 +568,145 @@ export function normalizeAutoModeApprovalOptions(value: unknown): AutoModeApprov
     .filter((option): option is AutoModeApprovalOption => option !== null)
 }
 
+export function parseAutoModeApprovalOptions(value: unknown): AutoModeApprovalOption[] {
+  if (Array.isArray(value)) {
+    return normalizeAutoModeApprovalOptions(value)
+  }
+
+  if (typeof value !== 'string' || !value.trim()) {
+    return []
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown
+    return normalizeAutoModeApprovalOptions(parsed)
+  } catch {
+    return []
+  }
+}
+
+export function encodeAutoModeApprovalOptions(options: AutoModeApprovalOption[] | undefined): string | undefined {
+  return options && options.length > 0 ? JSON.stringify(options) : undefined
+}
+
+export function buildAutoModeApprovalDecisionReason(
+  options: AutoModeApprovalDecision | BuildAutoModeApprovalDecisionReasonOptions,
+  note?: string,
+): string {
+  const input = typeof options === 'string' ? { decision: options, note } : options
+  const selectedOptionId = input.selectedOption?.optionId ?? input.selectedOptionId
+  const selectedLabel = input.selectedOption?.label ?? input.selectedLabel
+  return JSON.stringify({
+    ...(input.source?.trim() ? { source: input.source.trim() } : {}),
+    ...(input.decision ? { decision: input.decision } : {}),
+    ...(input.note?.trim() ? { note: input.note.trim() } : {}),
+    ...(selectedOptionId?.trim() ? { selectedOptionId: selectedOptionId.trim() } : {}),
+    ...(selectedLabel?.trim() ? { selectedLabel: selectedLabel.trim() } : {}),
+  })
+}
+
+export function parseAutoModeApprovalDecisionReason(value: unknown): AutoModeApprovalDecisionReason | null {
+  if (typeof value !== 'string' || !value.trim()) {
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown
+    const record = recordFromUnknown(parsed)
+    if (!record) {
+      return null
+    }
+
+    const decision = normalizeAutoModeApprovalDecision(record.decision)
+    const nested = parseAutoModeApprovalDecisionReason(record.note)
+    const source = stringFromUnknown(record.source)
+    const note = stringFromUnknown(record.note)
+    const selectedOptionId = stringFromUnknown(record.selectedOptionId) ?? nested?.selectedOptionId
+    const selectedLabel = stringFromUnknown(record.selectedLabel) ?? nested?.selectedLabel
+
+    if (!source && !decision && !note && !selectedOptionId && !selectedLabel) {
+      return null
+    }
+
+    return {
+      ...(source ? { source } : {}),
+      ...(decision ? { decision } : {}),
+      ...(note ? { note } : {}),
+      ...(selectedOptionId ? { selectedOptionId } : {}),
+      ...(selectedLabel ? { selectedLabel } : {}),
+    }
+  } catch {
+    return null
+  }
+}
+
+export function autoModeApprovalDecisionForOption(option: AutoModeApprovalOption): AutoModeApprovalDecision {
+  if (option.kind === 'allow_for_session') {
+    return 'accept_for_session'
+  }
+  if (option.kind === 'allow_always') {
+    return 'accept_always'
+  }
+  if (option.kind === 'reject_once' || option.kind === 'reject_always') {
+    return 'decline'
+  }
+  if (option.kind === 'cancel') {
+    return 'cancel'
+  }
+  return 'accept'
+}
+
+export function autoModeApprovalDecisionForStoredApproval(input: {
+  status: AutoModeStoredApprovalStatus | undefined
+  reason?: unknown
+  approvalOptions?: unknown
+}): AutoModeApprovalDecision | null {
+  if (input.status === 'pending') {
+    return null
+  }
+
+  const parsed = parseAutoModeApprovalDecisionReason(input.reason)
+
+  if (input.status === 'rejected') {
+    return parsed?.decision === 'cancel' ? 'cancel' : 'decline'
+  }
+
+  const option = parsed?.selectedOptionId
+    ? parseAutoModeApprovalOptions(input.approvalOptions).find((entry) => entry.optionId === parsed.selectedOptionId)
+    : null
+  if (option) {
+    return autoModeApprovalDecisionForOption(option)
+  }
+
+  if (parsed?.decision === 'accept_for_session') {
+    return 'accept_for_session'
+  }
+
+  if (parsed?.decision === 'accept_always') {
+    return 'accept_always'
+  }
+
+  if (parsed?.decision === 'decline' || parsed?.decision === 'cancel') {
+    return parsed.decision
+  }
+
+  return input.status === 'approved' ? 'accept' : null
+}
+
+export function shouldMaterializeAutoModeGrant(decision: AutoModeApprovalDecision | null | undefined): boolean {
+  return decision === 'accept_for_session' || decision === 'accept_always'
+}
+
+export function autoModeGrantScopeForDecision(decision: AutoModeApprovalDecision | null | undefined): AutoModeGrantScope | null {
+  if (decision === 'accept_for_session') {
+    return 'session'
+  }
+  if (decision === 'accept_always') {
+    return 'durable'
+  }
+  return null
+}
+
 function normalizeDurationMs(value: unknown, unit: 'ms' | 'seconds' | 'auto'): number | undefined {
   const numeric = typeof value === 'number'
     ? value
@@ -629,10 +794,12 @@ function selectAcpPermissionOption(
   }
 
   const preferredKinds = decision === 'accept'
-    ? ['allow_once', 'allow_always']
+    ? ['allow_once', 'allow_for_session', 'allow_always']
     : decision === 'accept_for_session'
-      ? ['allow_always', 'allow_once']
-      : ['reject_once', 'reject_always']
+      ? ['allow_for_session', 'allow_always', 'allow_once']
+      : decision === 'accept_always'
+        ? ['allow_always', 'allow_for_session', 'allow_once']
+        : ['reject_once', 'reject_always']
 
   for (const kind of preferredKinds) {
     const match = options.find((option) => option.kind === kind && typeof option.optionId === 'string')
@@ -710,37 +877,31 @@ export function resolveAutoModeCredentialSourceResolution(input: {
 }
 
 export function resolveAutoModeAutoApprovalDecision(input: {
-  mode: AutoModeMode
+  mode: LegacyAutoModeMode
+  autoEnabled?: boolean
   request: AutoModeApprovalRequest
 }): AutoModeApprovalDecision | null {
-  const { mode, request } = input
+  const { request } = input
+  const autoEnabled = isAutoModeSecretaryControlEnabled(input)
 
   if (request.kind === 'command-approval') {
-    if (mode === 'auto') {
+    if (autoEnabled) {
       return 'accept_for_session'
-    }
-
-    if (mode === 'smart' && isTrustedAutoModeCommand(request.command)) {
-      return 'accept'
     }
 
     return null
   }
 
   if (request.kind === 'file-change-approval') {
-    if (mode === 'auto') {
+    if (autoEnabled) {
       return 'accept_for_session'
-    }
-
-    if (mode === 'smart') {
-      return 'accept'
     }
 
     return null
   }
 
   if (request.kind === 'permissions-approval') {
-    if (mode === 'auto') {
+    if (autoEnabled) {
       return 'accept_for_session'
     }
 
@@ -751,18 +912,20 @@ export function resolveAutoModeAutoApprovalDecision(input: {
 }
 
 export function createFallbackAutoModeSecretaryRecommendation(input: {
-  mode: AutoModeMode
+  mode: LegacyAutoModeMode
+  autoEnabled?: boolean
   request: AutoModeInteractionRequest
 }): AutoModeSecretaryRecommendation | null {
-  if (input.mode === 'manual' || input.request.kind === 'user-input') {
+  if (!isAutoModeSecretaryControlEnabled(input) || input.request.kind === 'user-input') {
     return null
   }
 
   const decision = resolveAutoModeAutoApprovalDecision({
     mode: input.mode,
+    autoEnabled: input.autoEnabled,
     request: input.request,
   })
-  const secretaryDecision = decision === 'accept_for_session' ? 'accept' : decision
+  const secretaryDecision = normalizeAutoModeDecisionForSecretary(decision)
   if (!secretaryDecision) {
     return null
   }
@@ -771,7 +934,7 @@ export function createFallbackAutoModeSecretaryRecommendation(input: {
     kind: input.request.kind,
     canAutoDecide: true,
     decision: secretaryDecision,
-    confidence: input.mode === 'auto' ? 0.7 : 0.6,
+    confidence: 0.7,
     reason: 'Matched local fallback policy while AI secretary was unavailable.',
     reactionWindowMs: 0,
     source: 'fallback',
@@ -856,6 +1019,9 @@ export function autoModeApprovalDecisionLabel(decision: AutoModeApprovalDecision
   }
   if (decision === 'accept_for_session') {
     return 'Grant'
+  }
+  if (decision === 'accept_always') {
+    return 'Always allow'
   }
   if (decision === 'decline') {
     return 'Deny'
@@ -961,8 +1127,42 @@ function normalizeSecretaryApprovalDecision(value: unknown): AutoModeSecretaryAp
   }
 
   const normalized = value.trim().toLowerCase().replace(/-/g, '_')
-  if (['accept', 'allow', 'allow_once', 'approve', 'yes', 'accept_for_session', 'allow_always', 'grant', 'session', 'approve_for_session'].includes(normalized)) {
+  if (['accept', 'allow', 'allow_once', 'approve', 'yes', 'accept_for_session', 'accept_always', 'allow_for_session', 'allow_always', 'grant', 'session', 'approve_for_session'].includes(normalized)) {
     return 'accept'
+  }
+  if (['decline', 'deny', 'reject', 'reject_once', 'reject_always', 'no'].includes(normalized)) {
+    return 'decline'
+  }
+  if (['cancel', 'abort'].includes(normalized)) {
+    return 'cancel'
+  }
+  return undefined
+}
+
+function normalizeAutoModeDecisionForSecretary(decision: AutoModeApprovalDecision | null | undefined): AutoModeSecretaryApprovalDecision | undefined {
+  if (decision === 'accept' || decision === 'accept_for_session' || decision === 'accept_always') {
+    return 'accept'
+  }
+  if (decision === 'decline' || decision === 'cancel') {
+    return decision
+  }
+  return undefined
+}
+
+function normalizeAutoModeApprovalDecision(value: unknown): AutoModeApprovalDecision | undefined {
+  if (typeof value !== 'string') {
+    return undefined
+  }
+
+  const normalized = value.trim().toLowerCase().replace(/-/g, '_')
+  if (['accept', 'allow', 'allow_once', 'approve', 'yes'].includes(normalized)) {
+    return 'accept'
+  }
+  if (['accept_for_session', 'allow_for_session', 'session', 'approve_for_session'].includes(normalized)) {
+    return 'accept_for_session'
+  }
+  if (['accept_always', 'allow_always', 'grant', 'always', 'approve_always'].includes(normalized)) {
+    return 'accept_always'
   }
   if (['decline', 'deny', 'reject', 'reject_once', 'reject_always', 'no'].includes(normalized)) {
     return 'decline'
@@ -1085,6 +1285,10 @@ function normalizeAutoModeAuthText(value: unknown, depth = 0): string | undefine
 }
 
 export function getAutoModeAuthLoginCommand(backend: AutoModeBackend): string | null {
+  if (backend === 'linx') {
+    return null
+  }
+
   if (backend === 'claude') {
     return 'claude auth login'
   }
@@ -1098,11 +1302,19 @@ export function getAutoModeAuthLoginCommand(backend: AutoModeBackend): string | 
 
 export function formatAutoModeBackendAuthMessage(backend: AutoModeBackend, detail?: string): string {
   const command = getAutoModeAuthLoginCommand(backend)
-  const label = backend === 'claude'
-    ? 'Claude Code'
-    : backend === 'codebuddy'
-      ? 'CodeBuddy Code'
-      : 'Codex'
+  const label = backend === 'linx'
+    ? 'LinX'
+    : backend === 'claude'
+      ? 'Claude Code'
+      : backend === 'codebuddy'
+        ? 'CodeBuddy Code'
+        : 'Codex'
+
+  if (backend === 'linx') {
+    return detail
+      ? `${label} backend is unavailable. Native message: ${detail}`
+      : `${label} backend is unavailable.`
+  }
 
   if (backend === 'codebuddy') {
     return detail
@@ -1310,16 +1522,18 @@ export function normalizeCodexAppServerInteractionRequest(message: Record<string
 
 export function resolveAutoModeInteractionAutoResponse(input: {
   mode: AutoModeMode
+  autoEnabled?: boolean
   request: AutoModeInteractionRequest
 }): unknown | null {
-  const { mode, request } = input
+  const { request } = input
 
   if (request.kind === 'user-input' || request.kind === 'codex-approval') {
     return null
   }
 
   const decision = resolveAutoModeAutoApprovalDecision({
-    mode,
+    mode: input.mode,
+    autoEnabled: input.autoEnabled,
     request,
   })
 
@@ -1328,6 +1542,15 @@ export function resolveAutoModeInteractionAutoResponse(input: {
   }
 
   return buildCodexApprovalResponse(request, decision)
+}
+
+function isAutoModeSecretaryControlEnabled(input: {
+  mode?: LegacyAutoModeMode
+  autoEnabled?: boolean
+}): boolean {
+  return typeof input.autoEnabled === 'boolean'
+    ? input.autoEnabled
+    : input.mode === 'auto'
 }
 
 export function buildCodexApprovalResponse(
@@ -1339,7 +1562,7 @@ export function buildCodexApprovalResponse(
       return { permissions: request.permissions, scope: 'turn' }
     }
 
-    if (decision === 'accept_for_session') {
+    if (decision === 'accept_for_session' || decision === 'accept_always') {
       return { permissions: request.permissions, scope: 'session' }
     }
 
@@ -1351,7 +1574,7 @@ export function buildCodexApprovalResponse(
       return { decision: 'approved' }
     }
 
-    if (decision === 'accept_for_session') {
+    if (decision === 'accept_for_session' || decision === 'accept_always') {
       return { decision: 'approved_for_session' }
     }
 
@@ -1366,7 +1589,7 @@ export function buildCodexApprovalResponse(
     return { decision: 'accept' }
   }
 
-  if (decision === 'accept_for_session') {
+  if (decision === 'accept_for_session' || decision === 'accept_always') {
     return { decision: 'acceptForSession' }
   }
 
@@ -1988,6 +2211,7 @@ export function buildAutoModeThreadMetadata(record: AutoModeSessionRecord): Auto
     runtime: record.runtime,
     transport: record.transport,
     mode: record.mode,
+    ...(record.autoEnabled !== undefined ? { autoEnabled: record.autoEnabled } : {}),
     ...(record.goalMode !== undefined ? { goalMode: record.goalMode } : {}),
     cwd: record.cwd,
     model: record.model,

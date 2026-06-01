@@ -7,10 +7,12 @@ buildAutoModeTranscriptMessages,
 buildCodexApprovalResponse,
 buildCodexUserInputResponse,
 buildAutoModeUserInputResponse,
+buildAutoModeApprovalDecisionReason,
 createFallbackAutoModeSecretaryRecommendation,
 computeAutoModeSecretaryReactionWindowMs,
 createAutoModeSessionId,
 detectAutoModeAuthFailure,
+encodeAutoModeApprovalOptions,
 extractAutoModeSessionIdFromJsonLine,
 formatAutoModeBackendAuthMessage,
 getAutoModeAuthLoginCommand,
@@ -24,11 +26,15 @@ normalizeCodexAppServerRequest,
 looksLikeAutoModeAuthFailureText,
 normalizeAutoModeCredentialSource,
 normalizeAutoModeUserInputQuestion,
+parseAutoModeApprovalDecisionReason,
+parseAutoModeApprovalOptions,
 parseAutoModeSecretaryRecommendation,
 parseAutoModeGrantCoverageDecision,
 parseAutoModeClaudeAuthStatus,
 parseAutoModeJsonProtocolLine,
 resolveAutoModeAutoApprovalDecision,
+autoModeApprovalDecisionForOption,
+autoModeApprovalDecisionForStoredApproval,
 resolveAutoModeInteractionAutoResponse,
 resolveAutoModeQuestionAnswer,
 resolveAutoModeCredentialSourceResolution,
@@ -44,7 +50,16 @@ AUTO_MODE_SESSION_FILE_NAME,
 autoModeApprovalRequestMessage,
 autoModeApprovalRisk,
 autoModeApprovalToolName,
+shouldMaterializeAutoModeGrant,
 } from '../src/auto-mode'
+import {
+  buildLinxSessionControlMetadata,
+  buildLinxSessionControlState,
+  mergeLinxSessionControlMetadata,
+  readLinxSessionControlMetadata,
+  resolveLinxSessionAutoEnabled,
+  resolveLinxSessionSymphonyEnabled,
+} from '../src/control-plane'
 
 function expect<T>(actual: T) {
   return {
@@ -115,13 +130,55 @@ test('maps approval request semantics from the shared auto-mode core', () => {
   expect(autoModeApprovalRequestMessage(permissionRequest)).toBe('Need permission')
 })
 
+test('shares stored approval decision semantics across UI surfaces', () => {
+  const encodedOptions = encodeAutoModeApprovalOptions([
+    { optionId: '0', label: 'Allow', kind: 'allow_once' },
+    { optionId: '1', label: 'Allow always', kind: 'allow_always' },
+    { optionId: '2', label: 'Block', kind: 'reject_once' },
+  ])
+
+  expect(parseAutoModeApprovalOptions(encodedOptions)).toEqual([
+    { optionId: '0', label: 'Allow', kind: 'allow_once' },
+    { optionId: '1', label: 'Allow always', kind: 'allow_always' },
+    { optionId: '2', label: 'Block', kind: 'reject_once' },
+  ])
+
+  const reason = buildAutoModeApprovalDecisionReason({
+    source: 'linx-inbox',
+    selectedOption: { optionId: '1', label: 'Allow always', kind: 'allow_always' },
+    note: 'delegate in this session',
+  })
+
+  expect(parseAutoModeApprovalDecisionReason(reason)).toEqual({
+    source: 'linx-inbox',
+    note: 'delegate in this session',
+    selectedOptionId: '1',
+    selectedLabel: 'Allow always',
+  })
+  expect(autoModeApprovalDecisionForOption({ optionId: '1', label: 'Allow always', kind: 'allow_always' })).toBe('accept_always')
+  expect(autoModeApprovalDecisionForStoredApproval({
+    status: 'approved',
+    reason,
+    approvalOptions: encodedOptions,
+  })).toBe('accept_always')
+  expect(autoModeApprovalDecisionForStoredApproval({
+    status: 'rejected',
+    reason: buildAutoModeApprovalDecisionReason('cancel'),
+    approvalOptions: encodedOptions,
+  })).toBe('cancel')
+  expect(shouldMaterializeAutoModeGrant('accept_for_session')).toBe(true)
+  expect(shouldMaterializeAutoModeGrant('accept_always')).toBe(true)
+  expect(shouldMaterializeAutoModeGrant('accept')).toBe(false)
+})
+
 test('maps auto-mode runtime context into generic thread metadata instead of a parallel session type', () => {
   expect(buildAutoModeThreadMetadata({
     id: 'auto_demo_1234',
     backend: 'codex',
     runtime: 'local',
     transport: 'acp',
-    mode: 'smart',
+autoEnabled: true,
+mode: 'auto',
     cwd: '/tmp/demo',
     model: 'gpt-5-codex',
     prompt: 'fix failing tests',
@@ -144,7 +201,8 @@ test('maps auto-mode runtime context into generic thread metadata instead of a p
     backend: 'codex',
     runtime: 'local',
     transport: 'acp',
-    mode: 'smart',
+autoEnabled: true,
+mode: 'auto',
     cwd: '/tmp/demo',
     model: 'gpt-5-codex',
     credentialSource: 'cloud',
@@ -153,6 +211,92 @@ test('maps auto-mode runtime context into generic thread metadata instead of a p
     status: 'completed',
     backendSessionId: 'sess_codex_123',
   })
+})
+
+test('builds reusable LinX session control-plane metadata', () => {
+  const state = buildLinxSessionControlState({
+    autoEnabled: true,
+    symphonyEnabled: true,
+    updatedAt: '2026-04-01T00:00:00.000Z',
+    updatedBy: 'cli',
+  })
+
+  expect(state).toEqual({
+    autoEnabled: true,
+    symphonyEnabled: true,
+    updatedAt: '2026-04-01T00:00:00.000Z',
+    updatedBy: 'cli',
+  })
+  expect(buildLinxSessionControlMetadata({
+    autoEnabled: false,
+    symphonyEnabled: true,
+    updatedAt: '2026-04-01T00:00:01.000Z',
+    updatedBy: 'app',
+  })).toEqual({
+    controlPlane: {
+      linxSession: {
+        autoEnabled: false,
+        symphonyEnabled: true,
+        updatedAt: '2026-04-01T00:00:01.000Z',
+        updatedBy: 'app',
+      },
+    },
+  })
+  expect(mergeLinxSessionControlMetadata({
+    runtime: 'pi',
+    controlPlane: {
+      other: { keep: true },
+      linxSession: {
+        autoEnabled: false,
+        updatedAt: '2026-03-01T00:00:00.000Z',
+      },
+    },
+  }, state)).toEqual({
+    runtime: 'pi',
+    controlPlane: {
+      other: { keep: true },
+      linxSession: {
+        autoEnabled: true,
+        symphonyEnabled: true,
+        updatedAt: '2026-04-01T00:00:00.000Z',
+        updatedBy: 'cli',
+      },
+    },
+  })
+  expect(readLinxSessionControlMetadata({
+    controlPlane: {
+      linxSession: {
+        autoEnabled: false,
+        symphonyEnabled: true,
+        updatedAt: '2026-05-21T00:00:00.000Z',
+        updatedBy: 'app',
+      },
+    },
+  })).toEqual({
+    autoEnabled: false,
+    symphonyEnabled: true,
+    updatedAt: '2026-05-21T00:00:00.000Z',
+    updatedBy: 'app',
+  })
+  expect(resolveLinxSessionAutoEnabled({
+    controlPlane: {
+      linxSession: {
+        autoEnabled: true,
+        symphonyEnabled: true,
+        updatedAt: '2026-05-21T00:00:00.000Z',
+      },
+    },
+  })).toBe(true)
+  expect(resolveLinxSessionSymphonyEnabled({
+    controlPlane: {
+      linxSession: {
+        symphonyEnabled: true,
+        updatedAt: '2026-05-21T00:00:00.000Z',
+      },
+    },
+  })).toBe(true)
+  expect(resolveLinxSessionAutoEnabled({})).toBe(null)
+  expect(resolveLinxSessionSymphonyEnabled({})).toBe(null)
 })
 
 test('builds structured transcript messages from archived auto-mode events', () => {
@@ -451,13 +595,30 @@ test('normalizes auto-mode interaction requests and response mapping', () => {
   })
 
   expect(resolveAutoModeInteractionAutoResponse({
-    mode: 'smart',
+    mode: 'off',
     request: commandRequest,
-  })).toEqual({ decision: 'accept' })
+  })).toBe(null)
   expect(resolveAutoModeAutoApprovalDecision({
-    mode: 'smart',
+    mode: 'off',
     request: commandRequest,
-  })).toBe('accept')
+  })).toBe(null)
+  expect(resolveAutoModeInteractionAutoResponse({
+    mode: 'auto',
+    autoEnabled: true,
+    request: commandRequest,
+  })).toEqual({ decision: 'acceptForSession' })
+
+  expect(resolveAutoModeInteractionAutoResponse({
+    mode: 'auto',
+    autoEnabled: false,
+    request: commandRequest,
+  })).toBe(null)
+
+  expect(resolveAutoModeInteractionAutoResponse({
+    mode: 'off',
+    autoEnabled: true,
+    request: commandRequest,
+  })).toEqual({ decision: 'acceptForSession' })
 
   expect(buildCodexApprovalResponse(commandRequest, 'accept_for_session')).toEqual({
     decision: 'acceptForSession',
@@ -477,6 +638,7 @@ test('normalizes auto-mode interaction requests and response mapping', () => {
 
   expect(resolveAutoModeInteractionAutoResponse({
     mode: 'auto',
+    autoEnabled: true,
     request: permissionsRequest,
   })).toEqual({
     permissions: { network: true },
@@ -484,6 +646,7 @@ test('normalizes auto-mode interaction requests and response mapping', () => {
   })
   expect(resolveAutoModeAutoApprovalDecision({
     mode: 'auto',
+    autoEnabled: true,
     request: permissionsRequest,
   })).toBe('accept_for_session')
 
@@ -1131,7 +1294,8 @@ test('parses AI secretary approval and user-input recommendations conservatively
     reason: 'safe read-only command',
     reaction_window_ms: 1200,
   }), {
-    mode: 'smart',
+    autoEnabled: true,
+    mode: 'off',
     request: approvalRequest,
   })).toMatchObject({
     kind: 'command-approval',
@@ -1145,7 +1309,8 @@ test('parses AI secretary approval and user-input recommendations conservatively
   expect(computeAutoModeSecretaryReactionWindowMs(0)).toBe(60000)
   expect(computeAutoModeSecretaryReactionWindowMs(1)).toBe(5000)
   expect(createFallbackAutoModeSecretaryRecommendation({
-    mode: 'auto',
+    mode: 'off',
+    autoEnabled: true,
     request: approvalRequest,
   })).toMatchObject({
     kind: 'command-approval',
@@ -1171,7 +1336,8 @@ test('parses AI secretary approval and user-input recommendations conservatively
   }
 
   const recommendation = parseAutoModeSecretaryRecommendation('```json\n{"canAnswer":true,"answers":{"runtime":{"answers":["cloud"]}},"confidence":0.8,"reason":"Pod credentials are available"}\n```', {
-    mode: 'smart',
+    autoEnabled: true,
+    mode: 'off',
     request: inputRequest,
   })
 

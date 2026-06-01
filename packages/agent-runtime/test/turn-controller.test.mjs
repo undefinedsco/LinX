@@ -58,7 +58,7 @@ test('fast companion model policy is shared beyond turn control', () => {
   })
 })
 
-test('LinX runtime endpoints treat ACP as an adapter instead of the internal bus', () => {
+test('LinX runtime endpoints treat LinX as the default backend and ACP as external adapters', () => {
   assert.deepEqual(LINX_RUNTIME_ENDPOINTS, ['linx', 'acp:codex', 'acp:claude', 'acp:codebuddy'])
   assert.equal(linxRuntimeEndpointForBackend('linx'), 'linx')
   assert.equal(linxRuntimeEndpointForBackend('codex'), 'acp:codex')
