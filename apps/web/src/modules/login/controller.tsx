@@ -749,6 +749,7 @@ export function useLoginController() {
     localConnectKeyRef.current = null
     silentLocalFallbackStartedRef.current = false
     resetDesktopAuthState()
+    clearPendingCallbackError()
     clearPendingLoginAttempt()
     clearPendingPostLoginMicroAppId()
     if (state === 'connecting') {

@@ -323,6 +323,10 @@ describe('useLoginController', () => {
       returnToMicroAppId: 'chat',
     }))
     window.sessionStorage.setItem('linx-post-login-micro-app', 'chat')
+    window.sessionStorage.setItem('linx-pending-callback-error', JSON.stringify({
+      error: 'access_denied',
+      description: null,
+    }))
 
     act(() => {
       result.current.cancelConnecting()
@@ -334,6 +338,7 @@ describe('useLoginController', () => {
     expect(embeddedAuthorizationState.close).toHaveBeenCalledTimes(1)
     expect(window.sessionStorage.getItem('linx-pending-login-attempt')).toBeNull()
     expect(window.sessionStorage.getItem('linx-post-login-micro-app')).toBeNull()
+    expect(window.sessionStorage.getItem('linx-pending-callback-error')).toBeNull()
   })
 
   it('clears a remembered account when cancelling Local auth so provider selection can be used again', async () => {

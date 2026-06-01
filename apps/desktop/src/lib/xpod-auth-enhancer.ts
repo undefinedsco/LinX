@@ -7,7 +7,7 @@ const XPOD_PASSWORD_REGISTER_PATH = '/.account/login/password/register/'
 const EMBEDDED_QUERY_KEY = 'embedded'
 const EMBEDDED_QUERY_VALUE = '1'
 const INSTALL_FLAG = '__LINX_XPOD_AUTH_ENHANCER__'
-const NEW_DOCUMENT_SCRIPT_TIMEOUT_MS = 750
+const NEW_DOCUMENT_SCRIPT_TIMEOUT_MS = 3000
 
 export interface ScriptInjectionTarget {
   getURL(): string
