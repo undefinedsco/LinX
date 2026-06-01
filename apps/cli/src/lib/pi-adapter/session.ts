@@ -5,7 +5,7 @@ import {
   SessionManager,
   type SessionEntry,
   type SessionInfo,
-} from '@mariozechner/pi-coding-agent'
+} from '@earendil-works/pi-coding-agent'
 import {
   getDefaultPodDataSession,
   type PodDataSession,
@@ -539,7 +539,7 @@ function synthesizeAgentMessage(row: LinxPiPodMessageSnapshot): unknown | null {
     return {
       role: 'assistant',
       content,
-      api: 'openai-completions',
+      api: 'linx-cloud-chat-completions',
       provider: 'undefineds',
       model: 'linx-lite',
       usage: {
@@ -738,7 +738,7 @@ function filterPodSessionRows(context: DefaultPodSessionContext, rows: SessionRo
     if (typeof row.id !== 'string' || !buildSessionResourceIdFromInput(row.id)) {
       return false
     }
-    if (row.ownerWebId && row.ownerWebId !== context.webId) {
+    if (row.owner && row.owner !== context.webId) {
       return false
     }
     if (row.chat && !isSecretaryChatRef(row.chat, secretaryChat)) {
@@ -881,7 +881,7 @@ async function findPodSessionSnapshot(
   if (!row || extractResourceLocalId(row.id) !== expectedSessionId || row.tool !== 'linx') {
     return null
   }
-  if (row.ownerWebId && row.ownerWebId !== context.webId) {
+  if (row.owner && row.owner !== context.webId) {
     return null
   }
   return row ? buildPodSessionSnapshot(context, row) : null
@@ -954,7 +954,7 @@ async function buildPodSessionSnapshot(
   if (!row.id || row.tool !== 'linx') {
     return null
   }
-  if (row.ownerWebId && row.ownerWebId !== context.webId) {
+  if (row.owner && row.owner !== context.webId) {
     return null
   }
 
@@ -981,13 +981,18 @@ async function listPodSessionMessages(
   }
 
   const metadata = isRecord(session.metadata) ? session.metadata : {}
-  const rowMessageResources = Array.isArray((session as { messageResources?: unknown }).messageResources)
-    ? (session as { messageResources: unknown[] }).messageResources
+  const rowMessageResources = Array.isArray((session as { messages?: unknown }).messages)
+    ? (session as { messages: unknown[] }).messages
+    : Array.isArray((session as { messageResources?: unknown }).messageResources)
+      ? (session as { messageResources: unknown[] }).messageResources
+      : []
+  const metadataMessages = Array.isArray(metadata.messages)
+    ? metadata.messages
     : []
   const metadataMessageResources = Array.isArray(metadata.messageResources)
     ? metadata.messageResources
     : []
-  const messageResources = [...rowMessageResources, ...metadataMessageResources]
+  const messageResources = [...rowMessageResources, ...metadataMessages, ...metadataMessageResources]
     .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
   if (messageResources.length > 0) {
     const rows = await Promise.all(messageResources.map(async (resource) => {
@@ -1000,17 +1005,17 @@ async function listPodSessionMessages(
       }
     }))
     const messages = rows
-      .filter((message): message is MessageRow => {
+      .filter((message: MessageRow | null): message is MessageRow => {
         if (!message?.id) {
           return false
         }
         // Exact resource reads may not hydrate inverse thread links. The
-        // session-owned messageResources list is already the authoritative
+        // session-owned messages list is already the authoritative
         // pointer set, so only reject rows that explicitly point elsewhere.
         return !message.thread || message.thread === session.thread
       })
       .map(podMessageRowToSnapshot)
-      .filter((message) => message.id)
+      .filter((message: LinxPiPodMessageSnapshot) => message.id)
       .sort(compareMessageSnapshots)
     if (messages.length > 0) {
       return messages

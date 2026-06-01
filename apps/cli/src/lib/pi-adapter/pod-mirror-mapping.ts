@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
-import type { AgentMessage } from '@mariozechner/pi-agent-core'
-import type { SessionEntry, SessionManager } from '@mariozechner/pi-coding-agent'
+import type { AgentMessage } from '@earendil-works/pi-agent-core'
+import type { SessionEntry, SessionManager } from '@earendil-works/pi-coding-agent'
 
 export const DEFAULT_SECRETARY_CHAT_ID = 'ai-secretary'
 export const DEFAULT_SECRETARY_AGENT_ID = 'ai-secretary'

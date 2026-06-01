@@ -241,7 +241,7 @@ test('native Pod session source reads session and messages through shared ORM re
       if (resource?.config?.name === 'session' && id === sessionResourceId) {
         return {
           id: sessionResourceId,
-          ownerWebId: WEB_ID,
+          owner: WEB_ID,
           chat: chatUri,
           thread: threadUri,
           tool: 'linx',
@@ -269,7 +269,7 @@ test('native Pod session source reads session and messages through shared ORM re
 	                return [
 	                  {
 	                    id: 'https://pod.example/.data/session/legacy-session.ttl',
-	                    ownerWebId: WEB_ID,
+	                    owner: WEB_ID,
 	                    chat: chatUri,
 	                    tool: 'linx',
 	                    status: 'active',
@@ -277,7 +277,7 @@ test('native Pod session source reads session and messages through shared ORM re
 	                  },
 	                  {
 	                    id: sessionId,
-	                    ownerWebId: WEB_ID,
+	                    owner: WEB_ID,
 	                    chat: 'ai-secretary',
 	                    thread: threadUri,
 	                    tool: 'linx',
@@ -360,12 +360,12 @@ test('native Pod session source uses session message resource refs before broad 
       if (resource?.config?.name === 'session' && id === sessionResourceId) {
         return {
           id: sessionResourceId,
-          ownerWebId: WEB_ID,
+          owner: WEB_ID,
           chat: chatUri,
           thread: threadUri,
           tool: 'linx',
           status: 'active',
-          metadata: { cwd, threadUri, messageResources: [messageUri] },
+          metadata: { cwd, threadUri, messages: [messageUri] },
           createdAt: new Date('2026-04-01T00:00:00.000Z'),
           updatedAt: new Date('2026-04-01T00:00:01.000Z'),
         }
@@ -416,7 +416,7 @@ test('native Pod session source uses session message resource refs before broad 
                 return []
               }
               if (resourceName === 'chat_message') {
-                throw new Error('message fallback scan should not run when messageResources exist')
+                throw new Error('message fallback scan should not run when session messages exist')
               }
               return []
             },
