@@ -138,7 +138,7 @@ describe('model services collections integration', () => {
 
     const createdProvider = await (database as any).findById(aiProviderTable as any, providerId)
     const modelLocator = { id: modelId, isProvidedBy: providerId }
-    const modelResourceId = (database as any).resolveLocatorId(aiModelTable as any, modelLocator as any)
+    const modelResourceId = aiModelTable.buildId(modelLocator)
     const createdModel = await (database as any).findById(aiModelTable as any, modelResourceId)
     expect(createdProvider?.baseUrl).toBe('https://api.example.com/v1')
     expect(createdModel?.status).toBe('active')

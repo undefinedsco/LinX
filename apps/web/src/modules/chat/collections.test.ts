@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { chatResourceId, chatTable, messageTable, threadTable } from '@undefineds.co/models'
+import { chatTable, messageTable, threadTable } from '@undefineds.co/models'
 
 const mocked = vi.hoisted(() => {
   const states = new Map<string, Map<string, Record<string, unknown>>>()
@@ -112,6 +112,10 @@ type InsertRecord = {
   values: Record<string, unknown>
 }
 
+function chatStorageIdForTest(chatId: string): string {
+  return chatTable.buildId( { id: chatId })
+}
+
 function createMockDb() {
   const inserts: InsertRecord[] = []
   const rows = new Map<unknown, Array<Record<string, unknown>>>()
@@ -124,24 +128,30 @@ function createMockDb() {
     return next
   }
 
+  function resolveMockResourceId(table: unknown, target: string | Record<string, unknown>) {
+    return typeof target === 'string'
+      ? target
+      : (table as { buildId: (target: Record<string, unknown>) => string }).buildId(target)
+  }
+
+  function resolveMockResourceIri(table: unknown, target: string | Record<string, unknown>) {
+    const id = resolveMockResourceId(table, target)
+    return table === chatTable
+      ? `https://alice.example/.data/chat/${id}`
+      : `https://alice.example/.data/${id}`
+  }
+
   function resolveMockRowIri(table: unknown, row: Record<string, unknown>) {
-    const id = String(row.id ?? '')
-    if (id.includes('.ttl#')) {
-      return table === chatTable
-        ? `https://alice.example/.data/chat/${id}`
-        : `https://alice.example/.data/${id}`
-    }
-    if (table === threadTable) {
-      return `https://alice.example/.data/chat/${row.chat}/index.ttl#${row.id}`
-    }
-    if (table === messageTable) {
-      return `https://alice.example/.data/chat/${row.chat}/2026/03/18/messages.ttl#${row.id}`
-    }
-    return `https://alice.example/.data/chat/${row.id}/index.ttl#this`
+    return resolveMockResourceIri(table, row)
   }
 
   return {
     db: {
+      getSession() {
+        return {
+          info: { webId: 'https://alice.example/profile/card#me' },
+        }
+      },
       insert(table: unknown) {
         return {
           values(values: Record<string, unknown>) {
@@ -156,6 +166,25 @@ function createMockDb() {
       findById(table: unknown, id: string) {
         return Promise.resolve(tableRows(table).find((row) => row.id === id) ?? null)
       },
+      findByResource(table: unknown, target: string | Record<string, unknown>) {
+        const rowsForTable = tableRows(table)
+        const targetResourceId = resolveMockResourceId(table, target)
+        const targetIri = resolveMockResourceIri(table, target)
+        if (typeof target === 'string') {
+          return Promise.resolve(
+            rowsForTable.find((row) => row.id === targetResourceId || resolveMockRowIri(table, row) === targetIri) ?? null,
+          )
+        }
+        const targetId = target.id ?? target['@id'] ?? target.subject ?? target.uri
+        return Promise.resolve(
+          rowsForTable.find((row) =>
+            row.id === targetId
+            || row.id === targetResourceId
+            || resolveMockRowIri(table, row) === targetIri
+            || resolveMockRowIri(table, row) === targetId
+          ) ?? null,
+        )
+      },
       updateById(table: unknown, id: string, update: Record<string, unknown>) {
         const rowsForTable = tableRows(table)
         const index = rowsForTable.findIndex((row) => row.id === id)
@@ -163,6 +192,26 @@ function createMockDb() {
           const row = { id, ...update }
           rowsForTable.push(row)
           return Promise.resolve(row)
+        }
+
+        rowsForTable[index] = { ...rowsForTable[index], ...update }
+        return Promise.resolve(rowsForTable[index])
+      },
+      updateByResource(table: unknown, target: string | Record<string, unknown>, update: Record<string, unknown>) {
+        const rowsForTable = tableRows(table)
+        const targetResourceId = resolveMockResourceId(table, target)
+        const targetIri = resolveMockResourceIri(table, target)
+        const targetId = typeof target === 'string'
+          ? target
+          : target.id ?? target['@id'] ?? target.subject ?? target.uri
+        const index = rowsForTable.findIndex((row) =>
+          row.id === targetId
+          || row.id === targetResourceId
+          || resolveMockRowIri(table, row) === targetIri
+          || resolveMockRowIri(table, row) === targetId
+        )
+        if (index === -1) {
+          return Promise.resolve(null)
         }
 
         rowsForTable[index] = { ...rowsForTable[index], ...update }
@@ -178,8 +227,8 @@ function createMockDb() {
         rowsForTable[index] = { ...rowsForTable[index], ...update }
         return Promise.resolve(rowsForTable[index])
       },
-      resolveRowIri(table: unknown, row: Record<string, unknown>) {
-        return resolveMockRowIri(table, row)
+      resolveResourceIri(table: unknown, target: string | Record<string, unknown>) {
+        return resolveMockResourceIri(table, target)
       },
     },
     inserts,
@@ -199,7 +248,7 @@ describe('chatOps sync projection', () => {
     initializeChatCollections(db as any)
 
     await (db as any).insert(chatTable).values({
-      id: chatResourceId('chat-1'),
+      id: chatStorageIdForTest('chat-1'),
       title: 'Existing Chat',
     }).execute()
 
