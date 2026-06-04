@@ -1692,6 +1692,133 @@ test('XpodManager reuses persisted managed registration on resume without reallo
   assert.equal(fetchCalls, 0)
 })
 
+test('XpodManager falls back from managed domain allocation to the preallocated Cloud URL contract', { concurrency: false }, async (t) => {
+  installElectronStub(t)
+  const provider = {
+    id: 'local',
+    issuerUrl: 'http://localhost:5737',
+    managed: {
+      status: 'stopped',
+      dataDir: '/tmp/local-pod',
+      port: 5737,
+      spaceKind: 'local',
+      domain: { type: 'none' },
+    },
+  }
+  const providerStatuses = []
+  const manager = createManager({
+    providerManager: {
+      getManagedPods: () => [provider],
+      get: () => provider,
+      getDefault: () => provider,
+      updateManagedStatus: (_providerId, status) => providerStatuses.push(status),
+    },
+  })
+
+  const requests = []
+  const originalFetch = global.fetch
+  global.fetch = async (url, options) => {
+    assert.equal(String(url), 'https://api.undefineds.co/provision/nodes')
+    const body = JSON.parse(String(options?.body ?? '{}'))
+    requests.push(body)
+
+    if (requests.length === 1) {
+      assert.equal(body.domainMode, 'managed')
+      assert.equal(body.publicUrl, undefined)
+      assert.equal(body.spDomain, undefined)
+      return {
+        ok: false,
+        status: 400,
+        text: async () => '{"error":"publicUrl is required"}',
+      }
+    }
+
+    assert.equal(body.domainMode, 'self-managed')
+    assert.equal(body.spDomain, 'node-0000.undefineds.co')
+    assert.equal(body.publicUrl, 'https://node-0000.undefineds.co/')
+    assert.equal(body.localPort, 5737)
+    return {
+      ok: true,
+      json: async () => ({
+        nodeId: 'node-0000',
+        nodeToken: 'node-token-1',
+        serviceToken: 'service-token-1',
+        provisionCode: 'pc-1',
+        spDomain: 'node-0000.undefineds.co',
+      }),
+    }
+  }
+
+  t.after(() => {
+    global.fetch = originalFetch
+  })
+
+  manager.readState = () => null
+  manager.resolvePreferredLaunchTarget = () => ({
+    kind: 'dev-source',
+    rootDir: '/Users/example/xpod-cli',
+    entryPath: '/Users/example/xpod-cli/src/main.ts',
+  })
+  manager.ensureEnvFileExists = () => {}
+  manager.buildLaunchSpec = (_target, _port, envPath) => {
+    const envText = fs.readFileSync(envPath, 'utf8')
+    assert.match(envText, /CSS_BASE_URL=https:\/\/node-0000\.undefineds\.co\//)
+    assert.match(envText, /oidcIssuer=https:\/\/id\.undefineds\.co/)
+    assert.match(envText, /XPOD_CLOUD_API_ENDPOINT=https:\/\/api\.undefineds\.co/)
+    assert.match(envText, /XPOD_NODE_ID=node-0000/)
+    assert.match(envText, /XPOD_NODE_TOKEN=node-token-1/)
+    assert.match(envText, /XPOD_SERVICE_TOKEN=service-token-1/)
+    assert.match(envText, /XPOD_PROVISION_CODE=pc-1/)
+    assert.match(envText, /XPOD_PROVISION_URL=https:\/\/id\.undefineds\.co\/\.account\/\?provisionCode=pc-1/)
+    assert.match(envText, /XPOD_SP_DOMAIN=node-0000\.undefineds\.co/)
+    return {
+      command: process.execPath,
+      args: ['-e', ''],
+      cwd: process.cwd(),
+    }
+  }
+  manager.buildSpawnOptions = () => ({
+    cwd: process.cwd(),
+    env: {},
+    detached: true,
+    windowsHide: true,
+    stdio: ['ignore', fs.openSync('/tmp/linx-managed-fallback.out', 'a'), fs.openSync('/tmp/linx-managed-fallback.err', 'a')],
+  })
+  manager.attachProcessHandlers = () => {}
+  manager.writeState = (state) => {
+    assert.equal(state.baseUrl, 'https://node-0000.undefineds.co/')
+    assert.equal(state.localUrl, 'http://localhost:5737/')
+    assert.equal(state.provisioning.publicUrl, 'https://node-0000.undefineds.co/')
+    assert.equal(state.provisioning.spDomain, 'node-0000.undefineds.co')
+  }
+  manager.waitForReady = async (localUrl) => {
+    assert.equal(localUrl, 'http://localhost:5737/')
+  }
+
+  const originalSpawn = require('node:child_process').spawn
+  require('node:child_process').spawn = () => ({
+    pid: 24680,
+    unref() {},
+  })
+
+  t.after(() => {
+    require('node:child_process').spawn = originalSpawn
+    try { fs.unlinkSync('/tmp/linx-managed-fallback.out') } catch {}
+    try { fs.unlinkSync('/tmp/linx-managed-fallback.err') } catch {}
+  })
+
+  await manager.start({
+    providerId: 'local',
+    dataDir: '/tmp/local-pod',
+    port: 5737,
+    spaceKind: 'local',
+    domain: { type: 'none' },
+  })
+
+  assert.equal(requests.length, 2)
+  assert.deepEqual(providerStatuses, ['starting', 'running'])
+})
+
 test('XpodManager normalizes older persisted managed registrations to spDomain for startup', { concurrency: false }, async (t) => {
   installElectronStub(t)
   const provider = {
