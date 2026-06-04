@@ -13,7 +13,7 @@ test('getXpodDashboardUrl prefers local url', () => {
   assert.equal(url, 'http://localhost:5737/dashboard/')
 })
 
-test('formatXpodStatusDetail includes urls and pid', () => {
+test('formatXpodStatusDetail summarizes user-facing readiness without runtime internals', () => {
   const detail = formatXpodStatusDetail({
     running: true,
     status: 'running',
@@ -24,8 +24,8 @@ test('formatXpodStatusDetail includes urls and pid', () => {
     baseUrl: 'https://node-abc123.undefineds.co/',
   })
 
-  assert.match(detail, /状态: running/)
-  assert.match(detail, /PID: 12345/)
-  assert.match(detail, /本地地址: http:\/\/localhost:5737\//)
-  assert.match(detail, /公开地址: https:\/\/node-abc123\.undefineds\.co\//)
+  assert.match(detail, /状态: 运行中/)
+  assert.match(detail, /本机入口: 已准备/)
+  assert.match(detail, /外网入口: 已配置/)
+  assert.doesNotMatch(detail, /PID|12345|localhost:5737|node-abc123\.undefineds\.co/)
 })
