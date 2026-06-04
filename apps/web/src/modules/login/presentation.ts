@@ -10,15 +10,15 @@ export function getProviderDisplayLabel(provider: LoginProviderOption): string {
   const source = resolveLoginProviderSource(provider)
 
   if (source === 'local') {
-    return 'Local'
+    return '本地空间'
   }
 
   if (source === 'standalone') {
-    return 'Standalone'
+    return '独立空间'
   }
 
   if (source === 'cloud') {
-    return 'Cloud'
+    return '云端空间'
   }
 
   return provider.label
@@ -71,18 +71,18 @@ export function getProviderInfoText(provider: LoginProviderOption, isFailed: boo
   const source = resolveLoginProviderSource(provider)
 
   if (source === 'cloud') {
-    return 'Cloud 账号登录，数据写入 Cloud Pod。账号、授权和数据都在 Cloud。'
+    return '使用云端账号登录，数据保存在云端。'
   }
 
   if (source === 'local') {
-    return 'Cloud 账号登录，数据写入当前本机 xpod 的 Local Pod。Cloud 只做身份授权。'
+    return '使用云端账号登录，数据写入这台电脑上的本地空间。'
   }
 
   if (source === 'standalone') {
-    return '本机 xpod 登录，数据也写入本机 Standalone Pod；不绑定 Cloud 账号。'
+    return '账号和数据都留在这台电脑，不绑定云端账号。'
   }
 
-  return '使用这个 Solid Provider 同时作为账号入口和数据空间。'
+  return '使用这个服务登录，数据也保存在这里。'
 }
 
 export function getProviderActionLabel(provider: LoginProviderOption): string {

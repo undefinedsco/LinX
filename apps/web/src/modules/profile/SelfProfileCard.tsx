@@ -12,6 +12,7 @@ import { Copy, RefreshCw, CheckCircle2, AlertCircle, Loader2, HardDrive, Link2 }
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { formatErrorForUser } from "@/lib/user-facing-errors";
 import { useSolidDatabase } from "@/providers/solid-database-provider";
 import { useLoginStore } from "@linx/stores/login";
 
@@ -288,7 +289,7 @@ export function SelfProfileCard() {
         <>
           <AlertCircle className="w-3 h-3 text-destructive/60" />
           <span className="text-destructive/60">
-            {queryError instanceof Error ? queryError.message : "同步失败"}
+            {formatErrorForUser(queryError, "资料同步失败。请检查当前账号和空间后重试。")}
           </span>
           <Button
             variant="link"

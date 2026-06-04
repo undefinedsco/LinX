@@ -293,10 +293,10 @@ export function useProviders() {
           ...current,
           spaceKind,
           state: 'starting',
-          message: spaceKind === 'standalone' ? '正在启动 Standalone…' : '正在启动 Local…',
+          message: spaceKind === 'standalone' ? '正在启动独立空间…' : '正在启动本地空间…',
           progress: {
             phase: 'spawn',
-            label: spaceKind === 'standalone' ? '正在启动 Standalone…' : '正在启动 Local…',
+            label: spaceKind === 'standalone' ? '正在启动独立空间…' : '正在启动本地空间…',
             detail: null,
           },
           errorCode: null,
@@ -314,10 +314,10 @@ export function useProviders() {
           provisionCode: null,
           provisionUrl: null,
           nodeId: null,
-          message: spaceKind === 'standalone' ? '正在启动 Standalone…' : '正在启动 Local…',
+          message: spaceKind === 'standalone' ? '正在启动独立空间…' : '正在启动本地空间…',
           progress: {
             phase: 'spawn',
-            label: spaceKind === 'standalone' ? '正在启动 Standalone…' : '正在启动 Local…',
+            label: spaceKind === 'standalone' ? '正在启动独立空间…' : '正在启动本地空间…',
             detail: null,
           },
           errorCode: null,
@@ -357,7 +357,7 @@ export function useProviders() {
       await new Promise((resolve) => window.setTimeout(resolve, SERVICE_LOCAL_POLL_INTERVAL))
     }
 
-    throw new Error('Local 启动超时，请稍后重试。')
+    throw new Error('本地空间启动超时，请稍后重试。')
   }, [desktopApi, isServiceMode, localOnboarding, publishLocalOnboarding, refreshProviders])
 
   return {
@@ -514,9 +514,9 @@ function buildServiceLocalSnapshot(
     nodeId: status.provisioning?.nodeId ?? null,
     message: running
       ? spaceKind === 'local'
-        ? 'Local 已准备好，接下来会通过 Cloud 登录并写入本地空间。'
-        : 'Standalone 已准备好，接下来会打开本地登录页。'
-      : '本地服务尚未运行。选择 Local 后会启动本地 xpod。',
+        ? '本地空间已准备好，接下来会通过云端账号登录，数据会写入这台电脑。'
+        : '独立空间已准备好，接下来会打开本机登录页。'
+      : '本地空间尚未运行。选择后会自动启动。',
     progress: null,
     errorCode: null,
     canRetry: true,
@@ -540,8 +540,8 @@ function projectLocalOnboardingForSource(
       spaceKind: source,
       publicUrl: source === 'local' ? snapshot.publicUrl : null,
       message: source === 'local'
-        ? '当前按 Standalone 运行。要使用 Local，请先切换为空间类型 Local。'
-        : '当前按 Local 运行。要使用 Standalone，请先切换为空间类型 Standalone。',
+        ? '当前启动的是独立空间。要使用本地空间，请返回空间选择页切换。'
+        : '当前启动的是本地空间。要使用独立空间，请返回空间选择页切换。',
       errorCode: 'SERVICE_MODE_MISMATCH',
       canRetry: false,
       canOpenSettings: true,
@@ -558,7 +558,7 @@ function projectLocalOnboardingForSource(
       state: 'repair_required',
       spaceKind: 'local',
       publicUrl: snapshot.publicUrl,
-      message: 'Local 已运行，但还没拿到 Cloud 分配的 canonical URL 或绑定信息。请重新启动 Local，再继续登录。',
+      message: '本地空间还没有完成准备。请回到空间选择页，再点一次“本地空间”。',
       errorCode: 'LOCAL_CLOUD_BINDING_REQUIRED',
       canRetry: true,
       canOpenSettings: true,
@@ -579,14 +579,14 @@ function resolveLocalProviderMessage(
 ): string | null {
   if (snapshot.state === 'ready') {
     return source === 'local'
-      ? 'Local 已准备好，接下来会通过 Cloud 登录并写入本地空间。'
-      : 'Standalone 已准备好，接下来会打开本地登录页。'
+      ? '本地空间已准备好，接下来会通过云端账号登录，数据会写入这台电脑。'
+      : '独立空间已准备好，接下来会打开本机登录页。'
   }
 
   if (snapshot.state === 'idle') {
     return source === 'local'
-      ? 'Local 尚未运行。选择后会按 Cloud issuer + 本地 storage 启动。'
-      : 'Standalone 尚未运行。选择后会按本地 issuer + 本地 storage 启动。'
+      ? '本地空间尚未运行。选择后会用云端账号进入这台电脑。'
+      : '独立空间尚未运行。选择后账号和数据都留在这台电脑。'
   }
 
   return snapshot.message

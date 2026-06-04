@@ -206,7 +206,7 @@ describe('useProviders', () => {
     expect(standaloneProvider?.runtime?.onboarding?.state).toBe('repair_required')
   })
 
-  it('does not project localhost as the Local storage provider before canonical URL exists', async () => {
+  it('does not project localhost as the Local storage provider before a login storage address exists', async () => {
     delete window.xpodDesktop
     ;(window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__ = true
 
@@ -248,7 +248,7 @@ describe('useProviders', () => {
     })
   })
 
-  it('does not project LAN addresses as the Local storage provider before canonical URL exists', async () => {
+  it('does not project LAN addresses as the Local storage provider before a login storage address exists', async () => {
     delete window.xpodDesktop
     ;(window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__ = true
 

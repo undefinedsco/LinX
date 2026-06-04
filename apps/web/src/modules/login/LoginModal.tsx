@@ -13,6 +13,7 @@ import {
 } from './presentation'
 import { resolveLoginProviderSource } from './provider-model'
 import { LoginCardShell } from './LoginCardShell'
+import { formatLoginErrorForUser } from './error-messages'
 
 export function LoginModal(props: LoginModalProps) {
   const { state, storageConflict, view } = props
@@ -87,7 +88,7 @@ function StorageConflictView({
     <div className="flex-1 flex flex-col h-full">
       <div className="px-5 pt-6 pb-4 shrink-0">
         <p className="text-[11px] font-medium tracking-wide text-muted-foreground/70 text-center">
-          {isCreatePodSetup ? '需要创建 Pod' : '空间不匹配'}
+          {isCreatePodSetup ? '需要创建空间' : '空间不匹配'}
         </p>
       </div>
 
@@ -101,8 +102,8 @@ function StorageConflictView({
         <p className="text-base font-semibold text-foreground">{accountName}</p>
         <p className="max-w-[19rem] text-center text-sm leading-6 text-muted-foreground">
           {isCreatePodSetup
-            ? '这个 Cloud 账号还没有绑定当前 Local 空间的 Pod。先为当前 Local 空间创建 Pod，之后数据会写入这里。'
-            : '当前登录到了另一个数据空间。此版本暂不支持自动迁移，请返回正确空间重新登录，或在当前空间新建一个 Pod 后再继续。'}
+            ? '这个账号还没有完成当前本地空间的创建。创建完成后，LinX 会把数据保存在这里。'
+            : '当前账号绑定的是另一个空间。请返回后重新选择正确空间，或先在当前空间完成创建。'}
         </p>
       </div>
 
@@ -118,7 +119,7 @@ function StorageConflictView({
             onClick={onOpenCurrentSpacePodSetup}
             className="w-full h-10 rounded-xl border border-border/60 bg-muted/30 text-sm font-medium text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
           >
-            {isCreatePodSetup ? '为当前 Local 创建 Pod' : '在当前空间新建 Pod'}
+            {isCreatePodSetup ? '创建当前空间' : '在当前空间创建'}
           </button>
         ) : null}
         <button
@@ -256,7 +257,7 @@ function ProviderSelectionView({
         <div className="mx-4 mb-3 flex items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
           <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
           <p className="text-xs text-muted-foreground">
-            {localLoginStatus.message ?? '正在启动 Local…'}
+            {formatLocalStatusMessageForUser(localLoginStatus.message, '正在启动本地空间…')}
           </p>
         </div>
       ) : null}
@@ -277,7 +278,7 @@ function ProviderSelectionView({
           </ProviderSection>
 
           {customProviders.length > 0 ? (
-            <ProviderSection title="其他 Solid 账号">
+            <ProviderSection title="其他账号服务">
               <div className="bg-muted/40 rounded-xl overflow-hidden divide-y divide-border/40">
                 {customProviders.map((provider) => (
                   <ProviderItem
@@ -327,7 +328,7 @@ function ProviderSelectionView({
             className="w-full h-9 flex items-center justify-center gap-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-colors cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
-            连接其他 Solid 账号
+            连接其他账号服务
           </button>
         )}
       </div>
@@ -367,26 +368,15 @@ function ConnectingView({
 }) {
   let title = '正在连接'
   let detail = connectingProvider
-    ? `正在使用 ${connectingProvider.issuerLabel}`
+    ? '正在打开登录页'
     : '请稍候...'
 
   if (authWindowStatus.open) {
-    const isSplitProvider = Boolean(
-      connectingProvider
-      && connectingProvider.storageProviderLabel
-      && connectingProvider.storageProviderLabel !== connectingProvider.issuerLabel,
-    )
-    title = connectingProvider
-      ? `等待 ${isSplitProvider ? connectingProvider.storageProviderLabel : connectingProvider.issuerLabel} ${isSplitProvider ? '授权' : '登录'}完成`
-      : '等待登录完成'
-    detail = isSplitProvider
-      ? `请在 ${connectingProvider?.issuerLabel} 登录窗口完成`
-      : '请在登录窗口完成'
+    title = '等待登录完成'
+    detail = '请在登录窗口完成'
   } else if (authWindowStatus.reason === 'completed') {
     title = '正在验证身份'
-    detail = connectingProvider?.storageProviderLabel
-      ? `正在进入 ${connectingProvider.storageProviderLabel}`
-      : detail
+    detail = connectingProvider?.storageProviderLabel ? '正在进入所选空间' : detail
   }
 
   return (
@@ -398,7 +388,7 @@ function ConnectingView({
         {connectingProvider ? (
           <div className="mt-4 w-full max-w-[18rem] rounded-2xl border border-border/60 bg-muted/30 px-3 py-2">
             <p className="truncate text-xs font-medium text-foreground">
-              {connectingProvider.storageProviderLabel}
+              {formatProviderLabelForUser(connectingProvider.storageProviderLabel)}
             </p>
             <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
               {formatProviderHost(connectingProvider.storageProviderUrl)}
@@ -438,14 +428,15 @@ function LocalOnboardingView({
 }) {
   const snapshot = localOnboarding
   const isStandalone = localProviderSource === 'standalone'
-  const productLabel = isStandalone ? 'Standalone' : 'Local'
+  const productLabel = isStandalone ? '独立空间' : '本地空间'
   const onboardingState = snapshot?.state ?? 'idle'
   const isReady = onboardingState === 'ready'
   const isRepair = onboardingState === 'repair_required'
   const isError = onboardingState === 'error'
   const isStarting = onboardingState === 'starting' || onboardingState === 'checking' || onboardingState === 'idle' || onboardingState === 'space_required'
-  const progressLabel = snapshot?.progress?.label ?? snapshot?.message ?? `正在启动 ${productLabel}…`
-  const progressDetail = snapshot?.progress?.detail
+  const progress = formatLocalStartupProgressForUser(snapshot?.progress, productLabel, snapshot?.message)
+  const progressLabel = progress.label
+  const progressDetail = progress.detail
   const localUrl = snapshot?.localUrl ?? snapshot?.baseUrl ?? null
 
   return (
@@ -481,11 +472,6 @@ function LocalOnboardingView({
           {isReady && (
             <div className="flex flex-col gap-3">
               <p className="text-sm font-medium text-foreground text-center">{productLabel} 已准备好</p>
-              {isStandalone && snapshot?.capabilities?.contract && (
-                <p className="text-[11px] text-muted-foreground/70 text-center font-mono">
-                  {snapshot.capabilities.contract}
-                </p>
-              )}
               {isStandalone ? (
                 <RouteInfoCard title="本机入口" value={localUrl} />
               ) : null}
@@ -501,10 +487,13 @@ function LocalOnboardingView({
           {isRepair && (
             <div className="flex flex-col gap-3">
               <p className="text-sm text-foreground leading-relaxed">
-                {isStandalone ? 'Standalone 启动失败' : '还差一步让 Local 接入 Cloud'}
+                {isStandalone ? '独立空间启动失败' : '还差一步完成本地空间绑定'}
               </p>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                {snapshot?.message ?? (isStandalone ? '请检查本机 xpod 启动状态。' : '需要完成额外设置才能从其他设备访问。')}
+                {formatLocalStatusMessageForUser(
+                  snapshot?.message,
+                  isStandalone ? '请检查独立空间启动状态。' : '需要完成额外设置才能从其他设备访问。',
+                )}
               </p>
               <button
                 onClick={() => {
@@ -513,7 +502,7 @@ function LocalOnboardingView({
                 }}
                 className="w-full h-10 rounded-xl bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
               >
-                {isStandalone ? '打开设置' : '去完成 Local 设置'}
+                {isStandalone ? '打开设置' : '去完成本地空间设置'}
               </button>
             </div>
           )}
@@ -522,7 +511,7 @@ function LocalOnboardingView({
             <div className="flex flex-col items-center gap-3 text-center">
               <AlertCircle className="w-6 h-6 text-destructive" />
               <p className="text-sm text-destructive">
-                {snapshot?.message ?? `${productLabel} 启动失败`}
+                {formatLocalStatusMessageForUser(snapshot?.message, `${productLabel} 启动失败`)}
               </p>
             </div>
           )}
@@ -552,7 +541,7 @@ function RouteInfoCard({
         {action}
       </div>
       <p className="mt-2 break-all font-mono text-[11px] leading-5 text-foreground">
-        {value ?? '等待 xpod 返回'}
+        {value ?? '正在获取入口'}
       </p>
     </div>
   )
@@ -794,13 +783,75 @@ function ProviderStatusBadge({
   )
 }
 
+function formatLocalStartupProgressForUser(
+  progress: NonNullable<LoginModalProps['localOnboarding']>['progress'] | null | undefined,
+  productLabel: string,
+  message: string | null | undefined,
+): { label: string; detail: string | null } {
+  switch (progress?.phase) {
+    case 'source':
+    case 'version':
+    case 'check-bun':
+    case 'check-node':
+    case 'runtime-ready':
+    case 'embedded':
+    case 'resolve-runtime':
+      return { label: `检查 ${productLabel} 运行环境`, detail: null }
+    case 'install-bun':
+    case 'install-npm':
+      return {
+        label: '正在准备本地空间',
+        detail: '首次启动可能需要下载，完成后会自动继续。',
+      }
+    case 'register-cloud':
+      return {
+        label: '正在准备本地空间',
+        detail: '正在为当前设备准备本地登录入口。',
+      }
+    case 'prepare-data':
+    case 'write-env':
+      return { label: `准备 ${productLabel} 本地数据`, detail: null }
+    case 'spawn':
+      return { label: `正在启动 ${productLabel}`, detail: null }
+    case 'wait-ready':
+      return {
+        label: `等待 ${productLabel} 服务就绪`,
+        detail: '这一步可能需要几十秒。',
+      }
+    case 'ready':
+      return { label: `${productLabel} 已准备好`, detail: null }
+    default:
+      return {
+        label: formatLocalStatusMessageForUser(progress?.label ?? message, `正在启动 ${productLabel}…`),
+        detail: progress?.detail ? formatLocalOptionalDetailForUser(progress.detail) : null,
+      }
+  }
+}
+
+function formatLocalStatusMessageForUser(value: string | null | undefined, fallback: string): string {
+  return formatLoginErrorForUser(value, fallback)
+}
+
+function formatLocalOptionalDetailForUser(value: string): string | null {
+  const formatted = formatLoginErrorForUser(value, '')
+  return formatted || null
+}
+
+function formatProviderLabelForUser(value: string | undefined): string {
+  if (value === 'Cloud') return '云端空间'
+  if (value === 'Local') return '本地空间'
+  if (value === 'Standalone') return '独立空间'
+  return value ?? '所选空间'
+}
+
 function ErrorBanner({ error, onClearError }: { error: string | null; onClearError: () => void }) {
   if (!error) return null
+  const message = formatLoginErrorForUser(error, '操作失败，请返回上一步后重试。')
 
   return (
     <div className="mx-4 mb-3 px-3 py-2 bg-destructive/10 rounded-lg flex items-start gap-2 shrink-0">
       <AlertCircle className="w-3.5 h-3.5 text-destructive mt-0.5 shrink-0" />
-      <p className="text-xs text-destructive flex-1 leading-relaxed">{error}</p>
+      <p className="text-xs text-destructive flex-1 leading-relaxed">{message}</p>
       <button
         onClick={onClearError}
         className="text-destructive/60 hover:text-destructive shrink-0 cursor-pointer"

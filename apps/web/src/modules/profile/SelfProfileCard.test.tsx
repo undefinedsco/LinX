@@ -116,4 +116,13 @@ describe('SelfProfileCard', () => {
     expect(screen.getByText('Shanghai')).toBeTruthy()
     expect(screen.getByText('hello')).toBeTruthy()
   })
+
+  it('does not expose profile sync internals when loading fails', async () => {
+    findByIriMock.mockRejectedValueOnce(new Error('读取 WebID Profile 失败：HTTP 401'))
+
+    renderCard()
+
+    expect(await screen.findByText('登录状态已失效。请重新登录。')).toBeTruthy()
+    expect(screen.queryByText(/WebID Profile|HTTP 401/i)).toBeNull()
+  })
 })

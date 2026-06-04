@@ -72,10 +72,10 @@ export function UserProfileCard({
 
       {/* Info Rows */}
       <div className="px-4 py-2 space-y-3">
-        {/* WebID Detail */}
+        {/* Account address */}
         <div className="space-y-1">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>WebID</span>
+            <span>账号地址</span>
             {showCopyId && (
               <Button variant="ghost" size="icon" className="h-5 w-5 hover:bg-muted" onClick={handleCopy} title="复制">
                 <Copy className="w-3 h-3" />

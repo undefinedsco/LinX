@@ -51,7 +51,7 @@ describe('getProviderSubtitle', () => {
     }
 
     expect(getProviderSubtitle(provider, false)).toBe('云端空间')
-    expect(getProviderInfoText(provider, false)).toBe('Cloud 账号登录，数据写入 Cloud Pod。账号、授权和数据都在 Cloud。')
+    expect(getProviderInfoText(provider, false)).toBe('使用云端账号登录，数据保存在云端。')
   })
 
   it('uses onboarding state for first-time Local setup', () => {
@@ -70,7 +70,7 @@ describe('getProviderSubtitle', () => {
     })
 
     expect(getProviderSubtitle(provider, false)).toBe('本地空间')
-    expect(getProviderInfoText(provider, false)).toBe('Cloud 账号登录，数据写入当前本机 xpod 的 Local Pod。Cloud 只做身份授权。')
+    expect(getProviderInfoText(provider, false)).toBe('使用云端账号登录，数据写入这台电脑上的本地空间。')
   })
 
   it('uses onboarding state for resumable Local setup', () => {

@@ -137,16 +137,16 @@ describe('LoginModal', () => {
     render(<LoginModal {...props} />)
 
     expect(screen.getByText('空间不匹配')).toBeTruthy()
-    expect(screen.getByText(/当前登录到了另一个数据空间。此版本暂不支持自动迁移/)).toBeTruthy()
+    expect(screen.getByText(/当前账号绑定的是另一个空间/)).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: '在当前空间新建 Pod' }))
+    fireEvent.click(screen.getByRole('button', { name: '在当前空间创建' }))
     expect(props.onOpenCurrentSpacePodSetup).toHaveBeenCalledTimes(1)
 
     fireEvent.click(screen.getByRole('button', { name: '返回登录并重新选择空间' }))
     expect(props.onDismissStorageConflict).toHaveBeenCalledTimes(1)
   })
 
-  it('shows the Local first-Pod setup copy when Local needs a provisioned Pod', () => {
+  it('shows the Local first space setup copy when Local needs provisioned storage', () => {
     const props = createProps({
       state: 'authenticated',
       storedAccount: {
@@ -161,17 +161,17 @@ describe('LoginModal', () => {
         actualStorageUrl: 'https://id.undefineds.co/ganlu/',
         storageProviderUrl: 'https://node-abc123.undefineds.co/',
         managementUrl: 'https://node-abc123.undefineds.co/.account/account/',
-        setupUrl: 'https://id.undefineds.co/.account/create-pod/?provisionCode=pc-123',
+        setupUrl: 'https://node-abc123.undefineds.co/.account/create-pod/?provisionCode=pc-123',
         setupKind: 'create-pod',
       },
     })
 
     render(<LoginModal {...props} />)
 
-    expect(screen.getByText('需要创建 Pod')).toBeTruthy()
-    expect(screen.getByText(/这个 Cloud 账号还没有绑定当前 Local 空间的 Pod/)).toBeTruthy()
+    expect(screen.getByText('需要创建空间')).toBeTruthy()
+    expect(screen.getByText(/这个账号还没有完成当前本地空间的创建/)).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: '为当前 Local 创建 Pod' }))
+    fireEvent.click(screen.getByRole('button', { name: '创建当前空间' }))
     expect(props.onOpenCurrentSpacePodSetup).toHaveBeenCalledTimes(1)
   })
 
@@ -228,6 +228,18 @@ describe('LoginModal', () => {
     expect(screen.getByRole('button', { name: '进入 LinX' })).toBeTruthy()
   })
 
+  it('does not expose raw internal login errors in the provider selection banner', () => {
+    const props = createProps({
+      state: 'idle',
+      error: '读取 WebID Profile 失败：HTTP 401',
+    })
+
+    render(<LoginModal {...props} />)
+
+    expect(screen.getByText('登录状态已失效。请重新登录。')).toBeTruthy()
+    expect(screen.queryByText(/WebID Profile|HTTP 401/)).toBeNull()
+  })
+
   it('renders LinX logo avatars with a visible framed background on white surfaces', () => {
     const props = createProps({
       state: 'idle',
@@ -249,15 +261,15 @@ describe('LoginModal', () => {
 
     expect(screen.getByText('选择空间')).toBeTruthy()
     expect(screen.getByText('登录方式')).toBeTruthy()
-    expect(screen.getByText('Cloud')).toBeTruthy()
+    expect(screen.getAllByText('云端空间').length).toBeGreaterThan(0)
     expect(screen.queryByText('官方')).toBeNull()
     expect(screen.queryByText('未配置')).toBeNull()
     expect(screen.getAllByText('登录').length).toBeGreaterThan(0)
-    expect(screen.getByText('云端空间')).toBeTruthy()
+    expect(screen.getAllByText('云端空间').length).toBeGreaterThan(0)
     expect(screen.getByText('本机空间')).toBeTruthy()
-    expect(screen.getByLabelText('Cloud 账号登录，数据写入 Cloud Pod。账号、授权和数据都在 Cloud。')).toBeTruthy()
-    expect(screen.getByLabelText('Cloud 账号登录，数据写入当前本机 xpod 的 Local Pod。Cloud 只做身份授权。')).toBeTruthy()
-    expect(screen.getByLabelText('本机 xpod 登录，数据也写入本机 Standalone Pod；不绑定 Cloud 账号。')).toBeTruthy()
+    expect(screen.getByLabelText('使用云端账号登录，数据保存在云端。')).toBeTruthy()
+    expect(screen.getByLabelText('使用云端账号登录，数据写入这台电脑上的本地空间。')).toBeTruthy()
+    expect(screen.getByLabelText('账号和数据都留在这台电脑，不绑定云端账号。')).toBeTruthy()
     expect(container.querySelector('[data-provider-source="cloud"] img')).toBeTruthy()
     expect(container.querySelector('[data-provider-status-dot="primary"]')).toBeTruthy()
     expect(container.querySelector('[data-provider-status-dot="neutral"]')).toBeTruthy()
@@ -265,7 +277,7 @@ describe('LoginModal', () => {
     expect(container.querySelector('[data-provider-source="local"] [data-provider-local-marker]')).toBeTruthy()
     expect(container.querySelector('[data-provider-source="standalone"] [data-provider-standalone-marker]')).toBeTruthy()
 
-    fireEvent.click(screen.getByText('Cloud'))
+    fireEvent.click(screen.getByRole('button', { name: /云端空间/ }))
     expect(props.onConnect).toHaveBeenCalledWith('cloud')
   })
 
@@ -274,9 +286,9 @@ describe('LoginModal', () => {
 
     const { container } = render(<LoginModal {...props} />)
 
-    expect(screen.getByText('Cloud')).toBeTruthy()
-    expect(screen.getByText('Local')).toBeTruthy()
-    expect(screen.getByText('Standalone')).toBeTruthy()
+    expect(screen.getAllByText('云端空间').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('本地空间').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('独立空间').length).toBeGreaterThan(0)
     expect(container.querySelector('[data-provider-source="standalone"] [data-provider-standalone-marker]')).toBeTruthy()
   })
 
@@ -290,11 +302,11 @@ describe('LoginModal', () => {
 
     render(<LoginModal {...props} />)
 
-    expect(screen.getByText('正在启动 Local…')).toBeTruthy()
+    expect(screen.getByText('正在启动本地空间…')).toBeTruthy()
     expect(screen.getByText('选择空间')).toBeTruthy()
   })
 
-  it('shows detailed Local startup progress after selecting Local', () => {
+  it('shows user-facing Local startup progress after selecting Local', () => {
     const props = createProps({
       view: 'local',
       localOnboarding: {
@@ -324,8 +336,41 @@ describe('LoginModal', () => {
 
     render(<LoginModal {...props} />)
 
-    expect(screen.getByText('下载 xpod runtime')).toBeTruthy()
-    expect(screen.getByText('@undefineds.co/xpod@0.3.4')).toBeTruthy()
+    expect(screen.getByText('正在准备本地空间')).toBeTruthy()
+    expect(screen.getByText('首次启动可能需要下载，完成后会自动继续。')).toBeTruthy()
+    expect(screen.queryByText('下载 xpod runtime')).toBeNull()
+    expect(screen.queryByText('@undefineds.co/xpod@0.3.4')).toBeNull()
+  })
+
+  it('hides raw Local startup diagnostics in the Local view', () => {
+    const props = createProps({
+      view: 'local',
+      localProviderSource: 'local',
+      localOnboarding: {
+        state: 'error',
+        spaceKind: 'local',
+        localUrl: 'http://localhost:5737/',
+        baseUrl: 'https://node-0000.undefineds.co/',
+        publicUrl: 'https://node-0000.undefineds.co/',
+        tunnel: null,
+        connectivity: null,
+        capabilities: null,
+        cloudIdentityUrl: 'https://id.undefineds.co',
+        provisionCode: null,
+        provisionUrl: null,
+        nodeId: null,
+        message: "Cannot find module 'jsonld'\nRequire stack:\n- /Users/ganlu/Library/Application Support/@linx/desktop/xpod.js",
+        errorCode: 'LOCAL_START_FAILED',
+        canRetry: true,
+        canOpenSettings: true,
+      },
+    })
+
+    render(<LoginModal {...props} />)
+
+    expect(screen.getByText('本地空间启动文件损坏。请重启 LinX 让它自动修复；如果仍失败，请打开本地空间设置修复。')).toBeTruthy()
+    expect(screen.queryByText(/Cannot find module/)).toBeNull()
+    expect(screen.queryByText(/Application Support/)).toBeNull()
   })
 
   it('marks remembered Local accounts on the avatar', () => {
@@ -420,7 +465,7 @@ describe('LoginModal', () => {
 
     render(<LoginModal {...props} />)
 
-    expect(screen.getAllByText('其他 Solid 账号').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('其他账号服务').length).toBeGreaterThan(0)
     expect(screen.getAllByText('pod.example.com')).toHaveLength(2)
   })
 
@@ -459,9 +504,8 @@ describe('LoginModal', () => {
 
     render(<LoginModal {...props} />)
 
-    expect(screen.getByText('Local')).toBeTruthy()
-    expect(screen.getByText('本地空间')).toBeTruthy()
-    expect(screen.getByLabelText('Cloud 账号登录，数据写入当前本机 xpod 的 Local Pod。Cloud 只做身份授权。')).toBeTruthy()
+    expect(screen.getAllByText('本地空间').length).toBeGreaterThan(0)
+    expect(screen.getByLabelText('使用云端账号登录，数据写入这台电脑上的本地空间。')).toBeTruthy()
     expect(screen.queryByText('需设置')).toBeNull()
     expect(screen.getByText('设置')).toBeTruthy()
   })
@@ -585,8 +629,8 @@ describe('LoginModal', () => {
     })
     render(<LoginModal {...props} />)
 
-    expect(screen.getByText('正在使用 Cloud')).toBeTruthy()
-    expect(screen.getByText('Local')).toBeTruthy()
+    expect(screen.getByText('正在连接')).toBeTruthy()
+    expect(screen.getByText('本地空间')).toBeTruthy()
     expect(screen.getByText('node-0000.undefineds.co')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: '换一个空间' }))
@@ -609,7 +653,7 @@ describe('LoginModal', () => {
       },
     })
     render(<LoginModal {...props} />)
-    expect(screen.getByText('等待 Cloud 登录完成')).toBeTruthy()
+    expect(screen.getByText('等待登录完成')).toBeTruthy()
     expect(screen.getByText('请在登录窗口完成')).toBeTruthy()
   })
 
@@ -629,8 +673,8 @@ describe('LoginModal', () => {
       },
     })
     render(<LoginModal {...props} />)
-    expect(screen.getByText('等待 Local 授权完成')).toBeTruthy()
-    expect(screen.getByText('请在 Cloud 登录窗口完成')).toBeTruthy()
+    expect(screen.getByText('等待登录完成')).toBeTruthy()
+    expect(screen.getByText('请在登录窗口完成')).toBeTruthy()
   })
 
   it('shows verification copy after the auth window completes', () => {
