@@ -17,6 +17,8 @@ package-lock.json
 # Environment files
 .env
 .env.*
+/.npmrc
+/.yarnrc
 
 # AI
 .codex
@@ -39,6 +41,13 @@ test-results/
 # Electron build artefacts
 apps/desktop/dist/
 apps/desktop/out/
+apps/desktop/release/
+apps/desktop/data/
+apps/desktop/*.tgz
+
+# Web build artefacts
+apps/web/dist-desktop/
+apps/web/*.tsbuildinfo
 
 # Capacitor / mobile build artefacts
 apps/mobile/android/
@@ -70,11 +79,24 @@ GEMINI.md
 logs/
 notes/
 issues/
+.codex-notes/
 
 # Demo / scratch
 demos/
 .tmp-smoke/
 preview/
+.external/
+.xpod/
+data/
+local-home.js
+standalone>
+*.tgz
+
+# Generated JS emitted next to TypeScript sources
+lib/**/*.js
+lib/**/*.js.map
+lib/**/*.d.ts
+lib/**/*.d.ts.map
 
 # W3C test data (downloaded at test time)
 packages/models/tests/w3c-data/
