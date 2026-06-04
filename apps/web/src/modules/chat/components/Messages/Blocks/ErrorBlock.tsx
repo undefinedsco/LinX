@@ -9,6 +9,7 @@ import { memo } from 'react'
 import { AlertCircle, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { formatLoginErrorForUser } from '@/modules/login/error-messages'
 import type { ErrorMessageBlock } from '../message-blocks'
 
 interface ErrorBlockProps {
@@ -28,6 +29,9 @@ export const ErrorBlock = memo<ErrorBlockProps>(({
   onRetry,
   className,
 }) => {
+  const message = formatLoginErrorForUser(block.message, '操作失败。请稍后重试。')
+  const details = formatErrorDetailsForUser(block.error?.details)
+
   return (
     <div
       className={cn(
@@ -42,15 +46,13 @@ export const ErrorBlock = memo<ErrorBlockProps>(({
       {/* Error Content */}
       <div className="flex-1 min-w-0">
         <p className="text-sm text-destructive font-medium">
-          {block.message}
+          {message}
         </p>
         
         {/* Error Details */}
-        {block.error?.details != null && (
+        {details && (
           <pre className="mt-2 text-xs text-destructive/80 overflow-x-auto">
-            {typeof block.error.details === 'string'
-              ? block.error.details
-              : JSON.stringify(block.error.details as object, null, 2)}
+            {details}
           </pre>
         )}
       </div>
@@ -74,3 +76,15 @@ export const ErrorBlock = memo<ErrorBlockProps>(({
 ErrorBlock.displayName = 'ErrorBlock'
 
 export default ErrorBlock
+
+function formatErrorDetailsForUser(details: unknown): string | null {
+  if (details == null) {
+    return null
+  }
+
+  const raw = typeof details === 'string'
+    ? details
+    : JSON.stringify(details, null, 2)
+  const formatted = formatLoginErrorForUser(raw, '')
+  return formatted || null
+}

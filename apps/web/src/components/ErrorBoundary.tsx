@@ -1,4 +1,5 @@
 import { Component, ErrorInfo, ReactNode } from 'react'
+import { formatLoginErrorForUser } from '@/modules/login/error-messages'
 
 interface Props {
   children: ReactNode
@@ -25,43 +26,35 @@ export class ErrorBoundary extends Component<Props, State> {
 
   public render() {
     if (this.state.hasError) {
+      const message = formatLoginErrorForUser(
+        this.state.error,
+        '页面暂时无法显示。请刷新页面；如果仍失败，请重新进入 LinX。',
+      )
+
       return (
         <div style={{
           padding: '40px',
-          maxWidth: '800px',
+          maxWidth: '480px',
           margin: '0 auto',
-          fontFamily: 'monospace'
+          fontFamily: 'inherit',
+          textAlign: 'center',
         }}>
-          <h1 style={{ color: 'red' }}>❌ 出错了</h1>
-          <h2>错误信息：</h2>
-          <pre style={{
-            background: '#f5f5f5',
-            padding: '20px',
-            borderRadius: '8px',
-            overflow: 'auto'
-          }}>
-            {this.state.error?.toString()}
-          </pre>
-          <h2>堆栈信息：</h2>
-          <pre style={{
-            background: '#f5f5f5',
-            padding: '20px',
-            borderRadius: '8px',
-            overflow: 'auto',
-            fontSize: '12px'
-          }}>
-            {this.state.error?.stack}
-          </pre>
-          <button 
+          <h1 style={{ color: '#dc2626', fontSize: '22px', marginBottom: '12px' }}>
+            页面暂时无法显示
+          </h1>
+          <p style={{ color: '#4b5563', fontSize: '14px', lineHeight: 1.7, margin: 0 }}>
+            {message}
+          </p>
+          <button
             onClick={() => window.location.reload()}
             style={{
-              marginTop: '20px',
+              marginTop: '24px',
               padding: '10px 20px',
-              background: '#007bff',
+              background: '#111827',
               color: 'white',
               border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer'
+              borderRadius: '999px',
+              cursor: 'pointer',
             }}
           >
             刷新页面
@@ -73,15 +66,4 @@ export class ErrorBoundary extends Component<Props, State> {
     return this.props.children
   }
 }
-
-
-
-
-
-
-
-
-
-
-
 
