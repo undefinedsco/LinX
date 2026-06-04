@@ -9,7 +9,13 @@ import {
   clearPendingPostLoginMicroAppId,
   getPendingCallbackError,
   getPendingLoginAttempt,
+  getPendingLoginTransaction,
 } from '@/modules/login/login-utils'
+import {
+  getLoginTransactionRetryEntryUrl,
+  isLocalLoginTransaction,
+} from '@/modules/login/login-transaction'
+import { formatLoginErrorForUser } from '@/modules/login/error-messages'
 
 interface AuthCallbackProps {
   onSuccess?: () => void
@@ -30,6 +36,7 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
   const navigatedRef = useRef(false)
   const silentFallbackStartedRef = useRef(false)
   const pendingAttempt = useMemo(() => getPendingLoginAttempt(), [])
+  const pendingTransaction = useMemo(() => getPendingLoginTransaction(), [])
   const callbackError = useMemo(() => getPendingCallbackError(), [])
   const retryInteractiveFromSilentAttempt = useCallback(async () => {
     if (!pendingAttempt || retrying) return
@@ -38,19 +45,27 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
     setError(null)
 
     try {
-      await oidc.connect(pendingAttempt.issuerUrl, {
+      const retryEntryUrl = pendingTransaction
+        ? getLoginTransactionRetryEntryUrl(pendingTransaction)
+        : pendingAttempt.issuerUrl
+      await oidc.connect(retryEntryUrl, {
         authorizationSurface: pendingAttempt.authorizationSurface,
         returnToMicroAppId: pendingAttempt.returnToMicroAppId,
-        storageProviderUrl: pendingAttempt.storageProviderUrl,
-        storageProviderLabel: pendingAttempt.storageProviderLabel,
-        authorizationQuery: pendingAttempt.authorizationQuery,
+        route: pendingTransaction?.route,
+        accountIssuerUrl: pendingTransaction?.accountIssuerUrl ?? pendingAttempt.accountIssuerUrl,
+        accountIssuerLabel: pendingTransaction?.accountIssuerLabel ?? pendingAttempt.accountIssuerLabel,
+        storageProviderUrl: pendingTransaction?.storageProviderUrl ?? pendingAttempt.storageProviderUrl,
+        storageProviderLabel: pendingTransaction?.storageProviderLabel ?? pendingAttempt.storageProviderLabel,
+        authorizationQuery: pendingTransaction?.authorizationQuery ?? pendingAttempt.authorizationQuery,
+        strictDiscovery: pendingTransaction?.strictDiscovery ?? pendingAttempt.strictDiscovery,
+        nodeId: pendingTransaction?.nodeId,
       })
     } catch (retryError: any) {
-      setError(retryError?.message || '重新发起登录失败。')
+      setError(formatLoginErrorForUser(retryError, '重新发起登录失败。请返回登录页后再试。'))
     } finally {
       setRetrying(false)
     }
-  }, [oidc, pendingAttempt, retrying])
+  }, [oidc, pendingAttempt, pendingTransaction, retrying])
 
   // Check for OIDC errors in URL
   useEffect(() => {
@@ -60,14 +75,14 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
     const errorDesc = params.get('error_description')
     if (errorParam) {
       if (errorParam === 'email_unverified' || errorParam === 'verify_required') {
-        setError('请先验证邮箱后再登录。')
+        setError(formatLoginErrorForUser(errorParam, '请先验证邮箱后再登录。'))
       } else if (pendingAttempt?.prompt === 'none' && isSilentAuthError(errorParam)) {
         if (!silentFallbackStartedRef.current) {
           silentFallbackStartedRef.current = true
           void retryInteractiveFromSilentAttempt()
         }
       } else {
-        setError(errorDesc ? decodeURIComponent(errorDesc) : '认证服务器拒绝了请求')
+        setError(formatLoginErrorForUser(errorDesc ?? errorParam, '登录请求被拒绝。请返回登录页后重试。'))
       }
       return
     }
@@ -81,7 +96,7 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
         return
       }
 
-      setError(callbackError.description ? decodeURIComponent(callbackError.description) : '认证服务器拒绝了请求')
+      setError(formatLoginErrorForUser(callbackError.description ?? callbackError.error, '登录请求被拒绝。请返回登录页后重试。'))
     }
   }, [callbackError, pendingAttempt, retryInteractiveFromSilentAttempt])
 
@@ -135,9 +150,9 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
   }, [session.info.isLoggedIn, session.info.sessionId, sessionRequestInProgress, onSuccess, error])
 
   const retryLabel = pendingAttempt
-    ? isLocalIssuer(pendingAttempt.issuerUrl) || pendingAttempt.authorizationSurface === 'embedded'
-      ? '重试 Local'
-      : '重试 Cloud'
+    ? isLocalLoginTransaction(pendingTransaction) || isLocalIssuer(pendingAttempt.issuerUrl) || pendingAttempt.authorizationSurface === 'embedded'
+      ? '重试本地空间'
+      : '重试云端登录'
     : '重试登录'
 
   const handleRetry = async () => {
@@ -147,19 +162,28 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
     setError(null)
 
     try {
+      const retryEntryUrl = pendingTransaction
+        ? getLoginTransactionRetryEntryUrl(pendingTransaction)
+        : pendingAttempt.issuerUrl
+      const prompt = pendingTransaction?.prompt ?? pendingAttempt.prompt
       const retryOptions = {
         authorizationSurface: pendingAttempt.authorizationSurface,
         returnToMicroAppId: pendingAttempt.returnToMicroAppId,
-        storageProviderUrl: pendingAttempt.storageProviderUrl,
-        storageProviderLabel: pendingAttempt.storageProviderLabel,
-        authorizationQuery: pendingAttempt.authorizationQuery,
-        ...(pendingAttempt.prompt ? { prompt: pendingAttempt.prompt } : {}),
+        route: pendingTransaction?.route,
+        accountIssuerUrl: pendingTransaction?.accountIssuerUrl ?? pendingAttempt.accountIssuerUrl,
+        accountIssuerLabel: pendingTransaction?.accountIssuerLabel ?? pendingAttempt.accountIssuerLabel,
+        storageProviderUrl: pendingTransaction?.storageProviderUrl ?? pendingAttempt.storageProviderUrl,
+        storageProviderLabel: pendingTransaction?.storageProviderLabel ?? pendingAttempt.storageProviderLabel,
+        authorizationQuery: pendingTransaction?.authorizationQuery ?? pendingAttempt.authorizationQuery,
+        strictDiscovery: pendingTransaction?.strictDiscovery ?? pendingAttempt.strictDiscovery,
+        nodeId: pendingTransaction?.nodeId,
+        ...(prompt ? { prompt } : {}),
       }
-      await oidc.connect(pendingAttempt.issuerUrl, {
+      await oidc.connect(retryEntryUrl, {
         ...retryOptions,
       })
     } catch (retryError: any) {
-      setError(retryError?.message || '重新发起登录失败。')
+      setError(formatLoginErrorForUser(retryError, '重新发起登录失败。请返回登录页后再试。'))
     } finally {
       setRetrying(false)
     }
@@ -169,19 +193,20 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
     clearPendingCallbackError()
     clearPendingLoginAttempt()
     clearPendingPostLoginMicroAppId()
-    onError?.(error ?? '登录未完成')
+    onError?.(formatLoginErrorForUser(error ?? '登录未完成', '登录未完成，请重试。'))
   }
+  const visibleError = error ? formatLoginErrorForUser(error, '登录未完成，请重试。') : null
 
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-background p-4">
       <div className="w-full max-w-md bg-card border border-border/50 rounded-2xl shadow-2xl p-8 text-center">
-        {error ? (
+        {visibleError ? (
           <div className="flex flex-col items-center animate-in fade-in">
             <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mb-6">
               <AlertTriangle className="w-8 h-8 text-destructive" />
             </div>
             <h2 className="text-xl font-semibold text-foreground mb-2">登录未完成</h2>
-            <p className="text-sm text-muted-foreground mb-8 px-4">{error}</p>
+            <p className="text-sm text-muted-foreground mb-8 px-4">{visibleError}</p>
             <div className="flex w-full max-w-[280px] flex-col gap-3">
               {pendingAttempt ? (
                 <Button onClick={() => void handleRetry()} disabled={retrying}>

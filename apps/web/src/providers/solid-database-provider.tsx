@@ -11,7 +11,12 @@ import {
   installLocalAccessRoute,
   resolveBestLocalAccessRoute,
 } from '@/lib/local-access-route'
-import { getPendingLoginAttempt } from '@/modules/login/login-utils'
+import {
+  getPendingLoginAttempt,
+  getPendingLoginTransaction,
+} from '@/modules/login/login-utils'
+import type { LoginRoute } from '@/modules/login/login-transaction'
+import { createUserFacingLoginError } from '@/modules/login/error-messages'
 import {
   fetchProfileStorageUrl,
   isStorageUrlWithinProviderBase,
@@ -220,7 +225,7 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
         publishValue({
           db: null,
           status: 'error',
-          error: error instanceof Error ? error : new Error(String(error)),
+          error: createUserFacingLoginError(error, '登录后初始化失败。请重新登录后重试。'),
         })
       } finally {
         if (inFlightSessionKeyRef.current === databaseKey && initGenerationRef.current === generation) {
@@ -303,21 +308,53 @@ function resolveLoginPodContext(
   webId: string,
   storedAccount: { storageProviderUrl?: string; storageProviderLabel?: string; issuerUrl?: string; issuerLabel?: string } | null,
 ): LoginPodContextResolution {
-  const pendingLoginAttempt = getPendingLoginAttempt()
-  if (pendingLoginAttempt) {
-    return resolveCandidatePodContext(
+  const pendingTransaction = getPendingLoginTransaction()
+  if (pendingTransaction) {
+    const resolved = resolveCandidatePodContext(
       webId,
       {
-        storageProviderUrl: pendingLoginAttempt.storageProviderUrl,
-        storageProviderLabel: pendingLoginAttempt.storageProviderLabel,
-        issuerUrl: pendingLoginAttempt.issuerUrl,
+        route: pendingTransaction.route,
+        storageProviderUrl: pendingTransaction.storageProviderUrl,
+        storageProviderLabel: pendingTransaction.storageProviderLabel,
+        issuerUrl: pendingTransaction.accountIssuerUrl,
       },
     )
+    if (pendingTransaction.route !== 'local') {
+      return resolved
+    }
+    if (!pendingTransaction.authorizationQuery?.provisionCode) {
+      return {
+        context: null,
+        error: new Error('本地空间还没有完成准备。请回到空间选择页，再点一次“本地空间”。'),
+      }
+    }
+    return resolved
+  }
+
+  const pendingLoginAttempt = getPendingLoginAttempt()
+  if (pendingLoginAttempt) {
+    const resolved = resolveCandidatePodContext(
+      webId,
+      {
+        route: undefined,
+        storageProviderUrl: pendingLoginAttempt.storageProviderUrl,
+        storageProviderLabel: pendingLoginAttempt.storageProviderLabel,
+        issuerUrl: pendingLoginAttempt.accountIssuerUrl ?? pendingLoginAttempt.issuerUrl,
+      },
+    )
+    if (isPendingSplitLocalLoginAttempt(pendingLoginAttempt) && !pendingLoginAttempt.authorizationQuery?.provisionCode) {
+      return {
+        context: null,
+        error: new Error('本地空间还没有完成准备。请回到空间选择页，再点一次“本地空间”。'),
+      }
+    }
+    return resolved
   }
 
   return resolveCandidatePodContext(
     webId,
     {
+      route: undefined,
       storageProviderUrl: storedAccount?.storageProviderUrl,
       storageProviderLabel: storedAccount?.storageProviderLabel,
       issuerUrl: storedAccount?.issuerUrl,
@@ -339,14 +376,14 @@ async function resolveRuntimePodContext(
   if (!profileStorageUrl || !providerBaseUrl) {
     return {
       context: null,
-      error: new Error('Custom provider profile 缺少 solid:storage，已阻止进入，避免写入错误空间。'),
+      error: new Error('LinX 还不能把数据保存到当前空间。请换一个空间；如果这是本地空间，请先完成空间创建。'),
     }
   }
 
   if (!isStorageUrlWithinProviderBase(profileStorageUrl, providerBaseUrl)) {
     return {
       context: null,
-      error: new Error('Custom provider profile 的 solid:storage 不在当前 provider 下，已阻止进入。'),
+      error: new Error('账号和当前空间不匹配。请换账号或换空间后重试。'),
     }
   }
 
@@ -354,7 +391,7 @@ async function resolveRuntimePodContext(
   if (!podUrl) {
     return {
       context: null,
-      error: new Error('Custom provider storage URL 无法解析，已阻止进入，避免写入错误空间。'),
+      error: new Error('当前空间不可用。请换一个空间，或联系空间管理员。'),
     }
   }
 
@@ -369,9 +406,9 @@ async function resolveRuntimePodContext(
 
 function resolveCandidatePodContext(
   webId: string,
-  candidate: { storageProviderUrl?: string; storageProviderLabel?: string; issuerUrl?: string },
+  candidate: { route?: LoginRoute; storageProviderUrl?: string; storageProviderLabel?: string; issuerUrl?: string },
 ): LoginPodContextResolution {
-  const classification = classifyStorageProvider(candidate.storageProviderUrl, candidate.issuerUrl, webId, candidate.storageProviderLabel)
+  const classification = classifyStorageProvider(candidate.storageProviderUrl, candidate.issuerUrl, webId, candidate.storageProviderLabel, candidate.route)
   if (classification.kind === 'default') {
     if (shouldUseProfileStorageForProvider(candidate)) {
       return {
@@ -392,11 +429,21 @@ function resolveCandidatePodContext(
     }
   }
 
+  if (shouldUseProfileStorageForSelectedProvider(candidate)) {
+    return {
+      context: null,
+      profileStorageProvider: {
+        storageProviderUrl: candidate.storageProviderUrl ?? '',
+        storageProviderLabel: candidate.storageProviderLabel,
+      },
+    }
+  }
+
   const normalized = resolveProviderPodUrl(candidate.storageProviderUrl, webId)
   if (!normalized) {
     return {
       context: null,
-      error: new Error('Local storage URL 无法解析，已阻止进入，避免写入错误空间。'),
+      error: new Error('本地空间不可用。请返回空间选择页，重新选择“本地”。'),
     }
   }
 
@@ -410,7 +457,7 @@ function resolveCandidatePodContext(
 }
 
 function shouldUseProfileStorageForProvider(
-  candidate: { storageProviderUrl?: string; storageProviderLabel?: string; issuerUrl?: string },
+  candidate: { route?: LoginRoute; storageProviderUrl?: string; storageProviderLabel?: string; issuerUrl?: string },
 ): boolean {
   if (typeof candidate.storageProviderUrl !== 'string' || !candidate.storageProviderUrl.trim()) {
     return false
@@ -421,6 +468,9 @@ function shouldUseProfileStorageForProvider(
   }
 
   const normalizedLabel = candidate.storageProviderLabel?.trim().toLowerCase()
+  if (candidate.route === 'cloud' || candidate.route === 'local' || candidate.route === 'standalone') {
+    return false
+  }
   if (normalizedLabel === 'cloud' || normalizedLabel === 'local' || normalizedLabel === 'standalone') {
     return false
   }
@@ -432,6 +482,49 @@ function shouldUseProfileStorageForProvider(
   }
 
   return true
+}
+
+function shouldUseProfileStorageForSelectedProvider(
+  candidate: { route?: LoginRoute; storageProviderUrl?: string; storageProviderLabel?: string; issuerUrl?: string },
+): boolean {
+  if (typeof candidate.storageProviderUrl !== 'string' || !candidate.storageProviderUrl.trim()) {
+    return false
+  }
+
+  if (isLocalAccessUrl(candidate.storageProviderUrl)) {
+    return false
+  }
+
+  const normalizedLabel = candidate.storageProviderLabel?.trim().toLowerCase()
+  if (candidate.route === 'standalone' || normalizedLabel === 'standalone') {
+    return false
+  }
+
+  if (candidate.route === 'cloud' || normalizedLabel === 'cloud') {
+    return false
+  }
+
+  return true
+}
+
+function isPendingSplitLocalLoginAttempt(attempt: {
+  issuerUrl?: string
+  accountIssuerUrl?: string
+  storageProviderUrl?: string
+  storageProviderLabel?: string
+}): boolean {
+  const normalizedLabel = attempt.storageProviderLabel?.trim().toLowerCase()
+  if (normalizedLabel === 'standalone' || normalizedLabel === 'cloud') {
+    return false
+  }
+
+  if (normalizedLabel === 'local') {
+    return true
+  }
+
+  const providerOrigin = normalizeOrigin(attempt.storageProviderUrl)
+  const issuerOrigin = normalizeOrigin(attempt.accountIssuerUrl ?? attempt.issuerUrl)
+  return Boolean(providerOrigin && issuerOrigin && providerOrigin !== issuerOrigin && !isLocalAccessUrl(attempt.accountIssuerUrl ?? attempt.issuerUrl))
 }
 
 function resolveProviderPodUrl(storageProviderUrl: string | undefined, webId: string): string | null {
@@ -461,6 +554,7 @@ function classifyStorageProvider(
   issuerUrl: string | undefined,
   _webId: string,
   storageProviderLabel?: string,
+  route?: LoginRoute,
 ): { kind: 'default' } | { kind: 'selected' } | { kind: 'invalid'; message: string } {
   if (typeof storageProviderUrl !== 'string' || !storageProviderUrl.trim()) {
     return { kind: 'default' }
@@ -470,15 +564,15 @@ function classifyStorageProvider(
   const providerOrigin = normalizeOrigin(storageProviderUrl)
   if (!providerOrigin) {
     return normalizedLabel === 'local' || normalizedLabel === 'standalone'
-      ? { kind: 'invalid', message: 'Local storage URL 无法解析，已阻止进入，避免写入错误空间。' }
+      ? { kind: 'invalid', message: '本地空间不可用。请返回空间选择页，重新选择“本地”。' }
       : { kind: 'default' }
   }
 
   const issuerOrigin = normalizeOrigin(issuerUrl)
   const providerIsAccessRoute = isLocalAccessUrl(storageProviderUrl)
   const issuerIsAccessRoute = isLocalAccessUrl(issuerUrl)
-  const explicitlyLocal = normalizedLabel === 'local'
-  const explicitlyStandalone = normalizedLabel === 'standalone'
+  const explicitlyLocal = route === 'local' || normalizedLabel === 'local'
+  const explicitlyStandalone = route === 'standalone' || normalizedLabel === 'standalone'
 
   if (explicitlyStandalone) {
     return { kind: 'selected' }
@@ -489,7 +583,7 @@ function classifyStorageProvider(
       ? { kind: 'default' }
       : {
           kind: 'invalid',
-          message: 'Local storage URL 必须指向 selected Local SP，不能等于 OIDC issuer。',
+          message: '本地空间还没有完成准备。请回到空间选择页，再点一次“本地空间”。',
         }
   }
 
@@ -501,7 +595,7 @@ function classifyStorageProvider(
   if (providerIsAccessRoute) {
     return {
       kind: 'invalid',
-      message: 'Local storage URL 必须是 canonical 域名，不能使用 localhost 或局域网访问地址。',
+      message: '本地空间还没完成登录准备。请返回空间选择页，重新选择“本地”。',
     }
   }
 

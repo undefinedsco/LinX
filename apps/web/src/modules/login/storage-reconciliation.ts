@@ -97,7 +97,7 @@ export async function fetchProfileStorageUrl(
   }
 
   if (!response.ok) {
-    throw new Error(`读取 WebID Profile 失败：HTTP ${response.status}`)
+    throw new Error(formatProfileStorageReadError(response.status))
   }
 
   return parseProfileStorageUrl(response)
@@ -128,6 +128,18 @@ function isProfileAuthFailure(response: Response): boolean {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function formatProfileStorageReadError(status: number): string {
+  if (status === 401 || status === 403) {
+    return '登录状态已失效。请退出后重新登录。'
+  }
+
+  if (status === 404) {
+    return '没有找到这个账号的资料页。请确认账号已创建完成后重试。'
+  }
+
+  return '无法读取账号的空间信息。请稍后重试。'
 }
 
 function fetchProfile(webId: string, fetcher: typeof fetch): Promise<Response> {

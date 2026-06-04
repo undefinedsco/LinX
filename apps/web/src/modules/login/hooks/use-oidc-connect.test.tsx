@@ -4,6 +4,7 @@ import {
   consumePendingPostLoginMicroAppId,
   ensurePendingPostLoginMicroAppId,
   getPendingLoginAttempt,
+  getPendingLoginTransaction,
 } from '../login-utils'
 import { useOidcConnect } from './use-oidc-connect'
 
@@ -52,6 +53,45 @@ function EmbeddedTestComponent() {
       },
     })}>
       connect embedded
+    </button>
+  )
+}
+
+function StrictManagedLocalTestComponent() {
+  const { connect } = useOidcConnect()
+
+  return (
+    <button onClick={() => { void connect('https://node-0000.undefineds.co/', {
+      authorizationSurface: 'embedded',
+      storageProviderUrl: 'https://node-0000.undefineds.co/',
+      storageProviderLabel: 'Local',
+      issuerLabel: 'Cloud',
+      strictDiscovery: true,
+    }).catch(() => undefined) }}>
+      connect managed local
+    </button>
+  )
+}
+
+function ManagedLocalWithCloudIssuerTestComponent() {
+  const { connect } = useOidcConnect()
+
+  return (
+    <button onClick={() => { void connect('https://node-0000.undefineds.co/', {
+      authorizationSurface: 'embedded',
+      route: 'local',
+      accountIssuerUrl: 'https://id.undefineds.co/',
+      accountIssuerLabel: 'Cloud',
+      storageProviderUrl: 'https://node-0000.undefineds.co/',
+      storageProviderLabel: 'Local',
+      issuerLabel: 'Cloud',
+      authorizationQuery: {
+        provisionCode: 'pc-123',
+      },
+      strictDiscovery: true,
+      nodeId: 'node-0000',
+    }) }}>
+      connect split local
     </button>
   )
 }
@@ -125,7 +165,7 @@ describe('useOidcConnect', () => {
 
     const options = loginMock.mock.calls[0][0]
     expect(options).toMatchObject({
-      oidcIssuer: 'http://127.0.0.1:5737',
+      oidcIssuer: 'http://localhost:5737',
       redirectUrl: `${window.location.origin}/auth/callback`,
       clientName: 'LinX',
     })
@@ -149,7 +189,7 @@ describe('useOidcConnect', () => {
     )
     expect(prepareLoopbackRedirectMock).toHaveBeenCalledTimes(1)
     expect(options).toMatchObject({
-      oidcIssuer: 'http://127.0.0.1:5737',
+      oidcIssuer: 'http://localhost:5737',
       redirectUrl: 'http://127.0.0.1:43123/auth/callback',
       clientName: 'LinX',
       tokenType: 'DPoP',
@@ -193,6 +233,23 @@ describe('useOidcConnect', () => {
       expect(window.sessionStorage.getItem('linx-post-login-micro-app')).toBeNull()
       expect(window.sessionStorage.getItem('linx-pending-login-attempt')).toBeNull()
     })
+    expect(loginMock).not.toHaveBeenCalled()
+  })
+
+  it('keeps managed Local canonical discovery strict when the public SP is unreachable', async () => {
+    fetchMock.mockRejectedValueOnce(Object.assign(new Error('aborted'), { name: 'AbortError' }))
+    render(<StrictManagedLocalTestComponent />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'connect managed local' }))
+
+    await waitFor(() => {
+      expect(window.sessionStorage.getItem('linx-post-login-micro-app')).toBeNull()
+      expect(window.sessionStorage.getItem('linx-pending-login-attempt')).toBeNull()
+    })
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://node-0000.undefineds.co/.well-known/openid-configuration',
+      expect.objectContaining({ method: 'GET' }),
+    )
     expect(loginMock).not.toHaveBeenCalled()
   })
 
@@ -291,7 +348,7 @@ describe('useOidcConnect', () => {
     const options = loginMock.mock.calls[0][0]
     expect(consumePendingPostLoginMicroAppId()).toBe('contacts')
     expect(getPendingLoginAttempt()).toEqual({
-      issuerUrl: 'http://127.0.0.1:5737',
+      issuerUrl: 'http://localhost:5737',
       authorizationSurface: 'embedded',
       returnToMicroAppId: 'contacts',
       storageProviderUrl: 'http://localhost:5737',
@@ -304,6 +361,36 @@ describe('useOidcConnect', () => {
     expect(openEmbeddedAuthorizationMock).toHaveBeenCalledWith('https://idp.example.com/authorize?provisionCode=pc-123', {
       providerLabel: 'Local',
     })
+  })
+
+  it('persists Local transaction entry separately from the discovered Cloud issuer', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ issuer: 'https://id.undefineds.co/' }),
+    })
+    render(<ManagedLocalWithCloudIssuerTestComponent />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'connect split local' }))
+
+    await waitFor(() => {
+      expect(loginMock).toHaveBeenCalledTimes(1)
+    })
+
+    expect(loginMock.mock.calls[0][0]).toMatchObject({
+      oidcIssuer: 'https://node-0000.undefineds.co',
+    })
+    expect(getPendingLoginTransaction()).toEqual(expect.objectContaining({
+      route: 'local',
+      oidcEntryUrl: 'https://node-0000.undefineds.co',
+      oidcIssuerUrl: 'https://id.undefineds.co',
+      accountIssuerUrl: 'https://id.undefineds.co',
+      storageProviderUrl: 'https://node-0000.undefineds.co',
+      authorizationQuery: {
+        provisionCode: 'pc-123',
+      },
+      nodeId: 'node-0000',
+      strictDiscovery: true,
+    }))
   })
 
   it('clears the pending target and attempt when login setup fails', async () => {

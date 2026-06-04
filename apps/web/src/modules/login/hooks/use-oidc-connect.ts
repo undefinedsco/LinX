@@ -9,6 +9,13 @@ import {
   resolvePostLoginMicroAppId,
   setPendingLoginAttempt,
 } from '../login-utils'
+import {
+  createLoginTransaction,
+  inferLoginRoute,
+  normalizeLoginUrl,
+  sanitizeAuthorizationQuery,
+  type LoginRoute,
+} from '../login-transaction'
 
 const PROVIDER_CHECK_TIMEOUT = 5000
 const AUTH_SURFACE_HANDOFF_TIMEOUT_MS = 250
@@ -18,11 +25,16 @@ const CANCELLED = Symbol('oidc-connect-cancelled')
 interface OidcConnectOptions {
   authorizationSurface?: 'window' | 'embedded' | 'external'
   returnToMicroAppId?: Parameters<typeof ensurePendingPostLoginMicroAppId>[0]
+  route?: LoginRoute
+  accountIssuerUrl?: string
+  accountIssuerLabel?: string
   storageProviderUrl?: string
   storageProviderLabel?: string
   issuerLabel?: string
   authorizationQuery?: Record<string, string | null | undefined>
   prompt?: 'none' | 'consent'
+  strictDiscovery?: boolean
+  nodeId?: string
 }
 
 export function useOidcConnect() {
@@ -31,11 +43,11 @@ export function useOidcConnect() {
   const generationRef = useRef(0)
   const cancelRef = useRef<{ generation: number; resolve: () => void } | null>(null)
 
-  const resolveOidcIssuer = useCallback(async (url: string): Promise<string> => {
+  const resolveOidcIssuer = useCallback(async (url: string, options?: { strict?: boolean }): Promise<string> => {
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), PROVIDER_CHECK_TIMEOUT)
     const normalizedEntryUrl = url.replace(/\/$/, '')
-    const strictDiscovery = isLoopbackUrl(normalizedEntryUrl)
+    const strictDiscovery = options?.strict || isLoopbackUrl(normalizedEntryUrl)
 
     try {
       const configUrl = `${normalizedEntryUrl}/.well-known/openid-configuration`
@@ -45,7 +57,7 @@ export function useOidcConnect() {
         headers: { Accept: 'application/json' },
       })
       if (!response.ok) {
-        throw new Error(`OIDC 配置不可用: ${response.status}`)
+        throw new Error('无法打开这个空间的登录页。请确认服务已启动，然后重试。')
       }
 
       const payload = await response.json().catch(() => null) as { issuer?: string } | null
@@ -59,10 +71,9 @@ export function useOidcConnect() {
         return normalizedEntryUrl
       }
       if (err.name === 'AbortError') {
-        throw new Error('连接超时，请检查网络')
+        throw new Error('连接超时。请检查网络后重试。')
       }
-      if (err.message?.includes('OIDC')) throw err
-      throw new Error('无法连接服务器')
+      throw new Error('无法连接这个空间。请确认服务已启动，然后重试。')
     } finally {
       clearTimeout(timeoutId)
     }
@@ -83,25 +94,57 @@ export function useOidcConnect() {
         resolve: () => cancelSignal.resolve(CANCELLED),
       }
       const resolvedIssuerResult = await Promise.race([
-        resolveOidcIssuer(normalizedEntryUrl),
+        resolveOidcIssuer(normalizedEntryUrl, { strict: options?.strictDiscovery }),
         cancelSignal.promise,
       ])
       if (resolvedIssuerResult === CANCELLED) return
       const resolvedIssuerUrl = resolvedIssuerResult
+      const oidcEntryUrl = normalizedEntryUrl
       const returnToMicroAppId =
         options?.returnToMicroAppId
         ?? getPendingPostLoginMicroAppId()
         ?? resolvePostLoginMicroAppId()
       ensurePendingPostLoginMicroAppId(returnToMicroAppId)
-      setPendingLoginAttempt({
-        issuerUrl: resolvedIssuerUrl,
+      const explicitAccountIssuerUrl = normalizeLoginUrl(options?.accountIssuerUrl)
+      const accountIssuerUrl = explicitAccountIssuerUrl ?? resolvedIssuerUrl
+      const storageProviderUrl = normalizeLoginUrl(options?.storageProviderUrl) ?? normalizedEntryUrl
+      const accountIssuerLabel = options?.accountIssuerLabel ?? options?.issuerLabel
+      const authorizationQuery = sanitizeAuthorizationQuery(options?.authorizationQuery)
+      const route = options?.route ?? inferLoginRoute({
+        oidcEntryUrl: normalizedEntryUrl,
+        oidcIssuerUrl: resolvedIssuerUrl,
+        accountIssuerUrl,
+        storageProviderUrl,
+        storageProviderLabel: options?.storageProviderLabel,
+        accountIssuerLabel,
+      })
+      const transaction = createLoginTransaction({
+        route,
+        oidcEntryUrl,
+        oidcIssuerUrl: resolvedIssuerUrl,
+        accountIssuerUrl,
+        accountIssuerLabel,
         authorizationSurface: options?.authorizationSurface ?? 'window',
         returnToMicroAppId,
-        storageProviderUrl: options?.storageProviderUrl ?? normalizedEntryUrl,
+        storageProviderUrl,
         storageProviderLabel: options?.storageProviderLabel,
-        authorizationQuery: normalizeAuthorizationQuery(options?.authorizationQuery),
+        authorizationQuery,
         prompt: options?.prompt,
+        strictDiscovery: options?.strictDiscovery,
+        nodeId: options?.nodeId,
       })
+      setPendingLoginAttempt({
+        issuerUrl: oidcEntryUrl,
+        accountIssuerUrl: explicitAccountIssuerUrl ?? undefined,
+        accountIssuerLabel: explicitAccountIssuerUrl ? accountIssuerLabel : undefined,
+        authorizationSurface: options?.authorizationSurface ?? 'window',
+        returnToMicroAppId,
+        storageProviderUrl,
+        storageProviderLabel: options?.storageProviderLabel,
+        authorizationQuery,
+        prompt: options?.prompt,
+        strictDiscovery: options?.strictDiscovery === true ? true : undefined,
+      }, transaction)
 
       const desktopApi = typeof window !== 'undefined' ? window.xpodDesktop : undefined
       const authorizationSurface = options?.authorizationSurface ?? 'window'
@@ -116,19 +159,19 @@ export function useOidcConnect() {
 
       const redirectHandler =
         authorizationSurface === 'embedded' && desktopApi?.auth?.openEmbeddedAuthorization
-          ? (url: string) => desktopApi.auth.openEmbeddedAuthorization(appendAuthorizationQuery(url, options?.authorizationQuery), {
+          ? (url: string) => desktopApi.auth.openEmbeddedAuthorization(appendAuthorizationQuery(url, authorizationQuery), {
               providerLabel: options?.storageProviderLabel ?? options?.issuerLabel,
             })
-          : authorizationSurface === 'external'
+        : authorizationSurface === 'external'
           ? desktopApi?.app?.openExternal
-            ? (url: string) => desktopApi.app.openExternal(appendAuthorizationQuery(url, options?.authorizationQuery))
+            ? (url: string) => desktopApi.app.openExternal(appendAuthorizationQuery(url, authorizationQuery))
             : undefined
           : desktopApi?.auth?.openAuthorizationWindow
-          ? (url: string) => desktopApi.auth.openAuthorizationWindow(appendAuthorizationQuery(url, options?.authorizationQuery), {
+          ? (url: string) => desktopApi.auth.openAuthorizationWindow(appendAuthorizationQuery(url, authorizationQuery), {
               providerLabel: options?.storageProviderLabel ?? options?.issuerLabel,
             })
-          : desktopApi?.app?.openExternal
-          ? (url: string) => desktopApi.app.openExternal(appendAuthorizationQuery(url, options?.authorizationQuery))
+        : desktopApi?.app?.openExternal
+          ? (url: string) => desktopApi.app.openExternal(appendAuthorizationQuery(url, authorizationQuery))
           : undefined
       const redirectStarted = redirectHandler ? createDeferred<void>() : null
       const handleRedirect = redirectHandler
@@ -161,7 +204,7 @@ export function useOidcConnect() {
         : undefined
 
       const loginOptions = {
-        oidcIssuer: resolvedIssuerUrl,
+        oidcIssuer: transaction?.oidcEntryUrl ?? oidcEntryUrl,
         redirectUrl,
         clientName: 'LinX',
         tokenType: 'DPoP',
@@ -242,21 +285,9 @@ function createDeferred<T>() {
   return { promise, resolve, reject }
 }
 
-function normalizeAuthorizationQuery(
-  query?: Record<string, string | null | undefined>,
-): Record<string, string> | undefined {
-  if (!query) return undefined
-
-  const entries = Object.entries(query).filter(
-    ([key, value]) => key.length > 0 && typeof value === 'string' && value.length > 0,
-  ) as Array<[string, string]>
-  if (entries.length === 0) return undefined
-  return Object.fromEntries(entries)
-}
-
 function appendAuthorizationQuery(
   url: string,
-  query?: Record<string, string | null | undefined>,
+  query?: Record<string, string>,
 ): string {
   if (!query) {
     return url
@@ -265,9 +296,6 @@ function appendAuthorizationQuery(
   try {
     const parsed = new URL(url)
     for (const [key, value] of Object.entries(query)) {
-      if (typeof value !== 'string' || value.length === 0) {
-        continue
-      }
       parsed.searchParams.set(key, value)
     }
     return parsed.toString()

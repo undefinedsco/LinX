@@ -135,22 +135,24 @@ describe('AuthCallback', () => {
     render(<SolidAuthCallback onSuccess={onSuccessMock} onError={onErrorMock} />)
 
     expect(screen.getByText('Denied')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: '重试 Cloud' }))
+    fireEvent.click(screen.getByRole('button', { name: '重试云端登录' }))
 
     await waitFor(() => {
-      expect(connectMock).toHaveBeenCalledWith('https://cloud.example.com', {
+      expect(connectMock).toHaveBeenCalledWith('https://cloud.example.com', expect.objectContaining({
         authorizationSurface: 'window',
         returnToMicroAppId: 'files',
-        storageProviderUrl: undefined,
-        storageProviderLabel: undefined,
+        accountIssuerUrl: 'https://cloud.example.com',
+        storageProviderUrl: 'https://cloud.example.com',
         authorizationQuery: undefined,
-      })
+      }))
     })
   })
 
   it('preserves Local provisioning context when retrying a Local SP attempt', async () => {
     setPendingLoginAttempt({
       issuerUrl: 'https://id.undefineds.co',
+      accountIssuerUrl: 'https://id.undefineds.co',
+      accountIssuerLabel: 'Cloud',
       authorizationSurface: 'embedded',
       returnToMicroAppId: 'chat',
       storageProviderUrl: 'https://node-0000.undefineds.co',
@@ -163,24 +165,29 @@ describe('AuthCallback', () => {
 
     render(<SolidAuthCallback onSuccess={onSuccessMock} onError={onErrorMock} />)
 
-    fireEvent.click(screen.getByRole('button', { name: '重试 Local' }))
+    fireEvent.click(screen.getByRole('button', { name: '重试本地空间' }))
 
     await waitFor(() => {
-      expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', {
+      expect(connectMock).toHaveBeenCalledWith('https://node-0000.undefineds.co', expect.objectContaining({
         authorizationSurface: 'embedded',
         returnToMicroAppId: 'chat',
+        route: 'local',
+        accountIssuerUrl: 'https://id.undefineds.co',
+        accountIssuerLabel: 'Cloud',
         storageProviderUrl: 'https://node-0000.undefineds.co',
         storageProviderLabel: 'Local',
         authorizationQuery: {
           provisionCode: 'pc-123',
         },
-      })
+      }))
     })
   })
 
   it('falls back to interactive Local auth after a silent Local attempt returns login_required', async () => {
     setPendingLoginAttempt({
       issuerUrl: 'https://id.undefineds.co',
+      accountIssuerUrl: 'https://id.undefineds.co',
+      accountIssuerLabel: 'Cloud',
       authorizationSurface: 'embedded',
       returnToMicroAppId: 'chat',
       storageProviderUrl: 'https://node-0000.undefineds.co',
@@ -195,15 +202,18 @@ describe('AuthCallback', () => {
     render(<SolidAuthCallback onSuccess={onSuccessMock} onError={onErrorMock} />)
 
     await waitFor(() => {
-      expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', {
+      expect(connectMock).toHaveBeenCalledWith('https://node-0000.undefineds.co', expect.objectContaining({
         authorizationSurface: 'embedded',
         returnToMicroAppId: 'chat',
+        route: 'local',
+        accountIssuerUrl: 'https://id.undefineds.co',
+        accountIssuerLabel: 'Cloud',
         storageProviderUrl: 'https://node-0000.undefineds.co',
         storageProviderLabel: 'Local',
         authorizationQuery: {
           provisionCode: 'pc-123',
         },
-      })
+      }))
     })
     expect(screen.queryByText('认证服务器拒绝了请求')).toBeNull()
   })
@@ -218,7 +228,7 @@ describe('AuthCallback', () => {
 
     render(<SolidAuthCallback onSuccess={onSuccessMock} onError={onErrorMock} />)
 
-    expect(screen.getByRole('button', { name: '重试 Local' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '重试本地空间' })).toBeTruthy()
   })
 
   it('falls back to return-only when there is no retry context', async () => {
@@ -226,8 +236,8 @@ describe('AuthCallback', () => {
 
     render(<SolidAuthCallback onSuccess={onSuccessMock} onError={onErrorMock} />)
 
-    expect(screen.queryByRole('button', { name: '重试 Cloud' })).toBeNull()
-    expect(screen.queryByRole('button', { name: '重试 Local' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '重试云端登录' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '重试本地空间' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '返回登录' }))
     expect(onErrorMock).toHaveBeenCalledTimes(1)
   })
@@ -260,7 +270,7 @@ describe('AuthCallback', () => {
 
     render(<SolidAuthCallback onSuccess={onSuccessMock} onError={onErrorMock} />)
 
-    expect(screen.getByRole('button', { name: '重试 Local' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '重试本地空间' })).toBeTruthy()
     expect(window.sessionStorage.getItem('linx-post-login-micro-app')).toBe('files')
     expect(window.sessionStorage.getItem('linx-pending-login-attempt')).not.toBeNull()
   })
@@ -276,10 +286,10 @@ describe('AuthCallback', () => {
 
     render(<SolidAuthCallback onSuccess={onSuccessMock} onError={onErrorMock} />)
 
-    fireEvent.click(screen.getByRole('button', { name: '重试 Cloud' }))
+    fireEvent.click(screen.getByRole('button', { name: '重试云端登录' }))
 
     await waitFor(() => {
-      expect(screen.getByText('retry failed')).toBeTruthy()
+      expect(screen.getByText('登录没有重新打开。请返回空间选择页后再试。')).toBeTruthy()
     })
   })
 })

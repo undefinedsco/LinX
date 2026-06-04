@@ -258,7 +258,7 @@ describe('useLoginController', () => {
       storageProviderUrl: 'https://cloud.example.com',
     }))
     expect(useLoginStore.getState().state).toBe('idle')
-    expect(useLoginStore.getState().error).toBe('OIDC unavailable')
+    expect(useLoginStore.getState().error).toBe('登录页面暂时打不开。请检查网络，或回到“选择空间”重试。')
     expect(result.current.connectingProvider).toBeNull()
   })
 
@@ -824,8 +824,10 @@ describe('useLoginController', () => {
       await result.current.continueLocalLogin()
     })
 
-    expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', expect.objectContaining({
+    expect(connectMock).toHaveBeenCalledWith('https://pod.example.com/', expect.objectContaining({
       authorizationSurface: 'embedded',
+      accountIssuerUrl: 'https://id.undefineds.co',
+      accountIssuerLabel: 'Cloud',
       storageProviderUrl: 'https://pod.example.com/',
       storageProviderLabel: 'Local',
       issuerLabel: 'Cloud',
@@ -833,10 +835,11 @@ describe('useLoginController', () => {
         provisionCode: 'pc-123',
       },
     }))
+    expect(connectMock).not.toHaveBeenCalledWith('https://id.undefineds.co', expect.anything())
     expect(connectMock.mock.calls[0]?.[1]).not.toHaveProperty('prompt')
   })
 
-  it('blocks Local login when Cloud binding has no canonical storage URL', async () => {
+  it('blocks Local login when the Local storage address is not ready', async () => {
     providersState.localOnboarding = {
       state: 'ready',
       spaceKind: 'local',
@@ -863,11 +866,11 @@ describe('useLoginController', () => {
     })
 
     expect(connectMock).not.toHaveBeenCalled()
-    expect(result.current.error).toContain('canonical storage URL')
+    expect(result.current.error).toContain('本地空间还没有完成准备')
     expect(useLoginStore.getState().state).toBe('idle')
   })
 
-  it('does not treat a LAN Local access route as the canonical storage URL', async () => {
+  it('does not treat a LAN Local access route as the Local storage address', async () => {
     providersState.localOnboarding = {
       state: 'ready',
       spaceKind: 'local',
@@ -901,7 +904,7 @@ describe('useLoginController', () => {
     const { result } = renderHook(() => useLoginController())
 
     await waitFor(() => {
-      expect(result.current.error).toContain('canonical storage URL')
+      expect(result.current.error).toContain('本地空间还没有完成准备')
     })
 
     expect(fetchMock).not.toHaveBeenCalled()
@@ -1249,8 +1252,10 @@ describe('useLoginController', () => {
     })
 
     expect(startLocalMock).not.toHaveBeenCalled()
-    expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', expect.objectContaining({
+    expect(connectMock).toHaveBeenCalledWith('https://pod.example.com/', expect.objectContaining({
       authorizationSurface: 'embedded',
+      accountIssuerUrl: 'https://id.undefineds.co',
+      accountIssuerLabel: 'Cloud',
       storageProviderUrl: 'https://pod.example.com/',
       storageProviderLabel: 'Local',
       issuerLabel: 'Cloud',
@@ -1258,6 +1263,7 @@ describe('useLoginController', () => {
         provisionCode: 'pc-123',
       },
     }))
+    expect(connectMock).not.toHaveBeenCalledWith('https://id.undefineds.co', expect.anything())
     expect(result.current.connectingProvider).toEqual({
       issuerLabel: 'Cloud',
       issuerUrl: 'https://id.undefineds.co',
@@ -1352,9 +1358,11 @@ describe('useLoginController', () => {
 
     expect(connectMock).toHaveBeenCalledTimes(2)
     expect(connectMock.mock.calls[1]).toEqual([
-      'https://id.undefineds.co',
+      'https://node-abc123.undefineds.co/',
       expect.objectContaining({
         authorizationSurface: 'embedded',
+        accountIssuerUrl: 'https://id.undefineds.co',
+        accountIssuerLabel: 'Cloud',
         storageProviderUrl: 'https://node-abc123.undefineds.co/',
         storageProviderLabel: 'Local',
         issuerLabel: 'Cloud',
@@ -1488,8 +1496,10 @@ describe('useLoginController', () => {
       await result.current.continueLocalLogin()
     })
 
-    expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', expect.objectContaining({
+    expect(connectMock).toHaveBeenCalledWith('https://pod.example.com/', expect.objectContaining({
       authorizationSurface: 'embedded',
+      accountIssuerUrl: 'https://id.undefineds.co',
+      accountIssuerLabel: 'Cloud',
       storageProviderUrl: 'https://pod.example.com/',
       storageProviderLabel: 'Local',
       issuerLabel: 'Cloud',
@@ -1497,6 +1507,7 @@ describe('useLoginController', () => {
         provisionCode: 'pc-123',
       },
     }))
+    expect(connectMock).not.toHaveBeenCalledWith('https://id.undefineds.co', expect.anything())
     expect(connectMock.mock.calls[0]?.[1]).not.toHaveProperty('prompt')
   })
 
@@ -1548,8 +1559,10 @@ describe('useLoginController', () => {
       await result.current.continueLocalLogin()
     })
 
-    expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', expect.objectContaining({
+    expect(connectMock).toHaveBeenCalledWith('https://pod.example.com/', expect.objectContaining({
       authorizationSurface: 'embedded',
+      accountIssuerUrl: 'https://id.undefineds.co',
+      accountIssuerLabel: 'Cloud',
       storageProviderUrl: 'https://pod.example.com/',
       storageProviderLabel: 'Local',
       issuerLabel: 'Cloud',
@@ -1557,7 +1570,9 @@ describe('useLoginController', () => {
         provisionCode: 'pc-123',
       },
       prompt: 'none',
+      strictDiscovery: true,
     }))
+    expect(connectMock).not.toHaveBeenCalledWith('https://id.undefineds.co', expect.anything())
   })
 
   it('falls back to interactive auth when a desktop silent Local attempt returns login_required', async () => {
@@ -1571,7 +1586,9 @@ describe('useLoginController', () => {
       description: null,
     }))
     window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
-      issuerUrl: 'https://id.undefineds.co',
+      issuerUrl: 'https://node-0000.undefineds.co/',
+      accountIssuerUrl: 'https://id.undefineds.co',
+      accountIssuerLabel: 'Cloud',
       storageProviderUrl: 'https://node-0000.undefineds.co/',
       storageProviderLabel: 'Local',
       authorizationSurface: 'embedded',
@@ -1585,15 +1602,19 @@ describe('useLoginController', () => {
     renderHook(() => useLoginController())
 
     await waitFor(() => {
-      expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', {
+      expect(connectMock).toHaveBeenCalledWith('https://node-0000.undefineds.co', expect.objectContaining({
         authorizationSurface: 'embedded',
         returnToMicroAppId: 'chat',
-        storageProviderUrl: 'https://node-0000.undefineds.co/',
+        route: 'local',
+        accountIssuerUrl: 'https://id.undefineds.co',
+        accountIssuerLabel: 'Cloud',
+        storageProviderUrl: 'https://node-0000.undefineds.co',
         storageProviderLabel: 'Local',
         authorizationQuery: {
           provisionCode: 'pc-123',
         },
-      })
+        strictDiscovery: true,
+      }))
     })
     expect(useLoginStore.getState().error).toBeNull()
   })
@@ -1888,7 +1909,7 @@ describe('useLoginController', () => {
 
     expect(useLoginStore.getState().storedAccount?.issuerUrl).toBe('https://cloud.example.com')
     expect(useLoginStore.getState().storedAccount?.issuerLabel).toBe('Cloud')
-    expect(useLoginStore.getState().storedAccount?.storageProviderUrl).toBe('https://node-0000.undefineds.co/')
+    expect(useLoginStore.getState().storedAccount?.storageProviderUrl).toBe('https://node-0000.undefineds.co')
     expect(useLoginStore.getState().storedAccount?.storageProviderLabel).toBe('Local')
   })
 
@@ -2029,7 +2050,7 @@ describe('useLoginController', () => {
         actualStorageUrl: 'https://node-old999.undefineds.co/alice/',
         storageProviderUrl: 'https://node-abc123.undefineds.co/',
         managementUrl: 'https://node-abc123.undefineds.co/.account/account/',
-        setupUrl: 'https://id.undefineds.co/.account/create-pod/?provisionCode=pc-123',
+        setupUrl: 'https://node-abc123.undefineds.co/.account/create-pod/?provisionCode=pc-123',
         setupKind: 'create-pod',
       })
     })
@@ -2105,7 +2126,7 @@ describe('useLoginController', () => {
         actualStorageUrl: 'https://id.undefineds.co/alice/',
         storageProviderUrl: 'https://node-abc123.undefineds.co/',
         managementUrl: 'https://node-abc123.undefineds.co/.account/account/',
-        setupUrl: 'https://id.undefineds.co/.account/create-pod/?provisionCode=pc-123',
+        setupUrl: 'https://node-abc123.undefineds.co/.account/create-pod/?provisionCode=pc-123',
         setupKind: 'create-pod',
       })
     })
@@ -2117,7 +2138,7 @@ describe('useLoginController', () => {
     expect(useLoginStore.getState().storedAccount?.storageProviderUrl).toBe('https://node-abc123.undefineds.co/')
   })
 
-  it('opens the Cloud create-pod page with provisionCode for Local first-Pod setup', async () => {
+  it('opens the Local create-pod page with provisionCode for Local first-Pod setup', async () => {
     const openEmbeddedAuthorization = vi.fn().mockResolvedValue(undefined)
     window.xpodDesktop = {
       auth: {
@@ -2189,7 +2210,7 @@ describe('useLoginController', () => {
     })
 
     expect(openEmbeddedAuthorization).toHaveBeenCalledWith(
-      'https://id.undefineds.co/.account/create-pod/?provisionCode=pc-123',
+      'https://node-abc123.undefineds.co/.account/create-pod/?provisionCode=pc-123',
       { providerLabel: 'Local' },
     )
   })

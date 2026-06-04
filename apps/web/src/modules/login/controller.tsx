@@ -17,17 +17,23 @@ import {
   consumePendingPostLoginMicroAppId,
   ensurePendingPostLoginMicroAppId,
   getPendingLoginAttempt,
+  getPendingLoginTransaction,
   getStoredSolidSession,
   getPendingCallbackError,
   resolvePostLoginMicroAppId,
   SIGN_OUT_EVENT,
 } from './login-utils'
+import {
+  getLoginTransactionRetryEntryUrl,
+  isLocalLoginTransaction,
+} from './login-transaction'
 import type { ConnectingProviderInfo, LocalLoginProviderSource, LoginProviderOption } from './types'
 import { detectStorageConflict, type StorageConflict } from './storage-reconciliation'
 import {
   isLocalLoginProviderSource,
   resolveLoginProviderSource,
 } from './provider-model'
+import { formatLoginErrorForUser } from './error-messages'
 
 const LOCAL_RESTORE_TIMEOUT_MS = 5000
 function normalizeUrl(url: string): string {
@@ -123,6 +129,7 @@ export function useLoginController() {
     const callbackRestoreFailed = path.startsWith('/auth/callback') && !hasCallbackError
 
     const pendingAttempt = getPendingLoginAttempt()
+    const pendingTransaction = getPendingLoginTransaction()
     const callbackError = getPendingCallbackError()
     if (
       pendingAttempt?.prompt === 'none'
@@ -131,16 +138,27 @@ export function useLoginController() {
       && !silentLocalFallbackStartedRef.current
     ) {
       silentLocalFallbackStartedRef.current = true
-      void oidc.connect(pendingAttempt.issuerUrl, {
+      const retryEntryUrl = pendingTransaction
+        ? getLoginTransactionRetryEntryUrl(pendingTransaction)
+        : pendingAttempt.issuerUrl
+      void oidc.connect(retryEntryUrl, {
         authorizationSurface: pendingAttempt.authorizationSurface,
         returnToMicroAppId: pendingAttempt.returnToMicroAppId,
-        storageProviderUrl: pendingAttempt.storageProviderUrl,
-        storageProviderLabel: pendingAttempt.storageProviderLabel,
-        authorizationQuery: pendingAttempt.authorizationQuery,
+        route: pendingTransaction?.route,
+        accountIssuerUrl: pendingTransaction?.accountIssuerUrl ?? pendingAttempt.accountIssuerUrl,
+        accountIssuerLabel: pendingTransaction?.accountIssuerLabel ?? pendingAttempt.accountIssuerLabel,
+        storageProviderUrl: pendingTransaction?.storageProviderUrl ?? pendingAttempt.storageProviderUrl,
+        storageProviderLabel: pendingTransaction?.storageProviderLabel ?? pendingAttempt.storageProviderLabel,
+        authorizationQuery: pendingTransaction?.authorizationQuery ?? pendingAttempt.authorizationQuery,
+        strictDiscovery: pendingTransaction?.strictDiscovery === true
+          || pendingAttempt.strictDiscovery === true
+          || isLocalLoginTransaction(pendingTransaction)
+          || isLocalPendingLoginAttempt(pendingAttempt),
+        nodeId: pendingTransaction?.nodeId,
       }).catch((error: any) => {
         resetDesktopAuthState()
         setConnectingProvider(null)
-        setError(error?.message || '重新发起登录失败。')
+        setError(formatLoginErrorForUser(error, '重新发起登录失败。请返回登录页后再试。'))
         setState('idle')
       })
       return
@@ -265,7 +283,7 @@ export function useLoginController() {
         localPublicUrl: localOnboarding?.publicUrl,
       })
       if (storageProviderLabel === 'Local' && !storageProviderPublicUrl) {
-        throw new Error('Local canonical storage URL 缺失，已阻止进入。请重新启动 Local 完成 Cloud 绑定。')
+        throw new Error('本地空间还没有完成准备。请回到空间选择页，再点一次“本地空间”。')
       }
       const conflict = await detectStorageConflict({
         webId: session.info.webId ?? '',
@@ -284,7 +302,6 @@ export function useLoginController() {
       if (conflict) {
         setStorageConflict(resolveStorageConflictAction(conflict, {
           storageProviderLabel,
-          cloudIdentityUrl: localOnboarding?.cloudIdentityUrl,
           provisionCode: localOnboarding?.provisionCode,
         }))
         setStoredAccount(account)
@@ -343,7 +360,7 @@ export function useLoginController() {
       }
       clearStoredSolidSession()
       setState('idle')
-      setError(error?.message || '登录后校验空间失败，请重试。')
+      setError(formatLoginErrorForUser(error, '登录后初始化失败。请返回登录页后重试。'))
     })
 
     return () => {
@@ -409,7 +426,7 @@ export function useLoginController() {
 
       if (snapshot?.state === 'error') {
         setLocalLoginActive(false)
-        setError(snapshot.message || '启动 Local 失败。')
+        setError(formatLoginErrorForUser(snapshot.message, '本地空间启动失败。请稍后重试。'))
         return
       }
 
@@ -445,7 +462,7 @@ export function useLoginController() {
       setLocalLoginActive(true)
     } catch (error: any) {
       setLocalLoginActive(false)
-      setError(error?.message || '启动 Local 失败。')
+      setError(formatLoginErrorForUser(error, '本地空间启动失败。请稍后重试。'))
     }
   }, [isDesktop, logout, providers, resetDesktopAuthState, session, setError, setState, startLocal])
 
@@ -484,6 +501,7 @@ export function useLoginController() {
       }
       await oidc.connect(issuerUrl, {
         authorizationSurface: surface,
+        route: source,
         storageProviderUrl,
         storageProviderLabel: provider?.storageProvider?.label ?? provider?.label,
         issuerLabel: provider?.oidcProvider?.label ?? resolveProviderDisplayName(provider, issuerUrl),
@@ -491,7 +509,7 @@ export function useLoginController() {
     } catch (err: any) {
       resetDesktopAuthState()
       setConnectingProvider(null)
-      setError(err.message || '连接失败')
+      setError(formatLoginErrorForUser(err, '连接失败。请检查网络后重试。'))
       setState('idle')
     }
   }, [oidc, providers, resetDesktopAuthState, setError, setState, startLocalLogin, storedAccount])
@@ -614,21 +632,22 @@ export function useLoginController() {
       : normalizeRememberedUrl(localOnboarding.publicUrl)
     if (!localProviderUrl) {
       setError(isStandalone
-        ? 'Standalone 已启动，但本地登录入口尚未准备好。'
-        : 'Local 已启动，但 canonical storage URL 尚未准备好。请重新启动 Local 完成 Cloud 绑定。')
+        ? '独立空间已启动，但本机登录入口尚未准备好。请稍后重试。'
+        : '本地空间还没有完成准备。请回到空间选择页，再点一次“本地空间”。')
       return
     }
 
-    const issuerUrl = isStandalone
+    const accountIssuerUrl = isStandalone
       ? localProviderUrl
       : normalizeRememberedUrl(localOnboarding.cloudIdentityUrl) ?? LINX_CLOUD_IDENTITY_ORIGIN
+    const oidcEntryUrl = isStandalone ? localProviderUrl : localProviderUrl
 
     if (!isStandalone && !localOnboarding.provisionCode) {
-      setError('Local 还没完成 Cloud 绑定，暂时无法继续登录。')
+      setError('本地空间还没有完成准备。请回到空间选择页，再点一次“本地空间”。')
       return
     }
 
-    const connectKey = `${issuerUrl}|${localProviderUrl}|${localOnboarding.provisionCode ?? ''}`
+    const connectKey = `${oidcEntryUrl}|${accountIssuerUrl}|${localProviderUrl}|${localOnboarding.provisionCode ?? ''}`
     if (localConnectKeyRef.current === connectKey) return
     localConnectKeyRef.current = connectKey
     silentLocalFallbackStartedRef.current = false
@@ -643,13 +662,16 @@ export function useLoginController() {
     }
     setConnectingProvider({
       issuerLabel: isStandalone ? 'Standalone' : 'Cloud',
-      issuerUrl,
+      issuerUrl: accountIssuerUrl,
       storageProviderLabel: isStandalone ? 'Standalone' : 'Local',
       storageProviderUrl: localProviderUrl,
     })
 
     const connectOptions = {
       authorizationSurface: 'embedded',
+      route: activeLocalProviderSource,
+      accountIssuerUrl,
+      accountIssuerLabel: isStandalone ? 'Standalone' : 'Cloud',
       storageProviderUrl: localProviderUrl,
       storageProviderLabel: isStandalone ? 'Standalone' : 'Local',
       issuerLabel: isStandalone ? 'Standalone' : 'Cloud',
@@ -657,16 +679,18 @@ export function useLoginController() {
         ? undefined
         : { provisionCode: localOnboarding.provisionCode },
       ...(shouldTrySilentDesktopAuth ? { prompt: 'none' as const } : {}),
+      strictDiscovery: true,
+      nodeId: localOnboarding.nodeId ?? undefined,
     } as const
 
     try {
-      await oidc.connect(issuerUrl, connectOptions)
+      await oidc.connect(oidcEntryUrl, connectOptions)
     } catch (error: any) {
       resetDesktopAuthState()
       localConnectKeyRef.current = null
       setConnectingProvider(null)
       setState('idle')
-      setError(error?.message || (isStandalone ? '打开 Standalone 登录失败。' : '打开 Local 登录失败。'))
+      setError(formatLoginErrorForUser(error, isStandalone ? '登录页没有打开。请稍后重试。' : '登录页没有打开。请返回空间选择页重试。'))
     }
   }, [
     activeLocalProviderSource,
@@ -686,7 +710,7 @@ export function useLoginController() {
   const saveLocalTunnelToken = useCallback(async (token: string) => {
     const desktopApi = typeof window !== 'undefined' ? window.xpodDesktop : undefined
     if (!desktopApi?.localOnboarding?.saveTunnelToken) {
-      setError('当前桌面壳不支持保存 Tunnel token。')
+      setError('当前桌面端不支持保存隧道密钥。')
       return
     }
 
@@ -695,7 +719,7 @@ export function useLoginController() {
     try {
       await desktopApi.localOnboarding.saveTunnelToken({ token })
     } catch (error: any) {
-      setError(error?.message || '保存 Tunnel token 失败。')
+      setError(formatLoginErrorForUser(error, '保存隧道密钥失败。请稍后重试。'))
     } finally {
       setLocalLoginActive(false)
     }
@@ -704,7 +728,7 @@ export function useLoginController() {
   const testLocalConnectivity = useCallback(async () => {
     const desktopApi = typeof window !== 'undefined' ? window.xpodDesktop : undefined
     if (!desktopApi?.localOnboarding?.testConnectivity) {
-      setError('当前桌面壳不支持测试 Local 联通性。')
+      setError('当前桌面端不支持测试本地空间连接。')
       return
     }
 
@@ -713,7 +737,7 @@ export function useLoginController() {
     try {
       await desktopApi.localOnboarding.testConnectivity()
     } catch (error: any) {
-      setError(error?.message || '测试 Local 联通性失败。')
+      setError(formatLoginErrorForUser(error, '测试本地空间连接失败。请稍后重试。'))
     } finally {
       setLocalLoginActive(false)
     }
@@ -864,7 +888,7 @@ export function useLoginController() {
     localLoginStatus: {
       active: localLoginActive,
       message: localLoginActive
-        ? (localOnboarding?.message ?? (activeLocalProviderSource === 'standalone' ? '正在启动 Standalone…' : '正在启动 Local…'))
+        ? (localOnboarding?.message ?? (activeLocalProviderSource === 'standalone' ? '正在启动独立空间…' : '正在启动本地空间…'))
         : null,
     },
     authWindowStatus: {
@@ -902,7 +926,6 @@ function resolveStorageConflictAction(
   conflict: StorageConflict,
   input: {
     storageProviderLabel?: string
-    cloudIdentityUrl?: string | null
     provisionCode?: string | null
   },
 ): StorageConflict {
@@ -914,7 +937,7 @@ function resolveStorageConflictAction(
     }
   }
 
-  const createPodUrl = buildCloudScopedAccountUrl(input.cloudIdentityUrl, input.provisionCode)
+  const createPodUrl = buildLocalScopedCreatePodUrl(conflict.storageProviderUrl, input.provisionCode)
   if (!createPodUrl) {
     return {
       ...conflict,
@@ -930,15 +953,19 @@ function resolveStorageConflictAction(
   }
 }
 
-function buildCloudScopedAccountUrl(
-  cloudIdentityUrl: string | null | undefined,
+function buildLocalScopedCreatePodUrl(
+  storageProviderUrl: string | null | undefined,
   provisionCode: string,
 ): string | null {
-  const normalizedCloudIdentityUrl = normalizeRememberedUrl(cloudIdentityUrl) ?? LINX_CLOUD_IDENTITY_ORIGIN
+  const normalizedStorageProviderUrl = normalizeRememberedUrl(storageProviderUrl)
+  if (!normalizedStorageProviderUrl) {
+    return null
+  }
+
   try {
-    const url = new URL('/.account/create-pod/', normalizedCloudIdentityUrl.endsWith('/')
-      ? normalizedCloudIdentityUrl
-      : `${normalizedCloudIdentityUrl}/`)
+    const url = new URL('/.account/create-pod/', normalizedStorageProviderUrl.endsWith('/')
+      ? normalizedStorageProviderUrl
+      : `${normalizedStorageProviderUrl}/`)
     url.searchParams.set('provisionCode', provisionCode)
     return url.toString()
   } catch {
@@ -1136,22 +1163,29 @@ function resolveAccountContext(
   providers: LoginProviderOption[],
 ): Pick<StoredAccount, 'issuerUrl' | 'issuerLabel' | 'storageProviderUrl' | 'storageProviderLabel'> {
   const pendingLoginAttempt = getPendingLoginAttempt()
+  const pendingTransaction = getPendingLoginTransaction()
   const storedSolidSession = getStoredSolidSession()
   const issuerUrl =
-    pendingLoginAttempt?.issuerUrl
+    pendingTransaction?.accountIssuerUrl
+    ?? pendingLoginAttempt?.accountIssuerUrl
+    ?? pendingLoginAttempt?.issuerUrl
     ?? storedAccount?.issuerUrl
     ?? storedSolidSession?.issuerUrl
     ?? ''
   const storageProviderUrl =
-    pendingLoginAttempt?.storageProviderUrl
+    pendingTransaction?.storageProviderUrl
+    ?? pendingLoginAttempt?.storageProviderUrl
     ?? storedAccount?.storageProviderUrl
     ?? issuerUrl
 
   return {
     issuerUrl,
-    issuerLabel: resolveIssuerLabel(issuerUrl, providers, storedAccount?.issuerLabel),
+    issuerLabel: pendingTransaction?.accountIssuerLabel
+      ?? pendingLoginAttempt?.accountIssuerLabel
+      ?? resolveIssuerLabel(issuerUrl, providers, storedAccount?.issuerLabel),
     storageProviderUrl,
-    storageProviderLabel: pendingLoginAttempt?.storageProviderLabel
+    storageProviderLabel: pendingTransaction?.storageProviderLabel
+      ?? pendingLoginAttempt?.storageProviderLabel
       ?? resolveStorageProviderLabel(storageProviderUrl, providers, storedAccount?.storageProviderLabel),
   }
 }
@@ -1234,6 +1268,28 @@ function resolveProviderDisplayName(provider: LoginProviderOption | undefined, f
   } catch {
     return fallbackUrl
   }
+}
+
+function isLocalPendingLoginAttempt(attempt: ReturnType<typeof getPendingLoginAttempt>): boolean {
+  if (!attempt) {
+    return false
+  }
+
+  const storageProviderLabel = attempt.storageProviderLabel?.trim().toLowerCase()
+  if (storageProviderLabel === 'local' || storageProviderLabel === 'standalone') {
+    return true
+  }
+
+  const accountIssuerLabel = attempt.accountIssuerLabel?.trim().toLowerCase()
+  if (accountIssuerLabel === 'standalone') {
+    return true
+  }
+
+  return Boolean(
+    attempt.storageProviderUrl && isLocalAccessUrl(attempt.storageProviderUrl),
+  ) || Boolean(
+    attempt.issuerUrl && isLocalAccessUrl(attempt.issuerUrl),
+  )
 }
 
 function sameUrlOrigin(left: string, right: string): boolean {

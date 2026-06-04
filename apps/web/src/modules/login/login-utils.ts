@@ -1,4 +1,11 @@
 import { defaultMicroAppId, isValidMicroAppId, type MicroAppId } from '@/modules/layout/micro-app-registry'
+import {
+  createLoginTransaction,
+  normalizeLoginTransaction,
+  normalizeLoginUrl,
+  sanitizeAuthorizationQuery,
+  type LoginTransaction,
+} from './login-transaction'
 
 const POST_LOGIN_MICRO_APP_KEY = 'linx-post-login-micro-app'
 const PENDING_LOGIN_ATTEMPT_KEY = 'linx-pending-login-attempt'
@@ -7,13 +14,29 @@ const CURRENT_SOLID_SESSION_KEY = 'solidClientAuthn:currentSession'
 const SOLID_SESSION_PREFIX = 'solidClientAuthenticationUser:'
 
 export interface PendingLoginAttempt {
+  /** OIDC entry URL passed to Inrupt. For Local this is the selected SP facade. */
   issuerUrl: string
+  /** Semantic identity issuer stored on the remembered account after login. */
+  accountIssuerUrl?: string
+  accountIssuerLabel?: string
   authorizationSurface: 'window' | 'embedded' | 'external'
   returnToMicroAppId: MicroAppId
   storageProviderUrl?: string
   storageProviderLabel?: string
   authorizationQuery?: Record<string, string>
   prompt?: 'none' | 'consent'
+  strictDiscovery?: boolean
+}
+
+type PendingLoginPayload = Partial<PendingLoginAttempt> & {
+  providerUrl?: string
+  providerLabel?: string
+  oidcEntryUrl?: string
+  oidcIssuerUrl?: string
+  loginTransaction?: unknown
+  transaction?: unknown
+  nodeId?: string
+  createdAt?: number
 }
 
 export interface PendingCallbackError {
@@ -147,42 +170,9 @@ export function getPendingLoginAttempt(): PendingLoginAttempt | null {
   if (!raw) return null
 
   try {
-    const parsed = JSON.parse(raw) as Partial<PendingLoginAttempt> & {
-      providerUrl?: string
-      providerLabel?: string
-    }
-    if (
-      typeof parsed.issuerUrl === 'string'
-      && (parsed.authorizationSurface === 'window'
-        || parsed.authorizationSurface === 'embedded'
-        || parsed.authorizationSurface === 'external')
-      && isValidMicroAppId(parsed.returnToMicroAppId)
-    ) {
-      const storageProviderUrl = normalizeStoredUrl(parsed.storageProviderUrl)
-        ?? normalizeStoredUrl(parsed.providerUrl)
-      const storageProviderLabel = parsed.storageProviderLabel ?? parsed.providerLabel
-      const attempt: PendingLoginAttempt = {
-        issuerUrl: parsed.issuerUrl,
-        authorizationSurface: parsed.authorizationSurface,
-        returnToMicroAppId: parsed.returnToMicroAppId,
-      }
-      if (storageProviderUrl) {
-        attempt.storageProviderUrl = storageProviderUrl
-      }
-      if (typeof storageProviderLabel === 'string' && storageProviderLabel.trim().length > 0) {
-        attempt.storageProviderLabel = storageProviderLabel
-      }
-      const authorizationQuery = sanitizeAuthorizationQuery(parsed.authorizationQuery)
-      if (authorizationQuery) {
-        attempt.authorizationQuery = authorizationQuery
-      }
-      if (parsed.prompt === 'none' || parsed.prompt === 'consent') {
-        attempt.prompt = parsed.prompt
-      }
-      return {
-        ...attempt,
-      }
-    }
+    const parsed = JSON.parse(raw) as PendingLoginPayload
+    const attempt = normalizePendingLoginAttemptPayload(parsed)
+    if (attempt) return attempt
   } catch {
     // ignore invalid payloads
   }
@@ -191,12 +181,56 @@ export function getPendingLoginAttempt(): PendingLoginAttempt | null {
   return null
 }
 
-export function setPendingLoginAttempt(attempt: PendingLoginAttempt) {
+export function getPendingLoginTransaction(): LoginTransaction | null {
+  if (typeof window === 'undefined') return null
+
+  const raw = window.sessionStorage.getItem(PENDING_LOGIN_ATTEMPT_KEY)
+  if (!raw) return null
+
+  try {
+    const parsed = JSON.parse(raw) as PendingLoginPayload
+    const explicitTransaction = normalizeLoginTransaction(parsed.loginTransaction)
+      ?? normalizeLoginTransaction(parsed.transaction)
+    if (explicitTransaction) {
+      return explicitTransaction
+    }
+
+    const attempt = normalizePendingLoginAttemptPayload(parsed)
+    if (!attempt) return null
+
+    return createLoginTransaction({
+      ...parsed,
+      issuerUrl: attempt.issuerUrl,
+      oidcIssuerUrl: parsed.oidcIssuerUrl ?? attempt.issuerUrl,
+      oidcEntryUrl: parsed.oidcEntryUrl,
+      accountIssuerUrl: attempt.accountIssuerUrl,
+      accountIssuerLabel: attempt.accountIssuerLabel,
+      authorizationSurface: attempt.authorizationSurface,
+      returnToMicroAppId: attempt.returnToMicroAppId,
+      storageProviderUrl: attempt.storageProviderUrl,
+      storageProviderLabel: attempt.storageProviderLabel,
+      authorizationQuery: attempt.authorizationQuery,
+      prompt: attempt.prompt,
+      strictDiscovery: attempt.strictDiscovery,
+    })
+  } catch {
+    return null
+  }
+}
+
+export function setPendingLoginAttempt(attempt: PendingLoginAttempt, loginTransaction?: LoginTransaction | null) {
   if (typeof window === 'undefined') return
   const persisted: PendingLoginAttempt = {
     issuerUrl: attempt.issuerUrl,
     authorizationSurface: attempt.authorizationSurface,
     returnToMicroAppId: attempt.returnToMicroAppId,
+  }
+  const accountIssuerUrl = normalizeStoredUrl(attempt.accountIssuerUrl)
+  if (accountIssuerUrl) {
+    persisted.accountIssuerUrl = accountIssuerUrl
+  }
+  if (attempt.accountIssuerLabel) {
+    persisted.accountIssuerLabel = attempt.accountIssuerLabel
   }
   if (attempt.storageProviderUrl) {
     persisted.storageProviderUrl = attempt.storageProviderUrl
@@ -211,7 +245,32 @@ export function setPendingLoginAttempt(attempt: PendingLoginAttempt) {
   if (attempt.prompt === 'none' || attempt.prompt === 'consent') {
     persisted.prompt = attempt.prompt
   }
-  window.sessionStorage.setItem(PENDING_LOGIN_ATTEMPT_KEY, JSON.stringify(persisted))
+  if (attempt.strictDiscovery === true) {
+    persisted.strictDiscovery = true
+  }
+  const transaction = normalizeLoginTransaction(loginTransaction)
+    ?? createLoginTransaction({
+      issuerUrl: persisted.issuerUrl,
+      oidcIssuerUrl: persisted.issuerUrl,
+      accountIssuerUrl: persisted.accountIssuerUrl,
+      accountIssuerLabel: persisted.accountIssuerLabel,
+      authorizationSurface: persisted.authorizationSurface,
+      returnToMicroAppId: persisted.returnToMicroAppId,
+      storageProviderUrl: persisted.storageProviderUrl,
+      storageProviderLabel: persisted.storageProviderLabel,
+      authorizationQuery: persisted.authorizationQuery,
+      prompt: persisted.prompt,
+      strictDiscovery: persisted.strictDiscovery,
+    })
+  const payload = transaction
+    ? {
+        ...persisted,
+        oidcEntryUrl: transaction.oidcEntryUrl,
+        oidcIssuerUrl: transaction.oidcIssuerUrl,
+        loginTransaction: transaction,
+      }
+    : persisted
+  window.sessionStorage.setItem(PENDING_LOGIN_ATTEMPT_KEY, JSON.stringify(payload))
 }
 
 export function consumePendingLoginAttempt(): PendingLoginAttempt | null {
@@ -225,20 +284,53 @@ export function clearPendingLoginAttempt() {
   window.sessionStorage.removeItem(PENDING_LOGIN_ATTEMPT_KEY)
 }
 
-function sanitizeAuthorizationQuery(value: unknown): Record<string, string> | undefined {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
-
-  const entries = Object.entries(value as Record<string, unknown>).filter(
-    ([key, entryValue]) => key.length > 0 && typeof entryValue === 'string' && entryValue.length > 0,
-  ) as Array<[string, string]>
-  if (entries.length === 0) return undefined
-  return Object.fromEntries(entries)
+function normalizeStoredUrl(url?: string | null): string | null {
+  return normalizeLoginUrl(url)
 }
 
-function normalizeStoredUrl(url?: string | null): string | null {
-  if (typeof url !== 'string') return null
-  const trimmed = url.trim()
-  return trimmed.length > 0 ? trimmed : null
+function normalizePendingLoginAttemptPayload(parsed: PendingLoginPayload): PendingLoginAttempt | null {
+  if (
+    typeof parsed.issuerUrl !== 'string'
+    || !(parsed.authorizationSurface === 'window'
+      || parsed.authorizationSurface === 'embedded'
+      || parsed.authorizationSurface === 'external')
+    || !isValidMicroAppId(parsed.returnToMicroAppId)
+  ) {
+    return null
+  }
+
+  const storageProviderUrl = normalizeStoredUrl(parsed.storageProviderUrl)
+    ?? normalizeStoredUrl(parsed.providerUrl)
+  const storageProviderLabel = parsed.storageProviderLabel ?? parsed.providerLabel
+  const attempt: PendingLoginAttempt = {
+    issuerUrl: parsed.issuerUrl,
+    authorizationSurface: parsed.authorizationSurface,
+    returnToMicroAppId: parsed.returnToMicroAppId,
+  }
+  const accountIssuerUrl = normalizeStoredUrl(parsed.accountIssuerUrl)
+  if (accountIssuerUrl) {
+    attempt.accountIssuerUrl = accountIssuerUrl
+  }
+  if (typeof parsed.accountIssuerLabel === 'string' && parsed.accountIssuerLabel.trim().length > 0) {
+    attempt.accountIssuerLabel = parsed.accountIssuerLabel
+  }
+  if (storageProviderUrl) {
+    attempt.storageProviderUrl = storageProviderUrl
+  }
+  if (typeof storageProviderLabel === 'string' && storageProviderLabel.trim().length > 0) {
+    attempt.storageProviderLabel = storageProviderLabel
+  }
+  const authorizationQuery = sanitizeAuthorizationQuery(parsed.authorizationQuery)
+  if (authorizationQuery) {
+    attempt.authorizationQuery = authorizationQuery
+  }
+  if (parsed.prompt === 'none' || parsed.prompt === 'consent') {
+    attempt.prompt = parsed.prompt
+  }
+  if (parsed.strictDiscovery === true) {
+    attempt.strictDiscovery = true
+  }
+  return attempt
 }
 
 export function capturePendingCallbackError(url?: string): PendingCallbackError | null {

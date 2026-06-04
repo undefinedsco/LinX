@@ -12,6 +12,7 @@ import {
   consumePendingPostLoginMicroAppId,
   ensurePendingPostLoginMicroAppId,
   getPendingLoginAttempt,
+  getPendingLoginTransaction,
   hasStoredSolidSession,
   resolvePostLoginMicroAppId,
   setPendingLoginAttempt,
@@ -65,6 +66,7 @@ describe('login-utils post-login target helpers', () => {
         provisionCode: 'pc-123',
         ignored: '',
       },
+      strictDiscovery: true,
     })
 
     expect(getPendingLoginAttempt()).toEqual({
@@ -76,6 +78,7 @@ describe('login-utils post-login target helpers', () => {
       authorizationQuery: {
         provisionCode: 'pc-123',
       },
+      strictDiscovery: true,
     })
     expect(consumePendingLoginAttempt()).toEqual({
       issuerUrl: 'https://cloud.example.com',
@@ -86,8 +89,37 @@ describe('login-utils post-login target helpers', () => {
       authorizationQuery: {
         provisionCode: 'pc-123',
       },
+      strictDiscovery: true,
     })
     expect(getPendingLoginAttempt()).toBeNull()
+  })
+
+  it('derives a Local transaction entry from legacy split issuer/storage attempts', () => {
+    setPendingLoginAttempt({
+      issuerUrl: 'https://id.undefineds.co',
+      accountIssuerUrl: 'https://id.undefineds.co',
+      accountIssuerLabel: 'Cloud',
+      authorizationSurface: 'embedded',
+      returnToMicroAppId: 'chat',
+      storageProviderUrl: 'https://node-0000.undefineds.co',
+      storageProviderLabel: 'Local',
+      authorizationQuery: {
+        provisionCode: 'pc-123',
+      },
+      strictDiscovery: true,
+    })
+
+    expect(getPendingLoginTransaction()).toEqual(expect.objectContaining({
+      route: 'local',
+      oidcEntryUrl: 'https://node-0000.undefineds.co',
+      oidcIssuerUrl: 'https://id.undefineds.co',
+      accountIssuerUrl: 'https://id.undefineds.co',
+      storageProviderUrl: 'https://node-0000.undefineds.co',
+      authorizationQuery: {
+        provisionCode: 'pc-123',
+      },
+      strictDiscovery: true,
+    }))
   })
 
   it('migrates legacy pending login attempts that used providerUrl/providerLabel', () => {
