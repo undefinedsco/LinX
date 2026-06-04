@@ -140,8 +140,52 @@ test('LocalOnboardingController publishes xpod startup progress while starting L
 
   const progressSnapshot = snapshots.find((snapshot) => snapshot.progress?.phase === 'install-bun')
   assert.ok(progressSnapshot)
-  assert.equal(progressSnapshot.message, '下载 xpod runtime')
-  assert.equal(progressSnapshot.progress.detail, '@undefineds.co/xpod@0.3.4')
+  assert.equal(progressSnapshot.message, '正在准备本地空间')
+  assert.equal(progressSnapshot.progress.detail, '首次启动可能需要下载，完成后会自动继续。')
+})
+
+test('LocalOnboardingController does not publish raw Local addresses as startup progress detail', async () => {
+  const { LocalOnboardingController } = require(resolveCompiledDesktopModule('lib/local-onboarding.js'))
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'linx-local-onboarding-progress-address-'))
+  const snapshots = []
+  let started = false
+
+  const controller = new LocalOnboardingController({
+    stateDir,
+    ensureBootstrapProvider: () => createProvider(),
+    onSnapshotChange: (snapshot) => snapshots.push(snapshot),
+    xpodManager: {
+      getStatus: async () => started
+        ? {
+            running: true,
+            status: 'running',
+            localUrl: 'http://localhost:5737/',
+            baseUrl: 'http://localhost:5737/',
+          }
+        : {
+            running: false,
+            status: 'stopped',
+            localUrl: 'http://localhost:5737/',
+            baseUrl: 'http://localhost:5737/',
+          },
+      start: async (_options, onProgress) => {
+        onProgress?.({
+          phase: 'custom-debug',
+          label: '等待 Local 服务就绪',
+          detail: 'http://localhost:5737/',
+        })
+        started = true
+      },
+    },
+  })
+
+  await controller.chooseSpace('standalone')
+  await controller.continue()
+
+  const progressSnapshot = snapshots.find((snapshot) => snapshot.progress?.phase === 'custom-debug')
+  assert.ok(progressSnapshot)
+  assert.equal(progressSnapshot.message, '等待 Local 服务就绪')
+  assert.equal(progressSnapshot.progress.detail, null)
 })
 
 test('LocalOnboardingController treats a running Standalone service as ready without Cloud binding', async () => {
@@ -296,13 +340,44 @@ test('LocalOnboardingController preserves start errors across refreshes until re
   assert.equal(failed.state, 'error')
   assert.equal(failed.spaceKind, 'local')
   assert.equal(failed.errorCode, 'LOCAL_START_FAILED')
-  assert.match(failed.message, /Service Unavailable/)
+  assert.match(failed.message, /登录服务暂时不可用/)
 
   const refreshed = await controller.refresh()
   assert.equal(refreshed.state, 'error')
   assert.equal(refreshed.spaceKind, 'local')
   assert.equal(refreshed.errorCode, 'LOCAL_START_FAILED')
   assert.equal(refreshed.message, failed.message)
+})
+
+test('LocalOnboardingController hides raw xpod runtime diagnostics from start errors', async () => {
+  const { LocalOnboardingController } = require(resolveCompiledDesktopModule('lib/local-onboarding.js'))
+  const controller = new LocalOnboardingController({
+    stateDir: fs.mkdtempSync(path.join(os.tmpdir(), 'linx-local-onboarding-')),
+    ensureBootstrapProvider: () => createProvider(),
+    xpodManager: {
+      getStatus: async () => ({
+        running: false,
+        status: 'stopped',
+        providerId: 'local',
+        localUrl: 'http://localhost:5737/',
+        baseUrl: 'http://localhost:5737/',
+      }),
+      start: async () => {
+        throw new Error([
+          "Cannot find module 'jsonld'",
+          'Require stack:',
+          '- /Users/ganlu/Library/Application Support/@linx/desktop/local/runtimes/xpod/index.js',
+        ].join('\n'))
+      },
+    },
+  })
+
+  await controller.chooseSpace('standalone')
+  const failed = await controller.continue()
+
+  assert.equal(failed.state, 'error')
+  assert.equal(failed.message, '本地空间启动文件损坏。请重启 LinX 让它自动修复；如果仍失败，请打开本地空间设置修复。')
+  assert.doesNotMatch(failed.message, /jsonld|Require stack|Application Support|\/Users\//)
 })
 
 test('LocalOnboardingController requires an explicit space for an existing local instance', async () => {

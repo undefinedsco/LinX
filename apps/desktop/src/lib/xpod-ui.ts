@@ -10,26 +10,17 @@ export function getXpodDashboardUrl(status: Pick<XpodStatus, 'localUrl' | 'baseU
 }
 
 export function formatXpodStatusDetail(status: XpodStatus): string {
+  const statusText = status.running
+    ? '运行中'
+    : status.status === 'starting'
+      ? '启动中'
+      : '已停止';
   const lines = [
-    `状态: ${status.status ?? (status.running ? 'running' : 'stopped')}`,
-    `运行中: ${status.running ? '是' : '否'}`,
+    `状态: ${statusText}`,
+    `本机入口: ${status.localUrl || status.baseUrl ? '已准备' : '未准备'}`,
   ];
 
-  if (status.providerId) {
-    lines.push(`Provider: ${status.providerId}`);
-  }
-  if (status.pid) {
-    lines.push(`PID: ${status.pid}`);
-  }
-  if (status.port) {
-    lines.push(`端口: ${status.port}`);
-  }
-  if (status.localUrl) {
-    lines.push(`本地地址: ${status.localUrl}`);
-  }
-  if (status.baseUrl && status.baseUrl !== status.localUrl) {
-    lines.push(`公开地址: ${status.baseUrl}`);
-  }
+  lines.push(`外网入口: ${status.baseUrl && status.baseUrl !== status.localUrl ? '已配置' : '未配置'}`);
 
   return lines.join('\n');
 }

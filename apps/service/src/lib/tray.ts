@@ -69,30 +69,30 @@ export class TrayModule {
       },
       { type: 'separator' },
       {
-        label: `Pod 状态: ${statusLabel}`,
+        label: `本地空间: ${statusLabel}`,
         enabled: false,
       },
       {
-        label: `  本地: ${xpodStatus.baseUrl || 'http://localhost:5737'}`,
+        label: `  本机入口: ${xpodStatus.baseUrl ? '已启用' : '未启用'}`,
         enabled: false,
       },
       ...(xpodStatus.publicUrl
         ? [
             {
-              label: `  公网: ${xpodStatus.publicUrl}`,
+              label: '  外网入口: 已启用',
               enabled: false,
             } as Electron.MenuItemConstructorOptions,
           ]
         : []),
       {
-        label: '打开 xpod App',
+        label: '打开本地空间',
         click: () => {
           const target = `${(xpodStatus.publicUrl || xpodStatus.baseUrl || 'http://localhost:5737').replace(/\/$/, '')}/app/`
           shell.openExternal(target)
         },
       },
       {
-        label: '打开 xpod Dashboard',
+        label: '打开本地空间管理页',
         click: () => {
           const target = `${(xpodStatus.publicUrl || xpodStatus.baseUrl || 'http://localhost:5737').replace(/\/$/, '')}/dashboard/`
           shell.openExternal(target)
@@ -104,8 +104,8 @@ export class TrayModule {
         submenu: [
           {
             label: xpodStatus.publicUrl
-              ? `✓ ${xpodStatus.publicUrl}`
-              : '✗ 仅本地访问',
+              ? '✓ 外网入口已启用'
+              : '✗ 仅本机访问',
             enabled: false,
           },
           {

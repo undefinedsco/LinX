@@ -556,7 +556,7 @@ test('XpodManager reports a clear error when managed Cloud registration times ou
       spaceKind: 'local',
       domain: { type: 'custom', value: 'pod.example.com' },
     }),
-    /连接 Cloud 注册 Local 节点超时/,
+    /连接登录服务超时。请检查网络后重试。/,
   )
 })
 
@@ -1180,6 +1180,80 @@ test('XpodManager reuses an existing Local canonical URL even when older state h
   assert.equal(registration.publicUrl, 'https://pod.example.com/')
   assert.equal(registration.spDomain, undefined)
   assert.equal(registration.provisionCode, 'legacy-pc')
+})
+
+test('XpodManager start reuses a healthy matching Local service before resolving runtime', { concurrency: false }, async (t) => {
+  installElectronStub(t)
+  const manager = createManager({
+    providerManager: {
+      updateManagedStatus: () => {},
+    },
+  })
+  const statePath = path.join(path.dirname(manager.getLogPaths().directory), 'xpod-service.json')
+  fs.writeFileSync(statePath, JSON.stringify({
+    providerId: 'local',
+    dataDir: '/tmp/local-pod',
+    port: 5737,
+    spaceKind: 'local',
+    baseUrl: 'https://node-0000.undefineds.co/',
+    localUrl: 'http://localhost:5737/',
+    startedAt: Date.now(),
+    pid: 246813,
+    launchKind: 'managed-bun-package',
+    runtimeId: 'managed-bun-package|old-runtime',
+    provisioning: {
+      nodeId: 'node-0000',
+      nodeToken: 'node-token-1',
+      serviceToken: 'service-token-1',
+      provisionCode: 'legacy-pc',
+      publicUrl: 'https://node-0000.undefineds.co/',
+      spDomain: 'node-0000.undefineds.co',
+      provisionUrl: 'https://id.undefineds.co/.account/?provisionCode=legacy-pc',
+      cloudIdentityUrl: 'https://id.undefineds.co',
+      cloudApiUrl: 'https://api.undefineds.co',
+      registeredAt: 1760000000000,
+    },
+  }), 'utf8')
+
+  const originalFetch = global.fetch
+  global.fetch = async (url) => {
+    assert.equal(String(url), 'http://localhost:5737/service/status')
+    return {
+      ok: true,
+      json: async () => [
+        { name: 'css', status: 'running' },
+        { name: 'api', status: 'running' },
+      ],
+    }
+  }
+
+  t.after(() => {
+    global.fetch = originalFetch
+  })
+
+  manager.resolvePreferredLaunchTarget = () => {
+    throw new Error('healthy matching Local service should not prepare runtime')
+  }
+  manager.registerProvisionedNode = () => {
+    throw new Error('healthy matching Local service should not call Cloud provisioning')
+  }
+
+  const progress = []
+  await manager.start({
+    providerId: 'local',
+    dataDir: '/tmp/local-pod',
+    port: 5737,
+    spaceKind: 'local',
+    domain: { type: 'managed', value: 'node-0000.undefineds.co' },
+  }, (event) => {
+    progress.push(event)
+  })
+
+  assert.deepEqual(progress, [{
+    phase: 'ready',
+    label: '本地空间已运行',
+    detail: 'http://localhost:5737/',
+  }])
 })
 
 test('XpodManager Standalone startup skips managed Cloud registration', { concurrency: false }, async (t) => {

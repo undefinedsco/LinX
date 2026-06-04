@@ -165,7 +165,7 @@ export class LocalOnboardingController {
     })
     const status = await this.xpodManager.getStatus()
     const spaceKind = this.resolveSpaceKind(provider, status)
-    const productLabel = spaceKind === 'standalone' ? 'Standalone' : 'Local'
+    const productLabel = getLocalSpaceProductLabel(spaceKind)
     const localUrl = status.localUrl ?? provider.issuerUrl ?? null
     const baseUrl = status.baseUrl ?? provider.issuerUrl ?? null
     const provisioning = status.provisioning
@@ -256,7 +256,7 @@ export class LocalOnboardingController {
         baseUrl,
         ...bindingFields,
         capabilities: null,
-        message: 'Local 已运行，但还没拿到 Cloud 分配的 canonical URL 或绑定信息。请通过 LinX 重新启动 Local，再继续登录。',
+        message: '本地空间还没有完成准备。请回到空间选择页，再点一次“本地空间”。',
         errorCode: 'LOCAL_CLOUD_BINDING_REQUIRED',
         canRetry: true,
         canOpenSettings: true,
@@ -274,8 +274,8 @@ export class LocalOnboardingController {
       ...bindingFields,
       capabilities,
       message: spaceKind === 'standalone'
-        ? 'Standalone 已准备好，接下来会打开本机登录页。'
-        : 'Local 已准备好，接下来会通过 Cloud 登录并写入本地空间。',
+        ? '独立空间已准备好，接下来会打开本机登录页。'
+        : '本地空间已准备好，接下来会打开登录页，数据会写入这台电脑。',
       errorCode: null,
       canRetry: true,
       canOpenSettings: true,
@@ -295,7 +295,7 @@ export class LocalOnboardingController {
     const provider = this.ensureBootstrapProvider(this.state.spaceKind)
     const status = await this.xpodManager.getStatus()
     const spaceKind = this.resolveSpaceKind(provider, status)
-    const productLabel = spaceKind === 'standalone' ? 'Standalone' : 'Local'
+    const productLabel = getLocalSpaceProductLabel(spaceKind)
 
     if (!spaceKind) {
       return this.refresh()
@@ -329,11 +329,11 @@ export class LocalOnboardingController {
       baseUrl,
       ...bindingFields,
       capabilities: null,
-      message: '检查 xpod 运行环境',
+      message: `检查${productLabel}运行环境`,
       progress: {
         phase: 'resolve-runtime',
-        label: '检查 xpod 运行环境',
-        detail: `准备启动 ${productLabel}`,
+        label: `检查${productLabel}运行环境`,
+        detail: null,
       },
       errorCode: null,
       canRetry: false,
@@ -356,6 +356,7 @@ export class LocalOnboardingController {
           tunnelToken: provider.managed.tunnelToken,
         },
         (progress) => {
+          const userProgress = formatLocalStartupProgress(progress, productLabel)
           this.updateSnapshot({
             state: 'starting',
             spaceKind,
@@ -363,8 +364,8 @@ export class LocalOnboardingController {
             baseUrl,
             ...bindingFields,
             capabilities: null,
-            message: progress.label,
-            progress,
+            message: userProgress.label,
+            progress: userProgress,
             errorCode: null,
             canRetry: false,
             canOpenSettings: false,
@@ -374,13 +375,14 @@ export class LocalOnboardingController {
 
       return this.refresh()
     } catch (error) {
+      const message = formatLocalOnboardingError(error, '本地空间启动失败。请稍后重试。')
       this.lastStartError = {
         spaceKind,
         providerId: provider.id,
         localUrl,
         baseUrl,
         publicUrl,
-        message: error instanceof Error ? error.message : '启动 Local 失败。',
+        message,
         errorCode: 'LOCAL_START_FAILED',
       }
       return this.updateSnapshot({
@@ -390,7 +392,7 @@ export class LocalOnboardingController {
         baseUrl,
         ...bindingFields,
         capabilities: null,
-        message: error instanceof Error ? error.message : '启动 Local 失败。',
+        message,
         progress: null,
         errorCode: 'LOCAL_START_FAILED',
         canRetry: true,
@@ -408,7 +410,7 @@ export class LocalOnboardingController {
       return this.updateSnapshot({
         ...this.snapshot,
         state: this.snapshot.state === 'space_required' ? 'idle' : this.snapshot.state,
-        message: '请粘贴 Cloudflare Tunnel token，或粘贴完整的 cloudflared run 命令。',
+        message: '请粘贴隧道 Token，或粘贴完整的隧道启动命令。',
         errorCode: 'LOCAL_TUNNEL_TOKEN_REQUIRED',
         canRetry: true,
         canOpenSettings: true,
@@ -641,6 +643,152 @@ function parsePersistedSpaceKind(value: unknown): LocalSpaceKind | null {
   return null
 }
 
+function getLocalSpaceProductLabel(spaceKind: LocalSpaceKind | null): string {
+  return spaceKind === 'standalone' ? '独立空间' : '本地空间'
+}
+
+function formatLocalOnboardingError(error: unknown, fallback: string): string {
+  const message = error instanceof Error
+    ? error.message
+    : typeof error === 'string'
+      ? error
+      : ''
+  const normalized = message.toLowerCase()
+
+  if (!message) {
+    return fallback
+  }
+
+  if (/unable to install @undefineds\.co\/xpod|unable to prepare xpod runtime/.test(normalized)) {
+    return '本地空间组件下载失败。请检查网络后重试。'
+  }
+
+  if (/missing required local login\/startup capabilities|scoped webid|scoped pickwebid|scoped picker|escaped recursive css runtime/.test(normalized)) {
+    return '本地空间版本过旧。请重启 LinX 让它自动更新；如果仍失败，请打开本地空间设置修复。'
+  }
+
+  if (/local 服务在完成启动前已退出|exceeded max restarts/.test(normalized)) {
+    return '本地空间启动失败。请点“重新检查”；如果仍失败，请重启 LinX。'
+  }
+
+  if (/等待 local 服务就绪超时|local.*启动超时/.test(normalized)) {
+    return '本地空间启动超时。请点“重新检查”；如果仍失败，请重启 LinX。'
+  }
+
+  if (/cannot find module|invalid resource iri|jsonld|componentsjs|node_modules|require stack|\/users\/|application support/i.test(message)) {
+    return '本地空间启动文件损坏。请重启 LinX 让它自动修复；如果仍失败，请打开本地空间设置修复。'
+  }
+
+  if (/eaddrinuse|port|address already in use/.test(normalized)) {
+    return '本地空间端口被占用。请关闭占用端口的程序，或在本地空间设置里换一个端口。'
+  }
+
+  if (/provider '.+' is not a managed pod|not managed|no selected local space/.test(normalized)) {
+    return '本地空间配置不完整。请返回空间选择，重新选择。'
+  }
+
+  if (/service unavailable|http\s*503/.test(normalized)) {
+    return '登录服务暂时不可用。请稍后重试。'
+  }
+
+  if (/publicurl is required|canonical|cloud.*绑定|绑定信息/.test(normalized)) {
+    return '本地空间还没有完成准备。请回到空间选择页，再点一次“本地空间”。'
+  }
+
+  if (/invalid or expired provisioncode|invalid or expired providercode|provisioncode.*expired|providercode.*expired/.test(normalized)) {
+    return '这次本地登录已失效。请回到空间选择页，重新点“本地空间”。'
+  }
+
+  if (/http\s*401|unauthorized/.test(normalized)) {
+    return '登录状态已失效。请重新登录。'
+  }
+
+  if (/http\s*403|forbidden/.test(normalized)) {
+    return '这个账号还不能写入当前空间。请换一个空间；如果这是你的本地空间，请先完成空间创建。'
+  }
+
+  if (message.length > 180 || /stack|\.js:\d+|\.ts:\d+|https?:\/\/|file:\/\/|localhost|127\.0\.0\.1|0\.0\.0\.0|HTTP\s+\d{3}|Pod|Solid|Agent|Secretary|WebID|IRI|RDF|row\.id/i.test(message)) {
+    return fallback
+  }
+
+  return message
+}
+
+function formatLocalStartupProgress(progress: XpodStartProgress, productLabel: string): XpodStartProgress {
+  switch (progress.phase) {
+    case 'source':
+    case 'version':
+    case 'check-bun':
+    case 'check-node':
+    case 'runtime-ready':
+    case 'embedded':
+    case 'resolve-runtime':
+      return {
+        phase: progress.phase,
+        label: `检查${productLabel}运行环境`,
+        detail: null,
+      }
+    case 'install-bun':
+    case 'install-npm':
+      return {
+        phase: progress.phase,
+        label: '正在准备本地空间',
+        detail: '首次启动可能需要下载，完成后会自动继续。',
+      }
+    case 'register-cloud':
+      return {
+        phase: progress.phase,
+        label: '正在准备本地空间',
+        detail: '正在为这台电脑准备本地登录入口。',
+      }
+    case 'prepare-data':
+    case 'write-env':
+      return {
+        phase: progress.phase,
+        label: `准备${productLabel}数据`,
+        detail: null,
+      }
+    case 'spawn':
+      return {
+        phase: progress.phase,
+        label: `正在启动${productLabel}`,
+        detail: null,
+      }
+    case 'wait-ready':
+      return {
+        phase: progress.phase,
+        label: `等待${productLabel}就绪`,
+        detail: '这一步可能需要几十秒。',
+      }
+    case 'ready':
+      return {
+        phase: progress.phase,
+        label: `${productLabel}已准备好`,
+        detail: null,
+      }
+    default:
+      return {
+        phase: progress.phase,
+        label: formatRequiredLocalProgressText(progress.label, `正在启动 ${productLabel}…`),
+        detail: progress.detail ? formatOptionalLocalProgressText(progress.detail) : null,
+      }
+  }
+}
+
+function formatRequiredLocalProgressText(value: string | null | undefined, fallback: string): string {
+  return formatOptionalLocalProgressText(value) ?? fallback
+}
+
+function formatOptionalLocalProgressText(value: string | null | undefined): string | null {
+  if (!value) return null
+  if (isInternalDiagnosticText(value)) return null
+  return value
+}
+
+function isInternalDiagnosticText(value: string): boolean {
+  return /@undefineds\.co|xpod runtime|node_modules|\/Users\/|\\Users\\|Application Support|bun|npm|node|\.js:\d+|\.ts:\d+|Require stack|Cannot find module|jsonld|componentsjs|publicUrl|provisionCode|spDomain|baseUrl|canonical|OIDC|issuer|provider|HTTP\s+\d{3}|Pod|Solid|Agent|Secretary|WebID|IRI|RDF|row\.id|https?:\/\/|file:\/\/|localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(value)
+}
+
 function extractCloudflareTunnelToken(input: string): string {
   const raw = input.trim()
   if (!raw) return ''
@@ -788,8 +936,8 @@ function summarizeConnectivity(
       local: localProbe,
       public: null,
       message: localProbe.reachable
-        ? 'Standalone 本机入口可用。'
-        : 'Standalone 本机入口不可达。',
+        ? '独立空间本机入口可用。'
+        : '独立空间本机入口不可达。',
     }
   }
 
@@ -799,7 +947,7 @@ function summarizeConnectivity(
       checkedAt: Date.now(),
       local: localProbe,
       public: publicProbe,
-      message: 'Local 本机入口不可达，请先确认 xpod 已启动。',
+      message: '本机入口不可达，请先确认本地空间已经启动。',
     }
   }
 
@@ -809,7 +957,7 @@ function summarizeConnectivity(
       checkedAt: Date.now(),
       local: localProbe,
       public: publicProbe,
-      message: '本机入口可用，但还没有公网 canonical URL。',
+      message: '本机入口可用，但还没有完成本地登录准备。',
     }
   }
 
@@ -819,7 +967,7 @@ function summarizeConnectivity(
       checkedAt: Date.now(),
       local: localProbe,
       public: publicProbe,
-      message: '本机入口可用，公网入口暂不可达。配置并启动 tunnel 后再重试。',
+      message: '本机入口可用，公网入口暂不可达。配置并启动隧道后再重试。',
     }
   }
 
@@ -829,7 +977,7 @@ function summarizeConnectivity(
       checkedAt: Date.now(),
       local: localProbe,
       public: publicProbe,
-      message: '入口可达，但返回的 canonical baseUrl 不一致，已阻止当作同一 Local 节点。',
+      message: '入口可达，但它们不是同一个本地空间。请检查本地空间设置后重试。',
     }
   }
 
@@ -838,7 +986,7 @@ function summarizeConnectivity(
     checkedAt: Date.now(),
     local: localProbe,
     public: publicProbe,
-    message: '本机入口和公网入口都可达，且指向同一个 Local 节点。',
+    message: '本机入口和公网入口都可达，且指向同一个本地空间。',
   }
 }
 
@@ -882,10 +1030,10 @@ function buildProbeMessage(
 ): string {
   const label = kind === 'local' ? '本机入口' : '公网入口'
   if (!capability.supported) {
-    return `${label}不可达或未返回 Local capabilities。`
+    return `${label}不可达，或不是有效的本地空间服务。`
   }
   if (sameNode === false) {
-    return `${label}可达，但不是当前 Local canonical 节点。`
+    return `${label}可达，但不是当前本地空间。`
   }
   return `${label}可达。`
 }

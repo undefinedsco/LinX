@@ -6,6 +6,10 @@ const path = require('node:path')
 const Module = require('node:module')
 const { resolveCompiledDesktopModule } = require('./helpers.cjs')
 
+function makeProvisionCode(payload) {
+  return `${Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url')}.sig`
+}
+
 test('XpodManager loads without requiring xpod runtime on module import', (t) => {
   const originalLoad = Module._load
 
@@ -37,6 +41,49 @@ test('XpodManager loads without requiring xpod runtime on module import', (t) =>
 
   assert.equal(typeof XpodManager, 'function')
   assert.ok(manager)
+})
+
+test('XpodManager start errors do not expose runtime stack details to users', (t) => {
+  const originalLoad = Module._load
+
+  Module._load = function patchedLoad(request, parent, isMain) {
+    if (request === 'electron') {
+      return {
+        app: {
+          getPath: () => fs.mkdtempSync(path.join(os.tmpdir(), 'linx-xpod-manager-')),
+          isPackaged: false,
+        },
+      }
+    }
+
+    return originalLoad.call(this, request, parent, isMain)
+  }
+
+  t.after(() => {
+    Module._load = originalLoad
+  })
+
+  const { XpodManager } = require(resolveCompiledDesktopModule('lib/xpod-manager.js'))
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'linx-xpod-manager-error-'))
+  const manager = new XpodManager(
+    {},
+    {
+      getConfigPath: () => path.join(tmpDir, '.env'),
+      getAll: () => ({}),
+    },
+    { updateManagedStatus: () => {} },
+    tmpDir,
+  )
+
+  manager.lastProcessErrorOutput = [
+    "Cannot find module 'jsonld'",
+    'Require stack:',
+    '- /Users/ganlu/Library/Application Support/@linx/desktop/local/runtimes/xpod/index.js',
+  ].join('\n')
+
+  const error = manager.normalizeStartError(new Error('Local 服务在完成启动前已退出。'), 5737)
+  assert.equal(error.message, '本地空间启动文件损坏。请重启 LinX 让它自动修复；如果仍失败，请打开本地空间设置修复。')
+  assert.doesNotMatch(error.message, /jsonld|Require stack|Application Support|\/Users\//)
 })
 
 test('XpodManager adds workspace node_modules to child NODE_PATH', (t) => {
@@ -322,6 +369,7 @@ test('XpodManager Local env keeps Local SP public URL while binding Cloud issuer
       provisionCode: 'provision-code',
       publicUrl: 'https://node-0000.undefineds.co/',
       provisionUrl: 'https://id.undefineds.co/.account/?provisionCode=provision-code',
+      spDomain: 'node-0000.undefineds.co',
       cloudIdentityUrl: 'https://id.undefineds.co',
       cloudApiUrl: 'https://api.undefineds.co',
       registeredAt: Date.now(),
@@ -336,6 +384,400 @@ test('XpodManager Local env keeps Local SP public URL while binding Cloud issuer
   assert.equal(env.XPOD_NODE_ID, 'node-0000')
   assert.equal(env.XPOD_NODE_TOKEN, 'node-token')
   assert.equal(env.XPOD_SERVICE_TOKEN, 'service-token')
+  assert.equal(env.XPOD_PROVISION_CODE, 'provision-code')
+  assert.equal(env.XPOD_PROVISION_URL, 'https://id.undefineds.co/.account/?provisionCode=provision-code')
+  assert.equal(env.XPOD_SP_DOMAIN, 'node-0000.undefineds.co')
+})
+
+test('XpodManager detects stale Local runtime env before reusing a running xpod', (t) => {
+  const originalLoad = Module._load
+
+  Module._load = function patchedLoad(request, parent, isMain) {
+    if (request === 'electron') {
+      return {
+        app: {
+          getPath: () => fs.mkdtempSync(path.join(os.tmpdir(), 'linx-xpod-manager-')),
+          isPackaged: false,
+        },
+      }
+    }
+
+    return originalLoad.call(this, request, parent, isMain)
+  }
+
+  t.after(() => {
+    Module._load = originalLoad
+  })
+
+  const { XpodManager } = require(resolveCompiledDesktopModule('lib/xpod-manager.js'))
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'linx-xpod-manager-runtime-env-'))
+  const manager = new XpodManager(
+    {},
+    {
+      getConfigPath: () => path.join(tmpDir, '.env'),
+      getAll: () => ({
+        CSS_EDITION: 'local',
+        oidcIssuer: 'https://id.undefineds.co',
+        XPOD_CLOUD_API_ENDPOINT: 'https://api.undefineds.co',
+      }),
+    },
+    { updateManagedStatus: () => {} },
+    tmpDir,
+  )
+  const options = {
+    providerId: 'local',
+    dataDir: tmpDir,
+    port: 5737,
+    spaceKind: 'local',
+    domain: { type: 'managed', value: 'node-0000.undefineds.co' },
+  }
+  const provisioning = {
+    nodeId: 'node-0000',
+    nodeToken: 'node-token',
+    serviceToken: 'service-token',
+    provisionCode: 'provision-code',
+    publicUrl: 'https://node-0000.undefineds.co/',
+    provisionUrl: 'https://id.undefineds.co/.account/?provisionCode=provision-code',
+    spDomain: 'node-0000.undefineds.co',
+    cloudIdentityUrl: 'https://id.undefineds.co',
+    cloudApiUrl: 'https://api.undefineds.co',
+    registeredAt: Date.now(),
+  }
+  const state = manager.createDesiredState(options, provisioning.publicUrl)
+  const expected = manager.buildServiceEnv(options, state, provisioning)
+  const runtimeEnvPath = path.join(tmpDir, 'xpod.runtime.env')
+
+  fs.writeFileSync(runtimeEnvPath, [
+    'CSS_BASE_URL=https://node-0000.undefineds.co/',
+    'XPOD_NODE_ID=node-0000',
+    'XPOD_NODE_TOKEN=node-token',
+    'XPOD_SERVICE_TOKEN=service-token',
+    'oidcIssuer=https://id.undefineds.co',
+  ].join('\n'))
+
+  assert.equal(manager.matchesRuntimeEnvFile(expected), false)
+
+  manager.writeRuntimeEnvFile(expected)
+  assert.equal(manager.matchesRuntimeEnvFile(expected), true)
+})
+
+test('XpodManager treats changed managed provisionCode as a provisioning mismatch', (t) => {
+  const originalLoad = Module._load
+
+  Module._load = function patchedLoad(request, parent, isMain) {
+    if (request === 'electron') {
+      return {
+        app: {
+          getPath: () => fs.mkdtempSync(path.join(os.tmpdir(), 'linx-xpod-manager-')),
+          isPackaged: false,
+        },
+      }
+    }
+
+    return originalLoad.call(this, request, parent, isMain)
+  }
+
+  t.after(() => {
+    Module._load = originalLoad
+  })
+
+  const { XpodManager } = require(resolveCompiledDesktopModule('lib/xpod-manager.js'))
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'linx-xpod-manager-provisioning-match-'))
+  const manager = new XpodManager(
+    {},
+    {
+      getConfigPath: () => path.join(tmpDir, '.env'),
+      getAll: () => ({}),
+    },
+    { updateManagedStatus: () => {} },
+    tmpDir,
+  )
+
+  const current = {
+    nodeId: 'node-0000',
+    nodeToken: 'node-token',
+    serviceToken: 'service-token',
+    provisionCode: 'provision-code-old',
+    publicUrl: 'https://node-0000.undefineds.co/',
+    provisionUrl: 'https://id.undefineds.co/.account/?provisionCode=provision-code-old',
+    spDomain: 'node-0000.undefineds.co',
+    cloudIdentityUrl: 'https://id.undefineds.co',
+    cloudApiUrl: 'https://api.undefineds.co',
+    registeredAt: Date.now(),
+  }
+  const desired = {
+    ...current,
+    provisionCode: 'provision-code-new',
+    provisionUrl: 'https://id.undefineds.co/.account/?provisionCode=provision-code-new',
+  }
+
+  assert.equal(manager.matchesProvisioning(current, desired), false)
+})
+
+test('XpodManager refreshes expired self-contained provisionCode before Local Pod creation', async (t) => {
+  const originalLoad = Module._load
+  const originalFetch = global.fetch
+
+  Module._load = function patchedLoad(request, parent, isMain) {
+    if (request === 'electron') {
+      return {
+        app: {
+          getPath: () => fs.mkdtempSync(path.join(os.tmpdir(), 'linx-xpod-manager-')),
+          isPackaged: false,
+        },
+      }
+    }
+
+    return originalLoad.call(this, request, parent, isMain)
+  }
+
+  t.after(() => {
+    Module._load = originalLoad
+    global.fetch = originalFetch
+  })
+
+  const requests = []
+  const expiredProvisionCode = makeProvisionCode({
+    spUrl: 'https://node-0000.undefineds.co/',
+    serviceToken: 'service-token-old',
+    nodeId: 'node-0000',
+    exp: Math.floor(Date.now() / 1000) - 60,
+  })
+  const freshProvisionCode = makeProvisionCode({
+    spUrl: 'https://node-0000.undefineds.co/',
+    serviceToken: 'service-token-new',
+    nodeId: 'node-0000',
+    exp: Math.floor(Date.now() / 1000) + 3600,
+  })
+
+  global.fetch = async (_url, init) => {
+    requests.push(JSON.parse(init.body))
+    return {
+      ok: true,
+      json: async () => ({
+        nodeId: 'node-0000',
+        nodeToken: 'node-token-new',
+        serviceToken: 'service-token-new',
+        provisionCode: freshProvisionCode,
+        publicUrl: 'https://node-0000.undefineds.co/',
+        spDomain: 'node-0000.undefineds.co',
+      }),
+    }
+  }
+
+  const { XpodManager } = require(resolveCompiledDesktopModule('lib/xpod-manager.js'))
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'linx-xpod-manager-expired-provision-code-'))
+  const manager = new XpodManager(
+    {},
+    {
+      getConfigPath: () => path.join(tmpDir, '.env'),
+      getAll: () => ({
+        CSS_EDITION: 'local',
+        oidcIssuer: 'https://id.undefineds.co',
+        XPOD_CLOUD_API_ENDPOINT: 'https://api.undefineds.co',
+      }),
+    },
+    { updateManagedStatus: () => {} },
+    tmpDir,
+  )
+
+  const result = await manager.ensureManagedCloudRegistration(
+    {
+      providerId: 'local',
+      dataDir: tmpDir,
+      port: 5737,
+      spaceKind: 'local',
+      domain: { type: 'managed', value: 'node-0000.undefineds.co' },
+    },
+    {
+      nodeId: 'node-0000',
+      nodeToken: 'node-token-old',
+      serviceToken: 'service-token-old',
+      provisionCode: expiredProvisionCode,
+      publicUrl: 'https://node-0000.undefineds.co/',
+      provisionUrl: `https://id.undefineds.co/.account/?provisionCode=${expiredProvisionCode}`,
+      spDomain: 'node-0000.undefineds.co',
+      cloudIdentityUrl: 'https://id.undefineds.co',
+      cloudApiUrl: 'https://api.undefineds.co',
+      registeredAt: Date.now() - 86_400_000,
+    },
+  )
+
+  assert.equal(requests.length, 1)
+  assert.equal(requests[0].nodeId, 'node-0000')
+  assert.equal(requests[0].nodeToken, 'node-token-old')
+  assert.equal(requests[0].serviceToken, 'service-token-old')
+  assert.equal(result.provisionCode, freshProvisionCode)
+  assert.equal(result.provisionUrl, `https://id.undefineds.co/.account/?provisionCode=${freshProvisionCode}`)
+})
+
+test('XpodManager refreshes stale managed registration when configured SP domain changes', async (t) => {
+  const originalLoad = Module._load
+  const originalFetch = global.fetch
+
+  Module._load = function patchedLoad(request, parent, isMain) {
+    if (request === 'electron') {
+      return {
+        app: {
+          getPath: () => fs.mkdtempSync(path.join(os.tmpdir(), 'linx-xpod-manager-')),
+          isPackaged: false,
+        },
+      }
+    }
+
+    return originalLoad.call(this, request, parent, isMain)
+  }
+
+  t.after(() => {
+    Module._load = originalLoad
+    global.fetch = originalFetch
+  })
+
+  const requests = []
+  global.fetch = async (_url, init) => {
+    requests.push(JSON.parse(init.body))
+    return {
+      ok: true,
+      json: async () => ({
+        nodeId: 'node-0000',
+        nodeToken: 'node-token-new',
+        serviceToken: 'service-token-new',
+        provisionCode: 'provision-code-new',
+        spDomain: 'node-0000.undefineds.co',
+      }),
+    }
+  }
+
+  const { XpodManager } = require(resolveCompiledDesktopModule('lib/xpod-manager.js'))
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'linx-xpod-manager-sp-domain-'))
+  const manager = new XpodManager(
+    {},
+    {
+      getConfigPath: () => path.join(tmpDir, '.env'),
+      getAll: () => ({
+        CSS_EDITION: 'local',
+        oidcIssuer: 'https://id.undefineds.co',
+        XPOD_CLOUD_API_ENDPOINT: 'https://api.undefineds.co',
+      }),
+    },
+    { updateManagedStatus: () => {} },
+    tmpDir,
+  )
+
+  const result = await manager.ensureManagedCloudRegistration(
+    {
+      providerId: 'local',
+      dataDir: tmpDir,
+      port: 5737,
+      spaceKind: 'local',
+      domain: { type: 'managed', value: 'node-0000.undefineds.co' },
+    },
+    {
+      nodeId: '868c9f63-6b0e-4255-8f7f-f2e347908ba4',
+      nodeToken: 'node-token-old',
+      serviceToken: 'service-token-old',
+      provisionCode: 'provision-code-old',
+      publicUrl: 'https://868c9f63-6b0e-4255-8f7f-f2e347908ba4.nodes.undefineds.co/',
+      provisionUrl: 'https://id.undefineds.co/.account/?provisionCode=provision-code-old',
+      spDomain: '868c9f63-6b0e-4255-8f7f-f2e347908ba4.nodes.undefineds.co',
+      tunnelToken: 'tunnel-token',
+      cloudIdentityUrl: 'https://id.undefineds.co',
+      cloudApiUrl: 'https://api.undefineds.co',
+      registeredAt: Date.now(),
+    },
+  )
+
+  assert.equal(requests.length, 1)
+  assert.equal(requests[0].spDomain, 'node-0000.undefineds.co')
+  assert.equal(requests[0].publicUrl, undefined)
+  assert.equal(result.publicUrl, 'https://node-0000.undefineds.co/')
+  assert.equal(result.spDomain, 'node-0000.undefineds.co')
+})
+
+test('XpodManager does not reuse a stale managed spDomain when none is explicitly configured', async (t) => {
+  const originalLoad = Module._load
+  const originalFetch = global.fetch
+
+  Module._load = function patchedLoad(request, parent, isMain) {
+    if (request === 'electron') {
+      return {
+        app: {
+          getPath: () => fs.mkdtempSync(path.join(os.tmpdir(), 'linx-xpod-manager-')),
+          isPackaged: false,
+        },
+      }
+    }
+
+    return originalLoad.call(this, request, parent, isMain)
+  }
+
+  t.after(() => {
+    Module._load = originalLoad
+    global.fetch = originalFetch
+  })
+
+  const requests = []
+  global.fetch = async (_url, init) => {
+    requests.push(JSON.parse(init.body))
+    return {
+      ok: true,
+      json: async () => ({
+        nodeId: '868c9f63-6b0e-4255-8f7f-f2e347908ba4',
+        nodeToken: 'node-token-old',
+        serviceToken: 'service-token-old',
+        provisionCode: 'provision-code-new',
+        spDomain: '868c9f63-6b0e-4255-8f7f-f2e347908ba4.nodes.undefineds.co',
+        publicUrl: 'https://868c9f63-6b0e-4255-8f7f-f2e347908ba4.nodes.undefineds.co/',
+      }),
+    }
+  }
+
+  const { XpodManager } = require(resolveCompiledDesktopModule('lib/xpod-manager.js'))
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'linx-xpod-manager-stale-sp-domain-'))
+  const manager = new XpodManager(
+    {},
+    {
+      getConfigPath: () => path.join(tmpDir, '.env'),
+      getAll: () => ({
+        CSS_EDITION: 'local',
+        oidcIssuer: 'https://id.undefineds.co',
+        XPOD_CLOUD_API_ENDPOINT: 'https://api.undefineds.co',
+      }),
+    },
+    { updateManagedStatus: () => {} },
+    tmpDir,
+  )
+
+  const result = await manager.ensureManagedCloudRegistration(
+    {
+      providerId: 'local',
+      dataDir: tmpDir,
+      port: 5737,
+      spaceKind: 'local',
+      domain: { type: 'managed', value: '' },
+    },
+    {
+      nodeId: '868c9f63-6b0e-4255-8f7f-f2e347908ba4',
+      nodeToken: 'node-token-old',
+      serviceToken: 'service-token-old',
+      provisionCode: 'provision-code-old',
+      publicUrl: 'https://stale-node.undefineds.co/',
+      provisionUrl: 'https://id.undefineds.co/.account/?provisionCode=provision-code-old',
+      spDomain: 'stale-node.undefineds.co',
+      cloudIdentityUrl: 'https://id.undefineds.co',
+      cloudApiUrl: 'https://api.undefineds.co',
+      registeredAt: Date.now(),
+    },
+  )
+
+  assert.equal(requests.length, 1)
+  assert.equal(requests[0].nodeId, '868c9f63-6b0e-4255-8f7f-f2e347908ba4')
+  assert.equal(requests[0].nodeToken, 'node-token-old')
+  assert.equal(requests[0].serviceToken, 'service-token-old')
+  assert.equal(requests[0].spDomain, undefined)
+  assert.equal(requests[0].publicUrl, undefined)
+  assert.equal(result.publicUrl, 'https://868c9f63-6b0e-4255-8f7f-f2e347908ba4.nodes.undefineds.co/')
+  assert.equal(result.spDomain, '868c9f63-6b0e-4255-8f7f-f2e347908ba4.nodes.undefineds.co')
 })
 
 test('XpodManager Standalone desired state keeps HTTP LAN CSS_BASE_URL as the canonical URL', (t) => {

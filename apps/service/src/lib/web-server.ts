@@ -15,6 +15,98 @@ const OFFICIAL_CLOUD_IDENTITY_ORIGIN = 'https://id.undefineds.co'
 const OFFICIAL_CLOUD_API_ORIGIN = 'https://api.undefineds.co'
 const MANAGED_CLOUD_REGISTRATION_TIMEOUT_MS = 30000
 
+function formatServiceUserError(error: unknown, fallback: string): string {
+  const message = error instanceof Error
+    ? error.message
+    : typeof error === 'string'
+      ? error
+      : ''
+  const normalized = message.toLowerCase()
+
+  if (!message) {
+    return fallback
+  }
+
+  if (/publicurl is required|spdomain|canonical|cloud.*local.*绑定|local.*cloud.*绑定/.test(normalized)) {
+    return '本地空间还没有完成准备。请回到空间选择页，再点一次“本地空间”。'
+  }
+
+  if (/invalid or expired provisioncode|invalid or expired providercode|provisioncode.*expired|providercode.*expired/.test(normalized)) {
+    return '这次本地登录已失效。请回到空间选择页，重新点“本地空间”。'
+  }
+
+  if (/无法准备本地空间登录入口|cloud 返回|节点注册结果不完整|local canonical url 不完整/.test(normalized)) {
+    return '本地空间入口准备失败。请稍后重试；如果仍失败，请回到空间选择页重新进入。'
+  }
+
+  if (/aborterror|timeout|连接.*超时|failed to fetch|network/.test(normalized)) {
+    return '无法连接登录服务。请检查网络后重试。'
+  }
+
+  if (/(?:http|api error|runtime request failed|request failed)[:\s]*401\b|unauthorized/.test(normalized)) {
+    return '登录状态已失效。请重新登录。'
+  }
+
+  if (/(?:http|api error|runtime request failed|request failed)[:\s]*403\b|forbidden/.test(normalized)) {
+    return '这个账号还不能写入当前空间。请换一个空间；如果这是你的本地空间，请先完成空间创建。'
+  }
+
+  if (/(?:http|api error|runtime request failed|request failed)[:\s]*409\b|conflict|already exists|already registered/.test(normalized)) {
+    return '这个账号或空间名已经存在。请直接登录，或换一个名字。'
+  }
+
+  if (/(?:http|api error|runtime request failed|request failed)[:\s]*429\b|rate limit|too many requests/.test(normalized)) {
+    return '请求太频繁。请稍等一会儿再试。'
+  }
+
+  if (/(?:http|api error|runtime request failed|request failed)[:\s]*5\d\d\b|service unavailable|internal server error/.test(normalized)) {
+    return '服务暂时没有响应。请稍后重试。'
+  }
+
+  if (/findbyid|base-relative|full iris|resource id|iri/.test(normalized) && fallback.includes('工作会话')) {
+    return fallback
+  }
+
+  if (/findbyid|base-relative|full iris|resource id|iri/.test(normalized)) {
+    return 'LinX 初始化失败。请刷新页面；如果仍失败，请换一个空间重新登录。'
+  }
+
+  if (/cannot find module|invalid resource iri|jsonld|componentsjs|application support|require stack/.test(normalized)) {
+    return '本地空间启动文件损坏。请重启 LinX 让它自动修复；如果仍失败，请打开本地空间设置修复。'
+  }
+
+  if (/unable to install @undefineds\.co\/xpod|unable to prepare xpod runtime/.test(normalized)) {
+    return '本地空间组件下载失败。请检查网络后重试。'
+  }
+
+  if (/missing required local login\/startup capabilities|scoped webid|scoped pickwebid|scoped picker|escaped recursive css runtime/.test(normalized)) {
+    return '本地空间版本过旧。请重启 LinX 让它自动更新；如果仍失败，请打开本地空间设置修复。'
+  }
+
+  if (/xpod failed to start|failed to start xpod|local 服务在完成启动前已退出|exceeded max restarts/.test(normalized)) {
+    return '本地空间启动失败。请点“重新检查”；如果仍失败，请重启 LinX。'
+  }
+
+  if (/\/users\/|\\users\\|application support|node_modules|require stack|cannot find module|jsonld|componentsjs|https?:\/\/|file:\/\/|localhost|127\.0\.0\.1|http\s+\d{3}|pod|solid|webid|oidc|issuer|provider|publicurl|provisioncode|spdomain|canonical|agent|secretary/i.test(message)) {
+    return fallback
+  }
+
+  return message.length <= 180 ? message : fallback
+}
+
+function sendUserError(
+  res: Response,
+  status: number,
+  fallback: string,
+  error?: unknown,
+  extra?: Record<string, unknown>,
+): void {
+  res.status(status).json({
+    error: formatServiceUserError(error ?? fallback, fallback),
+    ...(extra ?? {}),
+  })
+}
+
 interface SetupData {
   dataDir: string
   port: number
@@ -530,7 +622,7 @@ export class WebServerModule {
       if ((error as Error & { name?: string })?.name === 'AbortError') {
         throw new Error('连接 Cloud 注册 Local 节点超时。')
       }
-      throw new Error(`无法完成 Local 的 Cloud 绑定：${error instanceof Error ? error.message : String(error)}`)
+        throw new Error(`无法准备本地空间登录入口：${error instanceof Error ? error.message : String(error)}`)
     } finally {
       clearTimeout(timeoutId)
     }
@@ -621,7 +713,7 @@ export class WebServerModule {
         }
       } catch (error) {
         console.error('[WebServer] Failed to read config:', error)
-        res.status(500).json({ error: 'Failed to read config' })
+        sendUserError(res, 500, '读取本地空间设置失败。请稍后重试。', error)
       }
     })
 
@@ -631,14 +723,14 @@ export class WebServerModule {
         const data = normalizeSetupData(req.body as SetupData)
 
         if (data.network?.accessMode === 'tunnel' && !data.network.tunnelProvider) {
-          res.status(400).json({ error: 'tunnelProvider is required when accessMode=tunnel' })
+          sendUserError(res, 400, '请选择隧道供应商后再保存。')
           return
         }
 
         if (data.network?.accessMode === 'tunnel' && data.network.tunnelProvider && !data.network.tunnelToken) {
           const envPath = getEnvPath()
           if (!fs.existsSync(envPath)) {
-            res.status(400).json({ error: 'tunnelToken is required for new tunnel configuration' })
+            sendUserError(res, 400, '请填写隧道 Token 后再保存。')
             return
           }
 
@@ -654,7 +746,7 @@ export class WebServerModule {
           const tokenKey = data.network.tunnelProvider === 'cloudflare' ? 'CLOUDFLARE_TUNNEL_TOKEN' : 'SAKURA_TOKEN'
           const existingToken = env[tokenKey]
           if (!existingToken) {
-            res.status(400).json({ error: 'tunnelToken is required for selected tunnel provider' })
+            sendUserError(res, 400, '请填写隧道 Token 后再保存。')
             return
           }
           data.network.tunnelToken = existingToken
@@ -697,7 +789,7 @@ export class WebServerModule {
         } : undefined })
       } catch (error) {
         console.error('[WebServer] Failed to save setup:', error)
-        res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to save configuration' })
+        res.status(500).json({ error: formatServiceUserError(error, '保存本地空间设置失败。请检查填写内容后重试。') })
       }
     })
 
@@ -740,7 +832,7 @@ export class WebServerModule {
     this.app.post('/api/service/start', async (req: Request, res: Response) => {
       try {
         if (isInvalidServiceSpaceKind(req.body?.spaceKind)) {
-          res.status(400).json({ error: 'spaceKind must be "local" or "standalone"' })
+          sendUserError(res, 400, '当前页面和已启动的空间不一致。请回到空间选择页重新进入。')
           return
         }
 
@@ -748,7 +840,7 @@ export class WebServerModule {
         const configuredSpaceKind = this.readConfiguredSpaceKind()
         if (requestedSpaceKind && configuredSpaceKind && requestedSpaceKind !== configuredSpaceKind) {
           res.status(409).json({
-            error: `当前 Service 配置为 ${configuredSpaceKind}，不能按 ${requestedSpaceKind} 启动。请先在设置中切换空间。`,
+            error: '当前已经选择了另一种本地空间。请返回空间选择页，切换后再启动。',
             configuredSpaceKind,
             requestedSpaceKind,
           })
@@ -759,7 +851,7 @@ export class WebServerModule {
         res.json({ success: true })
       } catch (error) {
         console.error('[WebServer] Failed to start xpod:', error)
-        res.status(500).json({ error: 'Failed to start xpod' })
+        sendUserError(res, 500, '本地空间启动失败。请点“重新检查”；如果仍失败，请重启 LinX。', error)
       }
     })
 
@@ -769,7 +861,7 @@ export class WebServerModule {
         res.json({ success: true })
       } catch (error) {
         console.error('[WebServer] Failed to stop xpod:', error)
-        res.status(500).json({ error: 'Failed to stop xpod' })
+        sendUserError(res, 500, '本地空间没有顺利关闭。请稍后重试。', error)
       }
     })
 
@@ -779,7 +871,7 @@ export class WebServerModule {
         res.json({ success: true })
       } catch (error) {
         console.error('[WebServer] Failed to restart xpod:', error)
-        res.status(500).json({ error: 'Failed to restart xpod' })
+        sendUserError(res, 500, '本地空间没有顺利重启。请稍后重试。', error)
       }
     })
 
@@ -794,7 +886,7 @@ export class WebServerModule {
     this.app.get('/api/runtime/threads/:id', (req: Request, res: Response) => {
       const session = getRuntimeThreadsModule().getSession(routeParam(req.params.id))
       if (!session) {
-        res.status(404).json({ error: 'Runtime session not found' })
+        sendUserError(res, 404, '没有找到这个工作会话。请返回当前聊天后重试。')
         return
       }
       res.json(session)
@@ -804,7 +896,7 @@ export class WebServerModule {
       try {
         const { threadId, workspaceUri, title, repoPath, folderPath, runnerType, tool, baseRef, branch } = req.body ?? {}
         if (!threadId || !title || !repoPath) {
-          res.status(400).json({ error: 'threadId, title, and repoPath are required' })
+          sendUserError(res, 400, '请先选择聊天和工作目录后再启动。')
           return
         }
 
@@ -822,7 +914,7 @@ export class WebServerModule {
         res.json(session)
       } catch (error) {
         console.error('[WebServer] Failed to create runtime session:', error)
-        res.status(500).json({ error: 'Failed to create runtime session' })
+        sendUserError(res, 500, '工作会话创建失败。请重新进入 LinX；如果仍失败，请换一个空间。', error)
       }
     })
 
@@ -832,7 +924,7 @@ export class WebServerModule {
         res.json(session)
       } catch (error) {
         console.error('[WebServer] Failed to start runtime session:', error)
-        res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to start runtime session' })
+        res.status(500).json({ error: formatServiceUserError(error, '运行时会话启动失败。请稍后重试。') })
       }
     })
 
@@ -842,7 +934,7 @@ export class WebServerModule {
         res.json(session)
       } catch (error) {
         console.error('[WebServer] Failed to pause runtime session:', error)
-        res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to pause runtime session' })
+        res.status(500).json({ error: formatServiceUserError(error, '运行时会话暂停失败。请稍后重试。') })
       }
     })
 
@@ -852,7 +944,7 @@ export class WebServerModule {
         res.json(session)
       } catch (error) {
         console.error('[WebServer] Failed to resume runtime session:', error)
-        res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to resume runtime session' })
+        res.status(500).json({ error: formatServiceUserError(error, '运行时会话恢复失败。请稍后重试。') })
       }
     })
 
@@ -862,7 +954,7 @@ export class WebServerModule {
         res.json(session)
       } catch (error) {
         console.error('[WebServer] Failed to stop runtime session:', error)
-        res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to stop runtime session' })
+        res.status(500).json({ error: formatServiceUserError(error, '运行时会话停止失败。请稍后重试。') })
       }
     })
 
@@ -870,7 +962,7 @@ export class WebServerModule {
       try {
         const text = typeof req.body?.text === 'string' ? req.body.text.trim() : ''
         if (!text) {
-          res.status(400).json({ error: 'text is required' })
+          sendUserError(res, 400, '请输入要发送的内容。')
           return
         }
 
@@ -878,7 +970,7 @@ export class WebServerModule {
         res.json(session)
       } catch (error) {
         console.error('[WebServer] Failed to send runtime session message:', error)
-        res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to send runtime session message' })
+        res.status(500).json({ error: formatServiceUserError(error, '消息发送失败。请稍后重试。') })
       }
     })
 
@@ -886,7 +978,7 @@ export class WebServerModule {
       try {
         const output = typeof req.body?.output === 'string' ? req.body.output : ''
         if (!output.trim()) {
-          res.status(400).json({ error: 'output is required' })
+          sendUserError(res, 400, '请先填写工具执行结果。')
           return
         }
 
@@ -898,7 +990,7 @@ export class WebServerModule {
         res.json(session)
       } catch (error) {
         console.error('[WebServer] Failed to respond runtime tool call:', error)
-        res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to respond runtime tool call' })
+        res.status(500).json({ error: formatServiceUserError(error, '工具结果提交失败。请稍后重试。') })
       }
     })
 
@@ -908,7 +1000,7 @@ export class WebServerModule {
         res.type('text/plain').send(log)
       } catch (error) {
         console.error('[WebServer] Failed to get runtime session log:', error)
-        res.status(500).json({ error: 'Failed to get runtime session log' })
+        sendUserError(res, 500, '工作会话日志读取失败。请稍后重试。', error)
       }
     })
 
@@ -917,7 +1009,7 @@ export class WebServerModule {
       const sessionId = routeParam(req.params.id)
       const session = runtimeSessions.getSession(sessionId)
       if (!session) {
-        res.status(404).json({ error: 'Runtime session not found' })
+        sendUserError(res, 404, '没有找到这个工作会话。请返回当前聊天后重试。')
         return
       }
 
@@ -958,7 +1050,7 @@ export class WebServerModule {
       this.app.use((req, res) => {
         // Skip API routes
         if (req.path.startsWith('/api/')) {
-          res.status(404).json({ error: 'Not found' })
+          sendUserError(res, 404, '没有找到这个服务接口。请刷新页面后重试。')
           return
         }
 

@@ -23,9 +23,10 @@ function loadWebServerWithStubs(t, options = {}) {
 
   global.fetch = async (url, init = {}) => {
     fetchCalls.push({ url: String(url), init })
+    const statusCode = options.provisionStatus ?? 200
     return {
-      ok: true,
-      status: 200,
+      ok: statusCode >= 200 && statusCode < 300,
+      status: statusCode,
       async json() {
         return options.provisionResponse ?? {
           nodeId: 'node-123',
@@ -39,7 +40,7 @@ function loadWebServerWithStubs(t, options = {}) {
         }
       },
       async text() {
-        return ''
+        return options.provisionText ?? ''
       },
     }
   }
@@ -62,9 +63,14 @@ function loadWebServerWithStubs(t, options = {}) {
           getStatus: () => status,
           start: async () => {
             startCalls.push({})
+            if (options.xpodStartError) throw options.xpodStartError
           },
-          stop: async () => {},
-          restart: async () => {},
+          stop: async () => {
+            if (options.xpodStopError) throw options.xpodStopError
+          },
+          restart: async () => {
+            if (options.xpodRestartError) throw options.xpodRestartError
+          },
         }),
       }
     }
@@ -74,7 +80,10 @@ function loadWebServerWithStubs(t, options = {}) {
         getRuntimeThreadsModule: () => ({
           listSessions: () => runtimeSessions,
           getSession: () => null,
-          createSession: () => ({}),
+          createSession: () => {
+            if (options.runtimeCreateError) throw options.runtimeCreateError
+            return {}
+          },
           startSession: async () => ({}),
           pauseSession: async () => ({}),
           resumeSession: async () => ({}),
@@ -253,6 +262,24 @@ test('setup writes Cloud+Local Cloud-managed canonical domain env without a user
   assert.doesNotMatch(env, /^LINX_PUBLIC_DOMAIN=/m)
 })
 
+test('setup returns user-facing copy when Local binding fails', async (t) => {
+  const { server } = loadWebServerWithStubs(t, {
+    provisionStatus: 400,
+    provisionText: '{"error":"publicUrl is required","provisionCode":"secret-code"}',
+  })
+  const { listener, origin } = await listenOnRandomPort(server.app)
+  t.after(() => listener.close())
+
+  const response = await requestJson(origin, '/api/setup', {
+    method: 'POST',
+    body: setupPayload(),
+  })
+
+  assert.equal(response.status, 500)
+  assert.equal(response.body.error, '本地空间还没有完成准备。请回到空间选择页，再点一次“本地空间”。')
+  assert.doesNotMatch(response.body.error, /publicUrl|provisionCode|secret-code/i)
+})
+
 test('service status exposes provisioning from generated env', async (t) => {
   const { server, tmpDir } = loadWebServerWithStubs(t, {
     status: {
@@ -357,8 +384,51 @@ test('service start rejects invalid space values', async (t) => {
   })
 
   assert.equal(response.status, 400)
-  assert.match(response.body.error, /spaceKind must/)
+  assert.equal(response.body.error, '当前页面和已启动的空间不一致。请回到空间选择页重新进入。')
   assert.equal(startCalls.length, 0)
+})
+
+test('service start failure returns user-facing copy without runtime details', async (t) => {
+  const { server, tmpDir } = loadWebServerWithStubs(t, {
+    xpodStartError: new Error("Cannot find module 'jsonld'\nRequire stack:\n- /Users/ganlu/Library/Application Support/@linx/xpod.js"),
+  })
+  const { listener, origin } = await listenOnRandomPort(server.app)
+  t.after(() => listener.close())
+
+  fs.writeFileSync(path.join(tmpDir, '.env'), [
+    'LINX_SPACE_KIND=local',
+    'CSS_PORT=5737',
+  ].join('\n'))
+
+  const response = await requestJson(origin, '/api/service/start', {
+    method: 'POST',
+    body: { spaceKind: 'local' },
+  })
+
+  assert.equal(response.status, 500)
+  assert.equal(response.body.error, '本地空间启动文件损坏。请重启 LinX 让它自动修复；如果仍失败，请打开本地空间设置修复。')
+  assert.doesNotMatch(response.body.error, /jsonld|Require stack|Application Support|\/Users|xpod/i)
+})
+
+test('runtime API failures return user-facing copy without internal fields', async (t) => {
+  const { server } = loadWebServerWithStubs(t, {
+    runtimeCreateError: new Error('findById requires a base-relative resource id. Use findByIri(resource, iri) for full IRIs.'),
+  })
+  const { listener, origin } = await listenOnRandomPort(server.app)
+  t.after(() => listener.close())
+
+  const response = await requestJson(origin, '/api/runtime/threads', {
+    method: 'POST',
+    body: {
+      threadId: 'thread-1',
+      title: '测试会话',
+      repoPath: '/tmp/repo',
+    },
+  })
+
+  assert.equal(response.status, 500)
+  assert.equal(response.body.error, '工作会话创建失败。请重新进入 LinX；如果仍失败，请换一个空间。')
+  assert.doesNotMatch(response.body.error, /findById|resource id|IRI/i)
 })
 
 test('stored Cloud registration is ignored when no public URL can be recovered', (t) => {

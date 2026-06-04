@@ -395,7 +395,7 @@ async function createConfigWindow(): Promise<void> {
 
   const dashboardUrl = getXpodDashboardUrl(status);
   if (!dashboardUrl) {
-    throw new Error('当前没有可用的 xpod 管理界面');
+    throw new Error('当前没有可用的本地空间管理页');
   }
 
   await embeddedXpodSettingsSheet.open(dashboardUrl);
@@ -549,8 +549,8 @@ async function openXpodDashboardWindow(): Promise<void> {
   if (!status.running || !dashboardUrl) {
     await dialog.showMessageBox({
       type: 'info',
-      title: 'xpod 未运行',
-      message: '当前没有可用的 xpod 管理界面。',
+      title: '本地空间未运行',
+      message: '当前没有可用的本地空间管理页。',
       detail: formatXpodStatusDetail(status),
     });
     return;
@@ -560,7 +560,7 @@ async function openXpodDashboardWindow(): Promise<void> {
     xpodWindow = new BrowserWindow({
       width: 1120,
       height: 800,
-      title: 'xpod 管理',
+      title: '本地空间管理',
       icon: desktopAppIcon && !desktopAppIcon.isEmpty() ? desktopAppIcon : undefined,
       webPreferences: {
         nodeIntegration: false,
@@ -583,8 +583,8 @@ async function showXpodStatusDialog(): Promise<void> {
   const status = await xpodManager.getStatus();
   await dialog.showMessageBox({
     type: status.running ? 'info' : 'warning',
-    title: 'xpod 状态',
-    message: status.running ? 'xpod 运行中' : 'xpod 未运行',
+    title: '本地空间状态',
+    message: status.running ? '本地空间运行中' : '本地空间未运行',
     detail: formatXpodStatusDetail(status),
   });
 }
@@ -667,9 +667,9 @@ async function startXpodFromTray(): Promise<void> {
   if (!resumed) {
     await dialog.showMessageBox({
       type: 'info',
-      title: '没有可启动的 xpod',
-      message: '当前没有已配置的 xpod。',
-      detail: '请先在 LinX 中完成 Local 配置。',
+      title: '没有可启动的本地空间',
+      message: '当前还没有配置好的本地空间。',
+      detail: '请先在 LinX 中完成本地空间设置。',
     });
     return;
   }
@@ -728,7 +728,7 @@ async function refreshTrayState(): Promise<void> {
         },
       },
       {
-        label: '打开 xpod 管理',
+        label: '打开本地空间管理',
         enabled: Boolean(status.running && dashboardUrl),
         click: () => {
           void openXpodDashboardWindow().catch((error) => {
@@ -738,7 +738,7 @@ async function refreshTrayState(): Promise<void> {
       },
       { type: 'separator' },
       {
-        label: '查看 xpod 状态',
+        label: '查看本地空间状态',
         click: () => {
           void showXpodStatusDialog().catch((error) => {
             console.error('[Desktop] Failed to show xpod status:', error);
@@ -746,7 +746,7 @@ async function refreshTrayState(): Promise<void> {
         },
       },
       {
-        label: status.running || status.status === 'starting' ? '重启 xpod' : '启动 xpod',
+        label: status.running || status.status === 'starting' ? '重启本地空间' : '启动本地空间',
         enabled: Boolean((status.running || status.status === 'starting') || resumable),
         click: () => {
           const action = status.running || status.status === 'starting'
@@ -760,7 +760,7 @@ async function refreshTrayState(): Promise<void> {
         },
       },
       {
-        label: '停止 xpod',
+        label: '停止本地空间',
         enabled: Boolean(status.running || status.status === 'starting'),
         click: () => {
           void stopXpodFromTray()
@@ -771,7 +771,7 @@ async function refreshTrayState(): Promise<void> {
         },
       },
       {
-        label: '打开 xpod 日志目录',
+        label: '打开本地空间日志目录',
         click: () => {
           void openXpodLogsDirectory().catch((error) => {
             console.error('[Desktop] Failed to open xpod logs:', error);
