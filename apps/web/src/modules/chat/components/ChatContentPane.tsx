@@ -11,7 +11,6 @@ import { useSession } from '@inrupt/solid-ui-react'
 import { useNavigate } from '@tanstack/react-router'
 import { Bot, Loader2, LockKeyhole, PlayCircle, ShieldAlert } from 'lucide-react'
 import { useChatKit, ChatKit as ChatKitComponent } from '@openai/chatkit-react'
-import { resolveRowSubject } from '@undefineds.co/drizzle-solid'
 import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { Button } from '@/components/ui/button'
 import {
@@ -28,6 +27,7 @@ import { useInboxItems } from '@/modules/inbox/collections'
 import { isActionableInboxItem } from '@/modules/inbox/utils'
 import { useInboxStore } from '@/modules/inbox/store'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
+import { formatLoginErrorForUser } from '@/modules/login/error-messages'
 import { createLocalChatKitFetch } from '../services/chatkit-local/fetch-handler'
 import { useChatStore } from '../store'
 import { useChatInit, useChatList, useChatMutations, useThreadList, useWorkspaceList } from '../collections'
@@ -176,7 +176,7 @@ function RuntimeSessionToolbar({
     }
 
     if (event.type === 'error') {
-      setRuntimeError(event.message || '运行时执行失败。')
+      setRuntimeError(formatLoginErrorForUser(event.message, '运行时执行失败。请稍后重试。'))
       void runtimeSession.refetch()
     }
   }, [runtimeSession])
@@ -230,7 +230,7 @@ function RuntimeSessionToolbar({
       setBranch('')
     } catch (error) {
       console.error('Create runtime session failed:', error)
-      setRuntimeError(error instanceof Error ? error.message : '创建运行时会话失败。')
+      setRuntimeError(formatLoginErrorForUser(error, '创建运行时会话失败。请检查工作区设置后重试。'))
     }
   }, [baseRef, branch, folderPath, mutations.ensureThreadWorkspace, repoPath, runtimeSession, threadId, threadTitle, tool])
 
@@ -260,7 +260,7 @@ function RuntimeSessionToolbar({
       await navigator.clipboard.writeText(log)
     } catch (error) {
       console.error('Copy runtime session log failed:', error)
-      setRuntimeError(error instanceof Error ? error.message : '复制运行时日志失败。')
+      setRuntimeError(formatLoginErrorForUser(error, '复制运行时日志失败。请稍后重试。'))
     }
   }, [runtimeSession])
 
@@ -315,7 +315,7 @@ function RuntimeSessionToolbar({
         <div className="flex items-center justify-between gap-3 border-b border-border/50 bg-muted/20 px-4 py-3">
           <div className="min-w-0">
             <p className="text-sm font-medium text-foreground">
-              {workspaceSummary ? `当前话题已绑定${workspaceSummary.kindLabel}` : '当前话题仅做 Pod 留档'}
+              {workspaceSummary ? `当前话题已绑定${workspaceSummary.kindLabel}` : '当前话题仅保存到空间'}
             </p>
             <p className="text-xs text-muted-foreground">
               {workspaceSummary
@@ -577,19 +577,19 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
 
   const activeChat = useMemo(() => {
     if (!selectedChatId || !chats) return null
-    return chats.find((chat) => resolveRowSubject(chat as Record<string, unknown>) === selectedChatId) ?? null
+    return chats.find((chat) => chat.id === selectedChatId) ?? null
   }, [chats, selectedChatId])
 
   const activeThread = useMemo(() => {
     if (!selectedThreadId) return null
-    return threads.find((thread) => (resolveRowSubject(thread as Record<string, unknown>) ?? thread.id) === selectedThreadId) ?? null
+    return threads.find((thread) => thread.id === selectedThreadId) ?? null
   }, [selectedThreadId, threads])
 
   useEffect(() => {
     if (!selectedChatId || !isReady || isThreadsLoading) return
 
     const normalizedThreads = threads
-      .map((thread) => ({ ...thread, _id: resolveRowSubject(thread as Record<string, unknown>) ?? thread.id }))
+      .map((thread) => ({ ...thread, _id: thread.id }))
       .filter((thread) => Boolean(thread._id))
 
     if (selectedThreadId && normalizedThreads.some((thread) => thread._id === selectedThreadId)) {
@@ -613,7 +613,7 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
       },
       {
         onSuccess: (thread) => {
-          const threadId = thread.id ?? resolveRowSubject(thread as Record<string, unknown>)
+          const threadId = thread.id
           if (threadId) {
             selectThread(threadId)
           }
@@ -632,19 +632,19 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
   }
 
   if (!isReady) {
-    return <EmptyState title="正在连接 Pod" description="等待 Solid 会话和数据库准备完成。" />
+    return <EmptyState title="正在连接空间" description="正在准备账号和数据访问，请稍等。" />
   }
 
   if (!session.info.webId || !session.fetch) {
-    return <EmptyState title="会话未就绪" description="请先完成 Solid Pod 登录，再开始聊天。" />
+    return <EmptyState title="登录未完成" description="请先完成登录，再开始聊天。" />
   }
 
   if (!db) {
-    return <EmptyState title="数据库未就绪" description="正在初始化 Pod 数据访问层。" />
+    return <EmptyState title="数据还没准备好" description="正在准备当前空间的数据访问。" />
   }
 
   if (!activeChat) {
-    return <EmptyState title="正在加载聊天" description="聊天元数据正在从 Pod 读取。" />
+    return <EmptyState title="正在加载聊天" description="正在从当前空间读取聊天内容。" />
   }
 
   if (!selectedThreadId) {

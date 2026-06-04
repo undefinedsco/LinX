@@ -32,6 +32,7 @@ import { useModelServicesStore } from './store'
 import { useModelServices } from './hooks/useModelServices'
 import { PlaceholderContentPane } from '@/modules/layout/placeholders'
 import { cn } from '@/lib/utils'
+import { formatErrorForUser } from '@/lib/user-facing-errors'
 import type { AIModel } from './types'
 import { searchProviderModels } from './services/model-fetcher'
 
@@ -298,10 +299,17 @@ export function ModelServicesContentPane() {
         className: "bg-green-500/15 border-green-500/20 text-green-600" 
       })
     } catch (e) {
-      const message = e instanceof Error ? e.message : '请检查 API Key、Base URL 或网络设置'
+      console.warn('[ModelServices] Provider verification failed:', e)
+      const rawMessage = e instanceof Error ? e.message : String(e ?? '')
+      let message = formatErrorForUser(e, '请检查密钥、服务地址或网络后重试。')
+      if (/401|unauthorized|api key|invalid key|missing key|incorrect api key/i.test(rawMessage)) {
+        message = '密钥不可用。请检查密钥是否填写正确，或换一个密钥后重试。'
+      } else if (/模型列表获取失败|model list|models/i.test(rawMessage)) {
+        message = '模型列表获取失败。请检查密钥、服务地址或网络后重试。'
+      }
       toast({ 
         variant: "destructive",
-        description: `连接失败: ${message}`
+        description: `连接失败：${message}`
       })
     } finally {
       setIsVerifying(false)

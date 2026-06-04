@@ -426,7 +426,7 @@ test('resolveRemoteAutoModeApproval updates Pod approval state and listRemoteAut
   state.audits.push({
     id: 'audit_requested_123',
     action: 'approval_requested',
-    actor: 'https://alice.example/.data/agents/linx-auto-mode-assistant.ttl',
+    actor: 'https://alice.example/.data/agents/linx-auto-mode-assistant/index.ttl#this',
     actorRole: 'secretary',
     onBehalfOf: state.webId,
     session: AUTO_MODE_THREAD_URI,
@@ -751,7 +751,7 @@ test('native remote approval store writes and reads approval grant audit resourc
   await store.insertAudit({
     id: 'audit_native_1',
     action: 'approval_requested',
-    actor: 'https://alice.example/.data/agents/linx-auto-mode-assistant.ttl',
+    actor: 'https://alice.example/.data/agents/linx-auto-mode-assistant/index.ttl#this',
     actorRole: 'secretary',
     onBehalfOf: webId,
     session: 'https://alice.example/.data/chat/linx-auto-mode/index.ttl#auto_1',
@@ -832,4 +832,107 @@ test('native remote approval store writes and reads approval grant audit resourc
   assert.equal(writes.some((write) => write.url.endsWith('/.data/approvals/2026/03/18.ttl')), true)
   assert.equal(writes.some((write) => write.url.endsWith('/.data/audits/2026/03/18.ttl')), true)
   assert.equal(writes.some((write) => write.url.endsWith('/settings/autonomy/grants/grant_native_1.ttl')), true)
+})
+
+test('native remote approval store surfaces approval container read failures', async () => {
+  const webId = 'https://alice.example/profile/card#me'
+  const store = approvalModule.__podApprovalInternal.createNativeRemoteApprovalStore(webId, async (url, init = {}) => {
+    const method = init.method ?? 'GET'
+    if (method === 'GET' && url.endsWith('/.data/approvals/')) {
+      return new Response('forbidden', { status: 403, statusText: 'Forbidden' })
+    }
+    return new Response('missing', { status: 404 })
+  })
+
+  await assert.rejects(
+    () => store.listApprovals(),
+    /Failed to list Pod container .*\/\.data\/approvals\/: 403 Forbidden/,
+  )
+})
+
+test('native remote approval store surfaces listed audit resource read failures', async () => {
+  const webId = 'https://alice.example/profile/card#me'
+  const auditUrl = 'https://alice.example/.data/audits/2026/03/18.ttl'
+  const store = approvalModule.__podApprovalInternal.createNativeRemoteApprovalStore(webId, async (url, init = {}) => {
+    const method = init.method ?? 'GET'
+    if (method !== 'GET') {
+      return new Response(null, { status: 405 })
+    }
+    if (url.endsWith('/.data/audits/')) {
+      return new Response(`<${auditUrl}> .`, { status: 200, headers: { 'Content-Type': 'text/turtle' } })
+    }
+    if (url === auditUrl) {
+      return new Response('forbidden', { status: 403, statusText: 'Forbidden' })
+    }
+    return new Response('missing', { status: 404 })
+  })
+
+  await assert.rejects(
+    () => store.listAudits(),
+    /Failed to read Pod resource .*\/\.data\/audits\/2026\/03\/18\.ttl: 403 Forbidden/,
+  )
+})
+
+test('native remote approval store surfaces malformed grant Turtle instead of treating it as empty', async () => {
+  const webId = 'https://alice.example/profile/card#me'
+  const grantUrl = 'https://alice.example/settings/autonomy/grants/bad.ttl'
+  const store = approvalModule.__podApprovalInternal.createNativeRemoteApprovalStore(webId, async (url, init = {}) => {
+    const method = init.method ?? 'GET'
+    if (method !== 'GET') {
+      return new Response(null, { status: 405 })
+    }
+    if (url.endsWith('/settings/autonomy/grants/')) {
+      return new Response(`<${grantUrl}> .`, { status: 200, headers: { 'Content-Type': 'text/turtle' } })
+    }
+    if (url === grantUrl) {
+      return new Response('<https://alice.example/settings/autonomy/grants/bad.ttl> <broken> "unterminated .', {
+        status: 200,
+        headers: { 'Content-Type': 'text/turtle' },
+      })
+    }
+    return new Response('missing', { status: 404 })
+  })
+
+  await assert.rejects(
+    () => store.listGrants(),
+    (error) => error instanceof Error && error.message.length > 0,
+  )
+})
+
+test('native remote approval store refuses to merge into malformed existing approval Turtle', async () => {
+  const webId = 'https://alice.example/profile/card#me'
+  const approvalDocUrl = 'https://alice.example/.data/approvals/2026/03/18.ttl'
+  const store = approvalModule.__podApprovalInternal.createNativeRemoteApprovalStore(webId, async (url, init = {}) => {
+    const method = init.method ?? 'GET'
+    if (method === 'GET' && url === approvalDocUrl) {
+      return new Response('<https://alice.example/.data/approvals/2026/03/18.ttl#old> <broken> "unterminated .', {
+        status: 200,
+        headers: { 'Content-Type': 'text/turtle' },
+      })
+    }
+    if (method === 'HEAD') {
+      return new Response(null, { status: 200 })
+    }
+    if (method === 'PUT') {
+      assert.fail('malformed existing Turtle must not be overwritten by managed block merge')
+    }
+    return new Response('missing', { status: 404 })
+  })
+
+  await assert.rejects(
+    () => store.insertApproval({
+      id: 'approval_bad_existing',
+      session: 'https://alice.example/.data/chat/linx-auto-mode/index.ttl#auto_1',
+      toolCallId: 'tool_1',
+      toolName: 'commandExecution',
+      target: 'https://alice.example/.data/chat/linx-auto-mode/index.ttl#auto_1',
+      action: 'https://undefineds.co/ns#commandExecution',
+      risk: 'medium',
+      status: 'pending',
+      assignedTo: webId,
+      policyVersion: 'linx-auto-mode-remote-approval/v1',
+      createdAt: '2026-03-18T00:00:00.000Z',
+    }),
+    (error) => error instanceof Error && error.message.length > 0,
+  )
 })

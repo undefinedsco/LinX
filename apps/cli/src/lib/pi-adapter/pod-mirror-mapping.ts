@@ -1,14 +1,17 @@
 import { createHash } from 'node:crypto'
 import type { AgentMessage } from '@mariozechner/pi-agent-core'
 import type { SessionEntry, SessionManager } from '@mariozechner/pi-coding-agent'
+import { agentResourceId } from '../models.js'
 
 export const DEFAULT_SECRETARY_CHAT_ID = 'ai-secretary'
 export const DEFAULT_SECRETARY_AGENT_ID = 'ai-secretary'
+export const DEFAULT_SECRETARY_AGENT_RESOURCE_ID = agentResourceId(DEFAULT_SECRETARY_AGENT_ID)
 
 // Compatibility exports for older call sites. New code should use the secretary/chat
 // names because Chat identifies the conversation counterpart, not the CLI product.
 export const PI_CHAT_ID = DEFAULT_SECRETARY_CHAT_ID
 export const PI_AGENT_ID = DEFAULT_SECRETARY_AGENT_ID
+export const PI_AGENT_RESOURCE_ID = DEFAULT_SECRETARY_AGENT_RESOURCE_ID
 
 type PersistedRole = 'user' | 'assistant' | 'system'
 
@@ -64,7 +67,7 @@ export function buildThreadUri(webId: string, chatId: string, threadId: string):
 }
 
 export function buildAgentUri(webId: string): string {
-  return `${getPodBaseUrl(webId)}/.data/agents/${DEFAULT_SECRETARY_AGENT_ID}.ttl`
+  return `${getPodBaseUrl(webId)}/.data/agents/${DEFAULT_SECRETARY_AGENT_RESOURCE_ID}`
 }
 
 export function buildChatUri(webId: string): string {

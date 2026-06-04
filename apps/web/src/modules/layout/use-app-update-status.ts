@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useToast } from '@/components/ui/use-toast'
 import { getBuiltAppVersion, resolveBrowserAppUpdateStatus, type AppUpdateStatus } from '@/lib/app-release'
+import { formatErrorForUser } from '@/lib/user-facing-errors'
 import { getRuntimeShellInfo } from '@/lib/runtime-shell'
 
 const NOTIFY_KEY_PREFIX = 'linx:app-update:notified'
@@ -72,7 +73,7 @@ export function useAppUpdateStatus() {
         toast({
           title: nextStatus.error ? '检查更新失败' : nextStatus.available ? '发现新版本' : '当前已是最新版本',
           description: nextStatus.error
-            ? nextStatus.error
+            ? formatErrorForUser(nextStatus.error, '检查更新失败。请稍后重试。')
             : nextStatus.available && nextStatus.latestVersion
             ? `当前 ${nextStatus.currentVersion}，最新 ${nextStatus.latestVersion}`
             : `LinX ${nextStatus.currentVersion}`,

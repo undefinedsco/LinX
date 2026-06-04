@@ -42,6 +42,13 @@ describe('buildRuntimeToolResponse', () => {
       getDialect: () => ({
         getPodUrl: () => 'https://node-0000.undefineds.co/alice/',
       }),
+      resolveRowIri: vi.fn((_table: unknown, row: Record<string, unknown>) => {
+        const createdAt = new Date(String(row.createdAt ?? '2026-05-26T00:00:00.000Z'))
+        const yyyy = String(createdAt.getUTCFullYear())
+        const mm = String(createdAt.getUTCMonth() + 1).padStart(2, '0')
+        const dd = String(createdAt.getUTCDate()).padStart(2, '0')
+        return `https://node-0000.undefineds.co/alice/.data/approvals/${yyyy}/${mm}/${dd}.ttl#${row.id}`
+      }),
       updateByIri: vi.fn(async (table: unknown, iri: string, values: Record<string, unknown>) => {
         updates.push({ table, iri, values })
       }),
@@ -84,6 +91,9 @@ describe('buildRuntimeToolResponse', () => {
       getDialect: () => ({
         getPodUrl: () => 'https://node-0000.undefineds.co/alice/',
       }),
+      resolveRowIri: vi.fn((_table: unknown, row: Record<string, unknown>) => (
+        `https://node-0000.undefineds.co/alice/.data/approvals/2026/05/26.ttl#${row.id}`
+      )),
       updateByIri,
       insert: vi.fn((table: unknown) => ({
         values(values: Record<string, unknown>) {
@@ -96,7 +106,6 @@ describe('buildRuntimeToolResponse', () => {
     await expect(inboxOps.resolveApproval({
       approval: {
         id: 'approval-cloud',
-        '@id': 'https://id.undefineds.co/alice/.data/approvals/2026/05/26.ttl#approval-cloud',
         status: 'pending',
         risk: 'high',
         toolName: 'write_file',

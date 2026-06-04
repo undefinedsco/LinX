@@ -29,7 +29,7 @@ describe('exact record storage routing', () => {
     expect(updateByIri).not.toHaveBeenCalled()
   })
 
-  it('refuses a stale absolute IRI even when only id-based mutation is available', async () => {
+  it('ignores stale subject-shaped row fields for id-based mutation targets', async () => {
     const updateById = vi.fn(async () => undefined)
     const deleteById = vi.fn(async () => undefined)
     const db = createDb({ updateById, deleteById })
@@ -38,12 +38,27 @@ describe('exact record storage routing', () => {
       '@id': cloudRecordIri,
     }
 
+    await updateExactRecord(db as any, {} as any, staleRecord, { title: 'Current space by row.id' })
+    await deleteExactRecord(db as any, {} as any, staleRecord)
+
+    expect(updateById).toHaveBeenCalledWith({}, 'approval-cloud', { title: 'Current space by row.id' })
+    expect(deleteById).toHaveBeenCalledWith({}, 'approval-cloud')
+  })
+
+  it('refuses full RDF subject IRIs in row.id for id-based mutation targets', async () => {
+    const updateById = vi.fn(async () => undefined)
+    const deleteById = vi.fn(async () => undefined)
+    const db = createDb({ updateById, deleteById })
+    const badRecord = {
+      id: localRecordIri,
+    }
+
     await expect(
-      updateExactRecord(db as any, {} as any, staleRecord, { title: 'Wrong space' }),
-    ).rejects.toThrow('outside the current SP')
+      updateExactRecord(db as any, {} as any, badRecord, { title: 'Bad id' }),
+    ).rejects.toThrow('base-relative resource id')
     await expect(
-      deleteExactRecord(db as any, {} as any, staleRecord),
-    ).rejects.toThrow('outside the current SP')
+      deleteExactRecord(db as any, {} as any, badRecord),
+    ).rejects.toThrow('base-relative resource id')
 
     expect(updateById).not.toHaveBeenCalled()
     expect(deleteById).not.toHaveBeenCalled()

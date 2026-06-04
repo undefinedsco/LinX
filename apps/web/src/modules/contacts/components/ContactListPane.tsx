@@ -26,7 +26,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import type { ContactRow } from '@undefineds.co/models'
-import { ContactGender, ContactType, isGroupContact, normalizeContactGender } from '@undefineds.co/models'
+import { ContactGender, ContactType, isAgentContact, isGroupContact, normalizeContactGender } from '@undefineds.co/models'
 import { useQuery } from '@tanstack/react-query'
 
 // ============================================
@@ -51,6 +51,17 @@ function isUnifiedGroupContact(contact: Partial<UnifiedContact> | null | undefin
   }
 
   return isGroupContact({
+    contactType: typeof contact.contactType === 'string' ? contact.contactType : null,
+    rdfType: typeof contact.rdfType === 'string' ? contact.rdfType : null,
+  })
+}
+
+function isUnifiedAgentContact(contact: Partial<UnifiedContact> | null | undefined): boolean {
+  if (!contact) {
+    return false
+  }
+
+  return isAgentContact({
     contactType: typeof contact.contactType === 'string' ? contact.contactType : null,
     rdfType: typeof contact.rdfType === 'string' ? contact.rdfType : null,
   })
@@ -270,7 +281,7 @@ export function ContactListPane({}: MicroAppPaneProps) {
 
     // 转换为 UnifiedContact 格式
     const unified: UnifiedContact[] = rawItems.map((c: ContactRow) => {
-      const normalizedGender = normalizeContactGender(c.gender, c.contactType === ContactType.AGENT ? ContactGender.BOT : undefined)
+      const normalizedGender = normalizeContactGender(c.gender, isAgentContact(c) ? ContactGender.BOT : undefined)
       const isGroup = isUnifiedGroupContact({ ...c, gender: normalizedGender })
       const base = {
         ...c,
@@ -278,16 +289,15 @@ export function ContactListPane({}: MicroAppPaneProps) {
         displayName: c.alias || c.name || 'Unknown',
         displayAvatar: c.avatarUrl || '',
         initial: getInitial(c.alias || c.name || ''),
-        sourceType: (c.contactType as any) === 'agent' ? 'agent' as const :
+        sourceType: isAgentContact(c) ? 'agent' as const :
                     (c.externalPlatform === 'wechat' ? 'wechat' as const : 'solid' as const),
       }
 
       // Populate groupInfo for group contacts
       if (isGroup) {
-        const groupRef = c.entityUri || c.id
         return {
           ...base,
-          groupInfo: contactOps.getGroupDisplayInfo(groupRef, session.info.webId ?? undefined),
+          groupInfo: contactOps.getGroupDisplayInfo(c.id, session.info.webId ?? undefined),
         } as UnifiedContact
       }
 
@@ -298,7 +308,7 @@ export function ContactListPane({}: MicroAppPaneProps) {
     const filtered = listFilter !== 'all'
       ? unified.filter(c => {
           if (listFilter === 'personal') return c.contactType === ContactType.SOLID && !isUnifiedGroupContact(c)
-          if (listFilter === 'agents') return c.contactType === ContactType.AGENT
+          if (listFilter === 'agents') return isUnifiedAgentContact(c)
           if (listFilter === 'groups') return isUnifiedGroupContact(c)
           return true
         })
@@ -307,10 +317,10 @@ export function ContactListPane({}: MicroAppPaneProps) {
     // Split by contactType
     const starredItems = filtered.filter(c => c.starred)
     const groupItems = filtered.filter(c => isUnifiedGroupContact(c) && !c.starred)
-    const agentItems = filtered.filter(c => c.contactType === ContactType.AGENT && !c.starred)
+    const agentItems = filtered.filter(c => isUnifiedAgentContact(c) && !c.starred)
     const personalItems = filtered.filter(c =>
       !isUnifiedGroupContact(c) &&
-      c.contactType !== ContactType.AGENT &&
+      !isUnifiedAgentContact(c) &&
       !c.starred
     )
 

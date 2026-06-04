@@ -19,9 +19,6 @@ const XPOD_RUNTIME_MODULE_URL = pathToFileURL(
 const XPOD_LOCAL_PROVISIONING_SERVICE_MODULE_URL = pathToFileURL(
   resolve(__dirname, '../../../../node_modules/@undefineds.co/xpod/dist/provision/LocalPodProvisioningService.js'),
 ).href
-const XPOD_RDF_QUAD_INDEX_MODULE_URL = pathToFileURL(
-  resolve(__dirname, '../../../../node_modules/@undefineds.co/xpod/dist/storage/rdf/RdfQuadIndex.js'),
-).href
 dotenv.config({ path: resolve(__dirname, '../../../../.env') })
 
 type AuthType = 'client_credentials' | 'oidc_oauth'
@@ -69,6 +66,7 @@ interface AccountPayload {
       pod?: string
     }
   }
+  pods?: Record<string, string>
   webIds?: Record<string, string>
 }
 
@@ -453,15 +451,14 @@ async function ensureSeedPod(fetchFn: typeof fetch, options: {
   accountPayload: AccountPayload
   baseUrl: string
   podName: string
-  runtimeRoot: string
 }): Promise<{ webId: string; podUrl: string }> {
-  const fallback = {
-    webId: resolveSeedWebId(options.accountPayload, options.baseUrl, options.podName),
-    podUrl: new URL(`${options.podName}/`, options.baseUrl).href,
-  }
+  const existing = resolveSeedPodFromAccount(options.accountPayload, options.baseUrl, options.podName)
   const endpoint = options.accountPayload.controls?.account?.pod
   if (!endpoint) {
-    return fallback
+    if (existing) {
+      return existing
+    }
+    throw new Error(`Seeded account does not expose a Pod creation endpoint and has no linked Pod named ${options.podName}`)
   }
 
   const response = await fetchFn(endpoint, {
@@ -476,31 +473,47 @@ async function ensureSeedPod(fetchFn: typeof fetch, options: {
 
   if (response.ok) {
     const payload = await response.json().catch(() => ({})) as { webId?: string; pod?: string }
-    return {
-      webId: payload.webId ? new URL(payload.webId, options.baseUrl).href : fallback.webId,
-      podUrl: payload.pod ? new URL(payload.pod, options.baseUrl).href : fallback.podUrl,
+    const created = resolveSeedPodFromCreatePayload(payload, options.baseUrl)
+    if (created) {
+      return created
     }
+
+    const refreshed = await getAccountPayload(fetchFn, options.baseUrl, options.accountToken)
+    const linked = resolveSeedPodFromAccount(refreshed, options.baseUrl, options.podName)
+    if (linked) return linked
+
+    throw new Error(`Seeded Pod ${options.podName} was created but no linked WebID was returned by account controls`)
   }
 
   if (response.status === 409) {
-    await ensureLocalSeedPodFiles(options)
-    return fallback
-  }
+    const refreshed = await getAccountPayload(fetchFn, options.baseUrl, options.accountToken)
+    const linked = resolveSeedPodFromAccount(refreshed, options.baseUrl, options.podName)
+    if (linked) return linked
 
-  if (response.status === 400) {
-    await ensureLocalSeedPodFiles(options)
-    return fallback
+    throw new Error(`Seeded Pod ${options.podName} already exists but is not linked to the seeded account`)
   }
 
   const text = await response.text().catch(() => '')
+  if (response.status === 400 && /already registered to this account/i.test(text)) {
+    const refreshed = await getAccountPayload(fetchFn, options.baseUrl, options.accountToken)
+    const linked = resolveSeedPodFromAccount(refreshed, options.baseUrl, options.podName)
+    if (linked) return linked
+
+    return {
+      webId: new URL(`${options.podName}/profile/card#me`, options.baseUrl).href,
+      podUrl: new URL(`${options.podName}/`, options.baseUrl).href,
+    }
+  }
+
   throw new Error(`Failed to ensure seeded Pod ${options.podName}: ${response.status} ${text}`)
 }
 
-async function ensureLocalSeedPodFiles(options: {
+async function ensureLocalSeedPodMetadata(options: {
   baseUrl: string
   podName: string
   runtimeRoot: string
-  accountPayload: AccountPayload
+  podUrl: string
+  webId: string
 }): Promise<void> {
   const module = await import(XPOD_LOCAL_PROVISIONING_SERVICE_MODULE_URL) as {
     LocalPodProvisioningService: new (options: {
@@ -508,74 +521,33 @@ async function ensureLocalSeedPodFiles(options: {
       rootDir: string
       sparqlEndpoint: string
       identityDbUrl: string
+      rdfIndexPath?: string
       oidcIssuer?: string
     }) => {
       createPodFiles: (podName: string, initialResources?: Record<string, string>) => Promise<void>
-      writeQuints: (input: { podUrl: string; webId: string; oidcIssuer: string }) => void
+      writeQuints: (quads: unknown[]) => void
+      writeRdfIndex: (quads: unknown[]) => void
       buildPodQuads: (input: { podUrl: string; webId: string; oidcIssuer: string }) => unknown[]
     }
   }
+
   const service = new module.LocalPodProvisioningService({
     baseUrl: options.baseUrl,
     rootDir: join(options.runtimeRoot, 'data'),
     sparqlEndpoint: `sqlite:${join(options.runtimeRoot, 'quadstore.sqlite')}`,
     identityDbUrl: `sqlite:${join(options.runtimeRoot, 'identity.sqlite')}`,
+    rdfIndexPath: join(options.runtimeRoot, 'rdf-index.sqlite'),
     oidcIssuer: options.baseUrl,
   })
-  const webId = resolveSeedWebId(options.accountPayload, options.baseUrl, options.podName)
-  const podUrl = new URL(`${options.podName}/`, options.baseUrl).href
-  await service.createPodFiles(options.podName)
-  service.writeQuints({
-    podUrl,
-    webId,
-    oidcIssuer: options.baseUrl,
-  })
-  await writeSeedPodRdfIndex({
-    runtimeRoot: options.runtimeRoot,
-    quads: service.buildPodQuads({
-      podUrl,
-      webId,
-      oidcIssuer: options.baseUrl,
-    }),
-    source: `local-provision:${podUrl}`,
-  })
-}
 
-async function writeSeedPodRdfIndex(options: {
-  runtimeRoot: string
-  quads: unknown[]
-  source: string
-}): Promise<void> {
-  const module = await import(XPOD_RDF_QUAD_INDEX_MODULE_URL) as {
-    RdfQuadIndex: new (options: { path: string }) => {
-      open: () => void
-      close: () => void
-      multiPut: (
-        quads: unknown[],
-        options?: {
-          source?: {
-            source: string
-            workspace: string
-            localPath?: string
-            contentType?: string
-          }
-        },
-      ) => void
-    }
-  }
-  const index = new module.RdfQuadIndex({ path: join(options.runtimeRoot, 'rdf-index.sqlite') })
-  index.open()
-  try {
-    index.multiPut(options.quads, {
-      source: {
-        source: options.source,
-        workspace: 'local-seeded-auth',
-        contentType: 'internal/quads',
-      },
-    })
-  } finally {
-    index.close()
-  }
+  await service.createPodFiles(options.podName)
+  const quads = service.buildPodQuads({
+    podUrl: options.podUrl,
+    webId: options.webId,
+    oidcIssuer: options.baseUrl,
+  })
+  service.writeQuints(quads)
+  service.writeRdfIndex(quads)
 }
 
 async function exchangeClientCredentialsForAccessToken(fetchFn: typeof fetch, options: {
@@ -627,11 +599,80 @@ async function exchangeClientCredentialsForAccessToken(fetchFn: typeof fetch, op
   return tokenPayload.access_token
 }
 
-function resolveSeedWebId(accountPayload: AccountPayload, baseUrl: string, podName: string): string {
-  const webIds = Object.keys(accountPayload.webIds ?? {})
-  const matchedWebId = webIds.find((webId) => webId.includes(`/${podName}/`))
+function resolveSeedPodFromCreatePayload(
+  payload: { webId?: string; pod?: string },
+  baseUrl: string,
+): { webId: string; podUrl: string } | null {
+  const webId = resolveAbsoluteUrl(payload.webId, baseUrl)
+  if (!webId) {
+    return null
+  }
 
-  return matchedWebId ?? webIds[0] ?? new URL(`${podName}/profile/card#me`, baseUrl).href
+  return {
+    webId,
+    podUrl: resolveDirectoryUrl(payload.pod, baseUrl) ?? resolvePodUrlFromWebId(webId, baseUrl),
+  }
+}
+
+function resolveSeedPodFromAccount(
+  accountPayload: AccountPayload,
+  baseUrl: string,
+  podName: string,
+): { webId: string; podUrl: string } | null {
+  const entries = Object.entries(accountPayload.webIds ?? {})
+    .map(([webId, podUrl]) => {
+      const normalizedWebId = resolveAbsoluteUrl(webId, baseUrl)
+      if (!normalizedWebId) return null
+
+      return {
+        webId: normalizedWebId,
+        podUrl: resolveDirectoryUrl(podUrl, baseUrl) ?? resolvePodUrlFromWebId(normalizedWebId, baseUrl),
+      }
+    })
+    .filter((entry): entry is { webId: string; podUrl: string } => entry !== null)
+
+  return entries.find((entry) => seedPodMatches(entry, podName)) ?? entries[0] ?? null
+}
+
+function seedPodMatches(entry: { webId: string; podUrl: string }, podName: string): boolean {
+  return getPodNameFromWebId(entry.webId) === podName || getPodNameFromPodUrl(entry.podUrl) === podName
+}
+
+function getPodNameFromWebId(webId: string): string | null {
+  try {
+    return new URL(webId).pathname.match(/^\/([^/]+)\/profile\/card\/?$/)?.[1] ?? null
+  } catch {
+    return null
+  }
+}
+
+function getPodNameFromPodUrl(podUrl: string): string | null {
+  try {
+    return new URL(podUrl).pathname.split('/').filter(Boolean)[0] ?? null
+  } catch {
+    return null
+  }
+}
+
+function resolveAbsoluteUrl(value: string | undefined, baseUrl: string): string | null {
+  if (typeof value !== 'string' || !value.trim()) {
+    return null
+  }
+
+  try {
+    return new URL(value, baseUrl).href
+  } catch {
+    return null
+  }
+}
+
+function resolveDirectoryUrl(value: string | undefined, baseUrl: string): string | null {
+  const url = resolveAbsoluteUrl(value, baseUrl)
+  if (!url) {
+    return null
+  }
+
+  return url.endsWith('/') ? url : `${url}/`
 }
 
 function resolvePodUrlFromWebId(webId: string, providerBaseUrl?: string): string {
@@ -815,7 +856,13 @@ async function createLocalSeededContext<TSchema extends Record<string, unknown>>
       accountPayload,
       baseUrl: activeRuntime.baseUrl,
       podName: seed.podName,
+    })
+    await ensureLocalSeedPodMetadata({
+      baseUrl: activeRuntime.baseUrl,
+      podName: seed.podName,
       runtimeRoot,
+      podUrl,
+      webId,
     })
     const credentials = await createSeedClientCredentials(fetchFn, {
       accountToken,

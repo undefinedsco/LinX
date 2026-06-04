@@ -26,9 +26,9 @@ function resolveLocalKindLabel(kind: 'folder' | 'git' | 'worktree') {
 }
 
 function resolvePodKindLabel(kind?: string | null) {
-  if (kind === 'worktree') return 'Pod worktree'
-  if (kind === 'git') return 'Pod 仓库'
-  return 'Pod 容器'
+  if (kind === 'worktree') return '空间 worktree'
+  if (kind === 'git') return '空间仓库'
+  return '空间文件夹'
 }
 
 function inferRuntimeWorkspaceKind(runtimeSession?: RuntimeSessionRecord | null): 'folder' | 'git' | 'worktree' {

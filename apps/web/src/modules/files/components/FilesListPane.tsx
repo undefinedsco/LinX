@@ -267,7 +267,7 @@ export function FilesListPane(_props: MicroAppPaneProps) {
     if (selection.kind === 'local-workspace') {
       return {
         title: '当前话题绑定的是本地目录',
-        description: `${selection.localPath ?? '该目录'} 暂时不能在 Web 壳直接浏览；请在桌面端打开，或先把产物同步到 Pod。`,
+        description: `${selection.localPath ?? '该目录'} 暂时不能在 Web 端直接浏览；请在桌面端打开，或先把产物同步到你的空间。`,
         icon: HardDrive,
       }
     }
@@ -292,7 +292,7 @@ export function FilesListPane(_props: MicroAppPaneProps) {
       <ListSearchBar value={searchText} onChange={setSearchText} />
       <ColumnHeader />
       {isLoading ? (
-        <EmptyState title="正在读取资源" description="稍等，正在从 Pod 拉取当前容器内容。" />
+        <EmptyState title="正在读取资源" description="稍等，正在从当前空间读取内容。" />
       ) : error ? (
         <EmptyState title="读取资源失败" description="当前容器暂时不可用，请稍后重试。" />
       ) : files.length === 0 ? (

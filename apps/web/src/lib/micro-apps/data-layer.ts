@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { PodRepositoryDescriptor } from '@undefineds.co/models'
+import { requireRowResourceId, type PodRepositoryDescriptor } from '@undefineds.co/models'
 import { createRepositoryQueries } from '@/lib/data/query-factory'
 import type {
   DetailConfig,
@@ -43,12 +43,7 @@ export interface CreateDataLayerOptions<
 }
 
 const deriveIdentifier = <RowSource>(view: RowSource): string | undefined => {
-  const record = view as Record<string, unknown>
-  const subject = (record['@id'] ?? record.subject) as unknown
-  if (typeof subject === 'string' && subject.length > 0) return subject
-  if (typeof record.subject === 'string' && record.subject.length > 0) return record.subject
-  if (typeof record.id === 'string' && record.id.length > 0) return record.id
-  return undefined
+  return requireRowResourceId(view as { id?: string | null }, 'micro-app row')
 }
 
 export function createDataLayer<

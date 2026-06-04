@@ -10,6 +10,7 @@
  */
 
 import type { SolidDatabase } from '@undefineds.co/models'
+import { formatErrorForUser } from '@/lib/user-facing-errors'
 import { LocalChatKitStore } from './store'
 import { LocalChatKitService } from './service'
 
@@ -87,8 +88,9 @@ export function createLocalChatKitFetch(options: LocalChatKitFetchOptions): type
       })
     } catch (error: any) {
       console.error('[LocalChatKitFetch] Error:', error)
+      const message = formatErrorForUser(error, '聊天服务暂时不可用。请稍后重试。')
       return new Response(
-        JSON.stringify({ error: { code: 'local_error', message: error.message } }),
+        JSON.stringify({ error: { code: 'local_error', message } }),
         { status: 500, headers: { 'Content-Type': 'application/json' } },
       )
     }

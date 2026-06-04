@@ -1,12 +1,14 @@
 import { createCollection } from '@tanstack/react-db'
 import { queryCollectionOptions } from '@tanstack/query-db-collection'
 import { QueryClient } from '@tanstack/react-query'
-import type { SolidDatabase } from '@undefineds.co/models'
+import { asBaseRelativeResourceId, requireRowResourceId, type SolidDatabase } from '@undefineds.co/models'
 import type { PodTable } from '@undefineds.co/drizzle-solid'
 import { deleteExactRecord, updateExactRecord } from './exact-records'
 
-interface PodCollectionOptions<TTable, TData> {
-  table: TTable
+interface PodCollectionOptions<TResource, TData> {
+  resource?: TResource
+  /** @deprecated Use `resource`; this remains only for existing call sites. */
+  table?: TResource
   queryKey: string[]
   queryClient: QueryClient
   // Function to get the current DB instance
@@ -29,30 +31,36 @@ interface PodCollectionOptions<TTable, TData> {
  * Includes support for real-time subscriptions via db.subscribe().
  */
 export function createPodCollection<
-  TTable extends PodTable<any>,
+  TResource extends PodTable<any>,
   TData extends { id?: string },
   _TInsert = any
 >(
-  options: PodCollectionOptions<TTable, TData>
+  options: PodCollectionOptions<TResource, TData>
 ) {
-  const { table, queryKey, queryClient, getDb, columns, orderBy, getKey: customGetKey, seed } = options
+  const { queryKey, queryClient, getDb, columns, orderBy, getKey: customGetKey, seed } = options
+  const resource = options.resource ?? options.table
+  if (!resource) {
+    throw new Error('createPodCollection requires a Pod resource schema.')
+  }
 
-  const ensureId = (item: TData): TData => {
-    if (item.id) return item
-    const id = crypto.randomUUID()
-    if (typeof item === 'object' && item) {
-      return Object.assign(item, { id }) as TData
+  const ensureId = (item: TData, operation: 'seed' | 'insert'): TData => {
+    if (item.id) {
+      asBaseRelativeResourceId(item.id, 'Pod collection row.id')
+      return item
     }
-    return { ...(item as TData), id }
+    if (operation === 'seed') {
+      const id = asBaseRelativeResourceId(crypto.randomUUID(), 'generated Pod collection row.id')
+      if (typeof item === 'object' && item) {
+        return Object.assign(item, { id }) as TData
+      }
+      return { ...(item as TData), id }
+    }
+    throw new Error('Cannot persist Pod collection item without row.id.')
   }
 
   // Default key extractor: id required after insert/read
   const getKey = customGetKey ?? ((item: TData) => {
-    const id = (item as any).id
-    if (!id) {
-      throw new Error('Collection item is missing id.')
-    }
-    return id
+    return requireRowResourceId(item, 'collection item')
   })
 
   let didSeed = false
@@ -66,11 +74,11 @@ export function createPodCollection<
       if (columns && columns.length > 0) {
         const selectObj: Record<string, any> = {}
         for (const col of columns) {
-          selectObj[col as string] = (table as any)[col]
+          selectObj[col as string] = (resource as any)[col]
         }
-        query = db.select(selectObj).from(table)
+        query = db.select(selectObj).from(resource)
       } else {
-        query = db.select().from(table)
+        query = db.select().from(resource)
       }
       if (orderBy?.column) {
         query = query.orderBy(orderBy.column, orderBy.direction ?? 'asc')
@@ -82,30 +90,19 @@ export function createPodCollection<
     try {
       rows = (await buildQuery().execute()) as TData[]
     } catch (error) {
-      console.warn(`[PodCollection] ${queryKey.join('/')} fetch failed, returning empty:`, error)
-      return []
+      console.error(`[PodCollection] ${queryKey.join('/')} fetch failed:`, error)
+      throw error
     }
 
-    // Filter out path-traversal/absolute-path shaped ids only. Base-relative
-    // resource ids such as "#openai" and "chat-1/index.ttl#this" are valid.
-    rows = rows.filter(row => {
-      const id = (row as any).id
-      if (!id) return true // Keep rows without id field
-      if (
-        typeof id === 'string'
-        && (id.startsWith('/') || id.startsWith('./') || id.startsWith('../'))
-      ) {
-        console.warn(`[PodCollection] Skipping row with invalid id: ${id}`)
-        return false
-      }
-      return true
-    })
+    for (const row of rows) {
+      requireRowResourceId(row, 'Pod collection row')
+    }
 
     if (!didSeed && rows.length === 0 && seed) {
       const seedRows = typeof seed === 'function' ? seed() : seed
       if (seedRows.length > 0) {
-        const ensured = seedRows.map((row) => ensureId(row))
-        await db.insert(table).values(ensured as any).execute()
+        const ensured = seedRows.map((row) => ensureId(row, 'seed'))
+        await db.insert(resource).values(ensured as any).execute()
         didSeed = true
         rows = (await buildQuery().execute()) as TData[]
       } else {
@@ -133,8 +130,8 @@ export function createPodCollection<
         const db = getDb()
         if (!db) throw new Error('Database not connected')
         const { modified } = transaction.mutations[0]
-        const ensured = ensureId(modified as TData)
-        await db.insert(table).values(ensured as any).execute()
+        const ensured = ensureId(modified as TData, 'insert')
+        await db.insert(resource).values(ensured as any).execute()
       },
 
       // UPDATE
@@ -144,7 +141,7 @@ export function createPodCollection<
         const { original, modified } = transaction.mutations[0]
 
         try {
-          await updateExactRecord(db, table as any, (original ?? modified) as any, modified as any)
+          await updateExactRecord(db, resource as any, (original ?? modified) as any, modified as any)
         } catch (error) {
           console.error(`[PodCollection] Update failed for ${queryKey.join('/')}:`, error)
           throw error
@@ -156,7 +153,7 @@ export function createPodCollection<
         const db = getDb()
         if (!db) throw new Error('Database not connected')
         const { original } = transaction.mutations[0]
-        await deleteExactRecord(db, table as any, original as any)
+        await deleteExactRecord(db, resource as any, original as any)
       }
     })
   )
@@ -184,7 +181,7 @@ export function createPodCollection<
     }
 
     try {
-      const sub = await (db as any).subscribe(table, {
+      const sub = await (db as any).subscribe(resource, {
         onCreate: async (activity: any) => {
           console.log(`[PodCollection] onCreate: ${activity.object}`)
           // 直接 invalidate，让 useQuery 重新获取完整列表
@@ -210,7 +207,7 @@ export function createPodCollection<
 
   // Extend the collection object with helper methods
   const baseInsert = collection.insert.bind(collection)
-  const insert = (item: TData) => baseInsert(ensureId(item))
+  const insert = (item: TData) => baseInsert(ensureId(item, 'insert'))
 
   return Object.assign(collection, { insert, subscribeToPod, fetch })
 }

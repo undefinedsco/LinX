@@ -27,10 +27,10 @@ import {
   useThreadIndex,
 } from '../collections'
 import { resolveThreadChatId } from '@undefineds.co/models'
-import { resolveRowSubject } from '@undefineds.co/drizzle-solid'
 import { useInboxItems } from '@/modules/inbox/collections'
 import { isActionableInboxItem } from '@/modules/inbox/utils'
 import { useToast } from '@/components/ui/use-toast'
+import { formatLoginErrorForUser } from '@/modules/login/error-messages'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   Bot,
@@ -616,7 +616,7 @@ export function ChatListPane(_props: ChatListPaneProps) {
     }
 
     const timer = window.setTimeout(() => {
-      setWelcomeProblem('AI Secretary 暂时还没准备好，可以先进入 LinX。')
+      setWelcomeProblem('默认助手暂时还没准备好，可以先进入 LinX。')
     }, 12_000)
 
     return () => window.clearTimeout(timer)
@@ -629,7 +629,7 @@ export function ChatListPane(_props: ChatListPaneProps) {
     const threadsByChatId = new Map<string, string[]>()
     const workspaceBackedChatIds = new Set<string>()
     for (const thread of threads) {
-      const threadId = resolveRowSubject(thread as Record<string, unknown>) ?? thread.id
+      const threadId = thread.id
       const chatId = resolveThreadChatId(thread)
       if (!threadId || !chatId) continue
       const list = threadsByChatId.get(chatId) ?? []
@@ -649,7 +649,7 @@ export function ChatListPane(_props: ChatListPaneProps) {
     }
 
     const formatted = rawChats.map((chat): ChatItemData => {
-      const id = resolveRowSubject(chat as Record<string, unknown>) ?? 'unknown'
+      const id = chat.id ?? 'unknown'
       const pendingItems = inboxItems.filter((item) => item.chatId === id)
       const hasPendingApproval = pendingItems.some((item) => item.kind === 'approval' && item.status === 'pending')
       const hasAuthRequired = pendingItems.some((item) => item.category === 'auth_required')
@@ -753,7 +753,7 @@ export function ChatListPane(_props: ChatListPaneProps) {
   const handleDeleteChat = useCallback(async (chatId: string) => {
     const chat = chats.find(c => c.id === chatId)
     if (chat?.isProtected) {
-      toast({ description: 'AI Secretary 是默认助手，不能删除。' })
+      toast({ description: '默认助手不能删除。' })
       return
     }
 
@@ -785,7 +785,7 @@ export function ChatListPane(_props: ChatListPaneProps) {
     } catch (error) {
       console.error('Copy runtime session log failed:', error)
       toast({
-        description: error instanceof Error ? error.message : '复制运行时日志失败。',
+        description: formatLoginErrorForUser(error, '复制运行时日志失败。请稍后重试。'),
         variant: 'destructive',
       })
     }
@@ -813,7 +813,7 @@ export function ChatListPane(_props: ChatListPaneProps) {
         ) : chats.length === 0 && mutations.ensureLinxWelcome.isPending && !welcomeProblem ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground px-4 py-8 justify-center animate-fade-in">
             <Loader2 className="w-4 h-4 animate-spin" />
-            正在准备 AI Secretary...
+            正在准备默认助手...
           </div>
         ) : chats.length === 0 && welcomeProblem ? (
           <div className="px-4 py-12 text-center animate-fade-in">

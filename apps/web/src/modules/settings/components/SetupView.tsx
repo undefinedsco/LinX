@@ -10,8 +10,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { AlertCircle, CheckCircle2, Loader2, RefreshCcw, Server } from 'lucide-react'
 import type { SetupConfig, ServiceSpaceKind, TunnelProvider, NetworkAccessMode } from '../types'
-
-const LOCAL_DOMAIN_HELP_PATH = '/docs/local-sp-domain-and-tunnel.md'
+import { formatLoginErrorForUser } from '@/modules/login/error-messages'
 
 type DomainSource = 'manual'
 
@@ -43,7 +42,8 @@ function ensureLocalDomainSource(): DomainSource {
 async function parseError(response: Response): Promise<string> {
   const data = await response.json().catch(() => null)
   if (typeof data?.error === 'string' && data.error.trim()) return data.error
-  return `HTTP ${response.status}`
+  if (response.status >= 500) return '服务暂时没有响应。请稍后重试。'
+  return '请求没有完成。请稍后重试。'
 }
 
 export function SetupView({ onComplete }: SetupViewProps) {
@@ -108,7 +108,7 @@ export function SetupView({ onComplete }: SetupViewProps) {
       setInitialHasTunnelToken(Boolean(config.hasTunnelToken))
       setTunnelToken('')
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : '读取配置失败')
+      setError(formatLoginErrorForUser(loadError, '读取配置失败。请稍后重试。'))
     } finally {
       setLoading(false)
     }
@@ -129,7 +129,7 @@ export function SetupView({ onComplete }: SetupViewProps) {
       const canReuseToken =
         initialHasTunnelToken && initialTunnelProvider === tunnelProvider && !tunnelToken.trim()
       if (!canReuseToken && !tunnelToken.trim()) {
-        return '请填写隧道 Token，或沿用已配置 Token'
+        return '请填写隧道密钥，或沿用已保存密钥'
       }
     }
 
@@ -223,7 +223,7 @@ export function SetupView({ onComplete }: SetupViewProps) {
       onComplete?.(buildCompleteConfig())
       setSuccess('配置已保存，服务正在继续启动。')
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : '保存配置失败')
+      setError(formatLoginErrorForUser(saveError, '保存配置失败。请检查配置后重试。'))
     } finally {
       setSaving(false)
     }
@@ -234,8 +234,8 @@ export function SetupView({ onComplete }: SetupViewProps) {
       <div className="min-h-screen bg-background flex items-center justify-center p-6">
         <Card className="w-full max-w-lg rounded-2xl border-border/50">
           <CardHeader>
-            <CardTitle>该入口仅用于 LinX Service</CardTitle>
-            <CardDescription>当前壳不会消费 `/setup` 首次引导页。</CardDescription>
+            <CardTitle>该入口仅用于 LinX 服务</CardTitle>
+            <CardDescription>当前入口不能使用首次配置页。</CardDescription>
           </CardHeader>
           <CardContent>
             <Button onClick={() => navigate({ to: '/$microAppId', params: { microAppId: 'chat' } })}>
@@ -256,14 +256,14 @@ export function SetupView({ onComplete }: SetupViewProps) {
               <Server className="h-5 w-5" />
             </div>
             <div>
-              <CardTitle>首次配置 LinX Service</CardTitle>
-              <CardDescription>这里只做真实配置保存；保存后 service 会继续启动 xpod 与 Web UI。</CardDescription>
+              <CardTitle>首次配置 LinX 服务</CardTitle>
+              <CardDescription>这里只保存真实配置；保存后服务会继续启动本地空间与 LinX 界面。</CardDescription>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Badge variant="secondary">真实写入 `/api/setup`</Badge>
-            <Badge variant="outline">Local 默认 Cloud-managed canonical URL</Badge>
-            <Badge variant="outline">说明见 {LOCAL_DOMAIN_HELP_PATH}</Badge>
+            <Badge variant="secondary">保存到本机配置</Badge>
+            <Badge variant="outline">本地空间默认自动分配登录地址</Badge>
+            <Badge variant="outline">外网访问可稍后配置</Badge>
           </div>
         </CardHeader>
 
@@ -293,8 +293,8 @@ export function SetupView({ onComplete }: SetupViewProps) {
             <Label>空间类型</Label>
             <Tabs value={spaceKind} onValueChange={(value) => setSpaceKind(value as ServiceSpaceKind)}>
               <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="local">local</TabsTrigger>
-                <TabsTrigger value="standalone">standalone</TabsTrigger>
+                <TabsTrigger value="local">本地空间</TabsTrigger>
+                <TabsTrigger value="standalone">独立空间</TabsTrigger>
               </TabsList>
             </Tabs>
           </div>
@@ -305,14 +305,14 @@ export function SetupView({ onComplete }: SetupViewProps) {
               id="setup-data-dir"
               value={dataDir}
               onChange={(event) => setDataDir(event.target.value)}
-              placeholder="~/Library/Application Support/LinX/pod"
+              placeholder="选择一个用于保存本地数据的文件夹"
             />
           </div>
 
           <div className="flex items-center justify-between rounded-xl border border-border/50 px-3 py-3">
             <div className="space-y-1">
               <Label htmlFor="setup-auto-start">开机自动启动</Label>
-              <div className="text-xs text-muted-foreground">仅写入 service 配置，不在这里直接拉起守护进程。</div>
+              <div className="text-xs text-muted-foreground">只保存配置，不会直接修改正在运行的服务。</div>
             </div>
             <Switch id="setup-auto-start" checked={autoStart} onCheckedChange={setAutoStart} />
           </div>
@@ -322,9 +322,9 @@ export function SetupView({ onComplete }: SetupViewProps) {
               <div className="space-y-2">
                 <Label>公网入口</Label>
                 <div className="text-sm text-foreground">
-                  留空时由 Cloud provisioning 分配 Cloud-managed canonical URL；只有要使用自有 HTTPS origin 时才填写。
+                  留空时由 LinX 自动分配可登录地址；只有要使用自有 HTTPS 域名时才填写。
                 </div>
-                <div className="text-xs text-muted-foreground">配置说明：{LOCAL_DOMAIN_HELP_PATH}</div>
+                <div className="text-xs text-muted-foreground">需要外网访问时，可在高级设置里配置自有域名或隧道。</div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="setup-public-domain">自有公网域名（可选）</Label>
@@ -394,14 +394,14 @@ export function SetupView({ onComplete }: SetupViewProps) {
                   </SelectContent>
                 </Select>
                 <div className="text-xs text-muted-foreground">
-                  不配置隧道时，Local 仍会启动并保证本机/局域网可用；之后可再补公网入口。
+                  不配置隧道时，本地空间仍会启动并保证本机/局域网可用；之后可再补公网入口。
                 </div>
               </div>
 
               {tunnelProvider ? (
               <div className="space-y-3">
                 <div className="space-y-2">
-                  <Label htmlFor="setup-tunnel-token">隧道 Token</Label>
+                  <Label htmlFor="setup-tunnel-token">隧道密钥</Label>
                   <Input
                     id="setup-tunnel-token"
                     type="password"
@@ -409,16 +409,16 @@ export function SetupView({ onComplete }: SetupViewProps) {
                     onChange={(event) => setTunnelToken(event.target.value)}
                     placeholder={
                       initialHasTunnelToken && initialTunnelProvider === tunnelProvider
-                        ? '留空则沿用已配置 Token'
-                        : '请输入 Token'
+                        ? '留空则沿用已保存密钥'
+                        : '请输入密钥'
                     }
                   />
                   {initialHasTunnelToken && initialTunnelProvider === tunnelProvider ? (
-                    <div className="text-xs text-muted-foreground">已检测到当前供应商的既有 Token。</div>
+                    <div className="text-xs text-muted-foreground">已检测到当前供应商的已保存密钥。</div>
                   ) : null}
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  未填写自有域名时，隧道会服务于 Cloud 分配的 Cloud-managed canonical URL。
+                  未填写自有域名时，隧道会服务于 LinX 自动分配的登录地址。
                 </div>
               </div>
                 ) : null}
@@ -428,8 +428,8 @@ export function SetupView({ onComplete }: SetupViewProps) {
 
           <div className="rounded-xl border border-border/50 bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
             生效地址：{spaceKind === 'local'
-              ? (effectivePublicDomain ? `https://${effectivePublicDomain}` : 'Cloud-managed canonical URL')
-              : (effectivePublicDomain ? `https://${effectivePublicDomain}` : `http://localhost:${port}`)}
+              ? (effectivePublicDomain ? `https://${effectivePublicDomain}` : '自动分配登录地址')
+              : (effectivePublicDomain ? `https://${effectivePublicDomain}` : '本机或局域网入口')}
           </div>
 
           <div className="flex flex-wrap gap-3">

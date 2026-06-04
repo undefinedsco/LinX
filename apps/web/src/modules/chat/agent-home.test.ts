@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { buildAgentHomePath, ensureAgentHome, normalizeAgentHomeId } from './agent-home'
+import { agentResourceId } from '@undefineds.co/models'
+import { buildAgentHomePath, ensureAgentHome } from './agent-home'
 
 describe('agent-home', () => {
   it('creates default Agent Home containers and files in the Pod', async () => {
@@ -17,15 +18,15 @@ describe('agent-home', () => {
     } as any
 
     await ensureAgentHome(db, {
-      agentId: 'agent-1',
+      agentId: agentResourceId('agent-1'),
       name: 'AI Secretary',
       provider: 'undefineds',
       model: 'undefineds/linx-lite',
       instructions: 'Help the user.',
     })
 
-    expect(buildAgentHomePath('agent-1')).toBe('/.data/agents/agent-1/')
-    expect(buildAgentHomePath('__secretary__')).toBe('/.data/agents/__secretary__/')
+    expect(buildAgentHomePath(agentResourceId('agent-1'))).toBe('/.data/agents/agent-1/')
+    expect(buildAgentHomePath(agentResourceId('__secretary__'))).toBe('/.data/agents/__secretary__/')
 
     const putTargets = fetchMock.mock.calls
       .filter(([, init]) => init?.method === 'PUT')
@@ -48,7 +49,7 @@ describe('agent-home', () => {
     expect(String(agentsMdPut?.[1]?.body)).toContain('Help the user.')
   })
 
-  it('normalizes Agent resource IRIs before creating Agent Home folders', async () => {
+  it('rejects full Agent IRIs because callers must pass Agent row.id', async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       if (init?.method === 'HEAD') {
         return new Response('', { status: 404 })
@@ -62,22 +63,16 @@ describe('agent-home', () => {
       }),
     } as any
 
-    expect(normalizeAgentHomeId('https://alice.example/.data/agents/__secretary__.ttl#this')).toBe('__secretary__')
-    expect(buildAgentHomePath('__secretary__.ttl')).toBe('/.data/agents/__secretary__/')
+    expect(() => buildAgentHomePath('https://alice.example/.data/agents/__secretary__.ttl#this'))
+      .toThrow('Agent resource id must be a base-relative resource id')
 
-    await ensureAgentHome(db, {
-      agentId: 'https://alice.example/.data/agents/__secretary__.ttl#this',
+    await expect(ensureAgentHome(db, {
+      agentId: 'https://alice.example/.data/agents/__secretary__.ttl#this' as any,
       name: 'AI Secretary',
       provider: 'undefineds',
       model: 'undefineds/linx-lite',
-    })
+    })).rejects.toThrow('Agent resource id must be a base-relative resource id')
 
-    const putTargets = fetchMock.mock.calls
-      .filter(([, init]) => init?.method === 'PUT')
-      .map(([input]) => String(input))
-
-    expect(putTargets).toContain('https://alice.example/.data/agents/__secretary__/')
-    expect(putTargets).toContain('https://alice.example/.data/agents/__secretary__/skills/')
-    expect(putTargets).not.toContain('https://alice.example/.data/agents/__secretary__.ttl/skills/')
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })

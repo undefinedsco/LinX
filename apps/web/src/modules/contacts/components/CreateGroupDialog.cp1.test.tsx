@@ -18,7 +18,7 @@ const {
   mockContacts: [
     { id: 'p-1', name: 'Alice', alias: null, rdfType: 'https://undefineds.co/ns#PersonContact', contactType: 'solid', deletedAt: null, avatarUrl: null, entityUri: 'https://alice.example/profile/card#me' },
     { id: 'p-2', name: 'Bob', alias: null, rdfType: 'https://undefineds.co/ns#PersonContact', contactType: 'solid', deletedAt: null, avatarUrl: null, entityUri: 'https://bob.example/profile/card#me' },
-    { id: 'a-1', name: 'GPT Helper', alias: null, rdfType: 'https://undefineds.co/ns#AgentContact', contactType: 'agent', deletedAt: null, avatarUrl: null, entityUri: 'https://pod.example/.data/agents/gpt-helper.ttl#this' },
+    { id: 'a-1', name: 'GPT Helper', alias: null, rdfType: 'https://undefineds.co/ns#AgentContact', contactType: 'agent', deletedAt: null, avatarUrl: null, entityUri: 'https://pod.example/.data/agents/gpt-helper/index.ttl#this' },
   ],
   mockCreateGroupWithChat: vi.fn().mockResolvedValue({ id: 'g-1', chatId: 'ch-1' }),
   mockCreateGroup: vi.fn().mockResolvedValue({ id: 'g-1', chatId: 'ch-1' }),
@@ -165,5 +165,25 @@ describe('CreateGroupDialog', () => {
     await waitFor(() => {
       expect(onCreated).toHaveBeenCalledWith('g-1', 'ch-1')
     })
+  })
+
+  it('does not expose storage internals when group creation fails', async () => {
+    mockCreateGroupWithChat.mockRejectedValueOnce(new Error('Failed to create Pod container https://node.example/alice/.data/groups/: HTTP 403'))
+
+    render(
+      <CreateGroupDialog open onOpenChange={() => {}} />,
+      { wrapper: createWrapper() },
+    )
+
+    fireEvent.change(screen.getByPlaceholderText('输入群组名称'), {
+      target: { value: 'Test Group' },
+    })
+
+    const alice = await screen.findByText('Alice')
+    fireEvent.click(alice)
+    fireEvent.click(screen.getByRole('button', { name: '创建群组' }))
+
+    expect(await screen.findByText('这个账号还不能写入当前空间。请换一个空间；如果这是你的本地空间，请先完成空间创建。')).toBeInTheDocument()
+    expect(screen.queryByText(/HTTP 403|Pod container|node\.example|\.data/i)).not.toBeInTheDocument()
   })
 })

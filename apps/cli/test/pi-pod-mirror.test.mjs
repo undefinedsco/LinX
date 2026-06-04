@@ -51,7 +51,7 @@ function createFakePodRuntime() {
       return `${podBase}/.data/chat/${encodeURIComponent(chatId)}/index.ttl#${encodeURIComponent(locator.id)}`
     }
     if (name === 'agent') {
-      return `${podBase}/.data/agents/${encodeURIComponent(locator.id)}.ttl`
+      return `${podBase}/.data/agents/${locator.id}`
     }
     if (name === 'session') {
       const { yyyy, mm, dd } = dateParts(locator.createdAt, true)
@@ -207,7 +207,7 @@ test('buildPodMessageRow maps Pi user and assistant messages into standard Pod m
     },
   )
 
-  assert.equal(assistantRow.maker, 'https://id.undefineds.co/alice/.data/agents/ai-secretary.ttl')
+  assert.equal(assistantRow.maker, 'https://id.undefineds.co/alice/.data/agents/ai-secretary/index.ttl#this')
   assert.equal(assistantRow.role, 'assistant')
   assert.match(assistantRow.content, /answer/)
   assert.match(assistantRow.content, /tool-call:bash/)

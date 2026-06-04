@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Textarea } from '@/components/ui/textarea'
 import { useChatStore } from '@/modules/chat/store'
+import { formatLoginErrorForUser } from '@/modules/login/error-messages'
 import { buildAuditPresentation, createResolvedAuthTimestampsIndex, formatAuditActorRole, formatInboxStatusLabel } from '../presentation'
 import { isActionableInboxItem } from '../utils'
 import { useInboxItems, useResolveInboxApproval } from '../collections'
@@ -178,11 +179,11 @@ export function InboxContentPane(_props: MicroAppPaneProps) {
                 </div>
                 {resolveApproval.error && (
                   <p className="text-xs text-destructive">
-                    {resolveApproval.error instanceof Error ? resolveApproval.error.message : '处理审批失败'}
+                    {formatLoginErrorForUser(resolveApproval.error, '处理审批失败。请稍后重试。')}
                   </p>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  审批结果会写入 Pod；运行时恢复后，相关会话会继续推进。
+                  审批结果会保存到当前空间；运行时恢复后，相关会话会继续推进。
                 </p>
               </div>
             )}

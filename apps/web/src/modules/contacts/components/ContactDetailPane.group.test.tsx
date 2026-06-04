@@ -226,7 +226,7 @@ describe('ContactDetailPane group flows', () => {
 
     fireEvent.click(screen.getByText('聊天'))
 
-    expect(mockGetGroupChat).toHaveBeenCalledWith('/.data/chats/chat-1/index.ttl#this')
+    expect(mockGetGroupChat).toHaveBeenCalledWith('group-1')
     expect(mockSelectChat).toHaveBeenCalledWith('chat-1')
     expect(mockFindOrCreateChat).not.toHaveBeenCalled()
     expect(mockNavigate).toHaveBeenCalledWith({
@@ -265,7 +265,7 @@ describe('ContactDetailPane group flows', () => {
     Object.assign(mockStoreState, {
       selectedId: 'group-1',
       inviteMemberDialogOpen: true,
-      inviteTargetGroupId: '/.data/chats/chat-1/index.ttl#this',
+      inviteTargetGroupId: 'group-1',
     })
     mockGetGroupMembers.mockReturnValue([
       'https://me.example/profile/card#me',
@@ -287,7 +287,7 @@ describe('ContactDetailPane group flows', () => {
 
     await waitFor(() => {
       expect(mockAddMemberToGroup).toHaveBeenCalledWith(
-        '/.data/chats/chat-1/index.ttl#this',
+        'group-1',
         'https://charlie.example/profile/card#me',
       )
     })

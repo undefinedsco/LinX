@@ -37,8 +37,9 @@ LinX 选择 Local
   -> LinX 向 Cloud /provision/nodes 注册 Local node，请求 Cloud 分配 canonical 域名
   -> Cloud 返回 spDomain/publicUrl，例如 https://<device-node-id>.nodes.undefineds.co/
   -> LinX 启动 xpod，CSS_BASE_URL=https://<device-node-id>.nodes.undefineds.co/
-  -> 用户走 Cloud 登录 / 注册 / consent
-  -> Cloud 根据 provision scope 把 WebID solid:storage 写到 Local SP Pod
+  -> 用户进入 Local SP facade 的账号 / OIDC 页面
+  -> Local SP facade 使用 Cloud 身份 authority，但 consent / Pod picker 按 Local SP scope 过滤
+  -> WebID profile 的 solid:storage 写到 Local SP Pod
 ```
 
 规则：
@@ -53,8 +54,16 @@ LinX 选择 Local
 
 补充：
 
-- managed 续约时，LinX 应优先带同一个 `nodeId`、`nodeToken`、`serviceToken` 和 `spDomain`。
-- managed `spDomain` 是 Cloud-managed 域名请求/续约条件，不是 user-managed `publicUrl`；LinX 可以把预配的 `node-0000.undefineds.co` 作为 `spDomain` 发给 Cloud，但不能把它当成用户自有域名。
+- managed 续约时，LinX 应优先带同一个 `nodeId`、`nodeToken` 和
+  `serviceToken`，让 Cloud 按节点重新确认 canonical domain。
+- `spDomain` 只有两种权威来源：当前显式配置的 managed SP domain，或
+  Cloud 本次返回 / 仍有效签名 `provisionCode` 中声明的 domain。历史
+  registration 里的 `spDomain` 不能在没有显式配置时直接带回 Cloud 当作请求条件。
+- managed `spDomain` 是 Cloud-managed 域名请求/续约条件，不是 user-managed
+  `publicUrl`；LinX 可以把当前显式配置的预配 `node-0000.undefineds.co` 作为
+  `spDomain` 发给 Cloud，但不能把历史记录里的同名字段当成用户自有域名或当前权威。
+- Local 登录必须从 selected SP facade 做 OIDC discovery。该 discovery 不可达时
+  必须展示 Local 错误并 fail closed，不能退回 Cloud OIDC 入口或 Cloud Pod。
 
 ## Local + User-managed Canonical Domain
 

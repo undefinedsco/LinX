@@ -8,7 +8,6 @@
  * No API server round-trip — fetch goes directly to the AI provider.
  */
 
-import { resolveRowSubject } from '@undefineds.co/drizzle-solid'
 import { resolveLinxRuntimeApiBaseUrlForIssuerUrl } from '@undefineds.co/models/client'
 import type { ChatKitStore, StoreContext } from '@/lib/vendor/xpod-chatkit'
 import {
@@ -24,20 +23,46 @@ import {
   type ThreadStreamEvent,
 } from '@/lib/vendor/xpod-chatkit'
 import {
+  asResourceIri,
   agentTable,
   aiProviderResource,
   chatTable,
   contactTable,
   credentialResource,
+  extractChatIdFromChatRef,
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
+  requireRowResourceId,
   selectAIConfigCredential,
   type AgentRow,
   type ContactRow,
+  type ResourceIri,
   type SolidDatabase,
 } from '@undefineds.co/models'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
+import { formatErrorForUser } from '@/lib/user-facing-errors'
 import { RuntimeSidecarSink } from './runtime-sidecar'
+
+function readChatIdFromThread(thread: ThreadMetadata): string | null {
+  if (typeof thread.metadata?.chat_id !== 'string') {
+    return null
+  }
+  return extractChatIdFromChatRef(thread.metadata.chat_id) ?? thread.metadata.chat_id
+}
+
+function requireRowId(row: Record<string, unknown> | null | undefined, label: string): string {
+  return requireRowResourceId(row as { id?: string | null }, label)
+}
+
+function resolveContactIri(db: SolidDatabase, contact: Pick<ContactRow, 'id'>): ResourceIri {
+  const id = requireRowId(contact, 'Contact row')
+  return asResourceIri(db.resolveRowIri(contactTable as any, { id }), 'Contact IRI')
+}
+
+function contactMatchesRef(db: SolidDatabase, contact: ContactRow | null | undefined, ref: string): boolean {
+  if (!contact || !ref) return false
+  return contact.id === ref || resolveContactIri(db, contact) === ref
+}
 
 export interface LocalServiceOptions {
   store: ChatKitStore<StoreContext>
@@ -139,11 +164,13 @@ export class LocalChatKitService {
         yield encoder.encode(`data: ${JSON.stringify(event)}\n\n`)
       }
     } catch (error: any) {
+      console.error('[LocalChatKitService] Streaming request failed:', error)
+      const userMessage = formatErrorForUser(error, '消息生成失败。请稍后重试。')
       const errorEvent = {
         type: 'error',
         error: {
           code: 'internal_error',
-          message: error?.message || 'An error occurred',
+          message: userMessage,
         },
       }
       yield encoder.encode(`data: ${JSON.stringify(errorEvent)}\n\n`)
@@ -260,7 +287,7 @@ export class LocalChatKitService {
     }
 
     const thread = await this.store.loadThread(params.thread_id, context)
-    const chatId = typeof thread.metadata?.chat_id === 'string' ? thread.metadata.chat_id : 'default'
+    const chatId = readChatIdFromThread(thread) ?? 'default'
     const assistantItem = this.createAssistantItem(thread, context)
     await this.store.addThreadItem(thread.id, assistantItem, context)
     yield { type: 'thread.item.added', item: assistantItem }
@@ -344,7 +371,7 @@ export class LocalChatKitService {
       const runtimeThread = await this.getRuntimeThread(thread.id)
 
       if (runtimeThread) {
-        const chatId = typeof thread.metadata?.chat_id === 'string' ? thread.metadata.chat_id : 'default'
+        const chatId = readChatIdFromThread(thread) ?? 'default'
         for await (const event of this.streamRuntimeResponse(
           runtimeThread,
           thread,
@@ -429,7 +456,8 @@ export class LocalChatKitService {
       }
     } catch (error: any) {
       console.error('[LocalChatKitService] AI/runtime response failed:', error)
-      assistantItem.content = [{ type: 'output_text', text: fullText || 'Sorry, an error occurred.', annotations: [] }]
+      const userMessage = formatErrorForUser(error, '消息生成失败。请稍后重试。')
+      assistantItem.content = [{ type: 'output_text', text: fullText || userMessage, annotations: [] }]
       assistantItem.status = 'incomplete'
       await this.store.saveItem(thread.id, assistantItem, context)
       yield { type: 'thread.item.done', item: assistantItem }
@@ -437,7 +465,7 @@ export class LocalChatKitService {
         type: 'error',
         error: {
           code: 'generation_error',
-          message: error?.message || 'Failed to generate response',
+          message: userMessage,
         },
       } as ThreadStreamEvent
     }
@@ -758,78 +786,81 @@ export class LocalChatKitService {
       return null
     }
 
-    try {
-      const findProvider = typeof (this.db as any).findById === 'function'
-        ? (this.db as any).findById(aiProviderResource as any, providerId).catch(() => null)
-        : Promise.resolve(null)
-      const [credentialRows, providerRow] = await Promise.all([
-        this.db.select().from(credentialResource).execute(),
-        findProvider,
-      ])
+    const findProvider = typeof (this.db as any).findById === 'function'
+      ? (this.db as any).findById(aiProviderResource as any, providerId)
+      : Promise.resolve(null)
+    const [credentialRows, providerRow] = await Promise.all([
+      this.db.select().from(credentialResource).execute(),
+      findProvider,
+    ])
 
-      const selected = selectAIConfigCredential(
-        providerId,
-        credentialRows as Array<Record<string, unknown>>,
-        providerRow ? [providerRow as Record<string, unknown>] : [],
-      )
+    const selected = selectAIConfigCredential(
+      providerId,
+      credentialRows as Array<Record<string, unknown>>,
+      providerRow ? [providerRow as Record<string, unknown>] : [],
+    )
 
-      if (!selected) return null
+    if (!selected) return null
 
-      return {
-        baseUrl: selected.baseUrl || 'https://openrouter.ai/api/v1',
-        apiKey: selected.apiKey,
-      }
-    } catch (error) {
-      console.warn('[LocalChatKitService] shared credential query failed:', error)
-      return null
+    return {
+      baseUrl: selected.baseUrl || 'https://openrouter.ai/api/v1',
+      apiKey: selected.apiKey,
     }
   }
 
   private async resolveThreadAgentConfig(thread: ThreadMetadata): Promise<ThreadAgentConfig | null> {
-    const chatId = typeof thread.metadata?.chat_id === 'string' ? thread.metadata.chat_id : null
+    const chatId = readChatIdFromThread(thread)
     if (!chatId) return null
 
-    try {
-      const chat = await this.findChatById(chatId)
-      const participantRefs = Array.isArray(chat?.participants)
-        ? chat.participants.filter((participant: unknown): participant is string => typeof participant === 'string' && participant.length > 0)
-        : []
+    const chat = await this.findChatById(chatId)
+    const participantRefs = Array.isArray(chat?.participants)
+      ? chat.participants.filter((participant: unknown): participant is string => typeof participant === 'string' && participant.length > 0)
+      : []
 
-      if (participantRefs.length === 0) {
-        return null
-      }
-
-      const contacts = await this.db.select().from(contactTable).execute() as ContactRow[]
-      const agents = await this.db.select().from(agentTable).execute() as AgentRow[]
-
-      for (const participantRef of participantRefs) {
-        const contact = contacts.find((entry: any) => this.isSameRecordRef(entry, participantRef))
-        const agentRef = contact?.entityUri ?? participantRef
-        const agent = agents.find((entry: any) => this.isSameRecordRef(entry, agentRef))
-
-        if (!agent) {
-          continue
-        }
-
-        const provider = normalizeAIConfigProviderId(typeof agent.provider === 'string' ? agent.provider : '')
-        const model = normalizeAIConfigResourceId(typeof agent.model === 'string' ? agent.model : '')
-
-        if (!provider || !model) {
-          continue
-        }
-
-        return {
-          provider,
-          model,
-          instructions: typeof agent.instructions === 'string' ? agent.instructions : undefined,
-        }
-      }
-
-      return null
-    } catch (error) {
-      console.warn('[LocalChatKitService] Failed to resolve thread agent config:', error)
+    if (participantRefs.length === 0) {
       return null
     }
+
+    const contacts = await this.db.select().from(contactTable).execute() as ContactRow[]
+
+    for (const participantRef of participantRefs) {
+      const contact = contacts.find((entry) => contactMatchesRef(this.db, entry, participantRef))
+      const agentRef = contact?.entityUri ?? participantRef
+      const agent = await this.findAgentByRef(agentRef)
+
+      if (!agent) {
+        continue
+      }
+
+      const provider = normalizeAIConfigProviderId(typeof agent.provider === 'string' ? agent.provider : '')
+      const model = normalizeAIConfigResourceId(typeof agent.model === 'string' ? agent.model : '')
+
+      if (!provider || !model) {
+        continue
+      }
+
+      return {
+        provider,
+        model,
+        instructions: typeof agent.instructions === 'string' ? agent.instructions : undefined,
+      }
+    }
+
+    return null
+  }
+
+  private async findAgentByRef(ref: string): Promise<AgentRow | null> {
+    if (!ref) return null
+    if (/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(ref)) {
+      const findByIri = (this.db as any).findByIri
+      return typeof findByIri === 'function'
+        ? await findByIri.call(this.db, agentTable as any, ref) as AgentRow | null
+        : null
+    }
+    const findById = (this.db as any).findById
+    return typeof findById === 'function'
+      ? await findById.call(this.db, agentTable as any, ref) as AgentRow | null
+      : null
   }
 
   private async findChatById(chatId: string): Promise<any | null> {
@@ -837,17 +868,7 @@ export class LocalChatKitService {
     if (direct) return direct
 
     const chats = await this.db.select().from(chatTable).execute()
-    return chats.find((entry: any) => entry.id === chatId || resolveRowSubject(entry) === chatId) ?? null
-  }
-
-  private isSameRecordRef(record: Record<string, unknown> | null | undefined, ref: string): boolean {
-    if (!record || !ref) return false
-    return (
-      record.id === ref
-      || record['@id'] === ref
-      || record.uri === ref
-      || resolveRowSubject(record as Record<string, unknown>) === ref
-    )
+    return chats.find((entry: any) => entry.id === chatId) ?? null
   }
 
   private resolvePlatformModel(agentConfig: ThreadAgentConfig | null): string | null {

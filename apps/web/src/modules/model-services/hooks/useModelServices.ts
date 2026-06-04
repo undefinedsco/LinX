@@ -19,7 +19,10 @@ import type { AIProvider, AIModel } from '../types'
 type AnyRow = Record<string, any>
 
 function rowKey(row: AnyRow): string {
-  return (row?.id as string) || (row?.['@id'] as string)
+  if (typeof row?.id === 'string' && row.id.length > 0) {
+    return row.id
+  }
+  throw new Error('AI config row is missing row.id.')
 }
 
 function applyPayload(draft: AnyRow, payload: Record<string, unknown>) {

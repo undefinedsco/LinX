@@ -1,6 +1,6 @@
 import type { PodDataSession } from '../pod-data-session.js'
 import { getDefaultPodDataSession } from '../pod-data-session.js'
-import { buildSessionSubjectPath } from '../models.js'
+import { agentResourceId, buildSessionSubjectPath } from '../models.js'
 import {
   buildAutoModeThreadMetadata,
   buildAutoModeTranscriptMessages,
@@ -190,7 +190,7 @@ function buildAutoModeMessageUri(webId: string, record: AutoModeSessionRecord, r
 }
 
 function buildAgentUri(webId: string, agentId: string): string {
-  return `${getPodBaseUrl(webId)}/.data/agents/${agentId}.ttl`
+  return `${getPodBaseUrl(webId)}/.data/agents/${agentResourceId(agentId)}`
 }
 
 function buildAutoModeChatId(record: Pick<AutoModeSessionRecord, 'backend'>): string {
@@ -460,7 +460,7 @@ async function ensureAutoModeConversationAgents(db: PodPersistenceDb, runtime: A
   const now = record.endedAt ? new Date(record.endedAt) : new Date(record.startedAt)
   const rows: AutoModeAgentRow[] = [
     {
-      id: AUTO_MODE_SECRETARY_AGENT_ID,
+      id: agentResourceId(AUTO_MODE_SECRETARY_AGENT_ID),
       name: 'AI Secretary',
       description: 'LinX companion that routes auto-mode approvals and structured input.',
       provider: 'undefineds',
@@ -469,7 +469,7 @@ async function ensureAutoModeConversationAgents(db: PodPersistenceDb, runtime: A
       updatedAt: now,
     },
     {
-      id: buildAutoModePrimaryAgentId(record),
+      id: agentResourceId(buildAutoModePrimaryAgentId(record)),
       name: autoModeBackendDisplayName(record.backend),
       description: `Controlled ${autoModeBackendDisplayName(record.backend)} runtime participant.`,
       provider: record.backend,

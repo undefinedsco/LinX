@@ -6,6 +6,7 @@ import {
   eq,
   extractChatIdFromChatRef,
   extractThreadIdFromThreadRef,
+  agentResourceId,
   solidResources,
   messageResource,
   threadResource,
@@ -18,6 +19,7 @@ import { formatThreadLabel, toOpenAiMessages } from './thread-utils.js'
 
 const DEFAULT_CHAT_ID = 'cli-default'
 const DEFAULT_AGENT_ID = 'linx-cli-assistant'
+const DEFAULT_AGENT_RESOURCE_ID = agentResourceId(DEFAULT_AGENT_ID)
 
 function extractChatId(chatIdOrUri: string | null | undefined): string {
   return extractChatIdFromChatRef(chatIdOrUri) ?? DEFAULT_CHAT_ID
@@ -32,7 +34,7 @@ function getPodBaseUrl(webId: string): string {
 }
 
 function buildAgentUri(webId: string, agentId: string): string {
-  return `${getPodBaseUrl(webId)}/.data/agents/${agentId}.ttl`
+  return `${getPodBaseUrl(webId)}/.data/agents/${agentResourceId(agentId)}`
 }
 
 function requireFindById(db: SolidDatabase): NonNullable<SolidDatabase['findById']> {
@@ -79,7 +81,7 @@ export async function initPodData(session: Session): Promise<SolidDatabase> {
 
 async function ensureCliAgent(db: SolidDatabase, webId: string): Promise<void> {
   const findById = requireFindById(db)
-  const existing = await findById(agentResource, DEFAULT_AGENT_ID)
+  const existing = await findById(agentResource, DEFAULT_AGENT_RESOURCE_ID)
 
   if (existing) {
     return
@@ -87,7 +89,7 @@ async function ensureCliAgent(db: SolidDatabase, webId: string): Promise<void> {
 
   const now = new Date()
   await db.insert(agentResource).values({
-    id: DEFAULT_AGENT_ID,
+    id: DEFAULT_AGENT_RESOURCE_ID,
     name: 'LinX CLI Assistant',
     provider: 'xpod',
     model: DEFAULT_LINX_CLOUD_MODEL_ID,

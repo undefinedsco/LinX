@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient, type QueryKey, type UseMutationOptions, type UseQueryOptions } from '@tanstack/react-query'
-import type { PodRepositoryDescriptor } from '@undefineds.co/models'
+import { asBaseRelativeResourceId, requireRowResourceId, type PodRepositoryDescriptor } from '@undefineds.co/models'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 import { runWithOfflineQueue } from '@/lib/data/offline-queue'
 
@@ -20,12 +20,7 @@ type RemoveMutationOptions = Omit<UseMutationOptions<{ id: string }, Error, { id
 
 const deriveRowId = <Row>(row: Row | null | undefined): string | undefined => {
   if (!row) return undefined
-  const record = row as Record<string, unknown>
-  const explicit = record['@id']
-  if (typeof explicit === 'string' && explicit.length > 0) return explicit
-  if (typeof record.subject === 'string' && record.subject.length > 0) return record.subject
-  if (typeof record.id === 'string' && record.id.length > 0) return record.id
-  return undefined
+  return requireRowResourceId(row as { id?: string | null }, 'repository row')
 }
 
 const invalidateScopes = (
@@ -85,16 +80,17 @@ export function createRepositoryQueries<
     const { db, status, error } = useSolidDatabase()
     const { enabled: optEnabled, ...rest } = options ?? {}
     const ready = status === 'ready' && Boolean(db)
+    const resourceId = id ? asBaseRelativeResourceId(id, `${descriptor.namespace} detail id`) : null
     return useQuery({
-      queryKey: buildKey(descriptor.namespace, 'detail', id ?? 'unknown'),
+      queryKey: buildKey(descriptor.namespace, 'detail', resourceId ?? 'unknown'),
       queryFn: () => {
-        if (!id) return Promise.resolve(null)
+        if (!resourceId) return Promise.resolve(null)
         if (!ready || !db) {
           throw error ?? new Error('Solid database is not ready. Please sign in to your Pod.')
         }
-        return descriptor.detail(db, id)
+        return descriptor.detail(db, resourceId)
       },
-      enabled: Boolean(id) && ready && (optEnabled ?? true),
+      enabled: Boolean(resourceId) && ready && (optEnabled ?? true),
       staleTime: defaultCache.staleTime ?? DEFAULT_STALE_TIME,
       gcTime: defaultCache.gcTime ?? DEFAULT_GC_TIME,
       ...rest,
@@ -128,13 +124,14 @@ export function createRepositoryQueries<
         return useMutation({
           mutationFn: ({ id, input }: { id: string; input: Update }) =>
             runWithOfflineQueue(() => {
+              const resourceId = asBaseRelativeResourceId(id, `${descriptor.namespace} update id`)
               if (!db || status !== 'ready') {
                 throw error ?? new Error('Solid database is not ready. Please sign in to your Pod.')
               }
-              return descriptor.update!(db, id, input)
+              return descriptor.update!(db, resourceId, input)
             }),
           onSuccess: (data, variables, context, mutation) => {
-            const detailId = deriveRowId(data) ?? variables.id
+            const detailId = deriveRowId(data) ?? asBaseRelativeResourceId(variables.id, `${descriptor.namespace} update id`)
             invalidateScopes(descriptor.namespace, descriptor.invalidations.update, queryClient, { detailId })
             options?.onSuccess?.(data, variables, context, mutation)
           },
@@ -150,14 +147,16 @@ export function createRepositoryQueries<
         return useMutation({
           mutationFn: ({ id }: { id: string }) =>
             runWithOfflineQueue(() => {
+              const resourceId = asBaseRelativeResourceId(id, `${descriptor.namespace} remove id`)
               if (!db || status !== 'ready') {
                 throw error ?? new Error('Solid database is not ready. Please sign in to your Pod.')
               }
-              return descriptor.remove!(db, id)
+              return descriptor.remove!(db, resourceId)
             }),
           onSuccess: (data, variables, context, mutation) => {
+            const detailId = asBaseRelativeResourceId(variables.id, `${descriptor.namespace} remove id`)
             invalidateScopes(descriptor.namespace, descriptor.invalidations.remove, queryClient, {
-              detailId: variables.id,
+              detailId,
             })
             options?.onSuccess?.(data, variables, context, mutation)
           },

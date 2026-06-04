@@ -1,8 +1,8 @@
-import type { SolidDatabase } from '@undefineds.co/models'
+import { agentHomePathFromResourceId, type BaseRelativeResourceId, type SolidDatabase } from '@undefineds.co/models'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 
 export interface EnsureAgentHomeInput {
-  agentId: string
+  agentId: BaseRelativeResourceId
   name: string
   provider: string
   model: string
@@ -82,23 +82,7 @@ async function putPodFileIfMissing(
 }
 
 export function buildAgentHomePath(agentId: string): string {
-  return `/.data/agents/${encodeURIComponent(normalizeAgentHomeId(agentId))}/`
-}
-
-export function normalizeAgentHomeId(agentIdOrRef: string): string {
-  const trimmed = agentIdOrRef.trim()
-  const withoutFragment = trimmed.replace(/#.*$/, '')
-  const agentPathMatch = withoutFragment.match(/\/\.data\/agents\/([^/]+?)(?:\.ttl)?$/)
-  if (agentPathMatch?.[1]) {
-    return decodeURIComponent(agentPathMatch[1])
-  }
-
-  const fileNameMatch = withoutFragment.match(/^([^/]+?)(?:\.ttl)?$/)
-  if (fileNameMatch?.[1]) {
-    return decodeURIComponent(fileNameMatch[1])
-  }
-
-  return trimmed
+  return agentHomePathFromResourceId(agentId)
 }
 
 function buildAgentHomeFiles(input: EnsureAgentHomeInput): Array<{ path: string; body: string; contentType: string }> {
@@ -163,15 +147,11 @@ export async function ensureAgentHome(db: SolidDatabase, input: EnsureAgentHomeI
     throw new Error('Solid database is missing authenticated fetch.')
   }
 
-  const normalizedInput = {
-    ...input,
-    agentId: normalizeAgentHomeId(input.agentId),
-  }
-  const homePath = buildAgentHomePath(normalizedInput.agentId)
+  const homePath = buildAgentHomePath(input.agentId)
   await ensurePodContainer(fetchFn, resolvePodPath(db, homePath))
   await ensurePodContainer(fetchFn, resolvePodPath(db, `${homePath}skills/`))
 
-  for (const file of buildAgentHomeFiles(normalizedInput)) {
+  for (const file of buildAgentHomeFiles(input)) {
     await putPodFileIfMissing(
       fetchFn,
       resolvePodPath(db, `${homePath}${file.path}`),

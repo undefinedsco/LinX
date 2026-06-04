@@ -15,6 +15,8 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 import type { PodTable, InferTableData } from '@undefineds.co/drizzle-solid'
 
+type PodResource = PodTable<any>
+
 export interface UseEntityOptions<T> {
   /** 数据更新时的回调（除了更新内部 state，还可以做额外操作如更新缓存） */
   onUpdate?: (data: T) => void
@@ -40,7 +42,7 @@ export interface UseEntityResult<T> {
 /**
  * 查询和订阅单个实体
  * 
- * @param table - 表定义（用于解析 schema）
+ * @param resource - Pod resource schema definition
  * @param iri - 实体的完整 IRI（本地或远程），为 null 时不查询
  * @param options - 可选配置
  * 
@@ -69,11 +71,11 @@ export interface UseEntityResult<T> {
  * )
  * ```
  */
-export function useEntity<TTable extends PodTable<any>>(
-  table: TTable,
+export function useEntity<TResource extends PodResource>(
+  resource: TResource,
   iri: string | null | undefined,
-  options: UseEntityOptions<InferTableData<TTable>> = {}
-): UseEntityResult<InferTableData<TTable>> {
+  options: UseEntityOptions<InferTableData<TResource>> = {}
+): UseEntityResult<InferTableData<TResource>> {
   const { db } = useSolidDatabase()
   const { onUpdate, onDelete, onError, enabled = true } = options
   
@@ -81,7 +83,7 @@ export function useEntity<TTable extends PodTable<any>>(
   const callbacksRef = useRef({ onUpdate, onDelete, onError })
   callbacksRef.current = { onUpdate, onDelete, onError }
   
-  const [data, setData] = useState<InferTableData<TTable> | null>(null)
+  const [data, setData] = useState<InferTableData<TResource> | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<Error | null>(null)
 
@@ -93,9 +95,10 @@ export function useEntity<TTable extends PodTable<any>>(
     setError(null)
     
     try {
-      const result = typeof (db as any).findByIri === 'function'
-        ? await (db as any).findByIri(table as any, iri)
-        : await (db as any).findFirst?.(table as any, { '@id': iri } as any)
+      if (typeof (db as any).findByIri !== 'function') {
+        throw new Error('Solid database is missing findByIri support.')
+      }
+      const result = await (db as any).findByIri(resource as any, iri)
       setData(result)
       if (result) {
         callbacksRef.current.onUpdate?.(result)
@@ -107,7 +110,7 @@ export function useEntity<TTable extends PodTable<any>>(
     } finally {
       setIsLoading(false)
     }
-  }, [db, table, iri, enabled])
+  }, [db, resource, iri, enabled])
 
   // 手动刷新
   const refresh = useCallback(async () => {
@@ -126,7 +129,7 @@ export function useEntity<TTable extends PodTable<any>>(
     fetchData()
 
     // TODO: 等 drizzle-solid 支持后启用订阅
-    // const unsubscribe = db.subscribeByIri(table, iri, {
+    // const unsubscribe = db.subscribeByIri(resource, iri, {
     //   onUpdate: (newData) => {
     //     setData(newData)
     //     callbacksRef.current.onUpdate?.(newData)
@@ -145,7 +148,7 @@ export function useEntity<TTable extends PodTable<any>>(
     return () => {
       // cleanup placeholder
     }
-  }, [db, table, iri, enabled, fetchData])
+  }, [db, resource, iri, enabled, fetchData])
 
   return { data, isLoading, error, refresh }
 }

@@ -21,6 +21,16 @@ vi.mock('@undefineds.co/models', () => ({
   chatTable: mocked.chatTable,
   contactTable: mocked.contactTable,
   credentialResource: mocked.credentialResource,
+  extractChatIdFromChatRef: (value?: string | null) => {
+    if (!value) return null
+    const direct = value.match(/^([^/]+)\/index\.ttl#this$/)
+    if (direct) return direct[1]
+    const command = value.match(/^(?:chat|task)\/([^/]+)\//)
+    if (command) return command[1]
+    const iri = value.match(/\/\.data\/chat\/([^/]+)\/index\.ttl#this$/)
+    if (iri) return iri[1]
+    return null
+  },
   normalizeAIConfigProviderId: (value?: string | null) => {
     if (!value) return ''
     const tail = value.includes('#') ? value.split('#').pop() : value.split('/').pop()
@@ -32,26 +42,6 @@ vi.mock('@undefineds.co/models', () => ({
     const tail = value.includes('#') ? value.split('#').pop() : value.split('/').pop()
     return (tail ?? value).replace(/\.ttl$/, '')
   },
-  selectAIConfigCredential: (provider: string, rows: Array<Record<string, any>>) => {
-    const normalizedProvider = provider.includes('#') ? provider.split('#').pop() : provider
-    const credential = rows.find((row) => {
-      const rowProvider = String(row.provider ?? '')
-      return rowProvider.endsWith(`#${normalizedProvider}`)
-        && (row.service ?? 'ai') === 'ai'
-        && (row.status ?? 'active') === 'active'
-        && row.apiKey
-    })
-    if (!credential) return undefined
-    return {
-      providerId: normalizedProvider,
-      credential,
-      credentialId: credential.id,
-      apiKey: credential.apiKey,
-      baseUrl: credential.baseUrl,
-      isDefault: Boolean(credential.isDefault),
-    }
-  },
-  resolveRowId: (row: Record<string, unknown> | null | undefined) => row?.['@id'] ?? row?.uri ?? row?.id ?? null,
   selectAIConfigCredential: (
     provider: string,
     credentialRows: Array<Record<string, unknown>>,
@@ -65,7 +55,7 @@ vi.mock('@undefineds.co/models', () => ({
     const providerId = normalizeProvider(provider)
     const credential = credentialRows.find((row) => normalizeProvider(row.provider ?? row.id) === providerId && row.apiKey)
     if (!credential) return undefined
-    const providerRow = providerRows.find((row) => normalizeProvider(row.id ?? row['@id']) === providerId)
+    const providerRow = providerRows.find((row) => normalizeProvider(row.id) === providerId)
     return {
       providerId,
       credential,
@@ -182,18 +172,26 @@ function createMockStore() {
   }
 }
 
-function createMockDb(agent: { provider: string; model: string }, credentialRows: Array<Record<string, unknown>> = []) {
+function createMockDb(
+  agent: { provider: string; model: string },
+  credentialRows: Array<Record<string, unknown>> = [],
+  options: {
+    findByIdError?: Error
+    contactEntityUri?: string
+    selectError?: Error
+  } = {},
+) {
   const chat = {
     id: 'chat-1',
     participants: ['contact-1'],
   }
   const contact = {
     id: 'contact-1',
-    entityUri: 'agent-1',
+    entityUri: options.contactEntityUri ?? 'agent-1/index.ttl#this',
     contactType: 'agent',
   }
   const agentRow = {
-    id: 'agent-1',
+    id: 'agent-1/index.ttl#this',
     provider: agent.provider,
     model: agent.model,
   }
@@ -203,7 +201,11 @@ function createMockDb(agent: { provider: string; model: string }, credentialRows
       getPodUrl: () => null,
     }),
     findById: vi.fn(async (table: unknown, id?: string) => {
+      if (options.findByIdError) {
+        throw options.findByIdError
+      }
       if (table === mocked.chatTable) return chat
+      if (table === mocked.agentTable && id === agentRow.id) return agentRow
       if (table === mocked.aiProviderResource) {
         return {
           id,
@@ -212,9 +214,18 @@ function createMockDb(agent: { provider: string; model: string }, credentialRows
       }
       return null
     }),
+    findByIri: vi.fn(async (table: unknown, iri?: string) => {
+      if (table === mocked.agentTable && iri === 'https://node-0000.undefineds.co/alice/.data/agents/agent-1/index.ttl#this') {
+        return agentRow
+      }
+      return null
+    }),
     select: vi.fn(() => ({
       from: (table: unknown) => {
         const execute = async () => {
+          if (options.selectError) {
+            throw options.selectError
+          }
           if (table === mocked.chatTable) return [chat]
           if (table === mocked.contactTable) return [contact]
           if (table === mocked.agentTable) return [agentRow]
@@ -264,6 +275,35 @@ describe('LocalChatKitService platform runtime routing', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     ;(window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__ = false
+  })
+
+  it('does not stream raw implementation errors to the user', async () => {
+    const store = createMockStore()
+    store.loadThread.mockRejectedValueOnce(
+      new Error("Cannot find module 'jsonld'\nRequire stack:\n- /Users/ganlu/Library/Application Support/@linx/xpod.js"),
+    )
+    const db = createMockDb({
+      provider: 'undefineds',
+      model: 'undefineds/linx-lite',
+    })
+    const authFetch = vi.fn()
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service)
+
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'error',
+      error: expect.objectContaining({
+        code: 'internal_error',
+        message: '本地空间启动文件损坏。请重启 LinX 让它自动修复；如果仍失败，请打开本地空间设置修复。',
+      }),
+    }))
+    expect(JSON.stringify(events)).not.toMatch(/jsonld|Require stack|Application Support|\/Users|xpod/i)
   })
 
   it('routes the default LinX assistant to cloud runtime without a user API key', async () => {
@@ -357,6 +397,39 @@ describe('LocalChatKitService platform runtime routing', () => {
     expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === '本地空间')).toBe(true)
   })
 
+  it('resolves an Agent contact entity IRI with findByIri instead of deriving a row id from the IRI', async () => {
+    const store = createMockStore()
+    const agentIri = 'https://node-0000.undefineds.co/alice/.data/agents/agent-1/index.ttl#this'
+    const db = createMockDb({
+      provider: 'undefineds',
+      model: 'undefineds/linx-lite',
+    }, [], {
+      contactEntityUri: agentIri,
+    })
+    const authFetch = vi.fn(async () => createSseResponse([
+      'data: {"choices":[{"delta":{"content":"IRI OK"}}]}\n\n',
+      'data: [DONE]\n\n',
+    ]))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service)
+
+    expect((db as any).findByIri).toHaveBeenCalledWith(mocked.agentTable, agentIri)
+    expect((db as any).findById).not.toHaveBeenCalledWith(mocked.agentTable, expect.stringContaining('https://'))
+    expect(authFetch).toHaveBeenCalledWith(
+      'https://api.undefineds.co/v1/chat/completions',
+      expect.objectContaining({
+        method: 'POST',
+      }),
+    )
+    expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === 'IRI OK')).toBe(true)
+  })
+
   it('keeps non-platform providers on the user API key path', async () => {
     const store = createMockStore()
     const db = createMockDb({
@@ -420,5 +493,75 @@ describe('LocalChatKitService platform runtime routing', () => {
     expect(authFetch).not.toHaveBeenCalled()
     expect(providerFetch).not.toHaveBeenCalled()
     expect(findAssistantDone(events)?.item?.content?.[0]?.text).toBe('请先在设置中配置 AI API Key。')
+  })
+
+  it('surfaces shared credential query failures instead of pretending the API key is missing', async () => {
+    const store = createMockStore()
+    const db = createMockDb({
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+    }, [], {
+      findByIdError: new Error('findById failed'),
+    })
+    const providerFetch = vi.fn()
+    vi.stubGlobal('fetch', providerFetch)
+    const authFetch = vi.fn(async () => new Response('', { status: 404 }))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service)
+
+    expect(providerFetch).not.toHaveBeenCalled()
+    expect(findAssistantDone(events)?.item?.status).toBe('incomplete')
+    expect(findAssistantDone(events)?.item?.content?.[0]?.text).toBe('消息生成失败。请稍后重试。')
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'error',
+      error: expect.objectContaining({
+        code: 'generation_error',
+        message: '消息生成失败。请稍后重试。',
+      }),
+    }))
+  })
+
+  it('surfaces agent config query failures instead of falling back to generic AI config', async () => {
+    const store = createMockStore()
+    const db = createMockDb({
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+    }, [{
+      id: 'credentials.ttl#openai-default',
+      provider: '/settings/providers/openai.ttl',
+      service: 'ai',
+      status: 'active',
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.openai.example/v1',
+    }], {
+      selectError: new Error('contact query failed'),
+    })
+    const providerFetch = vi.fn()
+    vi.stubGlobal('fetch', providerFetch)
+    const authFetch = vi.fn(async () => new Response('', { status: 404 }))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service)
+
+    expect(providerFetch).not.toHaveBeenCalled()
+    expect(findAssistantDone(events)?.item?.status).toBe('incomplete')
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'error',
+      error: expect.objectContaining({
+        code: 'generation_error',
+        message: '消息生成失败。请稍后重试。',
+      }),
+    }))
   })
 })

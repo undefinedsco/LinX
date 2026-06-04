@@ -8,6 +8,7 @@
 import { memo, useState } from 'react'
 import { ChevronDown, Wrench, CheckCircle, XCircle, Loader2, ShieldCheck, Play } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { formatLoginErrorForUser } from '@/modules/login/error-messages'
 import {
   Collapsible,
   CollapsibleContent,
@@ -114,6 +115,12 @@ export const ToolBlock = memo<ToolBlockProps>(({
   // 格式化参数和结果
   const formattedArgs = block.arguments ? formatJSON(block.arguments) : null
   const formattedResult = block.content ? formatJSON(block.content) : null
+  const displayedResult = hasError && formattedResult
+    ? formatLoginErrorForUser(formattedResult, '工具执行失败。请检查输入后重试。')
+    : formattedResult
+  const displayedError = block.error
+    ? formatLoginErrorForUser(block.error.message, '工具执行失败。请检查输入后重试。')
+    : null
 
   return (
     <Collapsible
@@ -194,7 +201,7 @@ export const ToolBlock = memo<ToolBlockProps>(({
           )}
 
           {/* Result */}
-          {formattedResult && (
+          {displayedResult && (
             <div>
               <div className={cn(
                 'mb-1',
@@ -206,17 +213,17 @@ export const ToolBlock = memo<ToolBlockProps>(({
                 'p-2 rounded overflow-x-auto max-h-60 text-[11px]',
                 hasError ? 'bg-destructive/10 text-destructive' : 'bg-background/50'
               )}>
-                {formattedResult}
+                {displayedResult}
               </pre>
             </div>
           )}
 
           {/* Error from block.error */}
-          {block.error && (
+          {displayedError && (
             <div>
               <div className="text-destructive mb-1">错误:</div>
               <pre className="p-2 rounded bg-destructive/10 text-destructive overflow-x-auto text-[11px]">
-                {block.error.message}
+                {displayedError}
               </pre>
             </div>
           )}

@@ -12,6 +12,7 @@
 - 涉及 Pod 登录、持久化、权限、通知的集成测试，必须跑在自举的 `xpod` + 真实 Pod 上。
 - 模块状态分工：Pod 数据走 TanStack DB Collection；Zustand 只管理纯 UI 状态。
 - 新增共享规则、RDF contract、归一化逻辑、跨端 use-case 时，优先放进 `@undefineds.co/models`。
+- Pod ORM row 的 `id` 是 base-relative resource id，用于 UI key、selection 和所有 `ById` 调用；full IRI 只用于 RDF 关系或 `ByIri`。不要在 App 代码里从 `@id/subject/uri` 解析业务 id，缺 `row.id` 时先修 schema/repository/ORM。
 - `Table` 到 `Resource` 的语义迁移按功能边界推进：改到哪个 Pod/ORM 功能，就把该功能的命名、测试和文档叙事同步改成 `Resource`；不要为了“统一”做全仓机械重命名，底层兼容 API 可继续保留 `Table`。
 
 ## Skill Routing

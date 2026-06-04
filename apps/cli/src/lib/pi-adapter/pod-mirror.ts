@@ -1,5 +1,6 @@
 import type { AgentMessage } from '@mariozechner/pi-agent-core'
 import type { SessionEntry, SessionManager } from '@mariozechner/pi-coding-agent'
+import { asBaseRelativeResourceId } from '@undefineds.co/models'
 import { DEFAULT_LINX_CLOUD_MODEL_ID } from '../default-model.js'
 import { getDefaultPodDataSession, type PodDataSession } from '../pod-data-session.js'
 import {
@@ -21,7 +22,7 @@ import {
 export { buildPodMessageRow } from './pod-mirror-mapping.js'
 import {
   DEFAULT_SECRETARY_CHAT_ID,
-  PI_AGENT_ID,
+  PI_AGENT_RESOURCE_ID,
   buildPodMessageRow as buildPodMessageRowFromMapping,
   buildThreadTitle,
   buildToolAuditId,
@@ -307,8 +308,8 @@ async function ensurePiConversationRoot(
     updatedAt: now,
   })
 
-  await upsertByResource(context.db, agentResource, { id: PI_AGENT_ID }, {
-    id: PI_AGENT_ID,
+  await upsertByResource(context.db, agentResource, { id: PI_AGENT_RESOURCE_ID }, {
+    id: PI_AGENT_RESOURCE_ID,
     name: 'LinX CLI Assistant',
     provider: 'undefineds',
     model: DEFAULT_LINX_CLOUD_MODEL_ID,
@@ -439,7 +440,7 @@ function resolvePiResourceRefs(context: PodMirrorContext, options: LinxPiPodMirr
   const createdAt = getSessionCreatedAt(options.sessionManager)
   const chatUri = context.db.resolveLocatorIri(chatResource, { id: DEFAULT_SECRETARY_CHAT_ID })
   return {
-    agentUri: context.db.resolveLocatorIri(agentResource, { id: PI_AGENT_ID }),
+    agentUri: context.db.resolveLocatorIri(agentResource, { id: PI_AGENT_RESOURCE_ID }),
     chatUri,
     sessionUri: context.db.resolveLocatorIri(sessionResource, { id: sessionId, createdAt }),
     threadUri: context.db.resolveLocatorIri(threadResource, { id: sessionId, chat: chatUri }),
@@ -468,7 +469,9 @@ async function upsertByResource(
   insert: Record<string, unknown>,
   update: Record<string, unknown>,
 ): Promise<void> {
-  const id = String(target.id ?? '')
+  const id = typeof target.id === 'string' && target.id.length > 0
+    ? asBaseRelativeResourceId(target.id, 'Pod mirror target.id')
+    : ''
   const iri = db.resolveLocatorIri(resource, target)
   const existing = id ? await db.findById(resource, id) : await db.findByIri(resource, iri)
   if (!existing) {

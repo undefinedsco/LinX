@@ -19,17 +19,22 @@ import {
 } from '@/lib/vendor/xpod-chatkit'
 import {
   contactTable,
+  chatResourceId,
   extractChatIdFromChatRef,
   extractThreadIdFromThreadRef,
+  messageResourceId,
+  requireRowResourceId,
+  threadResourceId,
   type SolidDatabase,
   UDFS,
 } from '@undefineds.co/models'
-import { resolveRowSubject } from '@undefineds.co/drizzle-solid'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { deleteExactRecord, updateExactRecord } from '@/lib/data/exact-records'
 
 const DEFAULT_CHAT_ID = 'default'
 const POD_QUERY_TIMEOUT_MS = 15000
+const CHATKIT_ITEM_ID_METADATA_KEY = 'chatkitItemId'
+const ABSOLUTE_IRI = /^[a-zA-Z][a-zA-Z\d+.-]*:/
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -56,7 +61,9 @@ function extractThreadId(threadIdOrUri: string | null | undefined): string | und
 }
 
 function getChatIdFromMetadata(metadata?: Record<string, unknown>): string {
-  if (metadata && typeof metadata.chat_id === 'string') return metadata.chat_id
+  if (metadata && typeof metadata.chat_id === 'string') {
+    return extractChatId(metadata.chat_id)
+  }
   return DEFAULT_CHAT_ID
 }
 
@@ -76,38 +83,51 @@ function parseThreadMetadata(metadata: unknown): Record<string, unknown> | undef
   return undefined
 }
 
-function extractLocalSubjectId(value: string | null | undefined): string | null {
-  if (!value) return null
-  const hashIndex = value.lastIndexOf('#')
-  if (hashIndex >= 0 && hashIndex < value.length - 1) {
-    return value.slice(hashIndex + 1)
+function resourceUrlFromIri(iri: string): string {
+  const hashIndex = iri.indexOf('#')
+  return hashIndex >= 0 ? iri.slice(0, hashIndex) : iri
+}
+
+function parseRecordMetadata(metadata: unknown): Record<string, unknown> {
+  if (!metadata) return {}
+  if (typeof metadata === 'string') {
+    try {
+      const parsed = JSON.parse(metadata) as Record<string, unknown> | null
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+    } catch {
+      return {}
+    }
   }
-  const slashIndex = value.lastIndexOf('/')
-  return slashIndex >= 0 ? value.slice(slashIndex + 1) : value
+  return typeof metadata === 'object' && !Array.isArray(metadata)
+    ? metadata as Record<string, unknown>
+    : {}
 }
 
-function matchesMessageItemId(record: any, itemId: string): boolean {
-  return record?.id === itemId
-    || extractLocalSubjectId(typeof record?.id === 'string' ? record.id : null) === itemId
-    || extractLocalSubjectId(resolveRowSubject(record as Record<string, unknown>)) === itemId
+function readChatKitItemId(record: Record<string, unknown> | null | undefined): string | null {
+  const value = parseRecordMetadata(record?.metadata)[CHATKIT_ITEM_ID_METADATA_KEY]
+  return typeof value === 'string' && value.length > 0 ? value : null
 }
 
-function resourceUrlFromSubject(subjectUri: string): string {
-  const hashIndex = subjectUri.indexOf('#')
-  return hashIndex >= 0 ? subjectUri.slice(0, hashIndex) : subjectUri
+function messageRecordMatchesItem(record: Record<string, unknown>, itemId: string): boolean {
+  return readChatKitItemId(record) === itemId
+}
+
+function requireRecordId(record: Record<string, unknown> | null | undefined, label: string): string {
+  return requireRowResourceId(record as { id?: string | null }, label)
 }
 
 async function findThreadRecord(db: SolidDatabase<any>, threadId: string, chatId?: string | null): Promise<any | null> {
   if (chatId) {
-    const resourceId = (db as any).resolveLocatorId?.(Thread as any, { id: threadId, chat: chatId } as any)
-    const exact = resourceId
-      ? await (db as any).findById(Thread as any, resourceId)
-      : null
+    const exactId = threadResourceId(threadId, { surfaceId: chatId })
+    const exact = await (db as any).findById(Thread as any, exactId)
     if (exact) return exact
   }
 
   const rows = await db.select().from(Thread).execute()
-  return rows.find((entry: any) => entry.id === threadId) ?? null
+  return rows.find((entry: any) => (
+    entry.id === threadId
+    || extractThreadId(entry.id) === threadId
+  )) ?? null
 }
 
 // ---------------------------------------------------------------------------
@@ -117,8 +137,9 @@ async function findThreadRecord(db: SolidDatabase<any>, threadId: string, chatId
 function threadRecordToMetadata(record: any): ThreadMetadata {
   const chatId = extractChatId(record.chat)
   const extra = parseThreadMetadata(record.metadata)
+  const threadId = extractThreadId(record.id) ?? record.id
   return {
-    id: record.id,
+    id: threadId,
     title: record.title || undefined,
     status: stringToStatus(record.status || 'active'),
     created_at: record.createdAt
@@ -194,6 +215,7 @@ function messageRecordToItem(record: any, threadId: string): ThreadItem {
   const createdAt = record.createdAt
     ? Math.floor(new Date(record.createdAt).getTime() / 1000)
     : nowTimestamp()
+  const itemId = readChatKitItemId(record) ?? requireRecordId(record, 'Message row')
 
   const storedThreadItem = parseStoredThreadItem(record.richContent, threadId, createdAt)
     ?? parseStoredThreadItem(record.content, threadId, createdAt)
@@ -203,7 +225,7 @@ function messageRecordToItem(record: any, threadId: string): ThreadItem {
 
   if (record.role === MessageRole.USER) {
     return {
-      id: record.id,
+      id: itemId,
       thread_id: threadId,
       type: 'user_message',
       content: [{ type: 'input_text', text: record.content || '' }],
@@ -212,7 +234,7 @@ function messageRecordToItem(record: any, threadId: string): ThreadItem {
     } as ThreadItem
   }
   return {
-    id: record.id,
+    id: itemId,
     thread_id: threadId,
     type: 'assistant_message',
     content: [{ type: 'output_text', text: record.content || '', annotations: [] } as any],
@@ -235,7 +257,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   private threadChatIdCache = new Map<string, string>()
   private threadMetadataCache = new Map<string, ThreadMetadata>()
   private threadItemsCache = new Map<string, ThreadItem[]>()
-  private messageSubjectCache = new Map<string, string>()
+  private messageRowIdByItemId = new Map<string, string>()
 
   constructor(db: SolidDatabase, webId: string, authFetch: typeof fetch) {
     this.db = db
@@ -260,11 +282,12 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   // -----------------------------------------------------------------------
 
   private async ensureChat(chatId: string): Promise<void> {
-    const existingChat = await (this.db as any).findById(Chat as any, chatId)
+    const chatIdForResource = chatResourceId(chatId)
+    const existingChat = await (this.db as any).findById(Chat as any, chatIdForResource)
     if (!existingChat) {
       const now = new Date()
       await (this.db as any).insert(Chat as any).values({
-        id: chatId,
+        id: chatIdForResource,
         title: chatId === DEFAULT_CHAT_ID ? 'Default Chat' : chatId,
         createdAt: now,
         updatedAt: now,
@@ -296,6 +319,10 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     return `${this.getPodBaseUrl()}/.data/chat/${chatId}/index.ttl#${threadId}`
   }
 
+  private buildChatUri(chatId: string): string {
+    return `${this.getPodBaseUrl()}/.data/chat/${chatId}/index.ttl#this`
+  }
+
   private async resolveCounterpartMaker(chatId: string): Promise<string> {
     const chat = await (this.db as any).findById(Chat as any, chatId)
     const participants = Array.isArray(chat?.participants)
@@ -307,14 +334,22 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       return this.webId
     }
 
-    const contacts = await this.db.select().from(contactTable).execute()
-    const contact = contacts.find((entry: any) => (
-      entry.entityUri === participantRef
-      || resolveRowSubject(entry as Record<string, unknown>) === participantRef
-      || entry.id === participantRef
-    )) as { entityUri?: string | null } | undefined
+    const contact = await this.findContactByRef(participantRef) as { entityUri?: string | null } | null
 
     return contact?.entityUri || participantRef
+  }
+
+  private async findContactByRef(ref: string): Promise<Record<string, unknown> | null> {
+    if (ABSOLUTE_IRI.test(ref)) {
+      const findByIri = (this.db as any).findByIri
+      return typeof findByIri === 'function'
+        ? await findByIri.call(this.db, contactTable as any, ref) as Record<string, unknown> | null
+        : null
+    }
+    const findById = (this.db as any).findById
+    return typeof findById === 'function'
+      ? await findById.call(this.db, contactTable as any, ref) as Record<string, unknown> | null
+      : null
   }
 
   private async selectMessagesForThread(threadId: string): Promise<any[]> {
@@ -360,45 +395,39 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     this.threadItemsCache.set(threadId, next)
   }
 
-  private cacheMessageSubject(messageId: string, rowOrSubject: unknown): string | null {
-    const subject = typeof rowOrSubject === 'string'
-      ? rowOrSubject
-      : resolveRowSubject(rowOrSubject as Record<string, unknown>)
-    if (!subject) return null
-    this.messageSubjectCache.set(messageId, subject)
-    return subject
+  private resolveRowIri(table: unknown, row: Record<string, unknown>): string {
+    requireRecordId(row, 'Pod row')
+    const iri = typeof (this.db as any).resolveRowIri === 'function'
+      ? (this.db as any).resolveRowIri(table as any, row)
+      : null
+    if (typeof iri !== 'string' || iri.length === 0) {
+      throw new Error('Unable to resolve Pod row IRI from row.id.')
+    }
+    return iri
   }
 
-  private async resolveMessageSubject(messageId: string): Promise<string | null> {
-    const cached = this.messageSubjectCache.get(messageId)
-    if (cached) return cached
+  private cacheMessageRow(itemId: string, row: Record<string, unknown>): void {
+    this.messageRowIdByItemId.set(itemId, requireRecordId(row, 'Message row'))
+  }
 
-    try {
-      const direct = await (this.db as any).findById(Message as any, messageId)
-      const subject = this.cacheMessageSubject(messageId, direct)
-      if (subject) return subject
-    } catch {
-      // Continue with a narrow fallback below. findById only works when callers
-      // hold the exact base-relative id, while ChatKit item ids are local ids.
+  private async findMessageByItemId(threadId: string, itemId: string): Promise<Record<string, unknown> | null> {
+    const cachedRowId = this.messageRowIdByItemId.get(itemId)
+    if (cachedRowId) {
+      const row = await (this.db as any).findById(Message as any, cachedRowId)
+      if (row) return row
+      this.messageRowIdByItemId.delete(itemId)
     }
 
-    try {
-      const messages = await withTimeout(
-        this.db.select().from(Message).execute(),
-        POD_QUERY_TIMEOUT_MS,
-        `Timed out resolving message subject ${messageId}`,
-      )
-      const existing = messages.find((message: any) => matchesMessageItemId(message, messageId))
-      const subject = this.cacheMessageSubject(messageId, existing)
-      if (subject) return subject
-    } catch {
-      // Fall through to the resolver prediction.
+    const messages = await this.selectMessagesForThread(threadId)
+    const row = messages.find((message: any) => messageRecordMatchesItem(message, itemId)) ?? null
+    if (row) {
+      this.cacheMessageRow(itemId, row)
     }
+    return row
+  }
 
-    const predicted = typeof (this.db as any).resolveRowIri === 'function'
-      ? (this.db as any).resolveRowIri(Message as any, { id: messageId })
-      : null
-    return predicted ? this.cacheMessageSubject(messageId, predicted) : null
+  private resolveMessageIri(row: Record<string, unknown>): string {
+    return this.resolveRowIri(Message, row)
   }
 
   private pageThreadItems(
@@ -471,8 +500,10 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       } as any)
     } else {
       await (this.db as any).insert(Thread as any).values({
-        id: thread.id,
-        chat: chatId,
+        id: threadResourceId(thread.id, { surfaceId: chatId }),
+        commandKind: 'chat',
+        surfaceId: chatId,
+        chat: this.buildChatUri(chatId),
         title: thread.title || undefined,
         status: statusToString(thread.status),
         metadata: metadataValue,
@@ -506,12 +537,12 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
         const idx = threads.findIndex((t: any) => t.id === after)
         if (idx !== -1) startIndex = idx + 1
       }
-      const slice = threads.slice(startIndex, startIndex + limit)
+      const slice = threads.slice(startIndex, startIndex + limit).map((t: any) => threadRecordToMetadata(t))
       return {
-        data: slice.map((t: any) => threadRecordToMetadata(t)),
+        data: slice,
         has_more: startIndex + limit < threads.length,
-        first_id: slice.length > 0 ? (slice[0] as any).id : undefined,
-        last_id: slice.length > 0 ? (slice[slice.length - 1] as any).id : undefined,
+        first_id: slice.length > 0 ? slice[0]?.id : undefined,
+        last_id: slice.length > 0 ? slice[slice.length - 1]?.id : undefined,
       }
     } catch (error) {
       console.error('[LocalStore] Failed to load threads:', error)
@@ -608,24 +639,39 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     const chatId = await this.getThreadChatId(threadId)
     const { content, role, status, richContent } = threadItemToMessageRecord(item)
     const podBaseUrl = this.getPodBaseUrl()
+    const createdAt = new Date(item.created_at * 1000)
+    const thread = this.buildThreadUri(chatId, threadId)
+    const messageId = messageResourceId(item.id, {
+      commandKind: 'chat',
+      surfaceId: chatId,
+      thread,
+      createdAt,
+    })
     const maker = role === MessageRole.USER
       ? this.webId
       : await this.resolveCounterpartMaker(chatId)
 
     await (this.db as any).insert(Message as any).values({
-      id: item.id,
+      id: messageId,
       chat: `${podBaseUrl}/.data/chat/${chatId}/index.ttl#this`,
-      thread: this.buildThreadUri(chatId, threadId),
+      thread,
       maker,
       role,
       content,
       richContent: richContent ?? undefined,
+      metadata: {
+        [CHATKIT_ITEM_ID_METADATA_KEY]: item.id,
+      },
       status: status ?? undefined,
-      createdAt: new Date(item.created_at * 1000),
+      createdAt,
     }).execute()
 
-    const inserted = await (this.db as any).findById(Message as any, item.id).catch(() => null)
-    this.cacheMessageSubject(item.id, inserted)
+    const inserted = await (this.db as any).findById(Message as any, messageId)
+    if (inserted) {
+      this.cacheMessageRow(item.id, inserted)
+    } else {
+      this.messageRowIdByItemId.set(item.id, messageId)
+    }
     this.recentlyCreatedIds.add(item.id)
     this.upsertCachedThreadItem(threadId, item)
   }
@@ -639,24 +685,19 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     // instead of issuing a broad message SELECT during the active stream.
     if (this.recentlyCreatedIds.has(item.id) || cachedItem) {
       this.recentlyCreatedIds.delete(item.id)
-      const subjectUri = await this.resolveMessageSubject(item.id)
-      if (!subjectUri) {
-        throw new Error(`Cannot resolve Pod subject for ChatKit message ${item.id}`)
-      }
-      await this.directPatchMessage(subjectUri, content, richContent, status)
+      const row = await this.findMessageByItemId(threadId, item.id)
+      if (!row) throw new Error(`Cannot find Pod message row for ChatKit item ${item.id}`)
+      const messageIri = this.resolveMessageIri(row)
+      await this.directPatchMessage(messageIri, content, richContent, status)
       this.upsertCachedThreadItem(threadId, item)
       return
     }
 
-    const existing = (await this.selectMessagesForThread(threadId))
-      .find((entry: any) => matchesMessageItemId(entry, item.id)) ?? null
+    const existing = await this.findMessageByItemId(threadId, item.id)
 
     if (existing) {
-      const subjectUri = this.cacheMessageSubject(item.id, existing)
-      if (!subjectUri) {
-        throw new Error(`Cannot resolve Pod subject for ChatKit message ${item.id}`)
-      }
-      await this.directPatchMessage(subjectUri, content, richContent, status)
+      const messageIri = this.resolveMessageIri(existing)
+      await this.directPatchMessage(messageIri, content, richContent, status)
       this.upsertCachedThreadItem(threadId, item)
     } else {
       await this.addThreadItem(threadId, item, _context)
@@ -668,12 +709,12 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
    * Avoids drizzle-solid UPDATE bug (same approach as PodChatKitStore).
    */
   private async directPatchMessage(
-    subjectUri: string,
+    messageIri: string,
     content: string,
     richContent: string | null,
     status: string | null,
   ): Promise<void> {
-    const resourceUrl = resourceUrlFromSubject(subjectUri)
+    const resourceUrl = resourceUrlFromIri(messageIri)
     const graphUri = resourceUrl
 
     const escapeForSparql = (value: string): string => {
@@ -695,26 +736,26 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     }
 
     const deleteTriples = [
-      `<${subjectUri}> <http://rdfs.org/sioc/ns#content> ?oldContent .`,
-      `<${subjectUri}> <http://rdfs.org/sioc/ns#richContent> ?oldRichContent .`,
-      `<${subjectUri}> <${UDFS.messageStatus}> ?oldStatus .`,
+      `<${messageIri}> <http://rdfs.org/sioc/ns#content> ?oldContent .`,
+      `<${messageIri}> <http://rdfs.org/sioc/ns#richContent> ?oldRichContent .`,
+      `<${messageIri}> <${UDFS.messageStatus}> ?oldStatus .`,
     ]
     const insertTriples = [
-      `<${subjectUri}> <http://rdfs.org/sioc/ns#content> ${escapeForSparql(content)} .`,
+      `<${messageIri}> <http://rdfs.org/sioc/ns#content> ${escapeForSparql(content)} .`,
     ]
     const wherePatterns = [
-      `<${subjectUri}> ?existingPredicate ?existingObject .`,
-      `OPTIONAL { <${subjectUri}> <http://rdfs.org/sioc/ns#content> ?oldContent . }`,
-      `OPTIONAL { <${subjectUri}> <http://rdfs.org/sioc/ns#richContent> ?oldRichContent . }`,
-      `OPTIONAL { <${subjectUri}> <${UDFS.messageStatus}> ?oldStatus . }`,
+      `<${messageIri}> ?existingPredicate ?existingObject .`,
+      `OPTIONAL { <${messageIri}> <http://rdfs.org/sioc/ns#content> ?oldContent . }`,
+      `OPTIONAL { <${messageIri}> <http://rdfs.org/sioc/ns#richContent> ?oldRichContent . }`,
+      `OPTIONAL { <${messageIri}> <${UDFS.messageStatus}> ?oldStatus . }`,
     ]
 
     if (richContent !== null) {
-      insertTriples.push(`<${subjectUri}> <http://rdfs.org/sioc/ns#richContent> ${escapeForSparql(richContent)} .`)
+      insertTriples.push(`<${messageIri}> <http://rdfs.org/sioc/ns#richContent> ${escapeForSparql(richContent)} .`)
     }
 
     if (status) {
-      insertTriples.push(`<${subjectUri}> <${UDFS.messageStatus}> "${status}" .`)
+      insertTriples.push(`<${messageIri}> <${UDFS.messageStatus}> "${status}" .`)
     }
 
     const sparql = `
@@ -742,20 +783,19 @@ WHERE { GRAPH <${graphUri}> { ${wherePatterns.join(' ')} } }
       return cachedItem
     }
 
-    const messages = (await this.selectMessagesForThread(threadId))
-      .filter((message: any) => message.id === itemId)
-    if (messages.length === 0) throw new Error(`Item not found: ${itemId}`)
-    return messageRecordToItem(messages[0], threadId)
+    const message = await this.findMessageByItemId(threadId, itemId)
+    if (!message) throw new Error(`Item not found: ${itemId}`)
+    return messageRecordToItem(message, threadId)
   }
 
   async deleteThreadItem(threadId: string, itemId: string, _context: StoreContext): Promise<void> {
-    const messages = await this.selectMessagesForThread(threadId)
-    const message = messages.find((entry: any) => entry.id === itemId)
+    const message = await this.findMessageByItemId(threadId, itemId)
     if (!message) {
       return
     }
 
     await this.deleteMessageRecord(message)
+    this.messageRowIdByItemId.delete(itemId)
     this.removeCachedThreadItem(threadId, itemId)
   }
 

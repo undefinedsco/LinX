@@ -82,7 +82,7 @@ export function InboxListPane(_props: MicroAppPaneProps) {
         <div className="space-y-2 p-3">
           {isLoading && (
             <div className="rounded-xl border border-border/50 bg-card/60 px-3 py-4 text-sm text-muted-foreground">
-              正在从 Pod 读取 inbox…
+              正在从当前空间读取收件箱…
             </div>
           )}
 

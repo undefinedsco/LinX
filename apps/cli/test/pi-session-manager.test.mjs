@@ -444,3 +444,188 @@ test('native Pod session source uses session message resource refs before broad 
     { resource: 'chat_message', iri: messageUri },
   ])
 })
+
+test('native Pod session source surfaces exact message resource read failures', async (t) => {
+  const { module: sessionModule, cleanup } = await loadAutoModeModule('lib/pi-adapter/session.ts')
+  t.after(() => cleanup())
+
+  const sessionId = '019d4657-0000-7000-8000-000000000003'
+  const sessionResourceId = '2026/04/01/019d4657-0000-7000-8000-000000000003.ttl'
+  const cwd = '/tmp/native-pod-cwd'
+  const chatUri = `${POD_BASE}/.data/chat/ai-secretary/index.ttl#this`
+  const threadUri = `${POD_BASE}/.data/chat/ai-secretary/index.ttl#${sessionId}`
+  const messageUri = `${POD_BASE}/.data/chat/ai-secretary/2026/04/01/messages.ttl#${sessionId}-u1`
+  let selectedMessages = false
+
+  const db = {
+    resolveLocatorIri(resource, locator) {
+      if (resource?.config?.name === 'chats') {
+        return `${POD_BASE}/.data/chat/${locator.id}/index.ttl#this`
+      }
+      throw new Error(`Unexpected resource: ${resource?.config?.name}`)
+    },
+    async findById(resource, id) {
+      if (resource?.config?.name === 'session' && id === sessionResourceId) {
+        return {
+          id: sessionResourceId,
+          ownerWebId: WEB_ID,
+          chat: chatUri,
+          thread: threadUri,
+          tool: 'linx',
+          status: 'active',
+          metadata: { cwd, threadUri, messageResources: [messageUri] },
+          createdAt: new Date('2026-04-01T00:00:00.000Z'),
+          updatedAt: new Date('2026-04-01T00:00:01.000Z'),
+        }
+      }
+      return null
+    },
+    async findByIri(resource, iri) {
+      if (resource?.config?.name === 'chat_message' && iri === messageUri) {
+        throw new Error('exact message read failed')
+      }
+      return null
+    },
+    select() {
+      return {
+        from(resource) {
+          const resourceName = resource?.config?.name
+          if (resourceName === 'chat_message') {
+            selectedMessages = true
+          }
+          return {
+            where() {
+              return this
+            },
+            orderBy() {
+              return this
+            },
+            async execute() {
+              if (resourceName === 'session') {
+                return []
+              }
+              if (resourceName === 'chat_message') {
+                throw new Error('message fallback scan should not run when messageResources exist')
+              }
+              return []
+            },
+          }
+        },
+      }
+    },
+  }
+
+  const source = sessionModule.createNativeLinxPiPodSessionSource({
+    webId: WEB_ID,
+    db,
+  })
+
+  await assert.rejects(
+    () => source.findSession(sessionId, '/tmp/another-cwd'),
+    /exact message read failed/,
+  )
+  assert.equal(selectedMessages, false)
+})
+
+test('native Pod session list surfaces exact message resource read failures', async (t) => {
+  const { module: sessionModule, cleanup } = await loadAutoModeModule('lib/pi-adapter/session.ts')
+  t.after(() => cleanup())
+
+  const sessionId = '019d4657-0000-7000-8000-000000000004'
+  const sessionResourceId = '2026/04/01/019d4657-0000-7000-8000-000000000004.ttl'
+  const cwd = '/tmp/native-pod-cwd'
+  const chatUri = `${POD_BASE}/.data/chat/ai-secretary/index.ttl#this`
+  const threadUri = `${POD_BASE}/.data/chat/ai-secretary/index.ttl#${sessionId}`
+  const messageUri = `${POD_BASE}/.data/chat/ai-secretary/2026/04/01/messages.ttl#${sessionId}-u1`
+
+  const db = {
+    resolveLocatorIri(resource, locator) {
+      if (resource?.config?.name === 'chats') {
+        return `${POD_BASE}/.data/chat/${locator.id}/index.ttl#this`
+      }
+      throw new Error(`Unexpected resource: ${resource?.config?.name}`)
+    },
+    async findByIri(resource, iri) {
+      if (resource?.config?.name === 'chat_message' && iri === messageUri) {
+        throw new Error('exact list message read failed')
+      }
+      return null
+    },
+    select() {
+      return {
+        from(resource) {
+          const resourceName = resource?.config?.name
+          return {
+            where() {
+              return this
+            },
+            orderBy() {
+              return this
+            },
+            async execute() {
+              if (resourceName === 'session') {
+                return [{
+                  id: sessionResourceId,
+                  ownerWebId: WEB_ID,
+                  chat: chatUri,
+                  thread: threadUri,
+                  tool: 'linx',
+                  status: 'active',
+                  metadata: { cwd, threadUri, messageResources: [messageUri] },
+                  createdAt: new Date('2026-04-01T00:00:00.000Z'),
+                  updatedAt: new Date('2026-04-01T00:00:01.000Z'),
+                }]
+              }
+              throw new Error(`Unexpected list query: ${resourceName}`)
+            },
+          }
+        },
+      }
+    },
+  }
+
+  const source = sessionModule.createNativeLinxPiPodSessionSource({
+    webId: WEB_ID,
+    db,
+  })
+
+  await assert.rejects(
+    () => source.listSessions('/tmp/another-cwd'),
+    /exact list message read failed/,
+  )
+})
+
+test('native Pod session list surfaces container read failures', async (t) => {
+  const { module: sessionModule, cleanup } = await loadAutoModeModule('lib/pi-adapter/session.ts')
+  t.after(() => cleanup())
+
+  const db = {
+    resolveLocatorIri(resource, locator) {
+      if (resource?.config?.name === 'chats') {
+        return `${POD_BASE}/.data/chat/${locator.id}/index.ttl#this`
+      }
+      throw new Error(`Unexpected resource: ${resource?.config?.name}`)
+    },
+    select() {
+      throw new Error('container listing path should run when fetch is available')
+    },
+  }
+
+  const source = sessionModule.createNativeLinxPiPodSessionSource({
+    webId: WEB_ID,
+    db,
+    fetch: async (url, init = {}) => {
+      const method = init.method ?? 'GET'
+      assert.equal(method, 'GET')
+      if (url.includes('/.data/sessions/')) {
+        return new Response('forbidden', { status: 403, statusText: 'Forbidden' })
+      }
+      return new Response('missing', { status: 404 })
+    },
+  })
+
+  await assert.rejects(
+    () => source.listSessions('/tmp/another-cwd'),
+    /Failed to list Pod container .*\/\.data\/sessions\/.*: 403 Forbidden/,
+  )
+})

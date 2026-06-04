@@ -7,6 +7,7 @@ import { useChatStore } from '@/modules/chat/store'
 import { initializeContactCollections } from '@/modules/contacts/collections'
 import { initializeFavoriteCollections } from '@/modules/favorites/collections'
 import { initializeInboxCollections } from '@/modules/inbox/collections'
+import { formatLoginErrorForUser } from '@/modules/login/error-messages'
 import { initializeModelCollections } from '@/modules/model-services/collections'
 
 type BootstrapStatus = 'idle' | 'initializing' | 'ready' | 'error'
@@ -57,7 +58,7 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
     void withTimeout(
       chatOps.ensureLinxWelcome({ force }),
       SECRETARY_BOOTSTRAP_TIMEOUT_MS,
-      'AI Secretary 初始化超时，请检查 Pod 连接后重试。',
+      '默认助手准备超时。请检查网络，或返回空间选择页重试。',
     )
       .then(async (result) => {
         if (cancelled) return
@@ -92,7 +93,7 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
   if (db && (!isCurrentBootstrapState || bootstrapState.status === 'idle' || bootstrapState.status === 'initializing')) {
     return (
       <BootstrapScreen
-        title="正在初始化 AI Secretary"
+        title="正在准备默认助手"
         description="首次登录后正在创建默认助手、默认话题和欢迎消息。"
       />
     )
@@ -101,8 +102,11 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
   if (db && isCurrentBootstrapState && bootstrapState.status === 'error') {
     return (
       <BootstrapScreen
-        title="AI Secretary 初始化失败"
-        description={bootstrapState.error?.message ?? '初始化默认助手时发生未知错误。'}
+        title="默认助手准备失败"
+        description={formatLoginErrorForUser(
+          bootstrapState.error,
+          '默认助手暂时无法创建。请确认当前空间可以保存数据，或换一个空间。',
+        )}
         actionLabel="重试"
         onAction={() => {
           setBootstrapState({ db, status: 'initializing', error: null })

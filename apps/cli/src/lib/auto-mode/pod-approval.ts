@@ -4,6 +4,7 @@ import { getDefaultPodDataSession, type PodDataSession } from '../pod-data-sessi
 import {
   approvalResource,
   auditResource,
+  agentResourceId,
   buildApprovalSubjectPath,
   buildGrantSubjectPath,
   drizzle,
@@ -267,6 +268,12 @@ function buildThreadUri(webId: string, record: AutoModeSessionRecord): string {
 }
 
 function buildApprovalUriForDate(webIdOrUri: string, approvalId: string, createdAt: Date): string {
+  if (/^https?:\/\//.test(approvalId)) {
+    return approvalId
+  }
+  if (approvalId.includes('#')) {
+    return buildPodResourceIri(webIdOrUri, `/.data/approvals/${approvalId}`)
+  }
   return buildPodResourceIri(webIdOrUri, buildApprovalSubjectPath(approvalId, createdAt))
 }
 
@@ -290,7 +297,7 @@ function buildGrantSchemaUri(webIdOrUri: string): string {
 }
 
 function buildAgentUri(webId: string): string {
-  return `${getPodBaseUrl(webId)}/.data/agents/${AUTO_MODE_AGENT_ID}.ttl`
+  return `${getPodBaseUrl(webId)}/.data/agents/${agentResourceId(AUTO_MODE_AGENT_ID)}`
 }
 
 function buildActionUri(request: AutoModeApprovalRequest): string {
@@ -884,14 +891,7 @@ async function modelUpdateById<T>(
   if (typeof db.updateById === 'function') {
     return await db.updateById(resource, id, update) as T | null
   }
-
-  const row = await modelFindById<Record<string, unknown>>(getDb, resource, id)
-  const iri = rowSubject(row ?? {})
-  if (!iri) {
-    return null
-  }
-  await modelUpdateByIri(getDb, resource, iri, update)
-  return await modelFindByIri<T>(getDb, resource, iri)
+  throw new Error('Remote approval shared model store requires updateById support')
 }
 
 function stripUndefined(row: Record<string, unknown>): Record<string, unknown> {
@@ -914,19 +914,12 @@ function omitInternalFields(row: Record<string, unknown>): Record<string, unknow
   return next
 }
 
-function rowSubject(row: Record<string, unknown>): string | undefined {
-  return normalizeString(row['@id'])
-    ?? normalizeString(row.subject)
-    ?? normalizeString(row.uri)
-}
-
 function enrichApprovalRow(webId: string, row: ApprovalRowLike, explicitIri?: string): ApprovalRowLike {
   const createdAt = new Date(toIsoString(row.createdAt, new Date().toISOString()))
   return {
     ...row,
     approvalUri: explicitIri
       ?? normalizeString(row.approvalUri)
-      ?? rowSubject(row)
       ?? buildApprovalUriForDate(webId, row.id, createdAt),
   }
 }
@@ -993,14 +986,18 @@ async function readApprovalRowFromResource(fetcher: PodFetch, resourceUri: strin
   return null
 }
 
+async function readExistingTurtleResource(fetcher: PodFetch, url: string): Promise<string | null> {
+  return await readTurtleResource(fetcher, url)
+}
+
 async function listApprovalRows(webId: string, fetcher: PodFetch): Promise<ApprovalRowLike[]> {
   const urls = [
     ...recentApprovalDocumentUrls(webId),
-    ...await listTurtleResources(fetcher, `${getPodBaseUrl(webId)}/.data/approvals/`).catch(() => []),
+    ...await listTurtleResources(fetcher, `${getPodBaseUrl(webId)}/.data/approvals/`),
   ]
   const rows: ApprovalRowLike[] = []
   for (const url of [...new Set(urls)].filter((entry) => entry.endsWith('.ttl'))) {
-    const turtle = await readTurtleResource(fetcher, url).catch(() => null)
+    const turtle = await readExistingTurtleResource(fetcher, url)
     if (!turtle) continue
     for (const [subject, predicates] of parseManagedTurtleBlocks(turtle, url)) {
       const row = approvalRowFromPredicates(subject, predicates)
@@ -1054,7 +1051,7 @@ async function listAuditRows(webId: string, fetcher: PodFetch): Promise<AuditRow
   const urls = await listTurtleResourcesRecursive(fetcher, `${getPodBaseUrl(webId)}/.data/audits/`)
   const rows: AuditRowLike[] = []
   for (const url of urls.filter((entry: string) => entry.endsWith('.ttl'))) {
-    const turtle = await readTurtleResource(fetcher, url).catch(() => null)
+    const turtle = await readExistingTurtleResource(fetcher, url)
     if (!turtle) continue
     for (const [subject, predicates] of parseManagedTurtleBlocks(turtle, url)) {
       const row = auditRowFromPredicates(subject, predicates)
@@ -1089,11 +1086,11 @@ async function writeAuditRow(webId: string, fetcher: PodFetch, row: AuditRowLike
 
 async function listGrantRows(webId: string, fetcher: PodFetch): Promise<GrantRowLike[]> {
   const urls = [
-    ...await listTurtleResources(fetcher, `${getPodBaseUrl(webId)}/settings/autonomy/grants/`).catch(() => []),
+    ...await listTurtleResources(fetcher, `${getPodBaseUrl(webId)}/settings/autonomy/grants/`),
   ]
   const rows: GrantRowLike[] = []
   for (const url of urls.filter((entry) => entry.endsWith('.ttl'))) {
-    const turtle = await readTurtleResource(fetcher, url).catch(() => null)
+    const turtle = await readExistingTurtleResource(fetcher, url)
     if (!turtle) continue
     for (const [subject, predicates] of parseManagedTurtleBlocks(turtle, url)) {
       const row = grantRowFromPredicates(subject, predicates)

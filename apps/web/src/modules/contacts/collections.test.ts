@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { ContactClass, ContactType } from '@undefineds.co/models'
+import { ContactClass, ContactType, agentResourceId, agentTable, chatTable, contactTable } from '@undefineds.co/models'
 
 // Mock search results storage for db.select().from().where().execute()
 let mockSearchResults: any[] = []
@@ -44,8 +44,7 @@ const mockDb = {
   }),
   resolveRowIri: vi.fn(),
   resolveRowId: vi.fn(),
-  // Add findFirst for remote profile/agent fetching
-  findFirst: vi.fn().mockResolvedValue(null),
+  findByIri: vi.fn().mockResolvedValue(null),
 }
 
 // Use vi.hoisted so these are available in vi.mock
@@ -107,13 +106,22 @@ function resetMockDb() {
       execute: vi.fn().mockResolvedValue(undefined),
     }),
   }))
-  mockDb.resolveRowIri.mockImplementation((_table, row: Record<string, unknown>) => {
-    return String(row.id ?? row['@id'] ?? row.subject ?? row.uri ?? row.source ?? 'mock-row')
+  mockDb.resolveRowIri.mockImplementation((table, row: Record<string, unknown>) => {
+    if (typeof row.id !== 'string' || row.id.length === 0) {
+      throw new Error('Mock row is missing row.id.')
+    }
+    if (table === chatTable) return `https://pod.example/.data/chat/${row.id}/index.ttl#this`
+    if (table === contactTable) return `https://pod.example/.data/contacts/${row.id}.ttl#this`
+    if (table === agentTable) return `https://pod.example/.data/agents/${row.id}`
+    return `https://pod.example/${row.id}`
   })
   mockDb.resolveRowId.mockImplementation((_table, row: Record<string, unknown>) => {
-    return String(row.id ?? row['@id'] ?? row.subject ?? row.uri ?? row.source ?? 'mock-row')
+    if (typeof row.id !== 'string' || row.id.length === 0) {
+      throw new Error('Mock row is missing row.id.')
+    }
+    return row.id
   })
-  mockDb.findFirst.mockResolvedValue(null)
+  mockDb.findByIri.mockResolvedValue(null)
 }
 
 // Mock createPodCollection before importing collections
@@ -187,7 +195,7 @@ describe('contactOps', () => {
       expect(result.chatId).toBe('uuid-3') // Chat ID (third UUID)
       expect(result.name).toBe('Test Agent')
       expect(result.contactType).toBe(ContactType.AGENT)
-      expect(result.entityUri).toBe('uuid-1') // Agent ID (first UUID)
+      expect(result.entityUri).toBe('https://pod.example/.data/agents/uuid-1/index.ttl#this')
       
       // Repositories create Agent + Contact via db.insert; collection persists Chat
       expect(mockDb.insert).toHaveBeenCalledTimes(2)
@@ -269,9 +277,10 @@ describe('contactOps', () => {
 
   describe('updateAgent', () => {
     it('should call collection update with correct id', async () => {
-      await contactOps.updateAgent('agent-1', { instructions: 'New instructions' })
+      const agentId = agentResourceId('agent-1')
+      await contactOps.updateAgent(agentId, { instructions: 'New instructions' })
 
-      expect(mockUpdate).toHaveBeenCalledWith('agent-1', expect.any(Function))
+      expect(mockUpdate).toHaveBeenCalledWith(agentId, expect.any(Function))
     })
   })
 
@@ -319,13 +328,11 @@ describe('contactOps', () => {
       expect(result).toBeNull()
     })
 
-    it('should match by @id property (RDF subject)', () => {
+    it('should reject full RDF subject IRI in getById', () => {
       const mockContact = { id: 'contact-1', '@id': 'https://pod/contact-1', name: 'Test' }
       mockCollectionState.set('contact-1', mockContact)
 
-      const result = contactOps.getById('https://pod/contact-1')
-
-      expect(result).toEqual(mockContact)
+      expect(() => contactOps.getById('https://pod/contact-1')).toThrow('base-relative resource id')
     })
   })
 
@@ -333,12 +340,11 @@ describe('contactOps', () => {
     it('should reuse an existing chat when participants store contact URI', async () => {
       const contact = {
         id: 'contact-1',
-        '@id': 'https://pod.example/.data/contacts/contact-1.ttl',
         name: 'Alice',
       }
       const chat = {
         id: 'chat-1',
-        participants: ['https://pod.example/.data/contacts/contact-1.ttl'],
+        participants: ['https://pod.example/.data/contacts/contact-1.ttl#this'],
       }
 
       mockCollectionState.set(contact.id, contact)
@@ -353,7 +359,6 @@ describe('contactOps', () => {
     it('should create a new chat using the persisted contact reference', async () => {
       const contact = {
         id: 'contact-1',
-        '@id': 'https://pod.example/.data/contacts/contact-1.ttl',
         name: 'Alice',
       }
 
@@ -365,7 +370,7 @@ describe('contactOps', () => {
       expect(mockInsert).toHaveBeenCalledWith(
         expect.objectContaining({
           id: 'uuid-1',
-          participants: ['https://pod.example/.data/contacts/contact-1.ttl'],
+          participants: ['https://pod.example/.data/contacts/contact-1.ttl#this'],
         }),
       )
     })
@@ -373,10 +378,11 @@ describe('contactOps', () => {
 
   describe('getAgentById', () => {
     it('should find agent by id from collection state', () => {
-      const mockAgent = { id: 'agent-1', name: 'Test Agent' }
-      mockCollectionState.set('agent-1', mockAgent)
+      const agentId = agentResourceId('agent-1')
+      const mockAgent = { id: agentId, name: 'Test Agent' }
+      mockCollectionState.set(agentId, mockAgent)
 
-      const result = contactOps.getAgentById('agent-1')
+      const result = contactOps.getAgentById(agentId)
 
       expect(result).toEqual(mockAgent)
     })
@@ -384,7 +390,7 @@ describe('contactOps', () => {
     it('should return null if agent not found', () => {
       mockCollectionState.clear()
 
-      const result = contactOps.getAgentById('non-existent')
+      const result = contactOps.getAgentById(agentResourceId('non-existent'))
 
       expect(result).toBeNull()
     })
@@ -399,7 +405,7 @@ describe('contactOps', () => {
         id: 'group-1',
         name: '产品群',
         rdfType: ContactClass.GROUP,
-        entityUri: '/.data/chat/chat-1/index.ttl#this',
+        entityUri: 'https://pod.example/.data/chat/chat-1/index.ttl#this',
         contactType: ContactType.SOLID,
       })
       mockCollectionState.set('owner-contact', {
@@ -459,7 +465,7 @@ describe('Contact + Chat Linkage Logic', () => {
     const chatId = 'uuid-3'
 
     // Verify linkage
-    expect(result.entityUri).toBe(agentId) // Contact → Agent
+    expect(result.entityUri).toBe(`https://pod.example/.data/agents/${agentId}/index.ttl#this`)
     expect(result.id).toBe(contactId)
     expect(result.chatId).toBe(chatId)
   })
@@ -682,7 +688,7 @@ describe('contactOps Solid Profile Operations', () => {
 
   describe('fetchSolidProfile', () => {
     it('should return profile info when found', async () => {
-      mockDb.findFirst.mockResolvedValueOnce({
+      mockDb.findByIri.mockResolvedValueOnce({
         name: 'Alice Smith',
         nick: 'alice',
         avatar: 'https://alice.pod/avatar.png',
@@ -700,7 +706,7 @@ describe('contactOps Solid Profile Operations', () => {
 
     it('should return null when profile not found', async () => {
       vi.spyOn(console, 'warn').mockImplementation(() => {})
-      mockDb.findFirst.mockResolvedValueOnce(null)
+      mockDb.findByIri.mockResolvedValueOnce(null)
 
       const result = await contactOps.fetchSolidProfile('https://invalid.pod/profile')
 
@@ -708,7 +714,7 @@ describe('contactOps Solid Profile Operations', () => {
     })
 
     it('should use nick as fallback when name is missing', async () => {
-      mockDb.findFirst.mockResolvedValueOnce({
+      mockDb.findByIri.mockResolvedValueOnce({
         name: '',
         nick: 'bob',
         avatar: null,
@@ -722,7 +728,7 @@ describe('contactOps Solid Profile Operations', () => {
 
     it('should return null on error', async () => {
       vi.spyOn(console, 'error').mockImplementation(() => {})
-      mockDb.findFirst.mockRejectedValueOnce(new Error('Network error'))
+      mockDb.findByIri.mockRejectedValueOnce(new Error('Network error'))
 
       const result = await contactOps.fetchSolidProfile('https://error.pod/profile')
 

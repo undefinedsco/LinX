@@ -1,4 +1,5 @@
 import { Parser, Writer } from 'n3'
+import { agentResourceId } from '../models.js'
 
 export type PodFetch = (url: string, init?: RequestInit) => Promise<Response>
 
@@ -128,7 +129,7 @@ export function buildInboxResourceUrl(webIdOrUri: string, notificationId: string
 }
 
 export function buildAgentResourceUrl(webId: string, agentId: string): string {
-  return `${podBaseUrlFromWebId(webId)}/.data/agents/${encodeURIComponent(agentId)}.ttl`
+  return `${podBaseUrlFromWebId(webId)}/.data/agents/${agentResourceId(agentId)}`
 }
 
 export function buildChatIndexResourceUrl(webId: string, chatId: string): string {
@@ -464,12 +465,7 @@ function renderTurtleObject(object: TurtleObject): string {
 function parseStandardTurtleBlocks(turtle: string, baseIRI?: string): Map<string, Map<string, TurtleObject[]>> {
   const blocks = new Map<string, Map<string, TurtleObject[]>>()
   const parser = new Parser(baseIRI ? { baseIRI } : undefined)
-  let quads
-  try {
-    quads = parser.parse(turtle)
-  } catch {
-    return blocks
-  }
+  const quads = parser.parse(turtle)
   for (const quad of quads) {
     if (quad.subject.termType !== 'NamedNode' || quad.predicate.termType !== 'NamedNode') {
       continue
@@ -493,12 +489,7 @@ function removeStandardTriplesForSubject(turtle: string, subject: string): strin
   }
   const baseIRI = subject.includes('#') ? subject.split('#')[0] : subject
   const parser = new Parser({ baseIRI })
-  let quads
-  try {
-    quads = parser.parse(turtle)
-  } catch {
-    return turtle
-  }
+  const quads = parser.parse(turtle)
   const kept = quads.filter((quad) => (
     quad.subject.value !== subject
     && !(quad.object.termType === 'NamedNode' && quad.object.value === subject)
@@ -509,9 +500,17 @@ function removeStandardTriplesForSubject(turtle: string, subject: string): strin
   const writer = new Writer()
   writer.addQuads(kept)
   let output = ''
+  let writeError: Error | undefined
   writer.end((error, result) => {
-    output = error ? turtle : result
+    if (error) {
+      writeError = error instanceof Error ? error : new Error(String(error))
+      return
+    }
+    output = result
   })
+  if (writeError) {
+    throw writeError
+  }
   return output
 }
 

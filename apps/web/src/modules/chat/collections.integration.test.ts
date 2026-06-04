@@ -53,7 +53,7 @@ describe('chat collections integration', () => {
 
     const id = `group-chat-${Date.now()}`
     const podBase = webId.replace('/profile/card#me', '')
-    const assistantUri = `${podBase}/.data/agents/assistant-${id}.ttl#this`
+    const assistantUri = `${podBase}/.data/agents/assistant-${id}/index.ttl#this`
     const metadata = {
       memberRoles: {
         [webId]: 'owner',

@@ -10,7 +10,7 @@ import { contactOps, contactCollection } from '../collections'
 import type { UnifiedContact } from '../types'
 import { useChatStore } from '@/modules/chat/store'
 import { useEntity } from '@/lib/data/use-entity'
-import { solidProfileTable, agentTable, ContactType, isGroupContact } from '@undefineds.co/models'
+import { solidProfileResource, agentResource, ContactType, isAgentContact, isGroupContact } from '@undefineds.co/models'
 import { useToast } from '@/components/ui/use-toast'
 import { 
   MessageCircle, 
@@ -54,6 +54,7 @@ import {
   DropdownMenuTrigger 
 } from '@/components/ui/dropdown-menu'
 import { cn, toStringArray } from '@/lib/utils'
+import { formatErrorForUser } from '@/lib/user-facing-errors'
 
 // ============================================
 // Helpers & Components
@@ -166,13 +167,13 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
 
   // Find contact from collection state (本地缓存)
   const realContact = selectedId
-    ? contacts.find(c => c.id === selectedId || (c as any)['@id'] === selectedId)
+    ? contacts.find(c => c.id === selectedId)
     : null
   const isContactLoading = false // Collections handle loading state
   
-  // 确定 entityUri 和对应的 table
+  // Choose the source resource from the explicit contact type.
   const entityUri = realContact && !isGroupContact(realContact) ? realContact.entityUri || null : null
-  const entityTable = realContact?.contactType === ContactType.AGENT ? agentTable : solidProfileTable
+  const entityResource = isAgentContact(realContact) ? agentResource : solidProfileResource
 
   // 使用 useEntity 获取源数据（本地或远程，统一处理）
   const { 
@@ -180,7 +181,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
     isLoading: isSyncing, 
     error: syncError, 
     refresh: handleManualSync 
-  } = useEntity(entityTable, entityUri, {
+  } = useEntity(entityResource, entityUri, {
     onUpdate: (data) => {
       // 同步成功后更新本地 Contact 缓存
       if (realContact?.id && data) {
@@ -204,7 +205,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
     if (!realContact) return null
     
     // 构建 agentConfig（如果是 Agent 类型且有源数据）
-    const agentConfig = realContact.contactType === ContactType.AGENT && entityData ? {
+    const agentConfig = isAgentContact(realContact) && entityData ? {
       ...entityData,
       model: typeof (entityData as any).model === 'string' ? (entityData as any).model : undefined,
       instructions: typeof (entityData as any).instructions === 'string' ? (entityData as any).instructions : undefined,
@@ -217,7 +218,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
       ...realContact,
       displayName: realContact.alias || realContact.name || 'Unknown',
       displayAvatar: realContact.avatarUrl || '',
-      sourceType: realContact.contactType === 'agent' ? 'agent' : (realContact.externalPlatform === 'wechat' ? 'wechat' : 'solid'),
+      sourceType: isAgentContact(realContact) ? 'agent' : (realContact.externalPlatform === 'wechat' ? 'wechat' : 'solid'),
       agentConfig,
     } as UnifiedContact
   }, [selectedId, realContact, entityData])
@@ -228,15 +229,15 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
     const record = contact as Record<string, unknown> | null
     return typeof record?.inbox === 'string' && record.inbox.length > 0 ? record.inbox : null
   }, [contact])
-  const groupContactRef = isGroup ? realContact?.entityUri || realContact?.id || null : null
+  const groupContactId = isGroup ? realContact?.id ?? null : null
   const groupMemberRoleMap = useMemo(
-    () => (groupContactRef ? contactOps.getGroupMemberRoles(groupContactRef) : {}),
-    [groupContactRef, contacts],
+    () => (groupContactId ? contactOps.getGroupMemberRoles(groupContactId) : {}),
+    [groupContactId, contacts],
   )
   const groupMembers = useMemo<GroupMember[]>(() => {
-    if (!groupContactRef) return []
+    if (!groupContactId) return []
 
-    const memberRefs = contactOps.getGroupMembers(groupContactRef)
+    const memberRefs = contactOps.getGroupMembers(groupContactId)
     const resolvedByRef = new Map(
       contactOps.resolveMembers(memberRefs).flatMap((member) => {
         const refs = new Set<string>()
@@ -258,7 +259,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
       } as any),
       role: (groupMemberRoleMap[memberRef] as 'owner' | 'admin' | 'member' | undefined) ?? 'member',
     }))
-  }, [groupContactRef, groupMemberRoleMap, contacts])
+  }, [groupContactId, groupMemberRoleMap, contacts])
   const currentUserRole = currentUserRef ? groupMemberRoleMap[currentUserRef] : undefined
   const isGroupOwner = currentUserRole === 'owner'
   const isGroupAdmin = currentUserRole === 'owner' || currentUserRole === 'admin'
@@ -294,7 +295,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
     
     try {
       if (realContact && isGroupContact(realContact)) {
-        const chat = contactOps.getGroupChat(realContact.entityUri || realContact.id)
+        const chat = contactOps.getGroupChat(realContact.id)
         if (!chat) {
           throw new Error('群聊不存在')
         }
@@ -379,10 +380,11 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
 
   // 保存 Prompt
   const handleSavePrompt = useCallback(async () => {
-    if (!contact || !entityUri) return
+    const agentId = contact?.agentConfig?.id
+    if (!contact || !agentId) return
     setIsSaving(true)
     try {
-      await contactOps.updateAgent(entityUri, { instructions: editingPrompt.trim() })
+      await contactOps.updateAgent(agentId, { instructions: editingPrompt.trim() })
       notify.success('系统提示词已更新')
       setEditMode('none')
     } catch (e) {
@@ -390,7 +392,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
     } finally {
       setIsSaving(false)
     }
-  }, [contact, selectedId, entityUri, editingPrompt, notify])
+  }, [contact, editingPrompt, notify])
 
   // 删除联系人
   const handleDelete = useCallback(async () => {
@@ -422,7 +424,8 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
   }, [contact])
 
   const handleSaveTools = useCallback(async () => {
-    if (!contact || !entityUri) return
+    const agentId = contact?.agentConfig?.id
+    if (!contact || !agentId) return
 
     const nextTools = Array.from(
       new Set(
@@ -435,7 +438,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
 
     setIsSaving(true)
     try {
-      await contactOps.updateAgent(entityUri, {
+      await contactOps.updateAgent(agentId, {
         tools: nextTools.length > 0 ? nextTools : [],
       })
       notify.success('工具配置已更新')
@@ -445,12 +448,12 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
     } finally {
       setIsSaving(false)
     }
-  }, [contact, editingToolsText, entityUri, notify])
+  }, [contact, editingToolsText, notify])
 
   // 搜索 WebID - 使用 contactOps.fetchSolidProfile
   const handleSearchWebId = useCallback(async () => {
     if (!friendSearch.webId.trim()) {
-      setFriendSearch(s => ({ ...s, error: '请输入 WebID' }))
+      setFriendSearch(s => ({ ...s, error: '请输入用户地址' }))
       return
     }
     
@@ -464,7 +467,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
         setFriendSearch(s => ({ 
           ...s, 
           isSearching: false, 
-          error: '无法获取用户信息，请检查 WebID 是否正确' 
+          error: '无法获取用户信息，请检查用户地址是否正确'
         }))
         return
       }
@@ -556,24 +559,24 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
   }, [notify])
 
   const handleRemoveGroupMember = useCallback(async (memberRef: string) => {
-    if (!groupContactRef) return
+    if (!groupContactId) return
     try {
-      await contactOps.removeMemberFromGroup(groupContactRef, memberRef)
+      await contactOps.removeMemberFromGroup(groupContactId, memberRef)
       notify.success('成员已移除')
     } catch {
       notify.error('移除成员失败')
     }
-  }, [groupContactRef, notify])
+  }, [groupContactId, notify])
 
   const handleUpdateGroupMemberRole = useCallback(async (memberRef: string, role: 'admin' | 'member') => {
-    if (!groupContactRef) return
+    if (!groupContactId) return
     try {
-      await contactOps.updateMemberRole(groupContactRef, memberRef, role)
+      await contactOps.updateMemberRole(groupContactId, memberRef, role)
       notify.success(role === 'admin' ? '已设为管理员' : '已取消管理员')
     } catch {
       notify.error('更新成员角色失败')
     }
-  }, [groupContactRef, notify])
+  }, [groupContactId, notify])
 
   const toggleInvitee = useCallback((contactId: string) => {
     setSelectedInvitees((current) => {
@@ -633,8 +636,8 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
     const rawId = contact.externalId || contact.entityUri || contact.id
     const displayId = getShortId(rawId ?? '')
     const region = contact.province ? `${contact.province} ${contact.city || ''}` : '未知地区'
-    const gender = contact.gender || (contact.contactType === 'agent' ? 'bot' : 'unknown')
     const isAgent = contact.sourceType === 'agent'
+    const gender = contact.gender || (isAgent ? 'bot' : 'unknown')
     const isReference = contact.sourceType === 'solid' || (isAgent && rawId?.startsWith('http'))
 
     return (
@@ -726,7 +729,9 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
                   ) : syncError ? (
                     <>
                       <AlertCircle className="w-3 h-3 text-destructive/60" />
-                      <span className="text-destructive/60">{syncError.message}</span>
+                      <span className="text-destructive/60">
+                        {formatErrorForUser(syncError, '联系人同步失败。请稍后重试。')}
+                      </span>
                       <Button 
                         variant="link" 
                         className="h-auto p-0 text-xs text-primary/70 hover:text-primary"
@@ -848,7 +853,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
           {!isAgent && !isGroup && (contact.entityUri || contactInbox) && (
             <div className="bg-card rounded-xl border border-border/40 overflow-hidden shadow-sm">
               {contact.entityUri && (
-                <InfoRow label={contact.sourceType === 'solid' ? 'WebID' : '资源'} hideArrow last={!contactInbox}>
+                <InfoRow label={contact.sourceType === 'solid' ? '用户地址' : '资源'} hideArrow last={!contactInbox}>
                   <span className="font-mono text-xs break-all">{contact.entityUri}</span>
                 </InfoRow>
               )}
@@ -894,7 +899,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
               onMention={handleMentionMember}
               onRemoveMember={handleRemoveGroupMember}
               onUpdateRole={handleUpdateGroupMemberRole}
-              onInvite={() => realContact && openInviteMemberDialog(realContact.entityUri || realContact.id)}
+              onInvite={() => realContact && openInviteMemberDialog(realContact.id)}
             />
           )}
         </div>
@@ -1059,12 +1064,12 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
               <User className="w-5 h-5" />
               添加朋友
             </DialogTitle>
-            <DialogDescription>通过 WebID 搜索并添加新的 Solid 联系人。</DialogDescription>
+            <DialogDescription>通过用户地址搜索并添加新的联系人。</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 mt-2">
             {/* 搜索框 */}
             <div className="space-y-2">
-              <label className="text-sm font-medium">WebID</label>
+              <label className="text-sm font-medium">用户地址</label>
               <div className="flex gap-2">
                 <Input
                   placeholder="https://alice.solidcommunity.net/profile/card#me"
@@ -1112,7 +1117,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
             {!friendSearch.searchResult && !friendSearch.isSearching && (
               <div className="py-8 text-center text-muted-foreground">
                 <User className="w-10 h-10 mx-auto mb-2 opacity-30" />
-                <p className="text-sm">输入对方的 WebID 搜索用户</p>
+                <p className="text-sm">输入对方的用户地址搜索用户</p>
               </div>
             )}
           </div>

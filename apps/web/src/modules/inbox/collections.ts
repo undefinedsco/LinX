@@ -4,9 +4,11 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import {
   approvalResource,
   auditResource,
-  buildApprovalSubjectPath,
   buildAuditSubjectPath,
+  extractApprovalIdFromApprovalRef,
+  extractAuditIdFromAuditRef,
   extractChatThreadRef,
+  extractRuntimeSessionId as extractRuntimeSessionIdFromRef,
   inboxNotificationResource,
   type ApprovalInsert,
   type ApprovalRow,
@@ -18,6 +20,7 @@ import {
 } from '@undefineds.co/models'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { updateExactRecord } from '@/lib/data/exact-records'
+import { assertInsertValuesBelongToCurrentPod, assertUpdateValuesBelongToCurrentPod } from '@/lib/data/pod-write-guard'
 import { createPodCollection } from '@/lib/data/pod-collection'
 import { queryClient } from '@/providers/query-provider'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
@@ -81,14 +84,6 @@ export function useInboxInit() {
   return { db, isReady: !!db }
 }
 
-function extractResourceId(uri: string | undefined): string | null {
-  if (!uri) return null
-  const hash = uri.split('#').pop()
-  if (hash) return hash
-  const match = uri.match(/\/([^/]+)\.ttl$/)
-  return match?.[1] ?? null
-}
-
 function formatTimestamp(value: unknown): number {
   if (!value) return 0
   const time = new Date(String(value)).getTime()
@@ -103,27 +98,22 @@ function extractPodBase(db: SolidDatabase): string {
   return podBaseUrl
 }
 
-function makeApprovalUri(db: SolidDatabase, approvalId: string, createdAt: Date | string | number = new Date()): string {
-  return `${extractPodBase(db)}${buildApprovalSubjectPath(approvalId, createdAt)}`
-}
-
 function resolveApprovalIri(db: SolidDatabase, approval: ApprovalRow): string {
-  const subject = (approval as Record<string, unknown>)['@id'] ?? (approval as Record<string, unknown>).subject
-  if (typeof subject === 'string' && /^https?:\/\//.test(subject)) {
-    return subject
+  if (!approval.id) {
+    throw new Error('Approval row is missing id.')
   }
-  return makeApprovalUri(db, approval.id, approval.createdAt ?? new Date())
-}
-
-function getApprovalSubject(approval: ApprovalRow): string | null {
-  const subject = (approval as Record<string, unknown>)['@id'] ?? (approval as Record<string, unknown>).subject
-  return typeof subject === 'string' && subject.length > 0 ? subject : null
+  return db.resolveRowIri(approvalResource as any, {
+    id: approval.id,
+    createdAt: approval.createdAt ?? new Date(),
+  } as any)
 }
 
 function findLinkedApproval(approvals: ApprovalRow[], audit: AuditRow): ApprovalRow | null {
   if (!audit.approval) return null
-  const approvalId = extractResourceId(audit.approval)
-  return approvals.find((item) => getApprovalSubject(item) === audit.approval || item.id === approvalId) ?? null
+  const approvalId = extractApprovalIdFromApprovalRef(audit.approval)
+  return approvalId
+    ? approvals.find((item) => item.id === approvalId) ?? null
+    : null
 }
 
 async function updateApprovalByIri(
@@ -131,37 +121,16 @@ async function updateApprovalByIri(
   approval: ApprovalRow,
   patch: Record<string, unknown>,
 ): Promise<void> {
-  await updateExactRecord(db, approvalResource as any, {
-    ...approval,
-    '@id': resolveApprovalIri(db, approval),
-  } as any, patch)
+  assertUpdateValuesBelongToCurrentPod(db, approval)
+  await updateExactRecord(db, approvalResource as any, resolveApprovalIri(db, approval), patch)
 }
 
 function makeAuditUri(db: SolidDatabase, auditId: string, createdAt: Date | string | number = new Date()): string {
   return `${extractPodBase(db)}${buildAuditSubjectPath(auditId, createdAt)}`
 }
 
-function extractRuntimeSessionId(sessionUri: string | null | undefined): string | null {
-  if (!sessionUri) return null
-  const match = sessionUri.match(/^urn:linx:runtime-session:(.+)$/)
-  if (match?.[1]) return match[1]
-
-  const currentPodMatch = sessionUri.match(/\/\.data\/sessions\/\d{4}\/\d{2}\.ttl#([^/#]+)$/)
-  if (currentPodMatch?.[1]) return decodeURIComponent(currentPodMatch[1])
-
-  const legacyPodMatch = sessionUri.match(/\/\.data\/session\/([^/#]+)\.ttl(?:#([^/#]+))?$/)
-  return legacyPodMatch?.[2]
-    ? decodeURIComponent(legacyPodMatch[2])
-    : legacyPodMatch?.[1]
-      ? decodeURIComponent(legacyPodMatch[1])
-      : null
-}
-
-function extractThreadId(approval: ApprovalRow): string | null {
-  const threadUri = approval.thread || approval.target
-  if (!threadUri) return null
-  const hash = threadUri.split('#').pop()
-  return hash || null
+function extractApprovalRuntimeThreadId(approval: ApprovalRow): string | null {
+  return extractChatThreadRef(approval.thread || approval.target).threadId
 }
 
 export function buildRuntimeToolResponse(decision: 'approved' | 'rejected', reason?: string): string {
@@ -224,10 +193,8 @@ function buildInboxItems(
   const items: InboxItem[] = []
 
   for (const notification of notifications) {
-    const resourceId = extractResourceId(notification.object)
-    if (!resourceId) continue
-
-    const approval = approvalById.get(resourceId)
+    const approvalId = extractApprovalIdFromApprovalRef(notification.object)
+    const approval = approvalId ? approvalById.get(approvalId) : null
     if (approval) {
       const itemId = `approval:${approval.id}`
       if (seen.has(itemId)) continue
@@ -252,7 +219,8 @@ function buildInboxItems(
       continue
     }
 
-    const audit = auditById.get(resourceId)
+    const auditId = extractAuditIdFromAuditRef(notification.object)
+    const audit = auditId ? auditById.get(auditId) : null
     if (audit) {
       const itemId = `audit:${audit.id}`
       if (seen.has(itemId)) continue
@@ -274,7 +242,7 @@ function buildInboxItems(
         threadId: presentation.threadId,
         thread: presentation.thread,
         about: presentation.about,
-        approvalId: linkedApproval?.id ?? extractResourceId(audit.approval),
+        approvalId: linkedApproval?.id ?? extractApprovalIdFromApprovalRef(audit.approval),
         authUrl: presentation.authUrl,
         authMethod: presentation.authMethod,
         authMessage: presentation.authMessage,
@@ -322,7 +290,7 @@ function buildInboxItems(
       threadId: presentation.threadId,
       thread: presentation.thread,
       about: presentation.about,
-      approvalId: linkedApproval?.id ?? extractResourceId(audit.approval),
+      approvalId: linkedApproval?.id ?? extractApprovalIdFromApprovalRef(audit.approval),
       authUrl: presentation.authUrl,
       authMethod: presentation.authMethod,
       authMessage: presentation.authMessage,
@@ -366,7 +334,7 @@ export const inboxOps = {
       policyVersion: input.approval.policyVersion || 'phase4-inbox-v1',
     })
 
-    await db.insert(auditResource).values({
+    const auditPayload = {
       id: auditId,
       action: `inbox.approval.${input.decision}`,
       actor: input.actorWebId,
@@ -380,14 +348,18 @@ export const inboxOps = {
       entry: input.approval.thread || input.approval.target,
       policyVersion: input.approval.policyVersion || 'phase4-inbox-v1',
       createdAt: now,
-    }).execute()
+    }
+    assertInsertValuesBelongToCurrentPod(db, auditPayload)
+    await db.insert(auditResource).values(auditPayload).execute()
 
-    await db.insert(inboxNotificationResource).values({
+    const notificationPayload = {
       id: crypto.randomUUID(),
       actor: input.actorWebId,
       object: auditUri,
       createdAt: now,
-    }).execute()
+    }
+    assertInsertValuesBelongToCurrentPod(db, notificationPayload)
+    await db.insert(inboxNotificationResource).values(notificationPayload).execute()
 
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['inbox', 'approvals'] }),
@@ -451,8 +423,8 @@ export function useResolveInboxApproval() {
         reason: input.reason,
       })
 
-      const runtimeSessionId = extractRuntimeSessionId(input.approval.session)
-      const threadId = extractThreadId(input.approval)
+      const runtimeSessionId = extractRuntimeSessionIdFromRef(input.approval.session)
+      const threadId = extractApprovalRuntimeThreadId(input.approval)
       const isServiceMode = typeof window !== 'undefined' && !!(window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__
       if (runtimeSessionId && threadId && isServiceMode && input.approval.toolCallId && db && session.fetch) {
         try {

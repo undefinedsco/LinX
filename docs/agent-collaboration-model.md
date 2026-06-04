@@ -153,8 +153,8 @@ AI Secretary Agent
 
 | 对象 | 含义 | 持久位置 / 边界 |
 | --- | --- | --- |
-| `Agent` | Secretary 或其他可执行身份的长期配置根 | `/.data/agents/{agentId}/` |
-| `Agent Home` | `AGENTS.md`、rules、MCP、skills、backend、compaction、memory | 跟 Agent 走，不跟目录、Thread、Session 走 |
+| `Agent` | Secretary 或其他可执行身份的长期配置根 | `/.data/agents/{agentKey}/index.ttl#this`，`row.id = {agentKey}/index.ttl#this` |
+| `Agent Home` | `AGENTS.md`、rules、MCP、skills、backend、compaction、memory | 同目录 `/.data/agents/{agentKey}/`，跟 Agent 走，不跟目录、Thread、Session 走 |
 | `Chat` | 用户看到的会话/房间对象 | 回答“和谁/什么在聊” |
 | `Thread` | Chat 内的一条具体时间线/工作现场 | 绑定 workspace，可承载 group/private timeline |
 | `Session` | 一次 runtime 生命周期投影 | 绑定 Agent + Thread + Workspace |

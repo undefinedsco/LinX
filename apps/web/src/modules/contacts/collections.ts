@@ -8,8 +8,12 @@
  */
 
 import { createPodCollection } from '@/lib/data/pod-collection'
-import { like, or, resolveRowSubject } from '@undefineds.co/drizzle-solid'
+import { like, or } from '@undefineds.co/drizzle-solid'
 import {
+  asBaseRelativeResourceId,
+  asResourceIri,
+  agentHomeDirFromResourceId,
+  chatTable,
   contactTable,
   agentTable,
   solidProfileTable,
@@ -23,7 +27,10 @@ import {
   type ChatInsert,
   type SolidProfileRow,
   ContactType,
+  isAgentContact,
   isGroupContact,
+  type BaseRelativeResourceId,
+  type ResourceIri,
 } from '@undefineds.co/models'
 import type { SolidDatabase } from '@undefineds.co/models'
 import { queryClient } from '@/providers/query-provider'
@@ -53,22 +60,35 @@ function getDb(): SolidDatabase | null {
   return dbGetter?.() ?? null
 }
 
-async function findByIriCompat<T>(db: SolidDatabase, table: unknown, iri: string): Promise<T | null> {
+async function findByIriCompat<T>(db: SolidDatabase, resource: unknown, iri: string): Promise<T | null> {
   if (typeof (db as any).findByIri === 'function') {
-    return await (db as any).findByIri(table as any, iri)
+    return await (db as any).findByIri(resource as any, iri)
   }
-  if (typeof (db as any).findFirst === 'function') {
-    return await (db as any).findFirst(table as any, { '@id': iri } as any)
-  }
-  return null
-}
-
-function buildLocalChatUri(chatId: string): string {
-  return `/.data/chat/${chatId}/index.ttl#this`
+  throw new Error('Solid database is missing findByIri support.')
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function asContactId(id: string): BaseRelativeResourceId {
+  return asBaseRelativeResourceId(id, 'Contact id')
+}
+
+function asAgentId(id: string): BaseRelativeResourceId {
+  const resourceId = asBaseRelativeResourceId(id, 'Agent id')
+  agentHomeDirFromResourceId(resourceId)
+  return resourceId
+}
+
+function resolveContactIri(db: SolidDatabase, contact: Pick<ContactRow, 'id'>): ResourceIri {
+  const id = asBaseRelativeResourceId(contact.id, 'Contact row.id')
+  return asResourceIri(db.resolveRowIri(contactTable as any, { id }), 'Contact IRI')
+}
+
+function resolveChatIri(db: SolidDatabase, chat: Pick<ChatRow, 'id'>): ResourceIri {
+  const id = asBaseRelativeResourceId(chat.id, 'Chat row.id')
+  return asResourceIri(db.resolveRowIri(chatTable as any, { id }), 'Chat IRI')
 }
 
 function readChatMetadata(metadata: unknown): ChatMetadata {
@@ -140,37 +160,22 @@ export const agentCollection = createPodCollection<typeof agentTable, AgentRow, 
 // chatCollection is imported from '@/modules/chat/collections' at the top
 // to avoid creating duplicate instances
 
-function hasParticipant(chat: Pick<ChatRow, 'participants'> | null | undefined, participantRefs: string[]): boolean {
+function hasParticipant(chat: Pick<ChatRow, 'participants'> | null | undefined, participantRefs: readonly string[]): boolean {
   const participants = toStringArray(chat?.participants)
   return participants.some((participant) => participantRefs.includes(participant))
 }
 
-function getContactRefs(contact: Partial<ContactRow> | null | undefined): string[] {
-  const refs = new Set<string>()
-  if (contact?.id) refs.add(contact.id)
-  const uri = contact ? resolveRowSubject(contact as Record<string, unknown>) : undefined
-  if (uri) refs.add(uri)
-  return Array.from(refs)
+function getContactParticipantRefs(db: SolidDatabase, contact: ContactRow): string[] {
+  return [resolveContactIri(db, contact)]
 }
 
-function getChatRefs(chat: Partial<ChatRow> | null | undefined): string[] {
-  const refs = new Set<string>()
-  if (!chat) return []
-  if (chat.id) {
-    refs.add(chat.id)
-    refs.add(buildLocalChatUri(chat.id))
-  }
-  const uri = chat ? resolveRowSubject(chat as Record<string, unknown>) : undefined
-  if (uri) refs.add(uri)
-  return Array.from(refs)
+function getChatRef(db: SolidDatabase, chat: ChatRow): ResourceIri {
+  return resolveChatIri(db, chat)
 }
 
-function findContactRecord(contactIdOrRef: string): ContactRow | null {
-  const items = Array.from(contactCollection.state.values())
-  return items.find((contact: ContactRow) => {
-    const itemId = (contact as any)['@id'] || (contact as any).subject || contact.id
-    return itemId === contactIdOrRef || contact.id === contactIdOrRef
-  }) ?? null
+function findContactRecord(contactId: string): ContactRow | null {
+  const id = asContactId(contactId)
+  return contactCollection.state.get(id) as ContactRow | undefined ?? null
 }
 
 function buildDirectChatParticipants(contactRef: string): string[] {
@@ -381,8 +386,7 @@ export const contactOps = {
    * Update an agent
    */
   async updateAgent(idOrRef: string, data: Partial<AgentRow>): Promise<void> {
-    const targetAgent = this.getAgentById(idOrRef)
-    const targetId = targetAgent?.id ?? idOrRef
+    const targetId = asAgentId(idOrRef)
 
     const tx = agentCollection.update(targetId, (draft: any) => {
       Object.assign(draft, data)
@@ -412,13 +416,16 @@ export const contactOps = {
   async deleteContact(id: string): Promise<void> {
     const contact = this.getById(id)
     if (contact) {
+      const db = getDb()
+      if (!db) {
+        throw new Error('Solid database is not ready')
+      }
       const chats = Array.from(chatCollection.state.values()) as ChatRow[]
-      const participantRefs = getContactRefs(contact)
+      const participantRefs = getContactParticipantRefs(db, contact)
 
       const linkedChats = chats.filter((chat) => {
         if (isGroupContact(contact)) {
-          const groupChatRef = contact.entityUri ?? contact.id
-          return getChatRefs(chat).includes(groupChatRef)
+          return !!contact.entityUri && getChatRef(db, chat) === contact.entityUri
         }
 
         const participants = toStringArray(chat.participants)
@@ -450,14 +457,8 @@ export const contactOps = {
    * Get agent detail by ID
    */
   getAgentById(id: string): AgentRow | null {
-    // Collection state is a Map, convert to array
-    const stateMap = agentCollection.state
-    const items = Array.from(stateMap.values())
-    const found = items.find((a: AgentRow) => {
-      const itemId = (a as any)['@id'] || (a as any).subject || a.id
-      return itemId === id || a.id === id
-    })
-    return found || null
+    const agentId = asAgentId(id)
+    return agentCollection.state.get(agentId) as AgentRow | undefined ?? null
   },
 
   // ==========================================================================
@@ -509,18 +510,8 @@ export const contactOps = {
       
       return results as ContactRow[]
     } catch (error) {
-      console.error('[contactOps] Search error, falling back to local:', error)
-      // Fallback to local search if SPARQL fails
-      const searchLower = query.trim().toLowerCase()
-      const all = this.getAll()
-      
-      return all.filter(c => 
-        c.name?.toLowerCase().includes(searchLower) ||
-        c.alias?.toLowerCase().includes(searchLower) ||
-        c.externalId?.toLowerCase().includes(searchLower) ||
-        c.note?.toLowerCase().includes(searchLower) ||
-        c.entityUri?.toLowerCase().includes(searchLower)
-      )
+      console.error('[contactOps] Search error:', error)
+      throw error
     }
   },
 
@@ -547,7 +538,11 @@ export const contactOps = {
       throw new Error(`Contact not found: ${contactId}`)
     }
 
-    const participantRefs = getContactRefs(contact)
+    const db = getDb()
+    if (!db) {
+      throw new Error('Solid database is not ready')
+    }
+    const participantRefs = getContactParticipantRefs(db, contact)
 
     // First, try to find existing chat
     const chats = Array.from(chatCollection.state.values())
@@ -560,7 +555,7 @@ export const contactOps = {
     // No existing chat, create one
     const chatId = crypto.randomUUID()
     const now = new Date()
-    const primaryParticipant = participantRefs.find((ref) => ref !== contact.id) ?? contact.id
+    const primaryParticipant = participantRefs[0]
     
     const chatData: ChatInsert = {
       id: chatId,
@@ -699,7 +694,7 @@ export const contactOps = {
       if (contact.contactType === ContactType.SOLID) {
         // Fetch Solid Profile
         data = await this.fetchSolidProfile(entityUri)
-      } else if (contact.contactType === ContactType.AGENT) {
+      } else if (isAgentContact(contact)) {
         // Fetch Remote Agent
         data = await this.fetchRemoteAgent(entityUri)
       }
@@ -785,7 +780,7 @@ export const contactOps = {
     }
 
     const chatId = crypto.randomUUID()
-    const chatUri = buildLocalChatUri(chatId)
+    const chatUri = resolveChatIri(db, { id: chatId } as ChatRow)
 
     const { contact, contactId } = await createGroupContactRecord(db, {
       name,
@@ -859,10 +854,16 @@ export const contactOps = {
    * Returns null if no chat is found.
    */
   getGroupChat(groupContactId: string): ChatRow | null {
+    const db = getDb()
+    if (!db) {
+      return null
+    }
     const chats = Array.from(chatCollection.state.values())
     const groupContact = this.getById(groupContactId)
-    const groupChatRef = groupContact?.entityUri ?? groupContactId
-    return chats.find((chat: ChatRow) => getChatRefs(chat).includes(groupChatRef)) ?? null
+    if (!groupContact?.entityUri) {
+      return null
+    }
+    return chats.find((chat: ChatRow) => getChatRef(db, chat) === groupContact.entityUri) ?? null
   },
 
   /**
@@ -1004,8 +1005,6 @@ export const contactOps = {
         if (typeof member.entityUri === 'string' && member.entityUri.length > 0) {
           refs.add(member.entityUri)
         }
-        const resolved = resolveRowSubject(member as Record<string, unknown>)
-        if (resolved) refs.add(resolved)
         return Array.from(refs).map((ref) => [ref, member] as const)
       }),
     )
@@ -1041,8 +1040,6 @@ export const contactOps = {
         if (typeof contact.entityUri === 'string' && contact.entityUri.length > 0) {
           refs.add(contact.entityUri)
         }
-        const resolved = resolveRowSubject(contact as Record<string, unknown>)
-        if (resolved) refs.add(resolved)
         return Array.from(refs).map((ref) => [ref, contact] as const)
       }),
     )

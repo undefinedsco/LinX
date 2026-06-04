@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Search, MoreHorizontal, UserPlus, Bot, Crown, Shield } from 'lucide-react'
 import type { ContactRow } from '@undefineds.co/models'
-import { ContactType } from '@undefineds.co/models'
+import { isAgentContact } from '@undefineds.co/models'
 
 export type MemberRole = 'owner' | 'admin' | 'member'
 
@@ -65,7 +65,7 @@ function MemberItem({ member, isCurrentUser, canManage, canSetRole, onViewProfil
   onRemoveMember?: (id: string) => void; onUpdateRole?: (id: string, role: 'admin' | 'member') => void
 }) {
   const { contact, memberRef, role } = member
-  const isAgent = contact.contactType === ContactType.AGENT
+  const isAgent = isAgentContact(contact)
   const displayName = contact.alias || contact.name || '?'
 
   return (

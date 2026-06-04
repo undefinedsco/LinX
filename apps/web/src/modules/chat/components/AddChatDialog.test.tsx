@@ -228,7 +228,7 @@ describe('AddChatDialog', () => {
     setupStore('friend')
     render(<AddChatDialog />)
 
-    fireEvent.change(screen.getByLabelText('WebID'), {
+    fireEvent.change(screen.getByLabelText('用户地址'), {
       target: { value: 'https://alice.example/profile/card#me' },
     })
     fireEvent.click(screen.getByRole('button', { name: '搜索' }))
@@ -251,6 +251,25 @@ describe('AddChatDialog', () => {
 
     expect(mockSelectChat).toHaveBeenCalledWith('chat-friend-1')
     expect(mockCloseAddDialog).toHaveBeenCalled()
+  })
+
+  it('does not expose storage internals when adding a friend fails', async () => {
+    setupStore('friend')
+    mockAddFriend.mockRejectedValue(new Error('Failed to create Pod container https://node.example/alice/.data/contacts/: HTTP 403'))
+
+    render(<AddChatDialog />)
+
+    fireEvent.change(screen.getByLabelText('用户地址'), {
+      target: { value: 'https://alice.example/profile/card#me' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '搜索' }))
+
+    expect(await screen.findByText('Alice')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '添加为好友' }))
+
+    expect(await screen.findByText('这个账号还不能写入当前空间。请换一个空间；如果这是你的本地空间，请先完成空间创建。')).toBeInTheDocument()
+    expect(screen.queryByText(/HTTP 403|Pod container|node\.example|\.data/i)).not.toBeInTheDocument()
   })
 
   it('delegates group creation to CreateGroupDialog and selects created chat', async () => {

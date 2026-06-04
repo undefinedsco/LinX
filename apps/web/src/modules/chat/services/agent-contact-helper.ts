@@ -9,12 +9,14 @@
 
 import type { SolidDatabase } from '@undefineds.co/models'
 import {
+  asResourceIri,
   agentTable,
   contactTable,
   agentRepository,
   contactRepository,
   ContactClass,
   ContactType,
+  isAgentContact,
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
   type AgentRow,
@@ -54,7 +56,7 @@ export async function findOrCreateAgent(
   )
 
   if (existing) {
-    const uri = (existing as any)['@id'] || (existing as any).uri
+    const uri = asResourceIri(db.resolveRowIri(agentTable as any, existing), 'Agent IRI')
     return { agent: existing, agentUri: uri, created: false }
   }
 
@@ -67,7 +69,7 @@ export async function findOrCreateAgent(
     instructions: instructions || '',
   })
 
-  const uri = (newAgent as any)['@id'] || (newAgent as any).uri
+  const uri = asResourceIri(db.resolveRowIri(agentTable as any, newAgent), 'Agent IRI')
   return { agent: newAgent, agentUri: uri, created: true }
 }
 
@@ -85,11 +87,11 @@ export async function findOrCreateAgentContact(
   
   // Find contact that points to this agent
   const existing = contacts.find(
-    c => c.entityUri === agentUri && c.contactType === ContactType.AGENT
+    c => c.entityUri === agentUri && isAgentContact(c)
   )
 
   if (existing) {
-    const uri = (existing as any)['@id'] || (existing as any).uri
+    const uri = asResourceIri(db.resolveRowIri(contactTable as any, existing), 'Contact IRI')
     return { contact: existing, contactUri: uri, created: false }
   }
 
@@ -103,7 +105,7 @@ export async function findOrCreateAgentContact(
     isPublic: false,
   })
 
-  const uri = (newContact as any)['@id'] || (newContact as any).uri
+  const uri = asResourceIri(db.resolveRowIri(contactTable as any, newContact), 'Contact IRI')
   return { contact: newContact, contactUri: uri, created: true }
 }
 

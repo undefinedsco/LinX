@@ -39,7 +39,7 @@ describe('SetupView', () => {
     render(<SetupView />)
 
     expect(await screen.findByDisplayValue('/tmp/linx-pod')).toBeInTheDocument()
-    expect(screen.getByText(/Cloud provisioning 分配 Cloud-managed canonical URL/)).toBeInTheDocument()
+    expect(screen.getByText(/LinX 自动分配可登录地址/)).toBeInTheDocument()
   })
 
   it('saves a local setup payload without a generated public domain', async () => {
@@ -244,7 +244,7 @@ describe('SetupView', () => {
 
     fireEvent.click(screen.getByText('保存配置'))
 
-    expect(await screen.findByText('请填写隧道 Token，或沿用已配置 Token')).toBeInTheDocument()
+    expect(await screen.findByText('请填写隧道密钥，或沿用已保存密钥')).toBeInTheDocument()
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })

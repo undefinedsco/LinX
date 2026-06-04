@@ -100,7 +100,7 @@ test('buildAutoModeConversationMessages maps archived transcript into standard P
       id: 'auto_2026-03-18T00-00-00-000Z_deadbeef-m0002',
       chat: 'linx-auto-mode-codex',
       thread: 'auto_2026-03-18T00-00-00-000Z_deadbeef',
-      maker: 'https://alice.example/.data/agents/linx-auto-mode-codex-agent.ttl',
+      maker: 'https://alice.example/.data/agents/linx-auto-mode-codex-agent/index.ttl#this',
       role: 'assistant',
       content: 'I found two issues.',
       senderName: 'Codex',
@@ -112,11 +112,11 @@ test('buildAutoModeConversationMessages maps archived transcript into standard P
       id: 'auto_2026-03-18T00-00-00-000Z_deadbeef-m0003',
       chat: 'linx-auto-mode-codex',
       thread: 'auto_2026-03-18T00-00-00-000Z_deadbeef',
-      maker: 'https://alice.example/.data/agents/linx-auto-mode-assistant.ttl',
+      maker: 'https://alice.example/.data/agents/linx-auto-mode-assistant/index.ttl#this',
       role: 'system',
       content: '[approval] Allow bash?',
       senderName: 'AI Secretary',
-      routedBy: 'https://alice.example/.data/agents/linx-auto-mode-assistant.ttl',
+      routedBy: 'https://alice.example/.data/agents/linx-auto-mode-assistant/index.ttl#this',
       routeTargetAgentId: 'linx-auto-mode-codex-agent',
       coordinationId: 'auto_2026-03-18T00-00-00-000Z_deadbeef',
     },
@@ -124,11 +124,11 @@ test('buildAutoModeConversationMessages maps archived transcript into standard P
       id: 'auto_2026-03-18T00-00-00-000Z_deadbeef-m0004',
       chat: 'linx-auto-mode-codex',
       thread: 'auto_2026-03-18T00-00-00-000Z_deadbeef',
-      maker: 'https://alice.example/.data/agents/linx-auto-mode-codex-agent.ttl',
+      maker: 'https://alice.example/.data/agents/linx-auto-mode-codex-agent/index.ttl#this',
       role: 'system',
       content: '[tool] bash {"command":"pwd"}',
       senderName: 'Codex Tool',
-      routedBy: 'https://alice.example/.data/agents/linx-auto-mode-codex-agent.ttl',
+      routedBy: 'https://alice.example/.data/agents/linx-auto-mode-codex-agent/index.ttl#this',
       routeTargetAgentId: 'linx-auto-mode-codex-agent',
       coordinationId: 'auto_2026-03-18T00-00-00-000Z_deadbeef',
     },
@@ -146,13 +146,13 @@ test('buildAutoModeConversationChatRow stores auto-mode as a group chat', () => 
   assert.equal(row.title, 'LinX Auto Mode · Codex')
   assert.deepEqual(row.participants, [
     'https://alice.example/profile/card#me',
-    'https://alice.example/.data/agents/linx-auto-mode-assistant.ttl',
-    'https://alice.example/.data/agents/linx-auto-mode-codex-agent.ttl',
+    'https://alice.example/.data/agents/linx-auto-mode-assistant/index.ttl#this',
+    'https://alice.example/.data/agents/linx-auto-mode-codex-agent/index.ttl#this',
   ])
   assert.equal(row.metadata.kind, 'auto-mode-group')
   assert.equal(row.metadata.backend, 'codex')
-  assert.equal(row.metadata.secretaryAgent, 'https://alice.example/.data/agents/linx-auto-mode-assistant.ttl')
-  assert.equal(row.metadata.primaryAgent, 'https://alice.example/.data/agents/linx-auto-mode-codex-agent.ttl')
+  assert.equal(row.metadata.secretaryAgent, 'https://alice.example/.data/agents/linx-auto-mode-assistant/index.ttl#this')
+  assert.equal(row.metadata.primaryAgent, 'https://alice.example/.data/agents/linx-auto-mode-codex-agent/index.ttl#this')
 })
 
 test('buildAutoModeConversationSessionRow stores auto-mode lifecycle as a Pod session projection', () => {
@@ -230,7 +230,7 @@ test('persistAutoModeConversationToPod upserts group chat, participants, agents,
     },
     agent: {
       name: 'agent',
-      resolveUri: (id) => `/.data/agents/${id}.ttl`,
+      resolveUri: (id) => `/.data/agents/${id}`,
     },
   }
   const db = {
@@ -296,8 +296,8 @@ test('persistAutoModeConversationToPod upserts group chat, participants, agents,
   assert.equal(chat.id, 'linx-auto-mode-codex')
   assert.deepEqual(chat.participants, [
     'https://alice.example/profile/card#me',
-    'https://alice.example/.data/agents/linx-auto-mode-assistant.ttl',
-    'https://alice.example/.data/agents/linx-auto-mode-codex-agent.ttl',
+    'https://alice.example/.data/agents/linx-auto-mode-assistant/index.ttl#this',
+    'https://alice.example/.data/agents/linx-auto-mode-codex-agent/index.ttl#this',
   ])
   assert.equal(chat.metadata.kind, 'auto-mode-group')
 
@@ -305,7 +305,10 @@ test('persistAutoModeConversationToPod upserts group chat, participants, agents,
     .filter((item) => item.resource === resources.agent)
     .map((item) => item.value.id)
     .sort()
-  assert.deepEqual(agentIds, ['linx-auto-mode-assistant', 'linx-auto-mode-codex-agent'])
+  assert.deepEqual(agentIds, [
+    'linx-auto-mode-assistant/index.ttl#this',
+    'linx-auto-mode-codex-agent/index.ttl#this',
+  ])
 
   const thread = inserts.find((item) => item.resource === resources.thread)?.value
   assert.equal(thread.chat, 'linx-auto-mode-codex')
@@ -324,7 +327,7 @@ test('persistAutoModeConversationToPod upserts group chat, participants, agents,
     .filter((item) => item.resource === resources.message)
     .map((item) => item.value)
   assert.equal(messages[0].senderName, 'User')
-  assert.equal(messages[1].maker, 'https://alice.example/.data/agents/linx-auto-mode-codex-agent.ttl')
+  assert.equal(messages[1].maker, 'https://alice.example/.data/agents/linx-auto-mode-codex-agent/index.ttl#this')
   assert.equal(messages[1].senderName, 'Codex')
   assert.equal(messages[1].coordinationId, 'auto_2026-03-18T00-00-00-000Z_deadbeef')
 })

@@ -10,6 +10,7 @@ const {
   mockStoreState,
   mockContactState,
   mockEntityByUri,
+  mockEntityError,
   mockSelectChat,
   mockFindOrCreateChat,
   mockGetLastSyncedText,
@@ -32,6 +33,7 @@ const {
   },
   mockContactState: new Map<string, any>(),
   mockEntityByUri: new Map<string, any>(),
+  mockEntityError: { current: null as Error | null },
   mockSelectChat: vi.fn(),
   mockFindOrCreateChat: vi.fn(),
   mockGetLastSyncedText: vi.fn(() => '刚刚同步'),
@@ -68,7 +70,7 @@ vi.mock('@/lib/data/use-entity', () => ({
   useEntity: (_table: unknown, entityUri: string | null) => ({
     data: entityUri ? (mockEntityByUri.get(entityUri) ?? null) : null,
     isLoading: false,
-    error: null,
+    error: mockEntityError.current,
     refresh: vi.fn(),
   }),
 }))
@@ -139,6 +141,7 @@ describe('ContactDetailPane', () => {
     vi.clearAllMocks()
     mockContactState.clear()
     mockEntityByUri.clear()
+    mockEntityError.current = null
     Object.assign(mockStoreState, {
       selectedId: null,
       viewMode: 'view',
@@ -166,7 +169,7 @@ describe('ContactDetailPane', () => {
     render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
 
     expect(screen.getByText('添加朋友')).toBeInTheDocument()
-    expect(screen.getByText('WebID')).toBeInTheDocument()
+    expect(screen.getByText('用户地址')).toBeInTheDocument()
   })
 
   it('renders human contact details from real collection data', () => {
@@ -188,10 +191,27 @@ describe('ContactDetailPane', () => {
 
     expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Alice')
     expect(screen.getByText('北京 海淀')).toBeInTheDocument()
-    expect(screen.getByText('WebID')).toBeInTheDocument()
+    expect(screen.getByText('用户地址')).toBeInTheDocument()
     expect(screen.getByText('Inbox')).toBeInTheDocument()
     expect(screen.getByText('公开关系')).toBeInTheDocument()
     expect(screen.queryByText('标签')).not.toBeInTheDocument()
+  })
+
+  it('does not expose internal sync errors in the contact details', () => {
+    const contact = makeContact({
+      id: 'contact-solid-1',
+      name: 'Alice Smith',
+      entityUri: 'https://alice.solidcommunity.net/profile/card#me',
+    })
+
+    mockContactState.set(contact.id, contact)
+    mockStoreState.selectedId = contact.id
+    mockEntityError.current = new Error('读取资源头信息失败: https://alice.example/profile/card#me (HTTP 403)')
+
+    render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
+
+    expect(screen.getByText('这个账号还不能写入当前空间。请换一个空间；如果这是你的本地空间，请先完成空间创建。')).toBeInTheDocument()
+    expect(screen.queryByText(/HTTP 403|读取资源头信息失败|alice\.example/i)).not.toBeInTheDocument()
   })
 
   it('starts chat from a persisted contact instead of using fake ids', async () => {
@@ -219,7 +239,7 @@ describe('ContactDetailPane', () => {
   })
 
   it('renders local agent configuration and allows opening tools editor', async () => {
-    const entityUri = '/.data/agents/agent-1.ttl#this'
+    const entityUri = '/.data/agents/agent-1/index.ttl#this'
     const contact = makeContact({
       id: 'contact-agent-1',
       name: '智能翻译官',

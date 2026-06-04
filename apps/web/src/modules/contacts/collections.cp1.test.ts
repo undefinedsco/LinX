@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { ContactClass, ContactType } from '@undefineds.co/models'
+import { ContactClass, ContactType, chatTable, contactTable } from '@undefineds.co/models'
 
 const mockDb = {
   insert: vi.fn().mockReturnValue({
@@ -63,11 +63,19 @@ function resetMockDb() {
       execute: vi.fn().mockResolvedValue(undefined),
     }),
   }))
-  mockDb.resolveRowIri.mockImplementation((_table, row: Record<string, unknown>) => {
-    return String(row.id ?? row['@id'] ?? row.subject ?? row.uri ?? row.source ?? 'mock-row')
+  mockDb.resolveRowIri.mockImplementation((table, row: Record<string, unknown>) => {
+    if (typeof row.id !== 'string' || row.id.length === 0) {
+      throw new Error('Mock row is missing row.id.')
+    }
+    if (table === chatTable) return `https://pod.example/.data/chat/${row.id}/index.ttl#this`
+    if (table === contactTable) return `https://pod.example/.data/contacts/${row.id}.ttl#this`
+    return `https://pod.example/${row.id}`
   })
   mockDb.resolveRowId.mockImplementation((_table, row: Record<string, unknown>) => {
-    return String(row.id ?? row['@id'] ?? row.subject ?? row.uri ?? row.source ?? 'mock-row')
+    if (typeof row.id !== 'string' || row.id.length === 0) {
+      throw new Error('Mock row is missing row.id.')
+    }
+    return row.id
   })
 }
 
@@ -112,7 +120,7 @@ function seedGroupContact(groupId = 'group-1', chatId = 'chat-1') {
     name: 'Test Group',
     rdfType: ContactClass.GROUP,
     contactType: ContactType.SOLID,
-    entityUri: `/.data/chat/${chatId}/index.ttl#this`,
+    entityUri: `https://pod.example/.data/chat/${chatId}/index.ttl#this`,
   })
 }
 
@@ -205,6 +213,8 @@ describe('CP1: updateMemberRole', () => {
     vi.clearAllMocks()
     mockCollectionState.clear()
     mockChatState.clear()
+    resetMockDb()
+    setContactsDatabaseGetter(() => mockDb as any)
   })
 
   it('should update role in chat metadata', async () => {
@@ -274,6 +284,8 @@ describe('CP1: getGroupMemberRoles', () => {
     vi.clearAllMocks()
     mockCollectionState.clear()
     mockChatState.clear()
+    resetMockDb()
+    setContactsDatabaseGetter(() => mockDb as any)
   })
 
   it('should return role map from chat metadata', () => {
@@ -312,7 +324,7 @@ describe('CP1: getGroupMemberRoles', () => {
   it('should return empty object when no chat found', () => {
     mockChatState.clear()
 
-    const roles = contactOps.getGroupMemberRoles('/.data/contacts/no-group.ttl')
+    const roles = contactOps.getGroupMemberRoles('no-group')
 
     expect(roles).toEqual({})
   })
@@ -323,6 +335,8 @@ describe('CP1: getGroupMembers', () => {
     vi.clearAllMocks()
     mockCollectionState.clear()
     mockChatState.clear()
+    resetMockDb()
+    setContactsDatabaseGetter(() => mockDb as any)
   })
 
   it('should merge chat participants with owner refs from metadata', () => {
@@ -348,6 +362,8 @@ describe('CP1: resolveMembers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockCollectionState.clear()
+    resetMockDb()
+    setContactsDatabaseGetter(() => mockDb as any)
   })
 
   it('should resolve member IDs to ContactRow objects', () => {

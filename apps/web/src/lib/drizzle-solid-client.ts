@@ -7,7 +7,7 @@ import { type ChatRow, type ChatInsert } from '@undefineds.co/models'
 class MockSolidDatabase {
   private mockChats: ChatRow[] = [
     {
-      subject: 'chat-1',
+      id: 'chat-1',
       title: 'AI Assistant Chat',
       description: 'Chat with Claude AI',
       provider: 'anthropic',
@@ -21,7 +21,7 @@ class MockSolidDatabase {
       lastActiveAt: new Date('2024-01-15T15:30:00Z'),
     },
     {
-      subject: 'chat-2',
+      id: 'chat-2',
       title: 'Project Discussion',
       description: 'LinX project planning',
       provider: 'openai',
@@ -38,7 +38,7 @@ class MockSolidDatabase {
       lastActiveAt: new Date('2024-01-15T14:20:00Z'),
     },
     {
-      subject: 'chat-3',
+      id: 'chat-3',
       title: 'Quick Chat with Bob',
       description: '',
       provider: 'openai',
@@ -55,7 +55,7 @@ class MockSolidDatabase {
       lastActiveAt: new Date('2024-01-15T11:45:00Z'),
     },
     {
-      subject: 'chat-4',
+      id: 'chat-4',
       title: 'Old Discussion',
       description: 'Archived conversation',
       provider: 'openai',
@@ -101,7 +101,7 @@ class MockSolidDatabase {
             await this.delay(300)
             
             const newChat: ChatRow = {
-              subject: `chat-${Date.now()}`,
+              id: `chat-${Date.now()}`,
               title: data.title,
               description: data.description ?? '',
               provider: data.provider ?? 'openai',
@@ -132,7 +132,7 @@ class MockSolidDatabase {
               await this.delay(250)
               
               // 简单模拟更新逻辑
-              const chatIndex = this.mockChats.findIndex(chat => chat.subject === (condition as any).chatId)
+              const chatIndex = this.mockChats.findIndex(chat => chat.id === (condition as any).chatId)
               if (chatIndex >= 0) {
                 this.mockChats[chatIndex] = {
                   ...this.mockChats[chatIndex],

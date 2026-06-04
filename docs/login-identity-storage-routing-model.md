@@ -21,13 +21,13 @@ strategies, but the login/storage semantics stay the same. Custom remains a
 secondary route for third-party Solid providers; no route should force the
 normal user through an IDP/SP two-step picker.
 
-| Route | OIDC issuer | Storage Provider | Canonical SP URL |
-| --- | --- | --- | --- |
-| Cloud | Cloud | Cloud | Cloud SP provided |
-| Local + Cloud-managed canonical domain | Cloud | Local xpod | Cloud-allocated `node-*.undefineds.co` |
-| Local + user-managed canonical domain | Cloud | Local xpod | User-owned HTTPS origin |
-| Standalone | Local xpod | Local xpod | Default localhost/LAN; optional user-owned URL |
-| Custom | User-entered Solid provider | Same user-entered Solid provider | Same user-entered URL |
+| Route | Identity authority | OIDC entry / account surface | Storage Provider | Canonical SP URL |
+| --- | --- | --- | --- | --- |
+| Cloud | Cloud | Cloud | Cloud | Cloud SP provided |
+| Local + Cloud-managed canonical domain | Cloud | Local SP facade | Local xpod | Cloud-allocated `node-*.undefineds.co` |
+| Local + user-managed canonical domain | Cloud | Local SP facade | Local xpod | User-owned HTTPS origin |
+| Standalone | Local xpod | Local xpod | Local xpod | Default localhost/LAN; optional user-owned URL |
+| Custom | User-entered Solid provider | Same user-entered Solid provider | Same user-entered Solid provider | Same user-entered URL |
 
 Rules:
 - The normal login UX is a one-step product choice: Cloud, Local, or
@@ -43,6 +43,11 @@ Rules:
   to the Local device nodeId after registration, and later provision-code
   refreshes reuse that nodeId/domain instead of treating the domain as a user
   input.
+- Historical Local registration is not an authority for selecting the current
+  SP. It may provide renewal credentials (`nodeId`, `nodeToken`,
+  `serviceToken`) only. The current authoritative SP domain comes from an
+  explicit managed-domain configuration or from Cloud's current provision
+  response / valid signed provision code.
 - With the user-managed canonical domain strategy, the user provides a HTTPS
   origin that becomes the canonical Local SP URL.
 - Local localhost/LAN addresses are access channels for the same Local SP; they
@@ -55,7 +60,8 @@ Rules:
   Local canonical URL failures must not silently downgrade into Standalone.
 - If the Local canonical URL has no working external route yet, LinX may still
   start xpod and validate localhost/LAN reachability. It must not silently
-  degrade the login to Standalone or write localhost/LAN into `solid:storage`.
+  degrade the login to Standalone, Cloud, or write localhost/LAN into
+  `solid:storage`.
 - Adding a tunnel or self-managed route later must reuse the same local data
   directory and node configuration where possible.
 
@@ -95,9 +101,14 @@ Cloud is the canonical authority for Cloud and Local routes:
 
 Rules:
 - Cloud/Local-route canonical identity is issued by Cloud
-- Inrupt login receives the Cloud `oidcIssuer`; there is no second Inrupt
-  parameter for "SP". The target SP must be carried through provisioning/
-  onboarding state.
+- Local Inrupt login must start from the selected Local SP facade URL, not from
+  Cloud `/.account/`. The Local SP facade advertises the coherent OIDC/account
+  endpoints for this flow and scopes account/consent/Pod selection to the
+  selected SP. LinX still records Cloud as the semantic account issuer for the
+  remembered account and uses the Local SP URL as the storage provider.
+- Do not model Local as "call Cloud OIDC plus pass SP as a second parameter".
+  Inrupt has no SP parameter, and opening Cloud `/.account/` lets the Cloud
+  account UI list Cloud Pods. That is the regression this model forbids.
 - Standalone identity is issued by the local xpod and is intentionally separate from Cloud identity
 - canonical WebID must remain stable across equivalent access paths
 - switching LAN / FRP / public transport must not create a second identity model
@@ -297,8 +308,8 @@ Consent / Pod selection invariant:
   SP. It must not offer a Cloud Pod when the current flow was started from Local
   SP.
 - The current short-term implementation achieves this by carrying
-  `provisionCode` into the Cloud OIDC interaction and requiring the picker to
-  resolve WebIDs through the Local SP `/provision/webids` endpoint.
+  `provisionCode` into the Local SP facade OIDC interaction and requiring the
+  picker to resolve WebIDs through the Local SP `/provision/webids` endpoint.
 - After consent, the selected WebID profile must still carry `solid:storage`
   for the selected SP. Scoped consent is a candidate filter, not permission to
   ignore a missing, stale, or cross-SP storage binding.

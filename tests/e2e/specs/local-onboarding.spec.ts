@@ -1,16 +1,23 @@
 import { expect, test, type Page } from '@playwright/test'
 
 type Snapshot = {
-  state: 'mode_required' | 'idle' | 'checking' | 'starting' | 'repair_required' | 'ready' | 'error'
-  mode: 'device-only' | 'remote-ready' | null
+  state: 'space_required' | 'idle' | 'checking' | 'starting' | 'repair_required' | 'ready' | 'error'
+  spaceKind: 'local' | 'standalone' | null
   localUrl: string | null
   baseUrl: string | null
+  publicUrl: string | null
+  tunnel: null
+  connectivity: null
   capabilities: {
     supported: boolean
     contract: string | null
     baseUrl: string | null
     version: string | null
   } | null
+  cloudIdentityUrl: string | null
+  provisionCode: string | null
+  provisionUrl: string | null
+  nodeId: string | null
   message: string | null
   errorCode: string | null
   canRetry: boolean
@@ -19,7 +26,7 @@ type Snapshot = {
 
 type DesktopScenario = {
   initialSnapshot?: Snapshot
-  chooseModeSnapshots?: Partial<Record<'device-only' | 'remote-ready', Snapshot>>
+  chooseSpaceSnapshots?: Partial<Record<'local' | 'standalone', Snapshot>>
   continueSnapshot?: Snapshot
   configOpen?: boolean
   authWindowOpen?: boolean
@@ -31,30 +38,44 @@ type PendingLoginAttempt = {
   returnToMicroAppId: string
 }
 
-const MODE_REQUIRED_SNAPSHOT: Snapshot = {
-  state: 'mode_required',
-  mode: null,
+const SPACE_REQUIRED_SNAPSHOT: Snapshot = {
+  state: 'space_required',
+  spaceKind: null,
   localUrl: 'http://localhost:5737/',
   baseUrl: 'http://localhost:5737/',
+  publicUrl: null,
+  tunnel: null,
+  connectivity: null,
   capabilities: null,
-  message: '首次使用时先确认 Local 的启动方式。服务准备好后，再继续登录。',
+  cloudIdentityUrl: null,
+  provisionCode: null,
+  provisionUrl: null,
+  nodeId: null,
+  message: '首次使用时先确认本地空间的启动方式。服务准备好后，再继续登录。',
   errorCode: null,
   canRetry: false,
   canOpenSettings: true,
 }
 
-const READY_SNAPSHOT: Snapshot = {
+const READY_LOCAL_SNAPSHOT: Snapshot = {
   state: 'ready',
-  mode: 'device-only',
+  spaceKind: 'local',
   localUrl: 'http://localhost:5737/',
-  baseUrl: 'http://localhost:5737/',
+  baseUrl: 'https://node-test.undefineds.co/',
+  publicUrl: 'https://node-test.undefineds.co/',
+  tunnel: null,
+  connectivity: null,
   capabilities: {
     supported: true,
     contract: 'linx-local-onboarding/v1',
     baseUrl: 'http://localhost:5737/',
     version: '0.2.2',
   },
-  message: 'Local 已准备好，可以继续登录。',
+  cloudIdentityUrl: 'https://id.undefineds.co',
+  provisionCode: 'pc-123',
+  provisionUrl: 'https://id.undefineds.co/.account/?provisionCode=pc-123',
+  nodeId: 'node-test',
+  message: 'Local 已准备好，接下来会通过 Cloud 登录并写入本地空间。',
   errorCode: null,
   canRetry: true,
   canOpenSettings: true,
@@ -62,23 +83,37 @@ const READY_SNAPSHOT: Snapshot = {
 
 const REPAIR_SNAPSHOT: Snapshot = {
   state: 'repair_required',
-  mode: 'remote-ready',
+  spaceKind: 'local',
   localUrl: 'http://localhost:5737/',
   baseUrl: 'http://localhost:5737/',
+  publicUrl: null,
+  tunnel: null,
+  connectivity: null,
   capabilities: null,
-  message: '要让其他设备接入 Local，还需要先准备一个固定可访问地址。',
-  errorCode: 'LOCAL_REMOTE_READY_REQUIRES_SETUP',
+  cloudIdentityUrl: null,
+  provisionCode: null,
+  provisionUrl: null,
+  nodeId: null,
+  message: 'Local 的数据空间地址还没准备好。请回到空间选择，重新启动 Local 后再登录。',
+  errorCode: 'LOCAL_CLOUD_BINDING_REQUIRED',
   canRetry: true,
   canOpenSettings: true,
 }
 
-const IDLE_DEVICE_ONLY_SNAPSHOT: Snapshot = {
+const IDLE_LOCAL_SNAPSHOT: Snapshot = {
   state: 'idle',
-  mode: 'device-only',
+  spaceKind: 'local',
   localUrl: 'http://localhost:5737/',
   baseUrl: 'http://localhost:5737/',
+  publicUrl: null,
+  tunnel: null,
+  connectivity: null,
   capabilities: null,
-  message: 'Local 尚未运行。你可以先启动 Local，或先配置启动参数。',
+  cloudIdentityUrl: null,
+  provisionCode: null,
+  provisionUrl: null,
+  nodeId: null,
+  message: 'Local 尚未运行。你可以先启动服务，或先配置启动参数。',
   errorCode: null,
   canRetry: true,
   canOpenSettings: true,
@@ -94,12 +129,19 @@ async function installDesktopBridge(page: Page, scenario: DesktopScenario = {}) 
     }
 
     let snapshot: Snapshot = clone(input.initialSnapshot ?? {
-      state: 'mode_required',
-      mode: null,
+      state: 'space_required',
+      spaceKind: null,
       localUrl: 'http://localhost:5737/',
       baseUrl: 'http://localhost:5737/',
+      publicUrl: null,
+      tunnel: null,
+      connectivity: null,
       capabilities: null,
-      message: '首次使用时先确认 Local 的启动方式。服务准备好后，再继续登录。',
+      cloudIdentityUrl: null,
+      provisionCode: null,
+      provisionUrl: null,
+      nodeId: null,
+      message: '首次使用时先确认本地空间的启动方式。服务准备好后，再继续登录。',
       errorCode: null,
       canRetry: false,
       canOpenSettings: true,
@@ -109,7 +151,7 @@ async function installDesktopBridge(page: Page, scenario: DesktopScenario = {}) 
     let authWindowOpen = Boolean(input.authWindowOpen)
 
     const playState = {
-      chosenModes: [] as Array<'device-only' | 'remote-ready'>,
+      chosenSpaces: [] as Array<'local' | 'standalone'>,
       continueCalls: 0,
       getSnapshotCalls: 0,
       refreshCalls: 0,
@@ -248,11 +290,11 @@ async function installDesktopBridge(page: Page, scenario: DesktopScenario = {}) 
             playState.getSnapshotCalls += 1
             return clone(snapshot)
           },
-          chooseMode: async (mode: 'device-only' | 'remote-ready') => {
-            playState.chosenModes.push(mode)
-            snapshot = clone(input.chooseModeSnapshots?.[mode] ?? {
+          chooseSpace: async (spaceKind: 'local' | 'standalone') => {
+            playState.chosenSpaces.push(spaceKind)
+            snapshot = clone(input.chooseSpaceSnapshots?.[spaceKind] ?? {
               ...snapshot,
-              mode,
+              spaceKind,
             })
             emitLocal()
             return clone(snapshot)
@@ -338,14 +380,14 @@ async function openLocalFlow(page: Page) {
 test.describe('Local onboarding', () => {
   test('从登录页进入 Local 子流程', async ({ page }) => {
     await installDesktopBridge(page, {
-      initialSnapshot: MODE_REQUIRED_SNAPSHOT,
+      initialSnapshot: SPACE_REQUIRED_SNAPSHOT,
     })
 
     await openLocalFlow(page)
 
     await expect(page.getByText('Cloud', { exact: true })).toHaveCount(0)
     await expect(page.getByRole('heading', { name: 'Local' })).toBeVisible()
-    await expect(page.getByText('正在启动 Local…')).toBeVisible()
+    await expect(page.getByText('首次使用时先确认本地空间的启动方式。服务准备好后，再继续登录。')).toBeVisible()
     await expect(page.getByRole('button', { name: '返回空间选择' })).toBeVisible()
   })
 
@@ -357,51 +399,48 @@ test.describe('Local onboarding', () => {
     await page.goto('/')
 
     await expect(page.getByText('Local', { exact: true })).toBeVisible()
-    await expect(page.getByText('这台设备上的本地空间')).toBeVisible()
-    await expect(page.locator('span').filter({ hasText: '需设置' })).toBeVisible()
+    await expect(page.getByText('本地空间')).toBeVisible()
+    await expect(page.getByRole('button', { name: /Local[\s\S]*需设置/ })).toBeVisible()
   })
 
   test('默认按仅本地模式启动后会转入标准 xpod 登录流', async ({ page }) => {
     await installDesktopBridge(page, {
-      initialSnapshot: MODE_REQUIRED_SNAPSHOT,
-      continueSnapshot: READY_SNAPSHOT,
+      initialSnapshot: SPACE_REQUIRED_SNAPSHOT,
+      continueSnapshot: READY_LOCAL_SNAPSHOT,
     })
 
     await openLocalFlow(page)
 
     await expect(page.getByText('Local 已准备好', { exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: '继续登录' })).toBeVisible()
-    await expect(page.getByText('linx-local-onboarding/v1')).toBeVisible()
 
     const playState = await page.evaluate(() => (window as any).__linxPlaywrightState)
-    expect(playState.chosenModes).toEqual(['device-only'])
+    expect(playState.chosenSpaces).toEqual(['local'])
     expect(playState.continueCalls).toBe(1)
   })
 
-  test('已有 Local 模式时进入后会直接继续启动', async ({ page }) => {
+  test('已有 Local 空间时进入后会直接继续启动', async ({ page }) => {
     await installDesktopBridge(page, {
-      initialSnapshot: IDLE_DEVICE_ONLY_SNAPSHOT,
+      initialSnapshot: IDLE_LOCAL_SNAPSHOT,
     })
 
     await openLocalFlow(page)
 
-    await expect(page.getByText('正在启动 Local…')).toBeVisible()
+    await expect(page.getByText('Local 尚未运行。你可以先启动服务，或先配置启动参数。')).toBeVisible()
 
     const playState = await page.evaluate(() => (window as any).__linxPlaywrightState)
     expect(playState.continueCalls).toBe(1)
   })
 
-  test('已有 remote-ready Local 模式时进入后不降级为仅本机模式', async ({ page }) => {
+  test('已有 Local 空间时进入后不切换到 Standalone', async ({ page }) => {
     await installDesktopBridge(page, {
       initialSnapshot: {
-        ...IDLE_DEVICE_ONLY_SNAPSHOT,
-        mode: 'remote-ready',
+        ...IDLE_LOCAL_SNAPSHOT,
         baseUrl: 'https://node-test.undefineds.co/',
         message: 'Local 尚未运行。',
       },
       continueSnapshot: {
-        ...READY_SNAPSHOT,
-        mode: 'remote-ready',
+        ...READY_LOCAL_SNAPSHOT,
         baseUrl: 'https://node-test.undefineds.co/',
         publicUrl: 'https://node-test.undefineds.co/',
         cloudIdentityUrl: 'https://id.undefineds.co',
@@ -416,7 +455,7 @@ test.describe('Local onboarding', () => {
     await expect(page.getByText('Local 已准备好', { exact: true })).toBeVisible()
 
     const playState = await page.evaluate(() => (window as any).__linxPlaywrightState)
-    expect(playState.chosenModes).toEqual([])
+    expect(playState.chosenSpaces).toEqual([])
     expect(playState.continueCalls).toBe(1)
   })
 
@@ -427,8 +466,8 @@ test.describe('Local onboarding', () => {
 
     await openLocalFlow(page)
 
-    await expect(page.getByText('还差一步让其他设备接入 Local')).toBeVisible()
-    await expect(page.getByText('如果你现在只是想先开始使用，也可以直接切回“只给这台设备用”，不需要额外设置。')).toBeVisible()
+    await expect(page.getByText('还差一步让 Local 接入 Cloud')).toBeVisible()
+    await expect(page.getByText('Local 的数据空间地址还没准备好。请回到空间选择，重新启动 Local 后再登录。')).toBeVisible()
     await page.getByRole('button', { name: '去完成 Local 设置' }).click()
 
     const afterOpen = await page.evaluate(() => (window as any).__linxPlaywrightState)
@@ -437,7 +476,7 @@ test.describe('Local onboarding', () => {
 
   test('callback 错误页重试 Local 时保留原始 micro app 目标', async ({ page }) => {
     await installDesktopBridge(page, {
-      initialSnapshot: READY_SNAPSHOT,
+      initialSnapshot: READY_LOCAL_SNAPSHOT,
     })
     await installPendingLoginState(page, {
       microAppId: 'files',

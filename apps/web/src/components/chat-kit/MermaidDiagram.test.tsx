@@ -47,12 +47,14 @@ describe('MermaidDiagram', () => {
   })
 
   it('shows error when mermaid fails', async () => {
-    mockRender.mockRejectedValue(new Error('Invalid syntax'))
+    mockRender.mockRejectedValue(new Error('Parse error on line 2: internal mermaid parser detail'))
 
     render(<MermaidDiagram code="invalid mermaid code" />)
 
     await waitFor(() => {
-      expect(screen.getByText('Mermaid 语法错误:')).toBeInTheDocument()
+      expect(screen.getByText('图表渲染失败')).toBeInTheDocument()
+      expect(screen.getByText('图表语法需要调整。请检查图表代码后重试。')).toBeInTheDocument()
+      expect(screen.queryByText(/Parse error|internal mermaid parser/i)).not.toBeInTheDocument()
     })
   })
 

@@ -74,7 +74,7 @@ describe('buildWorkspaceSummary', () => {
         baseRef: 'origin/main',
       })],
     })).toEqual({
-      kindLabel: 'Pod 容器',
+      kindLabel: '空间文件夹',
       primaryText: 'Pod Workspace',
       secondaryText: 'https://alice.example/.data/workspaces/ws-1/ · main · 基于 origin/main',
     })

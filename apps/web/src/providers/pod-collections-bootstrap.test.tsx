@@ -113,7 +113,7 @@ describe('PodCollectionsBootstrap', () => {
     expect(initializeModelCollectionsMock).toHaveBeenCalledWith(db)
     expect(ensureLinxWelcomeMock).toHaveBeenCalledTimes(1)
     expect(ensureLinxWelcomeMock).toHaveBeenCalledWith({ force: false })
-    expect(screen.getByText('正在初始化 AI Secretary')).toBeTruthy()
+    expect(screen.getByText('正在准备默认助手')).toBeTruthy()
     expect(screen.queryByText('ready app')).toBeNull()
 
     await act(async () => {
@@ -156,8 +156,9 @@ describe('PodCollectionsBootstrap', () => {
 
     render(<PodCollectionsBootstrap><div>ready app</div></PodCollectionsBootstrap>)
 
-    expect(await screen.findByText('AI Secretary 初始化失败')).toBeTruthy()
-    expect(screen.getByText('Pod write failed')).toBeTruthy()
+    expect(await screen.findByText('默认助手准备失败')).toBeTruthy()
+    expect(screen.getByText('LinX 还不能在当前空间保存数据。请返回空间选择页，换一个空间后重试。')).toBeTruthy()
+    expect(screen.queryByText('Pod write failed')).toBeNull()
     expect(screen.queryByText('ready app')).toBeNull()
 
     fireEvent.click(screen.getByText('重试'))
@@ -183,7 +184,7 @@ describe('PodCollectionsBootstrap', () => {
       await Promise.resolve()
     })
 
-    expect(screen.getByText('AI Secretary 初始化失败')).toBeTruthy()
-    expect(screen.getByText('AI Secretary 初始化超时，请检查 Pod 连接后重试。')).toBeTruthy()
+    expect(screen.getByText('默认助手准备失败')).toBeTruthy()
+    expect(screen.getByText('默认助手准备超时。请检查网络，或返回空间选择页重试。')).toBeTruthy()
   })
 })

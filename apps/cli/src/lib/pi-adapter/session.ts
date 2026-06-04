@@ -231,7 +231,7 @@ async function hydratePodSessions(
   }
 
   const localIds = new Set(localSessions.map((session) => session.id))
-  const snapshots = await resolvedSource.listSessions(cwd).catch(() => [])
+  const snapshots = await resolvedSource.listSessions(cwd)
   const hydrated: SessionInfo[] = []
   for (const snapshot of snapshots) {
     if (localIds.has(snapshot.id)) {
@@ -253,7 +253,7 @@ async function hydratePodSession(
     return null
   }
 
-  const snapshot = await resolvedSource.findSession(input, cwd).catch(() => null)
+  const snapshot = await resolvedSource.findSession(input, cwd)
   if (!snapshot) {
     return null
   }
@@ -267,7 +267,7 @@ async function resolvePodSessionSource(
   if (source !== undefined) {
     return source
   }
-  return createDefaultLinxPiPodSessionSource().catch(() => null)
+  return createDefaultLinxPiPodSessionSource()
 }
 
 function materializePodSessionSnapshot(
@@ -695,7 +695,7 @@ async function listPodSessionSnapshots(
 ): Promise<LinxPiPodSessionSnapshot[]> {
   const rows = await listPodSessionRows(context)
   const snapshots = (await Promise.all(rows.map((row) => (
-    buildPodSessionSnapshot(context, row).catch(() => null)
+    buildPodSessionSnapshot(context, row)
   ))))
     .filter((snapshot): snapshot is LinxPiPodSessionSnapshot => snapshot !== null)
 
@@ -826,13 +826,14 @@ async function listContainedPodResources(fetchFn: PodSessionFetch, containerUrl:
       headers: { Accept: 'text/turtle' },
       signal: controller.signal,
     })
-    if (!response.ok) {
+    if (response.status === 404) {
       return []
+    }
+    if (!response.ok) {
+      throw new Error(`Failed to list Pod container ${containerUrl}: ${response.status} ${response.statusText}`)
     }
     const body = await response.text()
     return extractContainedPodResources(containerUrl, body)
-  } catch {
-    return []
   } finally {
     clearTimeout(timer)
   }
@@ -991,13 +992,9 @@ async function listPodSessionMessages(
     .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
   if (messageResources.length > 0) {
     const rows = await Promise.all(messageResources.map(async (resource) => {
-      try {
-        return /^https?:\/\//.test(resource)
-          ? await context.db.findByIri(messageResource, resource) as MessageRow | null
-          : await context.db.findById(messageResource, resource) as MessageRow | null
-      } catch {
-        return null
-      }
+      return /^https?:\/\//.test(resource)
+        ? await context.db.findByIri(messageResource, resource) as MessageRow | null
+        : await context.db.findById(messageResource, resource) as MessageRow | null
     }))
     const messages = rows
       .filter((message: MessageRow | null): message is MessageRow => {

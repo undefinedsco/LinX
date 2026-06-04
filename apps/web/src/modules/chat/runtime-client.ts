@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { buildLocalWorkspaceUri, normalizeLocalWorkspacePath } from '@/lib/data/workspace-model'
+import { formatErrorForUser } from '@/lib/user-facing-errors'
 
 export type RuntimeThreadStatus = 'idle' | 'active' | 'paused' | 'completed' | 'error'
 export type RuntimeSessionStatus = RuntimeThreadStatus
@@ -80,7 +81,10 @@ async function fetchRuntimeJson<T>(input: RequestInfo, init?: RequestInit): Prom
 
   if (!response.ok) {
     const data = await response.json().catch(() => null)
-    throw new Error(data?.error || `Runtime request failed: ${response.status}`)
+    throw new Error(formatErrorForUser(
+      data?.error || `Runtime request failed: ${response.status}`,
+      '工作会话请求失败。请稍后重试。',
+    ))
   }
 
   return response.json() as Promise<T>
@@ -278,7 +282,10 @@ export const useRuntimeThreadEvents = useRuntimeSessionEvents
 export async function fetchRuntimeSessionLog(id: string): Promise<string> {
   const response = await fetch(`/api/runtime/threads/${id}/log`)
   if (!response.ok) {
-    throw new Error(`Failed to fetch runtime session log: ${response.status}`)
+    throw new Error(formatErrorForUser(
+      `Runtime request failed: ${response.status}`,
+      '工作会话日志读取失败。请稍后重试。',
+    ))
   }
   return response.text()
 }

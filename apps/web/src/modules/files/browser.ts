@@ -3,6 +3,7 @@ import { isLocalWorkspaceUri, parseLocalWorkspaceUri } from '@/lib/data/workspac
 
 export const ALL_FILES_NODE_ID = 'all'
 export const POD_ROOT_NODE_ID = 'pod-root'
+const FILE_PREVIEW_ERROR_MESSAGE = '预览加载失败。请检查网络后重试，或直接打开文件。'
 
 export type FilesTreeNodeType = 'all' | 'workspace' | 'local-workspace' | 'container'
 export type FilesEntryKind = 'container' | 'resource'
@@ -402,10 +403,11 @@ export async function readFileDetail(db: SolidDatabase, resourceUri: string): Pr
         const text = await response.text()
         previewText = text.length > 12000 ? `${text.slice(0, 12000)}\n\n…` : text
       } else {
-        previewUnavailableReason = `读取预览失败：HTTP ${response.status}`
+        previewUnavailableReason = FILE_PREVIEW_ERROR_MESSAGE
       }
     } catch (error) {
-      previewUnavailableReason = error instanceof Error ? error.message : String(error)
+      console.warn('[Files] Preview load failed:', error)
+      previewUnavailableReason = FILE_PREVIEW_ERROR_MESSAGE
     }
   } else if (kind === 'container') {
     previewUnavailableReason = '容器不提供文本预览，可双击进入继续浏览。'

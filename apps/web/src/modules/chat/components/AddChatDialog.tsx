@@ -28,6 +28,7 @@ import {
   resolveLocalWorkspaceUri,
   type RuntimeToolType,
 } from '../runtime-client'
+import { formatErrorForUser } from '@/lib/user-facing-errors'
 
 interface AddChatDialogProps {
   onCreated?: (id: string) => void
@@ -194,7 +195,10 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
             console.error('Create runtime session failed:', runtimeError)
             toast({
               title: '运行时会话创建失败',
-              description: `聊天已创建，可在会话工具栏重试。${runtimeError?.message ? ` ${runtimeError.message}` : ''}`,
+              description: formatErrorForUser(
+                runtimeError,
+                '聊天已创建，可在会话工具栏重试运行时会话。',
+              ),
             })
           }
         }
@@ -202,11 +206,7 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
       }
       closeAddDialog()
     } catch (err: any) {
-      const message =
-        err?.message?.includes('401') || err?.message?.includes('403')
-          ? '无权限写入，请确认已登录且拥有写权限。'
-          : err?.message || '创建失败，请稍后再试。'
-      setError(message)
+      setError(formatErrorForUser(err, '创建失败。请确认当前空间可写后再试。'))
     } finally {
       setIsSubmitting(false)
     }
@@ -215,7 +215,7 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
   const handleSearchWebId = async () => {
     const webId = friendSearch.webId.trim()
     if (!webId) {
-      setFriendSearch((state) => ({ ...state, error: '请输入 WebID' }))
+      setFriendSearch((state) => ({ ...state, error: '请输入用户地址' }))
       return
     }
 
@@ -233,7 +233,7 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
         setFriendSearch((state) => ({
           ...state,
           isSearching: false,
-          error: '无法获取用户信息，请检查 WebID 是否正确',
+          error: '无法获取用户信息，请检查用户地址是否正确',
         }))
         return
       }
@@ -274,7 +274,7 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
       closeAddDialog()
     } catch (friendError: any) {
       console.error('Add friend failed:', friendError)
-      setError(friendError?.message || '添加好友失败，请稍后再试。')
+      setError(formatErrorForUser(friendError, '添加好友失败，请稍后再试。'))
     } finally {
       setIsSubmitting(false)
     }
@@ -291,8 +291,8 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
 
   const getDescription = () => {
     switch (dialogMode) {
-      case 'ai': return '创建一个留档到 Pod 的聊天'
-      case 'friend': return '添加 Solid 用户为好友'
+      case 'ai': return '创建一个会保存到当前空间的聊天'
+      case 'friend': return '添加外部用户为好友'
       case 'group': return '创建多人聊天群组'
       default: return ''
     }
@@ -310,7 +310,7 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
           placeholder="例如：代码助手、翻译助手"
         />
         <p className="text-xs text-muted-foreground">
-          留空将使用 provider/model 作为名称
+          留空将使用当前模型服务作为名称
         </p>
       </div>
 
@@ -433,7 +433,7 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
   const friendForm = (
     <div className="space-y-4">
       <div className="space-y-2">
-        <Label htmlFor="friend-webid">WebID</Label>
+        <Label htmlFor="friend-webid">用户地址</Label>
         <div className="flex gap-2">
           <Input
             id="friend-webid"
@@ -490,7 +490,7 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
       ) : (
         <div className="py-8 text-center text-muted-foreground">
           <User className="mx-auto mb-2 h-10 w-10 opacity-30" />
-          <p className="text-sm">输入对方 WebID 并搜索。</p>
+          <p className="text-sm">输入对方用户地址并搜索。</p>
         </div>
       )}
 

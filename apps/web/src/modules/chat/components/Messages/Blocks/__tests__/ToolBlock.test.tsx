@@ -118,4 +118,21 @@ describe('ToolBlock', () => {
     render(<ToolBlock block={block} defaultExpanded />)
     expect(screen.getByText('File not found')).toBeInTheDocument()
   })
+
+  it('does not expose internal tool errors in the chat UI', () => {
+    const block = createToolBlock({
+      status: MessageBlockStatus.ERROR,
+      toolStatus: 'error',
+      content: 'Failed to create Pod container https://id.undefineds.co/alice/.data/agents/__secretary__/: HTTP 403',
+      error: {
+        message: "Cannot find module 'jsonld'\nRequire stack:\n- /Users/ganlu/Library/Application Support/@linx/xpod.js",
+      },
+    })
+
+    render(<ToolBlock block={block} defaultExpanded />)
+
+    expect(screen.getByText('这个账号还不能写入当前空间。请换一个空间；如果这是你的本地空间，请先完成空间创建。')).toBeInTheDocument()
+    expect(screen.getByText('本地空间启动文件损坏。请重启 LinX 让它自动修复；如果仍失败，请打开本地空间设置修复。')).toBeInTheDocument()
+    expect(screen.queryByText(/HTTP 403|jsonld|Application Support|__secretary__|Require stack/i)).not.toBeInTheDocument()
+  })
 })

@@ -26,6 +26,7 @@ import { contactOps } from '../collections'
 import { isGroupContact, type ContactRow } from '@undefineds.co/models'
 import { useQuery } from '@tanstack/react-query'
 import { SelectableContactList } from './SelectableContactList'
+import { formatErrorForUser } from '@/lib/user-facing-errors'
 
 interface CreateGroupDialogProps {
   open: boolean
@@ -93,7 +94,7 @@ export function CreateGroupDialog({ open, onOpenChange, onCreated }: CreateGroup
       onCreated?.(result.id, result.chatId)
       handleClose()
     } catch (err) {
-      const msg = err instanceof Error ? err.message : '创建群组失败'
+      const msg = formatErrorForUser(err, '创建群组失败。请确认当前空间可写后再试。')
       setError(msg)
     } finally {
       setIsCreating(false)

@@ -8,8 +8,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { ExternalLink, Loader2, Server, CircleDot, Play, Square, RotateCw } from 'lucide-react'
-
-const LOCAL_DOMAIN_HELP_PATH = '/docs/local-sp-domain-and-tunnel.md'
+import { formatLoginErrorForUser } from '@/modules/login/error-messages'
 
 type ServiceSpaceKind = 'local' | 'standalone'
 type DomainSource = 'manual'
@@ -46,6 +45,13 @@ interface ServiceManagementDialogProps {
 
 function trimSlash(url: string): string {
   return url.replace(/\/+$/, '')
+}
+
+async function parseError(response: Response): Promise<string> {
+  const data = await response.json().catch(() => null)
+  if (typeof data?.error === 'string' && data.error.trim()) return data.error
+  if (response.status >= 500) return '服务暂时没有响应。请稍后重试。'
+  return '请求没有完成。请稍后重试。'
 }
 
 async function detectPublicIpReachability(): Promise<boolean> {
@@ -105,7 +111,7 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
   const refreshStatus = async () => {
     if (!isServiceMode) return
     const res = await fetch('/api/service/status')
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    if (!res.ok) throw new Error(await parseError(res))
     const data = await res.json()
     setStatus(data)
   }
@@ -152,7 +158,7 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Unknown error')
+          setError(formatLoginErrorForUser(err, '读取本地空间设置失败。请稍后重试。'))
         }
       } finally {
         if (!cancelled) setLoading(false)
@@ -191,10 +197,10 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
     setError(null)
     try {
       const res = await fetch(path, { method: 'POST' })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      if (!res.ok) throw new Error(await parseError(res))
       await refreshStatus()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error')
+      setError(formatLoginErrorForUser(err, '本地空间操作失败。请稍后重试。'))
     } finally {
       setSubmitting(false)
     }
@@ -209,7 +215,7 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
     if (useTunnel) {
       const canReuseToken = initialHasTunnelToken && tunnelProvider === initialTunnelProvider && !tunnelToken
       if (!tunnelToken && !canReuseToken) {
-        setError('请选择隧道供应商并填写隧道 Token（或沿用已配置的 Token）')
+        setError('请选择外网访问方式并填写隧道密钥（或沿用已保存的密钥）')
         return
       }
     }
@@ -245,14 +251,14 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
-      if (!setupRes.ok) throw new Error(`setup: HTTP ${setupRes.status}`)
+      if (!setupRes.ok) throw new Error(await parseError(setupRes))
 
       const startRes = await fetch('/api/service/start', { method: 'POST' })
-      if (!startRes.ok) throw new Error(`start: HTTP ${startRes.status}`)
+      if (!startRes.ok) throw new Error(await parseError(startRes))
 
       await refreshStatus()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error')
+      setError(formatLoginErrorForUser(err, '保存并启动本地空间失败。请检查配置后重试。'))
     } finally {
       setSubmitting(false)
     }
@@ -273,14 +279,14 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
             </div>
             <div>
               <div className="text-base font-semibold text-foreground">服务管理</div>
-              <div className="text-xs text-muted-foreground">未启动时配置 6 项参数；启动后查看状态并进入 xpod 原生界面</div>
-              <div className="text-xs text-muted-foreground">域名与隧道说明：{LOCAL_DOMAIN_HELP_PATH}</div>
+              <div className="text-xs text-muted-foreground">未启动时配置必要参数；启动后可查看状态并打开管理页。</div>
+              <div className="text-xs text-muted-foreground">外网访问可选配置自有域名或隧道。</div>
             </div>
           </div>
         </div>
 
         <div className="p-6 space-y-4">
-          {!isServiceMode ? <div className="text-sm text-muted-foreground">当前不是 LinX Service 模式。</div> : null}
+          {!isServiceMode ? <div className="text-sm text-muted-foreground">当前入口不支持服务管理。</div> : null}
 
           {loading ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -289,7 +295,11 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
             </div>
           ) : null}
 
-          {error ? <div className="text-sm text-destructive">操作失败：{error}</div> : null}
+          {error ? (
+            <div className="text-sm text-destructive">
+              {formatLoginErrorForUser(error, '本地空间暂时无法完成操作。请稍后重试。')}
+            </div>
+          ) : null}
 
           {!running ? (
             <div className="space-y-4">
@@ -297,15 +307,15 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
                 <Label>空间类型</Label>
                 <Tabs value={spaceKind} onValueChange={(v) => setSpaceKind(v as ServiceSpaceKind)}>
                   <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="local">local</TabsTrigger>
-                    <TabsTrigger value="standalone">standalone</TabsTrigger>
+                    <TabsTrigger value="local">本地空间</TabsTrigger>
+                    <TabsTrigger value="standalone">独立空间</TabsTrigger>
                   </TabsList>
                 </Tabs>
               </div>
 
               <div className="space-y-2">
                 <Label>1) 数据地址</Label>
-                <Input value={dataDir} onChange={(e) => setDataDir(e.target.value)} placeholder="~/Library/Application Support/LinX/pod" />
+                <Input value={dataDir} onChange={(e) => setDataDir(e.target.value)} placeholder="选择一个用于保存本地数据的文件夹" />
               </div>
 
               <div className="space-y-2">
@@ -320,13 +330,13 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
                   <div className="space-y-2">
                     <Label>3) 公网域名（可选）</Label>
                     <Input value={publicDomain} onChange={(e) => setPublicDomain(e.target.value)} placeholder="pod.example.com" />
-                    <div className="text-xs text-muted-foreground">留空时由 Cloud provisioning 分配 Cloud-managed canonical URL；只有要使用自有 HTTPS origin 时才填写。</div>
-                    <div className="text-xs text-muted-foreground">配置说明：{LOCAL_DOMAIN_HELP_PATH}</div>
+                    <div className="text-xs text-muted-foreground">留空时由 LinX 自动分配可登录地址；只有要使用自有 HTTPS 域名时才填写。</div>
+                    <div className="text-xs text-muted-foreground">需要外网访问时，可配置自有域名或隧道。</div>
                   </div>
                 </>
               ) : (
                 <div className="space-y-2">
-                  <Label>3) 公网域名（standalone，可选）</Label>
+                  <Label>3) 公网域名（可选）</Label>
                   <Input value={publicDomain} onChange={(e) => setPublicDomain(e.target.value)} placeholder="pod.example.com" />
                   <div className="text-xs text-muted-foreground">留空时只在本机或局域网使用；需要公网访问时再填你自己的域名。</div>
                 </div>
@@ -365,14 +375,14 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
 
                 {useTunnel ? (
                   <div className="pt-2 space-y-2">
-                    <Label>隧道 Token</Label>
+                    <Label>隧道密钥</Label>
                     <Input
                       value={tunnelToken}
                       onChange={(e) => setTunnelToken(e.target.value)}
-                      placeholder={initialHasTunnelToken && tunnelProvider === initialTunnelProvider ? '留空则沿用已配置 Token' : '必填'}
+                      placeholder={initialHasTunnelToken && tunnelProvider === initialTunnelProvider ? '留空则沿用已保存密钥' : '必填'}
                     />
                     {initialHasTunnelToken && tunnelProvider === initialTunnelProvider ? (
-                      <div className="text-xs text-muted-foreground">已检测到本机已配置 Token（不会回显明文）。</div>
+                      <div className="text-xs text-muted-foreground">已检测到本机已保存密钥（不会显示明文）。</div>
                     ) : null}
                   </div>
                 ) : null}
@@ -399,15 +409,15 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
                     {status?.pod?.publicUrl ? '公网地址' : '本地地址'}
                   </Badge>
                 </div>
-                <div className="text-xs font-mono text-muted-foreground break-all">{podBaseUrl || '未获取到 xpod 地址'}</div>
+                <div className="text-xs font-mono text-muted-foreground break-all">{podBaseUrl || '未获取到访问地址'}</div>
               </div>
 
               <div className="grid grid-cols-1 gap-2">
                 <Button className="justify-start" onClick={() => openExternal(`${podBaseUrl}/app/`)} disabled={!podBaseUrl}>
-                  <ExternalLink className="h-4 w-4 mr-2" /> 打开 xpod App
+                  <ExternalLink className="h-4 w-4 mr-2" /> 打开本地空间应用
                 </Button>
                 <Button variant="outline" className="justify-start" onClick={() => openExternal(`${podBaseUrl}/dashboard/`)} disabled={!podBaseUrl}>
-                  <ExternalLink className="h-4 w-4 mr-2" /> 打开 xpod Dashboard
+                  <ExternalLink className="h-4 w-4 mr-2" /> 打开本地空间管理页
                 </Button>
               </div>
 

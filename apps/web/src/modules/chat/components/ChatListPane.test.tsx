@@ -236,13 +236,13 @@ describe('ChatListPane', () => {
 
       render(<ChatListPane theme="light" />, { wrapper: createWrapper() })
 
-      expect(screen.getByText('正在准备 AI Secretary...')).toBeInTheDocument()
+      expect(screen.getByText('正在准备默认助手...')).toBeInTheDocument()
 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(12_000)
       })
 
-      expect(screen.getByText('AI Secretary 暂时还没准备好，可以先进入 LinX。')).toBeInTheDocument()
+      expect(screen.getByText('默认助手暂时还没准备好，可以先进入 LinX。')).toBeInTheDocument()
     })
 
     it('does not prepare AI Secretary from the chat list for existing accounts without it', () => {

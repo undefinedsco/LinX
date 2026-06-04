@@ -42,10 +42,11 @@ export async function checkMultiValue() {
         continue
       }
 
-      // 按 subject/id 分组
+      // 按 ORM row.id 分组。Full RDF subject 需要时由 db.resolveRowIri 生成，
+      // 不从 @id/subject 这类内部字段反推业务身份。
       const bySubject = new Map<string, any[]>()
       for (const row of rows) {
-        const subject = row['@id'] || row.subject || row.id || 'unknown'
+        const subject = row.id || 'unknown'
         if (!bySubject.has(subject)) {
           bySubject.set(subject, [])
         }

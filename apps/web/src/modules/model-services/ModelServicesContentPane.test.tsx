@@ -73,7 +73,7 @@ describe('ModelServicesContentPane', () => {
     }))
   })
 
-  it('shows the real probe error when verification fails', async () => {
+  it('shows an actionable probe error without raw provider details when verification fails', async () => {
     mockSearchProviderModels.mockRejectedValue(new Error('401 Unauthorized'))
 
     render(<ModelServicesContentPane />)
@@ -86,7 +86,25 @@ describe('ModelServicesContentPane', () => {
     await waitFor(() => {
       expect(mockToast).toHaveBeenCalledWith(expect.objectContaining({
         variant: 'destructive',
-        description: '连接失败: 401 Unauthorized',
+        description: '连接失败：密钥不可用。请检查密钥是否填写正确，或换一个密钥后重试。',
+      }))
+    })
+  })
+
+  it('shows model-list guidance without leaking provider response text', async () => {
+    mockSearchProviderModels.mockRejectedValue(new Error('OpenAI 模型列表获取失败: 500 {"error":"upstream stack"}'))
+
+    render(<ModelServicesContentPane />)
+
+    fireEvent.change(screen.getByPlaceholderText('sk-...'), {
+      target: { value: 'sk-test' },
+    })
+    fireEvent.click(screen.getByText('验证'))
+
+    await waitFor(() => {
+      expect(mockToast).toHaveBeenCalledWith(expect.objectContaining({
+        variant: 'destructive',
+        description: '连接失败：模型列表获取失败。请检查密钥、服务地址或网络后重试。',
       }))
     })
   })

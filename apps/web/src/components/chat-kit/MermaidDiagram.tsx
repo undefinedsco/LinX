@@ -46,7 +46,7 @@ export const MermaidDiagram: FC<MermaidDiagramProps> = memo(({ code, className }
         setSvg(renderedSvg)
       } catch (err) {
         console.error('Mermaid render error:', err)
-        setError(err instanceof Error ? err.message : '图表渲染失败')
+        setError('图表语法需要调整。请检查图表代码后重试。')
       } finally {
         setIsLoading(false)
       }
@@ -70,7 +70,7 @@ export const MermaidDiagram: FC<MermaidDiagramProps> = memo(({ code, className }
     return (
       <div className={cn('my-3 p-4 rounded bg-destructive/10 border border-destructive/30', className)}>
         <div className="text-sm text-destructive">
-          <strong>Mermaid 语法错误:</strong>
+          <strong>图表渲染失败</strong>
           <pre className="mt-2 text-xs whitespace-pre-wrap opacity-80">{error}</pre>
         </div>
         <details className="mt-2">

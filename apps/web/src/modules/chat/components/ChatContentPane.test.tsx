@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { forwardRef } from 'react'
 
@@ -21,6 +21,7 @@ const mockUseRuntimeSession = vi.fn()
 const mockUseWorkspaceList = vi.fn()
 const mockUseThreadList = vi.fn()
 const mockClearMessageAnchor = vi.fn()
+const mockRuntimeEventHandler = { current: null as ((event: unknown) => void) | null }
 
 const storeState = {
   selectedChatId: 'chat-1',
@@ -114,7 +115,9 @@ vi.mock('../runtime-client', () => ({
   isRuntimeSessionMode: () => mockIsRuntimeSessionMode(),
   resolveLocalWorkspaceUri: vi.fn(async () => 'linx://node-123/repo/linx'),
   useRuntimeSession: () => mockUseRuntimeSession(),
-  useRuntimeSessionEvents: vi.fn(),
+  useRuntimeSessionEvents: vi.fn((_id: string | undefined, handler: (event: unknown) => void) => {
+    mockRuntimeEventHandler.current = handler
+  }),
 }))
 
 import { ChatContentPane } from './ChatContentPane'
@@ -145,6 +148,7 @@ describe('ChatContentPane', () => {
       isLoading: false,
     })
     storeState.messageAnchorId = null
+    mockRuntimeEventHandler.current = null
   })
 
   it('passes selected thread as the initial ChatKit thread without unsafe pre-upgrade method calls', () => {
@@ -242,8 +246,33 @@ describe('ChatContentPane', () => {
 
     render(<ChatContentPane theme="light" />)
 
-    expect(screen.getByText('当前话题已绑定Pod 容器')).toBeInTheDocument()
+    expect(screen.getByText('当前话题已绑定空间文件夹')).toBeInTheDocument()
     expect(screen.getByText('Pod Workspace · https://alice.example/.data/workspaces/ws-1/ · main · 基于 origin/main')).toBeInTheDocument()
+  })
+
+  it('does not expose internal runtime event errors', () => {
+    mockIsRuntimeSessionMode.mockReturnValue(true)
+    mockUseRuntimeSession.mockReturnValue({
+      runtimeSession: { id: 'runtime-1', status: 'active' },
+      refetch: vi.fn(),
+      createSession: { isPending: false, mutateAsync: vi.fn() },
+      startSession: { isPending: false, mutateAsync: vi.fn() },
+      pauseSession: { isPending: false, mutateAsync: vi.fn() },
+      resumeSession: { isPending: false, mutateAsync: vi.fn() },
+      stopSession: { isPending: false, mutateAsync: vi.fn() },
+    })
+
+    render(<ChatContentPane theme="light" />)
+
+    act(() => {
+      mockRuntimeEventHandler.current?.({
+        type: 'error',
+        message: 'Failed to create Pod container https://node.example/alice/.data/agents/__secretary__/: HTTP 403',
+      })
+    })
+
+    expect(screen.getByText('这个账号还不能写入当前空间。请换一个空间；如果这是你的本地空间，请先完成空间创建。')).toBeInTheDocument()
+    expect(screen.queryByText(/HTTP 403|node\.example|__secretary__|Pod container/i)).not.toBeInTheDocument()
   })
 
   it('restores anchored message after chat scene re-entry', () => {

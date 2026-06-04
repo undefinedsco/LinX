@@ -4,6 +4,7 @@ import { useNavigate, useParams } from '@tanstack/react-router'
 import { PrimaryLayout } from './modules/layout/PrimaryLayout'
 import { defaultMicroAppId, isValidMicroAppId, MicroAppId } from './modules/layout/micro-app-registry'
 import { SolidLoginOverlay } from './modules/login'
+import { formatLoginErrorForUser } from './modules/login/error-messages'
 
 const SolidAuthCallback = lazy(() => import('./components/AuthCallback'))
 const DebugSearchableSelect = lazy(() =>
@@ -34,11 +35,14 @@ const RootComponent = () => {
 }
 
 function RouteErrorComponent({ error }: { error: unknown }) {
-  const message = error instanceof Error ? error.message : String(error)
+  const message = formatLoginErrorForUser(error, '页面加载失败。请刷新页面，或重新进入 LinX。')
 
   return (
     <div className="min-h-screen bg-background p-4 text-sm text-destructive">
-      {message}
+      <div className="mx-auto mt-16 max-w-sm rounded-2xl border border-destructive/20 bg-destructive/5 p-4">
+        <p className="font-medium">页面暂时无法打开</p>
+        <p className="mt-2 leading-relaxed text-muted-foreground">{message}</p>
+      </div>
     </div>
   )
 }

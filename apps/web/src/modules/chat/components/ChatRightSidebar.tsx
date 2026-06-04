@@ -35,8 +35,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { useChatStore } from '../store'
 import { useChatList, useThreadList, useChatMutations } from '../collections'
-import { contactTable, agentTable, ContactType } from '@undefineds.co/models'
-import { resolveRowSubject } from '@undefineds.co/drizzle-solid'
+import { contactResource, agentResource, isAgentContact } from '@undefineds.co/models'
 import { getPrimaryParticipantUri } from '../utils/chat-participants'
 import { useEntity } from '@/lib/data/use-entity'
 
@@ -314,16 +313,16 @@ export const ChatRightSidebar: FC<ChatRightSidebarProps> = () => {
   // 当前选中的 Chat
   const currentChat = useMemo(() => {
     if (!chats || !selectedChatId) return null
-    return chats.find((c) => resolveRowSubject(c as Record<string, unknown>) === selectedChatId)
+    return chats.find((c) => c.id === selectedChatId)
   }, [chats, selectedChatId])
 
   // 获取 Contact
   const contactUri = getPrimaryParticipantUri(currentChat, session.info.webId)
-  const { data: contact } = useEntity(contactTable, contactUri)
+  const { data: contact } = useEntity(contactResource, contactUri)
 
-  // 获取 Agent（当 contactType 是 agent 时）
-  const agentUri = contact?.contactType === ContactType.AGENT ? contact.entityUri : null
-  const { data: agent, refresh: refreshAgent } = useEntity(agentTable, agentUri)
+  // 获取 Agent（当 Contact 语义类型是 agent 时）
+  const agentUri = contact && isAgentContact(contact) ? contact.entityUri : null
+  const { data: agent, refresh: refreshAgent } = useEntity(agentResource, agentUri)
   const agentId = typeof agent?.id === 'string' && agent.id.length > 0
     ? agent.id
     : null
@@ -332,7 +331,7 @@ export const ChatRightSidebar: FC<ChatRightSidebarProps> = () => {
   const threads: Thread[] = useMemo(() => {
     if (!rawThreads) return []
     return rawThreads.map((t) => ({
-      id: resolveRowSubject(t as Record<string, unknown>) ?? 'unknown',
+      id: t.id ?? 'unknown',
       title: t.title ?? '新话题',
       starred: t.starred ?? false,
       updatedAt: t.updatedAt ? String(t.updatedAt) : undefined,
@@ -381,7 +380,7 @@ export const ChatRightSidebar: FC<ChatRightSidebarProps> = () => {
         title: `话题 ${new Date().toLocaleTimeString()}`,
       })
       // chatOps.createThread returns ThreadRow with id directly
-      const threadId = newThread.id ?? resolveRowSubject(newThread as Record<string, unknown>)
+      const threadId = newThread.id
       if (threadId) selectThread(threadId)
     } catch (e) {
       console.error('Create thread failed:', e)

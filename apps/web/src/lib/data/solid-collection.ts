@@ -6,7 +6,7 @@
  */
 
 import type { PodTable, InferTableData, InferInsertData, InferUpdateData, QueryCondition } from '@undefineds.co/drizzle-solid'
-import type { SolidDatabase } from '@undefineds.co/models'
+import { requireRowResourceId, type SolidDatabase } from '@undefineds.co/models'
 import { deleteExactRecord, findExactRecord, updateExactRecord } from './exact-records'
 
 /**
@@ -20,8 +20,8 @@ export interface SolidCollectionOptions<
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _TUpdate = InferUpdateData<TTable>,
 > {
-  /** The drizzle-solid table schema */
-  table: TTable
+  /** The drizzle-solid resource schema */
+  resource: TTable
   
   /** Function to extract unique key from a row */
   getKey: (item: TRow) => string
@@ -30,7 +30,7 @@ export interface SolidCollectionOptions<
   transform?: (row: InferTableData<TTable>) => TRow
   
   /** Optional: filter condition for queries */
-  filter?: (table: TTable) => QueryCondition | undefined
+  filter?: (resource: TTable) => QueryCondition | undefined
   
   /** Optional: sort configuration */
   orderBy?: {
@@ -69,7 +69,7 @@ export interface SolidCollectionResult<
  * @example
  * ```ts
  * const chatCollectionOptions = solidCollectionOptions({
- *   table: chatTable,
+ *   resource: chatResource,
  *   getKey: (chat) => chat.id,
  *   orderBy: { column: 'lastActiveAt', direction: 'desc' },
  * })
@@ -83,20 +83,20 @@ export function solidCollectionOptions<
 >(
   options: SolidCollectionOptions<TTable, TRow, TInsert, TUpdate>
 ): SolidCollectionResult<TRow, TInsert, TUpdate> {
-  const { table, getKey, transform, filter, orderBy } = options
+  const { resource, getKey, transform, filter, orderBy } = options
   
   const transformRow = transform ?? ((row: InferTableData<TTable>) => row as unknown as TRow)
   
   const queryFn = async (db: SolidDatabase): Promise<TRow[]> => {
-    let query = db.select().from(table)
+    let query = db.select().from(resource)
     
-    const whereClause = filter?.(table)
+    const whereClause = filter?.(resource)
     if (whereClause) {
       query = query.where(whereClause)
     }
     
     if (orderBy) {
-      const column = (table as unknown as Record<string, unknown>)[orderBy.column] as string | undefined
+      const column = (resource as unknown as Record<string, unknown>)[orderBy.column] as string | undefined
       if (column) {
         query = query.orderBy(column, orderBy.direction ?? 'asc')
       }
@@ -107,7 +107,7 @@ export function solidCollectionOptions<
   }
   
   const onInsert = async (db: SolidDatabase, item: TRow): Promise<TRow> => {
-    const rows = await db.insert(table).values(item as InferInsertData<TTable>).execute()
+    const rows = await db.insert(resource).values(item as InferInsertData<TTable>).execute()
     const created = rows?.[0]
     if (created) {
       return transformRow(created as InferTableData<TTable>)
@@ -121,13 +121,13 @@ export function solidCollectionOptions<
     id: string,
     updates: Partial<TUpdate>
   ): Promise<TRow | null> => {
-    await updateExactRecord(db, table as any, id, updates as Record<string, unknown>)
-    const record = await findExactRecord(db, table as any, id)
+    await updateExactRecord(db, resource as any, id, updates as Record<string, unknown>)
+    const record = await findExactRecord(db, resource as any, id)
     return record ? transformRow(record as InferTableData<TTable>) : null
   }
   
   const onDelete = async (db: SolidDatabase, id: string): Promise<void> => {
-    await deleteExactRecord(db, table as any, id)
+    await deleteExactRecord(db, resource as any, id)
   }
   
   return {
@@ -140,19 +140,13 @@ export function solidCollectionOptions<
 }
 
 /**
- * Helper to derive row ID from various sources
+ * Helper to read the canonical collection key from a Pod ORM row.
+ *
+ * `row.id` is the base-relative resource id. Full RDF subject IRIs belong in
+ * `ByIri` calls or `db.resolveRowIri`, not in collection identity.
  */
 export function deriveRowId(row: Record<string, unknown> | null | undefined): string | null {
   if (!row) return null
-  
-  const explicit = row['@id']
-  if (typeof explicit === 'string' && explicit.length > 0) return explicit
-  
-  const subject = row.subject
-  if (typeof subject === 'string' && subject.length > 0) return subject
-  
-  const id = row.id
-  if (typeof id === 'string' && id.length > 0) return id
-  
-  return null
+
+  return requireRowResourceId(row as { id?: string | null }, 'row')
 }

@@ -1,13 +1,18 @@
 import {
   ContactClass,
   ContactType,
+  agentTable,
   agentRepository,
+  agentResourceId,
+  contactTable,
   contactRepository,
+  asBaseRelativeResourceId,
+  requireRowResourceId,
   type AgentRow,
+  type BaseRelativeResourceId,
   type ContactRow,
   type SolidDatabase,
 } from '@undefineds.co/models'
-import { resolveRowSubject } from '@undefineds.co/drizzle-solid'
 
 export interface CreateAgentContactRecordsInput {
   agentId?: string
@@ -30,11 +35,13 @@ export interface CreateGroupContactRecordInput {
   avatarUrl?: string
 }
 
-type CollectionStateLike<T extends Record<string, unknown>> =
+type PersistedRow = Record<string, unknown> & { id: string }
+
+type CollectionStateLike<T extends PersistedRow> =
   | Map<string, T>
   | { data?: T[] }
 
-type CollectionInternalState<T extends Record<string, unknown>> = {
+type CollectionInternalState<T extends PersistedRow> = {
   syncedData?: {
     get?: (key: string) => T | undefined
     set?: (key: string, value: T) => unknown
@@ -47,33 +54,17 @@ type CollectionInternalState<T extends Record<string, unknown>> = {
   size?: number
 }
 
-function ensureRecordId(
-  record: Partial<Record<string, unknown>>,
-  fallback?: string,
-): string {
-  if (fallback) {
-    return normalizeResourceId(fallback)
-  }
-
-  const directId = typeof record.id === 'string' && record.id.length > 0 ? record.id : undefined
-  if (directId) {
-    return normalizeResourceId(directId)
-  }
-
-  throw new Error('Record is missing an identifier')
-}
-
 export async function createAgentContactRecords(
   db: SolidDatabase,
   input: CreateAgentContactRecordsInput,
 ): Promise<{
   agent: AgentRow
   contact: ContactRow
-  agentId: string
-  contactId: string
+  agentId: BaseRelativeResourceId
+  contactId: BaseRelativeResourceId
   contactUri: string
 }> {
-  const agentId = input.agentId?.trim() || crypto.randomUUID()
+  const agentId = agentResourceId(input.agentId?.trim() || crypto.randomUUID())
   const agent = await agentRepository.create!(db, {
     id: agentId,
     name: input.name,
@@ -81,8 +72,7 @@ export async function createAgentContactRecords(
     model: input.model,
     instructions: input.instructions || undefined,
   })
-
-  const agentUri = resolveRowSubject(agent as Record<string, unknown>) ?? agentId
+  const agentUri = db.resolveRowIri(agentTable as any, agent)
   const contactId = input.contactId?.trim() || crypto.randomUUID()
   const contact = await contactRepository.create!(db, {
     id: contactId,
@@ -92,13 +82,14 @@ export async function createAgentContactRecords(
     contactType: ContactType.AGENT,
     isPublic: false,
   })
+  const contactUri = db.resolveRowIri(contactTable as any, contact)
 
   return {
-    agent: agent as AgentRow,
-    contact: contact as ContactRow,
-    agentId: ensureRecordId(agent as Record<string, unknown>, agentId),
-    contactId: ensureRecordId(contact as Record<string, unknown>, contactId),
-    contactUri: resolveRowSubject(contact as Record<string, unknown>) ?? contactId,
+    agent,
+    contact,
+    agentId: requireRowResourceId(agent, 'created agent'),
+    contactId: requireRowResourceId(contact, 'created contact'),
+    contactUri,
   }
 }
 
@@ -107,7 +98,7 @@ export async function createSolidContactRecord(
   input: CreateSolidContactRecordInput,
 ): Promise<{
   contact: ContactRow
-  contactId: string
+  contactId: BaseRelativeResourceId
   contactUri: string
 }> {
   const contactId = crypto.randomUUID()
@@ -120,11 +111,12 @@ export async function createSolidContactRecord(
     contactType: ContactType.SOLID,
     isPublic: false,
   })
+  const contactUri = db.resolveRowIri(contactTable as any, contact)
 
   return {
-    contact: contact as ContactRow,
-    contactId: ensureRecordId(contact as Record<string, unknown>, contactId),
-    contactUri: resolveRowSubject(contact as Record<string, unknown>) ?? contactId,
+    contact,
+    contactId: requireRowResourceId(contact, 'created contact'),
+    contactUri,
   }
 }
 
@@ -133,7 +125,7 @@ export async function createGroupContactRecord(
   input: CreateGroupContactRecordInput,
 ): Promise<{
   contact: ContactRow
-  contactId: string
+  contactId: BaseRelativeResourceId
   contactUri: string
 }> {
   const contactId = crypto.randomUUID()
@@ -146,15 +138,16 @@ export async function createGroupContactRecord(
     contactType: ContactType.SOLID,
     isPublic: false,
   })
+  const contactUri = db.resolveRowIri(contactTable as any, contact)
 
   return {
-    contact: contact as ContactRow,
-    contactId: ensureRecordId(contact as Record<string, unknown>, contactId),
-    contactUri: resolveRowSubject(contact as Record<string, unknown>) ?? contactId,
+    contact,
+    contactId: requireRowResourceId(contact, 'created contact'),
+    contactUri,
   }
 }
 
-export function upsertStateRow<T extends Record<string, unknown>>(
+export function upsertStateRow<T extends PersistedRow>(
   state: CollectionStateLike<T> | undefined,
   row: T,
   rowId?: string,
@@ -163,15 +156,13 @@ export function upsertStateRow<T extends Record<string, unknown>>(
     return
   }
 
-  const resolvedId = rowId ?? resolveRowSubject(row)
+  const id = rowId
+    ? asBaseRelativeResourceId(rowId, 'collection row id')
+    : requireRowResourceId(row, 'collection row')
 
   if (state instanceof Map) {
-    if (!resolvedId) {
-      return
-    }
-
-    const existing = state.get(resolvedId)
-    state.set(resolvedId, existing ? { ...existing, ...row } : row)
+    const existing = state.get(id)
+    state.set(id, existing ? { ...existing, ...row } : row)
     return
   }
 
@@ -179,14 +170,8 @@ export function upsertStateRow<T extends Record<string, unknown>>(
     return
   }
 
-  if (!resolvedId) {
-    state.data.unshift(row)
-    return
-  }
-
   const index = state.data.findIndex((item) => {
-    const itemId = resolveRowSubject(item)
-    return itemId === resolvedId || (typeof (item as { id?: unknown }).id === 'string' && item.id === resolvedId)
+    return item.id === id
   })
 
   if (index === -1) {
@@ -200,7 +185,7 @@ export function upsertStateRow<T extends Record<string, unknown>>(
   }
 }
 
-export function writeCollectionRow<T extends Record<string, unknown>>(
+export function writeCollectionRow<T extends PersistedRow>(
   collection: {
     state?: CollectionStateLike<T>
     _state?: CollectionInternalState<T>
@@ -210,12 +195,10 @@ export function writeCollectionRow<T extends Record<string, unknown>>(
   row: T,
   rowId?: string,
 ): void {
-  const resolvedId = rowId ?? resolveRowSubject(row)
-  if (resolvedId) {
-    upsertInternalStateRow(collection?._state, row, resolvedId)
-  } else {
-    upsertStateRow(collection?.state, row, rowId)
-  }
+  const id = rowId
+    ? asBaseRelativeResourceId(rowId, 'collection row id')
+    : requireRowResourceId(row, 'collection row')
+  upsertInternalStateRow(collection?._state, row, id)
 
   const canManualSync =
     typeof collection?.utils?.writeUpsert === 'function'
@@ -231,17 +214,7 @@ export function writeCollectionRow<T extends Record<string, unknown>>(
   }
 }
 
-export function normalizeResourceId(id: string): string {
-  const trimmed = id.trim()
-  const withoutFragment = trimmed.replace(/#.*$/, '')
-  const resourceMatch = withoutFragment.match(/\/([^/]+)\.ttl$/)
-  if (resourceMatch?.[1]) {
-    return decodeURIComponent(resourceMatch[1])
-  }
-  return withoutFragment.replace(/\.ttl$/, '')
-}
-
-function upsertInternalStateRow<T extends Record<string, unknown>>(
+function upsertInternalStateRow<T extends PersistedRow>(
   state: CollectionInternalState<T> | undefined,
   row: T,
   rowId: string,
@@ -260,7 +233,7 @@ function upsertInternalStateRow<T extends Record<string, unknown>>(
   }
 }
 
-function getCollectionStateSize<T extends Record<string, unknown>>(
+function getCollectionStateSize<T extends PersistedRow>(
   state: CollectionInternalState<T>,
 ): number {
   const syncedSize = state.syncedData?.size ?? 0

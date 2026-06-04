@@ -24,6 +24,8 @@ import {
   createPodStorage,
   ContactType,
   auditResource,
+  agentHomeDirFromResourceId,
+  agentResourceId,
   agentResource,
   agentTable,
   applySolidComunicaPatches,
@@ -82,6 +84,8 @@ import {
 export {
   ContactType,
   agentResource,
+  agentHomeDirFromResourceId,
+  agentResourceId,
   agentTable,
   applySolidComunicaPatches,
   aiConfigModelUri,

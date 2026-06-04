@@ -1,32 +1,33 @@
 import type { PodTable, SolidDatabase } from '@undefineds.co/drizzle-solid'
+import { asBaseRelativeResourceId, requireRowResourceId } from '@undefineds.co/models'
 import { assertCurrentPodBaseUrl, assertIriBelongsToCurrentPod, assertUpdateValuesBelongToCurrentPod } from './pod-write-guard'
 
 type ExactRecordTarget = string | Record<string, unknown> | null | undefined
-type ExactPodTable = PodTable<any>
+type ExactPodResource = PodTable<any>
 
 type LocatorDatabase = SolidDatabase & {
-  findById?: <T = unknown>(table: unknown, id: string) => Promise<T | null>
-  updateById?: <T = unknown>(table: unknown, id: string, data: Record<string, unknown>) => Promise<T | null>
-  deleteById?: (table: unknown, id: string) => Promise<unknown>
+  findById?: <T = unknown>(resource: unknown, id: string) => Promise<T | null>
+  updateById?: <T = unknown>(resource: unknown, id: string, data: Record<string, unknown>) => Promise<T | null>
+  deleteById?: (resource: unknown, id: string) => Promise<unknown>
 }
 
 const ABSOLUTE_IRI = /^[a-zA-Z][a-zA-Z\d+.-]*:/
-const INTERNAL_FIELDS = new Set(['id', '@id', 'subject', 'source'])
+const INTERNAL_FIELDS = new Set(['id', '@id', 'subject', 'uri', 'source'])
 
 export async function findExactRecord<T>(
   db: SolidDatabase,
-  table: ExactPodTable,
+  resource: ExactPodResource,
   target: ExactRecordTarget,
 ): Promise<T | null> {
   const locatorDb = db as LocatorDatabase
   const iri = resolveRecordIri(target)
   if (iri && typeof locatorDb.findByIri === 'function') {
-    return locatorDb.findByIri<T>(table, iri)
+    return locatorDb.findByIri<T>(resource, iri)
   }
 
   const id = resolveRecordId(target)
   if (id && typeof locatorDb.findById === 'function') {
-    return locatorDb.findById<T>(table, id)
+    return locatorDb.findById<T>(resource, id)
   }
 
   return null
@@ -34,7 +35,7 @@ export async function findExactRecord<T>(
 
 export async function updateExactRecord(
   db: SolidDatabase,
-  table: ExactPodTable,
+  resource: ExactPodResource,
   target: ExactRecordTarget,
   updates: Record<string, unknown>,
 ): Promise<void> {
@@ -47,13 +48,13 @@ export async function updateExactRecord(
     assertIriBelongsToCurrentPod(db, iri, 'update')
   }
   if (iri && typeof locatorDb.updateByIri === 'function') {
-    await locatorDb.updateByIri(table, iri, payload)
+    await locatorDb.updateByIri(resource, iri, payload)
     return
   }
 
   const id = resolveRecordId(target)
   if (id && typeof locatorDb.updateById === 'function') {
-    await locatorDb.updateById(table, id, payload)
+    await locatorDb.updateById(resource, id, payload)
     return
   }
 
@@ -62,7 +63,7 @@ export async function updateExactRecord(
 
 export async function deleteExactRecord(
   db: SolidDatabase,
-  table: ExactPodTable,
+  resource: ExactPodResource,
   target: ExactRecordTarget,
 ): Promise<void> {
   const locatorDb = db as LocatorDatabase
@@ -72,13 +73,13 @@ export async function deleteExactRecord(
     assertIriBelongsToCurrentPod(db, iri, 'delete')
   }
   if (iri && typeof locatorDb.deleteByIri === 'function') {
-    await locatorDb.deleteByIri(table, iri)
+    await locatorDb.deleteByIri(resource, iri)
     return
   }
 
   const id = resolveRecordId(target)
   if (id && typeof locatorDb.deleteById === 'function') {
-    await locatorDb.deleteById(table, id)
+    await locatorDb.deleteById(resource, id)
     return
   }
 
@@ -89,25 +90,18 @@ function resolveRecordIri(target: ExactRecordTarget): string | null {
   if (typeof target === 'string') {
     return ABSOLUTE_IRI.test(target) ? target : null
   }
-
-  const record = target ?? {}
-  for (const key of ['@id', 'subject', 'uri', 'source']) {
-    const value = record[key]
-    if (typeof value === 'string' && ABSOLUTE_IRI.test(value)) {
-      return value
-    }
-  }
-
   return null
 }
 
 function resolveRecordId(target: ExactRecordTarget): string | null {
   if (typeof target === 'string') {
-    return ABSOLUTE_IRI.test(target) ? null : target
+    return ABSOLUTE_IRI.test(target)
+      ? null
+      : asBaseRelativeResourceId(target, 'record target')
   }
 
-  const id = target?.id
-  return typeof id === 'string' && id.length > 0 ? id : null
+  if (!target) return null
+  return requireRowResourceId(target as { id?: string | null }, 'record target')
 }
 
 function sanitizeUpdatePayload(updates: Record<string, unknown>): Record<string, unknown> {

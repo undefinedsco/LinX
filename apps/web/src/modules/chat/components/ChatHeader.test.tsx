@@ -113,12 +113,11 @@ vi.mock('@undefineds.co/models', () => ({
   extractAIConfigResourceId: (value: string) => value || null,
   normalizeAIConfigProviderId: (value: string) => value || 'openai',
   normalizeAIConfigResourceId: (value: string) => value || null,
-  resolveRowId: (row: Record<string, unknown> | null | undefined) => row?.id ?? row?.['@id'] ?? null,
-  contactTable: { name: 'contact' },
-  agentTable: { name: 'agent' },
-  ContactType: {
-    AGENT: 'agent',
-  },
+  resolveRowId: (row: Record<string, unknown> | null | undefined) => row?.id ?? null,
+  contactResource: { name: 'contact' },
+  agentResource: { name: 'agent' },
+  isAgentContact: (contact: { contactType?: string; rdfType?: string } | null | undefined) =>
+    contact?.contactType === 'agent' || contact?.rdfType === 'https://vocab.undefineds.co/AgentContact',
 }))
 
 import { ChatHeader } from './ChatHeader'
@@ -143,7 +142,7 @@ describe('ChatHeader', () => {
       ],
     })
 
-    mockUseEntity.mockImplementation((_table: unknown, iri: string | null | undefined) => {
+    mockUseEntity.mockImplementation((_resource: unknown, iri: string | null | undefined) => {
       if (iri === 'contact-iri') {
         return {
           data: {

@@ -76,7 +76,7 @@ export async function resolveJinaApiKey(runtime: JinaCredentialRuntime = activeC
   const [credentialRows, providerRow] = await Promise.all([
     db.select().from(credentialResource).execute() as Promise<Array<Record<string, unknown>>>,
     typeof db.findById === 'function'
-      ? db.findById(aiProviderResource, JINA_PROVIDER_ID).catch(() => null) as Promise<Record<string, unknown> | null>
+      ? db.findById(aiProviderResource, JINA_PROVIDER_ID) as Promise<Record<string, unknown> | null>
       : Promise.resolve(null),
   ]);
 

@@ -24,22 +24,12 @@ import { useEntity } from '@/lib/data/use-entity'
 import {
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
-  contactTable,
-  agentTable,
-  ContactType,
+  contactResource,
+  agentResource,
+  isAgentContact,
 } from '@undefineds.co/models'
-import { resolveRowSubject } from '@undefineds.co/drizzle-solid'
 import { findAgentProviderForModel, getAgentProviderInfo } from '@/lib/agent-providers'
-
-function resolvePersistedId(row?: Partial<Record<string, unknown>> | null): string | null {
-  const record = row as Record<string, unknown> | null | undefined
-  if (!record) return null
-  const id = record.id
-  if (typeof id === 'string' && id.length > 0) {
-    return id
-  }
-  return resolveRowSubject(record) ?? null
-}
+import { formatLoginErrorForUser } from '@/modules/login/error-messages'
 
 export function ChatHeader() {
   const { session } = useSession()
@@ -57,16 +47,16 @@ export function ChatHeader() {
   const mutations = useChatMutations()
 
   const chat = useMemo(
-    () => chats?.find((c) => resolveRowSubject(c as Record<string, unknown>) === selectedChatId) ?? null,
+    () => chats?.find((c) => c.id === selectedChatId) ?? null,
     [chats, selectedChatId],
   )
 
   const contactUri = getPrimaryParticipantUri(chat, session.info.webId)
-  const { data: contact, refresh: refreshContact } = useEntity(contactTable, contactUri)
-  const agentUri = contact?.contactType === ContactType.AGENT ? contact.entityUri : null
-  const { data: agent, refresh: refreshAgent } = useEntity(agentTable, agentUri)
-  const agentId = useMemo(() => resolvePersistedId(agent), [agent])
-  const contactId = useMemo(() => resolvePersistedId(contact), [contact])
+  const { data: contact, refresh: refreshContact } = useEntity(contactResource, contactUri)
+  const agentUri = contact && isAgentContact(contact) ? contact.entityUri : null
+  const { data: agent, refresh: refreshAgent } = useEntity(agentResource, agentUri)
+  const agentId = typeof agent?.id === 'string' && agent.id.length > 0 ? agent.id : null
+  const contactId = typeof contact?.id === 'string' && contact.id.length > 0 ? contact.id : null
 
   const provider = normalizeAIConfigProviderId(typeof agent?.provider === 'string' ? agent.provider : '') || 'openai'
   const model = normalizeAIConfigResourceId(typeof agent?.model === 'string' ? agent.model : '') || 'gpt-4o-mini'
@@ -154,7 +144,7 @@ export function ChatHeader() {
     } catch (error) {
       toast({
         title: '保存助手设置失败',
-        description: error instanceof Error ? error.message : '请稍后重试。',
+        description: formatLoginErrorForUser(error, '请稍后重试。'),
       })
     }
   }, [
@@ -205,7 +195,7 @@ export function ChatHeader() {
     } catch (error) {
       toast({
         title: '保存模型设置失败',
-        description: error instanceof Error ? error.message : '请稍后重试。',
+        description: formatLoginErrorForUser(error, '请稍后重试。'),
       })
     }
   }, [

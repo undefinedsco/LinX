@@ -46,6 +46,26 @@ const buildHeaders = (providerId: string, apiKey?: string) => {
   return headers
 }
 
+function formatModelListError(status: number): string {
+  if (status === 401 || status === 403) {
+    return '密钥不可用。请检查密钥是否填写正确，或换一个密钥后重试。'
+  }
+
+  if (status === 404) {
+    return '模型服务地址不正确。请检查服务地址后重试。'
+  }
+
+  if (status === 429) {
+    return '请求太频繁。请稍等一会儿再试。'
+  }
+
+  if (status >= 500) {
+    return '模型服务暂时没有响应。请稍后重试。'
+  }
+
+  return '模型列表获取失败。请检查密钥、服务地址或网络后重试。'
+}
+
 export const searchProviderModels = async (
   provider: ProviderDef | string,
   apiKey?: string,
@@ -68,7 +88,12 @@ export const searchProviderModels = async (
   })
   if (!res.ok) {
     const text = await res.text()
-    throw new Error(`${providerDef?.name || providerId} 模型列表获取失败: ${res.status} ${text}`)
+    console.warn('[ModelFetcher] Failed to fetch model list:', {
+      providerId,
+      status: res.status,
+      body: text.slice(0, 500),
+    })
+    throw new Error(formatModelListError(res.status))
   }
 
   const data = await res.json()
