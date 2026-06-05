@@ -7,6 +7,7 @@ import {
 } from '@linx/agent-runtime/sync'
 import {
   agentResource,
+  buildChatTargetRef,
   chatResource,
   drizzle,
   eq,
@@ -24,6 +25,8 @@ import { formatThreadLabel, toOpenAiMessages } from './thread-utils.js'
 
 const DEFAULT_CHAT_ID = 'cli-default'
 const DEFAULT_AGENT_ID = 'linx-cli-assistant'
+const POD_WRITE_RETRY_ATTEMPTS = 2
+const POD_WRITE_RETRY_DELAY_MS = 250
 
 interface CliChatStoreRuntime {
   createDb(session: Session): SolidDatabase
@@ -41,43 +44,6 @@ function extractChatId(chatIdOrUri: string | null | undefined): string {
 
 function extractThreadId(threadIdOrUri: string | null | undefined): string | undefined {
   return extractThreadIdFromThreadRef(threadIdOrUri) ?? undefined
-}
-
-function getPodBaseUrl(webId: string): string {
-  return webId.replace('/profile/card#me', '').replace(/\/$/, '')
-}
-
-function buildAgentUri(webId: string, agentId: string): string {
-  return `${getPodBaseUrl(webId)}/agents/${encodeURIComponent(agentId)}/`
-}
-
-function buildChatUri(webId: string, chatId: string): string {
-  return `${getPodBaseUrl(webId)}/.data/chat/${encodeURIComponent(chatId)}/index.ttl#this`
-}
-
-function buildThreadUri(webId: string, chatId: string, threadId: string): string {
-  return `${getPodBaseUrl(webId)}/.data/chat/${encodeURIComponent(chatId)}/index.ttl#${encodeURIComponent(threadId)}`
-}
-
-function buildMessageUri(webId: string, chatId: string, messageId: string, createdAt: Date): string {
-  const yyyy = String(createdAt.getUTCFullYear())
-  const mm = String(createdAt.getUTCMonth() + 1).padStart(2, '0')
-  const dd = String(createdAt.getUTCDate()).padStart(2, '0')
-  return `${getPodBaseUrl(webId)}/.data/chat/${encodeURIComponent(chatId)}/${yyyy}/${mm}/${dd}/messages.ttl#${encodeURIComponent(messageId)}`
-}
-
-function requireFindById(db: SolidDatabase): NonNullable<SolidDatabase['findById']> {
-  if (typeof db.findById !== 'function') {
-    throw new Error('Solid database does not support findById')
-  }
-  return db.findById.bind(db)
-}
-
-function requireUpdateById(db: SolidDatabase): NonNullable<SolidDatabase['updateById']> {
-  if (typeof db.updateById !== 'function') {
-    throw new Error('Solid database does not support updateById')
-  }
-  return db.updateById.bind(db)
 }
 
 export interface ThreadSummary {
@@ -152,8 +118,37 @@ async function runCliChatProjection<T>(
     metadata: {
       role: input.role,
     },
-    task: project,
+    task: () => withTransientPodWriteRetry(project),
   })
+}
+
+async function withTransientPodWriteRetry<T>(project: () => T | Promise<T>): Promise<T> {
+  let lastError: unknown
+  for (let attempt = 0; attempt <= POD_WRITE_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      return await project()
+    } catch (error) {
+      lastError = error
+      if (attempt >= POD_WRITE_RETRY_ATTEMPTS || !isTransientPodWriteError(error)) {
+        throw error
+      }
+      await delay(POD_WRITE_RETRY_DELAY_MS * (attempt + 1))
+    }
+  }
+  throw lastError
+}
+
+function isTransientPodWriteError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  const normalized = message.toLowerCase()
+  return normalized.includes('502 bad gateway')
+    || normalized.includes('503 service unavailable')
+    || normalized.includes('504 gateway timeout')
+    || normalized.includes('temporarily unavailable')
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 function nextCliChatSyncOperationId(input: { action: string; chatId?: string; threadId?: string; messageId?: string }): string {
@@ -171,16 +166,20 @@ function buildCliChatSyncResourceBindings(input: {
   createdAt?: Date
 }): LinxPodSyncResourceBindings {
   const chatUri = input.chatId
-    ? resolveLocatorIri(input.db, chatResource, { id: input.chatId })
-      ?? (input.webId ? buildChatUri(input.webId, input.chatId) : undefined)
+    ? (input.webId ? chatResource.buildIri(input.webId, { id: input.chatId }) : undefined)
     : undefined
   const threadUri = input.threadId && input.chatId
-    ? resolveLocatorIri(input.db, threadResource, { id: input.threadId, chat: chatUri ?? input.chatId })
-      ?? (input.webId ? buildThreadUri(input.webId, input.chatId, input.threadId) : undefined)
+    ? (input.webId ? threadResource.buildIri(input.webId, {
+      id: input.threadId,
+      chat: buildChatTargetRef(input.chatId),
+    }) : undefined)
     : undefined
   const messageUri = input.messageId && input.chatId && input.createdAt
-    ? resolveLocatorIri(input.db, messageResource, { id: input.messageId, chat: chatUri ?? input.chatId, createdAt: input.createdAt })
-      ?? (input.webId ? buildMessageUri(input.webId, input.chatId, input.messageId, input.createdAt) : undefined)
+    ? (input.webId ? messageResource.buildIri(input.webId, {
+      id: input.messageId,
+      chat: buildChatTargetRef(input.chatId),
+      createdAt: input.createdAt,
+    }) : undefined)
     : undefined
 
   return {
@@ -190,13 +189,6 @@ function buildCliChatSyncResourceBindings(input: {
   }
 }
 
-function resolveLocatorIri(db: SolidDatabase | undefined, resource: unknown, locator: Record<string, unknown>): string | undefined {
-  const resolver = db && typeof db.resolveLocatorIri === 'function' ? db.resolveLocatorIri.bind(db) : null
-  if (!resolver) return undefined
-  const value = resolver(resource as never, locator as never)
-  return typeof value === 'string' ? value : undefined
-}
-
 export async function initPodData(session: Session): Promise<SolidDatabase> {
   const db = getActiveRuntime().createDb(session)
 
@@ -204,8 +196,8 @@ export async function initPodData(session: Session): Promise<SolidDatabase> {
 }
 
 async function ensureCliAgent(db: SolidDatabase, webId: string): Promise<void> {
-  const findById = requireFindById(db)
-  const existing = await findById(agentResource, DEFAULT_AGENT_ID)
+  const agentId = agentResource.buildId({ id: DEFAULT_AGENT_ID })
+  const existing = await db.findById(agentResource, agentId)
 
   if (existing) {
     return
@@ -218,7 +210,7 @@ async function ensureCliAgent(db: SolidDatabase, webId: string): Promise<void> {
     db,
     webId,
   }, () => db.insert(agentResource).values({
-    id: DEFAULT_AGENT_ID,
+    id: agentId,
     name: 'LinX CLI Assistant',
     provider: 'xpod',
     model: DEFAULT_LINX_CLOUD_MODEL_ID,
@@ -236,8 +228,7 @@ export async function getOrCreateDefaultChat(session: Session): Promise<string> 
 
   await ensureCliAgent(db, webId)
 
-  const findById = requireFindById(db)
-  const existing = await findById(chatResource, DEFAULT_CHAT_ID)
+  const existing = await db.findById(chatResource, DEFAULT_CHAT_ID)
   if (existing) {
     return DEFAULT_CHAT_ID
   }
@@ -287,7 +278,7 @@ export async function createThread(
   }
   const threadId = getActiveRuntime().randomUUID()
   const now = getActiveRuntime().now()
-  const chatUri = resolveLocatorIri(db, chatResource, { id: chatId }) ?? buildChatUri(webId, chatId)
+  const chatUri = chatResource.buildIri(webId, { id: chatId })
 
   await runCliChatProjection({
     action: 'thread.create',
@@ -315,8 +306,10 @@ export async function touchThread(session: Session, threadId: string): Promise<v
     throw new Error('Missing webId in Solid session')
   }
   const chatId = extractChatId((await loadThread(session, threadId))?.chat) ?? DEFAULT_CHAT_ID
-  const updateById = requireUpdateById(db)
-  const threadResourceId = db.resolveLocatorId(threadResource, { chat: chatId, id: threadId })
+  const threadRecordId = threadResource.buildId({
+    id: threadId,
+    chat: buildChatTargetRef(chatId),
+  })
   await runCliChatProjection({
     action: 'thread.touch',
     kind: 'update',
@@ -324,7 +317,7 @@ export async function touchThread(session: Session, threadId: string): Promise<v
     webId,
     chatId,
     threadId,
-  }, () => updateById(threadResource, threadResourceId, { updatedAt: getActiveRuntime().now() }))
+  }, () => db.updateById(threadResource, threadRecordId, { updatedAt: getActiveRuntime().now() }))
 }
 
 export async function loadMessages(session: Session, threadId: string): Promise<StoredThreadMessage[]> {
@@ -363,10 +356,12 @@ export async function saveUserMessage(
   if (!webId) {
     throw new Error('Missing webId in Solid session')
   }
-  const updateById = requireUpdateById(db)
   const messageId = getActiveRuntime().randomUUID()
-  const chatUri = resolveLocatorIri(db, chatResource, { id: chatId }) ?? buildChatUri(webId, chatId)
-  const threadUri = resolveLocatorIri(db, threadResource, { id: threadId, chat: chatUri }) ?? buildThreadUri(webId, chatId, threadId)
+  const chatUri = chatResource.buildIri(webId, { id: chatId })
+  const threadUri = threadResource.buildIri(webId, {
+    id: threadId,
+    chat: buildChatTargetRef(chatId),
+  })
 
   await runCliChatProjection({
     action: 'message.create',
@@ -399,7 +394,7 @@ export async function saveUserMessage(
     messageId,
     createdAt: now,
     role: 'user',
-  }, () => updateById(chatResource, chatId, {
+  }, () => db.updateById(chatResource, chatId, {
     lastActiveAt: now,
     lastMessagePreview: content.slice(0, 100),
     updatedAt: now,
@@ -420,10 +415,12 @@ export async function saveAssistantMessage(
   if (!webId) {
     throw new Error('Missing webId in Solid session')
   }
-  const updateById = requireUpdateById(db)
   const messageId = getActiveRuntime().randomUUID()
-  const chatUri = resolveLocatorIri(db, chatResource, { id: chatId }) ?? buildChatUri(webId, chatId)
-  const threadUri = resolveLocatorIri(db, threadResource, { id: threadId, chat: chatUri }) ?? buildThreadUri(webId, chatId, threadId)
+  const chatUri = chatResource.buildIri(webId, { id: chatId })
+  const threadUri = threadResource.buildIri(webId, {
+    id: threadId,
+    chat: buildChatTargetRef(chatId),
+  })
 
   await runCliChatProjection({
     action: 'message.create',
@@ -439,7 +436,7 @@ export async function saveAssistantMessage(
     id: messageId,
     chat: chatUri,
     thread: threadUri,
-    maker: buildAgentUri(webId, DEFAULT_AGENT_ID),
+    maker: agentResource.buildIri(webId, { id: DEFAULT_AGENT_ID }),
     role: 'assistant',
     content,
     status: 'sent',
@@ -456,7 +453,7 @@ export async function saveAssistantMessage(
     messageId,
     createdAt: now,
     role: 'assistant',
-  }, () => updateById(chatResource, chatId, {
+  }, () => db.updateById(chatResource, chatId, {
     lastActiveAt: now,
     lastMessagePreview: content.slice(0, 100),
     updatedAt: now,
@@ -467,23 +464,22 @@ export async function saveAssistantMessage(
 
 export async function loadThread(session: Session, threadId: string): Promise<ThreadRow | null> {
   const db = await initPodData(session)
-  const findById = requireFindById(db)
 
   const directChatId = extractChatId(threadId)
   const directThreadId = extractThreadId(threadId)
   if (directChatId && directThreadId) {
-    const resourceId = db.resolveLocatorId(threadResource, {
-      chat: directChatId,
+    const resourceId = threadResource.buildId({
+      chat: buildChatTargetRef(directChatId),
       id: directThreadId,
     })
-    return await findById<ThreadRow>(threadResource, resourceId)
+    return await db.findById<ThreadRow>(threadResource, resourceId)
   }
 
-  const resourceId = db.resolveLocatorId(threadResource, {
-    chat: DEFAULT_CHAT_ID,
+  const resourceId = threadResource.buildId({
+    chat: buildChatTargetRef(DEFAULT_CHAT_ID),
     id: threadId,
   })
-  return await findById<ThreadRow>(threadResource, resourceId)
+  return await db.findById<ThreadRow>(threadResource, resourceId)
 }
 
 export async function getLatestThreadId(session: Session, chatId: string): Promise<string | null> {

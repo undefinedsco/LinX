@@ -143,3 +143,49 @@ test('pod chat store models CLI message persistence as local-to-core Pod sync', 
     'completed',
   ])
 })
+
+test('pod chat store retries transient Pod write failures', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pod-chat-store.ts')
+  t.after(() => cleanup())
+  t.after(() => module.__podChatStoreInternal.resetRuntime())
+
+  const { db } = createMockDb()
+  let uuid = 0
+  let messageAttempts = 0
+  const originalInsert = db.insert.bind(db)
+  db.insert = (resource) => {
+    const builder = originalInsert(resource)
+    if (resource !== module.__podChatStoreInternal.resources.messageResource) {
+      return builder
+    }
+    return {
+      values(value) {
+        const query = builder.values(value)
+        return {
+          async execute() {
+            messageAttempts += 1
+            if (messageAttempts === 1) {
+              throw new Error('SPARQL UPDATE failed: 502 Bad Gateway')
+            }
+            return query.execute()
+          },
+        }
+      },
+    }
+  }
+
+  module.__podChatStoreInternal.setRuntime({
+    createDb: () => db,
+    now: () => new Date('2026-05-21T00:00:00.000Z'),
+    randomUUID: () => `uuid-${++uuid}`,
+  })
+
+  await db.insert(module.__podChatStoreInternal.resources.threadResource).values({
+    id: 'cli-default/index.ttl#thread-1',
+    chat: 'cli-default',
+  }).execute()
+
+  await module.saveUserMessage(createSession(), 'cli-default', 'thread-1', 'hello after retry')
+
+  assert.equal(messageAttempts, 2)
+})
