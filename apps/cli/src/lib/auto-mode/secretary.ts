@@ -51,7 +51,7 @@ export async function resolveAutoModeSecretaryRecommendation(
     const target = resolveRuntimeTarget({ issuerUrl: session.credentials.url })
     const payload = JSON.stringify(buildSecretaryPayload(input))
     const runtime = createAgentRuntime({
-      agent: 'ai-secretary',
+      agent: '__secretary__',
       role: 'secretary',
       model: SECRETARY_MODEL,
       label: 'AI Secretary',
@@ -139,7 +139,7 @@ export async function resolveAutoModeGrantCoverage(
     const target = resolveRuntimeTarget({ issuerUrl: session.credentials.url })
     const payload = JSON.stringify(buildGrantCoveragePayload(input))
     const runtime = createAgentRuntime({
-      agent: 'ai-secretary',
+      agent: '__secretary__',
       role: 'secretary',
       model: SECRETARY_MODEL,
       label: 'AI Secretary',

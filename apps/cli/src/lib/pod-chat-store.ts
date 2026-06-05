@@ -48,7 +48,7 @@ function getPodBaseUrl(webId: string): string {
 }
 
 function buildAgentUri(webId: string, agentId: string): string {
-  return `${getPodBaseUrl(webId)}/.data/agents/${agentId}.ttl`
+  return `${getPodBaseUrl(webId)}/agents/${encodeURIComponent(agentId)}/`
 }
 
 function buildChatUri(webId: string, chatId: string): string {

@@ -474,7 +474,7 @@ test('symphony dispatch bridges non-dry-run plans into the auto-mode runtime and
   assert.equal(plan.session.autoModeSessionId, 'auto_bridge_123')
   assert.equal(plan.session.exitCode, 0)
   assert.equal(plan.delivery.reconciler?.decisions.at(-1)?.eventType, 'delivery.completed')
-  assert.equal(plan.delivery.reconciler?.decisions.at(-1)?.wakeJobs?.[0]?.targetAgent, 'ai-secretary')
+  assert.equal(plan.delivery.reconciler?.decisions.at(-1)?.wakeJobs?.[0]?.targetAgent, '__secretary__')
   assert.equal(plan.session.reconciler?.decisions.at(-1)?.eventType, 'delivery.completed')
   assert.deepEqual(projectionCalls.map((call) => call.stage), ['planned', 'running', 'completed'])
   assert.equal(mirrorCalls.length, 3)

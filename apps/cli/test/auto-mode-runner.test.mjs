@@ -1089,7 +1089,7 @@ mode: 'auto',
       assert.match(events, /Thread Reconciler dispatched command-approval/)
       assert.match(events, /"policyKind":"auto"/)
       assert.match(events, /"eventType":"approval.required"/)
-      assert.match(events, /"targetAgent":"ai-secretary"/)
+      assert.match(events, /"targetAgent":"__secretary__"/)
       assert.match(events, new RegExp(`Remote approval opened \\| approval_matrix_${item.backend}_1`))
       assert.match(events, /Local approval resolved \| accept/)
       assert.match(events, new RegExp(`${item.backend} approval applied`))
@@ -2105,7 +2105,7 @@ mode: 'auto',
   assert.match(events, /Thread Reconciler dispatched user-input/)
   assert.match(events, /"policyKind":"auto"/)
   assert.match(events, /"eventType":"input.required"/)
-  assert.match(events, /"targetAgent":"ai-secretary"/)
+  assert.match(events, /"targetAgent":"__secretary__"/)
 })
 
 

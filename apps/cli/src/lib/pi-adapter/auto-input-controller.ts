@@ -20,7 +20,7 @@ const MAX_CONTEXT_MESSAGES = 16
 const MAX_CONTEXT_CHARS = 12_000
 const MAX_GENERATED_INPUT_CHARS = 8_000
 const MAX_AUTO_INPUT_ATTEMPTS = 2
-const SECRETARY_AGENT_ID = 'ai-secretary'
+const SECRETARY_AGENT_ID = '__secretary__'
 const SECRETARY_AGENT_LABEL = 'AI Secretary'
 const SECRETARY_SYSTEM_PROMPT = [
   'You are the LinX AI Secretary running the auto input controller.',

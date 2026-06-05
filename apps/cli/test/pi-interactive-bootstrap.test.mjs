@@ -3805,7 +3805,7 @@ test('linx session control records only blocked runtime events while auto is on'
   assert.equal(blocked.source.runtime.backend, 'acp')
   assert.equal(blocked.reconciliation.policyKind, 'auto')
   assert.equal(blocked.reconciliation.eventType, 'approval.required')
-  assert.equal(blocked.reconciliation.wakeJobs[0].targetAgent, 'ai-secretary')
+  assert.equal(blocked.reconciliation.wakeJobs[0].targetAgent, '__secretary__')
   assert.equal(blocked.reconciliation.wakeJobs[0].targetRole, 'secretary')
 
   const snapshot = manager.getSnapshot()

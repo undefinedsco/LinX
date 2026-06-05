@@ -1337,7 +1337,7 @@ class AcpSession extends BaseSession {
     const cycle = await runThreadReconcilerCycle({
       policy: {
         kind: autoEnabled ? 'auto' : 'direct',
-        secretaryAgent: 'ai-secretary',
+        secretaryAgent: '__secretary__',
       },
       handleWakeJob: async ({ decisionSummary, record }) => {
         try {

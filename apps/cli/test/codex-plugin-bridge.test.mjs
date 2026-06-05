@@ -177,14 +177,14 @@ test('codex attach bridge routes auto-enabled approvals through Thread Reconcile
   assert.deepEqual(result.response, { decision: 'accept' })
   assert.equal(result.reconciler.policyKind, 'auto')
   assert.equal(result.reconciler.eventType, 'approval.required')
-  assert.equal(result.reconciler.wakeJobs[0].targetAgent, 'ai-secretary')
+  assert.equal(result.reconciler.wakeJobs[0].targetAgent, '__secretary__')
   assert.equal(result.reconciler.wakeJobs[0].targetRole, 'secretary')
   assert.equal(runtime.remoteApprovalCalls, 0)
 
   const events = readFileSync(record.eventsFile, 'utf-8')
   assert.match(events, /Thread Reconciler dispatched command-approval/)
   assert.match(events, /"policyKind":"auto"/)
-  assert.match(events, /"targetAgent":"ai-secretary"/)
+  assert.match(events, /"targetAgent":"__secretary__"/)
   assert.match(events, /Thread Reconciler resolved command-approval/)
 })
 

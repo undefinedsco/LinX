@@ -275,7 +275,7 @@ async function runSymphonyWorker(input: {
     policy: {
       kind: 'symphony',
       assignedWorkerAgent: input.worker.delivery.targetAgent,
-      secretaryAgent: 'ai-secretary',
+      secretaryAgent: '__secretary__',
     },
     handleWakeJob: async ({ decisionSummary, record }) => {
       try {
@@ -367,7 +367,7 @@ function createSymphonyWorkerDispatchEvent(worker: SymphonyWorkerPlan): ThreadCo
     ...(worker.delivery.thread ? { thread: worker.delivery.thread } : {}),
     resource: worker.delivery.uri,
     actor: {
-      id: 'ai-secretary',
+      id: '__secretary__',
       role: 'secretary',
     },
     data: {
@@ -390,7 +390,7 @@ async function dispatchSymphonyWorkerStatusDecision(input: {
   const cycle = await runThreadReconcilerCycle({
     policy: {
       kind: 'symphony',
-      secretaryAgent: 'ai-secretary',
+      secretaryAgent: '__secretary__',
     },
     handleWakeJob: ({ job }) => {
       try {

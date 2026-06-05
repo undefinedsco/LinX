@@ -190,7 +190,7 @@ export class SessionControlManager {
     return this.recordMessageAppended({
       text: input.text,
       source: 'secretary-runtime-intent',
-      actorId: 'ai-secretary',
+      actorId: '__secretary__',
       actorRole: 'secretary',
       reason: input.reason,
     })
@@ -212,7 +212,7 @@ export class SessionControlManager {
     const { summary } = decideThreadControlEvent({
       policy: {
         kind: snapshot.autoEnabled ? 'auto' : 'direct',
-        secretaryAgent: 'ai-secretary',
+        secretaryAgent: '__secretary__',
       },
       event: createThreadMessageEvent({
         text,
@@ -272,7 +272,7 @@ export class SessionControlManager {
     const cycle = await runThreadReconcilerCycle({
       policy: {
         kind: snapshot.autoEnabled ? 'auto' : 'direct',
-        secretaryAgent: 'ai-secretary',
+        secretaryAgent: '__secretary__',
       },
       handleWakeJob: async ({ decisionSummary }) => {
         try {
@@ -411,7 +411,7 @@ function createBlockedEventReconciliation(input: {
   const { summary } = decideThreadControlEvent({
     policy: {
       kind: input.snapshot.autoEnabled ? 'auto' : 'direct',
-      secretaryAgent: 'ai-secretary',
+      secretaryAgent: '__secretary__',
     },
     event: {
       type: input.event.type,

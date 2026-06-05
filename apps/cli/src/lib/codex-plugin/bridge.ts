@@ -205,7 +205,7 @@ async function resolveCodexAttachInteractionThroughReconciler(
   const cycle = await runThreadReconcilerCycle({
     policy: {
       kind: secretaryControlEnabled ? 'auto' : 'direct',
-      secretaryAgent: 'ai-secretary',
+      secretaryAgent: '__secretary__',
     },
     handleWakeJob: async ({ decisionSummary, record: wakeRecord }) => {
       try {
