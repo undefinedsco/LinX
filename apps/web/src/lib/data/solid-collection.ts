@@ -6,8 +6,8 @@
  */
 
 import type { PodTable, InferTableData, InferInsertData, InferUpdateData, QueryCondition } from '@undefineds.co/drizzle-solid'
+import { deleteExactRecord, findExactRecord, updateExactRecord } from '@undefineds.co/drizzle-solid'
 import type { SolidDatabase } from '@undefineds.co/models'
-import { deleteExactRecord, findExactRecord, updateExactRecord } from './exact-records'
 
 /**
  * Options for creating a Solid Pod collection

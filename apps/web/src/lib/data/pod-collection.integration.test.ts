@@ -2,8 +2,7 @@
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import { QueryClient } from '@tanstack/react-query'
 import { aiProviderTable, solidSchema } from '@undefineds.co/models'
-import { extractPodResourceTemplateValue } from '@undefineds.co/drizzle-solid'
-import { deleteExactRecord } from './exact-records'
+import { deleteExactRecord, extractPodResourceTemplateValue } from '@undefineds.co/drizzle-solid'
 import { createPodCollection } from './pod-collection'
 import { createXpodIntegrationContext, type XpodIntegrationContext } from '../../test/xpod-integration'
 

@@ -212,11 +212,11 @@ describe('buildRuntimeToolResponse', () => {
         action: 'approval.resolve',
         resourceBindings: {
           approval: {
-            uri: 'https://alice.example/profile/.data/approvals/2026/05/21.ttl#approval-1',
+            uri: 'https://alice.example/.data/approvals/2026/05/21.ttl#approval-1',
             local: 'approval-1',
           },
           audit: {
-            uri: expect.stringMatching(/^https:\/\/alice\.example\/profile\/\.data\/audits\/\d{4}\/\d{2}\/\d{2}\.ttl#[0-9a-f-]+$/),
+            uri: expect.stringMatching(/^https:\/\/alice\.example\/\.data\/audits\/\d{4}\/\d{2}\/\d{2}\.ttl#[0-9a-f-]+$/),
             local: expect.stringMatching(/^[0-9a-f-]+$/),
           },
         },

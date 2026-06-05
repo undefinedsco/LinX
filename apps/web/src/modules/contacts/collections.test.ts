@@ -44,8 +44,7 @@ const mockDb = {
   }),
   resolveRowIri: vi.fn(),
   resolveRowId: vi.fn(),
-  // Add findFirst for remote profile/agent fetching
-  findFirst: vi.fn().mockResolvedValue(null),
+  findByResource: vi.fn().mockResolvedValue(null),
 }
 
 // Use vi.hoisted so these are available in vi.mock
@@ -113,7 +112,7 @@ function resetMockDb() {
   mockDb.resolveRowId.mockImplementation((_table, row: Record<string, unknown>) => {
     return String(row.id ?? row['@id'] ?? row.subject ?? row.uri ?? row.source ?? 'mock-row')
   })
-  mockDb.findFirst.mockResolvedValue(null)
+  mockDb.findByResource.mockResolvedValue(null)
 }
 
 // Mock createPodCollection before importing collections
@@ -767,7 +766,7 @@ describe('contactOps Solid Profile Operations', () => {
 
   describe('fetchSolidProfile', () => {
     it('should return profile info when found', async () => {
-      mockDb.findFirst.mockResolvedValueOnce({
+      mockDb.findByResource.mockResolvedValueOnce({
         name: 'Alice Smith',
         nick: 'alice',
         avatar: 'https://alice.pod/avatar.png',
@@ -785,7 +784,7 @@ describe('contactOps Solid Profile Operations', () => {
 
     it('should return null when profile not found', async () => {
       vi.spyOn(console, 'warn').mockImplementation(() => {})
-      mockDb.findFirst.mockResolvedValueOnce(null)
+      mockDb.findByResource.mockResolvedValueOnce(null)
 
       const result = await contactOps.fetchSolidProfile('https://invalid.pod/profile')
 
@@ -793,7 +792,7 @@ describe('contactOps Solid Profile Operations', () => {
     })
 
     it('should use nick as fallback when name is missing', async () => {
-      mockDb.findFirst.mockResolvedValueOnce({
+      mockDb.findByResource.mockResolvedValueOnce({
         name: '',
         nick: 'bob',
         avatar: null,
@@ -807,7 +806,7 @@ describe('contactOps Solid Profile Operations', () => {
 
     it('should return null on error', async () => {
       vi.spyOn(console, 'error').mockImplementation(() => {})
-      mockDb.findFirst.mockRejectedValueOnce(new Error('Network error'))
+      mockDb.findByResource.mockRejectedValueOnce(new Error('Network error'))
 
       const result = await contactOps.fetchSolidProfile('https://error.pod/profile')
 

@@ -25,17 +25,13 @@ import {
   type Page, type StoreItemType,
 } from '@/lib/vendor/xpod-chatkit'
 import {
-  chatResourceId,
+  buildChatTargetRef,
   contactTable,
   extractChatIdFromChatRef,
   extractThreadIdFromThreadRef,
-  messageResourceId,
-  threadResourceId,
   type SolidDatabase,
-  UDFS,
 } from '@undefineds.co/models'
-import { resolveRowSubject } from '@undefineds.co/drizzle-solid'
-import { deleteExactRecord, updateExactRecord } from '@/lib/data/exact-records'
+import { deleteExactRecord, resolveRowSubject, updateExactRecord } from '@undefineds.co/drizzle-solid'
 
 const DEFAULT_CHAT_ID = 'default'
 const POD_QUERY_TIMEOUT_MS = 15000
@@ -90,16 +86,17 @@ function parseThreadMetadata(metadata: unknown): Record<string, unknown> | undef
   return undefined
 }
 
-function chatResourceIdForChat(chatId: string): string {
-  return chatResourceId(chatId)
+function chatStorageIdForChat(chatId: string): string {
+  return Chat.buildId({ id: chatId })
 }
 
 function chatRefForChat(chatId: string): string {
-  return `chat/${chatResourceIdForChat(chatId)}`
+  return buildChatTargetRef(chatId)
 }
 
-function threadResourceIdForThread(chatId: string, threadId: string): string {
-  return threadResourceId(threadId, {
+function threadStorageIdForThread(chatId: string, threadId: string): string {
+  return Thread.buildId({
+    id: threadId,
     chat: chatRefForChat(chatId),
   })
 }
@@ -107,10 +104,8 @@ function threadResourceIdForThread(chatId: string, threadId: string): string {
 async function findThreadRecord(db: SolidDatabase<any>, threadId: string, chatId?: string | null): Promise<any | null> {
   if (chatId) {
     const localChatId = extractChatId(chatId)
-    const resourceId = threadResourceIdForThread(localChatId, threadId)
-    const exact = typeof (db as any).findById === 'function'
-      ? await (db as any).findById(Thread as any, resourceId)
-      : null
+    const resourceId = threadStorageIdForThread(localChatId, threadId)
+    const exact = await db.findById(Thread as any, resourceId)
     if (exact) return exact
   }
 
@@ -254,7 +249,6 @@ function messageRecordMatchesItemId(record: any, itemId: string): boolean {
 export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   private db: SolidDatabase
   private webId: string
-  private authFetch: typeof fetch
   private readonly sync: LinxPodSyncScope
   private recentlyCreatedIds = new Set<string>()
   private readonly syncResults: LinxSyncRunResult[] = []
@@ -267,12 +261,11 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   constructor(
     db: SolidDatabase,
     webId: string,
-    authFetch: typeof fetch,
+    _authFetch: typeof fetch,
     private readonly options: LocalChatKitStoreOptions = {},
   ) {
     this.db = db
     this.webId = webId
-    this.authFetch = authFetch
     this.sync = createLinxPodSyncScope({
       source: 'chatkit-local-store',
       target: 'pod',
@@ -309,12 +302,12 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   // -----------------------------------------------------------------------
 
   private async ensureChat(chatId: string): Promise<void> {
-    const existingChat = await (this.db as any).findById(Chat as any, this.buildChatResourceId(chatId))
-      ?? await (this.db as any).findById(Chat as any, chatId)
+    const existingChat = await this.db.findById(Chat as any, this.resolveChatStorageId(chatId))
+      ?? await this.db.findById(Chat as any, chatId)
     if (!existingChat) {
       const now = new Date()
       await (this.db as any).insert(Chat as any).values({
-        id: this.buildChatResourceId(chatId),
+        id: this.resolveChatStorageId(chatId),
         title: chatId === DEFAULT_CHAT_ID ? 'Default Chat' : chatId,
         createdAt: now,
         updatedAt: now,
@@ -334,47 +327,51 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     return chatId
   }
 
-  private getPodBaseUrl(): string {
-    return this.webId.replace('/profile/card#me', '').replace(/\/$/, '')
+  private resolveChatStorageId(chatId: string): string {
+    return chatStorageIdForChat(chatId)
   }
 
-  private buildChatResourceId(chatId: string): string {
-    return chatResourceIdForChat(chatId)
+  private resolveThreadStorageId(chatId: string, threadId: string): string {
+    return threadStorageIdForThread(chatId, threadId)
   }
 
-  private buildThreadResourceId(chatId: string, threadId: string): string {
-    return threadResourceIdForThread(chatId, threadId)
-  }
-
-  private buildMessageResourceId(chatId: string, messageId: string, createdAt: Date): string {
-    return messageResourceId(messageId, {
-      chat: this.buildChatUri(chatId),
+  private resolveMessageStorageId(chatId: string, messageId: string, createdAt: Date): string {
+    return Message.buildId({
+      id: messageId,
+      chat: chatRefForChat(chatId),
       createdAt,
     })
   }
 
-  private buildThreadUri(chatId: string, threadId: string): string {
-    return `${this.getPodBaseUrl()}/.data/${this.buildThreadResourceId(chatId, threadId)}`
+  private resolveThreadUri(chatId: string, threadId: string): string {
+    return Thread.buildIri(this.webId, {
+      id: threadId,
+      chat: chatRefForChat(chatId),
+    })
   }
 
-  private buildChatUri(chatId: string): string {
-    return `${this.getPodBaseUrl()}/.data/chat/${this.buildChatResourceId(chatId)}`
+  private resolveChatUri(chatId: string): string {
+    return Chat.buildIri(this.webId, { id: chatId })
   }
 
-  private buildMessageUri(chatId: string, messageId: string, createdAt: Date): string {
-    return `${this.getPodBaseUrl()}/.data/${this.buildMessageResourceId(chatId, messageId, createdAt)}`
+  private resolveMessageUri(chatId: string, messageId: string, createdAt: Date): string {
+    return Message.buildIri(this.webId, {
+      id: messageId,
+      chat: chatRefForChat(chatId),
+      createdAt,
+    })
   }
 
-  private buildSyncRefs(input: {
+  private resolveSyncRefs(input: {
     chatId?: string
     threadId?: string
     itemId?: string
     itemCreatedAt?: Date
   }): LinxPodSyncResourceBindings {
-    const chatUri = input.chatId ? this.buildChatUri(input.chatId) : undefined
-    const threadUri = input.threadId && input.chatId ? this.buildThreadUri(input.chatId, input.threadId) : undefined
+    const chatUri = input.chatId ? this.resolveChatUri(input.chatId) : undefined
+    const threadUri = input.threadId && input.chatId ? this.resolveThreadUri(input.chatId, input.threadId) : undefined
     const messageUri = input.itemId && input.chatId && input.itemCreatedAt
-      ? this.buildMessageUri(input.chatId, input.itemId, input.itemCreatedAt)
+      ? this.resolveMessageUri(input.chatId, input.itemId, input.itemCreatedAt)
       : undefined
 
     return {
@@ -385,8 +382,8 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   }
 
   private async resolveCounterpartMaker(chatId: string): Promise<string> {
-    const chat = await (this.db as any).findById(Chat as any, this.buildChatResourceId(chatId))
-      ?? await (this.db as any).findById(Chat as any, chatId)
+    const chat = await this.db.findById(Chat as any, this.resolveChatStorageId(chatId))
+      ?? await this.db.findById(Chat as any, chatId)
     const participants = Array.isArray(chat?.participants)
       ? chat.participants.filter((participant: unknown): participant is string => typeof participant === 'string' && participant.length > 0)
       : []
@@ -528,8 +525,8 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       } as any)
     } else {
       await (this.db as any).insert(Thread as any).values({
-        id: this.buildThreadResourceId(chatId, thread.id),
-        chat: this.buildChatUri(chatId),
+        id: this.resolveThreadStorageId(chatId, thread.id),
+        chat: this.resolveChatUri(chatId),
         title: thread.title || undefined,
         status: statusToString(thread.status),
         metadata: metadataValue,
@@ -694,9 +691,9 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       : await this.resolveCounterpartMaker(chatId)
 
     await (this.db as any).insert(Message as any).values({
-      id: this.buildMessageResourceId(chatId, item.id, createdAt),
-      chat: this.buildChatUri(chatId),
-      thread: this.buildThreadUri(chatId, threadId),
+      id: this.resolveMessageStorageId(chatId, item.id, createdAt),
+      chat: this.resolveChatUri(chatId),
+      thread: this.resolveThreadUri(chatId, threadId),
       maker,
       role,
       content,
@@ -739,7 +736,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       const cachedCreatedAt = cachedItem?.created_at
         ? new Date(cachedItem.created_at * 1000).toISOString()
         : undefined
-      await this.directPatchMessage(chatId, item.id, content, richContent, status, createdAt ?? cachedCreatedAt)
+      await this.updateMessageProjection(chatId, item.id, content, richContent, status, createdAt ?? cachedCreatedAt)
       this.upsertCachedThreadItem(threadId, item)
       return
     }
@@ -753,18 +750,14 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
           ? (existing as any).createdAt
           : String((existing as any).createdAt))
         : undefined
-      await this.directPatchMessage(chatId, item.id, content, richContent, status, existingCreatedAt)
+      await this.updateMessageProjection(chatId, item.id, content, richContent, status, existingCreatedAt)
       this.upsertCachedThreadItem(threadId, item)
     } else {
       await this.addThreadItemProjection(threadId, item)
     }
   }
 
-  /**
-   * Direct SPARQL UPDATE PATCH to update message content.
-   * Avoids drizzle-solid UPDATE bug (same approach as PodChatKitStore).
-   */
-  private async directPatchMessage(
+  private async updateMessageProjection(
     chatId: string,
     messageId: string,
     content: string,
@@ -772,73 +765,13 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     status: string | null,
     createdAt?: string,
   ): Promise<void> {
-    // The db instance already carries session.fetch with DPoP auth.
-    // Build resource URL from webId.
     const dateForPath = createdAt ? new Date(createdAt) : new Date()
-    const yyyy = dateForPath.getUTCFullYear()
-    const mm = String(dateForPath.getUTCMonth() + 1).padStart(2, '0')
-    const dd = String(dateForPath.getUTCDate()).padStart(2, '0')
-    const podBaseUrl = this.getPodBaseUrl()
-    const resourceUrl = `${podBaseUrl}/.data/chat/${chatId}/${yyyy}/${mm}/${dd}/messages.ttl`
-    const subjectUri = `${resourceUrl}#${messageId}`
-
-    const escapeForSparql = (value: string): string => {
-      const hasQuotes = value.includes('"')
-      const hasNewlines = value.includes('\n') || value.includes('\r')
-      if (hasQuotes || hasNewlines) {
-        let escaped = value
-        escaped = escaped.replace(/"""/g, '"\\"\\""')
-        if (escaped.endsWith('"')) {
-          const match = escaped.match(/"*$/)
-          const trailingQuotes = match ? match[0].length : 0
-          if (trailingQuotes > 0) {
-            escaped = escaped.slice(0, -trailingQuotes) + '\\"'.repeat(trailingQuotes)
-          }
-        }
-        return `"""${escaped}"""`
-      }
-      return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
-    }
-
-    const deleteTriples = [
-      `<${subjectUri}> <http://rdfs.org/sioc/ns#content> ?oldContent .`,
-      `<${subjectUri}> <http://rdfs.org/sioc/ns#richContent> ?oldRichContent .`,
-      `<${subjectUri}> <${UDFS.messageStatus}> ?oldStatus .`,
-    ]
-    const insertTriples = [
-      `<${subjectUri}> <http://rdfs.org/sioc/ns#content> ${escapeForSparql(content)} .`,
-    ]
-    const wherePatterns = [
-      `OPTIONAL { <${subjectUri}> <http://rdfs.org/sioc/ns#content> ?oldContent . }`,
-      `OPTIONAL { <${subjectUri}> <http://rdfs.org/sioc/ns#richContent> ?oldRichContent . }`,
-      `OPTIONAL { <${subjectUri}> <${UDFS.messageStatus}> ?oldStatus . }`,
-    ]
-
-    if (richContent !== null) {
-      insertTriples.push(`<${subjectUri}> <http://rdfs.org/sioc/ns#richContent> ${escapeForSparql(richContent)} .`)
-    }
-
-    if (status) {
-      insertTriples.push(`<${subjectUri}> <${UDFS.messageStatus}> "${status}" .`)
-    }
-
-    const sparql = `
-DELETE { ${deleteTriples.join(' ')} }
-INSERT { ${insertTriples.join(' ')} }
-WHERE { ${wherePatterns.join(' ')} }
-    `.trim()
-
-    // Use the auth fetch passed in at construction time
-    const response = await this.authFetch(resourceUrl, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/sparql-update' },
-      body: sparql,
+    const messageStorageId = this.resolveMessageStorageId(chatId, messageId, dateForPath)
+    await updateExactRecord(this.db, Message as any, messageStorageId, {
+      content,
+      richContent: richContent ?? undefined,
+      status: status ?? undefined,
     })
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => '')
-      throw new Error(`Direct PATCH failed: ${response.status} ${response.statusText} - ${text}`)
-    }
   }
 
   async loadItem(threadId: string, itemId: string, _context: StoreContext): Promise<ThreadItem> {
@@ -895,7 +828,7 @@ WHERE { ${wherePatterns.join(' ')} }
       kind: input.kind,
       description: `local-chatkit-store:${input.action}`,
       subject: input.itemId ?? input.threadId ?? input.chatId,
-      resourceBindings: this.buildSyncRefs(input),
+      resourceBindings: this.resolveSyncRefs(input),
       metadata: {
         itemType: input.itemType,
       },

@@ -3,7 +3,7 @@ import { queryCollectionOptions } from '@tanstack/query-db-collection'
 import { QueryClient } from '@tanstack/react-query'
 import type { SolidDatabase } from '@undefineds.co/models'
 import type { PodTable } from '@undefineds.co/drizzle-solid'
-import { deleteExactRecord, updateExactRecord } from './exact-records'
+import { deleteExactRecord, updateExactRecord } from '@undefineds.co/drizzle-solid'
 import { createPodCollectionSyncTracker, type PodCollectionSyncTracker } from './pod-collection-sync'
 
 interface PodCollectionOptions<TTable, TData> {

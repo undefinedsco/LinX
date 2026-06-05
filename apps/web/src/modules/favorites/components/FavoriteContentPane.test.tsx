@@ -61,6 +61,16 @@ vi.mock('@/modules/files/store', () => ({
 
 vi.mock('@undefineds.co/models', () => ({
   resolveRowId: (item: unknown) => (item as Record<string, unknown>)?.id ?? 'mock-id',
+  extractChatTargetRef: (target: string | null | undefined) => {
+    const raw = target ?? ''
+    const chatMatch = raw.match(/\/chat\/([^/#?]+)/)
+    const messageMatch = raw.match(/#([^/#?]+)$/)
+    return {
+      chatId: chatMatch?.[1] ?? null,
+      threadId: null,
+      messageId: messageMatch?.[1] && messageMatch[1] !== 'this' ? messageMatch[1] : null,
+    }
+  },
 }))
 
 // ============================================================================

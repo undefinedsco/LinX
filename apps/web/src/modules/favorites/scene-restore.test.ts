@@ -44,6 +44,18 @@ describe('resolveFavoriteScene', () => {
     })
   })
 
+  it('resolves base-relative chat target refs through shared model helpers', () => {
+    expect(resolveFavoriteScene(createFavorite({
+      sourceModule: 'thread',
+      target: '/.data/chat/chat-1/index.ttl#thread-9',
+    }))).toEqual({
+      microAppId: 'chat',
+      chatId: 'chat-1',
+      threadId: 'thread-9',
+      messageId: null,
+    })
+  })
+
   it('resolves message favorites using snapshot meta when available', () => {
     expect(resolveFavoriteScene(createFavorite({
       sourceModule: 'messages',

@@ -1,4 +1,4 @@
-import type { FavoriteRow } from '@undefineds.co/models'
+import { extractChatTargetRef, type FavoriteRow } from '@undefineds.co/models'
 import type { MicroAppId } from '@/modules/layout/micro-app-registry'
 
 interface FavoriteSnapshotMeta {
@@ -31,83 +31,50 @@ function parseSnapshotMeta(raw?: string | null): FavoriteSnapshotMeta | null {
   }
 }
 
-function parseChatTargetUri(target?: string | null): {
-  chatId?: string | null
-  threadId?: string | null
-  messageId?: string | null
-} {
-  if (!target) return {}
-
-  const threadMatch = target.match(/\/\.data\/chat\/([^/]+)\/index\.ttl#(.+)$/)
-  if (threadMatch) {
-    const [, chatId, fragment] = threadMatch
-    return {
-      chatId,
-      threadId: fragment === 'this' ? null : fragment,
-    }
-  }
-
-  const messageMatch = target.match(/\/\.data\/chat\/([^/]+)\/\d{4}\/\d{2}\/\d{2}\/messages\.ttl#(.+)$/)
-  if (messageMatch) {
-    const [, chatId, messageId] = messageMatch
-    return {
-      chatId,
-      messageId,
-    }
-  }
-
-  return {}
-}
-
-function legacySourceId(favorite: FavoriteRow): string | null {
-  const record = favorite as FavoriteRow & { sourceId?: string | null }
-  return record.sourceId ?? null
-}
-
 function resolveChatScene(favorite: FavoriteRow, meta: FavoriteSnapshotMeta | null): FavoriteSceneTarget {
-  const uriTarget = parseChatTargetUri(favorite.target)
+  const uriTarget = extractChatTargetRef(favorite.target)
 
   return {
     microAppId: 'chat',
-    chatId: meta?.chatId ?? uriTarget.chatId ?? legacySourceId(favorite),
+    chatId: meta?.chatId ?? uriTarget.chatId ?? null,
     threadId: meta?.threadId ?? uriTarget.threadId ?? null,
     messageId: meta?.messageId ?? uriTarget.messageId ?? null,
   }
 }
 
 function resolveThreadScene(favorite: FavoriteRow, meta: FavoriteSnapshotMeta | null): FavoriteSceneTarget {
-  const uriTarget = parseChatTargetUri(favorite.target)
+  const uriTarget = extractChatTargetRef(favorite.target)
 
   return {
     microAppId: 'chat',
     chatId: meta?.chatId ?? uriTarget.chatId ?? null,
-    threadId: meta?.threadId ?? uriTarget.threadId ?? legacySourceId(favorite),
+    threadId: meta?.threadId ?? uriTarget.threadId ?? null,
     messageId: meta?.messageId ?? null,
   }
 }
 
 function resolveMessageScene(favorite: FavoriteRow, meta: FavoriteSnapshotMeta | null): FavoriteSceneTarget {
-  const uriTarget = parseChatTargetUri(favorite.target)
+  const uriTarget = extractChatTargetRef(favorite.target)
 
   return {
     microAppId: 'chat',
     chatId: meta?.chatId ?? uriTarget.chatId ?? null,
     threadId: meta?.threadId ?? null,
-    messageId: meta?.messageId ?? uriTarget.messageId ?? legacySourceId(favorite),
+    messageId: meta?.messageId ?? uriTarget.messageId ?? null,
   }
 }
 
 function resolveContactScene(favorite: FavoriteRow, meta: FavoriteSnapshotMeta | null): FavoriteSceneTarget {
   return {
     microAppId: 'contacts',
-    contactId: meta?.contactId ?? legacySourceId(favorite) ?? favorite.target ?? null,
+    contactId: meta?.contactId ?? favorite.target ?? null,
   }
 }
 
 function resolveFileScene(favorite: FavoriteRow, meta: FavoriteSnapshotMeta | null): FavoriteSceneTarget {
   return {
     microAppId: 'files',
-    fileId: meta?.fileId ?? favorite.target ?? legacySourceId(favorite),
+    fileId: meta?.fileId ?? favorite.target,
     treeNodeId: meta?.treeNodeId ?? null,
   }
 }
@@ -127,21 +94,13 @@ export function resolveFavoriteScene(favorite: FavoriteRow): FavoriteSceneTarget
     case 'files':
       return resolveFileScene(favorite, meta)
     default: {
-      const uriTarget = parseChatTargetUri(favorite.target)
+      const uriTarget = extractChatTargetRef(favorite.target)
       if (uriTarget.chatId || uriTarget.threadId || uriTarget.messageId) {
         return {
           microAppId: 'chat',
           chatId: uriTarget.chatId ?? null,
           threadId: uriTarget.threadId ?? null,
           messageId: uriTarget.messageId ?? null,
-        }
-      }
-
-      const legacySource = legacySourceId(favorite)
-      if (legacySource) {
-        return {
-          microAppId: 'chat',
-          chatId: legacySource,
         }
       }
 

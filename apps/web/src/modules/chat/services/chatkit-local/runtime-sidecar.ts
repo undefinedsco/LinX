@@ -4,15 +4,16 @@ import {
   type LinxSyncOperationKind,
   type LinxSyncRunResult,
 } from '@linx/agent-runtime/sync'
+import { resolvePodBaseUrl } from '@undefineds.co/drizzle-solid'
 import {
   ODRL,
   approvalResource,
   auditResource,
-  buildApprovalSubjectPath,
-  buildAuditSubjectPath,
-  buildSessionSubjectPath,
+  buildChatTargetRef,
+  chatResource,
   inboxNotificationTable,
   sessionTable,
+  threadResource,
   type ApprovalRow,
   type SolidDatabase,
 } from '@undefineds.co/models'
@@ -88,7 +89,7 @@ export class RuntimeSidecarSink {
     private readonly webId: string,
     private readonly options: RuntimeSidecarSinkOptions = {},
   ) {
-    this.podBaseUrl = this.resolvePodBaseUrl(this.webId)
+    this.podBaseUrl = resolvePodBaseUrl(this.webId)
     this.sync = createLinxPodSyncScope({
       source: 'chatkit-local-runtime',
       target: 'pod',
@@ -108,22 +109,12 @@ export class RuntimeSidecarSink {
     return [...this.syncResults]
   }
 
-  private resolvePodBaseUrl(webId: string): string {
-    return webId.replace('/profile/card#me', '').replace(/\/$/, '')
-  }
-
   private async findByStorageId<T>(resource: any, id: string): Promise<T | null> {
-    if (typeof (this.db as any).findById !== 'function') {
-      throw new Error('Solid database does not support findById.')
-    }
-    return await (this.db as any).findById(resource, id) as T | null
+    return await this.db.findById(resource, id) as T | null
   }
 
   private async updateByStorageId(resource: any, id: string, payload: Record<string, unknown>): Promise<void> {
-    if (typeof (this.db as any).updateById !== 'function') {
-      throw new Error('Solid database does not support updateById.')
-    }
-    await (this.db as any).updateById(resource, id, payload)
+    await this.db.updateById(resource, id, payload)
   }
 
   async persistRuntimeEvent(
@@ -224,15 +215,18 @@ export class RuntimeSidecarSink {
   }
 
   private makeRuntimeSessionUri(sessionId: string, createdAt: Date = new Date()): string {
-    return `${this.podBaseUrl}${buildSessionSubjectPath(sessionId, createdAt)}`
+    return sessionTable.buildIri(this.podBaseUrl, { id: sessionId, createdAt })
   }
 
   private makeChatUri(chatId: string): string {
-    return `${this.podBaseUrl}/.data/chat/${chatId}/index.ttl#this`
+    return chatResource.buildIri(this.podBaseUrl, { id: chatId })
   }
 
   private makeThreadUri(chatId: string, threadId: string): string {
-    return `${this.podBaseUrl}/.data/chat/${chatId}/index.ttl#${threadId}`
+    return threadResource.buildIri(this.podBaseUrl, {
+      id: threadId,
+      chat: buildChatTargetRef(chatId),
+    })
   }
 
   private async upsertSessionState(
@@ -276,11 +270,11 @@ export class RuntimeSidecarSink {
   }
 
   private makeApprovalUri(id: string, createdAt: Date = new Date()): string {
-    return `${this.podBaseUrl}${buildApprovalSubjectPath(id, createdAt)}`
+    return approvalResource.buildIri(this.podBaseUrl, { id, createdAt })
   }
 
   private makeAuditUri(id: string, createdAt: Date = new Date()): string {
-    return `${this.podBaseUrl}${buildAuditSubjectPath(id, createdAt)}`
+    return auditResource.buildIri(this.podBaseUrl, { id, createdAt })
   }
 
   private buildEventKey(type: string, runtimeSessionId: string, suffix: string): string {

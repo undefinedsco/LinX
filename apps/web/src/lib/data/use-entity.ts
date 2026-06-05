@@ -93,9 +93,7 @@ export function useEntity<TTable extends PodTable<any>>(
     setError(null)
     
     try {
-      const result = typeof (db as any).findByIri === 'function'
-        ? await (db as any).findByIri(table as any, iri)
-        : await (db as any).findFirst?.(table as any, { '@id': iri } as any)
+      const result = await db.findByIri(table as any, iri) as InferTableData<TTable> | null
       setData(result)
       if (result) {
         callbacksRef.current.onUpdate?.(result)

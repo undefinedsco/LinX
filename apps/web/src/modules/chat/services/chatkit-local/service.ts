@@ -8,7 +8,7 @@
  * No API server round-trip — fetch goes directly to the AI provider.
  */
 
-import { resolveRowSubject } from '@undefineds.co/drizzle-solid'
+import { findExactRecord, resolvePodBaseUrl, resolveRowSubject } from '@undefineds.co/drizzle-solid'
 import { resolveLinxRuntimeApiBaseUrlForIssuerUrl } from '@undefineds.co/models/client'
 import type { ChatKitStore, StoreContext } from '@/lib/vendor/xpod-chatkit'
 import {
@@ -25,13 +25,11 @@ import {
 } from '@/lib/vendor/xpod-chatkit'
 import {
   agentTable,
-  aiProviderResource,
+  aiConfigRepository,
   chatTable,
   contactTable,
-  credentialResource,
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
-  selectAIConfigCredential,
   type AgentRow,
   type ContactRow,
   type SolidDatabase,
@@ -758,25 +756,10 @@ export class LocalChatKitService {
     }
 
     try {
-      const findProvider = typeof (this.db as any).findById === 'function'
-        ? (this.db as any).findById(aiProviderResource as any, providerId).catch(() => null)
-        : Promise.resolve(null)
-      const [credentialRows, providerRow] = await Promise.all([
-        this.db.select().from(credentialResource).execute(),
-        findProvider,
-      ])
-
-      const selected = selectAIConfigCredential(
-        providerId,
-        credentialRows as Array<Record<string, unknown>>,
-        providerRow ? [providerRow as Record<string, unknown>] : [],
-      )
-
+      const selected = await aiConfigRepository.loadCredentialForBackend(this.db, providerId)
       if (!selected) return null
 
-      if (selected.credentialId) {
-        await (this.db as any).updateByLocator?.(credentialResource as any, { id: selected.credentialId }, { lastUsedAt: new Date() })
-      }
+      await aiConfigRepository.markCredentialUsed(this.db, selected)
 
       return {
         baseUrl: selected.baseUrl || 'https://openrouter.ai/api/v1',
@@ -836,7 +819,7 @@ export class LocalChatKitService {
   }
 
   private async findChatById(chatId: string): Promise<any | null> {
-    const direct = await (this.db as any).findById?.(chatTable as any, chatId)
+    const direct = await findExactRecord(this.db as any, chatTable as any, { id: chatId })
     if (direct) return direct
 
     const chats = await this.db.select().from(chatTable).execute()
@@ -876,9 +859,7 @@ export class LocalChatKitService {
     try {
       issuerUrl = new URL(this.webId).origin
     } catch {
-      if (this.webId.includes('/profile/card#me')) {
-        issuerUrl = this.webId.replace('/profile/card#me', '')
-      }
+      issuerUrl = resolvePodBaseUrl(this.webId) || issuerUrl
     }
 
     return resolveLinxRuntimeApiBaseUrlForIssuerUrl(issuerUrl).replace(/\/$/, '')

@@ -8,13 +8,13 @@ import {
   type AutoModeApprovalOption,
 } from '@linx/agent-runtime/auto-mode'
 import { createLinxPodSyncScope, type LinxSyncRunResult } from '@linx/agent-runtime/sync'
-import { resolveLinxPodBaseUrl } from '@undefineds.co/models/client'
 import {
   approvalResource,
   auditResource,
-  buildApprovalSubjectPath,
-  buildAuditSubjectPath,
+  extractApprovalIdFromApprovalRef,
+  extractAuditIdFromAuditRef,
   extractChatThreadRef,
+  extractRuntimeSessionId,
   inboxNotificationResource,
   type ApprovalInsert,
   type ApprovalRow,
@@ -102,26 +102,14 @@ export function useInboxInit() {
   return { db, isReady: !!db }
 }
 
-function extractResourceId(uri: string | undefined): string | null {
-  if (!uri) return null
-  const hash = uri.split('#').pop()
-  if (hash) return hash
-  const match = uri.match(/\/([^/]+)\.ttl$/)
-  return match?.[1] ?? null
-}
-
 function formatTimestamp(value: unknown): number {
   if (!value) return 0
   const time = new Date(String(value)).getTime()
   return Number.isFinite(time) ? time : 0
 }
 
-function extractPodBase(webId: string): string {
-  return resolveLinxPodBaseUrl(webId)
-}
-
 function makeApprovalUri(webId: string, approvalId: string, createdAt: Date | string | number = new Date()): string {
-  return `${extractPodBase(webId)}${buildApprovalSubjectPath(approvalId, createdAt)}`
+  return approvalResource.buildIri(webId, { id: approvalId, createdAt })
 }
 
 function resolveApprovalIri(actorWebId: string, approval: ApprovalRow): string {
@@ -139,7 +127,7 @@ function getApprovalSubject(approval: ApprovalRow): string | null {
 
 function findLinkedApproval(approvals: ApprovalRow[], audit: AuditRow): ApprovalRow | null {
   if (!audit.approval) return null
-  const approvalId = extractResourceId(audit.approval)
+  const approvalId = extractApprovalIdFromApprovalRef(audit.approval)
   return approvals.find((item) => getApprovalSubject(item) === audit.approval || item.id === approvalId) ?? null
 }
 
@@ -150,23 +138,11 @@ async function updateApprovalByIri(
   patch: Record<string, unknown>,
 ): Promise<void> {
   const iri = resolveApprovalIri(actorWebId, approval)
-  const updateByIri = (db as unknown as { updateByIri?: (resource: typeof approvalResource, iri: string, data: Record<string, unknown>) => Promise<unknown> }).updateByIri
-  if (typeof updateByIri === 'function') {
-    await updateByIri.call(db, approvalResource, iri, patch)
-    return
-  }
-
-  const query = db.update(approvalResource).set(patch as any)
-  if (typeof (query as any).whereByIri === 'function') {
-    await (query as any).whereByIri(iri).execute()
-    return
-  }
-
-  await query.where({ id: approval.id } as any).execute()
+  await db.updateByIri(approvalResource, iri, patch)
 }
 
 function makeAuditUri(webId: string, auditId: string, createdAt: Date | string | number = new Date()): string {
-  return `${extractPodBase(webId)}${buildAuditSubjectPath(auditId, createdAt)}`
+  return auditResource.buildIri(webId, { id: auditId, createdAt })
 }
 
 async function runInboxControlSync<T>(
@@ -200,22 +176,6 @@ async function runInboxControlSync<T>(
     },
     task: operation,
   })
-}
-
-function extractRuntimeSessionId(sessionUri: string | null | undefined): string | null {
-  if (!sessionUri) return null
-  const match = sessionUri.match(/^urn:linx:runtime-session:(.+)$/)
-  if (match?.[1]) return match[1]
-
-  const currentPodMatch = sessionUri.match(/\/\.data\/sessions\/\d{4}\/\d{2}\.ttl#([^/#]+)$/)
-  if (currentPodMatch?.[1]) return decodeURIComponent(currentPodMatch[1])
-
-  const legacyPodMatch = sessionUri.match(/\/\.data\/session\/([^/#]+)\.ttl(?:#([^/#]+))?$/)
-  return legacyPodMatch?.[2]
-    ? decodeURIComponent(legacyPodMatch[2])
-    : legacyPodMatch?.[1]
-      ? decodeURIComponent(legacyPodMatch[1])
-      : null
 }
 
 function extractThreadId(approval: ApprovalRow): string | null {
@@ -305,10 +265,9 @@ function buildInboxItems(
   const items: InboxItem[] = []
 
   for (const notification of notifications) {
-    const resourceId = extractResourceId(notification.object)
-    if (!resourceId) continue
+    const approvalId = extractApprovalIdFromApprovalRef(notification.object)
 
-    const approval = approvalById.get(resourceId)
+    const approval = approvalId ? approvalById.get(approvalId) : undefined
     if (approval) {
       const itemId = `approval:${approval.id}`
       if (seen.has(itemId)) continue
@@ -333,7 +292,8 @@ function buildInboxItems(
       continue
     }
 
-    const audit = auditById.get(resourceId)
+    const auditId = extractAuditIdFromAuditRef(notification.object)
+    const audit = auditId ? auditById.get(auditId) : undefined
     if (audit) {
       const itemId = `audit:${audit.id}`
       if (seen.has(itemId)) continue
@@ -355,7 +315,7 @@ function buildInboxItems(
         threadId: presentation.threadId,
         thread: presentation.thread,
         about: presentation.about,
-        approvalId: linkedApproval?.id ?? extractResourceId(audit.approval),
+        approvalId: linkedApproval?.id ?? extractApprovalIdFromApprovalRef(audit.approval),
         authUrl: presentation.authUrl,
         authMethod: presentation.authMethod,
         authMessage: presentation.authMessage,
@@ -403,7 +363,7 @@ function buildInboxItems(
       threadId: presentation.threadId,
       thread: presentation.thread,
       about: presentation.about,
-      approvalId: linkedApproval?.id ?? extractResourceId(audit.approval),
+      approvalId: linkedApproval?.id ?? extractApprovalIdFromApprovalRef(audit.approval),
       authUrl: presentation.authUrl,
       authMethod: presentation.authMethod,
       authMessage: presentation.authMessage,

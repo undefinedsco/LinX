@@ -9,6 +9,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { createPodCollection } from '@/lib/data/pod-collection'
 import { createLinxPodSyncScope, type LinxSyncOperationKind, type LinxSyncRunResult } from '@linx/agent-runtime/sync'
 import {
+  buildChatTargetRef,
   favoriteTable,
   MEETING,
   SCHEMA,
@@ -95,18 +96,14 @@ function isUri(value: string): boolean {
   return /^(https?:|urn:|\/)/.test(value)
 }
 
-function legacyFavoriteSource(favorite: FavoriteRow): string | undefined {
-  return readResultString(favorite, 'sourceId')
-}
-
 function favoriteTargetMatches(favorite: FavoriteRow, sourceModule: SourceModule, target: string, localTarget: string): boolean {
   return favorite.sourceModule === sourceModule
-    && (favorite.target === target || legacyFavoriteSource(favorite) === localTarget)
+    && (favorite.target === target || favorite.target === localTarget)
 }
 
 function resolveFavoriteTargetUri(sourceModule: SourceModule, target: string): string | null {
   if (isUri(target)) return target
-  if (sourceModule === 'chat') return `/.data/chat/${encodeURIComponent(target)}/index.ttl#this`
+  if (sourceModule === 'chat') return buildChatTargetRef(target)
   if (sourceModule === 'contacts') return `/.data/contacts/${encodeURIComponent(target)}.ttl`
   return null
 }
@@ -212,7 +209,6 @@ async function onStarredChange(
         throw new Error(`Cannot resolve favorite target URI for ${sourceModule}:${targetRef}`)
       }
 
-      // Legacy sourceId is read-only compatibility for rows written before Favorite.target became canonical.
       const existing = Array.from(favoriteCollection.state.values()).find(
         (f: FavoriteRow) => favoriteTargetMatches(f, sourceModule, target, targetRef),
       )
@@ -257,7 +253,6 @@ async function onStarredChange(
         return { favoriteId: data.id, target, sourceModule, targetLocal: targetRef }
       }
     } else {
-      // Legacy sourceId is read-only compatibility for old rows; new rows match by target.
       const target = Array.from(favoriteCollection.state.values()).find(
         (f: FavoriteRow) => favoriteTargetMatches(f, sourceModule, resolveFavoriteTargetUri(sourceModule, targetRef) ?? targetRef, targetRef),
       )

@@ -9,7 +9,7 @@
 
 import { createPodCollection } from '@/lib/data/pod-collection'
 import { createLinxPodSyncScope, type LinxSyncOperationKind, type LinxSyncRunResult } from '@linx/agent-runtime/sync'
-import { like, or, resolveRowSubject } from '@undefineds.co/drizzle-solid'
+import { findExactRecord, like, or, resolveRowSubject } from '@undefineds.co/drizzle-solid'
 import {
   contactTable,
   agentTable,
@@ -23,6 +23,7 @@ import {
   type ChatRow,
   type ChatInsert,
   type SolidProfileRow,
+  buildChatTargetRef,
   ContactClass,
   ContactType,
   isGroupContact,
@@ -115,25 +116,15 @@ function readResultString(value: unknown, key: string): string | undefined {
   return isRecord(value) && typeof value[key] === 'string' ? value[key] : undefined
 }
 
-async function findByIriCompat<T>(db: SolidDatabase, table: unknown, iri: string): Promise<T | null> {
-  if (typeof (db as any).findByIri === 'function') {
-    return await (db as any).findByIri(table as any, iri)
-  }
-  if (typeof (db as any).findFirst === 'function') {
-    return await (db as any).findFirst(table as any, { '@id': iri } as any)
-  }
-  return null
-}
-
-function buildLocalChatUri(chatId: string): string {
-  return `/.data/chat/${chatId}/index.ttl#this`
+function localChatRef(chatId: string): string {
+  return buildChatTargetRef(chatId)
 }
 
 function resolveChatUri(chat: Partial<ChatRow> | null | undefined): string | undefined {
   if (!chat) return undefined
   const subject = resolveRowSubject(chat as Record<string, unknown>)
   if (subject && subject !== chat.id) return subject
-  return chat.id ? buildLocalChatUri(chat.id) : subject ?? undefined
+  return chat.id ? localChatRef(chat.id) : subject ?? undefined
 }
 
 function isUriRef(value: string): boolean {
@@ -247,7 +238,7 @@ function getChatRefs(chat: Partial<ChatRow> | null | undefined): string[] {
   if (!chat) return []
   if (chat.id) {
     refs.add(chat.id)
-    refs.add(buildLocalChatUri(chat.id))
+    refs.add(localChatRef(chat.id))
   }
   const uri = chat ? resolveRowSubject(chat as Record<string, unknown>) : undefined
   if (uri) refs.add(uri)
@@ -420,7 +411,7 @@ export const contactOps = {
         contactUri,
         agentUri: resolveAgentUri(agent as AgentRow),
         localAgent: typeof agent.id === 'string' ? agent.id : undefined,
-        chatUri: buildLocalChatUri(chatId),
+        chatUri: localChatRef(chatId),
       }
     })
   },
@@ -475,7 +466,7 @@ export const contactOps = {
         id: contactId,
         chatId,
         contactUri,
-        chatUri: buildLocalChatUri(chatId),
+        chatUri: localChatRef(chatId),
       }
     })
   },
@@ -708,7 +699,7 @@ export const contactOps = {
 
       queryClient.invalidateQueries({ queryKey: ['chats'] })
 
-      return { chatId, chatUri: buildLocalChatUri(chatId), created: true }
+      return { chatId, chatUri: localChatRef(chatId), created: true }
     })
 
     return chatId
@@ -737,7 +728,7 @@ export const contactOps = {
     try {
       // Use drizzle-solid to fetch remote profile
       // The '@id' query will resolve to the full WebID URL
-      const record = await findByIriCompat<SolidProfileRow>(db, solidProfileTable, webId)
+      const record = await findExactRecord<SolidProfileRow>(db, solidProfileTable as any, webId)
       
       if (!record) {
         console.warn(`[contactOps] Profile not found for WebID: ${webId}`)
@@ -774,7 +765,7 @@ export const contactOps = {
     
     try {
       // Use drizzle-solid to fetch remote agent
-      const record = await findByIriCompat<AgentRow>(db, agentTable, agentUrl)
+      const record = await findExactRecord<AgentRow>(db, agentTable as any, agentUrl)
       
       if (!record) {
         console.warn(`[contactOps] Agent not found at: ${agentUrl}`)
@@ -918,7 +909,7 @@ export const contactOps = {
     }
 
     const chatId = crypto.randomUUID()
-    const chatUri = buildLocalChatUri(chatId)
+    const chatUri = localChatRef(chatId)
 
     return await runContactDomainSync({
       action: 'group.create',

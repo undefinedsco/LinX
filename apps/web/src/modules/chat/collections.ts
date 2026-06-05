@@ -9,7 +9,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getLiteral, getSolidDataset, getThing, getUrl, getUrlAll } from '@inrupt/solid-client'
-import { like, or, resolveRowSubject } from '@undefineds.co/drizzle-solid'
+import { findExactRecord, like, or, resolvePodBaseUrlFromDatabase, resolveRowSubject, updateExactRecord } from '@undefineds.co/drizzle-solid'
 import {
   createLinxPodSyncScope,
   type LinxSyncOperationKind,
@@ -21,17 +21,13 @@ import {
   messageTable,
   agentTable,
   contactTable,
-  credentialResource,
-  aiProviderResource,
-  chatResourceId,
+  aiConfigRepository,
+  buildChatTargetRef,
   eq,
   extractChatIdFromChatRef,
-  messageResourceId,
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
   resolveThreadChatId as resolveThreadChatIdFromRow,
-  selectAIConfigCredential,
-  threadResourceId,
   MEETING,
   UDFS,
   WF,
@@ -59,7 +55,6 @@ import {
 } from '@/lib/data/workspace-model'
 import { queryClient } from '@/providers/query-provider'
 import { createPodCollection } from '@/lib/data/pod-collection'
-import { updateExactRecord } from '@/lib/data/exact-records'
 import { favoriteHooks } from '@/modules/favorites/collections'
 import { createAgentContactRecords, writeCollectionRow } from '@/lib/data/direct-chat-records'
 import { getAgentProviderInfo } from '@/lib/agent-providers'
@@ -253,60 +248,6 @@ function hasHydratedChatMetadata(metadata: unknown): boolean {
     )
 }
 
-function buildChatResourceId(chatId: string): string {
-  return chatResourceId(extractChatIdFromChatRef(chatId) ?? chatId)
-}
-
-function buildChatRef(chatId: string): string {
-  return `chat/${buildChatResourceId(chatId)}`
-}
-
-function buildThreadResourceId(chatId: string, threadId: string): string {
-  return threadResourceId(threadId, {
-    chat: buildChatRef(chatId),
-  })
-}
-
-function buildMessageResourceId(input: {
-  chatId: string
-  messageId: string
-  createdAt?: Date | string | number
-}): string {
-  return messageResourceId(input.messageId, {
-    chat: buildChatRef(input.chatId),
-    createdAt: input.createdAt ?? new Date(),
-  })
-}
-
-function buildChatSubjectIri(db: SolidDatabase, chatId: string | undefined): string | null {
-  if (!chatId) return null
-  if (typeof db.resolveRowIri !== 'function') return null
-  return db.resolveRowIri(chatTable as any, { id: buildChatResourceId(chatId) })
-}
-
-function resolveAgentSubjectIri(db: SolidDatabase, agentId: string): string | null {
-  if (!agentId || typeof db.resolveRowIri !== 'function') return null
-  return db.resolveRowIri(agentTable as any, { id: agentId })
-}
-
-function resolveContactSubjectIri(db: SolidDatabase, contactId: string): string | null {
-  if (!contactId || typeof db.resolveRowIri !== 'function') return null
-  return db.resolveRowIri(contactTable as any, { id: contactId })
-}
-
-function getPodBaseUrl(db: SolidDatabase): string | null {
-  const podUrl = (db as any).getDialect?.()?.getPodUrl?.()
-  if (typeof podUrl === 'string' && podUrl.length > 0) {
-    return podUrl.replace(/\/$/, '')
-  }
-
-  const webId = (db as any).getSession?.()?.info?.webId
-  if (typeof webId !== 'string' || !webId.includes('/profile/card#me')) {
-    return null
-  }
-  return webId.replace('/profile/card#me', '')
-}
-
 function getCachedThreadChatId(threadId: string): string | null {
   return threadChatIdCache.get(threadId) ?? resolveThreadChatIdFromRow(threadCollection.get(threadId)) ?? null
 }
@@ -324,11 +265,9 @@ async function resolveThreadChatId(
     return cachedChatId
   }
 
-  const row = typeof (db as any).findById === 'function'
-    ? await (db as any).findById(threadTable as any, chatId
-      ? buildThreadResourceId(chatId, threadId)
-      : threadId) as ThreadRow | null
-    : null
+  const row = await findExactRecord<ThreadRow>(db as any, threadTable as any, chatId
+    ? { id: threadId, chat: buildChatTargetRef(chatId) }
+    : threadId)
   const rowChatId = resolveThreadChatIdFromRow(row)
   if (!rowChatId) {
     return null
@@ -339,40 +278,6 @@ async function resolveThreadChatId(
     ;(threadCollection.utils as { writeUpsert?: (data: ThreadRow) => void }).writeUpsert?.(row)
   }
   return rowChatId
-}
-
-async function buildThreadSubjectIri(
-  db: SolidDatabase,
-  threadId: string | undefined,
-  chatId?: string | null,
-): Promise<string | null> {
-  if (!threadId) return null
-  const resolvedChatId = await resolveThreadChatId(db, threadId, chatId)
-  if (!resolvedChatId) return null
-  if (typeof db.resolveRowIri !== 'function') return null
-  return db.resolveRowIri(threadTable as any, { id: buildThreadResourceId(resolvedChatId, threadId) })
-}
-
-async function buildMessageSubjectIri(
-  db: SolidDatabase,
-  input: {
-    messageId: string | undefined
-    chatId?: string | null
-    threadId?: string | null
-    createdAt?: Date | string | number
-  },
-): Promise<string | null> {
-  if (!input.messageId) return null
-  const resolvedChatId = await resolveThreadChatId(db, input.threadId ?? undefined, input.chatId)
-  if (!resolvedChatId) return null
-  if (typeof db.resolveRowIri !== 'function') return null
-  return db.resolveRowIri(messageTable as any, {
-    id: buildMessageResourceId({
-      chatId: resolvedChatId,
-      messageId: input.messageId,
-      createdAt: input.createdAt,
-    }),
-  })
 }
 
 function extractLinkedEntityId(uri: string | null | undefined): string | null {
@@ -409,7 +314,10 @@ async function hydrateChatRows(db: SolidDatabase, rows: ChatRow[]): Promise<Chat
   const hydratedRowsById = new Map<string, Partial<ChatRow>>()
 
   await Promise.all(needsHydration.map(async (row) => {
-    const subjectIri = buildChatSubjectIri(db, row.id)
+    if (!row.id) return
+    const subjectIri = chatTable.resolveIriForDatabase(db,  {
+      id: extractChatIdFromChatRef(row.id) ?? row.id,
+    })
     if (!subjectIri) return
 
     try {
@@ -473,9 +381,9 @@ async function ensureChatStateRow(db: SolidDatabase, chatId: string): Promise<Ch
     return cached
   }
 
-  const located = typeof (db as any).findById === 'function'
-    ? await (db as any).findById(chatTable as any, buildChatResourceId(chatId)) as ChatRow | null
-    : null
+  const located = await findExactRecord<ChatRow>(db as any, chatTable as any, {
+    id: extractChatIdFromChatRef(chatId) ?? chatId,
+  })
   if (located) {
     if (!chatCollection.isReady()) {
       await chatCollection.preload()
@@ -505,11 +413,10 @@ async function ensureThreadStateRow(db: SolidDatabase, threadId: string): Promis
     return cached
   }
 
-  const row = typeof (db as any).findById === 'function'
-    ? await (db as any).findById(threadTable as any, getCachedThreadChatId(threadId)
-      ? buildThreadResourceId(getCachedThreadChatId(threadId) as string, threadId)
-      : threadId) as ThreadRow | null
-    : null
+  const cachedChatId = getCachedThreadChatId(threadId)
+  const row = await findExactRecord<ThreadRow>(db as any, threadTable as any, cachedChatId
+    ? { id: threadId, chat: buildChatTargetRef(cachedChatId) }
+    : threadId)
 
   if (!row) {
     throw new Error(`Thread ${threadId} was not found in the Pod`)
@@ -617,7 +524,7 @@ async function resolveAssistantMakerFromChat(db: SolidDatabase, chat: Pick<ChatR
   try {
     const contactId = extractLinkedEntityId(participant)
     const contact = contactId
-      ? await (db as any).findById(contactTable as any, contactId) as ContactRow | null
+      ? await db.findById(contactTable, contactId) as ContactRow | null
       : null
     if (contact?.entity) {
       return contact.entity
@@ -631,6 +538,8 @@ async function resolveAssistantMakerFromChat(db: SolidDatabase, chat: Pick<ChatR
 
 function extractAgentIdFromRef(ref: string | null | undefined): string | null {
   if (!ref) return null
+  const canonicalMatch = ref.match(/\/agents\/([^/#]+)(?:\/(?:\.meta(?:#.*)?|$)|$)/)
+  if (canonicalMatch?.[1]) return decodeURIComponent(canonicalMatch[1])
   const match = ref.match(/\/\.data\/agents\/([^/#]+)\.ttl(?:#.*)?$/)
   if (match?.[1]) return decodeURIComponent(match[1])
   return /^[a-zA-Z0-9_-]+$/.test(ref) ? ref : null
@@ -643,13 +552,13 @@ async function ensureAgentHomeForChat(db: SolidDatabase, chat: Pick<ChatRow, 'ti
   try {
     const contactId = extractLinkedEntityId(participant)
     const contact = contactId
-      ? await (db as any).findByLocator(contactTable as any, { id: contactId } as any) as ContactRow | null
+      ? await db.findByResource(contactTable, { id: contactId }) as ContactRow | null
       : null
     const agentRef = contact?.entity ?? participant
     const agentId = extractAgentIdFromRef(agentRef)
     if (!agentId) return
 
-    const agent = await (db as any).findByLocator(agentTable as any, { id: agentId } as any) as AgentRow | null
+    const agent = await db.findByResource(agentTable, { id: agentId }) as AgentRow | null
     await ensureAgentHome(db, {
       agentId,
       name: agent?.name || chat.title || agentId,
@@ -664,14 +573,14 @@ async function ensureAgentHomeForChat(db: SolidDatabase, chat: Pick<ChatRow, 'ti
 
 async function resolveAgentMaker(db: SolidDatabase, agentId: string): Promise<string> {
   try {
-    const agent = await (db as any).findById(agentTable as any, agentId)
+    const agent = await db.findByResource(agentTable, { id: agentId })
     const agentUri = agent ? resolveRowSubject(agent as Record<string, unknown>) : undefined
     if (agentUri) return agentUri
   } catch (error) {
     console.warn('[chatOps] Failed to resolve default AI Secretary agent URI:', error)
   }
 
-  return resolveAgentSubjectIri(db, agentId) ?? agentId
+  return agentTable.resolveIriForDatabase(db,  { id: agentId }) ?? agentId
 }
 
 async function ensureDefaultWelcomeMessage(
@@ -992,8 +901,9 @@ export const chatOps = {
         id: chatId,
         agentId,
         contactId,
-        chatUri: buildChatSubjectIri(db, chatId) ?? undefined,
-        agentUri: resolveRowSubject(agent as Record<string, unknown>) ?? resolveAgentSubjectIri(db, agentId) ?? undefined,
+        chatUri: chatTable.buildIriForDatabase(db,  { id: chatId }),
+        agentUri: resolveRowSubject(agent as Record<string, unknown>)
+          ?? agentTable.buildIriForDatabase(db,  { id: agentId }),
         contactUri,
       } as ChatRow & { agentId: string; contactId: string }
     })
@@ -1020,11 +930,19 @@ export const chatOps = {
    * Update a chat
    */
   async updateChat(id: string, data: Partial<ChatRow>): Promise<void> {
+    const dbForProjection = getDb()
+    const chatTarget = {
+      id: extractChatIdFromChatRef(id) ?? id,
+    }
+    const chatUri = dbForProjection
+      ? chatTable.resolveIriForDatabase(dbForProjection,  chatTarget) ?? undefined
+      : undefined
+
     await runChatOpsProjection({
       action: 'chat.update',
       kind: 'update',
       chatId: id,
-      chatUri: getDb() ? buildChatSubjectIri(getDb() as SolidDatabase, id) ?? undefined : undefined,
+      chatUri,
       metadata: {
         fieldKeys: Object.keys(data),
       },
@@ -1040,7 +958,7 @@ export const chatOps = {
 
       if (db) {
         const existing = chatCollection.get(id)
-        await updateExactRecord(db, chatTable as any, buildChatSubjectIri(db, id) ?? existing ?? { id: buildChatResourceId(id) }, {
+        await updateExactRecord(db, chatTable as any, chatUri ?? existing ?? chatTarget, {
           ...data,
           updatedAt,
         } as Record<string, unknown>)
@@ -1100,7 +1018,9 @@ export const chatOps = {
       action: 'chat.delete',
       kind: 'delete',
       chatId: id,
-      chatUri: buildChatSubjectIri(db, id) ?? undefined,
+      chatUri: chatTable.buildIriForDatabase(db,  {
+        id: extractChatIdFromChatRef(id) ?? id,
+      }),
     }, async () => {
       // Delete all threads first
       const threads = this.getThreads(id)
@@ -1125,10 +1045,18 @@ export const chatOps = {
     const db = getDb()
     const threadId = crypto.randomUUID()
     const now = new Date()
-    const chatUri = db ? buildChatSubjectIri(db, chatId) : null
+    const chatUri = db
+      ? chatTable.buildIriForDatabase(db,  {
+        id: extractChatIdFromChatRef(chatId) ?? chatId,
+      })
+      : null
+    const threadResourceId = threadTable.buildId( {
+      id: threadId,
+      chat: buildChatTargetRef(chatId),
+    })
     
     const threadData: ThreadInsert = {
-      id: db ? buildThreadResourceId(chatId, threadId) : threadId,
+      id: db ? threadResourceId : threadId,
       chat: chatUri ?? chatId,
       title: title || `话题 ${now.toLocaleTimeString()}`,
       createdAt: now,
@@ -1142,7 +1070,7 @@ export const chatOps = {
         chatId,
         threadId,
         chatUri: chatUri ?? undefined,
-        threadUri: await buildThreadSubjectIri(db, threadId, chatId) ?? undefined,
+        threadUri: threadTable.buildIriForDatabase(db,  threadResourceId),
       }, () => db.insert(threadTable).values(threadData as any).execute())
     } else {
       const tx = threadCollection.insert(threadData as ThreadRow)
@@ -1200,7 +1128,7 @@ export const chatOps = {
         return thread.workspace
       }
 
-      const podBaseUrl = getPodBaseUrl(db)
+      const podBaseUrl = resolvePodBaseUrlFromDatabase(db)
       if (!podBaseUrl) {
         throw new Error('无法解析 Pod 地址，无法创建 workspace。')
       }
@@ -1225,9 +1153,9 @@ export const chatOps = {
       const cachedWorkspace = workspaceCollection.get(workspaceId)
       const persistedWorkspaceRows: WorkspaceRow[] = []
       if (!cachedWorkspace) {
-        const persistedWorkspace = await (db as any).findById(workspaceTable as any, workspaceId)
+        const persistedWorkspace = await db.findById(workspaceTable as any, workspaceId)
         if (persistedWorkspace) {
-          persistedWorkspaceRows.push(persistedWorkspace)
+          persistedWorkspaceRows.push(persistedWorkspace as WorkspaceRow)
         }
       }
       const existingWorkspace = cachedWorkspace ?? persistedWorkspaceRows[0] as WorkspaceRow | undefined
@@ -1321,13 +1249,27 @@ export const chatOps = {
    * Delete a thread (and its messages)
    */
   async deleteThread(id: string, chatId: string): Promise<void> {
+    const db = getDb()
+    const chatUri = db
+      ? chatTable.buildIriForDatabase(db,  {
+        id: extractChatIdFromChatRef(chatId) ?? chatId,
+      })
+      : undefined
+    const threadResourceId = threadTable.buildId( {
+      id,
+      chat: buildChatTargetRef(chatId),
+    })
+    const threadUri = db
+      ? threadTable.buildIriForDatabase(db,  threadResourceId)
+      : undefined
+
     await runChatOpsProjection({
       action: 'thread.delete',
       kind: 'delete',
       chatId,
       threadId: id,
-      chatUri: getDb() ? buildChatSubjectIri(getDb() as SolidDatabase, chatId) ?? undefined : undefined,
-      threadUri: getDb() ? await buildThreadSubjectIri(getDb() as SolidDatabase, id, chatId) ?? undefined : undefined,
+      chatUri,
+      threadUri,
     }, async () => {
       // Delete all messages first
       const messages = this.getMessages(id)
@@ -1363,16 +1305,23 @@ export const chatOps = {
 
     const msgId = crypto.randomUUID()
     const now = new Date()
-    const threadRef = await buildThreadSubjectIri(db, threadId, chatId)
+    const threadResourceId = threadTable.buildId( {
+      id: threadId,
+      chat: buildChatTargetRef(chatId),
+    })
+    const threadRef = threadTable.buildIriForDatabase(db,  threadResourceId)
     if (!threadRef) {
       throw new Error(`Failed to resolve thread IRI for thread ${threadId}`)
     }
-    const chatRef = buildChatSubjectIri(db, chatId) ?? chatId
-    const messageResource = buildMessageResourceId({
-      chatId,
-      messageId: msgId,
+    const chatRef = chatTable.buildIriForDatabase(db,  {
+      id: extractChatIdFromChatRef(chatId) ?? chatId,
+    })
+    const messageResource = messageTable.buildId( {
+      id: msgId,
+      chat: buildChatTargetRef(chatId),
       createdAt: now,
     })
+    const messageUri = messageTable.buildIriForDatabase(db,  messageResource)
     
     const msgData = {
       id: messageResource,
@@ -1393,12 +1342,7 @@ export const chatOps = {
       messageId: msgId,
       chatUri: chatRef,
       threadUri: threadRef,
-      messageUri: await buildMessageSubjectIri(db, {
-        messageId: msgId,
-        chatId,
-        threadId,
-        createdAt: now,
-      }) ?? undefined,
+      messageUri,
       role: 'user',
     }, () => db.insert(messageTable).values(msgData as any).execute())
     writeCollectionRow(messageCollection, { ...msgData, id: msgId } as MessageRow, msgId)
@@ -1406,12 +1350,7 @@ export const chatOps = {
     // Update chat last activity
     await this.updateChat(chatId, {
       lastActiveAt: now,
-      lastMessage: await buildMessageSubjectIri(db, {
-        messageId: msgId,
-        chatId,
-        threadId,
-        createdAt: now,
-      }) ?? undefined,
+      lastMessage: messageUri,
       lastMessagePreview: content.slice(0, 100),
     })
     
@@ -1436,16 +1375,23 @@ export const chatOps = {
 
     const msgId = crypto.randomUUID()
     const now = new Date()
-    const threadRef = await buildThreadSubjectIri(db, threadId, chatId)
+    const threadResourceId = threadTable.buildId( {
+      id: threadId,
+      chat: buildChatTargetRef(chatId),
+    })
+    const threadRef = threadTable.buildIriForDatabase(db,  threadResourceId)
     if (!threadRef) {
       throw new Error(`Failed to resolve thread IRI for thread ${threadId}`)
     }
-    const chatRef = buildChatSubjectIri(db, chatId) ?? chatId
-    const messageResource = buildMessageResourceId({
-      chatId,
-      messageId: msgId,
+    const chatRef = chatTable.buildIriForDatabase(db,  {
+      id: extractChatIdFromChatRef(chatId) ?? chatId,
+    })
+    const messageResource = messageTable.buildId( {
+      id: msgId,
+      chat: buildChatTargetRef(chatId),
       createdAt: now,
     })
+    const messageUri = messageTable.buildIriForDatabase(db,  messageResource)
     
     const msgData = {
       id: messageResource,
@@ -1467,12 +1413,7 @@ export const chatOps = {
       messageId: msgId,
       chatUri: chatRef,
       threadUri: threadRef,
-      messageUri: await buildMessageSubjectIri(db, {
-        messageId: msgId,
-        chatId,
-        threadId,
-        createdAt: now,
-      }) ?? undefined,
+      messageUri,
       role: 'assistant',
     }, () => db.insert(messageTable).values(msgData as any).execute())
     writeCollectionRow(messageCollection, { ...msgData, id: msgId } as MessageRow, msgId)
@@ -1480,12 +1421,7 @@ export const chatOps = {
     // Update chat last activity
     await this.updateChat(chatId, {
       lastActiveAt: now,
-      lastMessage: await buildMessageSubjectIri(db, {
-        messageId: msgId,
-        chatId,
-        threadId,
-        createdAt: now,
-      }) ?? undefined,
+      lastMessage: messageUri,
       lastMessagePreview: content.slice(0, 100),
     })
     
@@ -1501,14 +1437,25 @@ export const chatOps = {
   async deleteMessage(id: string, threadId: string): Promise<void> {
     const chatId = getCachedThreadChatId(threadId) || ''
     const db = getDb()
+    const chatUri = db && chatId
+      ? chatTable.buildIriForDatabase(db,  {
+        id: extractChatIdFromChatRef(chatId) ?? chatId,
+      })
+      : undefined
+    const threadUri = db && chatId
+      ? threadTable.buildIriForDatabase(db,  {
+        id: threadId,
+        chat: buildChatTargetRef(chatId),
+      })
+      : undefined
     await runChatOpsProjection({
       action: 'message.delete',
       kind: 'delete',
       chatId,
       threadId,
       messageId: id,
-      chatUri: db ? buildChatSubjectIri(db, chatId) ?? undefined : undefined,
-      threadUri: db ? await buildThreadSubjectIri(db, threadId, chatId) ?? undefined : undefined,
+      chatUri,
+      threadUri,
     }, async () => {
       const tx = messageCollection.delete(id)
       await tx.isPersisted.promise
@@ -1525,6 +1472,7 @@ export const chatOps = {
    * Update agent profile and keep related contact/chat display fields in sync.
    */
   async updateAgentProfile(input: UpdateAgentProfileInput): Promise<void> {
+    const dbForProjection = getDb()
     await runChatOpsProjection({
       action: 'agent.profile.update',
       kind: 'update',
@@ -1532,9 +1480,17 @@ export const chatOps = {
       chatId: input.chatId,
       contactId: input.contactId,
       metadata: {
-        agentUri: getDb() ? resolveAgentSubjectIri(getDb() as SolidDatabase, input.agentId) ?? undefined : undefined,
-        chatUri: input.chatId && getDb() ? buildChatSubjectIri(getDb() as SolidDatabase, input.chatId) ?? undefined : undefined,
-        contactUri: input.contactId && getDb() ? resolveContactSubjectIri(getDb() as SolidDatabase, input.contactId) ?? undefined : undefined,
+        agentUri: dbForProjection
+          ? agentTable.resolveIriForDatabase(dbForProjection,  { id: input.agentId }) ?? undefined
+          : undefined,
+        chatUri: input.chatId && dbForProjection
+          ? chatTable.resolveIriForDatabase(dbForProjection,  {
+            id: extractChatIdFromChatRef(input.chatId) ?? input.chatId,
+          }) ?? undefined
+          : undefined,
+        contactUri: input.contactId && dbForProjection
+          ? contactTable.resolveIriForDatabase(dbForProjection,  { id: input.contactId }) ?? undefined
+          : undefined,
         fieldKeys: [
           ...(input.name !== undefined ? ['name'] : []),
           ...(input.instructions !== undefined ? ['instructions'] : []),
@@ -1575,12 +1531,15 @@ export const chatOps = {
    * Update an agent's instructions (system prompt)
    */
   async updateAgentInstructions(agentId: string, instructions: string): Promise<void> {
+    const dbForProjection = getDb()
     await runChatOpsProjection({
       action: 'agent.instructions.update',
       kind: 'update',
       agentId,
       metadata: {
-        agentUri: getDb() ? resolveAgentSubjectIri(getDb() as SolidDatabase, agentId) ?? undefined : undefined,
+        agentUri: dbForProjection
+          ? agentTable.resolveIriForDatabase(dbForProjection,  { id: agentId }) ?? undefined
+          : undefined,
         fieldKeys: ['instructions'],
       },
     }, async () => {
@@ -1597,6 +1556,7 @@ export const chatOps = {
    * Also updates the related Chat's avatarUrl for list display
    */
   async updateAgentModel(agentId: string, provider: string, model: string, chatId?: string, contactId?: string): Promise<void> {
+    const dbForProjection = getDb()
     await runChatOpsProjection({
       action: 'agent.model.update',
       kind: 'update',
@@ -1604,9 +1564,17 @@ export const chatOps = {
       chatId,
       contactId,
       metadata: {
-        agentUri: getDb() ? resolveAgentSubjectIri(getDb() as SolidDatabase, agentId) ?? undefined : undefined,
-        chatUri: chatId && getDb() ? buildChatSubjectIri(getDb() as SolidDatabase, chatId) ?? undefined : undefined,
-        contactUri: contactId && getDb() ? resolveContactSubjectIri(getDb() as SolidDatabase, contactId) ?? undefined : undefined,
+        agentUri: dbForProjection
+          ? agentTable.resolveIriForDatabase(dbForProjection,  { id: agentId }) ?? undefined
+          : undefined,
+        chatUri: chatId && dbForProjection
+          ? chatTable.resolveIriForDatabase(dbForProjection,  {
+            id: extractChatIdFromChatRef(chatId) ?? chatId,
+          }) ?? undefined
+          : undefined,
+        contactUri: contactId && dbForProjection
+          ? contactTable.resolveIriForDatabase(dbForProjection,  { id: contactId }) ?? undefined
+          : undefined,
         provider: normalizeAIConfigProviderId(provider),
         model: normalizeAIConfigResourceId(model),
       },
@@ -1708,24 +1676,11 @@ export const chatOps = {
     const db = getDb()
     if (!db) return null
 
-    const providerId = normalizeAIConfigProviderId(provider)
-    const [credentialRows, providerRow] = await Promise.all([
-      db.select().from(credentialResource).execute(),
-      typeof (db as any).findById === 'function'
-        ? (db as any).findById(aiProviderResource as any, providerId).catch(() => null)
-        : Promise.resolve(null),
-    ])
-    const selected = selectAIConfigCredential(
-      providerId,
-      credentialRows as Array<Record<string, unknown>>,
-      providerRow ? [providerRow as Record<string, unknown>] : [],
-    )
+    const selected = await aiConfigRepository.loadCredentialForBackend(db, normalizeAIConfigProviderId(provider))
 
     if (!selected) return null
 
-    if (selected.credentialId) {
-      await (db as any).updateByLocator?.(credentialResource as any, { id: selected.credentialId }, { lastUsedAt: new Date() })
-    }
+    await aiConfigRepository.markCredentialUsed(db, selected)
 
     return {
       apiKey: selected.apiKey,
@@ -1805,11 +1760,10 @@ export const chatOps = {
       console.warn('[chatOps] Failed to resolve thread IRI for message query:', threadId)
       return chatOps.getMessages(threadId)
     }
-    const threadRef = await buildThreadSubjectIri(db, threadId, resolvedChatId)
-    if (!threadRef) {
-      console.warn('[chatOps] Failed to resolve thread IRI for message query:', threadId)
-      return chatOps.getMessages(threadId)
-    }
+    const threadRef = threadTable.buildIriForDatabase(db,  {
+      id: threadId,
+      chat: buildChatTargetRef(resolvedChatId),
+    })
 
     try {
       const threadCol = (messageTable as any).thread

@@ -4,6 +4,7 @@ import { createLinxPodSyncScope, type LinxSyncRunResult } from '@linx/agent-runt
 import {
   aiConfigModelUri,
   aiConfigProviderRef,
+  aiModelResource,
   buildAIConfigMutationPlan,
   buildAIConfigProviderStateMap,
   normalizeAIConfigModelId,
@@ -255,12 +256,20 @@ export function useModelServices() {
 
         for (const modelPayload of plan.modelUpserts) {
           if (!modelPayload.id) continue
+          const modelResourceId = aiModelResource.buildId({
+            id: modelPayload.id,
+            isProvidedBy: modelPayload.isProvidedBy,
+          })
+          const modelRowPayload = {
+            ...modelPayload,
+            id: modelResourceId,
+          }
           const existing = existingById.get(modelPayload.id)
           const modelTx = existing
             ? modelCollection.update(rowKey(existing), (draft: AnyRow) => {
-                applyPayload(draft, modelPayload as AnyRow)
+                applyPayload(draft, modelRowPayload as AnyRow)
               })
-            : modelCollection.insert(modelPayload as any)
+            : modelCollection.insert(modelRowPayload as any)
 
           await waitPersist(modelTx)
         }

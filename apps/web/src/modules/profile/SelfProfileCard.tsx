@@ -101,7 +101,7 @@ export function SelfProfileCard() {
     queryKey: ["profile", webId],
     queryFn: async () => {
       if (!db || !webId) return null;
-      const record = await (db as any).findByIri(solidProfileTable, webId);
+      const record = await db.findByIri(solidProfileTable, webId);
       return record as SolidProfileRow | null;
     },
     enabled: !!db && !!webId,

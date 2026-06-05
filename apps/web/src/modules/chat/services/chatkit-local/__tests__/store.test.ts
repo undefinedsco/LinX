@@ -35,6 +35,14 @@ function createMockDb() {
       findById(table: unknown, id: string) {
         return Promise.resolve(tableRows(table).find((row) => row.id === id) ?? null)
       },
+      updateByResource(table: unknown, target: string | Record<string, unknown>, patch: Record<string, unknown>) {
+        const id = typeof target === 'string' ? target : String(target.id ?? '')
+        const row = tableRows(table).find((entry) => entry.id === id)
+        if (row) {
+          Object.assign(row, patch)
+        }
+        return Promise.resolve(row ?? null)
+      },
       select() {
         return {
           from(table: unknown) {
@@ -100,16 +108,11 @@ describe('LocalChatKitStore', () => {
       thread: 'https://alice.example/.data/chat/chat-1/index.ttl#thread-1',
       maker: 'https://alice.example/profile/card#me',
       role: 'user',
-      content: 'hello',
     })
-    expect(authFetch).toHaveBeenCalledWith(
-      'https://alice.example/.data/chat/chat-1/1970/01/01/messages.ttl',
-      expect.objectContaining({
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/sparql-update' },
-      }),
-    )
-    expect(String(authFetch.mock.calls[0]?.[1]?.body)).toContain('hello updated')
+    expect(authFetch).not.toHaveBeenCalled()
+    expect(inserts.find((item) => item.table === Message)?.values).toMatchObject({
+      content: 'hello updated',
+    })
 
     expect(store.getSyncResults()).toHaveLength(3)
     expect(onSyncResult).toHaveBeenCalledTimes(3)

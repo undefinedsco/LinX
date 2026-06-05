@@ -6,6 +6,7 @@ const mocked = vi.hoisted(() => ({
   agentTable: { name: 'agent' },
   credentialResource: { name: 'credential' },
   aiProviderResource: { name: 'ai_provider' },
+  resolvePodBaseUrlMock: vi.fn((value: string) => value.replace('/profile/card#me', '').replace(/\/+$/, '')),
 }))
 
 vi.mock('@undefineds.co/models/client', () => ({
@@ -15,9 +16,42 @@ vi.mock('@undefineds.co/models/client', () => ({
   },
 }))
 
+vi.mock('@undefineds.co/drizzle-solid', () => ({
+  findExactRecord: async (db: any, table: unknown, target: string | Record<string, unknown>) => {
+    return await db.findByResource(table, target)
+  },
+  resolvePodBaseUrl: mocked.resolvePodBaseUrlMock,
+  resolveRowSubject: (record: Record<string, unknown> | null | undefined) => record?.['@id'] ?? record?.uri ?? record?.id ?? null,
+}))
+
 vi.mock('@undefineds.co/models', () => ({
   agentTable: mocked.agentTable,
   aiProviderResource: mocked.aiProviderResource,
+  aiConfigRepository: {
+    async loadCredentialForBackend(db: any, provider: string) {
+      const normalizedProvider = provider.includes('#') ? provider.split('#').pop() : provider
+      const credentialRows = await db.select().from(mocked.credentialResource).execute()
+      const providerRow = await db.findById(mocked.aiProviderResource, normalizedProvider).catch(() => null)
+      const credential = credentialRows.find((row: Record<string, unknown>) => {
+        const rowProvider = String(row.provider ?? row.id ?? '')
+        return rowProvider.endsWith(`#${normalizedProvider}`) || rowProvider.endsWith(`/${normalizedProvider}.ttl`)
+      })
+      return credential?.apiKey
+        ? {
+            providerId: normalizedProvider,
+            credential,
+            credentialId: credential.id,
+            apiKey: credential.apiKey,
+            baseUrl: credential.baseUrl ?? providerRow?.baseUrl,
+          }
+        : undefined
+    },
+    async markCredentialUsed(db: any, selection: { credentialId?: string }) {
+      if (selection.credentialId) {
+        await db.updateById(mocked.credentialResource, selection.credentialId, { lastUsedAt: new Date() })
+      }
+    },
+  },
   chatTable: mocked.chatTable,
   contactTable: mocked.contactTable,
   credentialResource: mocked.credentialResource,
@@ -32,47 +66,7 @@ vi.mock('@undefineds.co/models', () => ({
     const tail = value.includes('#') ? value.split('#').pop() : value.split('/').pop()
     return (tail ?? value).replace(/\.ttl$/, '')
   },
-  selectAIConfigCredential: (provider: string, rows: Array<Record<string, any>>) => {
-    const normalizedProvider = provider.includes('#') ? provider.split('#').pop() : provider
-    const credential = rows.find((row) => {
-      const rowProvider = String(row.provider ?? '')
-      return rowProvider.endsWith(`#${normalizedProvider}`)
-        && (row.service ?? 'ai') === 'ai'
-        && (row.status ?? 'active') === 'active'
-        && row.apiKey
-    })
-    if (!credential) return undefined
-    return {
-      providerId: normalizedProvider,
-      credential,
-      credentialId: credential.id,
-      apiKey: credential.apiKey,
-      baseUrl: credential.baseUrl,
-      isDefault: Boolean(credential.isDefault),
-    }
-  },
   resolveRowId: (row: Record<string, unknown> | null | undefined) => row?.['@id'] ?? row?.uri ?? row?.id ?? null,
-  selectAIConfigCredential: (
-    provider: string,
-    credentialRows: Array<Record<string, unknown>>,
-    providerRows: Array<Record<string, unknown>>,
-  ) => {
-    const normalizeProvider = (value?: unknown) => {
-      if (typeof value !== 'string' || !value) return ''
-      const tail = value.includes('#') ? value.split('#').pop() : value.split('/').pop()
-      return (tail ?? value).replace(/\.ttl$/, '').toLowerCase()
-    }
-    const providerId = normalizeProvider(provider)
-    const credential = credentialRows.find((row) => normalizeProvider(row.provider ?? row.id) === providerId && row.apiKey)
-    if (!credential) return undefined
-    const providerRow = providerRows.find((row) => normalizeProvider(row.id ?? row['@id']) === providerId)
-    return {
-      providerId,
-      credential,
-      apiKey: credential.apiKey,
-      baseUrl: credential.baseUrl ?? providerRow?.baseUrl,
-    }
-  },
 }))
 
 vi.mock('../runtime-sidecar', () => ({
@@ -209,6 +203,18 @@ function createMockDb(agent: { provider: string; model: string }, credentialRows
       }
       return null
     }),
+    findByResource: vi.fn(async (table: unknown, target: string | Record<string, unknown>) => {
+      const id = typeof target === 'string' ? target : target.id
+      if (table === mocked.chatTable && id === chat.id) return chat
+      if (table === mocked.aiProviderResource) {
+        return {
+          id,
+          baseUrl: id === 'openai' ? 'https://openrouter.ai/api/v1' : undefined,
+        }
+      }
+      return null
+    }),
+    updateById: vi.fn(async () => ({})),
     select: vi.fn(() => ({
       from: (table: unknown) => {
         const execute = async () => {
@@ -307,6 +313,34 @@ describe('LocalChatKitService platform runtime routing', () => {
       }),
     )
     expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === '本地可聊')).toBe(true)
+  })
+
+  it('uses shared Pod base resolution for malformed WebID fallback routing', async () => {
+    const store = createMockStore()
+    const db = createMockDb({
+      provider: 'undefineds',
+      model: 'undefineds/linx-lite',
+    })
+    const authFetch = vi.fn(async () => new Response('fallback ok', {
+      status: 200,
+      headers: { 'Content-Type': 'text/plain' },
+    }))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'not-a-url/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    await sendMessage(service)
+
+    expect(mocked.resolvePodBaseUrlMock).toHaveBeenCalledWith('not-a-url/profile/card#me')
+    expect(authFetch).toHaveBeenCalledWith(
+      'not-a-url/v1/chat/completions',
+      expect.objectContaining({
+        method: 'POST',
+      }),
+    )
   })
 
   it('keeps non-platform providers on the user API key path', async () => {

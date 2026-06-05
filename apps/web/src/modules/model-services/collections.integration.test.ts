@@ -126,8 +126,10 @@ describe('model services collections integration', () => {
       hasModel: `/settings/providers/${providerId}.ttl#${modelId}`,
     } as any).execute()
 
+    const modelLocator = { id: modelId, isProvidedBy: providerId }
+    const modelResourceId = aiModelTable.buildId(modelLocator)
     await database.insert(aiModelTable).values({
-      id: modelId,
+      id: modelResourceId,
       displayName: modelId,
       modelType: 'chat',
       isProvidedBy: providerId,
@@ -137,8 +139,6 @@ describe('model services collections integration', () => {
     } as any).execute()
 
     const createdProvider = await (database as any).findById(aiProviderTable as any, providerId)
-    const modelLocator = { id: modelId, isProvidedBy: providerId }
-    const modelResourceId = aiModelTable.buildId(modelLocator)
     const createdModel = await (database as any).findById(aiModelTable as any, modelResourceId)
     expect(createdProvider?.baseUrl).toBe('https://api.example.com/v1')
     expect(createdModel?.status).toBe('active')
