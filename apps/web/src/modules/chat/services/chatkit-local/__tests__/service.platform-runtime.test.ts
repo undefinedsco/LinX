@@ -1,9 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocked = vi.hoisted(() => ({
+  agentResource: {
+    name: 'agent',
+    buildId: ({ id }: { id: string }) => `${id.replace(/\/+$/, '')}/`,
+    resolveUri: (id: string) => `/agents/${id.replace(/^\/?agents\//, '')}`,
+  },
   chatTable: { name: 'chat' },
   contactTable: { name: 'contact' },
   agentTable: { name: 'agent' },
+  skillResource: { name: 'skill' },
   credentialResource: { name: 'credential' },
   aiProviderResource: { name: 'ai_provider' },
   resolvePodBaseUrlMock: vi.fn((value: string) => value.replace('/profile/card#me', '').replace(/\/+$/, '')),
@@ -25,6 +31,7 @@ vi.mock('@undefineds.co/drizzle-solid', () => ({
 }))
 
 vi.mock('@undefineds.co/models', () => ({
+  agentResource: mocked.agentResource,
   agentTable: mocked.agentTable,
   aiProviderResource: mocked.aiProviderResource,
   aiConfigRepository: {
@@ -55,6 +62,7 @@ vi.mock('@undefineds.co/models', () => ({
   chatTable: mocked.chatTable,
   contactTable: mocked.contactTable,
   credentialResource: mocked.credentialResource,
+  skillResource: mocked.skillResource,
   normalizeAIConfigProviderId: (value?: string | null) => {
     if (!value) return ''
     const tail = value.includes('#') ? value.split('#').pop() : value.split('/').pop()
@@ -138,13 +146,13 @@ async function collectStreamEvents(result: Awaited<ReturnType<LocalChatKitServic
   return events
 }
 
-function createMockStore() {
+function createMockStore(options: { chatId?: string } = {}) {
   const thread = {
     id: 'thread-1',
     status: { type: 'active' as const },
     created_at: 1,
     updated_at: 1,
-    metadata: { chat_id: 'chat-1' },
+    metadata: { chat_id: options.chatId ?? 'chat-1' },
   }
   const items: any[] = []
   let index = 0
@@ -176,21 +184,35 @@ function createMockStore() {
   }
 }
 
-function createMockDb(agent: { provider: string; model: string }, credentialRows: Array<Record<string, unknown>> = []) {
+function createMockDb(
+  agent: { provider: string; model: string; id?: string; instructions?: string; root?: string } | null,
+  credentialRows: Array<Record<string, unknown>> = [],
+  options: {
+    chatId?: string
+    participants?: string[]
+    contactId?: string
+    contactEntity?: string
+    chatMetadata?: Record<string, unknown>
+    skillRows?: Array<Record<string, unknown>>
+  } = {},
+) {
   const chat = {
-    id: 'chat-1',
-    participants: ['contact-1'],
+    id: options.chatId ?? 'chat-1',
+    participants: options.participants ?? ['contact-1'],
+    metadata: options.chatMetadata,
   }
   const contact = {
-    id: 'contact-1',
-    entity: 'agent-1',
+    id: options.contactId ?? 'contact-1',
+    entity: options.contactEntity ?? (agent?.id ?? 'agent-1'),
     contactType: 'agent',
   }
-  const agentRow = {
-    id: 'agent-1',
+  const agentRow = agent ? {
+    id: agent.id ?? 'agent-1',
     provider: agent.provider,
     model: agent.model,
-  }
+    instructions: agent.instructions,
+    root: agent.root,
+  } : null
 
   return {
     findById: vi.fn(async (table: unknown, id?: string) => {
@@ -220,7 +242,8 @@ function createMockDb(agent: { provider: string; model: string }, credentialRows
         const execute = async () => {
           if (table === mocked.chatTable) return [chat]
           if (table === mocked.contactTable) return [contact]
-          if (table === mocked.agentTable) return [agentRow]
+          if (table === mocked.agentTable) return agentRow ? [agentRow] : []
+          if (table === mocked.skillResource) return options.skillRows ?? []
           if (table === mocked.credentialResource) return credentialRows
           return []
         }
@@ -236,6 +259,15 @@ function createMockDb(agent: { provider: string; model: string }, credentialRows
 
 function findAssistantDone(events: Array<Record<string, any>>) {
   return events.find((event) => event.type === 'thread.item.done' && event.item?.type === 'assistant_message')
+}
+
+function findRuntimeRequestBody(fetchMock: ReturnType<typeof vi.fn>) {
+  const call = fetchMock.mock.calls.find(([input]) => String(input).endsWith('/chat/completions'))
+  if (!call) {
+    throw new Error('Runtime request was not sent')
+  }
+
+  return JSON.parse((call[1] as RequestInit).body as string)
 }
 
 async function sendMessage(service: LocalChatKitService) {
@@ -281,7 +313,7 @@ describe('LocalChatKitService platform runtime routing', () => {
         method: 'POST',
       }),
     )
-    const body = JSON.parse((authFetch.mock.calls[0]?.[1] as RequestInit).body as string)
+    const body = findRuntimeRequestBody(authFetch)
     expect(body.model).toBe('linx-lite')
     expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === '可以')).toBe(true)
     expect(findAssistantDone(events)?.item?.status).toBe('completed')
@@ -313,6 +345,127 @@ describe('LocalChatKitService platform runtime routing', () => {
       }),
     )
     expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === '本地可聊')).toBe(true)
+  })
+
+  it('projects the Secretary Agent Home and enabled skill files into runtime messages', async () => {
+    const agentRoot = 'https://id.undefineds.co/agents/__secretary__/'
+    const store = createMockStore({ chatId: 'ai-secretary' })
+    const db = createMockDb({
+      id: '__secretary__/',
+      provider: 'undefineds',
+      model: 'undefineds/linx-lite',
+      instructions: 'Keep control records current.',
+      root: agentRoot,
+    }, [], {
+      chatId: 'ai-secretary',
+      participants: ['contact-secretary'],
+      contactId: 'contact-secretary',
+      contactEntity: agentRoot,
+      chatMetadata: { linx: { role: 'secretary', version: 1 } },
+      skillRows: [{
+        id: '__secretary__/skills/symphony/',
+        agent: agentRoot,
+        root: `${agentRoot}skills/symphony/`,
+        name: 'symphony',
+        displayName: 'Symphony',
+        enabled: true,
+        source: 'linx-cli:skills/symphony',
+        loadPolicy: 'file-backed',
+      }],
+    })
+    const authFetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+
+      if (url.endsWith('/agents/__secretary__/AGENTS.md')) {
+        return new Response('# Secretary Home\nUse the Agent Home rules.', {
+          status: 200,
+          headers: { 'Content-Type': 'text/markdown' },
+        })
+      }
+
+      if (url.endsWith('/agents/__secretary__/rules.md')) {
+        return new Response('# Rules\nNever ignore enabled skills.', {
+          status: 200,
+          headers: { 'Content-Type': 'text/markdown' },
+        })
+      }
+
+      if (url.endsWith('/agents/__secretary__/config.json')) {
+        return new Response(JSON.stringify({ skills: { enabled: ['symphony'] } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (url.endsWith('/agents/__secretary__/skills/symphony/SKILL.md')) {
+        return new Response('# Symphony Skill\nSystem Situation -> Evolution Judgment.', {
+          status: 200,
+          headers: { 'Content-Type': 'text/markdown' },
+        })
+      }
+
+      if (url.endsWith('/chat/completions')) {
+        return createSseResponse([
+          'data: {"choices":[{"delta":{"content":"收到"}}]}\n\n',
+          'data: [DONE]\n\n',
+        ])
+      }
+
+      return new Response('', { status: 404 })
+    })
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    await sendMessage(service)
+
+    const body = findRuntimeRequestBody(authFetch)
+    expect(body.model).toBe('linx-lite')
+    expect(body.messages[0].content).toContain('Default Secretary Agent Home is active.')
+    expect(body.messages[0].content).toContain('Agent root: https://id.undefineds.co/agents/__secretary__/')
+    expect(body.messages[0].content).toContain('Keep control records current.')
+    expect(body.messages[0].content).toContain('Use the Agent Home rules.')
+    expect(body.messages[0].content).toContain('Never ignore enabled skills.')
+    expect(body.messages[0].content).toContain('Skill file: symphony/SKILL.md')
+    expect(body.messages[0].content).toContain('System Situation -> Evolution Judgment.')
+  })
+
+  it('uses the default Symphony skill for an unmaterialized Secretary chat', async () => {
+    const store = createMockStore({ chatId: 'ai-secretary' })
+    const db = createMockDb(null, [], {
+      chatId: 'ai-secretary',
+      participants: [],
+      chatMetadata: { linx: { role: 'secretary', version: 1 } },
+    })
+    const authFetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/chat/completions')) {
+        return createSseResponse([
+          'data: {"choices":[{"delta":{"content":"默认可用"}}]}\n\n',
+          'data: [DONE]\n\n',
+        ])
+      }
+
+      return new Response('', { status: 404 })
+    })
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service)
+
+    const body = findRuntimeRequestBody(authFetch)
+    expect(body.model).toBe('linx-lite')
+    expect(body.messages[0].content).toContain('Agent key: __secretary__')
+    expect(body.messages[0].content).toContain('symphony')
+    expect(body.messages[0].content).toContain('Use the Symphony control-plane skill')
+    expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === '默认可用')).toBe(true)
   })
 
   it('uses shared Pod base resolution for malformed WebID fallback routing', async () => {

@@ -24,14 +24,17 @@ import {
   type ThreadStreamEvent,
 } from '@/lib/vendor/xpod-chatkit'
 import {
+  agentResource,
   agentTable,
   aiConfigRepository,
   chatTable,
   contactTable,
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
+  skillResource,
   type AgentRow,
   type ContactRow,
+  type SkillRow,
   type SolidDatabase,
 } from '@undefineds.co/models'
 import { RuntimeSidecarSink } from './runtime-sidecar'
@@ -68,10 +71,37 @@ interface RuntimeThreadRecord {
   tokenUsage: number
 }
 
+const DEFAULT_SECRETARY_CHAT_ID = 'ai-secretary'
+const DEFAULT_SECRETARY_AGENT_ID = '__secretary__'
+const DEFAULT_SECRETARY_PROVIDER = 'undefineds'
+const DEFAULT_SECRETARY_MODEL = 'undefineds/linx-lite'
+const DEFAULT_SECRETARY_SKILL = 'symphony'
+const AGENT_HOME_PROMPT_FILES = ['AGENTS.md', 'rules.md', 'config.json', 'memory.md'] as const
+const MAX_AGENT_HOME_FILE_CHARS = 12_000
+const MAX_SKILL_FILE_CHARS = 24_000
+
+interface AgentHomeFileProjection {
+  path: string
+  content: string
+}
+
+interface ThreadAgentSkillConfig {
+  name: string
+  displayName?: string
+  root?: string
+  source?: string
+  loadPolicy?: string
+  enabled?: boolean
+}
+
 interface ThreadAgentConfig {
   provider: string
   model: string
   instructions?: string
+  agentId?: string
+  agentRoot?: string
+  isDefaultSecretary?: boolean
+  skills?: ThreadAgentSkillConfig[]
 }
 
 type RuntimeThreadEvent =
@@ -327,8 +357,6 @@ export class LocalChatKitService {
     context: StoreContext,
     inferenceOptions?: any,
   ): AsyncIterable<ThreadStreamEvent> {
-    const messages = await this.buildConversationHistory(thread.id, context)
-
     const assistantItem = this.createAssistantItem(thread, context) as any
     const assistantItemId = assistantItem.id
     await this.store.addThreadItem(thread.id, assistantItem, context)
@@ -369,6 +397,7 @@ export class LocalChatKitService {
         }
       } else {
         const agentConfig = await this.resolveThreadAgentConfig(thread)
+        const messages = await this.buildConversationHistory(thread.id, context, agentConfig)
         const platformModel = this.resolvePlatformModel(agentConfig)
 
         if (platformModel) {
@@ -777,45 +806,249 @@ export class LocalChatKitService {
 
     try {
       const chat = await this.findChatById(chatId)
+      const isDefaultSecretary = this.isDefaultSecretaryChat(chatId, chat)
       const participantRefs = Array.isArray(chat?.participants)
         ? chat.participants.filter((participant: unknown): participant is string => typeof participant === 'string' && participant.length > 0)
         : []
 
-      if (participantRefs.length === 0) {
+      const contacts = await this.db.select().from(contactTable).execute() as ContactRow[]
+      const agents = await this.db.select().from(agentTable).execute() as AgentRow[]
+      const selected = this.resolveAgentFromParticipants(participantRefs, contacts, agents)
+        ?? (isDefaultSecretary ? this.resolveDefaultSecretaryAgent(agents) : null)
+
+      if (!selected && !isDefaultSecretary) {
         return null
       }
 
-      const contacts = await this.db.select().from(contactTable).execute() as ContactRow[]
-      const agents = await this.db.select().from(agentTable).execute() as AgentRow[]
+      const provider = normalizeAIConfigProviderId(
+        typeof selected?.agent.provider === 'string'
+          ? selected.agent.provider
+          : (isDefaultSecretary ? DEFAULT_SECRETARY_PROVIDER : ''),
+      )
+      const model = normalizeAIConfigResourceId(
+        typeof selected?.agent.model === 'string'
+          ? selected.agent.model
+          : (isDefaultSecretary ? DEFAULT_SECRETARY_MODEL : ''),
+      )
 
-      for (const participantRef of participantRefs) {
-        const contact = contacts.find((entry: any) => this.isSameRecordRef(entry, participantRef))
-        const agentRef = contact?.entity ?? participantRef
-        const agent = agents.find((entry: any) => this.isSameRecordRef(entry, agentRef))
-
-        if (!agent) {
-          continue
-        }
-
-        const provider = normalizeAIConfigProviderId(typeof agent.provider === 'string' ? agent.provider : '')
-        const model = normalizeAIConfigResourceId(typeof agent.model === 'string' ? agent.model : '')
-
-        if (!provider || !model) {
-          continue
-        }
-
-        return {
-          provider,
-          model,
-          instructions: typeof agent.instructions === 'string' ? agent.instructions : undefined,
-        }
+      if (!provider || !model) {
+        return null
       }
 
-      return null
+      const agentId = this.resolveAgentId(selected?.agent, selected?.agentRef)
+        ?? (isDefaultSecretary ? DEFAULT_SECRETARY_AGENT_ID : undefined)
+      const agentRoot = this.resolveAgentRoot(selected?.agent, agentId)
+      const skills = await this.resolveAgentSkills(agentId, agentRoot, isDefaultSecretary)
+
+      return {
+        provider,
+        model,
+        agentId,
+        agentRoot,
+        isDefaultSecretary,
+        skills,
+        instructions: typeof selected?.agent.instructions === 'string' ? selected.agent.instructions : undefined,
+      }
     } catch (error) {
       console.warn('[LocalChatKitService] Failed to resolve thread agent config:', error)
       return null
     }
+  }
+
+  private resolveAgentFromParticipants(
+    participantRefs: string[],
+    contacts: ContactRow[],
+    agents: AgentRow[],
+  ): { agent: AgentRow; agentRef: string } | null {
+    for (const participantRef of participantRefs) {
+      const contact = contacts.find((entry: any) => this.isSameRecordRef(entry, participantRef))
+      const agentRef = typeof contact?.entity === 'string' && contact.entity.length > 0
+        ? contact.entity
+        : participantRef
+      const agent = agents.find((entry: any) => this.isSameAgentRef(entry, agentRef))
+
+      if (agent) {
+        return { agent, agentRef }
+      }
+    }
+
+    return null
+  }
+
+  private resolveDefaultSecretaryAgent(agents: AgentRow[]): { agent: AgentRow; agentRef: string } | null {
+    const agent = agents.find((entry: any) => {
+      const agentId = this.resolveAgentId(entry)
+      return agentId === DEFAULT_SECRETARY_AGENT_ID
+    })
+
+    return agent
+      ? { agent, agentRef: DEFAULT_SECRETARY_AGENT_ID }
+      : null
+  }
+
+  private isDefaultSecretaryChat(chatId: string, chat: any | null): boolean {
+    const chatKey = this.extractChatKey(chatId)
+    const chatRole = (chat?.metadata as any)?.linx?.role
+
+    return (
+      chatKey === DEFAULT_SECRETARY_CHAT_ID
+      || chat?.id === DEFAULT_SECRETARY_CHAT_ID
+      || chatRole === 'secretary'
+    )
+  }
+
+  private extractChatKey(ref: string): string | null {
+    const match = ref.match(/\/\.data\/chat\/([^/#]+)\/index\.ttl(?:#.*)?$/)
+    if (match?.[1]) return decodeURIComponent(match[1])
+    return /^[a-zA-Z0-9_-]+$/.test(ref) ? ref : null
+  }
+
+  private resolveAgentId(agent?: AgentRow | null, ref?: string | null): string | null {
+    const candidates = [
+      ref,
+      typeof agent?.id === 'string' ? agent.id : null,
+      typeof (agent as any)?.['@id'] === 'string' ? (agent as any)['@id'] : null,
+      typeof (agent as any)?.uri === 'string' ? (agent as any).uri : null,
+      typeof agent?.root === 'string' ? agent.root : null,
+      agent ? resolveRowSubject(agent as Record<string, unknown>) : null,
+    ]
+
+    for (const candidate of candidates) {
+      const agentId = this.extractAgentIdFromRef(candidate)
+      if (agentId) return agentId
+    }
+
+    return null
+  }
+
+  private extractAgentIdFromRef(ref: string | null | undefined): string | null {
+    if (!ref) return null
+
+    const canonicalMatch = ref.match(/(?:^|\/)agents\/([^/#]+)(?:\/|$)/)
+    if (canonicalMatch?.[1]) return decodeURIComponent(canonicalMatch[1])
+
+    const localSkillMatch = ref.match(/^([^/#]+)\/skills\//)
+    if (localSkillMatch?.[1]) return decodeURIComponent(localSkillMatch[1])
+
+    const compact = ref.replace(/\/+$/, '')
+    return /^[a-zA-Z0-9_-]+$/.test(compact) ? compact : null
+  }
+
+  private resolveAgentRoot(agent?: AgentRow | null, agentId?: string | null): string | undefined {
+    if (typeof agent?.root === 'string' && agent.root.length > 0) {
+      return this.resolvePodUrl(agent.root)
+    }
+
+    if (!agentId) {
+      return undefined
+    }
+
+    return this.resolvePodUrl(agentResource.resolveUri(agentResource.buildId({ id: agentId })))
+  }
+
+  private async resolveAgentSkills(
+    agentId: string | null | undefined,
+    agentRoot: string | undefined,
+    isDefaultSecretary: boolean,
+  ): Promise<ThreadAgentSkillConfig[]> {
+    const skills: ThreadAgentSkillConfig[] = []
+
+    try {
+      const rows = await this.db.select().from(skillResource).execute() as SkillRow[]
+
+      for (const row of rows) {
+        if (row.enabled === false || !this.isSkillForAgent(row, agentId, agentRoot)) {
+          continue
+        }
+
+        const name = this.resolveSkillName(row)
+        if (!name) {
+          continue
+        }
+
+        skills.push({
+          name,
+          displayName: typeof row.displayName === 'string' ? row.displayName : undefined,
+          root: typeof row.root === 'string' ? this.resolvePodUrl(row.root) : undefined,
+          source: typeof row.source === 'string' ? row.source : undefined,
+          loadPolicy: typeof row.loadPolicy === 'string' ? row.loadPolicy : undefined,
+          enabled: row.enabled !== false,
+        })
+      }
+    } catch (error) {
+      console.warn('[LocalChatKitService] Failed to resolve agent skills:', error)
+    }
+
+    if (isDefaultSecretary && !skills.some((skill) => skill.name === DEFAULT_SECRETARY_SKILL)) {
+      skills.push(this.createDefaultSecretarySkill(agentRoot))
+    }
+
+    return this.dedupeSkills(skills)
+  }
+
+  private isSkillForAgent(
+    row: SkillRow,
+    agentId: string | null | undefined,
+    agentRoot: string | undefined,
+  ): boolean {
+    if (!agentId && !agentRoot) return false
+
+    const rowAgentId = this.extractAgentIdFromRef(typeof row.agent === 'string' ? row.agent : undefined)
+    if (rowAgentId && rowAgentId === agentId) {
+      return true
+    }
+
+    const rowIdAgent = this.extractAgentIdFromRef(typeof row.id === 'string' ? row.id : undefined)
+    if (rowIdAgent && rowIdAgent === agentId) {
+      return true
+    }
+
+    const rowRootAgent = this.extractAgentIdFromRef(typeof row.root === 'string' ? row.root : undefined)
+    if (rowRootAgent && rowRootAgent === agentId) {
+      return true
+    }
+
+    return Boolean(agentRoot && typeof row.agent === 'string' && this.resolvePodUrl(row.agent) === agentRoot)
+  }
+
+  private resolveSkillName(row: SkillRow): string | null {
+    if (typeof row.name === 'string' && row.name.length > 0) {
+      return row.name
+    }
+
+    return this.extractSkillNameFromRef(typeof row.id === 'string' ? row.id : undefined)
+      ?? this.extractSkillNameFromRef(typeof row.root === 'string' ? row.root : undefined)
+  }
+
+  private extractSkillNameFromRef(ref: string | null | undefined): string | null {
+    if (!ref) return null
+    const match = ref.match(/\/skills\/([^/#]+)(?:\/|$)/)
+    return match?.[1] ? decodeURIComponent(match[1]) : null
+  }
+
+  private createDefaultSecretarySkill(agentRoot: string | undefined): ThreadAgentSkillConfig {
+    return {
+      name: DEFAULT_SECRETARY_SKILL,
+      displayName: 'Symphony',
+      root: agentRoot ? new URL(`skills/${DEFAULT_SECRETARY_SKILL}/`, this.ensureTrailingSlash(agentRoot)).toString() : undefined,
+      source: 'linx:default-secretary',
+      loadPolicy: 'file-backed',
+      enabled: true,
+    }
+  }
+
+  private dedupeSkills(skills: ThreadAgentSkillConfig[]): ThreadAgentSkillConfig[] {
+    const seen = new Set<string>()
+    const result: ThreadAgentSkillConfig[] = []
+
+    for (const skill of skills) {
+      const key = skill.name || skill.root
+      if (!key || seen.has(key)) continue
+      seen.add(key)
+      result.push(skill)
+    }
+
+    return result
   }
 
   private async findChatById(chatId: string): Promise<any | null> {
@@ -834,6 +1067,226 @@ export class LocalChatKitService {
       || record.uri === ref
       || resolveRowSubject(record as Record<string, unknown>) === ref
     )
+  }
+
+  private isSameAgentRef(record: Record<string, unknown> | null | undefined, ref: string): boolean {
+    if (this.isSameRecordRef(record, ref)) {
+      return true
+    }
+
+    const recordId = this.extractAgentIdFromRef(typeof record?.id === 'string' ? record.id : undefined)
+      ?? this.extractAgentIdFromRef(typeof record?.['@id'] === 'string' ? record['@id'] : undefined)
+      ?? this.extractAgentIdFromRef(typeof record?.uri === 'string' ? record.uri : undefined)
+      ?? this.extractAgentIdFromRef(typeof record?.root === 'string' ? record.root : undefined)
+      ?? this.extractAgentIdFromRef(record ? resolveRowSubject(record) : null)
+    const refId = this.extractAgentIdFromRef(ref)
+
+    return Boolean(recordId && refId && recordId === refId)
+  }
+
+  private resolvePodUrl(value: string): string {
+    try {
+      return new URL(value).toString()
+    } catch {
+      const base = resolvePodBaseUrl(this.webId) || this.resolveWebIdOrigin()
+      const relative = value.replace(/^\/+/, '')
+      try {
+        return new URL(relative, this.ensureTrailingSlash(base)).toString()
+      } catch {
+        return `${base.replace(/\/+$/, '')}/${relative}`
+      }
+    }
+  }
+
+  private resolveWebIdOrigin(): string {
+    try {
+      return new URL(this.webId).origin
+    } catch {
+      return this.webId.replace(/\/profile\/card#me$/, '').replace(/\/+$/, '')
+    }
+  }
+
+  private ensureTrailingSlash(value: string): string {
+    return value.endsWith('/') ? value : `${value}/`
+  }
+
+  private async buildSystemPrompt(agentConfig: ThreadAgentConfig | null): Promise<string> {
+    const sections = [this.systemPrompt]
+
+    if (agentConfig?.instructions?.trim()) {
+      sections.push(`Agent instructions:\n${agentConfig.instructions.trim()}`)
+    }
+
+    if (agentConfig?.isDefaultSecretary) {
+      const homeFiles = await this.loadAgentHomeFiles(agentConfig.agentRoot)
+      const skills = this.mergeAgentHomeConfiguredSkills(
+        agentConfig.skills ?? [],
+        homeFiles,
+        agentConfig.agentRoot,
+      )
+      const loadedSkills = await this.loadSkillFiles(skills, agentConfig.agentRoot)
+
+      sections.push(this.formatSecretaryAgentHomeContext(agentConfig, homeFiles, skills, loadedSkills))
+    }
+
+    return sections.filter((section) => section.trim().length > 0).join('\n\n')
+  }
+
+  private async loadAgentHomeFiles(agentRoot: string | undefined): Promise<AgentHomeFileProjection[]> {
+    if (!agentRoot) return []
+
+    const files: AgentHomeFileProjection[] = []
+
+    for (const path of AGENT_HOME_PROMPT_FILES) {
+      const content = await this.readPodTextFile(new URL(path, this.ensureTrailingSlash(agentRoot)).toString())
+      if (content?.trim()) {
+        files.push({
+          path,
+          content: this.truncateForPrompt(content.trim(), MAX_AGENT_HOME_FILE_CHARS),
+        })
+      }
+    }
+
+    return files
+  }
+
+  private mergeAgentHomeConfiguredSkills(
+    skills: ThreadAgentSkillConfig[],
+    homeFiles: AgentHomeFileProjection[],
+    agentRoot: string | undefined,
+  ): ThreadAgentSkillConfig[] {
+    const merged = [...skills]
+    const configFile = homeFiles.find((file) => file.path === 'config.json')
+    const enabledSkillNames = this.extractEnabledSkillNames(configFile?.content)
+
+    for (const name of enabledSkillNames) {
+      if (merged.some((skill) => skill.name === name)) {
+        continue
+      }
+
+      merged.push({
+        name,
+        root: agentRoot ? new URL(`skills/${encodeURIComponent(name)}/`, this.ensureTrailingSlash(agentRoot)).toString() : undefined,
+        source: 'agent-home:config.json',
+        loadPolicy: 'file-backed',
+        enabled: true,
+      })
+    }
+
+    if (!merged.some((skill) => skill.name === DEFAULT_SECRETARY_SKILL)) {
+      merged.push(this.createDefaultSecretarySkill(agentRoot))
+    }
+
+    return this.dedupeSkills(merged)
+  }
+
+  private extractEnabledSkillNames(configContent: string | undefined): string[] {
+    if (!configContent?.trim()) return []
+
+    try {
+      const parsed = JSON.parse(configContent) as { skills?: { enabled?: unknown } }
+      return Array.isArray(parsed.skills?.enabled)
+        ? parsed.skills.enabled.filter((value): value is string => typeof value === 'string' && value.length > 0)
+        : []
+    } catch {
+      return []
+    }
+  }
+
+  private async loadSkillFiles(
+    skills: ThreadAgentSkillConfig[],
+    agentRoot: string | undefined,
+  ): Promise<Array<{ skill: ThreadAgentSkillConfig; content: string }>> {
+    const result: Array<{ skill: ThreadAgentSkillConfig; content: string }> = []
+
+    for (const skill of skills) {
+      const root = skill.root
+        ?? (agentRoot ? new URL(`skills/${encodeURIComponent(skill.name)}/`, this.ensureTrailingSlash(agentRoot)).toString() : undefined)
+      const content = root
+        ? await this.readPodTextFile(new URL('SKILL.md', this.ensureTrailingSlash(root)).toString())
+        : null
+      const fallback = !content && skill.name === DEFAULT_SECRETARY_SKILL
+        ? this.defaultSymphonySkillFallback()
+        : null
+
+      if (content?.trim() || fallback) {
+        result.push({
+          skill,
+          content: this.truncateForPrompt((content ?? fallback ?? '').trim(), MAX_SKILL_FILE_CHARS),
+        })
+      }
+    }
+
+    return result
+  }
+
+  private async readPodTextFile(url: string): Promise<string | null> {
+    try {
+      const response = await this.authFetch(url, {
+        method: 'GET',
+        headers: { Accept: 'text/markdown, text/plain, application/json;q=0.9, */*;q=0.1' },
+      })
+
+      if (!response.ok) {
+        return null
+      }
+
+      return await response.text()
+    } catch {
+      return null
+    }
+  }
+
+  private formatSecretaryAgentHomeContext(
+    agentConfig: ThreadAgentConfig,
+    homeFiles: AgentHomeFileProjection[],
+    skills: ThreadAgentSkillConfig[],
+    loadedSkills: Array<{ skill: ThreadAgentSkillConfig; content: string }>,
+  ): string {
+    const lines = [
+      'Default Secretary Agent Home is active.',
+      `Agent key: ${agentConfig.agentId ?? DEFAULT_SECRETARY_AGENT_ID}`,
+      `Agent root: ${agentConfig.agentRoot ?? '/agents/__secretary__/'}`,
+      'Treat this Agent Home as the instruction root for this chat surface.',
+    ]
+
+    if (skills.length > 0) {
+      lines.push('')
+      lines.push('Enabled skills:')
+      for (const skill of skills) {
+        lines.push(`- ${skill.name}${skill.root ? ` (${skill.root})` : ''}`)
+      }
+    }
+
+    for (const file of homeFiles) {
+      lines.push('')
+      lines.push(`Agent Home file: ${file.path}`)
+      lines.push(file.content)
+    }
+
+    for (const entry of loadedSkills) {
+      lines.push('')
+      lines.push(`Skill file: ${entry.skill.name}/SKILL.md`)
+      lines.push(entry.content)
+    }
+
+    return lines.join('\n')
+  }
+
+  private defaultSymphonySkillFallback(): string {
+    return [
+      '# Symphony',
+      '',
+      'Use the Symphony control-plane skill when coordinating system evolution.',
+      'Maintain system situation, evolution judgment, execution control, and evidence feedback.',
+      'Do not treat every message as an issue; distinguish ideas, existing work changes, tasks, runs, deliveries, and evidence.',
+      'Default Secretary identity is `__secretary__`; `ai-secretary` is only the chat surface id.',
+    ].join('\n')
+  }
+
+  private truncateForPrompt(content: string, maxChars: number): string {
+    if (content.length <= maxChars) return content
+    return `${content.slice(0, maxChars)}\n\n[truncated]`
   }
 
   private resolvePlatformModel(agentConfig: ThreadAgentConfig | null): string | null {
@@ -1029,9 +1482,11 @@ export class LocalChatKitService {
   private async buildConversationHistory(
     threadId: string,
     context: StoreContext,
+    agentConfig: ThreadAgentConfig | null,
   ): Promise<Array<{ role: string; content: string }>> {
+    const systemPrompt = await this.buildSystemPrompt(agentConfig)
     const messages: Array<{ role: string; content: string }> = [
-      { role: 'system', content: this.systemPrompt },
+      { role: 'system', content: systemPrompt },
     ]
 
     const items = await this.store.loadThreadItems(threadId, undefined, 100, 'asc', context)
