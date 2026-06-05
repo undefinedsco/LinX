@@ -50,6 +50,65 @@ LinX product runtime persists through shared models/repositories. A portable AI
 agent may call `xpod` CLI when that tool is available, but `xpod` is an adapter
 tool surface, not something the core Symphony skill or runtime module requires.
 
+## Agent Config And Skill Resources
+
+Do not treat an agent's backend, model, credentials, tools, or skills as hidden
+prompt blobs. They are managed resources with runtime snapshots.
+
+In LinX runtime, an Agent is a resource/container. Its default runtime config is
+metadata on that Agent container; skills are file or folder resources bound by
+lightweight metadata. A Solid-backed implementation may use a container `.meta`
+document to describe the Agent container itself, but Symphony code and prompts
+must not hardcode those paths or predicates. Use shared models, repositories,
+or xpod/adapters for the concrete storage shape.
+
+Treat an Agent root as a context folder with multiple authority surfaces, not as
+one merged config object. System-managed surfaces and user-managed surfaces live
+under the same Agent folder. This is analogous to platform/system instructions
+plus a repository `AGENTS.md`: both are loaded into runtime context, but they
+remain separate sources of truth. Do not describe this as a field-level overlay
+that rewrites the system package or user personalization into one blob.
+
+The default Secretary Agent key is the system-reserved `__secretary__`.
+`ai-secretary` may remain a Chat surface id, but durable Agent, Skill,
+maker/actor, grant-recipient, and runtime snapshot identity should use the
+`/agents/__secretary__/` container resource. Do not treat `.meta` as the Agent
+identity, and do not read or write legacy `ai-secretary` Agent resources.
+
+Agent root and Agent identity are separate:
+
+- The Agent root is the configuration/resource container.
+- An Agent WebID is needed only when the AI acts as an auditable actor,
+  requester, maker, grant recipient, credential holder, or authorization
+  subject.
+- Ordinary Skills, Issues, Tasks, Runs, Evidence, Reports, and files use their
+  own resource URIs; they do not become WebIDs.
+
+Skill content is file-backed. Skill metadata may record enabled state, version,
+source, checksum, load policy, dependencies, and relations, but it must not
+duplicate the full skill text in RDF or runtime config. Agent-scoped skill
+resources are bindings/installations; external or reusable skills are referenced
+through source/version/checksum/root and may be materialized locally per Agent.
+Secretary and workers should refer to configured skill resources and loaded skill versions rather than
+assuming a skill is just an invisible system-prompt section.
+
+For the default Secretary, system-managed surfaces include the installed
+Secretary package, built-in skill bindings, migration records, capability
+envelope, and default policy pointers. User-managed surfaces include
+`AGENTS.md`, preferences, user-installed skills, grants, memory policy, and
+forked skill bindings. Upgrades may mutate system-managed surfaces only.
+User-managed surfaces survive upgrades unless the user explicitly accepts a
+migration or edits them. If a system skill is customized, represent it as a
+user-managed fork or override binding with its own source/version/checksum.
+
+Runtime startup resolves the Agent default config plus launch/session
+overrides, projects the Agent folder in authority order, then freezes the
+effective backend, model, credential source, skill set, loaded system package
+version, user surface revisions, skill checksums, and authority/tool policy into
+Session/Run metadata. Resume should use that snapshot by default. A different
+backend/model/credential source means a new runtime session or an explicit
+override record, not silent mutation of an old run's meaning.
+
 ## Control Lane
 
 When Symphony is active in Codex:

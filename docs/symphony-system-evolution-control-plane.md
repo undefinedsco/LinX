@@ -56,6 +56,70 @@ runtime JSON, tests, and no-Pod recovery files are allowed only as adapter/cache
 material; they must not replace TTL resources or become the source of Symphony
 truth.
 
+## Agent Runtime Configuration And Skills
+
+AgentRuntimeConfig is part of the managed system, not an invisible prompt
+assembly detail. In LinX runtime, an Agent is a container resource. The Agent's
+default backend/model/credential/tool/skill policy belongs to metadata for that
+container. In a Solid-backed Pod this means the container can be described by a
+`.meta` document whose subject is the container itself, not the `.meta` file.
+
+Use this shape as the product direction:
+
+- Agent root: the resource container and context folder, for example an AI
+  Secretary folder.
+- Agent meta: default runtime config, skill bindings, display/name metadata,
+  capability envelope, and policy pointers for that Agent container.
+- Agent context surfaces: system-managed files/resources and user-managed
+  files/resources live in the same Agent folder, but keep separate authority.
+  This is closer to the relationship between a platform/system message and a
+  repository `AGENTS.md` file than to a field-level overlay. The system package
+  may update system-managed surfaces; the user may edit user-managed surfaces.
+  They must not be collapsed into one mutable prompt/config blob.
+- Agent WebID: optional actor identity, separate from Agent root. It is needed
+  only when the AI Agent receives grants, acts as maker/actor/requester, holds
+  credentials, or needs independent authorization/audit identity.
+- Skills: file-backed resources such as `SKILL.md` and related files. Metadata
+  records enabled state, version, source, checksum, load policy, dependencies,
+  and relations. An Agent-scoped skill resource is a binding/installation fact,
+  not the global reusable skill definition. External or shared skills are
+  referenced through source/version/checksum/root and may be materialized into
+  an Agent-local folder without changing their reusable source identity.
+- Runtime session snapshot: startup reads Agent meta and skill bindings, applies
+  launch or session overrides, then freezes the effective backend, model,
+  credentialSource, skills, and authority/tool policy into Session/Run metadata.
+
+Default Secretary identity uses the system-reserved persisted key
+`__secretary__` and the Agent resource shape
+`/agents/__secretary__/`. A Solid `.meta` document may describe that container,
+but it is not the Agent resource identity. The `ai-secretary` slug remains valid
+only as a Chat surface id. Do not read or write legacy `/agents/ai-secretary/`
+or `/.data/agents/ai-secretary/` Agent resources.
+
+The Secretary folder is the stable user-owned context root. It may contain
+system-managed surfaces such as the installed Secretary package record and
+system skill bindings, plus user-managed surfaces such as `AGENTS.md`,
+preferences, user-installed skills, and optional forked skills. System upgrades
+may replace or migrate only system-managed surfaces. User-managed surfaces
+survive upgrades unchanged unless the user explicitly edits, rebases, or accepts
+a migration. If a user modifies a system skill, model it as a user-managed fork
+or override binding, not as an in-place mutation of the system package.
+
+Runtime startup projects the folder into an effective prompt/config in
+authority order, for example platform rules, LinX Secretary system package,
+Agent `AGENTS.md`, enabled skill files, then session messages. The projection is
+not a new source of truth. Session/Run metadata records the system package
+version, user surface revisions, and skill checksums that were actually loaded.
+
+Resume should use the runtime session snapshot by default. A different
+backend/model/credential source should produce a new runtime session or an
+explicit override record. It must not silently mutate what an old Session/Run
+meant.
+
+Ordinary system resources do not become WebIDs. Issues, Tasks, Runs, Evidence,
+Reports, Deliveries, files, and skills use resource URIs and optional metadata;
+only actor-like agents need WebID identity.
+
 ## Why This Exists
 
 As LinX grows, the hard problem is not dispatching work. The hard problem is
@@ -944,10 +1008,11 @@ Open design work:
 - Define how file-backed portable records map to Pod-backed LinX records.
 - Decide which first controller should prove the model without over-engineering
   the system.
-- Later, define AgentConfig as a managed control record for agent profiles,
-  model/runtime policy, tool permissions, skill bindings, contact identity, and
-  capability envelopes. This is out of scope for the current Symphony skill and
-  MVP execution protocol.
+- Define the exact shared model/repository for Agent container meta, optional
+  Agent WebID relation, Skill resources, Skill bindings, runtime config
+  override records, and Session/Run snapshot fields. The product shape is
+  agreed; the remaining work is schema/repository/API implementation and
+  migration.
 
 ## Wiki-Like Knowledge Means Managed System Knowledge
 

@@ -40,6 +40,50 @@ blockers. Product orchestration skills such as `symphony` may be used
 both by Secretary at runtime and by coding agents implementing or verifying the
 same LinX behavior.
 
+Secretary's configured skills are resource-backed product inputs, not opaque
+prompt fragments. The Secretary Agent is a container resource; its default
+runtime config is metadata on that container, and skill bindings point to skill
+files or skill folders. A Solid-backed store may describe the container through
+`.meta`, but product code should reach it through shared models/repositories,
+not by hardcoding Pod paths.
+
+The default persisted Secretary Agent key is the system-reserved
+`__secretary__`. Use it for durable Agent, Skill, maker, actor,
+grant-recipient, and runtime-snapshot identity. The canonical Agent resource is
+the container `/agents/__secretary__/`; `.meta` is only the storage document that
+may describe that container. Keep `ai-secretary` only as the default Chat
+surface id.
+
+Treat `/agents/__secretary__/` as a user-owned context folder, not as a single
+merged config object. System-managed surfaces and user-managed surfaces live
+under the same folder with different authority. System-managed surfaces include
+the installed Secretary package record, built-in skill bindings, migration
+records, and capability envelope. User-managed surfaces include `AGENTS.md`,
+preferences, user-installed skills, grants, memory policy, and any forked skill
+bindings. Runtime assembly is a projection, similar to loading a system message
+and then `AGENTS.md`; it must not write the projected result back as the new
+truth.
+
+Upgrades only mutate system-managed surfaces unless a migration explicitly asks
+for user acceptance. User personalization survives package upgrades unchanged.
+When a user changes a system skill, represent it as a user-managed fork or
+override binding with its own source/version/checksum instead of editing the
+system-managed skill in place.
+
+Skill content should remain file-backed, for example a `SKILL.md` plus related
+files. Skill metadata should record binding facts such as enabled state,
+version, source, checksum, load policy, dependencies, and relations. It should
+not duplicate full skill text in RDF or local runtime JSON. A Secretary skill
+resource is an Agent-scoped binding/installation record; external or reusable
+skills should keep their source identity in `source/version/checksum/root`
+rather than sharing one mutable Agent-local resource.
+
+Agent root and Agent WebID are separate. Secretary needs an Agent WebID only
+when it must appear as an auditable actor, requester, maker, grant recipient,
+credential holder, or authorization subject. Ordinary skill resources,
+deliveries, issues, tasks, runs, reports, evidence, and files use resource URIs,
+not WebIDs.
+
 Developer implementation skills are different. Keep `drizzle-solid`,
 `solid-modeling`, `pod-storage`, and `xpod-componentsjs` available to engineers
 or coding agents when they are changing schemas, repositories, Pod storage, or

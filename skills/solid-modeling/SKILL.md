@@ -165,16 +165,89 @@ udfs:AgentProvider rdfs:subClassOf udfs:Provider ;
 
 ```turtle
 # 定义（模板） - 静态配置，描述"是什么"
-<#agent-config> a udfs:AgentConfig ;
-    udfs:displayName "Indexing Agent" ;
-    udfs:systemPrompt "..." .
+<#indexing-profile> a udfs:CapabilityProfile ;
+    udfs:displayName "Indexing Profile" ;
+    udfs:description "..." .
 
 # 实例 - 运行时状态，描述"正在做什么"
-<#agent-status> a udfs:AgentStatus ;
-    udfs:agentId "indexing" ;
+<#indexing-run> a udfs:Run ;
+    udfs:profile <#indexing-profile> ;
     udfs:status "running" ;
     udfs:currentTaskId "task-123" .
 ```
+
+### Container `.meta` 描述资源本身
+
+当文件夹/容器本身是业务资源时，优先用容器 URI 作为资源 URI，并用
+`.meta` 描述这个容器。`.meta` 的 subject 指向容器本身，而不是指向
+`.meta` 文件。
+
+```text
+pod:/agents/secretary/
+├── .meta
+├── profile/card
+└── skills/
+    └── symphony/
+        ├── .meta
+        └── SKILL.md
+```
+
+```turtle
+# /agents/secretary/.meta
+<./> a udfs:Agent ;
+  udfs:displayName "Secretary" ;
+  udfs:webId <profile/card#me> ;
+  udfs:hasSkill <skills/symphony/> .
+
+# /agents/secretary/skills/symphony/.meta
+<./> a udfs:Skill ;
+  udfs:enabled "true" ;
+  udfs:source "pod" ;
+  udfs:checksum "..." .
+```
+
+规则：
+
+- 容器 resource 的主体是容器 URI，例如 `/agents/secretary/`。
+- `.meta` 是该容器的元数据文档，subject 用 `<./>` 或等价容器 IRI。
+- 普通文件资源需要元数据时也可以有旁路 `.meta`，但不要把文件正文重复进 RDF。
+- 业务代码不要手写 `.meta` 路径；通过 models/repository/ORM/xpod 层读写。
+
+### Agent Root、WebID、Skill 的边界
+
+Agent root 和 Agent WebID 不是同一个资源。
+
+- Agent root 是配置和资源容器，例如 `/agents/secretary/`。
+- 只有需要独立授权、审计身份、maker/actor/requester、收取 grant 或持有凭据的 AI Agent 才需要 WebID。
+- 建议 Agent WebID 形态为 `/agents/secretary/profile/card#me`，由 Agent root `.meta` 通过 URI relation 指向。
+- Skills、Issue、Task、Run、Evidence、Report、普通文件和普通对象不需要 WebID；它们用自己的 resource URI 表达身份，需要元数据时再用 `.meta`。
+
+Agent root 也是 Agent 的上下文文件夹。system-managed surfaces 和
+user-managed surfaces 可以同目录共存，但权威不同，不能合并成一份被系统和用户共同改写的配置：
+
+- system-managed surfaces 包括官方 Agent 包记录、内置 skill binding、迁移记录、capability envelope 和默认 policy pointer。
+- user-managed surfaces 包括 `AGENTS.md`、preferences、用户安装 skill、grant/memory policy，以及用户 fork 的 skill binding。
+- 运行时按类似 system message + `AGENTS.md` 的顺序投影这些 surfaces；投影结果只进入 Session/Run snapshot，不成为新的 shared truth。
+- 系统升级只修改 system-managed surfaces。用户个性化必须保留在 user-managed surfaces；冲突时进入 review/migration 状态，而不是自动覆盖。
+
+Skill 应该文件化：
+
+- Skill 正文是文件或文件夹，例如 `/agents/secretary/skills/symphony/SKILL.md`。
+- Skill binding/meta 是轻量 RDF，例如 `/agents/secretary/skills/symphony/.meta`。
+- RDF meta 只记录启用状态、版本、来源、checksum、加载策略、依赖和关系；不要把完整 `SKILL.md` 内容塞进 RDF 字段。
+- Durable shared 语义必须在 `@undefineds.co/models` 定义；产品壳和 prompt 不应发明 predicate、subject template 或路径。
+
+### Agent Runtime Config Snapshot
+
+AgentRuntimeConfig 是 Agent folder 的 Pod-backed 默认配置，不是每次运行临时拼出来的私有 JSON。
+
+启动时：
+
+1. 读取 Agent root `.meta` 和 skill bindings。
+2. 应用启动参数或 session override。
+3. 把解析后的 backend、model、credentialSource、skills、tool/authority policy 冻结到 Session/Run metadata。
+
+Resume 默认使用这个 runtime session snapshot。显式切换 backend/model/credentialSource 应创建新的 runtime session 或记录明确 override，不能静默修改历史 session 的含义。
 
 ## 属性设计
 
