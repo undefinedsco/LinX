@@ -58,7 +58,7 @@
 | 收藏消息 | Favorites 可见，并能回到原消息 |
 | 文件来自聊天 | `底部菜单 -> 聊天文件` 可见来源会话 |
 | 进入一级文件模块 | 可浏览 Pod 根目录、容器树和 resource 详情 |
-| 进入 Agent 文件夹 | 可看到 `/.data/agents/{agentId}/`，但不在 Files 中编辑 API Key |
+| 进入 Agent 文件夹 | 可看到 `/agents/{agentKey}/`，但不在 Files 中编辑 API Key |
 | 开始一次运行 | Session 绑定 Agent + Thread + Workspace，git 元信息从 Workspace `.meta` 读取 |
 | 待审批事件 | Chat inline card 与 Inbox 指向同一对象 |
 | 退出登录 | 主界面消失，重新登录后恢复 |

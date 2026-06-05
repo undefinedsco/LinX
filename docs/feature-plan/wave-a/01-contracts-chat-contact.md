@@ -277,7 +277,7 @@ Wave A 阶段仅定义 JSON schema，不做 RDF 提取。
 | Message | `/.data/chat/{chatId}/{yyyy}/{MM}/{dd}/messages.ttl#{id}` | `mee:Message` | UDFS | 按日期分桶；`chat`/`thread` 字段存完整 RDF URI，API helper 可接收本地 id 并解析 |
 | Contact | `/.data/contacts/{id}.ttl` | `vcard:Individual` | UDFS | 新增 `GROUP` 枚举值 |
 | Thread | `/.data/chat/{chatId}/index.ttl#{threadId}` | `sioc:Thread` | UDFS | 与 chat 共用 index.ttl；CP0 仅新增 `workspace` 字段 |
-| Agent | `/.data/agents/{id}.ttl` | `foaf:Agent` | UDFS | 无变更 |
+| Agent | `/agents/{key}/` | `foaf:Agent` | UDFS | Agent identity is the container root; `.meta` only stores container metadata |
 
 ### 6A.7 Vocab 文件结构
 

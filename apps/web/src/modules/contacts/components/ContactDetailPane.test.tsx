@@ -219,7 +219,7 @@ describe('ContactDetailPane', () => {
   })
 
   it('renders local agent configuration and allows opening tools editor', async () => {
-    const entity = '/.data/agents/agent-1.ttl#this'
+    const entity = '/agents/agent-1/'
     const contact = makeContact({
       id: 'contact-agent-1',
       name: '智能翻译官',

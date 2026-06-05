@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { chatTable, messageTable, threadTable } from '@undefineds.co/models'
+import { agentTable, chatTable, messageTable, threadTable } from '@undefineds.co/models'
 
 const mocked = vi.hoisted(() => {
   const states = new Map<string, Map<string, Record<string, unknown>>>()
@@ -106,6 +106,7 @@ import {
   getChatOpsSyncResults,
   initializeChatCollections,
 } from './collections'
+import { ensureAgentHome } from './agent-home'
 
 type InsertRecord = {
   table: unknown
@@ -378,5 +379,36 @@ describe('chatOps sync projection', () => {
         model: 'gpt-4o',
       },
     })
+  })
+
+  it('resolves canonical Agent URI participants when ensuring the default Secretary home', async () => {
+    const { db } = createMockDb()
+    initializeChatCollections(db as any)
+
+    const agentUri = 'https://alice.example/agents/__secretary__/'
+    mocked.states.get('chats')?.set('ai-secretary', {
+      id: 'ai-secretary',
+      title: 'AI Secretary',
+      participants: [agentUri],
+      metadata: { linx: { role: 'secretary', version: 1 } },
+    })
+
+    await (db as any).insert(agentTable).values({
+      id: agentTable.buildId({ id: '__secretary__' }),
+      name: 'AI Secretary',
+      provider: 'undefineds',
+      model: 'undefineds/linx-lite',
+    }).execute()
+
+    await expect(chatOps.ensureLinxWelcome()).resolves.toMatchObject({
+      chatId: 'ai-secretary',
+      created: false,
+    })
+    expect(ensureAgentHome).toHaveBeenCalledWith(db, expect.objectContaining({
+      agentId: '__secretary__',
+      name: 'AI Secretary',
+      provider: 'undefineds',
+      model: 'undefineds/linx-lite',
+    }))
   })
 })

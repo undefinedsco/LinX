@@ -13,7 +13,7 @@
 | 会话 | 聊天列表中的一个对象 | 现有 chat collection |
 | 话题 / Thread | 会话内的上下文切片、一次工作的时间线 | 现有 thread collection，使用 URI 关系 |
 | 消息 | 对话、系统留档、附件卡片 | 现有 message 结构 |
-| Agent home | 某个可执行助手自己的文件系统 | `/.data/agents/{agentId}/` |
+| Agent home | 某个可执行助手自己的文件系统 | `/agents/{agentKey}/` |
 | Workspace | 运行时真正操作的工作区 / worktree | `/.data/workspaces/{workspaceId}/` + `.meta` |
 | Repository | 仓库来源元信息，不是工作区 | `/.data/repositories/{repositoryId}.ttl` |
 | Session | 一次 Agent 运行记录 | 只绑定 Agent + Thread + Workspace，可挂快照 |
@@ -27,7 +27,7 @@
 
 - `Contact` 是用户通讯录里的关系卡片，回答“我正在和谁互动”。
 - `Person` 是人类身份，不自动拥有 Agent 文件系统。
-- `Agent` 是可执行能力根，必须有 `/.data/agents/{agentId}/`。
+- `Agent` 是可执行能力根，必须有 `/agents/{agentKey}/`。
 - `Thread` 是聊天里的细化时间线，不拥有规则、skills、MCP、backend 或 compaction。
 - `Workspace` 是运行时工作区，`.meta` 存 repository、branch、commit、cwd、dirty state 等 git/worktree 信息。
 - `Repository` 是 Pod 内部资源，记录远端 URL、provider、默认分支等元数据；产品首屏打开 Workspace，不做 Repository 管理页。
@@ -43,7 +43,7 @@
 - `默认 Agent · 不可删除`
 - `当前 Thread · Pod 已同步`
 - `Workspace: linx-prototype`
-- `Agent Home: /.data/agents/secretary/`
+- `Agent Home: /agents/__secretary__/`
 - `AI 配置: 共享配置池`
 
 不要把界面建模成：
@@ -91,7 +91,7 @@
 推荐开发路径：
 
 1. Pod collection bootstrap 完成后检查默认 Agent home。
-2. 如果不存在，创建 `AI Secretary` Agent home、Agent profile、Contact 投影、Chat、Thread。
+2. 如果不存在，创建 `AI Secretary` Agent context root、`.meta`、Contact 投影、Chat、Thread。
 3. 创建欢迎消息。
 4. 该 Agent 标记为系统默认，不允许删除，只允许改名和改头像。
 5. Agent runtime 默认偏好指向共享 AI config，不复制凭据。

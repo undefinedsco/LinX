@@ -36,15 +36,15 @@ Contacts 展示的是 Contact 投影。它可以链接到 Person 或 Agent，但
 | 对象 | 用户心智 | 存储/实现边界 |
 | --- | --- | --- |
 | Contact | 通讯录卡片、关系、备注、最近互动 | 可链接到 Person 或 Agent |
-| Person | 人类身份、WebID/Profile | 不自动拥有 Agent home |
-| Agent | 可执行助手、能力根 | 必须有 `/.data/agents/{agentId}/` |
+| Person | 人类身份、WebID/Profile | 不自动拥有 Agent context root |
+| Agent | 可执行助手、能力根 | 必须有 `/agents/{agentKey}/` |
 
 AI Secretary 同时有 Contact 投影和 Agent 身份：
 
 ```text
 Contact: /.data/contacts/ai-secretary.ttl
-Agent:   /.data/agents/secretary/profile.ttl
-Home:    /.data/agents/secretary/
+Agent:   /agents/__secretary__/
+Meta:    /agents/__secretary__/.meta
 ```
 
 联系人详情可以显示这些链接作为开发/高级信息，但首屏语言应是“默认助手”“发消息”“请赐名”，不要变成配置表单。
@@ -64,7 +64,7 @@ Home:    /.data/agents/secretary/
 - 禁用删除。
 - 支持改名。
 - 支持回到 Secretary 会话。
-- Contact 改名需要同步到 Chat 展示名；Agent home 不因改名而迁移路径。
+- Contact 改名需要同步到 Chat 展示名；Agent context root 不因改名而迁移路径。
 
 ## 发起聊天
 
@@ -78,7 +78,7 @@ Home:    /.data/agents/secretary/
 
 - Contact / Agent 语义来自 `@undefineds.co/models`。
 - Contact 是关系卡；Agent 是 runtime capability root。
-- Agent 的 rules、skills、MCP、backend、compaction、memory 都在 Agent home，不属于联系人详情首屏编辑项。
+- Agent 的 rules、skills、MCP、backend、compaction、memory 都在 Agent context root，不属于联系人详情首屏编辑项。
 - AI provider/model/credential 来自共享 AI config 池；联系人详情不展示 API Key。
 - UI state 如选中联系人、筛选分组走 Zustand 或局部 state。
 - 新增跨端字段前先进入 models。

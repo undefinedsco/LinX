@@ -212,7 +212,7 @@ const fileLocations: Array<{ label: string; icon: IconType; active?: boolean }> 
 
 const fileRows: FileRow[] = [
   { name: 'agents/', type: 'Container', size: '3 agents', modified: 'Today 09:45', permission: 'Private', icon: Folder },
-  { name: 'agents/secretary/', type: 'Agent home', size: '8 items', modified: 'Today 09:44', permission: 'Private', icon: Bot, active: true },
+  { name: 'agents/__secretary__/', type: 'Agent home', size: '8 items', modified: 'Today 09:44', permission: 'Private', icon: Bot, active: true },
   { name: 'workspaces/linx-prototype/', type: 'Workspace', size: '.meta', modified: 'Today 09:42', permission: 'Private', icon: FolderOpen },
   { name: 'repositories/linx.ttl', type: 'Repository', size: '4 KB', modified: 'Today 09:40', permission: 'Private', icon: FileText },
   { name: 'chat/', type: 'Container', size: '12 items', modified: 'Today 09:36', permission: 'Private', icon: MessageSquare },
@@ -293,7 +293,7 @@ const inboxItems: InboxItem[] = [
     kind: 'approval',
     title: '允许 AI Secretary 写入个人卡片',
     source: 'AI Secretary · 原型调整',
-    target: '/.data/agents/secretary/profile.ttl',
+    target: '/agents/__secretary__/.meta',
     risk: '会修改默认助手的名称、头像和欢迎语。',
     time: '09:44',
     icon: ShieldCheck,
@@ -534,7 +534,7 @@ function ApprovalInlineCard({
       <AvatarMark icon={ShieldCheck} active={isPending} />
       <div>
         <strong>需要你确认：写入 AI Secretary 个人卡片</strong>
-        <p>目标：/.data/agents/secretary/profile.ttl</p>
+        <p>目标：/agents/__secretary__/.meta</p>
         <p>影响：更新默认助手名称、头像和欢迎语。</p>
         <div className="approval-actions">
           {isPending ? (
@@ -632,7 +632,7 @@ function ChatDetail() {
       </section>
       <section className="detail-card">
         <h3>Agent 能力</h3>
-        <DetailLine icon={Home} label="Home" value="/.data/agents/secretary/" />
+        <DetailLine icon={Home} label="Home" value="/agents/__secretary__/" />
         <DetailLine icon={Sparkles} label="Skills" value="enabled" />
         <DetailLine icon={ShieldCheck} label="AI 配置" value="共享配置池" />
       </section>
@@ -688,8 +688,8 @@ function ContactsMain({ pendingCount, onOpenInbox }: { pendingCount: number; onO
       </div>
       <section className="info-table">
         <InfoRow label="Contact" value="/.data/contacts/ai-secretary.ttl" />
-        <InfoRow label="Agent" value="/.data/agents/secretary/profile.ttl" />
-        <InfoRow label="Agent Home" value="/.data/agents/secretary/" />
+        <InfoRow label="Agent" value="/agents/__secretary__/" />
+        <InfoRow label="Agent Meta" value="/agents/__secretary__/.meta" />
         <InfoRow label="规则" value="默认助手不可删除；可改名、改头像" />
         <InfoRow label="说明" value="帮你整理聊天、文件、链接、任务和上下文。" />
       </section>
@@ -791,12 +791,12 @@ function FilesDetail() {
     <aside className="detail-pane">
       <section className="identity-card file-identity">
         <AvatarMark icon={Bot} active />
-        <h2>secretary/</h2>
+        <h2>__secretary__/</h2>
         <p>Agent home container</p>
       </section>
       <section className="info-stack">
-        <InfoRow label="Path" value="/.data/agents/secretary/" />
-        <InfoRow label="Profile" value="/.data/agents/secretary/profile.ttl" />
+        <InfoRow label="Path" value="/agents/__secretary__/" />
+        <InfoRow label="Meta" value="/agents/__secretary__/.meta" />
         <InfoRow label="Config" value="config / skills / mcp / backends" />
         <InfoRow label="Modified" value="Today 09:44" />
         <InfoRow label="Permission" value="Private" />

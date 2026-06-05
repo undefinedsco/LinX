@@ -183,9 +183,10 @@ udfs:AgentProvider rdfs:subClassOf udfs:Provider ;
 `.meta` 文件。
 
 ```text
-pod:/agents/secretary/
+pod:/agents/__secretary__/
 ├── .meta
-├── profile/card
+├── system/
+├── user/
 └── skills/
     └── symphony/
         ├── .meta
@@ -193,13 +194,12 @@ pod:/agents/secretary/
 ```
 
 ```turtle
-# /agents/secretary/.meta
+# /agents/__secretary__/.meta
 <./> a udfs:Agent ;
   udfs:displayName "Secretary" ;
-  udfs:webId <profile/card#me> ;
   udfs:hasSkill <skills/symphony/> .
 
-# /agents/secretary/skills/symphony/.meta
+# /agents/__secretary__/skills/symphony/.meta
 <./> a udfs:Skill ;
   udfs:enabled "true" ;
   udfs:source "pod" ;
@@ -208,18 +208,18 @@ pod:/agents/secretary/
 
 规则：
 
-- 容器 resource 的主体是容器 URI，例如 `/agents/secretary/`。
+- 容器 resource 的主体是容器 URI，例如 `/agents/__secretary__/`。
 - `.meta` 是该容器的元数据文档，subject 用 `<./>` 或等价容器 IRI。
 - 普通文件资源需要元数据时也可以有旁路 `.meta`，但不要把文件正文重复进 RDF。
 - 业务代码不要手写 `.meta` 路径；通过 models/repository/ORM/xpod 层读写。
 
-### Agent Root、WebID、Skill 的边界
+### Agent Root、Actor URI、Skill 的边界
 
-Agent root 和 Agent WebID 不是同一个资源。
+Agent root 是 Agent 身份。独立 actor URI / WebID 是可选扩展，不是默认身份。
 
-- Agent root 是配置和资源容器，例如 `/agents/secretary/`。
+- Agent root 是配置和资源容器，例如 `/agents/__secretary__/`。
 - 只有需要独立授权、审计身份、maker/actor/requester、收取 grant 或持有凭据的 AI Agent 才需要 WebID。
-- 建议 Agent WebID 形态为 `/agents/secretary/profile/card#me`，由 Agent root `.meta` 通过 URI relation 指向。
+- 如果未来确实需要独立 actor URI / WebID，应作为 Agent root `.meta` 的显式 URI relation 记录；它不能替代 Agent root，也不能让 `.meta` 文件本身成为身份。
 - Skills、Issue、Task、Run、Evidence、Report、普通文件和普通对象不需要 WebID；它们用自己的 resource URI 表达身份，需要元数据时再用 `.meta`。
 
 Agent root 也是 Agent 的上下文文件夹。system-managed surfaces 和
@@ -232,8 +232,8 @@ user-managed surfaces 可以同目录共存，但权威不同，不能合并成�
 
 Skill 应该文件化：
 
-- Skill 正文是文件或文件夹，例如 `/agents/secretary/skills/symphony/SKILL.md`。
-- Skill binding/meta 是轻量 RDF，例如 `/agents/secretary/skills/symphony/.meta`。
+- Skill 正文是文件或文件夹，例如 `/agents/__secretary__/skills/symphony/SKILL.md`。
+- Skill binding/meta 是轻量 RDF，例如 `/agents/__secretary__/skills/symphony/.meta`。
 - RDF meta 只记录启用状态、版本、来源、checksum、加载策略、依赖和关系；不要把完整 `SKILL.md` 内容塞进 RDF 字段。
 - Durable shared 语义必须在 `@undefineds.co/models` 定义；产品壳和 prompt 不应发明 predicate、subject template 或路径。
 

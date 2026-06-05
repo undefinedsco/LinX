@@ -70,7 +70,7 @@
 │    │ LinX 原型工作区     │  └───────────────────────────────────┘ │ Workspace linx   │
 │    │ Cloud Node         │  ┌ You ─────────────────────────────┐  │ Tasks 2          │
 │    │                    │  │ 按新模型继续重做原型              │  │ Agent home       │
-│    │                    │  └───────────────────────────────────┘ │ /.data/agents/… │
+│    │                    │  └───────────────────────────────────┘ │ /agents/…       │
 │    │                    │  [ 像发消息一样丢文件、链接、任务... ] │ 保存原则 / 入口   │
 └────┴────────────────────┴────────────────────────────────────────┴──────────────────┘
 ```
@@ -104,7 +104,7 @@
 │    │   Gan              │                                        │ map.md           │
 │    │ Groups             │ WebID        https://...#secretary     │ tunnel.md        │
 │    │   Design Room      │ Role         默认助手，不可删除         │                  │
-│    │                    │ Agent Home   /.data/agents/secretary/  │                  │
+│    │                    │ Agent Home   /agents/__secretary__/    │                  │
 └────┴────────────────────┴────────────────────────────────────────┴──────────────────┘
 ```
 
@@ -133,9 +133,9 @@
 │    │ .data               │                                        │ Agent home       │
 │    │ Recent              │ Name                 Kind   Size  Time │                  │
 │    │ Favorites           │ agents/              Folder 3    Today │ Path             │
-│    │ Shared              │ agents/secretary/    Agent  8    09:44│ /.data/agents/… │
+│    │ Shared              │ agents/__secretary__/ Agent  8    09:44│ /agents/…       │
 │    │ Containers          │ workspaces/linx/     Worksp .meta 09:42│ Profile          │
-│    │ /                  │ repositories/linx.ttl Repo   4K  Today│ profile.ttl      │
+│    │ /                  │ repositories/linx.ttl Repo   4K  Today│ .meta            │
 │    │ chat/              │                                        │ Permission       │
 │    │ files/             │ Repository 是元数据，Workspace 是工作区 │ Private          │
 └────┴────────────────────┴────────────────────────────────────────┴──────────────────┘

@@ -64,7 +64,7 @@ Files 是一级 `文件` 模块，必须保留。它负责完整 Pod 文件浏�
 - 资源 URI。
 - 资源权限/可访问状态。
 - 最近文件。
-- `.data/agents/{agentId}/` Agent home 浏览。
+- `/agents/{agentKey}/` Agent home 浏览。
 - `.data/workspaces/{workspaceId}/` Workspace 容器和 `.meta` 浏览。
 - `.data/repositories/{repositoryId}.ttl` Repository 元信息浏览。
 
@@ -76,7 +76,7 @@ Files 是 Finder 视角，可以看到这些 Pod 资源，但不把它们变成�
 
 | Pod 路径 | Files 中的展示 | 产品含义 |
 | --- | --- | --- |
-| `/.data/agents/secretary/` | 容器 / Agent home | Agent 自己的规则、skills、MCP、backend、compaction、memory |
+| `/agents/__secretary__/` | 容器 / Agent home | Agent 自己的规则、skills、MCP、backend、compaction、memory |
 | `/.data/workspaces/linx-prototype/` | 容器 / Workspace | 运行时真实 worktree/cwd；`.meta` 存 git/workspace 快照 |
 | `/.data/repositories/linx.ttl` | RDF resource | 仓库元信息，不是工作区 |
 

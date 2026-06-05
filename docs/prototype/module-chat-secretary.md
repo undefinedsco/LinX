@@ -32,7 +32,7 @@ Chat 是 LinX 的默认入口。`AI Secretary` 是默认不可删除助手，承
 首次 Pod 数据初始化完成后：
 
 1. 检查默认 Secretary Agent 是否存在。
-2. 不存在则创建 Agent home、Agent profile、Contact、Chat、Thread。
+2. 不存在则创建 Agent context root、`.meta`、Contact、Chat、Thread。
 3. 创建欢迎消息：
    - 自我介绍。
    - 说明“我会帮你把聊天、文件、链接和任务保存在你的 Pod 里”。
