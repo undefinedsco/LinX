@@ -192,8 +192,8 @@ test('buildPodMessageRow maps Pi user and assistant messages into standard Pod m
   )
 
   assert.equal(userRow.id, '019df000-aaaa-bbbb-cccc-000000000001-u1')
-  assert.match(userRow.chat, /\/\.data\/chat\/ai-secretary\/index\.ttl#this$/)
-  assert.match(userRow.thread, /\/\.data\/chat\/ai-secretary\/index\.ttl#019df000-aaaa-bbbb-cccc-000000000001$/)
+  assert.match(userRow.chat, /\/\.data\/chat\/__secretary__\/index\.ttl#this$/)
+  assert.match(userRow.thread, /\/\.data\/chat\/__secretary__\/index\.ttl#019df000-aaaa-bbbb-cccc-000000000001$/)
   assert.equal(userRow.maker, 'https://id.undefineds.co/alice/profile/card#me')
   assert.equal(userRow.role, 'user')
   assert.equal(userRow.content, 'hello pod')
@@ -260,8 +260,8 @@ test('buildPodMessageRow keeps tool results as system messages linked to the sam
     },
   )
 
-  assert.match(row.chat, /\/\.data\/chat\/ai-secretary\/index\.ttl#this$/)
-  assert.match(row.thread, /\/\.data\/chat\/ai-secretary\/index\.ttl#019df000-aaaa-bbbb-cccc-000000000001$/)
+  assert.match(row.chat, /\/\.data\/chat\/__secretary__\/index\.ttl#this$/)
+  assert.match(row.thread, /\/\.data\/chat\/__secretary__\/index\.ttl#019df000-aaaa-bbbb-cccc-000000000001$/)
   assert.equal(row.role, 'system')
   assert.equal(row.content, '[tool:bash] /tmp/demo')
 })
@@ -304,13 +304,13 @@ test('LinxPiPodMirror persists Pi session events into Pod tables', async (t) => 
   assert.equal(rowValues.some((row) => row.name === 'symphony' && row.loadPolicy === 'file-backed'), true)
   assert.equal(rowValues.some((row) => row.tool === 'linx' && row.status === 'completed'), true)
   assert.equal(rowValues.some((row) => row.content === 'persist through mirror'), true)
-  assert.equal(writes.some((write) => write.table === 'chats' && write.iri.endsWith('/.data/chat/ai-secretary/index.ttl#this')), true)
+  assert.equal(writes.some((write) => write.table === 'chats' && write.iri.endsWith('/.data/chat/__secretary__/index.ttl#this')), true)
   assert.equal(writes.some((write) => write.table === 'agent' && write.iri.endsWith('/agents/__secretary__/')), true)
   assert.equal(writes.some((write) => write.table === 'skill' && write.iri.endsWith('/agents/__secretary__/skills/symphony/')), true)
   assert.equal(writes.some((write) => write.table === 'session' && /\/\.data\/sessions\/2026\/04\/01\/[^/]+\.ttl$/.test(write.iri)), true)
   assert.equal(writes.filter((write) => write.table === 'session' && write.op === 'insert').length, 1)
   assert.equal(writes.filter((write) => write.table === 'session' && write.op === 'update').length, 1)
-  assert.equal(writes.some((write) => write.table === 'chat_message' && /\/\.data\/chat\/ai-secretary\/2026\/04\/01\/messages\.ttl#/.test(write.iri)), true)
+  assert.equal(writes.some((write) => write.table === 'chat_message' && /\/\.data\/chat\/__secretary__\/2026\/04\/01\/messages\.ttl#/.test(write.iri)), true)
   assert.equal(writes.some((write) => write.table === 'audit'), false)
   const runtimeSessionRow = rowValues.find((row) => row.tool === 'linx' && row.status === 'completed')
   assert.equal(runtimeSessionRow.metadata.runtimeSnapshot.agent, '__secretary__')
@@ -513,12 +513,12 @@ test('LinxPiPodMirror records failed streaming projection checkpoints', async (t
     local: sessionManager.getSessionId(),
   })
   assert.deepEqual(checkpoints[0].metadata.resourceBindings.thread, {
-    uri: `https://id.undefineds.co/alice/.data/chat/ai-secretary/index.ttl#${sessionManager.getSessionId()}`,
+    uri: `https://id.undefineds.co/alice/.data/chat/__secretary__/index.ttl#${sessionManager.getSessionId()}`,
     local: sessionManager.getSessionId(),
   })
   assert.deepEqual(checkpoints[0].metadata.resourceBindings.chat, {
-    uri: 'https://id.undefineds.co/alice/.data/chat/ai-secretary/index.ttl#this',
-    local: 'ai-secretary',
+    uri: 'https://id.undefineds.co/alice/.data/chat/__secretary__/index.ttl#this',
+    local: '__secretary__',
   })
   assert.match(checkpoints[0].failures[0].message, /pod write failed/)
 })

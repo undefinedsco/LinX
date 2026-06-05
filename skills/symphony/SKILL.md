@@ -70,10 +70,12 @@ remain separate sources of truth. Do not describe this as a field-level overlay
 that rewrites the system package or user personalization into one blob.
 
 The default Secretary Agent key is the system-reserved `__secretary__`.
-`ai-secretary` may remain a Chat surface id, but durable Agent, Skill,
+The default Secretary Chat may use the same reserved key under the Chat
+resource base, for example `/.data/chat/__secretary__/index.ttl#this`; this
+does not make the Chat resource an Agent identity. Durable Agent, Skill,
 maker/actor, grant-recipient, and runtime snapshot identity should use the
 `/agents/__secretary__/` container resource. Do not treat `.meta` as the Agent
-identity, and do not read or write legacy `ai-secretary` Agent resources.
+identity, and do not introduce non-reserved Secretary slugs.
 
 Agent root and Agent identity are separate:
 

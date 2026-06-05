@@ -8,7 +8,7 @@ import {
   threadResource,
 } from '../models.js'
 
-export const DEFAULT_SECRETARY_CHAT_ID = 'ai-secretary'
+export const DEFAULT_SECRETARY_CHAT_ID = '__secretary__'
 export const DEFAULT_SECRETARY_AGENT_ID = '__secretary__'
 
 // Compatibility exports for older call sites. New code should use the secretary/chat

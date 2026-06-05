@@ -42,7 +42,7 @@ Contacts 展示的是 Contact 投影。它可以链接到 Person 或 Agent，但
 AI Secretary 同时有 Contact 投影和 Agent 身份：
 
 ```text
-Contact: /.data/contacts/ai-secretary.ttl
+Contact: /.data/contacts/__secretary__.ttl
 Agent:   /agents/__secretary__/
 Meta:    /agents/__secretary__/.meta
 ```

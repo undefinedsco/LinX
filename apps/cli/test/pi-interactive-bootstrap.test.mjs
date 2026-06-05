@@ -1090,7 +1090,7 @@ test('linx extension ui select keeps TUI interaction and mirrors the local decis
   assert.equal(runtime.state.approvals[0].status, 'approved')
   assert.equal(runtime.state.approvals[0].decisionRole, 'human')
   assert.equal(runtime.state.approvals[0].toolName, 'extension-ui-select')
-  assert.match(runtime.state.approvals[0].session, /\/\.data\/chat\/ai-secretary\/index\.ttl#019df-test-extension-ui-local$/)
+  assert.match(runtime.state.approvals[0].session, /\/\.data\/chat\/__secretary__\/index\.ttl#019df-test-extension-ui-local$/)
   assert.deepEqual(JSON.parse(runtime.state.approvals[0].approvalOptions), [
     { optionId: '0', label: 'Allow', kind: 'allow_once' },
     { optionId: '1', label: 'Block', kind: 'reject_once' },
@@ -4856,8 +4856,8 @@ test('linx interactive resolves /symphony source from runtime Pod session', asyn
   await interactive.defaultEditor.onSubmit('/symphony status')
 
   assert.equal(statuses.length, 1)
-  assert.match(statuses[0], /Chat: https:\/\/alice\.example\/.data\/chat\/ai-secretary\/index\.ttl#this/)
-  assert.match(statuses[0], /Thread: https:\/\/alice\.example\/.data\/chat\/ai-secretary\/index\.ttl#session-runtime-pod/)
+  assert.match(statuses[0], /Chat: https:\/\/alice\.example\/.data\/chat\/__secretary__\/index\.ttl#this/)
+  assert.match(statuses[0], /Thread: https:\/\/alice\.example\/.data\/chat\/__secretary__\/index\.ttl#session-runtime-pod/)
 })
 
 test('linx interactive /symphony switches current chat peer for following messages', async (t) => {
@@ -4957,8 +4957,8 @@ test('linx interactive /symphony switches current chat peer for following messag
   assert.match(statuses[1], /Running workers: 1/)
   assert.match(statuses[1], /codex\/auto -> Codex worker A/)
   assert.match(statuses[1], /runtime=auto-worker-a/)
-  assert.match(statuses[1], /Chat: https:\/\/alice\.example\/.data\/chat\/ai-secretary\/index\.ttl#this/)
-  assert.match(statuses[1], /Thread: https:\/\/alice\.example\/.data\/chat\/ai-secretary\/index\.ttl#session-status/)
+  assert.match(statuses[1], /Chat: https:\/\/alice\.example\/.data\/chat\/__secretary__\/index\.ttl#this/)
+  assert.match(statuses[1], /Thread: https:\/\/alice\.example\/.data\/chat\/__secretary__\/index\.ttl#session-status/)
   assert.match(statuses[2], /Symphony off: you are now chatting with the current worker\/backend peer/)
   assert.match(statuses[2], /What changed: following messages bypass Secretary Symphony triage and dispatch/)
   assert.match(statuses[2], /Current Symphony dispatches started from this TUI were cancelled/)
@@ -5100,7 +5100,7 @@ test('linx interactive /symphony dispatches explicit worker objectives instead o
   assert.equal(runCalls[0].args.workerSupervisorIntervalMs, 600000)
   assert.equal(runCalls[0].args.target.source, 'active-session')
   assert.equal(runCalls[0].args.target.backend, 'claude')
-  assert.match(runCalls[0].args.chat, /ai-secretary\/index\.ttl#this/)
+  assert.match(runCalls[0].args.chat, /__secretary__\/index\.ttl#this/)
   assert.match(runCalls[0].args.thread, /session-dispatch/)
   assert.equal(typeof runCalls[0].runtime.runAutoMode, 'function')
   assert.equal(typeof runCalls[0].runtime.listAutoModeSessions, 'function')
@@ -5490,8 +5490,8 @@ test('linx interactive /symphony status reads open issues and running workers fr
                         description: 'Pod issue should win over local archive',
                         status: 'open',
                         priority: 'high',
-                        chat: 'https://alice.example/.data/chat/ai-secretary/index.ttl#this',
-                        thread: 'https://alice.example/.data/chat/ai-secretary/index.ttl#thread-pod',
+                        chat: 'https://alice.example/.data/chat/__secretary__/index.ttl#this',
+                        thread: 'https://alice.example/.data/chat/__secretary__/index.ttl#thread-pod',
                         tasks: ['https://alice.example/.data/task/index.ttl#task-pod'],
                         createdAt: new Date('2026-04-02T00:00:00.000Z'),
                         updatedAt: new Date('2026-04-02T00:03:00.000Z'),

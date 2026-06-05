@@ -687,7 +687,7 @@ function ContactsMain({ pendingCount, onOpenInbox }: { pendingCount: number; onO
         <button><Star size={16} /> 收藏</button>
       </div>
       <section className="info-table">
-        <InfoRow label="Contact" value="/.data/contacts/ai-secretary.ttl" />
+        <InfoRow label="Contact" value="/.data/contacts/__secretary__.ttl" />
         <InfoRow label="Agent" value="/agents/__secretary__/" />
         <InfoRow label="Agent Meta" value="/agents/__secretary__/.meta" />
         <InfoRow label="规则" value="默认助手不可删除；可改名、改头像" />

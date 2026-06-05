@@ -386,8 +386,8 @@ describe('chatOps sync projection', () => {
     initializeChatCollections(db as any)
 
     const agentUri = 'https://alice.example/agents/__secretary__/'
-    mocked.states.get('chats')?.set('ai-secretary', {
-      id: 'ai-secretary',
+    mocked.states.get('chats')?.set('__secretary__', {
+      id: '__secretary__',
       title: 'AI Secretary',
       participants: [agentUri],
       metadata: { linx: { role: 'secretary', version: 1 } },
@@ -401,7 +401,7 @@ describe('chatOps sync projection', () => {
     }).execute()
 
     await expect(chatOps.ensureLinxWelcome()).resolves.toMatchObject({
-      chatId: 'ai-secretary',
+      chatId: '__secretary__',
       created: false,
     })
     expect(ensureAgentHome).toHaveBeenCalledWith(db, expect.objectContaining({

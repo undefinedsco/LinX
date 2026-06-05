@@ -349,7 +349,7 @@ describe('LocalChatKitService platform runtime routing', () => {
 
   it('projects the Secretary Agent Home and enabled skill files into runtime messages', async () => {
     const agentRoot = 'https://id.undefineds.co/agents/__secretary__/'
-    const store = createMockStore({ chatId: 'ai-secretary' })
+    const store = createMockStore({ chatId: 'secretary-chat' })
     const db = createMockDb({
       id: '__secretary__/',
       provider: 'undefineds',
@@ -357,7 +357,7 @@ describe('LocalChatKitService platform runtime routing', () => {
       instructions: 'Keep control records current.',
       root: agentRoot,
     }, [], {
-      chatId: 'ai-secretary',
+      chatId: 'secretary-chat',
       participants: ['contact-secretary'],
       contactId: 'contact-secretary',
       contactEntity: agentRoot,
@@ -433,12 +433,11 @@ describe('LocalChatKitService platform runtime routing', () => {
     expect(body.messages[0].content).toContain('System Situation -> Evolution Judgment.')
   })
 
-  it('uses the default Symphony skill for an unmaterialized Secretary chat', async () => {
-    const store = createMockStore({ chatId: 'ai-secretary' })
+  it('uses the default Symphony skill for the reserved Secretary chat without materialized Agent Home', async () => {
+    const store = createMockStore({ chatId: '__secretary__' })
     const db = createMockDb(null, [], {
-      chatId: 'ai-secretary',
+      chatId: '__secretary__',
       participants: [],
-      chatMetadata: { linx: { role: 'secretary', version: 1 } },
     })
     const authFetch = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)

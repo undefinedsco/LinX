@@ -51,8 +51,10 @@ The default persisted Secretary Agent key is the system-reserved
 `__secretary__`. Use it for durable Agent, Skill, maker, actor,
 grant-recipient, and runtime-snapshot identity. The canonical Agent resource is
 the container `/agents/__secretary__/`; `.meta` is only the storage document that
-may describe that container. Keep `ai-secretary` only as the default Chat
-surface id.
+may describe that container. The default Secretary Chat may use the same
+reserved key under the Chat resource base, for example
+`/.data/chat/__secretary__/index.ttl#this`; it remains a Chat resource, not the
+Agent identity.
 
 Treat `/agents/__secretary__/` as a user-owned context folder, not as a single
 merged config object. System-managed surfaces and user-managed surfaces live

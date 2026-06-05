@@ -92,9 +92,11 @@ Use this shape as the product direction:
 Default Secretary identity uses the system-reserved persisted key
 `__secretary__` and the Agent resource shape
 `/agents/__secretary__/`. A Solid `.meta` document may describe that container,
-but it is not the Agent resource identity. The `ai-secretary` slug remains valid
-only as a Chat surface id. Do not read or write legacy `/agents/ai-secretary/`
-or `/.data/agents/ai-secretary/` Agent resources.
+but it is not the Agent resource identity. The default Secretary Chat may use
+the same reserved key under the Chat resource base, for example
+`/.data/chat/__secretary__/index.ttl#this`; this is distinct from the Agent
+root `/agents/__secretary__/`. Do not introduce non-reserved Secretary slugs for
+durable Agent or Chat resources.
 
 The Secretary folder is the stable user-owned context root. It may contain
 system-managed surfaces such as the installed Secretary package record and

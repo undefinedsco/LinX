@@ -261,8 +261,8 @@ test('listOpenSymphonyIssuesFromPod reads open issues from shared Issue TTL proj
           description: 'redirect drops state after login',
           status: 'open',
           priority: 'high',
-          chat: 'https://alice.example/.data/chat/ai-secretary/index.ttl#this',
-          thread: 'https://alice.example/.data/chat/ai-secretary/index.ttl#thread-login',
+          chat: 'https://alice.example/.data/chat/__secretary__/index.ttl#this',
+          thread: 'https://alice.example/.data/chat/__secretary__/index.ttl#thread-login',
           tasks: ['https://alice.example/.data/task/index.ttl#task_existing'],
           createdBy: 'https://alice.example/profile/card#me',
           createdAt: new Date('2026-04-02T00:00:00.000Z'),
@@ -288,7 +288,7 @@ test('listOpenSymphonyIssuesFromPod reads open issues from shared Issue TTL proj
   assert.equal(issues[0].title, 'Fix login redirect bug')
   assert.equal(issues[0].status, 'open')
   assert.equal(issues[0].priority, 'high')
-  assert.equal(issues[0].chat, 'https://alice.example/.data/chat/ai-secretary/index.ttl#this')
+  assert.equal(issues[0].chat, 'https://alice.example/.data/chat/__secretary__/index.ttl#this')
   assert.deepEqual(issues[0].tasks, ['https://alice.example/.data/task/index.ttl#task_existing'])
 })
 
@@ -1177,10 +1177,10 @@ test('persistSymphonyProjectionToPod writes the default Secretary control-room w
 
   assert.ok(result)
   const chat = fake.inserts.find((item) => item.resource === fake.resources.chat)?.value
-  assert.equal(chat.id, 'ai-secretary-symphony')
+  assert.equal(chat.id, '__symphony__')
   assert.equal(chat.metadata.kind, 'symphony-control-room')
-  assert.equal(result.chat, 'https://alice.example/.data/chat/ai-secretary-symphony/index.ttl#this')
-  assert.equal(result.thread, `https://alice.example/.data/chat/ai-secretary-symphony/index.ttl#${encodeURIComponent('session_2026-04-02T00-00-00-000Z_projection')}`)
+  assert.equal(result.chat, 'https://alice.example/.data/chat/__symphony__/index.ttl#this')
+  assert.equal(result.thread, `https://alice.example/.data/chat/__symphony__/index.ttl#${encodeURIComponent('session_2026-04-02T00-00-00-000Z_projection')}`)
   assert.equal(fake.inserts.find((item) => item.resource === fake.resources.audit)?.value.session, 'https://alice.example/.data/sessions/2026/04/02/session_2026-04-02T00-00-00-000Z_projection.ttl')
 })
 

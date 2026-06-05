@@ -71,8 +71,8 @@ interface RuntimeThreadRecord {
   tokenUsage: number
 }
 
-const DEFAULT_SECRETARY_CHAT_ID = 'ai-secretary'
 const DEFAULT_SECRETARY_AGENT_ID = '__secretary__'
+const DEFAULT_SECRETARY_CHAT_ID = '__secretary__'
 const DEFAULT_SECRETARY_PROVIDER = 'undefineds'
 const DEFAULT_SECRETARY_MODEL = 'undefineds/linx-lite'
 const DEFAULT_SECRETARY_SKILL = 'symphony'
@@ -806,7 +806,6 @@ export class LocalChatKitService {
 
     try {
       const chat = await this.findChatById(chatId)
-      const isDefaultSecretary = this.isDefaultSecretaryChat(chatId, chat)
       const participantRefs = Array.isArray(chat?.participants)
         ? chat.participants.filter((participant: unknown): participant is string => typeof participant === 'string' && participant.length > 0)
         : []
@@ -814,20 +813,23 @@ export class LocalChatKitService {
       const contacts = await this.db.select().from(contactTable).execute() as ContactRow[]
       const agents = await this.db.select().from(agentTable).execute() as AgentRow[]
       const selected = this.resolveAgentFromParticipants(participantRefs, contacts, agents)
+      const selectedAgentId = this.resolveAgentId(selected?.agent, selected?.agentRef)
+      const isDefaultSecretary = this.isDefaultSecretaryChat(chatId, chat, participantRefs, selectedAgentId)
+      const effectiveAgent = selected
         ?? (isDefaultSecretary ? this.resolveDefaultSecretaryAgent(agents) : null)
 
-      if (!selected && !isDefaultSecretary) {
+      if (!effectiveAgent && !isDefaultSecretary) {
         return null
       }
 
       const provider = normalizeAIConfigProviderId(
-        typeof selected?.agent.provider === 'string'
-          ? selected.agent.provider
+        typeof effectiveAgent?.agent.provider === 'string'
+          ? effectiveAgent.agent.provider
           : (isDefaultSecretary ? DEFAULT_SECRETARY_PROVIDER : ''),
       )
       const model = normalizeAIConfigResourceId(
-        typeof selected?.agent.model === 'string'
-          ? selected.agent.model
+        typeof effectiveAgent?.agent.model === 'string'
+          ? effectiveAgent.agent.model
           : (isDefaultSecretary ? DEFAULT_SECRETARY_MODEL : ''),
       )
 
@@ -835,9 +837,10 @@ export class LocalChatKitService {
         return null
       }
 
-      const agentId = this.resolveAgentId(selected?.agent, selected?.agentRef)
+      const agentId = selectedAgentId
+        ?? this.resolveAgentId(effectiveAgent?.agent, effectiveAgent?.agentRef)
         ?? (isDefaultSecretary ? DEFAULT_SECRETARY_AGENT_ID : undefined)
-      const agentRoot = this.resolveAgentRoot(selected?.agent, agentId)
+      const agentRoot = this.resolveAgentRoot(effectiveAgent?.agent, agentId)
       const skills = await this.resolveAgentSkills(agentId, agentRoot, isDefaultSecretary)
 
       return {
@@ -847,7 +850,7 @@ export class LocalChatKitService {
         agentRoot,
         isDefaultSecretary,
         skills,
-        instructions: typeof selected?.agent.instructions === 'string' ? selected.agent.instructions : undefined,
+        instructions: typeof effectiveAgent?.agent.instructions === 'string' ? effectiveAgent.agent.instructions : undefined,
       }
     } catch (error) {
       console.warn('[LocalChatKitService] Failed to resolve thread agent config:', error)
@@ -886,13 +889,20 @@ export class LocalChatKitService {
       : null
   }
 
-  private isDefaultSecretaryChat(chatId: string, chat: any | null): boolean {
+  private isDefaultSecretaryChat(
+    chatId: string,
+    chat: any | null,
+    participantRefs: string[],
+    agentId?: string | null,
+  ): boolean {
     const chatKey = this.extractChatKey(chatId)
+      ?? this.extractChatKey(typeof chat?.id === 'string' ? chat.id : '')
     const chatRole = (chat?.metadata as any)?.linx?.role
 
     return (
       chatKey === DEFAULT_SECRETARY_CHAT_ID
-      || chat?.id === DEFAULT_SECRETARY_CHAT_ID
+      || agentId === DEFAULT_SECRETARY_AGENT_ID
+      || participantRefs.some((participantRef) => this.extractAgentIdFromRef(participantRef) === DEFAULT_SECRETARY_AGENT_ID)
       || chatRole === 'secretary'
     )
   }
@@ -1280,7 +1290,7 @@ export class LocalChatKitService {
       'Use the Symphony control-plane skill when coordinating system evolution.',
       'Maintain system situation, evolution judgment, execution control, and evidence feedback.',
       'Do not treat every message as an issue; distinguish ideas, existing work changes, tasks, runs, deliveries, and evidence.',
-      'Default Secretary identity is `__secretary__`; `ai-secretary` is only the chat surface id.',
+      'Default Secretary identity is `__secretary__`; chat surfaces must not redefine durable Agent identity.',
     ].join('\n')
   }
 

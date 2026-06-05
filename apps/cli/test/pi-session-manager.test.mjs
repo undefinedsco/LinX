@@ -225,8 +225,8 @@ test('native Pod session source reads session and messages through shared ORM re
   const sessionId = '019d4657-0000-7000-8000-000000000001'
   const sessionResourceId = '2026/04/01/019d4657-0000-7000-8000-000000000001.ttl'
   const cwd = '/tmp/native-pod-cwd'
-  const chatUri = `${POD_BASE}/.data/chat/ai-secretary/index.ttl#this`
-  const threadUri = `${POD_BASE}/.data/chat/ai-secretary/index.ttl#${sessionId}`
+  const chatUri = `${POD_BASE}/.data/chat/__secretary__/index.ttl#this`
+  const threadUri = `${POD_BASE}/.data/chat/__secretary__/index.ttl#${sessionId}`
   const idReads = []
 
   const db = {
@@ -278,7 +278,7 @@ test('native Pod session source reads session and messages through shared ORM re
 	                  {
 	                    id: sessionId,
 	                    owner: WEB_ID,
-	                    chat: 'ai-secretary',
+	                    chat: '__secretary__',
 	                    thread: threadUri,
 	                    tool: 'linx',
 	                    status: 'active',
@@ -341,9 +341,9 @@ test('native Pod session source uses session message resource refs before broad 
   const sessionId = '019d4657-0000-7000-8000-000000000002'
   const sessionResourceId = '2026/04/01/019d4657-0000-7000-8000-000000000002.ttl'
   const cwd = '/tmp/native-pod-cwd'
-  const chatUri = `${POD_BASE}/.data/chat/ai-secretary/index.ttl#this`
-  const threadUri = `${POD_BASE}/.data/chat/ai-secretary/index.ttl#${sessionId}`
-  const messageUri = `${POD_BASE}/.data/chat/ai-secretary/2026/04/01/messages.ttl#${sessionId}-u1`
+  const chatUri = `${POD_BASE}/.data/chat/__secretary__/index.ttl#this`
+  const threadUri = `${POD_BASE}/.data/chat/__secretary__/index.ttl#${sessionId}`
+  const messageUri = `${POD_BASE}/.data/chat/__secretary__/2026/04/01/messages.ttl#${sessionId}-u1`
   const idReads = []
   const iriReads = []
   let selectedMessages = false
