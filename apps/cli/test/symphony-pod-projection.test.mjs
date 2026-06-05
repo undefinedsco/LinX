@@ -1158,7 +1158,7 @@ test('persistSymphonyProjectionToPod preserves each worker Thread Session and wo
   assert.equal(run.metadata.podAccessPolicy.assigned.session, reviewSession.metadata.worker.podAccessPolicy.assigned.session)
 })
 
-test('persistSymphonyProjectionToPod writes the default Secretary control-room when no explicit target is provided', async () => {
+test('persistSymphonyProjectionToPod writes the default Symphony control surface when no explicit target is provided', async () => {
   const fake = createFakeRuntime()
   const plan = createPlan({
     session: {
@@ -1177,10 +1177,10 @@ test('persistSymphonyProjectionToPod writes the default Secretary control-room w
 
   assert.ok(result)
   const chat = fake.inserts.find((item) => item.resource === fake.resources.chat)?.value
-  assert.equal(chat.id, '__symphony__')
+  assert.equal(chat.id, 'symphony')
   assert.equal(chat.metadata.kind, 'symphony-control-room')
-  assert.equal(result.chat, 'https://alice.example/.data/chat/__symphony__/index.ttl#this')
-  assert.equal(result.thread, `https://alice.example/.data/chat/__symphony__/index.ttl#${encodeURIComponent('session_2026-04-02T00-00-00-000Z_projection')}`)
+  assert.equal(result.chat, 'https://alice.example/.data/chat/symphony/index.ttl#this')
+  assert.equal(result.thread, `https://alice.example/.data/chat/symphony/index.ttl#${encodeURIComponent('session_2026-04-02T00-00-00-000Z_projection')}`)
   assert.equal(fake.inserts.find((item) => item.resource === fake.resources.audit)?.value.session, 'https://alice.example/.data/sessions/2026/04/02/session_2026-04-02T00-00-00-000Z_projection.ttl')
 })
 

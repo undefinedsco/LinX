@@ -59,9 +59,9 @@ import {
 import { pathToWorkspaceUri } from '../pi-adapter/pod-mirror-mapping.js'
 import { getSymphonyHome } from './archive.js'
 
-const SYMPHONY_CHAT_ID = '__symphony__'
+const SYMPHONY_CHAT_ID = 'symphony'
 const SYMPHONY_SECRETARY_AGENT_ID = '__secretary__'
-const SYMPHONY_CONTACT_ID = '__symphony__'
+const SYMPHONY_CONTACT_ID = 'symphony'
 const SYMPHONY_POLICY_VERSION = 'linx-symphony-session/v1'
 const SYMPHONY_WORKER_POD_ACCESS_POLICY_VERSION = 'linx-symphony-worker-pod-access/v1'
 const SYMPHONY_ARCHIVE_PROVENANCE_VERSION = 'linx-symphony-archive/v1'

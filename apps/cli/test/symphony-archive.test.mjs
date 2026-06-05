@@ -407,9 +407,9 @@ test('symphony dispatch bridges non-dry-run plans into the auto-mode runtime and
         assert.equal(existsSync(join(root, '.linx', 'symphony')), false)
       }
       projectionCalls.push({ plan, stage: options?.stage })
-      const chat = 'https://alice.example/.data/chat/__symphony__/index.ttl#this'
-      const thread = 'https://alice.example/.data/chat/__symphony__/index.ttl#thread-bridge'
-      const messages = ['https://alice.example/.data/chat/__symphony__/2026/04/02/messages.ttl#bridge-planned']
+      const chat = 'https://alice.example/.data/chat/symphony/index.ttl#this'
+      const thread = 'https://alice.example/.data/chat/symphony/index.ttl#thread-bridge'
+      const messages = ['https://alice.example/.data/chat/symphony/2026/04/02/messages.ttl#bridge-planned']
       const workers = plan.workers.map((worker) => ({
         task: worker.task,
         taskRecord: { ...worker.taskRecord, chat, thread, messages },
@@ -460,7 +460,7 @@ test('symphony dispatch bridges non-dry-run plans into the auto-mode runtime and
   assert.equal(runCalls[0].metadata?.symphony?.delivery, plan.delivery.uri)
   assert.equal(runCalls[0].metadata?.reconciler?.policyKind, 'symphony')
   assert.equal(runCalls[0].metadata?.reconciler?.eventType, 'delivery.submitted')
-  assert.equal(runCalls[0].metadata?.reconciler?.thread, 'https://alice.example/.data/chat/__symphony__/index.ttl#thread-bridge')
+  assert.equal(runCalls[0].metadata?.reconciler?.thread, 'https://alice.example/.data/chat/symphony/index.ttl#thread-bridge')
   assert.equal(runCalls[0].metadata?.reconciler?.wakeJobs?.[0]?.targetAgent, 'codex-worker')
   assert.equal(runCalls[0].metadata?.scheduler?.wakeRecord?.status, 'running')
   assert.equal(runCalls[0].metadata?.scheduler?.wakeRecord?.targetRole, 'worker')
@@ -481,9 +481,9 @@ test('symphony dispatch bridges non-dry-run plans into the auto-mode runtime and
   assert.equal(existsSync(join(root, '.linx', 'symphony')), true)
   assert.equal(existsSync(join(root, '.linx', 'symphony', 'issues')), false)
   assert.equal(existsSync(join(root, '.linx', 'symphony', 'jsonld', 'mirror-4.jsonld')), true)
-  assert.equal(plan.issue.chat, 'https://alice.example/.data/chat/__symphony__/index.ttl#this')
-  assert.equal(plan.delivery.thread, 'https://alice.example/.data/chat/__symphony__/index.ttl#thread-bridge')
-  assert.deepEqual(plan.session.messages, ['https://alice.example/.data/chat/__symphony__/2026/04/02/messages.ttl#bridge-planned'])
+  assert.equal(plan.issue.chat, 'https://alice.example/.data/chat/symphony/index.ttl#this')
+  assert.equal(plan.delivery.thread, 'https://alice.example/.data/chat/symphony/index.ttl#thread-bridge')
+  assert.deepEqual(plan.session.messages, ['https://alice.example/.data/chat/symphony/2026/04/02/messages.ttl#bridge-planned'])
 })
 
 test('symphony dispatch can run quiet one-shot workers for TUI-verifiable delegation', async (t) => {
@@ -626,9 +626,9 @@ test('symphony dispatch uses the worker session workspace resolved by control re
           session: primary?.session ?? plan.session,
           workers,
         },
-        chat: 'https://alice.example/.data/chat/__symphony__/index.ttl#this',
-        thread: 'https://alice.example/.data/chat/__symphony__/index.ttl#thread-worker-workspace',
-        messages: ['https://alice.example/.data/chat/__symphony__/2026/04/02/messages.ttl#worker-workspace'],
+        chat: 'https://alice.example/.data/chat/symphony/index.ttl#this',
+        thread: 'https://alice.example/.data/chat/symphony/index.ttl#thread-worker-workspace',
+        messages: ['https://alice.example/.data/chat/symphony/2026/04/02/messages.ttl#worker-workspace'],
       }
     },
   })
@@ -891,9 +891,9 @@ rl.on('line', (line) => {
   const mirrorCalls = []
   const persistSymphonyProjectionToPod = async (plan, options) => {
     const stage = options?.stage ?? 'planned'
-    const chat = 'https://alice.example/.data/chat/__symphony__/index.ttl#this'
-    const thread = 'https://alice.example/.data/chat/__symphony__/index.ttl#thread-integration'
-    const messages = [`https://alice.example/.data/chat/__symphony__/2026/04/02/messages.ttl#${stage}`]
+    const chat = 'https://alice.example/.data/chat/symphony/index.ttl#this'
+    const thread = 'https://alice.example/.data/chat/symphony/index.ttl#thread-integration'
+    const messages = [`https://alice.example/.data/chat/symphony/2026/04/02/messages.ttl#${stage}`]
     const workers = plan.workers.map((worker) => ({
       task: worker.task,
       taskRecord: { ...worker.taskRecord, chat, thread, messages },
@@ -960,9 +960,9 @@ rl.on('line', (line) => {
   assert.equal(plan.session.status, 'completed')
   assert.equal(plan.session.autoModeSessionId, 'sess_symphony_integration_123')
   assert.equal(plan.session.exitCode, 0)
-  assert.equal(plan.issue.chat, 'https://alice.example/.data/chat/__symphony__/index.ttl#this')
-  assert.equal(plan.delivery.thread, 'https://alice.example/.data/chat/__symphony__/index.ttl#thread-integration')
-  assert.deepEqual(plan.session.messages, ['https://alice.example/.data/chat/__symphony__/2026/04/02/messages.ttl#completed'])
+  assert.equal(plan.issue.chat, 'https://alice.example/.data/chat/symphony/index.ttl#this')
+  assert.equal(plan.delivery.thread, 'https://alice.example/.data/chat/symphony/index.ttl#thread-integration')
+  assert.deepEqual(plan.session.messages, ['https://alice.example/.data/chat/symphony/2026/04/02/messages.ttl#completed'])
 
   const symphonyHome = join(root, '.linx', 'symphony')
   const finalMirrorFile = readFileSync(join(symphonyHome, 'jsonld', 'integration-4.jsonld'), 'utf-8')
