@@ -429,7 +429,7 @@ test('resolveRemoteAutoModeApproval updates only Pod approval state and listRemo
   state.audits.push({
     id: 'audit_requested_123',
     action: 'approval_requested',
-    actor: 'https://alice.example/.data/agents/linx-auto-mode-assistant.ttl',
+    actor: 'https://alice.example/agents/__secretary__/',
     actorRole: 'secretary',
     onBehalfOf: state.webId,
     session: AUTO_MODE_THREAD_URI,
@@ -794,7 +794,7 @@ test('native remote approval store writes and reads approval grant audit resourc
   await store.insertAudit({
     id: 'audit_native_1',
     action: 'approval_requested',
-    actor: 'https://alice.example/.data/agents/linx-auto-mode-assistant.ttl',
+    actor: 'https://alice.example/agents/__secretary__/',
     actorRole: 'secretary',
     onBehalfOf: webId,
     session: 'https://alice.example/.data/chat/linx-auto-mode/index.ttl#auto_1',

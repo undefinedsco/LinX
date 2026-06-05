@@ -15,18 +15,33 @@ import { DEFAULT_AGENT_RUNTIME_COMPANION_MODEL_ID } from '@linx/agent-runtime/co
 import { decideThreadControlEvent } from '@linx/agent-runtime/thread-reconciler-controller'
 import type { AutoModeWorkerBackend } from '@linx/agent-runtime/auto-mode'
 import { createLinxPodSyncScope, type LinxSyncOperation } from '@linx/agent-runtime/sync'
+import {
+  type ExactRecordDatabase,
+  insertExactRecordOnce,
+  type PodTable,
+  resolvePodResourceTemplateValue,
+  upsertExactRecord,
+} from '@undefineds.co/drizzle-solid'
 import { getDefaultPodDataSession, type PodDataSession } from '../pod-data-session.js'
 import {
   ContactClass,
   ContactType,
-  buildSessionResourceId,
-  deliveryResourceId,
+  buildChatTargetRef,
   extractChatIdFromChatRef,
   extractChatThreadRef,
   extractThreadIdFromThreadRef,
-  runResourceId,
-  runStepResourceId,
-  taskResourceId,
+  agentResource,
+  chatResource,
+  contactResource,
+  deliveryResource,
+  ideaResource,
+  issueResource,
+  messageResource,
+  runResource,
+  runStepResource,
+  sessionResource,
+  taskResource,
+  threadResource,
   type AuditInsert,
   type ChatInsert,
   type DeliveryInsert,
@@ -37,6 +52,7 @@ import {
   type RunInsert,
   type RunStepInsert,
   type SessionInsert,
+  type SolidDatabase,
   type TaskInsert,
   type ThreadInsert,
 } from '../models.js'
@@ -44,12 +60,14 @@ import { pathToWorkspaceUri } from '../pi-adapter/pod-mirror-mapping.js'
 import { getSymphonyHome } from './archive.js'
 
 const SYMPHONY_CHAT_ID = 'ai-secretary-symphony'
-const SYMPHONY_SECRETARY_AGENT_ID = 'ai-secretary'
+const SYMPHONY_SECRETARY_AGENT_ID = '__secretary__'
 const SYMPHONY_CONTACT_ID = 'ai-secretary-symphony'
 const SYMPHONY_POLICY_VERSION = 'linx-symphony-session/v1'
 const SYMPHONY_WORKER_POD_ACCESS_POLICY_VERSION = 'linx-symphony-worker-pod-access/v1'
+const SYMPHONY_ARCHIVE_PROVENANCE_VERSION = 'linx-symphony-archive/v1'
 
 type ProjectionStage = 'planned' | 'running' | 'completed' | 'failed'
+type SymphonyArchiveRefs = Partial<Record<'idea' | 'issue' | 'task' | 'delivery' | 'session', string>>
 
 export interface SymphonyPodProjectionResult {
   plan: SymphonyRunPlan
@@ -79,40 +97,23 @@ export interface SymphonyJsonLdMirrorResult {
 export interface SymphonyPodProjectionRuntime {
   getPodDataSession: () => Promise<PodDataSession | null>
   createDb: (session: PodDataSession) => PodProjectionDb
-  chatResource: unknown
-  threadResource: unknown
-  messageResource: unknown
-  sessionResource: unknown
-  ideaResource: unknown
-  issueResource: unknown
-  taskResource: unknown
-  deliveryResource: unknown
-  runResource: unknown
-  runStepResource: unknown
-  agentResource: unknown
-  contactResource: unknown
-  auditResource: unknown
-  inboxNotificationResource?: unknown
+  chatResource: PodTable<any>
+  threadResource: PodTable<any>
+  messageResource: PodTable<any>
+  sessionResource: PodTable<any>
+  ideaResource: PodTable<any>
+  issueResource: PodTable<any>
+  taskResource: PodTable<any>
+  deliveryResource: PodTable<any>
+  runResource: PodTable<any>
+  runStepResource: PodTable<any>
+  agentResource: PodTable<any>
+  contactResource: PodTable<any>
+  auditResource: PodTable<any>
+  inboxNotificationResource?: PodTable<any>
 }
 
-interface PodProjectionDb {
-  init(resources: unknown[]): Promise<unknown>
-  select?: () => {
-    from(resource: unknown): {
-      execute(): Promise<unknown[]>
-    }
-  }
-  findById?: (resource: unknown, id: string) => Promise<unknown | null>
-  findByIri?: (resource: unknown, iri: string) => Promise<unknown | null>
-  resolveLocatorIri?: (resource: unknown, locator: Record<string, unknown>) => string
-  insert(resource: unknown): {
-    values(value: Record<string, unknown>): {
-      execute(): Promise<unknown>
-    }
-  }
-  updateById?: (resource: unknown, id: string, value: Record<string, unknown>) => Promise<unknown>
-  updateByIri?: (resource: unknown, iri: string, value: Record<string, unknown>) => Promise<unknown>
-}
+type PodProjectionDb = SolidDatabase & ExactRecordDatabase
 
 export interface SymphonyPodWorkerStatus {
   status: string
@@ -285,15 +286,11 @@ async function createDefaultRuntime(): Promise<SymphonyPodProjectionRuntime> {
   }
 }
 
-function getPodBaseUrl(webId: string): string {
-  return webId.replace('/profile/card#me', '').replace(/\/$/, '')
-}
-
 function normalizeChatUri(value: string | undefined, webId: string, plan?: SymphonyRunPlan): string {
   if (!value) {
     const chatId = extractChatThreadRef(plan?.session.target?.thread).chatId
     if (chatId) {
-      return `${getPodBaseUrl(webId)}/.data/chat/${encodeURIComponent(chatId)}/index.ttl#this`
+      return chatResource.buildIri(webId,  { id: chatId })
     }
     return buildSymphonyChatUri(webId)
   }
@@ -311,20 +308,15 @@ function buildTargetChatId(plan: SymphonyRunPlan, webId: string): string {
   return extractChatIdFromChatRef(normalizeChatUri(plan.session.target?.chat, webId, plan)) ?? SYMPHONY_CHAT_ID
 }
 
-function buildAgentUri(webId: string, agentId: string): string {
-  return `${getPodBaseUrl(webId)}/.data/agents/${agentId}.ttl`
-}
-
-function buildContactUri(webId: string, contactId: string): string {
-  return `${getPodBaseUrl(webId)}/.data/contacts/${contactId}.ttl`
-}
-
 function buildSymphonyChatUri(webId: string): string {
-  return `${getPodBaseUrl(webId)}/.data/chat/${SYMPHONY_CHAT_ID}/index.ttl#this`
+  return chatResource.buildIri(webId,  { id: SYMPHONY_CHAT_ID })
 }
 
 function buildSymphonyThreadUri(webId: string, plan: SymphonyRunPlan): string {
-  return `${getPodBaseUrl(webId)}/.data/chat/${SYMPHONY_CHAT_ID}/index.ttl#${encodeURIComponent(buildSymphonyThreadId(plan))}`
+  return threadResource.buildIri(webId,  {
+    id: buildSymphonyThreadId(plan),
+    chat: buildChatTargetRef(SYMPHONY_CHAT_ID),
+  })
 }
 
 function buildTargetThreadUri(webId: string, plan: SymphonyRunPlan): string {
@@ -342,24 +334,25 @@ function buildTargetThreadUri(webId: string, plan: SymphonyRunPlan): string {
 }
 
 function buildSymphonyControlSessionUri(webId: string, plan: SymphonyRunPlan): string {
-  return `${getPodBaseUrl(webId)}/.data/sessions/${buildSessionResourceId(buildSymphonyThreadId(plan), plan.session.createdAt)}`
+  return sessionResource.buildIri(webId,  {
+    id: buildSymphonyThreadId(plan),
+    createdAt: plan.session.createdAt,
+  })
 }
 
 function buildSymphonyWorkerSessionUri(webId: string, worker: SymphonyRunPlan['workers'][number]): string {
-  return `${getPodBaseUrl(webId)}/.data/sessions/${buildSessionResourceId(buildSymphonySessionRecordId(worker.session), worker.session.createdAt)}`
+  return sessionResource.buildIri(webId,  {
+    id: buildSymphonySessionRecordId(worker.session),
+    createdAt: worker.session.createdAt,
+  })
 }
 
 function buildSymphonyMessageUri(webId: string, plan: SymphonyRunPlan, row: Pick<MessageInsert, 'id' | 'createdAt'>): string {
-  const createdAt = row.createdAt instanceof Date ? row.createdAt : new Date(row.createdAt ?? Date.now())
-  const safeDate = Number.isFinite(createdAt.getTime()) ? createdAt : new Date()
-  const yyyy = String(safeDate.getUTCFullYear())
-  const mm = String(safeDate.getUTCMonth() + 1).padStart(2, '0')
-  const dd = String(safeDate.getUTCDate()).padStart(2, '0')
-  return `${getPodBaseUrl(webId)}/.data/chat/${buildTargetChatId(plan, webId)}/${yyyy}/${mm}/${dd}/messages.ttl#${encodeURIComponent(String(row.id))}`
-}
-
-function buildPodDataIri(webId: string, resourceId: string): string {
-  return `${getPodBaseUrl(webId)}/.data/${resourceId.replace(/^\/?\.data\//u, '')}`
+  return messageResource.buildIri(webId,  {
+    id: String(row.id),
+    chat: normalizeChatUri(plan.session.target?.chat, webId, plan),
+    createdAt: row.createdAt,
+  })
 }
 
 function buildSymphonyIssueId(issue: SymphonyIssueRecord): string {
@@ -367,19 +360,15 @@ function buildSymphonyIssueId(issue: SymphonyIssueRecord): string {
 }
 
 function buildSymphonyIssueIri(webId: string, issue: SymphonyIssueRecord): string {
-  return `${getPodBaseUrl(webId)}/.data/issues/${buildSymphonyIssueId(issue)}.ttl`
+  return issueResource.buildIri(webId,  { id: buildSymphonyIssueId(issue) })
 }
 
 function buildSymphonyTaskKey(task: string): string {
   return getSymphonyArchiveKey(task)
 }
 
-function buildSymphonyTaskId(task: string): string {
-  return taskResourceId(buildSymphonyTaskKey(task))
-}
-
 function buildSymphonyTaskIri(webId: string, task: string): string {
-  return `${getPodBaseUrl(webId)}/.data/task/${buildSymphonyTaskId(task)}`
+  return taskResource.buildIri(webId,  { id: buildSymphonyTaskKey(task) })
 }
 
 function normalizeSymphonyTaskIri(webId: string, task: string): string {
@@ -389,37 +378,35 @@ function normalizeSymphonyTaskIri(webId: string, task: string): string {
   return buildSymphonyTaskIri(webId, task)
 }
 
-function buildSymphonyDeliveryId(webId: string, worker: SymphonyRunPlan['workers'][number]): string {
-  return deliveryResourceId(getSymphonyArchiveKey(worker.delivery.uri), {
+function buildSymphonyDeliveryIri(webId: string, worker: SymphonyRunPlan['workers'][number]): string {
+  return deliveryResource.buildIri(webId,  {
+    id: getSymphonyArchiveKey(worker.delivery.uri),
     task: buildSymphonyTaskIri(webId, worker.task),
     createdAt: safeDate(worker.delivery.createdAt),
   })
 }
 
-function buildSymphonyDeliveryIri(webId: string, worker: SymphonyRunPlan['workers'][number]): string {
-  return buildPodDataIri(webId, buildSymphonyDeliveryId(webId, worker))
-}
-
-function buildSymphonyReportDeliveryId(webId: string, worker: SymphonyRunPlan['workers'][number]): string {
-  return deliveryResourceId(`${getSymphonyArchiveKey(worker.session.uri)}-report`, {
+function buildSymphonyReportDeliveryIri(webId: string, worker: SymphonyRunPlan['workers'][number]): string {
+  return deliveryResource.buildIri(webId,  {
+    id: `${getSymphonyArchiveKey(worker.session.uri)}-report`,
     task: buildSymphonyTaskIri(webId, worker.task),
     createdAt: safeDate(worker.session.completedAt ?? worker.session.updatedAt),
   })
 }
 
-function buildSymphonyReportDeliveryIri(webId: string, worker: SymphonyRunPlan['workers'][number]): string {
-  return buildPodDataIri(webId, buildSymphonyReportDeliveryId(webId, worker))
-}
-
-function buildSymphonyRunId(webId: string, worker: SymphonyRunPlan['workers'][number]): string {
-  return runResourceId(getSymphonyArchiveKey(worker.session.uri), {
+function buildSymphonyRunIri(webId: string, worker: SymphonyRunPlan['workers'][number]): string {
+  return runResource.buildIri(webId,  {
+    id: getSymphonyArchiveKey(worker.session.uri),
     task: buildSymphonyTaskIri(webId, worker.task),
     createdAt: safeDate(worker.session.createdAt),
   })
 }
 
-function buildSymphonyRunIri(webId: string, worker: SymphonyRunPlan['workers'][number]): string {
-  return buildPodDataIri(webId, buildSymphonyRunId(webId, worker))
+function buildSymphonyRunStepIri(webId: string, worker: SymphonyRunPlan['workers'][number], stage: ProjectionStage): string {
+  return runStepResource.buildIri(webId,  {
+    id: `${getSymphonyArchiveKey(worker.session.uri)}-${stage}`,
+    run: buildSymphonyRunIri(webId, worker),
+  })
 }
 
 function buildSymphonyWorkerPodAccessPolicy(
@@ -429,17 +416,19 @@ function buildSymphonyWorkerPodAccessPolicy(
 ): Record<string, unknown> {
   return {
     version: SYMPHONY_WORKER_POD_ACCESS_POLICY_VERSION,
-    authority: 'ai-secretary-control-lane',
+    authority: '__secretary__-control-lane',
     assigned: {
       issue: buildSymphonyIssueIri(webId, plan.issue),
       task: buildSymphonyTaskIri(webId, worker.task),
       delivery: buildSymphonyDeliveryIri(webId, worker),
       run: buildSymphonyRunIri(webId, worker),
       session: buildSymphonyWorkerSessionUri(webId, worker),
-      sourceIssueUri: plan.issue.uri,
-      sourceTaskUri: worker.task,
-      sourceDeliveryUri: worker.delivery.uri,
-      sourceSessionUri: worker.session.uri,
+      archive: buildSymphonyArchiveRefs({
+        issue: plan.issue.uri,
+        task: worker.task,
+        delivery: worker.delivery.uri,
+        session: worker.session.uri,
+      }),
     },
     spaceContract: buildSymphonySpaceContract(plan, webId, worker),
     workspace: buildSymphonyWorkspaceMetadata(plan, worker),
@@ -486,6 +475,24 @@ function buildSymphonyWorkerPodAccessPolicy(
       localControlRecords: 'portable-runtime-fallback-or-pod-mirror',
       rule: 'repository-docs-reference-pod-issue-without-becoming-issue-truth',
     },
+  }
+}
+
+function buildSymphonyArchiveRefs(refs: SymphonyArchiveRefs): Record<string, string> {
+  const archive: Record<string, string> = {
+    version: SYMPHONY_ARCHIVE_PROVENANCE_VERSION,
+  }
+  for (const [key, value] of Object.entries(refs)) {
+    if (typeof value === 'string' && value.trim()) {
+      archive[key] = value
+    }
+  }
+  return archive
+}
+
+function buildSymphonyArchiveMetadata(refs: SymphonyArchiveRefs): { archive: Record<string, string> } {
+  return {
+    archive: buildSymphonyArchiveRefs(refs),
   }
 }
 
@@ -641,7 +648,7 @@ function normalizeWorkerChatUri(
   const thread = readWorkerThreadRef(worker)
   const chatId = extractChatThreadRef(thread).chatId
   if (chatId) {
-    return `${getPodBaseUrl(webId)}/.data/chat/${encodeURIComponent(chatId)}/index.ttl#this`
+    return chatResource.buildIri(webId,  { id: chatId })
   }
 
   return normalizeChatUri(undefined, webId, plan)
@@ -816,8 +823,10 @@ function withTargetRefs(
 function buildSymphonyChatRow(plan: SymphonyRunPlan, webId: string, stage: ProjectionStage, lastPreview?: string): ChatInsert {
   const createdAt = safeDate(plan.issue.createdAt)
   const updatedAt = safeDate(plan.session.updatedAt)
-  const secretaryAgent = buildAgentUri(webId, SYMPHONY_SECRETARY_AGENT_ID)
-  const workerAgents = plan.workers.map((worker) => buildAgentUri(webId, buildWorkerAgentId(worker.session.backend, worker.session.target.agent)))
+  const secretaryAgent = agentResource.buildIri(webId,  { id: SYMPHONY_SECRETARY_AGENT_ID })
+  const workerAgents = plan.workers.map((worker) => agentResource.buildIri(webId,  {
+    id: buildWorkerAgentId(worker.session.backend, worker.session.target.agent),
+  }))
   const participants = Array.from(new Set([webId, secretaryAgent, ...workerAgents]))
   const targetChat = normalizeChatUri(plan.session.target?.chat, webId, plan)
 
@@ -841,7 +850,9 @@ function buildSymphonyChatRow(plan: SymphonyRunPlan, webId: string, stage: Proje
         { uri: webId, role: 'user', label: 'User' },
         { uri: secretaryAgent, role: 'secretary', label: 'AI Secretary' },
         ...plan.workers.map((worker) => ({
-          uri: buildAgentUri(webId, buildWorkerAgentId(worker.session.backend, worker.session.target.agent)),
+          uri: agentResource.buildIri(webId,  {
+            id: buildWorkerAgentId(worker.session.backend, worker.session.target.agent),
+          }),
           role: 'worker',
           label: worker.session.target.label ?? worker.session.target.agent ?? backendDisplayName(worker.session.backend),
         })),
@@ -1076,7 +1087,7 @@ function buildSymphonyIssueRow(plan: SymphonyRunPlan, webId: string): IssueInser
     tasks: Array.from(new Set((plan.issue.tasks?.length ? plan.issue.tasks : plan.workers.map((worker) => worker.task))
       .map((task) => normalizeSymphonyTaskIri(webId, task)))),
     createdBy: plan.issue.issuer.webId ?? webId,
-    assignedTo: buildAgentUri(webId, SYMPHONY_SECRETARY_AGENT_ID),
+    assignedTo: agentResource.buildIri(webId,  { id: SYMPHONY_SECRETARY_AGENT_ID }),
     createdAt,
     updatedAt,
     ...(plan.issue.closedAt ? { closedAt: safeDate(plan.issue.closedAt) } : {}),
@@ -1105,7 +1116,7 @@ function buildSymphonyIdeaRow(idea: SymphonyIdeaRecord, webId: string): IdeaInse
     createdBy: webId,
     metadata: {
       surface: 'symphony',
-      sourceUri: idea.uri,
+      ...buildSymphonyArchiveMetadata({ idea: idea.uri }),
     },
     createdAt,
     updatedAt,
@@ -1129,8 +1140,11 @@ function mapSymphonyRunStatus(status: string): string {
 function buildSymphonyTaskRow(plan: SymphonyRunPlan, webId: string, worker: SymphonyRunPlan['workers'][number]): TaskInsert {
   const createdAt = safeDate(worker.taskRecord.createdAt)
   const updatedAt = safeDate(worker.taskRecord.updatedAt)
+  const workerAgent = agentResource.buildIri(webId,  {
+    id: buildWorkerAgentId(worker.session.backend, worker.session.target.agent),
+  })
   return {
-    id: buildSymphonyTaskId(worker.task),
+    id: taskResource.buildId( { id: buildSymphonyTaskKey(worker.task) }),
     title: worker.taskRecord.title,
     instruction: worker.taskRecord.objective,
     prompt: worker.delivery.projection.prompt,
@@ -1140,11 +1154,11 @@ function buildSymphonyTaskRow(plan: SymphonyRunPlan, webId: string, worker: Symp
     workspace: pathToWorkspaceUri(worker.session.cwd) ?? pathToWorkspaceUri(plan.session.cwd) ?? 'file:///',
     status: mapSymphonyTaskStatus(worker.taskRecord.status),
     priority: plan.issue.priority,
-    assignedTo: buildAgentUri(webId, buildWorkerAgentId(worker.session.backend, worker.session.target.agent)),
+    assignedTo: workerAgent,
     source: buildSymphonyIssueIri(webId, plan.issue),
     metadata: {
       surface: 'symphony',
-      sourceUri: worker.taskRecord.uri,
+      ...buildSymphonyArchiveMetadata({ task: worker.taskRecord.uri }),
       acceptanceCriteria: worker.taskRecord.acceptanceCriteria,
       backend: worker.session.backend,
       target: worker.session.target,
@@ -1161,18 +1175,26 @@ function buildSymphonyTaskRow(plan: SymphonyRunPlan, webId: string, worker: Symp
 function buildSymphonyDeliveryRow(plan: SymphonyRunPlan, webId: string, worker: SymphonyRunPlan['workers'][number]): DeliveryInsert {
   const createdAt = safeDate(worker.delivery.createdAt)
   const updatedAt = safeDate(worker.delivery.updatedAt)
+  const secretaryAgent = agentResource.buildIri(webId,  { id: SYMPHONY_SECRETARY_AGENT_ID })
+  const workerAgent = agentResource.buildIri(webId,  {
+    id: buildWorkerAgentId(worker.session.backend, worker.session.target.agent),
+  })
   return {
-    id: buildSymphonyDeliveryId(webId, worker),
+    id: deliveryResource.buildId( {
+      id: getSymphonyArchiveKey(worker.delivery.uri),
+      task: buildSymphonyTaskIri(webId, worker.task),
+      createdAt,
+    }),
     kind: worker.delivery.type,
     status: worker.delivery.status,
     task: buildSymphonyTaskIri(webId, worker.task),
-    source: buildAgentUri(webId, SYMPHONY_SECRETARY_AGENT_ID),
-    target: buildAgentUri(webId, buildWorkerAgentId(worker.session.backend, worker.session.target.agent)),
+    source: secretaryAgent,
+    target: workerAgent,
     chat: normalizeWorkerChatUri(plan, webId, worker),
     thread: normalizeWorkerThreadUri(plan, webId, worker),
     targetThread: normalizeWorkerThreadUri(plan, webId, worker),
     targetSession: worker.session.uri,
-    actor: buildAgentUri(webId, SYMPHONY_SECRETARY_AGENT_ID),
+    actor: secretaryAgent,
     object: buildSymphonyTaskIri(webId, worker.task),
     objective: worker.taskRecord.objective,
     payload: {
@@ -1190,10 +1212,12 @@ function buildSymphonyDeliveryRow(plan: SymphonyRunPlan, webId: string, worker: 
     projectedRole: worker.delivery.projection.runtimeRole,
     metadata: {
       surface: 'symphony',
-      sourceUri: worker.delivery.uri,
-      sourceIssueUri: plan.issue.uri,
-      sourceTaskUri: worker.task,
-      sourceSessionUri: worker.session.uri,
+      ...buildSymphonyArchiveMetadata({
+        issue: plan.issue.uri,
+        task: worker.task,
+        delivery: worker.delivery.uri,
+        session: worker.session.uri,
+      }),
       autoModeSessionId: worker.delivery.autoModeSessionId,
       workspace: buildSymphonyWorkspaceMetadata(plan, worker),
       spaceContract: buildSymphonySpaceContract(plan, webId, worker),
@@ -1217,8 +1241,10 @@ function buildSymphonyReportDeliveryRow(
   stage: Extract<ProjectionStage, 'completed' | 'failed'>,
 ): DeliveryInsert {
   const completedAt = safeDate(worker.session.completedAt ?? worker.session.updatedAt)
-  const workerAgent = buildAgentUri(webId, buildWorkerAgentId(worker.session.backend, worker.session.target.agent))
-  const secretaryAgent = buildAgentUri(webId, SYMPHONY_SECRETARY_AGENT_ID)
+  const workerAgent = agentResource.buildIri(webId,  {
+    id: buildWorkerAgentId(worker.session.backend, worker.session.target.agent),
+  })
+  const secretaryAgent = agentResource.buildIri(webId,  { id: SYMPHONY_SECRETARY_AGENT_ID })
   const run = buildSymphonyRunIri(webId, worker)
   const task = buildSymphonyTaskIri(webId, worker.task)
   const originalDelivery = buildSymphonyDeliveryIri(webId, worker)
@@ -1228,7 +1254,11 @@ function buildSymphonyReportDeliveryRow(
     : `${worker.taskRecord.title} failed: ${worker.session.error ?? worker.delivery.error ?? 'worker did not complete successfully.'}`
 
   return {
-    id: buildSymphonyReportDeliveryId(webId, worker),
+    id: deliveryResource.buildId( {
+      id: `${getSymphonyArchiveKey(worker.session.uri)}-report`,
+      task: buildSymphonyTaskIri(webId, worker.task),
+      createdAt: completedAt,
+    }),
     kind: 'report',
     status: 'completed',
     task,
@@ -1258,7 +1288,7 @@ function buildSymphonyReportDeliveryRow(
       error: worker.session.error ?? worker.delivery.error ?? worker.taskRecord.error,
       evidence: {
         statusMessage: buildSymphonyMessageUri(webId, plan, buildStatusMessageRow(plan, webId, stage)),
-        runStep: buildPodDataIri(webId, runStepResourceId(`${getSymphonyArchiveKey(worker.session.uri)}-${stage}`, { run })),
+        runStep: buildSymphonyRunStepIri(webId, worker, stage),
       },
     },
     projection: {
@@ -1268,11 +1298,12 @@ function buildSymphonyReportDeliveryRow(
     projectedRole: 'system',
     metadata: {
       surface: 'symphony',
-      sourceUri: worker.session.uri,
-      sourceIssueUri: plan.issue.uri,
-      sourceTaskUri: worker.task,
-      sourceDeliveryUri: worker.delivery.uri,
-      sourceSessionUri: worker.session.uri,
+      ...buildSymphonyArchiveMetadata({
+        issue: plan.issue.uri,
+        task: worker.task,
+        delivery: worker.delivery.uri,
+        session: worker.session.uri,
+      }),
       reportKind: 'worker-completion',
     },
     error: status === 'failed' ? worker.session.error ?? worker.delivery.error ?? worker.taskRecord.error : undefined,
@@ -1288,7 +1319,11 @@ function buildSymphonyRunRow(plan: SymphonyRunPlan, webId: string, worker: Symph
   const createdAt = safeDate(worker.session.createdAt)
   const updatedAt = safeDate(worker.session.updatedAt)
   return {
-    id: buildSymphonyRunId(webId, worker),
+    id: runResource.buildId( {
+      id: getSymphonyArchiveKey(worker.session.uri),
+      task: buildSymphonyTaskIri(webId, worker.task),
+      createdAt,
+    }),
     task: buildSymphonyTaskIri(webId, worker.task),
     delivery: buildSymphonyDeliveryIri(webId, worker),
     trigger: plan.issue.messages?.at(-1) ?? buildSymphonyIssueIri(webId, plan.issue),
@@ -1302,7 +1337,7 @@ function buildSymphonyRunRow(plan: SymphonyRunPlan, webId: string, worker: Symph
     error: worker.session.error,
     metadata: {
       surface: 'symphony',
-      sourceUri: worker.session.uri,
+      ...buildSymphonyArchiveMetadata({ session: worker.session.uri }),
       mode: worker.session.mode,
       model: worker.session.model,
       target: worker.session.target,
@@ -1338,7 +1373,10 @@ function buildSymphonyRunStepRow(
         ? 'run.completed'
         : 'run.failed'
   return {
-    id: runStepResourceId(`${getSymphonyArchiveKey(worker.session.uri)}-${stage}`, { run }),
+    id: runStepResource.buildId( {
+      id: `${getSymphonyArchiveKey(worker.session.uri)}-${stage}`,
+      run,
+    }),
     run,
     stepType,
     message: buildStatusContent(plan, stage),
@@ -1348,7 +1386,7 @@ function buildSymphonyRunStepRow(
       issue: buildSymphonyIssueIri(webId, plan.issue),
       task: buildSymphonyTaskIri(webId, worker.task),
       delivery: buildSymphonyDeliveryIri(webId, worker),
-      sourceRunUri: worker.session.uri,
+      archive: buildSymphonyArchiveRefs({ session: worker.session.uri }),
       autoModeSessionId: worker.session.autoModeSessionId,
     },
     createdAt,
@@ -1402,7 +1440,7 @@ function buildSymphonyContacts(plan: SymphonyRunPlan, webId: string): SymphonyCo
   return buildSymphonyAgents(plan).map((agent) => ({
     id: agent.id === SYMPHONY_SECRETARY_AGENT_ID ? SYMPHONY_CONTACT_ID : `${agent.id}-contact`,
     name: agent.name,
-    entity: buildAgentUri(webId, agent.id),
+    entity: agentResource.buildIri(webId,  { id: agent.id }),
     rdfType: ContactClass.AGENT,
     contactType: ContactType.AGENT,
     createdAt: now,
@@ -1474,12 +1512,16 @@ function buildStatusMessageRow(plan: SymphonyRunPlan, webId: string, stage: Proj
     ? safeDate(plan.issue.createdAt)
     : safeDate(plan.session.updatedAt)
   const content = buildStatusContent(plan, stage)
+  const secretaryAgent = agentResource.buildIri(webId,  { id: SYMPHONY_SECRETARY_AGENT_ID })
+  const routeTargetAgent = agentResource.buildIri(webId,  {
+    id: buildWorkerAgentId(plan.session.backend, plan.session.target?.agent),
+  })
 
   return {
     id: `${buildSymphonyThreadId(plan)}-${stage}`,
     chat: normalizeChatUri(plan.session.target?.chat, webId, plan),
     thread: normalizeThreadUri(plan.session.target?.thread, webId, plan),
-    maker: buildAgentUri(webId, SYMPHONY_SECRETARY_AGENT_ID),
+    maker: secretaryAgent,
     role: 'assistant',
     content,
     richContent: JSON.stringify({
@@ -1509,11 +1551,8 @@ function buildStatusMessageRow(plan: SymphonyRunPlan, webId: string, stage: Proj
     }),
     status: stage === 'failed' ? 'error' : 'sent',
     senderName: 'AI Secretary',
-    routedBy: buildAgentUri(webId, SYMPHONY_SECRETARY_AGENT_ID),
-    routeTargetAgent: buildAgentUri(
-      webId,
-      buildWorkerAgentId(plan.session.backend, plan.session.target?.agent),
-    ),
+    routedBy: secretaryAgent,
+    routeTargetAgent,
     coordinationId: plan.session.uri,
     createdAt,
     updatedAt: createdAt,
@@ -1547,7 +1586,9 @@ function buildSymphonyReportInboxNotificationRow(
   const createdAt = safeDate(worker.session.completedAt ?? worker.session.updatedAt)
   return {
     id: stableReportInboxNotificationId(worker),
-    actor: buildAgentUri(webId, buildWorkerAgentId(worker.session.backend, worker.session.target.agent)),
+    actor: agentResource.buildIri(webId,  {
+      id: buildWorkerAgentId(worker.session.backend, worker.session.target.agent),
+    }),
     object: buildSymphonyReportDeliveryIri(webId, worker),
     createdAt,
   } as InboxNotificationInsert
@@ -1560,7 +1601,7 @@ function buildSymphonyAuditRow(plan: SymphonyRunPlan, webId: string, stage: Proj
   return {
     id: stableAuditId(plan, stage),
     action: auditActionForStage(stage),
-    actor: buildAgentUri(webId, SYMPHONY_SECRETARY_AGENT_ID),
+    actor: agentResource.buildIri(webId,  { id: SYMPHONY_SECRETARY_AGENT_ID }),
     actorRole: 'secretary',
     onBehalfOf: webId,
     session: buildSymphonyControlSessionUri(webId, plan),
@@ -1570,56 +1611,8 @@ function buildSymphonyAuditRow(plan: SymphonyRunPlan, webId: string, stage: Proj
   } as AuditInsert
 }
 
-function requireFindById(db: PodProjectionDb): NonNullable<PodProjectionDb['findById']> {
-  if (typeof db.findById !== 'function') {
-    throw new Error('Solid database does not support findById.')
-  }
-  return db.findById.bind(db)
-}
-
-function requireUpdateById(db: PodProjectionDb): NonNullable<PodProjectionDb['updateById']> {
-  if (typeof db.updateById !== 'function') {
-    throw new Error('Solid database does not support updateById.')
-  }
-  return db.updateById.bind(db)
-}
-
-async function upsertById(db: PodProjectionDb, resource: unknown, id: string, row: Record<string, unknown>, update: Record<string, unknown>): Promise<void> {
-  const existing = await requireFindById(db)(resource, id)
-  if (!existing) {
-    await db.insert(resource).values(row).execute()
-    return
-  }
-  await requireUpdateById(db)(resource, id, update)
-}
-
-async function upsertByResource(
-  db: PodProjectionDb,
-  resource: unknown,
-  target: Record<string, unknown>,
-  row: Record<string, unknown>,
-  update: Record<string, unknown>,
-): Promise<void> {
-  if (
-    typeof db.resolveLocatorIri === 'function'
-    && typeof db.findByIri === 'function'
-    && typeof db.updateByIri === 'function'
-  ) {
-    const iri = db.resolveLocatorIri(resource, target)
-    const existing = await db.findByIri(resource, iri)
-    if (!existing) {
-      await db.insert(resource).values(row).execute()
-      return
-    }
-    await db.updateByIri(resource, iri, update)
-    return
-  }
-
-  await upsertById(db, resource, String(target.id ?? row.id ?? ''), row, update)
-}
-
 async function upsertChat(db: PodProjectionDb, runtime: SymphonyPodProjectionRuntime, row: ChatInsert): Promise<void> {
-  await upsertByResource(db, runtime.chatResource, { id: row.id }, row as Record<string, unknown>, {
+  await upsertExactRecord(db, runtime.chatResource, { id: row.id }, row as Record<string, unknown>, {
     title: row.title,
     participants: row.participants,
     metadata: row.metadata,
@@ -1630,7 +1623,7 @@ async function upsertChat(db: PodProjectionDb, runtime: SymphonyPodProjectionRun
 }
 
 async function upsertThread(db: PodProjectionDb, runtime: SymphonyPodProjectionRuntime, row: ThreadInsert): Promise<void> {
-  await upsertByResource(db, runtime.threadResource, { id: row.id, chat: row.chat }, row as Record<string, unknown>, {
+  await upsertExactRecord(db, runtime.threadResource, { id: row.id, chat: row.chat }, row as Record<string, unknown>, {
     title: row.title,
     metadata: row.metadata,
     updatedAt: row.updatedAt,
@@ -1638,7 +1631,7 @@ async function upsertThread(db: PodProjectionDb, runtime: SymphonyPodProjectionR
 }
 
 async function upsertMessage(db: PodProjectionDb, runtime: SymphonyPodProjectionRuntime, row: MessageInsert): Promise<void> {
-  await upsertByResource(db, runtime.messageResource, {
+  await upsertExactRecord(db, runtime.messageResource, {
     id: row.id,
     chat: row.chat,
     createdAt: row.createdAt,
@@ -1657,7 +1650,7 @@ async function upsertMessage(db: PodProjectionDb, runtime: SymphonyPodProjection
 }
 
 async function upsertSession(db: PodProjectionDb, runtime: SymphonyPodProjectionRuntime, row: SessionInsert): Promise<void> {
-  await upsertByResource(db, runtime.sessionResource, {
+  await upsertExactRecord(db, runtime.sessionResource, {
     id: row.id,
     createdAt: row.createdAt,
   }, row as Record<string, unknown>, {
@@ -1677,7 +1670,7 @@ async function upsertSession(db: PodProjectionDb, runtime: SymphonyPodProjection
 }
 
 async function upsertIssue(db: PodProjectionDb, runtime: SymphonyPodProjectionRuntime, row: IssueInsert): Promise<void> {
-  await upsertByResource(db, runtime.issueResource, { id: row.id }, row as Record<string, unknown>, {
+  await upsertExactRecord(db, runtime.issueResource, { id: row.id }, row as Record<string, unknown>, {
     title: row.title,
     description: row.description,
     status: row.status,
@@ -1693,7 +1686,7 @@ async function upsertIssue(db: PodProjectionDb, runtime: SymphonyPodProjectionRu
 }
 
 async function upsertIdea(db: PodProjectionDb, runtime: SymphonyPodProjectionRuntime, row: IdeaInsert): Promise<void> {
-  await upsertByResource(db, runtime.ideaResource, { id: row.id }, row as Record<string, unknown>, {
+  await upsertExactRecord(db, runtime.ideaResource, { id: row.id }, row as Record<string, unknown>, {
     summary: row.summary,
     input: row.input,
     status: row.status,
@@ -1714,7 +1707,7 @@ async function upsertIdea(db: PodProjectionDb, runtime: SymphonyPodProjectionRun
 }
 
 async function upsertTask(db: PodProjectionDb, runtime: SymphonyPodProjectionRuntime, row: TaskInsert): Promise<void> {
-  await upsertByResource(db, runtime.taskResource, { id: row.id }, row as Record<string, unknown>, {
+  await upsertExactRecord(db, runtime.taskResource, { id: row.id }, row as Record<string, unknown>, {
     title: row.title,
     instruction: row.instruction,
     prompt: row.prompt,
@@ -1732,7 +1725,7 @@ async function upsertTask(db: PodProjectionDb, runtime: SymphonyPodProjectionRun
 }
 
 async function upsertDelivery(db: PodProjectionDb, runtime: SymphonyPodProjectionRuntime, row: DeliveryInsert): Promise<void> {
-  await upsertByResource(db, runtime.deliveryResource, { id: row.id }, row as Record<string, unknown>, {
+  await upsertExactRecord(db, runtime.deliveryResource, { id: row.id }, row as Record<string, unknown>, {
     kind: row.kind,
     status: row.status,
     task: row.task,
@@ -1757,7 +1750,7 @@ async function upsertDelivery(db: PodProjectionDb, runtime: SymphonyPodProjectio
 }
 
 async function upsertRun(db: PodProjectionDb, runtime: SymphonyPodProjectionRuntime, row: RunInsert): Promise<void> {
-  await upsertByResource(db, runtime.runResource, { id: row.id }, row as Record<string, unknown>, {
+  await upsertExactRecord(db, runtime.runResource, { id: row.id }, row as Record<string, unknown>, {
     task: row.task,
     delivery: row.delivery,
     trigger: row.trigger,
@@ -1777,29 +1770,20 @@ async function upsertRun(db: PodProjectionDb, runtime: SymphonyPodProjectionRunt
 }
 
 async function insertRunStepOnce(db: PodProjectionDb, runtime: SymphonyPodProjectionRuntime, row: RunStepInsert): Promise<void> {
-  const id = String(row.id)
-  if (
-    typeof db.resolveLocatorIri === 'function'
-    && typeof db.findByIri === 'function'
-  ) {
-    const iri = db.resolveLocatorIri(runtime.runStepResource, { id, run: row.run })
-    const existing = await db.findByIri(runtime.runStepResource, iri)
-    if (existing) {
-      return
-    }
-    await db.insert(runtime.runStepResource).values(row as Record<string, unknown>).execute()
-    return
-  }
-
-  const existing = await requireFindById(db)(runtime.runStepResource, id)
-  if (existing) {
-    return
-  }
-  await db.insert(runtime.runStepResource).values(row as Record<string, unknown>).execute()
+  await insertExactRecordOnce(db, runtime.runStepResource, String(row.id), row as Record<string, unknown>)
 }
 
 async function upsertAgent(db: PodProjectionDb, runtime: SymphonyPodProjectionRuntime, row: SymphonyAgentRow): Promise<void> {
-  await upsertByResource(db, runtime.agentResource, { id: row.id }, row, {
+  const target = { id: row.id }
+  const agentResourceWithId = runtime.agentResource as PodTable<any> & {
+    buildId?: (target: Record<string, unknown>) => string
+  }
+  await upsertExactRecord(db, runtime.agentResource, target, {
+    ...row,
+    id: typeof agentResourceWithId.buildId === 'function'
+      ? agentResourceWithId.buildId(target)
+      : row.id,
+  }, {
     name: row.name,
     description: row.description,
     provider: row.provider,
@@ -1809,7 +1793,7 @@ async function upsertAgent(db: PodProjectionDb, runtime: SymphonyPodProjectionRu
 }
 
 async function upsertContact(db: PodProjectionDb, runtime: SymphonyPodProjectionRuntime, row: SymphonyContactRow): Promise<void> {
-  await upsertByResource(db, runtime.contactResource, { id: row.id }, row, {
+  await upsertExactRecord(db, runtime.contactResource, { id: row.id }, row, {
     name: row.name,
     entity: row.entity,
     rdfType: row.rdfType,
@@ -1819,28 +1803,10 @@ async function upsertContact(db: PodProjectionDb, runtime: SymphonyPodProjection
 }
 
 async function insertAuditOnce(db: PodProjectionDb, runtime: SymphonyPodProjectionRuntime, row: AuditInsert): Promise<void> {
-  const id = String(row.id)
-  if (
-    typeof db.resolveLocatorIri === 'function'
-    && typeof db.findByIri === 'function'
-  ) {
-    const iri = db.resolveLocatorIri(runtime.auditResource, {
-      id,
-      createdAt: row.createdAt,
-    })
-    const existing = await db.findByIri(runtime.auditResource, iri)
-    if (existing) {
-      return
-    }
-    await db.insert(runtime.auditResource).values(row as Record<string, unknown>).execute()
-    return
-  }
-
-  const existing = await requireFindById(db)(runtime.auditResource, id)
-  if (existing) {
-    return
-  }
-  await db.insert(runtime.auditResource).values(row as Record<string, unknown>).execute()
+  await insertExactRecordOnce(db, runtime.auditResource, {
+    id: String(row.id),
+    createdAt: row.createdAt,
+  }, row as Record<string, unknown>)
 }
 
 async function insertInboxNotificationOnce(
@@ -1852,25 +1818,7 @@ async function insertInboxNotificationOnce(
     return
   }
 
-  const id = String(row.id)
-  if (
-    typeof db.resolveLocatorIri === 'function'
-    && typeof db.findByIri === 'function'
-  ) {
-    const iri = db.resolveLocatorIri(runtime.inboxNotificationResource, { id })
-    const existing = await db.findByIri(runtime.inboxNotificationResource, iri)
-    if (existing) {
-      return
-    }
-    await db.insert(runtime.inboxNotificationResource).values(row as Record<string, unknown>).execute()
-    return
-  }
-
-  const existing = await requireFindById(db)(runtime.inboxNotificationResource, id)
-  if (existing) {
-    return
-  }
-  await db.insert(runtime.inboxNotificationResource).values(row as Record<string, unknown>).execute()
+  await insertExactRecordOnce(db, runtime.inboxNotificationResource, String(row.id), row as Record<string, unknown>)
 }
 
 function collectMessageUris(webId: string, plan: SymphonyRunPlan, stages: ProjectionStage[]): string[] {
@@ -1900,10 +1848,10 @@ function collectSymphonyProjectionResources(
   }
 
   for (const agent of buildSymphonyAgents(plan)) {
-    add('agent', buildAgentUri(webId, agent.id))
+    add('agent', agentResource.buildIri(webId,  { id: agent.id }))
   }
   for (const contact of buildSymphonyContacts(plan, webId)) {
-    add('contact', buildContactUri(webId, contact.id))
+    add('contact', contactResource.buildIri(webId,  { id: contact.id }))
   }
 
   for (const worker of plan.workers) {
@@ -1914,9 +1862,7 @@ function collectSymphonyProjectionResources(
     add('delivery', buildSymphonyDeliveryIri(webId, worker))
     add('run', buildSymphonyRunIri(webId, worker))
     for (const stage of stages) {
-      add('runStep', buildPodDataIri(webId, runStepResourceId(`${getSymphonyArchiveKey(worker.session.uri)}-${stage}`, {
-        run: buildSymphonyRunIri(webId, worker),
-      })))
+      add('runStep', buildSymphonyRunStepIri(webId, worker, stage))
     }
     if (worker.session.status === 'completed' || worker.session.status === 'failed') {
       add('delivery', buildSymphonyReportDeliveryIri(webId, worker))
@@ -2011,14 +1957,11 @@ export async function mirrorSymphonyProjectionJsonLdFromPod(
 ): Promise<SymphonyJsonLdMirrorResult | null> {
   const runtime = options.runtime ?? await createDefaultRuntime()
   const podSession = await runtime.getPodDataSession()
-  if (!podSession || typeof runtime.createDb !== 'function') {
+  if (!podSession) {
     return null
   }
 
   const db = runtime.createDb(podSession)
-  if (typeof db.findByIri !== 'function') {
-    return null
-  }
 
   const resources = Array.from(new Map((projection.resources ?? [])
     .map((resource) => [resource.uri, resource] as const)).values())
@@ -2065,13 +2008,13 @@ export async function mirrorSymphonyProjectionJsonLdFromPod(
 function collectProjectionResourceModels(
   runtime: SymphonyPodProjectionRuntime,
   resources: SymphonyPodProjectionResource[],
-): unknown[] {
+): Array<PodTable<any>> {
   return Array.from(new Set(resources
     .map((resource) => resolveProjectionResourceModel(runtime, resource.kind))
-    .filter((resource): resource is unknown => Boolean(resource))))
+    .filter((resource): resource is PodTable<any> => Boolean(resource))))
 }
 
-function resolveProjectionResourceModel(runtime: SymphonyPodProjectionRuntime, kind: string): unknown | null {
+function resolveProjectionResourceModel(runtime: SymphonyPodProjectionRuntime, kind: string): PodTable<any> | null {
   if (kind === 'chat') return runtime.chatResource
   if (kind === 'thread') return runtime.threadResource
   if (kind === 'message') return runtime.messageResource
@@ -2210,7 +2153,10 @@ export async function persistSymphonyIdeaToPod(
     action: 'symphony.idea.project',
     resourceBindings: {
       idea: {
-        uri: `${getPodBaseUrl(podSession.webId)}/.data/ideas/${getSymphonyArchiveKey(idea.uri)}.ttl`,
+        uri: ideaResource.buildIri(podSession.webId,  {
+          id: getSymphonyArchiveKey(idea.uri),
+          createdAt: idea.createdAt,
+        }),
         local: getSymphonyArchiveKey(idea.uri),
       },
       ...(idea.chat ? { chat: { uri: idea.chat, local: extractChatIdFromChatRef(idea.chat) ?? undefined } } : {}),
@@ -2254,9 +2200,6 @@ export async function listOpenSymphonyIssuesFromPod(
   }
 
   const db = runtime.createDb(podSession)
-  if (typeof db.select !== 'function') {
-    return null
-  }
 
   try {
     await db.init([runtime.issueResource]).catch(() => undefined)
@@ -2281,9 +2224,6 @@ export async function listRunningSymphonyWorkersFromPod(
   }
 
   const db = runtime.createDb(podSession)
-  if (typeof db.select !== 'function') {
-    return null
-  }
 
   try {
     await db.init([runtime.sessionResource]).catch(() => undefined)
@@ -2308,9 +2248,6 @@ export async function listRecentSymphonyReportsFromPod(
   }
 
   const db = runtime.createDb(podSession)
-  if (typeof db.select !== 'function') {
-    return null
-  }
 
   try {
     await db.init([runtime.deliveryResource]).catch(() => undefined)
@@ -2366,10 +2303,7 @@ function issueRowToSymphonyIssueRecord(row: unknown, webId: string): SymphonyIss
 }
 
 function symphonyIssueUriFromResourceId(id: string): string {
-  const normalized = id
-    .replace(/^\/?\.data\/issues\//u, '')
-    .replace(/^issues\//u, '')
-    .replace(/\.ttl$/u, '')
+  const normalized = resolvePodResourceTemplateValue(issueResource, id) ?? id
   return `urn:undefineds:linx:issue:${normalized}`
 }
 
@@ -2469,7 +2403,8 @@ function deliveryRowToSymphonyReportStatus(row: unknown): (SymphonyPodReportStat
   const title = normalizeString(record.objective)
   const summary = normalizeString(payload?.summary)
   const task = normalizeString(record.task)
-  const delivery = normalizeString(payload?.delivery) ?? normalizeString(metadata?.sourceDeliveryUri)
+  const archive = asRecord(metadata?.archive)
+  const delivery = normalizeString(payload?.delivery) ?? normalizeString(archive?.delivery)
   const reportDelivery = normalizeString(payload?.reportDelivery) ?? normalizeString(record.id)
   const run = normalizeString(payload?.run) ?? normalizeString(record.object)
   const chat = normalizeString(record.chat)
@@ -2699,8 +2634,6 @@ export const __symphonyPodProjectionInternal = {
   SYMPHONY_SECRETARY_AGENT_ID,
   SYMPHONY_CONTACT_ID,
   SYMPHONY_POLICY_VERSION,
-  buildAgentUri,
-  buildContactUri,
   buildSymphonyChatUri,
   buildSymphonyThreadId,
   buildSymphonyThreadUri,

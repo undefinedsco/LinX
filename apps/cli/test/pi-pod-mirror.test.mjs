@@ -46,6 +46,9 @@ function createFakePodRuntime() {
   }
   const resolveLocatorIri = (table, locator) => {
     const name = tableName(table)
+    if (typeof table?.buildIri === 'function') {
+      return table.buildIri(podBase, locator)
+    }
     if (name === 'chats') {
       return `${podBase}/.data/chat/${encodeURIComponent(locator.id)}/index.ttl#this`
     }
@@ -54,7 +57,12 @@ function createFakePodRuntime() {
       return `${podBase}/.data/chat/${encodeURIComponent(chatId)}/index.ttl#${encodeURIComponent(locator.id)}`
     }
     if (name === 'agent') {
-      return `${podBase}/.data/agents/${encodeURIComponent(locator.id)}.ttl`
+      return `${podBase}/agents/${encodeURIComponent(locator.id)}/`
+    }
+    if (name === 'skill') {
+      const agent = String(locator.agent ?? '')
+      const agentKey = agent.match(/\/agents\/([^/]+)\/?$/)?.[1] ?? agent
+      return `${podBase}/agents/${encodeURIComponent(decodeURIComponent(agentKey))}/skills/${encodeURIComponent(locator.id)}/`
     }
     if (name === 'session') {
       const { yyyy, mm, dd } = dateParts(locator.createdAt, true)
@@ -77,6 +85,7 @@ function createFakePodRuntime() {
     if (name === 'session') return { id: row.id, createdAt: row.createdAt }
     if (name === 'chat_message') return { id: row.id, chat: row.chat, createdAt: row.createdAt }
     if (name === 'audit') return { id: row.id, createdAt: row.createdAt }
+    if (name === 'skill') return { id: row.id, agent: row.agent }
     return { id: row.id }
   }
   const db = {
@@ -90,6 +99,12 @@ function createFakePodRuntime() {
       return [...rows.entries()].find(([iri]) => iri.endsWith(suffix) || iri.endsWith(documentSuffix))?.[1] ?? null
     },
     async findByIri(_table, iri) {
+      return rows.get(iri) ?? null
+    },
+    async findByResource(table, target) {
+      const iri = typeof target === 'string' && /^https?:\/\//.test(target)
+        ? target
+        : resolveLocatorIri(table, typeof target === 'string' ? { id: target } : target)
       return rows.get(iri) ?? null
     },
     async updateById(table, id, patch) {
@@ -108,6 +123,12 @@ function createFakePodRuntime() {
       rows.set(iri, next)
       writes.push({ op: 'update', table: tableName(table), iri, row: next })
       return next
+    },
+    async updateByResource(table, target, patch) {
+      const iri = typeof target === 'string' && /^https?:\/\//.test(target)
+        ? target
+        : resolveLocatorIri(table, typeof target === 'string' ? { id: target } : target)
+      return this.updateByIri(table, iri, patch)
     },
     insert(table) {
       return {
@@ -210,7 +231,7 @@ test('buildPodMessageRow maps Pi user and assistant messages into standard Pod m
     },
   )
 
-  assert.equal(assistantRow.maker, 'https://id.undefineds.co/alice/.data/agents/ai-secretary.ttl')
+  assert.equal(assistantRow.maker, 'https://id.undefineds.co/alice/agents/__secretary__/')
   assert.equal(assistantRow.role, 'assistant')
   assert.match(assistantRow.content, /answer/)
   assert.match(assistantRow.content, /tool-call:bash/)
@@ -278,14 +299,22 @@ test('LinxPiPodMirror persists Pi session events into Pod tables', async (t) => 
   const rowValues = [...rows.values()]
   assert.equal(rowValues.some((row) => row.title === 'AI Secretary'), true)
   assert.equal(rowValues.some((row) => row.name === 'LinX CLI Assistant'), true)
+  assert.equal(rowValues.some((row) => row.name === 'symphony' && row.loadPolicy === 'file-backed'), true)
   assert.equal(rowValues.some((row) => row.tool === 'linx' && row.status === 'completed'), true)
   assert.equal(rowValues.some((row) => row.content === 'persist through mirror'), true)
   assert.equal(writes.some((write) => write.table === 'chats' && write.iri.endsWith('/.data/chat/ai-secretary/index.ttl#this')), true)
+  assert.equal(writes.some((write) => write.table === 'agent' && write.iri.endsWith('/agents/__secretary__/')), true)
+  assert.equal(writes.some((write) => write.table === 'skill' && write.iri.endsWith('/agents/__secretary__/skills/symphony/')), true)
   assert.equal(writes.some((write) => write.table === 'session' && /\/\.data\/sessions\/2026\/04\/01\/[^/]+\.ttl$/.test(write.iri)), true)
   assert.equal(writes.filter((write) => write.table === 'session' && write.op === 'insert').length, 1)
   assert.equal(writes.filter((write) => write.table === 'session' && write.op === 'update').length, 1)
   assert.equal(writes.some((write) => write.table === 'chat_message' && /\/\.data\/chat\/ai-secretary\/2026\/04\/01\/messages\.ttl#/.test(write.iri)), true)
   assert.equal(writes.some((write) => write.table === 'audit'), false)
+  const runtimeSessionRow = rowValues.find((row) => row.tool === 'linx' && row.status === 'completed')
+  assert.equal(runtimeSessionRow.metadata.runtimeSnapshot.agent, '__secretary__')
+  assert.equal(runtimeSessionRow.metadata.runtimeSnapshot.runtime.backend, 'linx')
+  assert.equal(runtimeSessionRow.metadata.runtimeSnapshot.runtime.runtime, 'pi')
+  assert.equal(runtimeSessionRow.metadata.runtimeSnapshot.skills[0].name, 'symphony')
 })
 
 test('LinxPiPodMirror projects auto control-plane state into Pod session metadata', async (t) => {
@@ -478,15 +507,15 @@ test('LinxPiPodMirror records failed streaming projection checkpoints', async (t
   assert.equal(checkpoints.length, 1)
   assert.equal(checkpoints[0].status, 'failed')
   assert.deepEqual(checkpoints[0].metadata.resourceBindings.session, {
-    uri: 'https://id.undefineds.co/alice/.data/fake.ttl#id',
+    uri: `https://id.undefineds.co/alice/.data/sessions/2026/04/01/${sessionManager.getSessionId()}.ttl`,
     local: sessionManager.getSessionId(),
   })
   assert.deepEqual(checkpoints[0].metadata.resourceBindings.thread, {
-    uri: 'https://id.undefineds.co/alice/.data/fake.ttl#id',
+    uri: `https://id.undefineds.co/alice/.data/chat/ai-secretary/index.ttl#${sessionManager.getSessionId()}`,
     local: sessionManager.getSessionId(),
   })
   assert.deepEqual(checkpoints[0].metadata.resourceBindings.chat, {
-    uri: 'https://id.undefineds.co/alice/.data/fake.ttl#id',
+    uri: 'https://id.undefineds.co/alice/.data/chat/ai-secretary/index.ttl#this',
     local: 'ai-secretary',
   })
   assert.match(checkpoints[0].failures[0].message, /pod write failed/)

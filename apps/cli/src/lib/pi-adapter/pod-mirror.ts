@@ -1,6 +1,10 @@
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
 import type { SessionEntry, SessionManager } from '@earendil-works/pi-coding-agent'
 import {
+  createAgentRuntimeConfigSnapshot,
+  type AgentRuntimeSkillSnapshot,
+} from '@linx/agent-runtime'
+import {
   buildLinxSessionControlState,
   mergeLinxSessionControlMetadata,
 } from '@linx/agent-runtime/control-plane'
@@ -14,6 +18,7 @@ import {
   type LinxSyncCheckpointStore,
   type LinxSyncRunResult,
 } from '@linx/agent-runtime/sync'
+import { upsertExactRecord } from '@undefineds.co/drizzle-solid'
 import { DEFAULT_LINX_CLOUD_MODEL_ID } from '../default-model.js'
 import { getDefaultPodDataSession, type PodDataSession } from '../pod-data-session.js'
 import {
@@ -23,12 +28,14 @@ import {
   drizzle,
   messageResource,
   sessionResource,
+  skillResource,
   solidResources,
   threadResource,
   type AuditInsert,
   type ChatInsert,
   type MessageInsert,
   type SessionInsert,
+  type SkillInsert,
   type SolidDatabase,
   type ThreadInsert,
 } from '../models.js'
@@ -44,6 +51,7 @@ import {
 } from './pod-mirror-mapping.js'
 
 const PI_POLICY_VERSION = 'linx-pi-pod-mirror/v1'
+const PI_SYMPHONY_SKILL_ID = 'symphony'
 
 interface PodMirrorRuntime {
   getPodDataSession(): Promise<PodDataSession | null>
@@ -70,6 +78,7 @@ interface PiResourceRefs {
   agentUri: string
   chatUri: string
   sessionUri: string
+  symphonySkillUri: string
   threadUri: string
 }
 
@@ -168,10 +177,15 @@ export class LinxPiPodMirror {
         throw new Error('Pod data session unavailable for Pi control-plane sync')
       }
 
+      const refs = resolvePiResourceRefs(context, this.options)
+      if (this.options.syncConversationRoot) {
+        await ensurePiConversationRoot(context, this.options, refs)
+      }
+
       await persistRuntimeSession(
         context,
         this.options,
-        resolvePiResourceRefs(context, this.options),
+        refs,
         'active',
         this.messageResourceRefs,
       )
@@ -191,10 +205,15 @@ export class LinxPiPodMirror {
         throw new Error('Pod data session unavailable for Pi control-plane sync')
       }
 
+      const refs = resolvePiResourceRefs(context, this.options)
+      if (this.options.syncConversationRoot) {
+        await ensurePiConversationRoot(context, this.options, refs)
+      }
+
       await persistRuntimeSession(
         context,
         this.options,
-        resolvePiResourceRefs(context, this.options),
+        refs,
         'active',
         this.messageResourceRefs,
       )
@@ -428,7 +447,7 @@ async function ensurePiConversationRoot(
   const now = new Date()
   const threadId = options.sessionManager.getSessionId()
 
-  await upsertByResource(context.db, chatResource, { id: DEFAULT_SECRETARY_CHAT_ID }, {
+  await upsertExactRecord(context.db, chatResource, { id: DEFAULT_SECRETARY_CHAT_ID }, {
     id: DEFAULT_SECRETARY_CHAT_ID,
     title: 'AI Secretary',
     participants: [context.webId, refs.agentUri],
@@ -452,7 +471,7 @@ async function ensurePiConversationRoot(
     updatedAt: now,
   })
 
-  await upsertByResource(context.db, threadResource, { id: threadId, chat: refs.chatUri }, {
+  await upsertExactRecord(context.db, threadResource, { id: threadId, chat: refs.chatUri }, {
     id: threadId,
     chat: refs.chatUri,
     title: buildThreadTitle(options.sessionManager),
@@ -467,17 +486,77 @@ async function ensurePiConversationRoot(
     updatedAt: now,
   })
 
-  await upsertByResource(context.db, agentResource, { id: PI_AGENT_ID }, {
-    id: PI_AGENT_ID,
+  await upsertExactRecord(context.db, agentResource, { id: PI_AGENT_ID }, {
+    id: agentResource.buildId({ id: PI_AGENT_ID }),
     name: 'LinX CLI Assistant',
+    root: refs.agentUri,
+    hasSkill: [refs.symphonySkillUri],
     provider: 'undefineds',
+    backend: 'linx',
+    runtime: 'pi',
+    transport: 'pi-runtime',
+    credentialSource: 'pod-session',
     model: DEFAULT_LINX_CLOUD_MODEL_ID,
+    enabled: true,
+    metadata: {
+      kind: 'ai-secretary',
+      surface: 'cli',
+      fileBackedSkills: true,
+    },
     createdAt: now,
     updatedAt: now,
   }, {
     name: 'LinX CLI Assistant',
+    root: refs.agentUri,
+    hasSkill: [refs.symphonySkillUri],
     provider: 'undefineds',
+    backend: 'linx',
+    runtime: 'pi',
+    transport: 'pi-runtime',
+    credentialSource: 'pod-session',
     model: DEFAULT_LINX_CLOUD_MODEL_ID,
+    enabled: true,
+    metadata: {
+      kind: 'ai-secretary',
+      surface: 'cli',
+      fileBackedSkills: true,
+    },
+    updatedAt: now,
+  })
+
+  await upsertExactRecord(context.db, skillResource, {
+    id: PI_SYMPHONY_SKILL_ID,
+    agent: refs.agentUri,
+  }, {
+    id: skillResource.buildId({
+      id: PI_SYMPHONY_SKILL_ID,
+      agent: refs.agentUri,
+    }),
+    agent: refs.agentUri,
+    root: refs.symphonySkillUri,
+    name: PI_SYMPHONY_SKILL_ID,
+    displayName: 'Symphony',
+    enabled: true,
+    source: 'linx-cli:skills/symphony',
+    loadPolicy: 'file-backed',
+    metadata: {
+      file: 'SKILL.md',
+      scope: 'linx-cli',
+    },
+    createdAt: now,
+    updatedAt: now,
+  } satisfies SkillInsert, {
+    agent: refs.agentUri,
+    root: refs.symphonySkillUri,
+    name: PI_SYMPHONY_SKILL_ID,
+    displayName: 'Symphony',
+    enabled: true,
+    source: 'linx-cli:skills/symphony',
+    loadPolicy: 'file-backed',
+    metadata: {
+      file: 'SKILL.md',
+      scope: 'linx-cli',
+    },
     updatedAt: now,
   })
 }
@@ -501,6 +580,7 @@ async function persistRuntimeSession(
     surface: 'cli',
     threadUri: refs.threadUri,
     messages: [...messageResourceRefs],
+    runtimeSnapshot: createPiRuntimeSnapshot(refs, createdAt),
   }
   const controlState = buildLinxSessionControlState({
     autoEnabled: options.autoEnabled === true,
@@ -557,7 +637,7 @@ async function persistMessage(
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   } satisfies MessageInsert
-  const resourceRef = context.db.resolveLocatorIri(messageResource, { id: row.id, chat: row.chat, createdAt: row.createdAt })
+  const resourceRef = messageResource.buildIri(context.webId,  { id: row.id, chat: row.chat, createdAt: row.createdAt })
   await upsertByIri(context.db, messageResource, resourceRef, insert, {
     chat: row.chat,
     thread: row.thread,
@@ -614,12 +694,17 @@ function createPodMirrorDb(session: PodDataSession): SolidDatabase {
 function resolvePiResourceRefs(context: PodMirrorContext, options: LinxPiPodMirrorOptions): PiResourceRefs {
   const sessionId = options.sessionManager.getSessionId()
   const createdAt = getSessionCreatedAt(options.sessionManager)
-  const chatUri = context.db.resolveLocatorIri(chatResource, { id: DEFAULT_SECRETARY_CHAT_ID })
+  const chatUri = chatResource.buildIri(context.webId,  { id: DEFAULT_SECRETARY_CHAT_ID })
+  const agentUri = agentResource.buildIri(context.webId,  { id: PI_AGENT_ID })
   return {
-    agentUri: context.db.resolveLocatorIri(agentResource, { id: PI_AGENT_ID }),
+    agentUri,
     chatUri,
-    sessionUri: context.db.resolveLocatorIri(sessionResource, { id: sessionId, createdAt }),
-    threadUri: context.db.resolveLocatorIri(threadResource, { id: sessionId, chat: chatUri }),
+    sessionUri: sessionResource.buildIri(context.webId,  { id: sessionId, createdAt }),
+    symphonySkillUri: skillResource.buildIri(context.webId, {
+      id: PI_SYMPHONY_SKILL_ID,
+      agent: agentUri,
+    }),
+    threadUri: threadResource.buildIri(context.webId,  { id: sessionId, chat: chatUri }),
   }
 }
 
@@ -633,6 +718,7 @@ function createPiPodMirrorSyncResourceBindings(
     thread: { uri: refs?.threadUri, local: sessionId },
     session: { uri: refs?.sessionUri, local: sessionId },
     agent: { uri: refs?.agentUri, local: PI_AGENT_ID },
+    skill: { uri: refs?.symphonySkillUri, local: PI_SYMPHONY_SKILL_ID },
   }
 }
 
@@ -649,28 +735,6 @@ function normalizePodMessageRow(
     thread: refs.threadUri,
     maker: row.role === 'user' ? context.webId : refs.agentUri,
   }
-}
-
-async function upsertByResource(
-  db: SolidDatabase,
-  resource: Parameters<SolidDatabase['resolveLocatorIri']>[0],
-  target: Record<string, unknown>,
-  insert: Record<string, unknown>,
-  update: Record<string, unknown>,
-): Promise<void> {
-  const id = String(target.id ?? '')
-  const iri = db.resolveLocatorIri(resource, target)
-  const existing = id ? await db.findById(resource, id) : await db.findByIri(resource, iri)
-  if (!existing) {
-    await db.insert(resource).values(insert).execute()
-    return
-  }
-
-  if (id) {
-    await db.updateById(resource, id, update)
-    return
-  }
-  await db.updateByIri(resource, iri, update)
 }
 
 async function upsertByIri(
@@ -758,6 +822,38 @@ function buildThreadMetadata(options: LinxPiPodMirrorOptions): Record<string, un
     cwd: options.cwd,
     sessionFile: options.sessionManager.getSessionFile(),
   }
+}
+
+function createPiRuntimeSnapshot(refs: PiResourceRefs, createdAt: Date): ReturnType<typeof createAgentRuntimeConfigSnapshot> {
+  const skills: AgentRuntimeSkillSnapshot[] = [
+    {
+      id: skillResource.buildId({
+        id: PI_SYMPHONY_SKILL_ID,
+        agent: refs.agentUri,
+      }),
+      name: PI_SYMPHONY_SKILL_ID,
+      source: 'linx-cli:skills/symphony',
+      loadPolicy: 'file-backed',
+      enabled: true,
+    },
+  ]
+  return createAgentRuntimeConfigSnapshot({
+    agent: PI_AGENT_ID,
+    role: 'secretary',
+    label: 'AI Secretary',
+    model: DEFAULT_LINX_CLOUD_MODEL_ID,
+    runtime: {
+      backend: 'linx',
+      model: DEFAULT_LINX_CLOUD_MODEL_ID,
+      credentialSource: 'pod-session',
+      runtime: 'pi',
+      transport: 'pi-runtime',
+    },
+    skills,
+  }, {
+    createdAt,
+    source: 'linx-cli.pi-pod-mirror',
+  })
 }
 
 function isReplayablePiProjectionCheckpoint(checkpoint: LinxSyncCheckpoint): boolean {

@@ -1,9 +1,15 @@
 import { createHash } from 'node:crypto'
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
 import type { SessionEntry, SessionManager } from '@earendil-works/pi-coding-agent'
+import {
+  agentResource,
+  buildChatTargetRef,
+  chatResource,
+  threadResource,
+} from '../models.js'
 
 export const DEFAULT_SECRETARY_CHAT_ID = 'ai-secretary'
-export const DEFAULT_SECRETARY_AGENT_ID = 'ai-secretary'
+export const DEFAULT_SECRETARY_AGENT_ID = '__secretary__'
 
 // Compatibility exports for older call sites. New code should use the secretary/chat
 // names because Chat identifies the conversation counterpart, not the CLI product.
@@ -44,9 +50,9 @@ export function buildPodMessageRow(
   const createdAt = messageTimestampToDate(message, entry.timestamp)
   return {
     id: `${options.sessionManager.getSessionId()}-${entry.id}`,
-    chat: buildChatUri(webId),
-    thread: buildThreadUri(webId, DEFAULT_SECRETARY_CHAT_ID, options.sessionManager.getSessionId()),
-    maker: role === 'user' ? webId : buildAgentUri(webId),
+    chat: secretaryChatUri(webId),
+    thread: secretaryThreadUri(webId, options.sessionManager.getSessionId()),
+    maker: role === 'user' ? webId : secretaryAgentUri(webId),
     role,
     content,
     richContent: JSON.stringify({
@@ -59,16 +65,19 @@ export function buildPodMessageRow(
   }
 }
 
-export function buildThreadUri(webId: string, chatId: string, threadId: string): string {
-  return `${getPodBaseUrl(webId)}/.data/chat/${chatId}/index.ttl#${threadId}`
+export function secretaryThreadUri(webId: string, threadId: string, chatId = DEFAULT_SECRETARY_CHAT_ID): string {
+  return threadResource.buildIri(webId,  {
+    id: threadId,
+    chat: buildChatTargetRef(chatId),
+  })
 }
 
-export function buildAgentUri(webId: string): string {
-  return `${getPodBaseUrl(webId)}/.data/agents/${DEFAULT_SECRETARY_AGENT_ID}.ttl`
+export function secretaryAgentUri(webId: string): string {
+  return agentResource.buildIri(webId,  { id: DEFAULT_SECRETARY_AGENT_ID })
 }
 
-export function buildChatUri(webId: string): string {
-  return `${getPodBaseUrl(webId)}/.data/chat/${DEFAULT_SECRETARY_CHAT_ID}/index.ttl#this`
+export function secretaryChatUri(webId: string, chatId = DEFAULT_SECRETARY_CHAT_ID): string {
+  return chatResource.buildIri(webId,  { id: chatId })
 }
 
 export function buildToolAuditId(sessionId: string, toolCallId: string, action: string): string {
@@ -217,10 +226,6 @@ function messageTimestampToDate(message: AgentMessage, fallback: string): Date {
 function isAssistantError(message: AgentMessage): boolean {
   return (message as { role?: unknown; stopReason?: unknown }).role === 'assistant'
     && (message as { stopReason?: unknown }).stopReason === 'error'
-}
-
-function getPodBaseUrl(webId: string): string {
-  return webId.replace('/profile/card#me', '').replace(/\/$/, '')
 }
 
 function shortStableId(parts: string[]): string {

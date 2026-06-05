@@ -14,7 +14,7 @@ import {
   type RemoteApprovalRequestDetails,
   type RemoteApprovalSubjectContext,
 } from '../auto-mode/pod-approval.js'
-import { buildAgentUri, buildThreadUri, DEFAULT_SECRETARY_CHAT_ID } from './pod-mirror-mapping.js'
+import { DEFAULT_SECRETARY_CHAT_ID, secretaryAgentUri, secretaryThreadUri } from './pod-mirror-mapping.js'
 import type { SessionControlManager } from './session-control.js'
 
 const EXTENSION_UI_POLICY_VERSION = 'linx-pi-extension-ui/v1'
@@ -407,10 +407,10 @@ async function createExtensionUiRemoteApproval(input: {
 
 function buildExtensionUiApprovalSubject(webId: string, options: PodBackedExtensionUiOptions): RemoteApprovalSubjectContext {
   const sessionId = resolveSessionId(options.sessionId) ?? 'linx-pi-extension-ui'
-  const sessionUri = buildThreadUri(webId, DEFAULT_SECRETARY_CHAT_ID, sessionId)
+  const sessionUri = secretaryThreadUri(webId, sessionId, DEFAULT_SECRETARY_CHAT_ID)
   return {
     sessionUri,
-    actorUri: buildAgentUri(webId),
+    actorUri: secretaryAgentUri(webId),
     target: sessionUri,
     policyVersion: EXTENSION_UI_POLICY_VERSION,
   }

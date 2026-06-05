@@ -1,6 +1,15 @@
 import type { PodDataSession } from '../pod-data-session.js'
 import { getDefaultPodDataSession } from '../pod-data-session.js'
-import { buildSessionSubjectPath } from '../models.js'
+import {
+  agentResource,
+  buildChatTargetRef,
+  chatResource,
+  messageResource,
+  sessionResource,
+  threadResource,
+  type AnyPodResource,
+  type SolidDatabase,
+} from '../models.js'
 import {
   buildAutoModeThreadMetadata,
   buildAutoModeTranscriptMessages,
@@ -23,47 +32,21 @@ import { loadAutoModeEvents, writeAutoModeSyncCheckpoint } from './archive.js'
 
 const AUTO_MODE_CHAT_ID_PREFIX = 'linx-auto-mode'
 const AUTO_MODE_CHAT_TITLE = 'LinX Auto Mode'
-const AUTO_MODE_SECRETARY_AGENT_ID = 'linx-auto-mode-assistant'
+const AUTO_MODE_SECRETARY_AGENT_ID = '__secretary__'
 
 interface AutoModePodPersistenceRuntime {
   getPodDataSession: () => Promise<PodDataSession | null>
   createDb: (session: PodDataSession) => PodPersistenceDb
-  chatResource: unknown
-  threadResource: unknown
-  messageResource: unknown
-  sessionResource: unknown
-  agentResource: unknown
+  chatResource: AnyPodResource
+  threadResource: AnyPodResource
+  messageResource: AnyPodResource
+  sessionResource: AnyPodResource
+  agentResource: AnyPodResource
   loadAutoModeEvents: (id: string) => AutoModeEventLogEntry[]
   writeSyncCheckpoint?: (record: AutoModeSessionRecord, checkpoint: LinxSyncCheckpoint) => void | Promise<void>
 }
 
-interface PodPersistenceDb {
-  init(resources: unknown[]): Promise<unknown>
-  findById?: (resource: unknown, id: string) => Promise<unknown | null>
-  select(): {
-    from(resource: unknown): {
-      execute(): Promise<unknown[]>
-      where(condition: unknown): {
-        limit(limit: number): {
-          execute(): Promise<unknown[]>
-        }
-      }
-    }
-  }
-  insert(resource: unknown): {
-    values(value: Record<string, unknown>): {
-      execute(): Promise<unknown>
-    }
-  }
-  update(resource: unknown): {
-    set(value: Record<string, unknown>): {
-      where(condition: unknown): {
-        execute(): Promise<unknown>
-      }
-    }
-  }
-  updateById?: (resource: unknown, id: string, value: Record<string, unknown>) => Promise<unknown>
-}
+type PodPersistenceDb = SolidDatabase
 
 interface AutoModeChatRow extends Record<string, unknown> {
   id: string
@@ -171,38 +154,30 @@ function normalizeTitle(text: string, width = 72): string {
   return `${normalized.slice(0, Math.max(0, width - 3))}...`
 }
 
-function getPodBaseUrl(webId: string): string {
-  return webId.replace('/profile/card#me', '').replace(/\/$/, '')
-}
-
-function buildPodIri(webId: string, relativeUri: string): string {
-  if (/^https?:\/\//.test(relativeUri)) return relativeUri
-  return new URL(relativeUri.replace(/^\//, ''), `${getPodBaseUrl(webId)}/`).toString()
-}
-
 function buildAutoModeChatUri(webId: string, record: Pick<AutoModeSessionRecord, 'backend'>): string {
-  return `${getPodBaseUrl(webId)}/.data/chat/${buildAutoModeChatId(record)}/index.ttl#this`
+  return chatResource.buildIri(webId, { id: buildAutoModeChatId(record) })
 }
 
 function buildAutoModeThreadUri(webId: string, record: AutoModeSessionRecord): string {
-  return `${getPodBaseUrl(webId)}/.data/chat/${buildAutoModeChatId(record)}/index.ttl#${encodeURIComponent(record.id)}`
+  return threadResource.buildIri(webId, {
+    id: record.id,
+    chat: buildChatTargetRef(buildAutoModeChatId(record)),
+  })
 }
 
 function buildAutoModeSessionUri(webId: string, record: AutoModeSessionRecord): string {
-  return buildPodIri(webId, buildSessionSubjectPath(record.id, record.startedAt))
+  return sessionResource.buildIri(webId, {
+    id: record.id,
+    createdAt: record.startedAt,
+  })
 }
 
 function buildAutoModeMessageUri(webId: string, record: AutoModeSessionRecord, row: Pick<PersistedAutoModeConversationMessage, 'id' | 'createdAt'>): string {
-  const createdAt = row.createdAt instanceof Date ? row.createdAt : new Date(row.createdAt)
-  const safeDate = Number.isFinite(createdAt.getTime()) ? createdAt : new Date(record.startedAt)
-  const yyyy = String(safeDate.getUTCFullYear())
-  const mm = String(safeDate.getUTCMonth() + 1).padStart(2, '0')
-  const dd = String(safeDate.getUTCDate()).padStart(2, '0')
-  return `${getPodBaseUrl(webId)}/.data/chat/${buildAutoModeChatId(record)}/${yyyy}/${mm}/${dd}/messages.ttl#${encodeURIComponent(row.id)}`
-}
-
-function buildAgentUri(webId: string, agentId: string): string {
-  return `${getPodBaseUrl(webId)}/.data/agents/${agentId}.ttl`
+  return messageResource.buildIri(webId, {
+    id: row.id,
+    chat: buildChatTargetRef(buildAutoModeChatId(record)),
+    createdAt: row.createdAt ?? record.startedAt,
+  })
 }
 
 function buildAutoModeChatId(record: Pick<AutoModeSessionRecord, 'backend'>): string {
@@ -223,15 +198,15 @@ function autoModeBackendDisplayName(backend: AutoModeSessionRecord['backend']): 
 function buildAutoModeParticipants(webId: string, record: Pick<AutoModeSessionRecord, 'backend'>): string[] {
   return [
     webId,
-    buildAgentUri(webId, AUTO_MODE_SECRETARY_AGENT_ID),
-    buildAgentUri(webId, buildAutoModePrimaryAgentId(record)),
+    agentResource.buildIri(webId, { id: AUTO_MODE_SECRETARY_AGENT_ID }),
+    agentResource.buildIri(webId, { id: buildAutoModePrimaryAgentId(record) }),
   ]
 }
 
 function buildAutoModeChatMetadata(webId: string, record: AutoModeSessionRecord): Record<string, unknown> {
-  const secretaryAgentUri = buildAgentUri(webId, AUTO_MODE_SECRETARY_AGENT_ID)
+  const secretaryAgentUri = agentResource.buildIri(webId, { id: AUTO_MODE_SECRETARY_AGENT_ID })
   const primaryAgentId = buildAutoModePrimaryAgentId(record)
-  const primaryAgentUri = buildAgentUri(webId, primaryAgentId)
+  const primaryAgentUri = agentResource.buildIri(webId, { id: primaryAgentId })
 
   return {
     kind: 'auto-mode-group',
@@ -354,9 +329,9 @@ function resolveMessageSender(input: {
   routedBy?: string
   routeTargetAgent?: string
 } {
-  const secretaryAgentUri = buildAgentUri(input.webId, AUTO_MODE_SECRETARY_AGENT_ID)
+  const secretaryAgentUri = agentResource.buildIri(input.webId, { id: AUTO_MODE_SECRETARY_AGENT_ID })
   const primaryAgentId = buildAutoModePrimaryAgentId(input.record)
-  const primaryAgentUri = buildAgentUri(input.webId, primaryAgentId)
+  const primaryAgentUri = agentResource.buildIri(input.webId, { id: primaryAgentId })
 
   if (input.source === 'user') {
     return {
@@ -421,22 +396,8 @@ function buildAutoModeConversationMessages(
   })
 }
 
-function requireFindById(db: PodPersistenceDb): NonNullable<PodPersistenceDb['findById']> {
-  if (typeof db.findById !== 'function') {
-    throw new Error('Solid database does not support findById.')
-  }
-  return db.findById.bind(db)
-}
-
-function requireUpdateById(db: PodPersistenceDb): NonNullable<PodPersistenceDb['updateById']> {
-  if (typeof db.updateById !== 'function') {
-    throw new Error('Solid database does not support updateById.')
-  }
-  return db.updateById.bind(db)
-}
-
-async function selectById(db: PodPersistenceDb, resource: unknown, id: string): Promise<unknown | null> {
-  return await requireFindById(db)(resource, id)
+async function selectById(db: PodPersistenceDb, resource: AnyPodResource, id: string): Promise<unknown | null> {
+  return await db.findById(resource, id)
 }
 
 async function ensureAutoModeConversationChat(db: PodPersistenceDb, runtime: AutoModePodPersistenceRuntime, webId: string, row: AutoModeChatRow): Promise<void> {
@@ -447,7 +408,7 @@ async function ensureAutoModeConversationChat(db: PodPersistenceDb, runtime: Aut
     return
   }
 
-  await requireUpdateById(db)(runtime.chatResource, row.id, {
+  await db.updateById(runtime.chatResource, row.id, {
     title: row.title,
     participants: row.participants,
     metadata: row.metadata,
@@ -458,13 +419,40 @@ async function ensureAutoModeConversationChat(db: PodPersistenceDb, runtime: Aut
 }
 
 async function ensureAutoModeConversationAgent(db: PodPersistenceDb, runtime: AutoModePodPersistenceRuntime, webId: string, row: AutoModeAgentRow): Promise<void> {
-  const existing = await selectById(db, runtime.agentResource, row.id)
+  const target = { id: row.id }
+  const agentResourceWithId = runtime.agentResource as AnyPodResource & {
+    buildId?: (target: Record<string, unknown>) => string
+  }
+  const canonicalRow = {
+    ...row,
+    id: typeof agentResourceWithId.buildId === 'function'
+      ? agentResourceWithId.buildId(target)
+      : row.id,
+  }
+  const existing = typeof db.findByResource === 'function'
+    ? await db.findByResource(runtime.agentResource, target)
+    : await selectById(db, runtime.agentResource, canonicalRow.id)
   if (!existing) {
-    await db.insert(runtime.agentResource).values(row).execute()
+    await db.insert(runtime.agentResource).values(canonicalRow).execute()
     return
   }
 
-  await requireUpdateById(db)(runtime.agentResource, row.id, {
+  if (row.id === AUTO_MODE_SECRETARY_AGENT_ID) {
+    return
+  }
+
+  if (typeof db.updateByResource === 'function') {
+    await db.updateByResource(runtime.agentResource, target, {
+      name: row.name,
+      description: row.description,
+      provider: row.provider,
+      model: row.model,
+      updatedAt: row.updatedAt,
+    })
+    return
+  }
+
+  await db.updateById(runtime.agentResource, canonicalRow.id, {
     name: row.name,
     description: row.description,
     provider: row.provider,
@@ -513,7 +501,7 @@ async function upsertAutoModeConversationThread(db: PodPersistenceDb, runtime: A
     return
   }
 
-  await requireUpdateById(db)(runtime.threadResource, threadId, {
+    await db.updateById(runtime.threadResource, threadId, {
     title: row.title,
     metadata: row.metadata,
     updatedAt: row.updatedAt,
@@ -528,7 +516,7 @@ async function upsertAutoModeConversationSession(db: PodPersistenceDb, runtime: 
     return
   }
 
-  await requireUpdateById(db)(runtime.sessionResource, row.id, {
+  await db.updateById(runtime.sessionResource, row.id, {
     owner: row.owner,
     chat: row.chat,
     thread: row.thread,
@@ -558,7 +546,7 @@ async function upsertAutoModeConversationMessages(
       continue
     }
 
-    await requireUpdateById(db)(runtime.messageResource, row.id, {
+    await db.updateById(runtime.messageResource, row.id, {
       role: row.role,
       maker: row.maker,
       content: row.content,

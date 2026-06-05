@@ -1,19 +1,23 @@
 import { setTimeout as delay } from 'node:timers/promises'
+import { resolvePodBaseUrl } from '@undefineds.co/drizzle-solid'
 import type { StoredCredentials } from '../credentials-store.js'
 import { getDefaultPodDataSession, type PodDataSession } from '../pod-data-session.js'
 import {
+  agentResource,
   approvalResource,
   auditResource,
-  buildApprovalSubjectPath,
-  buildGrantSubjectPath,
+  buildChatTargetRef,
+  chatResource,
   drizzle,
   grantResource,
   inboxNotificationResource,
   solidResources,
+  threadResource,
+  type AnyPodResource,
   type SolidDatabase,
 } from '../models.js'
 import { AS, ODRL, UDFS } from '@undefineds.co/models/namespaces'
-import { ApprovalVocab, AuditVocab, GrantVocab, InboxNotificationVocab } from '@undefineds.co/models/vocab/sidecar'
+import { ApprovalVocab, AuditVocab, GrantReadVocab, GrantVocab, InboxNotificationVocab } from '@undefineds.co/models/vocab/sidecar'
 import {
   autoModeApprovalActionUri,
   autoModeApprovalDecisionForStoredApproval,
@@ -55,7 +59,7 @@ import {
 } from '../pi-adapter/pod-native.js'
 
 const AUTO_MODE_CHAT_ID_PREFIX = 'linx-auto-mode'
-const AUTO_MODE_AGENT_ID = 'linx-auto-mode-assistant'
+const AUTO_MODE_AGENT_ID = '__secretary__'
 const REMOTE_APPROVAL_POLICY_VERSION = 'linx-auto-mode-remote-approval/v1'
 const DEFAULT_REMOTE_APPROVAL_POLL_MS = 1000
 const DEFAULT_WARN_ONLY_TIMEOUT_MS = 5000
@@ -249,52 +253,42 @@ function toIsoString(value: Date | string | undefined, fallback: string): string
   return fallback
 }
 
-function getPodBaseUrl(webIdOrUri: string): string {
-  if (webIdOrUri.includes('/profile/card#me')) {
-    return webIdOrUri.replace('/profile/card#me', '').replace(/\/$/, '')
-  }
-
-  const match = webIdOrUri.match(/^(https?:\/\/[^?#]+?)(?:\/\.data\/|\/inbox\/)/u)
-  if (match) {
-    return match[1].replace(/\/$/, '')
-  }
-
-  return webIdOrUri.replace(/\/$/, '')
-}
-
 function buildAutoModeChatId(record: AutoModeSessionRecord): string {
   return `${AUTO_MODE_CHAT_ID_PREFIX}-${record.backend}`
 }
 
-function buildThreadUri(webId: string, record: AutoModeSessionRecord): string {
-  return `${getPodBaseUrl(webId)}/.data/chat/${buildAutoModeChatId(record)}/index.ttl#${record.id}`
+function buildAutoModeChatUri(webId: string, record: AutoModeSessionRecord): string {
+  return chatResource.buildIri(webId,  { id: buildAutoModeChatId(record) })
 }
 
-function buildApprovalUriForDate(webIdOrUri: string, approvalId: string, createdAt: Date): string {
-  return buildPodResourceIri(webIdOrUri, buildApprovalSubjectPath(approvalId, createdAt))
+function autoModeThreadUri(webId: string, record: AutoModeSessionRecord): string {
+  return threadResource.buildIri(webId,  {
+    id: record.id,
+    chat: buildChatTargetRef(buildAutoModeChatId(record)),
+  })
+}
+
+function approvalIriForCreatedAt(webIdOrUri: string, approvalId: string, createdAt: Date): string {
+  return approvalResource.buildIri(webIdOrUri,  {
+    id: approvalId,
+    createdAt,
+  })
 }
 
 function documentUrlFromResourceUri(resourceUri: string): string {
   return resourceUri.split('#', 1)[0] ?? resourceUri
 }
 
-function buildGrantUri(webIdOrUri: string, grantId: string): string {
-  return buildPodResourceIri(webIdOrUri, buildGrantSubjectPath(grantId))
-}
-
-function buildPodResourceIri(webIdOrUri: string, relativeUri: string): string {
-  if (/^https?:\/\//.test(relativeUri)) {
-    return relativeUri
-  }
-  return new URL(relativeUri.replace(/^\//, ''), `${getPodBaseUrl(webIdOrUri)}/`).toString()
+function grantIri(webIdOrUri: string, grantId: string): string {
+  return buildGrantResourceUrl(webIdOrUri, grantId)
 }
 
 function buildGrantSchemaUri(webIdOrUri: string): string {
-  return `${getPodBaseUrl(webIdOrUri)}/settings/autonomy/schema/grant.ttl#GrantWikiPage`
+  return new URL('settings/autonomy/schema/grant.ttl#GrantWikiPage', `${resolvePodBaseUrl(webIdOrUri)}/`).toString()
 }
 
-function buildAgentUri(webId: string): string {
-  return `${getPodBaseUrl(webId)}/.data/agents/${AUTO_MODE_AGENT_ID}.ttl`
+function autoModeAgentUri(webId: string): string {
+  return agentResource.buildIri(webId,  { id: AUTO_MODE_AGENT_ID })
 }
 
 function buildActionUri(request: AutoModeApprovalRequest): string {
@@ -458,7 +452,7 @@ function grantWikiTagsFromApproval(row: ApprovalRowLike, explicitTags?: string[]
 
 function grantContextFromApproval(row: ApprovalRowLike): string {
   return safeCompactJson({
-    sourceApproval: buildApprovalUriForDate(row.session, row.id, new Date(toIsoString(row.createdAt, new Date().toISOString()))),
+    sourceApproval: approvalIriForCreatedAt(row.session, row.id, new Date(toIsoString(row.createdAt, new Date().toISOString()))),
     session: row.session,
     toolCallId: row.toolCallId,
     toolName: row.toolName,
@@ -475,10 +469,25 @@ function literalValues(predicates: Map<string, unknown[]>, predicate: string): s
     .filter(Boolean)
 }
 
+function firstLiteralValue(predicates: Map<string, unknown[]>, predicatesToTry: readonly string[]): string | undefined {
+  for (const predicate of predicatesToTry) {
+    const [value] = literalValues(predicates, predicate)
+    if (value) {
+      return value
+    }
+  }
+  return undefined
+}
+
 function iriValues(predicates: Map<string, unknown[]>, predicate: string): string[] {
   return (predicates.get(predicate) ?? [])
     .map((object) => isRecord(object) && object.type === 'iri' && typeof object.value === 'string' ? object.value : '')
     .filter(Boolean)
+}
+
+function iriValuesFrom(predicates: Map<string, unknown[]>, predicatesToTry: readonly string[]): string[] {
+  const values = predicatesToTry.flatMap((predicate) => iriValues(predicates, predicate))
+  return [...new Set(values)]
 }
 
 function grantSourceHash(row: ApprovalRowLike): string {
@@ -703,7 +712,7 @@ function createSharedModelRemoteApprovalStore(
       }
       if (options.createdAt) {
         const createdAt = new Date(toIsoString(options.createdAt, new Date().toISOString()))
-        const iri = buildApprovalUriForDate(webId, id, createdAt)
+        const iri = approvalIriForCreatedAt(webId, id, createdAt)
         const row = await modelFindByIri<ApprovalRowLike>(getDb, approvalResource, iri)
         return row ? enrichApprovalRow(webId, row, iri) : null
       }
@@ -716,7 +725,7 @@ function createSharedModelRemoteApprovalStore(
     updateApproval: async (id, patch, options = {}) => {
       const explicitIri = options.resourceUri
         ?? normalizeString(patch.approvalUri)
-        ?? (options.createdAt ? buildApprovalUriForDate(webId, id, new Date(toIsoString(options.createdAt, new Date().toISOString()))) : undefined)
+        ?? (options.createdAt ? approvalIriForCreatedAt(webId, id, new Date(toIsoString(options.createdAt, new Date().toISOString()))) : undefined)
       if (explicitIri) {
         await modelUpdateByIri(getDb, approvalResource, explicitIri, omitInternalFields(patch))
         return
@@ -741,75 +750,50 @@ function createSharedModelRemoteApprovalStore(
   }
 }
 
-async function modelList<T>(getDb: () => Promise<SolidDatabase>, resource: unknown): Promise<T[]> {
-  const db = await getDb() as any
+async function modelList<T>(getDb: () => Promise<SolidDatabase>, resource: AnyPodResource): Promise<T[]> {
+  const db = await getDb()
   return await db.select().from(resource).execute() as T[]
 }
 
-async function modelFindByIri<T>(getDb: () => Promise<SolidDatabase>, resource: unknown, iri: string): Promise<T | null> {
-  const db = await getDb() as any
-  if (typeof db.findByIri === 'function') {
-    return await db.findByIri(resource, iri) as T | null
-  }
-  const rows = await db.select().from(resource).whereByIri(iri).execute() as T[]
-  return rows[0] ?? null
+async function modelFindByIri<T>(getDb: () => Promise<SolidDatabase>, resource: AnyPodResource, iri: string): Promise<T | null> {
+  const db = await getDb()
+  return await db.findByIri(resource, iri) as T | null
 }
 
-async function modelFindById<T>(getDb: () => Promise<SolidDatabase>, resource: unknown, id: string): Promise<T | null> {
-  const db = await getDb() as any
-  if (typeof db.findById === 'function') {
-    return await db.findById(resource, id) as T | null
-  }
-  throw new Error('Remote approval shared model store requires findById support')
+async function modelFindById<T>(getDb: () => Promise<SolidDatabase>, resource: AnyPodResource, id: string): Promise<T | null> {
+  const db = await getDb()
+  return await db.findById(resource, id) as T | null
 }
 
-async function modelInsert(getDb: () => Promise<SolidDatabase>, resource: unknown, row: Record<string, unknown>): Promise<void> {
-  const db = await getDb() as any
+async function modelInsert(getDb: () => Promise<SolidDatabase>, resource: AnyPodResource, row: Record<string, unknown>): Promise<void> {
+  const db = await getDb()
   await db.insert(resource).values(stripUndefined(row)).execute()
 }
 
 async function modelUpdateByIri(
   getDb: () => Promise<SolidDatabase>,
-  resource: unknown,
+  resource: AnyPodResource,
   iri: string,
   patch: Record<string, unknown>,
 ): Promise<void> {
-  const db = await getDb() as any
+  const db = await getDb()
   const update = stripUndefined(patch)
   delete update.id
   delete update.approvalUri
-  if (typeof db.updateByIri === 'function') {
-    await db.updateByIri(resource, iri, update)
-    return
-  }
-  const query = db.update(resource).set(update)
-  if (typeof query.whereByIri !== 'function') {
-    throw new Error('Remote approval shared model store requires updateByIri/whereByIri support')
-  }
-  await query.whereByIri(iri).execute()
+  await db.updateByIri(resource, iri, update)
 }
 
 async function modelUpdateById<T>(
   getDb: () => Promise<SolidDatabase>,
-  resource: unknown,
+  resource: AnyPodResource,
   id: string,
   patch: Record<string, unknown>,
 ): Promise<T | null> {
-  const db = await getDb() as any
+  const db = await getDb()
   const update = stripUndefined(patch)
   delete update.id
   delete update.approvalUri
-  if (typeof db.updateById === 'function') {
-    return await db.updateById(resource, id, update) as T | null
-  }
-
-  const row = await modelFindById<Record<string, unknown>>(getDb, resource, id)
-  const iri = rowSubject(row ?? {})
-  if (!iri) {
-    return null
-  }
-  await modelUpdateByIri(getDb, resource, iri, update)
-  return await modelFindByIri<T>(getDb, resource, iri)
+  return await db.updateById(resource, id, update) as T | null
 }
 
 function stripUndefined(row: Record<string, unknown>): Record<string, unknown> {
@@ -827,7 +811,6 @@ function omitInternalFields(row: Record<string, unknown>): Record<string, unknow
   delete next.approvalUri
   delete next['@id']
   delete next.subject
-  delete next.source
   delete next.uri
   return next
 }
@@ -845,7 +828,7 @@ function enrichApprovalRow(webId: string, row: ApprovalRowLike, explicitIri?: st
     approvalUri: explicitIri
       ?? normalizeString(row.approvalUri)
       ?? rowSubject(row)
-      ?? buildApprovalUriForDate(webId, row.id, createdAt),
+      ?? approvalIriForCreatedAt(webId, row.id, createdAt),
   }
 }
 
@@ -914,7 +897,7 @@ async function readApprovalRowFromResource(fetcher: PodFetch, resourceUri: strin
 async function listApprovalRows(webId: string, fetcher: PodFetch): Promise<ApprovalRowLike[]> {
   const urls = [
     ...recentApprovalDocumentUrls(webId),
-    ...await listTurtleResources(fetcher, `${getPodBaseUrl(webId)}/.data/approvals/`).catch(() => []),
+    ...await listTurtleResources(fetcher, `${resolvePodBaseUrl(webId)}/.data/approvals/`).catch(() => []),
   ]
   const rows: ApprovalRowLike[] = []
   for (const url of [...new Set(urls)].filter((entry) => entry.endsWith('.ttl'))) {
@@ -969,7 +952,7 @@ async function writeApprovalRow(webId: string, fetcher: PodFetch, row: ApprovalR
 }
 
 async function listAuditRows(webId: string, fetcher: PodFetch): Promise<AuditRowLike[]> {
-  const urls = await listTurtleResourcesRecursive(fetcher, `${getPodBaseUrl(webId)}/.data/audits/`)
+  const urls = await listTurtleResourcesRecursive(fetcher, `${resolvePodBaseUrl(webId)}/.data/audits/`)
   const rows: AuditRowLike[] = []
   for (const url of urls.filter((entry: string) => entry.endsWith('.ttl'))) {
     const turtle = await readTurtleResource(fetcher, url).catch(() => null)
@@ -1007,7 +990,7 @@ async function writeAuditRow(webId: string, fetcher: PodFetch, row: AuditRowLike
 
 async function listGrantRows(webId: string, fetcher: PodFetch): Promise<GrantRowLike[]> {
   const urls = [
-    ...await listTurtleResources(fetcher, `${getPodBaseUrl(webId)}/settings/autonomy/grants/`).catch(() => []),
+    ...await listTurtleResources(fetcher, `${resolvePodBaseUrl(webId)}/settings/autonomy/grants/`).catch(() => []),
   ]
   const rows: GrantRowLike[] = []
   for (const url of urls.filter((entry) => entry.endsWith('.ttl'))) {
@@ -1042,7 +1025,7 @@ async function writeGrantRow(webId: string, fetcher: PodFetch, row: GrantRowLike
       { predicate: GrantVocab.action, object: iri(action) },
       ...(normalizeString(row.title) ? [{ predicate: GrantVocab.title, object: literal(truncatePodLiteral(normalizeString(row.title) as string, 160)) }] : []),
       ...(normalizeString(row.summary) ? [{ predicate: GrantVocab.summary, object: literal(truncatePodLiteral(normalizeString(row.summary) as string, 500)) }] : []),
-      ...(normalizeString(row.body) ? [{ predicate: GrantVocab.body, object: literal(truncatePodLiteral(normalizeString(row.body) as string, MAX_GRANT_POLICY_LENGTH)) }] : []),
+      ...(normalizeString(row.body) ? [{ predicate: GrantVocab.description, object: literal(truncatePodLiteral(normalizeString(row.body) as string, MAX_GRANT_POLICY_LENGTH)) }] : []),
       ...(normalizeString(row.schema) ? [{ predicate: GrantVocab.schema, object: iri(normalizeString(row.schema) as string) }] : []),
       ...(normalizeString(row.pageKind) ? [{ predicate: GrantVocab.pageKind, object: literal(normalizeString(row.pageKind) as string) }] : []),
       ...(normalizeString(row.wikiStatus) ? [{ predicate: GrantVocab.wikiStatus, object: literal(normalizeString(row.wikiStatus) as string) }] : []),
@@ -1152,17 +1135,17 @@ function grantRowFromPredicates(url: string, predicates: Map<string, unknown[]>)
     target,
     action,
     title: firstLiteral(predicates as never, GrantVocab.title),
-    summary: firstLiteral(predicates as never, GrantVocab.summary),
-    body: firstLiteral(predicates as never, GrantVocab.body),
+    summary: firstLiteralValue(predicates, GrantReadVocab.summary),
+    body: firstLiteralValue(predicates, GrantReadVocab.description),
     schema: firstIri(predicates as never, GrantVocab.schema),
     pageKind: firstLiteral(predicates as never, GrantVocab.pageKind),
     wikiStatus: firstLiteral(predicates as never, GrantVocab.wikiStatus),
     tags: firstLiteral(predicates as never, GrantVocab.tags),
-    source: firstLiteral(predicates as never, GrantVocab.source),
+    source: firstLiteralValue(predicates, GrantReadVocab.source),
     sourceHash: firstLiteral(predicates as never, GrantVocab.sourceHash),
     compiledAt: firstLiteral(predicates as never, GrantVocab.compiledAt),
     compiledFrom: iriValues(predicates, GrantVocab.compiledFrom),
-    related: iriValues(predicates, GrantVocab.related),
+    related: iriValuesFrom(predicates, GrantReadVocab.related),
     effect,
     riskCeiling: firstLiteral(predicates as never, GrantVocab.riskCeiling),
     policy: firstLiteral(predicates as never, GrantVocab.policy),
@@ -1256,8 +1239,8 @@ function buildAutoModeGrantRequestContext(input: {
   request: AutoModeApprovalRequest
 }): Record<string, unknown> {
   return {
-    session: buildThreadUri(input.webId, input.record),
-    target: buildThreadUri(input.webId, input.record),
+    session: autoModeThreadUri(input.webId, input.record),
+    target: autoModeThreadUri(input.webId, input.record),
     action: buildActionUri(input.request),
     risk: buildRisk(input.request),
     toolName: buildToolName(input.request),
@@ -1291,8 +1274,8 @@ export async function createRemoteAutoModeApproval(options: {
 
   return createRemoteApproval({
     subject: ({ webId }) => ({
-      sessionUri: buildThreadUri(webId, options.record),
-      actorUri: buildAgentUri(webId),
+      sessionUri: autoModeThreadUri(webId, options.record),
+      actorUri: autoModeAgentUri(webId),
       policyVersion: REMOTE_APPROVAL_POLICY_VERSION,
     }),
     request: ({ sessionUri }) => ({
@@ -1330,7 +1313,7 @@ export async function createRemoteApproval(options: {
     const approvalId = crypto.randomUUID()
     const now = activeRuntime.now()
     const sessionUri = subject.sessionUri
-    const approvalUri = buildApprovalUriForDate(webId, approvalId, now)
+    const approvalUri = approvalIriForCreatedAt(webId, approvalId, now)
     const target = subject.target ?? sessionUri
     const assignedTo = subject.assignedTo ?? webId
     const onBehalfOf = subject.onBehalfOf ?? webId
@@ -1604,7 +1587,7 @@ export async function resolveRemoteAutoModeApproval(options: {
 
     const now = activeRuntime.now()
     const approvalCreatedAt = new Date(toIsoString(row.createdAt, now.toISOString()))
-    const approvalUri = buildApprovalUriForDate(row.session, row.id, approvalCreatedAt)
+    const approvalUri = approvalIriForCreatedAt(row.session, row.id, approvalCreatedAt)
     const nextStatus = options.decision === 'accept' || options.decision === 'accept_for_session'
       ? 'approved'
       : 'rejected'
@@ -1694,7 +1677,7 @@ export async function materializeRemoteAutoModeGrant(options: {
     const grantId = crypto.randomUUID()
     const body = grantWikiBodyFromApproval(row, options.grantWikiBody)
     const approvalCreatedAt = new Date(toIsoString(row.createdAt, now.toISOString()))
-    const approvalUri = options.approvalUri ?? row.approvalUri ?? buildApprovalUriForDate(row.session, row.id, approvalCreatedAt)
+    const approvalUri = options.approvalUri ?? row.approvalUri ?? approvalIriForCreatedAt(row.session, row.id, approvalCreatedAt)
     const grant: GrantRowLike = {
       id: grantId,
       target: row.target,
@@ -1726,7 +1709,7 @@ export async function materializeRemoteAutoModeGrant(options: {
     await warnOnly(activeRuntime, () => store.insertInboxNotification({
       id: crypto.randomUUID(),
       actor: webId,
-      object: buildGrantUri(row.session, grantId),
+      object: grantIri(row.session, grantId),
       createdAt: now,
     }))
 

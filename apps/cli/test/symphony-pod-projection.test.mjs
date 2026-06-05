@@ -53,7 +53,7 @@ function createPlan(overrides = {}) {
       task: 'urn:undefineds:linx:task:task_2026-04-02T00-00-00-000Z_projection',
       type: 'task_dispatch',
       status: 'pending',
-      sourceAgent: 'ai-secretary',
+      sourceAgent: '__secretary__',
       targetBackend: 'codex',
       targetAgent: 'codex-worker',
       target: {
@@ -118,6 +118,7 @@ function createFakeRuntime(options = {}) {
   const updates = []
   const findIds = []
   const findIris = []
+  const findResources = []
   const resources = {
     chat: { name: 'chat' },
     thread: { name: 'thread' },
@@ -146,7 +147,10 @@ function createFakeRuntime(options = {}) {
     delivery: { name: 'delivery' },
     run: { name: 'run' },
     runStep: { name: 'run_step' },
-    agent: { name: 'agent' },
+    agent: {
+      name: 'agent',
+      buildId: ({ id }) => `${id}/`,
+    },
     contact: { name: 'contact' },
     audit: { name: 'audit' },
     inbox: { name: 'inbox_notification' },
@@ -162,7 +166,12 @@ function createFakeRuntime(options = {}) {
         },
       }
     },
-    resolveLocatorIri: (resource, locator) => `${resource.name}:${JSON.stringify(locator)}`,
+    resolveLocatorIri: (resource, locator) => {
+      if (typeof locator?.id === 'string' && /^https?:\/\//u.test(locator.id)) {
+        throw new Error(`resolveLocatorIri does not accept a full IRI in locator.id: ${locator.id}`)
+      }
+      return `${resource.name}:${JSON.stringify(locator)}`
+    },
     findByIri: async (_resource, iri) => {
       findIris.push(iri)
       return options.rowsByIri?.[iri] ?? null
@@ -171,12 +180,21 @@ function createFakeRuntime(options = {}) {
       findIds.push(id)
       return null
     },
+    findByResource: async (resource, target) => {
+      findResources.push({ resource, target })
+      const key = `${resource.name}:${typeof target === 'string' ? target : JSON.stringify(target)}`
+      return options.rowsByResourceTarget?.[key] ?? null
+    },
     updateByIri: async (resource, iri, value) => {
       updates.push({ resource, iri, value })
       return value
     },
     updateById: async (resource, id, value) => {
       updates.push({ resource, id, value })
+      return value
+    },
+    updateByResource: async (resource, target, value) => {
+      updates.push({ resource, target, value })
       return value
     },
     insert(resource) {
@@ -196,6 +214,7 @@ function createFakeRuntime(options = {}) {
     updates,
     findIds,
     findIris,
+    findResources,
     resources,
     runtime: {
       getPodDataSession: async () => ({
@@ -292,8 +311,10 @@ test('persistSymphonyProjectionToPod projects Symphony run into shared chat thre
   assert.equal(result.plan.delivery.thread, result.thread)
   assert.deepEqual(result.plan.session.messages, result.messages)
   assert.equal(fake.findIds.length, 0)
-  assert.ok(fake.findIris.some((iri) => iri.includes('"chat":"https://alice.example/.data/chat/chat-1/index.ttl#this"')))
-  assert.ok(fake.findIris.some((iri) => iri.includes('"createdAt":"2026-04-02T00:00:00.000Z"') || iri.includes('"createdAt":"2026-04-02T00:00:03.000Z"')))
+  assert.equal(fake.findIris.length, 0)
+  assert.ok(fake.findResources.some((entry) => entry.resource === fake.resources.message && entry.target.chat === result.chat))
+  assert.ok(fake.findResources.some((entry) => entry.resource === fake.resources.runStep && entry.target === 'task/task_2026-04-02T00-00-00-000Z_projection/2026/04/02/runs.ttl#session_2026-04-02T00-00-00-000Z_projection-planned'))
+  assert.ok(fake.findResources.some((entry) => entry.resource === fake.resources.runStep && entry.target === 'task/task_2026-04-02T00-00-00-000Z_projection/2026/04/02/runs.ttl#session_2026-04-02T00-00-00-000Z_projection-running'))
 
   assert.equal(fake.inserts.find((item) => item.resource === fake.resources.chat)?.value, undefined)
 
@@ -327,17 +348,20 @@ test('persistSymphonyProjectionToPod projects Symphony run into shared chat thre
     equivalenceRequires: ['baseRevision', 'checksum-or-etag-or-artifact-uri'],
   })
   assert.equal(task.metadata.podAccessPolicy.version, 'linx-symphony-worker-pod-access/v1')
-  assert.equal(task.metadata.podAccessPolicy.authority, 'ai-secretary-control-lane')
+  assert.equal(task.metadata.podAccessPolicy.authority, '__secretary__-control-lane')
   assert.deepEqual(task.metadata.podAccessPolicy.assigned, {
     issue: 'https://alice.example/.data/issues/issue_2026-04-02T00-00-00-000Z_projection.ttl',
     task: 'https://alice.example/.data/task/index.ttl#task_2026-04-02T00-00-00-000Z_projection',
     delivery: 'https://alice.example/.data/task/task_2026-04-02T00-00-00-000Z_projection/2026/04/02/deliveries.ttl#delivery_2026-04-02T00-00-00-000Z_projection',
     run: 'https://alice.example/.data/task/task_2026-04-02T00-00-00-000Z_projection/2026/04/02/runs.ttl#session_2026-04-02T00-00-00-000Z_projection',
     session: 'https://alice.example/.data/sessions/2026/04/02/session_2026-04-02T00-00-00-000Z_projection.ttl',
-    sourceIssueUri: 'urn:undefineds:linx:issue:issue_2026-04-02T00-00-00-000Z_projection',
-    sourceTaskUri: 'urn:undefineds:linx:task:task_2026-04-02T00-00-00-000Z_projection',
-    sourceDeliveryUri: 'urn:undefineds:linx:delivery:delivery_2026-04-02T00-00-00-000Z_projection',
-    sourceSessionUri: 'urn:undefineds:linx:session:session_2026-04-02T00-00-00-000Z_projection',
+    archive: {
+      version: 'linx-symphony-archive/v1',
+      issue: 'urn:undefineds:linx:issue:issue_2026-04-02T00-00-00-000Z_projection',
+      task: 'urn:undefineds:linx:task:task_2026-04-02T00-00-00-000Z_projection',
+      delivery: 'urn:undefineds:linx:delivery:delivery_2026-04-02T00-00-00-000Z_projection',
+      session: 'urn:undefineds:linx:session:session_2026-04-02T00-00-00-000Z_projection',
+    },
   })
   assert.ok(task.metadata.podAccessPolicy.writeScope.includes('runStep'))
   assert.ok(task.metadata.podAccessPolicy.writeScope.includes('implementationChangeRequest'))
@@ -386,6 +410,12 @@ test('persistSymphonyProjectionToPod projects Symphony run into shared chat thre
 
   const runSteps = fake.inserts.filter((item) => item.resource === fake.resources.runStep).map((item) => item.value)
   assert.deepEqual(runSteps.map((item) => item.stepType), ['run.created', 'run.started'])
+  assert.deepEqual(runSteps.map((item) => item.id), [
+    'task/task_2026-04-02T00-00-00-000Z_projection/2026/04/02/runs.ttl#session_2026-04-02T00-00-00-000Z_projection-planned',
+    'task/task_2026-04-02T00-00-00-000Z_projection/2026/04/02/runs.ttl#session_2026-04-02T00-00-00-000Z_projection-running',
+  ])
+  assert.ok(runSteps.every((item) => item.run === 'https://alice.example/.data/task/task_2026-04-02T00-00-00-000Z_projection/2026/04/02/runs.ttl#session_2026-04-02T00-00-00-000Z_projection'))
+  assert.ok(runSteps.every((item) => !String(item.id).startsWith('https://')))
 
   const thread = fake.inserts.find((item) => item.resource === fake.resources.thread)?.value
   assert.equal(thread.id, 'thread-1')
@@ -427,7 +457,7 @@ test('persistSymphonyProjectionToPod projects Symphony run into shared chat thre
   ])
   assert.equal(messages[0].chat, result.chat)
   assert.equal(messages[0].thread, result.thread)
-  assert.equal(messages[0].maker, 'https://alice.example/.data/agents/ai-secretary.ttl')
+  assert.equal(messages[0].maker, 'https://alice.example/agents/__secretary__/')
   assert.equal(messages[0].senderName, 'AI Secretary')
   assert.match(messages[0].richContent, /task_progress/)
   assert.match(messages[1].content, /Symphony workers are active/)
@@ -436,13 +466,13 @@ test('persistSymphonyProjectionToPod projects Symphony run into shared chat thre
     .filter((item) => item.resource === fake.resources.agent)
     .map((item) => item.value.id)
     .sort()
-  assert.deepEqual(agentIds, ['ai-secretary', 'symphony-codex-worker'])
+  assert.deepEqual(agentIds, ['__secretary__/', 'symphony-codex-worker/'])
 
   const contacts = fake.inserts.filter((item) => item.resource === fake.resources.contact).map((item) => item.value)
   assert.deepEqual(contacts.map((item) => item.contactType), ['agent', 'agent'])
   assert.deepEqual(contacts.map((item) => item.entity).sort(), [
-    'https://alice.example/.data/agents/ai-secretary.ttl',
-    'https://alice.example/.data/agents/symphony-codex-worker.ttl',
+    'https://alice.example/agents/__secretary__/',
+    'https://alice.example/agents/symphony-codex-worker/',
   ])
   assert.equal(session.metadata.workers[0].taskStatus, 'running')
   assert.deepEqual(session.metadata.workers[0].acceptanceCriteria, ['projection is visible'])
@@ -463,7 +493,7 @@ test('persistSymphonyProjectionToPod projects Symphony run into shared chat thre
   const audits = fake.inserts.filter((item) => item.resource === fake.resources.audit).map((item) => item.value)
   assert.equal(audits.length, 2)
   assert.deepEqual(audits.map((item) => item.action), ['symphony.planned', 'symphony.dispatched'])
-  assert.ok(audits.every((item) => item.actor === 'https://alice.example/.data/agents/ai-secretary.ttl'))
+  assert.ok(audits.every((item) => item.actor === 'https://alice.example/agents/__secretary__/'))
   assert.ok(audits.every((item) => item.actorRole === 'secretary'))
   assert.ok(audits.every((item) => item.onBehalfOf === 'https://alice.example/profile/card#me'))
   assert.ok(audits.every((item) => item.session === 'https://alice.example/.data/sessions/2026/04/02/session_2026-04-02T00-00-00-000Z_projection.ttl'))
@@ -803,8 +833,8 @@ test('completed Symphony projection includes completion message and archived ses
   assert.ok(report)
   assert.equal(report.status, 'completed')
   assert.equal(report.task, 'https://alice.example/.data/task/index.ttl#task_2026-04-02T00-00-00-000Z_projection')
-  assert.equal(report.source, 'https://alice.example/.data/agents/symphony-codex-worker.ttl')
-  assert.equal(report.target, 'https://alice.example/.data/agents/ai-secretary.ttl')
+  assert.equal(report.source, 'https://alice.example/agents/symphony-codex-worker/')
+  assert.equal(report.target, 'https://alice.example/agents/__secretary__/')
   assert.equal(report.targetSession, 'https://alice.example/.data/sessions/2026/04/02/session_2026-04-02T00-00-00-000Z_projection.ttl')
   assert.equal(report.payload.outcome, 'completed')
   assert.equal(report.payload.delivery, 'https://alice.example/.data/task/task_2026-04-02T00-00-00-000Z_projection/2026/04/02/deliveries.ttl#delivery_2026-04-02T00-00-00-000Z_projection')
@@ -813,7 +843,7 @@ test('completed Symphony projection includes completion message and archived ses
 
   const inbox = fake.inserts.find((item) => item.resource === fake.resources.inbox)?.value
   assert.ok(inbox)
-  assert.equal(inbox.actor, 'https://alice.example/.data/agents/symphony-codex-worker.ttl')
+  assert.equal(inbox.actor, 'https://alice.example/agents/symphony-codex-worker/')
   assert.equal(inbox.object, `https://alice.example/.data/${report.id}`)
 })
 
@@ -959,7 +989,11 @@ test('persistSymphonyProjectionToPod records multiple worker agents tasks and pa
     .filter((item) => item.resource === fake.resources.agent)
     .map((item) => item.value.id)
     .sort()
-  assert.deepEqual(agentIds, ['ai-secretary', 'symphony-claude-reviewer', 'symphony-codex-worker'])
+  assert.deepEqual(agentIds, [
+    '__secretary__/',
+    'symphony-claude-reviewer/',
+    'symphony-codex-worker/',
+  ])
 
   const thread = fake.inserts.find((item) => item.resource === fake.resources.thread)?.value
   assert.equal(thread.metadata.workers.length, 2)
@@ -1109,7 +1143,7 @@ test('persistSymphonyProjectionToPod preserves each worker Thread Session and wo
   const delivery = fake.inserts
     .filter((item) => item.resource === fake.resources.delivery)
     .map((item) => item.value)
-    .find((item) => item.target === 'https://alice.example/.data/agents/symphony-claude-reviewer.ttl')
+    .find((item) => item.target === 'https://alice.example/agents/symphony-claude-reviewer/')
   assert.equal(delivery.chat, secondChat)
   assert.equal(delivery.thread, secondThread)
   assert.equal(delivery.targetThread, secondThread)
@@ -1154,21 +1188,12 @@ test('Symphony audit projection is idempotent for already written stages', async
   const fake = createFakeRuntime()
   fake.runtime.createDb = () => ({
     init: async () => undefined,
-    resolveLocatorIri: (resource, locator) => `${resource.name}:${JSON.stringify(locator)}`,
-    findByIri: async (resource, iri) => {
-      fake.findIris.push(iri)
+    findByResource: async (resource, target) => {
+      fake.findResources.push({ resource, target })
       return resource === fake.resources.audit ? { id: 'existing-audit' } : null
     },
-    findById: async (_resource, id) => {
-      fake.findIds.push(id)
-      return null
-    },
-    updateByIri: async (resource, iri, value) => {
-      fake.updates.push({ resource, iri, value })
-      return value
-    },
-    updateById: async (resource, id, value) => {
-      fake.updates.push({ resource, id, value })
+    updateByResource: async (resource, target, value) => {
+      fake.updates.push({ resource, target, value })
       return value
     },
     insert(resource) {
