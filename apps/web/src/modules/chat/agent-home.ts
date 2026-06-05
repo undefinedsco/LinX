@@ -1,4 +1,5 @@
 import type { SolidDatabase } from '@undefineds.co/models'
+import { resolvePodBaseUrlFromDatabase } from '@undefineds.co/drizzle-solid'
 
 export interface EnsureAgentHomeInput {
   agentId: string
@@ -6,19 +7,6 @@ export interface EnsureAgentHomeInput {
   provider: string
   model: string
   instructions?: string
-}
-
-function getPodBaseUrl(db: SolidDatabase): string | null {
-  const podUrl = (db as any).getDialect?.()?.getPodUrl?.()
-  if (typeof podUrl === 'string' && podUrl.length > 0) {
-    return podUrl.replace(/\/$/, '')
-  }
-
-  const webId = (db as any).getSession?.()?.info?.webId
-  if (typeof webId !== 'string' || !webId.includes('/profile/card#me')) {
-    return null
-  }
-  return webId.replace('/profile/card#me', '')
 }
 
 function getAuthenticatedFetch(db: SolidDatabase): typeof fetch | null {
@@ -32,7 +20,7 @@ function getAuthenticatedFetch(db: SolidDatabase): typeof fetch | null {
 }
 
 function resolvePodPath(db: SolidDatabase, path: string): string {
-  const podBaseUrl = getPodBaseUrl(db)
+  const podBaseUrl = resolvePodBaseUrlFromDatabase(db)
   if (!podBaseUrl) {
     throw new Error('无法解析 Pod 地址，无法初始化 Agent Home。')
   }
@@ -90,7 +78,7 @@ async function putPodFileIfMissing(
 }
 
 export function buildAgentHomePath(agentId: string): string {
-  return `/.data/agents/${encodeURIComponent(agentId)}/`
+  return `/agents/${encodeURIComponent(agentId)}/`
 }
 
 function buildAgentHomeFiles(input: EnsureAgentHomeInput): Array<{ path: string; body: string; contentType: string }> {

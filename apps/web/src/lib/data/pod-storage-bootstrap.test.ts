@@ -31,7 +31,7 @@ describe('initializeLinxPodStorage', () => {
       expect.objectContaining({ method: 'PUT' }),
     )
     expect(fetchMock).toHaveBeenCalledWith(
-      'https://node.example/alice/.data/agents/',
+      'https://node.example/alice/agents/',
       expect.objectContaining({ method: 'PUT' }),
     )
   })

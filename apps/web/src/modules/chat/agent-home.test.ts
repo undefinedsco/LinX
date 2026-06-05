@@ -24,20 +24,20 @@ describe('agent-home', () => {
       instructions: 'Help the user.',
     })
 
-    expect(buildAgentHomePath('agent-1')).toBe('/.data/agents/agent-1/')
+    expect(buildAgentHomePath('agent-1')).toBe('/agents/agent-1/')
 
     const putTargets = fetchMock.mock.calls
       .filter(([, init]) => init?.method === 'PUT')
       .map(([input]) => String(input))
 
-    expect(putTargets).toContain('https://alice.example/.data/agents/agent-1/')
-    expect(putTargets).toContain('https://alice.example/.data/agents/agent-1/skills/')
-    expect(putTargets).toContain('https://alice.example/.data/agents/agent-1/AGENTS.md')
-    expect(putTargets).toContain('https://alice.example/.data/agents/agent-1/config.json')
-    expect(putTargets).toContain('https://alice.example/.data/agents/agent-1/rules.md')
-    expect(putTargets).toContain('https://alice.example/.data/agents/agent-1/mcp.json')
-    expect(putTargets).toContain('https://alice.example/.data/agents/agent-1/skills/README.md')
-    expect(putTargets).toContain('https://alice.example/.data/agents/agent-1/memory.md')
+    expect(putTargets).toContain('https://alice.example/agents/agent-1/')
+    expect(putTargets).toContain('https://alice.example/agents/agent-1/skills/')
+    expect(putTargets).toContain('https://alice.example/agents/agent-1/AGENTS.md')
+    expect(putTargets).toContain('https://alice.example/agents/agent-1/config.json')
+    expect(putTargets).toContain('https://alice.example/agents/agent-1/rules.md')
+    expect(putTargets).toContain('https://alice.example/agents/agent-1/mcp.json')
+    expect(putTargets).toContain('https://alice.example/agents/agent-1/skills/README.md')
+    expect(putTargets).toContain('https://alice.example/agents/agent-1/memory.md')
 
     const agentsMdPut = fetchMock.mock.calls.find(([input, init]) =>
       String(input).endsWith('/AGENTS.md') && init?.method === 'PUT'

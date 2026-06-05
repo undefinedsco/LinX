@@ -48,7 +48,8 @@
 - vocab / namespaces
 - `Credential` / `Provider` / `Model`
 - `AIConfig`
-- `AgentConfig` 共享字段合同
+- Agent container meta / AgentRuntimeConfig 共享字段合同
+- Skill resource / Skill binding 共享字段合同
 - `AgentStatus`
 - `Chat` / `Thread` / `Message`
 - `Contact`
@@ -79,9 +80,10 @@
 - `@linx/client` 收缩为 Linx 客户端入口
 - `@undefineds.co/models` 直接声明 `@undefineds.co/drizzle-solid` 依赖，成为版本权威入口
 - `xpod-cli` 的 `AIConfig` / `VectorStore` / `IndexedFile` / `AgentStatus` 已改为消费共享包
-- `AgentConfig` 的**字段合同**已收敛到共享 `createAgentSchema`
-- `xpod-cli` 的 `/settings/ai/agents.ttl` 与 `/agents/{id}/.meta` 现在共用同一套 shared schema 字段
-- `resolveAgentConfig` 已支持在缺少 `AGENT.md` 时回退到 Pod 元数据中的共享字段
+- Agent container meta 的字段合同已收敛到共享 Agent schema。AgentRuntimeConfig 是 Agent 容器的默认运行时配置，不是独立 prompt blob。
+- `/agents/{id}/.meta` 是 Agent container meta 的目标形态；`/settings/ai/agents.ttl` 若仍存在，只应作为兼容迁移来源，不应继续作为新的 Agent 配置权威。
+- Skill 内容应保持文件化，Skill binding/meta 只保存 enabled、version、source、checksum、load policy、依赖和关系。
+- runtime config resolver 应支持在缺少文件化 Agent manifest 时回退到 Pod 元数据中的共享字段，并在启动时冻结为 Session/Run snapshot。
 
 ### Phase 2
 
