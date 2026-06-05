@@ -299,6 +299,8 @@ test('LinxPiPodMirror persists Pi session events into Pod tables', async (t) => 
   const rowValues = [...rows.values()]
   assert.equal(rowValues.some((row) => row.title === 'AI Secretary'), true)
   assert.equal(rowValues.some((row) => row.name === 'LinX CLI Assistant'), true)
+  assert.equal(rowValues.some((row) => row.title === 'AI Secretary' && row.metadata?.kind === 'secretary-chat'), true)
+  assert.equal(rowValues.some((row) => row.name === 'LinX CLI Assistant' && row.metadata?.kind === 'secretary-agent'), true)
   assert.equal(rowValues.some((row) => row.name === 'symphony' && row.loadPolicy === 'file-backed'), true)
   assert.equal(rowValues.some((row) => row.tool === 'linx' && row.status === 'completed'), true)
   assert.equal(rowValues.some((row) => row.content === 'persist through mirror'), true)

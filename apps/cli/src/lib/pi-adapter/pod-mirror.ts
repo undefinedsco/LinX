@@ -452,7 +452,7 @@ async function ensurePiConversationRoot(
     title: 'AI Secretary',
     participants: [context.webId, refs.agentUri],
     metadata: {
-      kind: 'ai-secretary',
+      kind: 'secretary-chat',
       surface: 'cli',
       agent: refs.agentUri,
     },
@@ -463,7 +463,7 @@ async function ensurePiConversationRoot(
     title: 'AI Secretary',
     participants: [context.webId, refs.agentUri],
     metadata: {
-      kind: 'ai-secretary',
+      kind: 'secretary-chat',
       surface: 'cli',
       agent: refs.agentUri,
     },
@@ -499,7 +499,7 @@ async function ensurePiConversationRoot(
     model: DEFAULT_LINX_CLOUD_MODEL_ID,
     enabled: true,
     metadata: {
-      kind: 'ai-secretary',
+      kind: 'secretary-agent',
       surface: 'cli',
       fileBackedSkills: true,
     },
@@ -517,7 +517,7 @@ async function ensurePiConversationRoot(
     model: DEFAULT_LINX_CLOUD_MODEL_ID,
     enabled: true,
     metadata: {
-      kind: 'ai-secretary',
+      kind: 'secretary-agent',
       surface: 'cli',
       fileBackedSkills: true,
     },

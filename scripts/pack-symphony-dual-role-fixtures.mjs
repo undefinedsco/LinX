@@ -274,7 +274,7 @@ function renderReplayJsonl(scenario) {
       lines.push(JSON.stringify({
         scenario: scenario.id,
         turn: `${fragment.id}-secretary`,
-        role: 'ai-secretary',
+        role: 'secretary',
         derivesFrom: fragment.id,
         content: reply.content,
       }))
