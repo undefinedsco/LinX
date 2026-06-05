@@ -24,11 +24,17 @@ import {
 } from './lib/auto-mode/index.js'
 import { resolveRuntimeTarget } from './lib/runtime-target.js'
 import { createCodexNativeProxy } from './lib/codex-plugin/index.js'
-import { bootstrapPiInteractiveMode, createPiRuntimeAdapter, resolveLinxInteractiveLoginReason, resolveLinxStartupLoginPromptDecision, type LinxLoginReason } from './lib/pi-adapter/index.js'
+import {
+  bootstrapLinxInteractiveMode,
+  createLinxRuntimeAdapter,
+  resolveLinxInteractiveLoginReason,
+  resolveLinxStartupLoginPromptDecision,
+  type LinxCompletionBackendResult,
+  type LinxLoginReason,
+} from './lib/pi-adapter/index.js'
 import { isOidcLoginExpiredError } from './lib/oidc-auth.js'
 import { clearDefaultPodDataSession, createPodDataSession, getDefaultPodDataSession, type PodDataSession } from './lib/pod-data-session.js'
 import { DEFAULT_LINX_CLOUD_MODEL_ID, FALLBACK_LINX_CLOUD_MODEL_IDS } from './lib/default-model.js'
-import type { PiCompletionBackendResult } from './lib/pi-adapter/stream.js'
 import {
   createLinxPiSessionManager,
   formatLinxPiSessionSummary,
@@ -43,6 +49,7 @@ import { createFileSyncCheckpointStore } from './lib/sync-checkpoint-store.js'
 import { deriveLinxPiStartupControlState, hydrateLinxPiControlState } from './lib/pi-adapter/control-state.js'
 import { drizzle, solidResources, type SolidDatabase } from './lib/models.js'
 import type { RemoteAuthFetch } from './lib/chat-api.js'
+import { formatLinxCliErrorMessage } from './lib/linx-cloud-errors.js'
 
 type ChatRole = 'system' | 'user' | 'assistant'
 
@@ -69,7 +76,7 @@ interface ChatRuntime {
     model?: string
     messages: RemoteChatMessage[]
     tools?: RemoteChatTool[]
-  }): Promise<string | PiCompletionBackendResult>
+  }): Promise<string | LinxCompletionBackendResult>
   listRemoteModels(authFetch: RemoteAuthFetch, runtimeUrl: string, options?: { fallback?: boolean; timeoutMs?: number }): Promise<Array<{
     id: string
     provider?: string
@@ -212,6 +219,14 @@ async function createLinxPodDataSession(): Promise<PodDataSession> {
   return podSession
 }
 
+async function resolveStartupLinxPodDataSession(): Promise<PodDataSession | null> {
+  if (!loadCredentials()) {
+    return null
+  }
+
+  return createLinxPodDataSession()
+}
+
 async function runSingleTurn(options: {
   ctx: RuntimeContext
   threadId: string
@@ -219,9 +234,7 @@ async function runSingleTurn(options: {
   prompt: string
 }): Promise<void> {
   const { ctx, threadId, model, prompt } = options
-  const history = await ctx.runtime.loadMessages(ctx.session, threadId)
-
-  await ctx.runtime.saveUserMessage(ctx.session, ctx.chatId, threadId, prompt)
+  const history = await tryLoadMessages(ctx, threadId)
 
   const reply = await ctx.runtime.createRemoteCompletion({
     runtimeUrl: ctx.runtimeUrl,
@@ -231,8 +244,31 @@ async function runSingleTurn(options: {
   })
 
   const replyText = typeof reply === 'string' ? reply : reply.content ?? ''
-  await ctx.runtime.saveAssistantMessage(ctx.session, ctx.chatId, threadId, replyText)
   process.stdout.write(`\n${replyText}\n\n`)
+  await persistSingleTurnBestEffort(ctx, threadId, prompt, replyText)
+}
+
+async function tryLoadMessages(ctx: RuntimeContext, threadId: string): Promise<ChatMessage[]> {
+  try {
+    return await ctx.runtime.loadMessages(ctx.session, threadId)
+  } catch (error) {
+    process.stderr.write(`Warning: failed to load Pod chat history; continuing without history: ${formatLinxCliErrorMessage(error)}\n`)
+    return []
+  }
+}
+
+async function persistSingleTurnBestEffort(
+  ctx: RuntimeContext,
+  threadId: string,
+  prompt: string,
+  replyText: string,
+): Promise<void> {
+  try {
+    await ctx.runtime.saveUserMessage(ctx.session, ctx.chatId, threadId, prompt)
+    await ctx.runtime.saveAssistantMessage(ctx.session, ctx.chatId, threadId, replyText)
+  } catch (error) {
+    process.stderr.write(`Warning: failed to persist Pod chat turn: ${formatLinxCliErrorMessage(error)}\n`)
+  }
 }
 
 async function resolveThreadId(options: {
@@ -240,21 +276,43 @@ async function resolveThreadId(options: {
   continueMode?: boolean
   explicitThreadId?: string
   workspace?: string
+  bestEffort?: boolean
 }): Promise<string> {
-  const { ctx, continueMode, explicitThreadId, workspace } = options
+  const { ctx, continueMode, explicitThreadId, workspace, bestEffort } = options
 
   if (explicitThreadId) {
     return explicitThreadId
   }
 
   if (continueMode) {
-    const latest = await ctx.runtime.getLatestThreadId(ctx.session, ctx.chatId)
+    const latest = bestEffort
+      ? await tryGetLatestThreadId(ctx)
+      : await ctx.runtime.getLatestThreadId(ctx.session, ctx.chatId)
     if (latest) {
       return latest
     }
   }
 
-  return ctx.runtime.createThread(ctx.session, ctx.chatId, workspace || process.cwd(), 'CLI Session')
+  if (!bestEffort) {
+    return ctx.runtime.createThread(ctx.session, ctx.chatId, workspace || process.cwd(), 'CLI Session')
+  }
+
+  try {
+    return await ctx.runtime.createThread(ctx.session, ctx.chatId, workspace || process.cwd(), 'CLI Session')
+  } catch (error) {
+    const fallbackThreadId = `local-${Date.now().toString(36)}`
+    process.stderr.write(`Warning: failed to create Pod chat thread; using temporary thread ${fallbackThreadId}: ${formatLinxCliErrorMessage(error)}\n`)
+    return fallbackThreadId
+  }
+}
+
+async function tryGetLatestThreadId(ctx: RuntimeContext): Promise<string | null> {
+  try {
+    return await ctx.runtime.getLatestThreadId(ctx.session, ctx.chatId)
+  } catch (error) {
+    process.stderr.write(`Warning: failed to load latest Pod chat thread: ${formatLinxCliErrorMessage(error)}\n`)
+    return null
+  }
 }
 
 async function runInteractive(options: {
@@ -447,7 +505,7 @@ async function runPiCommand(argv: {
     backend: 'cloud',
     print: argv.print,
     issuerUrl: resolveAccountBaseUrl(),
-    resolveSession: createLinxPodDataSession,
+    resolveSession: resolveStartupLinxPodDataSession,
   })
 
   const sessionManager = await createLinxPiSessionManager({
@@ -466,7 +524,7 @@ async function runPiCommand(argv: {
   const autoEnabled = controlState.autoEnabled
   const symphonyEnabled = controlState.symphonyEnabled
 
-  const adapter = createPiRuntimeAdapter({
+  const adapter = createLinxRuntimeAdapter({
     async createRemoteCompletion(options) {
       const chatApi = await import('./lib/chat-api.js')
       return chatApi.createRemoteCompletionResult(options)
@@ -527,7 +585,7 @@ async function runPiCommand(argv: {
     const unsubscribePodMirror = runtime.session.subscribe((event: unknown) => {
       podMirror.handleEvent(event)
     })
-    const interactive = bootstrapPiInteractiveMode(runtime, {
+    const interactive = bootstrapLinxInteractiveMode(runtime, {
       initialMessage: prompt || undefined,
       restoredAuto: autoEnabled && restoreAutoFromHydration,
       onAutoControlChange(enabled) {
@@ -864,7 +922,7 @@ const retiredSymphonyCommand: CommandModule<object, { args?: string[] }> = {
       })
   },
   handler(): void {
-    throw new Error('`linx symphony` is not a product command. Enter the TUI, run `/symphony on`, then send the objective as normal chat.')
+    throw new Error('`linx symphony` is not a product command. Enter the TUI, run `/symphony on`, then send the objective as normal chat to Secretary.')
   },
 }
 
@@ -942,6 +1000,7 @@ const cli = yargs(hideBin(process.argv))
         continueMode: argv.continue,
         explicitThreadId: argv.thread,
         workspace: argv.workspace,
+        bestEffort: Boolean((argv.prompt as string[] | undefined)?.join(' ').trim()),
       })
 
       const prompt = (argv.prompt as string[] | undefined)?.join(' ').trim() || undefined
@@ -1060,11 +1119,11 @@ const cli = yargs(hideBin(process.argv))
   .help()
   .fail((message, error, yargsInstance) => {
     if (error) {
-      console.error(error instanceof Error ? error.message : String(error))
+      console.error(formatLinxCliErrorMessage(error))
       process.exit(1)
     }
     if (message) {
-      console.error(message)
+      console.error(formatLinxCliErrorMessage(message))
       process.exit(1)
     }
     yargsInstance.showHelp()
@@ -1072,7 +1131,7 @@ const cli = yargs(hideBin(process.argv))
   })
 
 process.on('unhandledRejection', (error: unknown) => {
-  console.error(error instanceof Error ? error.message : String(error))
+  console.error(formatLinxCliErrorMessage(error))
   process.exit(1)
 })
 

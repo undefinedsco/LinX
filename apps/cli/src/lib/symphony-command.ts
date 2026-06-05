@@ -3,11 +3,12 @@ import { resolve } from 'node:path'
 import {
   runThreadReconcilerCycle,
   summarizeWakeJobExecutionRecord,
+  type AgentRuntimeBackendConfig,
   type ReconcileDecisionSummary,
   type ThreadControlEvent,
   type WakeJobSchedulerSnapshotSummary,
 } from '@linx/agent-runtime'
-import type { AutoModeMode, AutoModeWorkerBackend } from '@linx/agent-runtime/auto-mode'
+import type { AutoModeCredentialSource, AutoModeMode, AutoModeWorkerBackend } from '@linx/agent-runtime/auto-mode'
 import {
   appendSymphonyReconcilerDecision,
   createRunPlan,
@@ -50,7 +51,14 @@ interface SymphonyRunArgs {
   title?: string
   acceptance?: string | string[]
   model?: string
+  agentRuntime?: AgentRuntimeBackendConfig
+  secretaryModel?: string
+  workerModel?: string
+  workerSupervisorIntervalMs?: number
   plain?: boolean
+  credentialSource?: AutoModeCredentialSource
+  print?: boolean
+  quietProjectionErrors?: boolean
   repository?: string
   branch?: string
   worktree?: string
@@ -60,6 +68,11 @@ interface SymphonyRunArgs {
   messages?: string[]
   target?: Partial<SymphonyDelegationTarget>
   worker?: string[]
+  workerGoalMode?: boolean
+  quietWorkers?: boolean
+  commandOverride?: string
+  commandEnv?: Record<string, string>
+  signal?: AbortSignal
   '--'?: string[]
 }
 
@@ -75,6 +88,7 @@ export async function runSymphony(
   argv: SymphonyRunArgs,
   runtime: SymphonyRuntime = defaultRuntime,
 ): Promise<SymphonyRunPlan> {
+  throwIfAborted(argv.signal)
   const objective = normalizeObjective(argv.objective)
   const cwd = resolve(argv.cwd || process.cwd())
   const workspace = resolveWorkspaceMetadata(cwd, argv)
@@ -82,6 +96,9 @@ export async function runSymphony(
   const mode: AutoModeMode = 'off'
   const secretaryAutoEnabled = Boolean(argv.auto)
   const workers = normalizeWorkers(argv.worker, backend, argv.target)
+  const agentRuntime = resolveSymphonyAgentRuntime(argv)
+  const requestedWorkerModel = normalizeOptional(argv.workerModel) ?? normalizeOptional(argv.model)
+  assertSymphonyWorkerModelCompatibility(backend, requestedWorkerModel, workers)
   const planInput: CreateSymphonyRunPlanInput = {
     objective,
     title: normalizeOptional(argv.title),
@@ -101,6 +118,8 @@ export async function runSymphony(
     mode,
     secretaryAutoEnabled,
     model: normalizeOptional(argv.model),
+    workerModel: normalizeOptional(argv.workerModel),
+    workerSupervisorIntervalMs: normalizePositiveInteger(argv.workerSupervisorIntervalMs),
     chat: normalizeOptional(argv.chat),
     thread: normalizeOptional(argv.thread),
     messages: normalizeMessages(argv.messages),
@@ -113,10 +132,16 @@ export async function runSymphony(
     target: argv.target,
     workers,
   }
-  const plan = await createSymphonyRunPlanForRuntime(planInput, runtime)
-  let currentPlan = await persistSymphonyProjectionBestEffort(plan, 'planned', runtime)
+  const plan = await createSymphonyRunPlanForRuntime(planInput, runtime, argv.signal)
+  throwIfAborted(argv.signal)
+  const quietProjectionErrors = argv.quietProjectionErrors === true
+  let currentPlan = await persistSymphonyProjectionBestEffort(plan, 'planned', runtime, {
+    quiet: quietProjectionErrors,
+    signal: argv.signal,
+  })
 
   if (argv.dryRun) {
+    throwIfAborted(argv.signal)
     currentPlan = withUpdatedIssue({
       ...currentPlan,
       workers: currentPlan.workers.map((worker) => ({
@@ -124,20 +149,29 @@ export async function runSymphony(
         session: withSymphonySessionStatus(worker.session, 'planned', { dryRun: true }),
       })),
     })
-    currentPlan = await persistSymphonyProjectionBestEffort(currentPlan, 'planned', runtime)
-    printSymphonyRunPlan(currentPlan, { dryRun: true })
+    currentPlan = await persistSymphonyProjectionBestEffort(currentPlan, 'planned', runtime, {
+      quiet: quietProjectionErrors,
+      signal: argv.signal,
+    })
+    if (argv.print !== false) {
+      printSymphonyRunPlan(currentPlan, { dryRun: true })
+    }
     return currentPlan
   }
 
   let issue = withSymphonyIssueStatus(currentPlan.issue, 'in_progress')
   currentPlan = { ...currentPlan, issue }
-  currentPlan = await persistSymphonyProjectionBestEffort(currentPlan, 'running', runtime)
+  currentPlan = await persistSymphonyProjectionBestEffort(currentPlan, 'running', runtime, {
+    quiet: quietProjectionErrors,
+    signal: argv.signal,
+  })
   issue = currentPlan.issue
 
   try {
     const dispatchedWorkers: SymphonyWorkerPlan[] = []
     let firstFailure: { exitCode: number; error: string } | null = null
     for (const [index, worker] of currentPlan.workers.entries()) {
+      throwIfAborted(argv.signal)
       const dispatched = await runSymphonyWorker({
         worker,
         issue: currentPlan.issue,
@@ -146,15 +180,26 @@ export async function runSymphony(
         secretaryAutoEnabled,
         cwd,
         plain: Boolean(argv.plain),
-        model: normalizeOptional(argv.model),
+        agentRuntime,
+        model: normalizeOptional(argv.workerModel) ?? normalizeOptional(argv.model),
+        credentialSource: normalizeCredentialSource(argv.credentialSource),
+        goalMode: argv.workerGoalMode !== false,
+        quiet: argv.quietWorkers === true,
         passthroughArgs: ((argv['--'] as string[] | undefined) ?? []).map(String),
+        commandOverride: normalizeOptional(argv.commandOverride),
+        commandEnv: normalizeCommandEnv(argv.commandEnv),
         runtime,
+        signal: argv.signal,
+        onWorkerDispatched: async (runningWorker) => {
+          currentPlan = withUpdatedWorker(currentPlan, runningWorker)
+          currentPlan = await persistSymphonyProjectionBestEffort(currentPlan, 'running', runtime, {
+            quiet: quietProjectionErrors,
+            signal: argv.signal,
+          })
+        },
       })
       dispatchedWorkers.push(dispatched.worker)
       currentPlan = withUpdatedWorker(currentPlan, dispatched.worker)
-      if (currentPlan.workers.length > 1) {
-        currentPlan = await persistSymphonyProjectionBestEffort(currentPlan, 'running', runtime)
-      }
       if (dispatched.exitCode !== 0 && !firstFailure) {
         firstFailure = {
           exitCode: dispatched.exitCode,
@@ -170,13 +215,21 @@ export async function runSymphony(
       issue,
       workers: dispatchedWorkers,
     })
-    currentPlan = await persistSymphonyProjectionBestEffort(currentPlan, status, runtime)
-    printSymphonyRunPlan(currentPlan, { dryRun: false })
+    currentPlan = await persistSymphonyProjectionBestEffort(currentPlan, status, runtime, {
+      quiet: quietProjectionErrors,
+      signal: argv.signal,
+    })
+    if (argv.print !== false) {
+      printSymphonyRunPlan(currentPlan, { dryRun: false })
+    }
     if (firstFailure) {
       process.exitCode = firstFailure.exitCode
     }
     return currentPlan
   } catch (error) {
+    if (isAbortError(error)) {
+      throw error
+    }
     const message = error instanceof Error ? error.message : String(error)
     issue = withSymphonyIssueStatus(issue, 'blocked', { error: message })
     const failedWorker = currentPlan.workers[0]
@@ -191,7 +244,10 @@ export async function runSymphony(
     } else {
       currentPlan = { ...currentPlan, issue }
     }
-    await persistSymphonyProjectionBestEffort(currentPlan, 'failed', runtime)
+    await persistSymphonyProjectionBestEffort(currentPlan, 'failed', runtime, {
+      quiet: quietProjectionErrors,
+      signal: argv.signal,
+    })
     throw error
   }
 }
@@ -199,7 +255,9 @@ export async function runSymphony(
 async function createSymphonyRunPlanForRuntime(
   input: CreateSymphonyRunPlanInput,
   runtime: SymphonyRuntime,
+  signal?: AbortSignal,
 ): Promise<SymphonyRunPlan> {
+  throwIfAborted(signal)
   const listIssues = runtime.listOpenSymphonyIssuesFromPod
   if (!listIssues) {
     return createSymphonyRunPlanDraft(input)
@@ -207,8 +265,12 @@ async function createSymphonyRunPlanForRuntime(
 
   let podIssues: Awaited<ReturnType<typeof listOpenSymphonyIssuesFromPod>>
   try {
-    podIssues = await listIssues()
-  } catch {
+    podIssues = await withAbortSignal(listIssues(), signal)
+    throwIfAborted(signal)
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw error
+    }
     podIssues = null
   }
 
@@ -238,10 +300,19 @@ async function runSymphonyWorker(input: {
   secretaryAutoEnabled: boolean
   cwd: string
   plain: boolean
+  agentRuntime?: AgentRuntimeBackendConfig
   model?: string
+  credentialSource?: AutoModeCredentialSource
+  goalMode: boolean
+  quiet: boolean
   passthroughArgs: string[]
+  commandOverride?: string
+  commandEnv?: Record<string, string>
   runtime: SymphonyRuntime
+  signal?: AbortSignal
+  onWorkerDispatched?: (worker: SymphonyWorkerPlan) => Promise<void>
 }): Promise<{ worker: SymphonyWorkerPlan; status: 'completed' | 'failed'; exitCode: number }> {
+  throwIfAborted(input.signal)
   const beforeAutoModeIds = new Set(input.runtime.listAutoModeSessions().map((record) => record.id))
   const cwd = input.worker.session.cwd || input.cwd
   const workspace = input.worker.session.workspace ?? {
@@ -279,29 +350,39 @@ async function runSymphonyWorker(input: {
     },
     handleWakeJob: async ({ decisionSummary, record }) => {
       try {
+        throwIfAborted(input.signal)
         exitCode = await input.runtime.runAutoMode({
           backend: input.worker.session.backend,
           autoEnabled: input.secretaryAutoEnabled,
           mode: 'off',
           cwd,
           plain: input.plain,
-          model: input.model,
+          model: normalizeOptional(input.worker.session.model) ?? input.model,
+          credentialSource: input.credentialSource,
           prompt,
-          goalMode: true,
+          goalMode: input.goalMode,
+          quiet: input.quiet,
           passthroughArgs: input.passthroughArgs,
+          ...(input.commandOverride ? { commandOverride: input.commandOverride } : {}),
+          ...(input.commandEnv ? { commandEnv: input.commandEnv } : {}),
           metadata: {
             symphony: {
               issue: input.issue.uri,
               task: input.worker.task,
               delivery: input.worker.delivery.uri,
               session: input.worker.session.uri,
+              ...(input.agentRuntime ? { agentRuntime: input.agentRuntime } : {}),
+              ...(input.worker.session.model ? { workerModel: input.worker.session.model } : {}),
+              ...(input.worker.session.supervisor ? { supervisor: input.worker.session.supervisor } : {}),
             },
             reconciler: decisionSummary,
             scheduler: {
               wakeRecord: summarizeWakeJobExecutionRecord(record),
             },
           },
+          ...(input.signal ? { signal: input.signal } : {}),
         })
+        throwIfAborted(input.signal)
         return { exitCode }
       } catch (error) {
         wakeError = error
@@ -313,9 +394,16 @@ async function runSymphonyWorker(input: {
       randomId: `${input.worker.delivery.uri}-dispatch`,
     },
     onDispatched: (dispatch) => {
+      throwIfAborted(input.signal)
       runningDelivery = appendSymphonyReconcilerDecision(withSymphonyDeliveryStatus(input.worker.delivery, 'dispatched'), dispatch.summary)
       runningSession = appendSymphonyReconcilerDecision(withSymphonySessionStatus(input.worker.session, 'running'), dispatch.summary)
       runningTask = appendSymphonyReconcilerDecision(withSymphonyTaskStatus(input.worker.taskRecord, 'running'), dispatch.summary)
+      return input.onWorkerDispatched?.({
+        task: input.worker.task,
+        taskRecord: runningTask,
+        delivery: runningDelivery,
+        session: runningSession,
+      })
     },
   })
   const dispatchScheduler = cycle.schedulerSummary
@@ -326,6 +414,7 @@ async function runSymphonyWorker(input: {
     throw new Error('Symphony worker was not awakened by the Thread Reconciler.')
   }
 
+  throwIfAborted(input.signal)
   const autoModeSessionId = resolveCreatedAutoModeSessionId(beforeAutoModeIds, input.runtime)
   const status = exitCode === 0 ? 'completed' : 'failed'
   const statusDecision = await dispatchSymphonyWorkerStatusDecision({
@@ -449,7 +538,9 @@ async function persistSymphonyProjectionBestEffort(
   plan: SymphonyRunPlan,
   stage: 'planned' | 'running' | 'completed' | 'failed',
   runtime: SymphonyRuntime,
+  options: { quiet?: boolean; signal?: AbortSignal } = {},
 ): Promise<SymphonyRunPlan> {
+  throwIfAborted(options.signal)
   const persist = runtime.persistSymphonyProjectionToPod
   if (!persist) {
     writeSymphonyRunPlan(plan)
@@ -457,16 +548,22 @@ async function persistSymphonyProjectionBestEffort(
   }
 
   try {
-    const result = await persist(plan, { stage })
+    const result = await withAbortSignal(persist(plan, { stage }), options.signal)
+    throwIfAborted(options.signal)
     if (!result) {
       writeSymphonyRunPlan(plan)
       return plan
     }
-    await mirrorSymphonyProjectionBestEffort(result, runtime)
+    await mirrorSymphonyProjectionBestEffort(result, runtime, options)
     return result.plan
   } catch (error) {
+    if (isAbortError(error)) {
+      throw error
+    }
     const message = error instanceof Error ? error.message : String(error)
-    process.stderr.write(`[symphony] Pod projection skipped: ${message}\n`)
+    if (!options.quiet) {
+      process.stderr.write(`[symphony] Pod projection skipped: ${message}\n`)
+    }
     writeSymphonyRunPlan(plan)
     return plan
   }
@@ -475,7 +572,9 @@ async function persistSymphonyProjectionBestEffort(
 async function mirrorSymphonyProjectionBestEffort(
   result: Awaited<ReturnType<typeof persistSymphonyProjectionToPod>>,
   runtime: SymphonyRuntime,
+  options: { quiet?: boolean; signal?: AbortSignal } = {},
 ): Promise<void> {
+  throwIfAborted(options.signal)
   if (!result) {
     return
   }
@@ -486,10 +585,15 @@ async function mirrorSymphonyProjectionBestEffort(
   }
 
   try {
-    await mirror(result)
+    await withAbortSignal(mirror(result), options.signal)
   } catch (error) {
+    if (isAbortError(error)) {
+      throw error
+    }
     const message = error instanceof Error ? error.message : String(error)
-    process.stderr.write(`[symphony] Pod JSON-LD mirror skipped: ${message}\n`)
+    if (!options.quiet) {
+      process.stderr.write(`[symphony] Pod JSON-LD mirror skipped: ${message}\n`)
+    }
   }
 }
 
@@ -543,6 +647,35 @@ function resolveCreatedAutoModeSessionId(beforeIds: Set<string>, runtime: Sympho
   return created[0]?.id
 }
 
+function assertSymphonyWorkerModelCompatibility(
+  fallbackBackend: AutoModeWorkerBackend,
+  workerModel: string | undefined,
+  workers: Partial<SymphonyDelegationTarget>[] | undefined,
+): void {
+  if (!workerModel || !isNonCodexProviderModel(workerModel)) {
+    return
+  }
+
+  const targets = workers && workers.length > 0 ? workers : [{ backend: fallbackBackend }]
+  const codexTarget = targets.find((target) => (target.backend ?? fallbackBackend) === 'codex')
+  if (codexTarget) {
+    throw new Error(`codex backend cannot run worker model ${workerModel}. Use backend claude/cc or linx for provider-routed models.`)
+  }
+
+  const claudeTarget = targets.find((target) => (target.backend ?? fallbackBackend) === 'claude')
+  if (claudeTarget && isProviderRoutedClaudeModel(workerModel)) {
+    throw new Error(`claude backend cannot set provider-routed worker model ${workerModel}. Configure it behind a Claude Code alias such as opus, or omit the worker model.`)
+  }
+}
+
+function isNonCodexProviderModel(model: string): boolean {
+  return /(?:deepseek|claude|qwen|gemini|kimi|moonshot|mistral|grok|glm|minimax)/iu.test(model)
+}
+
+function isProviderRoutedClaudeModel(model: string): boolean {
+  return /(?:deepseek|qwen|gemini|kimi|moonshot|mistral|grok|glm|minimax)/iu.test(model)
+}
+
 function normalizeWorkers(
   values: string[] | undefined,
   fallbackBackend: AutoModeWorkerBackend,
@@ -567,7 +700,10 @@ function normalizeWorkers(
 
 function normalizeBackend(value: string | undefined): AutoModeWorkerBackend | undefined {
   const normalized = normalizeOptional(value)
-  if (normalized === 'codex' || normalized === 'claude' || normalized === 'codebuddy') {
+  if (normalized === 'cc') {
+    return 'claude'
+  }
+  if (normalized === 'linx' || normalized === 'codex' || normalized === 'claude' || normalized === 'codebuddy') {
     return normalized
   }
   return undefined
@@ -600,9 +736,111 @@ function normalizeMessages(value?: string[]): string[] | undefined {
   return messages.length > 0 ? messages : undefined
 }
 
+function resolveSymphonyAgentRuntime(argv: SymphonyRunArgs): AgentRuntimeBackendConfig | undefined {
+  const explicit = normalizeAgentRuntimeConfig(argv.agentRuntime)
+  const model = explicit?.model
+    ?? normalizeOptional(argv.secretaryModel)
+    ?? normalizeOptional(argv.model)
+  if (!explicit && !model) {
+    return undefined
+  }
+
+  return {
+    backend: explicit?.backend ?? 'linx',
+    credentialSource: explicit?.credentialSource ?? 'cloud',
+    ...explicit,
+    ...(model ? { model } : {}),
+  }
+}
+
+function normalizeAgentRuntimeConfig(value: AgentRuntimeBackendConfig | undefined): AgentRuntimeBackendConfig | undefined {
+  if (!value) {
+    return undefined
+  }
+
+  const metadata = isRecord(value.metadata) ? { ...value.metadata } : undefined
+  const resolved: AgentRuntimeBackendConfig = {
+    ...(normalizeOptional(value.backend) ? { backend: normalizeOptional(value.backend) } : {}),
+    ...(normalizeOptional(value.model) ? { model: normalizeOptional(value.model) } : {}),
+    ...(normalizeOptional(value.credentialSource) ? { credentialSource: normalizeOptional(value.credentialSource) } : {}),
+    ...(normalizeOptional(value.runtime) ? { runtime: normalizeOptional(value.runtime) } : {}),
+    ...(normalizeOptional(value.transport) ? { transport: normalizeOptional(value.transport) } : {}),
+    ...(normalizeOptional(value.endpoint) ? { endpoint: normalizeOptional(value.endpoint) } : {}),
+    ...(metadata ? { metadata } : {}),
+  }
+  return Object.keys(resolved).length > 0 ? resolved : undefined
+}
+
 function normalizeOptional(value?: string | null): string | undefined {
   const normalized = typeof value === 'string' ? value.trim() : ''
   return normalized || undefined
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function normalizeCommandEnv(value: Record<string, string> | undefined): Record<string, string> | undefined {
+  if (!value) {
+    return undefined
+  }
+
+  const entries = Object.entries(value)
+    .map(([key, entryValue]) => [key.trim(), String(entryValue)] as const)
+    .filter(([key]) => Boolean(key))
+
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined
+}
+
+function normalizeCredentialSource(value: AutoModeCredentialSource | undefined): AutoModeCredentialSource | undefined {
+  return value === 'local' ? 'local' : value === 'cloud' ? 'cloud' : undefined
+}
+
+function normalizePositiveInteger(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return undefined
+  }
+  const normalized = Math.trunc(value)
+  return normalized > 0 ? normalized : undefined
+}
+
+function createAbortError(message = 'The operation was aborted.'): Error {
+  const error = new Error(message)
+  error.name = 'AbortError'
+  return error
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && (error.name === 'AbortError' || error.message.toLowerCase().includes('aborted'))
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) {
+    return
+  }
+
+  const reason = signal.reason
+  if (reason instanceof Error) {
+    throw reason
+  }
+  throw createAbortError(typeof reason === 'string' && reason.trim() ? reason : undefined)
+}
+
+function withAbortSignal<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) {
+    return promise
+  }
+  throwIfAborted(signal)
+
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason instanceof Error
+      ? signal.reason
+      : createAbortError(typeof signal.reason === 'string' && signal.reason.trim() ? signal.reason : undefined))
+    signal.addEventListener('abort', onAbort, { once: true })
+    promise
+      .then(resolve, reject)
+      .finally(() => signal.removeEventListener('abort', onAbort))
+  })
 }
 
 function resolveWorkspaceMetadata(cwd: string, argv: SymphonyRunArgs): {

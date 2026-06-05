@@ -34,6 +34,7 @@ import {
   LINX_TUI_AUTO_MODE_HELP_TEXT,
   LINX_TUI_AUTO_MODE_READY_NOTE,
 } from '../linx-tui-contract.js'
+import { formatLinxCliErrorMessage } from '../linx-cloud-errors.js'
 
 type PromptText = (prompt: string, signal?: AbortSignal) => Promise<string>
 
@@ -683,6 +684,15 @@ function styleStatusLine(line: string): string {
   return applyAnsi(line, ANSI.cyan)
 }
 
+function normalizeAutoModeDisplayText(text: string): string {
+  return formatLinxCliErrorMessage(text)
+}
+
+function formatAutoModeSessionFailureLine(record: AutoModeSessionRecord, error?: string): string {
+  const normalizedError = error ? normalizeAutoModeDisplayText(error) : ''
+  return `[session] failed ${resolveAutoModeSessionDisplayId(record)}${normalizedError ? `: ${normalizedError}` : ''}`
+}
+
 function styleContextLine(line: string, width: number): string {
   if (/^\s+\d+\./.test(line)) {
     return applyAnsi(clipLine(line, width), ANSI.dim)
@@ -776,6 +786,7 @@ class PlainAutoModeDisplay implements AutoModeDisplay {
   setPhase(): void {}
 
   showActivity(text: string, tone: AutoModeUiActivityTone = 'note'): void {
+    const normalizedText = normalizeAutoModeDisplayText(text)
     const prefix = tone === 'success'
       ? '[ok]'
       : tone === 'error'
@@ -783,7 +794,7 @@ class PlainAutoModeDisplay implements AutoModeDisplay {
         : tone === 'debug'
           ? '[debug]'
         : '[note]'
-    stdout.write(`${prefix} ${text}\n`)
+    stdout.write(`${prefix} ${normalizedText}\n`)
   }
 
   setDebugMode(enabled: boolean): void {
@@ -918,12 +929,12 @@ class PlainAutoModeDisplay implements AutoModeDisplay {
       }
 
       if (event.type === 'approval.required') {
-        stdout.write(`[approval] ${event.message}\n`)
+        stdout.write(`[approval] ${normalizeAutoModeDisplayText(event.message)}\n`)
         continue
       }
 
       if (event.type === 'input.required') {
-        stdout.write(`[input] ${event.message}\n`)
+        stdout.write(`[input] ${normalizeAutoModeDisplayText(event.message)}\n`)
         continue
       }
 
@@ -938,7 +949,7 @@ class PlainAutoModeDisplay implements AutoModeDisplay {
     }
 
     const target = stream === 'stderr' ? process.stderr : stdout
-    target.write(`${line}\n`)
+    target.write(`${normalizeAutoModeDisplayText(line)}\n`)
   }
 
   async promptInput(prompt: string): Promise<AutoModePromptSubmission> {
@@ -959,9 +970,67 @@ class PlainAutoModeDisplay implements AutoModeDisplay {
     if (status === 'completed') {
       stdout.write(`\n[session] completed ${resolveAutoModeSessionDisplayId(record)}\n`)
     } else {
-      process.stderr.write(`\n[session] failed ${resolveAutoModeSessionDisplayId(record)}${error ? `: ${error}` : ''}\n`)
+      process.stderr.write(`\n${formatAutoModeSessionFailureLine(record, error)}\n`)
     }
   }
+}
+
+class QuietAutoModeDisplay implements AutoModeDisplay {
+  private record: AutoModeSessionRecord
+
+  constructor(record: AutoModeSessionRecord) {
+    this.record = record
+  }
+
+  start(): void {}
+
+  updateRecord(record: AutoModeSessionRecord): void {
+    this.record = record
+  }
+
+  updateQueue(): void {}
+
+  bindInputController(): void {}
+
+  setPhase(): void {}
+
+  showActivity(): void {}
+
+  setDebugMode(): void {}
+
+  chooseOption(title: string): Promise<string> {
+    return Promise.reject(new Error(`Quiet auto-mode worker cannot answer interactive option: ${title}`))
+  }
+
+  chooseQuestions(): Promise<AutoModeUserInputAnswers> {
+    return Promise.reject(new Error('Quiet auto-mode worker cannot answer interactive input questions.'))
+  }
+
+  promptSecret(request: AutoModeSecretInputRequest): Promise<string> {
+    return Promise.reject(new Error(`Quiet auto-mode worker cannot collect secret input: ${request.header}`))
+  }
+
+  chooseQuestion(state: {
+    header: string
+  }): Promise<string> {
+    return Promise.reject(new Error(`Quiet auto-mode worker cannot answer question: ${state.header}`))
+  }
+
+  showUserTurn(): void {}
+
+  showHelp(): void {}
+
+  showQuestion(): void {}
+
+  renderEvents(): void {}
+
+  renderRawLine(): void {}
+
+  promptInput(): Promise<AutoModePromptSubmission> {
+    return Promise.resolve({ text: '/exit', mode: 'send' })
+  }
+
+  finish(): void {}
 }
 
 class TuiAutoModeDisplay implements AutoModeDisplay {
@@ -1052,7 +1121,7 @@ class TuiAutoModeDisplay implements AutoModeDisplay {
   showActivity(text: string, tone: AutoModeUiActivityTone = 'note'): void {
     this.pushActivityEntry({
       kind: tone,
-      text,
+      text: normalizeAutoModeDisplayText(text),
     })
     this.render()
   }
@@ -1244,7 +1313,7 @@ class TuiAutoModeDisplay implements AutoModeDisplay {
 
       this.pushActivityEntry({
         kind: 'note',
-        text: event.message,
+        text: normalizeAutoModeDisplayText(event.message),
       })
       if (this.debugMode && event.raw) {
         const debugPayload = summarizeAutoModeDebugPayload(event.raw)
@@ -1273,11 +1342,12 @@ class TuiAutoModeDisplay implements AutoModeDisplay {
         ? summarizeAutoModeDebugPayload(trimmed)
         : null
 
+      const displayText = debugPayload?.text ?? trimmed
       this.pushActivityEntry({
         kind: stream === 'stderr' ? 'error' : this.debugMode ? 'debug' : 'note',
         text: stream === 'stderr'
-          ? trimmed
-          : debugPayload?.text ?? trimmed,
+          ? normalizeAutoModeDisplayText(trimmed)
+          : normalizeAutoModeDisplayText(displayText),
         ...(debugPayload?.detail ? { detail: debugPayload.detail } : {}),
       })
     }
@@ -1305,7 +1375,8 @@ class TuiAutoModeDisplay implements AutoModeDisplay {
     if (status === 'completed') {
       this.pushActivityEntry({ kind: 'success', text: `Session completed | ${resolveAutoModeSessionDisplayId(record)}` })
     } else {
-      this.pushActivityEntry({ kind: 'error', text: `Session failed | ${resolveAutoModeSessionDisplayId(record)}${error ? `: ${error}` : ''}` })
+      const normalizedError = error ? normalizeAutoModeDisplayText(error) : ''
+      this.pushActivityEntry({ kind: 'error', text: `Session failed | ${resolveAutoModeSessionDisplayId(record)}${normalizedError ? `: ${normalizedError}` : ''}` })
     }
     this.render()
     this.teardown()
@@ -1313,7 +1384,7 @@ class TuiAutoModeDisplay implements AutoModeDisplay {
     if (status === 'completed') {
       stdout.write(`[session] completed ${resolveAutoModeSessionDisplayId(record)}\n`)
     } else {
-      process.stderr.write(`[session] failed ${resolveAutoModeSessionDisplayId(record)}${error ? `: ${error}` : ''}\n`)
+      process.stderr.write(`${formatAutoModeSessionFailureLine(record, error)}\n`)
     }
   }
 
@@ -1933,7 +2004,11 @@ class TuiAutoModeDisplay implements AutoModeDisplay {
   }
 }
 
-export function createAutoModeDisplay(record: AutoModeSessionRecord, prompt: PromptText): AutoModeDisplay {
+export function createAutoModeDisplay(record: AutoModeSessionRecord, prompt: PromptText, options: { quiet?: boolean } = {}): AutoModeDisplay {
+  if (options.quiet) {
+    return new QuietAutoModeDisplay(record)
+  }
+
   if (supportsAutoModeTui()) {
     return new TuiAutoModeDisplay(record, prompt)
   }

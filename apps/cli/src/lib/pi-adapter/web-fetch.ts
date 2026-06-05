@@ -10,10 +10,8 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Type, type Static } from 'typebox';
 import { getDefaultPodDataSession, type PodDataSession } from '../pod-data-session.js';
 import {
-  aiProviderResource,
-  credentialResource,
+  aiConfigRepository,
   drizzle,
-  selectAIConfigCredential,
   solidResources,
   type SolidDatabase,
 } from '../models.js';
@@ -72,19 +70,9 @@ export async function resolveJinaApiKey(runtime: JinaCredentialRuntime = activeC
   const session = await runtime.getPodDataSession();
   if (!session) return null;
 
-  const db = runtime.createDb(session) as any;
-  const [credentialRows, providerRow] = await Promise.all([
-    db.select().from(credentialResource).execute() as Promise<Array<Record<string, unknown>>>,
-    typeof db.findById === 'function'
-      ? db.findById(aiProviderResource, JINA_PROVIDER_ID).catch(() => null) as Promise<Record<string, unknown> | null>
-      : Promise.resolve(null),
-  ]);
-
-  const selected = selectAIConfigCredential(
-    JINA_PROVIDER_ID,
-    credentialRows,
-    providerRow ? [providerRow] : [],
-  );
+  const db = runtime.createDb(session);
+  const selected = await aiConfigRepository.loadCredentialForBackend(db, JINA_PROVIDER_ID);
+  await aiConfigRepository.markCredentialUsed(db, selected);
   return selected?.apiKey ?? null;
 }
 

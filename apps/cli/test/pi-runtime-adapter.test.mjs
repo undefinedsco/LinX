@@ -487,6 +487,9 @@ test('pi runtime adapter prefers current Pod session fetch over stale Pi apiKey 
     messages: [{ role: 'user', content: 'hello' }],
   }, {
     apiKey: 'stale-pi-runtime-token',
+    async authFetch() {
+      throw new Error('LinX Pod request timed out after 30s: POST https://api.undefineds.co/v1/chat/completions')
+    },
   })) {
     events.push(event)
   }
@@ -496,6 +499,52 @@ test('pi runtime adapter prefers current Pod session fetch over stale Pi apiKey 
   assert.equal(podSessionCloses, 1)
   assert.equal(events.at(-1)?.type, 'done')
   assert.equal(events.at(-1)?.message.content[0].text, 'hello from current session')
+})
+
+test('pi runtime adapter reports stalled cloud completions as cloud timeout, not Pod timeout', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
+  t.after(() => cleanup())
+
+  const previousTimeout = process.env.LINX_CHAT_TIMEOUT_MS
+  process.env.LINX_CHAT_TIMEOUT_MS = '5'
+  t.after(() => {
+    if (previousTimeout === undefined) {
+      delete process.env.LINX_CHAT_TIMEOUT_MS
+    } else {
+      process.env.LINX_CHAT_TIMEOUT_MS = previousTimeout
+    }
+  })
+
+  const adapter = module.createPiRuntimeAdapter({
+    async createRemoteCompletion(input) {
+      await input.authFetch('https://api.undefineds.co/v1/chat/completions', { method: 'POST' })
+      return 'should not finish'
+    },
+  }, {
+    providerConfig: {
+      baseUrl: 'https://api.undefineds.co/v1',
+    },
+    async getPodDataSession() {
+      return {
+        async runtimeFetch() {
+          return new Promise(() => undefined)
+        },
+        async close() {},
+      }
+    },
+  })
+
+  const events = []
+  for await (const event of adapter.streamAdapter.streamFn(undefined, {
+    messages: [{ role: 'user', content: 'hello' }],
+  })) {
+    events.push(event)
+  }
+
+  const errorEvent = events.find((event) => event.type === 'error')
+  assert.ok(errorEvent)
+  assert.equal(errorEvent.error.errorMessage, 'LinX Cloud request timed out after 1s.')
+  assert.doesNotMatch(errorEvent.error.errorMessage, /LinX Pod request/)
 })
 
 test('pi runtime adapter exposes bundled LinX skills during initial resource loading', async (t) => {
@@ -712,8 +761,8 @@ test('pi runtime adapter prefers linx-lite when cloud model discovery returns mu
     },
     async listRemoteModels() {
       return [
-        { id: 'linx', contextWindow: 200_000 },
-        { id: 'linx-lite', contextWindow: 100_000 },
+        { id: 'linx', contextWindow: 1_000_000 },
+        { id: 'linx-lite', contextWindow: 1_000_000 },
       ]
     },
   }, {
@@ -747,6 +796,7 @@ test('pi runtime adapter prefers linx-lite when cloud model discovery returns mu
 
   assert.equal(adapter.model, 'linx-lite')
   assert.equal(runtime.session.model.id, 'linx-lite')
+  assert.equal(runtime.session.model.contextWindow, 1_000_000)
 
   await runtime.session.prompt('say hi')
   assert.equal(completionCalls.length, 1)
@@ -807,8 +857,11 @@ test('pi runtime adapter keeps both LinX fallback models when cloud discovery is
 
   const available = runtime.session.modelRegistry.getAvailable()
     .filter((model) => model.provider === 'undefineds')
-    .map((model) => model.id)
-  assert.deepEqual(available, ['linx', 'linx-lite'])
+    .map((model) => ({ id: model.id, contextWindow: model.contextWindow }))
+  assert.deepEqual(available, [
+    { id: 'linx', contextWindow: 1_000_000 },
+    { id: 'linx-lite', contextWindow: 1_000_000 },
+  ])
   assert.equal(runtime.session.model.id, 'linx-lite')
 
   await runtime.dispose()
@@ -898,8 +951,8 @@ test('pi runtime adapter ignores stale undefineds defaults that point to gpt-5-c
     },
     async listRemoteModels() {
       return [
-        { id: 'linx', contextWindow: 200_000 },
-        { id: 'linx-lite', contextWindow: 100_000 },
+        { id: 'linx', contextWindow: 1_000_000 },
+        { id: 'linx-lite', contextWindow: 1_000_000 },
       ]
     },
   }, {
@@ -966,8 +1019,8 @@ test('pi runtime adapter preserves the last valid LinX model and thinking defaul
     },
     async listRemoteModels() {
       return [
-        { id: 'linx', contextWindow: 200_000 },
-        { id: 'linx-lite', contextWindow: 100_000 },
+        { id: 'linx', contextWindow: 1_000_000 },
+        { id: 'linx-lite', contextWindow: 1_000_000 },
       ]
     },
   }, {
@@ -1217,8 +1270,8 @@ test('pi runtime adapter silently refreshes stored auth before prompting for log
       }
       assert.equal(authHeader, 'DPoP refreshed-session-token')
       return [
-        { id: 'linx', contextWindow: 200_000 },
-        { id: 'linx-lite', contextWindow: 100_000 },
+        { id: 'linx', contextWindow: 1_000_000 },
+        { id: 'linx-lite', contextWindow: 1_000_000 },
       ]
     },
   }, {
@@ -1290,8 +1343,8 @@ test('pi runtime adapter silently refreshes stored auth when chat completion rej
     },
     async listRemoteModels() {
       return [
-        { id: 'linx', contextWindow: 200_000 },
-        { id: 'linx-lite', contextWindow: 100_000 },
+        { id: 'linx', contextWindow: 1_000_000 },
+        { id: 'linx-lite', contextWindow: 1_000_000 },
       ]
     },
   }, {
@@ -1340,7 +1393,7 @@ test('pi runtime adapter clears startup auth prompt after a successful browser l
       return 'ok'
     },
     async listRemoteModels() {
-      return [{ id: 'linx', contextWindow: 200_000 }]
+      return [{ id: 'linx', contextWindow: 1_000_000 }]
     },
   }, {
     providerConfig: {
@@ -1405,8 +1458,8 @@ test('pi runtime adapter overrides restored non-LinX session models', async (t) 
     },
     async listRemoteModels() {
       return [
-        { id: 'linx', contextWindow: 200_000 },
-        { id: 'linx-lite', contextWindow: 100_000 },
+        { id: 'linx', contextWindow: 1_000_000 },
+        { id: 'linx-lite', contextWindow: 1_000_000 },
       ]
     },
   }, {

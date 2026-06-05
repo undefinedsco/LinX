@@ -22,9 +22,13 @@ function createPodConfigHarness() {
 
   const recordId = (name, row) => {
     if (name === 'aiModel') {
+      const rawId = String(row.id ?? '')
+      if (rawId.includes('#')) {
+        return rawId.replace(/^\/?settings\/providers\//, '')
+      }
       const providerRef = String(row.isProvidedBy ?? '')
       const provider = providerRef.includes('#') ? providerRef.split('#').pop() : providerRef.split('/').pop()
-      return `${provider?.replace(/\.ttl$/, '')}.ttl#${row.id}`
+      return `${provider?.replace(/\.ttl$/, '')}.ttl#${rawId}`
     }
     return String(row.id)
   }
@@ -35,9 +39,13 @@ function createPodConfigHarness() {
       if (name !== 'aiModel') {
         return typeof locator === 'string' ? locator : String(locator.id)
       }
+      const rawId = String(locator.id ?? '')
+      if (rawId.includes('#')) {
+        return rawId.replace(/^\/?settings\/providers\//, '')
+      }
       const providerRef = String(locator.isProvidedBy ?? '')
       const provider = providerRef.includes('#') ? providerRef.split('#').pop() : providerRef.split('/').pop()
-      return `${provider?.replace(/\.ttl$/, '')}.ttl#${locator.id}`
+      return `${provider?.replace(/\.ttl$/, '')}.ttl#${rawId}`
     },
     select() {
       return {

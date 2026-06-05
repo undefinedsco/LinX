@@ -972,7 +972,7 @@
       <section>
         <h2>3. Symphony：从一个三人 Thread 变成多组 Threads</h2>
         <p class="section-copy">
-          Symphony 不是 Automode 的升级版，而是把工作拆到多组 Thread 里。Main thread 是 User 和 Secretary 聊；其他 worker threads 是 Secretary 和 Worker 聊。main 以外默认都是 automode，approval 和 grant 由各自对端 Secretary 安排。
+          Symphony 不是 Automode 的升级版，而是切换“用户当前在跟谁聊”。<code>/symphony off</code> 时，用户直接跟当前 worker/backend peer 聊；<code>/symphony on</code> 时，用户跟 Secretary 控制面聊，Secretary 再把工作拆到多组 worker threads。worker threads 是 Secretary 和 Worker 聊，approval 和 grant 由同 Thread 的 Secretary 优先处理。
         </p>
 
         <div class="symphony-map">
@@ -1013,12 +1013,12 @@
 
         <div class="rules">
           <article class="panel">
-            <h3><code>/symphony off</code>：Secretary 是普通会话助手</h3>
+            <h3><code>/symphony off</code>：用户直接跟 Worker / Backend Peer 聊</h3>
             <ul>
-              <li>把用户输入当成当前 chat 的普通消息处理。</li>
-              <li>可以回答问题、继续对话、处理当前会话上下文。</li>
+              <li>用户输入直接进入当前 worker/backend peer 的普通 chat。</li>
+              <li>可以回答问题、继续对话、处理当前 backend 会话上下文。</li>
               <li>不会默认把一句话升级成 Issue，也不会默认拆 Task 或派 worker。</li>
-              <li>如果要委派，需要用户显式给出对应动作或已有产品路径触发。</li>
+              <li>如果要委派，需要切到 <code>/symphony on</code> 或由已有产品路径触发。</li>
             </ul>
           </article>
           <article class="panel">

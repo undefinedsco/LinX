@@ -39,6 +39,11 @@ Expected behavior:
 3. If the callback cannot complete, the CLI can ask for manual redirect paste.
 4. The CLI stores only LinX/Solid auth material needed to regain Pod access.
 5. The CLI does not store AI provider API keys as part of LinX/xPod/Solid login.
+6. Interactive startup, including `linx resume <session>`, must not exit before
+   entering the TUI just because LinX/Solid credentials are missing. Missing or
+   expired login becomes an in-TUI login prompt so the user can re-authorize and
+   continue the same session. Non-interactive commands may still fail fast with
+   a login-required error.
 
 This login gives the CLI authority to read/write the user's Pod data. It is not
 the same thing as an AI provider credential.

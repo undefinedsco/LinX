@@ -4,19 +4,10 @@ import {
   aiConfigRepository,
   selectAIConfigCredentialForBackend,
   type AIConfigBackendCredentialSelection,
+  type SolidDatabase,
 } from '../models.js'
 
-type SupportedPodAutoModeBackend = AutoModeWorkerBackend
-
-interface PodQueryDb {
-  select(): {
-    from(resource: unknown): {
-      execute(): Promise<unknown[]>
-    }
-  }
-  updateById?: (resource: unknown, id: string, data: Record<string, unknown>) => Promise<unknown>
-  findById<T = unknown>(resource: unknown, id: string): Promise<T | null>
-}
+type SupportedPodAutoModeBackend = Exclude<AutoModeWorkerBackend, 'linx'>
 
 export interface PodBackedAutoModeCredential {
   backend: SupportedPodAutoModeBackend
@@ -26,7 +17,7 @@ export interface PodBackedAutoModeCredential {
 
 interface PodAiRuntime {
   getPodDataSession: () => Promise<PodDataSession | null>
-  createDb?: (session: PodDataSession) => PodQueryDb
+  createDb?: (session: PodDataSession) => SolidDatabase
 }
 
 interface PodProviderMatch {
@@ -122,7 +113,7 @@ async function createDefaultRuntime(): Promise<PodAiRuntime> {
         podUrl: podSession.podUrl,
         resourcePreparation: 'off' as never,
         schema: models.solidResources,
-      }) as PodQueryDb
+      }) as SolidDatabase
     },
   }
 }
@@ -131,7 +122,7 @@ async function loadRowsWithDrizzle(
   backend: SupportedPodAutoModeBackend,
   runtime: PodAiRuntime,
   podSession: PodDataSession,
-): Promise<{ db: PodQueryDb; match: AIConfigBackendCredentialSelection | undefined } | null> {
+): Promise<{ db: SolidDatabase; match: AIConfigBackendCredentialSelection | undefined } | null> {
   if (!runtime.createDb) {
     return null
   }
@@ -144,7 +135,7 @@ async function loadRowsWithDrizzle(
 }
 
 export async function loadPodBackendCredential(
-  backend: AutoModeWorkerBackend,
+  backend: SupportedPodAutoModeBackend,
   runtime?: PodAiRuntime,
 ): Promise<PodBackedAutoModeCredential | null> {
   const activeRuntime = runtime ?? await createDefaultRuntime()

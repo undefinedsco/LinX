@@ -1,5 +1,5 @@
 import type { Session } from '@inrupt/solid-client-authn-node'
-import { resolveLinxPodUrl } from '@undefineds.co/models/client'
+import { LINX_CLOUD_RUNTIME_API_BASE_URL, resolveLinxPodUrl } from '@undefineds.co/models/client'
 import { loadAccountSession } from './account-session.js'
 import {
   getClientCredentialId,
@@ -11,6 +11,7 @@ import {
 } from './credentials-store.js'
 import { getOidcAccessToken, restoreStoredOidcSession } from './oidc-auth.js'
 import { authenticate } from './solid-auth.js'
+import { normalizeMisclassifiedCloudCompletionPodTimeoutMessage } from './linx-cloud-errors.js'
 
 export type PodFetch = (url: string, init?: RequestInit) => Promise<Response>
 
@@ -155,12 +156,15 @@ export async function createPodDataSession(
     }
     const podUrl = resolvePodDataSessionUrl(webId)
 
+    const sessionFetch = createSanitizedSessionFetch(session)
     const fetchWithTimeout: PodFetch = (url, init) => withFetchTimeout(
-      (requestUrl, requestInit) => session.fetch(requestUrl, requestInit),
+      sessionFetch,
       url,
       init,
+      podUrl,
       runtime.fetchTimeoutMs ?? DEFAULT_POD_DATA_FETCH_TIMEOUT_MS,
     )
+    const runtimeFetch = createRuntimeFetch(sessionFetch)
 
     return {
       credentials,
@@ -168,7 +172,7 @@ export async function createPodDataSession(
       podUrl,
       solidSession: createSessionLikeFromSolidSession(session, fetchWithTimeout, podUrl),
       fetch: fetchWithTimeout,
-      runtimeFetch: fetchWithTimeout,
+      runtimeFetch,
       async getRuntimeAuthToken() {
         throw new Error('LinX runtime auth is session-managed. Use runtimeFetch instead of requesting a raw token.')
       },
@@ -188,12 +192,15 @@ export async function createPodDataSession(
 
     const webId = session.info.webId ?? credentials.webId
     const podUrl = resolvePodDataSessionUrl(webId)
+    const sessionFetch = createSanitizedSessionFetch(session)
     const fetchWithTimeout: PodFetch = (url, init) => withFetchTimeout(
-      (requestUrl, requestInit) => session.fetch(requestUrl, requestInit),
+      sessionFetch,
       url,
       init,
+      podUrl,
       runtime.fetchTimeoutMs ?? DEFAULT_POD_DATA_FETCH_TIMEOUT_MS,
     )
+    const runtimeFetch = createRuntimeFetch(sessionFetch)
 
     return {
       credentials,
@@ -201,7 +208,7 @@ export async function createPodDataSession(
       podUrl,
       solidSession: createSessionLikeFromSolidSession(session, fetchWithTimeout, podUrl),
       fetch: fetchWithTimeout,
-      runtimeFetch: fetchWithTimeout,
+      runtimeFetch,
       async getRuntimeAuthToken() {
         const accessToken = await withTimeout(
           runtime.getOidcAccessToken(credentials, { forceRefresh: true }),
@@ -227,6 +234,27 @@ function createSessionLikeFromSolidSession(session: Session, fetcher: PodFetch, 
     login: (...args: Parameters<Session['login']>) => session.login(...args),
     logout: () => session.logout(),
     handleIncomingRedirect: (url: string) => session.handleIncomingRedirect(url),
+  }
+}
+
+function createSanitizedSessionFetch(session: Pick<Session, 'fetch'>): PodFetch {
+  return (url, init) => session.fetch(url, sanitizeFetchInit(init))
+}
+
+function sanitizeFetchInit(init: RequestInit | undefined): RequestInit | undefined {
+  if (!init?.headers) {
+    return init
+  }
+
+  const headers = new Headers(init.headers)
+  if (!headers.has('content-length')) {
+    return init
+  }
+
+  headers.delete('content-length')
+  return {
+    ...init,
+    headers,
   }
 }
 
@@ -257,8 +285,13 @@ async function withFetchTimeout(
   fetcher: PodFetch,
   url: string,
   init: RequestInit | undefined,
+  podUrl: string,
   timeoutMs: number,
 ): Promise<Response> {
+  if (!isPodStorageRequest(url, podUrl)) {
+    return fetcher(url, init)
+  }
+
   const controller = new AbortController()
   let timedOut = false
   const timer = setTimeout(() => {
@@ -284,6 +317,59 @@ async function withFetchTimeout(
   } finally {
     clearTimeout(timer)
   }
+}
+
+function createRuntimeFetch(fetcher: PodFetch): PodFetch {
+  return async (url, init) => {
+    try {
+      return await fetcher(url, init)
+    } catch (error) {
+      const normalized = normalizeMisclassifiedCloudCompletionPodTimeoutMessage(error)
+      if (normalized) {
+        const rewritten = new Error(normalized)
+        ;(rewritten as { cause?: unknown }).cause = error
+        throw rewritten
+      }
+      throw error
+    }
+  }
+}
+
+function isPodStorageRequest(url: string, podUrl: string): boolean {
+  try {
+    const target = new URL(url)
+    const storage = new URL(podUrl)
+    if (isRuntimeApiRequest(target)) {
+      return false
+    }
+    return target.origin === storage.origin
+      && normalizePathname(target.pathname).startsWith(normalizePathname(storage.pathname))
+  } catch {
+    return true
+  }
+}
+
+function isRuntimeApiRequest(target: URL): boolean {
+  if (isChatCompletionRuntimeEndpoint(target)) {
+    return true
+  }
+
+  const cloudRuntime = new URL(LINX_CLOUD_RUNTIME_API_BASE_URL)
+  return target.origin === cloudRuntime.origin
+    && normalizePathname(target.pathname).startsWith(normalizePathname(cloudRuntime.pathname))
+}
+
+function isChatCompletionRuntimeEndpoint(target: URL): boolean {
+  const segments = normalizePathname(target.pathname).split('/').filter(Boolean)
+  return segments.length >= 3
+    && /^v\d+$/.test(segments.at(-3) ?? '')
+    && segments.at(-2) === 'chat'
+    && segments.at(-1) === 'completions'
+}
+
+function normalizePathname(pathname: string): string {
+  const normalized = pathname.endsWith('/') ? pathname : `${pathname}/`
+  return normalized.replace(/\/{2,}/g, '/')
 }
 
 function combineAbortSignals(left: AbortSignal, right: AbortSignal): AbortSignal {

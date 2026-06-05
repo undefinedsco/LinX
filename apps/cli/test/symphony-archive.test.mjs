@@ -476,14 +476,87 @@ test('symphony dispatch bridges non-dry-run plans into the auto-mode runtime and
   assert.equal(plan.delivery.reconciler?.decisions.at(-1)?.eventType, 'delivery.completed')
   assert.equal(plan.delivery.reconciler?.decisions.at(-1)?.wakeJobs?.[0]?.targetAgent, '__secretary__')
   assert.equal(plan.session.reconciler?.decisions.at(-1)?.eventType, 'delivery.completed')
-  assert.deepEqual(projectionCalls.map((call) => call.stage), ['planned', 'running', 'completed'])
-  assert.equal(mirrorCalls.length, 3)
+  assert.deepEqual(projectionCalls.map((call) => call.stage), ['planned', 'running', 'running', 'completed'])
+  assert.equal(mirrorCalls.length, 4)
   assert.equal(existsSync(join(root, '.linx', 'symphony')), true)
   assert.equal(existsSync(join(root, '.linx', 'symphony', 'issues')), false)
-  assert.equal(existsSync(join(root, '.linx', 'symphony', 'jsonld', 'mirror-3.jsonld')), true)
+  assert.equal(existsSync(join(root, '.linx', 'symphony', 'jsonld', 'mirror-4.jsonld')), true)
   assert.equal(plan.issue.chat, 'https://alice.example/.data/chat/ai-secretary-symphony/index.ttl#this')
   assert.equal(plan.delivery.thread, 'https://alice.example/.data/chat/ai-secretary-symphony/index.ttl#thread-bridge')
   assert.deepEqual(plan.session.messages, ['https://alice.example/.data/chat/ai-secretary-symphony/2026/04/02/messages.ttl#bridge-planned'])
+})
+
+test('symphony dispatch can run quiet one-shot workers for TUI-verifiable delegation', async (t) => {
+  const originalHome = process.env.HOME
+  const root = mkdtempSync(join(tmpdir(), 'linx-symphony-oneshot-home-'))
+  process.env.HOME = root
+
+  t.after(() => {
+    if (originalHome === undefined) {
+      delete process.env.HOME
+    } else {
+      process.env.HOME = originalHome
+    }
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  const { module, cleanup } = await loadAutoModeModule('lib/symphony-command.ts')
+  t.after(() => cleanup())
+
+  const runCalls = []
+  const projectionStages = []
+  let autoSessions = []
+  const plan = await module.runSymphony({
+    objective: ['reply', 'exactly', 'symphony-ok'],
+    backend: 'codex',
+    auto: true,
+    cwd: '/tmp/linx',
+    workerGoalMode: false,
+    quietWorkers: true,
+  }, {
+    async runAutoMode(options) {
+      runCalls.push(options)
+      autoSessions = [{
+        id: 'auto_oneshot_123',
+        backend: 'codex',
+        runtime: 'local',
+        transport: 'acp',
+        mode: 'off',
+        cwd: '/tmp/linx',
+        passthroughArgs: [],
+        credentialSource: 'cloud',
+        command: 'codex-acp',
+        args: [],
+        status: 'completed',
+        startedAt: '2026-04-02T00:00:01.000Z',
+        archiveDir: '/tmp/auto_oneshot_123',
+        eventsFile: '/tmp/auto_oneshot_123/events.jsonl',
+      }]
+      return 0
+    },
+    listAutoModeSessions() {
+      return autoSessions
+    },
+    async persistSymphonyProjectionToPod(plan, options) {
+      projectionStages.push(options?.stage)
+      return {
+        plan,
+        chat: plan.issue.chat,
+        thread: plan.issue.thread,
+        messages: [],
+      }
+    },
+    async mirrorSymphonyProjectionJsonLdFromPod() {},
+  })
+
+  assert.equal(runCalls.length, 1)
+  assert.equal(runCalls[0].goalMode, false)
+  assert.equal(runCalls[0].quiet, true)
+  assert.equal(runCalls[0].plain, false)
+  assert.equal(plan.issue.status, 'resolved')
+  assert.equal(plan.delivery.status, 'completed')
+  assert.equal(plan.session.autoModeSessionId, 'auto_oneshot_123')
+  assert.deepEqual(projectionStages, ['planned', 'running', 'running', 'completed'])
 })
 
 test('symphony dispatch uses the worker session workspace resolved by control records', async (t) => {
@@ -665,9 +738,9 @@ test('symphony dispatch merges follow-up work against Pod issues before local ca
   assert.ok(projectionCalls[0].plan.issue.sessions.includes(existingIssue.sessions[0]))
   assert.match(runCalls[0].prompt, new RegExp(existingIssue.uri))
   assert.equal(existsSync(join(root, '.linx', 'symphony')), true)
-  assert.equal(mirrorCalls.length, 3)
+  assert.equal(mirrorCalls.length, 4)
   assert.equal(existsSync(join(root, '.linx', 'symphony', 'issues')), false)
-  assert.equal(existsSync(join(root, '.linx', 'symphony', 'jsonld', 'merge-3.jsonld')), true)
+  assert.equal(existsSync(join(root, '.linx', 'symphony', 'jsonld', 'merge-4.jsonld')), true)
 })
 
 test('symphony run preserves caller-provided delegation target chat and thread', async (t) => {
@@ -892,8 +965,8 @@ rl.on('line', (line) => {
   assert.deepEqual(plan.session.messages, ['https://alice.example/.data/chat/ai-secretary-symphony/2026/04/02/messages.ttl#completed'])
 
   const symphonyHome = join(root, '.linx', 'symphony')
-  const finalMirrorFile = readFileSync(join(symphonyHome, 'jsonld', 'integration-3.jsonld'), 'utf-8')
-  assert.equal(mirrorCalls.length, 3)
+  const finalMirrorFile = readFileSync(join(symphonyHome, 'jsonld', 'integration-4.jsonld'), 'utf-8')
+  assert.equal(mirrorCalls.length, 4)
   assert.equal(existsSync(join(symphonyHome, 'issues')), false)
   assert.match(finalMirrorFile, /"sessionStatus":"completed"/)
   assert.match(finalMirrorFile, /"deliveryStatus":"completed"/)
@@ -924,7 +997,7 @@ rl.on('line', (line) => {
   assert.equal(readdirSync(join(autoModeHome, 'sessions')).length, 1)
 })
 
-test('symphony launches codex as a goal session so Secretary can keep steering after dispatch', async (t) => {
+test('symphony launches Claude Code alias model as a router-backed goal worker so Secretary can keep steering after dispatch', async (t) => {
   const originalHome = process.env.HOME
   const root = mkdtempSync(join(tmpdir(), 'linx-symphony-goal-home-'))
   process.env.HOME = root
@@ -945,10 +1018,15 @@ test('symphony launches codex as a goal session so Secretary can keep steering a
   const autoSessions = []
   const plan = await module.runSymphony({
     objective: ['ship', 'goal', 'session'],
-    backend: 'codex',
+    backend: 'claude',
     auto: true,
     cwd: root,
-    acceptance: ['Codex receives a goal prompt', 'Secretary can continue steering'],
+    secretaryModel: 'gpt-5.5',
+    workerModel: 'opus',
+    credentialSource: 'local',
+    workerSupervisorIntervalMs: 600000,
+    commandOverride: '/tmp/fake-claude-code-acp',
+    acceptance: ['Claude Code receives a goal prompt', 'Secretary can continue steering'],
   }, {
     async runAutoMode(options) {
       runCalls.push(options)
@@ -964,14 +1042,150 @@ test('symphony launches codex as a goal session so Secretary can keep steering a
   })
 
   assert.equal(runCalls.length, 1)
-  assert.equal(runCalls[0].backend, 'codex')
+  assert.equal(runCalls[0].backend, 'claude')
   assert.equal(runCalls[0].mode, 'off')
   assert.equal(runCalls[0].autoEnabled, true)
+  assert.equal(runCalls[0].model, 'opus')
+  assert.equal(runCalls[0].credentialSource, 'local')
   assert.equal(runCalls[0].goalMode, true)
+  assert.equal(runCalls[0].commandOverride, '/tmp/fake-claude-code-acp')
+  assert.equal(runCalls[0].commandEnv, undefined)
+  assert.deepEqual(runCalls[0].metadata?.symphony?.agentRuntime, {
+    backend: 'linx',
+    credentialSource: 'cloud',
+    model: 'gpt-5.5',
+  })
+  assert.equal(runCalls[0].metadata?.symphony?.workerModel, 'opus')
+  assert.equal(runCalls[0].metadata?.symphony?.supervisor?.strategy, 'interval')
+  assert.equal(runCalls[0].metadata?.symphony?.supervisor?.intervalMs, 600000)
+  assert.deepEqual(runCalls[0].metadata?.symphony?.supervisor?.immediateWakeKinds, ['approval', 'question', 'blocked', 'failed', 'completed'])
   assert.match(runCalls[0].prompt, /# LinX Symphony Task/)
   assert.match(runCalls[0].prompt, /Start and maintain this as the active goal/)
   assert.match(runCalls[0].prompt, /later Secretary messages/)
+  assert.equal(plan.session.model, 'opus')
+  assert.equal(plan.session.supervisor?.intervalMs, 600000)
   assert.equal(plan.issue.status, 'resolved')
   assert.equal(plan.delivery.autoModeSessionId, 'auto_goal_session_123')
   assert.equal(plan.session.autoModeSessionId, 'auto_goal_session_123')
+})
+
+test('symphony rejects codex worker with provider-routed deepseek model', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/symphony-command.ts')
+  t.after(() => cleanup())
+
+  let runCalled = false
+  await assert.rejects(
+    module.runSymphony({
+      objective: ['ship', 'invalid', 'worker'],
+      backend: 'codex',
+      auto: true,
+      cwd: process.cwd(),
+      workerModel: 'deepseek-v4',
+      quietProjectionErrors: true,
+      print: false,
+    }, {
+      async runAutoMode() {
+        runCalled = true
+        return 0
+      },
+      listAutoModeSessions() {
+        return []
+      },
+    }),
+    /codex backend cannot run worker model deepseek-v4/,
+  )
+  assert.equal(runCalled, false)
+})
+
+test('symphony rejects Claude Code worker with direct provider-routed deepseek model', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/symphony-command.ts')
+  t.after(() => cleanup())
+
+  let runCalled = false
+  await assert.rejects(
+    module.runSymphony({
+      objective: ['ship', 'invalid', 'claude', 'worker'],
+      backend: 'claude',
+      auto: true,
+      cwd: process.cwd(),
+      workerModel: 'deepseek-v4',
+      quietProjectionErrors: true,
+      print: false,
+    }, {
+      async runAutoMode() {
+        runCalled = true
+        return 0
+      },
+      listAutoModeSessions() {
+        return []
+      },
+    }),
+    /claude backend cannot set provider-routed worker model deepseek-v4/,
+  )
+  assert.equal(runCalled, false)
+})
+
+test('symphony launches LinX native worker with deepseek-v4 goal model', async (t) => {
+  const originalHome = process.env.HOME
+  const root = mkdtempSync(join(tmpdir(), 'linx-symphony-linx-goal-home-'))
+  process.env.HOME = root
+
+  t.after(() => {
+    if (originalHome === undefined) {
+      delete process.env.HOME
+    } else {
+      process.env.HOME = originalHome
+    }
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  const { module, cleanup } = await loadAutoModeModule('lib/symphony-command.ts')
+  t.after(() => cleanup())
+
+  const runCalls = []
+  const autoSessions = []
+  const plan = await module.runSymphony({
+    objective: ['ship', 'linx', 'native', 'worker'],
+    backend: 'linx',
+    auto: true,
+    cwd: root,
+    secretaryModel: 'gpt-5.5',
+    workerModel: 'deepseek-v4',
+    workerSupervisorIntervalMs: 600000,
+    acceptance: ['LinX native worker receives a goal prompt'],
+  }, {
+    async runAutoMode(options) {
+      runCalls.push(options)
+      autoSessions.push({
+        id: 'auto_linx_goal_session_123',
+        startedAt: '2026-04-18T00:00:00.000Z',
+      })
+      return 0
+    },
+    listAutoModeSessions() {
+      return autoSessions
+    },
+  })
+
+  assert.equal(runCalls.length, 1)
+  assert.equal(runCalls[0].backend, 'linx')
+  assert.equal(runCalls[0].mode, 'off')
+  assert.equal(runCalls[0].autoEnabled, true)
+  assert.equal(runCalls[0].model, 'deepseek-v4')
+  assert.equal(runCalls[0].goalMode, true)
+  assert.deepEqual(runCalls[0].metadata?.symphony?.agentRuntime, {
+    backend: 'linx',
+    credentialSource: 'cloud',
+    model: 'gpt-5.5',
+  })
+  assert.equal(runCalls[0].metadata?.symphony?.workerModel, 'deepseek-v4')
+  assert.equal(runCalls[0].metadata?.symphony?.supervisor?.strategy, 'interval')
+  assert.equal(runCalls[0].metadata?.symphony?.supervisor?.intervalMs, 600000)
+  assert.match(runCalls[0].prompt, /# LinX Symphony Task/)
+  assert.match(runCalls[0].prompt, /Start and maintain this as the active goal/)
+  assert.equal(plan.session.backend, 'linx')
+  assert.equal(plan.session.model, 'deepseek-v4')
+  assert.equal(plan.session.supervisor?.intervalMs, 600000)
+  assert.equal(plan.delivery.autoModeSessionId, 'auto_linx_goal_session_123')
+  assert.equal(plan.session.autoModeSessionId, 'auto_linx_goal_session_123')
 })

@@ -10,7 +10,8 @@ Keep code, tests, CLI help, and release notes aligned with this contract.
 - `auto off`: the user drives the current Secretary/backend conversation directly.
 - `auto on`: AI Secretary drives the current conversation and asks the user only when blocked.
 - There is no product-level `manual`, `smart`, or multi-tier auto mode in the LinX TUI.
-- The command surface is one command: `/auto on|off|status`.
+- The command surface is one command: `/auto on|off|status`, with `/auto <input>`
+  as shorthand for turning auto on and giving Secretary the first control input.
 - `--auto` starts the same switch in the `on` state.
 
 `auto` controls who drives the session input loop. It is not the backend's native
@@ -32,6 +33,26 @@ as the maker/source of that intent. The adapter then projects that intent into
 the backend-required role. The temporary Secretary control session should store
 control entries, pointers, runtime projection hints, and execution-side
 projections, not fabricate chat messages.
+
+When `auto on`, Secretary owns the next backend-facing user input slot. That
+projected input must pass through a command ownership layer before it reaches
+the current chat peer.
+
+- Command ownership is resolved by the shared auto-mode core. Shells may expose
+  different UI affordances, but they must consume the same route result instead
+  of re-parsing `/auto` or `/goal` semantics locally.
+- `/auto` is Secretary control-plane input. It must not be sent to the current
+  chat peer as a peer command.
+- `/goal <peer-command>` is a peer command. Secretary may send it into the
+  current peer input lane; LinX records that Secretary issued the command and
+  mirrors Secretary supervision behavior after sending it when shared core can
+  infer a behavior change.
+- Other slash commands must be routed by ownership: Secretary-owned commands are
+  handled locally, peer-owned commands are delivered to the current chat peer,
+  and non-command text is projected as runtime `user` input.
+
+`/auto <input>` must therefore not create a user-authored business message. It
+turns auto on and passes `<input>` into the Secretary-owned input lane.
 
 ## Approval Policy Is Separate
 
@@ -75,12 +96,53 @@ decisions, reaction windows, user overrides, waits, and runtime apply results
 were correct through shared approval/audit/grant records; it must not create a
 parallel auto-only approval metric or policy model.
 
-## Symphony Is Secretary Delegation
+## Goal Is A Peer Command
 
-`symphony` is an AI Secretary delegation capability, not a separate product or a
-third auto level.
+`goal` is not another auto level and not a shell-owned lifecycle protocol. It is
+a peer command:
 
-`/symphony` changes how Secretary analyzes an objective:
+- `/goal <peer-command>` is routed unmodified to the current chat peer.
+- The current chat peer owns the `/goal` command grammar, output, validation,
+  and completion semantics.
+- LinX core may observe the routed command and update Secretary supervision as
+  a local behavior mirror. This mirror is not the peer command response and must
+  not replace the peer response.
+- Common mirror rules: `/goal status` does not change local Secretary behavior;
+  `/goal pause`, `/goal close`, and `/goal cancel` pause local Secretary goal
+  supervision; other non-empty `/goal ...` commands activate local Secretary
+  goal supervision.
+
+This separates two axes:
+
+- `auto` decides who writes the next input slot: user or Secretary.
+- `goal` decides whether the current chat peer behaves like one-turn chat or a
+  persistent actor pursuing an objective.
+
+`/symphony` chooses the current chat peer:
+
+- `symphony off`: the user is chatting directly with the worker/backend peer.
+- `symphony on`: the user is chatting with Secretary; Secretary may then create,
+  update, or steer worker chats as part of orchestration.
+
+In the common auto + direct-worker path, the user enables auto while Symphony is
+off, Secretary writes `/goal <objective>` into the worker input lane on the
+user's behalf, and then Secretary supervises through bounded
+steering/checkpoint inputs instead of responding to every worker turn. The
+default supervisor cadence is minutes-level, not per-message; a supervisor
+check may intentionally produce no projected input when the current chat peer
+is still on track.
+
+## Symphony Selects Chat Peer
+
+`symphony` is the switch for who the user is chatting with. It is not a separate
+product or a third auto level.
+
+- `symphony off`: normal chat goes to the current worker/backend peer.
+- `symphony on`: normal chat goes to Secretary, which uses Symphony skills to
+  judge whether the message is ordinary chat, an Idea, a change to existing
+  work, or delegable work.
+
+When `symphony on`, Secretary analyzes objectives this way:
 
 - treat ordinary chat as `Message`, not as an `Issue`;
 - identify the issue/work item;
@@ -95,11 +157,14 @@ third auto level.
 
 `auto` and `symphony` are orthogonal:
 
-- `auto on + symphony off`: Secretary may drive one current conversation.
-- `auto off + symphony on`: Secretary may propose delegation but should not
-  silently drive beyond explicit user input.
-- `auto on + symphony on`: Secretary may delegate and manage workers within
-  policy, while asking when blocked.
+- `auto on + symphony off`: Secretary owns the input lane, but the current chat
+  peer remains the worker/backend peer.
+- `auto off + symphony on`: the user chats with Secretary directly; Secretary
+  may propose delegation but should not silently drive beyond explicit user
+  input.
+- `auto on + symphony on`: Secretary owns the input lane for its own control
+  conversation and may delegate/manage workers within policy, while asking when
+  blocked.
 
 ## Implementation Guardrails
 
@@ -107,6 +172,11 @@ third auto level.
 - `/auto` must be handled by the LinX shell before backend command fallback.
 - `/auto on` must update LinX session state, not backend approval policy.
 - `/auto on` must not inject control text into the active chat transcript.
+- `/goal` must be classified by shared auto-mode core as a peer command before
+  backend command fallback, then delivered to the current chat peer unmodified.
+- Secretary-generated inputs must pass through LinX command handling before
+  backend projection; otherwise Secretary cannot safely use `/goal`, `/model`,
+  `/auto`, or future control commands.
 - The control session model is backend-agnostic: Codex, Claude, CodeBuddy, cloud
   runtimes, and future agents are all runtime participants behind the same
   multi-agent control plane.

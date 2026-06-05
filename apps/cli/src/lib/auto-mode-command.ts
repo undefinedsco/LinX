@@ -13,7 +13,7 @@ import {
   type AutoModeWorkerBackend,
 } from './auto-mode/index.js'
 
-const AUTO_MODE_BACKENDS = ['codex', 'claude', 'codebuddy'] as const
+const AUTO_MODE_BACKENDS = ['linx', 'codex', 'claude', 'codebuddy'] as const
 
 export interface AutoModeCommandArgs {
   prompt?: string[]
@@ -150,7 +150,7 @@ export async function runAutoModeCommand(argv: AutoModeCommandArgs): Promise<voi
   }
 
   if (!isAutoModeBackend(argv.backend)) {
-    throw new Error('Usage: linx --backend <codex|claude|codebuddy> [prompt] [--auto] [-- backend args]')
+    throw new Error('Usage: linx --backend <linx|codex|claude|codebuddy> [prompt] [--auto] [-- backend args]')
   }
 
   const prompt = (argv.prompt ?? [])

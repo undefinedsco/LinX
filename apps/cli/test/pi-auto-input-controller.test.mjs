@@ -125,6 +125,7 @@ test('Secretary auto input reuses runtime Pod session instead of ~/.linx fallbac
   })
 
   const runtimeFetchCalls = []
+  const runtimeFetchBodies = []
   let podSessionCalls = 0
   const runtimeSession = {
     credentials: {
@@ -143,6 +144,7 @@ test('Secretary auto input reuses runtime Pod session instead of ~/.linx fallbac
         url: String(url),
         method: init?.method ?? 'GET',
       })
+      runtimeFetchBodies.push(JSON.parse(String(init?.body ?? '{}')))
       return new Response(JSON.stringify({
         choices: [
           {
@@ -166,6 +168,11 @@ test('Secretary auto input reuses runtime Pod session instead of ~/.linx fallbac
     backend: 'linx',
     cwd,
     model: 'gpt-5-codex',
+    agentRuntimeConfig: {
+      backend: 'linx',
+      model: 'gpt-5.5',
+      credentialSource: 'cloud',
+    },
     async getPodDataSession() {
       podSessionCalls += 1
       return runtimeSession
@@ -184,6 +191,7 @@ test('Secretary auto input reuses runtime Pod session instead of ~/.linx fallbac
 
   assert.equal(podSessionCalls > 0, true)
   assert.equal(runtimeFetchCalls.length > 0, true)
+  assert.equal(runtimeFetchBodies[0]?.model, 'gpt-5.5')
   assert.equal(interactive.sentUserMessages[0], '下一句')
 })
 
@@ -255,5 +263,70 @@ test('Secretary auto input stop aborts the in-flight runtime turn', async (t) =>
   assert.equal(podSessionCalls > 0, true)
   assert.equal(fetchStarted, true)
   assert.equal(fetchAborted, true)
+  assert.deepEqual(interactive.sentUserMessages, [])
+})
+
+test('Secretary auto input keeps retrying LinX Cloud 502 outages instead of waiting for user', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/auto-input-controller.ts')
+  t.after(() => cleanup())
+
+  const home = mkdtempSync(join(tmpdir(), 'linx-secretary-502-home-'))
+  const cwd = mkdtempSync(join(tmpdir(), 'linx-secretary-502-cwd-'))
+  t.after(() => {
+    rmSync(home, { recursive: true, force: true })
+    rmSync(cwd, { recursive: true, force: true })
+  })
+
+  let fetchCalls = 0
+  const runtimeSession = {
+    credentials: {
+      url: 'https://id.undefineds.co/',
+      webId: 'https://alice.example/profile/card#me',
+      authType: 'oidc_oauth',
+      sourceDir: home,
+      secrets: {
+        oidcRefreshToken: 'refresh-token',
+        oidcAccessToken: 'access-token',
+        oidcExpiresAt: '2030-01-01T00:00:00.000Z',
+      },
+    },
+    runtimeFetch: async () => {
+      fetchCalls += 1
+      return new Response('Bad Gateway', {
+        status: 502,
+        statusText: 'Bad Gateway',
+      })
+    },
+  }
+
+  const statuses = []
+  const interactive = createInteractiveStub(cwd)
+  interactive.showStatus = (message) => {
+    statuses.push(String(message))
+  }
+  const runtime = {
+    backend: 'linx',
+    cwd,
+    model: 'gpt-5-codex',
+    async getPodDataSession() {
+      return runtimeSession
+    },
+  }
+
+  await withPatchedEnv(t, {
+    HOME: home,
+    LINX_TUI_NO_EXIT_MESSAGE: '1',
+    LINX_AUTO_INPUT_RECOVERY_DELAYS_MS: '10,10,10',
+    LINX_AUTO_INPUT_TRANSIENT_RECOVERY_DELAY_MS: '50',
+  }, async () => {
+    const controller = module.getSecretaryAutoInputController(interactive, runtime, createSessionControlStub(cwd))
+    controller.start()
+    await waitFor(() => statuses.some((status) => status.includes('Auto waiting for LinX Cloud')), 3000)
+    controller.stop()
+  })
+
+  assert.equal(fetchCalls > 0, true)
+  assert.equal(statuses.some((status) => status.includes('Auto waiting for LinX Cloud')), true)
+  assert.equal(statuses.some((status) => status.includes('Auto waiting for user')), false)
   assert.deepEqual(interactive.sentUserMessages, [])
 })

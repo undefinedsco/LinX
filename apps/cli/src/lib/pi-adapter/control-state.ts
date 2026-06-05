@@ -4,8 +4,6 @@ import {
 } from '@linx/agent-runtime/control-plane'
 import { createLinxPodSyncScope, type LinxSyncRunResult } from '@linx/agent-runtime/sync'
 import {
-  buildSessionResourceId,
-  buildSessionSubjectPath,
   sessionResource,
   type SessionRow,
   type SolidDatabase,
@@ -92,19 +90,10 @@ function resolveSessionIri(
   sessionId: string,
   createdAt: Date | string | number,
 ): string {
-  if (typeof db.resolveLocatorIri === 'function') {
-    return db.resolveLocatorIri(sessionResource, { id: sessionId, createdAt })
-  }
+  const sessionIri = sessionResource.resolveIriForDatabase(db, { id: sessionId, createdAt })
+  if (sessionIri) return sessionIri
 
-  const sessionLike = (db as unknown as { session?: { info?: { webId?: unknown } } }).session
-  const webId = typeof sessionLike?.info?.webId === 'string'
-    ? sessionLike.info.webId
-    : null
-  if (webId) {
-    return `${webId.replace('/profile/card#me', '').replace(/\/$/, '')}${buildSessionSubjectPath(sessionId, createdAt)}`
-  }
-
-  return buildSessionSubjectPath(sessionId, createdAt)
+  return `/.data/sessions/${sessionResource.buildId({ id: sessionId, createdAt })}`
 }
 
 async function readSessionRow(
@@ -112,12 +101,12 @@ async function readSessionRow(
   sessionId: string,
   createdAt: Date | string | number,
 ): Promise<SessionRow | null> {
-  const resourceId = buildSessionResourceId(sessionId, createdAt)
+  const resourceId = sessionResource.buildId({ id: sessionId, createdAt })
   const byId = await db.findById(sessionResource, resourceId) as SessionRow | null
   if (byId) {
     return byId
   }
 
-  const iri = db.resolveLocatorIri(sessionResource, { id: sessionId, createdAt })
+  const iri = resolveSessionIri(db, sessionId, createdAt)
   return await db.findByIri(sessionResource, iri) as SessionRow | null
 }

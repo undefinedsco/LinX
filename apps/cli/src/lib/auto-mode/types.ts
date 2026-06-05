@@ -40,6 +40,7 @@ export interface AutoRunOptions {
   resumeSessionId?: string
   cwd: string
   plain?: boolean
+  quiet?: boolean
   model?: string
   prompt?: string
   goalMode?: boolean
@@ -52,6 +53,7 @@ export interface AutoRunOptions {
   metadata?: Record<string, unknown>
   commandOverride?: string
   commandEnv?: Record<string, string>
+  signal?: AbortSignal
 }
 
 export interface AutoModeSpawnPlan {

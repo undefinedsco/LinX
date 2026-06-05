@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, symlinkSync } from 'node:fs'
+import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, rmSync, symlinkSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -6,6 +6,7 @@ import { spawnSync } from 'node:child_process'
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const modelsPath = join(repoRoot, 'packages', 'models')
 const defaultExternalModelsPath = resolve(repoRoot, '..', 'models')
+const previewPath = join(repoRoot, 'preview')
 const action = process.argv[2]
 
 try {
@@ -18,6 +19,15 @@ try {
       break
     case 'assert-release-safe':
       assertReleaseSafe()
+      break
+    case 'build':
+      runModelsScript('build')
+      break
+    case 'clean':
+      cleanModels()
+      break
+    case 'pack-release':
+      packModelsRelease()
       break
     default:
       printUsage()
@@ -49,12 +59,20 @@ function ensureModelsWorkspace() {
 }
 
 function printStatus() {
+  const authoritative = resolveAuthoritativeModelsPath({ allowLegacy: true })
+  if (authoritative) {
+    console.log(`authoritative models: ${authoritative}`)
+    printGitStatus(authoritative)
+  } else {
+    console.log('authoritative models: missing. Clone the independent models repository at ../models or set LINX_MODELS_PATH.')
+  }
+
   if (!existsSync(modelsPath)) {
-    console.log('packages/models is missing. Run yarn models:update after cloning the independent models repository.')
+    console.log('packages/models: missing')
     return
   }
 
-  const kind = detectModelsKind()
+  const kind = detectModelsKind(modelsPath)
   console.log(`packages/models: ${kind}`)
 
   if (kind === 'linked external checkout') {
@@ -70,40 +88,86 @@ function printStatus() {
     return
   }
 
-  const status = run('git', ['status', '--short', '--branch'], modelsPath, { allowFailure: true })
-  if (status.code === 0 && status.stdout.trim()) {
-    console.log(status.stdout.trim())
+  if (resolve(authoritative ?? '') !== resolve(modelsPath)) {
+    printGitStatus(modelsPath)
   }
 }
 
 function assertReleaseSafe() {
-  if (!existsSync(modelsPath)) {
-    throw new Error('Release blocked: packages/models is missing. Clone/link the independent models repository or consume a published models package.')
+  const root = resolveAuthoritativeModelsPath({ allowLegacy: true })
+  if (!root) {
+    throw new Error('Release blocked: no @undefineds.co/models checkout found. Clone the independent models repository at ../models or set LINX_MODELS_PATH.')
   }
 
-  if (!isModelsPackage(modelsPath)) {
-    throw new Error('Release blocked: packages/models is not @undefineds.co/models.')
-  }
-
-  const kind = detectModelsKind()
+  const kind = root === modelsPath ? detectModelsKind(modelsPath) : 'independent checkout'
   if (kind === 'legacy submodule') {
-    console.warn('Warning: packages/models is a legacy submodule checkout. Prefer an external models checkout or published package version.')
+    console.warn('Warning: using packages/models legacy submodule checkout. Prefer the independent ../models checkout or a published package version.')
   }
 
   if (kind !== 'workspace directory' && kind !== 'directory') {
-    const status = run('git', ['status', '--porcelain'], modelsPath)
+    const status = run('git', ['status', '--porcelain'], root)
     if (status.stdout.trim()) {
-      throw new Error('Release blocked: packages/models has uncommitted changes. Commit/publish models in the independent models repository first.')
+      throw new Error(`Release blocked: ${root} has uncommitted changes. Commit/publish models in the independent models repository first.`)
     }
   }
 }
 
-function detectModelsKind() {
-  if (lstatSync(modelsPath).isSymbolicLink()) {
+function runModelsScript(scriptName) {
+  const root = requireAuthoritativeModelsPath()
+  run('yarn', [scriptName], root, { stdio: 'inherit' })
+}
+
+function cleanModels() {
+  const root = requireAuthoritativeModelsPath()
+  rmSync(join(root, 'dist'), { recursive: true, force: true })
+}
+
+function packModelsRelease() {
+  const root = requireAuthoritativeModelsPath()
+  run('yarn', ['build'], root, { stdio: 'inherit' })
+  run('yarn', ['pack:release'], root, { stdio: 'inherit' })
+
+  const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+  const tarball = join(root, 'preview', `undefineds-co-models-${pkg.version}.tgz`)
+  if (!existsSync(tarball)) {
+    throw new Error(`Models pack:release did not produce expected tarball: ${tarball}`)
+  }
+
+  mkdirSync(previewPath, { recursive: true })
+  cpSync(tarball, join(previewPath, `undefineds-co-models-${pkg.version}.tgz`))
+}
+
+function requireAuthoritativeModelsPath() {
+  const root = resolveAuthoritativeModelsPath({ allowLegacy: true })
+  if (!root) {
+    throw new Error('Cannot find @undefineds.co/models. Clone the independent repository at ../models or set LINX_MODELS_PATH.')
+  }
+  return root
+}
+
+function resolveAuthoritativeModelsPath({ allowLegacy }) {
+  const candidates = [
+    process.env.LINX_MODELS_ROOT,
+    process.env.LINX_MODELS_PATH,
+    defaultExternalModelsPath,
+    allowLegacy ? modelsPath : undefined,
+  ].filter(Boolean)
+
+  for (const candidate of candidates) {
+    const resolved = resolve(candidate)
+    if (isModelsPackage(resolved)) {
+      return resolved
+    }
+  }
+  return null
+}
+
+function detectModelsKind(path) {
+  if (lstatSync(path).isSymbolicLink()) {
     return 'linked external checkout'
   }
 
-  const topLevel = run('git', ['rev-parse', '--show-toplevel'], modelsPath, { allowFailure: true })
+  const topLevel = run('git', ['rev-parse', '--show-toplevel'], path, { allowFailure: true })
   if (topLevel.code !== 0) {
     return 'directory'
   }
@@ -129,23 +193,30 @@ function isModelsPackage(path) {
   }
 }
 
+function printGitStatus(path) {
+  const status = run('git', ['status', '--short', '--branch'], path, { allowFailure: true })
+  if (status.code === 0 && status.stdout.trim()) {
+    console.log(status.stdout.trim())
+  }
+}
+
 function run(command, args, cwd, options = {}) {
   const result = spawnSync(command, args, {
     cwd,
     encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: options.stdio ?? ['ignore', 'pipe', 'pipe'],
   })
 
   const code = result.status ?? 1
   if (code !== 0 && !options.allowFailure) {
-    const detail = result.stderr.trim() || result.stdout.trim()
+    const detail = result.stderr?.trim() || result.stdout?.trim()
     throw new Error(`${command} ${args.join(' ')} failed${detail ? `: ${detail}` : ''}`)
   }
 
   return {
     code,
-    stdout: result.stdout,
-    stderr: result.stderr,
+    stdout: result.stdout ?? '',
+    stderr: result.stderr ?? '',
   }
 }
 
@@ -154,4 +225,6 @@ function printUsage() {
   console.error('  yarn models:update')
   console.error('  yarn models:status')
   console.error('  yarn models:assert-release-safe')
+  console.error('  yarn build:models')
+  console.error('  yarn pack:models:release')
 }

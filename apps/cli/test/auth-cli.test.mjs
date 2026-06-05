@@ -168,9 +168,13 @@ function createAiCommandHarness(rows = {}) {
   const resolveId = (name, target) => {
     if (typeof target === 'string') return target
     if (name === 'aiModel') {
+      const rawId = String(target.id ?? '')
+      if (rawId.includes('#')) {
+        return rawId.replace(/^\/?settings\/providers\//, '')
+      }
       const providerRef = String(target.isProvidedBy ?? '')
       const provider = providerRef.includes('#') ? providerRef.split('#').pop() : providerRef.split('/').pop()
-      return `${provider?.replace(/\.ttl$/, '')}.ttl#${target.id}`
+      return `${provider?.replace(/\.ttl$/, '')}.ttl#${rawId}`
     }
     return String(target.id)
   }
@@ -470,7 +474,7 @@ test('linx ai connect writes provider and credential config to Pod', async (t) =
   assert.equal(credentialInsert.row.service, 'ai')
   assert.equal(credentialInsert.row.apiKey, 'sk-ant-test-key')
   assert.equal(credentialInsert.row.defaultModel, undefined)
-  assert.equal(modelInsert.row.id, 'claude-sonnet-4-20250514')
+  assert.equal(modelInsert.row.id, 'anthropic.ttl#claude-sonnet-4-20250514')
   assert.equal(modelInsert.row.displayName, 'claude-sonnet-4-20250514')
   assert.equal(modelInsert.row.isProvidedBy, '/settings/providers/anthropic.ttl')
   assert.equal(harness.syncResults.length, 1)

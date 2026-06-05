@@ -226,7 +226,7 @@ test('pod ai selector maps codebuddy credentials and prefers credential baseUrl'
   })
 })
 
-test('auto-mode run options always resolve backend credentials from LinX Cloud Pod config', async (t) => {
+test('local credential source uses backend local auth and skips LinX Cloud Pod config', async (t) => {
   const { module } = await getAutoModeBundle()
 
   let preflightCalls = 0
@@ -236,8 +236,7 @@ test('auto-mode run options always resolve backend credentials from LinX Cloud P
     preflightCalls += 1
     assert.equal(backend, 'claude')
     return {
-      state: 'unauthenticated',
-      message: 'Claude Code is not authenticated. Run `claude auth login` and try again.',
+      state: 'authenticated',
     }
   })
 
@@ -263,13 +262,11 @@ mode: 'auto',
     credentialSource: 'local',
   })
 
-  assert.equal(preflightCalls, 0)
-  assert.equal(podCalls, 1)
-  assert.equal(resolved.options.credentialSource, 'cloud')
-  assert.equal(resolved.options.resolvedCredentialSource, 'cloud')
-  assert.deepEqual(resolved.options.commandEnv, {
-    ANTHROPIC_API_KEY: 'sk-pod-key',
-  })
+  assert.equal(preflightCalls, 1)
+  assert.equal(podCalls, 0)
+  assert.equal(resolved.options.credentialSource, 'local')
+  assert.equal(resolved.options.resolvedCredentialSource, 'local')
+  assert.equal(resolved.options.commandEnv, undefined)
   assert.equal(resolved.authPreflight.state, 'authenticated')
 })
 
@@ -296,8 +293,8 @@ test('cloud credential source resolves pod-backed codex credentials and skips lo
 
   const resolved = await module.resolveAutoRunOptions({
     backend: 'codex',
-autoEnabled: true,
-mode: 'auto',
+    autoEnabled: true,
+    mode: 'auto',
     cwd: process.cwd(),
     passthroughArgs: [],
     credentialSource: 'cloud',
@@ -310,6 +307,43 @@ mode: 'auto',
     CODEX_BASE_URL: 'https://api.openai.com/v1',
   })
   assert.equal(resolved.authPreflight.state, 'authenticated')
+})
+
+test('explicit command env overrides pod credential env after cloud resolution', async (t) => {
+  const { module } = await getAutoModeBundle()
+
+  t.mock.method(module.autoModeRuntime, 'loadPodBackendCredential', async (backend) => {
+    assert.equal(backend, 'codex')
+    return {
+      backend: 'codex',
+      provider: 'openai',
+      env: {
+        CODEX_API_KEY: 'sk-pod-openai',
+        CODEX_BASE_URL: 'https://api.openai.com/v1',
+      },
+    }
+  })
+
+  const resolved = await module.resolveAutoRunOptions({
+    backend: 'codex',
+autoEnabled: true,
+mode: 'auto',
+    cwd: process.cwd(),
+    passthroughArgs: [],
+    credentialSource: 'cloud',
+    commandEnv: {
+      CODEX_API_KEY: 'sk-explicit-deepseek',
+      CODEX_BASE_URL: 'https://api.deepseek.com/v1',
+      EXTRA_SMOKE_ENV: '1',
+    },
+  })
+
+  assert.equal(resolved.options.resolvedCredentialSource, 'cloud')
+  assert.deepEqual(resolved.options.commandEnv, {
+    CODEX_API_KEY: 'sk-explicit-deepseek',
+    CODEX_BASE_URL: 'https://api.deepseek.com/v1',
+    EXTRA_SMOKE_ENV: '1',
+  })
 })
 
 test('backend startup LinX Cloud auth prompt matches TUI sign-in choices', async (t) => {
@@ -549,6 +583,10 @@ test('pod-backed codex credential is read through shared model db', async () => 
           }
           return null
         },
+        async updateById(resource, id, update) {
+          assert.equal(resourceName(resource), 'credential')
+          return { id, ...update }
+        },
       }
     },
     credentialResource,
@@ -618,7 +656,7 @@ mode: 'auto',
   assert.equal(resolved.authPreflight.state, 'authenticated')
 })
 
-test('auto-mode credential resolution ignores local backend auth status', async (t) => {
+test('default credential resolution uses LinX Cloud Pod config and skips local backend auth status', async (t) => {
   const { module } = await getAutoModeBundle()
   let preflightCalls = 0
 

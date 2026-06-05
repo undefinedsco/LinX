@@ -1,6 +1,9 @@
 import {
   createAgentRuntime,
+  resolveAgentRuntimeConfig,
   runThreadReconcilerCycle,
+  type AgentRuntimeBackendConfig,
+  type AgentRuntimeConfig,
   type AgentRuntimeCompletionResult,
   type AgentRuntimeMessage,
   type ReconcileDecisionSummary,
@@ -15,13 +18,20 @@ import type { SessionControlManager, SessionControlSnapshot } from './session-co
 
 const AUTO_INPUT_DELAY_MS = 50
 const AUTO_INPUT_IDLE_WATCHDOG_MS = 1_000
-const AUTO_INPUT_RECOVERY_DELAYS_MS = [500, 1_500, 3_000] as const
+const DEFAULT_AUTO_INPUT_RECOVERY_DELAYS_MS = [500, 1_500, 3_000] as const
+const DEFAULT_TRANSIENT_REMOTE_RECOVERY_DELAY_MS = 30_000
+const DEFAULT_GOAL_MODE_SUPERVISOR_INTERVAL_MS = 10 * 60 * 1000
 const MAX_CONTEXT_MESSAGES = 16
 const MAX_CONTEXT_CHARS = 12_000
 const MAX_GENERATED_INPUT_CHARS = 8_000
 const MAX_AUTO_INPUT_ATTEMPTS = 2
 const SECRETARY_AGENT_ID = '__secretary__'
 const SECRETARY_AGENT_LABEL = 'AI Secretary'
+const DEFAULT_SECRETARY_RUNTIME_BACKEND: AgentRuntimeBackendConfig = {
+  backend: 'linx',
+  model: DEFAULT_LINX_CLOUD_MODEL_ID,
+  credentialSource: 'cloud',
+}
 const SECRETARY_SYSTEM_PROMPT = [
   'You are the LinX AI Secretary running the auto input controller.',
   'Auto mode is on, so you are taking over the next user input slot for the active backend session.',
@@ -29,7 +39,8 @@ const SECRETARY_SYSTEM_PROMPT = [
   'Do not include reasoning, labels, markdown fences, or explanations.',
   'When the backend asks for ordinary conversational input, a game move, or a next turn you can reasonably infer, answer as the user and keep the session moving.',
   'For games, including 成语接龙, provide the next valid move directly.',
-  'Return an empty response only for missing credentials, missing authority, unsafe or destructive action, or genuinely unresolvable ambiguity.',
+  'When goal mode is on, act as a supervisor: send a concise steer only when the current chat peer needs direction, and return empty when no intervention is needed.',
+  'Outside goal mode, return an empty response only for missing credentials, missing authority, unsafe or destructive action, or genuinely unresolvable ambiguity.',
 ].join(' ')
 const SECRETARY_RETRY_PREFIX = [
   'The previous auto-input attempt returned empty.',
@@ -42,6 +53,7 @@ export interface SecretaryAutoInputController {
   start(options?: { scheduleImmediately?: boolean }): void
   stop(): void
   schedule(reason: SecretaryAutoInputReason): void
+  submit(text: string, options?: { reason?: SecretaryAutoInputReason }): Promise<void>
 }
 
 export type SecretaryAutoInputReason = 'auto-on' | 'agent-end' | 'runtime-idle'
@@ -51,6 +63,8 @@ interface SecretaryAutoInputContext {
   backend?: string
   cwd: string
   model?: string
+  goalMode: boolean
+  supervisorIntervalMs?: number
   reconciliation?: ReconcileDecisionSummary
   recentMessages: Array<{
     role: string
@@ -87,6 +101,7 @@ class SecretaryAutoInputControllerImpl implements SecretaryAutoInputController {
   private unsubscribe: (() => void) | null = null
   private recoveryAttempts = 0
   private pausedAssistantSignature: string | null = null
+  private goalModeSupervisedAssistantSignature: string | null = null
   private currentTurnAbortController: AbortController | null = null
 
   constructor(
@@ -125,6 +140,7 @@ class SecretaryAutoInputControllerImpl implements SecretaryAutoInputController {
     this.stopIdleWatchdog()
     this.recoveryAttempts = 0
     this.pausedAssistantSignature = null
+    this.goalModeSupervisedAssistantSignature = null
   }
 
   private abortCurrentTurn(): void {
@@ -149,6 +165,51 @@ class SecretaryAutoInputControllerImpl implements SecretaryAutoInputController {
     }, AUTO_INPUT_DELAY_MS)
   }
 
+  async submit(text: string, options: { reason?: SecretaryAutoInputReason } = {}): Promise<void> {
+    const trimmed = text.trim()
+    if (!trimmed) {
+      return
+    }
+    if (!this.active) {
+      this.start({ scheduleImmediately: false })
+    }
+
+    const session = this.interactive?.session
+    const reason = options.reason ?? 'auto-on'
+    const snapshot = this.sessionControl.ensureControlSession('auto')
+    const backend = normalizeString(this.runtime?.backendCommandRouter?.backend)
+      ?? normalizeString(this.runtime?.backendSessionRef?.backend)
+      ?? normalizeString(this.runtime?.backend)
+
+    try {
+      const projection = this.sessionControl.recordSecretaryRuntimeIntent({
+        text: trimmed,
+        reason,
+      })
+      const delivery = await deliverProjectedInput(this.interactive, session, trimmed)
+      this.sessionControl.recordAutoInputEvent('delivered', {
+        reason,
+        runtimeProjection: {
+          targetRole: projectedDeliveryTargetRole(delivery),
+          source: 'secretary-runtime-intent',
+          controlDecision: projection,
+        },
+        businessSession: snapshot.businessSession,
+        backend,
+        length: trimmed.length,
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      this.sessionControl.recordAutoInputEvent('failed', {
+        reason,
+        message,
+        businessSession: snapshot.businessSession,
+        backend,
+      })
+      throw error
+    }
+  }
+
   private installRuntimeHooks(): void {
     if (this.unsubscribe || typeof this.interactive?.session?.subscribe !== 'function') {
       return
@@ -156,6 +217,9 @@ class SecretaryAutoInputControllerImpl implements SecretaryAutoInputController {
 
     this.unsubscribe = this.interactive.session.subscribe((event: unknown) => {
       if (!isRecord(event) || event.type !== 'agent_end') {
+        return
+      }
+      if (isGoalModeActive(this.interactive, this.runtime)) {
         return
       }
       this.schedule('agent-end')
@@ -202,6 +266,20 @@ class SecretaryAutoInputControllerImpl implements SecretaryAutoInputController {
         return
       }
 
+      if (isGoalModeActive(this.interactive, this.runtime)) {
+        if (signature && signature === this.goalModeSupervisedAssistantSignature) {
+          return
+        }
+        if (!isGoalModeSupervisorDue(this.interactive, this.runtime)) {
+          return
+        }
+        markGoalModeSupervisorChecked(this.interactive, this.runtime)
+        this.goalModeSupervisedAssistantSignature = signature
+        this.schedule('runtime-idle')
+        return
+      }
+
+      this.goalModeSupervisedAssistantSignature = null
       this.schedule('runtime-idle')
     }, AUTO_INPUT_IDLE_WATCHDOG_MS)
 
@@ -253,7 +331,39 @@ class SecretaryAutoInputControllerImpl implements SecretaryAutoInputController {
       })
       context = execution.context
       const { reconciliation, scheduler, turn, text, attempts } = execution
-      if (!text || !this.active || generation !== this.generation || this.interactive?.__autoEnabled !== true) {
+      if (!this.active || generation !== this.generation || this.interactive?.__autoEnabled !== true) {
+        this.sessionControl.recordAutoInputEvent('failed', {
+          reason,
+          message: 'AI Secretary auto input projection was cancelled before delivery',
+          run: summarizeRuntimeRun(turn.run),
+          steps: summarizeRuntimeSteps(turn.steps),
+          businessSession: context.snapshot.businessSession,
+          backend: context.backend,
+          reconciler: reconciliation,
+          scheduler,
+          attempts,
+        })
+        this.scheduleRecovery('runtime-idle', 'AI Secretary returned empty user input projection', context, generation)
+        return
+      }
+
+      if (!text) {
+        if (context.goalMode) {
+          this.resetRecoveryState()
+          this.sessionControl.recordAutoInputEvent('skipped', {
+            reason,
+            message: 'Goal supervision found no Secretary intervention needed.',
+            run: summarizeRuntimeRun(turn.run),
+            steps: summarizeRuntimeSteps(turn.steps),
+            businessSession: context.snapshot.businessSession,
+            backend: context.backend,
+            reconciler: reconciliation,
+            scheduler,
+            attempts,
+          })
+          return
+        }
+
         this.sessionControl.recordAutoInputEvent('failed', {
           reason,
           message: 'AI Secretary returned empty user input projection',
@@ -273,12 +383,12 @@ class SecretaryAutoInputControllerImpl implements SecretaryAutoInputController {
         text,
         reason,
       })
-      await deliverAsUserInput(session, text)
+      const delivery = await deliverProjectedInput(this.interactive, session, text)
       this.resetRecoveryState()
       this.sessionControl.recordAutoInputEvent('delivered', {
         reason,
         runtimeProjection: {
-          targetRole: 'user',
+          targetRole: projectedDeliveryTargetRole(delivery),
           source: 'secretary-runtime-intent',
           controlDecision: projection,
         },
@@ -328,6 +438,8 @@ class SecretaryAutoInputControllerImpl implements SecretaryAutoInputController {
         ?? snapshot.businessSession.cwd,
       model: normalizeString(this.interactive?.session?.model?.id)
         ?? normalizeString(this.runtime?.model),
+      goalMode: isGoalModeActive(this.interactive, this.runtime),
+      supervisorIntervalMs: resolveGoalModeSupervisorIntervalMs(this.interactive, this.runtime),
       recentMessages,
     }
   }
@@ -465,16 +577,42 @@ class SecretaryAutoInputControllerImpl implements SecretaryAutoInputController {
       return
     }
 
-    if (this.recoveryAttempts >= AUTO_INPUT_RECOVERY_DELAYS_MS.length) {
+    const recoveryDelaysMs = resolveAutoInputRecoveryDelaysMs()
+    if (this.recoveryAttempts >= recoveryDelaysMs.length) {
+      if (isTransientRemoteAutoInputFailure(message, error)) {
+        this.scheduleTransientRemoteRecovery(reason, message, generation)
+        return
+      }
       this.pauseOnAssistant(context, `Auto waiting for user: Secretary could not recover after ${this.recoveryAttempts} restart attempts. ${message}`)
       return
     }
 
     const attempt = this.recoveryAttempts + 1
-    const delayMs = AUTO_INPUT_RECOVERY_DELAYS_MS[this.recoveryAttempts]
+    const delayMs = recoveryDelaysMs[this.recoveryAttempts]
     this.recoveryAttempts = attempt
     this.clearRecoveryTimer()
-    this.interactive?.showStatus?.(`Auto recovering: restarting Secretary (${attempt}/${AUTO_INPUT_RECOVERY_DELAYS_MS.length}).`)
+    this.interactive?.showStatus?.(`Auto recovering: restarting Secretary (${attempt}/${recoveryDelaysMs.length}).`)
+    this.interactive?.ui?.requestRender?.()
+    this.recoveryTimer = setTimeout(() => {
+      this.recoveryTimer = null
+      if (!this.active || generation !== this.generation || this.interactive?.__autoEnabled !== true) {
+        return
+      }
+      this.schedule(reason)
+    }, delayMs)
+    this.recoveryTimer.unref?.()
+  }
+
+  private scheduleTransientRemoteRecovery(
+    reason: SecretaryAutoInputReason,
+    message: string,
+    generation: number,
+  ): void {
+    const attempt = this.recoveryAttempts + 1
+    const delayMs = resolveTransientRemoteRecoveryDelayMs()
+    this.recoveryAttempts = attempt
+    this.clearRecoveryTimer()
+    this.interactive?.showStatus?.(`Auto waiting for LinX Cloud: temporarily unavailable. Secretary will retry in ${formatDelay(delayMs)}. ${message}`)
     this.interactive?.ui?.requestRender?.()
     this.recoveryTimer = setTimeout(() => {
       this.recoveryTimer = null
@@ -512,6 +650,48 @@ class SecretaryAutoInputControllerImpl implements SecretaryAutoInputController {
 function shouldGenerateNextUserInput(context: SecretaryAutoInputContext): boolean {
   const latest = context.recentMessages.at(-1)
   return latest?.role === 'assistant'
+}
+
+function isGoalModeActive(interactive: any, runtime: any): boolean {
+  return interactive?.__linxGoalModeEnabled === true || runtime?.goalMode === true
+}
+
+function resolveGoalModeSupervisorIntervalMs(interactive: any, runtime: any): number {
+  const value = Number(
+    interactive?.__linxGoalModeSupervisorIntervalMs
+      ?? runtime?.goalModeSupervisorIntervalMs
+      ?? interactive?.__linxSymphonyWorkerSupervisorIntervalMs
+      ?? runtime?.symphonyWorkerSupervisorIntervalMs
+      ?? DEFAULT_GOAL_MODE_SUPERVISOR_INTERVAL_MS,
+  )
+  if (!Number.isFinite(value) || value <= 0) {
+    return DEFAULT_GOAL_MODE_SUPERVISOR_INTERVAL_MS
+  }
+  return Math.trunc(value)
+}
+
+function resolveGoalModeSupervisorLastAt(interactive: any, runtime: any): number {
+  const value = Number(interactive?.__linxGoalModeSupervisorLastAt ?? runtime?.goalModeSupervisorLastAt)
+  return Number.isFinite(value) && value > 0 ? value : 0
+}
+
+function markGoalModeSupervisorChecked(interactive: any, runtime: any, at = Date.now()): void {
+  if (interactive && typeof interactive === 'object') {
+    interactive.__linxGoalModeSupervisorLastAt = at
+  }
+  if (runtime && typeof runtime === 'object') {
+    runtime.goalModeSupervisorLastAt = at
+  }
+}
+
+function isGoalModeSupervisorDue(interactive: any, runtime: any): boolean {
+  const now = Date.now()
+  const lastAt = resolveGoalModeSupervisorLastAt(interactive, runtime)
+  if (!lastAt) {
+    markGoalModeSupervisorChecked(interactive, runtime, now)
+    return false
+  }
+  return now - lastAt >= resolveGoalModeSupervisorIntervalMs(interactive, runtime)
 }
 
 function createAutoInputThreadEvent(
@@ -561,11 +741,13 @@ async function runSecretaryAutoInputTurn(input: {
   attempt: number
   signal?: AbortSignal
 }): Promise<Awaited<ReturnType<ReturnType<typeof createAgentRuntime>['runTurn']>>> {
-  return createAgentRuntime({
+  const startupOverride = resolveAgentRuntimeStartupOverride(input.runtime)
+  const agentConfig = resolveAgentRuntimeConfig({
     agent: SECRETARY_AGENT_ID,
     role: 'secretary',
-    model: input.context.model ?? DEFAULT_LINX_CLOUD_MODEL_ID,
+    model: DEFAULT_LINX_CLOUD_MODEL_ID,
     label: SECRETARY_AGENT_LABEL,
+    runtime: DEFAULT_SECRETARY_RUNTIME_BACKEND,
     systemPrompt: SECRETARY_SYSTEM_PROMPT,
     metadata: {
       mode: 'auto',
@@ -575,7 +757,12 @@ async function runSecretaryAutoInputTurn(input: {
       controlSession: input.context.snapshot.controlSession,
       reconciler: input.reconciliation,
     },
-  }, async ({ messages, signal }): Promise<AgentRuntimeCompletionResult> => {
+  }, {
+    model: startupOverride?.model ?? input.context.model,
+    runtime: startupOverride,
+  })
+
+  return createAgentRuntime(agentConfig, async ({ agent, messages, signal }): Promise<AgentRuntimeCompletionResult> => {
     if (input.injectedResolver) {
       const text = await input.injectedResolver(input.context)
       return {
@@ -586,7 +773,7 @@ async function runSecretaryAutoInputTurn(input: {
       }
     }
 
-    return resolveNextUserInputFromSecretaryRuntime(input.runtime, input.context, messages, signal)
+    return resolveNextUserInputFromSecretaryRuntime(input.runtime, input.context, agent, messages, signal)
   }).runTurn({
     input: input.inputText,
     messages: [{
@@ -633,19 +820,26 @@ function combineAbortSignals(signal: AbortSignal, extraSignal?: AbortSignal): Ab
 async function resolveNextUserInputFromSecretaryRuntime(
   runtime: any,
   context: SecretaryAutoInputContext,
+  agent: AgentRuntimeConfig,
   messages: AgentRuntimeMessage[],
   signal?: AbortSignal,
 ): Promise<AgentRuntimeCompletionResult> {
+  const backend = normalizeString(agent.runtime?.backend) ?? 'linx'
+  if (backend !== 'linx') {
+    throw new SecretaryAutoInputBlockedError(`Secretary runtime backend ${backend} is not supported yet.`)
+  }
+
   const session = await resolveSecretaryPodDataSession(runtime)
   if (!session) {
     throw new SecretaryAutoInputBlockedError('LinX login is required before Secretary can drive auto input.')
   }
 
   const target = resolveRuntimeTarget({ issuerUrl: session.credentials.url })
+  const model = normalizeString(agent.runtime?.model) ?? agent.model
   const result = await createRemoteCompletionResult({
     runtimeUrl: target.runtimeUrl,
     authFetch: session.runtimeFetch,
-    model: DEFAULT_LINX_CLOUD_MODEL_ID,
+    model,
     messages,
     signal,
   })
@@ -668,16 +862,59 @@ async function resolveSecretaryPodDataSession(runtime: any): Promise<PodDataSess
   return getDefaultPodDataSession()
 }
 
+function resolveAgentRuntimeStartupOverride(runtime: any): Partial<AgentRuntimeBackendConfig> | undefined {
+  const candidates = [
+    runtime?.agentRuntimeConfig,
+    runtime?.agentRuntime,
+  ]
+  for (const candidate of candidates) {
+    if (!isRecord(candidate)) {
+      continue
+    }
+    const resolved = normalizeAgentRuntimeBackendConfig(candidate)
+    if (resolved) {
+      return resolved
+    }
+  }
+  return undefined
+}
+
+function normalizeAgentRuntimeBackendConfig(value: Record<string, unknown>): Partial<AgentRuntimeBackendConfig> | undefined {
+  const backend = normalizeString(value.backend)
+  const model = normalizeString(value.model)
+  const credentialSource = normalizeString(value.credentialSource)
+  const runtime = normalizeString(value.runtime)
+  const transport = normalizeString(value.transport)
+  const endpoint = normalizeString(value.endpoint)
+  const metadata = isRecord(value.metadata) ? { ...value.metadata } : undefined
+  const resolved: Partial<AgentRuntimeBackendConfig> = {
+    ...(backend ? { backend } : {}),
+    ...(model ? { model } : {}),
+    ...(credentialSource ? { credentialSource } : {}),
+    ...(runtime ? { runtime } : {}),
+    ...(transport ? { transport } : {}),
+    ...(endpoint ? { endpoint } : {}),
+    ...(metadata ? { metadata } : {}),
+  }
+  return Object.keys(resolved).length > 0 ? resolved : undefined
+}
+
 function renderSecretaryAutoInputContext(context: SecretaryAutoInputContext): string {
   return [
     `Backend: ${context.backend ?? 'unknown'}`,
     `Workspace: ${context.cwd}`,
     context.model ? `Model: ${context.model}` : null,
+    `Goal mode: ${context.goalMode ? 'on' : 'off'}`,
+    context.goalMode && context.supervisorIntervalMs
+      ? `Supervisor interval: ${context.supervisorIntervalMs}ms`
+      : null,
     '',
     'Recent visible conversation:',
     ...context.recentMessages.map((message) => `[${message.role}] ${message.text}`),
     '',
-    'Write the next user input only.',
+    context.goalMode
+      ? 'Write the next supervisor steer only when useful. Return empty if no intervention is needed.'
+      : 'Write the next user input only.',
   ].filter((line): line is string => line !== null).join('\n')
 }
 
@@ -765,6 +1002,30 @@ async function deliverAsUserInput(session: any, text: string): Promise<void> {
   throw new Error('Active LinX session cannot accept user input projection')
 }
 
+type ProjectedInputDelivery = 'control-command' | 'peer-command' | 'backend'
+
+async function deliverProjectedInput(interactive: any, session: any, text: string): Promise<ProjectedInputDelivery> {
+  if (text.trim().startsWith('/') && typeof interactive?.__linxHandleProjectedCommand === 'function') {
+    const handled = await interactive.__linxHandleProjectedCommand(text)
+    if (handled === 'peer-command') {
+      return 'peer-command'
+    }
+    if (handled === true) {
+      return 'control-command'
+    }
+  }
+
+  await deliverAsUserInput(session, text)
+  return 'backend'
+}
+
+function projectedDeliveryTargetRole(delivery: ProjectedInputDelivery): 'control-command' | 'peer-command' | 'user' {
+  if (delivery === 'backend') {
+    return 'user'
+  }
+  return delivery
+}
+
 function normalizeGeneratedInput(value: unknown): string | null {
   if (typeof value !== 'string') {
     return null
@@ -799,6 +1060,72 @@ function isRecoverableAutoInputFailure(message: string, error?: unknown): boolea
   }
 
   return true
+}
+
+function isTransientRemoteAutoInputFailure(message: string, error?: unknown): boolean {
+  const status = resolveTransientRemoteFailureStatus(error)
+  if (status !== null) {
+    return true
+  }
+
+  const normalized = message.toLowerCase()
+  return normalized.includes('linx cloud is temporarily unavailable')
+    || (normalized.includes('502') && normalized.includes('bad gateway'))
+    || (normalized.includes('503') && normalized.includes('service unavailable'))
+    || (normalized.includes('504') && normalized.includes('gateway timeout'))
+}
+
+function resolveTransientRemoteFailureStatus(error: unknown): number | null {
+  if (typeof error === 'object' && error !== null) {
+    const candidates = [
+      (error as { status?: unknown }).status,
+      (error as { response?: { status?: unknown } }).response?.status,
+      (error as { cause?: { status?: unknown } }).cause?.status,
+    ]
+
+    for (const candidate of candidates) {
+      if (candidate === 502 || candidate === 503 || candidate === 504) {
+        return candidate
+      }
+    }
+  }
+
+  return null
+}
+
+function resolveAutoInputRecoveryDelaysMs(): number[] {
+  return parsePositiveIntegerListEnv('LINX_AUTO_INPUT_RECOVERY_DELAYS_MS')
+    ?? [...DEFAULT_AUTO_INPUT_RECOVERY_DELAYS_MS]
+}
+
+function resolveTransientRemoteRecoveryDelayMs(): number {
+  return parsePositiveIntegerEnv('LINX_AUTO_INPUT_TRANSIENT_RECOVERY_DELAY_MS')
+    ?? DEFAULT_TRANSIENT_REMOTE_RECOVERY_DELAY_MS
+}
+
+function parsePositiveIntegerListEnv(name: string): number[] | null {
+  const raw = process.env[name]
+  if (!raw) {
+    return null
+  }
+  const values = raw.split(',').map((part) => Number(part.trim()))
+  if (values.length === 0 || values.some((value) => !Number.isFinite(value) || value <= 0)) {
+    return null
+  }
+  return values.map((value) => Math.trunc(value))
+}
+
+function parsePositiveIntegerEnv(name: string): number | null {
+  const value = Number(process.env[name])
+  return Number.isFinite(value) && value > 0 ? Math.trunc(value) : null
+}
+
+function formatDelay(delayMs: number): string {
+  if (delayMs < 1_000) {
+    return `${delayMs}ms`
+  }
+  const seconds = delayMs / 1_000
+  return Number.isInteger(seconds) ? `${seconds}s` : `${seconds.toFixed(1)}s`
 }
 
 function resolveAssistantSignature(context: SecretaryAutoInputContext): string | null {

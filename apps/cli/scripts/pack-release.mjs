@@ -1,6 +1,6 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { dirname, join, relative, sep } from 'node:path'
+import { dirname, join, relative, resolve, sep } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import {
@@ -11,7 +11,13 @@ import {
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 const cliRoot = fileURLToPath(new URL('..', import.meta.url))
-const modelsRoot = join(repoRoot, 'packages', 'models')
+const modelsRoot = resolvePackageSourceRoot('@undefineds.co/models', [
+  process.env.LINX_MODELS_ROOT,
+  process.env.LINX_MODELS_PATH,
+  resolve(repoRoot, '..', 'models'),
+  join(repoRoot, 'packages', 'models'),
+  join(repoRoot, 'node_modules', '@undefineds.co', 'models'),
+])
 const outRoot = join(repoRoot, 'preview')
 const args = parseArgs(process.argv.slice(2))
 
@@ -257,6 +263,22 @@ function npmPack(cwd, cacheRoot) {
 
 function writeJson(path, value) {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`)
+}
+
+function resolvePackageSourceRoot(packageName, candidates) {
+  for (const candidate of candidates.filter(Boolean)) {
+    const packageJsonPath = join(candidate, 'package.json')
+    if (!existsSync(packageJsonPath)) {
+      continue
+    }
+
+    const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf-8'))
+    if (pkg.name === packageName) {
+      return candidate
+    }
+  }
+
+  throw new Error(`Cannot find ${packageName}. Set LINX_MODELS_ROOT or clone the independent models repository at ../models.`)
 }
 
 function parseArgs(argv) {

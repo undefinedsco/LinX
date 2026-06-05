@@ -14,6 +14,7 @@ import { extractUsernameFromWebId, resolveProfileDisplayName } from '../profile-
 import { LINX_TUI_KEYMAP_COMMAND, LINX_TUI_KEYMAP_LABEL, LINX_TUI_LOGIN_COMMAND } from '../linx-tui-contract.js'
 import { suppressPodStatusOutput } from './pod-status-output.js'
 import { LINX_RUNTIME_MANAGED_AUTH_KEY } from './runtime.js'
+import { formatLinxCliErrorMessage } from '../linx-cloud-errors.js'
 
 export const LINX_AGENT_DIR = join(homedir(), LINX_HOME_DIRNAME, 'agent')
 export const LINX_UPDATE_PACKAGE_NAME = '@undefineds.co/linx'
@@ -167,7 +168,7 @@ async function showLinxUpdateSelector(interactive: any, newVersion: string): Pro
       `Current ${LINX_CLI_VERSION} -> latest ${newVersion}`,
       'Choose how to handle this update.',
     ].join('\n')
-    const options = [UPDATE_OPTION_INSTALL, UPDATE_OPTION_CHANGELOG, UPDATE_OPTION_LATER]
+    const options = [UPDATE_OPTION_LATER, UPDATE_OPTION_INSTALL, UPDATE_OPTION_CHANGELOG]
     const rawSelected = typeof interactive.showExtensionSelector === 'function'
       ? await interactive.showExtensionSelector(title, options)
       : undefined
@@ -349,7 +350,8 @@ function patchAuthExpiredSessionEvents(interactive: any): void {
   }
 
   interactive.handleEvent = async function patchedHandleEvent(event: unknown): Promise<unknown> {
-    if (eventHasLinxAuthExpiredError(event)) {
+    const normalizedEvent = normalizeLinxCliErrorEvent(event)
+    if (eventHasLinxAuthExpiredError(normalizedEvent)) {
       showLinxAuthExpiredRecoveryNotice(this)
       prepareLinxAuthExpiredRetry(this)
       suppressLinxAuthExpiredAssistantError(this)
@@ -357,7 +359,7 @@ function patchAuthExpiredSessionEvents(interactive: any): void {
       return undefined
     }
 
-    const result = await originalHandleEvent(event)
+    const result = await originalHandleEvent(normalizedEvent)
     return result
   }
 }
@@ -371,7 +373,7 @@ function patchAuthExpiredLoginPrompt(interactive: any): void {
   interactive.showError = function patchedShowError(errorMessage: unknown): unknown {
     const text = typeof errorMessage === 'string' ? errorMessage : String(errorMessage)
     if (this[LINX_AUTH_REPORTING_ERROR] || !isLinxAuthExpiredError(text)) {
-      return originalShowError(errorMessage)
+      return originalShowError(formatLinxCliErrorMessage(errorMessage))
     }
 
     showLinxAuthExpiredRecoveryNotice(this)
@@ -398,6 +400,38 @@ function eventHasLinxAuthExpiredError(event: unknown): boolean {
   const error = isRecord(event.error) ? event.error : undefined
   const nestedErrorMessage = typeof error?.errorMessage === 'string' ? error.errorMessage : ''
   return isLinxAuthExpiredError(`${topLevelErrorMessage}\n${errorMessage}\n${nestedErrorMessage}`)
+}
+
+function normalizeLinxCliErrorEvent(event: unknown): unknown {
+  if (typeof event === 'string') {
+    const normalized = formatLinxCliErrorMessage(event)
+    return normalized === event ? event : normalized
+  }
+  if (Array.isArray(event)) {
+    let changed = false
+    const next = event.map((item) => {
+      const normalized = normalizeLinxCliErrorEvent(item)
+      if (normalized !== item) {
+        changed = true
+      }
+      return normalized
+    })
+    return changed ? next : event
+  }
+  if (!isRecord(event)) {
+    return event
+  }
+
+  let changed = false
+  const next: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(event)) {
+    const normalized = normalizeLinxCliErrorEvent(value)
+    next[key] = normalized
+    if (normalized !== value) {
+      changed = true
+    }
+  }
+  return changed ? { ...event, ...next } : event
 }
 
 function showLinxAuthExpiredRecoveryNotice(interactive: any): void {

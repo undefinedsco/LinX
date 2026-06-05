@@ -2,6 +2,8 @@ import { connectAiProviderCredential } from '../ai-command.js'
 import { loadPodBackendCredential, podCredentialMissingMessage, type PodBackedAutoModeCredential } from '../auto-mode/pod-ai.js'
 import type { AutoModeWorkerBackend } from '../auto-mode/types.js'
 
+type ProviderCredentialBackend = Exclude<AutoModeWorkerBackend, 'linx'>
+
 export type BackendCredentialInput = {
   providerIdPrompt?: string
   apiKeyPrompt: string
@@ -19,7 +21,7 @@ export interface BackendCredentialEntry {
 
 export type BackendCredentialRepairReason = 'missing' | 'invalid'
 
-export function backendCredentialInput(backend: AutoModeWorkerBackend): BackendCredentialInput {
+export function backendCredentialInput(backend: ProviderCredentialBackend): BackendCredentialInput {
   if (backend === 'claude') {
     return {
       apiKeyPrompt: 'Anthropic API key',
@@ -49,7 +51,7 @@ export function backendCredentialInput(backend: AutoModeWorkerBackend): BackendC
 }
 
 export function backendCredentialInputForReason(
-  backend: AutoModeWorkerBackend,
+  backend: ProviderCredentialBackend,
   reason: BackendCredentialRepairReason,
 ): BackendCredentialInput {
   return {
@@ -58,7 +60,7 @@ export function backendCredentialInputForReason(
   }
 }
 
-export function isMissingBackendCredentialError(backend: AutoModeWorkerBackend, error: unknown): boolean {
+export function isMissingBackendCredentialError(backend: ProviderCredentialBackend, error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error)
   return message === podCredentialMissingMessage(backend)
 }
@@ -74,7 +76,7 @@ export const defaultPiBackendCredentialRuntime: PiBackendCredentialRuntime = {
 }
 
 export async function promptAndSavePiBackendCredential(
-  backend: AutoModeWorkerBackend,
+  backend: ProviderCredentialBackend,
   input: {
     promptCredential: (details: BackendCredentialInput) => Promise<BackendCredentialEntry | null | undefined>
     runtime?: PiBackendCredentialRuntime
@@ -110,7 +112,7 @@ export async function promptAndSavePiBackendCredential(
 }
 
 export async function loadOrPromptPiBackendCredential(
-  backend: AutoModeWorkerBackend,
+  backend: ProviderCredentialBackend,
   input: {
     promptCredential: (details: BackendCredentialInput) => Promise<BackendCredentialEntry | null | undefined>
     runtime?: PiBackendCredentialRuntime

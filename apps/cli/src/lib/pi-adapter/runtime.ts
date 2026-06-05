@@ -1,4 +1,4 @@
-import { createPiAgentStreamAdapter, type PiAgentStreamAdapter, type PiCompletionBackendResult } from './stream.js'
+import { createLinxAgentStreamAdapter, type LinxAgentStreamAdapter, type LinxCompletionBackendResult } from './stream.js'
 import { ensureBrowserConsentLogin, isOidcLoginExpiredError, isOidcTransientRemoteError } from '../oidc-auth.js'
 import { DEFAULT_LINX_CLOUD_MODEL_ID, FALLBACK_LINX_CLOUD_MODEL_IDS, resolvePreferredLinxCloudModelId } from '../default-model.js'
 import { ensureLinxPiTheme } from './theme.js'
@@ -23,7 +23,7 @@ import { dirname, join, resolve } from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import type { Api, Model, OAuthCredentials } from '@earendil-works/pi-ai'
-import { isRemoteAuthExpiredError, type RemoteAuthFetch, type RemoteChatMessage, type RemoteChatTool } from '../chat-api.js'
+import { RemoteChatRequestError, isRemoteAuthExpiredError, type RemoteAuthFetch, type RemoteChatMessage, type RemoteChatTool } from '../chat-api.js'
 import type { AutoModeWorkerBackend } from '../auto-mode/types.js'
 import type { BackendCommandRouter, BackendCommandResult } from './backend-command.js'
 import { clearDefaultPodDataSession, getDefaultPodDataSession, type PodDataSession } from '../pod-data-session.js'
@@ -40,8 +40,10 @@ const LINX_PACKAGE_SOURCE = '@undefineds.co/linx'
 const LINX_WEB_ACCESS_PACKAGE_SOURCE = 'pi-web-access'
 const LINX_PRODUCT_SKILL_NAMES = new Set(['symphony'])
 export const DEFAULT_LINX_PI_BASH_TIMEOUT_SECONDS = 15
+const DEFAULT_LINX_CLOUD_CONTEXT_WINDOW = 1_000_000
+const DEFAULT_LINX_CLOUD_COMPLETION_TIMEOUT_MS = 10 * 60 * 1000
 
-export interface PiRuntimeAdapterDependencies {
+export interface LinxRuntimeAdapterDependencies {
   createNativeProxy?: (options?: {
     cwd?: string
     model?: string
@@ -76,7 +78,7 @@ export interface PiRuntimeAdapterDependencies {
     tools?: RemoteChatTool[]
     systemPrompt?: string
     signal?: AbortSignal
-  }) => Promise<string | PiCompletionBackendResult>
+  }) => Promise<string | LinxCompletionBackendResult>
   listRemoteModels?: (
     authFetch: RemoteAuthFetch,
     runtimeUrl: string,
@@ -87,16 +89,23 @@ export interface PiRuntimeAdapterDependencies {
   }>>
 }
 
-export interface PiRuntimeFactoryContext {
+/** @deprecated Use LinxRuntimeAdapterDependencies. */
+export type PiRuntimeAdapterDependencies = LinxRuntimeAdapterDependencies
+
+export interface LinxRuntimeFactoryContext {
   cwd: string
   agentDir: string
   sessionManager: unknown
   sessionStartEvent?: unknown
 }
 
-export type PiCreateRuntimeFactory = (context: PiRuntimeFactoryContext) => Promise<AgentSessionRuntime>
+export type LinxCreateRuntimeFactory = (context: LinxRuntimeFactoryContext) => Promise<AgentSessionRuntime>
+/** @deprecated Use LinxRuntimeFactoryContext. */
+export type PiRuntimeFactoryContext = LinxRuntimeFactoryContext
+/** @deprecated Use LinxCreateRuntimeFactory. */
+export type PiCreateRuntimeFactory = LinxCreateRuntimeFactory
 
-export interface PiRuntimeAdapterOptions {
+export interface LinxRuntimeAdapterOptions {
   cwd?: string
   model?: string
   port?: number
@@ -121,6 +130,9 @@ export interface PiRuntimeAdapterOptions {
     }
   }
 }
+
+/** @deprecated Use LinxRuntimeAdapterOptions. */
+export type PiRuntimeAdapterOptions = LinxRuntimeAdapterOptions
 
 export interface LinxCloudPiAuthBridge {
   description: 'undefineds-cloud-oauth-bridge'
@@ -197,7 +209,7 @@ export function resolveLinxInteractiveLoginReason(options: {
   return resolveLinxStartupLoginReason(options.startupDecision)
 }
 
-export interface PiRuntimeAdapter {
+export interface LinxRuntimeAdapter {
   readonly remoteUrl: string
   readonly sessionId: string
   readonly cwd: string
@@ -207,16 +219,16 @@ export interface PiRuntimeAdapter {
   readonly autoEnabled: boolean
   readonly symphonyEnabled: boolean
   readonly backendCommandRouter?: BackendCommandRouter
-  readonly streamAdapter: PiAgentStreamAdapter
-  createRuntime: PiCreateRuntimeFactory
+  readonly streamAdapter: LinxAgentStreamAdapter
+  createRuntime: LinxCreateRuntimeFactory
   start(): Promise<void>
   close(): Promise<void>
 }
 
-export function createPiRuntimeAdapter(
-  dependencies: PiRuntimeAdapterDependencies,
-  options: PiRuntimeAdapterOptions = {},
-): PiRuntimeAdapter {
+export function createLinxRuntimeAdapter(
+  dependencies: LinxRuntimeAdapterDependencies,
+  options: LinxRuntimeAdapterOptions = {},
+): LinxRuntimeAdapter {
   const backendMode = options.backend ?? 'cloud'
   const workerBackend = options.workerBackend ?? (backendMode === 'native' ? 'codex' : undefined)
   const cwd = options.cwd ?? process.cwd()
@@ -265,7 +277,7 @@ export function createPiRuntimeAdapter(
     throw new Error('Cloud LinX runtime backend requires createRemoteCompletion')
   }
 
-  const streamAdapter = createPiAgentStreamAdapter({
+  const streamAdapter = createLinxAgentStreamAdapter({
     sessionId: proxy?.record.id ?? UNDEFINEDS_SESSION_ID,
     cwd: proxy?.record.cwd ?? cwd,
     model: proxy?.record.model ?? activeModelId,
@@ -282,9 +294,14 @@ export function createPiRuntimeAdapter(
     completionBackend: !proxy && dependencies.createRemoteCompletion
       ? {
         async complete(input) {
-          const authFetch = input.authFetch
-            ?? (options.providerConfig?.oauth ? resolveRuntimeAuthFetchFromApiKey(input.apiKey) : null)
-            ?? await resolveLinxPiCloudAuthFetch({
+          const authFetch = options.providerConfig?.oauth
+            ? input.authFetch
+              ?? resolveRuntimeAuthFetchFromApiKey(input.apiKey)
+              ?? await resolveLinxPiCloudAuthFetch({
+                issuerUrl: options.providerConfig?.issuerUrl,
+                getPodDataSession: options.getPodDataSession,
+              })
+            : await resolveLinxPiCloudAuthFetch({
               issuerUrl: options.providerConfig?.issuerUrl,
               getPodDataSession: options.getPodDataSession,
             })
@@ -328,7 +345,7 @@ export function createPiRuntimeAdapter(
     symphonyEnabled: options.symphonyEnabled === true,
     backendCommandRouter,
     streamAdapter,
-    createRuntime: async (context: PiRuntimeFactoryContext): Promise<AgentSessionRuntime> => {
+    createRuntime: async (context: LinxRuntimeFactoryContext): Promise<AgentSessionRuntime> => {
       const authStorage = AuthStorage.inMemory()
       const modelRegistry = ModelRegistry.inMemory(authStorage)
       const originalIsUsingOAuth = modelRegistry.isUsingOAuth.bind(modelRegistry)
@@ -395,10 +412,11 @@ export function createPiRuntimeAdapter(
         },
       }
       const storedCredentials = options.providerConfig?.oauth ? null : loadCredentials()
+      const hasManagedPodSession = !options.providerConfig?.oauth && Boolean(options.getPodDataSession)
       const explicitOAuthCredential = options.providerConfig?.oauth
         ? await options.providerConfig.oauth.login()
         : null
-      if (storedCredentials) {
+      if (storedCredentials || hasManagedPodSession) {
         const authFetch = await resolveLinxPiCloudAuthFetch({
           issuerUrl: options.providerConfig?.issuerUrl,
           getPodDataSession: options.getPodDataSession,
@@ -410,7 +428,7 @@ export function createPiRuntimeAdapter(
       modelRegistry.registerProvider(UNDEFINEDS_PROVIDER_ID, {
         api: UNDEFINEDS_PROVIDER_API,
         baseUrl,
-        apiKey: 'LINX_RUNTIME_AUTH',
+        apiKey: '$LINX_RUNTIME_AUTH',
         oauth: linxOAuthProvider,
         authHeader: false,
         streamSimple: streamAdapter.streamFn,
@@ -519,7 +537,7 @@ export function createPiRuntimeAdapter(
 
     const mergedModels = mergeLinxProviderModels(remoteModels.map((entry) => ({
       id: entry.id,
-      contextWindow: entry.contextWindow ?? 1_000_000,
+      contextWindow: entry.contextWindow,
     })), activeModelId)
     const nextModels = mergedModels.map((entry) => buildProviderModel(entry))
     providerModels.splice(0, providerModels.length, ...nextModels)
@@ -570,7 +588,7 @@ export function createPiRuntimeAdapter(
       tools?: RemoteChatTool[]
       signal?: AbortSignal
     },
-  ): Promise<string | PiCompletionBackendResult> {
+  ): Promise<string | LinxCompletionBackendResult> {
     try {
       return await dependencies.createRemoteCompletion!({
         ...request,
@@ -607,6 +625,12 @@ export function createPiRuntimeAdapter(
     return null
   }
 }
+
+/** @deprecated Use LinxRuntimeAdapter. */
+export type PiRuntimeAdapter = LinxRuntimeAdapter
+
+/** @deprecated Use createLinxRuntimeAdapter. */
+export const createPiRuntimeAdapter = createLinxRuntimeAdapter
 
 export function resolveBundledLinxSkillsDir(importMetaUrl = import.meta.url): string | null {
   const moduleDir = dirname(fileURLToPath(importMetaUrl))
@@ -772,7 +796,7 @@ async function resolveLinxPiCloudAuthFetch(options: {
 
   const session = await getDefaultPodDataSession()
   if (session) {
-    return session.runtimeFetch
+    return withCloudCompletionTimeout(session.runtimeFetch)
   }
 
   throw new Error('No LinX cloud login found. Interactive TUI supports /login in-app. For non-interactive --print mode, run `linx login` first.')
@@ -782,7 +806,7 @@ function createPodDataSessionAuthFetch(
   getPodDataSession: () => Promise<PodDataSession | null>,
 ): RemoteAuthFetch {
   if (getPodDataSession !== getDefaultPodDataSession) {
-    return async (url, init) => {
+    return withCloudCompletionTimeout(async (url, init) => {
       const session = await getPodDataSession()
       if (session) {
         try {
@@ -793,7 +817,7 @@ function createPodDataSessionAuthFetch(
       }
 
       throw new Error('No LinX cloud login found. Interactive TUI supports /login in-app. For non-interactive --print mode, run `linx login` first.')
-    }
+    })
   }
 
   let cachedSession: PodDataSession | null = null
@@ -814,14 +838,102 @@ function createPodDataSessionAuthFetch(
     return cachedSessionPromise
   }
 
-  return async (url, init) => {
+  return withCloudCompletionTimeout(async (url, init) => {
     const session = await getCachedSession()
     if (session) {
       return await session.runtimeFetch(url, init)
     }
 
     throw new Error('No LinX cloud login found. Interactive TUI supports /login in-app. For non-interactive --print mode, run `linx login` first.')
+  })
+}
+
+function withCloudCompletionTimeout(fetcher: RemoteAuthFetch): RemoteAuthFetch {
+  return async (url, init) => {
+    if (!isChatCompletionRuntimeUrl(String(url))) {
+      return fetcher(url, init)
+    }
+
+    const timeoutMs = resolveLinxCloudCompletionTimeoutMs()
+    const controller = new AbortController()
+    const signal = init?.signal
+      ? combineAbortSignals(init.signal, controller.signal)
+      : controller.signal
+    let timedOut = false
+    const timer = setTimeout(() => {
+      timedOut = true
+      controller.abort()
+    }, timeoutMs)
+
+    try {
+      return await Promise.race([
+        fetcher(url, { ...init, signal }),
+        new Promise<Response>((_resolve, reject) => {
+          controller.signal.addEventListener('abort', () => {
+            if (timedOut) {
+              reject(new RemoteChatRequestError(
+                `LinX Cloud request timed out after ${formatTimeoutSeconds(timeoutMs)}s.`,
+                0,
+                `Timed out waiting for POST ${url}`,
+              ))
+            }
+          }, { once: true })
+        }),
+      ])
+    } catch (error) {
+      if (timedOut) {
+        throw new RemoteChatRequestError(
+          `LinX Cloud request timed out after ${formatTimeoutSeconds(timeoutMs)}s.`,
+          0,
+          error instanceof Error ? error.message : String(error),
+        )
+      }
+      throw error
+    } finally {
+      clearTimeout(timer)
+    }
   }
+}
+
+function resolveLinxCloudCompletionTimeoutMs(): number {
+  const raw = process.env.LINX_CHAT_TIMEOUT_MS
+  if (!raw) {
+    return DEFAULT_LINX_CLOUD_COMPLETION_TIMEOUT_MS
+  }
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_LINX_CLOUD_COMPLETION_TIMEOUT_MS
+}
+
+function formatTimeoutSeconds(timeoutMs: number): number {
+  return Math.max(1, Math.round(timeoutMs / 1000))
+}
+
+function isChatCompletionRuntimeUrl(value: string): boolean {
+  try {
+    const target = new URL(value)
+    const segments = target.pathname.split('/').filter(Boolean)
+    return segments.length >= 3
+      && /^v\d+$/.test(segments.at(-3) ?? '')
+      && segments.at(-2) === 'chat'
+      && segments.at(-1) === 'completions'
+  } catch {
+    return false
+  }
+}
+
+function combineAbortSignals(left: AbortSignal, right: AbortSignal): AbortSignal {
+  if (typeof AbortSignal.any === 'function') {
+    return AbortSignal.any([left, right])
+  }
+  const controller = new AbortController()
+  const abort = () => controller.abort()
+  if (left.aborted || right.aborted) {
+    abort()
+    return controller.signal
+  }
+  left.addEventListener('abort', abort, { once: true })
+  right.addEventListener('abort', abort, { once: true })
+  return controller.signal
 }
 
 function sanitizeLinxCloudDefaults(
@@ -900,7 +1012,7 @@ function buildFallbackProviderModels(activeModelId: string): ReturnType<typeof b
 }
 
 function mergeLinxProviderModels(
-  models: Array<{ id: string; contextWindow: number }>,
+  models: Array<{ id: string; contextWindow?: number }>,
   activeModelId: string,
 ): Array<{ id: string; contextWindow: number }> {
   const byId = new Map<string, { id: string; contextWindow: number }>()
@@ -910,7 +1022,7 @@ function mergeLinxProviderModels(
   ]) {
     byId.set(id, {
       id,
-      contextWindow: 1_000_000,
+      contextWindow: normalizeLinxCloudContextWindow(undefined),
     })
   }
   for (const model of models) {
@@ -920,10 +1032,16 @@ function mergeLinxProviderModels(
     }
     byId.set(id, {
       id,
-      contextWindow: model.contextWindow,
+      contextWindow: normalizeLinxCloudContextWindow(model.contextWindow),
     })
   }
   return [...byId.values()]
+}
+
+function normalizeLinxCloudContextWindow(contextWindow: number | undefined): number {
+  return typeof contextWindow === 'number' && Number.isFinite(contextWindow) && contextWindow > 0
+    ? contextWindow
+    : DEFAULT_LINX_CLOUD_CONTEXT_WINDOW
 }
 
 function withSystemPrompt(systemPrompt: string | undefined, messages: RemoteChatMessage[]): RemoteChatMessage[] {

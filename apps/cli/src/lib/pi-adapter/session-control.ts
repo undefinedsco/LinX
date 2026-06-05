@@ -52,7 +52,7 @@ export interface SessionControlBlockedEvent {
   }
 }
 
-export type SessionControlAutoInputEventKind = 'requested' | 'delivered' | 'failed'
+export type SessionControlAutoInputEventKind = 'requested' | 'delivered' | 'skipped' | 'failed'
 
 export type SessionControlInteractionResponse =
   | {

@@ -472,3 +472,27 @@ test('pi agent stream adapter maps expired LinX cloud auth errors to a compact T
   assert.equal(errorEvent.error.errorMessage, 'LinX Cloud login expired.')
   assert.doesNotMatch(errorEvent.error.errorMessage, /Invalid Solid token/)
 })
+
+test('pi agent stream adapter maps misclassified cloud completion Pod timeouts to cloud errors', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/stream.ts')
+  t.after(() => cleanup())
+
+  const adapter = module.createPiAgentStreamAdapter({
+    completionBackend: {
+      async complete() {
+        throw new Error('LinX Pod request timed out after 30s: POST https://api.undefineds.co/v1/chat/completions')
+      },
+    },
+  })
+
+  const events = []
+  for await (const event of adapter.streamFn(undefined, {
+    messages: [{ role: 'user', content: 'hello' }],
+  })) {
+    events.push(event)
+  }
+
+  const errorEvent = events.find((event) => event.type === 'error')
+  assert.ok(errorEvent)
+  assert.equal(errorEvent.error.errorMessage, 'LinX Cloud request timed out after 30s.')
+})

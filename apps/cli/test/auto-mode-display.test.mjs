@@ -95,6 +95,95 @@ test('formatAutoModeTranscriptLine maps live roles to codex-like prefixes', () =
   assert.deepEqual(assistantLines, ['linx hello user'])
 })
 
+test('auto-mode display normalizes cloud completion Pod timeout failures', async () => {
+  const originalPlain = process.env.LINX_AUTO_MODE_PLAIN
+  const originalWrite = process.stderr.write
+  const chunks = []
+  process.env.LINX_AUTO_MODE_PLAIN = '1'
+  process.stderr.write = function patchedWrite(chunk, encodingOrCallback, maybeCallback) {
+    chunks.push(String(chunk))
+    const callback = typeof encodingOrCallback === 'function' ? encodingOrCallback : maybeCallback
+    if (typeof callback === 'function') {
+      callback()
+    }
+    return true
+  }
+
+  try {
+    const display = displayModule.createAutoModeDisplay(createRecord(), async () => '')
+    display.finish(
+      'failed',
+      createRecord(),
+      'Retry failed after 3 attempts: LinX Pod request timed out after 30s: POST https://api.undefineds.co/v1/chat/completions',
+    )
+  } finally {
+    process.stderr.write = originalWrite
+    if (originalPlain === undefined) {
+      delete process.env.LINX_AUTO_MODE_PLAIN
+    } else {
+      process.env.LINX_AUTO_MODE_PLAIN = originalPlain
+    }
+  }
+
+  const output = chunks.join('')
+  assert.match(output, /LinX Cloud request timed out after 30s\./)
+  assert.doesNotMatch(output, /LinX Pod request timed out/)
+})
+
+test('auto-mode plain display normalizes cloud completion Pod timeout raw output and prompts', async () => {
+  const originalPlain = process.env.LINX_AUTO_MODE_PLAIN
+  const originalWrite = process.stdout.write
+  const chunks = []
+  process.env.LINX_AUTO_MODE_PLAIN = '1'
+  process.stdout.write = function patchedWrite(chunk, encodingOrCallback, maybeCallback) {
+    chunks.push(String(chunk))
+    const callback = typeof encodingOrCallback === 'function' ? encodingOrCallback : maybeCallback
+    if (typeof callback === 'function') {
+      callback()
+    }
+    return true
+  }
+
+  const raw = 'Error: LinX Pod request timed out after 30s: POST https://api.undefineds.co/v1/chat/completions'
+  try {
+    const display = displayModule.createAutoModeDisplay(createRecord(), async () => '')
+    display.renderRawLine('stdout', raw)
+    display.renderEvents([
+      { type: 'approval.required', message: raw },
+      { type: 'input.required', message: raw },
+      { type: 'system.note', message: raw },
+    ])
+  } finally {
+    process.stdout.write = originalWrite
+    if (originalPlain === undefined) {
+      delete process.env.LINX_AUTO_MODE_PLAIN
+    } else {
+      process.env.LINX_AUTO_MODE_PLAIN = originalPlain
+    }
+  }
+
+  const output = chunks.join('')
+  assert.match(output, /LinX Cloud request timed out after 30s\./)
+  assert.doesNotMatch(output, /LinX Pod request timed out/)
+})
+
+test('auto-mode archive transcript normalizes cloud completion Pod timeout raw lines', async (t) => {
+  const loaded = await loadAutoModeModule('lib/auto-mode/format.ts')
+  t.after(() => loaded.cleanup())
+  const raw = 'Error: LinX Pod request timed out after 30s: POST https://api.undefineds.co/v1/chat/completions'
+
+  const lines = loaded.module.renderAutoModeTranscript([
+    { stream: 'stdout', line: raw, events: [] },
+    { stream: 'stderr', line: raw, events: [] },
+    { stream: 'stdout', line: JSON.stringify({ type: 'process.error', message: raw }), events: [] },
+    { stream: 'stdout', line: '', events: [{ type: 'approval.required', message: raw }] },
+  ])
+
+  const output = lines.join('\n')
+  assert.match(output, /LinX Cloud request timed out after 30s\./)
+  assert.doesNotMatch(output, /LinX Pod request timed out/)
+})
+
 test('summarizeAutoModeToolCall keeps tool activity short and avoids dumping raw JSON', () => {
   assert.equal(
     displayModule.summarizeAutoModeToolCall('commandExecution', {

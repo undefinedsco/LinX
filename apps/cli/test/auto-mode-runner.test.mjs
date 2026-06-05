@@ -106,6 +106,119 @@ function mockPodBackendCredential(t, module, backend = 'codex', env, options = {
   }
 }
 
+test('auto-mode can run LinX native worker through session-managed runtime auth', async (t) => {
+  const { root, autoModeHome } = createAutoModeSandbox('linx-auto-mode-native-worker-')
+
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  const { module, cleanup } = await loadAutoModeModule()
+  t.after(() => cleanup())
+
+  const sessions = []
+  const completionCalls = []
+  const persisted = []
+  t.mock.method(module.autoModeRuntime, 'createPodDataSession', async () => {
+    const session = {
+      webId: `https://id.undefineds.co/gcloud/profile/card#me-${sessions.length + 1}`,
+      podUrl: 'https://id.undefineds.co/gcloud/',
+      credentials: {
+        url: 'https://id.undefineds.co/',
+      },
+      runtimeFetch: async () => new Response('{}'),
+      async close() {
+        session.closed = true
+      },
+      closed: false,
+    }
+    sessions.push(session)
+    return session
+  })
+  t.mock.method(module.autoModeRuntime, 'createRemoteCompletionResult', async (options) => {
+    completionCalls.push(options)
+    return {
+      content: 'native worker completed',
+      reasoningContent: 'checked by linx native worker',
+      toolCalls: [{
+        id: 'tool-call-1',
+        type: 'function',
+        function: {
+          name: 'report_status',
+          arguments: '{"status":"ok"}',
+        },
+      }],
+      finishReason: 'stop',
+      usage: {
+        input: 12,
+        output: 8,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 20,
+      },
+    }
+  })
+  t.mock.method(module.autoModeRuntime, 'persistAutoModeConversationToPod', async (record) => {
+    persisted.push(record)
+  })
+
+  await withPatchedEnv(t, {
+    LINX_AUTO_MODE_HOME: autoModeHome,
+  }, async () => {
+    const exitCode = await module.runAutoMode({
+      backend: 'linx',
+      autoEnabled: false,
+      mode: 'off',
+      cwd: root,
+      prompt: 'run native worker once',
+      model: 'deepseek-v4',
+      passthroughArgs: [],
+      credentialSource: 'cloud',
+      quiet: true,
+    })
+
+    assert.equal(exitCode, 0)
+  })
+
+  assert.equal(sessions.length, 2)
+  assert.equal(sessions.every((session) => session.closed), true)
+  assert.equal(completionCalls.length, 1)
+  assert.match(completionCalls[0].runtimeUrl, /^https:\/\/api\.undefineds\.co/)
+  assert.equal(completionCalls[0].authSession, sessions[1])
+  assert.equal(completionCalls[0].model, 'deepseek-v4')
+  assert.deepEqual(completionCalls[0].messages, [{ role: 'user', content: 'run native worker once' }])
+  assert.equal(persisted.length, 1)
+  assert.equal(persisted[0].backend, 'linx')
+  assert.equal(persisted[0].transport, 'native')
+  assert.equal(persisted[0].model, 'deepseek-v4')
+  assert.equal(persisted[0].status, 'completed')
+
+  const sessionDirs = readdirSync(join(autoModeHome, 'sessions'))
+  assert.equal(sessionDirs.length, 1)
+  const sessionDir = join(autoModeHome, 'sessions', sessionDirs[0])
+  const session = JSON.parse(readFileSync(join(sessionDir, 'session.json'), 'utf-8'))
+  assert.equal(session.backend, 'linx')
+  assert.equal(session.transport, 'native')
+  assert.equal(session.model, 'deepseek-v4')
+  assert.equal(session.status, 'completed')
+
+  const events = readFileSync(join(sessionDir, 'events.jsonl'), 'utf-8')
+  assert.match(events, /run native worker once/)
+  assert.match(events, /native worker completed/)
+  assert.match(events, /report_status/)
+})
+
+test('auto-mode supported backends includes LinX native worker', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule()
+  t.after(() => cleanup())
+
+  const backends = module.listSupportedAutoModeBackends()
+  assert.deepEqual(backends.map((backend) => backend.backend), ['linx', 'codex', 'claude', 'codebuddy'])
+  const linx = backends.find((backend) => backend.backend === 'linx')
+  assert.equal(linx.label, 'LinX')
+  assert.match(linx.description, /LinX Cloud\/Pi runtime directly/)
+})
+
 test('auto-mode reuses one ACP session across multiple turns', async (t) => {
   const { root, binDir, autoModeHome } = createAutoModeSandbox('linx-auto-mode-acp-runner-')
   const logFile = join(root, 'claude-acp-log.jsonl')
@@ -200,6 +313,7 @@ rl.on('line', (line) => {
 autoEnabled: true,
 mode: 'auto',
       cwd: process.cwd(),
+      model: 'opus',
       passthroughArgs: [],
     })
 
@@ -217,6 +331,12 @@ mode: 'auto',
     .map((entry) => entry.message)
 
   const prompts = rpcMessages.filter((message) => message.method === 'session/prompt')
+  const setModelRequests = rpcMessages.filter((message) => message.method === 'session/set_model')
+  assert.equal(setModelRequests.length, 1)
+  assert.deepEqual(setModelRequests[0].params, {
+    sessionId: 'sess_claude_acp_123',
+    modelId: 'opus',
+  })
   assert.equal(prompts.length, 2)
   assert.equal(prompts[0].params.sessionId, 'sess_claude_acp_123')
   assert.equal(prompts[1].params.sessionId, 'sess_claude_acp_123')
@@ -2540,7 +2660,7 @@ mode: 'off',
   ])
 })
 
-test('auto-mode keeps Secretary control separate from worker mode', async (t) => {
+test('auto-mode keeps Secretary control separate from goal mode', async (t) => {
   const { module, cleanup } = await loadAutoModeModule()
   t.after(() => cleanup())
 
@@ -2579,7 +2699,7 @@ test('auto-mode keeps Secretary control separate from worker mode', async (t) =>
     session: {
       async setModel() {},
       applyResolvedOptions() {
-        throw new Error('status must not rewrite worker mode')
+        throw new Error('status must not rewrite goal mode')
       },
     },
     display: {
@@ -2599,6 +2719,178 @@ test('auto-mode keeps Secretary control separate from worker mode', async (t) =>
   assert.equal(record.mode, 'off')
   assert.deepEqual(activity, [
     { message: 'Auto is on. Use /auto on or /auto off.', tone: 'note' },
+  ])
+})
+
+test('auto-mode shell switches peer goal mode without changing Secretary auto control', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule()
+  t.after(() => cleanup())
+
+  const root = mkdtempSync(join(tmpdir(), 'linx-auto-mode-goal-command-'))
+  const archiveDir = join(root, 'session')
+  mkdirSync(archiveDir, { recursive: true })
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  const activity = []
+  const appliedOptions = []
+  const record = {
+    id: 'auto_goal_command_123',
+    backend: 'codex',
+    runtime: 'local',
+    transport: 'acp',
+    autoEnabled: true,
+    mode: 'auto',
+    cwd: '/tmp/demo',
+    model: 'gpt-5-codex',
+    prompt: undefined,
+    passthroughArgs: [],
+    credentialSource: 'cloud',
+    resolvedCredentialSource: 'cloud',
+    approvalSource: 'hybrid',
+    command: 'codex-acp',
+    args: [],
+    status: 'running',
+    startedAt: '2026-04-17T00:00:00.000Z',
+    archiveDir,
+    eventsFile: join(archiveDir, 'events.jsonl'),
+  }
+  const base = {
+    session: {
+      async setModel() {},
+      applyResolvedOptions(options) {
+        appliedOptions.push(options)
+        record.mode = options.mode
+        record.autoEnabled = options.autoEnabled
+        record.goalMode = options.goalMode || undefined
+      },
+    },
+    display: {
+      showHelp() {},
+      showActivity(message, tone = 'note') {
+        activity.push({ message, tone })
+      },
+      setPhase() {},
+      updateRecord() {},
+    },
+    queueState: { steeringCount: 0, followUpCount: 0 },
+    backend: 'codex',
+    record,
+  }
+
+  const status = await module.__testHandleAutoModeShellCommand({ ...base, input: '/goal status' })
+  assert.deepEqual(status, { kind: 'send', text: '/goal status' })
+  const resumed = await module.__testHandleAutoModeShellCommand({ ...base, input: '/goal resume' })
+  assert.deepEqual(resumed, { kind: 'send', text: '/goal resume' })
+  const projected = await module.__testHandleAutoModeShellCommand({ ...base, input: '/goal ship the login fix' })
+  assert.deepEqual(projected, { kind: 'send', text: '/goal ship the login fix' })
+  const paused = await module.__testHandleAutoModeShellCommand({ ...base, input: '/goal pause' })
+  assert.deepEqual(paused, { kind: 'send', text: '/goal pause' })
+  const closed = await module.__testHandleAutoModeShellCommand({ ...base, input: '/goal close' })
+  assert.deepEqual(closed, { kind: 'send', text: '/goal close' })
+  const cancelled = await module.__testHandleAutoModeShellCommand({ ...base, input: '/goal cancel' })
+  assert.deepEqual(cancelled, { kind: 'send', text: '/goal cancel' })
+
+  assert.equal(record.autoEnabled, true)
+  assert.equal(record.mode, 'auto')
+  assert.equal(record.goalMode, undefined)
+  assert.equal(appliedOptions.length, 5)
+  assert.deepEqual(appliedOptions.map((options) => options.goalMode), [true, true, false, false, false])
+  assert.deepEqual(activity, [
+    { message: 'Goal command routed to current chat peer.', tone: 'note' },
+    { message: 'Goal command routed to current chat peer; local supervision mirror is active.', tone: 'success' },
+    { message: 'Goal command routed to current chat peer; local supervision mirror is active.', tone: 'success' },
+    { message: 'Goal command routed to current chat peer; local supervision mirror is paused.', tone: 'success' },
+    { message: 'Goal command routed to current chat peer; local supervision mirror is paused.', tone: 'success' },
+    { message: 'Goal command routed to current chat peer; local supervision mirror is paused.', tone: 'success' },
+  ])
+})
+
+test('auto-mode shell routes /auto startup commands through shared ownership before peer delivery', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule()
+  t.after(() => cleanup())
+
+  const root = mkdtempSync(join(tmpdir(), 'linx-auto-mode-startup-route-'))
+  const archiveDir = join(root, 'session')
+  mkdirSync(archiveDir, { recursive: true })
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  const activity = []
+  const appliedOptions = []
+  const record = {
+    id: 'auto_startup_route_123',
+    backend: 'codex',
+    runtime: 'local',
+    transport: 'acp',
+    autoEnabled: false,
+    mode: 'off',
+    cwd: '/tmp/demo',
+    model: 'gpt-5-codex',
+    prompt: undefined,
+    passthroughArgs: [],
+    credentialSource: 'cloud',
+    resolvedCredentialSource: 'cloud',
+    approvalSource: 'hybrid',
+    command: 'codex-acp',
+    args: [],
+    status: 'running',
+    startedAt: '2026-04-17T00:00:00.000Z',
+    archiveDir,
+    eventsFile: join(archiveDir, 'events.jsonl'),
+  }
+  const base = {
+    session: {
+      async setModel() {},
+      applyResolvedOptions(options) {
+        appliedOptions.push(options)
+        record.mode = options.mode
+        record.autoEnabled = options.autoEnabled
+        record.goalMode = options.goalMode || undefined
+      },
+    },
+    display: {
+      showHelp() {},
+      showActivity(message, tone = 'note') {
+        activity.push({ message, tone })
+      },
+      setPhase() {},
+      updateRecord() {},
+    },
+    queueState: { steeringCount: 0, followUpCount: 0 },
+    backend: 'codex',
+    record,
+  }
+
+  const goal = await module.__testHandleAutoModeShellCommand({ ...base, input: '/auto /goal ship the login fix' })
+  assert.deepEqual(goal, { kind: 'send', text: '/goal ship the login fix' })
+  assert.equal(record.autoEnabled, true)
+  assert.equal(record.mode, 'auto')
+  assert.equal(record.goalMode, true)
+
+  const nestedControl = await module.__testHandleAutoModeShellCommand({ ...base, input: '/auto /auto off' })
+  assert.equal(nestedControl, 'handled')
+  assert.equal(record.autoEnabled, false)
+  assert.equal(record.mode, 'off')
+  assert.equal(record.goalMode, true)
+
+  assert.deepEqual(appliedOptions.map((options) => ({
+    autoEnabled: options.autoEnabled,
+    mode: options.mode,
+    goalMode: options.goalMode,
+  })), [
+    { autoEnabled: true, mode: 'auto', goalMode: undefined },
+    { autoEnabled: true, mode: 'auto', goalMode: true },
+    { autoEnabled: true, mode: 'auto', goalMode: true },
+    { autoEnabled: false, mode: 'off', goalMode: true },
+  ])
+  assert.deepEqual(activity, [
+    { message: 'Auto on: Secretary drives the session and asks when blocked.', tone: 'success' },
+    { message: 'Goal command routed to current chat peer; local supervision mirror is active.', tone: 'success' },
+    { message: 'Auto on: Secretary drives the session and asks when blocked.', tone: 'success' },
+    { message: 'Auto off: user drives the session directly.', tone: 'success' },
   ])
 })
 
@@ -2846,3 +3138,105 @@ mode: 'auto',
   assert.equal(sync['auto-mode-archive:pod:projection'].status, 'failed')
   assert.equal(sync['auto-mode-archive:pod:projection'].failures[0].message, 'timed out after 5000ms')
 })
+
+test('auto-mode abort signal terminates a running ACP backend turn', async (t) => {
+  const { root, binDir, autoModeHome } = createAutoModeSandbox('linx-auto-mode-abort-signal-')
+  const logFile = join(root, 'abort-signal-log.jsonl')
+
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  writeExecutable(join(binDir, 'codex-acp'), `#!/usr/bin/env node
+const { appendFileSync } = require('node:fs')
+const readline = require('node:readline')
+
+function log(event) {
+  appendFileSync(process.env.FAKE_ACP_LOG, JSON.stringify({ event }) + '\\n')
+}
+
+function write(obj) {
+  process.stdout.write(JSON.stringify(obj) + '\\n')
+}
+
+process.on('SIGTERM', () => {
+  log('sigterm')
+  process.exit(143)
+})
+
+log('started')
+const rl = readline.createInterface({ input: process.stdin })
+rl.on('line', (line) => {
+  const message = JSON.parse(line)
+  if (message.method === 'initialize') {
+    write({ jsonrpc: '2.0', id: message.id, result: { protocolVersion: 1 } })
+    return
+  }
+  if (message.method === 'session/new') {
+    write({ jsonrpc: '2.0', id: message.id, result: { sessionId: 'sess_abort_signal_123' } })
+    return
+  }
+  if (message.method === 'session/prompt') {
+    log('prompt')
+  }
+})
+`)
+
+  const { module, cleanup } = await loadAutoModeModule()
+  t.after(() => cleanup())
+
+  mockPodBackendCredential(t, module, 'codex')
+  const controller = new AbortController()
+  let persisted
+  t.mock.method(module.autoModeRuntime, 'persistAutoModeConversationToPod', async (record) => {
+    persisted = record
+  })
+
+  await withPatchedEnv(t, {
+    PATH: `${binDir}:${process.env.PATH ?? ''}`,
+    LINX_AUTO_MODE_HOME: autoModeHome,
+    FAKE_ACP_LOG: logFile,
+  }, async () => {
+    const run = module.runAutoMode({
+      backend: 'codex',
+      autoEnabled: false,
+      mode: 'off',
+      cwd: process.cwd(),
+      prompt: 'long running turn',
+      passthroughArgs: [],
+      commandOverride: join(binDir, 'codex-acp'),
+      signal: controller.signal,
+    })
+
+    await waitForLogEvent(logFile, 'prompt')
+    controller.abort(new Error('test abort signal'))
+    await assert.rejects(run, /test abort signal/)
+  })
+
+  const log = readFileSync(logFile, 'utf-8')
+  assert.match(log, /"event":"sigterm"/)
+  const sessionDirs = readdirSync(join(autoModeHome, 'sessions'))
+  assert.equal(sessionDirs.length, 1)
+  const session = JSON.parse(readFileSync(join(autoModeHome, 'sessions', sessionDirs[0], 'session.json'), 'utf-8'))
+  assert.equal(session.status, 'failed')
+  assert.equal(session.error, 'test abort signal')
+  assert.equal(persisted.status, 'failed')
+  assert.equal(persisted.error, 'test abort signal')
+})
+
+async function waitForLogEvent(path, event, timeoutMs = 3000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    try {
+      const lines = readFileSync(path, 'utf-8')
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line))
+      if (lines.some((line) => line.event === event)) {
+        return
+      }
+    } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  throw new Error(`Timed out waiting for log event: ${event}`)
+}

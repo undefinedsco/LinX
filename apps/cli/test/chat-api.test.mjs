@@ -100,6 +100,29 @@ test('listRemoteModels falls back to builtin catalog on request failure', async 
   assert.ok(models.some((model) => typeof model.id === 'string' && model.id.length > 0))
 })
 
+test('listRemoteModels reports explicit cloud timeout when fallback is disabled', async () => {
+  const { listRemoteModels, RemoteChatRequestError } = await import('../dist/lib/chat-api.js')
+
+  await assert.rejects(
+    listRemoteModels(
+      async () => {
+        const error = new Error('The operation was aborted due to timeout')
+        error.name = 'TimeoutError'
+        throw error
+      },
+      'https://api.undefineds.co/v1',
+      { fallback: false, timeoutMs: 5 },
+    ),
+    (error) => {
+      assert.equal(error instanceof RemoteChatRequestError, true)
+      assert.equal(error.status, 0)
+      assert.equal(error.message, 'LinX Cloud models request timed out after 1s.')
+      assert.match(error.responseBody, /aborted due to timeout/)
+      return true
+    },
+  )
+})
+
 test('createRemoteCompletion reads string content payloads', async () => {
   let requestedUrl = null
   globalThis.fetch = async (url) => {
@@ -188,6 +211,86 @@ test('createRemoteCompletion defaults to linx-lite when no model override is pro
 
   assert.equal(requestBody.model, 'linx-lite')
   assert.equal(reply, 'hello default model')
+})
+
+test('createRemoteCompletionResult prefers runtimeFetch over Pod data fetch on session-like auth', async () => {
+  const calls = []
+  const { createRemoteCompletionResult } = await import('../dist/lib/chat-api.js')
+  const result = await createRemoteCompletionResult({
+    runtimeUrl: 'https://api.undefineds.co/v1',
+    authSession: {
+      async runtimeFetch(url) {
+        calls.push({ kind: 'runtime', url: String(url) })
+        return {
+          ok: true,
+          json: async () => ({
+            choices: [
+              {
+                message: {
+                  content: 'runtime fetch ok',
+                },
+              },
+            ],
+          }),
+        }
+      },
+      async fetch(url) {
+        calls.push({ kind: 'pod', url: String(url) })
+        throw new Error(`LinX Pod request timed out after 30s: POST ${url}`)
+      },
+    },
+    model: 'linx-lite',
+    messages: [{ role: 'user', content: 'hi' }],
+  })
+
+  assert.equal(result.content, 'runtime fetch ok')
+  assert.deepEqual(calls, [
+    { kind: 'runtime', url: 'https://api.undefineds.co/v1/chat/completions' },
+  ])
+})
+
+test('createRemoteCompletionResult normalizes misclassified Pod timeout for Cloud completions', async () => {
+  const { createRemoteCompletionResult, RemoteChatRequestError } = await import('../dist/lib/chat-api.js')
+
+  await assert.rejects(
+    createRemoteCompletionResult({
+      runtimeUrl: 'https://api.undefineds.co/v1',
+      authFetch: async () => {
+        throw new Error('LinX Pod request timed out after 30s: POST https://api.undefineds.co/v1/chat/completions')
+      },
+      model: 'linx-lite',
+      messages: [{ role: 'user', content: 'hi' }],
+    }),
+    (error) => {
+      assert.equal(error instanceof RemoteChatRequestError, true)
+      assert.equal(error.status, 0)
+      assert.equal(error.message, 'LinX Cloud request timed out after 30s.')
+      assert.match(error.responseBody, /LinX Pod request timed out after 30s/)
+      return true
+    },
+  )
+})
+
+test('createRemoteCompletionResult normalizes prefixed misclassified Pod timeout for Cloud completions', async () => {
+  const { createRemoteCompletionResult, RemoteChatRequestError } = await import('../dist/lib/chat-api.js')
+
+  await assert.rejects(
+    createRemoteCompletionResult({
+      runtimeUrl: 'https://api.undefineds.co/v1',
+      authFetch: async () => {
+        throw new Error('Retry failed after 3 attempts: LinX Pod request timed out after 30s: POST https://api.undefineds.co/v1/chat/completions')
+      },
+      model: 'linx-lite',
+      messages: [{ role: 'user', content: 'hi' }],
+    }),
+    (error) => {
+      assert.equal(error instanceof RemoteChatRequestError, true)
+      assert.equal(error.status, 0)
+      assert.equal(error.message, 'LinX Cloud request timed out after 30s.')
+      assert.match(error.responseBody, /Retry failed after 3 attempts/)
+      return true
+    },
+  )
 })
 
 test('createRemoteCompletionResult passes external abort signal and reports user abort', async () => {
@@ -461,13 +564,14 @@ test('createRemoteCompletionResult reports persistent service unavailable as a c
       assert.equal(error.status, 502)
       assert.equal(requestCount, 2)
       assert.match(error.message, /LinX Cloud is temporarily unavailable \(502\): Service Unavailable/)
+      assert.doesNotMatch(error.message, /context_length_exceeded/)
       assert.doesNotMatch(error.message, /"details"/)
       return true
     },
   )
 })
 
-test('createRemoteCompletionResult hides upstream HTML error bodies from user-visible errors', async () => {
+test('createRemoteCompletionResult hides upstream HTML Bad Gateway bodies from user-visible errors', async () => {
   let requestCount = 0
   globalThis.fetch = async () => {
     requestCount += 1
@@ -492,7 +596,34 @@ test('createRemoteCompletionResult hides upstream HTML error bodies from user-vi
       assert.equal(error.status, 502)
       assert.equal(requestCount, 2)
       assert.match(error.message, /LinX Cloud is temporarily unavailable \(502\): Bad Gateway/)
+      assert.doesNotMatch(error.message, /context_length_exceeded/)
       assert.doesNotMatch(error.message, /<html|<\/html>|nginx/i)
+      return true
+    },
+  )
+})
+
+test('createRemoteCompletionResult reports thrown Bad Gateway errors as cloud outages', async () => {
+  let requestCount = 0
+  globalThis.fetch = async () => {
+    requestCount += 1
+    throw new Error('expected 200 OK, got: 502 Bad Gateway')
+  }
+
+  const { createRemoteCompletionResult, RemoteChatRequestError } = await import('../dist/lib/chat-api.js')
+  await assert.rejects(
+    createRemoteCompletionResult({
+      runtimeUrl: 'https://api.undefineds.co/v1',
+      apiKey: 'token',
+      model: 'linx-lite',
+      messages: [{ role: 'user', content: 'hi' }],
+    }),
+    (error) => {
+      assert.equal(error instanceof RemoteChatRequestError, true)
+      assert.equal(error.status, 502)
+      assert.equal(requestCount, 2)
+      assert.match(error.message, /LinX Cloud is temporarily unavailable \(502\): expected 200 OK, got: 502 Bad Gateway/)
+      assert.doesNotMatch(error.message, /context_length_exceeded/)
       return true
     },
   )

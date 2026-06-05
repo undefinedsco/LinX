@@ -75,11 +75,16 @@ const scenarios = [
     ],
   },
   {
-    name: 'agent config remains future TODO outside current skill protocol',
+    name: 'agent runtime config is resource-backed and snapshotted',
     checks: [
-      ['concept', /Later, define AgentConfig as a managed control record/],
-      ['concept', /out of scope for the current Symphony skill and\s+MVP execution protocol/],
-      ['symphony', (source) => !/AgentConfig/.test(source)],
+      ['concept', /AgentRuntimeConfig is part of the managed system/],
+      ['concept', /Agent root: the resource container/],
+      ['concept', /Agent WebID: optional actor identity/],
+      ['concept', /Runtime session snapshot: startup reads Agent meta and skill bindings/],
+      ['symphony', /Agent Config And Skill Resources/],
+      ['symphony', /managed resources with runtime snapshots/],
+      ['symphony', /Skill content is file-backed/],
+      ['symphony', /Resume should use\s+that snapshot by default/],
     ],
   },
   {
@@ -249,7 +254,7 @@ const scenarios = [
       ['concept', /Secretary\/control-lane API for creating, splitting, closing, and\s+projecting control records is future product work/],
       ['concept', /create\/update\/split\/supersede Spec/],
       ['concept', /Define the Secretary\/control-lane API for LinX control-plane operations/],
-      ['concept', /Later, define AgentConfig as a managed control record/],
+      ['concept', /Define the exact shared model\/repository for Agent container meta/],
     ],
   },
   {

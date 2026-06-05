@@ -2,6 +2,7 @@ import { createAssistantMessageEventStream, type AssistantMessage, type Assistan
 import type { RemoteChatMessage, RemoteChatTool, RemoteChatToolCall } from '../chat-api.js'
 import type { AutoModeNormalizedEvent } from '../auto-mode/types.js'
 import { DEFAULT_LINX_CLOUD_MODEL_ID } from '../default-model.js'
+import { normalizeMisclassifiedCloudCompletionPodTimeoutMessage } from '../linx-cloud-errors.js'
 
 const UNDEFINEDS_PROVIDER_ID = 'undefineds'
 const UNDEFINEDS_PROVIDER_API = 'linx-cloud-chat-completions'
@@ -19,7 +20,7 @@ type PiStreamTool = {
   parameters?: unknown
 }
 
-export interface PiCompletionBackendResult {
+export interface LinxCompletionBackendResult {
   content?: string
   reasoningContent?: string
   toolCalls?: RemoteChatToolCall[]
@@ -33,6 +34,9 @@ export interface PiCompletionBackendResult {
   }
 }
 
+/** @deprecated Use LinxCompletionBackendResult. */
+export type PiCompletionBackendResult = LinxCompletionBackendResult
+
 type PiStreamOptions = {
   apiKey?: string
   authFetch?: (url: string, init?: RequestInit) => Promise<Response>
@@ -40,7 +44,7 @@ type PiStreamOptions = {
   signal?: AbortSignal
 }
 
-export interface PiAgentStreamAdapterOptions {
+export interface LinxAgentStreamAdapterOptions {
   sessionId?: string
   cwd?: string
   model?: string
@@ -58,18 +62,24 @@ export interface PiAgentStreamAdapterOptions {
       tools?: RemoteChatTool[]
       systemPrompt?: string
       signal?: AbortSignal
-    }): Promise<string | PiCompletionBackendResult>
+    }): Promise<string | LinxCompletionBackendResult>
   }
 }
 
-export interface PiAgentStreamAdapter {
+/** @deprecated Use LinxAgentStreamAdapterOptions. */
+export type PiAgentStreamAdapterOptions = LinxAgentStreamAdapterOptions
+
+export interface LinxAgentStreamAdapter {
   readonly sessionId?: string
   readonly cwd?: string
   readonly model?: string
   streamFn(..._args: unknown[]): AssistantMessageEventStream
 }
 
-export function createPiAgentStreamAdapter(options: PiAgentStreamAdapterOptions = {}): PiAgentStreamAdapter {
+/** @deprecated Use LinxAgentStreamAdapter. */
+export type PiAgentStreamAdapter = LinxAgentStreamAdapter
+
+export function createLinxAgentStreamAdapter(options: LinxAgentStreamAdapterOptions = {}): LinxAgentStreamAdapter {
   const createBaseMessage = (modelId?: string): AssistantMessage => ({
     role: 'assistant',
     content: [],
@@ -181,6 +191,8 @@ export function createPiAgentStreamAdapter(options: PiAgentStreamAdapterOptions 
   }
 }
 
+export const createPiAgentStreamAdapter = createLinxAgentStreamAdapter
+
 function throwIfAborted(signal?: AbortSignal): void {
   if (!signal?.aborted) {
     return
@@ -201,7 +213,15 @@ function formatStreamErrorMessage(error: unknown): string {
   if (isAuthExpiredError(error)) {
     return 'LinX Cloud login expired.'
   }
+  const misclassifiedPodRuntimeTimeout = formatMisclassifiedPodRuntimeTimeout(error)
+  if (misclassifiedPodRuntimeTimeout) {
+    return misclassifiedPodRuntimeTimeout
+  }
   return error instanceof Error ? error.message : String(error)
+}
+
+function formatMisclassifiedPodRuntimeTimeout(error: unknown): string | null {
+  return normalizeMisclassifiedCloudCompletionPodTimeoutMessage(error)
 }
 
 function isAbortError(error: unknown): boolean {
@@ -466,7 +486,7 @@ function normalizeMessageContent(content: unknown): string {
 function emitCompletionResult(
   stream: AssistantMessageEventStream,
   message: AssistantMessage,
-  reply: string | PiCompletionBackendResult,
+  reply: string | LinxCompletionBackendResult,
 ): void {
   const content = typeof reply === 'string' ? reply : reply.content ?? ''
   const toolCalls = typeof reply === 'string' ? [] : reply.toolCalls ?? []
@@ -529,7 +549,7 @@ function parseToolArguments(input: string): Record<string, unknown> {
   }
 }
 
-function isStringReply(reply: string | PiCompletionBackendResult): reply is string {
+function isStringReply(reply: string | LinxCompletionBackendResult): reply is string {
   return typeof reply === 'string'
 }
 

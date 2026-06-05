@@ -6,13 +6,13 @@ import {
   type SessionEntry,
   type SessionInfo,
 } from '@earendil-works/pi-coding-agent'
+import { resolvePodBaseUrl } from '@undefineds.co/drizzle-solid'
 import {
   getDefaultPodDataSession,
   type PodDataSession,
 } from '../pod-data-session.js'
 import {
   chatResource,
-  buildSessionResourceId,
   drizzle,
   eq,
   extractSessionIdFromSessionRef,
@@ -733,9 +733,9 @@ async function listPodSessionRows(context: DefaultPodSessionContext): Promise<Se
 }
 
 function filterPodSessionRows(context: DefaultPodSessionContext, rows: SessionRow[]): SessionRow[] {
-  const secretaryChat = context.db.resolveLocatorIri(chatResource, { id: PI_CHAT_ID })
+  const secretaryChat = chatResource.buildIri(context.webId, { id: PI_CHAT_ID })
   return rows.filter((row) => {
-    if (typeof row.id !== 'string' || !buildSessionResourceIdFromInput(row.id)) {
+    if (typeof row.id !== 'string' || !normalizeSessionResourceIdFromInput(row.id)) {
       return false
     }
     if (row.owner && row.owner !== context.webId) {
@@ -805,7 +805,7 @@ async function listRecentSessionRowsFromContainers(
 }
 
 function getRecentSessionMonthContainers(webId: string): string[] {
-  const base = getPodBaseUrl(webId)
+  const base = resolvePodBaseUrl(webId)
   const months = new Set<string>()
   const now = new Date()
   for (let offset = 0; offset < POD_SESSION_LIST_LOOKBACK_DAYS; offset += 1) {
@@ -871,7 +871,7 @@ async function findPodSessionSnapshot(
     return null
   }
 
-  const resourceId = buildSessionResourceIdFromInput(sessionId)
+  const resourceId = normalizeSessionResourceIdFromInput(sessionId)
   if (!resourceId) {
     return null
   }
@@ -887,7 +887,7 @@ async function findPodSessionSnapshot(
   return row ? buildPodSessionSnapshot(context, row) : null
 }
 
-function buildSessionResourceIdFromInput(input: string): string | null {
+function normalizeSessionResourceIdFromInput(input: string): string | null {
   const trimmed = input.trim().replace(/^\/?\.data\/sessions\//, '')
   if (!trimmed) {
     return null
@@ -902,7 +902,7 @@ function buildSessionResourceIdFromInput(input: string): string | null {
       }
       const sessionId = extractSessionIdFromSessionRef(trimmed)
       const createdAt = sessionId ? parseTimestampFromUuidLikeId(sessionId) : null
-      return sessionId && createdAt ? buildSessionResourceId(sessionId, createdAt) : trimmed
+      return sessionId && createdAt ? sessionResource.buildId({ id: sessionId, createdAt }) : trimmed
     }
     if (!trimmed.startsWith('20')) {
       return null
@@ -914,7 +914,7 @@ function buildSessionResourceIdFromInput(input: string): string | null {
   if (!createdAt) {
     return null
   }
-  return buildSessionResourceId(trimmed, createdAt)
+  return sessionResource.buildId({ id: trimmed, createdAt })
 }
 
 function extractResourceLocalId(resourceId: string): string {
@@ -981,10 +981,11 @@ async function listPodSessionMessages(
   }
 
   const metadata = isRecord(session.metadata) ? session.metadata : {}
-  const rowMessageResources = Array.isArray((session as { messages?: unknown }).messages)
-    ? (session as { messages: unknown[] }).messages
-    : Array.isArray((session as { messageResources?: unknown }).messageResources)
-      ? (session as { messageResources: unknown[] }).messageResources
+  const sessionRecord = session as unknown as Record<string, unknown>
+  const rowMessageResources = Array.isArray(sessionRecord.messages)
+    ? sessionRecord.messages
+    : Array.isArray(sessionRecord.messageResources)
+      ? sessionRecord.messageResources
       : []
   const metadataMessages = Array.isArray(metadata.messages)
     ? metadata.messages
@@ -1068,10 +1069,6 @@ function normalizeUnknownDate(value: unknown): Date | string | number | undefine
     return value
   }
   return undefined
-}
-
-function getPodBaseUrl(webId: string): string {
-  return webId.replace('/profile/card#me', '').replace(/\/$/, '')
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
