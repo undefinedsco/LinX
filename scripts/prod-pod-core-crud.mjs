@@ -170,19 +170,26 @@ async function main() {
   const grantId = `${runId}-grant`
   const auditId = `${runId}-audit`
 
-  const chatIri = db.resolveLocatorIri(chatTable, { id: chatId })
-  const chatResourceId = db.resolveResourceId(chatTable, chatIri)
-  const threadIri = db.resolveLocatorIri(threadTable, { id: threadId, chat: chatIri })
-  const threadResourceId = db.resolveResourceId(threadTable, threadIri)
-  const messageIri = db.resolveLocatorIri(messageTable, { id: messageId, chat: chatIri, createdAt: now })
-  const runtimeSessionIri = db.resolveLocatorIri(sessionTable, { id: runtimeSessionId, createdAt: now })
-  const runtimeSessionResourceId = db.resolveResourceId(sessionTable, runtimeSessionIri)
-  const approvalIri = db.resolveLocatorIri(approvalTable, { id: approvalId, createdAt: now })
-  const approvalResourceId = db.resolveResourceId(approvalTable, approvalIri)
-  const grantIri = db.resolveLocatorIri(grantTable, { id: grantId })
-  const grantResourceId = db.resolveResourceId(grantTable, grantIri)
-  const auditIri = db.resolveLocatorIri(auditTable, { id: auditId, createdAt: now })
-  const auditResourceId = db.resolveResourceId(auditTable, auditIri)
+  const chatTarget = { id: chatId }
+  const chatIri = chatTable.buildIri(webId, chatTarget)
+  const chatResourceId = chatTable.buildId(chatTarget)
+  const threadTarget = { id: threadId, chat: chatIri }
+  const threadIri = threadTable.buildIri(webId, threadTarget)
+  const threadResourceId = threadTable.buildId(threadTarget)
+  const messageTarget = { id: messageId, chat: chatIri, createdAt: now }
+  const messageIri = messageTable.buildIri(webId, messageTarget)
+  const runtimeSessionTarget = { id: runtimeSessionId, createdAt: now }
+  const runtimeSessionIri = sessionTable.buildIri(webId, runtimeSessionTarget)
+  const runtimeSessionResourceId = sessionTable.buildId(runtimeSessionTarget)
+  const approvalTarget = { id: approvalId, createdAt: now }
+  const approvalIri = approvalTable.buildIri(webId, approvalTarget)
+  const approvalResourceId = approvalTable.buildId(approvalTarget)
+  const grantTarget = { id: grantId }
+  const grantIri = grantTable.buildIri(webId, grantTarget)
+  const grantResourceId = grantTable.buildId(grantTarget)
+  const auditTarget = { id: auditId, createdAt: now }
+  const auditIri = auditTable.buildIri(webId, auditTarget)
+  const auditResourceId = auditTable.buildId(auditTarget)
 
   created.push([auditTable, auditIri], [grantTable, grantIri], [approvalTable, approvalIri], [messageTable, messageIri], [sessionTable, runtimeSessionIri], [threadTable, threadIri], [chatTable, chatIri])
 
