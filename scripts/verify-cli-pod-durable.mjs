@@ -16,9 +16,6 @@ import {
   aiProviderResource,
   approvalResource,
   auditResource,
-  buildApprovalSubjectPath,
-  buildGrantSubjectPath,
-  buildSessionResourceId,
   chatResource,
   credentialResource,
   drizzle,
@@ -144,22 +141,6 @@ function uuidV7LikeId(date, suffix = crypto.randomUUID().slice(13)) {
   return `${millisHex.slice(0, 8)}-${millisHex.slice(8, 12)}-7000-8000-${suffix.replace(/-/g, '').slice(0, 12).padEnd(12, '0')}`
 }
 
-function dateBucketResourceId(id, createdAt, includeDay = false) {
-  const date = createdAt instanceof Date ? createdAt : new Date(createdAt)
-  const yyyy = String(date.getUTCFullYear())
-  const mm = String(date.getUTCMonth() + 1).padStart(2, '0')
-  if (!includeDay) {
-    return `${yyyy}/${mm}.ttl#${encodeURIComponent(id)}`
-  }
-  const dd = String(date.getUTCDate()).padStart(2, '0')
-  return `${yyyy}/${mm}/${dd}.ttl#${encodeURIComponent(id)}`
-}
-
-function podResourceIri(webId, path) {
-  const base = `${podBaseUrl(webId).replace(/\/$/, '')}/`
-  return new URL(path.replace(/^\/+/, ''), base).toString()
-}
-
 async function main() {
   logStep('authenticating')
   const configuredCredentials = loadCredentials()
@@ -211,22 +192,22 @@ async function main() {
   await mirror.close()
 
   logStep('checking Pod ORM resources')
-  const chatUri = context.db.resolveLocatorIri(chatResource, { id: DEFAULT_SECRETARY_CHAT_ID })
-  const chatResourceId = context.db.resolveResourceId(chatResource, { id: DEFAULT_SECRETARY_CHAT_ID })
+  const chatTarget = { id: DEFAULT_SECRETARY_CHAT_ID }
+  const chatUri = chatResource.buildIri(context.webId, chatTarget)
+  const chatResourceId = chatResource.buildId(chatTarget)
   const auditId = buildToolAuditId(sessionId, `${runId}-tool`, 'tool_execution_started')
-  const sessionResourceId = buildSessionResourceId(sessionId, createdAt)
-  const messageResourceId = context.db.resolveResourceId(messageResource, {
+  const sessionTarget = { id: sessionId, createdAt }
+  const messageTarget = {
     id: `${sessionId}-u1`,
     chat: chatUri,
     createdAt,
-  })
-  const auditResourceId = dateBucketResourceId(auditId, createdAt, true)
-  const sessionUri = podResourceIri(context.webId, `/.data/sessions/${sessionResourceId}`)
-  const messageUri = context.db.resolveLocatorIri(messageResource, {
-    id: `${sessionId}-u1`,
-    chat: chatUri,
-    createdAt,
-  })
+  }
+  const auditTarget = { id: auditId, createdAt }
+  const sessionResourceId = sessionResource.buildId(sessionTarget)
+  const messageResourceId = messageResource.buildId(messageTarget)
+  const auditResourceId = auditResource.buildId(auditTarget)
+  const sessionUri = sessionResource.buildIri(context.webId, sessionTarget)
+  const messageUri = messageResource.buildIri(context.webId, messageTarget)
 
   const [sessionRow, messageRow, auditRow] = await Promise.all([
     context.db.findById(sessionResource, sessionResourceId),
@@ -332,8 +313,8 @@ async function main() {
   logStep('writing inactive auth/credential config resource')
   const credentialId = `${runId}-credential`
   const providerId = `${runId}-provider`
-  const credentialUri = context.db.resolveLocatorIri(credentialResource, { id: credentialId })
-  const providerUri = context.db.resolveLocatorIri(aiProviderResource, { id: providerId })
+  const credentialUri = credentialResource.buildIri(context.webId, { id: credentialId })
+  const providerUri = aiProviderResource.buildIri(context.webId, { id: providerId })
   cleanupPodCredential = async () => {
     await Promise.allSettled([
       deleteByIdIfExists(context.db, credentialResource, credentialId),
@@ -374,9 +355,10 @@ async function main() {
   const approvalCreatedAt = new Date('2026-04-02T03:04:06.000Z')
   const grantCreatedAt = new Date('2026-04-02T03:04:07.000Z')
   const approvalAuditCreatedAt = new Date('2026-04-02T03:04:08.000Z')
-  const approvalUri = podResourceIri(context.webId, buildApprovalSubjectPath(approvalId, approvalCreatedAt))
-  const approvalResourceId = context.db.resolveResourceId(approvalResource, approvalUri)
-  const grantResourceId = context.db.resolveResourceId(grantResource, podResourceIri(context.webId, buildGrantSubjectPath(grantId)))
+  const approvalTarget = { id: approvalId, createdAt: approvalCreatedAt }
+  const approvalUri = approvalResource.buildIri(context.webId, approvalTarget)
+  const approvalResourceId = approvalResource.buildId(approvalTarget)
+  const grantResourceId = grantResource.buildId({ id: grantId })
   const approvalSessionUri = `${podBaseUrl(context.webId)}/.data/chat/linx-auto-mode/index.ttl#${runId}`
   await store.insertApproval({
     id: approvalId,
@@ -445,11 +427,14 @@ async function main() {
   if (!grants.some((row) => row.id === grantResourceId && row.effect === 'allow')) {
     throw new Error('grant was not read back from Pod')
   }
-  const approvalAuditResourceId = dateBucketResourceId(`${runId}-approval-audit`, approvalAuditCreatedAt, true)
+  const approvalAuditResourceId = auditResource.buildId({
+    id: `${runId}-approval-audit`,
+    createdAt: approvalAuditCreatedAt,
+  })
   if (!audits.some((row) => row.id === approvalAuditResourceId && row.action === 'approval_requested')) {
     throw new Error('approval audit was not read back from Pod')
   }
-  const grantUri = podResourceIri(context.webId, buildGrantSubjectPath(grantId))
+  const grantUri = grantResource.buildIri(context.webId, { id: grantId })
 
   console.log(JSON.stringify({
     ok: true,
