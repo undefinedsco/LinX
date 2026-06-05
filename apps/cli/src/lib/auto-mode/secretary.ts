@@ -9,7 +9,12 @@ import {
   type AutoModeSecretaryRecommendation,
   type AutoModeSessionRecord,
 } from '@linx/agent-runtime/auto-mode'
-import { createAgentRuntime } from '@linx/agent-runtime'
+import {
+  createAgentRuntime,
+  resolveAgentRuntimeConfig,
+  type AgentRuntimeBackendConfig,
+  type AgentRuntimeConfig,
+} from '@linx/agent-runtime'
 import { createRemoteCompletionResult } from '../chat-api.js'
 import { DEFAULT_LINX_CLOUD_MODEL_ID } from '../default-model.js'
 import { getDefaultPodDataSession } from '../pod-data-session.js'
@@ -28,7 +33,11 @@ export interface AutoModeGrantCoverageInput {
   grant: Record<string, unknown>
 }
 
-const SECRETARY_MODEL = DEFAULT_LINX_CLOUD_MODEL_ID
+const DEFAULT_SECRETARY_RUNTIME_BACKEND: AgentRuntimeBackendConfig = {
+  backend: 'linx',
+  model: DEFAULT_LINX_CLOUD_MODEL_ID,
+  credentialSource: 'cloud',
+}
 const SECRETARY_TIMEOUT_MS = 15_000
 
 export async function resolveAutoModeSecretaryRecommendation(
@@ -50,25 +59,17 @@ export async function resolveAutoModeSecretaryRecommendation(
 
     const target = resolveRuntimeTarget({ issuerUrl: session.credentials.url })
     const payload = JSON.stringify(buildSecretaryPayload(input))
-    const runtime = createAgentRuntime({
-      agent: '__secretary__',
-      role: 'secretary',
-      model: SECRETARY_MODEL,
-      label: 'AI Secretary',
+    const agentConfig = createSecretaryAgentRuntimeConfig({
       systemPrompt: buildSecretaryRecommendationSystemPrompt(),
       metadata: {
         mode: input.mode,
         backend: input.record.backend,
         cwd: input.record.cwd,
       },
-    }, async ({ messages, signal }) => {
-      const result = await createRemoteCompletionResult({
-        runtimeUrl: target.runtimeUrl,
-        authFetch: session.runtimeFetch,
-        model: SECRETARY_MODEL,
-        messages,
-        signal,
-      })
+      overrides: resolveSecretaryRuntimeOverrides(input.record),
+    })
+    const runtime = createAgentRuntime(agentConfig, async ({ agent, messages, signal }) => {
+      const result = await completeWithSecretaryRuntime(session, target.runtimeUrl, agent, messages, signal)
       return {
         content: result.content,
         reasoningContent: result.reasoningContent,
@@ -138,24 +139,16 @@ export async function resolveAutoModeGrantCoverage(
 
     const target = resolveRuntimeTarget({ issuerUrl: session.credentials.url })
     const payload = JSON.stringify(buildGrantCoveragePayload(input))
-    const runtime = createAgentRuntime({
-      agent: '__secretary__',
-      role: 'secretary',
-      model: SECRETARY_MODEL,
-      label: 'AI Secretary',
+    const agentConfig = createSecretaryAgentRuntimeConfig({
       systemPrompt: buildGrantCoverageSystemPrompt(),
       metadata: {
         backend: input.record?.backend,
         cwd: input.record?.cwd,
       },
-    }, async ({ messages, signal }) => {
-      const result = await createRemoteCompletionResult({
-        runtimeUrl: target.runtimeUrl,
-        authFetch: session.runtimeFetch,
-        model: SECRETARY_MODEL,
-        messages,
-        signal,
-      })
+      overrides: resolveSecretaryRuntimeOverrides(input.record),
+    })
+    const runtime = createAgentRuntime(agentConfig, async ({ agent, messages, signal }) => {
+      const result = await completeWithSecretaryRuntime(session, target.runtimeUrl, agent, messages, signal)
       return {
         content: result.content,
         reasoningContent: result.reasoningContent,
@@ -195,6 +188,94 @@ export async function resolveAutoModeGrantCoverage(
       source: 'fallback',
     }
   }
+}
+
+function createSecretaryAgentRuntimeConfig(input: {
+  systemPrompt: string
+  metadata?: Record<string, unknown>
+  overrides?: { model?: string; runtime?: Partial<AgentRuntimeBackendConfig> }
+}): AgentRuntimeConfig {
+  return resolveAgentRuntimeConfig(
+    {
+      agent: '__secretary__',
+      role: 'secretary',
+      model: DEFAULT_LINX_CLOUD_MODEL_ID,
+      label: 'AI Secretary',
+      runtime: DEFAULT_SECRETARY_RUNTIME_BACKEND,
+      systemPrompt: input.systemPrompt,
+      metadata: input.metadata,
+    },
+    input.overrides,
+  )
+}
+
+async function completeWithSecretaryRuntime(
+  session: Awaited<ReturnType<typeof getDefaultPodDataSession>>,
+  runtimeUrl: string,
+  agent: AgentRuntimeConfig,
+  messages: Parameters<typeof createRemoteCompletionResult>[0]['messages'],
+  signal?: AbortSignal,
+) {
+  if (!session) {
+    throw new Error('AI secretary is unavailable without a Pod data session.')
+  }
+  const backend = normalizeString(agent.runtime?.backend) ?? 'linx'
+  if (backend !== 'linx') {
+    throw new Error(`AI secretary runtime backend ${backend} is not supported yet.`)
+  }
+  return createRemoteCompletionResult({
+    runtimeUrl,
+    authFetch: session.runtimeFetch,
+    model: normalizeString(agent.runtime?.model) ?? agent.model,
+    messages,
+    signal,
+  })
+}
+
+function resolveSecretaryRuntimeOverrides(record?: Partial<AutoModeSessionRecord>): {
+  model?: string
+  runtime?: Partial<AgentRuntimeBackendConfig>
+} | undefined {
+  const metadata = record?.metadata
+  const candidates = [
+    isRecord(metadata?.agentRuntime) ? metadata.agentRuntime : undefined,
+    isRecord(metadata?.symphony) && isRecord(metadata.symphony.agentRuntime)
+      ? metadata.symphony.agentRuntime
+      : undefined,
+  ]
+  for (const candidate of candidates) {
+    if (!candidate) {
+      continue
+    }
+    const runtime = normalizeAgentRuntimeBackendConfig(candidate)
+    if (runtime) {
+      return {
+        ...(runtime.model ? { model: runtime.model } : {}),
+        runtime,
+      }
+    }
+  }
+  return undefined
+}
+
+function normalizeAgentRuntimeBackendConfig(value: Record<string, unknown>): Partial<AgentRuntimeBackendConfig> | undefined {
+  const backend = normalizeString(value.backend)
+  const model = normalizeString(value.model)
+  const credentialSource = normalizeString(value.credentialSource)
+  const runtime = normalizeString(value.runtime)
+  const transport = normalizeString(value.transport)
+  const endpoint = normalizeString(value.endpoint)
+  const metadata = isRecord(value.metadata) ? { ...value.metadata } : undefined
+  const resolved: Partial<AgentRuntimeBackendConfig> = {
+    ...(backend ? { backend } : {}),
+    ...(model ? { model } : {}),
+    ...(credentialSource ? { credentialSource } : {}),
+    ...(runtime ? { runtime } : {}),
+    ...(transport ? { transport } : {}),
+    ...(endpoint ? { endpoint } : {}),
+    ...(metadata ? { metadata } : {}),
+  }
+  return Object.keys(resolved).length > 0 ? resolved : undefined
 }
 
 function buildSecretaryPayload(input: AutoModeSecretaryRecommendationInput): Record<string, unknown> {
@@ -318,6 +399,14 @@ function parseJsonString(value: unknown): unknown {
   }
 }
 
+function normalizeString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
 function summarizeRequest(request: AutoModeInteractionRequest): Record<string, unknown> {
   if (request.kind === 'user-input') {
     return {
@@ -359,4 +448,10 @@ function summarizeRequest(request: AutoModeInteractionRequest): Record<string, u
     approvalOptions: request.approvalOptions,
     expiresAt: request.expiresAt,
   }
+}
+
+export const __autoModeSecretaryInternal = {
+  createSecretaryAgentRuntimeConfig,
+  resolveSecretaryRuntimeOverrides,
+  normalizeAgentRuntimeBackendConfig,
 }
