@@ -149,7 +149,7 @@ export interface ThreadReconciler {
   reconcile(event: ThreadControlEvent, options?: Omit<ReconcileThreadEventInput, 'policy' | 'event'>): ReconcileDecision
 }
 
-const DEFAULT_SECRETARY_AGENT = 'ai-secretary'
+const DEFAULT_SECRETARY_AGENT = '__secretary__'
 const DEFAULT_ASSISTANT_AGENT = 'primary-agent'
 const DEFAULT_REVIEWER_AGENT = 'ai-reviewer'
 

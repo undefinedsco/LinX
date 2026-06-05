@@ -49,6 +49,12 @@ export interface SymphonyWorkerEnvironmentRef {
   runtime?: AutoModeWorkerBackend | string
 }
 
+export interface SymphonySupervisorPolicy {
+  strategy: 'interval'
+  intervalMs: number
+  immediateWakeKinds: string[]
+}
+
 export interface SymphonyIssuerRef extends SymphonyChatThreadRef {
   source: 'user' | 'secretary' | 'system'
   webId?: string
@@ -131,7 +137,7 @@ export interface SymphonyDeliveryRecord extends SymphonyChatThreadRef {
   task: string
   type: 'task_dispatch'
   status: SymphonyDeliveryStatus
-  sourceAgent: 'ai-secretary'
+  sourceAgent: '__secretary__'
   targetBackend: AutoModeWorkerBackend
   targetAgent: string
   target: SymphonyDelegationTarget
@@ -161,6 +167,7 @@ export interface SymphonySessionRecord extends SymphonyChatThreadRef {
   workspace?: SymphonyWorkspaceRef
   target: SymphonyDelegationTarget
   model?: string
+  supervisor?: SymphonySupervisorPolicy
   autoModeSessionId?: string
   dryRun?: boolean
   exitCode?: number | null
@@ -191,6 +198,8 @@ export interface SymphonyWorkerSpec extends Partial<SymphonyDelegationTarget> {
   title?: string
   objective?: string
   acceptanceCriteria?: string[]
+  model?: string
+  supervisorIntervalMs?: number
   workspace?: Partial<SymphonyWorkspaceRef>
 }
 
@@ -210,6 +219,8 @@ export interface CreateSymphonyRunPlanInput {
   mode: AutoModeMode
   secretaryAutoEnabled?: boolean
   model?: string
+  workerModel?: string
+  workerSupervisorIntervalMs?: number
   chat?: string
   thread?: string
   messages?: string[]
@@ -367,7 +378,8 @@ export function createRunPlan(input: CreateSymphonyRunPlanInput): SymphonyRunPla
       cwd: workerWorkspace.path,
       workspace: workerWorkspace,
       target,
-      ...(normalizeOptionalText(input.model) ? { model: normalizeOptionalText(input.model) } : {}),
+      ...(spec.model ? { model: spec.model } : {}),
+      ...(spec.supervisor ? { supervisor: spec.supervisor } : {}),
       reconciler: dispatchReconciler,
       ...workerChatThread,
       createdAt: timestamp,
@@ -379,7 +391,7 @@ export function createRunPlan(input: CreateSymphonyRunPlanInput): SymphonyRunPla
       task: uris.task,
       type: 'task_dispatch',
       status: 'pending',
-      sourceAgent: 'ai-secretary',
+      sourceAgent: '__secretary__',
       targetBackend: target.backend,
       targetAgent,
       target,
@@ -540,7 +552,7 @@ function createSymphonyDispatchReconcilerState(input: {
     policy: {
       kind: 'symphony',
       assignedWorkerAgent: input.targetAgent,
-      secretaryAgent: 'ai-secretary',
+      secretaryAgent: '__secretary__',
     },
     event: {
       type: 'delivery.submitted',
@@ -548,7 +560,7 @@ function createSymphonyDispatchReconcilerState(input: {
       ...(input.thread ? { thread: input.thread } : {}),
       resource: input.delivery,
       actor: {
-        id: 'ai-secretary',
+        id: '__secretary__',
         role: 'secretary',
       },
       data: {
@@ -730,6 +742,8 @@ function normalizeSymphonyWorkerSpecs(input: CreateSymphonyRunPlanInput): Array<
   title?: string
   objective: string
   acceptanceCriteria: string[]
+  model?: string
+  supervisor?: SymphonySupervisorPolicy
   workspace?: Partial<SymphonyWorkspaceRef>
 }> {
   const workers: SymphonyWorkerSpec[] = input.workers && input.workers.length > 0 ? input.workers : [input.target ?? {}]
@@ -749,15 +763,34 @@ function normalizeSymphonyWorkerSpecs(input: CreateSymphonyRunPlanInput): Array<
       ?? (workers.length > 1 && label ? createSymphonyTitle(`${label}: ${objective}`) : undefined)
       ?? (workers.length > 1 ? createSymphonyTitle(`Worker ${index + 1}: ${objective}`) : undefined)
     const acceptanceCriteria = normalizeSymphonyAcceptanceCriteria(worker.acceptanceCriteria)
+    const model = normalizeOptionalText(worker.model) ?? normalizeOptionalText(input.workerModel) ?? normalizeOptionalText(input.model)
+    const supervisor = createSymphonySupervisorPolicy(worker.supervisorIntervalMs ?? input.workerSupervisorIntervalMs)
 
     return {
       target,
       ...(title ? { title } : {}),
       objective,
       acceptanceCriteria: acceptanceCriteria.length > 0 ? acceptanceCriteria : rootAcceptanceCriteria,
+      ...(model ? { model } : {}),
+      ...(supervisor ? { supervisor } : {}),
       ...(worker.workspace ? { workspace: worker.workspace } : {}),
     }
   })
+}
+
+function createSymphonySupervisorPolicy(intervalMs: unknown): SymphonySupervisorPolicy | undefined {
+  const normalized = typeof intervalMs === 'number' && Number.isFinite(intervalMs)
+    ? Math.trunc(intervalMs)
+    : undefined
+  if (!normalized || normalized <= 0) {
+    return undefined
+  }
+
+  return {
+    strategy: 'interval',
+    intervalMs: normalized,
+    immediateWakeKinds: ['approval', 'question', 'blocked', 'failed', 'completed'],
+  }
 }
 
 function normalizeSymphonyDelegationTarget(input: CreateSymphonyRunPlanInput): SymphonyDelegationTarget {

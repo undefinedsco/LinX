@@ -159,6 +159,30 @@ test('creates a task delivery session run plan with URI relations and workspace 
   assert.match(plan.delivery.projection.prompt, /Target thread:/)
 })
 
+test('creates worker model and supervisor policy separately from the secretary model', () => {
+  const plan = createRunPlan({
+    objective: 'Implement a bounded Symphony worker slice.',
+    acceptanceCriteria: ['Worker receives the cheap model', 'Secretary supervises on an interval'],
+    workspacePath: '/tmp/linx',
+    backend: 'linx',
+    mode: 'off',
+    secretaryAutoEnabled: true,
+    model: 'gpt-5.5',
+    workerModel: 'deepseek-v4',
+    workerSupervisorIntervalMs: 600000,
+    now: new Date('2026-04-01T02:03:04.005Z'),
+    randomId: 'worker-model',
+  })
+
+  assert.equal(plan.session.backend, 'linx')
+  assert.equal(plan.session.target.backend, 'linx')
+  assert.equal(plan.session.secretaryAutoEnabled, true)
+  assert.equal(plan.session.model, 'deepseek-v4')
+  assert.equal(plan.session.supervisor?.strategy, 'interval')
+  assert.equal(plan.session.supervisor?.intervalMs, 600000)
+  assert.deepEqual(plan.session.supervisor?.immediateWakeKinds, ['approval', 'question', 'blocked', 'failed', 'completed'])
+})
+
 test('renders delegated runtime prompt with objective criteria session and workspace', () => {
   const plan = createRunPlan({
     objective: 'Fix the login regression.',

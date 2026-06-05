@@ -180,9 +180,9 @@ test('wake scheduler exposes reusable metadata summaries for controller callers'
 
   const snapshot = scheduler.snapshot()
   assert.deepEqual(summarizeWakeJobExecutionRecord(snapshot.completed[0]), {
-    key: 'thread:default||ai-secretary|secretary|event-summary|message.appended',
+    key: 'thread:default||__secretary__|secretary|event-summary|message.appended',
     status: 'completed',
-    targetAgent: 'ai-secretary',
+    targetAgent: '__secretary__',
     targetRole: 'secretary',
     trigger: 'message.appended',
     priority: 'normal',
@@ -200,7 +200,7 @@ function makeWakeJob(input: Partial<WakeJob> = {}): WakeJob {
     id: input.id ?? 'wake',
     thread: input.thread ?? 'thread:default',
     ...(input.chat ? { chat: input.chat } : {}),
-    targetAgent: input.targetAgent ?? 'ai-secretary',
+    targetAgent: input.targetAgent ?? '__secretary__',
     targetRole: input.targetRole ?? 'secretary',
     trigger: input.trigger ?? 'message.appended',
     priority: input.priority ?? 'normal',

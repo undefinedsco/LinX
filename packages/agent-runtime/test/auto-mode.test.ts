@@ -36,6 +36,8 @@ resolveAutoModeAutoApprovalDecision,
 autoModeApprovalDecisionForOption,
 autoModeApprovalDecisionForStoredApproval,
 resolveAutoModeInteractionAutoResponse,
+resolveAutoModeCommandRoute,
+resolveAutoModePeerCommand,
 resolveAutoModeQuestionAnswer,
 resolveAutoModeCredentialSourceResolution,
 autoModeApprovalDecisionLabel,
@@ -94,6 +96,85 @@ test('returns the shared archive file layout for a session id', () => {
     sessionDir: 'sessions/auto_demo_1234',
     sessionFile: 'sessions/auto_demo_1234/session.json',
     eventsFile: 'sessions/auto_demo_1234/events.jsonl',
+  })
+})
+
+test('classifies goal as a pass-through peer command with secretary behavior mirror', () => {
+  expect(resolveAutoModePeerCommand('hello')).toBe(null)
+  expect(resolveAutoModePeerCommand('/goal status')).toEqual({
+    kind: 'peer-command',
+    targetRole: 'peer-command',
+    command: 'goal',
+    text: '/goal status',
+  })
+  expect(resolveAutoModePeerCommand('/goal ship login fix')).toEqual({
+    kind: 'peer-command',
+    targetRole: 'peer-command',
+    command: 'goal',
+    text: '/goal ship login fix',
+    secretaryBehavior: { goalMode: true },
+  })
+  expect(resolveAutoModePeerCommand('/goal resume')).toEqual({
+    kind: 'peer-command',
+    targetRole: 'peer-command',
+    command: 'goal',
+    text: '/goal resume',
+    secretaryBehavior: { goalMode: true },
+  })
+  for (const command of ['pause', 'close', 'cancel']) {
+    expect(resolveAutoModePeerCommand(`/goal ${command}`)).toEqual({
+      kind: 'peer-command',
+      targetRole: 'peer-command',
+      command: 'goal',
+      text: `/goal ${command}`,
+      secretaryBehavior: { goalMode: false },
+    })
+  }
+})
+
+test('classifies auto control commands in shared core before shell handling', () => {
+  expect(resolveAutoModeCommandRoute('hello')).toBe(null)
+  expect(resolveAutoModeCommandRoute('/auto')).toEqual({
+    kind: 'control-command',
+    targetRole: 'control-command',
+    command: 'auto',
+    text: '/auto',
+    auto: { action: 'status' },
+  })
+  expect(resolveAutoModeCommandRoute('/auto status')).toEqual({
+    kind: 'control-command',
+    targetRole: 'control-command',
+    command: 'auto',
+    text: '/auto status',
+    auto: { action: 'status' },
+  })
+  expect(resolveAutoModeCommandRoute('/auto on')).toEqual({
+    kind: 'control-command',
+    targetRole: 'control-command',
+    command: 'auto',
+    text: '/auto on',
+    auto: { action: 'set', enabled: true },
+  })
+  expect(resolveAutoModeCommandRoute('/auto off')).toEqual({
+    kind: 'control-command',
+    targetRole: 'control-command',
+    command: 'auto',
+    text: '/auto off',
+    auto: { action: 'set', enabled: false },
+  })
+  expect(resolveAutoModeCommandRoute('/auto /goal ship login fix')).toEqual({
+    kind: 'control-command',
+    targetRole: 'control-command',
+    command: 'auto',
+    text: '/auto /goal ship login fix',
+    auto: { action: 'set', enabled: true, initialInput: '/goal ship login fix' },
+  })
+  expect(resolveAutoModeCommandRoute('/goal ship login fix')).toEqual({
+    kind: 'peer-command',
+    targetRole: 'peer-command',
+    command: 'goal',
+    text: '/goal ship login fix',
+    secretaryBehavior: { goalMode: true },
   })
 })
 
@@ -367,11 +448,24 @@ test('builds structured transcript messages from archived auto-mode events', () 
 
 test('normalizes requested credential source and decides when cloud fallback should be probed', () => {
   expect(normalizeAutoModeCredentialSource()).toBe('cloud')
-  expect(normalizeAutoModeCredentialSource('local')).toBe('cloud')
-  expect(shouldAttemptCloudCredentialProbe('local', { state: 'unauthenticated' })).toBe(true)
+  expect(normalizeAutoModeCredentialSource('local')).toBe('local')
+  expect(shouldAttemptCloudCredentialProbe('local', { state: 'unauthenticated' })).toBe(false)
   expect(shouldAttemptCloudCredentialProbe('auto', { state: 'authenticated' })).toBe(true)
   expect(shouldAttemptCloudCredentialProbe('auto', { state: 'unauthenticated' })).toBe(true)
   expect(shouldAttemptCloudCredentialProbe('cloud', { state: 'unknown' })).toBe(true)
+})
+
+test('resolves explicit local credential source from local backend auth status', () => {
+  expect(
+    resolveAutoModeCredentialSourceResolution({
+      requestedSource: 'local',
+      localAuthStatus: { state: 'authenticated' },
+    }),
+  ).toEqual({
+    requestedSource: 'local',
+    resolvedSource: 'local',
+    authStatus: { state: 'authenticated' },
+  })
 })
 
 test('resolves legacy credential source names to cloud when Pod credential exists', () => {

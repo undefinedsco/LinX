@@ -24,7 +24,7 @@ test('auto policy wakes same-thread Secretary for runtime input and approval', (
   assert.equal(decision.policyKind, 'auto')
   assert.equal(decision.placement.thread, 'thread:auto-1')
   assert.equal(decision.wakeJobs.length, 1)
-  assert.equal(decision.wakeJobs[0].targetAgent, 'ai-secretary')
+  assert.equal(decision.wakeJobs[0].targetAgent, '__secretary__')
   assert.equal(decision.wakeJobs[0].targetRole, 'secretary')
   assert.equal(decision.wakeJobs[0].trigger, 'approval.required')
   assert.equal(decision.wakeJobs[0].priority, 'high')
@@ -86,7 +86,7 @@ test('symphony task dispatch Delivery wakes assigned worker through WakeJob', ()
       type: 'delivery.submitted',
       chat: 'chat:symphony',
       thread: 'thread:worker',
-      actor: { role: 'secretary', id: 'ai-secretary' },
+      actor: { role: 'secretary', id: '__secretary__' },
       resource: 'delivery:1',
       data: {
         deliveryType: 'task_dispatch',
@@ -118,7 +118,7 @@ test('symphony completion failure and blocker events wake Secretary with control
     now: new Date('2026-05-28T00:00:02.500Z'),
     randomId: 'completed',
   }))
-  assert.equal(completed.wakeJobs[0].targetAgent, 'ai-secretary')
+  assert.equal(completed.wakeJobs[0].targetAgent, '__secretary__')
   assert.equal(completed.wakeJobs[0].targetRole, 'secretary')
   assert.equal(completed.wakeJobs[0].priority, 'high')
   assert.equal(completed.wakeJobs[0].controlGate, 'quality')

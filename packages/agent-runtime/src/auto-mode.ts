@@ -1,11 +1,11 @@
 export type AutoModeBackend = 'linx' | 'codex' | 'claude' | 'codebuddy'
-export type AutoModeWorkerBackend = Exclude<AutoModeBackend, 'linx'>
+export type AutoModeWorkerBackend = AutoModeBackend
 export type AutoModeMode = 'off' | 'auto'
 export type LegacyAutoModeMode = AutoModeMode | 'manual' | 'smart'
 export type AutoModeSessionStatus = 'running' | 'completed' | 'failed'
 export type AutoModeOutputStream = 'stdout' | 'stderr' | 'system'
-export type AutoModeCredentialSource = 'cloud'
-export type AutoModeResolvedCredentialSource = 'cloud'
+export type AutoModeCredentialSource = 'cloud' | 'local'
+export type AutoModeResolvedCredentialSource = 'cloud' | 'local'
 type LegacyAutoModeCredentialSource = AutoModeCredentialSource | 'auto' | 'local'
 export type AutoModeApprovalSource = 'local' | 'remote' | 'hybrid'
 export type AutoModeRuntime = 'local'
@@ -331,6 +331,32 @@ export interface AutoModeThreadMetadata extends Record<string, unknown> {
   backendSessionId?: string
 }
 
+export type AutoModeCommandTargetRole = 'control-command' | 'peer-command'
+
+export type AutoModeAutoControl =
+  | { action: 'status' }
+  | { action: 'set'; enabled: boolean; initialInput?: string }
+
+export interface AutoModeControlCommandRoute {
+  kind: 'control-command'
+  targetRole: 'control-command'
+  command: 'auto' | (string & {})
+  text: string
+  auto?: AutoModeAutoControl
+}
+
+export interface AutoModePeerCommandRoute {
+  kind: 'peer-command'
+  targetRole: 'peer-command'
+  command: 'goal' | (string & {})
+  text: string
+  secretaryBehavior?: {
+    goalMode?: boolean
+  }
+}
+
+export type AutoModeCommandRoute = AutoModeControlCommandRoute | AutoModePeerCommandRoute
+
 export type AutoModeTranscriptMessageRole = 'user' | 'assistant' | 'system'
 export type AutoModeTranscriptMessageSource =
   | 'user'
@@ -355,6 +381,101 @@ export interface AutoModeArchiveRelativePaths {
   sessionDir: string
   sessionFile: string
   eventsFile: string
+}
+
+export function resolveAutoModeCommandRoute(input: string | null | undefined): AutoModeCommandRoute | null {
+  const text = normalizeAutoModeCommandText(input)
+  if (!text) {
+    return null
+  }
+
+  const autoRoute = resolveAutoModeAutoControlCommand(text)
+  if (autoRoute) {
+    return autoRoute
+  }
+
+  return resolveAutoModePeerCommand(text)
+}
+
+export function resolveAutoModePeerCommand(input: string | null | undefined): AutoModePeerCommandRoute | null {
+  const text = normalizeAutoModeCommandText(input)
+  if (text !== '/goal' && !text.startsWith('/goal ')) {
+    return null
+  }
+
+  const argument = text.slice('/goal'.length).trim()
+  const goalMode = inferSecretaryGoalModeFromGoalPeerCommand(argument)
+  return {
+    kind: 'peer-command',
+    targetRole: 'peer-command',
+    command: 'goal',
+    text,
+    ...(goalMode === undefined ? {} : { secretaryBehavior: { goalMode } }),
+  }
+}
+
+function resolveAutoModeAutoControlCommand(text: string): AutoModeControlCommandRoute | null {
+  if (text === '/auto' || text === '/auto status') {
+    return {
+      kind: 'control-command',
+      targetRole: 'control-command',
+      command: 'auto',
+      text,
+      auto: { action: 'status' },
+    }
+  }
+
+  if (text === '/auto on') {
+    return {
+      kind: 'control-command',
+      targetRole: 'control-command',
+      command: 'auto',
+      text,
+      auto: { action: 'set', enabled: true },
+    }
+  }
+
+  if (text === '/auto off') {
+    return {
+      kind: 'control-command',
+      targetRole: 'control-command',
+      command: 'auto',
+      text,
+      auto: { action: 'set', enabled: false },
+    }
+  }
+
+  if (text.startsWith('/auto ')) {
+    const initialInput = text.slice('/auto'.length).trim()
+    if (initialInput && initialInput !== 'on' && initialInput !== 'off' && initialInput !== 'status') {
+      return {
+        kind: 'control-command',
+        targetRole: 'control-command',
+        command: 'auto',
+        text,
+        auto: { action: 'set', enabled: true, initialInput },
+      }
+    }
+  }
+
+  return null
+}
+
+function normalizeAutoModeCommandText(input: string | null | undefined): string {
+  return typeof input === 'string' ? input.trim() : ''
+}
+
+function inferSecretaryGoalModeFromGoalPeerCommand(argument: string): boolean | undefined {
+  if (!argument || argument === 'status') {
+    return undefined
+  }
+
+  const firstToken = argument.split(/\s+/, 1)[0]?.toLowerCase()
+  if (firstToken === 'pause' || firstToken === 'close' || firstToken === 'cancel') {
+    return false
+  }
+
+  return true
 }
 
 export const AUTO_MODE_HOME_DIRNAME = 'auto-mode'
@@ -837,15 +958,15 @@ export function createAutoModeSessionId(options: CreateAutoModeSessionIdOptions 
   return `auto_${stamp}_${randomId}`
 }
 
-export function normalizeAutoModeCredentialSource(_source?: LegacyAutoModeCredentialSource | null): AutoModeCredentialSource {
-  return 'cloud'
+export function normalizeAutoModeCredentialSource(source?: LegacyAutoModeCredentialSource | null): AutoModeCredentialSource {
+  return source === 'local' ? 'local' : 'cloud'
 }
 
 export function shouldAttemptCloudCredentialProbe(
-  _requestedSource: LegacyAutoModeCredentialSource,
+  requestedSource: LegacyAutoModeCredentialSource,
   _localAuthStatus: AutoModeAuthStatus,
 ): boolean {
-  return true
+  return normalizeAutoModeCredentialSource(requestedSource) === 'cloud'
 }
 
 export function formatAutoModeAutoFallbackMessage(localMessage: string, detail: string): string {
@@ -860,6 +981,22 @@ export function resolveAutoModeCredentialSourceResolution(input: {
 }): AutoModeCredentialSourceResolution {
   const requestedSource = normalizeAutoModeCredentialSource(input.requestedSource)
   const cloudCredentialProbe = input.cloudCredentialProbe
+
+  if (requestedSource === 'local') {
+    if (input.localAuthStatus.state === 'unauthenticated') {
+      return {
+        requestedSource,
+        authStatus: input.localAuthStatus,
+        error: input.localAuthStatus.message ?? input.defaultLocalMessage ?? 'Local backend authentication unavailable.',
+      }
+    }
+
+    return {
+      requestedSource,
+      resolvedSource: 'local',
+      authStatus: input.localAuthStatus,
+    }
+  }
 
   if (cloudCredentialProbe?.status === 'available') {
     return {
