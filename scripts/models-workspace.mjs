@@ -47,7 +47,7 @@ function ensureModelsWorkspace() {
   const candidate = resolve(process.env.LINX_MODELS_PATH || defaultExternalModelsPath)
   if (!isModelsPackage(candidate)) {
     console.log('packages/models is missing.')
-    console.log('Clone the independent models repository, then rerun with LINX_MODELS_PATH if it is not at ../models:')
+    console.log('Provide a local models checkout, then rerun with LINX_MODELS_PATH if it is not at packages/models:')
     console.log('  git clone https://github.com/undefinedsco/models.git ../models')
     console.log('  LINX_MODELS_PATH=../models yarn models:update')
     return
@@ -64,7 +64,7 @@ function printStatus() {
     console.log(`authoritative models: ${authoritative}`)
     printGitStatus(authoritative)
   } else {
-    console.log('authoritative models: missing. Clone the independent models repository at ../models or set LINX_MODELS_PATH.')
+    console.log('authoritative models: missing. Provide packages/models or set LINX_MODELS_PATH.')
   }
 
   if (!existsSync(modelsPath)) {
@@ -96,12 +96,12 @@ function printStatus() {
 function assertReleaseSafe() {
   const root = resolveAuthoritativeModelsPath({ allowLegacy: true })
   if (!root) {
-    throw new Error('Release blocked: no @undefineds.co/models checkout found. Clone the independent models repository at ../models or set LINX_MODELS_PATH.')
+    throw new Error('Release blocked: no @undefineds.co/models checkout found. Provide packages/models or set LINX_MODELS_PATH.')
   }
 
   const kind = root === modelsPath ? detectModelsKind(modelsPath) : 'independent checkout'
   if (kind === 'legacy submodule') {
-    console.warn('Warning: using packages/models legacy submodule checkout. Prefer the independent ../models checkout or a published package version.')
+    console.warn('Warning: using packages/models legacy submodule checkout. Ensure it is committed and published before publishing LinX.')
   }
 
   if (kind !== 'workspace directory' && kind !== 'directory') {
@@ -140,7 +140,7 @@ function packModelsRelease() {
 function requireAuthoritativeModelsPath() {
   const root = resolveAuthoritativeModelsPath({ allowLegacy: true })
   if (!root) {
-    throw new Error('Cannot find @undefineds.co/models. Clone the independent repository at ../models or set LINX_MODELS_PATH.')
+    throw new Error('Cannot find @undefineds.co/models. Provide packages/models or set LINX_MODELS_PATH.')
   }
   return root
 }
@@ -149,8 +149,8 @@ function resolveAuthoritativeModelsPath({ allowLegacy }) {
   const candidates = [
     process.env.LINX_MODELS_ROOT,
     process.env.LINX_MODELS_PATH,
-    defaultExternalModelsPath,
     allowLegacy ? modelsPath : undefined,
+    defaultExternalModelsPath,
   ].filter(Boolean)
 
   for (const candidate of candidates) {

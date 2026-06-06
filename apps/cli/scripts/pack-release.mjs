@@ -14,8 +14,8 @@ const cliRoot = fileURLToPath(new URL('..', import.meta.url))
 const modelsRoot = resolvePackageSourceRoot('@undefineds.co/models', [
   process.env.LINX_MODELS_ROOT,
   process.env.LINX_MODELS_PATH,
-  resolve(repoRoot, '..', 'models'),
   join(repoRoot, 'packages', 'models'),
+  resolve(repoRoot, '..', 'models'),
   join(repoRoot, 'node_modules', '@undefineds.co', 'models'),
 ])
 const outRoot = join(repoRoot, 'preview')
@@ -27,9 +27,6 @@ const agentRuntimeRoot = join(repoRoot, 'packages', 'agent-runtime')
 const agentRuntimePkg = JSON.parse(readFileSync(join(agentRuntimeRoot, 'package.json'), 'utf-8'))
 const codexAcpDependencyVersion = cliPkg.dependencies?.['@zed-industries/codex-acp']
 const version = args.version ?? cliPkg.version
-if (modelsPkg.version !== cliPkg.version && !args.version) {
-  throw new Error(`CLI and models versions must match for release: cli=${cliPkg.version}, models=${modelsPkg.version}`)
-}
 
 const workRoot = join(tmpdir(), `linx-cli-release-${Date.now()}`)
 const cliWorkRoot = join(workRoot, 'cli')
@@ -278,7 +275,7 @@ function resolvePackageSourceRoot(packageName, candidates) {
     }
   }
 
-  throw new Error(`Cannot find ${packageName}. Set LINX_MODELS_ROOT or clone the independent models repository at ../models.`)
+  throw new Error(`Cannot find ${packageName}. Set LINX_MODELS_ROOT or provide packages/models.`)
 }
 
 function parseArgs(argv) {

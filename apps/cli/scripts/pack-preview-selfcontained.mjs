@@ -21,8 +21,8 @@ const workRoot = join(tmpdir(), `linx-cli-${artifactKind}-${Date.now()}`)
 const modelsSourceRoot = resolvePackageSourceRoot('@undefineds.co/models', [
   process.env.LINX_MODELS_ROOT,
   process.env.LINX_MODELS_PATH,
-  join(repoRoot, '..', 'models'),
   join(repoRoot, 'packages', 'models'),
+  join(repoRoot, '..', 'models'),
   join(repoRoot, 'node_modules', '@undefineds.co', 'models'),
 ])
 const drizzleSolidSourceRoot = resolvePackageSourceRoot('@undefineds.co/drizzle-solid', [
