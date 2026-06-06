@@ -1,6 +1,4 @@
 import {
-  XPOD_AI,
-  XPOD_CREDENTIAL,
   aiConfigProviderRef,
   aiConfigModelUri,
   aiConfigProviderUri,
@@ -11,11 +9,6 @@ import {
   approvalResource,
   approvalTable,
   auditTable,
-  buildApprovalSubjectPath,
-  buildAuditSubjectPath,
-  buildGrantSubjectPath,
-  buildSessionResourceId,
-  buildSessionSubjectPath,
   buildAIConfigDisconnectPlan,
   buildAIConfigMutationPlan,
   buildAIConfigProviderStateMap,
@@ -79,6 +72,35 @@ import {
   type ThreadRow,
 } from '@undefineds.co/models'
 
+interface ResourcePathBuilder {
+  buildId(row: Record<string, unknown>): string
+  resolveUri(id: string): string
+}
+
+function buildResourceSubjectPath(resource: ResourcePathBuilder, row: Record<string, unknown>): string {
+  return resource.resolveUri(resource.buildId(row))
+}
+
+export function buildApprovalSubjectPath(approvalId: string, createdAt: Date | string | number = new Date()): string {
+  return buildResourceSubjectPath(approvalResource as ResourcePathBuilder, { id: approvalId, createdAt })
+}
+
+export function buildAuditSubjectPath(auditId: string, createdAt: Date | string | number = new Date()): string {
+  return buildResourceSubjectPath(auditResource as ResourcePathBuilder, { id: auditId, createdAt })
+}
+
+export function buildGrantSubjectPath(grantId: string): string {
+  return buildResourceSubjectPath(grantResource as ResourcePathBuilder, { id: grantId })
+}
+
+export function buildSessionResourceId(sessionId: string, createdAt: Date | string | number = new Date()): string {
+  return sessionResource.buildId({ id: sessionId, createdAt })
+}
+
+export function buildSessionSubjectPath(sessionId: string, createdAt: Date | string | number = new Date()): string {
+  return sessionResource.resolveUri(buildSessionResourceId(sessionId, createdAt))
+}
+
 export {
   ContactType,
   agentResource,
@@ -94,11 +116,6 @@ export {
   approvalResource,
   approvalTable,
   auditTable,
-  buildApprovalSubjectPath,
-  buildAuditSubjectPath,
-  buildGrantSubjectPath,
-  buildSessionResourceId,
-  buildSessionSubjectPath,
   buildAIConfigDisconnectPlan,
   buildAIConfigMutationPlan,
   buildAIConfigProviderStateMap,
@@ -137,8 +154,6 @@ export {
   sessionRepository,
   threadResource,
   threadTable,
-  XPOD_AI,
-  XPOD_CREDENTIAL,
 }
 export type {
   AIConfigModel,
