@@ -1,10 +1,27 @@
 # LinX CLI Release
 
-LinX CLI release publishes the CLI package under the Undefineds scope:
+LinX CLI release means producing a verified release artifact and cutting a git
+tag. It does not mean that a local agent should run `npm publish` from a
+developer machine.
+
+The public package identity remains:
 
 - `@undefineds.co/linx`
 
-The CLI package depends on a published exact `@undefineds.co/models` version, but the CLI and models package versions are independent. Models is owned and released from the independent models repository; LinX release automation may still build or pack a local models checkout during migration, but that is not the ownership boundary.
+The CLI package depends on a published exact `@undefineds.co/models` version,
+but the CLI and models package versions are independent. Models is owned and
+released from the independent models repository; LinX release automation may
+still build or pack a local models checkout during migration, but that is not
+the ownership boundary.
+
+Default release authority:
+
+- Humans and local agents commit, verify, push git commits, and create/push the
+  release tag.
+- GitHub Actions owns npm registry publication for tagged releases.
+- Local `npm publish` is an explicit emergency/manual registry operation only.
+  Do not infer it from ordinary instructions such as "release", "publish", or
+  "发版".
 
 ## Current Release Path
 
@@ -43,7 +60,8 @@ yarn pack:cli:preview
 
 ## Local Verification
 
-Install the produced tarball into an isolated npm prefix before publishing or uploading it:
+Install the produced tarball into an isolated npm prefix before tagging or
+uploading it:
 
 ```bash
 node scripts/smoke-install-cli-release.mjs
@@ -56,7 +74,11 @@ The required `@undefineds.co/drizzle-solid` runtime fix has two externally visib
 - Inserting a message with `message.chat` and `message.thread` resolves inverse links to concrete chat/thread IRIs.
 - Generated triples must never contain unresolved template variables such as `{chat}`.
 
-If the smoke script fails on the drizzle-solid check, publish a fixed `@undefineds.co/drizzle-solid` first and then rebuild the models and CLI tarballs. Do not publish `@undefineds.co/models` or `@undefineds.co/linx` against a registry drizzle-solid version that still only replaces `{id}` in linked table templates.
+If the smoke script fails on the drizzle-solid check, release a fixed
+`@undefineds.co/drizzle-solid` first and then rebuild the models and CLI
+tarballs. Do not tag or publish `@undefineds.co/models` or `@undefineds.co/linx`
+against a registry drizzle-solid version that still only replaces `{id}` in
+linked table templates.
 
 ## Bundled Pi Plugins
 
@@ -88,7 +110,37 @@ HOME=/tmp/linx-prod-smoke-home LINX_PROD_SMOKE_WEBID=$LINX_PROD_SMOKE_WEBID node
 
 The isolated `HOME` keeps the smoke account's `~/.solid/auth` credentials separate from the user's normal Solid auth store. `scripts/verify-cli-pod-durable.mjs` and `scripts/prod-pod-core-crud.mjs` are write smoke tests; they should never default to the currently logged-in personal account.
 
-## npm Registry Publish
+## Git Tag Release
+
+Normal LinX CLI release is tag-driven:
+
+```bash
+git status --short
+yarn pack:cli:release
+node scripts/smoke-install-cli-release.mjs
+git push origin <branch>
+git tag linx-v<cli-version>
+git push origin linx-v<cli-version>
+```
+
+The tag must match the CLI version in `apps/cli/package.json`. For example,
+`apps/cli/package.json` version `0.3.3` is released with:
+
+```bash
+git tag linx-v0.3.3
+git push origin linx-v0.3.3
+```
+
+The `linx-v*` tag starts `.github/workflows/cli-release.yml`. That workflow
+rebuilds, packs, smoke-installs, publishes the npm package with the repository
+`NPM_TOKEN`, and creates the GitHub Release. Local machines do not need npm
+publish credentials for the normal release path.
+
+## Manual npm Registry Publish
+
+Manual npm publish is not the default release process. Use it only when a human
+explicitly asks for a registry publish outside the tag workflow, and only after
+the same pack and smoke-install verification has passed.
 
 Publish models first, then CLI:
 
@@ -111,7 +163,7 @@ npm i -g --omit=peer @undefineds.co/linx
 
 npm 7+ auto-installs peer dependencies, including `drizzle-orm` optional database driver peers that are not needed by LinX CLI. The CLI release smoke test and in-TUI updater intentionally install with `--omit=peer` so global installs stay small and avoid fetching optional SQL drivers such as `better-sqlite3`, `pg`, or AWS database clients.
 
-If a new models release depends on ORM behavior, publish order is:
+If a new models release depends on ORM behavior, registry publication order is:
 
 ```text
 @undefineds.co/drizzle-solid -> @undefineds.co/models -> @undefineds.co/linx
@@ -218,13 +270,19 @@ Release publishing is handled by:
 .github/workflows/cli-release.yml
 ```
 
-It verifies the same release tarballs on Linux, macOS, and Windows. Only the Linux artifact is uploaded for publish. Publishing runs in order:
+It verifies the same release tarballs on Linux and macOS. Only the Linux
+artifact is uploaded for the publish job. The normal trigger is a pushed
+`linx-v*` git tag. Publishing runs in order:
 
 ```text
 @undefineds.co/models -> @undefineds.co/linx
 ```
 
-Automatic publish happens on tags matching `linx-v*`. Manual `workflow_dispatch` can verify without publish, or publish when `publish=true`. npm publishing requires `NPM_TOKEN` in GitHub Actions secrets.
+Automatic registry publish happens in GitHub Actions on tags matching `linx-v*`.
+Manual `workflow_dispatch` can verify without publishing, or publish when
+`publish=true`. npm publishing requires `NPM_TOKEN` in GitHub Actions secrets;
+local developer/agent npm credentials are not part of the standard release
+path.
 
 ## Shared Models Development
 

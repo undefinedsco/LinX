@@ -20,11 +20,24 @@
 - 当前 `packages/models` 若存在，只能视为迁移期的本地开发检出；它不再是推荐长期形态，也不应作为 LinX 内部 submodule 维护入口。
 - 本地开发如果需要改共享模型，优先在独立 models 仓库完成提交、版本和发布，再让 LinX 消费对应版本。开发期 workspace/link 只是便捷接线，不改变权威归属。
 
+## 发布口径
+
+这里的“发布”默认指 git release path：提交、推送、打版本 tag，让 CI/CD
+用仓库凭证完成 registry/npm 侧动作。不要把用户或文档里的“发布 / 发版 /
+publish”自动理解为在本机执行 `npm publish`。
+
+- 本地 agent 可以做：提交、验证、打包、本地安装冒烟、准备 tag 命令。
+- 正常 release 入口：push git commit + push release tag。
+- npm registry publish：由 GitHub Actions 等发布流水线执行；只有用户明确要求
+  “手工 npm publish / registry publish” 时，本地才考虑执行。
+- 发布前发现本机 npm token 失效，不是标准 release blocker；标准 blocker 是
+  git 状态、版本号、tag、CI 发布权限或 release workflow 配置错误。
+
 ## 版本锁定规则
 
 发布产物必须锁定到一个明确的 `@undefineds.co/models` 版本：
 
-1. models 独立仓库先完成 schema/API 修改、测试、版本号、tag 和 npm 发布。
+1. models 独立仓库先完成 schema/API 修改、测试、版本号和 release tag；npm registry 发布由对应 release 流水线完成。
 2. LinX 再升级 `@undefineds.co/models` 依赖到该精确版本，并更新 lockfile / release 脚本需要的版本来源。
 3. 不要把 LinX 父仓库的 git 状态当成 models 版本证明。
 4. 如果本地 `packages/models` 正好是 submodule，那是旧布局兼容；不要提交新的 submodule 指针作为共享模型升级方案。
@@ -47,7 +60,7 @@ LinX release dependency: @undefineds.co/models@X.Y.Z
 
 当 models 有新版本时：
 
-1. 在独立 models 仓库完成修改、测试、tag、发布。
+1. 在独立 models 仓库完成修改、测试、tag，并确认 release 流水线完成 registry 发布。
 2. 在 LinX 仓库升级 `@undefineds.co/models` 到发布后的精确版本。
 3. 运行至少：
 
