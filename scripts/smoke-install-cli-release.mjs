@@ -125,14 +125,15 @@ function assertInstalledPiWebAccessPatch() {
 
   const indexSource = readFileSync(indexSourcePath, 'utf8')
   const configSource = readFileSync(configSourcePath, 'utf8')
+  const expectedConfigCode = 'process.env.LINX_HOME?.trim() || join(process.env.SOLID_HOME?.trim() || join(homedir(), ".solid"), "apps", "linx")'
   if (
-    !indexSource.includes('~/.linx/pi-web-access.json')
-    || !configSource.includes('~/.linx/pi-web-access.json')
+    !indexSource.includes(expectedConfigCode)
+    || !configSource.includes(expectedConfigCode)
   ) {
-    throw new Error('Installed vendored pi-web-access package does not target ~/.linx/pi-web-access.json')
+    throw new Error('Installed vendored pi-web-access package does not derive pi-web-access config from LINX_HOME/SOLID_HOME')
   }
 
-  console.log('verified vendored pi-web-access package targets ~/.linx/pi-web-access.json')
+  console.log('verified vendored pi-web-access package derives config from LINX_HOME/SOLID_HOME')
 }
 
 function findInstalledPackageRoot(packageName) {

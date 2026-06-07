@@ -1,11 +1,6 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
 import {
   isLinxClientCredentialsSecrets,
-  LINX_CONFIG_FILE_NAME,
-  LINX_HOME_DIRNAME,
-  LINX_SECRETS_FILE_NAME,
   parseLinxClientConfig,
   parseLinxClientSecrets,
   type LinxAuthType,
@@ -14,6 +9,7 @@ import {
   type LinxClientSecrets,
   type LinxOidcOAuthSecrets,
 } from '@undefineds.co/models/client'
+import { getSolidAuthCredentialsPath, getSolidAuthDir } from './solid-auth-store.js'
 
 export type AuthType = LinxAuthType
 export type StoredConfig = LinxClientConfig
@@ -26,18 +22,6 @@ export interface StoredCredentials extends StoredConfig {
   sourceDir: string
 }
 
-function linxDir(): string {
-  return join(homedir(), LINX_HOME_DIRNAME)
-}
-
-export function getConfigPath(): string {
-  return join(linxDir(), LINX_CONFIG_FILE_NAME)
-}
-
-export function getSecretsPath(): string {
-  return join(linxDir(), LINX_SECRETS_FILE_NAME)
-}
-
 function readJson<T>(filePath: string): T | null {
   try {
     return JSON.parse(readFileSync(filePath, 'utf-8')) as T
@@ -46,30 +30,47 @@ function readJson<T>(filePath: string): T | null {
   }
 }
 
-function credentialDirs(): string[] {
-  return [linxDir()]
+function parseStoredCredentialsEnvelope(raw: unknown): StoredCredentials | null {
+  const config = parseLinxClientConfig(raw)
+  if (!config || typeof raw !== 'object' || raw === null || !('secrets' in raw)) {
+    return null
+  }
+
+  const secrets = parseLinxClientSecrets((raw as { secrets?: unknown }).secrets)
+  if (!secrets) {
+    return null
+  }
+
+  return {
+    url: config.url,
+    webId: config.webId,
+    authType: config.authType,
+    sourceDir: getSolidAuthDir(),
+    secrets,
+  }
 }
 
 export function saveCredentials(creds: StoredConfig & { secrets: StoredSecrets }): void {
-  const dir = linxDir()
+  const dir = getSolidAuthDir()
   mkdirSync(dir, { recursive: true })
 
   writeFileSync(
-    getConfigPath(),
-    `${JSON.stringify({ url: creds.url, webId: creds.webId, authType: creds.authType }, null, 2)}\n`,
+    getSolidAuthCredentialsPath(),
+    `${JSON.stringify({
+      url: creds.url,
+      webId: creds.webId,
+      authType: creds.authType,
+      secrets: creds.secrets,
+    }, null, 2)}\n`,
     'utf-8',
   )
-  chmodSync(getConfigPath(), 0o644)
-
-  writeFileSync(getSecretsPath(), `${JSON.stringify(creds.secrets, null, 2)}\n`, 'utf-8')
-  chmodSync(getSecretsPath(), 0o600)
+  chmodSync(getSolidAuthCredentialsPath(), 0o600)
 }
 
 export function clearCredentials(): void {
-  for (const path of [getConfigPath(), getSecretsPath()]) {
-    if (existsSync(path)) {
-      unlinkSync(path)
-    }
+  const path = getSolidAuthCredentialsPath()
+  if (existsSync(path)) {
+    unlinkSync(path)
   }
 }
 
@@ -97,29 +98,10 @@ export function getOidcOAuthSecrets(creds: StoredCredentials): OidcOAuthSecrets 
 }
 
 export function loadCredentials(): StoredCredentials | null {
-  for (const sourceDir of credentialDirs()) {
-    const configPath = join(sourceDir, LINX_CONFIG_FILE_NAME)
-    const secretsPath = join(sourceDir, LINX_SECRETS_FILE_NAME)
-
-    if (!existsSync(configPath) || !existsSync(secretsPath)) {
-      continue
-    }
-
-    const config = parseLinxClientConfig(readJson<unknown>(configPath))
-    const secrets = parseLinxClientSecrets(readJson<unknown>(secretsPath))
-
-    if (!config || !secrets) {
-      continue
-    }
-
-    return {
-      url: config.url,
-      webId: config.webId,
-      authType: config.authType,
-      sourceDir,
-      secrets,
-    }
+  const path = getSolidAuthCredentialsPath()
+  if (!existsSync(path)) {
+    return null
   }
 
-  return null
+  return parseStoredCredentialsEnvelope(readJson<unknown>(path))
 }

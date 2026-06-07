@@ -65,7 +65,7 @@ test('compiled cli default --print accepts a prompt argument and starts the pi p
     env: {
       ...process.env,
       HOME: home,
-      LINX_AUTO_MODE_HOME: join(home, '.linx', 'auto-mode'),
+      LINX_HOME: join(home, '.solid', 'apps', 'linx'),
       OPENAI_API_KEY: process.env.OPENAI_API_KEY || 'test-key',
     },
   })

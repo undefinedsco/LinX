@@ -1,8 +1,6 @@
 import { spawn } from 'node:child_process'
-import { homedir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename } from 'node:path'
 import { readFileSync } from 'node:fs'
-import { LINX_HOME_DIRNAME } from '@undefineds.co/models/client'
 import { keyHint, LoginDialogComponent, rawKeyHint } from '@earendil-works/pi-coding-agent'
 import { Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui'
 import type { OAuthCredentials } from '@earendil-works/pi-ai'
@@ -15,8 +13,9 @@ import { LINX_TUI_KEYMAP_COMMAND, LINX_TUI_KEYMAP_LABEL, LINX_TUI_LOGIN_COMMAND 
 import { suppressPodStatusOutput } from './pod-status-output.js'
 import { LINX_RUNTIME_MANAGED_AUTH_KEY } from './runtime.js'
 import { formatLinxCliErrorMessage } from '../linx-cloud-errors.js'
+import { getSolidLinxAgentDir } from '../solid-local-store.js'
 
-export const LINX_AGENT_DIR = join(homedir(), LINX_HOME_DIRNAME, 'agent')
+export const LINX_AGENT_DIR = getSolidLinxAgentDir()
 export const LINX_UPDATE_PACKAGE_NAME = '@undefineds.co/linx'
 export const LINX_CHANGELOG_URL = 'https://github.com/undefineds-co/linx-cli/releases'
 export const LINX_CLI_VERSION = readLinxCliVersion()
@@ -642,7 +641,7 @@ async function promptForLinxClientCredentials(interactive: any, reason: LinxAuth
     podUrl: result.podUrl,
   })
   await refreshLinxAuthState(interactive)
-  await finishLinxAuthSuccess(interactive, reason, 'Solid client credentials saved to ~/.linx.')
+  await finishLinxAuthSuccess(interactive, reason, 'Solid client credentials saved to ~/.solid/auth.')
 }
 
 function resolveSolidClientCredentialsLogin(interactive: any): typeof persistSolidClientCredentialsLogin {

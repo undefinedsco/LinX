@@ -72,7 +72,7 @@ To copy a specific plugin into a package staging root:
 node apps/cli/scripts/bundled-pi-plugins.mjs --target-root /tmp/linx-cli-package pi-web-access
 ```
 
-`pack-release.mjs` and `pack-preview-selfcontained.mjs` use the same helper, so release and preview packages share one plugin manifest. For `pi-web-access`, the helper also verifies the packaged source no longer points at `~/.pi/web-search.json` and does point at `~/.linx/pi-web-access.json`.
+`pack-release.mjs` and `pack-preview-selfcontained.mjs` use the same helper, so release and preview packages share one plugin manifest. For `pi-web-access`, the helper also verifies the packaged source no longer points at `~/.pi/web-search.json` or `~/.linx/pi-web-access.json` and derives its config path from `LINX_HOME` / `SOLID_HOME`.
 
 ## Production Pod Smoke Account
 
@@ -86,7 +86,7 @@ HOME=/tmp/linx-prod-smoke-home linx login
 HOME=/tmp/linx-prod-smoke-home LINX_PROD_SMOKE_WEBID=$LINX_PROD_SMOKE_WEBID node scripts/verify-cli-pod-durable.mjs
 ```
 
-The isolated `HOME` keeps the smoke account's `~/.linx` credentials separate from the user's normal LinX account. `scripts/verify-cli-pod-durable.mjs` and `scripts/prod-pod-core-crud.mjs` are write smoke tests; they should never default to the currently logged-in personal account.
+The isolated `HOME` keeps the smoke account's `~/.solid/auth` credentials separate from the user's normal Solid auth store. `scripts/verify-cli-pod-durable.mjs` and `scripts/prod-pod-core-crud.mjs` are write smoke tests; they should never default to the currently logged-in personal account.
 
 ## npm Registry Publish
 

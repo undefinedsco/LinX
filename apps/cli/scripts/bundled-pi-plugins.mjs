@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -6,7 +6,10 @@ export const BUNDLED_PI_PLUGINS = [
   {
     packageName: 'pi-web-access',
     legacyConfigPath: '~/.pi/web-search.json',
-    configPath: '~/.linx/pi-web-access.json',
+    deprecatedConfigPath: '~/.linx/pi-web-access.json',
+    deprecatedConfigCode: 'join(homedir(), ".linx", "pi-web-access.json")',
+    configPath: '$LINX_HOME/pi-web-access.json',
+    configCode: 'join(process.env.LINX_HOME?.trim() || join(process.env.SOLID_HOME?.trim() || join(homedir(), ".solid"), "apps", "linx"), "pi-web-access.json")',
   },
 ]
 
@@ -21,6 +24,7 @@ export function copyBundledPiPlugins({ repoRoot, targetRoot, plugins = BUNDLED_P
       recursive: true,
       filter: (src) => shouldCopyPackagePath(sourceRoot, src),
     })
+    rewriteBundledPiPluginConfigPath(join(targetRoot, 'vendor', plugin.packageName), plugin)
   }
 }
 
@@ -57,15 +61,27 @@ export function assertBundledPiPluginConfigPaths(packageRoot, plugins = BUNDLED_
     const vendorRoot = join(packageRoot, 'vendor', plugin.packageName)
     const files = walkSourceFiles(vendorRoot)
     const legacyMatches = []
+    const deprecatedMatches = []
+    const deprecatedCodeMatches = []
     const expectedMatches = []
+    const expectedCodeMatches = []
 
     for (const file of files) {
       const content = readFileSync(file, 'utf8')
       if (content.includes(plugin.legacyConfigPath)) {
         legacyMatches.push(relative(vendorRoot, file))
       }
+      if (plugin.deprecatedConfigPath && content.includes(plugin.deprecatedConfigPath)) {
+        deprecatedMatches.push(relative(vendorRoot, file))
+      }
+      if (plugin.deprecatedConfigCode && content.includes(plugin.deprecatedConfigCode)) {
+        deprecatedCodeMatches.push(relative(vendorRoot, file))
+      }
       if (content.includes(plugin.configPath)) {
         expectedMatches.push(relative(vendorRoot, file))
+      }
+      if (plugin.configCode && content.includes(plugin.configCode)) {
+        expectedCodeMatches.push(relative(vendorRoot, file))
       }
     }
 
@@ -76,10 +92,43 @@ export function assertBundledPiPluginConfigPaths(packageRoot, plugins = BUNDLED_
       )
     }
 
-    if (expectedMatches.length === 0) {
+    if (deprecatedMatches.length > 0) {
+      throw new Error(
+        `Installed vendored ${plugin.packageName} still references ${plugin.deprecatedConfigPath} in:\n`
+          + deprecatedMatches.map((file) => `  - ${file}`).join('\n'),
+      )
+    }
+
+    if (deprecatedCodeMatches.length > 0) {
+      throw new Error(
+        `Installed vendored ${plugin.packageName} still references ${plugin.deprecatedConfigCode} in:\n`
+          + deprecatedCodeMatches.map((file) => `  - ${file}`).join('\n'),
+      )
+    }
+
+    if (expectedMatches.length === 0 && expectedCodeMatches.length === 0) {
       throw new Error(
         `Installed vendored ${plugin.packageName} does not reference ${plugin.configPath} in its source files`,
       )
+    }
+  }
+}
+
+function rewriteBundledPiPluginConfigPath(root, plugin) {
+  if (!plugin.deprecatedConfigPath && !plugin.deprecatedConfigCode) return
+
+  for (const file of walkSourceFiles(root)) {
+    let content = readFileSync(file, 'utf8')
+    const original = content
+
+    if (plugin.deprecatedConfigPath && plugin.configPath) {
+      content = content.split(plugin.deprecatedConfigPath).join(plugin.configPath)
+    }
+    if (plugin.deprecatedConfigCode && plugin.configCode) {
+      content = content.split(plugin.deprecatedConfigCode).join(plugin.configCode)
+    }
+    if (content !== original) {
+      writeFileSync(file, content)
     }
   }
 }

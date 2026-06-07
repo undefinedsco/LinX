@@ -6,6 +6,27 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 
+function solidAuthDir(home) {
+  return join(home, '.solid', 'auth')
+}
+
+function solidCredentialsPath(home) {
+  return join(solidAuthDir(home), 'credentials.json')
+}
+
+function solidAccountPath(home) {
+  return join(solidAuthDir(home), 'account.json')
+}
+
+function solidOidcStorageDir(home) {
+  return join(solidAuthDir(home), 'oidc-storage')
+}
+
+function writeSolidCredentials(home, credentials) {
+  mkdirSync(solidAuthDir(home), { recursive: true })
+  writeFileSync(solidCredentialsPath(home), JSON.stringify(credentials, null, 2))
+}
+
 test('serializeOidcCredentials stores browser consent token set as oidc_oauth credentials', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/oidc-auth.ts')
   t.after(() => cleanup())
@@ -70,20 +91,18 @@ test('existing browser consent reuse clears stale local OIDC state when storage 
 
   const originalHome = process.env.HOME
   const home = mkdtempSync(join(tmpdir(), 'linx-oidc-stale-home-'))
-  const linxDir = join(home, '.linx')
-  mkdirSync(linxDir, { recursive: true })
-  writeFileSync(join(linxDir, 'config.json'), JSON.stringify({
+  writeSolidCredentials(home, {
     url: 'https://id.undefineds.co/',
     webId: 'https://id.undefineds.co/alice/profile/card#me',
     authType: 'oidc_oauth',
-  }, null, 2))
-  writeFileSync(join(linxDir, 'secrets.json'), JSON.stringify({
-    oidcRefreshToken: 'old-refresh',
-    oidcAccessToken: 'old-access',
-    oidcExpiresAt: '2030-01-01T00:00:00.000Z',
-    oidcClientId: 'old-client',
-  }, null, 2))
-  writeFileSync(join(linxDir, 'account.json'), JSON.stringify({
+    secrets: {
+      oidcRefreshToken: 'old-refresh',
+      oidcAccessToken: 'old-access',
+      oidcExpiresAt: '2030-01-01T00:00:00.000Z',
+      oidcClientId: 'old-client',
+    },
+  })
+  writeFileSync(solidAccountPath(home), JSON.stringify({
     url: 'https://id.undefineds.co/',
     email: 'browser-consent',
     token: 'oidc-session',
@@ -106,9 +125,8 @@ test('existing browser consent reuse clears stale local OIDC state when storage 
   })
 
   assert.equal(reused, null)
-  assert.equal(existsSync(join(linxDir, 'config.json')), false)
-  assert.equal(existsSync(join(linxDir, 'secrets.json')), false)
-  assert.equal(existsSync(join(linxDir, 'account.json')), false)
+  assert.equal(existsSync(solidCredentialsPath(home)), false)
+  assert.equal(existsSync(solidAccountPath(home)), false)
 })
 
 test('transient OIDC refresh failures do not clear stored login state', async (t) => {
@@ -117,21 +135,20 @@ test('transient OIDC refresh failures do not clear stored login state', async (t
 
   const originalHome = process.env.HOME
   const home = mkdtempSync(join(tmpdir(), 'linx-oidc-transient-home-'))
-  const linxDir = join(home, '.linx')
-  const storageDir = join(linxDir, 'oidc-storage')
+  const storageDir = solidOidcStorageDir(home)
   const sessionId = 'transient-session'
   mkdirSync(storageDir, { recursive: true })
-  writeFileSync(join(linxDir, 'config.json'), JSON.stringify({
+  writeSolidCredentials(home, {
     url: 'https://id.undefineds.co/',
     webId: 'https://id.undefineds.co/alice/profile/card#me',
     authType: 'oidc_oauth',
-  }, null, 2))
-  writeFileSync(join(linxDir, 'secrets.json'), JSON.stringify({
-    oidcRefreshToken: 'old-refresh',
-    oidcAccessToken: 'old-access',
-    oidcExpiresAt: '2030-01-01T00:00:00.000Z',
-    oidcClientId: 'old-client',
-  }, null, 2))
+    secrets: {
+      oidcRefreshToken: 'old-refresh',
+      oidcAccessToken: 'old-access',
+      oidcExpiresAt: '2030-01-01T00:00:00.000Z',
+      oidcClientId: 'old-client',
+    },
+  })
   writeFileSync(join(storageDir, encodeURIComponent('solidClientAuthn:registeredSessions')), JSON.stringify([sessionId]))
   writeFileSync(
     join(storageDir, encodeURIComponent(`solidClientAuthenticationUser:${sessionId}`)),
@@ -156,8 +173,7 @@ test('transient OIDC refresh failures do not clear stored login state', async (t
   assert.equal(module.isOidcTransientRemoteError(error), true)
   assert.equal(module.isOidcLoginExpiredError(error), false)
   assert.match(String(error), /temporarily unavailable/i)
-  assert.equal(existsSync(join(linxDir, 'config.json')), true)
-  assert.equal(existsSync(join(linxDir, 'secrets.json')), true)
+  assert.equal(existsSync(solidCredentialsPath(home)), true)
   assert.equal(existsSync(storageDir), true)
 })
 
@@ -167,21 +183,20 @@ test('force restoring a DPoP OIDC session clears stale local OIDC state', async 
 
   const originalHome = process.env.HOME
   const home = mkdtempSync(join(tmpdir(), 'linx-oidc-legacy-home-'))
-  const linxDir = join(home, '.linx')
-  const storageDir = join(linxDir, 'oidc-storage')
+  const storageDir = solidOidcStorageDir(home)
   const sessionId = 'legacy-session'
   mkdirSync(storageDir, { recursive: true })
-  writeFileSync(join(linxDir, 'config.json'), JSON.stringify({
+  writeSolidCredentials(home, {
     url: 'https://id.undefineds.co/',
     webId: 'https://id.undefineds.co/alice/profile/card#me',
     authType: 'oidc_oauth',
-  }, null, 2))
-  writeFileSync(join(linxDir, 'secrets.json'), JSON.stringify({
-    oidcRefreshToken: 'old-refresh',
-    oidcAccessToken: 'old-access',
-    oidcExpiresAt: '2030-01-01T00:00:00.000Z',
-    oidcClientId: 'old-client',
-  }, null, 2))
+    secrets: {
+      oidcRefreshToken: 'old-refresh',
+      oidcAccessToken: 'old-access',
+      oidcExpiresAt: '2030-01-01T00:00:00.000Z',
+      oidcClientId: 'old-client',
+    },
+  })
   writeFileSync(join(storageDir, encodeURIComponent('solidClientAuthn:registeredSessions')), JSON.stringify([sessionId]))
   writeFileSync(
     join(storageDir, encodeURIComponent(`solidClientAuthenticationUser:${sessionId}`)),
@@ -216,8 +231,7 @@ test('force restoring a DPoP OIDC session clears stale local OIDC state', async 
     }, { forceRefresh: true }),
     /LinX Cloud login expired/,
   )
-  assert.equal(existsSync(join(linxDir, 'config.json')), false)
-  assert.equal(existsSync(join(linxDir, 'secrets.json')), false)
+  assert.equal(existsSync(solidCredentialsPath(home)), false)
   assert.equal(existsSync(storageDir), false)
 })
 

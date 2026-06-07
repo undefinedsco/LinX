@@ -3,7 +3,10 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { app } from 'electron'
 
-const LOCAL_HOME_ENV_KEY = 'LINX_LOCAL_HOME'
+const SOLID_HOME_DIRNAME = '.solid'
+const SOLID_APPS_DIRNAME = 'apps'
+const SOLID_LINX_APP_DIRNAME = 'linx'
+const DESKTOP_LOCAL_DIRNAME = 'desktop'
 
 export interface LinxLocalPaths {
   home: string
@@ -22,12 +25,7 @@ export function resolveLinxLocalHome(explicitBaseDir?: string): string {
     return path.resolve(explicitBaseDir)
   }
 
-  const configured = process.env[LOCAL_HOME_ENV_KEY]
-  if (configured && configured.trim()) {
-    return path.resolve(configured)
-  }
-
-  return path.join(resolveDesktopUserDataDir(), 'local')
+  return path.join(resolveLinxHomeDir(), DESKTOP_LOCAL_DIRNAME)
 }
 
 export function resolveLinxLocalPaths(explicitBaseDir?: string): LinxLocalPaths {
@@ -47,12 +45,7 @@ export function resolveLinxLocalPaths(explicitBaseDir?: string): LinxLocalPaths 
 }
 
 export function applyLinxLocalHomeToElectronUserData(explicitBaseDir?: string): string | null {
-  const configured = explicitBaseDir ?? process.env[LOCAL_HOME_ENV_KEY]
-  if (!configured || !configured.trim()) {
-    return null
-  }
-
-  const electronUserDataDir = resolveLinxLocalPaths(configured).electronUserDataDir
+  const electronUserDataDir = resolveLinxLocalPaths(explicitBaseDir).electronUserDataDir
   fs.mkdirSync(electronUserDataDir, { recursive: true })
   app.setPath('userData', electronUserDataDir)
   return electronUserDataDir
@@ -117,4 +110,22 @@ function resolveDesktopUserDataDir(): string {
   }
 
   return path.join(os.homedir(), 'Library', 'Application Support', '@linx', 'desktop')
+}
+
+function resolveSolidHomeDir(): string {
+  const configured = process.env.SOLID_HOME?.trim()
+  if (configured) {
+    return path.resolve(configured)
+  }
+
+  return path.join(os.homedir(), SOLID_HOME_DIRNAME)
+}
+
+function resolveLinxHomeDir(): string {
+  const configured = process.env.LINX_HOME?.trim()
+  if (configured) {
+    return path.resolve(configured)
+  }
+
+  return path.join(resolveSolidHomeDir(), SOLID_APPS_DIRNAME, SOLID_LINX_APP_DIRNAME)
 }

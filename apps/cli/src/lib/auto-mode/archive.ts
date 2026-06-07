@@ -3,22 +3,17 @@ import { join } from 'node:path'
 import {
   createAutoModeSessionId,
   AUTO_MODE_EVENTS_FILE_NAME,
-  AUTO_MODE_HOME_DIRNAME,
   AUTO_MODE_SESSIONS_DIRNAME,
   AUTO_MODE_SESSION_FILE_NAME,
 } from '@linx/agent-runtime/auto-mode'
 import type { LinxSyncCheckpoint } from '@linx/agent-runtime/sync'
 import type { AutoRunOptions, AutoModeEventLogEntry, AutoModeSessionRecord, AutoModeSessionStatus, AutoModeSpawnPlan } from './types.js'
+import { getSolidLinxAutoModeDir } from '../solid-local-store.js'
 
 const AUTO_MODE_SYNC_FILE_NAME = 'sync.json'
 
 function getAutoModeHome(): string {
-  const autoModeOverride = process.env.LINX_AUTO_MODE_HOME?.trim()
-  if (autoModeOverride) {
-    return autoModeOverride
-  }
-
-  return join(process.env.HOME || '.', '.linx', AUTO_MODE_HOME_DIRNAME)
+  return getSolidLinxAutoModeDir()
 }
 
 function ensureDir(path: string): void {

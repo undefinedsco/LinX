@@ -71,7 +71,7 @@ export function runLinxLogoutCommand(deps: LogoutCommandDeps = {}): void {
   clearAccountSession()
   clearCredentials()
   clearOidcSessionStorage()
-  write('Logged out. Local LinX credentials removed.\n')
+  write('Logged out. Local Solid auth credentials removed.\n')
 }
 
 export const loginCommand: CommandModule<object, LoginArgs> = {

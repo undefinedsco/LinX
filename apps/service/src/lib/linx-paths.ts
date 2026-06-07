@@ -1,37 +1,37 @@
 import * as os from 'os'
 import * as path from 'path'
-import { app } from 'electron'
 
-function getLegacyLinxUserDataDir(): string {
-  return path.join(os.homedir(), 'Library', 'Application Support', 'LinX')
-}
+const SOLID_HOME_DIRNAME = '.solid'
+const SOLID_APPS_DIRNAME = 'apps'
+const SOLID_LINX_APP_DIRNAME = 'linx'
+const SERVICE_LOCAL_DIRNAME = 'service'
 
 export function resolveLinxUserDataDir(): string {
-  try {
-    const userData = app.getPath('userData')
-    if (userData && userData.trim()) {
-      const normalized = path.normalize(userData)
-      const basename = path.basename(normalized)
-      if (basename !== 'Electron') {
-        return normalized
-      }
-    }
-
-    const appName = app.getName?.()
-    if (appName && appName !== 'Electron') {
-      return userData
-    }
-  } catch {
-    // Fallback to legacy path below when Electron userData is unavailable.
-  }
-
-  return getLegacyLinxUserDataDir()
+  return path.join(resolveLinxHomeDir(), SERVICE_LOCAL_DIRNAME)
 }
 
 export function resolveLinxLocalHomeDir(): string {
-  return process.env.LINX_LOCAL_HOME?.trim() || path.join(resolveLinxUserDataDir(), 'local')
+  return path.join(resolveLinxUserDataDir(), 'local')
 }
 
 export function resolveLinxDefaultWorkspaceDir(): string {
-  return process.env.LINX_DEFAULT_WORKSPACE_PATH?.trim() || path.join(resolveLinxLocalHomeDir(), 'workspace')
+  return path.join(resolveLinxLocalHomeDir(), 'workspace')
+}
+
+function resolveSolidHomeDir(): string {
+  const configured = process.env.SOLID_HOME?.trim()
+  if (configured) {
+    return path.resolve(configured)
+  }
+
+  return path.join(os.homedir(), SOLID_HOME_DIRNAME)
+}
+
+function resolveLinxHomeDir(): string {
+  const configured = process.env.LINX_HOME?.trim()
+  if (configured) {
+    return path.resolve(configured)
+  }
+
+  return path.join(resolveSolidHomeDir(), SOLID_APPS_DIRNAME, SOLID_LINX_APP_DIRNAME)
 }

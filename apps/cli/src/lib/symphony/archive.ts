@@ -1,5 +1,4 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import {
   createSymphonyIdeaUri,
@@ -9,7 +8,6 @@ import {
   formatSymphonySessionSummary,
   getSymphonyArchiveKey,
   getSymphonyArchiveRelativePaths,
-  SYMPHONY_HOME_DIRNAME,
   type CreateSymphonyRunPlanInput,
   type SymphonyDeliveryRecord,
   type SymphonyDeliveryStatus,
@@ -24,7 +22,7 @@ import {
   type SymphonyTaskRecord,
   type SymphonyTaskStatus,
 } from '@linx/agent-runtime/symphony'
-import { LINX_HOME_DIRNAME } from '@undefineds.co/models/client'
+import { getSolidLinxSymphonyDir } from '../solid-local-store.js'
 
 type SymphonyKind = 'idea' | 'issue' | 'task' | 'delivery' | 'session'
 
@@ -72,7 +70,7 @@ export interface CaptureSymphonyIdeaInput {
 }
 
 export function getSymphonyHome(): string {
-  return join(homedir(), LINX_HOME_DIRNAME, SYMPHONY_HOME_DIRNAME)
+  return getSolidLinxSymphonyDir()
 }
 
 export function createArchivedSymphonyRunPlan(input: CreateSymphonyRunPlanInput): SymphonyRunPlan {

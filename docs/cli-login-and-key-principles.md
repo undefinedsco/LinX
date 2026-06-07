@@ -20,6 +20,10 @@ The CLI interaction should extend the existing Pi CLI/TUI login mental model.
   through shared model paths.
 - Backend runtime startup then retries by reading the key from Pod. Runtime code
   does not keep a separate durable local provider-key source.
+- Local Solid login material is shared across Solid-facing tools under
+  `$SOLID_HOME/auth`, where `SOLID_HOME` defaults to `~/.solid`. LinX
+  app-local runtime/cache/archive state lives under `$LINX_HOME`, where
+  `LINX_HOME` defaults to `$SOLID_HOME/apps/linx`.
 
 The user-facing interaction stays Pi-like. The durable storage changes: provider
 keys go to the user's Pod instead of staying only in a local runtime auth store.
@@ -39,7 +43,7 @@ Expected behavior:
 3. If the callback cannot complete, the CLI can ask for manual redirect paste.
 4. The CLI stores only LinX/Solid auth material needed to regain Pod access.
 5. The CLI does not store AI provider API keys as part of LinX/xPod/Solid login.
-6. Interactive startup, including `linx resume <session>`, must not exit before
+6. Interactive startup, including `linx --session <session>`, must not exit before
    entering the TUI just because LinX/Solid credentials are missing. Missing or
    expired login becomes an in-TUI login prompt so the user can re-authorize and
    continue the same session. Non-interactive commands may still fail fast with
@@ -47,6 +51,37 @@ Expected behavior:
 
 This login gives the CLI authority to read/write the user's Pod data. It is not
 the same thing as an AI provider credential.
+
+`$SOLID_HOME/auth/credentials.json` is the local credential envelope. It may contain
+only the minimal `url`, `webId`, `authType`, and `secrets` needed to recover Pod
+access. Product configuration, Agent configuration, skills, model/provider
+selection, and AI provider keys belong in Pod-backed shared resources, not in
+the local auth store.
+
+## Agent Tool Authority
+
+Inside an Agent Runtime, the runtime-held LinX/Solid session is also the
+authority source for Pod-facing tools.
+
+If a worker or Secretary runs `xpod` as a shell/tool command, that `xpod`
+process should use the Agent Runtime's inherited Pod authority. The user should
+not have to run a separate `xpod auth login`, and the command must not silently
+reuse unrelated app-local or legacy auth files from the host.
+
+The runtime/tool bridge must keep login acquisition and tool consumption
+separate:
+
+1. The LinX login layer restores browser OIDC or Solid client-credentials
+   access.
+2. Agent Runtime receives a usable session/fetch capability and freezes that
+   authority into the Session/Run context.
+3. Child tools receive a short-lived, runtime-provided auth context for Pod
+   operations.
+4. `xpod auth status --json` should report the effective WebID, Pod root, and
+   `authSource: "agent_runtime"` when invoked through this path.
+5. Raw access tokens, refresh tokens, client secrets, cookies, and DPoP
+   material must not appear in model-visible prompts, command output, archives,
+   or logs.
 
 ## CLI Provider Key Handling
 

@@ -40,7 +40,7 @@ test('symphony archive creates, updates, lists, and resolves URI records', async
   const originalHome = process.env.HOME
   const root = mkdtempSync(join(tmpdir(), 'linx-symphony-home-'))
   process.env.HOME = root
-  const symphonyHome = join(root, '.linx', 'symphony')
+  const symphonyHome = join(root, '.solid', 'apps', 'linx', 'symphony')
 
   t.after(() => {
     if (originalHome === undefined) {
@@ -188,12 +188,14 @@ test('symphony archive creates, updates, lists, and resolves URI records', async
   assert.doesNotMatch(sessionFile, /"deliveryId"/)
 })
 
-test('symphony archive ignores legacy worker overrides and defaults under ~/.linx/symphony', async (t) => {
+test('symphony archive defaults under HOME-derived SOLID_HOME when LINX_HOME is unset', async (t) => {
   const originalHome = process.env.HOME
+  const originalSolidHome = process.env.SOLID_HOME
+  const originalLinxHome = process.env.LINX_HOME
   const tempHome = mkdtempSync(join(tmpdir(), 'linx-symphony-home-'))
-  const legacyHome = mkdtempSync(join(tmpdir(), 'linx-worker-legacy-'))
   process.env.HOME = tempHome
-  process.env.LINX_WORKER_HOME = legacyHome
+  delete process.env.SOLID_HOME
+  delete process.env.LINX_HOME
 
   t.after(() => {
     if (originalHome === undefined) {
@@ -201,9 +203,17 @@ test('symphony archive ignores legacy worker overrides and defaults under ~/.lin
     } else {
       process.env.HOME = originalHome
     }
-    delete process.env.LINX_WORKER_HOME
+    if (originalSolidHome === undefined) {
+      delete process.env.SOLID_HOME
+    } else {
+      process.env.SOLID_HOME = originalSolidHome
+    }
+    if (originalLinxHome === undefined) {
+      delete process.env.LINX_HOME
+    } else {
+      process.env.LINX_HOME = originalLinxHome
+    }
     rmSync(tempHome, { recursive: true, force: true })
-    rmSync(legacyHome, { recursive: true, force: true })
   })
 
   const { module, cleanup } = await loadAutoModeModule('lib/symphony/archive.ts')
@@ -219,8 +229,7 @@ mode: 'off',
     randomId: 'home',
   })
 
-  assert.equal(getSymphonyHome().startsWith(legacyHome), false)
-  assert.equal(getSymphonyHome(), join(tempHome, '.linx', 'symphony'))
+  assert.equal(getSymphonyHome(), join(tempHome, '.solid', 'apps', 'linx', 'symphony'))
   assert.equal(plan.issue.uri.startsWith('urn:undefineds:linx:issue:'), true)
   assert.equal(plan.task.startsWith('urn:undefineds:linx:task:'), true)
 })
@@ -404,7 +413,7 @@ test('symphony dispatch bridges non-dry-run plans into the auto-mode runtime and
     },
     async persistSymphonyProjectionToPod(plan, options) {
       if (projectionCalls.length === 0) {
-        assert.equal(existsSync(join(root, '.linx', 'symphony')), false)
+        assert.equal(existsSync(join(root, '.solid', 'apps', 'linx', 'symphony')), false)
       }
       projectionCalls.push({ plan, stage: options?.stage })
       const chat = 'https://alice.example/.data/chat/symphony/index.ttl#this'
@@ -437,7 +446,7 @@ test('symphony dispatch bridges non-dry-run plans into the auto-mode runtime and
     },
     async mirrorSymphonyProjectionJsonLdFromPod(result) {
       mirrorCalls.push(result)
-      const dir = join(root, '.linx', 'symphony', 'jsonld')
+      const dir = join(root, '.solid', 'apps', 'linx', 'symphony', 'jsonld')
       mkdirSync(dir, { recursive: true })
       writeFileSync(join(dir, `mirror-${mirrorCalls.length}.jsonld`), `${JSON.stringify({
         '@context': {},
@@ -478,9 +487,9 @@ test('symphony dispatch bridges non-dry-run plans into the auto-mode runtime and
   assert.equal(plan.session.reconciler?.decisions.at(-1)?.eventType, 'delivery.completed')
   assert.deepEqual(projectionCalls.map((call) => call.stage), ['planned', 'running', 'running', 'completed'])
   assert.equal(mirrorCalls.length, 4)
-  assert.equal(existsSync(join(root, '.linx', 'symphony')), true)
-  assert.equal(existsSync(join(root, '.linx', 'symphony', 'issues')), false)
-  assert.equal(existsSync(join(root, '.linx', 'symphony', 'jsonld', 'mirror-4.jsonld')), true)
+  assert.equal(existsSync(join(root, '.solid', 'apps', 'linx', 'symphony')), true)
+  assert.equal(existsSync(join(root, '.solid', 'apps', 'linx', 'symphony', 'issues')), false)
+  assert.equal(existsSync(join(root, '.solid', 'apps', 'linx', 'symphony', 'jsonld', 'mirror-4.jsonld')), true)
   assert.equal(plan.issue.chat, 'https://alice.example/.data/chat/symphony/index.ttl#this')
   assert.equal(plan.delivery.thread, 'https://alice.example/.data/chat/symphony/index.ttl#thread-bridge')
   assert.deepEqual(plan.session.messages, ['https://alice.example/.data/chat/symphony/2026/04/02/messages.ttl#bridge-planned'])
@@ -709,7 +718,7 @@ test('symphony dispatch merges follow-up work against Pod issues before local ca
     },
     async persistSymphonyProjectionToPod(plan, options) {
       if (projectionCalls.length === 0) {
-        assert.equal(existsSync(join(root, '.linx', 'symphony')), false)
+        assert.equal(existsSync(join(root, '.solid', 'apps', 'linx', 'symphony')), false)
       }
       projectionCalls.push({ plan, stage: options?.stage })
       return {
@@ -721,7 +730,7 @@ test('symphony dispatch merges follow-up work against Pod issues before local ca
     },
     async mirrorSymphonyProjectionJsonLdFromPod(result) {
       mirrorCalls.push(result)
-      const dir = join(root, '.linx', 'symphony', 'jsonld')
+      const dir = join(root, '.solid', 'apps', 'linx', 'symphony', 'jsonld')
       mkdirSync(dir, { recursive: true })
       writeFileSync(join(dir, `merge-${mirrorCalls.length}.jsonld`), `${JSON.stringify({
         '@context': {},
@@ -737,10 +746,10 @@ test('symphony dispatch merges follow-up work against Pod issues before local ca
   assert.ok(projectionCalls[0].plan.issue.deliveries.includes(existingIssue.deliveries[0]))
   assert.ok(projectionCalls[0].plan.issue.sessions.includes(existingIssue.sessions[0]))
   assert.match(runCalls[0].prompt, new RegExp(existingIssue.uri))
-  assert.equal(existsSync(join(root, '.linx', 'symphony')), true)
+  assert.equal(existsSync(join(root, '.solid', 'apps', 'linx', 'symphony')), true)
   assert.equal(mirrorCalls.length, 4)
-  assert.equal(existsSync(join(root, '.linx', 'symphony', 'issues')), false)
-  assert.equal(existsSync(join(root, '.linx', 'symphony', 'jsonld', 'merge-4.jsonld')), true)
+  assert.equal(existsSync(join(root, '.solid', 'apps', 'linx', 'symphony', 'issues')), false)
+  assert.equal(existsSync(join(root, '.solid', 'apps', 'linx', 'symphony', 'jsonld', 'merge-4.jsonld')), true)
 })
 
 test('symphony run preserves caller-provided delegation target chat and thread', async (t) => {
@@ -804,7 +813,8 @@ test('symphony non-dry-run dispatches through auto-mode ACP and archives complet
   const originalHome = process.env.HOME
   const root = mkdtempSync(join(tmpdir(), 'linx-symphony-integration-home-'))
   const binDir = join(root, 'bin')
-  const autoModeHome = join(root, 'auto-mode-home')
+  const linxHome = join(root, '.solid', 'apps', 'linx')
+  const autoModeHome = join(linxHome, 'auto-mode')
   const fakeAcpLog = join(root, 'fake-codex-acp.jsonl')
   mkdirSync(binDir, { recursive: true })
   process.env.HOME = root
@@ -916,7 +926,7 @@ rl.on('line', (line) => {
   }
   const mirrorSymphonyProjectionJsonLdFromPod = async (result) => {
     mirrorCalls.push(result)
-    const dir = join(root, '.linx', 'symphony', 'jsonld')
+    const dir = join(linxHome, 'symphony', 'jsonld')
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, `integration-${mirrorCalls.length}.jsonld`), `${JSON.stringify({
       '@context': {},
@@ -931,7 +941,7 @@ rl.on('line', (line) => {
   let plan
   await withPatchedEnv(t, {
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
-    LINX_AUTO_MODE_HOME: autoModeHome,
+    LINX_HOME: linxHome,
     FAKE_ACP_LOG: fakeAcpLog,
   }, async () => {
     plan = await symphonyModule.runSymphony({
@@ -964,7 +974,7 @@ rl.on('line', (line) => {
   assert.equal(plan.delivery.thread, 'https://alice.example/.data/chat/symphony/index.ttl#thread-integration')
   assert.deepEqual(plan.session.messages, ['https://alice.example/.data/chat/symphony/2026/04/02/messages.ttl#completed'])
 
-  const symphonyHome = join(root, '.linx', 'symphony')
+  const symphonyHome = join(linxHome, 'symphony')
   const finalMirrorFile = readFileSync(join(symphonyHome, 'jsonld', 'integration-4.jsonld'), 'utf-8')
   assert.equal(mirrorCalls.length, 4)
   assert.equal(existsSync(join(symphonyHome, 'issues')), false)

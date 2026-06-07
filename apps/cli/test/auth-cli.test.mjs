@@ -10,6 +10,22 @@ import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 const cliRoot = fileURLToPath(new URL('..', import.meta.url))
 const entryPath = join(cliRoot, 'dist', 'index.js')
 
+function solidAuthDir(home) {
+  return join(home, '.solid', 'auth')
+}
+
+function solidCredentialsPath(home) {
+  return join(solidAuthDir(home), 'credentials.json')
+}
+
+function solidAccountPath(home) {
+  return join(solidAuthDir(home), 'account.json')
+}
+
+function solidOidcStorageDir(home) {
+  return join(solidAuthDir(home), 'oidc-storage')
+}
+
 function createFetchMock(t) {
   const root = mkdtempSync(join(tmpdir(), 'linx-cli-fetch-mock-'))
   const modulePath = join(root, 'fake-fetch.mjs')
@@ -356,16 +372,16 @@ test('linx login --fresh starts a fresh browser consent flow', async (t) => {
   assert.match(output.join(''), /session: browser-consent/)
 })
 
-test('linx whoami reads the saved LinX account session', async (t) => {
+test('linx whoami reads the saved Solid auth account session', async (t) => {
   const home = mkdtempSync(join(tmpdir(), 'linx-cli-whoami-home-'))
-  const linxDir = join(home, '.linx')
+  const authDir = solidAuthDir(home)
 
   t.after(() => {
     rmSync(home, { recursive: true, force: true })
   })
 
-  mkdirSync(linxDir, { recursive: true })
-  writeFileSync(join(linxDir, 'account.json'), JSON.stringify({
+  mkdirSync(authDir, { recursive: true })
+  writeFileSync(solidAccountPath(home), JSON.stringify({
     url: 'https://account.test/',
     email: 'dev@example.com',
     token: 'token_test',
@@ -388,18 +404,17 @@ test('linx whoami reads the saved LinX account session', async (t) => {
 
 test('linx logout removes account session and client credentials', async (t) => {
   const home = mkdtempSync(join(tmpdir(), 'linx-cli-logout-home-'))
-  const linxDir = join(home, '.linx')
-  const oidcStorageDir = join(linxDir, 'oidc-storage')
+  const authDir = solidAuthDir(home)
+  const oidcStorageDir = solidOidcStorageDir(home)
 
   t.after(() => {
     rmSync(home, { recursive: true, force: true })
   })
 
-  mkdirSync(linxDir, { recursive: true })
+  mkdirSync(authDir, { recursive: true })
   mkdirSync(oidcStorageDir, { recursive: true })
-  writeFileSync(join(linxDir, 'account.json'), '{}')
-  writeFileSync(join(linxDir, 'config.json'), '{}')
-  writeFileSync(join(linxDir, 'secrets.json'), '{}')
+  writeFileSync(solidAccountPath(home), '{}')
+  writeFileSync(solidCredentialsPath(home), '{}')
   writeFileSync(join(oidcStorageDir, encodeURIComponent('solidClientAuthn:registeredSessions')), '["stale-session"]')
 
   const { logFile, modulePath } = createFetchMock(t)
@@ -409,9 +424,8 @@ test('linx logout removes account session and client credentials', async (t) => 
   }, modulePath)
 
   assert.match(output, /Logged out\./)
-  assert.equal(existsSync(join(linxDir, 'account.json')), false)
-  assert.equal(existsSync(join(linxDir, 'config.json')), false)
-  assert.equal(existsSync(join(linxDir, 'secrets.json')), false)
+  assert.equal(existsSync(solidAccountPath(home)), false)
+  assert.equal(existsSync(solidCredentialsPath(home)), false)
   assert.equal(existsSync(oidcStorageDir), false)
 })
 
@@ -438,7 +452,7 @@ test('linx logout does not clear Pod-backed AI provider credentials', async (t) 
     },
   })
 
-  assert.match(output.join(''), /Local LinX credentials removed/)
+  assert.match(output.join(''), /Local Solid auth credentials removed/)
   assert.doesNotMatch(output.join(''), /AI provider|API key|provider credential/i)
 })
 
