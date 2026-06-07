@@ -76,6 +76,10 @@ demos/
 .tmp-smoke/
 preview/
 
+# External shared model checkout. LinX consumes @undefineds.co/models through npm
+# by default; use LINX_MODELS_ROOT for explicit local development overrides.
+packages/models/
+
 # W3C test data (downloaded at test time)
 packages/models/tests/w3c-data/
 .omx/

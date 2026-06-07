@@ -538,10 +538,8 @@ async function resolveAssistantMakerFromChat(db: SolidDatabase, chat: Pick<ChatR
 
 function extractAgentIdFromRef(ref: string | null | undefined): string | null {
   if (!ref) return null
-  const canonicalMatch = ref.match(/\/agents\/([^/#]+)(?:\/(?:\.meta(?:#.*)?|$)|$)/)
+  const canonicalMatch = ref.match(/\/agents\/([^/#]+)\/(?:\.meta(?:#.*)?|$)/)
   if (canonicalMatch?.[1]) return decodeURIComponent(canonicalMatch[1])
-  const match = ref.match(/\/\.data\/agents\/([^/#]+)\.ttl(?:#.*)?$/)
-  if (match?.[1]) return decodeURIComponent(match[1])
   return /^[a-zA-Z0-9_-]+$/.test(ref) ? ref : null
 }
 

@@ -1,19 +1,15 @@
-import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, rmSync, symlinkSync } from 'node:fs'
+import { existsSync, lstatSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { dirname, join, resolve } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
-const modelsPath = join(repoRoot, 'packages', 'models')
-const defaultExternalModelsPath = resolve(repoRoot, '..', 'models')
-const previewPath = join(repoRoot, 'preview')
+const npmModelsPath = join(repoRoot, 'node_modules', '@undefineds.co', 'models')
 const action = process.argv[2]
 
 try {
   switch (action) {
     case 'update':
-      ensureModelsWorkspace()
-      break
     case 'status':
       printStatus()
       break
@@ -21,14 +17,13 @@ try {
       assertReleaseSafe()
       break
     case 'build':
-      runModelsScript('build')
+      buildOrVerifyModels()
       break
     case 'clean':
-      cleanModels()
+      cleanExplicitModelsRoot()
       break
     case 'pack-release':
-      packModelsRelease()
-      break
+      throw new Error('LinX no longer packs @undefineds.co/models. Publish models from the models repository, then bump the npm dependency here.')
     default:
       printUsage()
       process.exit(1)
@@ -38,119 +33,77 @@ try {
   process.exit(1)
 }
 
-function ensureModelsWorkspace() {
-  if (existsSync(modelsPath)) {
-    printStatus()
-    return
-  }
-
-  const candidate = resolve(process.env.LINX_MODELS_PATH || defaultExternalModelsPath)
-  if (!isModelsPackage(candidate)) {
-    console.log('packages/models is missing.')
-    console.log('Provide a local models checkout, then rerun with LINX_MODELS_PATH if it is not at packages/models:')
-    console.log('  git clone https://github.com/undefinedsco/models.git ../models')
-    console.log('  LINX_MODELS_PATH=../models yarn models:update')
-    return
-  }
-
-  mkdirSync(dirname(modelsPath), { recursive: true })
-  symlinkSync(candidate, modelsPath, 'dir')
-  console.log(`Linked packages/models -> ${candidate}`)
-}
-
 function printStatus() {
-  const authoritative = resolveAuthoritativeModelsPath({ allowLegacy: true })
-  if (authoritative) {
-    console.log(`authoritative models: ${authoritative}`)
-    printGitStatus(authoritative)
-  } else {
-    console.log('authoritative models: missing. Provide packages/models or set LINX_MODELS_PATH.')
+  const deps = readConsumerDependencySpecs()
+  console.log(`@undefineds.co/models dependency: ${deps.expected}`)
+  if (deps.mismatches.length > 0) {
+    console.log(`dependency mismatches:\n${deps.mismatches.join('\n')}`)
   }
 
-  if (!existsSync(modelsPath)) {
-    console.log('packages/models: missing')
+  const root = resolveModelsRoot()
+  if (!root) {
+    console.log('resolved models: missing. Run yarn install, or set LINX_MODELS_ROOT to an explicit external checkout.')
     return
   }
 
-  const kind = detectModelsKind(modelsPath)
-  console.log(`packages/models: ${kind}`)
-
-  if (kind === 'linked external checkout') {
-    console.log(`target: ${readlinkSync(modelsPath)}`)
-  }
-
-  if (kind === 'legacy submodule') {
-    console.log('mode: legacy migration path; do not use LinX submodule pointers as the shared models upgrade mechanism.')
-  }
-
-  if (kind === 'workspace directory') {
-    console.log('mode: tracked by the host repository')
-    return
-  }
-
-  if (resolve(authoritative ?? '') !== resolve(modelsPath)) {
-    printGitStatus(modelsPath)
-  }
+  const pkg = readPackage(root)
+  console.log(`resolved models: ${root}`)
+  console.log(`resolved version: ${pkg.version ?? 'unknown'}`)
+  console.log(`source: ${process.env.LINX_MODELS_ROOT ? 'LINX_MODELS_ROOT' : 'npm package'}`)
+  printGitStatusIfExternal(root)
 }
 
 function assertReleaseSafe() {
-  const root = resolveAuthoritativeModelsPath({ allowLegacy: true })
-  if (!root) {
-    throw new Error('Release blocked: no @undefineds.co/models checkout found. Provide packages/models or set LINX_MODELS_PATH.')
+  const deps = readConsumerDependencySpecs()
+  if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(deps.expected)) {
+    throw new Error(`Release blocked: @undefineds.co/models must be pinned to an exact npm version, got ${deps.expected}.`)
+  }
+  if (deps.mismatches.length > 0) {
+    throw new Error(`Release blocked: @undefineds.co/models dependency versions differ:\n${deps.mismatches.join('\n')}`)
   }
 
-  const kind = root === modelsPath ? detectModelsKind(modelsPath) : 'independent checkout'
-  if (kind === 'legacy submodule') {
-    console.warn('Warning: using packages/models legacy submodule checkout. Ensure it is committed and published before publishing LinX.')
+  const root = requireModelsRoot()
+  const pkg = readPackage(root)
+  if (pkg.version !== deps.expected) {
+    throw new Error(`Release blocked: installed @undefineds.co/models version ${pkg.version ?? 'unknown'} does not match dependency ${deps.expected}. Run yarn install.`)
   }
 
-  if (kind !== 'workspace directory' && kind !== 'directory') {
-    const status = run('git', ['status', '--porcelain'], root)
-    if (status.stdout.trim()) {
-      throw new Error(`Release blocked: ${root} has uncommitted changes. Commit/publish models in the independent models repository first.`)
-    }
+  const realRoot = realpathSync(root)
+  const legacyPath = join(repoRoot, 'packages', 'models')
+  if (isInside(realRoot, legacyPath)) {
+    throw new Error('Release blocked: @undefineds.co/models resolves to packages/models. LinX must consume the npm package or an explicit external LINX_MODELS_ROOT.')
   }
 }
 
-function runModelsScript(scriptName) {
-  const root = requireAuthoritativeModelsPath()
-  run('yarn', [scriptName], root, { stdio: 'inherit' })
+function buildOrVerifyModels() {
+  const root = requireModelsRoot()
+  if (process.env.LINX_MODELS_ROOT) {
+    run('yarn', ['build'], root, { stdio: 'inherit' })
+    return
+  }
+  if (!existsSync(join(root, 'dist', 'index.js'))) {
+    throw new Error('Installed @undefineds.co/models does not contain dist/index.js. Run yarn install or set LINX_MODELS_ROOT to a built external checkout.')
+  }
+  console.log(`@undefineds.co/models already installed: ${readPackage(root).version}`)
 }
 
-function cleanModels() {
-  const root = requireAuthoritativeModelsPath()
+function cleanExplicitModelsRoot() {
+  if (!process.env.LINX_MODELS_ROOT) {
+    console.log('No LINX_MODELS_ROOT set; skipping @undefineds.co/models clean.')
+    return
+  }
+  const root = requireModelsRoot()
   rmSync(join(root, 'dist'), { recursive: true, force: true })
 }
 
-function packModelsRelease() {
-  const root = requireAuthoritativeModelsPath()
-  run('yarn', ['build'], root, { stdio: 'inherit' })
-  run('yarn', ['pack:release'], root, { stdio: 'inherit' })
-
-  const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
-  const tarball = join(root, 'preview', `undefineds-co-models-${pkg.version}.tgz`)
-  if (!existsSync(tarball)) {
-    throw new Error(`Models pack:release did not produce expected tarball: ${tarball}`)
+function resolveModelsRoot() {
+  if (process.env.LINX_MODELS_PATH) {
+    throw new Error('LINX_MODELS_PATH is no longer supported. Use LINX_MODELS_ROOT for an explicit external models checkout.')
   }
 
-  mkdirSync(previewPath, { recursive: true })
-  cpSync(tarball, join(previewPath, `undefineds-co-models-${pkg.version}.tgz`))
-}
-
-function requireAuthoritativeModelsPath() {
-  const root = resolveAuthoritativeModelsPath({ allowLegacy: true })
-  if (!root) {
-    throw new Error('Cannot find @undefineds.co/models. Provide packages/models or set LINX_MODELS_PATH.')
-  }
-  return root
-}
-
-function resolveAuthoritativeModelsPath({ allowLegacy }) {
   const candidates = [
     process.env.LINX_MODELS_ROOT,
-    process.env.LINX_MODELS_PATH,
-    allowLegacy ? modelsPath : undefined,
-    defaultExternalModelsPath,
+    npmModelsPath,
   ].filter(Boolean)
 
   for (const candidate of candidates) {
@@ -162,42 +115,66 @@ function resolveAuthoritativeModelsPath({ allowLegacy }) {
   return null
 }
 
-function detectModelsKind(path) {
-  if (lstatSync(path).isSymbolicLink()) {
-    return 'linked external checkout'
+function requireModelsRoot() {
+  const root = resolveModelsRoot()
+  if (!root) {
+    throw new Error('Cannot find @undefineds.co/models. Run yarn install, or set LINX_MODELS_ROOT to an explicit external checkout.')
   }
-
-  const topLevel = run('git', ['rev-parse', '--show-toplevel'], path, { allowFailure: true })
-  if (topLevel.code !== 0) {
-    return 'directory'
-  }
-
-  if (resolve(topLevel.stdout.trim()) === resolve(repoRoot)) {
-    return 'workspace directory'
-  }
-
-  return isRegisteredSubmodule() ? 'legacy submodule' : 'external checkout'
+  return root
 }
 
-function isRegisteredSubmodule() {
-  const status = run('git', ['submodule', 'status', 'packages/models'], repoRoot, { allowFailure: true })
-  return status.code === 0 && status.stdout.trim().length > 0
+function readConsumerDependencySpecs() {
+  const manifests = [
+    'apps/cli/package.json',
+    'apps/web/package.json',
+    'packages/stores/package.json',
+    'examples/solid-login-example/package.json',
+  ]
+  const specs = manifests.map((manifest) => {
+    const pkg = readPackage(join(repoRoot, manifest, '..'))
+    return {
+      manifest,
+      spec: pkg.dependencies?.['@undefineds.co/models'],
+    }
+  })
+  const expected = specs[0]?.spec
+  const mismatches = specs
+    .filter((item) => item.spec !== expected)
+    .map((item) => `${item.manifest}: ${item.spec ?? '<missing>'}`)
+  return {
+    expected: expected ?? '<missing>',
+    mismatches,
+  }
 }
 
 function isModelsPackage(path) {
   try {
-    const pkg = JSON.parse(readFileSync(join(path, 'package.json'), 'utf8'))
-    return pkg.name === '@undefineds.co/models'
+    return readPackage(path).name === '@undefineds.co/models'
   } catch {
     return false
   }
 }
 
-function printGitStatus(path) {
-  const status = run('git', ['status', '--short', '--branch'], path, { allowFailure: true })
+function readPackage(root) {
+  return JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+}
+
+function printGitStatusIfExternal(root) {
+  const realRoot = realpathSync(root)
+  const nodeModulesRoot = join(repoRoot, 'node_modules')
+  if (isInside(realRoot, nodeModulesRoot) && !lstatSync(root).isSymbolicLink()) {
+    return
+  }
+
+  const status = run('git', ['status', '--short', '--branch'], root, { allowFailure: true })
   if (status.code === 0 && status.stdout.trim()) {
     console.log(status.stdout.trim())
   }
+}
+
+function isInside(path, parent) {
+  const rel = relative(resolve(parent), resolve(path))
+  return rel === '' || Boolean(rel && !rel.startsWith('..') && !rel.startsWith('/'))
 }
 
 function run(command, args, cwd, options = {}) {
@@ -226,5 +203,4 @@ function printUsage() {
   console.error('  yarn models:status')
   console.error('  yarn models:assert-release-safe')
   console.error('  yarn build:models')
-  console.error('  yarn pack:models:release')
 }

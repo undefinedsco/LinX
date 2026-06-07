@@ -124,7 +124,7 @@ function assertBuilt() {
   if (missing.length > 0) {
     throw new Error([
       'CLI dist is not built.',
-      'Run `yarn build:models && yarn build:agent-runtime && yarn build:cli`, then retry.',
+      'Run `yarn build:agent-runtime && yarn build:cli`, then retry.',
       `Missing: ${missing.join(', ')}`,
     ].join('\n'))
   }

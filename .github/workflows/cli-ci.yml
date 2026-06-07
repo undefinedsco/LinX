@@ -7,10 +7,11 @@ on:
   pull_request:
     paths:
       - 'apps/cli/**'
-      - 'packages/models/**'
       - 'packages/stores/**'
+      - 'packages/agent-runtime/**'
       - 'scripts/**'
       - 'package.json'
+      - 'apps/cli/package.json'
       - 'yarn.lock'
       - '.github/workflows/cli-ci.yml'
       - '.github/workflows/cli-release.yml'
@@ -20,10 +21,11 @@ on:
       - 'feat/**'
     paths:
       - 'apps/cli/**'
-      - 'packages/models/**'
       - 'packages/stores/**'
+      - 'packages/agent-runtime/**'
       - 'scripts/**'
       - 'package.json'
+      - 'apps/cli/package.json'
       - 'yarn.lock'
       - '.github/workflows/cli-ci.yml'
       - '.github/workflows/cli-release.yml'
@@ -41,8 +43,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -56,8 +56,8 @@ jobs:
       - name: Models status
         run: yarn models:status
 
-      - name: Build models
-        run: yarn build:models
+      - name: Verify models dependency
+        run: yarn models:assert-release-safe
 
       - name: Build CLI
         run: yarn build:cli

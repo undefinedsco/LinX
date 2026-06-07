@@ -143,7 +143,7 @@ async function main() {
     solidSchema,
     threadTable,
     threadRepository,
-  } = await import('../packages/models/dist/index.js')
+  } = await import('@undefineds.co/models')
   applySolidComunicaPatches()
   const baseUrl = podBaseUrl(webId)
   const db = drizzle(session, {

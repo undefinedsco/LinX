@@ -411,4 +411,22 @@ describe('chatOps sync projection', () => {
       model: 'undefineds/linx-lite',
     }))
   })
+
+  it('does not treat legacy .data agent documents as Agent roots', async () => {
+    const { db } = createMockDb()
+    initializeChatCollections(db as any)
+
+    mocked.states.get('chats')?.set('__secretary__', {
+      id: '__secretary__',
+      title: 'AI Secretary',
+      participants: ['https://alice.example/.data/agents/__secretary__.ttl'],
+      metadata: { linx: { role: 'secretary', version: 1 } },
+    })
+
+    await expect(chatOps.ensureLinxWelcome()).resolves.toMatchObject({
+      chatId: '__secretary__',
+      created: false,
+    })
+    expect(ensureAgentHome).not.toHaveBeenCalled()
+  })
 })

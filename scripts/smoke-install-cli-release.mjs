@@ -6,17 +6,17 @@ import { fileURLToPath } from 'node:url'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const previewRoot = join(repoRoot, 'preview')
-const modelsPreviewRoot = join(repoRoot, 'packages', 'models', 'preview')
 const prefix = mkdtempSync(join(tmpdir(), 'linx-cli-release-prefix-'))
 const cache = process.env.LINX_RELEASE_SMOKE_CACHE || mkdtempSync(join(tmpdir(), 'linx-cli-release-cache-'))
 const installTimeoutMs = Number(process.env.LINX_RELEASE_SMOKE_INSTALL_TIMEOUT_MS || 20 * 60 * 1000)
-const modelsVersion = JSON.parse(readFileSync(join(repoRoot, 'packages', 'models', 'package.json'), 'utf8')).version
-const cliVersion = JSON.parse(readFileSync(join(repoRoot, 'apps', 'cli', 'package.json'), 'utf8')).version
+const cliPackage = JSON.parse(readFileSync(join(repoRoot, 'apps', 'cli', 'package.json'), 'utf8'))
+const modelsVersion = cliPackage.dependencies?.['@undefineds.co/models']
+const cliVersion = cliPackage.version
 
-const modelsTarball = findExactTarball(`undefineds-co-models-${modelsVersion}.tgz`, [
-  previewRoot,
-  modelsPreviewRoot,
-])
+if (!modelsVersion || !/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(modelsVersion)) {
+  throw new Error(`apps/cli/package.json must pin @undefineds.co/models to an exact npm version, got ${modelsVersion ?? '<missing>'}`)
+}
+
 const cliTarball = findExactTarball(`undefineds-co-linx-${cliVersion}.tgz`, [previewRoot])
 
 mkdirSync(prefix, { recursive: true })
@@ -36,7 +36,6 @@ run('npm', [
   prefix,
   '--cache',
   cache,
-  modelsTarball,
   cliTarball,
 ], { timeout: installTimeoutMs })
 
@@ -53,6 +52,7 @@ const smokeEnv = {
 
 run(linxBin, ['--help'], { env: smokeEnv })
 run(linxBin, ['--version'], { env: smokeEnv })
+assertInstalledModelsVersion(modelsVersion)
 assertInstalledDrizzleSolidPatch()
 assertInstalledPiWebAccessPatch()
 
@@ -110,6 +110,16 @@ function assertInstalledDrizzleSolidPatch() {
   }
 
   console.log(`verified @undefineds.co/drizzle-solid@${packageJson.version} LinX Pod resource patches`)
+}
+
+function assertInstalledModelsVersion(expectedVersion) {
+  const packageRoot = findInstalledPackageRoot('@undefineds.co/models')
+  const packageJson = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'))
+  if (packageJson.version !== expectedVersion) {
+    throw new Error(`Installed @undefineds.co/models@${packageJson.version} does not match CLI dependency ${expectedVersion}`)
+  }
+
+  console.log(`verified @undefineds.co/models@${packageJson.version}`)
 }
 
 function assertInstalledPiWebAccessPatch() {

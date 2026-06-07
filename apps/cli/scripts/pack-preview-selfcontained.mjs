@@ -20,14 +20,10 @@ const artifactKind = args.release ? 'release' : 'preview'
 const workRoot = join(tmpdir(), `linx-cli-${artifactKind}-${Date.now()}`)
 const modelsSourceRoot = resolvePackageSourceRoot('@undefineds.co/models', [
   process.env.LINX_MODELS_ROOT,
-  process.env.LINX_MODELS_PATH,
-  join(repoRoot, 'packages', 'models'),
-  join(repoRoot, '..', 'models'),
   join(repoRoot, 'node_modules', '@undefineds.co', 'models'),
 ])
 const drizzleSolidSourceRoot = resolvePackageSourceRoot('@undefineds.co/drizzle-solid', [
   process.env.LINX_DRIZZLE_SOLID_ROOT,
-  join(repoRoot, '..', 'drizzle-solid'),
   join(repoRoot, 'node_modules', '@undefineds.co', 'drizzle-solid'),
 ])
 
@@ -413,7 +409,7 @@ function resolvePackageSourceRoot(packageName, candidates) {
     }
   }
 
-  throw new Error(`Cannot find built ${packageName}. Build it first or set LINX_MODELS_ROOT / LINX_DRIZZLE_SOLID_ROOT.`)
+  throw new Error(`Cannot find built ${packageName}. Run yarn install, or set LINX_MODELS_ROOT / LINX_DRIZZLE_SOLID_ROOT to an explicit built checkout.`)
 }
 
 function assertDrizzleSolidVendorExports(packageRoot) {

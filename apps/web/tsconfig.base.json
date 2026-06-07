@@ -28,18 +28,7 @@
       "@linx/agent-runtime/*": ["../../packages/agent-runtime/src/*"],
       "@linx/stores": ["../../packages/stores/src/index.ts"],
       "@linx/stores/*": ["../../packages/stores/src/*"],
-      "@undefineds.co/drizzle-solid": ["../../../drizzle-solid/dist/index.d.ts", "../../node_modules/@undefineds.co/drizzle-solid/dist/index.d.ts"],
-      "@undefineds.co/models": ["../../../models/dist/index.d.ts", "../../packages/models/dist/index.d.ts", "../../../models/src/index.ts", "../../packages/models/src/index.ts"],
-      "@undefineds.co/models/ai-config": ["../../../models/dist/ai-config/index.d.ts", "../../packages/models/dist/ai-config/index.d.ts", "../../../models/src/ai-config/index.ts", "../../packages/models/src/ai-config/index.ts"],
-      "@undefineds.co/models/client": ["../../../models/dist/client/index.d.ts", "../../packages/models/dist/client/index.d.ts", "../../../models/src/client/index.ts", "../../packages/models/src/client/index.ts"],
-      "@undefineds.co/models/discovery": ["../../../models/dist/discovery/index.d.ts", "../../packages/models/dist/discovery/index.d.ts", "../../../models/src/discovery/index.ts", "../../packages/models/src/discovery/index.ts"],
-      "@undefineds.co/models/interop": ["../../../models/dist/interop/index.d.ts", "../../packages/models/dist/interop/index.d.ts", "../../../models/src/interop/index.ts", "../../packages/models/src/interop/index.ts"],
-      "@undefineds.co/models/namespaces": ["../../../models/dist/namespaces.d.ts", "../../packages/models/dist/namespaces.d.ts", "../../../models/src/namespaces.ts", "../../packages/models/src/namespaces.ts"],
-      "@undefineds.co/models/profile": ["../../../models/dist/profile.d.ts", "../../packages/models/dist/profile.d.ts", "../../../models/src/profile.ts", "../../packages/models/src/profile.ts"],
-      "@undefineds.co/models/profile.repository": ["../../../models/dist/profile.repository.d.ts", "../../packages/models/dist/profile.repository.d.ts", "../../../models/src/profile.repository.ts", "../../packages/models/src/profile.repository.ts"],
-      "@undefineds.co/models/profile.schema": ["../../../models/dist/profile.schema.d.ts", "../../packages/models/dist/profile.schema.d.ts", "../../../models/src/profile.schema.ts", "../../packages/models/src/profile.schema.ts"],
-      "@undefineds.co/models/vocab": ["../../../models/dist/vocab/index.d.ts", "../../packages/models/dist/vocab/index.d.ts", "../../../models/src/vocab/index.ts", "../../packages/models/src/vocab/index.ts"],
-      "@undefineds.co/models/vocab/sidecar": ["../../../models/dist/vocab/sidecar.vocab.d.ts", "../../packages/models/dist/vocab/sidecar.vocab.d.ts", "../../../models/src/vocab/sidecar.vocab.ts", "../../packages/models/src/vocab/sidecar.vocab.ts"]
+      "@undefineds.co/drizzle-solid": ["../../node_modules/@undefineds.co/drizzle-solid/dist/index.d.ts"]
     }
   },
   "include": ["src"],

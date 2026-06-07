@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { globalAgent as httpsGlobalAgent } from 'node:https'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
@@ -8,6 +9,9 @@ import { initTheme } from '@earendil-works/pi-coding-agent'
 
 process.env.PI_OFFLINE = '1'
 initTheme('dark')
+test.after(() => {
+  httpsGlobalAgent.destroy()
+})
 
 const LINX_RUNTIME_MANAGED_AUTH_KEY = 'linx-runtime-managed-auth'
 
@@ -103,6 +107,7 @@ test('pi interactive bootstrap can instantiate with the LinX runtime adapter', a
   })
 
   const interactive = interactiveModule.bootstrapLinxInteractiveMode(runtime)
+  t.after(() => interactive.stop())
   assert.equal(typeof interactive.init, 'function')
   assert.equal(typeof interactive.run, 'function')
   assert.equal(typeof interactive.requestLogin, 'function')
@@ -168,6 +173,7 @@ test('pi interactive bootstrap passes initial prompt options into Pi interactive
   const interactive = interactiveModule.bootstrapPiInteractiveMode(runtime, {
     initialMessage: 'ship the auto prompt',
   })
+  t.after(() => interactive.stop())
 
   assert.equal(interactive.__unsafeInteractiveForTests.options.initialMessage, 'ship the auto prompt')
   await runtime.dispose()
@@ -1209,6 +1215,7 @@ test('linx interactive branding stores agent state under .solid/apps/linx and pa
         getHideThinkingBlock() { return false },
         getTheme() { return 'dark' },
         getQuietStartup() { return true },
+        getShowTerminalProgress() { return false },
       },
       sessionManager: {
         getCwd() {
@@ -1238,6 +1245,7 @@ test('linx interactive branding stores agent state under .solid/apps/linx and pa
   }
 
   const interactive = interactiveModule.bootstrapPiInteractiveMode(runtime)
+  t.after(() => interactive.stop())
   assert.equal(typeof interactive.init, 'function')
   assert.equal(typeof interactive.run, 'function')
   assert.equal(typeof interactive.stop, 'function')
@@ -1635,6 +1643,7 @@ test('linx footer patch adds cache rate from assistant usage', async (t) => {
         getHideThinkingBlock() { return false },
         getTheme() { return 'dark' },
         getQuietStartup() { return true },
+        getShowTerminalProgress() { return false },
       },
       sessionManager: {
         getCwd() {
@@ -1688,6 +1697,7 @@ test('linx footer patch adds cache rate from assistant usage', async (t) => {
   }
 
   const interactive = interactiveModule.bootstrapPiInteractiveMode(runtime)
+  t.after(() => interactive.stop())
   assert.equal(typeof interactive.init, 'function')
 
   const footer = new FooterComponent(runtime.session, {
@@ -1733,6 +1743,7 @@ test('linx footer patch keeps cache rate line within terminal width', async (t) 
         getHideThinkingBlock() { return false },
         getTheme() { return 'dark' },
         getQuietStartup() { return true },
+        getShowTerminalProgress() { return false },
       },
       sessionManager: {
         getCwd() {
@@ -1786,6 +1797,7 @@ test('linx footer patch keeps cache rate line within terminal width', async (t) 
   }
 
   const interactive = interactiveModule.bootstrapPiInteractiveMode(runtime)
+  t.after(() => interactive.stop())
   assert.equal(typeof runtimeModule.createLinxRuntimeAdapter, 'function')
   assert.equal(typeof interactive.init, 'function')
 

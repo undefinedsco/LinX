@@ -11,15 +11,11 @@ const cliDistRoot = join(cliRoot, 'dist')
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 const modelsRoot = resolvePackageSourceRoot('@undefineds.co/models', [
   process.env.LINX_MODELS_ROOT,
-  process.env.LINX_MODELS_PATH,
-  join(repoRoot, 'packages', 'models'),
-  join(repoRoot, '..', 'models'),
   join(repoRoot, 'node_modules', '@undefineds.co', 'models'),
 ])
 const modelsDistRoot = join(modelsRoot, 'dist')
 const drizzleSolidRoot = resolvePackageSourceRoot('@undefineds.co/drizzle-solid', [
   process.env.LINX_DRIZZLE_SOLID_ROOT,
-  join(repoRoot, '..', 'drizzle-solid'),
   join(repoRoot, 'node_modules', '@undefineds.co', 'drizzle-solid'),
 ])
 const drizzleSolidDistRoot = join(drizzleSolidRoot, 'dist')
@@ -46,7 +42,7 @@ function resolvePackageSourceRoot(packageName, candidates) {
     }
   }
 
-  throw new Error(`Cannot find built ${packageName}. Run yarn build:models or set LINX_MODELS_ROOT.`)
+  throw new Error(`Cannot find built ${packageName}. Run yarn install, or set LINX_MODELS_ROOT to an explicit built checkout.`)
 }
 
 export async function loadAutoModeModule(entryRelative = 'lib/auto-mode/index.ts') {
@@ -117,6 +113,10 @@ function statMtime(path) {
 }
 
 function hasNewerSource(root, outputTime) {
+  if (!existsSync(root)) {
+    return false
+  }
+
   for (const entry of readdirSync(root, { withFileTypes: true })) {
     const path = join(root, entry.name)
     if (entry.isDirectory()) {

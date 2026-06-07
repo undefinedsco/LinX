@@ -8,7 +8,7 @@ import { aiCommand } from './lib/ai-command.js'
 import { resolveAccountBaseUrl } from './lib/account-api.js'
 import { loadCredentials } from './lib/credentials-store.js'
 import { loginCommand, logoutCommand, whoamiCommand } from './lib/login-command.js'
-import { DefaultPackageManager, SettingsManager, SessionSelectorComponent, runPrintMode } from '@earendil-works/pi-coding-agent'
+import { DefaultPackageManager, SettingsManager, SessionSelectorComponent, initTheme, runPrintMode } from '@earendil-works/pi-coding-agent'
 import { ProcessTerminal, TUI } from '@earendil-works/pi-tui'
 import { promptText } from './lib/prompt.js'
 import {
@@ -714,6 +714,9 @@ function cwdFromArg(cwd: unknown): string {
 }
 
 async function selectLinxSession(cwd: string): Promise<string | null> {
+  const settingsManager = SettingsManager.create(cwd, LINX_AGENT_DIR)
+  initTheme(settingsManager.getTheme())
+
   return new Promise((resolve) => {
     const ui = new TUI(new ProcessTerminal())
     let resolved = false

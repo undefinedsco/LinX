@@ -14,9 +14,6 @@ const inruptAuthnBrowser = path.resolve(
 function resolveModelsModuleRoot(): string {
   const candidates = [
     process.env.LINX_MODELS_ROOT,
-    process.env.LINX_MODELS_PATH,
-    path.resolve(repoRoot, '../models'),
-    path.resolve(repoRoot, 'packages/models'),
     path.resolve(repoRoot, 'node_modules/@undefineds.co/models'),
   ].filter((value): value is string => Boolean(value))
 
@@ -32,13 +29,12 @@ function resolveModelsModuleRoot(): string {
     return path.join(candidate, 'src')
   }
 
-  throw new Error('Cannot resolve @undefineds.co/models. Clone ../models or set LINX_MODELS_ROOT.')
+  throw new Error('Cannot resolve @undefineds.co/models. Run yarn install, or set LINX_MODELS_ROOT to an explicit external checkout.')
 }
 
 function resolveDrizzleSolidEntry(): string {
   const candidates = [
     process.env.LINX_DRIZZLE_SOLID_ROOT,
-    path.resolve(repoRoot, '../drizzle-solid'),
     path.resolve(repoRoot, 'node_modules/@undefineds.co/drizzle-solid'),
   ].filter((value): value is string => Boolean(value))
 
@@ -53,7 +49,7 @@ function resolveDrizzleSolidEntry(): string {
     if (existsSync(esmEntry)) return esmEntry
   }
 
-  throw new Error('Cannot resolve @undefineds.co/drizzle-solid. Build ../drizzle-solid or run yarn install.')
+  throw new Error('Cannot resolve @undefineds.co/drizzle-solid. Run yarn install, or set LINX_DRIZZLE_SOLID_ROOT to an explicit built checkout.')
 }
 
 function resolveModelsEntry(relativeModule: string): string {

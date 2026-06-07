@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -890,4 +890,64 @@ test('compiled cli can list Pi sessions with pending Pod mirror sync', async (t)
 
   assert.match(output, new RegExp(failedSessionId))
   assert.doesNotMatch(output, new RegExp(completedSessionId))
+})
+
+test('compiled cli resume selector initializes theme before rendering', async (t) => {
+  const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-resume-selector-'))
+  const home = mkdtempSync(join(cliRoot, '.tmp-linx-cli-resume-home-'))
+
+  t.after(() => {
+    rmSync(outdir, { recursive: true, force: true })
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  try {
+    execFileSync('tsc', [
+      '--outDir',
+      outdir,
+      '--rootDir',
+      sourceRoot,
+      '--module',
+      'nodenext',
+      '--moduleResolution',
+      'nodenext',
+      '--target',
+      'ES2022',
+      '--lib',
+      'ES2022',
+      '--types',
+      'node',
+      '--skipLibCheck',
+      'true',
+      '--noEmitOnError',
+      'false',
+      entryPath,
+    ], {
+      cwd: cliRoot,
+      stdio: 'pipe',
+    })
+  } catch {
+    assert.ok(existsSync(join(outdir, 'index.js')))
+  }
+
+  const result = spawnSync(process.execPath, [join(outdir, 'index.js'), '-r'], {
+    cwd: cliRoot,
+    env: {
+      ...process.env,
+      HOME: home,
+      LINX_HOME: join(home, '.linx'),
+      SOLID_HOME: join(home, '.solid'),
+    },
+    encoding: 'utf-8',
+    stdio: 'pipe',
+    timeout: 1500,
+  })
+  const output = [
+    result.stdout,
+    result.stderr,
+    result.error?.message ?? '',
+  ].join('')
+
+  assert.doesNotMatch(output, /Theme not initialized/)
+  assert.doesNotMatch(output, /Call initTheme\(\) first/)
 })

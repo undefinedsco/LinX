@@ -13,9 +13,6 @@ const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 const cliRoot = fileURLToPath(new URL('..', import.meta.url))
 const modelsRoot = resolvePackageSourceRoot('@undefineds.co/models', [
   process.env.LINX_MODELS_ROOT,
-  process.env.LINX_MODELS_PATH,
-  join(repoRoot, 'packages', 'models'),
-  resolve(repoRoot, '..', 'models'),
   join(repoRoot, 'node_modules', '@undefineds.co', 'models'),
 ])
 const outRoot = join(repoRoot, 'preview')
@@ -275,7 +272,7 @@ function resolvePackageSourceRoot(packageName, candidates) {
     }
   }
 
-  throw new Error(`Cannot find ${packageName}. Set LINX_MODELS_ROOT or provide packages/models.`)
+  throw new Error(`Cannot find ${packageName}. Run yarn install, or set LINX_MODELS_ROOT to an explicit external checkout.`)
 }
 
 function parseArgs(argv) {
