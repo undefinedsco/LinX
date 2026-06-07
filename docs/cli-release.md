@@ -131,6 +131,18 @@ git tag linx-v0.3.3
 git push origin linx-v0.3.3
 ```
 
+Never reuse or force-move a release tag. Before tagging, check both local and
+remote tags:
+
+```bash
+git tag --list "linx-v<cli-version>"
+git ls-remote --tags origin "linx-v<cli-version>"
+```
+
+If the tag already exists, the current package version is not releasable as a
+new release. Bump `apps/cli/package.json` to the next intended version, rebuild,
+smoke-install, commit that version change, then tag the new version.
+
 The `linx-v*` tag starts `.github/workflows/cli-release.yml`. That workflow
 rebuilds, packs, smoke-installs, publishes the npm package with the repository
 `NPM_TOKEN`, and creates the GitHub Release. Local machines do not need npm
