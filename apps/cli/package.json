@@ -16,7 +16,7 @@
     "@linx/agent-runtime": "*",
     "@mariozechner/pi-coding-agent": "^0.73.1",
     "@sinclair/typebox": "^0.34.49",
-    "@undefineds.co/models": "0.2.37",
+    "@undefineds.co/models": "0.2.38",
     "@zed-industries/codex-acp": "0.14.0",
     "n3": "^2.0.3",
     "yargs": "^18.0.0"

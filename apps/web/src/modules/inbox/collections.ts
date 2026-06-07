@@ -4,8 +4,6 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import {
   approvalResource,
   auditResource,
-  buildApprovalSubjectPath,
-  buildAuditSubjectPath,
   extractChatThreadRef,
   inboxNotificationResource,
   type ApprovalInsert,
@@ -34,6 +32,15 @@ export function setInboxDatabaseGetter(getter: () => SolidDatabase | null) {
 
 function getDb(): SolidDatabase | null {
   return dbGetter?.() ?? null
+}
+
+interface ResourcePathBuilder {
+  buildId(row: Record<string, unknown>): string
+  resolveUri(id: string): string
+}
+
+function buildResourceSubjectPath(resource: ResourcePathBuilder, row: Record<string, unknown>): string {
+  return resource.resolveUri(resource.buildId(row))
 }
 
 export const approvalCollection = createPodCollection<typeof approvalResource, ApprovalRow, ApprovalInsert>({
@@ -104,7 +111,7 @@ function extractPodBase(db: SolidDatabase): string {
 }
 
 function makeApprovalUri(db: SolidDatabase, approvalId: string, createdAt: Date | string | number = new Date()): string {
-  return `${extractPodBase(db)}${buildApprovalSubjectPath(approvalId, createdAt)}`
+  return `${extractPodBase(db)}${buildResourceSubjectPath(approvalResource as ResourcePathBuilder, { id: approvalId, createdAt })}`
 }
 
 function resolveApprovalIri(db: SolidDatabase, approval: ApprovalRow): string {
@@ -138,7 +145,7 @@ async function updateApprovalByIri(
 }
 
 function makeAuditUri(db: SolidDatabase, auditId: string, createdAt: Date | string | number = new Date()): string {
-  return `${extractPodBase(db)}${buildAuditSubjectPath(auditId, createdAt)}`
+  return `${extractPodBase(db)}${buildResourceSubjectPath(auditResource as ResourcePathBuilder, { id: auditId, createdAt })}`
 }
 
 function extractRuntimeSessionId(sessionUri: string | null | undefined): string | null {

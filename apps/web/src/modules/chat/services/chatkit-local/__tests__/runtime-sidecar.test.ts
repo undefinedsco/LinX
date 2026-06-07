@@ -184,6 +184,9 @@ describe('RuntimeSidecarSink', () => {
 
     expect(inserts.filter((item) => item.table === auditResource)).toHaveLength(1)
     expect(inserts.filter((item) => item.table === sessionTable)).toHaveLength(1)
+    expect(inserts.find((item) => item.table === sessionTable)?.values.owner).toBe(
+      'https://alice.example/profile/card#me',
+    )
     expect(inserts.find((item) => item.table === sessionTable)?.values.chat).toBe(
       'https://alice.example/.data/chat/chat-1/index.ttl#this',
     )

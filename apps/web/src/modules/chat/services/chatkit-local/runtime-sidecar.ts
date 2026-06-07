@@ -2,11 +2,8 @@ import {
   ODRL,
   approvalResource,
   auditResource,
-  buildApprovalSubjectPath,
-  buildAuditSubjectPath,
-  buildSessionSubjectPath,
-  inboxNotificationTable,
-  sessionTable,
+  inboxNotificationResource,
+  sessionResource,
   type ApprovalRow,
   type SolidDatabase,
 } from '@undefineds.co/models'
@@ -44,6 +41,15 @@ interface PendingAuthState {
   message?: string
   options?: Array<{ label?: string; url?: string; method?: string }>
   eventTs: number
+}
+
+interface ResourcePathBuilder {
+  buildId(row: Record<string, unknown>): string
+  resolveUri(id: string): string
+}
+
+function buildResourceSubjectPath(resource: ResourcePathBuilder, row: Record<string, unknown>): string {
+  return resource.resolveUri(resource.buildId(row))
 }
 
 function inferRisk(toolName: string, rawArguments: string): 'low' | 'medium' | 'high' {
@@ -130,7 +136,7 @@ export class RuntimeSidecarSink {
   }
 
   private makeRuntimeSessionUri(sessionId: string, createdAt: Date = new Date()): string {
-    return `${this.podBaseUrl}${buildSessionSubjectPath(sessionId, createdAt)}`
+    return `${this.podBaseUrl}${buildResourceSubjectPath(sessionResource as ResourcePathBuilder, { id: sessionId, createdAt })}`
   }
 
   private makeChatUri(chatId: string): string {
@@ -148,10 +154,10 @@ export class RuntimeSidecarSink {
     previousStatus: RuntimeThreadStatus | undefined,
   ): Promise<void> {
     const eventDate = eventDateFromTs(event.ts)
-    const existing = await this.findByStorageId<Record<string, unknown>>(sessionTable, runtimeSession.id)
+    const existing = await this.findByStorageId<Record<string, unknown>>(sessionResource, runtimeSession.id)
 
     const payload = {
-      ownerWebId: this.webId,
+      owner: this.webId,
       chat: this.makeChatUri(context.chatId),
       thread: this.makeThreadUri(context.chatId, context.threadId),
       sessionType: 'direct',
@@ -170,7 +176,7 @@ export class RuntimeSidecarSink {
     } as const
 
     if (!existing) {
-      await this.db.insert(sessionTable).values({
+      await this.db.insert(sessionResource).values({
         id: runtimeSession.id,
         ...payload,
         createdAt: eventDate,
@@ -178,15 +184,15 @@ export class RuntimeSidecarSink {
       return
     }
 
-    await this.updateByStorageId(sessionTable, runtimeSession.id, payload)
+    await this.updateByStorageId(sessionResource, runtimeSession.id, payload)
   }
 
   private makeApprovalUri(id: string, createdAt: Date = new Date()): string {
-    return `${this.podBaseUrl}${buildApprovalSubjectPath(id, createdAt)}`
+    return `${this.podBaseUrl}${buildResourceSubjectPath(approvalResource as ResourcePathBuilder, { id, createdAt })}`
   }
 
   private makeAuditUri(id: string, createdAt: Date = new Date()): string {
-    return `${this.podBaseUrl}${buildAuditSubjectPath(id, createdAt)}`
+    return `${this.podBaseUrl}${buildResourceSubjectPath(auditResource as ResourcePathBuilder, { id, createdAt })}`
   }
 
   private buildEventKey(type: string, runtimeSessionId: string, suffix: string): string {
@@ -241,7 +247,7 @@ export class RuntimeSidecarSink {
     }
 
     this.seenEventKeys.add(dedupeKey)
-    await this.db.insert(inboxNotificationTable).values({
+    await this.db.insert(inboxNotificationResource).values({
       id: crypto.randomUUID(),
       actor: this.webId,
       object: objectUri,
