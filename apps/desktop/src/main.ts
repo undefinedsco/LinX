@@ -1,3 +1,4 @@
+import './lib/stdio-error-guard';
 import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog, shell, Notification, screen } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';

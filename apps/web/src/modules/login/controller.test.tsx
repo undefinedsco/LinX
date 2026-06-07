@@ -870,6 +870,85 @@ describe('useLoginController', () => {
     expect(useLoginStore.getState().state).toBe('idle')
   })
 
+  it('blocks Local login before OIDC discovery when the public Local entry is unreachable', async () => {
+    const connectivity = {
+      status: 'local-only',
+      checkedAt: Date.now(),
+      local: {
+        kind: 'local',
+        url: 'http://localhost:5737/',
+        reachable: true,
+        sameNode: true,
+        latencyMs: 2,
+        baseUrl: 'https://node-0000.undefineds.co/',
+        message: '本机入口可达。',
+      },
+      public: {
+        kind: 'public',
+        url: 'https://node-0000.undefineds.co/',
+        reachable: false,
+        sameNode: false,
+        latencyMs: null,
+        baseUrl: null,
+        message: '公网入口不可达。',
+      },
+      message: '本机入口可用，公网入口暂不可达。配置并启动隧道后再重试。',
+    }
+    const testConnectivityMock = vi.fn().mockResolvedValue({
+      state: 'ready',
+      spaceKind: 'local',
+      localUrl: 'http://localhost:5737',
+      baseUrl: 'https://node-0000.undefineds.co/',
+      publicUrl: 'https://node-0000.undefineds.co/',
+      tunnel: null,
+      connectivity,
+      capabilities: null,
+      cloudIdentityUrl: 'https://id.undefineds.co',
+      provisionCode: 'pc-123',
+      provisionUrl: 'https://id.undefineds.co/.account/?provisionCode=pc-123',
+      nodeId: 'abc',
+      message: null,
+      errorCode: null,
+      canRetry: true,
+      canOpenSettings: true,
+    })
+    window.xpodDesktop = {
+      auth: {},
+      localOnboarding: {
+        testConnectivity: testConnectivityMock,
+      },
+    } as any
+    providersState.localOnboarding = {
+      state: 'ready',
+      spaceKind: 'local',
+      localUrl: 'http://localhost:5737',
+      baseUrl: 'https://node-0000.undefineds.co/',
+      publicUrl: 'https://node-0000.undefineds.co/',
+      tunnel: null,
+      connectivity: null,
+      capabilities: null,
+      cloudIdentityUrl: 'https://id.undefineds.co',
+      provisionCode: 'pc-123',
+      provisionUrl: 'https://id.undefineds.co/.account/?provisionCode=pc-123',
+      nodeId: 'abc',
+      message: null,
+      errorCode: null,
+      canRetry: true,
+      canOpenSettings: true,
+    }
+
+    const { result } = renderHook(() => useLoginController())
+
+    await act(async () => {
+      await result.current.continueLocalLogin()
+    })
+
+    expect(testConnectivityMock).toHaveBeenCalledTimes(1)
+    expect(connectMock).not.toHaveBeenCalled()
+    expect(result.current.error).toBeNull()
+    expect(useLoginStore.getState().state).toBe('idle')
+  })
+
   it('does not treat a LAN Local access route as the Local storage address', async () => {
     providersState.localOnboarding = {
       state: 'ready',

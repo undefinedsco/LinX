@@ -647,6 +647,26 @@ export function useLoginController() {
       return
     }
 
+    if (!isStandalone) {
+      const desktopApi = typeof window !== 'undefined' ? window.xpodDesktop : undefined
+      const checkedSnapshot = desktopApi?.localOnboarding?.testConnectivity
+        ? await desktopApi.localOnboarding.testConnectivity().catch((error: any) => {
+            setError(formatLoginErrorForUser(error, '无法确认本地空间公网入口。请稍后重试。'))
+            return null
+          })
+        : null
+
+      if (checkedSnapshot === null && desktopApi?.localOnboarding?.testConnectivity) {
+        return
+      }
+
+      const connectivity = checkedSnapshot?.connectivity ?? localOnboarding.connectivity
+      if (connectivity && connectivity.status !== 'ready') {
+        setError(null)
+        return
+      }
+    }
+
     const connectKey = `${oidcEntryUrl}|${accountIssuerUrl}|${localProviderUrl}|${localOnboarding.provisionCode ?? ''}`
     if (localConnectKeyRef.current === connectKey) return
     localConnectKeyRef.current = connectKey

@@ -431,6 +431,14 @@ function LocalOnboardingView({
   const productLabel = isStandalone ? '独立空间' : '本地空间'
   const onboardingState = snapshot?.state ?? 'idle'
   const isReady = onboardingState === 'ready'
+  const connectivity = !isStandalone ? snapshot?.connectivity : null
+  const isLocalNetworkBlocked = Boolean(
+    isReady
+    && connectivity
+    && connectivity.status !== 'unknown'
+    && connectivity.status !== 'checking'
+    && connectivity.status !== 'ready',
+  )
   const isRepair = onboardingState === 'repair_required'
   const isError = onboardingState === 'error'
   const isStarting = onboardingState === 'starting' || onboardingState === 'checking' || onboardingState === 'idle' || onboardingState === 'space_required'
@@ -471,7 +479,17 @@ function LocalOnboardingView({
 
           {isReady && (
             <div className="flex flex-col gap-3">
-              <p className="text-sm font-medium text-foreground text-center">{productLabel} 已准备好</p>
+              <p className="text-sm font-medium text-foreground text-center">
+                {isLocalNetworkBlocked ? '本地空间公网入口未连通' : `${productLabel} 已准备好`}
+              </p>
+              {isLocalNetworkBlocked ? (
+                <p className="text-xs text-muted-foreground leading-relaxed text-center">
+                  {formatLocalStatusMessageForUser(
+                    connectivity?.message,
+                    '本地空间公网入口不可达。请确认隧道已启动后重试。',
+                  )}
+                </p>
+              ) : null}
               {isStandalone ? (
                 <RouteInfoCard title="本机入口" value={localUrl} />
               ) : null}
@@ -479,7 +497,7 @@ function LocalOnboardingView({
                 onClick={onContinue}
                 className="w-full h-10 rounded-xl bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
               >
-                继续登录
+                {isLocalNetworkBlocked ? '重新检测' : '继续登录'}
               </button>
             </div>
           )}

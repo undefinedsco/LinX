@@ -33,9 +33,25 @@ function debugXpodManager(message: string, payload?: Record<string, unknown>): v
   }
 
   if (payload) {
-    console.log(`[XpodManager:debug] ${message}`, payload);
+    safeConsoleLog(`[XpodManager:debug] ${message}`, payload);
   } else {
-    console.log(`[XpodManager:debug] ${message}`);
+    safeConsoleLog(`[XpodManager:debug] ${message}`);
+  }
+}
+
+function safeConsoleLog(...args: unknown[]): void {
+  try {
+    console.log(...args);
+  } catch {
+    // Logging must not crash the Electron main process if stdout is closed.
+  }
+}
+
+function safeConsoleError(...args: unknown[]): void {
+  try {
+    console.error(...args);
+  } catch {
+    // Logging must not crash the Electron main process if stderr is closed.
   }
 }
 
@@ -1001,7 +1017,7 @@ export class XpodManager {
 
   private attachProcessHandlers(child: ChildProcess, providerId: string): void {
     child.on('error', (error) => {
-      console.error('[XpodManager] Failed to spawn xpod:', error);
+      safeConsoleError('[XpodManager] Failed to spawn xpod:', error);
       if (this.childProcess?.pid === child.pid) {
         this.childProcess = null;
       }
@@ -1013,7 +1029,7 @@ export class XpodManager {
     });
 
     child.on('exit', (code, signal) => {
-      console.log(`[XpodManager] xpod exited with code ${code} signal ${signal}`);
+      safeConsoleLog(`[XpodManager] xpod exited with code ${code} signal ${signal}`);
       const wasIntentionalStop = this.stoppingPid === child.pid;
 
       if (this.childProcess?.pid === child.pid) {
@@ -1342,7 +1358,7 @@ export class XpodManager {
       if (error?.name === 'AbortError') {
         throw new Error('连接登录服务超时。请检查网络后重试。');
       }
-      console.error('[XpodManager] Failed to register Local node with Cloud:', error);
+      safeConsoleError('[XpodManager] Failed to register Local node with Cloud:', error);
       throw createManagedCloudRegistrationError(error);
     } finally {
       clearTimeout(timeoutId);
@@ -1410,7 +1426,7 @@ export class XpodManager {
       const record = (payload as Record<string, unknown>)[providerId];
       return parseManagedCloudRegistration(record);
     } catch (error) {
-      console.error('[XpodManager] Failed to read managed Cloud registration:', error);
+      safeConsoleError('[XpodManager] Failed to read managed Cloud registration:', error);
       return undefined;
     }
   }
@@ -1430,7 +1446,7 @@ export class XpodManager {
       );
       fs.chmodSync(this.cloudRegistrationPath, 0o600);
     } catch (error) {
-      console.error('[XpodManager] Failed to persist managed Cloud registration:', error);
+      safeConsoleError('[XpodManager] Failed to persist managed Cloud registration:', error);
       throw error;
     }
   }
@@ -1444,7 +1460,7 @@ export class XpodManager {
       const raw = fs.readFileSync(this.statePath, 'utf-8');
       return JSON.parse(raw) as XpodServiceState;
     } catch (error) {
-      console.error('[XpodManager] Failed to read state:', error);
+      safeConsoleError('[XpodManager] Failed to read state:', error);
       return null;
     }
   }

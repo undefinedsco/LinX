@@ -595,7 +595,8 @@ describe('LoginModal', () => {
 
     render(<LoginModal {...props} />)
 
-    expect(screen.getByRole('button', { name: '继续登录' })).toBeTruthy()
+    expect(screen.getByText('本地空间公网入口未连通')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '重新检测' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: /高级配置/ })).toBeNull()
     expect(screen.queryByText('拿到 Local 域名')).toBeNull()
     expect(screen.queryByText('配置 Cloudflare Tunnel')).toBeNull()
