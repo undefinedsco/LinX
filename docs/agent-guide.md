@@ -13,6 +13,7 @@
 - 模块状态分工：Pod 数据走 TanStack DB Collection；Zustand 只管理纯 UI 状态。
 - 新增共享规则、RDF contract、归一化逻辑、跨端 use-case 时，优先放进 `@undefineds.co/models`。
 - `Table` 到 `Resource` 的语义迁移按功能边界推进：改到哪个 Pod/ORM 功能，就把该功能的命名、测试和文档叙事同步改成 `Resource`；不要为了“统一”做全仓机械重命名，底层兼容 API 可继续保留 `Table`。
+- 命名只在跨包公共 API、外部冲突边界、LinX Cloud 产品语义和品牌展示上使用 `Linx` 前缀；CLI/TUI 内部通用概念、helper、状态和 adapter 局部类型不要因为位于 LinX 仓库里重复加 `Linx` / `LinxPi` 前缀。
 
 ## Skill Routing
 

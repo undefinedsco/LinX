@@ -457,7 +457,10 @@ test('pod-backed codex credential is read through shared model db', async () => 
   assert.equal(createDbCalls, 1)
   assert.equal(fetchCalls, 0)
   assert.deepEqual(selectResources, [credentialResource])
-  assert.deepEqual(findByIds, [[aiProviderResource, 'openai']])
+  assert.deepEqual(findByIds, [
+    [aiProviderResource, 'openai'],
+    [aiProviderResource, 'codex'],
+  ])
 })
 
 test('cloud credential source resolves pod-backed codebuddy credentials and skips local auth preflight', async (t) => {

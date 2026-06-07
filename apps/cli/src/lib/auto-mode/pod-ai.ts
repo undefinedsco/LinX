@@ -53,10 +53,10 @@ interface PodAiRuntime {
   aiProviderResource?: unknown
 }
 
-const BACKEND_PROVIDER_ID: Record<SupportedPodAutoModeBackend, 'anthropic' | 'openai' | 'codebuddy'> = {
-  claude: 'anthropic',
-  codex: 'openai',
-  codebuddy: 'codebuddy',
+const BACKEND_PROVIDER_IDS: Record<SupportedPodAutoModeBackend, readonly string[]> = {
+  claude: ['anthropic', 'claude'],
+  codex: ['openai', 'codex'],
+  codebuddy: ['codebuddy'],
 }
 
 function selectPodCredentialForBackend(
@@ -64,22 +64,19 @@ function selectPodCredentialForBackend(
   credentials: PodCredentialRow[],
   providers: PodProviderRow[],
 ): PodProviderMatch | null {
-  const providerId = BACKEND_PROVIDER_ID[backend]
-  const selected = selectAIConfigCredential(
-    providerId,
-    credentials as Array<Record<string, unknown>>,
-    providers as Array<Record<string, unknown>>,
-  )
+  const providerIds = BACKEND_PROVIDER_IDS[backend]
 
-  if (!selected) {
-    return null
+  for (const providerId of providerIds) {
+    const selected = selectAIConfigCredential(providerId, credentials, providers)
+    if (!selected) continue
+    return {
+      providerId: selected.providerId,
+      apiKey: selected.apiKey,
+      baseUrl: selected.baseUrl,
+    }
   }
 
-  return {
-    providerId,
-    apiKey: selected.apiKey,
-    baseUrl: selected.baseUrl,
-  }
+  return null
 }
 
 async function markCredentialUsed(
@@ -179,10 +176,13 @@ async function loadRowsWithDrizzle(
 
   const db = runtime.createDb(podSession)
   const credentials = await db.select().from(runtime.credentialResource).execute() as PodCredentialRow[]
-  const providerId = BACKEND_PROVIDER_ID[backend]
-  const provider = await db.findById?.(runtime.aiProviderResource, providerId) as PodProviderRow | null | undefined
+  const providers = await Promise.all(
+    BACKEND_PROVIDER_IDS[backend].map(async (providerId) => {
+      return db.findById?.(runtime.aiProviderResource, providerId) as Promise<PodProviderRow | null | undefined>
+    }),
+  )
 
-  return { db, credentials, providers: provider ? [provider] : [] }
+  return { db, credentials, providers: providers.filter((provider): provider is PodProviderRow => Boolean(provider)) }
 }
 
 export async function loadPodBackendCredential(
@@ -212,6 +212,6 @@ export async function loadPodBackendCredential(
 }
 
 export const __podInternal = {
-  BACKEND_PROVIDER_ID,
+  BACKEND_PROVIDER_IDS,
   selectPodCredentialForBackend,
 }

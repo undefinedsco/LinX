@@ -19,6 +19,7 @@ import {
   credentialResource,
   aiProviderResource,
   eq,
+  getDefaultAIConfigCredentialId,
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
   selectAIConfigCredential,
@@ -1399,12 +1400,24 @@ export const chatOps = {
     if (!db) return null
 
     const providerId = normalizeAIConfigProviderId(provider)
-    const [credentialRows, providerRow] = await Promise.all([
-      db.select().from(credentialResource).execute(),
+    const credentialId = getDefaultAIConfigCredentialId(providerId)
+    const [defaultCredentialRows, providerRow] = await Promise.all([
+      typeof (db as any).findById === 'function'
+        ? (db as any).findById(credentialResource as any, credentialId)
+          .then((row: unknown) => row ? [row] : [])
+          .catch(() => [])
+        : Promise.resolve([]),
       typeof (db as any).findById === 'function'
         ? (db as any).findById(aiProviderResource as any, providerId).catch(() => null)
         : Promise.resolve(null),
     ])
+    const credentialRows = defaultCredentialRows.length > 0
+      ? defaultCredentialRows
+      : await db.select().from(credentialResource).execute().catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error)
+          if (message.includes('Document-mode collection queries over plain LDP')) return []
+          throw error
+        })
     const selected = selectAIConfigCredential(
       providerId,
       credentialRows as Array<Record<string, unknown>>,
@@ -1412,6 +1425,10 @@ export const chatOps = {
     )
 
     if (!selected) return null
+
+    if (selected.credentialId) {
+      await (db as any).updateById?.(credentialResource as any, selected.credentialId, { lastUsedAt: new Date() })
+    }
 
     return {
       apiKey: selected.apiKey,

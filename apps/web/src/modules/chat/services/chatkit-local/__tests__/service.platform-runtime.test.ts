@@ -21,6 +21,7 @@ vi.mock('@undefineds.co/models', () => ({
   chatTable: mocked.chatTable,
   contactTable: mocked.contactTable,
   credentialResource: mocked.credentialResource,
+  getDefaultAIConfigCredentialId: (provider: string) => `${provider}-default`,
   normalizeAIConfigProviderId: (value?: string | null) => {
     if (!value) return ''
     const tail = value.includes('#') ? value.split('#').pop() : value.split('/').pop()
@@ -31,25 +32,6 @@ vi.mock('@undefineds.co/models', () => ({
     if (value.startsWith('undefineds/')) return value
     const tail = value.includes('#') ? value.split('#').pop() : value.split('/').pop()
     return (tail ?? value).replace(/\.ttl$/, '')
-  },
-  selectAIConfigCredential: (provider: string, rows: Array<Record<string, any>>) => {
-    const normalizedProvider = provider.includes('#') ? provider.split('#').pop() : provider
-    const credential = rows.find((row) => {
-      const rowProvider = String(row.provider ?? '')
-      return rowProvider.endsWith(`#${normalizedProvider}`)
-        && (row.service ?? 'ai') === 'ai'
-        && (row.status ?? 'active') === 'active'
-        && row.apiKey
-    })
-    if (!credential) return undefined
-    return {
-      providerId: normalizedProvider,
-      credential,
-      credentialId: credential.id,
-      apiKey: credential.apiKey,
-      baseUrl: credential.baseUrl,
-      isDefault: Boolean(credential.isDefault),
-    }
   },
   resolveRowId: (row: Record<string, unknown> | null | undefined) => row?.['@id'] ?? row?.uri ?? row?.id ?? null,
   selectAIConfigCredential: (
@@ -69,6 +51,7 @@ vi.mock('@undefineds.co/models', () => ({
     return {
       providerId,
       credential,
+      credentialId: normalizeProvider(credential.id),
       apiKey: credential.apiKey,
       baseUrl: credential.baseUrl ?? providerRow?.baseUrl,
     }
@@ -203,12 +186,21 @@ function createMockDb(agent: { provider: string; model: string }, credentialRows
       getPodUrl: () => null,
     }),
     findById: vi.fn(async (table: unknown, id?: string) => {
+      const normalizeResourceId = (value?: unknown) => {
+        if (typeof value !== 'string' || !value) return ''
+        if (value.includes('#')) return value.split('#').pop() || value
+        const tail = value.split('/').pop() || value
+        return tail.replace(/\.ttl$/, '')
+      }
       if (table === mocked.chatTable) return chat
       if (table === mocked.aiProviderResource) {
         return {
           id,
           baseUrl: id === 'openai' ? 'https://openrouter.ai/api/v1' : undefined,
         }
+      }
+      if (table === mocked.credentialResource) {
+        return credentialRows.find((row) => normalizeResourceId(row.id) === normalizeResourceId(id)) ?? null
       }
       return null
     }),

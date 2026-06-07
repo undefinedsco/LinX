@@ -4,6 +4,7 @@ import {
   chatTable,
   aiProviderTable,
   credentialTable,
+  getDefaultAIConfigCredentialId,
   threadTable,
   messageTable,
   solidSchema,
@@ -108,7 +109,7 @@ describe('chat collections integration', () => {
     const { db: database } = await getContext()
     const suffix = crypto.randomUUID()
     const providerId = `openai-${suffix}`
-    const credentialId = `credential-${suffix}`
+    const credentialId = getDefaultAIConfigCredentialId(providerId)
 
     await database.insert(aiProviderTable).values({
       id: providerId,

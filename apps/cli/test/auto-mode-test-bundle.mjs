@@ -73,6 +73,10 @@ function statMtime(path) {
 }
 
 function hasNewerSource(root, outputTime) {
+  if (!existsSync(root)) {
+    return false
+  }
+
   for (const entry of readdirSync(root, { withFileTypes: true })) {
     const path = join(root, entry.name)
     if (entry.isDirectory()) {

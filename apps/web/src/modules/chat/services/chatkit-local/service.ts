@@ -29,6 +29,7 @@ import {
   chatTable,
   contactTable,
   credentialResource,
+  getDefaultAIConfigCredentialId,
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
   selectAIConfigCredential,
@@ -759,13 +760,25 @@ export class LocalChatKitService {
     }
 
     try {
+      const credentialId = getDefaultAIConfigCredentialId(providerId)
       const findProvider = typeof (this.db as any).findById === 'function'
         ? (this.db as any).findById(aiProviderResource as any, providerId).catch(() => null)
         : Promise.resolve(null)
-      const [credentialRows, providerRow] = await Promise.all([
-        this.db.select().from(credentialResource).execute(),
+      const [defaultCredentialRows, providerRow] = await Promise.all([
+        typeof (this.db as any).findById === 'function'
+          ? (this.db as any).findById(credentialResource as any, credentialId)
+            .then((row: unknown) => row ? [row] : [])
+            .catch(() => [])
+          : Promise.resolve([]),
         findProvider,
       ])
+      const credentialRows = defaultCredentialRows.length > 0
+        ? defaultCredentialRows
+        : await this.db.select().from(credentialResource).execute().catch((error: unknown) => {
+            const message = error instanceof Error ? error.message : String(error)
+            if (message.includes('Document-mode collection queries over plain LDP')) return []
+            throw error
+          })
 
       const selected = selectAIConfigCredential(
         providerId,
@@ -774,6 +787,10 @@ export class LocalChatKitService {
       )
 
       if (!selected) return null
+
+      if (selected.credentialId) {
+        await (this.db as any).updateById?.(credentialResource as any, selected.credentialId, { lastUsedAt: new Date() })
+      }
 
       return {
         baseUrl: selected.baseUrl || 'https://openrouter.ai/api/v1',
