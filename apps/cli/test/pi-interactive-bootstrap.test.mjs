@@ -11,6 +11,21 @@ initTheme('dark')
 
 const LINX_RUNTIME_MANAGED_AUTH_KEY = 'linx-runtime-managed-auth'
 
+function isolateSolidHome(t, prefix) {
+  const previousSolidHome = process.env.SOLID_HOME
+  const solidHome = mkdtempSync(join(tmpdir(), prefix))
+  process.env.SOLID_HOME = solidHome
+  t.after(() => {
+    if (previousSolidHome === undefined) {
+      delete process.env.SOLID_HOME
+    } else {
+      process.env.SOLID_HOME = previousSolidHome
+    }
+    rmSync(solidHome, { recursive: true, force: true })
+  })
+  return solidHome
+}
+
 test('pi interactive bootstrap can instantiate with the LinX runtime adapter', async (t) => {
   const [{ module: runtimeModule, cleanup: runtimeCleanup }, { module: interactiveModule, cleanup: interactiveCleanup }] = await Promise.all([
     loadAutoModeModule('lib/pi-adapter/runtime.ts'),
@@ -97,6 +112,7 @@ test('pi interactive bootstrap can instantiate with the LinX runtime adapter', a
 })
 
 test('pi interactive bootstrap passes initial prompt options into Pi interactive mode', async (t) => {
+  isolateSolidHome(t, 'linx-pi-initial-prompt-solid-')
   const [{ module: runtimeModule, cleanup: runtimeCleanup }, { module: interactiveModule, cleanup: interactiveCleanup }] = await Promise.all([
     loadAutoModeModule('lib/pi-adapter/runtime.ts'),
     loadAutoModeModule('lib/pi-adapter/interactive.ts'),
@@ -159,6 +175,7 @@ test('pi interactive bootstrap passes initial prompt options into Pi interactive
 })
 
 test('pi interactive backend credential prompt uses the existing extension input surface', async (t) => {
+  isolateSolidHome(t, 'linx-pi-backend-credential-solid-')
   const [{ module: runtimeModule, cleanup: runtimeCleanup }, { module, cleanup }] = await Promise.all([
     loadAutoModeModule('lib/pi-adapter/runtime.ts'),
     loadAutoModeModule('lib/pi-adapter/interactive.ts'),
@@ -244,6 +261,7 @@ test('pi interactive backend credential prompt uses the existing extension input
 })
 
 test('pi interactive backend credential prompt distinguishes invalid existing credentials', async (t) => {
+  isolateSolidHome(t, 'linx-pi-invalid-backend-credential-solid-')
   const [{ module: runtimeModule, cleanup: runtimeCleanup }, { module, cleanup }] = await Promise.all([
     loadAutoModeModule('lib/pi-adapter/runtime.ts'),
     loadAutoModeModule('lib/pi-adapter/interactive.ts'),
@@ -324,6 +342,7 @@ test('pi interactive backend credential prompt distinguishes invalid existing cr
 })
 
 test('pi interactive backend credential prompt reuses Pi login dialog when TUI is initialized', async (t) => {
+  isolateSolidHome(t, 'linx-pi-backend-credential-dialog-solid-')
   const [{ module: runtimeModule, cleanup: runtimeCleanup }, { module, cleanup }] = await Promise.all([
     loadAutoModeModule('lib/pi-adapter/runtime.ts'),
     loadAutoModeModule('lib/pi-adapter/interactive.ts'),
@@ -778,6 +797,330 @@ test('linx interactive session prompt routes peer commands without recursion', a
   assert.match(statuses.join('\n'), /Peer command routed/)
 })
 
+test('linx interactive /rewind materializes a clean active Pi session without submitting to backend', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  t.after(() => cleanup())
+
+  const { SessionManager } = await import('@earendil-works/pi-coding-agent')
+  const sessionManager = SessionManager.inMemory('/tmp/linx-rewind-test')
+  const originalSessionId = sessionManager.getSessionId()
+  const firstUser = sessionManager.appendMessage({
+    role: 'user',
+    content: [{ type: 'text', text: 'first turn' }],
+    timestamp: Date.parse('2026-04-01T00:00:00.000Z'),
+  })
+  const firstAssistant = sessionManager.appendMessage({
+    role: 'assistant',
+    content: [{ type: 'text', text: 'first answer' }],
+    provider: 'undefineds',
+    model: 'linx-lite',
+    stopReason: 'stop',
+    timestamp: Date.parse('2026-04-01T00:00:01.000Z'),
+  })
+  const secondUser = sessionManager.appendMessage({
+    role: 'user',
+    content: [{ type: 'text', text: 'dirty turn' }],
+    timestamp: Date.parse('2026-04-01T00:00:02.000Z'),
+  })
+  sessionManager.appendMessage({
+    role: 'assistant',
+    content: [{ type: 'text', text: 'dirty answer' }],
+    provider: 'undefineds',
+    model: 'linx-lite',
+    stopReason: 'stop',
+    timestamp: Date.parse('2026-04-01T00:00:03.000Z'),
+  })
+
+  const submitted = []
+  const statuses = []
+  const renders = []
+  const agentState = {
+    ...sessionManager.buildSessionContext(),
+  }
+  const interactive = {
+    defaultEditor: {},
+    editor: {
+      setText() {},
+    },
+    session: {
+      sessionManager,
+      agent: {
+        state: agentState,
+      },
+    },
+    ui: {
+      requestRender() {
+        renders.push('render')
+      },
+    },
+    setupEditorSubmitHandler() {
+      this.defaultEditor.onSubmit = async (text) => {
+        submitted.push(text)
+      }
+    },
+    showStatus(message) {
+      statuses.push(message)
+    },
+    showError(message) {
+      throw new Error(message)
+    },
+  }
+
+  module.installLinxGlobalCommands(interactive, {}, '/tmp/linx-rewind-test')
+  interactive.setupEditorSubmitHandler()
+  await interactive.defaultEditor.onSubmit('/rewind')
+
+  assert.deepEqual(submitted, [])
+  assert.notEqual(sessionManager.getSessionId(), originalSessionId)
+  assert.equal(sessionManager.getLeafId(), firstAssistant)
+  assert.equal(sessionManager.getEntry(secondUser), undefined)
+  assert.deepEqual(sessionManager.getEntries().map((entry) => entry.id), [
+    firstUser,
+    firstAssistant,
+  ])
+  assert.deepEqual(agentState.messages.map((message) => message.content[0].text), [
+    'first turn',
+    'first answer',
+  ])
+  assert.match(statuses.join('\n'), /Rewound 1 turn/)
+  assert.equal(renders.length > 0, true)
+  assert.equal(sessionManager.getBranch().map((entry) => entry.id).includes(firstUser), true)
+})
+
+test('linx interactive /rewind opens a TUI selector for the rollback target', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  t.after(() => cleanup())
+
+  const { SessionManager } = await import('@earendil-works/pi-coding-agent')
+  const sessionManager = SessionManager.inMemory('/tmp/linx-rewind-selector-test')
+  sessionManager.appendMessage({
+    role: 'user',
+    content: [{ type: 'text', text: 'first turn' }],
+    timestamp: Date.parse('2026-04-01T00:00:00.000Z'),
+  })
+  const firstAssistant = sessionManager.appendMessage({
+    role: 'assistant',
+    content: [{ type: 'text', text: 'first answer' }],
+    provider: 'undefineds',
+    model: 'linx-lite',
+    stopReason: 'stop',
+    timestamp: Date.parse('2026-04-01T00:00:01.000Z'),
+  })
+  const secondUser = sessionManager.appendMessage({
+    role: 'user',
+    content: [{ type: 'text', text: 'dirty turn' }],
+    timestamp: Date.parse('2026-04-01T00:00:02.000Z'),
+  })
+  sessionManager.appendMessage({
+    role: 'assistant',
+    content: [{ type: 'text', text: 'dirty answer' }],
+    provider: 'undefineds',
+    model: 'linx-lite',
+    stopReason: 'stop',
+    timestamp: Date.parse('2026-04-01T00:00:03.000Z'),
+  })
+
+  const submitted = []
+  const statuses = []
+  const renders = []
+  const agentState = {
+    ...sessionManager.buildSessionContext(),
+  }
+  let selectorResult
+  let doneCalled = false
+  const interactive = {
+    defaultEditor: {},
+    editor: {
+      setText() {},
+    },
+    session: {
+      sessionManager,
+      agent: {
+        state: agentState,
+      },
+    },
+    ui: {
+      requestRender() {
+        renders.push('render')
+      },
+    },
+    showSelector(create) {
+      selectorResult = create(() => {
+        doneCalled = true
+      })
+    },
+    setupEditorSubmitHandler() {
+      this.defaultEditor.onSubmit = async (text) => {
+        submitted.push(text)
+      }
+    },
+    showStatus(message) {
+      statuses.push(message)
+    },
+    showError(message) {
+      throw new Error(message)
+    },
+  }
+
+  module.installLinxGlobalCommands(interactive, {}, '/tmp/linx-rewind-selector-test')
+  interactive.setupEditorSubmitHandler()
+  await interactive.defaultEditor.onSubmit('/rewind')
+
+  assert.deepEqual(submitted, [])
+  assert.ok(selectorResult?.component)
+  assert.ok(selectorResult?.focus)
+  assert.equal(sessionManager.getLeafId() !== firstAssistant, true)
+
+  await selectorResult.focus.onSelect(secondUser)
+
+  assert.equal(doneCalled, true)
+  assert.equal(sessionManager.getLeafId(), firstAssistant)
+  assert.equal(sessionManager.getEntry(secondUser), undefined)
+  assert.deepEqual(agentState.messages.map((message) => message.content[0].text), [
+    'first turn',
+    'first answer',
+  ])
+  assert.match(statuses.join('\n'), /Rewound to before selected message/)
+  assert.equal(renders.length > 0, true)
+})
+
+test('linx interactive /rewind can reset the branch to the session root', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  t.after(() => cleanup())
+
+  const { SessionManager } = await import('@earendil-works/pi-coding-agent')
+  const sessionManager = SessionManager.inMemory('/tmp/linx-rewind-root-test')
+  sessionManager.appendMessage({
+    role: 'user',
+    content: [{ type: 'text', text: 'only turn' }],
+    timestamp: Date.parse('2026-04-01T00:00:00.000Z'),
+  })
+  sessionManager.appendMessage({
+    role: 'assistant',
+    content: [{ type: 'text', text: 'only answer' }],
+    provider: 'undefineds',
+    model: 'linx-lite',
+    stopReason: 'stop',
+    timestamp: Date.parse('2026-04-01T00:00:01.000Z'),
+  })
+
+  const statuses = []
+  const agentState = {
+    ...sessionManager.buildSessionContext(),
+  }
+  const interactive = {
+    defaultEditor: {},
+    editor: {
+      setText() {},
+    },
+    session: {
+      sessionManager,
+      agent: {
+        state: agentState,
+      },
+    },
+    ui: {
+      requestRender() {},
+    },
+    setupEditorSubmitHandler() {
+      this.defaultEditor.onSubmit = async () => {
+        throw new Error('/rewind should not reach backend submit')
+      }
+    },
+    showStatus(message) {
+      statuses.push(message)
+    },
+    showError(message) {
+      throw new Error(message)
+    },
+  }
+
+  module.installLinxGlobalCommands(interactive, {}, '/tmp/linx-rewind-root-test')
+  interactive.setupEditorSubmitHandler()
+  await interactive.defaultEditor.onSubmit('/rewind 2')
+
+  assert.equal(sessionManager.getLeafId(), null)
+  assert.deepEqual(sessionManager.getEntries(), [])
+  assert.deepEqual(agentState.messages, [])
+  assert.match(statuses.join('\n'), /Rewound 1 turn/)
+})
+
+test('linx interactive /rewind can use legacy entry-only session managers', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  t.after(() => cleanup())
+
+  const statuses = []
+  const calls = []
+  const entries = [
+    {
+      id: 'user-1',
+      type: 'message',
+      parentId: null,
+      message: {
+        role: 'user',
+        content: [{ type: 'text', text: 'legacy dirty turn' }],
+      },
+    },
+    {
+      id: 'assistant-1',
+      type: 'message',
+      parentId: 'user-1',
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text: 'legacy dirty answer' }],
+      },
+    },
+  ]
+  const agentState = { messages: [{ role: 'user', content: [{ type: 'text', text: 'legacy dirty turn' }] }] }
+  const sessionManager = {
+    getEntries() {
+      calls.push('getEntries')
+      return entries
+    },
+    resetLeaf() {
+      calls.push('resetLeaf')
+    },
+    buildSessionContext() {
+      calls.push('buildSessionContext')
+      return { messages: [] }
+    },
+  }
+  const interactive = {
+    defaultEditor: {},
+    editor: {
+      setText() {},
+    },
+    session: {
+      sessionManager,
+      agent: {
+        state: agentState,
+      },
+    },
+    ui: {
+      requestRender() {},
+    },
+    setupEditorSubmitHandler() {
+      this.defaultEditor.onSubmit = async () => {
+        throw new Error('/rewind should not reach backend submit')
+      }
+    },
+    showStatus(message) {
+      statuses.push(message)
+    },
+    showError(message) {
+      throw new Error(message)
+    },
+  }
+
+  module.installLinxGlobalCommands(interactive, {}, '/tmp/linx-rewind-legacy-test')
+  interactive.setupEditorSubmitHandler()
+  await interactive.defaultEditor.onSubmit('/rewind')
+
+  assert.deepEqual(calls, ['getEntries', 'getEntries', 'getEntries', 'getEntries', 'resetLeaf', 'buildSessionContext'])
+  assert.deepEqual(agentState.messages, [])
+  assert.match(statuses.join('\n'), /Rewound 1 turn/)
+})
+
 test('linx interactive /ai connect falls back to extension input when dialog cannot render', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
   t.after(() => cleanup())
@@ -838,7 +1181,7 @@ test('linx interactive /ai connect falls back to extension input when dialog can
   assert.match(statuses.join('\n'), /Connected AI provider openai to LinX Pod AI settings/)
 })
 
-test('linx interactive branding stores agent state under .linx and patches update checks', async (t) => {
+test('linx interactive branding stores agent state under .solid/apps/linx and patches update checks', async (t) => {
   const [{ module: brandingModule, cleanup: brandingCleanup }, { module: interactiveModule, cleanup: interactiveCleanup }] = await Promise.all([
     loadAutoModeModule('lib/pi-adapter/branding.ts'),
     loadAutoModeModule('lib/pi-adapter/interactive.ts'),
@@ -846,7 +1189,7 @@ test('linx interactive branding stores agent state under .linx and patches updat
   t.after(() => brandingCleanup())
   t.after(() => interactiveCleanup())
 
-  assert.equal(brandingModule.LINX_AGENT_DIR.endsWith('/.linx/agent'), true)
+  assert.equal(brandingModule.LINX_AGENT_DIR.endsWith('/.solid/apps/linx/agent'), true)
 
   const runtime = {
     sessionManager: {
@@ -1006,6 +1349,33 @@ test('linx escape interrupt keeps wrapping later Pi escape handler assignments',
   interactive.defaultEditor.onEscape()
 
   assert.deepEqual(calls, ['abort', 'later'])
+})
+
+test('linx escape interrupt ignores self rebinds to avoid recursive exit crashes', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  t.after(() => cleanup())
+
+  const calls = []
+  const interactive = {
+    defaultEditor: {
+      onEscape() {
+        calls.push('original')
+      },
+    },
+    session: {
+      get isBashRunning() {
+        calls.push('isBashRunning')
+        return false
+      },
+    },
+  }
+
+  module.installLinxEscapeInterrupt(interactive)
+  const wrapped = interactive.defaultEditor.onEscape
+  interactive.defaultEditor.onEscape = wrapped
+  interactive.defaultEditor.onEscape()
+
+  assert.deepEqual(calls, ['isBashRunning', 'original'])
 })
 
 test('linx interrupt hands auto control back to the user before Pi clear exit semantics', async (t) => {
@@ -1493,7 +1863,7 @@ test('linx interactive exit message prints resume command and token usage', asyn
 
   assert.match(output, /LinX session closed/)
   assert.match(output, /Token usage: input 100 · output 25 · cache 33%/)
-  assert.match(output, /Resume: linx resume 019df-exit-test/)
+  assert.match(output, /Resume: linx --session 019df-exit-test/)
 })
 
 test('linx interactive run suppresses Pi resume command output while preserving LinX output', async (t) => {
@@ -1502,11 +1872,11 @@ test('linx interactive run suppresses Pi resume command output while preserving 
   const writes = captureProcessStreamWrites(t, process.stdout)
 
   await module.withSuppressedPiResumeOutput(async () => {
-    process.stdout.write('\x1b[2mTo resume this session:\x1b[22m pi --session-dir /Users/ganlu/.linx/agent/sessions --session 019e5cf6-cbfa-75c2-9d50-5a736c158c17\n')
-    process.stdout.write('Resume: linx resume 019e5cf6-cbfa-75c2-9d50-5a736c158c17\n')
+    process.stdout.write('\x1b[2mTo resume this session:\x1b[22m pi --session-dir /Users/ganlu/.solid/apps/linx/agent/sessions --session 019e5cf6-cbfa-75c2-9d50-5a736c158c17\n')
+    process.stdout.write('Resume: linx --session 019e5cf6-cbfa-75c2-9d50-5a736c158c17\n')
   })
 
-  assert.equal(writes.join(''), 'Resume: linx resume 019e5cf6-cbfa-75c2-9d50-5a736c158c17\n')
+  assert.equal(writes.join(''), 'Resume: linx --session 019e5cf6-cbfa-75c2-9d50-5a736c158c17\n')
 })
 
 test('linx resume output style suppresses split upstream Pi resume hints', async (t) => {
@@ -1516,12 +1886,12 @@ test('linx resume output style suppresses split upstream Pi resume hints', async
 
   await module.withLinxResumeOutputStyle(async () => {
     process.stdout.write('\x1b[2mTo resume this session:')
-    process.stdout.write('\x1b[22m pi --session-dir /Users/ganlu/.linx/agent/sessions ')
+    process.stdout.write('\x1b[22m pi --session-dir /Users/ganlu/.solid/apps/linx/agent/sessions ')
     process.stdout.write('--session 019e5cf6-cbfa-75c2-9d50-5a736c158c17\n')
-    process.stdout.write('Resume: linx resume 019e5cf6-cbfa-75c2-9d50-5a736c158c17\n')
+    process.stdout.write('Resume: linx --session 019e5cf6-cbfa-75c2-9d50-5a736c158c17\n')
   })
 
-  assert.equal(writes.join(''), 'Resume: linx resume 019e5cf6-cbfa-75c2-9d50-5a736c158c17\n')
+  assert.equal(writes.join(''), 'Resume: linx --session 019e5cf6-cbfa-75c2-9d50-5a736c158c17\n')
 })
 
 test('linx resume output style suppresses upstream Pi resume hints on stderr', async (t) => {
@@ -1530,7 +1900,7 @@ test('linx resume output style suppresses upstream Pi resume hints on stderr', a
   const writes = captureProcessStreamWrites(t, process.stderr)
 
   await module.withLinxResumeOutputStyle(async () => {
-    process.stderr.write('To resume this session: pi --session-dir /Users/ganlu/.linx/agent/sessions --session 019e5cf6-cbfa-75c2-9d50-5a736c158c17\n')
+    process.stderr.write('To resume this session: pi --session-dir /Users/ganlu/.solid/apps/linx/agent/sessions --session 019e5cf6-cbfa-75c2-9d50-5a736c158c17\n')
     process.stderr.write('LinX warning stays visible\n')
   })
 
@@ -1544,7 +1914,7 @@ test('linx resume output style keeps suppressing Pi resume hints written on the 
 
   await module.withLinxResumeOutputStyle(async () => {
     setImmediate(() => {
-      process.stdout.write('To resume this session: pi --session-dir /Users/ganlu/.linx/agent/sessions --session 019e5cf6-cbfa-75c2-9d50-5a736c158c17\n')
+      process.stdout.write('To resume this session: pi --session-dir /Users/ganlu/.solid/apps/linx/agent/sessions --session 019e5cf6-cbfa-75c2-9d50-5a736c158c17\n')
     })
   })
 
@@ -1561,8 +1931,8 @@ test('linx persistent resume output style suppresses Pi resume hints after run s
   try {
     await new Promise((resolve) => {
       setImmediate(() => {
-        process.stdout.write('To resume this session: pi --session-dir /Users/ganlu/.linx/agent/sessions --session 019e5cf6-cbfa-75c2-9d50-5a736c158c17\n')
-        process.stdout.write('Resume: linx resume 019e5cf6-cbfa-75c2-9d50-5a736c158c17\n')
+        process.stdout.write('To resume this session: pi --session-dir /Users/ganlu/.solid/apps/linx/agent/sessions --session 019e5cf6-cbfa-75c2-9d50-5a736c158c17\n')
+        process.stdout.write('Resume: linx --session 019e5cf6-cbfa-75c2-9d50-5a736c158c17\n')
         resolve()
       })
     })
@@ -1570,7 +1940,7 @@ test('linx persistent resume output style suppresses Pi resume hints after run s
     restore()
   }
 
-  assert.equal(writes.join(''), 'Resume: linx resume 019e5cf6-cbfa-75c2-9d50-5a736c158c17\n')
+  assert.equal(writes.join(''), 'Resume: linx --session 019e5cf6-cbfa-75c2-9d50-5a736c158c17\n')
 })
 
 test('linx resume output style preserves non-Pi output with the same sentence prefix', async (t) => {
@@ -2345,7 +2715,7 @@ test('linx /login Solid client credentials marks Pi runtime auth as session-mana
   })
   assert.equal(runtimeWrites.some((entry) => JSON.stringify(entry).includes(solidSecret)), false)
   assert.equal(runtimeWrites.some((entry) => JSON.stringify(entry).includes('resolved-solid-access-token')), false)
-  assert.equal(statuses.some((message) => String(message).includes('Solid client credentials saved to ~/.linx')), true)
+  assert.equal(statuses.some((message) => String(message).includes('Solid client credentials saved to ~/.solid/auth')), true)
 })
 
 test('linx native oauth selector is replaced with LinX-only login', async (t) => {
@@ -2636,7 +3006,7 @@ test('linx interactive branding normalizes misclassified cloud completion Pod ti
   interactive.showError('LinX Pod request timed out after 30s: POST https://id.undefineds.co/gcloud/.data/chat/index.ttl')
 
   assert.deepEqual(errors, [
-    'LinX Cloud request timed out after 30s.',
+    'LinX Cloud is temporarily unavailable. Request exceeded 30s. Please retry shortly.',
     'LinX Pod request timed out after 30s: POST https://id.undefineds.co/gcloud/.data/chat/index.ttl',
   ])
 })
@@ -2667,7 +3037,7 @@ test('linx interactive branding normalizes misclassified cloud completion Pod ti
   })
 
   assert.equal(handledEvents.length, 1)
-  assert.equal(handledEvents[0].message.errorMessage, 'LinX Cloud request timed out after 30s.')
+  assert.equal(handledEvents[0].message.errorMessage, 'LinX Cloud is temporarily unavailable. Request exceeded 30s. Please retry shortly.')
 })
 
 test('linx auth refresh clears the startup re-prompt flag after browser login succeeds', async (t) => {
@@ -5737,13 +6107,14 @@ test('linx interactive adds LinX commands to real slash command autocomplete pro
   interactive.setupAutocompleteProvider()
   interactive.setupAutocompleteProvider()
 
+  const commandByName = (name) => interactive.autocompleteProvider.commands.find((command) => command.name === name)
   assert.deepEqual(interactive.autocompleteProvider.commands, [
     { name: 'login', description: 'refresh LinX login' },
     {
       name: 'auto',
       argumentHint: 'on|off|status',
       description: 'toggle AI Secretary driving for this session',
-      getArgumentCompletions: interactive.autocompleteProvider.commands[1].getArgumentCompletions,
+      getArgumentCompletions: commandByName('auto').getArgumentCompletions,
     },
     {
       name: 'cd',
@@ -5756,34 +6127,39 @@ test('linx interactive adds LinX commands to real slash command autocomplete pro
       description: 'send a goal command to the current chat peer',
     },
     {
+      name: 'rewind',
+      description: 'select a user message and rewind the active branch before it',
+    },
+    {
       name: 'ai',
       argumentHint: 'connect <provider>',
       description: 'connect AI provider credentials to LinX Pod settings',
-      getArgumentCompletions: interactive.autocompleteProvider.commands[4].getArgumentCompletions,
+      getArgumentCompletions: commandByName('ai').getArgumentCompletions,
     },
     {
       name: 'symphony',
       argumentHint: 'on|off|status',
       description: 'switch chat peer between Secretary and backend worker',
-      getArgumentCompletions: interactive.autocompleteProvider.commands[5].getArgumentCompletions,
+      getArgumentCompletions: commandByName('symphony').getArgumentCompletions,
     },
   ])
   assert.equal(interactive.defaultEditor.providers.length, 2)
   assert.equal(interactive.editor.providers.length, 2)
-  assert.deepEqual(await interactive.autocompleteProvider.commands[1].getArgumentCompletions('o'), [
+  assert.deepEqual(await commandByName('auto').getArgumentCompletions('o'), [
     { value: 'on', label: 'on', description: 'Secretary drives the session and asks when blocked' },
     { value: 'off', label: 'off', description: 'User drives the session directly' },
   ])
   assert.equal(interactive.autocompleteProvider.commands[3].getArgumentCompletions, undefined)
-  assert.deepEqual(await interactive.autocompleteProvider.commands[4].getArgumentCompletions('con'), [
+  assert.equal(commandByName('rewind').getArgumentCompletions, undefined)
+  assert.deepEqual(await commandByName('ai').getArgumentCompletions('con'), [
     { value: 'connect ', label: 'connect', description: 'Connect an AI provider key to LinX Pod AI settings' },
   ])
-  assert.deepEqual(await interactive.autocompleteProvider.commands[4].getArgumentCompletions('connect c'), [
+  assert.deepEqual(await commandByName('ai').getArgumentCompletions('connect c'), [
     { value: 'connect codebuddy', label: 'codebuddy', description: 'Connect codebuddy credentials' },
     { value: 'connect codex', label: 'codex', description: 'Connect codex credentials' },
     { value: 'connect claude', label: 'claude', description: 'Connect claude credentials' },
   ])
-  assert.deepEqual(await interactive.autocompleteProvider.commands[5].getArgumentCompletions('o'), [
+  assert.deepEqual(await commandByName('symphony').getArgumentCompletions('o'), [
     { value: 'on', label: 'on', description: 'Chat with Secretary using Symphony orchestration skills' },
     { value: 'off', label: 'off', description: 'Chat directly with the current worker/backend peer' },
   ])
@@ -5814,6 +6190,7 @@ test('linx interactive autocomplete patch falls back to legacy setupAutocomplete
     'auto',
     'cd',
     'goal',
+    'rewind',
     'ai',
     'symphony',
   ])

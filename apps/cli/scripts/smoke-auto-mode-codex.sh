@@ -20,10 +20,7 @@ yarn workspace @undefineds.co/linx dev --backend codex "pwd"
 step "codex auto-mode git status"
 yarn workspace @undefineds.co/linx dev --backend codex "git status"
 
-step "auto-mode sessions"
-yarn workspace @undefineds.co/linx dev --sessions | sed -n '1,20p'
-
 step "auto-mode show latest"
-latest=$(ls -1t ~/.linx/auto-mode/sessions | head -n 1)
+latest=$(ls -1t "${LINX_HOME:-${SOLID_HOME:-$HOME/.solid}/apps/linx}/auto-mode/sessions" | head -n 1)
 echo "latest=$latest"
 yarn workspace @undefineds.co/linx dev --show "$latest"

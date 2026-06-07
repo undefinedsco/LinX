@@ -43,6 +43,9 @@ the current chat peer.
   of re-parsing `/auto` or `/goal` semantics locally.
 - `/auto` is Secretary control-plane input. It must not be sent to the current
   chat peer as a peer command.
+- `/rewind [turns]` is LinX session control-plane input. It moves the active Pi
+  session branch before recent user turns without deleting append-only JSONL
+  history. It must not be sent to the current chat peer as a peer command.
 - `/goal <peer-command>` is a peer command. Secretary may send it into the
   current peer input lane; LinX records that Secretary issued the command and
   mirrors Secretary supervision behavior after sending it when shared core can
@@ -174,6 +177,10 @@ When `symphony on`, Secretary analyzes objectives this way:
 - `/auto on` must not inject control text into the active chat transcript.
 - `/goal` must be classified by shared auto-mode core as a peer command before
   backend command fallback, then delivered to the current chat peer unmodified.
+- `/rewind` must be handled by the LinX shell before backend command fallback.
+  Pod/runtime session projection must use the active branch, not all append-only
+  JSONL entries, so abandoned turns remain auditable but do not pollute current
+  context.
 - Secretary-generated inputs must pass through LinX command handling before
   backend projection; otherwise Secretary cannot safely use `/goal`, `/model`,
   `/auto`, or future control commands.

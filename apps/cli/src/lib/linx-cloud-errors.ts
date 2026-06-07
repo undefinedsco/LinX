@@ -15,12 +15,36 @@ export function normalizeMisclassifiedCloudCompletionPodTimeoutMessage(errorOrMe
     return null
   }
 
-  return `LinX Cloud request timed out after ${seconds}s.`
+  return formatLinxCloudTransientMessage(`Request exceeded ${seconds}s.`)
 }
 
 export function formatLinxCliErrorMessage(errorOrMessage: unknown): string {
   return normalizeMisclassifiedCloudCompletionPodTimeoutMessage(errorOrMessage)
     ?? (errorOrMessage instanceof Error ? errorOrMessage.message : String(errorOrMessage))
+}
+
+export function formatLinxCloudTransientMessage(detail?: string): string {
+  const suffix = detail?.trim()
+  return suffix
+    ? `LinX Cloud is temporarily unavailable. ${suffix} Please retry shortly.`
+    : 'LinX Cloud is temporarily unavailable. Please retry shortly.'
+}
+
+export function isLinxCloudTransientMessage(errorOrMessage: unknown): boolean {
+  const normalized = stripAnsi(errorOrMessage instanceof Error ? errorOrMessage.message : String(errorOrMessage)).toLowerCase()
+  return normalized.includes('linx cloud is temporarily unavailable')
+    || normalized.includes('chat request failed (500): fetch failed')
+    || normalized.includes('outgoing request timed out')
+    || (normalized.includes('502') && normalized.includes('bad gateway'))
+    || (normalized.includes('503') && normalized.includes('service unavailable'))
+    || (normalized.includes('504') && normalized.includes('gateway timeout'))
+}
+
+export function isLinxCloudAuthExpiredMessage(errorOrMessage: unknown): boolean {
+  const normalized = stripAnsi(errorOrMessage instanceof Error ? errorOrMessage.message : String(errorOrMessage)).toLowerCase()
+  return normalized.includes('linx cloud login expired')
+    || normalized.includes('invalid solid token')
+    || (normalized.includes('401') && normalized.includes('unauthorized'))
 }
 
 function isCloudChatCompletionsPath(pathname: string): boolean {

@@ -13,9 +13,10 @@ function writeExecutable(path, source) {
 function createAutoModeSandbox(prefix) {
   const root = mkdtempSync(join(tmpdir(), prefix))
   const binDir = join(root, 'bin')
-  const autoModeHome = join(root, 'auto-mode-home')
+  const linxHome = join(root, 'linx-home')
+  const autoModeHome = join(linxHome, 'auto-mode')
   mkdirSync(binDir, { recursive: true })
-  return { root, binDir, autoModeHome }
+  return { root, binDir, linxHome, autoModeHome }
 }
 
 function writeFakeAcpBackend(path, options) {
@@ -107,7 +108,7 @@ function mockPodBackendCredential(t, module, backend = 'codex', env, options = {
 }
 
 test('auto-mode can run LinX native worker through session-managed runtime auth', async (t) => {
-  const { root, autoModeHome } = createAutoModeSandbox('linx-auto-mode-native-worker-')
+  const { root, linxHome, autoModeHome } = createAutoModeSandbox('linx-auto-mode-native-worker-')
 
   t.after(() => {
     rmSync(root, { recursive: true, force: true })
@@ -163,7 +164,7 @@ test('auto-mode can run LinX native worker through session-managed runtime auth'
   })
 
   await withPatchedEnv(t, {
-    LINX_AUTO_MODE_HOME: autoModeHome,
+    LINX_HOME: linxHome,
   }, async () => {
     const exitCode = await module.runAutoMode({
       backend: 'linx',
@@ -220,7 +221,7 @@ test('auto-mode supported backends includes LinX native worker', async (t) => {
 })
 
 test('auto-mode reuses one ACP session across multiple turns', async (t) => {
-  const { root, binDir, autoModeHome } = createAutoModeSandbox('linx-auto-mode-acp-runner-')
+  const { root, binDir, linxHome, autoModeHome } = createAutoModeSandbox('linx-auto-mode-acp-runner-')
   const logFile = join(root, 'claude-acp-log.jsonl')
 
   t.after(() => {
@@ -305,7 +306,7 @@ rl.on('line', (line) => {
 
   await withPatchedEnv(t, {
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
-    LINX_AUTO_MODE_HOME: autoModeHome,
+    LINX_HOME: linxHome,
     FAKE_ACP_LOG: logFile,
   }, async () => {
     const exitCode = await module.runAutoMode({
@@ -373,7 +374,7 @@ mode: 'auto',
 })
 
 test('auto-mode injects cloud-backed claude credentials into claude-code-acp', async (t) => {
-  const { root, binDir, autoModeHome } = createAutoModeSandbox('linx-auto-mode-acp-claude-cloud-')
+  const { root, binDir, linxHome, autoModeHome } = createAutoModeSandbox('linx-auto-mode-acp-claude-cloud-')
   const logFile = join(root, 'claude-cloud-log.jsonl')
 
   t.after(() => {
@@ -441,7 +442,7 @@ rl.on('line', (line) => {
 
   await withPatchedEnv(t, {
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
-    LINX_AUTO_MODE_HOME: autoModeHome,
+    LINX_HOME: linxHome,
     FAKE_ACP_LOG: logFile,
   }, async () => {
     const exitCode = await module.runAutoMode({
@@ -475,7 +476,7 @@ mode: 'auto',
 })
 
 test('auto-mode prompts for missing Pod provider key, saves it, and retries startup without archiving the key', async (t) => {
-  const { root, binDir, autoModeHome } = createAutoModeSandbox('linx-auto-mode-missing-key-')
+  const { root, binDir, linxHome, autoModeHome } = createAutoModeSandbox('linx-auto-mode-missing-key-')
   const logFile = join(root, 'missing-key-codex-log.jsonl')
 
   t.after(() => {
@@ -565,7 +566,7 @@ rl.on('line', (line) => {
 
   await withPatchedEnv(t, {
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
-    LINX_AUTO_MODE_HOME: autoModeHome,
+    LINX_HOME: linxHome,
     LINX_AUTO_MODE_PLAIN: '1',
     FAKE_ACP_LOG: logFile,
   }, async () => {
@@ -603,7 +604,7 @@ mode: 'auto',
 })
 
 test('auto-mode exits cleanly when LinX Cloud auth recovery is cancelled', async (t) => {
-  const { root, binDir, autoModeHome } = createAutoModeSandbox('linx-auto-mode-cancel-auth-')
+  const { root, binDir, linxHome, autoModeHome } = createAutoModeSandbox('linx-auto-mode-cancel-auth-')
   t.after(() => {
     rmSync(root, { recursive: true, force: true })
   })
@@ -632,7 +633,7 @@ test('auto-mode exits cleanly when LinX Cloud auth recovery is cancelled', async
 
   await withPatchedEnv(t, {
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
-    LINX_AUTO_MODE_HOME: autoModeHome,
+    LINX_HOME: linxHome,
     LINX_AUTO_MODE_PLAIN: '1',
     FAKE_ACP_LOG: join(root, 'cancel-auth-log.jsonl'),
   }, async () => {
@@ -662,7 +663,7 @@ mode: 'off',
 })
 
 test('auto-mode injects cloud-backed codebuddy credentials into built-in ACP mode', async (t) => {
-  const { root, binDir, autoModeHome } = createAutoModeSandbox('linx-auto-mode-acp-codebuddy-cloud-')
+  const { root, binDir, linxHome, autoModeHome } = createAutoModeSandbox('linx-auto-mode-acp-codebuddy-cloud-')
   const logFile = join(root, 'codebuddy-cloud-log.jsonl')
 
   t.after(() => {
@@ -732,7 +733,7 @@ rl.on('line', (line) => {
 
   await withPatchedEnv(t, {
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
-    LINX_AUTO_MODE_HOME: autoModeHome,
+    LINX_HOME: linxHome,
     FAKE_ACP_LOG: logFile,
   }, async () => {
     const exitCode = await module.runAutoMode({
@@ -761,7 +762,7 @@ mode: 'auto',
 })
 
 test('auto-mode expands OpenAI pod credentials for codex-acp', async (t) => {
-  const { root, binDir, autoModeHome } = createAutoModeSandbox('linx-auto-mode-acp-codex-cloud-')
+  const { root, binDir, linxHome, autoModeHome } = createAutoModeSandbox('linx-auto-mode-acp-codex-cloud-')
   const logFile = join(root, 'codex-cloud-log.jsonl')
 
   t.after(() => {
@@ -832,7 +833,7 @@ rl.on('line', (line) => {
 
   await withPatchedEnv(t, {
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
-    LINX_AUTO_MODE_HOME: autoModeHome,
+    LINX_HOME: linxHome,
     FAKE_ACP_LOG: logFile,
   }, async () => {
     const exitCode = await module.runAutoMode({
@@ -907,7 +908,7 @@ test('auto-mode runs every backend through Pod credentials, ACP chat, and Pod pe
 
   for (const item of cases) {
     await t.test(item.backend, async (t) => {
-      const { root, binDir, autoModeHome } = createAutoModeSandbox(`linx-auto-mode-matrix-${item.backend}-`)
+      const { root, binDir, linxHome, autoModeHome } = createAutoModeSandbox(`linx-auto-mode-matrix-${item.backend}-`)
       const logFile = join(root, `${item.backend}-matrix-log.jsonl`)
       const commandPath = join(binDir, item.command)
       const persisted = []
@@ -941,7 +942,7 @@ test('auto-mode runs every backend through Pod credentials, ACP chat, and Pod pe
 
       await withPatchedEnv(t, {
         PATH: `${binDir}:${process.env.PATH ?? ''}`,
-        LINX_AUTO_MODE_HOME: autoModeHome,
+        LINX_HOME: linxHome,
         FAKE_ACP_LOG: logFile,
       }, async () => {
         const exitCode = await module.runAutoMode({
@@ -1026,7 +1027,7 @@ test('auto-mode runs every backend through ACP approval control and Pod persiste
 
   for (const item of cases) {
     await t.test(item.backend, async (t) => {
-      const { root, binDir, autoModeHome } = createAutoModeSandbox(`linx-auto-mode-approval-matrix-${item.backend}-`)
+      const { root, binDir, linxHome, autoModeHome } = createAutoModeSandbox(`linx-auto-mode-approval-matrix-${item.backend}-`)
       const logFile = join(root, `${item.backend}-approval-matrix-log.jsonl`)
       const commandPath = join(binDir, item.command)
       const persisted = []
@@ -1151,7 +1152,7 @@ rl.on('line', (line) => {
 
       await withPatchedEnv(t, {
         PATH: `${binDir}:${process.env.PATH ?? ''}`,
-        LINX_AUTO_MODE_HOME: autoModeHome,
+        LINX_HOME: linxHome,
         FAKE_ACP_LOG: logFile,
       }, async () => {
         const exitCode = await module.runAutoMode({
@@ -1237,7 +1238,7 @@ test('auto-mode secretary countdown detail shrinks over time and clamps to a fiv
 })
 
 test('auto-mode auto-approves trusted ACP permission requests when remote approval is unavailable', async (t) => {
-  const { root, binDir, autoModeHome } = createAutoModeSandbox('linx-auto-mode-acp-approval-')
+  const { root, binDir, linxHome, autoModeHome } = createAutoModeSandbox('linx-auto-mode-acp-approval-')
   const logFile = join(root, 'approval-log.jsonl')
 
   t.after(() => {
@@ -1330,7 +1331,7 @@ rl.on('line', (line) => {
 
   await withPatchedEnv(t, {
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
-    LINX_AUTO_MODE_HOME: autoModeHome,
+    LINX_HOME: linxHome,
     FAKE_ACP_LOG: logFile,
   }, async () => {
     const exitCode = await module.runAutoMode({
@@ -1369,7 +1370,7 @@ mode: 'auto',
 })
 
 test('auto-mode lets remote approval win by default and aborts the local approval prompt', async (t) => {
-  const { root, binDir, autoModeHome } = createAutoModeSandbox('linx-auto-mode-acp-remote-approval-')
+  const { root, binDir, linxHome, autoModeHome } = createAutoModeSandbox('linx-auto-mode-acp-remote-approval-')
   const logFile = join(root, 'remote-approval-log.jsonl')
 
   t.after(() => {
@@ -1484,7 +1485,7 @@ rl.on('line', (line) => {
 
   await withPatchedEnv(t, {
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
-    LINX_AUTO_MODE_HOME: autoModeHome,
+    LINX_HOME: linxHome,
     FAKE_ACP_LOG: logFile,
   }, async () => {
     const exitCode = await module.runAutoMode({
@@ -1532,7 +1533,7 @@ mode: 'off',
 })
 
 test('auto-mode can force remote-only approval from run options', async (t) => {
-  const { root, binDir, autoModeHome } = createAutoModeSandbox('linx-auto-mode-acp-remote-only-')
+  const { root, binDir, linxHome, autoModeHome } = createAutoModeSandbox('linx-auto-mode-acp-remote-only-')
   const logFile = join(root, 'remote-only-approval-log.jsonl')
 
   t.after(() => {
@@ -1616,7 +1617,7 @@ rl.on('line', (line) => {
 
   await withPatchedEnv(t, {
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
-    LINX_AUTO_MODE_HOME: autoModeHome,
+    LINX_HOME: linxHome,
     FAKE_ACP_LOG: logFile,
   }, async () => {
     const exitCode = await module.runAutoMode({
@@ -1663,7 +1664,7 @@ rl.on('line', (line) => {
 })
 
 test('auto-mode mirrors a local approval decision back into Pod remote approval state by default', async (t) => {
-  const { root, binDir, autoModeHome } = createAutoModeSandbox('linx-auto-mode-acp-hybrid-local-first-')
+  const { root, binDir, linxHome, autoModeHome } = createAutoModeSandbox('linx-auto-mode-acp-hybrid-local-first-')
   const logFile = join(root, 'hybrid-local-first-log.jsonl')
 
   t.after(() => {
@@ -1770,7 +1771,7 @@ rl.on('line', (line) => {
 
   await withPatchedEnv(t, {
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
-    LINX_AUTO_MODE_HOME: autoModeHome,
+    LINX_HOME: linxHome,
     FAKE_ACP_LOG: logFile,
   }, async () => {
     const exitCode = await module.runAutoMode({
@@ -1816,7 +1817,7 @@ mode: 'off',
 })
 
 test('auto-mode lets AI secretary allow approval after a reaction window and mirrors it to Pod', async (t) => {
-  const { root, binDir, autoModeHome } = createAutoModeSandbox('linx-auto-mode-acp-secretary-approval-')
+  const { root, binDir, linxHome, autoModeHome } = createAutoModeSandbox('linx-auto-mode-acp-secretary-approval-')
   const logFile = join(root, 'secretary-approval-log.jsonl')
 
   t.after(() => {
@@ -1913,7 +1914,7 @@ rl.on('line', (line) => {
 
   await withPatchedEnv(t, {
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
-    LINX_AUTO_MODE_HOME: autoModeHome,
+    LINX_HOME: linxHome,
     FAKE_ACP_LOG: logFile,
   }, async () => {
     const exitCode = await module.runAutoMode({
@@ -1950,7 +1951,7 @@ mode: 'auto',
 })
 
 test('auto-mode batches multi-question ACP user input responses into one payload', async (t) => {
-  const { root, binDir, autoModeHome } = createAutoModeSandbox('linx-auto-mode-acp-input-')
+  const { root, binDir, linxHome, autoModeHome } = createAutoModeSandbox('linx-auto-mode-acp-input-')
   const logFile = join(root, 'input-log.jsonl')
 
   t.after(() => {
@@ -2044,7 +2045,7 @@ rl.on('line', (line) => {
 
   await withPatchedEnv(t, {
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
-    LINX_AUTO_MODE_HOME: autoModeHome,
+    LINX_HOME: linxHome,
     FAKE_ACP_LOG: logFile,
   }, async () => {
     const exitCode = await module.runAutoMode({
@@ -2094,7 +2095,7 @@ mode: 'off',
 })
 
 test('auto-mode lets AI secretary answer ACP user input after a reaction window', async (t) => {
-  const { root, binDir, autoModeHome } = createAutoModeSandbox('linx-auto-mode-acp-secretary-input-')
+  const { root, binDir, linxHome, autoModeHome } = createAutoModeSandbox('linx-auto-mode-acp-secretary-input-')
   const logFile = join(root, 'secretary-input-log.jsonl')
 
   t.after(() => {
@@ -2188,7 +2189,7 @@ rl.on('line', (line) => {
 
   await withPatchedEnv(t, {
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
-    LINX_AUTO_MODE_HOME: autoModeHome,
+    LINX_HOME: linxHome,
     FAKE_ACP_LOG: logFile,
   }, async () => {
     const exitCode = await module.runAutoMode({
@@ -2230,7 +2231,7 @@ mode: 'auto',
 
 
 test('auto-mode with an initial prompt does not emit an extra empty prompt turn before the scripted turn', async (t) => {
-  const { root, binDir, autoModeHome } = createAutoModeSandbox('linx-auto-mode-initial-prompt-')
+  const { root, binDir, linxHome, autoModeHome } = createAutoModeSandbox('linx-auto-mode-initial-prompt-')
 
   t.after(() => {
     rmSync(root, { recursive: true, force: true })
@@ -2273,7 +2274,7 @@ rl.on('line', (line) => {
 
   await withPatchedEnv(t, {
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
-    LINX_AUTO_MODE_HOME: autoModeHome,
+    LINX_HOME: linxHome,
     FAKE_ACP_LOG: join(root, 'persist-timeout-log.jsonl'),
   }, async () => {
     const exitCode = await module.runAutoMode({
@@ -2294,7 +2295,7 @@ mode: 'auto',
 })
 
 test('auto-mode goal sessions keep running after the initial goal and apply steer before follow-up', async (t) => {
-  const { root, binDir, autoModeHome } = createAutoModeSandbox('linx-auto-mode-goal-queue-')
+  const { root, binDir, linxHome, autoModeHome } = createAutoModeSandbox('linx-auto-mode-goal-queue-')
   const logFile = join(root, 'goal-queue-log.jsonl')
 
   t.after(() => {
@@ -2368,7 +2369,7 @@ rl.on('line', (line) => {
 
   await withPatchedEnv(t, {
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
-    LINX_AUTO_MODE_HOME: autoModeHome,
+    LINX_HOME: linxHome,
     FAKE_ACP_LOG: logFile,
   }, async () => {
     const exitCode = await module.runAutoMode({
@@ -2972,7 +2973,7 @@ mode: 'off',
 })
 
 test('auto-mode persists the final conversation to Pod opportunistically without breaking local success', async (t) => {
-  const { root, binDir, autoModeHome } = createAutoModeSandbox('linx-auto-mode-pod-persist-')
+  const { root, binDir, linxHome, autoModeHome } = createAutoModeSandbox('linx-auto-mode-pod-persist-')
 
   t.after(() => {
     rmSync(root, { recursive: true, force: true })
@@ -3034,7 +3035,7 @@ rl.on('line', (line) => {
 
   await withPatchedEnv(t, {
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
-    LINX_AUTO_MODE_HOME: autoModeHome,
+    LINX_HOME: linxHome,
     FAKE_ACP_LOG: join(root, 'persist-timeout-log.jsonl'),
   }, async () => {
     const exitCode = await module.runAutoMode({
@@ -3068,7 +3069,7 @@ mode: 'auto',
 })
 
 test('auto-mode times out final Pod persistence without blocking local success', async (t) => {
-  const { root, binDir, autoModeHome } = createAutoModeSandbox('linx-auto-mode-pod-persist-timeout-')
+  const { root, binDir, linxHome, autoModeHome } = createAutoModeSandbox('linx-auto-mode-pod-persist-timeout-')
 
   t.after(() => {
     rmSync(root, { recursive: true, force: true })
@@ -3106,7 +3107,7 @@ test('auto-mode times out final Pod persistence without blocking local success',
 
   await withPatchedEnv(t, {
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
-    LINX_AUTO_MODE_HOME: autoModeHome,
+    LINX_HOME: linxHome,
     FAKE_ACP_LOG: join(root, 'persist-timeout-log.jsonl'),
   }, async () => {
     const startedAt = Date.now()
@@ -3140,7 +3141,7 @@ mode: 'auto',
 })
 
 test('auto-mode abort signal terminates a running ACP backend turn', async (t) => {
-  const { root, binDir, autoModeHome } = createAutoModeSandbox('linx-auto-mode-abort-signal-')
+  const { root, binDir, linxHome, autoModeHome } = createAutoModeSandbox('linx-auto-mode-abort-signal-')
   const logFile = join(root, 'abort-signal-log.jsonl')
 
   t.after(() => {
@@ -3194,7 +3195,7 @@ rl.on('line', (line) => {
 
   await withPatchedEnv(t, {
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
-    LINX_AUTO_MODE_HOME: autoModeHome,
+    LINX_HOME: linxHome,
     FAKE_ACP_LOG: logFile,
   }, async () => {
     const run = module.runAutoMode({

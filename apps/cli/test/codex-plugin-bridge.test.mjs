@@ -6,14 +6,14 @@ import { join } from 'node:path'
 import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 
 function useTempAutoModeHome(t) {
-  const previous = process.env.LINX_AUTO_MODE_HOME
+  const previous = process.env.LINX_HOME
   const dir = mkdtempSync(join(tmpdir(), 'linx-auto-mode-home-'))
-  process.env.LINX_AUTO_MODE_HOME = dir
+  process.env.LINX_HOME = dir
   t.after(() => {
     if (previous === undefined) {
-      delete process.env.LINX_AUTO_MODE_HOME
+      delete process.env.LINX_HOME
     } else {
-      process.env.LINX_AUTO_MODE_HOME = previous
+      process.env.LINX_HOME = previous
     }
     rmSync(dir, { recursive: true, force: true })
   })

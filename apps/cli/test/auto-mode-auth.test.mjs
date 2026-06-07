@@ -692,7 +692,8 @@ mode: 'auto',
 test('auto-mode normalizes runtime auth failures for codebuddy sessions', async (t) => {
   const root = mkdtempSync(join(tmpdir(), 'linx-auto-mode-auth-runtime-'))
   const binDir = join(root, 'bin')
-  const autoModeHome = join(root, 'auto-mode-home')
+  const linxHome = join(root, 'linx-home')
+  const autoModeHome = join(linxHome, 'auto-mode')
 
   t.after(() => {
     rmSync(root, { recursive: true, force: true })
@@ -765,7 +766,7 @@ rl.on('line', (line) => {
   let thrown
   await withPatchedEnv(t, {
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
-    LINX_AUTO_MODE_HOME: autoModeHome,
+    LINX_HOME: linxHome,
   }, async () => {
     try {
       await module.runAutoMode({

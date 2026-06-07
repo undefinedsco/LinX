@@ -26,8 +26,8 @@ function createRecord(overrides = {}) {
     args: ['app-server', '--listen', 'stdio://'],
     status: 'running',
     startedAt: '2026-03-17T00:00:00.000Z',
-    archiveDir: '/tmp/demo/.linx/auto-mode/session',
-    eventsFile: '/tmp/demo/.linx/auto-mode/session/events.jsonl',
+    archiveDir: '/tmp/demo/.solid/apps/linx/auto-mode/session',
+    eventsFile: '/tmp/demo/.solid/apps/linx/auto-mode/session/events.jsonl',
     ...overrides,
   }
 }
@@ -126,7 +126,7 @@ test('auto-mode display normalizes cloud completion Pod timeout failures', async
   }
 
   const output = chunks.join('')
-  assert.match(output, /LinX Cloud request timed out after 30s\./)
+  assert.match(output, /LinX Cloud is temporarily unavailable\. Request exceeded 30s\. Please retry shortly\./)
   assert.doesNotMatch(output, /LinX Pod request timed out/)
 })
 
@@ -163,7 +163,7 @@ test('auto-mode plain display normalizes cloud completion Pod timeout raw output
   }
 
   const output = chunks.join('')
-  assert.match(output, /LinX Cloud request timed out after 30s\./)
+  assert.match(output, /LinX Cloud is temporarily unavailable\. Request exceeded 30s\. Please retry shortly\./)
   assert.doesNotMatch(output, /LinX Pod request timed out/)
 })
 
@@ -180,7 +180,7 @@ test('auto-mode archive transcript normalizes cloud completion Pod timeout raw l
   ])
 
   const output = lines.join('\n')
-  assert.match(output, /LinX Cloud request timed out after 30s\./)
+  assert.match(output, /LinX Cloud is temporarily unavailable\. Request exceeded 30s\. Please retry shortly\./)
   assert.doesNotMatch(output, /LinX Pod request timed out/)
 })
 

@@ -113,7 +113,7 @@ async function withPatchedEnv(t, env, fn) {
   return fn()
 }
 
-test('Secretary auto input reuses runtime Pod session instead of ~/.linx fallback', async (t) => {
+test('Secretary auto input reuses runtime Pod session instead of local auth fallback', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/auto-input-controller.ts')
   t.after(() => cleanup())
 

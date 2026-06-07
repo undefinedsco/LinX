@@ -577,12 +577,13 @@ class SecretaryAutoInputControllerImpl implements SecretaryAutoInputController {
       return
     }
 
+    if (isTransientRemoteAutoInputFailure(message, error)) {
+      this.scheduleTransientRemoteRecovery(reason, message, generation)
+      return
+    }
+
     const recoveryDelaysMs = resolveAutoInputRecoveryDelaysMs()
     if (this.recoveryAttempts >= recoveryDelaysMs.length) {
-      if (isTransientRemoteAutoInputFailure(message, error)) {
-        this.scheduleTransientRemoteRecovery(reason, message, generation)
-        return
-      }
       this.pauseOnAssistant(context, `Auto waiting for user: Secretary could not recover after ${this.recoveryAttempts} restart attempts. ${message}`)
       return
     }

@@ -87,12 +87,14 @@ deliveries, issues, tasks, runs, reports, evidence, and files use resource URIs,
 not WebIDs.
 
 Developer implementation skills are different. Keep `drizzle-solid`,
-`solid-modeling`, `pod-storage`, and `xpod-componentsjs` available to engineers
-or coding agents when they are changing schemas, repositories, Pod storage, or
-Xpod UI/component integrations, but do not inject them into the user-facing
-Secretary prompt. If Secretary needs durable data, it should request a
-product-level plan or call a bounded product operation; shared model/runtime
-code owns exact predicates, URI templates, storage paths, and component APIs.
+`solid-modeling`, and `xpod-componentsjs` available to engineers or coding
+agents when they are changing schemas, repositories, or Xpod UI/component
+integrations, but do not inject them into the user-facing Secretary prompt.
+Pod operation guidance belongs to the external `xpod-cli` marketplace skill,
+not a LinX-local `pod_read` / `pod_write` skill. If Secretary needs durable
+data, it should request a product-level plan or call a bounded product
+operation; shared model/runtime code owns exact predicates, URI templates,
+storage paths, and component APIs.
 
 ## Approval And Input Handling
 

@@ -208,7 +208,7 @@ test('compiled cli routes Codex --backend through the ACP auto-mode path', async
     env: {
       ...process.env,
       HOME: join(outdir, 'empty-home'),
-      LINX_AUTO_MODE_HOME: join(outdir, 'auto-mode-home'),
+      LINX_HOME: join(outdir, 'linx-home'),
     },
     encoding: 'utf-8',
     stdio: 'pipe',
@@ -268,7 +268,7 @@ test('compiled cli keeps explicit backend entry points on auto-mode path', async
         env: {
           ...process.env,
           HOME: join(outdir, `${backend}-empty-home`),
-          LINX_AUTO_MODE_HOME: join(outdir, `${backend}-auto-mode-home`),
+          LINX_HOME: join(outdir, `${backend}-linx-home`),
           LINX_BACKEND_PLAIN: '1',
         },
         input: '3\n',
@@ -343,6 +343,15 @@ test('compiled cli auto-mode rejects retired command surfaces', async (t) => {
       stdio: 'pipe',
     }),
     /Unknown command: watch/,
+  )
+
+  assert.throws(
+    () => execFileSync(process.execPath, [join(outdir, 'index.js'), 'resume', '019df-test'], {
+      cwd: cliRoot,
+      encoding: 'utf-8',
+      stdio: 'pipe',
+    }),
+    /Unknown command: resume/,
   )
 })
 
@@ -447,15 +456,63 @@ test('compiled cli default entry is Pi TUI and hides explicit frontend aliases',
   assert.match(output, /runtime-url/)
   assert.match(output, /--backend/)
   assert.match(output, /--print/)
+  assert.match(output, /--continue/)
+  assert.match(output, /--resume/)
+  assert.match(output, /--session/)
   assert.doesNotMatch(output, /automode/)
   assert.doesNotMatch(output, /auto-mode/)
   assert.doesNotMatch(output, /--plain/)
   assert.doesNotMatch(output, /--sessions/)
   assert.doesNotMatch(output, /--show/)
+  assert.doesNotMatch(output, /linx resume \[session\]/)
   assert.doesNotMatch(output, /cloud, native/)
   assert.doesNotMatch(output, /native keeps/)
   assert.doesNotMatch(output, /pi-frontend/)
   assert.doesNotMatch(output, /linx pi /)
+})
+
+test('compiled cli rejects removed --sessions flag as an unknown option', async (t) => {
+  const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-sessions-flag-'))
+  t.after(() => {
+    rmSync(outdir, { recursive: true, force: true })
+  })
+
+  try {
+    execFileSync('tsc', [
+      '--outDir',
+      outdir,
+      '--rootDir',
+      sourceRoot,
+      '--module',
+      'nodenext',
+      '--moduleResolution',
+      'nodenext',
+      '--target',
+      'ES2022',
+      '--lib',
+      'ES2022',
+      '--types',
+      'node',
+      '--skipLibCheck',
+      'true',
+      '--noEmitOnError',
+      'false',
+      entryPath,
+    ], {
+      cwd: cliRoot,
+      stdio: 'pipe',
+    })
+  } catch {
+    assert.ok(existsSync(join(outdir, 'index.js')))
+  }
+
+  const result = execFileResult(process.execPath, [join(outdir, 'index.js'), '--sessions'], {
+    cwd: cliRoot,
+    encoding: 'utf-8',
+  })
+
+  assert.notEqual(result.status, 0)
+  assert.match(result.stderr, /Unknown argument: sessions/)
 })
 
 test('compiled cli exposes LinX package commands in help', async (t) => {
@@ -570,11 +627,12 @@ test('cli build ships product skills for the Pi resource loader', async (t) => {
 
 test('compiled cli auto-mode show replays archived timeline instead of raw json', async (t) => {
   const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-show-'))
-  const autoModeHome = mkdtempSync(join(cliRoot, '.tmp-linx-auto-mode-home-'))
+  const linxHome = mkdtempSync(join(cliRoot, '.tmp-linx-home-'))
+  const autoModeHome = join(linxHome, 'auto-mode')
 
   t.after(() => {
     rmSync(outdir, { recursive: true, force: true })
-    rmSync(autoModeHome, { recursive: true, force: true })
+    rmSync(linxHome, { recursive: true, force: true })
   })
 
   try {
@@ -643,7 +701,7 @@ mode: 'auto',
     cwd: cliRoot,
     env: {
       ...process.env,
-      LINX_AUTO_MODE_HOME: autoModeHome,
+      LINX_HOME: linxHome,
     },
     encoding: 'utf-8',
   })
@@ -658,11 +716,12 @@ mode: 'auto',
 
 test('compiled cli can list archived auto-mode sessions with pending Pod sync', async (t) => {
   const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-sync-status-'))
-  const autoModeHome = mkdtempSync(join(cliRoot, '.tmp-linx-auto-mode-sync-status-'))
+  const linxHome = mkdtempSync(join(cliRoot, '.tmp-linx-sync-status-'))
+  const autoModeHome = join(linxHome, 'auto-mode')
 
   t.after(() => {
     rmSync(outdir, { recursive: true, force: true })
-    rmSync(autoModeHome, { recursive: true, force: true })
+    rmSync(linxHome, { recursive: true, force: true })
   })
 
   try {
@@ -742,7 +801,7 @@ test('compiled cli can list archived auto-mode sessions with pending Pod sync', 
     cwd: cliRoot,
     env: {
       ...process.env,
-      LINX_AUTO_MODE_HOME: autoModeHome,
+      LINX_HOME: linxHome,
     },
     encoding: 'utf-8',
   })
@@ -792,7 +851,7 @@ test('compiled cli can list Pi sessions with pending Pod mirror sync', async (t)
   const failedSessionId = '019df000-aaaa-bbbb-cccc-000000000001'
   const completedSessionId = '019df000-aaaa-bbbb-cccc-000000000002'
   for (const [sessionId, status] of [[failedSessionId, 'failed'], [completedSessionId, 'completed']]) {
-    const syncDir = join(home, '.linx', 'agent', 'sync', 'pi-pod-mirror', sessionId)
+    const syncDir = join(home, '.solid', 'apps', 'linx', 'agent', 'sync', 'pi-pod-mirror', sessionId)
     mkdirSync(syncDir, { recursive: true })
     const checkpointId = `pi-pod-mirror:${sessionId}:2026-04-01T00-00-00-000Z:1`
     writeFileSync(join(syncDir, `${encodeURIComponent(checkpointId)}.json`), JSON.stringify({

@@ -74,6 +74,7 @@ auto-mode ACP 控制界面当前提供这些 LinX 壳命令：
 - `/login` / `/logout` 刷新或清除 xPod/LinX/Solid 登录；AI provider key 不走 `/login`
 - `/session` 查看当前 backend session、runtime、credential 和 cwd
 - `/auto on|off|status` 切换或查看 Secretary 接管状态
+- `/rewind [turns]` 将当前 LinX session 的活动分支回退到最近若干轮用户输入之前；原始 JSONL 历史保留，后续上下文只沿新活动分支继续
 - `/queue` 查看等待当前 turn 完成后的 steer / follow-up 队列
 - `/model <modelId>` 请求当前 ACP backend 切换模型
 - `/debug on|off` 切换协议调试输出
@@ -83,10 +84,14 @@ auto-mode ACP 控制界面当前提供这些 LinX 壳命令：
 
 当前优先读取：
 
-1. `~/.linx/config.json` + `~/.linx/secrets.json`
+1. `$SOLID_HOME/auth/credentials.json`
+2. `$SOLID_HOME/auth/oidc-storage/`
 
-`~/.linx` 只保存 xPod/LinX/Solid 身份材料。AI provider credential 通过
-`linx ai connect` 或 TUI credential repair 写入 Pod AI config。
+`SOLID_HOME` 默认是 `~/.solid`。`$SOLID_HOME/auth` 是 LinX 和 xpod 共享的
+Solid 登录权威，只保存恢复 Pod 访问必需的本地 auth material。LinX
+runtime/cache/archive 只写入 `$LINX_HOME`，默认是 `$SOLID_HOME/apps/linx`。AI
+provider credential 通过 `linx ai connect` 或 TUI credential repair 写入 Pod
+AI config。
 
 AI provider 冒烟测试分两层：默认测试只验证 shell 输入通过 shared model/core
 写入 Pod AI config，并验证 Codex-compatible provider 可被 runtime 读取；真实
@@ -103,7 +108,7 @@ LINX_OPENROUTER_SMOKE=1 OPENROUTER_API_KEY=sk-or-xxx node --test test/ai-connect
 - Symphony 是 AI Secretary 的内置委派能力，不是独立产品入口；控制面 MVP 见 [`docs/agent-collaboration-model.md`](../../docs/agent-collaboration-model.md)
 - `--backend <backend>` 当前直接依赖本机已经安装好的 `codex` / `claude` / `codebuddy`
 - 如果当前终端对全屏重绘支持不好，可加 `--plain`（等价于 `LINX_BACKEND_PLAIN=1`）关闭全屏 TUI，改用线性输出
-- LinX 负责统一 `auto on/off` 接管开关，并把 backend 会话归档写到 `~/.linx/auto-mode/sessions/`
+- LinX 负责统一 `auto on/off` 接管开关，并把 backend 会话归档写到 `$LINX_HOME/auto-mode/sessions/`
 - `auto on` 表示由 AI Secretary 主驾当前 backend 会话，并在搞不定、越权或需要人类决策时再问用户；不等同于 Codex 原生 `approvalPolicy=never`；原生审批策略保留在 backend 自己的配置通道
 - 进入默认是 `auto off`；可用 `--auto` 直接以接管状态启动，或进入后用 `/auto on|off|status` 切换和查看
 - backend 凭据只从 Pod AI 配置读取；本地只保存 LinX/Solid auth，不提供 `credential-source` 选择
@@ -131,7 +136,7 @@ LINX_OPENROUTER_SMOKE=1 OPENROUTER_API_KEY=sk-or-xxx node --test test/ai-connect
 - Chat/Thread 是过程展示和回看载体，由 Secretary 在产品层创建或选择，并把对应 URI 写进 `Issue / Delivery / Session`；TUI 不要求用户填写这些 URI。
 - `symphony` 调整的是 Secretary 的行为：Secretary 自己不主要下场写代码，而是引用通用 Task，创建 `Issue / Delivery / Session` 编排记录，把工作投影给下面的 backend worker。
 - Objective 必须来自用户正常发送的聊天消息；`/symphony` 只切换能力，不把 slash 参数伪造成用户输入，也不直接创建一次性派活。
-- 归档固定写在本地 LinX home 下的 `~/.linx/symphony/`，不新增单独的产品级 home 环境变量。
+- 归档固定写在本地 LinX home 下的 `$LINX_HOME/symphony/`。本地目录只认两个根：`SOLID_HOME` 和 `LINX_HOME`。
 - 当前 MVP 不做 `linx symphony` / `linx-symphony` 独立产品入口、不做 daemon、不新增 Task/Delivery/Session Pod schema、不改 GUI/TUI 信息架构；新增 shared Pod resource 仍以 `@undefineds.co/models` 为权威。
 
 ## TODO

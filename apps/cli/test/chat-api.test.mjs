@@ -264,7 +264,7 @@ test('createRemoteCompletionResult normalizes misclassified Pod timeout for Clou
     (error) => {
       assert.equal(error instanceof RemoteChatRequestError, true)
       assert.equal(error.status, 0)
-      assert.equal(error.message, 'LinX Cloud request timed out after 30s.')
+      assert.equal(error.message, 'LinX Cloud is temporarily unavailable. Request exceeded 30s. Please retry shortly.')
       assert.match(error.responseBody, /LinX Pod request timed out after 30s/)
       return true
     },
@@ -286,7 +286,7 @@ test('createRemoteCompletionResult normalizes prefixed misclassified Pod timeout
     (error) => {
       assert.equal(error instanceof RemoteChatRequestError, true)
       assert.equal(error.status, 0)
-      assert.equal(error.message, 'LinX Cloud request timed out after 30s.')
+      assert.equal(error.message, 'LinX Cloud is temporarily unavailable. Request exceeded 30s. Please retry shortly.')
       assert.match(error.responseBody, /Retry failed after 3 attempts/)
       return true
     },
@@ -488,8 +488,108 @@ test('createRemoteCompletionResult normalizes upstream timeout errors', async ()
     (error) => {
       assert.equal(error instanceof RemoteChatRequestError, true)
       assert.equal(error.status, 500)
-      assert.match(error.message, /LinX Cloud request timed out upstream/)
-      assert.match(error.message, /aborted due to timeout/)
+      assert.equal(error.message, 'LinX Cloud is temporarily unavailable. Upstream did not return in time. Please retry shortly.')
+      assert.match(error.responseBody, /aborted due to timeout/)
+      assert.doesNotMatch(error.message, /500|timeout|timed out|aborted/i)
+      return true
+    },
+  )
+})
+
+test('createRemoteCompletionResult reports short upstream timeout responses without adding retry', async () => {
+  let requestCount = 0
+  globalThis.fetch = async () => {
+    requestCount += 1
+    return {
+      ok: false,
+      status: 500,
+      statusText: 'Internal Server Error',
+      text: async () => JSON.stringify({
+        error: {
+          message: 'outgoing request timed out after 3500ms',
+        },
+      }),
+    }
+  }
+
+  const { createRemoteCompletionResult, RemoteChatRequestError } = await import('../dist/lib/chat-api.js')
+  await assert.rejects(
+    createRemoteCompletionResult({
+      runtimeUrl: 'https://api.undefineds.co/v1',
+      apiKey: 'token',
+      model: 'linx-lite',
+      messages: [{ role: 'user', content: 'hi' }],
+    }),
+    (error) => {
+      assert.equal(error instanceof RemoteChatRequestError, true)
+      assert.equal(error.status, 500)
+      assert.equal(requestCount, 1)
+      assert.equal(error.message, 'LinX Cloud is temporarily unavailable. Upstream did not return in time. Please retry shortly.')
+      assert.match(error.responseBody, /outgoing request timed out after 3500ms/)
+      assert.doesNotMatch(error.message, /500|timeout|timed out/i)
+      return true
+    },
+  )
+})
+
+test('createRemoteCompletionResult reports thrown fetch failed cloud 500 errors without adding retry', async () => {
+  let requestCount = 0
+  globalThis.fetch = async () => {
+    requestCount += 1
+    throw new Error('Chat request failed (500): fetch failed')
+  }
+
+  const { createRemoteCompletionResult, RemoteChatRequestError } = await import('../dist/lib/chat-api.js')
+  await assert.rejects(
+    createRemoteCompletionResult({
+      runtimeUrl: 'https://api.undefineds.co/v1',
+      apiKey: 'token',
+      model: 'linx-lite',
+      messages: [{ role: 'user', content: 'hi' }],
+    }),
+    (error) => {
+      assert.equal(error instanceof RemoteChatRequestError, true)
+      assert.equal(error.status, 500)
+      assert.equal(requestCount, 1)
+      assert.equal(error.message, 'LinX Cloud is temporarily unavailable. Please retry shortly.')
+      assert.match(error.responseBody, /fetch failed/)
+      assert.doesNotMatch(error.message, /500|fetch failed/i)
+      return true
+    },
+  )
+})
+
+test('createRemoteCompletionResult reports response fetch failed cloud 500 errors without adding retry', async () => {
+  let requestCount = 0
+  globalThis.fetch = async () => {
+    requestCount += 1
+    return {
+      ok: false,
+      status: 500,
+      statusText: 'Internal Server Error',
+      text: async () => JSON.stringify({
+        error: {
+          message: 'fetch failed',
+        },
+      }),
+    }
+  }
+
+  const { createRemoteCompletionResult, RemoteChatRequestError } = await import('../dist/lib/chat-api.js')
+  await assert.rejects(
+    createRemoteCompletionResult({
+      runtimeUrl: 'https://api.undefineds.co/v1',
+      apiKey: 'token',
+      model: 'linx-lite',
+      messages: [{ role: 'user', content: 'hi' }],
+    }),
+    (error) => {
+      assert.equal(error instanceof RemoteChatRequestError, true)
+      assert.equal(error.status, 500)
+      assert.equal(requestCount, 1)
+      assert.equal(error.message, 'LinX Cloud is temporarily unavailable. Please retry shortly.')
+      assert.match(error.responseBody, /fetch failed/)
+      assert.doesNotMatch(error.message, /500|fetch failed/i)
       return true
     },
   )
@@ -562,10 +662,12 @@ test('createRemoteCompletionResult reports persistent service unavailable as a c
     (error) => {
       assert.equal(error instanceof RemoteChatRequestError, true)
       assert.equal(error.status, 502)
-      assert.equal(requestCount, 2)
-      assert.match(error.message, /LinX Cloud is temporarily unavailable \(502\): Service Unavailable/)
+      assert.equal(requestCount, 4)
+      assert.equal(error.message, 'LinX Cloud is temporarily unavailable. Please retry shortly.')
+      assert.match(error.responseBody, /Service Unavailable/)
       assert.doesNotMatch(error.message, /context_length_exceeded/)
       assert.doesNotMatch(error.message, /"details"/)
+      assert.doesNotMatch(error.message, /502|Service Unavailable/i)
       return true
     },
   )
@@ -594,10 +696,12 @@ test('createRemoteCompletionResult hides upstream HTML Bad Gateway bodies from u
     (error) => {
       assert.equal(error instanceof RemoteChatRequestError, true)
       assert.equal(error.status, 502)
-      assert.equal(requestCount, 2)
-      assert.match(error.message, /LinX Cloud is temporarily unavailable \(502\): Bad Gateway/)
+      assert.equal(requestCount, 4)
+      assert.equal(error.message, 'LinX Cloud is temporarily unavailable. Please retry shortly.')
+      assert.match(error.responseBody, /Bad Gateway/)
       assert.doesNotMatch(error.message, /context_length_exceeded/)
       assert.doesNotMatch(error.message, /<html|<\/html>|nginx/i)
+      assert.doesNotMatch(error.message, /502|Bad Gateway/i)
       return true
     },
   )
@@ -621,9 +725,11 @@ test('createRemoteCompletionResult reports thrown Bad Gateway errors as cloud ou
     (error) => {
       assert.equal(error instanceof RemoteChatRequestError, true)
       assert.equal(error.status, 502)
-      assert.equal(requestCount, 2)
-      assert.match(error.message, /LinX Cloud is temporarily unavailable \(502\): expected 200 OK, got: 502 Bad Gateway/)
+      assert.equal(requestCount, 4)
+      assert.equal(error.message, 'LinX Cloud is temporarily unavailable. Please retry shortly.')
+      assert.match(error.responseBody, /expected 200 OK, got: 502 Bad Gateway/)
       assert.doesNotMatch(error.message, /context_length_exceeded/)
+      assert.doesNotMatch(error.message, /502|Bad Gateway/i)
       return true
     },
   )

@@ -16,7 +16,7 @@ test('parseSolidClientCredentials accepts only direct Solid client credentials',
   assert.equal(module.parseSolidClientCredentials('sk-ant-test-key'), null)
 })
 
-test('persistSolidClientCredentialsLogin validates and persists reloadable ~/.linx credentials', async (t) => {
+test('persistSolidClientCredentialsLogin validates and persists reloadable Solid auth credentials', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/solid-client-credentials-login.ts')
   t.after(() => cleanup())
 
@@ -34,7 +34,7 @@ test('persistSolidClientCredentialsLogin validates and persists reloadable ~/.li
       savedCredentials.push(credentials)
       currentCredentials = {
         ...credentials,
-        sourceDir: '/tmp/linx-home/.linx',
+        sourceDir: '/tmp/home/.solid/auth',
       }
     },
     clearCredentials() {
@@ -93,7 +93,7 @@ test('persistSolidClientCredentialsLogin restores previous credentials when vali
     url: 'https://id.undefineds.co/',
     webId: 'https://id.undefineds.co/alice/profile/card#me',
     authType: 'oidc_oauth',
-    sourceDir: '/tmp/linx-home/.linx',
+    sourceDir: '/tmp/home/.solid/auth',
     secrets: {
       oidcRefreshToken: 'old-refresh',
       oidcAccessToken: 'old-access',

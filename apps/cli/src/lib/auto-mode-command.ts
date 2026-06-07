@@ -3,7 +3,6 @@ import {
   formatArchivedAutoModeSession,
   formatAutoModeSessionSummary,
   loadArchivedAutoModeEvents,
-  listArchivedAutoModeSessions,
   listArchivedAutoModeSessionsWithPendingSync,
   listSupportedAutoModeBackends,
   loadArchivedAutoModeSession,
@@ -23,7 +22,6 @@ export interface AutoModeCommandArgs {
   cwd?: string
   plain?: boolean
   'list-backends'?: boolean
-  sessions?: boolean
   show?: string
   'sync-status'?: boolean
   'sync-retry'?: string
@@ -37,7 +35,6 @@ export function isAutoModeBackend(value: unknown): value is AutoModeWorkerBacken
 
 export function isAutoModeRequest(argv: AutoModeCommandArgs): boolean {
   return Boolean(argv['list-backends'])
-    || Boolean(argv.sessions)
     || typeof argv.show === 'string'
     || Boolean(argv['sync-status'])
     || typeof argv['sync-retry'] === 'string'
@@ -62,10 +59,6 @@ export function buildAutoModeOptions<T extends object>(command: Argv<T>): Argv<T
       type: 'boolean',
       describe: 'List available backend runtimes',
     })
-    .option('sessions', {
-      type: 'boolean',
-      hidden: true,
-    })
     .option('show', {
       type: 'string',
       hidden: true,
@@ -89,17 +82,6 @@ export async function runAutoModeCommand(argv: AutoModeCommandArgs): Promise<voi
       process.stdout.write(`  ${backend.description}\n`)
       process.stdout.write(`  auto: ${backend.auto}\n`)
     }
-    return
-  }
-
-  if (argv.sessions) {
-    const sessions = listArchivedAutoModeSessions()
-    if (sessions.length === 0) {
-      process.stdout.write('No auto-mode sessions found.\n')
-      return
-    }
-
-    process.stdout.write(`${sessions.map(formatAutoModeSessionSummary).join('\n')}\n`)
     return
   }
 

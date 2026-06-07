@@ -49,7 +49,15 @@ models/repositories. Portable agents or scripts may use `xpod` CLI commands
 when that is the available tool surface, but that is an adapter/tool choice, not
 the core Symphony contract.
 
-Local files under `~/.linx/symphony` are not a second product model. When a Pod
+When LinX Agent Runtime gives a Secretary or worker Pod authority, that
+authority must extend to Pod-facing tools invoked inside the same runtime.
+`xpod` should consume the runtime-provided authority bridge and report the
+effective identity; it should not require a separate `xpod auth login` and
+should not fall back to unrelated app-local or legacy auth files.
+
+Local files under `$LINX_HOME/symphony` are not a second product model. By
+default, `LINX_HOME` resolves to `$SOLID_HOME/apps/linx`, and `SOLID_HOME`
+defaults to `~/.solid`. When a Pod
 session exists, the local durable mirror should be pulled from the Pod RDF graph
 as JSON-LD, not authored as an independent business JSON schema. Portable
 runtime JSON, tests, and no-Pod recovery files are allowed only as adapter/cache
@@ -948,6 +956,12 @@ In LinX, the same control records can eventually be projected into Pod/xpod as
 authoritative state. Secretary, workers, app clients, and future controllers can
 observe the shared state, invoke worker runtimes or tools, and write
 status/evidence through the Pod model. This is state-driven reconciliation.
+
+For workers, xpod is a portable tool surface over the same Pod authority the
+runtime already holds. It is not a separate identity plane. A worker that has
+been granted Pod access by LinX should be able to run xpod reads/writes through
+that inherited session, while raw tokens and client secrets remain outside the
+model-visible transcript.
 
 LinX does not need these Pod/xpod control-plane operations for the portable
 skill path. The Secretary/control-lane API for creating, splitting, closing, and

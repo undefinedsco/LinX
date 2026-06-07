@@ -55,7 +55,7 @@
 
 ### 3. 本地保存的 access token 已过期
 
-本机 `~/.linx/secrets.json` 中保存了：
+本机 `~/.solid/auth/credentials.json` 中保存的 OIDC credential envelope 里有：
 
 - `oidcRefreshToken`
 - `oidcAccessToken`
@@ -78,7 +78,7 @@
 
 原因：
 
-1. 登录态由 CLI 自己保存在 `~/.linx`
+1. 登录态由 CLI/xpod 共享保存在 `~/.solid/auth`
 2. CLI 自己决定何时读 token、何时发 `/v1/models`
 3. token 是否过期、是否 refresh，本质上是客户端 session lifecycle 管理问题
 
@@ -95,14 +95,14 @@ CLI 应实现统一的 OIDC session helper：
    - `access_token`
    - `expires_in`
    - 如有 rotation，则新的 `refresh_token`
-5. 回写本地 `~/.linx/secrets.json`
+5. 回写本地 `~/.solid/auth/credentials.json`
 6. 再带新 token 去请求：
    - `https://api.undefineds.co/v1/models`
    - `https://api.undefineds.co/v1/chat/completions`
 
 ## 建议实现结构
 
-建议抽出一个统一 helper，而不是每个命令自己读 `secrets.json`：
+建议抽出一个统一 helper，而不是每个命令自己读 credential envelope：
 
 - `loadOidcSession()`
 - `isOidcAccessTokenExpiring()`

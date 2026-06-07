@@ -16,19 +16,20 @@ import {
   createLocalBashOperations,
 } from '@earendil-works/pi-coding-agent'
 // web_fetch / web_search are now handled by pi-web-access
-import { podReadTool, podWriteTool } from './pod-tools.js'
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import type { Api, Model, OAuthCredentials } from '@earendil-works/pi-ai'
 import { RemoteChatRequestError, isRemoteAuthExpiredError, type RemoteAuthFetch, type RemoteChatMessage, type RemoteChatTool } from '../chat-api.js'
+import { formatLinxCloudTransientMessage } from '../linx-cloud-errors.js'
 import type { AutoModeWorkerBackend } from '../auto-mode/types.js'
 import type { BackendCommandRouter, BackendCommandResult } from './backend-command.js'
 import { clearDefaultPodDataSession, getDefaultPodDataSession, type PodDataSession } from '../pod-data-session.js'
 import type { CodexApprovalPolicy } from '../codex-plugin/codex-native-proxy.js'
 import { loadCredentials } from '../credentials-store.js'
+import { getSolidLinxAppDir, getSolidLinxPiWebAccessConfigPath } from '../solid-local-store.js'
 
 const UNDEFINEDS_PROVIDER_ID = 'undefineds'
 const UNDEFINEDS_PROVIDER_LABEL = 'LinX Cloud'
@@ -39,6 +40,7 @@ export const LINX_RUNTIME_MANAGED_AUTH_KEY = 'linx-runtime-managed-auth'
 const LINX_PACKAGE_SOURCE = '@undefineds.co/linx'
 const LINX_WEB_ACCESS_PACKAGE_SOURCE = 'pi-web-access'
 const LINX_PRODUCT_SKILL_NAMES = new Set(['symphony'])
+const MARKET_XPOD_CLI_SKILL_SOURCE = 'xpod-cli@undefineds'
 export const DEFAULT_LINX_PI_BASH_TIMEOUT_SECONDS = 15
 const DEFAULT_LINX_CLOUD_CONTEXT_WINDOW = 1_000_000
 const DEFAULT_LINX_CLOUD_COMPLETION_TIMEOUT_MS = 10 * 60 * 1000
@@ -448,6 +450,11 @@ export function createLinxRuntimeAdapter(
       const defaultModelId = sanitizeLinxCloudDefaults(settingsManager, requestedModel, providerModels)
       activeModelId = defaultModelId
       const bundledSkillsDir = resolveBundledLinxSkillsDir()
+      const marketSkillDirs = resolveInstalledMarketSkillDirs()
+      const additionalSkillPaths = [
+        ...(bundledSkillsDir ? [bundledSkillsDir] : []),
+        ...marketSkillDirs,
+      ]
       const bundledPackagePaths = [
         resolveBundledPiPackageRoot(LINX_WEB_ACCESS_PACKAGE_SOURCE),
       ].filter((path): path is string => Boolean(path))
@@ -460,10 +467,11 @@ export function createLinxRuntimeAdapter(
         resourceLoaderOptions: {
           // Built-in: pi-web-access handles web_search, fetch_content, and related web tools.
           additionalExtensionPaths: bundledPackagePaths,
-          additionalSkillPaths: bundledSkillsDir ? [bundledSkillsDir] : [],
-          skillsOverride: bundledSkillsDir
-            ? (base) => withBundledLinxSkillSourceInfo(base, bundledSkillsDir)
-            : undefined,
+          additionalSkillPaths,
+          skillsOverride: (base) => withLinxSkillSourceInfo(base, {
+            bundledSkillsDir,
+            marketSkillDirs,
+          }),
           systemPromptOverride: overrideLinxSystemPrompt,
         },
       })
@@ -477,7 +485,6 @@ export function createLinxRuntimeAdapter(
         sessionManager: context.sessionManager as SessionManager,
         sessionStartEvent: context.sessionStartEvent as never,
         model: selectedModel,
-        customTools: [podReadTool, podWriteTool],
       })
       const session = created.session
       enableLinxXhighThinking(session)
@@ -655,8 +662,8 @@ export function resolveBundledLinxSkillsDir(importMetaUrl = import.meta.url): st
 
 function ensurePiWebAccessConfig(): void {
   const config = JSON.stringify({ workflow: 'none' }, null, 2) + '\n'
-  const linxPath = join(homedir(), '.linx', 'pi-web-access.json')
-  const linxDir = join(homedir(), '.linx')
+  const linxPath = getSolidLinxPiWebAccessConfigPath()
+  const linxDir = getSolidLinxAppDir()
   if (!existsSync(linxDir)) {
     mkdirSync(linxDir, { recursive: true })
   }
@@ -685,23 +692,29 @@ export function resolveBundledPiPackageRoot(packageName: string, importMetaUrl =
   }
 }
 
-function withBundledLinxSkillSourceInfo<T extends {
+function withLinxSkillSourceInfo<T extends {
   skills: Array<{
     name: string
     filePath: string
     sourceInfo?: unknown
   }>
   diagnostics: unknown[]
-}>(base: T, bundledSkillsDir: string): T {
+}>(base: T, options: {
+  bundledSkillsDir: string | null
+  marketSkillDirs: string[]
+}): T {
+  const { bundledSkillsDir, marketSkillDirs } = options
   const filteredSkills = base.skills.filter((skill) => (
-    !skill.filePath.startsWith(bundledSkillsDir) || LINX_PRODUCT_SKILL_NAMES.has(skill.name)
+    !bundledSkillsDir
+    || !skill.filePath.startsWith(bundledSkillsDir)
+    || LINX_PRODUCT_SKILL_NAMES.has(skill.name)
   ))
 
   return {
     ...base,
-    skills: filteredSkills.map((skill) => (
-      skill.filePath.startsWith(bundledSkillsDir)
-        ? {
+    skills: filteredSkills.map((skill) => {
+      if (bundledSkillsDir && skill.filePath.startsWith(bundledSkillsDir)) {
+        return {
           ...skill,
           sourceInfo: {
             path: skill.filePath,
@@ -711,9 +724,88 @@ function withBundledLinxSkillSourceInfo<T extends {
             baseDir: bundledSkillsDir,
           },
         }
-        : skill
-    )),
+      }
+
+      const marketSkillDir = marketSkillDirs.find((dir) => skill.filePath.startsWith(dir))
+      if (marketSkillDir) {
+        return {
+          ...skill,
+          sourceInfo: {
+            path: skill.filePath,
+            source: MARKET_XPOD_CLI_SKILL_SOURCE,
+            scope: 'temporary',
+            origin: 'marketplace',
+            version: resolveMarketSkillVersion(marketSkillDir),
+            baseDir: marketSkillDir,
+          },
+        }
+      }
+
+      return skill
+    }),
   }
+}
+
+export function resolveInstalledMarketSkillDirs(): string[] {
+  return [resolveInstalledXpodCliMarketSkillDir()].filter((path): path is string => Boolean(path))
+}
+
+function resolveInstalledXpodCliMarketSkillDir(): string | null {
+  const codexHome = process.env.CODEX_HOME?.trim() || join(homedir(), '.codex')
+  const versionsRoot = join(codexHome, 'plugins', 'cache', 'undefineds', 'xpod-cli')
+  if (!existsSync(versionsRoot)) {
+    return null
+  }
+
+  const candidates: Array<{ version: string; dir: string }> = []
+  for (const entry of safeReadDir(versionsRoot)) {
+    const versionDir = join(versionsRoot, entry)
+    if (!safeIsDirectory(versionDir)) {
+      continue
+    }
+    const skillDir = join(versionDir, 'skills', 'xpod-cli')
+    if (existsSync(join(skillDir, 'SKILL.md'))) {
+      candidates.push({ version: entry, dir: skillDir })
+    }
+  }
+
+  candidates.sort((a, b) => compareVersionLike(b.version, a.version))
+  return candidates[0]?.dir ?? null
+}
+
+function resolveMarketSkillVersion(skillDir: string): string | undefined {
+  const version = basename(dirname(dirname(skillDir)))
+  return version && version !== 'skills' ? version : undefined
+}
+
+function safeReadDir(dir: string): string[] {
+  try {
+    return readdirSync(dir)
+  } catch {
+    return []
+  }
+}
+
+function safeIsDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory()
+  } catch {
+    return false
+  }
+}
+
+function compareVersionLike(a: string, b: string): number {
+  const left = a.split(/[.-]/u).map((part) => Number(part))
+  const right = b.split(/[.-]/u).map((part) => Number(part))
+  const length = Math.max(left.length, right.length)
+  for (let i = 0; i < length; i += 1) {
+    const l = Number.isFinite(left[i]) ? left[i] : 0
+    const r = Number.isFinite(right[i]) ? right[i] : 0
+    if (l !== r) {
+      return l - r
+    }
+  }
+  return a.localeCompare(b)
 }
 
 function enableLinxXhighThinking(session: {
@@ -872,7 +964,7 @@ function withCloudCompletionTimeout(fetcher: RemoteAuthFetch): RemoteAuthFetch {
           controller.signal.addEventListener('abort', () => {
             if (timedOut) {
               reject(new RemoteChatRequestError(
-                `LinX Cloud request timed out after ${formatTimeoutSeconds(timeoutMs)}s.`,
+                formatLinxCloudTransientMessage(`Request exceeded ${formatTimeoutSeconds(timeoutMs)}s.`),
                 0,
                 `Timed out waiting for POST ${url}`,
               ))
@@ -883,7 +975,7 @@ function withCloudCompletionTimeout(fetcher: RemoteAuthFetch): RemoteAuthFetch {
     } catch (error) {
       if (timedOut) {
         throw new RemoteChatRequestError(
-          `LinX Cloud request timed out after ${formatTimeoutSeconds(timeoutMs)}s.`,
+          formatLinxCloudTransientMessage(`Request exceeded ${formatTimeoutSeconds(timeoutMs)}s.`),
           0,
           error instanceof Error ? error.message : String(error),
         )
@@ -1062,6 +1154,9 @@ function overrideLinxSystemPrompt(base: string | undefined): string | undefined 
     'When replying in Chinese, describe yourself as "AI主理人".',
     'Use a friendly, direct style like: "你好！我是 LinX，一个 AI 主理人，很高兴为你服务！"',
     'Keep Pi-compatible coding agent behavior: read files, run commands, edit code, use tools, and follow project instructions.',
+    'When introducing capabilities, describe only user-facing LinX product abilities and the currently available runtime actions.',
+    'Do not advertise repository-local agent instructions, internal command names, bundled plugin skill names, package names, or developer-only workflows as features the user can call.',
+    'If a capability depends on the current workspace, installed tools, login state, backend, or Symphony mode, state that dependency instead of implying it is always available.',
   ].join('\n')
 
   if (!original) {

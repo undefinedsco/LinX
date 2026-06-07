@@ -9,6 +9,21 @@ import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 
 const cliRoot = fileURLToPath(new URL('..', import.meta.url))
 
+function isolateSolidHome(t, prefix) {
+  const previousSolidHome = process.env.SOLID_HOME
+  const solidHome = mkdtempSync(join(tmpdir(), prefix))
+  process.env.SOLID_HOME = solidHome
+  t.after(() => {
+    if (previousSolidHome === undefined) {
+      delete process.env.SOLID_HOME
+    } else {
+      process.env.SOLID_HOME = previousSolidHome
+    }
+    rmSync(solidHome, { recursive: true, force: true })
+  })
+  return solidHome
+}
+
 async function readAuthHeader(authFetch, url = 'https://api.undefineds.co/v1/probe') {
   const originalFetch = globalThis.fetch
   let authorization = null
@@ -543,7 +558,7 @@ test('pi runtime adapter reports stalled cloud completions as cloud timeout, not
 
   const errorEvent = events.find((event) => event.type === 'error')
   assert.ok(errorEvent)
-  assert.equal(errorEvent.error.errorMessage, 'LinX Cloud request timed out after 1s.')
+  assert.equal(errorEvent.error.errorMessage, 'LinX Cloud is temporarily unavailable. Request exceeded 1s. Please retry shortly.')
   assert.doesNotMatch(errorEvent.error.errorMessage, /LinX Pod request/)
 })
 
@@ -599,7 +614,7 @@ test('pi runtime adapter exposes bundled LinX skills during initial resource loa
     for (const name of ['symphony']) {
       assert.ok(skillNames.includes(name), `expected bundled LinX product skill ${name}`)
     }
-    for (const name of ['drizzle-solid', 'pod-storage', 'solid-modeling', 'xpod-componentsjs']) {
+    for (const name of ['drizzle-solid', 'solid-modeling', 'xpod-componentsjs']) {
       assert.equal(skillNames.includes(name), false, `developer skill ${name} should not be exposed to Secretary`)
     }
     assert.ok(skillNames.includes('librarian'), 'expected pi-web-access skill to be loaded from the bundled package')
@@ -620,6 +635,83 @@ test('pi runtime adapter exposes bundled LinX skills during initial resource loa
   } finally {
     await runtime.dispose()
     process.chdir(cliRoot)
+  }
+})
+
+test('pi runtime adapter loads installed xpod-cli market skill by default', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
+  t.after(() => cleanup())
+
+  const { SessionManager } = await import('@earendil-works/pi-coding-agent')
+  const cwd = mkdtempSync(join(tmpdir(), 'linx-pi-runtime-xpod-market-skill-'))
+  const agentDir = mkdtempSync(join(tmpdir(), 'linx-pi-runtime-xpod-market-agent-'))
+  const codexHome = mkdtempSync(join(tmpdir(), 'linx-codex-market-home-'))
+  const previousCodexHome = process.env.CODEX_HOME
+  const skillDir = join(codexHome, 'plugins', 'cache', 'undefineds', 'xpod-cli', '9.9.9', 'skills', 'xpod-cli')
+  mkdirSync(skillDir, { recursive: true })
+  writeFileSync(join(skillDir, 'SKILL.md'), `---
+name: xpod-cli
+description: Xpod CLI Market Skill
+---
+
+# Xpod CLI Market Skill
+`)
+  process.env.CODEX_HOME = codexHome
+  t.after(() => {
+    if (previousCodexHome === undefined) {
+      delete process.env.CODEX_HOME
+    } else {
+      process.env.CODEX_HOME = previousCodexHome
+    }
+    process.chdir(cliRoot)
+    rmSync(cwd, { recursive: true, force: true })
+    rmSync(agentDir, { recursive: true, force: true })
+    rmSync(codexHome, { recursive: true, force: true })
+  })
+
+  const adapter = module.createPiRuntimeAdapter({
+    async createRemoteCompletion() {
+      return 'hello with xpod market skill'
+    },
+  }, {
+    cwd,
+    providerConfig: {
+      baseUrl: 'https://api.undefineds.co/v1',
+      oauth: {
+        name: 'LinX Cloud',
+        async login() {
+          return {
+            refresh: 'refresh-token',
+            access: 'access-token',
+            expires: Date.now() + 60_000,
+          }
+        },
+        async refreshToken(credentials) {
+          return credentials
+        },
+        getApiKey() {
+          return 'cloud-access-token'
+        },
+      },
+    },
+  })
+
+  const runtime = await adapter.createRuntime({
+    cwd,
+    agentDir,
+    sessionManager: SessionManager.inMemory(cwd),
+  })
+
+  try {
+    assert.deepEqual(module.resolveInstalledMarketSkillDirs(), [skillDir])
+    const skills = runtime.session.resourceLoader.getSkills().skills
+    const xpodSkill = skills.find((skill) => skill.name === 'xpod-cli')
+    assert.ok(xpodSkill, 'expected xpod-cli market skill to be loaded')
+    assert.equal(xpodSkill.sourceInfo?.source, 'xpod-cli@undefineds')
+    assert.equal(xpodSkill.sourceInfo?.origin, 'marketplace')
+    assert.equal(xpodSkill.sourceInfo?.version, '9.9.9')
+  } finally {
+    await runtime.dispose()
   }
 })
 
@@ -705,6 +797,7 @@ test('pi runtime adapter configures undefineds models as openai chat completions
 })
 
 test('pi runtime adapter lets interactive sessions start without a user API key', async (t) => {
+  isolateSolidHome(t, 'linx-pi-agent-no-key-solid-')
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
   t.after(() => cleanup())
 
@@ -1108,7 +1201,10 @@ test('pi runtime adapter brands the default system prompt as LinX AI Secretary',
   assert.match(runtime.session.systemPrompt, /AI Secretary/)
   assert.match(runtime.session.systemPrompt, /AI主理人/)
   assert.match(runtime.session.systemPrompt, /我是 LinX/)
+  assert.match(runtime.session.systemPrompt, /user-facing LinX product abilities/)
+  assert.match(runtime.session.systemPrompt, /Do not advertise repository-local agent instructions/)
   assert.doesNotMatch(runtime.session.systemPrompt, /operating inside pi/)
+  assert.doesNotMatch(runtime.session.systemPrompt, /semble search/)
 
   await runtime.dispose()
   process.chdir(cliRoot)
@@ -1578,12 +1674,12 @@ export default function projectExtraTool(pi) {
     'code_search',
     'fetch_content',
     'get_search_content',
-    'pod_read',
-    'pod_write',
     'project_extra_tool',
   ]) {
     assert.ok(activeTools.includes(toolName), `${toolName} should be active`)
   }
+  assert.equal(activeTools.includes('pod_read'), false, 'legacy pod_read should not be active by default')
+  assert.equal(activeTools.includes('pod_write'), false, 'legacy pod_write should not be active by default')
   assert.ok(runtime.session.getAllTools().some((tool) => tool.name === 'project_extra_tool'))
   await runtime.dispose()
 })

@@ -232,7 +232,7 @@ test('local .codex credentials flow through standard LinX AI config into codex a
   const root = mkdtempSync(join(tmpdir(), 'linx-local-codex-credential-smoke-'))
   const tempHome = join(root, 'home')
   const binDir = join(root, 'bin')
-  const autoModeHome = join(root, 'auto-mode-home')
+  const linxHome = join(root, 'linx-home')
   const logFile = join(root, 'codex-acp-log.jsonl')
   mkdirSync(tempHome, { recursive: true })
   mkdirSync(binDir, { recursive: true })
@@ -277,7 +277,7 @@ test('local .codex credentials flow through standard LinX AI config into codex a
   await withPatchedEnv({
     HOME: tempHome,
     USERPROFILE: tempHome,
-    LINX_AUTO_MODE_HOME: autoModeHome,
+    LINX_HOME: linxHome,
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
     FAKE_ACP_LOG: logFile,
     EXPECTED_CODEX_KEY_SHA256: keyHash,
@@ -292,7 +292,7 @@ test('local .codex credentials flow through standard LinX AI config into codex a
         clientSecret: 'local-codex-smoke-secret',
       },
     })
-    assert.equal(credentialsModule.loadCredentials()?.sourceDir, join(tempHome, '.linx'))
+    assert.equal(credentialsModule.loadCredentials()?.sourceDir, join(tempHome, '.solid', 'auth'))
 
     await aiModule.runAiCommand({
       action: 'connect',

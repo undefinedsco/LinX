@@ -29,6 +29,14 @@ Shell 应该把外部输入和 runtime 事件翻译成 core 能理解的领域�
 
 Core 应该让 shell 可替换：换一个端实现、运行时适配器或展示层，不应改变产品含义。
 
+当上游 core 已经拥有某个通用 coding-agent 能力时，LinX shell 不重新实现同等能力。
+Shell 只能注入 LinX 差异点，例如品牌、默认目录、默认 backend、Pod 登录、同步投影、auto
+和 Symphony 控制。若 core 能力没有可复用 API，优先推动 core 暴露 action/service，而不是在
+LinX shell 里复制一份局部实现。
+
+会话控制入口跟 Pi 对齐：`--continue/-c`、`--resume/-r`、`--session <id|path>` 是公共语义。
+LinX 不新增并列的 `sessions` 产品命令或 `--sessions` flag。
+
 Shell 的全局命令和帮助属于 shell contract，不应被某个 backend 或 core 私有命令覆盖。
 Backend 可以通过 adapter 暴露自己的命令说明，但必须作为当前 backend 的附加 section，
 不能替代 LinX/Pi 壳层的 `/help`、会话控制和全局命令。

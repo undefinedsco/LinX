@@ -12,8 +12,8 @@ const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 const modelsRoot = resolvePackageSourceRoot('@undefineds.co/models', [
   process.env.LINX_MODELS_ROOT,
   process.env.LINX_MODELS_PATH,
-  join(repoRoot, '..', 'models'),
   join(repoRoot, 'packages', 'models'),
+  join(repoRoot, '..', 'models'),
   join(repoRoot, 'node_modules', '@undefineds.co', 'models'),
 ])
 const modelsDistRoot = join(modelsRoot, 'dist')

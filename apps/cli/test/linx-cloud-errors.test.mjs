@@ -10,7 +10,7 @@ test('formatLinxCliErrorMessage rewrites cloud completion timeouts mislabeled as
     'Retry failed after 3 attempts: LinX Pod request timed out after 30s: POST https://api.undefineds.co/v1/chat/completions.',
     '\u001b[31mError: LinX Pod request timed out after 30s: POST https://api.undefineds.co/v1/chat/completions\u001b[0m',
   ]) {
-    assert.equal(formatLinxCliErrorMessage(input), 'LinX Cloud request timed out after 30s.')
+    assert.equal(formatLinxCliErrorMessage(input), 'LinX Cloud is temporarily unavailable. Request exceeded 30s. Please retry shortly.')
   }
 })
 

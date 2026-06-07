@@ -50,6 +50,13 @@ LinX product runtime persists through shared models/repositories. A portable AI
 agent may call `xpod` CLI when that tool is available, but `xpod` is an adapter
 tool surface, not something the core Symphony skill or runtime module requires.
 
+In LinX Agent Runtime, Pod authority belongs to the runtime session and should
+be inherited by tools launched inside that session. If a Secretary or worker has
+Pod access, `xpod` commands it runs should use the runtime-provided authority
+bridge, not a separate `xpod auth login` or stale app-local/legacy auth files.
+Never ask the model to handle raw tokens, refresh tokens, client secrets,
+cookies, or DPoP material directly.
+
 ## Agent Config And Skill Resources
 
 Do not treat an agent's backend, model, credentials, tools, or skills as hidden

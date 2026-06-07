@@ -1,7 +1,10 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import { resolveLinxRuntimeApiBaseUrl } from '@undefineds.co/models/client'
 import { DEFAULT_LINX_CLOUD_MODEL_ID, FALLBACK_LINX_CLOUD_MODEL_IDS } from './default-model.js'
-import { normalizeMisclassifiedCloudCompletionPodTimeoutMessage } from './linx-cloud-errors.js'
+import {
+  formatLinxCloudTransientMessage,
+  normalizeMisclassifiedCloudCompletionPodTimeoutMessage,
+} from './linx-cloud-errors.js'
 
 export interface RemoteModelSummary {
   id: string
@@ -69,7 +72,7 @@ export interface RemoteAuthSessionOptions {
 }
 
 const DEFAULT_CHAT_TIMEOUT_MS = 10 * 60 * 1000
-const REMOTE_CHAT_RETRY_DELAY_MS = 100
+const REMOTE_CHAT_RETRY_DELAYS_MS = [100, 500, 1_000] as const
 const TRANSIENT_REMOTE_STATUS_CODES = new Set([502, 503, 504])
 
 export class RemoteChatRequestError extends Error {
@@ -254,7 +257,7 @@ export async function createRemoteCompletionResult(options: {
   const abortSignals = withTimeoutSignal(timeoutMs, options.signal)
 
   try {
-    for (let attempt = 0; attempt <= 1; attempt += 1) {
+    for (let attempt = 0; attempt <= REMOTE_CHAT_RETRY_DELAYS_MS.length; attempt += 1) {
       let response: Response
       try {
         response = await authFetch(url, {
@@ -276,7 +279,7 @@ export async function createRemoteCompletionResult(options: {
             )
           }
           throw new RemoteChatRequestError(
-            `LinX Cloud request timed out after ${formatTimeoutSeconds(timeoutMs)}s.`,
+            formatLinxCloudTransientMessage(`Request exceeded ${formatTimeoutSeconds(timeoutMs)}s.`),
             0,
             error instanceof Error ? error.message : String(error),
           )
@@ -286,12 +289,16 @@ export async function createRemoteCompletionResult(options: {
           throw misclassifiedRuntimeTimeout
         }
         const transientFailure = normalizeTransientRemoteFailure(error)
-        if (attempt === 0 && transientFailure) {
-          await delay(REMOTE_CHAT_RETRY_DELAY_MS, undefined, { signal: abortSignals.signal })
+        if (transientFailure && shouldRetryRemoteChatAttempt(attempt)) {
+          await delay(REMOTE_CHAT_RETRY_DELAYS_MS[attempt]!, undefined, { signal: abortSignals.signal })
           continue
         }
         if (transientFailure) {
           throw transientFailure
+        }
+        const nonRetryableRemoteFailure = normalizeNonRetryableRemoteFailure(error)
+        if (nonRetryableRemoteFailure) {
+          throw nonRetryableRemoteFailure
         }
         throw error
       }
@@ -299,8 +306,8 @@ export async function createRemoteCompletionResult(options: {
       if (!response.ok) {
         const text = await response.text().catch(() => '')
         const responseBody = text || response.statusText
-        if (attempt === 0 && shouldRetryRemoteChatResponse(response.status, responseBody)) {
-          await delay(REMOTE_CHAT_RETRY_DELAY_MS, undefined, { signal: abortSignals.signal })
+        if (shouldRetryRemoteChatResponse(response.status, responseBody) && shouldRetryRemoteChatAttempt(attempt)) {
+          await delay(REMOTE_CHAT_RETRY_DELAYS_MS[attempt]!, undefined, { signal: abortSignals.signal })
           continue
         }
         throw buildRemoteChatRequestError(response.status, responseBody)
@@ -351,7 +358,7 @@ export async function createRemoteCompletionResult(options: {
         )
       }
       throw new RemoteChatRequestError(
-        `LinX Cloud request timed out after ${formatTimeoutSeconds(timeoutMs)}s.`,
+        formatLinxCloudTransientMessage(`Request exceeded ${formatTimeoutSeconds(timeoutMs)}s.`),
         0,
         error instanceof Error ? error.message : String(error),
       )
@@ -362,6 +369,10 @@ export async function createRemoteCompletionResult(options: {
     }
     throw error
   }
+}
+
+function shouldRetryRemoteChatAttempt(attempt: number): boolean {
+  return attempt < REMOTE_CHAT_RETRY_DELAYS_MS.length
 }
 
 function formatTimeoutSeconds(timeoutMs: number): number {
@@ -403,7 +414,7 @@ function buildRemoteChatRequestError(
   }
   if (isTimeoutResponse(status, responseBody)) {
     return new RemoteChatRequestError(
-      `LinX Cloud request timed out upstream: ${upstreamMessage}`,
+      formatLinxCloudTransientMessage('Upstream did not return in time.'),
       status,
       responseBody,
     )
@@ -411,7 +422,15 @@ function buildRemoteChatRequestError(
 
   if (shouldRetryRemoteChatResponse(status, responseBody)) {
     return new RemoteChatRequestError(
-      `LinX Cloud is temporarily unavailable (${status}): ${upstreamMessage}`,
+      formatLinxCloudTransientMessage(),
+      status,
+      responseBody,
+    )
+  }
+
+  if (isCloudFetchFailedResponse(status, responseBody)) {
+    return new RemoteChatRequestError(
+      formatLinxCloudTransientMessage(),
       status,
       responseBody,
     )
@@ -449,12 +468,31 @@ function normalizeTransientRemoteFailure(error: unknown): RemoteChatRequestError
   }
 
   const responseBody = error instanceof Error ? error.message : String(error)
-  const upstreamMessage = extractRemoteErrorMessage(responseBody, status).trim() || fallbackRemoteErrorMessage(status)
   return new RemoteChatRequestError(
-    `LinX Cloud is temporarily unavailable (${status}): ${upstreamMessage}`,
+    formatLinxCloudTransientMessage(),
     status,
     responseBody,
   )
+}
+
+function normalizeNonRetryableRemoteFailure(error: unknown): RemoteChatRequestError | null {
+  const message = error instanceof Error ? error.message : String(error)
+  const normalized = message.toLowerCase()
+  if (normalized.includes('500') && normalized.includes('fetch failed')) {
+    return new RemoteChatRequestError(
+      formatLinxCloudTransientMessage(),
+      500,
+      message,
+    )
+  }
+  if (normalized.includes('500') && normalized.includes('outgoing request timed out')) {
+    return new RemoteChatRequestError(
+      formatLinxCloudTransientMessage('Upstream did not return in time.'),
+      500,
+      message,
+    )
+  }
+  return null
 }
 
 function normalizeMisclassifiedPodRuntimeTimeout(error: unknown): RemoteChatRequestError | null {
@@ -506,6 +544,10 @@ function resolveTransientRemoteStatus(error: unknown): number | null {
   return null
 }
 
+function isCloudFetchFailedResponse(status: number, responseBody: string): boolean {
+  return status >= 500 && responseBody.toLowerCase().includes('fetch failed')
+}
+
 function normalizePathname(pathname: string): string {
   const normalized = pathname.endsWith('/') ? pathname : `${pathname}/`
   return normalized.replace(/\/{2,}/g, '/')
@@ -513,9 +555,12 @@ function normalizePathname(pathname: string): string {
 
 function isTimeoutResponse(status: number, responseBody: string): boolean {
   const normalized = responseBody.toLowerCase()
-  return status >= 500
-    && normalized.includes('timeout')
-    && normalized.includes('aborted')
+  if (status < 500) {
+    return false
+  }
+
+  return (normalized.includes('timeout') && normalized.includes('aborted'))
+    || normalized.includes('outgoing request timed out')
 }
 
 function extractRemoteErrorMessage(responseBody: string, status: number): string {
