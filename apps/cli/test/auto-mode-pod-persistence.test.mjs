@@ -24,8 +24,8 @@ mode: 'auto',
     status: 'completed',
     startedAt: '2026-03-18T00:00:00.000Z',
     endedAt: '2026-03-18T00:01:00.000Z',
-    archiveDir: '/tmp/demo/.linx/auto-mode/auto_2026-03-18T00-00-00-000Z_deadbeef',
-    eventsFile: '/tmp/demo/.linx/auto-mode/auto_2026-03-18T00-00-00-000Z_deadbeef/events.jsonl',
+    archiveDir: '/tmp/demo/.solid/apps/linx/auto-mode/auto_2026-03-18T00-00-00-000Z_deadbeef',
+    eventsFile: '/tmp/demo/.solid/apps/linx/auto-mode/auto_2026-03-18T00-00-00-000Z_deadbeef/events.jsonl',
     backendSessionId: 'sess_codex_123',
     ...overrides,
   }
@@ -42,6 +42,8 @@ test.after(() => {
 })
 
 test('buildAutoModeConversationMessages maps archived transcript into standard Pod message rows', () => {
+  const chatUri = 'https://alice.example/.data/chat/linx-auto-mode-codex/index.ttl#this'
+  const threadUri = 'https://alice.example/.data/chat/linx-auto-mode-codex/index.ttl#auto_2026-03-18T00-00-00-000Z_deadbeef'
   const rows = persistenceModule.__podPersistenceInternal.buildAutoModeConversationMessages(
     createRecord(),
     'https://alice.example/profile/card#me',
@@ -87,8 +89,8 @@ test('buildAutoModeConversationMessages maps archived transcript into standard P
   })), [
     {
       id: 'auto_2026-03-18T00-00-00-000Z_deadbeef-m0001',
-      chat: 'linx-auto-mode-codex',
-      thread: 'auto_2026-03-18T00-00-00-000Z_deadbeef',
+      chat: chatUri,
+      thread: threadUri,
       maker: 'https://alice.example/profile/card#me',
       role: 'user',
       content: 'inspect workspace',
@@ -99,8 +101,8 @@ test('buildAutoModeConversationMessages maps archived transcript into standard P
     },
     {
       id: 'auto_2026-03-18T00-00-00-000Z_deadbeef-m0002',
-      chat: 'linx-auto-mode-codex',
-      thread: 'auto_2026-03-18T00-00-00-000Z_deadbeef',
+      chat: chatUri,
+      thread: threadUri,
       maker: 'https://alice.example/agents/linx-auto-mode-codex-agent/',
       role: 'assistant',
       content: 'I found two issues.',
@@ -111,8 +113,8 @@ test('buildAutoModeConversationMessages maps archived transcript into standard P
     },
     {
       id: 'auto_2026-03-18T00-00-00-000Z_deadbeef-m0003',
-      chat: 'linx-auto-mode-codex',
-      thread: 'auto_2026-03-18T00-00-00-000Z_deadbeef',
+      chat: chatUri,
+      thread: threadUri,
       maker: 'https://alice.example/agents/__secretary__/',
       role: 'system',
       content: '[approval] Allow bash?',
@@ -123,8 +125,8 @@ test('buildAutoModeConversationMessages maps archived transcript into standard P
     },
     {
       id: 'auto_2026-03-18T00-00-00-000Z_deadbeef-m0004',
-      chat: 'linx-auto-mode-codex',
-      thread: 'auto_2026-03-18T00-00-00-000Z_deadbeef',
+      chat: chatUri,
+      thread: threadUri,
       maker: 'https://alice.example/agents/linx-auto-mode-codex-agent/',
       role: 'system',
       content: '[tool] bash {"command":"pwd"}',
@@ -324,7 +326,8 @@ test('persistAutoModeConversationToPod upserts group chat, participants, agents,
   ])
 
   const thread = inserts.find((item) => item.resource === resources.thread)?.value
-  assert.equal(thread.chat, 'linx-auto-mode-codex')
+  assert.equal(thread.id, 'chat/linx-auto-mode-codex/index.ttl#auto_2026-03-18T00-00-00-000Z_deadbeef')
+  assert.equal(thread.parent, 'https://alice.example/.data/chat/linx-auto-mode-codex/index.ttl#this')
   assert.equal(thread.metadata.kind, 'auto-mode')
   assert.equal(thread.metadata.chatId, 'linx-auto-mode-codex')
 

@@ -6,13 +6,12 @@ import {
   agentResource,
   approvalResource,
   auditResource,
-  buildChatTargetRef,
   chatResource,
   drizzle,
   grantResource,
   inboxNotificationResource,
   solidResources,
-  threadResource,
+  threadRepository,
   type AnyPodResource,
   type SolidDatabase,
 } from '../models.js'
@@ -262,10 +261,7 @@ function buildAutoModeChatUri(webId: string, record: AutoModeSessionRecord): str
 }
 
 function autoModeThreadUri(webId: string, record: AutoModeSessionRecord): string {
-  return threadResource.buildIri(webId,  {
-    id: record.id,
-    chat: buildChatTargetRef(buildAutoModeChatId(record)),
-  })
+  return threadRepository.iriForChat(webId, buildAutoModeChatId(record), record.id)
 }
 
 function approvalIriForCreatedAt(webIdOrUri: string, approvalId: string, createdAt: Date): string {

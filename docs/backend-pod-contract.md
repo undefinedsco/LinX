@@ -24,6 +24,10 @@ These principles are the review baseline for auto-mode work:
   and inbox notifications must converge to shared Pod resources.
 - Local runtime is allowed to be ahead of Pod. Local archive/cache writes are
   the availability path; Pod sync is the durability/convergence path.
+- Agent Runtime authority applies to its tools. When an agent session has a
+usable Solid/Pod session, child tools such as `xpod` must consume that
+runtime-provided authority instead of requiring their own login or reading an
+unrelated app-local or legacy auth file.
 - Auth acquisition can differ, but post-auth data access cannot. OIDC browser
   auth, client credentials, and native backend auth may produce sessions or
   injected environment differently; after that boundary, credential lookup,
@@ -72,6 +76,10 @@ Use these invariants when reviewing an auto-mode design or implementation:
   client credentials, and backend-native login may differ before a usable
   session or environment exists; they must not fork credential lookup, archive
   shape, Pod writes, approval handling, or sync semantics after that boundary.
+- Tool auth is inherited from the runtime, not reacquired per tool. A command
+  run by an authorized backend worker should see the same Pod authority through
+  the runtime's tool bridge. The command must not silently switch to stale local
+  xpod credentials just because those files exist on the host.
 - The local archive is a cache plus recovery log, not a competing source of
   truth. It may unblock work while Pod is unavailable, but any state with
   cross-surface meaning must be syncable to Pod.
@@ -134,6 +142,7 @@ Backend provider credentials and provider-level config are Pod data.
   fallback.
 
 Detailed CLI interaction rules are in `docs/cli-login-and-key-principles.md`.
+Detailed xpod command auth rules are in `docs/xpod-cli-spec.md`.
 
 The shared query path is:
 
@@ -184,6 +193,13 @@ If a resource exists in `@undefineds.co/models`, CLI/App code must use the
 shared resource/repository. Missing query ergonomics should be added to the
 shared model layer first, not worked around by parsing TTL or duplicating URI
 builders in a shell.
+
+External tools used by an agent, such as `xpod`, are different from LinX
+in-process business code. They may be the correct portable tool surface for a
+worker, but their authority still comes from the Agent Runtime session. The
+runtime should provide a short-lived inherited auth bridge for those tools and
+must not expose raw tokens, refresh tokens, client secrets, cookies, or DPoP
+material in model-visible environment, logs, messages, or archives.
 
 ## Backend Auth Paths
 

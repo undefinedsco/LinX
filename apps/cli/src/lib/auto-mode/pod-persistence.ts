@@ -2,11 +2,11 @@ import type { PodDataSession } from '../pod-data-session.js'
 import { getDefaultPodDataSession } from '../pod-data-session.js'
 import {
   agentResource,
-  buildChatTargetRef,
   chatResource,
   messageResource,
   sessionResource,
   threadResource,
+  threadRepository,
   type AnyPodResource,
   type SolidDatabase,
 } from '../models.js'
@@ -61,7 +61,7 @@ interface AutoModeChatRow extends Record<string, unknown> {
 
 interface AutoModeThreadRow extends Record<string, unknown> {
   id: string
-  chat: string
+  parent: string
   title: string
   metadata: Record<string, unknown>
   createdAt: Date
@@ -159,10 +159,7 @@ function buildAutoModeChatUri(webId: string, record: Pick<AutoModeSessionRecord,
 }
 
 function buildAutoModeThreadUri(webId: string, record: AutoModeSessionRecord): string {
-  return threadResource.buildIri(webId, {
-    id: record.id,
-    chat: buildChatTargetRef(buildAutoModeChatId(record)),
-  })
+  return threadRepository.iriForChat(webId, buildAutoModeChatId(record), record.id)
 }
 
 function buildAutoModeSessionUri(webId: string, record: AutoModeSessionRecord): string {
@@ -175,7 +172,8 @@ function buildAutoModeSessionUri(webId: string, record: AutoModeSessionRecord): 
 function buildAutoModeMessageUri(webId: string, record: AutoModeSessionRecord, row: Pick<PersistedAutoModeConversationMessage, 'id' | 'createdAt'>): string {
   return messageResource.buildIri(webId, {
     id: row.id,
-    chat: buildChatTargetRef(buildAutoModeChatId(record)),
+    chat: buildAutoModeChatUri(webId, record),
+    thread: buildAutoModeThreadUri(webId, record),
     createdAt: row.createdAt ?? record.startedAt,
   })
 }
@@ -256,14 +254,16 @@ function buildAutoModeConversationChatRow(record: AutoModeSessionRecord, webId: 
 
 function buildAutoModeConversationThreadRow(
   record: AutoModeSessionRecord,
+  webId: string,
   transcript: Array<{ role: string; content: string }> = [],
 ): AutoModeThreadRow {
   const startedAt = new Date(record.startedAt)
   const updatedAt = record.endedAt ? new Date(record.endedAt) : startedAt
+  const chatUri = buildAutoModeChatUri(webId, record)
 
   return {
-    id: record.id,
-    chat: buildAutoModeChatId(record),
+    id: threadRepository.idForChat(chatUri, record.id),
+    parent: chatUri,
     title: buildAutoModeConversationThreadTitle(record, transcript),
     metadata: {
       ...buildAutoModeThreadMetadata(record),
@@ -370,7 +370,8 @@ function buildAutoModeConversationMessages(
   entries: AutoModeEventLogEntry[],
 ): PersistedAutoModeConversationMessage[] {
   const transcript = buildAutoModeTranscriptMessages(entries)
-  const chatId = buildAutoModeChatId(record)
+  const chatUri = buildAutoModeChatUri(webId, record)
+  const threadUri = buildAutoModeThreadUri(webId, record)
 
   return transcript.map((message, index) => {
     const sender = resolveMessageSender({
@@ -381,8 +382,8 @@ function buildAutoModeConversationMessages(
 
     return {
       id: `${record.id}-m${String(index + 1).padStart(4, '0')}`,
-      chat: chatId,
-      thread: record.id,
+      chat: chatUri,
+      thread: threadUri,
       maker: sender.maker,
       role: message.role,
       content: message.content,
@@ -669,7 +670,7 @@ function buildAutoModeConversationProjectionOperations(input: {
         input.db,
         input.runtime,
         input.webId,
-        buildAutoModeConversationThreadRow(input.record, input.transcriptRows),
+        buildAutoModeConversationThreadRow(input.record, input.webId, input.transcriptRows),
         input.record,
       ),
     },

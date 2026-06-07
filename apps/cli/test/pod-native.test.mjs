@@ -14,7 +14,7 @@ test('pod native URL helpers keep chat and message resources under chat storage'
     'https://id.undefineds.co/alice/.data/chat/chat-1/index.ttl',
   )
   assert.equal(
-    module.buildMessageResourceUrl(webId, 'chat-1', createdAt),
+    module.buildMessageResourceUrl(webId, 'chat-1', 'thread-1', createdAt),
     'https://id.undefineds.co/alice/.data/chat/chat-1/2026/05/18/messages.ttl',
   )
 })

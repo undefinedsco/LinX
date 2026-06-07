@@ -5,11 +5,11 @@ import {
   agentResource,
   approvalResource,
   auditResource,
-  buildChatTargetRef,
   chatResource,
   grantResource,
   messageResource,
   sessionResource,
+  threadRepository,
 } from '../models.js'
 
 export type PodFetch = (url: string, init?: RequestInit) => Promise<Response>
@@ -134,10 +134,11 @@ export function buildChatIndexResourceUrl(webId: string, chatId: string): string
   return documentUrl(chatResource.buildIri(webId,  { id: chatId }))
 }
 
-export function buildMessageResourceUrl(webId: string, chatId: string, createdAt: Date): string {
+export function buildMessageResourceUrl(webId: string, chatId: string, threadId: string, createdAt: Date): string {
   return documentUrl(messageResource.buildIri(webId,  {
     id: '__document__',
-    chat: buildChatTargetRef(chatId),
+    chat: chatResource.buildIri(webId, { id: chatId }),
+    thread: threadRepository.iriForChat(webId, chatId, threadId),
     createdAt,
   }))
 }

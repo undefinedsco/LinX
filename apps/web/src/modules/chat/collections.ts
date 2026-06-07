@@ -25,9 +25,9 @@ import {
   buildChatTargetRef,
   eq,
   extractChatIdFromChatRef,
+  threadRepository,
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
-  resolveThreadChatId as resolveThreadChatIdFromRow,
   MEETING,
   UDFS,
   WF,
@@ -249,10 +249,10 @@ function hasHydratedChatMetadata(metadata: unknown): boolean {
 }
 
 function getCachedThreadChatId(threadId: string): string | null {
-  return threadChatIdCache.get(threadId) ?? resolveThreadChatIdFromRow(threadCollection.get(threadId)) ?? null
+  return threadChatIdCache.get(threadId) ?? threadRepository.chatId(threadCollection.get(threadId)) ?? null
 }
 
-async function resolveThreadChatId(
+async function loadChatIdForThread(
   db: SolidDatabase,
   threadId: string | undefined,
   chatId?: string | null,
@@ -266,9 +266,9 @@ async function resolveThreadChatId(
   }
 
   const row = await findExactRecord<ThreadRow>(db as any, threadTable as any, chatId
-    ? { id: threadId, chat: buildChatTargetRef(chatId) }
+    ? threadRepository.targetForChat(chatId, threadId)
     : threadId)
-  const rowChatId = resolveThreadChatIdFromRow(row)
+  const rowChatId = threadRepository.chatId(row)
   if (!rowChatId) {
     return null
   }
@@ -415,14 +415,14 @@ async function ensureThreadStateRow(db: SolidDatabase, threadId: string): Promis
 
   const cachedChatId = getCachedThreadChatId(threadId)
   const row = await findExactRecord<ThreadRow>(db as any, threadTable as any, cachedChatId
-    ? { id: threadId, chat: buildChatTargetRef(cachedChatId) }
+    ? threadRepository.targetForChat(cachedChatId, threadId)
     : threadId)
 
   if (!row) {
     throw new Error(`Thread ${threadId} was not found in the Pod`)
   }
 
-  const rowChatId = resolveThreadChatIdFromRow(row)
+  const rowChatId = threadRepository.chatId(row)
   if (rowChatId) {
     threadChatIdCache.set(threadId, rowChatId)
   }
@@ -801,7 +801,7 @@ export const chatOps = {
   getThreads(chatId: string): ThreadRow[] {
     const stateMap = threadCollection.state
     const items = Array.from(stateMap.values())
-    return items.filter((t: ThreadRow) => resolveThreadChatIdFromRow(t) === chatId)
+    return items.filter((t: ThreadRow) => threadRepository.chatId(t) === chatId)
   },
 
   /**
@@ -1051,13 +1051,12 @@ export const chatOps = {
       })
       : null
     const threadResourceId = threadTable.buildId( {
-      id: threadId,
-      chat: buildChatTargetRef(chatId),
+      ...threadRepository.targetForChat(chatId, threadId),
     })
     
     const threadData: ThreadInsert = {
       id: db ? threadResourceId : threadId,
-      chat: chatUri ?? chatId,
+      parent: chatUri ?? threadRepository.targetForChat(chatId).parent,
       title: title || `话题 ${now.toLocaleTimeString()}`,
       createdAt: now,
       updatedAt: now,
@@ -1082,7 +1081,7 @@ export const chatOps = {
     // Invalidate threads query
     queryClient.invalidateQueries({ queryKey: ['chats', chatId, 'threads'] })
     
-    return { ...threadData, id: threadId, chat: chatUri ?? chatId } as ThreadRow
+    return { ...threadData, id: threadId, parent: chatUri ?? threadRepository.targetForChat(chatId).parent } as ThreadRow
   },
 
   async ensureThreadWorkspace(input: {
@@ -1116,7 +1115,7 @@ export const chatOps = {
       if (requestedWorkspaceUri && isLocalWorkspaceUri(requestedWorkspaceUri)) {
         if (thread.workspace !== requestedWorkspaceUri) {
           await this.updateThread(input.threadId, { workspace: requestedWorkspaceUri })
-          const chatId = resolveThreadChatIdFromRow(thread)
+          const chatId = threadRepository.chatId(thread)
           if (chatId) {
             queryClient.invalidateQueries({ queryKey: QUERY_KEYS.threads(chatId) })
           }
@@ -1206,7 +1205,7 @@ export const chatOps = {
 
       if (thread.workspace !== workspaceUri) {
         await this.updateThread(input.threadId, { workspace: workspaceUri })
-        const chatId = resolveThreadChatIdFromRow(thread)
+        const chatId = threadRepository.chatId(thread)
         if (chatId) {
           queryClient.invalidateQueries({ queryKey: QUERY_KEYS.threads(chatId) })
         }
@@ -1256,8 +1255,7 @@ export const chatOps = {
       })
       : undefined
     const threadResourceId = threadTable.buildId( {
-      id,
-      chat: buildChatTargetRef(chatId),
+      ...threadRepository.targetForChat(chatId, id),
     })
     const threadUri = db
       ? threadTable.buildIriForDatabase(db,  threadResourceId)
@@ -1306,8 +1304,7 @@ export const chatOps = {
     const msgId = crypto.randomUUID()
     const now = new Date()
     const threadResourceId = threadTable.buildId( {
-      id: threadId,
-      chat: buildChatTargetRef(chatId),
+      ...threadRepository.targetForChat(chatId, threadId),
     })
     const threadRef = threadTable.buildIriForDatabase(db,  threadResourceId)
     if (!threadRef) {
@@ -1319,6 +1316,7 @@ export const chatOps = {
     const messageResource = messageTable.buildId( {
       id: msgId,
       chat: buildChatTargetRef(chatId),
+      thread: threadRef,
       createdAt: now,
     })
     const messageUri = messageTable.buildIriForDatabase(db,  messageResource)
@@ -1376,8 +1374,7 @@ export const chatOps = {
     const msgId = crypto.randomUUID()
     const now = new Date()
     const threadResourceId = threadTable.buildId( {
-      id: threadId,
-      chat: buildChatTargetRef(chatId),
+      ...threadRepository.targetForChat(chatId, threadId),
     })
     const threadRef = threadTable.buildIriForDatabase(db,  threadResourceId)
     if (!threadRef) {
@@ -1389,6 +1386,7 @@ export const chatOps = {
     const messageResource = messageTable.buildId( {
       id: msgId,
       chat: buildChatTargetRef(chatId),
+      thread: threadRef,
       createdAt: now,
     })
     const messageUri = messageTable.buildIriForDatabase(db,  messageResource)
@@ -1444,8 +1442,7 @@ export const chatOps = {
       : undefined
     const threadUri = db && chatId
       ? threadTable.buildIriForDatabase(db,  {
-        id: threadId,
-        chat: buildChatTargetRef(chatId),
+        ...threadRepository.targetForChat(chatId, threadId),
       })
       : undefined
     await runChatOpsProjection({
@@ -1739,7 +1736,7 @@ export const chatOps = {
     }
 
     rows.forEach((row) => {
-      const rowChatId = resolveThreadChatIdFromRow(row)
+      const rowChatId = threadRepository.chatId(row)
       if (row.id && rowChatId) {
         threadChatIdCache.set(row.id, rowChatId)
       }
@@ -1755,14 +1752,13 @@ export const chatOps = {
     const db = getDb()
     const cachedMessages = chatOps.getMessages(threadId)
     if (!db || cachedMessages.length > 0) return cachedMessages
-    const resolvedChatId = await resolveThreadChatId(db, threadId, chatId)
+    const resolvedChatId = await loadChatIdForThread(db, threadId, chatId)
     if (!resolvedChatId) {
       console.warn('[chatOps] Failed to resolve thread IRI for message query:', threadId)
       return chatOps.getMessages(threadId)
     }
     const threadRef = threadTable.buildIriForDatabase(db,  {
-      id: threadId,
-      chat: buildChatTargetRef(resolvedChatId),
+      ...threadRepository.targetForChat(resolvedChatId, threadId),
     })
 
     try {

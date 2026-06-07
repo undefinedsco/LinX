@@ -26,12 +26,8 @@ import { getDefaultPodDataSession, type PodDataSession } from '../pod-data-sessi
 import {
   ContactClass,
   ContactType,
-  buildChatTargetRef,
-  extractChatIdFromChatRef,
-  extractChatThreadRef,
-  extractThreadIdFromThreadRef,
+  chatRepository,
   agentResource,
-  chatResource,
   contactResource,
   deliveryResource,
   ideaResource,
@@ -41,7 +37,7 @@ import {
   runStepResource,
   sessionResource,
   taskResource,
-  threadResource,
+  threadRepository,
   type AuditInsert,
   type ChatInsert,
   type DeliveryInsert,
@@ -286,51 +282,43 @@ async function createDefaultRuntime(): Promise<SymphonyPodProjectionRuntime> {
   }
 }
 
-function normalizeChatUri(value: string | undefined, webId: string, plan?: SymphonyRunPlan): string {
+function selectTargetChatIri(value: string | undefined, webId: string, plan?: SymphonyRunPlan): string {
   if (!value) {
-    const chatId = extractChatThreadRef(plan?.session.target?.thread).chatId
-    if (chatId) {
-      return chatResource.buildIri(webId,  { id: chatId })
+    const thread = plan?.session.target?.thread
+    if (thread) {
+      return chatRepository.iri(webId, threadRepository.chatIdFromRef(thread) ?? SYMPHONY_CHAT_ID)
     }
     return buildSymphonyChatUri(webId)
   }
-  return value
+  return chatRepository.iri(webId, value)
 }
 
-function normalizeThreadUri(value: string | undefined, webId: string, plan: SymphonyRunPlan): string {
+function selectTargetThreadIri(value: string | undefined, webId: string, plan: SymphonyRunPlan): string {
   if (!value) {
-    return buildTargetThreadUri(webId, plan)
+    return selectDefaultThreadIri(webId, plan)
   }
-  return value
+  return threadRepository.iriForChat(webId, selectTargetChatIri(plan.session.target?.chat, webId, plan), value)
 }
 
 function buildTargetChatId(plan: SymphonyRunPlan, webId: string): string {
-  return extractChatIdFromChatRef(normalizeChatUri(plan.session.target?.chat, webId, plan)) ?? SYMPHONY_CHAT_ID
+  return chatRepository.target(selectTargetChatIri(plan.session.target?.chat, webId, plan)).id
 }
 
 function buildSymphonyChatUri(webId: string): string {
-  return chatResource.buildIri(webId,  { id: SYMPHONY_CHAT_ID })
+  return chatRepository.iri(webId, SYMPHONY_CHAT_ID)
 }
 
 function buildSymphonyThreadUri(webId: string, plan: SymphonyRunPlan): string {
-  return threadResource.buildIri(webId,  {
-    id: buildSymphonyThreadId(plan),
-    chat: buildChatTargetRef(SYMPHONY_CHAT_ID),
-  })
+  return threadRepository.iriForChat(webId, SYMPHONY_CHAT_ID, buildSymphonyThreadId(plan))
 }
 
-function buildTargetThreadUri(webId: string, plan: SymphonyRunPlan): string {
+function selectDefaultThreadIri(webId: string, plan: SymphonyRunPlan): string {
   const targetThread = plan.session.target?.thread
   if (targetThread) {
     return targetThread
   }
 
-  const targetChat = normalizeChatUri(plan.session.target?.chat, webId, plan)
-  if (targetChat.endsWith('#this')) {
-    return `${targetChat.slice(0, -'#this'.length)}#${encodeURIComponent(buildSymphonyThreadId(plan))}`
-  }
-
-  return buildSymphonyThreadUri(webId, plan)
+  return threadRepository.iriForChat(webId, selectTargetChatIri(plan.session.target?.chat, webId, plan), buildSymphonyThreadId(plan))
 }
 
 function buildSymphonyControlSessionUri(webId: string, plan: SymphonyRunPlan): string {
@@ -350,7 +338,8 @@ function buildSymphonyWorkerSessionUri(webId: string, worker: SymphonyRunPlan['w
 function buildSymphonyMessageUri(webId: string, plan: SymphonyRunPlan, row: Pick<MessageInsert, 'id' | 'createdAt'>): string {
   return messageResource.buildIri(webId,  {
     id: String(row.id),
-    chat: normalizeChatUri(plan.session.target?.chat, webId, plan),
+    chat: selectTargetChatIri(plan.session.target?.chat, webId, plan),
+    thread: selectTargetThreadIri(plan.session.target?.thread, webId, plan),
     createdAt: row.createdAt,
   })
 }
@@ -514,15 +503,15 @@ function buildSymphonySpaceContract(
     },
     runtimeSession: {
       relation: resolveSymphonyRuntimeSessionRelation(plan, webId, worker),
-      secretaryThread: normalizeThreadUri(plan.issue.thread, webId, plan),
-      workerThread: normalizeWorkerThreadUri(plan, webId, worker),
+      secretaryThread: selectTargetThreadIri(plan.issue.thread, webId, plan),
+      workerThread: selectWorkerThreadIri(plan, webId, worker),
       workerSession: worker.session.uri,
       topologyRule: 'session-topology-is-explicit-not-derived-from-workspace-sharing',
     },
     workspace: {
       relation: 'thread-environment-scoped',
       allocation: 'thread',
-      thread: normalizeWorkerThreadUri(plan, webId, worker),
+      thread: selectWorkerThreadIri(plan, webId, worker),
       sameThreadSameEnvironmentSharing: 'preferred',
       independentWorkIsolation: 'separate-worktree-when-needed',
       crossEnvironmentIdentity: 'artifact-or-revision-evidence-required',
@@ -535,8 +524,8 @@ function resolveSymphonyRuntimeSessionRelation(
   webId: string,
   worker: SymphonyRunPlan['workers'][number],
 ): string {
-  const secretaryThread = normalizeThreadUri(plan.issue.thread, webId, plan)
-  const workerThread = normalizeWorkerThreadUri(plan, webId, worker)
+  const secretaryThread = selectTargetThreadIri(plan.issue.thread, webId, plan)
+  const workerThread = selectWorkerThreadIri(plan, webId, worker)
   if (secretaryThread === workerThread) {
     return 'same-thread-or-room'
   }
@@ -635,45 +624,47 @@ function readWorkerMessages(worker: SymphonyRunPlan['workers'][number]): string[
     ?? []
 }
 
-function normalizeWorkerChatUri(
+function selectWorkerChatIri(
   plan: SymphonyRunPlan,
   webId: string,
   worker: SymphonyRunPlan['workers'][number],
 ): string {
   const chat = readWorkerChatRef(worker)
   if (chat) {
-    return normalizeChatUri(chat, webId, plan)
+    return selectTargetChatIri(chat, webId, plan)
   }
 
   const thread = readWorkerThreadRef(worker)
-  const chatId = extractChatThreadRef(thread).chatId
-  if (chatId) {
-    return chatResource.buildIri(webId,  { id: chatId })
+  if (thread) {
+    return chatRepository.iri(
+      webId,
+      threadRepository.chatIdFromRef(thread) ?? chatRepository.idFromRef(selectTargetChatIri(undefined, webId, plan)) ?? SYMPHONY_CHAT_ID,
+    )
   }
 
-  return normalizeChatUri(undefined, webId, plan)
+  return selectTargetChatIri(undefined, webId, plan)
 }
 
-function normalizeWorkerThreadUri(
+function selectWorkerThreadIri(
   plan: SymphonyRunPlan,
   webId: string,
   worker: SymphonyRunPlan['workers'][number],
 ): string {
   const thread = readWorkerThreadRef(worker)
   if (thread) {
-    return normalizeThreadUri(thread, webId, plan)
+    return selectTargetThreadIri(thread, webId, plan)
   }
 
-  const chat = normalizeWorkerChatUri(plan, webId, worker)
+  const chat = selectWorkerChatIri(plan, webId, worker)
   if (chat.endsWith('#this')) {
     return `${chat.slice(0, -'#this'.length)}#${encodeURIComponent(buildSymphonySessionRecordId(worker.session))}`
   }
 
-  return normalizeThreadUri(undefined, webId, plan)
+  return selectTargetThreadIri(undefined, webId, plan)
 }
 
 function buildWorkerThreadId(plan: SymphonyRunPlan, webId: string, worker: SymphonyRunPlan['workers'][number]): string {
-  return extractThreadIdFromThreadRef(normalizeWorkerThreadUri(plan, webId, worker))
+  return threadRepository.idFromRef(selectWorkerThreadIri(plan, webId, worker))
     ?? buildSymphonySessionRecordId(worker.session)
 }
 
@@ -742,12 +733,12 @@ function withTargetRefs(
   webId: string,
 ): SymphonyRunPlan {
   const workers = plan.workers.map((worker, index) => {
-    const workerThread = normalizeWorkerThreadUri(plan, webId, worker)
+    const workerThread = selectWorkerThreadIri(plan, webId, worker)
     const sameThreadAsControl = workerThread === refs.thread
     const workerRefs = index === 0
       ? refs
       : {
-        chat: normalizeWorkerChatUri(plan, webId, worker),
+        chat: selectWorkerChatIri(plan, webId, worker),
         thread: workerThread,
         messages: sameThreadAsControl ? refs.messages : readWorkerMessages(worker),
       }
@@ -828,7 +819,7 @@ function buildSymphonyChatRow(plan: SymphonyRunPlan, webId: string, stage: Proje
     id: buildWorkerAgentId(worker.session.backend, worker.session.target.agent),
   }))
   const participants = Array.from(new Set([webId, secretaryAgent, ...workerAgents]))
-  const targetChat = normalizeChatUri(plan.session.target?.chat, webId, plan)
+  const targetChat = selectTargetChatIri(plan.session.target?.chat, webId, plan)
 
   return {
     id: buildTargetChatId(plan, webId),
@@ -874,8 +865,8 @@ interface SymphonyThreadProjectionGroup {
 function collectSymphonyThreadProjectionGroups(plan: SymphonyRunPlan, webId: string): SymphonyThreadProjectionGroup[] {
   const groups = new Map<string, SymphonyThreadProjectionGroup>()
   for (const worker of plan.workers) {
-    const chat = normalizeWorkerChatUri(plan, webId, worker)
-    const thread = normalizeWorkerThreadUri(plan, webId, worker)
+    const chat = selectWorkerChatIri(plan, webId, worker)
+    const thread = selectWorkerThreadIri(plan, webId, worker)
     const key = `${chat}\0${thread}`
     const existing = groups.get(key)
     if (existing) {
@@ -906,7 +897,7 @@ function buildSymphonyWorkerSummary(
     status: worker.session.status,
     autoModeSessionId: worker.session.autoModeSessionId,
     target: worker.session.target,
-    thread: normalizeWorkerThreadUri(plan, webId, worker),
+    thread: selectWorkerThreadIri(plan, webId, worker),
     workspace: buildSymphonyWorkspaceMetadata(plan, worker),
     podAccessPolicy: buildSymphonyWorkerPodAccessPolicy(plan, webId, worker),
     reconciler: buildSymphonyReconcilerMetadata(worker),
@@ -978,13 +969,13 @@ function buildSymphonyThreadRow(
   }
   const createdAt = safeDate(primaryWorker.session.createdAt)
   const updatedAt = safeDate(primaryWorker.session.updatedAt)
-  const chat = group?.chat ?? normalizeChatUri(plan.session.target?.chat, webId, plan)
-  const thread = group?.thread ?? normalizeThreadUri(plan.session.target?.thread, webId, plan)
+  const parent = group?.chat ?? selectTargetChatIri(plan.session.target?.chat, webId, plan)
+  const thread = group?.thread ?? selectTargetThreadIri(plan.session.target?.thread, webId, plan)
   const workspace = pathToWorkspaceUri(primaryWorker.session.cwd) ?? pathToWorkspaceUri(plan.session.cwd)
 
   return {
-    id: extractThreadIdFromThreadRef(thread) ?? buildWorkerThreadId(plan, webId, primaryWorker),
-    chat,
+    id: threadRepository.idForChat(parent, thread),
+    parent,
     title: normalizeTitle(plan.issue.title || plan.issue.description || 'Symphony Task'),
     ...(workspace ? { workspace } : {}),
     metadata: {
@@ -1036,8 +1027,8 @@ function buildSymphonySessionRow(
   return {
     id: buildSymphonySessionRecordId(worker.session),
     owner: webId,
-    chat: normalizeWorkerChatUri(plan, webId, worker),
-    thread: normalizeWorkerThreadUri(plan, webId, worker),
+    chat: selectWorkerChatIri(plan, webId, worker),
+    thread: selectWorkerThreadIri(plan, webId, worker),
     sessionType: 'group',
     status,
     tool: `symphony:${worker.session.backend}`,
@@ -1082,8 +1073,8 @@ function buildSymphonyIssueRow(plan: SymphonyRunPlan, webId: string): IssueInser
     status: plan.issue.status,
     priority: plan.issue.priority,
     labels: ['symphony'],
-    chat: normalizeChatUri(plan.session.target?.chat, webId, plan),
-    thread: normalizeThreadUri(plan.session.target?.thread, webId, plan),
+    chat: selectTargetChatIri(plan.session.target?.chat, webId, plan),
+    thread: selectTargetThreadIri(plan.session.target?.thread, webId, plan),
     tasks: Array.from(new Set((plan.issue.tasks?.length ? plan.issue.tasks : plan.workers.map((worker) => worker.task))
       .map((task) => normalizeSymphonyTaskIri(webId, task)))),
     createdBy: plan.issue.issuer.webId ?? webId,
@@ -1150,7 +1141,7 @@ function buildSymphonyTaskRow(plan: SymphonyRunPlan, webId: string, worker: Symp
     prompt: worker.delivery.projection.prompt,
     issue: buildSymphonyIssueIri(webId, plan.issue),
     message: plan.issue.messages?.at(-1),
-    thread: normalizeWorkerThreadUri(plan, webId, worker),
+    thread: selectWorkerThreadIri(plan, webId, worker),
     workspace: pathToWorkspaceUri(worker.session.cwd) ?? pathToWorkspaceUri(plan.session.cwd) ?? 'file:///',
     status: mapSymphonyTaskStatus(worker.taskRecord.status),
     priority: plan.issue.priority,
@@ -1190,9 +1181,9 @@ function buildSymphonyDeliveryRow(plan: SymphonyRunPlan, webId: string, worker: 
     task: buildSymphonyTaskIri(webId, worker.task),
     source: secretaryAgent,
     target: workerAgent,
-    chat: normalizeWorkerChatUri(plan, webId, worker),
-    thread: normalizeWorkerThreadUri(plan, webId, worker),
-    targetThread: normalizeWorkerThreadUri(plan, webId, worker),
+    chat: selectWorkerChatIri(plan, webId, worker),
+    thread: selectWorkerThreadIri(plan, webId, worker),
+    targetThread: selectWorkerThreadIri(plan, webId, worker),
     targetSession: worker.session.uri,
     actor: secretaryAgent,
     object: buildSymphonyTaskIri(webId, worker.task),
@@ -1264,9 +1255,9 @@ function buildSymphonyReportDeliveryRow(
     task,
     source: workerAgent,
     target: secretaryAgent,
-    chat: normalizeWorkerChatUri(plan, webId, worker),
-    thread: normalizeWorkerThreadUri(plan, webId, worker),
-    targetThread: normalizeThreadUri(plan.issue.thread ?? worker.session.target?.thread, webId, plan),
+    chat: selectWorkerChatIri(plan, webId, worker),
+    thread: selectWorkerThreadIri(plan, webId, worker),
+    targetThread: selectTargetThreadIri(plan.issue.thread ?? worker.session.target?.thread, webId, plan),
     targetSession: buildSymphonyControlSessionUri(webId, plan),
     actor: workerAgent,
     object: run,
@@ -1328,7 +1319,7 @@ function buildSymphonyRunRow(plan: SymphonyRunPlan, webId: string, worker: Symph
     delivery: buildSymphonyDeliveryIri(webId, worker),
     trigger: plan.issue.messages?.at(-1) ?? buildSymphonyIssueIri(webId, plan.issue),
     input: buildSymphonyDeliveryIri(webId, worker),
-    thread: normalizeWorkerThreadUri(plan, webId, worker),
+    thread: selectWorkerThreadIri(plan, webId, worker),
     workspace: pathToWorkspaceUri(worker.session.cwd) ?? pathToWorkspaceUri(plan.session.cwd) ?? 'file:///',
     status: mapSymphonyRunStatus(worker.session.status),
     runner: worker.session.backend,
@@ -1519,8 +1510,8 @@ function buildStatusMessageRow(plan: SymphonyRunPlan, webId: string, stage: Proj
 
   return {
     id: `${buildSymphonyThreadId(plan)}-${stage}`,
-    chat: normalizeChatUri(plan.session.target?.chat, webId, plan),
-    thread: normalizeThreadUri(plan.session.target?.thread, webId, plan),
+    chat: selectTargetChatIri(plan.session.target?.chat, webId, plan),
+    thread: selectTargetThreadIri(plan.session.target?.thread, webId, plan),
     maker: secretaryAgent,
     role: 'assistant',
     content,
@@ -1623,7 +1614,7 @@ async function upsertChat(db: PodProjectionDb, runtime: SymphonyPodProjectionRun
 }
 
 async function upsertThread(db: PodProjectionDb, runtime: SymphonyPodProjectionRuntime, row: ThreadInsert): Promise<void> {
-  await upsertExactRecord(db, runtime.threadResource, { id: row.id, chat: row.chat }, row as Record<string, unknown>, {
+  await upsertExactRecord(db, runtime.threadResource, { id: row.id }, row as Record<string, unknown>, {
     title: row.title,
     metadata: row.metadata,
     updatedAt: row.updatedAt,
@@ -1840,7 +1831,7 @@ function collectSymphonyProjectionResources(
     })
   }
 
-  add('chat', normalizeChatUri(plan.session.target?.chat, webId, plan))
+  add('chat', selectTargetChatIri(plan.session.target?.chat, webId, plan))
   add('issue', buildSymphonyIssueIri(webId, plan.issue))
 
   for (const message of collectMessageUris(webId, plan, stages)) {
@@ -1855,8 +1846,8 @@ function collectSymphonyProjectionResources(
   }
 
   for (const worker of plan.workers) {
-    add('chat', normalizeWorkerChatUri(plan, webId, worker))
-    add('thread', normalizeWorkerThreadUri(plan, webId, worker))
+    add('chat', selectWorkerChatIri(plan, webId, worker))
+    add('thread', selectWorkerThreadIri(plan, webId, worker))
     add('session', buildSymphonyWorkerSessionUri(webId, worker))
     add('task', buildSymphonyTaskIri(webId, worker.task))
     add('delivery', buildSymphonyDeliveryIri(webId, worker))
@@ -1899,8 +1890,8 @@ export async function persistSymphonyProjectionToPod(
     : [stage]
   const messages = collectMessageUris(podSession.webId, normalizedPlan, stages)
   const refs = {
-    chat: normalizeChatUri(normalizedPlan.session.target?.chat, podSession.webId, normalizedPlan),
-    thread: normalizeThreadUri(normalizedPlan.session.target?.thread, podSession.webId, normalizedPlan),
+    chat: selectTargetChatIri(normalizedPlan.session.target?.chat, podSession.webId, normalizedPlan),
+    thread: selectTargetThreadIri(normalizedPlan.session.target?.thread, podSession.webId, normalizedPlan),
     messages,
   }
   const projected = withTargetRefs(normalizedPlan, refs, podSession.webId)
@@ -1921,11 +1912,11 @@ export async function persistSymphonyProjectionToPod(
       },
       chat: {
         uri: refs.chat,
-        local: extractChatIdFromChatRef(refs.chat) ?? undefined,
+        local: chatRepository.target(refs.chat).id,
       },
       thread: {
         uri: refs.thread,
-        local: extractThreadIdFromThreadRef(refs.thread) ?? buildSymphonyThreadId(projected),
+        local: threadRepository.idFromRef(refs.thread) ?? buildSymphonyThreadId(projected),
       },
     },
     metadata: {
@@ -2159,8 +2150,8 @@ export async function persistSymphonyIdeaToPod(
         }),
         local: getSymphonyArchiveKey(idea.uri),
       },
-      ...(idea.chat ? { chat: { uri: idea.chat, local: extractChatIdFromChatRef(idea.chat) ?? undefined } } : {}),
-      ...(idea.thread ? { thread: { uri: idea.thread, local: extractThreadIdFromThreadRef(idea.thread) ?? undefined } } : {}),
+      ...(idea.chat ? { chat: { uri: idea.chat, local: chatRepository.target(idea.chat).id } } : {}),
+      ...(idea.thread ? { thread: { uri: idea.thread, local: threadRepository.idFromRef(idea.thread) } } : {}),
     },
     metadata: {
       idea: idea.uri,

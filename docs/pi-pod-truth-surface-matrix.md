@@ -71,8 +71,8 @@ Rules:
    against a developer's personal WebID or a customer account.
 
 Production write smoke scripts must fail closed unless the active WebID matches the explicit
-`LINX_PROD_SMOKE_WEBID` environment variable. Use an isolated `HOME` or credential directory for
-that account so local `~/.linx` state does not accidentally point production smoke at a personal Pod.
+`LINX_PROD_SMOKE_WEBID` environment variable. Use an isolated `HOME` or Solid auth directory for
+that account so local `~/.solid/auth` state does not accidentally point production smoke at a personal Pod.
 
 Implication: the earlier attempt to adapt schemas to vanilla CSS was the wrong direction. The fix is
 to keep xpod semantics intact and make the test harness target local xpod.

@@ -7,12 +7,15 @@ import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 
 function createSessionManager() {
   const entries = []
+  let leafId = null
+  let sessionId = '019df000-aaaa-bbbb-cccc-000000000001'
+  let sessionFile = '/tmp/demo/session.jsonl'
   return {
     getSessionId() {
-      return '019df000-aaaa-bbbb-cccc-000000000001'
+      return sessionId
     },
     getSessionFile() {
-      return '/tmp/demo/session.jsonl'
+      return sessionFile
     },
     getSessionName() {
       return undefined
@@ -20,8 +23,41 @@ function createSessionManager() {
     getEntries() {
       return entries
     },
+    getLeafId() {
+      return leafId
+    },
+    getEntry(id) {
+      return entries.find((entry) => entry.id === id)
+    },
+    getBranch(fromId = leafId) {
+      if (!fromId) {
+        return []
+      }
+      const byId = new Map(entries.map((entry) => [entry.id, entry]))
+      const branch = []
+      let current = byId.get(fromId)
+      while (current) {
+        branch.unshift(current)
+        current = current.parentId ? byId.get(current.parentId) : undefined
+      }
+      return branch
+    },
+    branch(id) {
+      if (!entries.some((entry) => entry.id === id)) {
+        throw new Error(`unknown entry ${id}`)
+      }
+      leafId = id
+    },
+    resetLeaf() {
+      leafId = null
+    },
+    setSessionId(id) {
+      sessionId = id
+      sessionFile = `/tmp/demo/${id}.jsonl`
+    },
     appendTestEntry(entry) {
       entries.push(entry)
+      leafId = entry.id
     },
   }
 }
@@ -53,7 +89,7 @@ function createFakePodRuntime() {
       return `${podBase}/.data/chat/${encodeURIComponent(locator.id)}/index.ttl#this`
     }
     if (name === 'thread') {
-      const chatId = chatIdFromRef(locator.chat)
+      const chatId = chatIdFromRef(locator.parent)
       return `${podBase}/.data/chat/${encodeURIComponent(chatId)}/index.ttl#${encodeURIComponent(locator.id)}`
     }
     if (name === 'agent') {
@@ -81,9 +117,9 @@ function createFakePodRuntime() {
   }
   const rowLocator = (table, row) => {
     const name = tableName(table)
-    if (name === 'thread') return { id: row.id, chat: row.chat }
+    if (name === 'thread') return { id: row.id, parent: row.parent }
     if (name === 'session') return { id: row.id, createdAt: row.createdAt }
-    if (name === 'chat_message') return { id: row.id, chat: row.chat, createdAt: row.createdAt }
+    if (name === 'chat_message') return { id: row.id, chat: row.chat, thread: row.thread, createdAt: row.createdAt }
     if (name === 'audit') return { id: row.id, createdAt: row.createdAt }
     if (name === 'skill') return { id: row.id, agent: row.agent }
     return { id: row.id }
@@ -266,6 +302,66 @@ test('buildPodMessageRow keeps tool results as system messages linked to the sam
   assert.equal(row.content, '[tool:bash] /tmp/demo')
 })
 
+test('buildPodMessageRow sanitizes invalid Pod literal text before RDF projection', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/pod-mirror-mapping.ts')
+  t.after(() => cleanup())
+
+  const invalidText = `bad ${String.fromCharCode(0xD83C)}${String.fromCharCode(0x1B)} text`
+  const row = module.buildPodMessageRow(
+    'https://id.undefineds.co/alice/profile/card#me',
+    { sessionManager: createSessionManager() },
+    {
+      type: 'message',
+      id: 't1',
+      parentId: 'a1',
+      timestamp: '2026-04-01T00:00:02.000Z',
+      message: {
+        role: 'toolResult',
+        toolCallId: 'call_1',
+        toolName: 'bash',
+        content: [{ type: 'text', text: invalidText }],
+        isError: false,
+        timestamp: Date.parse('2026-04-01T00:00:02.000Z'),
+      },
+    },
+  )
+
+  assert.equal(row.content.includes(String.fromCharCode(0xD83C)), false)
+  assert.equal(row.content.includes(String.fromCharCode(0x1B)), false)
+  assert.match(row.content, /\uFFFD/)
+  assert.doesNotThrow(() => JSON.parse(row.richContent))
+})
+
+test('buildPodMessageRow skips operational assistant cloud/auth errors from durable Pod chat', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/pod-mirror-mapping.ts')
+  t.after(() => cleanup())
+
+  for (const errorMessage of [
+    'LinX Cloud is temporarily unavailable. Please retry shortly.',
+    'LinX Cloud login expired.',
+  ]) {
+    const row = module.buildPodMessageRow(
+      'https://id.undefineds.co/alice/profile/card#me',
+      { sessionManager: createSessionManager() },
+      {
+        type: 'message',
+        id: `a-${errorMessage}`,
+        parentId: 'u1',
+        timestamp: '2026-04-01T00:00:03.000Z',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: errorMessage }],
+          stopReason: 'error',
+          errorMessage,
+          timestamp: Date.parse('2026-04-01T00:00:03.000Z'),
+        },
+      },
+    )
+
+    assert.equal(row, null)
+  }
+})
+
 test('LinxPiPodMirror persists Pi session events into Pod tables', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/pod-mirror.ts')
   t.after(() => cleanup())
@@ -317,6 +413,119 @@ test('LinxPiPodMirror persists Pi session events into Pod tables', async (t) => 
   assert.equal(runtimeSessionRow.metadata.runtimeSnapshot.runtime.backend, 'linx')
   assert.equal(runtimeSessionRow.metadata.runtimeSnapshot.runtime.runtime, 'pi')
   assert.equal(runtimeSessionRow.metadata.runtimeSnapshot.skills[0].name, 'symphony')
+})
+
+test('LinxPiPodMirror retries transient Pod projection failures before checkpointing', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/pod-mirror.ts')
+  t.after(() => cleanup())
+
+  const sessionManager = createSessionManager()
+  const message = {
+    role: 'user',
+    content: [{ type: 'text', text: 'retry transient pod failure' }],
+    timestamp: Date.parse('2026-04-01T00:00:00.000Z'),
+  }
+  sessionManager.appendTestEntry({
+    type: 'message',
+    id: 'u1',
+    parentId: null,
+    timestamp: '2026-04-01T00:00:00.000Z',
+    message,
+  })
+
+  let transientFailures = 2
+  const { runtime, rows } = createFakePodRuntime()
+  const mirror = new module.LinxPiPodMirror({
+    cwd: '/tmp/demo',
+    sessionManager,
+    runtime: {
+      ...runtime,
+      createDb(session) {
+        const db = runtime.createDb(session)
+        return {
+          ...db,
+          async findByIri(table, iri) {
+            if (transientFailures > 0) {
+              transientFailures -= 1
+              throw new Error(`Could not retrieve ${iri} (HTTP status 502): Bad Gateway`)
+            }
+            return db.findByIri(table, iri)
+          },
+        }
+      },
+    },
+  })
+
+  mirror.handleEvent({ type: 'message_end', message })
+  await mirror.flush()
+
+  assert.equal(transientFailures, 0)
+  assert.equal(mirror.getSyncResults().at(-1).status, 'completed')
+  assert.equal([...rows.values()].some((row) => row.content === 'retry transient pod failure'), true)
+})
+
+test('LinxPiPodMirror disables same-session projection after Pod auth failures', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/pod-mirror.ts')
+  t.after(() => cleanup())
+
+  const sessionManager = createSessionManager()
+  const firstMessage = {
+    role: 'user',
+    content: [{ type: 'text', text: 'first auth failure' }],
+    timestamp: Date.parse('2026-04-01T00:00:00.000Z'),
+  }
+  const secondMessage = {
+    role: 'user',
+    content: [{ type: 'text', text: 'should not retry same broken pod auth' }],
+    timestamp: Date.parse('2026-04-01T00:00:01.000Z'),
+  }
+  sessionManager.appendTestEntry({
+    type: 'message',
+    id: 'u1',
+    parentId: null,
+    timestamp: '2026-04-01T00:00:00.000Z',
+    message: firstMessage,
+  })
+  sessionManager.appendTestEntry({
+    type: 'message',
+    id: 'u2',
+    parentId: 'u1',
+    timestamp: '2026-04-01T00:00:01.000Z',
+    message: secondMessage,
+  })
+
+  const errors = []
+  const { runtime, writes } = createFakePodRuntime()
+  const mirror = new module.LinxPiPodMirror({
+    cwd: '/tmp/demo',
+    sessionManager,
+    runtime: {
+      ...runtime,
+      createDb(session) {
+        const db = runtime.createDb(session)
+        return {
+          ...db,
+          async findByIri(_table, iri) {
+            throw new Error(`Could not retrieve ${iri} (HTTP status 401): UnauthorizedHttpError`)
+          },
+        }
+      },
+    },
+    onError(error) {
+      errors.push(error)
+    },
+  })
+
+  mirror.handleEvent({ type: 'message_end', message: firstMessage })
+  await mirror.flush()
+  mirror.handleEvent({ type: 'message_end', message: secondMessage })
+  await mirror.flush()
+
+  assert.equal(errors.length, 1)
+  assert.match(errors[0].message, /401|Unauthorized/)
+  assert.equal(mirror.getSyncCheckpoints().length, 1)
+  assert.match(mirror.getSyncCheckpoints()[0].failures[0].message, /401|Unauthorized/)
+  assert.equal(writes.length, 0)
 })
 
 test('LinxPiPodMirror projects auto control-plane state into Pod session metadata', async (t) => {
@@ -399,6 +608,119 @@ test('LinxPiPodMirror keeps auto control-plane state while updating runtime sess
   const sessionRow = [...rows.values()].find((row) => row.tool === 'linx')
   assert.equal(sessionRow.metadata.controlPlane.linxSession.autoEnabled, true)
   assert.equal(sessionRow.metadata.controlPlane.linxSession.symphonyEnabled, false)
+})
+
+test('LinxPiPodMirror projects runtime session metadata from the active branch after rewind', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/pod-mirror.ts')
+  t.after(() => cleanup())
+
+  const sessionManager = createSessionManager()
+  const messages = [
+    {
+      entry: {
+        type: 'message',
+        id: 'u1',
+        parentId: null,
+        timestamp: '2026-04-01T00:00:00.000Z',
+        message: {
+          role: 'user',
+          content: [{ type: 'text', text: 'keep this user turn' }],
+          timestamp: Date.parse('2026-04-01T00:00:00.000Z'),
+        },
+      },
+    },
+    {
+      entry: {
+        type: 'message',
+        id: 'a1',
+        parentId: 'u1',
+        timestamp: '2026-04-01T00:00:01.000Z',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'keep this assistant turn' }],
+          provider: 'undefineds',
+          model: 'linx-lite',
+          usage: { totalTokens: 11 },
+          stopReason: 'stop',
+          timestamp: Date.parse('2026-04-01T00:00:01.000Z'),
+        },
+      },
+    },
+    {
+      entry: {
+        type: 'message',
+        id: 'u2',
+        parentId: 'a1',
+        timestamp: '2026-04-01T00:00:02.000Z',
+        message: {
+          role: 'user',
+          content: [{ type: 'text', text: 'dirty user turn' }],
+          timestamp: Date.parse('2026-04-01T00:00:02.000Z'),
+        },
+      },
+    },
+    {
+      entry: {
+        type: 'message',
+        id: 'a2',
+        parentId: 'u2',
+        timestamp: '2026-04-01T00:00:03.000Z',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'dirty assistant turn' }],
+          provider: 'undefineds',
+          model: 'linx-lite',
+          usage: { totalTokens: 23 },
+          stopReason: 'stop',
+          timestamp: Date.parse('2026-04-01T00:00:03.000Z'),
+        },
+      },
+    },
+  ]
+  for (const { entry } of messages) {
+    sessionManager.appendTestEntry(entry)
+  }
+
+  const { runtime, rows } = createFakePodRuntime()
+  const mirror = new module.LinxPiPodMirror({
+    cwd: '/tmp/demo',
+    sessionManager,
+    runtime,
+  })
+
+  for (const { entry } of messages) {
+    mirror.handleEvent({ type: 'message_end', message: entry.message })
+  }
+  await mirror.flush()
+
+  const previousSessionId = sessionManager.getSessionId()
+  sessionManager.branch('a1')
+  sessionManager.setSessionId('019df000-aaaa-bbbb-cccc-000000000002')
+  await mirror.syncRewindProjection({
+    previousSessionId,
+    previousSessionFile: '/tmp/demo/session.jsonl',
+    previousCreatedAt: '2026-04-01T00:00:00.000Z',
+    cleanSessionId: sessionManager.getSessionId(),
+    cleanSessionFile: sessionManager.getSessionFile(),
+    abandonedEntries: messages.slice(2).map(({ entry }) => entry),
+  })
+  await mirror.close()
+
+  const sessionRow = [...rows.values()].find((row) => row.tool === 'linx' && row.id === sessionManager.getSessionId())
+  const previousSessionRow = [...rows.values()].find((row) => row.tool === 'linx' && row.id === previousSessionId)
+  assert.ok(sessionRow)
+  assert.ok(previousSessionRow)
+  assert.equal(previousSessionRow.status, 'archived')
+  assert.equal(previousSessionRow.metadata.rewoundToSessionId, sessionManager.getSessionId())
+  assert.equal(sessionRow.tokenUsage, 11)
+  assert.equal(sessionRow.messages.some((ref) => ref.includes('-u1')), true)
+  assert.equal(sessionRow.messages.some((ref) => ref.includes('-a1')), true)
+  assert.equal(sessionRow.messages.some((ref) => ref.includes('-u2')), false)
+  assert.equal(sessionRow.messages.some((ref) => ref.includes('-a2')), false)
+  assert.equal(sessionRow.metadata.messages.some((ref) => ref.includes('-u2')), false)
+  assert.equal([...rows.values()].some((row) => row.content === 'keep this user turn' && row.id.includes(sessionManager.getSessionId())), true)
+  assert.equal([...rows.values()].some((row) => row.content === 'dirty user turn' && row.status === 'abandoned'), true)
+  assert.equal([...rows.values()].some((row) => row.content === 'dirty assistant turn' && row.status === 'abandoned'), true)
 })
 
 test('LinxPiPodMirror writes tool execution audits to Pod tables', async (t) => {
@@ -682,7 +1004,7 @@ test('LinxPiPodMirror replays pending failed projections from the local session 
                 return {
                   async execute() {
                     if (failWrites) {
-                      throw new Error('pod write failed')
+                      throw new Error('Could not store resource (HTTP status 502): Bad Gateway')
                     }
                     return values.execute()
                   },
@@ -709,6 +1031,60 @@ test('LinxPiPodMirror replays pending failed projections from the local session 
   assert.equal(checkpointStore.listCheckpoints({ status: 'failed' }).length, 0)
   assert.equal([...rows.values()].some((row) => row.content === 'retry me from local archive'), true)
   assert.equal(writes.filter((write) => write.table === 'chat_message' && write.op === 'insert').length, 1)
+})
+
+test('LinxPiPodMirror does not replay failed auth projection checkpoints', async (t) => {
+  const { module: mirrorModule, cleanup: cleanupMirror } = await loadAutoModeModule('lib/pi-adapter/pod-mirror.ts')
+  const { module: storeModule, cleanup: cleanupStore } = await loadAutoModeModule('lib/sync-checkpoint-store.ts')
+  t.after(() => {
+    cleanupMirror()
+    cleanupStore()
+  })
+
+  const dir = mkdtempSync(join(tmpdir(), 'linx-pi-mirror-replay-auth-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+
+  const sessionManager = createSessionManager()
+  const checkpointStore = storeModule.createFileSyncCheckpointStore({ dir })
+  const sessionId = sessionManager.getSessionId()
+  checkpointStore.writeCheckpoint({
+    id: `pi-pod-mirror:${sessionId}:message`,
+    source: 'pi-runtime',
+    target: 'pod',
+    direction: 'local-to-core',
+    plane: 'projection',
+    authority: 'core',
+    status: 'failed',
+    attempted: 1,
+    applied: 0,
+    skipped: 0,
+    failed: 1,
+    failures: [{ operationId: 'message', message: 'Could not retrieve messages.ttl (HTTP status 401): UnauthorizedHttpError' }],
+    startedAt: '2026-04-01T00:00:00.000Z',
+    completedAt: '2026-04-01T00:00:01.000Z',
+    metadata: {
+      resourceBindings: {
+        session: {
+          local: sessionId,
+        },
+      },
+      syncTaskDescription: 'message_end',
+    },
+  })
+
+  const { runtime, writes } = createFakePodRuntime()
+  const mirror = new mirrorModule.LinxPiPodMirror({
+    cwd: '/tmp/demo',
+    sessionManager,
+    checkpointStore,
+    runtime,
+  })
+
+  const replayResults = await mirror.replayPendingSync()
+
+  assert.deepEqual(replayResults, [])
+  assert.equal(checkpointStore.listCheckpoints({ status: 'failed' }).length, 1)
+  assert.equal(writes.length, 0)
 })
 
 test('LinxPiPodMirror does not clear non-replayable pending tool checkpoints during message replay', async (t) => {

@@ -276,6 +276,17 @@ test('native Pod session source reads session and messages through shared ORM re
 	                    metadata: { cwd },
 	                  },
 	                  {
+	                    id: '2026/04/01/019d4657-0000-7000-8000-000000000009.ttl',
+	                    owner: WEB_ID,
+	                    chat: '__secretary__',
+	                    thread: `${POD_BASE}/.data/chat/__secretary__/index.ttl#019d4657-0000-7000-8000-000000000009`,
+	                    tool: 'linx',
+	                    status: 'archived',
+	                    metadata: { cwd },
+	                    createdAt: new Date('2026-04-01T00:00:00.000Z'),
+	                    updatedAt: new Date('2026-04-01T00:00:02.000Z'),
+	                  },
+	                  {
 	                    id: sessionId,
 	                    owner: WEB_ID,
 	                    chat: '__secretary__',
@@ -344,6 +355,7 @@ test('native Pod session source uses session message resource refs before broad 
   const chatUri = `${POD_BASE}/.data/chat/__secretary__/index.ttl#this`
   const threadUri = `${POD_BASE}/.data/chat/__secretary__/index.ttl#${sessionId}`
   const messageUri = `${POD_BASE}/.data/chat/__secretary__/2026/04/01/messages.ttl#${sessionId}-u1`
+  const abandonedMessageUri = `${POD_BASE}/.data/chat/__secretary__/2026/04/01/messages.ttl#${sessionId}-u2`
   const idReads = []
   const iriReads = []
   let selectedMessages = false
@@ -365,7 +377,7 @@ test('native Pod session source uses session message resource refs before broad 
           thread: threadUri,
           tool: 'linx',
           status: 'active',
-          metadata: { cwd, threadUri, messages: [messageUri] },
+          metadata: { cwd, threadUri, messages: [messageUri, abandonedMessageUri] },
           createdAt: new Date('2026-04-01T00:00:00.000Z'),
           updatedAt: new Date('2026-04-01T00:00:01.000Z'),
         }
@@ -393,6 +405,16 @@ test('native Pod session source uses session message resource refs before broad 
             },
           }),
           createdAt: new Date('2026-04-01T00:00:00.000Z'),
+        }
+      }
+      if (resource?.config?.name === 'chat_message' && iri === abandonedMessageUri) {
+        return {
+          id: '2026/04/01/messages.ttl#019d4657-0000-7000-8000-000000000002-u2',
+          thread: threadUri,
+          role: 'user',
+          content: 'dirty exact resource',
+          status: 'abandoned',
+          createdAt: new Date('2026-04-01T00:00:01.000Z'),
         }
       }
       return null
@@ -442,5 +464,6 @@ test('native Pod session source uses session message resource refs before broad 
   ])
   assert.deepEqual(iriReads, [
     { resource: 'chat_message', iri: messageUri },
+    { resource: 'chat_message', iri: abandonedMessageUri },
   ])
 })

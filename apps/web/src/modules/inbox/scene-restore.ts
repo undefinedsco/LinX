@@ -1,7 +1,7 @@
 import {
   extractApprovalIdFromApprovalRef,
   extractChatThreadRef,
-  resolveThreadChatId,
+  threadRepository,
   type ThreadRow,
 } from '@undefineds.co/models'
 import { isLocalWorkspaceUri } from '@/lib/data/workspace-model'
@@ -47,7 +47,7 @@ function findThreadRow(
 ): ThreadRow | null {
   if (!threadId) return null
 
-  const exact = threads.find((thread) => thread.id === threadId && (!chatId || resolveThreadChatId(thread) === chatId))
+  const exact = threads.find((thread) => thread.id === threadId && (!chatId || threadRepository.chatId(thread) === chatId))
   if (exact) return exact
   return threads.find((thread) => thread.id === threadId) ?? null
 }

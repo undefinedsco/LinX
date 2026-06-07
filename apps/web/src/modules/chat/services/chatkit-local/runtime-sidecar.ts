@@ -14,6 +14,7 @@ import {
   inboxNotificationTable,
   sessionTable,
   threadResource,
+  threadRepository,
   type ApprovalRow,
   type SolidDatabase,
 } from '@undefineds.co/models'
@@ -224,8 +225,7 @@ export class RuntimeSidecarSink {
 
   private makeThreadUri(chatId: string, threadId: string): string {
     return threadResource.buildIri(this.podBaseUrl, {
-      id: threadId,
-      chat: buildChatTargetRef(chatId),
+      ...threadRepository.targetForChat(chatId, threadId),
     })
   }
 

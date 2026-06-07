@@ -954,6 +954,9 @@ async function buildPodSessionSnapshot(
   if (!row.id || row.tool !== 'linx') {
     return null
   }
+  if (row.status === 'archived') {
+    return null
+  }
   if (row.owner && row.owner !== context.webId) {
     return null
   }
@@ -1010,6 +1013,9 @@ async function listPodSessionMessages(
         if (!message?.id) {
           return false
         }
+        if (message.status === 'abandoned' || message.deletedAt) {
+          return false
+        }
         // Exact resource reads may not hydrate inverse thread links. The
         // session-owned messages list is already the authoritative
         // pointer set, so only reject rows that explicitly point elsewhere.
@@ -1035,6 +1041,9 @@ async function listPodSessionMessages(
   return rows
     .filter((message) => {
       if (!message.id || message.thread !== session.thread) {
+        return false
+      }
+      if (message.status === 'abandoned' || message.deletedAt) {
         return false
       }
       return extractResourceLocalId(message.id).startsWith(`${extractResourceLocalId(session.id)}-`)

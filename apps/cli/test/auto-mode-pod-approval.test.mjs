@@ -26,8 +26,8 @@ mode: 'off',
     args: [],
     status: 'running',
     startedAt: '2026-03-18T00:00:00.000Z',
-    archiveDir: '/tmp/demo/.linx/auto-mode/auto_2026-03-18T00-00-00-000Z_deadbeef',
-    eventsFile: '/tmp/demo/.linx/auto-mode/auto_2026-03-18T00-00-00-000Z_deadbeef/events.jsonl',
+    archiveDir: '/tmp/demo/.solid/apps/linx/auto-mode/auto_2026-03-18T00-00-00-000Z_deadbeef',
+    eventsFile: '/tmp/demo/.solid/apps/linx/auto-mode/auto_2026-03-18T00-00-00-000Z_deadbeef/events.jsonl',
     backendSessionId: 'sess_codex_123',
     ...overrides,
   }
@@ -45,7 +45,7 @@ function createRuntime(module) {
     url: 'https://id.undefineds.co',
     webId,
     authType: 'client_credentials',
-    sourceDir: '/tmp/.linx',
+    sourceDir: '/tmp/.solid/apps/linx',
     secrets: {
       clientId: 'client-id',
       clientSecret: 'client-secret',
@@ -118,7 +118,7 @@ function createOidcRuntime(module) {
     url: 'https://id.undefineds.co',
     webId: state.webId,
     authType: 'oidc_oauth',
-    sourceDir: '/tmp/.linx',
+    sourceDir: '/tmp/.solid/apps/linx',
     secrets: {
       oidcAccessToken: 'oidc-access-token',
       oidcRefreshToken: 'oidc-refresh-token',

@@ -313,8 +313,8 @@ test('persistSymphonyProjectionToPod projects Symphony run into shared chat thre
   assert.equal(fake.findIds.length, 0)
   assert.equal(fake.findIris.length, 0)
   assert.ok(fake.findResources.some((entry) => entry.resource === fake.resources.message && entry.target.chat === result.chat))
-  assert.ok(fake.findResources.some((entry) => entry.resource === fake.resources.runStep && entry.target === 'task/task_2026-04-02T00-00-00-000Z_projection/2026/04/02/runs.ttl#session_2026-04-02T00-00-00-000Z_projection-planned'))
-  assert.ok(fake.findResources.some((entry) => entry.resource === fake.resources.runStep && entry.target === 'task/task_2026-04-02T00-00-00-000Z_projection/2026/04/02/runs.ttl#session_2026-04-02T00-00-00-000Z_projection-running'))
+  assert.ok(fake.findResources.some((entry) => entry.resource === fake.resources.runStep && entry.target === '2026/04/02/runs.ttl#session_2026-04-02T00-00-00-000Z_projection-planned'))
+  assert.ok(fake.findResources.some((entry) => entry.resource === fake.resources.runStep && entry.target === '2026/04/02/runs.ttl#session_2026-04-02T00-00-00-000Z_projection-running'))
 
   assert.equal(fake.inserts.find((item) => item.resource === fake.resources.chat)?.value, undefined)
 
@@ -352,8 +352,8 @@ test('persistSymphonyProjectionToPod projects Symphony run into shared chat thre
   assert.deepEqual(task.metadata.podAccessPolicy.assigned, {
     issue: 'https://alice.example/.data/issues/issue_2026-04-02T00-00-00-000Z_projection.ttl',
     task: 'https://alice.example/.data/task/index.ttl#task_2026-04-02T00-00-00-000Z_projection',
-    delivery: 'https://alice.example/.data/task/task_2026-04-02T00-00-00-000Z_projection/2026/04/02/deliveries.ttl#delivery_2026-04-02T00-00-00-000Z_projection',
-    run: 'https://alice.example/.data/task/task_2026-04-02T00-00-00-000Z_projection/2026/04/02/runs.ttl#session_2026-04-02T00-00-00-000Z_projection',
+    delivery: 'https://alice.example/.data/2026/04/02/deliveries.ttl#delivery_2026-04-02T00-00-00-000Z_projection',
+    run: 'https://alice.example/.data/2026/04/02/runs.ttl#session_2026-04-02T00-00-00-000Z_projection',
     session: 'https://alice.example/.data/sessions/2026/04/02/session_2026-04-02T00-00-00-000Z_projection.ttl',
     archive: {
       version: 'linx-symphony-archive/v1',
@@ -411,15 +411,15 @@ test('persistSymphonyProjectionToPod projects Symphony run into shared chat thre
   const runSteps = fake.inserts.filter((item) => item.resource === fake.resources.runStep).map((item) => item.value)
   assert.deepEqual(runSteps.map((item) => item.stepType), ['run.created', 'run.started'])
   assert.deepEqual(runSteps.map((item) => item.id), [
-    'task/task_2026-04-02T00-00-00-000Z_projection/2026/04/02/runs.ttl#session_2026-04-02T00-00-00-000Z_projection-planned',
-    'task/task_2026-04-02T00-00-00-000Z_projection/2026/04/02/runs.ttl#session_2026-04-02T00-00-00-000Z_projection-running',
+    '2026/04/02/runs.ttl#session_2026-04-02T00-00-00-000Z_projection-planned',
+    '2026/04/02/runs.ttl#session_2026-04-02T00-00-00-000Z_projection-running',
   ])
-  assert.ok(runSteps.every((item) => item.run === 'https://alice.example/.data/task/task_2026-04-02T00-00-00-000Z_projection/2026/04/02/runs.ttl#session_2026-04-02T00-00-00-000Z_projection'))
+  assert.ok(runSteps.every((item) => item.run === 'https://alice.example/.data/2026/04/02/runs.ttl#session_2026-04-02T00-00-00-000Z_projection'))
   assert.ok(runSteps.every((item) => !String(item.id).startsWith('https://')))
 
   const thread = fake.inserts.find((item) => item.resource === fake.resources.thread)?.value
-  assert.equal(thread.id, 'thread-1')
-  assert.equal(thread.chat, result.chat)
+  assert.equal(thread.id, 'chat/chat-1/index.ttl#thread-1')
+  assert.equal(thread.parent, result.chat)
   assert.equal(thread.metadata.kind, 'symphony-run')
   assert.equal(thread.metadata.issue, plan.issue.uri)
   assert.equal(thread.metadata.delivery, plan.delivery.uri)
@@ -837,7 +837,7 @@ test('completed Symphony projection includes completion message and archived ses
   assert.equal(report.target, 'https://alice.example/agents/__secretary__/')
   assert.equal(report.targetSession, 'https://alice.example/.data/sessions/2026/04/02/session_2026-04-02T00-00-00-000Z_projection.ttl')
   assert.equal(report.payload.outcome, 'completed')
-  assert.equal(report.payload.delivery, 'https://alice.example/.data/task/task_2026-04-02T00-00-00-000Z_projection/2026/04/02/deliveries.ttl#delivery_2026-04-02T00-00-00-000Z_projection')
+  assert.equal(report.payload.delivery, 'https://alice.example/.data/2026/04/02/deliveries.ttl#delivery_2026-04-02T00-00-00-000Z_projection')
   assert.match(report.payload.summary, /Verify Symphony Pod projection completed/)
   assert.match(report.payload.evidence.statusMessage, /projection-completed$/)
 
@@ -870,7 +870,7 @@ test('persistSymphonyProjectionToPod derives chat from target thread when chat i
   assert.equal(result.chat, 'https://alice.example/.data/chat/chat-2/index.ttl#this')
   assert.equal(result.thread, 'https://alice.example/.data/chat/chat-2/index.ttl#thread-2')
   assert.equal(fake.inserts.find((item) => item.resource === fake.resources.chat)?.value.id, 'chat-2')
-  assert.equal(fake.inserts.find((item) => item.resource === fake.resources.thread)?.value.id, 'thread-2')
+  assert.equal(fake.inserts.find((item) => item.resource === fake.resources.thread)?.value.id, 'chat/chat-2/index.ttl#thread-2')
 })
 
 test('persistSymphonyProjectionToPod can target a group chat without rewriting the chat resource', async () => {
@@ -897,7 +897,7 @@ test('persistSymphonyProjectionToPod can target a group chat without rewriting t
   assert.equal(result.chat, 'https://alice.example/.data/chat/group-design/index.ttl#this')
   assert.equal(result.thread, 'https://alice.example/.data/chat/group-design/index.ttl#thread-group')
   assert.equal(fake.inserts.find((item) => item.resource === fake.resources.chat)?.value, undefined)
-  assert.equal(fake.inserts.find((item) => item.resource === fake.resources.thread)?.value.chat, result.chat)
+  assert.equal(fake.inserts.find((item) => item.resource === fake.resources.thread)?.value.parent, result.chat)
   assert.equal(fake.inserts.find((item) => item.resource === fake.resources.message)?.value.chat, result.chat)
 })
 
@@ -1111,9 +1111,9 @@ test('persistSymphonyProjectionToPod preserves each worker Thread Session and wo
 
   const threads = fake.inserts.filter((item) => item.resource === fake.resources.thread).map((item) => item.value)
   assert.equal(threads.length, 2)
-  assert.deepEqual(threads.map((thread) => thread.id).sort(), ['thread-1', 'thread-2'])
-  const reviewThread = threads.find((thread) => thread.id === 'thread-2')
-  assert.equal(reviewThread.chat, secondChat)
+  assert.deepEqual(threads.map((thread) => thread.id).sort(), ['chat/chat-1/index.ttl#thread-1', 'chat/chat-2/index.ttl#thread-2'])
+  const reviewThread = threads.find((thread) => thread.id === 'chat/chat-2/index.ttl#thread-2')
+  assert.equal(reviewThread.parent, secondChat)
   assert.equal(reviewThread.workspace, 'file:///tmp/linx-review')
   assert.equal(reviewThread.metadata.workers.length, 1)
   assert.equal(reviewThread.metadata.workers[0].thread, secondThread)

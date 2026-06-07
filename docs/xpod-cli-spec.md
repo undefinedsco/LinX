@@ -130,6 +130,24 @@ xpod auth whoami [--json]
 
 Rules:
 
+- `xpod auth login` and `linx login` are two UIs over the same Solid auth
+  bootstrap store, `~/.solid/auth`. xpod must not create a separate Solid login
+  authority under `~/.xpod`.
+- When `xpod` is invoked inside an Agent Runtime, inherited runtime authority
+  is the preferred auth source. If the runtime has authority to access the
+  user's Pod, `xpod` commands spawned by that runtime must be able to perform
+  the same Pod operations without a separate `xpod auth login`.
+- Inherited agent authority must be consumed as a runtime-provided capability,
+  not as a new durable xpod account and not by asking the AI model to manage
+  bearer tokens, refresh tokens, client secrets, cookies, or DPoP material.
+- Inherited authority takes precedence over app-local or legacy auth files so a
+  stale local xpod login cannot silently switch the acting identity inside an
+  agent session. JSON output should report `authSource: "agent_runtime"` when
+  this path is used.
+- If the runtime advertises inherited authority but xpod cannot consume it,
+  commands must fail with `code: "auth_context_unavailable"` or
+  `code: "token_exchange_failed"` instead of falling back to unrelated local
+  credentials.
 - In interactive mode, commands may explain how to log in when no session is
   available.
 - In `--json`, CI, or non-interactive mode, missing auth returns
@@ -156,6 +174,35 @@ xpod curl -- <curl-compatible-args>
 `xpod curl` is a compatibility surface for agents and scripts that already know
 curl semantics. It must not print access tokens, refresh tokens, cookies, or
 authorization headers unless a human-only debug flag explicitly requests it.
+
+### Agent Runtime Auth Bridge
+
+The agent bridge is a tool-authority mechanism, not a second login ceremony.
+
+Expected shape:
+
+- The Agent Runtime restores or holds the user's Solid session/access
+  capability through its normal login/session layer.
+- The runtime exposes that capability to child tools through a local,
+  short-lived, non-printing bridge such as a Unix socket, loopback endpoint, or
+  runtime-managed credential directory. The bridge should proxy authenticated
+  Pod requests or mint tool-scoped request capability without exposing raw
+  Solid secrets to the model transcript.
+- `xpod` discovers the bridge through explicit environment/config provided by
+  the runtime, for example an `authSource=agent_runtime` context plus endpoint
+  metadata. The exact variable names are implementation detail, but the
+  behavior must be stable and testable.
+- `xpod auth status --json` and `xpod auth whoami --json` must show the
+  effective WebID, Pod root, base IRI, and auth source. They must not print
+  tokens or bridge secrets.
+- The bridge should be scoped to the runtime session and cleaned up when the
+  runtime exits. Durable user-approved grants and audit facts still belong in
+  Pod models; the bridge only transports authority for tool execution.
+
+This lets an AI use ordinary commands such as `xpod file read`,
+`xpod obj list`, or `xpod curl -- ...` inside an authorized runtime. The AI does
+not need to learn a LinX-only private protocol, and it does not need a separate
+xpod login.
 
 ## Files
 
@@ -346,7 +393,9 @@ should use the same output contract but are not RDF/model commands.
 - xpod does not define model classes, fields, relation names, status values,
   lifecycle semantics, or URI templates.
 - xpod does not run an AI consensus/modeling loop.
-- xpod does not own LinX Secretary skills.
+- xpod does not own LinX product skills such as Symphony. The reusable
+  `xpod-cli` agent skill is maintained as an external marketplace skill and may
+  be referenced by LinX runtimes without copying its text into this repository.
 - xpod does not replace `udfs` as the model/schema CLI.
 - xpod does not add approval/grant policy. Approval and grant objects are just
   descriptor-backed objects from xpod's perspective.

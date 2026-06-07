@@ -18,7 +18,7 @@
 
 - Pod schema
 - RDF namespace / predicate / subject 规则
-- 本地 `~/.linx` 配置文件结构
+- 本地 `~/.solid/auth` Solid auth bootstrap 结构
 - auto-mode session archive 格式
 - sidecar / approval / tool-call 事件格式
 
@@ -35,8 +35,7 @@
 - `packages/agent-runtime/auto-mode`: generic JSON line / codex JSON-RPC event normalization helper
 - `packages/agent-runtime/auto-mode`: approval request / structured user-input / auto-approval decision helper
 - `packages/models`: `approval / audit / inbox_notification` 是跨端 remote approval 的共享真相
-- `packages/models/client`: `~/.linx` account/config/secrets contract
-- `packages/models/client`: linx cloud login bootstrap / whoami field helper
+- `packages/models/client`: LinX/Solid auth envelope、account session、login bootstrap 和 whoami helper
 - `packages/models/client`: linx cloud account API 与 runtime API URL 解析 helper
 
 强约束：
@@ -51,6 +50,7 @@
 - `id()` 虚拟列语义归 ORM：它表示相对 resource id，可以是 base-relative subject id（例如 `2026/05/07.ttl#approval_123`），不能在 models 或壳层被偷换成 fragment-only id。调用方已持有 full IRI、base-relative id、row 或 locator 时优先走 `findByResource/updateByResource/deleteByResource`；只知道 full IRI 时可走 `findByIri/updateByIri/deleteByIri`；只知道 locator 且 subject template 变量齐全时可走 `findByLocator/updateByLocator/deleteByLocator`。
 - UI collection/cache 层可以把 ORM 返回的 row subject 用于选中态、Map key、乐观更新合并，但不能自定义 shared storage contract，也不能替代 `drizzle-solid` 的 locator/IRI API。需要跨端共享的 row identity/locator 行为必须下沉到 `drizzle-solid`。
 - Inrupt-compatible session 可以是真实 Inrupt `Session`，也可以是由已认证 `fetch` 适配出来的 inline session：至少包含 `info.isLoggedIn=true`、`info.webId` 和 `fetch`。client credentials 与 OIDC/browser consent 只影响这个 session 如何获得，不能影响后续 shared model 查询路径。
+- Agent Runtime 内部调用的 Pod-facing 工具必须继承 runtime 的 Pod authority。`xpod` 作为外部人/脚本/agent 工具面时，可以通过 runtime-provided auth bridge 访问同一 Pod session，但不能要求 agent 额外执行 `xpod auth login`，也不能在 agent session 内优先读取无关的 app-local 或 legacy 登录态。raw token、refresh token、client secret、cookie、DPoP material 不得进入模型可见环境、消息、archive 或日志。
 - 允许留在 CLI / App 的逻辑只有壳层适配：TTY/GUI 渲染、快捷键、命令参数、Pi/Codex/Claude 协议事件到 shared insert/update DTO 的映射、本地缓存策略、错误展示。它不能决定 shared Pod resource 的存储路径、predicate、subject 或跨端状态机。
 - remote approval 的审批颗粒度必须跟原生运行时对齐：只有 Pi/Codex/Claude 等上游原生流程请求审批时，LinX 才写 `approval`/`inbox` 控制面；LinX CLI 不得用自己的工具名 allowlist/blocklist 额外发明一套审批策略。
 - remote approval 的读取分两类：等待/处理一个已知 approval 时，优先使用持久化的 `approvalUri` 做精确 subject lookup；App/Inbox 这类列表界面可以做最近日期分桶的有界发现，但不得对 `/.data/approvals/` 做无界递归扫描，也不得把列表优化理解成改变 approval URI 存储语义。
@@ -63,7 +63,7 @@
 - approval/grant/auto 质检上报必须从 shared `Approval` / `Grant` / `Audit` / `Inbox` / runtime result 事实派生；CLI/Web 可以展示或导出报表，但不能各自维护私有 telemetry 作为质量真相。
 - AI provider/model 的接口 id 可以是 `provider/model` 形式，但这不是 Pod 存储路径约定。LinX 自供模型来自 ai-gateway discovery/runtime，不写入用户 Pod 的 AI provider/model 配置资源。用户自己维护的第三方 AI 配置按 provider-scoped 文档建模：provider 位于 `/settings/providers/{providerId}.ttl`，model 位于同一文档的 `/settings/providers/{providerId}.ttl#{modelId}` fragment，两者通过 `udfs:hasModel` / `udfs:isProvidedBy` 的 IRI 关系关联。这里的 `{providerId}.ttl` 是 provider 文档，不代表接口层把 provider/model 合并成一个模型 id。
 - CLI/App 不得为 `approval/grant/audit` 字段定义自己的业务 predicate。shared 字段必须先在 `packages/models` 的 namespace/vocab/schema 中定义清楚，再由壳层消费。
-- Symphony 的 `Idea / Issue / Task / Delivery / Session / Run / RunStep` 在 LinX 产品运行时必须以 shared Pod TTL resource 为权威。本地持久镜像应从 Pod RDF 拉取为 JSON-LD；`~/.linx/symphony/*.json` 这类 runtime 私有 JSON 只允许作为 portable runtime、无 Pod 离线恢复或测试缓存，不得替代 `@undefineds.co/models` + `drizzle-solid` 主路径。
+- Symphony 的 `Idea / Issue / Task / Delivery / Session / Run / RunStep` 在 LinX 产品运行时必须以 shared Pod TTL resource 为权威。本地持久镜像应从 Pod RDF 拉取为 JSON-LD；`$LINX_HOME/symphony/*.json` 这类 runtime 私有 JSON 只允许作为 portable runtime、无 Pod 离线恢复或测试缓存，不得替代 `@undefineds.co/models` + `drizzle-solid` 主路径。`LINX_HOME` 默认是 `$SOLID_HOME/apps/linx`，`SOLID_HOME` 默认是 `~/.solid`。
 - Agent runtime config 和 skill binding 也是 shared resource 语义，不是 CLI/App 各自拼接的 prompt 配置。Agent 是一个容器资源，例如默认 Secretary Agent 的资源根；AgentRuntimeConfig 是这个容器的默认 meta，Solid-backed 存储用 `.meta` 描述容器本身，subject 指向容器而不是 `.meta` 文件。
 - Agent root 和 Agent WebID 必须分离。只有 AI Agent 需要独立授权、审计身份、maker/actor/requester、grant recipient 或 credential holder 时才需要 WebID；普通 Skill、Issue、Task、Run、Evidence、Report、文件和对象只使用自己的 resource URI。
 - Skill 内容必须文件化，例如 `SKILL.md` 或 skill 文件夹；RDF/meta 只记录 enabled、version、source、checksum、load policy、依赖和关系。Agent 下的 skill resource 是该 Agent 的启用/安装 binding，不是全局 Skill 本体；外部或复用 skill 通过 `source`、`version`、`checksum`、`root` 指向来源或本地 materialized copy。CLI/App 不得把完整 skill 文本复制进 AgentRuntimeConfig、message archive 或本地 JSON 作为 shared truth。

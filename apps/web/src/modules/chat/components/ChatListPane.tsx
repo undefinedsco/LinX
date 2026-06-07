@@ -26,7 +26,7 @@ import {
   useChatInit,
   useThreadIndex,
 } from '../collections'
-import { resolveThreadChatId } from '@undefineds.co/models'
+import { threadRepository } from '@undefineds.co/models'
 import { resolveRowSubject } from '@undefineds.co/drizzle-solid'
 import { useInboxItems } from '@/modules/inbox/collections'
 import { isActionableInboxItem } from '@/modules/inbox/utils'
@@ -643,7 +643,7 @@ export function ChatListPane(_props: ChatListPaneProps) {
     const workspaceBackedChatIds = new Set<string>()
     for (const thread of threads) {
       const threadId = resolveRowSubject(thread as Record<string, unknown>) ?? thread.id
-      const chatId = resolveThreadChatId(thread)
+      const chatId = threadRepository.chatId(thread)
       if (!threadId || !chatId) continue
       const list = threadsByChatId.get(chatId) ?? []
       list.push(threadId)

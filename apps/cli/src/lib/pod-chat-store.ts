@@ -7,15 +7,14 @@ import {
 } from '@linx/agent-runtime/sync'
 import {
   agentResource,
-  buildChatTargetRef,
+  chatRepository,
   chatResource,
   drizzle,
   eq,
-  extractChatIdFromChatRef,
-  extractThreadIdFromThreadRef,
   solidResources,
   messageResource,
   threadResource,
+  threadRepository,
   type MessageRow,
   type SolidDatabase,
   type ThreadRow,
@@ -39,11 +38,11 @@ const cliChatSyncResults: LinxSyncRunResult[] = []
 let cliChatSyncSeq = 0
 
 function extractChatId(chatIdOrUri: string | null | undefined): string {
-  return extractChatIdFromChatRef(chatIdOrUri) ?? DEFAULT_CHAT_ID
+  return chatRepository.idFromRef(chatIdOrUri) ?? chatIdOrUri ?? DEFAULT_CHAT_ID
 }
 
 function extractThreadId(threadIdOrUri: string | null | undefined): string | undefined {
-  return extractThreadIdFromThreadRef(threadIdOrUri) ?? undefined
+  return threadRepository.idFromRef(threadIdOrUri) ?? threadIdOrUri ?? undefined
 }
 
 export interface ThreadSummary {
@@ -169,15 +168,13 @@ function buildCliChatSyncResourceBindings(input: {
     ? (input.webId ? chatResource.buildIri(input.webId, { id: input.chatId }) : undefined)
     : undefined
   const threadUri = input.threadId && input.chatId
-    ? (input.webId ? threadResource.buildIri(input.webId, {
-      id: input.threadId,
-      chat: buildChatTargetRef(input.chatId),
-    }) : undefined)
+    ? (input.webId ? threadRepository.iriForChat(input.webId, input.chatId, input.threadId) : undefined)
     : undefined
   const messageUri = input.messageId && input.chatId && input.createdAt
     ? (input.webId ? messageResource.buildIri(input.webId, {
       id: input.messageId,
-      chat: buildChatTargetRef(input.chatId),
+      chat: chatResource.buildIri(input.webId, { id: input.chatId }),
+      ...(threadUri ? { thread: threadUri } : {}),
       createdAt: input.createdAt,
     }) : undefined)
     : undefined
@@ -254,11 +251,16 @@ export async function getOrCreateDefaultChat(session: Session): Promise<string> 
 
 export async function listThreads(session: Session, chatId: string): Promise<ThreadSummary[]> {
   const db = await initPodData(session)
-  const chatCol = (threadResource as any).chat
-  const rows = await db.select().from(threadResource).where(eq(chatCol, chatId)).orderBy('updatedAt', 'desc').execute()
+  const webId = session.info.webId
+  if (!webId) {
+    throw new Error('Missing webId in Solid session')
+  }
+  const chatUri = chatRepository.iri(webId, chatId)
+  const parentCol = (threadResource as any).parent
+  const rows = await db.select().from(threadResource).where(eq(parentCol, chatUri)).orderBy('updatedAt', 'desc').execute()
 
   return rows.map((row: any) => ({
-    id: String(row.id),
+    id: threadRepository.idFromRef(String(row.id)) ?? String(row.id),
     title: row.title || undefined,
     workspace: row.workspace || undefined,
     updatedAt: row.updatedAt ? new Date(row.updatedAt) : undefined,
@@ -288,8 +290,8 @@ export async function createThread(
     chatId,
     threadId,
   }, () => db.insert(threadResource).values({
-    id: threadId,
-    chat: chatUri,
+    id: threadRepository.idForChat(chatUri, threadId),
+    parent: chatUri,
     title: title || 'CLI Session',
     workspace: workspace || undefined,
     createdAt: now,
@@ -305,11 +307,8 @@ export async function touchThread(session: Session, threadId: string): Promise<v
   if (!webId) {
     throw new Error('Missing webId in Solid session')
   }
-  const chatId = extractChatId((await loadThread(session, threadId))?.chat) ?? DEFAULT_CHAT_ID
-  const threadRecordId = threadResource.buildId({
-    id: threadId,
-    chat: buildChatTargetRef(chatId),
-  })
+  const chatId = threadRepository.chatId(await loadThread(session, threadId)) ?? DEFAULT_CHAT_ID
+  const threadRecordId = threadRepository.idForChat(chatId, threadId)
   await runCliChatProjection({
     action: 'thread.touch',
     kind: 'update',
@@ -328,7 +327,7 @@ export async function loadMessages(session: Session, threadId: string): Promise<
     return []
   }
 
-  const chatId = extractChatId((thread as any).chat)
+  const chatId = threadRepository.chatId(thread)
   const rows = await db.select().from(messageResource).orderBy(createdAtCol).execute()
 
   return rows
@@ -358,10 +357,7 @@ export async function saveUserMessage(
   }
   const messageId = getActiveRuntime().randomUUID()
   const chatUri = chatResource.buildIri(webId, { id: chatId })
-  const threadUri = threadResource.buildIri(webId, {
-    id: threadId,
-    chat: buildChatTargetRef(chatId),
-  })
+  const threadUri = threadRepository.iriForChat(webId, chatId, threadId)
 
   await runCliChatProjection({
     action: 'message.create',
@@ -417,10 +413,7 @@ export async function saveAssistantMessage(
   }
   const messageId = getActiveRuntime().randomUUID()
   const chatUri = chatResource.buildIri(webId, { id: chatId })
-  const threadUri = threadResource.buildIri(webId, {
-    id: threadId,
-    chat: buildChatTargetRef(chatId),
-  })
+  const threadUri = threadRepository.iriForChat(webId, chatId, threadId)
 
   await runCliChatProjection({
     action: 'message.create',
@@ -465,20 +458,14 @@ export async function saveAssistantMessage(
 export async function loadThread(session: Session, threadId: string): Promise<ThreadRow | null> {
   const db = await initPodData(session)
 
-  const directChatId = extractChatId(threadId)
+  const directChatId = threadRepository.chatIdFromRef(threadId)
   const directThreadId = extractThreadId(threadId)
   if (directChatId && directThreadId) {
-    const resourceId = threadResource.buildId({
-      chat: buildChatTargetRef(directChatId),
-      id: directThreadId,
-    })
+    const resourceId = threadRepository.idForChat(directChatId, directThreadId)
     return await db.findById<ThreadRow>(threadResource, resourceId)
   }
 
-  const resourceId = threadResource.buildId({
-    chat: buildChatTargetRef(DEFAULT_CHAT_ID),
-    id: threadId,
-  })
+  const resourceId = threadRepository.idForChat(DEFAULT_CHAT_ID, threadId)
   return await db.findById<ThreadRow>(threadResource, resourceId)
 }
 

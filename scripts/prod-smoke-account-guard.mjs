@@ -23,7 +23,7 @@ export function assertDedicatedProdSmokeAccount(actualWebId, options = {}) {
   if (!expected) {
     throw new Error(
       `${scriptName} writes to a production Pod. Set ${PROD_SMOKE_WEBID_ENV} to a dedicated smoke-test WebID `
-      + `and run with that account's isolated LinX credentials. Refusing to use the default local account.`,
+      + `and run with that account's isolated Solid auth store. Refusing to use the default local account.`,
     )
   }
 

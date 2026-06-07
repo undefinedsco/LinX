@@ -96,8 +96,8 @@ test('pod chat store models CLI message persistence as local-to-core Pod sync', 
   })
 
   await db.insert(module.__podChatStoreInternal.resources.threadResource).values({
-    id: 'cli-default/index.ttl#thread-1',
-    chat: 'cli-default',
+    id: 'chat/cli-default/index.ttl#thread-1',
+    parent: 'https://alice.example/.data/chat/cli-default/index.ttl#this',
   }).execute()
 
   await module.saveUserMessage(createSession(), 'cli-default', 'thread-1', 'hello from cli')
@@ -181,8 +181,8 @@ test('pod chat store retries transient Pod write failures', async (t) => {
   })
 
   await db.insert(module.__podChatStoreInternal.resources.threadResource).values({
-    id: 'cli-default/index.ttl#thread-1',
-    chat: 'cli-default',
+    id: 'chat/cli-default/index.ttl#thread-1',
+    parent: 'https://alice.example/.data/chat/cli-default/index.ttl#this',
   }).execute()
 
   await module.saveUserMessage(createSession(), 'cli-default', 'thread-1', 'hello after retry')

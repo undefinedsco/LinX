@@ -46,7 +46,9 @@ export interface PodDataSessionRuntime {
   getOidcAccessToken(credentials: Pick<StoredCredentials, 'authType' | 'secrets' | 'webId' | 'url'>, options?: { forceRefresh?: boolean }): ReturnType<typeof getOidcAccessToken>
   authenticate(clientId: string, clientSecret: string, oidcIssuer: string): Promise<{ session: Session }>
   authTimeoutMs?: number
+  readFetchTimeoutMs?: number
   fetchTimeoutMs?: number
+  writeFetchTimeoutMs?: number
 }
 
 const defaultRuntime: PodDataSessionRuntime = {
@@ -58,7 +60,8 @@ const defaultRuntime: PodDataSessionRuntime = {
 }
 
 const DEFAULT_POD_DATA_AUTH_TIMEOUT_MS = 15_000
-const DEFAULT_POD_DATA_FETCH_TIMEOUT_MS = 30_000
+const DEFAULT_POD_DATA_READ_FETCH_TIMEOUT_MS = 5_000
+const DEFAULT_POD_DATA_WRITE_FETCH_TIMEOUT_MS = 30_000
 
 let defaultSessionPromise: Promise<PodDataSession | null> | null = null
 let defaultSessionCredentialKey: string | null = null
@@ -162,7 +165,7 @@ export async function createPodDataSession(
       url,
       init,
       podUrl,
-      runtime.fetchTimeoutMs ?? DEFAULT_POD_DATA_FETCH_TIMEOUT_MS,
+      resolvePodDataFetchTimeoutMs(runtime, init),
     )
     const runtimeFetch = createRuntimeFetch(sessionFetch)
 
@@ -198,7 +201,7 @@ export async function createPodDataSession(
       url,
       init,
       podUrl,
-      runtime.fetchTimeoutMs ?? DEFAULT_POD_DATA_FETCH_TIMEOUT_MS,
+      resolvePodDataFetchTimeoutMs(runtime, init),
     )
     const runtimeFetch = createRuntimeFetch(sessionFetch)
 
@@ -347,6 +350,19 @@ function isPodStorageRequest(url: string, podUrl: string): boolean {
   } catch {
     return true
   }
+}
+
+function resolvePodDataFetchTimeoutMs(runtime: PodDataSessionRuntime, init: RequestInit | undefined): number {
+  if (runtime.fetchTimeoutMs !== undefined) {
+    return runtime.fetchTimeoutMs
+  }
+
+  const method = (init?.method ?? 'GET').toUpperCase()
+  if (method === 'GET' || method === 'HEAD') {
+    return runtime.readFetchTimeoutMs ?? DEFAULT_POD_DATA_READ_FETCH_TIMEOUT_MS
+  }
+
+  return runtime.writeFetchTimeoutMs ?? DEFAULT_POD_DATA_WRITE_FETCH_TIMEOUT_MS
 }
 
 function isRuntimeApiRequest(target: URL): boolean {

@@ -23,6 +23,7 @@ import {
   messageResource,
   sessionResource,
   solidResources,
+  threadRepository,
 } from '../apps/cli/dist/lib/models.js'
 import { __podApprovalInternal } from '../apps/cli/dist/lib/auto-mode/pod-approval.js'
 import { loadCredentials } from '../apps/cli/dist/lib/credentials-store.js'
@@ -43,7 +44,7 @@ function podBaseUrl(webId) {
 async function createPodContext() {
   const session = await getDefaultPodDataSession()
   if (!session) {
-    throw new Error('No ~/.linx credentials found. Run `linx login` first.')
+    throw new Error('No Solid auth credentials found. Run `linx login` first.')
   }
 
   return {
@@ -145,7 +146,7 @@ async function main() {
   logStep('authenticating')
   const configuredCredentials = loadCredentials()
   if (!configuredCredentials) {
-    throw new Error('No ~/.linx credentials found. Run `linx login` with the dedicated smoke account first.')
+    throw new Error('No Solid auth credentials found. Run `linx login` with the dedicated smoke account first.')
   }
   assertDedicatedProdSmokeAccount(configuredCredentials.webId, { scriptName: 'scripts/verify-cli-pod-durable.mjs' })
   const context = await createPodContext()
@@ -197,9 +198,11 @@ async function main() {
   const chatResourceId = chatResource.buildId(chatTarget)
   const auditId = buildToolAuditId(sessionId, `${runId}-tool`, 'tool_execution_started')
   const sessionTarget = { id: sessionId, createdAt }
+  const threadUri = threadRepository.iriForChat(context.webId, DEFAULT_SECRETARY_CHAT_ID, sessionId)
   const messageTarget = {
     id: `${sessionId}-u1`,
     chat: chatUri,
+    thread: threadUri,
     createdAt,
   }
   const auditTarget = { id: auditId, createdAt }

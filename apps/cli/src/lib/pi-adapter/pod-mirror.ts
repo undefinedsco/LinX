@@ -1,3 +1,4 @@
+import { setTimeout as delay } from 'node:timers/promises'
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
 import type { SessionEntry, SessionManager } from '@earendil-works/pi-coding-agent'
 import {
@@ -47,11 +48,15 @@ import {
   buildThreadTitle,
   buildToolAuditId,
   calculateTokenUsage,
+  getActiveSessionEntries,
   pathToWorkspaceUri,
+  sanitizePodLiteralText,
+  secretaryThreadResourceId,
 } from './pod-mirror-mapping.js'
 
 const PI_POLICY_VERSION = 'linx-pi-pod-mirror/v1'
 const PI_SYMPHONY_SKILL_ID = 'symphony'
+const POD_MIRROR_TRANSIENT_RETRY_DELAYS_MS = [250, 1_000, 2_500] as const
 
 interface PodMirrorRuntime {
   getPodDataSession(): Promise<PodDataSession | null>
@@ -67,6 +72,15 @@ export interface LinxPiPodMirrorOptions {
   autoEnabled?: boolean
   symphonyEnabled?: boolean
   syncConversationRoot?: boolean
+}
+
+export interface LinxPiPodMirrorRewindProjectionInput {
+  previousSessionId?: string
+  previousSessionFile?: string
+  previousCreatedAt?: Date | string | number
+  cleanSessionId?: string
+  cleanSessionFile?: string
+  abandonedEntries?: SessionEntry[]
 }
 
 interface PodMirrorContext {
@@ -90,6 +104,7 @@ export class LinxPiPodMirror {
   private readonly runtimePromise: Promise<PodMirrorRuntime>
   private readonly syncCheckpoints = new Map<string, LinxSyncCheckpoint>()
   private readonly syncResults: LinxSyncRunResult[] = []
+  private projectionDisabledReason: string | null = null
   private closed = false
   private taskSeq = 0
 
@@ -122,6 +137,9 @@ export class LinxPiPodMirror {
 
   handleEvent(event: unknown): void {
     if (this.closed || !isRecord(event)) {
+      return
+    }
+    if (this.projectionDisabledReason) {
       return
     }
 
@@ -171,6 +189,9 @@ export class LinxPiPodMirror {
 
   syncAutoControlState(enabled: boolean): Promise<LinxSyncRunResult | null> {
     this.options.autoEnabled = enabled
+    if (this.projectionDisabledReason) {
+      return Promise.resolve(null)
+    }
     return this.enqueue('auto_control_state', async () => {
       const context = await this.getContext()
       if (!context) {
@@ -199,6 +220,9 @@ export class LinxPiPodMirror {
 
   syncSymphonyControlState(enabled: boolean): Promise<LinxSyncRunResult | null> {
     this.options.symphonyEnabled = enabled
+    if (this.projectionDisabledReason) {
+      return Promise.resolve(null)
+    }
     return this.enqueue('symphony_control_state', async () => {
       const context = await this.getContext()
       if (!context) {
@@ -221,6 +245,38 @@ export class LinxPiPodMirror {
       symphonyEnabled: enabled,
     }, {
       plane: 'control-plane',
+      authority: 'core',
+    })
+  }
+
+  syncRewindProjection(input: LinxPiPodMirrorRewindProjectionInput): Promise<LinxSyncRunResult | null> {
+    if (this.projectionDisabledReason) {
+      return Promise.resolve(null)
+    }
+    return this.enqueue('rewind_projection', async () => {
+      const context = await this.getContext()
+      if (!context) {
+        throw new Error('Pod data session unavailable for Pi rewind projection')
+      }
+
+      const refs = resolvePiResourceRefs(context, this.options)
+      if (this.options.syncConversationRoot) {
+        await ensurePiConversationRoot(context, this.options, refs)
+      }
+
+      await archivePreviousRuntimeSession(context, this.options, input)
+      await markAbandonedPreviousMessages(context, this.options, input)
+
+      this.seenMessageIds.clear()
+      this.messageResourceRefs.clear()
+      await this.persistUnseenMessageEntries()
+      await persistRuntimeSession(context, this.options, refs, 'active', this.messageResourceRefs)
+    }, {
+      previousSessionId: input.previousSessionId,
+      cleanSessionId: input.cleanSessionId,
+      abandonedEntries: input.abandonedEntries?.length ?? 0,
+    }, {
+      plane: 'projection',
       authority: 'core',
     })
   }
@@ -263,6 +319,10 @@ export class LinxPiPodMirror {
       return
     }
     this.closed = true
+    if (this.projectionDisabledReason) {
+      await this.queue.flush()
+      return
+    }
     this.enqueue('close', async () => {
       const context = await this.getContext()
       if (!context) {
@@ -286,6 +346,9 @@ export class LinxPiPodMirror {
     metadata: Record<string, unknown> = {},
     sync: { plane?: 'projection' | 'control-plane'; authority?: 'core' | 'local-runtime' } = {},
   ): Promise<LinxSyncRunResult | null> {
+    if (this.projectionDisabledReason) {
+      return Promise.resolve(null)
+    }
     const action = `pi-pod-mirror.${description}`
     return this.queue.enqueue({
       id: this.nextTaskId(),
@@ -301,7 +364,17 @@ export class LinxPiPodMirror {
         return podContext ? createPiPodMirrorSyncResourceBindings(this.options, resolvePiResourceRefs(podContext, this.options)) : undefined
       },
       run: async (context) => {
-        await task(context)
+        if (this.projectionDisabledReason) {
+          return
+        }
+        try {
+          await runWithTransientPodMirrorRetry(context, () => task(context))
+        } catch (error) {
+          if (isPodMirrorCircuitBreakerError(error)) {
+            this.projectionDisabledReason = formatPodMirrorCircuitBreakerReason(error)
+          }
+          throw error
+        }
       },
     })
   }
@@ -317,7 +390,7 @@ export class LinxPiPodMirror {
       return null
     }
 
-    const entries = [...this.options.sessionManager.getEntries()].reverse()
+    const entries = [...getActiveSessionEntries(this.options.sessionManager)].reverse()
     const timestamp = typeof (message as { timestamp?: unknown }).timestamp === 'number'
       ? (message as { timestamp: number }).timestamp
       : null
@@ -370,7 +443,7 @@ export class LinxPiPodMirror {
   }
 
   private async persistUnseenMessageEntries(): Promise<void> {
-    for (const entry of this.options.sessionManager.getEntries()) {
+    for (const entry of getActiveSessionEntries(this.options.sessionManager)) {
       if (entry.type !== 'message' || this.seenMessageIds.has(entry.id)) {
         continue
       }
@@ -471,9 +544,10 @@ async function ensurePiConversationRoot(
     updatedAt: now,
   })
 
-  await upsertExactRecord(context.db, threadResource, { id: threadId, chat: refs.chatUri }, {
-    id: threadId,
-    chat: refs.chatUri,
+  const threadResourceId = secretaryThreadResourceId(threadId)
+  await upsertExactRecord(context.db, threadResource, { id: threadResourceId }, {
+    id: threadResourceId,
+    parent: refs.chatUri,
     title: buildThreadTitle(options.sessionManager),
     workspace: pathToWorkspaceUri(options.cwd),
     metadata: buildThreadMetadata(options),
@@ -566,12 +640,13 @@ async function persistRuntimeSession(
   options: LinxPiPodMirrorOptions,
   refs: PiResourceRefs,
   status: 'active' | 'completed' = 'active',
-  messageResourceRefs: Set<string> = new Set(),
+  _messageResourceRefs: Set<string> = new Set(),
 ): Promise<void> {
   const now = new Date()
   const threadId = options.sessionManager.getSessionId()
   const runtimeSessionId = threadId
   const createdAt = getSessionCreatedAt(options.sessionManager)
+  const activeMessageResourceRefs = resolveActiveMessageResourceRefs(context, options, refs)
   const metadata = {
     cwd: options.cwd,
     sessionFile: options.sessionManager.getSessionFile(),
@@ -579,7 +654,7 @@ async function persistRuntimeSession(
     runtimeSessionId,
     surface: 'cli',
     threadUri: refs.threadUri,
-    messages: [...messageResourceRefs],
+    messages: [...activeMessageResourceRefs],
     runtimeSnapshot: createPiRuntimeSnapshot(refs, createdAt),
   }
   const controlState = buildLinxSessionControlState({
@@ -598,8 +673,8 @@ async function persistRuntimeSession(
     sessionType: 'direct',
     status,
     tool: 'linx',
-    tokenUsage: calculateTokenUsage(options.sessionManager.getEntries()),
-    messages: [...messageResourceRefs],
+    tokenUsage: calculateTokenUsage(getActiveSessionEntries(options.sessionManager)),
+    messages: [...activeMessageResourceRefs],
     policyVersion: PI_POLICY_VERSION,
     metadata: sessionMetadata,
     createdAt,
@@ -614,11 +689,130 @@ async function persistRuntimeSession(
     status,
     tool: 'linx',
     tokenUsage: row.tokenUsage,
-    messages: [...messageResourceRefs],
+    messages: [...activeMessageResourceRefs],
     policyVersion: PI_POLICY_VERSION,
     metadata: sessionMetadata,
     updatedAt: now,
   })
+}
+
+async function archivePreviousRuntimeSession(
+  context: PodMirrorContext,
+  options: LinxPiPodMirrorOptions,
+  input: LinxPiPodMirrorRewindProjectionInput,
+): Promise<void> {
+  const previousSessionId = normalizeString(input.previousSessionId)
+  if (!previousSessionId || previousSessionId === options.sessionManager.getSessionId()) {
+    return
+  }
+
+  const previousCreatedAt = toDate(input.previousCreatedAt)
+    ?? parseTimestampFromUuidLikeId(previousSessionId)
+    ?? new Date()
+  const previousRefs = resolvePiResourceRefsForSession(context, options, previousSessionId, previousCreatedAt)
+  const existing = await context.db.findByIri(sessionResource, previousRefs.sessionUri) as SessionInsert | null
+  if (!existing) {
+    return
+  }
+
+  const now = new Date()
+  const existingMetadataValue = (existing as Record<string, unknown>).metadata
+  const existingMetadata: Record<string, unknown> = isRecord(existingMetadataValue)
+    ? existingMetadataValue
+    : {}
+  await context.db.updateByIri(sessionResource, previousRefs.sessionUri, {
+    status: 'archived',
+    archivedAt: now,
+    updatedAt: now,
+    metadata: {
+      ...existingMetadata,
+      rewoundAt: now.toISOString(),
+      rewoundToSessionId: options.sessionManager.getSessionId(),
+      rewoundToSessionFile: normalizeString(input.cleanSessionFile),
+      rewindPreviousSessionFile: normalizeString(input.previousSessionFile),
+    },
+  })
+}
+
+async function markAbandonedPreviousMessages(
+  context: PodMirrorContext,
+  options: LinxPiPodMirrorOptions,
+  input: LinxPiPodMirrorRewindProjectionInput,
+): Promise<void> {
+  const previousSessionId = normalizeString(input.previousSessionId)
+  const abandonedEntries = Array.isArray(input.abandonedEntries) ? input.abandonedEntries : []
+  if (!previousSessionId || abandonedEntries.length === 0) {
+    return
+  }
+
+  const previousCreatedAt = toDate(input.previousCreatedAt)
+    ?? parseTimestampFromUuidLikeId(previousSessionId)
+    ?? new Date()
+  const previousRefs = resolvePiResourceRefsForSession(context, options, previousSessionId, previousCreatedAt)
+  const previousSessionManager = {
+    getSessionId: () => previousSessionId,
+  } as unknown as SessionManager
+  const now = new Date()
+
+  for (const entry of abandonedEntries) {
+    if (entry.type !== 'message') {
+      continue
+    }
+    const row = buildPodMessageRowFromMapping(context.webId, { sessionManager: previousSessionManager }, entry)
+    if (!row) {
+      continue
+    }
+    const normalized = normalizePodMessageRow(context, row, previousRefs)
+    const resourceRef = messageResource.buildIri(context.webId, {
+      id: normalized.id,
+      chat: normalized.chat,
+      thread: normalized.thread,
+      createdAt: normalized.createdAt,
+    })
+    const existing = await context.db.findByIri(messageResource, resourceRef)
+    if (!existing) {
+      continue
+    }
+    const existingMetadataValue = (existing as Record<string, unknown>).metadata
+    const existingMetadata: Record<string, unknown> = isRecord(existingMetadataValue)
+      ? existingMetadataValue
+      : {}
+    await context.db.updateByIri(messageResource, resourceRef, {
+      status: 'abandoned',
+      updatedAt: now,
+      metadata: {
+        ...existingMetadata,
+        rewoundAt: now.toISOString(),
+        rewoundFromSessionId: previousSessionId,
+        rewoundToSessionId: options.sessionManager.getSessionId(),
+      },
+    })
+  }
+}
+
+function resolveActiveMessageResourceRefs(
+  context: PodMirrorContext,
+  options: LinxPiPodMirrorOptions,
+  refs: PiResourceRefs,
+): Set<string> {
+  const activeRefs = new Set<string>()
+  for (const entry of getActiveSessionEntries(options.sessionManager)) {
+    if (entry.type !== 'message') {
+      continue
+    }
+    const row = buildPodMessageRowFromMapping(context.webId, options, entry)
+    if (!row) {
+      continue
+    }
+    const normalized = normalizePodMessageRow(context, row, refs)
+    activeRefs.add(messageResource.buildIri(context.webId, {
+      id: normalized.id,
+      chat: normalized.chat,
+      thread: normalized.thread,
+      createdAt: normalized.createdAt,
+    }))
+  }
+  return activeRefs
 }
 
 async function persistMessage(
@@ -631,20 +825,20 @@ async function persistMessage(
     thread: row.thread,
     maker: row.maker,
     role: row.role,
-    content: row.content,
-    ...(row.richContent ? { richContent: row.richContent } : {}),
+    content: sanitizePodLiteralText(row.content),
+    ...(row.richContent ? { richContent: sanitizePodLiteralText(row.richContent) } : {}),
     status: row.status,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   } satisfies MessageInsert
-  const resourceRef = messageResource.buildIri(context.webId,  { id: row.id, chat: row.chat, createdAt: row.createdAt })
+  const resourceRef = messageResource.buildIri(context.webId,  { id: row.id, chat: row.chat, thread: row.thread, createdAt: row.createdAt })
   await upsertByIri(context.db, messageResource, resourceRef, insert, {
     chat: row.chat,
     thread: row.thread,
     maker: row.maker,
     role: row.role,
-    content: row.content,
-    ...(row.richContent ? { richContent: row.richContent } : {}),
+    content: sanitizePodLiteralText(row.content),
+    ...(row.richContent ? { richContent: sanitizePodLiteralText(row.richContent) } : {}),
     status: row.status,
     updatedAt: row.updatedAt,
   })
@@ -660,7 +854,7 @@ async function touchPiConversation(
   const now = new Date()
   const threadId = options.sessionManager.getSessionId()
   await context.db.updateById(chatResource, DEFAULT_SECRETARY_CHAT_ID, {
-    lastMessagePreview: preview.slice(0, 100),
+    lastMessagePreview: sanitizePodLiteralText(preview).slice(0, 100),
     lastActiveAt: now,
     updatedAt: now,
   })
@@ -694,6 +888,15 @@ function createPodMirrorDb(session: PodDataSession): SolidDatabase {
 function resolvePiResourceRefs(context: PodMirrorContext, options: LinxPiPodMirrorOptions): PiResourceRefs {
   const sessionId = options.sessionManager.getSessionId()
   const createdAt = getSessionCreatedAt(options.sessionManager)
+  return resolvePiResourceRefsForSession(context, options, sessionId, createdAt)
+}
+
+function resolvePiResourceRefsForSession(
+  context: PodMirrorContext,
+  _options: LinxPiPodMirrorOptions,
+  sessionId: string,
+  createdAt: Date,
+): PiResourceRefs {
   const chatUri = chatResource.buildIri(context.webId,  { id: DEFAULT_SECRETARY_CHAT_ID })
   const agentUri = agentResource.buildIri(context.webId,  { id: PI_AGENT_ID })
   return {
@@ -704,7 +907,7 @@ function resolvePiResourceRefs(context: PodMirrorContext, options: LinxPiPodMirr
       id: PI_SYMPHONY_SKILL_ID,
       agent: agentUri,
     }),
-    threadUri: threadResource.buildIri(context.webId,  { id: sessionId, chat: chatUri }),
+    threadUri: threadResource.buildIri(context.webId, { id: secretaryThreadResourceId(sessionId) }),
   }
 }
 
@@ -750,6 +953,62 @@ async function upsertByIri(
     return
   }
   await db.updateByIri(resource, iri, update)
+}
+
+async function runWithTransientPodMirrorRetry(
+  context: LinxSyncContext,
+  task: () => Promise<void>,
+): Promise<void> {
+  for (let attempt = 0; attempt <= POD_MIRROR_TRANSIENT_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      await task()
+      return
+    } catch (error) {
+      if (attempt >= POD_MIRROR_TRANSIENT_RETRY_DELAYS_MS.length || !isTransientPodMirrorError(error)) {
+        throw error
+      }
+      await delay(POD_MIRROR_TRANSIENT_RETRY_DELAYS_MS[attempt]!, undefined, { signal: context.signal })
+    }
+  }
+}
+
+function isTransientPodMirrorError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  const normalized = message.toLowerCase()
+  if (normalized.includes('401') || normalized.includes('unauthorized')) {
+    return false
+  }
+  if (normalized.includes('invalid unicode') || normalized.includes('surrogate pair') || normalized.includes('parse error')) {
+    return false
+  }
+  return normalized.includes('http status 502')
+    || normalized.includes('http status 503')
+    || normalized.includes('http status 504')
+    || normalized.includes('502 bad gateway')
+    || normalized.includes('503 service unavailable')
+    || normalized.includes('504 gateway timeout')
+    || normalized.includes('bad gateway')
+    || normalized.includes('service unavailable')
+    || normalized.includes('gateway timeout')
+    || normalized.includes('fetch failed')
+    || normalized.includes('timed out')
+    || normalized.includes('timeout')
+}
+
+function isPodMirrorCircuitBreakerError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  const normalized = message.toLowerCase()
+  return normalized.includes('401')
+    || normalized.includes('403')
+    || normalized.includes('unauthorized')
+    || normalized.includes('forbidden')
+    || normalized.includes('invalid solid token')
+    || normalized.includes('linx cloud login expired')
+}
+
+function formatPodMirrorCircuitBreakerReason(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  return `Pod projection disabled for this session after auth/permission failure: ${message}`
 }
 
 async function insertResource(
@@ -858,11 +1117,22 @@ function createPiRuntimeSnapshot(refs: PiResourceRefs, createdAt: Date): ReturnT
 
 function isReplayablePiProjectionCheckpoint(checkpoint: LinxSyncCheckpoint): boolean {
   const syncTaskDescription = checkpoint.metadata?.syncTaskDescription ?? checkpoint.metadata?.taskDescription
-  return syncTaskDescription === 'message_end'
+  const replayableTask = syncTaskDescription === 'message_end'
     || syncTaskDescription === 'agent_end'
     || syncTaskDescription === 'retry_pending_projection'
+  if (!replayableTask) {
+    return false
+  }
+  if (!checkpoint.failures || checkpoint.failures.length === 0) {
+    return checkpoint.status === 'partial'
+  }
+  return checkpoint.failures.some((failure) => isTransientPodMirrorError(failure.message))
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
+}
+
+function normalizeString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined
 }

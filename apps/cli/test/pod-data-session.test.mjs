@@ -5,6 +5,22 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 
+function solidAuthDir(home) {
+  return join(home, '.solid', 'auth')
+}
+
+function solidCredentialsPath(home) {
+  return join(solidAuthDir(home), 'credentials.json')
+}
+
+function solidAccountPath(home) {
+  return join(solidAuthDir(home), 'account.json')
+}
+
+function solidOidcStorageDir(home) {
+  return join(solidAuthDir(home), 'oidc-storage')
+}
+
 test('createPodDataSession normalizes OIDC credentials into a restored Pod session capability', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pod-data-session.ts')
   t.after(() => cleanup())
@@ -305,6 +321,65 @@ test('runtimeFetch reuses Solid session auth without applying Pod data fetch tim
   assert.equal(await runtimeResponse.text(), 'runtime ok')
 })
 
+test('Pod data session uses a short read timeout without shortening Pod writes', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pod-data-session.ts')
+  t.after(() => cleanup())
+
+  const credentials = {
+    url: 'https://id.undefineds.co/',
+    webId: 'https://id.undefineds.co/alice/profile/card#me',
+    authType: 'oidc_oauth',
+    sourceDir: '/tmp/linx',
+    secrets: {
+      oidcAccessToken: 'access-token',
+      oidcRefreshToken: 'refresh-token',
+      oidcExpiresAt: '2030-01-01T00:00:00.000Z',
+    },
+  }
+  const runtime = {
+    readFetchTimeoutMs: 5,
+    writeFetchTimeoutMs: 25,
+    loadCredentials() {
+      return credentials
+    },
+    getClientCredentials() {
+      return null
+    },
+    async getOidcAccessToken() {
+      return 'access-token'
+    },
+    async restoreStoredOidcSession() {
+      return {
+        info: {
+          isLoggedIn: true,
+          webId: credentials.webId,
+        },
+        async fetch(_url, init) {
+          if ((init?.method ?? 'GET').toUpperCase() === 'POST') {
+            await new Promise((resolve) => setTimeout(resolve, 15))
+            return new Response('write ok', { status: 200 })
+          }
+          return new Promise(() => undefined)
+        },
+        async logout() {},
+      }
+    },
+    async authenticate() {
+      throw new Error('client credentials should not be used')
+    },
+  }
+
+  const session = await module.createPodDataSession(runtime)
+
+  await assert.rejects(
+    () => session.fetch('https://id.undefineds.co/alice/.data/slow.ttl'),
+    /LinX Pod request timed out after 0s: GET https:\/\/id\.undefineds\.co\/alice\/\.data\/slow\.ttl/,
+  )
+
+  const response = await session.fetch('https://id.undefineds.co/alice/.data/-/sparql', { method: 'POST' })
+  assert.equal(await response.text(), 'write ok')
+})
+
 test('runtimeFetch normalizes legacy Pod timeout labels for Cloud chat completions', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pod-data-session.ts')
   t.after(() => cleanup())
@@ -352,7 +427,7 @@ test('runtimeFetch normalizes legacy Pod timeout labels for Cloud chat completio
   await assert.rejects(
     () => session.runtimeFetch('https://api.undefineds.co/v1/chat/completions', { method: 'POST' }),
     (error) => {
-      assert.equal(error.message, 'LinX Cloud request timed out after 30s.')
+      assert.equal(error.message, 'LinX Cloud is temporarily unavailable. Request exceeded 30s. Please retry shortly.')
       assert.doesNotMatch(error.message, /LinX Pod request/)
       assert.match(error.cause?.message ?? '', /LinX Pod request timed out/)
       return true
@@ -416,8 +491,8 @@ test('Pod data fetch does not apply Pod timeout to LinX cloud chat completions',
 test('Pod data fetch does not classify LinX runtime API as Pod storage even when cached Pod URL is wrong', async (t) => {
   const previousHome = process.env.HOME
   const homeDir = mkdtempSync(join(tmpdir(), 'linx-pod-session-home-'))
-  mkdirSync(join(homeDir, '.linx'), { recursive: true })
-  writeFileSync(join(homeDir, '.linx', 'account.json'), `${JSON.stringify({
+  mkdirSync(solidAuthDir(homeDir), { recursive: true })
+  writeFileSync(solidAccountPath(homeDir), `${JSON.stringify({
     url: 'https://id.undefineds.co/',
     email: 'browser-consent',
     token: 'oidc-session',
@@ -640,20 +715,20 @@ test('OIDC Pod data session preserves login storage on transient refresh outage'
   t.after(() => cleanup())
 
   const home = mkdtempSync(join(tmpdir(), 'linx-pod-data-transient-oidc-home-'))
-  const linxDir = join(home, '.linx')
-  const storageDir = join(linxDir, 'oidc-storage')
+  const authDir = solidAuthDir(home)
+  const storageDir = solidOidcStorageDir(home)
   mkdirSync(storageDir, { recursive: true })
 
-  writeFileSync(join(linxDir, 'config.json'), JSON.stringify({
+  writeFileSync(solidCredentialsPath(home), JSON.stringify({
     url: 'https://id.undefineds.co/',
     webId: 'https://id.undefineds.co/alice/profile/card#me',
     authType: 'oidc_oauth',
-  }, null, 2))
-  writeFileSync(join(linxDir, 'secrets.json'), JSON.stringify({
-    oidcRefreshToken: 'refresh-token',
-    oidcAccessToken: 'access-token',
-    oidcExpiresAt: '2030-01-01T00:00:00.000Z',
-    oidcClientId: 'client-id',
+    secrets: {
+      oidcRefreshToken: 'refresh-token',
+      oidcAccessToken: 'access-token',
+      oidcExpiresAt: '2030-01-01T00:00:00.000Z',
+      oidcClientId: 'client-id',
+    },
   }, null, 2))
   writeFileSync(join(storageDir, 'sentinel'), 'keep me', 'utf-8')
   const originalHome = process.env.HOME
@@ -675,7 +750,7 @@ test('OIDC Pod data session preserves login storage on transient refresh outage'
           url: 'https://id.undefineds.co/',
           webId: 'https://id.undefineds.co/alice/profile/card#me',
           authType: 'oidc_oauth',
-          sourceDir: linxDir,
+          sourceDir: authDir,
           secrets: {
             oidcRefreshToken: 'refresh-token',
             oidcAccessToken: 'access-token',
@@ -688,7 +763,7 @@ test('OIDC Pod data session preserves login storage on transient refresh outage'
         return null
       },
       async restoreStoredOidcSession() {
-        const error = new Error('LinX Cloud is temporarily unavailable (502): Bad Gateway. Your login was not cleared; retry shortly.')
+        const error = new Error('LinX Cloud is temporarily unavailable. Your login was not cleared; retry shortly.')
         error.transientRemote = true
         throw error
       },
@@ -701,8 +776,7 @@ test('OIDC Pod data session preserves login storage on transient refresh outage'
     }),
     /LinX Cloud is temporarily unavailable/,
   )
-  assert.equal(existsSync(join(linxDir, 'config.json')), true)
-  assert.equal(existsSync(join(linxDir, 'secrets.json')), true)
+  assert.equal(existsSync(solidCredentialsPath(home)), true)
   assert.equal(existsSync(storageDir), true)
 })
 

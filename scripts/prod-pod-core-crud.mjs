@@ -36,7 +36,7 @@ function createOidcSessionLike(credentials, accessToken) {
 async function createSession() {
   const credentials = loadCredentials()
   if (!credentials) {
-    throw new Error('No ~/.linx credentials found. Run `linx login` first.')
+    throw new Error('No Solid auth credentials found. Run `linx login` first.')
   }
   assertDedicatedProdSmokeAccount(credentials.webId, { scriptName: 'scripts/prod-pod-core-crud.mjs' })
 
@@ -142,6 +142,7 @@ async function main() {
     sessionTable,
     solidSchema,
     threadTable,
+    threadRepository,
   } = await import('../packages/models/dist/index.js')
   applySolidComunicaPatches()
   const baseUrl = podBaseUrl(webId)
@@ -173,10 +174,9 @@ async function main() {
   const chatTarget = { id: chatId }
   const chatIri = chatTable.buildIri(webId, chatTarget)
   const chatResourceId = chatTable.buildId(chatTarget)
-  const threadTarget = { id: threadId, chat: chatIri }
-  const threadIri = threadTable.buildIri(webId, threadTarget)
-  const threadResourceId = threadTable.buildId(threadTarget)
-  const messageTarget = { id: messageId, chat: chatIri, createdAt: now }
+  const threadIri = threadRepository.iriForChat(webId, chatIri, threadId)
+  const threadResourceId = threadRepository.idForChat(chatIri, threadId)
+  const messageTarget = { id: messageId, chat: chatIri, thread: threadIri, createdAt: now }
   const messageIri = messageTable.buildIri(webId, messageTarget)
   const runtimeSessionTarget = { id: runtimeSessionId, createdAt: now }
   const runtimeSessionIri = sessionTable.buildIri(webId, runtimeSessionTarget)
@@ -214,8 +214,8 @@ async function main() {
     })), { title: 'Prod CRUD chat updated' })
 
     await step('thread.create', () => db.insert(threadTable).values({
-      id: threadId,
-      chat: chatIri,
+      id: threadResourceId,
+      parent: chatIri,
       title: 'Prod CRUD thread',
       workspace: `${baseUrl}/workspace/${threadId}/`,
       metadata: { source: 'prod-pod-core-crud' },
