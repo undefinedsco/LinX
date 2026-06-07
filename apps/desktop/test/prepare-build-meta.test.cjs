@@ -33,7 +33,7 @@ test('prepare-build-meta records the declared xpod dependency version by default
   assert.equal(result.status, 0, result.stderr)
   const meta = JSON.parse(fs.readFileSync(outputPath, 'utf8'))
   assert.equal(meta.version, '1.2.3')
-  assert.equal(meta.xpodVersion, '0.3.29')
+  assert.equal(meta.xpodVersion, '0.3.32')
 })
 
 test('prepare-build-meta can record a local packaged xpod resource version for explicit experiments', (t) => {

@@ -12,6 +12,7 @@ const siblingXpodRoot = path.resolve(desktopRoot, '../../../xpod')
 const packageXpodRoot = path.resolve(desktopRoot, '../../node_modules/@undefineds.co/xpod')
 const preferredSource = process.env.LINX_DESKTOP_XPOD_SOURCE?.trim().toLowerCase()
 const explicitSourceRoot = process.env.LINX_DESKTOP_XPOD_RESOURCE_ROOT?.trim()
+  || process.env.LINX_XPOD_ROOT?.trim()
 const maxResourceSizeMb = Number(process.env.LINX_DESKTOP_MAX_XPOD_RESOURCE_MB || '25')
 const forbiddenArtifactPaths = new Set([
   'dist/xpod-single.cjs',

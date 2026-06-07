@@ -10520,10 +10520,21 @@
     sparqljs "^3.7.3"
     zod "^4.1.8"
 
-"@undefineds.co/xpod@0.3.29":
-  version "0.3.29"
-  resolved "https://registry.npmmirror.com/@undefineds.co/xpod/-/xpod-0.3.29.tgz#d5a8164ee3b183fe96450efe9d4d0e733b17eeff"
-  integrity sha512-G7VYgv2RJp6yiMeEb3VsLWYmhNE5zZmCFNanpbXf7GmbrvGHI3RhaOwJIKoMeCm6/86P9AABo8JntArp23B3ow==
+"@undefineds.co/models@0.2.34":
+  version "0.2.34"
+  resolved "https://registry.npmjs.org/@undefineds.co/models/-/models-0.2.34.tgz#046a4948def82ccb302bdfedc1d032fbc0bf500e"
+  integrity sha512-I3JkjbA/vX+nEcGOip0WKFcmJz0x2o+vg8AEEhc0/fCCRnx+iBKVIYa3+smS4jxymAADmDdUsqQjBmUfnNxoTg==
+  dependencies:
+    "@comunica/query-sparql-solid" "^4.0.2"
+    "@inrupt/vocab-common-rdf" "^1.0.5"
+    "@undefineds.co/drizzle-solid" "^0.3.13"
+    n3 "^1.26.0"
+    zod "^3.22.4"
+
+"@undefineds.co/xpod@0.3.32":
+  version "0.3.32"
+  resolved "https://registry.npmmirror.com/@undefineds.co/xpod/-/xpod-0.3.32.tgz#79f8189aa581a76e4107724fc611b20a06bf51e6"
+  integrity sha512-g2KUnZ3Ksa71iUBURuzMyKolStnfac2mojGlnnoPY13hJBo9v0FPLRyq6dkXmyegjPJwrmjFrlP37kzcln/+Wg==
   dependencies:
     "@agentclientprotocol/sdk" "^0.14.1"
     "@ai-sdk/openai" "^3.0.2"
