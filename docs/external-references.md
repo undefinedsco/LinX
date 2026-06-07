@@ -1,5 +1,9 @@
 # External Code References
 
+Ongoing project status and watch signals live in
+`docs/external-project-watchlist.md`. This file keeps detailed reference notes
+and adopted comparisons after a project becomes relevant enough to analyze.
+
 ## Chat UI Projects
 
 ### Cherry Studio (MIT)

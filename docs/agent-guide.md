@@ -36,6 +36,7 @@ Skill source of truth:
 - local-first runtime 接入共享 core、source/target/authority/plane 同步建模 → 先读 `docs/local-first-pod-sync.md`。这类原则文档只讲同步语言，不讲具体资源。
 - 具体产品功能、命令行为、状态机、验收和测试 → 写在该功能自己的文档，不回填到原则文档。
 - Symphony 系统演进控制平面、系统态势、演进判断、执行控制、证据回流 → 先读 `docs/symphony-system-evolution-control-plane.md`。这类文档只讲 Symphony 第一性原理，不替代具体功能契约。
+- 外部项目、竞品、参考实现的持续跟踪 → 先读 `docs/external-project-watchlist.md`；已吸收的详细参考再看 `docs/external-references.md`。
 - 依赖、升级、版本、发版、打包、workspace、npm、yarn lock、`xpod`、`models`、`drizzle-solid` → 先读 `docs/dependency-guide.md`。
 - Solid/RDF/Pod 数据建模、URI/id、schema、vocab、repository、collection → 先读 `docs/cli-app-shared-core.md`，必要时再用 `solid-modeling` skill。
 - UI 视觉、组件分层、样式规范 → 先读 `docs/ui-style-guide.md` 和 `docs/ui-component-architecture.md`。
@@ -56,6 +57,7 @@ Feature contracts:
 - `docs/secretary/auto-symphony-contract.md` — `/auto` 单开关、backend approval 分离、Symphony 委派边界
 - `docs/xpod-cli-spec.md` — xpod CLI 的 Pod 文件/RDF/jsonl/secret/approval 能力边界，与 `udfs` 建模 CLI 分工
 - `docs/dependency-guide.md` — 依赖升级、workspace/npm 版本、`xpod`/`models` 联动与 models 独立发布规则
+- `docs/external-project-watchlist.md` — 外部项目持续跟踪清单，记录观察状态、证据、复查信号和是否需要沉淀到功能文档
 - `docs/desktop-product-strategy.md` — 桌面端 Chat-first + AI-native 产品策略
 - `docs/secretary/README.md` — AI Secretary 能力设计入口，包括存储建模、授权判断和用户请示边界
 - `docs/agent-collaboration-model.md` — Secretary 多工作现场、群聊、跨会话投递、auto 模式与 TUI 共用模型
@@ -66,6 +68,7 @@ Feature contracts:
 - `docs/ui-style-guide.md` — 视觉与样式规范
 - `docs/architecture-comparison.md` — LinX 与外部参考产品的架构对比
 - `docs/external-references.md` — 参考实现入口
+- `docs/secretary/taste/` — 主理人 taste 能力域：benchmark 全景、记忆方法论对比与选型
 
 ## Working Heuristics
 
