@@ -1,4 +1,11 @@
-import { agentHomePathFromResourceId, type BaseRelativeResourceId, type SolidDatabase } from '@undefineds.co/models'
+import {
+  agentKeyFromResourceId,
+  aiConfigModelRef,
+  aiConfigProviderRef,
+  getDefaultAIConfigCredentialId,
+  type BaseRelativeResourceId,
+  type SolidDatabase,
+} from '@undefineds.co/models'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 
 export interface EnsureAgentHomeInput {
@@ -32,41 +39,12 @@ function resolvePodPath(db: SolidDatabase, path: string): string {
   return new URL(path.replace(/^\/+/, ''), `${podBaseUrl}/`).toString()
 }
 
-async function ensurePodContainer(fetchFn: typeof fetch, containerUrl: string): Promise<void> {
-  const target = containerUrl.endsWith('/') ? containerUrl : `${containerUrl}/`
-  const head = await fetchFn(target, { method: 'HEAD' })
-  if (head.ok || head.status === 409) return
-
-  if (head.status !== 404 && head.status !== 405) {
-    throw new Error(`Failed to check Pod container ${target}: HTTP ${head.status}`)
-  }
-
-  const response = await fetchFn(target, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'text/turtle',
-      Link: '<http://www.w3.org/ns/ldp#BasicContainer>; rel="type"',
-    },
-    body: '@prefix ldp: <http://www.w3.org/ns/ldp#> .\n',
-  })
-
-  if (!response.ok && response.status !== 409) {
-    throw new Error(`Failed to create Pod container ${target}: HTTP ${response.status}`)
-  }
-}
-
 async function putPodFileIfMissing(
   fetchFn: typeof fetch,
   fileUrl: string,
   body: string,
   contentType: string,
 ): Promise<void> {
-  const head = await fetchFn(fileUrl, { method: 'HEAD' })
-  if (head.ok) return
-  if (head.status !== 404 && head.status !== 405) {
-    throw new Error(`Failed to check Pod file ${fileUrl}: HTTP ${head.status}`)
-  }
-
   const response = await fetchFn(fileUrl, {
     method: 'PUT',
     headers: {
@@ -82,63 +60,61 @@ async function putPodFileIfMissing(
 }
 
 export function buildAgentHomePath(agentId: string): string {
-  return agentHomePathFromResourceId(agentId)
+  return `/agents/${agentKeyFromResourceId(agentId)}/`
 }
 
 function buildAgentHomeFiles(input: EnsureAgentHomeInput): Array<{ path: string; body: string; contentType: string }> {
-  const config = {
-    version: 1,
-    agent: {
-      id: input.agentId,
-      name: input.name,
-    },
-    backend: {
-      provider: input.provider,
-      model: input.model,
-    },
-    compaction: {
-      mode: 'auto',
-      keepRecentTurns: 20,
-    },
-    skills: {
-      enabled: [] as string[],
-    },
-    mcp: {
-      servers: {} as Record<string, unknown>,
-    },
-  }
-
   const agentsMd = [
     `# ${input.name}`,
     '',
     'This directory is the Agent Home for this LinX agent.',
     '',
-    '- Read `config.json` for backend, model, skills, MCP, and compaction defaults.',
-    '- Read `rules.md` before using tools or touching user data.',
+    '- Read `.meta` for backend, model, skills, MCP, and compaction defaults.',
     '- Treat this Agent Home as the instruction root. Runtime sessions and workspaces do not own agent rules.',
-    '- Keep durable agent memory and configuration here; keep transient runtime state in sessions.',
+    '- Keep durable agent preferences here; keep transient runtime state in sessions.',
     '',
     input.instructions?.trim() ? '## Instructions\n\n' + input.instructions.trim() + '\n' : '',
   ].filter(Boolean).join('\n')
 
-  const rules = [
-    '# Rules',
-    '',
-    '- Ask for approval before destructive file operations.',
-    '- Prefer read-only inspection before editing.',
-    '- Keep workspace changes scoped to the active task.',
-    '- Record durable preferences in Agent Home, not in transient runtime state.',
-    '',
-  ].join('\n')
-
   return [
     { path: 'AGENTS.md', body: agentsMd, contentType: 'text/markdown; charset=utf-8' },
-    { path: 'config.json', body: JSON.stringify(config, null, 2) + '\n', contentType: 'application/json; charset=utf-8' },
-    { path: 'rules.md', body: rules, contentType: 'text/markdown; charset=utf-8' },
-    { path: 'mcp.json', body: JSON.stringify({ servers: {} }, null, 2) + '\n', contentType: 'application/json; charset=utf-8' },
+    { path: '.meta', body: buildAgentMetaTurtle(input), contentType: 'text/turtle; charset=utf-8' },
     { path: 'skills/README.md', body: '# Skills\n\nAgent-specific skills can be added here.\n', contentType: 'text/markdown; charset=utf-8' },
-    { path: 'memory.md', body: '# Memory\n\nDurable agent memory notes can be added here.\n', contentType: 'text/markdown; charset=utf-8' },
   ]
+}
+
+function buildAgentMetaTurtle(input: EnsureAgentHomeInput): string {
+  const providerId = input.provider
+  const modelId = input.model
+  const providerRef = aiConfigProviderRef(providerId)
+  const modelRef = aiConfigModelRef(providerId, modelId)
+  const credentialRef = `/settings/credentials.ttl#${getDefaultAIConfigCredentialId(providerId)}`
+  const instructions = input.instructions?.trim()
+
+  return [
+    '@prefix udfs: <https://undefineds.co/ns#> .',
+    '@prefix foaf: <http://xmlns.com/foaf/0.1/> .',
+    '@prefix dcterms: <http://purl.org/dc/terms/> .',
+    '',
+    '<#config>',
+    '  a udfs:AgentConfig ;',
+    `  foaf:name ${toTurtleString(input.name)} ;`,
+    `  udfs:provider <${providerRef}> ;`,
+    `  udfs:credential <${credentialRef}> ;`,
+    `  udfs:model <${modelRef}> ;`,
+    '  udfs:runtimeKind "codex" ;',
+    '  udfs:enabled "true" ;',
+    '  udfs:permissionMode "acceptEdits" ;',
+    '  udfs:maxTurns 20' + (instructions ? ' ;' : ' .'),
+    ...(instructions ? [
+      `  udfs:systemPrompt ${toTurtleString(instructions)} .`,
+    ] : []),
+    '',
+  ].join('\n')
+}
+
+function toTurtleString(value: string): string {
+  return JSON.stringify(value)
 }
 
 export async function ensureAgentHome(db: SolidDatabase, input: EnsureAgentHomeInput): Promise<void> {
@@ -148,9 +124,6 @@ export async function ensureAgentHome(db: SolidDatabase, input: EnsureAgentHomeI
   }
 
   const homePath = buildAgentHomePath(input.agentId)
-  await ensurePodContainer(fetchFn, resolvePodPath(db, homePath))
-  await ensurePodContainer(fetchFn, resolvePodPath(db, `${homePath}skills/`))
-
   for (const file of buildAgentHomeFiles(input)) {
     await putPodFileIfMissing(
       fetchFn,
