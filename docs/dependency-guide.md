@@ -17,6 +17,26 @@
 - `packages/models` 在 LinX 仓库中作为 git submodule 使用。
 - `apps/web` 和 `apps/cli` 通过 workspace 依赖 `@undefineds.co/models`，但 release artifact 必须依赖发布后的精确 npm 版本。
 - `@undefineds.co/models` 是跨端 schema、vocab、repository、runtime contract 和轻量 client helper 的 authority。
+- `@undefineds.co/drizzle-solid`、`@undefineds.co/xpod` 这类外部 npm 包必须先在源仓库完成版本 commit、tag 和 push，由源仓库 GitHub Actions 发布到 npm；LinX 只消费已经能从 registry 查到的版本。
+
+## 发布包消费流程
+
+LinX 不负责本地发布共享 npm 包。需要升级 `@undefineds.co/drizzle-solid`、`@undefineds.co/xpod` 或其它非 submodule 共享包时，按下面顺序执行：
+
+1. 在源仓库完成代码修改、测试和版本号 bump。
+2. 在源仓库提交 release commit，打 `vX.Y.Z` tag，并 push `main` 与 tag。
+3. 等源仓库 GitHub Actions 被 tag 触发并完成 npm publish。
+4. 在 LinX 里用 registry 验证目标版本已经可用：
+
+   ```bash
+   npm view @undefineds.co/drizzle-solid@X.Y.Z version
+   npm view @undefineds.co/xpod@X.Y.Z version
+   ```
+
+5. 只在验证通过后，更新 LinX 的 `package.json`、workspace package、`resolutions` 和 `yarn.lock`。
+6. 运行受影响 workspace 的测试和 build check，再提交 LinX 的依赖消费改动。
+
+禁止把 `npm publish` 或 `yarn publish` 作为 LinX 侧升级步骤。发布失败时回到源仓库查看 tag workflow 日志，修复后重新走 tag 驱动发布流程；不要在 LinX 工作区手工补发包。
 
 ## Models 修改入口
 

@@ -4,6 +4,7 @@ import path from 'node:path'
 
 const packageDistRoot = path.resolve('node_modules/@undefineds.co/drizzle-solid/dist')
 const packageEsmRoot = path.join(packageDistRoot, 'esm')
+const packageJsonPath = path.resolve('node_modules/@undefineds.co/drizzle-solid/package.json')
 const localDrizzleSolidDistRoot = path.resolve('../drizzle-solid/dist')
 const sourceMapPattern = /\n\/\/# sourceMappingURL=.*$/m
 
@@ -859,6 +860,10 @@ function patchBaseRelativeIdClassifier(source) {
 }
 
 function patchDrizzleSolidResourcePreparation(root) {
+  if (versionGte(getInstalledDrizzleSolidVersion(), '0.3.15')) {
+    return
+  }
+
   const runtimeFiles = [
     path.join(root, 'driver.js'),
     path.join(root, 'esm/driver.js'),
@@ -920,6 +925,34 @@ function patchDrizzleSolidResourcePreparation(root) {
       writeFileSync(filePath, patched, 'utf8')
     }
   }
+}
+
+function getInstalledDrizzleSolidVersion() {
+  if (statSync(packageJsonPath, { throwIfNoEntry: false }) == null) {
+    return null
+  }
+
+  try {
+    return JSON.parse(readFileSync(packageJsonPath, 'utf8')).version ?? null
+  } catch {
+    return null
+  }
+}
+
+function versionGte(version, minimum) {
+  if (typeof version !== 'string') {
+    return false
+  }
+
+  const parse = (value) => value.split(/[.-]/).slice(0, 3).map((part) => Number.parseInt(part, 10) || 0)
+  const current = parse(version)
+  const target = parse(minimum)
+
+  for (let index = 0; index < 3; index += 1) {
+    if (current[index] > target[index]) return true
+    if (current[index] < target[index]) return false
+  }
+  return true
 }
 
 function patchResourcePreparationDriverRuntime(source) {
@@ -1303,7 +1336,8 @@ function assertPatchedDrizzleSolid(root) {
       [
         'Exact resource reads already know the concrete Pod document',
         'shouldSkipResourcePreparation()',
-        'skipResourceExistenceCheck: this.shouldSkipResourcePreparation()',
+        ['skipResourceExistenceCheck: this.shouldSkipResourcePreparation()', 'skipResourceExistenceCheck: useWriteTimePreparation'],
+        ['repairContainerOnWriteFailure', 'shouldSkipResourcePreparation()'],
       ],
     ],
     [
@@ -1311,13 +1345,15 @@ function assertPatchedDrizzleSolid(root) {
       [
         'Exact resource reads already know the concrete Pod document',
         'shouldSkipResourcePreparation()',
-        'skipResourceExistenceCheck: this.shouldSkipResourcePreparation()',
+        ['skipResourceExistenceCheck: this.shouldSkipResourcePreparation()', 'skipResourceExistenceCheck: useWriteTimePreparation'],
+        ['repairContainerOnWriteFailure', 'shouldSkipResourcePreparation()'],
       ],
     ],
     [
       path.join(root, 'core/execution/ldp-executor.js'),
       [
         'options.skipResourceExistenceCheck',
+        ['repairContainerAndRetryPutIfNeeded', 'repairContainerOnWriteFailure'],
         'via = \'patch\'',
       ],
     ],
@@ -1325,6 +1361,7 @@ function assertPatchedDrizzleSolid(root) {
       path.join(root, 'esm/core/execution/ldp-executor.js'),
       [
         'options.skipResourceExistenceCheck',
+        ['repairContainerAndRetryPutIfNeeded', 'repairContainerOnWriteFailure'],
         'via = \'patch\'',
       ],
     ],
