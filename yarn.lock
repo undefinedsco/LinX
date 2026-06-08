@@ -10520,10 +10520,10 @@
     sparqljs "^3.7.3"
     zod "^4.1.8"
 
-"@undefineds.co/xpod@0.3.33":
-  version "0.3.33"
-  resolved "https://registry.npmmirror.com/@undefineds.co/xpod/-/xpod-0.3.33.tgz#2af6adc79563de2f5d4b5135f9e3219123fd2558"
-  integrity sha512-2Qb3Sr8pahJcm9KCxdVl1Ta/ph0NpDj1DQHHFYNotwhsNfcB+B87kOSyVNpeCyWCH4kDusLwJ+f6yPaS3zRsmQ==
+"@undefineds.co/xpod@0.3.34":
+  version "0.3.34"
+  resolved "https://registry.npmjs.org/@undefineds.co/xpod/-/xpod-0.3.34.tgz#ee1b81676eafb9c54cb9a5c95c47cdf79f5a2978"
+  integrity sha512-WLM9lYw8ogl8jv3/bGrOh/4bYWebrIMEVsRCL/bx13xq9X8oiF6mK2l1avtBkBcOyB4IwUqXwGqPDybDdEawnA==
   dependencies:
     "@agentclientprotocol/sdk" "^0.14.1"
     "@ai-sdk/openai" "^3.0.2"

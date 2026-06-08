@@ -59,11 +59,34 @@ async function putPodFileIfMissing(
   }
 }
 
+async function patchPodMetadata(
+  fetchFn: typeof fetch,
+  metadataUrl: string,
+  body: string,
+): Promise<void> {
+  const response = await fetchFn(metadataUrl, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/sparql-update',
+    },
+    body,
+  })
+
+  if (!response.ok) {
+    throw new Error(`Failed to update Pod metadata ${metadataUrl}: HTTP ${response.status}`)
+  }
+}
+
 export function buildAgentHomePath(agentId: string): string {
   return `/agents/${agentKeyFromResourceId(agentId)}/`
 }
 
-function buildAgentHomeFiles(input: EnsureAgentHomeInput): Array<{ path: string; body: string; contentType: string }> {
+function buildAgentHomeFiles(input: EnsureAgentHomeInput): Array<{
+  path: string
+  body: string
+  contentType: string
+  writeMode?: 'patch-metadata'
+}> {
   const agentsMd = [
     `# ${input.name}`,
     '',
@@ -78,25 +101,27 @@ function buildAgentHomeFiles(input: EnsureAgentHomeInput): Array<{ path: string;
 
   return [
     { path: 'AGENTS.md', body: agentsMd, contentType: 'text/markdown; charset=utf-8' },
-    { path: '.meta', body: buildAgentMetaTurtle(input), contentType: 'text/turtle; charset=utf-8' },
+    { path: '.meta', body: '', contentType: 'text/turtle; charset=utf-8', writeMode: 'patch-metadata' },
     { path: 'skills/README.md', body: '# Skills\n\nAgent-specific skills can be added here.\n', contentType: 'text/markdown; charset=utf-8' },
   ]
 }
 
-function buildAgentMetaTurtle(input: EnsureAgentHomeInput): string {
+function buildAgentMetaSparqlInsert(input: EnsureAgentHomeInput, metadataUrl: string): string {
   const providerId = input.provider
   const modelId = input.model
   const providerRef = aiConfigProviderRef(providerId)
   const modelRef = aiConfigModelRef(providerId, modelId)
   const credentialRef = `/settings/credentials.ttl#${getDefaultAIConfigCredentialId(providerId)}`
   const instructions = input.instructions?.trim()
+  const subjectRef = metadataUrl.endsWith('.meta') ? metadataUrl.slice(0, -'.meta'.length) : metadataUrl
 
   return [
-    '@prefix udfs: <https://undefineds.co/ns#> .',
-    '@prefix foaf: <http://xmlns.com/foaf/0.1/> .',
-    '@prefix dcterms: <http://purl.org/dc/terms/> .',
+    `BASE <${metadataUrl}>`,
+    'PREFIX udfs: <https://undefineds.co/ns#>',
+    'PREFIX foaf: <http://xmlns.com/foaf/0.1/>',
     '',
-    '<#config>',
+    'INSERT DATA {',
+    `<${subjectRef}>`,
     '  a udfs:AgentConfig ;',
     `  foaf:name ${toTurtleString(input.name)} ;`,
     `  udfs:provider <${providerRef}> ;`,
@@ -109,6 +134,7 @@ function buildAgentMetaTurtle(input: EnsureAgentHomeInput): string {
     ...(instructions ? [
       `  udfs:systemPrompt ${toTurtleString(instructions)} .`,
     ] : []),
+    '}',
     '',
   ].join('\n')
 }
@@ -125,9 +151,15 @@ export async function ensureAgentHome(db: SolidDatabase, input: EnsureAgentHomeI
 
   const homePath = buildAgentHomePath(input.agentId)
   for (const file of buildAgentHomeFiles(input)) {
+    const fileUrl = resolvePodPath(db, `${homePath}${file.path}`)
+    if (file.writeMode === 'patch-metadata') {
+      await patchPodMetadata(fetchFn, fileUrl, buildAgentMetaSparqlInsert(input, fileUrl))
+      continue
+    }
+
     await putPodFileIfMissing(
       fetchFn,
-      resolvePodPath(db, `${homePath}${file.path}`),
+      fileUrl,
       file.body,
       file.contentType,
     )

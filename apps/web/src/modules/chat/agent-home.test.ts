@@ -26,12 +26,17 @@ describe('agent-home', () => {
     const putTargets = fetchMock.mock.calls
       .filter(([, init]) => init?.method === 'PUT')
       .map(([input]) => String(input))
+    const patchTargets = fetchMock.mock.calls
+      .filter(([, init]) => init?.method === 'PATCH')
+      .map(([input]) => String(input))
 
     expect(putTargets).not.toContain('https://alice.example/.data/agents/agent-1/')
     expect(putTargets).toEqual([
       'https://alice.example/agents/agent-1/AGENTS.md',
-      'https://alice.example/agents/agent-1/.meta',
       'https://alice.example/agents/agent-1/skills/README.md',
+    ])
+    expect(patchTargets).toEqual([
+      'https://alice.example/agents/agent-1/.meta',
     ])
     expect(fetchMock).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ method: 'HEAD' }))
 
@@ -43,6 +48,16 @@ describe('agent-home', () => {
     expect(agentsMdPut?.[1]?.headers).toMatchObject({
       'If-None-Match': '*',
     })
+
+    const metaPatch = fetchMock.mock.calls.find(([input, init]) =>
+      String(input).endsWith('/.meta') && init?.method === 'PATCH'
+    )
+    expect(metaPatch?.[1]?.headers).toMatchObject({
+      'Content-Type': 'application/sparql-update',
+    })
+    expect(String(metaPatch?.[1]?.body)).toContain('INSERT DATA')
+    expect(String(metaPatch?.[1]?.body)).toContain('<https://alice.example/agents/agent-1/>')
+    expect(String(metaPatch?.[1]?.body)).not.toContain('.meta#config')
   })
 
   it('rejects full Agent IRIs because callers must pass Agent row.id', async () => {
@@ -68,7 +83,9 @@ describe('agent-home', () => {
   })
 
   it('treats existing Agent Home files as initialized', async () => {
-    const fetchMock = vi.fn(async () => new Response('', { status: 412 }))
+    const fetchMock = vi.fn(async (_input, init) => new Response('', {
+      status: init?.method === 'PATCH' ? 200 : 412,
+    }))
     const db = {
       getDialect: () => ({
         getPodUrl: () => 'https://alice.example/',
