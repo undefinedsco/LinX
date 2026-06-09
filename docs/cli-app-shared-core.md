@@ -100,7 +100,10 @@
 - `Chat` 只表示对话对象/counterpart：用户正在和谁或什么对话，例如默认 AI secretary、某个人、群组、Codex、Claude Code，或后续具体 AI 身份。
 - `Thread` 表示具体场所、时间线和 runtime context：workspace、backend 控制场景、AI 产品运行时 session、外部 agent session 等上下文都归在 thread 上。
 - `Session` 表示通用 AI 产品/agent runtime 的运行生命周期投影：它必须指向对应的 `chat` URI 和 `thread` URI，不能作为另一套对话根。
-- `Message` 同时属于一个 `chat` 和一个 `thread`：chat 回答“跟谁聊”，thread 回答“在哪个运行/时间线里聊”。
+- `Message` 可以同时属于一个 `chat` 和一个 `thread`：chat 回答“跟谁聊”，thread 回答“在哪个运行/时间线里聊”。普通人聊场景可以只保留 Chat 兼容关系；AI/task/branch timeline 场景再显式挂 Thread。
+- `scope` / `udfs:inScope` 是 LinX 对 Chat、Task 等 command surface 的中性归属关系，只能补充跨 surface 查询，不能替代 Solid Chat 兼容谓词。
+- Chat-scoped Thread 必须继续通过 `sioc:has_parent` 指向 Chat；Chat-scoped Message 必须继续通过 inverse `wf:message` 写到 Chat；Thread-scoped Message 必须继续通过 inverse `sioc:has_member` 写到 Thread。这些关系是与 Solid Chat/SolidOS 生态互操作的兼容契约。
+- Task-scoped Thread/Message 可以使用 `udfs:inScope` 和 `udfs:task` 等 LinX 谓词，但如果同一资源也出现在 Chat 里，仍必须保留对应 Solid Chat 关系。
 
 存储层规则：
 

@@ -37,6 +37,11 @@ jobs:
           cache: yarn
 
       - name: Install
+        env:
+          # xpod brings inngest-cli transitively, but the LinX CLI release does
+          # not need the local Inngest binary. Its postinstall download is
+          # CDN-dependent and has caused macOS release installs to fail with 504.
+          SKIP_POSTINSTALL: "1"
         run: yarn install --frozen-lockfile --ignore-engines
 
       - name: Build, pack, and smoke

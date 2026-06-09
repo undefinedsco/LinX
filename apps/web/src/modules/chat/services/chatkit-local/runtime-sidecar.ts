@@ -2,8 +2,8 @@ import {
   ODRL,
   approvalResource,
   auditResource,
-  inboxNotificationTable,
-  sessionTable,
+  inboxNotificationResource,
+  sessionResource,
   type ApprovalRow,
   type SolidDatabase,
 } from '@undefineds.co/models'
@@ -127,7 +127,7 @@ export class RuntimeSidecarSink {
   }
 
   private makeRuntimeSessionUri(sessionId: string, createdAt: Date = new Date()): string {
-    return sessionTable.buildIri(this.podBaseUrl, { id: sessionId, createdAt })
+    return sessionResource.buildIri(this.podBaseUrl, { id: sessionId, createdAt })
   }
 
   private makeChatUri(chatId: string): string {
@@ -145,7 +145,7 @@ export class RuntimeSidecarSink {
     previousStatus: RuntimeThreadStatus | undefined,
   ): Promise<void> {
     const eventDate = eventDateFromTs(event.ts)
-    const existing = await this.findByStorageId<Record<string, unknown>>(sessionTable, runtimeSession.id)
+    const existing = await this.findByStorageId<Record<string, unknown>>(sessionResource, runtimeSession.id)
 
     const payload = {
       owner: this.webId,
@@ -167,7 +167,7 @@ export class RuntimeSidecarSink {
     } as const
 
     if (!existing) {
-      await this.db.insert(sessionTable).values({
+      await this.db.insert(sessionResource).values({
         id: runtimeSession.id,
         ...payload,
         createdAt: eventDate,
@@ -175,7 +175,7 @@ export class RuntimeSidecarSink {
       return
     }
 
-    await this.updateByStorageId(sessionTable, runtimeSession.id, payload)
+    await this.updateByStorageId(sessionResource, runtimeSession.id, payload)
   }
 
   private makeApprovalUri(id: string, createdAt: Date = new Date()): string {
@@ -238,7 +238,7 @@ export class RuntimeSidecarSink {
     }
 
     this.seenEventKeys.add(dedupeKey)
-    await this.db.insert(inboxNotificationTable).values({
+    await this.db.insert(inboxNotificationResource).values({
       id: crypto.randomUUID(),
       actor: this.webId,
       object: objectUri,

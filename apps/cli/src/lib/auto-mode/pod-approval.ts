@@ -14,7 +14,7 @@ import {
   type SolidDatabase,
 } from '../models.js'
 import { AS, ODRL, UDFS } from '@undefineds.co/models/namespaces'
-import { ApprovalVocab, AuditVocab, GrantVocab, InboxNotificationVocab } from '@undefineds.co/models/vocab/sidecar'
+import { ApprovalVocab, AuditVocab, GrantReadVocab, GrantVocab, InboxNotificationVocab } from '@undefineds.co/models/vocab/sidecar'
 import {
   autoModeApprovalActionUri,
   autoModeApprovalRequestMessage,
@@ -510,10 +510,25 @@ function literalValues(predicates: Map<string, unknown[]>, predicate: string): s
     .filter(Boolean)
 }
 
+function firstLiteralValue(predicates: Map<string, unknown[]>, predicatesToTry: readonly string[]): string | undefined {
+  for (const predicate of predicatesToTry) {
+    const [value] = literalValues(predicates, predicate)
+    if (value) {
+      return value
+    }
+  }
+  return undefined
+}
+
 function iriValues(predicates: Map<string, unknown[]>, predicate: string): string[] {
   return (predicates.get(predicate) ?? [])
     .map((object) => isRecord(object) && object.type === 'iri' && typeof object.value === 'string' ? object.value : '')
     .filter(Boolean)
+}
+
+function iriValuesFrom(predicates: Map<string, unknown[]>, predicatesToTry: readonly string[]): string[] {
+  const values = predicatesToTry.flatMap((predicate) => iriValues(predicates, predicate))
+  return [...new Set(values)]
 }
 
 function grantSourceHash(row: ApprovalRowLike): string {
@@ -1121,7 +1136,7 @@ async function writeGrantRow(webId: string, fetcher: PodFetch, row: GrantRowLike
       { predicate: GrantVocab.action, object: iri(action) },
       ...(normalizeString(row.title) ? [{ predicate: GrantVocab.title, object: literal(truncatePodLiteral(normalizeString(row.title) as string, 160)) }] : []),
       ...(normalizeString(row.summary) ? [{ predicate: GrantVocab.summary, object: literal(truncatePodLiteral(normalizeString(row.summary) as string, 500)) }] : []),
-      ...(normalizeString(row.body) ? [{ predicate: GrantVocab.body, object: literal(truncatePodLiteral(normalizeString(row.body) as string, MAX_GRANT_POLICY_LENGTH)) }] : []),
+      ...(normalizeString(row.body) ? [{ predicate: GrantVocab.description, object: literal(truncatePodLiteral(normalizeString(row.body) as string, MAX_GRANT_POLICY_LENGTH)) }] : []),
       ...(normalizeString(row.schema) ? [{ predicate: GrantVocab.schema, object: iri(normalizeString(row.schema) as string) }] : []),
       ...(normalizeString(row.pageKind) ? [{ predicate: GrantVocab.pageKind, object: literal(normalizeString(row.pageKind) as string) }] : []),
       ...(normalizeString(row.wikiStatus) ? [{ predicate: GrantVocab.wikiStatus, object: literal(normalizeString(row.wikiStatus) as string) }] : []),
@@ -1231,17 +1246,17 @@ function grantRowFromPredicates(url: string, predicates: Map<string, unknown[]>)
     target,
     action,
     title: firstLiteral(predicates as never, GrantVocab.title),
-    summary: firstLiteral(predicates as never, GrantVocab.summary),
-    body: firstLiteral(predicates as never, GrantVocab.body),
+    summary: firstLiteralValue(predicates, GrantReadVocab.summary),
+    body: firstLiteralValue(predicates, GrantReadVocab.description),
     schema: firstIri(predicates as never, GrantVocab.schema),
     pageKind: firstLiteral(predicates as never, GrantVocab.pageKind),
     wikiStatus: firstLiteral(predicates as never, GrantVocab.wikiStatus),
     tags: firstLiteral(predicates as never, GrantVocab.tags),
-    source: firstLiteral(predicates as never, GrantVocab.source),
+    source: firstLiteralValue(predicates, GrantReadVocab.source),
     sourceHash: firstLiteral(predicates as never, GrantVocab.sourceHash),
     compiledAt: firstLiteral(predicates as never, GrantVocab.compiledAt),
     compiledFrom: iriValues(predicates, GrantVocab.compiledFrom),
-    related: iriValues(predicates, GrantVocab.related),
+    related: iriValuesFrom(predicates, GrantReadVocab.related),
     effect,
     riskCeiling: firstLiteral(predicates as never, GrantVocab.riskCeiling),
     policy: firstLiteral(predicates as never, GrantVocab.policy),
