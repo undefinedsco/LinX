@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { desktopFetch } from './desktop-fetch';
 import { ensureLinxLocalHome } from './local-home';
 
 export interface ManagedPodConfig {
@@ -192,7 +193,7 @@ export class ProviderManager {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-      const response = await fetch(oidcUrl.toString(), {
+      const response = await desktopFetch(oidcUrl.toString(), {
         signal: controller.signal,
       });
       clearTimeout(timeoutId);

@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
-import { ExternalLink, Loader2, Server, CircleDot, Play, Square, RotateCw } from 'lucide-react'
+import { Download, ExternalLink, Loader2, Server, CircleDot, Play, Square, RotateCw } from 'lucide-react'
 import { formatLoginErrorForUser } from '@/modules/login/error-messages'
 
 type ServiceSpaceKind = 'local' | 'standalone'
@@ -16,9 +16,18 @@ type DomainSource = 'manual'
 type ServiceStatus = {
   pod?: {
     running?: boolean
+    status?: 'starting' | 'running' | 'stopped' | 'error'
     port?: number
     baseUrl?: string
     publicUrl?: string
+    localUrl?: string
+    pid?: number
+    runtime?: {
+      launchKind?: string | null
+      currentVersion?: string | null
+      targetVersion?: string | null
+      upgradeAvailable?: boolean
+    }
   }
 }
 
@@ -91,9 +100,14 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
   const [httpsCertPath, setHttpsCertPath] = useState('')
 
   const isServiceMode = typeof window !== 'undefined' && !!(window as any).__LINX_SERVICE__
+  const desktopXpodApi = typeof window !== 'undefined' ? window.xpodDesktop?.xpod : undefined
+  const isDesktopMode = !isServiceMode && Boolean(desktopXpodApi)
+  const supportsServiceManagement = isServiceMode || isDesktopMode
 
   const running = !!status?.pod?.running
   const podBaseUrl = useMemo(() => trimSlash(status?.pod?.publicUrl || status?.pod?.baseUrl || ''), [status])
+  const runtime = status?.pod?.runtime
+  const canUpgradeXpod = isDesktopMode && Boolean(runtime?.upgradeAvailable)
   const tunnelSuggested = spaceKind === 'local' && (!autoDetectPublicIp || hasPublicIp === false)
   const useTunnel = spaceKind === 'local' && !!tunnelProvider
 
@@ -109,6 +123,17 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
   }, [spaceKind, domainSource, tunnelSuggested])
 
   const refreshStatus = async () => {
+    if (isDesktopMode && desktopXpodApi) {
+      const desktopStatus = await desktopXpodApi.status()
+      setStatus({
+        pod: {
+          ...desktopStatus,
+          publicUrl: desktopStatus.provisioning?.publicUrl,
+        },
+      })
+      return
+    }
+
     if (!isServiceMode) return
     const res = await fetch('/api/service/status')
     if (!res.ok) throw new Error(await parseError(res))
@@ -126,12 +151,25 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
       setLoading(true)
       setError(null)
 
-      if (!isServiceMode) {
+      if (!supportsServiceManagement) {
         setLoading(false)
         return
       }
 
       try {
+        if (isDesktopMode && desktopXpodApi) {
+          const desktopStatus = await desktopXpodApi.status()
+          if (!cancelled) {
+            setStatus({
+              pod: {
+                ...desktopStatus,
+                publicUrl: desktopStatus.provisioning?.publicUrl,
+              },
+            })
+          }
+          return
+        }
+
         const [statusRes, configRes] = await Promise.all([
           fetch('/api/service/status', { signal: controller.signal }),
           fetch('/api/setup/config', { signal: controller.signal }),
@@ -171,10 +209,10 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
       cancelled = true
       controller.abort()
     }
-  }, [open, isServiceMode])
+  }, [open, isServiceMode, isDesktopMode, supportsServiceManagement, desktopXpodApi])
 
   useEffect(() => {
-    if (!open || spaceKind !== 'local' || !autoDetectPublicIp || running) {
+    if (!open || !isServiceMode || spaceKind !== 'local' || !autoDetectPublicIp || running) {
       if (spaceKind !== 'local') setHasPublicIp(null)
       if (!autoDetectPublicIp) setHasPublicIp(false)
       return
@@ -190,17 +228,42 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
     return () => {
       cancelled = true
     }
-  }, [open, spaceKind, autoDetectPublicIp, running])
+  }, [open, isServiceMode, spaceKind, autoDetectPublicIp, running])
 
-  const postServiceAction = async (path: '/api/service/start' | '/api/service/stop' | '/api/service/restart') => {
+  const runXpodAction = async (
+    action: 'stop' | 'restart',
+    servicePath: '/api/service/stop' | '/api/service/restart',
+  ) => {
     setSubmitting(true)
     setError(null)
     try {
-      const res = await fetch(path, { method: 'POST' })
-      if (!res.ok) throw new Error(await parseError(res))
+      if (isDesktopMode && desktopXpodApi) {
+        await desktopXpodApi[action]()
+      } else {
+        const res = await fetch(servicePath, { method: 'POST' })
+        if (!res.ok) throw new Error(await parseError(res))
+      }
       await refreshStatus()
     } catch (err) {
       setError(formatLoginErrorForUser(err, '本地空间操作失败。请稍后重试。'))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const upgradeXpodRuntime = async () => {
+    if (!desktopXpodApi?.upgrade) {
+      setError('当前入口不支持直接升级 xpod。')
+      return
+    }
+
+    setSubmitting(true)
+    setError(null)
+    try {
+      await desktopXpodApi.upgrade()
+      await refreshStatus()
+    } catch (err) {
+      setError(formatLoginErrorForUser(err, 'xpod 升级失败。请稍后重试。'))
     } finally {
       setSubmitting(false)
     }
@@ -278,15 +341,15 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
               <Server className="h-4 w-4 text-primary-foreground" />
             </div>
             <div>
-              <div className="text-base font-semibold text-foreground">服务管理</div>
-              <div className="text-xs text-muted-foreground">未启动时配置必要参数；启动后可查看状态并打开管理页。</div>
+              <div className="text-base font-semibold text-foreground">xpod 状态</div>
+              <div className="text-xs text-muted-foreground">查看本地 xpod 状态；检测到新版本时可手动升级。</div>
               <div className="text-xs text-muted-foreground">外网访问可选配置自有域名或隧道。</div>
             </div>
           </div>
         </div>
 
         <div className="p-6 space-y-4">
-          {!isServiceMode ? <div className="text-sm text-muted-foreground">当前入口不支持服务管理。</div> : null}
+          {!supportsServiceManagement ? <div className="text-sm text-muted-foreground">当前入口不支持 xpod 状态管理。</div> : null}
 
           {loading ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -301,7 +364,20 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
             </div>
           ) : null}
 
-          {!running ? (
+          {!supportsServiceManagement ? null : !running ? (
+            !isServiceMode ? (
+              <div className="space-y-4">
+                <div className="rounded-md border border-border/40 p-4 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <CircleDot className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">未运行</span>
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    xpod 当前没有运行。请在登录页选择本地空间或独立空间启动。
+                  </div>
+                </div>
+              </div>
+            ) : (
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label>空间类型</Label>
@@ -399,6 +475,7 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
                 保存并启动服务
               </Button>
             </div>
+            )
           ) : (
             <div className="space-y-4">
               <div className="rounded-md border border-border/40 p-4 space-y-3">
@@ -412,6 +489,28 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
                 <div className="text-xs font-mono text-muted-foreground break-all">{podBaseUrl || '未获取到访问地址'}</div>
               </div>
 
+              {runtime?.currentVersion || runtime?.targetVersion ? (
+                <div className="rounded-md border border-border/40 p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-medium">xpod runtime</div>
+                      <div className="mt-1 flex flex-wrap gap-2">
+                        <Badge variant="secondary">当前 {runtime.currentVersion || '未知'}</Badge>
+                        {runtime.targetVersion ? <Badge variant="outline">目标 {runtime.targetVersion}</Badge> : null}
+                      </div>
+                    </div>
+                    {canUpgradeXpod ? (
+                      <Button onClick={upgradeXpodRuntime} disabled={submitting} size="sm">
+                        {submitting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+                        升级 xpod
+                      </Button>
+                    ) : (
+                      <Badge variant="outline">无需升级</Badge>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+
               <div className="grid grid-cols-1 gap-2">
                 <Button className="justify-start" onClick={() => openExternal(`${podBaseUrl}/app/`)} disabled={!podBaseUrl}>
                   <ExternalLink className="h-4 w-4 mr-2" /> 打开本地空间应用
@@ -422,11 +521,11 @@ export function ServiceManagementDialog({ open, onOpenChange }: ServiceManagemen
               </div>
 
               <div className="grid grid-cols-2 gap-2">
-                <Button variant="outline" onClick={() => postServiceAction('/api/service/restart')} disabled={submitting}>
+                <Button variant="outline" onClick={() => runXpodAction('restart', '/api/service/restart')} disabled={submitting}>
                   {submitting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RotateCw className="h-4 w-4 mr-2" />}
                   重启
                 </Button>
-                <Button variant="destructive" onClick={() => postServiceAction('/api/service/stop')} disabled={submitting}>
+                <Button variant="destructive" onClick={() => runXpodAction('stop', '/api/service/stop')} disabled={submitting}>
                   {submitting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Square className="h-4 w-4 mr-2" />}
                   停止
                 </Button>

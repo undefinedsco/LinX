@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { LoginModal } from './LoginModal'
 import type { LoginModalProps } from './types'
@@ -104,6 +104,10 @@ function createProps(overrides: Partial<LoginModalProps> = {}): LoginModalProps 
 }
 
 describe('LoginModal', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   it('returns null when authenticated', () => {
     const props = createProps({ state: 'authenticated' })
     const { container } = render(<LoginModal {...props} />)
@@ -322,11 +326,11 @@ describe('LoginModal', () => {
         provisionCode: null,
         provisionUrl: null,
         nodeId: null,
-        message: '下载 xpod runtime',
+        message: '安装 xpod runtime 包与生产依赖',
         progress: {
           phase: 'install-bun',
-          label: '下载 xpod runtime',
-          detail: '@undefineds.co/xpod@0.3.4',
+          label: '安装 xpod runtime 包与生产依赖',
+          detail: 'bun install · @undefineds.co/xpod@0.3.4',
         },
         errorCode: null,
         canRetry: false,
@@ -336,10 +340,8 @@ describe('LoginModal', () => {
 
     render(<LoginModal {...props} />)
 
-    expect(screen.getByText('正在准备本地空间')).toBeTruthy()
-    expect(screen.getByText('首次启动可能需要下载，完成后会自动继续。')).toBeTruthy()
-    expect(screen.queryByText('下载 xpod runtime')).toBeNull()
-    expect(screen.queryByText('@undefineds.co/xpod@0.3.4')).toBeNull()
+    expect(screen.getByText('安装 xpod runtime 包与生产依赖')).toBeTruthy()
+    expect(screen.getByText('bun install · @undefineds.co/xpod@0.3.4')).toBeTruthy()
   })
 
   it('hides raw Local startup diagnostics in the Local view', () => {
@@ -543,7 +545,7 @@ describe('LoginModal', () => {
     expect(props.onBackFromLocal).not.toHaveBeenCalled()
   })
 
-  it('does not expose managed Local network configuration in the login path', () => {
+  it('shows Local reachability status without exposing managed network configuration in the login path', () => {
     const props = createProps({
       view: 'local',
       localProviderSource: 'local',
@@ -579,7 +581,7 @@ describe('LoginModal', () => {
             baseUrl: null,
             message: '公网入口不可达。',
           },
-          message: '本机入口可用，公网入口暂不可达。配置并启动 tunnel 后再重试。',
+          message: '本机入口可用，公网入口暂不可达。可以继续本机使用，外网访问需要配置隧道。',
         },
         capabilities: null,
         cloudIdentityUrl: 'https://id.undefineds.co',
@@ -595,8 +597,13 @@ describe('LoginModal', () => {
 
     render(<LoginModal {...props} />)
 
-    expect(screen.getByText('本地空间公网入口未连通')).toBeTruthy()
-    expect(screen.getByRole('button', { name: '重新检测' })).toBeTruthy()
+    expect(screen.getByText('本地空间 已准备好')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '继续登录' })).toBeTruthy()
+    expect(screen.getByText('本机可以访问')).toBeTruthy()
+    expect(screen.getByText('公网可以访问')).toBeTruthy()
+    expect(screen.getByLabelText('本机可以访问：是')).toBeTruthy()
+    expect(screen.getByLabelText('公网可以访问：否')).toBeTruthy()
+    expect(screen.queryByText(/外网访问/)).toBeNull()
     expect(screen.queryByRole('button', { name: /高级配置/ })).toBeNull()
     expect(screen.queryByText('拿到 Local 域名')).toBeNull()
     expect(screen.queryByText('配置 Cloudflare Tunnel')).toBeNull()
@@ -605,6 +612,49 @@ describe('LoginModal', () => {
     expect(screen.queryByPlaceholderText('粘贴 tunnel token 或完整命令')).toBeNull()
     expect(props.onSaveLocalTunnelToken).not.toHaveBeenCalled()
     expect(props.onTestLocalConnectivity).not.toHaveBeenCalled()
+  })
+
+  it('starts a background reachability check when Local is ready but not yet probed', async () => {
+    const props = createProps({
+      view: 'local',
+      localProviderSource: 'local',
+      onTestLocalConnectivity: vi.fn(),
+      localOnboarding: {
+        state: 'ready',
+        spaceKind: 'local',
+        localUrl: 'http://localhost:5737/',
+        baseUrl: 'https://node-0000.undefineds.co/',
+        publicUrl: 'https://node-0000.undefineds.co/',
+        tunnel: null,
+        connectivity: {
+          status: 'unknown',
+          checkedAt: null,
+          local: null,
+          public: null,
+          message: '尚未测试公网联通性。',
+        },
+        capabilities: null,
+        cloudIdentityUrl: 'https://id.undefineds.co',
+        provisionCode: 'pc-123',
+        provisionUrl: 'https://id.undefineds.co/.account/?provisionCode=pc-123',
+        nodeId: 'node-123',
+        message: null,
+        errorCode: null,
+        canRetry: true,
+        canOpenSettings: true,
+      },
+    })
+
+    render(<LoginModal {...props} />)
+
+    expect(screen.getByText('本机可以访问')).toBeTruthy()
+    expect(screen.getByText('公网可以访问')).toBeTruthy()
+    expect(screen.getByLabelText('本机可以访问：是')).toBeTruthy()
+    expect(screen.getByLabelText('公网可以访问：检测中')).toBeTruthy()
+
+    await waitFor(() => {
+      expect(props.onTestLocalConnectivity).toHaveBeenCalledTimes(1)
+    })
   })
 
   it('does not render the old footer copy', () => {
@@ -658,7 +708,7 @@ describe('LoginModal', () => {
     expect(screen.getByText('请在登录窗口完成')).toBeTruthy()
   })
 
-  it('labels split Cloud IDP and Local SP auth as Local authorization', () => {
+  it('labels split Local auth as Local authorization', () => {
     const props = createProps({
       state: 'connecting',
       connectingProvider: {

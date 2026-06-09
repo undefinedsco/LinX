@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { startRealLocalCloudRuntime } from '../helpers/real-local-cloud-runtime.cjs'
+import { expectSecretaryInitialized } from '../helpers/secretary-bootstrap'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -70,9 +71,9 @@ test.describe('Real Local -> Cloud auth flow', () => {
       await page.goto('/')
       await expect(page.getByRole('heading', { name: '选择空间' })).toBeVisible({ timeout: 15_000 })
 
-      await page.getByRole('button', { name: /Local/ }).click()
+      await clickLocalSpaceEntry(page)
       await waitForLocalReady(page, runtime, 180_000)
-      await page.waitForURL(/id\.undefineds\.co|\/\.account\//, { timeout: 30_000 })
+      await continueToLocalAccountSurface(page)
 
       const registerResult = await registerOnProductionCloud(page, runtime)
       const consentResult = await provisionAndAuthorize(page, runtime)
@@ -86,6 +87,7 @@ test.describe('Real Local -> Cloud auth flow', () => {
         throw new Error(`expected LinX to land on /chat\n${JSON.stringify(await collectDebugState(page, runtime), null, 2)}`)
       }
       await waitForSolidDbReady(page, 90_000)
+      await expectSecretaryInitialized(page)
 
       const debug = await collectDebugState(page, runtime)
       expect(debug.snapshot.state).toBe('ready')
@@ -95,9 +97,9 @@ test.describe('Real Local -> Cloud auth flow', () => {
       expect(debug.dbStatus).toBe('ready')
       expect(debug.dbError).toBeNull()
       expect(debug.loginStore?.state?.storedAccount?.webId).toBeTruthy()
-      expect(debug.loginStore?.state?.storedAccount?.providerLabel).toBe('Local')
+      expect(debug.loginStore?.state?.storedAccount?.storageProviderLabel).toBe('Local')
       expect(normalizeUrl(debug.loginStore?.state?.storedAccount?.issuerUrl)).toBe('https://id.undefineds.co/')
-      expect(normalizeUrl(debug.loginStore?.state?.storedAccount?.providerUrl)).toBe(normalizeUrl(debug.snapshot.publicUrl))
+      expect(normalizeUrl(debug.loginStore?.state?.storedAccount?.storageProviderUrl)).toBe(normalizeUrl(debug.snapshot.publicUrl))
       expect(debug.dbPodUrl).toMatch(new RegExp(`^${escapeRegExp(normalizeUrl(debug.snapshot.publicUrl))}`))
       expect(debug.dbPodUrl).not.toMatch(/^https:\/\/id\.undefineds\.co\//)
       expect(debug.accessRoute?.canonicalPodUrl).toBe(debug.dbPodUrl)
@@ -117,6 +119,35 @@ test.describe('Real Local -> Cloud auth flow', () => {
     }
   })
 })
+
+async function clickLocalSpaceEntry(page: Page): Promise<void> {
+  const currentProductEntry = page.getByRole('button', { name: /本地空间[\s\S]*(开始|登录|继续)/ })
+  if (await currentProductEntry.isVisible({ timeout: 3_000 }).catch(() => false)) {
+    await currentProductEntry.click()
+    return
+  }
+
+  await page.getByRole('button', { name: /Local/ }).click()
+}
+
+async function continueToLocalAccountSurface(page: Page): Promise<void> {
+  if (await page.getByPlaceholder(/Email(?: address)?/i).isVisible({ timeout: 1_000 }).catch(() => false)) {
+    return
+  }
+
+  const continueButton = page.getByRole('button', { name: /继续登录|Continue/i })
+  if (!await continueButton.isVisible({ timeout: 10_000 }).catch(() => false)) {
+    await page.waitForURL(/id\.undefineds\.co|\/\.account\//, { timeout: 30_000, waitUntil: 'domcontentloaded' })
+    return
+  }
+
+  await Promise.all([
+    page.waitForURL(/id\.undefineds\.co|\/\.account\//, { timeout: 30_000, waitUntil: 'domcontentloaded' }),
+    continueButton.evaluate((element) => {
+      ;(element as HTMLElement).click()
+    }),
+  ])
+}
 
 async function registerOnProductionCloud(
   page: Page,
@@ -168,6 +199,41 @@ async function provisionAndAuthorize(
     const missingPodMessage = page.getByText('You need to create a Pod first to get a WebID.')
     const createPodButton = page.getByRole('button', { name: /^Create Pod$/i })
     const addPodButton = page.getByRole('button', { name: /Add Pod/i })
+    const continueAuthorizationLink = page.getByRole('link', { name: /^Continue$/i })
+    const firstPodNameInput = page.getByPlaceholder(/^alice$/i)
+    const createStorageButton = page.getByRole('button', { name: /^Create storage$/i })
+    const refreshAuthorizationButton = page.getByRole('button', { name: /^Refresh authorization$/i })
+
+    if (await continueAuthorizationLink.isVisible({ timeout: 1_000 }).catch(() => false)) {
+      await Promise.all([
+        page.waitForURL(/\/\.account\/oidc\/consent\//, { timeout: 30_000 }),
+        continueAuthorizationLink.click(),
+      ])
+      continue
+    }
+
+    if (await createStorageButton.isVisible({ timeout: 1_000 }).catch(() => false)) {
+      if (!await firstPodNameInput.isVisible({ timeout: 1_000 }).catch(() => false)) {
+        await page.waitForTimeout(500)
+        continue
+      }
+      usedAddPod = true
+      await ensureProvisionCodeOnCloudPage(page, runtime)
+      try {
+        await firstPodNameInput.fill(runtime.username, { timeout: 5_000 })
+      } catch {
+        await page.waitForTimeout(500)
+        continue
+      }
+      await expect(createStorageButton).toBeEnabled({ timeout: 20_000 })
+      await createStorageButton.click()
+      continue
+    }
+
+    if (await refreshAuthorizationButton.isVisible({ timeout: 1_000 }).catch(() => false)) {
+      await refreshAuthorizationButton.click()
+      continue
+    }
 
     if (await createPodButton.isVisible({ timeout: 1_000 }).catch(() => false)) {
       usedCreatePod = true
@@ -191,9 +257,6 @@ async function provisionAndAuthorize(
         page.waitForLoadState('networkidle'),
         page.getByRole('button', { name: /^Create$/i }).click(),
       ])
-
-      const consentUrl = new URL('/.account/oidc/consent/', page.url()).toString()
-      await page.goto(consentUrl)
       continue
     }
 

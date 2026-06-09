@@ -53,14 +53,14 @@ describe('AppRuntime', () => {
     )
   })
 
-  it('lets the Inrupt provider restore Electron callback URLs in the renderer', () => {
+  it('keeps Electron callback restore owned by the callback page', () => {
     window.xpodDesktop = { auth: {} } as any
     window.history.replaceState({}, '', '/auth/callback?code=abc&state=xyz')
 
     render(<AppRuntime />)
 
     expect(solidSessionProviderMock).toHaveBeenCalledWith(
-      expect.objectContaining({ restorePreviousSession: true }),
+      expect.objectContaining({ restorePreviousSession: false }),
     )
   })
 })

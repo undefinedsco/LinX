@@ -30,7 +30,14 @@ import { useSolidDatabase } from '@/providers/solid-database-provider'
 import { formatLoginErrorForUser } from '@/modules/login/error-messages'
 import { createLocalChatKitFetch } from '../services/chatkit-local/fetch-handler'
 import { useChatStore } from '../store'
-import { useChatInit, useChatList, useChatMutations, useThreadList, useWorkspaceList } from '../collections'
+import {
+  useChatInit,
+  useChatList,
+  useChatMutations,
+  useThreadList,
+  useWorkspaceList,
+  useLinxDefaultSecretaryBootstrapSettling,
+} from '../collections'
 import { SessionControlBar, type SessionStatus } from './SessionControlBar'
 import {
   fetchRuntimeSessionLog,
@@ -88,7 +95,8 @@ function InboxActionBanner({
   const navigate = useNavigate()
   const selectItem = useInboxStore((state) => state.selectItem)
   const setFilter = useInboxStore((state) => state.setFilter)
-  const { data: inboxItems = [] } = useInboxItems('all')
+  const isDefaultSecretarySettling = useLinxDefaultSecretaryBootstrapSettling()
+  const { data: inboxItems = [] } = useInboxItems('all', { enabled: !isDefaultSecretarySettling })
 
   const actionableItems = useMemo(
     () =>

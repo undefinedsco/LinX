@@ -28,7 +28,7 @@ describe('formatLoginErrorForUser', () => {
   })
 
   it('turns managed runtime install failures into download guidance', () => {
-    expect(formatLoginErrorForUser('Unable to install @undefineds.co/xpod@0.3.29 with bun.\nerror: registry failed'))
+    expect(formatLoginErrorForUser('Unable to install @undefineds.co/xpod@0.3.31 with bun.\nerror: registry failed'))
       .toBe('本地空间组件下载失败。请检查网络后重试。')
   })
 

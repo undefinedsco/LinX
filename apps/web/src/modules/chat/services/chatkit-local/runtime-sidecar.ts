@@ -2,9 +2,6 @@ import {
   ODRL,
   approvalResource,
   auditResource,
-  buildApprovalSubjectPath,
-  buildAuditSubjectPath,
-  buildSessionSubjectPath,
   inboxNotificationTable,
   sessionTable,
   type ApprovalRow,
@@ -130,7 +127,7 @@ export class RuntimeSidecarSink {
   }
 
   private makeRuntimeSessionUri(sessionId: string, createdAt: Date = new Date()): string {
-    return `${this.podBaseUrl}${buildSessionSubjectPath(sessionId, createdAt)}`
+    return sessionTable.buildIri(this.podBaseUrl, { id: sessionId, createdAt })
   }
 
   private makeChatUri(chatId: string): string {
@@ -151,7 +148,7 @@ export class RuntimeSidecarSink {
     const existing = await this.findByStorageId<Record<string, unknown>>(sessionTable, runtimeSession.id)
 
     const payload = {
-      ownerWebId: this.webId,
+      owner: this.webId,
       chat: this.makeChatUri(context.chatId),
       thread: this.makeThreadUri(context.chatId, context.threadId),
       sessionType: 'direct',
@@ -182,11 +179,11 @@ export class RuntimeSidecarSink {
   }
 
   private makeApprovalUri(id: string, createdAt: Date = new Date()): string {
-    return `${this.podBaseUrl}${buildApprovalSubjectPath(id, createdAt)}`
+    return approvalResource.buildIri(this.podBaseUrl, { id, createdAt })
   }
 
   private makeAuditUri(id: string, createdAt: Date = new Date()): string {
-    return `${this.podBaseUrl}${buildAuditSubjectPath(id, createdAt)}`
+    return auditResource.buildIri(this.podBaseUrl, { id, createdAt })
   }
 
   private buildEventKey(type: string, runtimeSessionId: string, suffix: string): string {

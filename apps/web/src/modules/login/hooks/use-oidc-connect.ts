@@ -50,6 +50,13 @@ export function useOidcConnect() {
     const strictDiscovery = options?.strict || isLoopbackUrl(normalizedEntryUrl)
 
     try {
+      const desktopResolvedIssuer = strictDiscovery
+        ? await resolveDesktopOidcIssuer(normalizedEntryUrl)
+        : null
+      if (desktopResolvedIssuer) {
+        return desktopResolvedIssuer
+      }
+
       const configUrl = `${normalizedEntryUrl}/.well-known/openid-configuration`
       const response = await fetch(configUrl, {
         method: 'GET',
@@ -106,7 +113,8 @@ export function useOidcConnect() {
         ?? resolvePostLoginMicroAppId()
       ensurePendingPostLoginMicroAppId(returnToMicroAppId)
       const explicitAccountIssuerUrl = normalizeLoginUrl(options?.accountIssuerUrl)
-      const accountIssuerUrl = explicitAccountIssuerUrl ?? resolvedIssuerUrl
+      const oidcIssuerUrl = resolvedIssuerUrl
+      const accountIssuerUrl = explicitAccountIssuerUrl ?? oidcIssuerUrl
       const storageProviderUrl = normalizeLoginUrl(options?.storageProviderUrl) ?? normalizedEntryUrl
       const accountIssuerLabel = options?.accountIssuerLabel ?? options?.issuerLabel
       const authorizationQuery = sanitizeAuthorizationQuery(options?.authorizationQuery)
@@ -121,7 +129,7 @@ export function useOidcConnect() {
       const transaction = createLoginTransaction({
         route,
         oidcEntryUrl,
-        oidcIssuerUrl: resolvedIssuerUrl,
+        oidcIssuerUrl,
         accountIssuerUrl,
         accountIssuerLabel,
         authorizationSurface: options?.authorizationSurface ?? 'window',
@@ -166,7 +174,7 @@ export function useOidcConnect() {
           ? desktopApi?.app?.openExternal
             ? (url: string) => desktopApi.app.openExternal(appendAuthorizationQuery(url, authorizationQuery))
             : undefined
-          : desktopApi?.auth?.openAuthorizationWindow
+        : desktopApi?.auth?.openAuthorizationWindow
           ? (url: string) => desktopApi.auth.openAuthorizationWindow(appendAuthorizationQuery(url, authorizationQuery), {
               providerLabel: options?.storageProviderLabel ?? options?.issuerLabel,
             })
@@ -204,7 +212,7 @@ export function useOidcConnect() {
         : undefined
 
       const loginOptions = {
-        oidcIssuer: transaction?.oidcEntryUrl ?? oidcEntryUrl,
+        oidcIssuer: transaction?.oidcIssuerUrl ?? oidcIssuerUrl,
         redirectUrl,
         clientName: 'LinX',
         tokenType: 'DPoP',
@@ -266,6 +274,22 @@ function isLoopbackUrl(url: string): boolean {
       || hostname === '[::1]'
   } catch {
     return false
+  }
+}
+
+async function resolveDesktopOidcIssuer(url: string): Promise<string | null> {
+  const desktopApi = typeof window !== 'undefined' ? window.xpodDesktop : undefined
+  if (!desktopApi?.auth?.resolveOidcIssuer) {
+    return null
+  }
+
+  try {
+    const issuer = await desktopApi.auth.resolveOidcIssuer(url)
+    return typeof issuer === 'string' && issuer.trim().length > 0
+      ? issuer.replace(/\/$/, '')
+      : null
+  } catch {
+    return null
   }
 }
 

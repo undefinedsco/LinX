@@ -8,11 +8,17 @@ import {
   messageTable,
   solidSchema,
   extractChatIdFromChatRef,
+  aiConfigProviderRef,
+  getDefaultAIConfigCredentialId,
 } from '@undefineds.co/models'
 import { createXpodIntegrationContext, type XpodIntegrationContext } from '../../test/xpod-integration'
 import { chatOps, initializeChatCollections } from './collections'
 
 let context: XpodIntegrationContext<typeof solidSchema> | null = null
+
+function chatResourceId(key: string): string {
+  return chatTable.buildId({ id: key })
+}
 
 async function getContext(): Promise<XpodIntegrationContext<typeof solidSchema>> {
   if (context) return context
@@ -33,8 +39,9 @@ describe('chat collections integration', () => {
     const { db: database, webId } = await getContext()
 
     const id = `chat-${Date.now()}`
+    const resourceId = chatResourceId(id)
     const [created] = await database.insert(chatTable).values({
-      id,
+      id: resourceId,
       title: 'Integration Chat',
       description: 'chat insert test',
       participants: [webId],
@@ -43,7 +50,7 @@ describe('chat collections integration', () => {
     expect(created).toBeDefined()
 
     // Round-trip: SELECT back via SPARQL endpoint
-    const row = await (database as any).findById(chatTable as any, id)
+    const row = await (database as any).findById(chatTable as any, resourceId)
     expect(row).toBeTruthy()
     expect(row?.title).toBe('Integration Chat')
   })
@@ -53,7 +60,7 @@ describe('chat collections integration', () => {
 
     const id = `group-chat-${Date.now()}`
     const podBase = webId.replace('/profile/card#me', '')
-    const assistantUri = `${podBase}/.data/agents/assistant-${id}/index.ttl#this`
+    const assistantUri = `${podBase}/agents/assistant-${id}/profile/card#me`
     const metadata = {
       memberRoles: {
         [webId]: 'owner',
@@ -61,8 +68,9 @@ describe('chat collections integration', () => {
       },
     } as const
 
+    const resourceId = chatResourceId(id)
     await database.insert(chatTable).values({
-      id,
+      id: resourceId,
       title: 'Group Round Trip',
       participants: [webId, assistantUri],
       metadata,
@@ -74,15 +82,16 @@ describe('chat collections integration', () => {
     expect(roundTripped?.participants).toEqual(expect.arrayContaining([assistantUri]))
     expect(roundTripped?.metadata).toMatchObject(metadata)
 
-    await (database as any).deleteById(chatTable as any, id)
+    await (database as any).deleteById(chatTable as any, resourceId)
   })
 
   it('insert thread/message and SELECT back', { timeout: 90000 }, async () => {
     const { db: database, webId } = await getContext()
 
     const chatId = `chat-thread-${Date.now()}`
+    const chatResource = chatResourceId(chatId)
     await database.insert(chatTable).values({
-      id: chatId,
+      id: chatResource,
       title: 'Thread Test Chat',
       participants: [webId],
     }).execute()
@@ -99,7 +108,8 @@ describe('chat collections integration', () => {
     expect(message).toBeDefined()
 
     const msgRows = await chatOps.fetchMessages(thread.id, chatId)
-    const roundTripped = msgRows.find((row) => row.id === message.id)
+    const messageIri = (message as Record<string, unknown>)['@id']
+    const roundTripped = msgRows.find((row) => row.id === message.id || (row as Record<string, unknown>)['@id'] === messageIri)
     expect(roundTripped).toBeDefined()
     expect(roundTripped?.content).toBe('hello from integration test')
   })
@@ -108,7 +118,7 @@ describe('chat collections integration', () => {
     const { db: database } = await getContext()
     const suffix = crypto.randomUUID()
     const providerId = `openai-${suffix}`
-    const credentialId = `credential-${suffix}`
+    const credentialId = getDefaultAIConfigCredentialId(providerId)
 
     await database.insert(aiProviderTable).values({
       id: providerId,
@@ -117,9 +127,10 @@ describe('chat collections integration', () => {
 
     await database.insert(credentialTable).values({
       id: credentialId,
-      provider: `/settings/providers/${providerId}.ttl`,
+      provider: aiConfigProviderRef(providerId),
       service: 'ai',
       status: 'active',
+      isDefault: true,
       apiKey: 'sk-openai-test',
     }).execute()
 
@@ -136,16 +147,17 @@ describe('chat collections integration', () => {
     const { db: database, webId } = await getContext()
 
     const id = `chat-del-${Date.now()}`
+    const resourceId = chatResourceId(id)
     await database.insert(chatTable).values({
-      id,
+      id: resourceId,
       title: 'Delete Me',
       participants: [webId],
     }).execute()
 
-    await (database as any).deleteById(chatTable as any, id)
+    await (database as any).deleteById(chatTable as any, resourceId)
 
     // Verify deletion via SPARQL SELECT
-    const row = await (database as any).findById(chatTable as any, id)
+    const row = await (database as any).findById(chatTable as any, resourceId)
     expect(row).toBeNull()
   })
 })

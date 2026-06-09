@@ -74,10 +74,13 @@ function createSelectedSpDb(chatId: string) {
     }),
     resolveRowIri: vi.fn((table: unknown, row: Record<string, unknown>) => {
       if (table === chatTable) {
-        return `${SELECTED_SP_POD_URL}.data/chat/${row.id}/index.ttl#this`
+        return `${SELECTED_SP_POD_URL}.data/chat/${row.id}`
       }
       if (table === threadTable) {
-        return `${SELECTED_SP_POD_URL}.data/chat/${row.chat}/index.ttl#${row.id}`
+        return `${SELECTED_SP_POD_URL}.data/${row.id}`
+      }
+      if (table === messageTable) {
+        return `${SELECTED_SP_POD_URL}.data/${row.id}`
       }
       return null
     }),

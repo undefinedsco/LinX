@@ -108,6 +108,7 @@ vi.mock('../collections', () => ({
   useThreadList: () => mockUseThreadList(),
   useWorkspaceList: () => mockUseWorkspaceList(),
   useChatMutations: () => mockMutations,
+  useLinxDefaultSecretaryBootstrapSettling: () => false,
 }))
 
 vi.mock('../runtime-client', () => ({
@@ -267,7 +268,7 @@ describe('ChatContentPane', () => {
     act(() => {
       mockRuntimeEventHandler.current?.({
         type: 'error',
-        message: 'Failed to create Pod container https://node.example/alice/.data/agents/__secretary__/: HTTP 403',
+        message: 'Failed to create Pod container https://node.example/alice/agents/__secretary__/: HTTP 403',
       })
     })
 

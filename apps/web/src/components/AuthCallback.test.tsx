@@ -8,6 +8,9 @@ import {
 } from '@/modules/login/login-utils'
 
 const connectMock = vi.fn()
+const handleIncomingRedirectMock = vi.fn()
+const consumePendingRedirectMock = vi.fn()
+const onRedirectMock = vi.fn()
 const onSuccessMock = vi.fn()
 const onErrorMock = vi.fn()
 
@@ -23,6 +26,7 @@ vi.mock('@inrupt/solid-ui-react', () => ({
   useSession: () => ({
     session: {
       info: sessionState.info,
+      handleIncomingRedirect: handleIncomingRedirectMock,
     },
     sessionRequestInProgress: sessionState.sessionRequestInProgress,
   }),
@@ -42,11 +46,15 @@ describe('AuthCallback', () => {
     sessionState.info.isLoggedIn = false
     sessionState.info.sessionId = 'session-1'
     sessionState.sessionRequestInProgress = false
+    handleIncomingRedirectMock.mockResolvedValue({ isLoggedIn: false })
+    consumePendingRedirectMock.mockResolvedValue(null)
+    onRedirectMock.mockReturnValue(() => {})
     clearPendingLoginAttempt()
     clearPendingPostLoginMicroAppId()
     window.localStorage.removeItem('solidClientAuthn:currentSession')
     window.localStorage.removeItem('solidClientAuthenticationUser:session-1')
     window.history.replaceState({}, '', '/auth/callback')
+    delete window.xpodDesktop
   })
 
   afterEach(() => {
@@ -102,6 +110,43 @@ describe('AuthCallback', () => {
 
     render(<SolidAuthCallback onSuccess={onSuccessMock} onError={onErrorMock} />)
 
+    await waitFor(() => {
+      expect(onSuccessMock).toHaveBeenCalledTimes(1)
+    })
+    expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBe('session-1')
+  })
+
+  it('restores a Desktop loopback redirect from the pending main-process callback', async () => {
+    consumePendingRedirectMock.mockResolvedValueOnce('http://127.0.0.1:43123/auth/callback?code=abc&state=xyz')
+    handleIncomingRedirectMock.mockImplementationOnce(async () => {
+      window.localStorage.setItem(
+        'solidClientAuthenticationUser:session-1',
+        JSON.stringify({
+          isLoggedIn: 'true',
+          webId: 'https://id.undefineds.co/alice/profile/card#me',
+        }),
+      )
+      return {
+        isLoggedIn: true,
+        sessionId: 'session-1',
+        webId: 'https://id.undefineds.co/alice/profile/card#me',
+      }
+    })
+    window.xpodDesktop = {
+      auth: {
+        consumePendingRedirect: consumePendingRedirectMock,
+        onRedirect: onRedirectMock,
+      },
+    } as any
+
+    render(<SolidAuthCallback onSuccess={onSuccessMock} onError={onErrorMock} />)
+
+    await waitFor(() => {
+      expect(handleIncomingRedirectMock).toHaveBeenCalledWith({
+        url: `${window.location.origin}/auth/callback?code=abc&state=xyz`,
+        restorePreviousSession: false,
+      })
+    })
     await waitFor(() => {
       expect(onSuccessMock).toHaveBeenCalledTimes(1)
     })

@@ -1,16 +1,36 @@
 import { Session } from '@inrupt/solid-client-authn-browser'
 import { useEffect, useState } from 'react'
 
+const LOG_STORAGE_KEY = 'linx:inrupt-simple-test:logs'
+
+function readStoredLogs(): string[] {
+  if (typeof window === 'undefined') return []
+  try {
+    return JSON.parse(window.sessionStorage.getItem(LOG_STORAGE_KEY) ?? '[]') as string[]
+  } catch {
+    return []
+  }
+}
+
 export default function InruptSimpleTest() {
-  const [logs, setLogs] = useState<string[]>([])
+  const [logs, setLogs] = useState<string[]>(() => readStoredLogs())
   const [session] = useState(() => new Session({}, 'inrupt-simple-test'))
   const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null
   const issuer = params?.get('issuer') ?? 'http://localhost:3000'
   const tokenType = params?.get('tokenType') === 'Bearer' ? 'Bearer' : 'DPoP'
+  const redirectUrl = typeof window !== 'undefined'
+    ? `${window.location.origin}/test/inrupt-simple?issuer=${encodeURIComponent(issuer)}&tokenType=${encodeURIComponent(tokenType)}`
+    : '/test/inrupt-simple'
 
   const log = (msg: string) => {
     console.log(msg)
-    setLogs(prev => [...prev, msg])
+    setLogs(prev => {
+      const next = [...prev, msg]
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.setItem(LOG_STORAGE_KEY, JSON.stringify(next))
+      }
+      return next
+    })
   }
 
   useEffect(() => {
@@ -43,10 +63,12 @@ export default function InruptSimpleTest() {
   }, [session])
 
   const handleLogin = () => {
+    window.sessionStorage.removeItem(LOG_STORAGE_KEY)
+    setLogs([])
     log('Starting login...')
     session.login({
       oidcIssuer: issuer,
-      redirectUrl: window.location.origin + '/test/inrupt-simple',
+      redirectUrl,
       clientName: 'InruptSimpleTest',
       tokenType,
     })

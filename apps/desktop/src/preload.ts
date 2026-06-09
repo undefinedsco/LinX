@@ -42,6 +42,14 @@ export interface XpodStatus {
   localUrl?: string;
   pid?: number;
   provisioning?: XpodProvisioningInfo;
+  runtime?: XpodRuntimeInfo;
+}
+
+export interface XpodRuntimeInfo {
+  launchKind?: string | null;
+  currentVersion?: string | null;
+  targetVersion?: string | null;
+  upgradeAvailable: boolean;
 }
 
 export interface XpodProvisioningInfo {
@@ -137,6 +145,7 @@ export interface LocalOnboardingSnapshot {
 
 export interface AuthAPI {
   prepareLoopbackRedirect: () => Promise<string>;
+  resolveOidcIssuer: (url: string) => Promise<string | null>;
   getEmbeddedAuthorizationState: () => Promise<{ open: boolean; reason: 'opened' | 'completed' | 'dismissed'; ready: boolean }>;
   openAuthorizationWindow: (url: string, options?: { providerLabel?: string }) => Promise<void>;
   openEmbeddedAuthorization: (url: string, options?: { providerLabel?: string }) => Promise<void>;
@@ -194,6 +203,8 @@ contextBridge.exposeInMainWorld('xpodDesktop', {
       ipcRenderer.invoke('xpod:stop'),
     restart: (): Promise<{ success: boolean }> =>
       ipcRenderer.invoke('xpod:restart'),
+    upgrade: (): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('xpod:upgrade'),
     status: (): Promise<XpodStatus> =>
       ipcRenderer.invoke('xpod:status'),
     healthCheck: (): Promise<boolean> =>
@@ -258,6 +269,8 @@ contextBridge.exposeInMainWorld('xpodDesktop', {
   auth: {
     prepareLoopbackRedirect: (): Promise<string> =>
       ipcRenderer.invoke('auth:prepareLoopbackRedirect'),
+    resolveOidcIssuer: (url: string): Promise<string | null> =>
+      ipcRenderer.invoke('auth:resolveOidcIssuer', url),
     getEmbeddedAuthorizationState: (): Promise<{ open: boolean; reason: 'opened' | 'completed' | 'dismissed'; ready: boolean }> =>
       ipcRenderer.invoke('auth:getEmbeddedAuthorizationState'),
     openAuthorizationWindow: (url: string, options?: { providerLabel?: string }): Promise<void> =>

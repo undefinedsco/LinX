@@ -5,6 +5,7 @@ import {
   derivePodSlugFromWebId,
   detectStorageConflict,
   resolveExpectedStorageUrl,
+  resolveStorageProviderProfileUrl,
 } from './storage-reconciliation'
 
 describe('storage-reconciliation', () => {
@@ -26,21 +27,30 @@ describe('storage-reconciliation', () => {
     ).toBe('https://node-abc123.undefineds.co/alice/')
   })
 
+  it('resolves the selected provider profile URL from a Cloud WebID', () => {
+    expect(
+      resolveStorageProviderProfileUrl(
+        'https://id.undefineds.co/alice/profile/card#me',
+        'https://node-abc123.undefineds.co/',
+      ),
+    ).toBe('https://node-abc123.undefineds.co/alice/profile/card#me')
+  })
+
   it.each([
     {
-      route: 'Cloud IDP + Cloud SP',
+      route: 'Cloud account authority + Cloud SP',
       webId: 'https://id.undefineds.co/alice/profile/card#me',
       storageProviderPublicUrl: 'https://id.undefineds.co/',
       expectedStorageUrl: 'https://id.undefineds.co/alice/',
     },
     {
-      route: 'Cloud IDP + Local SP',
+      route: 'Cloud account authority + Local SP',
       webId: 'https://id.undefineds.co/alice/profile/card#me',
       storageProviderPublicUrl: 'https://node-abc123.undefineds.co/',
       expectedStorageUrl: 'https://node-abc123.undefineds.co/alice/',
     },
     {
-      route: 'Standalone Local IDP + Local SP',
+      route: 'Standalone local account authority + Local SP',
       webId: 'http://localhost:5737/alice/profile/card#me',
       storageProviderPublicUrl: 'http://localhost:5737/',
       expectedStorageUrl: 'http://localhost:5737/alice/',
@@ -147,6 +157,46 @@ describe('storage-reconciliation', () => {
       'https://id.undefineds.co/alice/profile/card#me',
       expect.anything(),
     )
+  })
+
+  it('falls back to the selected SP profile when Cloud WebID profile cannot be read with the SP token', async () => {
+    vi.useFakeTimers()
+    const anonymousFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      headers: new Headers(),
+      text: async () => 'unauthorized',
+    })
+    const authenticatedFetch = vi.fn()
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ 'content-type': 'application/ld+json' }),
+        text: async () => JSON.stringify({
+          '@id': 'https://node-abc123.undefineds.co/alice/profile/card#me',
+          'solid:storage': { '@id': 'https://node-abc123.undefineds.co/alice/' },
+        }),
+      })
+    vi.stubGlobal('fetch', anonymousFetch)
+
+    await expect(
+      detectStorageConflict({
+        webId: 'https://id.undefineds.co/alice/profile/card#me',
+        storageProviderUrl: 'https://node-abc123.undefineds.co/',
+        storageProviderPublicUrl: 'https://node-abc123.undefineds.co/',
+        fetch: authenticatedFetch as typeof fetch,
+      }),
+    ).resolves.toBeNull()
+
+    expect(authenticatedFetch).toHaveBeenCalledWith(
+      'https://id.undefineds.co/alice/profile/card#me',
+      expect.anything(),
+    )
+    expect(authenticatedFetch).toHaveBeenCalledWith(
+      'https://node-abc123.undefineds.co/alice/profile/card#me',
+      expect.anything(),
+    )
+    expect(anonymousFetch).not.toHaveBeenCalled()
   })
 
   it('retries authenticated profile reads before falling back to anonymous fetch', async () => {

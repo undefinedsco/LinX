@@ -17,7 +17,9 @@ test.describe('Inrupt simple local auth', () => {
 
   test('shows raw auth result against seeded xpod', async ({ page }) => {
     test.setTimeout(120_000)
+    const browserMessages: string[] = []
     page.on('console', (message) => {
+      browserMessages.push(message.text())
       console.log(`[browser:${message.type()}] ${message.text()}`)
     })
     page.on('pageerror', (error) => {
@@ -40,12 +42,14 @@ test.describe('Inrupt simple local auth', () => {
     await authorizeSeededRuntime(page)
 
     await page.waitForURL(/\/test\/inrupt-simple/, { timeout: 30_000 })
-    await page.waitForTimeout(5_000)
+    await expect.poll(() => browserMessages.join('\n'), {
+      timeout: 15_000,
+    }).toContain('Successfully connected to Solid Pod')
 
     const logs = await page.locator('pre').innerText()
     console.log(`[inrupt-simple-logs]\n${logs}`)
 
-    expect(logs).toContain('Result:')
+    expect(browserMessages.join('\n')).not.toContain('Failed to fetch WebID profile: 401 Unauthorized')
   })
 })
 

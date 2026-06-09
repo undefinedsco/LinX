@@ -4,7 +4,6 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import {
   approvalResource,
   auditResource,
-  buildAuditSubjectPath,
   extractApprovalIdFromApprovalRef,
   extractAuditIdFromAuditRef,
   extractChatThreadRef,
@@ -18,8 +17,8 @@ import {
   type InboxNotificationRow,
   type SolidDatabase,
 } from '@undefineds.co/models'
-import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { updateExactRecord } from '@/lib/data/exact-records'
+import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { assertInsertValuesBelongToCurrentPod, assertUpdateValuesBelongToCurrentPod } from '@/lib/data/pod-write-guard'
 import { createPodCollection } from '@/lib/data/pod-collection'
 import { queryClient } from '@/providers/query-provider'
@@ -90,14 +89,6 @@ function formatTimestamp(value: unknown): number {
   return Number.isFinite(time) ? time : 0
 }
 
-function extractPodBase(db: SolidDatabase): string {
-  const podBaseUrl = resolveCurrentPodBaseUrl(db)
-  if (!podBaseUrl) {
-    throw new Error('Unable to resolve current Pod URL for inbox resources.')
-  }
-  return podBaseUrl
-}
-
 function resolveApprovalIri(db: SolidDatabase, approval: ApprovalRow): string {
   if (!approval.id) {
     throw new Error('Approval row is missing id.')
@@ -126,7 +117,11 @@ async function updateApprovalByIri(
 }
 
 function makeAuditUri(db: SolidDatabase, auditId: string, createdAt: Date | string | number = new Date()): string {
-  return `${extractPodBase(db)}${buildAuditSubjectPath(auditId, createdAt)}`
+  const podBaseUrl = resolveCurrentPodBaseUrl(db)
+  if (!podBaseUrl) {
+    throw new Error('Cannot build audit resource IRI without a current SP Pod URL.')
+  }
+  return auditResource.buildIri(podBaseUrl, { id: auditId, createdAt } as any)
 }
 
 function extractApprovalRuntimeThreadId(approval: ApprovalRow): string | null {
@@ -370,14 +365,14 @@ export const inboxOps = {
   },
 }
 
-export function useInboxItems(filterOverride?: InboxFilter) {
+export function useInboxItems(filterOverride?: InboxFilter, options?: { enabled?: boolean }) {
   const { db } = useSolidDatabase()
   const storeFilter = useInboxStore((state) => state.filter)
   const filter = filterOverride ?? storeFilter
 
   return useQuery({
     queryKey: ['inbox', 'items', filter],
-    enabled: !!db,
+    enabled: !!db && (options?.enabled ?? true),
     queryFn: async () => {
       const [notifications, approvals, audits] = await Promise.all([
         inboxOps.fetchNotifications(),

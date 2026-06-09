@@ -8,10 +8,10 @@ import { ConfigManager } from './config-manager';
 import { ProviderManager } from './provider-manager';
 import {
   resolveManagedXpodLaunchTarget,
-  resolveXpodLaunchTarget,
   type XpodLaunchProgress,
   type XpodLaunchTarget,
 } from './xpod-launch';
+import { desktopFetch } from './desktop-fetch';
 import { ensureLinxLocalHome } from './local-home';
 import buildMeta from '../generated/build-meta.json';
 
@@ -20,6 +20,8 @@ const OFFICIAL_CLOUD_API_ORIGIN = 'https://api.undefineds.co';
 const OFFICIAL_PREALLOCATED_MANAGED_SP_DOMAIN = 'node-0000.undefineds.co';
 const MANAGED_CLOUD_REGISTRATION_TIMEOUT_MS = 30000;
 const CANONICAL_OIDC_ISSUER_ENV_KEY = 'oidcIssuer';
+const XPOD_LOCAL_SETUP_PATH_ENV_KEY = 'XPOD_LOCAL_SETUP_PATH';
+const XPOD_PROVIDER_ID_ENV_KEY = 'XPOD_PROVIDER_ID';
 const PROVISION_CODE_REFRESH_GRACE_SECONDS = 5 * 60;
 const desktopBuildMeta = buildMeta as { xpodVersion?: string };
 
@@ -240,6 +242,14 @@ export interface XpodStatus {
   localUrl?: string;
   pid?: number;
   provisioning?: XpodProvisioningInfo;
+  runtime?: XpodRuntimeInfo;
+}
+
+export interface XpodRuntimeInfo {
+  launchKind?: string | null;
+  currentVersion?: string | null;
+  targetVersion?: string | null;
+  upgradeAvailable: boolean;
 }
 
 export interface XpodProvisioningInfo {
@@ -302,6 +312,16 @@ interface ProvisionNodeResponse {
   tunnelEndpoint?: string;
 }
 
+interface ProvisionStatusResponse {
+  registered?: boolean;
+  cloudUrl?: string;
+  nodeId?: string;
+  publicUrl?: string;
+  spDomain?: string;
+  provisionCode?: string;
+  provisionUrl?: string;
+}
+
 export class XpodManager {
   private readonly configManager: ConfigManager;
   private readonly providerManager: ProviderManager;
@@ -338,7 +358,17 @@ export class XpodManager {
     const existing = this.readState();
     if (existing) {
       const existingHealthy = await this.isServiceReady(existing.localUrl);
-      if (existingHealthy && this.canFastReuseRunningService(existing, options)) {
+      const existingProvisioning = existingHealthy && existing.providerId === options.providerId
+        ? await this.readProvisioningFromRunningService({
+            providerId: existing.providerId,
+            localUrl: existing.localUrl,
+            provisioning: existing.provisioning,
+          })
+        : existing.provisioning;
+      if (
+        existingHealthy
+        && this.canFastReuseRunningService(existing, options, existingProvisioning)
+      ) {
         this.reportStartProgress(onProgress, {
           phase: 'ready',
           label: '本地空间已运行',
@@ -368,9 +398,10 @@ export class XpodManager {
         detail: null,
       });
     }
+    const persistedRegistration = this.readPersistedManagedCloudRegistration(options.providerId);
     const existingRegistration = existing?.providerId === options.providerId
-      ? existing.provisioning ?? this.readPersistedManagedCloudRegistration(options.providerId)
-      : this.readPersistedManagedCloudRegistration(options.providerId);
+      ? persistedRegistration ?? existing.provisioning
+      : persistedRegistration;
     const provisioning = this.requiresManagedCloudRegistration(options)
       ? await this.ensureManagedCloudRegistration(options, existingRegistration)
       : undefined;
@@ -387,12 +418,21 @@ export class XpodManager {
 
     if (existing) {
       const existingHealthy = await this.isServiceReady(existing.localUrl);
+      const existingProvisioning = existing.providerId === options.providerId
+        ? this.readPersistedManagedCloudRegistration(options.providerId) ?? existing.provisioning
+        : existing.provisioning;
+      const comparableExisting = existingProvisioning && existing.spaceKind === 'local'
+        ? {
+            ...existing,
+            baseUrl: existingProvisioning.publicUrl,
+            provisioning: existingProvisioning,
+          }
+        : existing;
       if (
         existingHealthy
-        && this.matchesDesiredState(existing, desiredState)
-        && this.matchesProvisioning(existing.provisioning, provisioning)
+        && this.matchesDesiredState(comparableExisting, desiredState)
+        && this.matchesProvisioning(comparableExisting.provisioning, provisioning)
         && this.matchesRuntimeEnvFile(runtimeEnv)
-        && !this.shouldReplaceManagedRuntime(existing, preferredTarget)
       ) {
         this.reportStartProgress(onProgress, {
           phase: 'ready',
@@ -584,6 +624,22 @@ export class XpodManager {
     }
   }
 
+  async upgradeRuntime(onProgress?: XpodStartProgressHandler): Promise<void> {
+    const state = this.readState();
+    const runtime = this.buildRuntimeInfo(state);
+    if (!runtime.upgradeAvailable) {
+      throw new Error('当前 xpod runtime 已是目标版本，无需升级。');
+    }
+
+    const options = this.getResumableStartOptions();
+    if (!options) {
+      throw new Error('无法找到可恢复的本地空间配置，不能升级 xpod runtime。');
+    }
+
+    await this.stop();
+    await this.start(options, onProgress);
+  }
+
   async getStatus(): Promise<XpodStatus> {
     const state = this.readState();
     if (!state) {
@@ -592,45 +648,34 @@ export class XpodManager {
         return external;
       }
 
-      return { running: false, status: 'stopped' };
+      return {
+        running: false,
+        status: 'stopped',
+        runtime: this.buildRuntimeInfo(null),
+      };
     }
 
-    const isCurrentChildProcess = Boolean(
-      this.childProcess?.pid
-      && state.pid
-      && this.childProcess.pid === state.pid,
-    );
-
-    if (!app.isPackaged && !isCurrentChildProcess) {
-      const preferredTarget = this.resolveComparableLaunchTarget();
-      if (this.shouldReplaceManagedRuntime(state, preferredTarget)) {
-        await this.disposeManagedRuntime(state);
-        return {
-          running: false,
-          status: 'stopped',
-          providerId: state.providerId,
-          port: state.port,
-          baseUrl: state.baseUrl,
-          localUrl: state.localUrl,
-          pid: state.pid,
-          provisioning: toProvisioningInfo(state.provisioning),
-        };
-      }
-    }
+    const runtime = this.buildRuntimeInfo(state);
 
     const healthy = await this.isServiceReady(state.localUrl);
     if (healthy) {
       this.currentProviderId = state.providerId;
       this.providerManager.updateManagedStatus(state.providerId, 'running');
+      const provisioning = await this.readProvisioningFromRunningService({
+        providerId: state.providerId,
+        localUrl: state.localUrl,
+        provisioning: state.provisioning,
+      });
       return {
         running: true,
         status: 'running',
         providerId: state.providerId,
         port: state.port,
-        baseUrl: state.baseUrl,
+        baseUrl: provisioning?.publicUrl ?? state.baseUrl,
         localUrl: state.localUrl,
         pid: state.pid,
-        provisioning: toProvisioningInfo(state.provisioning),
+        provisioning: toProvisioningInfo(provisioning),
+        runtime,
       };
     }
 
@@ -646,6 +691,7 @@ export class XpodManager {
         localUrl: state.localUrl,
         pid: state.pid,
         provisioning: toProvisioningInfo(state.provisioning),
+        runtime,
       };
     }
 
@@ -672,6 +718,7 @@ export class XpodManager {
       localUrl: state.localUrl,
       pid: state.pid,
       provisioning: toProvisioningInfo(state.provisioning),
+      runtime,
     };
   }
 
@@ -746,14 +793,22 @@ export class XpodManager {
         }
       }
 
+      const provisioning = candidate.providerId
+        ? await this.readProvisioningFromRunningService({
+            providerId: candidate.providerId,
+            localUrl: candidate.localUrl,
+          })
+        : undefined;
+
       return {
         running: true,
         status: 'running',
         providerId: candidate.providerId,
         port: candidate.port,
-        baseUrl: candidate.baseUrl,
+        baseUrl: provisioning?.publicUrl ?? candidate.baseUrl,
         localUrl: candidate.localUrl,
-        provisioning: candidate.provisioning,
+        provisioning: toProvisioningInfo(provisioning) ?? candidate.provisioning,
+        runtime: this.buildRuntimeInfo(null),
       };
     }
 
@@ -806,6 +861,43 @@ export class XpodManager {
 
     await this.start(options);
     return true;
+  }
+
+  async prepareLocalAuthorizationUrl(rawUrl: string): Promise<string> {
+    const requestedProvisionCode = extractProvisionCodeFromUrl(rawUrl);
+    const state = this.readState();
+    const persistedProvisioning = state?.providerId
+      ? this.readPersistedManagedCloudRegistration(state.providerId)
+      : undefined;
+    const stateProvisionCode = state?.spaceKind === 'local'
+      ? (persistedProvisioning ?? state.provisioning)?.provisionCode
+      : undefined;
+    const shouldRefresh = Boolean(
+      (requestedProvisionCode && !isProvisionCodeReusable(requestedProvisionCode))
+      || (
+        stateProvisionCode
+        && !isProvisionCodeReusable(stateProvisionCode)
+        && (!requestedProvisionCode || requestedProvisionCode === stateProvisionCode)
+      ),
+    );
+
+    if (!shouldRefresh) {
+      return rawUrl;
+    }
+
+    const options = this.getResumableStartOptions();
+    if (!options || options.spaceKind !== 'local') {
+      return rawUrl;
+    }
+
+    await this.start(options);
+    const freshProvisionCode = this.readPersistedManagedCloudRegistration(options.providerId)?.provisionCode
+      ?? this.readState()?.provisioning?.provisionCode;
+    if (!freshProvisionCode) {
+      return rawUrl;
+    }
+
+    return replaceProvisionCodeInUrl(rawUrl, freshProvisionCode);
   }
 
   private createDesiredState(
@@ -1097,6 +1189,8 @@ export class XpodManager {
       ...envConfig,
       XPOD_PORT: String(state.port),
       PORT: String(state.port),
+      [XPOD_LOCAL_SETUP_PATH_ENV_KEY]: this.cloudRegistrationPath,
+      [XPOD_PROVIDER_ID_ENV_KEY]: options.providerId,
       CSS_EDITION: envConfig.CSS_EDITION ?? 'local',
       edition: envConfig.CSS_EDITION ?? 'local',
       edgeNodesEnabled: envConfig.CSS_EDGE_NODES_ENABLED ?? 'false',
@@ -1251,7 +1345,7 @@ export class XpodManager {
         effectiveProvisionRequest,
         managedCloudApiOrigin,
       );
-      if (!fallbackRequest || !isMissingPublicUrlProvisionError(error)) {
+      if (!fallbackRequest || !isManagedProvisionFallbackError(error)) {
         throw error;
       }
 
@@ -1318,7 +1412,7 @@ export class XpodManager {
     const timeoutId = setTimeout(() => controller.abort(), MANAGED_CLOUD_REGISTRATION_TIMEOUT_MS);
 
     try {
-      const response = await fetch(endpoint, {
+      const response = await desktopFetch(endpoint, {
         method: 'POST',
         headers: {
           Accept: 'application/json',
@@ -1534,7 +1628,7 @@ export class XpodManager {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 1000);
 
-      const response = await fetch(url, { signal: controller.signal });
+      const response = await desktopFetch(url, { signal: controller.signal });
       clearTimeout(timeoutId);
       if (!response.ok) {
         return false;
@@ -1546,6 +1640,40 @@ export class XpodManager {
       return css?.status === 'running' && api?.status === 'running';
     } catch {
       return false;
+    }
+  }
+
+  private async readProvisioningFromRunningService(input: {
+    providerId: string;
+    localUrl: string;
+    provisioning?: XpodManagedCloudRegistration;
+  }): Promise<XpodManagedCloudRegistration | undefined> {
+    const current = this.readPersistedManagedCloudRegistration(input.providerId) ?? input.provisioning;
+    if (!current) {
+      return input.provisioning;
+    }
+
+    const status = await this.fetchProvisionStatus(input.localUrl);
+    const refreshed = this.readPersistedManagedCloudRegistration(input.providerId) ?? current;
+    return mergeProvisioningStatus(refreshed, status) ?? refreshed;
+  }
+
+  private async fetchProvisionStatus(localUrl: string): Promise<ProvisionStatusResponse | null> {
+    try {
+      const url = new URL('/provision/status', localUrl);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      const response = await desktopFetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (!response.ok) {
+        return null;
+      }
+      const payload = await response.json() as unknown;
+      return payload && typeof payload === 'object' && !Array.isArray(payload)
+        ? payload as ProvisionStatusResponse
+        : null;
+    } catch {
+      return null;
     }
   }
 
@@ -1643,6 +1771,7 @@ export class XpodManager {
   private canFastReuseRunningService(
     current: XpodServiceState,
     desired: XpodStartOptions,
+    provisioning: XpodManagedCloudRegistration | undefined = current.provisioning,
   ): boolean {
     if (current.providerId !== desired.providerId) {
       return false;
@@ -1660,21 +1789,27 @@ export class XpodManager {
       return true;
     }
 
+    const hasReusableProvisioning = Boolean(
+      provisioning?.publicUrl
+      && provisioning?.provisionCode
+      && isProvisionCodeReusable(provisioning.provisionCode)
+      && provisioning?.cloudIdentityUrl,
+    );
+    if (!hasReusableProvisioning) {
+      return false;
+    }
+    const reusableProvisioning = provisioning as XpodManagedCloudRegistration;
+
     if (desired.domain?.type === 'custom' && desired.domain.value?.trim()) {
       return current.baseUrl === this.ensureTrailingSlash(`https://${desired.domain.value}`);
     }
 
     if (desired.domain?.type === 'managed' && desired.domain.value?.trim()) {
-      return current.provisioning?.spDomain === normalizeHostname(desired.domain.value)
-        && current.baseUrl === this.ensureTrailingSlash(`https://${desired.domain.value}`);
+      return reusableProvisioning.spDomain === normalizeHostname(desired.domain.value)
+        && reusableProvisioning.publicUrl === this.ensureTrailingSlash(`https://${desired.domain.value}`);
     }
 
-    return Boolean(
-      current.provisioning?.publicUrl
-      && current.provisioning?.provisionCode
-      && isProvisionCodeReusable(current.provisioning.provisionCode)
-      && current.provisioning?.cloudIdentityUrl,
-    );
+    return true;
   }
 
   private matchesProvisioning(
@@ -1734,6 +1869,7 @@ export class XpodManager {
     onProgress: XpodStartProgressHandler | undefined,
     progress: XpodStartProgress,
   ): void {
+    debugXpodManager('start progress', { ...progress });
     onProgress?.(progress);
   }
 
@@ -1750,34 +1886,35 @@ export class XpodManager {
     });
   }
 
-  private resolveComparableLaunchTarget(): XpodLaunchTarget {
-    return resolveXpodLaunchTarget({
-      appIsPackaged: app.isPackaged,
-      desktopDir: this.desktopDir,
-      cwd: process.cwd(),
-      env: process.env,
-      resourcesPath: process.resourcesPath,
-    });
+  private buildRuntimeInfo(state: Pick<XpodServiceState, 'launchKind' | 'runtimeId'> | null | undefined): XpodRuntimeInfo {
+    const targetVersion = desktopBuildMeta.xpodVersion?.trim() || null;
+    const currentVersion = this.extractManagedRuntimeVersion(state);
+    const upgradeAvailable = Boolean(
+      targetVersion
+      && currentVersion
+      && currentVersion !== targetVersion
+      && this.isManagedPackageRuntime(state?.launchKind),
+    );
+
+    return {
+      launchKind: state?.launchKind ?? null,
+      currentVersion,
+      targetVersion,
+      upgradeAvailable,
+    };
   }
 
-  private shouldReplaceManagedRuntime(
-    state: Pick<XpodServiceState, 'launchKind' | 'runtimeId'>,
-    preferredTarget: XpodLaunchTarget,
-  ): boolean {
-    if (app.isPackaged) {
-      return false;
+  private extractManagedRuntimeVersion(state: Pick<XpodServiceState, 'launchKind' | 'runtimeId'> | null | undefined): string | null {
+    if (!this.isManagedPackageRuntime(state?.launchKind)) {
+      return null;
     }
 
-    if (!state.launchKind) {
-      return false;
-    }
+    const runtimeVersion = state?.runtimeId?.split('|')[3]?.trim();
+    return runtimeVersion || null;
+  }
 
-    if (state.launchKind !== preferredTarget.kind) {
-      return true;
-    }
-
-    const preferredRuntimeId = this.buildRuntimeId(preferredTarget);
-    return state.runtimeId !== preferredRuntimeId;
+  private isManagedPackageRuntime(launchKind: string | null | undefined): boolean {
+    return launchKind === 'managed-bun-package' || launchKind === 'managed-node-package';
   }
 
   private buildRuntimeId(target: XpodLaunchTarget): string {
@@ -1824,26 +1961,6 @@ export class XpodManager {
     }
   }
 
-  private async disposeManagedRuntime(state: Pick<XpodServiceState, 'providerId' | 'pid' | 'localUrl'>): Promise<void> {
-    if (state.pid && this.isProcessAlive(state.pid)) {
-      this.stoppingPid = state.pid;
-      this.childProcess = null;
-      this.lastProcessErrorOutput = '';
-      await this.killProcess(state.pid);
-      await this.waitForShutdown(state.localUrl);
-    }
-
-    this.clearState();
-    this.currentProviderId = null;
-    this.stoppingPid = null;
-
-    try {
-      this.providerManager.updateManagedStatus(state.providerId, 'stopped');
-    } catch {
-      // provider may have been removed
-    }
-  }
-
   private ensureTrailingSlash(url: string): string {
     return url.endsWith('/') ? url : `${url}/`;
   }
@@ -1872,6 +1989,28 @@ function buildProvisionUrl(cloudIdentityUrl: string, provisionCode: string): str
   const url = new URL('/.account/', `${normalizeUrl(cloudIdentityUrl)}/`);
   url.searchParams.set('provisionCode', provisionCode);
   return url.toString();
+}
+
+function extractProvisionCodeFromUrl(rawUrl: string): string | null {
+  try {
+    const parsed = new URL(rawUrl);
+    return parsed.searchParams.get('provisionCode');
+  } catch {
+    return null;
+  }
+}
+
+function replaceProvisionCodeInUrl(rawUrl: string, provisionCode: string): string {
+  try {
+    const parsed = new URL(rawUrl);
+    if (!parsed.searchParams.has('provisionCode')) {
+      return rawUrl;
+    }
+    parsed.searchParams.set('provisionCode', provisionCode);
+    return parsed.toString();
+  } catch {
+    return rawUrl;
+  }
 }
 
 function derivePublicUrlFromSpDomain(spDomain?: string): string | undefined {
@@ -1930,9 +2069,14 @@ function isCurrentManagedSpDomain(spDomain: string | undefined): boolean {
   return Boolean(spDomain && /^node-[a-z0-9-]+\.undefineds\.co$/iu.test(spDomain));
 }
 
-function isMissingPublicUrlProvisionError(error: unknown): boolean {
+function isManagedProvisionFallbackError(error: unknown): boolean {
   const message = readErrorDiagnostic(error);
-  return message.includes('publicUrl is required');
+  const normalized = message.toLowerCase();
+  return normalized.includes('publicurl is required')
+    || normalized.includes('failed to register sp node')
+    || normalized.includes('fetch failed')
+    || normalized.includes('connect timeout')
+    || normalized.includes('timeout');
 }
 
 function createManagedCloudRegistrationError(error: unknown): Error {
@@ -2020,6 +2164,51 @@ function toProvisioningInfo(
     cloudApiUrl: provisioning.cloudApiUrl,
     registeredAt: provisioning.registeredAt,
   };
+}
+
+function mergeProvisioningStatus(
+  current: XpodManagedCloudRegistration,
+  status: ProvisionStatusResponse | null,
+): XpodManagedCloudRegistration | null {
+  if (!status?.registered || typeof status.provisionCode !== 'string' || !status.provisionCode.trim()) {
+    return null;
+  }
+
+  if (typeof status.nodeId === 'string' && status.nodeId.trim() && status.nodeId !== current.nodeId) {
+    return null;
+  }
+
+  const publicUrl = normalizeUrlWithTrailingSlash(status.publicUrl) ?? current.publicUrl;
+  const cloudIdentityUrl = resolveCloudIdentityUrlFromProvisionUrl(status.provisionUrl) ?? current.cloudIdentityUrl;
+  const cloudApiUrl = typeof status.cloudUrl === 'string' && status.cloudUrl.trim()
+    ? normalizeUrl(status.cloudUrl)
+    : current.cloudApiUrl;
+  const provisionUrl = typeof status.provisionUrl === 'string' && status.provisionUrl.trim()
+    ? status.provisionUrl
+    : buildProvisionUrl(cloudIdentityUrl, status.provisionCode);
+
+  return {
+    ...current,
+    nodeId: status.nodeId ?? current.nodeId,
+    provisionCode: status.provisionCode,
+    publicUrl,
+    spDomain: typeof status.spDomain === 'string' && status.spDomain.trim() ? status.spDomain : current.spDomain,
+    provisionUrl,
+    cloudIdentityUrl,
+    cloudApiUrl,
+  };
+}
+
+function resolveCloudIdentityUrlFromProvisionUrl(provisionUrl: string | undefined): string | null {
+  if (!provisionUrl?.trim()) {
+    return null;
+  }
+
+  try {
+    return normalizeUrl(new URL(provisionUrl).origin);
+  } catch {
+    return null;
+  }
 }
 
 function toStartOptions(

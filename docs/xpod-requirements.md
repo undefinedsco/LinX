@@ -42,7 +42,10 @@ Standalone 下的取值规则以 `docs/local-sp-domain-and-tunnel.md` 为准。
 - Cloud 返回 `spDomain` / `publicUrl`，例如 `https://node-0000.undefineds.co/` 或 `https://868c9f63-6b0e-4255-8f7f-f2e347908ba4.nodes.undefineds.co/`。
 - LinX 设置 `CSS_BASE_URL` 为 Cloud 返回的 canonical URL。
 - xpod 仍监听本机端口。
-- xpod 生成的 issuer、WebID、storage URL 必须使用 `CSS_BASE_URL`。
+- xpod 生成的 OIDC discovery/issuer surface、Pod、storage 和资源 URL
+  必须使用 `CSS_BASE_URL`。Local 的 canonical WebID 可以仍是 Cloud WebID，
+  但 profile 里的 `solid:oidcIssuer` 必须信任实际 OIDC issuer，且
+  `solid:storage` 必须指向 `CSS_BASE_URL` 下的 Local Pod。
 - xpod 需要能消费 Cloud provision scope；profile/storage 绑定语义见登录主文档。
 - 可选 tunnel/直连 route 只改变访问渠道，不改变 canonical URL。
 

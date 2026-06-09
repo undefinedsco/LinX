@@ -127,8 +127,8 @@ test('LocalOnboardingController publishes xpod startup progress while starting L
       start: async (_options, onProgress) => {
         onProgress?.({
           phase: 'install-bun',
-          label: '下载 xpod runtime',
-          detail: '@undefineds.co/xpod@0.3.4',
+          label: '安装 xpod runtime 包与生产依赖',
+          detail: 'bun install · @undefineds.co/xpod@0.3.4',
         })
         started = true
       },
@@ -140,8 +140,8 @@ test('LocalOnboardingController publishes xpod startup progress while starting L
 
   const progressSnapshot = snapshots.find((snapshot) => snapshot.progress?.phase === 'install-bun')
   assert.ok(progressSnapshot)
-  assert.equal(progressSnapshot.message, '正在准备本地空间')
-  assert.equal(progressSnapshot.progress.detail, '首次启动可能需要下载，完成后会自动继续。')
+  assert.equal(progressSnapshot.message, '安装 xpod runtime 包与生产依赖')
+  assert.equal(progressSnapshot.progress.detail, 'bun install · @undefineds.co/xpod@0.3.4')
 })
 
 test('LocalOnboardingController does not publish raw Local addresses as startup progress detail', async () => {
@@ -589,7 +589,7 @@ test('LocalOnboardingController saves a Cloudflare command token and restarts Lo
       supported: true,
       contract: 'linx-local-onboarding/v1',
       baseUrl: 'https://node-0000.undefineds.co/',
-      version: '0.3.29',
+      version: '0.3.31',
     }),
   })
 
@@ -621,7 +621,7 @@ test('LocalOnboardingController reports public route mismatch during connectivit
       json: async () => ({
         contract: 'linx-local-onboarding/v1',
         baseUrl,
-        version: '0.3.29',
+        version: '0.3.31',
       }),
     }
   }

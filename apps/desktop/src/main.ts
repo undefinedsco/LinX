@@ -11,6 +11,7 @@ import { RendererStaticServer, resolveRendererServerPort } from './lib/renderer-
 import { formatXpodStatusDetail, getXpodDashboardUrl } from './lib/xpod-ui';
 import { getTrayPresentation } from './lib/tray-presentation';
 import { extractLinxAuthCallbackUrl, isDesktopAuthCallbackUrl } from './lib/auth-protocol';
+import { installAuthCallbackNavigationInterceptor } from './lib/auth-callback-navigation';
 import { AuthLoopbackServer } from './lib/auth-loopback';
 import {
   addEmbeddedAuthQuery,
@@ -30,6 +31,12 @@ import {
   resolveEffectiveManagedTunnelToken,
   resolveManagedDomainFromEnv,
 } from './lib/local-provider-config';
+import {
+  installLocalSpSessionRoutes,
+  resolveLocalSpOidcIssuer,
+  updateLocalSpSessionRouteFromSnapshot,
+  updateLocalSpSessionRouteFromStatus,
+} from './lib/local-sp-session-route';
 import {
   LocalOnboardingController,
   type LocalSpaceKind,
@@ -64,6 +71,10 @@ const rendererStaticServer = new RendererStaticServer({
 });
 const embeddedAuthorizationSheet = new EmbeddedAuthorizationSheet({
   getMainWindow: () => mainWindow,
+  onCallbackUrl: (url) => {
+    authWindowCloseReason = 'completed';
+    queueAuthRedirect(url);
+  },
   onStateChange: (state) => {
     notifyEmbeddedAuthorizationState(state);
   },
@@ -91,7 +102,7 @@ const localOnboarding = new LocalOnboardingController({
   updateProvider: (id, updates) => providerManager.update(id, updates),
   stateDir: localPaths.home,
   onSnapshotChange: (snapshot) => {
-    notifyLocalOnboardingState(snapshot);
+    publishLocalOnboardingSnapshot(snapshot);
   },
 });
 const authLoopbackServer = new AuthLoopbackServer({
@@ -196,6 +207,11 @@ function notifyEmbeddedAuthorizationState(state: { open: boolean; reason: 'opene
 
 function notifyConfigWindowState(state: { open: boolean; reason: 'opened' | 'closed'; ready: boolean }): void {
   mainWindow?.webContents.send('app:configWindowState', state);
+}
+
+function publishLocalOnboardingSnapshot(snapshot: LocalOnboardingSnapshot): void {
+  updateLocalSpSessionRouteFromSnapshot(snapshot);
+  notifyLocalOnboardingState(snapshot);
 }
 
 function notifyLocalOnboardingState(snapshot: LocalOnboardingSnapshot): void {
@@ -338,9 +354,8 @@ function createWindow(): void {
     mainWindow.webContents.openDevTools({ mode: 'bottom' });
   }
 
-  // macOS: 关闭窗口时隐藏而不是销毁
   mainWindow.on('close', (event) => {
-    if (process.platform === 'darwin' && !isQuitting) {
+    if (!isQuitting) {
       event.preventDefault();
       mainWindow?.hide();
     }
@@ -413,7 +428,9 @@ interface AuthorizationWindowOptions {
 async function openAuthorizationWindow(url: string, options?: AuthorizationWindowOptions): Promise<void> {
   closeEmbeddedAuthorizationIfOpen('dismissed')
   closeConfigWindowIfOpen()
-  const authUrl = addEmbeddedAuthQuery(url)
+  const preparedUrl = await prepareAuthorizationUrlForLocal(url);
+  await refreshLocalSpSessionRoute();
+  const authUrl = addEmbeddedAuthQuery(preparedUrl)
   const title = resolveAuthorizationWindowTitle(options?.providerLabel)
 
   if (authWindow && !authWindow.isDestroyed()) {
@@ -453,6 +470,11 @@ async function openAuthorizationWindow(url: string, options?: AuthorizationWindo
   notifyAuthWindowState({ open: true, reason: 'opened' });
   installSingleSurfaceWindowOpenHandler(authWindow.webContents, {
     prepareSameOriginUrl: addEmbeddedAuthQuery,
+  });
+  installAuthCallbackNavigationInterceptor(authWindow.webContents, (callbackUrl) => {
+    authWindowCloseReason = 'completed';
+    queueAuthRedirect(callbackUrl);
+    closeAuthWindowIfOpen('completed');
   });
   await installXpodAuthEnhancerOnNewDocument(authWindow.webContents).catch((error) => {
     console.warn('[Desktop] Failed to install xpod auth enhancer preload:', error);
@@ -509,7 +531,27 @@ async function openAuthorizationWindow(url: string, options?: AuthorizationWindo
 async function openEmbeddedAuthorization(url: string, options?: AuthorizationWindowOptions): Promise<void> {
   closeAuthWindowIfOpen('dismissed');
   closeConfigWindowIfOpen();
-  await embeddedAuthorizationSheet.open(url, options);
+  const preparedUrl = await prepareAuthorizationUrlForLocal(url);
+  await refreshLocalSpSessionRoute();
+  await embeddedAuthorizationSheet.open(preparedUrl, options);
+}
+
+async function refreshLocalSpSessionRoute(): Promise<void> {
+  const status = await xpodManager.getStatus().catch(() => null);
+  if (!status) {
+    return;
+  }
+  updateLocalSpSessionRouteFromStatus(status);
+}
+
+async function prepareAuthorizationUrlForLocal(url: string): Promise<string> {
+  const preparedUrl = await xpodManager.prepareLocalAuthorizationUrl(url);
+  if (preparedUrl !== url) {
+    await localOnboarding.refresh().catch((error) => {
+      console.warn('[Desktop] Failed to refresh Local onboarding after provisioning refresh:', error);
+    });
+  }
+  return preparedUrl;
 }
 
 async function fitAuthWindowToContent(window: BrowserWindow): Promise<void> {
@@ -679,6 +721,20 @@ async function startXpodFromTray(): Promise<void> {
 }
 
 function createTrayIcon() {
+  if (process.platform === 'darwin') {
+    const svg = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18">
+        <rect x="2.5" y="2.5" width="13" height="13" rx="4" fill="#000000" />
+        <path d="M6 5.5v7h6" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+    `.trim();
+    const image = nativeImage
+      .createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`)
+      .resize({ width: 18, height: 18 });
+    image.setTemplateImage(true);
+    return image;
+  }
+
   if (desktopAppIcon && !desktopAppIcon.isEmpty()) {
     return desktopAppIcon.resize({ width: 18, height: 18 });
   }
@@ -924,6 +980,11 @@ function setupIPC(): void {
     return { success: true };
   });
 
+  ipcMain.handle('xpod:upgrade', async () => {
+    await xpodManager.upgradeRuntime();
+    return { success: true };
+  });
+
   ipcMain.handle('xpod:status', () => {
     return xpodManager.getStatus();
   });
@@ -1028,6 +1089,11 @@ function setupIPC(): void {
     return authLoopbackServer.prepareRedirectUrl();
   });
 
+  ipcMain.handle('auth:resolveOidcIssuer', async (_event, url: string) => {
+    await refreshLocalSpSessionRoute();
+    return resolveLocalSpOidcIssuer(url);
+  });
+
   ipcMain.handle('auth:getEmbeddedAuthorizationState', () => {
     return embeddedAuthorizationSheet.getState();
   });
@@ -1074,6 +1140,7 @@ if (!gotSingleInstanceLock) {
   app.whenReady().then(() => {
     applyDesktopAppIcon();
     registerAppProtocol();
+    installLocalSpSessionRoutes();
     ensureBootstrapLocalProvider();
     setupIPC();
     createWindow();
@@ -1086,9 +1153,7 @@ if (!gotSingleInstanceLock) {
 }
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  // Keep the desktop shell resident so the tray can control the detached xpod.
 });
 
 app.on('before-quit', async () => {
@@ -1114,8 +1179,7 @@ app.on('before-quit', async () => {
   }
   embeddedAuthorizationSheet.dispose();
   embeddedXpodSettingsSheet.dispose();
-  console.log('[Desktop] Stopping desktop-managed foreground services...');
-  await supervisor.stopAll();
+  console.log('[Desktop] LinX desktop shell is quitting; local xpod services stay resident.');
 });
 
 function ensureBootstrapLocalProvider(spaceKind: LocalSpaceKind | null = null): SolidProvider {

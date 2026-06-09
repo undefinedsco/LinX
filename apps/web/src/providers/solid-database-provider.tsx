@@ -371,7 +371,9 @@ async function resolveRuntimePodContext(
     return resolution
   }
 
-  const profileStorageUrl = await fetchProfileStorageUrl(webId, fetcher)
+  const profileStorageUrl = await fetchProfileStorageUrl(webId, fetcher, {
+    storageProviderUrl: resolution.profileStorageProvider.storageProviderUrl,
+  })
   const providerBaseUrl = normalizePodUrl(resolution.profileStorageProvider.storageProviderUrl)
   if (!profileStorageUrl || !providerBaseUrl) {
     return {

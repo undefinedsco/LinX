@@ -93,7 +93,7 @@ LinX 当前会传给 xpod 的核心配置：
 | --- | --- |
 | 数据目录 | xpod 本地持久化位置 |
 | `CSS_BASE_URL` | selected canonical xpod URL |
-| `oidcIssuer` | Local 路径的 Cloud issuer；Standalone 不设置 |
+| `oidcIssuer` | xpod 内部外部账号 authority 配置。它不是 LinX 传给 Inrupt 的 `oidcIssuer`；Local 的 Inrupt OIDC entry 必须仍由 selected Local SP discovery 决定。Standalone 不设置。 |
 | `CLOUDFLARE_TUNNEL_TOKEN` | 可选访问渠道 token |
 | `XPOD_NODE_ID` / `XPOD_NODE_TOKEN` / `XPOD_SERVICE_TOKEN` | Local provision 后的节点凭据 |
 

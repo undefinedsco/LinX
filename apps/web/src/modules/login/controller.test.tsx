@@ -171,10 +171,59 @@ describe('useLoginController', () => {
 
     expect(window.sessionStorage.getItem('linx-post-login-micro-app')).toBe('files')
     expect(result.current.view).toBe('local')
-    expect(result.current.localLoginStatus.active).toBe(true)
+    expect(result.current.localLoginStatus.active).toBe(false)
     expect(startLocalMock).toHaveBeenCalledTimes(1)
     expect(navigateMock).not.toHaveBeenCalled()
     expect(connectMock).not.toHaveBeenCalled()
+  })
+
+  it('shows Local startup status only while the service is actually starting', async () => {
+    providersState.providers = [
+      {
+        id: 'local',
+        url: 'http://localhost:5737',
+        label: 'Local',
+        source: 'local',
+        runtime: {
+          kind: 'local-pod',
+          status: 'stopped',
+          canStart: true,
+          canCreate: true,
+        },
+      },
+    ]
+    const startingSnapshot = {
+      state: 'starting',
+      spaceKind: 'local',
+      localUrl: 'http://localhost:5737/',
+      baseUrl: 'http://localhost:5737/',
+      publicUrl: 'https://node-0000.undefineds.co/',
+      tunnel: null,
+      connectivity: null,
+      capabilities: null,
+      cloudIdentityUrl: 'https://id.undefineds.co',
+      provisionCode: null,
+      provisionUrl: null,
+      nodeId: null,
+      message: '启动本地空间服务',
+      errorCode: null,
+      canRetry: false,
+      canOpenSettings: false,
+    }
+    startLocalMock.mockImplementationOnce(async () => {
+      providersState.localOnboarding = startingSnapshot
+      return startingSnapshot
+    })
+
+    const { result } = renderHook(() => useLoginController())
+
+    await act(async () => {
+      await result.current.connect('local')
+    })
+
+    expect(result.current.view).toBe('local')
+    expect(result.current.localLoginStatus.active).toBe(true)
+    expect(result.current.localLoginStatus.message).toBe('启动本地空间服务')
   })
 
   it('hydrates the account card from remembered account storage when the login store is empty', async () => {
@@ -550,7 +599,7 @@ describe('useLoginController', () => {
 
     expect(window.sessionStorage.getItem('linx-post-login-micro-app')).toBe('contacts')
     expect(result.current.view).toBe('local')
-    expect(result.current.localLoginStatus.active).toBe(true)
+    expect(result.current.localLoginStatus.active).toBe(false)
     expect(startLocalMock).toHaveBeenCalledTimes(1)
     expect(navigateMock).not.toHaveBeenCalled()
     expect(connectMock).not.toHaveBeenCalled()
@@ -605,7 +654,7 @@ describe('useLoginController', () => {
 
     expect(startLocalMock).toHaveBeenCalledTimes(1)
     expect(result.current.view).toBe('local')
-    expect(result.current.localLoginStatus.active).toBe(true)
+    expect(result.current.localLoginStatus.active).toBe(false)
     expect(navigateMock).not.toHaveBeenCalled()
     expect(connectMock).not.toHaveBeenCalled()
   })
@@ -672,7 +721,7 @@ describe('useLoginController', () => {
     expect(connectMock).not.toHaveBeenCalled()
   })
 
-  it('starts Local before restoring a remembered Local session outside Desktop', async () => {
+  it('starts Local, tries stored session restore, then opens auth when restore does not complete outside Desktop', async () => {
     providersState.providers = [
       {
         id: 'local',
@@ -719,10 +768,16 @@ describe('useLoginController', () => {
       url: window.location.href,
       restorePreviousSession: true,
     })
-    expect(connectMock).not.toHaveBeenCalled()
+    expect(connectMock).toHaveBeenCalledWith('http://localhost:5737/', expect.objectContaining({
+      route: 'standalone',
+      accountIssuerUrl: 'http://localhost:5737/',
+      storageProviderUrl: 'http://localhost:5737/',
+      storageProviderLabel: 'Standalone',
+      strictDiscovery: true,
+    }))
   })
 
-  it('starts remembered Local in Desktop but does not reuse stored auth without an active matching session', async () => {
+  it('starts remembered Local in Desktop and tries silent auth when stored auth matches the account', async () => {
     window.xpodDesktop = {
       auth: {},
     } as any
@@ -768,11 +823,18 @@ describe('useLoginController', () => {
     })
 
     await waitFor(() => {
-      expect(result.current.localLoginStatus.active).toBe(true)
+      expect(result.current.localLoginStatus.active).toBe(false)
     })
     expect(startLocalMock).toHaveBeenCalledTimes(1)
     expect(handleIncomingRedirectMock).not.toHaveBeenCalled()
-    expect(connectMock).not.toHaveBeenCalled()
+    expect(connectMock).toHaveBeenCalledWith('http://localhost:5737/', expect.objectContaining({
+      route: 'standalone',
+      prompt: 'none',
+      accountIssuerUrl: 'http://localhost:5737/',
+      storageProviderUrl: 'http://localhost:5737/',
+      storageProviderLabel: 'Standalone',
+      strictDiscovery: true,
+    }))
     expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBe('session-1')
   })
 
@@ -870,7 +932,7 @@ describe('useLoginController', () => {
     expect(useLoginStore.getState().state).toBe('idle')
   })
 
-  it('blocks Local login before OIDC discovery when the public Local entry is unreachable', async () => {
+  it('uses the canonical Local SP URL for Local login without testing public connectivity', async () => {
     const connectivity = {
       status: 'local-only',
       checkedAt: Date.now(),
@@ -892,9 +954,16 @@ describe('useLoginController', () => {
         baseUrl: null,
         message: '公网入口不可达。',
       },
-      message: '本机入口可用，公网入口暂不可达。配置并启动隧道后再重试。',
+      message: '本机入口可用，公网入口暂不可达。可以继续本机使用，外网访问需要配置隧道。',
     }
-    const testConnectivityMock = vi.fn().mockResolvedValue({
+    const testConnectivityMock = vi.fn()
+    window.xpodDesktop = {
+      auth: {},
+      localOnboarding: {
+        testConnectivity: testConnectivityMock,
+      },
+    } as any
+    providersState.localOnboarding = {
       state: 'ready',
       spaceKind: 'local',
       localUrl: 'http://localhost:5737',
@@ -911,7 +980,35 @@ describe('useLoginController', () => {
       errorCode: null,
       canRetry: true,
       canOpenSettings: true,
+    }
+
+    const { result } = renderHook(() => useLoginController())
+
+    await act(async () => {
+      await result.current.continueLocalLogin()
     })
+
+    expect(testConnectivityMock).not.toHaveBeenCalled()
+    expect(connectMock).toHaveBeenCalledWith('https://node-0000.undefineds.co/', expect.objectContaining({
+      authorizationSurface: 'embedded',
+      route: 'local',
+      accountIssuerUrl: 'https://id.undefineds.co',
+      accountIssuerLabel: 'Cloud',
+      storageProviderUrl: 'https://node-0000.undefineds.co/',
+      storageProviderLabel: 'Local',
+      issuerLabel: 'Cloud',
+      authorizationQuery: {
+        provisionCode: 'pc-123',
+      },
+      strictDiscovery: true,
+      nodeId: 'abc',
+    }))
+    expect(result.current.error).toBeNull()
+    expect(useLoginStore.getState().state).toBe('connecting')
+  })
+
+  it('does not use the local access URL as the Local login issuer', async () => {
+    const testConnectivityMock = vi.fn()
     window.xpodDesktop = {
       auth: {},
       localOnboarding: {
@@ -921,7 +1018,7 @@ describe('useLoginController', () => {
     providersState.localOnboarding = {
       state: 'ready',
       spaceKind: 'local',
-      localUrl: 'http://localhost:5737',
+      localUrl: null,
       baseUrl: 'https://node-0000.undefineds.co/',
       publicUrl: 'https://node-0000.undefineds.co/',
       tunnel: null,
@@ -943,10 +1040,18 @@ describe('useLoginController', () => {
       await result.current.continueLocalLogin()
     })
 
-    expect(testConnectivityMock).toHaveBeenCalledTimes(1)
-    expect(connectMock).not.toHaveBeenCalled()
+    expect(testConnectivityMock).not.toHaveBeenCalled()
+    expect(connectMock).toHaveBeenCalledWith('https://node-0000.undefineds.co/', expect.objectContaining({
+      authorizationSurface: 'embedded',
+      route: 'local',
+      accountIssuerUrl: 'https://id.undefineds.co',
+      storageProviderUrl: 'https://node-0000.undefineds.co/',
+      authorizationQuery: {
+        provisionCode: 'pc-123',
+      },
+    }))
     expect(result.current.error).toBeNull()
-    expect(useLoginStore.getState().state).toBe('idle')
+    expect(useLoginStore.getState().state).toBe('connecting')
   })
 
   it('does not treat a LAN Local access route as the Local storage address', async () => {
@@ -1039,7 +1144,7 @@ describe('useLoginController', () => {
     })
 
     await waitFor(() => {
-      expect(result.current.localLoginStatus.active).toBe(true)
+      expect(result.current.localLoginStatus.active).toBe(false)
     })
     expect(startLocalMock).toHaveBeenCalledTimes(1)
     expect(handleIncomingRedirectMock).not.toHaveBeenCalled()
@@ -1275,10 +1380,16 @@ describe('useLoginController', () => {
     })
 
     expect(startLocalMock).toHaveBeenCalledTimes(1)
-    expect(connectMock).not.toHaveBeenCalled()
+    expect(connectMock).toHaveBeenCalledWith('http://localhost:5737/', expect.objectContaining({
+      route: 'standalone',
+      accountIssuerUrl: 'http://localhost:5737/',
+      storageProviderUrl: 'http://localhost:5737/',
+      storageProviderLabel: 'Standalone',
+      strictDiscovery: true,
+    }))
   })
 
-  it('uses Cloud issuer with provision code when continuing a Local login', async () => {
+  it('uses the Local SP entry with provision code when continuing a Local login', async () => {
     providersState.providers = [
       {
         id: 'local',
@@ -1992,6 +2103,64 @@ describe('useLoginController', () => {
     expect(useLoginStore.getState().storedAccount?.storageProviderLabel).toBe('Local')
   })
 
+  it('uses the selected Local SP profile when the Cloud WebID profile cannot be read with the SP token', async () => {
+    providersState.providers = [
+      {
+        id: 'local',
+        url: 'https://node-0000.undefineds.co/',
+        label: 'Local',
+        source: 'local',
+        runtime: {
+          kind: 'local-pod',
+          status: 'running',
+          canStart: false,
+          canCreate: false,
+        },
+      },
+    ]
+    window.sessionStorage.setItem('linx-post-login-micro-app', 'chat')
+    window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
+      issuerUrl: 'https://node-0000.undefineds.co',
+      accountIssuerUrl: 'https://id.undefineds.co',
+      accountIssuerLabel: 'Cloud',
+      storageProviderUrl: 'https://node-0000.undefineds.co/',
+      storageProviderLabel: 'Local',
+      authorizationSurface: 'embedded',
+      returnToMicroAppId: 'chat',
+    }))
+    sessionState.info.isLoggedIn = true
+    sessionState.info.webId = 'https://id.undefineds.co/alice/profile/card#me'
+    sessionState.fetch
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ 'content-type': 'application/ld+json' }),
+        text: async () => JSON.stringify({
+          '@id': 'https://node-0000.undefineds.co/alice/profile/card#me',
+          'solid:storage': { '@id': 'https://node-0000.undefineds.co/alice/' },
+        }),
+      })
+
+    renderHook(() => useLoginController())
+
+    await waitFor(() => {
+      expect(useLoginStore.getState().state).toBe('authenticated')
+    })
+
+    expect(sessionState.fetch).toHaveBeenCalledWith(
+      'https://id.undefineds.co/alice/profile/card#me',
+      expect.anything(),
+    )
+    expect(sessionState.fetch).toHaveBeenCalledWith(
+      'https://node-0000.undefineds.co/alice/profile/card#me',
+      expect.anything(),
+    )
+    expect(useLoginStore.getState().storedAccount?.issuerUrl).toBe('https://id.undefineds.co')
+    expect(useLoginStore.getState().storedAccount?.issuerLabel).toBe('Cloud')
+    expect(useLoginStore.getState().storedAccount?.storageProviderUrl).toBe('https://node-0000.undefineds.co')
+    expect(useLoginStore.getState().storedAccount?.storageProviderLabel).toBe('Local')
+  })
+
   it('completes Standalone login when profile storage points at the local SP', async () => {
     providersState.providers = [
       {
@@ -2065,7 +2234,7 @@ describe('useLoginController', () => {
     expect(useLoginStore.getState().storedAccount?.storageProviderLabel).toBe('Standalone')
   })
 
-  it('blocks Cloud IDP + Local SP login when the profile storage points at another SP', async () => {
+  it('blocks split Local login when the profile storage points at another SP', async () => {
     providersState.providers = [
       {
         id: 'cloud',
@@ -2141,7 +2310,7 @@ describe('useLoginController', () => {
     expect(logoutMock).toHaveBeenCalledTimes(1)
   })
 
-  it('blocks Cloud IDP + Local SP login when the profile still points at Cloud storage', async () => {
+  it('blocks split Local login when the profile still points at Cloud storage', async () => {
     providersState.providers = [
       {
         id: 'cloud',
@@ -2484,7 +2653,7 @@ describe('useLoginController', () => {
 
     expect(startLocalMock).toHaveBeenCalledTimes(1)
     expect(result.current.view).toBe('local')
-    expect(result.current.localLoginStatus.active).toBe(true)
+    expect(result.current.localLoginStatus.active).toBe(false)
     expect(connectMock).not.toHaveBeenCalled()
   })
 })

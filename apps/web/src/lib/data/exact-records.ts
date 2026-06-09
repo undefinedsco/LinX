@@ -90,6 +90,13 @@ function resolveRecordIri(target: ExactRecordTarget): string | null {
   if (typeof target === 'string') {
     return ABSOLUTE_IRI.test(target) ? target : null
   }
+  if (!target) return null
+  for (const key of ['@id', 'uri', 'subject', 'source']) {
+    const value = target[key]
+    if (typeof value === 'string' && ABSOLUTE_IRI.test(value)) {
+      return value
+    }
+  }
   return null
 }
 

@@ -235,7 +235,7 @@ export function assertXpodLoginRuntimeCapabilities(packageDir: string): void {
   const hasScopedPickWebIdHandler =
     fs.existsSync(path.join(packageDir, 'src', 'identity', 'oidc', 'ScopedPickWebIdHandler.ts')) ||
     fs.existsSync(path.join(packageDir, 'dist', 'identity', 'oidc', 'ScopedPickWebIdHandler.js'))
-  const hasScopedPickerConfig = fs.existsSync(path.join(packageDir, 'config', 'xpod.base.json'))
+  const hasScopedPickerConfig = hasRequiredStorageScopedPickerConfig(packageDir)
 
   if (hasScopedPickWebIdHandler && hasScopedPickerConfig) {
     return
@@ -244,8 +244,66 @@ export function assertXpodLoginRuntimeCapabilities(packageDir: string): void {
   throw new Error([
     `xpod runtime at ${packageDir} does not include scoped WebID selection.`,
     'Cloud IDP + Local SP login would be able to expose Pods from the wrong storage provider.',
-    'Install an @undefineds.co/xpod version that contains ScopedPickWebIdHandler before enabling oidcIssuer.',
+    'Install an @undefineds.co/xpod version that contains ScopedPickWebIdHandler.storageBaseUrl before enabling oidcIssuer.',
   ].join('\n'))
+}
+
+function hasRequiredStorageScopedPickerConfig(packageDir: string): boolean {
+  const configPath = path.join(packageDir, 'config', 'xpod.base.json')
+  if (!fs.existsSync(configPath)) {
+    return false
+  }
+
+  try {
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
+    const params = findOverrideParameters(config, 'ScopedPickWebIdHandler')
+    return hasVariable(params, 'storageBaseUrl', 'urn:solid-server:default:variable:baseUrl')
+  } catch {
+    return false
+  }
+}
+
+function findOverrideParameters(value: unknown, componentType: string): Record<string, unknown> | null {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const match = findOverrideParameters(item, componentType)
+      if (match) return match
+    }
+    return null
+  }
+
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  const record = value as Record<string, unknown>
+  const overrideParameters = record.overrideParameters
+  if (
+    overrideParameters &&
+    typeof overrideParameters === 'object' &&
+    !Array.isArray(overrideParameters) &&
+    (overrideParameters as Record<string, unknown>)['@type'] === componentType
+  ) {
+    return overrideParameters as Record<string, unknown>
+  }
+
+  for (const child of Object.values(record)) {
+    const match = findOverrideParameters(child, componentType)
+    if (match) return match
+  }
+
+  return null
+}
+
+function hasVariable(params: Record<string, unknown> | null, key: string, variableId: string): boolean {
+  const value = params?.[key]
+  return Boolean(
+    value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    (value as Record<string, unknown>)['@id'] === variableId &&
+    (value as Record<string, unknown>)['@type'] === 'Variable',
+  )
 }
 
 export function getBindHost(baseUrl: string): string {

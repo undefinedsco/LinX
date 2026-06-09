@@ -65,7 +65,7 @@ LinX Desktop
 外网访问只在 canonical URL 有真实可达 route 后启用。
 
 ```text
-Cloud IDP
+Cloud account authority
   -> canonical=https://node-xxxx.undefineds.co/
   -> tunnel / 直连 / 反向代理
   -> localhost:5737 的 Local SP
@@ -112,5 +112,5 @@ Local 或 Standalone 登录后，LinX 可以在后台探测同一个 Local SP �
 
 - Cloud：生产 Cloud 注册、授权、进入 `/chat` 通过。
 - Standalone：无公网 URL、无 tunnel token 时，本机 xpod 启动、注册、授权、进入 `/chat` 通过。
-- Local tunnel：使用 Cloud 分配的 `https://node-0000.undefineds.co/` 和 Cloudflare tunnel token，Cloud IDP + Local SP 注册、授权、进入 `/chat` 通过。
-- Local / Standalone switch：desktop 单测覆盖 Local 入口使用 Cloud IDP + Local SP，Standalone 入口使用 Local IDP + Local SP。
+- Local tunnel：使用 Cloud 分配的 `https://node-0000.undefineds.co/` 和 Cloudflare tunnel token，Cloud account authority + Local SP 注册、授权、进入 `/chat` 通过。
+- Local / Standalone switch：desktop 单测覆盖 Local 入口使用 Cloud account authority + Local SP，Standalone 入口使用 local account authority + Local SP。

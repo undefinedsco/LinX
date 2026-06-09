@@ -190,6 +190,156 @@ async function waitForHealthy(
   ].filter(Boolean).join('\n\n'))
 }
 
+async function loginToAccount(
+  baseUrl: string,
+  email: string,
+  password: string,
+): Promise<string> {
+  const response = await fetch(new URL('/.account/login/password/', baseUrl), {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ email, password }),
+  })
+
+  if (!response.ok) {
+    throw new Error(`seed account login failed: ${response.status} ${await response.text()}`)
+  }
+
+  const payload = await response.json() as { authorization?: string }
+  if (!payload.authorization) {
+    throw new Error('seed account login response did not include an account authorization token')
+  }
+
+  return payload.authorization
+}
+
+async function readAccountData(baseUrl: string, token: string): Promise<{
+  controls?: { account?: { pod?: string; webId?: string } }
+  pods?: Record<string, string>
+  webIds?: Record<string, string>
+}> {
+  const response = await fetch(new URL('/.account/', baseUrl), {
+    headers: {
+      Accept: 'application/json',
+      Authorization: `CSS-Account-Token ${token}`,
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(`failed to read seeded account data: ${response.status} ${await response.text()}`)
+  }
+
+  const account = await response.json() as {
+    controls?: { account?: { pod?: string; webId?: string } }
+    pods?: Record<string, string>
+    webIds?: Record<string, string>
+  }
+
+  if (account.webIds || !account.controls?.account?.webId) {
+    return await withAccountPods(account, token)
+  }
+
+  const webIdResponse = await fetch(account.controls.account.webId, {
+    headers: {
+      Accept: 'application/json',
+      Authorization: `CSS-Account-Token ${token}`,
+    },
+  })
+
+  if (webIdResponse.ok) {
+    const payload = await webIdResponse.json() as {
+      webIds?: Record<string, string>
+      webIdLinks?: Record<string, string>
+    }
+    account.webIds = payload.webIds ?? payload.webIdLinks ?? {}
+  }
+
+  return await withAccountPods(account, token)
+}
+
+async function withAccountPods<T extends {
+  controls?: { account?: { pod?: string } }
+  pods?: Record<string, string>
+}>(account: T, token: string): Promise<T> {
+  if (account.pods || !account.controls?.account?.pod) {
+    return account
+  }
+
+  const podResponse = await fetch(account.controls.account.pod, {
+    headers: {
+      Accept: 'application/json',
+      Authorization: `CSS-Account-Token ${token}`,
+    },
+  })
+
+  if (podResponse.ok) {
+    const payload = await podResponse.json() as { pods?: Record<string, string> }
+    account.pods = payload.pods ?? {}
+  }
+
+  return account
+}
+
+function accountHasPod(
+  account: { pods?: Record<string, string>; webIds?: Record<string, string> },
+  podName: string,
+  baseUrl: string,
+): boolean {
+  const podUrl = new URL(`${podName}/`, baseUrl).href
+  const webId = new URL(`${podName}/profile/card#me`, baseUrl).href
+  const webIdLinked = Object.values(account.webIds ?? {}).includes(webId)
+    || Object.keys(account.webIds ?? {}).includes(webId)
+  const podLinked = Object.values(account.pods ?? {}).includes(podUrl)
+    || Object.keys(account.pods ?? {}).includes(podUrl)
+  return podLinked && webIdLinked
+}
+
+async function ensureSeededAccountPod(
+  baseUrl: string,
+  email: string,
+  password: string,
+  podName: string,
+): Promise<void> {
+  const token = await loginToAccount(baseUrl, email, password)
+  let account = await readAccountData(baseUrl, token)
+  if (accountHasPod(account, podName, baseUrl)) {
+    return
+  }
+
+  const podEndpoint = account.controls?.account?.pod
+  if (!podEndpoint) {
+    throw new Error('seeded account does not expose controls.account.pod')
+  }
+
+  const createResponse = await fetch(podEndpoint, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      Authorization: `CSS-Account-Token ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ name: podName }),
+  })
+
+  if (!createResponse.ok && createResponse.status !== 409) {
+    throw new Error(`failed to create seeded account pod: ${createResponse.status} ${await createResponse.text()}`)
+  }
+
+  const deadline = Date.now() + 30_000
+  while (Date.now() < deadline) {
+    account = await readAccountData(baseUrl, token)
+    if (accountHasPod(account, podName, baseUrl)) {
+      return
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500))
+  }
+
+  throw new Error(`seeded account pod was not visible after creation: ${JSON.stringify(account, null, 2)}`)
+}
+
 export async function startSeededXpodRuntime(): Promise<SeededXpodRuntime> {
   return startTestXpodRuntime({
     email: process.env.XPOD_TEST_SEED_EMAIL || 'test-integration@example.com',
@@ -231,7 +381,7 @@ async function startTestXpodRuntime(options: {
         {
           email,
           password,
-          pods: [{ name: podName }],
+          pods: [],
         },
       ], null, 2)}\n`,
       'utf-8',
@@ -288,6 +438,9 @@ async function startTestXpodRuntime(options: {
         })
 
         await waitForHealthy(ports.baseUrl, child, logs)
+        if (seedAccount) {
+          await ensureSeededAccountPod(ports.baseUrl, email, password, podName)
+        }
 
         return {
           baseUrl: ports.baseUrl,

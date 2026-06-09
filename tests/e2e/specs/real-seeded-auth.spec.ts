@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { startSeededXpodRuntime, type SeededXpodRuntime } from '../helpers/seeded-xpod-runtime'
+import { expectSecretaryInitialized } from '../helpers/secretary-bootstrap'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -81,7 +82,7 @@ test.describe('Real seeded xpod auth flow', () => {
 
     await expect(page.getByRole('heading', { name: '选择空间' })).toBeVisible({ timeout: 15_000 })
 
-    await page.getByRole('button', { name: '连接其他 Solid 账号' }).click()
+    await page.getByRole('button', { name: /连接其他账号服务|连接其他 Solid 账号/ }).click()
     await page.getByPlaceholder('https://pod.example.com').fill(runtime.baseUrl)
 
     await Promise.all([
@@ -90,7 +91,7 @@ test.describe('Real seeded xpod auth flow', () => {
     ])
 
     await signInToSeededRuntime(page, runtime)
-    await authorizeSeededRuntime(page)
+    await authorizeSeededRuntime(page, runtime)
 
     const landedOnChat = await waitForChatPath(page, 30_000)
     if (!landedOnChat) {
@@ -99,6 +100,7 @@ test.describe('Real seeded xpod auth flow', () => {
     }
 
     await assertLoginRouteReady(page, runtime)
+    await expectSecretaryInitialized(page)
     await expect(page.getByRole('heading', { name: '选择空间' })).toHaveCount(0)
   })
 })
@@ -116,21 +118,121 @@ async function signInToSeededRuntime(page: Page, runtime: SeededXpodRuntime): Pr
   await emailInput.fill(runtime.email)
   await passwordInput.fill(runtime.password)
 
-  await Promise.all([
-    page.waitForURL(/\/\.account\/oidc\/consent\//, { timeout: 30_000 }),
-    page.getByRole('button', { name: /^Sign in$/i }).click(),
-  ])
+  await page.getByRole('button', { name: /^Sign in$/i }).click()
+  await page.waitForFunction(() => {
+    const path = window.location.pathname
+    const password = document.querySelector('input[type="password"]') as HTMLInputElement | null
+    return path.includes('/.account/oidc/consent/')
+      || path.includes('/.account/account/')
+      || !password
+      || password.offsetParent === null
+  }, undefined, { timeout: 30_000 })
 }
 
-async function authorizeSeededRuntime(page: Page): Promise<void> {
-  const authorizeButton = page.getByRole('button', { name: /Authorize|允许访问/i })
-  await expect(authorizeButton).toBeVisible({ timeout: 20_000 })
+async function authorizeSeededRuntime(page: Page, runtime: SeededXpodRuntime): Promise<void> {
+  const deadline = Date.now() + 90_000
 
-  const missingPodMessage = page.getByText('You need to create a Pod first to get a WebID.')
-  await expect(missingPodMessage).toHaveCount(0)
+  while (Date.now() < deadline) {
+    const authorizeButton = page.getByRole('button', { name: /Authorize|允许访问/i })
+    const missingPodMessage = page.getByText('You need to create a Pod first to get a WebID.')
+    const createPodButton = page.getByRole('button', { name: /^Create Pod$/i })
+    const addPodButton = page.getByRole('button', { name: /Add Pod/i })
+    const expectedPodUrl = new URL(`${runtime.podName}/`, runtime.baseUrl).href
 
-  await expect(authorizeButton).toBeEnabled({ timeout: 20_000 })
-  await authorizeButton.click()
+    if (page.url().includes('/.account/account/')) {
+      const bodyText = await page.locator('body').innerText({ timeout: 1_000 }).catch(() => '')
+      if (bodyText.includes(expectedPodUrl) && bodyText.includes('Authorization Pending')) {
+        await clickAccountDashboardContinue(page)
+        await page.waitForURL(/\/\.account\/oidc\/consent\//, { timeout: 30_000 })
+        continue
+      }
+
+      await page.waitForTimeout(500)
+      continue
+    }
+
+    const continueButton = page.getByRole('button', { name: /Continue/i }).first()
+    if (await continueButton.isVisible({ timeout: 500 }).catch(() => false)) {
+      await Promise.all([
+        page.waitForURL(/\/\.account\/oidc\/consent\//, { timeout: 30_000 }),
+        continueButton.click(),
+      ])
+      continue
+    }
+
+    if (
+      await missingPodMessage.isVisible({ timeout: 1_000 }).catch(() => false)
+      && await createPodButton.isVisible({ timeout: 500 }).catch(() => false)
+    ) {
+      await createPodButton.click()
+      continue
+    }
+
+    if (await addPodButton.isVisible({ timeout: 1_000 }).catch(() => false)) {
+      await addPodButton.click()
+
+      const podNameInput = page.getByPlaceholder(/my-pod/i)
+      await expect(podNameInput).toBeVisible({ timeout: 20_000 })
+      await podNameInput.fill(runtime.podName)
+
+      const submitPodButton = page.getByRole('button', { name: /^Create(?: Pod)?$/i })
+      await expect(submitPodButton).toBeEnabled({ timeout: 20_000 })
+      await submitPodButton.click()
+      await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => undefined)
+
+      await waitForPodCreationOutcome(page, expectedPodUrl)
+      continue
+    }
+
+    if (await authorizeButton.isVisible({ timeout: 1_000 }).catch(() => false)) {
+      await expect(missingPodMessage).toHaveCount(0)
+      await expect(authorizeButton).toBeEnabled({ timeout: 20_000 })
+      await authorizeButton.click()
+      return
+    }
+
+    await page.waitForTimeout(500)
+  }
+
+  throw new Error(`timed out waiting for seeded xpod consent\n${JSON.stringify(await readCallbackDebugState(page), null, 2)}`)
+}
+
+async function clickAccountDashboardContinue(page: Page): Promise<void> {
+  const clicked = await page.evaluate(() => {
+    const candidates = Array.from(document.querySelectorAll('button, a, [role="button"]')) as HTMLElement[]
+    const target = candidates.find((element) => element.textContent?.trim().includes('Continue'))
+    target?.click()
+    return Boolean(target)
+  })
+
+  if (!clicked) {
+    throw new Error(`expected account dashboard Continue control\n${JSON.stringify(await readCallbackDebugState(page), null, 2)}`)
+  }
+}
+
+async function waitForPodCreationOutcome(page: Page, expectedPodUrl: string): Promise<void> {
+  const deadline = Date.now() + 30_000
+
+  while (Date.now() < deadline) {
+    const bodyText = await page.locator('body').innerText({ timeout: 1_000 }).catch(() => '')
+    if (bodyText.includes(expectedPodUrl)) {
+      return
+    }
+
+    const authorizeButton = page.getByRole('button', { name: /Authorize|允许访问/i })
+    const missingPodMessage = page.getByText('You need to create a Pod first to get a WebID.')
+    if (
+      page.url().includes('/.account/oidc/consent/')
+      && await authorizeButton.isVisible({ timeout: 500 }).catch(() => false)
+      && await missingPodMessage.isVisible({ timeout: 500 }).then((visible) => !visible, () => true)
+    ) {
+      return
+    }
+
+    await page.waitForTimeout(500)
+  }
+
+  throw new Error(`expected created Pod ${expectedPodUrl} to become selectable or authorizable\n${JSON.stringify(await readCallbackDebugState(page), null, 2)}`)
 }
 
 function escapeRegex(value: string): string {
@@ -202,6 +304,7 @@ async function readCallbackDebugState(page: Page) {
       dbReady: Boolean((window as any).__SOLID_DB__),
       dbStatus: (window as any).__SOLID_DB_STATUS__ ?? null,
       dbError: (window as any).__SOLID_DB_ERROR__ ?? null,
+      dbBootstrap: (window as any).__SOLID_DB_BOOTSTRAP__ ?? null,
       currentSession: sessionId,
       storedSession: storedSession ? JSON.parse(storedSession) : null,
       loginStore: JSON.parse(window.localStorage.getItem('linx-login') ?? 'null'),

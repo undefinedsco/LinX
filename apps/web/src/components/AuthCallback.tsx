@@ -4,6 +4,7 @@ import { Loader2, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useOidcConnect } from '@/modules/login/hooks/use-oidc-connect'
 import {
+  capturePendingCallbackError,
   clearPendingCallbackError,
   clearPendingLoginAttempt,
   clearPendingPostLoginMicroAppId,
@@ -16,6 +17,11 @@ import {
   isLocalLoginTransaction,
 } from '@/modules/login/login-transaction'
 import { formatLoginErrorForUser } from '@/modules/login/error-messages'
+import {
+  getCurrentLocationCallbackRedirectUrl,
+  isCallbackErrorRedirect,
+  normalizeDesktopAuthRedirectUrl,
+} from '@/modules/login/desktop-auth-redirect'
 
 interface AuthCallbackProps {
   onSuccess?: () => void
@@ -35,6 +41,8 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
   const [retrying, setRetrying] = useState(false)
   const navigatedRef = useRef(false)
   const silentFallbackStartedRef = useRef(false)
+  const desktopRedirectRestoreStartedRef = useRef(false)
+  const desktopRedirectRestoreInProgressRef = useRef(false)
   const pendingAttempt = useMemo(() => getPendingLoginAttempt(), [])
   const pendingTransaction = useMemo(() => getPendingLoginTransaction(), [])
   const callbackError = useMemo(() => getPendingCallbackError(), [])
@@ -99,6 +107,108 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
       setError(formatLoginErrorForUser(callbackError.description ?? callbackError.error, '登录请求被拒绝。请返回登录页后重试。'))
     }
   }, [callbackError, pendingAttempt, retryInteractiveFromSilentAttempt])
+
+  const restoreDesktopRedirect = useCallback(async (redirectUrl: string) => {
+    if (navigatedRef.current || desktopRedirectRestoreInProgressRef.current) return
+
+    const normalizedRedirectUrl = normalizeDesktopAuthRedirectUrl(redirectUrl)
+    if (isCallbackErrorRedirect(normalizedRedirectUrl)) {
+      const captured = capturePendingCallbackError(normalizedRedirectUrl)
+      if (captured?.error) {
+        setError(formatLoginErrorForUser(
+          captured.description ?? captured.error,
+          '登录请求被拒绝。请返回登录页后重试。',
+        ))
+      }
+      return
+    }
+
+    desktopRedirectRestoreInProgressRef.current = true
+    try {
+      const restored = await session.handleIncomingRedirect({
+        url: normalizedRedirectUrl,
+        restorePreviousSession: false,
+      })
+      if (navigatedRef.current) return
+
+      const restoredSessionId = typeof restored?.sessionId === 'string'
+        ? restored.sessionId
+        : session.info.sessionId
+      if (restored?.isLoggedIn || session.info.isLoggedIn) {
+        const persistence = await ensureCurrentSessionPersistence(
+          restoredSessionId,
+          SESSION_CURRENT_KEY_TIMEOUT_MS,
+        )
+        if (navigatedRef.current) return
+        if (persistence === 'missing') {
+          console.warn('[auth-callback] continuing after desktop redirect before currentSession was persisted')
+        }
+        navigatedRef.current = true
+        onSuccess?.()
+        return
+      }
+
+      setError('登录未完成，请重试。')
+    } catch (restoreError) {
+      console.warn('[auth-callback] failed to restore desktop redirect', restoreError)
+      if (!session.info.isLoggedIn) {
+        setError(formatLoginErrorForUser(restoreError, '登录未完成，请重试。'))
+      }
+    } finally {
+      desktopRedirectRestoreInProgressRef.current = false
+    }
+  }, [onSuccess, session])
+
+  useEffect(() => {
+    if (error || navigatedRef.current || session.info.isLoggedIn) return
+    const currentRedirectUrl = getCurrentLocationCallbackRedirectUrl()
+    if (currentRedirectUrl) {
+      const desktopAuth = typeof window !== 'undefined' ? window.xpodDesktop?.auth : undefined
+      if (desktopAuth && !desktopRedirectRestoreStartedRef.current) {
+        desktopRedirectRestoreStartedRef.current = true
+        void restoreDesktopRedirect(currentRedirectUrl)
+      }
+      return
+    }
+
+    const desktopAuth = typeof window !== 'undefined' ? window.xpodDesktop?.auth : undefined
+    if (!desktopAuth?.consumePendingRedirect) return
+    if (desktopRedirectRestoreStartedRef.current) return
+    desktopRedirectRestoreStartedRef.current = true
+
+    let cancelled = false
+    void desktopAuth.consumePendingRedirect()
+      .then((redirectUrl) => {
+        if (cancelled || !redirectUrl) return
+        void restoreDesktopRedirect(redirectUrl)
+      })
+      .catch((restoreError) => {
+        console.warn('[auth-callback] failed to consume desktop redirect', restoreError)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [error, restoreDesktopRedirect, session.info.isLoggedIn])
+
+  useEffect(() => {
+    if (error || navigatedRef.current || session.info.isLoggedIn) return
+    if (getCurrentLocationCallbackRedirectUrl()) return
+
+    const desktopAuth = typeof window !== 'undefined' ? window.xpodDesktop?.auth : undefined
+    if (!desktopAuth?.onRedirect || !desktopAuth.consumePendingRedirect) return
+
+    return desktopAuth.onRedirect(() => {
+      void desktopAuth.consumePendingRedirect()
+        .then((redirectUrl) => {
+          if (!redirectUrl) return
+          void restoreDesktopRedirect(redirectUrl)
+        })
+        .catch((restoreError) => {
+          console.warn('[auth-callback] failed to consume desktop redirect event', restoreError)
+        })
+    })
+  }, [error, restoreDesktopRedirect, session.info.isLoggedIn])
 
   useEffect(() => {
     if (error || navigatedRef.current) return

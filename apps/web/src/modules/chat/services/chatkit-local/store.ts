@@ -18,13 +18,13 @@ import {
   type Page, type StoreItemType,
 } from '@/lib/vendor/xpod-chatkit'
 import {
+  chatResource,
   contactTable,
-  chatResourceId,
   extractChatIdFromChatRef,
   extractThreadIdFromThreadRef,
-  messageResourceId,
+  messageResource,
   requireRowResourceId,
-  threadResourceId,
+  threadResource,
   type SolidDatabase,
   UDFS,
 } from '@undefineds.co/models'
@@ -116,9 +116,24 @@ function requireRecordId(record: Record<string, unknown> | null | undefined, lab
   return requireRowResourceId(record as { id?: string | null }, label)
 }
 
+function requirePodBaseUrl(db: SolidDatabase<any>): string {
+  const podBaseUrl = resolveCurrentPodBaseUrl(db)
+  if (!podBaseUrl) {
+    throw new Error('Unable to resolve current Pod URL for LocalChatKitStore.')
+  }
+  return podBaseUrl
+}
+
+function buildChatIri(db: SolidDatabase<any>, chatId: string): string {
+  return chatResource.buildIri(requirePodBaseUrl(db), { id: chatId })
+}
+
 async function findThreadRecord(db: SolidDatabase<any>, threadId: string, chatId?: string | null): Promise<any | null> {
   if (chatId) {
-    const exactId = threadResourceId(threadId, { surfaceId: chatId })
+    const exactId = threadResource.buildId({
+      id: threadId,
+      chat: buildChatIri(db, chatId),
+    })
     const exact = await (db as any).findById(Thread as any, exactId)
     if (exact) return exact
   }
@@ -282,7 +297,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   // -----------------------------------------------------------------------
 
   private async ensureChat(chatId: string): Promise<void> {
-    const chatIdForResource = chatResourceId(chatId)
+    const chatIdForResource = chatResource.buildId({ id: chatId })
     const existingChat = await (this.db as any).findById(Chat as any, chatIdForResource)
     if (!existingChat) {
       const now = new Date()
@@ -307,24 +322,35 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     return chatId
   }
 
-  private getPodBaseUrl(): string {
-    const podBaseUrl = resolveCurrentPodBaseUrl(this.db)
-    if (!podBaseUrl) {
-      throw new Error('Unable to resolve current Pod URL for LocalChatKitStore.')
-    }
-    return podBaseUrl
-  }
-
   private buildThreadUri(chatId: string, threadId: string): string {
-    return `${this.getPodBaseUrl()}/.data/chat/${chatId}/index.ttl#${threadId}`
+    return threadResource.buildIri(requirePodBaseUrl(this.db), {
+      id: threadId,
+      chat: this.buildChatUri(chatId),
+    })
   }
 
   private buildChatUri(chatId: string): string {
-    return `${this.getPodBaseUrl()}/.data/chat/${chatId}/index.ttl#this`
+    return buildChatIri(this.db, chatId)
+  }
+
+  private buildThreadId(chatId: string, threadId: string): string {
+    return threadResource.buildId({
+      id: threadId,
+      chat: this.buildChatUri(chatId),
+    })
+  }
+
+  private buildMessageId(chatId: string, thread: string, itemId: string, createdAt: Date): string {
+    return messageResource.buildId({
+      id: itemId,
+      chat: this.buildChatUri(chatId),
+      thread,
+      createdAt,
+    })
   }
 
   private async resolveCounterpartMaker(chatId: string): Promise<string> {
-    const chat = await (this.db as any).findById(Chat as any, chatId)
+    const chat = await (this.db as any).findById(Chat as any, chatResource.buildId({ id: chatId }))
     const participants = Array.isArray(chat?.participants)
       ? chat.participants.filter((participant: unknown): participant is string => typeof participant === 'string' && participant.length > 0)
       : []
@@ -500,9 +526,8 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       } as any)
     } else {
       await (this.db as any).insert(Thread as any).values({
-        id: threadResourceId(thread.id, { surfaceId: chatId }),
-        commandKind: 'chat',
-        surfaceId: chatId,
+        id: this.buildThreadId(chatId, thread.id),
+        scope: this.buildChatUri(chatId),
         chat: this.buildChatUri(chatId),
         title: thread.title || undefined,
         status: statusToString(thread.status),
@@ -638,22 +663,17 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   async addThreadItem(threadId: string, item: ThreadItem, _context: StoreContext): Promise<void> {
     const chatId = await this.getThreadChatId(threadId)
     const { content, role, status, richContent } = threadItemToMessageRecord(item)
-    const podBaseUrl = this.getPodBaseUrl()
     const createdAt = new Date(item.created_at * 1000)
     const thread = this.buildThreadUri(chatId, threadId)
-    const messageId = messageResourceId(item.id, {
-      commandKind: 'chat',
-      surfaceId: chatId,
-      thread,
-      createdAt,
-    })
+    const messageId = this.buildMessageId(chatId, thread, item.id, createdAt)
     const maker = role === MessageRole.USER
       ? this.webId
       : await this.resolveCounterpartMaker(chatId)
 
     await (this.db as any).insert(Message as any).values({
       id: messageId,
-      chat: `${podBaseUrl}/.data/chat/${chatId}/index.ttl#this`,
+      scope: this.buildChatUri(chatId),
+      chat: this.buildChatUri(chatId),
       thread,
       maker,
       role,

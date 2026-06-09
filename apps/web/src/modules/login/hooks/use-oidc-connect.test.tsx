@@ -13,6 +13,7 @@ const fetchMock = vi.fn()
 const openAuthorizationWindowMock = vi.fn()
 const openEmbeddedAuthorizationMock = vi.fn()
 const prepareLoopbackRedirectMock = vi.fn()
+const resolveDesktopOidcIssuerMock = vi.fn()
 
 vi.mock('@inrupt/solid-ui-react', () => ({
   useSession: () => ({
@@ -73,7 +74,7 @@ function StrictManagedLocalTestComponent() {
   )
 }
 
-function ManagedLocalWithCloudIssuerTestComponent() {
+function ManagedLocalWithCloudAccountAuthorityTestComponent() {
   const { connect } = useOidcConnect()
 
   return (
@@ -132,6 +133,7 @@ describe('useOidcConnect', () => {
     prepareLoopbackRedirectMock.mockResolvedValue('http://127.0.0.1:43123/auth/callback')
     openAuthorizationWindowMock.mockResolvedValue(undefined)
     openEmbeddedAuthorizationMock.mockResolvedValue(undefined)
+    resolveDesktopOidcIssuerMock.mockReset()
     window.xpodDesktop = {
       auth: {
         prepareLoopbackRedirect: prepareLoopbackRedirectMock,
@@ -165,7 +167,7 @@ describe('useOidcConnect', () => {
 
     const options = loginMock.mock.calls[0][0]
     expect(options).toMatchObject({
-      oidcIssuer: 'http://localhost:5737',
+      oidcIssuer: 'http://127.0.0.1:5737',
       redirectUrl: `${window.location.origin}/auth/callback`,
       clientName: 'LinX',
     })
@@ -189,7 +191,7 @@ describe('useOidcConnect', () => {
     )
     expect(prepareLoopbackRedirectMock).toHaveBeenCalledTimes(1)
     expect(options).toMatchObject({
-      oidcIssuer: 'http://localhost:5737',
+      oidcIssuer: 'http://127.0.0.1:5737',
       redirectUrl: 'http://127.0.0.1:43123/auth/callback',
       clientName: 'LinX',
       tokenType: 'DPoP',
@@ -251,6 +253,39 @@ describe('useOidcConnect', () => {
       expect.objectContaining({ method: 'GET' }),
     )
     expect(loginMock).not.toHaveBeenCalled()
+  })
+
+  it('uses the desktop Local SP route for strict canonical discovery before falling back to public reachability', async () => {
+    resolveDesktopOidcIssuerMock.mockResolvedValueOnce('https://node-0000.undefineds.co/')
+    window.xpodDesktop = {
+      auth: {
+        prepareLoopbackRedirect: prepareLoopbackRedirectMock,
+        resolveOidcIssuer: resolveDesktopOidcIssuerMock,
+        openAuthorizationWindow: openAuthorizationWindowMock,
+        openEmbeddedAuthorization: openEmbeddedAuthorizationMock,
+        closeEmbeddedAuthorization: vi.fn(),
+        consumePendingRedirect: vi.fn(),
+        onEmbeddedAuthorizationState: vi.fn(() => () => {}),
+        onRedirect: vi.fn(() => () => {}),
+      },
+    } as any
+
+    render(<StrictManagedLocalTestComponent />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'connect managed local' }))
+
+    await waitFor(() => {
+      expect(loginMock).toHaveBeenCalledTimes(1)
+    })
+
+    expect(resolveDesktopOidcIssuerMock).toHaveBeenCalledWith('https://node-0000.undefineds.co')
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      'https://node-0000.undefineds.co/.well-known/openid-configuration',
+      expect.anything(),
+    )
+    expect(loginMock.mock.calls[0][0]).toMatchObject({
+      oidcIssuer: 'https://node-0000.undefineds.co',
+    })
   })
 
   it('resolves after opening the desktop authorization surface even though Inrupt login stays pending', async () => {
@@ -363,12 +398,12 @@ describe('useOidcConnect', () => {
     })
   })
 
-  it('persists Local transaction entry separately from the discovered Cloud issuer', async () => {
+  it('persists Local transaction entry separately from the Cloud account issuer', async () => {
     fetchMock.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ issuer: 'https://id.undefineds.co/' }),
+      json: async () => ({ issuer: 'https://node-0000.undefineds.co/' }),
     })
-    render(<ManagedLocalWithCloudIssuerTestComponent />)
+    render(<ManagedLocalWithCloudAccountAuthorityTestComponent />)
 
     fireEvent.click(screen.getByRole('button', { name: 'connect split local' }))
 
@@ -382,7 +417,7 @@ describe('useOidcConnect', () => {
     expect(getPendingLoginTransaction()).toEqual(expect.objectContaining({
       route: 'local',
       oidcEntryUrl: 'https://node-0000.undefineds.co',
-      oidcIssuerUrl: 'https://id.undefineds.co',
+      oidcIssuerUrl: 'https://node-0000.undefineds.co',
       accountIssuerUrl: 'https://id.undefineds.co',
       storageProviderUrl: 'https://node-0000.undefineds.co',
       authorizationQuery: {
@@ -390,6 +425,39 @@ describe('useOidcConnect', () => {
       },
       nodeId: 'node-0000',
       strictDiscovery: true,
+    }))
+  })
+
+  it('uses Local SP OIDC setup for managed Local while keeping the Cloud account issuer metadata', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ issuer: 'https://node-0000.undefineds.co/' }),
+    })
+    loginMock.mockImplementationOnce(async (options) => {
+      await options.handleRedirect('https://node-0000.undefineds.co/.oidc/auth?client_id=abc')
+      return new Promise(() => {})
+    })
+    render(<ManagedLocalWithCloudAccountAuthorityTestComponent />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'connect split local' }))
+
+    await waitFor(() => {
+      expect(openEmbeddedAuthorizationMock).toHaveBeenCalledTimes(1)
+    })
+    const openedUrl = new URL(openEmbeddedAuthorizationMock.mock.calls[0][0])
+    expect(openedUrl.origin).toBe('https://node-0000.undefineds.co')
+    expect(openedUrl.pathname).toBe('/.oidc/auth')
+    expect(openedUrl.searchParams.get('client_id')).toBe('abc')
+    expect(openedUrl.searchParams.get('provisionCode')).toBe('pc-123')
+    expect(loginMock.mock.calls[0][0]).toMatchObject({
+      oidcIssuer: 'https://node-0000.undefineds.co',
+    })
+    expect(getPendingLoginTransaction()).toEqual(expect.objectContaining({
+      route: 'local',
+      oidcEntryUrl: 'https://node-0000.undefineds.co',
+      oidcIssuerUrl: 'https://node-0000.undefineds.co',
+      accountIssuerUrl: 'https://id.undefineds.co',
+      storageProviderUrl: 'https://node-0000.undefineds.co',
     }))
   })
 

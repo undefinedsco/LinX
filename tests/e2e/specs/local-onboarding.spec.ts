@@ -7,7 +7,7 @@ type Snapshot = {
   baseUrl: string | null
   publicUrl: string | null
   tunnel: null
-  connectivity: null
+  connectivity: Connectivity | null
   capabilities: {
     supported: boolean
     contract: string | null
@@ -22,6 +22,24 @@ type Snapshot = {
   errorCode: string | null
   canRetry: boolean
   canOpenSettings: boolean
+}
+
+type RouteProbe = {
+  kind: 'local' | 'public'
+  url: string | null
+  reachable: boolean
+  sameNode: boolean | null
+  latencyMs: number | null
+  baseUrl: string | null
+  message: string | null
+}
+
+type Connectivity = {
+  status: 'unknown' | 'checking' | 'ready' | 'local-only' | 'failed' | 'mismatch'
+  checkedAt: number | null
+  local: RouteProbe | null
+  public: RouteProbe | null
+  message: string | null
 }
 
 type DesktopScenario = {
@@ -57,6 +75,30 @@ const SPACE_REQUIRED_SNAPSHOT: Snapshot = {
   canOpenSettings: true,
 }
 
+const READY_LOCAL_CONNECTIVITY: Connectivity = {
+  status: 'ready',
+  checkedAt: 1,
+  local: {
+    kind: 'local',
+    url: 'http://localhost:5737/',
+    reachable: true,
+    sameNode: true,
+    latencyMs: 12,
+    baseUrl: 'https://node-test.undefineds.co/',
+    message: '本机入口可达。',
+  },
+  public: {
+    kind: 'public',
+    url: 'https://node-test.undefineds.co/',
+    reachable: true,
+    sameNode: true,
+    latencyMs: 30,
+    baseUrl: 'https://node-test.undefineds.co/',
+    message: '公网入口可达。',
+  },
+  message: '本机入口和公网入口都可达，且指向同一个本地空间。',
+}
+
 const READY_LOCAL_SNAPSHOT: Snapshot = {
   state: 'ready',
   spaceKind: 'local',
@@ -64,7 +106,7 @@ const READY_LOCAL_SNAPSHOT: Snapshot = {
   baseUrl: 'https://node-test.undefineds.co/',
   publicUrl: 'https://node-test.undefineds.co/',
   tunnel: null,
-  connectivity: null,
+  connectivity: READY_LOCAL_CONNECTIVITY,
   capabilities: {
     supported: true,
     contract: 'linx-local-onboarding/v1',
@@ -311,6 +353,14 @@ async function installDesktopBridge(page: Page, scenario: DesktopScenario = {}) 
             playState.refreshCalls += 1
             return clone(snapshot)
           },
+          testConnectivity: async () => {
+            snapshot = clone({
+              ...snapshot,
+              connectivity: snapshot.connectivity ?? READY_LOCAL_CONNECTIVITY,
+            })
+            emitLocal()
+            return clone(snapshot)
+          },
           onStateChange: (callback: (next: Snapshot) => void) => {
             listeners.local.add(callback)
             return () => listeners.local.delete(callback)
@@ -372,9 +422,9 @@ async function openLocalFlow(page: Page) {
   await page.goto('/')
   await expect(page).toHaveURL(/\/(?:$|chat$)/)
   await expect(page.getByRole('heading', { name: '选择空间' })).toBeVisible({ timeout: 15000 })
-  await page.getByText('Local', { exact: true }).click()
+  await page.getByRole('button', { name: /本地空间[\s\S]*(开始|启动|查看|设置|登录|继续)/ }).click()
   await expect(page).toHaveURL(/\/(?:$|chat$)/)
-  await expect(page.getByRole('heading', { name: 'Local' })).toBeVisible({ timeout: 15000 })
+  await expect(page.getByRole('heading', { name: '本地空间' })).toBeVisible({ timeout: 15000 })
 }
 
 test.describe('Local onboarding', () => {
@@ -385,9 +435,9 @@ test.describe('Local onboarding', () => {
 
     await openLocalFlow(page)
 
-    await expect(page.getByText('Cloud', { exact: true })).toHaveCount(0)
-    await expect(page.getByRole('heading', { name: 'Local' })).toBeVisible()
-    await expect(page.getByText('首次使用时先确认本地空间的启动方式。服务准备好后，再继续登录。')).toBeVisible()
+    await expect(page.getByRole('heading', { name: '选择空间' })).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: '本地空间' })).toBeVisible()
+    await expect(page.getByText('正在启动本地空间…')).toBeVisible()
     await expect(page.getByRole('button', { name: '返回空间选择' })).toBeVisible()
   })
 
@@ -398,9 +448,7 @@ test.describe('Local onboarding', () => {
 
     await page.goto('/')
 
-    await expect(page.getByText('Local', { exact: true })).toBeVisible()
-    await expect(page.getByText('本地空间')).toBeVisible()
-    await expect(page.getByRole('button', { name: /Local[\s\S]*需设置/ })).toBeVisible()
+    await expect(page.getByRole('button', { name: /本地空间[\s\S]*需设置/ })).toBeVisible()
   })
 
   test('默认按仅本地模式启动后会转入标准 xpod 登录流', async ({ page }) => {
@@ -411,7 +459,7 @@ test.describe('Local onboarding', () => {
 
     await openLocalFlow(page)
 
-    await expect(page.getByText('Local 已准备好', { exact: true })).toBeVisible()
+    await expect(page.getByText(/本地空间\s*已准备好/)).toBeVisible()
     await expect(page.getByRole('button', { name: '继续登录' })).toBeVisible()
 
     const playState = await page.evaluate(() => (window as any).__linxPlaywrightState)
@@ -426,7 +474,7 @@ test.describe('Local onboarding', () => {
 
     await openLocalFlow(page)
 
-    await expect(page.getByText('Local 尚未运行。你可以先启动服务，或先配置启动参数。')).toBeVisible()
+    await expect(page.getByText('正在启动本地空间…')).toBeVisible()
 
     const playState = await page.evaluate(() => (window as any).__linxPlaywrightState)
     expect(playState.continueCalls).toBe(1)
@@ -452,7 +500,7 @@ test.describe('Local onboarding', () => {
 
     await openLocalFlow(page)
 
-    await expect(page.getByText('Local 已准备好', { exact: true })).toBeVisible()
+    await expect(page.getByText(/本地空间\s*已准备好/)).toBeVisible()
 
     const playState = await page.evaluate(() => (window as any).__linxPlaywrightState)
     expect(playState.chosenSpaces).toEqual([])
@@ -466,9 +514,9 @@ test.describe('Local onboarding', () => {
 
     await openLocalFlow(page)
 
-    await expect(page.getByText('还差一步让 Local 接入 Cloud')).toBeVisible()
-    await expect(page.getByText('Local 的数据空间地址还没准备好。请回到空间选择，重新启动 Local 后再登录。')).toBeVisible()
-    await page.getByRole('button', { name: '去完成 Local 设置' }).click()
+    await expect(page.getByText('还差一步完成本地空间绑定')).toBeVisible()
+    await expect(page.getByText('本地空间的数据空间地址还没准备好。请回到空间选择，重新启动本地空间后再登录。')).toBeVisible()
+    await page.getByRole('button', { name: '去完成本地空间设置' }).click()
 
     const afterOpen = await page.evaluate(() => (window as any).__linxPlaywrightState)
     expect(afterOpen.openConfigCalls).toBe(1)
@@ -492,11 +540,11 @@ test.describe('Local onboarding', () => {
 
     await expect(page.getByText('登录未完成')).toBeVisible()
     await expect(page.getByText('Denied')).toBeVisible()
-    await expect(page.getByRole('button', { name: '重试 Local' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '重试本地空间' })).toBeVisible()
 
     expect(await page.evaluate(() => window.sessionStorage.getItem('linx-post-login-micro-app'))).toBe('files')
 
-    await page.getByRole('button', { name: '重试 Local' }).click()
+    await page.getByRole('button', { name: '重试本地空间' }).click()
 
     await expect.poll(async () => {
       const playState = await page.evaluate(() => (window as any).__linxPlaywrightState)

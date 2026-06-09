@@ -322,7 +322,7 @@ describe('LocalOnboardingPage', () => {
     expect(connectMock).not.toHaveBeenCalled()
   })
 
-  it('does not expose Local network configuration in the login path', () => {
+  it('shows Local reachability status without exposing network configuration in the login path', () => {
     localOnboardingState.snapshot = {
       state: 'ready',
       spaceKind: 'local',
@@ -355,7 +355,7 @@ describe('LocalOnboardingPage', () => {
           baseUrl: null,
           message: '公网入口不可达。',
         },
-        message: '本机入口可用，公网入口暂不可达。配置并启动 tunnel 后再重试。',
+        message: '本机入口可用，公网入口暂不可达。可以继续本机使用，外网访问需要配置隧道。',
       },
       capabilities: null,
       cloudIdentityUrl: 'https://id.undefineds.co',
@@ -371,6 +371,10 @@ describe('LocalOnboardingPage', () => {
     render(<LocalOnboardingPage />)
 
     expect(screen.getByRole('button', { name: '继续登录' })).toBeTruthy()
+    expect(screen.getByText('本机可以访问')).toBeTruthy()
+    expect(screen.getByText('公网可以访问')).toBeTruthy()
+    expect(screen.getByLabelText('本机可以访问：是')).toBeTruthy()
+    expect(screen.getByLabelText('公网可以访问：否')).toBeTruthy()
     expect(screen.queryByRole('button', { name: /高级配置/ })).toBeNull()
     expect(screen.queryByText('拿到本地空间域名')).toBeNull()
     expect(screen.queryByText('配置 Cloudflare Tunnel')).toBeNull()

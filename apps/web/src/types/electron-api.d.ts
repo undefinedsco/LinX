@@ -49,6 +49,14 @@ export interface XpodStatus {
   localUrl?: string
   pid?: number
   provisioning?: XpodProvisioningInfo
+  runtime?: XpodRuntimeInfo
+}
+
+export interface XpodRuntimeInfo {
+  launchKind?: string | null
+  currentVersion?: string | null
+  targetVersion?: string | null
+  upgradeAvailable: boolean
 }
 
 export interface XpodProvisioningInfo {
@@ -162,6 +170,7 @@ export interface XpodAPI {
   start: (options: XpodStartOptions) => Promise<{ success: boolean }>
   stop: () => Promise<{ success: boolean }>
   restart: () => Promise<{ success: boolean }>
+  upgrade: () => Promise<{ success: boolean }>
   status: () => Promise<XpodStatus>
   healthCheck: () => Promise<boolean>
 }
@@ -197,6 +206,7 @@ export interface AppAPI {
 
 export interface AuthAPI {
   prepareLoopbackRedirect: () => Promise<string>
+  resolveOidcIssuer?: (url: string) => Promise<string | null>
   getEmbeddedAuthorizationState: () => Promise<{ open: boolean; reason: 'opened' | 'completed' | 'dismissed'; ready: boolean }>
   openAuthorizationWindow: (url: string, options?: { providerLabel?: string }) => Promise<void>
   openEmbeddedAuthorization: (url: string, options?: { providerLabel?: string }) => Promise<void>

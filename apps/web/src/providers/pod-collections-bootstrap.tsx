@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { SolidDatabase } from '@undefineds.co/models'
 import { queryClient } from './query-provider'
 import { useSolidDatabase } from './solid-database-provider'
-import { chatOps, initializeChatCollections } from '@/modules/chat/collections'
+import { chatOps, initializeChatCollections, type LinxWelcomeResult } from '@/modules/chat/collections'
 import { useChatStore } from '@/modules/chat/store'
 import { initializeContactCollections } from '@/modules/contacts/collections'
 import { initializeFavoriteCollections } from '@/modules/favorites/collections'
@@ -55,21 +55,25 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
     lastStartedRef.current = { db, retryKey }
     setBootstrapState({ db, status: 'initializing', error: null })
 
+    const welcomePromise = chatOps.ensureLinxWelcome({ force })
+    const applyWelcomeResult = async (result: LinxWelcomeResult | null) => {
+      if (!result) return
+      selectInitialSecretary(result.chatId, result.threadId)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['chats'] }),
+        queryClient.invalidateQueries({ queryKey: ['chats', result.chatId, 'threads'] }),
+      ])
+    }
+
     void withTimeout(
-      chatOps.ensureLinxWelcome({ force }),
+      welcomePromise,
       SECRETARY_BOOTSTRAP_TIMEOUT_MS,
       '默认助手准备超时。请检查网络，或返回空间选择页重试。',
     )
       .then(async (result) => {
         if (cancelled) return
 
-        if (result) {
-          selectInitialSecretary(result.chatId, result.threadId)
-          await Promise.all([
-            queryClient.invalidateQueries({ queryKey: ['chats'] }),
-            queryClient.invalidateQueries({ queryKey: ['chats', result.chatId, 'threads'] }),
-          ])
-        }
+        await applyWelcomeResult(result)
 
         if (!cancelled) {
           setBootstrapState({ db, status: 'ready', error: null })
@@ -175,7 +179,11 @@ function BootstrapScreen({
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
   let timeoutId: ReturnType<typeof setTimeout> | undefined
   const timeoutPromise = new Promise<T>((_, reject) => {
-    timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs)
+    timeoutId = setTimeout(() => {
+      const error = new Error(message)
+      error.name = 'BootstrapTimeoutError'
+      reject(error)
+    }, timeoutMs)
   })
 
   return Promise.race([promise, timeoutPromise]).finally(() => {

@@ -28,6 +28,7 @@ import {
   isLocalLoginTransaction,
 } from './login-transaction'
 import type { ConnectingProviderInfo, LocalLoginProviderSource, LoginProviderOption } from './types'
+import type { LocalOnboardingSnapshot } from '@/types/electron-api'
 import { detectStorageConflict, type StorageConflict } from './storage-reconciliation'
 import {
   isLocalLoginProviderSource,
@@ -94,6 +95,101 @@ export function useLoginController() {
     desktopAuthPendingRef.current = false
     desktopAuthSurfaceOpenedRef.current = false
   }, [])
+
+  const connectReadyLocalSnapshot = useCallback(async (
+    snapshot: LocalOnboardingSnapshot,
+    source: LocalLoginProviderSource,
+    options?: { restoreAccount?: StoredAccount | null },
+  ) => {
+    const storedSolidSession = getStoredSolidSession()
+    const accountForReuse = options?.restoreAccount ?? storedAccount
+    const shouldTrySilentDesktopAuth = isDesktop
+      && session.info.isLoggedIn !== true
+      && canReuseSessionForLocalSpace({
+        account: accountForReuse,
+        providers,
+        activeWebId: session.info.webId,
+        storedSolidSession,
+      })
+
+    const isStandalone = source === 'standalone'
+    const localProviderUrl = isStandalone
+      ? normalizeRememberedUrl(snapshot.localUrl) ?? normalizeRememberedUrl(snapshot.baseUrl)
+      : normalizeRememberedUrl(snapshot.publicUrl)
+    if (!localProviderUrl) {
+      setError(isStandalone
+        ? '独立空间已启动，但本机登录入口尚未准备好。请稍后重试。'
+        : '本地空间还没有完成准备。请回到空间选择页，再点一次“本地空间”。')
+      return
+    }
+
+    const accountIssuerUrl = isStandalone
+      ? localProviderUrl
+      : normalizeRememberedUrl(snapshot.cloudIdentityUrl) ?? LINX_CLOUD_IDENTITY_ORIGIN
+
+    if (!isStandalone && !snapshot.provisionCode) {
+      setError('本地空间还没有完成准备。请回到空间选择页，再点一次“本地空间”。')
+      return
+    }
+
+    const oidcEntryUrl = localProviderUrl
+
+    const connectKey = `${oidcEntryUrl}|${accountIssuerUrl}|${localProviderUrl}|${snapshot.provisionCode ?? ''}`
+    if (localConnectKeyRef.current === connectKey) return
+    localConnectKeyRef.current = connectKey
+    silentLocalFallbackStartedRef.current = false
+
+    setLocalLoginActive(false)
+    setState('connecting')
+    setError(null)
+    clearPendingCallbackError()
+    if (isDesktop) {
+      desktopAuthPendingRef.current = true
+      desktopAuthSurfaceOpenedRef.current = false
+    }
+    setConnectingProvider({
+      issuerLabel: isStandalone ? 'Standalone' : 'Cloud',
+      issuerUrl: accountIssuerUrl,
+      storageProviderLabel: isStandalone ? 'Standalone' : 'Local',
+      storageProviderUrl: localProviderUrl,
+    })
+
+    const connectOptions = {
+      authorizationSurface: 'embedded',
+      route: source,
+      accountIssuerUrl,
+      accountIssuerLabel: isStandalone ? 'Standalone' : 'Cloud',
+      storageProviderUrl: localProviderUrl,
+      storageProviderLabel: isStandalone ? 'Standalone' : 'Local',
+      issuerLabel: isStandalone ? 'Standalone' : 'Cloud',
+      authorizationQuery: isStandalone
+        ? undefined
+        : { provisionCode: snapshot.provisionCode },
+      ...(shouldTrySilentDesktopAuth ? { prompt: 'none' as const } : {}),
+      strictDiscovery: true,
+      nodeId: snapshot.nodeId ?? undefined,
+    } as const
+
+    try {
+      await oidc.connect(oidcEntryUrl, connectOptions)
+    } catch (error: any) {
+      resetDesktopAuthState()
+      localConnectKeyRef.current = null
+      setConnectingProvider(null)
+      setState('idle')
+      setError(formatLoginErrorForUser(error, isStandalone ? '登录页没有打开。请稍后重试。' : '登录页没有打开。请返回空间选择页重试。'))
+    }
+  }, [
+    isDesktop,
+    oidc,
+    providers,
+    resetDesktopAuthState,
+    session.info.isLoggedIn,
+    session.info.webId,
+    setError,
+    setState,
+    storedAccount,
+  ])
 
   useEffect(() => {
     if (initRef.current) return
@@ -344,6 +440,15 @@ export function useLoginController() {
 
     void finalizeLogin().catch(async (error: any) => {
       if (cancelled || !isFinalizeCurrent()) return
+      console.warn('[login] finalize failed', {
+        errorName: error instanceof Error ? error.name : undefined,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        webId: account.webId,
+        issuerUrl: account.issuerUrl,
+        issuerLabel: account.issuerLabel,
+        storageProviderUrl: account.storageProviderUrl,
+        storageProviderLabel: account.storageProviderLabel,
+      })
       suppressAutoLoginRef.current = true
       if (account.storageProviderUrl) {
         setStoredAccount(account)
@@ -459,12 +564,19 @@ export function useLoginController() {
         }
       }
 
-      setLocalLoginActive(true)
+      if (snapshot?.state === 'ready') {
+        await connectReadyLocalSnapshot(snapshot, source, {
+          restoreAccount: options?.restoreAccount ?? storedAccount,
+        })
+        return
+      }
+
+      setLocalLoginActive(isLocalStartupSnapshot(snapshot))
     } catch (error: any) {
       setLocalLoginActive(false)
       setError(formatLoginErrorForUser(error, '本地空间启动失败。请稍后重试。'))
     }
-  }, [isDesktop, logout, providers, resetDesktopAuthState, session, setError, setState, startLocal])
+  }, [connectReadyLocalSnapshot, isDesktop, logout, providers, resetDesktopAuthState, session, setError, setState, startLocal, storedAccount])
 
   const connect = useCallback(async (providerKey: string) => {
     loginFinalizeGenerationRef.current += 1
@@ -609,17 +721,6 @@ export function useLoginController() {
       return
     }
 
-    const storedSolidSession = getStoredSolidSession()
-    const shouldTrySilentDesktopAuth = isDesktop
-      && session.info.isLoggedIn !== true
-      && canReuseSessionForLocalSpace({
-        account: storedAccount,
-        providers,
-        activeWebId: session.info.webId,
-        storedSolidSession,
-      })
-
-    const isStandalone = activeLocalProviderSource === 'standalone'
     if (localOnboarding.spaceKind !== activeLocalProviderSource) {
       void startLocalLogin(activeLocalProviderSource, {
         restoreAccount: getReusableLocalStoredAccount(storedAccount, providers, activeLocalProviderSource),
@@ -627,102 +728,14 @@ export function useLoginController() {
       return
     }
 
-    const localProviderUrl = isStandalone
-      ? normalizeRememberedUrl(localOnboarding.localUrl) ?? normalizeRememberedUrl(localOnboarding.baseUrl)
-      : normalizeRememberedUrl(localOnboarding.publicUrl)
-    if (!localProviderUrl) {
-      setError(isStandalone
-        ? '独立空间已启动，但本机登录入口尚未准备好。请稍后重试。'
-        : '本地空间还没有完成准备。请回到空间选择页，再点一次“本地空间”。')
-      return
-    }
-
-    const accountIssuerUrl = isStandalone
-      ? localProviderUrl
-      : normalizeRememberedUrl(localOnboarding.cloudIdentityUrl) ?? LINX_CLOUD_IDENTITY_ORIGIN
-    const oidcEntryUrl = isStandalone ? localProviderUrl : localProviderUrl
-
-    if (!isStandalone && !localOnboarding.provisionCode) {
-      setError('本地空间还没有完成准备。请回到空间选择页，再点一次“本地空间”。')
-      return
-    }
-
-    if (!isStandalone) {
-      const desktopApi = typeof window !== 'undefined' ? window.xpodDesktop : undefined
-      const checkedSnapshot = desktopApi?.localOnboarding?.testConnectivity
-        ? await desktopApi.localOnboarding.testConnectivity().catch((error: any) => {
-            setError(formatLoginErrorForUser(error, '无法确认本地空间公网入口。请稍后重试。'))
-            return null
-          })
-        : null
-
-      if (checkedSnapshot === null && desktopApi?.localOnboarding?.testConnectivity) {
-        return
-      }
-
-      const connectivity = checkedSnapshot?.connectivity ?? localOnboarding.connectivity
-      if (connectivity && connectivity.status !== 'ready') {
-        setError(null)
-        return
-      }
-    }
-
-    const connectKey = `${oidcEntryUrl}|${accountIssuerUrl}|${localProviderUrl}|${localOnboarding.provisionCode ?? ''}`
-    if (localConnectKeyRef.current === connectKey) return
-    localConnectKeyRef.current = connectKey
-    silentLocalFallbackStartedRef.current = false
-
-    setLocalLoginActive(false)
-    setState('connecting')
-    setError(null)
-    clearPendingCallbackError()
-    if (isDesktop) {
-      desktopAuthPendingRef.current = true
-      desktopAuthSurfaceOpenedRef.current = false
-    }
-    setConnectingProvider({
-      issuerLabel: isStandalone ? 'Standalone' : 'Cloud',
-      issuerUrl: accountIssuerUrl,
-      storageProviderLabel: isStandalone ? 'Standalone' : 'Local',
-      storageProviderUrl: localProviderUrl,
+    await connectReadyLocalSnapshot(localOnboarding, activeLocalProviderSource, {
+      restoreAccount: getReusableLocalStoredAccount(storedAccount, providers, activeLocalProviderSource),
     })
-
-    const connectOptions = {
-      authorizationSurface: 'embedded',
-      route: activeLocalProviderSource,
-      accountIssuerUrl,
-      accountIssuerLabel: isStandalone ? 'Standalone' : 'Cloud',
-      storageProviderUrl: localProviderUrl,
-      storageProviderLabel: isStandalone ? 'Standalone' : 'Local',
-      issuerLabel: isStandalone ? 'Standalone' : 'Cloud',
-      authorizationQuery: isStandalone
-        ? undefined
-        : { provisionCode: localOnboarding.provisionCode },
-      ...(shouldTrySilentDesktopAuth ? { prompt: 'none' as const } : {}),
-      strictDiscovery: true,
-      nodeId: localOnboarding.nodeId ?? undefined,
-    } as const
-
-    try {
-      await oidc.connect(oidcEntryUrl, connectOptions)
-    } catch (error: any) {
-      resetDesktopAuthState()
-      localConnectKeyRef.current = null
-      setConnectingProvider(null)
-      setState('idle')
-      setError(formatLoginErrorForUser(error, isStandalone ? '登录页没有打开。请稍后重试。' : '登录页没有打开。请返回空间选择页重试。'))
-    }
   }, [
     activeLocalProviderSource,
+    connectReadyLocalSnapshot,
     localOnboarding,
-    oidc,
-    isDesktop,
-    resetDesktopAuthState,
-    session.info.isLoggedIn,
-    session.info.webId,
     providers,
-    setError,
-    setState,
     startLocalLogin,
     storedAccount,
   ])
@@ -891,6 +904,8 @@ export function useLoginController() {
     window.open(setupUrl, '_blank', 'noopener,noreferrer')
   }, [storageConflict?.managementUrl, storageConflict?.setupKind, storageConflict?.setupUrl])
 
+  const localStartupStatusActive = localLoginActive && isLocalStartupSnapshot(localOnboarding)
+
   return {
     view,
     state,
@@ -906,8 +921,8 @@ export function useLoginController() {
     localOnboarding,
     localProviderSource: activeLocalProviderSource,
     localLoginStatus: {
-      active: localLoginActive,
-      message: localLoginActive
+      active: localStartupStatusActive,
+      message: localStartupStatusActive
         ? (localOnboarding?.message ?? (activeLocalProviderSource === 'standalone' ? '正在启动独立空间…' : '正在启动本地空间…'))
         : null,
     },
@@ -933,6 +948,14 @@ export function useLoginController() {
     dismissStorageConflict,
     openCurrentSpacePodSetup,
   }
+}
+
+function isLocalStartupSnapshot(snapshot: LocalOnboardingSnapshot | null | undefined): boolean {
+  if (!snapshot) {
+    return true
+  }
+
+  return snapshot.state === 'checking' || snapshot.state === 'starting'
 }
 
 function isSilentAuthError(error: string): boolean {

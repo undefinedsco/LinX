@@ -2,6 +2,7 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import type { SolidProvider } from './provider-manager'
 import type { XpodManager, XpodStartProgress } from './xpod-manager'
+import { desktopFetch } from './desktop-fetch'
 import { ensureLinxLocalHome } from './local-home'
 
 export type LocalSpaceKind = 'local' | 'standalone'
@@ -717,29 +718,75 @@ function formatLocalOnboardingError(error: unknown, fallback: string): string {
 function formatLocalStartupProgress(progress: XpodStartProgress, productLabel: string): XpodStartProgress {
   switch (progress.phase) {
     case 'source':
+      return {
+        phase: progress.phase,
+        label: formatRequiredLocalProgressText(progress.label, `定位${productLabel}运行环境`),
+        detail: progress.detail ? formatOptionalLocalProgressText(progress.detail) : null,
+      }
     case 'version':
+      return {
+        phase: progress.phase,
+        label: formatRequiredLocalProgressText(progress.label, '确定 xpod runtime 版本'),
+        detail: progress.detail ? formatOptionalLocalProgressText(progress.detail) : null,
+      }
     case 'check-bun':
+      return {
+        phase: progress.phase,
+        label: formatRequiredLocalProgressText(progress.label, '检查 Bun 运行环境'),
+        detail: progress.detail ? formatOptionalLocalProgressText(progress.detail) : null,
+      }
     case 'check-node':
+      return {
+        phase: progress.phase,
+        label: formatRequiredLocalProgressText(progress.label, '检查 Node/npm 运行环境'),
+        detail: progress.detail ? formatOptionalLocalProgressText(progress.detail) : null,
+      }
+    case 'prepare-runtime-cache':
+      return {
+        phase: progress.phase,
+        label: formatRequiredLocalProgressText(progress.label, '写入 xpod runtime 缓存配置'),
+        detail: progress.detail ? formatOptionalLocalProgressText(progress.detail) : null,
+      }
+    case 'verify-runtime':
+      return {
+        phase: progress.phase,
+        label: formatRequiredLocalProgressText(progress.label, '校验 xpod runtime 启动能力'),
+        detail: progress.detail ? formatOptionalLocalProgressText(progress.detail) : null,
+      }
     case 'runtime-ready':
+      return {
+        phase: progress.phase,
+        label: formatRequiredLocalProgressText(progress.label, 'xpod runtime 已就绪'),
+        detail: progress.detail ? formatOptionalLocalProgressText(progress.detail) : null,
+      }
     case 'embedded':
+      return {
+        phase: progress.phase,
+        label: formatRequiredLocalProgressText(progress.label, '使用内置 xpod runtime'),
+        detail: progress.detail ? formatOptionalLocalProgressText(progress.detail) : null,
+      }
     case 'resolve-runtime':
       return {
         phase: progress.phase,
-        label: `检查${productLabel}运行环境`,
-        detail: null,
+        label: formatRequiredLocalProgressText(progress.label, `检查${productLabel}运行环境`),
+        detail: progress.detail ? formatOptionalLocalProgressText(progress.detail) : null,
       }
     case 'install-bun':
     case 'install-npm':
       return {
         phase: progress.phase,
-        label: '正在准备本地空间',
-        detail: '首次启动可能需要下载，完成后会自动继续。',
+        label: formatRequiredLocalProgressText(progress.label, '安装 xpod runtime'),
+        detail: progress.detail
+          ? formatOptionalLocalProgressText(progress.detail)
+          : '首次启动需要安装 runtime 包与生产依赖，完成后会自动继续。',
       }
     case 'register-cloud':
       return {
         phase: progress.phase,
-        label: '正在准备本地空间',
-        detail: '正在为这台电脑准备本地登录入口。',
+        label: formatRequiredLocalProgressText(progress.label, '准备账号绑定'),
+        detail: progress.detail
+          ? formatOptionalLocalProgressText(progress.detail)
+          : '正在为这台电脑准备本地登录入口。',
       }
     case 'prepare-data':
     case 'write-env':
@@ -786,7 +833,7 @@ function formatOptionalLocalProgressText(value: string | null | undefined): stri
 }
 
 function isInternalDiagnosticText(value: string): boolean {
-  return /@undefineds\.co|xpod runtime|node_modules|\/Users\/|\\Users\\|Application Support|bun|npm|node|\.js:\d+|\.ts:\d+|Require stack|Cannot find module|jsonld|componentsjs|publicUrl|provisionCode|spDomain|baseUrl|canonical|OIDC|issuer|provider|HTTP\s+\d{3}|Pod|Solid|Agent|Secretary|WebID|IRI|RDF|row\.id|https?:\/\/|file:\/\/|localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(value)
+  return /node_modules|\/Users\/|\\Users\\|Application Support|\.js:\d+|\.ts:\d+|Require stack|Cannot find module|jsonld|componentsjs|publicUrl|provisionCode|spDomain|baseUrl|canonical|OIDC|issuer|provider|HTTP\s+\d{3}|\bPod\b|Solid|Agent|Secretary|WebID|IRI|RDF|row\.id|https?:\/\/|file:\/\/|localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(value)
 }
 
 function extractCloudflareTunnelToken(input: string): string {
@@ -833,7 +880,7 @@ async function fetchLocalCapabilitiesOnce(baseUrl: string, timeoutMs: number): P
 
   try {
     const url = new URL('/api/linx/capabilities', ensureTrailingSlash(baseUrl))
-    const response = await fetch(url, {
+    const response = await desktopFetch(url, {
       method: 'GET',
       headers: { Accept: 'application/json' },
       signal: controller.signal,
@@ -967,7 +1014,7 @@ function summarizeConnectivity(
       checkedAt: Date.now(),
       local: localProbe,
       public: publicProbe,
-      message: '本机入口可用，公网入口暂不可达。配置并启动隧道后再重试。',
+      message: '本机入口可用，公网入口暂不可达。可以继续本机使用，外网访问需要配置隧道。',
     }
   }
 
@@ -996,7 +1043,7 @@ async function fetchCapabilitiesOnce(baseUrl: string, timeoutMs: number): Promis
 
   try {
     const url = new URL('/api/linx/capabilities', ensureTrailingSlash(baseUrl))
-    const response = await fetch(url, {
+    const response = await desktopFetch(url, {
       method: 'GET',
       headers: { Accept: 'application/json' },
       signal: controller.signal,

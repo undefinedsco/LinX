@@ -2,7 +2,7 @@
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import { Message, type ThreadStreamEvent } from '@/lib/vendor/xpod-chatkit'
 import { Chat, Thread } from '@/lib/vendor/xpod-chatkit'
-import { aiProviderTable, credentialTable } from '@undefineds.co/models'
+import { aiProviderTable, credentialTable, getDefaultAIConfigCredentialId } from '@undefineds.co/models'
 import { createLocalChatKitFetch } from '../fetch-handler'
 import { createXpodIntegrationContext, type XpodIntegrationContext } from '@/test/xpod-integration'
 
@@ -107,7 +107,7 @@ describe('LocalChatKit pod archive integration', () => {
     const providerBase = 'https://provider.example/v1'
     const providerEndpoint = `${providerBase}/chat/completions`
     const providerId = 'openai'
-    const credentialId = `credential-openai-${Date.now()}`
+    const credentialId = getDefaultAIConfigCredentialId(providerId)
 
     await db.insert(aiProviderTable).values({
       id: providerId,

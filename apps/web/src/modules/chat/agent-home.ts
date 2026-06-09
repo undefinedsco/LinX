@@ -1,5 +1,5 @@
 import {
-  agentKeyFromResourceId,
+  agentHomePathFromResourceId,
   aiConfigModelRef,
   aiConfigProviderRef,
   getDefaultAIConfigCredentialId,
@@ -78,7 +78,7 @@ async function patchPodMetadata(
 }
 
 export function buildAgentHomePath(agentId: string): string {
-  return `/agents/${agentKeyFromResourceId(agentId)}/`
+  return agentHomePathFromResourceId(agentId)
 }
 
 function buildAgentHomeFiles(input: EnsureAgentHomeInput): Array<{

@@ -3,6 +3,7 @@ import {
   startUnseededXpodRuntime,
   type SeededXpodRuntime,
 } from '../helpers/seeded-xpod-runtime'
+import { expectSecretaryInitialized } from '../helpers/secretary-bootstrap'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -24,7 +25,7 @@ test.describe('Real register auth flow', () => {
     await page.goto('/')
     await expect(page.getByRole('heading', { name: '选择空间' })).toBeVisible({ timeout: 15_000 })
 
-    await page.getByRole('button', { name: '连接其他 Solid 账号' }).click()
+    await page.getByRole('button', { name: /连接其他账号服务|连接其他 Solid 账号/ }).click()
     await page.getByPlaceholder('https://pod.example.com').fill(runtime.baseUrl)
 
     await Promise.all([
@@ -38,6 +39,7 @@ test.describe('Real register auth flow', () => {
     const landedOnChat = await waitForChatPath(page, 30_000)
     expect(landedOnChat).toBe(true)
     await assertLoginRouteReady(page, runtime)
+    await expectSecretaryInitialized(page)
   })
 })
 

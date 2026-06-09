@@ -36,6 +36,7 @@ vi.mock('@undefineds.co/models', () => ({
     const tail = value.includes('#') ? value.split('#').pop() : value.split('/').pop()
     return (tail ?? value).replace(/\.ttl$/, '').toLowerCase()
   },
+  getDefaultAIConfigCredentialId: (providerId: string) => `${providerId}-default`,
   normalizeAIConfigResourceId: (value?: string | null) => {
     if (!value) return ''
     if (value.startsWith('undefineds/')) return value
@@ -187,11 +188,11 @@ function createMockDb(
   }
   const contact = {
     id: 'contact-1',
-    entityUri: options.contactEntityUri ?? 'agent-1/index.ttl#this',
+    entityUri: options.contactEntityUri ?? 'agent-1/profile/card#me',
     contactType: 'agent',
   }
   const agentRow = {
-    id: 'agent-1/index.ttl#this',
+    id: 'agent-1/profile/card#me',
     provider: agent.provider,
     model: agent.model,
   }
@@ -215,7 +216,7 @@ function createMockDb(
       return null
     }),
     findByIri: vi.fn(async (table: unknown, iri?: string) => {
-      if (table === mocked.agentTable && iri === 'https://node-0000.undefineds.co/alice/.data/agents/agent-1/index.ttl#this') {
+      if (table === mocked.agentTable && iri === 'https://node-0000.undefineds.co/alice/agents/agent-1/profile/card#me') {
         return agentRow
       }
       return null
@@ -399,7 +400,7 @@ describe('LocalChatKitService platform runtime routing', () => {
 
   it('resolves an Agent contact entity IRI with findByIri instead of deriving a row id from the IRI', async () => {
     const store = createMockStore()
-    const agentIri = 'https://node-0000.undefineds.co/alice/.data/agents/agent-1/index.ttl#this'
+    const agentIri = 'https://node-0000.undefineds.co/alice/agents/agent-1/profile/card#me'
     const db = createMockDb({
       provider: 'undefineds',
       model: 'undefineds/linx-lite',

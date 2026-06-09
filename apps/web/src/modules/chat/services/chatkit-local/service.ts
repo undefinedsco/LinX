@@ -30,6 +30,7 @@ import {
   contactTable,
   credentialResource,
   extractChatIdFromChatRef,
+  getDefaultAIConfigCredentialId,
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
   requireRowResourceId,
@@ -62,6 +63,18 @@ function resolveContactIri(db: SolidDatabase, contact: Pick<ContactRow, 'id'>): 
 function contactMatchesRef(db: SolidDatabase, contact: ContactRow | null | undefined, ref: string): boolean {
   if (!contact || !ref) return false
   return contact.id === ref || resolveContactIri(db, contact) === ref
+}
+
+function isMissingExactReadError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const message = 'message' in error && typeof error.message === 'string' ? error.message : ''
+  return /404|not found|missing/i.test(message)
+}
+
+function isUnsupportedCollectionReadError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const message = 'message' in error && typeof error.message === 'string' ? error.message : ''
+  return /collection queries over plain LDP are not supported|Configure a global query capability/i.test(message)
 }
 
 export interface LocalServiceOptions {
@@ -790,7 +803,7 @@ export class LocalChatKitService {
       ? (this.db as any).findById(aiProviderResource as any, providerId)
       : Promise.resolve(null)
     const [credentialRows, providerRow] = await Promise.all([
-      this.db.select().from(credentialResource).execute(),
+      this.findAiCredentialRows(providerId),
       findProvider,
     ])
 
@@ -805,6 +818,33 @@ export class LocalChatKitService {
     return {
       baseUrl: selected.baseUrl || 'https://openrouter.ai/api/v1',
       apiKey: selected.apiKey,
+    }
+  }
+
+  private async findAiCredentialRows(providerId: string): Promise<Array<Record<string, unknown>>> {
+    const exactRows: Array<Record<string, unknown>> = []
+    const findById = (this.db as any).findById
+    if (typeof findById === 'function') {
+      const defaultCredentialId = getDefaultAIConfigCredentialId(providerId)
+      const exact = await findById.call(this.db, credentialResource as any, defaultCredentialId)
+        .catch((error: unknown) => {
+          if (isMissingExactReadError(error)) return null
+          throw error
+        })
+      if (exact) exactRows.push(exact as Record<string, unknown>)
+    }
+
+    if (exactRows.length > 0) {
+      return exactRows
+    }
+
+    try {
+      return await this.db.select().from(credentialResource).execute() as Array<Record<string, unknown>>
+    } catch (error) {
+      if (isUnsupportedCollectionReadError(error)) {
+        return exactRows
+      }
+      throw error
     }
   }
 

@@ -117,6 +117,19 @@ function ensureTrailingSlash(url) {
   return url.endsWith('/') ? url : `${url}/`
 }
 
+function resolveRuntimeDomainConfig(publicDomain) {
+  if (!publicDomain) {
+    return { type: 'none' }
+  }
+
+  const normalized = publicDomain.trim().toLowerCase()
+  if (/^node-[a-z0-9-]+\.undefineds\.co$/.test(normalized) || normalized.endsWith('.nodes.undefineds.co')) {
+    return { type: 'managed', value: normalized }
+  }
+
+  return { type: 'custom', value: publicDomain }
+}
+
 function readFileIfExists(filePath) {
   try {
     return fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : ''
@@ -181,7 +194,7 @@ function installElectronStub(baseDir) {
 async function startRealLocalCloudRuntime(page, overrides = {}) {
   return startRealLocalRuntime(page, {
     requirePublicDomain: true,
-    startupMode: 'remote-ready',
+    spaceKind: 'local',
     tmpPrefix: 'linx-prod-local-cloud-',
     ...overrides,
   })
@@ -190,7 +203,7 @@ async function startRealLocalCloudRuntime(page, overrides = {}) {
 async function startRealLocalDeviceRuntime(page, overrides = {}) {
   return startRealLocalRuntime(page, {
     requirePublicDomain: false,
-    startupMode: 'device-only',
+    spaceKind: 'standalone',
     tmpPrefix: 'linx-prod-local-device-',
     ...overrides,
   })
@@ -215,9 +228,7 @@ async function startRealLocalRuntime(page, options) {
       status: 'stopped',
       dataDir: path.join(tmpDir, 'pod'),
       port,
-      domain: publicDomain
-        ? { type: 'custom', value: publicDomain }
-        : { type: 'none' },
+      domain: resolveRuntimeDomainConfig(publicDomain),
       tunnelToken,
     },
   }
@@ -282,6 +293,13 @@ async function startRealLocalRuntime(page, options) {
       ensureBootstrapProvider: () => provider,
     })
     await controller.refresh()
+    if (publicDomain && options.spaceKind === 'local') {
+      console.log(`[real-local-cloud] installing browser route https://${publicDomain} -> http://127.0.0.1:${port}`)
+      await installLocalSpBrowserRoute(page, {
+        canonicalOrigin: `https://${publicDomain}`,
+        accessOrigin: `http://127.0.0.1:${port}`,
+      })
+    }
   } catch (error) {
     restoreElectron()
     fs.rmSync(tmpDir, { recursive: true, force: true })
@@ -340,7 +358,7 @@ async function startRealLocalRuntime(page, options) {
       case 'xpod:start':
         await manager.start({
           ...args[0],
-          startupMode: args[0]?.startupMode ?? options.startupMode,
+          spaceKind: args[0]?.spaceKind ?? options.spaceKind,
         })
         return { success: true }
       case 'xpod:stop':
@@ -389,14 +407,21 @@ async function startRealLocalRuntime(page, options) {
         pendingProvisionCode = value || null
         return { success: true }
       }
+      case 'auth:resolveOidcIssuer':
+        return resolveOidcIssuerViaLocalTransport(args[0], controller)
       case 'local:getSnapshot':
         return controller.getSnapshot()
       case 'local:chooseMode':
-        return controller.chooseMode(args[0])
+      case 'local:chooseSpace':
+        return controller.chooseSpace(args[0])
       case 'local:continue':
         return controller.continue()
       case 'local:refresh':
         return controller.refresh()
+      case 'local:saveTunnelToken':
+        return controller.saveTunnelToken(args[0] ?? {})
+      case 'local:testConnectivity':
+        return controller.testConnectivity()
       case 'auth:getEmbeddedAuthorizationState':
         return { open: false, reason: 'dismissed', ready: false }
       case 'runtime:getDebugState': {
@@ -482,6 +507,7 @@ async function startRealLocalRuntime(page, options) {
         },
         auth: {
           getEmbeddedAuthorizationState: () => invoke('auth:getEmbeddedAuthorizationState'),
+          resolveOidcIssuer: (url) => invoke('auth:resolveOidcIssuer', url),
           openAuthorizationWindow: async (url) => {
             window.location.assign(url)
           },
@@ -504,9 +530,11 @@ async function startRealLocalRuntime(page, options) {
         },
         localOnboarding: {
           getSnapshot: () => invoke('local:getSnapshot'),
-          chooseMode: (mode) => invoke('local:chooseMode', mode),
+          chooseSpace: (spaceKind) => invoke('local:chooseSpace', spaceKind),
           continue: () => invoke('local:continue'),
           refresh: () => invoke('local:refresh'),
+          saveTunnelToken: (input) => invoke('local:saveTunnelToken', input),
+          testConnectivity: () => invoke('local:testConnectivity'),
           onStateChange: () => () => undefined,
         },
       },
@@ -543,6 +571,224 @@ async function startRealLocalRuntime(page, options) {
       fs.rmSync(tmpDir, { recursive: true, force: true })
     },
   }
+}
+
+async function resolveOidcIssuerViaLocalTransport(entryUrl, controller) {
+  const entry = normalizeUrl(entryUrl)
+  if (!entry) {
+    return null
+  }
+
+  const snapshot = await controller.refresh()
+  const canonical = normalizeUrl(snapshot.publicUrl ?? snapshot.baseUrl)
+  const access = normalizeUrl(snapshot.localUrl)
+  if (!canonical || !access || entry.origin !== canonical.origin) {
+    return null
+  }
+
+  const configUrl = new URL('/.well-known/openid-configuration', access).href
+  const response = await fetch(configUrl, {
+    method: 'GET',
+    headers: {
+      Accept: 'application/json',
+      'X-Forwarded-Host': canonical.host,
+      'X-Forwarded-Proto': canonical.protocol.replace(':', ''),
+    },
+  })
+  if (!response.ok) {
+    throw new Error(`Local OIDC discovery failed: HTTP ${response.status}`)
+  }
+
+  const payload = await response.json().catch(() => null)
+  const issuer = typeof payload?.issuer === 'string' && payload.issuer.trim().length > 0
+    ? payload.issuer.trim()
+    : canonical.href
+  return issuer.replace(/\/$/, '')
+}
+
+function normalizeUrl(url) {
+  if (typeof url !== 'string' || url.trim().length === 0) {
+    return null
+  }
+  try {
+    const parsed = new URL(url)
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+async function installLocalSpBrowserRoute(page, { canonicalOrigin, accessOrigin }) {
+  const canonical = normalizeUrl(canonicalOrigin)
+  const access = normalizeUrl(accessOrigin)
+  if (!canonical || !access || canonical.origin === access.origin) {
+    return
+  }
+
+  await page.context().route((url) => url.origin === canonical.origin, async (route) => {
+    const request = route.request()
+    console.log(`[real-local-cloud] route ${request.method()} ${request.url()}`)
+    const requestUrl = normalizeUrl(request.url())
+    if (!requestUrl || requestUrl.origin !== canonical.origin) {
+      await route.continue()
+      return
+    }
+
+    if (request.method().toUpperCase() === 'OPTIONS') {
+      await route.fulfill({
+        status: 204,
+        headers: createCorsHeaders(request.headers()),
+        body: '',
+      })
+      return
+    }
+
+    const forwardedUrl = rewriteUrlOrigin(requestUrl, access.origin)
+    const requestHeaders = createForwardHeaders(request.headers(), canonical)
+    const init = {
+      method: request.method(),
+      headers: requestHeaders,
+      redirect: 'manual',
+    }
+    const body = request.postDataBuffer()
+    if (body && !['GET', 'HEAD'].includes(request.method().toUpperCase())) {
+      init.body = body
+    }
+
+    try {
+      const response = await fetch(forwardedUrl, init)
+      const location = response.headers.get('location')
+      console.log(`[real-local-cloud] route response ${response.status} ${request.url()} <- ${response.url}${location ? ` location=${location}` : ''}`)
+      const headers = createFulfillHeaders(response.headers, request.headers(), canonical, access)
+      if (isDocumentRedirect(response.status, location, request)) {
+        const redirectUrl = resolveCanonicalRedirectLocation(location, requestUrl, canonical, access)
+        for (const key of Object.keys(headers)) {
+          if (key.toLowerCase() === 'location') {
+            delete headers[key]
+          }
+        }
+        await route.fulfill({
+          status: 200,
+          headers: {
+            ...headers,
+            'content-type': 'text/html; charset=utf-8',
+          },
+          body: buildRedirectShim(redirectUrl),
+        })
+        return
+      }
+      const responseBody = await response.arrayBuffer()
+      await route.fulfill({
+        status: response.status,
+        headers,
+        body: Buffer.from(responseBody),
+      })
+    } catch (error) {
+      console.warn('[real-local-cloud] Local SP browser route failed:', error)
+      await route.abort('connectionrefused')
+    }
+  })
+}
+
+function rewriteUrlOrigin(url, targetOrigin) {
+  const target = new URL(url.href)
+  const origin = new URL(targetOrigin)
+  target.protocol = origin.protocol
+  target.host = origin.host
+  return target.href
+}
+
+function createForwardHeaders(headers, canonical) {
+  const forwarded = { ...headers }
+  delete forwarded.host
+  delete forwarded.connection
+  forwarded['x-forwarded-host'] = canonical.host
+  forwarded['x-forwarded-proto'] = canonical.protocol.replace(':', '')
+  return forwarded
+}
+
+function createFulfillHeaders(responseHeaders, requestHeaders, canonical, access) {
+  const headers = {}
+  for (const [key, value] of responseHeaders.entries()) {
+    const lower = key.toLowerCase()
+    if (
+      lower === 'content-encoding'
+      || lower === 'content-length'
+      || lower === 'transfer-encoding'
+      || lower === 'connection'
+    ) {
+      continue
+    }
+    if (lower === 'location') {
+      headers[key] = rewriteHeaderUrl(value, access.origin, canonical.origin)
+      continue
+    }
+    headers[key] = value
+  }
+  const setCookie = readSetCookieHeaders(responseHeaders)
+  if (setCookie.length === 1) {
+    headers['set-cookie'] = setCookie[0]
+  } else if (setCookie.length > 1) {
+    headers['set-cookie'] = setCookie.join('\n')
+  }
+
+  return {
+    ...headers,
+    ...createCorsHeaders(requestHeaders),
+  }
+}
+
+function readSetCookieHeaders(headers) {
+  if (typeof headers.getSetCookie === 'function') {
+    return headers.getSetCookie()
+  }
+  const value = headers.get?.('set-cookie')
+  return value ? [value] : []
+}
+
+function createCorsHeaders(requestHeaders) {
+  const origin = requestHeaders.origin || '*'
+  return {
+    'access-control-allow-origin': origin,
+    'access-control-allow-credentials': 'true',
+    'access-control-allow-methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
+    'access-control-allow-headers': requestHeaders['access-control-request-headers'] || 'authorization,content-type,accept,dpop',
+    vary: 'Origin',
+  }
+}
+
+function isDocumentRedirect(status, location, request) {
+  return status >= 300
+    && status < 400
+    && typeof location === 'string'
+    && location.length > 0
+    && request.resourceType() === 'document'
+}
+
+function resolveCanonicalRedirectLocation(location, requestUrl, canonical, access) {
+  const resolved = new URL(location, requestUrl.href).href
+  return rewriteHeaderUrl(resolved, access.origin, canonical.origin)
+}
+
+function buildRedirectShim(url) {
+  const serialized = JSON.stringify(url)
+  const escaped = escapeHtml(url)
+  return `<!doctype html><meta charset="utf-8"><title>Redirecting</title><script>window.location.replace(${serialized});</script><a href="${escaped}">Continue</a>`
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+}
+
+function rewriteHeaderUrl(value, fromOrigin, toOrigin) {
+  if (typeof value !== 'string' || value.length === 0) {
+    return value
+  }
+  return value.replaceAll(fromOrigin, toOrigin)
 }
 
 function redactBridgeArgs(method, args) {

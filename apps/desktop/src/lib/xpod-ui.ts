@@ -22,6 +22,13 @@ export function formatXpodStatusDetail(status: XpodStatus): string {
 
   lines.push(`外网入口: ${status.baseUrl && status.baseUrl !== status.localUrl ? '已配置' : '未配置'}`);
 
+  if (status.runtime?.currentVersion || status.runtime?.targetVersion) {
+    const current = status.runtime.currentVersion ?? '未知';
+    const target = status.runtime.targetVersion ?? '未知';
+    const upgrade = status.runtime.upgradeAvailable ? '，可升级' : '';
+    lines.push(`xpod runtime: ${current} -> ${target}${upgrade}`);
+  }
+
   return lines.join('\n');
 }
 

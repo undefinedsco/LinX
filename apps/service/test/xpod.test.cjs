@@ -171,6 +171,21 @@ test('service xpod rejects Cloud+Local runtimes without scoped WebID selection',
   fs.mkdirSync(path.join(runtimeRoot, 'config'), { recursive: true })
   fs.writeFileSync(path.join(runtimeRoot, 'config', 'xpod.base.json'), '{}', 'utf-8')
 
+  assert.throws(
+    () => assertXpodLoginRuntimeCapabilities(runtimeRoot),
+    /ScopedPickWebIdHandler.storageBaseUrl/,
+  )
+
+  fs.writeFileSync(path.join(runtimeRoot, 'config', 'xpod.base.json'), JSON.stringify([{
+    overrideParameters: {
+      '@type': 'ScopedPickWebIdHandler',
+      storageBaseUrl: {
+        '@id': 'urn:solid-server:default:variable:baseUrl',
+        '@type': 'Variable',
+      },
+    },
+  }]), 'utf-8')
+
   assert.doesNotThrow(() => assertXpodLoginRuntimeCapabilities(runtimeRoot))
 })
 

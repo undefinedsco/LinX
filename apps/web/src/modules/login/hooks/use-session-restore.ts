@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSession } from '@inrupt/solid-ui-react'
 import {
-  capturePendingCallbackError,
-  getPendingLoginAttempt,
   getStoredSolidSession,
-  clearStoredSolidSession,
 } from '../login-utils'
+import {
+  getCurrentLocationCallbackRedirectUrl,
+  normalizeDesktopAuthRedirectUrl,
+} from '../desktop-auth-redirect'
 
 const CALLBACK_RESTORE_TIMEOUT = 15000
 
@@ -18,8 +19,13 @@ const CALLBACK_RESTORE_TIMEOUT = 15000
  * current renderer location.
  * It only:
  *   1. Waits for session.info.isLoggedIn to become true (or timeout)
- *   2. For Desktop: consumes pending redirect URLs and calls handleIncomingRedirect for those
+ *   2. For Desktop: consumes pending redirect URLs and routes the renderer to /auth/callback
  *   3. Reports restoreComplete / restoreFailed to the login controller
+ *
+ * Desktop deliberately does not call handleIncomingRedirect from an arbitrary
+ * app route. Inrupt mutates browser history during callback processing; doing
+ * that from /chat can leave the renderer on /auth/callback without code/state.
+ * The callback page is the only route that should finish the OIDC response.
  */
 export function useSessionRestore() {
   const { session, sessionRequestInProgress } = useSession()
@@ -37,49 +43,20 @@ export function useSessionRestore() {
     if (!desktopApi?.auth) return null
     const redirectUrl = await desktopApi.auth.consumePendingRedirect()
     if (!redirectUrl) return null
-    return normalizeIncomingRedirectUrl(redirectUrl)
+    return normalizeDesktopAuthRedirectUrl(redirectUrl)
   }, [desktopApi])
 
-  // Handle Desktop redirect — this is the only case where we call handleIncomingRedirect
-  const restoreDesktopRedirect = useCallback(async (redirectUrl: string) => {
+  const routeDesktopRedirectToCallback = useCallback((redirectUrl: string) => {
     setIsRestoring(true)
     setRestoreFailed(false)
-    const timeoutMs = CALLBACK_RESTORE_TIMEOUT
 
-    try {
-      if (isSilentAuthFailureRedirect(redirectUrl)) {
-        capturePendingCallbackError(redirectUrl)
-        setRestoreFailed(true)
-        return
-      }
-
-      const restored = await Promise.race<any>([
-        session.handleIncomingRedirect({
-          url: redirectUrl,
-          restorePreviousSession: true,
-        }),
-        new Promise<void>((_, reject) =>
-          setTimeout(() => reject(new Error('timeout')), timeoutMs),
-        ),
-      ])
-
-      if (restored?.isLoggedIn || session.info.isLoggedIn) {
-        setRestoreComplete(true)
-      } else {
-        clearStoredSolidSession()
-        setRestoreFailed(true)
-      }
-    } catch {
-      if (!session.info.isLoggedIn) {
-        clearStoredSolidSession()
-        setRestoreFailed(true)
-      } else {
-        setRestoreComplete(true)
-      }
-    } finally {
-      setIsRestoring(false)
+    if (redirectUrl === window.location.href) {
+      return
     }
-  }, [session])
+
+    window.history.pushState({}, '', redirectUrl)
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  }, [])
 
   // Auto-restore on mount
   useEffect(() => {
@@ -95,7 +72,7 @@ export function useSessionRestore() {
     if (desktopApi?.auth) {
       void consumeDesktopRedirect().then((redirectUrl) => {
         if (redirectUrl) {
-          void restoreDesktopRedirect(redirectUrl)
+          routeDesktopRedirectToCallback(redirectUrl)
         } else if (shouldAttemptCurrentLocationRestore()) {
           setIsRestoring(true)
         } else {
@@ -117,7 +94,7 @@ export function useSessionRestore() {
     } else {
       setRestoreFailed(true)
     }
-  }, [session.info.isLoggedIn, desktopApi, consumeDesktopRedirect, restoreDesktopRedirect, hasStoredSession])
+  }, [session.info.isLoggedIn, desktopApi, consumeDesktopRedirect, routeDesktopRedirectToCallback, hasStoredSession])
 
   // Listen for Desktop redirect events
   useEffect(() => {
@@ -125,11 +102,11 @@ export function useSessionRestore() {
     return desktopApi.auth.onRedirect(() => {
       void consumeDesktopRedirect().then((redirectUrl) => {
         if (redirectUrl) {
-          void restoreDesktopRedirect(redirectUrl)
+          routeDesktopRedirectToCallback(redirectUrl)
         }
       })
     })
-  }, [desktopApi, consumeDesktopRedirect, restoreDesktopRedirect])
+  }, [desktopApi, consumeDesktopRedirect, routeDesktopRedirectToCallback])
 
   // Watch for session state changes from SolidSessionProvider
   useEffect(() => {
@@ -183,68 +160,6 @@ export function useSessionRestore() {
   }
 }
 
-function isSilentAuthFailureRedirect(url: string): boolean {
-  const pendingAttempt = getPendingLoginAttempt()
-  if (pendingAttempt?.prompt !== 'none') {
-    return false
-  }
-
-  try {
-    const error = new URL(url).searchParams.get('error')
-    return error === 'login_required'
-      || error === 'interaction_required'
-      || error === 'consent_required'
-      || error === 'account_selection_required'
-  } catch {
-    return false
-  }
-}
-
-function normalizeIncomingRedirectUrl(url: string): string {
-  if (typeof window === 'undefined') return url
-
-  try {
-    const parsed = new URL(url)
-    const isLoopback =
-      (parsed.protocol === 'http:' || parsed.protocol === 'https:')
-      && (parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost')
-      && parsed.pathname === '/auth/callback'
-    const isLinxProtocol =
-      parsed.protocol === 'linx:'
-      && parsed.hostname === 'auth'
-      && parsed.pathname === '/callback'
-
-    if (isLoopback || isLinxProtocol) {
-      if (window.location.protocol === 'file:') {
-        return buildCurrentDocumentRedirectUrl(parsed.search)
-      }
-      return `${window.location.origin}/auth/callback${parsed.search}`
-    }
-
-    return url
-  } catch {
-    return url
-  }
-}
-
-function buildCurrentDocumentRedirectUrl(search: string): string {
-  const currentUrl = new URL(window.location.href)
-  currentUrl.search = search
-  return currentUrl.toString()
-}
-
 function shouldAttemptCurrentLocationRestore() {
   return getCurrentLocationCallbackRedirectUrl() !== null
-}
-
-function getCurrentLocationCallbackRedirectUrl(): string | null {
-  if (typeof window === 'undefined') return null
-  try {
-    const parsed = new URL(window.location.href)
-    return parsed.pathname === '/auth/callback' && parsed.searchParams.has('code')
-      ? window.location.href
-      : null
-  } catch {
-    return null
-  }
 }

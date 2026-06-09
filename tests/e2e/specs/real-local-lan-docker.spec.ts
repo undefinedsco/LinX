@@ -24,7 +24,7 @@ test.describe('Real Local LAN/Docker reachability', () => {
       const snapshot = await runtime.getSnapshot()
 
       expect(snapshot.state).toBe('ready')
-      expect(snapshot.mode).toBe('device-only')
+      expect(snapshot.spaceKind).toBe('standalone')
       expect(snapshot.baseUrl).toBe(runtime.baseUrl)
       expect(snapshot.publicUrl).toBeNull()
       expect(snapshot.provisionCode).toBeNull()

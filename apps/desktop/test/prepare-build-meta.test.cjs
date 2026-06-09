@@ -5,9 +5,12 @@ const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 
 const desktopRoot = path.resolve(__dirname, '..')
+const repoRoot = path.resolve(desktopRoot, '../..')
 const scriptPath = path.join(desktopRoot, 'scripts', 'prepare-build-meta.mjs')
 const outputPath = path.join(desktopRoot, 'src/generated/build-meta.json')
 const resourcePackagePath = path.join(desktopRoot, 'build/xpod-resource/package.json')
+const rootPackageJson = require(path.join(repoRoot, 'package.json'))
+const declaredXpodVersion = rootPackageJson.dependencies?.['@undefineds.co/xpod']
 
 test('prepare-build-meta records the declared xpod dependency version by default', (t) => {
   const originalOutput = readOptional(outputPath)
@@ -33,7 +36,7 @@ test('prepare-build-meta records the declared xpod dependency version by default
   assert.equal(result.status, 0, result.stderr)
   const meta = JSON.parse(fs.readFileSync(outputPath, 'utf8'))
   assert.equal(meta.version, '1.2.3')
-  assert.equal(meta.xpodVersion, '0.3.32')
+  assert.equal(meta.xpodVersion, declaredXpodVersion)
 })
 
 test('prepare-build-meta can record a local packaged xpod resource version for explicit experiments', (t) => {

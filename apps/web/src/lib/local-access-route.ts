@@ -3,7 +3,7 @@ import type { LocalOnboardingSnapshot } from '@/types/electron-api'
 const LINX_LOCAL_ONBOARDING_CONTRACT = 'linx-local-onboarding/v1'
 const DEFAULT_PROBE_TIMEOUT_MS = 900
 
-export type LocalAccessRouteKind = 'local' | 'lan' | 'public' | 'canonical'
+export type LocalAccessRouteKind = 'standalone' | 'local' | 'lan' | 'public' | 'canonical'
 
 export interface LocalAccessRouteProbe {
   url: string
@@ -218,11 +218,15 @@ async function loadLocalOnboardingSnapshot(): Promise<LocalOnboardingSnapshot | 
 
 function collectCandidates(snapshot: LocalOnboardingSnapshot, canonicalBaseUrl: string): Candidate[] {
   const publicBaseUrl = normalizeBaseUrl(snapshot.publicUrl)
+  const standaloneKind = snapshot.spaceKind === 'standalone' ? 'standalone' : null
   const candidates: Candidate[] = [
-    { url: snapshot.localUrl ?? '', kind: 'local' },
-    { url: snapshot.baseUrl ?? '', kind: resolveBaseUrlKind(snapshot.baseUrl, canonicalBaseUrl, publicBaseUrl) },
-    { url: snapshot.publicUrl ?? '', kind: 'public' },
-    { url: canonicalBaseUrl, kind: 'canonical' },
+    { url: snapshot.localUrl ?? '', kind: standaloneKind ?? 'local' },
+    {
+      url: snapshot.baseUrl ?? '',
+      kind: standaloneKind ?? resolveBaseUrlKind(snapshot.baseUrl, canonicalBaseUrl, publicBaseUrl),
+    },
+    { url: snapshot.publicUrl ?? '', kind: standaloneKind ?? 'public' },
+    { url: canonicalBaseUrl, kind: standaloneKind ?? 'canonical' },
   ]
   const seen = new Set<string>()
   return candidates.flatMap((candidate) => {
@@ -331,9 +335,7 @@ function ensureFetchInterceptor(): void {
   }) as typeof fetch
 }
 
-function resolveFetchRewriteSafety(
-  selection: LocalAccessRouteSelection,
-): { enabled: boolean; reason: string | null } {
+function resolveFetchRewriteSafety(selection: LocalAccessRouteSelection): { enabled: boolean; reason: string | null } {
   try {
     const canonical = new URL(selection.canonicalBaseUrl)
     const access = new URL(selection.accessBaseUrl)
@@ -408,6 +410,7 @@ function publishRoute(selection: LocalAccessRouteSelection | null): void {
 
 function routePriority(kind: LocalAccessRouteKind): number {
   switch (kind) {
+    case 'standalone':
     case 'local':
       return 0
     case 'lan':

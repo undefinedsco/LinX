@@ -36,9 +36,12 @@ describe('createLinxSolidDatabase', () => {
     expect(drizzleMock).toHaveBeenCalledWith(session, {
       disableInteropDiscovery: true,
       podUrl: undefined,
+      resourcePreparation: 'best-effort',
       schema: { chat: 'schema' },
     })
-    expect(initializeLinxPodStorageMock).toHaveBeenCalledWith(db)
+    expect(initializeLinxPodStorageMock).toHaveBeenCalledWith(db, expect.objectContaining({
+      onEvent: expect.any(Function),
+    }))
   })
 
   it('passes an explicit Pod URL for split IdP/SP deployments', async () => {
@@ -57,6 +60,7 @@ describe('createLinxSolidDatabase', () => {
     expect(drizzleMock).toHaveBeenCalledWith(session, {
       disableInteropDiscovery: true,
       podUrl: 'https://pod.example.com/',
+      resourcePreparation: 'best-effort',
       schema: { chat: 'schema' },
     })
   })
@@ -113,6 +117,7 @@ describe('createLinxSolidDatabase', () => {
 
     expect(drizzleMock).toHaveBeenCalledWith(session, expect.objectContaining({
       podUrl: 'https://node-0000.undefineds.co/alice/',
+      resourcePreparation: 'best-effort',
     }))
     expect(runtime.setPodUrl).toHaveBeenCalledWith('https://node-0000.undefineds.co/alice/')
   })
@@ -295,5 +300,124 @@ describe('createLinxSolidDatabase', () => {
 
     await assertion
     vi.useRealTimers()
+  })
+
+  it('coalesces concurrent initialization for the same session and Pod', async () => {
+    const db = {
+      id: 'db',
+      getDialect: vi.fn(() => ({
+        getPodUrl: vi.fn(() => 'https://node-0000.undefineds.co/alice/'),
+      })),
+    }
+    let resolveInit: (() => void) | undefined
+    initializeLinxPodStorageMock.mockReturnValue(new Promise<void>((resolve) => {
+      resolveInit = resolve
+    }))
+    drizzleMock.mockReturnValue(db)
+    const session = {
+      info: {
+        sessionId: 'session-1',
+        webId: 'https://id.undefineds.co/alice/profile/card#me',
+      },
+    }
+
+    const first = createLinxSolidDatabase(session, { podUrl: 'https://node-0000.undefineds.co/alice/' })
+    const second = createLinxSolidDatabase(session, { podUrl: 'https://node-0000.undefineds.co/alice/' })
+
+    expect(drizzleMock).toHaveBeenCalledTimes(1)
+    expect(initializeLinxPodStorageMock).toHaveBeenCalledTimes(1)
+
+    resolveInit?.()
+    await expect(Promise.all([first, second])).resolves.toEqual([db, db])
+  })
+
+  it('coalesces initialization while the OIDC session id is still settling', async () => {
+    const db = {
+      id: 'db',
+      getDialect: vi.fn(() => ({
+        getPodUrl: vi.fn(() => 'https://node-0000.undefineds.co/alice/'),
+      })),
+    }
+    let resolveInit: (() => void) | undefined
+    initializeLinxPodStorageMock.mockReturnValue(new Promise<void>((resolve) => {
+      resolveInit = resolve
+    }))
+    drizzleMock.mockReturnValue(db)
+    const session = {
+      info: {
+        sessionId: undefined as string | undefined,
+        webId: 'https://id.undefineds.co/alice/profile/card#me',
+      },
+    }
+
+    const first = createLinxSolidDatabase(session, { podUrl: 'https://node-0000.undefineds.co/alice/' })
+    session.info.sessionId = 'session-1'
+    const second = createLinxSolidDatabase(session, { podUrl: 'https://node-0000.undefineds.co/alice/' })
+
+    expect(drizzleMock).toHaveBeenCalledTimes(1)
+    expect(initializeLinxPodStorageMock).toHaveBeenCalledTimes(1)
+
+    resolveInit?.()
+    await expect(Promise.all([first, second])).resolves.toEqual([db, db])
+  })
+
+  it('coalesces explicit Pod initialization while session info is still settling', async () => {
+    const db = {
+      id: 'db',
+      getDialect: vi.fn(() => ({
+        getPodUrl: vi.fn(() => 'https://node-0000.undefineds.co/alice/'),
+      })),
+    }
+    let resolveInit: (() => void) | undefined
+    initializeLinxPodStorageMock.mockReturnValue(new Promise<void>((resolve) => {
+      resolveInit = resolve
+    }))
+    drizzleMock.mockReturnValue(db)
+    const session = {
+      info: {
+        sessionId: undefined as string | undefined,
+        webId: undefined as string | undefined,
+      },
+    }
+
+    const first = createLinxSolidDatabase(session, { podUrl: 'https://node-0000.undefineds.co/alice/' })
+    session.info.sessionId = 'session-1'
+    session.info.webId = 'https://id.undefineds.co/alice/profile/card#me'
+    const second = createLinxSolidDatabase(session, { podUrl: 'https://node-0000.undefineds.co/alice/' })
+
+    expect(drizzleMock).toHaveBeenCalledTimes(1)
+    expect(initializeLinxPodStorageMock).toHaveBeenCalledTimes(1)
+
+    resolveInit?.()
+    await expect(Promise.all([first, second])).resolves.toEqual([db, db])
+  })
+
+  it('coalesces when profile storage discovery is followed by an explicit Pod URL', async () => {
+    const db = {
+      id: 'db',
+      getDialect: vi.fn(() => ({
+        getPodUrl: vi.fn(() => 'https://node-0000.undefineds.co/alice/'),
+      })),
+    }
+    let resolveInit: (() => void) | undefined
+    initializeLinxPodStorageMock.mockReturnValue(new Promise<void>((resolve) => {
+      resolveInit = resolve
+    }))
+    drizzleMock.mockReturnValue(db)
+    const session = {
+      info: {
+        sessionId: 'session-1',
+        webId: 'https://id.undefineds.co/alice/profile/card#me',
+      },
+    }
+
+    const first = createLinxSolidDatabase(session)
+    const second = createLinxSolidDatabase(session, { podUrl: 'https://node-0000.undefineds.co/alice/' })
+
+    expect(drizzleMock).toHaveBeenCalledTimes(1)
+    expect(initializeLinxPodStorageMock).toHaveBeenCalledTimes(1)
+
+    resolveInit?.()
+    await expect(Promise.all([first, second])).resolves.toEqual([db, db])
   })
 })

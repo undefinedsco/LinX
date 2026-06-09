@@ -4,6 +4,7 @@ import {
   installXpodAuthEnhancer,
   installXpodAuthEnhancerOnNewDocument,
 } from './xpod-auth-enhancer';
+import { installAuthCallbackNavigationInterceptor } from './auth-callback-navigation';
 import { installSingleSurfaceWindowOpenHandler } from './window-open-routing';
 
 export type EmbeddedAuthorizationCloseReason = 'opened' | 'completed' | 'dismissed';
@@ -16,6 +17,7 @@ export interface EmbeddedAuthorizationState {
 
 interface EmbeddedAuthorizationSheetOptions {
   getMainWindow: () => BrowserWindow | null;
+  onCallbackUrl?: (url: string) => void;
   onStateChange?: (state: EmbeddedAuthorizationState) => void;
 }
 
@@ -28,6 +30,7 @@ export const AUTHORIZATION_SURFACE_HEIGHT = 720;
 
 export class EmbeddedAuthorizationSheet {
   private readonly getMainWindow: () => BrowserWindow | null;
+  private readonly onCallbackUrl?: (url: string) => void;
   private readonly onStateChange?: (state: EmbeddedAuthorizationState) => void;
   private window: BrowserWindow | null = null;
   private isOpen = false;
@@ -42,6 +45,7 @@ export class EmbeddedAuthorizationSheet {
 
   public constructor(options: EmbeddedAuthorizationSheetOptions) {
     this.getMainWindow = options.getMainWindow;
+    this.onCallbackUrl = options.onCallbackUrl;
     this.onStateChange = options.onStateChange;
   }
 
@@ -89,6 +93,10 @@ export class EmbeddedAuthorizationSheet {
 
     installSingleSurfaceWindowOpenHandler(this.window.webContents, {
       prepareSameOriginUrl: addEmbeddedAuthQuery,
+    });
+    installAuthCallbackNavigationInterceptor(this.window.webContents, (callbackUrl) => {
+      this.onCallbackUrl?.(callbackUrl);
+      this.close('completed');
     });
     this.emitState({ open: true, reason: 'opened', ready: false });
     await this.installAuthEnhancerOnNewDocument();

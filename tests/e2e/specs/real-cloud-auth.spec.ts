@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { expectSecretaryInitialized } from '../helpers/secretary-bootstrap'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -171,7 +172,7 @@ test.describe('Cloud IDP + Cloud SP auth flow', () => {
     await page.goto('/')
     await expect(page.getByRole('heading', { name: '选择空间' })).toBeVisible({ timeout: 15_000 })
 
-    const cloudButton = page.getByRole('button').filter({ hasText: '官方云端空间' }).first()
+    const cloudButton = page.getByRole('button', { name: /云端空间[\s\S]*登录|Cloud[\s\S]*Login/i }).first()
     if (!await cloudButton.isVisible({ timeout: 15_000 }).catch(() => false)) {
       throw new Error(`Cloud provider button not found\n${JSON.stringify(await readPageState(page), null, 2)}`)
     }
@@ -186,6 +187,7 @@ test.describe('Cloud IDP + Cloud SP auth flow', () => {
       throw new Error(`expected LinX to land on /chat\n${JSON.stringify(await readPageState(page), null, 2)}`)
     }
     await waitForSolidDbReady(page, 90_000)
+    await expectSecretaryInitialized(page)
 
     const debug = await readPageState(page)
     localStartupCalls.push(...debug.localStartupCalls)
@@ -195,8 +197,8 @@ test.describe('Cloud IDP + Cloud SP auth flow', () => {
     expect(debug.dbError).toBeNull()
     expect(debug.loginStore?.state?.storedAccount?.webId).toBeTruthy()
     expect(debug.loginStore?.state?.storedAccount?.issuerUrl).toContain('https://id.undefineds.co')
-    expect(debug.loginStore?.state?.storedAccount?.providerLabel).toBe('Cloud')
-    expect(debug.loginStore?.state?.storedAccount?.providerUrl).toContain('https://id.undefineds.co')
+    expect(debug.loginStore?.state?.storedAccount?.storageProviderLabel).toBe('Cloud')
+    expect(debug.loginStore?.state?.storedAccount?.storageProviderUrl).toContain('https://id.undefineds.co')
     expect(debug.loginStore?.state?.storedAccount?.webId).toContain(`/${runtime.username}/profile/card#me`)
     expect(localStartupCalls).toEqual([])
 

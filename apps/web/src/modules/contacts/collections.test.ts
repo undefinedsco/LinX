@@ -112,7 +112,7 @@ function resetMockDb() {
     }
     if (table === chatTable) return `https://pod.example/.data/chat/${row.id}/index.ttl#this`
     if (table === contactTable) return `https://pod.example/.data/contacts/${row.id}.ttl#this`
-    if (table === agentTable) return `https://pod.example/.data/agents/${row.id}`
+    if (table === agentTable) return new URL(agentTable.resolveUri(row.id), 'https://pod.example/').toString()
     return `https://pod.example/${row.id}`
   })
   mockDb.resolveRowId.mockImplementation((_table, row: Record<string, unknown>) => {
@@ -195,7 +195,7 @@ describe('contactOps', () => {
       expect(result.chatId).toBe('uuid-3') // Chat ID (third UUID)
       expect(result.name).toBe('Test Agent')
       expect(result.contactType).toBe(ContactType.AGENT)
-      expect(result.entityUri).toBe('https://pod.example/.data/agents/uuid-1/index.ttl#this')
+      expect(result.entityUri).toBe('https://pod.example/agents/uuid-1/profile/card#me')
       
       // Repositories create Agent + Contact via db.insert; collection persists Chat
       expect(mockDb.insert).toHaveBeenCalledTimes(2)
@@ -465,7 +465,7 @@ describe('Contact + Chat Linkage Logic', () => {
     const chatId = 'uuid-3'
 
     // Verify linkage
-    expect(result.entityUri).toBe(`https://pod.example/.data/agents/${agentId}/index.ttl#this`)
+    expect(result.entityUri).toBe(`https://pod.example/agents/${agentId}/profile/card#me`)
     expect(result.id).toBe(contactId)
     expect(result.chatId).toBe(chatId)
   })

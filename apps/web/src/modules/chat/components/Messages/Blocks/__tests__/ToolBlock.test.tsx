@@ -123,7 +123,7 @@ describe('ToolBlock', () => {
     const block = createToolBlock({
       status: MessageBlockStatus.ERROR,
       toolStatus: 'error',
-      content: 'Failed to create Pod container https://id.undefineds.co/alice/.data/agents/__secretary__/: HTTP 403',
+      content: 'Failed to create Pod container https://id.undefineds.co/alice/agents/__secretary__/: HTTP 403',
       error: {
         message: "Cannot find module 'jsonld'\nRequire stack:\n- /Users/ganlu/Library/Application Support/@linx/xpod.js",
       },

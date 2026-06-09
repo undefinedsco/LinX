@@ -31,7 +31,9 @@ LinX 普通登录卡展示三个产品入口：
 
 - 具体的 OIDC issuer / Storage Provider 语义、Local canonical URL、tunnel 和访问渠道边界，见两份主文档。
 - Custom 只让用户填写一个 Solid provider URL，不拆成两次选择。
-- Local 是“当前本地节点/SP”的入口，不代表可以枚举同一个 Cloud IDP 下的所有 SP。未来其他本地/集群空间需要通过 membership/invite 进入列表。
+- Local 是“当前本地节点/SP”的入口，不代表可以枚举同一个 Cloud 账号
+  authority 下的所有 SP。未来其他本地/集群空间需要通过 membership/invite
+  进入列表。
 - Local 的本机/LAN/tunnel 只是访问渠道，不是新的账号或 storage 语义。
 
 ## 用户流程
@@ -55,13 +57,23 @@ LinX 普通登录卡展示三个产品入口：
 选择 Local
   -> LinX 启动本地 xpod
   -> LinX 向 Cloud 注册 Local SP，拿到 selected canonical SP URL
-  -> 可选配置 tunnel token 或 self-managed HTTPS origin
-  -> 用户走 Cloud 登录 / 注册 / consent
-  -> Cloud 将 WebID profile 的 solid:storage 绑定到 selected Local SP Pod
+  -> LinX 携带 provision scope 打开 selected Local SP 账号/OIDC 表面
+  -> Local SP 可使用 Cloud 账号 authority 完成登录 / 注册
+  -> Local SP consent / Pod picker 只展示 selected Local SP 下的 Pod
+  -> WebID profile 的 solid:storage 绑定到 selected Local SP Pod
   -> 回调进入 LinX
 ```
 
 验收：Cloud WebID 可以保持 `https://id.undefineds.co/...`，但 Solid DB Pod URL、首个业务写入、后续 update/delete 都必须在 selected Local SP Pod URL 下。
+
+Local 交互验收：
+
+- 如果本地 xpod 已 ready，选择 Local 后不要出现一帧无意义的“正在进入”
+  中间页，应直接打开 selected Local SP 登录/consent。
+- 登录窗口、等待态、错误态都必须能返回空间选择。
+- 如果 provision scope 缺失、过期、不可解析或 scoped lookup 失败，展示
+  Local 绑定/重试/创建当前空间，而不是展示 Cloud Pod。
+- 已登录且 session 可复用时，优先复用；不能每次强制重新输入账号密码。
 
 ### Standalone
 
@@ -102,9 +114,14 @@ LinX 普通登录卡展示三个产品入口：
 
 - Cloud：登录后 `storedAccount.storageProviderLabel` 为 `Cloud`，Pod URL 不依赖本机地址。
 - Local：登录后 `storedAccount.storageProviderLabel` 为 `Local`，Solid DB Pod URL 必须以 selected Local SP canonical URL 开头。
+- Local：OIDC/account 页面可以复用 Cloud 账号 authority，但 Inrupt 的
+  OIDC entry 必须来自 selected Local SP，或来自明确支持 SP-scoped consent
+  的等价 Cloud-hosted surface；不能直接打开无 scope 的 Cloud consent。
 - Local：`/.data/*` bootstrap、chat/message、inbox、Agent Home、runtime session ref、AI 配置、Secretary 初始化数据和内置 runtime API 都必须从 Solid DB 当前 Pod URL 推导。
 - Local：不能从 Cloud WebID origin、issuer URL、profile URL、localhost 或 LAN 地址推导业务写入位置。
 - Local：Cloud provision 回调创建 Pod 时，Local SP 必须创建 Pod root 和结构化 root metadata；`HEAD /<pod>/` 必须返回存在。
+- Local：选择/创建 Pod 前后都不能显示 Cloud Pod。没有 Local Pod 时展示
+  first-Pod 创建入口；不是把 Cloud Pod 当作候选项。
 - Standalone：不要求公网 URL，不走 Cloud provisioning；必须能完成本机/局域网登录验证。
 - Custom：只使用用户输入的 provider URL，不做 Cloud/Local 特例。
 
@@ -117,7 +134,7 @@ LinX 普通登录卡展示三个产品入口：
 
 ## 回归记录
 
-- 2026-05-10 新增 Cloud IDP + Cloud SP 真实回归：`yarn workspace @linx/e2e test:real-cloud`。
+- 2026-05-10 新增 Cloud account authority + Cloud SP 真实回归：`yarn workspace @linx/e2e test:real-cloud`。
 - 2026-05-11 Cloud+Cloud 现网回归已通过：生产 Cloud 注册、授权、进入 `/chat`，且 Solid DB ready。
-- 2026-05-11 Cloud IDP + Local SP 隧道路径已通过：`https://node-0000.undefineds.co/ -> localhost:5737`，使用 Cloudflare tunnel token。
-- 2026-05-06 验证通过 Cloud IDP + Local SP 隧道路径：`https://prot-reprint-setup-civic.trycloudflare.com/ -> localhost:5737`。
+- 2026-05-11 Cloud account authority + Local SP 隧道路径已通过：`https://node-0000.undefineds.co/ -> localhost:5737`，使用 Cloudflare tunnel token。
+- 2026-05-06 验证通过 Cloud account authority + Local SP 隧道路径：`https://prot-reprint-setup-civic.trycloudflare.com/ -> localhost:5737`。

@@ -118,15 +118,15 @@ describe('LocalChatKitStore storage routing', () => {
   it('resolves assistant maker from a contact IRI with findByIri instead of deriving a row id', async () => {
     const inserts: Array<Record<string, unknown>> = []
     const contactIri = 'https://node-0000.undefineds.co/alice/.data/contacts/contact-1.ttl'
-    const agentIri = 'https://node-0000.undefineds.co/alice/.data/agents/agent-1/index.ttl#this'
+    const agentIri = 'https://node-0000.undefineds.co/alice/agents/agent-1/profile/card#me'
     const db = {
       getDialect: () => ({
         getPodUrl: () => 'https://node-0000.undefineds.co/alice/',
       }),
       findById: vi.fn(async (_resource: unknown, id?: string) => {
-        if (id === 'default') {
+        if (id === 'default/index.ttl#this') {
           return {
-            id: 'default',
+            id: 'default/index.ttl#this',
             participants: [contactIri],
           }
         }

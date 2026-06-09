@@ -10504,10 +10504,10 @@
     "@typescript-eslint/types" "8.59.4"
     eslint-visitor-keys "^5.0.0"
 
-"@undefineds.co/drizzle-solid@0.3.14", "@undefineds.co/drizzle-solid@^0.3.13", "@undefineds.co/drizzle-solid@^0.3.14", "@undefineds.co/drizzle-solid@^0.3.15":
-  version "0.3.15"
-  resolved "https://registry.npmmirror.com/@undefineds.co/drizzle-solid/-/drizzle-solid-0.3.15.tgz#a2aec485fb17a5e6bd728a145c4922e0acc036e4"
-  integrity sha512-3w6Hscg4G/tcId48zlN1QdPlVbTC7uhbRa0SnYWq7PKaMS6df1h5JqTfP6ly3APXMsl0nBCrhdH5fUNzYWhR9w==
+"@undefineds.co/drizzle-solid@0.3.14", "@undefineds.co/drizzle-solid@^0.3.13", "@undefineds.co/drizzle-solid@^0.3.14", "@undefineds.co/drizzle-solid@^0.3.16":
+  version "0.3.16"
+  resolved "https://registry.npmjs.org/@undefineds.co/drizzle-solid/-/drizzle-solid-0.3.16.tgz#98120a978ce6d02afec04730e14805a3c275d369"
+  integrity sha512-TFZHi/lgNVHIuzCluhn4aEhv9ACIBbuYWjB3dqjS8KYN4yVfeDTiqUoknMBag/p5ro/wKZKnVaY59Q9g7ocDWg==
   dependencies:
     "@inrupt/solid-client" "^3.0.0"
     "@inrupt/solid-client-authn-node" "^3.1.1"
@@ -10520,10 +10520,10 @@
     sparqljs "^3.7.3"
     zod "^4.1.8"
 
-"@undefineds.co/xpod@0.3.34":
-  version "0.3.34"
-  resolved "https://registry.npmjs.org/@undefineds.co/xpod/-/xpod-0.3.34.tgz#ee1b81676eafb9c54cb9a5c95c47cdf79f5a2978"
-  integrity sha512-WLM9lYw8ogl8jv3/bGrOh/4bYWebrIMEVsRCL/bx13xq9X8oiF6mK2l1avtBkBcOyB4IwUqXwGqPDybDdEawnA==
+"@undefineds.co/xpod@0.3.43":
+  version "0.3.43"
+  resolved "https://registry.npmmirror.com/@undefineds.co/xpod/-/xpod-0.3.43.tgz#d90b2ed28396219c36af37b38e67b158dc587be1"
+  integrity sha512-NKpOndtk+xPhvHCM/1FjnTairVx6IH0dnmT3TAemifOd/mSSqMmcKjXUvPcOctTRxIJ8l34S2u7IMAqSBKZb5Q==
   dependencies:
     "@agentclientprotocol/sdk" "^0.14.1"
     "@ai-sdk/openai" "^3.0.2"

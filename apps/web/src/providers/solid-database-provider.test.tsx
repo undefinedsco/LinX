@@ -278,6 +278,55 @@ describe('SolidDatabaseProvider', () => {
     })
   })
 
+  it('uses the selected Local SP profile when the Cloud WebID profile fetch fails', async () => {
+    const db = {}
+    createLinxSolidDatabaseMock.mockResolvedValue(db)
+    sessionState.session.info.webId = 'https://id.undefineds.co/alice/profile/card#me'
+    sessionState.session.fetch
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(new Response(`
+        @prefix solid: <http://www.w3.org/ns/solid/terms#>.
+        <https://node-0000.undefineds.co/alice/profile/card#me>
+          solid:storage <https://node-0000.undefineds.co/alice/> .
+      `, {
+        status: 200,
+        headers: { 'Content-Type': 'text/turtle' },
+      }))
+    window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
+      issuerUrl: 'https://node-0000.undefineds.co',
+      accountIssuerUrl: 'https://id.undefineds.co',
+      accountIssuerLabel: 'Cloud',
+      storageProviderUrl: 'https://node-0000.undefineds.co/',
+      storageProviderLabel: 'Local',
+      authorizationQuery: {
+        provisionCode: 'pc-123',
+      },
+      authorizationSurface: 'embedded',
+      returnToMicroAppId: 'chat',
+    }))
+
+    render(
+      <SolidDatabaseProvider>
+        <Probe />
+      </SolidDatabaseProvider>,
+    )
+
+    await flushAsyncWork()
+
+    expect(sessionState.session.fetch).toHaveBeenCalledWith(
+      'https://id.undefineds.co/alice/profile/card#me',
+      expect.anything(),
+    )
+    expect(sessionState.session.fetch).toHaveBeenCalledWith(
+      'https://node-0000.undefineds.co/alice/profile/card#me',
+      expect.anything(),
+    )
+    expect(createLinxSolidDatabaseMock).toHaveBeenCalledWith(sessionState.session, {
+      initTimeoutMs: 90_000,
+      podUrl: 'https://node-0000.undefineds.co/alice/',
+    })
+  })
+
   it('fails closed when Local profile solid:storage points back to Cloud', async () => {
     const db = {}
     createLinxSolidDatabaseMock.mockResolvedValue(db)
@@ -577,7 +626,7 @@ describe('SolidDatabaseProvider', () => {
       canonicalPodUrl: 'http://192.168.1.10:5737/alice/',
       accessBaseUrl: 'http://localhost:5737/',
       accessPodUrl: 'http://localhost:5737/alice/',
-      kind: 'local',
+      kind: 'standalone',
       rewriteEnabled: true,
       rewriteDisabledReason: null,
     })

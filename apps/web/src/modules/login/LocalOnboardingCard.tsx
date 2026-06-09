@@ -6,7 +6,8 @@ import { useConfigWindowState } from './hooks/use-config-window-state'
 import { useLocalOnboarding } from './hooks/use-local-onboarding'
 import { useOidcConnect } from './hooks/use-oidc-connect'
 import { formatLoginErrorForUser } from './error-messages'
-import type { LocalSpaceKind } from '@/types/electron-api'
+import { LocalReachabilitySummary } from './LocalReachabilitySummary'
+import type { LocalOnboardingConnectivity, LocalSpaceKind } from '@/types/electron-api'
 
 export interface LocalOnboardingCardProps {
   onBack: () => void
@@ -39,12 +40,14 @@ export function LocalOnboardingCard({
     chooseSpace,
     continueLocal,
     refresh,
+    testConnectivity,
     openAdvancedSettings,
   } = useLocalOnboarding()
   const [launchingAuth, setLaunchingAuth] = useState(false)
   const [authError, setAuthError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const autoBootstrapStartedRef = useRef(false)
+  const autoProbeKeyRef = useRef<string | null>(null)
   const localIssuerUrl = snapshot.localUrl ?? snapshot.baseUrl
   const localProviderUrl = snapshot.spaceKind === 'standalone'
     ? localIssuerUrl
@@ -165,6 +168,33 @@ export function LocalOnboardingCard({
     snapshot.spaceKind,
     snapshot.state,
   ])
+
+  useEffect(() => {
+    if (loading || acting) return
+    if (snapshot.state !== 'ready' || snapshot.spaceKind !== 'local') return
+    if (snapshot.connectivity && snapshot.connectivity.status !== 'unknown') return
+
+    const probeKey = [
+      snapshot.spaceKind ?? '',
+      snapshot.localUrl ?? '',
+      snapshot.publicUrl ?? '',
+    ].join('|')
+    if (autoProbeKeyRef.current === probeKey) return
+
+    autoProbeKeyRef.current = probeKey
+    void Promise.resolve(testConnectivity()).catch((error: any) => {
+      setActionError(formatLoginErrorForUser(error, '本地空间连接检测失败。'))
+    })
+  }, [
+    acting,
+    loading,
+    snapshot.connectivity,
+    snapshot.localUrl,
+    snapshot.publicUrl,
+    snapshot.spaceKind,
+    snapshot.state,
+    testConnectivity,
+  ])
   const productLabel = snapshot.spaceKind === 'standalone' ? '独立空间' : '本地空间'
 
   return (
@@ -214,6 +244,7 @@ export function LocalOnboardingCard({
               : snapshot.spaceKind === 'standalone'
               ? formatLocalCardDetail(snapshot.localUrl ?? snapshot.baseUrl ?? snapshot.capabilities?.contract ?? undefined)
               : formatLocalCardDetail(snapshot.publicUrl ?? undefined)}
+            connectivity={snapshot.spaceKind === 'local' ? snapshot.connectivity : null}
             error={authError ?? actionError}
             busy={launchingAuth}
             backLabel={backLabel}
@@ -301,6 +332,7 @@ function ReadyCard({
   spaceKind,
   message,
   detail,
+  connectivity,
   error,
   busy,
   backLabel,
@@ -310,6 +342,7 @@ function ReadyCard({
   spaceKind: LocalSpaceKind | null
   message: string
   detail?: string
+  connectivity: LocalOnboardingConnectivity | null
   error: string | null
   busy: boolean
   backLabel: string
@@ -327,6 +360,9 @@ function ReadyCard({
             : '下一步会打开登录页，流程完成后会回到 LinX。'}
         </p>
         {detail ? <p className="mt-2 text-xs text-muted-foreground break-all">{detail}</p> : null}
+        {spaceKind === 'local' ? (
+          <LocalReachabilitySummary connectivity={connectivity} assumeLocalReachable className="mt-4 bg-background/50" />
+        ) : null}
       </div>
 
       {error ? (

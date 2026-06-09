@@ -8,6 +8,7 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
 import { getLiteral, getSolidDataset, getThing, getUrl, getUrlAll } from '@inrupt/solid-client'
 import { like, or } from '@undefineds.co/drizzle-solid'
 import {
@@ -20,6 +21,7 @@ import {
   credentialResource,
   aiProviderResource,
   eq,
+  getDefaultAIConfigCredentialId,
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
   extractThreadIdFromThreadRef,
@@ -37,7 +39,8 @@ import {
   type AgentRow,
   type ContactInsert,
   type ContactRow,
-  requireRowResourceId,
+  ContactClass,
+  ContactType,
 } from '@undefineds.co/models'
 import type { SolidDatabase } from '@undefineds.co/models'
 import {
@@ -55,7 +58,7 @@ import { createPodCollection } from '@/lib/data/pod-collection'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { findExactRecord, updateExactRecord } from '@/lib/data/exact-records'
 import { favoriteHooks } from '@/modules/favorites/collections'
-import { createAgentContactRecords, writeCollectionRow } from '@/lib/data/direct-chat-records'
+import { createAgentContactRecords, ensureAgentContactRecords, writeCollectionRow } from '@/lib/data/direct-chat-records'
 import { getAgentProviderInfo } from '@/lib/agent-providers'
 import { toStringArray } from '@/lib/utils'
 import { ensureAgentHome } from './agent-home'
@@ -68,12 +71,28 @@ let dbGetter: (() => SolidDatabase | null) | null = null
 const threadChatIdCache = new Map<string, string>()
 let linxWelcomeInFlight: Promise<LinxWelcomeResult | null> | null = null
 const ABSOLUTE_IRI = /^[a-zA-Z][a-zA-Z\d+.-]*:/
+const DEFAULT_SECRETARY_EXACT_READ_TIMEOUT_MS = 1_500
+const DEFAULT_SECRETARY_READY_TIMEOUT_MS = 30_000
+const DEFAULT_SECRETARY_READY_POLL_MS = 400
+const DEFAULT_SECRETARY_READY_FETCH_TIMEOUT_MS = 2_000
+const DEFAULT_SECRETARY_UI_SETTLE_MS = 12_000
+const DEFAULT_SECRETARY_AGENT_HOME_DELAY_MS = 60_000
+let linxWelcomeSettlingUntil = 0
+let linxWelcomeSettleTimer: ReturnType<typeof setTimeout> | null = null
 
 export const LINX_DEFAULT_SECRETARY = {
+  agentKey: '__secretary__',
   agentId: agentResourceId('__secretary__'),
-  contactId: '__secretary__',
-  chatId: '__secretary__',
-  threadId: 'default',
+  contactKey: '__secretary__',
+  contactId: contactTable.buildId({ id: '__secretary__' }),
+  contactResourceId: contactTable.buildId({ id: '__secretary__' }),
+  chatKey: '__secretary__',
+  chatId: chatTable.buildId({ id: '__secretary__' }),
+  chatResourceId: chatTable.buildId({ id: '__secretary__' }),
+  threadKey: 'default',
+  threadId: 'chat/__secretary__/index.ttl#default',
+  threadResourceId: 'chat/__secretary__/index.ttl#default',
+  welcomeMessageId: 'chat/__secretary__/welcome.ttl#message',
   title: 'AI Secretary',
   provider: 'undefineds',
   model: 'undefineds/linx-lite',
@@ -98,8 +117,65 @@ type SecretaryMetadata = {
   }
 }
 
+type CollectionWriter<T extends Record<string, unknown> & { id: string }> =
+  Parameters<typeof writeCollectionRow<T>>[0] & {
+    get?: (id: string) => T | undefined
+  }
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isMissingExactReadError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const message = 'message' in error && typeof error.message === 'string' ? error.message : ''
+  return /404|not found|missing/i.test(message)
+}
+
+function isUnsupportedCollectionReadError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const message = 'message' in error && typeof error.message === 'string' ? error.message : ''
+  return /collection queries over plain LDP are not supported|Configure a global query capability/i.test(message)
+}
+
+function isMissingCollectionReadError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const message = 'message' in error && typeof error.message === 'string' ? error.message : ''
+  return /Could not retrieve[\s\S]*HTTP status 404|NotFoundHttpError/i.test(message)
+}
+
+function isRecoverableCollectionReadError(error: unknown): boolean {
+  return isUnsupportedCollectionReadError(error) || isMissingCollectionReadError(error)
+}
+
+function isExactReadTimeoutError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'ExactReadTimeoutError'
+}
+
+async function findAIConfigCredentialRows(db: SolidDatabase, providerId: string): Promise<Array<Record<string, unknown>>> {
+  const exactRows: Array<Record<string, unknown>> = []
+  const findById = (db as any).findById
+  if (typeof findById === 'function') {
+    const exact = await findById.call(db, credentialResource as any, getDefaultAIConfigCredentialId(providerId))
+      .catch((error: unknown) => {
+        if (isMissingExactReadError(error)) return null
+        throw error
+      })
+    if (exact) exactRows.push(exact as Record<string, unknown>)
+  }
+
+  if (exactRows.length > 0) {
+    return exactRows
+  }
+
+  try {
+    return await db.select().from(credentialResource).execute() as Array<Record<string, unknown>>
+  } catch (error) {
+    if (isRecoverableCollectionReadError(error)) {
+      return exactRows
+    }
+    throw error
+  }
 }
 
 function getSecretaryMetadata(metadata: unknown): SecretaryMetadata | null {
@@ -175,21 +251,84 @@ function hasHydratedChatMetadata(metadata: unknown): boolean {
 
 function buildChatIri(db: SolidDatabase, chatId: string | undefined): string | null {
   if (!chatId) return null
-  if (typeof db.resolveRowIri !== 'function') return null
-  return db.resolveRowIri(chatTable as any, { id: chatId })
+  return resolveResourceIri(db, chatTable, buildChatResourceId(chatId))
 }
 
 function resolveAgentIri(db: SolidDatabase, agentId: string): string | null {
-  if (!agentId || typeof db.resolveRowIri !== 'function') return null
-  return db.resolveRowIri(agentTable as any, { id: agentId })
+  if (!agentId) return null
+  const resourceId = buildResourceId(agentTable as any, { id: agentId })
+  return resolveResourceIri(db, agentTable, resourceId)
 }
 
 function getPodBaseUrl(db: SolidDatabase): string | null {
   return resolveCurrentPodBaseUrl(db)
 }
 
+function getAuthenticatedFetch(db: SolidDatabase): typeof fetch | null {
+  const candidate = (
+    (db as any).getDialect?.()?.getAuthenticatedFetch?.()
+    ?? (db as any).getSession?.()?.fetch
+    ?? (db as any).session?.fetch
+  )
+
+  return typeof candidate === 'function'
+    ? candidate.bind((db as any).session ?? db) as typeof fetch
+    : null
+}
+
+function buildResourceId(
+  resource: { buildId?: (row: Record<string, unknown>) => string },
+  row: Record<string, unknown>,
+): string {
+  return typeof resource.buildId === 'function'
+    ? resource.buildId(row)
+    : String(row.id ?? '')
+}
+
+function resolveResourceIri(
+  db: SolidDatabase,
+  resource: unknown,
+  resourceId: string,
+): string | null {
+  if (!resourceId || typeof db.resolveRowIri !== 'function') return null
+  return db.resolveRowIri(resource as any, { id: resourceId })
+}
+
+function buildChatResourceId(chatId: string): string {
+  return buildResourceId(chatTable as any, { id: chatId })
+}
+
+function normalizeChatRowId(chatIdOrKey: string | null | undefined): string | null {
+  if (!chatIdOrKey) return null
+  return buildChatResourceId(chatIdOrKey)
+}
+
+function resolveThreadChatRowId(row: ThreadRow | null | undefined): string | null {
+  const chatKeyOrId = resolveThreadChatIdFromRow(row)
+  return normalizeChatRowId(chatKeyOrId)
+}
+
+function buildThreadResourceId(threadId: string, chatIri: string): string {
+  return buildResourceId(threadTable as any, { id: threadId, chat: chatIri })
+}
+
+function buildMessageResourceId(
+  messageId: string,
+  row: Pick<MessageInsert, 'chat' | 'thread' | 'createdAt'>,
+): string {
+  return buildResourceId(messageTable as any, { ...row, id: messageId } as Record<string, unknown>)
+}
+
+async function insertPodRow(
+  db: SolidDatabase,
+  resource: unknown,
+  row: Record<string, unknown>,
+): Promise<void> {
+  await db.insert(resource as any).values(row as any).execute()
+}
+
 function getCachedThreadChatId(threadId: string): string | null {
-  return threadChatIdCache.get(threadId) ?? resolveThreadChatIdFromRow(threadCollection.get(threadId)) ?? null
+  return threadChatIdCache.get(threadId) ?? resolveThreadChatRowId(threadCollection.get(threadId)) ?? null
 }
 
 async function resolveThreadChatId(
@@ -208,10 +347,15 @@ async function resolveThreadChatId(
     return cachedChatId
   }
 
+  if (threadId === LINX_DEFAULT_SECRETARY.threadId) {
+    threadChatIdCache.set(threadId, LINX_DEFAULT_SECRETARY.chatId)
+    return LINX_DEFAULT_SECRETARY.chatId
+  }
+
   const row = typeof (db as any).findById === 'function'
     ? await (db as any).findById(threadTable as any, threadId) as ThreadRow | null
     : null
-  const rowChatId = resolveThreadChatIdFromRow(row)
+  const rowChatId = resolveThreadChatRowId(row)
   if (!rowChatId) {
     return null
   }
@@ -231,8 +375,9 @@ async function buildThreadIri(
   if (!threadId) return null
   const resolvedChatId = await resolveThreadChatId(db, threadId, chatId)
   if (!resolvedChatId) return null
-  if (typeof db.resolveRowIri !== 'function') return null
-  return db.resolveRowIri(threadTable as any, { id: threadId, chat: resolvedChatId })
+  const chatIri = buildChatIri(db, resolvedChatId)
+  if (!chatIri) return null
+  return resolveResourceIri(db, threadTable, buildThreadResourceId(threadId, chatIri))
 }
 
 async function hydrateChatRows(db: SolidDatabase, rows: ChatRow[]): Promise<ChatRow[]> {
@@ -325,8 +470,9 @@ async function ensureChatStateRow(db: SolidDatabase, chatId: string): Promise<Ch
     return cached
   }
 
+  const chatResourceId = buildChatResourceId(chatId)
   const located = typeof (db as any).findById === 'function'
-    ? await (db as any).findById(chatTable as any, chatId) as ChatRow | null
+    ? await (db as any).findById(chatTable as any, chatResourceId) as ChatRow | null
     : null
   if (located) {
     if (!chatCollection.isReady()) {
@@ -334,7 +480,7 @@ async function ensureChatStateRow(db: SolidDatabase, chatId: string): Promise<Ch
     }
     const [hydrated] = await hydrateChatRows(db, [located])
     const row = hydrated ?? located
-    ;(chatCollection.utils as { writeUpsert?: (data: ChatRow) => void }).writeUpsert?.(row)
+    writeCollectionRow(chatCollection, row, chatId)
     return row
   }
 
@@ -345,7 +491,7 @@ async function ensureChatStateRow(db: SolidDatabase, chatId: string): Promise<Ch
     throw new Error(`Chat ${chatId} was not found in the Pod`)
   }
 
-  ;(chatCollection.utils as { writeUpsert?: (data: ChatRow) => void }).writeUpsert?.(row)
+  writeCollectionRow(chatCollection, row, chatId)
   return row
 }
 
@@ -366,7 +512,7 @@ async function ensureThreadStateRow(db: SolidDatabase, threadId: string): Promis
     throw new Error(`Thread ${threadId} was not found in the Pod`)
   }
 
-  const rowChatId = resolveThreadChatIdFromRow(row)
+  const rowChatId = resolveThreadChatRowId(row)
   if (rowChatId) {
     threadChatIdCache.set(threadId, rowChatId)
   }
@@ -392,136 +538,467 @@ async function isProtectedLinxSecretaryChat(db: SolidDatabase, chatId: string): 
   return isLinxDefaultSecretaryChat(chat)
 }
 
-async function ensureDefaultThread(chatId: string): Promise<ThreadRow> {
-  const db = getDb()
-  if (!db) {
-    throw new Error('Solid database is not ready')
-  }
-
-  const threads = await chatOps.fetchThreads(chatId)
-  const existing = threads.find((thread) => thread.title === LINX_DEFAULT_SECRETARY.threadTitle) ?? threads[0]
-  if (existing) {
-    const threadId = existing.id
-    if (!threadId) throw new Error('Thread row is missing id.')
-    threadChatIdCache.set(threadId, chatId)
-    writeCollectionRow(threadCollection, existing, threadId)
-    return existing
-  }
-
-  return chatOps.createThread(chatId, LINX_DEFAULT_SECRETARY.threadTitle, {
-    threadId: LINX_DEFAULT_SECRETARY.threadId,
-  })
-}
-
 async function ensureLinxWelcomeInternal(): Promise<LinxWelcomeResult | null> {
   const db = getDb()
   if (!db) {
     throw new Error('Solid database is not ready')
   }
 
-  const chats = await chatOps.fetchChats()
-  const existingSecretary = chats.find((chat) => isLinxDefaultSecretaryChat(chat))
-  if (existingSecretary) {
-    const chatId = existingSecretary.id
-    if (!chatId) throw new Error('AI Secretary chat row is missing id.')
+  const resources = await ensureDefaultSecretaryResources(db)
 
-    if (!getSecretaryMetadata(existingSecretary.metadata)?.linx?.role) {
-      await chatOps.updateChat(chatId, {
-        metadata: createSecretaryMetadata(existingSecretary.metadata),
-      })
-    }
-
-    const thread = await ensureDefaultThread(chatId)
-    const threadId = thread.id
-    if (!threadId) throw new Error('AI Secretary thread row is missing id.')
-    const maker = await resolveAssistantMakerFromChat(db, existingSecretary)
-    await ensureAgentHomeForChat(db, existingSecretary)
-    await ensureDefaultWelcomeMessage(chatId, threadId, maker ?? getCurrentWebId(db) ?? 'linx')
-    return { chatId, threadId, created: false }
+  const welcomeMessage = await ensureDefaultWelcomeMessage(
+    LINX_DEFAULT_SECRETARY.chatId,
+    LINX_DEFAULT_SECRETARY.threadId,
+    resources.agentIri,
+    {
+      chatIri: resources.chatIri,
+      threadIri: resources.threadIri,
+      skipExistingRead: resources.chatCreated || resources.threadCreated,
+    },
+  )
+  if (!welcomeMessage) {
+    throw new Error('AI Secretary welcome message was not created.')
   }
 
-  const chat = await chatOps.createAIChat({
+  const welcomeMessageIri = typeof welcomeMessage['@id'] === 'string'
+    ? welcomeMessage['@id']
+    : resolveResourceIri(db, messageTable, LINX_DEFAULT_SECRETARY.welcomeMessageId)
+  if (!welcomeMessageIri) {
+    throw new Error('Failed to resolve AI Secretary welcome message IRI.')
+  }
+
+  await waitForDefaultSecretaryCoreResources(db, {
+    agentIri: resources.agentIri,
+    contactIri: resources.contactIri,
+    chatIri: resources.chatIri,
+    welcomeMessageIri,
+  })
+  markLinxDefaultSecretaryBootstrapSettling()
+  scheduleDefaultSecretaryAgentHome(db)
+
+  return {
+    chatId: LINX_DEFAULT_SECRETARY.chatId,
+    threadId: LINX_DEFAULT_SECRETARY.threadId,
+    created: resources.created,
+  }
+}
+
+async function ensureDefaultSecretaryResources(db: SolidDatabase): Promise<{
+  agentIri: string
+  contactIri: string
+  chatIri: string
+  threadIri: string
+  created: boolean
+  chatCreated: boolean
+  threadCreated: boolean
+}> {
+  const now = new Date()
+  const agentIri = resolveAgentIri(db, LINX_DEFAULT_SECRETARY.agentId)
+  const contactIri = resolveResourceIri(db, contactTable, LINX_DEFAULT_SECRETARY.contactResourceId)
+  const chatIri = resolveResourceIri(db, chatTable, LINX_DEFAULT_SECRETARY.chatResourceId)
+  const threadIri = resolveResourceIri(db, threadTable, LINX_DEFAULT_SECRETARY.threadResourceId)
+
+  if (!agentIri || !contactIri || !chatIri || !threadIri) {
+    throw new Error('Failed to resolve AI Secretary resource IRIs.')
+  }
+
+  const optimistic = buildDefaultSecretaryContactRows({
+    now,
+    agentIri,
+    contactIri,
+    chatIri,
+    threadIri,
+  })
+  writeDefaultSecretaryContactState(optimistic)
+
+  const agentContact = await ensureAgentContactRecords(db, {
     agentId: LINX_DEFAULT_SECRETARY.agentId,
     contactId: LINX_DEFAULT_SECRETARY.contactId,
-    chatId: LINX_DEFAULT_SECRETARY.chatId,
-    title: LINX_DEFAULT_SECRETARY.title,
-    provider: LINX_DEFAULT_SECRETARY.provider,
-    model: LINX_DEFAULT_SECRETARY.model,
+    contactResourceId: LINX_DEFAULT_SECRETARY.contactResourceId,
+    name: LINX_DEFAULT_SECRETARY.title,
+    provider: normalizeAIConfigProviderId(LINX_DEFAULT_SECRETARY.provider),
+    model: normalizeAIConfigResourceId(LINX_DEFAULT_SECRETARY.model),
   })
-  const chatId = chat.id
-  if (!chatId) throw new Error('Created AI Secretary chat row is missing id.')
-  const thread = await ensureDefaultThread(chatId)
-  const threadId = thread.id
-  if (!threadId) throw new Error('Created AI Secretary thread row is missing id.')
-  await ensureDefaultWelcomeMessage(
-    chatId,
-    threadId,
-    await resolveAgentMaker(db, chat.agentId),
+  writeCollectionRow(agentCollection, agentContact.agent as AgentRow, agentContact.agentId)
+  writeCollectionRow(_contactCollection, agentContact.contact as ContactRow, agentContact.contactId)
+
+  const chatResult = await ensureDefaultSecretaryRow<ChatRow>(
+    db,
+    chatTable as any,
+    LINX_DEFAULT_SECRETARY.chatResourceId,
+    {
+      ...optimistic.chat,
+      participants: [agentContact.contactUri],
+    } as Record<string, unknown>,
+    chatCollection,
+    LINX_DEFAULT_SECRETARY.chatId,
+    chatIri,
+    { trustCached: false },
   )
 
-  return { chatId, threadId, created: true }
+  const threadResult = await ensureDefaultSecretaryRow<ThreadRow>(
+    db,
+    threadTable as any,
+    LINX_DEFAULT_SECRETARY.threadResourceId,
+    optimistic.thread as Record<string, unknown>,
+    threadCollection,
+    LINX_DEFAULT_SECRETARY.threadId,
+    threadIri,
+    { trustCached: false, skipExistingRead: chatResult.created },
+  )
+  threadChatIdCache.set(LINX_DEFAULT_SECRETARY.threadId, LINX_DEFAULT_SECRETARY.chatId)
+  if (!threadResult.row.id) {
+    throw new Error('AI Secretary thread row is missing id.')
+  }
+
+  return {
+    agentIri: agentContact.agentUri || agentIri,
+    contactIri: agentContact.contactUri || contactIri,
+    chatIri,
+    threadIri,
+    created: agentContact.created || chatResult.created || threadResult.created,
+    chatCreated: chatResult.created,
+    threadCreated: threadResult.created,
+  }
 }
 
-async function resolveAssistantMakerFromChat(db: SolidDatabase, chat: Pick<ChatRow, 'participants'>): Promise<string | null> {
-  const [participant] = toStringArray(chat.participants)
-  if (!participant) return null
+function buildDefaultSecretaryContactRows(input: {
+  now: Date
+  agentIri: string
+  contactIri: string
+  chatIri: string
+  threadIri: string
+}): {
+  agent: AgentRow
+  contact: ContactRow
+  chat: ChatRow
+  thread: ThreadRow
+} {
+  return {
+    agent: {
+      id: LINX_DEFAULT_SECRETARY.agentId,
+      '@id': input.agentIri,
+      name: LINX_DEFAULT_SECRETARY.title,
+      provider: normalizeAIConfigProviderId(LINX_DEFAULT_SECRETARY.provider),
+      model: normalizeAIConfigResourceId(LINX_DEFAULT_SECRETARY.model),
+      createdAt: input.now,
+      updatedAt: input.now,
+    } as AgentRow,
+    contact: {
+      id: LINX_DEFAULT_SECRETARY.contactId,
+      '@id': input.contactIri,
+      name: LINX_DEFAULT_SECRETARY.title,
+      entity: input.agentIri,
+      entityUri: input.agentIri,
+      rdfType: ContactClass.AGENT,
+      contactType: ContactType.AGENT,
+      isPublic: false,
+      createdAt: input.now,
+      updatedAt: input.now,
+    } as ContactRow,
+    chat: {
+      id: LINX_DEFAULT_SECRETARY.chatId,
+      '@id': input.chatIri,
+      title: LINX_DEFAULT_SECRETARY.title,
+      metadata: createSecretaryMetadata(),
+      participants: [input.contactIri],
+      createdAt: input.now,
+      updatedAt: input.now,
+      lastActiveAt: input.now,
+    } as ChatRow,
+    thread: {
+      id: LINX_DEFAULT_SECRETARY.threadId,
+      '@id': input.threadIri,
+      chat: input.chatIri,
+      title: LINX_DEFAULT_SECRETARY.threadTitle,
+      createdAt: input.now,
+      updatedAt: input.now,
+    } as ThreadRow,
+  }
+}
 
+function writeDefaultSecretaryContactState(rows: {
+  agent: AgentRow
+  contact: ContactRow
+  chat: ChatRow
+  thread: ThreadRow
+}): void {
+  writeCollectionRow(agentCollection, rows.agent, LINX_DEFAULT_SECRETARY.agentId)
+  writeCollectionRow(_contactCollection, rows.contact, LINX_DEFAULT_SECRETARY.contactId)
+  writeCollectionRow(chatCollection, rows.chat, LINX_DEFAULT_SECRETARY.chatId)
+  writeCollectionRow(threadCollection, rows.thread, LINX_DEFAULT_SECRETARY.threadId)
+  threadChatIdCache.set(LINX_DEFAULT_SECRETARY.threadId, LINX_DEFAULT_SECRETARY.chatId)
+}
+
+function getStagedSecretaryChatRows(): ChatRow[] {
+  const staged = chatCollection.get(LINX_DEFAULT_SECRETARY.chatId)
+  return staged ? [staged] : []
+}
+
+function getStagedSecretaryThreadRows(): ThreadRow[] {
+  const staged = threadCollection.get(LINX_DEFAULT_SECRETARY.threadId)
+  return staged ? [staged] : []
+}
+
+export function isLinxDefaultSecretaryBootstrapSettling(): boolean {
+  return Date.now() < linxWelcomeSettlingUntil
+}
+
+function markLinxDefaultSecretaryBootstrapSettling(): void {
+  linxWelcomeSettlingUntil = Date.now() + DEFAULT_SECRETARY_UI_SETTLE_MS
+  if (linxWelcomeSettleTimer) {
+    globalThis.clearTimeout(linxWelcomeSettleTimer)
+  }
+
+  linxWelcomeSettleTimer = globalThis.setTimeout(() => {
+    linxWelcomeSettleTimer = null
+    if (!isLinxDefaultSecretaryBootstrapSettling()) {
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.chats })
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.threads(LINX_DEFAULT_SECRETARY.chatId) })
+    }
+  }, DEFAULT_SECRETARY_UI_SETTLE_MS)
+}
+
+async function ensureDefaultSecretaryAgentHome(db: SolidDatabase): Promise<void> {
   try {
-    const contact = await findExactRecord<ContactRow>(db, contactTable as any, participant)
-    if (contact?.entityUri) {
-      return contact.entityUri
+    await ensureAgentHome(db, {
+      agentId: LINX_DEFAULT_SECRETARY.agentId,
+      name: LINX_DEFAULT_SECRETARY.title,
+      provider: normalizeAIConfigProviderId(LINX_DEFAULT_SECRETARY.provider),
+      model: normalizeAIConfigResourceId(LINX_DEFAULT_SECRETARY.model),
+    })
+  } catch (error) {
+    console.warn('[chatOps] Failed to prepare default Secretary Agent Home:', error)
+  }
+}
+
+function scheduleDefaultSecretaryAgentHome(db: SolidDatabase): void {
+  const run = () => {
+    void ensureDefaultSecretaryAgentHome(db)
+  }
+
+  globalThis.setTimeout(run, DEFAULT_SECRETARY_AGENT_HOME_DELAY_MS)
+}
+
+async function waitForDefaultSecretaryCoreResources(
+  db: SolidDatabase,
+  resources: {
+    agentIri: string
+    contactIri: string
+    chatIri: string
+    welcomeMessageIri: string
+  },
+  options: {
+    timeoutMs?: number
+    pollMs?: number
+    fetchTimeoutMs?: number
+  } = {},
+): Promise<void> {
+  const fetchFn = getAuthenticatedFetch(db)
+  if (!fetchFn) {
+    throw new Error('Solid database is missing authenticated fetch.')
+  }
+
+  const checks = [
+    {
+      label: 'agent profile',
+      url: documentUrlFromIri(resources.agentIri),
+      includes: LINX_DEFAULT_SECRETARY.title,
+    },
+    {
+      label: 'contact',
+      url: documentUrlFromIri(resources.contactIri),
+      includes: documentUrlFromIri(resources.agentIri),
+    },
+    {
+      label: 'chat',
+      url: documentUrlFromIri(resources.chatIri),
+      includes: LINX_DEFAULT_SECRETARY.title,
+    },
+    {
+      label: 'welcome message',
+      url: documentUrlFromIri(resources.welcomeMessageIri),
+      includes: LINX_DEFAULT_SECRETARY.title,
+    },
+  ]
+
+  const timeoutMs = options.timeoutMs ?? DEFAULT_SECRETARY_READY_TIMEOUT_MS
+  const pollMs = options.pollMs ?? DEFAULT_SECRETARY_READY_POLL_MS
+  const fetchTimeoutMs = options.fetchTimeoutMs ?? DEFAULT_SECRETARY_READY_FETCH_TIMEOUT_MS
+  const deadline = Date.now() + timeoutMs
+  let lastResults: SecretaryCoreReadResult[] = []
+
+  while (Date.now() <= deadline) {
+    lastResults = await Promise.all(checks.map((check) => readSecretaryCoreResource(fetchFn, check, fetchTimeoutMs)))
+    if (lastResults.every((result) => result.ok)) {
+      return
+    }
+
+    const remainingMs = deadline - Date.now()
+    if (remainingMs <= 0) {
+      break
+    }
+    await sleep(Math.min(pollMs, remainingMs))
+  }
+
+  const details = lastResults
+    .filter((result) => !result.ok)
+    .map((result) => `${result.label}: ${result.status || result.error || 'unexpected body'}`)
+    .join('; ')
+  throw new Error(`AI Secretary core resources are not readable yet.${details ? ` ${details}` : ''}`)
+}
+
+type SecretaryCoreReadResult = {
+  label: string
+  ok: boolean
+  status?: number
+  error?: string
+}
+
+async function readSecretaryCoreResource(
+  fetchFn: typeof fetch,
+  check: { label: string; url: string; includes: string },
+  timeoutMs: number,
+): Promise<SecretaryCoreReadResult> {
+  try {
+    const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+      ? AbortSignal.timeout(timeoutMs)
+      : undefined
+    const response = await fetchFn(check.url, {
+      method: 'GET',
+      headers: { Accept: '*/*' },
+      signal,
+    })
+    const text = await response.text().catch(() => '')
+    return {
+      label: check.label,
+      status: response.status,
+      ok: response.ok && text.includes(check.includes),
     }
   } catch (error) {
-    console.warn('[chatOps] Failed to resolve AI Secretary contact:', error)
+    return {
+      label: check.label,
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    }
   }
-
-  return participant
 }
 
-async function ensureAgentHomeForChat(db: SolidDatabase, chat: Pick<ChatRow, 'title' | 'participants'>): Promise<void> {
-  const [participant] = toStringArray(chat.participants)
-  if (!participant) return
-
-  const contact = await findExactRecord<ContactRow>(db, contactTable as any, participant)
-  const agentRef = contact?.entityUri ?? participant
-  const agent = await findExactRecord<AgentRow>(db, agentTable as any, agentRef)
-  if (!agent) return
-  const agentId = requireRowResourceId(agent, 'AI Secretary agent')
-  await ensureAgentHome(db, {
-    agentId,
-    name: agent?.name || chat.title || agentId,
-    provider: normalizeAIConfigProviderId(typeof agent?.provider === 'string' ? agent.provider : LINX_DEFAULT_SECRETARY.provider),
-    model: normalizeAIConfigResourceId(typeof agent?.model === 'string' ? agent.model : LINX_DEFAULT_SECRETARY.model),
-    instructions: typeof agent?.instructions === 'string' ? agent.instructions : undefined,
-  })
+function documentUrlFromIri(iri: string): string {
+  const hashIndex = iri.indexOf('#')
+  return hashIndex >= 0 ? iri.slice(0, hashIndex) : iri
 }
 
-async function resolveAgentMaker(db: SolidDatabase, agentId: string): Promise<string> {
-  try {
-    const agent = await (db as any).findById(agentTable as any, agentId)
-    const agentUri = agent ? db.resolveRowIri(agentTable as any, agent) : undefined
-    if (agentUri) return agentUri
-  } catch (error) {
-    console.warn('[chatOps] Failed to resolve default AI Secretary agent URI:', error)
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => globalThis.setTimeout(resolve, ms))
+}
+
+function readCollectionRows<T extends Record<string, unknown> & { id: string }>(
+  collection: unknown,
+): T[] {
+  const rows = new Map<string, T>()
+  const add = (row: unknown) => {
+    if (isRecord(row) && typeof row.id === 'string') {
+      rows.set(row.id, row as T)
+    }
+  }
+  const target = collection as {
+    state?: Map<string, T> | { data?: T[] }
+    toArray?: T[]
+    _state?: {
+      syncedData?: Map<string, T> | { values?: () => IterableIterator<T> }
+    }
+  } | null | undefined
+
+  if (target?.state instanceof Map) {
+    Array.from(target.state.values()).forEach(add)
+  } else if (Array.isArray(target?.state?.data)) {
+    target.state.data.forEach(add)
+  }
+  if (Array.isArray(target?.toArray)) {
+    target.toArray.forEach(add)
+  }
+  const syncedValues = target?._state?.syncedData?.values
+  if (typeof syncedValues === 'function') {
+    Array.from(syncedValues.call(target._state?.syncedData)).forEach(add)
   }
 
-  return resolveAgentIri(db, agentId) ?? agentId
+  return Array.from(rows.values())
+}
+
+async function ensureDefaultSecretaryRow<T extends Record<string, unknown> & { id: string }>(
+  db: SolidDatabase,
+  resource: unknown,
+  targetId: string,
+  row: Record<string, unknown>,
+  collection: CollectionWriter<T>,
+  collectionId: string,
+  iri: string,
+  options: { trustCached?: boolean; skipExistingRead?: boolean } = {},
+): Promise<{ row: T; created: boolean }> {
+  const cached = collection?.get?.(collectionId) as T | undefined
+  if (cached && options.trustCached !== false) {
+    return { row: cached, created: false }
+  }
+
+  if (!options.skipExistingRead) {
+    const existing = await findOptionalExactRecord<T>(db, resource as any, targetId)
+    if (existing) {
+      const normalized = normalizeCollectionRow(existing, collectionId, iri)
+      writeCollectionRow(collection, normalized, collectionId)
+      return { row: normalized, created: false }
+    }
+  }
+
+  await insertPodRow(db, resource, row)
+  const created = normalizeCollectionRow(row as T, collectionId, iri)
+  writeCollectionRow(collection, created, collectionId)
+  return { row: created, created: true }
+}
+
+function normalizeCollectionRow<T extends Record<string, unknown> & { id: string }>(
+  row: T,
+  collectionId: string,
+  iri: string,
+): T {
+  return {
+    ...row,
+    id: collectionId,
+    '@id': typeof row['@id'] === 'string' ? row['@id'] : iri,
+  }
 }
 
 async function ensureDefaultWelcomeMessage(
   chatId: string,
   threadId: string | undefined,
   maker: string,
+  options: { chatIri?: string; threadIri?: string; skipExistingRead?: boolean } = {},
 ): Promise<MessageRow | null> {
   if (!threadId) return null
 
-  const existingMessages = await chatOps.fetchMessages(threadId, chatId)
-  const existing = existingMessages.find((message) =>
-    message.role === 'assistant' && message.content === LINX_DEFAULT_SECRETARY.welcomeMessage
-  )
-  if (existing) {
-    writeCollectionRow(messageCollection, existing, existing.id)
-    return existing
+  const db = getDb()
+  if (!db) {
+    throw new Error('Solid database is not ready')
+  }
+
+  const messageIri = options.threadIri && options.chatIri
+    ? resolveResourceIri(db, messageTable, LINX_DEFAULT_SECRETARY.welcomeMessageId)
+    : null
+  const cached = messageCollection.get(LINX_DEFAULT_SECRETARY.welcomeMessageId)
+  if (cached) {
+    return cached
+  }
+  if (messageIri && !options.skipExistingRead) {
+    const existing = await findOptionalExactRecord<MessageRow>(
+      db,
+      messageTable as any,
+      LINX_DEFAULT_SECRETARY.welcomeMessageId,
+    )
+    if (existing) {
+      const row = normalizeCollectionRow(existing, LINX_DEFAULT_SECRETARY.welcomeMessageId, messageIri)
+      writeCollectionRow(messageCollection, row, LINX_DEFAULT_SECRETARY.welcomeMessageId)
+      return row
+    }
   }
 
   return chatOps.createAssistantMessage(
@@ -529,7 +1006,48 @@ async function ensureDefaultWelcomeMessage(
     threadId,
     LINX_DEFAULT_SECRETARY.welcomeMessage,
     maker,
+    undefined,
+    {
+      messageId: LINX_DEFAULT_SECRETARY.welcomeMessageId,
+      chatIri: options.chatIri,
+      threadIri: options.threadIri,
+    },
   )
+}
+
+async function findOptionalExactRecord<T>(
+  db: SolidDatabase,
+  resource: unknown,
+  id: string,
+): Promise<T | null> {
+  try {
+    return await withExactReadTimeout(
+      findExactRecord<T>(db, resource as any, id),
+      DEFAULT_SECRETARY_EXACT_READ_TIMEOUT_MS,
+    )
+  } catch (error) {
+    if (isMissingExactReadError(error) || isExactReadTimeoutError(error)) {
+      return null
+    }
+    throw error
+  }
+}
+
+function withExactReadTimeout<T>(promise: Promise<T | null>, timeoutMs: number): Promise<T | null> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
+  const timeoutPromise = new Promise<T | null>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      const error = new Error('Exact record read timed out.')
+      error.name = 'ExactReadTimeoutError'
+      reject(error)
+    }, timeoutMs)
+  })
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeoutId) {
+      clearTimeout(timeoutId)
+    }
+  })
 }
 
 // ============================================================================
@@ -710,16 +1228,14 @@ export const chatOps = {
    * Get all chats from collection state
    */
   getAll(): ChatRow[] {
-    const stateMap = chatCollection.state
-    return Array.from(stateMap.values())
+    return readCollectionRows<ChatRow>(chatCollection)
   },
 
   /**
    * Get chat by ID
    */
   getById(id: string): ChatRow | null {
-    const stateMap = chatCollection.state
-    const items = Array.from(stateMap.values())
+    const items = readCollectionRows<ChatRow>(chatCollection)
     return items.find((c: ChatRow) => c.id === id) || null
   },
 
@@ -727,17 +1243,15 @@ export const chatOps = {
    * Get threads for a chat
    */
   getThreads(chatId: string): ThreadRow[] {
-    const stateMap = threadCollection.state
-    const items = Array.from(stateMap.values())
-    return items.filter((t: ThreadRow) => resolveThreadChatIdFromRow(t) === chatId)
+    const items = readCollectionRows<ThreadRow>(threadCollection)
+    return items.filter((t: ThreadRow) => resolveThreadChatRowId(t) === normalizeChatRowId(chatId))
   },
 
   /**
    * Get messages for a thread
    */
   getMessages(threadId: string): MessageRow[] {
-    const stateMap = messageCollection.state
-    const items = Array.from(stateMap.values())
+    const items = readCollectionRows<MessageRow>(messageCollection)
     return items
       .filter((m: MessageRow) => extractThreadIdFromThreadRef(m.thread) === threadId)
       .sort((a, b) => {
@@ -793,13 +1307,18 @@ export const chatOps = {
     })
 
     const chatId = input.chatId?.trim() || crypto.randomUUID()
+    const chatIri = buildChatIri(db, chatId)
+    if (!chatIri) {
+      throw new Error(`Failed to resolve chat IRI for chat ${chatId}`)
+    }
     const now = new Date()
 
     writeCollectionRow(agentCollection, agent as AgentRow, agentId)
     writeCollectionRow(_contactCollection, contact as ContactRow, contactId)
 
-    const chatData: ChatInsert = {
+    const chatData = {
       id: chatId,
+      '@id': chatIri,
       title,
       avatarUrl: providerInfo?.logoUrl,
       metadata: title === LINX_DEFAULT_SECRETARY.title
@@ -809,7 +1328,7 @@ export const chatOps = {
       createdAt: now,
       updatedAt: now,
       lastActiveAt: now,
-    }
+    } as ChatInsert & { '@id': string }
     const chatTx = chatCollection.insert(chatData as ChatRow)
     await chatTx.isPersisted.promise
     writeCollectionRow(chatCollection, { ...chatData, id: chatId } as ChatRow, chatId)
@@ -855,15 +1374,15 @@ export const chatOps = {
   async updateChat(id: string, data: Partial<ChatRow>): Promise<void> {
     const db = getDb()
     const updatedAt = new Date()
+    let existing = chatCollection.get(id)
     if (!chatCollection.get(id)) {
       if (!db) {
         throw new Error('Solid database is not ready')
       }
-      await ensureChatStateRow(db, id)
+      existing = await ensureChatStateRow(db, id)
     }
 
     if (db) {
-      const existing = chatCollection.get(id)
       await updateExactRecord(db, chatTable as any, existing ?? { id }, {
         ...data,
         updatedAt,
@@ -940,14 +1459,25 @@ export const chatOps = {
     const db = getDb()
     const threadId = options?.threadId?.trim() || crypto.randomUUID()
     const now = new Date()
+    const chatIri = db ? buildChatIri(db, chatId) : null
+    if (db && !chatIri) {
+      throw new Error(`Failed to resolve chat IRI for chat ${chatId}`)
+    }
+    const threadIri = db && chatIri
+      ? resolveResourceIri(db, threadTable, buildThreadResourceId(threadId, chatIri))
+      : null
+    if (db && !threadIri) {
+      throw new Error(`Failed to resolve thread IRI for thread ${threadId}`)
+    }
     
-    const threadData: ThreadInsert = {
+    const threadData = {
       id: threadId,
-      chat: chatId,
+      ...(threadIri ? { '@id': threadIri } : {}),
+      chat: chatIri ?? chatId,
       title: title || `话题 ${now.toLocaleTimeString()}`,
       createdAt: now,
       updatedAt: now,
-    }
+    } as ThreadInsert & { '@id'?: string }
     
     if (db) {
       await db.insert(threadTable).values(threadData as any).execute()
@@ -984,7 +1514,7 @@ export const chatOps = {
     if (requestedWorkspaceUri && isLocalWorkspaceUri(requestedWorkspaceUri)) {
       if (thread.workspace !== requestedWorkspaceUri) {
         await this.updateThread(input.threadId, { workspace: requestedWorkspaceUri })
-        const chatId = resolveThreadChatIdFromRow(thread)
+        const chatId = resolveThreadChatRowId(thread)
         if (chatId) {
           queryClient.invalidateQueries({ queryKey: QUERY_KEYS.threads(chatId) })
         }
@@ -1074,7 +1604,7 @@ export const chatOps = {
 
     if (thread.workspace !== workspaceUri) {
       await this.updateThread(input.threadId, { workspace: workspaceUri })
-      const chatId = resolveThreadChatIdFromRow(thread)
+      const chatId = resolveThreadChatRowId(thread)
       if (chatId) {
         queryClient.invalidateQueries({ queryKey: QUERY_KEYS.threads(chatId) })
       }
@@ -1138,21 +1668,34 @@ export const chatOps = {
 
     const msgId = crypto.randomUUID()
     const now = new Date()
+    const chatRef = buildChatIri(db, chatId)
+    if (!chatRef) {
+      throw new Error(`Failed to resolve chat IRI for chat ${chatId}`)
+    }
     const threadRef = await buildThreadIri(db, threadId, chatId)
     if (!threadRef) {
       throw new Error(`Failed to resolve thread IRI for thread ${threadId}`)
     }
+    const messageIri = resolveResourceIri(db, messageTable, buildMessageResourceId(msgId, {
+      chat: chatRef,
+      thread: threadRef,
+      createdAt: now,
+    }))
+    if (!messageIri) {
+      throw new Error(`Failed to resolve message IRI for message ${msgId}`)
+    }
     
     const msgData = {
       id: msgId,
-      chat: buildChatIri(db, chatId) ?? chatId,
+      '@id': messageIri,
+      chat: chatRef,
       thread: threadRef,
       maker,
       role: 'user',
       content,
       status: 'sent',
       createdAt: now,
-    } as MessageInsert
+    } as MessageInsert & { '@id': string }
     
     await db.insert(messageTable).values(msgData as any).execute()
     writeCollectionRow(messageCollection, { ...msgData, id: msgId } as MessageRow, msgId)
@@ -1178,21 +1721,35 @@ export const chatOps = {
     threadId: string,
     content: string,
     maker: string,
-    richContent?: string
+    richContent?: string,
+    options?: { messageId?: string; chatIri?: string; threadIri?: string },
   ): Promise<MessageRow> {
     const db = getDb()
     if (!db) throw new Error('Database not connected')
 
-    const msgId = crypto.randomUUID()
+    const msgId = options?.messageId?.trim() || crypto.randomUUID()
     const now = new Date()
-    const threadRef = await buildThreadIri(db, threadId, chatId)
+    const chatRef = options?.chatIri ?? buildChatIri(db, chatId)
+    if (!chatRef) {
+      throw new Error(`Failed to resolve chat IRI for chat ${chatId}`)
+    }
+    const threadRef = options?.threadIri ?? await buildThreadIri(db, threadId, chatId)
     if (!threadRef) {
       throw new Error(`Failed to resolve thread IRI for thread ${threadId}`)
+    }
+    const messageIri = resolveResourceIri(db, messageTable, buildMessageResourceId(msgId, {
+      chat: chatRef,
+      thread: threadRef,
+      createdAt: now,
+    }))
+    if (!messageIri) {
+      throw new Error(`Failed to resolve message IRI for message ${msgId}`)
     }
     
     const msgData = {
       id: msgId,
-      chat: buildChatIri(db, chatId) ?? chatId,
+      '@id': messageIri,
+      chat: chatRef,
       thread: threadRef,
       maker,
       role: 'assistant',
@@ -1200,7 +1757,7 @@ export const chatOps = {
       richContent,
       status: 'sent',
       createdAt: now,
-    } as MessageInsert
+    } as MessageInsert & { '@id': string }
     
     await db.insert(messageTable).values(msgData as any).execute()
     writeCollectionRow(messageCollection, { ...msgData, id: msgId } as MessageRow, msgId)
@@ -1380,7 +1937,7 @@ export const chatOps = {
 
     const providerId = normalizeAIConfigProviderId(provider)
     const [credentialRows, providerRow] = await Promise.all([
-      db.select().from(credentialResource).execute(),
+      findAIConfigCredentialRows(db, providerId),
       typeof (db as any).findById === 'function'
         ? (db as any).findById(aiProviderResource as any, providerId)
         : Promise.resolve(null),
@@ -1412,10 +1969,24 @@ export const chatOps = {
       return chatCollection.fetch()
     }
 
-    const rows = await db.select()
-      .from(chatTable)
-      .orderBy('lastActiveAt', 'desc')
-      .execute() as ChatRow[]
+    const fallbackRows = getStagedSecretaryChatRows()
+    if (fallbackRows.length > 0 && (linxWelcomeInFlight || isLinxDefaultSecretaryBootstrapSettling())) {
+      return fallbackRows
+    }
+
+    let rows: ChatRow[]
+    try {
+      rows = await db.select()
+        .from(chatTable)
+        .orderBy('lastActiveAt', 'desc')
+        .execute() as ChatRow[]
+    } catch (error) {
+      if (isRecoverableCollectionReadError(error)) {
+        return fallbackRows.length > 0 ? fallbackRows : chatOps.getAll()
+      }
+      throw error
+    }
+
     if (rows.length === 0) {
       return rows
     }
@@ -1429,16 +2000,33 @@ export const chatOps = {
   async fetchThreads(chatId: string): Promise<ThreadRow[]> {
     const db = getDb()
     if (!db) return []
-    
+
+    if (normalizeChatRowId(chatId) === LINX_DEFAULT_SECRETARY.chatId && isLinxDefaultSecretaryBootstrapSettling()) {
+      return getStagedSecretaryThreadRows()
+    }
+
+    const chatIri = buildChatIri(db, chatId)
+    if (!chatIri) {
+      throw new Error(`Failed to resolve chat IRI for chat ${chatId}`)
+    }
+
     const chatCol = (threadTable as any).chat
-    const rows = await db.select()
-      .from(threadTable)
-      .where(eq(chatCol, chatId))
-      .orderBy('updatedAt', 'desc')
-      .execute() as ThreadRow[]
+    let rows: ThreadRow[]
+    try {
+      rows = await db.select()
+        .from(threadTable)
+        .where(eq(chatCol, chatIri))
+        .orderBy('updatedAt', 'desc')
+        .execute() as ThreadRow[]
+    } catch (error) {
+      if (isRecoverableCollectionReadError(error)) {
+        return chatOps.getThreads(chatId)
+      }
+      throw error
+    }
 
     rows.forEach((row) => {
-      const rowChatId = resolveThreadChatIdFromRow(row)
+      const rowChatId = resolveThreadChatRowId(row)
       if (row.id && rowChatId) {
         threadChatIdCache.set(row.id, rowChatId)
       }
@@ -1463,11 +2051,19 @@ export const chatOps = {
     }
 
     const threadCol = (messageTable as any).thread
-    return await db.select()
-      .from(messageTable)
-      .where(eq(threadCol, threadRef))
-      .orderBy('createdAt', 'asc')
-      .execute() as MessageRow[]
+    try {
+      const rows = await db.select()
+        .from(messageTable)
+        .where(eq(threadCol, threadRef))
+        .orderBy('createdAt', 'asc')
+        .execute() as MessageRow[]
+      return rows.length > 0 ? rows : chatOps.getMessages(threadId)
+    } catch (error) {
+      if (isRecoverableCollectionReadError(error)) {
+        return chatOps.getMessages(threadId)
+      }
+      throw error
+    }
   },
 
   // ==========================================================================
@@ -1543,6 +2139,27 @@ export function useChatInit() {
   setDatabaseGetter(() => db)
 
   return { db, isReady: !!db }
+}
+
+export function useLinxDefaultSecretaryBootstrapSettling(): boolean {
+  const [isSettling, setIsSettling] = useState(() => isLinxDefaultSecretaryBootstrapSettling())
+
+  useEffect(() => {
+    if (!isSettling) {
+      return
+    }
+
+    const remainingMs = Math.max(0, linxWelcomeSettlingUntil - Date.now())
+    const timer = globalThis.setTimeout(() => {
+      setIsSettling(isLinxDefaultSecretaryBootstrapSettling())
+    }, remainingMs)
+
+    return () => {
+      globalThis.clearTimeout(timer)
+    }
+  }, [isSettling])
+
+  return isSettling
 }
 
 const QUERY_KEYS = {

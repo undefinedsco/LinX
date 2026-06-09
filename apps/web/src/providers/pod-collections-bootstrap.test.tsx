@@ -23,6 +23,10 @@ vi.mock('./solid-database-provider', () => ({
 
 vi.mock('@/modules/chat/collections', () => ({
   initializeChatCollections: (...args: unknown[]) => initializeChatCollectionsMock(...args),
+  LINX_DEFAULT_SECRETARY: {
+    chatId: '__secretary__/index.ttl#this',
+    threadId: 'chat/__secretary__/index.ttl#default',
+  },
   chatOps: {
     ensureLinxWelcome: (...args: unknown[]) => ensureLinxWelcomeMock(...args),
   },
@@ -171,8 +175,9 @@ describe('PodCollectionsBootstrap', () => {
     expect(ensureLinxWelcomeMock).toHaveBeenLastCalledWith({ force: true })
   })
 
-  it('times out a stuck LinX welcome preparation so the user can retry', async () => {
+  it('does not render children when default Secretary persistence times out', async () => {
     vi.useFakeTimers()
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     const db = { id: 'db' }
     useSolidDatabaseMock.mockReturnValue({ db })
     ensureLinxWelcomeMock.mockReturnValue(new Promise(() => {}))
@@ -185,6 +190,10 @@ describe('PodCollectionsBootstrap', () => {
     })
 
     expect(screen.getByText('默认助手准备失败')).toBeTruthy()
-    expect(screen.getByText('默认助手准备超时。请检查网络，或返回空间选择页重试。')).toBeTruthy()
+    expect(screen.queryByText('ready app')).toBeNull()
+    expect(screen.queryByText('正在准备默认助手')).toBeNull()
+    expect(selectChatMock).not.toHaveBeenCalled()
+    expect(selectThreadMock).not.toHaveBeenCalled()
+    warnSpy.mockRestore()
   })
 })

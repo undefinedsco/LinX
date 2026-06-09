@@ -3,7 +3,7 @@ import { agentResourceId } from '@undefineds.co/models'
 import { buildAgentHomePath, ensureAgentHome } from './agent-home'
 
 describe('agent-home', () => {
-  it('creates default Agent Home files in the Pod without probing containers', async () => {
+  it('creates default Agent Home files at canonical Agent Home paths', async () => {
     const fetchMock = vi.fn(async () => new Response('', { status: 201 }))
     const db = {
       getDialect: () => ({
@@ -38,7 +38,6 @@ describe('agent-home', () => {
     expect(patchTargets).toEqual([
       'https://alice.example/agents/agent-1/.meta',
     ])
-    expect(fetchMock).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ method: 'HEAD' }))
 
     const agentsMdPut = fetchMock.mock.calls.find(([input, init]) =>
       String(input).endsWith('/AGENTS.md') && init?.method === 'PUT'
@@ -58,6 +57,7 @@ describe('agent-home', () => {
     expect(String(metaPatch?.[1]?.body)).toContain('INSERT DATA')
     expect(String(metaPatch?.[1]?.body)).toContain('<https://alice.example/agents/agent-1/>')
     expect(String(metaPatch?.[1]?.body)).not.toContain('.meta#config')
+    expect(agentResourceId('__secretary__')).toBe('__secretary__/profile/card#me')
   })
 
   it('rejects full Agent IRIs because callers must pass Agent row.id', async () => {
@@ -83,9 +83,10 @@ describe('agent-home', () => {
   })
 
   it('treats existing Agent Home files as initialized', async () => {
-    const fetchMock = vi.fn(async (_input, init) => new Response('', {
-      status: init?.method === 'PATCH' ? 200 : 412,
-    }))
+    const fetchMock = vi.fn(async (_input, init) => {
+      if (init?.method === 'HEAD') return new Response('', { status: 200 })
+      return new Response('', { status: init?.method === 'PATCH' ? 200 : 412 })
+    })
     const db = {
       getDialect: () => ({
         getPodUrl: () => 'https://alice.example/',
@@ -100,7 +101,7 @@ describe('agent-home', () => {
       model: 'undefineds/linx-lite',
     })).resolves.toBeUndefined()
 
-    expect(fetchMock).toHaveBeenCalledTimes(3)
-    expect(fetchMock).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ method: 'HEAD' }))
+    const writeCalls = fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT' || init?.method === 'PATCH')
+    expect(writeCalls).toHaveLength(3)
   })
 })

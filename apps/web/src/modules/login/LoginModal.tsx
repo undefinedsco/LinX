@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Loader2, Plus, X, AlertCircle, ChevronRight, Cloud, HardDrive, Globe2, ArrowLeft, Link2, Info, type LucideIcon } from 'lucide-react'
 import { isLocalAccessHostname } from '@/lib/local-access-url'
 import { cn } from '@/lib/utils'
@@ -14,6 +14,7 @@ import {
 import { resolveLoginProviderSource } from './provider-model'
 import { LoginCardShell } from './LoginCardShell'
 import { formatLoginErrorForUser } from './error-messages'
+import { LocalReachabilitySummary } from './LocalReachabilitySummary'
 
 export function LoginModal(props: LoginModalProps) {
   const { state, storageConflict, view } = props
@@ -44,6 +45,7 @@ export function LoginModal(props: LoginModalProps) {
           error={props.error}
           onBack={props.onBackFromLocal}
           onContinue={props.onContinueLocalLogin}
+          onTestConnectivity={props.onTestLocalConnectivity}
           onClearError={props.onClearError}
         />
       ) : props.storedAccount ? (
@@ -417,6 +419,7 @@ function LocalOnboardingView({
   error,
   onBack,
   onContinue,
+  onTestConnectivity,
   onClearError,
 }: {
   localOnboarding: LoginModalProps['localOnboarding']
@@ -424,9 +427,11 @@ function LocalOnboardingView({
   error: string | null
   onBack: () => void
   onContinue: () => void
+  onTestConnectivity: () => Promise<void> | void
   onClearError: () => void
 }) {
   const snapshot = localOnboarding
+  const autoProbeKeyRef = useRef<string | null>(null)
   const isStandalone = localProviderSource === 'standalone'
   const productLabel = isStandalone ? '独立空间' : '本地空间'
   const onboardingState = snapshot?.state ?? 'idle'
@@ -435,17 +440,47 @@ function LocalOnboardingView({
   const isLocalNetworkBlocked = Boolean(
     isReady
     && connectivity
-    && connectivity.status !== 'unknown'
-    && connectivity.status !== 'checking'
-    && connectivity.status !== 'ready',
+    && (connectivity.status === 'failed' || connectivity.status === 'mismatch')
   )
+  const isPendingStart = onboardingState === 'space_required' || onboardingState === 'idle'
   const isRepair = onboardingState === 'repair_required'
   const isError = onboardingState === 'error'
-  const isStarting = onboardingState === 'starting' || onboardingState === 'checking' || onboardingState === 'idle' || onboardingState === 'space_required'
+  const isStarting = onboardingState === 'starting' || onboardingState === 'checking'
   const progress = formatLocalStartupProgressForUser(snapshot?.progress, productLabel, snapshot?.message)
   const progressLabel = progress.label
   const progressDetail = progress.detail
   const localUrl = snapshot?.localUrl ?? snapshot?.baseUrl ?? null
+
+  useEffect(() => {
+    if (!isReady || isStandalone || !snapshot) {
+      return
+    }
+
+    if (connectivity && connectivity.status !== 'unknown') {
+      return
+    }
+
+    const probeKey = [
+      snapshot.spaceKind ?? '',
+      snapshot.localUrl ?? '',
+      snapshot.publicUrl ?? '',
+    ].join('|')
+    if (autoProbeKeyRef.current === probeKey) {
+      return
+    }
+
+    autoProbeKeyRef.current = probeKey
+    void Promise.resolve(onTestConnectivity()).catch(() => undefined)
+  }, [
+    connectivity?.status,
+    isReady,
+    isStandalone,
+    onTestConnectivity,
+    snapshot,
+    snapshot?.localUrl,
+    snapshot?.publicUrl,
+    snapshot?.spaceKind,
+  ])
 
   return (
     <div className="flex-1 flex flex-col h-full">
@@ -465,11 +500,13 @@ function LocalOnboardingView({
 
       <div className="flex-1 min-h-0 overflow-y-auto px-5 py-2">
         <div className="flex min-h-full flex-col justify-center gap-4">
-          {isStarting && (
+          {(isPendingStart || isStarting) && (
             <div className="flex flex-col items-center gap-3 text-center">
               <Loader2 className="w-6 h-6 text-primary animate-spin" />
-              <p className="text-sm font-medium text-foreground">{progressLabel}</p>
-              {progressDetail ? (
+              <p className="text-sm font-medium text-foreground">
+                {isPendingStart ? `正在启动${productLabel}…` : progressLabel}
+              </p>
+              {!isPendingStart && progressDetail ? (
                 <p className="max-w-[18rem] break-all text-[11px] leading-5 text-muted-foreground">
                   {progressDetail}
                 </p>
@@ -480,18 +517,21 @@ function LocalOnboardingView({
           {isReady && (
             <div className="flex flex-col gap-3">
               <p className="text-sm font-medium text-foreground text-center">
-                {isLocalNetworkBlocked ? '本地空间公网入口未连通' : `${productLabel} 已准备好`}
+                {isLocalNetworkBlocked ? '本地空间入口异常' : `${productLabel} 已准备好`}
               </p>
               {isLocalNetworkBlocked ? (
                 <p className="text-xs text-muted-foreground leading-relaxed text-center">
                   {formatLocalStatusMessageForUser(
                     connectivity?.message,
-                    '本地空间公网入口不可达。请确认隧道已启动后重试。',
+                    '本机入口不可达。请确认本地空间已启动后重试。',
                   )}
                 </p>
               ) : null}
               {isStandalone ? (
                 <RouteInfoCard title="本机入口" value={localUrl} />
+              ) : null}
+              {!isStandalone ? (
+                <LocalReachabilitySummary connectivity={connectivity} assumeLocalReachable />
               ) : null}
               <button
                 onClick={onContinue}
@@ -808,23 +848,62 @@ function formatLocalStartupProgressForUser(
 ): { label: string; detail: string | null } {
   switch (progress?.phase) {
     case 'source':
+      return {
+        label: '定位 xpod runtime',
+        detail: progress.detail ? formatLocalProgressDetailForUser(progress.detail) : null,
+      }
     case 'version':
+      return {
+        label: '确定 xpod runtime 版本',
+        detail: progress.detail ? formatLocalProgressDetailForUser(progress.detail) : null,
+      }
     case 'check-bun':
+      return {
+        label: formatLocalProgressLabelForUser(progress.label, '检查 Bun 运行环境'),
+        detail: progress.detail ? formatLocalProgressDetailForUser(progress.detail) : null,
+      }
     case 'check-node':
+      return {
+        label: formatLocalProgressLabelForUser(progress.label, '检查 Node/npm 运行环境'),
+        detail: progress.detail ? formatLocalProgressDetailForUser(progress.detail) : null,
+      }
+    case 'prepare-runtime-cache':
+      return {
+        label: formatLocalProgressLabelForUser(progress.label, '准备 xpod runtime 缓存目录'),
+        detail: progress.detail ? formatLocalProgressDetailForUser(progress.detail) : null,
+      }
+    case 'verify-runtime':
+      return {
+        label: formatLocalProgressLabelForUser(progress.label, '校验 xpod runtime'),
+        detail: progress.detail ? formatLocalProgressDetailForUser(progress.detail) : null,
+      }
     case 'runtime-ready':
+      return {
+        label: formatLocalProgressLabelForUser(progress.label, 'xpod runtime 已就绪'),
+        detail: progress.detail ? formatLocalProgressDetailForUser(progress.detail) : null,
+      }
     case 'embedded':
+      return {
+        label: formatLocalProgressLabelForUser(progress.label, '使用内置 xpod runtime'),
+        detail: progress.detail ? formatLocalProgressDetailForUser(progress.detail) : null,
+      }
     case 'resolve-runtime':
-      return { label: `检查 ${productLabel} 运行环境`, detail: null }
+      return {
+        label: formatLocalProgressLabelForUser(progress.label, `检查 ${productLabel} 运行环境`),
+        detail: progress.detail ? formatLocalProgressDetailForUser(progress.detail) : null,
+      }
     case 'install-bun':
     case 'install-npm':
       return {
-        label: '正在准备本地空间',
-        detail: '首次启动可能需要下载，完成后会自动继续。',
+        label: formatLocalProgressLabelForUser(progress.label, '安装 xpod runtime'),
+        detail: progress.detail
+          ? formatLocalProgressDetailForUser(progress.detail)
+          : '首次启动需要安装 runtime 包与生产依赖，完成后会自动继续。',
       }
     case 'register-cloud':
       return {
-        label: '正在准备本地空间',
-        detail: '正在为当前设备准备本地登录入口。',
+        label: formatLocalProgressLabelForUser(progress.label, '准备账号绑定'),
+        detail: progress.detail ? formatLocalProgressDetailForUser(progress.detail) : '正在为当前设备准备本地登录入口。',
       }
     case 'prepare-data':
     case 'write-env':
@@ -840,8 +919,8 @@ function formatLocalStartupProgressForUser(
       return { label: `${productLabel} 已准备好`, detail: null }
     default:
       return {
-        label: formatLocalStatusMessageForUser(progress?.label ?? message, `正在启动 ${productLabel}…`),
-        detail: progress?.detail ? formatLocalOptionalDetailForUser(progress.detail) : null,
+        label: formatLocalProgressLabelForUser(progress?.label ?? message, `正在启动 ${productLabel}…`),
+        detail: progress?.detail ? formatLocalProgressDetailForUser(progress.detail) : null,
       }
   }
 }
@@ -850,9 +929,25 @@ function formatLocalStatusMessageForUser(value: string | null | undefined, fallb
   return formatLoginErrorForUser(value, fallback)
 }
 
-function formatLocalOptionalDetailForUser(value: string): string | null {
-  const formatted = formatLoginErrorForUser(value, '')
-  return formatted || null
+function formatLocalProgressLabelForUser(value: string | null | undefined, fallback: string): string {
+  return formatLocalProgressDetailForUser(value) ?? fallback
+}
+
+function formatLocalProgressDetailForUser(value: string | null | undefined): string | null {
+  if (!value) return null
+  const message = value.trim()
+  if (!message) return null
+  if (message.length > 180) return null
+  if (/(?:\/Users\/|\\Users\\|Application Support|node_modules|\.tsx?:\d+|\.jsx?:\d+|Require stack|at\s+\w+[\w.]*\s*\()/i.test(message)) {
+    return null
+  }
+  if (/(?:https?:\/\/|file:\/\/|localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])/i.test(message)) {
+    return null
+  }
+  if (/\b(provisionCode|providerCode|client_secret|client_id|access_token|refresh_token|nodeToken|serviceToken)\b/i.test(message)) {
+    return null
+  }
+  return message
 }
 
 function formatProviderLabelForUser(value: string | undefined): string {

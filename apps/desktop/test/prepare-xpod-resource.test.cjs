@@ -84,6 +84,21 @@ test('prepare-xpod-resource copies the allowlisted runtime dependency tree', (t)
   assert.equal(fs.existsSync(path.join(resourceRoot, 'node_modules/jsonld/node_modules/huge-package/index.js')), false)
 })
 
+test('prepare-xpod-resource honors LINX_XPOD_ROOT for raw desktop debugging', (t) => {
+  const fixtureRoot = createXpodFixture(t)
+  const resourceRoot = createOutputRoot(t)
+
+  const result = runPrepare({
+    LINX_XPOD_ROOT: fixtureRoot,
+    LINX_DESKTOP_XPOD_RESOURCE_OUTPUT_ROOT: resourceRoot,
+    LINX_DESKTOP_MAX_XPOD_RESOURCE_MB: '1',
+  })
+
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, new RegExp(`xpod resource prepared from ${escapeRegExp(fixtureRoot)}`))
+  assert.equal(fs.existsSync(path.join(resourceRoot, 'dist/main.js')), true)
+})
+
 function createXpodFixture(t, packageFields = {}) {
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'linx-xpod-resource-fixture-'))
   const fixtureRoot = path.join(tmpRoot, 'xpod')
@@ -137,4 +152,8 @@ function writeFile(root, relativePath, content) {
   const target = path.join(root, relativePath)
   fs.mkdirSync(path.dirname(target), { recursive: true })
   fs.writeFileSync(target, content)
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }

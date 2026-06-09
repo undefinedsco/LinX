@@ -157,7 +157,7 @@ describe('useSessionRestore', () => {
     expect(screen.getByTestId('restore-failed').textContent).toBe('true')
   })
 
-  it('normalizes desktop loopback callback and restores after redirect event', async () => {
+  it('normalizes desktop loopback callback and routes to the callback page after redirect event', async () => {
     window.history.replaceState({}, '', '/chat')
     render(<TestComponent />)
 
@@ -169,17 +169,11 @@ describe('useSessionRestore', () => {
     redirectListener?.()
 
     await waitFor(() => {
-      expect(handleIncomingRedirectMock).toHaveBeenCalledTimes(1)
+      expect(window.location.pathname).toBe('/auth/callback')
     })
 
-    expect(handleIncomingRedirectMock).toHaveBeenCalledWith({
-      url: `${window.location.origin}/auth/callback?code=abc&state=xyz`,
-      restorePreviousSession: true,
-    })
-
-    await waitFor(() => {
-      expect(screen.getByTestId('restore-complete').textContent).toBe('true')
-    })
+    expect(window.location.search).toBe('?code=abc&state=xyz')
+    expect(handleIncomingRedirectMock).not.toHaveBeenCalled()
     expect(clearStoredSolidSessionMock).not.toHaveBeenCalled()
   })
 
@@ -195,13 +189,11 @@ describe('useSessionRestore', () => {
     redirectListener?.()
 
     await waitFor(() => {
-      expect(handleIncomingRedirectMock).toHaveBeenCalledTimes(1)
+      expect(window.location.pathname).toBe('/auth/callback')
     })
 
-    expect(handleIncomingRedirectMock).toHaveBeenCalledWith({
-      url: `${window.location.origin}/auth/callback?code=abc&state=xyz`,
-      restorePreviousSession: true,
-    })
+    expect(window.location.search).toBe('?code=abc&state=xyz')
+    expect(handleIncomingRedirectMock).not.toHaveBeenCalled()
   })
 
   it('waits for SolidSessionProvider to restore a desktop renderer callback URL when no pending loopback redirect exists', async () => {
@@ -216,38 +208,6 @@ describe('useSessionRestore', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('has-stored-session').textContent).toBe('true')
-    })
-  })
-
-  it('maps desktop loopback callback onto the file renderer URL in file mode', async () => {
-    const originalLocation = window.location
-    const fileLocation = new URL('file:///Applications/LinX.app/Contents/Resources/web/index.html#/chat')
-    Object.defineProperty(window, 'location', {
-      configurable: true,
-      value: fileLocation,
-    })
-
-    render(<TestComponent />)
-
-    await waitFor(() => {
-      expect(onRedirectMock).toHaveBeenCalled()
-    })
-    expect(screen.getByTestId('restore-failed').textContent).toBe('false')
-
-    redirectListener?.()
-
-    await waitFor(() => {
-      expect(handleIncomingRedirectMock).toHaveBeenCalledTimes(1)
-    })
-
-    expect(handleIncomingRedirectMock).toHaveBeenCalledWith({
-      url: 'file:///Applications/LinX.app/Contents/Resources/web/index.html?code=abc&state=xyz#/chat',
-      restorePreviousSession: true,
-    })
-
-    Object.defineProperty(window, 'location', {
-      configurable: true,
-      value: originalLocation,
     })
   })
 

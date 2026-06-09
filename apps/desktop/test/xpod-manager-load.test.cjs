@@ -611,6 +611,115 @@ test('XpodManager refreshes expired self-contained provisionCode before Local Po
   assert.equal(result.provisionUrl, `https://id.undefineds.co/.account/?provisionCode=${freshProvisionCode}`)
 })
 
+test('XpodManager rewrites expired Local authorization URL with a fresh provisionCode', async (t) => {
+  const originalLoad = Module._load
+
+  Module._load = function patchedLoad(request, parent, isMain) {
+    if (request === 'electron') {
+      return {
+        app: {
+          getPath: () => fs.mkdtempSync(path.join(os.tmpdir(), 'linx-xpod-manager-')),
+          isPackaged: false,
+        },
+      }
+    }
+
+    return originalLoad.call(this, request, parent, isMain)
+  }
+
+  t.after(() => {
+    Module._load = originalLoad
+  })
+
+  const { XpodManager } = require(resolveCompiledDesktopModule('lib/xpod-manager.js'))
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'linx-xpod-manager-auth-url-'))
+  const managedProvider = {
+    id: 'local',
+    managed: {
+      dataDir: tmpDir,
+      port: 5737,
+      spaceKind: 'local',
+      domain: { type: 'managed', value: 'node-0000.undefineds.co' },
+    },
+  }
+  const manager = new XpodManager(
+    {},
+    {
+      getConfigPath: () => path.join(tmpDir, '.env'),
+      getAll: () => ({
+        CSS_EDITION: 'local',
+        oidcIssuer: 'https://id.undefineds.co',
+        XPOD_CLOUD_API_ENDPOINT: 'https://api.undefineds.co',
+      }),
+    },
+    {
+      updateManagedStatus: () => {},
+      get: (id) => (id === 'local' ? managedProvider : undefined),
+      getDefault: () => managedProvider,
+      getManagedPods: () => [managedProvider],
+    },
+    tmpDir,
+  )
+  const expiredProvisionCode = makeProvisionCode({
+    spUrl: 'https://node-0000.undefineds.co/',
+    serviceToken: 'service-token-old',
+    nodeId: 'node-0000',
+    exp: Math.floor(Date.now() / 1000) - 60,
+  })
+  const freshProvisionCode = makeProvisionCode({
+    spUrl: 'https://node-0000.undefineds.co/',
+    serviceToken: 'service-token-new',
+    nodeId: 'node-0000',
+    exp: Math.floor(Date.now() / 1000) + 3600,
+  })
+  const statePath = path.join(path.dirname(manager.getLogPaths().directory), 'xpod-service.json')
+  const staleState = {
+    providerId: 'local',
+    dataDir: tmpDir,
+    port: 5737,
+    spaceKind: 'local',
+    baseUrl: 'https://node-0000.undefineds.co/',
+    localUrl: 'http://localhost:5737/',
+    startedAt: Date.now(),
+    pid: 246813,
+    provisioning: {
+      nodeId: 'node-0000',
+      nodeToken: 'node-token-old',
+      serviceToken: 'service-token-old',
+      provisionCode: expiredProvisionCode,
+      publicUrl: 'https://node-0000.undefineds.co/',
+      provisionUrl: `https://id.undefineds.co/.account/?provisionCode=${expiredProvisionCode}`,
+      spDomain: 'node-0000.undefineds.co',
+      cloudIdentityUrl: 'https://id.undefineds.co',
+      cloudApiUrl: 'https://api.undefineds.co',
+      registeredAt: Date.now() - 86_400_000,
+    },
+  }
+  fs.writeFileSync(statePath, JSON.stringify(staleState), 'utf8')
+
+  let started = false
+  manager.start = async () => {
+    started = true
+    fs.writeFileSync(statePath, JSON.stringify({
+      ...staleState,
+      provisioning: {
+        ...staleState.provisioning,
+        serviceToken: 'service-token-new',
+        provisionCode: freshProvisionCode,
+        provisionUrl: `https://id.undefineds.co/.account/?provisionCode=${freshProvisionCode}`,
+      },
+    }), 'utf8')
+  }
+
+  const preparedUrl = await manager.prepareLocalAuthorizationUrl(
+    `https://node-0000.undefineds.co/.account/create-pod/?provisionCode=${expiredProvisionCode}&returnTo=linx`,
+  )
+  const parsed = new URL(preparedUrl)
+  assert.equal(started, true)
+  assert.equal(parsed.searchParams.get('provisionCode'), freshProvisionCode)
+  assert.equal(parsed.searchParams.get('returnTo'), 'linx')
+})
+
 test('XpodManager refreshes stale managed registration when configured SP domain changes', async (t) => {
   const originalLoad = Module._load
   const originalFetch = global.fetch
@@ -1012,6 +1121,8 @@ test('XpodManager runtime env path points to the generated local runtime env fil
   runtimeEnv.XPOD_ENV_PATH = runtimeEnvPath
 
   assert.equal(runtimeEnv.XPOD_ENV_PATH, path.join(tmpDir, 'xpod.runtime.env'))
+  assert.equal(runtimeEnv.XPOD_LOCAL_SETUP_PATH, path.join(tmpDir, 'xpod-cloud-registration.json'))
+  assert.equal(runtimeEnv.XPOD_PROVIDER_ID, 'local')
   assert.equal(fs.existsSync(runtimeEnvPath), true)
 })
 

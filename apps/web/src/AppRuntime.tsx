@@ -8,14 +8,10 @@ import { router } from './router'
 export function AppRuntime() {
   const isDesktopRuntime =
     typeof window !== 'undefined' && Boolean(window.xpodDesktop?.auth)
-  const isAuthCallback =
-    typeof window !== 'undefined'
-    && window.location.pathname === '/auth/callback'
-    && new URLSearchParams(window.location.search).has('code')
   const shouldRestoreInProvider =
     typeof window !== 'undefined'
     && window.location.protocol !== 'file:'
-    && (!isDesktopRuntime || isAuthCallback)
+    && !isDesktopRuntime
 
   return (
     <SolidSessionProvider

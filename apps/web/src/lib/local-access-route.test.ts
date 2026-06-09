@@ -58,6 +58,50 @@ describe('Local access route selection', () => {
     })
   })
 
+  it('preserves standalone space semantics for a same-node loopback route', async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.startsWith('http://localhost:5737/')) {
+        return jsonResponse({ contract: 'linx-local-onboarding/v1', baseUrl: 'http://localhost:5737/' })
+      }
+      throw new Error(`unexpected URL: ${url}`)
+    }) as unknown as typeof fetch
+    let nowCall = 0
+    const nowValues = [0, 4]
+
+    const selection = await resolveBestLocalAccessRoute({
+      canonicalPodUrl: 'http://localhost:5737/alice/',
+      storageProviderLabel: 'Standalone',
+      storageProviderUrl: 'http://localhost:5737/',
+      snapshot: {
+        state: 'ready',
+        spaceKind: 'standalone',
+        localUrl: 'http://localhost:5737/',
+        baseUrl: 'http://localhost:5737/',
+        publicUrl: null,
+        capabilities: null,
+        cloudIdentityUrl: null,
+        provisionCode: null,
+        provisionUrl: null,
+        nodeId: null,
+        message: null,
+        errorCode: null,
+        canRetry: true,
+        canOpenSettings: true,
+      },
+      fetchImpl,
+      now: () => nowValues[nowCall++] ?? 4,
+    })
+
+    expect(selection).toMatchObject({
+      canonicalBaseUrl: 'http://localhost:5737/',
+      canonicalPodUrl: 'http://localhost:5737/alice/',
+      accessBaseUrl: 'http://localhost:5737/',
+      accessPodUrl: 'http://localhost:5737/alice/',
+      kind: 'standalone',
+    })
+    expect(selection?.probes.map((probe) => probe.kind)).toEqual(['standalone'])
+  })
+
   it('falls back to LAN when localhost is not reachable', async () => {
     const fetchImpl = vi.fn(async (url: string) => {
       if (url.startsWith('http://localhost:5737/')) {

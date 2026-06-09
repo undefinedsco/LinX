@@ -33,6 +33,7 @@ vi.mock('../collections', () => ({
   useThreadIndex: (..._args: unknown[]) => mockUseThreadIndex(),
   useChatMutations: () => mockMutations,
   useChatInit: () => ({ db: null, isReady: true }),
+  useLinxDefaultSecretaryBootstrapSettling: () => false,
   isLinxDefaultSecretaryChat: (chat: { title?: string } | null | undefined) => chat?.title === 'AI Secretary',
 }))
 

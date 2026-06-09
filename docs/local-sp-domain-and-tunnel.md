@@ -9,7 +9,10 @@
 权威原则：
 
 - `cloud`：OIDC issuer 和 Storage Provider 都在 Cloud。
-- `local`：OIDC issuer 使用 Cloud，Storage Provider 运行在本机 xpod。
+- `local`：账号/WebID authority 是 Cloud；OIDC entry、consent/Pod picker
+  和 Storage Provider 必须以 selected Local SP 为作用域。实际 OIDC issuer
+  以 discovery/profile trust 为准，不能把 Cloud account authority 当成
+  Inrupt 的 `oidcIssuer`。
 - `standalone`：OIDC issuer 和 Storage Provider 都在本机 xpod。
 - `custom`：第三方 Solid provider 的 issuer/storage 一体入口，用户只填写一个 provider URL。
 - Local 的 canonical SP URL 必须稳定，并写入 Cloud WebID profile 的 `solid:storage`。
@@ -27,8 +30,9 @@
 
 ## Local + Cloud-managed Canonical Domain
 
-这是默认的 `local` 空间路径：Cloud issuer + Local storage。它不是一个新的
-LinX 内部模式，只是 Local canonical SP URL 的分配策略。
+这是默认的 `local` 空间路径：Cloud account authority + selected Local SP
+storage。它不是一个新的 LinX 内部模式，只是 Local canonical SP URL 的
+分配策略。
 
 流程：
 
@@ -37,8 +41,8 @@ LinX 选择 Local
   -> LinX 向 Cloud /provision/nodes 注册 Local node，请求 Cloud 分配 canonical 域名
   -> Cloud 返回 spDomain/publicUrl，例如 https://<device-node-id>.nodes.undefineds.co/
   -> LinX 启动 xpod，CSS_BASE_URL=https://<device-node-id>.nodes.undefineds.co/
-  -> 用户进入 Local SP facade 的账号 / OIDC 页面
-  -> Local SP facade 使用 Cloud 身份 authority，但 consent / Pod picker 按 Local SP scope 过滤
+  -> LinX 验证 Local SP 可达，并携带 provisionCode 进入 selected Local SP 账号/OIDC 页面
+  -> Local SP 可使用 Cloud account authority，但 consent / Pod picker 按 Local SP scope 过滤
   -> WebID profile 的 solid:storage 写到 Local SP Pod
 ```
 
@@ -62,8 +66,14 @@ LinX 选择 Local
 - managed `spDomain` 是 Cloud-managed 域名请求/续约条件，不是 user-managed
   `publicUrl`；LinX 可以把当前显式配置的预配 `node-0000.undefineds.co` 作为
   `spDomain` 发给 Cloud，但不能把历史记录里的同名字段当成用户自有域名或当前权威。
-- Local 登录必须从 selected SP facade 做 OIDC discovery。该 discovery 不可达时
-  必须展示 Local 错误并 fail closed，不能退回 Cloud OIDC 入口或 Cloud Pod。
+- Local 登录必须先验证 selected SP/canonical URL 可达并取得有效
+  `provisionCode`。验证失败时必须展示 Local 错误并 fail closed，不能退回
+  Cloud-only 登录或 Cloud Pod。
+- Local setup/provision 的长期状态只落在本机 setup JSON（当前为
+  `xpod-cloud-registration.json`）。`xpod-service.json` 只是当前进程快照，
+  `xpod.runtime.env` 只是启动输入；二者不能成为续约、canonical URL 或
+  provision token 的第二套权威。运行中的 xpod 续约 `provisionCode` 时也必须
+  写回同一份 setup JSON，LinX 只读取它并重新生成 runtime env。
 
 ## Local + User-managed Canonical Domain
 
@@ -98,8 +108,11 @@ Local 登录路径必须无配置：
 
 1. 用户选择 Local。
 2. LinX 自动启动 xpod，并向 Cloud provisioning 申请或续约 canonical URL。
-3. 服务 ready 后，登录面只展示 Local 已准备好、返回空间选择、继续登录。
-4. 用户继续登录；登录、注册、Pod 创建和 storage 绑定按
+3. 服务 ready 后，如果已有可用 session，直接进入 selected Local SP
+   consent；没有 session 时打开 selected Local SP 的账号/OIDC 页面。
+4. 登录面必须始终提供返回空间选择的入口；关闭嵌入窗口或返回不能把用户
+   留在不可操作的等待状态。
+5. 登录、注册、Pod 创建和 storage 绑定按
    `docs/login-identity-storage-routing-model.md` 执行。
 
 Local 网络配置属于设置 / Local 管理路径，不出现在登录路径。设置里可以展示：
@@ -126,9 +139,9 @@ Cloudflare 配置。
 
 ## 登录 / 注册边界
 
-本文不定义登录模型。Local flow 的 Cloud issuer、provision scope、
-consent/Pod picker 过滤、WebID profile `solid:storage` 绑定，以及 LinX
-登录后如何选择 Solid DB base，全部以
+本文不定义登录模型。Local flow 的 account authority、OIDC entry/issuer、
+provision scope、consent/Pod picker 过滤、WebID profile `solid:storage`
+绑定，以及 LinX 登录后如何选择 Solid DB base，全部以
 `docs/login-identity-storage-routing-model.md` 为准。
 
 ## 用户侧判断

@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 const XPOD_PACKAGE_NAME = '@undefineds.co/xpod';
 const DEFAULT_MIN_BUN_VERSION = '1.3.0';
 const DEFAULT_MIN_NODE_VERSION = '22.0.0';
+const DEFAULT_XPOD_PACKAGE_REGISTRY = 'https://registry.npmjs.org';
 
 export interface XpodLaunchResolutionOptions {
   appIsPackaged: boolean;
@@ -37,9 +38,11 @@ export type XpodLaunchProgressPhase =
   | 'source'
   | 'version'
   | 'check-bun'
+  | 'prepare-runtime-cache'
   | 'install-bun'
   | 'check-node'
   | 'install-npm'
+  | 'verify-runtime'
   | 'runtime-ready'
   | 'embedded';
 
@@ -88,7 +91,7 @@ export async function resolveManagedXpodLaunchTarget(
   const runtimeVersion = resolveXpodRuntimeVersion(options);
   reportProgress(options, {
     phase: 'version',
-    label: '准备 xpod runtime',
+    label: '确定 xpod runtime 版本',
     detail: `${XPOD_PACKAGE_NAME}@${runtimeVersion}`,
   });
   const managedErrors: Error[] = [];
@@ -298,7 +301,7 @@ function resolveXpodSourceRoot(options: XpodLaunchResolutionOptions): string | n
     }
   }
 
-  if (env.LINX_XPOD_DEV_SOURCE === '0') {
+  if (!isTruthyEnv(env.LINX_XPOD_DEV_SOURCE)) {
     return null;
   }
 
@@ -428,9 +431,9 @@ function ensureManagedPackageTarget(options: XpodManagedRuntimeOptions & {
 
   if (!existsSync(entryPath)) {
     reportProgress(options, {
-      phase: options.packageManager === 'bun' ? 'install-bun' : 'install-npm',
-      label: '下载 xpod runtime',
-      detail: `${XPOD_PACKAGE_NAME}@${options.runtimeVersion}`,
+      phase: 'prepare-runtime-cache',
+      label: '写入 xpod runtime 缓存配置',
+      detail: rootDir,
     });
     mkdirSync(rootDir, { recursive: true });
     writeFileSync(
@@ -445,8 +448,19 @@ function ensureManagedPackageTarget(options: XpodManagedRuntimeOptions & {
       'utf-8',
     );
 
+    reportProgress(options, {
+      phase: options.packageManager === 'bun' ? 'install-bun' : 'install-npm',
+      label: '安装 xpod runtime 包与生产依赖',
+      detail: `${options.packageManager} install · ${XPOD_PACKAGE_NAME}@${options.runtimeVersion}`,
+    });
     installManagedPackage(rootDir, options);
   }
+
+  reportProgress(options, {
+    phase: 'verify-runtime',
+    label: '校验 xpod runtime 启动能力',
+    detail: path.join(rootDir, 'node_modules', '@undefineds.co', 'xpod'),
+  });
 
   if (!existsSync(entryPath)) {
     throw new Error(`Managed xpod install did not create ${entryPath}`);
@@ -482,9 +496,12 @@ function installManagedPackage(
   },
 ): void {
   const spawn = options.spawnSync ?? spawnSync;
+  const packageRegistry = resolveXpodPackageRegistry(options.env ?? process.env);
   const env = {
     ...process.env,
     ...(options.env ?? {}),
+    npm_config_registry: packageRegistry,
+    NPM_CONFIG_REGISTRY: packageRegistry,
   };
 
   const result = options.packageManager === 'bun'
@@ -525,6 +542,16 @@ function installManagedPackage(
       .trim();
     throw new Error(`Unable to install ${XPOD_PACKAGE_NAME}@${options.runtimeVersion} with ${options.packageManager}.${output ? `\n${output}` : ''}`);
   }
+}
+
+function resolveXpodPackageRegistry(env: NodeJS.ProcessEnv): string {
+  const configured = env.LINX_XPOD_PACKAGE_REGISTRY?.trim();
+  return configured || DEFAULT_XPOD_PACKAGE_REGISTRY;
+}
+
+function isTruthyEnv(value: string | undefined): boolean {
+  const normalized = value?.trim().toLowerCase();
+  return normalized === '1' || normalized === 'true' || normalized === 'yes';
 }
 
 function reportProgress(options: XpodManagedRuntimeOptions, progress: XpodLaunchProgress): void {
@@ -688,17 +715,18 @@ function assertXpodLoginRuntimeCapabilities(
   const hasScopedPickWebIdHandler =
     existsSync(path.join(rootDir, 'src', 'identity', 'oidc', 'ScopedPickWebIdHandler.ts'))
     || existsSync(path.join(rootDir, 'dist', 'identity', 'oidc', 'ScopedPickWebIdHandler.js'));
-  const hasScopedPickerConfig = existsSync(path.join(rootDir, 'config', 'xpod.base.json'));
+  const hasProvisionAwareConfig =
+    hasRequiredProvisionConfig(rootDir, existsSync, readFileSync);
   const hasEscapedCssRuntimeConfigImports =
     hasCssRuntimeConfigImportRewrite(rootDir, existsSync, readFileSync);
 
-  if (hasScopedPickWebIdHandler && hasScopedPickerConfig && hasEscapedCssRuntimeConfigImports) {
+  if (hasScopedPickWebIdHandler && hasProvisionAwareConfig && hasEscapedCssRuntimeConfigImports) {
     return;
   }
 
   const missing = [
     !hasScopedPickWebIdHandler ? 'scoped WebID selection handler' : null,
-    !hasScopedPickerConfig ? 'scoped WebID picker config' : null,
+    !hasProvisionAwareConfig ? 'storage-scoped/provision-aware WebID and PodCreator config' : null,
     !hasEscapedCssRuntimeConfigImports ? 'escaped recursive CSS runtime config imports' : null,
   ].filter((item): item is string => Boolean(item));
 
@@ -708,6 +736,80 @@ function assertXpodLoginRuntimeCapabilities(
     'Local login would be able to expose Cloud Pods from the same IdP account or hang when CSS config paths contain spaces.',
     'Use a current xpod checkout via LINX_XPOD_ROOT or install an @undefineds.co/xpod version that contains these capabilities.',
   ].join('\n'));
+}
+
+function hasRequiredProvisionConfig(
+  rootDir: string,
+  existsSync: (filePath: string) => boolean,
+  readFileSync: (filePath: string, encoding: BufferEncoding) => string,
+): boolean {
+  const configPath = path.join(rootDir, 'config', 'xpod.base.json');
+  if (!existsSync(configPath)) {
+    return false;
+  }
+
+  try {
+    const config = JSON.parse(readFileSync(configPath, 'utf-8')) as unknown;
+    const scopedPickWebIdParams = findOverrideParameters(config, 'ScopedPickWebIdHandler');
+    const provisionPodCreatorParams = findOverrideParameters(config, 'ProvisionPodCreator');
+    return hasVariable(scopedPickWebIdParams, 'storageBaseUrl', 'urn:solid-server:default:variable:baseUrl')
+      && hasVariable(scopedPickWebIdParams, 'provisionBaseUrl', 'urn:solid-server:default:variable:oidcIssuer')
+      && hasVariable(provisionPodCreatorParams, 'provisionBaseUrl', 'urn:solid-server:default:variable:oidcIssuer')
+      && hasVariable(provisionPodCreatorParams, 'nodeId', 'urn:solid-server:default:variable:nodeId');
+  } catch {
+    return false;
+  }
+}
+
+function findOverrideParameters(value: unknown, componentType: string): Record<string, unknown> | null {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const match = findOverrideParameters(item, componentType);
+      if (match) {
+        return match;
+      }
+    }
+    return null;
+  }
+
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const overrideParameters = record.overrideParameters;
+  if (
+    overrideParameters
+    && typeof overrideParameters === 'object'
+    && !Array.isArray(overrideParameters)
+    && (overrideParameters as Record<string, unknown>)['@type'] === componentType
+  ) {
+    return overrideParameters as Record<string, unknown>;
+  }
+
+  for (const child of Object.values(record)) {
+    const match = findOverrideParameters(child, componentType);
+    if (match) {
+      return match;
+    }
+  }
+
+  return null;
+}
+
+function hasVariable(
+  params: Record<string, unknown> | null,
+  key: string,
+  variableId: string,
+): boolean {
+  const value = params?.[key];
+  return Boolean(
+    value
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    && (value as Record<string, unknown>)['@id'] === variableId
+    && (value as Record<string, unknown>)['@type'] === 'Variable',
+  );
 }
 
 function hasCssRuntimeConfigImportRewrite(

@@ -25,6 +25,7 @@ import {
   useChatMutations,
   useChatInit,
   useThreadIndex,
+  useLinxDefaultSecretaryBootstrapSettling,
 } from '../collections'
 import { resolveThreadChatId } from '@undefineds.co/models'
 import { useInboxItems } from '@/modules/inbox/collections'
@@ -596,9 +597,10 @@ export function ChatListPane(_props: ChatListPaneProps) {
 
   // Use new collection-based hooks
   const { data: rawChats, isLoading: isChatsLoading } = useChatList(search ? { search } : undefined)
+  const isDefaultSecretarySettling = useLinxDefaultSecretaryBootstrapSettling()
   const runtimeMode = isRuntimeSessionMode()
   const { data: threads = [] } = useThreadIndex({ enabled: runtimeMode })
-  const { data: inboxItems = [] } = useInboxItems('all')
+  const { data: inboxItems = [] } = useInboxItems('all', { enabled: !isDefaultSecretarySettling })
   const { data: runtimeSessions = [] } = useQuery({
     queryKey: ['runtime-sessions'],
     queryFn: () => listRuntimeSessions(),

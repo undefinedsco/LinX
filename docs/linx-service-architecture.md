@@ -84,6 +84,6 @@ The Web UI uses Service APIs only for startup/status:
 - No separate Service-only login model.
 - No hidden fallback from Local to Standalone.
 - No claim that `localhost:5737` is the selected Local storage URL when Local is
-  Cloud issuer + Local SP.
+  Cloud account authority + Local SP.
 - No provider picker that blindly lists Cloud Pods while the selected route is
   Local.

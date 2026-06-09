@@ -2,7 +2,7 @@ import { drizzle } from '@undefineds.co/drizzle-solid'
 import type { SolidDatabase } from '@undefineds.co/models'
 import { solidSchema } from '@undefineds.co/models'
 import { installBrowserSparqlEngine } from './browser-sparql-engine'
-import { initializeLinxPodStorage } from './pod-storage-bootstrap'
+import { initializeLinxPodStorage, type PodStorageBootstrapEvent } from './pod-storage-bootstrap'
 import {
   assertCurrentPodBaseUrl,
   assertIriBelongsToCurrentPod,
@@ -16,6 +16,8 @@ export interface CreateLinxSolidDatabaseOptions {
 }
 
 const DEFAULT_INIT_TIMEOUT_MS = 30_000
+const inFlightCreations = new Map<string, Promise<SolidDatabase>>()
+const MAX_BOOTSTRAP_EVENTS = 80
 
 /**
  * Creates a LinX-ready Solid database.
@@ -27,28 +29,94 @@ export async function createLinxSolidDatabase(
   session: unknown,
   options: CreateLinxSolidDatabaseOptions = {},
 ): Promise<SolidDatabase> {
+  const cacheKeys = resolveCreationCacheKeys(session, options.podUrl)
+  for (const cacheKey of cacheKeys) {
+    const inFlight = inFlightCreations.get(cacheKey)
+    if (inFlight) {
+      return await inFlight
+    }
+  }
+
+  const creation = createLinxSolidDatabaseUncached(session, options)
+  if (cacheKeys.length > 0) {
+    for (const cacheKey of cacheKeys) {
+      inFlightCreations.set(cacheKey, creation)
+    }
+    const clearInFlight = () => {
+      for (const cacheKey of cacheKeys) {
+        if (inFlightCreations.get(cacheKey) === creation) {
+          inFlightCreations.delete(cacheKey)
+        }
+      }
+    }
+    void creation.then(clearInFlight, clearInFlight)
+  }
+
+  return await creation
+}
+
+async function createLinxSolidDatabaseUncached(
+  session: unknown,
+  options: CreateLinxSolidDatabaseOptions,
+): Promise<SolidDatabase> {
+  const report = createBootstrapReporter()
+  report({ stage: 'database:create:start' })
   installBrowserSparqlEngine()
 
   const instance = drizzle(session as any, {
     disableInteropDiscovery: true,
     podUrl: normalizePodUrl(options.podUrl),
+    resourcePreparation: 'best-effort',
     schema: solidSchema,
   } as any) as unknown as SolidDatabase
+  report({ stage: 'database:create:done' })
 
   applyPodUrlOverride(instance, options.podUrl)
   assertExplicitPodUrlApplied(instance, options.podUrl, 'before Pod initialization')
+  report({
+    stage: 'database:pod-url:ready',
+    target: normalizePodUrl((instance as any).getDialect?.()?.getPodUrl?.()),
+  })
   installInsertWriteGuard(instance)
   installMutationWriteGuard(instance)
 
-  await withTimeout(
-    initializeLinxPodStorage(instance),
-    options.initTimeoutMs ?? DEFAULT_INIT_TIMEOUT_MS,
-    'Pod init timed out',
-  )
+  try {
+    await withTimeout(
+      initializeLinxPodStorage(instance, { onEvent: report }),
+      options.initTimeoutMs ?? DEFAULT_INIT_TIMEOUT_MS,
+      'Pod init timed out',
+    )
+  } catch (error) {
+    report({
+      stage: 'database:init:error',
+      error: error instanceof Error ? error.message : String(error),
+    })
+    throw error
+  }
 
   assertExplicitPodUrlApplied(instance, options.podUrl, 'after Pod initialization')
+  report({ stage: 'database:init:done' })
 
   return instance
+}
+
+function resolveCreationCacheKeys(session: unknown, podUrl?: string | null): string[] {
+  const info = (session as { info?: { sessionId?: string; webId?: string } } | null | undefined)?.info
+  const normalizedPodUrl = normalizePodUrl(podUrl)
+  const webId = typeof info?.webId === 'string' && info.webId.trim()
+    ? info.webId
+    : null
+
+  const keys: string[] = []
+  if (normalizedPodUrl) {
+    keys.push(`pod:${normalizedPodUrl}`)
+  }
+
+  if (webId) {
+    keys.push(`webid:${webId}:default`)
+  }
+
+  return keys
 }
 
 function installInsertWriteGuard(db: SolidDatabase): void {
@@ -225,4 +293,40 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
       clearTimeout(timeoutId)
     }
   })
+}
+
+function createBootstrapReporter(): (event: PodStorageBootstrapEvent) => void {
+  return (event) => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    const target = window as unknown as {
+      __SOLID_DB_BOOTSTRAP__?: {
+        status?: string
+        stage?: string
+        target?: string
+        error?: string
+        events?: Array<PodStorageBootstrapEvent & { at: string }>
+      }
+    }
+    const previousEvents = Array.isArray(target.__SOLID_DB_BOOTSTRAP__?.events)
+      ? target.__SOLID_DB_BOOTSTRAP__?.events ?? []
+      : []
+    const nextEvent = {
+      ...event,
+      at: new Date().toISOString(),
+    }
+    const events = [...previousEvents, nextEvent].slice(-MAX_BOOTSTRAP_EVENTS)
+    const isError = event.stage.endsWith(':error')
+    const isDone = event.stage === 'database:init:done'
+
+    target.__SOLID_DB_BOOTSTRAP__ = {
+      status: isError ? 'error' : isDone ? 'ready' : 'initializing',
+      stage: event.stage,
+      target: event.target,
+      error: event.error,
+      events,
+    }
+  }
 }

@@ -1,72 +1,114 @@
-import { describe, expect, it } from 'vitest'
-import { upsertStateRow, writeCollectionRow } from './direct-chat-records'
+import { describe, expect, it, vi } from 'vitest'
+import { agentTable, contactTable } from '@undefineds.co/models'
+import { createAgentContactRecords, ensureAgentContactRecords } from './direct-chat-records'
 
 describe('direct-chat-records', () => {
-  it('requires row.id or an explicit rowId for collection state writes', () => {
-    const state = new Map<string, Record<string, unknown> & { id: string }>()
+  it('preserves canonical Agent resource ids when repository create returns a short id', async () => {
+    const agentIri = 'https://pod.example/agents/__secretary__/profile/card#me'
+    const contactIri = 'https://pod.example/.data/contacts/__secretary__'
 
-    // @ts-expect-error Collection rows must carry a base-relative row.id.
-    expect(() => upsertStateRow(state, {
-      '@id': 'https://alice.example/.data/agents/__secretary__/index.ttl#this',
-      name: 'AI Secretary',
-    })).toThrow('collection row is missing row.id.')
-
-    upsertStateRow(state, {
-      '@id': 'https://alice.example/.data/agents/__secretary__/index.ttl#this',
-      id: '__secretary__/index.ttl#this',
-      name: 'AI Secretary',
-    })
-
-    expect(state.get('__secretary__/index.ttl#this')).toMatchObject({
-      id: '__secretary__/index.ttl#this',
-      name: 'AI Secretary',
-    })
-  })
-
-  it('refuses full RDF subject IRIs as collection row ids', () => {
-    const state = new Map<string, Record<string, unknown> & { id: string }>()
-
-    expect(() => upsertStateRow(state, {
-      id: 'https://alice.example/.data/agents/__secretary__/index.ttl#this',
-      name: 'AI Secretary',
-    })).toThrow('base-relative resource id')
-
-    const collection = {
-      _state: {
-        syncedData: new Map<string, Record<string, unknown> & { id: string }>(),
-        syncedKeys: new Set<string>(),
-      },
+    const db = {
+      insert: vi.fn((resource: unknown) => ({
+        values: (input: Record<string, unknown>) => ({
+          execute: vi.fn(async () => {
+            if (resource === agentTable) {
+              return [{
+                ...input,
+                id: '__secretary__',
+                '@id': agentIri,
+              }]
+            }
+            if (resource === contactTable) {
+              return [{
+                ...input,
+                id: '__secretary__',
+                '@id': contactIri,
+              }]
+            }
+            return [{ ...input }]
+          }),
+        }),
+      })),
+      resolveRowIri: vi.fn((resource: unknown, row: Record<string, unknown>) => {
+        if (resource === agentTable) {
+          expect(row.id).toBe('__secretary__/profile/card#me')
+          return agentIri
+        }
+        if (resource === contactTable) {
+          return contactIri
+        }
+        return null
+      }),
     }
 
-    expect(() => writeCollectionRow(collection, {
-      id: 'https://alice.example/.data/contacts/__secretary__.ttl',
+    const result = await createAgentContactRecords(db as any, {
+      agentId: '__secretary__',
+      contactId: '__secretary__',
       name: 'AI Secretary',
-    })).toThrow('base-relative resource id')
+      provider: 'undefineds',
+      model: 'undefineds/linx-lite',
+    })
+
+    expect(result.agentId).toBe('__secretary__/profile/card#me')
+    expect(result.agent.id).toBe('__secretary__/profile/card#me')
+    expect(result.contactId).toBe('__secretary__')
+    expect(result.contactUri).toBe(contactIri)
+    expect(result.contact.entityUri).toBe(agentIri)
   })
 
-  it('requires row.id or an explicit rowId for TanStack collection writes', () => {
-    const collection = {
-      _state: {
-        syncedData: new Map<string, Record<string, unknown> & { id: string }>(),
-        syncedKeys: new Set<string>(),
-      },
-      state: new Map<string, Record<string, unknown> & { id: string }>(),
+  it('ensures an Agent contact by base-relative ids before chat bootstrap', async () => {
+    const agentIri = 'https://pod.example/agents/__secretary__/profile/card#me'
+    const contactIri = 'https://pod.example/.data/contacts/__secretary__.ttl'
+    const insertedRows: Array<{ resource: unknown; row: Record<string, unknown> }> = []
+    const findById = vi.fn(async () => null)
+    const db = {
+      findById,
+      insert: vi.fn((resource: unknown) => ({
+        values: (input: Record<string, unknown>) => ({
+          execute: vi.fn(async () => {
+            insertedRows.push({ resource, row: input })
+            return [{ ...input }]
+          }),
+        }),
+      })),
+      resolveRowIri: vi.fn((resource: unknown, row: Record<string, unknown>) => {
+        if (resource === agentTable) {
+          expect(row.id).toBe('__secretary__/profile/card#me')
+          return agentIri
+        }
+        if (resource === contactTable) {
+          expect(row.id).toBe('__secretary__.ttl')
+          return contactIri
+        }
+        return null
+      }),
     }
 
-    // @ts-expect-error Collection rows must carry a base-relative row.id.
-    expect(() => writeCollectionRow(collection, {
-      '@id': 'https://alice.example/.data/contacts/__secretary__.ttl',
+    const result = await ensureAgentContactRecords(db as any, {
+      agentId: '__secretary__',
+      contactId: '__secretary__',
+      contactResourceId: '__secretary__.ttl',
       name: 'AI Secretary',
-    })).toThrow('collection row is missing row.id.')
+      provider: 'undefineds',
+      model: 'undefineds/linx-lite',
+    })
 
-    writeCollectionRow(collection, {
-      '@id': 'https://alice.example/.data/contacts/__secretary__.ttl',
+    expect(findById).toHaveBeenNthCalledWith(1, agentTable, '__secretary__/profile/card#me')
+    expect(findById).toHaveBeenNthCalledWith(2, contactTable, '__secretary__.ttl')
+    expect(insertedRows.map(({ resource }) => resource)).toEqual([agentTable, contactTable])
+    expect(insertedRows[0].row).toMatchObject({
+      id: '__secretary__/profile/card#me',
+      '@id': agentIri,
+      name: 'AI Secretary',
+    })
+    expect(insertedRows[1].row).toMatchObject({
       id: '__secretary__',
-      name: 'AI Secretary',
+      '@id': contactIri,
+      entity: agentIri,
     })
-
-    expect(collection._state.syncedData.get('__secretary__')).toMatchObject({
-      name: 'AI Secretary',
-    })
+    expect(result.agentId).toBe('__secretary__/profile/card#me')
+    expect(result.contactId).toBe('__secretary__')
+    expect(result.contactUri).toBe(contactIri)
+    expect(result.contact.entityUri).toBe(agentIri)
   })
 })

@@ -490,7 +490,14 @@ async function ensureSeedPod(fetchFn: typeof fetch, options: {
     const linked = resolveSeedPodFromAccount(refreshed, options.baseUrl, options.podName)
     if (linked) return linked
 
-    throw new Error(`Seeded Pod ${options.podName} already exists but is not linked to the seeded account`)
+    // xpod's seed path can create the Pod root before CSS account controls
+    // expose a WebID link. The local integration runtime is isolated, so use
+    // the deterministic seeded Pod URLs and let metadata initialization repair
+    // the profile/storage graph below.
+    return {
+      webId: new URL(`${options.podName}/profile/card#me`, options.baseUrl).href,
+      podUrl: new URL(`${options.podName}/`, options.baseUrl).href,
+    }
   }
 
   const text = await response.text().catch(() => '')
