@@ -148,8 +148,9 @@ rebuilds, packs, smoke-installs, publishes the npm package from GitHub Actions,
 and creates the GitHub Release. Publication should use npm Trusted Publishing
 (OIDC) for `undefinedsco/LinX` + workflow filename `cli-release.yml`; npm token
 publication can fail with `EOTP` when the token belongs to an account/package
-that requires interactive 2FA. Local machines do not need npm publish
-credentials for the normal release path.
+that requires interactive 2FA. Keep the publish step free of `NODE_AUTH_TOKEN`
+and token-backed npmrc setup so npm can use the GitHub OIDC identity. Local
+machines do not need npm publish credentials for the normal release path.
 
 ## Manual npm Registry Publish
 
