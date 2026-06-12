@@ -398,11 +398,13 @@ test('LinxPiPodMirror persists Pi session events into Pod tables', async (t) => 
   assert.equal(rowValues.some((row) => row.title === 'AI Secretary' && row.metadata?.kind === 'secretary-chat'), true)
   assert.equal(rowValues.some((row) => row.name === 'LinX CLI Assistant' && row.metadata?.kind === 'secretary-agent'), true)
   assert.equal(rowValues.some((row) => row.name === 'symphony' && row.loadPolicy === 'file-backed'), true)
+  assert.equal(rowValues.some((row) => row.name === 'xpod-cli' && row.loadPolicy === 'file-backed'), true)
   assert.equal(rowValues.some((row) => row.tool === 'linx' && row.status === 'completed'), true)
   assert.equal(rowValues.some((row) => row.content === 'persist through mirror'), true)
   assert.equal(writes.some((write) => write.table === 'chats' && write.iri.endsWith('/.data/chat/__secretary__/index.ttl#this')), true)
   assert.equal(writes.some((write) => write.table === 'agent' && write.iri.endsWith('/agents/__secretary__/')), true)
   assert.equal(writes.some((write) => write.table === 'skill' && write.iri.endsWith('/agents/__secretary__/skills/symphony/')), true)
+  assert.equal(writes.some((write) => write.table === 'skill' && write.iri.endsWith('/agents/__secretary__/skills/xpod-cli/')), true)
   assert.equal(writes.some((write) => write.table === 'session' && /\/\.data\/sessions\/2026\/04\/01\/[^/]+\.ttl$/.test(write.iri)), true)
   assert.equal(writes.filter((write) => write.table === 'session' && write.op === 'insert').length, 1)
   assert.equal(writes.filter((write) => write.table === 'session' && write.op === 'update').length, 1)
@@ -412,7 +414,7 @@ test('LinxPiPodMirror persists Pi session events into Pod tables', async (t) => 
   assert.equal(runtimeSessionRow.metadata.runtimeSnapshot.agent, '__secretary__')
   assert.equal(runtimeSessionRow.metadata.runtimeSnapshot.runtime.backend, 'linx')
   assert.equal(runtimeSessionRow.metadata.runtimeSnapshot.runtime.runtime, 'pi')
-  assert.equal(runtimeSessionRow.metadata.runtimeSnapshot.skills[0].name, 'symphony')
+  assert.deepEqual(runtimeSessionRow.metadata.runtimeSnapshot.skills.map((skill) => skill.name), ['symphony', 'xpod-cli'])
 })
 
 test('LinxPiPodMirror retries transient Pod projection failures before checkpointing', async (t) => {

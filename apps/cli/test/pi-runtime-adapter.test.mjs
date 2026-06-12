@@ -611,15 +611,15 @@ test('pi runtime adapter exposes bundled LinX skills during initial resource loa
   try {
     const skills = runtime.session.resourceLoader.getSkills().skills
     const skillNames = skills.map((skill) => skill.name).sort()
-    for (const name of ['symphony']) {
+    for (const name of ['symphony', 'xpod-cli']) {
       assert.ok(skillNames.includes(name), `expected bundled LinX product skill ${name}`)
     }
     for (const name of ['drizzle-solid', 'solid-modeling', 'xpod-componentsjs']) {
       assert.equal(skillNames.includes(name), false, `developer skill ${name} should not be exposed to Secretary`)
     }
     assert.ok(skillNames.includes('librarian'), 'expected pi-web-access skill to be loaded from the bundled package')
-    const linxSkills = skills.filter((skill) => skill.name === 'symphony')
-    assert.equal(linxSkills.length, 1)
+    const linxSkills = skills.filter((skill) => ['symphony', 'xpod-cli'].includes(skill.name))
+    assert.equal(linxSkills.length, 2)
     assert.equal(
       linxSkills.every((skill) => skill.sourceInfo?.source === '@undefineds.co/linx'),
       true,
@@ -630,6 +630,7 @@ test('pi runtime adapter exposes bundled LinX skills during initial resource loa
     )
     assert.match(runtime.session.systemPrompt, /<skill>/)
     assert.match(runtime.session.systemPrompt, /symphony/)
+    assert.match(runtime.session.systemPrompt, /xpod-cli/)
     assert.doesNotMatch(runtime.session.systemPrompt, /solid-modeling/)
     assert.doesNotMatch(runtime.session.systemPrompt, /xpod-componentsjs/)
   } finally {
@@ -638,7 +639,7 @@ test('pi runtime adapter exposes bundled LinX skills during initial resource loa
   }
 })
 
-test('pi runtime adapter loads installed xpod-cli market skill by default', async (t) => {
+test('pi runtime adapter prefers bundled xpod-cli skill over installed market skill', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
   t.after(() => cleanup())
 
@@ -705,11 +706,11 @@ description: Xpod CLI Market Skill
   try {
     assert.deepEqual(module.resolveInstalledMarketSkillDirs(), [skillDir])
     const skills = runtime.session.resourceLoader.getSkills().skills
-    const xpodSkill = skills.find((skill) => skill.name === 'xpod-cli')
-    assert.ok(xpodSkill, 'expected xpod-cli market skill to be loaded')
-    assert.equal(xpodSkill.sourceInfo?.source, 'xpod-cli@undefineds')
-    assert.equal(xpodSkill.sourceInfo?.origin, 'marketplace')
-    assert.equal(xpodSkill.sourceInfo?.version, '9.9.9')
+    const xpodSkills = skills.filter((skill) => skill.name === 'xpod-cli')
+    assert.equal(xpodSkills.length, 1, 'expected bundled xpod-cli to de-duplicate market fallback')
+    assert.equal(xpodSkills[0].sourceInfo?.source, '@undefineds.co/linx')
+    assert.equal(xpodSkills[0].sourceInfo?.origin, 'package')
+    assert.equal(xpodSkills[0].sourceInfo?.version, undefined)
   } finally {
     await runtime.dispose()
   }

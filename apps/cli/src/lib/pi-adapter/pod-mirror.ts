@@ -56,6 +56,7 @@ import {
 
 const PI_POLICY_VERSION = 'linx-pi-pod-mirror/v1'
 const PI_SYMPHONY_SKILL_ID = 'symphony'
+const PI_XPOD_CLI_SKILL_ID = 'xpod-cli'
 const POD_MIRROR_TRANSIENT_RETRY_DELAYS_MS = [250, 1_000, 2_500] as const
 
 interface PodMirrorRuntime {
@@ -93,6 +94,7 @@ interface PiResourceRefs {
   chatUri: string
   sessionUri: string
   symphonySkillUri: string
+  xpodCliSkillUri: string
   threadUri: string
 }
 
@@ -564,7 +566,7 @@ async function ensurePiConversationRoot(
     id: agentResource.buildId({ id: PI_AGENT_ID }),
     name: 'LinX CLI Assistant',
     root: refs.agentUri,
-    hasSkill: [refs.symphonySkillUri],
+    hasSkill: [refs.symphonySkillUri, refs.xpodCliSkillUri],
     provider: 'undefineds',
     backend: 'linx',
     runtime: 'pi',
@@ -582,7 +584,7 @@ async function ensurePiConversationRoot(
   }, {
     name: 'LinX CLI Assistant',
     root: refs.agentUri,
-    hasSkill: [refs.symphonySkillUri],
+    hasSkill: [refs.symphonySkillUri, refs.xpodCliSkillUri],
     provider: 'undefineds',
     backend: 'linx',
     runtime: 'pi',
@@ -626,6 +628,42 @@ async function ensurePiConversationRoot(
     displayName: 'Symphony',
     enabled: true,
     source: 'linx-cli:skills/symphony',
+    loadPolicy: 'file-backed',
+    metadata: {
+      file: 'SKILL.md',
+      scope: 'linx-cli',
+    },
+    updatedAt: now,
+  })
+
+  await upsertExactRecord(context.db, skillResource, {
+    id: PI_XPOD_CLI_SKILL_ID,
+    agent: refs.agentUri,
+  }, {
+    id: skillResource.buildId({
+      id: PI_XPOD_CLI_SKILL_ID,
+      agent: refs.agentUri,
+    }),
+    agent: refs.agentUri,
+    root: refs.xpodCliSkillUri,
+    name: PI_XPOD_CLI_SKILL_ID,
+    displayName: 'Xpod CLI',
+    enabled: true,
+    source: 'linx-cli:skills/xpod-cli',
+    loadPolicy: 'file-backed',
+    metadata: {
+      file: 'SKILL.md',
+      scope: 'linx-cli',
+    },
+    createdAt: now,
+    updatedAt: now,
+  } satisfies SkillInsert, {
+    agent: refs.agentUri,
+    root: refs.xpodCliSkillUri,
+    name: PI_XPOD_CLI_SKILL_ID,
+    displayName: 'Xpod CLI',
+    enabled: true,
+    source: 'linx-cli:skills/xpod-cli',
     loadPolicy: 'file-backed',
     metadata: {
       file: 'SKILL.md',
@@ -907,6 +945,10 @@ function resolvePiResourceRefsForSession(
       id: PI_SYMPHONY_SKILL_ID,
       agent: agentUri,
     }),
+    xpodCliSkillUri: skillResource.buildIri(context.webId, {
+      id: PI_XPOD_CLI_SKILL_ID,
+      agent: agentUri,
+    }),
     threadUri: threadResource.buildIri(context.webId, { id: secretaryThreadResourceId(sessionId) }),
   }
 }
@@ -1092,6 +1134,16 @@ function createPiRuntimeSnapshot(refs: PiResourceRefs, createdAt: Date): ReturnT
       }),
       name: PI_SYMPHONY_SKILL_ID,
       source: 'linx-cli:skills/symphony',
+      loadPolicy: 'file-backed',
+      enabled: true,
+    },
+    {
+      id: skillResource.buildId({
+        id: PI_XPOD_CLI_SKILL_ID,
+        agent: refs.agentUri,
+      }),
+      name: PI_XPOD_CLI_SKILL_ID,
+      source: 'linx-cli:skills/xpod-cli',
       loadPolicy: 'file-backed',
       enabled: true,
     },

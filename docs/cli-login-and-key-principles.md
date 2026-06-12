@@ -64,9 +64,12 @@ Inside an Agent Runtime, the runtime-held LinX/Solid session is also the
 authority source for Pod-facing tools.
 
 If a worker or Secretary runs `xpod` as a shell/tool command, that `xpod`
-process should use the Agent Runtime's inherited Pod authority. The user should
-not have to run a separate `xpod auth login`, and the command must not silently
-reuse unrelated app-local or legacy auth files from the host.
+process should use the Agent Runtime's inherited Pod authority. Outside the
+runtime bridge, all Solid apps share one local auth source:
+`$SOLID_HOME/auth/credentials.json`. Old xpod-local files such as
+`~/.xpod/config.json` and `~/.xpod/secrets.json` are not Solid auth sources; if
+only those files exist, `xpod` must report unauthenticated instead of treating
+them as login state.
 
 The runtime/tool bridge must keep login acquisition and tool consumption
 separate:

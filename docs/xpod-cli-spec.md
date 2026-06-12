@@ -131,8 +131,11 @@ xpod auth whoami [--json]
 Rules:
 
 - `xpod auth login` and `linx login` are two UIs over the same Solid auth
-  bootstrap store, `~/.solid/auth`. xpod must not create a separate Solid login
-  authority under `~/.xpod`.
+  bootstrap store, `$SOLID_HOME/auth/credentials.json` with `SOLID_HOME`
+  defaulting to `~/.solid`. xpod must not create a separate Solid login
+  authority under `~/.xpod`; old `~/.xpod/config.json` /
+  `~/.xpod/secrets.json` files are app-local stale files and do not count as
+  login state.
 - When `xpod` is invoked inside an Agent Runtime, inherited runtime authority
   is the preferred auth source. If the runtime has authority to access the
   user's Pod, `xpod` commands spawned by that runtime must be able to perform
@@ -140,14 +143,15 @@ Rules:
 - Inherited agent authority must be consumed as a runtime-provided capability,
   not as a new durable xpod account and not by asking the AI model to manage
   bearer tokens, refresh tokens, client secrets, cookies, or DPoP material.
-- Inherited authority takes precedence over app-local or legacy auth files so a
-  stale local xpod login cannot silently switch the acting identity inside an
-  agent session. JSON output should report `authSource: "agent_runtime"` when
-  this path is used.
+- Inherited authority takes precedence over the local shared Solid auth source
+  inside an agent session. JSON output should report
+  `authSource: "agent_runtime"` when this path is used. Old `.xpod` app-local
+  files are never an authority source.
 - If the runtime advertises inherited authority but xpod cannot consume it,
   commands must fail with `code: "auth_context_unavailable"` or
-  `code: "token_exchange_failed"` instead of falling back to unrelated local
-  credentials.
+  `code: "token_exchange_failed"` instead of falling back to another local
+  identity. Outside runtime authority, only `$SOLID_HOME/auth/credentials.json`
+  can authenticate the command.
 - In interactive mode, commands may explain how to log in when no session is
   available.
 - In `--json`, CI, or non-interactive mode, missing auth returns
@@ -393,9 +397,9 @@ should use the same output contract but are not RDF/model commands.
 - xpod does not define model classes, fields, relation names, status values,
   lifecycle semantics, or URI templates.
 - xpod does not run an AI consensus/modeling loop.
-- xpod does not own LinX product skills such as Symphony. The reusable
-  `xpod-cli` agent skill is maintained as an external marketplace skill and may
-  be referenced by LinX runtimes without copying its text into this repository.
+- xpod does not own LinX product skills such as Symphony. LinX may bundle a
+  user-facing `xpod-cli` skill for Secretary workflows; xpod repository
+  maintenance guidance stays in xpod's own docs/skills.
 - xpod does not replace `udfs` as the model/schema CLI.
 - xpod does not add approval/grant policy. Approval and grant objects are just
   descriptor-backed objects from xpod's perspective.

@@ -39,7 +39,7 @@ const UNDEFINEDS_AUTH_BRIDGE_ID = 'undefineds-cloud-oauth-bridge'
 export const LINX_RUNTIME_MANAGED_AUTH_KEY = 'linx-runtime-managed-auth'
 const LINX_PACKAGE_SOURCE = '@undefineds.co/linx'
 const LINX_WEB_ACCESS_PACKAGE_SOURCE = 'pi-web-access'
-const LINX_PRODUCT_SKILL_NAMES = new Set(['symphony'])
+const LINX_PRODUCT_SKILL_NAMES = new Set(['symphony', 'xpod-cli'])
 const MARKET_XPOD_CLI_SKILL_SOURCE = 'xpod-cli@undefineds'
 export const DEFAULT_LINX_PI_BASH_TIMEOUT_SECONDS = 15
 const DEFAULT_LINX_CLOUD_CONTEXT_WINDOW = 1_000_000
@@ -704,10 +704,24 @@ function withLinxSkillSourceInfo<T extends {
   marketSkillDirs: string[]
 }): T {
   const { bundledSkillsDir, marketSkillDirs } = options
+  const bundledProductSkillNames = new Set<string>()
+  if (bundledSkillsDir) {
+    for (const skill of base.skills) {
+      if (skill.filePath.startsWith(bundledSkillsDir) && LINX_PRODUCT_SKILL_NAMES.has(skill.name)) {
+        bundledProductSkillNames.add(skill.name)
+      }
+    }
+  }
   const filteredSkills = base.skills.filter((skill) => (
-    !bundledSkillsDir
-    || !skill.filePath.startsWith(bundledSkillsDir)
-    || LINX_PRODUCT_SKILL_NAMES.has(skill.name)
+    !(
+      bundledSkillsDir
+      && skill.filePath.startsWith(bundledSkillsDir)
+      && !LINX_PRODUCT_SKILL_NAMES.has(skill.name)
+    )
+    && !(
+      marketSkillDirs.some((dir) => skill.filePath.startsWith(dir))
+      && bundledProductSkillNames.has(skill.name)
+    )
   ))
 
   return {

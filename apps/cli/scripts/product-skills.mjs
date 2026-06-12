@@ -3,6 +3,7 @@ import { join } from 'node:path'
 
 export const PRODUCT_SKILL_NAMES = Object.freeze([
   'symphony',
+  'xpod-cli',
 ])
 
 export function copyProductSkills(sourceDir, targetDir) {
