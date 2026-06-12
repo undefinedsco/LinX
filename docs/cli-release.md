@@ -144,9 +144,12 @@ new release. Bump `apps/cli/package.json` to the next intended version, rebuild,
 smoke-install, commit that version change, then tag the new version.
 
 The `linx-v*` tag starts `.github/workflows/cli-release.yml`. That workflow
-rebuilds, packs, smoke-installs, publishes the npm package with the repository
-`NPM_TOKEN`, and creates the GitHub Release. Local machines do not need npm
-publish credentials for the normal release path.
+rebuilds, packs, smoke-installs, publishes the npm package from GitHub Actions,
+and creates the GitHub Release. Publication should use npm Trusted Publishing
+(OIDC) for `undefinedsco/LinX` + workflow filename `cli-release.yml`; npm token
+publication can fail with `EOTP` when the token belongs to an account/package
+that requires interactive 2FA. Local machines do not need npm publish
+credentials for the normal release path.
 
 ## Manual npm Registry Publish
 

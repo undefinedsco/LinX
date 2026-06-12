@@ -1,6 +1,6 @@
 {
   "name": "@undefineds.co/linx",
-  "version": "0.3.9",
+  "version": "0.3.10",
   "private": true,
   "type": "module",
   "bin": {
@@ -31,5 +31,10 @@
   "devDependencies": {
     "@types/node": "^24.10.1",
     "typescript": "^5.6.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/undefinedsco/LinX.git",
+    "directory": "apps/cli"
   }
 }

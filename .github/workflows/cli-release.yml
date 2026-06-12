@@ -73,7 +73,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           registry-url: https://registry.npmjs.org
 
       - name: Resolve release tarballs
@@ -87,12 +87,13 @@ jobs:
           test -f "$cli_tgz"
           echo "cli=./$cli_tgz" >> "$GITHUB_OUTPUT"
 
+      - name: Use current npm for OIDC publish
+        run: npm install -g npm@latest
+
       - name: Dry-run publish CLI
         run: npm publish --access public --dry-run "${{ steps.tarballs.outputs.cli }}"
 
       - name: Publish CLI
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --access public "${{ steps.tarballs.outputs.cli }}"
 
       - name: Create GitHub Release
