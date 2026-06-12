@@ -242,8 +242,8 @@ const scenarios = [
     checks: [
       ['symphony', /Portable runtimes such as Codex or Claude Code/],
       ['symphony', /local Markdown\/JSON control\s+records plus available tools/],
-      ['symphony', /LinX runtime may project[\s\S]*Pod\/xpod as authoritative state/],
-      ['symphony', /not as the core Symphony skill contract/],
+      ['symphony', /LinX runtime writes its own control records to modeled Pod\/RDF resources/],
+      ['symphony', /Reserve sync\/projection\s+language for external\/backend\/runtime facts/],
       ['concept', /LinX does not need these Pod\/xpod control-plane operations for the portable\s+skill path/],
       ['concept', /Declarative Runtime TODO/],
     ],

@@ -24,7 +24,7 @@ LinX 的群协作不建成“成员直接唤醒成员”的网状模型，而是
 - `Chat` 是长期可分组的协作空间，回答“和谁/什么在聊”。
 - `Thread` 是 Chat 下的一条具体工作现场和时间线，回答“这件事在哪里发生”。
 - `ThreadBus` 只负责 append / subscribe，不做语义判断。
-- `Reconciler` 是程序控制器，观察 Thread 里的 Message、ControlEvent、InboxItem、Delivery、schedule tick，去重、分类、应用 Thread policy，并生成或跳过 WakeJob。
+- `Reconciler` 是程序控制器，观察 Thread 里的 Message、ControlEvent、InboxNotification/control resource、Delivery、schedule tick，去重、分类、应用 Thread policy，并生成或跳过 WakeJob。
 - `Scheduler` 消费 WakeJob，处理锁、优先级、重试、超时，并启动对应 Agent Runtime / Run。
 - `Secretary` 是 Thread 内的重要 agent 角色，不是 Reconciler。Reconciler 可以唤醒 Secretary；Secretary 再做意图判断、审批代理、worker steering、验收或上升。
 
@@ -33,13 +33,15 @@ LinX 的群协作不建成“成员直接唤醒成员”的网状模型，而是
 默认流转：
 
 ```text
-Message / ControlEvent / InboxItem / Delivery appended to Thread
+Message / ControlEvent / InboxNotification or linked control resource / Delivery appended to Thread
   -> Reconciler classifies and applies Thread policy
   -> Scheduler starts selected Agent Runtime
   -> Agent output appends back to Thread
 ```
 
 `auto` 和 Symphony worker Thread 复用同一条路径：当 runtime 需要 input、approval 或 blocker 处理时，事件先落到当前 Thread；Reconciler 唤醒同 Thread 的 Secretary；Secretary 在 policy 内处理，处理不了才进入 Inbox/控制态等待用户或上级 Secretary。
+
+跨端上升不靠 worker 直接唤醒某个 Secretary。未解决的 approval/input/blocker 写入 Pod control resource，并通过 `/inbox/` 下的 `InboxNotification` envelope 通知所有活跃 client。每个 client 都可以刷新 Inbox 和展示 badge/toast；只有具备本地 Secretary runtime、符合 presence/policy、并成功通过 `leaseOwner` / `leaseExpiresAt` claim linked control resource 的 client 才能实际唤醒 Secretary 处理。claim 失败的 client 只展示，不处理。这样用户在 Web/Desktop/TUI 任一端活跃时都能看到请求，同时避免多个端重复回答 worker。
 
 `Delivery` 不是普通聊天、steer、approval/input request 的通用运输层。普通问题、回答、纠偏、checkpoint 都是 Message 或 ControlEvent。Delivery 只用于阶段边界：任务派发包、异步交接、最终报告、patch/artifact/evidence/risk package、需要验收的结果包。
 
@@ -389,7 +391,7 @@ Reconciler 根据 Thread policy 决定是否唤醒 Secretary、worker、reviewer
 runtime。不要先假设“谁直接唤醒谁”。
 
 Delivery 只在阶段/结果/异步交接边界创建。普通聊天、steer、approval/input
-request、worker checkpoint 都先写成 Message、ControlEvent、InboxItem、
+request、worker checkpoint 都先写成 Message、ControlEvent、InboxNotification、
 Approval/InputRequest、RunStep 或 Evidence。
 
 | 事件 | Pod / Thread 写入 | Delivery | Reconciler 默认动作 | Runtime projection | Inbox |
@@ -400,6 +402,7 @@ Approval/InputRequest、RunStep 或 Evidence。
 | Secretary 发送 steer / follow-up | 目标 Thread 写 `AssistantMessage` 或 `ControlEvent(type=steer|change.requested)` | 通常不创建；只有跨 Thread 异步交接才创建 | 唤醒目标 Thread 的 Secretary/worker/runtime | adapter 投影为 backend 支持的 `user`/`system`/input response | 越权、敏感或不可推导时进 |
 | backend 普通输出、工具状态、checkpoint | 工作 Thread 写 AssistantMessage、RuntimeEvent projection、RunStep 或 Evidence | 不创建，除非形成阶段报告 | 可触发巡检、状态更新或批处理，不必每条都唤醒 Secretary | backend 原生输出映射到 Pod/runtime event | 不进 |
 | backend 需要 approval/input | 工作 Thread 写 `ControlEvent(type=approval.required|input.required)` 和 Approval/InputRequest | 不创建 | 唤醒同 Thread Secretary 先处理 | backend 暂停等待 adapter 回填 | 创建或更新 Inbox；Secretary 已处理也要留 resolved 记录 |
+| 同 Thread Secretary 无法代理，需上升主 Secretary/用户 | 主/控制 Thread 写 `InboxNotification` envelope，并确保其 `as:object` 指向对应 `InputRequest` / `ApprovalRequest` / `ControlEvent`，真实 actor 保存在控制资源上 | 不创建 | Reconciler 基于 `inbox.notification.created/updated` 产生用户可见 Inbox 通知；只有 linked control resource claim/lease 成功的 client 才产生 Secretary 检查 Inbox 的调度机会；如果主 Secretary 正在回用户，则排队/合并到下一轮，不中途注入 | 作为 runtime/control context 投给 Secretary；若后端只能用 `user` role，必须标注 `Runtime control event, not a human user message` | pending，用户或主 Secretary 处理后更新为 resolved/rejected/expired |
 | Secretary 代 approval/input | 工作 Thread 写 AssistantMessage + DelegatedResponse，`maker = Secretary` | 不创建 | 更新 Inbox/Approval/InputRequest 状态，唤醒等待中的 Run | adapter 投影为 backend 协议要求的 response | policy 覆盖则 resolved；越界则 pending |
 | worker 提交阶段/最终结果 | 工作 Thread 写 `Delivery(type=report|result|artifact_package)` 和 `delivery.submitted` event | 创建 | 唤醒 Secretary/reviewer 做验收或排队批处理 | 不再投给原 runtime，除非验收后产生 follow-up | 失败、风险或需决策时进 |
 | 群聊 `@worker` 或显式指派 | 群 Thread 保留原 Message，另写 mention/dispatch control event | 只有形成任务包时创建 `task_dispatch` Delivery | 唤醒 Reconciler 选择目标 Thread/worker | 目标 runtime 只收到投影后的任务包/context pack | 非自动时可进待确认 |
@@ -422,6 +425,8 @@ Runtime 中：
 ```
 
 所以不要在 Pod 里把 Secretary 派发伪造成 `UserMessage`。如果 UI 想表达“Secretary 代表你说”，用 AssistantMessage 文案、policy 和 source 表达；如果 runtime 需要 `user` role，由 projection 层负责。
+
+同理，跨 Session 上升的 pending Inbox 也不是用户消息、系统消息或开发者消息。权威事实是 `InputRequest` / `ApprovalRequest` / `ControlEvent`；`InboxNotification` 只是指向它们的 envelope。Inbox 本身是用户可见、可被动查看和处理的入口；变更事件可以通知用户，也可以给 Secretary 一个检查 Inbox 的调度机会。`system/developer` 只放处理规则，payload 是 runtime/control context。只有受限 backend 需要 chat-role 兼容时，adapter 才能把 payload 放进 `user` role，并且必须显式标注它不是 human user message。
 
 ## 私聊
 
@@ -532,7 +537,7 @@ type Delivery = {
 - `派发`：父级 Secretary 创建或更新 Task/Thread；形成明确任务包时创建 `Delivery(type=task_dispatch)`。
 - `上升`：子级 worker/Secretary 发布 `Delivery(type=report|result)` 给父级 Thread，由父级 Reconciler 唤醒验收。
 - `steer/follow-up`：写 Message 或 ControlEvent；只有跨 Thread 异步交接且需要包化时才创建 Delivery。
-- `approval/input`：写 Approval/InputRequest + InboxItem；同 Thread Secretary 先处理。
+- `approval/input`：写 Approval/InputRequest + InboxNotification envelope；同 Thread Secretary 先处理。
 - `横向沟通`：默认经共同父级 Reconciler/Secretary 路由，不鼓励 worker 之间直接网状互发。
 
 ## Delivery 消费模型

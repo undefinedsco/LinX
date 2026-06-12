@@ -145,6 +145,15 @@ product or a third auto level.
   judge whether the message is ordinary chat, an Idea, a change to existing
   work, or delegable work.
 
+When `symphony on`, the visible input lane must remain Secretary-owned even
+while one or more workers are running. User input is appended to and rendered in
+the Secretary-facing Thread first, then Secretary may answer directly, update
+control state, or project a bounded steer/input to a worker Thread. Dispatching
+or entering a worker runtime must not steal the user's visible echo, make
+Secretary messages invisible, or silently route normal text to a worker. If
+Secretary forwards a message to a worker, the UI should show a visible
+acknowledgement or status transition in the Secretary Thread.
+
 When `symphony on`, Secretary analyzes objectives this way:
 
 - treat ordinary chat as `Message`, not as an `Issue`;
@@ -157,6 +166,14 @@ When `symphony on`, Secretary analyzes objectives this way:
 - create or update Issue / Delivery / Session records;
 - dispatch work to backend workers;
 - track worker status and escalate blockers back to Secretary or the user.
+
+That analysis is internal by default. User-facing replies in Symphony mode
+should look like normal chat unless a visible state change happened or the user
+asks for status/details. Do not print Symphony judgment, Issue/Task routing,
+worker selection, or report-style sections for ordinary chat or early idea
+exploration. When Secretary creates/updates work, hands off a task, hits a
+blocker, or needs a decision, summarize the visible outcome and next step
+briefly; `/symphony status` is the detailed inspection surface.
 
 `auto` and `symphony` are orthogonal:
 
@@ -191,8 +208,9 @@ When `symphony on`, Secretary analyzes objectives this way:
   user runs `linx --auto <objective>`.
 - Tests should reject old `/manual` and `/smart` command surfaces unless a new
   product decision explicitly changes this contract.
-- `/symphony status` must read Pod-projected worker state before local fallback.
-  Local archive is only no-Pod/offline recovery, not product truth.
+- `/symphony status` must read Pod-authoritative worker/control state. Local
+  archive is only portable no-Pod/offline recovery, not product truth or a
+  fallback when the LinX Pod control read fails.
 - Worker dispatch prompts and projected Task/Delivery/Run metadata must carry
   the worker Pod access boundary. The MVP default is report-only: workers get a
   task brief/control-record snapshot and return structured progress, blockers,

@@ -32,11 +32,18 @@ import {
   withSymphonyTaskStatus,
   writeSymphonyRunPlan,
 } from './symphony/archive.js'
-import { listOpenSymphonyIssuesFromPod, mirrorSymphonyProjectionJsonLdFromPod, persistSymphonyProjectionToPod } from './symphony/pod-projection.js'
+import {
+  listOpenSymphonyIssuesFromPod,
+  mirrorSymphonyProjectionJsonLdFromPod,
+  persistSymphonyControlStateToPod,
+  persistSymphonyProjectionToPod,
+} from './symphony/pod-projection.js'
 
 export interface SymphonyRuntime {
   runAutoMode(options: AutoRunOptions): Promise<number>
   listAutoModeSessions(): ReturnType<typeof listArchivedAutoModeSessions>
+  persistSymphonyControlStateToPod?: typeof persistSymphonyControlStateToPod
+  /** @deprecated Use persistSymphonyControlStateToPod for LinX-owned Symphony records. */
   persistSymphonyProjectionToPod?: typeof persistSymphonyProjectionToPod
   listOpenSymphonyIssuesFromPod?: typeof listOpenSymphonyIssuesFromPod
   mirrorSymphonyProjectionJsonLdFromPod?: typeof mirrorSymphonyProjectionJsonLdFromPod
@@ -79,7 +86,7 @@ interface SymphonyRunArgs {
 const defaultRuntime: SymphonyRuntime = {
   runAutoMode,
   listAutoModeSessions: listArchivedAutoModeSessions,
-  persistSymphonyProjectionToPod,
+  persistSymphonyControlStateToPod,
   listOpenSymphonyIssuesFromPod,
   mirrorSymphonyProjectionJsonLdFromPod,
 }
@@ -135,7 +142,7 @@ export async function runSymphony(
   const plan = await createSymphonyRunPlanForRuntime(planInput, runtime, argv.signal)
   throwIfAborted(argv.signal)
   const quietProjectionErrors = argv.quietProjectionErrors === true
-  let currentPlan = await persistSymphonyProjectionBestEffort(plan, 'planned', runtime, {
+  let currentPlan = await persistSymphonyControlState(plan, 'planned', runtime, {
     quiet: quietProjectionErrors,
     signal: argv.signal,
   })
@@ -149,7 +156,7 @@ export async function runSymphony(
         session: withSymphonySessionStatus(worker.session, 'planned', { dryRun: true }),
       })),
     })
-    currentPlan = await persistSymphonyProjectionBestEffort(currentPlan, 'planned', runtime, {
+    currentPlan = await persistSymphonyControlState(currentPlan, 'planned', runtime, {
       quiet: quietProjectionErrors,
       signal: argv.signal,
     })
@@ -161,7 +168,7 @@ export async function runSymphony(
 
   let issue = withSymphonyIssueStatus(currentPlan.issue, 'in_progress')
   currentPlan = { ...currentPlan, issue }
-  currentPlan = await persistSymphonyProjectionBestEffort(currentPlan, 'running', runtime, {
+  currentPlan = await persistSymphonyControlState(currentPlan, 'running', runtime, {
     quiet: quietProjectionErrors,
     signal: argv.signal,
   })
@@ -192,7 +199,7 @@ export async function runSymphony(
         signal: argv.signal,
         onWorkerDispatched: async (runningWorker) => {
           currentPlan = withUpdatedWorker(currentPlan, runningWorker)
-          currentPlan = await persistSymphonyProjectionBestEffort(currentPlan, 'running', runtime, {
+          currentPlan = await persistSymphonyControlState(currentPlan, 'running', runtime, {
             quiet: quietProjectionErrors,
             signal: argv.signal,
           })
@@ -215,7 +222,7 @@ export async function runSymphony(
       issue,
       workers: dispatchedWorkers,
     })
-    currentPlan = await persistSymphonyProjectionBestEffort(currentPlan, status, runtime, {
+    currentPlan = await persistSymphonyControlState(currentPlan, status, runtime, {
       quiet: quietProjectionErrors,
       signal: argv.signal,
     })
@@ -244,7 +251,7 @@ export async function runSymphony(
     } else {
       currentPlan = { ...currentPlan, issue }
     }
-    await persistSymphonyProjectionBestEffort(currentPlan, 'failed', runtime, {
+    await persistSymphonyControlState(currentPlan, 'failed', runtime, {
       quiet: quietProjectionErrors,
       signal: argv.signal,
     })
@@ -271,11 +278,12 @@ async function createSymphonyRunPlanForRuntime(
     if (isAbortError(error)) {
       throw error
     }
-    podIssues = null
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`Symphony Pod control read failed: ${message}`)
   }
 
   if (!podIssues) {
-    return createSymphonyRunPlanDraft(input)
+    throw new Error('No active Pod session; Symphony control-plane state must be read from Pod in LinX runtime.')
   }
 
   const plan = createRunPlan(input)
@@ -534,15 +542,18 @@ function createSymphonyWorkerStatusEvent(input: {
   }
 }
 
-async function persistSymphonyProjectionBestEffort(
+async function persistSymphonyControlState(
   plan: SymphonyRunPlan,
   stage: 'planned' | 'running' | 'completed' | 'failed',
   runtime: SymphonyRuntime,
   options: { quiet?: boolean; signal?: AbortSignal } = {},
 ): Promise<SymphonyRunPlan> {
   throwIfAborted(options.signal)
-  const persist = runtime.persistSymphonyProjectionToPod
+  const persist = runtime.persistSymphonyControlStateToPod ?? runtime.persistSymphonyProjectionToPod
   if (!persist) {
+    // Portable/no-Pod Symphony runtimes may use the local archive as their
+    // control record. LinX product runtime always provides a Pod writer and
+    // must not silently downgrade its own control-plane facts to local JSON.
     writeSymphonyRunPlan(plan)
     return plan
   }
@@ -551,26 +562,21 @@ async function persistSymphonyProjectionBestEffort(
     const result = await withAbortSignal(persist(plan, { stage }), options.signal)
     throwIfAborted(options.signal)
     if (!result) {
-      writeSymphonyRunPlan(plan)
-      return plan
+      throw new Error('No active Pod session; Symphony control-plane state must be written to Pod in LinX runtime.')
     }
-    await mirrorSymphonyProjectionBestEffort(result, runtime, options)
+    await mirrorSymphonyControlStateBestEffort(result, runtime, options)
     return result.plan
   } catch (error) {
     if (isAbortError(error)) {
       throw error
     }
     const message = error instanceof Error ? error.message : String(error)
-    if (!options.quiet) {
-      process.stderr.write(`[symphony] Pod projection skipped: ${message}\n`)
-    }
-    writeSymphonyRunPlan(plan)
-    return plan
+    throw new Error(`Symphony Pod write failed during ${stage}: ${message}`)
   }
 }
 
-async function mirrorSymphonyProjectionBestEffort(
-  result: Awaited<ReturnType<typeof persistSymphonyProjectionToPod>>,
+async function mirrorSymphonyControlStateBestEffort(
+  result: Awaited<ReturnType<typeof persistSymphonyControlStateToPod>>,
   runtime: SymphonyRuntime,
   options: { quiet?: boolean; signal?: AbortSignal } = {},
 ): Promise<void> {

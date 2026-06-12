@@ -1870,7 +1870,7 @@ function projectionStagesForStatus(status: SymphonySessionStatus): ProjectionSta
   return ['planned']
 }
 
-export async function persistSymphonyProjectionToPod(
+export async function persistSymphonyControlStateToPod(
   plan: SymphonyRunPlan,
   options: { stage?: ProjectionStage; runtime?: SymphonyPodProjectionRuntime } = {},
 ): Promise<SymphonyPodProjectionResult | null> {
@@ -1898,9 +1898,12 @@ export async function persistSymphonyProjectionToPod(
   const resources = collectSymphonyProjectionResources(podSession.webId, projected, stages)
 
   const latestMessage = buildStatusMessageRow(projected, podSession.webId, stage)
-  const projectionSync = createLinxPodSyncScope({ source: 'symphony-run-plan' })
-  await projectionSync.runOperations({
-    action: 'symphony.project',
+  const controlWrite = createLinxPodSyncScope({
+    source: 'symphony-control-state',
+    plane: 'control-plane',
+  })
+  await controlWrite.runOperations({
+    action: 'symphony.write',
     resourceBindings: {
       session: {
         uri: buildSymphonyControlSessionUri(podSession.webId, projected),
@@ -1941,6 +1944,9 @@ export async function persistSymphonyProjectionToPod(
     resources,
   }
 }
+
+/** @deprecated Use persistSymphonyControlStateToPod for LinX-owned Symphony records. */
+export const persistSymphonyProjectionToPod = persistSymphonyControlStateToPod
 
 export async function mirrorSymphonyProjectionJsonLdFromPod(
   projection: SymphonyPodProjectionResult,
@@ -2139,9 +2145,12 @@ export async function persistSymphonyIdeaToPod(
   }
 
   const db = runtime.createDb(podSession)
-  const ideaSync = createLinxPodSyncScope({ source: 'symphony-idea' })
-  await ideaSync.runOperations({
-    action: 'symphony.idea.project',
+  const ideaWrite = createLinxPodSyncScope({
+    source: 'symphony-control-state',
+    plane: 'control-plane',
+  })
+  await ideaWrite.runOperations({
+    action: 'symphony.idea.write',
     resourceBindings: {
       idea: {
         uri: ideaResource.buildIri(podSession.webId,  {

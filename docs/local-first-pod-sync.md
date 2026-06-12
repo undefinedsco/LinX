@@ -11,6 +11,8 @@ Local-first 是外部 runtime 和 shell 可用性策略，不是 LinX 产品事�
 - 外部 runtime 可以本地优先，以保持可升级、可替换和弱网可用。
 - LinX 自己定义的产品状态应进入 core 或共享数据面。
 - 本地 archive/cache 是恢复和可用性路径，不是第二个产品事实源。
+- 只有把外部 runtime / backend / 工具产生的事件纳入 LinX 共享状态时才称为
+  sync/projection。LinX 自己产生的控制面事实是 core/Pod write，不是 sync。
 
 简写：
 

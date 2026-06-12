@@ -809,6 +809,94 @@ test('symphony run preserves caller-provided delegation target chat and thread',
   assert.deepEqual(plan.session.target, target)
 })
 
+test('symphony product runtime fails Pod control writes instead of downgrading to local archive', async (t) => {
+  const originalHome = process.env.HOME
+  const root = mkdtempSync(join(tmpdir(), 'linx-symphony-pod-required-home-'))
+  process.env.HOME = root
+
+  t.after(() => {
+    if (originalHome === undefined) {
+      delete process.env.HOME
+    } else {
+      process.env.HOME = originalHome
+    }
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  const { module, cleanup } = await loadAutoModeModule('lib/symphony-command.ts')
+  t.after(() => cleanup())
+
+  let runCalled = false
+  await assert.rejects(
+    module.runSymphony({
+      objective: ['require', 'pod', 'control', 'write'],
+      backend: 'codex',
+      auto: true,
+      dryRun: true,
+      cwd: root,
+      print: false,
+    }, {
+      async runAutoMode() {
+        runCalled = true
+        return 0
+      },
+      listAutoModeSessions() {
+        return []
+      },
+      async persistSymphonyProjectionToPod() {
+        throw new Error('pod unavailable')
+      },
+    }),
+    /Symphony Pod write failed during planned: pod unavailable/,
+  )
+
+  assert.equal(runCalled, false)
+  assert.equal(existsSync(join(root, '.solid', 'apps', 'linx', 'symphony', 'issues')), false)
+  assert.equal(existsSync(join(root, '.solid', 'apps', 'linx', 'symphony', 'sessions')), false)
+})
+
+test('symphony product runtime treats missing Pod session as blocked control state', async (t) => {
+  const originalHome = process.env.HOME
+  const root = mkdtempSync(join(tmpdir(), 'linx-symphony-no-pod-session-home-'))
+  process.env.HOME = root
+
+  t.after(() => {
+    if (originalHome === undefined) {
+      delete process.env.HOME
+    } else {
+      process.env.HOME = originalHome
+    }
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  const { module, cleanup } = await loadAutoModeModule('lib/symphony-command.ts')
+  t.after(() => cleanup())
+
+  await assert.rejects(
+    module.runSymphony({
+      objective: ['require', 'pod', 'session'],
+      backend: 'codex',
+      auto: true,
+      dryRun: true,
+      cwd: root,
+      print: false,
+    }, {
+      async runAutoMode() {
+        throw new Error('dry-run must not launch auto-mode')
+      },
+      listAutoModeSessions() {
+        return []
+      },
+      async persistSymphonyProjectionToPod() {
+        return null
+      },
+    }),
+    /No active Pod session; Symphony control-plane state must be written to Pod/,
+  )
+
+  assert.equal(existsSync(join(root, '.solid', 'apps', 'linx', 'symphony', 'issues')), false)
+})
+
 test('symphony non-dry-run dispatches through auto-mode ACP and archives completion', async (t) => {
   const originalHome = process.env.HOME
   const root = mkdtempSync(join(tmpdir(), 'linx-symphony-integration-home-'))

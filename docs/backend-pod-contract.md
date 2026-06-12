@@ -26,8 +26,11 @@ These principles are the review baseline for auto-mode work:
   the availability path; Pod sync is the durability/convergence path.
 - Agent Runtime authority applies to its tools. When an agent session has a
 usable Solid/Pod session, child tools such as `xpod` must consume that
-runtime-provided authority instead of requiring their own login or reading an
-unrelated app-local or legacy auth file.
+runtime-provided authority instead of requiring their own login. Outside that
+runtime bridge, all Solid apps authenticate from the same
+`$SOLID_HOME/auth/credentials.json`; old `~/.xpod/config.json` /
+`~/.xpod/secrets.json` files are not Solid auth sources and do not make xpod
+logged in.
 - Auth acquisition can differ, but post-auth data access cannot. OIDC browser
   auth, client credentials, and native backend auth may produce sessions or
   injected environment differently; after that boundary, credential lookup,
@@ -81,8 +84,10 @@ Use these invariants when reviewing an auto-mode design or implementation:
   the runtime's tool bridge. The command must not silently switch to stale local
   xpod credentials just because those files exist on the host.
 - The local archive is a cache plus recovery log, not a competing source of
-  truth. It may unblock work while Pod is unavailable, but any state with
-  cross-surface meaning must be syncable to Pod.
+  truth. External backend/runtime events may be archived first for availability
+  and then synced/projected into Pod. LinX-owned control-plane facts such as
+  Symphony Issue/Task/Run/Delivery state are product writes and must go to Pod;
+  local JSON is only a portable no-Pod record, mirror, or recovery artifact.
 - Exact resource identity beats scanning. When LinX already has a resource URI,
   it should do exact lookup/update/delete. Bounded listing is reserved for
   discovery surfaces such as inbox views.
@@ -156,15 +161,21 @@ must be the same.
 
 ## Local-First Persistence
 
-Interactive backend work is local-first.
+Interactive backend work is local-first. LinX-owned control-plane writes are
+Pod-first.
 
 - The local runtime must be able to continue even when Pod sync is slow or
   temporarily failing.
 - Local archive/cache writes happen first so the active terminal session is not
-  blocked by network or Pod errors.
-- Pod sync is then attempted through shared models/repositories.
+  blocked by network or Pod errors when the source is an external backend or
+  runtime event.
+- Pod sync is then attempted through shared models/repositories for external
+  backend/runtime events.
 - Pod sync failure should surface as a warning or retryable sync state, not as a
   reason to discard the local turn or block the backend from continuing.
+- For LinX-authored control-plane state, including Symphony's own
+  Issue/Task/Run/Delivery/Idea decisions, Pod write failure is a control-state
+  blocker, not permission to create a second authoritative local schema.
 
 Local-first does not mean local-only. Durable product state must converge to
 Pod when connectivity and auth allow it.
@@ -254,9 +265,19 @@ complete until it proves:
 
 - Each supported `--backend` launches the expected backend command.
 - Pod credential/config lookup works for each supported backend.
+- ACP event normalization is covered by deterministic fake-backend tests across
+  all supported ACP backends. This is the default CI path and must not depend on
+  local developer credentials.
+- Real ACP backend smoke is explicit and environment-gated. When
+  `LINX_LIVE_ACP_SMOKE=1` or `yarn test:cli:live-acp` is used, the smoke suite
+  detects the current machine, runs only backends with a command plus usable
+  local configuration markers, and skips the rest with a diagnostic reason.
 - Native backend auth paths remain reachable when configured.
-- Local archive/cache still works without Pod write success.
-- Pod sync can write/read the critical resources listed above through shared
-  models.
+- External backend/runtime local archive/cache still works without Pod sync
+  success.
+- LinX-owned control-plane writes surface Pod failures instead of silently
+  becoming local product truth.
+- Pod sync/control writes can write/read the critical resources listed above
+  through shared models.
 - Approval and grant flows use exact resource lookup when the resource URI is
   known, and bounded listing only for inbox-style discovery.

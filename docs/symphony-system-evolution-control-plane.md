@@ -45,15 +45,20 @@ This does not mean the portable Symphony runtime module owns Pod IO.
 prompt contract: it may create DTOs, URIs, projections, and worker prompts, but
 must not call Pod APIs, shell out to `xpod`, import `drizzle-solid`, or decide
 resource paths. LinX product code persists those DTOs through shared
-models/repositories. Portable agents or scripts may use `xpod` CLI commands
+models/repositories. LinX-owned control-plane records are Pod writes, not
+sync/projection; use sync/projection wording only when external backend/runtime
+facts are translated into LinX control records or when a local mirror is pulled
+from Pod. Portable agents or scripts may use `xpod` CLI commands
 when that is the available tool surface, but that is an adapter/tool choice, not
 the core Symphony contract.
 
 When LinX Agent Runtime gives a Secretary or worker Pod authority, that
 authority must extend to Pod-facing tools invoked inside the same runtime.
 `xpod` should consume the runtime-provided authority bridge and report the
-effective identity; it should not require a separate `xpod auth login` and
-should not fall back to unrelated app-local or legacy auth files.
+effective identity. Outside that bridge, every Solid app uses the same local
+Solid auth source, `$SOLID_HOME/auth/credentials.json`; old
+`~/.xpod/config.json` / `~/.xpod/secrets.json` files are not Solid auth sources,
+so their presence alone means unauthenticated.
 
 Local files under `$LINX_HOME/symphony` are not a second product model. By
 default, `LINX_HOME` resolves to `$SOLID_HOME/apps/linx`, and `SOLID_HOME`
@@ -578,7 +583,7 @@ that reference them.
 The default event flow is:
 
 ```text
-Message / ControlEvent / Delivery / InboxItem appended to Thread
+Message / ControlEvent / Delivery / InboxNotification or linked control resource appended to Thread
   -> Reconciler observes it
   -> Reconciler creates or skips a WakeJob according to Thread policy
   -> Scheduler runs the selected Agent Runtime
@@ -612,6 +617,7 @@ auto
   input/approval/blocker in this Thread -> same-Thread Secretary
 
 symphony
+  visible user message -> Secretary-facing Thread first
   issue/task/run/delivery events -> same-Thread Secretary or assigned worker
 
 open_group
@@ -621,6 +627,14 @@ review
   delivery.submitted -> Secretary/reviewer
 ```
 
+The selected chat peer and the active worker runtime are not the same state.
+When the selected peer is Secretary, the UI must append and render the user's
+message in the Secretary-facing Thread before any worker projection happens. A
+worker Run may receive a Secretary-authored steer or projected input, but it must
+not consume the user's visible input lane or hide the Secretary response path.
+This prevents the split-brain failure where entering a worker makes subsequent
+Secretary conversation appear to have no echo.
+
 `auto` is therefore not a separate Symphony protocol. A Symphony worker Thread
 can be in auto mode just like a normal backend Thread: when the worker needs
 input or approval, the same-Thread Secretary handles it first. If the Secretary
@@ -629,21 +643,77 @@ continues. If not, the request becomes pending for a human or higher-level
 Secretary through the Inbox/control surface.
 
 Inbox is the ledger for input and approval requests, not an alternate chat
-route. Every input/approval request should have an Inbox/control record whether
+route. Every input/approval request should have a control resource plus an InboxNotification envelope whether
 it is still pending or already handled by Secretary. This gives CLI, Web, and
 future clients the same audit surface:
 
 ```text
 worker/runtime needs input or approval
-  -> InboxItem(status=pending or handling) linked to Thread/Run/source Message
+  -> ApprovalRequest/InputRequest/control resource (status=pending or handling) linked to Thread/Run/source Message, plus an InboxNotification envelope
   -> same-Thread Secretary may resolve it
-  -> InboxItem(status=resolved/rejected/expired) records decision and actor
+  -> the control resource (status=resolved/rejected/expired) records decision and actor; the InboxNotification remains only the envelope
 ```
 
 If the user is actively talking with a main Secretary, that Secretary may bring
-pending Inbox items into the current conversation. If the user is not active,
+pending control resources surfaced through Inbox into the current conversation. If the user is not active,
 pending items can remain visible in Inbox without interrupting the user unless
 urgency, expiry, or risk policy says otherwise.
+
+A pending control resource surfaced through Inbox is control data, not authored chat. When a worker Thread
+cannot resolve input, approval, or a blocker locally, the normal path is to
+create or update the authoritative `InputRequest` /
+`ApprovalRequest` / `ControlEvent` plus an `InboxNotification` envelope with its real runtime, worker, or Secretary
+actor. The Inbox remains the passive, user-visible place to inspect and act on
+the request. It must not be persisted as a user-authored `Message`.
+
+InboxNotification envelope changes are distributed through Pod subscription/watch, not through a
+member directly waking another member. The durable write is the source of truth;
+the subscription event is only a small invalidation/notification envelope:
+
+```text
+ApprovalRequest / InputRequest / control resource written to Pod, with an InboxNotification envelope
+  -> Pod subscription/watch notifies active clients
+  -> each client refreshes Inbox and reads the linked control resource from Pod
+  -> every client may update badge/toast/list UI
+  -> only an agent-capable client that acquires the linked control-resource lease may wake Secretary
+```
+
+This is a client-side reconciliation boundary. Multiple Web/Desktop/TUI/runtime
+clients can be active at the same time and the user may not be interacting with
+the client where the worker is running. Therefore subscribe must fan out to all
+active clients, while handling must be serialized by a claim/lease on the
+Inbox/control item. A client that loses the claim stays display-only. A client
+that wins the claim may schedule a local Secretary Inbox-check WakeJob and
+record `leaseOwner` and `leaseExpiresAt` on the control item. Claim/lease state is durable control metadata on
+the linked control resource; focus, tab visibility, runtime locks, and local
+Scheduler queues remain runtime-local presence state.
+
+The subscription payload should stay small: event id/type, InboxNotification IRI, linked control resource IRI,
+source Thread/Run/Task references when already known, priority, and a short
+summary. Full details must be read by URI through the shared Pod/ORM path before
+Secretary reasons about the request. This avoids prompt bloat and prevents a
+notification envelope from becoming a second source of truth.
+
+When this control item is projected into a Secretary LLM turn, split the
+projection:
+
+- `system` / `developer` messages carry only stable handling rules;
+- the pending item payload remains runtime/control context with source Thread,
+  Run, Task, and request references;
+- if a backend only supports chat roles and forces the payload into a `user`
+  slot, prefix it as `Runtime control event, not a human user message`.
+
+If the main Secretary is already generating a reply for the user, the winning
+client queues or coalesces the Secretary Inbox-check job. It should not inject
+the item mid-turn. Secretary's normal habit is to check Inbox/context when
+active; if the user is currently talking in the main Thread, Secretary may
+naturally mention the pending item in that conversation. If the user is not
+active, the Inbox notification remains visible without forcing an interruption.
+
+Client activity is not inferred by the LLM. Runtime/client presence decides it:
+user focus, recent activity, current Thread, available Secretary runtime,
+generation lock, and lease expiry. The LLM receives only the resulting runtime
+control context after a client has decided to act and acquired the claim.
 
 Delivery is a stage boundary, not the general message transport. Ordinary
 questions, answers, steering, and checkpoints are Messages. A Delivery packages
@@ -792,7 +862,7 @@ Completion is not a worker saying "done". Evidence may include:
 - runtime logs and reproduced behavior;
 - review findings and fixes;
 - user validation;
-- Pod projections, audit entries, reports, or delivery records;
+- Pod control-state writes/reads, audit entries, reports, or delivery records;
 - commit messages and release notes.
 
 After execution, Symphony should update the system situation with what changed,
@@ -847,8 +917,9 @@ These explain why Symphony performed well or poorly:
 - worker Implementation Change Request count and reason: infeasible, too broad,
   wrong assumption, missing authority, missing dependency, unsafe, or blocked.
 - run outcome counts: planned, running, completed, failed, cancelled, retried.
-- projection health: Pod projection succeeded, degraded to local cache, or
-  failed with recovery pending.
+- Pod control-state health: Pod writes/reads succeeded, are unavailable, or
+  need explicit recovery. Do not treat local cache as authoritative product
+  state for LinX-owned control records.
 - evidence gap count by kind: no test, no integration run, no runtime log, no
   user validation, no migration note, or stale doc.
 - privacy/authority escalations: how often target visibility, credentials,
@@ -878,11 +949,12 @@ In LinX, this maps to existing product surfaces:
   `symphony.change_requested`, `symphony.blocked`, `symphony.completed`,
   `symphony.reopened`, and `symphony.release_boundary_changed`.
 - `Run` and `RunStep` record runtime attempt facts, retries, failures, tool
-  events, and projection health.
+  events, runtime projections, and Pod control-state health.
 - `Delivery` records proposed result packages and whether they were accepted,
   rejected, superseded, or still reviewing.
 - `Evidence` records proof and findings. It should point to tests, logs, diffs,
-  reports, user validation, Pod projection, or review findings.
+  reports, user validation, Pod control-state writes/reads, runtime projections,
+  or review findings.
 - `Report/Review` records the closure summary and the metric-relevant outcome:
   accepted, rejected, reopened, partial release, deferred, blocked, or changed
   request.
@@ -890,8 +962,8 @@ In LinX, this maps to existing product surfaces:
 For Codex or Claude Code portable use, the same chain can be file-backed:
 append events to the local control record or adjacent JSONL, write worker
 evidence into the assigned work record, and write the final report with metric
-facts. LinX can later project those records into Pod without changing the
-portable skill semantics.
+facts. When those records are imported into LinX product state, that import is
+a sync/projection path because the source was an external portable runtime.
 
 ### Event Shape
 
@@ -941,7 +1013,7 @@ Symphony is doing poorly when:
   wrong;
 - steering appears in chat but not in the control record;
 - release boundaries are unclear or partial work is presented as complete;
-- Pod projection failures hide shared-state updates without visible recovery.
+- Pod control-state failures hide shared-state updates without visible recovery.
 
 ## Runtime Portability
 

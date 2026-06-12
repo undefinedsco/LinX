@@ -29,6 +29,40 @@ System Situation
   -> updated System Situation
 ```
 
+## Recording Trigger
+
+Do not wait for the user to say "record" or "summarize." Every conversation
+produces signals—Idea, Design Decision, Research Finding, Meta-Rule,
+Product Direction, or Project Context. The Secretary must decide when
+these signals should become durable control records.
+
+Judgment rules:
+
+- A clear design conclusion has been reached ("放弃长链条归因 → 版本记录").
+  → Create or update the relevant control record. Ask for the user only
+    when authority, target, or type classification is ambiguous.
+- The user has corrected the Secretary's behavior ("你应该自己判断什么时候记录").
+  → This is a Meta-Rule. Record it as one.
+- A research finding with external evidence has been cited ("GraphGPO 困于单任务轨迹").
+  → Record it with provenance.
+- A new candidate work item or architectural direction has been identified.
+  → Record it as an Idea first. Promote to Issue only when acceptance, scope,
+    and compatibility impact are clear.
+- The user explicitly asks to record ("记录一下").
+  → This is the fallback, not the primary trigger. The Secretary should have
+    already proposed recording before the user asks.
+
+Do not create a control record for:
+
+- Ordinary back-and-forth that doesn't change system state.
+- Transient task instructions ("帮我查一下").
+- Social chatter or off-topic remarks.
+
+When in doubt, propose: "这个要落到控制记录里吗？" and show the
+classification (Idea / Decision / Finding / Meta-Rule). The user confirms
+or corrects—once. Do not ask again for the same kind of signal in the same
+session unless the user's intent genuinely changed.
+
 ## Runtime Boundary
 
 Portable runtimes such as Codex or Claude Code use local Markdown/JSON control
@@ -40,9 +74,11 @@ paths, RDF predicates, URI templates, or LinX-specific synchronization mechanics
 in this skill; they belong in LinX models/adapters, not as the core Symphony
 skill contract.
 
-LinX runtime may project the same control records into Pod/xpod as authoritative state
-for shared state recovery and cross-client visibility, but that projection is an
-implementation detail, not as the core Symphony skill contract.
+LinX runtime writes its own control records to modeled Pod/RDF resources as the
+authoritative product state for shared recovery and cross-client visibility.
+Do not describe those writes as sync or projection. Reserve sync/projection
+language for external/backend/runtime facts that are being translated into the
+LinX control plane, or for local mirrors materialized from Pod.
 
 The portable Symphony runtime contract is storage-agnostic. It may produce
 control records, work splits, prompts, and reports, but it does not own Pod IO.
@@ -53,9 +89,11 @@ tool surface, not something the core Symphony skill or runtime module requires.
 In LinX Agent Runtime, Pod authority belongs to the runtime session and should
 be inherited by tools launched inside that session. If a Secretary or worker has
 Pod access, `xpod` commands it runs should use the runtime-provided authority
-bridge, not a separate `xpod auth login` or stale app-local/legacy auth files.
-Never ask the model to handle raw tokens, refresh tokens, client secrets,
-cookies, or DPoP material directly.
+bridge. Outside that bridge, all Solid apps share the same local auth source
+`$SOLID_HOME/auth/credentials.json`; old `~/.xpod/config.json` and
+`~/.xpod/secrets.json` files are not Solid auth sources, and their presence
+alone must be treated as unauthenticated. Never ask the model to handle raw
+tokens, refresh tokens, client secrets, cookies, or DPoP material directly.
 
 ## Agent Config And Skill Resources
 
@@ -251,7 +289,7 @@ Run/RunStep, progress, blockers, Evidence, Delivery reports, and Implementation
 Change Requests. Workers do not directly close Issues, change acceptance,
 rewrite Spec truth, change roadmap/release boundaries, or create grants.
 Structured Pod data must be read/written via shared models/ORM; do not invent
-raw TTL patches or Pod paths inside the skill. LinX product projection should
+raw TTL patches or Pod paths inside the skill. LinX product Pod records should
 expose this worker access policy on assigned Task/Delivery/Run/session metadata
 so UI, Secretary, and runtime adapters enforce the same boundary instead of
 relying on prompt text alone.
@@ -476,7 +514,7 @@ wakeups:
 
 - Chat is the long-lived groupable collaboration surface. Thread is the
   concrete observable work site under a Chat.
-- Messages, control events, Delivery submissions, Inbox items, approvals, and
+- Messages, control events, Delivery submissions, InboxNotification envelopes, linked approvals/input requests, and
   schedule ticks are appended to a Thread first.
 - A Reconciler observes Thread state, classifies and deduplicates events,
   applies Thread policy, and creates or skips WakeJobs.
@@ -489,9 +527,26 @@ wakeups:
   `delivery.submitted`, but those events still go through Reconciler/Scheduler.
 - `auto` and Symphony worker Threads use the same path: input, approval, or
   blocker events wake the same-Thread Secretary first; unresolved requests stay
-  pending in Inbox/control state for the human or higher-level Secretary.
+  pending in a linked control resource surfaced through Inbox for the human or higher-level Secretary.
 - Inbox is the ledger for input and approval lifecycle, including requests that
-  Secretary resolved automatically.
+  Secretary resolved automatically. It is also the user-visible passive surface
+  for pending approval/input: the user can inspect and act on it directly
+  without any chat turn.
+- InboxNotification envelope changes are events distributed through Pod subscribe/watch. Subscribe
+  notifies active clients; it does not directly wake a member or create chat.
+  Every client may refresh Inbox and display badge/toast state. Only an
+  agent-capable client that matches runtime presence/policy and successfully
+  claims the linked ApprovalRequest/InputRequest/control resource through `leaseOwner` / `leaseExpiresAt` may schedule a
+  local Secretary Inbox-check job.
+  Clients that lose the claim remain display-only. If the user is active in a
+  main Thread, the winning Secretary may naturally bring the pending item into
+  that conversation; if not, the item remains visible in Inbox without forcing
+  an interruption.
+- A pending control resource surfaced through Inbox is runtime/control context, not a user-authored,
+  system-authored, or developer-authored message. Persist the real actor on the
+  `InputRequest`, `ApprovalRequest`, or `ControlEvent`; `InboxNotification` is only the envelope. If a
+  backend adapter must project it into a `user` role, label it as a runtime
+  control event and not a human user message.
 - Delivery is a stage/result package, not generic message transport. Ordinary
   questions, answers, steering, and checkpoints remain Messages.
 - Schedules are event sources. A schedule tick is appended to a stable schedule
@@ -646,6 +701,10 @@ raw transcripts, prompts, secrets, or private worker context into metrics.
 ## Hard Rules
 
 - Do not treat every Symphony-mode chat message as an Issue.
+- Do not expose Symphony binding, routing, Issue/Task analysis, worker
+  selection, or report headings in ordinary user-facing chat. Reply like normal
+  chat by default, and show control-plane detail only for visible state changes,
+  blockers, handoffs, or explicit status/details requests.
 - Do not treat `/symphony` slash arguments as an objective.
 - Do not create work before binding the input to the relevant system object.
 - Do not dispatch workers before updating the relevant control record enough for
