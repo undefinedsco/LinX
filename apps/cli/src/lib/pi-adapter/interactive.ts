@@ -26,7 +26,6 @@ import {
   listSymphonyIssues,
   listSymphonySessions,
   type CaptureSymphonyIdeaInput,
-  writeSymphonyIdea,
 } from '../symphony/archive.js'
 import {
   listOpenSymphonyIssuesFromPod,
@@ -34,7 +33,7 @@ import {
   listRunningSymphonyWorkersFromPod,
   mirrorSymphonyProjectionJsonLdFromPod,
   persistSymphonyIdeaToPod,
-  persistSymphonyProjectionToPod,
+  persistSymphonyControlStateToPod,
   type SymphonyPodReportStatus,
   type SymphonyPodWorkerStatus,
 } from '../symphony/pod-projection.js'
@@ -42,6 +41,19 @@ import {
   getSessionControlManager,
   installSessionControlRuntimeEventBridge,
 } from './session-control.js'
+import {
+  buildLinxFooterStatusLine,
+  calculateSessionUsage,
+  DEFAULT_STATUS_LINE_TOKENS,
+  formatTokenCount,
+  LINX_STATUS_LINE_TOKEN_NAMES,
+  parseLinxStatusLineColorArg,
+  parseLinxStatusLineTokenArgs,
+  readLinxStatusLineConfig,
+  resetLinxStatusLineConfig,
+  writeLinxStatusLineConfigPatch,
+  type LinxStatusLineToken,
+} from '../linx-status-line.js'
 
 export interface LinxInteractiveBootstrap {
   init(): Promise<void>
@@ -79,6 +91,22 @@ const BACKEND_OWNED_SLASH_COMMANDS = new Set([
 ])
 const SYMPHONY_STATUS_POD_TIMEOUT_MS = 1_200
 const DEFAULT_SYMPHONY_WORKER_SUPERVISOR_INTERVAL_MS = 10 * 60 * 1000
+const CODEX_STYLE_STATUS_LINE_TOKENS: LinxStatusLineToken[] = [
+  'model-with-reasoning',
+  'git-branch',
+  'context-remaining',
+  'total-input-tokens',
+  'total-output-tokens',
+  'current-dir',
+]
+const COMPACT_STATUS_LINE_TOKENS: LinxStatusLineToken[] = [
+  'model-with-reasoning',
+  'context-remaining',
+  'current-dir',
+]
+/** Module-level reference to interactive for footer mode state (set during bootstrap). */
+let _linxFooterInteractive: any = null
+
 
 export function bootstrapLinxInteractiveMode(
   runtime: any,
@@ -93,6 +121,8 @@ export function bootstrapLinxInteractiveMode(
   ;(interactive as any).runtime = runtime
   ;(interactive as any).__autoEnabled = runtime?.autoEnabled === true
   ;(interactive as any).__linxSymphonyModeEnabled = runtime?.symphonyEnabled === true
+  _linxFooterInteractive = interactive as any
+
   if (options.onSymphonyControlChange) {
     ;(interactive as any).__linxOnSymphonyControlChange = options.onSymphonyControlChange
   }
@@ -191,7 +221,7 @@ export function installLinxRestoredAutoStartup(
       controller.start({ scheduleImmediately: true })
       interactive.showStatus?.([
         'Auto restored from the previous session.',
-        '托管中 · Secretary 自动输入 · Ctrl+C 接管 · /auto off',
+        'auto · Ctrl+C or /auto off to hand control back',
       ].join('\n'))
       interactive.ui?.requestRender?.()
     }
@@ -362,6 +392,7 @@ type LinxGlobalCommand =
   | { action: 'peer-command'; route: AutoModePeerCommandRoute }
   | { action: 'cd'; target?: string }
   | { action: 'ai-connect'; provider?: string; baseUrl?: string; model?: string }
+  | { action: 'statusline'; args: string[] }
   | { action: 'rewind-select' }
   | { action: 'rewind-turns'; turns: number }
 
@@ -679,6 +710,17 @@ function parseLinxGlobalCommand(input: string): LinxGlobalCommand | null {
     return { action: 'ai-connect', ...parseInteractiveAiConnectArgs(input.slice('/ai connect'.length).trim()) }
   }
 
+  if (input === '/statusline' || input === '/status-line') {
+    return { action: 'statusline', args: [] }
+  }
+
+  if (input.startsWith('/statusline ') || input.startsWith('/status-line ')) {
+    const body = input.startsWith('/statusline ')
+      ? input.slice('/statusline'.length).trim()
+      : input.slice('/status-line'.length).trim()
+    return { action: 'statusline', args: splitInteractiveCommandArgs(body) }
+  }
+
   if (input === '/rewind') {
     return { action: 'rewind-select' }
   }
@@ -827,6 +869,11 @@ async function handleLinxGlobalCommand(
     return
   }
 
+  if (command.action === 'statusline') {
+    await handleInteractiveStatusLineCommand(interactive, command.args)
+    return
+  }
+
   if (command.action === 'rewind-select') {
     await handleInteractiveRewindSelector(interactive, runtime)
     return
@@ -838,6 +885,151 @@ async function handleLinxGlobalCommand(
   }
 
   await changeInteractiveCwd(interactive, runtime, command.target)
+}
+
+async function handleInteractiveStatusLineCommand(interactive: any, args: string[]): Promise<void> {
+  if (args.length > 0) {
+    handleInteractiveStatusLineArgs(interactive, args)
+    return
+  }
+
+  const summary = formatInteractiveStatusLineSummary()
+  if (typeof interactive.showExtensionSelector !== 'function') {
+    interactive.showStatus?.(`${summary} · Use /statusline set <tokens...>, /statusline tokens, /statusline colors <on|off>, or /statusline reset.`)
+    interactive.ui?.requestRender?.()
+    return
+  }
+
+  const choice = await interactive.showExtensionSelector(`Status line\n${summary}`, [
+    'Use Codex-style preset',
+    'Use compact preset',
+    'Configure tokens manually',
+    'Toggle colors',
+    'Show available tokens',
+    'Reset to default',
+  ])
+
+  if (choice === 'Use Codex-style preset') {
+    writeInteractiveStatusLineConfig(interactive, {
+      statusLine: CODEX_STYLE_STATUS_LINE_TOKENS,
+      message: 'Status line set to Codex-style preset.',
+    })
+    return
+  }
+  if (choice === 'Use compact preset') {
+    writeInteractiveStatusLineConfig(interactive, {
+      statusLine: COMPACT_STATUS_LINE_TOKENS,
+      message: 'Status line set to compact preset.',
+    })
+    return
+  }
+  if (choice === 'Toggle colors') {
+    const current = readLinxStatusLineConfig()
+    writeInteractiveStatusLineConfig(interactive, {
+      statusLineUseColors: !current.useColors,
+      message: `Status line colors ${current.useColors ? 'disabled' : 'enabled'}.`,
+    })
+    return
+  }
+  if (choice === 'Show available tokens') {
+    showInteractiveStatusLineTokens(interactive)
+    return
+  }
+  if (choice === 'Reset to default') {
+    resetLinxStatusLineConfig()
+    finishInteractiveStatusLineUpdate(interactive, `Status line reset to default: ${DEFAULT_STATUS_LINE_TOKENS.join(', ')}`)
+    return
+  }
+  if (choice === 'Configure tokens manually') {
+    await promptInteractiveStatusLineTokens(interactive)
+  }
+}
+
+function handleInteractiveStatusLineArgs(interactive: any, args: string[]): void {
+  const action = args[0]?.toLowerCase()
+  if (action === 'tokens' || action === 'list') {
+    showInteractiveStatusLineTokens(interactive)
+    return
+  }
+  if (action === 'reset') {
+    resetLinxStatusLineConfig()
+    finishInteractiveStatusLineUpdate(interactive, `Status line reset to default: ${DEFAULT_STATUS_LINE_TOKENS.join(', ')}`)
+    return
+  }
+  if (action === 'colors' || action === 'color') {
+    const value = parseLinxStatusLineColorArg(args[1])
+    if (value === undefined) {
+      interactive.showError?.('Usage: /statusline colors <on|off>')
+      return
+    }
+    writeInteractiveStatusLineConfig(interactive, {
+      statusLineUseColors: value,
+      message: `Status line colors ${value ? 'enabled' : 'disabled'}.`,
+    })
+    return
+  }
+
+  const tokenArgs = action === 'set' ? args.slice(1) : args
+  try {
+    const tokens = parseLinxStatusLineTokenArgs(tokenArgs)
+    writeInteractiveStatusLineConfig(interactive, {
+      statusLine: tokens,
+      message: `Status line updated: ${tokens.join(', ')}`,
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    interactive.showError?.(`${message}. Use /statusline tokens to list valid tokens.`)
+  }
+}
+
+async function promptInteractiveStatusLineTokens(interactive: any): Promise<void> {
+  if (typeof interactive.showExtensionInput !== 'function') {
+    interactive.showStatus?.(`Use /statusline set ${CODEX_STYLE_STATUS_LINE_TOKENS.join(' ')}`)
+    interactive.ui?.requestRender?.()
+    return
+  }
+
+  const value = await interactive.showExtensionInput(
+    'Status line tokens',
+    CODEX_STYLE_STATUS_LINE_TOKENS.join(' '),
+  )
+  if (typeof value !== 'string' || !value.trim()) {
+    interactive.showStatus?.('Status line unchanged.')
+    interactive.ui?.requestRender?.()
+    return
+  }
+  handleInteractiveStatusLineArgs(interactive, ['set', ...splitInteractiveCommandArgs(value)])
+}
+
+function writeInteractiveStatusLineConfig(
+  interactive: any,
+  patch: {
+    statusLine?: LinxStatusLineToken[]
+    statusLineUseColors?: boolean
+    message: string
+  },
+): void {
+  writeLinxStatusLineConfigPatch({
+    ...(patch.statusLine ? { statusLine: patch.statusLine } : {}),
+    ...(patch.statusLineUseColors !== undefined ? { statusLineUseColors: patch.statusLineUseColors } : {}),
+  })
+  finishInteractiveStatusLineUpdate(interactive, patch.message)
+}
+
+function finishInteractiveStatusLineUpdate(interactive: any, message: string): void {
+  interactive.footer?.invalidate?.()
+  interactive.showStatus?.(message)
+  interactive.ui?.requestRender?.()
+}
+
+function showInteractiveStatusLineTokens(interactive: any): void {
+  interactive.showStatus?.(`Status line tokens: ${LINX_STATUS_LINE_TOKEN_NAMES.join(', ')}`)
+  interactive.ui?.requestRender?.()
+}
+
+function formatInteractiveStatusLineSummary(): string {
+  const config = readLinxStatusLineConfig()
+  return `Current: ${config.tokens.join(', ')} · colors ${config.useColors ? 'on' : 'off'} · source ${config.tokenSource}`
 }
 
 async function handleInteractiveRewindSelector(interactive: any, runtime: any): Promise<void> {
@@ -917,6 +1109,7 @@ async function handleInteractiveRewindTurnsCommand(
 
   const cleanResult = materializeCleanRewindSession(sessionManager, result.targetLeafId, previousState)
   syncAgentStateFromSessionManager(session, sessionManager)
+  refreshInteractiveTranscriptFromSessionManager(interactive)
   await syncRewindProjection(interactive, runtime, {
     previousState,
     cleanResult,
@@ -955,6 +1148,7 @@ async function rewindSessionManagerBeforeUserEntry(
   moveSessionManagerLeaf(sessionManager, targetLeafId)
   const cleanResult = materializeCleanRewindSession(sessionManager, targetLeafId, previousState)
   syncAgentStateFromSessionManager(session, sessionManager)
+  refreshInteractiveTranscriptFromSessionManager(interactive)
   await syncRewindProjection(interactive, runtime, {
     previousState,
     cleanResult,
@@ -1251,6 +1445,22 @@ function syncAgentStateFromSessionManager(session: any, sessionManager: any): vo
   }
 }
 
+function refreshInteractiveTranscriptFromSessionManager(interactive: any): void {
+  try {
+    if (typeof interactive?.rebuildChatFromMessages === 'function') {
+      interactive.rebuildChatFromMessages()
+      return
+    }
+    if (typeof interactive?.renderInitialMessages === 'function') {
+      interactive.chatContainer?.clear?.()
+      interactive.renderInitialMessages()
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    interactive?.showWarning?.(`Rewind transcript refresh failed: ${message}`)
+  }
+}
+
 interface LinxRewindMessageItem {
   id: string
   text: string
@@ -1498,7 +1708,7 @@ function formatAutoModeChangeStatus(enabled: boolean): string {
       'Auto is on.',
       'Auto on: Secretary drives the current session input loop.',
       'What changed: backend prompts and blocked approval/input requests go to Secretary first; Secretary answers in-policy and asks you only when blocked.',
-      'User-visible state: the input bar shows托管中; Ctrl+C or /auto off hands control back to you.',
+      'User-visible state: the input bar shows auto; Ctrl+C or /auto off hands control back to you.',
       'Backend approval policy is unchanged.',
     ].join('\n')
     : [
@@ -1588,18 +1798,8 @@ export function installSymphonyCommand(interactive: any): void {
       }
 
       if (this.__linxSymphonyModeEnabled && shouldProjectSymphonyInput(input)) {
-        const source = await resolveSymphonySourceContext(this)
-        const idea = await captureSymphonyIdeaIfNeeded(input, source)
         getSessionControlManager(this, this.runtime).recordUserMessage({ text: input })
-        if (shouldDispatchSymphonyWorkerInput(input)) {
-          await dispatchSymphonyWorkerFromInteractive(this, input, source)
-          return
-        }
-        await originalSubmit(buildSymphonyDelegationPrompt(input, {
-          persistentMode: true,
-          ...(source ? { source } : {}),
-          ...(idea ? { idea } : {}),
-        }))
+        await originalSubmit(renderSymphonySecretaryProjection(input))
         return
       }
 
@@ -1677,6 +1877,17 @@ const LINX_INTERACTIVE_SLASH_COMMANDS = [
     description: 'select a user message and rewind the active branch before it',
   },
   {
+    name: 'statusline',
+    argumentHint: 'set|colors|tokens|reset',
+    description: 'configure which items appear in the status line',
+    getArgumentCompletions: (prefix: string) => completeStaticArguments(prefix, [
+      { value: 'set', description: 'Set status line tokens' },
+      { value: 'colors', description: 'Enable or disable status line colors' },
+      { value: 'tokens', description: 'List available status line tokens' },
+      { value: 'reset', description: 'Restore default status line tokens' },
+    ]),
+  },
+  {
     name: 'ai',
     argumentHint: 'connect <provider>',
     description: 'connect AI provider credentials to LinX Pod settings',
@@ -1685,11 +1896,11 @@ const LINX_INTERACTIVE_SLASH_COMMANDS = [
   {
     name: 'symphony',
     argumentHint: 'on|off|status',
-    description: 'switch chat peer between Secretary and backend worker',
+    description: 'turn Secretary task handoff on/off, or show status',
     getArgumentCompletions: (prefix: string) => completeStaticArguments(prefix, [
-      { value: 'on', description: 'Chat with Secretary using Symphony orchestration skills' },
-      { value: 'off', description: 'Chat directly with the current worker/backend peer' },
-      { value: 'status', description: 'Show Symphony state and source conversation' },
+      { value: 'on', description: 'Secretary can plan and hand off larger tasks' },
+      { value: 'off', description: 'Return to direct chat' },
+      { value: 'status', description: 'Show whether Symphony task handoff is enabled' },
     ]),
   },
 ] as const
@@ -1823,19 +2034,8 @@ async function handleSymphonyCommand(interactive: any, command: SymphonyCommand)
 
 function formatSymphonyModeChangeStatus(enabled: boolean): string {
   return enabled
-    ? [
-      'Symphony on: you are now chatting with Secretary.',
-      'What changed: following normal messages enter the Secretary control lane before worker/backend routing.',
-      'Skills: issue triage, existing Issue lookup, create/update/ask decision, task split, worker dispatch, status/report tracking.',
-      'Ordinary chat stays ordinary Message; only trackable work becomes Issue/Task/Delivery/Session.',
-      'Use /symphony status to inspect workers, /symphony off to chat with the current worker/backend peer.',
-    ].join('\n')
-    : [
-      'Symphony off: you are now chatting with the current worker/backend peer.',
-      'What changed: following messages bypass Secretary Symphony triage and dispatch.',
-      'Current Symphony dispatches started from this TUI were cancelled; archived workers remain inspectable with /symphony status.',
-      'Use /symphony on to chat with Secretary again.',
-    ].join('\n')
+    ? 'Symphony is on. I will keep ordinary chat ordinary and only plan or hand off real work.'
+    : 'Symphony is off. Back to direct chat. Active handoffs from this window were stopped.'
 }
 
 function formatSymphonyUsage(input: string): string {
@@ -1852,14 +2052,21 @@ function shouldProjectSymphonyInput(input: string): boolean {
     && !input.startsWith('!')
 }
 
-function shouldDispatchSymphonyWorkerInput(input: string): boolean {
-  const normalized = input.trim().toLowerCase()
-  if (!normalized) {
-    return false
-  }
-
-  return /\b(delegate|dispatch|assign|worker|agent|task)\b/u.test(normalized)
-    || /(派工|派活|派发|委派|分派|交给.*(worker|agent|codex|claude|codebuddy|ai)|让.*(worker|agent|codex|claude|codebuddy|ai).*做|发一个任务|派出一个任务)/u.test(input)
+function renderSymphonySecretaryProjection(input: string): string {
+  return [
+    '# AI Secretary Symphony request',
+    '',
+    'Symphony is on: the user is chatting with Secretary, not directly with the worker/backend peer.',
+    'Treat the user message below as a Secretary-facing product message.',
+    'Decide whether it is ordinary chat, an Idea, a change to existing work, or delegable work.',
+    'Default response style: reply like normal chat.',
+    'Do not print internal Symphony binding, Issue/Task routing, worker selection, or report-style sections unless a visible state change or blocker must be surfaced.',
+    'If the message is ordinary chat or early exploration, answer directly and do not explain that it was not delegated.',
+    'If real delegation is needed, summarize the visible handoff result briefly after updating control state.',
+    '',
+    'User message:',
+    input,
+  ].join('\n')
 }
 
 async function dispatchSymphonyWorkerFromInteractive(
@@ -1883,18 +2090,11 @@ async function dispatchSymphonyWorkerFromInteractive(
   const controllers = getInteractiveSymphonyDispatchControllers(interactive)
   controllers.add(controller)
 
-  interactive.showStatus?.([
-    'Symphony dispatch started.',
-    `Worker backend: ${backend}`,
-    `Worker credentials: ${workerCredentialSource}`,
-    ...(agentRuntime ? [`Control runtime: ${formatSymphonyControlRuntime(agentRuntime)}`] : []),
-    ...(workerModel ? [`Worker model: ${workerModel}`] : []),
-    workerGoalMode
-      ? `Worker goal: on · supervisor interval=${formatSymphonySupervisorInterval(workerSupervisorIntervalMs)}`
-      : 'Worker goal: off',
-    'Status: creating Issue / Task / Delivery and starting a quiet worker session.',
-    'Use /symphony status to inspect running workers and reports.',
-  ].join('\n'))
+  interactive.showStatus?.(
+    `Symphony handoff started: ${backend}${workerModel ? ` · ${workerModel}` : ''}`
+    + `${workerGoalMode ? ` · supervised every ${formatSymphonySupervisorInterval(workerSupervisorIntervalMs)}` : ''}.`
+    + ' Use /symphony status for details.',
+  )
   interactive.ui?.requestRender?.()
 
   const run = typeof interactive.__linxRunSymphony === 'function'
@@ -1993,8 +2193,8 @@ function createInteractiveSymphonyRuntime(interactive: any): SymphonyRuntime | u
   return {
     runAutoMode,
     listAutoModeSessions: listArchivedAutoModeSessions,
-    persistSymphonyProjectionToPod(plan, options) {
-      return persistSymphonyProjectionToPod(plan, {
+    persistSymphonyControlStateToPod(plan, options) {
+      return persistSymphonyControlStateToPod(plan, {
         ...options,
         runtime: projectionRuntime,
       })
@@ -2231,13 +2431,9 @@ function formatSymphonyDispatchResult(plan: Awaited<ReturnType<typeof runSymphon
   const delivery = worker?.delivery ?? plan.delivery
   const lines = [
     plan.issue.status === 'resolved' && delivery.status === 'completed'
-      ? 'Symphony dispatch completed.'
-      : 'Symphony dispatch recorded.',
-    `Issue: ${plan.issue.title} (${formatSymphonyResourceTail(plan.issue.uri) ?? plan.issue.uri})`,
-    `Task: ${formatSymphonyResourceTail(worker?.task ?? plan.task) ?? worker?.task ?? plan.task}`,
-    `Delivery: ${delivery.status}${delivery.autoModeSessionId ? ` · runtime=${delivery.autoModeSessionId}` : ''}`,
-    `Worker session: ${session.status}${session.autoModeSessionId ? ` · runtime=${session.autoModeSessionId}` : ''}`,
-    'Use /symphony status to inspect the Pod-projected worker report.',
+      ? `Symphony handoff completed: ${plan.issue.title}.`
+      : `Symphony handoff recorded: ${plan.issue.title}.`,
+    'Use /symphony status for details.',
   ]
   if (session.error) {
     lines.push(`Error: ${session.error}`)
@@ -2274,9 +2470,8 @@ async function captureSymphonyIdeaIfNeeded(
     }
     const idea = createSymphonyIdeaRecord(captureInput)
     const persisted = await persistSymphonyIdeaToPod(idea)
-      .catch(() => null)
     if (!persisted) {
-      writeSymphonyIdea(idea)
+      throw new Error('No active Pod session; Symphony Idea records must be written to Pod in LinX runtime.')
     }
     return {
       uri: idea.uri,
@@ -2284,7 +2479,12 @@ async function captureSymphonyIdeaIfNeeded(
       status: idea.status,
       commitment: idea.commitment,
     }
-  } catch {
+  } catch (error) {
+    process.emitWarning(
+      error instanceof Error
+        ? new Error(`LinX Symphony Idea Pod write failed: ${error.message}`)
+        : new Error(`LinX Symphony Idea Pod write failed: ${String(error)}`),
+    )
     return undefined
   }
 }
@@ -2309,58 +2509,6 @@ function inferSymphonyIdeaAffectedArea(input: string): string | undefined {
   return undefined
 }
 
-function buildSymphonyDelegationPrompt(
-  objective: string,
-  options: {
-    persistentMode: boolean
-    source?: SymphonySourceContext
-    idea?: CapturedSymphonyIdeaContext
-  },
-): string {
-  const modeLine = options.persistentMode
-    ? 'Symphony is on: the user is chatting with Secretary in this LinX TUI session.'
-    : 'This is a chat-driven Symphony request from the LinX TUI.'
-  const sourceLines = options.source
-    ? [
-      '',
-      'Source conversation resources:',
-      `Chat: ${options.source.chat}`,
-      `Thread: ${options.source.thread}`,
-      ...(options.source.sessionId ? [`Runtime session: ${options.source.sessionId}`] : []),
-    ]
-    : []
-  const ideaLines = options.idea
-    ? [
-      '',
-      'Captured Idea:',
-      `Idea: ${options.idea.uri}`,
-      `Summary: ${options.idea.summary}`,
-      `Commitment: ${options.idea.commitment}`,
-      `Status: ${options.idea.status}`,
-    ]
-    : []
-  return [
-    'AI Secretary Symphony request.',
-    modeLine,
-    ...sourceLines,
-    ...ideaLines,
-    '',
-    'User objective:',
-    objective.trim(),
-    '',
-    'Act as AI Secretary with Symphony skills enabled: issue triage, existing issue lookup, create/update/ask decision, task split, worker dispatch, and status/report tracking.',
-    'Decide whether this objective should be delegated to backend workers through Symphony.',
-    'Do not create an Issue for ordinary chat. Create or update an Issue only when the objective is a trackable work item.',
-    'If this is an uncommitted fragment, keep or merge it as an Idea first; do not dispatch a worker until promotion gates are met.',
-    'Before creating a new Issue, compare against existing open Issues. Update the existing Issue when it is clearly the same work item, and ask the user only when new-vs-existing is ambiguous.',
-    'Every delegation must target a Chat resource. Use a personal AI contact chat when assigning to one worker, or a group chat when the work belongs in a shared room.',
-    'Use the Source conversation resources only as provenance unless they are also the correct target chat.',
-    'If delegation is appropriate, create or update the normal LinX work context, derive issue/task acceptance criteria from the objective and source context, and project the task to the selected backend worker.',
-    'Ask the user only when acceptance, authority, credentials, or target selection cannot be safely inferred.',
-    'If delegation is not appropriate, explain the reason and continue in this conversation.',
-    'Keep the user-facing answer concise and show the next observable step.',
-  ].join('\n')
-}
 
 async function formatSymphonyStatus(interactive: any): Promise<string> {
   const enabled = interactive.__linxSymphonyModeEnabled === true
@@ -2373,33 +2521,29 @@ async function formatSymphonyStatus(interactive: any): Promise<string> {
   const workers = workersRead.items
   const issues = issuesRead.items
   const reports = reportsRead.items
-  const projectionErrors = Array.from(new Set([
+  const controlStateErrors = Array.from(new Set([
     workersRead.error,
     issuesRead.error,
     reportsRead.error,
   ].filter((item): item is string => Boolean(item))))
-  const projectionSources = new Set([workersRead.source, issuesRead.source, reportsRead.source])
+  const controlStateSources = new Set([workersRead.source, issuesRead.source, reportsRead.source])
   const lines = [
     `Symphony is ${enabled ? 'on' : 'off'}.`,
     `Current chat peer: ${enabled ? 'Secretary' : 'worker/backend peer'}.`,
     `Open issues: ${issues.length}`,
     `Running workers: ${workers.length}`,
     `Recent reports: ${reports.length}`,
-    projectionErrors.length > 0
-      ? `Pod projection: unavailable (${formatSymphonyStatusError(projectionErrors[0]!)})`
-      : projectionSources.has('pod')
-        ? 'Pod projection: active.'
-        : 'Pod projection: local archive only.',
+    controlStateErrors.length > 0
+      ? `Pod control state: unavailable (${formatSymphonyStatusError(controlStateErrors[0]!)})`
+      : controlStateSources.has('pod')
+        ? 'Pod control state: active.'
+        : 'Pod control state: portable local archive mode.',
     'Skills: issue triage, existing issue lookup, create/update/ask decision, task split, worker dispatch, status/report tracking.',
     'Delegation target: AI Secretary must choose a Chat resource before dispatch.',
     'Allowed targets: personal AI contact chat or group chat.',
     'Thread role: concrete work timeline under the selected Chat.',
     'Session role: backend runtime lifecycle only.',
   ]
-  if (projectionErrors.length > 0) {
-    lines.push('Fallback: showing local Symphony archive while Pod projection is unavailable.')
-  }
-
   for (const issue of issues.slice(0, 5)) {
     lines.push(`  - ${formatSymphonyIssueStatus(issue)}`)
   }
@@ -2481,22 +2625,28 @@ async function withSymphonyStatusTimeout<T>(
 }
 
 async function listOpenSymphonyIssues(interactive: any): Promise<SymphonyStatusRead<SymphonyIssueStatus>> {
-  const projectionRuntime = interactive?.__linxSymphonyPodProjectionRuntime
-  let projectionError: string | undefined
+  const controlRuntime = interactive?.__linxSymphonyPodProjectionRuntime
   try {
-    if (projectionRuntime?.issueResource) {
+    if (controlRuntime?.issueResource) {
       const podIssues = await withSymphonyStatusTimeout(
         interactive,
         'Symphony Pod issue status',
-        listOpenSymphonyIssuesFromPod({ runtime: projectionRuntime }),
+        listOpenSymphonyIssuesFromPod({ runtime: controlRuntime }),
       )
       if (podIssues) {
         return { items: podIssues, source: 'pod' }
       }
     }
   } catch (error) {
-    projectionError = error instanceof Error ? error.message : String(error)
-    // Fall back to local no-Pod archive below.
+    return { items: [], source: 'none', error: error instanceof Error ? error.message : String(error) }
+  }
+
+  if (controlRuntime?.issueResource) {
+    return {
+      items: [],
+      source: 'none',
+      error: 'No active Pod session; Symphony control-plane state is Pod-authoritative.',
+    }
   }
 
   try {
@@ -2506,29 +2656,35 @@ async function listOpenSymphonyIssues(interactive: any): Promise<SymphonyStatusR
     return {
       items: issues.filter((issue: SymphonyIssueStatus) => issue.status !== 'closed' && issue.status !== 'resolved'),
       source: 'local',
-      ...(projectionError ? { error: projectionError } : {}),
     }
   } catch {
-    return { items: [], source: 'none', ...(projectionError ? { error: projectionError } : {}) }
+    return { items: [], source: 'none' }
   }
 }
 
 async function listRunningSymphonyWorkers(interactive: any): Promise<SymphonyStatusRead<SymphonyWorkerStatus>> {
-  const projectionRuntime = interactive?.__linxSymphonyPodProjectionRuntime
-  let projectionError: string | undefined
+  const controlRuntime = interactive?.__linxSymphonyPodProjectionRuntime
   try {
-    if (projectionRuntime?.sessionResource) {
+    if (controlRuntime?.sessionResource) {
       const podWorkers = await withSymphonyStatusTimeout(
         interactive,
         'Symphony Pod worker status',
-        listRunningSymphonyWorkersFromPod({ runtime: projectionRuntime }),
+        listRunningSymphonyWorkersFromPod({ runtime: controlRuntime }),
       )
       if (podWorkers) {
         return { items: podWorkers, source: 'pod' }
       }
     }
   } catch (error) {
-    projectionError = error instanceof Error ? error.message : String(error)
+    return { items: [], source: 'none', error: error instanceof Error ? error.message : String(error) }
+  }
+
+  if (controlRuntime?.sessionResource) {
+    return {
+      items: [],
+      source: 'none',
+      error: 'No active Pod session; Symphony control-plane state is Pod-authoritative.',
+    }
   }
 
   try {
@@ -2537,7 +2693,6 @@ async function listRunningSymphonyWorkers(interactive: any): Promise<SymphonySta
       return {
         items: sessions.filter((session: ReturnType<typeof listSymphonySessions>[number]) => session.status === 'running'),
         source: 'local',
-        ...(projectionError ? { error: projectionError } : {}),
       }
     }
 
@@ -2545,23 +2700,21 @@ async function listRunningSymphonyWorkers(interactive: any): Promise<SymphonySta
       items: listSymphonySessions()
         .filter((session: ReturnType<typeof listSymphonySessions>[number]) => session.status === 'running'),
       source: 'local',
-      ...(projectionError ? { error: projectionError } : {}),
     }
   } catch {
-    return { items: [], source: 'none', ...(projectionError ? { error: projectionError } : {}) }
+    return { items: [], source: 'none' }
   }
 }
 
 async function listRecentSymphonyReports(interactive: any): Promise<SymphonyStatusRead<SymphonyReportStatus>> {
-  const projectionRuntime = interactive?.__linxSymphonyPodProjectionRuntime
-  let projectionError: string | undefined
+  const controlRuntime = interactive?.__linxSymphonyPodProjectionRuntime
   try {
-    if (projectionRuntime?.deliveryResource) {
+    if (controlRuntime?.deliveryResource) {
       const podReports = await withSymphonyStatusTimeout(
         interactive,
         'Symphony Pod report status',
         listRecentSymphonyReportsFromPod({
-          runtime: projectionRuntime,
+          runtime: controlRuntime,
           limit: 5,
         }),
       )
@@ -2570,8 +2723,15 @@ async function listRecentSymphonyReports(interactive: any): Promise<SymphonyStat
       }
     }
   } catch (error) {
-    projectionError = error instanceof Error ? error.message : String(error)
-    // Fall back to local no-Pod archive below.
+    return { items: [], source: 'none', error: error instanceof Error ? error.message : String(error) }
+  }
+
+  if (controlRuntime?.deliveryResource) {
+    return {
+      items: [],
+      source: 'none',
+      error: 'No active Pod session; Symphony control-plane state is Pod-authoritative.',
+    }
   }
 
   try {
@@ -2583,10 +2743,9 @@ async function listRecentSymphonyReports(interactive: any): Promise<SymphonyStat
         .filter((session: ReturnType<typeof listSymphonySessions>[number]) => session.status === 'completed' || session.status === 'failed')
         .slice(0, 5),
       source: 'local',
-      ...(projectionError ? { error: projectionError } : {}),
     }
   } catch {
-    return { items: [], source: 'none', ...(projectionError ? { error: projectionError } : {}) }
+    return { items: [], source: 'none' }
   }
 }
 
@@ -2995,24 +3154,42 @@ export function installLinxEscapeInterrupt(interactive: any): void {
   let currentOnEscape = isLinxEscapeInterruptWrapper(initialOnEscape)
     ? undefined
     : initialOnEscape
+  let lastIdleEscapeTime = 0
 
   const linxEscapeInterrupt = function linxEscapeInterrupt(): void {
     const session = interactive?.session
 
     if (handBackAutoControlOnInterrupt(interactive)) {
+      lastIdleEscapeTime = 0
       return
     }
 
     if (session?.isBashRunning && typeof session.abortBash === 'function') {
+      lastIdleEscapeTime = 0
       void session.abortBash()
       return
     }
 
     if (isLinxSessionRunning(interactive) && typeof session?.abort === 'function') {
+      lastIdleEscapeTime = 0
       void session.abort()
       return
     }
 
+    if (shouldHandleLinxIdleDoubleEscape(interactive)) {
+      const now = Date.now()
+      if (now - lastIdleEscapeTime < 500) {
+        lastIdleEscapeTime = 0
+        void openInteractiveRewindFromEscape(interactive)
+      } else {
+        lastIdleEscapeTime = now
+        interactive?.showStatus?.('Press Escape again to rewind this session.')
+        interactive?.ui?.requestRender?.()
+      }
+      return
+    }
+
+    lastIdleEscapeTime = 0
     currentOnEscape?.call(editor)
   }
   Object.defineProperty(linxEscapeInterrupt, '__linxEscapeInterruptWrapper', {
@@ -3034,6 +3211,22 @@ export function installLinxEscapeInterrupt(interactive: any): void {
 
   installLinxClearInterrupt(interactive, editor)
   editor.__linxEscapeInterruptInstalled = true
+}
+
+function shouldHandleLinxIdleDoubleEscape(interactive: any): boolean {
+  if (typeof interactive?.editor?.getText !== 'function') {
+    return false
+  }
+  const text = String(interactive.editor.getText() ?? '')
+  return text.trim().length === 0
+}
+
+async function openInteractiveRewindFromEscape(interactive: any): Promise<void> {
+  try {
+    await handleInteractiveRewindSelector(interactive, interactive?.runtime)
+  } catch (error) {
+    interactive?.showError?.(error instanceof Error ? error.message : String(error))
+  }
 }
 
 function isLinxEscapeInterruptWrapper(value: unknown): boolean {
@@ -3350,11 +3543,35 @@ function patchPiFooter(): void {
     if (Array.isArray(lines) && lines.length > 1 && typeof lines[1] === 'string') {
       const session = (this as unknown as { session?: unknown }).session
       const autoCompactEnabled = (this as unknown as { autoCompactEnabled?: boolean }).autoCompactEnabled !== false
-      lines[1] = buildLinxFooterStatusLine(session, width, autoCompactEnabled)
+      const footerData = (this as unknown as { footerData?: unknown }).footerData
+      const modePrefix = buildLinxFooterModePrefix()
+      const modeLen = visibleWidth(modePrefix)
+      const bulletLen = modeLen > 0 ? 3 : 0
+      const statusWidth = Math.max(0, width - modeLen - bulletLen)
+      lines[1] = buildLinxFooterStatusLine({
+        session,
+        width: statusWidth,
+        autoCompactEnabled,
+        footerData: footerData as Parameters<typeof buildLinxFooterStatusLine>[0]['footerData'],
+      })
+      if (modePrefix) {
+        lines[1] = modePrefix + ' • ' + lines[1]
+      }
     }
     return lines
   }
   footerPatched = true
+}
+
+
+function buildLinxFooterModePrefix(): string {
+  if (!_linxFooterInteractive) return ''
+  const autoOn = _linxFooterInteractive.__autoEnabled === true
+  const symphonyOn = _linxFooterInteractive.__linxSymphonyModeEnabled === true
+  if (!autoOn && !symphonyOn) return ''
+  if (autoOn && symphonyOn) return 'Symphony · Auto'
+  if (autoOn) return 'Auto'
+  return 'Symphony'
 }
 
 export function patchPiAssistantMessageRendering(): void {
@@ -3392,112 +3609,4 @@ function isLinxHiddenAssistantContentPart(part: unknown): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
-}
-
-function buildLinxFooterStatusLine(session: any, width: number, autoCompactEnabled: boolean): string {
-  const usage = calculateSessionUsage(session)
-  const state = session?.state ?? {}
-  const model = state.model ?? {}
-  const parts: string[] = []
-
-  if (usage.input > 0) {
-    parts.push(`↑${formatTokenCount(usage.input)}`)
-  }
-  if (usage.output > 0) {
-    parts.push(`↓${formatTokenCount(usage.output)}`)
-  }
-
-  parts.push(formatContextUsage(session, model, autoCompactEnabled))
-
-  if (usage.cacheRate !== null) {
-    parts.push(`cache ${usage.cacheRate}%`)
-  }
-
-  parts.push(typeof model.id === 'string' && model.id ? model.id : 'no-model')
-  if (model.reasoning) {
-    const thinkingLevel = typeof state.thinkingLevel === 'string' && state.thinkingLevel
-      ? state.thinkingLevel
-      : 'off'
-    parts.push(thinkingLevel === 'off' ? 'thinking off' : thinkingLevel)
-  }
-
-  return fitFooterLine(parts.join(' • '), width)
-}
-
-function fitFooterLine(line: string, width: number): string {
-  const truncated = truncateToWidth(line, width)
-  const visible = visibleWidth(truncated)
-  const padded = visible < width ? `${truncated}${' '.repeat(width - visible)}` : truncated
-
-  return `\x1b[2m${padded}\x1b[22m`
-}
-
-function calculateSessionUsage(session: any): {
-  input: number
-  output: number
-  cacheRead: number
-  cacheWrite: number
-  cacheRate: number | null
-} {
-  const entries = session?.sessionManager?.getEntries?.()
-  if (!Array.isArray(entries)) {
-    return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cacheRate: null }
-  }
-
-  let input = 0
-  let output = 0
-  let cacheRead = 0
-  let cacheWrite = 0
-  for (const entry of entries) {
-    const message = entry?.type === 'message' ? entry.message : undefined
-    if (message?.role !== 'assistant' || !message.usage) {
-      continue
-    }
-    input += safeTokenCount(message.usage.input)
-    output += safeTokenCount(message.usage.output)
-    cacheRead += safeTokenCount(message.usage.cacheRead)
-    cacheWrite += safeTokenCount(message.usage.cacheWrite)
-  }
-
-  const totalPromptTokens = input + cacheRead + cacheWrite
-  if (totalPromptTokens <= 0) {
-    return { input, output, cacheRead, cacheWrite, cacheRate: null }
-  }
-
-  return {
-    input,
-    output,
-    cacheRead,
-    cacheWrite,
-    cacheRate: Math.round((cacheRead / totalPromptTokens) * 100),
-  }
-}
-
-function formatContextUsage(session: any, model: any, autoCompactEnabled: boolean): string {
-  const contextUsage = session?.getContextUsage?.()
-  const contextWindow = safeTokenCount(contextUsage?.contextWindow) || safeTokenCount(model.contextWindow)
-  const percent = typeof contextUsage?.percent === 'number' && Number.isFinite(contextUsage.percent)
-    ? `${contextUsage.percent.toFixed(1)}%`
-    : '?'
-  return `${percent}/${formatTokenCount(contextWindow)}${autoCompactEnabled ? ' (auto)' : ''}`
-}
-
-function formatTokenCount(count: number): string {
-  if (count < 1000) {
-    return count.toString()
-  }
-  if (count < 10000) {
-    return `${(count / 1000).toFixed(1)}k`
-  }
-  if (count < 1000000) {
-    return `${Math.round(count / 1000)}k`
-  }
-  if (count < 10000000) {
-    return `${(count / 1000000).toFixed(1)}M`
-  }
-  return `${Math.round(count / 1000000)}M`
-}
-
-function safeTokenCount(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0
 }

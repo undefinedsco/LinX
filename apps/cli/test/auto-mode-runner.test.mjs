@@ -107,6 +107,63 @@ function mockPodBackendCredential(t, module, backend = 'codex', env, options = {
   }
 }
 
+test('auto-mode backend process inherits Solid auth home for xpod CLI tools', async (t) => {
+  const { root, binDir, linxHome } = createAutoModeSandbox('linx-auto-mode-xpod-auth-env-')
+  const solidHome = join(root, 'solid-home')
+  const home = join(root, 'home')
+  const logFile = join(root, 'xpod-auth-env-log.jsonl')
+  const commandPath = join(binDir, 'codex-acp')
+
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  mkdirSync(solidHome, { recursive: true })
+  mkdirSync(home, { recursive: true })
+  writeFakeAcpBackend(commandPath, {
+    sessionId: 'sess_xpod_auth_env_123',
+    reply: 'xpod auth env ready',
+    envKeys: ['HOME', 'SOLID_HOME', 'LINX_HOME', 'CODEX_API_KEY'],
+  })
+
+  const { module, cleanup } = await loadAutoModeModule()
+  t.after(() => cleanup())
+
+  mockPodBackendCredential(t, module, 'codex', { CODEX_API_KEY: 'sk-pod-openai' })
+  t.mock.method(module.autoModeRuntime, 'promptText', async () => '/exit')
+
+  await withPatchedEnv(t, {
+    PATH: `${binDir}:${process.env.PATH ?? ''}`,
+    HOME: home,
+    SOLID_HOME: solidHome,
+    LINX_HOME: linxHome,
+    FAKE_ACP_LOG: logFile,
+  }, async () => {
+    const exitCode = await module.runAutoMode({
+      backend: 'codex',
+      autoEnabled: false,
+      mode: 'off',
+      cwd: root,
+      prompt: 'verify xpod auth environment',
+      passthroughArgs: [],
+      credentialSource: 'cloud',
+      commandOverride: commandPath,
+    })
+
+    assert.equal(exitCode, 0)
+  })
+
+  const invocations = readFileSync(logFile, 'utf-8')
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line))
+  assert.equal(invocations[0].env.HOME, home)
+  assert.equal(invocations[0].env.SOLID_HOME, solidHome)
+  assert.equal(invocations[0].env.LINX_HOME, linxHome)
+  assert.equal(invocations[0].env.CODEX_API_KEY, 'sk-pod-openai')
+})
+
 test('auto-mode can run LinX native worker through session-managed runtime auth', async (t) => {
   const { root, linxHome, autoModeHome } = createAutoModeSandbox('linx-auto-mode-native-worker-')
 
@@ -218,6 +275,321 @@ test('auto-mode supported backends includes LinX native worker', async (t) => {
   const linx = backends.find((backend) => backend.backend === 'linx')
   assert.equal(linx.label, 'LinX')
   assert.match(linx.description, /LinX Cloud\/Pi runtime directly/)
+})
+
+test('auto-mode archives command args and every normalized event type for ACP backends', async (t) => {
+  const cases = [
+    {
+      backend: 'codex',
+      command: 'codex-acp',
+      useCommandOverride: true,
+      sessionId: 'sess_codex_all_events_123',
+      model: 'gpt-5.5',
+      passthroughArgs: ['--sandbox', 'workspace-write'],
+      expectedArgs: ['-c', 'model="gpt-5.5"', '--sandbox', 'workspace-write'],
+      credentialEnv: { CODEX_API_KEY: 'sk-all-events-openai' },
+    },
+    {
+      backend: 'claude',
+      command: 'claude-code-acp',
+      sessionId: 'sess_claude_all_events_123',
+      model: 'opus',
+      passthroughArgs: ['--debug-acp'],
+      expectedArgs: ['--debug-acp'],
+      credentialEnv: { ANTHROPIC_API_KEY: 'sk-all-events-anthropic' },
+    },
+    {
+      backend: 'codebuddy',
+      command: 'codebuddy',
+      sessionId: 'sess_codebuddy_all_events_123',
+      model: 'codebuddy-worker',
+      passthroughArgs: ['--trace'],
+      expectedArgs: ['--acp', '--acp-transport', 'stdio', '--model', 'codebuddy-worker', '--trace'],
+      credentialEnv: { CODEBUDDY_API_KEY: 'sk-all-events-codebuddy' },
+    },
+  ]
+
+  const { module, cleanup } = await loadAutoModeModule()
+  t.after(() => cleanup())
+
+  for (const item of cases) {
+    await t.test(item.backend, async (t) => {
+      const { root, binDir, linxHome, autoModeHome } = createAutoModeSandbox(`linx-auto-mode-${item.backend}-all-events-`)
+      const logFile = join(root, `${item.backend}-all-events-log.jsonl`)
+      const commandPath = join(binDir, item.command)
+      const expectedCommand = item.useCommandOverride ? commandPath : item.command
+
+      t.after(() => {
+        rmSync(root, { recursive: true, force: true })
+      })
+
+      writeExecutable(commandPath, `#!/usr/bin/env node
+const { appendFileSync } = require('node:fs')
+const readline = require('node:readline')
+
+function write(obj) {
+  process.stdout.write(JSON.stringify(obj) + '\\n')
+}
+
+function log(obj) {
+  appendFileSync(process.env.FAKE_ACP_LOG, JSON.stringify(obj) + '\\n')
+}
+
+log({ kind: 'spawn', argv: process.argv.slice(2) })
+
+const rl = readline.createInterface({ input: process.stdin })
+const sessionId = ${JSON.stringify(item.sessionId)}
+let pendingPromptId = null
+let pendingPermissionId = null
+let pendingInputId = null
+
+rl.on('line', (line) => {
+  const message = JSON.parse(line)
+  log({ kind: 'rpc', message })
+
+  if (message.method === 'initialize') {
+    write({ jsonrpc: '2.0', id: message.id, result: { protocolVersion: 1 } })
+    return
+  }
+
+  if (message.method === 'session/new') {
+    write({ jsonrpc: '2.0', id: message.id, result: { sessionId } })
+    return
+  }
+
+  if (message.method === 'session/set_model') {
+    write({ jsonrpc: '2.0', id: message.id, result: {} })
+    return
+  }
+
+  if (message.method === 'session/prompt') {
+    pendingPromptId = message.id
+    pendingPermissionId = 701
+    pendingInputId = 702
+    write({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId,
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: ${JSON.stringify(`${item.backend} delta before tools`)} },
+        },
+      },
+    })
+    write({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId,
+        update: {
+          sessionUpdate: 'tool_call',
+          title: 'Inspect workspace',
+          rawInput: { command: 'ls -la', cwd: process.cwd() },
+        },
+      },
+    })
+    write({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId,
+        update: {
+          sessionUpdate: 'progress_update',
+          message: ${JSON.stringify(`planning note from ${item.backend} acp`)},
+        },
+      },
+    })
+    write({
+      jsonrpc: '2.0',
+      id: pendingPermissionId,
+      method: 'session/request_permission',
+      params: {
+        sessionId,
+        toolCall: {
+          toolCallId: 'tool_pwd',
+          title: 'Run pwd',
+          kind: 'execute',
+          rawInput: { command: 'pwd', cwd: process.cwd() },
+        },
+        options: [
+          { optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' },
+          { optionId: 'allow_always', name: 'Allow always', kind: 'allow_always' },
+          { optionId: 'reject_once', name: 'Reject once', kind: 'reject_once' }
+        ],
+      },
+    })
+    return
+  }
+
+  if (pendingPermissionId !== null && message.id === pendingPermissionId) {
+    write({
+      jsonrpc: '2.0',
+      id: pendingInputId,
+      method: 'session/request_input',
+      params: {
+        sessionId,
+        questions: [{
+          id: 'confirm',
+          header: 'Confirm',
+          question: 'Which verification path should Codex use?',
+          options: [
+            { label: 'archive' },
+            { label: 'skip' }
+          ],
+        }],
+      },
+    })
+    return
+  }
+
+  if (pendingInputId !== null && message.id === pendingInputId) {
+    write({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId,
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: ${JSON.stringify(`${item.backend} delta after input`)} },
+        },
+      },
+    })
+    write({ jsonrpc: '2.0', id: pendingPromptId, result: { stopReason: 'end_turn' } })
+  }
+})
+`)
+
+      mockPodBackendCredential(t, module, item.backend, item.credentialEnv)
+      t.mock.method(module.autoModeRuntime, 'resolveAutoModeSecretaryRecommendation', async ({ request }) => {
+        if (request.kind === 'user-input') {
+          return {
+            kind: 'user-input',
+            canAutoDecide: true,
+            answers: {
+              confirm: {
+                answers: ['archive'],
+              },
+            },
+            confidence: 0.9,
+            reason: 'archive path verifies event retention',
+            reactionWindowMs: 0,
+            source: 'fallback',
+          }
+        }
+
+        return {
+          kind: request.kind,
+          canAutoDecide: true,
+          decision: 'accept',
+          confidence: 0.95,
+          reason: 'safe verification command in test harness',
+          reactionWindowMs: 0,
+          source: 'fallback',
+        }
+      })
+      t.mock.method(module.autoModeRuntime, 'resolveExistingRemoteAutoModeGrant', async () => null)
+      t.mock.method(module.autoModeRuntime, 'createRemoteAutoModeApproval', async () => {
+        throw new Error('remote unavailable')
+      })
+      t.mock.method(module.autoModeRuntime, 'promptText', async () => '/exit')
+
+      await withPatchedEnv(t, {
+        PATH: `${binDir}:${process.env.PATH ?? ''}`,
+        LINX_HOME: linxHome,
+        FAKE_ACP_LOG: logFile,
+      }, async () => {
+        const exitCode = await module.runAutoMode({
+          backend: item.backend,
+          autoEnabled: true,
+          mode: 'auto',
+          cwd: root,
+          prompt: `verify ${item.backend} acp event archive`,
+          model: item.model,
+          passthroughArgs: item.passthroughArgs,
+          credentialSource: 'cloud',
+          ...(item.useCommandOverride ? { commandOverride: commandPath } : {}),
+        })
+
+        assert.equal(exitCode, 0)
+      })
+
+      const logLines = readFileSync(logFile, 'utf-8')
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line))
+      const spawn = logLines.find((entry) => entry.kind === 'spawn')
+      assert.deepEqual(spawn.argv, item.expectedArgs)
+
+      const setModelRequest = logLines.find((entry) => entry.kind === 'rpc' && entry.message.method === 'session/set_model')
+      if (item.backend === 'claude') {
+        assert.equal(setModelRequest.message.params.modelId, item.model)
+      } else {
+        assert.equal(setModelRequest, undefined)
+      }
+
+      const permissionResponse = logLines.find((entry) => entry.kind === 'rpc' && entry.message.id === 701 && entry.message.result)
+      assert.deepEqual(permissionResponse.message.result, {
+        outcome: {
+          outcome: 'selected',
+          optionId: 'allow_once',
+        },
+      })
+
+      const inputResponse = logLines.find((entry) => entry.kind === 'rpc' && entry.message.id === 702 && entry.message.result)
+      assert.deepEqual(inputResponse.message.result, {
+        answers: {
+          confirm: {
+            answers: ['archive'],
+          },
+        },
+      })
+
+      const sessionDirs = readdirSync(join(autoModeHome, 'sessions'))
+      assert.deepEqual(sessionDirs, [item.sessionId])
+
+      const sessionDir = join(autoModeHome, 'sessions', sessionDirs[0])
+      const session = JSON.parse(readFileSync(join(sessionDir, 'session.json'), 'utf-8'))
+      assert.equal(session.command, expectedCommand)
+      assert.deepEqual(session.args, item.expectedArgs)
+      assert.deepEqual(session.passthroughArgs, item.passthroughArgs)
+      assert.equal(session.backendSessionId, item.sessionId)
+      assert.equal(session.transport, 'acp')
+      assert.equal(session.status, 'completed')
+
+      const archiveEntries = readFileSync(join(sessionDir, 'events.jsonl'), 'utf-8')
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line))
+
+      const turnStart = archiveEntries
+        .map((entry) => {
+          try {
+            return JSON.parse(entry.line)
+          } catch {
+            return null
+          }
+        })
+        .find((entry) => entry?.type === 'turn.start')
+      assert.equal(turnStart.command, expectedCommand)
+      assert.deepEqual(turnStart.args, item.expectedArgs)
+
+      const eventTypes = new Set(archiveEntries.flatMap((entry) => entry.events.map((event) => event.type)))
+      for (const type of ['assistant.delta', 'assistant.done', 'tool.call', 'approval.required', 'input.required', 'session.note']) {
+        assert.equal(eventTypes.has(type), true, `${item.backend} should archive ${type}`)
+      }
+
+      assert.equal(archiveEntries.some((entry) => JSON.stringify(entry).includes(`verify ${item.backend} acp event archive`)), true)
+      assert.equal(archiveEntries.some((entry) => JSON.stringify(entry).includes(`${item.backend} delta before tools`)), true)
+      assert.equal(archiveEntries.some((entry) => JSON.stringify(entry).includes(`${item.backend} delta after input`)), true)
+      assert.equal(archiveEntries.some((entry) => JSON.stringify(entry).includes('Inspect workspace')), true)
+      assert.equal(archiveEntries.some((entry) => JSON.stringify(entry).includes('"command":"pwd"')), true)
+      assert.equal(archiveEntries.some((entry) => JSON.stringify(entry).includes('Which verification path should Codex use?')), true)
+      assert.equal(archiveEntries.some((entry) => JSON.stringify(entry).includes(`planning note from ${item.backend} acp`)), true)
+    })
+  }
 })
 
 test('auto-mode reuses one ACP session across multiple turns', async (t) => {

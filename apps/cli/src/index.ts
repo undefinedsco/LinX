@@ -8,6 +8,7 @@ import { aiCommand } from './lib/ai-command.js'
 import { resolveAccountBaseUrl } from './lib/account-api.js'
 import { loadCredentials } from './lib/credentials-store.js'
 import { loginCommand, logoutCommand, whoamiCommand } from './lib/login-command.js'
+import { configCommand } from './lib/status-line-command.js'
 import { DefaultPackageManager, SettingsManager, SessionSelectorComponent, initTheme, runPrintMode } from '@earendil-works/pi-coding-agent'
 import { ProcessTerminal, TUI } from '@earendil-works/pi-tui'
 import { promptText } from './lib/prompt.js'
@@ -138,6 +139,15 @@ function resolveRemoteModelProviderLabel(model: { id: string; provider?: string;
 }
 
 let chatRuntimePromise: Promise<ChatRuntime> | null = null
+
+const RESERVED_NON_TOP_LEVEL_COMMANDS = new Set([
+  'automode',
+  'footer',
+  'resume',
+  'status-line',
+  'statusline',
+  'watch',
+])
 
 async function loadChatRuntime(): Promise<ChatRuntime> {
   if (!chatRuntimePromise) {
@@ -464,8 +474,8 @@ async function runPiCommand(argv: {
   prompt?: string[]
 } & AutoModeCommandArgs): Promise<void> {
   const firstPromptToken = Array.isArray(argv.prompt) ? argv.prompt[0] : undefined
-  // Reject old command aliases explicitly; auto-mode is only selected through flags.
-  if (firstPromptToken === 'automode' || firstPromptToken === 'watch' || firstPromptToken === 'resume') {
+  // Reject command-shaped aliases that should not fall through to the default TUI prompt.
+  if (firstPromptToken && RESERVED_NON_TOP_LEVEL_COMMANDS.has(firstPromptToken)) {
     throw new Error(`Unknown command: ${firstPromptToken}`)
   }
   if (argv.resume) {
@@ -917,6 +927,7 @@ const cli = yargs(hideBin(process.argv))
   .command(logoutCommand)
   .command(whoamiCommand)
   .command(aiCommand)
+  .command(configCommand)
   .command(retiredSymphonyCommand)
   .command(
     'install [source]',
@@ -1035,7 +1046,7 @@ const cli = yargs(hideBin(process.argv))
   .command(hiddenPiFrontendAliasCommand)
   .command(
     'codex-native-proxy',
-    'Start a local app-server websocket proxy for native Codex TUI',
+    false,
     (command) =>
       command
         .option('cwd', {

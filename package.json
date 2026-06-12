@@ -38,6 +38,7 @@
     "lint:web": "yarn workspace @linx/web lint",
     "typecheck:web": "yarn workspace @linx/web tsc --noEmit",
     "test:cli": "yarn workspace @undefineds.co/linx test",
+    "test:cli:live-acp": "yarn workspace @undefineds.co/linx test:live-acp",
     "dev:example": "yarn workspace solid-login-example dev",
     "build:models": "node scripts/models-workspace.mjs build",
     "build": "yarn build:models && yarn build:agent-runtime && yarn build:web",

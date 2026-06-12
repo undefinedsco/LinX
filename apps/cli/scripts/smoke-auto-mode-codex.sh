@@ -2,25 +2,6 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
-cd "$ROOT"
+cd "$ROOT/apps/cli"
 
-export PATH="$ROOT/node_modules/.bin:$PATH"
-
-step() {
-  printf '\n==> %s\n' "$1"
-}
-
-step "codex-acp help"
-./node_modules/.bin/codex-acp --help >/tmp/linx-codex-acp-help.txt
-sed -n '1,20p' /tmp/linx-codex-acp-help.txt
-
-step "codex auto-mode pwd"
-yarn workspace @undefineds.co/linx dev --backend codex "pwd"
-
-step "codex auto-mode git status"
-yarn workspace @undefineds.co/linx dev --backend codex "git status"
-
-step "auto-mode show latest"
-latest=$(ls -1t "${LINX_HOME:-${SOLID_HOME:-$HOME/.solid}/apps/linx}/auto-mode/sessions" | head -n 1)
-echo "latest=$latest"
-yarn workspace @undefineds.co/linx dev --show "$latest"
+exec node ./scripts/smoke-auto-mode-acp.mjs

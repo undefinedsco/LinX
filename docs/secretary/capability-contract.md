@@ -90,7 +90,7 @@ Developer implementation skills are different. Keep `drizzle-solid`,
 `solid-modeling`, and `xpod-componentsjs` available to engineers or coding
 agents when they are changing schemas, repositories, or Xpod UI/component
 integrations, but do not inject them into the user-facing Secretary prompt.
-Pod operation guidance belongs to the external `xpod-cli` marketplace skill,
+Pod operation guidance belongs to the bundled user-facing `xpod-cli` skill,
 not a LinX-local `pod_read` / `pod_write` skill. If Secretary needs durable
 data, it should request a product-level plan or call a bounded product
 operation; shared model/runtime code owns exact predicates, URI templates,

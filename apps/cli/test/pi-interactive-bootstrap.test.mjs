@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { globalAgent as httpsGlobalAgent } from 'node:https'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -28,6 +28,14 @@ function isolateSolidHome(t, prefix) {
     rmSync(solidHome, { recursive: true, force: true })
   })
   return solidHome
+}
+
+function restoreEnv(name, value) {
+  if (value === undefined) {
+    delete process.env[name]
+    return
+  }
+  process.env[name] = value
 }
 
 test('pi interactive bootstrap can instantiate with the LinX runtime adapter', async (t) => {
@@ -840,6 +848,7 @@ test('linx interactive /rewind materializes a clean active Pi session without su
   const submitted = []
   const statuses = []
   const renders = []
+  const transcriptRefreshes = []
   const agentState = {
     ...sessionManager.buildSessionContext(),
   }
@@ -858,6 +867,9 @@ test('linx interactive /rewind materializes a clean active Pi session without su
       requestRender() {
         renders.push('render')
       },
+    },
+    rebuildChatFromMessages() {
+      transcriptRefreshes.push(sessionManager.buildSessionContext().messages.map((message) => message.content[0].text))
     },
     setupEditorSubmitHandler() {
       this.defaultEditor.onSubmit = async (text) => {
@@ -888,6 +900,10 @@ test('linx interactive /rewind materializes a clean active Pi session without su
     'first turn',
     'first answer',
   ])
+  assert.deepEqual(transcriptRefreshes, [[
+    'first turn',
+    'first answer',
+  ]])
   assert.match(statuses.join('\n'), /Rewound 1 turn/)
   assert.equal(renders.length > 0, true)
   assert.equal(sessionManager.getBranch().map((entry) => entry.id).includes(firstUser), true)
@@ -929,6 +945,7 @@ test('linx interactive /rewind opens a TUI selector for the rollback target', as
   const submitted = []
   const statuses = []
   const renders = []
+  const transcriptRefreshes = []
   const agentState = {
     ...sessionManager.buildSessionContext(),
   }
@@ -949,6 +966,9 @@ test('linx interactive /rewind opens a TUI selector for the rollback target', as
       requestRender() {
         renders.push('render')
       },
+    },
+    rebuildChatFromMessages() {
+      transcriptRefreshes.push(sessionManager.buildSessionContext().messages.map((message) => message.content[0].text))
     },
     showSelector(create) {
       selectorResult = create(() => {
@@ -986,6 +1006,10 @@ test('linx interactive /rewind opens a TUI selector for the rollback target', as
     'first turn',
     'first answer',
   ])
+  assert.deepEqual(transcriptRefreshes, [[
+    'first turn',
+    'first answer',
+  ]])
   assert.match(statuses.join('\n'), /Rewound to before selected message/)
   assert.equal(renders.length > 0, true)
 })
@@ -1302,7 +1326,7 @@ test('linx escape interrupt aborts streaming session before Pi default handler',
   assert.deepEqual(calls, ['abort'])
 })
 
-test('linx escape interrupt aborts bash and preserves idle escape behavior', async (t) => {
+test('linx escape interrupt aborts bash and preserves non-empty editor escape behavior', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
   t.after(() => cleanup())
 
@@ -1311,6 +1335,11 @@ test('linx escape interrupt aborts bash and preserves idle escape behavior', asy
     defaultEditor: {
       onEscape() {
         calls.push('original')
+      },
+    },
+    editor: {
+      getText() {
+        return 'draft'
       },
     },
     session: {
@@ -1327,6 +1356,73 @@ test('linx escape interrupt aborts bash and preserves idle escape behavior', asy
   interactive.defaultEditor.onEscape()
 
   assert.deepEqual(calls, ['abortBash', 'original'])
+})
+
+test('linx escape interrupt opens rewind selector on double idle escape', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  t.after(() => cleanup())
+
+  const { SessionManager } = await import('@earendil-works/pi-coding-agent')
+  const sessionManager = SessionManager.inMemory('/tmp/linx-double-escape-rewind-test')
+  sessionManager.appendMessage({
+    role: 'user',
+    content: [{ type: 'text', text: 'first turn' }],
+    timestamp: Date.parse('2026-04-01T00:00:00.000Z'),
+  })
+  sessionManager.appendMessage({
+    role: 'assistant',
+    content: [{ type: 'text', text: 'first answer' }],
+    provider: 'undefineds',
+    model: 'linx-lite',
+    stopReason: 'stop',
+    timestamp: Date.parse('2026-04-01T00:00:01.000Z'),
+  })
+
+  const calls = []
+  const statuses = []
+  let selectorResult
+  const interactive = {
+    defaultEditor: {
+      onEscape() {
+        calls.push('original')
+      },
+    },
+    editor: {
+      getText() {
+        return ''
+      },
+    },
+    session: {
+      sessionManager,
+      agent: {
+        state: sessionManager.buildSessionContext(),
+      },
+    },
+    ui: {
+      requestRender() {
+        calls.push('render')
+      },
+    },
+    showSelector(create) {
+      calls.push('selector')
+      selectorResult = create(() => {})
+    },
+    showStatus(message) {
+      statuses.push(message)
+    },
+    showError(message) {
+      throw new Error(message)
+    },
+  }
+
+  module.installLinxEscapeInterrupt(interactive)
+  interactive.defaultEditor.onEscape()
+  interactive.defaultEditor.onEscape()
+
+  assert.equal(calls.includes('original'), false)
+  assert.equal(calls.includes('selector'), true)
+  assert.ok(selectorResult?.component)
+  assert.match(statuses.join('\n'), /Press Escape again to rewind/)
 })
 
 test('linx escape interrupt keeps wrapping later Pi escape handler assignments', async (t) => {
@@ -1612,6 +1708,262 @@ test('linx pod status output filter removes noisy Pod connection status lines', 
   ].join('\n')
 
   assert.equal(module.filterPodStatusOutput(noisy), 'real user-facing line')
+})
+
+test('linx status line supports Codex-style token config from environment', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-status-line.ts')
+  t.after(() => cleanup())
+  const previousStatusLine = process.env.LINX_STATUS_LINE
+  const previousUseColors = process.env.LINX_STATUS_LINE_USE_COLORS
+  const previousHome = process.env.HOME
+  process.env.LINX_STATUS_LINE = [
+    'model-with-reasoning',
+    'git-branch',
+    'context-remaining',
+    'total-input-tokens',
+    'total-output-tokens',
+    'current-dir',
+    'session-name',
+  ].join(',')
+  process.env.LINX_STATUS_LINE_USE_COLORS = 'false'
+  process.env.HOME = '/tmp'
+  t.after(() => {
+    restoreEnv('LINX_STATUS_LINE', previousStatusLine)
+    restoreEnv('LINX_STATUS_LINE_USE_COLORS', previousUseColors)
+    restoreEnv('HOME', previousHome)
+  })
+
+  const line = module.buildLinxFooterStatusLine({
+    width: 180,
+    autoCompactEnabled: true,
+    footerData: {
+      getGitBranch() {
+        return 'feature/statusline'
+      },
+    },
+    session: {
+      sessionManager: {
+        getCwd() {
+          return '/tmp/demo'
+        },
+        getSessionName() {
+          return 'smoke'
+        },
+        getEntries() {
+          return [
+            {
+              type: 'message',
+              message: {
+                role: 'assistant',
+                usage: {
+                  input: 1200,
+                  output: 80,
+                  cacheRead: 0,
+                  cacheWrite: 0,
+                  cost: { total: 0 },
+                },
+              },
+            },
+          ]
+        },
+      },
+      state: {
+        model: {
+          id: 'linx-lite',
+          provider: 'undefineds',
+          reasoning: true,
+          contextWindow: 1000,
+        },
+        thinkingLevel: 'high',
+      },
+      getContextUsage() {
+        return { contextWindow: 1000, percent: 25 }
+      },
+    },
+  }).trimEnd()
+
+  assert.equal(line, 'linx-lite • high • feature/statusline • ctx left 750 • ↑1.2k • ↓80 • ~/demo • smoke')
+})
+
+test('linx status line reads app-local JSON config from LINX_HOME', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-status-line.ts')
+  t.after(() => cleanup())
+  const linxHome = mkdtempSync(join(tmpdir(), 'linx-status-line-home-'))
+  const previousLinxHome = process.env.LINX_HOME
+  const previousStatusLine = process.env.LINX_STATUS_LINE
+  const previousUseColors = process.env.LINX_STATUS_LINE_USE_COLORS
+  process.env.LINX_HOME = linxHome
+  delete process.env.LINX_STATUS_LINE
+  delete process.env.LINX_STATUS_LINE_USE_COLORS
+  t.after(() => {
+    restoreEnv('LINX_HOME', previousLinxHome)
+    restoreEnv('LINX_STATUS_LINE', previousStatusLine)
+    restoreEnv('LINX_STATUS_LINE_USE_COLORS', previousUseColors)
+    rmSync(linxHome, { recursive: true, force: true })
+  })
+  mkdirSync(linxHome, { recursive: true })
+  writeFileSync(join(linxHome, 'config.json'), JSON.stringify({
+    status_line: ['provider', 'model', 'git_branch'],
+    status_line_use_colors: false,
+  }))
+
+  const line = module.buildLinxFooterStatusLine({
+    width: 80,
+    autoCompactEnabled: true,
+    footerData: {
+      getGitBranch() {
+        return 'main'
+      },
+    },
+    session: {
+      sessionManager: {
+        getCwd() {
+          return '/tmp/demo'
+        },
+        getEntries() {
+          return []
+        },
+      },
+      state: {
+        model: {
+          id: 'linx-lite',
+          provider: 'undefineds',
+          contextWindow: 1000,
+        },
+      },
+      getContextUsage() {
+        return { contextWindow: 1000, percent: 5 }
+      },
+    },
+  }).trimEnd()
+
+  assert.equal(line, 'undefineds • linx-lite • main')
+})
+
+test('linx interactive /statusline direct commands update app-local config', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  t.after(() => cleanup())
+  const linxHome = mkdtempSync(join(tmpdir(), 'linx-interactive-statusline-home-'))
+  const previousLinxHome = process.env.LINX_HOME
+  const previousStatusLine = process.env.LINX_STATUS_LINE
+  const previousUseColors = process.env.LINX_STATUS_LINE_USE_COLORS
+  process.env.LINX_HOME = linxHome
+  delete process.env.LINX_STATUS_LINE
+  delete process.env.LINX_STATUS_LINE_USE_COLORS
+  t.after(() => {
+    restoreEnv('LINX_HOME', previousLinxHome)
+    restoreEnv('LINX_STATUS_LINE', previousStatusLine)
+    restoreEnv('LINX_STATUS_LINE_USE_COLORS', previousUseColors)
+    rmSync(linxHome, { recursive: true, force: true })
+  })
+
+  const submitted = []
+  const statuses = []
+  const renders = []
+  const interactive = {
+    defaultEditor: {},
+    editor: {
+      setText() {},
+    },
+    ui: {
+      requestRender() {
+        renders.push('render')
+      },
+    },
+    setupEditorSubmitHandler() {
+      this.defaultEditor.onSubmit = async (text) => {
+        submitted.push(text)
+      }
+    },
+    showStatus(message) {
+      statuses.push(message)
+    },
+    showError(message) {
+      throw new Error(message)
+    },
+  }
+
+  module.installLinxGlobalCommands(interactive, {}, process.cwd())
+  interactive.setupEditorSubmitHandler()
+  await interactive.defaultEditor.onSubmit('/statusline set model-with-reasoning git-branch context-remaining')
+  await interactive.defaultEditor.onSubmit('/statusline colors off')
+
+  const config = JSON.parse(readFileSync(join(linxHome, 'config.json'), 'utf-8'))
+  assert.deepEqual(submitted, [])
+  assert.deepEqual(config.status_line, ['model-with-reasoning', 'git-branch', 'context-remaining'])
+  assert.equal(config.status_line_use_colors, false)
+  assert.match(statuses.join('\n'), /Status line updated/)
+  assert.match(statuses.join('\n'), /colors disabled/)
+  assert.equal(renders.length > 0, true)
+})
+
+test('linx interactive /statusline opens a selector with presets', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  t.after(() => cleanup())
+  const linxHome = mkdtempSync(join(tmpdir(), 'linx-interactive-statusline-selector-home-'))
+  const previousLinxHome = process.env.LINX_HOME
+  const previousStatusLine = process.env.LINX_STATUS_LINE
+  const previousUseColors = process.env.LINX_STATUS_LINE_USE_COLORS
+  process.env.LINX_HOME = linxHome
+  delete process.env.LINX_STATUS_LINE
+  delete process.env.LINX_STATUS_LINE_USE_COLORS
+  t.after(() => {
+    restoreEnv('LINX_HOME', previousLinxHome)
+    restoreEnv('LINX_STATUS_LINE', previousStatusLine)
+    restoreEnv('LINX_STATUS_LINE_USE_COLORS', previousUseColors)
+    rmSync(linxHome, { recursive: true, force: true })
+  })
+
+  const selectorCalls = []
+  const statuses = []
+  const interactive = {
+    defaultEditor: {},
+    editor: {
+      setText() {},
+    },
+    ui: {
+      requestRender() {},
+    },
+    setupEditorSubmitHandler() {
+      this.defaultEditor.onSubmit = async () => {
+        throw new Error('/statusline should not reach backend submit')
+      }
+    },
+    async showExtensionSelector(title, options) {
+      selectorCalls.push({ title, options })
+      return 'Use Codex-style preset'
+    },
+    showStatus(message) {
+      statuses.push(message)
+    },
+    showError(message) {
+      throw new Error(message)
+    },
+  }
+
+  module.installLinxGlobalCommands(interactive, {}, process.cwd())
+  interactive.setupEditorSubmitHandler()
+  await interactive.defaultEditor.onSubmit('/statusline')
+
+  const config = JSON.parse(readFileSync(join(linxHome, 'config.json'), 'utf-8'))
+  assert.match(selectorCalls[0].title, /Status line/)
+  assert.deepEqual(selectorCalls[0].options, [
+    'Use Codex-style preset',
+    'Use compact preset',
+    'Configure tokens manually',
+    'Toggle colors',
+    'Show available tokens',
+    'Reset to default',
+  ])
+  assert.deepEqual(config.status_line, [
+    'model-with-reasoning',
+    'git-branch',
+    'context-remaining',
+    'total-input-tokens',
+    'total-output-tokens',
+    'current-dir',
+  ])
+  assert.match(statuses.join('\n'), /Codex-style preset/)
 })
 
 test('linx footer patch adds cache rate from assistant usage', async (t) => {
@@ -5056,7 +5408,7 @@ test('linx interactive restores auto mode visibly on resume startup', async (t) 
   assert.equal(controllerStarts.length, 1)
   assert.deepEqual(controllerStarts[0], { scheduleImmediately: true })
   assert.match(statuses[0], /Auto restored from the previous session/)
-  assert.match(statuses[0], /托管中/)
+  assert.match(statuses[0], /auto · Ctrl\+C or \/auto off to hand control back/)
   bootstrap.stop()
   await runtime.dispose()
   process.chdir(originalCwd)
@@ -5330,10 +5682,10 @@ test('linx interactive /symphony switches current chat peer for following messag
 
   assert.deepEqual(editorTexts, ['', '', ''])
   assert.equal(interactive.__linxSymphonyModeEnabled, false)
-  assert.match(statuses[0], /Symphony on: you are now chatting with Secretary/)
-  assert.match(statuses[0], /What changed: following normal messages enter the Secretary control lane before worker\/backend routing/)
-  assert.match(statuses[0], /Skills: issue triage, existing Issue lookup, create\/update\/ask decision/)
-  assert.match(statuses[0], /Ordinary chat stays ordinary Message/)
+  assert.match(statuses[0], /Symphony is on/)
+  assert.match(statuses[0], /ordinary chat ordinary/)
+  assert.doesNotMatch(statuses[0], /Skills:/)
+  assert.doesNotMatch(statuses[0], /What changed:/)
   assert.match(statuses[1], /Symphony is on/)
   assert.match(statuses[1], /Current chat peer: Secretary/)
   assert.match(statuses[1], /Running workers: 1/)
@@ -5341,12 +5693,14 @@ test('linx interactive /symphony switches current chat peer for following messag
   assert.match(statuses[1], /runtime=auto-worker-a/)
   assert.match(statuses[1], /Chat: https:\/\/alice\.example\/.data\/chat\/__secretary__\/index\.ttl#this/)
   assert.match(statuses[1], /Thread: https:\/\/alice\.example\/.data\/chat\/__secretary__\/index\.ttl#session-status/)
-  assert.match(statuses[2], /Symphony off: you are now chatting with the current worker\/backend peer/)
-  assert.match(statuses[2], /What changed: following messages bypass Secretary Symphony triage and dispatch/)
-  assert.match(statuses[2], /Current Symphony dispatches started from this TUI were cancelled/)
+  assert.match(statuses[2], /Symphony is off/)
+  assert.match(statuses[2], /Back to direct chat/)
+  assert.match(statuses[2], /Active handoffs from this window were stopped/)
   assert.equal(submitted.length, 2)
   assert.match(submitted[0], /AI Secretary Symphony request/)
   assert.match(submitted[0], /Symphony is on: the user is chatting with Secretary/)
+  assert.match(submitted[0], /Default response style: reply like normal chat/)
+  assert.match(submitted[0], /do not explain that it was not delegated/)
   assert.match(submitted[0], /ship the login fix/)
   assert.equal(submitted[1], 'normal chat')
   assert.equal(controlManagers.length, 1)
@@ -5361,7 +5715,7 @@ test('linx interactive /symphony switches current chat peer for following messag
   assert.equal(messageEntry.data?.data?.reconciler?.policyKind, 'direct')
 })
 
-test('linx interactive /symphony dispatches explicit worker objectives instead of sending them to the main backend', async (t) => {
+test('linx interactive /symphony keeps worker-looking messages in the Secretary lane', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
   t.after(() => cleanup())
 
@@ -5369,145 +5723,7 @@ test('linx interactive /symphony dispatches explicit worker objectives instead o
   const statuses = []
   const errors = []
   const runCalls = []
-  let projectionSessionReads = 0
-  const projectionRuntime = {
-    async getPodDataSession() {
-      projectionSessionReads += 1
-      return null
-    },
-  }
-  const interactive = {
-    defaultEditor: {},
-    __autoEnabled: true,
-    __linxSymphonyWorkerModel: 'deepseek-v4',
-    __linxSymphonyPodProjectionRuntime: projectionRuntime,
-    podSession: {
-      webId: 'https://alice.example/profile/card#me',
-    },
-    session: {
-      model: {
-        id: 'gpt-5.5',
-      },
-    },
-    sessionManager: {
-      getSessionId() {
-        return 'session-dispatch'
-      },
-    },
-    runtime: {
-      runtimeBackend: 'codex',
-      cwd: '/tmp/linx-dispatch',
-    },
-    editor: {
-      setText() {},
-    },
-    ui: {
-      requestRender() {},
-    },
-    setupEditorSubmitHandler() {
-      this.defaultEditor.onSubmit = async (text) => {
-        submitted.push(text)
-      }
-    },
-    showStatus(message) {
-      statuses.push(message)
-    },
-    showError(message) {
-      errors.push(message)
-    },
-    __linxRunSymphony: async (args, runtime) => {
-      runCalls.push({ args, runtime })
-      return {
-        issue: {
-          uri: 'urn:undefineds:linx:issue:issue_dispatch',
-          title: 'Dispatch verification',
-          status: 'resolved',
-        },
-        task: 'urn:undefineds:linx:task:task_dispatch',
-        delivery: {
-          uri: 'urn:undefineds:linx:delivery:delivery_dispatch',
-          status: 'completed',
-          autoModeSessionId: 'auto-dispatch-1',
-        },
-        session: {
-          uri: 'urn:undefineds:linx:session:session_dispatch',
-          status: 'completed',
-          autoModeSessionId: 'auto-dispatch-1',
-        },
-        workers: [
-          {
-            task: 'urn:undefineds:linx:task:task_dispatch',
-            delivery: {
-              uri: 'urn:undefineds:linx:delivery:delivery_dispatch',
-              status: 'completed',
-              autoModeSessionId: 'auto-dispatch-1',
-            },
-            session: {
-              uri: 'urn:undefineds:linx:session:session_dispatch',
-              status: 'completed',
-              autoModeSessionId: 'auto-dispatch-1',
-            },
-          },
-        ],
-      }
-    },
-  }
-
-  module.installSymphonyCommand(interactive)
-  interactive.setupEditorSubmitHandler()
-
-  await interactive.defaultEditor.onSubmit('/symphony on')
-  await interactive.defaultEditor.onSubmit('请派出一个任务，用 cc worker 回复 exactly symphony-ok')
-  await Promise.all(interactive.__linxSymphonyDispatches ?? [])
-
-  assert.equal(errors.length, 0)
-  assert.equal(submitted.length, 0)
-  assert.equal(runCalls.length, 1)
-  assert.deepEqual(runCalls[0].args.objective, ['请派出一个任务，用 cc worker 回复 exactly symphony-ok'])
-  assert.equal(runCalls[0].args.backend, 'claude')
-  assert.equal(runCalls[0].args.auto, true)
-  assert.equal(runCalls[0].args.cwd, '/tmp/linx-dispatch')
-  assert.equal(runCalls[0].args.plain, true)
-  assert.equal(runCalls[0].args.print, false)
-  assert.equal(runCalls[0].args.quietProjectionErrors, true)
-  assert.equal(runCalls[0].args.quietWorkers, true)
-  assert.deepEqual(runCalls[0].args.agentRuntime, {
-    backend: 'linx',
-    credentialSource: 'cloud',
-    model: 'gpt-5.5',
-  })
-  assert.equal(runCalls[0].args.workerModel, 'opus')
-  assert.equal(runCalls[0].args.credentialSource, 'local')
-  assert.equal(runCalls[0].args.workerGoalMode, true)
-  assert.equal(runCalls[0].args.workerSupervisorIntervalMs, 600000)
-  assert.equal(runCalls[0].args.target.source, 'active-session')
-  assert.equal(runCalls[0].args.target.backend, 'claude')
-  assert.match(runCalls[0].args.chat, /__secretary__\/index\.ttl#this/)
-  assert.match(runCalls[0].args.thread, /session-dispatch/)
-  assert.equal(typeof runCalls[0].runtime.runAutoMode, 'function')
-  assert.equal(typeof runCalls[0].runtime.listAutoModeSessions, 'function')
-  assert.equal(typeof runCalls[0].runtime.persistSymphonyProjectionToPod, 'function')
-  assert.equal(await runCalls[0].runtime.listOpenSymphonyIssuesFromPod(), null)
-  assert.equal(projectionSessionReads, 1)
-  assert.match(statuses[0], /Symphony on: you are now chatting with Secretary/)
-  assert.match(statuses[1], /Symphony dispatch started/)
-  assert.match(statuses[1], /Worker backend: claude/)
-  assert.match(statuses[1], /Worker credentials: local/)
-  assert.match(statuses[1], /Control runtime: linx · gpt-5\.5 · credentials=cloud/)
-  assert.match(statuses[1], /Worker model: opus/)
-  assert.match(statuses[1], /Worker goal: on · supervisor interval=10m/)
-  assert.match(statuses.at(-1), /Symphony dispatch completed/)
-  assert.match(statuses.at(-1), /runtime=auto-dispatch-1/)
-})
-
-test('linx interactive /symphony can dispatch LinX native worker objectives', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
-  t.after(() => cleanup())
-
-  const submitted = []
-  const statuses = []
-  const errors = []
-  const runCalls = []
+  const editorTexts = []
   const interactive = {
     defaultEditor: {},
     __autoEnabled: true,
@@ -5522,15 +5738,17 @@ test('linx interactive /symphony can dispatch LinX native worker objectives', as
     },
     sessionManager: {
       getSessionId() {
-        return 'session-linx-dispatch'
+        return 'session-secretary-lane'
       },
     },
     runtime: {
       runtimeBackend: 'codex',
-      cwd: '/tmp/linx-native-dispatch',
+      cwd: '/tmp/linx-secretary-lane',
     },
     editor: {
-      setText() {},
+      setText(text) {
+        editorTexts.push(text)
+      },
     },
     ui: {
       requestRender() {},
@@ -5546,164 +5764,47 @@ test('linx interactive /symphony can dispatch LinX native worker objectives', as
     showError(message) {
       errors.push(message)
     },
-    __linxRunSymphony: async (args) => {
+    __linxRunSymphony: async (...args) => {
       runCalls.push(args)
-      return {
-        issue: {
-          uri: 'urn:undefineds:linx:issue:issue_linx_dispatch',
-          title: 'LinX native dispatch verification',
-          status: 'resolved',
-        },
-        task: 'urn:undefineds:linx:task:task_linx_dispatch',
-        delivery: {
-          uri: 'urn:undefineds:linx:delivery:delivery_linx_dispatch',
-          status: 'completed',
-          autoModeSessionId: 'auto-linx-dispatch-1',
-        },
-        session: {
-          uri: 'urn:undefineds:linx:session:session_linx_dispatch',
-          status: 'completed',
-          autoModeSessionId: 'auto-linx-dispatch-1',
-        },
-        workers: [],
-      }
+      throw new Error('raw Symphony user input must not directly dispatch a worker')
     },
   }
 
   module.installSymphonyCommand(interactive)
   interactive.setupEditorSubmitHandler()
 
+  const messages = [
+    '请派出一个任务，用 cc worker 回复 exactly symphony-ok',
+    'worker 干完了吗',
+    '请派出一个任务，用 linx worker，model=step-3.7-flash，回复 exactly symphony-ok',
+  ]
+
   await interactive.defaultEditor.onSubmit('/symphony on')
-  await interactive.defaultEditor.onSubmit('请派出一个任务，用 pi runtime worker 回复 exactly symphony-ok')
-  await Promise.all(interactive.__linxSymphonyDispatches ?? [])
-
-  assert.equal(errors.length, 0)
-  assert.equal(submitted.length, 0)
-  assert.equal(runCalls.length, 1)
-  assert.equal(runCalls[0].backend, 'linx')
-  assert.equal(runCalls[0].target.backend, 'linx')
-  assert.equal(runCalls[0].target.agent, 'linx-worker')
-  assert.equal(runCalls[0].auto, true)
-  assert.equal(runCalls[0].workerGoalMode, true)
-  assert.equal(runCalls[0].workerModel, 'deepseek-v4')
-  assert.equal(runCalls[0].credentialSource, 'cloud')
-  assert.equal(runCalls[0].workerSupervisorIntervalMs, 600000)
-  assert.deepEqual(runCalls[0].agentRuntime, {
-    backend: 'linx',
-    credentialSource: 'cloud',
-    model: 'gpt-5.5',
-  })
-  assert.match(statuses[1], /Worker backend: linx/)
-  assert.match(statuses[1], /Worker credentials: cloud/)
-  assert.match(statuses[1], /Worker goal: on · supervisor interval=10m/)
-  assert.match(statuses.at(-1), /runtime=auto-linx-dispatch-1/)
-})
-
-test('linx interactive /symphony passes StepFun model ids through LinX native workers', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
-  t.after(() => cleanup())
-
-  const submitted = []
-  const statuses = []
-  const errors = []
-  const runCalls = []
-  const interactive = {
-    defaultEditor: {},
-    __autoEnabled: true,
-    podSession: {
-      webId: 'https://alice.example/profile/card#me',
-    },
-    session: {
-      model: {
-        id: 'gpt-5.5',
-      },
-    },
-    sessionManager: {
-      getSessionId() {
-        return 'session-stepfun-dispatch'
-      },
-    },
-    runtime: {
-      runtimeBackend: 'codex',
-      cwd: '/tmp/linx-stepfun-dispatch',
-    },
-    editor: {
-      setText() {},
-    },
-    ui: {
-      requestRender() {},
-    },
-    setupEditorSubmitHandler() {
-      this.defaultEditor.onSubmit = async (text) => {
-        submitted.push(text)
-      }
-    },
-    showStatus(message) {
-      statuses.push(message)
-    },
-    showError(message) {
-      errors.push(message)
-    },
-    __linxRunSymphony: async (args) => {
-      runCalls.push(args)
-      return {
-        issue: {
-          uri: 'urn:undefineds:linx:issue:issue_stepfun_dispatch',
-          title: 'StepFun native dispatch verification',
-          status: 'resolved',
-        },
-        task: 'urn:undefineds:linx:task:task_stepfun_dispatch',
-        delivery: {
-          uri: 'urn:undefineds:linx:delivery:delivery_stepfun_dispatch',
-          status: 'completed',
-          autoModeSessionId: 'auto-stepfun-dispatch-1',
-        },
-        session: {
-          uri: 'urn:undefineds:linx:session:session_stepfun_dispatch',
-          status: 'completed',
-          autoModeSessionId: 'auto-stepfun-dispatch-1',
-        },
-        workers: [],
-      }
-    },
+  for (const message of messages) {
+    await interactive.defaultEditor.onSubmit(message)
   }
-
-  module.installSymphonyCommand(interactive)
-  interactive.setupEditorSubmitHandler()
-
-  await interactive.defaultEditor.onSubmit('/symphony on')
-  await interactive.defaultEditor.onSubmit('请派出一个任务，用 linx worker，model=step-3.7-flash，回复 exactly symphony-ok')
   await Promise.all(interactive.__linxSymphonyDispatches ?? [])
 
   assert.equal(errors.length, 0)
-  assert.equal(submitted.length, 0)
-  assert.equal(runCalls.length, 1)
-  assert.equal(runCalls[0].backend, 'linx')
-  assert.equal(runCalls[0].target.backend, 'linx')
-  assert.equal(runCalls[0].workerModel, 'step-3.7-flash')
-  assert.deepEqual(runCalls[0].agentRuntime, {
-    backend: 'linx',
-    credentialSource: 'cloud',
-    model: 'gpt-5.5',
-  })
-  assert.equal(runCalls[0].credentialSource, 'cloud')
-  assert.match(statuses[1], /Worker backend: linx/)
-  assert.match(statuses[1], /Worker model: step-3\.7-flash/)
-  assert.match(statuses.at(-1), /runtime=auto-stepfun-dispatch-1/)
+  assert.deepEqual(runCalls, [])
+  assert.equal(submitted.length, messages.length)
+  for (let i = 0; i < messages.length; i += 1) {
+    assert.match(submitted[i], /AI Secretary Symphony request/)
+    assert.match(submitted[i], /Symphony is on: the user is chatting with Secretary/)
+    assert.match(submitted[i], new RegExp(messages[i].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+  }
+  assert.deepEqual(editorTexts, [''])
+  assert.match(statuses[0], /Symphony is on/)
+  assert.equal(statuses.length, 1)
 })
 
-test('linx interactive /symphony off ignores stale worker dispatch callbacks and restores worker backend chat', async (t) => {
+test('linx interactive /symphony off restores worker backend chat without pending dispatch', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
   t.after(() => cleanup())
 
   const submitted = []
   const statuses = []
   const errors = []
-  let dispatchSignal
-  let resolveDispatch
-  const dispatchPromise = new Promise((resolve) => {
-    resolveDispatch = resolve
-  })
   const interactive = {
     defaultEditor: {},
     __autoEnabled: true,
@@ -5712,7 +5813,7 @@ test('linx interactive /symphony off ignores stale worker dispatch callbacks and
     },
     sessionManager: {
       getSessionId() {
-        return 'session-dispatch-off'
+        return 'session-symphony-off-secretary-lane'
       },
     },
     runtime: {
@@ -5736,9 +5837,8 @@ test('linx interactive /symphony off ignores stale worker dispatch callbacks and
     showError(message) {
       errors.push(message)
     },
-    __linxRunSymphony: async (args) => {
-      dispatchSignal = args.signal
-      return dispatchPromise
+    __linxRunSymphony: async () => {
+      throw new Error('raw Symphony user input must not directly dispatch a worker')
     },
   }
 
@@ -5747,57 +5847,23 @@ test('linx interactive /symphony off ignores stale worker dispatch callbacks and
 
   await interactive.defaultEditor.onSubmit('/symphony on')
   await interactive.defaultEditor.onSubmit('请派出一个任务，让 worker 回复 exactly symphony-ok')
-  assert.equal(dispatchSignal instanceof AbortSignal, true)
-  assert.equal(dispatchSignal.aborted, false)
   await interactive.defaultEditor.onSubmit('/symphony off')
-  assert.equal(dispatchSignal.aborted, true)
   await interactive.defaultEditor.onSubmit('normal chat after off')
-
-  resolveDispatch({
-    issue: {
-      uri: 'urn:undefineds:linx:issue:issue_dispatch_off',
-      title: 'Dispatch off verification',
-      status: 'resolved',
-    },
-    task: 'urn:undefineds:linx:task:task_dispatch_off',
-    delivery: {
-      uri: 'urn:undefineds:linx:delivery:delivery_dispatch_off',
-      status: 'completed',
-      autoModeSessionId: 'auto-dispatch-off',
-    },
-    session: {
-      uri: 'urn:undefineds:linx:session:session_dispatch_off',
-      status: 'completed',
-      autoModeSessionId: 'auto-dispatch-off',
-    },
-    workers: [
-      {
-        task: 'urn:undefineds:linx:task:task_dispatch_off',
-        delivery: {
-          uri: 'urn:undefineds:linx:delivery:delivery_dispatch_off',
-          status: 'completed',
-          autoModeSessionId: 'auto-dispatch-off',
-        },
-        session: {
-          uri: 'urn:undefineds:linx:session:session_dispatch_off',
-          status: 'completed',
-          autoModeSessionId: 'auto-dispatch-off',
-        },
-      },
-    ],
-  })
   await Promise.all(interactive.__linxSymphonyDispatches ?? [])
 
   assert.equal(errors.length, 0)
   assert.equal(interactive.__linxSymphonyModeEnabled, false)
-  assert.deepEqual(submitted, ['normal chat after off'])
-  assert.match(statuses[0], /Symphony on: you are now chatting with Secretary/)
-  assert.match(statuses[1], /Symphony dispatch started/)
-  assert.match(statuses[2], /Symphony off: you are now chatting with the current worker\/backend peer/)
-  assert.equal(statuses.length, 3)
+  assert.equal(submitted.length, 2)
+  assert.match(submitted[0], /AI Secretary Symphony request/)
+  assert.match(submitted[0], /请派出一个任务，让 worker 回复 exactly symphony-ok/)
+  assert.equal(submitted[1], 'normal chat after off')
+  assert.match(statuses[0], /Symphony is on/)
+  assert.match(statuses[1], /Symphony is off/)
+  assert.match(statuses[1], /Back to direct chat/)
+  assert.equal(statuses.length, 2)
 })
 
-test('linx interactive /symphony status reads open issues and running workers from Pod projection before local archive', async (t) => {
+test('linx interactive /symphony status reads open issues and running workers from Pod control state when available', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
   t.after(() => cleanup())
 
@@ -5961,6 +6027,7 @@ test('linx interactive /symphony status reads open issues and running workers fr
   await interactive.defaultEditor.onSubmit('/symphony status')
 
   assert.equal(statuses.length, 1)
+  assert.match(statuses[0], /Pod control state: active/)
   assert.match(statuses[0], /Open issues: 1/)
   assert.match(statuses[0], /open Pod authority issue/)
   assert.match(statuses[0], /issue_pod_open/)
@@ -5977,7 +6044,7 @@ test('linx interactive /symphony status reads open issues and running workers fr
   assert.doesNotMatch(statuses[0], /auto-local-stale/)
 })
 
-test('linx interactive /symphony status falls back to local archive when Pod projection status hangs', async (t) => {
+test('linx interactive /symphony status reports Pod control-state failure without showing local archive as truth', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
   t.after(() => cleanup())
 
@@ -6077,13 +6144,13 @@ test('linx interactive /symphony status falls back to local archive when Pod pro
   await interactive.defaultEditor.onSubmit('/symphony status')
 
   assert.equal(statuses.length, 1)
-  assert.match(statuses[0], /Pod projection: unavailable/)
-  assert.match(statuses[0], /Fallback: showing local Symphony archive/)
-  assert.match(statuses[0], /Open issues: 1/)
-  assert.match(statuses[0], /open Local open issue/)
-  assert.match(statuses[0], /Running workers: 1/)
-  assert.match(statuses[0], /codex\/auto -> Local running worker/)
-  assert.match(statuses[0], /runtime=auto-local-running/)
+  assert.match(statuses[0], /Pod control state: unavailable/)
+  assert.doesNotMatch(statuses[0], /Fallback: showing local Symphony archive/)
+  assert.match(statuses[0], /Open issues: 0/)
+  assert.doesNotMatch(statuses[0], /Local open issue/)
+  assert.match(statuses[0], /Running workers: 0/)
+  assert.doesNotMatch(statuses[0], /Local running worker/)
+  assert.doesNotMatch(statuses[0], /auto-local-running/)
 })
 
 test('linx interactive adds LinX commands to real slash command autocomplete provider', async (t) => {
@@ -6143,6 +6210,12 @@ test('linx interactive adds LinX commands to real slash command autocomplete pro
       description: 'select a user message and rewind the active branch before it',
     },
     {
+      name: 'statusline',
+      argumentHint: 'set|colors|tokens|reset',
+      description: 'configure which items appear in the status line',
+      getArgumentCompletions: commandByName('statusline').getArgumentCompletions,
+    },
+    {
       name: 'ai',
       argumentHint: 'connect <provider>',
       description: 'connect AI provider credentials to LinX Pod settings',
@@ -6151,7 +6224,7 @@ test('linx interactive adds LinX commands to real slash command autocomplete pro
     {
       name: 'symphony',
       argumentHint: 'on|off|status',
-      description: 'switch chat peer between Secretary and backend worker',
+      description: 'turn Secretary task handoff on/off, or show status',
       getArgumentCompletions: commandByName('symphony').getArgumentCompletions,
     },
   ])
@@ -6172,8 +6245,8 @@ test('linx interactive adds LinX commands to real slash command autocomplete pro
     { value: 'connect claude', label: 'claude', description: 'Connect claude credentials' },
   ])
   assert.deepEqual(await commandByName('symphony').getArgumentCompletions('o'), [
-    { value: 'on', label: 'on', description: 'Chat with Secretary using Symphony orchestration skills' },
-    { value: 'off', label: 'off', description: 'Chat directly with the current worker/backend peer' },
+    { value: 'on', label: 'on', description: 'Secretary can plan and hand off larger tasks' },
+    { value: 'off', label: 'off', description: 'Return to direct chat' },
   ])
 })
 
@@ -6203,6 +6276,7 @@ test('linx interactive autocomplete patch falls back to legacy setupAutocomplete
     'cd',
     'goal',
     'rewind',
+    'statusline',
     'ai',
     'symphony',
   ])

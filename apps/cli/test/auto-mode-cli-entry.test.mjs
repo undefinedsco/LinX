@@ -366,7 +366,7 @@ test('dev script routes auto-mode through the main cli command', async (t) => {
   assert.match(output, /codebuddy/i)
 })
 
-test('compiled cli entry exposes codex-native-proxy command help', async (t) => {
+test('compiled cli entry keeps codex-native-proxy callable but hidden from top-level help', async (t) => {
   const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-native-proxy-'))
   t.after(() => {
     rmSync(outdir, { recursive: true, force: true })
@@ -405,10 +405,15 @@ test('compiled cli entry exposes codex-native-proxy command help', async (t) => 
     cwd: cliRoot,
     encoding: 'utf-8',
   })
+  const topLevelHelp = execFileSync(process.execPath, [join(outdir, 'index.js'), '--help'], {
+    cwd: cliRoot,
+    encoding: 'utf-8',
+  })
 
   assert.match(output, /codex-native-proxy/)
   assert.match(output, /websocket/i)
   assert.match(output, /--port/)
+  assert.doesNotMatch(topLevelHelp, /codex-native-proxy/)
 })
 
 test('compiled cli default entry is Pi TUI and hides explicit frontend aliases', async (t) => {
@@ -559,7 +564,104 @@ test('compiled cli exposes LinX package commands in help', async (t) => {
   assert.match(output, /linx remove \[source\]/)
   assert.match(output, /linx update \[source\]/)
   assert.match(output, /linx list/)
+  assert.match(output, /linx config <section>/)
+  assert.doesNotMatch(output, /linx status-line/)
   assert.doesNotMatch(output, /pi install/)
+})
+
+test('compiled cli config status-line command configures app-local footer tokens', async (t) => {
+  const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-status-line-'))
+  const linxHome = mkdtempSync(join(cliRoot, '.tmp-linx-status-line-home-'))
+  t.after(() => {
+    rmSync(outdir, { recursive: true, force: true })
+    rmSync(linxHome, { recursive: true, force: true })
+  })
+
+  try {
+    execFileSync('tsc', [
+      '--outDir',
+      outdir,
+      '--rootDir',
+      sourceRoot,
+      '--module',
+      'nodenext',
+      '--moduleResolution',
+      'nodenext',
+      '--target',
+      'ES2022',
+      '--lib',
+      'ES2022',
+      '--types',
+      'node',
+      '--skipLibCheck',
+      'true',
+      '--noEmitOnError',
+      'false',
+      entryPath,
+    ], {
+      cwd: cliRoot,
+      stdio: 'pipe',
+    })
+  } catch {
+    assert.ok(existsSync(join(outdir, 'index.js')))
+  }
+
+  const env = {
+    ...process.env,
+    LINX_HOME: linxHome,
+  }
+  const cli = join(outdir, 'index.js')
+  const setOutput = execFileSync(process.execPath, [
+    cli,
+    'config',
+    'status-line',
+    'set',
+    'model-with-reasoning',
+    'git-branch',
+    'context-remaining',
+    '--no-colors',
+  ], {
+    cwd: cliRoot,
+    env,
+    encoding: 'utf-8',
+  })
+  const showOutput = execFileSync(process.execPath, [cli, 'config', 'status-line'], {
+    cwd: cliRoot,
+    env,
+    encoding: 'utf-8',
+  })
+  const tokensOutput = execFileSync(process.execPath, [cli, 'config', 'status-line', 'tokens'], {
+    cwd: cliRoot,
+    env,
+    encoding: 'utf-8',
+  })
+  execFileSync(process.execPath, [cli, 'config', 'status-line', 'reset'], {
+    cwd: cliRoot,
+    env,
+    encoding: 'utf-8',
+  })
+  const resetOutput = execFileSync(process.execPath, [cli, 'config', 'status-line'], {
+    cwd: cliRoot,
+    env,
+    encoding: 'utf-8',
+  })
+  const topLevelStatusLine = execFileResult(process.execPath, [cli, 'status-line'], {
+    cwd: cliRoot,
+    env,
+    encoding: 'utf-8',
+    stdio: 'pipe',
+  })
+
+  const config = JSON.parse(readFileSync(join(linxHome, 'config.json'), 'utf-8'))
+  assert.match(setOutput, /Updated LinX status line/)
+  assert.match(showOutput, /tokens: model-with-reasoning, git-branch, context-remaining/)
+  assert.match(showOutput, /colors: off/)
+  assert.match(tokensOutput, /context-remaining/)
+  assert.equal(config.status_line, undefined)
+  assert.equal(config.status_line_use_colors, undefined)
+  assert.match(resetOutput, /tokens source: default/)
+  assert.notEqual(topLevelStatusLine.status, 0)
+  assert.match(topLevelStatusLine.stderr, /Unknown command: status-line/)
 })
 
 test('compiled cli login help exposes browser consent flow and no password options', async (t) => {
@@ -619,7 +721,7 @@ test('cli build ships product skills for the Pi resource loader', async (t) => {
     .map((entry) => entry.name)
     .sort()
 
-  assert.deepEqual(distSkills, ['symphony'])
+  assert.deepEqual(distSkills, ['symphony', 'xpod-cli'])
   for (const skill of distSkills) {
     assert.ok(existsSync(join(cliRoot, 'dist', 'skills', skill, 'SKILL.md')), `${skill} should include SKILL.md`)
   }

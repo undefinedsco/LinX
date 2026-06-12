@@ -204,7 +204,7 @@ Last reviewed: 2026-06-04
     - Symphony 专项应增加 `no_progress_detected`、`steer_applied`、`stale_context_incident`、`approval_handled_by_secretary`、`delivery_acceptance` 等过程指标。
     - 分数报告应是派生 report，不作为共享事实源；原始事实仍来自 Audit、Run/RunStep、Delivery、Evidence 和控制记录。
   - Caveats:
-    - 不要只用带强线索的 bugfix 任务；需要 hold-out、无提示探索、多 worker、approval/input blocker、Pod projection failure、doc/code drift 等任务族。
+    - 不要只用带强线索的 bugfix 任务；需要 hold-out、无提示探索、多 worker、approval/input blocker、Pod control-state failure、doc/code drift 等任务族。
     - LLM judge 只能补充非客观质量，不应替代 acceptance、审计链、真实运行结果和用户验收。
     - 如果不同 backend 的日志可观测性不对称，D5/D6 类指标会偏向可观测性更强的平台，必须单独标注。
 - Watch Signals:

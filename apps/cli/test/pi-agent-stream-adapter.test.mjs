@@ -558,6 +558,39 @@ test('pi agent stream adapter maps misclassified cloud completion Pod timeouts t
   assert.equal(errorEvent.error.errorMessage, 'LinX Cloud is temporarily unavailable. Request exceeded 30s. Please retry shortly.')
 })
 
+test('pi agent stream adapter can expose raw cloud error details in debug mode', async (t) => {
+  const previous = process.env.LINX_DEBUG_CLOUD
+  process.env.LINX_DEBUG_CLOUD = '1'
+  t.after(() => restoreEnv('LINX_DEBUG_CLOUD', previous))
+
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/stream.ts')
+  t.after(() => cleanup())
+
+  const adapter = module.createPiAgentStreamAdapter({
+    completionBackend: {
+      async complete() {
+        const error = new Error('LinX Cloud is temporarily unavailable. Please retry shortly.')
+        error.status = 500
+        error.responseBody = '{"error":"Platform AI error: fetch failed"}'
+        throw error
+      },
+    },
+  })
+
+  const events = []
+  for await (const event of adapter.streamFn(undefined, {
+    messages: [{ role: 'user', content: 'hello' }],
+  })) {
+    events.push(event)
+  }
+
+  const errorEvent = events.find((event) => event.type === 'error')
+  assert.ok(errorEvent)
+  assert.match(errorEvent.error.errorMessage, /LinX Cloud is temporarily unavailable/)
+  assert.match(errorEvent.error.errorMessage, /Cloud debug: status=500/)
+  assert.match(errorEvent.error.errorMessage, /Platform AI error: fetch failed/)
+})
+
 function restoreEnv(name, value) {
   if (value === undefined) {
     delete process.env[name]

@@ -184,6 +184,7 @@ async function buildAutoModeBundle(entryRelative) {
       baseUrl: sourceRoot,
       paths: {
         '@undefineds.co/models': [join(modelsDistRoot, 'index.d.ts')],
+        '@undefineds.co/models/vocab/sidecar': [join(modelsDistRoot, 'vocab', 'sidecar.vocab.d.ts')],
         '@undefineds.co/models/*': [
           join(modelsDistRoot, '*'),
           join(modelsDistRoot, '*', 'index.d.ts'),

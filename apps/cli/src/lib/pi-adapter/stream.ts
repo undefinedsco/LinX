@@ -224,7 +224,39 @@ function formatStreamErrorMessage(error: unknown): string {
   if (misclassifiedPodRuntimeTimeout) {
     return misclassifiedPodRuntimeTimeout
   }
-  return error instanceof Error ? error.message : String(error)
+  return appendCloudDebugDetails(
+    error instanceof Error ? error.message : String(error),
+    error,
+  )
+}
+
+function appendCloudDebugDetails(message: string, error: unknown): string {
+  if (!isTruthyEnv('LINX_DEBUG_CLOUD') || !isRecord(error)) {
+    return message
+  }
+
+  const responseBody = typeof error.responseBody === 'string' ? error.responseBody : ''
+  const status = typeof error.status === 'number' ? error.status : undefined
+  if (!responseBody && status === undefined) {
+    return message
+  }
+
+  const parts = [
+    status === undefined ? undefined : `status=${status}`,
+    responseBody ? `response=${truncateCloudDebug(responseBody)}` : undefined,
+  ].filter(Boolean)
+
+  return `${message}\nCloud debug: ${parts.join(' ')}`
+}
+
+function isTruthyEnv(name: string): boolean {
+  const raw = process.env[name]
+  return raw === '1' || raw === 'true' || raw === 'yes'
+}
+
+function truncateCloudDebug(value: string): string {
+  const trimmed = value.replace(/\s+/g, ' ').trim()
+  return trimmed.length > 500 ? `${trimmed.slice(0, 500)}...` : trimmed
 }
 
 function formatMisclassifiedPodRuntimeTimeout(error: unknown): string | null {

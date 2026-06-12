@@ -101,6 +101,23 @@ OpenRouter 请求需要显式提供环境变量后单独运行：
 LINX_OPENROUTER_SMOKE=1 OPENROUTER_API_KEY=sk-or-xxx node --test test/ai-connect-boundary-smoke.test.mjs
 ```
 
+ACP backend 验证也分两层：默认测试用 fake ACP backend 覆盖 Codex / Claude /
+CodeBuddy 的统一事件归一化和归档；真实 backend smoke 需要手动运行，它会检测当前
+环境，只跑本机有命令和可用配置迹象的 backend：
+
+```bash
+yarn test:cli:live-acp
+# or
+yarn workspace @undefineds.co/linx test:live-acp
+```
+
+可选覆盖项：
+
+```bash
+LINX_LIVE_CLAUDE_MODEL=haiku yarn workspace @undefineds.co/linx test:live-acp
+LINX_LIVE_ACP_TIMEOUT_MS=300000 yarn workspace @undefineds.co/linx test:live-acp
+```
+
 ## Backend Control Notes
 
 - Design contract: see [`docs/backend-pod-contract.md`](../../docs/backend-pod-contract.md)

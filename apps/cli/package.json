@@ -9,7 +9,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit && node ./scripts/build.mjs",
     "dev": "node ./scripts/dev.mjs",
-    "test": "yarn build && node --test --test-concurrency=1 test/**/*.test.mjs"
+    "test": "yarn build && node --test --test-concurrency=1 test/**/*.test.mjs",
+    "test:live-acp": "node ./scripts/smoke-auto-mode-acp.mjs"
   },
   "dependencies": {
     "@inrupt/solid-client-authn-node": "^3.1.1",
