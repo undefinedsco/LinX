@@ -12,15 +12,23 @@ import { appendAutoModeEvent, createAutoModeSession, finishAutoModeSession, writ
 import { persistAutoModeConversationToPod } from '../auto-mode/pod-persistence.js'
 import { createCodexAttachBridge, type CodexAttachBridgeRuntime } from './bridge.js'
 import type { AutoRunOptions, AutoModeSpawnPlan } from '../auto-mode/types.js'
+import type { BackendCommandResult } from '../pi-adapter/backend-command.js'
+import type { SessionControlManager } from '../pi-adapter/session-control.js'
 
 interface WritableLike {
   write(chunk: string): unknown
 }
 
+export type CodexApprovalPolicy = 'never' | 'on-request'
+
 export interface CodexNativeProxyOptions {
   cwd?: string
   model?: string
+  autoEnabled?: boolean
+  codexApprovalPolicy?: CodexApprovalPolicy
   passthroughArgs?: string[]
+  env?: Record<string, string>
+  resolveEnv?: () => Promise<Record<string, string> | undefined>
   listenHost?: string
   listenPort?: number
   log?: WritableLike
@@ -35,6 +43,11 @@ export interface CodexNativeProxy {
   start(): Promise<void>
   startThread(): Promise<string>
   sendTurn(input: string): Promise<void>
+  executeCommand(input: string): Promise<BackendCommandResult>
+  setAutoEnabled(enabled: boolean): Promise<void>
+  setCodexApprovalPolicy(policy: CodexApprovalPolicy | undefined): Promise<void>
+  setSessionControl(control: SessionControlManager): void
+  setCwd(cwd: string): Promise<void>
   subscribe(listener: (event: AutoModeNormalizedEvent) => void): () => void
   close(): Promise<void>
 }
@@ -42,8 +55,23 @@ export interface CodexNativeProxy {
 function defaultPlan(options: CodexNativeProxyOptions): AutoModeSpawnPlan {
   return {
     command: 'codex',
-    args: ['app-server', '--listen', 'stdio://', ...(options.passthroughArgs ?? [])],
+    args: [
+      'app-server',
+      '--listen',
+      'stdio://',
+      ...codexConfigArgs(options.env),
+      ...(options.passthroughArgs ?? []),
+    ],
   }
+}
+
+function codexConfigArgs(env?: Record<string, string>): string[] {
+  const baseUrl = env?.CODEX_BASE_URL?.trim()
+  if (!baseUrl) {
+    return []
+  }
+
+  return ['-c', `openai_base_url=${JSON.stringify(baseUrl)}`]
 }
 
 function appendProxyEvent(record: AutoModeSessionRecord, stream: 'stdout' | 'stderr' | 'system', line: string, events: AutoModeNormalizedEvent[] = []): void {
@@ -58,7 +86,7 @@ function appendProxyEvent(record: AutoModeSessionRecord, stream: 'stdout' | 'std
 function createNativeProxySession(options: CodexNativeProxyOptions): AutoModeSessionRecord {
   const runOptions: AutoRunOptions = {
     backend: 'codex',
-    mode: 'manual',
+    autoEnabled: options.autoEnabled === true,
     cwd: options.cwd ?? process.cwd(),
     model: options.model,
     prompt: undefined,
@@ -71,6 +99,20 @@ function createNativeProxySession(options: CodexNativeProxyOptions): AutoModeSes
 
   const plan = defaultPlan(options)
   return createAutoModeSession(runOptions, plan)
+}
+
+function withCodexThreadDefaults(
+  params: Record<string, unknown>,
+  policy: CodexApprovalPolicy | undefined,
+): Record<string, unknown> {
+  if (!policy) {
+    return params
+  }
+
+  return {
+    ...params,
+    approvalPolicy: policy,
+  }
 }
 
 function normalizeAccountReadResponse(): Record<string, unknown> {
@@ -94,7 +136,6 @@ function normalizeInitializeResponse(): Record<string, unknown> {
 export function createCodexNativeProxy(options: CodexNativeProxyOptions = {}): CodexNativeProxy {
   const spawnProcess = options.spawnProcess ?? spawn
   const record = createNativeProxySession(options)
-  const plan = defaultPlan(options)
   const host = options.listenHost ?? '127.0.0.1'
   const port = options.listenPort ?? 8787
   const remoteUrl = `ws://${host}:${port}`
@@ -104,9 +145,11 @@ export function createCodexNativeProxy(options: CodexNativeProxyOptions = {}): C
   let child: ChildProcessWithoutNullStreams | null = null
   let wsServer: WebSocketServer | null = null
   let activeClient: WebSocket | null = null
+  let resolvedEnv: Record<string, string> | undefined = options.env
   let closed = false
   let started = false
   let initialized = false
+  let codexApprovalPolicy = options.codexApprovalPolicy
   let initializePromise: Promise<void> | null = null
   const pendingRequestMethods = new Map<string, string>()
   const pendingInternalResponses = new Map<string, {
@@ -119,6 +162,74 @@ export function createCodexNativeProxy(options: CodexNativeProxyOptions = {}): C
   const serverReady = new Promise<void>((resolve) => {
     serverReadyResolve = resolve
   })
+
+  const applyForkResult = (result: Record<string, unknown>, fallbackThreadId: string): void => {
+    const nextThreadId = extractThreadId(result) ?? fallbackThreadId
+    record.backendSessionId = nextThreadId
+    const model = typeof result.model === 'string' ? result.model : record.model
+    if (model) {
+      record.model = model
+    }
+  }
+
+  const requestThreadStart = async (): Promise<string> => {
+    const result = await sendInternalRequest('thread/start', withCodexThreadDefaults({
+      cwd: record.cwd,
+      model: record.model,
+      sandbox: 'workspace-write',
+    }, codexApprovalPolicy)) as Record<string, unknown>
+    const thread = (typeof result.thread === 'object' && result.thread !== null ? result.thread : {}) as Record<string, unknown>
+    const threadId = typeof thread.id === 'string' ? thread.id : record.backendSessionId
+    if (!threadId) {
+      throw new Error('Codex app-server did not return a thread id')
+    }
+    return threadId
+  }
+
+  const forkActiveThread = async (overrides: {
+    cwd?: string
+    autoEnabled?: boolean
+    codexApprovalPolicy?: CodexApprovalPolicy
+    updateAutoEnabled?: boolean
+    updateCodexApprovalPolicy?: boolean
+  }): Promise<void> => {
+    if (!started || !record.backendSessionId) {
+      if (overrides.cwd) {
+        record.cwd = overrides.cwd
+      }
+      if (overrides.updateAutoEnabled) {
+        record.autoEnabled = overrides.autoEnabled === true
+        record.mode = record.autoEnabled ? 'auto' : 'off'
+      }
+      if (overrides.updateCodexApprovalPolicy) {
+        codexApprovalPolicy = overrides.codexApprovalPolicy
+      }
+      writeAutoModeSession(record)
+      return
+    }
+
+    await ensureInitialized()
+    const currentThreadId = record.backendSessionId
+    if (overrides.cwd) {
+      record.cwd = overrides.cwd
+    }
+    if (overrides.updateAutoEnabled) {
+      record.autoEnabled = overrides.autoEnabled === true
+      record.mode = record.autoEnabled ? 'auto' : 'off'
+    }
+    if (overrides.updateCodexApprovalPolicy) {
+      codexApprovalPolicy = overrides.codexApprovalPolicy
+    }
+
+    const result = await sendInternalRequest('thread/fork', withCodexThreadDefaults({
+      threadId: currentThreadId,
+      model: record.model,
+      cwd: record.cwd,
+      sandbox: 'workspace-write',
+    }, codexApprovalPolicy)) as Record<string, unknown>
+    applyForkResult(result, currentThreadId)
+    writeAutoModeSession(record)
+  }
 
   const emitEvents = (events: AutoModeNormalizedEvent[]) => {
     if (events.length === 0) {
@@ -141,15 +252,21 @@ export function createCodexNativeProxy(options: CodexNativeProxyOptions = {}): C
   const sendInternalRequest = (method: string, params: Record<string, unknown>): Promise<unknown> => {
     const id = `linx-internal-${internalRequestId++}`
     pendingRequestMethods.set(id, method)
-    writeChild({
-      jsonrpc: '2.0',
-      id,
-      method,
-      params,
-    })
 
     return new Promise((resolve, reject) => {
       pendingInternalResponses.set(id, { resolve, reject })
+      try {
+        writeChild({
+          jsonrpc: '2.0',
+          id,
+          method,
+          params,
+        })
+      } catch (error) {
+        pendingInternalResponses.delete(id)
+        pendingRequestMethods.delete(id)
+        reject(error instanceof Error ? error : new Error(String(error)))
+      }
     })
   }
 
@@ -231,12 +348,20 @@ export function createCodexNativeProxy(options: CodexNativeProxyOptions = {}): C
   }
 
   const handleChildMessage = async (message: Record<string, unknown>): Promise<void> => {
-    const rpcResponses = await bridge.handleCodexRpcLine(JSON.stringify(message))
-    if (rpcResponses.length > 0) {
-      for (const response of rpcResponses) {
-        sendClient(response as unknown as Record<string, unknown>)
+    if (typeof message.method === 'string' && typeof message.id !== 'undefined') {
+      const events = normalizeCodexAppServerRequest(message)
+      if (events.length > 0) {
+        appendProxyEvent(record, 'stdout', JSON.stringify(message), events)
+        emitEvents(events)
       }
-      return
+
+      const rpcResponses = await bridge.handleCodexRpcLine(JSON.stringify(message))
+      if (rpcResponses.length > 0) {
+        for (const response of rpcResponses) {
+          writeChild(response as unknown as Record<string, unknown>)
+        }
+        return
+      }
     }
 
     if (typeof message.id !== 'undefined') {
@@ -288,10 +413,24 @@ export function createCodexNativeProxy(options: CodexNativeProxyOptions = {}): C
         throw new Error('Codex native proxy is already closed')
       }
       started = true
+      resolvedEnv = {
+        ...(options.env ?? {}),
+        ...((await options.resolveEnv?.()) ?? {}),
+      }
+      const activePlan = defaultPlan({
+        ...options,
+        env: resolvedEnv,
+      })
+      record.command = activePlan.command
+      record.args = [...activePlan.args]
+      writeAutoModeSession(record)
 
-      child = spawnProcess(plan.command, plan.args, {
+      child = spawnProcess(activePlan.command, activePlan.args, {
         cwd: record.cwd,
-        env: process.env,
+        env: {
+          ...process.env,
+          ...(resolvedEnv ?? {}),
+        },
         stdio: ['pipe', 'pipe', 'pipe'],
       })
       const activeChild = child
@@ -380,37 +519,188 @@ export function createCodexNativeProxy(options: CodexNativeProxyOptions = {}): C
       await serverReady
     },
     async startThread(): Promise<string> {
+      if (!started) {
+        await this.start()
+      }
       await ensureInitialized()
       if (record.backendSessionId) {
         return record.backendSessionId
       }
 
-      const result = await sendInternalRequest('thread/start', {
-        cwd: record.cwd,
-        model: record.model,
-        approvalPolicy: 'never',
-        sandbox: 'workspace-write',
-      }) as Record<string, unknown>
-      const thread = (typeof result.thread === 'object' && result.thread !== null ? result.thread : {}) as Record<string, unknown>
-      const threadId = typeof thread.id === 'string' ? thread.id : record.backendSessionId
-      if (!threadId) {
-        throw new Error('Codex app-server did not return a thread id')
-      }
-      return threadId
+      return requestThreadStart()
     },
     async sendTurn(input: string): Promise<void> {
-      await ensureInitialized()
       const threadId = await this.startThread()
+
+      const params: Record<string, unknown> = {
+        threadId,
+        input: [{ type: 'text', text: input }],
+      }
+      if (record.model) {
+        params.model = record.model
+      }
 
       writeChild({
         jsonrpc: '2.0',
         id: `linx-turn-${Date.now()}`,
         method: 'turn/start',
-        params: {
-          threadId,
-          input: [{ type: 'text', text: input }],
-        },
+        params,
       })
+    },
+    async setAutoEnabled(enabled: boolean): Promise<void> {
+      await forkActiveThread({
+        autoEnabled: enabled,
+        updateAutoEnabled: true,
+      })
+    },
+    async setCodexApprovalPolicy(policy: CodexApprovalPolicy | undefined): Promise<void> {
+      await forkActiveThread({
+        codexApprovalPolicy: policy,
+        updateCodexApprovalPolicy: true,
+      })
+    },
+    setSessionControl(control: SessionControlManager): void {
+      bridge.setSessionControl(control)
+    },
+    async setCwd(cwd: string): Promise<void> {
+      await forkActiveThread({ cwd })
+    },
+    async executeCommand(input: string): Promise<BackendCommandResult> {
+      const parsed = parseCodexBackendCommand(input)
+      if (!parsed) {
+        return { handled: false }
+      }
+
+      if (!started) {
+        await this.start()
+      }
+      await ensureInitialized()
+
+      if (parsed.name === 'help') {
+        return {
+          handled: true,
+          clearInput: true,
+          message: [
+            'Codex backend commands:',
+            '/commands show Codex backend commands',
+            '/compact compact current Codex thread',
+            '/new start a new Codex thread',
+            '/rollback [turns] roll back recent turns',
+            '/fork fork the current Codex thread',
+            '/model <id> use a Codex model for following turns',
+            '/models list Codex models',
+            '/session show current Codex thread',
+            '/name <name> rename current Codex thread',
+          ].join('\n'),
+        }
+      }
+
+      if (parsed.name === 'models') {
+        const result = await sendInternalRequest('model/list', {
+          limit: 20,
+          includeHidden: false,
+        }) as Record<string, unknown>
+        return {
+          handled: true,
+          clearInput: true,
+          message: formatCodexModelsResult(result),
+        }
+      }
+
+      if (parsed.name === 'model') {
+        const model = parsed.args.trim()
+        if (!model) {
+          return {
+            handled: true,
+            clearInput: true,
+            message: record.model
+              ? `Codex backend model: ${record.model}`
+              : 'Usage: /model <model-id>',
+          }
+        }
+        record.model = model
+        writeAutoModeSession(record)
+        return {
+          handled: true,
+          clearInput: true,
+          message: `Codex backend model set to ${model} for following turns.`,
+        }
+      }
+
+      if (parsed.name === 'new') {
+        record.backendSessionId = undefined
+        const threadId = await requestThreadStart()
+        return {
+          handled: true,
+          clearInput: true,
+          message: `Started new Codex thread ${threadId}.`,
+        }
+      }
+
+      const threadId = await this.startThread()
+
+      if (parsed.name === 'compact') {
+        await sendInternalRequest('thread/compact/start', { threadId })
+        return {
+          handled: true,
+          clearInput: true,
+          message: `Compacting Codex thread ${threadId}.`,
+        }
+      }
+
+      if (parsed.name === 'rollback') {
+        const numTurns = parseRollbackTurns(parsed.args)
+        await sendInternalRequest('thread/rollback', { threadId, numTurns })
+        return {
+          handled: true,
+          clearInput: true,
+          message: `Rolled back ${numTurns} Codex turn${numTurns === 1 ? '' : 's'}.`,
+        }
+      }
+
+      if (parsed.name === 'fork') {
+        const result = await sendInternalRequest('thread/fork', withCodexThreadDefaults({
+          threadId,
+          model: record.model,
+          cwd: record.cwd,
+          sandbox: 'workspace-write',
+        }, codexApprovalPolicy)) as Record<string, unknown>
+        applyForkResult(result, threadId)
+        writeAutoModeSession(record)
+        return {
+          handled: true,
+          clearInput: true,
+          message: `Forked Codex thread ${record.backendSessionId}.`,
+        }
+      }
+
+      if (parsed.name === 'session' || parsed.name === 'status') {
+        const result = await sendInternalRequest('thread/read', { threadId }) as Record<string, unknown>
+        return {
+          handled: true,
+          clearInput: true,
+          message: formatCodexThreadResult(result, record),
+        }
+      }
+
+      if (parsed.name === 'name') {
+        const name = parsed.args.trim()
+        if (!name) {
+          return {
+            handled: true,
+            clearInput: true,
+            message: 'Usage: /name <thread-name>',
+          }
+        }
+        await sendInternalRequest('thread/name/set', { threadId, name })
+        return {
+          handled: true,
+          clearInput: true,
+          message: `Renamed Codex thread ${threadId}.`,
+        }
+      }
+
+      return { handled: false }
     },
     subscribe(listener: (event: AutoModeNormalizedEvent) => void): () => void {
       listeners.add(listener)
@@ -421,10 +711,108 @@ export function createCodexNativeProxy(options: CodexNativeProxyOptions = {}): C
     async close(): Promise<void> {
       closed = true
       activeClient?.close()
-      wsServer?.close()
+      await new Promise<void>((resolve) => {
+        if (!wsServer) {
+          resolve()
+          return
+        }
+        wsServer.close(() => resolve())
+      })
       if (child && !child.killed) {
         child.kill()
       }
+      child?.stdin.destroy()
+      child?.stdout.destroy()
+      child?.stderr.destroy()
     },
   }
+}
+
+function parseCodexBackendCommand(input: string): { name: string; args: string } | null {
+  const trimmed = input.trim()
+  if (!trimmed.startsWith('/')) {
+    return null
+  }
+
+  const match = /^\/([A-Za-z][\w-]*)(?:\s+([\s\S]*))?$/.exec(trimmed)
+  if (!match) {
+    return null
+  }
+
+  const name = match[1].toLowerCase()
+  const args = match[2] ?? ''
+  const supported = new Set([
+    'compact',
+    'commands',
+    'fork',
+    'help',
+    'model',
+    'models',
+    'name',
+    'new',
+    'rollback',
+    'session',
+    'status',
+  ])
+  return supported.has(name) ? { name: name === 'commands' ? 'help' : name, args } : null
+}
+
+function parseRollbackTurns(raw: string): number {
+  const value = Number.parseInt(raw.trim() || '1', 10)
+  if (!Number.isFinite(value) || value < 1) {
+    return 1
+  }
+  return Math.min(value, 100)
+}
+
+function extractThreadId(result: Record<string, unknown>): string | undefined {
+  const thread = typeof result.thread === 'object' && result.thread !== null
+    ? result.thread as Record<string, unknown>
+    : undefined
+  return typeof thread?.id === 'string' ? thread.id : undefined
+}
+
+function formatCodexModelsResult(result: Record<string, unknown>): string {
+  const rows = Array.isArray(result.data) ? result.data : []
+  const names = rows
+    .map((entry) => {
+      if (typeof entry === 'string') {
+        return entry
+      }
+      if (typeof entry !== 'object' || entry === null) {
+        return null
+      }
+      const row = entry as Record<string, unknown>
+      const id = typeof row.id === 'string' ? row.id : typeof row.model === 'string' ? row.model : undefined
+      if (!id) {
+        return null
+      }
+      const marker = row.isDefault === true ? ' (default)' : ''
+      return `${id}${marker}`
+    })
+    .filter((entry): entry is string => Boolean(entry))
+
+  return names.length > 0
+    ? `Codex models:\n${names.slice(0, 20).map((name) => `- ${name}`).join('\n')}`
+    : 'Codex model list returned no models.'
+}
+
+function formatCodexThreadResult(result: Record<string, unknown>, record: AutoModeSessionRecord): string {
+  const thread = typeof result.thread === 'object' && result.thread !== null
+    ? result.thread as Record<string, unknown>
+    : result
+  const id = typeof thread.id === 'string' ? thread.id : record.backendSessionId ?? '(not started)'
+  const cwd = typeof thread.cwd === 'string' ? thread.cwd : record.cwd
+  const status = typeof thread.status === 'object' && thread.status !== null
+    ? JSON.stringify(thread.status)
+    : typeof thread.status === 'string'
+      ? thread.status
+      : 'unknown'
+  const model = typeof result.model === 'string' ? result.model : record.model ?? '(default)'
+  return [
+    `Codex thread: ${id}`,
+    `Status: ${status}`,
+    `Model: ${model}`,
+    `Workspace: ${cwd}`,
+  ].join('\n')
 }

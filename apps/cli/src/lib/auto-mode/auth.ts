@@ -2,10 +2,11 @@ import { spawn } from 'node:child_process'
 import {
   detectAutoModeAuthFailure as detectSharedAutoModeAuthFailure,
   parseAutoModeClaudeAuthStatus,
+  type AutoModeBackend,
   type AutoModeAuthFailure,
   type AutoModeAuthStatus,
 } from '@linx/agent-runtime/auto-mode'
-import type { AutoModeBackend } from './types.js'
+import type { AutoModeWorkerBackend } from './types.js'
 
 export type AutoModeAuthPreflightResult = AutoModeAuthStatus
 
@@ -59,7 +60,7 @@ async function runCommandCapture(command: string, args: string[]): Promise<Comma
   })
 }
 
-export async function preflightAutoModeAuth(backend: AutoModeBackend): Promise<AutoModeAuthPreflightResult> {
+export async function preflightAutoModeAuth(backend: AutoModeWorkerBackend): Promise<AutoModeAuthPreflightResult> {
   if (backend !== 'claude') {
     return { state: 'unknown' }
   }

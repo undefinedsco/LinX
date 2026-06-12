@@ -197,7 +197,7 @@ export const GROUP_AGENT_TURN_RULE: AgentTurnControllerRule = {
 export const AUTO_MODE_SECRETARY_APPROVAL_RULE: AgentTurnControllerRule = {
   id: 'auto-mode.secretary.approval',
   trigger: 'approval.required',
-  targetAgent: 'ai-secretary',
+  targetAgent: '__secretary__',
   targetRole: 'secretary',
   requiredCapabilities: ['approval.request', 'approval.options'],
   context: {
@@ -216,7 +216,7 @@ export const AUTO_MODE_SECRETARY_APPROVAL_RULE: AgentTurnControllerRule = {
 export const AUTO_MODE_SECRETARY_INPUT_RULE: AgentTurnControllerRule = {
   id: 'auto-mode.secretary.input',
   trigger: 'input.required',
-  targetAgent: 'ai-secretary',
+  targetAgent: '__secretary__',
   targetRole: 'secretary',
   requiredCapabilities: ['input.structured'],
   context: {

@@ -3,49 +3,41 @@ import {
   formatArchivedAutoModeSession,
   formatAutoModeSessionSummary,
   loadArchivedAutoModeEvents,
-  listArchivedAutoModeSessions,
+  listArchivedAutoModeSessionsWithPendingSync,
   listSupportedAutoModeBackends,
   loadArchivedAutoModeSession,
+  retryArchivedAutoModePodSync,
   resumeAutoModeSession,
   runAutoMode,
-  type AutoModeBackend,
-  type AutoModeMode,
+  type AutoModeWorkerBackend,
 } from './auto-mode/index.js'
 
-const AUTO_MODE_BACKENDS = ['codex', 'claude', 'codebuddy'] as const
+const AUTO_MODE_BACKENDS = ['linx', 'codex', 'claude', 'codebuddy'] as const
 
 export interface AutoModeCommandArgs {
   prompt?: string[]
-  backend?: AutoModeBackend
+  backend?: AutoModeWorkerBackend
   auto?: boolean
   model?: string
   cwd?: string
   plain?: boolean
   'list-backends'?: boolean
-  sessions?: boolean
   show?: string
+  'sync-status'?: boolean
+  'sync-retry'?: string
   resumeSession?: string
   '--'?: string[]
 }
 
-export function isAutoModeBackend(value: unknown): value is AutoModeBackend {
-  return typeof value === 'string' && AUTO_MODE_BACKENDS.includes(value as AutoModeBackend)
+export function isAutoModeBackend(value: unknown): value is AutoModeWorkerBackend {
+  return typeof value === 'string' && AUTO_MODE_BACKENDS.includes(value as AutoModeWorkerBackend)
 }
 
 export function isAutoModeRequest(argv: AutoModeCommandArgs): boolean {
-  return isAutoModeBackend(argv.backend)
-    || Boolean(argv.auto)
-    || Boolean(argv.plain)
-    || Boolean(argv['list-backends'])
-    || Boolean(argv.sessions)
+  return Boolean(argv['list-backends'])
     || typeof argv.show === 'string'
-}
-
-function resolveAutoMode(argv: AutoModeCommandArgs): AutoModeMode {
-  if (argv.auto) {
-    return 'auto'
-  }
-  return 'manual'
+    || Boolean(argv['sync-status'])
+    || typeof argv['sync-retry'] === 'string'
 }
 
 export function buildAutoModeOptions<T extends object>(command: Argv<T>): Argv<T & AutoModeCommandArgs> {
@@ -53,27 +45,31 @@ export function buildAutoModeOptions<T extends object>(command: Argv<T>): Argv<T
     .option('backend', {
       type: 'string',
       choices: AUTO_MODE_BACKENDS,
-      describe: 'External agent backend to control from LinX',
+      describe: 'Runtime backend for the LinX session',
     })
     .option('auto', {
       type: 'boolean',
-      describe: 'Start the selected backend with automatic AI secretary approvals enabled',
+      describe: 'Start with AI Secretary driving the selected backend session and asking when blocked',
     })
     .option('plain', {
       type: 'boolean',
-      describe: 'Disable full-screen TUI and use plain streaming output',
+      hidden: true,
     })
     .option('list-backends', {
       type: 'boolean',
-      describe: 'List supported external agent backends',
-    })
-    .option('sessions', {
-      type: 'boolean',
-      describe: 'List auto-mode sessions',
+      describe: 'List available backend runtimes',
     })
     .option('show', {
       type: 'string',
-      describe: 'Replay an auto-mode session by session id',
+      hidden: true,
+    })
+    .option('sync-status', {
+      type: 'boolean',
+      hidden: true,
+    })
+    .option('sync-retry', {
+      type: 'string',
+      hidden: true,
     })
   return withOptions as Argv<T & AutoModeCommandArgs>
 }
@@ -84,21 +80,27 @@ export async function runAutoModeCommand(argv: AutoModeCommandArgs): Promise<voi
     for (const backend of backends) {
       process.stdout.write(`- ${backend.backend} (${backend.label})\n`)
       process.stdout.write(`  ${backend.description}\n`)
-      process.stdout.write(`  manual: ${backend.modes.manual}\n`)
-      process.stdout.write(`  smart: ${backend.modes.smart}\n`)
-      process.stdout.write(`  auto: ${backend.modes.auto}\n`)
+      process.stdout.write(`  auto: ${backend.auto}\n`)
     }
     return
   }
 
-  if (argv.sessions) {
-    const sessions = listArchivedAutoModeSessions()
+  if (argv['sync-status']) {
+    const sessions = listArchivedAutoModeSessionsWithPendingSync()
     if (sessions.length === 0) {
-      process.stdout.write('No auto-mode sessions found.\n')
+      process.stdout.write('No pending auto-mode Pod sync sessions.\n')
       return
     }
 
-    process.stdout.write(`${sessions.map(formatAutoModeSessionSummary).join('\n')}\n`)
+    process.stdout.write(`${sessions.map((session) => `${session.id} · ${formatAutoModeSessionSummary(session)}`).join('\n')}\n`)
+    return
+  }
+
+  if (argv['sync-retry']) {
+    const synced = await retryArchivedAutoModePodSync(argv['sync-retry'])
+    process.stdout.write(synced
+      ? `Retried auto-mode Pod sync: ${argv['sync-retry']}\n`
+      : `Auto-mode Pod sync skipped: ${argv['sync-retry']}\n`)
     return
   }
 
@@ -130,7 +132,7 @@ export async function runAutoModeCommand(argv: AutoModeCommandArgs): Promise<voi
   }
 
   if (!isAutoModeBackend(argv.backend)) {
-    throw new Error('Usage: linx --backend <codex|claude|codebuddy> [prompt] [--auto] [-- backend args]')
+    throw new Error('Usage: linx --backend <linx|codex|claude|codebuddy> [prompt] [--auto] [-- backend args]')
   }
 
   const prompt = (argv.prompt ?? [])
@@ -140,8 +142,7 @@ export async function runAutoModeCommand(argv: AutoModeCommandArgs): Promise<voi
 
   const exitCode = await runAutoMode({
     backend: argv.backend,
-    mode: resolveAutoMode(argv),
-    autoModeEnabled: Boolean(argv.auto),
+    autoEnabled: Boolean(argv.auto),
     cwd: argv.cwd || process.cwd(),
     plain: Boolean(argv.plain),
     model: argv.model,

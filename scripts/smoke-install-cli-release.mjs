@@ -9,7 +9,13 @@ const previewRoot = join(repoRoot, 'preview')
 const prefix = mkdtempSync(join(tmpdir(), 'linx-cli-release-prefix-'))
 const cache = process.env.LINX_RELEASE_SMOKE_CACHE || mkdtempSync(join(tmpdir(), 'linx-cli-release-cache-'))
 const installTimeoutMs = Number(process.env.LINX_RELEASE_SMOKE_INSTALL_TIMEOUT_MS || 20 * 60 * 1000)
-const cliVersion = JSON.parse(readFileSync(join(repoRoot, 'apps', 'cli', 'package.json'), 'utf8')).version
+const cliPackage = JSON.parse(readFileSync(join(repoRoot, 'apps', 'cli', 'package.json'), 'utf8'))
+const modelsVersion = cliPackage.dependencies?.['@undefineds.co/models']
+const cliVersion = cliPackage.version
+
+if (!modelsVersion || !/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(modelsVersion)) {
+  throw new Error(`apps/cli/package.json must pin @undefineds.co/models to an exact npm version, got ${modelsVersion ?? '<missing>'}`)
+}
 
 const cliTarball = findExactTarball(`undefineds-co-linx-${cliVersion}.tgz`, [previewRoot])
 
@@ -46,7 +52,9 @@ const smokeEnv = {
 
 run(linxBin, ['--help'], { env: smokeEnv })
 run(linxBin, ['--version'], { env: smokeEnv })
+assertInstalledModelsVersion(modelsVersion)
 assertInstalledDrizzleSolidPatch()
+assertInstalledPiWebAccessPatch()
 
 console.log(`release smoke install passed: ${linxBin}`)
 
@@ -102,6 +110,40 @@ function assertInstalledDrizzleSolidPatch() {
   }
 
   console.log(`verified @undefineds.co/drizzle-solid@${packageJson.version} LinX Pod resource patches`)
+}
+
+function assertInstalledModelsVersion(expectedVersion) {
+  const packageRoot = findInstalledPackageRoot('@undefineds.co/models')
+  const packageJson = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'))
+  if (packageJson.version !== expectedVersion) {
+    throw new Error(`Installed @undefineds.co/models@${packageJson.version} does not match CLI dependency ${expectedVersion}`)
+  }
+
+  console.log(`verified @undefineds.co/models@${packageJson.version}`)
+}
+
+function assertInstalledPiWebAccessPatch() {
+  const packageRoot = findInstalledPackageRoot('@undefineds.co/linx')
+  const vendorRoot = join(packageRoot, 'vendor', 'pi-web-access')
+  const packageJsonPath = join(vendorRoot, 'package.json')
+  const indexSourcePath = join(vendorRoot, 'index.ts')
+  const configSourcePath = join(vendorRoot, 'gemini-web-config.ts')
+
+  if (!existsSync(packageJsonPath)) {
+    throw new Error(`Installed vendored pi-web-access package missing: ${packageJsonPath}`)
+  }
+
+  const indexSource = readFileSync(indexSourcePath, 'utf8')
+  const configSource = readFileSync(configSourcePath, 'utf8')
+  const expectedConfigCode = 'process.env.LINX_HOME?.trim() || join(process.env.SOLID_HOME?.trim() || join(homedir(), ".solid"), "apps", "linx")'
+  if (
+    !indexSource.includes(expectedConfigCode)
+    || !configSource.includes(expectedConfigCode)
+  ) {
+    throw new Error('Installed vendored pi-web-access package does not derive pi-web-access config from LINX_HOME/SOLID_HOME')
+  }
+
+  console.log('verified vendored pi-web-access package derives config from LINX_HOME/SOLID_HOME')
 }
 
 function findInstalledPackageRoot(packageName) {

@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "id": "duplicate-defer-existing-concern",
+  "title": "Duplicate Existing Concern Deferred",
+  "purpose": "Validate that a later saved-replies fragment links to the existing roadmap concern and does not create duplicate work or pollute an active bugfix scope.",
+  "inputPolicy": "user_fragments_only",
+  "expectedFinalIntent": "Link the new Pod-backed saved replies fragment to the existing saved-replies control record, defer it, and keep active chat loading work unchanged.",
+  "userFragments": [
+    {
+      "id": "u1",
+      "content": "Also make the saved replies Pod-backed."
+    },
+    {
+      "id": "u2",
+      "content": "I think we already said write the doc first, but can it be bundled into the chat loading fix?"
+    },
+    {
+      "id": "u3",
+      "content": "If it slows the current fix down, just remember it and do not lose it."
+    }
+  ],
+  "secretaryReplies": [
+    {
+      "after": "u1",
+      "content": "This matches the existing saved replies concern and should link there instead of creating a new issue."
+    },
+    {
+      "after": "u2",
+      "content": "Bundling it into chat loading would change active scope, so it must be deferred unless explicitly accepted as steering."
+    },
+    {
+      "after": "u3",
+      "content": "The final record should preserve the concern as deferred and avoid dispatching a saved replies worker."
+    }
+  ],
+  "acceptance": {
+    "finalOnly": true,
+    "classification": "duplicate",
+    "systemState": "partial",
+    "workState": "cancelled",
+    "compatibilityImpact": "compatible",
+    "requiredPhrases": [
+      "Duplicate/deferred roadmap concern",
+      "Link to the existing saved replies control record",
+      "Do not create a second saved replies issue",
+      "Do not merge saved replies into chat loading",
+      "Compatible"
+    ],
+    "forbiddenPhrases": [
+      "Create a second saved replies issue",
+      "Start worker run for saved replies",
+      "Merge into chat loading fix scope"
+    ]
+  }
+}

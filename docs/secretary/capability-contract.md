@@ -18,18 +18,83 @@ shared Pod model.
 - Plan durable Pod writes for user-requested configuration, credentials, grants,
   preferences, or similar state.
 - Produce user-visible rationale for automation decisions and pending actions.
+- When planning a Symphony dispatch, treat the target Chat as first-class: the chat identifies the counterpart or group, the thread identifies the concrete work timeline, and the session only records runtime lifecycle. Do not conflate the target chat with the Secretary control room.
 
 ## Non-Capabilities
 
 - It must not invent a parallel approval policy from CLI-local tool allowlists.
-- It must not recommend that the user create a grant. Grant creation is a user
-  decision.
+- It must not recommend or select `allow_for_session` / `allow_always`. Grant
+  creation is a user decision expressed through the unified approval UI.
 - It must not silently write or mutate Pod state when the target resource type,
   existing match, or required authority is ambiguous.
 - It must not author shared Pod paths, RDF predicates, subject templates, or
   Turtle directly. Those belong to `@undefineds.co/models` and `drizzle-solid`.
 - It must not fabricate secrets, tokens, file paths, model config, or user
   preferences.
+
+## Product Skill Boundary
+
+Secretary runtime skills are product capabilities: how to triage user intent,
+split work, dispatch workers, track status, accept completed work, and escalate
+blockers. Product orchestration skills such as `symphony` may be used
+both by Secretary at runtime and by coding agents implementing or verifying the
+same LinX behavior.
+
+Secretary's configured skills are resource-backed product inputs, not opaque
+prompt fragments. The Secretary Agent is a container resource; its default
+runtime config is metadata on that container, and skill bindings point to skill
+files or skill folders. A Solid-backed store may describe the container through
+`.meta`, but product code should reach it through shared models/repositories,
+not by hardcoding Pod paths.
+
+The default persisted Secretary Agent key is the system-reserved
+`__secretary__`. Use it for durable Agent, Skill, maker, actor,
+grant-recipient, and runtime-snapshot identity. The canonical Agent resource is
+the container `/agents/__secretary__/`; `.meta` is only the storage document that
+may describe that container. The default Secretary Chat may use the same
+reserved key under the Chat resource base, for example
+`/.data/chat/__secretary__/index.ttl#this`; it remains a Chat resource, not the
+Agent identity.
+
+Treat `/agents/__secretary__/` as a user-owned context folder, not as a single
+merged config object. System-managed surfaces and user-managed surfaces live
+under the same folder with different authority. System-managed surfaces include
+the installed Secretary package record, built-in skill bindings, migration
+records, and capability envelope. User-managed surfaces include `AGENTS.md`,
+preferences, user-installed skills, grants, memory policy, and any forked skill
+bindings. Runtime assembly is a projection, similar to loading a system message
+and then `AGENTS.md`; it must not write the projected result back as the new
+truth.
+
+Upgrades only mutate system-managed surfaces unless a migration explicitly asks
+for user acceptance. User personalization survives package upgrades unchanged.
+When a user changes a system skill, represent it as a user-managed fork or
+override binding with its own source/version/checksum instead of editing the
+system-managed skill in place.
+
+Skill content should remain file-backed, for example a `SKILL.md` plus related
+files. Skill metadata should record binding facts such as enabled state,
+version, source, checksum, load policy, dependencies, and relations. It should
+not duplicate full skill text in RDF or local runtime JSON. A Secretary skill
+resource is an Agent-scoped binding/installation record; external or reusable
+skills should keep their source identity in `source/version/checksum/root`
+rather than sharing one mutable Agent-local resource.
+
+Agent root and Agent WebID are separate. Secretary needs an Agent WebID only
+when it must appear as an auditable actor, requester, maker, grant recipient,
+credential holder, or authorization subject. Ordinary skill resources,
+deliveries, issues, tasks, runs, reports, evidence, and files use resource URIs,
+not WebIDs.
+
+Developer implementation skills are different. Keep `drizzle-solid`,
+`solid-modeling`, and `xpod-componentsjs` available to engineers or coding
+agents when they are changing schemas, repositories, or Xpod UI/component
+integrations, but do not inject them into the user-facing Secretary prompt.
+Pod operation guidance belongs to the bundled user-facing `xpod-cli` skill,
+not a LinX-local `pod_read` / `pod_write` skill. If Secretary needs durable
+data, it should request a product-level plan or call a bounded product
+operation; shared model/runtime code owns exact predicates, URI templates,
+storage paths, and component APIs.
 
 ## Approval And Input Handling
 
@@ -53,6 +118,10 @@ must not be shorter than the product minimum and should be longer for lower
 confidence. If AI Secretary cannot decide safely, LinX waits for the user with
 the recommended option still visible.
 
+Secretary recommendations are one-time decisions only. `allow_for_session` and
+`allow_always` are user grant decisions; they are materialized by the shared
+approval pipeline, not by Secretary.
+
 ## Grant Coverage
 
 Grants are user-authored LLM Wiki resources in Pod. They are durable policy
@@ -69,30 +138,28 @@ AI Secretary can use grants in two phases:
 Coarse metadata matches are insufficient by themselves. If semantic coverage is
 unclear, the request falls back to the normal visible approval path.
 
+Grant coverage is checked by the unified approval pipeline before asking
+Secretary to make a new one-time decision. Existing grant coverage can approve a
+request even when `auto` is off.
+
 ## Storage Planning
 
 When the user asks the secretary to save something, the secretary must request a
-descriptor-backed storage plan instead of guessing a location.
+storage plan instead of guessing a location.
 
 The planning layer should:
 
-- classify the intent into a supported resource type or call Consensus
-  `/v1/responses` when the descriptor choice is ambiguous,
+- classify the intent into a supported resource type,
 - inspect existing matching Pod resources,
 - decide create, update, link, ask, or unsupported,
 - explain the target resource and mutation,
 - require user confirmation for ambiguity, conflicts, low confidence, missing
   required fields, or missing authority.
 
-The secretary may reason over returned descriptors, clarification questions,
-validation errors, and user-facing summaries. Shared model/runtime code owns
-exact resource resolution and writes.
+The secretary may reason over the returned plan and user-facing summary. Shared
+model/runtime code owns exact resource resolution and writes.
 
-For the full target design, including `pod_schema`, `pod_storage`, Consensus
-Responses conversations, official/developer/user model sources, and model
-proposal flow, see [Pod Storage Consensus](./pod-storage-consensus.md). The older
-[Storage modeling TODO](./storage-modeling-todo.md) remains a checklist for the
-near-term implementation gaps.
+See [Storage modeling TODO](./storage-modeling-todo.md).
 
 ## Turn Controller Boundary
 

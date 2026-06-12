@@ -1,9 +1,18 @@
 import { createHash } from 'node:crypto'
-import type { AgentMessage } from '@mariozechner/pi-agent-core'
-import type { SessionEntry, SessionManager } from '@mariozechner/pi-coding-agent'
+import type { AgentMessage } from '@earendil-works/pi-agent-core'
+import type { SessionEntry, SessionManager } from '@earendil-works/pi-coding-agent'
+import {
+  agentResource,
+  chatResource,
+  threadResource,
+} from '../models.js'
+import {
+  isLinxCloudAuthExpiredMessage,
+  isLinxCloudTransientMessage,
+} from '../linx-cloud-errors.js'
 
-export const DEFAULT_SECRETARY_CHAT_ID = 'ai-secretary'
-export const DEFAULT_SECRETARY_AGENT_ID = 'ai-secretary'
+export const DEFAULT_SECRETARY_CHAT_ID = '__secretary__'
+export const DEFAULT_SECRETARY_AGENT_ID = '__secretary__'
 
 // Compatibility exports for older call sites. New code should use the secretary/chat
 // names because Chat identifies the conversation counterpart, not the CLI product.
@@ -35,8 +44,12 @@ export function buildPodMessageRow(
   }
 
   const message = entry.message as AgentMessage
+  if (isSkippableOperationalAssistantError(message)) {
+    return null
+  }
+
   const role = mapMessageRole(message)
-  const content = extractMessageText(message)
+  const content = sanitizePodLiteralText(extractMessageText(message))
   if (!role || !content.trim()) {
     return null
   }
@@ -44,31 +57,64 @@ export function buildPodMessageRow(
   const createdAt = messageTimestampToDate(message, entry.timestamp)
   return {
     id: `${options.sessionManager.getSessionId()}-${entry.id}`,
-    chat: buildChatUri(webId),
-    thread: buildThreadUri(webId, DEFAULT_SECRETARY_CHAT_ID, options.sessionManager.getSessionId()),
-    maker: role === 'user' ? webId : buildAgentUri(webId),
+    chat: secretaryChatUri(webId),
+    thread: secretaryThreadUri(webId, options.sessionManager.getSessionId()),
+    maker: role === 'user' ? webId : secretaryAgentUri(webId),
     role,
     content,
-    richContent: JSON.stringify({
+    richContent: sanitizePodLiteralText(JSON.stringify({
       linxPiSessionEntry: entry,
       message,
-    }),
+    })),
     status: isAssistantError(message) ? 'error' : 'sent',
     createdAt,
     updatedAt: createdAt,
   }
 }
 
-export function buildThreadUri(webId: string, chatId: string, threadId: string): string {
-  return `${getPodBaseUrl(webId)}/.data/chat/${chatId}/index.ttl#${threadId}`
+export function sanitizePodLiteralText(value: string): string {
+  let output = ''
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index)
+    if (code >= 0xD800 && code <= 0xDBFF) {
+      const next = value.charCodeAt(index + 1)
+      if (next >= 0xDC00 && next <= 0xDFFF) {
+        output += value[index]!
+        output += value[index + 1]!
+        index += 1
+      } else {
+        output += '\uFFFD'
+      }
+      continue
+    }
+    if (code >= 0xDC00 && code <= 0xDFFF) {
+      output += '\uFFFD'
+      continue
+    }
+    if ((code >= 0x00 && code <= 0x08) || code === 0x0B || code === 0x0C || (code >= 0x0E && code <= 0x1F)) {
+      output += '\uFFFD'
+      continue
+    }
+    output += value[index]!
+  }
+  return output
 }
 
-export function buildAgentUri(webId: string): string {
-  return `${getPodBaseUrl(webId)}/.data/agents/${DEFAULT_SECRETARY_AGENT_ID}.ttl`
+export function secretaryThreadUri(webId: string, threadId: string, chatId = DEFAULT_SECRETARY_CHAT_ID): string {
+  return threadResource.buildIri(webId, { id: secretaryThreadResourceId(threadId, chatId) })
 }
 
-export function buildChatUri(webId: string): string {
-  return `${getPodBaseUrl(webId)}/.data/chat/${DEFAULT_SECRETARY_CHAT_ID}/index.ttl#this`
+export function secretaryThreadResourceId(threadId: string, chatId = DEFAULT_SECRETARY_CHAT_ID): string {
+  const chatDocumentId = chatResource.buildId({ id: chatId }).split('#')[0]
+  return `chat/${chatDocumentId}#${threadId}`
+}
+
+export function secretaryAgentUri(webId: string): string {
+  return agentResource.buildIri(webId,  { id: DEFAULT_SECRETARY_AGENT_ID })
+}
+
+export function secretaryChatUri(webId: string, chatId = DEFAULT_SECRETARY_CHAT_ID): string {
+  return chatResource.buildIri(webId,  { id: chatId })
 }
 
 export function buildToolAuditId(sessionId: string, toolCallId: string, action: string): string {
@@ -96,13 +142,24 @@ export function calculateTokenUsage(entries: SessionEntry[]): number {
   return total
 }
 
+export function getActiveSessionEntries(sessionManager: SessionManager): SessionEntry[] {
+  if (typeof sessionManager.getLeafId === 'function' && sessionManager.getLeafId() === null) {
+    return []
+  }
+  if (typeof sessionManager.getBranch === 'function') {
+    const branch = sessionManager.getBranch()
+    return Array.isArray(branch) ? branch : []
+  }
+  return sessionManager.getEntries()
+}
+
 export function buildThreadTitle(sessionManager: SessionManager): string {
   const name = sessionManager.getSessionName()
   if (name) {
     return name
   }
 
-  const firstUser = sessionManager.getEntries().find((entry) => (
+  const firstUser = getActiveSessionEntries(sessionManager).find((entry) => (
     entry.type === 'message'
     && (entry.message as { role?: unknown }).role === 'user'
   ))
@@ -219,8 +276,15 @@ function isAssistantError(message: AgentMessage): boolean {
     && (message as { stopReason?: unknown }).stopReason === 'error'
 }
 
-function getPodBaseUrl(webId: string): string {
-  return webId.replace('/profile/card#me', '').replace(/\/$/, '')
+function isSkippableOperationalAssistantError(message: AgentMessage): boolean {
+  if (!isAssistantError(message)) {
+    return false
+  }
+  const errorMessage = (message as { errorMessage?: unknown }).errorMessage
+  if (typeof errorMessage !== 'string' || !errorMessage.trim()) {
+    return false
+  }
+  return isLinxCloudTransientMessage(errorMessage) || isLinxCloudAuthExpiredMessage(errorMessage)
 }
 
 function shortStableId(parts: string[]): string {
