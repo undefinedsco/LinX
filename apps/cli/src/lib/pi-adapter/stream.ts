@@ -1,10 +1,18 @@
-import { createAssistantMessageEventStream, type AssistantMessage, type AssistantMessageEventStream } from '@mariozechner/pi-ai'
+import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { createAssistantMessageEventStream, type AssistantMessage, type AssistantMessageEventStream } from '@earendil-works/pi-ai'
 import type { RemoteChatMessage, RemoteChatTool, RemoteChatToolCall } from '../chat-api.js'
 import type { AutoModeNormalizedEvent } from '../auto-mode/types.js'
 import { DEFAULT_LINX_CLOUD_MODEL_ID } from '../default-model.js'
+import { normalizeMisclassifiedCloudCompletionPodTimeoutMessage } from '../linx-cloud-errors.js'
+import { getSolidLinxAgentDir } from '../solid-local-store.js'
 
 const UNDEFINEDS_PROVIDER_ID = 'undefineds'
 const UNDEFINEDS_PROVIDER_API = 'linx-cloud-chat-completions'
+const DEFAULT_TOOL_RESULT_INLINE_CHAR_LIMIT = 12_000
+const DEFAULT_TOOL_RESULT_EXCERPT_HEAD_CHARS = 6_000
+const DEFAULT_TOOL_RESULT_EXCERPT_TAIL_CHARS = 1_200
 
 type PiStreamContextMessage = {
   role?: string
@@ -19,7 +27,7 @@ type PiStreamTool = {
   parameters?: unknown
 }
 
-export interface PiCompletionBackendResult {
+export interface LinxCompletionBackendResult {
   content?: string
   reasoningContent?: string
   toolCalls?: RemoteChatToolCall[]
@@ -33,14 +41,17 @@ export interface PiCompletionBackendResult {
   }
 }
 
+/** @deprecated Use LinxCompletionBackendResult. */
+export type PiCompletionBackendResult = LinxCompletionBackendResult
+
 type PiStreamOptions = {
   apiKey?: string
+  authFetch?: (url: string, init?: RequestInit) => Promise<Response>
   modelId?: string
-  reasoning?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
   signal?: AbortSignal
 }
 
-export interface PiAgentStreamAdapterOptions {
+export interface LinxAgentStreamAdapterOptions {
   sessionId?: string
   cwd?: string
   model?: string
@@ -53,23 +64,29 @@ export interface PiAgentStreamAdapterOptions {
     complete(input: {
       model?: string
       apiKey?: string
+      authFetch?: (url: string, init?: RequestInit) => Promise<Response>
       messages: RemoteChatMessage[]
       tools?: RemoteChatTool[]
       systemPrompt?: string
-      reasoning?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
       signal?: AbortSignal
-    }): Promise<string | PiCompletionBackendResult>
+    }): Promise<string | LinxCompletionBackendResult>
   }
 }
 
-export interface PiAgentStreamAdapter {
+/** @deprecated Use LinxAgentStreamAdapterOptions. */
+export type PiAgentStreamAdapterOptions = LinxAgentStreamAdapterOptions
+
+export interface LinxAgentStreamAdapter {
   readonly sessionId?: string
   readonly cwd?: string
   readonly model?: string
   streamFn(..._args: unknown[]): AssistantMessageEventStream
 }
 
-export function createPiAgentStreamAdapter(options: PiAgentStreamAdapterOptions = {}): PiAgentStreamAdapter {
+/** @deprecated Use LinxAgentStreamAdapter. */
+export type PiAgentStreamAdapter = LinxAgentStreamAdapter
+
+export function createLinxAgentStreamAdapter(options: LinxAgentStreamAdapterOptions = {}): LinxAgentStreamAdapter {
   const createBaseMessage = (modelId?: string): AssistantMessage => ({
     role: 'assistant',
     content: [],
@@ -113,10 +130,10 @@ export function createPiAgentStreamAdapter(options: PiAgentStreamAdapterOptions 
           const reply = await options.completionBackend.complete({
             model: resolvedModelId,
             apiKey: streamOptions?.apiKey,
+            authFetch: streamOptions?.authFetch,
             messages: normalizedMessages,
             tools: normalizedTools,
             systemPrompt: context?.systemPrompt,
-            reasoning: streamOptions?.reasoning,
             signal: streamOptions?.signal,
           })
           throwIfAborted(streamOptions?.signal)
@@ -181,6 +198,8 @@ export function createPiAgentStreamAdapter(options: PiAgentStreamAdapterOptions 
   }
 }
 
+export const createPiAgentStreamAdapter = createLinxAgentStreamAdapter
+
 function throwIfAborted(signal?: AbortSignal): void {
   if (!signal?.aborted) {
     return
@@ -201,7 +220,47 @@ function formatStreamErrorMessage(error: unknown): string {
   if (isAuthExpiredError(error)) {
     return 'LinX Cloud login expired.'
   }
-  return error instanceof Error ? error.message : String(error)
+  const misclassifiedPodRuntimeTimeout = formatMisclassifiedPodRuntimeTimeout(error)
+  if (misclassifiedPodRuntimeTimeout) {
+    return misclassifiedPodRuntimeTimeout
+  }
+  return appendCloudDebugDetails(
+    error instanceof Error ? error.message : String(error),
+    error,
+  )
+}
+
+function appendCloudDebugDetails(message: string, error: unknown): string {
+  if (!isTruthyEnv('LINX_DEBUG_CLOUD') || !isRecord(error)) {
+    return message
+  }
+
+  const responseBody = typeof error.responseBody === 'string' ? error.responseBody : ''
+  const status = typeof error.status === 'number' ? error.status : undefined
+  if (!responseBody && status === undefined) {
+    return message
+  }
+
+  const parts = [
+    status === undefined ? undefined : `status=${status}`,
+    responseBody ? `response=${truncateCloudDebug(responseBody)}` : undefined,
+  ].filter(Boolean)
+
+  return `${message}\nCloud debug: ${parts.join(' ')}`
+}
+
+function isTruthyEnv(name: string): boolean {
+  const raw = process.env[name]
+  return raw === '1' || raw === 'true' || raw === 'yes'
+}
+
+function truncateCloudDebug(value: string): string {
+  const trimmed = value.replace(/\s+/g, ' ').trim()
+  return trimmed.length > 500 ? `${trimmed.slice(0, 500)}...` : trimmed
+}
+
+function formatMisclassifiedPodRuntimeTimeout(error: unknown): string | null {
+  return normalizeMisclassifiedCloudCompletionPodTimeoutMessage(error)
 }
 
 function isAbortError(error: unknown): boolean {
@@ -262,7 +321,7 @@ function normalizeContextMessages(context?: { messages?: PiStreamContextMessage[
       if (content || toolCalls.length > 0) {
         normalized.push({
           role: 'assistant',
-          content: content || null,
+          content: content || '',
           ...(reasoningContent && toolCalls.length > 0 ? { reasoning_content: reasoningContent } : {}),
           ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
         })
@@ -271,9 +330,13 @@ function normalizeContextMessages(context?: { messages?: PiStreamContextMessage[
     }
 
     if (entry.role === 'toolResult' || entry.role === 'tool') {
-      const content = normalizeMessageContent(entry.content) || '(empty tool result)'
+      const rawContent = normalizeMessageContent(entry.content) || '(empty tool result)'
       const toolCallId = typeof entry.toolCallId === 'string' ? entry.toolCallId : undefined
       if (toolCallId) {
+        const content = materializeLargeToolResult(rawContent, {
+          toolCallId,
+          toolName: typeof entry.toolName === 'string' ? entry.toolName : undefined,
+        })
         normalized.push({
           role: 'tool',
           content,
@@ -285,6 +348,97 @@ function normalizeContextMessages(context?: { messages?: PiStreamContextMessage[
   }
 
   return sanitizeChatCompletionMessages(normalized)
+}
+
+function materializeLargeToolResult(
+  content: string,
+  metadata: {
+    toolCallId: string
+    toolName?: string
+  },
+): string {
+  const inlineLimit = readPositiveIntegerEnv(
+    'LINX_TOOL_RESULT_INLINE_CHAR_LIMIT',
+    DEFAULT_TOOL_RESULT_INLINE_CHAR_LIMIT,
+  )
+  if (content.length <= inlineLimit) {
+    return content
+  }
+
+  const digest = createHash('sha256').update(content).digest('hex')
+  const dir = join(
+    getSolidLinxAgentDir(),
+    'artifacts',
+    'tool-results',
+    new Date().toISOString().slice(0, 10),
+  )
+  const filePath = join(dir, `${sanitizePathSegment(metadata.toolName ?? 'tool')}-${digest.slice(0, 16)}.txt`)
+  const excerpt = buildToolResultExcerpt(content)
+  const descriptor = [
+    '[LinX large tool result materialized]',
+    `tool: ${metadata.toolName ?? 'unknown'}`,
+    `tool_call_id: ${metadata.toolCallId}`,
+    `original_chars: ${content.length}`,
+    `sha256: ${digest}`,
+    `path: ${filePath}`,
+    'The full tool output was omitted from chat history to keep the model request valid.',
+    'Read the file above when exact details are needed.',
+    '',
+    'inline_excerpt:',
+    excerpt,
+  ]
+
+  try {
+    if (!existsSync(filePath)) {
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(filePath, content, 'utf-8')
+    }
+  } catch (error) {
+    descriptor.splice(6, 0, `artifact_write_error: ${error instanceof Error ? error.message : String(error)}`)
+  }
+
+  return descriptor.join('\n')
+}
+
+function buildToolResultExcerpt(content: string): string {
+  const headChars = readPositiveIntegerEnv(
+    'LINX_TOOL_RESULT_EXCERPT_HEAD_CHARS',
+    DEFAULT_TOOL_RESULT_EXCERPT_HEAD_CHARS,
+  )
+  const tailChars = readPositiveIntegerEnv(
+    'LINX_TOOL_RESULT_EXCERPT_TAIL_CHARS',
+    DEFAULT_TOOL_RESULT_EXCERPT_TAIL_CHARS,
+  )
+  if (content.length <= headChars + tailChars) {
+    return content
+  }
+
+  const omitted = content.length - headChars - tailChars
+  return [
+    content.slice(0, headChars),
+    '',
+    `[... omitted ${omitted} chars; full output is in the artifact file ...]`,
+    '',
+    content.slice(-tailChars),
+  ].join('\n')
+}
+
+function sanitizePathSegment(value: string): string {
+  const sanitized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return sanitized || 'tool'
+}
+
+function readPositiveIntegerEnv(name: string, fallback: number): number {
+  const raw = process.env[name]
+  if (!raw) {
+    return fallback
+  }
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback
 }
 
 function sanitizeChatCompletionMessages(messages: RemoteChatMessage[]): RemoteChatMessage[] {
@@ -466,10 +620,9 @@ function normalizeMessageContent(content: unknown): string {
 function emitCompletionResult(
   stream: AssistantMessageEventStream,
   message: AssistantMessage,
-  reply: string | PiCompletionBackendResult,
+  reply: string | LinxCompletionBackendResult,
 ): void {
   const content = typeof reply === 'string' ? reply : reply.content ?? ''
-  const reasoningContent = typeof reply === 'string' ? '' : reply.reasoningContent ?? ''
   const toolCalls = typeof reply === 'string' ? [] : reply.toolCalls ?? []
   if (!isStringReply(reply) && reply.usage) {
     message.usage = {
@@ -480,33 +633,6 @@ function emitCompletionResult(
       totalTokens: reply.usage.totalTokens,
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
     }
-  }
-
-  if (reasoningContent) {
-    const contentIndex = message.content.length
-    message.content.push({
-      type: 'thinking',
-      thinking: '',
-      thinkingSignature: 'reasoning_content',
-    })
-    stream.push({ type: 'thinking_start', contentIndex, partial: { ...message } })
-    message.content[contentIndex] = {
-      type: 'thinking',
-      thinking: reasoningContent,
-      thinkingSignature: 'reasoning_content',
-    }
-    stream.push({
-      type: 'thinking_delta',
-      contentIndex,
-      delta: reasoningContent,
-      partial: { ...message },
-    })
-    stream.push({
-      type: 'thinking_end',
-      contentIndex,
-      content: reasoningContent,
-      partial: { ...message },
-    })
   }
 
   if (content) {
@@ -557,7 +683,7 @@ function parseToolArguments(input: string): Record<string, unknown> {
   }
 }
 
-function isStringReply(reply: string | PiCompletionBackendResult): reply is string {
+function isStringReply(reply: string | LinxCompletionBackendResult): reply is string {
   return typeof reply === 'string'
 }
 

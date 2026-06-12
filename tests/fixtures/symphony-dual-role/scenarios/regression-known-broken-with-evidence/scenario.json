@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "id": "regression-known-broken-with-evidence",
+  "title": "Regression Known Broken With Evidence",
+  "purpose": "Validate that fragmented bug reports bind to an existing capability as a known-broken regression with evidence, not as a new feature or UI fallback request.",
+  "inputPolicy": "user_fragments_only",
+  "expectedFinalIntent": "Record chat list loading as an existing capability regression, preserve the query-failure clue as unverified evidence, and require investigation before implementation.",
+  "userFragments": [
+    {
+      "id": "u1",
+      "content": "The chat list opened yesterday, but today it is blank."
+    },
+    {
+      "id": "u2",
+      "content": "I am not sure if it is login, but the log looks like a collection query failed."
+    },
+    {
+      "id": "u3",
+      "content": "Do not refactor yet. Treat it as a regression and do not hide it with a UI fallback."
+    }
+  ],
+  "secretaryReplies": [
+    {
+      "after": "u1",
+      "content": "Classified as a bug or regression against the existing chat list capability, not a new feature request."
+    },
+    {
+      "after": "u2",
+      "content": "The collection query failure is evidence to preserve, but it is not yet a confirmed root cause."
+    },
+    {
+      "after": "u3",
+      "content": "The control record should require reproduction and diagnosis before implementation; UI fallback is explicitly out of scope."
+    }
+  ],
+  "acceptance": {
+    "finalOnly": true,
+    "classification": "bug_or_regression",
+    "systemState": "known-broken",
+    "workState": "drafting",
+    "compatibilityImpact": "behavior_change",
+    "requiredPhrases": [
+      "Known-broken existing capability",
+      "not a new feature",
+      "collection query failure is a clue, not a confirmed root cause",
+      "Do not add a UI fallback",
+      "reproduce the blank chat list"
+    ],
+    "forbiddenPhrases": [
+      "Create new saved replies/chat feature",
+      "Add UI fallback to hide query failure",
+      "Implementation completed"
+    ]
+  }
+}

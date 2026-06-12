@@ -1,25 +1,18 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
 import {
-  LINX_ACCOUNT_SESSION_FILE_NAME,
-  LINX_HOME_DIRNAME,
   parseAccountSession,
   type AccountSession,
 } from '@undefineds.co/models/client'
+import { getSolidAuthAccountSessionPath, getSolidAuthDir } from './solid-auth-store.js'
 
 export type StoredAccountSession = AccountSession
 
-function linxDir(): string {
-  return join(homedir(), LINX_HOME_DIRNAME)
-}
-
 export function getAccountSessionPath(): string {
-  return join(linxDir(), LINX_ACCOUNT_SESSION_FILE_NAME)
+  return getSolidAuthAccountSessionPath()
 }
 
 export function saveAccountSession(session: StoredAccountSession): void {
-  mkdirSync(linxDir(), { recursive: true })
+  mkdirSync(getSolidAuthDir(), { recursive: true })
   writeFileSync(getAccountSessionPath(), `${JSON.stringify(session, null, 2)}\n`, 'utf-8')
   chmodSync(getAccountSessionPath(), 0o600)
 }

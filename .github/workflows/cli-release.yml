@@ -27,8 +27,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -37,11 +35,6 @@ jobs:
           cache: yarn
 
       - name: Install
-        env:
-          # xpod brings inngest-cli transitively, but the LinX CLI release does
-          # not need the local Inngest binary. Its postinstall download is
-          # CDN-dependent and has caused macOS release installs to fail with 504.
-          SKIP_POSTINSTALL: "1"
         run: yarn install --frozen-lockfile --ignore-engines
 
       - name: Build, pack, and smoke
@@ -70,8 +63,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Download release tarballs
         uses: actions/download-artifact@v4
@@ -82,8 +73,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
-          registry-url: https://registry.npmjs.org
+          node-version: 24
 
       - name: Resolve release tarballs
         id: tarballs
@@ -96,13 +86,14 @@ jobs:
           test -f "$cli_tgz"
           echo "cli=./$cli_tgz" >> "$GITHUB_OUTPUT"
 
+      - name: Use current npm for OIDC publish
+        run: npm install -g npm@latest
+
       - name: Dry-run publish CLI
         run: npm publish --access public --dry-run "${{ steps.tarballs.outputs.cli }}"
 
       - name: Publish CLI
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --access public "${{ steps.tarballs.outputs.cli }}"
+        run: npm publish --access public --provenance "${{ steps.tarballs.outputs.cli }}"
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/linx-v')

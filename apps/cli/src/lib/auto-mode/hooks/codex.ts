@@ -6,15 +6,26 @@ function encodeCodexConfigValue(value: string): string {
   return JSON.stringify(value)
 }
 
-function buildCodexArgs(passthroughArgs: string[], commandEnv?: Record<string, string>): string[] {
-  const baseUrl = commandEnv?.OPENAI_BASE_URL?.trim()
-  if (!baseUrl) {
-    return [...passthroughArgs]
+function isNonCodexProviderModel(model: string): boolean {
+  return /(?:deepseek|claude|qwen|gemini|kimi|moonshot|mistral|grok|glm|minimax)/iu.test(model)
+}
+
+function buildCodexArgs(passthroughArgs: string[], commandEnv?: Record<string, string>, model?: string): string[] {
+  const baseUrl = commandEnv?.CODEX_BASE_URL?.trim()
+  const normalizedModel = model?.trim()
+  if (normalizedModel && isNonCodexProviderModel(normalizedModel)) {
+    throw new Error(`codex backend cannot run model ${normalizedModel}. Use claude/cc or linx for provider-routed models.`)
   }
 
   return [
-    '-c',
-    `openai_base_url=${encodeCodexConfigValue(baseUrl)}`,
+    ...(baseUrl ? [
+      '-c',
+      `openai_base_url=${encodeCodexConfigValue(baseUrl)}`,
+    ] : []),
+    ...(normalizedModel ? [
+      '-c',
+      `model=${encodeCodexConfigValue(normalizedModel)}`,
+    ] : []),
     ...passthroughArgs,
   ]
 }
@@ -30,7 +41,7 @@ export const codexHook: AutoModeBackendHook = {
   buildSpawnPlan(options) {
     return {
       command: options.commandOverride ?? resolveCodexAcpCommand(),
-      args: buildCodexArgs(options.passthroughArgs, options.commandEnv),
+      args: buildCodexArgs(options.passthroughArgs, options.commandEnv, options.model),
     }
   },
 }

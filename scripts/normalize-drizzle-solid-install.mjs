@@ -1,8 +1,9 @@
-import { cpSync, realpathSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { cpSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 
 const packageDistRoot = path.resolve('node_modules/@undefineds.co/drizzle-solid/dist')
+const packageRoot = path.dirname(packageDistRoot)
 const packageEsmRoot = path.join(packageDistRoot, 'esm')
 const localDrizzleSolidDistRoot = path.resolve('../drizzle-solid/dist')
 const sourceMapPattern = /\n\/\/# sourceMappingURL=.*$/m
@@ -30,20 +31,83 @@ patchDrizzleSolidResourceIdSemantics(packageDistRoot)
 patchDrizzleSolidBaseRelativeIdClassifier(packageDistRoot)
 patchDrizzleSolidExactResourceReads(packageDistRoot)
 patchDrizzleSolidShortIdSubjectIndex(packageDistRoot)
+patchDrizzleSolidSparqlTargetGraphs(packageDistRoot)
 patchDrizzleSolidResourcePreparation(packageDistRoot)
 stripEsmSourceMapUrls(packageEsmRoot)
 assertPatchedDrizzleSolid(packageDistRoot)
+normalizeNestedDrizzleSolidInstalls(packageRoot)
 
 function syncLocalDrizzleSolidDist(root) {
   if (statSync(localDrizzleSolidDistRoot, { throwIfNoEntry: false }) == null) {
     return
   }
 
-  if (realpathSync(localDrizzleSolidDistRoot) === realpathSync(root)) {
-    return
+  cpSync(localDrizzleSolidDistRoot, root, { recursive: true })
+}
+
+function normalizeNestedDrizzleSolidInstalls(sourceRoot) {
+  const sourceDistRoot = path.join(sourceRoot, 'dist')
+  for (const nestedRoot of findNestedDrizzleSolidPackageRoots(findNodeModulesRoots())) {
+    if (path.resolve(nestedRoot) === path.resolve(sourceRoot)) {
+      continue
+    }
+    rmSync(path.join(nestedRoot, 'node_modules'), { recursive: true, force: true })
+    cpSync(sourceDistRoot, path.join(nestedRoot, 'dist'), { recursive: true })
+    stripEsmSourceMapUrls(path.join(nestedRoot, 'dist/esm'))
+    assertPatchedDrizzleSolid(path.join(nestedRoot, 'dist'))
+  }
+}
+
+function findNodeModulesRoots() {
+  const roots = [path.resolve('node_modules')]
+  for (const workspaceRoot of ['apps', 'packages']) {
+    for (const entry of readdirSync(path.resolve(workspaceRoot), { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue
+      const nodeModulesDir = path.resolve(workspaceRoot, entry.name, 'node_modules')
+      if (statSync(nodeModulesDir, { throwIfNoEntry: false })?.isDirectory()) {
+        roots.push(nodeModulesDir)
+      }
+    }
+  }
+  return roots
+}
+
+function findNestedDrizzleSolidPackageRoots(roots) {
+  const matches = []
+
+  function visitNodeModules(nodeModulesDir) {
+    const candidate = path.join(nodeModulesDir, '@undefineds.co', 'drizzle-solid')
+    if (statSync(candidate, { throwIfNoEntry: false })?.isDirectory()) {
+      matches.push(candidate)
+    }
+
+    for (const entry of readdirSync(nodeModulesDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue
+      if (entry.name.startsWith('.') || entry.name === '.bin') continue
+
+      if (entry.name.startsWith('@')) {
+        const scopedRoot = path.join(nodeModulesDir, entry.name)
+        for (const scopedEntry of readdirSync(scopedRoot, { withFileTypes: true })) {
+          if (!scopedEntry.isDirectory()) continue
+          const nestedNodeModules = path.join(scopedRoot, scopedEntry.name, 'node_modules')
+          if (statSync(nestedNodeModules, { throwIfNoEntry: false })?.isDirectory()) {
+            visitNodeModules(nestedNodeModules)
+          }
+        }
+        continue
+      }
+
+      const nestedNodeModules = path.join(nodeModulesDir, entry.name, 'node_modules')
+      if (statSync(nestedNodeModules, { throwIfNoEntry: false })?.isDirectory()) {
+        visitNodeModules(nestedNodeModules)
+      }
+    }
   }
 
-  cpSync(localDrizzleSolidDistRoot, root, { recursive: true })
+  for (const root of roots) {
+    visitNodeModules(root)
+  }
+  return Array.from(new Set(matches.map((match) => path.resolve(match))))
 }
 
 function stripEsmSourceMapUrls(root) {
@@ -195,7 +259,7 @@ function patchPodRuntime(source) {
     `$1if (!this.explicitPodUrl && resolvedStorage !== this.podUrl) {\n$2console.log(\`[PodRuntime] IdP-SP separation detected: storage at \${resolvedStorage}\`);\n$3this.podUrl = resolvedStorage;\n$4}`,
   )
 
-  if (!patched.includes('skipping Pod root probe')) {
+  if (!patched.includes('explicit Pod URL; skip Pod root probe silently')) {
     patched = patched.replace(
       /(\s+)\/\/ 检测是否支持 X-Request-ID\n\s+this\.requestIdSupported = await this\.detectRequestIdSupport\(\);\n\s+\/\/ 重新创建 wrappedFetch（现在知道是否支持了）\n\s+this\.wrappedFetch = this\.createWrappedFetch\(\);\n\s+\/\/ 从 profile 解析 storage URL \(IdP-SP 分离支持\)\n\s+\/\/ 使用 webIdResolver 的缓存，避免重复读取 profile\n\s+const resolvedStorage = await ([^;]+)\.resolveStorage\(this\.webId, this\.wrappedFetch\);\n\s+if \(resolvedStorage\) \{\n\s+this\.storageUrl = resolvedStorage;\n\s+this\.storageResolvedAt = Date\.now\(\);\n\s+(?:\/\/ 如果 storage URL 与当前 podUrl 不同，更新 podUrl\n\s+)?if \(!this\.explicitPodUrl && resolvedStorage !== this\.podUrl\) \{\n\s+console\.log\(`\[PodRuntime\] IdP-SP separation detected: storage at \$\{resolvedStorage\}`\);\n\s+this\.podUrl = resolvedStorage;\n\s+\}\n\s+\}/,
       `$1if (this.explicitPodUrl) {
@@ -204,7 +268,7 @@ $1    this.wrappedFetch = this.createWrappedFetch();
 $1    this.storageUrl = this.podUrl;
 $1    this.storageResolvedAt = Date.now();
 $1    this.connected = true;
-$1    console.log('Using explicit Pod URL; skipping Pod root probe');
+$1    // explicit Pod URL; skip Pod root probe silently
 $1    return;
 $1}
 $1// 检测是否支持 X-Request-ID
@@ -226,18 +290,23 @@ $1}`,
   }
 
   if (
-    !patched.includes('skipping Pod root probe')
+    !patched.includes('explicit Pod URL; skip Pod root probe silently')
     && patched.includes('if (this.explicitPodUrl) {')
     && patched.includes('this.storageResolvedAt = Date.now();')
   ) {
     patched = patched.replace(
       /(\s+if \(this\.explicitPodUrl\) \{\n\s+this\.storageUrl = this\.podUrl;\n\s+this\.storageResolvedAt = Date\.now\(\);\n)(\s+\})/,
       `$1            this.connected = true;
-            console.log('Using explicit Pod URL; skipping Pod root probe');
+            // explicit Pod URL; skip Pod root probe silently
             return;
 $2`,
     )
   }
+
+  patched = patched.replace(
+    /\s+console\.log\('Using explicit Pod URL; skipping Pod root probe'\);\n/g,
+    '\n',
+  )
 
   patched = patched.replace(
     /(\s+)if \(status === 500\) \{\n(\s+)const requestId = this\.requestIdSupported\n([\s\S]*?)\n\s+throw new Error\(`Failed to connect to Pod: \$\{status\} \$\{response\.statusText\}`\);\n\s+\}/,
@@ -598,6 +667,68 @@ function patchShortIdSubjectIndexPodDialectRuntime(source, isEsm) {
     /(\s+\/\*\*\n\s+\* Get the ExecutionStrategy for a table\n\s+\*\/\n\s+getStrategy\(table\) \{)/,
     `${methods}$1`,
   )
+}
+
+function patchDrizzleSolidSparqlTargetGraphs(root) {
+  const files = [
+    path.join(root, 'core/execution/sparql-strategy.js'),
+    path.join(root, 'esm/core/execution/sparql-strategy.js'),
+  ]
+
+  for (const filePath of files) {
+    if (statSync(filePath, { throwIfNoEntry: false }) == null) {
+      continue
+    }
+    const source = readFileSync(filePath, 'utf8')
+    const patched = patchSparqlStrategyTargetGraphs(source)
+    if (patched !== source) {
+      writeFileSync(filePath, patched, 'utf8')
+    }
+  }
+}
+
+function patchSparqlStrategyTargetGraphs(source) {
+  let patched = source
+
+  if (!patched.includes('resolvePodResourceIri(value)')) {
+    patched = patched.replace(
+      /(\s+setPodUrl\(podUrl\) \{\n\s+this\.podUrl = podUrl;\n\s+\}\n)/,
+      `$1    resolvePodResourceIri(value) {
+        if (typeof value !== 'string' || value.length === 0) {
+            return value;
+        }
+        if (/^[a-z][a-z0-9+.-]*:/i.test(value)) {
+            return value;
+        }
+        const podRoot = typeof this.podUrl === 'string' ? this.podUrl.trim() : '';
+        if (!podRoot) {
+            return value;
+        }
+        const normalizedPodRoot = podRoot.endsWith('/') ? podRoot : \`\${podRoot}/\`;
+        if (value.startsWith('/')) {
+            return \`\${normalizedPodRoot.replace(/\\/+$/, '')}\${value}\`;
+        }
+        try {
+            return new URL(value, normalizedPodRoot).toString();
+        }
+        catch {
+            return value;
+        }
+    }
+`,
+    )
+  }
+
+  patched = patched.replace(
+    /return table\.config\?\.containerPath \?\? table\.getContainerPath\?\.\(\);/g,
+    'return this.resolvePodResourceIri(table.config?.containerPath ?? table.getContainerPath?.());',
+  )
+  patched = patched.replace(
+    /return table\.config\?\.base;/g,
+    'return this.resolvePodResourceIri(table.config?.base);',
+  )
+
+  return patched
 }
 
 function ensureGenerateSubjectUriImport(source, isEsm) {
@@ -1303,7 +1434,10 @@ function assertPatchedDrizzleSolid(root) {
       [
         'Exact resource reads already know the concrete Pod document',
         'shouldSkipResourcePreparation()',
-        'skipResourceExistenceCheck: this.shouldSkipResourcePreparation()',
+        [
+          'skipResourceExistenceCheck: this.shouldSkipResourcePreparation()',
+          'skipResourceExistenceCheck: useWriteTimePreparation',
+        ],
       ],
     ],
     [
@@ -1311,7 +1445,24 @@ function assertPatchedDrizzleSolid(root) {
       [
         'Exact resource reads already know the concrete Pod document',
         'shouldSkipResourcePreparation()',
-        'skipResourceExistenceCheck: this.shouldSkipResourcePreparation()',
+        [
+          'skipResourceExistenceCheck: this.shouldSkipResourcePreparation()',
+          'skipResourceExistenceCheck: useWriteTimePreparation',
+        ],
+      ],
+    ],
+    [
+      path.join(root, 'core/execution/sparql-strategy.js'),
+      [
+        'resolvePodResourceIri(value)',
+        'return this.resolvePodResourceIri(table.config?.base);',
+      ],
+    ],
+    [
+      path.join(root, 'esm/core/execution/sparql-strategy.js'),
+      [
+        'resolvePodResourceIri(value)',
+        'return this.resolvePodResourceIri(table.config?.base);',
       ],
     ],
     [
@@ -1357,6 +1508,8 @@ function assertPatchedDrizzleSolid(root) {
     path.join(root, 'esm/core/pod-dialect.js'),
     path.join(root, 'core/execution/pod-executor.js'),
     path.join(root, 'esm/core/execution/pod-executor.js'),
+    path.join(root, 'core/execution/sparql-strategy.js'),
+    path.join(root, 'esm/core/execution/sparql-strategy.js'),
     path.join(root, 'core/execution/ldp-executor.js'),
     path.join(root, 'esm/core/execution/ldp-executor.js'),
     path.join(root, 'core/execution/ldp-strategy.js'),

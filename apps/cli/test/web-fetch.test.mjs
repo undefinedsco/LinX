@@ -8,11 +8,16 @@ function createRuntime(module, {
   fetchImpl = async () => new Response('', { status: 404 }),
 } = {}) {
   const db = {
+    updateCalls: [],
     findById: async (resource, id) => {
       if ((resource?.config?.name === 'aiProvider' || resource?.name === 'aiProvider') && id === 'jina') {
         return providerRow
       }
       return null
+    },
+    updateById: async (resource, id, data) => {
+      db.updateCalls.push({ resource, id, data })
+      return { id, ...data }
     },
     select() {
       return {
@@ -57,7 +62,7 @@ test('resolveJinaApiKey reads active Jina credential through shared models', asy
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/web-fetch.ts')
   t.after(() => cleanup())
 
-  const apiKey = await module.resolveJinaApiKey(createRuntime(module, {
+  const runtime = createRuntime(module, {
     credentialRows: [{
       id: 'credentials.ttl#jina-default',
       provider: '/settings/providers/jina.ttl',
@@ -65,9 +70,14 @@ test('resolveJinaApiKey reads active Jina credential through shared models', asy
       status: 'active',
       apiKey: 'jina_test_key',
     }],
-  }))
+  })
+  const db = runtime.createDb()
+
+  const apiKey = await module.resolveJinaApiKey(runtime)
 
   assert.equal(apiKey, 'jina_test_key')
+  assert.equal(db.updateCalls.length, 1)
+  assert.equal(db.updateCalls[0].id, 'jina-default')
 })
 
 test('web_fetch resolves Jina credential internally and calls Jina Reader', async (t) => {

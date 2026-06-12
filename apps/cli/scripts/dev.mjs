@@ -1,11 +1,8 @@
 import { spawnSync } from 'node:child_process'
-import { createRequire } from 'node:module'
 import { existsSync, renameSync, rmSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 const workspaceRoot = fileURLToPath(new URL('..', import.meta.url))
-const requireFromCli = createRequire(new URL('../package.json', import.meta.url))
-const localTscBin = requireFromCli.resolve('typescript/bin/tsc')
 const agentRuntimeTsconfig = fileURLToPath(new URL('../../../packages/agent-runtime/tsconfig.json', import.meta.url))
 const distDir = fileURLToPath(new URL('../dist', import.meta.url))
 const distIndex = fileURLToPath(new URL('../dist/index.js', import.meta.url))
@@ -48,7 +45,7 @@ function removeDirRobust(path) {
 
 removeDirRobust(distDir)
 
-const compileAgentRuntime = spawnSync(process.execPath, [localTscBin, '-p', agentRuntimeTsconfig], {
+const compileAgentRuntime = spawnSync('tsc', ['-p', agentRuntimeTsconfig], {
   cwd: workspaceRoot,
   stdio: 'inherit',
 })
@@ -56,7 +53,7 @@ if ((compileAgentRuntime.status ?? 1) !== 0) {
   process.exit(compileAgentRuntime.status ?? 1)
 }
 
-const compile = spawnSync(process.execPath, [localTscBin, ...compileArgs], {
+const compile = spawnSync('tsc', compileArgs, {
   cwd: workspaceRoot,
   stdio: 'inherit',
 })

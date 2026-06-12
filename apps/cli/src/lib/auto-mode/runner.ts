@@ -11,6 +11,10 @@ import {
   parseAutoModeJsonLine,
   autoModeApprovalDecisionLabel,
   autoModeUserInputAnswersSummary,
+  resolveAutoModeCommandRoute,
+  shouldMaterializeAutoModeGrant,
+  type AutoModeControlCommandRoute,
+  type AutoModePeerCommandRoute,
   type AutoModeApprovalDecision,
   type AutoModeApprovalRequest,
   type AutoModeInteractionRequest,
@@ -26,18 +30,22 @@ import {
   appendAutoModeEvent,
   createAutoModeSession,
   finishAutoModeSession,
+  hasPendingAutoModeSync,
   loadAutoModeEvents,
   loadAutoModeSession,
+  listAutoModeSessionsWithPendingSync,
   listAutoModeSessions,
+  writeAutoModeSyncCheckpoint,
   writeAutoModeSession,
 } from './archive.js'
 import { detectAutoModeAuthFailure, preflightAutoModeAuth, type AutoModeAuthPreflightResult } from './auth.js'
 import { createAutoModeDisplay, type AutoModeDisplay } from './display.js'
 import { formatAutoModeSessionSummary } from './format.js'
-import { describeAutoModeMode, getAutoModeHook, listAutoModeHooks } from './hooks/index.js'
+import { describeAutoControl, getAutoModeHook, linxNativeBackend, listAutoModeHooks } from './hooks/index.js'
 import {
   createRemoteAutoModeApproval,
   isRemoteApprovalAbortError,
+  materializeRemoteAutoModeGrant,
   resolveExistingRemoteAutoModeGrant,
   resolveRemoteAutoModeApproval,
   waitForRemoteAutoModeApproval,
@@ -47,9 +55,16 @@ import { loadPodBackendCredential, podCredentialMissingMessage } from './pod-ai.
 import { resolveAutoModeSecretaryRecommendation } from './secretary.js'
 import { promptText } from '../prompt.js'
 import { runLinxLoginCommand, runLinxLogoutCommand } from '../login-command.js'
-import { clearDefaultPodDataSession } from '../pod-data-session.js'
+import { clearDefaultPodDataSession, createPodDataSession, type PodDataSession } from '../pod-data-session.js'
+import { parseSolidClientCredentials, persistSolidClientCredentialsLogin } from '../solid-client-credentials-login.js'
 import { connectAiProviderCredential } from '../ai-command.js'
-import type { AgentRuntimeCapabilities } from '@linx/agent-runtime'
+import { saveAccountSession } from '../account-session.js'
+import { clearCredentials, loadCredentials, saveCredentials } from '../credentials-store.js'
+import { resolveAccountBaseUrl } from '../account-api.js'
+import { createRemoteCompletionResult, type RemoteCompletionResult } from '../chat-api.js'
+import { resolveRuntimeTarget } from '../runtime-target.js'
+import { runThreadReconcilerCycle, type AgentRuntimeCapabilities, type ThreadControlEvent } from '@linx/agent-runtime'
+import { createLinxSyncCheckpoint, type LinxSyncRunResult } from '@linx/agent-runtime/sync'
 import type {
   AutoModeBackendHook,
   AutoModeEventLogEntry,
@@ -61,6 +76,7 @@ import type {
   AutoRunOptions,
   AutoModeSessionRecord,
   AutoModeSpawnPlan,
+  AutoModeWorkerBackend,
 } from './types.js'
 
 type OutputStream = 'stdout' | 'stderr' | 'system'
@@ -71,6 +87,7 @@ interface AutoModeConversationSession {
   sendTurn(text: string): Promise<void>
   setModel(model: string): Promise<void>
   applyResolvedOptions(options: AutoRunOptions): void
+  abort(): Promise<void>
   close(): Promise<void>
 }
 
@@ -104,8 +121,18 @@ export const autoModeRuntime = {
   resolveExistingRemoteAutoModeGrant,
   waitForRemoteAutoModeApproval,
   resolveRemoteAutoModeApproval,
+  materializeRemoteAutoModeGrant,
   persistAutoModeConversationToPod,
   resolveAutoModeSecretaryRecommendation,
+  createPodDataSession,
+  clearDefaultPodDataSession,
+  loadCredentials,
+  saveCredentials,
+  clearCredentials,
+  saveAccountSession,
+  resolveAccountBaseUrl,
+  persistSolidClientCredentialsLogin,
+  createRemoteCompletionResult,
 }
 
 function createLineSplitter(
@@ -165,6 +192,45 @@ function withTimeout<T>(
   })
 }
 
+function createAbortError(message = 'The operation was aborted.'): Error {
+  const error = new Error(message)
+  error.name = 'AbortError'
+  return error
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && (error.name === 'AbortError' || error.message.toLowerCase().includes('aborted'))
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) {
+    return
+  }
+
+  const reason = signal.reason
+  if (reason instanceof Error) {
+    throw reason
+  }
+  throw createAbortError(typeof reason === 'string' && reason.trim() ? reason : undefined)
+}
+
+function withAbortSignal<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) {
+    return promise
+  }
+  throwIfAborted(signal)
+
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason instanceof Error
+      ? signal.reason
+      : createAbortError(typeof signal.reason === 'string' && signal.reason.trim() ? signal.reason : undefined))
+    signal.addEventListener('abort', onAbort, { once: true })
+    promise
+      .then(resolve, reject)
+      .finally(() => signal.removeEventListener('abort', onAbort))
+  })
+}
+
 function appendEntry(record: AutoModeSessionRecord, stream: AutoModeEventLogEntry['stream'], line: string, events: AutoModeNormalizedEvent[]): void {
   const entry: AutoModeEventLogEntry = {
     timestamp: new Date().toISOString(),
@@ -184,6 +250,33 @@ function appendSessionNote(record: AutoModeSessionRecord, message: string, raw?:
     message,
     raw,
   }])
+}
+
+function writeFailedPodSyncCheckpoint(record: AutoModeSessionRecord, message: string): void {
+  const now = new Date().toISOString()
+  const result: LinxSyncRunResult = {
+    source: 'auto-mode-archive',
+    target: 'pod',
+    direction: 'local-to-core',
+    plane: 'projection',
+    authority: 'core',
+    attempted: 0,
+    applied: 0,
+    skipped: 0,
+    failed: 1,
+    failures: [{
+      operationId: 'auto-mode.persist-to-pod',
+      message,
+      failedAt: now,
+    }],
+    startedAt: now,
+    completedAt: now,
+    status: 'failed',
+  }
+  writeAutoModeSyncCheckpoint(record, createLinxSyncCheckpoint('auto-mode-archive:pod:projection', result, {
+    sessionId: record.id,
+    backend: record.backend,
+  }))
 }
 
 function appendAndDisplaySessionNote(
@@ -413,8 +506,8 @@ async function promptLinxCloudAuth(display: AutoModeDisplay, lines: string[], re
       lines,
       [
         { label: 'Authorize in browser', value: 'browser', description: 'refresh the LinX Cloud Solid session', shortcuts: ['b', '1'] },
-        { label: 'Logout', value: 'logout', description: 'clear the current LinX Cloud session', shortcuts: ['l', '2'] },
-        { label: 'Exit', value: 'exit', description: 'leave auto-mode', shortcuts: ['x', '3'] },
+        { label: 'Enter Solid client credentials', value: 'client-credentials', description: 'use LinX Cloud client credentials', shortcuts: ['k', '2'] },
+        { label: 'Exit', value: 'exit', description: 'leave this session', shortcuts: ['x', '3'] },
       ],
     )).trim().toLowerCase()
 
@@ -423,8 +516,11 @@ async function promptLinxCloudAuth(display: AutoModeDisplay, lines: string[], re
       return 'retry'
     }
 
-    if (answer === 'logout' || answer === 'l' || answer === '2') {
-      runBackendLinxLogout(display)
+    if (answer === 'client-credentials' || answer === 'k' || answer === '2') {
+      const saved = await promptBackendSolidClientCredentials(display)
+      if (saved) {
+        return 'retry'
+      }
       continue
     }
 
@@ -448,7 +544,7 @@ async function runBackendLinxLogin(display: AutoModeDisplay): Promise<void> {
       }
     },
   })
-  clearDefaultPodDataSession()
+  autoModeRuntime.clearDefaultPodDataSession()
   display.showActivity('LinX Cloud login refreshed.', 'success')
 }
 
@@ -463,8 +559,36 @@ function runBackendLinxLogout(display: AutoModeDisplay): void {
       }
     },
   })
-  clearDefaultPodDataSession()
+  autoModeRuntime.clearDefaultPodDataSession()
   display.showActivity('Use /login or choose browser authorization to sign in again.', 'note')
+}
+
+async function promptBackendSolidClientCredentials(display: AutoModeDisplay): Promise<boolean> {
+  display.setPhase('question', 'Solid client credentials required')
+  const credentialsText = await display.promptSecret({
+    header: 'Solid client credentials',
+    question: 'Paste Solid client credentials in client_id:client_secret format.',
+    note: 'Input is hidden and saved locally as LinX Cloud client credentials.',
+  })
+  const parsed = parseSolidClientCredentials(credentialsText)
+  if (!parsed) {
+    display.showActivity('Solid client credentials entry cancelled or invalid. Expected client_id:client_secret.', 'error')
+    return false
+  }
+
+  autoModeRuntime.clearDefaultPodDataSession()
+
+  try {
+    await autoModeRuntime.persistSolidClientCredentialsLogin(credentialsText, autoModeRuntime)
+    autoModeRuntime.clearDefaultPodDataSession()
+    display.showActivity('Solid client credentials saved. Retrying backend startup.', 'success')
+    return true
+  } catch (error) {
+    autoModeRuntime.clearDefaultPodDataSession()
+    const message = error instanceof Error ? error.message : String(error)
+    display.showActivity(`Solid client credentials rejected: ${message}`, 'error')
+    return false
+  }
 }
 
 function isRecoverableLinxCloudAuthError(message: string): boolean {
@@ -477,29 +601,45 @@ function isRecoverableLinxCloudAuthError(message: string): boolean {
     || normalized.includes('unauthorized')
 }
 
-function backendProviderLabel(backend: AutoRunOptions['backend']): string {
+function backendProviderLabel(backend: Exclude<AutoRunOptions['backend'], 'linx'>): string {
   if (backend === 'claude') return 'Anthropic'
-  if (backend === 'codex') return 'OpenAI/Codex'
+  if (backend === 'codex') return 'Codex'
   return 'CodeBuddy'
 }
 
-function backendProviderId(backend: AutoRunOptions['backend']): 'anthropic' | 'openai' | 'codebuddy' {
+function backendProviderId(backend: Exclude<AutoRunOptions['backend'], 'linx'>): string {
   if (backend === 'claude') return 'anthropic'
   if (backend === 'codex') return 'openai'
   return 'codebuddy'
 }
 
-function isMissingProviderCredentialError(backend: AutoRunOptions['backend'], message: string): boolean {
+function isMissingProviderCredentialError(backend: Exclude<AutoRunOptions['backend'], 'linx'>, message: string): boolean {
   return message === podCredentialMissingMessage(backend)
 }
 
-async function promptBackendProviderKey(
+async function promptBackendProviderCredential(
   display: AutoModeDisplay,
-  backend: AutoRunOptions['backend'],
+  backend: Exclude<AutoRunOptions['backend'], 'linx'>,
+  reason: 'missing' | 'invalid' = 'missing',
 ): Promise<'saved' | 'cancel'> {
   const provider = backendProviderId(backend)
   const label = backendProviderLabel(backend)
-  display.setPhase('question', `${label} API key required`)
+  display.showActivity(`AI Secretary detected ${reason} ${label} credentials.`, 'note')
+  let providerId = provider
+  if (backend === 'codex') {
+    display.setPhase('question', `${label} ${reason} provider`)
+    const enteredProviderId = await display.chooseQuestion({
+      header: `${label} provider id`,
+      question: 'Enter the provider id for this Codex-compatible API gateway.',
+      options: [],
+      questionIndex: 0,
+      questionCount: 1,
+      unansweredCount: 1,
+    })
+    providerId = enteredProviderId.trim() || provider
+  }
+
+  display.setPhase('question', `${label} ${reason} API key`)
   const apiKey = await display.promptSecret({
     header: `${label} key`,
     question: `Enter the ${label} API key to save in your LinX Pod AI settings.`,
@@ -510,8 +650,9 @@ async function promptBackendProviderKey(
   }
 
   const result = await autoModeRuntime.connectAiProviderCredential({
-    provider,
+    provider: providerId,
     apiKey,
+    ...(backend === 'codex' ? { supportsBackend: 'codex', rotationPolicy: 'round_robin' } : {}),
   })
   display.showActivity(`Saved ${result.providerId} credential to LinX Pod AI settings.`, 'success')
   return 'saved'
@@ -533,6 +674,23 @@ function approvalPromptMessage(request: AutoModeApprovalRequest): string {
   return request.message || 'Approval required'
 }
 
+async function materializeAutoModeGrantIfNeeded(input: {
+  approvalId: string
+  approvalUri?: string
+  decision: AutoModeApprovalDecision
+  decisionRole?: 'human' | 'secretary'
+}): Promise<void> {
+  if (!shouldMaterializeAutoModeGrant(input.decision)) {
+    return
+  }
+
+  await autoModeRuntime.materializeRemoteAutoModeGrant({
+    approvalId: input.approvalId,
+    approvalUri: input.approvalUri,
+    decisionRole: input.decisionRole,
+  }).catch(() => undefined)
+}
+
 function appendUserTurn(record: AutoModeSessionRecord, text: string): void {
   appendEntry(record, 'system', JSON.stringify({ type: 'user.turn', text }), [])
 }
@@ -541,20 +699,61 @@ function appendTurnStart(record: AutoModeSessionRecord, command: string, args: s
   appendEntry(record, 'system', JSON.stringify({ type: 'turn.start', command, args }), [])
 }
 
-function requestedCredentialSource(_options: AutoRunOptions): 'cloud' {
-  return 'cloud'
+function createAcpInteractionThreadEvent(
+  record: AutoModeSessionRecord,
+  interaction: AutoModeInteractionRequest,
+): ThreadControlEvent {
+  return {
+    type: interaction.kind === 'user-input' ? 'input.required' : 'approval.required',
+    thread: record.backendSessionId ?? record.id,
+    chat: record.backendSessionId ?? record.id,
+    actor: {
+      id: record.backendSessionId ?? record.backend,
+      role: 'runtime',
+    },
+    data: {
+      requestKind: interaction.kind,
+      backend: record.backend,
+      runtimeSession: record.backendSessionId,
+      businessSession: record.id,
+    },
+  }
 }
 
-function requestedApprovalSource(): 'hybrid' {
+function requestedCredentialSource(options: AutoRunOptions): 'cloud' | 'local' {
+  return options.credentialSource === 'local' ? 'local' : 'cloud'
+}
+
+function defaultApprovalStrategy(): 'hybrid' {
   return 'hybrid'
+}
+
+function resolveApprovalStrategy(options: Pick<AutoRunOptions, 'approvalStrategy'>): AutoModeSessionRecord['approvalSource'] {
+  return options.approvalStrategy ?? defaultApprovalStrategy()
 }
 
 function requestedRuntime(options: AutoRunOptions): AutoModeRuntime {
   return options.runtime ?? 'local'
 }
 
-function requestedAutoModeMode(options: AutoRunOptions): AutoRunOptions['mode'] {
-  return options.autoModeEnabled ? 'auto' : options.mode
+function requestedAutoEnabled(options: AutoRunOptions): boolean {
+  return options.autoEnabled === true
+}
+
+function requestedAutoModeMode(options: AutoRunOptions): 'auto' | 'off' {
+  if (options.mode === 'auto' || options.mode === 'off') {
+    return options.mode
+  }
+
+  return requestedAutoEnabled(options) ? 'auto' : 'off'
+}
+
+function isAutoModeWorkerBackend(backend: AutoModeSessionRecord['backend']): backend is AutoModeWorkerBackend {
+  return backend === 'linx' || backend === 'codex' || backend === 'claude' || backend === 'codebuddy'
+}
+
+function isAcpAutoModeWorkerBackend(backend: AutoModeWorkerBackend): backend is Exclude<AutoModeWorkerBackend, 'linx'> {
+  return backend === 'codex' || backend === 'claude' || backend === 'codebuddy'
 }
 
 function normalizeBackendCommandEnv(
@@ -565,13 +764,7 @@ function normalizeBackendCommandEnv(
     return undefined
   }
 
-  const next = { ...env }
-
-  if (backend === 'codex' && next.OPENAI_API_KEY && !next.CODEX_API_KEY) {
-    next.CODEX_API_KEY = next.OPENAI_API_KEY
-  }
-
-  return next
+  return { ...env }
 }
 
 function mergeCommandEnv(
@@ -599,6 +792,7 @@ function syncRecordFromOptions(
     backend: options.backend,
     runtime: requestedRuntime(options),
     mode: requestedAutoModeMode(options),
+    autoEnabled: requestedAutoEnabled(options),
     goalMode: options.goalMode || undefined,
     cwd: options.cwd,
     model: options.model,
@@ -606,10 +800,11 @@ function syncRecordFromOptions(
     passthroughArgs: [...options.passthroughArgs],
     credentialSource: requestedCredentialSource(options),
     resolvedCredentialSource: options.resolvedCredentialSource,
-    approvalSource: requestedApprovalSource(),
+    approvalSource: record.approvalSource ?? defaultApprovalStrategy(),
     command: plan.command,
     args: [...plan.args],
-    transport: options.transport ?? 'acp',
+    transport: options.transport ?? (options.backend === 'linx' ? 'native' : 'acp'),
+    metadata: options.metadata ? { ...options.metadata } : undefined,
   }
 }
 
@@ -631,21 +826,23 @@ function extractAcpSessionId(response: Record<string, unknown>): string | null {
 
 function withResolvedSource(
   options: AutoRunOptions,
-  resolvedCredentialSource: 'cloud',
+  resolvedCredentialSource: 'cloud' | 'local',
   commandEnv?: Record<string, string>,
 ): AutoRunOptions {
   return {
     ...options,
     mode: requestedAutoModeMode(options),
-    transport: options.transport ?? 'acp',
+    transport: options.transport ?? (options.backend === 'linx' ? 'native' : 'acp'),
     credentialSource: requestedCredentialSource(options),
     resolvedCredentialSource,
-    commandEnv,
+    commandEnv: mergeCommandEnv(options.backend, commandEnv, options.commandEnv),
+    autoEnabled: requestedAutoEnabled(options),
+    approvalStrategy: resolveApprovalStrategy(options),
   }
 }
 
 async function probeCloudCredentialSource(
-  backend: AutoRunOptions['backend'],
+  backend: Exclude<AutoRunOptions['backend'], 'linx'>,
   runtime: typeof autoModeRuntime,
 ): Promise<{
   commandEnv?: Record<string, string>
@@ -668,6 +865,25 @@ export async function resolveAutoRunOptions(
   options: AutoRunOptions,
   runtime = autoModeRuntime,
 ): Promise<ResolvedAutoModeRun> {
+  if (options.backend === 'linx') {
+    const session = await runtime.createPodDataSession()
+    if (!session) {
+      throw new Error('No LinX cloud login found. Run `linx login` first.')
+    }
+    await session.close().catch(() => undefined)
+    return {
+      options: withResolvedSource(options, 'cloud'),
+      authPreflight: { state: 'authenticated' },
+    }
+  }
+
+  if (requestedCredentialSource(options) === 'local') {
+    return {
+      options: withResolvedSource(options, 'local'),
+      authPreflight: await runtime.preflightAutoModeAuth(options.backend),
+    }
+  }
+
   const { commandEnv } = await probeCloudCredentialSource(options.backend, runtime)
   return {
     options: withResolvedSource(options, 'cloud', commandEnv),
@@ -686,9 +902,9 @@ abstract class BaseSession implements AutoModeConversationSession {
   protected closed = false
   protected lastExit: { code: number | null; signal: NodeJS.Signals | null } | null = null
 
-  constructor(record: AutoModeSessionRecord, prompt: typeof autoModeRuntime.promptText) {
+  constructor(record: AutoModeSessionRecord, prompt: typeof autoModeRuntime.promptText, options: { quiet?: boolean } = {}) {
     this.record = record
-    this.display = createAutoModeDisplay(record, prompt)
+    this.display = createAutoModeDisplay(record, prompt, { quiet: options.quiet })
   }
 
   protected spawnProcess(command: string, args: string[], cwd: string, env?: Record<string, string>): ChildProcessWithoutNullStreams {
@@ -800,6 +1016,20 @@ abstract class BaseSession implements AutoModeConversationSession {
   abstract setModel(model: string): Promise<void>
   abstract applyResolvedOptions(options: AutoRunOptions): void
 
+  async abort(): Promise<void> {
+    this.closed = true
+
+    const child = this.child
+    if (!child) {
+      return
+    }
+
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill('SIGTERM')
+    }
+    await this.waitForActiveClose()
+  }
+
   async close(): Promise<void> {
     this.closed = true
 
@@ -838,7 +1068,9 @@ class AcpSession extends BaseSession {
 
   constructor(options: AutoRunOptions, hook: AutoModeBackendHook) {
     const plan = hook.buildSpawnPlan(options)
-    super(createAutoModeSession({ ...options, transport: options.transport ?? 'acp' }, plan), autoModeRuntime.promptText)
+    super(createAutoModeSession({ ...options, transport: options.transport ?? 'acp' }, plan), autoModeRuntime.promptText, {
+      quiet: options.quiet === true,
+    })
     this.hook = hook
     this.options = options
   }
@@ -1173,14 +1405,7 @@ class AcpSession extends BaseSession {
         return
       }
 
-      if (interaction.kind === 'user-input') {
-        const result = await this.resolveToolUserInput(interaction)
-        this.sendResponse(id, result)
-        return
-      }
-
-      const decision = await this.resolveApproval(interaction)
-      this.sendResponse(id, buildAcpPermissionResponse(interaction, decision))
+      this.sendResponse(id, await this.resolveInteraction(interaction))
     } catch (error) {
       const messageText = error instanceof Error ? error.message : String(error)
       this.sendError(id, -32000, messageText)
@@ -1188,6 +1413,72 @@ class AcpSession extends BaseSession {
       this.activeAgentRequests = Math.max(0, this.activeAgentRequests - 1)
       this.scheduleTurnSettle()
     }
+  }
+
+  private async resolveInteraction(interaction: AutoModeInteractionRequest): Promise<unknown> {
+    let result: unknown
+    let wakeError: unknown
+    const autoEnabled = this.record.autoEnabled === true
+    const cycle = await runThreadReconcilerCycle({
+      policy: {
+        kind: autoEnabled ? 'auto' : 'direct',
+        secretaryAgent: '__secretary__',
+      },
+      handleWakeJob: async ({ decisionSummary, record }) => {
+        try {
+          result = await this.resolveInteractionDirect(interaction)
+          return {
+            requestKind: interaction.kind,
+            responseKind: interaction.kind === 'user-input' ? 'user-input' : 'approval',
+            reconciler: decisionSummary.id,
+            wakeJob: record.key,
+          }
+        } catch (error) {
+          wakeError = error
+          throw error
+        }
+      },
+      event: createAcpInteractionThreadEvent(this.record, interaction),
+      dispatchOptions: {
+        randomId: `acp-${interaction.kind}-${Date.now()}`,
+      },
+      onDispatched: (dispatch) => {
+        appendSessionNote(this.record, `Thread Reconciler dispatched ${interaction.kind}`, {
+        requestKind: interaction.kind,
+        reconciler: dispatch.summary,
+        scheduler: {
+          wakeRecords: dispatch.wakeRecordSummaries,
+        },
+      })
+      if (dispatch.summary.wakeJobs.length === 0) {
+        result = this.resolveInteractionDirect(interaction)
+      }
+    },
+    })
+
+    result = await result
+    appendSessionNote(this.record, `Thread Reconciler resolved ${interaction.kind}`, {
+      requestKind: interaction.kind,
+      reconciler: cycle.summary,
+      scheduler: cycle.schedulerSummary,
+    })
+
+    if (cycle.schedulerSummary.failed.length > 0) {
+      throw wakeError ?? new Error(String(cycle.schedulerSummary.failed[0]?.error ?? 'AI Secretary interaction wake job failed'))
+    }
+    if (result === undefined) {
+      throw new Error('AI Secretary was not awakened for ACP interaction.')
+    }
+    return result
+  }
+
+  private async resolveInteractionDirect(interaction: AutoModeInteractionRequest): Promise<unknown> {
+    if (interaction.kind === 'user-input') {
+      return this.resolveToolUserInput(interaction)
+    }
+
+    const decision = await this.resolveApproval(interaction)
+    return buildAcpPermissionResponse(interaction, decision)
   }
 
   private async resolveToolUserInput(interaction: AutoModeUserInputRequest): Promise<unknown> {
@@ -1248,6 +1539,20 @@ class AcpSession extends BaseSession {
   }
 
   private async resolveApproval(interaction: AutoModeApprovalRequest): Promise<AutoModeApprovalDecision> {
+    const recommendation = await this.resolveSecretaryRecommendation(interaction)
+    const approvalRecommendation = recommendation?.kind === interaction.kind
+      ? recommendation as AutoModeSecretaryApprovalRecommendation
+      : null
+    const approvalStrategy = resolveApprovalStrategy(this.options)
+
+    if (approvalStrategy === 'local') {
+      const promptMessage = approvalPromptMessage(interaction)
+      const decision = await promptApprovalWithRecommendation(this.display, promptMessage, approvalRecommendation)
+      appendSessionNote(this.record, `Local approval resolved | ${decision}`)
+      this.display.setPhase('running', 'Continuing turn')
+      return decision
+    }
+
     const granted = await autoModeRuntime.resolveExistingRemoteAutoModeGrant({
       record: this.record,
       request: interaction,
@@ -1260,16 +1565,16 @@ class AcpSession extends BaseSession {
       return granted
     }
 
-    const recommendation = await this.resolveSecretaryRecommendation(interaction)
-    return this.resolveHybridApproval(
-      interaction,
-      recommendation?.kind === interaction.kind ? recommendation as AutoModeSecretaryApprovalRecommendation : null,
-    )
+    if (approvalStrategy === 'remote') {
+      return this.resolveRemoteOnlyApproval(interaction, approvalRecommendation)
+    }
+
+    return this.resolveHybridApproval(interaction, approvalRecommendation)
   }
 
   private async resolveSecretaryRecommendation(interaction: AutoModeInteractionRequest): Promise<AutoModeSecretaryRecommendation | null> {
     return autoModeRuntime.resolveAutoModeSecretaryRecommendation({
-      mode: this.options.mode,
+      mode: requestedAutoModeMode(this.options),
       record: this.record,
       request: interaction,
     }).catch(() => null)
@@ -1295,6 +1600,11 @@ class AcpSession extends BaseSession {
 
     if (!recommendation?.canAutoDecide || !recommendation.decision) {
       const decision = await remoteDecisionPromise
+      await materializeAutoModeGrantIfNeeded({
+        approvalId: remote.id,
+        approvalUri: remote.approvalUri,
+        decision,
+      })
       appendSessionNote(this.record, `Remote approval resolved | ${decision}`)
       this.display.setPhase('running', 'Continuing turn')
       return decision
@@ -1319,6 +1629,12 @@ class AcpSession extends BaseSession {
       }),
     ])
 
+    await materializeAutoModeGrantIfNeeded({
+      approvalId: remote.id,
+      approvalUri: remote.approvalUri,
+      decision,
+      decisionRole: recommendation?.canAutoDecide ? 'secretary' : undefined,
+    })
     appendSessionNote(this.record, `Remote approval resolved | ${decision}`)
     this.display.setPhase('running', 'Continuing turn')
     return decision
@@ -1384,12 +1700,24 @@ class AcpSession extends BaseSession {
           note: secretaryAutoResolved
             ? (recommendation?.reason ?? 'resolved by AI secretary')
             : 'resolved from active local auto-mode session',
-        }).catch(() => undefined)
+        })
+          .then(() => materializeAutoModeGrantIfNeeded({
+            approvalId: remoteApproval.id,
+            approvalUri: remoteApproval.approvalUri,
+            decision: winner.decision,
+            decisionRole: secretaryAutoResolved ? 'secretary' : 'human',
+          }))
+          .catch(() => undefined)
         this.display.setPhase('running', 'Continuing turn')
         return winner.decision
       }
 
       localAbort.abort()
+      await materializeAutoModeGrantIfNeeded({
+        approvalId: remoteApproval.id,
+        approvalUri: remoteApproval.approvalUri,
+        decision: winner.decision,
+      })
       appendSessionNote(this.record, `Remote approval resolved | ${winner.decision}`)
       this.display.setPhase('running', 'Continuing turn')
       return winner.decision
@@ -1462,7 +1790,144 @@ class AcpSession extends BaseSession {
   }
 }
 
+class LinxNativeSession extends BaseSession {
+  private options: AutoRunOptions
+  private podSession: PodDataSession | null = null
+
+  constructor(options: AutoRunOptions) {
+    super(createAutoModeSession({ ...options, transport: 'native' }, buildLinxNativeSpawnPlan(options)), autoModeRuntime.promptText, {
+      quiet: options.quiet === true,
+    })
+    this.options = options
+  }
+
+  async start(): Promise<void> {
+    const podSession = await autoModeRuntime.createPodDataSession()
+    if (!podSession) {
+      throw new Error('No LinX cloud login found. Run `linx login` first.')
+    }
+
+    this.podSession = podSession
+    this.updateRecord({
+      backendSessionId: this.record.id,
+      transport: 'native',
+      resolvedCredentialSource: 'cloud',
+      error: undefined,
+    })
+    appendSessionNote(this.record, `LinX native worker connected as ${podSession.webId}`)
+  }
+
+  applyResolvedOptions(options: AutoRunOptions): void {
+    this.options = {
+      ...options,
+      transport: 'native',
+    }
+    this.updateRecord(syncRecordFromOptions(this.record, this.options, buildLinxNativeSpawnPlan(this.options)))
+  }
+
+  async setModel(model: string): Promise<void> {
+    const normalized = model.trim()
+    if (!normalized) {
+      throw new Error('Model id cannot be empty')
+    }
+
+    this.options = {
+      ...this.options,
+      model: normalized,
+    }
+    this.updateRecord({
+      model: normalized,
+    })
+    appendSessionNote(this.record, `LinX native worker model set to ${normalized}`)
+  }
+
+  async sendTurn(text: string): Promise<void> {
+    const podSession = this.podSession
+    if (!podSession) {
+      throw new Error('LinX native session is not initialized')
+    }
+
+    appendUserTurn(this.record, text)
+    appendTurnStart(this.record, this.record.command, this.record.args)
+
+    const result = await autoModeRuntime.createRemoteCompletionResult({
+      runtimeUrl: resolveRuntimeTarget({ issuerUrl: podSession.credentials.url }).runtimeUrl,
+      authSession: podSession,
+      model: this.options.model,
+      messages: [{ role: 'user', content: text }],
+      signal: this.options.signal,
+    })
+
+    this.recordLinxCompletion(result)
+  }
+
+  protected onProcessExit(): void {}
+
+  protected onProcessFailure(): void {}
+
+  async abort(): Promise<void> {
+    await this.close()
+  }
+
+  async close(): Promise<void> {
+    const session = this.podSession
+    this.podSession = null
+    await session?.close().catch(() => undefined)
+    await super.close()
+  }
+
+  private recordLinxCompletion(result: RemoteCompletionResult): void {
+    const content = result.content.trim()
+    const toolEvents = result.toolCalls.map((toolCall) => ({
+      type: 'tool.call' as const,
+      name: toolCall.function.name,
+      arguments: parseLinxToolCallArguments(toolCall.function.arguments),
+      raw: toolCall,
+    }))
+    const events: AutoModeNormalizedEvent[] = [
+      ...toolEvents,
+      ...(content ? [{ type: 'assistant.delta' as const, text: content, raw: result }] : []),
+      { type: 'assistant.done' as const, ...(content ? { text: content } : {}), raw: result },
+    ]
+
+    this.recordParsedLine('stdout', JSON.stringify({
+      type: 'assistant.message',
+      content,
+      ...(result.reasoningContent ? { reasoningContent: result.reasoningContent } : {}),
+      ...(result.finishReason ? { finishReason: result.finishReason } : {}),
+      ...(result.usage ? { usage: result.usage } : {}),
+    }), events)
+  }
+}
+
+function buildLinxNativeSpawnPlan(_options: AutoRunOptions): AutoModeSpawnPlan {
+  return {
+    command: 'linx-cloud',
+    args: ['chat/completions'],
+  }
+}
+
+function parseLinxToolCallArguments(value: string): Record<string, unknown> | undefined {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return undefined
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed)
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : { value: parsed }
+  } catch {
+    return { raw: value }
+  }
+}
+
 function buildConversationSession(options: AutoRunOptions): BaseSession {
+  if (options.backend === 'linx') {
+    return new LinxNativeSession(options)
+  }
+
   const hook = getAutoModeHook(options.backend)
   return new AcpSession(options, hook)
 }
@@ -1474,7 +1939,7 @@ async function handleAutoModeShellCommand(args: {
   queueState: AutoModeQueueState
   backend: string
   record: AutoModeSessionRecord
-}): Promise<'handled' | 'exit' | 'pass'> {
+}): Promise<'handled' | 'exit' | 'pass' | { kind: 'send'; text: string }> {
   const { input, session, display, queueState, backend, record } = args
 
   if (input === '/exit' || input === '/quit') {
@@ -1515,24 +1980,14 @@ async function handleAutoModeShellCommand(args: {
     return 'handled'
   }
 
-  if (input === '/manual' || input === '/smart' || input === '/auto') {
-    const mode = input.slice(1) as AutoRunOptions['mode']
-    session.applyResolvedOptions({
-      backend: record.backend,
-      mode,
-      cwd: record.cwd,
-      plain: false,
-      model: record.model,
-      prompt: record.prompt,
-      passthroughArgs: record.passthroughArgs,
-      goalMode: record.goalMode,
-      runtime: record.runtime,
-      transport: record.transport,
-      credentialSource: record.credentialSource,
-      resolvedCredentialSource: record.resolvedCredentialSource,
+  const autoModeRoute = resolveAutoModeCommandRoute(input)
+  if (autoModeRoute) {
+    return handleAutoModeCommandRoute({
+      route: autoModeRoute,
+      session,
+      display,
+      record,
     })
-    appendAndDisplaySessionNote(record, display, `Approval mode set to ${mode}`, 'success', { mode })
-    return 'handled'
   }
 
   if (input === '/queue') {
@@ -1594,7 +2049,146 @@ async function handleAutoModeShellCommand(args: {
   return 'pass'
 }
 
+function handleAutoModeCommandRoute(args: {
+  route: AutoModeControlCommandRoute | AutoModePeerCommandRoute
+  session: AutoModeConversationSession
+  display: AutoModeDisplay
+  record: AutoModeSessionRecord
+}): 'handled' | { kind: 'send'; text: string } {
+  const { route, session, display, record } = args
+  if (route.kind === 'control-command') {
+    return handleAutoModeControlCommand({ route, session, display, record })
+  }
+  return handleAutoModePeerCommand({ route, session, display, record })
+}
+
+function handleAutoModeControlCommand(args: {
+  route: AutoModeControlCommandRoute
+  session: AutoModeConversationSession
+  display: AutoModeDisplay
+  record: AutoModeSessionRecord
+}): 'handled' | { kind: 'send'; text: string } {
+  const { route, session, display, record } = args
+  const auto = route.auto
+  if (!auto || auto.action === 'status') {
+    const enabled = record.autoEnabled === true
+    appendAndDisplaySessionNote(record, display, `Auto is ${enabled ? 'on' : 'off'}. Use /auto on or /auto off.`)
+    return 'handled'
+  }
+
+  if (!isAutoModeWorkerBackend(record.backend)) {
+    throw new Error(`Auto control commands cannot run backend ${record.backend}`)
+  }
+
+  applyAutoModeAutoEnabled(session, record, auto.enabled)
+  appendAndDisplaySessionNote(
+    record,
+    display,
+    `Auto ${auto.enabled ? 'on' : 'off'}: ${auto.enabled ? 'Secretary drives the session and asks when blocked' : 'user drives the session directly'}.`,
+    'success',
+    { autoEnabled: auto.enabled },
+  )
+
+  if (auto.initialInput) {
+    const projectedRoute = resolveAutoModeCommandRoute(auto.initialInput)
+    if (projectedRoute) {
+      return handleAutoModeCommandRoute({
+        route: projectedRoute,
+        session,
+        display,
+        record,
+      })
+    }
+    return { kind: 'send', text: auto.initialInput }
+  }
+  return 'handled'
+}
+
+function handleAutoModePeerCommand(args: {
+  route: AutoModePeerCommandRoute
+  session: AutoModeConversationSession
+  display: AutoModeDisplay
+  record: AutoModeSessionRecord
+}): { kind: 'send'; text: string } {
+  const { route, session, display, record } = args
+  const goalMirror = route.secretaryBehavior?.goalMode
+  if (goalMirror !== undefined) {
+    applyAutoModeGoalMode(session, record, goalMirror)
+    appendAndDisplaySessionNote(
+      record,
+      display,
+      `Goal command routed to current chat peer; local supervision mirror is ${goalMirror ? 'active' : 'paused'}.`,
+      'success',
+      { goalMode: goalMirror, peerCommand: route.text },
+    )
+  } else {
+    appendAndDisplaySessionNote(
+      record,
+      display,
+      'Goal command routed to current chat peer.',
+      'note',
+      { peerCommand: route.text },
+    )
+  }
+  return { kind: 'send', text: route.text }
+}
+
+function applyAutoModeAutoEnabled(
+  session: AutoModeConversationSession,
+  record: AutoModeSessionRecord,
+  enabled: boolean,
+): void {
+  session.applyResolvedOptions({
+    backend: record.backend,
+    autoEnabled: enabled,
+    mode: enabled ? 'auto' : 'off',
+    cwd: record.cwd,
+    plain: false,
+    model: record.model,
+    prompt: record.prompt,
+    passthroughArgs: record.passthroughArgs,
+    goalMode: record.goalMode,
+    runtime: record.runtime,
+    transport: record.transport,
+    credentialSource: record.credentialSource,
+    resolvedCredentialSource: record.resolvedCredentialSource,
+    approvalStrategy: resolveApprovalStrategy({ approvalStrategy: record.approvalSource }),
+  })
+  record.autoEnabled = enabled
+  record.mode = enabled ? 'auto' : 'off'
+}
+
+function applyAutoModeGoalMode(
+  session: AutoModeConversationSession,
+  record: AutoModeSessionRecord,
+  enabled: boolean,
+): void {
+  if (!isAutoModeWorkerBackend(record.backend)) {
+    throw new Error(`Goal peer commands cannot run backend ${record.backend}`)
+  }
+
+  session.applyResolvedOptions({
+    backend: record.backend,
+    autoEnabled: record.autoEnabled === true,
+    mode: record.mode,
+    cwd: record.cwd,
+    plain: false,
+    model: record.model,
+    prompt: record.prompt,
+    passthroughArgs: record.passthroughArgs,
+    goalMode: enabled,
+    runtime: record.runtime,
+    transport: record.transport,
+    credentialSource: record.credentialSource,
+    resolvedCredentialSource: record.resolvedCredentialSource,
+    approvalStrategy: resolveApprovalStrategy({ approvalStrategy: record.approvalSource }),
+  })
+  record.goalMode = enabled || undefined
+}
+
 export const __testHandleAutoModeShellCommand = handleAutoModeShellCommand
+export const __testPromptLinxCloudAuth = promptLinxCloudAuth
+export const __testParseSolidClientCredentials = parseSolidClientCredentials
 
 export async function runAutoMode(options: AutoRunOptions): Promise<number> {
   const previousPlainEnv = process.env.LINX_BACKEND_PLAIN
@@ -1604,20 +2198,42 @@ export async function runAutoMode(options: AutoRunOptions): Promise<number> {
 
   let fatalError: Error | null = null
   let session: BaseSession | null = null
+  let abortCleanup: (() => void) | null = null
 
   const requestedOptions = {
     ...options,
     runtime: requestedRuntime(options),
-    transport: 'acp' as const,
+    transport: (options.transport ?? (options.backend === 'linx' ? 'native' : 'acp')) as AutoRunOptions['transport'],
     mode: requestedAutoModeMode(options),
+    autoEnabled: requestedAutoEnabled(options),
     credentialSource: requestedCredentialSource(options),
+    approvalStrategy: resolveApprovalStrategy(options),
   }
 
   try {
+    throwIfAborted(requestedOptions.signal)
     session = buildConversationSession(requestedOptions)
     const activeSession = session
+
+    if (requestedOptions.signal) {
+      const abortRun = () => {
+        const reason = requestedOptions.signal?.reason
+        const error = reason instanceof Error
+          ? reason
+          : createAbortError(typeof reason === 'string' && reason.trim() ? reason : 'Auto-mode run aborted')
+        fatalError ??= error
+        void activeSession.abort().catch(() => undefined)
+      }
+      if (requestedOptions.signal.aborted) {
+        abortRun()
+      } else {
+        requestedOptions.signal.addEventListener('abort', abortRun, { once: true })
+        abortCleanup = () => requestedOptions.signal?.removeEventListener('abort', abortRun)
+      }
+    }
+
+    throwIfAborted(requestedOptions.signal)
     activeSession.display.start()
-    activeSession.display.showHelp()
     activeSession.display.setPhase('starting', `Preparing ${requestedOptions.backend}`)
     activeSession.display.updateQueue({
       steeringCount: 0,
@@ -1628,9 +2244,14 @@ export async function runAutoMode(options: AutoRunOptions): Promise<number> {
 
     for (let attempt = 0; ; attempt += 1) {
       try {
-        resolvedRun = await resolveAutoRunOptions(requestedOptions)
+        throwIfAborted(requestedOptions.signal)
+        resolvedRun = await withAbortSignal(resolveAutoRunOptions(requestedOptions), requestedOptions.signal)
+        throwIfAborted(requestedOptions.signal)
         break
       } catch (error) {
+        if (isAbortError(error)) {
+          throw error
+        }
         const message = error instanceof Error ? error.message : String(error)
         appendEntry(activeSession.record, 'system', JSON.stringify({
           type: 'credentials.resolve',
@@ -1638,12 +2259,21 @@ export async function runAutoMode(options: AutoRunOptions): Promise<number> {
           requestedCredentialSource: requestedOptions.credentialSource,
           error: message,
         }), [])
-        if (isMissingProviderCredentialError(requestedOptions.backend, message)) {
+        if (isAcpAutoModeWorkerBackend(requestedOptions.backend)
+          && isMissingProviderCredentialError(requestedOptions.backend, message)) {
+          if (requestedOptions.quiet) {
+            throw new Error(`${message} Quiet worker sessions cannot prompt for provider credentials; configure the credential before dispatching Symphony workers.`)
+          }
           if (attempt >= 2) {
             throw error
           }
 
-          const keyAction = await promptBackendProviderKey(activeSession.display, requestedOptions.backend)
+          appendEntry(activeSession.record, 'system', JSON.stringify({
+            type: 'credentials.secretary.repair',
+            backend: requestedOptions.backend,
+            reason: 'missing',
+          }), [])
+          const keyAction = await promptBackendProviderCredential(activeSession.display, requestedOptions.backend, 'missing')
           if (keyAction !== 'saved') {
             throw error
           }
@@ -1660,11 +2290,15 @@ export async function runAutoMode(options: AutoRunOptions): Promise<number> {
           'Re-authorize LinX Cloud, then LinX will retry backend startup.',
         ], 'startup')
         if (authAction !== 'retry') {
-          throw error
+          const cancelError = new Error('Backend startup cancelled before LinX Cloud authorization.')
+          fatalError = cancelError
+          appendAndDisplaySessionNote(activeSession.record, activeSession.display, cancelError.message, 'note')
+          return 1
         }
       }
     }
 
+    throwIfAborted(requestedOptions.signal)
     activeSession.applyResolvedOptions(resolvedRun.options)
     appendEntry(activeSession.record, 'system', JSON.stringify({
       type: 'credentials.resolve',
@@ -1687,7 +2321,8 @@ export async function runAutoMode(options: AutoRunOptions): Promise<number> {
       throw new Error(message)
     }
 
-    await activeSession.start()
+    await withAbortSignal(activeSession.start(), requestedOptions.signal)
+    throwIfAborted(requestedOptions.signal)
     const steeringQueue: AutoModePromptSubmission[] = []
     const followUpQueue: AutoModePromptSubmission[] = []
     let stopRequested = false
@@ -1731,6 +2366,28 @@ export async function runAutoMode(options: AutoRunOptions): Promise<number> {
       updateQueueState()
     }
 
+    if (requestedOptions.signal) {
+      const wakeOnAbort = () => {
+        const reason = requestedOptions.signal?.reason
+        fatalError ??= reason instanceof Error
+          ? reason
+          : createAbortError(typeof reason === 'string' && reason.trim() ? reason : 'Auto-mode run aborted')
+        stopRequested = true
+        clearQueuedSubmissions()
+        resolveWake()
+      }
+      if (requestedOptions.signal.aborted) {
+        wakeOnAbort()
+      } else {
+        requestedOptions.signal.addEventListener('abort', wakeOnAbort, { once: true })
+        const previousCleanup = abortCleanup
+        abortCleanup = () => {
+          previousCleanup?.()
+          requestedOptions.signal?.removeEventListener('abort', wakeOnAbort)
+        }
+      }
+    }
+
     const restoreQueuedSubmission = (): AutoModePromptSubmission | null => {
       const restored = steeringQueue.pop() ?? followUpQueue.pop() ?? null
       updateQueueState()
@@ -1771,13 +2428,22 @@ export async function runAutoMode(options: AutoRunOptions): Promise<number> {
       if (!trimmed) {
         return
       }
+      if (requestedOptions.signal?.aborted) {
+        const reason = requestedOptions.signal.reason
+        fatalError ??= reason instanceof Error
+          ? reason
+          : createAbortError(typeof reason === 'string' && reason.trim() ? reason : 'Auto-mode run aborted')
+        stopRequested = true
+        resolveWake()
+        return
+      }
 
       activeSession.display.showUserTurn(trimmed)
       activeSession.display.setPhase('running', `Running ${resolvedRun.options.backend}`)
 
       activeTurn = activeSession.sendTurn(trimmed)
         .catch((error) => {
-          fatalError = error instanceof Error ? error : new Error(String(error))
+          fatalError ??= error instanceof Error ? error : new Error(String(error))
         })
         .finally(() => {
           activeTurn = null
@@ -1810,6 +2476,7 @@ export async function runAutoMode(options: AutoRunOptions): Promise<number> {
       if (!trimmed) {
         return
       }
+      throwIfAborted(requestedOptions.signal)
 
       const shellCommand = await handleAutoModeShellCommand({
         input: trimmed,
@@ -1832,6 +2499,23 @@ export async function runAutoMode(options: AutoRunOptions): Promise<number> {
       if (shellCommand === 'exit') {
         stopRequested = true
         resolveWake()
+        return
+      }
+
+      if (shellCommand !== 'pass') {
+        const projectedText = shellCommand.text.trim()
+        if (!projectedText) {
+          resolveWake()
+          return
+        }
+        if (activeTurn) {
+          enqueueSubmission({
+            text: projectedText,
+            mode: submission.mode,
+          })
+          return
+        }
+        runTurn(projectedText)
         return
       }
 
@@ -1885,22 +2569,29 @@ export async function runAutoMode(options: AutoRunOptions): Promise<number> {
     fatalError = error instanceof Error ? error : new Error(String(error))
     throw fatalError
   } finally {
+    abortCleanup?.()
     if (session) {
       await session.close()
       const finalRecord = await session.finalizeAndClose(fatalError ? 'failed' : 'completed', fatalError?.message)
       const podSyncAbort = new AbortController()
       const podSyncTimeoutMessage = `timed out after ${POD_PERSISTENCE_TIMEOUT_MS}ms`
+      const podSyncSignal = options.signal && typeof AbortSignal.any === 'function'
+        ? AbortSignal.any([options.signal, podSyncAbort.signal])
+        : podSyncAbort.signal
       await withTimeout(
         autoModeRuntime.persistAutoModeConversationToPod(finalRecord, undefined, {
-          signal: podSyncAbort.signal,
+          signal: podSyncSignal,
         }),
         POD_PERSISTENCE_TIMEOUT_MS,
         podSyncTimeoutMessage,
         () => podSyncAbort.abort(new Error(podSyncTimeoutMessage)),
       ).catch((error) => {
         const message = error instanceof Error ? error.message : String(error)
+        writeFailedPodSyncCheckpoint(finalRecord, message)
         appendSessionNote(finalRecord, `Pod sync failed | ${message}`, { error: message })
-        process.emitWarning(`LinX auto-mode Pod sync failed: ${message}`)
+        if (!options.quiet) {
+          process.emitWarning(`LinX auto-mode Pod sync failed: ${message}`)
+        }
       })
     }
 
@@ -1926,6 +2617,25 @@ export function loadArchivedAutoModeEvents(id: string): AutoModeEventLogEntry[] 
   return loadAutoModeEvents(id)
 }
 
+export function listArchivedAutoModeSessionsWithPendingSync(): AutoModeSessionRecord[] {
+  return listAutoModeSessionsWithPendingSync()
+}
+
+export function hasArchivedAutoModeSessionPendingSync(record: AutoModeSessionRecord): boolean {
+  return hasPendingAutoModeSync(record)
+}
+
+export async function retryArchivedAutoModePodSync(id: string): Promise<boolean> {
+  const record = loadAutoModeSession(id)
+  if (!record) {
+    throw new Error(`Auto-mode session not found: ${id}`)
+  }
+  if (record.status === 'running') {
+    throw new Error(`Auto-mode session is still running: ${id}`)
+  }
+  return autoModeRuntime.persistAutoModeConversationToPod(record)
+}
+
 export function resumeAutoModeSession(record: AutoModeSessionRecord, options: {
   cwd?: string
   model?: string
@@ -1933,11 +2643,14 @@ export function resumeAutoModeSession(record: AutoModeSessionRecord, options: {
   prompt?: string
   goalMode?: boolean
 } = {}): Promise<number> {
+  if (!isAutoModeWorkerBackend(record.backend)) {
+    throw new Error(`Cannot resume ${record.backend} through the worker auto-mode runner`)
+  }
   const sessionId = record.backendSessionId?.trim() || record.id
   return runAutoMode({
     backend: record.backend,
+    autoEnabled: record.autoEnabled ?? record.mode === 'auto',
     mode: record.mode,
-    autoModeEnabled: record.mode === 'auto',
     resumeSessionId: sessionId,
     cwd: options.cwd || record.cwd,
     plain: Boolean(options.plain),
@@ -1946,7 +2659,7 @@ export function resumeAutoModeSession(record: AutoModeSessionRecord, options: {
     goalMode: options.goalMode ?? record.goalMode,
     passthroughArgs: [...record.passthroughArgs],
     runtime: record.runtime,
-    transport: record.transport ?? 'acp',
+    transport: record.transport ?? (record.backend === 'linx' ? 'native' : 'acp'),
     credentialSource: record.credentialSource,
     resolvedCredentialSource: record.resolvedCredentialSource,
   })
@@ -1959,17 +2672,22 @@ export function listSupportedAutoModeBackends(): Array<{
   label: string
   description: string
   capabilities: AgentRuntimeCapabilities
-  modes: Record<string, string>
+  auto: string
 }> {
-  return listAutoModeHooks().map((hook) => ({
-    backend: hook.id,
-    label: hook.label,
-    description: hook.description,
-    capabilities: hook.capabilities,
-    modes: {
-      manual: describeAutoModeMode('manual'),
-      smart: describeAutoModeMode('smart'),
-      auto: describeAutoModeMode('auto'),
+  return [
+    {
+      backend: linxNativeBackend.backend,
+      label: linxNativeBackend.label,
+      description: linxNativeBackend.description,
+      capabilities: linxNativeBackend.capabilities,
+      auto: describeAutoControl(),
     },
-  }))
+    ...listAutoModeHooks().map((hook) => ({
+      backend: hook.id,
+      label: hook.label,
+      description: hook.description,
+      capabilities: hook.capabilities,
+      auto: describeAutoControl(),
+    })),
+  ]
 }

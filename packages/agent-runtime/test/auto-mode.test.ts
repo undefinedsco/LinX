@@ -7,10 +7,12 @@ buildAutoModeTranscriptMessages,
 buildCodexApprovalResponse,
 buildCodexUserInputResponse,
 buildAutoModeUserInputResponse,
+buildAutoModeApprovalDecisionReason,
 createFallbackAutoModeSecretaryRecommendation,
 computeAutoModeSecretaryReactionWindowMs,
 createAutoModeSessionId,
 detectAutoModeAuthFailure,
+encodeAutoModeApprovalOptions,
 extractAutoModeSessionIdFromJsonLine,
 formatAutoModeBackendAuthMessage,
 getAutoModeAuthLoginCommand,
@@ -24,12 +26,18 @@ normalizeCodexAppServerRequest,
 looksLikeAutoModeAuthFailureText,
 normalizeAutoModeCredentialSource,
 normalizeAutoModeUserInputQuestion,
+parseAutoModeApprovalDecisionReason,
+parseAutoModeApprovalOptions,
 parseAutoModeSecretaryRecommendation,
 parseAutoModeGrantCoverageDecision,
 parseAutoModeClaudeAuthStatus,
 parseAutoModeJsonProtocolLine,
 resolveAutoModeAutoApprovalDecision,
+autoModeApprovalDecisionForOption,
+autoModeApprovalDecisionForStoredApproval,
 resolveAutoModeInteractionAutoResponse,
+resolveAutoModeCommandRoute,
+resolveAutoModePeerCommand,
 resolveAutoModeQuestionAnswer,
 resolveAutoModeCredentialSourceResolution,
 autoModeApprovalDecisionLabel,
@@ -44,7 +52,16 @@ AUTO_MODE_SESSION_FILE_NAME,
 autoModeApprovalRequestMessage,
 autoModeApprovalRisk,
 autoModeApprovalToolName,
+shouldMaterializeAutoModeGrant,
 } from '../src/auto-mode'
+import {
+  buildLinxSessionControlMetadata,
+  buildLinxSessionControlState,
+  mergeLinxSessionControlMetadata,
+  readLinxSessionControlMetadata,
+  resolveLinxSessionAutoEnabled,
+  resolveLinxSessionSymphonyEnabled,
+} from '../src/control-plane'
 
 function expect<T>(actual: T) {
   return {
@@ -82,6 +99,85 @@ test('returns the shared archive file layout for a session id', () => {
   })
 })
 
+test('classifies goal as a pass-through peer command with secretary behavior mirror', () => {
+  expect(resolveAutoModePeerCommand('hello')).toBe(null)
+  expect(resolveAutoModePeerCommand('/goal status')).toEqual({
+    kind: 'peer-command',
+    targetRole: 'peer-command',
+    command: 'goal',
+    text: '/goal status',
+  })
+  expect(resolveAutoModePeerCommand('/goal ship login fix')).toEqual({
+    kind: 'peer-command',
+    targetRole: 'peer-command',
+    command: 'goal',
+    text: '/goal ship login fix',
+    secretaryBehavior: { goalMode: true },
+  })
+  expect(resolveAutoModePeerCommand('/goal resume')).toEqual({
+    kind: 'peer-command',
+    targetRole: 'peer-command',
+    command: 'goal',
+    text: '/goal resume',
+    secretaryBehavior: { goalMode: true },
+  })
+  for (const command of ['pause', 'close', 'cancel']) {
+    expect(resolveAutoModePeerCommand(`/goal ${command}`)).toEqual({
+      kind: 'peer-command',
+      targetRole: 'peer-command',
+      command: 'goal',
+      text: `/goal ${command}`,
+      secretaryBehavior: { goalMode: false },
+    })
+  }
+})
+
+test('classifies auto control commands in shared core before shell handling', () => {
+  expect(resolveAutoModeCommandRoute('hello')).toBe(null)
+  expect(resolveAutoModeCommandRoute('/auto')).toEqual({
+    kind: 'control-command',
+    targetRole: 'control-command',
+    command: 'auto',
+    text: '/auto',
+    auto: { action: 'status' },
+  })
+  expect(resolveAutoModeCommandRoute('/auto status')).toEqual({
+    kind: 'control-command',
+    targetRole: 'control-command',
+    command: 'auto',
+    text: '/auto status',
+    auto: { action: 'status' },
+  })
+  expect(resolveAutoModeCommandRoute('/auto on')).toEqual({
+    kind: 'control-command',
+    targetRole: 'control-command',
+    command: 'auto',
+    text: '/auto on',
+    auto: { action: 'set', enabled: true },
+  })
+  expect(resolveAutoModeCommandRoute('/auto off')).toEqual({
+    kind: 'control-command',
+    targetRole: 'control-command',
+    command: 'auto',
+    text: '/auto off',
+    auto: { action: 'set', enabled: false },
+  })
+  expect(resolveAutoModeCommandRoute('/auto /goal ship login fix')).toEqual({
+    kind: 'control-command',
+    targetRole: 'control-command',
+    command: 'auto',
+    text: '/auto /goal ship login fix',
+    auto: { action: 'set', enabled: true, initialInput: '/goal ship login fix' },
+  })
+  expect(resolveAutoModeCommandRoute('/goal ship login fix')).toEqual({
+    kind: 'peer-command',
+    targetRole: 'peer-command',
+    command: 'goal',
+    text: '/goal ship login fix',
+    secretaryBehavior: { goalMode: true },
+  })
+})
+
 test('maps approval request semantics from the shared auto-mode core', () => {
   const commandRequest = {
     kind: 'command-approval' as const,
@@ -115,13 +211,55 @@ test('maps approval request semantics from the shared auto-mode core', () => {
   expect(autoModeApprovalRequestMessage(permissionRequest)).toBe('Need permission')
 })
 
+test('shares stored approval decision semantics across UI surfaces', () => {
+  const encodedOptions = encodeAutoModeApprovalOptions([
+    { optionId: '0', label: 'Allow', kind: 'allow_once' },
+    { optionId: '1', label: 'Allow always', kind: 'allow_always' },
+    { optionId: '2', label: 'Block', kind: 'reject_once' },
+  ])
+
+  expect(parseAutoModeApprovalOptions(encodedOptions)).toEqual([
+    { optionId: '0', label: 'Allow', kind: 'allow_once' },
+    { optionId: '1', label: 'Allow always', kind: 'allow_always' },
+    { optionId: '2', label: 'Block', kind: 'reject_once' },
+  ])
+
+  const reason = buildAutoModeApprovalDecisionReason({
+    source: 'linx-inbox',
+    selectedOption: { optionId: '1', label: 'Allow always', kind: 'allow_always' },
+    note: 'delegate in this session',
+  })
+
+  expect(parseAutoModeApprovalDecisionReason(reason)).toEqual({
+    source: 'linx-inbox',
+    note: 'delegate in this session',
+    selectedOptionId: '1',
+    selectedLabel: 'Allow always',
+  })
+  expect(autoModeApprovalDecisionForOption({ optionId: '1', label: 'Allow always', kind: 'allow_always' })).toBe('accept_always')
+  expect(autoModeApprovalDecisionForStoredApproval({
+    status: 'approved',
+    reason,
+    approvalOptions: encodedOptions,
+  })).toBe('accept_always')
+  expect(autoModeApprovalDecisionForStoredApproval({
+    status: 'rejected',
+    reason: buildAutoModeApprovalDecisionReason('cancel'),
+    approvalOptions: encodedOptions,
+  })).toBe('cancel')
+  expect(shouldMaterializeAutoModeGrant('accept_for_session')).toBe(true)
+  expect(shouldMaterializeAutoModeGrant('accept_always')).toBe(true)
+  expect(shouldMaterializeAutoModeGrant('accept')).toBe(false)
+})
+
 test('maps auto-mode runtime context into generic thread metadata instead of a parallel session type', () => {
   expect(buildAutoModeThreadMetadata({
     id: 'auto_demo_1234',
     backend: 'codex',
     runtime: 'local',
     transport: 'acp',
-    mode: 'smart',
+autoEnabled: true,
+mode: 'auto',
     cwd: '/tmp/demo',
     model: 'gpt-5-codex',
     prompt: 'fix failing tests',
@@ -144,7 +282,8 @@ test('maps auto-mode runtime context into generic thread metadata instead of a p
     backend: 'codex',
     runtime: 'local',
     transport: 'acp',
-    mode: 'smart',
+autoEnabled: true,
+mode: 'auto',
     cwd: '/tmp/demo',
     model: 'gpt-5-codex',
     credentialSource: 'cloud',
@@ -153,6 +292,92 @@ test('maps auto-mode runtime context into generic thread metadata instead of a p
     status: 'completed',
     backendSessionId: 'sess_codex_123',
   })
+})
+
+test('builds reusable LinX session control-plane metadata', () => {
+  const state = buildLinxSessionControlState({
+    autoEnabled: true,
+    symphonyEnabled: true,
+    updatedAt: '2026-04-01T00:00:00.000Z',
+    updatedBy: 'cli',
+  })
+
+  expect(state).toEqual({
+    autoEnabled: true,
+    symphonyEnabled: true,
+    updatedAt: '2026-04-01T00:00:00.000Z',
+    updatedBy: 'cli',
+  })
+  expect(buildLinxSessionControlMetadata({
+    autoEnabled: false,
+    symphonyEnabled: true,
+    updatedAt: '2026-04-01T00:00:01.000Z',
+    updatedBy: 'app',
+  })).toEqual({
+    controlPlane: {
+      linxSession: {
+        autoEnabled: false,
+        symphonyEnabled: true,
+        updatedAt: '2026-04-01T00:00:01.000Z',
+        updatedBy: 'app',
+      },
+    },
+  })
+  expect(mergeLinxSessionControlMetadata({
+    runtime: 'pi',
+    controlPlane: {
+      other: { keep: true },
+      linxSession: {
+        autoEnabled: false,
+        updatedAt: '2026-03-01T00:00:00.000Z',
+      },
+    },
+  }, state)).toEqual({
+    runtime: 'pi',
+    controlPlane: {
+      other: { keep: true },
+      linxSession: {
+        autoEnabled: true,
+        symphonyEnabled: true,
+        updatedAt: '2026-04-01T00:00:00.000Z',
+        updatedBy: 'cli',
+      },
+    },
+  })
+  expect(readLinxSessionControlMetadata({
+    controlPlane: {
+      linxSession: {
+        autoEnabled: false,
+        symphonyEnabled: true,
+        updatedAt: '2026-05-21T00:00:00.000Z',
+        updatedBy: 'app',
+      },
+    },
+  })).toEqual({
+    autoEnabled: false,
+    symphonyEnabled: true,
+    updatedAt: '2026-05-21T00:00:00.000Z',
+    updatedBy: 'app',
+  })
+  expect(resolveLinxSessionAutoEnabled({
+    controlPlane: {
+      linxSession: {
+        autoEnabled: true,
+        symphonyEnabled: true,
+        updatedAt: '2026-05-21T00:00:00.000Z',
+      },
+    },
+  })).toBe(true)
+  expect(resolveLinxSessionSymphonyEnabled({
+    controlPlane: {
+      linxSession: {
+        symphonyEnabled: true,
+        updatedAt: '2026-05-21T00:00:00.000Z',
+      },
+    },
+  })).toBe(true)
+  expect(resolveLinxSessionAutoEnabled({})).toBe(null)
+  expect(resolveLinxSessionSymphonyEnabled({})).toBe(null)
 })
 
 test('builds structured transcript messages from archived auto-mode events', () => {
@@ -223,11 +448,24 @@ test('builds structured transcript messages from archived auto-mode events', () 
 
 test('normalizes requested credential source and decides when cloud fallback should be probed', () => {
   expect(normalizeAutoModeCredentialSource()).toBe('cloud')
-  expect(normalizeAutoModeCredentialSource('local')).toBe('cloud')
-  expect(shouldAttemptCloudCredentialProbe('local', { state: 'unauthenticated' })).toBe(true)
+  expect(normalizeAutoModeCredentialSource('local')).toBe('local')
+  expect(shouldAttemptCloudCredentialProbe('local', { state: 'unauthenticated' })).toBe(false)
   expect(shouldAttemptCloudCredentialProbe('auto', { state: 'authenticated' })).toBe(true)
   expect(shouldAttemptCloudCredentialProbe('auto', { state: 'unauthenticated' })).toBe(true)
   expect(shouldAttemptCloudCredentialProbe('cloud', { state: 'unknown' })).toBe(true)
+})
+
+test('resolves explicit local credential source from local backend auth status', () => {
+  expect(
+    resolveAutoModeCredentialSourceResolution({
+      requestedSource: 'local',
+      localAuthStatus: { state: 'authenticated' },
+    }),
+  ).toEqual({
+    requestedSource: 'local',
+    resolvedSource: 'local',
+    authStatus: { state: 'authenticated' },
+  })
 })
 
 test('resolves legacy credential source names to cloud when Pod credential exists', () => {
@@ -451,13 +689,30 @@ test('normalizes auto-mode interaction requests and response mapping', () => {
   })
 
   expect(resolveAutoModeInteractionAutoResponse({
-    mode: 'smart',
+    mode: 'off',
     request: commandRequest,
-  })).toEqual({ decision: 'accept' })
+  })).toBe(null)
   expect(resolveAutoModeAutoApprovalDecision({
-    mode: 'smart',
+    mode: 'off',
     request: commandRequest,
-  })).toBe('accept')
+  })).toBe(null)
+  expect(resolveAutoModeInteractionAutoResponse({
+    mode: 'auto',
+    autoEnabled: true,
+    request: commandRequest,
+  })).toEqual({ decision: 'acceptForSession' })
+
+  expect(resolveAutoModeInteractionAutoResponse({
+    mode: 'auto',
+    autoEnabled: false,
+    request: commandRequest,
+  })).toBe(null)
+
+  expect(resolveAutoModeInteractionAutoResponse({
+    mode: 'off',
+    autoEnabled: true,
+    request: commandRequest,
+  })).toEqual({ decision: 'acceptForSession' })
 
   expect(buildCodexApprovalResponse(commandRequest, 'accept_for_session')).toEqual({
     decision: 'acceptForSession',
@@ -477,6 +732,7 @@ test('normalizes auto-mode interaction requests and response mapping', () => {
 
   expect(resolveAutoModeInteractionAutoResponse({
     mode: 'auto',
+    autoEnabled: true,
     request: permissionsRequest,
   })).toEqual({
     permissions: { network: true },
@@ -484,6 +740,7 @@ test('normalizes auto-mode interaction requests and response mapping', () => {
   })
   expect(resolveAutoModeAutoApprovalDecision({
     mode: 'auto',
+    autoEnabled: true,
     request: permissionsRequest,
   })).toBe('accept_for_session')
 
@@ -1131,7 +1388,8 @@ test('parses AI secretary approval and user-input recommendations conservatively
     reason: 'safe read-only command',
     reaction_window_ms: 1200,
   }), {
-    mode: 'smart',
+    autoEnabled: true,
+    mode: 'off',
     request: approvalRequest,
   })).toMatchObject({
     kind: 'command-approval',
@@ -1145,7 +1403,8 @@ test('parses AI secretary approval and user-input recommendations conservatively
   expect(computeAutoModeSecretaryReactionWindowMs(0)).toBe(60000)
   expect(computeAutoModeSecretaryReactionWindowMs(1)).toBe(5000)
   expect(createFallbackAutoModeSecretaryRecommendation({
-    mode: 'auto',
+    mode: 'off',
+    autoEnabled: true,
     request: approvalRequest,
   })).toMatchObject({
     kind: 'command-approval',
@@ -1171,7 +1430,8 @@ test('parses AI secretary approval and user-input recommendations conservatively
   }
 
   const recommendation = parseAutoModeSecretaryRecommendation('```json\n{"canAnswer":true,"answers":{"runtime":{"answers":["cloud"]}},"confidence":0.8,"reason":"Pod credentials are available"}\n```', {
-    mode: 'smart',
+    autoEnabled: true,
+    mode: 'off',
     request: inputRequest,
   })
 

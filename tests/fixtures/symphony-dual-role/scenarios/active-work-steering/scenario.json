@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "id": "active-work-steering",
+  "title": "Active Work Steering",
+  "purpose": "Validate that evolving priority fragments steer an active control record before worker scope changes.",
+  "inputPolicy": "user_fragments_only",
+  "expectedFinalIntent": "Update the active work record to steer priority toward chat list loading while preserving login work state and ownership.",
+  "userFragments": [
+    {
+      "id": "u1",
+      "content": "Finish the login flow fix first."
+    },
+    {
+      "id": "u2",
+      "content": "No, the chat list loading bug is more urgent now."
+    },
+    {
+      "id": "u3",
+      "content": "Actually keep login active, but if you touch chat loading, make that the main branch."
+    }
+  ],
+  "secretaryReplies": [
+    {
+      "after": "u1",
+      "content": "This binds to active login work. I will look for an existing work record before creating anything new."
+    },
+    {
+      "after": "u2",
+      "content": "Latest steering changes priority toward chat list loading. I will compare it against the active login record before dispatch."
+    },
+    {
+      "after": "u3",
+      "content": "The control record should keep login active while making chat loading the main branch if the scopes are related."
+    }
+  ],
+  "acceptance": {
+    "finalOnly": true,
+    "classification": "steering",
+    "systemState": "partial",
+    "workState": "running",
+    "compatibilityImpact": "behavior_change",
+    "requiredPhrases": [
+      "Active steering update",
+      "compared against the active work record before dispatch",
+      "If unrelated, create a separate issue",
+      "Behavior change within active execution only",
+      "verify login state before assigning chat-list loading work"
+    ],
+    "forbiddenPhrases": [
+      "Close login work immediately",
+      "Breaking. Users or scripts"
+    ]
+  }
+}

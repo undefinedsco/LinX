@@ -7,10 +7,11 @@ import {
 } from '../credentials-store.js'
 import { getOidcAccessToken, isOidcLoginExpiredError } from '../oidc-auth.js'
 import { getAccessToken } from '../solid-auth.js'
-import type { OAuthCredentials } from '@mariozechner/pi-ai'
-
-export interface PiCloudOAuthCredential extends OAuthCredentials {
+export interface PiCloudOAuthCredential {
   type: 'oauth'
+  refresh: string
+  access: string
+  expires: number
 }
 
 export interface PiAuthBridgeRuntime {

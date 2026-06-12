@@ -1,15 +1,10 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { homedir } from 'node:os'
 import type { IStorage } from '@inrupt/solid-client-authn-node'
-import { LINX_HOME_DIRNAME } from '@undefineds.co/models/client'
-
-function linxDir(): string {
-  return join(homedir(), LINX_HOME_DIRNAME)
-}
+import { getSolidAuthOidcStorageDir } from './solid-auth-store.js'
 
 function storageDir(): string {
-  return join(linxDir(), 'oidc-storage')
+  return getSolidAuthOidcStorageDir()
 }
 
 function keyPath(key: string): string {

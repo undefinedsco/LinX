@@ -26,14 +26,28 @@ function setTestHome(home) {
   process.env.USERPROFILE = home
 }
 
-function writeCredentialSet(baseDir, folderName, values) {
+function solidAuthDir(baseDir) {
+  return join(baseDir, '.solid', 'auth')
+}
+
+function solidCredentialsPath(baseDir) {
+  return join(solidAuthDir(baseDir), 'credentials.json')
+}
+
+function writeCredentialEnvelope(baseDir, values) {
+  const dir = solidAuthDir(baseDir)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(solidCredentialsPath(baseDir), JSON.stringify(values))
+}
+
+function writeLegacyCredentialSet(baseDir, folderName, values) {
   const dir = join(baseDir, folderName)
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'config.json'), JSON.stringify(values.config))
   writeFileSync(join(dir, 'secrets.json'), JSON.stringify(values.secrets))
 }
 
-test('saveCredentials persists client credentials under ~/.linx and clearCredentials removes them', async () => {
+test('saveCredentials persists client credentials under ~/.solid/auth and clearCredentials removes them', async () => {
   const tempHome = mkdtempSync(join(tmpdir(), 'linx-cli-creds-'))
   setTestHome(tempHome)
 
@@ -48,32 +62,33 @@ test('saveCredentials persists client credentials under ~/.linx and clearCredent
     },
   })
 
-  assert.equal(existsSync(join(tempHome, '.linx', 'config.json')), true)
-  assert.equal(existsSync(join(tempHome, '.linx', 'secrets.json')), true)
-  assert.equal(statSync(join(tempHome, '.linx', 'config.json')).mode & 0o777, 0o644)
-  assert.equal(statSync(join(tempHome, '.linx', 'secrets.json')).mode & 0o777, 0o600)
-  assert.match(readFileSync(join(tempHome, '.linx', 'config.json'), 'utf-8'), /linx\.example/)
-  assert.deepEqual(JSON.parse(readFileSync(join(tempHome, '.linx', 'secrets.json'), 'utf-8')), {
-    clientId: 'linx-client',
-    clientSecret: 'linx-secret',
-  })
-  assert.equal(mod.loadCredentials()?.sourceDir, join(tempHome, '.linx'))
-
-  mod.clearCredentials()
+  assert.equal(existsSync(solidCredentialsPath(tempHome)), true)
   assert.equal(existsSync(join(tempHome, '.linx', 'config.json')), false)
   assert.equal(existsSync(join(tempHome, '.linx', 'secrets.json')), false)
+  assert.equal(statSync(solidCredentialsPath(tempHome)).mode & 0o777, 0o600)
+  assert.deepEqual(JSON.parse(readFileSync(solidCredentialsPath(tempHome), 'utf-8')), {
+    url: 'https://linx.example',
+    webId: 'https://pod.example/profile#me',
+    authType: 'client_credentials',
+    secrets: {
+      clientId: 'linx-client',
+      clientSecret: 'linx-secret',
+    },
+  })
+  assert.equal(mod.loadCredentials()?.sourceDir, solidAuthDir(tempHome))
+
+  mod.clearCredentials()
+  assert.equal(existsSync(solidCredentialsPath(tempHome)), false)
 })
 
-test('loadCredentials reads credentials from ~/.linx', async () => {
+test('loadCredentials reads credentials from ~/.solid/auth', async () => {
   const tempHome = mkdtempSync(join(tmpdir(), 'linx-cli-creds-'))
   setTestHome(tempHome)
 
-  writeCredentialSet(tempHome, '.linx', {
-    config: {
-      url: 'https://linx.example',
-      webId: 'https://pod.example/profile#me',
-      authType: 'client_credentials',
-    },
+  writeCredentialEnvelope(tempHome, {
+    url: 'https://linx.example',
+    webId: 'https://pod.example/profile#me',
+    authType: 'client_credentials',
     secrets: {
       clientId: 'linx-client',
       clientSecret: 'linx-secret',
@@ -85,26 +100,24 @@ test('loadCredentials reads credentials from ~/.linx', async () => {
 
   assert.ok(credentials)
   assert.equal(credentials.url, 'https://linx.example')
-  assert.equal(credentials.sourceDir, join(tempHome, '.linx'))
+  assert.equal(credentials.sourceDir, solidAuthDir(tempHome))
   assert.deepEqual(mod.getClientCredentials(credentials), {
     clientId: 'linx-client',
     clientSecret: 'linx-secret',
   })
 })
 
-test('loadCredentials migrates legacy clientId/clientSecret secrets to clientId/clientSecret in memory', async () => {
+test('loadCredentials normalizes alternate Solid client credential field names in memory', async () => {
   const tempHome = mkdtempSync(join(tmpdir(), 'linx-cli-creds-'))
-  process.env.HOME = tempHome
+  setTestHome(tempHome)
 
-  writeCredentialSet(tempHome, '.linx', {
-    config: {
-      url: 'https://linx.example',
-      webId: 'https://pod.example/profile#me',
-      authType: 'client_credentials',
-    },
+  writeCredentialEnvelope(tempHome, {
+    url: 'https://linx.example',
+    webId: 'https://pod.example/profile#me',
+    authType: 'client_credentials',
     secrets: {
-      clientId: 'legacy-client',
-      clientSecret: 'legacy-secret',
+      secret_id: 'legacy-client',
+      secret_key: 'legacy-secret',
     },
   })
 
@@ -118,11 +131,11 @@ test('loadCredentials migrates legacy clientId/clientSecret secrets to clientId/
   })
 })
 
-test('loadCredentials ignores legacy ~/.xpod credentials', async () => {
+test('loadCredentials ignores legacy app-local credentials', async () => {
   const tempHome = mkdtempSync(join(tmpdir(), 'linx-cli-creds-'))
   setTestHome(tempHome)
 
-  writeCredentialSet(tempHome, '.xpod', {
+  writeLegacyCredentialSet(tempHome, '.xpod', {
     config: {
       url: 'https://xpod.example',
       webId: 'https://pod.example/profile#me',
@@ -131,6 +144,17 @@ test('loadCredentials ignores legacy ~/.xpod credentials', async () => {
     secrets: {
       clientId: 'xpod-client',
       clientSecret: 'xpod-secret',
+    },
+  })
+  writeLegacyCredentialSet(tempHome, '.linx', {
+    config: {
+      url: 'https://linx.example',
+      webId: 'https://pod.example/profile#me',
+      authType: 'client_credentials',
+    },
+    secrets: {
+      clientId: 'linx-client',
+      clientSecret: 'linx-secret',
     },
   })
 
@@ -142,12 +166,10 @@ test('loadCredentials returns null for incomplete secrets', async () => {
   const tempHome = mkdtempSync(join(tmpdir(), 'linx-cli-creds-'))
   setTestHome(tempHome)
 
-  writeCredentialSet(tempHome, '.linx', {
-    config: {
-      url: 'https://linx.example',
-      webId: 'https://pod.example/profile#me',
-      authType: 'client_credentials',
-    },
+  writeCredentialEnvelope(tempHome, {
+    url: 'https://linx.example',
+    webId: 'https://pod.example/profile#me',
+    authType: 'client_credentials',
     secrets: {
       clientId: 'linx-client',
     },

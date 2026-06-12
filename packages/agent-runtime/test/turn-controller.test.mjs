@@ -58,7 +58,7 @@ test('fast companion model policy is shared beyond turn control', () => {
   })
 })
 
-test('LinX runtime endpoints treat ACP as an adapter instead of the internal bus', () => {
+test('LinX runtime endpoints treat LinX as the default backend and ACP as external adapters', () => {
   assert.deepEqual(LINX_RUNTIME_ENDPOINTS, ['linx', 'acp:codex', 'acp:claude', 'acp:codebuddy'])
   assert.equal(linxRuntimeEndpointForBackend('linx'), 'linx')
   assert.equal(linxRuntimeEndpointForBackend('codex'), 'acp:codex')
@@ -81,7 +81,7 @@ test('auto-mode secretary turn-controller rules are explicit and user-visible', 
   ])
 
   assert.equal(AUTO_MODE_SECRETARY_APPROVAL_RULE.trigger, 'approval.required')
-  assert.equal(AUTO_MODE_SECRETARY_APPROVAL_RULE.targetAgent, 'ai-secretary')
+  assert.equal(AUTO_MODE_SECRETARY_APPROVAL_RULE.targetAgent, '__secretary__')
   assert.deepEqual(AUTO_MODE_SECRETARY_APPROVAL_RULE.requiredCapabilities, [
     'approval.request',
     'approval.options',
@@ -145,7 +145,7 @@ test('group turn routing delegates unmentioned multi-agent turns to controller',
     agents: [
       {
         id: 'agent-a',
-        uri: 'https://pod.example/.data/agents/planner.ttl#this',
+        uri: 'https://pod.example/agents/planner/',
         name: 'Planner',
         description: 'Plans architecture changes.',
         tags: ['architecture'],
@@ -153,7 +153,7 @@ test('group turn routing delegates unmentioned multi-agent turns to controller',
       },
       {
         id: 'agent-b',
-        uri: 'https://pod.example/.data/agents/coder.ttl#this',
+        uri: 'https://pod.example/agents/coder/',
         name: 'Coder',
         description: 'Implements code changes.',
         tags: ['implementation'],
@@ -167,7 +167,7 @@ test('group turn routing delegates unmentioned multi-agent turns to controller',
       assert.equal(history.length, 1)
       assert.deepEqual(agents[0], {
         id: 'agent-a',
-        uri: 'https://pod.example/.data/agents/planner.ttl#this',
+        uri: 'https://pod.example/agents/planner/',
         name: 'Planner',
         description: 'Plans architecture changes.',
         tags: ['architecture'],

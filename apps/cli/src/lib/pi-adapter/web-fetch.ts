@@ -6,14 +6,12 @@
  * credential Turtle directly.
  */
 
-import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
-import { Type } from '@sinclair/typebox';
+import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import { Type, type Static } from 'typebox';
 import { getDefaultPodDataSession, type PodDataSession } from '../pod-data-session.js';
 import {
-  aiProviderResource,
-  credentialResource,
+  aiConfigRepository,
   drizzle,
-  selectAIConfigCredential,
   solidResources,
   type SolidDatabase,
 } from '../models.js';
@@ -35,8 +33,8 @@ const WebSearchParams = Type.Object({
   query: Type.String({ description: 'Search query' }),
 });
 
-type WebFetchParams = typeof WebFetchParams.infer;
-type WebSearchParams = typeof WebSearchParams.infer;
+type WebFetchParams = Static<typeof WebFetchParams>;
+type WebSearchParams = Static<typeof WebSearchParams>;
 
 // ── Credential runtime ──────────────────────────────────────────────────────
 
@@ -72,19 +70,9 @@ export async function resolveJinaApiKey(runtime: JinaCredentialRuntime = activeC
   const session = await runtime.getPodDataSession();
   if (!session) return null;
 
-  const db = runtime.createDb(session) as any;
-  const [credentialRows, providerRow] = await Promise.all([
-    db.select().from(credentialResource).execute() as Promise<Array<Record<string, unknown>>>,
-    typeof db.findById === 'function'
-      ? db.findById(aiProviderResource, JINA_PROVIDER_ID).catch(() => null) as Promise<Record<string, unknown> | null>
-      : Promise.resolve(null),
-  ]);
-
-  const selected = selectAIConfigCredential(
-    JINA_PROVIDER_ID,
-    credentialRows,
-    providerRow ? [providerRow] : [],
-  );
+  const db = runtime.createDb(session);
+  const selected = await aiConfigRepository.loadCredentialForBackend(db, JINA_PROVIDER_ID);
+  await aiConfigRepository.markCredentialUsed(db, selected);
   return selected?.apiKey ?? null;
 }
 
@@ -197,9 +185,12 @@ export const webSearchTool: any = {
   },
 };
 
-// ── Pi Extension ────────────────────────────────────────────────────────────
-
-export default function (pi: ExtensionAPI): void {
-  pi.registerTool(webFetchTool);
-  pi.registerTool(webSearchTool);
-}
+// ── Pi Extension (disabled; replaced by pi-web-access) ─────────────────────
+//
+// LinX now uses pi-web-access for web_search and fetch_content.
+// The Jina utility functions below are kept for potential fallback use.
+//
+// export default function (pi: ExtensionAPI): void {
+//   pi.registerTool(webFetchTool);
+//   pi.registerTool(webSearchTool);
+// }
