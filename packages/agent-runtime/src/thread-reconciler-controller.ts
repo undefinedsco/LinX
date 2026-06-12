@@ -4,6 +4,7 @@ import {
   type ReconcileDecision,
   type ReconcileDecisionSummary,
   type ReconcileThreadEventInput,
+  type ReconcilerNotificationEvent,
   type ThreadControlEvent,
   type ThreadPolicy,
   type ThreadPolicyKind,
@@ -43,6 +44,7 @@ export interface ThreadReconcilerControllerOptions {
   onWakeJobStarted?: (record: WakeJobExecutionRecord, decision: ReconcileDecisionSummary) => void
   onWakeJobCompleted?: (record: WakeJobExecutionRecord, decision: ReconcileDecisionSummary) => void
   onWakeJobFailed?: (record: WakeJobExecutionRecord, decision: ReconcileDecisionSummary) => void
+  onNotificationEvent?: (event: ReconcilerNotificationEvent, decision: ReconcileDecisionSummary) => void
 }
 
 export interface ThreadReconcilerDispatchOptions extends Omit<ReconcileThreadEventInput, 'policy' | 'event'> {}
@@ -159,10 +161,14 @@ class ConfiguredThreadReconcilerController implements ThreadReconcilerController
   dispatch(event: ThreadControlEvent, options: ThreadReconcilerDispatchOptions = {}): ThreadReconcilerDispatchResult {
     const { decision, summary } = decideThreadControlEvent({
       ...options,
+      now: options.now ?? this.options.now?.(),
       policy: this.options.policy,
       event,
     })
     this.options.onDecision?.(summary)
+    for (const notificationEvent of decision.notificationEvents ?? []) {
+      this.options.onNotificationEvent?.(notificationEvent, summary)
+    }
     for (const job of decision.wakeJobs) {
       const key = defaultWakeJobDedupeKey(job)
       if (!this.contexts.has(key)) {

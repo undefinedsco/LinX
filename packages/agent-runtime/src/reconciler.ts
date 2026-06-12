@@ -14,6 +14,8 @@ export type ReconcilerEventType =
   | 'message.appended'
   | 'input.required'
   | 'approval.required'
+  | 'inbox.notification.created'
+  | 'inbox.notification.updated'
   | 'delivery.submitted'
   | 'delivery.completed'
   | 'delivery.failed'
@@ -37,6 +39,41 @@ export type ReconcilerActorRole =
 export type WakeJobTargetRole = AgentParticipantRole | 'worker' | 'reviewer'
 export type WakeJobPriority = 'low' | 'normal' | 'high'
 export type WakeJobStatus = 'queued'
+export type ReconcilerNotificationAudience = 'user'
+export type ReconcilerNotificationChannel = 'inbox'
+export type ReconcilerClientFocusState = 'focused' | 'background' | 'closed'
+export type ReconcilerControlResourceClaimStatus = 'claimed' | 'lost' | 'display_only' | 'none'
+
+export interface ReconcilerControlResourceClaimState {
+  status: ReconcilerControlResourceClaimStatus
+  controlResource?: string
+  leaseOwner?: string
+  leaseExpiresAt?: string
+  reason?: string
+}
+
+export interface ReconcilerClientContext {
+  id: string
+  agentCapable?: boolean
+  secretaryRuntimeAvailable?: boolean
+  focusState?: ReconcilerClientFocusState
+  activeThread?: string
+  activeChat?: string
+  generationLocked?: boolean
+  controlResourceClaim?: ReconcilerControlResourceClaimState
+}
+
+export interface SecretaryInboxWakeContext {
+  eventId: string
+  eventType: ReconcilerEventType
+  controlResource?: string
+  sourceThread?: string
+  sourceRun?: string
+  sourceTask?: string
+  requestKind?: string
+  priority: WakeJobPriority
+  shortSummary?: string
+}
 
 export interface ReconcilerActorRef {
   id?: string
@@ -98,12 +135,33 @@ export interface WakeJob {
   createdAt: string
 }
 
+export interface ReconcilerNotificationEvent {
+  id: string
+  thread: string
+  chat?: string
+  audience: ReconcilerNotificationAudience
+  channel: ReconcilerNotificationChannel
+  priority: WakeJobPriority
+  reason: string
+  sourceEventId?: string
+  sourceEventType: ReconcilerEventType
+  sourceResource?: string
+  inboxNotification?: string
+  sourceThread?: string
+  sourceRun?: string
+  sourceTask?: string
+  requestKind?: string
+  shortSummary?: string
+  createdAt: string
+}
+
 export interface ReconcileDecision {
   id: string
   policyKind: ThreadPolicyKind
   event: ThreadControlEvent
   placement: ThreadPlacement
   wakeJobs: WakeJob[]
+  notificationEvents?: ReconcilerNotificationEvent[]
   skippedReason?: string
   createdAt: string
 }
@@ -121,6 +179,7 @@ export interface WakeJobSummary {
   sourceEventId?: string
   sourceEventType: ReconcilerEventType
   sourceResource?: string
+  inboxNotification?: string
   controlGate?: string
 }
 
@@ -132,6 +191,7 @@ export interface ReconcileDecisionSummary {
   chat?: string
   skippedReason?: string
   wakeJobs: WakeJobSummary[]
+  notificationEvents?: ReconcilerNotificationEvent[]
   createdAt: string
 }
 
@@ -142,6 +202,7 @@ export interface ReconcileThreadEventInput {
   thread?: string
   now?: Date
   randomId?: string
+  client?: ReconcilerClientContext
 }
 
 export interface ThreadReconciler {
@@ -177,8 +238,9 @@ export function reconcileThreadEvent(input: ReconcileThreadEventInput): Reconcil
     thread: input.thread,
     randomId: input.randomId,
   })
-  const jobs = selectWakeJobs(policy, event, placement, createdAt, input.randomId)
-  const skippedReason = jobs.length === 0 ? skipReasonFor(policy, event) : undefined
+  const jobs = selectWakeJobs(policy, event, placement, createdAt, input.randomId, input.client)
+  const notificationEvents = selectNotificationEvents(event, placement, createdAt, input.randomId)
+  const skippedReason = jobs.length === 0 ? skipReasonFor(policy, event, input.client) : undefined
 
   return {
     id: createReconcilerId('decision', input.randomId),
@@ -186,6 +248,7 @@ export function reconcileThreadEvent(input: ReconcileThreadEventInput): Reconcil
     event,
     placement,
     wakeJobs: jobs,
+    ...(notificationEvents.length > 0 ? { notificationEvents } : {}),
     ...(skippedReason ? { skippedReason } : {}),
     createdAt,
   }
@@ -212,8 +275,12 @@ export function summarizeReconcileDecision(decision: ReconcileDecision): Reconci
       ...(job.sourceEventId ? { sourceEventId: job.sourceEventId } : {}),
       sourceEventType: job.sourceEventType,
       ...(decision.event.resource ? { sourceResource: decision.event.resource } : {}),
+      ...(normalizeText(decision.event.data?.inboxNotification) ? { inboxNotification: normalizeText(decision.event.data?.inboxNotification)! } : {}),
       ...(resolveControlGate(decision.event) ? { controlGate: resolveControlGate(decision.event)! } : {}),
     })),
+    ...(decision.notificationEvents && decision.notificationEvents.length > 0
+      ? { notificationEvents: decision.notificationEvents.map((event) => ({ ...event })) }
+      : {}),
     createdAt: decision.createdAt,
   }
 }
@@ -288,6 +355,7 @@ function selectWakeJobs(
   placement: ThreadPlacement,
   createdAt: string,
   randomId?: string,
+  client?: ReconcilerClientContext,
 ): WakeJob[] {
   if (policy.kind === 'direct') {
     return isUserMessage(event)
@@ -303,6 +371,11 @@ function selectWakeJobs(
   }
 
   if (policy.kind === 'auto') {
+    if (isActionableInboxEvent(event)) {
+      return canClientScheduleInboxWake(client, event, createdAt)
+        ? [createSecretaryWakeJob(policy, event, placement, 'Auto mode claimed an actionable control resource on this client and schedules the same-Thread Secretary to check Inbox.', 'high', createdAt, randomId)]
+        : []
+    }
     if (isInputApprovalOrBlocker(event)) {
       return [createSecretaryWakeJob(policy, event, placement, 'Auto mode routes input, approval, and blocker events to the same-Thread Secretary.', 'high', createdAt, randomId)]
     }
@@ -316,6 +389,11 @@ function selectWakeJobs(
   }
 
   if (policy.kind === 'symphony') {
+    if (isActionableInboxEvent(event)) {
+      return canClientScheduleInboxWake(client, event, createdAt)
+        ? [createSecretaryWakeJob(policy, event, placement, 'Symphony claimed an actionable control resource on this client and schedules Secretary to check Inbox; the payload is runtime control context, not a human user message.', 'high', createdAt, randomId)]
+        : []
+    }
     if (isInputApprovalOrBlocker(event) || event.type === 'change.requested') {
       return [createSecretaryWakeJob(policy, event, placement, 'Symphony routes blocker, input, approval, and change requests to Secretary for semantic judgment.', 'high', createdAt, randomId)]
     }
@@ -375,6 +453,108 @@ function selectWakeJobs(
   }
 
   return []
+}
+
+function selectNotificationEvents(
+  event: ThreadControlEvent,
+  placement: ThreadPlacement,
+  createdAt: string,
+  randomId?: string,
+): ReconcilerNotificationEvent[] {
+  if (!isActionableInboxEvent(event)) {
+    return []
+  }
+
+  const wakeContext = buildSecretaryInboxWakeContext(event, { priority: 'high' })
+  return [{
+    id: createReconcilerId('notice', randomId ?? event.id),
+    thread: placement.thread,
+    ...(placement.chat ? { chat: placement.chat } : {}),
+    audience: 'user',
+    channel: 'inbox',
+    priority: 'high',
+    reason: 'Inbox envelope changed; notify subscribed clients to refresh Inbox and read the linked control resource without converting it into chat.',
+    ...(event.id ? { sourceEventId: event.id } : {}),
+    sourceEventType: event.type,
+    ...(event.resource ? { sourceResource: event.resource } : {}),
+    ...(normalizeText(event.data?.inboxNotification) ? { inboxNotification: normalizeText(event.data?.inboxNotification)! } : {}),
+    ...(wakeContext.sourceThread ? { sourceThread: wakeContext.sourceThread } : {}),
+    ...(wakeContext.sourceRun ? { sourceRun: wakeContext.sourceRun } : {}),
+    ...(wakeContext.sourceTask ? { sourceTask: wakeContext.sourceTask } : {}),
+    ...(wakeContext.requestKind ? { requestKind: wakeContext.requestKind } : {}),
+    ...(wakeContext.shortSummary ? { shortSummary: wakeContext.shortSummary } : {}),
+    createdAt,
+  }]
+}
+
+export function buildSecretaryInboxWakeContext(
+  event: ThreadControlEvent,
+  options: { priority?: WakeJobPriority } = {},
+): SecretaryInboxWakeContext {
+  const controlResource = normalizeText(event.resource)
+    ?? normalizeText(event.data?.controlResource)
+    ?? normalizeText(event.data?.controlResourceId)
+    ?? normalizeText(event.data?.approval)
+    ?? normalizeText(event.data?.inputRequest)
+  const requestKind = normalizeText(event.data?.requestKind)
+    ?? normalizeText(event.data?.kind)
+    ?? normalizeText(event.data?.type)
+  const sourceThread = normalizeText(event.data?.sourceThread)
+  const sourceRun = normalizeText(event.data?.sourceRun)
+  const sourceTask = normalizeText(event.data?.sourceTask)
+  const shortSummary = normalizeText(event.data?.shortSummary)
+    ?? normalizeText(event.data?.summary)
+    ?? normalizeText(event.content)
+  return {
+    eventId: event.id ?? createReconcilerId('event', controlResource ?? requestKind),
+    eventType: event.type,
+    ...(controlResource ? { controlResource } : {}),
+    ...(sourceThread ? { sourceThread } : {}),
+    ...(sourceRun ? { sourceRun } : {}),
+    ...(sourceTask ? { sourceTask } : {}),
+    ...(requestKind ? { requestKind } : {}),
+    priority: options.priority ?? 'normal',
+    ...(shortSummary ? { shortSummary } : {}),
+  }
+}
+
+export function canClientScheduleInboxWake(
+  client: ReconcilerClientContext | undefined,
+  event: ThreadControlEvent,
+  now: Date | string | number = Date.now(),
+): boolean {
+  if (!client || !isActionableInboxEvent(event)) {
+    return false
+  }
+  if (client.agentCapable !== true) {
+    return false
+  }
+  if (client.secretaryRuntimeAvailable === false) {
+    return false
+  }
+  const claim = client.controlResourceClaim
+  if (!claim || claim.status !== 'claimed') {
+    return false
+  }
+  const eventControlResource = normalizeText(event.resource)
+    ?? normalizeText(event.data?.controlResource)
+    ?? normalizeText(event.data?.controlResourceId)
+  const claimControlResource = normalizeText(claim.controlResource)
+  if (eventControlResource && claimControlResource && eventControlResource !== claimControlResource) {
+    return false
+  }
+  const leaseOwner = normalizeText(claim.leaseOwner)
+  if (leaseOwner && leaseOwner !== client.id) {
+    return false
+  }
+  if (claim.leaseExpiresAt) {
+    const expiresAt = Date.parse(claim.leaseExpiresAt)
+    const nowMs = typeof now === 'number' ? now : Date.parse(now instanceof Date ? now.toISOString() : now)
+    if (!Number.isNaN(expiresAt) && !Number.isNaN(nowMs) && expiresAt <= nowMs) {
+      return false
+    }
+  }
+  return true
 }
 
 function createSecretaryWakeJob(
@@ -453,6 +633,9 @@ function threadKindFromEvent(event: ThreadControlEvent): ThreadKind {
   if (event.type === 'issue.updated' || event.type === 'task.updated' || event.type === 'run.updated') {
     return 'control'
   }
+  if (isInboxEvent(event)) {
+    return 'control'
+  }
   return 'main'
 }
 
@@ -461,6 +644,25 @@ function isInputApprovalOrBlocker(event: ThreadControlEvent): boolean {
 }
 
 function resolveControlGate(event: ThreadControlEvent): string | undefined {
+  if (isInboxEvent(event)) {
+    const explicitGate = normalizeText(event.data?.controlGate)
+    if (explicitGate) {
+      return explicitGate
+    }
+    const requestKind = normalizeText(event.data?.requestKind)
+      ?? normalizeText(event.data?.kind)
+      ?? normalizeText(event.data?.type)
+    if (requestKind && /approval|auth|credential|grant|permission|destructive/iu.test(requestKind)) {
+      return 'authority'
+    }
+    if (requestKind && /block|fail|feasibil/iu.test(requestKind)) {
+      return 'feasibility'
+    }
+    if (requestKind && /change|scope|rebase|steer/iu.test(requestKind)) {
+      return 'change'
+    }
+    return 'binding'
+  }
   if (event.type === 'input.required' || event.type === 'approval.required') {
     return 'authority'
   }
@@ -505,6 +707,21 @@ function isPrimaryAgentMessage(event: ThreadControlEvent): boolean {
     )
 }
 
+function isInboxEvent(event: ThreadControlEvent): boolean {
+  return event.type === 'inbox.notification.created' || event.type === 'inbox.notification.updated'
+}
+
+function isActionableInboxEvent(event: ThreadControlEvent): boolean {
+  if (!isInboxEvent(event)) {
+    return false
+  }
+  const status = normalizeText(event.data?.status)
+  if (!status) {
+    return event.type === 'inbox.notification.created'
+  }
+  return status === 'pending' || status === 'handling'
+}
+
 function isTaskDispatchDelivery(event: ThreadControlEvent): boolean {
   return event.data?.deliveryType === 'task_dispatch'
     || event.data?.type === 'task_dispatch'
@@ -546,9 +763,20 @@ function isMentioned(content: string | undefined, agent: ReconcilerAgentRef): bo
     .some((name) => normalized.includes(`@${name.toLowerCase()}`))
 }
 
-function skipReasonFor(policy: ThreadPolicy, event: ThreadControlEvent): string {
+function skipReasonFor(
+  policy: ThreadPolicy,
+  event: ThreadControlEvent,
+  client?: ReconcilerClientContext,
+): string {
   if (policy.kind === 'open_group') {
     return 'No mentioned or subscribed agents matched the event.'
+  }
+  if (isActionableInboxEvent(event) && (policy.kind === 'auto' || policy.kind === 'symphony')) {
+    if (!client) {
+      return `Policy ${policy.kind} keeps ${event.type} display-only until a subscribed client claims the control resource.`
+    }
+    const claimStatus = client.controlResourceClaim?.status ?? 'none'
+    return `Policy ${policy.kind} keeps ${event.type} display-only for client ${client.id} because control resource claim status is ${claimStatus}.`
   }
   return `Policy ${policy.kind} does not wake an agent for ${event.type}.`
 }

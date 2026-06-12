@@ -76,6 +76,88 @@ test('thread reconciler controller keeps skipped events out of the scheduler', a
   assert.equal(controller.snapshot().all.length, 0)
 })
 
+test('thread reconciler controller emits Inbox notification events separately from claimed Secretary wake jobs', async () => {
+  const handled: string[] = []
+  const notifications: string[] = []
+  const result = await runThreadReconcilerCycle({
+    policy: {
+      kind: 'symphony',
+      secretaryAgent: '__secretary__',
+    },
+    handleWakeJob: ({ job, decisionSummary }) => {
+      handled.push(`${decisionSummary.eventType}:${job.targetRole}:${job.targetAgent}`)
+      return { checkedInbox: true }
+    },
+    onNotificationEvent: (event, decision) => {
+      notifications.push(`${decision.eventType}:${event.audience}:${event.channel}:${event.sourceResource}:${event.requestKind}`)
+    },
+    event: {
+      type: 'inbox.notification.created',
+      thread: 'thread:main',
+      chat: 'chat:main',
+      resource: 'https://pod.example/.data/approvals/2026/05/28.ttl#approval-1',
+      actor: { role: 'runtime', id: 'pod-subscription' },
+      data: {
+        status: 'pending',
+        requestKind: 'approval.required',
+        sourceThread: 'thread:worker',
+      },
+    },
+    dispatchOptions: {
+      randomId: 'inbox-notice-1',
+      client: {
+        id: 'client:cli',
+        agentCapable: true,
+        secretaryRuntimeAvailable: true,
+        focusState: 'focused',
+        controlResourceClaim: {
+          status: 'claimed',
+          controlResource: 'https://pod.example/.data/approvals/2026/05/28.ttl#approval-1',
+          leaseOwner: 'client:cli',
+          leaseExpiresAt: '2026-05-29T00:05:00.000Z',
+        },
+      },
+    },
+    now: fixedNow(),
+  })
+
+  assert.deepEqual(notifications, ['inbox.notification.created:user:inbox:https://pod.example/.data/approvals/2026/05/28.ttl#approval-1:approval.required'])
+  assert.deepEqual(handled, ['inbox.notification.created:secretary:__secretary__'])
+  assert.equal(result.summary.notificationEvents?.[0]?.audience, 'user')
+  assert.equal(result.summary.notificationEvents?.[0]?.channel, 'inbox')
+  assert.equal(result.summary.wakeJobs[0].targetRole, 'secretary')
+  assert.deepEqual(result.schedulerSummary.completed[0].result, { checkedInbox: true })
+})
+
+test('thread reconciler controller keeps unclaimed Inbox notifications display-only', async () => {
+  const handled: string[] = []
+  const notifications: string[] = []
+  const result = await runThreadReconcilerCycle({
+    policy: 'symphony',
+    handleWakeJob: ({ job }) => {
+      handled.push(job.id)
+    },
+    onNotificationEvent: (event) => {
+      notifications.push(`${event.channel}:${event.sourceResource}`)
+    },
+    event: {
+      type: 'inbox.notification.created',
+      thread: 'thread:main',
+      resource: 'https://pod.example/.data/approvals/2026/05/28.ttl#approval-unclaimed',
+      actor: { role: 'runtime', id: 'pod-subscription' },
+      data: { status: 'pending', requestKind: 'approval.required' },
+    },
+    dispatchOptions: { randomId: 'inbox-display-only' },
+    now: fixedNow(),
+  })
+
+  assert.deepEqual(notifications, ['inbox:https://pod.example/.data/approvals/2026/05/28.ttl#approval-unclaimed'])
+  assert.deepEqual(handled, [])
+  assert.equal(result.summary.wakeJobs.length, 0)
+  assert.match(result.summary.skippedReason ?? '', /display-only/)
+  assert.equal(result.schedulerSummary.completed.length, 0)
+})
+
 test('run thread reconciler cycle exposes one shared dispatch/drain flow', async () => {
   const events: string[] = []
   const result = await runThreadReconcilerCycle({

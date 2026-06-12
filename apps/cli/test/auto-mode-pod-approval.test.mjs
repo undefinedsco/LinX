@@ -639,6 +639,8 @@ test('shared model remote approval store uses ORM exact lookup and update paths'
     action: 'https://undefineds.co/ns#commandExecution',
     risk: 'medium',
     status: 'pending',
+    leaseOwner: 'client:cli',
+    leaseExpiresAt: '2026-03-18T00:00:30.000Z',
     assignedTo: webId,
     policyVersion: 'linx-auto-mode-remote-approval/v1',
     createdAt: '2026-03-18T00:00:00.000Z',
@@ -704,6 +706,8 @@ test('shared model remote approval store uses ORM short-id lookup and update pat
     action: 'https://undefineds.co/ns#commandExecution',
     risk: 'medium',
     status: 'pending',
+    leaseOwner: 'client:cli',
+    leaseExpiresAt: '2026-03-18T00:00:30.000Z',
     assignedTo: webId,
     policyVersion: 'linx-auto-mode-remote-approval/v1',
     createdAt: '2026-03-18T00:00:00.000Z',
@@ -740,6 +744,55 @@ test('shared model remote approval store uses ORM short-id lookup and update pat
   assert.equal(calls.some((call) => call.op === 'findById' && call.id === approvalResourceId), true)
   assert.equal(calls.some((call) => call.op === 'updateById' && call.id === approvalResourceId && call.patch.status === 'approved'), true)
   assert.equal(calls.some((call) => call.op === 'select' && call.resource === 'approval'), false)
+})
+
+test('shared model remote approval store claims approval leases through models repository', async () => {
+  const webId = 'https://alice.example/profile/card#me'
+  const approvalUri = 'https://alice.example/.data/approvals/2026/03/18.ttl#approval_claim_1'
+  const calls = []
+  let row = {
+    id: '2026/03/18.ttl#approval_claim_1',
+    '@id': approvalUri,
+    session: AUTO_MODE_THREAD_URI,
+    toolCallId: 'tool_claim_1',
+    toolName: 'commandExecution',
+    target: AUTO_MODE_THREAD_URI,
+    action: 'https://undefineds.co/ns#commandExecution',
+    risk: 'medium',
+    status: 'pending',
+    createdAt: '2026-03-18T00:00:00.000Z',
+  }
+  const db = {
+    async findByIri(resource, iri) {
+      calls.push({ op: 'findByIri', resource: resource.config?.name, iri })
+      return iri === approvalUri ? row : null
+    },
+    async updateByIri(resource, iri, patch) {
+      calls.push({ op: 'updateByIri', resource: resource.config?.name, iri, patch })
+      row = { ...row, ...patch }
+      return row
+    },
+  }
+
+  const store = approvalModule.__podApprovalInternal.createSharedModelRemoteApprovalStore(webId, async () => db)
+  const result = await store.claimApproval({
+    approvalUri,
+    leaseOwner: 'client:cli',
+    leaseDurationMs: 120_000,
+    now: '2026-03-18T00:00:00.000Z',
+  })
+
+  assert.equal(result.status, 'claimed')
+  assert.equal(result.leaseOwner, 'client:cli')
+  assert.equal(result.leaseExpiresAt, '2026-03-18T00:02:00.000Z')
+  assert.equal(calls.some((call) => call.op === 'findByIri' && call.iri === approvalUri), true)
+  assert.equal(
+    calls.some((call) => call.op === 'updateByIri'
+      && call.iri === approvalUri
+      && call.patch.status === 'handling'
+      && call.patch.leaseOwner === 'client:cli'),
+    true,
+  )
 })
 
 test('native remote approval store writes and reads approval grant audit resources as Pod TTL', async () => {
@@ -782,6 +835,8 @@ test('native remote approval store writes and reads approval grant audit resourc
     action: 'https://undefineds.co/ns#commandExecution',
     risk: 'medium',
     status: 'pending',
+    leaseOwner: 'client:cli',
+    leaseExpiresAt: '2026-03-18T00:00:30.000Z',
     assignedTo: webId,
     approvalOptions: JSON.stringify([
       { optionId: 'allow_once', label: 'Allow once', kind: 'allow_once' },
@@ -848,6 +903,8 @@ test('native remote approval store writes and reads approval grant audit resourc
   assert.equal(approvals.length, 1)
   assert.equal(approvals[0].status, 'approved')
   assert.equal(approvals[0].toolCallId, 'tool_1')
+  assert.equal(approvals[0].leaseOwner, 'client:cli')
+  assert.equal(approvals[0].leaseExpiresAt, '2026-03-18T00:00:30.000Z')
   assert.equal(approvals[0].expiresAt, '2026-03-18T00:00:45.000Z')
   assert.deepEqual(JSON.parse(approvals[0].approvalOptions), [
     { optionId: 'allow_once', label: 'Allow once', kind: 'allow_once' },
@@ -875,4 +932,176 @@ test('native remote approval store writes and reads approval grant audit resourc
   assert.equal(writes.some((write) => write.url.endsWith('/.data/approvals/2026/03/18.ttl')), true)
   assert.equal(writes.some((write) => write.url.endsWith('/.data/audits/2026/03/18.ttl')), true)
   assert.equal(writes.some((write) => write.url.endsWith('/settings/autonomy/grants/grant_native_1.ttl')), true)
+})
+
+test('native remote approval store claims and preserves lease fields in Pod TTL fallback', async () => {
+  const resources = new Map()
+  const webId = 'https://alice.example/profile/card#me'
+
+  const store = approvalModule.__podApprovalInternal.createNativeRemoteApprovalStore(webId, async (url, init = {}) => {
+    const method = init.method ?? 'GET'
+    if (method === 'GET') {
+      if (resources.has(url)) {
+        return new Response(resources.get(url), { status: 200, headers: { 'Content-Type': 'text/turtle' } })
+      }
+      const children = [...resources.keys()]
+        .filter((entry) => entry.startsWith(url) && entry !== url)
+        .map((entry) => `<${entry}> .`)
+      if (children.length > 0 || url.endsWith('/')) {
+        return new Response(children.join('\n'), { status: 200, headers: { 'Content-Type': 'text/turtle' } })
+      }
+      return new Response('missing', { status: 404 })
+    }
+    if (method === 'HEAD') {
+      return new Response(null, { status: resources.has(url) || url.endsWith('/') ? 200 : 404 })
+    }
+    if (method === 'PUT') {
+      const body = typeof init.body === 'string' ? init.body : ''
+      resources.set(url, body)
+      return new Response(null, { status: 201 })
+    }
+    return new Response(null, { status: 405 })
+  })
+
+  await store.insertApproval({
+    id: 'approval_native_claim_1',
+    session: AUTO_MODE_THREAD_URI,
+    toolCallId: 'tool_native_claim_1',
+    toolName: 'commandExecution',
+    target: AUTO_MODE_THREAD_URI,
+    action: 'https://undefineds.co/ns#commandExecution',
+    risk: 'medium',
+    status: 'pending',
+    assignedTo: webId,
+    createdAt: '2026-03-18T00:00:00.000Z',
+  })
+
+  const approvalUri = 'https://alice.example/.data/approvals/2026/03/18.ttl#approval_native_claim_1'
+  const result = await store.claimApproval({
+    approvalUri,
+    leaseOwner: 'client:cli',
+    leaseDurationMs: 120_000,
+    now: '2026-03-18T00:00:00.000Z',
+  })
+  const found = await store.findApproval('approval_native_claim_1', { resourceUri: approvalUri })
+
+  assert.equal(result.status, 'claimed')
+  assert.equal(result.leaseExpiresAt, '2026-03-18T00:02:00.000Z')
+  assert.equal(found.status, 'handling')
+  assert.equal(found.leaseOwner, 'client:cli')
+  assert.equal(found.leaseExpiresAt, '2026-03-18T00:02:00.000Z')
+})
+
+test('claims approval control resources from Inbox notification as:object', async () => {
+  const approvalUri = 'https://alice.example/.data/approvals/2026/03/18.ttl#approval_inbox_claim_1'
+  const calls = []
+  let row = {
+    id: '2026/03/18.ttl#approval_inbox_claim_1',
+    '@id': approvalUri,
+    status: 'pending',
+    createdAt: '2026-03-18T00:00:00.000Z',
+  }
+  const db = {
+    async findByIri(resource, iri) {
+      calls.push({ op: 'findByIri', resource: resource.config?.name, iri })
+      return resource.config?.name === 'approval' && iri === approvalUri ? row : null
+    },
+    async updateByIri(resource, iri, patch) {
+      calls.push({ op: 'updateByIri', resource: resource.config?.name, iri, patch })
+      row = { ...row, ...patch }
+      return row
+    },
+  }
+
+  const result = await approvalModule.claimInboxNotificationControlResource({
+    controlResourceUri: approvalUri,
+    leaseOwner: 'client:cli',
+    leaseDurationMs: 120_000,
+    now: '2026-03-18T00:00:00.000Z',
+    getDb: async () => db,
+  })
+
+  assert.equal(result.status, 'claimed')
+  assert.equal(result.kind, 'approval')
+  assert.equal(result.controlResource, approvalUri)
+  assert.equal(result.leaseOwner, 'client:cli')
+  assert.equal(result.leaseExpiresAt, '2026-03-18T00:02:00.000Z')
+  assert.equal(calls.some((call) => call.op === 'findByIri' && call.resource === 'approval' && call.iri === approvalUri), true)
+  assert.equal(calls.some((call) => call.op === 'updateByIri' && call.resource === 'approval' && call.patch.status === 'handling'), true)
+})
+
+test('claims input request control resources from Inbox notification as:object', async () => {
+  const inputRequestUri = 'https://alice.example/.data/input-requests/2026/03/18.ttl#input_inbox_claim_1'
+  const calls = []
+  let row = {
+    id: '2026/03/18.ttl#input_inbox_claim_1',
+    '@id': inputRequestUri,
+    status: 'pending',
+    createdAt: '2026-03-18T00:00:00.000Z',
+  }
+  const db = {
+    async findByIri(resource, iri) {
+      calls.push({ op: 'findByIri', resource: resource.config?.name, iri })
+      return resource.config?.name === 'input_request' && iri === inputRequestUri ? row : null
+    },
+    async updateByIri(resource, iri, patch) {
+      calls.push({ op: 'updateByIri', resource: resource.config?.name, iri, patch })
+      row = { ...row, ...patch }
+      return row
+    },
+  }
+
+  const handler = approvalModule.createInboxNotificationControlResourceClaimHandler({
+    getDb: async () => db,
+    leaseDurationMs: 30_000,
+    now: () => '2026-03-18T00:00:00.000Z',
+  })
+  const result = await handler({
+    clientId: 'client:desktop',
+    controlResource: inputRequestUri,
+  })
+
+  assert.equal(result.status, 'claimed')
+  assert.equal(result.kind, 'input_request')
+  assert.equal(result.controlResource, inputRequestUri)
+  assert.equal(result.leaseOwner, 'client:desktop')
+  assert.equal(result.leaseExpiresAt, '2026-03-18T00:00:30.000Z')
+  assert.equal(calls.some((call) => call.op === 'findByIri' && call.resource === 'input_request' && call.iri === inputRequestUri), true)
+  assert.equal(calls.some((call) => call.op === 'updateByIri' && call.resource === 'input_request' && call.patch.status === 'handling'), true)
+})
+
+test('does not claim the InboxNotification envelope itself', async () => {
+  let dbCalls = 0
+  const result = await approvalModule.claimInboxNotificationControlResource({
+    controlResourceUri: 'https://alice.example/inbox/notice_1.ttl',
+    leaseOwner: 'client:cli',
+    now: '2026-03-18T00:00:00.000Z',
+    getDb: async () => {
+      dbCalls += 1
+      return {}
+    },
+  })
+
+  assert.equal(result.status, 'display_only')
+  assert.equal(result.kind, 'inbox_notification')
+  assert.match(result.reason, /envelope/i)
+  assert.equal(dbCalls, 0)
+})
+
+test('keeps unknown Inbox notification objects display-only', async () => {
+  let dbCalls = 0
+  const result = await approvalModule.claimInboxNotificationControlResource({
+    controlResourceUri: 'https://alice.example/.data/reports/2026/03/18/report.md',
+    leaseOwner: 'client:cli',
+    now: '2026-03-18T00:00:00.000Z',
+    getDb: async () => {
+      dbCalls += 1
+      return {}
+    },
+  })
+
+  assert.equal(result.status, 'display_only')
+  assert.equal(result.kind, 'unknown')
+  assert.match(result.reason, /not a known claimable control resource/i)
+  assert.equal(dbCalls, 0)
 })

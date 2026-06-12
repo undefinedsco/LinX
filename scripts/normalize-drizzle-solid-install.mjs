@@ -1434,7 +1434,10 @@ function assertPatchedDrizzleSolid(root) {
       [
         'Exact resource reads already know the concrete Pod document',
         'shouldSkipResourcePreparation()',
-        'skipResourceExistenceCheck: this.shouldSkipResourcePreparation()',
+        [
+          'skipResourceExistenceCheck: this.shouldSkipResourcePreparation()',
+          'skipResourceExistenceCheck: useWriteTimePreparation',
+        ],
       ],
     ],
     [
@@ -1442,7 +1445,10 @@ function assertPatchedDrizzleSolid(root) {
       [
         'Exact resource reads already know the concrete Pod document',
         'shouldSkipResourcePreparation()',
-        'skipResourceExistenceCheck: this.shouldSkipResourcePreparation()',
+        [
+          'skipResourceExistenceCheck: this.shouldSkipResourcePreparation()',
+          'skipResourceExistenceCheck: useWriteTimePreparation',
+        ],
       ],
     ],
     [

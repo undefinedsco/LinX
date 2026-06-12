@@ -9,7 +9,6 @@ import {
   ODRL,
   approvalResource,
   auditResource,
-  buildChatTargetRef,
   chatResource,
   inboxNotificationTable,
   sessionTable,

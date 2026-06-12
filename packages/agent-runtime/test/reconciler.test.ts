@@ -34,6 +34,38 @@ test('auto policy wakes same-thread Secretary for runtime input and approval', (
   assert.equal(summary.wakeJobs[0].controlGate, 'authority')
 })
 
+test('auto policy exposes actionable Inbox as notification until a client claims it', () => {
+  const decision = reconcileThreadEvent({
+    policy: 'auto',
+    event: {
+      type: 'inbox.notification.created',
+      thread: 'thread:auto-inbox',
+      chat: 'chat:auto',
+      resource: 'https://pod.example/.data/input-requests/2026/05/28.ttl#input-1',
+      actor: { role: 'runtime', id: 'thread-reconciler' },
+      data: {
+        status: 'pending',
+        requestKind: 'input.required',
+        sourceThread: 'thread:worker',
+        run: 'run:blocked',
+      },
+    },
+    now: new Date('2026-05-28T00:00:00.500Z'),
+    randomId: 'auto-inbox',
+  })
+
+  assert.equal(decision.wakeJobs.length, 0)
+  assert.match(decision.skippedReason ?? '', /display-only/)
+  assert.equal(decision.notificationEvents?.length, 1)
+  assert.equal(decision.notificationEvents?.[0]?.audience, 'user')
+  assert.equal(decision.notificationEvents?.[0]?.channel, 'inbox')
+  assert.equal(decision.notificationEvents?.[0]?.sourceResource, 'https://pod.example/.data/input-requests/2026/05/28.ttl#input-1')
+  const summary = summarizeReconcileDecision(decision)
+  assert.equal(summary.wakeJobs.length, 0)
+  assert.equal(summary.notificationEvents?.[0]?.audience, 'user')
+  assert.equal(summary.notificationEvents?.[0]?.requestKind, 'input.required')
+})
+
 test('auto policy treats backend messages as candidate next user-input slots', () => {
   const reconciler = createThreadReconciler({
     kind: 'auto',
@@ -74,6 +106,129 @@ test('auto policy routes user messages to Secretary before runtime projection', 
   assert.equal(decision.wakeJobs[0].targetAgent, 'secretary-a')
   assert.equal(decision.wakeJobs[0].targetRole, 'secretary')
   assert.match(decision.wakeJobs[0].reason, /before runtime projection/)
+})
+
+test('symphony policy exposes unclaimed pending Inbox as notification without treating it as user chat', () => {
+  const decision = reconcileThreadEvent({
+    policy: {
+      kind: 'symphony',
+      secretaryAgent: '__secretary__',
+    },
+    event: {
+      type: 'inbox.notification.created',
+      chat: 'chat:main',
+      thread: 'thread:main',
+      resource: 'https://pod.example/.data/approvals/2026/05/28.ttl#approval-1',
+      actor: { role: 'runtime', id: 'reconciler' },
+      content: 'worker needs production approval',
+      data: {
+        status: 'pending',
+        requestKind: 'approval.required',
+        sourceThread: 'thread:worker',
+        sourceRun: 'run:worker-1',
+        sourceTask: 'task:worker-1',
+      },
+    },
+    now: new Date('2026-05-28T00:00:01.750Z'),
+    randomId: 'symphony-inbox',
+  })
+
+  assert.equal(decision.event.type, 'inbox.notification.created')
+  assert.equal(decision.event.actor?.role, 'runtime')
+  assert.notEqual(decision.event.actor?.role, 'user')
+  assert.equal(decision.placement.kind, 'control')
+  assert.equal(decision.wakeJobs.length, 0)
+  assert.match(decision.skippedReason ?? '', /display-only/)
+  assert.equal(decision.notificationEvents?.length, 1)
+  assert.equal(decision.notificationEvents?.[0]?.audience, 'user')
+  assert.equal(decision.notificationEvents?.[0]?.channel, 'inbox')
+  assert.equal(decision.notificationEvents?.[0]?.sourceResource, 'https://pod.example/.data/approvals/2026/05/28.ttl#approval-1')
+
+  const summary = summarizeReconcileDecision(decision)
+  assert.equal(summary.eventType, 'inbox.notification.created')
+  assert.equal(summary.wakeJobs.length, 0)
+  assert.equal(summary.notificationEvents?.[0]?.sourceResource, 'https://pod.example/.data/approvals/2026/05/28.ttl#approval-1')
+  assert.equal(summary.notificationEvents?.[0]?.requestKind, 'approval.required')
+  assert.equal(summary.notificationEvents?.[0]?.sourceThread, 'thread:worker')
+  assert.equal(summary.notificationEvents?.[0]?.reason, 'Inbox envelope changed; notify subscribed clients to refresh Inbox and read the linked control resource without converting it into chat.')
+
+  const direct = reconcileThreadEvent({
+    policy: 'direct',
+    event: {
+      type: 'inbox.notification.created',
+      thread: 'thread:main',
+      actor: { role: 'runtime', id: 'reconciler' },
+      data: { status: 'pending', requestKind: 'approval.required' },
+    },
+    now: new Date('2026-05-28T00:00:01.760Z'),
+    randomId: 'direct-inbox',
+  })
+  assert.equal(direct.wakeJobs.length, 0)
+  assert.equal(direct.notificationEvents?.length, 1)
+  assert.equal(direct.skippedReason, 'Policy direct does not wake an agent for inbox.notification.created.')
+})
+
+
+test('claimed control resource wakes Secretary on the handling client only', () => {
+  const event = {
+    type: 'inbox.notification.created' as const,
+    chat: 'chat:main',
+    thread: 'thread:main',
+    resource: 'https://pod.example/.data/approvals/2026/05/28.ttl#approval-claimed',
+    actor: { role: 'runtime' as const, id: 'pod-subscription' },
+    data: {
+      status: 'pending',
+      requestKind: 'approval.required',
+      sourceThread: 'thread:worker',
+      sourceRun: 'run:worker-1',
+      sourceTask: 'task:worker-1',
+      shortSummary: 'worker needs approval',
+    },
+  }
+
+  const claimed = reconcileThreadEvent({
+    policy: 'symphony',
+    event,
+    client: {
+      id: 'client:cli',
+      agentCapable: true,
+      secretaryRuntimeAvailable: true,
+      focusState: 'focused',
+      controlResourceClaim: {
+        status: 'claimed',
+        controlResource: 'https://pod.example/.data/approvals/2026/05/28.ttl#approval-claimed',
+        leaseOwner: 'client:cli',
+        leaseExpiresAt: '2026-05-28T00:05:00.000Z',
+      },
+    },
+    now: new Date('2026-05-28T00:00:02.000Z'),
+    randomId: 'claimed-inbox',
+  })
+  assert.equal(claimed.wakeJobs.length, 1)
+  assert.equal(claimed.wakeJobs[0].targetRole, 'secretary')
+  assert.match(claimed.wakeJobs[0].reason, /claimed an actionable control resource/)
+  assert.equal(claimed.notificationEvents?.[0]?.shortSummary, 'worker needs approval')
+
+  const lost = reconcileThreadEvent({
+    policy: 'symphony',
+    event,
+    client: {
+      id: 'client:web',
+      agentCapable: true,
+      secretaryRuntimeAvailable: true,
+      focusState: 'focused',
+      controlResourceClaim: {
+        status: 'lost',
+        controlResource: 'https://pod.example/.data/approvals/2026/05/28.ttl#approval-claimed',
+        leaseOwner: 'client:cli',
+      },
+    },
+    now: new Date('2026-05-28T00:00:02.000Z'),
+    randomId: 'lost-inbox',
+  })
+  assert.equal(lost.wakeJobs.length, 0)
+  assert.match(lost.skippedReason ?? '', /claim status is lost/)
+  assert.equal(lost.notificationEvents?.length, 1)
 })
 
 test('symphony task dispatch Delivery wakes assigned worker through WakeJob', () => {

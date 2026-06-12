@@ -1,5 +1,5 @@
 import { setTimeout as delay } from 'node:timers/promises'
-import { resolvePodBaseUrl } from '@undefineds.co/drizzle-solid'
+import { parsePodResourceRef, resolvePodBaseUrl } from '@undefineds.co/drizzle-solid'
 import type { StoredCredentials } from '../credentials-store.js'
 import { getDefaultPodDataSession, type PodDataSession } from '../pod-data-session.js'
 import {
@@ -7,12 +7,17 @@ import {
   approvalResource,
   auditResource,
   chatResource,
+  claimApprovalRequest,
+  claimInputRequest,
   drizzle,
   grantResource,
   inboxNotificationResource,
+  inputRequestResource,
   solidResources,
   threadRepository,
   type AnyPodResource,
+  type ApprovalClaimResult,
+  type InputRequestClaimResult,
   type SolidDatabase,
 } from '../models.js'
 import { AS, ODRL, UDFS } from '@undefineds.co/models/namespaces'
@@ -81,6 +86,8 @@ export interface ApprovalRowLike extends Record<string, unknown> {
   action: string
   risk: string
   status: string
+  leaseOwner?: string
+  leaseExpiresAt?: Date | string
   assignedTo?: string
   decisionBy?: string
   decisionRole?: string
@@ -155,6 +162,14 @@ export interface AutoModeRemoteApprovalStore {
     patch: Partial<ApprovalRowLike>,
     options?: { resourceUri?: string; createdAt?: Date | string },
   ): Promise<void>
+  claimApproval?(
+    input: {
+      approvalUri: string
+      leaseOwner: string
+      leaseDurationMs?: number
+      now?: Date | string | number
+    },
+  ): Promise<ApprovalClaimResult>
   listAudits(): Promise<AuditRowLike[]>
   insertAudit(row: AuditRowLike): Promise<void>
   listGrants(): Promise<GrantRowLike[]>
@@ -171,6 +186,38 @@ export interface AutoModeRemoteApprovalRuntime {
   onSyncResult?: (result: LinxSyncRunResult) => void
   resolveGrantCoverage?: (input: AutoModeGrantCoverageInput) => Promise<AutoModeGrantCoverageDecision>
 }
+
+export type InboxNotificationControlResourceKind = 'approval' | 'input_request' | 'inbox_notification' | 'unknown'
+export type InboxNotificationControlResourceClaimStatus = 'claimed' | 'lost' | 'display_only' | 'none'
+
+export interface InboxNotificationControlResourceClaimInput {
+  /** Full as:object IRI from a Solid Inbox notification envelope. */
+  controlResourceUri: string
+  /** Local client/runtime id that wants to handle the linked control resource. */
+  leaseOwner: string
+  leaseDurationMs?: number
+  now?: Date | string | number
+  getDb: () => Promise<SolidDatabase> | SolidDatabase
+}
+
+export interface InboxNotificationControlResourceClaimResult {
+  status: InboxNotificationControlResourceClaimStatus
+  controlResource: string
+  kind: InboxNotificationControlResourceKind
+  leaseOwner?: string
+  leaseExpiresAt?: string
+  reason?: string
+}
+
+export interface InboxNotificationControlResourceClaimHandlerRequest {
+  clientId: string
+  controlResource: string
+  requestedLeaseMs?: number
+}
+
+export type InboxNotificationControlResourceClaimHandler = (
+  request: InboxNotificationControlResourceClaimHandlerRequest,
+) => Promise<InboxNotificationControlResourceClaimResult>
 
 interface RemoteApprovalClient {
   session: PodDataSession
@@ -732,6 +779,15 @@ function createSharedModelRemoteApprovalStore(
         throw new Error(`Remote approval not found: ${id}`)
       }
     },
+    claimApproval: async (input) => {
+      const db = await getDb()
+      return claimApprovalRequest(db as never, {
+        approval: input.approvalUri,
+        leaseOwner: input.leaseOwner,
+        leaseDurationMs: input.leaseDurationMs,
+        now: input.now,
+      })
+    },
     listAudits: () => modelList<AuditRowLike>(getDb, auditResource),
     insertAudit: async (row) => {
       await modelInsert(getDb, auditResource, omitInternalFields(row))
@@ -744,6 +800,130 @@ function createSharedModelRemoteApprovalStore(
       await modelInsert(getDb, inboxNotificationResource, omitInternalFields(row))
     },
   }
+}
+
+export function createInboxNotificationControlResourceClaimHandler(input: {
+  getDb: () => Promise<SolidDatabase> | SolidDatabase
+  leaseDurationMs?: number
+  now?: () => Date | string | number
+}): InboxNotificationControlResourceClaimHandler {
+  return async (request) => claimInboxNotificationControlResource({
+    controlResourceUri: request.controlResource,
+    leaseOwner: request.clientId,
+    leaseDurationMs: request.requestedLeaseMs ?? input.leaseDurationMs,
+    now: input.now?.(),
+    getDb: input.getDb,
+  })
+}
+
+export async function claimInboxNotificationControlResource(
+  input: InboxNotificationControlResourceClaimInput,
+): Promise<InboxNotificationControlResourceClaimResult> {
+  const controlResource = normalizeString(input.controlResourceUri)
+  if (!controlResource) {
+    return {
+      status: 'none',
+      controlResource: input.controlResourceUri,
+      kind: 'unknown',
+      reason: 'Inbox notification did not include an as:object control resource IRI.',
+    }
+  }
+
+  if (!/^https?:\/\//u.test(controlResource)) {
+    return {
+      status: 'display_only',
+      controlResource,
+      kind: 'unknown',
+      reason: 'Control resource claim requires a full IRI from the Inbox notification as:object.',
+    }
+  }
+
+  const kind = classifyInboxNotificationControlResource(controlResource)
+  if (kind === 'inbox_notification') {
+    return {
+      status: 'display_only',
+      controlResource,
+      kind,
+      reason: 'InboxNotification is an ActivityStreams envelope; claim the linked as:object control resource instead.',
+    }
+  }
+  if (kind === 'unknown') {
+    return {
+      status: 'display_only',
+      controlResource,
+      kind,
+      reason: 'Inbox notification object is not a known claimable control resource.',
+    }
+  }
+
+  const db = await input.getDb()
+  if (kind === 'approval') {
+    return mapApprovalControlClaimResult(controlResource, await claimApprovalRequest(db as never, {
+      approval: controlResource,
+      leaseOwner: input.leaseOwner,
+      leaseDurationMs: input.leaseDurationMs,
+      now: input.now,
+    }))
+  }
+
+  return mapInputRequestControlClaimResult(controlResource, await claimInputRequest(db as never, {
+    inputRequest: controlResource,
+    leaseOwner: input.leaseOwner,
+    leaseDurationMs: input.leaseDurationMs,
+    now: input.now,
+  }))
+}
+
+function classifyInboxNotificationControlResource(
+  controlResource: string,
+): InboxNotificationControlResourceKind {
+  if (parsePodResourceRef(inboxNotificationResource, controlResource)) {
+    return 'inbox_notification'
+  }
+  if (parsePodResourceRef(approvalResource, controlResource)) {
+    return 'approval'
+  }
+  if (parsePodResourceRef(inputRequestResource, controlResource)) {
+    return 'input_request'
+  }
+  return 'unknown'
+}
+
+function mapApprovalControlClaimResult(
+  controlResource: string,
+  result: ApprovalClaimResult,
+): InboxNotificationControlResourceClaimResult {
+  return {
+    status: mapModelsControlClaimStatus(result.status),
+    controlResource,
+    kind: 'approval',
+    leaseOwner: result.leaseOwner,
+    leaseExpiresAt: result.leaseExpiresAt,
+    ...(result.reason ? { reason: result.reason } : {}),
+  }
+}
+
+function mapInputRequestControlClaimResult(
+  controlResource: string,
+  result: InputRequestClaimResult,
+): InboxNotificationControlResourceClaimResult {
+  return {
+    status: mapModelsControlClaimStatus(result.status),
+    controlResource,
+    kind: 'input_request',
+    leaseOwner: result.leaseOwner,
+    leaseExpiresAt: result.leaseExpiresAt,
+    ...(result.reason ? { reason: result.reason } : {}),
+  }
+}
+
+function mapModelsControlClaimStatus(
+  status: ApprovalClaimResult['status'] | InputRequestClaimResult['status'],
+): InboxNotificationControlResourceClaimStatus {
+  if (status === 'claimed' || status === 'lost') {
+    return status
+  }
+  return 'display_only'
 }
 
 async function modelList<T>(getDb: () => Promise<SolidDatabase>, resource: AnyPodResource): Promise<T[]> {
@@ -845,12 +1025,126 @@ function createNativeRemoteApprovalStore(webId: string, fetcher: PodFetch): Auto
       }
       await writeApprovalRow(webId, fetcher, { ...existing, ...patch })
     },
+    claimApproval: async (input) => claimNativeApproval(webId, fetcher, input),
     listAudits: () => listAuditRows(webId, fetcher),
     insertAudit: (row) => writeAuditRow(webId, fetcher, row),
     listGrants: () => listGrantRows(webId, fetcher),
     insertGrant: (row) => writeGrantRow(webId, fetcher, row),
     insertInboxNotification: (row) => writeInboxNotificationRow(webId, fetcher, row),
   }
+}
+
+async function claimNativeApproval(
+  webId: string,
+  fetcher: PodFetch,
+  input: {
+    approvalUri: string
+    leaseOwner: string
+    leaseDurationMs?: number
+    now?: Date | string | number
+  },
+): Promise<ApprovalClaimResult> {
+  const now = normalizeClaimDate(input.now)
+  const leaseDurationMs = input.leaseDurationMs ?? 60_000
+  if (!Number.isFinite(leaseDurationMs) || leaseDurationMs <= 0) {
+    throw new Error('Approval claim leaseDurationMs must be a positive finite number.')
+  }
+  const leaseExpiresAt = new Date(now.getTime() + leaseDurationMs)
+  const missingResult = {
+    status: 'not_found' as const,
+    approval: null,
+    leaseOwner: input.leaseOwner,
+    leaseExpiresAt: leaseExpiresAt.toISOString(),
+    reason: 'Approval request was not found.',
+  }
+  const existing = await readApprovalRowFromResource(fetcher, input.approvalUri)
+  if (!existing) {
+    return missingResult
+  }
+  if (!isClaimableControlStatus(existing.status)) {
+    return {
+      status: 'not_actionable',
+      approval: existing as never,
+      leaseOwner: input.leaseOwner,
+      leaseExpiresAt: leaseExpiresAt.toISOString(),
+      reason: `Approval request status is ${String(existing.status || 'empty')}.`,
+    }
+  }
+  if (isPastDate(existing.expiresAt, now)) {
+    return {
+      status: 'not_actionable',
+      approval: existing as never,
+      leaseOwner: input.leaseOwner,
+      leaseExpiresAt: leaseExpiresAt.toISOString(),
+      reason: 'Approval request is past expiresAt.',
+    }
+  }
+  if (hasActiveForeignLease(existing, input.leaseOwner, now)) {
+    return {
+      status: 'lost',
+      approval: existing as never,
+      leaseOwner: input.leaseOwner,
+      leaseExpiresAt: leaseExpiresAt.toISOString(),
+      reason: 'Approval request is leased by another client.',
+    }
+  }
+  await writeApprovalRow(webId, fetcher, {
+    ...existing,
+    status: 'handling',
+    leaseOwner: input.leaseOwner,
+    leaseExpiresAt,
+  })
+  const claimed = await readApprovalRowFromResource(fetcher, input.approvalUri)
+  if (claimed?.leaseOwner === input.leaseOwner && !isPastDate(claimed.leaseExpiresAt, now)) {
+    return {
+      status: 'claimed',
+      approval: claimed as never,
+      leaseOwner: input.leaseOwner,
+      leaseExpiresAt: leaseExpiresAt.toISOString(),
+    }
+  }
+  return {
+    status: 'lost',
+    approval: (claimed ?? existing) as never,
+    leaseOwner: input.leaseOwner,
+    leaseExpiresAt: leaseExpiresAt.toISOString(),
+    reason: 'Approval request lease was not retained after update.',
+  }
+}
+
+function normalizeClaimDate(value: Date | string | number | undefined): Date {
+  const date = value instanceof Date ? value : new Date(value ?? Date.now())
+  if (Number.isNaN(date.getTime())) {
+    throw new Error('Invalid approval claim timestamp.')
+  }
+  return date
+}
+
+function isClaimableControlStatus(status: unknown): boolean {
+  if (typeof status !== 'string' || !status.trim()) {
+    return true
+  }
+  const normalized = status.trim()
+  return normalized === 'pending' || normalized === 'handling'
+}
+
+function hasActiveForeignLease(row: ApprovalRowLike, leaseOwner: string, now: Date): boolean {
+  if (row.leaseOwner === leaseOwner) {
+    return false
+  }
+  const currentOwner = normalizeString(row.leaseOwner)
+  if (!currentOwner) {
+    return false
+  }
+  return !isPastDate(row.leaseExpiresAt, now)
+}
+
+function isPastDate(value: Date | string | undefined, now: Date): boolean {
+  if (!value) {
+    return false
+  }
+  const date = value instanceof Date ? value : new Date(value)
+  return !Number.isNaN(date.getTime()) && date.getTime() <= now.getTime()
 }
 
 async function findApprovalRow(
@@ -932,6 +1226,8 @@ async function writeApprovalRow(webId: string, fetcher: PodFetch, row: ApprovalR
       { predicate: ApprovalVocab.action, object: iri(row.action) },
       { predicate: ApprovalVocab.risk, object: literal(row.risk) },
       { predicate: ApprovalVocab.status, object: literal(row.status) },
+      ...(row.leaseOwner ? [{ predicate: ApprovalVocab.leaseOwner, object: literal(row.leaseOwner) }] : []),
+      ...(row.leaseExpiresAt ? [{ predicate: ApprovalVocab.leaseExpiresAt, object: literal(toIsoString(row.leaseExpiresAt, new Date().toISOString())) }] : []),
       ...(row.assignedTo ? [{ predicate: ApprovalVocab.assignedTo, object: iri(row.assignedTo) }] : []),
       ...(row.decisionBy ? [{ predicate: ApprovalVocab.decisionBy, object: iri(row.decisionBy) }] : []),
       ...(row.decisionRole ? [{ predicate: ApprovalVocab.decisionRole, object: literal(row.decisionRole) }] : []),
@@ -1078,6 +1374,8 @@ function approvalRowFromPredicates(url: string, predicates: Map<string, unknown[
     action,
     risk,
     status,
+    leaseOwner: firstLiteral(predicates as never, ApprovalVocab.leaseOwner),
+    leaseExpiresAt: firstLiteral(predicates as never, ApprovalVocab.leaseExpiresAt),
     assignedTo: firstIri(predicates as never, ApprovalVocab.assignedTo),
     decisionBy: firstIri(predicates as never, ApprovalVocab.decisionBy),
     decisionRole: firstLiteral(predicates as never, ApprovalVocab.decisionRole),
@@ -1739,8 +2037,11 @@ export const __podApprovalInternal = {
   buildActionUri,
   buildRisk,
   buildToolName,
+  claimInboxNotificationControlResource,
+  createInboxNotificationControlResourceClaimHandler,
   createSharedModelRemoteApprovalStore,
   createNativeRemoteApprovalStore,
+  classifyInboxNotificationControlResource,
   extractToolCallId,
   decisionFromApprovalRow,
   encodeDecisionReason: buildAutoModeApprovalDecisionReason,
