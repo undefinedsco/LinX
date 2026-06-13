@@ -9760,17 +9760,6 @@
     n3 "^1.26.0"
     zod "^3.22.4"
 
-"@undefineds.co/models@0.2.40":
-  version "0.2.40"
-  resolved "https://registry.yarnpkg.com/@undefineds.co/models/-/models-0.2.40.tgz#792a58d6e87713c5cb07f938d20b7c9881a9e1b0"
-  integrity sha512-fkImNIoTGh4+Ocx12tK54N7aqzNlIEgvCf3xWKvFZNsY73W5nMRjEuOlLnoD8EKziBoS77Zo/TjSk19XXqHoPw==
-  dependencies:
-    "@comunica/query-sparql-solid" "^4.0.2"
-    "@inrupt/vocab-common-rdf" "^1.0.5"
-    "@undefineds.co/drizzle-solid" "^0.3.14"
-    n3 "^1.26.0"
-    zod "^3.22.4"
-
 "@undefineds.co/models@0.2.41":
   version "0.2.41"
   resolved "https://registry.yarnpkg.com/@undefineds.co/models/-/models-0.2.41.tgz#399142d75b03eedfbf4e0eac06f56d68cea5254e"
