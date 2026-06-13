@@ -114,6 +114,7 @@ function copyAgentRuntimePackage(cliWorkRoot) {
       './companion-model': './dist/companion-model.js',
       './control-plane': './dist/control-plane.js',
       './file-sync': './dist/file-sync.js',
+      './pod-resource-identity': './dist/pod-resource-identity.js',
       './reconciler': './dist/reconciler.js',
       './runtime': './dist/runtime.js',
       './symphony': './dist/symphony.js',
@@ -121,6 +122,7 @@ function copyAgentRuntimePackage(cliWorkRoot) {
       './thread-reconciler-controller': './dist/thread-reconciler-controller.js',
       './turn-controller': './dist/turn-controller.js',
       './wake-scheduler': './dist/wake-scheduler.js',
+      './workspace': './dist/workspace.js',
     },
   })
   fixExtensionlessRelativeImports(join(vendorRoot, 'dist'))
@@ -139,6 +141,7 @@ function rewriteAgentRuntimeImports(root, cliWorkRoot) {
       ["'@linx/agent-runtime/companion-model'", `'${base}/companion-model.js'`],
       ["'@linx/agent-runtime/control-plane'", `'${base}/control-plane.js'`],
       ["'@linx/agent-runtime/file-sync'", `'${base}/file-sync.js'`],
+      ["'@linx/agent-runtime/pod-resource-identity'", `'${base}/pod-resource-identity.js'`],
       ["'@linx/agent-runtime/reconciler'", `'${base}/reconciler.js'`],
       ["'@linx/agent-runtime/runtime'", `'${base}/runtime.js'`],
       ["'@linx/agent-runtime/symphony'", `'${base}/symphony.js'`],
@@ -146,12 +149,14 @@ function rewriteAgentRuntimeImports(root, cliWorkRoot) {
       ["'@linx/agent-runtime/thread-reconciler-controller'", `'${base}/thread-reconciler-controller.js'`],
       ["'@linx/agent-runtime/turn-controller'", `'${base}/turn-controller.js'`],
       ["'@linx/agent-runtime/wake-scheduler'", `'${base}/wake-scheduler.js'`],
+      ["'@linx/agent-runtime/workspace'", `'${base}/workspace.js'`],
       ['"@linx/agent-runtime"', `"${base}/index.js"`],
       ['"@linx/agent-runtime/acp"', `"${base}/acp.js"`],
       ['"@linx/agent-runtime/auto-mode"', `"${base}/auto-mode.js"`],
       ['"@linx/agent-runtime/companion-model"', `"${base}/companion-model.js"`],
       ['"@linx/agent-runtime/control-plane"', `"${base}/control-plane.js"`],
       ['"@linx/agent-runtime/file-sync"', `"${base}/file-sync.js"`],
+      ['"@linx/agent-runtime/pod-resource-identity"', `"${base}/pod-resource-identity.js"`],
       ['"@linx/agent-runtime/reconciler"', `"${base}/reconciler.js"`],
       ['"@linx/agent-runtime/runtime"', `"${base}/runtime.js"`],
       ['"@linx/agent-runtime/symphony"', `"${base}/symphony.js"`],
@@ -159,6 +164,7 @@ function rewriteAgentRuntimeImports(root, cliWorkRoot) {
       ['"@linx/agent-runtime/thread-reconciler-controller"', `"${base}/thread-reconciler-controller.js"`],
       ['"@linx/agent-runtime/turn-controller"', `"${base}/turn-controller.js"`],
       ['"@linx/agent-runtime/wake-scheduler"', `"${base}/wake-scheduler.js"`],
+      ['"@linx/agent-runtime/workspace"', `"${base}/workspace.js"`],
     ]
     for (const [from, to] of replacements) {
       source = source.split(from).join(to)

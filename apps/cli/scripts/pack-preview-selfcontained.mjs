@@ -101,6 +101,7 @@ const slimAgentRuntimePkg = {
     './companion-model': './dist/companion-model.js',
     './control-plane': './dist/control-plane.js',
     './file-sync': './dist/file-sync.js',
+    './pod-resource-identity': './dist/pod-resource-identity.js',
     './reconciler': './dist/reconciler.js',
     './runtime': './dist/runtime.js',
     './symphony': './dist/symphony.js',
@@ -109,6 +110,7 @@ const slimAgentRuntimePkg = {
     './thread-reconciler-controller': './dist/thread-reconciler-controller.js',
     './turn-controller': './dist/turn-controller.js',
     './wake-scheduler': './dist/wake-scheduler.js',
+    './workspace': './dist/workspace.js',
   },
 }
 writeFileSync(join(vendorAgentRuntimeRoot, 'package.json'), `${JSON.stringify(slimAgentRuntimePkg, null, 2)}\n`)
@@ -176,6 +178,7 @@ function rewriteVendorImports(root) {
       ["'@linx/agent-runtime/companion-model'", `'${agentRuntimeBase}/companion-model.js'`],
       ["'@linx/agent-runtime/control-plane'", `'${agentRuntimeBase}/control-plane.js'`],
       ["'@linx/agent-runtime/file-sync'", `'${agentRuntimeBase}/file-sync.js'`],
+      ["'@linx/agent-runtime/pod-resource-identity'", `'${agentRuntimeBase}/pod-resource-identity.js'`],
       ["'@linx/agent-runtime/reconciler'", `'${agentRuntimeBase}/reconciler.js'`],
       ["'@linx/agent-runtime/runtime'", `'${agentRuntimeBase}/runtime.js'`],
       ["'@linx/agent-runtime/symphony'", `'${agentRuntimeBase}/symphony.js'`],
@@ -184,6 +187,7 @@ function rewriteVendorImports(root) {
       ["'@linx/agent-runtime/thread-reconciler-controller'", `'${agentRuntimeBase}/thread-reconciler-controller.js'`],
       ["'@linx/agent-runtime/turn-controller'", `'${agentRuntimeBase}/turn-controller.js'`],
       ["'@linx/agent-runtime/wake-scheduler'", `'${agentRuntimeBase}/wake-scheduler.js'`],
+      ["'@linx/agent-runtime/workspace'", `'${agentRuntimeBase}/workspace.js'`],
       ["'@undefineds.co/drizzle-solid'", `'${drizzleSolidBase}/index.js'`],
       ['"@undefineds.co/models"', `"${modelsBase}/index.js"`],
       ['"@undefineds.co/models/client"', `"${modelsBase}/client/index.js"`],
@@ -201,6 +205,7 @@ function rewriteVendorImports(root) {
       ['"@linx/agent-runtime/companion-model"', `"${agentRuntimeBase}/companion-model.js"`],
       ['"@linx/agent-runtime/control-plane"', `"${agentRuntimeBase}/control-plane.js"`],
       ['"@linx/agent-runtime/file-sync"', `"${agentRuntimeBase}/file-sync.js"`],
+      ['"@linx/agent-runtime/pod-resource-identity"', `"${agentRuntimeBase}/pod-resource-identity.js"`],
       ['"@linx/agent-runtime/reconciler"', `"${agentRuntimeBase}/reconciler.js"`],
       ['"@linx/agent-runtime/runtime"', `"${agentRuntimeBase}/runtime.js"`],
       ['"@linx/agent-runtime/symphony"', `"${agentRuntimeBase}/symphony.js"`],
@@ -209,6 +214,7 @@ function rewriteVendorImports(root) {
       ['"@linx/agent-runtime/thread-reconciler-controller"', `"${agentRuntimeBase}/thread-reconciler-controller.js"`],
       ['"@linx/agent-runtime/turn-controller"', `"${agentRuntimeBase}/turn-controller.js"`],
       ['"@linx/agent-runtime/wake-scheduler"', `"${agentRuntimeBase}/wake-scheduler.js"`],
+      ['"@linx/agent-runtime/workspace"', `"${agentRuntimeBase}/workspace.js"`],
       ['"@undefineds.co/drizzle-solid"', `"${drizzleSolidBase}/index.js"`],
     ]
     for (const [from, to] of replacements) {
