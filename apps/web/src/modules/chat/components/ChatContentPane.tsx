@@ -28,6 +28,7 @@ import { isActionableInboxItem } from '@/modules/inbox/utils'
 import { useInboxStore } from '@/modules/inbox/store'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 import { formatLoginErrorForUser } from '@/modules/login/error-messages'
+import { DEFAULT_LINX_PLATFORM_MODEL_ID, LINX_PLATFORM_MODEL_IDS } from '@/lib/agent-providers'
 import { createLocalChatKitFetch } from '../services/chatkit-local/fetch-handler'
 import { useChatStore } from '../store'
 import {
@@ -37,6 +38,7 @@ import {
   useThreadList,
   useWorkspaceList,
   useLinxDefaultSecretaryBootstrapSettling,
+  LINX_DEFAULT_SECRETARY,
 } from '../collections'
 import { SessionControlBar, type SessionStatus } from './SessionControlBar'
 import {
@@ -200,16 +202,37 @@ function RuntimeSessionToolbar({
     const normalizedFolderPath = folderPath.trim() || normalizedRepoPath
     const normalizedBaseRef = baseRef.trim() || 'HEAD'
     const normalizedBranch = branch.trim()
+    const boundPodWorkspaceUri = workspaceUri?.trim() || ''
+    const canUseBoundPodWorkspace = /^https?:\/\//u.test(boundPodWorkspaceUri)
 
-    if (!normalizedRepoPath) {
+    if (!normalizedRepoPath && !canUseBoundPodWorkspace) {
       setRuntimeError('请先填写仓库路径。')
       return
     }
 
     try {
       setRuntimeError(null)
+      if (!normalizedRepoPath && canUseBoundPodWorkspace) {
+        const created = await runtimeSession.createSession.mutateAsync({
+          threadId,
+          workspaceUri: boundPodWorkspaceUri,
+          workspaceKind: 'pod-container',
+          title: threadTitle || '运行时会话',
+          tool,
+          baseRef: normalizedBaseRef,
+          branch: normalizedBranch || undefined,
+        })
+        await runtimeSession.startSession.mutateAsync(created.id)
+        await runtimeSession.refetch()
+        setIsDialogOpen(false)
+        setTool('codex')
+        setBaseRef('HEAD')
+        setBranch('')
+        return
+      }
+
       const requestedWorkspaceUri = await resolveLocalWorkspaceUri(normalizedFolderPath)
-      const workspaceUri = await mutations.ensureThreadWorkspace.mutateAsync({
+      const resolvedWorkspaceUri = await mutations.ensureThreadWorkspace.mutateAsync({
         threadId,
         workspaceUri: requestedWorkspaceUri,
         title: threadTitle || '运行时会话',
@@ -220,7 +243,7 @@ function RuntimeSessionToolbar({
       })
       const created = await runtimeSession.createSession.mutateAsync({
         threadId,
-        workspaceUri,
+        workspaceUri: resolvedWorkspaceUri,
         title: threadTitle || '运行时会话',
         repoPath: normalizedRepoPath,
         folderPath: normalizedFolderPath,
@@ -240,7 +263,7 @@ function RuntimeSessionToolbar({
       console.error('Create runtime session failed:', error)
       setRuntimeError(formatLoginErrorForUser(error, '创建运行时会话失败。请检查工作区设置后重试。'))
     }
-  }, [baseRef, branch, folderPath, mutations.ensureThreadWorkspace, repoPath, runtimeSession, threadId, threadTitle, tool])
+  }, [baseRef, branch, folderPath, mutations.ensureThreadWorkspace, repoPath, runtimeSession, threadId, threadTitle, tool, workspaceUri])
 
   const handlePause = useCallback(async () => {
     if (!runtimeSession.runtimeSession) return
@@ -447,7 +470,14 @@ function ChatKitPanel({ session, selectedThreadId }: { session: any; selectedThr
     },
     header: { enabled: false },
     history: { enabled: false },
-    composer: { placeholder: '输入消息...' },
+    composer: {
+      placeholder: '输入消息...',
+      models: LINX_PLATFORM_MODEL_IDS.map((modelId) => ({
+        id: modelId,
+        label: modelId === 'linx-lite' ? 'LinX Lite' : 'LinX',
+        default: modelId === DEFAULT_LINX_PLATFORM_MODEL_ID,
+      })),
+    },
     threadItemActions: { feedback: true, retry: true },
     onThreadChange: ({ threadId }: { threadId: string | null }) => {
       if (threadId) {
@@ -582,6 +612,12 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
   })
   const mutations = useChatMutations()
   const isCreatingThreadRef = useRef(false)
+  const lastAutoCreateThreadChatRef = useRef<string | null>(null)
+  const isDefaultSecretarySettling = useLinxDefaultSecretaryBootstrapSettling()
+
+  useEffect(() => {
+    lastAutoCreateThreadChatRef.current = null
+  }, [selectedChatId])
 
   const activeChat = useMemo(() => {
     if (!selectedChatId || !chats) return null
@@ -609,11 +645,20 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
       return
     }
 
-    if (isCreatingThreadRef.current || mutations.createThread.isPending) {
+    if (selectedChatId === LINX_DEFAULT_SECRETARY.chatId && isDefaultSecretarySettling) {
+      return
+    }
+
+    if (
+      isCreatingThreadRef.current
+      || mutations.createThread.isPending
+      || lastAutoCreateThreadChatRef.current === selectedChatId
+    ) {
       return
     }
 
     isCreatingThreadRef.current = true
+    lastAutoCreateThreadChatRef.current = selectedChatId
     mutations.createThread.mutate(
       {
         chatId: selectedChatId,
@@ -624,6 +669,12 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
           const threadId = thread.id
           if (threadId) {
             selectThread(threadId)
+            void mutations.ensureThreadWorkspace.mutateAsync({
+              threadId,
+              title: '默认话题',
+            }).catch((error) => {
+              console.error('Bind default Pod workspace failed:', error)
+            })
           }
           isCreatingThreadRef.current = false
         },
@@ -633,7 +684,17 @@ export function ChatContentPane(_props: ChatContentPaneProps) {
         },
       },
     )
-  }, [isReady, isThreadsLoading, mutations.createThread, selectedChatId, selectedThreadId, selectThread, threads])
+  }, [
+    isDefaultSecretarySettling,
+    isReady,
+    isThreadsLoading,
+    mutations.createThread,
+    mutations.ensureThreadWorkspace,
+    selectedChatId,
+    selectedThreadId,
+    selectThread,
+    threads,
+  ])
 
   if (!selectedChatId) {
     return <EmptyState title="选择或创建一个聊天" description="先打开一个会话，再为它绑定运行时与文件夹。" />

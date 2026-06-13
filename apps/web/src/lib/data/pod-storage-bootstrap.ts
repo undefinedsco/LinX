@@ -13,12 +13,10 @@ import {
   threadTable,
   type SolidDatabase,
 } from '@undefineds.co/models'
-import { workspaceTable } from './workspace-model'
 
 const CORE_TABLES = [
   chatTable,
   threadTable,
-  workspaceTable,
   messageTable,
   contactTable,
   agentTable,

@@ -7,6 +7,7 @@ export type RuntimeThreadStatus = 'idle' | 'active' | 'paused' | 'completed' | '
 export type RuntimeSessionStatus = RuntimeThreadStatus
 export type RuntimeRunnerType = 'mock' | 'xpod-pty'
 export type RuntimeToolType = 'codex' | 'claude' | 'codebuddy' | 'mock'
+export type RuntimeWorkspaceKind = 'local-folder' | 'local-worktree' | 'pod-container'
 export const DEFAULT_RUNTIME_TOOL: RuntimeToolType = 'codex'
 export const DEFAULT_RUNTIME_BASE_REF = 'HEAD'
 
@@ -14,9 +15,10 @@ export interface RuntimeThreadRecord {
   id: string
   threadId: string
   workspaceUri?: string
+  workspaceKind: RuntimeWorkspaceKind
   title: string
-  repoPath: string
-  folderPath: string
+  repoPath?: string
+  folderPath?: string
   runnerType: RuntimeRunnerType
   tool: RuntimeToolType
   status: RuntimeThreadStatus
@@ -48,8 +50,9 @@ export type RuntimeSessionEvent = RuntimeThreadEvent
 export interface CreateRuntimeThreadInput {
   threadId: string
   workspaceUri?: string
+  workspaceKind?: RuntimeWorkspaceKind
   title: string
-  repoPath: string
+  repoPath?: string
   folderPath?: string
   runnerType?: RuntimeRunnerType
   tool?: RuntimeToolType
@@ -90,27 +93,6 @@ async function fetchRuntimeJson<T>(input: RequestInfo, init?: RequestInit): Prom
   return response.json() as Promise<T>
 }
 
-export function normalizeRuntimeSessionInput(input: CreateRuntimeSessionInput): CreateRuntimeSessionInput {
-  const repoPath = input.repoPath.trim()
-  if (!repoPath) {
-    throw new Error('请先填写仓库路径。')
-  }
-
-  const folderPath = input.folderPath?.trim() || repoPath
-  const baseRef = input.baseRef?.trim() || DEFAULT_RUNTIME_BASE_REF
-  const branch = input.branch?.trim() || undefined
-
-  return {
-    ...input,
-    repoPath,
-    workspaceUri: input.workspaceUri?.trim() || undefined,
-    folderPath,
-    tool: input.tool ?? DEFAULT_RUNTIME_TOOL,
-    baseRef,
-    branch,
-  }
-}
-
 export async function getServiceDeviceId(): Promise<string> {
   if (cachedServiceNodeId !== undefined) {
     if (!cachedServiceNodeId) {
@@ -143,7 +125,7 @@ export async function resolveLocalWorkspaceUri(rootPath: string): Promise<string
 export async function createRuntimeSession(input: CreateRuntimeSessionInput): Promise<RuntimeSessionRecord> {
   return fetchRuntimeJson<RuntimeSessionRecord>('/api/runtime/threads', {
     method: 'POST',
-    body: JSON.stringify(normalizeRuntimeSessionInput(input)),
+    body: JSON.stringify(input),
   })
 }
 

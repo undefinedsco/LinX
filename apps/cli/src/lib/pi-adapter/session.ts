@@ -6,6 +6,7 @@ import {
   type SessionEntry,
   type SessionInfo,
 } from '@earendil-works/pi-coding-agent'
+import { filterRuntimeSessionsForWorkspace } from '@linx/agent-runtime/workspace'
 import { resolvePodBaseUrl } from '@undefineds.co/drizzle-solid'
 import {
   getDefaultPodDataSession,
@@ -121,7 +122,11 @@ export async function listLinxPiSessions(
   options: LinxPiListSessionsOptions = {},
 ): Promise<SessionInfo[]> {
   const sessionDir = getDefaultLinxPiSessionDir(cwd, agentDir)
-  const localSessions = await SessionManager.list(cwd, sessionDir)
+  const localSessions = filterRuntimeSessionsForWorkspace(
+    await SessionManager.list(cwd, sessionDir),
+    cwd,
+    { normalizeLocalPath: (value?: string | null) => value?.trim() ? resolve(value) : '' },
+  )
   const podSessions = await hydratePodSessions(cwd, sessionDir, options.podSessionSource, localSessions)
   return sortSessionsByModified(mergeSessions(localSessions, podSessions))
 }

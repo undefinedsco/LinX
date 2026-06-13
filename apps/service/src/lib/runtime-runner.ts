@@ -1,14 +1,18 @@
 export type RuntimeThreadStatus = 'idle' | 'active' | 'paused' | 'completed' | 'error'
 export type RuntimeRunnerType = 'mock' | 'xpod-pty'
 export type RuntimeToolType = 'codex' | 'claude' | 'codebuddy' | 'mock'
+import type { RuntimeWorkspaceKind } from '@linx/agent-runtime/workspace'
+
+export type { RuntimeWorkspaceKind }
 
 export interface RuntimeThreadRecord {
   id: string
   threadId: string
   workspaceUri?: string
+  workspaceKind: RuntimeWorkspaceKind
   title: string
-  repoPath: string
-  folderPath: string
+  repoPath?: string
+  folderPath?: string
   runnerType: RuntimeRunnerType
   tool: RuntimeToolType
   status: RuntimeThreadStatus
@@ -36,8 +40,9 @@ export type RuntimeThreadEvent =
 export interface CreateRuntimeThreadInput {
   threadId: string
   workspaceUri?: string
+  workspaceKind?: RuntimeWorkspaceKind
   title: string
-  repoPath: string
+  repoPath?: string
   folderPath?: string
   runnerType?: RuntimeRunnerType
   tool?: RuntimeToolType

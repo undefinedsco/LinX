@@ -11,6 +11,7 @@ import {
 import { MockRuntimeRunner } from './runtime-runner-mock'
 import { XpodPtyRuntimeRunner } from './xpod-chatkit-runtime'
 import { resolveLinxUserDataDir } from './linx-paths'
+import { normalizeCreateRuntimeThreadInput, normalizeLoadedRuntimeThreadRecord } from './runtime-workspace'
 
 const CONFIG_DIR = resolveLinxUserDataDir()
 const STORE_PATH = path.join(CONFIG_DIR, 'runtime-threads.json')
@@ -39,11 +40,12 @@ export class RuntimeThreadsModule {
     try {
       const raw = JSON.parse(fs.readFileSync(STORE_PATH, 'utf-8')) as RuntimeThreadRecord[]
       for (const item of raw) {
-        if (!item?.id || !item?.threadId || !item?.repoPath || !item?.folderPath) {
+        const normalized = normalizeLoadedRuntimeThreadRecord(item)
+        if (!normalized) {
           console.warn('[RuntimeThreads] Skip invalid runtime session record:', item?.id ?? '<unknown>')
           continue
         }
-        this.threads.set(item.id, item)
+        this.threads.set(normalized.id, normalized)
       }
     } catch (error) {
       console.warn('[RuntimeThreads] Failed to load store:', error)
@@ -159,23 +161,25 @@ export class RuntimeThreadsModule {
       return existing
     }
 
+    const normalized = normalizeCreateRuntimeThreadInput(input)
     const now = new Date().toISOString()
     const record: RuntimeThreadRecord = {
       id: crypto.randomUUID(),
-      threadId: input.threadId,
-      workspaceUri: input.workspaceUri,
-      title: input.title,
-      repoPath: input.repoPath,
-      folderPath: input.folderPath || input.repoPath,
-      runnerType: input.runnerType || 'xpod-pty',
-      tool: input.tool || 'codex',
+      threadId: normalized.threadId,
+      workspaceUri: normalized.workspaceUri,
+      workspaceKind: normalized.workspaceKind,
+      title: normalized.title,
+      repoPath: normalized.repoPath,
+      folderPath: normalized.folderPath,
+      runnerType: normalized.runnerType || 'xpod-pty',
+      tool: normalized.tool || 'codex',
       status: 'idle',
       tokenUsage: 0,
       createdAt: now,
       updatedAt: now,
       lastActivityAt: now,
-      baseRef: input.baseRef,
-      branch: input.branch,
+      baseRef: normalized.baseRef,
+      branch: normalized.branch,
     }
 
     this.threads.set(record.id, record)

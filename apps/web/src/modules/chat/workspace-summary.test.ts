@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { WorkspaceRow } from '@/lib/data/workspace-model'
+import { buildLocalWorkspaceId, type WorkspaceRow } from '@/lib/data/workspace-model'
 import type { RuntimeSessionRecord } from './runtime-client'
 import { buildWorkspaceSummary } from './workspace-summary'
 
@@ -46,7 +46,7 @@ describe('buildWorkspaceSummary', () => {
       workspaceUri: 'linx://node-123/repo/linx',
       runtimeSession: createRuntimeSession(),
     })).toEqual({
-      kindLabel: '本地仓库',
+      kindLabel: '本地 worktree',
       primaryText: '/repo/linx',
       secondaryText: '节点 node-123 · feature/runtime · 基于 HEAD',
     })
@@ -63,6 +63,28 @@ describe('buildWorkspaceSummary', () => {
       kindLabel: '本地 worktree',
       primaryText: '/repo/linx/worktrees/feature-x',
       secondaryText: '节点 node-123 · feature/runtime · 基于 HEAD',
+    })
+  })
+
+  it('builds local worktree summary from persisted workspace row without runtime session', () => {
+    const workspaceUri = 'linx://node-123/repo/linx/worktrees/feature-x'
+
+    expect(buildWorkspaceSummary({
+      workspaceUri,
+      workspaces: [createWorkspace({
+        id: buildLocalWorkspaceId('node-123', '/repo/linx/worktrees/feature-x'),
+        title: 'Feature X',
+        workspaceType: 'local',
+        kind: 'worktree',
+        rootUri: workspaceUri,
+        repoRootUri: 'linx://node-123/repo/linx',
+        branch: 'feature/x',
+        baseRef: 'main',
+      })],
+    })).toEqual({
+      kindLabel: '本地 worktree',
+      primaryText: 'Feature X',
+      secondaryText: '节点 node-123 · 仓库 linx://node-123/repo/linx · feature/x · 基于 main',
     })
   })
 

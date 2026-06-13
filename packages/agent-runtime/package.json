@@ -71,6 +71,11 @@
       "types": "./src/wake-scheduler.ts",
       "node": "./dist/wake-scheduler.js",
       "default": "./src/wake-scheduler.ts"
+    },
+    "./workspace": {
+      "types": "./src/workspace.ts",
+      "node": "./dist/workspace.js",
+      "default": "./src/workspace.ts"
     }
   },
   "scripts": {

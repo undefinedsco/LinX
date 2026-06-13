@@ -1,43 +1,42 @@
-import {
-  id,
-  podTable,
-  string,
-  timestamp,
-  uri,
-  type InferInsertData,
-  type InferTableData,
-} from '@undefineds.co/drizzle-solid'
-import { DCTerms, UDFS } from '@undefineds.co/models'
+export type WorkspaceKind = 'folder' | 'worktree'
+export type WorkspaceType = 'pod' | 'local'
 
-export type WorkspaceKind = 'folder' | 'git' | 'worktree'
-export type WorkspaceType = 'pod'
-
-export const workspaceTable = podTable('workspace', {
-  id: id('id'),
-  title: string('title').predicate(DCTerms.title).notNull(),
-  workspaceType: string('workspaceType').predicate(UDFS.term('workspaceType')).notNull().default('pod'),
-  kind: string('kind').predicate(UDFS.term('workspaceKind')).notNull().default('folder'),
-  rootUri: uri('rootUri').predicate(UDFS.term('rootUri')).notNull(),
-  repoRootUri: uri('repoRootUri').predicate(UDFS.term('repoRootUri')),
-  baseRef: string('baseRef').predicate(UDFS.term('baseRef')),
-  branch: string('branch').predicate(UDFS.term('branch')),
-  createdAt: timestamp('createdAt').predicate(DCTerms.created).notNull().defaultNow(),
-  updatedAt: timestamp('updatedAt').predicate(DCTerms.modified).notNull().defaultNow(),
-}, {
-  base: '/.data/workspaces/',
-  sparqlEndpoint: '/.data/workspaces/-/sparql',
-  type: UDFS.term('Workspace'),
-  namespace: UDFS,
-  subjectTemplate: '{id}/index.ttl#this',
-})
-
-export type WorkspaceRow = InferTableData<typeof workspaceTable> & {
+export interface WorkspaceRow {
+  id: string
+  title: string
   workspaceType: WorkspaceType
   kind: WorkspaceKind
+  rootUri: string
+  repoRootUri?: string
+  baseRef?: string
+  branch?: string
+  createdAt?: Date | string
+  updatedAt?: Date | string
 }
-export type WorkspaceInsert = InferInsertData<typeof workspaceTable> & {
-  workspaceType?: WorkspaceType
-  kind?: WorkspaceKind
+
+export type WorkspaceInsert = Partial<WorkspaceRow> & Pick<WorkspaceRow, 'id' | 'title' | 'rootUri'>
+
+export function normalizeWorkspaceType(value: unknown): WorkspaceType {
+  return value === 'local' ? 'local' : 'pod'
+}
+
+export function normalizeWorkspaceKind(value: unknown): WorkspaceKind {
+  if (value === 'worktree' || value === 'git') {
+    return 'worktree'
+  }
+  return 'folder'
+}
+
+export function inferWorkspaceKind(input: {
+  repoPath?: string | null
+  folderPath?: string | null
+}): WorkspaceKind {
+  const repoPath = normalizeLocalWorkspacePath(input.repoPath)
+
+  if (repoPath) {
+    return 'worktree'
+  }
+  return 'folder'
 }
 
 export function resolveWorkspaceContainerUri(podBaseUrl: string, workspaceId: string): string {
@@ -61,6 +60,20 @@ export function parseWorkspaceIdFromContainerUri(uri?: string | null): string | 
     const match = uri.match(/\/\.data\/workspaces\/([^/]+)\/?/)
     return match?.[1] ? decodeURIComponent(match[1]) : null
   }
+}
+
+export function resolveWorkspaceIdFromUri(uri?: string | null): string | null {
+  const podWorkspaceId = parseWorkspaceIdFromContainerUri(uri)
+  if (podWorkspaceId) {
+    return podWorkspaceId
+  }
+
+  const localWorkspace = parseLocalWorkspaceUri(uri)
+  if (localWorkspace) {
+    return buildLocalWorkspaceId(localWorkspace.nodeId, localWorkspace.path)
+  }
+
+  return null
 }
 
 export function normalizeLocalWorkspacePath(path?: string | null): string {
@@ -87,6 +100,16 @@ export function buildLocalWorkspaceUri(nodeId: string, path: string): string {
   return `linx://${encodeURIComponent(normalizedNodeId)}${encodePathname(absolutePath)}`
 }
 
+export function buildLocalWorkspaceId(nodeId: string, path: string): string {
+  const normalizedNodeId = nodeId.trim()
+  const normalizedPath = normalizeLocalWorkspacePath(path)
+  if (!normalizedNodeId || !normalizedPath) {
+    throw new Error('nodeId and path are required to build a local workspace id.')
+  }
+
+  return `local-${sanitizeWorkspaceIdSegment(normalizedNodeId)}-${stableWorkspaceHash(normalizedPath)}`
+}
+
 export function isLocalWorkspaceUri(uri?: string | null): boolean {
   return typeof uri === 'string' && uri.startsWith('linx://')
 }
@@ -107,6 +130,19 @@ export function parseLocalWorkspaceUri(uri?: string | null): { nodeId: string; p
   }
 }
 
+export function resolveLocalRepoRootUri(input: {
+  workspaceUri?: string | null
+  repoPath?: string | null
+}): string | undefined {
+  const localWorkspace = parseLocalWorkspaceUri(input.workspaceUri)
+  const repoPath = normalizeLocalWorkspacePath(input.repoPath)
+  if (!localWorkspace || !repoPath) {
+    return undefined
+  }
+
+  return buildLocalWorkspaceUri(localWorkspace.nodeId, repoPath)
+}
+
 function normalizeContainerBase(baseUrl: string): string {
   return baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`
 }
@@ -117,4 +153,20 @@ function encodePathname(pathname: string): string {
 
 function decodePathname(pathname: string): string {
   return pathname.split('/').map((segment) => decodeURIComponent(segment)).join('/')
+}
+
+function sanitizeWorkspaceIdSegment(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    || 'node'
+}
+
+function stableWorkspaceHash(value: string): string {
+  let hash = 5381
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) + hash) ^ value.charCodeAt(index)
+  }
+  return (hash >>> 0).toString(36)
 }
