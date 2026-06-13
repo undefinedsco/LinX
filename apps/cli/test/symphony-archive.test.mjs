@@ -1132,8 +1132,8 @@ rl.on('line', (line) => {
   const events = readFileSync(join(autoModeHome, 'sessions', 'sess_symphony_integration_123', 'events.jsonl'), 'utf-8')
   assert.match(events, /verify symphony integration/)
   assert.match(events, /symphony fake codex completed/)
-  assert.match(events, /profile\/card/)
   assert.match(events, /solid:storage/)
+  assert.match(events, /https:\/\/node-0000\.undefineds\.co\/symphony\//)
 
   const logLines = readFileSync(fakeAcpLog, 'utf-8')
     .trim()
@@ -1151,8 +1151,8 @@ rl.on('line', (line) => {
     },
   })
   const grepOutput = logLines.find((entry) => entry.kind === 'grep-output')?.output
-  assert.match(grepOutput ?? '', /profile\/card/)
   assert.match(grepOutput ?? '', /solid:storage/)
+  assert.match(grepOutput ?? '', /https:\/\/node-0000\.undefineds\.co\/symphony\//)
   assert.equal(readdirSync(join(autoModeHome, 'sessions')).length, 1)
 })
 
