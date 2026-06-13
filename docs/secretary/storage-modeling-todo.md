@@ -97,3 +97,68 @@ type StoragePlan =
 ```
 
 The secretary can reason over the returned plan and user-facing summary, while the shared implementation owns exact resource writes.
+
+## File-Primary Resource Convenience API
+
+`Idea`, `Issue`, `Report`, and most `Evidence` are file-primary resources: the
+Pod file owns human-readable markdown or artifact content, while the shared TTL
+resource owns queryable meta such as status, routing links, source/provenance,
+and workflow relations.
+
+The current projection path can write this shape, but convenient read/write
+composition is still too app-local: callers read meta through ORM and then fetch
+`document` / `source` separately. That is correct semantically, but product
+shells should not repeat the glue for every file-primary resource.
+
+Required split:
+
+- `drizzle-solid` owns generic Pod file mechanics:
+  - read a Pod file by full IRI or Pod-relative path,
+  - write a Pod file with content type,
+  - ensure parent containers,
+  - expose response metadata such as content type, ETag, and last-modified when
+    available,
+  - keep this API resource-agnostic and independent of LinX/Symphony semantics.
+- `@undefineds.co/models` owns model-level file-primary repositories:
+  - `ideaRepository.findWithDocument(...)`,
+  - `issueRepository.findWithDocument(...)`,
+  - `reportRepository.findWithDocument(...)`,
+  - later `evidenceRepository.findWithDocument(...)`,
+  - corresponding `upsertWithDocument(...)` helpers where the model has a
+    declared `document` or `source` field.
+- LinX CLI/App should call these repositories instead of hand-composing
+  `db.findById(...)` plus `fetch(row.document)` or hand-ensuring containers.
+
+Expected return shape:
+
+```ts
+type FilePrimaryResource<TMeta> = {
+  meta: TMeta
+  document: {
+    iri: string
+    contentType?: string
+    text?: string
+    bytes?: Uint8Array
+    etag?: string
+    lastModified?: string
+  }
+}
+```
+
+Open decisions:
+
+- Whether `document` should always be `dcterms:source` for file-primary records,
+  or whether some resources should use a more specific predicate while exposing
+  the same repository API.
+- Whether write helpers should require optimistic concurrency (`If-Match`) by
+  default for human-edited markdown files.
+- How to represent missing file body when meta exists but the linked file was
+  deleted or the client lacks read permission.
+
+Non-goals:
+
+- Do not move business-specific file paths into LinX shell code.
+- Do not duplicate markdown body into TTL `title`, `content`, `body`, or
+  `description` fields just to make reads easier.
+- Do not make `drizzle-solid` know about `Issue`, `Report`, `Evidence`, or
+  Symphony semantics.
