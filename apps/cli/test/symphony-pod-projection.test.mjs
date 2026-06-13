@@ -146,6 +146,7 @@ function createFakeRuntime(options = {}) {
     },
     task: { name: 'task' },
     delivery: { name: 'delivery' },
+    evidence: { name: 'evidence' },
     report: { name: 'report' },
     run: { name: 'run' },
     runStep: { name: 'run_step' },
@@ -237,6 +238,7 @@ function createFakeRuntime(options = {}) {
       issueResource: resources.issue,
       taskResource: resources.task,
       deliveryResource: resources.delivery,
+      evidenceResource: resources.evidence,
       reportResource: resources.report,
       runResource: resources.run,
       runStepResource: resources.runStep,
@@ -862,6 +864,20 @@ test('completed Symphony projection includes completion message and archived ses
   assert.equal(reportMeta.status, 'published')
   assert.equal(reportMeta.source, 'https://alice.example/.data/reports/2026/04/02/session_2026-04-02T00-00-00-000Z_projection-report.md')
   assert.equal(reportMeta.metadata.filePrimary, true)
+  assert.deepEqual(reportMeta.evidence, [
+    'https://alice.example/.data/evidence/2026/04/02.ttl#session_2026-04-02T00-00-00-000Z_projection-completed',
+  ])
+  assert.equal(reportMeta.metadata.postRunReconciliation.status, 'pending_secretary_review')
+
+  const evidenceMeta = fake.inserts.find((item) => item.resource === fake.resources.evidence)?.value
+  assert.ok(evidenceMeta)
+  assert.equal(evidenceMeta.id, 'evidence/2026/04/02.ttl#session_2026-04-02T00-00-00-000Z_projection-completed')
+  assert.equal(evidenceMeta.evidenceKind, 'runtime_log')
+  assert.equal(evidenceMeta.about, 'https://alice.example/.data/2026/04/02/runs.ttl#session_2026-04-02T00-00-00-000Z_projection')
+  assert.equal(evidenceMeta.source, 'https://alice.example/.data/evidence/2026/04/02/session_2026-04-02T00-00-00-000Z_projection-completed-evidence.md')
+  assert.equal(evidenceMeta.metadata.filePrimary, true)
+  assert.equal(evidenceMeta.metadata.sourceRunStep, 'https://alice.example/.data/2026/04/02/runs.ttl#session_2026-04-02T00-00-00-000Z_projection-completed')
+  assert.equal(evidenceMeta.metadata.postRunReconciliation.sourceEvidence, 'https://alice.example/.data/evidence/2026/04/02.ttl#session_2026-04-02T00-00-00-000Z_projection-completed')
 
   const report = fake.inserts
     .filter((item) => item.resource === fake.resources.delivery)
@@ -882,10 +898,22 @@ test('completed Symphony projection includes completion message and archived ses
   assert.equal(report.payload.report, report.object)
   assert.equal(report.payload.outcome, 'completed')
   assert.equal(report.payload.reportFile, '/.data/reports/2026/04/02/session_2026-04-02T00-00-00-000Z_projection-report.md')
+  assert.equal(report.payload.evidenceFile, '/.data/evidence/2026/04/02/session_2026-04-02T00-00-00-000Z_projection-completed-evidence.md')
   assert.equal(report.metadata.filePrimary, true)
+  assert.equal(report.metadata.evidence, 'https://alice.example/.data/evidence/2026/04/02.ttl#session_2026-04-02T00-00-00-000Z_projection-completed')
+  assert.equal(report.metadata.postRunReconciliation.status, 'pending_secretary_review')
   assert.equal(report.payload.delivery, 'https://alice.example/.data/2026/04/02/deliveries.ttl#delivery_2026-04-02T00-00-00-000Z_projection')
   assert.match(report.payload.summary, /Verify Symphony Pod projection completed/)
   assert.match(report.payload.evidence.statusMessage, /projection-completed$/)
+  assert.equal(report.payload.evidence.evidence, 'https://alice.example/.data/evidence/2026/04/02.ttl#session_2026-04-02T00-00-00-000Z_projection-completed')
+  assert.equal(report.payload.evidence.sourceRunStep, 'https://alice.example/.data/2026/04/02/runs.ttl#session_2026-04-02T00-00-00-000Z_projection-completed')
+  assert.equal(report.payload.postRunReconciliation.status, 'pending_secretary_review')
+
+  const evidenceFile = fake.podFiles.find((file) => file.path.endsWith('-evidence.md'))
+  assert.ok(evidenceFile)
+  assert.equal(evidenceFile.path, '/.data/evidence/2026/04/02/session_2026-04-02T00-00-00-000Z_projection-completed-evidence.md')
+  assert.match(evidenceFile.content, /# Verify Symphony Pod projection — completed evidence/)
+  assert.match(evidenceFile.content, /## Secretary Follow-Up Review/)
 
   const inbox = fake.inserts.find((item) => item.resource === fake.resources.inbox)?.value
   assert.ok(inbox)

@@ -26,10 +26,12 @@ import { getDefaultPodDataSession, type PodDataSession } from '../pod-data-sessi
 import {
   ContactClass,
   ContactType,
+  EvidenceKind,
   chatRepository,
   agentResource,
   contactResource,
   deliveryResource,
+  evidenceResource,
   ideaResource,
   issueResource,
   messageResource,
@@ -42,6 +44,7 @@ import {
   type AuditInsert,
   type ChatInsert,
   type DeliveryInsert,
+  type EvidenceInsert,
   type IdeaInsert,
   type InboxNotificationInsert,
   type IssueInsert,
@@ -110,6 +113,7 @@ export interface SymphonyPodProjectionRuntime {
   issueResource: PodTable<any>
   taskResource: PodTable<any>
   deliveryResource: PodTable<any>
+  evidenceResource: PodTable<any>
   reportResource: PodTable<any>
   runResource: PodTable<any>
   runStepResource: PodTable<any>
@@ -267,6 +271,14 @@ function buildSymphonyReportDocumentPath(worker: SymphonyRunPlan['workers'][numb
   const { yyyy, MM, dd } = datePathParts(worker.session.completedAt ?? worker.session.updatedAt)
   return `/.data/reports/${yyyy}/${MM}/${dd}/${getSymphonyArchiveKey(worker.session.uri)}-report.md`
 }
+
+function buildSymphonyEvidenceDocumentPath(
+  worker: SymphonyRunPlan['workers'][number],
+  stage: Extract<ProjectionStage, 'completed' | 'failed'>,
+): string {
+  const { yyyy, MM, dd } = datePathParts(worker.session.completedAt ?? worker.session.updatedAt)
+  return `/.data/evidence/${yyyy}/${MM}/${dd}/${getSymphonyArchiveKey(worker.session.uri)}-${stage}-evidence.md`
+}
 function renderMarkdownList(items: string[] | undefined): string {
   const values = (items ?? []).map((item) => item.trim()).filter(Boolean)
   return values.length > 0 ? values.map((item) => `- ${item}`).join('\n') : '- None recorded.'
@@ -367,11 +379,63 @@ function renderSymphonyReportMarkdown(plan: SymphonyRunPlan, worker: SymphonyRun
     `- Session: ${worker.session.uri}`,
     `- Run status: ${worker.session.status}`,
     '',
+    '## Post-Run Reconciliation',
+    '- Secretary must review this report and linked Evidence before closing the task.',
+    '- Classify any follow-up as same_issue_task, new_issue, idea, evidence_only, or ask_user.',
+    '',
     ...(worker.session.error || worker.delivery.error || worker.taskRecord.error ? [
       '## Error',
       worker.session.error ?? worker.delivery.error ?? worker.taskRecord.error ?? '',
       '',
     ] : []),
+  ].join('\n')
+}
+
+function renderSymphonyEvidenceMarkdown(
+  plan: SymphonyRunPlan,
+  webId: string,
+  worker: SymphonyRunPlan['workers'][number],
+  stage: Extract<ProjectionStage, 'completed' | 'failed'>,
+): string {
+  const status = worker.session.status === 'failed' || stage === 'failed' ? 'failed' : 'completed'
+  const summary = status === 'completed'
+    ? `${worker.taskRecord.title} completed with runtime status ${worker.session.status}.`
+    : `${worker.taskRecord.title} failed: ${worker.session.error ?? worker.delivery.error ?? worker.taskRecord.error ?? 'worker did not complete successfully.'}`
+  const run = buildSymphonyRunIri(webId, worker)
+  const runStep = buildSymphonyRunStepIri(webId, worker, stage)
+
+  return [
+    `# ${worker.taskRecord.title} — ${status} evidence`,
+    '',
+    '## Summary',
+    summary,
+    '',
+    '## Runtime Facts',
+    `- Backend: ${worker.session.backend}`,
+    `- Agent: ${worker.session.target.agent ?? worker.delivery.targetAgent}`,
+    `- Model: ${worker.session.model ?? 'not recorded'}`,
+    `- Auto mode session: ${worker.session.autoModeSessionId ?? 'not recorded'}`,
+    `- Exit code: ${worker.session.exitCode ?? 'not recorded'}`,
+    `- Run status: ${worker.session.status}`,
+    '',
+    '## Acceptance Criteria',
+    renderMarkdownList(worker.taskRecord.acceptanceCriteria),
+    '',
+    '## Linked Control Records',
+    `- Issue: ${buildSymphonyIssueIri(webId, plan.issue)}`,
+    `- Task: ${buildSymphonyTaskIri(webId, worker.task)}`,
+    `- Delivery: ${buildSymphonyDeliveryIri(webId, worker)}`,
+    `- Run: ${run}`,
+    `- Source RunStep: ${runStep}`,
+    `- Worker Thread: ${selectWorkerThreadIri(plan, webId, worker)}`,
+    '',
+    ...(worker.session.error || worker.delivery.error || worker.taskRecord.error ? [
+      '## Error',
+      worker.session.error ?? worker.delivery.error ?? worker.taskRecord.error ?? '',
+      '',
+    ] : []),
+    '## Secretary Follow-Up Review',
+    'This Evidence is append-only proof/finding material. Secretary must use it with the Report and RunSteps to decide acceptance and whether follow-up work should be captured.',
   ].join('\n')
 }
 
@@ -482,6 +546,7 @@ async function createDefaultRuntime(): Promise<SymphonyPodProjectionRuntime> {
     issueResource: models.issueResource,
     taskResource: models.taskResource,
     deliveryResource: models.deliveryResource,
+    evidenceResource: models.evidenceResource,
     reportResource: models.reportResource,
     runResource: models.runResource,
     runStepResource: models.runStepResource,
@@ -598,6 +663,17 @@ function buildSymphonyReportIri(webId: string, worker: SymphonyRunPlan['workers'
   return reportResource.buildIri(webId, {
     id: `${getSymphonyArchiveKey(worker.session.uri)}-report`,
     task: buildSymphonyTaskIri(webId, worker.task),
+    createdAt: safeDate(worker.session.completedAt ?? worker.session.updatedAt),
+  })
+}
+
+function buildSymphonyEvidenceIri(
+  webId: string,
+  worker: SymphonyRunPlan['workers'][number],
+  stage: Extract<ProjectionStage, 'completed' | 'failed'>,
+): string {
+  return evidenceResource.buildIri(webId, {
+    id: `${getSymphonyArchiveKey(worker.session.uri)}-${stage}`,
     createdAt: safeDate(worker.session.completedAt ?? worker.session.updatedAt),
   })
 }
@@ -1467,6 +1543,7 @@ function buildSymphonyReportRow(
   const summary = status === 'completed'
     ? `${worker.taskRecord.title} completed.`
     : `${worker.taskRecord.title} failed: ${worker.session.error ?? worker.delivery.error ?? 'worker did not complete successfully.'}`
+  const evidence = buildSymphonyEvidenceIri(webId, worker, stage)
 
   return {
     id: reportResource.buildId({
@@ -1484,7 +1561,7 @@ function buildSymphonyReportRow(
     run,
     thread: selectWorkerThreadIri(plan, webId, worker),
     evidence: [
-      buildSymphonyRunStepIri(webId, worker, stage),
+      evidence,
     ],
     summary,
     actor: workerAgent,
@@ -1500,6 +1577,7 @@ function buildSymphonyReportRow(
       filePrimary: true,
       reportFile: buildSymphonyReportDocumentPath(worker),
       reportDelivery: buildSymphonyReportDeliveryIri(webId, worker),
+      postRunReconciliation: buildPostRunReconciliationMetadata(plan, webId, worker, stage),
       ...buildSymphonyArchiveMetadata({
         issue: plan.issue.uri,
         task: worker.task,
@@ -1511,6 +1589,94 @@ function buildSymphonyReportRow(
     publishedAt: completedAt,
     updatedAt: completedAt,
   } as ReportInsert
+}
+
+function buildSymphonyEvidenceRow(
+  plan: SymphonyRunPlan,
+  webId: string,
+  worker: SymphonyRunPlan['workers'][number],
+  stage: Extract<ProjectionStage, 'completed' | 'failed'>,
+): EvidenceInsert {
+  const createdAt = safeDate(worker.session.completedAt ?? worker.session.updatedAt)
+  const status = worker.session.status === 'failed' || stage === 'failed' ? 'failed' : 'completed'
+  const run = buildSymphonyRunIri(webId, worker)
+  const task = buildSymphonyTaskIri(webId, worker.task)
+  const delivery = buildSymphonyDeliveryIri(webId, worker)
+  const runStep = buildSymphonyRunStepIri(webId, worker, stage)
+  const workerAgent = agentResource.buildIri(webId,  {
+    id: buildWorkerAgentId(worker.session.backend, worker.session.target.agent),
+  })
+
+  return {
+    id: evidenceResource.buildId({
+      id: `${getSymphonyArchiveKey(worker.session.uri)}-${stage}`,
+      createdAt,
+    }),
+    evidenceKind: EvidenceKind.RUNTIME_LOG,
+    about: run,
+    issue: buildSymphonyIssueIri(webId, plan.issue),
+    task,
+    delivery,
+    run,
+    thread: selectWorkerThreadIri(plan, webId, worker),
+    summary: status === 'completed'
+      ? `${worker.taskRecord.title} completed with runtime status ${worker.session.status}.`
+      : `${worker.taskRecord.title} failed: ${worker.session.error ?? worker.delivery.error ?? worker.taskRecord.error ?? 'worker did not complete successfully.'}`,
+    source: podFileUrlFromWebId(webId, buildSymphonyEvidenceDocumentPath(worker, stage)),
+    actor: workerAgent,
+    outcome: status,
+    metadata: {
+      surface: 'symphony',
+      filePrimary: true,
+      evidenceFile: buildSymphonyEvidenceDocumentPath(worker, stage),
+      sourceRunStep: runStep,
+      report: buildSymphonyReportIri(webId, worker),
+      reportDelivery: buildSymphonyReportDeliveryIri(webId, worker),
+      postRunReconciliation: buildPostRunReconciliationMetadata(plan, webId, worker, stage),
+      runtime: {
+        backend: worker.session.backend,
+        model: worker.session.model,
+        autoModeSessionId: worker.session.autoModeSessionId,
+        exitCode: worker.session.exitCode,
+        status: worker.session.status,
+      },
+      ...buildSymphonyArchiveMetadata({
+        issue: plan.issue.uri,
+        task: worker.task,
+        delivery: worker.delivery.uri,
+        session: worker.session.uri,
+      }),
+    },
+    createdAt,
+  } as EvidenceInsert
+}
+
+function buildPostRunReconciliationMetadata(
+  plan: SymphonyRunPlan,
+  webId: string,
+  worker: SymphonyRunPlan['workers'][number],
+  stage: Extract<ProjectionStage, 'completed' | 'failed'>,
+): Record<string, unknown> {
+  return {
+    required: true,
+    status: 'pending_secretary_review',
+    owner: agentResource.buildIri(webId,  { id: SYMPHONY_SECRETARY_AGENT_ID }),
+    sourceIssue: buildSymphonyIssueIri(webId, plan.issue),
+    sourceTask: buildSymphonyTaskIri(webId, worker.task),
+    sourceDelivery: buildSymphonyDeliveryIri(webId, worker),
+    sourceRun: buildSymphonyRunIri(webId, worker),
+    sourceRunStep: buildSymphonyRunStepIri(webId, worker, stage),
+    sourceEvidence: buildSymphonyEvidenceIri(webId, worker, stage),
+    sourceReport: buildSymphonyReportIri(webId, worker),
+    classifications: [
+      'same_issue_task',
+      'new_issue',
+      'idea',
+      'evidence_only',
+      'ask_user',
+    ],
+    rule: 'Secretary must reconcile acceptance and follow-up before task closure.',
+  }
 }
 
 function buildSymphonyReportDeliveryRow(
@@ -1532,6 +1698,8 @@ function buildSymphonyReportDeliveryRow(
   const summary = status === 'completed'
     ? `${worker.taskRecord.title} completed.`
     : `${worker.taskRecord.title} failed: ${worker.session.error ?? worker.delivery.error ?? 'worker did not complete successfully.'}`
+  const evidence = buildSymphonyEvidenceIri(webId, worker, stage)
+  const sourceRunStep = buildSymphonyRunStepIri(webId, worker, stage)
 
   return {
     id: deliveryResource.buildId( {
@@ -1568,9 +1736,12 @@ function buildSymphonyReportDeliveryRow(
       exitCode: worker.session.exitCode,
       error: worker.session.error ?? worker.delivery.error ?? worker.taskRecord.error,
       reportFile: buildSymphonyReportDocumentPath(worker),
+      evidenceFile: buildSymphonyEvidenceDocumentPath(worker, stage),
+      postRunReconciliation: buildPostRunReconciliationMetadata(plan, webId, worker, stage),
       evidence: {
         statusMessage: buildSymphonyMessageUri(webId, plan, buildStatusMessageRow(plan, webId, stage)),
-        runStep: buildSymphonyRunStepIri(webId, worker, stage),
+        sourceRunStep,
+        evidence,
       },
     },
     projection: {
@@ -1589,6 +1760,9 @@ function buildSymphonyReportDeliveryRow(
       reportKind: 'worker-completion',
       filePrimary: true,
       reportFile: buildSymphonyReportDocumentPath(worker),
+      evidence,
+      evidenceFile: buildSymphonyEvidenceDocumentPath(worker, stage),
+      postRunReconciliation: buildPostRunReconciliationMetadata(plan, webId, worker, stage),
     },
     error: status === 'failed' ? worker.session.error ?? worker.delivery.error ?? worker.taskRecord.error : undefined,
     createdAt: completedAt,
@@ -2037,6 +2211,26 @@ async function upsertReport(db: PodProjectionDb, runtime: SymphonyPodProjectionR
   })
 }
 
+async function upsertEvidence(db: PodProjectionDb, runtime: SymphonyPodProjectionRuntime, row: EvidenceInsert): Promise<void> {
+  await upsertExactRecord(db, runtime.evidenceResource, {
+    id: row.id,
+    createdAt: row.createdAt,
+  }, row as Record<string, unknown>, {
+    evidenceKind: row.evidenceKind,
+    about: row.about,
+    issue: row.issue,
+    task: row.task,
+    delivery: row.delivery,
+    run: row.run,
+    thread: row.thread,
+    summary: row.summary,
+    source: row.source,
+    actor: row.actor,
+    outcome: row.outcome,
+    metadata: row.metadata,
+  })
+}
+
 async function upsertDelivery(db: PodProjectionDb, runtime: SymphonyPodProjectionRuntime, row: DeliveryInsert): Promise<void> {
   await upsertExactRecord(db, runtime.deliveryResource, { id: row.id }, row as Record<string, unknown>, {
     kind: row.kind,
@@ -2178,6 +2372,8 @@ function collectSymphonyProjectionResources(
       add('runStep', buildSymphonyRunStepIri(webId, worker, stage))
     }
     if (worker.session.status === 'completed' || worker.session.status === 'failed') {
+      const terminalStage = worker.session.status === 'failed' ? 'failed' : 'completed'
+      add('evidence', buildSymphonyEvidenceIri(webId, worker, terminalStage))
       add('report', buildSymphonyReportIri(webId, worker))
       add('delivery', buildSymphonyReportDeliveryIri(webId, worker))
     }
@@ -2344,6 +2540,7 @@ function resolveProjectionResourceModel(runtime: SymphonyPodProjectionRuntime, k
   if (kind === 'issue') return runtime.issueResource
   if (kind === 'task') return runtime.taskResource
   if (kind === 'delivery') return runtime.deliveryResource
+  if (kind === 'evidence') return runtime.evidenceResource
   if (kind === 'report') return runtime.reportResource
   if (kind === 'run') return runtime.runResource
   if (kind === 'runStep') return runtime.runStepResource
@@ -2849,6 +3046,7 @@ function buildSymphonyProjectionOperations(input: {
           input.runtime.issueResource,
           input.runtime.taskResource,
           input.runtime.deliveryResource,
+          input.runtime.evidenceResource,
           input.runtime.reportResource,
           input.runtime.runResource,
           input.runtime.runStepResource,
@@ -2958,6 +3156,26 @@ function buildSymphonyReportOperations(input: {
 
   return input.plan.workers.flatMap((worker, index): LinxSyncOperation[] => [
     {
+      id: `symphony.write-evidence-file:${index + 1}`,
+      kind: 'upsert',
+      apply: async () => {
+        await input.runtime.writePodFile?.(input.podSession, {
+          path: buildSymphonyEvidenceDocumentPath(worker, terminalStage),
+          content: renderSymphonyEvidenceMarkdown(input.plan, input.webId, worker, terminalStage),
+          contentType: 'text/markdown; charset=utf-8',
+        })
+      },
+    },
+    {
+      id: `symphony.upsert-evidence:${index + 1}`,
+      kind: 'upsert',
+      apply: () => upsertEvidence(
+        input.db,
+        input.runtime,
+        buildSymphonyEvidenceRow(input.plan, input.webId, worker, terminalStage),
+      ),
+    },
+    {
       id: `symphony.write-report-file:${index + 1}`,
       kind: 'upsert',
       apply: async () => {
@@ -3019,6 +3237,7 @@ export const __symphonyPodProjectionInternal = {
   buildSymphonyIdeaRow,
   buildSymphonyTaskRow,
   buildSymphonyDeliveryRow,
+  buildSymphonyEvidenceRow,
   buildSymphonyReportDeliveryRow,
   buildSymphonyReportInboxNotificationRow,
   buildSymphonyRunRow,

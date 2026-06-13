@@ -144,6 +144,13 @@ function resolveNodeModule(packageName) {
   throw new Error(`Unable to resolve package root for ${packageName}`)
 }
 
+function symlinkNodePackage(outdir, packageName) {
+  const segments = packageName.split('/')
+  const targetParent = join(outdir, 'node_modules', ...segments.slice(0, -1))
+  mkdirSync(targetParent, { recursive: true })
+  symlinkSync(resolveNodeModule(packageName), join(targetParent, segments.at(-1)), 'dir')
+}
+
 async function buildAutoModeBundle(entryRelative) {
   registerProcessCleanup()
   const root = mkdtempSync(join(tmpdir(), 'linx-auto-mode-test-'))
@@ -154,9 +161,6 @@ async function buildAutoModeBundle(entryRelative) {
   const modelsPackageDir = join(undefinedsNodeModulesDir, 'models')
   const drizzleSolidPackageDir = join(undefinedsNodeModulesDir, 'drizzle-solid')
   const agentRuntimePackageDir = join(linxNodeModulesDir, 'agent-runtime')
-  const genericNodeModulesDir = join(outdir, 'node_modules')
-  const scopedNodeModulesDir = join(outdir, 'node_modules', '@earendil-works')
-  const sinclairNodeModulesDir = join(outdir, 'node_modules', '@sinclair')
   const entryPath = join(sourceRoot, entryRelative)
   const compiledEntry = join(outdir, entryRelative.replace(/\.ts$/, '.js'))
   const tsconfigPath = join(root, 'tsconfig.json')
@@ -203,9 +207,6 @@ async function buildAutoModeBundle(entryRelative) {
 
   mkdirSync(undefinedsNodeModulesDir, { recursive: true })
   mkdirSync(linxNodeModulesDir, { recursive: true })
-  mkdirSync(genericNodeModulesDir, { recursive: true })
-  mkdirSync(scopedNodeModulesDir, { recursive: true })
-  mkdirSync(sinclairNodeModulesDir, { recursive: true })
   mkdirSync(modelsPackageDir, { recursive: true })
   mkdirSync(drizzleSolidPackageDir, { recursive: true })
   mkdirSync(agentRuntimePackageDir, { recursive: true })
@@ -254,21 +255,29 @@ async function buildAutoModeBundle(entryRelative) {
       './wake-scheduler': './dist/wake-scheduler.js',
     },
   }, null, 2))
-  symlinkSync(resolveNodeModule('ws'), join(genericNodeModulesDir, 'ws'), 'dir')
-  symlinkSync(resolveNodeModule('n3'), join(genericNodeModulesDir, 'n3'), 'dir')
-  symlinkSync(resolveNodeModule('pi-web-access'), join(genericNodeModulesDir, 'pi-web-access'), 'dir')
-  symlinkSync(resolveNodeModule('typebox'), join(genericNodeModulesDir, 'typebox'), 'dir')
-  symlinkSync(resolveNodeModule('@sinclair/typebox'), join(sinclairNodeModulesDir, 'typebox'), 'dir')
-  symlinkSync(resolveNodeModule('@earendil-works/pi-ai'), join(scopedNodeModulesDir, 'pi-ai'), 'dir')
-  symlinkSync(resolveNodeModule('@earendil-works/pi-agent-core'), join(scopedNodeModulesDir, 'pi-agent-core'), 'dir')
-  symlinkSync(resolveNodeModule('@earendil-works/pi-coding-agent'), join(scopedNodeModulesDir, 'pi-coding-agent'), 'dir')
-  symlinkSync(resolveNodeModule('@earendil-works/pi-tui'), join(scopedNodeModulesDir, 'pi-tui'), 'dir')
-  mkdirSync(join(outdir, 'node_modules', '@inrupt'), { recursive: true })
-  symlinkSync(
-    resolveNodeModule('@inrupt/solid-client-authn-node'),
-    join(outdir, 'node_modules', '@inrupt', 'solid-client-authn-node'),
-    'dir',
-  )
+  for (const packageName of [
+    'ws',
+    'n3',
+    'pi-web-access',
+    'typebox',
+    'dotenv',
+    'drizzle-orm',
+    'node-fetch',
+    'sparqljs',
+    'zod',
+    '@comunica/query-sparql-solid',
+    '@inrupt/solid-client',
+    '@inrupt/solid-client-authn-node',
+    '@inrupt/universal-fetch',
+    '@inrupt/vocab-common-rdf',
+    '@sinclair/typebox',
+    '@earendil-works/pi-ai',
+    '@earendil-works/pi-agent-core',
+    '@earendil-works/pi-coding-agent',
+    '@earendil-works/pi-tui',
+  ]) {
+    symlinkNodePackage(outdir, packageName)
+  }
 
   return {
     module: await import(pathToFileURL(compiledEntry).href),
