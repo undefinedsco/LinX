@@ -12,18 +12,43 @@
     "resolveJsonModule": true,
     "jsx": "react-jsx",
     "paths": {
-      "@undefineds.co/drizzle-solid": ["../drizzle-solid/dist/index.d.ts", "node_modules/@undefineds.co/drizzle-solid/dist/index.d.ts"],
-      "@undefineds.co/models": ["../models/dist/index.d.ts", "packages/models/dist/index.d.ts"],
-      "@undefineds.co/models/ai-config": ["../models/dist/ai-config/index.d.ts", "packages/models/dist/ai-config/index.d.ts"],
-      "@undefineds.co/models/client": ["../models/dist/client/index.d.ts", "packages/models/dist/client/index.d.ts"],
-      "@undefineds.co/models/discovery": ["../models/dist/discovery/index.d.ts", "packages/models/dist/discovery/index.d.ts"],
-      "@undefineds.co/models/interop": ["../models/dist/interop/index.d.ts", "packages/models/dist/interop/index.d.ts"],
-      "@undefineds.co/models/namespaces": ["../models/dist/namespaces.d.ts", "packages/models/dist/namespaces.d.ts"],
-      "@undefineds.co/models/profile": ["../models/dist/profile.d.ts", "packages/models/dist/profile.d.ts"],
-      "@undefineds.co/models/profile.repository": ["../models/dist/profile.repository.d.ts", "packages/models/dist/profile.repository.d.ts"],
-      "@undefineds.co/models/profile.schema": ["../models/dist/profile.schema.d.ts", "packages/models/dist/profile.schema.d.ts"],
-      "@undefineds.co/models/vocab": ["../models/dist/vocab/index.d.ts", "packages/models/dist/vocab/index.d.ts"],
-      "@undefineds.co/models/vocab/sidecar": ["../models/dist/vocab/sidecar.vocab.d.ts", "packages/models/dist/vocab/sidecar.vocab.d.ts"]
+      "@undefineds.co/drizzle-solid": [
+        "../drizzle-solid/dist/index.d.ts",
+        "node_modules/@undefineds.co/drizzle-solid/dist/index.d.ts"
+      ],
+      "@undefineds.co/models": [
+        "node_modules/@undefineds.co/models/dist/index.d.ts"
+      ],
+      "@undefineds.co/models/ai-config": [
+        "node_modules/@undefineds.co/models/dist/ai-config/index.d.ts"
+      ],
+      "@undefineds.co/models/client": [
+        "node_modules/@undefineds.co/models/dist/client/index.d.ts"
+      ],
+      "@undefineds.co/models/discovery": [
+        "node_modules/@undefineds.co/models/dist/discovery/index.d.ts"
+      ],
+      "@undefineds.co/models/interop": [
+        "node_modules/@undefineds.co/models/dist/interop/index.d.ts"
+      ],
+      "@undefineds.co/models/namespaces": [
+        "node_modules/@undefineds.co/models/dist/namespaces.d.ts"
+      ],
+      "@undefineds.co/models/profile": [
+        "node_modules/@undefineds.co/models/dist/profile.d.ts"
+      ],
+      "@undefineds.co/models/profile.repository": [
+        "node_modules/@undefineds.co/models/dist/profile.repository.d.ts"
+      ],
+      "@undefineds.co/models/profile.schema": [
+        "node_modules/@undefineds.co/models/dist/profile.schema.d.ts"
+      ],
+      "@undefineds.co/models/vocab": [
+        "node_modules/@undefineds.co/models/dist/vocab/index.d.ts"
+      ],
+      "@undefineds.co/models/vocab/sidecar": [
+        "node_modules/@undefineds.co/models/dist/vocab/sidecar.vocab.d.ts"
+      ]
     }
   },
   "include": []

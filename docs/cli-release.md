@@ -145,11 +145,8 @@ smoke-install, commit that version change, then tag the new version.
 
 The `linx-v*` tag starts `.github/workflows/cli-release.yml`. That workflow
 rebuilds, packs, smoke-installs, publishes the npm package from GitHub Actions,
-and creates the GitHub Release. Publication should use npm Trusted Publishing
-(OIDC) for `undefinedsco/LinX` + workflow filename `cli-release.yml`; npm token
-publication can fail with `EOTP` when the token belongs to an account/package
-that requires interactive 2FA. Keep the publish step free of `NODE_AUTH_TOKEN`
-and token-backed npmrc setup so npm can use the GitHub OIDC identity. Local
+and creates the GitHub Release. Publication uses the GitHub Actions secret
+`NPM_TOKEN`, passed to npm as `NODE_AUTH_TOKEN` during the publish steps. Local
 machines do not need npm publish credentials for the normal release path.
 
 ## Manual npm Registry Publish
@@ -286,19 +283,17 @@ Release publishing is handled by:
 .github/workflows/cli-release.yml
 ```
 
-It verifies the same release tarballs on Linux and macOS. Only the Linux
+It verifies the same CLI release tarball on Linux and macOS. Only the Linux
 artifact is uploaded for the publish job. The normal trigger is a pushed
-`linx-v*` git tag. Publishing runs in order:
-
-```text
-@undefineds.co/models -> @undefineds.co/linx
-```
+`linx-v*` git tag.
 
 Automatic registry publish happens in GitHub Actions on tags matching `linx-v*`.
 Manual `workflow_dispatch` can verify without publishing, or publish when
 `publish=true`. npm publishing requires `NPM_TOKEN` in GitHub Actions secrets;
 local developer/agent npm credentials are not part of the standard release
-path.
+path. `@undefineds.co/models` is consumed as an already-published npm dependency;
+publish models from the models repository before bumping LinX when schema/API
+changes are needed.
 
 ## Shared Models Development
 

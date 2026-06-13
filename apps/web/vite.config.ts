@@ -11,7 +11,6 @@ const releaseRepo = String(process.env.VITE_RELEASE_REPO ?? 'undefinedsco/LinX')
 const assetBase = process.env.LINX_VITE_BASE ?? '/'
 const outputDir = process.env.LINX_VITE_OUT_DIR ?? 'dist'
 const repoRoot = path.resolve(__dirname, '../..')
-const modelsRoot = path.resolve(repoRoot, 'packages/models/src')
 const inruptAuthnBrowser = path.resolve(
   repoRoot,
   'node_modules/@inrupt/solid-client-authn-browser/dist/index.mjs',
@@ -106,8 +105,6 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
       '@linx/stores': path.resolve(__dirname, '../../packages/stores/src'),
-      '@undefineds.co/models/client': path.resolve(modelsRoot, 'client/index.ts'),
-      '@undefineds.co/models': path.resolve(modelsRoot, 'index.ts'),
       '@inrupt/solid-client-authn-browser': inruptAuthnBrowser,
     },
     extensions: ['.ts', '.tsx', '.mjs', '.js', '.mts', '.jsx', '.json'],

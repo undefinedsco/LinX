@@ -3,7 +3,6 @@ import react from '@vitejs/plugin-react'
 import path from 'path'
 
 const repoRoot = path.resolve(__dirname, '../..')
-const modelsRoot = path.resolve(repoRoot, 'packages/models/src')
 const inruptAuthnBrowser = path.resolve(
   repoRoot,
   'node_modules/@inrupt/solid-client-authn-browser/dist/index.mjs',
@@ -31,8 +30,6 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
       '@linx/stores': path.resolve(repoRoot, 'packages/stores/src'),
-      '@undefineds.co/models/client': path.resolve(modelsRoot, 'client/index.ts'),
-      '@undefineds.co/models': path.resolve(modelsRoot, 'index.ts'),
       '@inrupt/solid-client-authn-browser': inruptAuthnBrowser,
     },
     extensions: ['.ts', '.tsx', '.mjs', '.js', '.mts', '.jsx', '.json'],
