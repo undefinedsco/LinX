@@ -75,12 +75,13 @@ Codex / worker blocks on approval or input
 
 架构层参考 Symphony：
 
-- `Issue` 是用户/产品可见的工作项，承载需求、bug、调查和支持事项。
-- `Task` 是已有的通用可执行工作单元；Symphony 只能引用 Task，不能另起一套 `TaskRecord`。
+- `Idea` 是文件主体 + meta 的捕获记录；文件承载人读内容，meta 承载状态、来源、关联和 promotedTo。
+- `Issue` 是文件主体 + meta 的用户/产品可见工作项；文件承载需求、bug、调查、决策和验收说明，meta 承载 status/priority/assignee/thread/tasks 等机器协作事实。
+- `Task` 是已有的通用 TTL 控制资源；Symphony 只能引用 Task，不能另起一套 `TaskRecord`。
 - `Issue.tasks` 只能保存 Task URI reference；不能新增 `taskRefs`、`taskIds` 或 Symphony 专属 task row。
 - `Workspace/worktree` 是任务执行现场。
-- `Session` 是一次 runtime 生命周期。
-- `Report` 是任务完成后的上升和验收入口；`Evidence` 记录测试、日志、diff、Pod 投影、用户验证、review finding 等支撑事实。
+- `Session` / `Run` / `RunStep` 是 TTL 结构化执行事实。
+- `Report` 是任务完成后的上升和验收入口，使用 Pod 文件 + meta；`Evidence` 记录测试、日志、diff、Pod 投影、用户验证、review finding 等支撑事实，长内容同样使用 Pod 文件 + meta。
 
 建模硬约束：
 

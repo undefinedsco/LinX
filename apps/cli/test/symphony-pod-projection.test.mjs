@@ -119,6 +119,7 @@ function createFakeRuntime(options = {}) {
   const findIds = []
   const findIris = []
   const findResources = []
+  const podFiles = []
   const resources = {
     chat: { name: 'chat' },
     thread: { name: 'thread' },
@@ -145,6 +146,7 @@ function createFakeRuntime(options = {}) {
     },
     task: { name: 'task' },
     delivery: { name: 'delivery' },
+    report: { name: 'report' },
     run: { name: 'run' },
     runStep: { name: 'run_step' },
     agent: {
@@ -215,6 +217,7 @@ function createFakeRuntime(options = {}) {
     findIds,
     findIris,
     findResources,
+    podFiles,
     resources,
     runtime: {
       getPodDataSession: async () => ({
@@ -223,6 +226,9 @@ function createFakeRuntime(options = {}) {
         solidSession: { fetch },
       }),
       createDb: () => db,
+      writePodFile: async (_session, file) => {
+        podFiles.push(file)
+      },
       chatResource: resources.chat,
       threadResource: resources.thread,
       messageResource: resources.message,
@@ -231,6 +237,7 @@ function createFakeRuntime(options = {}) {
       issueResource: resources.issue,
       taskResource: resources.task,
       deliveryResource: resources.delivery,
+      reportResource: resources.report,
       runResource: resources.run,
       runStepResource: resources.runStep,
       agentResource: resources.agent,
@@ -301,6 +308,13 @@ test('persistSymphonyProjectionToPod projects Symphony run into shared chat thre
   })
 
   assert.ok(result)
+  const issueFile = fake.podFiles.find((file) => file.path.endsWith('/issue.md'))
+  assert.ok(issueFile)
+  assert.match(issueFile.path, /^\/.data\/issues\/issue_2026-04-02T00-00-00-000Z_projection\/issue\.md$/)
+  assert.equal(issueFile.contentType, 'text/markdown; charset=utf-8')
+  assert.match(issueFile.content, /# Verify Symphony Pod projection/)
+  assert.match(issueFile.content, /## Acceptance Criteria/)
+  assert.match(issueFile.content, /projection is visible/)
   assert.equal(result.chat, 'https://alice.example/.data/chat/chat-1/index.ttl#this')
   assert.equal(result.thread, 'https://alice.example/.data/chat/chat-1/index.ttl#thread-1')
   assert.deepEqual(result.messages, [
@@ -320,6 +334,8 @@ test('persistSymphonyProjectionToPod projects Symphony run into shared chat thre
 
   const issue = fake.inserts.find((item) => item.resource === fake.resources.issue)?.value
   assert.equal(issue.id, 'issue_2026-04-02T00-00-00-000Z_projection')
+  assert.equal(issue.document, 'https://alice.example/.data/issues/issue_2026-04-02T00-00-00-000Z_projection/issue.md')
+  assert.equal(issue.description, undefined)
   assert.equal(issue.chat, result.chat)
   assert.equal(issue.thread, result.thread)
   assert.equal(issue.tasks[0], 'https://alice.example/.data/task/index.ttl#task_2026-04-02T00-00-00-000Z_projection')
@@ -755,7 +771,7 @@ test('listRecentSymphonyReportsFromPod reads worker completion reports from Deli
   ])
 })
 
-test('persistSymphonyIdeaToPod writes captured ideas as shared TTL resources', async () => {
+test('persistSymphonyIdeaToPod writes captured ideas as Pod files plus shared meta', async () => {
   const fake = createFakeRuntime()
   const idea = {
     uri: 'urn:undefineds:linx:idea:idea_2026-04-02T00-00-00-000Z_capture',
@@ -783,8 +799,22 @@ test('persistSymphonyIdeaToPod writes captured ideas as shared TTL resources', a
 
   assert.equal(result.uri, idea.uri)
   const row = fake.inserts.find((item) => item.resource === fake.resources.idea)?.value
+  const ideaFile = fake.podFiles.find((file) => file.path.endsWith('/idea.md'))
+  assert.ok(ideaFile)
+  assert.equal(ideaFile.path, '/.data/ideas/2026/04/02/idea_2026-04-02T00-00-00-000Z_capture/idea.md')
+  assert.match(ideaFile.content, /# Capture uncommitted Symphony direction/)
+  assert.match(ideaFile.content, /我觉得先记录成 Idea，不要直接派工。/)
+
   assert.equal(row.id, 'idea_2026-04-02T00-00-00-000Z_capture')
   assert.equal(row.summary, idea.summary)
+  assert.equal(row.document, 'https://alice.example/.data/ideas/2026/04/02/idea_2026-04-02T00-00-00-000Z_capture/idea.md')
+  assert.equal(row.input, undefined)
+  assert.equal(row.currentUnderstanding, undefined)
+  assert.equal(row.openQuestions, undefined)
+  assert.equal(row.conflicts, undefined)
+  assert.equal(row.nextStep, undefined)
+  assert.equal(row.metadata.filePrimary, true)
+  assert.equal(row.metadata.documentPath, '/.data/ideas/2026/04/02/idea_2026-04-02T00-00-00-000Z_capture/idea.md')
   assert.equal(row.status, 'captured')
   assert.equal(row.commitment, 'thought')
   assert.equal(row.chat, idea.chat)
@@ -826,6 +856,13 @@ test('completed Symphony projection includes completion message and archived ses
   assert.equal(audits.length, 3)
   assert.deepEqual(audits.map((item) => item.action), ['symphony.planned', 'symphony.dispatched', 'symphony.completed'])
 
+  const reportMeta = fake.inserts.find((item) => item.resource === fake.resources.report)?.value
+  assert.ok(reportMeta)
+  assert.equal(reportMeta.reportKind, 'handoff')
+  assert.equal(reportMeta.status, 'published')
+  assert.equal(reportMeta.source, 'https://alice.example/.data/reports/2026/04/02/session_2026-04-02T00-00-00-000Z_projection-report.md')
+  assert.equal(reportMeta.metadata.filePrimary, true)
+
   const report = fake.inserts
     .filter((item) => item.resource === fake.resources.delivery)
     .map((item) => item.value)
@@ -836,7 +873,16 @@ test('completed Symphony projection includes completion message and archived ses
   assert.equal(report.source, 'https://alice.example/agents/symphony-codex-worker/')
   assert.equal(report.target, 'https://alice.example/agents/__secretary__/')
   assert.equal(report.targetSession, 'https://alice.example/.data/sessions/2026/04/02/session_2026-04-02T00-00-00-000Z_projection.ttl')
+  const reportFile = fake.podFiles.find((file) => file.path.endsWith('-report.md'))
+  assert.ok(reportFile)
+  assert.equal(reportFile.path, '/.data/reports/2026/04/02/session_2026-04-02T00-00-00-000Z_projection-report.md')
+  assert.match(reportFile.content, /# Verify Symphony Pod projection — completed/)
+  assert.match(reportFile.content, /## Linked Control Records/)
+  assert.equal(report.object, 'https://alice.example/.data/task/task_2026-04-02T00-00-00-000Z_projection/2026/04/02/reports.ttl#session_2026-04-02T00-00-00-000Z_projection-report')
+  assert.equal(report.payload.report, report.object)
   assert.equal(report.payload.outcome, 'completed')
+  assert.equal(report.payload.reportFile, '/.data/reports/2026/04/02/session_2026-04-02T00-00-00-000Z_projection-report.md')
+  assert.equal(report.metadata.filePrimary, true)
   assert.equal(report.payload.delivery, 'https://alice.example/.data/2026/04/02/deliveries.ttl#delivery_2026-04-02T00-00-00-000Z_projection')
   assert.match(report.payload.summary, /Verify Symphony Pod projection completed/)
   assert.match(report.payload.evidence.statusMessage, /projection-completed$/)

@@ -9771,6 +9771,17 @@
     n3 "^1.26.0"
     zod "^3.22.4"
 
+"@undefineds.co/models@0.2.41":
+  version "0.2.41"
+  resolved "https://registry.yarnpkg.com/@undefineds.co/models/-/models-0.2.41.tgz#399142d75b03eedfbf4e0eac06f56d68cea5254e"
+  integrity sha512-x4HBDMNLAD3lFQGZaWocvwy0knktYl4tayVq7kWRiDJSgGvtxZqCbKIC36+ysx8K3AjsX03zuMRVOlF2tU3nZQ==
+  dependencies:
+    "@comunica/query-sparql-solid" "^4.0.2"
+    "@inrupt/vocab-common-rdf" "^1.0.5"
+    "@undefineds.co/drizzle-solid" "^0.3.14"
+    n3 "^1.26.0"
+    zod "^3.22.4"
+
 "@undefineds.co/xpod@0.2.36":
   version "0.2.36"
   resolved "https://registry.yarnpkg.com/@undefineds.co/xpod/-/xpod-0.2.36.tgz#8b835000be14eb2d9fd69d9231230160de62d153"

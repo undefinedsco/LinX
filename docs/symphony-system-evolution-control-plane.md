@@ -27,18 +27,41 @@ In product terms:
 
 ## Storage Authority
 
-In LinX product runtime, Symphony state is Pod/TTL authoritative. Durable
-records such as `Idea`, `Issue`, `Task`, `Delivery`, `Session`, `Run`,
-`RunStep`, `Evidence`, and `Report` must be represented by shared
-`@undefineds.co/models` resources and written through `drizzle-solid` so CLI,
-App, and workers observe the same truth.
+In LinX product runtime, Symphony state is Pod-authoritative, but Pod authority
+is not synonymous with putting every subject body into TTL. Use this boundary:
+content-like resources are Pod files with structured meta; state-machine
+resources are TTL resources.
 
-The authoritative conclusion record is not an arbitrary local file. A completed
-or reviewed work item closes through a Pod `Report` linked to the relevant
-`Issue`, `Task`, `Delivery`, `Run`, `Thread`, and supporting `Evidence`.
+The default chain is:
+
+```text
+Idea(file + meta)
+  -> Issue(file + meta)
+    -> Task(TTL)
+      -> Delivery(TTL)
+        -> Session/Run/RunStep(TTL)
+          -> Report(file + meta)
+          -> Evidence(file + meta)
+```
+
+`Idea` and `Issue` are human-readable evolving context. Their markdown files own
+the title, problem statement, discussion summary, decision narrative, and
+acceptance explanation. Their meta owns machine facts such as status, priority,
+assignee, source messages, chat/thread links, promoted/related links,
+Task/Delivery/Run references, and timestamps. `Report` and `Evidence` follow the
+same file-primary rule for long worker reports, logs, benchmark output, patches,
+screenshots, fetch originals, and other proof material.
+
+`Task`, `Delivery`, `Session`, `Run`, `RunStep`, `ApprovalRequest`,
+`InputRequest`, and `InboxNotification` are structured control resources. They
+carry stable fields for scheduling, status, claim/lease, routing, and audit, and
+link to file-primary reports/evidence instead of inlining long bodies.
+
 Repository documents may be implementation authority, design source, portable
 runtime control records, or no-Pod recovery material, but they are not the
-cross-client conclusion authority when a LinX Pod session exists.
+cross-client conclusion authority when a LinX Pod session exists. The
+cross-client authority is the Pod file/resource plus its shared meta, written
+through `@undefineds.co/models` / `drizzle-solid` where a shared model exists.
 
 This does not mean the portable Symphony runtime module owns Pod IO.
 `packages/agent-runtime/src/symphony.ts` is a storage-agnostic control-plan and

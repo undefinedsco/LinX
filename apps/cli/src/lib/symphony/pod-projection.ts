@@ -33,6 +33,7 @@ import {
   ideaResource,
   issueResource,
   messageResource,
+  reportResource,
   runResource,
   runStepResource,
   sessionResource,
@@ -45,6 +46,7 @@ import {
   type InboxNotificationInsert,
   type IssueInsert,
   type MessageInsert,
+  type ReportInsert,
   type RunInsert,
   type RunStepInsert,
   type SessionInsert,
@@ -90,9 +92,16 @@ export interface SymphonyJsonLdMirrorResult {
   files: SymphonyJsonLdMirrorFile[]
 }
 
+export interface SymphonyPodFileWrite {
+  path: string
+  content: string
+  contentType: string
+}
+
 export interface SymphonyPodProjectionRuntime {
   getPodDataSession: () => Promise<PodDataSession | null>
   createDb: (session: PodDataSession) => PodProjectionDb
+  writePodFile?: (session: PodDataSession, file: SymphonyPodFileWrite) => Promise<void>
   chatResource: PodTable<any>
   threadResource: PodTable<any>
   messageResource: PodTable<any>
@@ -101,6 +110,7 @@ export interface SymphonyPodProjectionRuntime {
   issueResource: PodTable<any>
   taskResource: PodTable<any>
   deliveryResource: PodTable<any>
+  reportResource: PodTable<any>
   runResource: PodTable<any>
   runStepResource: PodTable<any>
   agentResource: PodTable<any>
@@ -164,6 +174,205 @@ interface SymphonyContactRow extends Record<string, unknown> {
   contactType: string
   createdAt: Date
   updatedAt: Date
+}
+
+
+function ensureTrailingSlash(value: string): string {
+  return value.endsWith('/') ? value : `${value}/`
+}
+
+
+function podBaseUrlFromWebId(webId: string): string {
+  const marker = '/profile/card#me'
+  if (webId.includes(marker)) {
+    return `${webId.slice(0, webId.indexOf(marker) + 1)}`
+  }
+  const url = new URL(webId)
+  return `${url.origin}/`
+}
+
+function podFileUrlFromWebId(webId: string, path: string): string {
+  return new URL(path.replace(/^\/+/, ''), podBaseUrlFromWebId(webId)).toString()
+}
+
+function podFileUrl(podSession: Pick<PodDataSession, 'podUrl'>, path: string): string {
+  return new URL(path.replace(/^\/+/, ''), ensureTrailingSlash(podSession.podUrl)).toString()
+}
+
+async function writePodFileToSession(session: PodDataSession, file: SymphonyPodFileWrite): Promise<void> {
+  const url = podFileUrl(session, file.path)
+  await ensurePodResourceContainers(session.fetch, url)
+  const response = await session.fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': file.contentType },
+    body: file.content.endsWith('\n') ? file.content : `${file.content}\n`,
+  })
+  if (!response.ok) {
+    const details = await response.text().catch(() => '')
+    const suffix = details.trim() ? ` - ${details.trim().slice(0, 500)}` : ''
+    throw new Error(`Failed to write Symphony Pod file ${url}: ${response.status} ${response.statusText}${suffix}`)
+  }
+}
+
+async function ensurePodResourceContainers(fetcher: PodDataSession['fetch'], resourceUrl: string): Promise<void> {
+  for (const containerUrl of containerUrlsForResource(resourceUrl)) {
+    const existing = await fetcher(containerUrl, { method: 'HEAD' }).catch(() => null)
+    if (existing?.ok) continue
+    if (existing && existing.status !== 404 && existing.status !== 405) continue
+    const response = await fetcher(containerUrl, {
+      method: 'PUT',
+      headers: {
+        Link: '<http://www.w3.org/ns/ldp#BasicContainer>; rel="type"',
+        'Content-Type': 'text/turtle; charset=utf-8',
+      },
+      body: '',
+    })
+    if (!response.ok && response.status !== 409) {
+      throw new Error(`Failed to ensure Symphony Pod container ${containerUrl}: ${response.status} ${response.statusText}`)
+    }
+  }
+}
+
+function containerUrlsForResource(resourceUrl: string): string[] {
+  const url = new URL(resourceUrl)
+  const parts = url.pathname.split('/').filter(Boolean)
+  const containers: string[] = []
+  let path = '/'
+  for (let index = 0; index < parts.length - 1; index += 1) {
+    path += `${parts[index]}/`
+    containers.push(new URL(path, url.origin).toString())
+  }
+  return containers
+}
+
+function datePathParts(input: string | Date | undefined): { yyyy: string; MM: string; dd: string } {
+  const date = safeDate(input)
+  return {
+    yyyy: String(date.getUTCFullYear()),
+    MM: String(date.getUTCMonth() + 1).padStart(2, '0'),
+    dd: String(date.getUTCDate()).padStart(2, '0'),
+  }
+}
+
+function buildSymphonyIssueDocumentPath(issue: SymphonyIssueRecord): string {
+  return `/.data/issues/${buildSymphonyIssueId(issue)}/issue.md`
+}
+
+function buildSymphonyIdeaDocumentPath(idea: SymphonyIdeaRecord): string {
+  const { yyyy, MM, dd } = datePathParts(idea.createdAt)
+  return `/.data/ideas/${yyyy}/${MM}/${dd}/${getSymphonyArchiveKey(idea.uri)}/idea.md`
+}
+
+function buildSymphonyReportDocumentPath(worker: SymphonyRunPlan['workers'][number]): string {
+  const { yyyy, MM, dd } = datePathParts(worker.session.completedAt ?? worker.session.updatedAt)
+  return `/.data/reports/${yyyy}/${MM}/${dd}/${getSymphonyArchiveKey(worker.session.uri)}-report.md`
+}
+function renderMarkdownList(items: string[] | undefined): string {
+  const values = (items ?? []).map((item) => item.trim()).filter(Boolean)
+  return values.length > 0 ? values.map((item) => `- ${item}`).join('\n') : '- None recorded.'
+}
+
+function renderSymphonyIssueMarkdown(plan: SymphonyRunPlan): string {
+  const issue = plan.issue
+  const sections = [
+    `# ${issue.title || buildSymphonyIssueId(issue)}`,
+    '',
+    '## Summary',
+    issue.description?.trim() || issue.title || 'No summary recorded.',
+    '',
+    '## Status',
+    `- Status: ${issue.status}`,
+    `- Priority: ${issue.priority}`,
+    `- Source: ${issue.source}`,
+    '',
+    '## Acceptance Criteria',
+    renderMarkdownList(plan.workers.flatMap((worker) => worker.taskRecord.acceptanceCriteria ?? [])),
+    '',
+    '## Tasks',
+    renderMarkdownList(plan.workers.map((worker) => `${worker.taskRecord.title}: ${worker.taskRecord.objective}`)),
+    '',
+    '## Source Context',
+    `- Chat: ${issue.chat ?? plan.session.chat ?? 'not recorded'}`,
+    `- Thread: ${issue.thread ?? plan.session.thread ?? 'not recorded'}`,
+    `- Messages: ${(issue.messages ?? []).join(', ') || 'not recorded'}`,
+    '',
+    '## Control Records',
+    `- Issue: ${issue.uri}`,
+    ...plan.workers.flatMap((worker) => [
+      `- Task: ${worker.task}`,
+      `- Delivery: ${worker.delivery.uri}`,
+      `- Session: ${worker.session.uri}`,
+    ]),
+  ]
+  return sections.join('\n')
+}
+
+function renderSymphonyIdeaMarkdown(idea: SymphonyIdeaRecord): string {
+  return [
+    `# ${idea.summary || getSymphonyArchiveKey(idea.uri)}`,
+    '',
+    '## Input',
+    idea.input?.trim() || idea.summary || 'No input recorded.',
+    '',
+    '## Current Understanding',
+    idea.currentUnderstanding?.trim() || 'No current understanding recorded.',
+    '',
+    '## Open Questions',
+    renderMarkdownList(idea.openQuestions),
+    '',
+    '## Conflicts',
+    renderMarkdownList(idea.conflicts),
+    '',
+    '## Next Step',
+    idea.nextStep?.trim() || 'No next step recorded.',
+    '',
+    '## Source Context',
+    `- Status: ${idea.status}`,
+    `- Commitment: ${idea.commitment}`,
+    `- Chat: ${idea.chat ?? 'not recorded'}`,
+    `- Thread: ${idea.thread ?? 'not recorded'}`,
+    `- Messages: ${(idea.messages ?? []).join(', ') || 'not recorded'}`,
+    `- Idea: ${idea.uri}`,
+  ].join('\n')
+}
+
+function renderSymphonyReportMarkdown(plan: SymphonyRunPlan, worker: SymphonyRunPlan['workers'][number], stage: Extract<ProjectionStage, 'completed' | 'failed'>): string {
+  const status = worker.session.status === 'failed' || stage === 'failed' ? 'failed' : 'completed'
+  const summary = status === 'completed'
+    ? `${worker.taskRecord.title} completed.`
+    : `${worker.taskRecord.title} failed: ${worker.session.error ?? worker.delivery.error ?? 'worker did not complete successfully.'}`
+  return [
+    `# ${worker.taskRecord.title} — ${status}`,
+    '',
+    '## Summary',
+    summary,
+    '',
+    '## Outcome',
+    `- Status: ${status}`,
+    `- Backend: ${worker.session.backend}`,
+    `- Agent: ${worker.session.target.agent ?? worker.delivery.targetAgent}`,
+    `- Auto mode session: ${worker.session.autoModeSessionId ?? 'not recorded'}`,
+    `- Exit code: ${worker.session.exitCode ?? 'not recorded'}`,
+    '',
+    '## Task',
+    worker.taskRecord.objective,
+    '',
+    '## Acceptance Criteria',
+    renderMarkdownList(worker.taskRecord.acceptanceCriteria),
+    '',
+    '## Linked Control Records',
+    `- Issue: ${buildSymphonyIssueId(plan.issue)}`,
+    `- Task: ${worker.task}`,
+    `- Delivery: ${worker.delivery.uri}`,
+    `- Session: ${worker.session.uri}`,
+    `- Run status: ${worker.session.status}`,
+    '',
+    ...(worker.session.error || worker.delivery.error || worker.taskRecord.error ? [
+      '## Error',
+      worker.session.error ?? worker.delivery.error ?? worker.taskRecord.error ?? '',
+      '',
+    ] : []),
+  ].join('\n')
 }
 
 function normalizeSymphonyRunPlan(plan: SymphonyRunPlan): SymphonyRunPlan {
@@ -273,12 +482,14 @@ async function createDefaultRuntime(): Promise<SymphonyPodProjectionRuntime> {
     issueResource: models.issueResource,
     taskResource: models.taskResource,
     deliveryResource: models.deliveryResource,
+    reportResource: models.reportResource,
     runResource: models.runResource,
     runStepResource: models.runStepResource,
     agentResource: models.agentResource,
     contactResource: models.contactTable,
     auditResource: models.auditResource,
     inboxNotificationResource: models.inboxNotificationResource,
+    writePodFile: writePodFileToSession,
   }
 }
 
@@ -377,6 +588,14 @@ function buildSymphonyDeliveryIri(webId: string, worker: SymphonyRunPlan['worker
 
 function buildSymphonyReportDeliveryIri(webId: string, worker: SymphonyRunPlan['workers'][number]): string {
   return deliveryResource.buildIri(webId,  {
+    id: `${getSymphonyArchiveKey(worker.session.uri)}-report`,
+    task: buildSymphonyTaskIri(webId, worker.task),
+    createdAt: safeDate(worker.session.completedAt ?? worker.session.updatedAt),
+  })
+}
+
+function buildSymphonyReportIri(webId: string, worker: SymphonyRunPlan['workers'][number]): string {
+  return reportResource.buildIri(webId, {
     id: `${getSymphonyArchiveKey(worker.session.uri)}-report`,
     task: buildSymphonyTaskIri(webId, worker.task),
     createdAt: safeDate(worker.session.completedAt ?? worker.session.updatedAt),
@@ -1068,8 +1287,11 @@ function buildSymphonyIssueRow(plan: SymphonyRunPlan, webId: string): IssueInser
   const updatedAt = safeDate(plan.issue.updatedAt)
   return {
     id: buildSymphonyIssueId(plan.issue),
+    // File-primary: title remains a compact index label for existing Issue schemas.
+    // The full problem statement and acceptance narrative live in issue.md.
     title: plan.issue.title,
-    description: plan.issue.description,
+    document: podFileUrlFromWebId(webId, buildSymphonyIssueDocumentPath(plan.issue)),
+    description: undefined,
     status: plan.issue.status,
     priority: plan.issue.priority,
     labels: ['symphony'],
@@ -1091,15 +1313,17 @@ function buildSymphonyIdeaRow(idea: SymphonyIdeaRecord, webId: string): IdeaInse
   return {
     id: getSymphonyArchiveKey(idea.uri),
     summary: idea.summary,
-    input: idea.input,
+    document: podFileUrlFromWebId(webId, buildSymphonyIdeaDocumentPath(idea)),
+    // File-primary: the source text lives in idea.md; TTL keeps only routing/index facts.
+    input: undefined,
     status: idea.status,
     commitment: idea.commitment,
     affectedArea: idea.affectedArea,
-    currentUnderstanding: idea.currentUnderstanding,
-    openQuestions: idea.openQuestions,
+    currentUnderstanding: undefined,
+    openQuestions: undefined,
     related: idea.relatedRecords,
-    conflicts: idea.conflicts,
-    nextStep: idea.nextStep,
+    conflicts: undefined,
+    nextStep: undefined,
     promotedTo: idea.promotedTo,
     chat: idea.chat,
     thread: idea.thread,
@@ -1107,6 +1331,8 @@ function buildSymphonyIdeaRow(idea: SymphonyIdeaRecord, webId: string): IdeaInse
     createdBy: webId,
     metadata: {
       surface: 'symphony',
+      filePrimary: true,
+      documentPath: buildSymphonyIdeaDocumentPath(idea),
       ...buildSymphonyArchiveMetadata({ idea: idea.uri }),
     },
     createdAt,
@@ -1225,6 +1451,68 @@ function buildSymphonyDeliveryRow(plan: SymphonyRunPlan, webId: string, worker: 
   } as DeliveryInsert
 }
 
+function buildSymphonyReportRow(
+  plan: SymphonyRunPlan,
+  webId: string,
+  worker: SymphonyRunPlan['workers'][number],
+  stage: Extract<ProjectionStage, 'completed' | 'failed'>,
+): ReportInsert {
+  const completedAt = safeDate(worker.session.completedAt ?? worker.session.updatedAt)
+  const workerAgent = agentResource.buildIri(webId,  {
+    id: buildWorkerAgentId(worker.session.backend, worker.session.target.agent),
+  })
+  const run = buildSymphonyRunIri(webId, worker)
+  const task = buildSymphonyTaskIri(webId, worker.task)
+  const status = worker.session.status === 'failed' || stage === 'failed' ? 'failed' : 'completed'
+  const summary = status === 'completed'
+    ? `${worker.taskRecord.title} completed.`
+    : `${worker.taskRecord.title} failed: ${worker.session.error ?? worker.delivery.error ?? 'worker did not complete successfully.'}`
+
+  return {
+    id: reportResource.buildId({
+      id: `${getSymphonyArchiveKey(worker.session.uri)}-report`,
+      task,
+      createdAt: completedAt,
+    }),
+    reportKind: 'handoff',
+    status: 'published',
+    outcome: status === 'completed' ? 'accepted' : 'blocked',
+    about: run,
+    issue: buildSymphonyIssueIri(webId, plan.issue),
+    task,
+    delivery: buildSymphonyDeliveryIri(webId, worker),
+    run,
+    thread: selectWorkerThreadIri(plan, webId, worker),
+    evidence: [
+      buildSymphonyRunStepIri(webId, worker, stage),
+    ],
+    summary,
+    actor: workerAgent,
+    source: podFileUrlFromWebId(webId, buildSymphonyReportDocumentPath(worker)),
+    metricFacts: {
+      backend: worker.session.backend,
+      agent: worker.session.target.agent,
+      autoModeSessionId: worker.session.autoModeSessionId,
+      exitCode: worker.session.exitCode,
+    },
+    metadata: {
+      surface: 'symphony',
+      filePrimary: true,
+      reportFile: buildSymphonyReportDocumentPath(worker),
+      reportDelivery: buildSymphonyReportDeliveryIri(webId, worker),
+      ...buildSymphonyArchiveMetadata({
+        issue: plan.issue.uri,
+        task: worker.task,
+        delivery: worker.delivery.uri,
+        session: worker.session.uri,
+      }),
+    },
+    createdAt: completedAt,
+    publishedAt: completedAt,
+    updatedAt: completedAt,
+  } as ReportInsert
+}
+
 function buildSymphonyReportDeliveryRow(
   plan: SymphonyRunPlan,
   webId: string,
@@ -1237,6 +1525,7 @@ function buildSymphonyReportDeliveryRow(
   })
   const secretaryAgent = agentResource.buildIri(webId,  { id: SYMPHONY_SECRETARY_AGENT_ID })
   const run = buildSymphonyRunIri(webId, worker)
+  const report = buildSymphonyReportIri(webId, worker)
   const task = buildSymphonyTaskIri(webId, worker.task)
   const originalDelivery = buildSymphonyDeliveryIri(webId, worker)
   const status = worker.session.status === 'failed' || stage === 'failed' ? 'failed' : 'completed'
@@ -1260,7 +1549,7 @@ function buildSymphonyReportDeliveryRow(
     targetThread: selectTargetThreadIri(plan.issue.thread ?? worker.session.target?.thread, webId, plan),
     targetSession: buildSymphonyControlSessionUri(webId, plan),
     actor: workerAgent,
-    object: run,
+    object: report,
     objective: summary,
     payload: {
       kind: 'symphony_report',
@@ -1269,6 +1558,7 @@ function buildSymphonyReportDeliveryRow(
       issue: buildSymphonyIssueIri(webId, plan.issue),
       task,
       delivery: originalDelivery,
+      report,
       reportDelivery: buildSymphonyReportDeliveryIri(webId, worker),
       session: buildSymphonyControlSessionUri(webId, plan),
       run,
@@ -1277,6 +1567,7 @@ function buildSymphonyReportDeliveryRow(
       autoModeSessionId: worker.session.autoModeSessionId,
       exitCode: worker.session.exitCode,
       error: worker.session.error ?? worker.delivery.error ?? worker.taskRecord.error,
+      reportFile: buildSymphonyReportDocumentPath(worker),
       evidence: {
         statusMessage: buildSymphonyMessageUri(webId, plan, buildStatusMessageRow(plan, webId, stage)),
         runStep: buildSymphonyRunStepIri(webId, worker, stage),
@@ -1296,6 +1587,8 @@ function buildSymphonyReportDeliveryRow(
         session: worker.session.uri,
       }),
       reportKind: 'worker-completion',
+      filePrimary: true,
+      reportFile: buildSymphonyReportDocumentPath(worker),
     },
     error: status === 'failed' ? worker.session.error ?? worker.delivery.error ?? worker.taskRecord.error : undefined,
     createdAt: completedAt,
@@ -1664,6 +1957,7 @@ async function upsertIssue(db: PodProjectionDb, runtime: SymphonyPodProjectionRu
   await upsertExactRecord(db, runtime.issueResource, { id: row.id }, row as Record<string, unknown>, {
     title: row.title,
     description: row.description,
+    document: row.document,
     status: row.status,
     priority: row.priority,
     labels: row.labels,
@@ -1679,6 +1973,7 @@ async function upsertIssue(db: PodProjectionDb, runtime: SymphonyPodProjectionRu
 async function upsertIdea(db: PodProjectionDb, runtime: SymphonyPodProjectionRuntime, row: IdeaInsert): Promise<void> {
   await upsertExactRecord(db, runtime.ideaResource, { id: row.id }, row as Record<string, unknown>, {
     summary: row.summary,
+    document: row.document,
     input: row.input,
     status: row.status,
     commitment: row.commitment,
@@ -1711,6 +2006,33 @@ async function upsertTask(db: PodProjectionDb, runtime: SymphonyPodProjectionRun
     assignedTo: row.assignedTo,
     source: row.source,
     metadata: row.metadata,
+    updatedAt: row.updatedAt,
+  })
+}
+
+async function upsertReport(db: PodProjectionDb, runtime: SymphonyPodProjectionRuntime, row: ReportInsert): Promise<void> {
+  await upsertExactRecord(db, runtime.reportResource, {
+    id: row.id,
+    task: row.task,
+    createdAt: row.createdAt,
+  }, row as Record<string, unknown>, {
+    reportKind: row.reportKind,
+    status: row.status,
+    outcome: row.outcome,
+    about: row.about,
+    issue: row.issue,
+    task: row.task,
+    delivery: row.delivery,
+    run: row.run,
+    thread: row.thread,
+    evidence: row.evidence,
+    summary: row.summary,
+    reviewer: row.reviewer,
+    actor: row.actor,
+    source: row.source,
+    metricFacts: row.metricFacts,
+    metadata: row.metadata,
+    publishedAt: row.publishedAt,
     updatedAt: row.updatedAt,
   })
 }
@@ -1856,6 +2178,7 @@ function collectSymphonyProjectionResources(
       add('runStep', buildSymphonyRunStepIri(webId, worker, stage))
     }
     if (worker.session.status === 'completed' || worker.session.status === 'failed') {
+      add('report', buildSymphonyReportIri(webId, worker))
       add('delivery', buildSymphonyReportDeliveryIri(webId, worker))
     }
   }
@@ -1935,6 +2258,7 @@ export async function persistSymphonyControlStateToPod(
       stages,
       latestMessage,
       shouldUpsertChat: !normalizedPlan.session.target?.chat,
+      podSession,
     }),
   })
 
@@ -2020,6 +2344,7 @@ function resolveProjectionResourceModel(runtime: SymphonyPodProjectionRuntime, k
   if (kind === 'issue') return runtime.issueResource
   if (kind === 'task') return runtime.taskResource
   if (kind === 'delivery') return runtime.deliveryResource
+  if (kind === 'report') return runtime.reportResource
   if (kind === 'run') return runtime.runResource
   if (kind === 'runStep') return runtime.runStepResource
   if (kind === 'agent') return runtime.agentResource
@@ -2180,7 +2505,18 @@ export async function persistSymphonyIdeaToPod(
         },
       },
       {
-        id: 'symphony.idea.upsert',
+        id: 'symphony.idea.write-file-primary-document',
+        kind: 'upsert',
+        apply: async () => {
+          await runtime.writePodFile?.(podSession, {
+            path: buildSymphonyIdeaDocumentPath(idea),
+            content: renderSymphonyIdeaMarkdown(idea),
+            contentType: 'text/markdown; charset=utf-8',
+          })
+        },
+      },
+      {
+        id: 'symphony.idea.upsert-meta',
         kind: 'upsert',
         apply: () => upsertIdea(db, runtime, buildSymphonyIdeaRow(idea, podSession.webId)),
       },
@@ -2498,6 +2834,7 @@ function buildSymphonyProjectionOperations(input: {
   stages: ProjectionStage[]
   latestMessage: MessageInsert
   shouldUpsertChat: boolean
+  podSession: PodDataSession
 }): LinxSyncOperation[] {
   return [
     {
@@ -2512,6 +2849,7 @@ function buildSymphonyProjectionOperations(input: {
           input.runtime.issueResource,
           input.runtime.taskResource,
           input.runtime.deliveryResource,
+          input.runtime.reportResource,
           input.runtime.runResource,
           input.runtime.runStepResource,
           input.runtime.agentResource,
@@ -2522,7 +2860,18 @@ function buildSymphonyProjectionOperations(input: {
       },
     },
     {
-      id: 'symphony.upsert-issue',
+      id: 'symphony.write-file-primary-documents',
+      kind: 'upsert',
+      apply: async () => {
+        await input.runtime.writePodFile?.(input.podSession, {
+          path: buildSymphonyIssueDocumentPath(input.plan.issue),
+          content: renderSymphonyIssueMarkdown(input.plan),
+          contentType: 'text/markdown; charset=utf-8',
+        })
+      },
+    },
+    {
+      id: 'symphony.upsert-issue-meta',
       kind: 'upsert',
       apply: () => upsertIssue(input.db, input.runtime, buildSymphonyIssueRow(input.plan, input.webId)),
     },
@@ -2600,6 +2949,7 @@ function buildSymphonyReportOperations(input: {
   plan: SymphonyRunPlan
   webId: string
   stage: ProjectionStage
+  podSession: PodDataSession
 }): LinxSyncOperation[] {
   if (input.stage !== 'completed' && input.stage !== 'failed') {
     return []
@@ -2607,6 +2957,26 @@ function buildSymphonyReportOperations(input: {
   const terminalStage = input.stage
 
   return input.plan.workers.flatMap((worker, index): LinxSyncOperation[] => [
+    {
+      id: `symphony.write-report-file:${index + 1}`,
+      kind: 'upsert',
+      apply: async () => {
+        await input.runtime.writePodFile?.(input.podSession, {
+          path: buildSymphonyReportDocumentPath(worker),
+          content: renderSymphonyReportMarkdown(input.plan, worker, terminalStage),
+          contentType: 'text/markdown; charset=utf-8',
+        })
+      },
+    },
+    {
+      id: `symphony.upsert-report:${index + 1}`,
+      kind: 'upsert',
+      apply: () => upsertReport(
+        input.db,
+        input.runtime,
+        buildSymphonyReportRow(input.plan, input.webId, worker, terminalStage),
+      ),
+    },
     {
       id: `symphony.upsert-report-delivery:${index + 1}`,
       kind: 'upsert',
