@@ -37,6 +37,11 @@
       "node": "./dist/file-sync.js",
       "default": "./src/file-sync.ts"
     },
+    "./pod-resource-identity": {
+      "types": "./src/pod-resource-identity.ts",
+      "node": "./dist/pod-resource-identity.js",
+      "default": "./src/pod-resource-identity.ts"
+    },
     "./reconciler": {
       "types": "./src/reconciler.ts",
       "node": "./dist/reconciler.js",

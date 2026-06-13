@@ -13,9 +13,9 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
-import type { PodTable, InferTableData } from '@undefineds.co/drizzle-solid'
+import type { PodResource as PodResourceSchema, InferTableData } from '@undefineds.co/drizzle-solid'
 
-type PodResource = PodTable<any>
+type PodResource = PodResourceSchema<any>
 
 export interface UseEntityOptions<T> {
   /** 数据更新时的回调（除了更新内部 state，还可以做额外操作如更新缓存） */
@@ -50,13 +50,13 @@ export interface UseEntityResult<T> {
  * ```typescript
  * // 查询联系人的 Profile（可能是远程的）
  * const { data: profile, isLoading, refresh } = useEntity(
- *   solidProfileTable,
+ *   solidProfileResource,
  *   contact.entityUri
  * )
  * 
  * // 查询 Agent（可能是本地或远程的）
  * const { data: agent } = useEntity(
- *   agentTable,
+ *   agentResource,
  *   contact.entityUri,
  *   {
  *     onUpdate: (data) => {

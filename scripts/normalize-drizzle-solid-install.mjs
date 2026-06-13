@@ -1,4 +1,4 @@
-import { cpSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { cpSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 
@@ -42,6 +42,10 @@ function syncLocalDrizzleSolidDist(root) {
     return
   }
 
+  if (samePath(localDrizzleSolidDistRoot, root)) {
+    return
+  }
+
   cpSync(localDrizzleSolidDistRoot, root, { recursive: true })
 }
 
@@ -55,6 +59,14 @@ function normalizeNestedDrizzleSolidInstalls(sourceRoot) {
     cpSync(sourceDistRoot, path.join(nestedRoot, 'dist'), { recursive: true })
     stripEsmSourceMapUrls(path.join(nestedRoot, 'dist/esm'))
     assertPatchedDrizzleSolid(path.join(nestedRoot, 'dist'))
+  }
+}
+
+function samePath(left, right) {
+  try {
+    return realpathSync(left) === realpathSync(right)
+  } catch {
+    return path.resolve(left) === path.resolve(right)
   }
 }
 

@@ -7,7 +7,11 @@ import { router } from './router'
 
 export function AppRuntime() {
   const isDesktopRuntime =
-    typeof window !== 'undefined' && Boolean(window.xpodDesktop?.auth)
+    typeof window !== 'undefined'
+    && Boolean(
+      window.xpodDesktop?.auth?.prepareLoopbackRedirect
+      && window.xpodDesktop?.auth?.consumePendingRedirect,
+    )
   const shouldRestoreInProvider =
     typeof window !== 'undefined'
     && window.location.protocol !== 'file:'

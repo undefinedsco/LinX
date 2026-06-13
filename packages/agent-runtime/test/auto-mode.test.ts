@@ -640,6 +640,7 @@ test('extracts session ids and normalizes generic json protocol lines', () => {
 
 test('normalizes auto-mode interaction requests and response mapping', () => {
   expect(isTrustedAutoModeCommand('rg --files')).toBe(true)
+  expect(isTrustedAutoModeCommand('grep -R "solid:storage" profile/card')).toBe(true)
   expect(isTrustedAutoModeCommand('rm -rf .')).toBe(false)
 
   expect(

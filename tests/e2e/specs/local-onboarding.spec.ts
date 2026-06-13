@@ -201,6 +201,8 @@ async function installDesktopBridge(page: Page, scenario: DesktopScenario = {}) 
       closeConfigCalls: 0,
       authWindowOpenCalls: 0,
       authWindowCloseCalls: 0,
+      authWindowUrls: [] as string[],
+      authWindowLabels: [] as Array<string | null>,
     }
 
     const emitLocal = () => {
@@ -304,13 +306,17 @@ async function installDesktopBridge(page: Page, scenario: DesktopScenario = {}) 
             reason: authWindowOpen ? 'opened' : 'dismissed',
             ready: authWindowOpen,
           }),
-          openAuthorizationWindow: async () => {
+          openAuthorizationWindow: async (url: string, options?: { providerLabel?: string }) => {
             playState.authWindowOpenCalls += 1
+            playState.authWindowUrls.push(url)
+            playState.authWindowLabels.push(options?.providerLabel ?? null)
             authWindowOpen = true
             emitAuth('opened')
           },
-          openEmbeddedAuthorization: async () => {
+          openEmbeddedAuthorization: async (url: string, options?: { providerLabel?: string }) => {
             playState.authWindowOpenCalls += 1
+            playState.authWindowUrls.push(url)
+            playState.authWindowLabels.push(options?.providerLabel ?? null)
             authWindowOpen = true
             emitAuth('opened')
           },
@@ -381,17 +387,19 @@ async function installPendingLoginState(page: Page, input: {
   }, input)
 }
 
-async function installMockOidcProvider(page: Page) {
-  await page.route('http://localhost:5737/.well-known/openid-configuration', async (route) => {
+async function installMockOidcProvider(page: Page, origin = 'http://localhost:5737') {
+  const normalizedOrigin = origin.replace(/\/$/, '')
+
+  await page.route(`${normalizedOrigin}/.well-known/openid-configuration`, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        issuer: 'http://localhost:5737',
-        authorization_endpoint: 'http://localhost:5737/authorize',
-        token_endpoint: 'http://localhost:5737/token',
-        jwks_uri: 'http://localhost:5737/jwks',
-        registration_endpoint: 'http://localhost:5737/register',
+        issuer: normalizedOrigin,
+        authorization_endpoint: `${normalizedOrigin}/authorize`,
+        token_endpoint: `${normalizedOrigin}/token`,
+        jwks_uri: `${normalizedOrigin}/jwks`,
+        registration_endpoint: `${normalizedOrigin}/register`,
         response_types_supported: ['code'],
         grant_types_supported: ['authorization_code', 'refresh_token'],
         subject_types_supported: ['public'],
@@ -404,7 +412,7 @@ async function installMockOidcProvider(page: Page) {
     })
   })
 
-  await page.route('http://localhost:5737/register', async (route) => {
+  await page.route(`${normalizedOrigin}/register`, async (route) => {
     await route.fulfill({
       status: 201,
       contentType: 'application/json',
@@ -418,13 +426,39 @@ async function installMockOidcProvider(page: Page) {
   })
 }
 
-async function openLocalFlow(page: Page) {
+async function selectLocalSpace(page: Page) {
   await page.goto('/')
   await expect(page).toHaveURL(/\/(?:$|chat$)/)
   await expect(page.getByRole('heading', { name: '选择空间' })).toBeVisible({ timeout: 15000 })
   await page.getByRole('button', { name: /本地空间[\s\S]*(开始|启动|查看|设置|登录|继续)/ }).click()
   await expect(page).toHaveURL(/\/(?:$|chat$)/)
+}
+
+async function openLocalFlow(page: Page) {
+  await selectLocalSpace(page)
   await expect(page.getByRole('heading', { name: '本地空间' })).toBeVisible({ timeout: 15000 })
+}
+
+async function expectLocalReadyFlowOpenedCloudAuthorization(page: Page) {
+  await expect(page.getByText('等待登录完成')).toBeVisible({ timeout: 15000 })
+
+  const result = await expect.poll(async () => {
+    return page.evaluate(() => {
+      const playState = (window as any).__linxPlaywrightState
+      const pendingAttempt = window.sessionStorage.getItem('linx-pending-login-attempt')
+      return {
+        authWindowOpenCalls: playState.authWindowOpenCalls,
+        authWindowUrls: playState.authWindowUrls,
+        authWindowLabels: playState.authWindowLabels,
+        pendingAttempt,
+      }
+    })
+  }).toMatchObject({
+    authWindowOpenCalls: 1,
+    authWindowLabels: ['Local'],
+  })
+
+  return result
 }
 
 test.describe('Local onboarding', () => {
@@ -456,15 +490,40 @@ test.describe('Local onboarding', () => {
       initialSnapshot: SPACE_REQUIRED_SNAPSHOT,
       continueSnapshot: READY_LOCAL_SNAPSHOT,
     })
+    await installMockOidcProvider(page, 'https://id.undefineds.co')
 
-    await openLocalFlow(page)
+    await selectLocalSpace(page)
 
-    await expect(page.getByText(/本地空间\s*已准备好/)).toBeVisible()
-    await expect(page.getByRole('button', { name: '继续登录' })).toBeVisible()
+    await expectLocalReadyFlowOpenedCloudAuthorization(page)
 
     const playState = await page.evaluate(() => (window as any).__linxPlaywrightState)
     expect(playState.chosenSpaces).toEqual(['local'])
     expect(playState.continueCalls).toBe(1)
+    expect(playState.authWindowUrls).toHaveLength(1)
+    const openedUrl = new URL(playState.authWindowUrls[0])
+    expect(openedUrl.origin).toBe('https://id.undefineds.co')
+    expect(openedUrl.searchParams.get('provisionCode')).toBe('pc-123')
+
+    const pending = await page.evaluate(() => JSON.parse(window.sessionStorage.getItem('linx-pending-login-attempt') ?? 'null'))
+    expect(pending).toMatchObject({
+      issuerUrl: 'https://id.undefineds.co',
+      accountIssuerUrl: 'https://id.undefineds.co',
+      authorizationSurface: 'embedded',
+      storageProviderUrl: 'https://node-test.undefineds.co',
+      storageProviderLabel: 'Local',
+      authorizationQuery: {
+        provisionCode: 'pc-123',
+      },
+      loginTransaction: {
+        route: 'local',
+        oidcEntryUrl: 'https://id.undefineds.co',
+        oidcIssuerUrl: 'https://id.undefineds.co',
+        accountIssuerUrl: 'https://id.undefineds.co',
+        storageProviderUrl: 'https://node-test.undefineds.co',
+        storageProviderLabel: 'Local',
+        nodeId: 'node-test',
+      },
+    })
   })
 
   test('已有 Local 空间时进入后会直接继续启动', async ({ page }) => {
@@ -497,14 +556,27 @@ test.describe('Local onboarding', () => {
         nodeId: 'node-test',
       } as Snapshot,
     })
+    await installMockOidcProvider(page, 'https://id.undefineds.co')
 
-    await openLocalFlow(page)
+    await selectLocalSpace(page)
 
-    await expect(page.getByText(/本地空间\s*已准备好/)).toBeVisible()
+    await expectLocalReadyFlowOpenedCloudAuthorization(page)
 
     const playState = await page.evaluate(() => (window as any).__linxPlaywrightState)
     expect(playState.chosenSpaces).toEqual([])
     expect(playState.continueCalls).toBe(1)
+    expect(playState.authWindowUrls).toHaveLength(1)
+    const openedUrl = new URL(playState.authWindowUrls[0])
+    expect(openedUrl.origin).toBe('https://id.undefineds.co')
+    expect(openedUrl.searchParams.get('provisionCode')).toBe('pc-123')
+
+    const pending = await page.evaluate(() => JSON.parse(window.sessionStorage.getItem('linx-pending-login-attempt') ?? 'null'))
+    expect(pending?.loginTransaction).toMatchObject({
+      route: 'local',
+      accountIssuerUrl: 'https://id.undefineds.co',
+      storageProviderUrl: 'https://node-test.undefineds.co',
+      storageProviderLabel: 'Local',
+    })
   })
 
   test('repair 态可从当前卡片拉起 Local 设置', async ({ page }) => {

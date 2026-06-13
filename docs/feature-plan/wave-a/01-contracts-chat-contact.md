@@ -85,7 +85,7 @@ CP0 中 Chat 作为纯 channel/place（`mee:LongChat`），不区分聊天对象
 schema 定义时直接用 `V.xxx`：
 
 ```ts
-// packages/models/src/vocab/chat.vocab.ts
+// @undefineds.co/models owning repository: src/vocab/chat.vocab.ts
 
 import { DCTerms, SCHEMA, UDFS, WF } from "../namespaces"
 
@@ -120,7 +120,7 @@ export const ChatBaseVocab = {
 现有 `chatTable` 保持单表，但 **Chat 作为“聊天发生的地方（channel/place）”变薄**。
 
 ```ts
-// packages/models/src/chat.schema.ts
+// @undefineds.co/models owning repository: src/chat.schema.ts
 
 export const chatTable = podTable(
   "chats",
@@ -145,7 +145,7 @@ export const chatTable = podTable(
 `threadTable` 在 CP0 **仅承载**与 workspace 关联的最小上下文，避免把执行细节塞进 Chat。
 
 ```ts
-// packages/models/src/thread.schema.ts
+// @undefineds.co/models owning repository: src/thread.schema.ts
 
 export const threadTable = podTable(
   "thread",
@@ -168,7 +168,7 @@ export const threadTable = podTable(
 ### 6A.3 Message 扩展 Vocab
 
 ```typescript
-// packages/models/src/vocab/message.vocab.ts
+// @undefineds.co/models owning repository: src/vocab/message.vocab.ts
 
 import { SIOC, FOAF, DCTerms, UDFS, SCHEMA, MEETING, WF } from '../namespaces'
 
@@ -202,7 +202,7 @@ export const MessageVocab = {
 #### messageTable 改造方案
 
 ```typescript
-// packages/models/src/message.schema.ts 新增字段
+// @undefineds.co/models owning repository: src/message.schema.ts 新增字段
 
 // 新增：Group 消息扩展
 senderName: string('senderName').predicate(UDFS.senderName),
@@ -219,7 +219,7 @@ coordinationId: string('coordinationId').predicate(UDFS.coordinationId),
 ### 6A.4 Contact 扩展 Vocab
 
 ```typescript
-// packages/models/src/vocab/contact.vocab.ts
+// @undefineds.co/models owning repository: src/vocab/contact.vocab.ts
 
 import { VCARD, FOAF, AS, DCTerms, UDFS } from '../namespaces'
 
@@ -277,12 +277,12 @@ Wave A 阶段仅定义 JSON schema，不做 RDF 提取。
 | Message | `/.data/chat/{chatId}/{yyyy}/{MM}/{dd}/messages.ttl#{id}` | `mee:Message` | UDFS | 按日期分桶；`chatId/threadId` 保留字符串键但带 canonical predicate |
 | Contact | `/.data/contacts/{id}.ttl` | `vcard:Individual` | UDFS | 新增 `GROUP` 枚举值 |
 | Thread | `/.data/chat/{chatId}/index.ttl#{threadId}` | `sioc:Thread` | UDFS | 与 chat 共用 index.ttl；CP0 仅新增 `workspace` 字段 |
-| Agent | `/.data/agents/{id}.ttl` | `foaf:Agent` | UDFS | 无变更 |
+| Agent | `/agents/{id}/` | `foaf:Agent` | UDFS | 目录型 Agent Home |
 
 ### 6A.7 Vocab 文件结构
 
 ```
-packages/models/src/vocab/
+@undefineds.co/models owning repository: src/vocab/
 ├── _namespaces.ts          ← 重导出 namespaces.ts（保持兼容）
 ├── chat.vocab.ts           ← ChatBaseVocab（Chat=channel/place）
 ├── thread.vocab.ts         ← ThreadVocab（workspace 上下文）

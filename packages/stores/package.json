@@ -6,14 +6,19 @@
   "exports": {
     ".": "./src/index.ts",
     "./login": "./src/login.ts",
-    "./pod-db": "./src/pod-collection.ts"
+    "./current-pod-base": "./src/current-pod-base.ts",
+    "./exact-records": "./src/exact-records.ts",
+    "./pod-db": "./src/pod-collection.ts",
+    "./pod-write-guard": "./src/pod-write-guard.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "lint": "echo \"lint not configured\""
   },
   "dependencies": {
+    "@linx/agent-runtime": "*",
     "@undefineds.co/models": "0.2.40",
+    "@undefineds.co/drizzle-solid": "^0.3.14",
     "@tanstack/query-db-collection": "^1.0.37",
     "@tanstack/react-db": "^0.1.84",
     "@tanstack/react-query": "^5.100.11",

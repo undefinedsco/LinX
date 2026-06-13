@@ -57,9 +57,9 @@ LinX 普通登录卡展示三个产品入口：
 选择 Local
   -> LinX 启动本地 xpod
   -> LinX 向 Cloud 注册 Local SP，拿到 selected canonical SP URL
-  -> LinX 携带 provision scope 打开 selected Local SP 账号/OIDC 表面
-  -> Local SP 可使用 Cloud 账号 authority 完成登录 / 注册
-  -> Local SP consent / Pod picker 只展示 selected Local SP 下的 Pod
+  -> LinX 携带 provision scope 打开 Cloud 账号/OIDC 表面
+  -> Cloud 完成登录 / 注册，但 consent / Pod picker 按 selected Local SP scope 过滤
+  -> Cloud 账号流只展示 selected Local SP 下的 Pod
   -> WebID profile 的 solid:storage 绑定到 selected Local SP Pod
   -> 回调进入 LinX
 ```
@@ -69,7 +69,7 @@ LinX 普通登录卡展示三个产品入口：
 Local 交互验收：
 
 - 如果本地 xpod 已 ready，选择 Local 后不要出现一帧无意义的“正在进入”
-  中间页，应直接打开 selected Local SP 登录/consent。
+  中间页，应直接打开携带 selected Local SP scope 的 Cloud 登录/consent 流。
 - 登录窗口、等待态、错误态都必须能返回空间选择。
 - 如果 provision scope 缺失、过期、不可解析或 scoped lookup 失败，展示
   Local 绑定/重试/创建当前空间，而不是展示 Cloud Pod。
@@ -114,9 +114,9 @@ Local 交互验收：
 
 - Cloud：登录后 `storedAccount.storageProviderLabel` 为 `Cloud`，Pod URL 不依赖本机地址。
 - Local：登录后 `storedAccount.storageProviderLabel` 为 `Local`，Solid DB Pod URL 必须以 selected Local SP canonical URL 开头。
-- Local：OIDC/account 页面可以复用 Cloud 账号 authority，但 Inrupt 的
-  OIDC entry 必须来自 selected Local SP，或来自明确支持 SP-scoped consent
-  的等价 Cloud-hosted surface；不能直接打开无 scope 的 Cloud consent。
+- Local：Inrupt 的 OIDC entry 必须是 Cloud account/OIDC surface，并携带
+  selected Local SP 的 provision scope；不能把 selected Local SP 当成
+  OIDC issuer，也不能直接打开无 scope 的 Cloud consent。
 - Local：`/.data/*` bootstrap、chat/message、inbox、Agent Home、runtime session ref、AI 配置、Secretary 初始化数据和内置 runtime API 都必须从 Solid DB 当前 Pod URL 推导。
 - Local：不能从 Cloud WebID origin、issuer URL、profile URL、localhost 或 LAN 地址推导业务写入位置。
 - Local：Cloud provision 回调创建 Pod 时，Local SP 必须创建 Pod root 和结构化 root metadata；`HEAD /<pod>/` 必须返回存在。

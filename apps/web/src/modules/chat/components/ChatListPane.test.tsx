@@ -1,4 +1,4 @@
-import { act, render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ChatListPane } from './ChatListPane'
@@ -225,8 +225,7 @@ describe('ChatListPane', () => {
       expect(mockSelectThread).not.toHaveBeenCalled()
     })
 
-    it('does not leave the empty chat list stuck on AI Secretary preparation', async () => {
-      vi.useFakeTimers()
+    it('keeps the empty chat list on the collection empty state while AI Secretary persistence is pending', () => {
       mockUseChatList.mockReturnValue({
         data: [],
         isLoading: false,
@@ -237,13 +236,9 @@ describe('ChatListPane', () => {
 
       render(<ChatListPane theme="light" />, { wrapper: createWrapper() })
 
-      expect(screen.getByText('正在准备默认助手...')).toBeInTheDocument()
-
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(12_000)
-      })
-
-      expect(screen.getByText('默认助手暂时还没准备好，可以先进入 LinX。')).toBeInTheDocument()
+      expect(screen.getByText('暂无聊天')).toBeInTheDocument()
+      expect(screen.queryByText('正在准备默认助手...')).not.toBeInTheDocument()
+      expect(screen.queryByText('默认助手暂时还没准备好，可以先进入 LinX。')).not.toBeInTheDocument()
     })
 
     it('does not prepare AI Secretary from the chat list for existing accounts without it', () => {

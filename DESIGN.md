@@ -2,9 +2,9 @@
 
 ## Source of truth
 - Status: Draft
-- Last refreshed: 2026-06-01
+- Last refreshed: 2026-06-11
 - Primary product surfaces: Desktop login overlay, Local onboarding, Service setup, settings.
-- Evidence reviewed: `docs/ui-style-guide.md`, `docs/ui-component-architecture.md`, `docs/local-sp-domain-and-tunnel.md`, `apps/web/src/modules/login/LoginModal.tsx`, `apps/web/src/modules/login/LocalOnboardingCard.tsx`, `apps/web/src/modules/settings/components/SetupView.tsx`.
+- Evidence reviewed: `docs/ui-style-guide.md`, `docs/ui-component-architecture.md`, `docs/local-sp-domain-and-tunnel.md`, `apps/web/src/modules/login/LoginModal.tsx`, `apps/web/src/modules/login/LocalOnboardingCard.tsx`, `apps/web/src/modules/settings/components/SetupView.tsx`, `apps/web/src/modules/settings/components/LocalNetworkSettingsCard.tsx`.
 
 ## Brand
 - Personality: Warm guardian, calm technical guidance, no mystery around local infrastructure.
@@ -23,7 +23,7 @@
 
 ## Information architecture
 - Primary navigation: Login overlay remains the first decision point. Settings owns deeper service configuration.
-- Core routes/screens: Provider selection, Local onboarding detail, auth waiting surface, `/setup` for service mode.
+- Core routes/screens: Provider selection, Local onboarding detail, auth waiting surface, Settings / 本地网络, `/setup` for service mode.
 - Content hierarchy: Space choice first, then runtime status, then login. Domain/tunnel/connectivity belong to settings or Local management.
 
 ## Design principles
@@ -40,8 +40,8 @@
 - Imagery/iconography: Existing lucide icons and LinX/local badges.
 
 ## Components
-- Existing components to reuse: `LoginCardShell`, login provider rows, settings form controls, existing buttons/input styling.
-- New/changed components: Local runtime status card in login; Local route info, tunnel setup, and connectivity cards in settings/local management.
+- Existing components to reuse: `LoginCardShell`, login provider rows, settings form controls, existing buttons/input styling, `LocalReachabilitySummary`.
+- New/changed components: Local runtime status card in login; Local route info, tunnel setup, and connectivity cards in Settings / 本地网络.
 - Variants and states: Unknown, checking, ready, local-only, failed, mismatch.
 - Token/component ownership: Login overlay owns first-run guidance; settings/service setup owns persistent advanced config.
 
@@ -61,7 +61,7 @@
 - Loading: Show concrete xpod startup progress and details.
 - Empty: No public URL yet shows "waiting for xpod/Cloud".
 - Error: Explain whether the failure is local startup, Cloud binding, or public route reachability.
-- Success: Show Local readiness before continuing. Assigned domain and route readiness are visible in settings.
+- Success: Show Local readiness before continuing. Assigned domain and route readiness are visible in Settings / 本地网络.
 - Disabled: Save token is disabled until token text is provided.
 - Offline/slow network: Public route can be `local-only`; do not silently switch to Cloud Pod.
 
@@ -75,7 +75,7 @@
 - Design-token constraints: Reuse existing tokens and modal shell.
 - Performance constraints: Connectivity probes are explicit user actions or startup status, not background polling loops in the login component.
 - Compatibility constraints: Local canonical URL semantics must stay aligned with `docs/local-sp-domain-and-tunnel.md`.
-- Test/screenshot expectations: Add unit tests proving Local login does not expose network configuration. Use Electron debugger for desktop visual verification when needed.
+- Test/screenshot expectations: Add unit tests proving Local login does not expose network configuration, and Settings / 本地网络 can save config input plus run reachability validation. Use Electron debugger for desktop visual verification when needed.
 
 ## Open questions
 - [ ] Whether Cloud will later return a Cloudflare one-click setup URL for the assigned domain.

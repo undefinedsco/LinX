@@ -10329,7 +10329,7 @@
     "@typescript-eslint/types" "8.61.0"
     eslint-visitor-keys "^5.0.0"
 
-"@undefineds.co/drizzle-solid@0.3.14", "@undefineds.co/drizzle-solid@0.3.16", "@undefineds.co/drizzle-solid@^0.3.13", "@undefineds.co/drizzle-solid@^0.3.14":
+"@undefineds.co/drizzle-solid@0.3.16", "@undefineds.co/drizzle-solid@^0.3.13", "@undefineds.co/drizzle-solid@^0.3.14":
   version "0.3.14"
   resolved "https://registry.yarnpkg.com/@undefineds.co/drizzle-solid/-/drizzle-solid-0.3.14.tgz#7327f522a58f1b87ac3fba578ec0372cc80d9854"
   integrity sha512-oZp6jUgfeDXhTIN+yhZ+nuL2nHsyFDW+jjrxrhVv2VQOjlnJ2pI9mwibJ/Z0UTXZmqgxNUpyb6Zx/bPilnfIhw==
@@ -10345,7 +10345,7 @@
     sparqljs "^3.7.3"
     zod "^4.1.8"
 
-"@undefineds.co/models@0.2.38", "@undefineds.co/models@0.2.39", "@undefineds.co/models@0.2.40":
+"@undefineds.co/models@0.2.39", "@undefineds.co/models@0.2.40":
   version "0.2.40"
   resolved "https://registry.yarnpkg.com/@undefineds.co/models/-/models-0.2.40.tgz#792a58d6e87713c5cb07f938d20b7c9881a9e1b0"
   integrity sha512-fkImNIoTGh4+Ocx12tK54N7aqzNlIEgvCf3xWKvFZNsY73W5nMRjEuOlLnoD8EKziBoS77Zo/TjSk19XXqHoPw==
@@ -10355,58 +10355,6 @@
     "@undefineds.co/drizzle-solid" "^0.3.14"
     n3 "^1.26.0"
     zod "^3.22.4"
-
-"@undefineds.co/xpod@0.3.33":
-  version "0.3.33"
-  resolved "https://registry.yarnpkg.com/@undefineds.co/xpod/-/xpod-0.3.33.tgz#2af6adc79563de2f5d4b5135f9e3219123fd2558"
-  integrity sha512-2Qb3Sr8pahJcm9KCxdVl1Ta/ph0NpDj1DQHHFYNotwhsNfcB+B87kOSyVNpeCyWCH4kDusLwJ+f6yPaS3zRsmQ==
-  dependencies:
-    "@agentclientprotocol/sdk" "^0.14.1"
-    "@ai-sdk/openai" "^3.0.2"
-    "@comunica/core" "^4.5.0"
-    "@comunica/query-sparql" "^4.5.0"
-    "@comunica/query-sparql-rdfjs" "^4.0.2"
-    "@comunica/query-sparql-solid" "^4.0.2"
-    "@comunica/types" "^4.5.0"
-    "@comunica/utils-metadata" "^4.5.0"
-    "@electric-sql/pglite" "^0.3.14"
-    "@inrupt/solid-client-authn-node" "^3.1.0"
-    "@mariozechner/pi-coding-agent" "^0.55.1"
-    "@solid/community-server" "8.0.0-alpha.1"
-    "@undefineds.co/drizzle-solid" "0.3.14"
-    "@undefineds.co/models" "0.2.38"
-    abstract-level "^1.0.4"
-    acme-client "^5.1.3"
-    ai "^6.0.6"
-    asynciterator "^3.9.0"
-    awilix "^12.0.5"
-    classic-level "^1.4.1"
-    clsx "^2.1.0"
-    drizzle-orm "^0.45.1"
-    http-proxy "^1.18.1"
-    i18next "^23.10.1"
-    inngest "^4.4.0"
-    inngest-cli "^1.19.4"
-    jsonld "^8.3.3"
-    minio "^8.0.2"
-    pg "^8.13.1"
-    pg-query-stream "^4.7.1"
-    pgvector "^0.2.1"
-    portfinder "^1.0.38"
-    quadstore "^15.4.1"
-    quadstore-comunica "^6.3.1"
-    react "^18.2.0"
-    react-dom "^18.2.0"
-    react-i18next "^13.3.1"
-    react-router-dom "^6.22.3"
-    sqlite-vec "^0.1.7-alpha.2"
-    tree-kill "^1.2.2"
-    werift "^0.22.2"
-    winston "^3.17.0"
-    winston-daily-rotate-file "^5.0.0"
-    yaml "^2.8.2"
-    yargs "^17.7.2"
-    zod "^3.25.76"
 
 "@undefineds.co/xpod@0.3.46":
   version "0.3.46"

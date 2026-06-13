@@ -5,7 +5,7 @@
 建立 `linx`、`xpod-cli` 与第三方开发者可共用的数据面权威源：
 
 - 词汇表 / namespace
-- drizzle-solid schema / table
+- drizzle-solid schema / resource
 - 由 schema 直接推导出的 TypeScript 类型
 - 与 URI 约定直接相关的纯函数
 

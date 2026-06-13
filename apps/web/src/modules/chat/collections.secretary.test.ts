@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { agentTable, chatTable, contactTable, threadTable } from '@undefineds.co/models'
+import { agentResource, chatResource, contactResource, threadResource } from '@undefineds.co/models'
 import { agentResourceId } from '@/lib/data/resource-identity'
 
 const {
@@ -12,7 +12,6 @@ const {
 
   function createCollectionMock(options: {
     queryKey?: string[]
-    table?: unknown
     resource?: unknown
     getDb?: () => {
       insert?: (resource: unknown) => {
@@ -49,7 +48,7 @@ const {
         state.set(id, next)
         const persistence = Promise.resolve().then(async () => {
           const db = options.getDb?.()
-          const resource = options.resource ?? options.table
+          const resource = options.resource
           if (!db?.insert || !resource) {
             return
           }
@@ -161,8 +160,8 @@ describe('AI Secretary bootstrap', () => {
     hangExactReads?: boolean
   } = {}) {
     const rows = options.rows ?? createSecretaryRows()
-    const insertedRows: Array<{ table: unknown; row: Record<string, unknown> }> = []
-    const findByIdMock = vi.fn(async (table: unknown, id: string) => {
+    const insertedRows: Array<{ resource: unknown; row: Record<string, unknown> }> = []
+    const findByIdMock = vi.fn(async (resource: unknown, id: string) => {
       if (options.hangExactReads) {
         return await new Promise(() => {})
       }
@@ -172,20 +171,20 @@ describe('AI Secretary bootstrap', () => {
       if (/^https?:\/\//.test(id)) {
         throw new Error('findById requires a base-relative resource id. Use findByIri(resource, iri) for full IRIs.')
       }
-      if (table === agentTable && id === LINX_DEFAULT_SECRETARY.agentId) {
+      if (resource === agentResource && id === LINX_DEFAULT_SECRETARY.agentId) {
         return rows.agentRow
       }
-      if (table === contactTable && id === LINX_DEFAULT_SECRETARY.contactResourceId) {
+      if (resource === contactResource && id === LINX_DEFAULT_SECRETARY.contactResourceId) {
         return rows.contactRow
       }
-      if (table === chatTable && id === LINX_DEFAULT_SECRETARY.chatResourceId) {
+      if (resource === chatResource && id === LINX_DEFAULT_SECRETARY.chatResourceId) {
         return rows.chatRow
       }
       return null
     })
-    const insertMock = vi.fn((table: unknown) => ({
+    const insertMock = vi.fn((resource: unknown) => ({
       values(row: Record<string, unknown>) {
-        insertedRows.push({ table, row })
+        insertedRows.push({ resource, row })
         return {
           execute: vi.fn(async () => [{ ...row }]),
         }
@@ -198,21 +197,21 @@ describe('AI Secretary bootstrap', () => {
         getAuthenticatedFetch: () => vi.fn(async () => new Response('', { status: 201 })),
       }),
       findById: findByIdMock,
-      resolveRowIri: vi.fn((table: unknown, row: Record<string, unknown>) => {
+      resolveRowIri: vi.fn((resource: unknown, row: Record<string, unknown>) => {
         if (typeof row['@id'] === 'string') return row['@id']
-        if (table === chatTable) return rows.chatIri
-        if (table === contactTable) return rows.contactIri
-        if (table === agentTable) return rows.agentIri
+        if (resource === chatResource) return rows.chatIri
+        if (resource === contactResource) return rows.contactIri
+        if (resource === agentResource) return rows.agentIri
         return null
       }),
       insert: insertMock,
       select: vi.fn(() => ({
-        from(table: unknown) {
+        from(resource: unknown) {
           const query = {
             where: vi.fn(() => query),
             orderBy: vi.fn(() => query),
             execute: vi.fn(async () => {
-              if (table === chatTable) {
+              if (resource === chatResource) {
                 if (options.chatSelectError) throw options.chatSelectError
                 return [rows.chatRow]
               }
@@ -222,11 +221,11 @@ describe('AI Secretary bootstrap', () => {
           return query
         },
       })),
-      updateByIri: vi.fn(async (_table: unknown, iri: string, updates: Record<string, unknown>) => ({
+      updateByIri: vi.fn(async (_resource: unknown, iri: string, updates: Record<string, unknown>) => ({
         ...(iri === rows.chatIri ? rows.chatRow : {}),
         ...updates,
       })),
-      updateById: vi.fn(async (_table: unknown, id: string, updates: Record<string, unknown>) => ({
+      updateById: vi.fn(async (_resource: unknown, id: string, updates: Record<string, unknown>) => ({
         ...(id === LINX_DEFAULT_SECRETARY.chatId ? rows.chatRow : {}),
         ...updates,
       })),
@@ -250,14 +249,14 @@ describe('AI Secretary bootstrap', () => {
     ])
     expect(db.select).not.toHaveBeenCalled()
     expect(insertedRows).toHaveLength(2)
-    expect(insertedRows.some(({ table }) => table === contactTable)).toBe(true)
-    expect(insertedRows.some(({ table }) => table === chatTable)).toBe(true)
-    expect(insertedRows.find(({ table }) => table === contactTable)?.row).toMatchObject({
+    expect(insertedRows.some(({ resource }) => resource === contactResource)).toBe(true)
+    expect(insertedRows.some(({ resource }) => resource === chatResource)).toBe(true)
+    expect(insertedRows.find(({ resource }) => resource === contactResource)?.row).toMatchObject({
       id: LINX_DEFAULT_SECRETARY.contactId,
       '@id': rows.contactIri,
       entity: rows.agentIri,
     })
-    expect(insertedRows.find(({ table }) => table === chatTable)?.row).toMatchObject({
+    expect(insertedRows.find(({ resource }) => resource === chatResource)?.row).toMatchObject({
       id: LINX_DEFAULT_SECRETARY.chatId,
       '@id': rows.chatIri,
       participants: [rows.contactIri],
@@ -283,9 +282,9 @@ describe('AI Secretary bootstrap', () => {
       LINX_DEFAULT_SECRETARY.chatResourceId,
     ])
     expect(insertedRows).toHaveLength(2)
-    expect(insertedRows.some(({ table }) => table === contactTable)).toBe(true)
-    expect(insertedRows.some(({ table }) => table === chatTable)).toBe(true)
-    expect(insertedRows.find(({ table }) => table === chatTable)?.row).toMatchObject({
+    expect(insertedRows.some(({ resource }) => resource === contactResource)).toBe(true)
+    expect(insertedRows.some(({ resource }) => resource === chatResource)).toBe(true)
+    expect(insertedRows.find(({ resource }) => resource === chatResource)?.row).toMatchObject({
       id: LINX_DEFAULT_SECRETARY.chatId,
       '@id': rows.chatIri,
     })
@@ -320,9 +319,9 @@ describe('AI Secretary bootstrap', () => {
       chatId: LINX_DEFAULT_SECRETARY.chatId,
       created: true,
     })
-    expect(insertedRows.map(({ table }) => table)).toEqual([
-      contactTable,
-      chatTable,
+    expect(insertedRows.map(({ resource }) => resource)).toEqual([
+      contactResource,
+      chatResource,
     ])
     vi.useRealTimers()
   })
@@ -331,9 +330,9 @@ describe('AI Secretary bootstrap', () => {
     const { db, insertedRows, rows } = createSecretaryDb()
     const executeResolvers: Array<() => void> = []
 
-    db.insert = vi.fn((table: unknown) => ({
+    db.insert = vi.fn((resource: unknown) => ({
       values(row: Record<string, unknown>) {
-        insertedRows.push({ table, row })
+        insertedRows.push({ resource, row })
         return {
           execute: vi.fn(async () => new Promise((resolve) => {
             executeResolvers.push(() => resolve([{ ...row }]))
@@ -373,14 +372,14 @@ describe('AI Secretary bootstrap', () => {
     let resolveContactInsert: (() => void) | null = null
     let resolveChatInsert: (() => void) | null = null
 
-    db.insert = vi.fn((table: unknown) => ({
+    db.insert = vi.fn((resource: unknown) => ({
       values(row: Record<string, unknown>) {
         return {
           execute: vi.fn(async () => new Promise((resolve) => {
             const complete = () => resolve([{ ...row }])
-            if (table === contactTable) {
+            if (resource === contactResource) {
               resolveContactInsert = complete
-            } else if (table === chatTable) {
+            } else if (resource === chatResource) {
               resolveChatInsert = complete
             } else {
               complete()
@@ -446,12 +445,19 @@ describe('chat workspace persistence', () => {
       createdAt: new Date('2026-06-02T00:00:00.000Z'),
       updatedAt: new Date('2026-06-02T00:00:00.000Z'),
     }
-    const insertedRows: Array<{ table: unknown; row: Record<string, unknown> }> = []
-    const findById = vi.fn(async (table: unknown, id: string) => {
-      if (table === threadTable && id === threadRow.id) {
+    const insertedRows: Array<{ resource: unknown; row: Record<string, unknown> }> = []
+    const findById = vi.fn(async (resource: unknown, id: string) => {
+      if (resource === threadResource && id === threadRow.id) {
         return threadRow
       }
       return null
+    })
+    const updateById = vi.fn(async (resource: unknown, id: string, updates: Record<string, unknown>) => {
+      if (resource === threadResource && id === threadRow.id) {
+        Object.assign(threadRow, updates)
+        return threadRow
+      }
+      throw new Error(`unexpected updateById target ${id}`)
     })
     const db = {
       getDialect: () => ({
@@ -459,9 +465,10 @@ describe('chat workspace persistence', () => {
         getWebId: () => `${podBase}profile/card#me`,
       }),
       findById,
-      insert: vi.fn((table: unknown) => ({
+      updateById,
+      insert: vi.fn((resource: unknown) => ({
         values(row: Record<string, unknown>) {
-          insertedRows.push({ table, row })
+          insertedRows.push({ resource, row })
           return {
             execute: vi.fn(async () => [{ ...row }]),
           }
@@ -469,11 +476,11 @@ describe('chat workspace persistence', () => {
       })),
     }
 
-    return { db, findById, insertedRows, threadRow }
+    return { db, findById, updateById, insertedRows, threadRow }
   }
 
   it('binds the thread to the requested workspace URI without persisting a separate workspace resource', async () => {
-    const { db, threadRow } = createWorkspaceDb()
+    const { db, threadRow, updateById } = createWorkspaceDb()
     initializeChatCollections(db as any)
 
     const workspaceUri = 'linx://node-123/repo/linx'
@@ -492,5 +499,10 @@ describe('chat workspace persistence', () => {
       id: threadRow.id,
       workspace: workspaceUri,
     })
+    expect(updateById).toHaveBeenCalledWith(
+      threadResource,
+      threadRow.id,
+      expect.objectContaining({ workspace: workspaceUri }),
+    )
   })
 })

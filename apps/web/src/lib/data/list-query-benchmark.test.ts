@@ -13,13 +13,13 @@ import { afterAll, beforeAll, describe, it } from 'vitest'
 import { Session } from '@inrupt/solid-client-authn-node'
 import { drizzle, type SolidDatabase } from '@undefineds.co/drizzle-solid'
 import {
-  aiProviderTable,
-  chatTable,
-  threadTable,
-  messageTable,
-  contactTable,
-  agentTable,
-  solidProfileTable,
+  aiProviderResource,
+  chatResource,
+  threadResource,
+  messageResource,
+  contactResource,
+  agentResource,
+  solidProfileResource,
   solidSchema,
 } from '@undefineds.co/models'
 
@@ -166,15 +166,15 @@ describe.skipIf(!hasEnv)('List Query Benchmark', () => {
     })
     db = database
     
-    // Initialize all tables
+    // Initialize all resources
     await (database as any).init([
-      chatTable,
-      threadTable,
-      messageTable,
-      contactTable,
-      agentTable,
-      aiProviderTable,
-      solidProfileTable,
+      chatResource,
+      threadResource,
+      messageResource,
+      contactResource,
+      agentResource,
+      aiProviderResource,
+      solidProfileResource,
     ])
   }, 30000)
 
@@ -189,13 +189,13 @@ describe.skipIf(!hasEnv)('List Query Benchmark', () => {
   
   it('chat.list - fetch all chats', { timeout: 30000 }, async () => {
     await measure('Chat', 'chatCollection.fetch()', async () => {
-      return await requireDb().select().from(chatTable).execute()
+      return await requireDb().select().from(chatResource).execute()
     })
   })
 
   it('chat.list - fetch chats with columns', { timeout: 30000 }, async () => {
-    await measure('Chat', 'chatTable (selected columns)', async () => {
-      const rows = await requireDb().select().from(chatTable).execute()
+    await measure('Chat', 'chatResource (selected columns)', async () => {
+      const rows = await requireDb().select().from(chatResource).execute()
       return rows.map((row) => ({
         id: row.id,
         title: row.title,
@@ -211,19 +211,19 @@ describe.skipIf(!hasEnv)('List Query Benchmark', () => {
 
   it('thread.list - fetch all threads', { timeout: 30000 }, async () => {
     await measure('Chat', 'threadCollection.fetch()', async () => {
-      return await requireDb().select().from(threadTable).execute()
+      return await requireDb().select().from(threadResource).execute()
     })
   })
 
   it('message.list - fetch all messages', { timeout: 30000 }, async () => {
     await measure('Chat', 'messageCollection.fetch()', async () => {
-      return await requireDb().select().from(messageTable).execute()
+      return await requireDb().select().from(messageResource).execute()
     })
   })
 
   it('agent.list - fetch all agents (chat module)', { timeout: 30000 }, async () => {
     await measure('Chat', 'agentCollection.fetch()', async () => {
-      return await requireDb().select().from(agentTable).execute()
+      return await requireDb().select().from(agentResource).execute()
     })
   })
 
@@ -233,13 +233,13 @@ describe.skipIf(!hasEnv)('List Query Benchmark', () => {
 
   it('contact.list - fetch all contacts', { timeout: 30000 }, async () => {
     await measure('Contacts', 'contactCollection.fetch()', async () => {
-      return await requireDb().select().from(contactTable).execute()
+      return await requireDb().select().from(contactResource).execute()
     })
   })
 
   it('contact.list - fetch contacts with order', { timeout: 30000 }, async () => {
-    await measure('Contacts', 'contactTable (ordered by name)', async () => {
-      return await requireDb().select().from(contactTable).orderBy('name', 'asc').execute()
+    await measure('Contacts', 'contactResource (ordered by name)', async () => {
+      return await requireDb().select().from(contactResource).orderBy('name', 'asc').execute()
     })
   })
 
@@ -249,7 +249,7 @@ describe.skipIf(!hasEnv)('List Query Benchmark', () => {
 
   it('provider.list - fetch all providers', { timeout: 30000 }, async () => {
     await measure('ModelServices', 'providerCollection.fetch()', async () => {
-      return await db!.select().from(aiProviderTable).execute()
+      return await db!.select().from(aiProviderResource).execute()
     })
   })
 
@@ -259,7 +259,7 @@ describe.skipIf(!hasEnv)('List Query Benchmark', () => {
 
   it('profile.fetch - fetch current user profile', { timeout: 30000 }, async () => {
     await measureSingle('Profile', 'profileOps.fetch()', async () => {
-      return await (db as any)!.findByIri(solidProfileTable as any, env.webId!)
+      return await (db as any)!.findByIri(solidProfileResource as any, env.webId!)
     })
   })
 
@@ -268,14 +268,14 @@ describe.skipIf(!hasEnv)('List Query Benchmark', () => {
   // ============================================================================
 
   it('chat.list - second fetch (warm cache)', { timeout: 30000 }, async () => {
-    await measure('Cache Test', 'chatTable (2nd fetch)', async () => {
-      return await db!.select().from(chatTable).execute()
+    await measure('Cache Test', 'chatResource (2nd fetch)', async () => {
+      return await db!.select().from(chatResource).execute()
     })
   })
 
   it('contact.list - second fetch (warm cache)', { timeout: 30000 }, async () => {
-    await measure('Cache Test', 'contactTable (2nd fetch)', async () => {
-      return await db!.select().from(contactTable).execute()
+    await measure('Cache Test', 'contactResource (2nd fetch)', async () => {
+      return await db!.select().from(contactResource).execute()
     })
   })
 })

@@ -123,7 +123,7 @@ export const UDFS = createNamespace('udfs', 'https://undefineds.co/ns#', {
 ### 9A.2 Favorites V2 Vocab
 
 ```typescript
-// packages/models/src/vocab/favorite.vocab.ts
+// @undefineds.co/models owning repository: src/vocab/favorite.vocab.ts
 
 import { UDFS, DCTerms, SCHEMA, RDF } from '../namespaces'
 
@@ -148,7 +148,7 @@ export const FavoriteVocab = {
 ### 9A.3 favoriteTable 改造方案
 
 ```typescript
-// packages/models/src/favorite/favorite.schema.ts 新增字段
+// @undefineds.co/models owning repository: src/favorite/favorite.schema.ts 新增字段
 
 // V2 新增：来源追踪
 sourceModule: string('sourceModule').predicate(UDFS.sourceModule),

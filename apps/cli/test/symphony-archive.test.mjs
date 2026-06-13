@@ -16,7 +16,11 @@ async function withPatchedEnv(t, env, fn) {
 
   for (const [key, value] of Object.entries(env)) {
     originals.set(key, process.env[key])
-    process.env[key] = value
+    if (value === undefined) {
+      delete process.env[key]
+    } else {
+      process.env[key] = value
+    }
   }
 
   t.after(() => {
@@ -81,7 +85,7 @@ test('symphony archive creates, updates, lists, and resolves URI records', async
     objective: 'verify symphony archive',
     acceptanceCriteria: ['task exists', 'session is loadable'],
     workspacePath: '/tmp/linx',
-    workspaceKind: 'git',
+    workspaceKind: 'worktree',
     repository: 'https://github.com/undefineds/linx.git',
     branch: 'main',
     worktree: '/tmp/linx-worktree',
@@ -904,7 +908,16 @@ test('symphony non-dry-run dispatches through auto-mode ACP and archives complet
   const linxHome = join(root, '.solid', 'apps', 'linx')
   const autoModeHome = join(linxHome, 'auto-mode')
   const fakeAcpLog = join(root, 'fake-codex-acp.jsonl')
+  const secretaryPodHome = join(root, 'pod-home')
+  const profileDir = join(secretaryPodHome, 'profile')
   mkdirSync(binDir, { recursive: true })
+  mkdirSync(profileDir, { recursive: true })
+  writeFileSync(join(profileDir, 'card'), [
+    '@prefix solid: <http://www.w3.org/ns/solid/terms#>.',
+    '<https://id.undefineds.co/symphony/profile/card#me>',
+    '    solid:storage <https://node-0000.undefineds.co/symphony/>.',
+    '',
+  ].join('\n'))
   process.env.HOME = root
 
   t.after(() => {
@@ -918,6 +931,7 @@ test('symphony non-dry-run dispatches through auto-mode ACP and archives complet
 
   writeExecutable(join(binDir, 'codex-acp'), `#!/usr/bin/env node
 const { appendFileSync } = require('node:fs')
+const { execFileSync } = require('node:child_process')
 const readline = require('node:readline')
 
 function write(obj) {
@@ -933,6 +947,8 @@ appendFileSync(process.env.FAKE_ACP_LOG, JSON.stringify({
 
 const sessionId = 'sess_symphony_integration_123'
 const rl = readline.createInterface({ input: process.stdin })
+let pendingPromptId = null
+let pendingPermissionId = null
 rl.on('line', (line) => {
   const message = JSON.parse(line)
   if (message.method === 'initialize') {
@@ -944,10 +960,40 @@ rl.on('line', (line) => {
     return
   }
   if (message.method === 'session/prompt') {
+    pendingPromptId = message.id
+    pendingPermissionId = 713
     appendFileSync(process.env.FAKE_ACP_LOG, JSON.stringify({
       kind: 'prompt',
       prompt: message.params?.prompt?.[0]?.text ?? null,
     }) + '\\n')
+    write({
+      jsonrpc: '2.0',
+      id: pendingPermissionId,
+      method: 'session/request_permission',
+      params: {
+        sessionId,
+        toolCall: {
+          toolCallId: 'tool_symphony_profile_card_grep',
+          title: 'Run shell command',
+          kind: 'execute',
+          rawInput: { command: 'grep -R "solid:storage" profile/card', cwd: process.env.FAKE_SECRETARY_POD_HOME },
+        },
+        options: [
+          { optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' },
+          { optionId: 'allow_always', name: 'Allow always', kind: 'allow_always' },
+          { optionId: 'reject_once', name: 'Reject once', kind: 'reject_once' }
+        ],
+      },
+    })
+    return
+  }
+  if (pendingPermissionId !== null && message.id === pendingPermissionId) {
+    appendFileSync(process.env.FAKE_ACP_LOG, JSON.stringify(message) + '\\n')
+    const output = execFileSync('grep', ['-R', 'solid:storage', 'profile/card'], {
+      cwd: process.env.FAKE_SECRETARY_POD_HOME,
+      encoding: 'utf8',
+    }).trim()
+    appendFileSync(process.env.FAKE_ACP_LOG, JSON.stringify({ kind: 'grep-output', output }) + '\\n')
     write({
       jsonrpc: '2.0',
       method: 'session/update',
@@ -955,11 +1001,11 @@ rl.on('line', (line) => {
         sessionId,
         update: {
           sessionUpdate: 'agent_message_chunk',
-          content: { type: 'text', text: 'symphony fake codex completed' },
+          content: { type: 'text', text: 'symphony fake codex completed: ' + output },
         },
       },
     })
-    write({ jsonrpc: '2.0', id: message.id, result: { stopReason: 'end_turn' } })
+    write({ jsonrpc: '2.0', id: pendingPromptId, result: { stopReason: 'end_turn' } })
   }
 })
 `)
@@ -1031,6 +1077,9 @@ rl.on('line', (line) => {
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
     LINX_HOME: linxHome,
     FAKE_ACP_LOG: fakeAcpLog,
+    FAKE_SECRETARY_POD_HOME: secretaryPodHome,
+    OPENAI_API_KEY: undefined,
+    CODEX_API_KEY: undefined,
   }, async () => {
     plan = await symphonyModule.runSymphony({
       objective: ['verify', 'symphony', 'integration'],
@@ -1083,6 +1132,8 @@ rl.on('line', (line) => {
   const events = readFileSync(join(autoModeHome, 'sessions', 'sess_symphony_integration_123', 'events.jsonl'), 'utf-8')
   assert.match(events, /verify symphony integration/)
   assert.match(events, /symphony fake codex completed/)
+  assert.match(events, /profile\/card/)
+  assert.match(events, /solid:storage/)
 
   const logLines = readFileSync(fakeAcpLog, 'utf-8')
     .trim()
@@ -1092,6 +1143,16 @@ rl.on('line', (line) => {
   assert.equal(logLines[0].codexKey, 'sk-symphony-integration')
   assert.match(logLines.find((entry) => entry.kind === 'prompt')?.prompt ?? '', /# LinX Symphony Task/)
   assert.match(logLines.find((entry) => entry.kind === 'prompt')?.prompt ?? '', /Task URI: urn:undefineds:linx:task:/)
+  const approvalResponse = logLines.find((entry) => entry.result)
+  assert.deepEqual(approvalResponse?.result, {
+    outcome: {
+      outcome: 'selected',
+      optionId: 'allow_once',
+    },
+  })
+  const grepOutput = logLines.find((entry) => entry.kind === 'grep-output')?.output
+  assert.match(grepOutput ?? '', /profile\/card/)
+  assert.match(grepOutput ?? '', /solid:storage/)
   assert.equal(readdirSync(join(autoModeHome, 'sessions')).length, 1)
 })
 

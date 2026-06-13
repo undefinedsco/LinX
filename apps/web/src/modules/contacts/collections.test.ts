@@ -7,7 +7,8 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { ContactClass, ContactType, agentResourceId, agentTable, chatTable, contactTable } from '@undefineds.co/models'
+import { ContactClass, ContactType, agentResource, chatResource, contactResource } from '@undefineds.co/models'
+import { agentResourceId } from '@/lib/data/resource-identity'
 
 // Mock search results storage for db.select().from().where().execute()
 let mockSearchResults: any[] = []
@@ -106,13 +107,13 @@ function resetMockDb() {
       execute: vi.fn().mockResolvedValue(undefined),
     }),
   }))
-  mockDb.resolveRowIri.mockImplementation((table, row: Record<string, unknown>) => {
+  mockDb.resolveRowIri.mockImplementation((resource, row: Record<string, unknown>) => {
     if (typeof row.id !== 'string' || row.id.length === 0) {
       throw new Error('Mock row is missing row.id.')
     }
-    if (table === chatTable) return `https://pod.example/.data/chat/${row.id}/index.ttl#this`
-    if (table === contactTable) return `https://pod.example/.data/contacts/${row.id}.ttl#this`
-    if (table === agentTable) return new URL(agentTable.resolveUri(row.id), 'https://pod.example/').toString()
+    if (resource === chatResource) return `https://pod.example/.data/chat/${row.id}/index.ttl#this`
+    if (resource === contactResource) return `https://pod.example/.data/contacts/${row.id}.ttl#this`
+    if (resource === agentResource) return new URL(agentResource.resolveUri(row.id), 'https://pod.example/').toString()
     return `https://pod.example/${row.id}`
   })
   mockDb.resolveRowId.mockImplementation((_table, row: Record<string, unknown>) => {
@@ -195,10 +196,10 @@ describe('contactOps', () => {
       expect(result.chatId).toBe('uuid-3') // Chat ID (third UUID)
       expect(result.name).toBe('Test Agent')
       expect(result.contactType).toBe(ContactType.AGENT)
-      expect(result.entityUri).toBe('https://pod.example/agents/uuid-1/profile/card#me')
+      expect(result.entityUri).toBe('https://pod.example/agents/uuid-1/')
       
-      // Repositories create Agent + Contact via db.insert; collection persists Chat
-      expect(mockDb.insert).toHaveBeenCalledTimes(2)
+      // Agent is a directory-style Agent Home; db.insert persists Contact and collection persists Chat.
+      expect(mockDb.insert).toHaveBeenCalledTimes(1)
       expect(mockInsert).toHaveBeenCalledTimes(1)
       
       // Verify query invalidation
@@ -465,7 +466,7 @@ describe('Contact + Chat Linkage Logic', () => {
     const chatId = 'uuid-3'
 
     // Verify linkage
-    expect(result.entityUri).toBe(`https://pod.example/agents/${agentId}/profile/card#me`)
+    expect(result.entityUri).toBe(`https://pod.example/agents/${agentId}/`)
     expect(result.id).toBe(contactId)
     expect(result.chatId).toBe(chatId)
   })
@@ -499,7 +500,7 @@ describe('Contact + Chat Linkage Logic', () => {
     const friendDbInsertCount = mockDb.insert.mock.calls.length
     const friendCollectionInsertCount = mockInsert.mock.calls.length
 
-    expect(agentDbInsertCount).toBe(2) // Agent + Contact
+    expect(agentDbInsertCount).toBe(1) // Contact; Agent Home is directory-style
     expect(agentCollectionInsertCount).toBe(1) // Chat
     expect(friendDbInsertCount).toBe(1) // Contact
     expect(friendCollectionInsertCount).toBe(1) // Chat

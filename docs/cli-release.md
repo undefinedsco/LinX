@@ -78,7 +78,7 @@ If the smoke script fails on the drizzle-solid check, release a fixed
 `@undefineds.co/drizzle-solid` first and then rebuild the models and CLI
 tarballs. Do not tag or publish `@undefineds.co/models` or `@undefineds.co/linx`
 against a registry drizzle-solid version that still only replaces `{id}` in
-linked table templates.
+linked resource templates.
 
 ## Bundled Pi Plugins
 

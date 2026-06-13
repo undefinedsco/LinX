@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildLocalWorkspaceId, type WorkspaceRow } from '@/lib/data/workspace-model'
+import { buildLocalWorkspaceId, type WorkspaceContainerMetadata } from '@/lib/data/workspace-uri'
 import type { RuntimeSessionRecord } from './runtime-client'
 import { buildWorkspaceSummary } from './workspace-summary'
 
@@ -24,7 +24,7 @@ function createRuntimeSession(overrides: Partial<RuntimeSessionRecord> = {}): Ru
   }
 }
 
-function createWorkspace(overrides: Partial<WorkspaceRow> = {}): WorkspaceRow {
+function createWorkspace(overrides: Partial<WorkspaceContainerMetadata> = {}): WorkspaceContainerMetadata {
   return {
     id: 'ws-1',
     title: 'Pod Workspace',
@@ -37,7 +37,7 @@ function createWorkspace(overrides: Partial<WorkspaceRow> = {}): WorkspaceRow {
     createdAt: new Date('2026-03-27T00:00:00Z'),
     updatedAt: new Date('2026-03-27T00:00:00Z'),
     ...overrides,
-  } as WorkspaceRow
+  } as WorkspaceContainerMetadata
 }
 
 describe('buildWorkspaceSummary', () => {

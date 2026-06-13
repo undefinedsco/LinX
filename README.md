@@ -163,9 +163,8 @@ yarn test
 - `apps/mobile`：Capacitor 壳
 - `apps/service`：本地服务进程 / xpod 兼容服务集成
 - `apps/cli`：CLI 入口
-- `packages/models`：`@undefineds.co/models` 共享数据面 SDK
+- `@undefineds.co/models`：通过 npm package 消费的共享数据面 SDK
 - `packages/shared-ui`：跨端共享 UI
-- `packages/utils`：通用工具
 - `tests/*`：单元、集成和端到端测试
 - `examples/*`：独立样例与验证工程
 

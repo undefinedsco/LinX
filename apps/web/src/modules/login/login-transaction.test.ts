@@ -33,11 +33,11 @@ describe('login-transaction', () => {
     })
   })
 
-  it('models Cloud account authority plus Local SP OIDC/storage without losing the Local entry URL', () => {
+  it('models Cloud OIDC plus Local storage without losing the Local target', () => {
     const transaction = createLoginTransaction({
       route: 'local',
-      oidcEntryUrl: 'https://node-0000.undefineds.co/',
-      oidcIssuerUrl: 'https://node-0000.undefineds.co/',
+      oidcEntryUrl: 'https://id.undefineds.co/',
+      oidcIssuerUrl: 'https://id.undefineds.co/',
       accountIssuerUrl: 'https://id.undefineds.co/',
       accountIssuerLabel: 'Cloud',
       authorizationSurface: 'embedded',
@@ -57,8 +57,8 @@ describe('login-transaction', () => {
     expect(transaction).toEqual({
       id: 'local-login',
       route: 'local',
-      oidcEntryUrl: 'https://node-0000.undefineds.co',
-      oidcIssuerUrl: 'https://node-0000.undefineds.co',
+      oidcEntryUrl: 'https://id.undefineds.co',
+      oidcIssuerUrl: 'https://id.undefineds.co',
       accountIssuerUrl: 'https://id.undefineds.co',
       accountIssuerLabel: 'Cloud',
       authorizationSurface: 'embedded',
@@ -72,7 +72,7 @@ describe('login-transaction', () => {
       nodeId: 'node-0000',
       createdAt: 2,
     })
-    expect(getLoginTransactionRetryEntryUrl(transaction!)).toBe('https://node-0000.undefineds.co')
+    expect(getLoginTransactionRetryEntryUrl(transaction!)).toBe('https://id.undefineds.co')
     expect(isLocalLoginTransaction(transaction)).toBe(true)
     expect(isSplitLocalLoginTransaction(transaction)).toBe(true)
   })
@@ -151,7 +151,7 @@ describe('login-transaction', () => {
 
   it('infers only unlabeled split Undefineds storage as Local', () => {
     expect(inferLoginRoute({
-      oidcIssuerUrl: 'https://node-0000.undefineds.co',
+      oidcIssuerUrl: 'https://id.undefineds.co',
       accountIssuerUrl: 'https://id.undefineds.co',
       storageProviderUrl: 'https://node-0000.undefineds.co',
     })).toBe('local')

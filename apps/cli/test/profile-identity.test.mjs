@@ -39,7 +39,7 @@ test('extractUsernameFromWebId uses the profile path owner as fallback identity'
   assert.equal(module.extractUsernameFromWebId('not logged in'), 'there')
 })
 
-test('resolveProfileDisplayName reads the configured WebID through solidProfileTable', async (t) => {
+test('resolveProfileDisplayName reads the configured WebID through solidProfileResource', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/profile-identity.ts')
   t.after(() => cleanup())
 

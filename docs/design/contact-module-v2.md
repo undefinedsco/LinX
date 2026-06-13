@@ -67,10 +67,10 @@ Content cards vary based on contact type:
 ## 3. Data Model Requirements
 *To be implemented in `@undefineds.co/models` schema.*
 
-*   **Common Fields** (`contactTable`):
+*   **Common Fields** (`contactResource`):
     *   `gender`: `male` | `female` | `bot` | `unknown`.
     *   `region`: String (e.g., "China", "US").
-*   **Agent Fields** (`agentTable`):
+*   **Agent Fields** (`agentResource`):
     *   `ttsModel`: String (ID of the TTS provider/model).
     *   `videoModel`: String (ID of the video provider/model).
     *   `tools`: JSON/Array (List of enabled MCP tools).

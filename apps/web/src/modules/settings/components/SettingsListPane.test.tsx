@@ -14,6 +14,7 @@ describe('SettingsListPane', () => {
     expect(screen.getByText('通用')).toBeInTheDocument()
     expect(screen.getByText('版本更新')).toBeInTheDocument()
     expect(screen.getByText('运行环境')).toBeInTheDocument()
+    expect(screen.getByText('本地网络')).toBeInTheDocument()
   })
 
   it('updates the selected section when clicked', () => {
@@ -22,5 +23,9 @@ describe('SettingsListPane', () => {
     fireEvent.click(screen.getByText('运行环境'))
 
     expect(useSettingsStore.getState().selectedSection).toBe('runtime')
+
+    fireEvent.click(screen.getByText('本地网络'))
+
+    expect(useSettingsStore.getState().selectedSection).toBe('network')
   })
 })

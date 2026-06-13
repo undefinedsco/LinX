@@ -7,9 +7,9 @@ import {
   parseLocalWorkspaceUri,
   resolveLocalRepoRootUri,
   resolveWorkspaceIdFromUri,
-} from './workspace-model'
+} from './workspace-uri'
 
-describe('workspace-model', () => {
+describe('workspace-uri', () => {
   it('builds stable local workspace uri and id from node plus path', () => {
     const uri = buildLocalWorkspaceUri('node-0000', '/Users/alice/repo/linx/')
 

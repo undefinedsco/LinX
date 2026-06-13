@@ -45,7 +45,7 @@ vi.mock('@/components/ui/model-selector', () => ({
       value={value}
       onChange={(event) => onChange?.(event.target.value)}
     >
-      <option value="undefineds/linx-lite">undefineds/linx-lite</option>
+      <option value="linx-lite">linx-lite</option>
       <option value="gpt-4o-mini">gpt-4o-mini</option>
       <option value="claude-3-5-sonnet-latest">claude-3-5-sonnet-latest</option>
     </select>
@@ -53,9 +53,12 @@ vi.mock('@/components/ui/model-selector', () => ({
 }))
 
 vi.mock('@/lib/agent-providers', () => ({
+  DEFAULT_LINX_PLATFORM_MODEL_ID: 'linx-lite',
+  LINX_PLATFORM_PROVIDER_ID: 'undefineds',
+  normalizeChatModelId: (modelId: string) => modelId === 'undefineds/linx-lite' ? 'linx-lite' : modelId,
   findAgentProviderForModel: (modelId: string) => {
     if (modelId === 'claude-3-5-sonnet-latest') return 'anthropic'
-    if (modelId === 'undefineds/linx-lite') return 'undefineds'
+    if (modelId === 'linx-lite' || modelId === 'undefineds/linx-lite') return 'undefineds'
     return 'openai'
   },
   getAgentProviderInfo: (slug: string) => ({
@@ -64,7 +67,7 @@ vi.mock('@/lib/agent-providers', () => ({
       slug === 'anthropic'
         ? 'Anthropic'
         : slug === 'undefineds'
-          ? 'Undefineds Cloud'
+          ? 'LinX Platform'
           : 'OpenAI',
     logoUrl: `${slug}.png`,
   }),
@@ -98,6 +101,14 @@ vi.mock('../collections', () => ({
       isPending: false,
     },
   }),
+}))
+
+vi.mock('../agent-runtime-location', () => ({
+  readAgentAiRuntimeLocation: (metadata: any) => metadata?.linx?.aiRuntimeLocation === 'server' ? 'server' : 'client',
+  describeAgentWorkspaceAccess: (runtimeLocation: 'client' | 'server') =>
+    runtimeLocation === 'server'
+      ? '服务端 / xpod：空间在 server 侧按本地文件夹访问。'
+      : '客户端：通过 xpod CLI 访问空间，不把 Pod 当成本地目录。',
 }))
 
 vi.mock('../utils/chat-participants', () => ({
@@ -162,6 +173,11 @@ describe('ChatHeader', () => {
             instructions: '原提示词',
             provider: 'openai',
             model: 'gpt-4o-mini',
+            metadata: {
+              linx: {
+                aiRuntimeLocation: 'client',
+              },
+            },
             avatarUrl: 'openai.png',
           },
           refresh: mockRefreshAgent,
@@ -188,6 +204,7 @@ describe('ChatHeader', () => {
         agentId: 'agent-1',
         name: '新的助手名',
         instructions: '新的提示词',
+        aiRuntimeLocation: 'client',
         chatId: 'chat-1',
         contactId: 'contact-1',
       })
@@ -216,5 +233,20 @@ describe('ChatHeader', () => {
 
     expect(mockRefreshAgent).toHaveBeenCalled()
     expect(mockRefreshContact).toHaveBeenCalled()
+  })
+
+  it('updates the agent AI runtime location from the profile dialog', async () => {
+    render(<ChatHeader />)
+
+    fireEvent.click(screen.getByText('助手A'))
+    fireEvent.change(screen.getByLabelText('AI 运行位置'), { target: { value: 'server' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+
+    await waitFor(() => {
+      expect(mockUpdateAgentProfile).toHaveBeenCalledWith(expect.objectContaining({
+        agentId: 'agent-1',
+        aiRuntimeLocation: 'server',
+      }))
+    })
   })
 })

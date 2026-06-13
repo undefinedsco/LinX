@@ -59,8 +59,8 @@ These should be reused as the backend/data plane.
 
 The current repo state is now clearer:
 
-- `chat` / `thread` / `message` already have real Pod tables and active writers
-- `approval` / `audit` / `inbox` already have real Pod tables and active writers in auto-mode/runtime-sidecar paths
+- `chat` / `thread` / `message` already have real Pod resources and active writers
+- `approval` / `audit` / `inbox` already have real Pod resources and active writers in auto-mode/runtime-sidecar paths
 - `grant` exists as the durable delegation/authz layer; auto-mode remote approval now writes and consumes active grants, while Pi/web coverage is still incomplete
 - `session` had been only a stub contract; it now has a real shared `sessionResource` baseline in `@undefineds.co/models`, exposed through neutral `solidSchema`, with runtime-sidecar write/read baseline in place
 
@@ -74,7 +74,7 @@ The next correct target is:
 
 ## Immediate next implementation target
 
-Use the new session table + truth-surface matrix as the execution baseline:
+Use the new session resource + truth-surface matrix as the execution baseline:
 
 - wire a durable session writer/reader
 - keep UI-only state local
@@ -84,4 +84,4 @@ Use the new session table + truth-surface matrix as the execution baseline:
 
 ## Product-branded storage naming
 
-Shared storage contracts should use Solid/domain language. The old `linxSchema` product-branded export has been removed instead of kept as a compatibility alias. New Pi/Pod/cloud alignment code should import `solidSchema`, and docs should describe durable records as Solid resources / schemas instead of product-level tables.
+Shared storage contracts should use Solid/domain language. The old `linxSchema` product-branded export has been removed instead of kept as a compatibility alias. New Pi/Pod/cloud alignment code should import `solidSchema`, and docs should describe durable records as Solid resources / schemas instead of product-level storage abstractions.

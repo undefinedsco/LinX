@@ -1,5 +1,5 @@
 import type { SolidDatabase } from '@undefineds.co/models'
-import { isLocalWorkspaceUri, parseLocalWorkspaceUri } from '@/lib/data/workspace-model'
+import { isLocalWorkspaceUri, parseLocalWorkspaceUri } from '@/lib/data/workspace-uri'
 
 export const ALL_FILES_NODE_ID = 'all'
 export const POD_ROOT_NODE_ID = 'pod-root'

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { agentTable } from '@undefineds.co/models'
+import { agentResource } from '@undefineds.co/models'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 
 export const AGENT_QUERY_KEYS = {
@@ -17,7 +17,7 @@ export function useAgents() {
     queryKey: AGENT_QUERY_KEYS.agents,
     queryFn: async () => {
       if (!db) return []
-      const rows = await db.select().from(agentTable).execute()
+      const rows = await db.select().from(agentResource).execute()
       return rows
     },
     enabled: !!db,
@@ -34,7 +34,7 @@ export function useAgent(id: string | null) {
     queryKey: AGENT_QUERY_KEYS.agent(id || ''),
     queryFn: async () => {
       if (!db || !id) return null
-      const rows = await db.select().from(agentTable).execute()
+      const rows = await db.select().from(agentResource).execute()
       return rows.find(r => r.id === id) ?? null
     },
     enabled: !!db && !!id,

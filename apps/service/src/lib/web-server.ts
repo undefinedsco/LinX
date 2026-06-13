@@ -875,6 +875,57 @@ export class WebServerModule {
       }
     })
 
+    this.app.post('/api/ai/chat/completions', async (req: Request, res: Response) => {
+      try {
+        const xpodStatus = getXpodModule().getStatus()
+        if (!xpodStatus.running) {
+          sendUserError(res, 503, '本地空间还没有启动。请先启动本地空间后再使用服务端 AI。')
+          return
+        }
+
+        const baseUrl = ensureTrailingSlash(xpodStatus.baseUrl || `http://localhost:${xpodStatus.port || 5737}`)
+        const endpoint = new URL('/v1/chat/completions', baseUrl).toString()
+        const authorization = typeof req.headers.authorization === 'string' ? req.headers.authorization : undefined
+        const upstream = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            Accept: 'text/event-stream, text/plain, application/json',
+            'Content-Type': 'application/json',
+            ...(authorization ? { Authorization: authorization } : {}),
+          },
+          body: JSON.stringify(req.body ?? {}),
+        })
+
+        res.status(upstream.status)
+        upstream.headers.forEach((value, key) => {
+          if (key.toLowerCase() === 'content-length') return
+          res.setHeader(key, value)
+        })
+
+        const reader = upstream.body?.getReader()
+        if (!reader) {
+          res.end(await upstream.text())
+          return
+        }
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            if (value) {
+              res.write(Buffer.from(value))
+            }
+          }
+          res.end()
+        } finally {
+          reader.releaseLock()
+        }
+      } catch (error) {
+        console.error('[WebServer] Failed to proxy server-originated AI request:', error)
+        sendUserError(res, 500, '服务端 AI 请求失败。请稍后重试，或切回客户端运行。', error)
+      }
+    })
+
 
     // Runtime session APIs (Phase 3 internal-first)
     this.app.get('/api/runtime/threads', (req: Request, res: Response) => {
@@ -894,15 +945,16 @@ export class WebServerModule {
 
     this.app.post('/api/runtime/threads', (req: Request, res: Response) => {
       try {
-        const { threadId, workspaceUri, title, repoPath, folderPath, runnerType, tool, baseRef, branch } = req.body ?? {}
-        if (!threadId || !title || !repoPath) {
-          sendUserError(res, 400, '请先选择聊天和工作目录后再启动。')
+        const { threadId, workspaceUri, workspaceKind, title, repoPath, folderPath, runnerType, tool, baseRef, branch } = req.body ?? {}
+        if (!threadId || !title) {
+          sendUserError(res, 400, '请先选择聊天和工作区后再启动。')
           return
         }
 
         const session = getRuntimeThreadsModule().createSession({
           threadId,
           workspaceUri,
+          workspaceKind,
           title,
           repoPath,
           folderPath,

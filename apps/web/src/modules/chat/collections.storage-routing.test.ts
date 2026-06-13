@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { chatTable, messageTable, threadTable } from '@undefineds.co/models'
+import { chatResource, messageResource, threadResource } from '@undefineds.co/models'
 import { chatOps, initializeChatCollections } from './collections'
 
 const SELECTED_SP_POD_URL = 'https://node-0000.undefineds.co/alice/'
@@ -29,18 +29,20 @@ describe('chatOps storage routing', () => {
       CLOUD_WEB_ID,
     )
 
-    const threadInsert = inserts.find((entry) => entry.table === threadTable)?.values
-    const messageInsert = inserts.find((entry) => entry.table === messageTable)?.values
+    const threadInsert = inserts.find((entry) => entry.resource === threadResource)?.values
+    const messageInsert = inserts.find((entry) => entry.resource === messageResource)?.values
 
-    expect(threadInsert?.id).toBe('thread-sp-routing')
-    expect(messageInsert?.id).toBe('message-sp-routing')
+    expect(threadInsert?.id).toBe(thread.id)
+    expect(messageInsert?.id).toBe(message.id)
+    expect(thread.id).toBe(`chat/${chatId}/index.ttl#thread-sp-routing`)
+    expect(message.id).toContain('#message-sp-routing')
     expect(message.chat).toBe(`${SELECTED_SP_POD_URL}.data/chat/${chatId}/index.ttl#this`)
     expect(message.thread).toBe(`${SELECTED_SP_POD_URL}.data/chat/${chatId}/index.ttl#thread-sp-routing`)
     expect(message.maker).toBe(CLOUD_WEB_ID)
     expect(messageInsert?.chat).toBe(message.chat)
     expect(messageInsert?.thread).toBe(message.thread)
     expect(messageInsert?.maker).toBe(CLOUD_WEB_ID)
-    expect(updates.find((entry) => entry.table === chatTable)?.id).toBe(chatId)
+    expect(updates.find((entry) => entry.resource === chatResource)?.id).toBe(chatId)
 
     const persisted = JSON.stringify({
       inserts: inserts.map((entry) => entry.values),
@@ -64,50 +66,50 @@ function createSelectedSpDb(chatId: string) {
     createdAt: new Date('2026-05-26T00:00:00.000Z'),
     updatedAt: new Date('2026-05-26T00:00:00.000Z'),
   }
-  const inserts: Array<{ table: unknown; values: Record<string, unknown> }> = []
-  const updates: Array<{ table: unknown; id: string; values: Record<string, unknown> }> = []
+  const inserts: Array<{ resource: unknown; values: Record<string, unknown> }> = []
+  const updates: Array<{ resource: unknown; id: string; values: Record<string, unknown> }> = []
 
   const db = {
     getDialect: () => ({
       getPodUrl: () => SELECTED_SP_POD_URL,
       getWebId: () => CLOUD_WEB_ID,
     }),
-    resolveRowIri: vi.fn((table: unknown, row: Record<string, unknown>) => {
-      if (table === chatTable) {
+    resolveRowIri: vi.fn((resource: unknown, row: Record<string, unknown>) => {
+      if (resource === chatResource) {
         return `${SELECTED_SP_POD_URL}.data/chat/${row.id}`
       }
-      if (table === threadTable) {
+      if (resource === threadResource) {
         return `${SELECTED_SP_POD_URL}.data/${row.id}`
       }
-      if (table === messageTable) {
+      if (resource === messageResource) {
         return `${SELECTED_SP_POD_URL}.data/${row.id}`
       }
       return null
     }),
-    findById: vi.fn(async (table: unknown, id: string) => {
-      if (table === chatTable && id === chatId) {
+    findById: vi.fn(async (resource: unknown, id: string) => {
+      if (resource === chatResource && id === chatId) {
         return chatRow
       }
       return null
     }),
-    insert: vi.fn((table: unknown) => ({
+    insert: vi.fn((resource: unknown) => ({
       values(values: Record<string, unknown>) {
-        inserts.push({ table, values })
+        inserts.push({ resource, values })
         return {
           execute: vi.fn(async () => [values]),
         }
       },
     })),
-    updateById: vi.fn(async (table: unknown, id: string, values: Record<string, unknown>) => {
-      updates.push({ table, id, values })
+    updateById: vi.fn(async (resource: unknown, id: string, values: Record<string, unknown>) => {
+      updates.push({ resource, id, values })
       return { id, ...values }
     }),
     select: vi.fn(() => ({
-      from(table: unknown) {
+      from(resource: unknown) {
         const query = {
           where: vi.fn(() => query),
           orderBy: vi.fn(() => query),
-          execute: vi.fn(async () => (table === chatTable ? [chatRow] : [])),
+          execute: vi.fn(async () => (resource === chatResource ? [chatRow] : [])),
         }
         return query
       },

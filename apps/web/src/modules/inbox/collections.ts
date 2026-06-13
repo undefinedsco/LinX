@@ -39,7 +39,7 @@ function getDb(): SolidDatabase | null {
 }
 
 export const approvalCollection = createPodCollection<typeof approvalResource, ApprovalRow, ApprovalInsert>({
-  table: approvalResource,
+  resource: approvalResource,
   queryKey: ['inbox', 'approvals'],
   queryClient,
   getDb,
@@ -51,7 +51,7 @@ export const approvalCollection = createPodCollection<typeof approvalResource, A
 })
 
 export const auditCollection = createPodCollection<typeof auditResource, AuditRow, AuditInsert>({
-  table: auditResource,
+  resource: auditResource,
   queryKey: ['inbox', 'audit'],
   queryClient,
   getDb,
@@ -63,7 +63,7 @@ export const auditCollection = createPodCollection<typeof auditResource, AuditRo
 })
 
 export const inboxNotificationCollection = createPodCollection<typeof inboxNotificationResource, InboxNotificationRow, InboxNotificationInsert>({
-  table: inboxNotificationResource,
+  resource: inboxNotificationResource,
   queryKey: ['inbox', 'notifications'],
   queryClient,
   getDb,

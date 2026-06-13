@@ -1,6 +1,6 @@
-import { credentialTable } from '@undefineds.co/models'
+import { credentialResource } from '@undefineds.co/models'
 
-export const Credential = credentialTable
+export const Credential = credentialResource
 
 export const CredentialStatus = {
   ACTIVE: 'active',

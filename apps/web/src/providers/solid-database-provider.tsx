@@ -1,7 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { EVENTS } from '@inrupt/solid-client-authn-browser'
 import { useSession } from '@inrupt/solid-ui-react'
-import { useLoginStore } from '@linx/stores/login'
 import type { SolidDatabase } from '@undefineds.co/models'
 import { LINX_CLOUD_IDENTITY_ORIGIN } from '@undefineds.co/models/client'
 import { createLinxSolidDatabase } from '@/lib/data/linx-solid-database'
@@ -36,7 +35,6 @@ const SolidDatabaseContext = createContext<SolidDatabaseContextValue>({
 
 export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
   const { session, sessionRequestInProgress } = useSession()
-  const storedAccount = useLoginStore((state) => state.storedAccount)
   const [sessionVersion, setSessionVersion] = useState(0)
 
   const dbInstanceRef = useRef<SolidDatabase | null>(null)
@@ -110,7 +108,7 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
     const isLoggedIn = session.info.isLoggedIn
     const webId = session.info.webId
     const sessionKey = isLoggedIn && webId ? getSessionKey(session.info.sessionId, webId) : null
-    const podContextResolution = webId ? resolveLoginPodContext(webId, storedAccount) : { context: null }
+    const podContextResolution = webId ? resolveLoginPodContext(webId) : { context: null }
     const databasePodKey = getDatabasePodKey(podContextResolution)
     const databaseKey = sessionKey ? getDatabaseKey(sessionKey, databasePodKey) : null
 
@@ -200,8 +198,10 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
         installLocalAccessRoute(accessRoute)
 
         const initTimeoutMs = resolveDatabaseInitTimeoutMs(podUrl)
+        const transportUrlRewrite = resolveDatabaseTransportRewrite(accessRoute)
         const instance = await createLinxSolidDatabase(session, {
           ...(initTimeoutMs === undefined ? {} : { initTimeoutMs }),
+          ...(transportUrlRewrite ? { transportUrlRewrite } : {}),
           podUrl,
         })
 
@@ -235,7 +235,7 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
     }
 
     initDatabase()
-  }, [sessionRequestInProgress, sessionVersion, session, storedAccount])
+  }, [sessionRequestInProgress, sessionVersion, session])
 
   const contextValue = useMemo(() => value, [value])
 
@@ -248,6 +248,40 @@ export function SolidDatabaseProvider({ children }: { children: ReactNode }) {
 
 export function useSolidDatabase() {
   return useContext(SolidDatabaseContext)
+}
+
+function resolveDatabaseTransportRewrite(
+  accessRoute: {
+    canonicalBaseUrl: string
+    accessBaseUrl: string
+  } | null,
+): { fromBaseUrl: string; toBaseUrl: string } | null {
+  if (!accessRoute || accessRoute.canonicalBaseUrl === accessRoute.accessBaseUrl) {
+    return null
+  }
+
+  if (!canRewriteSignedPodTransport(accessRoute.canonicalBaseUrl, accessRoute.accessBaseUrl)) {
+    return null
+  }
+
+  return {
+    fromBaseUrl: accessRoute.canonicalBaseUrl,
+    toBaseUrl: accessRoute.accessBaseUrl,
+  }
+}
+
+function canRewriteSignedPodTransport(canonicalBaseUrl: string, accessBaseUrl: string): boolean {
+  try {
+    const canonical = new URL(canonicalBaseUrl)
+    const access = new URL(accessBaseUrl)
+
+    // DPoP-authenticated Solid requests are bound to the canonical issuer/SP
+    // origin. Rewriting an HTTPS managed SP to a plain localhost transport
+    // changes the request URL seen by CSS and is rejected as unauthorized.
+    return !(canonical.protocol === 'https:' && access.protocol !== 'https:')
+  } catch {
+    return false
+  }
 }
 
 function getSessionKey(sessionId: string | undefined, webId: string): string {
@@ -264,7 +298,10 @@ function getDatabasePodKey(resolution: LoginPodContextResolution): string | null
   }
 
   if (resolution.profileStorageProvider) {
-    return `profile-storage:${normalizePodUrl(resolution.profileStorageProvider.storageProviderUrl) ?? resolution.profileStorageProvider.storageProviderUrl}`
+    const storageProviderUrl = resolution.profileStorageProvider.storageProviderUrl ?? undefined
+    return storageProviderUrl
+      ? `profile-storage:${normalizePodUrl(storageProviderUrl) ?? storageProviderUrl}`
+      : 'profile-storage:auto'
   }
 
   return null
@@ -291,7 +328,7 @@ function isCurrentSession(
 
 interface LoginPodContext {
   podUrl: string
-  storageProviderUrl: string
+  storageProviderUrl?: string
   storageProviderLabel?: string
 }
 
@@ -299,15 +336,13 @@ interface LoginPodContextResolution {
   context: LoginPodContext | null
   error?: Error
   profileStorageProvider?: {
-    storageProviderUrl: string
+    storageProviderUrl?: string | null
     storageProviderLabel?: string
+    enforceProviderBase?: boolean
   }
 }
 
-function resolveLoginPodContext(
-  webId: string,
-  storedAccount: { storageProviderUrl?: string; storageProviderLabel?: string; issuerUrl?: string; issuerLabel?: string } | null,
-): LoginPodContextResolution {
+function resolveLoginPodContext(webId: string): LoginPodContextResolution {
   const pendingTransaction = getPendingLoginTransaction()
   if (pendingTransaction) {
     const resolved = resolveCandidatePodContext(
@@ -351,15 +386,12 @@ function resolveLoginPodContext(
     return resolved
   }
 
-  return resolveCandidatePodContext(
-    webId,
-    {
-      route: undefined,
-      storageProviderUrl: storedAccount?.storageProviderUrl,
-      storageProviderLabel: storedAccount?.storageProviderLabel,
-      issuerUrl: storedAccount?.issuerUrl,
+  return {
+    context: null,
+    profileStorageProvider: {
+      enforceProviderBase: false,
     },
-  )
+  }
 }
 
 async function resolveRuntimePodContext(
@@ -374,15 +406,18 @@ async function resolveRuntimePodContext(
   const profileStorageUrl = await fetchProfileStorageUrl(webId, fetcher, {
     storageProviderUrl: resolution.profileStorageProvider.storageProviderUrl,
   })
-  const providerBaseUrl = normalizePodUrl(resolution.profileStorageProvider.storageProviderUrl)
-  if (!profileStorageUrl || !providerBaseUrl) {
+  const providerBaseUrl = normalizePodUrl(resolution.profileStorageProvider.storageProviderUrl ?? undefined)
+  if (!profileStorageUrl) {
     return {
       context: null,
       error: new Error('LinX 还不能把数据保存到当前空间。请换一个空间；如果这是本地空间，请先完成空间创建。'),
     }
   }
 
-  if (!isStorageUrlWithinProviderBase(profileStorageUrl, providerBaseUrl)) {
+  if (
+    resolution.profileStorageProvider.enforceProviderBase !== false
+    && (!providerBaseUrl || !isStorageUrlWithinProviderBase(profileStorageUrl, providerBaseUrl))
+  ) {
     return {
       context: null,
       error: new Error('账号和当前空间不匹配。请换账号或换空间后重试。'),
@@ -400,7 +435,7 @@ async function resolveRuntimePodContext(
   return {
     context: {
       podUrl,
-      storageProviderUrl: resolution.profileStorageProvider.storageProviderUrl,
+      ...(providerBaseUrl ? { storageProviderUrl: providerBaseUrl } : {}),
       storageProviderLabel: resolution.profileStorageProvider.storageProviderLabel,
     },
   }
@@ -418,6 +453,7 @@ function resolveCandidatePodContext(
         profileStorageProvider: {
           storageProviderUrl: candidate.storageProviderUrl ?? '',
           storageProviderLabel: candidate.storageProviderLabel,
+          enforceProviderBase: true,
         },
       }
     }
@@ -437,6 +473,7 @@ function resolveCandidatePodContext(
       profileStorageProvider: {
         storageProviderUrl: candidate.storageProviderUrl ?? '',
         storageProviderLabel: candidate.storageProviderLabel,
+        enforceProviderBase: true,
       },
     }
   }

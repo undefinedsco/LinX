@@ -28,8 +28,13 @@ import {
   agentResource,
   isAgentContact,
 } from '@undefineds.co/models'
-import { findAgentProviderForModel, getAgentProviderInfo } from '@/lib/agent-providers'
+import { DEFAULT_LINX_PLATFORM_MODEL_ID, LINX_PLATFORM_PROVIDER_ID, findAgentProviderForModel, getAgentProviderInfo, normalizeChatModelId } from '@/lib/agent-providers'
 import { formatLoginErrorForUser } from '@/modules/login/error-messages'
+import {
+  describeAgentWorkspaceAccess,
+  readAgentAiRuntimeLocation,
+  type AgentAiRuntimeLocation,
+} from '../agent-runtime-location'
 
 export function ChatHeader() {
   const { session } = useSession()
@@ -41,6 +46,7 @@ export function ChatHeader() {
   const [isModelDialogOpen, setIsModelDialogOpen] = useState(false)
   const [agentNameDraft, setAgentNameDraft] = useState('')
   const [instructionsDraft, setInstructionsDraft] = useState('')
+  const [aiRuntimeLocationDraft, setAiRuntimeLocationDraft] = useState<AgentAiRuntimeLocation>('client')
   const [modelDraft, setModelDraft] = useState('')
 
   const { data: chats } = useChatList()
@@ -58,8 +64,9 @@ export function ChatHeader() {
   const agentId = typeof agent?.id === 'string' && agent.id.length > 0 ? agent.id : null
   const contactId = typeof contact?.id === 'string' && contact.id.length > 0 ? contact.id : null
 
-  const provider = normalizeAIConfigProviderId(typeof agent?.provider === 'string' ? agent.provider : '') || 'openai'
-  const model = normalizeAIConfigResourceId(typeof agent?.model === 'string' ? agent.model : '') || 'gpt-4o-mini'
+  const provider = normalizeAIConfigProviderId(typeof agent?.provider === 'string' ? agent.provider : '') || LINX_PLATFORM_PROVIDER_ID
+  const model = normalizeChatModelId(normalizeAIConfigResourceId(typeof agent?.model === 'string' ? agent.model : '') || DEFAULT_LINX_PLATFORM_MODEL_ID)
+  const agentAiRuntimeLocation = readAgentAiRuntimeLocation((agent as Record<string, unknown> | null | undefined)?.metadata)
   const providerInfo = useMemo(() => {
     if (!provider) return null
     return getAgentProviderInfo(provider)
@@ -88,7 +95,8 @@ export function ChatHeader() {
     if (!isAgentDialogOpen) return
     setAgentNameDraft((agent?.name as string) || chat?.title || '')
     setInstructionsDraft((agent?.instructions as string) || '')
-  }, [agent?.instructions, agent?.name, chat?.title, isAgentDialogOpen])
+    setAiRuntimeLocationDraft(agentAiRuntimeLocation)
+  }, [agent?.instructions, agent?.name, agentAiRuntimeLocation, chat?.title, isAgentDialogOpen])
 
   useEffect(() => {
     if (!isModelDialogOpen) return
@@ -133,6 +141,7 @@ export function ChatHeader() {
         agentId,
         name: normalizedName,
         instructions: instructionsDraft,
+        aiRuntimeLocation: aiRuntimeLocationDraft,
         chatId: selectedChatId,
         contactId: contactId ?? undefined,
       })
@@ -150,6 +159,7 @@ export function ChatHeader() {
   }, [
     agentId,
     agentNameDraft,
+    aiRuntimeLocationDraft,
     contactId,
     instructionsDraft,
     mutations.updateAgentProfile,
@@ -310,6 +320,22 @@ export function ChatHeader() {
                 placeholder="输入系统提示词..."
                 className="min-h-[160px]"
               />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="chat-header-ai-runtime-location">AI 运行位置</Label>
+              <select
+                id="chat-header-ai-runtime-location"
+                aria-label="AI 运行位置"
+                value={aiRuntimeLocationDraft}
+                onChange={(event) => setAiRuntimeLocationDraft(event.target.value === 'server' ? 'server' : 'client')}
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="client">客户端（默认）</option>
+                <option value="server">服务端 / xpod</option>
+              </select>
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                {describeAgentWorkspaceAccess(aiRuntimeLocationDraft)}
+              </p>
             </div>
           </div>
           <DialogFooter>

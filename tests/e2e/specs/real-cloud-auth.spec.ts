@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { expectSecretaryInitialized } from '../helpers/secretary-bootstrap'
+import { expectSecretaryPersisted, expectSecretaryVisible } from '../helpers/secretary-bootstrap'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -187,7 +187,9 @@ test.describe('Cloud IDP + Cloud SP auth flow', () => {
       throw new Error(`expected LinX to land on /chat\n${JSON.stringify(await readPageState(page), null, 2)}`)
     }
     await waitForSolidDbReady(page, 90_000)
-    await expectSecretaryInitialized(page)
+    const secretaryVisibleMs = await expectSecretaryVisible(page, 8_000)
+    expect(secretaryVisibleMs, 'Cloud Secretary should be staged into the UI while Pod writes continue in the background').toBeLessThan(5_000)
+    await expectSecretaryPersisted(page, 45_000)
 
     const debug = await readPageState(page)
     localStartupCalls.push(...debug.localStartupCalls)
@@ -195,11 +197,11 @@ test.describe('Cloud IDP + Cloud SP auth flow', () => {
     expect(debug.dbReady).toBe(true)
     expect(debug.dbStatus).toBe('ready')
     expect(debug.dbError).toBeNull()
-    expect(debug.loginStore?.state?.storedAccount?.webId).toBeTruthy()
-    expect(debug.loginStore?.state?.storedAccount?.issuerUrl).toContain('https://id.undefineds.co')
-    expect(debug.loginStore?.state?.storedAccount?.storageProviderLabel).toBe('Cloud')
-    expect(debug.loginStore?.state?.storedAccount?.storageProviderUrl).toContain('https://id.undefineds.co')
-    expect(debug.loginStore?.state?.storedAccount?.webId).toContain(`/${runtime.username}/profile/card#me`)
+    expect(debug.storedAccount?.webId).toBeTruthy()
+    expect(debug.storedAccount?.issuerUrl).toContain('https://id.undefineds.co')
+    expect(debug.storedAccount?.storageProviderLabel).toBe('Cloud')
+    expect(debug.storedAccount?.storageProviderUrl).toContain('https://id.undefineds.co')
+    expect(debug.storedAccount?.webId).toContain(`/${runtime.username}/profile/card#me`)
     expect(localStartupCalls).toEqual([])
 
     console.log(`[real-cloud] usernameField=${registerResult.usedUsernameField} createPod=${consentResult.usedCreatePod} addPod=${consentResult.usedAddPod}`)
@@ -235,7 +237,6 @@ async function registerOnProductionCloud(
 
   const usernameInput = page.getByPlaceholder(/^Username$/i)
   await expect(usernameInput, 'Cloud signup must collect username so the first Cloud Pod can use the canonical slug').toBeVisible({ timeout: 20_000 })
-  await assertCloudIdentityAvailabilityEndpointHealthy(page, runtime.username)
   await usernameInput.fill(runtime.username)
   await emailInput.fill(runtime.email)
   await page.getByPlaceholder(/^Password$/i).fill(runtime.password)
@@ -247,36 +248,6 @@ async function registerOnProductionCloud(
   ])
 
   return { usedUsernameField: true }
-}
-
-async function assertCloudIdentityAvailabilityEndpointHealthy(page: Page, username: string): Promise<void> {
-  const status = await page.evaluate(async (value) => {
-    try {
-      const response = await fetch(`https://id.undefineds.co/api/v1/identity/${encodeURIComponent(value)}`, {
-        headers: { Accept: 'application/json' },
-      })
-      return {
-        ok: response.ok,
-        status: response.status,
-        body: await response.text(),
-      }
-    } catch (error: any) {
-      return {
-        ok: false,
-        status: 0,
-        body: error?.message ?? String(error),
-      }
-    }
-  }, username)
-
-  if (status.status === 404 || status.status === 200 || status.status === 409) {
-    return
-  }
-
-  throw new Error(
-    `Cloud username availability API is unhealthy: GET /api/v1/identity/${username} returned `
-    + `${status.status} ${status.body.slice(0, 500)}`,
-  )
 }
 
 async function provisionAndAuthorizeCloud(
@@ -383,10 +354,20 @@ async function waitForSolidDbReady(page: Page, timeoutMs: number): Promise<void>
 
 async function readPageState(page: Page) {
   return page.evaluate(() => {
+    const parseJson = (value: string | null) => {
+      try {
+        return value ? JSON.parse(value) : null
+      } catch {
+        return null
+      }
+    }
     const sessionId = window.localStorage.getItem('solidClientAuthn:currentSession')
     const storedSession = sessionId
       ? window.localStorage.getItem(`solidClientAuthenticationUser:${sessionId}`)
       : null
+    const loginStore = parseJson(window.localStorage.getItem('linx-login'))
+    const rememberedAccount = parseJson(window.localStorage.getItem('linx-remembered-account'))
+    const storedAccount = loginStore?.state?.storedAccount ?? rememberedAccount ?? null
 
     return {
       url: window.location.href,
@@ -396,9 +377,11 @@ async function readPageState(page: Page) {
       dbStatus: (window as any).__SOLID_DB_STATUS__ ?? null,
       dbError: (window as any).__SOLID_DB_ERROR__ ?? null,
       localStartupCalls: (window as any).__linxCloudOnlyLocalCalls ?? [],
-      loginStore: JSON.parse(window.localStorage.getItem('linx-login') ?? 'null'),
+      loginStore,
+      rememberedAccount,
+      storedAccount,
       currentSession: sessionId,
-      storedSession: storedSession ? JSON.parse(storedSession) : null,
+      storedSession: parseJson(storedSession),
       localStorage: Object.fromEntries(
         Object.keys(window.localStorage)
           .filter((key) => key.startsWith('solid') || key.startsWith('linx') || key.startsWith('oidc'))

@@ -475,9 +475,9 @@ test('native Pod session source surfaces exact message resource read failures', 
   const sessionId = '019d4657-0000-7000-8000-000000000003'
   const sessionResourceId = '2026/04/01/019d4657-0000-7000-8000-000000000003.ttl'
   const cwd = '/tmp/native-pod-cwd'
-  const chatUri = `${POD_BASE}/.data/chat/ai-secretary/index.ttl#this`
-  const threadUri = `${POD_BASE}/.data/chat/ai-secretary/index.ttl#${sessionId}`
-  const messageUri = `${POD_BASE}/.data/chat/ai-secretary/2026/04/01/messages.ttl#${sessionId}-u1`
+  const chatUri = `${POD_BASE}/.data/chat/__secretary__/index.ttl#this`
+  const threadUri = `${POD_BASE}/.data/chat/__secretary__/index.ttl#${sessionId}`
+  const messageUri = `${POD_BASE}/.data/chat/__secretary__/2026/04/01/messages.ttl#${sessionId}-u1`
   let selectedMessages = false
 
   const db = {
@@ -557,9 +557,9 @@ test('native Pod session list surfaces exact message resource read failures', as
   const sessionId = '019d4657-0000-7000-8000-000000000004'
   const sessionResourceId = '2026/04/01/019d4657-0000-7000-8000-000000000004.ttl'
   const cwd = '/tmp/native-pod-cwd'
-  const chatUri = `${POD_BASE}/.data/chat/ai-secretary/index.ttl#this`
-  const threadUri = `${POD_BASE}/.data/chat/ai-secretary/index.ttl#${sessionId}`
-  const messageUri = `${POD_BASE}/.data/chat/ai-secretary/2026/04/01/messages.ttl#${sessionId}-u1`
+  const chatUri = `${POD_BASE}/.data/chat/__secretary__/index.ttl#this`
+  const threadUri = `${POD_BASE}/.data/chat/__secretary__/index.ttl#${sessionId}`
+  const messageUri = `${POD_BASE}/.data/chat/__secretary__/2026/04/01/messages.ttl#${sessionId}-u1`
 
   const db = {
     resolveLocatorIri(resource, locator) {
@@ -613,7 +613,7 @@ test('native Pod session list surfaces exact message resource read failures', as
   })
 
   await assert.rejects(
-    () => source.listSessions('/tmp/another-cwd'),
+    () => source.listSessions(cwd),
     /exact list message read failed/,
   )
 })

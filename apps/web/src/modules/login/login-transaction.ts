@@ -43,7 +43,7 @@ export interface LoginTransactionInput {
 }
 
 export function createLoginTransaction(input: LoginTransactionInput): LoginTransaction | null {
-  const oidcIssuerUrl = normalizeLoginUrl(input.oidcIssuerUrl)
+  let oidcIssuerUrl = normalizeLoginUrl(input.oidcIssuerUrl)
     ?? normalizeLoginUrl(input.issuerUrl)
     ?? normalizeLoginUrl(input.oidcEntryUrl)
   if (!oidcIssuerUrl) return null
@@ -63,8 +63,16 @@ export function createLoginTransaction(input: LoginTransactionInput): LoginTrans
     storageProviderLabel,
     accountIssuerLabel,
   })
-  const oidcEntryUrl = normalizeLoginUrl(input.oidcEntryUrl)
-    ?? (route === 'local' ? storageProviderUrl : oidcIssuerUrl)
+  if (route === 'local' && accountIssuerUrl && normalizeOrigin(accountIssuerUrl) !== normalizeOrigin(storageProviderUrl)) {
+    oidcIssuerUrl = accountIssuerUrl
+  }
+  const explicitOidcEntryUrl = normalizeLoginUrl(input.oidcEntryUrl)
+  const oidcEntryUrl = route === 'local'
+    && explicitOidcEntryUrl
+    && normalizeOrigin(explicitOidcEntryUrl) === normalizeOrigin(storageProviderUrl)
+    && normalizeOrigin(accountIssuerUrl) !== normalizeOrigin(storageProviderUrl)
+      ? oidcIssuerUrl
+      : explicitOidcEntryUrl ?? oidcIssuerUrl
   const authorizationSurface = isAuthorizationSurface(input.authorizationSurface)
     ? input.authorizationSurface
     : 'window'

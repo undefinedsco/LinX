@@ -10,6 +10,11 @@ data ownership, auth ownership, or persistence semantics.
 
 These principles are the review baseline for auto-mode work:
 
+- The Pod is the authority center for every LinX endpoint. CLI normal mode,
+  auto-mode, Symphony, desktop, web, TUI, local xpod, and cloud services are
+  different access surfaces over the same durable Pod graph. They may keep
+  runtime-local caches and recovery logs, but they must not become competing
+  business truth.
 - Backend selection is a runtime adapter choice, not a product fork. Choosing
   Codex, Claude Code, CodeBuddy, Pi, or a future ACP backend must only change
   the external worker command/protocol.
@@ -27,6 +32,39 @@ These principles are the review baseline for auto-mode work:
   runtime events into shared DTOs and render TUI/App controls, but it must not
   define shared business predicates, subject templates, provider aliases, or a
   second approval policy.
+- Pod authority does not mean fabricating control records. If the native
+  runtime allows a Pi tool call without producing an approval request, LinX must
+  not create a fake approval. The durable record for ordinary execution belongs
+  in message/session/audit/tool-event surfaces; `approval` is reserved for real
+  upstream or LinX remote-approval requests.
+
+## Authority Layers
+
+LinX runtime code must keep these layers separate:
+
+| Layer | Owns | Not allowed to own |
+|---|---|---|
+| Pod graph | Durable shared facts: chats, threads, messages, sessions, approvals, grants, audits, inbox, AI config, agent resources, workspace relations | TTY/GUI rendering state, subprocess handles, cursor state |
+| Shared models / repositories | RDF class/predicate/resource identity, URI/id rules, query and mutation semantics | Product-specific rendering, backend command syntax |
+| Runtime adapters | Mapping Pi/ACP/ChatKit/Codex/Claude events into shared DTOs; invoking local processes; local cache/archive for recovery | New predicates, alternate approval policy, alternate credential source, cross-endpoint state machine |
+| UI shells | User interaction, display, shortcuts, local transient state | Durable business state or storage layout |
+
+The operational consequence is:
+
+```text
+runtime event / user command
+  -> shared runtime normalization
+  -> Pod-backed config / conversation path
+  -> Pod-backed grant / approval path only when an approval is actually requested
+  -> local runtime action
+  -> local archive/cache
+  -> Pod convergence through shared models
+```
+
+Shortcuts are allowed only when they preserve this order. A local trusted-command
+fallback may keep work moving when Pod/Secretary is unavailable, but it is not a
+new authority and must not prevent the Pod-backed approval/Secretary path from
+observing an actual approval request when that path is available.
 
 ### Review Invariants
 
@@ -42,6 +80,11 @@ Use these invariants when reviewing an auto-mode design or implementation:
 - The shell is not the domain layer. CLI/TUI and App/GUI may differ in
   rendering and interaction, but they must call the same shared models,
   repositories, runtime contracts, and approval semantics.
+- Normal Pi mode, auto-mode, and Symphony are surfaces over the same authority
+  model. Symphony adds control-plane records and a projected worker prompt;
+  auto-mode adds backend ACP control; normal Pi mode adds the default TUI.
+  None of them may fork credential lookup, approval resolution, or Pod
+  persistence semantics.
 - Authentication paths are interchangeable inputs to the same data path. OIDC,
   client credentials, and backend-native login may differ before a usable
   session or environment exists; they must not fork credential lookup, archive
@@ -91,7 +134,7 @@ Backend provider credentials and provider-level config are Pod data.
 - Backend API keys must not be copied into session archive, messages, audits,
   TUI state, logs, or generated docs.
 - CLI/App shells must not introduce a second credential format, a second
-  provider alias table, or a hand-written Turtle parser for shared credential
+  provider alias resource/registry, or a hand-written Turtle parser for shared credential
   data.
 - Backend credential strategy is fixed: provider credentials are read from Pod
   AI config after LinX/Solid auth has produced an Inrupt-compatible session.
@@ -173,8 +216,16 @@ Approval follows upstream runtime semantics.
   allowlists.
 - When the backend emits an approval or structured input request, LinX may
   display it locally, mirror it to Pod, and let App/Inbox resolve it remotely.
-- AI Secretary may recommend allow/deny/input. It must not recommend creating
-  grants on its own; grant creation is a user decision.
+- AI Secretary may produce a **recommendation** for allow/deny/input. A
+  recommendation is not final authority; it is an input to the Pod-backed
+  approval resolver. The final decision still comes from existing Pod grants,
+  remote approval state, user action, or an in-policy Secretary auto action that
+  is written back as an approval decision.
+- Local fallback rules can only run after the Pod-backed grant/Secretary path is
+  unavailable or inconclusive. They must not shadow Secretary visibility for
+  safe read-only requests such as `grep profile/card`.
+- AI Secretary must not recommend creating grants on its own; grant creation is
+  a user decision.
 - Existing grants are durable user-authored wiki resources in Pod. AI Secretary
   can evaluate whether a request is covered by an existing grant, but this
   judgement is semantic and must not be reduced to request fingerprint matching.

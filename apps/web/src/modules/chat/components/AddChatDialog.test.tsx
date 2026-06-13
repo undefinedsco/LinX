@@ -37,7 +37,7 @@ vi.mock('@/components/ui/model-selector', () => ({
       value={value}
       onChange={(event) => onChange?.(event.target.value)}
     >
-      <option value="undefineds/linx-lite">undefineds/linx-lite</option>
+      <option value="linx-lite">linx-lite</option>
       <option value="gpt-4o-mini">gpt-4o-mini</option>
       <option value="claude-3-5-sonnet-latest">claude-3-5-sonnet-latest</option>
     </select>
@@ -48,8 +48,8 @@ vi.mock('@/lib/agent-providers', () => ({
   CHAT_AGENT_PROVIDERS: [
     {
       slug: 'undefineds',
-      displayName: 'Undefineds Cloud',
-      models: [{ id: 'undefineds/linx-lite', displayName: 'LinX Lite' }],
+      displayName: 'LinX Platform',
+      models: [{ id: 'linx-lite', displayName: 'LinX Lite' }, { id: 'linx', displayName: 'LinX' }],
     },
     {
       slug: 'openai',
@@ -175,7 +175,7 @@ describe('AddChatDialog', () => {
       expect(mockCreateAIChat).toHaveBeenCalledWith({
         title: '代码助手',
         provider: 'undefineds',
-        model: 'undefineds/linx-lite',
+        model: 'linx-lite',
         systemPrompt: undefined,
       })
     })
@@ -211,6 +211,38 @@ describe('AddChatDialog', () => {
     expect(mockCloseAddDialog).toHaveBeenCalled()
     expect(onCreated).toHaveBeenCalledWith('chat-1')
     expect(mockToast).not.toHaveBeenCalled()
+  })
+
+  it('binds a default Pod workspace when creating an AI chat without a runtime session', async () => {
+    mockIsRuntimeSessionMode.mockReturnValue(false)
+    const onCreated = vi.fn()
+    render(<AddChatDialog onCreated={onCreated} />)
+
+    fireEvent.change(screen.getByLabelText('助手名称'), { target: { value: '普通助手' } })
+    fireEvent.click(screen.getByRole('button', { name: '创建' }))
+
+    await waitFor(() => {
+      expect(mockCreateAIChat).toHaveBeenCalledWith({
+        title: '普通助手',
+        provider: 'undefineds',
+        model: 'linx-lite',
+        systemPrompt: undefined,
+      })
+    })
+
+    expect(mockCreateThread).toHaveBeenCalledWith({
+      chatId: 'chat-1',
+      title: '默认话题',
+    })
+    expect(mockEnsureThreadWorkspace).toHaveBeenCalledWith({
+      threadId: 'thread-1',
+      title: '默认话题',
+    })
+    expect(mockCreateAndStartRuntimeSession).not.toHaveBeenCalled()
+    expect(mockSelectChat).toHaveBeenCalledWith('chat-1')
+    expect(mockSelectThread).toHaveBeenCalledWith('thread-1')
+    expect(mockCloseAddDialog).toHaveBeenCalled()
+    expect(onCreated).toHaveBeenCalledWith('chat-1')
   })
 
   it('blocks submit when runtime is enabled without repo path', async () => {

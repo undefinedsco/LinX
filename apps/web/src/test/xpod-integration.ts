@@ -82,7 +82,7 @@ export interface XpodIntegrationContext<TSchema extends Record<string, unknown>>
 
 interface XpodIntegrationOptions<TSchema extends Record<string, unknown>> {
   schema: TSchema
-  tables: unknown[]
+  resources: unknown[]
   initialize?: (db: SolidDatabase<TSchema>) => void | Promise<void>
 }
 
@@ -769,7 +769,7 @@ async function initializeIntegrationDatabase<TSchema extends Record<string, unkn
   options: XpodIntegrationOptions<TSchema>,
 ): Promise<void> {
   await initializeLinxPodStorage(db as any)
-  await db.init(options.tables as never[])
+  await db.init(options.resources as never[])
   await options.initialize?.(db)
 }
 

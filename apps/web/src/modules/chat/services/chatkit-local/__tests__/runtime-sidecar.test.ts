@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { approvalResource, auditResource, inboxNotificationTable, sessionTable } from '@undefineds.co/models'
+import { approvalResource, auditResource, inboxNotificationResource, sessionResource } from '@undefineds.co/models'
 
 const mocked = vi.hoisted(() => ({
   invalidateQueries: vi.fn().mockResolvedValue(undefined),
@@ -15,7 +15,7 @@ import { queryClient } from '@/providers/query-provider'
 import { RuntimeSidecarSink } from '../runtime-sidecar'
 
 type InsertRecord = {
-  table: unknown
+  resource: unknown
   values: Record<string, unknown>
 }
 
@@ -33,28 +33,28 @@ function createMockDb(
           getPodUrl: () => 'https://alice.example/',
         }
       },
-      insert(table: unknown) {
+      insert(resource: unknown) {
         return {
           values(values: Record<string, unknown>) {
-            inserts.push({ table, values })
+            inserts.push({ resource, values })
             return {
               execute: vi.fn().mockResolvedValue(undefined),
             }
           },
         }
       },
-      findById(table: unknown, id: string) {
-        const rows = table === sessionTable ? existingSessions : existingApprovals
+      findById(resource: unknown, id: string) {
+        const rows = resource === sessionResource ? existingSessions : existingApprovals
         return Promise.resolve(rows.find((row) => row.id === id) ?? null)
       },
-      updateById(table: unknown, id: string, values: Record<string, unknown>) {
-        updates.push({ table, values: { id, ...values } })
+      updateById(resource: unknown, id: string, values: Record<string, unknown>) {
+        updates.push({ resource, values: { id, ...values } })
         return Promise.resolve({ id, ...values })
       },
-      update(table: unknown) {
+      update(resource: unknown) {
         return {
           set(values: Record<string, unknown>) {
-            updates.push({ table, values })
+            updates.push({ resource, values })
             return {
               where() {
                 return {
@@ -67,14 +67,14 @@ function createMockDb(
       },
       select() {
         return {
-          from(table: unknown) {
+          from(resource: unknown) {
             return {
               where() {
                 return {
-                  execute: vi.fn().mockResolvedValue(table === sessionTable ? existingSessions : existingApprovals),
+                  execute: vi.fn().mockResolvedValue(resource === sessionResource ? existingSessions : existingApprovals),
                 }
               },
-              execute: vi.fn().mockResolvedValue(table === sessionTable ? existingSessions : existingApprovals),
+              execute: vi.fn().mockResolvedValue(resource === sessionResource ? existingSessions : existingApprovals),
             }
           },
         }
@@ -117,13 +117,13 @@ describe('RuntimeSidecarSink', () => {
       arguments: '{"path":"/tmp/demo.txt"}',
     }, context)
 
-    expect(inserts.filter((item) => item.table === approvalResource)).toHaveLength(1)
-    expect(inserts.filter((item) => item.table === auditResource)).toHaveLength(1)
-    expect(inserts.filter((item) => item.table === inboxNotificationTable)).toHaveLength(2)
-    expect(inserts.find((item) => item.table === approvalResource)?.values.session).toBe(
+    expect(inserts.filter((item) => item.resource === approvalResource)).toHaveLength(1)
+    expect(inserts.filter((item) => item.resource === auditResource)).toHaveLength(1)
+    expect(inserts.filter((item) => item.resource === inboxNotificationResource)).toHaveLength(2)
+    expect(inserts.find((item) => item.resource === approvalResource)?.values.session).toBe(
       'https://alice.example/.data/sessions/1970/01/01/runtime-1.ttl',
     )
-    const audit = inserts.find((item) => item.table === auditResource)?.values
+    const audit = inserts.find((item) => item.resource === auditResource)?.values
     expect(audit?.toolName).toBe('write_file')
     expect(audit?.entry).toBe('https://alice.example/.data/chat/chat-1/index.ttl#thread-1')
     expect(audit).not.toHaveProperty('context')
@@ -149,10 +149,10 @@ describe('RuntimeSidecarSink', () => {
       arguments: '{"path":"/tmp/demo.txt"}',
     }, context)
 
-    const approval = inserts.find((item) => item.table === approvalResource)?.values
-    const audit = inserts.find((item) => item.table === auditResource)?.values
+    const approval = inserts.find((item) => item.resource === approvalResource)?.values
+    const audit = inserts.find((item) => item.resource === auditResource)?.values
     const notifications = inserts
-      .filter((item) => item.table === inboxNotificationTable)
+      .filter((item) => item.resource === inboxNotificationResource)
       .map((item) => item.values.object)
 
     expect(approval?.session).toBe('https://node-0000.undefineds.co/alice/.data/sessions/1970/01/01/runtime-1.ttl')
@@ -182,20 +182,20 @@ describe('RuntimeSidecarSink', () => {
       status: 'active',
     }, context)
 
-    expect(inserts.filter((item) => item.table === auditResource)).toHaveLength(1)
-    expect(inserts.filter((item) => item.table === sessionTable)).toHaveLength(1)
-    expect(inserts.find((item) => item.table === sessionTable)?.values.owner).toBe(
+    expect(inserts.filter((item) => item.resource === auditResource)).toHaveLength(1)
+    expect(inserts.filter((item) => item.resource === sessionResource)).toHaveLength(1)
+    expect(inserts.find((item) => item.resource === sessionResource)?.values.owner).toBe(
       'https://alice.example/profile/card#me',
     )
-    expect(inserts.find((item) => item.table === sessionTable)?.values.chat).toBe(
+    expect(inserts.find((item) => item.resource === sessionResource)?.values.chat).toBe(
       'https://alice.example/.data/chat/chat-1/index.ttl#this',
     )
-    expect(inserts.find((item) => item.table === sessionTable)?.values.thread).toBe(
+    expect(inserts.find((item) => item.resource === sessionResource)?.values.thread).toBe(
       'https://alice.example/.data/chat/chat-1/index.ttl#thread-1',
     )
-    expect(inserts.find((item) => item.table === sessionTable)?.values).not.toHaveProperty('chatId')
-    expect(inserts.find((item) => item.table === sessionTable)?.values).not.toHaveProperty('threadId')
-    expect(inserts.find((item) => item.table === auditResource)?.values).not.toHaveProperty('context')
+    expect(inserts.find((item) => item.resource === sessionResource)?.values).not.toHaveProperty('chatId')
+    expect(inserts.find((item) => item.resource === sessionResource)?.values).not.toHaveProperty('threadId')
+    expect(inserts.find((item) => item.resource === auditResource)?.values).not.toHaveProperty('context')
     expect(queryClient.invalidateQueries).toHaveBeenCalledTimes(4)
   })
 
@@ -213,8 +213,8 @@ describe('RuntimeSidecarSink', () => {
       status: 'paused',
     }, context)
 
-    expect(updates.filter((item) => item.table === sessionTable)).toHaveLength(1)
-    expect(updates.find((item) => item.table === sessionTable)?.values.status).toBe('paused')
+    expect(updates.filter((item) => item.resource === sessionResource)).toHaveLength(1)
+    expect(updates.find((item) => item.resource === sessionResource)?.values.status).toBe('paused')
   })
 
   it('records auth resolution once runtime output resumes after auth_required', async () => {
@@ -237,12 +237,12 @@ describe('RuntimeSidecarSink', () => {
     }, context)
 
     const auditActions = inserts
-      .filter((item) => item.table === auditResource)
+      .filter((item) => item.resource === auditResource)
       .map((item) => item.values.action)
 
     expect(auditActions).toContain('runtime.auth_required')
     expect(auditActions).toContain('runtime.auth_resolved')
-    expect(inserts.filter((item) => item.table === auditResource).every((item) => !('context' in item.values))).toBe(true)
-    expect(inserts.filter((item) => item.table === inboxNotificationTable)).toHaveLength(2)
+    expect(inserts.filter((item) => item.resource === auditResource).every((item) => !('context' in item.values))).toBe(true)
+    expect(inserts.filter((item) => item.resource === inboxNotificationResource)).toHaveLength(2)
   })
 })

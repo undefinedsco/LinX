@@ -19,15 +19,15 @@ import {
 } from '@/lib/vendor/xpod-chatkit'
 import {
   chatResource,
-  contactTable,
+  contactResource,
   extractChatIdFromChatRef,
   extractThreadIdFromThreadRef,
   messageResource,
-  requireRowResourceId,
-  threadResource,
+  threadRepository,
   type SolidDatabase,
   UDFS,
 } from '@undefineds.co/models'
+import { requireRowResourceId } from '@/lib/data/resource-identity'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { deleteExactRecord, updateExactRecord } from '@/lib/data/exact-records'
 
@@ -130,10 +130,7 @@ function buildChatIri(db: SolidDatabase<any>, chatId: string): string {
 
 async function findThreadRecord(db: SolidDatabase<any>, threadId: string, chatId?: string | null): Promise<any | null> {
   if (chatId) {
-    const exactId = threadResource.buildId({
-      id: threadId,
-      chat: buildChatIri(db, chatId),
-    })
+    const exactId = threadRepository.idForChat(chatId, threadId)
     const exact = await (db as any).findById(Thread as any, exactId)
     if (exact) return exact
   }
@@ -150,7 +147,7 @@ async function findThreadRecord(db: SolidDatabase<any>, threadId: string, chatId
 // ---------------------------------------------------------------------------
 
 function threadRecordToMetadata(record: any): ThreadMetadata {
-  const chatId = extractChatId(record.chat)
+  const chatId = threadRepository.chatId(record) ?? DEFAULT_CHAT_ID
   const extra = parseThreadMetadata(record.metadata)
   const threadId = extractThreadId(record.id) ?? record.id
   return {
@@ -317,16 +314,13 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     const thread = await findThreadRecord(this.db, threadId, cached)
     if (!thread) return DEFAULT_CHAT_ID
 
-    const chatId = extractChatId((thread as any).chat)
+    const chatId = threadRepository.chatId(thread as any) ?? DEFAULT_CHAT_ID
     this.threadChatIdCache.set(threadId, chatId)
     return chatId
   }
 
   private buildThreadUri(chatId: string, threadId: string): string {
-    return threadResource.buildIri(requirePodBaseUrl(this.db), {
-      id: threadId,
-      chat: this.buildChatUri(chatId),
-    })
+    return threadRepository.iriForChat(requirePodBaseUrl(this.db), chatId, threadId)
   }
 
   private buildChatUri(chatId: string): string {
@@ -334,10 +328,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   }
 
   private buildThreadId(chatId: string, threadId: string): string {
-    return threadResource.buildId({
-      id: threadId,
-      chat: this.buildChatUri(chatId),
-    })
+    return threadRepository.idForChat(chatId, threadId)
   }
 
   private buildMessageId(chatId: string, thread: string, itemId: string, createdAt: Date): string {
@@ -369,12 +360,12 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     if (ABSOLUTE_IRI.test(ref)) {
       const findByIri = (this.db as any).findByIri
       return typeof findByIri === 'function'
-        ? await findByIri.call(this.db, contactTable as any, ref) as Record<string, unknown> | null
+        ? await findByIri.call(this.db, contactResource as any, ref) as Record<string, unknown> | null
         : null
     }
     const findById = (this.db as any).findById
     return typeof findById === 'function'
-      ? await findById.call(this.db, contactTable as any, ref) as Record<string, unknown> | null
+      ? await findById.call(this.db, contactResource as any, ref) as Record<string, unknown> | null
       : null
   }
 
@@ -421,10 +412,10 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     this.threadItemsCache.set(threadId, next)
   }
 
-  private resolveRowIri(table: unknown, row: Record<string, unknown>): string {
+  private resolveRowIri(resource: unknown, row: Record<string, unknown>): string {
     requireRecordId(row, 'Pod row')
     const iri = typeof (this.db as any).resolveRowIri === 'function'
-      ? (this.db as any).resolveRowIri(table as any, row)
+      ? (this.db as any).resolveRowIri(resource as any, row)
       : null
     if (typeof iri !== 'string' || iri.length === 0) {
       throw new Error('Unable to resolve Pod row IRI from row.id.')
@@ -527,8 +518,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     } else {
       await (this.db as any).insert(Thread as any).values({
         id: this.buildThreadId(chatId, thread.id),
-        scope: this.buildChatUri(chatId),
-        chat: this.buildChatUri(chatId),
+        parent: this.buildChatUri(chatId),
         title: thread.title || undefined,
         status: statusToString(thread.status),
         metadata: metadataValue,
@@ -581,7 +571,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       try {
         const thread = await findThreadRecord(this.db, threadId)
         if (thread) {
-          chatId = extractChatId((thread as any).chat)
+          chatId = threadRepository.chatId(thread as any) ?? DEFAULT_CHAT_ID
         }
       } catch (err: any) {
         console.debug('[LocalStore] Ignoring thread lookup error during delete:', err?.message || err)

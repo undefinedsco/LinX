@@ -18,7 +18,7 @@ import { createLinxPodSyncScope, type LinxSyncOperation } from '@linx/agent-runt
 import {
   type ExactRecordDatabase,
   insertExactRecordOnce,
-  type PodTable,
+  type PodResource,
   resolvePodResourceTemplateValue,
   upsertExactRecord,
 } from '@undefineds.co/drizzle-solid'
@@ -93,20 +93,20 @@ export interface SymphonyJsonLdMirrorResult {
 export interface SymphonyPodProjectionRuntime {
   getPodDataSession: () => Promise<PodDataSession | null>
   createDb: (session: PodDataSession) => PodProjectionDb
-  chatResource: PodTable<any>
-  threadResource: PodTable<any>
-  messageResource: PodTable<any>
-  sessionResource: PodTable<any>
-  ideaResource: PodTable<any>
-  issueResource: PodTable<any>
-  taskResource: PodTable<any>
-  deliveryResource: PodTable<any>
-  runResource: PodTable<any>
-  runStepResource: PodTable<any>
-  agentResource: PodTable<any>
-  contactResource: PodTable<any>
-  auditResource: PodTable<any>
-  inboxNotificationResource?: PodTable<any>
+  chatResource: PodResource<any>
+  threadResource: PodResource<any>
+  messageResource: PodResource<any>
+  sessionResource: PodResource<any>
+  ideaResource: PodResource<any>
+  issueResource: PodResource<any>
+  taskResource: PodResource<any>
+  deliveryResource: PodResource<any>
+  runResource: PodResource<any>
+  runStepResource: PodResource<any>
+  agentResource: PodResource<any>
+  contactResource: PodResource<any>
+  auditResource: PodResource<any>
+  inboxNotificationResource?: PodResource<any>
 }
 
 type PodProjectionDb = SolidDatabase & ExactRecordDatabase
@@ -276,7 +276,7 @@ async function createDefaultRuntime(): Promise<SymphonyPodProjectionRuntime> {
     runResource: models.runResource,
     runStepResource: models.runStepResource,
     agentResource: models.agentResource,
-    contactResource: models.contactTable,
+    contactResource: models.contactResource,
     auditResource: models.auditResource,
     inboxNotificationResource: models.inboxNotificationResource,
   }
@@ -1766,7 +1766,7 @@ async function insertRunStepOnce(db: PodProjectionDb, runtime: SymphonyPodProjec
 
 async function upsertAgent(db: PodProjectionDb, runtime: SymphonyPodProjectionRuntime, row: SymphonyAgentRow): Promise<void> {
   const target = { id: row.id }
-  const agentResourceWithId = runtime.agentResource as PodTable<any> & {
+  const agentResourceWithId = runtime.agentResource as PodResource<any> & {
     buildId?: (target: Record<string, unknown>) => string
   }
   await upsertExactRecord(db, runtime.agentResource, target, {
@@ -2005,13 +2005,13 @@ export async function mirrorSymphonyProjectionJsonLdFromPod(
 function collectProjectionResourceModels(
   runtime: SymphonyPodProjectionRuntime,
   resources: SymphonyPodProjectionResource[],
-): Array<PodTable<any>> {
+): Array<PodResource<any>> {
   return Array.from(new Set(resources
     .map((resource) => resolveProjectionResourceModel(runtime, resource.kind))
-    .filter((resource): resource is PodTable<any> => Boolean(resource))))
+    .filter((resource): resource is PodResource<any> => Boolean(resource))))
 }
 
-function resolveProjectionResourceModel(runtime: SymphonyPodProjectionRuntime, kind: string): PodTable<any> | null {
+function resolveProjectionResourceModel(runtime: SymphonyPodProjectionRuntime, kind: string): PodResource<any> | null {
   if (kind === 'chat') return runtime.chatResource
   if (kind === 'thread') return runtime.threadResource
   if (kind === 'message') return runtime.messageResource

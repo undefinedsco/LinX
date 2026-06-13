@@ -39,52 +39,46 @@ xpod 提供了统一的 Chat API 代理层，LinX 需要从直接调用各 AI �
 
 ## 用户配置数据模型
 
-### 三表结构（与 xpod 对齐）
+### 三资源结构（与 xpod 对齐）
 
-LinX 当前已经以三表为 AI 配置主线，与 xpod schema 对齐；旧的单表 `modelProviderTable` 已删除。
+LinX 当前已经以三资源为 AI 配置主线，与 xpod schema 对齐；旧的单资源 `modelProviderTable` 兼容名已删除。
 
-#### 1. Credential 表 - 凭据存储
+#### 1. Credential 资源 - 凭据存储
 
 **路径**: `/settings/credentials.ttl`
 
 **Namespace**: `https://vocab.xpod.dev/credential#`
 
-```typescript
-export const credentialTable = podTable('credential', {
-  id: string('id').primaryKey(),
-  provider: uri('provider'),        // 关联 provider id
-  service: string('service'),       // 'ai' | 'storage' | ...
-  status: string('status'),         // 'active' | 'inactive' | 'expired'
-  apiKey: string('apiKey'),         // API 密钥
-  baseUrl: string('baseUrl'),       // 可选，覆盖 provider 默认地址
-  label: string('label'),           // 用户自定义标签
-  lastUsedAt: datetime('lastUsedAt'),
-  failCount: int('failCount'),
-  rateLimitResetAt: datetime('rateLimitResetAt'),
-}, {
-  base: '/settings/credentials.ttl',
-  type: 'https://vocab.xpod.dev/credential#Credential',
-  subjectTemplate: '#{id}',
-})
+```text
+credentialResource
+  path: /settings/credentials.ttl
+  type: https://vocab.xpod.dev/credential#Credential
+  id: credentials.ttl#{credentialId}
+  fields:
+    provider: URI relation to providerResource
+    service: ai | storage | ...
+    status: active | inactive | expired
+    apiKey: secret value
+    baseUrl: optional provider override
+    label: user label
+    lastUsedAt / failCount / rateLimitResetAt
 ```
 
-#### 2. Provider 表 - AI 供应商配置
+#### 2. Provider 资源 - AI 供应商配置
 
 **路径**: `/settings/providers/{providerId}.ttl`
 
 **Namespace**: `https://vocab.xpod.dev/ai#`
 
-```typescript
-export const providerTable = podTable('provider', {
-  id: string('id').primaryKey(),    // 'openai' | 'anthropic' | ...
-  baseUrl: string('baseUrl'),       // 默认 API 地址
-  proxyUrl: string('proxyUrl'),     // 代理地址（可选）
-  hasModel: uri('hasModel'),        // 关联的 model URI
-}, {
-  base: '/settings/providers/',
-  type: 'https://vocab.xpod.dev/ai#Provider',
-  subjectTemplate: '{id}.ttl',
-})
+```text
+providerResource
+  path: /settings/providers/{providerId}.ttl
+  type: https://vocab.xpod.dev/ai#Provider
+  fields:
+    id: openai | anthropic | ...
+    baseUrl: default API endpoint
+    proxyUrl: optional proxy
+    hasModel: URI relation to modelResource
 ```
 
 #### 3. Model 资源 - 用户维护的 AI 模型配置
@@ -95,21 +89,18 @@ LinX 自供模型来自 ai-gateway discovery/runtime，不写入用户 Pod。这
 
 **Namespace**: `https://vocab.xpod.dev/ai#`
 
-```typescript
-export const modelTable = podTable('model', {
-  id: string('id').primaryKey(),    // 模型 ID，如 'gpt-4o'
-  displayName: string('displayName'),
-  modelType: string('modelType'),   // 'chat' | 'embedding' | 'completion'
-  isProvidedBy: uri('isProvidedBy'), // 关联 provider URI
-  dimension: int('dimension'),      // embedding 维度（可选）
-  status: string('status'),         // 'active' | 'deprecated'
-  createdAt: datetime('createdAt'),
-  updatedAt: datetime('updatedAt'),
-}, {
-  base: '/settings/providers/',
-  type: 'https://vocab.xpod.dev/ai#Model',
-  subjectTemplate: '{isProvidedBy|id}.ttl#{id}',
-})
+```text
+modelResource
+  path: /settings/providers/{providerId}.ttl#{modelId}
+  type: https://vocab.xpod.dev/ai#Model
+  fields:
+    id: model id, for example gpt-4o
+    displayName
+    modelType: chat | embedding | completion
+    isProvidedBy: URI relation to providerResource
+    dimension: optional embedding dimension
+    status: active | deprecated
+    createdAt / updatedAt
 ```
 
 ### 数据关系
@@ -431,5 +422,5 @@ const response = await authFetch(endpoint, {
 - [xpod Sidecar API](../../../xpod/docs/sidecar-api.md)
 - [xpod ChatHandler](../../../xpod/src/api/handlers/ChatHandler.ts)
 - [xpod VercelChatService](../../../xpod/src/api/service/VercelChatService.ts)
-- [xpod Credential Schema](../../../xpod/src/credential/schema/tables.ts)
-- [xpod AI Schema](../../../xpod/src/embedding/schema/tables.ts)
+- [xpod Credential Schema](../../../xpod/src/credential/schema/tables.ts) — upstream file path still uses `tables.ts`
+- [xpod AI Schema](../../../xpod/src/embedding/schema/tables.ts) — upstream file path still uses `tables.ts`

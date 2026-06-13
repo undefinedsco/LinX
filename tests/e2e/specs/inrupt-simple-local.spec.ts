@@ -39,12 +39,12 @@ test.describe('Inrupt simple local auth', () => {
     await page.getByRole('button', { name: '登录 CSS v8' }).click()
 
     await signInToSeededRuntime(page, runtime)
-    await authorizeSeededRuntime(page)
+    await authorizeSeededRuntime(page, runtime)
 
     await page.waitForURL(/\/test\/inrupt-simple/, { timeout: 30_000 })
     await expect.poll(() => browserMessages.join('\n'), {
       timeout: 15_000,
-    }).toContain('Successfully connected to Solid Pod')
+    }).toContain(`Using WebID: ${new URL(`${runtime.podName}/profile/card#me`, runtime.baseUrl).href}`)
 
     const logs = await page.locator('pre').innerText()
     console.log(`[inrupt-simple-logs]\n${logs}`)
@@ -88,18 +88,87 @@ async function signInToSeededRuntime(page: Page, runtime: SeededXpodRuntime): Pr
   }
 }
 
-async function authorizeSeededRuntime(page: Page): Promise<void> {
-  const authorizeButton = page.getByRole('button', { name: /Authorize|允许访问/i })
-  try {
-    await expect(authorizeButton).toBeVisible({ timeout: 20_000 })
-    await expect(authorizeButton).toBeEnabled({ timeout: 20_000 })
-  } catch (error) {
-    await dumpPageState(page, 'authorize-button-not-ready')
-    throw error
+async function authorizeSeededRuntime(page: Page, runtime: SeededXpodRuntime): Promise<void> {
+  const deadline = Date.now() + 60_000
+  const expectedPodUrl = new URL(`${runtime.podName}/`, runtime.baseUrl).href
+  const expectedWebId = new URL(`${runtime.podName}/profile/card#me`, runtime.baseUrl).href
+
+  while (Date.now() < deadline) {
+    const authorizeButton = page.getByRole('button', { name: /Authorize|允许访问/i })
+    const missingPodMessage = page.getByText('You need to create a Pod first to get a WebID.')
+    const createPodButton = page.getByRole('button', { name: /^Create Pod$/i })
+    const addPodButton = page.getByRole('button', { name: /Add Pod/i })
+
+    if (page.url().includes('/.account/account/')) {
+      const bodyText = await page.locator('body').innerText({ timeout: 1_000 }).catch(() => '')
+      if (bodyText.includes(expectedPodUrl) && bodyText.includes('Authorization Pending')) {
+        await pickExpectedWebId(page, expectedWebId)
+        await page.goto(new URL('/.account/oidc/consent/', runtime.baseUrl).href)
+        continue
+      }
+    }
+
+    if (
+      await missingPodMessage.isVisible({ timeout: 1_000 }).catch(() => false)
+      && await createPodButton.isVisible({ timeout: 500 }).catch(() => false)
+    ) {
+      await createPodButton.click()
+      continue
+    }
+
+    if (await addPodButton.isVisible({ timeout: 1_000 }).catch(() => false)) {
+      await addPodButton.click()
+      const podNameInput = page.getByPlaceholder(/my-pod/i)
+      await expect(podNameInput).toBeVisible({ timeout: 20_000 })
+      await podNameInput.fill(runtime.podName)
+      await page.getByRole('button', { name: /^Create(?: Pod)?$/i }).click()
+      await expect(page.getByRole('link', { name: expectedPodUrl, exact: true })).toBeVisible({ timeout: 30_000 })
+      await pickExpectedWebId(page, expectedWebId)
+      await page.goto(new URL('/.account/oidc/consent/', runtime.baseUrl).href)
+      continue
+    }
+
+    if (await authorizeButton.isVisible({ timeout: 1_000 }).catch(() => false)) {
+      if (await missingPodMessage.isVisible({ timeout: 500 }).catch(() => false)) {
+        await createPodButton.click()
+        continue
+      }
+
+      await expect(authorizeButton).toBeEnabled({ timeout: 20_000 })
+      console.log('[authorize] clicking authorize')
+      await authorizeButton.click()
+      return
+    }
+
+    await page.waitForTimeout(500)
   }
 
-  console.log('[authorize] clicking authorize')
-  await authorizeButton.click()
+  await dumpPageState(page, 'authorize-button-not-ready')
+  throw new Error('timed out waiting for seeded xpod authorization')
+}
+
+async function pickExpectedWebId(page: Page, webId: string): Promise<void> {
+  const result = await page.evaluate(async (targetWebId) => {
+    const response = await fetch('/.account/oidc/pick-webid/', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify({ webId: targetWebId, remember: true }),
+    })
+
+    return {
+      ok: response.ok,
+      status: response.status,
+      body: await response.text().catch(() => ''),
+    }
+  }, webId)
+
+  if (!result.ok) {
+    throw new Error(`failed to pick WebID ${webId}: ${result.status} ${result.body}`)
+  }
 }
 
 async function dumpPageState(page: Page, label: string): Promise<void> {

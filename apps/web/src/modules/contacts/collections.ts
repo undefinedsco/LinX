@@ -10,13 +10,10 @@
 import { createPodCollection } from '@/lib/data/pod-collection'
 import { like, or } from '@undefineds.co/drizzle-solid'
 import {
-  asBaseRelativeResourceId,
-  asResourceIri,
-  agentHomeDirFromResourceId,
-  chatTable,
-  contactTable,
-  agentTable,
-  solidProfileTable,
+  chatResource,
+  contactResource,
+  agentResource,
+  solidProfileResource,
   type ContactRow,
   type ContactInsert,
   type AgentRow,
@@ -29,10 +26,15 @@ import {
   ContactType,
   isAgentContact,
   isGroupContact,
-  type BaseRelativeResourceId,
-  type ResourceIri,
 } from '@undefineds.co/models'
 import type { SolidDatabase } from '@undefineds.co/models'
+import {
+  agentHomeDirFromResourceId,
+  asBaseRelativeResourceId,
+  asResourceIri,
+  type BaseRelativeResourceId,
+  type ResourceIri,
+} from '@/lib/data/resource-identity'
 import { queryClient } from '@/providers/query-provider'
 import type { GroupContactInfo } from './types'
 import {
@@ -83,12 +85,12 @@ function asAgentId(id: string): BaseRelativeResourceId {
 
 function resolveContactIri(db: SolidDatabase, contact: Pick<ContactRow, 'id'>): ResourceIri {
   const id = asBaseRelativeResourceId(contact.id, 'Contact row.id')
-  return asResourceIri(db.resolveRowIri(contactTable as any, { id }), 'Contact IRI')
+  return asResourceIri(db.resolveRowIri(contactResource as any, { id }), 'Contact IRI')
 }
 
 function resolveChatIri(db: SolidDatabase, chat: Pick<ChatRow, 'id'>): ResourceIri {
   const id = asBaseRelativeResourceId(chat.id, 'Chat row.id')
-  return asResourceIri(db.resolveRowIri(chatTable as any, { id }), 'Chat IRI')
+  return asResourceIri(db.resolveRowIri(chatResource as any, { id }), 'Chat IRI')
 }
 
 function readChatMetadata(metadata: unknown): ChatMetadata {
@@ -121,8 +123,8 @@ function writeChatMetadata(draft: Record<string, unknown>, metadata: ChatMetadat
 // Contact Collection
 // ============================================================================
 
-export const contactCollection = createPodCollection<typeof contactTable, ContactRow, ContactInsert>({
-  table: contactTable,
+export const contactCollection = createPodCollection<typeof contactResource, ContactRow, ContactInsert>({
+  resource: contactResource,
   queryKey: ['contacts'],
   queryClient,
   getDb,
@@ -139,8 +141,8 @@ export const contactCollection = createPodCollection<typeof contactTable, Contac
 // Agent Collection
 // ============================================================================
 
-export const agentCollection = createPodCollection<typeof agentTable, AgentRow, AgentInsert>({
-  table: agentTable,
+export const agentCollection = createPodCollection<typeof agentResource, AgentRow, AgentInsert>({
+  resource: agentResource,
   queryKey: ['agents'],
   queryClient,
   getDb,
@@ -496,14 +498,14 @@ export const contactOps = {
     try {
       const results = await db
         .select()
-        .from(contactTable)
+        .from(contactResource)
         .where(
           or(
-            like(contactTable.name as any, pattern),
-            like(contactTable.alias as any, pattern),
-            like(contactTable.externalId as any, pattern),
-            like(contactTable.note as any, pattern),
-            like(contactTable.entityUri as any, pattern)
+            like(contactResource.name as any, pattern),
+            like(contactResource.alias as any, pattern),
+            like(contactResource.externalId as any, pattern),
+            like(contactResource.note as any, pattern),
+            like(contactResource.entityUri as any, pattern)
           )
         )
         .execute()
@@ -599,7 +601,7 @@ export const contactOps = {
     try {
       // Use drizzle-solid to fetch remote profile
       // The '@id' query will resolve to the full WebID URL
-      const record = await findByIriCompat<SolidProfileRow>(db, solidProfileTable, webId)
+      const record = await findByIriCompat<SolidProfileRow>(db, solidProfileResource, webId)
       
       if (!record) {
         console.warn(`[contactOps] Profile not found for WebID: ${webId}`)
@@ -622,7 +624,7 @@ export const contactOps = {
    * Fetch remote Agent info using drizzle-solid
    * 
    * Agent data is stored in the agent's owner's Pod.
-   * Uses the agentTable schema to parse the data.
+   * Uses the agentResource schema to parse the data.
    * 
    * @param agentUrl - The URL of the remote agent resource
    * @returns Agent info or null if not found/no access
@@ -636,7 +638,7 @@ export const contactOps = {
     
     try {
       // Use drizzle-solid to fetch remote agent
-      const record = await findByIriCompat<AgentRow>(db, agentTable, agentUrl)
+      const record = await findByIriCompat<AgentRow>(db, agentResource, agentUrl)
       
       if (!record) {
         console.warn(`[contactOps] Agent not found at: ${agentUrl}`)

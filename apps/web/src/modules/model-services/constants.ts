@@ -4,6 +4,7 @@
 import type React from 'react'
 import { getBuiltinProvider } from '@undefineds.co/models'
 import { Globe } from 'lucide-react'
+import LinXLogoImage from '@/assets/linx-logo.png'
 import OpenAIImage from '@/assets/images/providers/openai.png'
 import GoogleImage from '@/assets/images/providers/google.png'
 import DeepSeekImage from '@/assets/images/providers/deepseek.png'
@@ -45,6 +46,7 @@ interface ProviderUiExtras {
 }
 
 const MODEL_PROVIDER_ORDER = [
+  'undefineds',
   'openai',
   'anthropic',
   'google',
@@ -60,6 +62,16 @@ const MODEL_PROVIDER_ORDER = [
 ] as const
 
 const PROVIDER_UI_EXTRAS: Record<string, ProviderUiExtras> = {
+  undefineds: {
+    name: 'LinX Platform',
+    description: '内置平台模型，登录后可直接使用',
+    avatar: LinXLogoImage,
+    homeUrl: 'https://undefineds.co/linx',
+    docsUrl: 'https://undefineds.co/linx',
+    modelsUrl: 'https://undefineds.co/linx',
+    defaultApiKeyPlaceholder: '登录后可用，无需 API Key',
+    defaultModels: ['linx-lite', 'linx'],
+  },
   openai: {
     name: 'OpenAI',
     description: 'GPT 系列',

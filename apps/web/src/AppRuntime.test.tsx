@@ -43,8 +43,19 @@ describe('AppRuntime', () => {
     )
   })
 
+
+  it('keeps web-style desktop test stubs on normal web callback restore', () => {
+    window.xpodDesktop = { auth: { openEmbeddedAuthorization: vi.fn() } } as any
+
+    render(<AppRuntime />)
+
+    expect(solidSessionProviderMock).toHaveBeenCalledWith(
+      expect.objectContaining({ restorePreviousSession: true }),
+    )
+  })
+
   it('disables Inrupt silent restore in Electron desktop runtime', () => {
-    window.xpodDesktop = { auth: {} } as any
+    window.xpodDesktop = { auth: { prepareLoopbackRedirect: vi.fn(), consumePendingRedirect: vi.fn() } } as any
 
     render(<AppRuntime />)
 
@@ -54,7 +65,7 @@ describe('AppRuntime', () => {
   })
 
   it('keeps Electron callback restore owned by the callback page', () => {
-    window.xpodDesktop = { auth: {} } as any
+    window.xpodDesktop = { auth: { prepareLoopbackRedirect: vi.fn(), consumePendingRedirect: vi.fn() } } as any
     window.history.replaceState({}, '', '/auth/callback?code=abc&state=xyz')
 
     render(<AppRuntime />)

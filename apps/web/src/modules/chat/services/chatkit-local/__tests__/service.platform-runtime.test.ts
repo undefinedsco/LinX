@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocked = vi.hoisted(() => ({
-  chatTable: { name: 'chat' },
-  contactTable: { name: 'contact' },
-  agentTable: { name: 'agent' },
-  credentialResource: { name: 'credential' },
-  aiProviderResource: { name: 'ai_provider' },
+  chatResource: { name: 'chat', buildId: ({ id }: { id: string }) => `${id}/index.ttl#this` },
+  contactResource: { name: 'contact' },
+  agentResource: { name: 'agent' },
+  credentialResource: { name: 'credential', buildId: ({ id }: { id: string }) => `credentials.ttl#${id}` },
+  aiProviderResource: { name: 'ai_provider', buildId: ({ id }: { id: string }) => `${id}.ttl` },
 }))
 
 vi.mock('@undefineds.co/models/client', () => ({
@@ -16,10 +16,10 @@ vi.mock('@undefineds.co/models/client', () => ({
 }))
 
 vi.mock('@undefineds.co/models', () => ({
-  agentTable: mocked.agentTable,
+  agentResource: mocked.agentResource,
   aiProviderResource: mocked.aiProviderResource,
-  chatTable: mocked.chatTable,
-  contactTable: mocked.contactTable,
+  chatResource: mocked.chatResource,
+  contactResource: mocked.contactResource,
   credentialResource: mocked.credentialResource,
   extractChatIdFromChatRef: (value?: string | null) => {
     if (!value) return null
@@ -174,7 +174,7 @@ function createMockStore() {
 }
 
 function createMockDb(
-  agent: { provider: string; model: string },
+  agent: { provider: string; model: string; metadata?: Record<string, unknown> },
   credentialRows: Array<Record<string, unknown>> = [],
   options: {
     findByIdError?: Error
@@ -188,49 +188,50 @@ function createMockDb(
   }
   const contact = {
     id: 'contact-1',
-    entityUri: options.contactEntityUri ?? 'agent-1/profile/card#me',
+    entityUri: options.contactEntityUri ?? 'agent-1/',
     contactType: 'agent',
   }
   const agentRow = {
-    id: 'agent-1/profile/card#me',
+    id: 'agent-1/',
     provider: agent.provider,
     model: agent.model,
+    metadata: agent.metadata,
   }
 
   return {
     getDialect: () => ({
       getPodUrl: () => null,
     }),
-    findById: vi.fn(async (table: unknown, id?: string) => {
+    findById: vi.fn(async (resource: unknown, id?: string) => {
       if (options.findByIdError) {
         throw options.findByIdError
       }
-      if (table === mocked.chatTable) return chat
-      if (table === mocked.agentTable && id === agentRow.id) return agentRow
-      if (table === mocked.aiProviderResource) {
+      if (resource === mocked.chatResource) return chat
+      if (resource === mocked.agentResource && id === agentRow.id) return agentRow
+      if (resource === mocked.aiProviderResource) {
         return {
           id,
-          baseUrl: id === 'openai' ? 'https://openrouter.ai/api/v1' : undefined,
+          baseUrl: id === 'openai.ttl' ? 'https://openrouter.ai/api/v1' : undefined,
         }
       }
       return null
     }),
-    findByIri: vi.fn(async (table: unknown, iri?: string) => {
-      if (table === mocked.agentTable && iri === 'https://node-0000.undefineds.co/alice/agents/agent-1/profile/card#me') {
+    findByIri: vi.fn(async (resource: unknown, iri?: string) => {
+      if (resource === mocked.agentResource && iri === 'https://node-0000.undefineds.co/alice/agents/agent-1/') {
         return agentRow
       }
       return null
     }),
     select: vi.fn(() => ({
-      from: (table: unknown) => {
+      from: (resource: unknown) => {
         const execute = async () => {
           if (options.selectError) {
             throw options.selectError
           }
-          if (table === mocked.chatTable) return [chat]
-          if (table === mocked.contactTable) return [contact]
-          if (table === mocked.agentTable) return [agentRow]
-          if (table === mocked.credentialResource) return credentialRows
+          if (resource === mocked.chatResource) return [chat]
+          if (resource === mocked.contactResource) return [contact]
+          if (resource === mocked.agentResource) return [agentRow]
+          if (resource === mocked.credentialResource) return credentialRows
           return []
         }
 
@@ -260,13 +261,14 @@ function findAssistantDone(events: Array<Record<string, any>>) {
   return events.find((event) => event.type === 'thread.item.done' && event.item?.type === 'assistant_message')
 }
 
-async function sendMessage(service: LocalChatKitService) {
+async function sendMessage(service: LocalChatKitService, inferenceOptions?: Record<string, unknown>) {
   return collectStreamEvents(await service.process(JSON.stringify({
     type: 'threads.add_user_message',
     params: {
       thread_id: 'thread-1',
       input: {
         content: [{ type: 'input_text', text: '你好' }],
+        ...(inferenceOptions ? { inference_options: inferenceOptions } : {}),
       },
     },
   }), {}))
@@ -366,6 +368,144 @@ describe('LocalChatKitService platform runtime routing', () => {
     expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === '本地可聊')).toBe(true)
   })
 
+  it('defaults platform runtime calls to client-originated Pod access', async () => {
+    const store = createMockStore()
+    const db = createMockDbWithPodUrl({
+      provider: 'undefineds',
+      model: 'linx-lite',
+    }, 'https://node-0000.undefineds.co/alice/')
+    const browserFetch = vi.fn()
+    vi.stubGlobal('fetch', browserFetch)
+    const authFetch = vi.fn(async () => createSseResponse([
+      'data: {"choices":[{"delta":{"content":"客户端"}}]}\n\n',
+      'data: [DONE]\n\n',
+    ]))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/alice/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    await sendMessage(service)
+
+    expect(authFetch).toHaveBeenCalledWith(
+      'https://node-0000.undefineds.co/v1/chat/completions',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect(browserFetch).not.toHaveBeenCalledWith('/api/ai/chat/completions', expect.anything())
+  })
+
+  it('routes server-selected platform runtime calls through the local service bridge', async () => {
+    ;(window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__ = true
+    const store = createMockStore()
+    const db = createMockDbWithPodUrl({
+      provider: 'undefineds',
+      model: 'linx-lite',
+      metadata: {
+        linx: {
+          aiRuntimeLocation: 'server',
+        },
+      },
+    }, 'https://node-0000.undefineds.co/alice/')
+    const browserFetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.startsWith('/api/runtime/threads')) {
+        return new Response(JSON.stringify({ items: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (url === '/api/ai/chat/completions') {
+        return createSseResponse([
+          'data: {"choices":[{"delta":{"content":"服务端"}}]}\n\n',
+          'data: [DONE]\n\n',
+        ])
+      }
+      return new Response('', { status: 404 })
+    })
+    vi.stubGlobal('fetch', browserFetch)
+    const authFetch = vi.fn(async () => new Response('', { status: 404 }))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/alice/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service)
+
+    expect(browserFetch).toHaveBeenCalledWith('/api/ai/chat/completions', expect.objectContaining({
+      method: 'POST',
+    }))
+    expect(authFetch).not.toHaveBeenCalled()
+    const body = JSON.parse((browserFetch.mock.calls.find(([input]) => input === '/api/ai/chat/completions')?.[1] as RequestInit).body as string)
+    expect(body.model).toBe('linx-lite')
+    expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === '服务端')).toBe(true)
+  })
+
+  it('does not silently fall back when server-selected runtime is unavailable', async () => {
+    const store = createMockStore()
+    const db = createMockDb({
+      provider: 'undefineds',
+      model: 'linx-lite',
+      metadata: {
+        linx: {
+          aiRuntimeLocation: 'server',
+        },
+      },
+    })
+    const browserFetch = vi.fn()
+    vi.stubGlobal('fetch', browserFetch)
+    const authFetch = vi.fn(async () => createSseResponse([
+      'data: {"choices":[{"delta":{"content":"fallback"}}]}\n\n',
+      'data: [DONE]\n\n',
+    ]))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service)
+
+    expect(authFetch).not.toHaveBeenCalled()
+    expect(browserFetch).not.toHaveBeenCalledWith('/api/ai/chat/completions', expect.anything())
+    expect(findAssistantDone(events)?.item?.status).toBe('incomplete')
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'error',
+      error: expect.objectContaining({
+        code: 'generation_error',
+        message: '服务端 AI 运行只支持 LinX 桌面或本地服务。请切回客户端运行，或先启动本地空间。',
+      }),
+    }))
+  })
+
+  it('lets ChatKit platform model selection override the default LinX Lite model', async () => {
+    const store = createMockStore()
+    const db = createMockDb({
+      provider: 'undefineds',
+      model: 'linx-lite',
+    })
+    const authFetch = vi.fn(async () => createSseResponse([
+      'data: {"choices":[{"delta":{"content":"深度"}}]}\n\n',
+      'data: [DONE]\n\n',
+    ]))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    await sendMessage(service, { model: 'linx' })
+
+    const body = JSON.parse((authFetch.mock.calls[0]?.[1] as RequestInit).body as string)
+    expect(body.model).toBe('linx')
+  })
+
+
   it('routes platform runtime calls through the selected Local SP, not the Cloud WebID origin', async () => {
     const store = createMockStore()
     const db = createMockDbWithPodUrl({
@@ -400,7 +540,7 @@ describe('LocalChatKitService platform runtime routing', () => {
 
   it('resolves an Agent contact entity IRI with findByIri instead of deriving a row id from the IRI', async () => {
     const store = createMockStore()
-    const agentIri = 'https://node-0000.undefineds.co/alice/agents/agent-1/profile/card#me'
+    const agentIri = 'https://node-0000.undefineds.co/alice/agents/agent-1/'
     const db = createMockDb({
       provider: 'undefineds',
       model: 'undefineds/linx-lite',
@@ -420,8 +560,8 @@ describe('LocalChatKitService platform runtime routing', () => {
 
     const events = await sendMessage(service)
 
-    expect((db as any).findByIri).toHaveBeenCalledWith(mocked.agentTable, agentIri)
-    expect((db as any).findById).not.toHaveBeenCalledWith(mocked.agentTable, expect.stringContaining('https://'))
+    expect((db as any).findByIri).toHaveBeenCalledWith(mocked.agentResource, agentIri)
+    expect((db as any).findById).not.toHaveBeenCalledWith(mocked.agentResource, expect.stringContaining('https://'))
     expect(authFetch).toHaveBeenCalledWith(
       'https://api.undefineds.co/v1/chat/completions',
       expect.objectContaining({

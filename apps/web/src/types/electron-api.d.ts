@@ -130,6 +130,12 @@ export interface LocalOnboardingTunnel {
   endpoint: string | null
 }
 
+export interface LocalOnboardingNetworkConfigInput {
+  publicDomain?: string | null
+  tunnelProvider?: 'cloudflare' | null
+  tunnelToken?: string | null
+}
+
 export interface LocalOnboardingSnapshot {
   state: LocalOnboardingState
   spaceKind: LocalSpaceKind | null
@@ -227,6 +233,7 @@ export interface LocalOnboardingAPI {
   continue: () => Promise<LocalOnboardingSnapshot>
   refresh: () => Promise<LocalOnboardingSnapshot>
   saveTunnelToken: (input: { token: string }) => Promise<LocalOnboardingSnapshot>
+  saveNetworkConfig: (input: LocalOnboardingNetworkConfigInput) => Promise<LocalOnboardingSnapshot>
   testConnectivity: () => Promise<LocalOnboardingSnapshot>
   onStateChange: (callback: (snapshot: LocalOnboardingSnapshot) => void) => () => void
 }

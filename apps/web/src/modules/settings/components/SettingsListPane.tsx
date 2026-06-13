@@ -2,7 +2,7 @@ import type { MicroAppPaneProps } from '@/modules/layout/micro-app-registry'
 import { useSettingsStore, type SettingsSectionId } from '../store'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { MonitorCog, Palette, RefreshCcw } from 'lucide-react'
+import { MonitorCog, Palette, RefreshCcw, Wifi } from 'lucide-react'
 
 const SECTION_ITEMS: {
   id: SettingsSectionId
@@ -27,6 +27,12 @@ const SECTION_ITEMS: {
     title: '运行环境',
     description: '当前壳与本地服务',
     icon: MonitorCog,
+  },
+  {
+    id: 'network',
+    title: '本地网络',
+    description: '域名、隧道与可达性',
+    icon: Wifi,
   },
 ]
 

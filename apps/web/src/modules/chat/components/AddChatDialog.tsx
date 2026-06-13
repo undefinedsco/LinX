@@ -201,6 +201,22 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
               ),
             })
           }
+        } else if (threadId) {
+          try {
+            await mutations.ensureThreadWorkspace.mutateAsync({
+              threadId,
+              title: '默认话题',
+            })
+          } catch (workspaceError: any) {
+            console.error('Bind default Pod workspace failed:', workspaceError)
+            toast({
+              title: '默认空间绑定失败',
+              description: formatErrorForUser(
+                workspaceError,
+                '聊天已创建，但默认空间暂未绑定。进入会话后可继续使用。',
+              ),
+            })
+          }
         }
         onCreated?.(id)
       }

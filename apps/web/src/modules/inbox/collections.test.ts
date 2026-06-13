@@ -36,25 +36,25 @@ describe('buildRuntimeToolResponse', () => {
       .mockReturnValueOnce('audit-1')
       .mockReturnValueOnce('notification-1')
 
-    const inserts: Array<{ table: unknown; values: Record<string, unknown> }> = []
-    const updates: Array<{ table: unknown; iri: string; values: Record<string, unknown> }> = []
+    const inserts: Array<{ resource: unknown; values: Record<string, unknown> }> = []
+    const updates: Array<{ resource: unknown; iri: string; values: Record<string, unknown> }> = []
     const db = {
       getDialect: () => ({
         getPodUrl: () => 'https://node-0000.undefineds.co/alice/',
       }),
-      resolveRowIri: vi.fn((_table: unknown, row: Record<string, unknown>) => {
+      resolveRowIri: vi.fn((_resource: unknown, row: Record<string, unknown>) => {
         const createdAt = new Date(String(row.createdAt ?? '2026-05-26T00:00:00.000Z'))
         const yyyy = String(createdAt.getUTCFullYear())
         const mm = String(createdAt.getUTCMonth() + 1).padStart(2, '0')
         const dd = String(createdAt.getUTCDate()).padStart(2, '0')
         return `https://node-0000.undefineds.co/alice/.data/approvals/${yyyy}/${mm}/${dd}.ttl#${row.id}`
       }),
-      updateByIri: vi.fn(async (table: unknown, iri: string, values: Record<string, unknown>) => {
-        updates.push({ table, iri, values })
+      updateByIri: vi.fn(async (resource: unknown, iri: string, values: Record<string, unknown>) => {
+        updates.push({ resource, iri, values })
       }),
-      insert: vi.fn((table: unknown) => ({
+      insert: vi.fn((resource: unknown) => ({
         values(values: Record<string, unknown>) {
-          inserts.push({ table, values })
+          inserts.push({ resource, values })
           return { execute: vi.fn(async () => undefined) }
         },
       })),
@@ -78,8 +78,8 @@ describe('buildRuntimeToolResponse', () => {
     })
 
     expect(updates[0]?.iri).toBe('https://node-0000.undefineds.co/alice/.data/approvals/2026/05/26.ttl#approval-1')
-    const audit = inserts.find((item) => item.table === auditResource)?.values
-    const notification = inserts.find((item) => item.table === inboxNotificationResource)?.values
+    const audit = inserts.find((item) => item.resource === auditResource)?.values
+    const notification = inserts.find((item) => item.resource === inboxNotificationResource)?.values
     expect(audit?.actor).toBe('https://id.undefineds.co/alice/profile/card#me')
     expect(audit?.approval).toBe('https://node-0000.undefineds.co/alice/.data/approvals/2026/05/26.ttl#approval-1')
     expect(notification?.object).toMatch(/^https:\/\/node-0000\.undefineds\.co\/alice\/\.data\/audits\//)
@@ -91,13 +91,13 @@ describe('buildRuntimeToolResponse', () => {
       getDialect: () => ({
         getPodUrl: () => 'https://node-0000.undefineds.co/alice/',
       }),
-      resolveRowIri: vi.fn((_table: unknown, row: Record<string, unknown>) => (
+      resolveRowIri: vi.fn((_resource: unknown, row: Record<string, unknown>) => (
         `https://node-0000.undefineds.co/alice/.data/approvals/2026/05/26.ttl#${row.id}`
       )),
       updateByIri,
-      insert: vi.fn((table: unknown) => ({
+      insert: vi.fn((resource: unknown) => ({
         values(values: Record<string, unknown>) {
-          return { execute: vi.fn(async () => ({ table, values })) }
+          return { execute: vi.fn(async () => ({ resource, values })) }
         },
       })),
     }

@@ -2,8 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 
-function tableName(table) {
-  return table?.config?.name ?? table?.name ?? 'unknown'
+function resourceName(resource) {
+  return resource?.config?.name ?? resource?.name ?? 'unknown'
 }
 
 function createPodConfigHarness() {
@@ -13,7 +13,7 @@ function createPodConfigHarness() {
   const syncResults = []
   const stored = new Map()
 
-  const tableStore = (name) => {
+  const resourceStore = (name) => {
     if (!stored.has(name)) {
       stored.set(name, new Map())
     }
@@ -34,8 +34,8 @@ function createPodConfigHarness() {
   }
 
   const db = {
-    resolveLocatorId(table, locator) {
-      const name = tableName(table)
+    resolveLocatorId(resource, locator) {
+      const name = resourceName(resource)
       if (name !== 'aiModel') {
         return typeof locator === 'string' ? locator : String(locator.id)
       }
@@ -52,40 +52,40 @@ function createPodConfigHarness() {
         from(resource) {
           return {
             async execute() {
-              return Array.from(tableStore(tableName(resource)).values())
+              return Array.from(resourceStore(resourceName(resource)).values())
             },
           }
         },
       }
     },
     async findById(resource, id) {
-      return tableStore(tableName(resource)).get(id) ?? null
+      return resourceStore(resourceName(resource)).get(id) ?? null
     },
     async updateById(resource, id, update) {
-      const name = tableName(resource)
-      const rows = tableStore(name)
+      const name = resourceName(resource)
+      const rows = resourceStore(name)
       const next = { ...(rows.get(id) ?? {}), ...update }
       rows.set(id, next)
-      operations.push({ op: 'update', table: name, id, row: next })
+      operations.push({ op: 'update', resource: name, id, row: next })
       return next
     },
     async deleteById(resource, id) {
-      const name = tableName(resource)
-      const rows = tableStore(name)
+      const name = resourceName(resource)
+      const rows = resourceStore(name)
       const row = rows.get(id) ?? null
       rows.delete(id)
-      operations.push({ op: 'delete', table: name, id, row })
+      operations.push({ op: 'delete', resource: name, id, row })
       return row
     },
-    insert(table) {
+    insert(resource) {
       return {
         values(row) {
           return {
             async execute() {
-              const name = tableName(table)
+              const name = resourceName(resource)
               const id = recordId(name, row)
-              tableStore(name).set(id, row)
-              operations.push({ op: 'insert', table: name, id, row })
+              resourceStore(name).set(id, row)
+              operations.push({ op: 'insert', resource: name, id, row })
               return [row]
             },
           }
@@ -101,10 +101,10 @@ function createPodConfigHarness() {
     output,
     syncResults,
     row(name, id) {
-      return tableStore(name).get(id)
+      return resourceStore(name).get(id)
     },
     rows(name) {
-      return Array.from(tableStore(name).values())
+      return Array.from(resourceStore(name).values())
     },
     dependencies: {
       async resolvePodWriteContext(urlOverride) {

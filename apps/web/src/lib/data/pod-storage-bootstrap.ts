@@ -1,32 +1,32 @@
 import {
-  agentTable,
+  agentResource,
   approvalResource,
   auditResource,
-  chatTable,
-  contactTable,
+  chatResource,
+  contactResource,
   credentialResource,
   aiModelResource,
   aiProviderResource,
-  inboxNotificationTable,
-  messageTable,
-  settingsTable,
-  threadTable,
+  inboxNotificationResource,
+  messageResource,
+  settingsResource,
+  threadResource,
   type SolidDatabase,
 } from '@undefineds.co/models'
 
-const CORE_TABLES = [
-  chatTable,
-  threadTable,
-  messageTable,
-  contactTable,
-  agentTable,
+const CORE_RESOURCES = [
+  chatResource,
+  threadResource,
+  messageResource,
+  contactResource,
+  agentResource,
   credentialResource,
   aiProviderResource,
   aiModelResource,
-  settingsTable,
+  settingsResource,
   approvalResource,
   auditResource,
-  inboxNotificationTable,
+  inboxNotificationResource,
 ] as const
 
 export interface PodStorageBootstrapEvent {
@@ -51,10 +51,10 @@ export async function initializeLinxPodStorage(
     report(options, { stage: 'connect:done' })
   }
 
-  const init = (db as unknown as { init?: (tables: unknown[]) => Promise<void> }).init
+  const init = (db as unknown as { init?: (resources: unknown[]) => Promise<void> }).init
   if (typeof init === 'function') {
     report(options, { stage: 'schema:init:start' })
-    await init.call(db, [...CORE_TABLES])
+    await init.call(db, [...CORE_RESOURCES])
     report(options, { stage: 'schema:init:done' })
   }
 }

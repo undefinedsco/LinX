@@ -121,6 +121,9 @@ function rewriteBundledPiPluginConfigPath(root, plugin) {
     let content = readFileSync(file, 'utf8')
     const original = content
 
+    if (plugin.legacyConfigPath && plugin.configPath) {
+      content = content.split(plugin.legacyConfigPath).join(plugin.configPath)
+    }
     if (plugin.deprecatedConfigPath && plugin.configPath) {
       content = content.split(plugin.deprecatedConfigPath).join(plugin.configPath)
     }

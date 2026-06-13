@@ -1,10 +1,10 @@
 import {
   extractApprovalIdFromApprovalRef,
   extractChatThreadRef,
-  resolveThreadChatId,
   type ThreadRow,
 } from '@undefineds.co/models'
-import { isLocalWorkspaceUri } from '@/lib/data/workspace-model'
+import { resolveThreadChatId } from '@/lib/data/resource-identity'
+import { isLocalWorkspaceUri } from '@/lib/data/workspace-uri'
 import {
   createContainerNodeId,
   createLocalWorkspaceNodeId,

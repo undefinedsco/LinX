@@ -3,15 +3,21 @@ import { useLoginController } from './controller'
 import { LoginModal } from './LoginModal'
 
 export function LoginOverlay() {
-  const controller = useLoginController()
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   })
 
-  if (
-    pathname.startsWith('/auth/callback')
-    || pathname.startsWith('/test/')
-  ) {
+  if (pathname.startsWith('/test/')) {
+    return null
+  }
+
+  return <LoginOverlayContent hidden={pathname.startsWith('/auth/callback')} />
+}
+
+function LoginOverlayContent({ hidden = false }: { hidden?: boolean }) {
+  const controller = useLoginController()
+
+  if (hidden) {
     return null
   }
 

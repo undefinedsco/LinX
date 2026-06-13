@@ -283,6 +283,30 @@ async function withAccountPods<T extends {
   return account
 }
 
+
+function appendNodeOption(existing: string | undefined, option: string): string {
+  const parts = (existing ?? '').split(/\s+/).filter(Boolean)
+  return parts.includes(option) ? parts.join(' ') : [...parts, option].join(' ')
+}
+
+function buildXpodChildEnv(runtimeRoot: string, ports: { baseUrl: string }, seedAccount: boolean, seedConfigPath: string): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    NODE_OPTIONS: appendNodeOption(process.env.NODE_OPTIONS, '--preserve-symlinks'),
+    NODE_PATH: [
+      process.env.NODE_PATH,
+      path.join(repoRoot, 'node_modules'),
+    ].filter(Boolean).join(path.delimiter),
+    CSS_BASE_URL: ports.baseUrl,
+    CSS_ROOT_FILE_PATH: path.join(runtimeRoot, 'pod'),
+    CSS_IDENTITY_DB_URL: `sqlite:${path.join(runtimeRoot, 'identity.sqlite')}`,
+    CSS_SPARQL_ENDPOINT: `sqlite:${path.join(runtimeRoot, 'quadstore.sqlite')}`,
+    CSS_SEED_CONFIG: seedAccount ? seedConfigPath : '',
+    CSS_LOGGING_LEVEL: process.env.XPOD_TEST_LOG_LEVEL || 'error',
+    XPOD_TEST_TRANSPORT: 'port',
+  }
+}
+
 function accountHasPod(
   account: { pods?: Record<string, string>; webIds?: Record<string, string> },
   podName: string,
@@ -381,7 +405,7 @@ async function startTestXpodRuntime(options: {
         {
           email,
           password,
-          pods: [],
+          pods: [{ name: podName }],
         },
       ], null, 2)}\n`,
       'utf-8',
@@ -410,16 +434,7 @@ async function startTestXpodRuntime(options: {
           ],
           {
             cwd: xpodCommand.cwd,
-            env: {
-              ...process.env,
-              CSS_BASE_URL: ports.baseUrl,
-              CSS_ROOT_FILE_PATH: path.join(runtimeRoot, 'pod'),
-              CSS_IDENTITY_DB_URL: `sqlite:${path.join(runtimeRoot, 'identity.sqlite')}`,
-              CSS_SPARQL_ENDPOINT: `sqlite:${path.join(runtimeRoot, 'quadstore.sqlite')}`,
-              CSS_SEED_CONFIG: seedAccount ? seedConfigPath : '',
-              CSS_LOGGING_LEVEL: process.env.XPOD_TEST_LOG_LEVEL || 'error',
-              XPOD_TEST_TRANSPORT: 'port',
-            },
+            env: buildXpodChildEnv(runtimeRoot, ports, seedAccount, seedConfigPath),
             stdio: ['ignore', 'pipe', 'pipe'],
           },
         )

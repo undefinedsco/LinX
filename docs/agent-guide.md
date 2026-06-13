@@ -13,7 +13,7 @@
 - 模块状态分工：Pod 数据走 TanStack DB Collection；Zustand 只管理纯 UI 状态。
 - 新增共享规则、RDF contract、归一化逻辑、跨端 use-case 时，优先放进 `@undefineds.co/models`。
 - Pod ORM row 的 `id` 是 base-relative resource id，用于 UI key、selection 和所有 `ById` 调用；full IRI 只用于 RDF 关系或 `ByIri`。不要在 App 代码里从 `@id/subject/uri` 解析业务 id，缺 `row.id` 时先修 schema/repository/ORM。
-- `Table` 到 `Resource` 的语义迁移按功能边界推进：改到哪个 Pod/ORM 功能，就把该功能的命名、测试和文档叙事同步改成 `Resource`；不要为了“统一”做全仓机械重命名，底层兼容 API 可继续保留 `Table`。
+- 应用层 Pod 语义统一说 `Resource`，不再把 shared model 叫 `Table`。`*Table` 只允许出现在 drizzle-solid / models 的历史兼容边界、上游兼容测试，或 HTML/SQLite 这类非 Pod 语义场景；Web/CLI/Service 的业务代码和新文档不得消费或示例化 `*Table` alias。
 - 命名只在跨包公共 API、外部冲突边界、LinX Cloud 产品语义和品牌展示上使用 `Linx` 前缀；CLI/TUI 内部通用概念、helper、状态和 adapter 局部类型不要因为位于 LinX 仓库里重复加 `Linx` / `LinxPi` 前缀。
 
 ## Skill Routing
@@ -40,6 +40,7 @@ Skill source of truth:
 - 外部项目、竞品、参考实现的持续跟踪 → 先读 `docs/external-project-watchlist.md`；已吸收的详细参考再看 `docs/external-references.md`。
 - 依赖、升级、版本、发版、打包、workspace、npm、yarn lock、`xpod`、`models`、`drizzle-solid` → 先读 `docs/dependency-guide.md`。
 - Solid/RDF/Pod 数据建模、URI/id、schema、vocab、repository、collection → 先读 `docs/cli-app-shared-core.md`，必要时再用 `solid-modeling` skill。
+- Pod 交互分层、collection / use-case / models / ORM / service 边界 → 先读 `docs/pod-interaction-layering.md`。
 - UI 视觉、组件分层、样式规范 → 先读 `docs/ui-style-guide.md` 和 `docs/ui-component-architecture.md`。
 
 ## Doc Map
@@ -49,6 +50,7 @@ Modeling principles:
 - `docs/linx-shell-core-design.md` — LinX shell/core 建模、事实归属和 local-first 边界原则，不承载功能契约
 - `docs/local-first-pod-sync.md` — local-first runtime 接入共享 core 的 source/target/authority/plane 同步模型，不承载资源细节
 - `docs/cli-app-shared-core.md` — `@undefineds.co/models` 共享数据面、client/auto-mode helper 与 CLI/App 边界
+- `docs/pod-interaction-layering.md` — Pod 交互分层 spec，定义 collection、shared use-case、models、drizzle-solid、service 的职责边界
 
 Feature contracts:
 

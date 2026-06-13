@@ -2,28 +2,124 @@ import { createCollection } from '@tanstack/react-db'
 import { queryCollectionOptions } from '@tanstack/query-db-collection'
 import { QueryClient } from '@tanstack/react-query'
 import type { SolidDatabase } from '@undefineds.co/models'
+import { asBaseRelativeResourceId, requireRowResourceId } from '@linx/agent-runtime/pod-resource-identity'
+import type { PodResource as PodResourceSchema } from '@undefineds.co/drizzle-solid'
+import { deleteExactRecord, updateExactRecord } from './exact-records'
 
-// Define a minimal interface for what we expect from a Drizzle/Pod Table
-interface PodTableSchema {
-  [key: string]: any
+function isPodCollectionDebugEnabled(): boolean {
+  return typeof process !== 'undefined'
+    && (process.env.LINX_POD_COLLECTION_DEBUG === '1' || process.env.LINX_POD_COLLECTION_DEBUG === 'true')
 }
 
-interface PodCollectionOptions<TData, TInsert> {
-  table: PodTableSchema
+function debugPodCollection(...args: unknown[]): void {
+  if (isPodCollectionDebugEnabled()) console.log(...args)
+}
+
+interface PodCollectionOptions<TResource, TData> {
+  resource: TResource
   queryKey: string[]
   queryClient: QueryClient
   // Function to get the current DB instance
-  getDb: () => SolidDatabase | null
+  getDb: () => SolidDatabase<any> | null
+  // Optional: columns to select for list view (defaults to all)
+  columns?: (keyof TData)[]
+  // Optional: sorting configuration
+  orderBy?: {
+    column: string
+    direction?: 'asc' | 'desc'
+  }
+  // Optional: custom key extractor (defaults to requiring item.id)
+  getKey?: (item: TData) => string
+  // Optional: seed data when the collection is empty
+  seed?: TData[] | (() => TData[])
 }
 
 /**
- * Creates a TanStack DB Collection synchronized with a Solid Pod Table.
+ * Creates a TanStack DB Collection synchronized with a Solid Pod resource.
  * Includes support for real-time subscriptions via db.subscribe().
  */
-export function createPodCollection<TData extends { id: string }, TInsert>(
-  options: PodCollectionOptions<TData, TInsert>
+export function createPodCollection<
+  TResource extends PodResourceSchema<any>,
+  TData extends { id?: string },
+  _TInsert = any
+>(
+  options: PodCollectionOptions<TResource, TData>
 ) {
-  const { table, queryKey, queryClient, getDb } = options
+  const { resource, queryKey, queryClient, getDb, columns, orderBy, getKey: customGetKey, seed } = options
+
+  const ensureId = (item: TData, operation: 'seed' | 'insert'): TData => {
+    if (item.id) {
+      asBaseRelativeResourceId(item.id, 'Pod collection row.id')
+      return item
+    }
+    if (operation === 'seed') {
+      const id = asBaseRelativeResourceId(crypto.randomUUID(), 'generated Pod collection row.id')
+      if (typeof item === 'object' && item) {
+        return Object.assign(item, { id }) as TData
+      }
+      return { ...(item as TData), id }
+    }
+    throw new Error('Cannot persist Pod collection item without row.id.')
+  }
+
+  // Default key extractor: id required after insert/read
+  const getKey = customGetKey ?? ((item: TData) => {
+    return requireRowResourceId(item, 'collection item')
+  })
+
+  let didSeed = false
+
+  const fetchRows = async () => {
+    const db = getDb()
+    if (!db) return []
+
+    const buildQuery = () => {
+      let query
+      if (columns && columns.length > 0) {
+        const selectObj: Record<string, any> = {}
+        for (const col of columns) {
+          selectObj[col as string] = (resource as any)[col]
+        }
+        query = db.select(selectObj).from(resource)
+      } else {
+        query = db.select().from(resource)
+      }
+      if (orderBy?.column) {
+        query = query.orderBy(orderBy.column, orderBy.direction ?? 'asc')
+      }
+      return query
+    }
+
+    let rows: TData[]
+    try {
+      rows = (await buildQuery().execute()) as TData[]
+    } catch (error) {
+      if (isUnsupportedDocumentCollectionRead(error)) {
+        console.warn(`[PodCollection] ${queryKey.join('/')} fetch skipped: ${errorMessage(error)}`)
+        return []
+      }
+      console.error(`[PodCollection] ${queryKey.join('/')} fetch failed:`, error)
+      throw error
+    }
+
+    for (const row of rows) {
+      requireRowResourceId(row, 'Pod collection row')
+    }
+
+    if (!didSeed && rows.length === 0 && seed) {
+      const seedRows = typeof seed === 'function' ? seed() : seed
+      if (seedRows.length > 0) {
+        const ensured = seedRows.map((row) => ensureId(row, 'seed'))
+        await db.insert(resource).values(ensured as any).execute()
+        didSeed = true
+        rows = (await buildQuery().execute()) as TData[]
+      } else {
+        didSeed = true
+      }
+    }
+
+    return rows
+  }
 
   // 1. Create the base collection
   const collection = createCollection<TData, string>(
@@ -32,22 +128,19 @@ export function createPodCollection<TData extends { id: string }, TInsert>(
       queryClient,
 
       // READ
-      queryFn: async () => {
-        const db = getDb()
-        if (!db) return []
-        const rows = await db.select().from(table).execute()
-        return rows as TData[]
-      },
+      queryFn: fetchRows,
 
       // IDENTITY
-      getKey: (item) => item.id,
+      getKey,
 
       // CREATE
       onInsert: async ({ transaction }) => {
         const db = getDb()
         if (!db) throw new Error('Database not connected')
         const { modified } = transaction.mutations[0]
-        await db.insert(table).values(modified as any).execute()
+        const ensured = ensureId(modified as TData, 'insert')
+        const payload = toPersistableInsert(ensured, resource)
+        await db.insert(resource).values(payload as any).execute()
       },
 
       // UPDATE
@@ -55,17 +148,9 @@ export function createPodCollection<TData extends { id: string }, TInsert>(
         const db = getDb()
         if (!db) throw new Error('Database not connected')
         const { original, modified } = transaction.mutations[0]
-        const id = original.id
-        if (!id) return
-
-        const systemFields = ['id', '@id', 'subject', 'uri', 'updatedAt'] 
-        const filteredData = Object.fromEntries(
-          Object.entries(modified).filter(([key]) => !systemFields.includes(key))
-        )
-        if (Object.keys(filteredData).length === 0) return
 
         try {
-          await db.update(table).set(filteredData).where({ id } as any).execute()
+          await updateExactRecord(db, resource as any, (original ?? modified) as any, modified as any)
         } catch (error) {
           console.error(`[PodCollection] Update failed for ${queryKey.join('/')}:`, error)
           throw error
@@ -77,58 +162,51 @@ export function createPodCollection<TData extends { id: string }, TInsert>(
         const db = getDb()
         if (!db) throw new Error('Database not connected')
         const { original } = transaction.mutations[0]
-        const id = original.id
-        await db.delete(table).where({ id } as any).execute()
+        await deleteExactRecord(db, resource as any, original as any)
       }
     })
   )
 
   // 2. Attach helpers
   const fetch = async () => {
-    const db = getDb()
-    if (!db) return []
-    const rows = await db.select().from(table).execute()
-    return rows as TData[]
+    if (!collection.isReady()) {
+      await collection.preload()
+      return collection.toArray as TData[]
+    }
+
+    const refetch = (collection.utils as { refetch?: () => Promise<void> }).refetch
+    if (typeof refetch === 'function') {
+      await refetch()
+    }
+
+    return collection.toArray as TData[]
   }
 
   // Usage: useEffect(() => collection.subscribeToPod(db), [db])
-  const subscribeToPod = async (db: SolidDatabase) => {
-    // ... (existing subscribe logic)
+  const subscribeToPod = async (db: SolidDatabase<any>) => {
     if (typeof (db as any).subscribe !== 'function') {
       console.warn('[PodCollection] db.subscribe not available')
       return () => {}
     }
 
     try {
-      const sub = await (db as any).subscribe(table, {
+      const sub = await (db as any).subscribe(resource, {
         onCreate: async (activity: any) => {
-          const id = activity.object
-          try {
-            const rows = await db.select().from(table).where({ id } as any).execute()
-            if (rows[0]) {
-               collection.insert(rows[0] as TData)
-               // Invalidate query to refresh UI if using useQuery
-               queryClient.invalidateQueries({ queryKey })
-            }
-          } catch (e) { console.error('Sync Create Error', e) }
+          debugPodCollection(`[PodCollection] onCreate: ${activity.object}`)
+          // 直接 invalidate，让 useQuery 重新获取完整列表
+          queryClient.invalidateQueries({ queryKey })
         },
         onUpdate: async (activity: any) => {
-          const id = activity.object
-          try {
-            const rows = await db.select().from(table).where({ id } as any).execute()
-            if (rows[0]) {
-              collection.update(id, (draft) => { Object.assign(draft, rows[0]) })
-              queryClient.invalidateQueries({ queryKey })
-            }
-          } catch (e) { console.error('Sync Update Error', e) }
+          debugPodCollection(`[PodCollection] onUpdate: ${activity.object}`)
+          queryClient.invalidateQueries({ queryKey })
         },
         onDelete: (activity: any) => {
-          collection.delete(activity.object)
+          debugPodCollection(`[PodCollection] onDelete: ${activity.object}`)
           queryClient.invalidateQueries({ queryKey })
         }
       })
       
-      console.log(`[PodCollection] Subscribed to ${queryKey.join('/')}`)
+      debugPodCollection(`[PodCollection] Subscribed to ${queryKey.join('/')}`)
       return () => sub.unsubscribe()
     } catch (error) {
       console.error(`[PodCollection] Subscription failed`, error)
@@ -137,5 +215,32 @@ export function createPodCollection<TData extends { id: string }, TInsert>(
   }
 
   // Extend the collection object with helper methods
-  return Object.assign(collection, { subscribeToPod, fetch })
+  const baseInsert = collection.insert.bind(collection)
+  const insert = (item: TData) => baseInsert(ensureId(item, 'insert'))
+
+  return Object.assign(collection, { insert, subscribeToPod, fetch })
+}
+
+function isUnsupportedDocumentCollectionRead(error: unknown): boolean {
+  return errorMessage(error).includes('Document-mode collection queries over plain LDP are not supported')
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function toPersistableInsert<TData extends { id?: string }>(item: TData, resource: unknown): TData {
+  const buildId = (resource as { buildId?: (target: { id: string }) => string } | null)?.buildId
+  if (typeof buildId !== 'function' || !item.id || looksLikeBaseRelativeResourceId(item.id)) {
+    return item
+  }
+
+  return {
+    ...item,
+    id: buildId.call(resource, { id: item.id }),
+  }
+}
+
+function looksLikeBaseRelativeResourceId(id: string): boolean {
+  return id.includes('/') || id.includes('#') || id.endsWith('.ttl')
 }

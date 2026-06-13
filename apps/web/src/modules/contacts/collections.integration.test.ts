@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterAll, describe, expect, it } from 'vitest'
 import type { SolidDatabase } from '@undefineds.co/drizzle-solid'
-import { ContactClass, contactTable, solidSchema } from '@undefineds.co/models'
+import { ContactClass, contactResource, solidSchema } from '@undefineds.co/models'
 import { createXpodIntegrationContext, type XpodIntegrationContext } from '@/test/xpod-integration'
 
 let context: XpodIntegrationContext<typeof solidSchema> | null = null
@@ -11,7 +11,7 @@ async function getContext(): Promise<XpodIntegrationContext<typeof solidSchema>>
   if (context) return context
   context = await createXpodIntegrationContext({
     schema: solidSchema,
-    tables: [contactTable],
+    resources: [contactResource],
   })
   return context
 }
@@ -22,7 +22,7 @@ async function cleanup() {
   if (!db) return
   for (const subject of createdSubjects) {
     try {
-      await (db as any).deleteByIri(contactTable as any, subject)
+      await (db as any).deleteByIri(contactResource as any, subject)
     } catch {
       // ignore cleanup errors
     }
@@ -39,8 +39,8 @@ describe('contact collections integration', () => {
     const { db: database, webId } = await getContext()
 
     const id = `contact-${Date.now()}`
-    const [created] = await database.insert(contactTable).values({
-      id,
+    const [created] = await database.insert(contactResource).values({
+      id: contactResource.buildId({ id }),
       name: 'Integration Contact',
       entityUri: webId,
       contactType: 'solid',
@@ -52,7 +52,7 @@ describe('contact collections integration', () => {
     expect(created).toBeDefined()
 
     // Round-trip: SELECT back via SPARQL endpoint
-    const row = await (database as any).findById(contactTable as any, id)
+    const row = await (database as any).findById(contactResource as any, contactResource.buildId({ id }))
     expect(row).toBeTruthy()
     expect(row?.name).toBe('Integration Contact')
     expect(row?.contactType).toBe('solid')
@@ -63,23 +63,29 @@ describe('contact collections integration', () => {
 
     const timestamp = Date.now()
     const contacts = [
-      { id: `solid-${timestamp}`, name: 'Solid User', contactType: 'solid', entityUri: `https://solid-${timestamp}.pod/#me` },
-      { id: `ext-${timestamp}`, name: 'External User', contactType: 'external', externalId: `wxid_${timestamp}`, entityUri: `wxid_${timestamp}` },
+      { id: contactResource.buildId({ id: `solid-${timestamp}` }), name: 'Solid User', contactType: 'solid', entityUri: `https://solid-${timestamp}.pod/#me` },
+      { id: contactResource.buildId({ id: `ext-${timestamp}` }), name: 'External User', contactType: 'external', externalId: `wxid_${timestamp}`, entityUri: `wxid_${timestamp}` },
     ]
 
     for (const contact of contacts) {
-      const [created] = await database.insert(contactTable).values(contact).execute()
+      const [created] = await database.insert(contactResource).values(contact).execute()
       const subject = (created as any)?.['@id']
       if (subject) createdSubjects.push(subject)
       expect(created).toBeDefined()
     }
 
     // Verify both contacts via SPARQL SELECT
-    const solidRow = await (database as any).findById(contactTable as any, `solid-${timestamp}`)
+    const solidRow = await (database as any).findById(
+      contactResource as any,
+      contactResource.buildId({ id: `solid-${timestamp}` }),
+    )
     expect(solidRow).toBeTruthy()
     expect(solidRow?.contactType).toBe('solid')
 
-    const extRow = await (database as any).findById(contactTable as any, `ext-${timestamp}`)
+    const extRow = await (database as any).findById(
+      contactResource as any,
+      contactResource.buildId({ id: `ext-${timestamp}` }),
+    )
     expect(extRow).toBeTruthy()
     expect(extRow?.contactType).toBe('external')
   })
@@ -88,8 +94,8 @@ describe('contact collections integration', () => {
     const { db: database, webId } = await getContext()
 
     const id = `contact-del-${Date.now()}`
-    const [created] = await database.insert(contactTable).values({
-      id,
+    const [created] = await database.insert(contactResource).values({
+      id: contactResource.buildId({ id }),
       name: 'Delete Me',
       entityUri: webId,
       contactType: 'solid',
@@ -97,10 +103,11 @@ describe('contact collections integration', () => {
 
     expect(created).toBeDefined()
 
-    await (database as any).deleteById(contactTable as any, id)
+    const resourceId = contactResource.buildId({ id })
+    await (database as any).deleteById(contactResource as any, resourceId)
 
     // Verify deletion via SPARQL SELECT
-    const row = await (database as any).findById(contactTable as any, id)
+    const row = await (database as any).findById(contactResource as any, resourceId)
     expect(row).toBeNull()
   })
 })

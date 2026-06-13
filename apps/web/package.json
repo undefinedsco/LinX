@@ -8,13 +8,14 @@
     "build": "vite build",
     "build:check": "tsc && vite build",
     "preview": "vite preview",
-    "test": "vitest",
+    "test": "NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--preserve-symlinks\" vitest",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
   "dependencies": {
     "@inrupt/solid-client": "^3.0.0",
     "@inrupt/solid-client-authn-browser": "^4.0.0",
     "@inrupt/vocab-common-rdf": "^1.0.5",
+    "@linx/agent-runtime": "*",
     "@linx/stores": "^0.1.0",
     "@lobehub/icons": "^5.8.0",
     "@openai/chatkit-react": "^1.5.1",

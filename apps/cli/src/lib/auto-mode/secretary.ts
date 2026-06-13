@@ -318,7 +318,7 @@ function buildGrantCoverageSystemPrompt(): string {
 }
 
 function hasSemanticGrantPage(grant: Record<string, unknown>): boolean {
-  return typeof grant.body === 'string' && grant.body.trim().length > 0
+  return typeof grant.description === 'string' && grant.description.trim().length > 0
     || typeof grant.policy === 'string' && grant.policy.trim().length > 0
 }
 
@@ -344,7 +344,7 @@ function summarizeGrant(grant: Record<string, unknown>): Record<string, unknown>
     action: grant.action,
     title: grant.title,
     summary: grant.summary,
-    body: grant.body,
+    description: grant.description,
     schema: grant.schema,
     pageKind: grant.pageKind,
     wikiStatus: grant.wikiStatus,

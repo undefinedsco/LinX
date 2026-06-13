@@ -33,7 +33,7 @@ function createManager(options = {}) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'linx-xpod-health-'))
   const config = options.config ?? {}
   const providerManager = options.providerManager ?? {}
-  return new XpodManager(
+  const manager = new XpodManager(
     {},
     {
       getConfigPath: () => path.join(tmpDir, '.env'),
@@ -48,6 +48,8 @@ function createManager(options = {}) {
     },
     tmpDir,
   )
+  manager.findListeningPids = () => []
+  return manager
 }
 
 function makeProvisionCode(payload) {
@@ -144,6 +146,74 @@ test('XpodManager detects an externally started xpod without local state', { con
   assert.equal(status.providerId, 'local')
   assert.equal(status.localUrl, 'http://localhost:5737/')
   assert.equal(status.baseUrl, 'http://localhost:5737/')
+})
+
+
+test('XpodManager stops stale external service when Local canonical changes and no state exists', { concurrency: false }, async (t) => {
+  installElectronStub(t)
+  const manager = createManager({
+    config: {
+      CSS_BASE_URL: 'http://localhost:5737/',
+    },
+  })
+  const originalFetch = global.fetch
+  const requestedUrls = []
+
+  global.fetch = async (url) => {
+    requestedUrls.push(String(url))
+    if (String(url) === 'http://localhost:5737/service/status') {
+      return {
+        ok: true,
+        json: async () => [
+          { name: 'css', status: 'running' },
+          { name: 'api', status: 'running' },
+        ],
+      }
+    }
+    if (String(url) === 'http://localhost:5737/api/linx/capabilities') {
+      return {
+        ok: true,
+        json: async () => ({
+          contract: 'linx-local-onboarding/v1',
+          baseUrl: 'https://node-0000.undefineds.co/',
+        }),
+      }
+    }
+    throw new Error(`unexpected fetch ${url}`)
+  }
+
+  t.after(() => {
+    global.fetch = originalFetch
+  })
+
+  manager.resolvePreferredLaunchTarget = async () => ({
+    kind: 'single-file',
+    rootDir: '/tmp/xpod-runtime',
+    entryPath: '/tmp/xpod-runtime/xpod.cjs',
+  })
+  let stopped = null
+  manager.findListeningPids = () => [43210]
+  manager.stopExternalServiceOnPort = async (port, localUrl) => {
+    stopped = { port, localUrl }
+    throw new Error('stale external stopped')
+  }
+
+  await assert.rejects(
+    () => manager.start({
+      providerId: 'standalone',
+      dataDir: '/tmp/local-pod',
+      port: 5737,
+      spaceKind: 'standalone',
+      domain: { type: 'custom', value: 'node-current.undefineds.co' },
+    }),
+    /stale external stopped/,
+  )
+
+  assert.deepEqual(stopped, { port: 5737, localUrl: 'http://localhost:5737/' })
+  assert.deepEqual(requestedUrls, [
+    'http://localhost:5737/service/status',
+    'http://localhost:5737/api/linx/capabilities',
+  ])
 })
 
 test('XpodManager reads refreshed running Local provision status without creating a second writer', { concurrency: false }, async (t) => {
@@ -607,9 +677,10 @@ test('XpodManager provisions a user-provided public URL for Local user-managed c
   const calls = []
 
   global.fetch = async (url, options = {}) => {
+    const body = JSON.parse(String(options.body ?? '{}'))
     calls.push({
       url: String(url),
-      body: JSON.parse(String(options.body ?? '{}')),
+      body,
     })
 
     return {
@@ -688,9 +759,10 @@ test('XpodManager forwards configured tunnel token on self-managed registration'
   const calls = []
 
   global.fetch = async (url, options = {}) => {
+    const body = JSON.parse(String(options.body ?? '{}'))
     calls.push({
       url: String(url),
-      body: JSON.parse(String(options.body ?? '{}')),
+      body,
     })
 
     return {
@@ -730,9 +802,10 @@ test('XpodManager marks configured custom domains as self-managed provisioning',
   const calls = []
 
   global.fetch = async (url, options = {}) => {
+    const body = JSON.parse(String(options.body ?? '{}'))
     calls.push({
       url: String(url),
-      body: JSON.parse(String(options.body ?? '{}')),
+      body,
     })
 
     return {
@@ -951,27 +1024,42 @@ test('XpodManager falls back to the preallocated Local URL after managed provisi
   assert.equal(registration.provisionCode, 'pc-1')
 })
 
-test('XpodManager does not send cached managed domain as publicUrl during Cloud-managed allocation', { concurrency: false }, async (t) => {
+test('XpodManager retries configured managed domain when Cloud-managed allocation returns a different canonical URL', { concurrency: false }, async (t) => {
   installElectronStub(t)
   const manager = createManager()
   const originalFetch = global.fetch
   const calls = []
 
   global.fetch = async (url, options = {}) => {
+    const body = JSON.parse(String(options.body ?? '{}'))
     calls.push({
       url: String(url),
-      body: JSON.parse(String(options.body ?? '{}')),
+      body,
     })
+
+    if (calls.length === 1) {
+      return {
+        ok: true,
+        json: async () => ({
+          nodeId: '868c9f63-6b0e-4255-8f7f-f2e347908ba4',
+          nodeToken: 'node-token-1',
+          serviceToken: 'service-token-1',
+          provisionCode: 'pc-random',
+          publicUrl: 'https://node-abcd1234ef56.undefineds.co/',
+          spDomain: 'node-abcd1234ef56.undefineds.co',
+        }),
+      }
+    }
 
     return {
       ok: true,
       json: async () => ({
-        nodeId: '868c9f63-6b0e-4255-8f7f-f2e347908ba4',
-        nodeToken: 'node-token-1',
-        serviceToken: 'service-token-1',
-        provisionCode: 'pc-1',
-        publicUrl: 'https://node-abcd1234ef56.undefineds.co/',
-        spDomain: 'node-abcd1234ef56.undefineds.co',
+        nodeId: 'node-0000',
+        nodeToken: 'node-token-2',
+        serviceToken: 'service-token-2',
+        provisionCode: 'pc-node-0000',
+        publicUrl: body.publicUrl,
+        spDomain: body.spDomain,
       }),
     }
   }
@@ -988,7 +1076,7 @@ test('XpodManager does not send cached managed domain as publicUrl during Cloud-
     domain: { type: 'managed', value: 'node-0000.undefineds.co' },
   })
 
-  assert.equal(calls.length, 1)
+  assert.equal(calls.length, 2)
   assert.deepEqual(calls[0], {
     url: 'https://api.undefineds.co/provision/nodes',
     body: {
@@ -997,8 +1085,17 @@ test('XpodManager does not send cached managed domain as publicUrl during Cloud-
       spDomain: 'node-0000.undefineds.co',
     },
   })
-  assert.equal(registration.publicUrl, 'https://node-abcd1234ef56.undefineds.co/')
-  assert.equal(registration.spDomain, 'node-abcd1234ef56.undefineds.co')
+  assert.deepEqual(calls[1], {
+    url: 'https://api.undefineds.co/provision/nodes',
+    body: {
+      localPort: 5737,
+      domainMode: 'self-managed',
+      spDomain: 'node-0000.undefineds.co',
+      publicUrl: 'https://node-0000.undefineds.co/',
+    },
+  })
+  assert.equal(registration.publicUrl, 'https://node-0000.undefineds.co/')
+  assert.equal(registration.spDomain, 'node-0000.undefineds.co')
 })
 
 test('XpodManager requests a configured Cloud-managed spDomain without treating it as user publicUrl', { concurrency: false }, async (t) => {

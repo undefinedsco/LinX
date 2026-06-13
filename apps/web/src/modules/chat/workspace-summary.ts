@@ -3,8 +3,8 @@ import {
   parseLocalWorkspaceUri,
   parseWorkspaceIdFromContainerUri,
   resolveWorkspaceIdFromUri,
-  type WorkspaceRow,
-} from '@/lib/data/workspace-model'
+  type WorkspaceContainerMetadata,
+} from '@/lib/data/workspace-uri'
 import type { RuntimeSessionRecord } from './runtime-client'
 
 export interface WorkspaceSummary {
@@ -31,7 +31,7 @@ function resolvePodKindLabel(kind?: string | null) {
   return '空间文件夹'
 }
 
-function resolveWorkspaceKindLabel(workspace?: WorkspaceRow | null, fallbackUri?: string | null) {
+function resolveWorkspaceKindLabel(workspace?: WorkspaceContainerMetadata | null, fallbackUri?: string | null) {
   const kind = normalizeWorkspaceKind(workspace?.kind)
   const workspaceType = workspace?.workspaceType ?? (parseLocalWorkspaceUri(fallbackUri) ? 'local' : 'pod')
   if (workspaceType === 'local') {
@@ -47,7 +47,7 @@ function resolveRuntimeDisplayKind(runtimeSession?: RuntimeSessionRecord | null)
   return 'worktree'
 }
 
-function resolveStoredWorkspaceSummary(workspaceUri: string, workspaces: WorkspaceRow[]): WorkspaceSummary {
+function resolveStoredWorkspaceSummary(workspaceUri: string, workspaces: WorkspaceContainerMetadata[]): WorkspaceSummary {
   const workspaceId = resolveWorkspaceIdFromUri(workspaceUri) ?? parseWorkspaceIdFromContainerUri(workspaceUri)
   const workspace = workspaces.find((item) => item.id === workspaceId || item.rootUri === workspaceUri) ?? null
   const primaryText = workspace?.title?.trim() || workspace?.rootUri?.trim() || workspaceUri
@@ -72,7 +72,7 @@ export function buildWorkspaceSummary({
   runtimeSession,
 }: {
   workspaceUri?: string | null
-  workspaces?: WorkspaceRow[]
+  workspaces?: WorkspaceContainerMetadata[]
   runtimeSession?: RuntimeSessionRecord | null
 }): WorkspaceSummary | null {
   if (!workspaceUri && !runtimeSession) {

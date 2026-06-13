@@ -78,7 +78,7 @@ Chat 可以显示当前工作现场，但不要把它变成配置中心：
 
 - `Contact` 是关系卡片。
 - `Agent` 是可执行能力根。
-- `Agent home` 是 `/.data/agents/{agentId}/`。
+- `Agent home` 是 `/agents/{agentId}/`。
 - API Key、provider、model credential 不放在联系人首屏。
 
 ## 底部菜单 / 聊天文件

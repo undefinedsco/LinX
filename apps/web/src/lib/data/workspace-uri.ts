@@ -1,7 +1,9 @@
 export type WorkspaceKind = 'folder' | 'worktree'
 export type WorkspaceType = 'pod' | 'local'
 
-export interface WorkspaceRow {
+// Workspace is a container URI. This metadata is an optional display/cache
+// projection for UI summaries; it is not a standalone Pod resource model.
+export interface WorkspaceContainerMetadata {
   id: string
   title: string
   workspaceType: WorkspaceType
@@ -13,8 +15,6 @@ export interface WorkspaceRow {
   createdAt?: Date | string
   updatedAt?: Date | string
 }
-
-export type WorkspaceInsert = Partial<WorkspaceRow> & Pick<WorkspaceRow, 'id' | 'title' | 'rootUri'>
 
 export function normalizeWorkspaceType(value: unknown): WorkspaceType {
   return value === 'local' ? 'local' : 'pod'
@@ -40,7 +40,7 @@ export function inferWorkspaceKind(input: {
 }
 
 export function resolveWorkspaceContainerUri(podBaseUrl: string, workspaceId: string): string {
-  return new URL(getWorkspaceContainerPath(workspaceId), normalizeContainerBase(podBaseUrl)).toString()
+  return new URL(getWorkspaceContainerPath(workspaceId).replace(/^\/+/u, ''), normalizeContainerBase(podBaseUrl)).toString()
 }
 
 export function getWorkspaceContainerPath(workspaceId: string): string {

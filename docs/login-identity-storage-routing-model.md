@@ -21,7 +21,7 @@ calling different concepts "issuer" or "provider".
 | Term | Meaning | Storage authority? |
 | --- | --- | --- |
 | Account authority | Where the human account/password and canonical Cloud WebID are managed. For Cloud and Local this is Cloud. | No |
-| OIDC entry URL | The URL LinX gives to Inrupt `login({ oidcIssuer })` before discovery. For Local this is the selected Local SP origin. | No |
+| OIDC entry URL | The URL LinX gives to Inrupt `login({ oidcIssuer })` before discovery. For Cloud and Local+Cloud this is Cloud; for Standalone and Custom it is the selected same-origin provider. | No |
 | OIDC issuer | The issuer returned by `/.well-known/openid-configuration` and used in tokens. The WebID profile must trust it through `solid:oidcIssuer`. | No |
 | Storage Provider / SP | The selected data space that owns Pods and durable business writes. | Yes |
 | Canonical SP URL | The stable public resource origin for the selected SP. | Yes |
@@ -30,11 +30,11 @@ calling different concepts "issuer" or "provider".
 Rules:
 - Do not use `issuer` to mean account authority. `issuer` means the actual
   Solid/OIDC issuer used by discovery/token validation.
-- Do not pass the Cloud account authority URL to Inrupt as `oidcIssuer` in a
-  Local route unless Cloud is also serving the SP-scoped OIDC/consent flow for
-  that selected Local SP.
-- `accountIssuerUrl` is UI/account metadata. It must not override
-  `oidcEntryUrl`, `oidcIssuerUrl`, or `storageProviderUrl`.
+- In Local+Cloud, Cloud is both the account authority and the actual OIDC
+  issuer. Pass Cloud to Inrupt as `oidcIssuer`; do not pass the Local SP root as
+  `oidcIssuer`.
+- `accountIssuerUrl` is UI/account metadata except in Local+Cloud, where it is
+  also the actual OIDC issuer. It must never override `storageProviderUrl`.
 - `provider` in the product UI means "space choice". Internally it must be
   split into account authority metadata, OIDC entry/issuer, and storage
   provider facts.
@@ -50,8 +50,8 @@ normal user through an IDP/SP two-step picker.
 | Route | Account / WebID authority | OIDC entry / account surface | Storage Provider | Canonical SP URL |
 | --- | --- | --- | --- | --- |
 | Cloud | Cloud | Cloud | Cloud | Cloud SP provided |
-| Local + Cloud-managed canonical domain | Cloud | Local SP facade backed by Cloud account | Local xpod | Cloud-allocated `node-*.undefineds.co` |
-| Local + user-managed canonical domain | Cloud | Local SP facade backed by Cloud account | Local xpod | User-owned HTTPS origin |
+| Local + Cloud-managed canonical domain | Cloud | Cloud OIDC/account surface with provision scope for the selected Local SP | Local xpod | Cloud-allocated `node-*.undefineds.co` |
+| Local + user-managed canonical domain | Cloud | Cloud OIDC/account surface with provision scope for the selected Local SP | Local xpod | User-owned HTTPS origin |
 | Standalone | Local xpod | Local xpod | Local xpod | Default localhost/LAN; optional user-owned URL |
 | Custom | User-entered Solid provider | Same user-entered Solid provider | Same user-entered Solid provider | Same user-entered URL |
 
@@ -62,10 +62,11 @@ Rules:
   local xpod storage.
 - Local is always Cloud account authority + Local storage. It is not the
   local-account route; the local-account route is Standalone.
-- In implementation terms, the user opens the selected Local SP origin for
-  Solid OIDC/account pages. The Local SP may delegate account/password checks to
-  Cloud, but the visible OIDC discovery, authorization endpoint, consent page,
-  and Pod picker must stay scoped to the selected Local SP.
+- In implementation terms, Local+Cloud starts from a selected Local SP/data
+  space, but the OIDC discovery, authorization endpoint, token issuer, and
+  Cloud WebID authority remain Cloud. The provision scope constrains Cloud's
+  account/consent flow to the selected Local SP so the user never sees unscoped
+  Cloud Pods from a Local entry.
 - `issuer` is reserved for the actual Solid/OIDC issuer returned by discovery
   and used in tokens. Do not use `issuer` to mean "Cloud account authority" or
   "where the password database lives".
@@ -135,22 +136,20 @@ Cloud is the canonical authority for Cloud and Local routes:
 
 Rules:
 - Cloud/Local-route canonical identity is issued by Cloud.
-- Local uses Cloud as the account and canonical WebID authority, but the OIDC
-  entry given to Solid/Inrupt is the selected Local SP origin. This keeps Solid
-  OIDC discovery, consent, Pod selection, and later storage writes on the same
-  selected SP surface while allowing the SP to verify the user through Cloud
-  account state internally.
+- Local uses Cloud as the account authority, canonical WebID authority, and
+  actual OIDC issuer. The OIDC entry given to Solid/Inrupt is Cloud. The
+  selected Local SP is carried separately as provision/storage scope.
 - The actual Solid/OIDC issuer returned by discovery must be trusted by the
-  WebID profile through `solid:oidcIssuer`. If the Local SP issues the token,
-  the Cloud WebID profile must list that Local SP issuer. Cloud account authority
-  is not a substitute for the profile's `solid:oidcIssuer` trust statement.
-- `accountIssuerUrl` is metadata for account authority and UI copy. It must not
-  be passed to Solid/Inrupt as `oidcIssuer` unless it is also the actual selected
-  OIDC issuer for that route.
+  WebID profile through `solid:oidcIssuer`. In Local+Cloud this is Cloud, not
+  the Local SP.
+- `accountIssuerUrl` is metadata for account authority and UI copy. In
+  Local+Cloud it is also the actual selected OIDC issuer and may be passed to
+  Solid/Inrupt as `oidcIssuer`; it must not be conflated with the selected
+  storage provider.
 - Local still starts from a selected SP/data-space choice in LinX. Before
   starting OIDC, LinX must validate the selected Local SP entry and obtain
   a short-lived `provisionCode` for that SP.
-- The Local SP OIDC/account flow receives the provision scope and must create or
+- The Cloud account/consent flow receives the provision scope and must create or
   select only Pods bound to the selected SP. Opening an unscoped Cloud consent
   surface and then showing Cloud Pods is the regression this model forbids.
 - LinX records Cloud as the account issuer and the Local SP URL as the storage
@@ -189,22 +188,20 @@ The split Local flow is:
 
 1. User selects or opens a Local SP.
 2. The SP or LinX obtains a Cloud-recognized provision intent/code for that SP.
-3. The browser opens the selected Local SP account/OIDC surface with that
-   provision scope.
-4. The Local SP uses Cloud account authority to authenticate the user and to
-   create or select the Cloud WebID.
+3. The browser opens the Cloud account/OIDC surface with that provision scope.
+4. Cloud authenticates the user and creates or selects the Cloud WebID while
+   keeping Pod choices scoped to the target SP.
 5. The target SP creates/confirms the Pod under the selected SP.
 6. The Cloud-backed account flow writes the WebID profile trust/storage binding:
 
 ```ttl
 <https://id.undefineds.co/alice/profile/card#me>
-  solid:oidcIssuer <https://<device-node-id>.nodes.undefineds.co/> ;
+  solid:oidcIssuer <https://id.undefineds.co/> ;
   solid:storage <https://<device-node-id>.nodes.undefineds.co/alice/> .
 ```
 
-If a deployment chooses Cloud itself as the actual OIDC issuer, Cloud must also
-serve the SP-scoped consent/Pod selection for the selected Local SP. It still
-must not show unscoped Cloud Pods in a Local flow.
+Cloud must serve the SP-scoped consent/Pod selection for the selected Local SP.
+It must not show unscoped Cloud Pods in a Local flow.
 
 Security and product rules:
 - Cloud must trust a short-lived signed provision intent/code or a registered
@@ -224,6 +221,12 @@ Security and product rules:
   `solid:storage`.
 - Inrupt SDKs discover the result after login by reading `session.info.webId`
   and the WebID profile. They do not decide the storage provider by themselves.
+- LinX `storedAccount` / remembered-account state is a UX convenience for the
+  login card and "continue as..." action. It is not a storage authority and
+  must not be required for post-login DB initialization. After login, the
+  authoritative inputs are the current Inrupt session `webId/fetch`, the
+  current pending login transaction when one exists, and the WebID profile's
+  `solid:storage`.
 
 ## Layer 3 — Routing / Connectivity Optimization
 
@@ -255,8 +258,8 @@ Rules:
 - candidate address set for the same node when available
 - a root/onboarding entry that can produce or consume a Cloud-recognized
   provision intent
-- SP-scoped account/OIDC/consent surface for Local, or an equivalent
-  Cloud-hosted surface that is cryptographically scoped to the selected SP
+- SP-scoped provision and Pod lookup/create APIs for Local. Local+Cloud does
+  not make the SP an OIDC token issuer.
 - post-login or post-setup direct/tunnel upgrade path without changing the
   selected canonical SP URL
 - enough proof material to show multiple addresses belong to the same node
@@ -298,9 +301,7 @@ Implementation invariant:
   equals that selected SP Pod URL before exposing the database. If drizzle-solid
   or bootstrap code keeps or restores the WebID/IDP origin, login fails closed.
 - In split Local routes, `webId` remains the Cloud WebID. `solid:oidcIssuer`
-  must trust the actual OIDC issuer returned by discovery: the selected Local
-  SP in the default implementation, or Cloud only in a deployment where Cloud
-  itself serves the SP-scoped OIDC/consent flow. `podUrl`, bootstrap
+  must trust Cloud, which is the actual OIDC issuer. `podUrl`, bootstrap
   containers, resource IRIs, and all subsequent writes must stay under the
   Local SP.
 - Create/update/delete paths share the same rule. No post-login writer may use
@@ -320,12 +321,12 @@ Acceptance:
 - Cloud path: WebID, provider URL, Solid DB Pod URL, bootstrap containers, chat
   resources, inbox resources, runtime/session resources all resolve under Cloud
   SP.
-- Split Local path: WebID may remain `https://id.undefineds.co/...`, but
-  actual OIDC issuer trust, Solid DB `podUrl`, `/.data/*` bootstrap
-  containers, chat/message refs, Agent Home files, inbox approvals/audits, and
-  runtime session refs must all resolve according to the selected Local SP.
-  Built-in platform chat runtime calls must also target the Local SP runtime
-  endpoint.
+- Split Local path: WebID may remain `https://id.undefineds.co/...`, and
+  `solid:oidcIssuer` must trust Cloud, while Solid DB `podUrl`, `/.data/*`
+  bootstrap containers, chat/message refs, Agent Home files, inbox
+  approvals/audits, and runtime session refs must all resolve according to the
+  selected Local SP. Built-in platform chat runtime calls must also target the
+  Local SP runtime endpoint.
 - Standalone path: local xpod starts before auth handoff,
   and both identity and data writes resolve under the local xpod SP.
 - Network optimization may change the fetch transport to a proven same-node
@@ -351,11 +352,15 @@ Acceptance:
   authentication and assert the produced URI starts with the selected SP Pod
   URL. A login that reaches `/chat` but writes the first message, approval,
   setting, or Secretary record under the IDP/WebID origin is a failure.
-- Login is not considered complete until the default AI Secretary bootstrap
-  succeeds on the selected SP Pod. The bootstrap must create or verify the
-  Secretary Chat, default Thread, welcome Message, Agent/Contact records, and
-  Agent Home files under `/.data/agents/__secretary__/` including
-  `AGENTS.md`, `config.json`, `rules.md`, and `skills/README.md`.
+- Login may enter the chat UI as soon as the default AI Secretary contact/chat
+  surface is staged. Pod persistence continues in the background, but the
+  persisted Secretary Contact and Chat records must resolve under the selected
+  SP before the bootstrap is considered healthy. The Secretary bootstrap must
+  not block chat entry on a fixed default Thread or welcome Message; topics are
+  created on demand with normal random Thread ids. Agent Home preparation is
+  also asynchronous after chat entry, but when it runs it must use
+  `/agents/__secretary__/` on the selected SP, including `AGENTS.md`, `.meta`,
+  and `skills/README.md`.
 - The same smoke test must exercise a later mutation path. At minimum one
   update/delete target must be proven to stay under the selected SP, and a stale
   Cloud-origin absolute IRI must fail closed in the split Local route.
@@ -376,10 +381,9 @@ Consent / Pod selection invariant:
 - The WebID/Pod choice shown during OIDC consent must be scoped to the selected
   SP. It must not offer a Cloud Pod when the current flow was started from Local
   SP.
-- The current implementation achieves this by opening the selected Local SP
-  OIDC/account surface and carrying `provisionCode` through the interaction.
-  The Local SP uses that scope to query/create only Local SP Pods for the Cloud
-  account/WebID.
+- The current implementation achieves this by opening Cloud as the OIDC issuer
+  and carrying `provisionCode` through the interaction. Cloud uses that scope to
+  query/create only Local SP Pods for the Cloud account/WebID.
 - If scoped lookup fails, the page must fail closed. It must not fall back to
   raw `pick-webid` results, account dashboard pod lists, profile-current WebID,
   or any Cloud account list.
@@ -390,9 +394,21 @@ Consent / Pod selection invariant:
 - After consent, the selected WebID profile must still carry `solid:storage`
   for the selected SP. Scoped consent is a candidate filter, not permission to
   ignore a missing, stale, or cross-SP storage binding.
-- A future SP-hosted consent page is acceptable only if OIDC discovery,
-  authorization endpoint, token issuer, and account session semantics remain
-  coherent. Do not fake it with an API-server proxy or a front-end-only redirect.
+- A future SP-hosted UI may act as an onboarding facade, but it must not make
+  the Local SP the OIDC token issuer for Local+Cloud unless the whole product
+  route is deliberately changed and the Cloud WebID `solid:oidcIssuer`
+  contract is updated accordingly. Do not fake it with an API-server proxy or a
+  front-end-only redirect.
+
+OIDC discovery preflight invariant:
+- LinX should not run its own browser-side `/.well-known/openid-configuration`
+  preflight for normal non-strict HTTPS providers before calling Inrupt
+  `login()`. Browser CORS on discovery is provider-owned, and Inrupt already
+  performs the protocol discovery needed for OIDC login.
+- LinX-owned discovery is reserved for strict local reachability cases:
+  loopback Local, Standalone, and desktop-assisted canonical SP validation.
+- Local+Cloud is non-strict from the browser perspective: the OIDC entry is
+  Cloud, and the selected Local SP remains only the storage/provision target.
 
 ## Anti-goals
 - LinX must not own username / WebID / Pod / consent semantics

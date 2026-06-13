@@ -9,10 +9,10 @@
 权威原则：
 
 - `cloud`：OIDC issuer 和 Storage Provider 都在 Cloud。
-- `local`：账号/WebID authority 是 Cloud；OIDC entry、consent/Pod picker
-  和 Storage Provider 必须以 selected Local SP 为作用域。实际 OIDC issuer
-  以 discovery/profile trust 为准，不能把 Cloud account authority 当成
-  Inrupt 的 `oidcIssuer`。
+- `local`：账号/WebID authority 和实际 OIDC issuer 都是 Cloud；LinX 传给
+  Inrupt `login({ oidcIssuer })` 的入口也是 Cloud。selected Local SP 只作为
+  storage/provision scope，Cloud 账号/consent 流必须据此过滤 Pod picker，不能
+  展示无 scope 的 Cloud Pod。
 - `standalone`：OIDC issuer 和 Storage Provider 都在本机 xpod。
 - `custom`：第三方 Solid provider 的 issuer/storage 一体入口，用户只填写一个 provider URL。
 - Local 的 canonical SP URL 必须稳定，并写入 Cloud WebID profile 的 `solid:storage`。
@@ -41,8 +41,8 @@ LinX 选择 Local
   -> LinX 向 Cloud /provision/nodes 注册 Local node，请求 Cloud 分配 canonical 域名
   -> Cloud 返回 spDomain/publicUrl，例如 https://<device-node-id>.nodes.undefineds.co/
   -> LinX 启动 xpod，CSS_BASE_URL=https://<device-node-id>.nodes.undefineds.co/
-  -> LinX 验证 Local SP 可达，并携带 provisionCode 进入 selected Local SP 账号/OIDC 页面
-  -> Local SP 可使用 Cloud account authority，但 consent / Pod picker 按 Local SP scope 过滤
+  -> LinX 验证 Local SP 可达，并携带 provisionCode 进入 Cloud 账号/OIDC 页面
+  -> Cloud 账号/consent 流按 selected Local SP scope 过滤 Pod picker
   -> WebID profile 的 solid:storage 写到 Local SP Pod
 ```
 
@@ -109,7 +109,8 @@ Local 登录路径必须无配置：
 1. 用户选择 Local。
 2. LinX 自动启动 xpod，并向 Cloud provisioning 申请或续约 canonical URL。
 3. 服务 ready 后，如果已有可用 session，直接进入 selected Local SP
-   consent；没有 session 时打开 selected Local SP 的账号/OIDC 页面。
+   scoped consent；没有 session 时打开 Cloud 账号/OIDC 页面，并携带 selected
+   Local SP 的 provision scope。
 4. 登录面必须始终提供返回空间选择的入口；关闭嵌入窗口或返回不能把用户
    留在不可操作的等待状态。
 5. 登录、注册、Pod 创建和 storage 绑定按

@@ -1,18 +1,19 @@
 import {
   ContactClass,
   ContactType,
-  agentTable,
-  agentRepository,
-  agentResourceId,
-  contactTable,
+  agentResource,
+  contactResource,
   contactRepository,
-  asBaseRelativeResourceId,
-  requireRowResourceId,
   type AgentRow,
-  type BaseRelativeResourceId,
   type ContactRow,
   type SolidDatabase,
 } from '@undefineds.co/models'
+import {
+  agentResourceId,
+  asBaseRelativeResourceId,
+  requireRowResourceId,
+  type BaseRelativeResourceId,
+} from './resource-identity'
 
 export interface CreateAgentContactRecordsInput {
   agentId?: string
@@ -77,22 +78,25 @@ export async function createAgentContactRecords(
   contactUri: string
 }> {
   const agentId = agentResourceId(input.agentId?.trim() || crypto.randomUUID())
-  const createdAgent = await agentRepository.create!(db, {
+  const now = new Date()
+  const agentUri = db.resolveRowIri(agentResource as any, { id: agentId })
+  const agent = {
     id: agentId,
+    '@id': agentUri,
     name: input.name,
     provider: input.provider,
     model: input.model,
     instructions: input.instructions || undefined,
-  })
-  const agent = {
-    ...createdAgent,
-    id: agentId,
+    createdAt: now,
+    updatedAt: now,
   } as AgentRow
-  const agentUri = db.resolveRowIri(agentTable as any, agent)
+  if (!agentUri) {
+    throw new Error('Failed to resolve Agent resource IRI.')
+  }
   const contactKey = input.contactId?.trim() || crypto.randomUUID()
   const contactId = asBaseRelativeResourceId(contactKey, 'Contact id')
-  const contactUri = db.resolveRowIri(contactTable as any, {
-    id: contactTable.buildId({ id: contactId }),
+  const contactUri = db.resolveRowIri(contactResource as any, {
+    id: contactResource.buildId({ id: contactId }),
   })
   const createdContact = await contactRepository.create!(db, {
     id: contactId,
@@ -137,27 +141,27 @@ export async function ensureAgentContactRecords(
   const agentId = agentResourceId(input.agentId)
   const contactId = asBaseRelativeResourceId(input.contactId, 'Contact id')
   const contactResourceId = asBaseRelativeResourceId(input.contactResourceId ?? input.contactId, 'Contact resource id')
-  const agentUri = db.resolveRowIri(agentTable as any, { id: agentId })
-  const contactUri = db.resolveRowIri(contactTable as any, {
-    id: contactTable.buildId({ id: contactResourceId }),
+  const agentUri = db.resolveRowIri(agentResource as any, { id: agentId })
+  const contactUri = db.resolveRowIri(contactResource as any, {
+    id: contactResource.buildId({ id: contactResourceId }),
   })
   if (!agentUri || !contactUri) {
     throw new Error('Failed to resolve Agent Contact resource IRIs.')
   }
 
-  const existingAgent = await findOptionalById<AgentRow>(db, agentTable, agentId, input.readTimeoutMs)
-  const agent = existingAgent
-    ? { ...existingAgent, id: agentId, '@id': existingAgent['@id'] ?? agentUri } as AgentRow
-    : await agentRepository.create!(db, {
-      id: agentId,
-      '@id': agentUri,
-      name: input.name,
-      provider: input.provider,
-      model: input.model,
-      instructions: input.instructions || undefined,
-    } as AgentRow)
+  const now = new Date()
+  const agent = {
+    id: agentId,
+    '@id': agentUri,
+    name: input.name,
+    provider: input.provider,
+    model: input.model,
+    instructions: input.instructions || undefined,
+    createdAt: now,
+    updatedAt: now,
+  } as AgentRow
 
-  const existingContact = await findOptionalById<ContactRow>(db, contactTable, contactResourceId, input.readTimeoutMs)
+  const existingContact = await findOptionalById<ContactRow>(db, contactResource, contactResourceId, input.readTimeoutMs)
   const contact = existingContact
     ? {
       ...existingContact,
@@ -196,8 +200,8 @@ export async function ensureAgentContactRecords(
     contactId,
     contactUri,
     agentUri,
-    created: !existingAgent || !existingContact,
-    agentCreated: !existingAgent,
+    created: !existingContact,
+    agentCreated: false,
     contactCreated: !existingContact,
   }
 }
@@ -211,8 +215,8 @@ export async function createSolidContactRecord(
   contactUri: string
 }> {
   const contactId = asBaseRelativeResourceId(crypto.randomUUID(), 'Contact id')
-  const contactUri = db.resolveRowIri(contactTable as any, {
-    id: contactTable.buildId({ id: contactId }),
+  const contactUri = db.resolveRowIri(contactResource as any, {
+    id: contactResource.buildId({ id: contactId }),
   })
   const createdContact = await contactRepository.create!(db, {
     id: contactId,
@@ -248,8 +252,8 @@ export async function createGroupContactRecord(
   contactUri: string
 }> {
   const contactId = asBaseRelativeResourceId(crypto.randomUUID(), 'Contact id')
-  const contactUri = db.resolveRowIri(contactTable as any, {
-    id: contactTable.buildId({ id: contactId }),
+  const contactUri = db.resolveRowIri(contactResource as any, {
+    id: contactResource.buildId({ id: contactId }),
   })
   const createdContact = await contactRepository.create!(db, {
     id: contactId,

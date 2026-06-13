@@ -179,7 +179,7 @@ function execCli(args, env, modulePath) {
 function createAiCommandHarness(rows = {}) {
   const operations = []
   const stored = new Map()
-  const tableName = (table) => table?.config?.name ?? table?.name ?? 'unknown'
+  const resourceName = (resource) => resource?.config?.name ?? resource?.name ?? 'unknown'
   const recordKey = (name, id) => `${name}:${id}`
   const resolveId = (name, target) => {
     if (typeof target === 'string') return target
@@ -213,37 +213,37 @@ function createAiCommandHarness(rows = {}) {
   }
 
   const db = {
-    resolveLocatorId(table, locator) {
-      return resolveId(tableName(table), locator)
+    resolveLocatorId(resource, locator) {
+      return resolveId(resourceName(resource), locator)
     },
-    async findById(table, id) {
-      return stored.get(recordKey(tableName(table), id)) ?? null
+    async findById(resource, id) {
+      return stored.get(recordKey(resourceName(resource), id)) ?? null
     },
-    async updateById(table, id, update) {
-      const name = tableName(table)
+    async updateById(resource, id, update) {
+      const name = resourceName(resource)
       const key = recordKey(name, id)
       const next = { ...(stored.get(key) ?? {}), ...update }
       stored.set(key, next)
-      operations.push({ op: 'update', table: name, id, row: next })
+      operations.push({ op: 'update', resource: name, id, row: next })
       return next
     },
-    async deleteById(table, id) {
-      const name = tableName(table)
+    async deleteById(resource, id) {
+      const name = resourceName(resource)
       const key = recordKey(name, id)
       const row = stored.get(key) ?? null
       stored.delete(key)
-      operations.push({ op: 'delete', table: name, id, row })
+      operations.push({ op: 'delete', resource: name, id, row })
       return row
     },
-    insert(table) {
+    insert(resource) {
       return {
         values(row) {
           return {
             async execute() {
-              const name = tableName(table)
+              const name = resourceName(resource)
               const id = inferId(name, row)
               stored.set(recordKey(name, id), row)
-              operations.push({ op: 'insert', table: name, id, row })
+              operations.push({ op: 'insert', resource: name, id, row })
               return [row]
             },
           }
@@ -472,9 +472,9 @@ test('linx ai connect writes provider and credential config to Pod', async (t) =
   assert.match(output, /Connected AI provider: anthropic/)
   assert.match(output, /api-key: sk-a\*\*\*\*-key/)
 
-  const providerInsert = harness.operations.find((item) => item.op === 'insert' && item.table === 'aiProvider')
-  const credentialInsert = harness.operations.find((item) => item.op === 'insert' && item.table === 'credential')
-  const modelInsert = harness.operations.find((item) => item.op === 'insert' && item.table === 'aiModel')
+  const providerInsert = harness.operations.find((item) => item.op === 'insert' && item.resource === 'aiProvider')
+  const credentialInsert = harness.operations.find((item) => item.op === 'insert' && item.resource === 'credential')
+  const modelInsert = harness.operations.find((item) => item.op === 'insert' && item.resource === 'aiModel')
 
   assert.deepEqual(harness.contexts, [undefined])
   assert.ok(providerInsert)
@@ -558,7 +558,7 @@ test('linx ai disconnect removes provider credential config from Pod', async (t)
   }, harness.dependencies)
 
   assert.match(harness.output.join(''), /Disconnected AI provider: anthropic/)
-  const deletes = harness.operations.filter((item) => item.op === 'delete' && item.table === 'credential')
+  const deletes = harness.operations.filter((item) => item.op === 'delete' && item.resource === 'credential')
   assert.deepEqual(deletes.map((item) => item.id).sort(), ['anthropic-default', 'claude-default'])
   assert.equal(harness.syncResults.length, 1)
   assert.deepEqual(harness.syncResults[0], {
@@ -631,10 +631,10 @@ test('linx ai status reads explicit provider config without provider/model colle
   const output = []
   const selectResources = []
   const findByIds = []
-  const tableName = (table) => table?.config?.name ?? table?.name ?? 'unknown'
+  const resourceName = (resource) => resource?.config?.name ?? resource?.name ?? 'unknown'
   const db = {
-    resolveLocatorId(table, locator) {
-      assert.equal(tableName(table), 'aiModel')
+    resolveLocatorId(resource, locator) {
+      assert.equal(resourceName(resource), 'aiModel')
       assert.deepEqual(locator, {
         id: 'gpt-5.5',
         isProvidedBy: '/settings/providers/openai.ttl',
@@ -646,9 +646,9 @@ test('linx ai status reads explicit provider config without provider/model colle
         from(resource) {
           return {
             async execute() {
-              selectResources.push(tableName(resource))
-              if (tableName(resource) !== 'credential') {
-                throw new Error(`unexpected collection scan: ${tableName(resource)}`)
+              selectResources.push(resourceName(resource))
+              if (resourceName(resource) !== 'credential') {
+                throw new Error(`unexpected collection scan: ${resourceName(resource)}`)
               }
               return [{
                 id: 'openai-default',
@@ -663,15 +663,15 @@ test('linx ai status reads explicit provider config without provider/model colle
       }
     },
     async findById(resource, id) {
-      findByIds.push([tableName(resource), id])
-      if (tableName(resource) === 'aiProvider' && id === 'openai') {
+      findByIds.push([resourceName(resource), id])
+      if (resourceName(resource) === 'aiProvider' && id === 'openai') {
         return {
           id: 'openai',
           baseUrl: 'https://api.openai.com/v1',
           hasModel: '/settings/providers/openai.ttl#gpt-5.5',
         }
       }
-      if (tableName(resource) === 'aiModel' && id === 'openai.ttl#gpt-5.5') {
+      if (resourceName(resource) === 'aiModel' && id === 'openai.ttl#gpt-5.5') {
         return {
           id: 'gpt-5.5',
           displayName: 'GPT-5.5',
@@ -744,7 +744,7 @@ test('linx ai connect deletes replaced provider-scoped model config', async (t) 
     model: 'new-model',
   }, harness.dependencies)
 
-  const modelDeletes = harness.operations.filter((item) => item.op === 'delete' && item.table === 'aiModel')
+  const modelDeletes = harness.operations.filter((item) => item.op === 'delete' && item.resource === 'aiModel')
   assert.deepEqual(modelDeletes.map((item) => item.id), ['anthropic.ttl#old-model'])
 })
 
@@ -777,7 +777,7 @@ test('linx ai connect uses the resolved Pod context before ORM writes', async (t
   assert.match(harness.output.join(''), /Connected AI provider: openai/)
   assert.ok(harness.operations.some((item) =>
     item.op === 'insert'
-    && item.table === 'credential'
+    && item.resource === 'credential'
     && item.row.provider === '/settings/providers/openai.ttl'
     && item.row.apiKey === 'sk-openai-test-key'))
 })

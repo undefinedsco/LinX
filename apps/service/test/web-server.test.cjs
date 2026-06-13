@@ -23,6 +23,9 @@ function loadWebServerWithStubs(t, options = {}) {
 
   global.fetch = async (url, init = {}) => {
     fetchCalls.push({ url: String(url), init })
+    if (options.aiResponse && String(url).endsWith('/v1/chat/completions')) {
+      return options.aiResponse(url, init)
+    }
     const statusCode = options.provisionStatus ?? 200
     return {
       ok: statusCode >= 200 && statusCode < 300,
@@ -429,6 +432,40 @@ test('runtime API failures return user-facing copy without internal fields', asy
   assert.equal(response.status, 500)
   assert.equal(response.body.error, '工作会话创建失败。请重新进入 LinX；如果仍失败，请换一个空间。')
   assert.doesNotMatch(response.body.error, /findById|resource id|IRI/i)
+})
+
+test('server AI proxy targets the running xpod runtime and ignores caller supplied upstream URLs', async (t) => {
+  const { server, fetchCalls } = loadWebServerWithStubs(t, {
+    status: {
+      running: true,
+      port: 5737,
+      baseUrl: 'http://127.0.0.1:5737',
+      publicUrl: undefined,
+    },
+    aiResponse: async () => new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }),
+  })
+  const { listener, origin } = await listenOnRandomPort(server.app)
+  t.after(() => listener.close())
+
+  const response = await requestJson(origin, '/api/ai/chat/completions', {
+    method: 'POST',
+    body: {
+      model: 'linx-lite',
+      messages: [{ role: 'user', content: 'hi' }],
+      upstreamUrl: 'https://evil.example/v1/chat/completions',
+    },
+  })
+
+  assert.equal(response.status, 200)
+  assert.deepEqual(response.body, { choices: [{ message: { content: 'ok' } }] })
+
+  const aiCall = fetchCalls.find((call) => call.url === 'http://127.0.0.1:5737/v1/chat/completions')
+  assert.ok(aiCall)
+  assert.equal(fetchCalls.some((call) => call.url.includes('evil.example')), false)
+  assert.equal(JSON.parse(aiCall.init.body).model, 'linx-lite')
 })
 
 test('stored Cloud registration is ignored when no public URL can be recovered', (t) => {

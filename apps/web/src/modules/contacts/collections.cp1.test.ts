@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { ContactClass, ContactType, chatTable, contactTable } from '@undefineds.co/models'
+import { ContactClass, ContactType, chatResource, contactResource } from '@undefineds.co/models'
 
 const mockDb = {
   insert: vi.fn().mockReturnValue({
@@ -63,12 +63,12 @@ function resetMockDb() {
       execute: vi.fn().mockResolvedValue(undefined),
     }),
   }))
-  mockDb.resolveRowIri.mockImplementation((table, row: Record<string, unknown>) => {
+  mockDb.resolveRowIri.mockImplementation((resource, row: Record<string, unknown>) => {
     if (typeof row.id !== 'string' || row.id.length === 0) {
       throw new Error('Mock row is missing row.id.')
     }
-    if (table === chatTable) return `https://pod.example/.data/chat/${row.id}/index.ttl#this`
-    if (table === contactTable) return `https://pod.example/.data/contacts/${row.id}.ttl#this`
+    if (resource === chatResource) return `https://pod.example/.data/chat/${row.id}/index.ttl#this`
+    if (resource === contactResource) return `https://pod.example/.data/contacts/${row.id}.ttl#this`
     return `https://pod.example/${row.id}`
   })
   mockDb.resolveRowId.mockImplementation((_table, row: Record<string, unknown>) => {

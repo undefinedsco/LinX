@@ -67,7 +67,7 @@ function createFakePodRuntime() {
   const writes = []
   const webId = 'https://id.undefineds.co/alice/profile/card#me'
   const podBase = 'https://id.undefineds.co/alice'
-  const tableName = (table) => table?.config?.name ?? 'unknown'
+  const resourceName = (resource) => resource?.config?.name ?? 'unknown'
   const dateParts = (value, includeDay = false) => {
     const date = value instanceof Date ? value : new Date(value)
     const yyyy = String(date.getUTCFullYear())
@@ -80,10 +80,10 @@ function createFakePodRuntime() {
     const match = value.match(/\/\.data\/chat\/([^/]+)\/index\.ttl/)
     return match ? decodeURIComponent(match[1]) : value
   }
-  const resolveLocatorIri = (table, locator) => {
-    const name = tableName(table)
-    if (typeof table?.buildIri === 'function') {
-      return table.buildIri(podBase, locator)
+  const resolveLocatorIri = (resource, locator) => {
+    const name = resourceName(resource)
+    if (typeof resource?.buildIri === 'function') {
+      return resource.buildIri(podBase, locator)
     }
     if (name === 'chats') {
       return `${podBase}/.data/chat/${encodeURIComponent(locator.id)}/index.ttl#this`
@@ -113,10 +113,10 @@ function createFakePodRuntime() {
       const { yyyy, mm, dd } = dateParts(locator.createdAt, true)
       return `${podBase}/.data/audits/${yyyy}/${mm}/${dd}.ttl#${encodeURIComponent(locator.id)}`
     }
-    throw new Error(`Unsupported table in fake Pod DB: ${name}`)
+    throw new Error(`Unsupported resource in fake Pod DB: ${name}`)
   }
-  const rowLocator = (table, row) => {
-    const name = tableName(table)
+  const rowLocator = (resource, row) => {
+    const name = resourceName(resource)
     if (name === 'thread') return { id: row.id, parent: row.parent }
     if (name === 'session') return { id: row.id, createdAt: row.createdAt }
     if (name === 'chat_message') return { id: row.id, chat: row.chat, thread: row.thread, createdAt: row.createdAt }
@@ -127,54 +127,54 @@ function createFakePodRuntime() {
   const db = {
     async init() {},
     resolveLocatorIri,
-    async findById(table, id) {
+    async findById(resource, id) {
       const exact = [...rows.values()].find((row) => row.id === id)
       if (exact) return exact
       const suffix = `#${encodeURIComponent(id)}`
       const documentSuffix = `/${encodeURIComponent(id)}.ttl`
       return [...rows.entries()].find(([iri]) => iri.endsWith(suffix) || iri.endsWith(documentSuffix))?.[1] ?? null
     },
-    async findByIri(_table, iri) {
+    async findByIri(_resource, iri) {
       return rows.get(iri) ?? null
     },
-    async findByResource(table, target) {
+    async findByResource(resource, target) {
       const iri = typeof target === 'string' && /^https?:\/\//.test(target)
         ? target
-        : resolveLocatorIri(table, typeof target === 'string' ? { id: target } : target)
+        : resolveLocatorIri(resource, typeof target === 'string' ? { id: target } : target)
       return rows.get(iri) ?? null
     },
-    async updateById(table, id, patch) {
-      const existing = await this.findById(table, id)
+    async updateById(resource, id, patch) {
+      const existing = await this.findById(resource, id)
       const iri = existing?.['@id'] ?? existing?.subject ?? existing?.uri
       if (typeof iri !== 'string') return null
       const next = { ...existing, ...patch, '@id': iri, subject: iri, uri: iri }
       rows.set(iri, next)
-      writes.push({ op: 'update', table: tableName(table), iri, row: next })
+      writes.push({ op: 'update', resource: resourceName(resource), iri, row: next })
       return next
     },
-    async updateByIri(table, iri, patch) {
+    async updateByIri(resource, iri, patch) {
       const existing = rows.get(iri)
       if (!existing) return null
       const next = { ...existing, ...patch, '@id': iri, subject: iri, uri: iri }
       rows.set(iri, next)
-      writes.push({ op: 'update', table: tableName(table), iri, row: next })
+      writes.push({ op: 'update', resource: resourceName(resource), iri, row: next })
       return next
     },
-    async updateByResource(table, target, patch) {
+    async updateByResource(resource, target, patch) {
       const iri = typeof target === 'string' && /^https?:\/\//.test(target)
         ? target
-        : resolveLocatorIri(table, typeof target === 'string' ? { id: target } : target)
-      return this.updateByIri(table, iri, patch)
+        : resolveLocatorIri(resource, typeof target === 'string' ? { id: target } : target)
+      return this.updateByIri(resource, iri, patch)
     },
-    insert(table) {
+    insert(resource) {
       return {
         values(row) {
           return {
             async execute() {
-              const iri = resolveLocatorIri(table, rowLocator(table, row))
+              const iri = resolveLocatorIri(resource, rowLocator(resource, row))
               const next = { ...row, '@id': iri, subject: iri, uri: iri }
               rows.set(iri, next)
-              writes.push({ op: 'insert', table: tableName(table), iri, row: next })
+              writes.push({ op: 'insert', resource: resourceName(resource), iri, row: next })
               return [next]
             },
           }
@@ -362,7 +362,7 @@ test('buildPodMessageRow skips operational assistant cloud/auth errors from dura
   }
 })
 
-test('LinxPiPodMirror persists Pi session events into Pod tables', async (t) => {
+test('LinxPiPodMirror persists Pi session events into Pod resources', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/pod-mirror.ts')
   t.after(() => cleanup())
 
@@ -401,15 +401,15 @@ test('LinxPiPodMirror persists Pi session events into Pod tables', async (t) => 
   assert.equal(rowValues.some((row) => row.name === 'xpod-cli' && row.loadPolicy === 'file-backed'), true)
   assert.equal(rowValues.some((row) => row.tool === 'linx' && row.status === 'completed'), true)
   assert.equal(rowValues.some((row) => row.content === 'persist through mirror'), true)
-  assert.equal(writes.some((write) => write.table === 'chats' && write.iri.endsWith('/.data/chat/__secretary__/index.ttl#this')), true)
-  assert.equal(writes.some((write) => write.table === 'agent' && write.iri.endsWith('/agents/__secretary__/')), true)
-  assert.equal(writes.some((write) => write.table === 'skill' && write.iri.endsWith('/agents/__secretary__/skills/symphony/')), true)
-  assert.equal(writes.some((write) => write.table === 'skill' && write.iri.endsWith('/agents/__secretary__/skills/xpod-cli/')), true)
-  assert.equal(writes.some((write) => write.table === 'session' && /\/\.data\/sessions\/2026\/04\/01\/[^/]+\.ttl$/.test(write.iri)), true)
-  assert.equal(writes.filter((write) => write.table === 'session' && write.op === 'insert').length, 1)
-  assert.equal(writes.filter((write) => write.table === 'session' && write.op === 'update').length, 1)
-  assert.equal(writes.some((write) => write.table === 'chat_message' && /\/\.data\/chat\/__secretary__\/2026\/04\/01\/messages\.ttl#/.test(write.iri)), true)
-  assert.equal(writes.some((write) => write.table === 'audit'), false)
+  assert.equal(writes.some((write) => write.resource === 'chats' && write.iri.endsWith('/.data/chat/__secretary__/index.ttl#this')), true)
+  assert.equal(writes.some((write) => write.resource === 'agent' && write.iri.endsWith('/agents/__secretary__/')), true)
+  assert.equal(writes.some((write) => write.resource === 'skill' && write.iri.endsWith('/agents/__secretary__/skills/symphony/')), true)
+  assert.equal(writes.some((write) => write.resource === 'skill' && write.iri.endsWith('/agents/__secretary__/skills/xpod-cli/')), true)
+  assert.equal(writes.some((write) => write.resource === 'session' && /\/\.data\/sessions\/2026\/04\/01\/[^/]+\.ttl$/.test(write.iri)), true)
+  assert.equal(writes.filter((write) => write.resource === 'session' && write.op === 'insert').length, 1)
+  assert.equal(writes.filter((write) => write.resource === 'session' && write.op === 'update').length, 1)
+  assert.equal(writes.some((write) => write.resource === 'chat_message' && /\/\.data\/chat\/__secretary__\/2026\/04\/01\/messages\.ttl#/.test(write.iri)), true)
+  assert.equal(writes.some((write) => write.resource === 'audit'), false)
   const runtimeSessionRow = rowValues.find((row) => row.tool === 'linx' && row.status === 'completed')
   assert.equal(runtimeSessionRow.metadata.runtimeSnapshot.agent, '__secretary__')
   assert.equal(runtimeSessionRow.metadata.runtimeSnapshot.runtime.backend, 'linx')
@@ -446,12 +446,12 @@ test('LinxPiPodMirror retries transient Pod projection failures before checkpoin
         const db = runtime.createDb(session)
         return {
           ...db,
-          async findByIri(table, iri) {
+          async findByIri(resource, iri) {
             if (transientFailures > 0) {
               transientFailures -= 1
               throw new Error(`Could not retrieve ${iri} (HTTP status 502): Bad Gateway`)
             }
-            return db.findByIri(table, iri)
+            return db.findByIri(resource, iri)
           },
         }
       },
@@ -507,7 +507,7 @@ test('LinxPiPodMirror disables same-session projection after Pod auth failures',
         const db = runtime.createDb(session)
         return {
           ...db,
-          async findByIri(_table, iri) {
+          async findByIri(_resource, iri) {
             throw new Error(`Could not retrieve ${iri} (HTTP status 401): UnauthorizedHttpError`)
           },
         }
@@ -550,7 +550,7 @@ test('LinxPiPodMirror projects auto control-plane state into Pod session metadat
   assert.equal(sessionRows[0].metadata.controlPlane.linxSession.autoEnabled, false)
   assert.equal(sessionRows[0].metadata.controlPlane.linxSession.symphonyEnabled, false)
   assert.equal(sessionRows[0].metadata.controlPlane.linxSession.updatedBy, 'cli')
-  assert.equal(writes.some((write) => write.table === 'session' && write.op === 'insert'), true)
+  assert.equal(writes.some((write) => write.resource === 'session' && write.op === 'insert'), true)
   assert.equal(mirror.getSyncResults().at(-1).plane, 'control-plane')
 })
 
@@ -725,7 +725,7 @@ test('LinxPiPodMirror projects runtime session metadata from the active branch a
   assert.equal([...rows.values()].some((row) => row.content === 'dirty assistant turn' && row.status === 'abandoned'), true)
 })
 
-test('LinxPiPodMirror writes tool execution audits to Pod tables', async (t) => {
+test('LinxPiPodMirror writes tool execution audits to Pod resources', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/pod-mirror.ts')
   t.after(() => cleanup())
 
@@ -998,8 +998,8 @@ test('LinxPiPodMirror replays pending failed projections from the local session 
         const db = runtime.createDb(session)
         return {
           ...db,
-          insert(table) {
-            const insert = db.insert(table)
+          insert(resource) {
+            const insert = db.insert(resource)
             return {
               values(row) {
                 const values = insert.values(row)
@@ -1032,7 +1032,7 @@ test('LinxPiPodMirror replays pending failed projections from the local session 
   assert.equal(replayResults[0].status, 'completed')
   assert.equal(checkpointStore.listCheckpoints({ status: 'failed' }).length, 0)
   assert.equal([...rows.values()].some((row) => row.content === 'retry me from local archive'), true)
-  assert.equal(writes.filter((write) => write.table === 'chat_message' && write.op === 'insert').length, 1)
+  assert.equal(writes.filter((write) => write.resource === 'chat_message' && write.op === 'insert').length, 1)
 })
 
 test('LinxPiPodMirror does not replay failed auth projection checkpoints', async (t) => {

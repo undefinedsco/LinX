@@ -16,8 +16,12 @@ export default defineConfig({
   /* Retry on CI only */
   retries: process.env.CI ? 2 : 0,
   
-  /* Opt out of parallel tests on CI */
-  workers: process.env.CI ? 1 : undefined,
+  /*
+   * E2E suites share local desktop/xpod launch state, production Cloud smoke
+   * accounts, and Cloud-managed Local domains. Running files in parallel makes
+   * those tests race each other even when each spec is internally serial.
+   */
+  workers: 1,
   
   /* Reporter to use */
   reporter: [

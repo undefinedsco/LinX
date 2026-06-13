@@ -5,7 +5,6 @@ import {
   derivePodSlugFromWebId,
   detectStorageConflict,
   resolveExpectedStorageUrl,
-  resolveStorageProviderProfileUrl,
 } from './storage-reconciliation'
 
 describe('storage-reconciliation', () => {
@@ -25,15 +24,6 @@ describe('storage-reconciliation', () => {
         'https://node-abc123.undefineds.co/',
       ),
     ).toBe('https://node-abc123.undefineds.co/alice/')
-  })
-
-  it('resolves the selected provider profile URL from a Cloud WebID', () => {
-    expect(
-      resolveStorageProviderProfileUrl(
-        'https://id.undefineds.co/alice/profile/card#me',
-        'https://node-abc123.undefineds.co/',
-      ),
-    ).toBe('https://node-abc123.undefineds.co/alice/profile/card#me')
   })
 
   it.each([
@@ -159,24 +149,18 @@ describe('storage-reconciliation', () => {
     )
   })
 
-  it('falls back to the selected SP profile when Cloud WebID profile cannot be read with the SP token', async () => {
+  it('does not treat the selected SP profile as the Cloud WebID profile authority', async () => {
     vi.useFakeTimers()
     const anonymousFetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 401,
-      headers: new Headers(),
-      text: async () => 'unauthorized',
+      ok: true,
+      headers: new Headers({ 'content-type': 'application/ld+json' }),
+      text: async () => JSON.stringify({
+        '@id': 'https://id.undefineds.co/alice/profile/card#me',
+        'solid:storage': { '@id': 'https://node-abc123.undefineds.co/alice/' },
+      }),
     })
     const authenticatedFetch = vi.fn()
       .mockRejectedValueOnce(new TypeError('Failed to fetch'))
-      .mockResolvedValueOnce({
-        ok: true,
-        headers: new Headers({ 'content-type': 'application/ld+json' }),
-        text: async () => JSON.stringify({
-          '@id': 'https://node-abc123.undefineds.co/alice/profile/card#me',
-          'solid:storage': { '@id': 'https://node-abc123.undefineds.co/alice/' },
-        }),
-      })
     vi.stubGlobal('fetch', anonymousFetch)
 
     await expect(
@@ -192,11 +176,14 @@ describe('storage-reconciliation', () => {
       'https://id.undefineds.co/alice/profile/card#me',
       expect.anything(),
     )
-    expect(authenticatedFetch).toHaveBeenCalledWith(
+    expect(anonymousFetch).toHaveBeenCalledWith(
+      'https://id.undefineds.co/alice/profile/card#me',
+      expect.anything(),
+    )
+    expect(authenticatedFetch).not.toHaveBeenCalledWith(
       'https://node-abc123.undefineds.co/alice/profile/card#me',
       expect.anything(),
     )
-    expect(anonymousFetch).not.toHaveBeenCalled()
   })
 
   it('retries authenticated profile reads before falling back to anonymous fetch', async () => {

@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { buildLocalWorkspaceUri, normalizeLocalWorkspacePath } from '@/lib/data/workspace-model'
+import { buildLocalWorkspaceUri, normalizeLocalWorkspacePath } from '@/lib/data/workspace-uri'
 import { formatErrorForUser } from '@/lib/user-facing-errors'
 
 export type RuntimeThreadStatus = 'idle' | 'active' | 'paused' | 'completed' | 'error'

@@ -63,7 +63,7 @@ export function hasLocalAccessRouteSource(): boolean {
 export async function resolveBestLocalAccessRoute(
   options: ResolveLocalAccessRouteOptions,
 ): Promise<LocalAccessRouteSelection | null> {
-  if (!isLocalProvider(options.storageProviderLabel) || !options.canonicalPodUrl) {
+  if (!options.canonicalPodUrl) {
     return null
   }
 
@@ -76,6 +76,10 @@ export async function resolveBestLocalAccessRoute(
     ?? baseUrlFromPodUrl(options.canonicalPodUrl)
   const canonicalPodUrl = normalizePodUrl(options.canonicalPodUrl)
   if (!canonicalBaseUrl || !canonicalPodUrl) {
+    return null
+  }
+
+  if (!isLocalProvider(options.storageProviderLabel) && !snapshotMatchesCanonicalBase(snapshot, canonicalBaseUrl)) {
     return null
   }
 
@@ -426,6 +430,19 @@ function routePriority(kind: LocalAccessRouteKind): number {
 function isLocalProvider(storageProviderLabel?: string | null): boolean {
   const normalized = storageProviderLabel?.trim().toLowerCase()
   return normalized === 'local' || normalized === 'standalone'
+}
+
+function snapshotMatchesCanonicalBase(snapshot: LocalOnboardingSnapshot, canonicalBaseUrl: string): boolean {
+  const canonical = normalizeBaseUrl(canonicalBaseUrl)
+  if (!canonical) {
+    return false
+  }
+
+  return [
+    snapshot.publicUrl,
+    snapshot.baseUrl,
+    snapshot.localUrl,
+  ].some((url) => normalizeBaseUrl(url) === canonical)
 }
 
 function isLoopbackUrl(url?: string | null): boolean {

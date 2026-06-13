@@ -72,7 +72,11 @@ async function withPatchedEnv(t, env, fn) {
 
   for (const [key, value] of Object.entries(env)) {
     originals.set(key, process.env[key])
-    process.env[key] = value
+    if (value === undefined) {
+      delete process.env[key]
+    } else {
+      process.env[key] = value
+    }
   }
 
   t.after(() => {
@@ -138,6 +142,8 @@ test('auto-mode backend process inherits Solid auth home for xpod CLI tools', as
     SOLID_HOME: solidHome,
     LINX_HOME: linxHome,
     FAKE_ACP_LOG: logFile,
+    OPENAI_API_KEY: undefined,
+    CODEX_API_KEY: undefined,
   }, async () => {
     const exitCode = await module.runAutoMode({
       backend: 'codex',
@@ -941,6 +947,8 @@ rl.on('line', (line) => {
     LINX_HOME: linxHome,
     LINX_AUTO_MODE_PLAIN: '1',
     FAKE_ACP_LOG: logFile,
+    OPENAI_API_KEY: undefined,
+    CODEX_API_KEY: undefined,
   }, async () => {
     const exitCode = await module.runAutoMode({
       backend: 'codex',
@@ -1207,6 +1215,8 @@ rl.on('line', (line) => {
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
     LINX_HOME: linxHome,
     FAKE_ACP_LOG: logFile,
+    OPENAI_API_KEY: undefined,
+    CODEX_API_KEY: undefined,
   }, async () => {
     const exitCode = await module.runAutoMode({
       backend: 'codex',

@@ -5,32 +5,33 @@
  * enabling reactive data management with Solid Pod persistence.
  */
 
-import type { PodTable, InferTableData, InferInsertData, InferUpdateData, QueryCondition } from '@undefineds.co/drizzle-solid'
-import { requireRowResourceId, type SolidDatabase } from '@undefineds.co/models'
+import type { PodResource as PodResourceSchema, InferTableData, InferInsertData, InferUpdateData, QueryCondition } from '@undefineds.co/drizzle-solid'
+import type { SolidDatabase } from '@undefineds.co/models'
+import { requireRowResourceId } from './resource-identity'
 import { deleteExactRecord, findExactRecord, updateExactRecord } from './exact-records'
 
 /**
  * Options for creating a Solid Pod collection
  */
 export interface SolidCollectionOptions<
-  TTable extends PodTable<any>,
-  TRow extends Record<string, unknown> = InferTableData<TTable>,
+  TResource extends PodResourceSchema<any>,
+  TRow extends Record<string, unknown> = InferTableData<TResource>,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _TInsert = InferInsertData<TTable>,
+  _TInsert = InferInsertData<TResource>,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _TUpdate = InferUpdateData<TTable>,
+  _TUpdate = InferUpdateData<TResource>,
 > {
   /** The drizzle-solid resource schema */
-  resource: TTable
+  resource: TResource
   
   /** Function to extract unique key from a row */
   getKey: (item: TRow) => string
   
   /** Optional: transform row from database to collection item */
-  transform?: (row: InferTableData<TTable>) => TRow
+  transform?: (row: InferTableData<TResource>) => TRow
   
   /** Optional: filter condition for queries */
-  filter?: (resource: TTable) => QueryCondition | undefined
+  filter?: (resource: TResource) => QueryCondition | undefined
   
   /** Optional: sort configuration */
   orderBy?: {
@@ -76,16 +77,16 @@ export interface SolidCollectionResult<
  * ```
  */
 export function solidCollectionOptions<
-  TTable extends PodTable<any>,
-  TRow extends Record<string, unknown> = InferTableData<TTable>,
-  TInsert = InferInsertData<TTable>,
-  TUpdate = InferUpdateData<TTable>,
+  TResource extends PodResourceSchema<any>,
+  TRow extends Record<string, unknown> = InferTableData<TResource>,
+  TInsert = InferInsertData<TResource>,
+  TUpdate = InferUpdateData<TResource>,
 >(
-  options: SolidCollectionOptions<TTable, TRow, TInsert, TUpdate>
+  options: SolidCollectionOptions<TResource, TRow, TInsert, TUpdate>
 ): SolidCollectionResult<TRow, TInsert, TUpdate> {
   const { resource, getKey, transform, filter, orderBy } = options
   
-  const transformRow = transform ?? ((row: InferTableData<TTable>) => row as unknown as TRow)
+  const transformRow = transform ?? ((row: InferTableData<TResource>) => row as unknown as TRow)
   
   const queryFn = async (db: SolidDatabase): Promise<TRow[]> => {
     let query = db.select().from(resource)
@@ -103,14 +104,14 @@ export function solidCollectionOptions<
     }
     
     const rows = await query.execute()
-    return rows.map(row => transformRow(row as InferTableData<TTable>))
+    return rows.map(row => transformRow(row as InferTableData<TResource>))
   }
   
   const onInsert = async (db: SolidDatabase, item: TRow): Promise<TRow> => {
-    const rows = await db.insert(resource).values(item as InferInsertData<TTable>).execute()
+    const rows = await db.insert(resource).values(item as InferInsertData<TResource>).execute()
     const created = rows?.[0]
     if (created) {
-      return transformRow(created as InferTableData<TTable>)
+      return transformRow(created as InferTableData<TResource>)
     }
     // Fallback: return the input item with generated ID
     return item
@@ -123,7 +124,7 @@ export function solidCollectionOptions<
   ): Promise<TRow | null> => {
     await updateExactRecord(db, resource as any, id, updates as Record<string, unknown>)
     const record = await findExactRecord(db, resource as any, id)
-    return record ? transformRow(record as InferTableData<TTable>) : null
+    return record ? transformRow(record as InferTableData<TResource>) : null
   }
   
   const onDelete = async (db: SolidDatabase, id: string): Promise<void> => {

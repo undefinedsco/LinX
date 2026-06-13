@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PodCollectionsBootstrap } from './pod-collections-bootstrap'
 
@@ -9,7 +9,9 @@ const initializeFavoriteCollectionsMock = vi.fn()
 const initializeInboxCollectionsMock = vi.fn()
 const initializeModelCollectionsMock = vi.fn()
 const ensureLinxWelcomeMock = vi.fn()
+const subscribeToPodMock = vi.fn()
 const invalidateQueriesMock = vi.fn()
+const toastMock = vi.fn()
 const selectChatMock = vi.fn()
 const selectThreadMock = vi.fn()
 let chatStoreState = {
@@ -25,10 +27,10 @@ vi.mock('@/modules/chat/collections', () => ({
   initializeChatCollections: (...args: unknown[]) => initializeChatCollectionsMock(...args),
   LINX_DEFAULT_SECRETARY: {
     chatId: '__secretary__/index.ttl#this',
-    threadId: 'chat/__secretary__/index.ttl#default',
   },
   chatOps: {
     ensureLinxWelcome: (...args: unknown[]) => ensureLinxWelcomeMock(...args),
+    subscribeToPod: (...args: unknown[]) => subscribeToPodMock(...args),
   },
 }))
 
@@ -46,6 +48,10 @@ vi.mock('@/modules/chat/store', () => ({
       selectThread: selectThreadMock,
     }),
   },
+}))
+
+vi.mock('@/components/ui/use-toast', () => ({
+  useToast: () => ({ toast: toastMock }),
 }))
 
 vi.mock('@/modules/contacts/collections', () => ({
@@ -69,6 +75,7 @@ describe('PodCollectionsBootstrap', () => {
     vi.clearAllMocks()
     useSolidDatabaseMock.mockReturnValue({ db: null })
     ensureLinxWelcomeMock.mockResolvedValue(null)
+    subscribeToPodMock.mockResolvedValue(() => undefined)
     invalidateQueriesMock.mockResolvedValue(undefined)
     chatStoreState = {
       selectedChatId: null,
@@ -93,12 +100,13 @@ describe('PodCollectionsBootstrap', () => {
     expect(initializeInboxCollectionsMock).toHaveBeenCalledWith(null)
     expect(initializeModelCollectionsMock).toHaveBeenCalledWith(null)
     expect(ensureLinxWelcomeMock).not.toHaveBeenCalled()
+    expect(subscribeToPodMock).not.toHaveBeenCalled()
   })
 
-  it('prepares the LinX welcome chat before rendering children after collections receive a ready database', async () => {
+  it('stages the LinX welcome chat and renders children while Pod persistence continues in the background', async () => {
     const db = { id: 'db' }
-    let resolveWelcome: ((value: { chatId: string; threadId: string; created: boolean }) => void) | undefined
-    const welcomePromise = new Promise<{ chatId: string; threadId: string; created: boolean }>((resolve) => {
+    let resolveWelcome: ((value: { chatId: string; created: boolean }) => void) | undefined
+    const welcomePromise = new Promise<{ chatId: string; created: boolean }>((resolve) => {
       resolveWelcome = resolve
     })
     useSolidDatabaseMock.mockReturnValue({ db })
@@ -115,18 +123,20 @@ describe('PodCollectionsBootstrap', () => {
     expect(initializeFavoriteCollectionsMock).toHaveBeenCalledWith(db)
     expect(initializeInboxCollectionsMock).toHaveBeenCalledWith(db)
     expect(initializeModelCollectionsMock).toHaveBeenCalledWith(db)
+    expect(subscribeToPodMock).toHaveBeenCalledTimes(1)
     expect(ensureLinxWelcomeMock).toHaveBeenCalledTimes(1)
     expect(ensureLinxWelcomeMock).toHaveBeenCalledWith({ force: false })
-    expect(screen.getByText('正在准备默认助手')).toBeTruthy()
-    expect(screen.queryByText('ready app')).toBeNull()
+    expect(selectChatMock).toHaveBeenCalledWith('__secretary__/index.ttl#this')
+    expect(selectThreadMock).not.toHaveBeenCalled()
+    expect(screen.queryByText('正在准备默认助手')).toBeNull()
+    expect(screen.getByText('ready app')).toBeTruthy()
+    expect(invalidateQueriesMock).toHaveBeenCalledWith({ queryKey: ['chats'] })
 
     await act(async () => {
-      resolveWelcome?.({ chatId: 'secretary-chat', threadId: 'secretary-thread', created: true })
+      resolveWelcome?.({ chatId: 'secretary-chat', created: true })
       await welcomePromise
     })
 
-    expect(selectChatMock).toHaveBeenCalledWith('secretary-chat')
-    expect(selectThreadMock).toHaveBeenCalledWith('secretary-thread')
     expect(invalidateQueriesMock).toHaveBeenCalledWith({ queryKey: ['chats'] })
     expect(invalidateQueriesMock).toHaveBeenCalledWith({ queryKey: ['chats', 'secretary-chat', 'threads'] })
     expect(screen.getByText('ready app')).toBeTruthy()
@@ -139,7 +149,7 @@ describe('PodCollectionsBootstrap', () => {
       selectedThreadId: 'user-thread',
     }
     useSolidDatabaseMock.mockReturnValue({ db })
-    ensureLinxWelcomeMock.mockResolvedValue({ chatId: 'secretary-chat', threadId: 'secretary-thread', created: false })
+    ensureLinxWelcomeMock.mockResolvedValue({ chatId: 'secretary-chat', created: false })
 
     render(<PodCollectionsBootstrap><div>ready app</div></PodCollectionsBootstrap>)
 
@@ -151,33 +161,30 @@ describe('PodCollectionsBootstrap', () => {
     expect(selectThreadMock).not.toHaveBeenCalled()
   })
 
-  it('shows a retryable error instead of spinning forever when LinX welcome preparation fails', async () => {
+  it('keeps the app visible when background LinX welcome persistence fails', async () => {
     const db = { id: 'db' }
     useSolidDatabaseMock.mockReturnValue({ db })
-    ensureLinxWelcomeMock
-      .mockRejectedValueOnce(new Error('Pod write failed'))
-      .mockResolvedValueOnce({ chatId: 'secretary-chat', threadId: 'secretary-thread', created: true })
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    ensureLinxWelcomeMock.mockRejectedValueOnce(new Error('Pod write failed'))
 
     render(<PodCollectionsBootstrap><div>ready app</div></PodCollectionsBootstrap>)
-
-    expect(await screen.findByText('默认助手准备失败')).toBeTruthy()
-    expect(screen.getByText('LinX 还不能在当前空间保存数据。请返回空间选择页，换一个空间后重试。')).toBeTruthy()
-    expect(screen.queryByText('Pod write failed')).toBeNull()
-    expect(screen.queryByText('ready app')).toBeNull()
-
-    fireEvent.click(screen.getByText('重试'))
 
     await waitFor(() => {
       expect(screen.getByText('ready app')).toBeTruthy()
     })
-
-    expect(ensureLinxWelcomeMock).toHaveBeenCalledTimes(2)
-    expect(ensureLinxWelcomeMock).toHaveBeenLastCalledWith({ force: true })
+    await waitFor(() => {
+      expect(warnSpy).toHaveBeenCalled()
+    })
+    expect(screen.queryByText('默认助手准备失败')).toBeNull()
+    expect(screen.queryByText('Pod write failed')).toBeNull()
+    expect(ensureLinxWelcomeMock).toHaveBeenCalledTimes(1)
+    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({
+      variant: 'destructive',
+    }))
+    warnSpy.mockRestore()
   })
 
-  it('does not render children when default Secretary persistence times out', async () => {
-    vi.useFakeTimers()
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+  it('does not block children while default Secretary persistence is still pending', async () => {
     const db = { id: 'db' }
     useSolidDatabaseMock.mockReturnValue({ db })
     ensureLinxWelcomeMock.mockReturnValue(new Promise(() => {}))
@@ -185,15 +192,14 @@ describe('PodCollectionsBootstrap', () => {
     render(<PodCollectionsBootstrap><div>ready app</div></PodCollectionsBootstrap>)
 
     await act(async () => {
-      vi.advanceTimersByTime(45_000)
       await Promise.resolve()
     })
 
-    expect(screen.getByText('默认助手准备失败')).toBeTruthy()
-    expect(screen.queryByText('ready app')).toBeNull()
+    expect(screen.getByText('ready app')).toBeTruthy()
+    expect(screen.queryByText('默认助手准备失败')).toBeNull()
     expect(screen.queryByText('正在准备默认助手')).toBeNull()
-    expect(selectChatMock).not.toHaveBeenCalled()
+    expect(selectChatMock).toHaveBeenCalledWith('__secretary__/index.ttl#this')
     expect(selectThreadMock).not.toHaveBeenCalled()
-    warnSpy.mockRestore()
+    expect(toastMock).not.toHaveBeenCalled()
   })
 })

@@ -20,6 +20,8 @@ import {
 const PROVIDER_CHECK_TIMEOUT = 5000
 const AUTH_SURFACE_HANDOFF_TIMEOUT_MS = 250
 const LOGIN_SETUP_TIMEOUT_MS = 10000
+const LOGIN_SETUP_RETRY_ATTEMPTS = 2
+const LOGIN_SETUP_RETRY_DELAY_MS = 500
 const CANCELLED = Symbol('oidc-connect-cancelled')
 
 interface OidcConnectOptions {
@@ -38,7 +40,8 @@ interface OidcConnectOptions {
 }
 
 export function useOidcConnect() {
-  const { login } = useSession()
+  const solidSession = useSession()
+  const login = solidSession.session?.login ?? solidSession.login
   const connectingRef = useRef(false)
   const generationRef = useRef(0)
   const cancelRef = useRef<{ generation: number; resolve: () => void } | null>(null)
@@ -50,9 +53,11 @@ export function useOidcConnect() {
     const strictDiscovery = options?.strict || isLoopbackUrl(normalizedEntryUrl)
 
     try {
-      const desktopResolvedIssuer = strictDiscovery
-        ? await resolveDesktopOidcIssuer(normalizedEntryUrl)
-        : null
+      if (!strictDiscovery) {
+        return normalizedEntryUrl
+      }
+
+      const desktopResolvedIssuer = await resolveDesktopOidcIssuer(normalizedEntryUrl)
       if (desktopResolvedIssuer) {
         return desktopResolvedIssuer
       }
@@ -94,7 +99,17 @@ export function useOidcConnect() {
     try {
       clearUnrestorableSolidAuthState()
 
-      const normalizedEntryUrl = issuerUrl.replace(/\/$/, '')
+      const requestedEntryUrl = issuerUrl.replace(/\/$/, '')
+      const explicitAccountIssuerUrl = normalizeLoginUrl(options?.accountIssuerUrl)
+      const explicitStorageProviderUrl = normalizeLoginUrl(options?.storageProviderUrl)
+      const normalizedEntryUrl = shouldUseAccountAuthorityEntry({
+        route: options?.route,
+        requestedEntryUrl,
+        accountIssuerUrl: explicitAccountIssuerUrl,
+        storageProviderUrl: explicitStorageProviderUrl,
+      })
+        ? explicitAccountIssuerUrl!
+        : requestedEntryUrl
       const cancelSignal = createDeferred<typeof CANCELLED>()
       cancelRef.current = {
         generation,
@@ -112,10 +127,9 @@ export function useOidcConnect() {
         ?? getPendingPostLoginMicroAppId()
         ?? resolvePostLoginMicroAppId()
       ensurePendingPostLoginMicroAppId(returnToMicroAppId)
-      const explicitAccountIssuerUrl = normalizeLoginUrl(options?.accountIssuerUrl)
       const oidcIssuerUrl = resolvedIssuerUrl
       const accountIssuerUrl = explicitAccountIssuerUrl ?? oidcIssuerUrl
-      const storageProviderUrl = normalizeLoginUrl(options?.storageProviderUrl) ?? normalizedEntryUrl
+      const storageProviderUrl = explicitStorageProviderUrl ?? requestedEntryUrl
       const accountIssuerLabel = options?.accountIssuerLabel ?? options?.issuerLabel
       const authorizationQuery = sanitizeAuthorizationQuery(options?.authorizationQuery)
       const route = options?.route ?? inferLoginRoute({
@@ -222,26 +236,14 @@ export function useOidcConnect() {
         ;(loginOptions as Parameters<typeof login>[0] & { prompt: 'none' | 'consent' }).prompt = options.prompt
       }
 
-      const loginPromise = Promise.resolve(login(loginOptions))
-      void loginPromise.catch(() => {
-        // Setup failures are handled by the races below. If a cancelled stale
-        // login later rejects, it must not surface as an unhandled rejection.
+      await runLoginSetupWithRetry({
+        login: () => login(loginOptions),
+        redirectStarted,
+        cancelPromise: cancelSignal.promise,
+        timeoutMessage: redirectStarted
+          ? '登录窗口打开超时，请重试。'
+          : '登录跳转超时，请重试。',
       })
-
-      if (redirectStarted) {
-        await Promise.race([
-          redirectStarted.promise,
-          loginPromise,
-          timeout(LOGIN_SETUP_TIMEOUT_MS, '登录窗口打开超时，请重试。'),
-          cancelSignal.promise,
-        ])
-      } else {
-        await Promise.race([
-          loginPromise,
-          timeout(LOGIN_SETUP_TIMEOUT_MS, '登录跳转超时，请重试。'),
-          cancelSignal.promise,
-        ])
-      }
     } catch (error) {
       clearPendingLoginAttempt()
       clearPendingPostLoginMicroAppId()
@@ -277,6 +279,40 @@ function isLoopbackUrl(url: string): boolean {
   }
 }
 
+function shouldUseAccountAuthorityEntry(input: {
+  route?: LoginRoute
+  requestedEntryUrl: string
+  accountIssuerUrl: string | null
+  storageProviderUrl: string | null
+}): boolean {
+  if (input.route !== 'local') {
+    return false
+  }
+
+  if (!input.accountIssuerUrl || !input.storageProviderUrl) {
+    return false
+  }
+
+  const accountOrigin = normalizeOrigin(input.accountIssuerUrl)
+  const storageOrigin = normalizeOrigin(input.storageProviderUrl)
+  if (!accountOrigin || !storageOrigin || accountOrigin === storageOrigin) {
+    return false
+  }
+
+  // Local+Cloud uses Cloud for OIDC and the selected Local SP for storage.
+  // If a caller still passes the SP URL as the first argument, correct the
+  // login entry before discovery so Local never becomes the token issuer.
+  return normalizeOrigin(input.requestedEntryUrl) === storageOrigin
+}
+
+function normalizeOrigin(url: string): string | null {
+  try {
+    return new URL(url).origin
+  } catch {
+    return null
+  }
+}
+
 async function resolveDesktopOidcIssuer(url: string): Promise<string | null> {
   const desktopApi = typeof window !== 'undefined' ? window.xpodDesktop : undefined
   if (!desktopApi?.auth?.resolveOidcIssuer) {
@@ -297,6 +333,66 @@ function timeout<T>(ms: number, message: string): Promise<T> {
   return new Promise((_, reject) => {
     window.setTimeout(() => reject(new Error(message)), ms)
   })
+}
+
+async function runLoginSetupWithRetry(input: {
+  login: () => Promise<void>
+  redirectStarted: ReturnType<typeof createDeferred<void>> | null
+  cancelPromise: Promise<typeof CANCELLED>
+  timeoutMessage: string
+}): Promise<void | typeof CANCELLED> {
+  let lastError: unknown
+
+  for (let attempt = 1; attempt <= LOGIN_SETUP_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      return await runLoginSetupOnce(input)
+    } catch (error) {
+      lastError = error
+      if (attempt >= LOGIN_SETUP_RETRY_ATTEMPTS || !isTransientLoginSetupError(error)) {
+        throw error
+      }
+      await delay(LOGIN_SETUP_RETRY_DELAY_MS * attempt)
+    }
+  }
+
+  throw lastError
+}
+
+async function runLoginSetupOnce(input: {
+  login: () => Promise<void>
+  redirectStarted: ReturnType<typeof createDeferred<void>> | null
+  cancelPromise: Promise<typeof CANCELLED>
+  timeoutMessage: string
+}): Promise<void | typeof CANCELLED> {
+  const loginPromise = Promise.resolve(input.login())
+  void loginPromise.catch(() => {
+    // Setup failures are handled by the races below. If a cancelled stale
+    // login later rejects, it must not surface as an unhandled rejection.
+  })
+
+  if (input.redirectStarted) {
+    return Promise.race<void | typeof CANCELLED>([
+      input.redirectStarted.promise,
+      loginPromise,
+      timeout(LOGIN_SETUP_TIMEOUT_MS, input.timeoutMessage),
+      input.cancelPromise,
+    ])
+  }
+
+  return Promise.race<void | typeof CANCELLED>([
+    loginPromise,
+    timeout(LOGIN_SETUP_TIMEOUT_MS, input.timeoutMessage),
+    input.cancelPromise,
+  ])
+}
+
+function isTransientLoginSetupError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return /Failed to fetch|ERR_NETWORK|network|NetworkError|fetch failed|登录页打开失败/i.test(message)
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
 }
 
 function createDeferred<T>() {

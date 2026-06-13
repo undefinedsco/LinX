@@ -58,17 +58,20 @@ vi.mock('@/providers/solid-database-provider', () => ({
 
 vi.mock('@undefineds.co/models', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@undefineds.co/models')>()
+  const mockResource = {
+    buildId: ({ id }: { id: string }) => id,
+  }
   return {
     ...actual,
-    chatTable: {},
-    threadTable: {},
-    workspaceTable: {},
-    messageTable: {},
-    agentTable: {},
-    contactTable: {},
-    credentialTable: {},
-    solidProfileTable: {},
-    favoriteTable: {},
+    chatResource: mockResource,
+    threadResource: mockResource,
+    workspaceResource: mockResource,
+    messageResource: mockResource,
+    agentResource: mockResource,
+    contactResource: mockResource,
+    credentialResource: mockResource,
+    solidProfileResource: mockResource,
+    favoriteResource: mockResource,
     eq: vi.fn(),
     getBuiltinProvider: vi.fn(),
   }

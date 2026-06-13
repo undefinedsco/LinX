@@ -67,7 +67,7 @@ vi.mock('@/modules/chat/store', () => ({
 }))
 
 vi.mock('@/lib/data/use-entity', () => ({
-  useEntity: (_table: unknown, entityUri: string | null) => ({
+  useEntity: (_resource: unknown, entityUri: string | null) => ({
     data: entityUri ? (mockEntityByUri.get(entityUri) ?? null) : null,
     isLoading: false,
     error: mockEntityError.current,
