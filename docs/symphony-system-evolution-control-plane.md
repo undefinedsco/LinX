@@ -892,6 +892,18 @@ After execution, Symphony should update the system situation with what changed,
 what remains open, which assumptions were confirmed or rejected, and what should
 be ignored as obsolete.
 
+Secretary/control lane must also run post-run reconciliation after every
+terminal Delivery or Report. This is not worker-owned. Secretary reviews the
+Report, Evidence, RunSteps, failed attempts, review findings, and accepted
+compromises to extract follow-up candidates: shared APIs that should move into
+`models` or `drizzle-solid`, app-local glue, live-verification gaps, schema or
+protocol gaps, cleanup/migration work, or repeated failed approaches. Each
+candidate is classified as `same_issue_task`, `new_issue`, `idea`,
+`evidence_only`, or `ask_user`. A new Issue must link provenance back to the
+originating Issue, Task, Delivery, Report, Evidence, Run, Thread, and source
+message where available. If no Issue is created, Secretary records why the
+finding was folded into the current Issue, deferred, duplicate, or evidence-only.
+
 ## 5. Quality Metrics And Reporting
 
 Symphony needs feedback loops for itself. The goal is not generic analytics and

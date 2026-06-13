@@ -228,6 +228,8 @@ test('renders delegated runtime prompt with objective criteria session and works
   assert.match(prompt, /Write only execution facts/)
   assert.match(prompt, /Do not close Issues/)
   assert.match(prompt, /structured report so AI Secretary can persist them/)
+  assert.match(prompt, /explicitly list follow-up candidates separately from assigned-work evidence/)
+  assert.match(prompt, /Secretary classifies these; do not create or close Issues yourself/)
   assert.match(prompt, /workspace path is local to this worker environment/)
   assert.match(prompt, /repo-relative paths plus base revision/)
   assert.match(prompt, /patch or artifact references/)

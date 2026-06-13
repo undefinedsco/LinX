@@ -517,6 +517,7 @@ export function renderSymphonyRuntimePrompt(input: {
     '- Report blockers to AI Secretary instead of asking the user directly.',
     '- Do not read sibling worker transcripts unless Secretary explicitly includes them in a Delivery.',
     '- Preserve a concise report with changed files, commands run, and remaining risks.',
+    '- In the final report, explicitly list follow-up candidates separately from assigned-work evidence: new defects, missing shared abstractions, app-local glue to move into shared models, storage, or adapter packages, live verification gaps, or deferred cleanup. Secretary classifies these; do not create or close Issues yourself.',
     '- If blocked by missing credentials, destructive actions, or unclear scope, report the blocker instead of guessing.',
     '- Your workspace path is local to this worker environment. Same-Thread workers in this environment may share it, but do not assume Secretary, the user, or workers in other environments can access the same absolute path.',
     '- When reporting file work across environments, include repo-relative paths plus base revision, checksums/etags, patch or artifact references, and verification evidence.',

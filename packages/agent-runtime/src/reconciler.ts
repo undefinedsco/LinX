@@ -411,10 +411,10 @@ function selectWakeJobs(
       return [createSecretaryWakeJob(policy, event, placement, 'Symphony Delivery submissions wake Secretary for review or routing.', 'normal', createdAt, randomId)]
     }
     if (event.type === 'delivery.completed') {
-      return [createSecretaryWakeJob(policy, event, placement, 'Symphony completion Delivery wakes Secretary for quality and acceptance reconciliation.', 'high', createdAt, randomId)]
+      return [createSecretaryWakeJob(policy, event, placement, 'Symphony completion Delivery wakes Secretary for quality, acceptance, and follow-up extraction reconciliation.', 'high', createdAt, randomId)]
     }
     if (event.type === 'delivery.failed') {
-      return [createSecretaryWakeJob(policy, event, placement, 'Symphony failed Delivery wakes Secretary for feasibility, retry, or scope change reconciliation.', 'high', createdAt, randomId)]
+      return [createSecretaryWakeJob(policy, event, placement, 'Symphony failed Delivery wakes Secretary for feasibility, retry, scope change, or follow-up extraction reconciliation.', 'high', createdAt, randomId)]
     }
     if (event.type === 'issue.updated' || event.type === 'task.updated' || event.type === 'run.updated') {
       return [createSecretaryWakeJob(policy, event, placement, 'Symphony state changes wake Secretary to reconcile system state.', 'normal', createdAt, randomId)]

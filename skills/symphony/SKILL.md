@@ -566,6 +566,11 @@ Worker-facing minimum contract:
   Issue to `blocked`.
 - Use Delivery only for stage results, async handoff, artifacts, proposed
   patches, verification evidence, and final reports.
+- In final reports, explicitly separate assigned-work evidence from follow-up
+  candidates: new defects, missing shared abstractions, app-local glue that
+  should move to models/drizzle-solid/xpod, live-verification gaps, or
+  deferred cleanup. Workers may recommend follow-up, but they do not decide
+  whether it becomes a new Issue.
 - Never use chat, Delivery, or repo docs to redefine scope, acceptance,
   compatibility, lifecycle state, or release boundary. Write an Implementation
   Change Request instead.
@@ -669,6 +674,51 @@ Delivery -> report
 If a failed attempt exposed an independent product bug or future concern, link
 or promote it through Idea/Issue binding. Otherwise keep it as RunStep/Evidence
 under the current work so the system learns without multiplying issues.
+
+## Post-Run Reconciliation And Follow-Up Extraction
+
+Worker completion is not the end of Secretary work. After every terminal
+Delivery or Report, Secretary/control lane must perform a post-run
+reconciliation pass before closing the Task/Issue.
+
+The pass has two separate questions:
+
+1. Did the assigned work satisfy current acceptance with sufficient evidence?
+2. Did the execution reveal new work that should be tracked separately?
+
+Secretary must inspect the worker Report, Evidence, RunSteps, failed attempts,
+review findings, and any local compromises. It should extract follow-up
+candidates even when the worker did not label them explicitly. Typical signals:
+
+- app-local glue that should be moved into a shared package such as
+  `@undefineds.co/models`, `drizzle-solid`, xpod CLI, or shared runtime;
+- missing repository/helper APIs exposed by repeated shell-side composition;
+- live Pod/cloud/manual verification that was intentionally left out;
+- schema, protocol, permission, auth, or persistence gaps discovered while
+  implementing the assigned task;
+- cleanup, migration, compatibility, release, or documentation work that is
+  not required to accept the current Delivery but should not be forgotten;
+- repeated failed approaches or flaky behavior that future work should avoid.
+
+Secretary owns classification. A worker may propose a follow-up but must not
+create or close Issues, rewrite acceptance, or re-split the roadmap unless the
+Delivery explicitly grants that authority.
+
+Classify each follow-up candidate as one of:
+
+- `same_issue_task`: append a Task or remaining-work item to the current Issue;
+- `new_issue`: create a separate Issue and link the source Report/Evidence/Run;
+- `idea`: capture as an Idea because scope, value, or acceptance is not clear;
+- `evidence_only`: keep as a finding/proof without new work;
+- `ask_user`: escalate only when user-owned intent, authority, priority, or
+  acceptance is required.
+
+When creating a new Issue, link provenance back to the originating Issue, Task,
+Delivery, Report, Evidence, Run, Thread, and source message where available.
+When no new Issue is created, record why the finding is evidence-only,
+deferred, duplicate, or folded into the current Issue. This prevents workers
+from missing second-order architecture/product gaps and prevents the main
+thread from silently losing follow-up work after a successful Delivery.
 
 ## Evidence Feedback
 
