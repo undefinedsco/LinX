@@ -237,12 +237,14 @@ function appendCloudDebugDetails(message: string, error: unknown): string {
 
   const responseBody = typeof error.responseBody === 'string' ? error.responseBody : ''
   const status = typeof error.status === 'number' ? error.status : undefined
-  if (!responseBody && status === undefined) {
+  const requestSummary = isRecord(error.requestSummary) ? error.requestSummary : undefined
+  if (!responseBody && status === undefined && !requestSummary) {
     return message
   }
 
   const parts = [
     status === undefined ? undefined : `status=${status}`,
+    formatRemoteRequestSummaryDebug(requestSummary),
     responseBody ? `response=${truncateCloudDebug(responseBody)}` : undefined,
   ].filter(Boolean)
 
@@ -257,6 +259,21 @@ function isTruthyEnv(name: string): boolean {
 function truncateCloudDebug(value: string): string {
   const trimmed = value.replace(/\s+/g, ' ').trim()
   return trimmed.length > 500 ? `${trimmed.slice(0, 500)}...` : trimmed
+}
+
+function formatRemoteRequestSummaryDebug(summary: Record<string, unknown> | undefined): string | undefined {
+  if (!summary) {
+    return undefined
+  }
+  const messageCount = typeof summary.messageCount === 'number' ? summary.messageCount : undefined
+  const bodyChars = typeof summary.bodyChars === 'number' ? summary.bodyChars : undefined
+  const model = typeof summary.model === 'string' ? summary.model : undefined
+  const parts = [
+    model ? `model=${model}` : undefined,
+    messageCount === undefined ? undefined : `messages=${messageCount}`,
+    bodyChars === undefined ? undefined : `bodyChars=${bodyChars}`,
+  ].filter(Boolean)
+  return parts.length > 0 ? `request=${parts.join(',')}` : undefined
 }
 
 function formatMisclassifiedPodRuntimeTimeout(error: unknown): string | null {
@@ -622,8 +639,10 @@ function emitCompletionResult(
   message: AssistantMessage,
   reply: string | LinxCompletionBackendResult,
 ): void {
-  const content = typeof reply === 'string' ? reply : reply.content ?? ''
   const toolCalls = typeof reply === 'string' ? [] : reply.toolCalls ?? []
+  const content = typeof reply === 'string'
+    ? reply
+    : reply.content || (toolCalls.length > 0 ? '' : reply.reasoningContent ?? '')
   if (!isStringReply(reply) && reply.usage) {
     message.usage = {
       input: reply.usage.input,

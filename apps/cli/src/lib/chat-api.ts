@@ -58,6 +58,13 @@ export interface RemoteCompletionUsage {
   totalTokens: number
 }
 
+export interface RemoteChatRequestSummary {
+  model: string
+  messageCount: number
+  bodyChars: number
+  roles: Record<string, number>
+}
+
 export type RemoteAuthFetch = (url: string, init?: RequestInit) => Promise<Response>
 
 export interface RemoteAuthSessionLike {
@@ -81,6 +88,7 @@ export class RemoteChatRequestError extends Error {
     readonly status: number,
     readonly responseBody: string,
     readonly authExpired: boolean = false,
+    readonly requestSummary?: RemoteChatRequestSummary,
   ) {
     super(message)
     this.name = 'RemoteChatRequestError'
@@ -252,6 +260,8 @@ export async function createRemoteCompletionResult(options: {
     requestBody.tools = tools
     requestBody.tool_choice = 'auto'
   }
+  const requestBodyJson = JSON.stringify(requestBody)
+  const requestSummary = summarizeRemoteChatRequest(requestBody, requestBodyJson.length)
 
   const timeoutMs = resolveChatTimeoutMs()
   const abortSignals = withTimeoutSignal(timeoutMs, options.signal)
@@ -267,7 +277,7 @@ export async function createRemoteCompletionResult(options: {
             'Content-Type': 'application/json',
             Accept: 'application/json',
           },
-          body: JSON.stringify(requestBody),
+          body: requestBodyJson,
         })
       } catch (error) {
         if (isAbortError(error)) {
@@ -276,19 +286,23 @@ export async function createRemoteCompletionResult(options: {
               'LinX Cloud request aborted by user.',
               0,
               error instanceof Error ? error.message : String(error),
+              false,
+              requestSummary,
             )
           }
           throw new RemoteChatRequestError(
             formatLinxCloudTransientMessage(`Request exceeded ${formatTimeoutSeconds(timeoutMs)}s.`),
             0,
             error instanceof Error ? error.message : String(error),
+            false,
+            requestSummary,
           )
         }
         const misclassifiedRuntimeTimeout = normalizeMisclassifiedPodRuntimeTimeout(error)
         if (misclassifiedRuntimeTimeout) {
           throw misclassifiedRuntimeTimeout
         }
-        const transientFailure = normalizeTransientRemoteFailure(error)
+        const transientFailure = normalizeTransientRemoteFailure(error, requestSummary)
         if (transientFailure && shouldRetryRemoteChatAttempt(attempt)) {
           await delay(REMOTE_CHAT_RETRY_DELAYS_MS[attempt]!, undefined, { signal: abortSignals.signal })
           continue
@@ -296,7 +310,7 @@ export async function createRemoteCompletionResult(options: {
         if (transientFailure) {
           throw transientFailure
         }
-        const nonRetryableRemoteFailure = normalizeNonRetryableRemoteFailure(error)
+        const nonRetryableRemoteFailure = normalizeNonRetryableRemoteFailure(error, requestSummary)
         if (nonRetryableRemoteFailure) {
           throw nonRetryableRemoteFailure
         }
@@ -310,7 +324,7 @@ export async function createRemoteCompletionResult(options: {
           await delay(REMOTE_CHAT_RETRY_DELAYS_MS[attempt]!, undefined, { signal: abortSignals.signal })
           continue
         }
-        throw buildRemoteChatRequestError(response.status, responseBody)
+        throw buildRemoteChatRequestError(response.status, responseBody, undefined, requestSummary)
       }
 
       const json = (await response.json()) as {
@@ -334,11 +348,12 @@ export async function createRemoteCompletionResult(options: {
       const reasoningContent = normalizeRemoteReasoning(message)
       const toolCalls = Array.isArray(message?.tool_calls) ? message.tool_calls : []
       const usage = normalizeRemoteUsage(json.usage ?? choice?.usage)
+      const visibleContent = resolveVisibleRemoteContent(content, reasoningContent, toolCalls)
 
-      if (content || reasoningContent || toolCalls.length > 0) {
+      if (visibleContent || reasoningContent || toolCalls.length > 0) {
         return {
-          content,
-          reasoningContent,
+          content: visibleContent,
+          reasoningContent: content ? reasoningContent : undefined,
           toolCalls,
           finishReason: choice?.finish_reason,
           usage,
@@ -355,12 +370,16 @@ export async function createRemoteCompletionResult(options: {
           'LinX Cloud request aborted by user.',
           0,
           error instanceof Error ? error.message : String(error),
+          false,
+          requestSummary,
         )
       }
       throw new RemoteChatRequestError(
         formatLinxCloudTransientMessage(`Request exceeded ${formatTimeoutSeconds(timeoutMs)}s.`),
         0,
         error instanceof Error ? error.message : String(error),
+        false,
+        requestSummary,
       )
     }
     const misclassifiedRuntimeTimeout = normalizeMisclassifiedPodRuntimeTimeout(error)
@@ -401,6 +420,7 @@ function buildRemoteChatRequestError(
   status: number,
   responseBody: string,
   prefix = `Chat request failed (${status})`,
+  requestSummary?: RemoteChatRequestSummary,
 ): RemoteChatRequestError {
   const upstreamMessage = extractRemoteErrorMessage(responseBody, status).trim() || fallbackRemoteErrorMessage(status)
   const authExpired = isInvalidSolidTokenResponse(status, responseBody)
@@ -410,6 +430,7 @@ function buildRemoteChatRequestError(
       status,
       responseBody,
       true,
+      requestSummary,
     )
   }
   if (isTimeoutResponse(status, responseBody)) {
@@ -417,14 +438,18 @@ function buildRemoteChatRequestError(
       formatLinxCloudTransientMessage('Upstream did not return in time.'),
       status,
       responseBody,
+      false,
+      requestSummary,
     )
   }
 
   if (shouldRetryRemoteChatResponse(status, responseBody)) {
     return new RemoteChatRequestError(
-      formatLinxCloudTransientMessage(),
+      formatLinxCloudTransientMessage(formatLargeRequestGatewayDiagnostic(requestSummary)),
       status,
       responseBody,
+      false,
+      requestSummary,
     )
   }
 
@@ -433,6 +458,8 @@ function buildRemoteChatRequestError(
       formatLinxCloudTransientMessage(),
       status,
       responseBody,
+      false,
+      requestSummary,
     )
   }
 
@@ -440,6 +467,8 @@ function buildRemoteChatRequestError(
     `${prefix}: ${upstreamMessage}`,
     status,
     responseBody,
+    false,
+    requestSummary,
   )
 }
 
@@ -457,7 +486,47 @@ function shouldRetryRemoteChatResponse(status: number, responseBody: string): bo
   )
 }
 
-function normalizeTransientRemoteFailure(error: unknown): RemoteChatRequestError | null {
+function summarizeRemoteChatRequest(
+  requestBody: {
+    model: string
+    messages: RemoteChatMessage[]
+  },
+  bodyChars: number,
+): RemoteChatRequestSummary {
+  const roles: Record<string, number> = {}
+  for (const message of requestBody.messages) {
+    roles[message.role] = (roles[message.role] ?? 0) + 1
+  }
+
+  return {
+    model: requestBody.model,
+    messageCount: requestBody.messages.length,
+    bodyChars,
+    roles,
+  }
+}
+
+function formatLargeRequestGatewayDiagnostic(summary: RemoteChatRequestSummary | undefined): string | undefined {
+  if (!summary || summary.bodyChars < 500_000) {
+    return undefined
+  }
+  return `Cloud gateway failed while handling a large request (${summary.messageCount} messages, ${formatCompactCharCount(summary.bodyChars)} request body); this is not a model context-limit verdict.`
+}
+
+function formatCompactCharCount(chars: number): string {
+  if (chars >= 1_000_000) {
+    return `${(chars / 1_000_000).toFixed(1)}M`
+  }
+  if (chars >= 1_000) {
+    return `${Math.round(chars / 1_000)}k`
+  }
+  return String(chars)
+}
+
+function normalizeTransientRemoteFailure(
+  error: unknown,
+  requestSummary?: RemoteChatRequestSummary,
+): RemoteChatRequestError | null {
   const status = resolveTransientRemoteStatus(error)
   if (status === null) {
     return null
@@ -469,13 +538,18 @@ function normalizeTransientRemoteFailure(error: unknown): RemoteChatRequestError
 
   const responseBody = error instanceof Error ? error.message : String(error)
   return new RemoteChatRequestError(
-    formatLinxCloudTransientMessage(),
+    formatLinxCloudTransientMessage(formatLargeRequestGatewayDiagnostic(requestSummary)),
     status,
     responseBody,
+    false,
+    requestSummary,
   )
 }
 
-function normalizeNonRetryableRemoteFailure(error: unknown): RemoteChatRequestError | null {
+function normalizeNonRetryableRemoteFailure(
+  error: unknown,
+  requestSummary?: RemoteChatRequestSummary,
+): RemoteChatRequestError | null {
   const message = error instanceof Error ? error.message : String(error)
   const normalized = message.toLowerCase()
   if (normalized.includes('500') && normalized.includes('fetch failed')) {
@@ -483,6 +557,8 @@ function normalizeNonRetryableRemoteFailure(error: unknown): RemoteChatRequestEr
       formatLinxCloudTransientMessage(),
       500,
       message,
+      false,
+      requestSummary,
     )
   }
   if (normalized.includes('500') && normalized.includes('outgoing request timed out')) {
@@ -490,6 +566,8 @@ function normalizeNonRetryableRemoteFailure(error: unknown): RemoteChatRequestEr
       formatLinxCloudTransientMessage('Upstream did not return in time.'),
       500,
       message,
+      false,
+      requestSummary,
     )
   }
   return null
@@ -722,6 +800,18 @@ function normalizeRemoteContent(content: string | Array<{ type?: string; text?: 
   }
 
   return ''
+}
+
+function resolveVisibleRemoteContent(
+  content: string,
+  reasoningContent: string,
+  toolCalls: RemoteChatToolCall[],
+): string {
+  if (content || toolCalls.length > 0) {
+    return content
+  }
+
+  return reasoningContent
 }
 
 function normalizeRemoteReasoning(message: {

@@ -997,7 +997,12 @@ test('linx interactive /rewind opens a TUI selector for the rollback target', as
   assert.ok(selectorResult?.focus)
   assert.equal(sessionManager.getLeafId() !== firstAssistant, true)
 
+  const originalGetEntry = sessionManager.getEntry.bind(sessionManager)
+  sessionManager.getEntry = (entryId) => entryId === secondUser
+    ? originalGetEntry(firstAssistant)
+    : originalGetEntry(entryId)
   await selectorResult.focus.onSelect(secondUser)
+  sessionManager.getEntry = originalGetEntry
 
   assert.equal(doneCalled, true)
   assert.equal(sessionManager.getLeafId(), firstAssistant)

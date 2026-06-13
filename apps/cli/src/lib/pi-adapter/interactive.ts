@@ -1131,15 +1131,16 @@ async function rewindSessionManagerBeforeUserEntry(
   sessionManager: any,
   entryId: string,
 ): Promise<void> {
-  const entry = typeof sessionManager?.getEntry === 'function'
-    ? sessionManager.getEntry(entryId)
-    : getActiveSessionBranch(sessionManager).find((candidate) => candidate?.id === entryId)
-  if (!entry || entry.type !== 'message' || entry.message?.role !== 'user') {
-    throw new Error('Cannot rewind: selected message is not a user turn in the active branch.')
+  const previousBranch = getActiveSessionBranch(sessionManager)
+  const entry = previousBranch.find((candidate) => String(candidate?.id) === entryId)
+  if (!entry) {
+    throw new Error('Cannot rewind: selected message is no longer in the active branch. Reopen /rewind and choose a current user turn.')
+  }
+  if (entry.type !== 'message' || entry.message?.role !== 'user') {
+    throw new Error('Cannot rewind: selected message is not a user turn.')
   }
 
   const previousState = captureRewindSessionState(sessionManager)
-  const previousBranch = getActiveSessionBranch(sessionManager)
 
   await stopActiveSessionWorkForRewind(session)
   resetPendingAutoInputForRewind(interactive, runtime)

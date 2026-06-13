@@ -277,6 +277,38 @@ test('pi agent stream adapter keeps remote reasoning content out of visible TUI 
   ])
 })
 
+test('pi agent stream adapter displays reasoning-only remote responses as a fallback', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/stream.ts')
+  t.after(() => cleanup())
+
+  const adapter = module.createPiAgentStreamAdapter({
+    completionBackend: {
+      async complete() {
+        return {
+          reasoningContent: 'provider returned the visible answer in reasoning_content',
+          content: '',
+          finishReason: 'stop',
+          toolCalls: [],
+        }
+      },
+    },
+  })
+
+  const events = []
+  for await (const event of adapter.streamFn(undefined, {
+    messages: [{ role: 'user', content: 'answer' }],
+  })) {
+    events.push(event)
+  }
+
+  assert.equal(events[1].type, 'text_start')
+  assert.equal(events[2].type, 'text_delta')
+  assert.equal(events[2].delta, 'provider returned the visible answer in reasoning_content')
+  assert.deepEqual(events.at(-1).message.content, [
+    { type: 'text', text: 'provider returned the visible answer in reasoning_content' },
+  ])
+})
+
 test('pi agent stream adapter attaches remote usage for Pi footer context and cache stats', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/stream.ts')
   t.after(() => cleanup())

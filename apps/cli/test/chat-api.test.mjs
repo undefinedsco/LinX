@@ -393,6 +393,40 @@ test('createRemoteCompletionResult parses OpenAI-compatible reasoning fields', a
   assert.equal(result.content, 'final answer')
 })
 
+test('createRemoteCompletionResult exposes reasoning-only responses as visible content fallback', async () => {
+  globalThis.fetch = async () => ({
+    ok: true,
+    json: async () => ({
+      choices: [
+        {
+          finish_reason: 'stop',
+          message: {
+            reasoning_content: 'visible answer was returned in reasoning_content',
+            content: '',
+          },
+        },
+      ],
+      usage: {
+        prompt_tokens: 10,
+        completion_tokens: 20,
+        total_tokens: 30,
+      },
+    }),
+  })
+
+  const { createRemoteCompletionResult } = await import('../dist/lib/chat-api.js')
+  const result = await createRemoteCompletionResult({
+    runtimeUrl: 'https://api.undefineds.co/v1',
+    apiKey: 'token',
+    model: 'linx',
+    messages: [{ role: 'user', content: 'answer' }],
+  })
+
+  assert.equal(result.content, 'visible answer was returned in reasoning_content')
+  assert.equal(result.reasoningContent, undefined)
+  assert.equal(result.usage.totalTokens, 30)
+})
+
 test('createRemoteCompletionResult maps OpenAI-compatible usage and cache tokens', async () => {
   globalThis.fetch = async () => ({
     ok: true,
@@ -702,6 +736,44 @@ test('createRemoteCompletionResult hides upstream HTML Bad Gateway bodies from u
       assert.doesNotMatch(error.message, /context_length_exceeded/)
       assert.doesNotMatch(error.message, /<html|<\/html>|nginx/i)
       assert.doesNotMatch(error.message, /502|Bad Gateway/i)
+      return true
+    },
+  )
+})
+
+test('createRemoteCompletionResult annotates large Bad Gateway requests with request diagnostics', async () => {
+  let requestCount = 0
+  globalThis.fetch = async () => {
+    requestCount += 1
+    return {
+      ok: false,
+      status: 502,
+      statusText: 'Bad Gateway',
+      text: async () => '<html><body><h1>502 Bad Gateway</h1><hr><center>nginx</center></body></html>',
+    }
+  }
+
+  const { createRemoteCompletionResult, RemoteChatRequestError } = await import('../dist/lib/chat-api.js')
+  await assert.rejects(
+    createRemoteCompletionResult({
+      runtimeUrl: 'https://api.undefineds.co/v1',
+      apiKey: 'token',
+      model: 'linx',
+      messages: [{ role: 'user', content: `large active branch ${'x'.repeat(510_000)}` }],
+    }),
+    (error) => {
+      assert.equal(error instanceof RemoteChatRequestError, true)
+      assert.equal(error.status, 502)
+      assert.equal(requestCount, 4)
+      assert.match(error.message, /LinX Cloud is temporarily unavailable/)
+      assert.match(error.message, /Cloud gateway failed while handling a large request/)
+      assert.match(error.message, /not a model context-limit verdict/)
+      assert.match(error.message, /1 messages/)
+      assert.equal(error.requestSummary.model, 'linx')
+      assert.equal(error.requestSummary.messageCount, 1)
+      assert.equal(error.requestSummary.roles.user, 1)
+      assert.ok(error.requestSummary.bodyChars >= 500_000)
+      assert.doesNotMatch(error.message, /<html|<\/html>|nginx/i)
       return true
     },
   )
