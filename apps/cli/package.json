@@ -1,6 +1,6 @@
 {
   "name": "@undefineds.co/linx",
-  "version": "0.3.5",
+  "version": "0.3.12",
   "private": true,
   "type": "module",
   "bin": {
@@ -9,20 +9,32 @@
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit && node ./scripts/build.mjs",
     "dev": "node ./scripts/dev.mjs",
-    "test": "yarn build && node --test --test-concurrency=1 test/**/*.test.mjs"
+    "test": "yarn build && node --test --test-concurrency=1 test/**/*.test.mjs",
+    "test:live-acp": "node ./scripts/smoke-auto-mode-acp.mjs"
   },
   "dependencies": {
-    "@inrupt/solid-client-authn-node": "^4.0.0",
+    "@inrupt/solid-client-authn-node": "^3.1.1",
     "@linx/agent-runtime": "*",
-    "@mariozechner/pi-coding-agent": "^0.73.1",
-    "@sinclair/typebox": "^0.34.49",
-    "@undefineds.co/models": "0.2.39",
+    "@earendil-works/pi-agent-core": "0.78.0",
+    "@earendil-works/pi-ai": "0.78.0",
+    "@earendil-works/pi-coding-agent": "0.78.0",
+    "@earendil-works/pi-tui": "0.78.0",
+    "@undefineds.co/drizzle-solid": "^0.3.14",
+    "@undefineds.co/models": "0.2.40",
     "@zed-industries/codex-acp": "0.14.0",
-    "n3": "^2.0.3",
-    "yargs": "^18.0.0"
+    "n3": "^1.26.0",
+    "pi-web-access": "^0.10.7",
+    "ws": "^8.20.0",
+    "typebox": "^1.1.38",
+    "yargs": "^17.7.2"
   },
   "devDependencies": {
-    "@types/node": "^25.9.1",
-    "typescript": "^6.0.3"
+    "@types/node": "^24.10.1",
+    "typescript": "^5.6.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/undefinedsco/LinX.git",
+    "directory": "apps/cli"
   }
 }

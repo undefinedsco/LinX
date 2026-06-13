@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "id": "defer-until-active-branch-lands",
+  "title": "Defer Until Active Branch Lands",
+  "purpose": "Validate that a useful but non-urgent requirement is captured as deferred work instead of interrupting active implementation.",
+  "inputPolicy": "user_fragments_only",
+  "expectedFinalIntent": "Preserve the future notification digest idea as deferred roadmap work while keeping the active approval-grant branch unchanged.",
+  "userFragments": [
+    {
+      "id": "u1",
+      "content": "After approval grants work, maybe Secretary should send me a daily digest of what it approved."
+    },
+    {
+      "id": "u2",
+      "content": "Do not interrupt the grant pipeline right now."
+    },
+    {
+      "id": "u3",
+      "content": "Just make sure this is remembered and reviewed after the active branch lands."
+    }
+  ],
+  "secretaryReplies": [
+    {
+      "after": "u1",
+      "content": "This is a future reporting capability related to approval grants, not part of the active grant pipeline implementation."
+    },
+    {
+      "after": "u2",
+      "content": "The control record should mark this as deferred and avoid steering the current branch."
+    },
+    {
+      "after": "u3",
+      "content": "The next step is to link the deferred idea to the approval-grant capability and revisit it after the active branch lands."
+    }
+  ],
+  "acceptance": {
+    "finalOnly": true,
+    "classification": "defer",
+    "systemState": "existing",
+    "workState": "cancelled",
+    "compatibilityImpact": "compatible",
+    "requiredPhrases": [
+      "Deferred follow-up",
+      "Do not interrupt the active approval-grant branch",
+      "review after the active branch lands",
+      "approval-grant capability",
+      "Compatible"
+    ],
+    "forbiddenPhrases": [
+      "Steer the active grant implementation",
+      "Start a digest worker now",
+      "Implementation completed"
+    ]
+  }
+}

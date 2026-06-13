@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "id": "ordinary-chat-no-issue",
+  "title": "Ordinary Chat Does Not Become Issue",
+  "purpose": "Validate that ordinary conversation remains chat and does not create Symphony work.",
+  "inputPolicy": "user_fragments_only",
+  "expectedFinalIntent": "Treat this as ordinary conversation only; do not create or update any issue, spec, or work item.",
+  "userFragments": [
+    {
+      "id": "u1",
+      "content": "Do you prefer coffee or tea?"
+    },
+    {
+      "id": "u2",
+      "content": "Actually, never mind, I'm just thinking out loud."
+    },
+    {
+      "id": "u3",
+      "content": "Anyway, what are you up to?"
+    }
+  ],
+  "secretaryReplies": [
+    {
+      "after": "u1",
+      "content": "This is ordinary conversation, not a system-evolution request. No issue should be created."
+    },
+    {
+      "after": "u2",
+      "content": "Still ordinary chat. I will not promote this to a spec, task, or worker dispatch."
+    },
+    {
+      "after": "u3",
+      "content": "Continue the chat normally. The control record remains no system work."
+    }
+  ],
+  "acceptance": {
+    "finalOnly": true,
+    "classification": "ordinary_message",
+    "systemState": "existing",
+    "workState": "cancelled",
+    "compatibilityImpact": "compatible",
+    "requiredPhrases": [
+      "No system work",
+      "Do not create an Issue, spec, Task, Delivery, or worker session",
+      "does not request system evolution",
+      "Continue normal AI Secretary chat behavior",
+      "Compatible"
+    ],
+    "forbiddenPhrases": [
+      "Create or update a concise feature spec",
+      "Track as a compatibility-affecting contract update"
+    ]
+  }
+}

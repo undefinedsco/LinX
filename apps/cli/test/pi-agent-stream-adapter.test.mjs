@@ -1,5 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 
 test('pi agent stream adapter captures session metadata and exposes a streamFn hook', async (t) => {
@@ -240,7 +243,7 @@ test('pi agent stream adapter forwards tools and emits tool calls for Pi agent l
   assert.equal(events[4].message.stopReason, 'toolUse')
 })
 
-test('pi agent stream adapter emits Pi thinking events from remote reasoning content', async (t) => {
+test('pi agent stream adapter keeps remote reasoning content out of visible TUI output', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/stream.ts')
   t.after(() => cleanup())
 
@@ -264,23 +267,13 @@ test('pi agent stream adapter emits Pi thinking events from remote reasoning con
     events.push(event)
   }
 
-  assert.equal(events[1].type, 'thinking_start')
-  assert.equal(events[2].type, 'thinking_delta')
-  assert.equal(events[2].delta, 'model reasoning trace')
-  assert.equal(events[3].type, 'thinking_end')
-  assert.equal(events[3].content, 'model reasoning trace')
-  assert.equal(events[4].type, 'text_start')
+  assert.equal(events.some((event) => event.type.startsWith('thinking_')), false)
+  assert.equal(events[1].type, 'text_start')
+  assert.equal(events[2].type, 'text_delta')
+  assert.equal(events[2].delta, 'final answer')
   assert.equal(events.at(-1).type, 'done')
-  assert.deepEqual(events.at(-1).message.content.slice(0, 2), [
-    {
-      type: 'thinking',
-      thinking: 'model reasoning trace',
-      thinkingSignature: 'reasoning_content',
-    },
-    {
-      type: 'text',
-      text: 'final answer',
-    },
+  assert.deepEqual(events.at(-1).message.content, [
+    { type: 'text', text: 'final answer' },
   ])
 })
 
@@ -349,7 +342,7 @@ test('pi agent stream adapter preserves assistant tool calls and tool results in
   assert.deepEqual(completionCalls[0].messages.slice(0, 2), [
     {
       role: 'assistant',
-      content: null,
+      content: '',
       tool_calls: [
         {
           id: 'call_1',
@@ -452,7 +445,66 @@ test('pi agent stream adapter preserves DeepSeek reasoning content for tool-resu
   }
 
   assert.equal(completionCalls[0].messages[0].reasoning_content, 'need to inspect cwd')
+  assert.equal(completionCalls[0].messages[0].content, '')
   assert.equal(completionCalls[0].messages[0].tool_calls[0].id, 'call_1')
+})
+
+test('pi agent stream adapter materializes oversized tool results before remote completion', async (t) => {
+  const previousSolidHome = process.env.SOLID_HOME
+  const previousInlineLimit = process.env.LINX_TOOL_RESULT_INLINE_CHAR_LIMIT
+  const previousHeadChars = process.env.LINX_TOOL_RESULT_EXCERPT_HEAD_CHARS
+  const previousTailChars = process.env.LINX_TOOL_RESULT_EXCERPT_TAIL_CHARS
+  const solidHome = mkdtempSync(join(tmpdir(), 'linx-tool-result-artifacts-'))
+
+  process.env.SOLID_HOME = solidHome
+  process.env.LINX_TOOL_RESULT_INLINE_CHAR_LIMIT = '80'
+  process.env.LINX_TOOL_RESULT_EXCERPT_HEAD_CHARS = '24'
+  process.env.LINX_TOOL_RESULT_EXCERPT_TAIL_CHARS = '16'
+
+  t.after(() => {
+    restoreEnv('SOLID_HOME', previousSolidHome)
+    restoreEnv('LINX_TOOL_RESULT_INLINE_CHAR_LIMIT', previousInlineLimit)
+    restoreEnv('LINX_TOOL_RESULT_EXCERPT_HEAD_CHARS', previousHeadChars)
+    restoreEnv('LINX_TOOL_RESULT_EXCERPT_TAIL_CHARS', previousTailChars)
+    rmSync(solidHome, { recursive: true, force: true })
+  })
+
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/stream.ts')
+  t.after(() => cleanup())
+
+  const longToolResult = `fetch result start\n${'x'.repeat(160)}\nfetch result end`
+  const completionCalls = []
+  const adapter = module.createPiAgentStreamAdapter({
+    completionBackend: {
+      async complete(input) {
+        completionCalls.push(input)
+        return 'done'
+      },
+    },
+  })
+
+  for await (const _event of adapter.streamFn(undefined, {
+    messages: [
+      { role: 'assistant', content: [{ type: 'toolCall', id: 'call_fetch', name: 'fetch', arguments: { url: 'https://example.test/long' } }] },
+      { role: 'toolResult', toolCallId: 'call_fetch', toolName: 'fetch', content: [{ type: 'text', text: longToolResult }] },
+      { role: 'user', content: 'summarize the fetched page' },
+    ],
+  })) {
+    // drain
+  }
+
+  const toolMessage = completionCalls[0].messages[1]
+  assert.equal(toolMessage.role, 'tool')
+  assert.match(toolMessage.content, /^\[LinX large tool result materialized\]/)
+  assert.match(toolMessage.content, /tool: fetch/)
+  assert.match(toolMessage.content, /original_chars:/)
+  assert.match(toolMessage.content, /\[\.\.\. omitted \d+ chars; full output is in the artifact file \.\.\.\]/)
+  assert.doesNotMatch(toolMessage.content, /x{80}/)
+
+  const pathMatch = toolMessage.content.match(/^path: (.+)$/m)
+  assert.ok(pathMatch)
+  assert.equal(existsSync(pathMatch[1]), true)
+  assert.equal(readFileSync(pathMatch[1], 'utf-8'), longToolResult)
 })
 
 test('pi agent stream adapter maps expired LinX cloud auth errors to a compact TUI error', async (t) => {
@@ -481,3 +533,68 @@ test('pi agent stream adapter maps expired LinX cloud auth errors to a compact T
   assert.equal(errorEvent.error.errorMessage, 'LinX Cloud login expired.')
   assert.doesNotMatch(errorEvent.error.errorMessage, /Invalid Solid token/)
 })
+
+test('pi agent stream adapter maps misclassified cloud completion Pod timeouts to cloud errors', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/stream.ts')
+  t.after(() => cleanup())
+
+  const adapter = module.createPiAgentStreamAdapter({
+    completionBackend: {
+      async complete() {
+        throw new Error('LinX Pod request timed out after 30s: POST https://api.undefineds.co/v1/chat/completions')
+      },
+    },
+  })
+
+  const events = []
+  for await (const event of adapter.streamFn(undefined, {
+    messages: [{ role: 'user', content: 'hello' }],
+  })) {
+    events.push(event)
+  }
+
+  const errorEvent = events.find((event) => event.type === 'error')
+  assert.ok(errorEvent)
+  assert.equal(errorEvent.error.errorMessage, 'LinX Cloud is temporarily unavailable. Request exceeded 30s. Please retry shortly.')
+})
+
+test('pi agent stream adapter can expose raw cloud error details in debug mode', async (t) => {
+  const previous = process.env.LINX_DEBUG_CLOUD
+  process.env.LINX_DEBUG_CLOUD = '1'
+  t.after(() => restoreEnv('LINX_DEBUG_CLOUD', previous))
+
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/stream.ts')
+  t.after(() => cleanup())
+
+  const adapter = module.createPiAgentStreamAdapter({
+    completionBackend: {
+      async complete() {
+        const error = new Error('LinX Cloud is temporarily unavailable. Please retry shortly.')
+        error.status = 500
+        error.responseBody = '{"error":"Platform AI error: fetch failed"}'
+        throw error
+      },
+    },
+  })
+
+  const events = []
+  for await (const event of adapter.streamFn(undefined, {
+    messages: [{ role: 'user', content: 'hello' }],
+  })) {
+    events.push(event)
+  }
+
+  const errorEvent = events.find((event) => event.type === 'error')
+  assert.ok(errorEvent)
+  assert.match(errorEvent.error.errorMessage, /LinX Cloud is temporarily unavailable/)
+  assert.match(errorEvent.error.errorMessage, /Cloud debug: status=500/)
+  assert.match(errorEvent.error.errorMessage, /Platform AI error: fetch failed/)
+})
+
+function restoreEnv(name, value) {
+  if (value === undefined) {
+    delete process.env[name]
+    return
+  }
+  process.env[name] = value
+}

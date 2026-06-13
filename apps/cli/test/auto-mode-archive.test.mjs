@@ -6,12 +6,18 @@ import { join } from 'node:path'
 import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 
 test('auto-mode archive creates, updates, and lists sessions', async (t) => {
-  const root = mkdtempSync(join(tmpdir(), 'linx-auto-mode-'))
-  process.env.LINX_AUTO_MODE_HOME = root
+  const originalLinxHome = process.env.LINX_HOME
+  const linxHome = mkdtempSync(join(tmpdir(), 'linx-auto-mode-'))
+  const root = join(linxHome, 'auto-mode')
+  process.env.LINX_HOME = linxHome
 
   t.after(() => {
-    delete process.env.LINX_AUTO_MODE_HOME
-    rmSync(root, { recursive: true, force: true })
+    if (originalLinxHome === undefined) {
+      delete process.env.LINX_HOME
+    } else {
+      process.env.LINX_HOME = originalLinxHome
+    }
+    rmSync(linxHome, { recursive: true, force: true })
   })
 
   const { module, cleanup } = await loadAutoModeModule()
@@ -22,14 +28,18 @@ test('auto-mode archive creates, updates, and lists sessions', async (t) => {
     createAutoModeSession,
     finishAutoModeSession,
     loadAutoModeEvents,
+    loadAutoModeSyncCheckpoints,
+    listAutoModeSessionsWithPendingSync,
     listAutoModeSessions,
     loadAutoModeSession,
+    writeAutoModeSyncCheckpoint,
   } = module
 
   const record = createAutoModeSession(
     {
       backend: 'codex',
-      mode: 'smart',
+autoEnabled: true,
+mode: 'auto',
       cwd: '/tmp/demo',
       prompt: 'fix tests',
       passthroughArgs: [],
@@ -63,18 +73,41 @@ test('auto-mode archive creates, updates, and lists sessions', async (t) => {
   assert.equal(listed.length, 1)
   assert.equal(listed[0].id, record.id)
   assert.equal(loadAutoModeEvents(record.id).length, 1)
+  assert.deepEqual(listAutoModeSessionsWithPendingSync().map((item) => item.id), [record.id])
+
+  writeAutoModeSyncCheckpoint(record, {
+    id: 'auto-mode-archive:pod:projection',
+    source: 'auto-mode-archive',
+    target: 'pod',
+    direction: 'local-to-core',
+    plane: 'projection',
+    authority: 'core',
+    status: 'completed',
+    attempted: 1,
+    applied: 1,
+    skipped: 0,
+    failed: 0,
+    failures: [],
+    startedAt: '2026-03-14T00:00:01.000Z',
+    completedAt: '2026-03-14T00:00:02.000Z',
+    metadata: { sessionId: record.id },
+  })
+  assert.equal(loadAutoModeSyncCheckpoints(record.id)['auto-mode-archive:pod:projection'].status, 'completed')
+  assert.deepEqual(listAutoModeSessionsWithPendingSync(), [])
 
   const eventsFile = readFileSync(record.eventsFile, 'utf-8').trim().split('\n')
   assert.equal(eventsFile.length, 1)
   assert.match(eventsFile[0], /assistant\.delta/)
 })
 
-test('auto-mode archive ignores legacy LINX_WORKER_HOME override', async (t) => {
+test('auto-mode archive defaults under HOME-derived SOLID_HOME when LINX_HOME is unset', async (t) => {
   const originalHome = process.env.HOME
+  const originalSolidHome = process.env.SOLID_HOME
+  const originalLinxHome = process.env.LINX_HOME
   const tempHome = mkdtempSync(join(tmpdir(), 'linx-auto-mode-home-'))
-  const root = mkdtempSync(join(tmpdir(), 'linx-auto-mode-legacy-'))
   process.env.HOME = tempHome
-  process.env.LINX_WORKER_HOME = root
+  delete process.env.SOLID_HOME
+  delete process.env.LINX_HOME
 
   t.after(() => {
     if (originalHome === undefined) {
@@ -82,9 +115,17 @@ test('auto-mode archive ignores legacy LINX_WORKER_HOME override', async (t) => 
     } else {
       process.env.HOME = originalHome
     }
-    delete process.env.LINX_WORKER_HOME
+    if (originalSolidHome === undefined) {
+      delete process.env.SOLID_HOME
+    } else {
+      process.env.SOLID_HOME = originalSolidHome
+    }
+    if (originalLinxHome === undefined) {
+      delete process.env.LINX_HOME
+    } else {
+      process.env.LINX_HOME = originalLinxHome
+    }
     rmSync(tempHome, { recursive: true, force: true })
-    rmSync(root, { recursive: true, force: true })
   })
 
   const { module, cleanup } = await loadAutoModeModule()
@@ -94,20 +135,20 @@ test('auto-mode archive ignores legacy LINX_WORKER_HOME override', async (t) => 
   const record = createAutoModeSession(
     {
       backend: 'claude',
-      mode: 'smart',
+autoEnabled: true,
+mode: 'auto',
       cwd: '/tmp/demo',
       prompt: 'legacy path',
       passthroughArgs: [],
     },
     {
       command: 'claude',
-      args: ['--print', 'legacy path'],
+      args: ['--print', 'default path'],
     },
   )
 
-  assert.equal(record.archiveDir.startsWith(root), false)
   assert.match(
     record.archiveDir,
-    new RegExp(`^${join(tempHome, '.linx', 'auto-mode').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`),
+    new RegExp(`^${join(tempHome, '.solid', 'apps', 'linx', 'auto-mode').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`),
   )
 })

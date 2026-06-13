@@ -1,28 +1,27 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { createRequire } from 'node:module'
-import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 
 const cliRoot = fileURLToPath(new URL('..', import.meta.url))
-const requireFromCli = createRequire(join(cliRoot, 'package.json'))
-const localTscBin = requireFromCli.resolve('typescript/bin/tsc')
 const sourceRoot = join(cliRoot, 'src')
 const entryPath = join(sourceRoot, 'index.ts')
 
-function compileMainCliEntry(t) {
+test('compiled cli default --print accepts a prompt argument and starts the pi path', async (t) => {
   const outdir = mkdtempSync(join(cliRoot, '.tmp-pi-print-'))
-  let compileOutput = ''
+  const home = mkdtempSync(join(tmpdir(), 'linx-cli-pi-print-home-'))
+  const workspace = mkdtempSync(join(tmpdir(), 'linx-cli-pi-print-workspace-'))
   t.after(() => {
     rmSync(outdir, { recursive: true, force: true })
+    rmSync(home, { recursive: true, force: true })
+    rmSync(workspace, { recursive: true, force: true })
   })
 
   try {
-    execFileSync(process.execPath, [localTscBin,
-      '--ignoreConfig',
+    execFileSync('tsc', [
       '--outDir',
       outdir,
       '--rootDir',
@@ -46,53 +45,11 @@ function compileMainCliEntry(t) {
       cwd: cliRoot,
       stdio: 'pipe',
     })
-  } catch (error) {
-    compileOutput = `${error.stdout ?? ''}${error.stderr ?? ''}`.trim()
+  } catch {
+    assert.ok(existsSync(join(outdir, 'index.js')))
   }
-
-  return resolveEmittedEntry(outdir, 'index.js', compileOutput)
-}
-
-function resolveEmittedEntry(outdir, entryName, compileOutput = '') {
-  const direct = join(outdir, entryName)
-  if (existsSync(direct)) return direct
-
-  const matches = findFiles(outdir, entryName)
-  const preferred = matches.find((file) => file.endsWith(`/src/${entryName}`))
-    ?? matches.find((file) => file.endsWith(`\\src\\${entryName}`))
-    ?? matches.sort((a, b) => a.length - b.length)[0]
-
-  assert.ok(
-    preferred,
-    `Expected emitted ${entryName}; emitted files: ${findFiles(outdir).join(', ') || '(none)'}${compileOutput ? `\n${compileOutput}` : ''}`,
-  )
-  return preferred
-}
-
-function findFiles(dir, basename) {
-  const files = []
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const path = join(dir, entry.name)
-    if (entry.isDirectory()) {
-      files.push(...findFiles(path, basename))
-    } else if (!basename || entry.name === basename) {
-      files.push(path)
-    }
-  }
-  return files
-}
-
-test('compiled cli default --print accepts a prompt argument and starts the pi path', async (t) => {
-  const home = mkdtempSync(join(tmpdir(), 'linx-cli-pi-print-home-'))
-  const workspace = mkdtempSync(join(tmpdir(), 'linx-cli-pi-print-workspace-'))
-  t.after(() => {
-    rmSync(home, { recursive: true, force: true })
-    rmSync(workspace, { recursive: true, force: true })
-  })
-
-  const entry = compileMainCliEntry(t)
   const result = spawnSync(process.execPath, [
-    entry,
+    join(outdir, 'index.js'),
     '--print',
     'say hi',
     '--cwd',
@@ -108,7 +65,7 @@ test('compiled cli default --print accepts a prompt argument and starts the pi p
     env: {
       ...process.env,
       HOME: home,
-      LINX_AUTO_MODE_HOME: join(home, '.linx', 'auto-mode'),
+      LINX_HOME: join(home, '.solid', 'apps', 'linx'),
       OPENAI_API_KEY: process.env.OPENAI_API_KEY || 'test-key',
     },
   })

@@ -1,8 +1,10 @@
 import type {
   AutoModeApprovalSource,
   AutoModeBackend,
+  AutoModeWorkerBackend,
   AutoModeCredentialSource,
   AutoModeEventLogEntry,
+  LegacyAutoModeMode,
   AutoModeMode,
   AutoModeNormalizedEvent,
   AutoModeOutputStream,
@@ -17,8 +19,10 @@ import type { AgentRuntimeCapabilities, LinxRuntimeEndpointId } from '@linx/agen
 export type {
   AutoModeApprovalSource,
   AutoModeBackend,
+  AutoModeWorkerBackend,
   AutoModeCredentialSource,
   AutoModeEventLogEntry,
+  LegacyAutoModeMode,
   AutoModeMode,
   AutoModeNormalizedEvent,
   AutoModeOutputStream,
@@ -30,12 +34,13 @@ export type {
 }
 
 export interface AutoRunOptions {
-  backend: AutoModeBackend
-  mode: AutoModeMode
-  autoModeEnabled?: boolean
+  backend: AutoModeWorkerBackend
+  autoEnabled: boolean
+  mode?: LegacyAutoModeMode
   resumeSessionId?: string
   cwd: string
   plain?: boolean
+  quiet?: boolean
   model?: string
   prompt?: string
   goalMode?: boolean
@@ -44,8 +49,11 @@ export interface AutoRunOptions {
   transport?: AutoModeTransport
   credentialSource?: AutoModeCredentialSource
   resolvedCredentialSource?: AutoModeResolvedCredentialSource
+  approvalStrategy?: AutoModeApprovalSource
+  metadata?: Record<string, unknown>
   commandOverride?: string
   commandEnv?: Record<string, string>
+  signal?: AbortSignal
 }
 
 export interface AutoModeSpawnPlan {
@@ -85,6 +93,7 @@ export interface AutoModePromptSubmission {
 export interface AutoModeSecretInputRequest {
   header: string
   question: string
+  note?: string
 }
 
 export interface AutoModeQueueState {
@@ -104,7 +113,7 @@ export interface AutoTurnPlanContext {
 export type AutoModeTurnPlanContext = AutoTurnPlanContext
 
 export interface AutoModeBackendHook {
-  id: AutoModeBackend
+  id: AutoModeWorkerBackend
   endpoint: LinxRuntimeEndpointId
   label: string
   description: string

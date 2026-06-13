@@ -7,16 +7,16 @@ import { PassThrough } from 'node:stream'
 import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 
 test('codex attach runner pumps codex request lines through xpod bridge responses', async (t) => {
-  const previousAutoModeHome = process.env.LINX_AUTO_MODE_HOME
-  const autoModeHome = mkdtempSync(join(tmpdir(), 'linx-auto-mode-home-'))
-  process.env.LINX_AUTO_MODE_HOME = autoModeHome
+  const previousLinxHome = process.env.LINX_HOME
+  const linxHome = mkdtempSync(join(tmpdir(), 'linx-home-'))
+  process.env.LINX_HOME = linxHome
   t.after(() => {
-    if (previousAutoModeHome === undefined) {
-      delete process.env.LINX_AUTO_MODE_HOME
+    if (previousLinxHome === undefined) {
+      delete process.env.LINX_HOME
     } else {
-      process.env.LINX_AUTO_MODE_HOME = previousAutoModeHome
+      process.env.LINX_HOME = previousLinxHome
     }
-    rmSync(autoModeHome, { recursive: true, force: true })
+    rmSync(linxHome, { recursive: true, force: true })
   })
 
   const { module, cleanup } = await loadAutoModeModule('lib/codex-plugin/runner.ts')

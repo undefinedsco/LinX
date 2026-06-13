@@ -1,5 +1,16 @@
 import { Parser, Writer } from 'n3'
-import { agentResourceId } from '../models.js'
+import { resolvePodBaseUrl } from '@undefineds.co/drizzle-solid'
+import { AS, DCTerms, FOAF, MEETING, ODRL, RDF, SIOC, UDFS, WF } from '@undefineds.co/models/namespaces'
+import {
+  agentResource,
+  approvalResource,
+  auditResource,
+  chatResource,
+  grantResource,
+  messageResource,
+  sessionResource,
+  threadRepository,
+} from '../models.js'
 
 export type PodFetch = (url: string, init?: RequestInit) => Promise<Response>
 
@@ -19,109 +30,96 @@ export interface ManagedTurtleBlock {
   extraStatements?: string[]
 }
 
-export const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
+export const RDF_TYPE = RDF.type
 export const XSD_DATE_TIME = 'http://www.w3.org/2001/XMLSchema#dateTime'
-export const DCT_CREATED = 'http://purl.org/dc/terms/created'
-export const DCT_MODIFIED = 'http://purl.org/dc/terms/modified'
-export const DCT_TITLE = 'http://purl.org/dc/terms/title'
-export const FOAF_MAKER = 'http://xmlns.com/foaf/0.1/maker'
-export const SIOC_CONTENT = 'http://rdfs.org/sioc/ns#content'
-export const SIOC_RICH_CONTENT = 'http://rdfs.org/sioc/ns#richContent'
-export const SIOC_HAS_MEMBER = 'http://rdfs.org/sioc/ns#has_member'
-export const MEETING_LONG_CHAT = 'http://www.w3.org/ns/pim/meeting#LongChat'
-export const MEETING_MESSAGE = 'http://www.w3.org/ns/pim/meeting#Message'
-export const SIOC_THREAD = 'http://rdfs.org/sioc/ns#Thread'
-export const WF_MESSAGE = 'http://www.w3.org/2005/01/wf/flow-1.0#message'
-export const UDFS_AGENT = 'https://undefineds.co/ns#Agent'
-export const UDFS_AUDIT_ENTRY = 'https://undefineds.co/ns#AuditEntry'
-export const UDFS_APPROVAL_REQUEST = 'https://undefineds.co/ns#ApprovalRequest'
-export const UDFS_AUTONOMY_GRANT = 'https://undefineds.co/ns#AutonomyGrant'
-export const UDFS_SESSION = 'https://undefineds.co/ns#Session'
-export const UDFS_ACTION = 'https://undefineds.co/ns#action'
-export const UDFS_ACTOR = 'https://undefineds.co/ns#actor'
-export const UDFS_ACTOR_ROLE = 'https://undefineds.co/ns#actorRole'
-export const UDFS_APPROVAL = 'https://undefineds.co/ns#approval'
-export const UDFS_CHAT_TYPE = 'https://undefineds.co/ns#chatType'
-export const UDFS_CONTEXT = 'https://undefineds.co/ns#context'
-export const UDFS_ENTRY = 'https://undefineds.co/ns#entry'
-export const UDFS_CONVERSATION = 'https://undefineds.co/ns#conversation'
-export const UDFS_CONVERSATION_TITLE = 'https://undefineds.co/ns#conversationTitle'
-export const UDFS_CONVERSATION_TYPE = 'https://undefineds.co/ns#conversationType'
-export const UDFS_HAS_THREAD = 'https://undefineds.co/ns#hasThread'
-export const UDFS_IN_THREAD = 'https://undefineds.co/ns#inThread'
-export const UDFS_LAST_ACTIVE_AT = 'https://undefineds.co/ns#lastActiveAt'
-export const UDFS_MESSAGE_STATUS = 'https://undefineds.co/ns#messageStatus'
-export const UDFS_MESSAGE_TYPE = 'https://undefineds.co/ns#messageType'
-export const UDFS_METADATA = 'https://undefineds.co/ns#metadata'
-export const UDFS_MODEL = 'https://undefineds.co/ns#model'
-export const UDFS_ON_BEHALF_OF = 'https://undefineds.co/ns#onBehalfOf'
-export const UDFS_ASSIGNED_TO = 'https://undefineds.co/ns#assignedTo'
-export const UDFS_DECISION_BY = 'https://undefineds.co/ns#decisionBy'
-export const UDFS_DECISION_ROLE = 'https://undefineds.co/ns#decisionRole'
-export const UDFS_EFFECT = 'https://undefineds.co/ns#effect'
-export const UDFS_POLICY_VERSION = 'https://undefineds.co/ns#policyVersion'
-export const UDFS_PROVIDER = 'https://undefineds.co/ns#provider'
-export const UDFS_REASON = 'https://undefineds.co/ns#reason'
-export const UDFS_RESOLVED_AT = 'https://undefineds.co/ns#resolvedAt'
-export const UDFS_REVOKED_AT = 'https://undefineds.co/ns#revokedAt'
-export const UDFS_RISK = 'https://undefineds.co/ns#risk'
-export const UDFS_RISK_CEILING = 'https://undefineds.co/ns#riskCeiling'
-export const UDFS_SESSION_STATUS = 'https://undefineds.co/ns#sessionStatus'
-export const UDFS_SESSION_TOOL = 'https://undefineds.co/ns#sessionTool'
-export const UDFS_STATUS = 'https://undefineds.co/ns#status'
-export const UDFS_TOKEN_USAGE = 'https://undefineds.co/ns#tokenUsage'
-export const UDFS_TOOL_CALL_ID = 'https://undefineds.co/ns#toolCallId'
-export const UDFS_TOOL_NAME = 'https://undefineds.co/ns#toolName'
-export const UDFS_WORKSPACE = 'https://undefineds.co/ns#workspace'
-export const ODRL_ACTION = 'http://www.w3.org/ns/odrl/2/action'
-export const ODRL_POLICY = 'http://www.w3.org/ns/odrl/2/Policy'
-export const ODRL_TARGET = 'http://www.w3.org/ns/odrl/2/target'
-export const AS_ANNOUNCE = 'https://www.w3.org/ns/activitystreams#Announce'
-export const AS_ACTOR = 'https://www.w3.org/ns/activitystreams#actor'
-export const AS_OBJECT = 'https://www.w3.org/ns/activitystreams#object'
+export const DCT_CREATED = DCTerms.created
+export const DCT_MODIFIED = DCTerms.modified
+export const DCT_TITLE = DCTerms.title
+export const FOAF_MAKER = FOAF.maker
+export const SIOC_CONTENT = SIOC.content
+export const SIOC_RICH_CONTENT = SIOC.richContent
+export const SIOC_HAS_MEMBER = SIOC.has_member
+export const MEETING_LONG_CHAT = MEETING.LongChat
+export const MEETING_MESSAGE = MEETING.Message
+export const SIOC_THREAD = SIOC.Thread
+export const WF_MESSAGE = WF.message
+export const UDFS_AGENT = UDFS.Agent
+export const UDFS_AUDIT_ENTRY = UDFS.AuditEntry
+export const UDFS_APPROVAL_REQUEST = UDFS.ApprovalRequest
+export const UDFS_AUTONOMY_GRANT = UDFS.AutonomyGrant
+export const UDFS_SESSION = UDFS.Session
+export const UDFS_ACTION = UDFS.action
+export const UDFS_ACTOR = UDFS.actor
+export const UDFS_ACTOR_ROLE = UDFS.actorRole
+export const UDFS_APPROVAL = UDFS.approval
+export const UDFS_CHAT_TYPE = UDFS.chatType
+export const UDFS_CONTEXT = UDFS.context
+export const UDFS_ENTRY = UDFS.entry
+export const UDFS_CONVERSATION = UDFS.conversation
+export const UDFS_CONVERSATION_TITLE = UDFS.conversationTitle
+export const UDFS_CONVERSATION_TYPE = UDFS.conversationType
+export const UDFS_HAS_THREAD = UDFS.hasThread
+export const UDFS_IN_THREAD = UDFS.inThread
+export const UDFS_LAST_ACTIVE_AT = UDFS.lastActiveAt
+export const UDFS_MESSAGE_STATUS = UDFS.messageStatus
+export const UDFS_MESSAGE_TYPE = UDFS.messageType
+export const UDFS_METADATA = UDFS.metadata
+export const UDFS_MODEL = UDFS.model
+export const UDFS_ON_BEHALF_OF = UDFS.onBehalfOf
+export const UDFS_ASSIGNED_TO = UDFS.assignedTo
+export const UDFS_DECISION_BY = UDFS.decisionBy
+export const UDFS_DECISION_ROLE = UDFS.decisionRole
+export const UDFS_EFFECT = UDFS.effect
+export const UDFS_POLICY_VERSION = UDFS.policyVersion
+export const UDFS_PROVIDER = UDFS.provider
+export const UDFS_REASON = UDFS.reason
+export const UDFS_RESOLVED_AT = UDFS.resolvedAt
+export const UDFS_REVOKED_AT = UDFS.revokedAt
+export const UDFS_RISK = UDFS.risk
+export const UDFS_RISK_CEILING = UDFS.riskCeiling
+export const UDFS_SESSION_STATUS = UDFS.sessionStatus
+export const UDFS_SESSION_TOOL = UDFS.sessionTool
+export const UDFS_STATUS = UDFS.status
+export const UDFS_TOKEN_USAGE = UDFS.tokenUsage
+export const UDFS_TOOL_CALL_ID = UDFS.toolCallId
+export const UDFS_TOOL_NAME = UDFS.toolName
+export const UDFS_WORKSPACE = UDFS.workspace
+export const ODRL_ACTION = ODRL.action
+export const ODRL_POLICY = ODRL.Policy
+export const ODRL_TARGET = ODRL.target
+export const AS_ANNOUNCE = AS.Announce
+export const AS_ACTOR = AS.actor
+export const AS_OBJECT = AS.object
 
 const MANAGED_BEGIN = '# linx-managed-subject:'
 const MANAGED_END = '# /linx-managed-subject'
 
 export function podBaseUrlFromWebId(webId: string): string {
-  return webId.replace('/profile/card#me', '').replace(/\/$/, '')
-}
-
-export function buildSessionDocumentUrl(webId: string, createdAt: Date): string {
-  const yyyy = String(createdAt.getUTCFullYear())
-  const mm = String(createdAt.getUTCMonth() + 1).padStart(2, '0')
-  const dd = String(createdAt.getUTCDate()).padStart(2, '0')
-  return `${podBaseUrlFromWebId(webId)}/.data/sessions/${yyyy}/${mm}/${dd}/`
+  return resolvePodBaseUrl(webId)
 }
 
 export function buildSessionResourceUrl(webId: string, sessionId: string, createdAt: Date = new Date()): string {
-  return `${buildSessionDocumentUrl(webId, createdAt)}${encodeURIComponent(sessionId)}.ttl`
+  return sessionResource.buildIri(webId,  { id: sessionId, createdAt })
 }
 
 export function buildAuditDocumentUrl(webId: string, createdAt: Date): string {
-  const yyyy = String(createdAt.getUTCFullYear())
-  const mm = String(createdAt.getUTCMonth() + 1).padStart(2, '0')
-  const dd = String(createdAt.getUTCDate()).padStart(2, '0')
-  return `${podBaseUrlFromWebId(webId)}/.data/audits/${yyyy}/${mm}/${dd}.ttl`
+  return documentUrl(buildAuditResourceUrl(webId, '__document__', createdAt))
 }
 
 export function buildAuditResourceUrl(webId: string, auditId: string, createdAt: Date): string {
-  return `${buildAuditDocumentUrl(webId, createdAt)}#${encodeURIComponent(auditId)}`
+  return auditResource.buildIri(webId,  { id: auditId, createdAt })
 }
 
 export function buildApprovalDocumentUrl(webId: string, createdAt: Date): string {
-  const yyyy = String(createdAt.getUTCFullYear())
-  const mm = String(createdAt.getUTCMonth() + 1).padStart(2, '0')
-  const dd = String(createdAt.getUTCDate()).padStart(2, '0')
-  return `${podBaseUrlFromWebId(webId)}/.data/approvals/${yyyy}/${mm}/${dd}.ttl`
+  return documentUrl(buildApprovalResourceUrl(webId, '__document__', createdAt))
 }
 
 export function buildApprovalResourceUrl(webId: string, approvalId: string, createdAt: Date = new Date()): string {
-  return `${buildApprovalDocumentUrl(webId, createdAt)}#${encodeURIComponent(approvalId)}`
+  return approvalResource.buildIri(webId,  { id: approvalId, createdAt })
 }
 
 export function buildGrantResourceUrl(webIdOrUri: string, grantId: string): string {
-  return `${podBaseUrlFromWebIdOrUri(webIdOrUri)}/settings/autonomy/grants/${encodeURIComponent(grantId)}.ttl`
+  return grantResource.buildIri(webIdOrUri,  { id: grantId })
 }
 
 export function buildInboxResourceUrl(webIdOrUri: string, notificationId: string): string {
@@ -129,22 +127,28 @@ export function buildInboxResourceUrl(webIdOrUri: string, notificationId: string
 }
 
 export function buildAgentResourceUrl(webId: string, agentId: string): string {
-  return `${podBaseUrlFromWebId(webId)}/.data/agents/${agentResourceId(agentId)}`
+  return agentResource.buildIri(webId,  { id: agentId })
 }
 
 export function buildChatIndexResourceUrl(webId: string, chatId: string): string {
-  return `${podBaseUrlFromWebId(webId)}/.data/chat/${encodeURIComponent(chatId)}/index.ttl`
+  return documentUrl(chatResource.buildIri(webId,  { id: chatId }))
 }
 
-export function buildMessageResourceUrl(webId: string, chatId: string, createdAt: Date): string {
-  const yyyy = String(createdAt.getUTCFullYear())
-  const mm = String(createdAt.getUTCMonth() + 1).padStart(2, '0')
-  const dd = String(createdAt.getUTCDate()).padStart(2, '0')
-  return `${podBaseUrlFromWebId(webId)}/.data/chat/${encodeURIComponent(chatId)}/${yyyy}/${mm}/${dd}/messages.ttl`
+export function buildMessageResourceUrl(webId: string, chatId: string, threadId: string, createdAt: Date): string {
+  return documentUrl(messageResource.buildIri(webId,  {
+    id: '__document__',
+    chat: chatResource.buildIri(webId, { id: chatId }),
+    thread: threadRepository.iriForChat(webId, chatId, threadId),
+    createdAt,
+  }))
 }
 
 export function buildMessageSubjectUrl(resourceUrl: string, messageId: string): string {
   return `${resourceUrl}#${encodeURIComponent(messageId)}`
+}
+
+function documentUrl(resourceUrl: string): string {
+  return resourceUrl.split('#', 1)[0] ?? resourceUrl
 }
 
 export function iri(value: string): TurtleObject {
@@ -465,7 +469,12 @@ function renderTurtleObject(object: TurtleObject): string {
 function parseStandardTurtleBlocks(turtle: string, baseIRI?: string): Map<string, Map<string, TurtleObject[]>> {
   const blocks = new Map<string, Map<string, TurtleObject[]>>()
   const parser = new Parser(baseIRI ? { baseIRI } : undefined)
-  const quads = parser.parse(turtle)
+  let quads
+  try {
+    quads = parser.parse(turtle)
+  } catch {
+    return blocks
+  }
   for (const quad of quads) {
     if (quad.subject.termType !== 'NamedNode' || quad.predicate.termType !== 'NamedNode') {
       continue
@@ -489,7 +498,12 @@ function removeStandardTriplesForSubject(turtle: string, subject: string): strin
   }
   const baseIRI = subject.includes('#') ? subject.split('#')[0] : subject
   const parser = new Parser({ baseIRI })
-  const quads = parser.parse(turtle)
+  let quads
+  try {
+    quads = parser.parse(turtle)
+  } catch {
+    return turtle
+  }
   const kept = quads.filter((quad) => (
     quad.subject.value !== subject
     && !(quad.object.termType === 'NamedNode' && quad.object.value === subject)
@@ -500,17 +514,9 @@ function removeStandardTriplesForSubject(turtle: string, subject: string): strin
   const writer = new Writer()
   writer.addQuads(kept)
   let output = ''
-  let writeError: Error | undefined
   writer.end((error, result) => {
-    if (error) {
-      writeError = error instanceof Error ? error : new Error(String(error))
-      return
-    }
-    output = result
+    output = error ? turtle : result
   })
-  if (writeError) {
-    throw writeError
-  }
   return output
 }
 

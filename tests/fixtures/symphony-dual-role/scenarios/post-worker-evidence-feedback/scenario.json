@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "id": "post-worker-evidence-feedback",
+  "title": "Post Worker Evidence Feedback",
+  "purpose": "Validate that reported worker completion updates the control record with partial evidence and does not overstate verification.",
+  "inputPolicy": "user_fragments_only",
+  "expectedFinalIntent": "Record completed implementation evidence, mark remaining Pod integration verification as open, and keep status below fully verified.",
+  "userFragments": [
+    {
+      "id": "u1",
+      "content": "The chat loading fix is done and tests were run."
+    },
+    {
+      "id": "u2",
+      "content": "Actually only unit tests ran. Pod integration has not run yet."
+    },
+    {
+      "id": "u3",
+      "content": "Write that into the control doc, but do not call it fully verified."
+    }
+  ],
+  "secretaryReplies": [
+    {
+      "after": "u1",
+      "content": "Completion claims must become evidence feedback in the control record, not just a worker transcript."
+    },
+    {
+      "after": "u2",
+      "content": "The record should separate unit-test evidence from missing Pod integration verification."
+    },
+    {
+      "after": "u3",
+      "content": "Status should move to reviewing or partial evidence, not verified, until integration evidence exists."
+    }
+  ],
+  "acceptance": {
+    "finalOnly": true,
+    "classification": "update_existing",
+    "systemState": "partial",
+    "workState": "reviewing",
+    "compatibilityImpact": "behavior_change",
+    "requiredPhrases": [
+      "Implementation reported complete; verification partial",
+      "unit tests ran",
+      "Pod integration has not run yet",
+      "Do not mark this fully verified",
+      "run Pod integration verification"
+    ],
+    "forbiddenPhrases": [
+      "Fully verified",
+      "All tests passed",
+      "No known remaining risks"
+    ]
+  }
+}

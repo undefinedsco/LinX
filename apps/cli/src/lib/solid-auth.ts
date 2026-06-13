@@ -2,7 +2,6 @@ import { Session } from '@inrupt/solid-client-authn-node'
 
 export interface PodAuth {
   session: Session
-  apiKey: string
 }
 
 export async function authenticate(
@@ -16,17 +15,14 @@ export async function authenticate(
     clientId,
     clientSecret,
     oidcIssuer,
-    tokenType: 'Bearer',
+    tokenType: 'DPoP',
   })
 
   if (!session.info.isLoggedIn) {
     throw new Error('Failed to authenticate with Pod')
   }
 
-  const credentials = `${clientId}:${clientSecret}`
-  const apiKey = `sk-${Buffer.from(credentials, 'utf-8').toString('base64')}`
-
-  return { session, apiKey }
+  return { session }
 }
 
 export interface SolidTokenResult {

@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "id": "saved-replies-doc-first",
+  "title": "Saved Replies Feature Documentation First",
+  "purpose": "Validate that fragmented feature requests become a doc-first control record before implementation.",
+  "inputPolicy": "user_fragments_only",
+  "expectedFinalIntent": "Define a spec for saved chat replies with storage ownership and decision criteria, while deferring implementation.",
+  "userFragments": [
+    {
+      "id": "u1",
+      "content": "I want a saved replies feature in chat."
+    },
+    {
+      "id": "u2",
+      "content": "Don't build it yet. First write the doc and make it explain where saved replies live."
+    },
+    {
+      "id": "u3",
+      "content": "Maybe it should be Pod-backed, unless that complicates things, then just document the decision path."
+    }
+  ],
+  "secretaryReplies": [
+    {
+      "after": "u1",
+      "content": "Classified as a new chat capability concern. I will bind it to a control record before any worker dispatch."
+    },
+    {
+      "after": "u2",
+      "content": "Scope updated to documentation-first. Implementation remains deferred until the storage ownership decision is explicit."
+    },
+    {
+      "after": "u3",
+      "content": "The control record now captures Pod-backed storage as a decision path, not as an implementation commitment."
+    }
+  ],
+  "acceptance": {
+    "finalOnly": true,
+    "classification": "new_concern",
+    "systemState": "candidate",
+    "workState": "drafting",
+    "compatibilityImpact": "compatible",
+    "requiredPhrases": [
+      "Deferred roadmap candidate",
+      "No implementation is authorized",
+      "No Issue, Task, Delivery, or worker run should start yet",
+      "Compatible",
+      "storage model and permissions"
+    ],
+    "forbiddenPhrases": [
+      "Worker mode: running",
+      "Implementation completed"
+    ]
+  }
+}

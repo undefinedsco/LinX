@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "id": "auto-command-breaking-change",
+  "title": "Auto Command Breaking Change",
+  "purpose": "Validate that contradictory command-surface fragments become a compatibility-managed control record.",
+  "inputPolicy": "user_fragments_only",
+  "expectedFinalIntent": "Record a compatibility-managed command change with deprecation, preserved behavior for existing users, and migration notes.",
+  "userFragments": [
+    {
+      "id": "u1",
+      "content": "Rename /auto to /assist."
+    },
+    {
+      "id": "u2",
+      "content": "Actually keep /auto, but manual has to disappear."
+    },
+    {
+      "id": "u3",
+      "content": "Wait, scripts still need to work, so maybe /auto stays and manual is just deprecated."
+    }
+  ],
+  "secretaryReplies": [
+    {
+      "after": "u1",
+      "content": "This changes a product command surface, so I will treat it as compatibility-impacting before dispatching work."
+    },
+    {
+      "after": "u2",
+      "content": "Latest steering preserves /auto and removes manual as a product mode; the record is now a breaking cleanup candidate."
+    },
+    {
+      "after": "u3",
+      "content": "Compatibility updated: existing scripts must keep working, so the final record should deprecate manual with migration guidance."
+    }
+  ],
+  "acceptance": {
+    "finalOnly": true,
+    "classification": "update_existing",
+    "systemState": "existing",
+    "workState": "drafting",
+    "compatibilityImpact": "breaking",
+    "requiredPhrases": [
+      "Planned breaking/cleanup decision",
+      "`/auto` is the single LinX auto switch",
+      "Breaking",
+      "migrate to `/auto off`",
+      "No backend approval policy semantics should be changed"
+    ],
+    "forbiddenPhrases": [
+      "`/assist` replaces `/auto`",
+      "Compatible. No runtime behavior changes"
+    ]
+  }
+}

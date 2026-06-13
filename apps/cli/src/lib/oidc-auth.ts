@@ -11,14 +11,15 @@ import {
 } from '@inrupt/solid-client-authn-node'
 import type { LinxStoredCredentials } from '@undefineds.co/models/client'
 import { isLinxOidcOAuthSecrets, resolveLinxCloudAccountBaseUrl, type LinxOidcOAuthSecrets } from '@undefineds.co/models/client'
-import { saveAccountSession } from './account-session.js'
-import { loadCredentials, saveCredentials } from './credentials-store.js'
-import { createOidcSessionStorage } from './oidc-session-storage.js'
+import { clearAccountSession, saveAccountSession } from './account-session.js'
+import { clearCredentials, loadCredentials, saveCredentials } from './credentials-store.js'
+import { clearOidcSessionStorage, createOidcSessionStorage } from './oidc-session-storage.js'
 
 const execFileAsync = promisify(execFile)
 const DEFAULT_CALLBACK_HOST = '127.0.0.1'
 const DEFAULT_CALLBACK_PATH = '/auth/callback'
 const DEFAULT_CLIENT_NAME = 'LinX CLI'
+const TRANSIENT_OIDC_REMOTE_STATUS_CODES = new Set([502, 503, 504])
 
 export interface BrowserOidcLoginOptions {
   issuerUrl?: string
@@ -48,7 +49,7 @@ export async function ensureBrowserConsentLogin(
   options: BrowserOidcLoginOptions = {},
 ): Promise<EnsureBrowserOidcLoginResult> {
   if (!options.forceFresh) {
-    const reused = await reuseExistingBrowserConsentLogin(options).catch(() => null)
+    const reused = await reuseExistingBrowserConsentLogin(options)
     if (reused) {
       return {
         ...reused,
@@ -57,6 +58,9 @@ export async function ensureBrowserConsentLogin(
     }
   }
 
+  if (options.forceFresh) {
+    clearOidcSessionStorage()
+  }
   const fresh = await loginWithBrowserConsent(options)
   return {
     ...fresh,
@@ -141,6 +145,7 @@ export async function getOidcAccessToken(
   }
 
   const secrets = credentials.secrets as LinxOidcOAuthSecrets
+
   if (options.forceRefresh || !secrets.oidcAccessToken) {
     return refreshStoredOidcSession(credentials, secrets)
   }
@@ -164,19 +169,31 @@ export async function restoreStoredOidcSession(
   const storage = createOidcSessionStorage()
   const sessionId = await resolveStoredOidcSessionId(storage, credentials.webId, credentials.url)
   if (!sessionId) {
+    if (options.forceRefresh) {
+      clearStoredOidcLoginState()
+      throw new LinxOidcLoginExpiredError('Stored OIDC session is missing.')
+    }
     return null
   }
 
   const session = await getSessionFromStorage(sessionId, {
     storage,
     refreshSession: false,
+  }).catch((error) => {
+    throw normalizeOidcSessionRefreshError(error)
   })
   if (!session) {
+    if (options.forceRefresh) {
+      clearStoredOidcLoginState()
+      throw new LinxOidcLoginExpiredError('Stored OIDC session cannot be restored.')
+    }
     return null
   }
 
   if (options.forceRefresh || !session.info.isLoggedIn) {
-    await refreshSession(session, { storage })
+    await refreshSession(session, { storage }).catch((error) => {
+      throw normalizeOidcSessionRefreshError(error)
+    })
   }
 
   return session.info.isLoggedIn ? session : null
@@ -455,8 +472,20 @@ async function reuseExistingBrowserConsentLogin(
     return null
   }
 
-  const accessToken = await getOidcAccessToken(stored, { forceRefresh: options.forceRefreshExisting })
+  let accessToken: string | null
+  try {
+    // Reuse is valid only after a real server refresh. Local expiry/WebID checks
+    // are insufficient when an account was deleted and recreated with the same WebID.
+    accessToken = await getOidcAccessToken(stored, { forceRefresh: true })
+  } catch (error) {
+    if (isOidcLoginExpiredError(error)) {
+      clearStoredOidcLoginState()
+      return null
+    }
+    throw error
+  }
   if (!accessToken || !isLinxOidcOAuthSecrets(stored.secrets)) {
+    clearStoredOidcLoginState()
     return null
   }
 
@@ -495,15 +524,19 @@ async function refreshStoredOidcSession(
   const storage = createOidcSessionStorage()
   const sessionId = await resolveStoredOidcSessionId(storage, credentials.webId, credentials.url)
   if (!sessionId) {
-    return null
+    clearStoredOidcLoginState()
+    throw new LinxOidcLoginExpiredError('Stored OIDC session is missing.')
   }
 
   const session = await getSessionFromStorage(sessionId, {
     storage,
     refreshSession: false,
+  }).catch((error) => {
+    throw normalizeOidcSessionRefreshError(error)
   })
   if (!session) {
-    return null
+    clearStoredOidcLoginState()
+    throw new LinxOidcLoginExpiredError('Stored OIDC session cannot be restored.')
   }
 
   let refreshedTokenSet: SessionTokenSet | null = null
@@ -511,11 +544,14 @@ async function refreshStoredOidcSession(
     refreshedTokenSet = tokenSet
   })
 
-  await refreshSession(session, { storage })
+  await refreshSession(session, { storage }).catch((error) => {
+    throw normalizeOidcSessionRefreshError(error)
+  })
 
   const nextTokenSet = refreshedTokenSet as SessionTokenSet | null
   if (!nextTokenSet?.accessToken) {
-    return null
+    clearStoredOidcLoginState()
+    throw new LinxOidcLoginExpiredError('Stored OIDC session refresh did not return an access token.')
   }
 
   secrets.oidcRefreshToken = nextTokenSet.refreshToken ?? secrets.oidcRefreshToken
@@ -570,10 +606,11 @@ async function resolveStoredOidcSessionId(
     }
 
     try {
-      const parsed = JSON.parse(stored) as { webId?: string; issuer?: string }
+      const parsed = JSON.parse(stored) as { webId?: string; issuer?: string; dpop?: string | boolean }
       const sessionWebId = typeof parsed.webId === 'string' ? parsed.webId : null
       const sessionIssuer = typeof parsed.issuer === 'string' ? parsed.issuer.replace(/\/+$/, '') : null
-      if (sessionWebId === webId && sessionIssuer === normalizedIssuer) {
+      const sessionUsesDpop = parsed.dpop === true || parsed.dpop === 'true'
+      if (sessionWebId === webId && sessionIssuer === normalizedIssuer && !sessionUsesDpop) {
         return sessionId
       }
     } catch {
@@ -619,11 +656,7 @@ async function waitForManualRedirect(
     await new Promise(() => undefined)
     return
   }
-  if (signal?.aborted) {
-    return
-  }
-  if (!requestUrl) {
-    await new Promise(() => undefined)
+  if (signal?.aborted || !requestUrl) {
     return
   }
   assertOidcCallbackDidNotReturnError(requestUrl)
@@ -651,9 +684,32 @@ export class LinxOidcLoginExpiredError extends Error {
   }
 }
 
+export class LinxOidcTransientRemoteError extends Error {
+  readonly transientRemote = true
+  readonly status?: number
+
+  constructor(cause?: unknown) {
+    const status = resolveOidcTransientRemoteStatus(cause)
+    const detail = status ? fallbackOidcTransientStatusMessage(status) : 'Service Unavailable'
+    super(status
+      ? `LinX Cloud is temporarily unavailable (${status}): ${detail}. Your login was not cleared; retry shortly.`
+      : 'LinX Cloud is temporarily unavailable. Your login was not cleared; retry shortly.')
+    this.name = 'LinxOidcTransientRemoteError'
+    if (status !== null) this.status = status
+    if (cause !== undefined) (this as any).cause = cause
+  }
+}
+
+export function clearStoredOidcLoginState(): void {
+  clearAccountSession()
+  clearCredentials()
+  clearOidcSessionStorage()
+}
+
 export function isOidcLoginExpiredError(error: unknown): boolean {
   if (error instanceof LinxOidcLoginExpiredError) return true
   if (typeof error === 'object' && error !== null && 'authExpired' in error && (error as any).authExpired === true) return true
+  if (isOidcTransientRemoteError(error)) return false
   const message = error instanceof Error ? error.message : String(error)
   const normalized = message.toLowerCase()
   return normalized.includes('linx cloud login expired')
@@ -661,4 +717,78 @@ export function isOidcLoginExpiredError(error: unknown): boolean {
     || normalized.includes('missing static client secret')
     || normalized.includes('invalid_client')
     || normalized.includes('invalid_grant')
+    || normalized.includes('invalid_redirect_uri')
+    || normalized.includes('unauthorized_client')
 }
+
+export function isOidcTransientRemoteError(error: unknown): boolean {
+  if (error instanceof LinxOidcTransientRemoteError) return true
+  if (typeof error === 'object' && error !== null && 'transientRemote' in error && (error as any).transientRemote === true) return true
+  return resolveOidcTransientRemoteStatus(error) !== null
+}
+
+function normalizeOidcSessionRefreshError(error: unknown): Error {
+  if (isOidcTransientRemoteError(error)) {
+    return new LinxOidcTransientRemoteError(error)
+  }
+  if (isOidcLoginExpiredError(error)) {
+    clearStoredOidcLoginState()
+    return new LinxOidcLoginExpiredError(error)
+  }
+  return error instanceof Error ? error : new Error(String(error))
+}
+
+function resolveOidcTransientRemoteStatus(error: unknown): number | null {
+  if (typeof error === 'object' && error !== null) {
+    const candidates = [
+      (error as { status?: unknown }).status,
+      (error as { statusCode?: unknown }).statusCode,
+      (error as { response?: { status?: unknown } }).response?.status,
+      (error as { cause?: { status?: unknown } }).cause?.status,
+      (error as { cause?: { statusCode?: unknown } }).cause?.statusCode,
+    ]
+    for (const candidate of candidates) {
+      if (typeof candidate === 'number' && TRANSIENT_OIDC_REMOTE_STATUS_CODES.has(candidate)) {
+        return candidate
+      }
+      if (typeof candidate === 'string') {
+        const parsed = Number.parseInt(candidate, 10)
+        if (TRANSIENT_OIDC_REMOTE_STATUS_CODES.has(parsed)) {
+          return parsed
+        }
+      }
+    }
+  }
+
+  const message = error instanceof Error ? error.message : String(error)
+  const normalized = message.toLowerCase()
+  if (normalized.includes('502') && normalized.includes('bad gateway')) {
+    return 502
+  }
+  if (normalized.includes('503') && normalized.includes('service unavailable')) {
+    return 503
+  }
+  if (normalized.includes('504') && normalized.includes('gateway timeout')) {
+    return 504
+  }
+  if (normalized.includes('expected 200 ok') && normalized.includes('bad gateway')) {
+    return 502
+  }
+  return null
+}
+
+function fallbackOidcTransientStatusMessage(status: number): string {
+  switch (status) {
+    case 502:
+      return 'Bad Gateway'
+    case 503:
+      return 'Service Unavailable'
+    case 504:
+      return 'Gateway Timeout'
+    default:
+      return 'Service Unavailable'
+  }
+}
+
+export const __testReuseExistingBrowserConsentLogin = reuseExistingBrowserConsentLogin
+export const __testNormalizeOidcSessionRefreshError = normalizeOidcSessionRefreshError

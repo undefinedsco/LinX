@@ -5,14 +5,14 @@ import {
   SessionManager,
   type SessionEntry,
   type SessionInfo,
-} from '@mariozechner/pi-coding-agent'
+} from '@earendil-works/pi-coding-agent'
+import { resolvePodBaseUrl } from '@undefineds.co/drizzle-solid'
 import {
   getDefaultPodDataSession,
   type PodDataSession,
 } from '../pod-data-session.js'
 import {
   chatResource,
-  buildSessionResourceId,
   drizzle,
   eq,
   extractSessionIdFromSessionRef,
@@ -539,7 +539,7 @@ function synthesizeAgentMessage(row: LinxPiPodMessageSnapshot): unknown | null {
     return {
       role: 'assistant',
       content,
-      api: 'openai-completions',
+      api: 'linx-cloud-chat-completions',
       provider: 'undefineds',
       model: 'linx-lite',
       usage: {
@@ -733,12 +733,12 @@ async function listPodSessionRows(context: DefaultPodSessionContext): Promise<Se
 }
 
 function filterPodSessionRows(context: DefaultPodSessionContext, rows: SessionRow[]): SessionRow[] {
-  const secretaryChat = context.db.resolveLocatorIri(chatResource, { id: PI_CHAT_ID })
+  const secretaryChat = chatResource.buildIri(context.webId, { id: PI_CHAT_ID })
   return rows.filter((row) => {
-    if (typeof row.id !== 'string' || !buildSessionResourceIdFromInput(row.id)) {
+    if (typeof row.id !== 'string' || !normalizeSessionResourceIdFromInput(row.id)) {
       return false
     }
-    if (row.ownerWebId && row.ownerWebId !== context.webId) {
+    if (row.owner && row.owner !== context.webId) {
       return false
     }
     if (row.chat && !isSecretaryChatRef(row.chat, secretaryChat)) {
@@ -805,7 +805,7 @@ async function listRecentSessionRowsFromContainers(
 }
 
 function getRecentSessionMonthContainers(webId: string): string[] {
-  const base = getPodBaseUrl(webId)
+  const base = resolvePodBaseUrl(webId)
   const months = new Set<string>()
   const now = new Date()
   for (let offset = 0; offset < POD_SESSION_LIST_LOOKBACK_DAYS; offset += 1) {
@@ -872,7 +872,7 @@ async function findPodSessionSnapshot(
     return null
   }
 
-  const resourceId = buildSessionResourceIdFromInput(sessionId)
+  const resourceId = normalizeSessionResourceIdFromInput(sessionId)
   if (!resourceId) {
     return null
   }
@@ -882,13 +882,13 @@ async function findPodSessionSnapshot(
   if (!row || extractResourceLocalId(row.id) !== expectedSessionId || row.tool !== 'linx') {
     return null
   }
-  if (row.ownerWebId && row.ownerWebId !== context.webId) {
+  if (row.owner && row.owner !== context.webId) {
     return null
   }
   return row ? buildPodSessionSnapshot(context, row) : null
 }
 
-function buildSessionResourceIdFromInput(input: string): string | null {
+function normalizeSessionResourceIdFromInput(input: string): string | null {
   const trimmed = input.trim().replace(/^\/?\.data\/sessions\//, '')
   if (!trimmed) {
     return null
@@ -903,7 +903,7 @@ function buildSessionResourceIdFromInput(input: string): string | null {
       }
       const sessionId = extractSessionIdFromSessionRef(trimmed)
       const createdAt = sessionId ? parseTimestampFromUuidLikeId(sessionId) : null
-      return sessionId && createdAt ? buildSessionResourceId(sessionId, createdAt) : trimmed
+      return sessionId && createdAt ? sessionResource.buildId({ id: sessionId, createdAt }) : trimmed
     }
     if (!trimmed.startsWith('20')) {
       return null
@@ -915,7 +915,7 @@ function buildSessionResourceIdFromInput(input: string): string | null {
   if (!createdAt) {
     return null
   }
-  return buildSessionResourceId(trimmed, createdAt)
+  return sessionResource.buildId({ id: trimmed, createdAt })
 }
 
 function extractResourceLocalId(resourceId: string): string {
@@ -955,7 +955,10 @@ async function buildPodSessionSnapshot(
   if (!row.id || row.tool !== 'linx') {
     return null
   }
-  if (row.ownerWebId && row.ownerWebId !== context.webId) {
+  if (row.status === 'archived') {
+    return null
+  }
+  if (row.owner && row.owner !== context.webId) {
     return null
   }
 
@@ -982,13 +985,19 @@ async function listPodSessionMessages(
   }
 
   const metadata = isRecord(session.metadata) ? session.metadata : {}
-  const rowMessageResources = Array.isArray((session as { messageResources?: unknown }).messageResources)
-    ? (session as { messageResources: unknown[] }).messageResources
+  const sessionRecord = session as unknown as Record<string, unknown>
+  const rowMessageResources = Array.isArray(sessionRecord.messages)
+    ? sessionRecord.messages
+    : Array.isArray(sessionRecord.messageResources)
+      ? sessionRecord.messageResources
+      : []
+  const metadataMessages = Array.isArray(metadata.messages)
+    ? metadata.messages
     : []
   const metadataMessageResources = Array.isArray(metadata.messageResources)
     ? metadata.messageResources
     : []
-  const messageResources = [...rowMessageResources, ...metadataMessageResources]
+  const messageResources = [...rowMessageResources, ...metadataMessages, ...metadataMessageResources]
     .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
   if (messageResources.length > 0) {
     const rows = await Promise.all(messageResources.map(async (resource) => {
@@ -1001,13 +1010,16 @@ async function listPodSessionMessages(
         if (!message?.id) {
           return false
         }
+        if (message.status === 'abandoned' || message.deletedAt) {
+          return false
+        }
         // Exact resource reads may not hydrate inverse thread links. The
-        // session-owned messageResources list is already the authoritative
+        // session-owned messages list is already the authoritative
         // pointer set, so only reject rows that explicitly point elsewhere.
         return !message.thread || message.thread === session.thread
       })
       .map(podMessageRowToSnapshot)
-      .filter((message: LinxPiPodMessageSnapshot): message is LinxPiPodMessageSnapshot => Boolean(message.id))
+      .filter((message: LinxPiPodMessageSnapshot) => message.id)
       .sort(compareMessageSnapshots)
     if (messages.length > 0) {
       return messages
@@ -1028,10 +1040,13 @@ async function listPodSessionMessages(
       if (!message.id || message.thread !== session.thread) {
         return false
       }
+      if (message.status === 'abandoned' || message.deletedAt) {
+        return false
+      }
       return extractResourceLocalId(message.id).startsWith(`${extractResourceLocalId(session.id)}-`)
     })
     .map(podMessageRowToSnapshot)
-    .filter((message: LinxPiPodMessageSnapshot): message is LinxPiPodMessageSnapshot => Boolean(message.id))
+    .filter((message) => message.id)
     .sort(compareMessageSnapshots)
 }
 
@@ -1060,10 +1075,6 @@ function normalizeUnknownDate(value: unknown): Date | string | number | undefine
     return value
   }
   return undefined
-}
-
-function getPodBaseUrl(webId: string): string {
-  return webId.replace('/profile/card#me', '').replace(/\/$/, '')
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

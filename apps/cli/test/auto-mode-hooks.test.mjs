@@ -20,7 +20,8 @@ test('codex hook maps to codex-acp transport', async () => {
   assert.equal(hook.capabilities.canSetModel, false)
   const plan = hook.buildSpawnPlan({
     backend: 'codex',
-    mode: 'smart',
+autoEnabled: true,
+mode: 'auto',
     cwd: '/tmp/demo',
     model: 'o3',
     prompt: 'fix lint',
@@ -28,7 +29,23 @@ test('codex hook maps to codex-acp transport', async () => {
   })
 
   assert.match(plan.command, /codex-acp(?:\.js)?$/)
-  assert.deepEqual(plan.args, ['--search'])
+  assert.deepEqual(plan.args, ['-c', 'model="o3"', '--search'])
+})
+
+test('codex hook rejects provider-routed worker models', async () => {
+  const { module } = await getAutoModeModule()
+  const { getAutoModeHook } = module
+  const hook = getAutoModeHook('codex')
+
+  assert.throws(() => hook.buildSpawnPlan({
+    backend: 'codex',
+autoEnabled: true,
+mode: 'auto',
+    cwd: '/tmp/demo',
+    model: 'deepseek-v4',
+    prompt: 'fix lint',
+    passthroughArgs: [],
+  }), /codex backend cannot run model deepseek-v4/)
 })
 
 test('claude hook maps to claude-code-acp transport', async () => {
@@ -36,17 +53,53 @@ test('claude hook maps to claude-code-acp transport', async () => {
   const { getAutoModeHook } = module
   const hook = getAutoModeHook('claude')
   assert.equal(hook.capabilities.protocol, 'acp')
+  assert.equal(hook.capabilities.canSetModel, true)
   const plan = hook.buildSpawnPlan({
     backend: 'claude',
     mode: 'auto',
     cwd: '/tmp/demo',
-    model: 'sonnet',
+    model: 'opus',
     prompt: 'summarize',
     passthroughArgs: ['--verbose'],
   })
 
   assert.equal(plan.command, 'claude-code-acp')
   assert.deepEqual(plan.args, ['--verbose'])
+})
+
+test('claude hook rejects provider-routed worker models before ACP startup', async () => {
+  const { module } = await getAutoModeModule()
+  const { getAutoModeHook } = module
+  const hook = getAutoModeHook('claude')
+
+  assert.throws(() => hook.buildSpawnPlan({
+    backend: 'claude',
+autoEnabled: true,
+mode: 'auto',
+    cwd: '/tmp/demo',
+    model: 'deepseek-v4',
+    prompt: 'summarize',
+    passthroughArgs: [],
+  }), /claude backend cannot set provider-routed model deepseek-v4/)
+})
+
+test('claude hook honors command override for smoke and packaged runtimes', async () => {
+  const { module } = await getAutoModeModule()
+  const { getAutoModeHook } = module
+  const hook = getAutoModeHook('claude')
+  const plan = hook.buildSpawnPlan({
+    backend: 'claude',
+autoEnabled: false,
+mode: 'off',
+    cwd: '/tmp/demo',
+    model: 'opus',
+    prompt: 'summarize',
+    commandOverride: '/tmp/fake-claude-code-acp',
+    passthroughArgs: [],
+  })
+
+  assert.equal(plan.command, '/tmp/fake-claude-code-acp')
+  assert.deepEqual(plan.args, [])
 })
 
 test('codebuddy hook maps to built-in ACP mode and preserves model arg', async () => {
@@ -56,7 +109,8 @@ test('codebuddy hook maps to built-in ACP mode and preserves model arg', async (
   assert.equal(hook.capabilities.protocol, 'acp')
   const plan = hook.buildSpawnPlan({
     backend: 'codebuddy',
-    mode: 'manual',
+autoEnabled: false,
+mode: 'off',
     cwd: '/tmp/demo',
     model: 'deepseek-v3.1-thinking',
     prompt: 'inspect repo',
