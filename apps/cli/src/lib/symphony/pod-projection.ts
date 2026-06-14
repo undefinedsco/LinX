@@ -8,9 +8,10 @@ import type {
   SymphonyRunPlan,
   SymphonySessionRecord,
   SymphonySessionStatus,
-  SymphonyWorkspaceRef,
+  WorkerWorkspace,
 } from '@linx/agent-runtime/symphony'
 import { getSymphonyArchiveKey } from '@linx/agent-runtime/symphony'
+import { appendChatReconcilerMetadata, reconcileChatAppend } from '@linx/agent-runtime'
 import { DEFAULT_AGENT_RUNTIME_COMPANION_MODEL_ID } from '@linx/agent-runtime/companion-model'
 import { decideThreadControlEvent } from '@linx/agent-runtime/thread-reconciler-controller'
 import type { AutoModeWorkerBackend } from '@linx/agent-runtime/auto-mode'
@@ -159,7 +160,7 @@ interface SymphonyAgentRow extends Record<string, unknown> {
 interface SymphonyContactRow extends Record<string, unknown> {
   id: string
   name: string
-  entity: string
+  about: string
   rdfType: string
   contactType: string
   createdAt: Date
@@ -536,11 +537,11 @@ function buildSymphonyWorkspaceMetadata(
   plan: SymphonyRunPlan,
   worker: SymphonyRunPlan['workers'][number],
 ): Record<string, unknown> {
-  const workspace = normalizeSymphonyWorkspaceRef(worker.session.workspace ?? plan.session.workspace, worker.session.cwd ?? plan.session.cwd)
+  const workspace = normalizeWorkerWorkspace(worker.session.workspace ?? plan.session.workspace, worker.session.cwd ?? plan.session.cwd)
   return {
     path: workspace.path,
     kind: workspace.kind,
-    ...(workspace.workspaceUri ? { uri: workspace.workspaceUri } : {}),
+    ...(workspace.container ? { container: workspace.container } : {}),
     ...(workspace.repository ? { repository: workspace.repository } : {}),
     ...(workspace.branch ? { branch: workspace.branch } : {}),
     ...(workspace.worktree ? { worktree: workspace.worktree } : {}),
@@ -554,17 +555,17 @@ function buildSymphonyWorkspaceMetadata(
   }
 }
 
-function normalizeSymphonyWorkspaceRef(
-  workspace: SymphonyWorkspaceRef | undefined,
+function normalizeWorkerWorkspace(
+  workspace: WorkerWorkspace | undefined,
   fallbackPath: string,
-): SymphonyWorkspaceRef {
+): WorkerWorkspace {
   return {
     path: workspace?.path ?? fallbackPath,
     kind: workspace?.kind ?? 'folder',
     ...(workspace?.repository ? { repository: workspace.repository } : {}),
     ...(workspace?.branch ? { branch: workspace.branch } : {}),
     ...(workspace?.worktree ? { worktree: workspace.worktree } : {}),
-    ...(workspace?.workspaceUri ? { workspaceUri: workspace.workspaceUri } : {}),
+    ...(workspace?.container ? { container: workspace.container } : {}),
     ...(workspace?.baseRevision ? { baseRevision: workspace.baseRevision } : {}),
     ...(workspace?.environment ? { environment: workspace.environment } : {}),
   }
@@ -969,13 +970,14 @@ function buildSymphonyThreadRow(
   }
   const createdAt = safeDate(primaryWorker.session.createdAt)
   const updatedAt = safeDate(primaryWorker.session.updatedAt)
-  const parent = group?.chat ?? selectTargetChatIri(plan.session.target?.chat, webId, plan)
+  const chat = group?.chat ?? selectTargetChatIri(plan.session.target?.chat, webId, plan)
   const thread = group?.thread ?? selectTargetThreadIri(plan.session.target?.thread, webId, plan)
   const workspace = pathToWorkspaceUri(primaryWorker.session.cwd) ?? pathToWorkspaceUri(plan.session.cwd)
 
   return {
-    id: threadRepository.idForChat(parent, thread),
-    parent,
+    id: threadRepository.idForChat(chat, thread),
+    scope: chat,
+    chat,
     title: normalizeTitle(plan.issue.title || plan.issue.description || 'Symphony Task'),
     ...(workspace ? { workspace } : {}),
     metadata: {
@@ -1431,7 +1433,7 @@ function buildSymphonyContacts(plan: SymphonyRunPlan, webId: string): SymphonyCo
   return buildSymphonyAgents(plan).map((agent) => ({
     id: agent.id === SYMPHONY_SECRETARY_AGENT_ID ? SYMPHONY_CONTACT_ID : `${agent.id}-contact`,
     name: agent.name,
-    entity: agentResource.buildIri(webId,  { id: agent.id }),
+    about: agentResource.buildIri(webId,  { id: agent.id }),
     rdfType: ContactClass.AGENT,
     contactType: ContactType.AGENT,
     createdAt: now,
@@ -1508,10 +1510,23 @@ function buildStatusMessageRow(plan: SymphonyRunPlan, webId: string, stage: Proj
     id: buildWorkerAgentId(plan.session.backend, plan.session.target?.agent),
   })
 
+  const chat = selectTargetChatIri(plan.session.target?.chat, webId, plan)
+  const thread = selectTargetThreadIri(plan.session.target?.thread, webId, plan)
+  const { summary } = reconcileChatAppend({
+    chat,
+    thread,
+    role: 'assistant',
+    content,
+    actor: { id: secretaryAgent, role: 'secretary' },
+    source: 'secretary-runtime-intent',
+    createdAt,
+    randomId: `${plan.session.uri}:${stage}`,
+  })
+
   return {
     id: `${buildSymphonyThreadId(plan)}-${stage}`,
-    chat: selectTargetChatIri(plan.session.target?.chat, webId, plan),
-    thread: selectTargetThreadIri(plan.session.target?.thread, webId, plan),
+    chat,
+    thread,
     maker: secretaryAgent,
     role: 'assistant',
     content,
@@ -1545,6 +1560,7 @@ function buildStatusMessageRow(plan: SymphonyRunPlan, webId: string, stage: Proj
     routedBy: secretaryAgent,
     routeTargetAgent,
     coordinationId: plan.session.uri,
+    metadata: appendChatReconcilerMetadata(undefined, summary),
     createdAt,
     updatedAt: createdAt,
   } as MessageInsert
@@ -1636,6 +1652,7 @@ async function upsertMessage(db: PodProjectionDb, runtime: SymphonyPodProjection
     routedBy: row.routedBy,
     routeTargetAgent: row.routeTargetAgent,
     coordinationId: row.coordinationId,
+    metadata: row.metadata,
     updatedAt: row.updatedAt,
   })
 }
@@ -1786,7 +1803,7 @@ async function upsertAgent(db: PodProjectionDb, runtime: SymphonyPodProjectionRu
 async function upsertContact(db: PodProjectionDb, runtime: SymphonyPodProjectionRuntime, row: SymphonyContactRow): Promise<void> {
   await upsertExactRecord(db, runtime.contactResource, { id: row.id }, row, {
     name: row.name,
-    entity: row.entity,
+    about: row.about,
     rdfType: row.rdfType,
     contactType: row.contactType,
     updatedAt: row.updatedAt,

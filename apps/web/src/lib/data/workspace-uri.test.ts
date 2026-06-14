@@ -10,15 +10,15 @@ import {
 } from './workspace-uri'
 
 describe('workspace-uri', () => {
-  it('builds stable local workspace uri and id from node plus path', () => {
-    const uri = buildLocalWorkspaceUri('node-0000', '/Users/alice/repo/linx/')
+  it('builds stable local workspace uri and id from device plus path', () => {
+    const uri = buildLocalWorkspaceUri('device-0000', '/Users/alice/repo/linx/')
 
-    expect(uri).toBe('linx://node-0000/Users/alice/repo/linx')
+    expect(uri).toBe('linx://device-0000/Users/alice/repo/linx')
     expect(parseLocalWorkspaceUri(uri)).toEqual({
-      nodeId: 'node-0000',
+      deviceId: 'device-0000',
       path: '/Users/alice/repo/linx',
     })
-    expect(resolveWorkspaceIdFromUri(uri)).toBe(buildLocalWorkspaceId('node-0000', '/Users/alice/repo/linx'))
+    expect(resolveWorkspaceIdFromUri(uri)).toBe(buildLocalWorkspaceId('device-0000', '/Users/alice/repo/linx'))
   })
 
   it('resolves pod workspace id from workspace container uri', () => {
@@ -46,8 +46,8 @@ describe('workspace-uri', () => {
 
   it('derives local repository root uri for worktree metadata', () => {
     expect(resolveLocalRepoRootUri({
-      workspaceUri: buildLocalWorkspaceUri('node-0000', '/repo/linx-worktrees/feature-a'),
+      workspaceUri: buildLocalWorkspaceUri('device-0000', '/repo/linx-worktrees/feature-a'),
       repoPath: '/repo/linx',
-    })).toBe('linx://node-0000/repo/linx')
+    })).toBe('linx://device-0000/repo/linx')
   })
 })

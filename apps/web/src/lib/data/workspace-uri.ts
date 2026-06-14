@@ -1,5 +1,6 @@
 export type WorkspaceKind = 'folder' | 'worktree'
 export type WorkspaceType = 'pod' | 'local'
+const LOCAL_WORKSPACE_URI_PATTERN = /^linx:\/\/(device-[^/]+)(\/.*)$/
 
 // Workspace is a container URI. This metadata is an optional display/cache
 // projection for UI summaries; it is not a standalone Pod resource model.
@@ -70,7 +71,7 @@ export function resolveWorkspaceIdFromUri(uri?: string | null): string | null {
 
   const localWorkspace = parseLocalWorkspaceUri(uri)
   if (localWorkspace) {
-    return buildLocalWorkspaceId(localWorkspace.nodeId, localWorkspace.path)
+    return buildLocalWorkspaceId(localWorkspace.deviceId, localWorkspace.path)
   }
 
   return null
@@ -89,44 +90,48 @@ export function normalizeLocalWorkspacePath(path?: string | null): string {
   return normalized
 }
 
-export function buildLocalWorkspaceUri(nodeId: string, path: string): string {
-  const normalizedNodeId = nodeId.trim()
+export function buildLocalWorkspaceUri(deviceId: string, path: string): string {
+  return buildLocalContainer(deviceId, path)
+}
+
+export function buildLocalContainer(deviceId: string, path: string): string {
+  const normalizedDeviceId = deviceId.trim()
   const normalizedPath = normalizeLocalWorkspacePath(path)
-  if (!normalizedNodeId || !normalizedPath) {
-    throw new Error('nodeId and path are required to build a local workspace URI.')
+  if (!normalizedDeviceId || !normalizedPath) {
+    throw new Error('deviceId and path are required to build a local workspace URI.')
   }
 
   const absolutePath = normalizedPath.startsWith('/') ? normalizedPath : `/${normalizedPath}`
-  return `linx://${encodeURIComponent(normalizedNodeId)}${encodePathname(absolutePath)}`
+  return `linx://${encodeURIComponent(normalizedDeviceId)}${encodePathname(absolutePath)}`
 }
 
-export function buildLocalWorkspaceId(nodeId: string, path: string): string {
-  const normalizedNodeId = nodeId.trim()
+export function buildLocalWorkspaceId(deviceId: string, path: string): string {
+  const normalizedDeviceId = deviceId.trim()
   const normalizedPath = normalizeLocalWorkspacePath(path)
-  if (!normalizedNodeId || !normalizedPath) {
-    throw new Error('nodeId and path are required to build a local workspace id.')
+  if (!normalizedDeviceId || !normalizedPath) {
+    throw new Error('deviceId and path are required to build a local workspace id.')
   }
 
-  return `local-${sanitizeWorkspaceIdSegment(normalizedNodeId)}-${stableWorkspaceHash(normalizedPath)}`
+  return `local-${sanitizeWorkspaceIdSegment(normalizedDeviceId)}-${stableWorkspaceHash(normalizedPath)}`
 }
 
 export function isLocalWorkspaceUri(uri?: string | null): boolean {
-  return typeof uri === 'string' && uri.startsWith('linx://')
+  return typeof uri === 'string' && LOCAL_WORKSPACE_URI_PATTERN.test(uri)
 }
 
-export function parseLocalWorkspaceUri(uri?: string | null): { nodeId: string; path: string } | null {
+export function parseLocalWorkspaceUri(uri?: string | null): { deviceId: string; path: string } | null {
   if (!isLocalWorkspaceUri(uri)) {
     return null
   }
 
-  const match = uri?.match(/^linx:\/\/([^/]+)(\/.*)?$/)
+  const match = uri?.match(LOCAL_WORKSPACE_URI_PATTERN)
   if (!match?.[1]) {
     return null
   }
 
   return {
-    nodeId: decodeURIComponent(match[1]),
-    path: normalizeLocalWorkspacePath(decodePathname(match[2] ?? '/')),
+    deviceId: decodeURIComponent(match[1]),
+    path: normalizeLocalWorkspacePath(decodePathname(match[2])),
   }
 }
 
@@ -140,7 +145,7 @@ export function resolveLocalRepoRootUri(input: {
     return undefined
   }
 
-  return buildLocalWorkspaceUri(localWorkspace.nodeId, repoPath)
+  return buildLocalWorkspaceUri(localWorkspace.deviceId, repoPath)
 }
 
 function normalizeContainerBase(baseUrl: string): string {
@@ -160,7 +165,7 @@ function sanitizeWorkspaceIdSegment(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, '-')
     .replace(/^-+|-+$/g, '')
-    || 'node'
+    || 'device'
 }
 
 function stableWorkspaceHash(value: string): string {

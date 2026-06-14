@@ -97,22 +97,26 @@ test('pod chat store models CLI message persistence as local-to-core Pod sync', 
 
   await db.insert(module.__podChatStoreInternal.resources.threadResource).values({
     id: 'chat/cli-default/index.ttl#thread-1',
-    parent: 'https://alice.example/.data/chat/cli-default/index.ttl#this',
+    chat: 'https://alice.example/.data/chat/cli-default/index.ttl#this',
   }).execute()
 
   await module.saveUserMessage(createSession(), 'cli-default', 'thread-1', 'hello from cli')
 
   const messageInsert = inserts.find((entry) => entry.resource === module.__podChatStoreInternal.resources.messageResource)
-  assert.deepEqual(messageInsert?.value, {
-    id: 'uuid-1',
-    chat: 'https://alice.example/.data/chat/cli-default/index.ttl#this',
-    thread: 'https://alice.example/.data/chat/cli-default/index.ttl#thread-1',
-    maker: 'https://alice.example/profile/card#me',
-    role: 'user',
-    content: 'hello from cli',
-    status: 'sent',
-    createdAt: new Date('2026-05-21T00:00:00.000Z'),
-  })
+  assert.equal(messageInsert?.value.id, 'uuid-1')
+  assert.equal(messageInsert?.value.chat, 'https://alice.example/.data/chat/cli-default/index.ttl#this')
+  assert.equal(messageInsert?.value.thread, 'https://alice.example/.data/chat/cli-default/index.ttl#thread-1')
+  assert.equal(messageInsert?.value.maker, 'https://alice.example/profile/card#me')
+  assert.equal(messageInsert?.value.role, 'user')
+  assert.equal(messageInsert?.value.content, 'hello from cli')
+  assert.equal(messageInsert?.value.status, 'sent')
+  assert.deepEqual(messageInsert?.value.createdAt, new Date('2026-05-21T00:00:00.000Z'))
+  assert.equal(messageInsert?.value.metadata?.reconciler?.latest?.eventType, 'message.appended')
+  assert.equal(messageInsert?.value.metadata?.reconciler?.latest?.wakeJobs?.[0]?.targetRole, 'primary-agent')
+  assert.equal(
+    messageInsert?.value.metadata?.reconciler?.latest?.wakeJobs?.[0]?.sourceResource,
+    'https://alice.example/.data/chat/cli-default/2026/05/21/messages.ttl#uuid-1',
+  )
   assert.equal(updates.length, 2)
 
   assert.deepEqual(syncResults.map((result) => result.metadata.action), [
@@ -182,7 +186,7 @@ test('pod chat store retries transient Pod write failures', async (t) => {
 
   await db.insert(module.__podChatStoreInternal.resources.threadResource).values({
     id: 'chat/cli-default/index.ttl#thread-1',
-    parent: 'https://alice.example/.data/chat/cli-default/index.ttl#this',
+    chat: 'https://alice.example/.data/chat/cli-default/index.ttl#this',
   }).execute()
 
   await module.saveUserMessage(createSession(), 'cli-default', 'thread-1', 'hello after retry')

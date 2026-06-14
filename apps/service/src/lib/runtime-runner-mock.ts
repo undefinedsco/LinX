@@ -16,7 +16,7 @@ function chunkText(text: string, targetChunks = 3): string[] {
 
 function describeWorkspace(record: RuntimeThreadRecord): string {
   if (record.workspaceKind === 'pod-container') {
-    return `当前 Pod workspace：${record.workspaceUri ?? '未设置'}`
+    return `当前 Pod workspace：${record.container ?? '未设置'}`
   }
 
   return [
@@ -53,7 +53,7 @@ export class MockRuntimeRunner implements RuntimeRunner {
       ts: Date.now(),
       threadId: record.id,
       runner: record.tool,
-      workdir: record.folderPath ?? record.repoPath ?? record.workspaceUri ?? '',
+      workdir: record.folderPath ?? record.repoPath ?? record.container ?? '',
     })
     this.host.emitEvent({
       type: 'status',

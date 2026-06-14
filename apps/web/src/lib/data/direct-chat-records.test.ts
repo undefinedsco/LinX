@@ -46,7 +46,7 @@ describe('direct-chat-records', () => {
     expect(result.agent.id).toBe('__secretary__/')
     expect(result.contactId).toBe('__secretary__')
     expect(result.contactUri).toBe(contactIri)
-    expect(result.contact.entityUri).toBe(agentIri)
+    expect(result.contact.about).toBe(agentIri)
   })
 
   it('ensures an Agent contact by base-relative ids before chat bootstrap', async () => {
@@ -92,11 +92,11 @@ describe('direct-chat-records', () => {
     expect(insertedRows[0].row).toMatchObject({
       id: '__secretary__',
       '@id': contactIri,
-      entity: agentIri,
+      about: agentIri,
     })
     expect(result.agentId).toBe('__secretary__/')
     expect(result.contactId).toBe('__secretary__')
     expect(result.contactUri).toBe(contactIri)
-    expect(result.contact.entityUri).toBe(agentIri)
+    expect(result.contact.about).toBe(agentIri)
   })
 })

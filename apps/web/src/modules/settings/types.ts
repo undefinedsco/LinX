@@ -28,9 +28,9 @@ export type TunnelProvider = 'cloudflare' | 'sakura'
  * 本地托管模式配置 - 连接 Cloud IdP
  */
 export interface LocalConfig {
-  /** 节点 ID，仅用于本机节点标识，不再派生平台托管域名 */
+  /** SP 节点 ID，用于 Cloud 识别这个存储服务节点 */
   nodeId?: string
-  /** 兼容旧字段，等价于 nodeId */
+  /** 设备 ID，用于标识可以运行本地 workspace 的设备 */
   deviceId?: string
   /** 节点 Token，用于与 Cloud 通信 (XPOD_NODE_TOKEN) */
   nodeToken?: string
@@ -67,8 +67,8 @@ export interface NetworkConfig {
  * - edition -> XPOD_EDITION
  * - pod.port -> XPOD_PORT / CSS_PORT
  * - pod.dataDir -> 用于生成 CSS_SPARQL_ENDPOINT, CSS_IDENTITY_DB_URL
- * - local.nodeId -> XPOD_NODE_ID
- * - local.deviceId -> XPOD_NODE_ID (legacy alias)
+ * - local.nodeId -> XPOD_NODE_ID / LINX_NODE_ID
+ * - local.deviceId -> LINX_DEVICE_ID
  * - local.nodeToken -> XPOD_NODE_TOKEN
  * - standalone.customDomain -> CSS_BASE_URL
  * - standalone.oidcIssuer -> oidcIssuer

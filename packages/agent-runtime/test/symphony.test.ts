@@ -86,7 +86,7 @@ test('creates a task delivery session run plan with URI relations and workspace 
     repository: 'https://github.com/undefineds/linx.git',
     branch: 'main',
     worktree: '/tmp/linx-worktree',
-    workspaceUri: 'urn:undefineds:workspace:local-linx',
+    container: 'urn:undefineds:workspace:local-linx',
     baseRevision: 'abc123',
     environment: {
       kind: 'local-shell',
@@ -144,7 +144,7 @@ test('creates a task delivery session run plan with URI relations and workspace 
   assert.equal(plan.session.secretaryAutoEnabled, true)
   assert.equal(plan.session.model, 'gpt-5.5')
   assert.equal(plan.session.workspace?.path, '/tmp/linx')
-  assert.equal(plan.session.workspace?.workspaceUri, 'urn:undefineds:workspace:local-linx')
+  assert.equal(plan.session.workspace?.container, 'urn:undefineds:workspace:local-linx')
   assert.equal(plan.session.workspace?.baseRevision, 'abc123')
   assert.equal(plan.session.workspace?.environment?.kind, 'local-shell')
   assert.equal(plan.session.workspace?.environment?.runtime, 'codex')
@@ -152,7 +152,7 @@ test('creates a task delivery session run plan with URI relations and workspace 
   assert.equal(plan.workers[0].delivery.uri, plan.delivery.uri)
   assert.match(plan.delivery.projection.prompt, /Workspace: \/tmp\/linx/)
   assert.match(plan.delivery.projection.prompt, /Workspace kind: git/)
-  assert.match(plan.delivery.projection.prompt, /Workspace URI: urn:undefineds:workspace:local-linx/)
+  assert.match(plan.delivery.projection.prompt, /Workspace container: urn:undefineds:workspace:local-linx/)
   assert.match(plan.delivery.projection.prompt, /Workspace base revision: abc123/)
   assert.match(plan.delivery.projection.prompt, /Workspace environment: local-shell runtime=codex id=host-a label=Local LinX checkout/)
   assert.match(plan.delivery.projection.prompt, /Target chat:/)
@@ -353,7 +353,7 @@ test('keeps shared workspace by default and honors explicit worker workspace ove
         workspace: {
           path: '/workspace/linx',
           kind: 'git',
-          workspaceUri: 'urn:undefineds:workspace:container-linx',
+          container: 'urn:undefineds:workspace:container-linx',
           baseRevision: 'base-b',
           environment: {
             kind: 'remote-container',
@@ -374,7 +374,7 @@ test('keeps shared workspace by default and honors explicit worker workspace ove
   assert.equal(plan.workers[0].session.workspace?.environment?.kind, 'backend-runtime')
   assert.equal(plan.workers[1].session.cwd, '/workspace/linx')
   assert.equal(plan.workers[1].session.workspace?.path, '/workspace/linx')
-  assert.equal(plan.workers[1].session.workspace?.workspaceUri, 'urn:undefineds:workspace:container-linx')
+  assert.equal(plan.workers[1].session.workspace?.container, 'urn:undefineds:workspace:container-linx')
   assert.equal(plan.workers[1].session.workspace?.baseRevision, 'base-b')
   assert.equal(plan.workers[1].session.workspace?.environment?.kind, 'remote-container')
   assert.equal(plan.workers[1].session.workspace?.environment?.id, 'container-a')

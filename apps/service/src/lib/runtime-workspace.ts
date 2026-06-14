@@ -23,7 +23,7 @@ export function normalizeLocalRuntimePath(value?: string | null): string {
 
 export function inferRuntimeWorkspaceKind(input: {
   workspaceKind?: unknown
-  workspaceUri?: string | null
+  container?: string | null
   repoPath?: string | null
   folderPath?: string | null
 }): RuntimeWorkspaceKind {
@@ -45,7 +45,7 @@ export function normalizeCreateRuntimeThreadInput(input: CreateRuntimeThreadInpu
   return {
     ...input,
     workspaceKind: normalized.workspaceKind,
-    workspaceUri: normalized.workspaceUri,
+    container: normalized.container,
     repoPath: normalized.repoPath,
     folderPath: normalized.folderPath,
     baseRef: normalized.baseRef,
@@ -61,7 +61,7 @@ export function normalizeLoadedRuntimeThreadRecord(record: RuntimeThreadRecord):
   try {
     const normalized = normalizeCreateRuntimeThreadInput({
       threadId: record.threadId,
-      workspaceUri: record.workspaceUri,
+      container: record.container,
       workspaceKind: record.workspaceKind,
       title: record.title,
       repoPath: record.repoPath,
@@ -75,7 +75,7 @@ export function normalizeLoadedRuntimeThreadRecord(record: RuntimeThreadRecord):
     return {
       ...record,
       workspaceKind: normalized.workspaceKind,
-      workspaceUri: normalized.workspaceUri,
+      container: normalized.container,
       repoPath: normalized.repoPath,
       folderPath: normalized.folderPath,
       baseRef: normalized.baseRef,
@@ -86,8 +86,8 @@ export function normalizeLoadedRuntimeThreadRecord(record: RuntimeThreadRecord):
   }
 }
 
-export function mapPodWorkspaceUriToLocalPath(
-  workspaceUri: string,
+export function mapPodContainerToLocalPath(
+  container: string,
   env: Partial<Record<'CSS_ROOT_FILE_PATH' | 'CSS_BASE_URL', string | undefined>> = process.env,
 ): string {
   const rootFilePath = env.CSS_ROOT_FILE_PATH?.trim()
@@ -97,21 +97,21 @@ export function mapPodWorkspaceUriToLocalPath(
   }
 
   const base = new URL(baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`)
-  const workspace = new URL(workspaceUri.endsWith('/') ? workspaceUri : `${workspaceUri}/`)
+  const workspace = new URL(container.endsWith('/') ? container : `${container}/`)
   if (base.origin !== workspace.origin) {
-    throw new Error(`Pod workspace ${workspaceUri} is not served by this xpod origin ${base.origin}.`)
+    throw new Error(`Pod workspace ${container} is not served by this xpod origin ${base.origin}.`)
   }
 
   const basePath = base.pathname.endsWith('/') ? base.pathname : `${base.pathname}/`
   if (!workspace.pathname.startsWith(basePath)) {
-    throw new Error(`Pod workspace ${workspaceUri} is outside this xpod base path ${basePath}.`)
+    throw new Error(`Pod workspace ${container} is outside this xpod base path ${basePath}.`)
   }
 
   const relative = decodeURIComponent(workspace.pathname.slice(basePath.length)).replace(/\/+$/g, '')
   const resolvedRoot = path.resolve(rootFilePath)
   const resolved = path.resolve(resolvedRoot, relative)
   if (resolved !== resolvedRoot && !resolved.startsWith(`${resolvedRoot}${path.sep}`)) {
-    throw new Error(`Pod workspace ${workspaceUri} resolves outside CSS_ROOT_FILE_PATH.`)
+    throw new Error(`Pod workspace ${container} resolves outside CSS_ROOT_FILE_PATH.`)
   }
   return resolved
 }
@@ -121,10 +121,10 @@ export function resolveRuntimeThreadWorkdir(record: RuntimeThreadRecord, options
   let workdir: string
 
   if (workspaceKind === 'pod-container') {
-    if (!record.workspaceUri) {
-      throw new Error('Pod workspace session is missing workspaceUri.')
+    if (!record.container) {
+      throw new Error('Pod workspace session is missing container.')
     }
-    workdir = mapPodWorkspaceUriToLocalPath(record.workspaceUri)
+    workdir = mapPodContainerToLocalPath(record.container)
   } else if (workspaceKind === 'local-worktree') {
     workdir = normalizeLocalRuntimePath(record.folderPath)
   } else {

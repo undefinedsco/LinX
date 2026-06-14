@@ -37,7 +37,7 @@
     "@tanstack/react-query": "^5.100.11",
     "@tanstack/react-router": "^1.170.6",
     "@undefineds.co/drizzle-solid": "^0.3.14",
-    "@undefineds.co/models": "0.2.40",
+    "@undefineds.co/models": "0.2.42",
     "ai": "^6.0.188",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

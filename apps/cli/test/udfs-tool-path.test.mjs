@@ -7,7 +7,7 @@ const CREDENTIAL_SCHEMA_URI = 'https://undefineds.co/ns#Credential'
 const API_KEY_PREDICATE_URI = 'https://undefineds.co/ns#apiKey'
 
 test('LinX consumed models keep Solid Chat compatibility predicates', () => {
-  assert.equal(ThreadVocab.chat, SIOC.has_parent)
+  assert.equal(ThreadVocab.parent, SIOC.has_parent)
   assert.equal(MessageVocab.chat, WF.message)
   assert.equal(MessageVocab.thread, SIOC.has_member)
 })

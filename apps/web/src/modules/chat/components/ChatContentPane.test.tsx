@@ -18,7 +18,7 @@ const { mockSetThreadId, mockUseChatKit } = vi.hoisted(() => {
 })
 const mockIsRuntimeSessionMode = vi.fn()
 const mockUseRuntimeSession = vi.fn()
-const mockResolveLocalWorkspaceUri = vi.fn(async () => 'linx://node-123/repo/linx')
+const mockResolveLocalWorkspaceUri = vi.fn(async () => 'linx://device-123/repo/linx')
 const mockUseWorkspaceList = vi.fn()
 const mockUseChatList = vi.fn()
 const mockUseThreadList = vi.fn()
@@ -119,7 +119,7 @@ vi.mock('../collections', () => ({
 vi.mock('../runtime-client', () => ({
   fetchRuntimeSessionLog: vi.fn(),
   isRuntimeSessionMode: () => mockIsRuntimeSessionMode(),
-  resolveLocalWorkspaceUri: (...args: unknown[]) => mockResolveLocalWorkspaceUri(...args),
+  resolveLocalContainer: (...args: unknown[]) => mockResolveLocalWorkspaceUri(...args),
   useRuntimeSession: () => mockUseRuntimeSession(),
   useRuntimeSessionEvents: vi.fn((_id: string | undefined, handler: (event: unknown) => void) => {
     mockRuntimeEventHandler.current = handler
@@ -158,7 +158,7 @@ describe('ChatContentPane', () => {
       isLoading: false,
     })
     mockMutations.ensureThreadWorkspace.mutateAsync.mockResolvedValue('https://alice.example/.data/workspaces/thread-1/')
-    mockResolveLocalWorkspaceUri.mockResolvedValue('linx://node-123/repo/linx')
+    mockResolveLocalWorkspaceUri.mockResolvedValue('linx://device-123/repo/linx')
     storeState.messageAnchorId = null
     storeState.selectedChatId = 'chat-1'
     storeState.selectedThreadId = 'thread-1'
@@ -402,7 +402,7 @@ describe('ChatContentPane', () => {
     await waitFor(() => {
       expect(createSession).toHaveBeenCalledWith({
         threadId: 'thread-1',
-        workspaceUri: 'https://alice.example/.data/workspaces/ws-1/',
+        container: 'https://alice.example/.data/workspaces/ws-1/',
         workspaceKind: 'pod-container',
         title: '默认话题',
         tool: 'codex',

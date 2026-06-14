@@ -1,8 +1,37 @@
 export type RuntimeWorkspaceKind = 'local-folder' | 'local-worktree' | 'pod-container'
+export type AgentWorkspaceKind = 'folder' | 'git' | 'worktree'
+
+export interface AgentWorkspaceEnvironment {
+  kind: 'local-shell' | 'remote-container' | 'cloud-runner' | 'backend-runtime' | 'unknown'
+  id?: string
+  label?: string
+  runtime?: string
+}
+
+export interface AgentWorkspace {
+  /**
+   * Stable container identity.
+   *
+   * - Solid Pod containers should use their dereferenceable HTTP(S) LDP IRI.
+   * - Device-local containers should use a device-scoped URI such as
+   *   `linx://device-0000/Users/alice/repo`.
+   *
+   * Runtime adapters may derive a process-local path from this value, but the
+   * path is not the shared identity.
+   */
+  container?: string
+  path?: string
+  kind: AgentWorkspaceKind
+  repository?: string
+  branch?: string
+  worktree?: string
+  baseRevision?: string
+  environment?: AgentWorkspaceEnvironment
+}
 
 export interface RuntimeWorkspaceInput {
   workspaceKind?: unknown
-  workspaceUri?: string | null
+  container?: string | null
   repoPath?: string | null
   folderPath?: string | null
   baseRef?: string | null
@@ -11,7 +40,7 @@ export interface RuntimeWorkspaceInput {
 
 export interface NormalizedRuntimeWorkspaceInput {
   workspaceKind: RuntimeWorkspaceKind
-  workspaceUri?: string
+  container?: string
   repoPath?: string
   folderPath?: string
   baseRef: string
@@ -27,7 +56,7 @@ export interface RuntimeWorkspaceSessionLike {
   cwd?: string | null
   repoPath?: string | null
   folderPath?: string | null
-  workspaceUri?: string | null
+  container?: string | null
 }
 
 function trim(value?: string | null): string {
@@ -42,7 +71,7 @@ export function isRuntimeWorkspaceKind(value: unknown): value is RuntimeWorkspac
   return value === 'local-folder' || value === 'local-worktree' || value === 'pod-container'
 }
 
-export function isHttpWorkspaceRef(value?: string | null): boolean {
+export function isHttpContainerRef(value?: string | null): boolean {
   const candidate = trim(value)
   if (!candidate) return false
   try {
@@ -52,6 +81,8 @@ export function isHttpWorkspaceRef(value?: string | null): boolean {
     return false
   }
 }
+
+export const isHttpWorkspaceRef = isHttpContainerRef
 
 export function inferRuntimeWorkspaceKind(
   input: RuntimeWorkspaceInput,
@@ -63,7 +94,7 @@ export function inferRuntimeWorkspaceKind(
 
   const normalize = options.normalizeLocalPath ?? normalizeLocalPath
   const repoPath = normalize(input.repoPath)
-  if (isHttpWorkspaceRef(input.workspaceUri) && !repoPath) {
+  if (isHttpContainerRef(input.container) && !repoPath) {
     return 'pod-container'
   }
 
@@ -77,20 +108,20 @@ export function normalizeRuntimeWorkspaceInput(
 ): NormalizedRuntimeWorkspaceInput {
   const normalize = options.normalizeLocalPath ?? normalizeLocalPath
   const workspaceKind = inferRuntimeWorkspaceKind(input, options)
-  const workspaceUri = trim(input.workspaceUri) || undefined
+  const container = trim(input.container) || undefined
   const repoPath = normalize(input.repoPath) || undefined
   const folderPathInput = normalize(input.folderPath) || undefined
   const baseRef = trim(input.baseRef) || options.defaultBaseRef || 'HEAD'
   const branch = trim(input.branch) || undefined
 
   if (workspaceKind === 'pod-container') {
-    if (!workspaceUri || !isHttpWorkspaceRef(workspaceUri)) {
-      throw new Error('Pod workspace session requires an http(s) workspaceUri.')
+    if (!container || !isHttpContainerRef(container)) {
+      throw new Error('Pod workspace session requires an http(s) container.')
     }
 
     return {
       workspaceKind,
-      workspaceUri,
+      container,
       repoPath,
       folderPath: folderPathInput,
       baseRef,
@@ -105,7 +136,7 @@ export function normalizeRuntimeWorkspaceInput(
   const folderPath = folderPathInput || repoPath
   return {
     workspaceKind: folderPath !== repoPath ? 'local-worktree' : 'local-folder',
-    workspaceUri,
+    container,
     repoPath,
     folderPath,
     baseRef,

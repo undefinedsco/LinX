@@ -3,7 +3,7 @@
  * 
  * When creating an AI chat, we need:
  * 1. An Agent record (stores provider, model, instructions)
- * 2. A Contact record (contactType='agent', entityUri points to Agent)
+ * 2. A Contact record (contactType='agent', about points to Agent)
  * 3. A Chat record (participants stores the Contact URI)
  */
 
@@ -87,7 +87,7 @@ export async function findOrCreateAgentContact(
   
   // Find contact that points to this agent
   const existing = contacts.find(
-    c => c.entityUri === agentUri && isAgentContact(c)
+    c => c.about === agentUri && isAgentContact(c)
   )
 
   if (existing) {
@@ -99,7 +99,7 @@ export async function findOrCreateAgentContact(
   const newContact = await contactRepository.create!(db, {
     name: agent.name,
     avatarUrl: agent.avatarUrl || undefined,
-    entityUri: agentUri,
+    about: agentUri,
     rdfType: ContactClass.AGENT,
     contactType: ContactType.AGENT,
     isPublic: false,

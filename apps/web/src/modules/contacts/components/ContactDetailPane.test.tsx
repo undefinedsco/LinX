@@ -9,8 +9,8 @@ const {
   mockToast,
   mockStoreState,
   mockContactState,
-  mockEntityByUri,
-  mockEntityError,
+  mockAboutByRef,
+  mockAboutError,
   mockSelectChat,
   mockFindOrCreateChat,
   mockGetLastSyncedText,
@@ -32,8 +32,8 @@ const {
     closeInviteMemberDialog: vi.fn(),
   },
   mockContactState: new Map<string, any>(),
-  mockEntityByUri: new Map<string, any>(),
-  mockEntityError: { current: null as Error | null },
+  mockAboutByRef: new Map<string, any>(),
+  mockAboutError: { current: null as Error | null },
   mockSelectChat: vi.fn(),
   mockFindOrCreateChat: vi.fn(),
   mockGetLastSyncedText: vi.fn(() => '刚刚同步'),
@@ -67,10 +67,10 @@ vi.mock('@/modules/chat/store', () => ({
 }))
 
 vi.mock('@/lib/data/use-entity', () => ({
-  useEntity: (_resource: unknown, entityUri: string | null) => ({
-    data: entityUri ? (mockEntityByUri.get(entityUri) ?? null) : null,
+  useEntity: (_resource: unknown, about: string | null) => ({
+    data: about ? (mockAboutByRef.get(about) ?? null) : null,
     isLoading: false,
-    error: mockEntityError.current,
+    error: mockAboutError.current,
     refresh: vi.fn(),
   }),
 }))
@@ -140,8 +140,8 @@ describe('ContactDetailPane', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockContactState.clear()
-    mockEntityByUri.clear()
-    mockEntityError.current = null
+    mockAboutByRef.clear()
+    mockAboutError.current = null
     Object.assign(mockStoreState, {
       selectedId: null,
       viewMode: 'view',
@@ -177,7 +177,7 @@ describe('ContactDetailPane', () => {
       id: 'contact-solid-1',
       name: 'Alice Smith',
       alias: 'Alice',
-      entityUri: 'https://alice.solidcommunity.net/profile/card#me',
+      about: 'https://alice.solidcommunity.net/profile/card#me',
       inbox: 'https://alice.solidcommunity.net/inbox/',
       province: '北京',
       city: '海淀',
@@ -201,12 +201,12 @@ describe('ContactDetailPane', () => {
     const contact = makeContact({
       id: 'contact-solid-1',
       name: 'Alice Smith',
-      entityUri: 'https://alice.solidcommunity.net/profile/card#me',
+      about: 'https://alice.solidcommunity.net/profile/card#me',
     })
 
     mockContactState.set(contact.id, contact)
     mockStoreState.selectedId = contact.id
-    mockEntityError.current = new Error('读取资源头信息失败: https://alice.example/profile/card#me (HTTP 403)')
+    mockAboutError.current = new Error('读取资源头信息失败: https://alice.example/profile/card#me (HTTP 403)')
 
     render(<ContactDetailPane theme="light" />, { wrapper: createWrapper() })
 
@@ -217,7 +217,7 @@ describe('ContactDetailPane', () => {
   it('starts chat from a persisted contact instead of using fake ids', async () => {
     const contact = makeContact({
       id: 'contact-solid-1',
-      entityUri: 'https://alice.solidcommunity.net/profile/card#me',
+      about: 'https://alice.solidcommunity.net/profile/card#me',
     })
 
     mockContactState.set(contact.id, contact)
@@ -239,20 +239,20 @@ describe('ContactDetailPane', () => {
   })
 
   it('renders local agent configuration and allows opening tools editor', async () => {
-    const entityUri = '/agents/agent-1/profile/card#me'
+    const about = '/agents/agent-1/profile/card#me'
     const contact = makeContact({
       id: 'contact-agent-1',
       name: '智能翻译官',
       alias: '翻译助手',
       contactType: ContactType.AGENT,
-      entityUri,
+      about,
       province: '广东',
       city: '深圳',
       gender: 'bot',
     })
 
     mockContactState.set(contact.id, contact)
-    mockEntityByUri.set(entityUri, {
+    mockAboutByRef.set(about, {
       model: 'openai/gpt-4o',
       instructions: '你是一个精通 12 国语言的翻译专家。',
       ttsModel: 'openai/tts-1',
@@ -282,7 +282,7 @@ describe('ContactDetailPane', () => {
     const contact = makeContact({
       id: 'contact-solid-1',
       alias: 'Alice',
-      entityUri: 'https://alice.solidcommunity.net/profile/card#me',
+      about: 'https://alice.solidcommunity.net/profile/card#me',
     })
 
     mockContactState.set(contact.id, contact)

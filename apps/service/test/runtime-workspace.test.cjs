@@ -89,6 +89,10 @@ test('runtime sessions support local folder, local worktree, and Pod container w
   assert.equal(localFolder.repoPath, path.resolve(folder))
   assert.equal(localFolder.folderPath, path.resolve(folder))
   assert.equal((await runtime.startSession(localFolder.id)).status, 'active')
+  const afterRuntimeMessage = await runtime.sendSessionMessage(localFolder.id, 'hello runtime')
+  assert.equal(afterRuntimeMessage.metadata.reconciler.latest.eventType, 'message.appended')
+  assert.equal(afterRuntimeMessage.metadata.reconciler.latest.wakeJobs[0].targetRole, 'primary-agent')
+  assert.equal(afterRuntimeMessage.reconciler.latest.id, afterRuntimeMessage.metadata.reconciler.latest.id)
 
   const repo = makeGitRepo(t)
   const worktree = path.join(os.tmpdir(), `linx-runtime-worktree-${Date.now()}`)
@@ -114,17 +118,17 @@ test('runtime sessions support local folder, local worktree, and Pod container w
     delete process.env.CSS_ROOT_FILE_PATH
     delete process.env.CSS_BASE_URL
   })
-  const podWorkspaceUri = 'https://node-0000.undefineds.co/.data/workspaces/thread-pod/'
+  const podContainer = 'https://node-0000.undefineds.co/.data/workspaces/thread-pod/'
   const podSession = runtime.createSession({
     threadId: 'thread-pod',
-    workspaceUri: podWorkspaceUri,
+    container: podContainer,
     workspaceKind: 'pod-container',
     title: 'Pod workspace',
     runnerType: 'mock',
     tool: 'mock',
   })
   assert.equal(podSession.workspaceKind, 'pod-container')
-  assert.equal(podSession.workspaceUri, podWorkspaceUri)
+  assert.equal(podSession.container, podContainer)
   assert.equal(podSession.repoPath, undefined)
   assert.equal(podSession.folderPath, undefined)
   assert.equal((await runtime.startSession(podSession.id)).status, 'active')
@@ -191,10 +195,10 @@ test('xpod-pty runtime session startup prepares local folder, worktree, and Pod 
     delete process.env.CSS_BASE_URL
   })
 
-  const podWorkspaceUri = 'https://node-0000.undefineds.co/.data/workspaces/thread-xpod-pod/'
+  const podContainer = 'https://node-0000.undefineds.co/.data/workspaces/thread-xpod-pod/'
   const podSession = runtime.createSession({
     threadId: 'thread-xpod-pod',
-    workspaceUri: podWorkspaceUri,
+    container: podContainer,
     workspaceKind: 'pod-container',
     title: 'xpod Pod workspace',
     runnerType: 'xpod-pty',
@@ -247,7 +251,7 @@ test('Pod workspace runtime message can perform filesystem write and list throug
   const runtime = new RuntimeThreadsModule()
   const session = runtime.createSession({
     threadId: 'thread-pod-message',
-    workspaceUri: 'https://node-0000.undefineds.co/.data/workspaces/thread-pod-message/',
+    container: 'https://node-0000.undefineds.co/.data/workspaces/thread-pod-message/',
     workspaceKind: 'pod-container',
     title: 'Pod message fs',
     runnerType: 'xpod-pty',
@@ -286,7 +290,7 @@ test('Pod workspace resolves to the server-side Pod container path for filesyste
   const record = {
     id: 'session-pod-fs',
     threadId: 'thread-pod-fs',
-    workspaceUri: 'https://node-0000.undefineds.co/.data/workspaces/thread-pod-fs/',
+    container: 'https://node-0000.undefineds.co/.data/workspaces/thread-pod-fs/',
     workspaceKind: 'pod-container',
     title: 'Pod FS',
     runnerType: 'mock',
@@ -321,7 +325,7 @@ test('Pod workspace refuses to resolve containers outside this xpod origin', (t)
   })
 
   assert.throws(
-    () => workspace.mapPodWorkspaceUriToLocalPath('https://id.undefineds.co/gcloud/.data/workspaces/thread/'),
+    () => workspace.mapPodContainerToLocalPath('https://id.undefineds.co/gcloud/.data/workspaces/thread/'),
     /not served by this xpod origin/,
   )
 })

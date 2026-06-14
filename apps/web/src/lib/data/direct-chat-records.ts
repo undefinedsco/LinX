@@ -44,7 +44,7 @@ export interface CreateSolidContactRecordInput {
 
 export interface CreateGroupContactRecordInput {
   name: string
-  entityUri: string
+  about: string
   avatarUrl?: string
 }
 
@@ -102,7 +102,7 @@ export async function createAgentContactRecords(
     id: contactId,
     '@id': contactUri,
     name: input.name,
-    entity: agentUri,
+    about: agentUri,
     rdfType: ContactClass.AGENT,
     contactType: ContactType.AGENT,
     isPublic: false,
@@ -111,9 +111,8 @@ export async function createAgentContactRecords(
     ...createdContact,
     id: contactId,
     '@id': contactUri,
-    entity: agentUri,
-    entityUri: agentUri,
-  } as ContactRow & { entityUri: string }
+    about: agentUri,
+  } as ContactRow
 
   return {
     agent,
@@ -167,14 +166,13 @@ export async function ensureAgentContactRecords(
       ...existingContact,
       id: contactId,
       '@id': existingContact['@id'] ?? contactUri,
-      entity: existingContact.entity ?? existingContact.entityUri ?? agentUri,
-      entityUri: existingContact.entityUri ?? existingContact.entity ?? agentUri,
-    } as ContactRow & { entityUri: string }
+      about: existingContact.about ?? agentUri,
+    } as ContactRow
     : await contactRepository.create!(db, {
       id: contactId,
       '@id': contactUri,
       name: input.name,
-      entity: agentUri,
+      about: agentUri,
       rdfType: ContactClass.AGENT,
       contactType: ContactType.AGENT,
       isPublic: input.isPublic ?? false,
@@ -189,9 +187,8 @@ export async function ensureAgentContactRecords(
     ...contact,
     id: contactId,
     '@id': (contact as Record<string, unknown>)['@id'] ?? contactUri,
-    entity: (contact as Record<string, unknown>).entity ?? (contact as Record<string, unknown>).entityUri ?? agentUri,
-    entityUri: (contact as Record<string, unknown>).entityUri ?? (contact as Record<string, unknown>).entity ?? agentUri,
-  } as ContactRow & { entityUri: string }
+    about: (contact as Record<string, unknown>).about ?? agentUri,
+  } as ContactRow
 
   return {
     agent: normalizedAgent,
@@ -223,7 +220,7 @@ export async function createSolidContactRecord(
     '@id': contactUri,
     name: input.name,
     avatarUrl: input.avatarUrl,
-    entity: input.webId,
+    about: input.webId,
     rdfType: ContactClass.PERSON,
     contactType: ContactType.SOLID,
     isPublic: false,
@@ -232,9 +229,8 @@ export async function createSolidContactRecord(
     ...createdContact,
     id: contactId,
     '@id': contactUri,
-    entity: input.webId,
-    entityUri: input.webId,
-  } as ContactRow & { entityUri: string }
+    about: input.webId,
+  } as ContactRow
 
   return {
     contact,
@@ -260,7 +256,7 @@ export async function createGroupContactRecord(
     '@id': contactUri,
     name: input.name,
     avatarUrl: input.avatarUrl,
-    entity: input.entityUri,
+    about: input.about,
     rdfType: ContactClass.GROUP,
     contactType: ContactType.SOLID,
     isPublic: false,
@@ -269,9 +265,8 @@ export async function createGroupContactRecord(
     ...createdContact,
     id: contactId,
     '@id': contactUri,
-    entity: input.entityUri,
-    entityUri: input.entityUri,
-  } as ContactRow & { entityUri: string }
+    about: input.about,
+  } as ContactRow
 
   return {
     contact,

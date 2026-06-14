@@ -1,16 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createRuntimeSession } from './runtime-client'
+import { createRuntimeSession, resolveLocalContainer } from './runtime-client'
 
 describe('runtime client', () => {
   afterEach(() => {
     vi.restoreAllMocks()
+    delete (window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__
   })
 
   it('posts runtime session requests to the service without duplicating workspace normalization', async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({
       id: 'runtime-1',
       threadId: 'thread-pod',
-      workspaceUri: 'https://node-0000.undefineds.co/.data/workspaces/thread-pod/',
+      container: 'https://node-0000.undefineds.co/.data/workspaces/thread-pod/',
       workspaceKind: 'pod-container',
       title: 'Pod',
       runnerType: 'xpod-pty',
@@ -27,7 +28,7 @@ describe('runtime client', () => {
     await expect(createRuntimeSession({
       threadId: 'thread-pod',
       title: 'Pod',
-      workspaceUri: ' https://node-0000.undefineds.co/.data/workspaces/thread-pod/ ',
+      container: ' https://node-0000.undefineds.co/.data/workspaces/thread-pod/ ',
       workspaceKind: 'pod-container',
     })).resolves.toMatchObject({
       id: 'runtime-1',
@@ -39,9 +40,22 @@ describe('runtime client', () => {
       body: JSON.stringify({
         threadId: 'thread-pod',
         title: 'Pod',
-        workspaceUri: ' https://node-0000.undefineds.co/.data/workspaces/thread-pod/ ',
+        container: ' https://node-0000.undefineds.co/.data/workspaces/thread-pod/ ',
         workspaceKind: 'pod-container',
       }),
     }))
+  })
+
+  it('builds device-scoped local containers from service deviceId, not SP nodeId', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      nodeId: 'node-123',
+      deviceId: 'device-abc',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+    ;(window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__ = true
+
+    await expect(resolveLocalContainer('/repo/linx')).resolves.toBe('linx://device-abc/repo/linx')
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/setup/config', expect.any(Object))
   })
 })

@@ -92,7 +92,7 @@ export function buildWorkspaceSummary({
       || workspaceUri
       || ''
     const secondaryText = joinMeta([
-      localWorkspace?.nodeId ? `节点 ${localWorkspace.nodeId}` : undefined,
+      localWorkspace?.deviceId ? `设备 ${localWorkspace.deviceId}` : undefined,
       storedWorkspace?.repoRootUri ? `仓库 ${storedWorkspace.repoRootUri}` : undefined,
       runtimeSession?.branch,
       !runtimeSession?.branch ? storedWorkspace?.branch : undefined,

@@ -1,6 +1,7 @@
 import type { AutoModeMode, AutoModeWorkerBackend } from './auto-mode.js'
 import { summarizeReconcileDecision, type ReconcileDecision, type ReconcileDecisionSummary } from './reconciler.js'
 import { decideThreadControlEvent } from './thread-reconciler-controller.js'
+import type { AgentWorkspace, AgentWorkspaceEnvironment, AgentWorkspaceKind } from './workspace.js'
 
 export const SYMPHONY_HOME_DIRNAME = 'symphony'
 export const SYMPHONY_IDEAS_DIRNAME = 'ideas'
@@ -17,7 +18,7 @@ export const SYMPHONY_SESSION_FILE_NAME = 'session.json'
 
 const SYMPHONY_URI_PREFIX = 'urn:undefineds:linx'
 
-export type SymphonyWorkspaceKind = 'git' | 'folder'
+export type WorkerWorkspaceKind = AgentWorkspaceKind
 export type SymphonyIdeaStatus = 'captured' | 'exploring' | 'candidate' | 'promoted' | 'deferred' | 'rejected' | 'superseded'
 export type SymphonyIdeaCommitment = 'thought' | 'direction' | 'tentative_decision' | 'committed'
 export type SymphonyIssueStatus = 'open' | 'triaging' | 'in_progress' | 'blocked' | 'resolved' | 'closed'
@@ -31,23 +32,8 @@ export interface SymphonyReconcilerState {
   decisions: ReconcileDecisionSummary[]
 }
 
-export interface SymphonyWorkspaceRef {
-  path: string
-  kind: SymphonyWorkspaceKind
-  repository?: string
-  branch?: string
-  worktree?: string
-  workspaceUri?: string
-  baseRevision?: string
-  environment?: SymphonyWorkerEnvironmentRef
-}
-
-export interface SymphonyWorkerEnvironmentRef {
-  kind: 'local-shell' | 'remote-container' | 'cloud-runner' | 'backend-runtime' | 'unknown'
-  id?: string
-  label?: string
-  runtime?: AutoModeWorkerBackend | string
-}
+export type WorkerWorkspace = AgentWorkspace & { path: string }
+export type WorkerEnvironment = AgentWorkspaceEnvironment
 
 export interface SymphonySupervisorPolicy {
   strategy: 'interval'
@@ -164,7 +150,7 @@ export interface SymphonySessionRecord extends SymphonyChatThreadRef {
   secretaryAutoEnabled?: boolean
   status: SymphonySessionStatus
   cwd: string
-  workspace?: SymphonyWorkspaceRef
+  workspace?: WorkerWorkspace
   target: SymphonyDelegationTarget
   model?: string
   supervisor?: SymphonySupervisorPolicy
@@ -200,7 +186,7 @@ export interface SymphonyWorkerSpec extends Partial<SymphonyDelegationTarget> {
   acceptanceCriteria?: string[]
   model?: string
   supervisorIntervalMs?: number
-  workspace?: Partial<SymphonyWorkspaceRef>
+  workspace?: Partial<WorkerWorkspace>
 }
 
 export interface CreateSymphonyRunPlanInput {
@@ -208,13 +194,13 @@ export interface CreateSymphonyRunPlanInput {
   title?: string
   acceptanceCriteria?: string[]
   workspacePath: string
-  workspaceKind?: SymphonyWorkspaceKind
+  workspaceKind?: WorkerWorkspaceKind
   repository?: string
   branch?: string
   worktree?: string
-  workspaceUri?: string
+  container?: string
   baseRevision?: string
-  environment?: Partial<SymphonyWorkerEnvironmentRef>
+  environment?: Partial<WorkerEnvironment>
   backend: AutoModeWorkerBackend
   mode: AutoModeMode
   secretaryAutoEnabled?: boolean
@@ -295,13 +281,13 @@ export function createRunPlan(input: CreateSymphonyRunPlanInput): SymphonyRunPla
     thread: normalizeOptionalText(input.thread) ?? primaryTarget.thread,
     messages: input.messages ?? primaryTarget.messages,
   })
-  const workspace: SymphonyWorkspaceRef = {
+  const workspace: WorkerWorkspace = {
     path: normalizeRequiredText(input.workspacePath, 'workspacePath'),
     kind: input.workspaceKind ?? 'folder',
     ...(normalizeOptionalText(input.repository) ? { repository: normalizeOptionalText(input.repository) } : {}),
     ...(normalizeOptionalText(input.branch) ? { branch: normalizeOptionalText(input.branch) } : {}),
     ...(normalizeOptionalText(input.worktree) ? { worktree: normalizeOptionalText(input.worktree) } : {}),
-    ...(normalizeOptionalText(input.workspaceUri) ? { workspaceUri: normalizeOptionalText(input.workspaceUri) } : {}),
+    ...(normalizeOptionalText(input.container) ? { container: normalizeOptionalText(input.container) } : {}),
     ...(normalizeOptionalText(input.baseRevision) ? { baseRevision: normalizeOptionalText(input.baseRevision) } : {}),
     environment: normalizeSymphonyWorkerEnvironment(input.environment, input.backend),
   }
@@ -449,7 +435,7 @@ export function renderSymphonyRuntimePrompt(input: {
   task: string
   objective: string
   acceptanceCriteria?: string[]
-  workspace: SymphonyWorkspaceRef
+  workspace: WorkerWorkspace
   backend: AutoModeWorkerBackend
   mode: AutoModeMode
   secretaryAutoEnabled?: boolean
@@ -489,7 +475,7 @@ export function renderSymphonyRuntimePrompt(input: {
     ...(workThread ? [`Work thread: ${workThread}`] : []),
     `Workspace: ${input.workspace.path}`,
     `Workspace kind: ${input.workspace.kind}`,
-    ...(input.workspace.workspaceUri ? [`Workspace URI: ${input.workspace.workspaceUri}`] : []),
+    ...(input.workspace.container ? [`Workspace container: ${input.workspace.container}`] : []),
     ...(input.workspace.repository ? [`Workspace repository: ${input.workspace.repository}`] : []),
     ...(input.workspace.branch ? [`Workspace branch: ${input.workspace.branch}`] : []),
     ...(input.workspace.baseRevision ? [`Workspace base revision: ${input.workspace.baseRevision}`] : []),
@@ -681,10 +667,10 @@ function createSymphonyWorkerUris(
 }
 
 function normalizeSymphonyWorkerWorkspace(
-  root: SymphonyWorkspaceRef,
-  override: Partial<SymphonyWorkspaceRef> | undefined,
+  root: WorkerWorkspace,
+  override: Partial<WorkerWorkspace> | undefined,
   backend: AutoModeWorkerBackend,
-): SymphonyWorkspaceRef {
+): WorkerWorkspace {
   const path = normalizeOptionalText(override?.path) ?? root.path
   return {
     path,
@@ -692,16 +678,16 @@ function normalizeSymphonyWorkerWorkspace(
     ...(normalizeOptionalText(override?.repository ?? root.repository) ? { repository: normalizeOptionalText(override?.repository ?? root.repository) } : {}),
     ...(normalizeOptionalText(override?.branch ?? root.branch) ? { branch: normalizeOptionalText(override?.branch ?? root.branch) } : {}),
     ...(normalizeOptionalText(override?.worktree ?? root.worktree) ? { worktree: normalizeOptionalText(override?.worktree ?? root.worktree) } : {}),
-    ...(normalizeOptionalText(override?.workspaceUri ?? root.workspaceUri) ? { workspaceUri: normalizeOptionalText(override?.workspaceUri ?? root.workspaceUri) } : {}),
+    ...(normalizeOptionalText(override?.container ?? root.container) ? { container: normalizeOptionalText(override?.container ?? root.container) } : {}),
     ...(normalizeOptionalText(override?.baseRevision ?? root.baseRevision) ? { baseRevision: normalizeOptionalText(override?.baseRevision ?? root.baseRevision) } : {}),
     environment: normalizeSymphonyWorkerEnvironment(override?.environment ?? root.environment, backend),
   }
 }
 
 function normalizeSymphonyWorkerEnvironment(
-  environment: Partial<SymphonyWorkerEnvironmentRef> | undefined,
+  environment: Partial<WorkerEnvironment> | undefined,
   backend: AutoModeWorkerBackend,
-): SymphonyWorkerEnvironmentRef {
+): WorkerEnvironment {
   const kind = environment?.kind ?? (backend === 'codex' || backend === 'claude' || backend === 'codebuddy' ? 'backend-runtime' : 'local-shell')
   return {
     kind,
@@ -711,7 +697,7 @@ function normalizeSymphonyWorkerEnvironment(
   }
 }
 
-function formatSymphonyWorkerEnvironment(environment: SymphonyWorkerEnvironmentRef): string {
+function formatSymphonyWorkerEnvironment(environment: WorkerEnvironment): string {
   return [
     environment.kind,
     environment.runtime ? `runtime=${environment.runtime}` : undefined,
@@ -744,7 +730,7 @@ function normalizeSymphonyWorkerSpecs(input: CreateSymphonyRunPlanInput): Array<
   acceptanceCriteria: string[]
   model?: string
   supervisor?: SymphonySupervisorPolicy
-  workspace?: Partial<SymphonyWorkspaceRef>
+  workspace?: Partial<WorkerWorkspace>
 }> {
   const workers: SymphonyWorkerSpec[] = input.workers && input.workers.length > 0 ? input.workers : [input.target ?? {}]
   const rootObjective = normalizeRequiredText(input.objective, 'objective')

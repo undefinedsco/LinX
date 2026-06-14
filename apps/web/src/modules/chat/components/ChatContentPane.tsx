@@ -44,7 +44,7 @@ import { SessionControlBar, type SessionStatus } from './SessionControlBar'
 import {
   fetchRuntimeSessionLog,
   isRuntimeSessionMode,
-  resolveLocalWorkspaceUri,
+  resolveLocalContainer,
   useRuntimeSession,
   useRuntimeSessionEvents,
   type RuntimeSessionEvent,
@@ -215,7 +215,7 @@ function RuntimeSessionToolbar({
       if (!normalizedRepoPath && canUseBoundPodWorkspace) {
         const created = await runtimeSession.createSession.mutateAsync({
           threadId,
-          workspaceUri: boundPodWorkspaceUri,
+          container: boundPodWorkspaceUri,
           workspaceKind: 'pod-container',
           title: threadTitle || '运行时会话',
           tool,
@@ -231,7 +231,7 @@ function RuntimeSessionToolbar({
         return
       }
 
-      const requestedWorkspaceUri = await resolveLocalWorkspaceUri(normalizedFolderPath)
+      const requestedWorkspaceUri = await resolveLocalContainer(normalizedFolderPath)
       const resolvedWorkspaceUri = await mutations.ensureThreadWorkspace.mutateAsync({
         threadId,
         workspaceUri: requestedWorkspaceUri,
@@ -243,7 +243,7 @@ function RuntimeSessionToolbar({
       })
       const created = await runtimeSession.createSession.mutateAsync({
         threadId,
-        workspaceUri: resolvedWorkspaceUri,
+        container: resolvedWorkspaceUri,
         title: threadTitle || '运行时会话',
         repoPath: normalizedRepoPath,
         folderPath: normalizedFolderPath,

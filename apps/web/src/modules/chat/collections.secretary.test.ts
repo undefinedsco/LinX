@@ -121,8 +121,8 @@ describe('AI Secretary bootstrap', () => {
       id: LINX_DEFAULT_SECRETARY.contactId,
       '@id': contactIri,
       name: LINX_DEFAULT_SECRETARY.title,
-      entity: agentIri,
-      entityUri: agentIri,
+      about: agentIri,
+      about: agentIri,
       contactType: 'agent',
     }
     const agentRow = {
@@ -254,7 +254,7 @@ describe('AI Secretary bootstrap', () => {
     expect(insertedRows.find(({ resource }) => resource === contactResource)?.row).toMatchObject({
       id: LINX_DEFAULT_SECRETARY.contactId,
       '@id': rows.contactIri,
-      entity: rows.agentIri,
+      about: rows.agentIri,
     })
     expect(insertedRows.find(({ resource }) => resource === chatResource)?.row).toMatchObject({
       id: LINX_DEFAULT_SECRETARY.chatId,
@@ -439,7 +439,7 @@ describe('chat workspace persistence', () => {
     const podBase = 'https://node-0000.undefineds.co/alice/'
     const threadRow = {
       id: 'thread-1/index.ttl#this',
-      parent: `${podBase}.data/chat/__secretary__/index.ttl#this`,
+      chat: `${podBase}.data/chat/__secretary__/index.ttl#this`,
       title: 'Default thread',
       workspace: options.threadWorkspace ?? null,
       createdAt: new Date('2026-06-02T00:00:00.000Z'),
@@ -483,7 +483,7 @@ describe('chat workspace persistence', () => {
     const { db, threadRow, updateById } = createWorkspaceDb()
     initializeChatCollections(db as any)
 
-    const workspaceUri = 'linx://node-123/repo/linx'
+    const workspaceUri = 'linx://device-123/repo/linx'
     await expect(chatOps.ensureThreadWorkspace({
       threadId: threadRow.id,
       workspaceUri,

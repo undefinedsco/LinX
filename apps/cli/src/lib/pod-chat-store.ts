@@ -1,4 +1,5 @@
 import type { Session } from '@inrupt/solid-client-authn-node'
+import { appendChatReconcilerMetadata, reconcileChatAppend } from '@linx/agent-runtime'
 import {
   createLinxPodSyncScope,
   type LinxPodSyncResourceBindings,
@@ -156,6 +157,33 @@ function nextCliChatSyncOperationId(input: { action: string; chatId?: string; th
   return `cli-chat-store:${input.action}:${subject}:${timestamp}:${++cliChatSyncSeq}`
 }
 
+
+function buildCliMessageReconcilerMetadata(input: {
+  chatUri: string
+  threadUri: string
+  messageUri?: string
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  maker: string
+  createdAt: Date
+}): Record<string, unknown> {
+  const { summary } = reconcileChatAppend({
+    chat: input.chatUri,
+    thread: input.threadUri,
+    ...(input.messageUri ? { resource: input.messageUri } : {}),
+    role: input.role,
+    content: input.content,
+    actor: {
+      id: input.maker,
+      role: input.role === 'user' ? 'user' : input.role === 'assistant' ? 'assistant' : 'runtime',
+    },
+    source: 'cli-chat-store',
+    createdAt: input.createdAt,
+    randomId: input.messageUri ?? `${input.role}-${input.createdAt.toISOString()}`,
+  })
+  return appendChatReconcilerMetadata(undefined, summary)
+}
+
 function buildCliChatSyncResourceBindings(input: {
   db?: SolidDatabase
   webId?: string
@@ -256,8 +284,8 @@ export async function listThreads(session: Session, chatId: string): Promise<Thr
     throw new Error('Missing webId in Solid session')
   }
   const chatUri = chatRepository.iri(webId, chatId)
-  const parentCol = (threadResource as any).parent
-  const rows = await db.select().from(threadResource).where(eq(parentCol, chatUri)).orderBy('updatedAt', 'desc').execute()
+  const chatCol = (threadResource as any).chat
+  const rows = await db.select().from(threadResource).where(eq(chatCol, chatUri)).orderBy('updatedAt', 'desc').execute()
 
   return rows.map((row: any) => ({
     id: threadRepository.idFromRef(String(row.id)) ?? String(row.id),
@@ -291,7 +319,8 @@ export async function createThread(
     threadId,
   }, () => db.insert(threadResource).values({
     id: threadRepository.idForChat(chatUri, threadId),
-    parent: chatUri,
+    scope: chatUri,
+    chat: chatUri,
     title: title || 'CLI Session',
     workspace: workspace || undefined,
     createdAt: now,
@@ -358,6 +387,12 @@ export async function saveUserMessage(
   const messageId = getActiveRuntime().randomUUID()
   const chatUri = chatResource.buildIri(webId, { id: chatId })
   const threadUri = threadRepository.iriForChat(webId, chatId, threadId)
+  const messageUri = messageResource.buildIri(webId, {
+    id: messageId,
+    chat: chatUri,
+    thread: threadUri,
+    createdAt: now,
+  })
 
   await runCliChatProjection({
     action: 'message.create',
@@ -377,6 +412,15 @@ export async function saveUserMessage(
     role: 'user',
     content,
     status: 'sent',
+    metadata: buildCliMessageReconcilerMetadata({
+      chatUri,
+      threadUri,
+      messageUri,
+      role: 'user',
+      content,
+      maker: webId,
+      createdAt: now,
+    }),
     createdAt: now,
   }).execute())
 
@@ -414,6 +458,13 @@ export async function saveAssistantMessage(
   const messageId = getActiveRuntime().randomUUID()
   const chatUri = chatResource.buildIri(webId, { id: chatId })
   const threadUri = threadRepository.iriForChat(webId, chatId, threadId)
+  const maker = agentResource.buildIri(webId, { id: DEFAULT_AGENT_ID })
+  const messageUri = messageResource.buildIri(webId, {
+    id: messageId,
+    chat: chatUri,
+    thread: threadUri,
+    createdAt: now,
+  })
 
   await runCliChatProjection({
     action: 'message.create',
@@ -429,10 +480,19 @@ export async function saveAssistantMessage(
     id: messageId,
     chat: chatUri,
     thread: threadUri,
-    maker: agentResource.buildIri(webId, { id: DEFAULT_AGENT_ID }),
+    maker,
     role: 'assistant',
     content,
     status: 'sent',
+    metadata: buildCliMessageReconcilerMetadata({
+      chatUri,
+      threadUri,
+      messageUri,
+      role: 'assistant',
+      content,
+      maker,
+      createdAt: now,
+    }),
     createdAt: now,
   }).execute())
 

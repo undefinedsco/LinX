@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocked = vi.hoisted(() => ({
   chatResource: { name: 'chat', buildId: ({ id }: { id: string }) => `${id}/index.ttl#this` },
+  threadResource: { name: 'thread', buildId: ({ id }: { id: string }) => id },
   contactResource: { name: 'contact' },
   agentResource: { name: 'agent' },
   credentialResource: { name: 'credential', buildId: ({ id }: { id: string }) => `credentials.ttl#${id}` },
@@ -19,6 +20,7 @@ vi.mock('@undefineds.co/models', () => ({
   agentResource: mocked.agentResource,
   aiProviderResource: mocked.aiProviderResource,
   chatResource: mocked.chatResource,
+  threadResource: mocked.threadResource,
   contactResource: mocked.contactResource,
   credentialResource: mocked.credentialResource,
   extractChatIdFromChatRef: (value?: string | null) => {
@@ -178,7 +180,7 @@ function createMockDb(
   credentialRows: Array<Record<string, unknown>> = [],
   options: {
     findByIdError?: Error
-    contactEntityUri?: string
+    contactAbout?: string
     selectError?: Error
   } = {},
 ) {
@@ -188,7 +190,7 @@ function createMockDb(
   }
   const contact = {
     id: 'contact-1',
-    entityUri: options.contactEntityUri ?? 'agent-1/',
+    about: options.contactAbout ?? 'agent-1/',
     contactType: 'agent',
   }
   const agentRow = {
@@ -201,6 +203,12 @@ function createMockDb(
   return {
     getDialect: () => ({
       getPodUrl: () => null,
+    }),
+    resolveRowIri: vi.fn((resource: unknown, row: { id?: string }) => {
+      const id = row?.id ?? ''
+      if (resource === mocked.chatResource) return `https://node-0000.undefineds.co/alice/.data/chat/${id}`
+      if (resource === mocked.threadResource) return `https://node-0000.undefineds.co/alice/.data/${id}`
+      return `https://node-0000.undefineds.co/alice/.data/${id}`
     }),
     findById: vi.fn(async (resource: unknown, id?: string) => {
       if (options.findByIdError) {
@@ -338,6 +346,52 @@ describe('LocalChatKitService platform runtime routing', () => {
     expect(body.model).toBe('linx-lite')
     expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === '可以')).toBe(true)
     expect(findAssistantDone(events)?.item?.status).toBe('completed')
+  })
+
+  it('routes Matrix group user messages through Matrix send without local duplicate persistence', async () => {
+    const store = createMockStore()
+    store.loadThread.mockResolvedValue({
+      id: 'chat/matrix-room/index.ttl#thread',
+      status: { type: 'active' as const },
+      created_at: 1,
+      updated_at: 1,
+      metadata: {
+        chat_id: 'matrix-room/index.ttl#this',
+        roomId: '!room:node-0000.undefineds.co',
+      },
+    })
+    const db = createMockDbWithPodUrl({
+      provider: 'undefineds',
+      model: 'undefineds/linx-lite',
+    }, 'https://node-0000.undefineds.co/alice/')
+    const authFetch = vi.fn(async () => new Response(JSON.stringify({
+      event_id: '$event:node-0000.undefineds.co',
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+    const service = new LocalChatKitService({
+      store: store as any,
+      db: db as any,
+      webId: 'https://id.undefineds.co/alice/profile/card#me',
+      authFetch: authFetch as any,
+    })
+
+    const events = await sendMessage(service)
+
+    expect(store.addThreadItem).not.toHaveBeenCalled()
+    expect(authFetch).toHaveBeenCalledWith(
+      'https://node-0000.undefineds.co/_matrix/client/v3/rooms/!room%3Anode-0000.undefineds.co/send/m.room.message/user_message-1',
+      expect.objectContaining({ method: 'PUT' }),
+    )
+    const body = JSON.parse((authFetch.mock.calls[0]?.[1] as RequestInit).body as string)
+    expect(body.body).toBe('你好')
+    expect(body['co.undefineds.linx'].chat).toBe('https://node-0000.undefineds.co/alice/.data/chat/matrix-room/index.ttl#this')
+    expect(body['co.undefineds.linx'].thread).toBe('https://node-0000.undefineds.co/alice/.data/chat/matrix-room/index.ttl#thread')
+    expect(body['co.undefineds.linx'].reconciler.latest.eventType).toBe('message.appended')
+    expect(body['co.undefineds.linx'].reconciler.latest.chat).toBe('https://node-0000.undefineds.co/alice/.data/chat/matrix-room/index.ttl#this')
+    expect(body['co.undefineds.linx'].reconciler.latest.thread).toBe('https://node-0000.undefineds.co/alice/.data/chat/matrix-room/index.ttl#thread')
+    expect(events.map((event) => event.type)).toEqual(['thread.item.added', 'thread.item.done'])
   })
 
   it('routes a local LinX assistant to the local xpod runtime', async () => {
@@ -538,14 +592,14 @@ describe('LocalChatKitService platform runtime routing', () => {
     expect(events.some((event) => event.type === 'thread.item.updated' && event.update?.delta === '本地空间')).toBe(true)
   })
 
-  it('resolves an Agent contact entity IRI with findByIri instead of deriving a row id from the IRI', async () => {
+  it('resolves an Agent contact about IRI with findByIri instead of deriving a row id from the IRI', async () => {
     const store = createMockStore()
     const agentIri = 'https://node-0000.undefineds.co/alice/agents/agent-1/'
     const db = createMockDb({
       provider: 'undefineds',
       model: 'undefineds/linx-lite',
     }, [], {
-      contactEntityUri: agentIri,
+      contactAbout: agentIri,
     })
     const authFetch = vi.fn(async () => createSseResponse([
       'data: {"choices":[{"delta":{"content":"IRI OK"}}]}\n\n',

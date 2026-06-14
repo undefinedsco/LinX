@@ -88,7 +88,7 @@ function createPlan(overrides = {}) {
         repository: 'https://github.com/undefineds/linx.git',
         branch: 'main',
         worktree: '/tmp/linx',
-        workspaceUri: 'urn:undefineds:workspace:local-linx',
+        container: 'urn:undefineds:workspace:local-linx',
         baseRevision: 'abc123',
         environment: {
           kind: 'local-shell',
@@ -333,7 +333,7 @@ test('persistSymphonyProjectionToPod projects Symphony run into shared chat thre
   assert.deepEqual(task.metadata.workspace, {
     path: '/tmp/linx',
     kind: 'git',
-    uri: 'urn:undefineds:workspace:local-linx',
+    container: 'urn:undefineds:workspace:local-linx',
     repository: 'https://github.com/undefineds/linx.git',
     branch: 'main',
     worktree: '/tmp/linx',
@@ -419,7 +419,7 @@ test('persistSymphonyProjectionToPod projects Symphony run into shared chat thre
 
   const thread = fake.inserts.find((item) => item.resource === fake.resources.thread)?.value
   assert.equal(thread.id, 'chat/chat-1/index.ttl#thread-1')
-  assert.equal(thread.parent, result.chat)
+  assert.equal(thread.chat, result.chat)
   assert.equal(thread.metadata.kind, 'symphony-run')
   assert.equal(thread.metadata.issue, plan.issue.uri)
   assert.equal(thread.metadata.delivery, plan.delivery.uri)
@@ -470,14 +470,14 @@ test('persistSymphonyProjectionToPod projects Symphony run into shared chat thre
 
   const contacts = fake.inserts.filter((item) => item.resource === fake.resources.contact).map((item) => item.value)
   assert.deepEqual(contacts.map((item) => item.contactType), ['agent', 'agent'])
-  assert.deepEqual(contacts.map((item) => item.entity).sort(), [
+  assert.deepEqual(contacts.map((item) => item.about).sort(), [
     'https://alice.example/agents/__secretary__/',
     'https://alice.example/agents/symphony-codex-worker/',
   ])
   assert.equal(session.metadata.workers[0].taskStatus, 'running')
   assert.deepEqual(session.metadata.workers[0].acceptanceCriteria, ['projection is visible'])
   assert.equal(session.metadata.workspace.pathAuthority, 'worker-environment')
-  assert.equal(session.metadata.workers[0].workspace.uri, 'urn:undefineds:workspace:local-linx')
+  assert.equal(session.metadata.workers[0].workspace.container, 'urn:undefineds:workspace:local-linx')
   assert.equal(session.metadata.workers[0].podAccessPolicy.version, 'linx-symphony-worker-pod-access/v1')
   assert.deepEqual(session.metadata.target, {
     source: 'ai-contact',
@@ -897,7 +897,7 @@ test('persistSymphonyProjectionToPod can target a group chat without rewriting t
   assert.equal(result.chat, 'https://alice.example/.data/chat/group-design/index.ttl#this')
   assert.equal(result.thread, 'https://alice.example/.data/chat/group-design/index.ttl#thread-group')
   assert.equal(fake.inserts.find((item) => item.resource === fake.resources.chat)?.value, undefined)
-  assert.equal(fake.inserts.find((item) => item.resource === fake.resources.thread)?.value.parent, result.chat)
+  assert.equal(fake.inserts.find((item) => item.resource === fake.resources.thread)?.value.chat, result.chat)
   assert.equal(fake.inserts.find((item) => item.resource === fake.resources.message)?.value.chat, result.chat)
 })
 
@@ -1022,7 +1022,7 @@ test('persistSymphonyProjectionToPod preserves each worker Thread Session and wo
     repository: 'https://github.com/undefineds/linx.git',
     branch: 'review',
     worktree: '/tmp/linx-review',
-    workspaceUri: 'urn:undefineds:workspace:review-linx',
+    container: 'urn:undefineds:workspace:review-linx',
     baseRevision: 'def456',
     environment: {
       kind: 'local-shell',
@@ -1113,11 +1113,11 @@ test('persistSymphonyProjectionToPod preserves each worker Thread Session and wo
   assert.equal(threads.length, 2)
   assert.deepEqual(threads.map((thread) => thread.id).sort(), ['chat/chat-1/index.ttl#thread-1', 'chat/chat-2/index.ttl#thread-2'])
   const reviewThread = threads.find((thread) => thread.id === 'chat/chat-2/index.ttl#thread-2')
-  assert.equal(reviewThread.parent, secondChat)
+  assert.equal(reviewThread.chat, secondChat)
   assert.equal(reviewThread.workspace, 'file:///tmp/linx-review')
   assert.equal(reviewThread.metadata.workers.length, 1)
   assert.equal(reviewThread.metadata.workers[0].thread, secondThread)
-  assert.equal(reviewThread.metadata.workers[0].workspace.uri, 'urn:undefineds:workspace:review-linx')
+  assert.equal(reviewThread.metadata.workers[0].workspace.container, 'urn:undefineds:workspace:review-linx')
 
   const sessions = fake.inserts.filter((item) => item.resource === fake.resources.session).map((item) => item.value)
   assert.equal(sessions.length, 2)

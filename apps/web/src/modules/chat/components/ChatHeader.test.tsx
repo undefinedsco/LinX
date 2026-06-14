@@ -158,7 +158,7 @@ describe('ChatHeader', () => {
         return {
           data: {
             id: 'contact-1',
-            entityUri: 'agent-iri',
+            about: 'agent-iri',
             contactType: 'agent',
           },
           refresh: mockRefreshContact,

@@ -75,6 +75,10 @@ test('buildAutoModeConversationMessages maps archived transcript into standard P
     ],
   )
 
+  assert.equal(rows.every((row) => row.metadata?.reconciler?.latest?.eventType === 'message.appended'), true)
+  assert.equal(rows[0].metadata.reconciler.latest.wakeJobs[0].targetRole, 'secretary')
+  assert.equal(rows[1].metadata.reconciler.latest.wakeJobs[0].targetRole, 'secretary')
+
   assert.deepEqual(rows.map((row) => ({
     id: row.id,
     chat: row.chat,
@@ -327,7 +331,7 @@ test('persistAutoModeConversationToPod upserts group chat, participants, agents,
 
   const thread = inserts.find((item) => item.resource === resources.thread)?.value
   assert.equal(thread.id, 'chat/linx-auto-mode-codex/index.ttl#auto_2026-03-18T00-00-00-000Z_deadbeef')
-  assert.equal(thread.parent, 'https://alice.example/.data/chat/linx-auto-mode-codex/index.ttl#this')
+  assert.equal(thread.chat, 'https://alice.example/.data/chat/linx-auto-mode-codex/index.ttl#this')
   assert.equal(thread.metadata.kind, 'auto-mode')
   assert.equal(thread.metadata.chatId, 'linx-auto-mode-codex')
 

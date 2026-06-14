@@ -25,7 +25,7 @@ import {
   DEFAULT_RUNTIME_TOOL,
   createAndStartRuntimeSession,
   isRuntimeSessionMode,
-  resolveLocalWorkspaceUri,
+  resolveLocalContainer,
   type RuntimeToolType,
 } from '../runtime-client'
 import { formatErrorForUser } from '@/lib/user-facing-errors'
@@ -171,7 +171,7 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
 
         if (shouldCreateRuntime && threadId) {
           try {
-            const requestedWorkspaceUri = await resolveLocalWorkspaceUri(normalizedFolderPath)
+            const requestedWorkspaceUri = await resolveLocalContainer(normalizedFolderPath)
             const workspaceUri = await mutations.ensureThreadWorkspace.mutateAsync({
               threadId,
               workspaceUri: requestedWorkspaceUri,
@@ -183,7 +183,7 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
             })
             await createAndStartRuntimeSession({
               threadId,
-              workspaceUri,
+              container: workspaceUri,
               title: '默认话题',
               repoPath: normalizedRepoPath,
               folderPath: normalizedFolderPath,

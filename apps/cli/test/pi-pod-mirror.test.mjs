@@ -89,7 +89,7 @@ function createFakePodRuntime() {
       return `${podBase}/.data/chat/${encodeURIComponent(locator.id)}/index.ttl#this`
     }
     if (name === 'thread') {
-      const chatId = chatIdFromRef(locator.parent)
+      const chatId = chatIdFromRef(locator.chat)
       return `${podBase}/.data/chat/${encodeURIComponent(chatId)}/index.ttl#${encodeURIComponent(locator.id)}`
     }
     if (name === 'agent') {
@@ -117,7 +117,7 @@ function createFakePodRuntime() {
   }
   const rowLocator = (resource, row) => {
     const name = resourceName(resource)
-    if (name === 'thread') return { id: row.id, parent: row.parent }
+    if (name === 'thread') return { id: row.id, chat: row.chat }
     if (name === 'session') return { id: row.id, createdAt: row.createdAt }
     if (name === 'chat_message') return { id: row.id, chat: row.chat, thread: row.thread, createdAt: row.createdAt }
     if (name === 'audit') return { id: row.id, createdAt: row.createdAt }
@@ -400,7 +400,10 @@ test('LinxPiPodMirror persists Pi session events into Pod resources', async (t) 
   assert.equal(rowValues.some((row) => row.name === 'symphony' && row.loadPolicy === 'file-backed'), true)
   assert.equal(rowValues.some((row) => row.name === 'xpod-cli' && row.loadPolicy === 'file-backed'), true)
   assert.equal(rowValues.some((row) => row.tool === 'linx' && row.status === 'completed'), true)
-  assert.equal(rowValues.some((row) => row.content === 'persist through mirror'), true)
+  const persistedMessageRow = rowValues.find((row) => row.content === 'persist through mirror')
+  assert.ok(persistedMessageRow)
+  assert.equal(persistedMessageRow.metadata.reconciler.latest.eventType, 'message.appended')
+  assert.equal(persistedMessageRow.metadata.reconciler.latest.wakeJobs[0].targetRole, 'primary-agent')
   assert.equal(writes.some((write) => write.resource === 'chats' && write.iri.endsWith('/.data/chat/__secretary__/index.ttl#this')), true)
   assert.equal(writes.some((write) => write.resource === 'agent' && write.iri.endsWith('/agents/__secretary__/')), true)
   assert.equal(writes.some((write) => write.resource === 'skill' && write.iri.endsWith('/agents/__secretary__/skills/symphony/')), true)

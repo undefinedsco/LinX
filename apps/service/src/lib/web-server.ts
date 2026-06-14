@@ -4,6 +4,7 @@
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
+import { randomUUID } from 'crypto'
 import { app } from 'electron'
 import express, { Express, Request, Response } from 'express'
 import { Server } from 'http'
@@ -312,34 +313,76 @@ function getSetupFlagPath(): string {
   return path.join(getConfigDir(), '.setup-complete')
 }
 
+function getDeviceIdPath(): string {
+  return path.join(getConfigDir(), '.device-id')
+}
+
 function normalizeNodeId(value?: string | null): string {
   const normalized = (value || '')
     .trim()
     .toLowerCase()
-    .replace(/^node-+/, '')
     .replace(/[^a-z0-9-]+/g, '-')
     .replace(/-{2,}/g, '-')
     .replace(/^-+|-+$/g, '')
 
   if (!normalized) {
-    return 'local'
+    return 'local-node'
   }
 
-  if (normalized.length <= 12) {
+  if (normalized.length <= 64) {
     return normalized
   }
 
-  return normalized.slice(0, 12).replace(/-+$/g, '') || 'local'
+  return normalized.slice(0, 64).replace(/-+$/g, '') || 'local-node'
 }
 
 function getDefaultNodeId() {
   return normalizeNodeId(
     process.env.LINX_NODE_ID
-    || process.env.LINX_DEVICE_ID
     || process.env.CSS_NODE_ID
+    || process.env.XPOD_NODE_ID
     || os.hostname()
     || 'local',
   )
+}
+
+function normalizeDeviceId(value?: string | null): string {
+  const normalized = (value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/-{2,}/g, '-')
+    .replace(/^-+|-+$/g, '')
+
+  if (!normalized) {
+    return 'local-device'
+  }
+
+  if (normalized.length <= 64) {
+    return normalized
+  }
+
+  return normalized.slice(0, 64).replace(/-+$/g, '') || 'local-device'
+}
+
+function getDefaultDeviceId() {
+  const envDeviceId = normalizeDeviceId(process.env.LINX_DEVICE_ID)
+  if (envDeviceId !== 'local-device') {
+    return envDeviceId
+  }
+
+  const deviceIdPath = getDeviceIdPath()
+  if (fs.existsSync(deviceIdPath)) {
+    const storedDeviceId = normalizeDeviceId(fs.readFileSync(deviceIdPath, 'utf-8'))
+    if (storedDeviceId !== 'local-device') {
+      return storedDeviceId
+    }
+  }
+
+  const generatedDeviceId = normalizeDeviceId(`device-${randomUUID()}`)
+  fs.mkdirSync(path.dirname(deviceIdPath), { recursive: true })
+  fs.writeFileSync(deviceIdPath, `${generatedDeviceId}\n`)
+  return generatedDeviceId
 }
 
 export class WebServerModule {
@@ -380,7 +423,19 @@ export class WebServerModule {
 
     // Build base URL
     let baseUrl: string
-    const localNodeId = normalizeNodeId(local?.nodeId || local?.deviceId)
+    const localNodeId = normalizeNodeId(
+      provisioning?.nodeId
+      || local?.nodeId
+      || process.env.XPOD_NODE_ID
+      || process.env.LINX_NODE_ID
+      || process.env.CSS_NODE_ID
+      || getDefaultNodeId(),
+    )
+    const localDeviceId = normalizeDeviceId(
+      local?.deviceId
+      || process.env.LINX_DEVICE_ID
+      || getDefaultDeviceId(),
+    )
 
     if (provisioning) {
       baseUrl = normalizeUrl(provisioning.publicUrl)
@@ -406,7 +461,7 @@ export class WebServerModule {
       `CSS_USAGE_DB_URL=sqlite:${path.join(dataDir, 'usage.sqlite')}`,
     ]
 
-    // Device ID for DDNS
+    // SP node identity. This is not the runtime device identity used by device:// workspaces.
     if (localNodeId) {
       lines.push(`CSS_NODE_ID=${localNodeId}`)
     }
@@ -432,8 +487,8 @@ export class WebServerModule {
     if (normalized.httpsCertPath) lines.push(`LINX_HTTPS_CERT_PATH=${normalized.httpsCertPath}`)
     if (localNodeId) {
       lines.push(`LINX_NODE_ID=${localNodeId}`)
-      lines.push(`LINX_DEVICE_ID=${localNodeId}`)
     }
+    lines.push(`LINX_DEVICE_ID=${localDeviceId}`)
     const effectiveTunnelProvider = provisioning?.tunnelProvider || network.tunnelProvider
     if (effectiveTunnelProvider) lines.push(`LINX_TUNNEL_PROVIDER=${effectiveTunnelProvider}`)
 
@@ -688,7 +743,8 @@ export class WebServerModule {
             publicDomain: env.LINX_PUBLIC_DOMAIN || '',
             autoDetectPublicIp: env.LINX_AUTO_DETECT_PUBLIC_IP === 'true',
             httpsCertPath: env.LINX_HTTPS_CERT_PATH || '',
-            nodeId: normalizeNodeId(env.LINX_NODE_ID || env.LINX_DEVICE_ID || env.CSS_NODE_ID || getDefaultNodeId()),
+            nodeId: normalizeNodeId(env.XPOD_NODE_ID || env.LINX_NODE_ID || env.CSS_NODE_ID || getDefaultNodeId()),
+            deviceId: normalizeDeviceId(env.LINX_DEVICE_ID || getDefaultDeviceId()),
             defaultWorkspacePath: resolveLinxDefaultWorkspaceDir(),
             tunnelProvider,
             hasTunnelToken: Boolean(env.CLOUDFLARE_TUNNEL_TOKEN || env.SAKURA_TOKEN),
@@ -706,6 +762,7 @@ export class WebServerModule {
             autoDetectPublicIp: true,
             httpsCertPath: '',
             nodeId: getDefaultNodeId(),
+            deviceId: getDefaultDeviceId(),
             defaultWorkspacePath: resolveLinxDefaultWorkspaceDir(),
             tunnelProvider: '',
             hasTunnelToken: false,
@@ -945,7 +1002,7 @@ export class WebServerModule {
 
     this.app.post('/api/runtime/threads', (req: Request, res: Response) => {
       try {
-        const { threadId, workspaceUri, workspaceKind, title, repoPath, folderPath, runnerType, tool, baseRef, branch } = req.body ?? {}
+        const { threadId, container, workspaceKind, title, repoPath, folderPath, runnerType, tool, baseRef, branch } = req.body ?? {}
         if (!threadId || !title) {
           sendUserError(res, 400, '请先选择聊天和工作区后再启动。')
           return
@@ -953,7 +1010,7 @@ export class WebServerModule {
 
         const session = getRuntimeThreadsModule().createSession({
           threadId,
-          workspaceUri,
+          container,
           workspaceKind,
           title,
           repoPath,

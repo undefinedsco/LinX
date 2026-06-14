@@ -45,7 +45,13 @@ import {
 } from '@/lib/data/direct-chat-records'
 import { toStringArray } from '@/lib/utils'
 // Import chat collection singleton from chat module
-import { chatCollection } from '@/modules/chat/collections'
+import { chatCollection, threadCollection } from '@/modules/chat/collections'
+import {
+  createMatrixGroupRoom,
+  loadMatrixChatRow,
+  loadMatrixThreadRow,
+  type MatrixAuthOptions,
+} from '@/modules/chat/matrix-service'
 import { favoriteHooks } from '@/modules/favorites/collections'
 
 // ============================================================================
@@ -240,6 +246,7 @@ export interface CreateGroupInput {
   avatarUrl?: string
   participants: string[]
   ownerRef?: string
+  matrix?: MatrixAuthOptions
 }
 
 export interface SolidProfileInfo {
@@ -283,7 +290,7 @@ export const contactOps = {
    * 
    * Flow:
    * 1. Create Agent record
-   * 2. Create Contact record (type: agent, entityUri → Agent)
+   * 2. Create Contact record (type: agent, about → Agent)
    * 3. Create Chat record (participants → Contact)
    * 
    * @returns The created Contact (with chatId attached)
@@ -334,7 +341,7 @@ export const contactOps = {
    * Add a Solid friend (create Contact and Chat)
    * 
    * Flow:
-   * 1. Create Contact record (type: solid, entityUri → WebID)
+   * 1. Create Contact record (type: solid, about → WebID)
    * 2. Create Chat record (participants → Contact)
    * 
    * @returns The created Contact (with chatId attached)
@@ -427,7 +434,7 @@ export const contactOps = {
 
       const linkedChats = chats.filter((chat) => {
         if (isGroupContact(contact)) {
-          return !!contact.entityUri && getChatRef(db, chat) === contact.entityUri
+          return !!contact.about && getChatRef(db, chat) === contact.about
         }
 
         const participants = toStringArray(chat.participants)
@@ -485,7 +492,7 @@ export const contactOps = {
 
   /**
    * Search contacts by query string using drizzle-solid ilike
-   * Searches in: name, alias, externalId, note, entityUri
+   * Searches in: name, alias, externalId, note, about
    */
   async search(query: string): Promise<ContactRow[]> {
     if (!query.trim()) return this.getAll()
@@ -505,7 +512,7 @@ export const contactOps = {
             like(contactResource.alias as any, pattern),
             like(contactResource.externalId as any, pattern),
             like(contactResource.note as any, pattern),
-            like(contactResource.entityUri as any, pattern)
+            like(contactResource.about as any, pattern)
           )
         )
         .execute()
@@ -518,11 +525,11 @@ export const contactOps = {
   },
 
   /**
-   * Find contact by entityUri (WebID or Agent ID)
+   * Find contact by about (WebID or Agent ID)
    */
-  findByEntityUri(entityUri: string): ContactRow | null {
+  findByAbout(about: string): ContactRow | null {
     const all = this.getAll()
-    return all.find(c => c.entityUri === entityUri) || null
+    return all.find(c => c.about === about) || null
   },
 
   // ==========================================================================
@@ -665,7 +672,7 @@ export const contactOps = {
    * Sync a contact from its remote source (WebID or Agent URL)
    * 
    * Implements Solid "source control" principle:
-   * - Fetches fresh data from entityUri
+   * - Fetches fresh data from about
    * - Updates cached fields (name, avatarUrl, lastSyncedAt)
    * - Returns the fetched data for detail display
    * 
@@ -678,15 +685,15 @@ export const contactOps = {
       return { success: false, error: '联系人不存在' }
     }
     
-    const entityUri = contact.entityUri
-    if (!entityUri) {
+    const about = contact.about
+    if (!about) {
       return { success: false, error: '没有关联的远程资源' }
     }
     
-    // Check if entityUri is remote (starts with http)
-    const isRemote = entityUri.startsWith('http://') || entityUri.startsWith('https://')
+    // Check if about is remote (starts with http)
+    const isRemote = about.startsWith('http://') || about.startsWith('https://')
     if (!isRemote) {
-      // Local entity (e.g., local agent), no sync needed
+      // Local about (e.g., local agent), no sync needed
       return { success: true, data: undefined }
     }
     
@@ -695,10 +702,10 @@ export const contactOps = {
       
       if (contact.contactType === ContactType.SOLID) {
         // Fetch Solid Profile
-        data = await this.fetchSolidProfile(entityUri)
+        data = await this.fetchSolidProfile(about)
       } else if (isAgentContact(contact)) {
         // Fetch Remote Agent
-        data = await this.fetchRemoteAgent(entityUri)
+        data = await this.fetchRemoteAgent(about)
       }
       
       if (!data) {
@@ -734,11 +741,11 @@ export const contactOps = {
   },
 
   /**
-   * Check if a contact needs sync (has remote entityUri)
+   * Check if a contact needs sync (has remote about)
    */
   isRemoteContact(contact: ContactRow | null): boolean {
-    if (!contact?.entityUri) return false
-    return contact.entityUri.startsWith('http://') || contact.entityUri.startsWith('https://')
+    if (!contact?.about) return false
+    return contact.about.startsWith('http://') || contact.about.startsWith('https://')
   },
 
   /**
@@ -768,7 +775,7 @@ export const contactOps = {
    * Create a Group Contact with associated Chat
    *
    * Flow:
-   * 1. Create Contact record (rdfType: GroupContact, entityUri → Chat URI)
+   * 1. Create Contact record (rdfType: GroupContact, about → Chat)
    * 2. Create Chat record (participants → member URIs)
    *
    * @returns The created Contact with chatId
@@ -781,15 +788,83 @@ export const contactOps = {
       throw new Error('Solid database is not ready')
     }
 
-    const chatId = crypto.randomUUID()
-    const chatUri = resolveChatIri(db, { id: chatId } as ChatRow)
+    const now = new Date()
+    const matrixRoom = input.matrix
+      ? await createMatrixGroupRoom({
+          db,
+          authFetch: input.matrix.authFetch,
+          name,
+          participants,
+          ownerRef,
+        })
+      : null
+    const chatId = matrixRoom?.chatId ?? crypto.randomUUID()
+    const chatUri = matrixRoom?.chatUri ?? resolveChatIri(db, { id: chatId } as ChatRow)
 
     const { contact, contactId } = await createGroupContactRecord(db, {
       name,
       avatarUrl,
-      entityUri: chatUri,
+      about: chatUri,
     })
-    const now = new Date()
+
+    if (matrixRoom) {
+      const participantRefs = buildGroupChatParticipants(participants, ownerRef)
+      const memberRoles = ownerRef
+        ? {
+            [ownerRef]: 'owner' as const,
+          }
+        : undefined
+      const matrixChatMetadata = {
+        protocol: 'matrix',
+        roomId: matrixRoom.roomId,
+        ...(memberRoles ? { memberRoles } : {}),
+      }
+      if (typeof (db as any).updateById === 'function') {
+        await (db as any).updateById(chatResource as any, matrixRoom.chatId, {
+          participants: participantRefs,
+          avatarUrl: avatarUrl || undefined,
+          metadata: matrixChatMetadata,
+          updatedAt: now,
+          lastActiveAt: now,
+        }).catch((error: unknown) => {
+          console.warn('[contactOps] Failed to enrich Matrix chat metadata:', error)
+        })
+      }
+      const [persistedChat, persistedThread] = await Promise.all([
+        loadMatrixChatRow(db, matrixRoom.chatId).catch(() => null),
+        loadMatrixThreadRow(db, matrixRoom.threadId).catch(() => null),
+      ])
+      const fallbackChat = {
+        id: matrixRoom.chatId,
+        title: name,
+        participants: participantRefs,
+        avatarUrl: avatarUrl || undefined,
+        metadata: matrixChatMetadata,
+        createdAt: now,
+        updatedAt: now,
+        lastActiveAt: now,
+      } as ChatRow
+      writeCollectionRow(contactCollection, contact as ContactRow, contactId)
+      writeCollectionRow(chatCollection, {
+        ...fallbackChat,
+        ...(persistedChat ?? {}),
+        participants: participantRefs,
+        avatarUrl: avatarUrl || persistedChat?.avatarUrl,
+        metadata: {
+          ...((persistedChat?.metadata && typeof persistedChat.metadata === 'object') ? persistedChat.metadata : {}),
+          ...matrixChatMetadata,
+        },
+      } as ChatRow, matrixRoom.chatId)
+      if (persistedThread) {
+        writeCollectionRow(threadCollection, persistedThread as any, matrixRoom.threadId)
+      }
+
+      queryClient.invalidateQueries({ queryKey: ['chats'] })
+      queryClient.invalidateQueries({ queryKey: ['contacts'] })
+      queryClient.invalidateQueries({ queryKey: ['chats', matrixRoom.chatId, 'threads'] })
+
+      return { ...(contact as ContactRow), id: contactId, chatId: matrixRoom.chatId }
+    }
 
     // 2. Create Chat linked to group contact
     const chatData: ChatInsert = {
@@ -862,10 +937,10 @@ export const contactOps = {
     }
     const chats = Array.from(chatCollection.state.values())
     const groupContact = this.getById(groupContactId)
-    if (!groupContact?.entityUri) {
+    if (!groupContact?.about) {
       return null
     }
-    return chats.find((chat: ChatRow) => getChatRef(db, chat) === groupContact.entityUri) ?? null
+    return chats.find((chat: ChatRow) => getChatRef(db, chat) === groupContact.about) ?? null
   },
 
   /**
@@ -1004,8 +1079,8 @@ export const contactOps = {
       this.resolveMembers(memberRefs).flatMap((member) => {
         const refs = new Set<string>()
         if (member.id) refs.add(member.id)
-        if (typeof member.entityUri === 'string' && member.entityUri.length > 0) {
-          refs.add(member.entityUri)
+        if (typeof member.about === 'string' && member.about.length > 0) {
+          refs.add(member.about)
         }
         return Array.from(refs).map((ref) => [ref, member] as const)
       }),
@@ -1039,8 +1114,8 @@ export const contactOps = {
       all.flatMap((contact) => {
         const refs = new Set<string>()
         if (contact.id) refs.add(contact.id)
-        if (typeof contact.entityUri === 'string' && contact.entityUri.length > 0) {
-          refs.add(contact.entityUri)
+        if (typeof contact.about === 'string' && contact.about.length > 0) {
+          refs.add(contact.about)
         }
         return Array.from(refs).map((ref) => [ref, contact] as const)
       }),

@@ -151,8 +151,8 @@ function ContactItem({ contact, isActive, onClick }: ContactItemProps) {
     if (contact.note) {
       return contact.note
     }
-    if (contact.entityUri && contact.contactType === ContactType.SOLID) {
-      return contact.entityUri
+    if (contact.about && contact.contactType === ContactType.SOLID) {
+      return contact.about
     }
     return undefined
   }, [contact, isGroup, isAgent])

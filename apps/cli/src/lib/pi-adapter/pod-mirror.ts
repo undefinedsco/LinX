@@ -2,7 +2,9 @@ import { setTimeout as delay } from 'node:timers/promises'
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
 import type { SessionEntry, SessionManager } from '@earendil-works/pi-coding-agent'
 import {
+  appendChatReconcilerMetadata,
   createAgentRuntimeConfigSnapshot,
+  reconcileChatAppend,
   type AgentRuntimeSkillSnapshot,
 } from '@linx/agent-runtime'
 import {
@@ -435,7 +437,7 @@ export class LinxPiPodMirror {
       return true
     }
 
-    const resourceRef = await persistMessage(context, normalizePodMessageRow(context, row, refs))
+    const resourceRef = await persistMessage(context, this.options, normalizePodMessageRow(context, row, refs))
     this.messageResourceRefs.add(resourceRef)
     await persistRuntimeSession(context, this.options, refs, 'active', this.messageResourceRefs)
     if (this.options.syncConversationRoot) {
@@ -549,7 +551,8 @@ async function ensurePiConversationRoot(
   const threadResourceId = secretaryThreadResourceId(threadId)
   await upsertExactRecord(context.db, threadResource, { id: threadResourceId }, {
     id: threadResourceId,
-    parent: refs.chatUri,
+    scope: refs.chatUri,
+    chat: refs.chatUri,
     title: buildThreadTitle(options.sessionManager),
     workspace: pathToWorkspaceUri(options.cwd),
     metadata: buildThreadMetadata(options),
@@ -853,10 +856,44 @@ function resolveActiveMessageResourceRefs(
   return activeRefs
 }
 
+
+function buildPiMessageReconcilerMetadata(
+  options: LinxPiPodMirrorOptions,
+  row: PodMirrorMessageRow,
+  resourceRef: string,
+): Record<string, unknown> {
+  const actorRole = row.role === 'user'
+    ? 'user'
+    : row.role === 'assistant' && row.maker.includes('/agents/__secretary__')
+      ? 'secretary'
+      : row.role === 'assistant'
+        ? 'assistant'
+        : 'runtime'
+  const { summary } = reconcileChatAppend({
+    chat: row.chat,
+    thread: row.thread,
+    resource: resourceRef,
+    role: row.role,
+    content: row.content,
+    actor: {
+      id: row.maker,
+      role: actorRole,
+    },
+    source: actorRole === 'secretary' ? 'secretary-runtime-intent' : 'cli-pi-mirror',
+    autoEnabled: options.autoEnabled === true,
+    createdAt: row.createdAt,
+    randomId: resourceRef,
+  })
+  return appendChatReconcilerMetadata(undefined, summary)
+}
+
 async function persistMessage(
   context: PodMirrorContext,
+  options: LinxPiPodMirrorOptions,
   row: NonNullable<ReturnType<typeof buildPodMessageRowFromMapping>>,
 ): Promise<string> {
+  const resourceRef = messageResource.buildIri(context.webId,  { id: row.id, chat: row.chat, thread: row.thread, createdAt: row.createdAt })
+  const metadata = buildPiMessageReconcilerMetadata(options, row, resourceRef)
   const insert = {
     id: row.id,
     chat: row.chat,
@@ -866,10 +903,10 @@ async function persistMessage(
     content: sanitizePodLiteralText(row.content),
     ...(row.richContent ? { richContent: sanitizePodLiteralText(row.richContent) } : {}),
     status: row.status,
+    metadata,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   } satisfies MessageInsert
-  const resourceRef = messageResource.buildIri(context.webId,  { id: row.id, chat: row.chat, thread: row.thread, createdAt: row.createdAt })
   await upsertByIri(context.db, messageResource, resourceRef, insert, {
     chat: row.chat,
     thread: row.thread,
@@ -878,6 +915,7 @@ async function persistMessage(
     content: sanitizePodLiteralText(row.content),
     ...(row.richContent ? { richContent: sanitizePodLiteralText(row.richContent) } : {}),
     status: row.status,
+    metadata,
     updatedAt: row.updatedAt,
   })
   return resourceRef

@@ -97,13 +97,13 @@ describe('inbox scene restoration', () => {
       {
         id: 'thread-2',
         chat: 'chat-2',
-        workspace: 'linx://node-123/repo/linx',
+        workspace: 'linx://device-123/repo/linx',
       },
     ] as any)
 
     expect(resolveInboxWorkspaceTarget(scene)).toEqual({
       mode: 'workspace',
-      treeNodeId: 'local-workspace:linx://node-123/repo/linx',
+      treeNodeId: 'local-workspace:linx://device-123/repo/linx',
       fileId: null,
     })
   })

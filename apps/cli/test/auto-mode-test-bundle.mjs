@@ -244,6 +244,9 @@ async function buildAutoModeBundle(entryRelative) {
       './companion-model': './dist/companion-model.js',
       './control-plane': './dist/control-plane.js',
       './file-sync': './dist/file-sync.js',
+      './chat-reconciler': './dist/chat-reconciler.js',
+      './matrix-client': './dist/matrix-client.js',
+      './pod-resource-identity': './dist/pod-resource-identity.js',
       './reconciler': './dist/reconciler.js',
       './runtime': './dist/runtime.js',
       './auto-mode': './dist/auto-mode.js',
@@ -254,19 +257,51 @@ async function buildAutoModeBundle(entryRelative) {
       './wake-scheduler': './dist/wake-scheduler.js',
     },
   }, null, 2))
-  symlinkSync(resolveNodeModule('ws'), join(genericNodeModulesDir, 'ws'), 'dir')
-  symlinkSync(resolveNodeModule('n3'), join(genericNodeModulesDir, 'n3'), 'dir')
-  symlinkSync(resolveNodeModule('pi-web-access'), join(genericNodeModulesDir, 'pi-web-access'), 'dir')
-  symlinkSync(resolveNodeModule('typebox'), join(genericNodeModulesDir, 'typebox'), 'dir')
+  for (const packageName of [
+    'ws',
+    'n3',
+    'pi-web-access',
+    'typebox',
+    'zod',
+    'uuid',
+    'jose',
+    'openid-client',
+    'lru-cache',
+    'object-hash',
+    'oidc-token-hash',
+    'events',
+    'node-fetch',
+    'undici',
+    'buffer',
+    'http-link-header',
+    'jsonld-context-parser',
+    'jsonld-streaming-parser',
+  ]) {
+    symlinkSync(resolveNodeModule(packageName), join(genericNodeModulesDir, packageName), 'dir')
+  }
   symlinkSync(resolveNodeModule('@sinclair/typebox'), join(sinclairNodeModulesDir, 'typebox'), 'dir')
   symlinkSync(resolveNodeModule('@earendil-works/pi-ai'), join(scopedNodeModulesDir, 'pi-ai'), 'dir')
   symlinkSync(resolveNodeModule('@earendil-works/pi-agent-core'), join(scopedNodeModulesDir, 'pi-agent-core'), 'dir')
   symlinkSync(resolveNodeModule('@earendil-works/pi-coding-agent'), join(scopedNodeModulesDir, 'pi-coding-agent'), 'dir')
   symlinkSync(resolveNodeModule('@earendil-works/pi-tui'), join(scopedNodeModulesDir, 'pi-tui'), 'dir')
   mkdirSync(join(outdir, 'node_modules', '@inrupt'), { recursive: true })
+  for (const [packageName, targetName] of [
+    ['@inrupt/solid-client', 'solid-client'],
+    ['@inrupt/solid-client-authn-core', 'solid-client-authn-core'],
+    ['@inrupt/solid-client-authn-node', 'solid-client-authn-node'],
+    ['@inrupt/solid-client-errors', 'solid-client-errors'],
+    ['@inrupt/universal-fetch', 'universal-fetch'],
+  ]) {
+    symlinkSync(
+      resolveNodeModule(packageName),
+      join(outdir, 'node_modules', '@inrupt', targetName),
+      'dir',
+    )
+  }
+  mkdirSync(join(outdir, 'node_modules', '@rdfjs'), { recursive: true })
   symlinkSync(
-    resolveNodeModule('@inrupt/solid-client-authn-node'),
-    join(outdir, 'node_modules', '@inrupt', 'solid-client-authn-node'),
+    resolveNodeModule('@rdfjs/dataset'),
+    join(outdir, 'node_modules', '@rdfjs', 'dataset'),
     'dir',
   )
 

@@ -45,6 +45,7 @@ import {
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { formatErrorForUser } from '@/lib/user-facing-errors'
 import { RuntimeSidecarSink } from './runtime-sidecar'
+import { sendMatrixThreadMessage } from '../../matrix-service'
 import {
   DEFAULT_AGENT_AI_RUNTIME_LOCATION,
   readAgentAiRuntimeLocation,
@@ -109,7 +110,7 @@ type RuntimeThreadStatus = 'idle' | 'active' | 'paused' | 'completed' | 'error'
 interface RuntimeThreadRecord {
   id: string
   threadId: string
-  workspaceUri?: string
+  container?: string
   workspaceKind?: 'local-folder' | 'local-worktree' | 'pod-container'
   title: string
   repoPath?: string
@@ -290,6 +291,12 @@ export class LocalChatKitService {
 
     if (params.input) {
       const userMessage = this.createUserMessage(threadId, params.input.content, thread)
+      const matrixSent = await this.trySendMatrixUserMessage(thread, userMessage)
+      if (matrixSent) {
+        yield { type: 'thread.item.added', item: userMessage }
+        yield { type: 'thread.item.done', item: userMessage }
+        return
+      }
       await this.store.addThreadItem(threadId, userMessage, context)
       yield { type: 'thread.item.added', item: userMessage }
       yield { type: 'thread.item.done', item: userMessage }
@@ -303,6 +310,12 @@ export class LocalChatKitService {
   ): AsyncIterable<ThreadStreamEvent> {
     const thread = await this.store.loadThread(params.thread_id, context)
     const userMessage = this.createUserMessage(params.thread_id, params.input.content)
+    const matrixSent = await this.trySendMatrixUserMessage(thread, userMessage)
+    if (matrixSent) {
+      yield { type: 'thread.item.added', item: userMessage }
+      yield { type: 'thread.item.done', item: userMessage }
+      return
+    }
     await this.store.addThreadItem(params.thread_id, userMessage, context)
     yield { type: 'thread.item.added', item: userMessage }
     yield { type: 'thread.item.done', item: userMessage }
@@ -537,6 +550,22 @@ export class LocalChatKitService {
 
   private isServiceMode(): boolean {
     return typeof window !== 'undefined' && !!(window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__
+  }
+
+  private async trySendMatrixUserMessage(thread: ThreadMetadata, userMessage: ThreadItem): Promise<boolean> {
+    const body = extractUserMessageText((userMessage as any).content)
+    const result = await sendMatrixThreadMessage({
+      db: this.db,
+      authFetch: this.authFetch,
+      webId: this.webId,
+      thread: {
+        id: thread.id,
+        metadata: thread.metadata as Record<string, unknown> | undefined,
+      },
+      body,
+      txnId: userMessage.id,
+    })
+    return result !== null
   }
 
   private async getRuntimeThread(threadId: string): Promise<RuntimeThreadRecord | null> {
@@ -906,7 +935,7 @@ export class LocalChatKitService {
 
     for (const participantRef of participantRefs) {
       const contact = contacts.find((entry) => contactMatchesRef(this.db, entry, participantRef))
-      const agentRef = contact?.entityUri ?? participantRef
+      const agentRef = contact?.about ?? participantRef
       const agent = await this.findAgentByRef(agentRef)
 
       if (!agent) {

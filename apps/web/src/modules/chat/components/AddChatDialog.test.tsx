@@ -108,7 +108,7 @@ vi.mock('../runtime-client', () => ({
   DEFAULT_RUNTIME_TOOL: 'codex',
   createAndStartRuntimeSession: (input: unknown) => mockCreateAndStartRuntimeSession(input),
   isRuntimeSessionMode: () => mockIsRuntimeSessionMode(),
-  resolveLocalWorkspaceUri: vi.fn(async () => 'linx://node-123/repo/linx'),
+  resolveLocalContainer: vi.fn(async () => 'linx://device-123/repo/linx'),
 }))
 
 vi.mock('@/modules/contacts/collections', () => ({
@@ -151,7 +151,7 @@ describe('AddChatDialog', () => {
     setupStore()
     mockCreateAIChat.mockResolvedValue({ id: 'chat-1' })
     mockCreateThread.mockResolvedValue({ id: 'thread-1' })
-    mockEnsureThreadWorkspace.mockResolvedValue('linx://node-123/repo/linx')
+    mockEnsureThreadWorkspace.mockResolvedValue('linx://device-123/repo/linx')
     mockIsRuntimeSessionMode.mockReturnValue(true)
     mockFetchSolidProfile.mockResolvedValue({
       name: 'Alice',
@@ -187,7 +187,7 @@ describe('AddChatDialog', () => {
 
     expect(mockEnsureThreadWorkspace).toHaveBeenCalledWith({
       threadId: 'thread-1',
-      workspaceUri: 'linx://node-123/repo/linx',
+      workspaceUri: 'linx://device-123/repo/linx',
       title: '默认话题',
       repoPath: '/repo/linx',
       folderPath: '/repo/linx',
@@ -197,7 +197,7 @@ describe('AddChatDialog', () => {
 
     expect(mockCreateAndStartRuntimeSession).toHaveBeenCalledWith({
       threadId: 'thread-1',
-      workspaceUri: 'linx://node-123/repo/linx',
+      container: 'linx://device-123/repo/linx',
       title: '默认话题',
       repoPath: '/repo/linx',
       folderPath: '/repo/linx',

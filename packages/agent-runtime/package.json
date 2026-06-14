@@ -22,6 +22,11 @@
       "node": "./dist/auto-mode.js",
       "default": "./src/auto-mode.ts"
     },
+    "./chat-reconciler": {
+      "types": "./src/chat-reconciler.ts",
+      "node": "./dist/chat-reconciler.js",
+      "default": "./src/chat-reconciler.ts"
+    },
     "./companion-model": {
       "types": "./src/companion-model.ts",
       "node": "./dist/companion-model.js",
@@ -36,6 +41,11 @@
       "types": "./src/file-sync.ts",
       "node": "./dist/file-sync.js",
       "default": "./src/file-sync.ts"
+    },
+    "./matrix-client": {
+      "types": "./src/matrix-client.ts",
+      "node": "./dist/matrix-client.js",
+      "default": "./src/matrix-client.ts"
     },
     "./pod-resource-identity": {
       "types": "./src/pod-resource-identity.ts",

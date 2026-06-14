@@ -1,6 +1,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { EventEmitter } from 'events'
+import { appendChatReconcilerMetadata, readChatReconcilerMetadata, reconcileChatAppend } from '@linx/agent-runtime/chat-reconciler'
 import {
   type CreateRuntimeThreadInput,
   type RuntimeRunner,
@@ -166,7 +167,7 @@ export class RuntimeThreadsModule {
     const record: RuntimeThreadRecord = {
       id: crypto.randomUUID(),
       threadId: normalized.threadId,
-      workspaceUri: normalized.workspaceUri,
+      container: normalized.container,
       workspaceKind: normalized.workspaceKind,
       title: normalized.title,
       repoPath: normalized.repoPath,
@@ -223,7 +224,28 @@ export class RuntimeThreadsModule {
     return this.stopThread(id)
   }
 
+
+  private reconcileRuntimeUserMessage(id: string, text: string): void {
+    const current = this.getThreadOrThrow(id)
+    const { summary } = reconcileChatAppend({
+      thread: current.threadId,
+      ...(current.container ? { resource: current.container } : {}),
+      role: 'user',
+      content: text,
+      actor: { id: 'current-user', role: 'user' },
+      source: 'service-runtime',
+      createdAt: new Date(),
+      randomId: `${id}:${Date.now()}`,
+    })
+    const metadata = appendChatReconcilerMetadata(current.metadata, summary)
+    this.updateThread(id, {
+      metadata,
+      reconciler: readChatReconcilerMetadata(metadata.reconciler) ?? undefined,
+    })
+  }
+
   async sendMessage(id: string, text: string): Promise<RuntimeThreadRecord> {
+    this.reconcileRuntimeUserMessage(id, text)
     return this.getRunner(id).sendMessage(text)
   }
 

@@ -619,7 +619,7 @@ test('symphony dispatch uses the worker session workspace resolved by control re
           workspace: {
             ...worker.session.workspace,
             path: workerWorkspace,
-            workspaceUri: 'urn:undefineds:workspace:worker-linx',
+            container: 'urn:undefineds:workspace:worker-linx',
             environment: {
               kind: 'remote-container',
               id: 'worker-container-a',
@@ -653,7 +653,7 @@ test('symphony dispatch uses the worker session workspace resolved by control re
   assert.match(runCalls[0].prompt, /Workspace environment: remote-container runtime=codex id=worker-container-a label=Worker container checkout/)
   assert.equal(plan.session.cwd, workerWorkspace)
   assert.equal(plan.session.workspace.path, workerWorkspace)
-  assert.equal(plan.session.workspace.workspaceUri, 'urn:undefineds:workspace:worker-linx')
+  assert.equal(plan.session.workspace.container, 'urn:undefineds:workspace:worker-linx')
   assert.equal(plan.session.autoModeSessionId, 'auto_worker_workspace_123')
 })
 

@@ -42,7 +42,7 @@ describe('contact collections integration', () => {
     const [created] = await database.insert(contactResource).values({
       id: contactResource.buildId({ id }),
       name: 'Integration Contact',
-      entityUri: webId,
+      about: webId,
       contactType: 'solid',
     }).execute()
 
@@ -63,8 +63,8 @@ describe('contact collections integration', () => {
 
     const timestamp = Date.now()
     const contacts = [
-      { id: contactResource.buildId({ id: `solid-${timestamp}` }), name: 'Solid User', contactType: 'solid', entityUri: `https://solid-${timestamp}.pod/#me` },
-      { id: contactResource.buildId({ id: `ext-${timestamp}` }), name: 'External User', contactType: 'external', externalId: `wxid_${timestamp}`, entityUri: `wxid_${timestamp}` },
+      { id: contactResource.buildId({ id: `solid-${timestamp}` }), name: 'Solid User', contactType: 'solid', about: `https://solid-${timestamp}.pod/#me` },
+      { id: contactResource.buildId({ id: `ext-${timestamp}` }), name: 'External User', contactType: 'external', externalId: `wxid_${timestamp}`, about: `wxid_${timestamp}` },
     ]
 
     for (const contact of contacts) {
@@ -97,7 +97,7 @@ describe('contact collections integration', () => {
     const [created] = await database.insert(contactResource).values({
       id: contactResource.buildId({ id }),
       name: 'Delete Me',
-      entityUri: webId,
+      about: webId,
       contactType: 'solid',
     }).execute()
 

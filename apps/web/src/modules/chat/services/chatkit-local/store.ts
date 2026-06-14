@@ -30,6 +30,7 @@ import {
 import { requireRowResourceId } from '@/lib/data/resource-identity'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { deleteExactRecord, updateExactRecord } from '@/lib/data/exact-records'
+import { appendChatReconcilerMetadata, reconcileChatAppend } from '@linx/agent-runtime/chat-reconciler'
 
 const DEFAULT_CHAT_ID = 'default'
 const POD_QUERY_TIMEOUT_MS = 15000
@@ -112,6 +113,13 @@ function messageRecordMatchesItem(record: Record<string, unknown>, itemId: strin
   return readChatKitItemId(record) === itemId
 }
 
+function isHiddenMatrixProtocolEvent(record: Record<string, unknown> | null | undefined): boolean {
+  const metadata = parseRecordMetadata(record?.metadata)
+  return metadata.protocol === 'matrix'
+    && typeof metadata.eventType === 'string'
+    && metadata.eventType !== 'm.room.message'
+}
+
 function requireRecordId(record: Record<string, unknown> | null | undefined, label: string): string {
   return requireRowResourceId(record as { id?: string | null }, label)
 }
@@ -122,6 +130,41 @@ function requirePodBaseUrl(db: SolidDatabase<any>): string {
     throw new Error('Unable to resolve current Pod URL for LocalChatKitStore.')
   }
   return podBaseUrl
+}
+
+
+function buildChatKitMessageReconcilerMetadata(input: {
+  db: SolidDatabase<any>
+  chat: string
+  thread: string
+  messageId: string
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  maker: string
+  createdAt: Date
+  existingMetadata?: Record<string, unknown>
+}): Record<string, unknown> {
+  const resource = messageResource.buildIri(requirePodBaseUrl(input.db), {
+    id: input.messageId,
+    chat: input.chat,
+    thread: input.thread,
+    createdAt: input.createdAt,
+  })
+  const { summary } = reconcileChatAppend({
+    chat: input.chat,
+    thread: input.thread,
+    resource,
+    role: input.role,
+    content: input.content,
+    actor: {
+      id: input.maker,
+      role: input.role === 'user' ? 'user' : input.role === 'assistant' ? 'assistant' : 'runtime',
+    },
+    source: input.role === 'assistant' ? 'primary-agent' : input.role === 'user' ? 'web-chat' : 'runtime',
+    createdAt: input.createdAt,
+    randomId: resource,
+  })
+  return appendChatReconcilerMetadata(input.existingMetadata, summary)
 }
 
 function buildChatIri(db: SolidDatabase<any>, chatId: string): string {
@@ -351,9 +394,9 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
       return this.webId
     }
 
-    const contact = await this.findContactByRef(participantRef) as { entityUri?: string | null } | null
+    const contact = await this.findContactByRef(participantRef) as { about?: string | null } | null
 
-    return contact?.entityUri || participantRef
+    return contact?.about || participantRef
   }
 
   private async findContactByRef(ref: string): Promise<Record<string, unknown> | null> {
@@ -380,6 +423,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     return messages.filter((message: any) => (
       extractChatId(message.chat) === chatId
       && extractThreadId(message.thread) === threadId
+      && !isHiddenMatrixProtocolEvent(message)
     ))
   }
 
@@ -510,6 +554,8 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
 
     if (existingThread) {
       await updateExactRecord(this.db, Thread as any, existingThread as any, {
+        scope: this.buildChatUri(chatId),
+        chat: this.buildChatUri(chatId),
         title: thread.title || undefined,
         status: statusToString(thread.status),
         metadata: metadataValue,
@@ -518,7 +564,8 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     } else {
       await (this.db as any).insert(Thread as any).values({
         id: this.buildThreadId(chatId, thread.id),
-        parent: this.buildChatUri(chatId),
+        scope: this.buildChatUri(chatId),
+        chat: this.buildChatUri(chatId),
         title: thread.title || undefined,
         status: statusToString(thread.status),
         metadata: metadataValue,
@@ -659,19 +706,37 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     const maker = role === MessageRole.USER
       ? this.webId
       : await this.resolveCounterpartMaker(chatId)
+    const reconcilerRole = role === MessageRole.ASSISTANT
+      ? 'assistant'
+      : role === MessageRole.SYSTEM
+        ? 'system'
+        : 'user'
+
+    const chat = this.buildChatUri(chatId)
+    const metadata = buildChatKitMessageReconcilerMetadata({
+      db: this.db,
+      chat,
+      thread,
+      messageId,
+      role: reconcilerRole,
+      content,
+      maker,
+      createdAt,
+      existingMetadata: {
+        [CHATKIT_ITEM_ID_METADATA_KEY]: item.id,
+      },
+    })
 
     await (this.db as any).insert(Message as any).values({
       id: messageId,
-      scope: this.buildChatUri(chatId),
-      chat: this.buildChatUri(chatId),
+      scope: chat,
+      chat,
       thread,
       maker,
       role,
       content,
       richContent: richContent ?? undefined,
-      metadata: {
-        [CHATKIT_ITEM_ID_METADATA_KEY]: item.id,
-      },
+      metadata,
       status: status ?? undefined,
       createdAt,
     }).execute()

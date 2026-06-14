@@ -10,7 +10,7 @@
     "dev:setup": "tsx src/setup/server.ts"
   },
   "dependencies": {
-    "@undefineds.co/xpod": "0.3.46",
+    "@undefineds.co/xpod": "0.3.48",
     "electron": "^42.2.0",
     "express": "^5.2.1",
     "open": "^11.0.0",

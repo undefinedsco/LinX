@@ -42,6 +42,9 @@ describe('chatOps storage routing', () => {
     expect(messageInsert?.chat).toBe(message.chat)
     expect(messageInsert?.thread).toBe(message.thread)
     expect(messageInsert?.maker).toBe(CLOUD_WEB_ID)
+    expect((messageInsert?.metadata as any)?.reconciler?.latest?.eventType).toBe('message.appended')
+    expect((messageInsert?.metadata as any)?.reconciler?.latest?.wakeJobs?.[0]?.targetRole).toBe('primary-agent')
+    expect((messageInsert?.metadata as any)?.reconciler?.latest?.wakeJobs?.[0]?.sourceResource).toBe(`${SELECTED_SP_POD_URL}.data/${message.id}`)
     expect(updates.find((entry) => entry.resource === chatResource)?.id).toBe(chatId)
 
     const persisted = JSON.stringify({

@@ -132,6 +132,7 @@ function setupPayload(overrides = {}) {
     },
     local: {
       nodeId: 'node-0000',
+      deviceId: 'device-0000',
     },
     ...overrides,
   }
@@ -221,6 +222,8 @@ test('setup writes Cloud+Local user-managed canonical domain env when Local has 
   assert.doesNotMatch(env, new RegExp(`^${['OIDC', 'ISSUER'].join('_')}=`, 'm'))
   assert.match(env, /^XPOD_CLOUD_API_ENDPOINT=https:\/\/api\.undefineds\.co$/m)
   assert.match(env, /^XPOD_NODE_ID=node-123$/m)
+  assert.match(env, /^LINX_NODE_ID=node-123$/m)
+  assert.match(env, /^LINX_DEVICE_ID=device-0000$/m)
   assert.match(env, /^XPOD_NODE_TOKEN=node-token$/m)
   assert.match(env, /^XPOD_SERVICE_TOKEN=service-token$/m)
   assert.match(env, /^LINX_PROVISION_CODE=provision-code$/m)
@@ -258,6 +261,8 @@ test('setup writes Cloud+Local Cloud-managed canonical domain env without a user
   assert.match(env, /^oidcIssuer=https:\/\/id\.undefineds\.co$/m)
   assert.doesNotMatch(env, new RegExp(`^${['OIDC', 'ISSUER'].join('_')}=`, 'm'))
   assert.match(env, /^XPOD_NODE_ID=node-123$/m)
+  assert.match(env, /^LINX_NODE_ID=node-123$/m)
+  assert.match(env, /^LINX_DEVICE_ID=device-0000$/m)
   assert.match(env, /^XPOD_NODE_TOKEN=node-token$/m)
   assert.match(env, /^XPOD_SERVICE_TOKEN=service-token$/m)
   assert.match(env, /^LINX_PROVISION_CODE=provision-code$/m)
@@ -333,6 +338,53 @@ test('service status exposes provisioning from generated env', async (t) => {
     completed: 0,
     error: 1,
   })
+})
+
+test('setup config separates SP node identity from runtime device identity', async (t) => {
+  const { server, tmpDir } = loadWebServerWithStubs(t)
+  const { listener, origin } = await listenOnRandomPort(server.app)
+  t.after(() => listener.close())
+
+  fs.writeFileSync(path.join(tmpDir, '.env'), [
+    'CSS_ROOT_FILE_PATH=/tmp/linx-pod',
+    'CSS_PORT=5737',
+    'XPOD_NODE_ID=node-123',
+    'LINX_NODE_ID=legacy-node',
+    'LINX_DEVICE_ID=device-abc',
+    'CSS_NODE_ID=css-node',
+    'LINX_SPACE_KIND=local',
+  ].join('\n'))
+
+  const response = await requestJson(origin, '/api/setup/config')
+
+  assert.equal(response.status, 200)
+  assert.equal(response.body.nodeId, 'node-123')
+  assert.equal(response.body.deviceId, 'device-abc')
+})
+
+test('setup config persists a generated runtime device identity', async (t) => {
+  const previousDeviceId = process.env.LINX_DEVICE_ID
+  delete process.env.LINX_DEVICE_ID
+  t.after(() => {
+    if (previousDeviceId === undefined) {
+      delete process.env.LINX_DEVICE_ID
+    } else {
+      process.env.LINX_DEVICE_ID = previousDeviceId
+    }
+  })
+
+  const { server, tmpDir } = loadWebServerWithStubs(t)
+  const { listener, origin } = await listenOnRandomPort(server.app)
+  t.after(() => listener.close())
+
+  const first = await requestJson(origin, '/api/setup/config')
+  const second = await requestJson(origin, '/api/setup/config')
+
+  assert.equal(first.status, 200)
+  assert.equal(second.status, 200)
+  assert.match(first.body.deviceId, /^device-[a-z0-9-]+$/)
+  assert.equal(second.body.deviceId, first.body.deviceId)
+  assert.equal(fs.readFileSync(path.join(tmpDir, '.device-id'), 'utf-8').trim(), first.body.deviceId)
 })
 
 test('service start accepts the configured Local space', async (t) => {

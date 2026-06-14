@@ -1,4 +1,5 @@
 import type { PodDataSession } from '../pod-data-session.js'
+import { appendChatReconcilerMetadata, reconcileChatAppend } from '@linx/agent-runtime'
 import { getDefaultPodDataSession } from '../pod-data-session.js'
 import {
   agentResource,
@@ -61,7 +62,8 @@ interface AutoModeChatRow extends Record<string, unknown> {
 
 interface AutoModeThreadRow extends Record<string, unknown> {
   id: string
-  parent: string
+  scope: string
+  chat: string
   title: string
   metadata: Record<string, unknown>
   createdAt: Date
@@ -97,6 +99,7 @@ interface PersistedAutoModeConversationMessage extends Record<string, unknown> {
   routedBy?: string
   routeTargetAgent?: string
   coordinationId?: string
+  metadata?: Record<string, unknown>
   createdAt: Date
 }
 
@@ -263,7 +266,8 @@ function buildAutoModeConversationThreadRow(
 
   return {
     id: threadRepository.idForChat(chatUri, record.id),
-    parent: chatUri,
+    scope: chatUri,
+    chat: chatUri,
     title: buildAutoModeConversationThreadTitle(record, transcript),
     metadata: {
       ...buildAutoModeThreadMetadata(record),
@@ -364,6 +368,49 @@ function resolveMessageSender(input: {
   }
 }
 
+
+function buildAutoModeMessageReconcilerMetadata(input: {
+  record: AutoModeSessionRecord
+  webId: string
+  chatUri: string
+  threadUri: string
+  messageUri: string
+  role: 'user' | 'assistant' | 'system'
+  source: AutoModeTranscriptMessageSource
+  content: string
+  maker: string
+  createdAt: Date
+}): Record<string, unknown> {
+  const { summary } = reconcileChatAppend({
+    chat: input.chatUri,
+    thread: input.threadUri,
+    resource: input.messageUri,
+    role: input.role,
+    content: input.content,
+    actor: {
+      id: input.maker,
+      role: input.source === 'user'
+        ? 'user'
+        : input.source === 'secretary'
+          ? 'secretary'
+          : input.source === 'primary-agent'
+            ? 'primary-agent'
+            : 'runtime',
+    },
+    source: input.source === 'primary-agent'
+      ? 'primary-agent'
+      : input.source === 'secretary'
+        ? 'secretary-runtime-intent'
+        : input.source === 'user'
+          ? 'cli-auto-mode'
+          : 'runtime',
+    autoEnabled: input.record.autoEnabled ?? input.record.mode === 'auto',
+    createdAt: input.createdAt,
+    randomId: input.messageUri,
+  })
+  return appendChatReconcilerMetadata(undefined, summary)
+}
+
 function buildAutoModeConversationMessages(
   record: AutoModeSessionRecord,
   webId: string,
@@ -379,9 +426,12 @@ function buildAutoModeConversationMessages(
       webId,
       source: message.source,
     })
+    const id = `${record.id}-m${String(index + 1).padStart(4, '0')}`
+    const createdAt = new Date(message.createdAt)
+    const messageUri = buildAutoModeMessageUri(webId, record, { id, createdAt })
 
     return {
-      id: `${record.id}-m${String(index + 1).padStart(4, '0')}`,
+      id,
       chat: chatUri,
       thread: threadUri,
       maker: sender.maker,
@@ -392,7 +442,19 @@ function buildAutoModeConversationMessages(
       routedBy: sender.routedBy,
       routeTargetAgent: sender.routeTargetAgent,
       coordinationId: record.id,
-      createdAt: new Date(message.createdAt),
+      metadata: buildAutoModeMessageReconcilerMetadata({
+        record,
+        webId,
+        chatUri,
+        threadUri,
+        messageUri,
+        role: message.role,
+        source: message.source,
+        content: message.content,
+        maker: sender.maker,
+        createdAt,
+      }),
+      createdAt,
     }
   })
 }
@@ -557,6 +619,7 @@ async function upsertAutoModeConversationMessages(
       routedBy: row.routedBy,
       routeTargetAgent: row.routeTargetAgent,
       coordinationId: row.coordinationId,
+      metadata: row.metadata,
       createdAt: row.createdAt,
     })
   }

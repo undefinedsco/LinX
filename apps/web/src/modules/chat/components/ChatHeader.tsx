@@ -59,7 +59,7 @@ export function ChatHeader() {
 
   const contactUri = getPrimaryParticipantUri(chat, session.info.webId)
   const { data: contact, refresh: refreshContact } = useEntity(contactResource, contactUri)
-  const agentUri = contact && isAgentContact(contact) ? contact.entityUri : null
+  const agentUri = contact && isAgentContact(contact) ? contact.about : null
   const { data: agent, refresh: refreshAgent } = useEntity(agentResource, agentUri)
   const agentId = typeof agent?.id === 'string' && agent.id.length > 0 ? agent.id : null
   const contactId = typeof contact?.id === 'string' && contact.id.length > 0 ? contact.id : null

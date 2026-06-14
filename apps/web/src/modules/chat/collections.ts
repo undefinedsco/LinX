@@ -42,6 +42,7 @@ import {
   ContactType,
 } from '@undefineds.co/models'
 import type { SolidDatabase } from '@undefineds.co/models'
+import { appendChatReconcilerMetadata, reconcileChatAppend } from '@linx/agent-runtime/chat-reconciler'
 import {
   agentResourceId,
   resolveThreadChatId as resolveThreadChatIdFromRow,
@@ -334,6 +335,34 @@ function buildMessageResourceId(
   row: Pick<MessageInsert, 'chat' | 'thread' | 'createdAt'>,
 ): string {
   return buildResourceId(messageResource as any, { ...row, id: messageId } as Record<string, unknown>)
+}
+
+function buildMessageReconcilerMetadata(input: {
+  chat: string
+  thread: string
+  resource: string
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  maker: string
+  source?: string
+  createdAt: Date
+  existingMetadata?: Record<string, unknown>
+}): Record<string, unknown> {
+  const { summary } = reconcileChatAppend({
+    chat: input.chat,
+    thread: input.thread,
+    resource: input.resource,
+    role: input.role,
+    content: input.content,
+    actor: {
+      id: input.maker,
+      role: input.role === 'user' ? 'user' : input.role === 'assistant' ? 'assistant' : 'runtime',
+    },
+    source: input.source ?? 'web-chat',
+    createdAt: input.createdAt,
+    randomId: input.resource,
+  })
+  return appendChatReconcilerMetadata(input.existingMetadata, summary)
 }
 
 async function insertPodRow(
@@ -690,8 +719,7 @@ function buildDefaultSecretaryContactRows(input: {
       id: LINX_DEFAULT_SECRETARY.contactId,
       '@id': input.contactIri,
       name: LINX_DEFAULT_SECRETARY.title,
-      entity: input.agentIri,
-      entityUri: input.agentIri,
+      about: input.agentIri,
       rdfType: ContactClass.AGENT,
       contactType: ContactType.AGENT,
       isPublic: false,
@@ -941,7 +969,7 @@ export const chatCollection = createPodCollection<typeof chatResource, ChatRow, 
 // Columns needed for thread list view
 const threadListColumns: (keyof ThreadRow)[] = [
   'id',
-  'parent',
+  'chat',
   'title',
   'starred',
   'workspace',
@@ -1110,7 +1138,7 @@ export const chatOps = {
    * 
    * Flow:
    * 1. Create Agent record (with avatarUrl from provider)
-   * 2. Create Contact record (type: agent, entityUri → Agent)
+   * 2. Create Contact record (type: agent, about → Agent)
    * 3. Create Chat record (participants → Contact URI)
    * 
    * @returns The created Chat with related IDs
@@ -1316,7 +1344,8 @@ export const chatOps = {
     const threadData = {
       id: threadResourceId,
       ...(threadIri ? { '@id': threadIri } : {}),
-      parent: chatIri ?? chatId,
+      scope: chatIri ?? chatId,
+      chat: chatIri ?? chatId,
       title: title || `话题 ${now.toLocaleTimeString()}`,
       createdAt: now,
       updatedAt: now,
@@ -1472,6 +1501,15 @@ export const chatOps = {
       role: 'user',
       content,
       status: 'sent',
+      metadata: buildMessageReconcilerMetadata({
+        chat: chatRef,
+        thread: threadRef,
+        resource: messageIri,
+        role: 'user',
+        content,
+        maker,
+        createdAt: now,
+      }),
       createdAt: now,
     } as MessageInsert & { '@id': string }
     
@@ -1539,6 +1577,16 @@ export const chatOps = {
       content,
       richContent,
       status: 'sent',
+      metadata: buildMessageReconcilerMetadata({
+        chat: chatRef,
+        thread: threadRef,
+        resource: messageIri,
+        role: 'assistant',
+        content,
+        maker,
+        source: 'primary-agent',
+        createdAt: now,
+      }),
       createdAt: now,
     } as MessageInsert & { '@id': string }
     
@@ -1916,12 +1964,12 @@ async function queryThreadRowsForChat(db: SolidDatabase, chatId: string): Promis
     throw new Error(`Failed to resolve chat IRI for chat ${chatId}`)
   }
 
-  const parentCol = (threadResource as any).parent
+  const chatCol = (threadResource as any).chat
   let rows: ThreadRow[]
   try {
     rows = await db.select()
       .from(threadResource)
-      .where(eq(parentCol, chatIri))
+      .where(eq(chatCol, chatIri))
       .orderBy('updatedAt', 'desc')
       .execute() as ThreadRow[]
   } catch (error) {
