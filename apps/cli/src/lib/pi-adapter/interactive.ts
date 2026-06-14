@@ -2121,8 +2121,9 @@ async function dispatchSymphonyWorkerFromInteractive(
     target: {
       source: 'active-session',
       backend,
-      agent: `${backend}-worker`,
-      label: `${backend} worker`,
+      contact: backend,
+      agent: backend,
+      label: backend,
       ...(source?.chat ? { chat: source.chat } : {}),
       ...(source?.thread ? { thread: source.thread } : {}),
     },
@@ -2540,8 +2541,8 @@ async function formatSymphonyStatus(interactive: any): Promise<string> {
         ? 'Pod control state: active.'
         : 'Pod control state: portable local archive mode.',
     'Skills: issue triage, existing issue lookup, create/update/ask decision, task split, worker dispatch, status/report tracking.',
-    'Delegation target: AI Secretary must choose a Chat resource before dispatch.',
-    'Allowed targets: personal AI contact chat or group chat.',
+    'Delegation target: AI Secretary chooses a Contact-backed worker target before dispatch.',
+    'Allowed targets: personal AI contact chat or group chat; Chat participants must reference Contacts.',
     'Thread role: concrete work timeline under the selected Chat.',
     'Session role: backend runtime lifecycle only.',
   ]
@@ -2752,6 +2753,7 @@ async function listRecentSymphonyReports(interactive: any): Promise<SymphonyStat
 
 function formatSymphonyWorkerStatus(session: SymphonyWorkerStatus): string {
   const target = session.target?.label
+    ?? session.target?.contact
     ?? session.target?.agent
     ?? session.target?.chat
     ?? session.backend
@@ -2766,8 +2768,10 @@ function formatSymphonyWorkerStatus(session: SymphonyWorkerStatus): string {
 function formatSymphonyReportStatus(report: SymphonyReportStatus): string {
   const status = report.status
   const reportRecord = report as Record<string, any>
-  const target = reportRecord.agent
-    ?? reportRecord.target?.label
+  const target = reportRecord.target?.label
+    ?? reportRecord.contact
+    ?? reportRecord.target?.contact
+    ?? reportRecord.agent
     ?? reportRecord.target?.agent
     ?? report.backend
   const title = 'summary' in report && report.summary

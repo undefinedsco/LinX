@@ -855,6 +855,13 @@ execution profiles selected from contacts or created as AI contacts when no
 suitable contact exists. A role assignment should bind to Work, not create a new
 product semantic object and not split a Spec by itself.
 
+Contact is the durable product identity for dispatch. A worker instance is a
+Run/Session role, not a Contact. Chat participants must reference Contact URIs
+so the App can recover and display the conversation; the Contact points to the
+underlying Agent, and the Run/Session records keep backend, model, runtime, and
+workspace facts. Default coding contacts use backend keys such as `codex`
+unless a deliberate persona is introduced.
+
 ### Worker Feasibility Recheck
 
 Worker execution is also a feedback surface for bad upstream judgment. A worker

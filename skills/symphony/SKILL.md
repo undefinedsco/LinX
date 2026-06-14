@@ -491,6 +491,12 @@ runtime capability; when implemented, roles should be execution profiles
 selected from contacts or created as AI contacts, and they bind to Work rather
 than splitting Spec by themselves.
 
+Dispatch targets are Contact-first. A Contact is the durable App-visible
+participant and may point to an Agent; a worker instance is only a Run/Session
+role. Chat participants must use Contact URIs, while backend/model/runtime facts
+stay on Agent/Run/Session. Default coding contacts should use backend keys such
+as `codex` unless a deliberate persona is introduced.
+
 Interactive worker sessions do not need a Delivery tool for every blocker. When
 Secretary launches or manages the worker session, the worker-facing `user`
 input is a Secretary-controlled projection. If the worker lacks information,

@@ -73,6 +73,7 @@ export type SymphonyDelegationTargetSource = 'active-session' | 'group-chat' | '
 export interface SymphonyDelegationTarget extends SymphonyChatThreadRef {
   source: SymphonyDelegationTargetSource
   backend: AutoModeWorkerBackend
+  contact?: string
   agent?: string
   label?: string
 }
@@ -121,6 +122,7 @@ export interface SymphonyTaskRecord extends SymphonyChatThreadRef {
   status: SymphonyTaskStatus
   target: SymphonyDelegationTarget
   backend: AutoModeWorkerBackend
+  contact?: string
   agent?: string
   delivery: string
   session: string
@@ -337,7 +339,7 @@ export function createRunPlan(input: CreateSymphonyRunPlanInput): SymphonyRunPla
       thread: target.thread ?? chatThread.thread,
       messages: target.messages ?? chatThread.messages,
     })
-    const targetAgent = target.agent ?? `${target.backend}-worker`
+    const targetAgent = target.agent ?? target.contact ?? target.backend
     const dispatchReconciler = createSymphonyDispatchReconcilerState({
       issue: issueUri,
       task: uris.task,
@@ -484,6 +486,7 @@ export function renderSymphonyRuntimePrompt(input: {
     ...(input.issuer?.thread ? [`Issuer thread: ${input.issuer.thread}`] : []),
     ...(input.target?.chat ? [`Target chat: ${input.target.chat}`] : []),
     ...(input.target?.thread ? [`Target thread: ${input.target.thread}`] : []),
+    ...(input.target?.contact ? [`Target contact: ${input.target.contact}`] : []),
     ...(input.target?.agent ? [`Target agent: ${input.target.agent}`] : []),
     ...(input.workerIndex && input.workerCount ? [`Worker: ${input.workerIndex}/${input.workerCount}`] : []),
     ...(workThread ? [`Work thread: ${workThread}`] : []),
@@ -796,12 +799,14 @@ function createSymphonySupervisorPolicy(intervalMs: unknown): SymphonySupervisor
 
 function normalizeSymphonyDelegationTarget(input: CreateSymphonyRunPlanInput): SymphonyDelegationTarget {
   const explicit = input.target ?? {}
+  const backend = explicit.backend ?? input.backend
   const chatThread = normalizeSymphonyChatThreadRef({
     chat: explicit.chat ?? input.chat,
     thread: explicit.thread ?? input.thread,
     messages: explicit.messages ?? input.messages,
   })
-  const agent = normalizeOptionalText(explicit.agent) ?? `${input.backend}-worker`
+  const contact = normalizeOptionalText(explicit.contact) ?? normalizeOptionalText(explicit.agent) ?? backend
+  const agent = normalizeOptionalText(explicit.agent) ?? contact
   const label = normalizeOptionalText(explicit.label)
   const source = explicit.source
     ?? (chatThread.chat || chatThread.thread
@@ -812,7 +817,8 @@ function normalizeSymphonyDelegationTarget(input: CreateSymphonyRunPlanInput): S
 
   return {
     source,
-    backend: explicit.backend ?? input.backend,
+    backend,
+    contact,
     agent,
     ...(label ? { label } : {}),
     ...chatThread,

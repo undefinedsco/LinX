@@ -102,13 +102,13 @@ Codex / worker blocks on approval or input
 - 创建新 Issue 前必须先比较当前 open Issues；明显同一个工作项时更新原 Issue，是否新建不明确时由 Secretary 向用户追问。
 - `Symphony` 是 Secretary 的全局控制面，不绑定从哪个 Chat/Thread 发起；在哪个界面触发只提供来源上下文，不决定投递模型。
 - Chat/Thread 是过程展示和回看载体，由 Secretary 在产品层创建或选择，并把对应 URI 写进 `Issue / Delivery / Session`。用户不需要选择或填写 Chat/Thread/Message URI，headless CLI 也不模拟这层产品上下文。
-- 派活必须有一个目标 `Chat`：可以是某个 AI contact 的工作私聊，也可以是一个任务群聊。`Thread` 是这次派活在该 Chat 下的具体协作时间线和 workspace 分组，`Session` 只记录 backend runtime 生命周期。不要把派活永远写进固定控制室，也不要把 `Session` 当成 Chat。
+- 派活的产品目标必须先落到 `Contact`：Contact 是 App 可见、可被用户选择和回看的稳定参与方；它可以指向一个 AI `Agent`。`Chat.participants` 保存 Contact URI，而不是 backend/worker session/Agent URI。`Thread` 是这次派活在该 Chat 下的具体协作时间线和 workspace 分组，`Session` 只记录 backend runtime 生命周期。不要把 worker 实例当 Contact，也不要把 `Session` 当成 Chat。
 - 不提供 `linx symphony` 或独立 `linx-symphony` 产品入口，避免把内置能力误解成另一个应用。
 
 当前 CLI/TUI 落地策略：
 
 - `/symphony` 触发后的派活必须先把过程投影到 Pod 的既有 `Chat / Thread / Message / Session / Agent / Contact` 资源，不能新增一套 Symphony 专属 UI 表。
-- 有产品上下文时，`/symphony` 应投影到被委派对象对应的 Chat，并为该次派活创建或复用 Thread；没有显式目标时才回退到 `AI Secretary · Symphony` 控制室。
+- 有产品上下文时，`/symphony` 应投影到被委派 Contact 对应的 Chat，并为该次派活创建或复用 Thread；没有显式目标时才回退到 `AI Secretary · Symphony` 控制室。默认 coding backend 的 Contact 用 backend 名称，例如 `codex`；除非后续显式引入人设，不创建 `codex-worker-*` 这种每次派工身份。
 - planned/running/completed/failed 状态写成 Secretary 发出的 assistant message，message.richContent 带 `task_progress`，让 App 在运行中可见。
 - planned/running/completed/failed 同时写 `Audit` 检查点：`symphony.planned`、`symphony.dispatched`、`symphony.completed`、`symphony.failed`。审计 entry 指向对应状态 message，session 指向通用 runtime Session，actor 是 AI Secretary，onBehalfOf 是用户 WebID。
 - `Issue / Delivery / Session` 的本地缓存只能是 Pod/RDF mirror 或无 Pod recovery material；跨端回看和调试必须依赖 `chat / thread / messages` URI。

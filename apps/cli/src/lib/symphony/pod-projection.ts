@@ -133,6 +133,7 @@ export interface SymphonyPodWorkerStatus {
   autoModeSessionId?: string
   target?: {
     label?: string
+    contact?: string
     agent?: string
     chat?: string
   }
@@ -551,7 +552,7 @@ async function createDefaultRuntime(): Promise<SymphonyPodProjectionRuntime> {
     runResource: models.runResource,
     runStepResource: models.runStepResource,
     agentResource: models.agentResource,
-    contactResource: models.contactTable,
+    contactResource: models.contactResource,
     auditResource: models.auditResource,
     inboxNotificationResource: models.inboxNotificationResource,
     writePodFile: writePodFileToSession,
@@ -1110,10 +1111,13 @@ function buildSymphonyChatRow(plan: SymphonyRunPlan, webId: string, stage: Proje
   const createdAt = safeDate(plan.issue.createdAt)
   const updatedAt = safeDate(plan.session.updatedAt)
   const secretaryAgent = agentResource.buildIri(webId,  { id: SYMPHONY_SECRETARY_AGENT_ID })
-  const workerAgents = plan.workers.map((worker) => agentResource.buildIri(webId,  {
-    id: buildWorkerAgentId(worker.session.backend, worker.session.target.agent),
+  const secretaryContact = buildSecretaryContactIri(webId)
+  const workerMembers = plan.workers.map((worker) => ({
+    contact: buildWorkerContactIri(webId, worker),
+    agent: buildWorkerAgentIri(webId, worker),
+    label: worker.session.target.label ?? worker.session.target.contact ?? worker.session.target.agent ?? backendDisplayName(worker.session.backend),
   }))
-  const participants = Array.from(new Set([webId, secretaryAgent, ...workerAgents]))
+  const participants = Array.from(new Set([webId, secretaryContact, ...workerMembers.map((member) => member.contact)]))
   const targetChat = selectTargetChatIri(plan.session.target?.chat, webId, plan)
 
   return {
@@ -1124,23 +1128,23 @@ function buildSymphonyChatRow(plan: SymphonyRunPlan, webId: string, stage: Proje
       kind: targetChat === buildSymphonyChatUri(webId) ? 'symphony-control-room' : 'symphony-target-room',
       surface: 'symphony',
       secretaryAgent,
+      secretaryContact,
       currentBackend: plan.session.backend,
       target: plan.session.target,
       currentStage: stage,
       memberRoles: Object.fromEntries([
         [webId, 'owner'],
-        [secretaryAgent, 'admin'],
-        ...workerAgents.map((agent) => [agent, 'member']),
+        [secretaryContact, 'admin'],
+        ...workerMembers.map((member) => [member.contact, 'member']),
       ]),
       members: [
         { uri: webId, role: 'user', label: 'User' },
-        { uri: secretaryAgent, role: 'secretary', label: 'AI Secretary' },
-        ...plan.workers.map((worker) => ({
-          uri: agentResource.buildIri(webId,  {
-            id: buildWorkerAgentId(worker.session.backend, worker.session.target.agent),
-          }),
+        { uri: secretaryContact, agent: secretaryAgent, role: 'secretary', label: 'AI Secretary' },
+        ...workerMembers.map((member) => ({
+          uri: member.contact,
+          agent: member.agent,
           role: 'worker',
-          label: worker.session.target.label ?? worker.session.target.agent ?? backendDisplayName(worker.session.backend),
+          label: member.label,
         })),
       ],
     },
@@ -1189,6 +1193,9 @@ function buildSymphonyWorkerSummary(
     sessionResource: buildSymphonyWorkerSessionUri(webId, worker),
     backend: worker.session.backend,
     agent: worker.session.target.agent,
+    contact: worker.session.target.contact ?? buildWorkerContactId(worker),
+    contactResource: buildWorkerContactIri(webId, worker),
+    agentResource: buildWorkerAgentIri(webId, worker),
     status: worker.session.status,
     autoModeSessionId: worker.session.autoModeSessionId,
     target: worker.session.target,
@@ -1361,6 +1368,7 @@ function buildSymphonySessionRow(
 function buildSymphonyIssueRow(plan: SymphonyRunPlan, webId: string): IssueInsert {
   const createdAt = safeDate(plan.issue.createdAt)
   const updatedAt = safeDate(plan.issue.updatedAt)
+  const secretaryContact = buildSecretaryContactIri(webId)
   return {
     id: buildSymphonyIssueId(plan.issue),
     // File-primary: title remains a compact index label for existing Issue schemas.
@@ -1376,7 +1384,7 @@ function buildSymphonyIssueRow(plan: SymphonyRunPlan, webId: string): IssueInser
     tasks: Array.from(new Set((plan.issue.tasks?.length ? plan.issue.tasks : plan.workers.map((worker) => worker.task))
       .map((task) => normalizeSymphonyTaskIri(webId, task)))),
     createdBy: plan.issue.issuer.webId ?? webId,
-    assignedTo: agentResource.buildIri(webId,  { id: SYMPHONY_SECRETARY_AGENT_ID }),
+    assignedTo: secretaryContact,
     createdAt,
     updatedAt,
     ...(plan.issue.closedAt ? { closedAt: safeDate(plan.issue.closedAt) } : {}),
@@ -1433,9 +1441,8 @@ function mapSymphonyRunStatus(status: string): string {
 function buildSymphonyTaskRow(plan: SymphonyRunPlan, webId: string, worker: SymphonyRunPlan['workers'][number]): TaskInsert {
   const createdAt = safeDate(worker.taskRecord.createdAt)
   const updatedAt = safeDate(worker.taskRecord.updatedAt)
-  const workerAgent = agentResource.buildIri(webId,  {
-    id: buildWorkerAgentId(worker.session.backend, worker.session.target.agent),
-  })
+  const workerContact = buildWorkerContactIri(webId, worker)
+  const workerAgent = buildWorkerAgentIri(webId, worker)
   return {
     id: taskResource.buildId( { id: buildSymphonyTaskKey(worker.task) }),
     title: worker.taskRecord.title,
@@ -1447,7 +1454,7 @@ function buildSymphonyTaskRow(plan: SymphonyRunPlan, webId: string, worker: Symp
     workspace: pathToWorkspaceUri(worker.session.cwd) ?? pathToWorkspaceUri(plan.session.cwd) ?? 'file:///',
     status: mapSymphonyTaskStatus(worker.taskRecord.status),
     priority: plan.issue.priority,
-    assignedTo: workerAgent,
+    assignedTo: workerContact,
     source: buildSymphonyIssueIri(webId, plan.issue),
     metadata: {
       surface: 'symphony',
@@ -1455,6 +1462,8 @@ function buildSymphonyTaskRow(plan: SymphonyRunPlan, webId: string, worker: Symp
       acceptanceCriteria: worker.taskRecord.acceptanceCriteria,
       backend: worker.session.backend,
       target: worker.session.target,
+      assignedContact: workerContact,
+      assignedAgent: workerAgent,
       workspace: buildSymphonyWorkspaceMetadata(plan, worker),
       spaceContract: buildSymphonySpaceContract(plan, webId, worker),
       podAccessPolicy: buildSymphonyWorkerPodAccessPolicy(plan, webId, worker),
@@ -1469,9 +1478,9 @@ function buildSymphonyDeliveryRow(plan: SymphonyRunPlan, webId: string, worker: 
   const createdAt = safeDate(worker.delivery.createdAt)
   const updatedAt = safeDate(worker.delivery.updatedAt)
   const secretaryAgent = agentResource.buildIri(webId,  { id: SYMPHONY_SECRETARY_AGENT_ID })
-  const workerAgent = agentResource.buildIri(webId,  {
-    id: buildWorkerAgentId(worker.session.backend, worker.session.target.agent),
-  })
+  const secretaryContact = buildSecretaryContactIri(webId)
+  const workerAgent = buildWorkerAgentIri(webId, worker)
+  const workerContact = buildWorkerContactIri(webId, worker)
   return {
     id: deliveryResource.buildId( {
       id: getSymphonyArchiveKey(worker.delivery.uri),
@@ -1481,8 +1490,8 @@ function buildSymphonyDeliveryRow(plan: SymphonyRunPlan, webId: string, worker: 
     kind: worker.delivery.type,
     status: worker.delivery.status,
     task: buildSymphonyTaskIri(webId, worker.task),
-    source: secretaryAgent,
-    target: workerAgent,
+    source: secretaryContact,
+    target: workerContact,
     chat: selectWorkerChatIri(plan, webId, worker),
     thread: selectWorkerThreadIri(plan, webId, worker),
     targetThread: selectWorkerThreadIri(plan, webId, worker),
@@ -1496,6 +1505,8 @@ function buildSymphonyDeliveryRow(plan: SymphonyRunPlan, webId: string, worker: 
       backend: worker.session.backend,
       mode: worker.session.mode,
       target: worker.session.target,
+      targetContact: workerContact,
+      targetAgent: workerAgent,
       workspace: buildSymphonyWorkspaceMetadata(plan, worker),
       spaceContract: buildSymphonySpaceContract(plan, webId, worker),
       podAccessPolicy: buildSymphonyWorkerPodAccessPolicy(plan, webId, worker),
@@ -1512,6 +1523,9 @@ function buildSymphonyDeliveryRow(plan: SymphonyRunPlan, webId: string, worker: 
         session: worker.session.uri,
       }),
       autoModeSessionId: worker.delivery.autoModeSessionId,
+      sourceAgent: secretaryAgent,
+      targetContact: workerContact,
+      targetAgent: workerAgent,
       workspace: buildSymphonyWorkspaceMetadata(plan, worker),
       spaceContract: buildSymphonySpaceContract(plan, webId, worker),
       podAccessPolicy: buildSymphonyWorkerPodAccessPolicy(plan, webId, worker),
@@ -1534,9 +1548,7 @@ function buildSymphonyReportRow(
   stage: Extract<ProjectionStage, 'completed' | 'failed'>,
 ): ReportInsert {
   const completedAt = safeDate(worker.session.completedAt ?? worker.session.updatedAt)
-  const workerAgent = agentResource.buildIri(webId,  {
-    id: buildWorkerAgentId(worker.session.backend, worker.session.target.agent),
-  })
+  const workerAgent = buildWorkerAgentIri(webId, worker)
   const run = buildSymphonyRunIri(webId, worker)
   const task = buildSymphonyTaskIri(webId, worker.task)
   const status = worker.session.status === 'failed' || stage === 'failed' ? 'failed' : 'completed'
@@ -1603,9 +1615,7 @@ function buildSymphonyEvidenceRow(
   const task = buildSymphonyTaskIri(webId, worker.task)
   const delivery = buildSymphonyDeliveryIri(webId, worker)
   const runStep = buildSymphonyRunStepIri(webId, worker, stage)
-  const workerAgent = agentResource.buildIri(webId,  {
-    id: buildWorkerAgentId(worker.session.backend, worker.session.target.agent),
-  })
+  const workerAgent = buildWorkerAgentIri(webId, worker)
 
   return {
     id: evidenceResource.buildId({
@@ -1660,7 +1670,7 @@ function buildPostRunReconciliationMetadata(
   return {
     required: true,
     status: 'pending_secretary_review',
-    owner: agentResource.buildIri(webId,  { id: SYMPHONY_SECRETARY_AGENT_ID }),
+    owner: buildSecretaryContactIri(webId),
     sourceIssue: buildSymphonyIssueIri(webId, plan.issue),
     sourceTask: buildSymphonyTaskIri(webId, worker.task),
     sourceDelivery: buildSymphonyDeliveryIri(webId, worker),
@@ -1686,10 +1696,10 @@ function buildSymphonyReportDeliveryRow(
   stage: Extract<ProjectionStage, 'completed' | 'failed'>,
 ): DeliveryInsert {
   const completedAt = safeDate(worker.session.completedAt ?? worker.session.updatedAt)
-  const workerAgent = agentResource.buildIri(webId,  {
-    id: buildWorkerAgentId(worker.session.backend, worker.session.target.agent),
-  })
+  const workerAgent = buildWorkerAgentIri(webId, worker)
+  const workerContact = buildWorkerContactIri(webId, worker)
   const secretaryAgent = agentResource.buildIri(webId,  { id: SYMPHONY_SECRETARY_AGENT_ID })
+  const secretaryContact = buildSecretaryContactIri(webId)
   const run = buildSymphonyRunIri(webId, worker)
   const report = buildSymphonyReportIri(webId, worker)
   const task = buildSymphonyTaskIri(webId, worker.task)
@@ -1710,8 +1720,8 @@ function buildSymphonyReportDeliveryRow(
     kind: 'report',
     status: 'completed',
     task,
-    source: workerAgent,
-    target: secretaryAgent,
+    source: workerContact,
+    target: secretaryContact,
     chat: selectWorkerChatIri(plan, webId, worker),
     thread: selectWorkerThreadIri(plan, webId, worker),
     targetThread: selectTargetThreadIri(plan.issue.thread ?? worker.session.target?.thread, webId, plan),
@@ -1732,6 +1742,9 @@ function buildSymphonyReportDeliveryRow(
       run,
       backend: worker.session.backend,
       agent: worker.session.target.agent,
+      contact: worker.session.target.contact ?? buildWorkerContactId(worker),
+      sourceAgent: workerAgent,
+      sourceContact: workerContact,
       autoModeSessionId: worker.session.autoModeSessionId,
       exitCode: worker.session.exitCode,
       error: worker.session.error ?? worker.delivery.error ?? worker.taskRecord.error,
@@ -1851,13 +1864,38 @@ function buildSymphonyRunStepRow(
   } as RunStepInsert
 }
 
-function buildWorkerAgentId(backend: AutoModeWorkerBackend, agent?: string): string {
-  const suffix = (agent ?? `${backend}-worker`)
+function normalizeSymphonyActorKey(value: string | undefined, fallback: string): string {
+  return (value ?? fallback)
     .trim()
     .replace(/[^a-zA-Z0-9._-]/gu, '-')
     .replace(/-+/gu, '-')
     .replace(/^-|-$/gu, '')
-  return `symphony-${suffix || `${backend}-worker`}`
+    || fallback
+}
+
+function buildWorkerContactId(worker: SymphonyRunPlan['workers'][number]): string {
+  return normalizeSymphonyActorKey(
+    worker.session.target.contact ?? worker.session.target.agent ?? worker.delivery.targetAgent,
+    worker.session.backend,
+  )
+}
+
+function buildWorkerAgentId(backend: AutoModeWorkerBackend, agent?: string, contact?: string): string {
+  return normalizeSymphonyActorKey(agent ?? contact, backend)
+}
+
+function buildSecretaryContactIri(webId: string): string {
+  return contactResource.buildIri(webId, { id: SYMPHONY_CONTACT_ID })
+}
+
+function buildWorkerAgentIri(webId: string, worker: SymphonyRunPlan['workers'][number]): string {
+  return agentResource.buildIri(webId, {
+    id: buildWorkerAgentId(worker.session.backend, worker.session.target.agent, worker.session.target.contact),
+  })
+}
+
+function buildWorkerContactIri(webId: string, worker: SymphonyRunPlan['workers'][number]): string {
+  return contactResource.buildIri(webId, { id: buildWorkerContactId(worker) })
 }
 
 function buildSymphonyAgents(plan: SymphonyRunPlan): SymphonyAgentRow[] {
@@ -1875,7 +1913,7 @@ function buildSymphonyAgents(plan: SymphonyRunPlan): SymphonyAgentRow[] {
   ]
   const seen = new Set(agents.map((agent) => agent.id))
   for (const worker of plan.workers) {
-    const id = buildWorkerAgentId(worker.session.backend, worker.session.target.agent)
+    const id = buildWorkerAgentId(worker.session.backend, worker.session.target.agent, worker.session.target.contact)
     if (seen.has(id)) {
       continue
     }
@@ -1895,15 +1933,35 @@ function buildSymphonyAgents(plan: SymphonyRunPlan): SymphonyAgentRow[] {
 
 function buildSymphonyContacts(plan: SymphonyRunPlan, webId: string): SymphonyContactRow[] {
   const now = safeDate(plan.session.updatedAt)
-  return buildSymphonyAgents(plan).map((agent) => ({
-    id: agent.id === SYMPHONY_SECRETARY_AGENT_ID ? SYMPHONY_CONTACT_ID : `${agent.id}-contact`,
-    name: agent.name,
-    entity: agentResource.buildIri(webId,  { id: agent.id }),
-    rdfType: ContactClass.AGENT,
-    contactType: ContactType.AGENT,
-    createdAt: now,
-    updatedAt: now,
-  }))
+  const contacts: SymphonyContactRow[] = [
+    {
+      id: SYMPHONY_CONTACT_ID,
+      name: 'AI Secretary',
+      entity: agentResource.buildIri(webId,  { id: SYMPHONY_SECRETARY_AGENT_ID }),
+      rdfType: ContactClass.AGENT,
+      contactType: ContactType.AGENT,
+      createdAt: now,
+      updatedAt: now,
+    },
+  ]
+  const seen = new Set(contacts.map((contact) => contact.id))
+  for (const worker of plan.workers) {
+    const id = buildWorkerContactId(worker)
+    if (seen.has(id)) {
+      continue
+    }
+    seen.add(id)
+    contacts.push({
+      id,
+      name: worker.session.target.label ?? worker.session.target.contact ?? worker.session.target.agent ?? backendDisplayName(worker.session.backend),
+      entity: buildWorkerAgentIri(webId, worker),
+      rdfType: ContactClass.AGENT,
+      contactType: ContactType.AGENT,
+      createdAt: now,
+      updatedAt: now,
+    })
+  }
+  return contacts
 }
 
 function buildProgressBlock(plan: SymphonyRunPlan, stage: ProjectionStage): Record<string, unknown> {
@@ -1972,7 +2030,7 @@ function buildStatusMessageRow(plan: SymphonyRunPlan, webId: string, stage: Proj
   const content = buildStatusContent(plan, stage)
   const secretaryAgent = agentResource.buildIri(webId,  { id: SYMPHONY_SECRETARY_AGENT_ID })
   const routeTargetAgent = agentResource.buildIri(webId,  {
-    id: buildWorkerAgentId(plan.session.backend, plan.session.target?.agent),
+    id: buildWorkerAgentId(plan.session.backend, plan.session.target?.agent, plan.session.target?.contact),
   })
 
   return {
@@ -2001,6 +2059,7 @@ function buildStatusMessageRow(plan: SymphonyRunPlan, webId: string, stage: Proj
           session: worker.session.uri,
           backend: worker.session.backend,
           agent: worker.session.target.agent,
+          contact: worker.session.target.contact ?? buildWorkerContactId(worker),
           status: worker.session.status,
           autoModeSessionId: worker.session.autoModeSessionId,
         })),
@@ -2044,9 +2103,7 @@ function buildSymphonyReportInboxNotificationRow(
   const createdAt = safeDate(worker.session.completedAt ?? worker.session.updatedAt)
   return {
     id: stableReportInboxNotificationId(worker),
-    actor: agentResource.buildIri(webId,  {
-      id: buildWorkerAgentId(worker.session.backend, worker.session.target.agent),
-    }),
+    actor: buildWorkerContactIri(webId, worker),
     object: buildSymphonyReportDeliveryIri(webId, worker),
     createdAt,
   } as InboxNotificationInsert

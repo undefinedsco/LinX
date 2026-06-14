@@ -146,7 +146,8 @@ test('symphony archive creates, updates, lists, and resolves URI records', async
   assert.deepEqual(plan.delivery.target, {
     source: 'active-session',
     backend: 'codex',
-    agent: 'codex-worker',
+    contact: 'codex',
+    agent: 'codex',
     chat,
     thread,
     messages,
@@ -470,7 +471,7 @@ test('symphony dispatch bridges non-dry-run plans into the auto-mode runtime and
   assert.equal(runCalls[0].metadata?.reconciler?.policyKind, 'symphony')
   assert.equal(runCalls[0].metadata?.reconciler?.eventType, 'delivery.submitted')
   assert.equal(runCalls[0].metadata?.reconciler?.thread, 'https://alice.example/.data/chat/symphony/index.ttl#thread-bridge')
-  assert.equal(runCalls[0].metadata?.reconciler?.wakeJobs?.[0]?.targetAgent, 'codex-worker')
+  assert.equal(runCalls[0].metadata?.reconciler?.wakeJobs?.[0]?.targetAgent, 'codex')
   assert.equal(runCalls[0].metadata?.scheduler?.wakeRecord?.status, 'running')
   assert.equal(runCalls[0].metadata?.scheduler?.wakeRecord?.targetRole, 'worker')
 
@@ -772,10 +773,11 @@ test('symphony run preserves caller-provided delegation target chat and thread',
   const target = {
     source: 'ai-contact',
     backend: 'codex',
-    agent: 'codex-worker',
-    chat: 'https://alice.example/.data/chat/codex-worker/index.ttl#this',
-    thread: 'https://alice.example/.data/chat/codex-worker/index.ttl#thread-target',
-    messages: ['https://alice.example/.data/chat/codex-worker/2026/04/02/messages.ttl#message-1'],
+    contact: 'codex',
+    agent: 'codex',
+    chat: 'https://alice.example/.data/chat/codex/index.ttl#this',
+    thread: 'https://alice.example/.data/chat/codex/index.ttl#thread-target',
+    messages: ['https://alice.example/.data/chat/codex/2026/04/02/messages.ttl#message-1'],
   }
 
   const plan = await module.runSymphony({

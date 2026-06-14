@@ -34,13 +34,14 @@ function createPlan(overrides = {}) {
       target: {
         source: 'ai-contact',
         backend: 'codex',
-        agent: 'codex-worker',
+        contact: 'codex',
+        agent: 'codex',
         chat: 'https://alice.example/.data/chat/chat-1/index.ttl#this',
         thread: 'https://alice.example/.data/chat/chat-1/index.ttl#thread-1',
         messages: ['https://alice.example/.data/chat/chat-1/2026/04/02/messages.ttl#message-1'],
       },
       backend: 'codex',
-      agent: 'codex-worker',
+      agent: 'codex',
       delivery: 'urn:undefineds:linx:delivery:delivery_2026-04-02T00-00-00-000Z_projection',
       session: 'urn:undefineds:linx:session:session_2026-04-02T00-00-00-000Z_projection',
       createdAt: now,
@@ -55,11 +56,12 @@ function createPlan(overrides = {}) {
       status: 'pending',
       sourceAgent: '__secretary__',
       targetBackend: 'codex',
-      targetAgent: 'codex-worker',
+      targetAgent: 'codex',
       target: {
         source: 'ai-contact',
         backend: 'codex',
-        agent: 'codex-worker',
+        contact: 'codex',
+        agent: 'codex',
         chat: 'https://alice.example/.data/chat/chat-1/index.ttl#this',
         thread: 'https://alice.example/.data/chat/chat-1/index.ttl#thread-1',
         messages: ['https://alice.example/.data/chat/chat-1/2026/04/02/messages.ttl#message-1'],
@@ -100,7 +102,8 @@ function createPlan(overrides = {}) {
       target: {
         source: 'ai-contact',
         backend: 'codex',
-        agent: 'codex-worker',
+        contact: 'codex',
+        agent: 'codex',
         chat: 'https://alice.example/.data/chat/chat-1/index.ttl#this',
         thread: 'https://alice.example/.data/chat/chat-1/index.ttl#thread-1',
         messages: ['https://alice.example/.data/chat/chat-1/2026/04/02/messages.ttl#message-1'],
@@ -347,7 +350,10 @@ test('persistSymphonyProjectionToPod projects Symphony run into shared chat thre
   assert.equal(task.issue, 'https://alice.example/.data/issues/issue_2026-04-02T00-00-00-000Z_projection.ttl')
   assert.equal(task.status, 'active')
   assert.equal(task.workspace, 'file:///tmp/linx')
+  assert.equal(task.assignedTo, 'https://alice.example/.data/contacts/codex.ttl')
   assert.deepEqual(task.metadata.acceptanceCriteria, ['projection is visible'])
+  assert.equal(task.metadata.assignedAgent, 'https://alice.example/agents/codex/')
+  assert.equal(task.metadata.assignedContact, 'https://alice.example/.data/contacts/codex.ttl')
   assert.deepEqual(task.metadata.workspace, {
     path: '/tmp/linx',
     kind: 'git',
@@ -396,7 +402,7 @@ test('persistSymphonyProjectionToPod projects Symphony run into shared chat thre
   assert.equal(task.metadata.podAccessPolicy.artifactContract.rule, 'absolute-paths-are-not-cross-environment-identities')
   assert.equal(task.metadata.reconciler.taskDecisions[0].policyKind, 'symphony')
   assert.equal(task.metadata.reconciler.taskDecisions[0].eventType, 'delivery.submitted')
-  assert.equal(task.metadata.reconciler.taskDecisions[0].wakeJobs[0].targetAgent, 'codex-worker')
+  assert.equal(task.metadata.reconciler.taskDecisions[0].wakeJobs[0].targetAgent, 'codex')
   assert.deepEqual(task.metadata.podAccessPolicy.documentationAuthority, {
     controlRecords: 'pod',
     implementationRecords: 'repository',
@@ -408,7 +414,12 @@ test('persistSymphonyProjectionToPod projects Symphony run into shared chat thre
   assert.equal(delivery.task, task.issue.replace('/issues/issue_2026-04-02T00-00-00-000Z_projection.ttl', '/task/index.ttl#task_2026-04-02T00-00-00-000Z_projection'))
   assert.equal(delivery.kind, 'task_dispatch')
   assert.equal(delivery.status, 'pending')
+  assert.equal(delivery.source, 'https://alice.example/.data/contacts/symphony.ttl')
+  assert.equal(delivery.target, 'https://alice.example/.data/contacts/codex.ttl')
+  assert.equal(delivery.actor, 'https://alice.example/agents/__secretary__/')
   assert.equal(delivery.projectedRole, 'user')
+  assert.equal(delivery.payload.targetAgent, 'https://alice.example/agents/codex/')
+  assert.equal(delivery.payload.targetContact, 'https://alice.example/.data/contacts/codex.ttl')
   assert.equal(delivery.payload.workspace.baseRevision, 'abc123')
   assert.equal(delivery.payload.podAccessPolicy.version, 'linx-symphony-worker-pod-access/v1')
   assert.equal(delivery.payload.spaceContract.workspace.sameThreadSameEnvironmentSharing, 'preferred')
@@ -461,7 +472,8 @@ test('persistSymphonyProjectionToPod projects Symphony run into shared chat thre
   assert.deepEqual(result.plan.session.target, {
     source: 'ai-contact',
     backend: 'codex',
-    agent: 'codex-worker',
+    contact: 'codex',
+    agent: 'codex',
     chat: 'https://alice.example/.data/chat/chat-1/index.ttl#this',
     thread: 'https://alice.example/.data/chat/chat-1/index.ttl#thread-1',
     messages: result.messages,
@@ -484,13 +496,14 @@ test('persistSymphonyProjectionToPod projects Symphony run into shared chat thre
     .filter((item) => item.resource === fake.resources.agent)
     .map((item) => item.value.id)
     .sort()
-  assert.deepEqual(agentIds, ['__secretary__/', 'symphony-codex-worker/'])
+  assert.deepEqual(agentIds, ['__secretary__/', 'codex/'])
 
   const contacts = fake.inserts.filter((item) => item.resource === fake.resources.contact).map((item) => item.value)
+  assert.deepEqual(contacts.map((item) => item.id).sort(), ['codex', 'symphony'])
   assert.deepEqual(contacts.map((item) => item.contactType), ['agent', 'agent'])
   assert.deepEqual(contacts.map((item) => item.entity).sort(), [
     'https://alice.example/agents/__secretary__/',
-    'https://alice.example/agents/symphony-codex-worker/',
+    'https://alice.example/agents/codex/',
   ])
   assert.equal(session.metadata.workers[0].taskStatus, 'running')
   assert.deepEqual(session.metadata.workers[0].acceptanceCriteria, ['projection is visible'])
@@ -500,7 +513,8 @@ test('persistSymphonyProjectionToPod projects Symphony run into shared chat thre
   assert.deepEqual(session.metadata.target, {
     source: 'ai-contact',
     backend: 'codex',
-    agent: 'codex-worker',
+    contact: 'codex',
+    agent: 'codex',
     chat: 'https://alice.example/.data/chat/chat-1/index.ttl#this',
     thread: 'https://alice.example/.data/chat/chat-1/index.ttl#thread-1',
     messages: [
@@ -612,11 +626,11 @@ test('listRunningSymphonyWorkersFromPod reads Symphony worker status from shared
           {
             status: 'running',
             backend: 'codex',
-            agent: 'codex-worker',
+            agent: 'codex',
             title: 'Codex worker',
             autoModeSessionId: 'auto-worker-a',
             target: {
-              chat: 'https://alice.example/.data/chat/codex-worker/index.ttl#this',
+              chat: 'https://alice.example/.data/chat/codex/index.ttl#this',
             },
           },
           {
@@ -667,8 +681,8 @@ test('listRunningSymphonyWorkersFromPod reads Symphony worker status from shared
       autoModeSessionId: 'auto-worker-a',
       target: {
         label: 'Codex worker',
-        agent: 'codex-worker',
-        chat: 'https://alice.example/.data/chat/codex-worker/index.ttl#this',
+        agent: 'codex',
+        chat: 'https://alice.example/.data/chat/codex/index.ttl#this',
       },
     },
   ])
@@ -698,7 +712,7 @@ test('listRecentSymphonyReportsFromPod reads worker completion reports from Deli
             outcome: 'completed',
             summary: 'Old worker completed.',
             backend: 'codex',
-            agent: 'codex-worker',
+            agent: 'codex',
             autoModeSessionId: 'auto-old',
           },
           completedAt: new Date('2026-04-02T00:03:00.000Z'),
@@ -718,6 +732,7 @@ test('listRecentSymphonyReportsFromPod reads worker completion reports from Deli
             outcome: 'failed',
             summary: 'Review worker failed.',
             backend: 'claude',
+            contact: 'claude-reviewer',
             agent: 'claude-reviewer',
             delivery: 'https://alice.example/.data/task/task-new/2026/04/02/deliveries.ttl#delivery-new',
             reportDelivery: 'https://alice.example/.data/task/task-new/2026/04/02/deliveries.ttl#report-new',
@@ -758,7 +773,7 @@ test('listRecentSymphonyReportsFromPod reads worker completion reports from Deli
     {
       status: 'completed',
       backend: 'codex',
-      agent: 'codex-worker',
+      agent: 'codex',
       title: 'Old worker completed.',
       summary: 'Old worker completed.',
       task: 'https://alice.example/.data/task/index.ttl#task-old',
@@ -886,8 +901,9 @@ test('completed Symphony projection includes completion message and archived ses
   assert.ok(report)
   assert.equal(report.status, 'completed')
   assert.equal(report.task, 'https://alice.example/.data/task/index.ttl#task_2026-04-02T00-00-00-000Z_projection')
-  assert.equal(report.source, 'https://alice.example/agents/symphony-codex-worker/')
-  assert.equal(report.target, 'https://alice.example/agents/__secretary__/')
+  assert.equal(report.source, 'https://alice.example/.data/contacts/codex.ttl')
+  assert.equal(report.target, 'https://alice.example/.data/contacts/symphony.ttl')
+  assert.equal(report.actor, 'https://alice.example/agents/codex/')
   assert.equal(report.targetSession, 'https://alice.example/.data/sessions/2026/04/02/session_2026-04-02T00-00-00-000Z_projection.ttl')
   const reportFile = fake.podFiles.find((file) => file.path.endsWith('-report.md'))
   assert.ok(reportFile)
@@ -917,7 +933,7 @@ test('completed Symphony projection includes completion message and archived ses
 
   const inbox = fake.inserts.find((item) => item.resource === fake.resources.inbox)?.value
   assert.ok(inbox)
-  assert.equal(inbox.actor, 'https://alice.example/agents/symphony-codex-worker/')
+  assert.equal(inbox.actor, 'https://alice.example/.data/contacts/codex.ttl')
   assert.equal(inbox.object, `https://alice.example/.data/${report.id}`)
 })
 
@@ -928,7 +944,8 @@ test('persistSymphonyProjectionToPod derives chat from target thread when chat i
       target: {
         source: 'explicit-backend',
         backend: 'codex',
-        agent: 'codex-worker',
+        contact: 'codex',
+        agent: 'codex',
         thread: 'https://alice.example/.data/chat/chat-2/index.ttl#thread-2',
         messages: ['https://alice.example/.data/chat/chat-2/2026/04/02/messages.ttl#message-1'],
       },
@@ -954,7 +971,8 @@ test('persistSymphonyProjectionToPod can target a group chat without rewriting t
       target: {
         source: 'group-chat',
         backend: 'codex',
-        agent: 'codex-worker',
+        contact: 'codex',
+        agent: 'codex',
         chat: 'https://alice.example/.data/chat/group-design/index.ttl#this',
         thread: 'https://alice.example/.data/chat/group-design/index.ttl#thread-group',
         messages: ['https://alice.example/.data/chat/group-design/2026/04/02/messages.ttl#message-1'],
@@ -1011,6 +1029,7 @@ test('persistSymphonyProjectionToPod records multiple worker agents tasks and pa
           target: {
             source: 'ai-contact',
             backend: 'claude',
+            contact: 'claude-reviewer',
             agent: 'claude-reviewer',
             label: 'Claude reviewer',
             chat: 'https://alice.example/.data/chat/chat-1/index.ttl#this',
@@ -1027,6 +1046,7 @@ test('persistSymphonyProjectionToPod records multiple worker agents tasks and pa
           target: {
             source: 'ai-contact',
             backend: 'claude',
+            contact: 'claude-reviewer',
             agent: 'claude-reviewer',
             label: 'Claude reviewer',
             chat: 'https://alice.example/.data/chat/chat-1/index.ttl#this',
@@ -1043,6 +1063,7 @@ test('persistSymphonyProjectionToPod records multiple worker agents tasks and pa
           target: {
             source: 'ai-contact',
             backend: 'claude',
+            contact: 'claude-reviewer',
             agent: 'claude-reviewer',
             label: 'Claude reviewer',
             chat: 'https://alice.example/.data/chat/chat-1/index.ttl#this',
@@ -1065,9 +1086,15 @@ test('persistSymphonyProjectionToPod records multiple worker agents tasks and pa
     .sort()
   assert.deepEqual(agentIds, [
     '__secretary__/',
-    'symphony-claude-reviewer/',
-    'symphony-codex-worker/',
+    'claude-reviewer/',
+    'codex/',
   ])
+
+  const contactIds = fake.inserts
+    .filter((item) => item.resource === fake.resources.contact)
+    .map((item) => item.value.id)
+    .sort()
+  assert.deepEqual(contactIds, ['claude-reviewer', 'codex', 'symphony'])
 
   const thread = fake.inserts.find((item) => item.resource === fake.resources.thread)?.value
   assert.equal(thread.metadata.workers.length, 2)
@@ -1108,6 +1135,7 @@ test('persistSymphonyProjectionToPod preserves each worker Thread Session and wo
   const secondTarget = {
     source: 'ai-contact',
     backend: 'claude',
+    contact: 'claude-reviewer',
     agent: 'claude-reviewer',
     label: 'Claude reviewer',
     chat: secondChat,
@@ -1217,7 +1245,7 @@ test('persistSymphonyProjectionToPod preserves each worker Thread Session and wo
   const delivery = fake.inserts
     .filter((item) => item.resource === fake.resources.delivery)
     .map((item) => item.value)
-    .find((item) => item.target === 'https://alice.example/agents/symphony-claude-reviewer/')
+    .find((item) => item.target === 'https://alice.example/.data/contacts/claude-reviewer.ttl')
   assert.equal(delivery.chat, secondChat)
   assert.equal(delivery.thread, secondThread)
   assert.equal(delivery.targetThread, secondThread)
@@ -1239,7 +1267,8 @@ test('persistSymphonyProjectionToPod writes the default Symphony control surface
       target: {
         source: 'default',
         backend: 'codex',
-        agent: 'codex-worker',
+        contact: 'codex',
+        agent: 'codex',
       },
     },
   })
@@ -1253,6 +1282,16 @@ test('persistSymphonyProjectionToPod writes the default Symphony control surface
   const chat = fake.inserts.find((item) => item.resource === fake.resources.chat)?.value
   assert.equal(chat.id, 'symphony')
   assert.equal(chat.metadata.kind, 'symphony-control-room')
+  assert.deepEqual(chat.participants, [
+    'https://alice.example/profile/card#me',
+    'https://alice.example/.data/contacts/symphony.ttl',
+    'https://alice.example/.data/contacts/codex.ttl',
+  ])
+  assert.equal(chat.metadata.secretaryContact, 'https://alice.example/.data/contacts/symphony.ttl')
+  assert.equal(chat.metadata.members[1].uri, 'https://alice.example/.data/contacts/symphony.ttl')
+  assert.equal(chat.metadata.members[1].agent, 'https://alice.example/agents/__secretary__/')
+  assert.equal(chat.metadata.members[2].uri, 'https://alice.example/.data/contacts/codex.ttl')
+  assert.equal(chat.metadata.members[2].agent, 'https://alice.example/agents/codex/')
   assert.equal(result.chat, 'https://alice.example/.data/chat/symphony/index.ttl#this')
   assert.equal(result.thread, `https://alice.example/.data/chat/symphony/index.ttl#${encodeURIComponent('session_2026-04-02T00-00-00-000Z_projection')}`)
   assert.equal(fake.inserts.find((item) => item.resource === fake.resources.audit)?.value.session, 'https://alice.example/.data/sessions/2026/04/02/session_2026-04-02T00-00-00-000Z_projection.ttl')
