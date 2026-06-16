@@ -26,6 +26,7 @@ const LINX_AUTH_LOGIN_SCHEDULED = Symbol.for('linx.tui.authLoginScheduled')
 const LINX_AUTH_REPORTING_ERROR = Symbol.for('linx.tui.authReportingError')
 const LINX_UPDATE_IN_PROGRESS = Symbol.for('linx.tui.updateInProgress')
 const LINX_UPDATE_CHECK_SCHEDULED = Symbol.for('linx.tui.updateCheckScheduled')
+const LINX_DEFERRED_UPDATE_VERSION = Symbol.for('linx.tui.deferredUpdateVersion')
 const LINX_SUPPRESS_UPSTREAM_PI_UPDATE = Symbol.for('linx.tui.suppressUpstreamPiUpdate')
 const LINX_PROVIDER_ID = 'undefineds'
 const AUTH_OPTION_BROWSER = 'Authorize in browser'
@@ -101,16 +102,12 @@ function patchUpdateNotification(interactive: any): void {
       return
     }
 
-    if (shouldDeferLinxUpdateNotification(this)) {
-      return
-    }
-
     const normalizedVersion = normalizeLinxUpdateVersion(newVersion)
     if (!normalizedVersion) {
       return
     }
 
-    void showLinxUpdateSelector(this, normalizedVersion)
+    requestLinxUpdateNotification(this, normalizedVersion)
   }
 }
 
@@ -123,16 +120,16 @@ function scheduleLinxVersionCheck(interactive: any): void {
   queueMicrotask(() => {
     void checkForNewLinxVersion()
       .then((latest) => {
-        if (!latest || shouldDeferLinxUpdateNotification(interactive)) {
+        if (!latest) {
           return
         }
-        void showLinxUpdateSelector(interactive, latest)
+        requestLinxUpdateNotification(interactive, latest)
       })
       .catch(() => undefined)
   })
 }
 
-async function checkForNewLinxVersion(): Promise<string | undefined> {
+export async function checkForNewLinxVersion(): Promise<string | undefined> {
   if (process.env.PI_OFFLINE) {
     return undefined
   }
@@ -193,6 +190,46 @@ async function showLinxUpdateSelector(interactive: any, newVersion: string): Pro
   } finally {
     interactive[LINX_UPDATE_IN_PROGRESS] = false
   }
+}
+
+export async function checkAndShowLinxUpdate(
+  interactive: any,
+  options: { manual?: boolean } = {},
+): Promise<void> {
+  const latest = await checkForNewLinxVersion()
+  if (!latest) {
+    if (options.manual) {
+      interactive.showStatus?.(`LinX ${LINX_CLI_VERSION} is up to date.`)
+      interactive.ui?.requestRender?.()
+    }
+    return
+  }
+
+  requestLinxUpdateNotification(interactive, latest, { force: options.manual === true })
+}
+
+function requestLinxUpdateNotification(
+  interactive: any,
+  newVersion: string,
+  options: { force?: boolean } = {},
+): void {
+  if (!options.force && shouldDeferLinxUpdateNotification(interactive)) {
+    interactive[LINX_DEFERRED_UPDATE_VERSION] = newVersion
+    return
+  }
+
+  interactive[LINX_DEFERRED_UPDATE_VERSION] = undefined
+  void showLinxUpdateSelector(interactive, newVersion)
+}
+
+function replayDeferredLinxUpdateNotification(interactive: any): void {
+  const version = normalizeLinxUpdateVersion(interactive[LINX_DEFERRED_UPDATE_VERSION])
+  if (!version || shouldDeferLinxUpdateNotification(interactive)) {
+    return
+  }
+
+  interactive[LINX_DEFERRED_UPDATE_VERSION] = undefined
+  void showLinxUpdateSelector(interactive, version)
 }
 
 function shouldDeferLinxUpdateNotification(interactive: any): boolean {
@@ -490,6 +527,7 @@ async function startLinxCloudLogin(interactive: any, options: { reason?: LinxAut
     reportLinxLoginError(interactive, message)
   } finally {
     interactive[LINX_AUTH_LOGIN_IN_PROGRESS] = false
+    replayDeferredLinxUpdateNotification(interactive)
   }
 }
 

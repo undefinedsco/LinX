@@ -14,7 +14,7 @@ import {
 import type { AgentRuntimeBackendConfig } from '@linx/agent-runtime'
 import { getAIConfigProviderCatalog, getAIConfigProviderMetadata } from '../models.js'
 import { runSymphony, type SymphonyRuntime } from '../symphony-command.js'
-import { applyLinxInteractiveBranding, requestLinxCloudLogin } from './branding.js'
+import { applyLinxInteractiveBranding, checkAndShowLinxUpdate, requestLinxCloudLogin } from './branding.js'
 import type { BackendCredentialEntry, BackendCredentialInput, BackendCredentialRepairReason } from './backend-credentials.js'
 import type { BackendCommandRouter } from './backend-command.js'
 import { installPodStatusOutputFilter } from './pod-status-output.js'
@@ -104,6 +104,11 @@ const COMPACT_STATUS_LINE_TOKENS: LinxStatusLineToken[] = [
   'context-remaining',
   'current-dir',
 ]
+const STATUS_LINE_CODEX_PRESET_OPTION = 'Preset: Codex-style'
+const STATUS_LINE_COMPACT_PRESET_OPTION = 'Preset: Compact'
+const STATUS_LINE_TOGGLE_COLORS_OPTION = 'Toggle colors'
+const STATUS_LINE_RESET_OPTION = 'Reset to default'
+const STATUS_LINE_DONE_OPTION = 'Done'
 /** Module-level reference to interactive for footer mode state (set during bootstrap). */
 let _linxFooterInteractive: any = null
 
@@ -393,6 +398,7 @@ type LinxGlobalCommand =
   | { action: 'cd'; target?: string }
   | { action: 'ai-connect'; provider?: string; baseUrl?: string; model?: string }
   | { action: 'statusline'; args: string[] }
+  | { action: 'update' }
   | { action: 'rewind-select' }
   | { action: 'rewind-turns'; turns: number }
 
@@ -721,6 +727,10 @@ function parseLinxGlobalCommand(input: string): LinxGlobalCommand | null {
     return { action: 'statusline', args: splitInteractiveCommandArgs(body) }
   }
 
+  if (input === '/update' || input === '/upgrade') {
+    return { action: 'update' }
+  }
+
   if (input === '/rewind') {
     return { action: 'rewind-select' }
   }
@@ -874,6 +884,11 @@ async function handleLinxGlobalCommand(
     return
   }
 
+  if (command.action === 'update') {
+    await checkAndShowLinxUpdate(interactive, { manual: true })
+    return
+  }
+
   if (command.action === 'rewind-select') {
     await handleInteractiveRewindSelector(interactive, runtime)
     return
@@ -894,55 +909,148 @@ async function handleInteractiveStatusLineCommand(interactive: any, args: string
   }
 
   const summary = formatInteractiveStatusLineSummary()
-  if (typeof interactive.showExtensionSelector !== 'function') {
+  if (typeof interactive.showSelector === 'function') {
+    await showInteractiveStatusLineMultiSelect(interactive)
+    return
+  }
+
+  if (typeof interactive.showExtensionSelector === 'function') {
+    await showInteractiveStatusLineFallbackSelector(interactive)
+    return
+  }
+
+  {
     interactive.showStatus?.(`${summary} · Use /statusline set <tokens...>, /statusline tokens, /statusline colors <on|off>, or /statusline reset.`)
     interactive.ui?.requestRender?.()
     return
   }
+}
 
-  const choice = await interactive.showExtensionSelector(`Status line\n${summary}`, [
-    'Use Codex-style preset',
-    'Use compact preset',
-    'Configure tokens manually',
-    'Toggle colors',
-    'Show available tokens',
-    'Reset to default',
-  ])
+async function showInteractiveStatusLineFallbackSelector(interactive: any): Promise<void> {
+  while (true) {
+    const currentSummary = formatInteractiveStatusLineSummary()
+    const config = readLinxStatusLineConfig()
+    const options = buildInteractiveStatusLineOptions(config)
+    const choice = await interactive.showExtensionSelector(`Status line\n${currentSummary}`, options)
 
-  if (choice === 'Use Codex-style preset') {
-    writeInteractiveStatusLineConfig(interactive, {
-      statusLine: CODEX_STYLE_STATUS_LINE_TOKENS,
-      message: 'Status line set to Codex-style preset.',
-    })
+    if (!choice || choice === STATUS_LINE_DONE_OPTION) {
+      return
+    }
+
+    const token = parseInteractiveStatusLineTokenChoice(choice)
+    if (token) {
+      toggleInteractiveStatusLineToken(interactive, token)
+      continue
+    }
+
+    if (choice === STATUS_LINE_CODEX_PRESET_OPTION) {
+      writeInteractiveStatusLineConfig(interactive, {
+        statusLine: CODEX_STYLE_STATUS_LINE_TOKENS,
+        message: 'Status line set to Codex-style preset.',
+      })
+      continue
+    }
+    if (choice === STATUS_LINE_COMPACT_PRESET_OPTION) {
+      writeInteractiveStatusLineConfig(interactive, {
+        statusLine: COMPACT_STATUS_LINE_TOKENS,
+        message: 'Status line set to compact preset.',
+      })
+      continue
+    }
+    if (choice === STATUS_LINE_TOGGLE_COLORS_OPTION) {
+      const current = readLinxStatusLineConfig()
+      writeInteractiveStatusLineConfig(interactive, {
+        statusLineUseColors: !current.useColors,
+        message: `Status line colors ${current.useColors ? 'disabled' : 'enabled'}.`,
+      })
+      continue
+    }
+    if (choice === STATUS_LINE_RESET_OPTION) {
+      resetLinxStatusLineConfig()
+      finishInteractiveStatusLineUpdate(interactive, `Status line reset to default: ${DEFAULT_STATUS_LINE_TOKENS.join(', ')}`)
+    }
+  }
+}
+
+async function showInteractiveStatusLineMultiSelect(interactive: any): Promise<void> {
+  await new Promise<void>((resolvePromise, rejectPromise) => {
+    let resolved = false
+    const resolveOnce = () => {
+      if (!resolved) {
+        resolved = true
+        resolvePromise()
+      }
+    }
+
+    try {
+      interactive.showSelector((done: () => void) => {
+        const close = () => {
+          done()
+          resolveOnce()
+        }
+        const selector = new LinxStatusLineSelectorComponent(
+          readLinxStatusLineConfig(),
+          ({ tokens, useColors }) => {
+            writeInteractiveStatusLineConfig(interactive, {
+              statusLine: tokens,
+              statusLineUseColors: useColors,
+              message: `Status line updated: ${tokens.join(', ')}`,
+            })
+            close()
+          },
+          () => {
+            close()
+            interactive.ui?.requestRender?.()
+          },
+        )
+        return { component: selector, focus: selector.getList() }
+      })
+    } catch (error) {
+      rejectPromise(error)
+    }
+  })
+}
+
+function buildInteractiveStatusLineOptions(config = readLinxStatusLineConfig()): string[] {
+  const enabled = new Set(config.tokens)
+  return [
+    ...LINX_STATUS_LINE_TOKEN_NAMES.map((token) => `${enabled.has(token) ? '✓' : '○'} ${token}`),
+    STATUS_LINE_CODEX_PRESET_OPTION,
+    STATUS_LINE_COMPACT_PRESET_OPTION,
+    STATUS_LINE_TOGGLE_COLORS_OPTION,
+    STATUS_LINE_RESET_OPTION,
+    STATUS_LINE_DONE_OPTION,
+  ]
+}
+
+function parseInteractiveStatusLineTokenChoice(choice: unknown): LinxStatusLineToken | null {
+  if (typeof choice !== 'string') {
+    return null
+  }
+  const token = choice.replace(/^[✓○]\s*/u, '').trim()
+  if (!token) {
+    return null
+  }
+  return LINX_STATUS_LINE_TOKEN_NAMES.includes(token as LinxStatusLineToken)
+    ? token as LinxStatusLineToken
+    : null
+}
+
+function toggleInteractiveStatusLineToken(interactive: any, token: LinxStatusLineToken): void {
+  const current = readLinxStatusLineConfig().tokens
+  const exists = current.includes(token)
+  if (exists && current.length <= 1) {
+    interactive.showError?.('Status line needs at least one item.')
     return
   }
-  if (choice === 'Use compact preset') {
-    writeInteractiveStatusLineConfig(interactive, {
-      statusLine: COMPACT_STATUS_LINE_TOKENS,
-      message: 'Status line set to compact preset.',
-    })
-    return
-  }
-  if (choice === 'Toggle colors') {
-    const current = readLinxStatusLineConfig()
-    writeInteractiveStatusLineConfig(interactive, {
-      statusLineUseColors: !current.useColors,
-      message: `Status line colors ${current.useColors ? 'disabled' : 'enabled'}.`,
-    })
-    return
-  }
-  if (choice === 'Show available tokens') {
-    showInteractiveStatusLineTokens(interactive)
-    return
-  }
-  if (choice === 'Reset to default') {
-    resetLinxStatusLineConfig()
-    finishInteractiveStatusLineUpdate(interactive, `Status line reset to default: ${DEFAULT_STATUS_LINE_TOKENS.join(', ')}`)
-    return
-  }
-  if (choice === 'Configure tokens manually') {
-    await promptInteractiveStatusLineTokens(interactive)
-  }
+
+  const next = exists
+    ? current.filter((item) => item !== token)
+    : [...current, token]
+  writeInteractiveStatusLineConfig(interactive, {
+    statusLine: next,
+    message: `Status line ${exists ? 'removed' : 'added'}: ${token}`,
+  })
 }
 
 function handleInteractiveStatusLineArgs(interactive: any, args: string[]): void {
@@ -980,25 +1088,6 @@ function handleInteractiveStatusLineArgs(interactive: any, args: string[]): void
     const message = error instanceof Error ? error.message : String(error)
     interactive.showError?.(`${message}. Use /statusline tokens to list valid tokens.`)
   }
-}
-
-async function promptInteractiveStatusLineTokens(interactive: any): Promise<void> {
-  if (typeof interactive.showExtensionInput !== 'function') {
-    interactive.showStatus?.(`Use /statusline set ${CODEX_STYLE_STATUS_LINE_TOKENS.join(' ')}`)
-    interactive.ui?.requestRender?.()
-    return
-  }
-
-  const value = await interactive.showExtensionInput(
-    'Status line tokens',
-    CODEX_STYLE_STATUS_LINE_TOKENS.join(' '),
-  )
-  if (typeof value !== 'string' || !value.trim()) {
-    interactive.showStatus?.('Status line unchanged.')
-    interactive.ui?.requestRender?.()
-    return
-  }
-  handleInteractiveStatusLineArgs(interactive, ['set', ...splitInteractiveCommandArgs(value)])
 }
 
 function writeInteractiveStatusLineConfig(
@@ -1466,6 +1555,221 @@ interface LinxRewindMessageItem {
   text: string
 }
 
+type LinxMultiSelectRow =
+  | {
+    kind: 'item'
+    id: string
+    label: string
+    selected: boolean
+    description?: string
+  }
+  | {
+    kind: 'action'
+    id: string
+    label: string
+    description?: string
+  }
+
+class LinxMultiSelectList {
+  private selectedIndex = 0
+
+  constructor(
+    private readonly getRows: () => LinxMultiSelectRow[],
+    private readonly onToggle: (id: string) => void,
+    private readonly onAction: (id: string) => void,
+    private readonly onCancel: () => void,
+  ) {}
+
+  invalidate(): void {
+    // No cached render state.
+  }
+
+  render(width: number): string[] {
+    const rows = this.normalizedRows()
+    if (rows.length === 0) {
+      return ['  No options']
+    }
+
+    const lines: string[] = []
+    for (let index = 0; index < rows.length; index += 1) {
+      const row = rows[index]
+      const cursor = index === this.selectedIndex ? '> ' : '  '
+      const label = row.kind === 'item'
+        ? `${row.selected ? '✓' : '○'} ${row.label}`
+        : row.label
+      lines.push(`${cursor}${truncateToWidth(label, Math.max(1, width - 2))}`)
+      if (row.description) {
+        lines.push(`  ${truncateToWidth(row.description, Math.max(1, width - 2))}`)
+      }
+    }
+    lines.push('')
+    lines.push('↑↓ navigate  Enter toggles items/actions  Escape/Ctrl+C cancel')
+    return lines
+  }
+
+  handleInput(keyData: string): void {
+    const rows = this.normalizedRows()
+    if (rows.length === 0) {
+      return
+    }
+
+    const keybindings = getKeybindings()
+    if (keybindings.matches(keyData, 'tui.select.up')) {
+      this.selectedIndex = this.selectedIndex === 0 ? rows.length - 1 : this.selectedIndex - 1
+      return
+    }
+    if (keybindings.matches(keyData, 'tui.select.down')) {
+      this.selectedIndex = this.selectedIndex === rows.length - 1 ? 0 : this.selectedIndex + 1
+      return
+    }
+    if (keybindings.matches(keyData, 'tui.select.confirm')) {
+      const selected = rows[this.selectedIndex]
+      if (selected?.kind === 'item') {
+        this.onToggle(selected.id)
+      } else if (selected?.kind === 'action') {
+        this.onAction(selected.id)
+      }
+      return
+    }
+    if (keybindings.matches(keyData, 'tui.select.cancel')) {
+      this.onCancel()
+    }
+  }
+
+  private normalizedRows(): LinxMultiSelectRow[] {
+    const rows = this.getRows()
+    if (this.selectedIndex >= rows.length) {
+      this.selectedIndex = Math.max(0, rows.length - 1)
+    }
+    return rows
+  }
+}
+
+class LinxStatusLineSelectorComponent extends Container {
+  private readonly list: LinxMultiSelectList
+  private draftTokens: LinxStatusLineToken[]
+  private draftUseColors: boolean
+  private notice: string | null = null
+
+  constructor(
+    config: ReturnType<typeof readLinxStatusLineConfig>,
+    onCommit: (config: { tokens: LinxStatusLineToken[]; useColors: boolean }) => void,
+    onCancel: () => void,
+  ) {
+    super()
+    this.draftTokens = [...config.tokens]
+    this.draftUseColors = config.useColors
+
+    this.addChild(new Spacer(1))
+    this.addChild(new Text('Status line', 1, 0))
+    this.addChild(new Text('Select the items that appear in the bottom TUI status line.', 1, 0))
+    this.addChild(new Text(`Current source: tokens ${config.tokenSource}, colors ${config.colorSource}.`, 1, 0))
+    this.addChild(new Spacer(1))
+    this.list = new LinxMultiSelectList(
+      () => this.rows(),
+      (id) => this.toggleToken(id),
+      (id) => this.handleAction(id, onCommit),
+      onCancel,
+    )
+    this.addChild(this.list)
+  }
+
+  getList(): LinxMultiSelectList {
+    return this.list
+  }
+
+  private rows(): LinxMultiSelectRow[] {
+    const enabled = new Set(this.draftTokens)
+    const rows: LinxMultiSelectRow[] = LINX_STATUS_LINE_TOKEN_NAMES.map((token) => ({
+      kind: 'item',
+      id: token,
+      label: token,
+      selected: enabled.has(token),
+    }))
+    rows.push(
+      {
+        kind: 'action',
+        id: 'preset-codex',
+        label: STATUS_LINE_CODEX_PRESET_OPTION,
+        description: CODEX_STYLE_STATUS_LINE_TOKENS.join(', '),
+      },
+      {
+        kind: 'action',
+        id: 'preset-compact',
+        label: STATUS_LINE_COMPACT_PRESET_OPTION,
+        description: COMPACT_STATUS_LINE_TOKENS.join(', '),
+      },
+      {
+        kind: 'action',
+        id: 'toggle-colors',
+        label: `${STATUS_LINE_TOGGLE_COLORS_OPTION}: ${this.draftUseColors ? 'on' : 'off'}`,
+      },
+      {
+        kind: 'action',
+        id: 'reset',
+        label: STATUS_LINE_RESET_OPTION,
+        description: DEFAULT_STATUS_LINE_TOKENS.join(', '),
+      },
+      {
+        kind: 'action',
+        id: 'done',
+        label: STATUS_LINE_DONE_OPTION,
+        description: this.notice ?? 'Save changes and close.',
+      },
+    )
+    return rows
+  }
+
+  private toggleToken(id: string): void {
+    const token = id as LinxStatusLineToken
+    if (!LINX_STATUS_LINE_TOKEN_NAMES.includes(token)) {
+      return
+    }
+    const exists = this.draftTokens.includes(token)
+    if (exists && this.draftTokens.length <= 1) {
+      this.notice = 'Status line needs at least one item.'
+      return
+    }
+    this.draftTokens = exists
+      ? this.draftTokens.filter((item) => item !== token)
+      : [...this.draftTokens, token]
+    this.notice = null
+  }
+
+  private handleAction(
+    id: string,
+    onCommit: (config: { tokens: LinxStatusLineToken[]; useColors: boolean }) => void,
+  ): void {
+    if (id === 'preset-codex') {
+      this.draftTokens = [...CODEX_STYLE_STATUS_LINE_TOKENS]
+      this.notice = 'Draft changed to Codex-style preset.'
+      return
+    }
+    if (id === 'preset-compact') {
+      this.draftTokens = [...COMPACT_STATUS_LINE_TOKENS]
+      this.notice = 'Draft changed to compact preset.'
+      return
+    }
+    if (id === 'toggle-colors') {
+      this.draftUseColors = !this.draftUseColors
+      this.notice = `Draft colors ${this.draftUseColors ? 'enabled' : 'disabled'}.`
+      return
+    }
+    if (id === 'reset') {
+      this.draftTokens = [...DEFAULT_STATUS_LINE_TOKENS]
+      this.draftUseColors = true
+      this.notice = 'Draft reset to default.'
+      return
+    }
+    if (id === 'done') {
+      onCommit({
+        tokens: this.draftTokens,
+        useColors: this.draftUseColors,
+      })
+    }
+  }
+}
+
 function collectRewindUserMessages(_session: any, sessionManager: any): LinxRewindMessageItem[] {
   return getActiveSessionBranch(sessionManager)
     .filter((entry) => entry?.type === 'message' && entry.message?.role === 'user')
@@ -1886,6 +2190,10 @@ const LINX_INTERACTIVE_SLASH_COMMANDS = [
       { value: 'tokens', description: 'List available status line tokens' },
       { value: 'reset', description: 'Restore default status line tokens' },
     ]),
+  },
+  {
+    name: 'update',
+    description: 'check for a LinX CLI update and install from the TUI',
   },
   {
     name: 'ai',

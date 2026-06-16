@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { globalAgent as httpsGlobalAgent } from 'node:https'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -14,6 +14,10 @@ test.after(() => {
 })
 
 const LINX_RUNTIME_MANAGED_AUTH_KEY = 'linx-runtime-managed-auth'
+
+function stripAnsi(text) {
+  return text.replace(/\x1b\[[0-9;]*m/g, '')
+}
 
 function isolateSolidHome(t, prefix) {
   const previousSolidHome = process.env.SOLID_HOME
@@ -1840,6 +1844,64 @@ test('linx status line reads app-local JSON config from LINX_HOME', async (t) =>
   assert.equal(line, 'undefineds • linx-lite • main')
 })
 
+test('linx interactive /update checks npm and opens the TUI update selector', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  t.after(() => cleanup())
+
+  const previousOffline = process.env.PI_OFFLINE
+  const previousFetch = globalThis.fetch
+  delete process.env.PI_OFFLINE
+  globalThis.fetch = async () => ({
+    ok: true,
+    async json() {
+      return { version: '0.9.9' }
+    },
+  })
+  t.after(() => {
+    restoreEnv('PI_OFFLINE', previousOffline)
+    globalThis.fetch = previousFetch
+  })
+
+  const submitted = []
+  const selectorCalls = []
+  const statuses = []
+  const interactive = {
+    defaultEditor: {},
+    editor: {
+      setText() {},
+    },
+    ui: {
+      requestRender() {},
+    },
+    setupEditorSubmitHandler() {
+      this.defaultEditor.onSubmit = async (text) => {
+        submitted.push(text)
+      }
+    },
+    async showExtensionSelector(title, options) {
+      selectorCalls.push({ title, options })
+      return 'Later'
+    },
+    showStatus(message) {
+      statuses.push(message)
+    },
+    showError(message) {
+      throw new Error(message)
+    },
+  }
+
+  module.installLinxGlobalCommands(interactive, {}, process.cwd())
+  interactive.setupEditorSubmitHandler()
+  await interactive.defaultEditor.onSubmit('/update')
+  await new Promise((resolve) => setImmediate(resolve))
+
+  assert.deepEqual(submitted, [])
+  assert.equal(selectorCalls.length, 1)
+  assert.match(selectorCalls[0].title, /LinX update available/)
+  assert.deepEqual(selectorCalls[0].options, ['Later', 'Install update and restart', 'Open changelog'])
+  assert.equal(statuses.some((message) => String(message).includes('Skipped LinX 0.9.9 for now.')), true)
+})
+
 test('linx interactive /statusline direct commands update app-local config', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
   t.after(() => cleanup())
@@ -1897,7 +1959,7 @@ test('linx interactive /statusline direct commands update app-local config', asy
   assert.equal(renders.length > 0, true)
 })
 
-test('linx interactive /statusline opens a selector with presets', async (t) => {
+test('linx interactive /statusline opens a draft multi-select editor', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
   t.after(() => cleanup())
   const linxHome = mkdtempSync(join(tmpdir(), 'linx-interactive-statusline-selector-home-'))
@@ -1914,7 +1976,8 @@ test('linx interactive /statusline opens a selector with presets', async (t) => 
     rmSync(linxHome, { recursive: true, force: true })
   })
 
-  const selectorCalls = []
+  let selectorResult
+  let doneCalled = false
   const statuses = []
   const interactive = {
     defaultEditor: {},
@@ -1929,9 +1992,10 @@ test('linx interactive /statusline opens a selector with presets', async (t) => 
         throw new Error('/statusline should not reach backend submit')
       }
     },
-    async showExtensionSelector(title, options) {
-      selectorCalls.push({ title, options })
-      return 'Use Codex-style preset'
+    showSelector(create) {
+      selectorResult = create(() => {
+        doneCalled = true
+      })
     },
     showStatus(message) {
       statuses.push(message)
@@ -1943,30 +2007,69 @@ test('linx interactive /statusline opens a selector with presets', async (t) => 
 
   module.installLinxGlobalCommands(interactive, {}, process.cwd())
   interactive.setupEditorSubmitHandler()
-  await interactive.defaultEditor.onSubmit('/statusline')
+  const submitPromise = interactive.defaultEditor.onSubmit('/statusline')
+  await new Promise((resolve) => setImmediate(resolve))
+
+  assert.ok(selectorResult?.component)
+  assert.ok(selectorResult?.focus)
+  const renderFocus = () => stripAnsi(selectorResult.focus.render(120).join('\n'))
+  const moveSelectionTo = (needle) => {
+    for (let index = 0; index < 40; index += 1) {
+      if (renderFocus().split('\n').some((line) => line.startsWith('> ') && line.includes(needle))) {
+        return
+      }
+      selectorResult.focus.handleInput('\x1B[B')
+    }
+    throw new Error(`Could not select ${needle}.\n${renderFocus()}`)
+  }
+
+  assert.match(renderFocus(), /> ✓ total-input-tokens/)
+  assert.match(renderFocus(), /  ○ git-branch/)
+  assert.match(renderFocus(), /Enter toggles/)
+
+  moveSelectionTo('git-branch')
+  selectorResult.focus.handleInput('\r')
+  assert.match(renderFocus(), /> ✓ git-branch/)
+  assert.equal(existsSync(join(linxHome, 'config.json')), false)
+
+  moveSelectionTo('current-dir')
+  selectorResult.focus.handleInput('\r')
+  assert.match(renderFocus(), /> ✓ current-dir/)
+  assert.equal(existsSync(join(linxHome, 'config.json')), false)
+
+  moveSelectionTo('Done')
+  selectorResult.focus.handleInput('\r')
+  await submitPromise
 
   const config = JSON.parse(readFileSync(join(linxHome, 'config.json'), 'utf-8'))
-  assert.match(selectorCalls[0].title, /Status line/)
-  assert.deepEqual(selectorCalls[0].options, [
-    'Use Codex-style preset',
-    'Use compact preset',
-    'Configure tokens manually',
-    'Toggle colors',
-    'Show available tokens',
-    'Reset to default',
-  ])
+  assert.equal(doneCalled, true)
   assert.deepEqual(config.status_line, [
-    'model-with-reasoning',
-    'git-branch',
-    'context-remaining',
     'total-input-tokens',
     'total-output-tokens',
+    'context-usage',
+    'cache-rate',
+    'model-with-reasoning',
+    'git-branch',
     'current-dir',
   ])
-  assert.match(statuses.join('\n'), /Codex-style preset/)
+  assert.match(statuses.join('\n'), /Status line updated/)
 })
 
 test('linx footer patch adds cache rate from assistant usage', async (t) => {
+  const linxHome = mkdtempSync(join(tmpdir(), 'linx-status-line-patch-home-'))
+  const previousLinxHome = process.env.LINX_HOME
+  const previousStatusLine = process.env.LINX_STATUS_LINE
+  const previousUseColors = process.env.LINX_STATUS_LINE_USE_COLORS
+  process.env.LINX_HOME = linxHome
+  delete process.env.LINX_STATUS_LINE
+  delete process.env.LINX_STATUS_LINE_USE_COLORS
+  t.after(() => {
+    restoreEnv('LINX_HOME', previousLinxHome)
+    restoreEnv('LINX_STATUS_LINE', previousStatusLine)
+    restoreEnv('LINX_STATUS_LINE_USE_COLORS', previousUseColors)
+    rmSync(linxHome, { recursive: true, force: true })
+  })
+
   const [{ module: runtimeModule, cleanup: runtimeCleanup }, { module: interactiveModule, cleanup: interactiveCleanup }] = await Promise.all([
     loadAutoModeModule('lib/pi-adapter/runtime.ts'),
     loadAutoModeModule('lib/pi-adapter/interactive.ts'),
@@ -2067,6 +2170,20 @@ test('linx footer patch adds cache rate from assistant usage', async (t) => {
 })
 
 test('linx footer patch keeps cache rate line within terminal width', async (t) => {
+  const linxHome = mkdtempSync(join(tmpdir(), 'linx-status-line-width-home-'))
+  const previousLinxHome = process.env.LINX_HOME
+  const previousStatusLine = process.env.LINX_STATUS_LINE
+  const previousUseColors = process.env.LINX_STATUS_LINE_USE_COLORS
+  process.env.LINX_HOME = linxHome
+  delete process.env.LINX_STATUS_LINE
+  delete process.env.LINX_STATUS_LINE_USE_COLORS
+  t.after(() => {
+    restoreEnv('LINX_HOME', previousLinxHome)
+    restoreEnv('LINX_STATUS_LINE', previousStatusLine)
+    restoreEnv('LINX_STATUS_LINE_USE_COLORS', previousUseColors)
+    rmSync(linxHome, { recursive: true, force: true })
+  })
+
   const [{ module: runtimeModule, cleanup: runtimeCleanup }, { module: interactiveModule, cleanup: interactiveCleanup }] = await Promise.all([
     loadAutoModeModule('lib/pi-adapter/runtime.ts'),
     loadAutoModeModule('lib/pi-adapter/interactive.ts'),
@@ -2649,6 +2766,65 @@ test('linx update notification normalizes object version values and selector obj
   assert.match(selectorCalls[0].title, /latest 0\.2\.4/)
   assert.equal(openedUrls[0], 'https://github.com/undefineds-co/linx-cli/releases')
   assert.equal(statuses.some((message) => message.includes('Opened LinX changelog for 0.2.4')), true)
+})
+
+test('linx update notification replays after deferred startup login completes', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/branding.ts')
+  t.after(() => cleanup())
+
+  const selectorCalls = []
+  const loginCalls = []
+  const statuses = []
+  const interactive = {
+    isInitialized: true,
+    session: {
+      modelRegistry: {
+        refresh() {},
+        authStorage: {
+          async login(providerId, callbacks) {
+            loginCalls.push(providerId)
+            callbacks.onAuth({ url: 'https://id.undefineds.co/.oidc/auth?client_id=test' })
+          },
+          get() {
+            return { type: 'oauth', access: 'fresh-access-token', refresh: 'refresh', expires: Date.now() + 60_000 }
+          },
+          setRuntimeApiKey(providerId, apiKey) {
+            loginCalls.push(`${providerId}:${apiKey}`)
+          },
+        },
+      },
+    },
+    chatContainer: {
+      addChild() {},
+    },
+    ui: {
+      requestRender() {},
+    },
+    async showExtensionSelector(title, options) {
+      selectorCalls.push({ title, options })
+      return title.includes('update available') ? 'Later' : 'Authorize in browser'
+    },
+    openExternal() {},
+    showStatus(message) {
+      statuses.push(message)
+    },
+    showError(message) {
+      throw new Error(message)
+    },
+    async updateAvailableProviderCount() {},
+  }
+
+  module.applyLinxInteractiveBranding(interactive)
+  module.requestLinxCloudLogin(interactive, 'startup')
+  interactive.showNewVersionNotification({ version: '0.9.9' })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  await new Promise((resolve) => setImmediate(resolve))
+
+  assert.equal(selectorCalls.length, 2)
+  assert.match(selectorCalls[0].title, /LinX Cloud login required/)
+  assert.match(selectorCalls[1].title, /LinX update available/)
+  assert.deepEqual(loginCalls, ['undefineds', `undefineds:${LINX_RUNTIME_MANAGED_AUTH_KEY}`])
+  assert.equal(statuses.some((message) => String(message).includes('Skipped LinX 0.9.9 for now.')), true)
 })
 
 test('linx update version comparison handles preview builds', async (t) => {
@@ -3443,14 +3619,18 @@ test('linx auth-expired login prompt defers update notifications while reauth is
   const selectorCalls = []
   const loginCalls = []
   const statuses = []
+  let finishLogin
+  const loginFinished = new Promise((resolve) => {
+    finishLogin = resolve
+  })
   const interactive = {
     session: {
       modelRegistry: {
         refresh() {},
         authStorage: {
-          async login(providerId, callbacks) {
+          async login(providerId) {
             loginCalls.push(providerId)
-            callbacks.onAuth({ url: 'https://id.undefineds.co/.oidc/auth?client_id=test' })
+            await loginFinished
           },
           get() {
             return { type: 'oauth', access: 'fresh-access-token', refresh: 'refresh', expires: Date.now() + 60_000 }
@@ -3469,7 +3649,7 @@ test('linx auth-expired login prompt defers update notifications while reauth is
     },
     async showExtensionSelector(title, options) {
       selectorCalls.push({ title, options })
-      return 'Authorize in browser'
+      return title.includes('update available') ? 'Later' : 'Authorize in browser'
     },
     openExternal() {},
     showStatus(message) {
@@ -3489,8 +3669,11 @@ test('linx auth-expired login prompt defers update notifications while reauth is
   assert.equal(selectorCalls.length, 1)
   assert.match(selectorCalls[0].title, /LinX Cloud login expired/)
   assert.doesNotMatch(selectorCalls[0].title, /LinX update available/)
-  assert.deepEqual(loginCalls, ['undefineds', `undefineds:${LINX_RUNTIME_MANAGED_AUTH_KEY}`])
+  assert.deepEqual(loginCalls, ['undefineds'])
   assert.equal(statuses.some((message) => String(message).includes('Installing LinX')), false)
+
+  finishLogin()
+  await new Promise((resolve) => setImmediate(resolve))
 })
 
 test('linx auth recovery does not reschedule login when the login attempt itself fails', async (t) => {
@@ -6212,6 +6395,10 @@ test('linx interactive adds LinX commands to real slash command autocomplete pro
       getArgumentCompletions: commandByName('statusline').getArgumentCompletions,
     },
     {
+      name: 'update',
+      description: 'check for a LinX CLI update and install from the TUI',
+    },
+    {
       name: 'ai',
       argumentHint: 'connect <provider>',
       description: 'connect AI provider credentials to LinX Pod settings',
@@ -6273,6 +6460,7 @@ test('linx interactive autocomplete patch falls back to legacy setupAutocomplete
     'goal',
     'rewind',
     'statusline',
+    'update',
     'ai',
     'symphony',
   ])
