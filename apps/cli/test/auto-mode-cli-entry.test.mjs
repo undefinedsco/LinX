@@ -569,7 +569,7 @@ test('compiled cli exposes LinX package commands in help', async (t) => {
   assert.doesNotMatch(output, /pi install/)
 })
 
-test('compiled cli config status-line command configures app-local footer tokens', async (t) => {
+test('compiled cli config status-line command configures app-local status line tokens', async (t) => {
   const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-status-line-'))
   const linxHome = mkdtempSync(join(cliRoot, '.tmp-linx-status-line-home-'))
   t.after(() => {
@@ -651,6 +651,12 @@ test('compiled cli config status-line command configures app-local footer tokens
     encoding: 'utf-8',
     stdio: 'pipe',
   })
+  const footerAlias = execFileResult(process.execPath, [cli, 'config', 'footer'], {
+    cwd: cliRoot,
+    env,
+    encoding: 'utf-8',
+    stdio: 'pipe',
+  })
 
   const config = JSON.parse(readFileSync(join(linxHome, 'config.json'), 'utf-8'))
   assert.match(setOutput, /Updated LinX status line/)
@@ -662,6 +668,8 @@ test('compiled cli config status-line command configures app-local footer tokens
   assert.match(resetOutput, /tokens source: default/)
   assert.notEqual(topLevelStatusLine.status, 0)
   assert.match(topLevelStatusLine.stderr, /Unknown command: status-line/)
+  assert.notEqual(footerAlias.status, 0)
+  assert.match(footerAlias.stderr, /Unknown argument: footer|Unknown command: footer|Specify a config section/)
 })
 
 test('compiled cli login help exposes browser consent flow and no password options', async (t) => {
@@ -721,7 +729,7 @@ test('cli build ships product skills for the Pi resource loader', async (t) => {
     .map((entry) => entry.name)
     .sort()
 
-  assert.deepEqual(distSkills, ['symphony', 'xpod-cli'])
+  assert.deepEqual(distSkills, ['basic', 'capture', 'symphony', 'xpod-cli'])
   for (const skill of distSkills) {
     assert.ok(existsSync(join(cliRoot, 'dist', 'skills', skill, 'SKILL.md')), `${skill} should include SKILL.md`)
   }

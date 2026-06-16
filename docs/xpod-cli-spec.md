@@ -159,8 +159,13 @@ Rules:
 - Commands that accept a path may also accept an absolute Pod URL. Output must
   still report the effective Pod root and subject/resource URL.
 - If multiple accounts are configured, the selected account must be explicit
-  through current xpod config or a command option. xpod should not guess from
-  path text when that would change authority.
+  through current Solid auth selection or a command option. xpod should not
+  guess from path text when that would change authority.
+- `xpod auth status --json` and `xpod auth whoami --json` must be sufficient for
+  an AI agent to verify it is using the same acting WebID/Pod root as LinX. If
+  legacy `~/.xpod/*` files exist and disagree with `$SOLID_HOME/auth/credentials.json`,
+  the shared Solid auth file wins and the legacy files must not be treated as
+  authenticated state.
 
 AI agents should not need to learn a private Pod protocol or handle bearer
 tokens directly. For raw resource access, xpod should provide a curl-like

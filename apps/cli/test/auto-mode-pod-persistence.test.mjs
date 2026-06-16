@@ -168,7 +168,6 @@ test('buildAutoModeConversationSessionRow stores auto-mode lifecycle as a Pod se
   assert.equal(row.owner, 'https://alice.example/profile/card#me')
   assert.equal(row.chat, 'https://alice.example/.data/chat/linx-auto-mode-codex/index.ttl#this')
   assert.equal(row.thread, 'https://alice.example/.data/chat/linx-auto-mode-codex/index.ttl#auto_2026-03-18T00-00-00-000Z_deadbeef')
-  assert.equal(row.sessionType, 'group')
   assert.equal(row.status, 'completed')
   assert.equal(row.tool, 'codex')
   assert.equal(row.policyVersion, 'linx-auto-mode-session/v1')

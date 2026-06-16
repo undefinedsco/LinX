@@ -47,6 +47,12 @@ export function isLinxCloudAuthExpiredMessage(errorOrMessage: unknown): boolean 
     || (normalized.includes('401') && normalized.includes('unauthorized'))
 }
 
+export function isLinxCloudLoginRequiredMessage(errorOrMessage: unknown): boolean {
+  const normalized = stripAnsi(errorOrMessage instanceof Error ? errorOrMessage.message : String(errorOrMessage)).toLowerCase()
+  return normalized.includes('no linx cloud login found')
+    || normalized.includes('no credentials found. run `linx login` first')
+}
+
 function isCloudChatCompletionsPath(pathname: string): boolean {
   const segments = normalizePathname(pathname).split('/').filter(Boolean)
   return segments.length >= 3

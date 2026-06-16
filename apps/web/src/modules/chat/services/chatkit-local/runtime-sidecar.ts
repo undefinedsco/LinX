@@ -241,7 +241,6 @@ export class RuntimeSidecarSink {
       owner: this.webId,
       chat: this.makeChatUri(context.chatId),
       thread: this.makeThreadUri(context.chatId, context.threadId),
-      sessionType: 'direct',
       status: event.status,
       tool: runtimeSession.tool,
       tokenUsage: runtimeSession.tokenUsage,

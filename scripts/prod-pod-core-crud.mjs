@@ -261,7 +261,6 @@ async function main() {
       owner: webId,
       chat: chatIri,
       thread: threadIri,
-      sessionType: 'direct',
       status: 'active',
       tool: 'linx',
       tokenUsage: 12,

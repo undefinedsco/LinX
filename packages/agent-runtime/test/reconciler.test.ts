@@ -330,6 +330,92 @@ test('review policy treats Delivery as stage boundary and wakes reviewer', () =>
   assert.equal(decision.wakeJobs.length, 1)
   assert.equal(decision.wakeJobs[0].targetAgent, 'qa-reviewer')
   assert.equal(decision.wakeJobs[0].targetRole, 'reviewer')
+  assert.equal(decision.reconcilerOwner, 'client')
+})
+
+test('client-owned coordination requires the active client lease when requested', () => {
+  const base = {
+    policy: 'direct' as const,
+    event: {
+      type: 'message.appended' as const,
+      thread: 'thread:client-lease',
+      actor: { role: 'user' as const, id: 'user:webid' },
+      content: 'wake the assistant',
+    },
+    now: new Date('2026-06-14T00:00:00.000Z'),
+  }
+
+  const missingLease = reconcileThreadEvent({
+    ...base,
+    client: { id: 'client:cli' },
+    requireClientReconcilerLease: true,
+    randomId: 'client-lease-missing',
+  })
+  assert.equal(missingLease.reconcilerOwner, 'client')
+  assert.equal(missingLease.wakeJobs.length, 0)
+  assert.match(missingLease.skippedReason ?? '', /requires an active client coordinator lease/)
+
+  const wrongClient = reconcileThreadEvent({
+    ...base,
+    client: { id: 'client:web' },
+    requireClientReconcilerLease: true,
+    clientReconcilerLease: {
+      thread: 'thread:client-lease',
+      ownerClientId: 'client:cli',
+      ownerUser: 'https://alice.example/#me',
+      fencingToken: 'token-1',
+      expiresAt: '2026-06-14T00:00:30.000Z',
+    },
+    randomId: 'client-lease-wrong-client',
+  })
+  assert.equal(wrongClient.wakeJobs.length, 0)
+  assert.match(wrongClient.skippedReason ?? '', /leased by client:cli/)
+
+  const leaseOwner = reconcileThreadEvent({
+    ...base,
+    client: { id: 'client:cli' },
+    requireClientReconcilerLease: true,
+    clientReconcilerLease: {
+      thread: 'thread:client-lease',
+      ownerClientId: 'client:cli',
+      ownerUser: 'https://alice.example/#me',
+      fencingToken: 'token-1',
+      expiresAt: '2026-06-14T00:00:30.000Z',
+    },
+    randomId: 'client-lease-owner',
+  })
+  assert.equal(leaseOwner.wakeJobs.length, 1)
+  assert.equal(leaseOwner.wakeJobs[0].targetRole, 'primary-agent')
+  assert.equal(leaseOwner.skippedReason, undefined)
+})
+
+test('server-owned group coordination is not gated by client leases', () => {
+  const decision = reconcileThreadEvent({
+    policy: {
+      kind: 'open_group',
+      agents: [
+        { id: 'agent:codex', aliases: ['codex'] },
+      ],
+    },
+    event: {
+      type: 'message.appended',
+      chat: 'chat:group',
+      thread: 'thread:group',
+      actor: { role: 'user', id: 'user:alice' },
+      content: '@codex please inspect this',
+      data: { mentions: ['codex'] },
+    },
+    client: { id: 'client:web' },
+    requireClientReconcilerLease: true,
+    clientReconcilerLease: null,
+    now: new Date('2026-06-14T00:00:00.000Z'),
+    randomId: 'group-no-client-lease',
+  })
+
+  assert.equal(decision.reconcilerOwner, 'server')
+  assert.equal(decision.wakeJobs.length, 1)
+  assert.equal(decision.wakeJobs[0].targetAgent, 'agent:codex')
+  assert.equal(decision.skippedReason, undefined)
 })
 
 test('schedule ticks stay on a stable main thread or split execution thread explicitly', () => {
@@ -395,8 +481,17 @@ test('decision summaries are compact metadata for control records', () => {
   })
   const summary = summarizeReconcileDecision(decision)
 
-  assert.deepEqual(Object.keys(summary).sort(), ['createdAt', 'eventType', 'id', 'policyKind', 'thread', 'wakeJobs'])
+  assert.deepEqual(Object.keys(summary).sort(), [
+    'createdAt',
+    'eventType',
+    'id',
+    'policyKind',
+    'reconcilerOwner',
+    'thread',
+    'wakeJobs',
+  ])
   assert.equal(summary.policyKind, 'direct')
+  assert.equal(summary.reconcilerOwner, 'client')
   assert.equal(summary.eventType, 'message.appended')
   assert.equal(summary.wakeJobs[0].targetRole, 'primary-agent')
   assert.deepEqual(Object.keys(summary.wakeJobs[0]).sort(), [

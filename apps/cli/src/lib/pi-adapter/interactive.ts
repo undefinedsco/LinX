@@ -42,7 +42,7 @@ import {
   installSessionControlRuntimeEventBridge,
 } from './session-control.js'
 import {
-  buildLinxFooterStatusLine,
+  buildLinxTuiStatusLine,
   calculateSessionUsage,
   DEFAULT_STATUS_LINE_TOKENS,
   formatTokenCount,
@@ -80,7 +80,7 @@ export interface LinxInteractiveBootstrapOptions {
 /** @deprecated Use LinxInteractiveBootstrapOptions. */
 export type PiInteractiveBootstrapOptions = LinxInteractiveBootstrapOptions
 
-let footerPatched = false
+let statusLinePatched = false
 let assistantMessagePatched = false
 let linxResumeOutputStyleRestore: (() => void) | null = null
 const BACKEND_OWNED_SLASH_COMMANDS = new Set([
@@ -92,6 +92,7 @@ const BACKEND_OWNED_SLASH_COMMANDS = new Set([
 const SYMPHONY_STATUS_POD_TIMEOUT_MS = 1_200
 const DEFAULT_SYMPHONY_WORKER_SUPERVISOR_INTERVAL_MS = 10 * 60 * 1000
 const CODEX_STYLE_STATUS_LINE_TOKENS: LinxStatusLineToken[] = [
+  'mode',
   'model-with-reasoning',
   'git-branch',
   'context-remaining',
@@ -100,12 +101,13 @@ const CODEX_STYLE_STATUS_LINE_TOKENS: LinxStatusLineToken[] = [
   'current-dir',
 ]
 const COMPACT_STATUS_LINE_TOKENS: LinxStatusLineToken[] = [
+  'mode',
   'model-with-reasoning',
   'context-remaining',
   'current-dir',
 ]
-/** Module-level reference to interactive for footer mode state (set during bootstrap). */
-let _linxFooterInteractive: any = null
+/** Module-level reference to interactive for status line mode state (set during bootstrap). */
+let _linxStatusLineInteractive: any = null
 
 
 export function bootstrapLinxInteractiveMode(
@@ -113,7 +115,7 @@ export function bootstrapLinxInteractiveMode(
   options: LinxInteractiveBootstrapOptions = {},
 ): LinxInteractiveBootstrap {
   installLinxResumeOutputStyle()
-  patchPiFooter()
+  patchPiStatusLine()
   patchPiAssistantMessageRendering()
   const sessionCwd = runtime?.cwd || process.cwd()
   ensureInteractiveRuntimeHost(runtime)
@@ -121,7 +123,7 @@ export function bootstrapLinxInteractiveMode(
   ;(interactive as any).runtime = runtime
   ;(interactive as any).__autoEnabled = runtime?.autoEnabled === true
   ;(interactive as any).__linxSymphonyModeEnabled = runtime?.symphonyEnabled === true
-  _linxFooterInteractive = interactive as any
+  _linxStatusLineInteractive = interactive as any
 
   if (options.onSymphonyControlChange) {
     ;(interactive as any).__linxOnSymphonyControlChange = options.onSymphonyControlChange
@@ -2063,7 +2065,12 @@ function renderSymphonySecretaryProjection(input: string): string {
     'Default response style: reply like normal chat.',
     'Do not print internal Symphony binding, Issue/Task routing, worker selection, or report-style sections unless a visible state change or blocker must be surfaced.',
     'If the message is ordinary chat or early exploration, answer directly and do not explain that it was not delegated.',
-    'If real delegation is needed, summarize the visible handoff result briefly after updating control state.',
+    'If real delegation is needed, update the Symphony control state before describing the visible handoff result.',
+    'When you need to inspect or mutate Symphony Pod resources from the AI side, use the xpod CLI as the direct Pod tool surface.',
+    'Prefer model-backed xpod obj commands for Idea, Issue, Task, Delivery, Run, RunStep, Report, Evidence, ApprovalRequest, InputRequest, and InboxNotification resources.',
+    'xpod uses the same Solid authority as LinX inside the Agent Runtime; do not ask the model to handle tokens or client secrets.',
+    'Before mutating Pod resources from tools, verify xpod auth status/whoami reports the same acting WebID/Pod root as the LinX session; stop on mismatch.',
+    'Do not hand-patch TTL or guess Pod paths for modeled product resources; use xpod/model descriptors or inspect existing links first.',
     '',
     'User message:',
     input,
@@ -3537,42 +3544,45 @@ function stripAnsi(text: string): string {
   return text.replace(/\x1b\[[0-9;]*m/gu, '')
 }
 
-function patchPiFooter(): void {
-  if (footerPatched) {
+function patchPiStatusLine(): void {
+  if (statusLinePatched) {
     return
   }
 
   const originalRender = FooterComponent.prototype.render
   FooterComponent.prototype.render = function patchedRender(width: number): string[] {
     const lines = originalRender.call(this, width)
-    if (Array.isArray(lines) && lines.length > 1 && typeof lines[1] === 'string') {
+    if (Array.isArray(lines)) {
       const session = (this as unknown as { session?: unknown }).session
       const autoCompactEnabled = (this as unknown as { autoCompactEnabled?: boolean }).autoCompactEnabled !== false
       const footerData = (this as unknown as { footerData?: unknown }).footerData
-      const modePrefix = buildLinxFooterModePrefix()
-      const modeLen = visibleWidth(modePrefix)
-      const bulletLen = modeLen > 0 ? 3 : 0
-      const statusWidth = Math.max(0, width - modeLen - bulletLen)
-      lines[1] = buildLinxFooterStatusLine({
+      const statusLine = buildLinxTuiStatusLine({
         session,
-        width: statusWidth,
+        width,
         autoCompactEnabled,
-        footerData: footerData as Parameters<typeof buildLinxFooterStatusLine>[0]['footerData'],
+        footerData: footerData as Parameters<typeof buildLinxTuiStatusLine>[0]['footerData'],
+        modeLabel: buildLinxStatusLineModeLabel(),
       })
-      if (modePrefix) {
-        lines[1] = modePrefix + ' • ' + lines[1]
+
+      // Pi's footer renders cwd, stats, then optional extension notices.  LinX
+      // owns only the logical TUI status line, so replace Pi's stats line and
+      // append the configurable status line after notices to keep it the
+      // bottom-most line.
+      if (lines.length > 1 && typeof lines[1] === 'string') {
+        lines.splice(1, 1)
       }
+      lines.push(statusLine)
     }
     return lines
   }
-  footerPatched = true
+  statusLinePatched = true
 }
 
 
-function buildLinxFooterModePrefix(): string {
-  if (!_linxFooterInteractive) return ''
-  const autoOn = _linxFooterInteractive.__autoEnabled === true
-  const symphonyOn = _linxFooterInteractive.__linxSymphonyModeEnabled === true
+function buildLinxStatusLineModeLabel(): string {
+  if (!_linxStatusLineInteractive) return ''
+  const autoOn = _linxStatusLineInteractive.__autoEnabled === true
+  const symphonyOn = _linxStatusLineInteractive.__linxSymphonyModeEnabled === true
   if (!autoOn && !symphonyOn) return ''
   if (autoOn && symphonyOn) return 'Symphony · Auto'
   if (autoOn) return 'Auto'

@@ -2,6 +2,8 @@ import { cpSync, existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 export const PRODUCT_SKILL_NAMES = Object.freeze([
+  'basic',
+  'capture',
   'symphony',
   'xpod-cli',
 ])

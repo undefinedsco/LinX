@@ -82,9 +82,11 @@ LinX control plane, or for local mirrors materialized from Pod.
 
 The portable Symphony runtime contract is storage-agnostic. It may produce
 control records, work splits, prompts, and reports, but it does not own Pod IO.
-LinX product runtime persists through shared models/repositories. A portable AI
-agent may call `xpod` CLI when that tool is available, but `xpod` is an adapter
-tool surface, not something the core Symphony skill or runtime module requires.
+LinX product runtime persists through shared models/repositories. When the
+writer is an AI operating through terminal/tools rather than in-process LinX
+code, `xpod` CLI is the preferred direct Pod tool surface. Use model-backed
+`xpod obj` operations for Symphony resources when available; do not invent a
+parallel Symphony-specific AI tool API and do not hand-patch modeled TTL paths.
 
 In LinX Agent Runtime, Pod authority belongs to the runtime session and should
 be inherited by tools launched inside that session. If a Secretary or worker has
@@ -92,7 +94,9 @@ Pod access, `xpod` commands it runs should use the runtime-provided authority
 bridge. Outside that bridge, all Solid apps share the same local auth source
 `$SOLID_HOME/auth/credentials.json`; old `~/.xpod/config.json` and
 `~/.xpod/secrets.json` files are not Solid auth sources, and their presence
-alone must be treated as unauthenticated. Never ask the model to handle raw
+alone must be treated as unauthenticated. If `xpod auth status --json` reports a
+different WebID or Pod root than the shared Solid auth file, treat it as an
+auth-store mismatch and stop before writing. Never ask the model to handle raw
 tokens, refresh tokens, client secrets, cookies, or DPoP material directly.
 
 ## Agent Config And Skill Resources

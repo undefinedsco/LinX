@@ -52,7 +52,8 @@ Modeling principles:
 Feature contracts:
 
 - `docs/cli-login-and-key-principles.md` — CLI 登录、provider key 获取、Pod AI config 存储与 backend runtime 消费边界
-- `docs/cli-status-line.md` — CLI TUI footer/statusline 的可配置 token、配置优先级和默认显示契约
+- `docs/cli-status-line.md` — CLI TUI 底部 status line 的可配置 token、配置优先级和默认显示契约
+- `docs/superpowers/specs/2026-06-16-capture-design.md` — Capture 能力契约：显式保存、被动观察、用户授权扫描、归类、Approval/Input 边界和 Pod 模型归属
 - `docs/approval-grant-design.md` — approval/grant 统一流水线、grant scope、auto 与 Secretary 授权边界
 - `docs/symphony-system-evolution-control-plane.md` — Symphony 作为系统演进控制平面的第一性原理，覆盖系统态势、演进判断、执行控制和证据回流
 - `docs/secretary/auto-symphony-contract.md` — `/auto` 单开关、backend approval 分离、Symphony 委派边界

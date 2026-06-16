@@ -611,15 +611,15 @@ test('pi runtime adapter exposes bundled LinX skills during initial resource loa
   try {
     const skills = runtime.session.resourceLoader.getSkills().skills
     const skillNames = skills.map((skill) => skill.name).sort()
-    for (const name of ['symphony', 'xpod-cli']) {
+    for (const name of ['basic', 'capture', 'symphony', 'xpod-cli']) {
       assert.ok(skillNames.includes(name), `expected bundled LinX product skill ${name}`)
     }
     for (const name of ['drizzle-solid', 'solid-modeling', 'xpod-componentsjs']) {
       assert.equal(skillNames.includes(name), false, `developer skill ${name} should not be exposed to Secretary`)
     }
-    assert.ok(skillNames.includes('librarian'), 'expected pi-web-access skill to be loaded from the bundled package')
-    const linxSkills = skills.filter((skill) => ['symphony', 'xpod-cli'].includes(skill.name))
-    assert.equal(linxSkills.length, 2)
+    assert.equal(skillNames.includes('librarian'), false, 'internal pi-web-access librarian skill should be hidden behind basic')
+    const linxSkills = skills.filter((skill) => ['basic', 'capture', 'symphony', 'xpod-cli'].includes(skill.name))
+    assert.equal(linxSkills.length, 4)
     assert.equal(
       linxSkills.every((skill) => skill.sourceInfo?.source === '@undefineds.co/linx'),
       true,
@@ -629,8 +629,11 @@ test('pi runtime adapter exposes bundled LinX skills during initial resource loa
       true,
     )
     assert.match(runtime.session.systemPrompt, /<skill>/)
+    assert.match(runtime.session.systemPrompt, /basic/)
+    assert.match(runtime.session.systemPrompt, /capture/)
     assert.match(runtime.session.systemPrompt, /symphony/)
     assert.match(runtime.session.systemPrompt, /xpod-cli/)
+    assert.doesNotMatch(runtime.session.systemPrompt, /librarian/)
     assert.doesNotMatch(runtime.session.systemPrompt, /solid-modeling/)
     assert.doesNotMatch(runtime.session.systemPrompt, /xpod-componentsjs/)
   } finally {
@@ -1671,6 +1674,7 @@ export default function projectExtraTool(pi) {
     'bash',
     'edit',
     'write',
+    'linx_capture',
     'web_search',
     'code_search',
     'fetch_content',

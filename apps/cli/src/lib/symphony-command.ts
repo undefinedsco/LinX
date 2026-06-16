@@ -16,7 +16,7 @@ import {
   type CreateSymphonyRunPlanInput,
   type SymphonyDelegationTarget,
   type SymphonyRunPlan,
-  type SymphonyWorkspaceKind,
+  type WorkerWorkspaceKind,
   type SymphonyWorkerPlan,
 } from '@linx/agent-runtime/symphony'
 import { runAutoMode, listArchivedAutoModeSessions, type AutoRunOptions } from './auto-mode/index.js'
@@ -69,7 +69,7 @@ interface SymphonyRunArgs {
   repository?: string
   branch?: string
   worktree?: string
-  workspaceKind?: SymphonyWorkspaceKind
+  workspaceKind?: WorkerWorkspaceKind
   chat?: string
   thread?: string
   messages?: string[]
@@ -323,7 +323,7 @@ async function runSymphonyWorker(input: {
   throwIfAborted(input.signal)
   const beforeAutoModeIds = new Set(input.runtime.listAutoModeSessions().map((record) => record.id))
   const cwd = input.worker.session.cwd || input.cwd
-  const workspace = input.worker.session.workspace ?? {
+  const workspace = input.worker.session.workspaceRef ?? {
     path: cwd,
     kind: 'folder' as const,
   }
@@ -850,7 +850,7 @@ function withAbortSignal<T>(promise: Promise<T>, signal?: AbortSignal): Promise<
 }
 
 function resolveWorkspaceMetadata(cwd: string, argv: SymphonyRunArgs): {
-  kind: SymphonyWorkspaceKind
+  kind: WorkerWorkspaceKind
   repository?: string
   branch?: string
   worktree?: string

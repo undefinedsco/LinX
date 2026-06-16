@@ -1,9 +1,8 @@
 # CLI Status Line
 
-LinX uses Pi's footer component for the TUI shell, but Pi does not expose a
-Codex-style generic `status_line` token list. LinX patches the second footer
-line with an app-local configurable renderer while keeping the default footer
-content unchanged.
+LinX exposes a Codex-style configurable TUI status line: the bottom-most line in
+the interactive shell. `/statusline` changes only that status line. It must not
+rewrite prompt hints, selector footers, or transient extension notices.
 
 ## Configuration
 
@@ -12,7 +11,7 @@ Preferred TUI workflow:
 ```text
 /statusline
 /statusline tokens
-/statusline set model-with-reasoning git-branch context-remaining total-input-tokens total-output-tokens current-dir
+/statusline set mode model-with-reasoning git-branch context-remaining total-input-tokens total-output-tokens current-dir
 /statusline colors off
 /statusline reset
 ```
@@ -23,12 +22,12 @@ external CLI remains available for scripts and dotfile setup:
 ```bash
 linx config status-line
 linx config status-line tokens
-linx config status-line set model-with-reasoning git-branch context-remaining total-input-tokens total-output-tokens current-dir
+linx config status-line set mode model-with-reasoning git-branch context-remaining total-input-tokens total-output-tokens current-dir
 linx config status-line colors off
 linx config status-line reset
 ```
 
-`statusline` and `footer` are aliases under `linx config`.
+`statusline` is accepted as an alias under `linx config`.
 
 Configuration priority:
 
@@ -40,7 +39,7 @@ Configuration priority:
 `LINX_STATUS_LINE` accepts comma- or space-separated tokens:
 
 ```bash
-LINX_STATUS_LINE="model-with-reasoning,git-branch,context-remaining,total-input-tokens,total-output-tokens,current-dir" linx
+LINX_STATUS_LINE="mode,model-with-reasoning,git-branch,context-remaining,total-input-tokens,total-output-tokens,current-dir" linx
 ```
 
 The app config file accepts the same shape as Codex's status line setting, using
@@ -49,6 +48,7 @@ JSON because LinX app-local config is stored under the Solid app directory:
 ```json
 {
   "status_line": [
+    "mode",
     "model-with-reasoning",
     "git-branch",
     "context-remaining",
@@ -64,6 +64,7 @@ CamelCase keys are also accepted: `statusLine` and `statusLineUseColors`.
 
 ## Tokens
 
+- `mode`
 - `total-input-tokens`
 - `total-output-tokens`
 - `context-usage`
@@ -78,12 +79,14 @@ CamelCase keys are also accepted: `statusLine` and `statusLineUseColors`.
 - `session-name`
 
 Aliases are accepted for common shorthand: `input`, `output`, `context`,
-`context-left`, `cache`, `cwd`, `pwd`, `branch`, and `reasoning`.
+`context-left`, `cache`, `cwd`, `pwd`, `workspace`, `branch`, `reasoning`,
+`peer`, and `state`.
 
 The default LinX status line is:
 
 ```json
 [
+  "mode",
   "total-input-tokens",
   "total-output-tokens",
   "context-usage",

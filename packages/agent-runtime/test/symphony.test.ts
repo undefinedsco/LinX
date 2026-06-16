@@ -86,7 +86,7 @@ test('creates a task delivery session run plan with URI relations and workspace 
     repository: 'https://github.com/undefineds/linx.git',
     branch: 'main',
     worktree: '/tmp/linx-worktree',
-    workspaceUri: 'urn:undefineds:workspace:local-linx',
+    workspace: 'urn:undefineds:workspace:local-linx',
     baseRevision: 'abc123',
     environment: {
       kind: 'local-shell',
@@ -145,16 +145,16 @@ test('creates a task delivery session run plan with URI relations and workspace 
   assert.equal(plan.session.mode, 'off')
   assert.equal(plan.session.secretaryAutoEnabled, true)
   assert.equal(plan.session.model, 'gpt-5.5')
-  assert.equal(plan.session.workspace?.path, '/tmp/linx')
-  assert.equal(plan.session.workspace?.workspaceUri, 'urn:undefineds:workspace:local-linx')
-  assert.equal(plan.session.workspace?.baseRevision, 'abc123')
-  assert.equal(plan.session.workspace?.environment?.kind, 'local-shell')
-  assert.equal(plan.session.workspace?.environment?.runtime, 'codex')
+  assert.equal(plan.session.workspaceRef?.path, '/tmp/linx')
+  assert.equal(plan.session.workspaceRef?.workspace, 'urn:undefineds:workspace:local-linx')
+  assert.equal(plan.session.workspaceRef?.baseRevision, 'abc123')
+  assert.equal(plan.session.workspaceRef?.environment?.kind, 'local-shell')
+  assert.equal(plan.session.workspaceRef?.environment?.runtime, 'codex')
   assert.equal(plan.workers.length, 1)
   assert.equal(plan.workers[0].delivery.uri, plan.delivery.uri)
   assert.match(plan.delivery.projection.prompt, /Workspace: \/tmp\/linx/)
   assert.match(plan.delivery.projection.prompt, /Workspace kind: git/)
-  assert.match(plan.delivery.projection.prompt, /Workspace URI: urn:undefineds:workspace:local-linx/)
+  assert.match(plan.delivery.projection.prompt, /Workspace resource: urn:undefineds:workspace:local-linx/)
   assert.match(plan.delivery.projection.prompt, /Workspace base revision: abc123/)
   assert.match(plan.delivery.projection.prompt, /Workspace environment: local-shell runtime=codex id=host-a label=Local LinX checkout/)
   assert.match(plan.delivery.projection.prompt, /Target chat:/)
@@ -316,8 +316,8 @@ test('creates issuer-aware multi-worker symphony plans', () => {
   assert.equal(plan.workers[1].session.backend, 'claude')
   assert.equal(plan.workers[0].session.cwd, '/tmp/linx')
   assert.equal(plan.workers[1].session.cwd, '/tmp/linx')
-  assert.equal(plan.workers[0].session.workspace?.path, '/tmp/linx')
-  assert.equal(plan.workers[1].session.workspace?.path, '/tmp/linx')
+  assert.equal(plan.workers[0].session.workspaceRef?.path, '/tmp/linx')
+  assert.equal(plan.workers[1].session.workspaceRef?.path, '/tmp/linx')
   assert.ok(plan.workers.every((worker) => worker.session.mode === 'off'))
   assert.ok(plan.workers.every((worker) => worker.session.secretaryAutoEnabled === true))
   assert.equal(plan.workers[0].session.target.agent, 'codex-builder')
@@ -360,7 +360,7 @@ test('keeps shared workspace by default and honors explicit worker workspace ove
         workspace: {
           path: '/workspace/linx',
           kind: 'git',
-          workspaceUri: 'urn:undefineds:workspace:container-linx',
+          workspace: 'urn:undefineds:workspace:container-linx',
           baseRevision: 'base-b',
           environment: {
             kind: 'remote-container',
@@ -376,15 +376,15 @@ test('keeps shared workspace by default and honors explicit worker workspace ove
   })
 
   assert.equal(plan.workers[0].session.cwd, '/tmp/linx')
-  assert.equal(plan.workers[0].session.workspace?.path, '/tmp/linx')
-  assert.equal(plan.workers[0].session.workspace?.baseRevision, 'base-a')
-  assert.equal(plan.workers[0].session.workspace?.environment?.kind, 'backend-runtime')
+  assert.equal(plan.workers[0].session.workspaceRef?.path, '/tmp/linx')
+  assert.equal(plan.workers[0].session.workspaceRef?.baseRevision, 'base-a')
+  assert.equal(plan.workers[0].session.workspaceRef?.environment?.kind, 'backend-runtime')
   assert.equal(plan.workers[1].session.cwd, '/workspace/linx')
-  assert.equal(plan.workers[1].session.workspace?.path, '/workspace/linx')
-  assert.equal(plan.workers[1].session.workspace?.workspaceUri, 'urn:undefineds:workspace:container-linx')
-  assert.equal(plan.workers[1].session.workspace?.baseRevision, 'base-b')
-  assert.equal(plan.workers[1].session.workspace?.environment?.kind, 'remote-container')
-  assert.equal(plan.workers[1].session.workspace?.environment?.id, 'container-a')
+  assert.equal(plan.workers[1].session.workspaceRef?.path, '/workspace/linx')
+  assert.equal(plan.workers[1].session.workspaceRef?.workspace, 'urn:undefineds:workspace:container-linx')
+  assert.equal(plan.workers[1].session.workspaceRef?.baseRevision, 'base-b')
+  assert.equal(plan.workers[1].session.workspaceRef?.environment?.kind, 'remote-container')
+  assert.equal(plan.workers[1].session.workspaceRef?.environment?.id, 'container-a')
   assert.match(plan.workers[1].delivery.projection.prompt, /Workspace: \/workspace\/linx/)
   assert.match(plan.workers[1].delivery.projection.prompt, /Workspace environment: remote-container runtime=claude id=container-a label=Container LinX checkout/)
   assert.match(plan.workers[1].delivery.projection.prompt, /Same-Thread workers in this environment may share it/)

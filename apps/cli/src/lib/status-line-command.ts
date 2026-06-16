@@ -30,7 +30,7 @@ export const configCommand: CommandModule<object, object> = {
 
 const statusLineCommand: CommandModule<object, StatusLineArgs> = {
   command: 'status-line [args..]',
-  aliases: ['statusline', 'footer'],
+  aliases: ['statusline'],
   describe: 'Show or configure the LinX TUI status line',
   builder: (yargs) =>
     yargs
@@ -44,7 +44,7 @@ const statusLineCommand: CommandModule<object, StatusLineArgs> = {
         describe: 'Enable or disable status line colors when setting tokens',
       })
       .example('$0 config status-line', 'Show the effective status line config')
-      .example('$0 config status-line set model-with-reasoning git-branch context-remaining', 'Configure status line tokens')
+      .example('$0 config status-line set mode model-with-reasoning git-branch context-remaining', 'Configure status line tokens')
       .example('$0 config status-line colors off', 'Disable dimmed status line colors')
       .example('$0 config status-line reset', 'Return to the built-in default'),
   handler: runStatusLineCommand,

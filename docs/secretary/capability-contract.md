@@ -34,11 +34,25 @@ shared Pod model.
 
 ## Product Skill Boundary
 
-Secretary runtime skills are product capabilities: how to triage user intent,
-split work, dispatch workers, track status, accept completed work, and escalate
-blockers. Product orchestration skills such as `symphony` may be used
-both by Secretary at runtime and by coding agents implementing or verifying the
-same LinX behavior.
+Secretary runtime skills are product capabilities: how to use baseline runtime
+tools, triage user intent, split work, dispatch workers, track status, accept
+completed work, and escalate blockers. The default system-managed Secretary
+skill bindings are:
+
+- `basic`: LinX-facing umbrella for common runtime capabilities such as web
+  access, fetching, source lookup, and workspace inspection. It hides upstream
+  package or internal skill names.
+- `capture`: Secretary workflow for saving, remembering, collecting, and
+  classifying useful observed content into typed Pod resources. It owns capture
+  judgment and uses Approval/Input for authority or missing information.
+- `symphony`: system-evolution control-plane judgment, work coordination, and
+  evidence feedback.
+- `xpod-cli`: Solid Pod object/file/RDF/secret operations through the shared
+  xpod CLI surface.
+
+Product orchestration skills such as `symphony` may be used both by Secretary
+at runtime and by coding agents implementing or verifying the same LinX
+behavior.
 
 Secretary's configured skills are resource-backed product inputs, not opaque
 prompt fragments. The Secretary Agent is a container resource; its default
@@ -90,11 +104,15 @@ Developer implementation skills are different. Keep `drizzle-solid`,
 `solid-modeling`, and `xpod-componentsjs` available to engineers or coding
 agents when they are changing schemas, repositories, or Xpod UI/component
 integrations, but do not inject them into the user-facing Secretary prompt.
+Runtime extension internals such as `pi-web-access` / `librarian` should be
+represented through `basic` in Secretary-facing prompts and product surfaces.
 Pod operation guidance belongs to the bundled user-facing `xpod-cli` skill,
 not a LinX-local `pod_read` / `pod_write` skill. If Secretary needs durable
-data, it should request a product-level plan or call a bounded product
-operation; shared model/runtime code owns exact predicates, URI templates,
-storage paths, and component APIs.
+data from a terminal/tool context, it should use `xpod` with shared Solid auth
+and model-backed `xpod obj` commands where a descriptor exists. In-process
+LinX code should still call shared models/repositories directly; shared
+model/runtime code owns exact predicates, URI templates, storage paths, and
+component APIs.
 
 ## Approval And Input Handling
 

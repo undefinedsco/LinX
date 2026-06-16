@@ -71,9 +71,22 @@ resource paths. LinX product code persists those DTOs through shared
 models/repositories. LinX-owned control-plane records are Pod writes, not
 sync/projection; use sync/projection wording only when external backend/runtime
 facts are translated into LinX control records or when a local mirror is pulled
-from Pod. Portable agents or scripts may use `xpod` CLI commands
-when that is the available tool surface, but that is an adapter/tool choice, not
-the core Symphony contract.
+from Pod.
+
+The AI-facing path is intentionally thinner: when a Secretary or worker needs to
+inspect or mutate Symphony state from a terminal/tool context, it should use the
+ordinary `xpod` CLI. The shape is:
+
+```text
+Secretary/worker tool call -> xpod CLI -> @undefineds.co/models descriptors -> drizzle-solid/Pod
+```
+
+Prefer `xpod obj` for descriptor-backed Idea, Issue, Task, Delivery, Run,
+RunStep, Report, Evidence, ApprovalRequest, InputRequest, and InboxNotification
+resources. Do not introduce a separate Symphony AI tool API, and do not
+hand-patch modeled TTL resources just because the directory shape is known.
+`xpod` remains an adapter/tool choice for AI and scripts, not the core Symphony
+contract.
 
 When LinX Agent Runtime gives a Secretary or worker Pod authority, that
 authority must extend to Pod-facing tools invoked inside the same runtime.
@@ -81,7 +94,10 @@ authority must extend to Pod-facing tools invoked inside the same runtime.
 effective identity. Outside that bridge, every Solid app uses the same local
 Solid auth source, `$SOLID_HOME/auth/credentials.json`; old
 `~/.xpod/config.json` / `~/.xpod/secrets.json` files are not Solid auth sources,
-so their presence alone means unauthenticated.
+so their presence alone means unauthenticated. If `xpod auth status --json`
+points at a different WebID or Pod root than `$SOLID_HOME/auth/credentials.json`,
+that is an auth-store mismatch and AI agents must not write until the shared
+auth source is restored.
 
 Local files under `$LINX_HOME/symphony` are not a second product model. By
 default, `LINX_HOME` resolves to `$SOLID_HOME/apps/linx`, and `SOLID_HOME`

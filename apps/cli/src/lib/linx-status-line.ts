@@ -4,6 +4,7 @@ import { truncateToWidth, visibleWidth } from '@earendil-works/pi-tui'
 import { getSolidLinxAppDir } from './solid-local-store.js'
 
 export type LinxStatusLineToken =
+  | 'mode'
   | 'total-input-tokens'
   | 'total-output-tokens'
   | 'context-usage'
@@ -18,6 +19,7 @@ export type LinxStatusLineToken =
   | 'session-name'
 
 export const DEFAULT_STATUS_LINE_TOKENS: LinxStatusLineToken[] = [
+  'mode',
   'total-input-tokens',
   'total-output-tokens',
   'context-usage',
@@ -51,6 +53,9 @@ const STATUS_LINE_TOKEN_ALIASES: Record<string, LinxStatusLineToken> = {
   pwd: 'current-dir',
   branch: 'git-branch',
   reasoning: 'thinking',
+  peer: 'mode',
+  state: 'mode',
+  workspace: 'current-dir',
 }
 
 const STATUS_LINE_TOKENS = new Set<string>(LINX_STATUS_LINE_TOKEN_NAMES)
@@ -64,6 +69,7 @@ export interface LinxStatusLineInput {
   width: number
   autoCompactEnabled: boolean
   footerData?: LinxFooterDataLike
+  modeLabel?: string | null | undefined
 }
 
 export interface LinxStatusLineConfig {
@@ -73,7 +79,7 @@ export interface LinxStatusLineConfig {
   colorSource: 'env' | 'file' | 'default'
 }
 
-export function buildLinxFooterStatusLine(input: LinxStatusLineInput): string {
+export function buildLinxTuiStatusLine(input: LinxStatusLineInput): string {
   const config = readLinxStatusLineConfig()
   const context = createStatusLineContext(input)
   const parts = config.tokens
@@ -98,6 +104,7 @@ function createStatusLineContext(input: LinxStatusLineInput) {
     contextUsage,
     autoCompactEnabled: input.autoCompactEnabled,
     gitBranch: normalizeText(input.footerData?.getGitBranch?.()),
+    modeLabel: normalizeText(input.modeLabel),
   }
 }
 
@@ -106,6 +113,8 @@ function renderStatusLineToken(
   context: ReturnType<typeof createStatusLineContext>,
 ): string | null {
   switch (token) {
+    case 'mode':
+      return context.modeLabel
     case 'total-input-tokens':
       return context.usage.input > 0 ? `↑${formatTokenCount(context.usage.input)}` : null
     case 'total-output-tokens':

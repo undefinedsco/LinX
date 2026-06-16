@@ -8,7 +8,7 @@ import type {
   SymphonyRunPlan,
   SymphonySessionRecord,
   SymphonySessionStatus,
-  SymphonyWorkspaceRef,
+  WorkerWorkspaceRef,
 } from '@linx/agent-runtime/symphony'
 import { getSymphonyArchiveKey } from '@linx/agent-runtime/symphony'
 import { DEFAULT_AGENT_RUNTIME_COMPANION_MODEL_ID } from '@linx/agent-runtime/companion-model'
@@ -832,11 +832,11 @@ function buildSymphonyWorkspaceMetadata(
   plan: SymphonyRunPlan,
   worker: SymphonyRunPlan['workers'][number],
 ): Record<string, unknown> {
-  const workspace = normalizeSymphonyWorkspaceRef(worker.session.workspace ?? plan.session.workspace, worker.session.cwd ?? plan.session.cwd)
+  const workspace = normalizeWorkerWorkspaceRef(worker.session.workspaceRef ?? plan.session.workspaceRef, worker.session.cwd ?? plan.session.cwd)
   return {
     path: workspace.path,
     kind: workspace.kind,
-    ...(workspace.workspaceUri ? { uri: workspace.workspaceUri } : {}),
+    ...(workspace.workspace ? { uri: workspace.workspace } : {}),
     ...(workspace.repository ? { repository: workspace.repository } : {}),
     ...(workspace.branch ? { branch: workspace.branch } : {}),
     ...(workspace.worktree ? { worktree: workspace.worktree } : {}),
@@ -850,17 +850,17 @@ function buildSymphonyWorkspaceMetadata(
   }
 }
 
-function normalizeSymphonyWorkspaceRef(
-  workspace: SymphonyWorkspaceRef | undefined,
+function normalizeWorkerWorkspaceRef(
+  workspace: WorkerWorkspaceRef | undefined,
   fallbackPath: string,
-): SymphonyWorkspaceRef {
+): WorkerWorkspaceRef {
   return {
     path: workspace?.path ?? fallbackPath,
     kind: workspace?.kind ?? 'folder',
     ...(workspace?.repository ? { repository: workspace.repository } : {}),
     ...(workspace?.branch ? { branch: workspace.branch } : {}),
     ...(workspace?.worktree ? { worktree: workspace.worktree } : {}),
-    ...(workspace?.workspaceUri ? { workspaceUri: workspace.workspaceUri } : {}),
+    ...(workspace?.workspace ? { workspace: workspace.workspace } : {}),
     ...(workspace?.baseRevision ? { baseRevision: workspace.baseRevision } : {}),
     ...(workspace?.environment ? { environment: workspace.environment } : {}),
   }
@@ -1331,7 +1331,6 @@ function buildSymphonySessionRow(
     owner: webId,
     chat: selectWorkerChatIri(plan, webId, worker),
     thread: selectWorkerThreadIri(plan, webId, worker),
-    sessionType: 'group',
     status,
     tool: `symphony:${worker.session.backend}`,
     tokenUsage: 0,
@@ -2172,7 +2171,6 @@ async function upsertSession(db: PodProjectionDb, runtime: SymphonyPodProjection
     owner: row.owner,
     chat: row.chat,
     thread: row.thread,
-    sessionType: row.sessionType,
     status: row.status,
     tool: row.tool,
     tokenUsage: row.tokenUsage,

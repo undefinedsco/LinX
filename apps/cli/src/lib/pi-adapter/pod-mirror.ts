@@ -55,6 +55,8 @@ import {
 } from './pod-mirror-mapping.js'
 
 const PI_POLICY_VERSION = 'linx-pi-pod-mirror/v1'
+const PI_BASIC_SKILL_ID = 'basic'
+const PI_CAPTURE_SKILL_ID = 'capture'
 const PI_SYMPHONY_SKILL_ID = 'symphony'
 const PI_XPOD_CLI_SKILL_ID = 'xpod-cli'
 const POD_MIRROR_TRANSIENT_RETRY_DELAYS_MS = [250, 1_000, 2_500] as const
@@ -93,6 +95,8 @@ interface PiResourceRefs {
   agentUri: string
   chatUri: string
   sessionUri: string
+  basicSkillUri: string
+  captureSkillUri: string
   symphonySkillUri: string
   xpodCliSkillUri: string
   threadUri: string
@@ -566,7 +570,7 @@ async function ensurePiConversationRoot(
     id: agentResource.buildId({ id: PI_AGENT_ID }),
     name: 'LinX CLI Assistant',
     root: refs.agentUri,
-    hasSkill: [refs.symphonySkillUri, refs.xpodCliSkillUri],
+    hasSkill: [refs.basicSkillUri, refs.captureSkillUri, refs.symphonySkillUri, refs.xpodCliSkillUri],
     provider: 'undefineds',
     backend: 'linx',
     runtime: 'pi',
@@ -584,7 +588,7 @@ async function ensurePiConversationRoot(
   }, {
     name: 'LinX CLI Assistant',
     root: refs.agentUri,
-    hasSkill: [refs.symphonySkillUri, refs.xpodCliSkillUri],
+    hasSkill: [refs.basicSkillUri, refs.captureSkillUri, refs.symphonySkillUri, refs.xpodCliSkillUri],
     provider: 'undefineds',
     backend: 'linx',
     runtime: 'pi',
@@ -596,6 +600,78 @@ async function ensurePiConversationRoot(
       kind: 'secretary-agent',
       surface: 'cli',
       fileBackedSkills: true,
+    },
+    updatedAt: now,
+  })
+
+  await upsertExactRecord(context.db, skillResource, {
+    id: PI_BASIC_SKILL_ID,
+    agent: refs.agentUri,
+  }, {
+    id: skillResource.buildId({
+      id: PI_BASIC_SKILL_ID,
+      agent: refs.agentUri,
+    }),
+    agent: refs.agentUri,
+    root: refs.basicSkillUri,
+    name: PI_BASIC_SKILL_ID,
+    displayName: 'Basic',
+    enabled: true,
+    source: 'linx-cli:skills/basic',
+    loadPolicy: 'file-backed',
+    metadata: {
+      file: 'SKILL.md',
+      scope: 'linx-cli',
+    },
+    createdAt: now,
+    updatedAt: now,
+  } satisfies SkillInsert, {
+    agent: refs.agentUri,
+    root: refs.basicSkillUri,
+    name: PI_BASIC_SKILL_ID,
+    displayName: 'Basic',
+    enabled: true,
+    source: 'linx-cli:skills/basic',
+    loadPolicy: 'file-backed',
+    metadata: {
+      file: 'SKILL.md',
+      scope: 'linx-cli',
+    },
+    updatedAt: now,
+  })
+
+  await upsertExactRecord(context.db, skillResource, {
+    id: PI_CAPTURE_SKILL_ID,
+    agent: refs.agentUri,
+  }, {
+    id: skillResource.buildId({
+      id: PI_CAPTURE_SKILL_ID,
+      agent: refs.agentUri,
+    }),
+    agent: refs.agentUri,
+    root: refs.captureSkillUri,
+    name: PI_CAPTURE_SKILL_ID,
+    displayName: 'Capture',
+    enabled: true,
+    source: 'linx-cli:skills/capture',
+    loadPolicy: 'file-backed',
+    metadata: {
+      file: 'SKILL.md',
+      scope: 'linx-cli',
+    },
+    createdAt: now,
+    updatedAt: now,
+  } satisfies SkillInsert, {
+    agent: refs.agentUri,
+    root: refs.captureSkillUri,
+    name: PI_CAPTURE_SKILL_ID,
+    displayName: 'Capture',
+    enabled: true,
+    source: 'linx-cli:skills/capture',
+    loadPolicy: 'file-backed',
+    metadata: {
+      file: 'SKILL.md',
+      scope: 'linx-cli',
     },
     updatedAt: now,
   })
@@ -708,7 +784,6 @@ async function persistRuntimeSession(
     owner: context.webId,
     chat: refs.chatUri,
     thread: refs.threadUri,
-    sessionType: 'direct',
     status,
     tool: 'linx',
     tokenUsage: calculateTokenUsage(getActiveSessionEntries(options.sessionManager)),
@@ -723,7 +798,6 @@ async function persistRuntimeSession(
     owner: context.webId,
     chat: refs.chatUri,
     thread: refs.threadUri,
-    sessionType: 'direct',
     status,
     tool: 'linx',
     tokenUsage: row.tokenUsage,
@@ -941,6 +1015,14 @@ function resolvePiResourceRefsForSession(
     agentUri,
     chatUri,
     sessionUri: sessionResource.buildIri(context.webId,  { id: sessionId, createdAt }),
+    basicSkillUri: skillResource.buildIri(context.webId, {
+      id: PI_BASIC_SKILL_ID,
+      agent: agentUri,
+    }),
+    captureSkillUri: skillResource.buildIri(context.webId, {
+      id: PI_CAPTURE_SKILL_ID,
+      agent: agentUri,
+    }),
     symphonySkillUri: skillResource.buildIri(context.webId, {
       id: PI_SYMPHONY_SKILL_ID,
       agent: agentUri,
@@ -1127,6 +1209,26 @@ function buildThreadMetadata(options: LinxPiPodMirrorOptions): Record<string, un
 
 function createPiRuntimeSnapshot(refs: PiResourceRefs, createdAt: Date): ReturnType<typeof createAgentRuntimeConfigSnapshot> {
   const skills: AgentRuntimeSkillSnapshot[] = [
+    {
+      id: skillResource.buildId({
+        id: PI_BASIC_SKILL_ID,
+        agent: refs.agentUri,
+      }),
+      name: PI_BASIC_SKILL_ID,
+      source: 'linx-cli:skills/basic',
+      loadPolicy: 'file-backed',
+      enabled: true,
+    },
+    {
+      id: skillResource.buildId({
+        id: PI_CAPTURE_SKILL_ID,
+        agent: refs.agentUri,
+      }),
+      name: PI_CAPTURE_SKILL_ID,
+      source: 'linx-cli:skills/capture',
+      loadPolicy: 'file-backed',
+      enabled: true,
+    },
     {
       id: skillResource.buildId({
         id: PI_SYMPHONY_SKILL_ID,

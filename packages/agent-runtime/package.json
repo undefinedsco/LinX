@@ -71,6 +71,11 @@
       "types": "./src/wake-scheduler.ts",
       "node": "./dist/wake-scheduler.js",
       "default": "./src/wake-scheduler.ts"
+    },
+    "./coordination": {
+      "types": "./src/coordination.ts",
+      "node": "./dist/coordination.js",
+      "default": "./src/coordination.ts"
     }
   },
   "scripts": {

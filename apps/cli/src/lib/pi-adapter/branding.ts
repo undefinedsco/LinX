@@ -12,7 +12,7 @@ import { extractUsernameFromWebId, resolveProfileDisplayName } from '../profile-
 import { LINX_TUI_KEYMAP_COMMAND, LINX_TUI_KEYMAP_LABEL, LINX_TUI_LOGIN_COMMAND } from '../linx-tui-contract.js'
 import { suppressPodStatusOutput } from './pod-status-output.js'
 import { LINX_RUNTIME_MANAGED_AUTH_KEY } from './runtime.js'
-import { formatLinxCliErrorMessage } from '../linx-cloud-errors.js'
+import { formatLinxCliErrorMessage, isLinxCloudLoginRequiredMessage } from '../linx-cloud-errors.js'
 import { getSolidLinxAgentDir } from '../solid-local-store.js'
 
 export const LINX_AGENT_DIR = getSolidLinxAgentDir()
@@ -35,7 +35,7 @@ const UPDATE_OPTION_INSTALL = 'Install update and restart'
 const UPDATE_OPTION_CHANGELOG = 'Open changelog'
 const UPDATE_OPTION_LATER = 'Later'
 
-type LinxAuthReason = 'startup' | 'expired' | 'manual'
+type LinxAuthReason = 'startup' | 'expired' | 'manual' | 'required'
 
 type LinxAuthPendingRetry = {
   continueFromId?: string | null
@@ -237,7 +237,7 @@ async function installLinxUpdateAndRestart(interactive: any, newVersion: string)
 
   interactive.showStatus?.(`LinX ${newVersion} installed. Restarting...`)
   interactive.ui?.requestRender?.()
-  restartCurrentProcess(interactive)
+  restartCurrentLinxProcess(interactive)
 }
 
 function runNpmInstallLatest(): Promise<void> {
@@ -263,18 +263,72 @@ function runNpmInstallLatest(): Promise<void> {
   })
 }
 
-function restartCurrentProcess(interactive: any): void {
-  const child = spawn(process.execPath, process.argv.slice(1), {
-    cwd: process.cwd(),
-    env: process.env,
-    stdio: 'inherit',
-    detached: false,
-  })
-  child.on('error', (error) => {
-    interactive.showError?.(`LinX restart failed: ${error.message}`)
-  })
-  interactive.stop?.()
-  setTimeout(() => process.exit(0), 50)
+export interface LinxRestartProcessPlan {
+  command: string
+  args: string[]
+  cwd: string
+  env: NodeJS.ProcessEnv
+}
+
+export interface LinxRestartProcessOptions {
+  execPath?: string
+  argv?: string[]
+  cwd?: string
+  env?: NodeJS.ProcessEnv
+  delayMs?: number
+  exitDelayMs?: number
+  spawnProcess?: typeof spawn
+  exitProcess?: (code?: number) => never | void
+  setTimeoutFn?: typeof setTimeout
+}
+
+export function createLinxRestartProcessPlan(options: LinxRestartProcessOptions = {}): LinxRestartProcessPlan {
+  return {
+    command: options.execPath ?? process.execPath,
+    args: (options.argv ?? process.argv).slice(1),
+    cwd: options.cwd ?? process.cwd(),
+    env: {
+      ...(options.env ?? process.env),
+      LINX_RESTARTED_AFTER_UPDATE: '1',
+    },
+  }
+}
+
+export function restartCurrentLinxProcess(
+  interactive: any,
+  options: LinxRestartProcessOptions = {},
+): void {
+  const plan = createLinxRestartProcessPlan(options)
+  const spawnProcess = options.spawnProcess ?? spawn
+  const setTimeoutFn = options.setTimeoutFn ?? setTimeout
+  const exitProcess = options.exitProcess ?? process.exit.bind(process)
+  const delayMs = options.delayMs ?? 100
+  const exitDelayMs = options.exitDelayMs ?? 50
+
+  // The child TUI must not start while the old TUI still owns raw stdin.
+  // Otherwise parent/child can race in process.stdin.setRawMode(), which shows
+  // up as "setRawMode EIO" and leaves a half-Pi, half-LinX screen.
+  try {
+    interactive.stop?.()
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    interactive.showError?.(`LinX restart cleanup failed: ${message}`)
+  }
+
+  setTimeoutFn(() => {
+    const child = spawnProcess(plan.command, plan.args, {
+      cwd: plan.cwd,
+      env: plan.env,
+      stdio: 'inherit',
+      detached: false,
+    })
+    child.on('error', (error) => {
+      interactive.showError?.(`LinX restart failed: ${error.message}`)
+    })
+    child.on('spawn', () => {
+      setTimeoutFn(() => exitProcess(0), exitDelayMs)
+    })
+  }, delayMs)
 }
 
 function showLinxUpdateFallback(interactive: any, newVersion: string): void {
@@ -350,11 +404,16 @@ function patchAuthExpiredSessionEvents(interactive: any): void {
 
   interactive.handleEvent = async function patchedHandleEvent(event: unknown): Promise<unknown> {
     const normalizedEvent = normalizeLinxCliErrorEvent(event)
-    if (eventHasLinxAuthExpiredError(normalizedEvent)) {
-      showLinxAuthExpiredRecoveryNotice(this)
-      prepareLinxAuthExpiredRetry(this)
-      suppressLinxAuthExpiredAssistantError(this)
-      scheduleLinxCloudLogin(this, 'expired')
+    const authPromptReason = resolveLinxAuthPromptReasonFromEvent(normalizedEvent)
+    if (authPromptReason) {
+      if (authPromptReason === 'expired') {
+        showLinxAuthExpiredRecoveryNotice(this)
+        prepareLinxAuthExpiredRetry(this)
+        suppressLinxAuthExpiredAssistantError(this)
+      } else {
+        showLinxAuthRequiredRecoveryNotice(this)
+      }
+      scheduleLinxCloudLogin(this, authPromptReason)
       return undefined
     }
 
@@ -371,15 +430,30 @@ function patchAuthExpiredLoginPrompt(interactive: any): void {
 
   interactive.showError = function patchedShowError(errorMessage: unknown): unknown {
     const text = typeof errorMessage === 'string' ? errorMessage : String(errorMessage)
-    if (this[LINX_AUTH_REPORTING_ERROR] || !isLinxAuthExpiredError(text)) {
+    const authPromptReason = resolveLinxAuthPromptReasonFromText(text)
+    if (this[LINX_AUTH_REPORTING_ERROR] || !authPromptReason) {
       return originalShowError(formatLinxCliErrorMessage(errorMessage))
     }
 
-    showLinxAuthExpiredRecoveryNotice(this)
-    prepareLinxAuthExpiredRetry(this)
-    scheduleLinxCloudLogin(this, 'expired')
+    if (authPromptReason === 'expired') {
+      showLinxAuthExpiredRecoveryNotice(this)
+      prepareLinxAuthExpiredRetry(this)
+    } else {
+      showLinxAuthRequiredRecoveryNotice(this)
+    }
+    scheduleLinxCloudLogin(this, authPromptReason)
     return undefined
   }
+}
+
+function resolveLinxAuthPromptReasonFromText(text: string): LinxAuthReason | null {
+  if (isLinxAuthExpiredError(text)) {
+    return 'expired'
+  }
+  if (isLinxCloudLoginRequiredMessage(text)) {
+    return 'required'
+  }
+  return null
 }
 
 function isLinxAuthExpiredError(text: string): boolean {
@@ -389,16 +463,16 @@ function isLinxAuthExpiredError(text: string): boolean {
     || (normalized.includes('chat request failed (401)') && normalized.includes('unauthorized'))
 }
 
-function eventHasLinxAuthExpiredError(event: unknown): boolean {
+function resolveLinxAuthPromptReasonFromEvent(event: unknown): LinxAuthReason | null {
   if (!isRecord(event)) {
-    return false
+    return null
   }
   const message = isRecord(event.message) ? event.message : undefined
   const topLevelErrorMessage = typeof event.errorMessage === 'string' ? event.errorMessage : ''
   const errorMessage = typeof message?.errorMessage === 'string' ? message.errorMessage : ''
   const error = isRecord(event.error) ? event.error : undefined
   const nestedErrorMessage = typeof error?.errorMessage === 'string' ? error.errorMessage : ''
-  return isLinxAuthExpiredError(`${topLevelErrorMessage}\n${errorMessage}\n${nestedErrorMessage}`)
+  return resolveLinxAuthPromptReasonFromText(`${topLevelErrorMessage}\n${errorMessage}\n${nestedErrorMessage}`)
 }
 
 function normalizeLinxCliErrorEvent(event: unknown): unknown {
@@ -437,6 +511,15 @@ function showLinxAuthExpiredRecoveryNotice(interactive: any): void {
   interactive.showStatus?.([
     'LinX Cloud login expired.',
     'Your message reached LinX, but the Cloud token was rejected.',
+    'Choose a sign-in method below, or run /login if the selector is not visible.',
+  ].join('\n'))
+  interactive.ui?.requestRender?.()
+}
+
+function showLinxAuthRequiredRecoveryNotice(interactive: any): void {
+  interactive.showStatus?.([
+    'LinX Cloud login required.',
+    'No local Solid session is available for LinX Cloud.',
     'Choose a sign-in method below, or run /login if the selector is not visible.',
   ].join('\n'))
   interactive.ui?.requestRender?.()
@@ -577,7 +660,7 @@ function matchSelectorChoice(value: unknown, options: readonly string[]): string
 }
 
 function buildLinxAuthPromptTitle(reason: LinxAuthReason, providerLabel: string): string {
-  if (reason === 'startup') {
+  if (reason === 'startup' || reason === 'required') {
     return [
       'LinX Cloud login required',
       `Connect to ${providerLabel} before using LinX TUI.`,
@@ -905,7 +988,7 @@ function authStatusPrefix(reason: LinxAuthReason): string {
   if (reason === 'expired') {
     return 'LinX Cloud login refreshed.'
   }
-  if (reason === 'startup') {
+  if (reason === 'startup' || reason === 'required') {
     return 'LinX Cloud connected.'
   }
   return 'LinX Cloud authorization updated.'
@@ -1159,12 +1242,7 @@ function patchHeader(interactive: any): void {
 
     let profileDisplayName: string | null = null
     const replacement = new LinxWelcomeCard(() => buildLinxWelcomeCardState(this, profileDisplayName))
-    const currentHeader = this.customHeader ?? this.builtInHeader
-    const index = this.headerContainer?.children?.indexOf?.(currentHeader) ?? -1
-    if (index >= 0) {
-      this.headerContainer.children[index] = replacement
-    }
-    this.customHeader = replacement
+    setLinxWelcomeHeader(this, replacement)
     this.ui?.requestRender?.()
     this.updateTerminalTitle?.()
 
@@ -1179,6 +1257,22 @@ function patchHeader(interactive: any): void {
       })
       .catch(() => undefined)
   }
+}
+
+function setLinxWelcomeHeader(interactive: any, replacement: LinxWelcomeCard): void {
+  if (typeof interactive.setExtensionHeader === 'function') {
+    interactive.setExtensionHeader(() => replacement)
+    return
+  }
+
+  const currentHeader = interactive.customHeader ?? interactive.builtInHeader
+  const index = interactive.headerContainer?.children?.indexOf?.(currentHeader) ?? -1
+  if (index >= 0) {
+    interactive.headerContainer.children[index] = replacement
+  } else if (Array.isArray(interactive.headerContainer?.children)) {
+    interactive.headerContainer.children.unshift(replacement)
+  }
+  interactive.customHeader = replacement
 }
 
 type HeaderState = {

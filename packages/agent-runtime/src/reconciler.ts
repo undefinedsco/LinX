@@ -1,4 +1,10 @@
 import type { AgentParticipantRole } from './turn-controller.js'
+import {
+  canClientCoordinateThread,
+  type ClientReconcilerLease,
+  type ReconcilerOwner,
+  resolveReconcilerOwnership,
+} from './coordination.js'
 
 export type ThreadPolicyKind = 'direct' | 'auto' | 'symphony' | 'open_group' | 'review'
 
@@ -102,6 +108,9 @@ export interface ThreadControlEvent<TData extends Record<string, unknown> = Reco
 
 export interface ThreadPolicy {
   kind: ThreadPolicyKind
+  reconcilerOwner?: ReconcilerOwner
+  humanAuthorities?: string[]
+  humanAuthorityCount?: number
   secretaryAgent?: string
   defaultAssistantAgent?: string
   assignedWorkerAgent?: string
@@ -158,6 +167,7 @@ export interface ReconcilerNotificationEvent {
 export interface ReconcileDecision {
   id: string
   policyKind: ThreadPolicyKind
+  reconcilerOwner: ReconcilerOwner
   event: ThreadControlEvent
   placement: ThreadPlacement
   wakeJobs: WakeJob[]
@@ -186,6 +196,7 @@ export interface WakeJobSummary {
 export interface ReconcileDecisionSummary {
   id: string
   policyKind: ThreadPolicyKind
+  reconcilerOwner: ReconcilerOwner
   eventType: ReconcilerEventType
   thread: string
   chat?: string
@@ -198,6 +209,11 @@ export interface ReconcileDecisionSummary {
 export interface ReconcileThreadEventInput {
   policy: ThreadPolicyKind | ThreadPolicy
   event: ThreadControlEvent
+  reconcilerOwner?: ReconcilerOwner
+  humanAuthorities?: string[]
+  humanAuthorityCount?: number
+  clientReconcilerLease?: ClientReconcilerLease | null
+  requireClientReconcilerLease?: boolean
   chat?: string
   thread?: string
   now?: Date
@@ -238,13 +254,28 @@ export function reconcileThreadEvent(input: ReconcileThreadEventInput): Reconcil
     thread: input.thread,
     randomId: input.randomId,
   })
-  const jobs = selectWakeJobs(policy, event, placement, createdAt, input.randomId, input.client)
+  const ownership = resolveReconcilerOwnership({
+    policyKind: policy.kind,
+    humanAuthorities: input.humanAuthorities ?? policy.humanAuthorities,
+    humanAuthorityCount: input.humanAuthorityCount ?? policy.humanAuthorityCount,
+    reconcilerOwner: input.reconcilerOwner ?? policy.reconcilerOwner,
+  })
+  const clientCoordinationSkip = resolveClientCoordinationSkip({
+    ownership,
+    input,
+    placement,
+    createdAt,
+  })
+  const jobs = clientCoordinationSkip
+    ? []
+    : selectWakeJobs(policy, event, placement, createdAt, input.randomId, input.client)
   const notificationEvents = selectNotificationEvents(event, placement, createdAt, input.randomId)
-  const skippedReason = jobs.length === 0 ? skipReasonFor(policy, event, input.client) : undefined
+  const skippedReason = clientCoordinationSkip ?? (jobs.length === 0 ? skipReasonFor(policy, event, input.client) : undefined)
 
   return {
     id: createReconcilerId('decision', input.randomId),
     policyKind: policy.kind,
+    reconcilerOwner: ownership.reconcilerOwner,
     event,
     placement,
     wakeJobs: jobs,
@@ -258,6 +289,7 @@ export function summarizeReconcileDecision(decision: ReconcileDecision): Reconci
   return {
     id: decision.id,
     policyKind: decision.policyKind,
+    reconcilerOwner: decision.reconcilerOwner,
     eventType: decision.event.type,
     thread: decision.placement.thread,
     ...(decision.placement.chat ? { chat: decision.placement.chat } : {}),
@@ -349,6 +381,33 @@ export function resolveThreadPlacement(input: {
   }
 }
 
+function resolveClientCoordinationSkip(input: {
+  ownership: { reconcilerOwner: ReconcilerOwner }
+  input: ReconcileThreadEventInput
+  placement: ThreadPlacement
+  createdAt: string
+}): string | undefined {
+  if (input.ownership.reconcilerOwner !== 'client') {
+    return undefined
+  }
+  if (!input.input.requireClientReconcilerLease && !input.input.clientReconcilerLease) {
+    return undefined
+  }
+  const clientId = input.input.client?.id
+  if (canClientCoordinateThread({
+    clientId,
+    thread: input.placement.thread,
+    lease: input.input.clientReconcilerLease,
+    now: input.createdAt,
+  })) {
+    return undefined
+  }
+  const owner = input.input.clientReconcilerLease?.ownerClientId
+  return owner
+    ? `Client-owned Reconciler is leased by ${owner}; client ${clientId ?? 'unknown'} must not reconcile ${input.placement.thread}.`
+    : `Client-owned Reconciler requires an active client coordinator lease for ${input.placement.thread}.`
+}
+
 function selectWakeJobs(
   policy: ThreadPolicy,
   event: ThreadControlEvent,
@@ -363,7 +422,7 @@ function selectWakeJobs(
         targetAgent: policy.defaultAssistantAgent ?? DEFAULT_ASSISTANT_AGENT,
         targetRole: 'primary-agent',
         priority: 'normal',
-        reason: 'Direct thread routes user messages to the default assistant.',
+        reason: 'Single-human assistant surfaces route user messages to the default assistant.',
         createdAt,
         randomId,
       })]

@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { EventEmitter } from 'node:events'
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { globalAgent as httpsGlobalAgent } from 'node:https'
 import { tmpdir } from 'node:os'
@@ -14,6 +15,10 @@ test.after(() => {
 })
 
 const LINX_RUNTIME_MANAGED_AUTH_KEY = 'linx-runtime-managed-auth'
+
+function stripAnsi(text) {
+  return text.replace(/\x1b\[[0-9;]*m/g, '')
+}
 
 function isolateSolidHome(t, prefix) {
   const previousSolidHome = process.env.SOLID_HOME
@@ -1280,6 +1285,108 @@ test('linx interactive branding stores agent state under .solid/apps/linx and pa
   assert.equal(typeof interactive.stop, 'function')
 })
 
+test('linx interactive branding replaces the upstream Pi startup header through extension API', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/branding.ts')
+  t.after(() => cleanup())
+
+  let headerFactory = null
+  const calls = []
+  const interactive = {
+    options: {},
+    settingsManager: {
+      getQuietStartup() { return false },
+    },
+    sessionManager: {
+      getCwd() { return '/tmp/demo' },
+      getSessionId() { return '019e9db3-6417-746d-8c60-aee61b6649a0' },
+      getSessionName() { return undefined },
+    },
+    session: {
+      model: {
+        id: 'linx-test-model',
+      },
+    },
+    ui: {
+      requestRender() {
+        calls.push('render')
+      },
+      terminal: {
+        setTitle(title) {
+          calls.push(`title:${title}`)
+        },
+      },
+    },
+    async init() {
+      calls.push('init')
+    },
+    async run() {},
+    setExtensionHeader(factory) {
+      calls.push('set-header')
+      headerFactory = factory
+    },
+    updateTerminalTitle() {
+      calls.push('title')
+    },
+  }
+
+  module.applyLinxInteractiveBranding(interactive)
+  await interactive.init()
+
+  assert.equal(calls.includes('set-header'), true)
+  const header = headerFactory()
+  const rendered = stripAnsi(header.render(100).join('\n'))
+  assert.match(rendered, /LinX v\d+\.\d+\.\d+/)
+  assert.doesNotMatch(rendered, /Pi can explain|pi v0\.78\.0/i)
+})
+
+test('linx update restart stops the old TUI before spawning the replacement process', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/branding.ts')
+  t.after(() => cleanup())
+
+  const calls = []
+  const child = new EventEmitter()
+  const interactive = {
+    stop() {
+      calls.push('stop')
+    },
+    showError(message) {
+      calls.push(`error:${message}`)
+    },
+  }
+
+  module.restartCurrentLinxProcess(interactive, {
+    execPath: '/usr/local/bin/node',
+    argv: ['node', '/usr/local/bin/linx', '--continue'],
+    cwd: '/tmp/demo',
+    env: { TEST_ENV: '1' },
+    delayMs: 0,
+    exitDelayMs: 0,
+    setTimeoutFn(callback) {
+      calls.push('timer')
+      callback()
+      return 0
+    },
+    spawnProcess(command, args, options) {
+      calls.push('spawn')
+      assert.deepEqual(calls.slice(0, 3), ['stop', 'timer', 'spawn'])
+      assert.equal(command, '/usr/local/bin/node')
+      assert.deepEqual(args, ['/usr/local/bin/linx', '--continue'])
+      assert.equal(options.cwd, '/tmp/demo')
+      assert.equal(options.stdio, 'inherit')
+      assert.equal(options.env.TEST_ENV, '1')
+      assert.equal(options.env.LINX_RESTARTED_AFTER_UPDATE, '1')
+      return child
+    },
+    exitProcess(code) {
+      calls.push(`exit:${code}`)
+    },
+  })
+
+  assert.deepEqual(calls, ['stop', 'timer', 'spawn'])
+  child.emit('spawn')
+  assert.deepEqual(calls, ['stop', 'timer', 'spawn', 'timer', 'exit:0'])
+})
+
 test('linx assistant rendering hides backend reasoning blocks from resumed history', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
   t.after(() => cleanup())
@@ -1738,7 +1845,7 @@ test('linx status line supports Codex-style token config from environment', asyn
     restoreEnv('HOME', previousHome)
   })
 
-  const line = module.buildLinxFooterStatusLine({
+  const line = module.buildLinxTuiStatusLine({
     width: 180,
     autoCompactEnabled: true,
     footerData: {
@@ -1812,7 +1919,7 @@ test('linx status line reads app-local JSON config from LINX_HOME', async (t) =>
     status_line_use_colors: false,
   }))
 
-  const line = module.buildLinxFooterStatusLine({
+  const line = module.buildLinxTuiStatusLine({
     width: 80,
     autoCompactEnabled: true,
     footerData: {
@@ -1961,6 +2068,7 @@ test('linx interactive /statusline opens a selector with presets', async (t) => 
     'Reset to default',
   ])
   assert.deepEqual(config.status_line, [
+    'mode',
     'model-with-reasoning',
     'git-branch',
     'context-remaining',
@@ -1971,7 +2079,7 @@ test('linx interactive /statusline opens a selector with presets', async (t) => 
   assert.match(statuses.join('\n'), /Codex-style preset/)
 })
 
-test('linx footer patch adds cache rate from assistant usage', async (t) => {
+test('linx status line patch keeps configurable status at the bottom', async (t) => {
   const [{ module: runtimeModule, cleanup: runtimeCleanup }, { module: interactiveModule, cleanup: interactiveCleanup }] = await Promise.all([
     loadAutoModeModule('lib/pi-adapter/runtime.ts'),
     loadAutoModeModule('lib/pi-adapter/interactive.ts'),
@@ -2059,19 +2167,22 @@ test('linx footer patch adds cache rate from assistant usage', async (t) => {
 
   const footer = new FooterComponent(runtime.session, {
     getGitBranch() { return null },
-    getExtensionStatuses() { return new Map() },
+    getExtensionStatuses() { return new Map([['sync', 'SYNCING']]) },
     getAvailableProviderCount() { return 1 },
   })
 
   const rendered = footer.render(100)
   const renderedText = rendered.join('\n')
+  const plainLines = rendered.map(stripAnsi)
+  assert.match(plainLines.slice(0, -1).join('\n'), /SYNCING/)
+  assert.equal(plainLines.at(-1).trim(), '↑60 • ↓25 • 12.5%/1.0k (auto) • cache 30% • linx-lite • medium')
   assert.match(renderedText, /↑60 • ↓25 • 12\.5%\/1\.0k \(auto\) • cache 30% • linx-lite • medium/)
   assert.doesNotMatch(renderedText, /\bR30\b/)
   assert.doesNotMatch(renderedText, /\bW10\b/)
   assert.equal(rendered.every((line) => visibleWidth(line) <= 100), true)
 })
 
-test('linx footer patch keeps cache rate line within terminal width', async (t) => {
+test('linx status line patch keeps cache rate line within terminal width', async (t) => {
   const [{ module: runtimeModule, cleanup: runtimeCleanup }, { module: interactiveModule, cleanup: interactiveCleanup }] = await Promise.all([
     loadAutoModeModule('lib/pi-adapter/runtime.ts'),
     loadAutoModeModule('lib/pi-adapter/interactive.ts'),
@@ -3496,6 +3607,62 @@ test('linx auth-expired login prompt defers update notifications while reauth is
   assert.doesNotMatch(selectorCalls[0].title, /LinX update available/)
   assert.deepEqual(loginCalls, ['undefineds', `undefineds:${LINX_RUNTIME_MANAGED_AUTH_KEY}`])
   assert.equal(statuses.some((message) => String(message).includes('Installing LinX')), false)
+})
+
+test('linx missing-login error opens the in-app login prompt', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/branding.ts')
+  t.after(() => cleanup())
+
+  const selectorCalls = []
+  const loginCalls = []
+  const statuses = []
+  const interactive = {
+    session: {
+      modelRegistry: {
+        refresh() {},
+        authStorage: {
+          async login(providerId, callbacks) {
+            loginCalls.push(providerId)
+            callbacks.onAuth({ url: 'https://id.undefineds.co/.oidc/auth?client_id=test' })
+          },
+          get() {
+            return { type: 'oauth', access: 'fresh-access-token', refresh: 'refresh', expires: Date.now() + 60_000 }
+          },
+          setRuntimeApiKey(providerId, apiKey) {
+            loginCalls.push(`${providerId}:${apiKey}`)
+          },
+        },
+      },
+    },
+    chatContainer: {
+      addChild() {},
+    },
+    ui: {
+      requestRender() {},
+    },
+    async showExtensionSelector(title, options) {
+      selectorCalls.push({ title, options })
+      return 'Authorize in browser'
+    },
+    openExternal() {},
+    showStatus(message) {
+      statuses.push(message)
+    },
+    showError(message) {
+      throw new Error(message)
+    },
+    async updateAvailableProviderCount() {},
+  }
+
+  module.applyLinxInteractiveBranding(interactive)
+  interactive.showError('No LinX cloud login found. Interactive TUI supports /login in-app. For non-interactive --print mode, run `linx login` first.')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  assert.equal(selectorCalls.length, 1)
+  assert.match(selectorCalls[0].title, /LinX Cloud login required/)
+  assert.doesNotMatch(selectorCalls[0].title, /expired/)
+  assert.deepEqual(loginCalls, ['undefineds', `undefineds:${LINX_RUNTIME_MANAGED_AUTH_KEY}`])
+  assert.equal(statuses.some((message) => String(message).includes('Choose a sign-in method below')), true)
 })
 
 test('linx auth recovery does not reschedule login when the login attempt itself fails', async (t) => {
@@ -5706,6 +5873,11 @@ test('linx interactive /symphony switches current chat peer for following messag
   assert.match(submitted[0], /Symphony is on: the user is chatting with Secretary/)
   assert.match(submitted[0], /Default response style: reply like normal chat/)
   assert.match(submitted[0], /do not explain that it was not delegated/)
+  assert.match(submitted[0], /use the xpod CLI as the direct Pod tool surface/i)
+  assert.match(submitted[0], /model-backed xpod obj commands/)
+  assert.match(submitted[0], /same Solid authority as LinX inside the Agent Runtime/)
+  assert.match(submitted[0], /verify xpod auth status\/whoami reports the same acting WebID\/Pod root/)
+  assert.match(submitted[0], /Do not hand-patch TTL or guess Pod paths/)
   assert.match(submitted[0], /ship the login fix/)
   assert.equal(submitted[1], 'normal chat')
   assert.equal(controlManagers.length, 1)
@@ -5796,6 +5968,7 @@ test('linx interactive /symphony keeps worker-looking messages in the Secretary 
   for (let i = 0; i < messages.length; i += 1) {
     assert.match(submitted[i], /AI Secretary Symphony request/)
     assert.match(submitted[i], /Symphony is on: the user is chatting with Secretary/)
+    assert.match(submitted[i], /xpod CLI as the direct Pod tool surface/i)
     assert.match(submitted[i], new RegExp(messages[i].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
   }
   assert.deepEqual(editorTexts, [''])

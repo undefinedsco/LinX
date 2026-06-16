@@ -84,13 +84,13 @@ function createPlan(overrides = {}) {
       mode: 'auto',
       status: 'running',
       cwd: '/tmp/linx',
-      workspace: {
+      workspaceRef: {
         path: '/tmp/linx',
         kind: 'git',
         repository: 'https://github.com/undefineds/linx.git',
         branch: 'main',
         worktree: '/tmp/linx',
-        workspaceUri: 'urn:undefineds:workspace:local-linx',
+        workspace: 'urn:undefineds:workspace:local-linx',
         baseRevision: 'abc123',
         environment: {
           kind: 'local-shell',
@@ -1123,7 +1123,7 @@ test('persistSymphonyProjectionToPod preserves each worker Thread Session and wo
     repository: 'https://github.com/undefineds/linx.git',
     branch: 'review',
     worktree: '/tmp/linx-review',
-    workspaceUri: 'urn:undefineds:workspace:review-linx',
+    workspace: 'urn:undefineds:workspace:review-linx',
     baseRevision: 'def456',
     environment: {
       kind: 'local-shell',
@@ -1190,7 +1190,7 @@ test('persistSymphonyProjectionToPod preserves each worker Thread Session and wo
           delivery: secondDelivery,
           backend: 'claude',
           cwd: secondWorkspace.path,
-          workspace: secondWorkspace,
+          workspaceRef: secondWorkspace,
           status: 'planned',
           target: secondTarget,
           chat: secondChat,

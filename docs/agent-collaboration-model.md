@@ -97,6 +97,7 @@ Codex / worker blocks on approval or input
 - `/symphony on|off|status` 用来调整或检查 Secretary 的委派行为、任务切分、worker 投影和状态归档。
 - TUI 里的 `/symphony` 是主入口：无参数或 `on` 时切换当前 Secretary 会话进入委派模式，`status` 查看状态，`off` 回到普通聊天；该命令不投递给 Codex/Claude/CodeBuddy backend。
 - Objective 必须来自用户正常发送的聊天消息；`/symphony` 不接收一次性 objective，也不把 slash 参数预填或伪造成用户输入。
+- 默认 Secretary skills 分四类：`basic` 承接通用 runtime 能力（web access、fetch、source lookup、workspace inspection），`capture` 承接保存/记住/收藏/归类到 Pod 的产品判断，`symphony` 承接产品编排，`xpod-cli` 承接 Pod 操作；不要把 `pi-web-access` / `librarian` 这类 runtime extension 内部名展示成产品 skill。
 - Symphony 是一组可共享的产品编排 skills：Secretary runtime 用它做 issue triage、现有 Issue 查重、create/update/ask 决策、task split、worker dispatch、status/report tracking；Codex/Claude 等 coding agent 在实现或验证 LinX Symphony 时也使用同一套 skill，避免产品运行时和工程实现各自发明一套模型。
 - 普通对话只记录为 `Message`，不能因为 `/symphony` 开启就把每句话都变成 `Issue`。只有可跟踪工作项才进入 Issue 生命周期。
 - 创建新 Issue 前必须先比较当前 open Issues；明显同一个工作项时更新原 Issue，是否新建不明确时由 Secretary 向用户追问。

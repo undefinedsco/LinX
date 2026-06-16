@@ -30,6 +30,7 @@ import { clearDefaultPodDataSession, getDefaultPodDataSession, type PodDataSessi
 import type { CodexApprovalPolicy } from '../codex-plugin/codex-native-proxy.js'
 import { loadCredentials } from '../credentials-store.js'
 import { getSolidLinxAppDir, getSolidLinxPiWebAccessConfigPath } from '../solid-local-store.js'
+import { createLinxCaptureTool } from '../capture/tool.js'
 
 const UNDEFINEDS_PROVIDER_ID = 'undefineds'
 const UNDEFINEDS_PROVIDER_LABEL = 'LinX Cloud'
@@ -39,7 +40,8 @@ const UNDEFINEDS_AUTH_BRIDGE_ID = 'undefineds-cloud-oauth-bridge'
 export const LINX_RUNTIME_MANAGED_AUTH_KEY = 'linx-runtime-managed-auth'
 const LINX_PACKAGE_SOURCE = '@undefineds.co/linx'
 const LINX_WEB_ACCESS_PACKAGE_SOURCE = 'pi-web-access'
-const LINX_PRODUCT_SKILL_NAMES = new Set(['symphony', 'xpod-cli'])
+const LINX_PRODUCT_SKILL_NAMES = new Set(['basic', 'capture', 'symphony', 'xpod-cli'])
+const LINX_RUNTIME_CAPABILITY_SKILL_NAMES = new Set(['librarian'])
 const MARKET_XPOD_CLI_SKILL_SOURCE = 'xpod-cli@undefineds'
 export const DEFAULT_LINX_PI_BASH_TIMEOUT_SECONDS = 15
 const DEFAULT_LINX_CLOUD_CONTEXT_WINDOW = 1_000_000
@@ -471,6 +473,7 @@ export function createLinxRuntimeAdapter(
           skillsOverride: (base) => withLinxSkillSourceInfo(base, {
             bundledSkillsDir,
             marketSkillDirs,
+            runtimeCapabilityDirs: bundledPackagePaths,
           }),
           systemPromptOverride: overrideLinxSystemPrompt,
         },
@@ -485,6 +488,11 @@ export function createLinxRuntimeAdapter(
         sessionManager: context.sessionManager as SessionManager,
         sessionStartEvent: context.sessionStartEvent as never,
         model: selectedModel,
+        customTools: [
+          createLinxCaptureTool({
+            getPodDataSession: options.getPodDataSession ?? getDefaultPodDataSession,
+          }),
+        ],
       })
       const session = created.session
       enableLinxXhighThinking(session)
@@ -702,8 +710,9 @@ function withLinxSkillSourceInfo<T extends {
 }>(base: T, options: {
   bundledSkillsDir: string | null
   marketSkillDirs: string[]
+  runtimeCapabilityDirs?: string[]
 }): T {
-  const { bundledSkillsDir, marketSkillDirs } = options
+  const { bundledSkillsDir, marketSkillDirs, runtimeCapabilityDirs = [] } = options
   const bundledProductSkillNames = new Set<string>()
   if (bundledSkillsDir) {
     for (const skill of base.skills) {
@@ -717,6 +726,10 @@ function withLinxSkillSourceInfo<T extends {
       bundledSkillsDir
       && skill.filePath.startsWith(bundledSkillsDir)
       && !LINX_PRODUCT_SKILL_NAMES.has(skill.name)
+    )
+    && !(
+      runtimeCapabilityDirs.some((dir) => skill.filePath.startsWith(dir))
+      && LINX_RUNTIME_CAPABILITY_SKILL_NAMES.has(skill.name)
     )
     && !(
       marketSkillDirs.some((dir) => skill.filePath.startsWith(dir))

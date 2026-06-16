@@ -73,7 +73,6 @@ interface AutoModeSessionRow extends Record<string, unknown> {
   owner: string
   chat: string
   thread: string
-  sessionType: 'group'
   status: 'active' | 'completed' | 'error'
   tool: string
   tokenUsage: number
@@ -307,7 +306,6 @@ function buildAutoModeConversationSessionRow(
     owner: webId,
     chat: buildAutoModeChatUri(webId, record),
     thread: buildAutoModeThreadUri(webId, record),
-    sessionType: 'group',
     status,
     tool: record.backend,
     tokenUsage: 0,
@@ -521,7 +519,6 @@ async function upsertAutoModeConversationSession(db: PodPersistenceDb, runtime: 
     owner: row.owner,
     chat: row.chat,
     thread: row.thread,
-    sessionType: row.sessionType,
     status: row.status,
     tool: row.tool,
     tokenUsage: row.tokenUsage,

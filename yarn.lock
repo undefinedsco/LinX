@@ -9760,10 +9760,10 @@
     n3 "^1.26.0"
     zod "^3.22.4"
 
-"@undefineds.co/models@0.2.41":
-  version "0.2.41"
-  resolved "https://registry.yarnpkg.com/@undefineds.co/models/-/models-0.2.41.tgz#399142d75b03eedfbf4e0eac06f56d68cea5254e"
-  integrity sha512-x4HBDMNLAD3lFQGZaWocvwy0knktYl4tayVq7kWRiDJSgGvtxZqCbKIC36+ysx8K3AjsX03zuMRVOlF2tU3nZQ==
+"@undefineds.co/models@0.2.44":
+  version "0.2.44"
+  resolved "https://registry.yarnpkg.com/@undefineds.co/models/-/models-0.2.44.tgz#4e9bd2b51045dcdc4076c81923c9ce69e23186b0"
+  integrity sha512-OFPnGWUa+Sv4b8AFiSzyXUyJ8MfHByvOU8IQhNneLySIKqB1XN5x0sznrw4fNsYYAFW2inwTx50gWEGh1akjoA==
   dependencies:
     "@comunica/query-sparql-solid" "^4.0.2"
     "@inrupt/vocab-common-rdf" "^1.0.5"

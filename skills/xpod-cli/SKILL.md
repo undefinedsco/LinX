@@ -18,6 +18,14 @@ secrets.
 - Read or write RDF resources when the user asks for Pod-level state.
 - Manage AI/provider credentials through secret-safe flows.
 - Verify that LinX, xpod, or another Solid app wrote the expected resource.
+- In Symphony mode, inspect and mutate control-plane resources through `xpod`
+  when the AI is acting from the terminal/tool surface. This includes Idea,
+  Issue, Task, Delivery, Run, RunStep, Report, Evidence, ApprovalRequest,
+  InputRequest, and InboxNotification resources.
+- In capture workflows, use `xpod obj` for model-backed `CaptureCandidate` and
+  `CaptureEvent` resources after the `capture` skill has decided what should
+  be written. xpod does not decide whether something is worth capturing or how
+  it should be classified.
 
 Do not use this skill for xpod CLI repository maintenance. If the task is to
 change xpod command behavior or release xpod itself, use the xpod project docs
@@ -49,9 +57,12 @@ Summarize human-facing output instead of pasting large raw payloads.
 - Authentication has one Solid-app source: `$SOLID_HOME/auth/credentials.json`
   (default `~/.solid/auth/credentials.json`). Old `~/.xpod/config.json` /
   `~/.xpod/secrets.json` files are app-local stale files, not Solid auth; if
-  only those exist, report unauthenticated.
+  only those exist, report unauthenticated. If `xpod auth status --json` reports
+  a different WebID or Pod root than the shared Solid auth file, treat that as an
+  auth-store mismatch and stop before writing.
 - For product resources, do not guess paths. Use model-backed `xpod obj`
-  commands or inspect existing links first.
+  commands or inspect existing links first. Do not hand-patch modeled product
+  TTL just because a path appears obvious.
 
 ## Useful Patterns
 

@@ -189,3 +189,32 @@ test('pod chat store retries transient Pod write failures', async (t) => {
 
   assert.equal(messageAttempts, 2)
 })
+
+test('pod chat store creates default CLI chat and thread without Reconciler type metadata', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pod-chat-store.ts')
+  t.after(() => cleanup())
+  t.after(() => module.__podChatStoreInternal.resetRuntime())
+
+  const { db, inserts } = createMockDb()
+  let uuid = 0
+  module.__podChatStoreInternal.setRuntime({
+    createDb: () => db,
+    now: () => new Date('2026-06-14T00:00:00.000Z'),
+    randomUUID: () => `uuid-${++uuid}`,
+  })
+
+  const chatId = await module.getOrCreateDefaultChat(createSession())
+  const threadId = await module.createThread(createSession(), chatId, '/tmp/workspace', 'CLI direct thread')
+
+  assert.equal(chatId, 'cli-default')
+  assert.equal(threadId, 'uuid-1')
+
+  const chatInsert = inserts.find((entry) => entry.resource === module.__podChatStoreInternal.resources.chatResource)
+  assert.equal(chatInsert?.value.metadata?.coordinationKind, undefined)
+  assert.equal(chatInsert?.value.metadata?.reconcilerOwner, undefined)
+
+  const threadInsert = inserts.find((entry) => entry.resource === module.__podChatStoreInternal.resources.threadResource)
+  assert.equal(threadInsert?.value.metadata?.coordinationKind, undefined)
+  assert.equal(threadInsert?.value.metadata?.reconcilerOwner, undefined)
+  assert.equal(threadInsert?.value.workspace, '/tmp/workspace')
+})
