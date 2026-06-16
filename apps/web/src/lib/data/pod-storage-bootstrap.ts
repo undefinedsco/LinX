@@ -8,6 +8,7 @@ import {
   aiModelResource,
   aiProviderResource,
   inboxNotificationResource,
+  inputRequestResource,
   messageResource,
   settingsResource,
   threadResource,
@@ -27,6 +28,7 @@ const CORE_RESOURCES = [
   approvalResource,
   auditResource,
   inboxNotificationResource,
+  inputRequestResource,
 ] as const
 
 export interface PodStorageBootstrapEvent {

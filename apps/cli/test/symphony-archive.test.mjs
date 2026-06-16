@@ -384,6 +384,27 @@ test('symphony dispatch bridges non-dry-run plans into the auto-mode runtime and
   const projectionCalls = []
   const mirrorCalls = []
   let autoSessions = []
+  const finalWorkerReport = [
+    'Runtime bridge complete.',
+    '',
+    '```json',
+    JSON.stringify({
+      symphonyFinal: true,
+      summary: 'Runtime bridge completed with Pod projection.',
+      changedFiles: ['apps/cli/src/lib/symphony-command.ts'],
+      commands: ['fake runtime'],
+      evidence: ['runtime called'],
+      risks: [],
+      followUps: [{
+        kind: 'missing_shared_abstraction',
+        summary: 'Extract reusable worker acceptance review into shared control use-case.',
+        evidence: ['apps/cli/src/lib/symphony-command.ts'],
+        suggestedDisposition: 'new_issue',
+        reason: 'CLI and Web need the same worker acceptance logic.',
+      }],
+    }),
+    '```',
+  ].join('\n')
   const plan = await module.runSymphony({
     objective: ['bridge', 'runtime'],
     backend: 'codex',
@@ -394,6 +415,7 @@ test('symphony dispatch bridges non-dry-run plans into the auto-mode runtime and
   }, {
     async runAutoMode(options) {
       runCalls.push(options)
+      assert.equal(options.commandEnv?.LINX_SYMPHONY_DELIVERY, undefined)
       autoSessions = [{
         id: 'auto_bridge_123',
         backend: 'codex',
@@ -414,6 +436,15 @@ test('symphony dispatch bridges non-dry-run plans into the auto-mode runtime and
     },
     listAutoModeSessions() {
       return autoSessions
+    },
+    loadAutoModeEvents(id) {
+      assert.equal(id, 'auto_bridge_123')
+      return [{
+        timestamp: '2026-04-02T00:00:02.000Z',
+        stream: 'stdout',
+        line: finalWorkerReport,
+        events: [{ type: 'assistant.done', text: finalWorkerReport }],
+      }]
     },
     async persistSymphonyProjectionToPod(plan, options) {
       if (projectionCalls.length === 0) {
@@ -439,9 +470,11 @@ test('symphony dispatch bridges non-dry-run plans into the auto-mode runtime and
             messages,
           },
           task: primary?.task ?? plan.task,
+          taskRecord: primary?.taskRecord ?? plan.taskRecord,
           delivery: primary?.delivery ?? { ...plan.delivery, chat, thread, messages },
           session: primary?.session ?? { ...plan.session, chat, thread, messages },
           workers,
+          ...(plan.followUpIssues?.length ? { followUpIssues: plan.followUpIssues } : {}),
         },
         chat,
         thread,
@@ -486,6 +519,13 @@ test('symphony dispatch bridges non-dry-run plans into the auto-mode runtime and
   assert.equal(plan.session.secretaryAutoEnabled, true)
   assert.equal(plan.session.autoModeSessionId, 'auto_bridge_123')
   assert.equal(plan.session.exitCode, 0)
+  assert.equal(plan.taskRecord.acceptanceReview?.outcome, 'follow_up')
+  assert.equal(plan.taskRecord.acceptanceReview?.summary, 'Runtime bridge completed with Pod projection.')
+  assert.equal(plan.delivery.acceptanceReview?.reusableExtraction.disposition, 'new_issue')
+  assert.equal(plan.session.acceptanceReview?.followUps?.[0]?.issue, plan.followUpIssues?.[0]?.uri)
+  assert.equal(plan.followUpIssues?.length, 1)
+  assert.equal(plan.followUpIssues[0].parentIssue, plan.issue.uri)
+  assert.match(plan.followUpIssues[0].title, /Extract reusable worker acceptance review/)
   assert.equal(plan.delivery.reconciler?.decisions.at(-1)?.eventType, 'delivery.completed')
   assert.equal(plan.delivery.reconciler?.decisions.at(-1)?.wakeJobs?.[0]?.targetAgent, '__secretary__')
   assert.equal(plan.session.reconciler?.decisions.at(-1)?.eventType, 'delivery.completed')
@@ -497,6 +537,181 @@ test('symphony dispatch bridges non-dry-run plans into the auto-mode runtime and
   assert.equal(plan.issue.chat, 'https://alice.example/.data/chat/symphony/index.ttl#this')
   assert.equal(plan.delivery.thread, 'https://alice.example/.data/chat/symphony/index.ttl#thread-bridge')
   assert.deepEqual(plan.session.messages, ['https://alice.example/.data/chat/symphony/2026/04/02/messages.ttl#bridge-planned'])
+})
+
+test('symphony dispatch persists heartbeat RunSteps while a worker is still running', async (t) => {
+  const originalHome = process.env.HOME
+  const root = mkdtempSync(join(tmpdir(), 'linx-symphony-heartbeat-home-'))
+  process.env.HOME = root
+
+  t.after(() => {
+    if (originalHome === undefined) {
+      delete process.env.HOME
+    } else {
+      process.env.HOME = originalHome
+    }
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  const { module, cleanup } = await loadAutoModeModule('lib/symphony-command.ts')
+  t.after(() => cleanup())
+
+  const projectionCalls = []
+  let autoSessions = []
+  const finalWorkerReport = JSON.stringify({
+    symphonyFinal: true,
+    summary: 'Heartbeat worker completed.',
+    evidence: ['heartbeat persisted'],
+  })
+  const plan = await module.runSymphony({
+    objective: ['emit', 'heartbeat'],
+    backend: 'codex',
+    auto: true,
+    cwd: '/tmp/linx',
+    workerSupervisorIntervalMs: 5,
+  }, {
+    async runAutoMode() {
+      await new Promise((resolve) => setTimeout(resolve, 30))
+      autoSessions = [{
+        id: 'auto_heartbeat_123',
+        backend: 'codex',
+        runtime: 'local',
+        transport: 'acp',
+        mode: 'off',
+        cwd: '/tmp/linx',
+        status: 'completed',
+        startedAt: '2026-04-02T00:00:01.000Z',
+        archiveDir: '/tmp/auto_heartbeat_123',
+        eventsFile: '/tmp/auto_heartbeat_123/events.jsonl',
+      }]
+      return 0
+    },
+    listAutoModeSessions() {
+      return autoSessions
+    },
+    loadAutoModeEvents(id) {
+      assert.equal(id, 'auto_heartbeat_123')
+      return [{
+        timestamp: '2026-04-02T00:00:02.000Z',
+        stream: 'stdout',
+        line: finalWorkerReport,
+        events: [{ type: 'assistant.done', text: finalWorkerReport }],
+      }]
+    },
+    async persistSymphonyProjectionToPod(plan, options) {
+      projectionCalls.push({ stage: options?.stage, plan })
+      return {
+        plan,
+        chat: plan.issue.chat,
+        thread: plan.issue.thread,
+        messages: [],
+      }
+    },
+    async mirrorSymphonyProjectionJsonLdFromPod() {},
+  })
+
+  const runningSnapshots = projectionCalls
+    .filter((call) => call.stage === 'running')
+    .map((call) => call.plan.workers?.[0]?.runSteps ?? [])
+  assert.ok(runningSnapshots.some((steps) => steps.some((step) => step.stepType === 'run.step')))
+  const heartbeatSteps = plan.workers[0].runSteps?.filter((step) => step.stepType === 'run.step') ?? []
+  assert.ok(heartbeatSteps.length >= 1)
+  assert.equal(heartbeatSteps[0].payload?.heartbeat, true)
+  assert.equal(heartbeatSteps[0].payload?.backend, 'codex')
+  assert.equal(plan.workers[0].runSteps?.some((step) => step.stepType === 'run.started'), true)
+  assert.equal(plan.workers[0].runSteps?.at(-1)?.stepType, 'run.completed')
+})
+
+test('symphony dispatch keeps the issue blocked when Secretary acceptance requires same-issue follow-up', async (t) => {
+  const originalHome = process.env.HOME
+  const root = mkdtempSync(join(tmpdir(), 'linx-symphony-blocked-acceptance-home-'))
+  process.env.HOME = root
+
+  t.after(() => {
+    if (originalHome === undefined) {
+      delete process.env.HOME
+    } else {
+      process.env.HOME = originalHome
+    }
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  const { module, cleanup } = await loadAutoModeModule('lib/symphony-command.ts')
+  t.after(() => cleanup())
+
+  let autoSessions = []
+  const finalWorkerReport = [
+    'Worker reached a partial result.',
+    '',
+    '```json',
+    JSON.stringify({
+      symphonyFinal: true,
+      summary: 'Reusable extraction is required before this task can close.',
+      evidence: ['fake runtime completed'],
+      followUps: [{
+        kind: 'missing_shared_abstraction',
+        summary: 'Extract shared worker acceptance review before accepting this task.',
+        evidence: ['apps/cli/src/lib/symphony-command.ts'],
+        requiredBeforeAcceptance: true,
+        reason: 'The delivered behavior would otherwise duplicate lifecycle decisions.',
+      }],
+    }),
+    '```',
+  ].join('\n')
+
+  const plan = await module.runSymphony({
+    objective: ['block', 'until', 'shared', 'acceptance'],
+    backend: 'codex',
+    auto: true,
+    cwd: '/tmp/linx',
+  }, {
+    async runAutoMode() {
+      autoSessions = [{
+        id: 'auto_blocked_acceptance_123',
+        backend: 'codex',
+        runtime: 'local',
+        transport: 'acp',
+        mode: 'auto',
+        cwd: '/tmp/linx',
+        status: 'completed',
+        startedAt: '2026-04-02T00:00:01.000Z',
+        archiveDir: '/tmp/auto_blocked_acceptance_123',
+        eventsFile: '/tmp/auto_blocked_acceptance_123/events.jsonl',
+      }]
+      return 0
+    },
+    listAutoModeSessions() {
+      return autoSessions
+    },
+    loadAutoModeEvents(id) {
+      assert.equal(id, 'auto_blocked_acceptance_123')
+      return [{
+        timestamp: '2026-04-02T00:00:02.000Z',
+        stream: 'stdout',
+        line: finalWorkerReport,
+        events: [{ type: 'assistant.done', text: finalWorkerReport }],
+      }]
+    },
+    async persistSymphonyProjectionToPod(plan, options) {
+      return {
+        plan,
+        chat: plan.issue.chat,
+        thread: plan.issue.thread,
+        messages: options?.stage ? [`urn:test:message:${options.stage}`] : [],
+      }
+    },
+    async mirrorSymphonyProjectionJsonLdFromPod() {},
+  })
+
+  assert.equal(plan.issue.status, 'blocked')
+  assert.match(plan.issue.error, /Extract shared worker acceptance review/)
+  assert.equal(plan.taskRecord.status, 'blocked')
+  assert.equal(plan.taskRecord.acceptanceReview?.accepted, false)
+  assert.equal(plan.taskRecord.acceptanceReview?.outcome, 'blocked')
+  assert.equal(plan.taskRecord.acceptanceReview?.reusableExtraction.disposition, 'same_issue_task')
+  assert.equal(plan.delivery.status, 'completed')
+  assert.equal(plan.session.status, 'completed')
+  assert.equal(plan.followUpIssues?.length ?? 0, 0)
 })
 
 test('symphony dispatch can run quiet one-shot workers for TUI-verifiable delegation', async (t) => {
@@ -943,6 +1158,7 @@ appendFileSync(process.env.FAKE_ACP_LOG, JSON.stringify({
   argv: process.argv.slice(2),
   openaiKey: process.env.OPENAI_API_KEY ?? null,
   codexKey: process.env.CODEX_API_KEY ?? null,
+  hasSymphonyDeliveryEnv: Boolean(process.env.LINX_SYMPHONY_DELIVERY),
 }) + '\\n')
 
 const sessionId = 'sess_symphony_integration_123'
@@ -994,6 +1210,20 @@ rl.on('line', (line) => {
       encoding: 'utf8',
     }).trim()
     appendFileSync(process.env.FAKE_ACP_LOG, JSON.stringify({ kind: 'grep-output', output }) + '\\n')
+    const finalReport = [
+      'symphony fake codex completed: ' + output,
+      '',
+      '\`\`\`json',
+      JSON.stringify({
+        symphonyFinal: true,
+        summary: 'ACP worker completed through transcript final report.',
+        evidence: ['profile card storage was grepped'],
+        commands: ['grep -R "solid:storage" profile/card'],
+        risks: [],
+        followUps: []
+      }),
+      '\`\`\`'
+    ].join('\\n')
     write({
       jsonrpc: '2.0',
       method: 'session/update',
@@ -1001,7 +1231,7 @@ rl.on('line', (line) => {
         sessionId,
         update: {
           sessionUpdate: 'agent_message_chunk',
-          content: { type: 'text', text: 'symphony fake codex completed: ' + output },
+          content: { type: 'text', text: finalReport },
         },
       },
     })
@@ -1107,6 +1337,7 @@ rl.on('line', (line) => {
   assert.equal(plan.session.status, 'completed')
   assert.equal(plan.session.autoModeSessionId, 'sess_symphony_integration_123')
   assert.equal(plan.session.exitCode, 0)
+  assert.equal(plan.workers[0].taskRecord.acceptanceReview?.summary, 'ACP worker completed through transcript final report.')
   assert.equal(plan.issue.chat, 'https://alice.example/.data/chat/symphony/index.ttl#this')
   assert.equal(plan.delivery.thread, 'https://alice.example/.data/chat/symphony/index.ttl#thread-integration')
   assert.deepEqual(plan.session.messages, ['https://alice.example/.data/chat/symphony/2026/04/02/messages.ttl#completed'])
@@ -1141,6 +1372,7 @@ rl.on('line', (line) => {
     .map((line) => JSON.parse(line))
   assert.equal(logLines[0].openaiKey, null)
   assert.equal(logLines[0].codexKey, 'sk-symphony-integration')
+  assert.equal(logLines[0].hasSymphonyDeliveryEnv, false)
   assert.match(logLines.find((entry) => entry.kind === 'prompt')?.prompt ?? '', /# LinX Symphony Task/)
   assert.match(logLines.find((entry) => entry.kind === 'prompt')?.prompt ?? '', /Task URI: urn:undefineds:linx:task:/)
   const approvalResponse = logLines.find((entry) => entry.result)

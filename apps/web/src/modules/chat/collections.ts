@@ -1964,12 +1964,11 @@ async function queryThreadRowsForChat(db: SolidDatabase, chatId: string): Promis
     throw new Error(`Failed to resolve chat IRI for chat ${chatId}`)
   }
 
-  const chatCol = (threadResource as any).chat
   let rows: ThreadRow[]
   try {
     rows = await db.select()
       .from(threadResource)
-      .where(eq(chatCol, chatIri))
+      .where(eq(threadResource.parent, chatIri))
       .orderBy('updatedAt', 'desc')
       .execute() as ThreadRow[]
   } catch (error) {

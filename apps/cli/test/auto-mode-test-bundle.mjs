@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { copyProductSkills } from '../scripts/product-skills.mjs'
 
@@ -21,6 +21,8 @@ const drizzleSolidRoot = resolvePackageSourceRoot('@undefineds.co/drizzle-solid'
 const drizzleSolidDistRoot = join(drizzleSolidRoot, 'dist')
 const agentRuntimeRoot = fileURLToPath(new URL('../../../packages/agent-runtime', import.meta.url))
 const agentRuntimeDistRoot = join(agentRuntimeRoot, 'dist')
+const storesRoot = fileURLToPath(new URL('../../../packages/stores', import.meta.url))
+const storesDistRoot = join(storesRoot, 'dist')
 const sourceRoot = join(cliRoot, 'src')
 const skillsRoot = fileURLToPath(new URL('../../../skills', import.meta.url))
 const requireFromCli = createRequire(join(cliRoot, 'package.json'))
@@ -69,6 +71,7 @@ function loadBuiltAutoModeBundle(entryRelative) {
   if (
     !runtimePackageMatches('@undefineds.co/models', modelsRoot)
     || !runtimePackageMatches('@undefineds.co/drizzle-solid', drizzleSolidRoot)
+    || !runtimePackageMatches('@linx/stores', storesRoot)
   ) {
     return null
   }
@@ -100,6 +103,7 @@ function isBuiltEntryFresh(compiledEntry) {
   return [
     [sourceRoot, outputTime],
     [join(agentRuntimeRoot, 'src'), statMtime(join(agentRuntimeDistRoot, 'index.js')) ?? outputTime],
+    [join(storesRoot, 'src'), statMtime(join(storesDistRoot, 'index.js')) ?? outputTime],
     [join(modelsRoot, 'src'), statMtime(join(modelsDistRoot, 'index.js')) ?? outputTime],
   ].every(([root, builtTime]) => builtTime != null && !hasNewerSource(root, builtTime))
 }
@@ -135,13 +139,37 @@ function hasNewerSource(root, outputTime) {
 
 function resolveNodeModule(packageName) {
   const segments = packageName.split('/')
-  for (const nodeModulesPath of requireFromCli.resolve.paths(packageName) ?? []) {
+  const searchPaths = requireFromCli.resolve.paths(packageName) ?? [
+    join(cliRoot, 'node_modules'),
+    join(repoRoot, 'node_modules'),
+  ]
+  for (const nodeModulesPath of searchPaths) {
     const packageRoot = join(nodeModulesPath, ...segments)
     if (existsSync(join(packageRoot, 'package.json'))) {
       return packageRoot
     }
   }
   throw new Error(`Unable to resolve package root for ${packageName}`)
+}
+
+function symlinkNodePackageTree(packageName, targetNodeModulesDir, seen = new Set()) {
+  if (seen.has(packageName)) {
+    return
+  }
+  seen.add(packageName)
+
+  const packageRoot = resolveNodeModule(packageName)
+  const packageTarget = join(targetNodeModulesDir, ...packageName.split('/'))
+  mkdirSync(dirname(packageTarget), { recursive: true })
+  if (!existsSync(packageTarget)) {
+    symlinkSync(packageRoot, packageTarget, 'dir')
+  }
+
+  const packageJsonPath = join(packageRoot, 'package.json')
+  const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf8'))
+  for (const dependencyName of Object.keys(pkg.dependencies ?? {})) {
+    symlinkNodePackageTree(dependencyName, targetNodeModulesDir, seen)
+  }
 }
 
 async function buildAutoModeBundle(entryRelative) {
@@ -154,14 +182,17 @@ async function buildAutoModeBundle(entryRelative) {
   const modelsPackageDir = join(undefinedsNodeModulesDir, 'models')
   const drizzleSolidPackageDir = join(undefinedsNodeModulesDir, 'drizzle-solid')
   const agentRuntimePackageDir = join(linxNodeModulesDir, 'agent-runtime')
+  const storesPackageDir = join(linxNodeModulesDir, 'stores')
   const genericNodeModulesDir = join(outdir, 'node_modules')
-  const scopedNodeModulesDir = join(outdir, 'node_modules', '@earendil-works')
-  const sinclairNodeModulesDir = join(outdir, 'node_modules', '@sinclair')
   const entryPath = join(sourceRoot, entryRelative)
   const compiledEntry = join(outdir, entryRelative.replace(/\.ts$/, '.js'))
   const tsconfigPath = join(root, 'tsconfig.json')
 
   execFileSync('tsc', ['-p', join(agentRuntimeRoot, 'tsconfig.json')], {
+    cwd: cliRoot,
+    stdio: 'pipe',
+  })
+  execFileSync('tsc', ['-p', join(storesRoot, 'tsconfig.json')], {
     cwd: cliRoot,
     stdio: 'pipe',
   })
@@ -190,6 +221,12 @@ async function buildAutoModeBundle(entryRelative) {
           join(modelsDistRoot, '*', 'index.d.ts'),
         ],
         '@undefineds.co/drizzle-solid': [join(drizzleSolidDistRoot, 'index.d.ts')],
+        '@linx/stores': [join(storesDistRoot, 'index.d.ts')],
+        '@linx/stores/symphony-control': [join(storesDistRoot, 'symphony-control.d.ts')],
+        '@linx/stores/*': [
+          join(storesDistRoot, '*'),
+          join(storesDistRoot, '*', 'index.d.ts'),
+        ],
       },
     },
     files: [entryPath],
@@ -204,11 +241,10 @@ async function buildAutoModeBundle(entryRelative) {
   mkdirSync(undefinedsNodeModulesDir, { recursive: true })
   mkdirSync(linxNodeModulesDir, { recursive: true })
   mkdirSync(genericNodeModulesDir, { recursive: true })
-  mkdirSync(scopedNodeModulesDir, { recursive: true })
-  mkdirSync(sinclairNodeModulesDir, { recursive: true })
   mkdirSync(modelsPackageDir, { recursive: true })
   mkdirSync(drizzleSolidPackageDir, { recursive: true })
   mkdirSync(agentRuntimePackageDir, { recursive: true })
+  mkdirSync(storesPackageDir, { recursive: true })
   symlinkSync(modelsDistRoot, join(modelsPackageDir, 'dist'), 'dir')
   writeFileSync(join(modelsPackageDir, 'package.json'), JSON.stringify({
     name: '@undefineds.co/models',
@@ -257,6 +293,20 @@ async function buildAutoModeBundle(entryRelative) {
       './wake-scheduler': './dist/wake-scheduler.js',
     },
   }, null, 2))
+  symlinkSync(storesDistRoot, join(storesPackageDir, 'dist'), 'dir')
+  writeFileSync(join(storesPackageDir, 'package.json'), JSON.stringify({
+    name: '@linx/stores',
+    type: 'module',
+    exports: {
+      '.': './dist/index.js',
+      './login': './dist/login.js',
+      './current-pod-base': './dist/current-pod-base.js',
+      './exact-records': './dist/exact-records.js',
+      './pod-db': './dist/pod-collection.js',
+      './pod-write-guard': './dist/pod-write-guard.js',
+      './symphony-control': './dist/symphony-control.js',
+    },
+  }, null, 2))
   for (const packageName of [
     'ws',
     'n3',
@@ -269,6 +319,7 @@ async function buildAutoModeBundle(entryRelative) {
     'lru-cache',
     'object-hash',
     'oidc-token-hash',
+    'yallist',
     'events',
     'node-fetch',
     'undici',
@@ -276,34 +327,38 @@ async function buildAutoModeBundle(entryRelative) {
     'http-link-header',
     'jsonld-context-parser',
     'jsonld-streaming-parser',
+    'drizzle-orm',
+    'sparqljs',
+    'rdf-data-factory',
+    'readable-stream',
+    'string_decoder',
+    'safe-buffer',
+    'abort-controller',
+    'base64-js',
+    'ieee754',
+    'process',
   ]) {
-    symlinkSync(resolveNodeModule(packageName), join(genericNodeModulesDir, packageName), 'dir')
+    symlinkNodePackageTree(packageName, genericNodeModulesDir)
   }
-  symlinkSync(resolveNodeModule('@sinclair/typebox'), join(sinclairNodeModulesDir, 'typebox'), 'dir')
-  symlinkSync(resolveNodeModule('@earendil-works/pi-ai'), join(scopedNodeModulesDir, 'pi-ai'), 'dir')
-  symlinkSync(resolveNodeModule('@earendil-works/pi-agent-core'), join(scopedNodeModulesDir, 'pi-agent-core'), 'dir')
-  symlinkSync(resolveNodeModule('@earendil-works/pi-coding-agent'), join(scopedNodeModulesDir, 'pi-coding-agent'), 'dir')
-  symlinkSync(resolveNodeModule('@earendil-works/pi-tui'), join(scopedNodeModulesDir, 'pi-tui'), 'dir')
+  symlinkNodePackageTree('@sinclair/typebox', genericNodeModulesDir)
+  symlinkNodePackageTree('@earendil-works/pi-ai', genericNodeModulesDir)
+  symlinkNodePackageTree('@earendil-works/pi-agent-core', genericNodeModulesDir)
+  symlinkNodePackageTree('@earendil-works/pi-coding-agent', genericNodeModulesDir)
+  symlinkNodePackageTree('@earendil-works/pi-tui', genericNodeModulesDir)
   mkdirSync(join(outdir, 'node_modules', '@inrupt'), { recursive: true })
-  for (const [packageName, targetName] of [
-    ['@inrupt/solid-client', 'solid-client'],
-    ['@inrupt/solid-client-authn-core', 'solid-client-authn-core'],
-    ['@inrupt/solid-client-authn-node', 'solid-client-authn-node'],
-    ['@inrupt/solid-client-errors', 'solid-client-errors'],
-    ['@inrupt/universal-fetch', 'universal-fetch'],
+  for (const packageName of [
+    '@inrupt/solid-client',
+    '@inrupt/solid-client-authn-core',
+    '@inrupt/solid-client-authn-node',
+    '@inrupt/solid-client-errors',
+    '@inrupt/universal-fetch',
+    '@inrupt/vocab-common-rdf',
   ]) {
-    symlinkSync(
-      resolveNodeModule(packageName),
-      join(outdir, 'node_modules', '@inrupt', targetName),
-      'dir',
-    )
+    symlinkNodePackageTree(packageName, genericNodeModulesDir)
   }
   mkdirSync(join(outdir, 'node_modules', '@rdfjs'), { recursive: true })
-  symlinkSync(
-    resolveNodeModule('@rdfjs/dataset'),
-    join(outdir, 'node_modules', '@rdfjs', 'dataset'),
-    'dir',
-  )
+  symlinkNodePackageTree('@rdfjs/dataset', genericNodeModulesDir)
+  symlinkNodePackageTree('@rdfjs/types', genericNodeModulesDir)
 
   return {
     module: await import(pathToFileURL(compiledEntry).href),

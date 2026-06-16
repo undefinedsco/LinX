@@ -1,6 +1,6 @@
 {
   "name": "@undefineds.co/linx",
-  "version": "0.3.16",
+  "version": "0.3.21",
   "private": true,
   "type": "module",
   "bin": {
@@ -19,14 +19,15 @@
     "@earendil-works/pi-ai": "0.78.0",
     "@earendil-works/pi-coding-agent": "0.78.0",
     "@earendil-works/pi-tui": "0.78.0",
-    "@undefineds.co/drizzle-solid": "^0.3.14",
+    "@undefineds.co/drizzle-solid": "0.3.16",
     "@undefineds.co/models": "0.2.42",
     "@zed-industries/codex-acp": "0.14.0",
     "n3": "^1.26.0",
     "pi-web-access": "^0.10.7",
     "ws": "^8.20.0",
     "typebox": "^1.1.38",
-    "yargs": "^17.7.2"
+    "yargs": "^17.7.2",
+    "@linx/stores": "*"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",

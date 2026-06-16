@@ -19,7 +19,7 @@ import {
   type AutoModeCommandArgs,
 } from './lib/auto-mode-command.js'
 import { resolveRuntimeTarget } from './lib/runtime-target.js'
-import { createCodexNativeProxy } from './lib/codex-plugin/index.js'
+import { createCodexNativeProxy, createSymphonyCodexMcpServer } from './lib/codex-plugin/index.js'
 import {
   bootstrapLinxInteractiveMode,
   createLinxRuntimeAdapter,
@@ -1044,6 +1044,16 @@ const cli = yargs(hideBin(process.argv))
   )
   .command(hiddenPiAliasCommand)
   .command(hiddenPiFrontendAliasCommand)
+  .command(
+    'symphony-codex-mcp',
+    false,
+    (command) => command,
+    async () => {
+      const server = createSymphonyCodexMcpServer()
+      const exitCode = await server.run()
+      process.exit(exitCode)
+    },
+  )
   .command(
     'codex-native-proxy',
     false,

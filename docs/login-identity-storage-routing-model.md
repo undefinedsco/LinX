@@ -74,9 +74,12 @@ Rules:
   canonical Local SP URL. LinX does not ask the user to type a
   platform-generated `node-*.undefineds.co` domain.
 - Cloud-managed allocation is random but stable: the allocated domain is bound
-  to the Local device nodeId after registration, and later provision-code
-  refreshes reuse that nodeId/domain instead of treating the domain as a user
-  input.
+  to the Local SP nodeId after registration, and later provision-code refreshes
+  reuse that nodeId/domain instead of treating the domain as a user input.
+- `node` and `device` are separate identities. `node` is the Storage Provider
+  service node used for provisioning and canonical storage routing; `device` is
+  a runtime-capable place that can run workspace sessions. Local workspace
+  containers use `linx://<device-id>/...`; they must not reuse the SP nodeId.
 - Historical Local registration is not an authority for selecting the current
   SP. It may provide renewal credentials (`nodeId`, `nodeToken`,
   `serviceToken`) only. The current authoritative SP domain comes from an
@@ -181,7 +184,7 @@ Rules:
 
 Cloud-backed registration and existing-account binding must be scoped to a target SP.
 The root of the SP is sufficient as the user-facing entrypoint:
-`https://<device-node-id>.nodes.undefineds.co/` may show onboarding, dashboard,
+`https://<sp-node-id>.nodes.undefineds.co/` may show onboarding, dashboard,
 or redirect to the Cloud account flow.
 
 The split Local flow is:
@@ -197,7 +200,7 @@ The split Local flow is:
 ```ttl
 <https://id.undefineds.co/alice/profile/card#me>
   solid:oidcIssuer <https://id.undefineds.co/> ;
-  solid:storage <https://<device-node-id>.nodes.undefineds.co/alice/> .
+  solid:storage <https://<sp-node-id>.nodes.undefineds.co/alice/> .
 ```
 
 Cloud must serve the SP-scoped consent/Pod selection for the selected Local SP.

@@ -42,6 +42,7 @@ export interface MatrixGroupRoomResult {
 
 export interface MatrixThreadLike {
   id: string
+  parent?: string | null
   chat?: string | null
   scope?: string | null
   metadata?: Record<string, unknown>
@@ -144,6 +145,9 @@ function resolveMatrixChatUri(
   thread: MatrixThreadLike,
   chatId: string | undefined,
 ): string | undefined {
+  if (thread.parent && isAbsoluteIri(thread.parent)) {
+    return thread.parent
+  }
   if (thread.chat && isAbsoluteIri(thread.chat)) {
     return thread.chat
   }

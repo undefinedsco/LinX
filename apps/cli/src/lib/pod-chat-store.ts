@@ -284,8 +284,7 @@ export async function listThreads(session: Session, chatId: string): Promise<Thr
     throw new Error('Missing webId in Solid session')
   }
   const chatUri = chatRepository.iri(webId, chatId)
-  const chatCol = (threadResource as any).chat
-  const rows = await db.select().from(threadResource).where(eq(chatCol, chatUri)).orderBy('updatedAt', 'desc').execute()
+  const rows = await db.select().from(threadResource).where(eq(threadResource.parent, chatUri)).orderBy('updatedAt', 'desc').execute()
 
   return rows.map((row: any) => ({
     id: threadRepository.idFromRef(String(row.id)) ?? String(row.id),

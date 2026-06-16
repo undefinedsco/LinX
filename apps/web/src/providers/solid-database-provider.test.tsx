@@ -56,6 +56,7 @@ vi.mock('@undefineds.co/models', () => ({
   approvalResource: {},
   auditResource: {},
   inboxNotificationResource: {},
+  inputRequestResource: {},
   solidSchema: {},
 }))
 

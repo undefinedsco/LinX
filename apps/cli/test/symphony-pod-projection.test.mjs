@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
+import { buildSymphonyControlRows } from '@linx/stores/symphony-control'
 
 let projectionModule
 let cleanup
@@ -113,6 +114,13 @@ function createPlan(overrides = {}) {
   }
 }
 
+function resourceName(resource) {
+  return resource?.name
+    ?? resource?.mapping?.name
+    ?? resource?.config?.name
+    ?? resource?._?.name
+}
+
 function createFakeRuntime(options = {}) {
   const inserts = []
   const updates = []
@@ -147,6 +155,8 @@ function createFakeRuntime(options = {}) {
     delivery: { name: 'delivery' },
     run: { name: 'run' },
     runStep: { name: 'run_step' },
+    evidence: { name: 'evidence' },
+    report: { name: 'report' },
     agent: {
       name: 'agent',
       buildId: ({ id }) => `${id}/`,
@@ -161,7 +171,7 @@ function createFakeRuntime(options = {}) {
       return {
         from(resource) {
           return {
-            execute: async () => options.rowsByResource?.[resource.name] ?? [],
+            execute: async () => options.rowsByResource?.[resourceName(resource)] ?? [],
           }
         },
       }
@@ -170,7 +180,7 @@ function createFakeRuntime(options = {}) {
       if (typeof locator?.id === 'string' && /^https?:\/\//u.test(locator.id)) {
         throw new Error(`resolveLocatorIri does not accept a full IRI in locator.id: ${locator.id}`)
       }
-      return `${resource.name}:${JSON.stringify(locator)}`
+      return `${resourceName(resource)}:${JSON.stringify(locator)}`
     },
     findByIri: async (_resource, iri) => {
       findIris.push(iri)
@@ -182,7 +192,7 @@ function createFakeRuntime(options = {}) {
     },
     findByResource: async (resource, target) => {
       findResources.push({ resource, target })
-      const key = `${resource.name}:${typeof target === 'string' ? target : JSON.stringify(target)}`
+      const key = `${resourceName(resource)}:${typeof target === 'string' ? target : JSON.stringify(target)}`
       return options.rowsByResourceTarget?.[key] ?? null
     },
     updateByIri: async (resource, iri, value) => {
@@ -233,6 +243,8 @@ function createFakeRuntime(options = {}) {
       deliveryResource: resources.delivery,
       runResource: resources.run,
       runStepResource: resources.runStep,
+      evidenceResource: resources.evidence,
+      reportResource: resources.report,
       agentResource: resources.agent,
       contactResource: resources.contact,
       auditResource: resources.audit,
@@ -416,10 +428,12 @@ test('persistSymphonyProjectionToPod projects Symphony run into shared chat thre
   ])
   assert.ok(runSteps.every((item) => item.run === 'https://alice.example/.data/2026/04/02/runs.ttl#session_2026-04-02T00-00-00-000Z_projection'))
   assert.ok(runSteps.every((item) => !String(item.id).startsWith('https://')))
+  assert.ok(runSteps.every((item) => item.payload?.surface === 'symphony'))
+  assert.ok(runSteps.every((item) => !('data' in item)))
 
   const thread = fake.inserts.find((item) => item.resource === fake.resources.thread)?.value
   assert.equal(thread.id, 'chat/chat-1/index.ttl#thread-1')
-  assert.equal(thread.chat, result.chat)
+  assert.equal(thread.parent, result.chat)
   assert.equal(thread.metadata.kind, 'symphony-run')
   assert.equal(thread.metadata.issue, plan.issue.uri)
   assert.equal(thread.metadata.delivery, plan.delivery.uri)
@@ -452,8 +466,8 @@ test('persistSymphonyProjectionToPod projects Symphony run into shared chat thre
   const messages = fake.inserts.filter((item) => item.resource === fake.resources.message).map((item) => item.value)
   assert.equal(messages.length, 2)
   assert.deepEqual(messages.map((item) => item.id), [
-    'session_2026-04-02T00-00-00-000Z_projection-planned',
-    'session_2026-04-02T00-00-00-000Z_projection-running',
+    'chat/chat-1/2026/04/02/messages.ttl#session_2026-04-02T00-00-00-000Z_projection-planned',
+    'chat/chat-1/2026/04/02/messages.ttl#session_2026-04-02T00-00-00-000Z_projection-running',
   ])
   assert.equal(messages[0].chat, result.chat)
   assert.equal(messages[0].thread, result.thread)
@@ -521,6 +535,48 @@ test('persistSymphonyProjectionToPod preserves existing Issue task links when me
   const issue = fake.inserts.find((item) => item.resource === fake.resources.issue)?.value
   assert.ok(issue.tasks.includes(existingTask))
   assert.ok(issue.tasks.includes('https://alice.example/.data/task/index.ttl#task_2026-04-02T00-00-00-000Z_projection'))
+})
+
+test('persistSymphonyProjectionToPod writes worker runtime RunSteps with modeled payload', async () => {
+  const fake = createFakeRuntime()
+  const plan = createPlan()
+  plan.workers = [{
+    task: plan.task,
+    taskRecord: plan.taskRecord,
+    delivery: plan.delivery,
+    session: plan.session,
+    runSteps: [{
+      uri: 'urn:undefineds:linx:runStep:heartbeat_2026-04-02T00-00-30-000Z_projection',
+      issue: plan.issue.uri,
+      task: plan.task,
+      delivery: plan.delivery.uri,
+      session: plan.session.uri,
+      stepType: 'run.step',
+      message: 'Codex worker progress heartbeat.',
+      payload: {
+        heartbeat: true,
+        autoModeSessionId: 'auto-heartbeat',
+      },
+      createdAt: '2026-04-02T00:00:30.000Z',
+    }],
+  }]
+
+  await projectionModule.persistSymphonyProjectionToPod(plan, {
+    stage: 'running',
+    runtime: fake.runtime,
+  })
+
+  const runSteps = fake.inserts.filter((item) => item.resource === fake.resources.runStep).map((item) => item.value)
+  assert.equal(runSteps.length, 3)
+  const heartbeat = runSteps.find((item) => item.stepType === 'run.step')
+  assert.ok(heartbeat)
+  assert.equal(heartbeat.id, '2026/04/02/runs.ttl#heartbeat_2026-04-02T00-00-30-000Z_projection')
+  assert.equal(heartbeat.message, 'Codex worker progress heartbeat.')
+  assert.equal(heartbeat.payload.surface, 'symphony')
+  assert.equal(heartbeat.payload.heartbeat, true)
+  assert.equal(heartbeat.payload.autoModeSessionId, 'auto-heartbeat')
+  assert.equal(heartbeat.payload.issue, 'https://alice.example/.data/issues/issue_2026-04-02T00-00-00-000Z_projection.ttl')
+  assert.ok(!('data' in heartbeat))
 })
 
 test('mirrorSymphonyProjectionJsonLdFromPod materializes JSON-LD through ORM rows', async (t) => {
@@ -624,7 +680,7 @@ test('listRunningSymphonyWorkersFromPod reads Symphony worker status from shared
     select() {
       return {
         from(resource) {
-          assert.equal(resource, fake.resources.session)
+          assert.equal(resourceName(resource), 'session')
           return {
             execute: async () => sessionRows,
           }
@@ -651,6 +707,74 @@ test('listRunningSymphonyWorkersFromPod reads Symphony worker status from shared
         label: 'Codex worker',
         agent: 'codex-worker',
         chat: 'https://alice.example/.data/chat/codex-worker/index.ttl#this',
+      },
+    },
+  ])
+})
+
+test('listRunningSymphonyWorkersFromPod reads Web-created shared control Session rows', async () => {
+  const fake = createFakeRuntime()
+  const plan = createPlan({
+    issue: {
+      source: 'web',
+      issuer: {
+        source: 'user',
+        webId: 'https://alice.example/profile/card#me',
+        chat: 'https://alice.example/.data/chat/chat-1/index.ttl#this',
+        thread: 'https://alice.example/.data/chat/chat-1/index.ttl#thread-1',
+      },
+    },
+    delivery: {
+      status: 'dispatched',
+    },
+  })
+  const webPlan = {
+    ...plan,
+    workers: [{
+      task: plan.task,
+      taskRecord: plan.taskRecord,
+      delivery: plan.delivery,
+      session: plan.session,
+    }],
+  }
+  const rows = buildSymphonyControlRows({
+    plan: webPlan,
+    webId: 'https://alice.example/profile/card#me',
+    stage: 'running',
+  })
+
+  fake.runtime.createDb = () => ({
+    init: async () => undefined,
+    select() {
+      return {
+        from(resource) {
+          assert.equal(resourceName(resource), 'session')
+          return {
+            execute: async () => rows.sessions,
+          }
+        },
+      }
+    },
+    insert() {
+      throw new Error('status read must not write')
+    },
+  })
+
+  const workers = await projectionModule.listRunningSymphonyWorkersFromPod({
+    runtime: fake.runtime,
+  })
+
+  assert.deepEqual(workers, [
+    {
+      status: 'running',
+      backend: 'codex',
+      mode: 'auto',
+      cwd: '/tmp/linx',
+      autoModeSessionId: undefined,
+      target: {
+        label: 'Verify Symphony Pod projection',
+        agent: 'codex-worker',
+        chat: 'https://alice.example/.data/chat/chat-1/index.ttl#this',
       },
     },
   ])
@@ -841,10 +965,114 @@ test('completed Symphony projection includes completion message and archived ses
   assert.match(report.payload.summary, /Verify Symphony Pod projection completed/)
   assert.match(report.payload.evidence.statusMessage, /projection-completed$/)
 
+  const modeledEvidence = fake.inserts.find((item) => item.resource === fake.resources.evidence)?.value
+  assert.ok(modeledEvidence)
+  assert.equal(modeledEvidence.evidenceKind, 'runtime_log')
+  assert.equal(modeledEvidence.about, 'https://alice.example/.data/2026/04/02/runs.ttl#session_2026-04-02T00-00-00-000Z_projection')
+  assert.equal(modeledEvidence.issue, 'https://alice.example/.data/issues/issue_2026-04-02T00-00-00-000Z_projection.ttl')
+
+  const modeledReport = fake.inserts.find((item) => item.resource === fake.resources.report)?.value
+  assert.ok(modeledReport)
+  assert.equal(modeledReport.reportKind, 'handoff')
+  assert.equal(modeledReport.status, 'published')
+  assert.equal(modeledReport.outcome, 'accepted')
+  assert.equal(modeledReport.about, modeledEvidence.about)
+  assert.deepEqual(modeledReport.evidence, [
+    'https://alice.example/.data/evidence/2026/04/02.ttl#session_2026-04-02T00-00-00-000Z_projection-final',
+  ])
+
   const inbox = fake.inserts.find((item) => item.resource === fake.resources.inbox)?.value
   assert.ok(inbox)
   assert.equal(inbox.actor, 'https://alice.example/agents/symphony-codex-worker/')
   assert.equal(inbox.object, `https://alice.example/.data/${report.id}`)
+})
+
+test('completed Symphony projection persists worker acceptance review and follow-up issues', async () => {
+  const fake = createFakeRuntime()
+  const plan = createPlan({
+    taskRecord: {
+      status: 'completed',
+      acceptanceReview: {
+        outcome: 'follow_up',
+        accepted: true,
+        reviewedBy: '__secretary__',
+        reviewedAt: '2026-04-02T00:02:00.000Z',
+        summary: 'Worker completed and proposed extraction.',
+        evidence: ['tests passed'],
+        risks: [],
+        changedFiles: ['apps/cli/src/lib/symphony-command.ts'],
+        commands: ['node --test'],
+        followUps: [{
+          kind: 'missing_shared_abstraction',
+          summary: 'Extract reusable worker acceptance review.',
+          evidence: ['apps/cli/src/lib/symphony-command.ts'],
+          disposition: 'new_issue',
+          reason: 'CLI and Web need the same control use-case.',
+          source: 'worker_report',
+          issue: 'urn:undefineds:linx:issue:issue_2026-04-02T00-02-00-000Z_followup',
+        }],
+        reusableExtraction: {
+          disposition: 'new_issue',
+          reason: 'CLI and Web need the same control use-case.',
+          candidates: [],
+        },
+      },
+    },
+    delivery: {
+      status: 'completed',
+      completedAt: '2026-04-02T00:02:00.000Z',
+    },
+    session: {
+      status: 'completed',
+      autoModeSessionId: 'auto_acceptance_done',
+      exitCode: 0,
+      updatedAt: '2026-04-02T00:02:00.000Z',
+      completedAt: '2026-04-02T00:02:00.000Z',
+    },
+  })
+  plan.followUpIssues = [{
+    uri: 'urn:undefineds:linx:issue:issue_2026-04-02T00-02-00-000Z_followup',
+    title: 'Extract reusable worker acceptance review.',
+    description: 'Origin issue: urn:undefineds:linx:issue:issue_2026-04-02T00-00-00-000Z_projection',
+    status: 'open',
+    priority: 'medium',
+    source: 'cli',
+    issuer: {
+      source: 'user',
+      webId: 'https://alice.example/profile/card#me',
+    },
+    parentIssue: plan.issue.uri,
+    labels: ['symphony', 'follow-up', 'missing_shared_abstraction'],
+    tasks: [],
+    deliveries: [],
+    sessions: [],
+    createdAt: '2026-04-02T00:02:00.000Z',
+    updatedAt: '2026-04-02T00:02:00.000Z',
+  }]
+
+  await projectionModule.persistSymphonyProjectionToPod(plan, {
+    stage: 'completed',
+    runtime: fake.runtime,
+  })
+
+  const issues = fake.inserts.filter((item) => item.resource === fake.resources.issue).map((item) => item.value)
+  assert.equal(issues.length, 2)
+  const followUpIssue = issues.find((issue) => issue.id === 'issue_2026-04-02T00-02-00-000Z_followup')
+  assert.ok(followUpIssue)
+  assert.equal(followUpIssue.parentIssue, 'https://alice.example/.data/issues/issue_2026-04-02T00-00-00-000Z_projection.ttl')
+  assert.deepEqual(followUpIssue.tasks, [])
+  assert.ok(followUpIssue.labels.includes('follow-up'))
+
+  const task = fake.inserts.find((item) => item.resource === fake.resources.task)?.value
+  assert.equal(task.metadata.acceptanceReview.outcome, 'follow_up')
+  assert.equal(task.metadata.acceptanceReview.reusableExtraction.disposition, 'new_issue')
+
+  const report = fake.inserts
+    .filter((item) => item.resource === fake.resources.delivery)
+    .map((item) => item.value)
+    .find((item) => item.kind === 'report')
+  assert.equal(report.payload.acceptanceReview.followUps[0].issue, 'urn:undefineds:linx:issue:issue_2026-04-02T00-02-00-000Z_followup')
+  assert.equal(report.metadata.acceptanceReview.outcome, 'follow_up')
 })
 
 test('persistSymphonyProjectionToPod derives chat from target thread when chat is omitted', async () => {
@@ -897,7 +1125,7 @@ test('persistSymphonyProjectionToPod can target a group chat without rewriting t
   assert.equal(result.chat, 'https://alice.example/.data/chat/group-design/index.ttl#this')
   assert.equal(result.thread, 'https://alice.example/.data/chat/group-design/index.ttl#thread-group')
   assert.equal(fake.inserts.find((item) => item.resource === fake.resources.chat)?.value, undefined)
-  assert.equal(fake.inserts.find((item) => item.resource === fake.resources.thread)?.value.chat, result.chat)
+  assert.equal(fake.inserts.find((item) => item.resource === fake.resources.thread)?.value.parent, result.chat)
   assert.equal(fake.inserts.find((item) => item.resource === fake.resources.message)?.value.chat, result.chat)
 })
 
@@ -1113,7 +1341,7 @@ test('persistSymphonyProjectionToPod preserves each worker Thread Session and wo
   assert.equal(threads.length, 2)
   assert.deepEqual(threads.map((thread) => thread.id).sort(), ['chat/chat-1/index.ttl#thread-1', 'chat/chat-2/index.ttl#thread-2'])
   const reviewThread = threads.find((thread) => thread.id === 'chat/chat-2/index.ttl#thread-2')
-  assert.equal(reviewThread.chat, secondChat)
+  assert.equal(reviewThread.parent, secondChat)
   assert.equal(reviewThread.workspace, 'file:///tmp/linx-review')
   assert.equal(reviewThread.metadata.workers.length, 1)
   assert.equal(reviewThread.metadata.workers[0].thread, secondThread)

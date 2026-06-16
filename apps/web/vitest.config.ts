@@ -38,6 +38,7 @@ export default defineConfig({
       '@linx/stores/exact-records': path.resolve(repoRoot, 'packages/stores/src/exact-records.ts'),
       '@linx/stores/pod-db': path.resolve(repoRoot, 'packages/stores/src/pod-collection.ts'),
       '@linx/stores/pod-write-guard': path.resolve(repoRoot, 'packages/stores/src/pod-write-guard.ts'),
+      '@linx/stores/symphony-control': path.resolve(repoRoot, 'packages/stores/src/symphony-control.ts'),
       '@linx/stores': path.resolve(repoRoot, 'packages/stores/src'),
       '@inrupt/solid-client-authn-browser': inruptAuthnBrowser,
     },

@@ -188,6 +188,90 @@ test('codex attach bridge routes auto-enabled approvals through Thread Reconcile
   assert.match(events, /Thread Reconciler resolved command-approval/)
 })
 
+test('codex attach bridge lets Secretary answer structured user input through Thread Reconciler', async (t) => {
+  useTempAutoModeHome(t)
+  const { module, cleanup } = await loadAutoModeModule('lib/codex-plugin/bridge.ts')
+  t.after(() => cleanup())
+
+  const record = module.createCodexAttachSessionRecord({
+    workspacePath: '/tmp/demo',
+    backendSessionId: 'sess_codex_attach_input',
+  })
+  record.autoEnabled = true
+  record.mode = 'auto'
+
+  const runtime = {
+    async createRemoteAutoModeApproval() {
+      throw new Error('remote approval should not be used for user-input requests')
+    },
+    async waitForRemoteAutoModeApproval() {
+      throw new Error('remote approval should not be used for user-input requests')
+    },
+    async resolveAutoModeSecretaryRecommendation({ request }) {
+      assert.equal(request.kind, 'user-input')
+      assert.deepEqual(request.questions.map((question) => question.id), ['runtime', 'goal'])
+      return {
+        kind: 'user-input',
+        canAutoDecide: true,
+        answers: {
+          runtime: { answers: ['cloud'] },
+          goal: { answers: ['Run the Symphony worker verification path'] },
+        },
+        confidence: 0.9,
+        reason: 'the answers are derivable from the active Symphony goal',
+        source: 'model',
+      }
+    },
+  }
+
+  const bridge = module.createCodexAttachBridge(record, runtime)
+  const result = await bridge.handleCodexRequest({
+    method: 'item/tool/requestUserInput',
+    params: {
+      questions: [
+        {
+          id: 'runtime',
+          header: 'Runtime',
+          question: 'Choose runtime',
+          options: [{ label: 'local' }, { label: 'cloud' }],
+        },
+        {
+          id: 'goal',
+          header: 'Goal',
+          question: 'Describe the goal',
+          options: [],
+        },
+      ],
+    },
+  })
+
+  assert.deepEqual({
+    requestKind: result?.request.kind,
+    decision: result?.decision,
+    response: result?.response,
+  }, {
+    requestKind: 'user-input',
+    decision: 'accept',
+    response: {
+      answers: {
+        runtime: { answers: ['cloud'] },
+        goal: { answers: ['Run the Symphony worker verification path'] },
+      },
+    },
+  })
+  assert.equal(result?.reconciler.policyKind, 'auto')
+  assert.equal(result?.reconciler.eventType, 'input.required')
+  assert.equal(result?.reconciler.wakeJobs[0].targetAgent, '__secretary__')
+  assert.equal(result?.reconciler.wakeJobs[0].targetRole, 'secretary')
+
+  const events = readFileSync(record.eventsFile, 'utf-8')
+  assert.match(events, /Thread Reconciler dispatched user-input/)
+  assert.match(events, /"policyKind":"auto"/)
+  assert.match(events, /"eventType":"input.required"/)
+  assert.match(events, /"targetAgent":"__secretary__"/)
+  assert.match(events, /Thread Reconciler resolved user-input/)
+})
+
 test('codex attach bridge handles JSON-RPC lines and emits codex responses', async (t) => {
   useTempAutoModeHome(t)
   const { module, cleanup } = await loadAutoModeModule('lib/codex-plugin/bridge.ts')

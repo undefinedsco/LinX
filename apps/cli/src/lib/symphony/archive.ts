@@ -8,6 +8,10 @@ import {
   formatSymphonySessionSummary,
   getSymphonyArchiveKey,
   getSymphonyArchiveRelativePaths,
+  withSymphonyDeliveryStatus as withCoreSymphonyDeliveryStatus,
+  withSymphonyIssueStatus as withCoreSymphonyIssueStatus,
+  withSymphonySessionStatus as withCoreSymphonySessionStatus,
+  withSymphonyTaskStatus as withCoreSymphonyTaskStatus,
   type CreateSymphonyRunPlanInput,
   type SymphonyDeliveryRecord,
   type SymphonyDeliveryStatus,
@@ -177,6 +181,12 @@ export function attachSymphonyRunPlanToIssue(plan: SymphonyRunPlan, issue: Symph
       thread: worker.session.thread ?? mergedIssue.thread,
       messages: worker.session.messages ?? mergedIssue.messages,
     },
+    ...(worker.runSteps?.length ? {
+      runSteps: worker.runSteps.map((step) => ({
+        ...step,
+        issue: mergedIssue.uri,
+      })),
+    } : {}),
   }))
   const primary = workers[0]!
   return {
@@ -186,6 +196,7 @@ export function attachSymphonyRunPlanToIssue(plan: SymphonyRunPlan, issue: Symph
     delivery: primary.delivery,
     session: primary.session,
     workers,
+    ...(plan.followUpIssues?.length ? { followUpIssues: plan.followUpIssues } : {}),
   }
 }
 
@@ -261,6 +272,9 @@ export function writeSymphonySession(record: SymphonySessionRecord): void {
 
 export function writeSymphonyRunPlan(plan: SymphonyRunPlan): SymphonyRunPlan {
   writeSymphonyIssue(plan.issue)
+  for (const issue of plan.followUpIssues ?? []) {
+    writeSymphonyIssue(issue)
+  }
   for (const worker of plan.workers.length > 0 ? plan.workers : [{ task: plan.task, taskRecord: plan.taskRecord, delivery: plan.delivery, session: plan.session }]) {
     if (worker.taskRecord) {
       writeSymphonyTask(worker.taskRecord)
@@ -286,14 +300,7 @@ export function withSymphonyIssueStatus(
   status: SymphonyIssueStatus,
   updates: { error?: string; closedAt?: string } = {},
 ): SymphonyIssueRecord {
-  const now = new Date().toISOString()
-  return {
-    ...record,
-    status,
-    updatedAt: now,
-    ...(updates.error ? { error: updates.error } : {}),
-    ...((updates.closedAt || status === 'resolved' || status === 'closed') ? { closedAt: updates.closedAt ?? now } : {}),
-  }
+  return withCoreSymphonyIssueStatus(record, status, updates)
 }
 
 export function updateSymphonyIdeaStatus(
@@ -357,14 +364,7 @@ export function withSymphonyTaskStatus(
   status: SymphonyTaskStatus,
   updates: { error?: string; completedAt?: string } = {},
 ): SymphonyTaskRecord {
-  const now = new Date().toISOString()
-  return {
-    ...record,
-    status,
-    updatedAt: now,
-    ...(updates.error ? { error: updates.error } : {}),
-    ...((updates.completedAt || status === 'completed' || status === 'failed') ? { completedAt: updates.completedAt ?? now } : {}),
-  }
+  return withCoreSymphonyTaskStatus(record, status, updates)
 }
 
 export function updateSymphonyDeliveryStatus(
@@ -382,15 +382,7 @@ export function withSymphonyDeliveryStatus(
   status: SymphonyDeliveryStatus,
   updates: { error?: string; autoModeSessionId?: string; completedAt?: string } = {},
 ): SymphonyDeliveryRecord {
-  const now = new Date().toISOString()
-  return {
-    ...record,
-    status,
-    updatedAt: now,
-    ...(updates.autoModeSessionId ? { autoModeSessionId: updates.autoModeSessionId } : {}),
-    ...(updates.error ? { error: updates.error } : {}),
-    ...((updates.completedAt || status === 'completed' || status === 'failed') ? { completedAt: updates.completedAt ?? now } : {}),
-  }
+  return withCoreSymphonyDeliveryStatus(record, status, updates)
 }
 
 export function updateSymphonySessionStatus(
@@ -420,17 +412,7 @@ export function withSymphonySessionStatus(
     completedAt?: string
   } = {},
 ): SymphonySessionRecord {
-  const now = new Date().toISOString()
-  return {
-    ...record,
-    status,
-    updatedAt: now,
-    ...(updates.autoModeSessionId ? { autoModeSessionId: updates.autoModeSessionId } : {}),
-    ...(updates.exitCode !== undefined ? { exitCode: updates.exitCode } : {}),
-    ...(updates.dryRun !== undefined ? { dryRun: updates.dryRun } : {}),
-    ...(updates.error ? { error: updates.error } : {}),
-    ...((updates.completedAt || status === 'completed' || status === 'failed') ? { completedAt: updates.completedAt ?? now } : {}),
-  }
+  return withCoreSymphonySessionStatus(record, status, updates)
 }
 
 export function listSymphonyIdeas(): SymphonyIdeaRecord[] {

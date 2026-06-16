@@ -38,6 +38,7 @@ import { useChatList, useThreadList, useChatMutations } from '../collections'
 import { contactResource, agentResource, isAgentContact } from '@undefineds.co/models'
 import { getPrimaryParticipantUri } from '../utils/chat-participants'
 import { useEntity } from '@/lib/data/use-entity'
+import { SymphonyWorkerPanel } from '@/modules/symphony/components/SymphonyWorkerPanel'
 
 // ============================================================================
 // 角色设定卡片
@@ -419,6 +420,9 @@ export const ChatRightSidebar: FC<ChatRightSidebarProps> = () => {
             onStarThread={handleStarThread}
             onCreateThread={handleCreateThread}
           />
+
+          {/* Secretary worker 控制面 */}
+          <SymphonyWorkerPanel />
         </div>
       </ScrollArea>
     </div>

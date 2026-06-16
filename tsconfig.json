@@ -13,7 +13,6 @@
     "jsx": "react-jsx",
     "paths": {
       "@undefineds.co/drizzle-solid": [
-        "../drizzle-solid/dist/index.d.ts",
         "node_modules/@undefineds.co/drizzle-solid/dist/index.d.ts"
       ],
       "@undefineds.co/models": [

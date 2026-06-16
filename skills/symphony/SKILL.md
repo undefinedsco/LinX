@@ -82,9 +82,11 @@ LinX control plane, or for local mirrors materialized from Pod.
 
 The portable Symphony runtime contract is storage-agnostic. It may produce
 control records, work splits, prompts, and reports, but it does not own Pod IO.
-LinX product runtime persists through shared models/repositories. A portable AI
-agent may call `xpod` CLI when that tool is available, but `xpod` is an adapter
-tool surface, not something the core Symphony skill or runtime module requires.
+LinX product runtime persists through shared models/repositories. When the
+writer is an AI operating through terminal/tools rather than in-process LinX
+code, `xpod` CLI is the preferred direct Pod tool surface. Use model-backed
+`xpod obj` operations for Symphony resources when available; do not invent a
+parallel Symphony-specific AI tool API and do not hand-patch modeled TTL paths.
 
 In LinX Agent Runtime, Pod authority belongs to the runtime session and should
 be inherited by tools launched inside that session. If a Secretary or worker has
@@ -92,7 +94,9 @@ Pod access, `xpod` commands it runs should use the runtime-provided authority
 bridge. Outside that bridge, all Solid apps share the same local auth source
 `$SOLID_HOME/auth/credentials.json`; old `~/.xpod/config.json` and
 `~/.xpod/secrets.json` files are not Solid auth sources, and their presence
-alone must be treated as unauthenticated. Never ask the model to handle raw
+alone must be treated as unauthenticated. If `xpod auth status --json` reports a
+different WebID or Pod root than the shared Solid auth file, treat it as an
+auth-store mismatch and stop before writing. Never ask the model to handle raw
 tokens, refresh tokens, client secrets, cookies, or DPoP material directly.
 
 ## Agent Config And Skill Resources
@@ -491,6 +495,12 @@ runtime capability; when implemented, roles should be execution profiles
 selected from contacts or created as AI contacts, and they bind to Work rather
 than splitting Spec by themselves.
 
+Dispatch targets are Contact-first. A Contact is the durable App-visible
+participant and may point to an Agent; a worker instance is only a Run/Session
+role. Chat participants must use Contact URIs, while backend/model/runtime facts
+stay on Agent/Run/Session. Default coding contacts should use backend keys such
+as `codex` unless a deliberate persona is introduced.
+
 Interactive worker sessions do not need a Delivery tool for every blocker. When
 Secretary launches or manages the worker session, the worker-facing `user`
 input is a Secretary-controlled projection. If the worker lacks information,
@@ -566,6 +576,18 @@ Worker-facing minimum contract:
   Issue to `blocked`.
 - Use Delivery only for stage results, async handoff, artifacts, proposed
   patches, verification evidence, and final reports.
+- In final reports, explicitly separate assigned-work evidence from follow-up
+  candidates: new defects, missing shared abstractions, app-local glue that
+  should move to models/drizzle-solid/xpod, live-verification gaps, or
+  deferred cleanup. Workers may recommend follow-up, but they do not decide
+  whether it becomes a new Issue.
+- If the LinX Symphony Codex plugin is installed, prefer its `linx-symphony`
+  MCP tools to check and write the delivery. The MCP helper only validates/writes
+  the portable Delivery file; it does not directly mutate Pod Issues, Tasks,
+  Deliveries, or acceptance state.
+- Otherwise include the same terminal facts in the final report using the
+  `symphonyFinal: true` JSON envelope so LinX can archive the transcript through
+  shared control-plane use-cases; it is not a separate worker schema.
 - Never use chat, Delivery, or repo docs to redefine scope, acceptance,
   compatibility, lifecycle state, or release boundary. Write an Implementation
   Change Request instead.
@@ -669,6 +691,51 @@ Delivery -> report
 If a failed attempt exposed an independent product bug or future concern, link
 or promote it through Idea/Issue binding. Otherwise keep it as RunStep/Evidence
 under the current work so the system learns without multiplying issues.
+
+## Post-Run Reconciliation And Follow-Up Extraction
+
+Worker completion is not the end of Secretary work. After every terminal
+Delivery or Report, Secretary/control lane must perform a post-run
+reconciliation pass before closing the Task/Issue.
+
+The pass has two separate questions:
+
+1. Did the assigned work satisfy current acceptance with sufficient evidence?
+2. Did the execution reveal new work that should be tracked separately?
+
+Secretary must inspect the worker Report, Evidence, RunSteps, failed attempts,
+review findings, and any local compromises. It should extract follow-up
+candidates even when the worker did not label them explicitly. Typical signals:
+
+- app-local glue that should be moved into a shared package such as
+  `@undefineds.co/models`, `drizzle-solid`, xpod CLI, or shared runtime;
+- missing repository/helper APIs exposed by repeated shell-side composition;
+- live Pod/cloud/manual verification that was intentionally left out;
+- schema, protocol, permission, auth, or persistence gaps discovered while
+  implementing the assigned task;
+- cleanup, migration, compatibility, release, or documentation work that is
+  not required to accept the current Delivery but should not be forgotten;
+- repeated failed approaches or flaky behavior that future work should avoid.
+
+Secretary owns classification. A worker may propose a follow-up but must not
+create or close Issues, rewrite acceptance, or re-split the roadmap unless the
+Delivery explicitly grants that authority.
+
+Classify each follow-up candidate as one of:
+
+- `same_issue_task`: append a Task or remaining-work item to the current Issue;
+- `new_issue`: create a separate Issue and link the source Report/Evidence/Run;
+- `idea`: capture as an Idea because scope, value, or acceptance is not clear;
+- `evidence_only`: keep as a finding/proof without new work;
+- `ask_user`: escalate only when user-owned intent, authority, priority, or
+  acceptance is required.
+
+When creating a new Issue, link provenance back to the originating Issue, Task,
+Delivery, Report, Evidence, Run, Thread, and source message where available.
+When no new Issue is created, record why the finding is evidence-only,
+deferred, duplicate, or folded into the current Issue. This prevents workers
+from missing second-order architecture/product gaps and prevents the main
+thread from silently losing follow-up work after a successful Delivery.
 
 ## Evidence Feedback
 

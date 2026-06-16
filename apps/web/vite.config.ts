@@ -93,6 +93,7 @@ export default defineConfig({
       '@linx/stores',
       '@linx/stores/login',
       '@linx/stores/pod-db',
+      '@linx/stores/symphony-control',
     ],
   },
   define: {

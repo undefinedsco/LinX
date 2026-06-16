@@ -22,7 +22,7 @@
 
 | 类型 | Canonical SP URL 来源 | 用户是否填写域名 | 说明 |
 | --- | --- | --- | --- |
-| Local + Cloud-managed canonical domain | Cloud provisioning 返回 `node-0000.undefineds.co`、`nodeId.nodes.undefineds.co` 或同类节点域名 | 否 | 默认 Local 路径。Cloud 负责决定 canonical URL，后续按 nodeId 稳定复用。 |
+| Local + Cloud-managed canonical domain | Cloud provisioning 返回 `node-0000.undefineds.co`、`nodeId.nodes.undefineds.co` 或同类节点域名 | 否 | 默认 Local 路径。Cloud 负责决定 canonical URL，后续按 SP nodeId 稳定复用。 |
 | Local + user-managed canonical domain | 用户自有 HTTPS origin | 是 | 高级路径。用户负责 DNS、HTTPS、反代、端口转发或隧道出口绑定。 |
 | Standalone | 默认 `http://localhost:5737/` 或用户本地配置 | 可选 | 不走 Cloud provisioning，WebID 与 Cloud WebID 分离。 |
 
@@ -38,9 +38,9 @@ storage。它不是一个新的 LinX 内部模式，只是 Local canonical SP UR
 
 ```text
 LinX 选择 Local
-  -> LinX 向 Cloud /provision/nodes 注册 Local node，请求 Cloud 分配 canonical 域名
-  -> Cloud 返回 spDomain/publicUrl，例如 https://<device-node-id>.nodes.undefineds.co/
-  -> LinX 启动 xpod，CSS_BASE_URL=https://<device-node-id>.nodes.undefineds.co/
+  -> LinX 向 Cloud /provision/nodes 注册 Local SP node，请求 Cloud 分配 canonical 域名
+  -> Cloud 返回 spDomain/publicUrl，例如 https://<sp-node-id>.nodes.undefineds.co/
+  -> LinX 启动 xpod，CSS_BASE_URL=https://<sp-node-id>.nodes.undefineds.co/
   -> LinX 验证 Local SP 可达，并携带 provisionCode 进入 Cloud 账号/OIDC 页面
   -> Cloud 账号/consent 流按 selected Local SP scope 过滤 Pod picker
   -> WebID profile 的 solid:storage 写到 Local SP Pod
@@ -49,7 +49,9 @@ LinX 选择 Local
 规则：
 
 - 用户不手填平台节点域名。
-- Cloud 分配的 managed domain 可以是随机 nodeId 形态，也可以是当前测试/预配的 `node-0000.undefineds.co` 这类已配置域名；首次注册后和设备 nodeId 绑定，后续续约必须稳定复用，不能再当作用户输入。
+- Cloud 分配的 managed domain 可以是随机 nodeId 形态，也可以是当前测试/预配的 `node-0000.undefineds.co` 这类已配置域名；首次注册后和 SP nodeId 绑定，后续续约必须稳定复用，不能再当作用户输入。
+- `node` 与 `device` 不同：`node` 是 Storage Provider 服务节点；`device` 是可以运行 workspace / Agent Runtime 的设备。`linx://...` 只用于本地 workspace 容器身份，不参与 Cloud SP provisioning。
+- LinX 本机服务会持久化独立的 `.device-id`；它用于构造 `linx://<device-id>/...` workspace container，不应写入 `XPOD_NODE_ID` 或用于 SP 域名续约。
 - 在 Cloudflare 还不能由 Cloud 自动创建 CNAME/route 的阶段，测试路径继续使用已经在 Cloudflare/tunnel 后台配置好的 `node-0000.undefineds.co`。
 - Cloud-managed canonical URL 是存储 URL，不等于 Cloud 托管用户数据。
 - 如果暂时没有外网 route，LinX 仍可启动 xpod 做 localhost/LAN 连通性检查。

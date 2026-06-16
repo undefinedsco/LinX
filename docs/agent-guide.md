@@ -59,6 +59,7 @@ Feature contracts:
 - `docs/approval-grant-design.md` — approval/grant 统一流水线、grant scope、auto 与 Secretary 授权边界
 - `docs/symphony-system-evolution-control-plane.md` — Symphony 作为系统演进控制平面的第一性原理，覆盖系统态势、演进判断、执行控制和证据回流
 - `docs/secretary/auto-symphony-contract.md` — `/auto` 单开关、backend approval 分离、Symphony 委派边界
+- `docs/secretary/symphony-worker-goal-control-spec.md` — Symphony worker goal 控制面、Codex/ACP 桥接、Pod 持久化与 Web/CLI/TUI 共享 use-case 边界
 - `docs/xpod-cli-spec.md` — xpod CLI 的 Pod 文件/RDF/jsonl/secret/approval 能力边界，与 `udfs` 建模 CLI 分工
 - `docs/dependency-guide.md` — 依赖升级、workspace/npm 版本、`xpod`/`models` 联动与 models 独立发布规则
 - `docs/external-project-watchlist.md` — 外部项目持续跟踪清单，记录观察状态、证据、复查信号和是否需要沉淀到功能文档

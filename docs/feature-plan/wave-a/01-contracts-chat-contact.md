@@ -221,13 +221,13 @@ coordinationId: string('coordinationId').predicate(UDFS.coordinationId),
 ```typescript
 // @undefineds.co/models owning repository: src/vocab/contact.vocab.ts
 
-import { VCARD, FOAF, AS, DCTerms, UDFS } from '../namespaces'
+import { VCARD, AS, DCTerms, UDFS, SCHEMA } from '../namespaces'
 
 export const ContactVocab = {
   // 现有（不变）
   name: VCARD.fn,
   avatarUrl: VCARD.hasPhoto,
-  entityUri: FOAF.primaryTopic,
+  about: SCHEMA.about,
   contactType: UDFS.contactType,
   isPublic: AS.audience,
   externalPlatform: UDFS.externalPlatform,

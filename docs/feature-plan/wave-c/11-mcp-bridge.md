@@ -100,7 +100,7 @@ MCP Bridge 在处理 `MCPControlCommand` 时需要验证权限：
 
 | 验证项 | 数据来源 | 查询方式 |
 |--------|---------|---------|
-| Session owner | `chatTable.contact` → `contactTable.entityUri` | 比对发送者 WebID |
+| Session owner | `chatResource.contact` → `contactResource.about` | 比对发送者 WebID |
 | Group admin | `chatTable.groupAdmin` | 检查发送者 WebID 是否在 admin 列表中 |
 | Autonomy level | `settingsTable` (key=`autonomy.level`) | 判断是否允许自动审批 |
 | Command whitelist | `settingsTable` (key=`autonomy.commandWhitelist`) | 匹配 approve_pattern |

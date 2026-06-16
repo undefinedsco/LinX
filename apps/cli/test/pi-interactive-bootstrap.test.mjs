@@ -5868,9 +5868,7 @@ test('linx interactive /symphony status reads open issues and running workers fr
   t.after(() => cleanup())
 
   const statuses = []
-  const issueResource = { name: 'issue' }
-  const sessionResource = { name: 'session' }
-  const deliveryResource = { name: 'delivery' }
+  const { issueResource, sessionResource, deliveryResource } = await import('@undefineds.co/models')
   const interactive = {
     defaultEditor: {},
     __linxSymphonyModeEnabled: true,
@@ -6049,9 +6047,7 @@ test('linx interactive /symphony status reports Pod control-state failure withou
   t.after(() => cleanup())
 
   const statuses = []
-  const issueResource = { name: 'issue' }
-  const sessionResource = { name: 'session' }
-  const deliveryResource = { name: 'delivery' }
+  const { issueResource, sessionResource, deliveryResource } = await import('@undefineds.co/models')
   const interactive = {
     defaultEditor: {},
     __linxSymphonyModeEnabled: true,

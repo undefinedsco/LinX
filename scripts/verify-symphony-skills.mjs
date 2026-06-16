@@ -1,6 +1,7 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
@@ -27,6 +28,7 @@ const sources = Object.fromEntries(
 
 runSkillCreatorValidation('skills/symphony')
 runDualRoleEvaluation()
+runCodexPluginPackagingCheck()
 
 const scenarios = [
   {
@@ -365,4 +367,85 @@ function runDualRoleEvaluation() {
   }
 
   passes.push('symphony dual-role evaluation')
+}
+
+function runCodexPluginPackagingCheck() {
+  const targetRoot = mkdtempSync(join(tmpdir(), 'linx-symphony-codex-plugin-verify-'))
+  try {
+    const result = spawnSync('node', [
+      'apps/cli/scripts/pack-symphony-codex-plugin.mjs',
+      '--target-root',
+      targetRoot,
+      '--check',
+    ], {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: 30_000,
+      maxBuffer: 2 * 1024 * 1024,
+    })
+
+    if (result.status !== 0) {
+      failures.push(`symphony Codex plugin packaging failed\n${result.stdout}${result.stderr}`)
+      return
+    }
+    const pluginRoot = result.stdout.trim().split(/\r?\n/).at(-1)
+    runCodexPluginManifestValidation(pluginRoot)
+    verifyCodexPluginHookPackage(pluginRoot)
+    passes.push('symphony Codex plugin packaging')
+  } finally {
+    rmSync(targetRoot, { recursive: true, force: true })
+  }
+}
+
+function runCodexPluginManifestValidation(pluginRoot) {
+  const validator = join(home, '.codex/skills/.system/plugin-creator/scripts/validate_plugin.py')
+  if (!existsSync(validator)) {
+    warnings.push(`plugin validator missing: ${validator}`)
+    return
+  }
+  if (!pluginRoot) {
+    failures.push('symphony Codex plugin packaging did not report a plugin root')
+    return
+  }
+  const result = spawnSync('python3', [validator, pluginRoot], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 30_000,
+    maxBuffer: 2 * 1024 * 1024,
+  })
+  if (result.status !== 0) {
+    failures.push(`symphony Codex plugin manifest validation failed\n${result.stdout}${result.stderr}`)
+    return
+  }
+  passes.push('symphony Codex plugin manifest validation')
+}
+
+function verifyCodexPluginHookPackage(pluginRoot) {
+  if (!pluginRoot) {
+    failures.push('symphony Codex plugin packaging did not report a plugin root for hook verification')
+    return
+  }
+  const manifestPath = join(pluginRoot, '.codex-plugin', 'plugin.json')
+  const hooksPath = join(pluginRoot, 'hooks.json')
+  const hookScriptPath = join(pluginRoot, 'scripts', 'symphony-hook-events.mjs')
+  if (!existsSync(hooksPath)) {
+    failures.push('symphony Codex plugin package is missing root hooks.json')
+    return
+  }
+  if (!existsSync(hookScriptPath)) {
+    failures.push('symphony Codex plugin package is missing scripts/symphony-hook-events.mjs')
+    return
+  }
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+  if ('hooks' in manifest) {
+    failures.push('symphony Codex plugin manifest must not include unsupported hooks field')
+  }
+  const hooks = JSON.parse(readFileSync(hooksPath, 'utf8'))
+  for (const eventName of ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop']) {
+    const command = hooks.hooks?.[eventName]?.[0]?.hooks?.[0]?.command
+    if (command !== 'node ./scripts/symphony-hook-events.mjs') {
+      failures.push(`symphony Codex plugin hooks.json missing recorder for ${eventName}`)
+    }
+  }
+  passes.push('symphony Codex plugin hook package')
 }

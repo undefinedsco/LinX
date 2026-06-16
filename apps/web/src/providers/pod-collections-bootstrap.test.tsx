@@ -8,6 +8,8 @@ const initializeContactCollectionsMock = vi.fn()
 const initializeFavoriteCollectionsMock = vi.fn()
 const initializeInboxCollectionsMock = vi.fn()
 const initializeModelCollectionsMock = vi.fn()
+const initializeSymphonyControlCollectionsMock = vi.fn()
+const subscribeSymphonyControlToPodMock = vi.fn()
 const ensureLinxWelcomeMock = vi.fn()
 const subscribeToPodMock = vi.fn()
 const invalidateQueriesMock = vi.fn()
@@ -70,12 +72,20 @@ vi.mock('@/modules/model-services/collections', () => ({
   initializeModelCollections: (...args: unknown[]) => initializeModelCollectionsMock(...args),
 }))
 
+vi.mock('@/modules/symphony/collections', () => ({
+  initializeSymphonyControlCollections: (...args: unknown[]) => initializeSymphonyControlCollectionsMock(...args),
+  symphonyControlOps: {
+    subscribeToPod: (...args: unknown[]) => subscribeSymphonyControlToPodMock(...args),
+  },
+}))
+
 describe('PodCollectionsBootstrap', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     useSolidDatabaseMock.mockReturnValue({ db: null })
     ensureLinxWelcomeMock.mockResolvedValue(null)
     subscribeToPodMock.mockResolvedValue(() => undefined)
+    subscribeSymphonyControlToPodMock.mockResolvedValue(() => undefined)
     invalidateQueriesMock.mockResolvedValue(undefined)
     chatStoreState = {
       selectedChatId: null,
@@ -99,8 +109,10 @@ describe('PodCollectionsBootstrap', () => {
     expect(initializeFavoriteCollectionsMock).toHaveBeenCalledWith(null)
     expect(initializeInboxCollectionsMock).toHaveBeenCalledWith(null)
     expect(initializeModelCollectionsMock).toHaveBeenCalledWith(null)
+    expect(initializeSymphonyControlCollectionsMock).toHaveBeenCalledWith(null)
     expect(ensureLinxWelcomeMock).not.toHaveBeenCalled()
     expect(subscribeToPodMock).not.toHaveBeenCalled()
+    expect(subscribeSymphonyControlToPodMock).not.toHaveBeenCalled()
   })
 
   it('stages the LinX welcome chat and renders children while Pod persistence continues in the background', async () => {
@@ -123,7 +135,9 @@ describe('PodCollectionsBootstrap', () => {
     expect(initializeFavoriteCollectionsMock).toHaveBeenCalledWith(db)
     expect(initializeInboxCollectionsMock).toHaveBeenCalledWith(db)
     expect(initializeModelCollectionsMock).toHaveBeenCalledWith(db)
+    expect(initializeSymphonyControlCollectionsMock).toHaveBeenCalledWith(db)
     expect(subscribeToPodMock).toHaveBeenCalledTimes(1)
+    expect(subscribeSymphonyControlToPodMock).toHaveBeenCalledTimes(1)
     expect(ensureLinxWelcomeMock).toHaveBeenCalledTimes(1)
     expect(ensureLinxWelcomeMock).toHaveBeenCalledWith({ force: false })
     expect(selectChatMock).toHaveBeenCalledWith('__secretary__/index.ttl#this')

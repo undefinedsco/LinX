@@ -2,14 +2,27 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import {
+  classifySymphonyFollowUpCandidate,
+  completeSymphonyWorkerRun,
   createRunPlan,
   createSymphonyDeliveryUri,
   createSymphonyIdeaUri,
   createSymphonyIssueUri,
+  createSymphonyRunStepRecord,
+  createSymphonyRunStepUri,
+  createSymphonyAcceptanceReview,
   createSymphonySessionUri,
   createTaskUri,
+  finalizeSymphonyRunPlanAfterWorkers,
   getSymphonyArchiveRelativePaths,
+  parseSymphonyFinalReportEnvelope,
+  parseSymphonyRuntimeDeliveryResult,
+  reconcileSymphonyWorkerDelivery,
+  recordSymphonyWorkerRuntimeEvent,
   renderSymphonyRuntimePrompt,
+  startSymphonyWorkerRun,
+  withSymphonyWorkerRunStep,
+  withSymphonyWorkerRuntimeStep,
   SYMPHONY_DELIVERIES_DIRNAME,
   SYMPHONY_DELIVERY_FILE_NAME,
   SYMPHONY_HOME_DIRNAME,
@@ -18,6 +31,8 @@ import {
   SYMPHONY_ISSUES_DIRNAME,
   SYMPHONY_ISSUE_FILE_NAME,
   SYMPHONY_SESSIONS_DIRNAME,
+  SYMPHONY_RUN_STEPS_DIRNAME,
+  SYMPHONY_RUN_STEP_FILE_NAME,
   SYMPHONY_SESSION_FILE_NAME,
 } from '../src/symphony'
 
@@ -42,6 +57,7 @@ test('creates stable symphony URIs from timestamp and random id', () => {
   assert.equal(createTaskUri(options), 'urn:undefineds:linx:task:task_2026-04-01T02-03-04-005Z_abcd1234efgh')
   assert.equal(createSymphonyDeliveryUri(options), 'urn:undefineds:linx:delivery:delivery_2026-04-01T02-03-04-005Z_abcd1234efgh')
   assert.equal(createSymphonySessionUri(options), 'urn:undefineds:linx:session:session_2026-04-01T02-03-04-005Z_abcd1234efgh')
+  assert.equal(createSymphonyRunStepUri(options), 'urn:undefineds:linx:runStep:runStep_2026-04-01T02-03-04-005Z_abcd1234efgh')
 })
 
 test('returns the shared archive file layout for symphony resources', () => {
@@ -50,10 +66,12 @@ test('returns the shared archive file layout for symphony resources', () => {
   assert.equal(SYMPHONY_ISSUES_DIRNAME, 'issues')
   assert.equal(SYMPHONY_DELIVERIES_DIRNAME, 'deliveries')
   assert.equal(SYMPHONY_SESSIONS_DIRNAME, 'sessions')
+  assert.equal(SYMPHONY_RUN_STEPS_DIRNAME, 'run-steps')
   assert.equal(SYMPHONY_IDEA_FILE_NAME, 'idea.json')
   assert.equal(SYMPHONY_ISSUE_FILE_NAME, 'issue.json')
   assert.equal(SYMPHONY_DELIVERY_FILE_NAME, 'delivery.json')
   assert.equal(SYMPHONY_SESSION_FILE_NAME, 'session.json')
+  assert.equal(SYMPHONY_RUN_STEP_FILE_NAME, 'run-step.json')
 
   assert.deepEqual(getSymphonyArchiveRelativePaths('urn:undefineds:linx:idea:idea_demo', 'idea'), {
     dir: 'ideas/idea_demo',
@@ -70,6 +88,10 @@ test('returns the shared archive file layout for symphony resources', () => {
   assert.deepEqual(getSymphonyArchiveRelativePaths('urn:undefineds:linx:session:session_demo', 'session'), {
     dir: 'sessions/session_demo',
     file: 'sessions/session_demo/session.json',
+  })
+  assert.deepEqual(getSymphonyArchiveRelativePaths('urn:undefineds:linx:runStep:run_step_demo', 'runStep'), {
+    dir: 'run-steps/run_step_demo',
+    file: 'run-steps/run_step_demo/run-step.json',
   })
 })
 
@@ -237,6 +259,13 @@ test('renders delegated runtime prompt with objective criteria session and works
   assert.match(prompt, /reference the Pod Issue\/Spec\/Task URI/)
   assert.match(prompt, /Implementation Change Request/)
   assert.match(prompt, /Same-Thread workers in this environment may share it/)
+  assert.match(prompt, /## Final Report And Follow-Up Candidates/)
+  assert.match(prompt, /machine-readable envelope/)
+  assert.doesNotMatch(prompt, /LINX_SYMPHONY_DELIVERY/)
+  assert.doesNotMatch(prompt, /"symphonyDelivery": true/)
+  assert.match(prompt, /"symphonyFinal": true/)
+  assert.match(prompt, /"followUps"/)
+  assert.match(prompt, /same_issue_task, new_issue, idea, evidence_only, or ask_user/)
 
   const promptWithIssue = renderSymphonyRuntimePrompt({
     issue: plan.issue,
@@ -381,4 +410,514 @@ test('keeps shared workspace by default and honors explicit worker workspace ove
   assert.match(plan.workers[1].delivery.projection.prompt, /Workspace: \/workspace\/linx/)
   assert.match(plan.workers[1].delivery.projection.prompt, /Workspace environment: remote-container runtime=claude id=container-a label=Container LinX checkout/)
   assert.match(plan.workers[1].delivery.projection.prompt, /Same-Thread workers in this environment may share it/)
+})
+
+test('records normalized runtime RunSteps on worker plans', () => {
+  const plan = createRunPlan({
+    objective: 'Keep a durable heartbeat for a Codex worker.',
+    workspacePath: '/tmp/linx',
+    backend: 'codex',
+    mode: 'off',
+    now: new Date('2026-04-01T02:03:04.005Z'),
+    randomId: 'runtime-step',
+  })
+  const worker = plan.workers[0]
+  const step = createSymphonyRunStepRecord({
+    worker,
+    stepType: 'run.step',
+    message: 'Codex worker heartbeat.',
+    payload: {
+      heartbeat: true,
+      omitted: undefined,
+    },
+    now: new Date('2026-04-01T02:04:00.000Z'),
+    randomId: 'heartbeat',
+  })
+
+  assert.equal(step.stepType, 'run.step')
+  assert.equal(step.issue, plan.issue.uri)
+  assert.equal(step.task, worker.task)
+  assert.equal(step.delivery, worker.delivery.uri)
+  assert.equal(step.session, worker.session.uri)
+  assert.equal(step.message, 'Codex worker heartbeat.')
+  assert.deepEqual(step.payload, { heartbeat: true })
+  assert.equal(step.createdAt, '2026-04-01T02:04:00.000Z')
+
+  const withStep = withSymphonyWorkerRunStep(worker, step)
+  assert.equal(withStep.runSteps?.length, 1)
+  assert.equal(withSymphonyWorkerRunStep(withStep, step).runSteps?.length, 1)
+
+  const started = withSymphonyWorkerRuntimeStep(worker, {
+    stepType: 'run.started',
+    now: new Date('2026-04-01T02:04:10.000Z'),
+    randomId: 'started',
+  })
+  assert.equal(started.runSteps?.[0]?.stepType, 'run.started')
+  assert.match(started.runSteps?.[0]?.message ?? '', /worker run started/)
+})
+
+test('parses Codex-compatible Symphony final report envelopes', () => {
+  const report = [
+    'Done.',
+    '',
+    '```json',
+    JSON.stringify({
+      symphonyFinal: true,
+      summary: 'Runtime control state converged.',
+      changedFiles: ['packages/agent-runtime/src/symphony.ts'],
+      commands: ['yarn workspace @linx/agent-runtime build'],
+      evidence: ['agent-runtime build passed'],
+      risks: ['Web subscription not manually verified'],
+      followUps: [{
+        kind: 'missing_shared_abstraction',
+        summary: 'Extract duplicated CLI/Web lifecycle decisions into a shared use-case.',
+        evidence: ['apps/cli/src/lib/symphony-command.ts'],
+        suggestedDisposition: 'new_issue',
+        reason: 'Both surfaces need the same worker acceptance logic.',
+      }],
+    }, null, 2),
+    '```',
+  ].join('\n')
+
+  const envelope = parseSymphonyFinalReportEnvelope(report)
+  assert.ok(envelope)
+  assert.equal(envelope.summary, 'Runtime control state converged.')
+  assert.deepEqual(envelope.changedFiles, ['packages/agent-runtime/src/symphony.ts'])
+  assert.deepEqual(envelope.commands, ['yarn workspace @linx/agent-runtime build'])
+  assert.deepEqual(envelope.evidence, ['agent-runtime build passed'])
+  assert.deepEqual(envelope.risks, ['Web subscription not manually verified'])
+  assert.equal(envelope.followUps?.[0]?.kind, 'missing_shared_abstraction')
+  assert.equal(envelope.followUps?.[0]?.suggestedDisposition, 'new_issue')
+})
+
+test('parses portable Codex Delivery reports into normalized runtime results', () => {
+  const delivery = [
+    '```json symphony-delivery',
+    JSON.stringify({
+      symphonyDelivery: true,
+      status: 'completed',
+      exitCode: 0,
+      autoModeSessionId: 'codex_manual_123',
+      events: [{
+        stepType: 'run.step',
+        message: 'Manual Codex worker wrote a patch.',
+        createdAt: '2026-04-01T02:04:00.000Z',
+        randomId: 'manual-step',
+        payload: {
+          command: 'yarn workspace @linx/agent-runtime test',
+        },
+      }],
+      report: {
+        summary: 'Manual Codex worker finished.',
+        evidence: ['agent-runtime test passed'],
+        changedFiles: ['packages/agent-runtime/src/symphony.ts'],
+        followUps: [{
+          kind: 'shared_runtime_utility',
+          summary: 'Reuse the Delivery parser from Web and CLI workers.',
+          suggestedDisposition: 'new_issue',
+        }],
+      },
+    }, null, 2),
+    '```',
+  ].join('\n')
+
+  const result = parseSymphonyRuntimeDeliveryResult(delivery)
+  assert.ok(result)
+  assert.equal(result.status, 'completed')
+  assert.equal(result.exitCode, 0)
+  assert.equal(result.autoModeSessionId, 'codex_manual_123')
+  assert.equal(result.events.length, 1)
+  assert.equal(result.events[0]?.stepType, 'run.step')
+  assert.equal(result.events[0]?.createdAt, '2026-04-01T02:04:00.000Z')
+  assert.match(result.reportText ?? '', /"symphonyFinal":true/)
+  assert.match(result.reportText ?? '', /Manual Codex worker finished/)
+  assert.match(result.reportText ?? '', /shared_runtime_utility/)
+})
+
+test('classifies reusable worker follow-up as a new issue unless it blocks acceptance', () => {
+  const reusable = classifySymphonyFollowUpCandidate({
+    kind: 'app_local_glue',
+    summary: 'Move duplicated Pod write helper into a shared use-case.',
+    evidence: ['apps/cli/src/lib/symphony-command.ts'],
+  })
+  assert.equal(reusable.disposition, 'new_issue')
+  assert.match(reusable.reason, /reusable across surfaces/)
+
+  const blocking = classifySymphonyFollowUpCandidate({
+    kind: 'missing_shared_abstraction',
+    summary: 'Shared acceptance review must exist before this delivery is safe.',
+    requiredBeforeAcceptance: true,
+  })
+  assert.equal(blocking.disposition, 'same_issue_task')
+})
+
+test('records worker acceptance review and creates follow-up issue records', () => {
+  const plan = createRunPlan({
+    objective: 'Unify Symphony worker completion handling.',
+    acceptanceCriteria: ['Final report is parsed', 'Follow-up issue is recorded'],
+    workspacePath: '/tmp/linx',
+    backend: 'codex',
+    mode: 'off',
+    now: new Date('2026-04-01T02:03:04.005Z'),
+    randomId: 'acceptance',
+  })
+  const report = [
+    'Implemented worker completion.',
+    '',
+    '```json',
+    JSON.stringify({
+      symphonyFinal: true,
+      summary: 'Worker completion handling is implemented.',
+      evidence: ['tests passed'],
+      followUps: [{
+        kind: 'missing_shared_abstraction',
+        summary: 'Extract reusable worker acceptance review into shared use-case.',
+        evidence: ['packages/agent-runtime/src/symphony.ts'],
+        suggestedDisposition: 'new_issue',
+      }],
+    }),
+    '```',
+  ].join('\n')
+
+  const review = createSymphonyAcceptanceReview({
+    issue: plan.issue,
+    worker: plan.workers[0],
+    status: 'completed',
+    exitCode: 0,
+    reportText: report,
+    now: new Date('2026-04-01T02:05:00.000Z'),
+  })
+  assert.equal(review.accepted, true)
+  assert.equal(review.outcome, 'follow_up')
+  assert.equal(review.reusableExtraction.disposition, 'new_issue')
+  assert.equal(review.followUps[0].disposition, 'new_issue')
+
+  const reconciled = reconcileSymphonyWorkerDelivery({
+    issue: plan.issue,
+    worker: plan.workers[0],
+    status: 'completed',
+    exitCode: 0,
+    reportText: report,
+    now: new Date('2026-04-01T02:05:00.000Z'),
+    randomId: 'acceptance',
+  })
+  assert.equal(reconciled.worker.taskRecord.acceptanceReview?.reusableExtraction.disposition, 'new_issue')
+  assert.equal(reconciled.worker.delivery.acceptanceReview?.outcome, 'follow_up')
+  assert.equal(reconciled.worker.session.acceptanceReview?.accepted, true)
+  assert.equal(reconciled.followUpIssues.length, 1)
+  assert.equal(reconciled.followUpIssues[0].parentIssue, plan.issue.uri)
+  assert.deepEqual(reconciled.followUpIssues[0].tasks, [])
+  assert.match(reconciled.followUpIssues[0].title, /Extract reusable worker acceptance review/)
+  assert.equal(reconciled.worker.taskRecord.acceptanceReview?.followUps[0].issue, reconciled.followUpIssues[0].uri)
+  assert.equal(reconciled.worker.runSteps?.at(-1)?.stepType, 'run.completed')
+  assert.equal(reconciled.worker.runSteps?.at(-1)?.payload?.acceptanceOutcome, 'follow_up')
+})
+
+test('shares worker lifecycle use-cases for dispatch heartbeat and completion', () => {
+  const plan = createRunPlan({
+    objective: 'Run one shared worker lifecycle.',
+    workspacePath: '/tmp/linx',
+    backend: 'codex',
+    mode: 'off',
+    now: new Date('2026-04-01T04:20:00.000Z'),
+    randomId: 'shared-lifecycle',
+  })
+
+  const started = startSymphonyWorkerRun({
+    worker: plan.workers[0],
+    decision: {
+      id: 'decision_shared_lifecycle_dispatch',
+      policyKind: 'symphony',
+      eventType: 'delivery.submitted',
+      thread: 'urn:undefineds:linx:thread:shared-lifecycle',
+      wakeJobs: [{
+        id: 'wake_shared_lifecycle_worker',
+        thread: 'urn:undefineds:linx:thread:shared-lifecycle',
+        targetAgent: 'codex-worker',
+        targetRole: 'worker',
+        trigger: 'delivery.submitted',
+        priority: 'high',
+        status: 'completed',
+        reason: 'dispatch accepted',
+        sourceEventType: 'delivery.submitted',
+      }],
+      createdAt: '2026-04-01T04:20:01.000Z',
+    },
+    now: new Date('2026-04-01T04:20:01.000Z'),
+    randomId: 'shared-lifecycle-started',
+  })
+
+  assert.equal(started.taskRecord.status, 'running')
+  assert.equal(started.delivery.status, 'dispatched')
+  assert.equal(started.session.status, 'running')
+  assert.equal(started.runSteps?.[0]?.stepType, 'run.started')
+  assert.equal(started.taskRecord.reconciler?.decisions.at(-1)?.wakeJobs[0]?.reason, 'dispatch accepted')
+
+  const heartbeat = recordSymphonyWorkerRuntimeEvent({
+    worker: started,
+    stepType: 'run.step',
+    message: 'worker heartbeat',
+    payload: { heartbeat: true },
+    now: new Date('2026-04-01T04:20:02.000Z'),
+    randomId: 'shared-lifecycle-heartbeat',
+  })
+
+  assert.equal(heartbeat.session.status, 'running')
+  assert.equal(heartbeat.runSteps?.[1]?.stepType, 'run.step')
+  assert.equal(heartbeat.runSteps?.[1]?.payload?.heartbeat, true)
+
+  const completed = completeSymphonyWorkerRun({
+    issue: plan.issue,
+    worker: heartbeat,
+    status: 'completed',
+    exitCode: 0,
+    autoModeSessionId: 'auto_shared_lifecycle',
+    reportText: [
+      'Done.',
+      '',
+      '```json',
+      JSON.stringify({
+        symphonyFinal: true,
+        summary: 'Shared lifecycle completed.',
+        evidence: ['unit test'],
+      }),
+      '```',
+    ].join('\n'),
+    decision: {
+      id: 'decision_shared_lifecycle_complete',
+      policyKind: 'symphony',
+      eventType: 'delivery.completed',
+      thread: 'urn:undefineds:linx:thread:shared-lifecycle',
+      wakeJobs: [{
+        id: 'wake_shared_lifecycle_secretary',
+        thread: 'urn:undefineds:linx:thread:shared-lifecycle',
+        targetAgent: '__secretary__',
+        targetRole: 'secretary',
+        trigger: 'delivery.completed',
+        priority: 'high',
+        status: 'completed',
+        reason: 'completion accepted for Secretary review',
+        sourceEventType: 'delivery.completed',
+      }],
+      createdAt: '2026-04-01T04:20:03.000Z',
+    },
+    now: new Date('2026-04-01T04:20:03.000Z'),
+    randomId: 'shared-lifecycle-complete',
+  })
+
+  assert.equal(completed.acceptanceReview.accepted, true)
+  assert.equal(completed.worker.taskRecord.status, 'completed')
+  assert.equal(completed.worker.delivery.status, 'completed')
+  assert.equal(completed.worker.session.status, 'completed')
+  assert.equal(completed.worker.session.autoModeSessionId, 'auto_shared_lifecycle')
+  assert.equal(completed.worker.runSteps?.at(-1)?.stepType, 'run.completed')
+  assert.equal(completed.worker.runSteps?.at(-1)?.payload?.acceptanceOutcome, 'accepted')
+})
+
+test('records repeated failed attempts as RunSteps and implementation change request without duplicate tasks', () => {
+  const plan = createRunPlan({
+    objective: 'Complete a worker task that currently fails.',
+    workspacePath: '/tmp/linx',
+    backend: 'codex',
+    mode: 'off',
+    now: new Date('2026-04-01T06:00:00.000Z'),
+    randomId: 'failed-attempt',
+  })
+  const started = startSymphonyWorkerRun({
+    worker: plan.workers[0],
+    now: new Date('2026-04-01T06:00:01.000Z'),
+    randomId: 'failed-attempt-start',
+  })
+  const attempted = recordSymphonyWorkerRuntimeEvent({
+    worker: started,
+    stepType: 'run.step',
+    message: 'First implementation attempt failed: build command exited non-zero.',
+    payload: {
+      command: 'yarn workspace @linx/agent-runtime test',
+      result: 'failed',
+      errorSummary: 'TypeScript compile error',
+    },
+    now: new Date('2026-04-01T06:00:02.000Z'),
+    randomId: 'failed-attempt-step-1',
+  })
+
+  const reconciled = completeSymphonyWorkerRun({
+    issue: plan.issue,
+    worker: attempted,
+    status: 'failed',
+    exitCode: 1,
+    reportText: [
+      'The plan cannot be completed as written.',
+      '',
+      '```json',
+      JSON.stringify({
+        symphonyFinal: true,
+        summary: 'Worker failed because the current plan is missing a shared runtime adapter contract.',
+        evidence: ['build command exited non-zero'],
+        risks: ['retrying without changing the plan will repeat the same failure'],
+      }),
+      '```',
+    ].join('\n'),
+    now: new Date('2026-04-01T06:00:03.000Z'),
+    randomId: 'failed-attempt-complete',
+  })
+
+  assert.equal(reconciled.worker.task, plan.task)
+  assert.equal(reconciled.worker.taskRecord.uri, plan.taskRecord.uri)
+  assert.equal(reconciled.followUpIssues.length, 0)
+  assert.equal(reconciled.worker.runSteps?.map((step) => step.stepType).join(','), 'run.started,run.step,run.failed')
+  assert.equal(reconciled.acceptanceReview.accepted, false)
+  assert.equal(reconciled.acceptanceReview.outcome, 'blocked')
+  assert.equal(reconciled.acceptanceReview.implementationChangeRequest?.task, plan.task)
+  assert.equal(reconciled.acceptanceReview.implementationChangeRequest?.delivery, plan.delivery.uri)
+  assert.equal(reconciled.acceptanceReview.implementationChangeRequest?.session, plan.session.uri)
+  assert.equal(reconciled.acceptanceReview.implementationChangeRequest?.trigger, 'worker_failed')
+  assert.match(reconciled.acceptanceReview.implementationChangeRequest?.failedAssumption ?? '', /complete/i)
+  assert.ok(reconciled.acceptanceReview.implementationChangeRequest?.basedOnRunSteps.includes(reconciled.worker.runSteps![0]!.uri))
+})
+
+
+test('blocks current worker task when reusable extraction is required before acceptance', () => {
+  const plan = createRunPlan({
+    objective: 'Ship a worker result only after shared acceptance logic exists.',
+    workspacePath: '/tmp/linx',
+    backend: 'codex',
+    mode: 'off',
+    now: new Date('2026-04-01T03:00:00.000Z'),
+    randomId: 'blocking-acceptance',
+  })
+  const report = [
+    'Implemented most of the worker path.',
+    '',
+    '```json',
+    JSON.stringify({
+      symphonyFinal: true,
+      summary: 'Worker path still needs shared acceptance logic before closure.',
+      evidence: ['partial tests passed'],
+      followUps: [{
+        kind: 'missing_shared_abstraction',
+        summary: 'Extract shared worker acceptance review before accepting this task.',
+        evidence: ['apps/cli/src/lib/symphony-command.ts'],
+        requiredBeforeAcceptance: true,
+      }],
+    }),
+    '```',
+  ].join('\n')
+
+  const reconciled = reconcileSymphonyWorkerDelivery({
+    issue: plan.issue,
+    worker: plan.workers[0],
+    status: 'completed',
+    exitCode: 0,
+    reportText: report,
+    now: new Date('2026-04-01T03:05:00.000Z'),
+    randomId: 'blocking-acceptance',
+  })
+
+  assert.equal(reconciled.acceptanceReview.accepted, false)
+  assert.equal(reconciled.acceptanceReview.outcome, 'blocked')
+  assert.equal(reconciled.acceptanceReview.reusableExtraction.disposition, 'same_issue_task')
+  assert.equal(reconciled.worker.taskRecord.status, 'blocked')
+  assert.equal(reconciled.worker.taskRecord.completedAt, undefined)
+  assert.equal(reconciled.followUpIssues.length, 0)
+})
+
+test('blocks acceptance when a worker follow-up requires user-owned input', () => {
+  const plan = createRunPlan({
+    objective: 'Deploy a worker result only after user-owned approval is clear.',
+    workspacePath: '/tmp/linx',
+    backend: 'codex',
+    mode: 'off',
+    now: new Date('2026-04-01T04:00:00.000Z'),
+    randomId: 'ask-user-acceptance',
+  })
+  const report = [
+    'Implementation is ready but needs a user decision.',
+    '',
+    '```json',
+    JSON.stringify({
+      symphonyFinal: true,
+      summary: 'The worker needs user authority before closure.',
+      followUps: [{
+        kind: 'other',
+        summary: 'User must approve production deployment.',
+        userDecisionRequired: true,
+      }],
+    }),
+    '```',
+  ].join('\n')
+
+  const review = createSymphonyAcceptanceReview({
+    issue: plan.issue,
+    worker: plan.workers[0],
+    status: 'completed',
+    exitCode: 0,
+    reportText: report,
+    now: new Date('2026-04-01T04:05:00.000Z'),
+  })
+
+  assert.equal(review.accepted, false)
+  assert.equal(review.outcome, 'blocked')
+  assert.equal(review.followUps[0].disposition, 'ask_user')
+})
+
+test('finalizes a run plan through the shared worker acceptance use-case', () => {
+  const plan = createRunPlan({
+    objective: 'Share Symphony completion decisions across CLI and Web adapters.',
+    workspacePath: '/tmp/linx',
+    backend: 'codex',
+    mode: 'off',
+    now: new Date('2026-04-01T05:00:00.000Z'),
+    randomId: 'shared-finalize',
+  })
+  const report = [
+    'The worker still needs same-issue work.',
+    '',
+    '```json',
+    JSON.stringify({
+      symphonyFinal: true,
+      summary: 'Shared use-case is not ready for closure.',
+      followUps: [{
+        kind: 'missing_shared_abstraction',
+        summary: 'Move final worker acceptance into the shared control layer.',
+        requiredBeforeAcceptance: true,
+      }],
+    }),
+    '```',
+  ].join('\n')
+  const reconciled = reconcileSymphonyWorkerDelivery({
+    issue: plan.issue,
+    worker: {
+      ...plan.workers[0],
+      session: {
+        ...plan.workers[0].session,
+        status: 'completed',
+        exitCode: 0,
+      },
+      delivery: {
+        ...plan.workers[0].delivery,
+        status: 'completed',
+      },
+    },
+    status: 'completed',
+    exitCode: 0,
+    reportText: report,
+    now: new Date('2026-04-01T05:05:00.000Z'),
+    randomId: 'shared-finalize',
+  })
+
+  const finalized = finalizeSymphonyRunPlanAfterWorkers({
+    plan,
+    workers: [reconciled.worker],
+    followUpIssues: reconciled.followUpIssues,
+    now: new Date('2026-04-01T05:06:00.000Z'),
+  })
+
+  assert.equal(finalized.status, 'completed')
+  assert.equal(finalized.issueStatus, 'blocked')
+  assert.equal(finalized.blocker?.kind, 'acceptance')
+  assert.equal(finalized.plan.issue.status, 'blocked')
+  assert.match(finalized.plan.issue.error, /Move final worker acceptance/)
+  assert.equal(finalized.plan.taskRecord.status, 'blocked')
+  assert.equal(finalized.plan.taskRecord.acceptanceReview?.accepted, false)
 })

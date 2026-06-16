@@ -10,6 +10,7 @@ import { initializeFavoriteCollections } from '@/modules/favorites/collections'
 import { initializeInboxCollections } from '@/modules/inbox/collections'
 import { formatLoginErrorForUser } from '@/modules/login/error-messages'
 import { initializeModelCollections } from '@/modules/model-services/collections'
+import { initializeSymphonyControlCollections, symphonyControlOps } from '@/modules/symphony/collections'
 
 interface PodCollectionsBootstrapProps {
   children?: ReactNode
@@ -26,6 +27,7 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
     initializeFavoriteCollections(db)
     initializeInboxCollections(db)
     initializeModelCollections(db)
+    initializeSymphonyControlCollections(db)
 
     if (!db) {
       lastStartedRef.current = null
@@ -34,6 +36,7 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
 
     let cancelled = false
     let unsubscribe: (() => void) | null = null
+    let unsubscribeSymphony: (() => void) | null = null
     const started = lastStartedRef.current
     const force = !!started && started !== db
 
@@ -49,6 +52,18 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
       })
       .catch((error) => {
         console.warn('[PodCollectionsBootstrap] Failed to subscribe chat collections:', error)
+      })
+
+    void symphonyControlOps.subscribeToPod()
+      .then((nextUnsubscribe) => {
+        if (cancelled) {
+          nextUnsubscribe()
+          return
+        }
+        unsubscribeSymphony = nextUnsubscribe
+      })
+      .catch((error) => {
+        console.warn('[PodCollectionsBootstrap] Failed to subscribe Symphony control collections:', error)
       })
 
     const welcomePromise = chatOps.ensureLinxWelcome({ force })
@@ -91,6 +106,7 @@ export function PodCollectionsBootstrap({ children }: PodCollectionsBootstrapPro
     return () => {
       cancelled = true
       unsubscribe?.()
+      unsubscribeSymphony?.()
     }
   }, [db, toast])
 

@@ -301,12 +301,13 @@ LinX 业务补充关系再用 `udfs:`：
 本地目录可以使用 LinX 自己的 URI 方案，例如：
 
 ```text
-linx://{node-id}/path/to/directory
+linx://{device-id}/path/to/directory
 ```
 
 但要注意：
 
 - 这是资源身份；
+- `device-id` 标识能运行 workspace 的设备，不是 SP nodeId；
 - 不意味着它天然就是 `ldp:Container`；
 - 仍应通过类声明明确其是 `udfs:LocalContainer`。
 

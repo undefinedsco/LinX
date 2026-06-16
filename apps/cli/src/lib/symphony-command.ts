@@ -1,25 +1,32 @@
 import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import {
+  buildAutoModeTranscriptMessages,
   runThreadReconcilerCycle,
   summarizeWakeJobExecutionRecord,
   type AgentRuntimeBackendConfig,
+  type AutoModeEventLogEntry,
   type ReconcileDecisionSummary,
   type ThreadControlEvent,
   type WakeJobSchedulerSnapshotSummary,
 } from '@linx/agent-runtime'
 import type { AutoModeCredentialSource, AutoModeMode, AutoModeWorkerBackend } from '@linx/agent-runtime/auto-mode'
 import {
-  appendSymphonyReconcilerDecision,
+  completeSymphonyWorkerRun,
   createRunPlan,
+  finalizeSymphonyRunPlanAfterWorkers,
+  recordSymphonyWorkerRuntimeEvent,
   renderSymphonyRuntimePrompt,
+  startSymphonyWorkerRun,
+  withSymphonyRunPlanPrimaryWorker,
+  withSymphonyRunPlanWorker,
   type CreateSymphonyRunPlanInput,
   type SymphonyDelegationTarget,
   type SymphonyRunPlan,
   type WorkerWorkspaceKind,
   type SymphonyWorkerPlan,
 } from '@linx/agent-runtime/symphony'
-import { runAutoMode, listArchivedAutoModeSessions, type AutoRunOptions } from './auto-mode/index.js'
+import { runAutoMode, listArchivedAutoModeSessions, loadAutoModeEvents, type AutoRunOptions } from './auto-mode/index.js'
 import {
   formatSymphonyRecordSummary,
   getSymphonyHome,
@@ -39,9 +46,12 @@ import {
   persistSymphonyProjectionToPod,
 } from './symphony/pod-projection.js'
 
+const DEFAULT_SYMPHONY_HEARTBEAT_INTERVAL_MS = 60_000
+
 export interface SymphonyRuntime {
   runAutoMode(options: AutoRunOptions): Promise<number>
   listAutoModeSessions(): ReturnType<typeof listArchivedAutoModeSessions>
+  loadAutoModeEvents?: typeof loadAutoModeEvents
   persistSymphonyControlStateToPod?: typeof persistSymphonyControlStateToPod
   /** @deprecated Use persistSymphonyControlStateToPod for LinX-owned Symphony records. */
   persistSymphonyProjectionToPod?: typeof persistSymphonyProjectionToPod
@@ -86,6 +96,7 @@ interface SymphonyRunArgs {
 const defaultRuntime: SymphonyRuntime = {
   runAutoMode,
   listAutoModeSessions: listArchivedAutoModeSessions,
+  loadAutoModeEvents,
   persistSymphonyControlStateToPod,
   listOpenSymphonyIssuesFromPod,
   mirrorSymphonyProjectionJsonLdFromPod,
@@ -176,7 +187,7 @@ export async function runSymphony(
 
   try {
     const dispatchedWorkers: SymphonyWorkerPlan[] = []
-    let firstFailure: { exitCode: number; error: string } | null = null
+    const followUpIssues: NonNullable<SymphonyRunPlan['followUpIssues']> = [...(currentPlan.followUpIssues ?? [])]
     for (const [index, worker] of currentPlan.workers.entries()) {
       throwIfAborted(argv.signal)
       const dispatched = await runSymphonyWorker({
@@ -206,31 +217,39 @@ export async function runSymphony(
         },
       })
       dispatchedWorkers.push(dispatched.worker)
-      currentPlan = withUpdatedWorker(currentPlan, dispatched.worker)
-      if (dispatched.exitCode !== 0 && !firstFailure) {
-        firstFailure = {
-          exitCode: dispatched.exitCode,
-          error: `Backend ${dispatched.worker.session.backend} exited with code ${dispatched.exitCode}`,
-        }
+      if (dispatched.followUpIssues?.length) {
+        followUpIssues.push(...dispatched.followUpIssues)
       }
+      currentPlan = withUpdatedWorker({
+        ...currentPlan,
+        followUpIssues,
+      }, dispatched.worker)
     }
 
-    const status = firstFailure ? 'failed' : 'completed'
-    issue = withSymphonyIssueStatus(issue, firstFailure ? 'blocked' : 'resolved', firstFailure ? { error: firstFailure.error } : {})
+    const finalized = finalizeSymphonyRunPlanAfterWorkers({
+      plan: {
+        ...currentPlan,
+        issue,
+        workers: dispatchedWorkers,
+        followUpIssues,
+      },
+      workers: dispatchedWorkers,
+      followUpIssues,
+    })
+    issue = finalized.plan.issue
     currentPlan = withUpdatedIssue({
       ...currentPlan,
-      issue,
-      workers: dispatchedWorkers,
+      ...finalized.plan,
     })
-    currentPlan = await persistSymphonyControlState(currentPlan, status, runtime, {
+    currentPlan = await persistSymphonyControlState(currentPlan, finalized.status, runtime, {
       quiet: quietProjectionErrors,
       signal: argv.signal,
     })
     if (argv.print !== false) {
       printSymphonyRunPlan(currentPlan, { dryRun: false })
     }
-    if (firstFailure) {
-      process.exitCode = firstFailure.exitCode
+    if (finalized.blocker?.kind === 'worker_failure' && finalized.blocker.exitCode !== undefined) {
+      process.exitCode = finalized.blocker.exitCode
     }
     return currentPlan
   } catch (error) {
@@ -319,7 +338,12 @@ async function runSymphonyWorker(input: {
   runtime: SymphonyRuntime
   signal?: AbortSignal
   onWorkerDispatched?: (worker: SymphonyWorkerPlan) => Promise<void>
-}): Promise<{ worker: SymphonyWorkerPlan; status: 'completed' | 'failed'; exitCode: number }> {
+}): Promise<{
+  worker: SymphonyWorkerPlan
+  status: 'completed' | 'failed'
+  exitCode: number
+  followUpIssues: SymphonyRunPlan['followUpIssues']
+}> {
   throwIfAborted(input.signal)
   const beforeAutoModeIds = new Set(input.runtime.listAutoModeSessions().map((record) => record.id))
   const cwd = input.worker.session.cwd || input.cwd
@@ -350,7 +374,67 @@ async function runSymphonyWorker(input: {
   let runningDelivery = input.worker.delivery
   let runningSession = input.worker.session
   let runningTask = input.worker.taskRecord
-  const cycle = await runThreadReconcilerCycle({
+  let runningRunSteps = input.worker.runSteps ?? []
+  let heartbeatTimer: ReturnType<typeof setInterval> | undefined
+  let heartbeatPending: Promise<void> | undefined
+  let heartbeatStopped = false
+  let heartbeatInFlight = false
+  let heartbeatCount = 0
+  const applyRunningWorkerUpdate = async (worker: SymphonyWorkerPlan): Promise<void> => {
+    runningTask = worker.taskRecord
+    runningDelivery = worker.delivery
+    runningSession = worker.session
+    runningRunSteps = worker.runSteps ?? []
+    await input.onWorkerDispatched?.(worker)
+  }
+  const emitHeartbeat = async (): Promise<void> => {
+    if (heartbeatStopped || heartbeatInFlight) {
+      return
+    }
+    heartbeatInFlight = true
+    try {
+      heartbeatCount += 1
+      const heartbeatWorker = recordSymphonyWorkerRuntimeEvent({
+        worker: {
+          task: input.worker.task,
+          taskRecord: runningTask,
+          delivery: runningDelivery,
+          session: runningSession,
+          ...(runningRunSteps.length ? { runSteps: runningRunSteps } : {}),
+        },
+        stepType: 'run.step',
+        message: `${input.worker.session.backend} worker heartbeat ${heartbeatCount}.`,
+        payload: {
+          heartbeat: true,
+          issue: input.issue.uri,
+          task: input.worker.task,
+          delivery: input.worker.delivery.uri,
+          session: input.worker.session.uri,
+          backend: input.worker.session.backend,
+          count: heartbeatCount,
+        },
+        randomId: `${input.worker.delivery.uri}-heartbeat-${heartbeatCount}`,
+      })
+      await applyRunningWorkerUpdate(heartbeatWorker)
+    } finally {
+      heartbeatInFlight = false
+    }
+  }
+  const startHeartbeat = (): void => {
+    if (!input.onWorkerDispatched || heartbeatTimer) {
+      return
+    }
+    const intervalMs = resolveSymphonyHeartbeatIntervalMs(input.worker.session.supervisor?.intervalMs)
+    heartbeatTimer = setInterval(() => {
+      heartbeatPending = emitHeartbeat().catch((error) => {
+        console.warn('[symphony] heartbeat persistence failed:', error instanceof Error ? error.message : String(error))
+      })
+    }, intervalMs)
+    heartbeatTimer.unref?.()
+  }
+  let cycle: Awaited<ReturnType<typeof runThreadReconcilerCycle>>
+  try {
+    cycle = await runThreadReconcilerCycle({
     policy: {
       kind: 'symphony',
       assignedWorkerAgent: input.worker.delivery.targetAgent,
@@ -403,17 +487,35 @@ async function runSymphonyWorker(input: {
     },
     onDispatched: (dispatch) => {
       throwIfAborted(input.signal)
-      runningDelivery = appendSymphonyReconcilerDecision(withSymphonyDeliveryStatus(input.worker.delivery, 'dispatched'), dispatch.summary)
-      runningSession = appendSymphonyReconcilerDecision(withSymphonySessionStatus(input.worker.session, 'running'), dispatch.summary)
-      runningTask = appendSymphonyReconcilerDecision(withSymphonyTaskStatus(input.worker.taskRecord, 'running'), dispatch.summary)
-      return input.onWorkerDispatched?.({
-        task: input.worker.task,
-        taskRecord: runningTask,
-        delivery: runningDelivery,
-        session: runningSession,
+      const runningWorker = startSymphonyWorkerRun({
+        worker: input.worker,
+        decision: dispatch.summary,
+        message: `${input.worker.session.backend} worker was dispatched by Thread Reconciler.`,
+        payload: {
+          issue: input.issue.uri,
+          task: input.worker.task,
+          delivery: input.worker.delivery.uri,
+          session: input.worker.session.uri,
+          backend: input.worker.session.backend,
+          targetAgent: input.worker.delivery.targetAgent,
+        },
+        randomId: `${input.worker.delivery.uri}-run-started`,
       })
+      runningDelivery = runningWorker.delivery
+      runningSession = runningWorker.session
+      runningTask = runningWorker.taskRecord
+      runningRunSteps = runningWorker.runSteps ?? []
+      startHeartbeat()
+      return applyRunningWorkerUpdate(runningWorker)
     },
-  })
+    })
+  } finally {
+    heartbeatStopped = true
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer)
+    }
+    await heartbeatPending
+  }
   const dispatchScheduler = cycle.schedulerSummary
   if (dispatchScheduler.failed.length > 0) {
     throw wakeError ?? new Error(String(dispatchScheduler.failed[0]?.error ?? 'Symphony worker wake job failed'))
@@ -425,6 +527,7 @@ async function runSymphonyWorker(input: {
   throwIfAborted(input.signal)
   const autoModeSessionId = resolveCreatedAutoModeSessionId(beforeAutoModeIds, input.runtime)
   const status = exitCode === 0 ? 'completed' : 'failed'
+  const reportText = readSymphonyWorkerFinalReport(autoModeSessionId, input.runtime)
   const statusDecision = await dispatchSymphonyWorkerStatusDecision({
     worker: {
       task: input.worker.task,
@@ -436,24 +539,28 @@ async function runSymphonyWorker(input: {
     exitCode,
     autoModeSessionId,
   })
+  const reconciliation = completeSymphonyWorkerRun({
+    issue: input.issue,
+    worker: {
+      task: input.worker.task,
+      taskRecord: runningTask,
+      delivery: runningDelivery,
+      session: runningSession,
+      ...(runningRunSteps.length ? { runSteps: runningRunSteps } : {}),
+    },
+    status,
+    exitCode,
+    autoModeSessionId,
+    reportText,
+    decision: statusDecision.decision,
+    randomId: `${input.worker.delivery.uri}-acceptance`,
+  })
+
   return {
     status,
     exitCode,
-    worker: {
-      task: input.worker.task,
-      taskRecord: appendSymphonyReconcilerDecision(withSymphonyTaskStatus(runningTask, status, {
-        ...(exitCode === 0 ? {} : { error: `Backend exited with code ${exitCode}` }),
-      }), statusDecision.decision),
-      delivery: appendSymphonyReconcilerDecision(withSymphonyDeliveryStatus(runningDelivery, status, {
-        autoModeSessionId,
-        ...(exitCode === 0 ? {} : { error: `Backend exited with code ${exitCode}` }),
-      }), statusDecision.decision),
-      session: appendSymphonyReconcilerDecision(withSymphonySessionStatus(runningSession, status, {
-        autoModeSessionId,
-        exitCode,
-        ...(exitCode === 0 ? {} : { error: `Backend exited with code ${exitCode}` }),
-      }), statusDecision.decision),
-    },
+    followUpIssues: reconciliation.followUpIssues,
+    worker: reconciliation.worker,
   }
 }
 
@@ -604,27 +711,11 @@ async function mirrorSymphonyControlStateBestEffort(
 }
 
 function withUpdatedIssue(plan: SymphonyRunPlan): SymphonyRunPlan {
-  const primary = plan.workers[0]
-  if (!primary) {
-    return plan
-  }
-
-  return {
-    ...plan,
-    task: primary.task,
-    delivery: primary.delivery,
-    session: primary.session,
-  }
+  return withSymphonyRunPlanPrimaryWorker(plan)
 }
 
 function withUpdatedWorker(plan: SymphonyRunPlan, worker: SymphonyWorkerPlan): SymphonyRunPlan {
-  const workers = plan.workers.map((candidate) => (
-    candidate.session.uri === worker.session.uri ? worker : candidate
-  ))
-  return withUpdatedIssue({
-    ...plan,
-    workers,
-  })
+  return withSymphonyRunPlanWorker(plan, worker)
 }
 
 function printSymphonyRunPlan(plan: SymphonyRunPlan, options: { dryRun: boolean }): void {
@@ -651,6 +742,24 @@ function resolveCreatedAutoModeSessionId(beforeIds: Set<string>, runtime: Sympho
     .filter((record) => !beforeIds.has(record.id))
     .sort((left, right) => right.startedAt.localeCompare(left.startedAt))
   return created[0]?.id
+}
+
+function readSymphonyWorkerFinalReport(autoModeSessionId: string | undefined, runtime: SymphonyRuntime): string | undefined {
+  if (!autoModeSessionId) {
+    return undefined
+  }
+
+  let events: AutoModeEventLogEntry[]
+  try {
+    events = runtime.loadAutoModeEvents?.(autoModeSessionId) ?? loadAutoModeEvents(autoModeSessionId)
+  } catch {
+    return undefined
+  }
+
+  const transcript = buildAutoModeTranscriptMessages(events)
+  return transcript
+    .filter((message) => message.role === 'assistant')
+    .at(-1)?.content
 }
 
 function assertSymphonyWorkerModelCompatibility(
@@ -808,6 +917,10 @@ function normalizePositiveInteger(value: unknown): number | undefined {
   }
   const normalized = Math.trunc(value)
   return normalized > 0 ? normalized : undefined
+}
+
+function resolveSymphonyHeartbeatIntervalMs(value: unknown): number {
+  return normalizePositiveInteger(value) ?? DEFAULT_SYMPHONY_HEARTBEAT_INTERVAL_MS
 }
 
 function createAbortError(message = 'The operation was aborted.'): Error {
