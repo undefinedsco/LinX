@@ -26,6 +26,7 @@ const drizzleSolidSourceRoot = resolvePackageSourceRoot('@undefineds.co/drizzle-
   process.env.LINX_DRIZZLE_SOLID_ROOT,
   join(repoRoot, 'node_modules', '@undefineds.co', 'drizzle-solid'),
 ])
+const storesSourceRoot = join(repoRoot, 'packages', 'stores')
 
 rmSync(workRoot, { recursive: true, force: true })
 mkdirSync(workRoot, { recursive: true })
@@ -48,6 +49,10 @@ cpSync(join(repoRoot, 'packages', 'agent-runtime', 'dist'), join(vendorAgentRunt
 const vendorDrizzleSolidRoot = join(workRoot, 'vendor', 'drizzle-solid')
 mkdirSync(vendorDrizzleSolidRoot, { recursive: true })
 cpSync(join(drizzleSolidSourceRoot, 'dist'), join(vendorDrizzleSolidRoot, 'dist'), { recursive: true })
+
+const vendorStoresRoot = join(workRoot, 'vendor', 'stores')
+mkdirSync(vendorStoresRoot, { recursive: true })
+cpSync(join(storesSourceRoot, 'dist'), join(vendorStoresRoot, 'dist'), { recursive: true })
 
 copyBundledPiPlugins({
   repoRoot,
@@ -117,6 +122,23 @@ const slimAgentRuntimePkg = {
 }
 writeFileSync(join(vendorAgentRuntimeRoot, 'package.json'), `${JSON.stringify(slimAgentRuntimePkg, null, 2)}\n`)
 
+const storesPkg = JSON.parse(readFileSync(join(storesSourceRoot, 'package.json'), 'utf-8'))
+const slimStoresPkg = {
+  name: '@linx/stores',
+  version: storesPkg.version,
+  type: 'module',
+  exports: {
+    '.': './dist/index.js',
+    './login': './dist/login.js',
+    './current-pod-base': './dist/current-pod-base.js',
+    './exact-records': './dist/exact-records.js',
+    './pod-db': './dist/pod-collection.js',
+    './pod-write-guard': './dist/pod-write-guard.js',
+    './symphony-control': './dist/symphony-control.js',
+  },
+}
+writeFileSync(join(vendorStoresRoot, 'package.json'), `${JSON.stringify(slimStoresPkg, null, 2)}\n`)
+
 const cliPkgPath = join(workRoot, 'package.json')
 const cliPkg = JSON.parse(readFileSync(cliPkgPath, 'utf-8'))
 cliPkg.private = false
@@ -133,6 +155,7 @@ cliPkg.publishConfig = {
 if (cliPkg.dependencies) {
   delete cliPkg.dependencies['@undefineds.co/models']
   delete cliPkg.dependencies['@linx/agent-runtime']
+  delete cliPkg.dependencies['@linx/stores']
   delete cliPkg.dependencies['@undefineds.co/drizzle-solid']
   Object.assign(cliPkg.dependencies, modelsPkg.dependencies)
   delete cliPkg.dependencies['@undefineds.co/drizzle-solid']
@@ -163,6 +186,8 @@ function rewriteVendorImports(root) {
     const agentRuntimeBase = agentRuntimeRel.startsWith('.') ? agentRuntimeRel : `./${agentRuntimeRel}`
     const drizzleSolidRel = relative(dirname(file), join(workRoot, 'vendor', 'drizzle-solid', 'dist', 'esm')).replaceAll('\\', '/')
     const drizzleSolidBase = drizzleSolidRel.startsWith('.') ? drizzleSolidRel : `./${drizzleSolidRel}`
+    const storesRel = relative(dirname(file), join(workRoot, 'vendor', 'stores', 'dist')).replaceAll('\\', '/')
+    const storesBase = storesRel.startsWith('.') ? storesRel : `./${storesRel}`
     const replacements = [
       ["'@undefineds.co/models'", `'${modelsBase}/index.js'`],
       ["'@undefineds.co/models/client'", `'${modelsBase}/client/index.js'`],
@@ -192,6 +217,13 @@ function rewriteVendorImports(root) {
       ["'@linx/agent-runtime/turn-controller'", `'${agentRuntimeBase}/turn-controller.js'`],
       ["'@linx/agent-runtime/wake-scheduler'", `'${agentRuntimeBase}/wake-scheduler.js'`],
       ["'@linx/agent-runtime/workspace'", `'${agentRuntimeBase}/workspace.js'`],
+      ["'@linx/stores'", `'${storesBase}/index.js'`],
+      ["'@linx/stores/login'", `'${storesBase}/login.js'`],
+      ["'@linx/stores/current-pod-base'", `'${storesBase}/current-pod-base.js'`],
+      ["'@linx/stores/exact-records'", `'${storesBase}/exact-records.js'`],
+      ["'@linx/stores/pod-db'", `'${storesBase}/pod-collection.js'`],
+      ["'@linx/stores/pod-write-guard'", `'${storesBase}/pod-write-guard.js'`],
+      ["'@linx/stores/symphony-control'", `'${storesBase}/symphony-control.js'`],
       ["'@undefineds.co/drizzle-solid'", `'${drizzleSolidBase}/index.js'`],
       ['"@undefineds.co/models"', `"${modelsBase}/index.js"`],
       ['"@undefineds.co/models/client"', `"${modelsBase}/client/index.js"`],
@@ -221,6 +253,13 @@ function rewriteVendorImports(root) {
       ['"@linx/agent-runtime/turn-controller"', `"${agentRuntimeBase}/turn-controller.js"`],
       ['"@linx/agent-runtime/wake-scheduler"', `"${agentRuntimeBase}/wake-scheduler.js"`],
       ['"@linx/agent-runtime/workspace"', `"${agentRuntimeBase}/workspace.js"`],
+      ['"@linx/stores"', `"${storesBase}/index.js"`],
+      ['"@linx/stores/login"', `"${storesBase}/login.js"`],
+      ['"@linx/stores/current-pod-base"', `"${storesBase}/current-pod-base.js"`],
+      ['"@linx/stores/exact-records"', `"${storesBase}/exact-records.js"`],
+      ['"@linx/stores/pod-db"', `"${storesBase}/pod-collection.js"`],
+      ['"@linx/stores/pod-write-guard"', `"${storesBase}/pod-write-guard.js"`],
+      ['"@linx/stores/symphony-control"', `"${storesBase}/symphony-control.js"`],
       ['"@undefineds.co/drizzle-solid"', `"${drizzleSolidBase}/index.js"`],
     ]
     for (const [from, to] of replacements) {
@@ -233,12 +272,16 @@ function rewriteVendorImports(root) {
 rewriteVendorImports(join(workRoot, 'dist'))
 rewriteVendorImports(join(workRoot, 'vendor', 'models', 'dist'))
 rewriteVendorImports(join(workRoot, 'vendor', 'agent-runtime', 'dist'))
+rewriteVendorImports(join(workRoot, 'vendor', 'stores', 'dist'))
 assertVendoredModelsImportsResolve(workRoot)
 assertNoBareAgentRuntimeImports(join(workRoot, 'dist'))
+assertNoBareStoresImports(join(workRoot, 'dist'))
+assertNoBareStoresImports(join(workRoot, 'vendor', 'stores', 'dist'))
 assertNoBareDrizzleSolidImports(join(workRoot, 'dist'))
 assertNoBareDrizzleSolidImports(join(workRoot, 'vendor', 'models', 'dist'))
 fixExtensionlessRelativeImports(join(workRoot, 'vendor', 'models', 'dist'))
 fixExtensionlessRelativeImports(join(workRoot, 'vendor', 'agent-runtime', 'dist'))
+fixExtensionlessRelativeImports(join(workRoot, 'vendor', 'stores', 'dist'))
 fixJsonImportAttributes(join(workRoot, 'vendor', 'models', 'dist'))
 
 function assertNoBareAgentRuntimeImports(root) {
@@ -251,6 +294,20 @@ function assertNoBareAgentRuntimeImports(root) {
   }
   if (leftovers.length > 0) {
     throw new Error(`Unrewritten @linx/agent-runtime imports remain:\n${leftovers.join('\n')}`)
+  }
+}
+
+
+function assertNoBareStoresImports(root) {
+  const leftovers = []
+  for (const file of walkJs(root)) {
+    const source = readFileSync(file, 'utf8')
+    if (source.includes('@linx/stores')) {
+      leftovers.push(relative(workRoot, file))
+    }
+  }
+  if (leftovers.length > 0) {
+    throw new Error(`Unrewritten @linx/stores imports remain:\n${leftovers.join('\n')}`)
   }
 }
 
@@ -484,6 +541,8 @@ function assertPackedFileList(files) {
     'vendor/agent-runtime/dist/index.js',
     'vendor/drizzle-solid/package.json',
     'vendor/drizzle-solid/dist/esm/index.js',
+    'vendor/stores/package.json',
+    'vendor/stores/dist/index.js',
   ]
   const missing = requiredFiles.filter((file) => !included.has(file))
   if (missing.length > 0) {

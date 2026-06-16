@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
-    "build:check": "tsc && vite build",
+    "build": "yarn workspace @linx/stores build && vite build",
+    "build:check": "yarn workspace @linx/stores build && tsc && vite build",
     "preview": "vite preview",
     "test": "NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--preserve-symlinks\" vitest",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"

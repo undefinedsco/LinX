@@ -22,6 +22,8 @@ const cliPkg = JSON.parse(readFileSync(join(cliRoot, 'package.json'), 'utf-8'))
 const modelsPkg = JSON.parse(readFileSync(join(modelsRoot, 'package.json'), 'utf-8'))
 const agentRuntimeRoot = join(repoRoot, 'packages', 'agent-runtime')
 const agentRuntimePkg = JSON.parse(readFileSync(join(agentRuntimeRoot, 'package.json'), 'utf-8'))
+const storesRoot = join(repoRoot, 'packages', 'stores')
+const storesPkg = JSON.parse(readFileSync(join(storesRoot, 'package.json'), 'utf-8'))
 const codexAcpDependencyVersion = cliPkg.dependencies?.['@zed-industries/codex-acp']
 const version = args.version ?? cliPkg.version
 
@@ -34,13 +36,15 @@ mkdirSync(cliWorkRoot, { recursive: true })
 
 copyPackage(cliRoot, cliWorkRoot)
 copyAgentRuntimePackage(cliWorkRoot)
+copyStoresPackage(cliWorkRoot)
 copyBundledPiPlugins({
   repoRoot,
   targetRoot: cliWorkRoot,
 })
 assertBundledPiPluginsInstalled(cliWorkRoot)
 assertBundledPiPluginConfigPaths(cliWorkRoot)
-rewriteAgentRuntimeImports(join(cliWorkRoot, 'dist'), cliWorkRoot)
+rewriteVendoredInternalImports(join(cliWorkRoot, 'dist'), cliWorkRoot)
+rewriteVendoredInternalImports(join(cliWorkRoot, 'vendor', 'stores', 'dist'), cliWorkRoot)
 
 writeJson(join(cliWorkRoot, 'package.json'), createPublishableCliPackage(cliPkg, version, modelsPkg.version))
 
@@ -81,6 +85,7 @@ function createPublishableCliPackage(pkg, packageVersion, modelsVersion) {
     '@zed-industries/codex-acp': codexAcpDependencyVersion,
   }
   delete dependencies['@linx/agent-runtime']
+  delete dependencies['@linx/stores']
 
   return {
     ...pkg,
@@ -130,7 +135,52 @@ function copyAgentRuntimePackage(cliWorkRoot) {
   fixExtensionlessRelativeImports(join(vendorRoot, 'dist'))
 }
 
-function rewriteAgentRuntimeImports(root, cliWorkRoot) {
+
+function copyStoresPackage(cliWorkRoot) {
+  const vendorRoot = join(cliWorkRoot, 'vendor', 'stores')
+  mkdirSync(vendorRoot, { recursive: true })
+  cpSync(join(storesRoot, 'dist'), join(vendorRoot, 'dist'), { recursive: true })
+  writeJson(join(vendorRoot, 'package.json'), {
+    name: '@linx/stores',
+    version: storesPkg.version,
+    type: 'module',
+    exports: {
+      '.': './dist/index.js',
+      './login': './dist/login.js',
+      './current-pod-base': './dist/current-pod-base.js',
+      './exact-records': './dist/exact-records.js',
+      './pod-db': './dist/pod-collection.js',
+      './pod-write-guard': './dist/pod-write-guard.js',
+      './symphony-control': './dist/symphony-control.js',
+    },
+  })
+  fixExtensionlessRelativeImports(join(vendorRoot, 'dist'))
+}
+
+
+function buildStoreImportReplacements(fromFile, cliWorkRoot) {
+  const storeDist = join(cliWorkRoot, 'vendor', 'stores', 'dist')
+  const rel = relative(dirname(fromFile), storeDist).replaceAll('\\', '/')
+  const base = rel.startsWith('.') ? rel : `./${rel}`
+  return [
+    ["'@linx/stores'", `'${base}/index.js'`],
+    ["'@linx/stores/login'", `'${base}/login.js'`],
+    ["'@linx/stores/current-pod-base'", `'${base}/current-pod-base.js'`],
+    ["'@linx/stores/exact-records'", `'${base}/exact-records.js'`],
+    ["'@linx/stores/pod-db'", `'${base}/pod-collection.js'`],
+    ["'@linx/stores/pod-write-guard'", `'${base}/pod-write-guard.js'`],
+    ["'@linx/stores/symphony-control'", `'${base}/symphony-control.js'`],
+    ['"@linx/stores"', `"${base}/index.js"`],
+    ['"@linx/stores/login"', `"${base}/login.js"`],
+    ['"@linx/stores/current-pod-base"', `"${base}/current-pod-base.js"`],
+    ['"@linx/stores/exact-records"', `"${base}/exact-records.js"`],
+    ['"@linx/stores/pod-db"', `"${base}/pod-collection.js"`],
+    ['"@linx/stores/pod-write-guard"', `"${base}/pod-write-guard.js"`],
+    ['"@linx/stores/symphony-control"', `"${base}/symphony-control.js"`],
+  ]
+}
+
+function rewriteVendoredInternalImports(root, cliWorkRoot) {
   const jsFiles = walkJs(root)
   for (const file of jsFiles) {
     let source = readFileSync(file, 'utf8')
@@ -171,25 +221,26 @@ function rewriteAgentRuntimeImports(root, cliWorkRoot) {
       ['"@linx/agent-runtime/turn-controller"', `"${base}/turn-controller.js"`],
       ['"@linx/agent-runtime/wake-scheduler"', `"${base}/wake-scheduler.js"`],
       ['"@linx/agent-runtime/workspace"', `"${base}/workspace.js"`],
+      ...buildStoreImportReplacements(file, cliWorkRoot),
     ]
     for (const [from, to] of replacements) {
       source = source.split(from).join(to)
     }
     writeFileSync(file, source)
   }
-  assertNoBareAgentRuntimeImports(root)
+  assertNoBareInternalImports(root)
 }
 
-function assertNoBareAgentRuntimeImports(root) {
+function assertNoBareInternalImports(root) {
   const leftovers = []
   for (const file of walkJs(root)) {
     const source = readFileSync(file, 'utf8')
-    if (source.includes('@linx/agent-runtime')) {
+    if (source.includes('@linx/agent-runtime') || source.includes('@linx/stores')) {
       leftovers.push(relative(root, file))
     }
   }
   if (leftovers.length > 0) {
-    throw new Error(`Unrewritten @linx/agent-runtime imports remain:\n${leftovers.join('\n')}`)
+    throw new Error(`Unrewritten internal package imports remain:\n${leftovers.join('\n')}`)
   }
 }
 

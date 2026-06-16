@@ -25,6 +25,7 @@
     "models:status": "node scripts/models-workspace.mjs status",
     "models:assert-release-safe": "node scripts/models-workspace.mjs assert-release-safe",
     "build:agent-runtime": "yarn workspace @linx/agent-runtime build",
+    "build:stores": "yarn workspace @linx/stores build",
     "pack:cli:preview": "yarn build:agent-runtime && yarn build:cli && node apps/cli/scripts/pack-preview-selfcontained.mjs",
     "pack:cli:selfcontained": "yarn build:agent-runtime && yarn build:cli && node apps/cli/scripts/pack-preview-selfcontained.mjs --release",
     "pack:cli:release": "yarn models:assert-release-safe && yarn build:agent-runtime && yarn build:cli && node apps/cli/scripts/pack-release.mjs",
