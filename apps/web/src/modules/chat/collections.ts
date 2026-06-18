@@ -332,7 +332,7 @@ function buildThreadResourceId(threadId: string, chatIri: string): string {
 
 function buildMessageResourceId(
   messageId: string,
-  row: Pick<MessageInsert, 'chat' | 'thread' | 'createdAt'>,
+  row: Pick<MessageInsert, 'parent' | 'chat' | 'thread' | 'createdAt'>,
 ): string {
   return buildResourceId(messageResource as any, { ...row, id: messageId } as Record<string, unknown>)
 }
@@ -1345,6 +1345,7 @@ export const chatOps = {
       id: threadResourceId,
       ...(threadIri ? { '@id': threadIri } : {}),
       scope: chatIri ?? chatId,
+      parent: chatIri ?? chatId,
       chat: chatIri ?? chatId,
       title: title || `话题 ${now.toLocaleTimeString()}`,
       createdAt: now,
@@ -1483,6 +1484,7 @@ export const chatOps = {
       throw new Error(`Failed to resolve thread IRI for thread ${threadId}`)
     }
     const messageResourceId = buildMessageResourceId(msgKey, {
+      parent: chatRef,
       chat: chatRef,
       thread: threadRef,
       createdAt: now,
@@ -1495,6 +1497,7 @@ export const chatOps = {
     const msgData = {
       id: messageResourceId,
       '@id': messageIri,
+      parent: chatRef,
       chat: chatRef,
       thread: threadRef,
       maker,
@@ -1558,6 +1561,7 @@ export const chatOps = {
       throw new Error(`Failed to resolve thread IRI for thread ${threadId}`)
     }
     const messageResourceId = buildMessageResourceId(msgKey, {
+      parent: chatRef,
       chat: chatRef,
       thread: threadRef,
       createdAt: now,
@@ -1570,6 +1574,7 @@ export const chatOps = {
     const msgData = {
       id: messageResourceId,
       '@id': messageIri,
+      parent: chatRef,
       chat: chatRef,
       thread: threadRef,
       maker,

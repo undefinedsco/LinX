@@ -338,9 +338,11 @@ function buildSymphonyWorkerSessionUri(webId: string, worker: SymphonyRunPlan['w
 }
 
 function buildSymphonyMessageUri(webId: string, plan: SymphonyRunPlan, row: Pick<MessageInsert, 'id' | 'createdAt'>): string {
+  const chat = selectTargetChatIri(plan.session.target?.chat, webId, plan)
   return messageResource.buildIri(webId,  {
     id: String(row.id),
-    chat: selectTargetChatIri(plan.session.target?.chat, webId, plan),
+    parent: chat,
+    chat,
     thread: selectTargetThreadIri(plan.session.target?.thread, webId, plan),
     createdAt: row.createdAt,
   })
@@ -1147,6 +1149,7 @@ async function upsertThread(db: PodProjectionDb, runtime: SymphonyPodProjectionR
 async function upsertMessage(db: PodProjectionDb, runtime: SymphonyPodProjectionRuntime, row: MessageInsert): Promise<void> {
   await upsertExactRecord(db, runtime.messageResource, {
     id: row.id,
+    parent: row.parent,
     chat: row.chat,
     createdAt: row.createdAt,
   }, row as Record<string, unknown>, {

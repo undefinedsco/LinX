@@ -16,9 +16,6 @@ import {
   aiProviderResource,
   approvalResource,
   auditResource,
-  buildApprovalSubjectPath,
-  buildGrantSubjectPath,
-  buildSessionResourceId,
   chatResource,
   credentialResource,
   drizzle,
@@ -27,6 +24,11 @@ import {
   sessionResource,
   solidResources,
 } from '../apps/cli/dist/lib/models.js'
+import {
+  buildApprovalResourceUrl,
+  buildGrantResourceUrl,
+  buildSessionResourceUrl,
+} from '../apps/cli/dist/lib/pi-adapter/pod-native.js'
 import { __podApprovalInternal } from '../apps/cli/dist/lib/auto-mode/pod-approval.js'
 import { loadCredentials } from '../apps/cli/dist/lib/credentials-store.js'
 import { getDefaultPodDataSession } from '../apps/cli/dist/lib/pod-data-session.js'
@@ -38,6 +40,7 @@ const agentDir = mkdtempSync(join(tmpdir(), 'linx-verify-agent-'))
 const recoveryAgentDir = mkdtempSync(join(tmpdir(), 'linx-verify-recovery-agent-'))
 let cleanupPodCredential = null
 const CLOUD_PREFLIGHT_TIMEOUT_MS = 8_000
+const SOLID_AUTH_CREDENTIALS_HINT = '$SOLID_HOME/auth/credentials.json (SOLID_HOME defaults to ~/.solid)'
 
 function podBaseUrl(webId) {
   return webId.replace('/profile/card#me', '').replace(/\/$/, '')
@@ -46,7 +49,7 @@ function podBaseUrl(webId) {
 async function createPodContext() {
   const session = await getDefaultPodDataSession()
   if (!session) {
-    throw new Error('No ~/.linx credentials found. Run `linx login` first.')
+    throw new Error(`No LinX/Solid credentials found at ${SOLID_AUTH_CREDENTIALS_HINT}. Run \`linx login\` first.`)
   }
 
   return {
@@ -164,7 +167,10 @@ async function main() {
   logStep('authenticating')
   const configuredCredentials = loadCredentials()
   if (!configuredCredentials) {
-    throw new Error('No ~/.linx credentials found. Run `linx login` with the dedicated smoke account first.')
+    throw new Error(
+      `No LinX/Solid credentials found at ${SOLID_AUTH_CREDENTIALS_HINT}. `
+      + 'Run `linx login` with the dedicated smoke account first.',
+    )
   }
   assertDedicatedProdSmokeAccount(configuredCredentials.webId, { scriptName: 'scripts/verify-cli-pod-durable.mjs' })
   const context = await createPodContext()
@@ -214,16 +220,18 @@ async function main() {
   const chatUri = context.db.resolveLocatorIri(chatResource, { id: DEFAULT_SECRETARY_CHAT_ID })
   const chatResourceId = context.db.resolveResourceId(chatResource, { id: DEFAULT_SECRETARY_CHAT_ID })
   const auditId = buildToolAuditId(sessionId, `${runId}-tool`, 'tool_execution_started')
-  const sessionResourceId = buildSessionResourceId(sessionId, createdAt)
+  const sessionUri = buildSessionResourceUrl(context.webId, sessionId, createdAt)
+  const sessionResourceId = context.db.resolveResourceId(sessionResource, sessionUri)
   const messageResourceId = context.db.resolveResourceId(messageResource, {
     id: `${sessionId}-u1`,
+    parent: chatUri,
     chat: chatUri,
     createdAt,
   })
   const auditResourceId = dateBucketResourceId(auditId, createdAt, true)
-  const sessionUri = podResourceIri(context.webId, `/.data/sessions/${sessionResourceId}`)
   const messageUri = context.db.resolveLocatorIri(messageResource, {
     id: `${sessionId}-u1`,
+    parent: chatUri,
     chat: chatUri,
     createdAt,
   })
@@ -372,9 +380,10 @@ async function main() {
   const approvalCreatedAt = new Date('2026-04-02T03:04:06.000Z')
   const grantCreatedAt = new Date('2026-04-02T03:04:07.000Z')
   const approvalAuditCreatedAt = new Date('2026-04-02T03:04:08.000Z')
-  const approvalUri = podResourceIri(context.webId, buildApprovalSubjectPath(approvalId, approvalCreatedAt))
+  const approvalUri = buildApprovalResourceUrl(context.webId, approvalId, approvalCreatedAt)
   const approvalResourceId = context.db.resolveResourceId(approvalResource, approvalUri)
-  const grantResourceId = context.db.resolveResourceId(grantResource, podResourceIri(context.webId, buildGrantSubjectPath(grantId)))
+  const grantUri = buildGrantResourceUrl(context.webId, grantId)
+  const grantResourceId = context.db.resolveResourceId(grantResource, grantUri)
   const approvalSessionUri = `${podBaseUrl(context.webId)}/.data/chat/linx-auto-mode/index.ttl#${runId}`
   await store.insertApproval({
     id: approvalId,
@@ -447,8 +456,6 @@ async function main() {
   if (!audits.some((row) => row.id === approvalAuditResourceId && row.action === 'approval_requested')) {
     throw new Error('approval audit was not read back from Pod')
   }
-  const grantUri = podResourceIri(context.webId, buildGrantSubjectPath(grantId))
-
   console.log(JSON.stringify({
     ok: true,
     runId,

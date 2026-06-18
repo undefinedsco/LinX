@@ -806,6 +806,7 @@ async function markAbandonedPreviousMessages(
     const normalized = normalizePodMessageRow(context, row, previousRefs)
     const resourceRef = messageResource.buildIri(context.webId, {
       id: normalized.id,
+      parent: normalized.parent,
       chat: normalized.chat,
       thread: normalized.thread,
       createdAt: normalized.createdAt,
@@ -848,6 +849,7 @@ function resolveActiveMessageResourceRefs(
     const normalized = normalizePodMessageRow(context, row, refs)
     activeRefs.add(messageResource.buildIri(context.webId, {
       id: normalized.id,
+      parent: normalized.parent,
       chat: normalized.chat,
       thread: normalized.thread,
       createdAt: normalized.createdAt,
@@ -892,10 +894,11 @@ async function persistMessage(
   options: LinxPiPodMirrorOptions,
   row: NonNullable<ReturnType<typeof buildPodMessageRowFromMapping>>,
 ): Promise<string> {
-  const resourceRef = messageResource.buildIri(context.webId,  { id: row.id, chat: row.chat, thread: row.thread, createdAt: row.createdAt })
+  const resourceRef = messageResource.buildIri(context.webId,  { id: row.id, parent: row.parent, chat: row.chat, thread: row.thread, createdAt: row.createdAt })
   const metadata = buildPiMessageReconcilerMetadata(options, row, resourceRef)
   const insert = {
     id: row.id,
+    parent: row.parent,
     chat: row.chat,
     thread: row.thread,
     maker: row.maker,
@@ -1014,6 +1017,7 @@ function normalizePodMessageRow(
 ): PodMirrorMessageRow {
   return {
     ...row,
+    parent: refs.chatUri,
     chat: refs.chatUri,
     thread: refs.threadUri,
     maker: row.role === 'user' ? context.webId : refs.agentUri,

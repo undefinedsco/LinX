@@ -119,7 +119,7 @@ function createFakePodRuntime() {
     const name = resourceName(resource)
     if (name === 'thread') return { id: row.id, chat: row.chat }
     if (name === 'session') return { id: row.id, createdAt: row.createdAt }
-    if (name === 'chat_message') return { id: row.id, chat: row.chat, thread: row.thread, createdAt: row.createdAt }
+    if (name === 'chat_message') return { id: row.id, parent: row.parent, chat: row.chat, thread: row.thread, createdAt: row.createdAt }
     if (name === 'audit') return { id: row.id, createdAt: row.createdAt }
     if (name === 'skill') return { id: row.id, agent: row.agent }
     return { id: row.id }

@@ -23,6 +23,7 @@ type PersistedRole = 'user' | 'assistant' | 'system'
 
 export interface PodMirrorMessageRow {
   id: string
+  parent: string
   chat: string
   thread: string
   maker: string
@@ -57,6 +58,7 @@ export function buildPodMessageRow(
   const createdAt = messageTimestampToDate(message, entry.timestamp)
   return {
     id: `${options.sessionManager.getSessionId()}-${entry.id}`,
+    parent: secretaryChatUri(webId),
     chat: secretaryChatUri(webId),
     thread: secretaryThreadUri(webId, options.sessionManager.getSessionId()),
     maker: role === 'user' ? webId : secretaryAgentUri(webId),

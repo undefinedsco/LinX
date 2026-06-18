@@ -1601,11 +1601,13 @@ export function buildSymphonyStatusMessageRow(
   return {
     id: messageResource.buildId({
       id: `${buildSymphonyThreadId(plan)}-${stage}`,
+      parent: chat,
       chat,
       thread,
       createdAt,
     }),
     scope: chat,
+    parent: chat,
     chat,
     thread,
     maker: secretaryAgent,
@@ -2276,9 +2278,11 @@ export function buildTargetChatId(plan: SymphonyRunPlan, webId: string): string 
 }
 
 export function buildSymphonyMessageIri(webId: string, plan: SymphonyRunPlan, row: Pick<MessageInsert, 'id' | 'createdAt'>): string {
+  const chat = selectTargetChatIri(plan.session.target?.chat, webId, plan)
   return messageResource.buildIri(webId, {
     id: String(row.id),
-    chat: selectTargetChatIri(plan.session.target?.chat, webId, plan),
+    parent: chat,
+    chat,
     thread: selectTargetThreadIri(plan.session.target?.thread, webId, plan),
     createdAt: row.createdAt,
   })

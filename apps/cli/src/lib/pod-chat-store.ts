@@ -201,7 +201,8 @@ function buildCliChatSyncResourceBindings(input: {
   const messageUri = input.messageId && input.chatId && input.createdAt
     ? (input.webId ? messageResource.buildIri(input.webId, {
       id: input.messageId,
-      chat: chatResource.buildIri(input.webId, { id: input.chatId }),
+      parent: chatUri,
+      chat: chatUri,
       ...(threadUri ? { thread: threadUri } : {}),
       createdAt: input.createdAt,
     }) : undefined)
@@ -319,6 +320,7 @@ export async function createThread(
   }, () => db.insert(threadResource).values({
     id: threadRepository.idForChat(chatUri, threadId),
     scope: chatUri,
+    parent: chatUri,
     chat: chatUri,
     title: title || 'CLI Session',
     workspace: workspace || undefined,
@@ -388,6 +390,7 @@ export async function saveUserMessage(
   const threadUri = threadRepository.iriForChat(webId, chatId, threadId)
   const messageUri = messageResource.buildIri(webId, {
     id: messageId,
+    parent: chatUri,
     chat: chatUri,
     thread: threadUri,
     createdAt: now,
@@ -405,6 +408,7 @@ export async function saveUserMessage(
     role: 'user',
   }, () => db.insert(messageResource).values({
     id: messageId,
+    parent: chatUri,
     chat: chatUri,
     thread: threadUri,
     maker: webId,
@@ -460,6 +464,7 @@ export async function saveAssistantMessage(
   const maker = agentResource.buildIri(webId, { id: DEFAULT_AGENT_ID })
   const messageUri = messageResource.buildIri(webId, {
     id: messageId,
+    parent: chatUri,
     chat: chatUri,
     thread: threadUri,
     createdAt: now,
@@ -477,6 +482,7 @@ export async function saveAssistantMessage(
     role: 'assistant',
   }, () => db.insert(messageResource).values({
     id: messageId,
+    parent: chatUri,
     chat: chatUri,
     thread: threadUri,
     maker,

@@ -135,9 +135,11 @@ export function buildChatIndexResourceUrl(webId: string, chatId: string): string
 }
 
 export function buildMessageResourceUrl(webId: string, chatId: string, threadId: string, createdAt: Date): string {
+  const chat = chatResource.buildIri(webId, { id: chatId })
   return documentUrl(messageResource.buildIri(webId,  {
     id: '__document__',
-    chat: chatResource.buildIri(webId, { id: chatId }),
+    parent: chat,
+    chat,
     thread: threadRepository.iriForChat(webId, chatId, threadId),
     createdAt,
   }))

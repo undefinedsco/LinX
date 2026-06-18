@@ -85,8 +85,9 @@ yarn build:models
 当前状态是迁移期：
 
 ```text
-@undefineds.co/models package version: 0.2.42
-@undefineds.co/xpod package version: 0.3.48
+@undefineds.co/models package version: 0.2.45
+@undefineds.co/drizzle-solid package version: 0.3.17
+@undefineds.co/xpod package version: 0.3.52
 packages/models: legacy local checkout/submodule if present
 target: remove submodule maintenance path and consume the published models package/version
 ```

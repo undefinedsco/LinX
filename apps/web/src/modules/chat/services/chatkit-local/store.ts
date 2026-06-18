@@ -146,6 +146,7 @@ function buildChatKitMessageReconcilerMetadata(input: {
 }): Record<string, unknown> {
   const resource = messageResource.buildIri(requirePodBaseUrl(input.db), {
     id: input.messageId,
+    parent: input.chat,
     chat: input.chat,
     thread: input.thread,
     createdAt: input.createdAt,
@@ -375,9 +376,11 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
   }
 
   private buildMessageId(chatId: string, thread: string, itemId: string, createdAt: Date): string {
+    const chat = this.buildChatUri(chatId)
     return messageResource.buildId({
       id: itemId,
-      chat: this.buildChatUri(chatId),
+      parent: chat,
+      chat,
       thread,
       createdAt,
     })
@@ -553,19 +556,23 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     const existingThread = await findThreadRecord(this.db, thread.id, chatId)
 
     if (existingThread) {
+      const chat = this.buildChatUri(chatId)
       await updateExactRecord(this.db, Thread as any, existingThread as any, {
-        scope: this.buildChatUri(chatId),
-        chat: this.buildChatUri(chatId),
+        scope: chat,
+        parent: chat,
+        chat,
         title: thread.title || undefined,
         status: statusToString(thread.status),
         metadata: metadataValue,
         updatedAt: now,
       } as any)
     } else {
+      const chat = this.buildChatUri(chatId)
       await (this.db as any).insert(Thread as any).values({
         id: this.buildThreadId(chatId, thread.id),
-        scope: this.buildChatUri(chatId),
-        chat: this.buildChatUri(chatId),
+        scope: chat,
+        parent: chat,
+        chat,
         title: thread.title || undefined,
         status: statusToString(thread.status),
         metadata: metadataValue,
@@ -730,6 +737,7 @@ export class LocalChatKitStore implements ChatKitStore<StoreContext> {
     await (this.db as any).insert(Message as any).values({
       id: messageId,
       scope: chat,
+      parent: chat,
       chat,
       thread,
       maker,

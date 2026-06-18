@@ -63,6 +63,7 @@ interface AutoModeChatRow extends Record<string, unknown> {
 interface AutoModeThreadRow extends Record<string, unknown> {
   id: string
   scope: string
+  parent: string
   chat: string
   title: string
   metadata: Record<string, unknown>
@@ -88,6 +89,7 @@ interface AutoModeSessionRow extends Record<string, unknown> {
 
 interface PersistedAutoModeConversationMessage extends Record<string, unknown> {
   id: string
+  parent: string
   chat: string
   thread: string
   maker: string
@@ -173,9 +175,11 @@ function buildAutoModeSessionUri(webId: string, record: AutoModeSessionRecord): 
 }
 
 function buildAutoModeMessageUri(webId: string, record: AutoModeSessionRecord, row: Pick<PersistedAutoModeConversationMessage, 'id' | 'createdAt'>): string {
+  const chat = buildAutoModeChatUri(webId, record)
   return messageResource.buildIri(webId, {
     id: row.id,
-    chat: buildAutoModeChatUri(webId, record),
+    parent: chat,
+    chat,
     thread: buildAutoModeThreadUri(webId, record),
     createdAt: row.createdAt ?? record.startedAt,
   })
@@ -267,6 +271,7 @@ function buildAutoModeConversationThreadRow(
   return {
     id: threadRepository.idForChat(chatUri, record.id),
     scope: chatUri,
+    parent: chatUri,
     chat: chatUri,
     title: buildAutoModeConversationThreadTitle(record, transcript),
     metadata: {
@@ -432,6 +437,7 @@ function buildAutoModeConversationMessages(
 
     return {
       id,
+      parent: chatUri,
       chat: chatUri,
       thread: threadUri,
       maker: sender.maker,
