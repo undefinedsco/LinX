@@ -197,7 +197,7 @@ npx vitest run src/modules/credentials/
 ### 集成测试
 
 ```bash
-# 默认直接运行即可；需要复用外部认证环境时，再设置 XPOD_TEST_MODE/XPOD_TEST_URL 等变量
+# 默认直接运行即可；需要复用外部认证环境时，设置 XPOD_TEST_MODE=auth 并让 SOLID_HOME 指向已登录的统一 Solid auth root
 
 # 运行所有集成测试
 cd ../models && npx vitest run tests/*.integration.test.ts

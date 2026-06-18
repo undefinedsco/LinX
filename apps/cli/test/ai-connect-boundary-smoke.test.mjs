@@ -1,6 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
+import {
+  getSmokeBaseUrl,
+  getSmokeModel,
+  shouldRunLiveSmoke,
+} from '../../../scripts/smoke-env.mjs'
 
 function resourceName(resource) {
   return resource?.config?.name ?? resource?.name ?? 'unknown'
@@ -235,7 +240,7 @@ test('Pod-backed OpenRouter credential can be marked as Codex-compatible and con
 })
 
 async function resolveOpenRouterSmokeModel(baseUrl, apiKey) {
-  const configured = process.env.OPENROUTER_MODEL?.trim()
+  const configured = getSmokeModel('openrouter')
   if (configured) {
     return configured
   }
@@ -249,15 +254,15 @@ async function resolveOpenRouterSmokeModel(baseUrl, apiKey) {
   assert.equal(response.ok, true, `OpenRouter model list failed: ${response.status} ${await response.text()}`)
   const payload = await response.json()
   const model = payload?.data?.find((entry) => typeof entry?.id === 'string' && entry.id.endsWith(':free'))
-  assert.ok(model?.id, 'No OpenRouter :free model found; set OPENROUTER_MODEL to smoke a specific model.')
+  assert.ok(model?.id, 'No OpenRouter :free model found; set LINX_SMOKE_MODELS=openrouter=<model> to smoke a specific model.')
   return model.id
 }
 
-const runOpenRouterSmoke = process.env.LINX_OPENROUTER_SMOKE === '1' && Boolean(process.env.OPENROUTER_API_KEY)
+const runOpenRouterSmoke = shouldRunLiveSmoke('openrouter') && Boolean(process.env.OPENROUTER_API_KEY)
 
 test('optional live OpenRouter OpenAI-compatible request smoke', { skip: !runOpenRouterSmoke }, async () => {
   const apiKey = process.env.OPENROUTER_API_KEY
-  const baseUrl = (process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1').replace(/\/+$/, '')
+  const baseUrl = getSmokeBaseUrl('openrouter', 'https://openrouter.ai/api/v1').replace(/\/+$/, '')
   const model = await resolveOpenRouterSmokeModel(baseUrl, apiKey)
 
   const response = await fetch(`${baseUrl}/chat/completions`, {

@@ -19,6 +19,13 @@ test('assertDedicatedProdSmokeAccount refuses undeclared production smoke accoun
   )
 })
 
+test('getExpectedProdSmokeWebId ignores the removed legacy smoke WebID env', () => {
+  assert.equal(
+    getExpectedProdSmokeWebId({ LINX_SMOKE_WEBID: 'https://id.undefineds.co/smoke/profile/card#me' }),
+    '',
+  )
+})
+
 test('assertDedicatedProdSmokeAccount refuses mismatched account', () => {
   assert.throws(
     () => assertDedicatedProdSmokeAccount('https://id.undefineds.co/personal/profile/card#me', {

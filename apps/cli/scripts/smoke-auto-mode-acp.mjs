@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 const cliRoot = dirname(fileURLToPath(new URL('../package.json', import.meta.url)))
 const env = {
   ...process.env,
-  LINX_LIVE_ACP_SMOKE: '1',
+  LINX_SMOKE_LIVE: 'acp',
 }
 
 const result = spawnSync(process.execPath, [

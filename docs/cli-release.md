@@ -110,6 +110,24 @@ HOME=/tmp/linx-prod-smoke-home LINX_PROD_SMOKE_WEBID=$LINX_PROD_SMOKE_WEBID node
 
 The isolated `HOME` keeps the smoke account's `~/.solid/auth` credentials separate from the user's normal Solid auth store. `scripts/verify-cli-pod-durable.mjs` and `scripts/prod-pod-core-crud.mjs` are write smoke tests; they should never default to the currently logged-in personal account.
 
+## Smoke Environment Surface
+
+Smoke scripts should use the smallest shared environment surface:
+
+- `SOLID_HOME`: points at the unified Solid auth root. Smoke scripts read `$SOLID_HOME/auth/credentials.json`; they should not ask for separate `WEBID` / `SOLID_CLIENT_ID` / `SOLID_CLIENT_SECRET` variables.
+- `LINX_HOME`: optional LinX runtime/archive root.
+- `LINX_PROD_SMOKE_WEBID`: required only for production Pod write smoke.
+- `LINX_SMOKE_LIVE`: comma-separated live smoke gate, for example `acp`, `openrouter`, or `all`.
+- `LINX_SMOKE_PROMPT`: optional prompt override for live backend smoke.
+- `LINX_SMOKE_TIMEOUT_MS`: optional timeout override for live backend smoke.
+- `LINX_SMOKE_MODELS`: optional backend model map, either JSON (`{"claude":"haiku"}`) or comma assignments (`claude=haiku,openrouter=meta/free`).
+- `LINX_SMOKE_BASE_URLS`: optional backend base URL map, either JSON or comma assignments.
+- `XPOD_TEST_MODE`: xpod integration mode, normally `local`; `auth` reuses the unified Solid login in `SOLID_HOME`.
+- `XPOD_TEST_SEED_CONFIG`: optional local xpod seed account file for seeded local integration tests.
+- `XPOD_TEST_LOG_LEVEL`: optional local xpod runtime log level.
+
+Do not add one-off smoke variables for each provider/backend unless the value is an actual provider credential such as `OPENAI_API_KEY` or `OPENROUTER_API_KEY`.
+
 ## Git Tag Release
 
 Normal LinX CLI release is tag-driven:

@@ -98,7 +98,7 @@ AI provider 冒烟测试分两层：默认测试只验证 shell 输入通过 sha
 OpenRouter 请求需要显式提供环境变量后单独运行：
 
 ```bash
-LINX_OPENROUTER_SMOKE=1 OPENROUTER_API_KEY=sk-or-xxx node --test test/ai-connect-boundary-smoke.test.mjs
+LINX_SMOKE_LIVE=openrouter OPENROUTER_API_KEY=sk-or-xxx node --test test/ai-connect-boundary-smoke.test.mjs
 ```
 
 ACP backend 验证也分两层：默认测试用 fake ACP backend 覆盖 Codex / Claude /
@@ -114,8 +114,9 @@ yarn workspace @undefineds.co/linx test:live-acp
 可选覆盖项：
 
 ```bash
-LINX_LIVE_CLAUDE_MODEL=haiku yarn workspace @undefineds.co/linx test:live-acp
-LINX_LIVE_ACP_TIMEOUT_MS=300000 yarn workspace @undefineds.co/linx test:live-acp
+LINX_SMOKE_LIVE=acp yarn workspace @undefineds.co/linx test:live-acp
+LINX_SMOKE_MODELS=claude=haiku yarn workspace @undefineds.co/linx test:live-acp
+LINX_SMOKE_TIMEOUT_MS=300000 yarn workspace @undefineds.co/linx test:live-acp
 ```
 
 ## Backend Control Notes

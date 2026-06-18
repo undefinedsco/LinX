@@ -5,11 +5,16 @@ import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
+import {
+  getSmokeModel,
+  getSmokePrompt,
+  getSmokeTimeoutMs,
+  shouldRunLiveSmoke,
+} from '../../../scripts/smoke-env.mjs'
 
-const LIVE_GATE = process.env.LINX_LIVE_ACP_SMOKE === '1'
-const LIVE_PROMPT = process.env.LINX_LIVE_ACP_PROMPT?.trim()
-  || 'Reply with exactly "linx-live-acp-ok". Do not use tools.'
-const LIVE_TIMEOUT_MS = Number(process.env.LINX_LIVE_ACP_TIMEOUT_MS || 180_000)
+const LIVE_GATE = shouldRunLiveSmoke('acp')
+const LIVE_PROMPT = getSmokePrompt('Reply with exactly "linx-live-acp-ok". Do not use tools.')
+const LIVE_TIMEOUT_MS = getSmokeTimeoutMs(180_000)
 
 function readJson(path) {
   try {
@@ -89,7 +94,7 @@ function readJsonFromString(value) {
 }
 
 function claudeSmokeModel() {
-  const configured = process.env.LINX_LIVE_CLAUDE_MODEL?.trim()
+  const configured = getSmokeModel('claude')
   if (configured) {
     return configured
   }
@@ -165,7 +170,7 @@ function detectLiveAcpBackends(autoModeModule) {
     {
       backend: 'codex',
       command: codexPlan.command,
-      model: process.env.LINX_LIVE_CODEX_MODEL?.trim() || undefined,
+      model: getSmokeModel('codex'),
       available: codexCommandAvailable && codexCredentialAvailable,
       reason: !codexCommandAvailable
         ? `codex-acp command not found (${codexPlan.command})`
@@ -187,7 +192,7 @@ function detectLiveAcpBackends(autoModeModule) {
     {
       backend: 'codebuddy',
       command: 'codebuddy',
-      model: process.env.LINX_LIVE_CODEBUDDY_MODEL?.trim() || undefined,
+      model: getSmokeModel('codebuddy'),
       available: codeBuddyCommandAvailable && codeBuddyConfigAvailable,
       reason: !codeBuddyCommandAvailable
         ? 'codebuddy command not found or --version failed'
