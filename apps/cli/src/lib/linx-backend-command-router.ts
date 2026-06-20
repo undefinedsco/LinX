@@ -1,4 +1,5 @@
 import type { BackendCommandRouter } from './pi-adapter/backend-command.js'
+import { installProjectedCommandRouter } from './linx-interactive-command-routing.js'
 import { shouldRouteToBackendCommand } from './linx-shell-command-router.js'
 
 type ProjectedCommandRouterInstaller = (interactive: any) => void
@@ -39,7 +40,8 @@ export function installBackendCommandRouter(
     interactive.ui?.requestRender?.()
     return true
   }
-  options.installProjectedCommandRouter?.(interactive)
+  const installProjected = options.installProjectedCommandRouter ?? installProjectedCommandRouter
+  installProjected(interactive)
 
   const originalSetup = interactive.setupEditorSubmitHandler?.bind(interactive)
   if (typeof originalSetup !== 'function') {
