@@ -1,5 +1,5 @@
 import { InteractiveMode } from '@earendil-works/pi-coding-agent'
-import { applyLinxInteractiveBranding, requestLinxCloudLogin } from './branding.js'
+import { applyLinxInteractiveBranding, requestLinxCloudLogin } from '../linx-interactive-branding.js'
 import type { BackendCredentialEntry, BackendCredentialInput } from './backend-credentials.js'
 import { installPodStatusOutputFilter } from './pod-status-output.js'
 import {
