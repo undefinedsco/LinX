@@ -4,7 +4,6 @@ import type { BackendCredentialEntry, BackendCredentialInput } from './backend-c
 import type { BackendCommandRouter } from './backend-command.js'
 import { installPodStatusOutputFilter } from './pod-status-output.js'
 import { createPodBackedExtensionUiContext } from './pod-approval.js'
-import { getSecretaryAutoInputController } from './auto-input-controller.js'
 import {
   getSessionControlManager,
   installSessionControlRuntimeEventBridge,
@@ -23,6 +22,7 @@ import { patchPiAssistantMessageRendering } from '../linx-assistant-message-rend
 import { installBackendCommandRouter as installBackendCommandRouterWithProjection } from '../linx-backend-command-router.js'
 import { promptForBackendCredential } from '../linx-ai-connect-command.js'
 import { installSymphonyCommand } from '../linx-symphony-interactive-command.js'
+import { installLinxRestoredAutoStartup } from '../linx-restored-auto-startup.js'
 import {
   handleInteractiveAutoCommand,
   installLinxFinalSubmitCommandRouter,
@@ -39,6 +39,7 @@ export { installLinxFooterPatch, setLinxFooterInteractive, buildLinxFooterModePr
 export { changeInteractiveCwd, installLinxCwdStartupNotice, resolveInteractiveCwd, setRuntimeCwd } from '../linx-workspace-command.js'
 export { patchPiAssistantMessageRendering } from '../linx-assistant-message-rendering.js'
 export { installSymphonyCommand } from '../linx-symphony-interactive-command.js'
+export { installLinxRestoredAutoStartup } from '../linx-restored-auto-startup.js'
 export {
   installLinxFinalSubmitCommandRouter,
   installLinxGlobalCommands,
@@ -165,37 +166,6 @@ function installLinxInteractivePostInitHooks(interactive: any, runtime: any): vo
 
 /** @deprecated Use bootstrapLinxInteractiveMode. */
 export const bootstrapPiInteractiveMode = bootstrapLinxInteractiveMode
-
-export function installLinxRestoredAutoStartup(
-  interactive: any,
-  runtime: any,
-  sessionControl = getSessionControlManager(interactive, runtime),
-): void {
-  if (!interactive || interactive.__linxRestoredAutoStartupInstalled) {
-    return
-  }
-
-  const originalInit = interactive.init?.bind(interactive)
-  if (typeof originalInit !== 'function') {
-    return
-  }
-
-  interactive.init = async function patchedLinxRestoredAutoInit(...args: unknown[]): Promise<unknown> {
-    const result = await originalInit(...args)
-    if (this.__autoEnabled === true && runtime?.autoEnabled === true) {
-      const controller = getSecretaryAutoInputController(this, runtime, sessionControl)
-      controller.start({ scheduleImmediately: true })
-      interactive.showStatus?.([
-        'Auto restored from the previous session.',
-        'auto · Ctrl+C or /auto off to hand control back',
-      ].join('\n'))
-      interactive.ui?.requestRender?.()
-    }
-    return result
-  }
-
-  interactive.__linxRestoredAutoStartupInstalled = true
-}
 
 function ensureInteractiveRuntimeHost(runtime: any): void {
   if (!runtime || typeof runtime !== 'object') {
