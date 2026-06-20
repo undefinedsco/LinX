@@ -1,7 +1,7 @@
 import { createLinxAgentStreamAdapter, type LinxAgentStreamAdapter, type LinxCompletionBackendResult } from './stream.js'
 import { ensureBrowserConsentLogin, isOidcLoginExpiredError, isOidcTransientRemoteError } from '../oidc-auth.js'
 import { DEFAULT_LINX_CLOUD_MODEL_ID, FALLBACK_LINX_CLOUD_MODEL_IDS, resolvePreferredLinxCloudModelId } from '../default-model.js'
-import { ensureLinxPiTheme } from './theme.js'
+import { ensureLinxPiTheme } from '../linx-theme.js'
 import {
   type BashOperations,
   type AgentSessionRuntime,

@@ -6645,6 +6645,13 @@ test('interactive bootstrap composition lives in a shell module', async (t) => {
   assert.equal(typeof module.bootstrapPiInteractiveMode, 'function')
 })
 
+test('interactive theme installation lives in a shell rendering module', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-theme.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.ensureLinxPiTheme, 'function')
+})
+
 test('backend command router patch lives in a shell command module', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-backend-command-router.ts')
   t.after(() => cleanup())
