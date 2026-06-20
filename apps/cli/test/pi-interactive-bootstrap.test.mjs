@@ -2732,6 +2732,69 @@ test('linx update notification ignores unversioned objects and never renders obj
   assert.doesNotMatch(renderedText, /\[object Object\]/)
 })
 
+
+test('shell lifecycle restart releases the old TUI and keeps the shell waiting for the new process', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/shell-lifecycle.ts')
+  t.after(() => cleanup())
+
+  const events = []
+  const childHandlers = {}
+  const runtimeEnv = {}
+  const interactive = {
+    stop() {
+      events.push({ type: 'stop', noExitMessage: runtimeEnv[module.LINX_TUI_NO_EXIT_MESSAGE_ENV] })
+    },
+    showError(message) {
+      events.push(`error:${message}`)
+    },
+  }
+  const runtime = {
+    execPath: '/usr/local/bin/node',
+    argv: ['/usr/local/bin/node', '/usr/local/bin/linx', '--session', 'session_123'],
+    env: runtimeEnv,
+    cwd() {
+      return '/workspace/project'
+    },
+    spawnProcess(command, args, options) {
+      events.push({ type: 'spawn', command, args, options })
+      return {
+        on(event, handler) {
+          childHandlers[event] = handler
+          events.push({ type: 'child-listener', event })
+          return this
+        },
+      }
+    },
+    exitProcess(code) {
+      events.push({ type: 'exit', code })
+    },
+    defer(callback, delayMs) {
+      events.push({ type: 'defer', delayMs })
+      callback()
+    },
+  }
+
+  module.restartInteractiveShellProcess(interactive, { runtime })
+
+  assert.deepEqual(events[0], { type: 'stop', noExitMessage: '1' })
+  assert.deepEqual(events[1], { type: 'defer', delayMs: 50 })
+  assert.equal(events[2]?.type, 'spawn')
+  assert.equal(events[2].command, runtime.execPath)
+  assert.deepEqual(events[2].args, runtime.argv.slice(1))
+  assert.equal(events[2].options.cwd, '/workspace/project')
+  assert.equal(events[2].options.env, runtimeEnv)
+  assert.equal(events[2].options.stdio, 'inherit')
+  assert.equal(events[2].options.detached, false)
+  assert.equal(runtimeEnv[module.LINX_TUI_NO_EXIT_MESSAGE_ENV], undefined)
+  assert.equal(events.some((event) => event?.type === 'exit'), false)
+
+  assert.equal(typeof childHandlers.close, 'function')
+  childHandlers.close(0, null)
+
+  assert.equal(events.at(-1)?.type, 'exit')
+  assert.equal(events.at(-1).code, 0)
+})
+
 test('linx update notification normalizes object version values and selector object choices', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/branding.ts')
   t.after(() => cleanup())

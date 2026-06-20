@@ -1,6 +1,5 @@
 import { spawn } from 'node:child_process'
 import { basename } from 'node:path'
-import { readFileSync } from 'node:fs'
 import { keyHint, LoginDialogComponent, rawKeyHint } from '@earendil-works/pi-coding-agent'
 import { Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui'
 import type { OAuthCredentials } from '@earendil-works/pi-ai'
@@ -14,11 +13,9 @@ import { suppressPodStatusOutput } from './pod-status-output.js'
 import { LINX_RUNTIME_MANAGED_AUTH_KEY } from './runtime.js'
 import { formatLinxCliErrorMessage } from '../linx-cloud-errors.js'
 import { getSolidLinxAgentDir } from '../solid-local-store.js'
+import { checkForNewLinxVersion, installLinxSelfUpdateAndRestart, LINX_CHANGELOG_URL, LINX_CLI_VERSION, LINX_UPDATE_PACKAGE_NAME } from '../linx-self-update.js'
 
 export const LINX_AGENT_DIR = getSolidLinxAgentDir()
-export const LINX_UPDATE_PACKAGE_NAME = '@undefineds.co/linx'
-export const LINX_CHANGELOG_URL = 'https://github.com/undefineds-co/linx-cli/releases'
-export const LINX_CLI_VERSION = readLinxCliVersion()
 const LINX_AUTH_LOGIN_IN_PROGRESS = Symbol.for('linx.tui.authLoginInProgress')
 const LINX_AUTH_LOGIN_ON_INIT = Symbol.for('linx.tui.authLoginOnInit')
 const LINX_AUTH_PENDING_RETRY = Symbol.for('linx.tui.authPendingRetry')
@@ -129,30 +126,6 @@ function scheduleLinxVersionCheck(interactive: any): void {
   })
 }
 
-export async function checkForNewLinxVersion(): Promise<string | undefined> {
-  if (process.env.PI_OFFLINE) {
-    return undefined
-  }
-
-  try {
-    const response = await fetch(`https://registry.npmjs.org/${encodeURIComponent(LINX_UPDATE_PACKAGE_NAME)}/latest`, {
-      signal: AbortSignal.timeout(5000),
-    })
-    if (!response.ok) {
-      return undefined
-    }
-
-    const body = await response.json() as { version?: string }
-    const latest = typeof body.version === 'string' ? body.version.trim() : ''
-    if (!latest || !isVersionNewer(latest, LINX_CLI_VERSION)) {
-      return undefined
-    }
-    return latest
-  } catch {
-    return undefined
-  }
-}
-
 async function showLinxUpdateSelector(interactive: any, newVersion: string): Promise<void> {
   if (interactive[LINX_UPDATE_IN_PROGRESS]) {
     return
@@ -171,7 +144,7 @@ async function showLinxUpdateSelector(interactive: any, newVersion: string): Pro
     const selected = normalizeSelectorChoice(rawSelected, options)
 
     if (selected === UPDATE_OPTION_INSTALL) {
-      await installLinxUpdateAndRestart(interactive, newVersion)
+      await installLinxSelfUpdateAndRestart(interactive, newVersion)
       return
     }
 
@@ -259,59 +232,6 @@ function normalizeLinxUpdateVersion(value: unknown): string | undefined {
   }
 
   return undefined
-}
-
-async function installLinxUpdateAndRestart(interactive: any, newVersion: string): Promise<void> {
-  interactive.showStatus?.(`Installing LinX ${newVersion}...`)
-  interactive.ui?.requestRender?.()
-  try {
-    await runNpmInstallLatest()
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    interactive.showError?.(`LinX update failed: ${message}`)
-    return
-  }
-
-  interactive.showStatus?.(`LinX ${newVersion} installed. Restarting...`)
-  interactive.ui?.requestRender?.()
-  restartCurrentProcess(interactive)
-}
-
-function runNpmInstallLatest(): Promise<void> {
-  const npmCommand = process.env.npm_execpath || 'npm'
-  const args = ['install', '-g', '--omit=peer', `${LINX_UPDATE_PACKAGE_NAME}@latest`]
-  return new Promise((resolve, reject) => {
-    const child = spawn(npmCommand, args, {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      shell: false,
-    })
-    let stderr = ''
-    child.stderr?.on('data', (chunk) => {
-      stderr += chunk.toString()
-    })
-    child.on('error', reject)
-    child.on('close', (code) => {
-      if (code === 0) {
-        resolve()
-        return
-      }
-      reject(new Error(stderr.trim() || `npm install exited with code ${code ?? 'unknown'}`))
-    })
-  })
-}
-
-function restartCurrentProcess(interactive: any): void {
-  const child = spawn(process.execPath, process.argv.slice(1), {
-    cwd: process.cwd(),
-    env: process.env,
-    stdio: 'inherit',
-    detached: false,
-  })
-  child.on('error', (error) => {
-    interactive.showError?.(`LinX restart failed: ${error.message}`)
-  })
-  interactive.stop?.()
-  setTimeout(() => process.exit(0), 50)
 }
 
 function showLinxUpdateFallback(interactive: any, newVersion: string): void {
@@ -1339,53 +1259,6 @@ function padLine(line: string, width: number): string {
   return `${line}${' '.repeat(width - visible)}`
 }
 
-function readLinxCliVersion(): string {
-  try {
-    const raw = readFileSync(new URL('../../../package.json', import.meta.url), 'utf-8')
-    const pkg = JSON.parse(raw) as { version?: string }
-    return typeof pkg.version === 'string' && pkg.version.trim() ? pkg.version.trim() : '0.1.0'
-  } catch {
-    return '0.1.0'
-  }
-}
-
-export function isVersionNewer(candidate: string, current: string): boolean {
-  const candidateVersion = parseSemverLike(candidate)
-  const currentVersion = parseSemverLike(current)
-  if (!candidateVersion || !currentVersion) {
-    return candidate !== current
-  }
-
-  for (const key of ['major', 'minor', 'patch'] as const) {
-    if (candidateVersion[key] > currentVersion[key]) {
-      return true
-    }
-    if (candidateVersion[key] < currentVersion[key]) {
-      return false
-    }
-  }
-
-  return !candidateVersion.prerelease && currentVersion.prerelease
-}
-
-function parseSemverLike(version: string): {
-  major: number
-  minor: number
-  patch: number
-  prerelease: boolean
-} | null {
-  const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+.+)?$/.exec(version.trim())
-  if (!match) {
-    return null
-  }
-  return {
-    major: Number(match[1]),
-    minor: Number(match[2]),
-    patch: Number(match[3]),
-    prerelease: Boolean(match[4]),
-  }
-}
-
 function resolveRuntimeProviderLabel(interactive: any): string {
   const bridge = interactive?.runtimeHost?.linxAuthBridge ?? interactive?.linxAuthBridge
   if (bridge?.providerLabel) {
@@ -1413,3 +1286,5 @@ function stripAnsi(text: string): string {
 function isPromiseLike(value: unknown): value is Promise<unknown> {
   return isRecord(value) && typeof value.then === 'function'
 }
+
+export { checkForNewLinxVersion, isVersionNewer, LINX_CHANGELOG_URL, LINX_CLI_VERSION, LINX_UPDATE_PACKAGE_NAME } from '../linx-self-update.js'

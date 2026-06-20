@@ -15,6 +15,7 @@ import type { AgentRuntimeBackendConfig } from '@linx/agent-runtime'
 import { getAIConfigProviderCatalog, getAIConfigProviderMetadata } from '../models.js'
 import { runSymphony, type SymphonyRuntime } from '../symphony-command.js'
 import { applyLinxInteractiveBranding, checkAndShowLinxUpdate, requestLinxCloudLogin } from './branding.js'
+import { LINX_TUI_NO_EXIT_MESSAGE_ENV } from '../shell-lifecycle.js'
 import type { BackendCredentialEntry, BackendCredentialInput, BackendCredentialRepairReason } from './backend-credentials.js'
 import type { BackendCommandRouter } from './backend-command.js'
 import { installPodStatusOutputFilter } from './pod-status-output.js'
@@ -3606,7 +3607,7 @@ function patchInteractiveExitMessage(interactive: any): void {
 
   interactive.stop = function patchedStop(...args: unknown[]): void {
     originalStop(...args)
-    if (!initialized || exitMessageWritten || process.env.LINX_TUI_NO_EXIT_MESSAGE === '1') {
+    if (!initialized || exitMessageWritten || process.env[LINX_TUI_NO_EXIT_MESSAGE_ENV] === '1') {
       return
     }
     exitMessageWritten = true
