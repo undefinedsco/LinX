@@ -1,0 +1,182 @@
+import { basename } from 'node:path'
+import { keyHint, rawKeyHint } from '@earendil-works/pi-coding-agent'
+import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui'
+import { LINX_TUI_KEYMAP_COMMAND, LINX_TUI_KEYMAP_LABEL, LINX_TUI_LOGIN_COMMAND } from './linx-tui-contract.js'
+import { loadCredentials } from './credentials-store.js'
+import { extractUsernameFromWebId, resolveProfileDisplayName } from './profile-identity.js'
+import { suppressPodStatusOutput } from './pi-adapter/pod-status-output.js'
+import { LINX_CLI_VERSION } from './linx-self-update.js'
+import { resolveRuntimeProviderLabel } from './linx-runtime-provider-label.js'
+
+export function installLinxWelcomeHeader(interactive: any): void {
+  patchTerminalTitle(interactive)
+  patchHeader(interactive)
+}
+
+function patchTerminalTitle(interactive: any): void {
+  const original = interactive.updateTerminalTitle?.bind(interactive)
+  interactive.updateTerminalTitle = function patchedUpdateTerminalTitle(): void {
+    original?.()
+    const cwd = this.sessionManager?.getCwd?.() || process.cwd()
+    const sessionName = this.sessionManager?.getSessionName?.()
+    const suffix = sessionName ? `${sessionName} - ${basename(cwd)}` : basename(cwd)
+    this.ui?.terminal?.setTitle?.(`LinX - ${suffix}`)
+  }
+}
+
+function patchHeader(interactive: any): void {
+  const originalInit = interactive.init?.bind(interactive)
+  if (typeof originalInit !== 'function') {
+    return
+  }
+  interactive.init = async function patchedInit(): Promise<void> {
+    await originalInit()
+
+    const quietStartup = this.options?.verbose ? false : this.settingsManager?.getQuietStartup?.()
+    if (quietStartup) {
+      return
+    }
+
+    let profileDisplayName: string | null = null
+    const replacement = new LinxWelcomeCard(() => buildLinxWelcomeCardState(this, profileDisplayName))
+    const currentHeader = this.customHeader ?? this.builtInHeader
+    const index = this.headerContainer?.children?.indexOf?.(currentHeader) ?? -1
+    if (index >= 0) {
+      this.headerContainer.children[index] = replacement
+    }
+    this.customHeader = replacement
+    this.ui?.requestRender?.()
+    this.updateTerminalTitle?.()
+
+    void suppressPodStatusOutput(() => resolveProfileDisplayName())
+      .then((displayName) => {
+        if (!displayName || displayName === profileDisplayName) {
+          return
+        }
+        profileDisplayName = displayName
+        replacement.invalidate()
+        this.ui?.requestRender?.()
+      })
+      .catch(() => undefined)
+  }
+}
+
+type HeaderState = {
+  webId: string
+  username: string
+  provider: string
+  model: string
+  workspace: string
+  session: string
+  next: string
+}
+
+class LinxWelcomeCard {
+  constructor(private readonly getState: () => HeaderState) {}
+
+  invalidate(): void {}
+
+  render(width: number): string[] {
+    const innerWidth = Math.max(20, width - 4)
+    const state = this.getState()
+    const titleBlock = [
+      `\x1b[1mLinX\x1b[22m \x1b[2mv${LINX_CLI_VERSION}\x1b[22m`,
+      `\x1b[1mWelcome back, ${state.username}\x1b[22m`,
+    ]
+    const rows = [
+      renderField('WebID', state.webId, innerWidth),
+      renderField('Provider', state.provider, innerWidth),
+      renderField('Model', state.model, innerWidth),
+      renderField('Workspace', state.workspace, innerWidth),
+      renderField('Session', state.session, innerWidth),
+      '',
+      truncateToWidth(`\x1b[2mNext\x1b[22m      ${state.next}`, innerWidth),
+    ]
+
+    const headerLines = titleBlock.map((line) => truncateToWidth(line, innerWidth))
+    const body = [
+      ...headerLines.map((line) => padLine(line, innerWidth)),
+      padLine('', innerWidth),
+      ...rows.flatMap((line) => wrapAndPad(line, innerWidth)),
+    ]
+
+    return [
+      `┌${'─'.repeat(innerWidth + 2)}┐`,
+      ...body.map((line) => `│ ${line} │`),
+      `└${'─'.repeat(innerWidth + 2)}┘`,
+    ]
+  }
+}
+
+export function buildLinxWelcomeCardState(interactive: any, profileDisplayName: string | null = null): HeaderState {
+  const credentials = loadCredentials()
+  const webId = credentials?.webId ?? 'not logged in'
+  const workspace = interactive?.sessionManager?.getCwd?.() || process.cwd()
+  const sessionId = interactive?.sessionManager?.getSessionId?.()
+  const sessionName = interactive?.sessionManager?.getSessionName?.()
+  const session = sessionName && sessionId ? `${sessionName} (${formatSessionId(sessionId)})` : formatSessionId(sessionId)
+  const model = interactive?.session?.model?.id ?? 'unknown-model'
+
+  return {
+    webId,
+    username: profileDisplayName ?? extractUsernameFromWebId(webId),
+    provider: resolveRuntimeProviderLabel(interactive),
+    model,
+    workspace,
+    session,
+    next: [
+      safeKeyHint('tui.input.submit', 'send'),
+      safeKeyHint('app.model.select', 'model'),
+      safeRawKeyHint(LINX_TUI_LOGIN_COMMAND, 'auth'),
+      safeRawKeyHint(LINX_TUI_KEYMAP_COMMAND, LINX_TUI_KEYMAP_LABEL),
+    ].join(' \x1b[2m·\x1b[22m '),
+  }
+}
+
+function safeKeyHint(keybinding: string, description: string): string {
+  try {
+    return keyHint(keybinding as never, description)
+  } catch {
+    return `\x1b[2m${keybinding}\x1b[22m \x1b[2m${description}\x1b[22m`
+  }
+}
+
+function safeRawKeyHint(key: string, description: string): string {
+  try {
+    return rawKeyHint(key, description)
+  } catch {
+    return `\x1b[2m${key}\x1b[22m \x1b[2m${description}\x1b[22m`
+  }
+}
+
+function renderField(label: string, value: string, width: number): string {
+  const prefix = `\x1b[2m${label}\x1b[22m`
+  const paddedPrefix = prefix + ' '.repeat(Math.max(1, 10 - visibleWidth(prefix)))
+  return truncateToWidth(`${paddedPrefix} ${value}`, width)
+}
+
+function wrapAndPad(line: string, width: number): string[] {
+  if (!line) {
+    return [padLine('', width)]
+  }
+
+  const wrapped = wrapTextWithAnsi(line, width)
+  return wrapped.length > 0
+    ? wrapped.map((entry) => padLine(entry, width))
+    : [padLine('', width)]
+}
+
+function formatSessionId(sessionId: unknown): string {
+  if (typeof sessionId !== 'string' || !sessionId.trim()) {
+    return 'new session'
+  }
+  return sessionId.trim()
+}
+
+function padLine(line: string, width: number): string {
+  const visible = visibleWidth(line)
+  if (visible >= width) {
+    return truncateToWidth(line, width)
+  }
+  return `${line}${' '.repeat(width - visible)}`
+}

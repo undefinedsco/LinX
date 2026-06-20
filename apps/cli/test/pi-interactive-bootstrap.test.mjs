@@ -6611,6 +6611,14 @@ test('assistant message rendering patch lives in a shell rendering module', asyn
   assert.equal(typeof module.patchPiAssistantMessageRendering, 'function')
 })
 
+test('welcome header rendering lives in a shell rendering module', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-welcome-header.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.installLinxWelcomeHeader, 'function')
+  assert.equal(typeof module.buildLinxWelcomeCardState, 'function')
+})
+
 test('backend command router patch lives in a shell command module', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-backend-command-router.ts')
   t.after(() => cleanup())
