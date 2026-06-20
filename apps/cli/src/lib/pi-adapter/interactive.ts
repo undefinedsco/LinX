@@ -15,7 +15,6 @@ import {
   withLinxResumeOutputStyle,
   withSuppressedPiResumeOutput,
 } from '../linx-resume-output.js'
-import { installLinxEscapeInterrupt as installLinxInterruptControl } from '../linx-interrupt-control.js'
 import { installSymphonyAutocomplete } from '../linx-command-autocomplete.js'
 import { installLinxFooterPatch, setLinxFooterInteractive } from '../linx-footer-patch.js'
 import { patchPiAssistantMessageRendering } from '../linx-assistant-message-rendering.js'
@@ -23,8 +22,8 @@ import { installBackendCommandRouter as installBackendCommandRouterWithProjectio
 import { promptForBackendCredential } from '../linx-ai-connect-command.js'
 import { installSymphonyCommand } from '../linx-symphony-interactive-command.js'
 import { installLinxRestoredAutoStartup } from '../linx-restored-auto-startup.js'
+import { installLinxInteractivePostInitHooks, installLinxEscapeInterrupt } from '../linx-interactive-post-init.js'
 import {
-  handleInteractiveAutoCommand,
   installLinxFinalSubmitCommandRouter,
   installLinxInputCommandRouter,
   installLinxSessionCommandRouter,
@@ -40,6 +39,7 @@ export { changeInteractiveCwd, installLinxCwdStartupNotice, resolveInteractiveCw
 export { patchPiAssistantMessageRendering } from '../linx-assistant-message-rendering.js'
 export { installSymphonyCommand } from '../linx-symphony-interactive-command.js'
 export { installLinxRestoredAutoStartup } from '../linx-restored-auto-startup.js'
+export { installLinxInteractivePostInitHooks, installLinxEscapeInterrupt } from '../linx-interactive-post-init.js'
 export {
   installLinxFinalSubmitCommandRouter,
   installLinxGlobalCommands,
@@ -135,35 +135,6 @@ export function bootstrapLinxInteractiveMode(
   return bootstrap
 }
 
-function installLinxInteractivePostInitHooks(interactive: any, runtime: any): void {
-  if (!interactive || interactive.__linxInteractivePostInitHooksInstalled) {
-    return
-  }
-  const originalInit = interactive.init?.bind(interactive)
-  if (typeof originalInit !== 'function') {
-    return
-  }
-
-  interactive.init = async function patchedLinxInteractivePostInit(...args: unknown[]): Promise<unknown> {
-    if (this.__linxInteractiveInitCompleted === true) {
-      installLinxSessionCommandRouter(this, runtime)
-      installLinxInputCommandRouter(this, runtime)
-      installLinxFinalSubmitCommandRouter(this, runtime)
-      installLinxEscapeInterrupt(this)
-      return undefined
-    }
-
-    const result = await originalInit(...args)
-    this.__linxInteractiveInitCompleted = true
-    installLinxSessionCommandRouter(this, runtime)
-    installLinxInputCommandRouter(this, runtime)
-    installLinxFinalSubmitCommandRouter(this, runtime)
-    installLinxEscapeInterrupt(this)
-    return result
-  }
-  interactive.__linxInteractivePostInitHooksInstalled = true
-}
-
 /** @deprecated Use bootstrapLinxInteractiveMode. */
 export const bootstrapPiInteractiveMode = bootstrapLinxInteractiveMode
 
@@ -235,13 +206,5 @@ export function installPodBackedExtensionUi(interactive: any, runtime: any, sess
 export function installBackendCommandRouter(interactive: any, router: BackendCommandRouter | undefined): void {
   installBackendCommandRouterWithProjection(interactive, router, {
     installProjectedCommandRouter,
-  })
-}
-
-export function installLinxEscapeInterrupt(interactive: any): void {
-  installLinxInterruptControl(interactive, {
-    disableAutoMode(target) {
-      void handleInteractiveAutoCommand(target, target?.runtime, false)
-    },
   })
 }
