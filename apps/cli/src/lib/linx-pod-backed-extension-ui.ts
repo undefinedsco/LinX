@@ -1,0 +1,38 @@
+import { createPodBackedExtensionUiContext } from './pi-adapter/pod-approval.js'
+import { getSessionControlManager } from './pi-adapter/session-control.js'
+
+export function installPodBackedExtensionUi(
+  interactive: any,
+  runtime: any,
+  sessionControl = getSessionControlManager(interactive, runtime),
+): void {
+  if (interactive.__linxPodBackedExtensionUiInstalled) {
+    return
+  }
+
+  const originalCreate = interactive.createExtensionUIContext?.bind(interactive)
+  if (typeof originalCreate !== 'function') {
+    return
+  }
+
+  interactive.createExtensionUIContext = function patchedCreateExtensionUIContext(...args: unknown[]): unknown {
+    const baseUi = originalCreate(...args)
+    if (!baseUi || typeof baseUi !== 'object') {
+      return baseUi
+    }
+
+    return createPodBackedExtensionUiContext(baseUi, {
+      cwd: interactive?.session?.cwd ?? runtime?.cwd ?? process.cwd(),
+      sessionId: () => interactive?.sessionManager?.getSessionId?.()
+        ?? interactive?.session?.sessionManager?.getSessionId?.()
+        ?? interactive?.session?.sessionId,
+      sessionControl,
+      onWarning(error) {
+        const message = error instanceof Error ? error.message : String(error)
+        interactive.showWarning?.(`Pod approval sync unavailable: ${message}`)
+      },
+    })
+  }
+
+  interactive.__linxPodBackedExtensionUiInstalled = true
+}

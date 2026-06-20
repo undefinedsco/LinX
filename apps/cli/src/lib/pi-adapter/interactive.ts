@@ -3,7 +3,6 @@ import { applyLinxInteractiveBranding, requestLinxCloudLogin } from './branding.
 import type { BackendCredentialEntry, BackendCredentialInput } from './backend-credentials.js'
 import type { BackendCommandRouter } from './backend-command.js'
 import { installPodStatusOutputFilter } from './pod-status-output.js'
-import { createPodBackedExtensionUiContext } from './pod-approval.js'
 import {
   getSessionControlManager,
   installSessionControlRuntimeEventBridge,
@@ -25,6 +24,7 @@ import { installSymphonyCommand } from '../linx-symphony-interactive-command.js'
 import { installLinxRestoredAutoStartup } from '../linx-restored-auto-startup.js'
 import { installLinxInteractivePostInitHooks, installLinxEscapeInterrupt } from '../linx-interactive-post-init.js'
 import { ensureInteractiveRuntimeHost } from '../linx-interactive-runtime-host.js'
+import { installPodBackedExtensionUi } from '../linx-pod-backed-extension-ui.js'
 import {
   installLinxFinalSubmitCommandRouter,
   installLinxInputCommandRouter,
@@ -44,6 +44,7 @@ export { installSymphonyCommand } from '../linx-symphony-interactive-command.js'
 export { installLinxRestoredAutoStartup } from '../linx-restored-auto-startup.js'
 export { installLinxInteractivePostInitHooks, installLinxEscapeInterrupt } from '../linx-interactive-post-init.js'
 export { ensureInteractiveRuntimeHost } from '../linx-interactive-runtime-host.js'
+export { installPodBackedExtensionUi } from '../linx-pod-backed-extension-ui.js'
 export {
   installLinxFinalSubmitCommandRouter,
   installLinxGlobalCommands,
@@ -141,38 +142,6 @@ export function bootstrapLinxInteractiveMode(
 
 /** @deprecated Use bootstrapLinxInteractiveMode. */
 export const bootstrapPiInteractiveMode = bootstrapLinxInteractiveMode
-
-export function installPodBackedExtensionUi(interactive: any, runtime: any, sessionControl = getSessionControlManager(interactive, runtime)): void {
-  if (interactive.__linxPodBackedExtensionUiInstalled) {
-    return
-  }
-
-  const originalCreate = interactive.createExtensionUIContext?.bind(interactive)
-  if (typeof originalCreate !== 'function') {
-    return
-  }
-
-  interactive.createExtensionUIContext = function patchedCreateExtensionUIContext(...args: unknown[]): unknown {
-    const baseUi = originalCreate(...args)
-    if (!baseUi || typeof baseUi !== 'object') {
-      return baseUi
-    }
-
-    return createPodBackedExtensionUiContext(baseUi, {
-      cwd: interactive?.session?.cwd ?? runtime?.cwd ?? process.cwd(),
-      sessionId: () => interactive?.sessionManager?.getSessionId?.()
-        ?? interactive?.session?.sessionManager?.getSessionId?.()
-        ?? interactive?.session?.sessionId,
-      sessionControl,
-      onWarning(error) {
-        const message = error instanceof Error ? error.message : String(error)
-        interactive.showWarning?.(`Pod approval sync unavailable: ${message}`)
-      },
-    })
-  }
-
-  interactive.__linxPodBackedExtensionUiInstalled = true
-}
 
 export function installBackendCommandRouter(interactive: any, router: BackendCommandRouter | undefined): void {
   installBackendCommandRouterWithProjection(interactive, router, {
