@@ -6602,6 +6602,13 @@ test('footer rendering patch lives in a shell rendering module', async (t) => {
   assert.equal(module.buildLinxFooterModePrefix(), 'Symphony · Auto')
 })
 
+test('assistant message rendering patch lives in a shell rendering module', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-assistant-message-rendering.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.patchPiAssistantMessageRendering, 'function')
+})
+
 test('workspace command shell module owns cwd changes and startup notice hooks', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-workspace-command.ts')
   t.after(() => cleanup())

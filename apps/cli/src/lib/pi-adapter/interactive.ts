@@ -1,5 +1,5 @@
 import { InteractiveMode } from '@earendil-works/pi-coding-agent'
-import { AssistantMessageComponent, LoginDialogComponent } from '@earendil-works/pi-coding-agent'
+import { LoginDialogComponent } from '@earendil-works/pi-coding-agent'
 import { connectAiProviderCredential } from '../ai-command.js'
 import { listArchivedAutoModeSessions, runAutoMode } from '../auto-mode/runner.js'
 import type { AutoModeCredentialSource, AutoModeWorkerBackend } from '../auto-mode/types.js'
@@ -49,11 +49,13 @@ import { installLinxAutoEditorIndicator } from '../linx-auto-editor-indicator.js
 import { installSymphonyAutocomplete } from '../linx-command-autocomplete.js'
 import { installLinxFooterPatch, setLinxFooterInteractive } from '../linx-footer-patch.js'
 import { changeInteractiveCwd, installLinxCwdStartupNotice, resolveInteractiveCwd } from '../linx-workspace-command.js'
+import { patchPiAssistantMessageRendering } from '../linx-assistant-message-rendering.js'
 export { buildLinxExitMessage, installLinxResumeOutputStyle, withLinxResumeOutputStyle, withSuppressedPiResumeOutput }
 export { buildLinxAutoEditorIndicatorLine, installLinxAutoEditorIndicator } from '../linx-auto-editor-indicator.js'
 export { installLinxCommandAutocomplete, installSymphonyAutocomplete } from '../linx-command-autocomplete.js'
 export { installLinxFooterPatch, setLinxFooterInteractive, buildLinxFooterModePrefix } from '../linx-footer-patch.js'
 export { changeInteractiveCwd, installLinxCwdStartupNotice, resolveInteractiveCwd, setRuntimeCwd } from '../linx-workspace-command.js'
+export { patchPiAssistantMessageRendering } from '../linx-assistant-message-rendering.js'
 
 
 export interface LinxInteractiveBootstrap {
@@ -81,7 +83,6 @@ export interface LinxInteractiveBootstrapOptions {
 /** @deprecated Use LinxInteractiveBootstrapOptions. */
 export type PiInteractiveBootstrapOptions = LinxInteractiveBootstrapOptions
 
-let assistantMessagePatched = false
 const SYMPHONY_STATUS_POD_TIMEOUT_MS = 1_200
 const DEFAULT_SYMPHONY_WORKER_SUPERVISOR_INTERVAL_MS = 10 * 60 * 1000
 export function bootstrapLinxInteractiveMode(
@@ -1968,39 +1969,6 @@ export function installLinxEscapeInterrupt(interactive: any): void {
     },
   })
 }
-export function patchPiAssistantMessageRendering(): void {
-  if (assistantMessagePatched) {
-    return
-  }
-
-  const originalUpdateContent = AssistantMessageComponent.prototype.updateContent
-  AssistantMessageComponent.prototype.updateContent = function patchedUpdateContent(message: unknown): void {
-    const sanitizedMessage = stripLinxHiddenAssistantContent(message) as Parameters<typeof originalUpdateContent>[0]
-    return originalUpdateContent.call(this, sanitizedMessage)
-  }
-  assistantMessagePatched = true
-}
-
-function stripLinxHiddenAssistantContent(message: unknown): unknown {
-  if (!isRecord(message) || !Array.isArray(message.content)) {
-    return message
-  }
-
-  const content = message.content.filter((part) => !isLinxHiddenAssistantContentPart(part))
-  if (content.length === message.content.length) {
-    return message
-  }
-
-  return {
-    ...message,
-    content,
-  }
-}
-
-function isLinxHiddenAssistantContentPart(part: unknown): boolean {
-  return isRecord(part) && part.type === 'thinking'
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
