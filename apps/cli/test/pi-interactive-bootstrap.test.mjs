@@ -6616,6 +6616,17 @@ test('backend command router patch lives in a shell command module', async (t) =
   assert.equal(typeof module.installBackendCommandRouter, 'function')
 })
 
+test('interactive command routing patch lives in a shell command module', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-command-routing.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.installLinxShellCommands, 'function')
+  assert.equal(typeof module.installLinxInputCommandRouter, 'function')
+  assert.equal(typeof module.installLinxFinalSubmitCommandRouter, 'function')
+  assert.equal(typeof module.installLinxSessionCommandRouter, 'function')
+  assert.equal(typeof module.installProjectedCommandRouter, 'function')
+})
+
 test('workspace command shell module owns cwd changes and startup notice hooks', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-workspace-command.ts')
   t.after(() => cleanup())
