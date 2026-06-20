@@ -6651,6 +6651,13 @@ test('interactive stop cleanup lives in the shell lifecycle module', async (t) =
   assert.equal(typeof module.installInteractiveStopCleanup, 'function')
 })
 
+test('pod-backed extension ui patch lives in a shell ui module', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-pod-backed-extension-ui.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.installPodBackedExtensionUi, 'function')
+})
+
 test('restored auto startup patch lives in a shell startup module', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-restored-auto-startup.ts')
   t.after(() => cleanup())
