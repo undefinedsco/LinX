@@ -6,16 +6,13 @@ import { resolve } from 'node:path'
 import { connectAiProviderCredential } from '../ai-command.js'
 import { listArchivedAutoModeSessions, runAutoMode } from '../auto-mode/runner.js'
 import type { AutoModeCredentialSource, AutoModeWorkerBackend } from '../auto-mode/types.js'
-import {
-  resolveAutoModeCommandRoute,
-  type AutoModeControlCommandRoute,
-  type AutoModePeerCommandRoute,
-} from '@linx/agent-runtime/auto-mode'
 import type { AgentRuntimeBackendConfig } from '@linx/agent-runtime'
 import { getAIConfigProviderCatalog, getAIConfigProviderMetadata } from '../models.js'
 import { runSymphony, type SymphonyRuntime } from '../symphony-command.js'
 import { applyLinxInteractiveBranding, checkAndShowLinxUpdate, requestLinxCloudLogin } from './branding.js'
 import { LINX_TUI_NO_EXIT_MESSAGE_ENV } from '../shell-lifecycle.js'
+import { parseLinxShellCommand, shouldRouteToBackendCommand, type LinxShellCommand } from '../linx-shell-command-router.js'
+import type { AutoModePeerCommandRoute } from '@linx/agent-runtime/auto-mode'
 import type { BackendCredentialEntry, BackendCredentialInput, BackendCredentialRepairReason } from './backend-credentials.js'
 import type { BackendCommandRouter } from './backend-command.js'
 import { installPodStatusOutputFilter } from './pod-status-output.js'
@@ -84,12 +81,6 @@ export type PiInteractiveBootstrapOptions = LinxInteractiveBootstrapOptions
 let footerPatched = false
 let assistantMessagePatched = false
 let linxResumeOutputStyleRestore: (() => void) | null = null
-const BACKEND_OWNED_SLASH_COMMANDS = new Set([
-  'commands',
-  'models',
-  'rollback',
-  'status',
-])
 const SYMPHONY_STATUS_POD_TIMEOUT_MS = 1_200
 const DEFAULT_SYMPHONY_WORKER_SUPERVISOR_INTERVAL_MS = 10 * 60 * 1000
 const CODEX_STYLE_STATUS_LINE_TOKENS: LinxStatusLineToken[] = [
@@ -141,7 +132,7 @@ export function bootstrapLinxInteractiveMode(
   installPodBackedExtensionUi(interactive as any, runtime, sessionControlManager)
   installSymphonyAutocomplete(interactive as any)
   // Register /cd slash command; workspace follows terminal while session stays.
-  installLinxGlobalCommands(interactive as any, runtime, sessionCwd, options)
+  installLinxShellCommands(interactive as any, runtime, sessionCwd, options)
   installSymphonyCommand(interactive as any)
   installBackendCommandRouter(interactive as any, runtime?.backendCommandRouter)
   installSessionControlRuntimeEventBridge(interactive as any, runtime, sessionCwd)
@@ -380,30 +371,7 @@ export function installBackendCommandRouter(interactive: any, router: BackendCom
   }
 }
 
-function shouldRouteToBackendCommand(command: string): boolean {
-  if (!command.startsWith('/')) {
-    return false
-  }
-
-  const name = command.slice(1).split(/\s+/, 1)[0]?.toLowerCase()
-  if (!name) {
-    return false
-  }
-
-  return BACKEND_OWNED_SLASH_COMMANDS.has(name)
-}
-
-type LinxGlobalCommand =
-  | { action: 'auto'; route: AutoModeControlCommandRoute }
-  | { action: 'peer-command'; route: AutoModePeerCommandRoute }
-  | { action: 'cd'; target?: string }
-  | { action: 'ai-connect'; provider?: string; baseUrl?: string; model?: string }
-  | { action: 'statusline'; args: string[] }
-  | { action: 'update' }
-  | { action: 'rewind-select' }
-  | { action: 'rewind-turns'; turns: number }
-
-export function installLinxGlobalCommands(
+export function installLinxShellCommands(
   interactive: any,
   runtime: any,
   sessionCwd: string,
@@ -414,8 +382,10 @@ export function installLinxGlobalCommands(
   if (options.onAutoControlChange) {
     interactive.__linxOnAutoControlChange = options.onAutoControlChange
   }
-  installLinxGlobalCommandHandler(interactive, runtime)
+  installLinxShellCommandHandler(interactive, runtime)
 }
+
+export const installLinxGlobalCommands = installLinxShellCommands
 
 export function installLinxAutoEditorIndicator(interactive: any): void {
   if (!interactive || interactive.__linxAutoEditorIndicatorInstalled) {
@@ -479,7 +449,7 @@ export function buildLinxAutoEditorIndicatorLine(width: number): string {
   return `\x1b[1m\x1b[38;5;230m\x1b[48;5;58m${padded}\x1b[0m`
 }
 
-function installLinxGlobalCommandHandler(interactive: any, runtime: any): void {
+function installLinxShellCommandHandler(interactive: any, runtime: any): void {
   if (interactive.__linxGlobalCommandHandlerInstalled) {
     return
   }
@@ -497,7 +467,7 @@ function installLinxGlobalCommandHandler(interactive: any, runtime: any): void {
     }
 
     this.defaultEditor.onSubmit = async (text: string): Promise<void> => {
-      const command = parseLinxGlobalCommand(text.trim())
+      const command = parseLinxShellCommand(text.trim())
       if (!command) {
         recordSubmittedUserMessage(this, runtime, text)
         await originalSubmit(text)
@@ -505,7 +475,7 @@ function installLinxGlobalCommandHandler(interactive: any, runtime: any): void {
       }
 
       this.editor?.setText?.('')
-      await handleLinxGlobalCommand(this, runtime, command)
+      await handleLinxShellCommand(this, runtime, command)
     }
 
     return result
@@ -513,11 +483,11 @@ function installLinxGlobalCommandHandler(interactive: any, runtime: any): void {
 
   interactive.__linxGlobalCommandHandlerInstalled = true
   interactive.__linxHandleProjectedGlobalCommand = async (text: string): Promise<boolean | 'peer-command'> => {
-    const command = parseLinxGlobalCommand(text.trim())
+    const command = parseLinxShellCommand(text.trim())
     if (!command) {
       return false
     }
-    await handleLinxGlobalCommand(interactive, runtime, command)
+    await handleLinxShellCommand(interactive, runtime, command)
     if (command.action === 'peer-command') {
       return 'peer-command'
     }
@@ -542,13 +512,13 @@ export function installLinxInputCommandRouter(interactive: any, runtime: any): v
         return input
       }
 
-      const command = parseLinxGlobalCommand(input.trim())
+      const command = parseLinxShellCommand(input.trim())
       if (!command) {
         return input
       }
 
       this.editor?.setText?.('')
-      await handleLinxGlobalCommand(this, runtime, command)
+      await handleLinxShellCommand(this, runtime, command)
     }
   }
   interactive.__linxInputCommandRouterInstalled = true
@@ -569,14 +539,14 @@ export function installLinxFinalSubmitCommandRouter(interactive: any, runtime: a
 
     const originalSubmit = editor.onSubmit.bind(editor)
     const wrappedSubmit = async (text: string): Promise<void> => {
-      const command = parseLinxGlobalCommand(String(text ?? '').trim())
+      const command = parseLinxShellCommand(String(text ?? '').trim())
       if (!command) {
         await originalSubmit(text)
         return
       }
 
       interactive.editor?.setText?.('')
-      await handleLinxGlobalCommand(interactive, runtime, command)
+      await handleLinxShellCommand(interactive, runtime, command)
     }
     ;(wrappedSubmit as any).__linxFinalSubmitCommandRouterWrapped = true
     editor.onSubmit = wrappedSubmit
@@ -669,13 +639,13 @@ async function maybeHandleLinxSessionCommand(interactive: any, runtime: any, tex
     return false
   }
 
-  const command = parseLinxGlobalCommand(text.trim())
+  const command = parseLinxShellCommand(text.trim())
   if (!command) {
     return false
   }
 
   interactive.editor?.setText?.('')
-  await handleLinxGlobalCommand(interactive, runtime, command)
+  await handleLinxShellCommand(interactive, runtime, command)
   return true
 }
 
@@ -692,165 +662,10 @@ function recordSubmittedUserMessage(interactive: any, runtime: any, text: string
   }
 }
 
-function parseLinxGlobalCommand(input: string): LinxGlobalCommand | null {
-  const autoModeRoute = resolveAutoModeCommandRoute(input)
-  if (autoModeRoute?.kind === 'control-command') {
-    return { action: 'auto', route: autoModeRoute }
-  }
-  if (autoModeRoute?.kind === 'peer-command') {
-    return { action: 'peer-command', route: autoModeRoute }
-  }
-
-  if (input === '/cd') {
-    return { action: 'cd' }
-  }
-
-  if (input.startsWith('/cd ')) {
-    return { action: 'cd', target: input.slice('/cd'.length).trim() }
-  }
-
-  if (input === '/ai connect') {
-    return { action: 'ai-connect' }
-  }
-
-  if (input.startsWith('/ai connect ')) {
-    return { action: 'ai-connect', ...parseInteractiveAiConnectArgs(input.slice('/ai connect'.length).trim()) }
-  }
-
-  if (input === '/statusline' || input === '/status-line') {
-    return { action: 'statusline', args: [] }
-  }
-
-  if (input.startsWith('/statusline ') || input.startsWith('/status-line ')) {
-    const body = input.startsWith('/statusline ')
-      ? input.slice('/statusline'.length).trim()
-      : input.slice('/status-line'.length).trim()
-    return { action: 'statusline', args: splitInteractiveCommandArgs(body) }
-  }
-
-  if (input === '/update' || input === '/upgrade') {
-    return { action: 'update' }
-  }
-
-  if (input === '/rewind') {
-    return { action: 'rewind-select' }
-  }
-
-  if (input.startsWith('/rewind ')) {
-    const turns = parseRewindTurnCount(input.slice('/rewind'.length).trim())
-    return { action: 'rewind-turns', turns: turns ?? 0 }
-  }
-
-  return null
-}
-
-function parseRewindTurnCount(input: string): number | null {
-  if (!/^\d+$/.test(input)) {
-    return null
-  }
-  const value = Number.parseInt(input, 10)
-  return Number.isSafeInteger(value) && value > 0 ? value : null
-}
-
-function parseInteractiveAiConnectArgs(input: string): Pick<Extract<LinxGlobalCommand, { action: 'ai-connect' }>, 'provider' | 'baseUrl' | 'model'> {
-  const tokens = splitInteractiveCommandArgs(input)
-  let provider: string | undefined
-  let baseUrl: string | undefined
-  let model: string | undefined
-
-  for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index]
-    if (!token) {
-      continue
-    }
-
-    if (token === '--base-url') {
-      baseUrl = tokens[index + 1]
-      index += 1
-      continue
-    }
-    if (token.startsWith('--base-url=')) {
-      baseUrl = token.slice('--base-url='.length)
-      continue
-    }
-    if (token === '--model') {
-      model = tokens[index + 1]
-      index += 1
-      continue
-    }
-    if (token.startsWith('--model=')) {
-      model = token.slice('--model='.length)
-      continue
-    }
-    if (!token.startsWith('-') && !provider) {
-      provider = token
-    }
-  }
-
-  return {
-    ...(provider?.trim() ? { provider: provider.trim() } : {}),
-    ...(baseUrl?.trim() ? { baseUrl: baseUrl.trim() } : {}),
-    ...(model?.trim() ? { model: model.trim() } : {}),
-  }
-}
-
-function splitInteractiveCommandArgs(input: string): string[] {
-  const tokens: string[] = []
-  let current = ''
-  let quote: '"' | "'" | null = null
-  let escaping = false
-
-  for (const char of input) {
-    if (escaping) {
-      current += char
-      escaping = false
-      continue
-    }
-
-    if (char === '\\') {
-      escaping = true
-      continue
-    }
-
-    if (quote) {
-      if (char === quote) {
-        quote = null
-      } else {
-        current += char
-      }
-      continue
-    }
-
-    if (char === '"' || char === "'") {
-      quote = char
-      continue
-    }
-
-    if (/\s/.test(char)) {
-      if (current) {
-        tokens.push(current)
-        current = ''
-      }
-      continue
-    }
-
-    current += char
-  }
-
-  if (escaping) {
-    current += '\\'
-  }
-  if (current) {
-    tokens.push(current)
-  }
-
-  return tokens
-}
-
-async function handleLinxGlobalCommand(
+async function handleLinxShellCommand(
   interactive: any,
   runtime: any,
-  command: LinxGlobalCommand,
+  command: LinxShellCommand,
 ): Promise<void> {
   if (command.action === 'auto') {
     const auto = command.route.auto
@@ -3191,7 +3006,7 @@ async function promptForBackendCredential(interactive: any, details: BackendCred
 async function handleInteractiveAiConnectCommand(
   interactive: any,
   runtime: any,
-  command: Extract<LinxGlobalCommand, { action: 'ai-connect' }>,
+  command: Extract<LinxShellCommand, { action: 'ai-connect' }>,
 ): Promise<void> {
   const providerId = command.provider?.trim()
   if (!providerId) {
