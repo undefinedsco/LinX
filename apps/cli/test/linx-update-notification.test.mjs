@@ -1,0 +1,71 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
+
+test('update notification module owns selector rendering and changelog action', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-update-notification.ts')
+  t.after(() => cleanup())
+
+  const selectorCalls = []
+  const openedUrls = []
+  const statuses = []
+  const interactive = {
+    chatContainer: { addChild() {} },
+    ui: { requestRender() {} },
+    async showExtensionSelector(title, options) {
+      selectorCalls.push({ title, options })
+      return { value: 'Open changelog' }
+    },
+    openExternal(url) {
+      openedUrls.push(url)
+    },
+    showStatus(message) {
+      statuses.push(message)
+    },
+  }
+
+  module.installLinxUpdateNotification(interactive)
+  interactive.showNewVersionNotification({ version: ' 0.3.99 ' })
+  await new Promise((resolve) => setImmediate(resolve))
+
+  assert.equal(selectorCalls.length, 1)
+  assert.match(selectorCalls[0].title, /LinX update available/)
+  assert.match(selectorCalls[0].title, /latest 0\.3\.99/)
+  assert.deepEqual(selectorCalls[0].options, ['Later', 'Install update and restart', 'Open changelog'])
+  assert.equal(openedUrls[0], 'https://github.com/undefineds-co/linx-cli/releases')
+  assert.equal(statuses.some((message) => message.includes('Opened LinX changelog for 0.3.99')), true)
+})
+
+test('update notification module defers and replays while auth UI owns the selector', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-update-notification.ts')
+  t.after(() => cleanup())
+
+  let defer = true
+  const selectorCalls = []
+  const statuses = []
+  const interactive = {
+    chatContainer: { addChild() {} },
+    ui: { requestRender() {} },
+    async showExtensionSelector(title, options) {
+      selectorCalls.push({ title, options })
+      return 'Later'
+    },
+    showStatus(message) {
+      statuses.push(message)
+    },
+  }
+
+  module.installLinxUpdateNotification(interactive, { shouldDefer: () => defer })
+  interactive.showNewVersionNotification({ version: '0.3.100' })
+  await new Promise((resolve) => setImmediate(resolve))
+
+  assert.equal(selectorCalls.length, 0)
+
+  defer = false
+  module.replayDeferredLinxUpdateNotification(interactive, { shouldDefer: () => defer })
+  await new Promise((resolve) => setImmediate(resolve))
+
+  assert.equal(selectorCalls.length, 1)
+  assert.match(selectorCalls[0].title, /latest 0\.3\.100/)
+  assert.equal(statuses.some((message) => message.includes('Skipped LinX 0.3.100 for now.')), true)
+})

@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process'
 import { basename } from 'node:path'
 import { keyHint, LoginDialogComponent, rawKeyHint } from '@earendil-works/pi-coding-agent'
 import { Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui'
@@ -13,7 +12,10 @@ import { suppressPodStatusOutput } from './pod-status-output.js'
 import { LINX_RUNTIME_MANAGED_AUTH_KEY } from './runtime.js'
 import { formatLinxCliErrorMessage } from '../linx-cloud-errors.js'
 import { getSolidLinxAgentDir } from '../solid-local-store.js'
-import { checkForNewLinxVersion, installLinxSelfUpdateAndRestart, LINX_CHANGELOG_URL, LINX_CLI_VERSION, LINX_UPDATE_PACKAGE_NAME } from '../linx-self-update.js'
+import { LINX_CLI_VERSION } from '../linx-self-update.js'
+import { installLinxUpdateNotification, replayDeferredLinxUpdateNotification } from '../linx-update-notification.js'
+import { openExternalUrl } from '../linx-external-url.js'
+import { normalizeSelectorChoice } from '../linx-selector-choice.js'
 
 export const LINX_AGENT_DIR = getSolidLinxAgentDir()
 const LINX_AUTH_LOGIN_IN_PROGRESS = Symbol.for('linx.tui.authLoginInProgress')
@@ -21,17 +23,10 @@ const LINX_AUTH_LOGIN_ON_INIT = Symbol.for('linx.tui.authLoginOnInit')
 const LINX_AUTH_PENDING_RETRY = Symbol.for('linx.tui.authPendingRetry')
 const LINX_AUTH_LOGIN_SCHEDULED = Symbol.for('linx.tui.authLoginScheduled')
 const LINX_AUTH_REPORTING_ERROR = Symbol.for('linx.tui.authReportingError')
-const LINX_UPDATE_IN_PROGRESS = Symbol.for('linx.tui.updateInProgress')
-const LINX_UPDATE_CHECK_SCHEDULED = Symbol.for('linx.tui.updateCheckScheduled')
-const LINX_DEFERRED_UPDATE_VERSION = Symbol.for('linx.tui.deferredUpdateVersion')
-const LINX_SUPPRESS_UPSTREAM_PI_UPDATE = Symbol.for('linx.tui.suppressUpstreamPiUpdate')
 const LINX_PROVIDER_ID = 'undefineds'
 const AUTH_OPTION_BROWSER = 'Authorize in browser'
 const AUTH_OPTION_CLIENT_CREDENTIALS = 'Enter Solid client credentials'
 const AUTH_OPTION_EXIT = 'Exit'
-const UPDATE_OPTION_INSTALL = 'Install update and restart'
-const UPDATE_OPTION_CHANGELOG = 'Open changelog'
-const UPDATE_OPTION_LATER = 'Later'
 
 type LinxAuthReason = 'startup' | 'expired' | 'manual'
 
@@ -43,8 +38,7 @@ type LinxAuthPendingRetry = {
 
 export function applyLinxInteractiveBranding(interactive: any): void {
   patchTerminalTitle(interactive)
-  patchVersionCheck(interactive)
-  patchUpdateNotification(interactive)
+  installLinxUpdateNotification(interactive, { shouldDefer: () => shouldDeferLinxUpdateNotification(interactive) })
   patchNativeOAuthSelectors(interactive)
   patchLoginCommand(interactive)
   patchAuthExpiredSessionEvents(interactive)
@@ -71,140 +65,6 @@ function patchTerminalTitle(interactive: any): void {
   }
 }
 
-function patchVersionCheck(interactive: any): void {
-  const originalRun = interactive.run?.bind(interactive)
-  if (typeof originalRun === 'function') {
-    interactive.run = async function patchedLinxRun(...args: unknown[]): Promise<unknown> {
-      this[LINX_SUPPRESS_UPSTREAM_PI_UPDATE] = true
-      return originalRun(...args)
-    }
-  }
-
-  const originalInit = interactive.init?.bind(interactive)
-  if (typeof originalInit === 'function') {
-    interactive.init = async function patchedLinxVersionInit(...args: unknown[]): Promise<void> {
-      await originalInit(...args)
-      scheduleLinxVersionCheck(this)
-    }
-  }
-
-  interactive.checkForNewVersion = async function patchedCheckForNewVersion(): Promise<string | undefined> {
-    return checkForNewLinxVersion()
-  }
-}
-
-function patchUpdateNotification(interactive: any): void {
-  interactive.showNewVersionNotification = function patchedShowNewVersionNotification(newVersion: unknown): void {
-    if (this[LINX_SUPPRESS_UPSTREAM_PI_UPDATE]) {
-      return
-    }
-
-    const normalizedVersion = normalizeLinxUpdateVersion(newVersion)
-    if (!normalizedVersion) {
-      return
-    }
-
-    requestLinxUpdateNotification(this, normalizedVersion)
-  }
-}
-
-function scheduleLinxVersionCheck(interactive: any): void {
-  if (interactive[LINX_UPDATE_CHECK_SCHEDULED]) {
-    return
-  }
-
-  interactive[LINX_UPDATE_CHECK_SCHEDULED] = true
-  queueMicrotask(() => {
-    void checkForNewLinxVersion()
-      .then((latest) => {
-        if (!latest) {
-          return
-        }
-        requestLinxUpdateNotification(interactive, latest)
-      })
-      .catch(() => undefined)
-  })
-}
-
-async function showLinxUpdateSelector(interactive: any, newVersion: string): Promise<void> {
-  if (interactive[LINX_UPDATE_IN_PROGRESS]) {
-    return
-  }
-  interactive[LINX_UPDATE_IN_PROGRESS] = true
-  try {
-    const title = [
-      'LinX update available',
-      `Current ${LINX_CLI_VERSION} -> latest ${newVersion}`,
-      'Choose how to handle this update.',
-    ].join('\n')
-    const options = [UPDATE_OPTION_LATER, UPDATE_OPTION_INSTALL, UPDATE_OPTION_CHANGELOG]
-    const rawSelected = typeof interactive.showExtensionSelector === 'function'
-      ? await interactive.showExtensionSelector(title, options)
-      : undefined
-    const selected = normalizeSelectorChoice(rawSelected, options)
-
-    if (selected === UPDATE_OPTION_INSTALL) {
-      await installLinxSelfUpdateAndRestart(interactive, newVersion)
-      return
-    }
-
-    if (selected === UPDATE_OPTION_CHANGELOG) {
-      openExternalUrl(LINX_CHANGELOG_URL, interactive)
-      interactive.showStatus?.(`Opened LinX changelog for ${newVersion}.`)
-      return
-    }
-
-    if (!selected) {
-      showLinxUpdateFallback(interactive, newVersion)
-      return
-    }
-
-    interactive.showStatus?.(`Skipped LinX ${newVersion} for now.`)
-  } finally {
-    interactive[LINX_UPDATE_IN_PROGRESS] = false
-  }
-}
-
-export async function checkAndShowLinxUpdate(
-  interactive: any,
-  options: { manual?: boolean } = {},
-): Promise<void> {
-  const latest = await checkForNewLinxVersion()
-  if (!latest) {
-    if (options.manual) {
-      interactive.showStatus?.(`LinX ${LINX_CLI_VERSION} is up to date.`)
-      interactive.ui?.requestRender?.()
-    }
-    return
-  }
-
-  requestLinxUpdateNotification(interactive, latest, { force: options.manual === true })
-}
-
-function requestLinxUpdateNotification(
-  interactive: any,
-  newVersion: string,
-  options: { force?: boolean } = {},
-): void {
-  if (!options.force && shouldDeferLinxUpdateNotification(interactive)) {
-    interactive[LINX_DEFERRED_UPDATE_VERSION] = newVersion
-    return
-  }
-
-  interactive[LINX_DEFERRED_UPDATE_VERSION] = undefined
-  void showLinxUpdateSelector(interactive, newVersion)
-}
-
-function replayDeferredLinxUpdateNotification(interactive: any): void {
-  const version = normalizeLinxUpdateVersion(interactive[LINX_DEFERRED_UPDATE_VERSION])
-  if (!version || shouldDeferLinxUpdateNotification(interactive)) {
-    return
-  }
-
-  interactive[LINX_DEFERRED_UPDATE_VERSION] = undefined
-  void showLinxUpdateSelector(interactive, version)
-}
-
 function shouldDeferLinxUpdateNotification(interactive: any): boolean {
   return Boolean(
     interactive[LINX_AUTH_LOGIN_IN_PROGRESS]
@@ -212,37 +72,6 @@ function shouldDeferLinxUpdateNotification(interactive: any): boolean {
       || interactive[LINX_AUTH_PENDING_RETRY]
       || interactive[LINX_AUTH_LOGIN_SCHEDULED],
   )
-}
-
-function normalizeLinxUpdateVersion(value: unknown): string | undefined {
-  const direct = normalizeNonEmptyString(value)
-  if (direct) {
-    return direct
-  }
-
-  if (!isRecord(value)) {
-    return undefined
-  }
-
-  for (const key of ['version', 'latest', 'latestVersion', 'packageVersion', 'newVersion']) {
-    const nested = normalizeNonEmptyString(value[key])
-    if (nested) {
-      return nested
-    }
-  }
-
-  return undefined
-}
-
-function showLinxUpdateFallback(interactive: any, newVersion: string): void {
-  const lines = [
-    '\x1b[1m\x1b[33mLinX update available\x1b[39m\x1b[22m',
-    `\x1b[2mCurrent ${LINX_CLI_VERSION} -> latest ${newVersion}\x1b[22m`,
-    `\x1b[2mRun \x1b[22m\x1b[36mnpm install -g ${LINX_UPDATE_PACKAGE_NAME}@latest\x1b[39m\x1b[2m if this terminal cannot show the update selector.\x1b[22m`,
-    `\x1b[2mChangelog: \x1b[22m\x1b[36m${LINX_CHANGELOG_URL}\x1b[39m`,
-  ]
-  interactive.chatContainer?.addChild?.(new Text(lines.join('\n'), 1, 0))
-  interactive.ui?.requestRender?.()
 }
 
 function patchLoginCommand(interactive: any): void {
@@ -447,7 +276,7 @@ async function startLinxCloudLogin(interactive: any, options: { reason?: LinxAut
     reportLinxLoginError(interactive, message)
   } finally {
     interactive[LINX_AUTH_LOGIN_IN_PROGRESS] = false
-    replayDeferredLinxUpdateNotification(interactive)
+    replayDeferredLinxUpdateNotification(interactive, { shouldDefer: () => shouldDeferLinxUpdateNotification(interactive) })
   }
 }
 
@@ -502,36 +331,6 @@ async function selectLinxAuthMethod(interactive: any, reason: LinxAuthReason): P
 
   showLinxAuthFallback(interactive, title, options)
   return undefined
-}
-
-function normalizeSelectorChoice(value: unknown, options: readonly string[]): string | undefined {
-  const direct = matchSelectorChoice(value, options)
-  if (direct) {
-    return direct
-  }
-
-  if (!isRecord(value)) {
-    return undefined
-  }
-
-  for (const key of ['value', 'label', 'title', 'name', 'display', 'text', 'option', 'id']) {
-    const match = matchSelectorChoice(value[key], options)
-    if (match) {
-      return match
-    }
-  }
-
-  return undefined
-}
-
-function matchSelectorChoice(value: unknown, options: readonly string[]): string | undefined {
-  const normalized = normalizeNonEmptyString(value)
-  if (!normalized) {
-    return undefined
-  }
-
-  return options.find((option) => option === normalized)
-    ?? options.find((option) => stripAnsi(option).trim() === stripAnsi(normalized).trim())
 }
 
 function buildLinxAuthPromptTitle(reason: LinxAuthReason, providerLabel: string): string {
@@ -1072,22 +871,6 @@ function openLoginUrl(url: string, interactive: any): void {
   openExternalUrl(url, interactive)
 }
 
-function openExternalUrl(url: string, interactive: any): void {
-  if (typeof interactive.openExternal === 'function') {
-    interactive.openExternal(url)
-    return
-  }
-
-  const command = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd' : 'xdg-open'
-  const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url]
-  const child = spawn(command, args, {
-    detached: true,
-    stdio: 'ignore',
-    shell: false,
-  })
-  child.unref()
-}
-
 function prefillLoginCommand(interactive: any): void {
   interactive.editor?.setText?.('/login')
   interactive.ui?.setFocus?.(interactive.editor)
@@ -1271,14 +1054,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
-function normalizeNonEmptyString(value: unknown): string | undefined {
-  if (typeof value !== 'string') {
-    return undefined
-  }
-  const normalized = value.trim()
-  return normalized || undefined
-}
-
 function stripAnsi(text: string): string {
   return text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
 }
@@ -1288,3 +1063,4 @@ function isPromiseLike(value: unknown): value is Promise<unknown> {
 }
 
 export { checkForNewLinxVersion, isVersionNewer, LINX_CHANGELOG_URL, LINX_CLI_VERSION, LINX_UPDATE_PACKAGE_NAME } from '../linx-self-update.js'
+export { checkAndShowLinxUpdate } from '../linx-update-notification.js'

@@ -1,0 +1,217 @@
+import { Text } from '@earendil-works/pi-tui'
+import {
+  checkForNewLinxVersion,
+  installLinxSelfUpdateAndRestart,
+  LINX_CHANGELOG_URL,
+  LINX_CLI_VERSION,
+  LINX_UPDATE_PACKAGE_NAME,
+} from './linx-self-update.js'
+import { openExternalUrl } from './linx-external-url.js'
+import { normalizeSelectorChoice } from './linx-selector-choice.js'
+
+const LINX_UPDATE_IN_PROGRESS = Symbol.for('linx.tui.updateInProgress')
+const LINX_UPDATE_CHECK_SCHEDULED = Symbol.for('linx.tui.updateCheckScheduled')
+const LINX_DEFERRED_UPDATE_VERSION = Symbol.for('linx.tui.deferredUpdateVersion')
+const LINX_SUPPRESS_UPSTREAM_PI_UPDATE = Symbol.for('linx.tui.suppressUpstreamPiUpdate')
+const UPDATE_OPTION_INSTALL = 'Install update and restart'
+const UPDATE_OPTION_CHANGELOG = 'Open changelog'
+const UPDATE_OPTION_LATER = 'Later'
+
+type LinxUpdateNotificationOptions = {
+  shouldDefer?: () => boolean
+}
+
+export function installLinxUpdateNotification(
+  interactive: any,
+  options: LinxUpdateNotificationOptions = {},
+): void {
+  patchVersionCheck(interactive, options)
+  patchUpdateNotification(interactive, options)
+}
+
+export async function checkAndShowLinxUpdate(
+  interactive: any,
+  options: LinxUpdateNotificationOptions & { manual?: boolean } = {},
+): Promise<void> {
+  const latest = await checkForNewLinxVersion()
+  if (!latest) {
+    if (options.manual) {
+      interactive.showStatus?.(`LinX ${LINX_CLI_VERSION} is up to date.`)
+      interactive.ui?.requestRender?.()
+    }
+    return
+  }
+
+  requestLinxUpdateNotification(interactive, latest, {
+    ...options,
+    force: options.manual === true,
+  })
+}
+
+export function replayDeferredLinxUpdateNotification(
+  interactive: any,
+  options: LinxUpdateNotificationOptions = {},
+): void {
+  const version = normalizeLinxUpdateVersion(interactive[LINX_DEFERRED_UPDATE_VERSION])
+  if (!version || shouldDeferLinxUpdateNotification(options)) {
+    return
+  }
+
+  interactive[LINX_DEFERRED_UPDATE_VERSION] = undefined
+  void showLinxUpdateSelector(interactive, version)
+}
+
+function patchVersionCheck(interactive: any, options: LinxUpdateNotificationOptions): void {
+  const originalRun = interactive.run?.bind(interactive)
+  if (typeof originalRun === 'function') {
+    interactive.run = async function patchedLinxRun(...args: unknown[]): Promise<unknown> {
+      this[LINX_SUPPRESS_UPSTREAM_PI_UPDATE] = true
+      return originalRun(...args)
+    }
+  }
+
+  const originalInit = interactive.init?.bind(interactive)
+  if (typeof originalInit === 'function') {
+    interactive.init = async function patchedLinxVersionInit(...args: unknown[]): Promise<void> {
+      await originalInit(...args)
+      scheduleLinxVersionCheck(this, options)
+    }
+  }
+
+  interactive.checkForNewVersion = async function patchedCheckForNewVersion(): Promise<string | undefined> {
+    return checkForNewLinxVersion()
+  }
+}
+
+function patchUpdateNotification(interactive: any, options: LinxUpdateNotificationOptions): void {
+  interactive.showNewVersionNotification = function patchedShowNewVersionNotification(newVersion: unknown): void {
+    if (this[LINX_SUPPRESS_UPSTREAM_PI_UPDATE]) {
+      return
+    }
+
+    const normalizedVersion = normalizeLinxUpdateVersion(newVersion)
+    if (!normalizedVersion) {
+      return
+    }
+
+    requestLinxUpdateNotification(this, normalizedVersion, options)
+  }
+}
+
+function scheduleLinxVersionCheck(interactive: any, options: LinxUpdateNotificationOptions): void {
+  if (interactive[LINX_UPDATE_CHECK_SCHEDULED]) {
+    return
+  }
+
+  interactive[LINX_UPDATE_CHECK_SCHEDULED] = true
+  queueMicrotask(() => {
+    void checkForNewLinxVersion()
+      .then((latest) => {
+        if (!latest) {
+          return
+        }
+        requestLinxUpdateNotification(interactive, latest, options)
+      })
+      .catch(() => undefined)
+  })
+}
+
+async function showLinxUpdateSelector(interactive: any, newVersion: string): Promise<void> {
+  if (interactive[LINX_UPDATE_IN_PROGRESS]) {
+    return
+  }
+  interactive[LINX_UPDATE_IN_PROGRESS] = true
+  try {
+    const title = [
+      'LinX update available',
+      `Current ${LINX_CLI_VERSION} -> latest ${newVersion}`,
+      'Choose how to handle this update.',
+    ].join('\n')
+    const options = [UPDATE_OPTION_LATER, UPDATE_OPTION_INSTALL, UPDATE_OPTION_CHANGELOG]
+    const rawSelected = typeof interactive.showExtensionSelector === 'function'
+      ? await interactive.showExtensionSelector(title, options)
+      : undefined
+    const selected = normalizeSelectorChoice(rawSelected, options)
+
+    if (selected === UPDATE_OPTION_INSTALL) {
+      await installLinxSelfUpdateAndRestart(interactive, newVersion)
+      return
+    }
+
+    if (selected === UPDATE_OPTION_CHANGELOG) {
+      openExternalUrl(LINX_CHANGELOG_URL, interactive)
+      interactive.showStatus?.(`Opened LinX changelog for ${newVersion}.`)
+      return
+    }
+
+    if (!selected) {
+      showLinxUpdateFallback(interactive, newVersion)
+      return
+    }
+
+    interactive.showStatus?.(`Skipped LinX ${newVersion} for now.`)
+  } finally {
+    interactive[LINX_UPDATE_IN_PROGRESS] = false
+  }
+}
+
+function requestLinxUpdateNotification(
+  interactive: any,
+  newVersion: string,
+  options: LinxUpdateNotificationOptions & { force?: boolean } = {},
+): void {
+  if (!options.force && shouldDeferLinxUpdateNotification(options)) {
+    interactive[LINX_DEFERRED_UPDATE_VERSION] = newVersion
+    return
+  }
+
+  interactive[LINX_DEFERRED_UPDATE_VERSION] = undefined
+  void showLinxUpdateSelector(interactive, newVersion)
+}
+
+function shouldDeferLinxUpdateNotification(options: LinxUpdateNotificationOptions): boolean {
+  return options.shouldDefer?.() === true
+}
+
+function normalizeLinxUpdateVersion(value: unknown): string | undefined {
+  const direct = normalizeNonEmptyString(value)
+  if (direct) {
+    return direct
+  }
+
+  if (!isRecord(value)) {
+    return undefined
+  }
+
+  for (const key of ['version', 'latest', 'latestVersion', 'packageVersion', 'newVersion']) {
+    const nested = normalizeNonEmptyString(value[key])
+    if (nested) {
+      return nested
+    }
+  }
+
+  return undefined
+}
+
+function showLinxUpdateFallback(interactive: any, newVersion: string): void {
+  const lines = [
+    '\x1b[1m\x1b[33mLinX update available\x1b[39m\x1b[22m',
+    `\x1b[2mCurrent ${LINX_CLI_VERSION} -> latest ${newVersion}\x1b[22m`,
+    `\x1b[2mRun \x1b[22m\x1b[36mnpm install -g ${LINX_UPDATE_PACKAGE_NAME}@latest\x1b[39m\x1b[2m if this terminal cannot show the update selector.\x1b[22m`,
+    `\x1b[2mChangelog: \x1b[22m\x1b[36m${LINX_CHANGELOG_URL}\x1b[39m`,
+  ]
+  interactive.chatContainer?.addChild?.(new Text(lines.join('\n'), 1, 0))
+  interactive.ui?.requestRender?.()
+}
+
+function normalizeNonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined
+  }
+  const normalized = value.trim()
+  return normalized || undefined
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
