@@ -3,7 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 export const LINX_TUI_NO_EXIT_MESSAGE_ENV = 'LINX_TUI_NO_EXIT_MESSAGE'
 
 export type InteractiveShellLifecycle = {
-  stop?: () => void
+  stop?: (...args: unknown[]) => void
   showError?: (message: string) => void
 }
 
@@ -137,4 +137,22 @@ function resolveRestartExitCode(code: number | null, signal: NodeJS.Signals | nu
     return 143
   }
   return 1
+}
+
+export function installInteractiveStopCleanup(
+  interactive: InteractiveShellLifecycle,
+  cleanup: () => void,
+): void {
+  const originalStop = interactive.stop?.bind(interactive)
+  if (typeof originalStop !== 'function') {
+    return
+  }
+
+  interactive.stop = function patchedStopWithCleanup(...args: unknown[]): void {
+    try {
+      originalStop(...args)
+    } finally {
+      cleanup()
+    }
+  }
 }
