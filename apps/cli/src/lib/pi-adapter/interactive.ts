@@ -1,7 +1,6 @@
 import { InteractiveMode } from '@earendil-works/pi-coding-agent'
 import { applyLinxInteractiveBranding, requestLinxCloudLogin } from './branding.js'
 import type { BackendCredentialEntry, BackendCredentialInput } from './backend-credentials.js'
-import type { BackendCommandRouter } from './backend-command.js'
 import { installPodStatusOutputFilter } from './pod-status-output.js'
 import {
   getSessionControlManager,
@@ -18,7 +17,7 @@ import { installInteractiveStopCleanup } from '../shell-lifecycle.js'
 import { installSymphonyAutocomplete } from '../linx-command-autocomplete.js'
 import { installLinxFooterPatch, setLinxFooterInteractive } from '../linx-footer-patch.js'
 import { patchPiAssistantMessageRendering } from '../linx-assistant-message-rendering.js'
-import { installBackendCommandRouter as installBackendCommandRouterWithProjection } from '../linx-backend-command-router.js'
+import { installBackendCommandRouter } from '../linx-backend-command-router.js'
 import { promptForBackendCredential } from '../linx-ai-connect-command.js'
 import { installSymphonyCommand } from '../linx-symphony-interactive-command.js'
 import { installLinxRestoredAutoStartup } from '../linx-restored-auto-startup.js'
@@ -31,7 +30,6 @@ import {
   installLinxSessionCommandRouter,
   installLinxSessionCommandRouterAfterRebind,
   installLinxShellCommands,
-  installProjectedCommandRouter,
 } from '../linx-interactive-command-routing.js'
 export { buildLinxExitMessage, installLinxResumeOutputStyle, withLinxResumeOutputStyle, withSuppressedPiResumeOutput }
 export { installInteractiveStopCleanup } from '../shell-lifecycle.js'
@@ -40,6 +38,7 @@ export { installLinxCommandAutocomplete, installSymphonyAutocomplete } from '../
 export { installLinxFooterPatch, setLinxFooterInteractive, buildLinxFooterModePrefix } from '../linx-footer-patch.js'
 export { changeInteractiveCwd, installLinxCwdStartupNotice, resolveInteractiveCwd, setRuntimeCwd } from '../linx-workspace-command.js'
 export { patchPiAssistantMessageRendering } from '../linx-assistant-message-rendering.js'
+export { installBackendCommandRouter } from '../linx-backend-command-router.js'
 export { installSymphonyCommand } from '../linx-symphony-interactive-command.js'
 export { installLinxRestoredAutoStartup } from '../linx-restored-auto-startup.js'
 export { installLinxInteractivePostInitHooks, installLinxEscapeInterrupt } from '../linx-interactive-post-init.js'
@@ -142,9 +141,3 @@ export function bootstrapLinxInteractiveMode(
 
 /** @deprecated Use bootstrapLinxInteractiveMode. */
 export const bootstrapPiInteractiveMode = bootstrapLinxInteractiveMode
-
-export function installBackendCommandRouter(interactive: any, router: BackendCommandRouter | undefined): void {
-  installBackendCommandRouterWithProjection(interactive, router, {
-    installProjectedCommandRouter,
-  })
-}

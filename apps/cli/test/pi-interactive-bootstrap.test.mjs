@@ -6618,6 +6618,24 @@ test('backend command router patch lives in a shell command module', async (t) =
   assert.equal(typeof module.installBackendCommandRouter, 'function')
 })
 
+test('backend command router shell module installs projected routing by default', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-backend-command-router.ts')
+  t.after(() => cleanup())
+
+  const interactive = {
+    setupEditorSubmitHandler() {},
+  }
+
+  module.installBackendCommandRouter(interactive, {
+    backend: 'codex',
+    async execute() {
+      return { handled: false }
+    },
+  })
+
+  assert.equal(typeof interactive.__linxHandleProjectedCommand, 'function')
+})
+
 test('interactive command routing patch lives in a shell command module', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-command-routing.ts')
   t.after(() => cleanup())
