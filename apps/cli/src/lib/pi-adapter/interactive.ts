@@ -15,6 +15,7 @@ import {
   withLinxResumeOutputStyle,
   withSuppressedPiResumeOutput,
 } from '../linx-resume-output.js'
+import { installInteractiveStopCleanup } from '../shell-lifecycle.js'
 import { installSymphonyAutocomplete } from '../linx-command-autocomplete.js'
 import { installLinxFooterPatch, setLinxFooterInteractive } from '../linx-footer-patch.js'
 import { patchPiAssistantMessageRendering } from '../linx-assistant-message-rendering.js'
@@ -33,6 +34,7 @@ import {
   installProjectedCommandRouter,
 } from '../linx-interactive-command-routing.js'
 export { buildLinxExitMessage, installLinxResumeOutputStyle, withLinxResumeOutputStyle, withSuppressedPiResumeOutput }
+export { installInteractiveStopCleanup } from '../shell-lifecycle.js'
 export { buildLinxAutoEditorIndicatorLine, installLinxAutoEditorIndicator } from '../linx-auto-editor-indicator.js'
 export { installLinxCommandAutocomplete, installSymphonyAutocomplete } from '../linx-command-autocomplete.js'
 export { installLinxFooterPatch, setLinxFooterInteractive, buildLinxFooterModePrefix } from '../linx-footer-patch.js'
@@ -100,7 +102,7 @@ export function bootstrapLinxInteractiveMode(
   const restorePodStatusOutputFilter = installPodStatusOutputFilter()
   applyLinxInteractiveBranding(interactive as any)
   installLinxExitMessage(interactive as any)
-  patchInteractivePodStatusFilterCleanup(interactive as any, restorePodStatusOutputFilter)
+  installInteractiveStopCleanup(interactive as any, restorePodStatusOutputFilter)
   installPodBackedExtensionUi(interactive as any, runtime, sessionControlManager)
   installSymphonyAutocomplete(interactive as any)
   // Register /cd slash command; workspace follows terminal while session stays.
@@ -139,21 +141,6 @@ export function bootstrapLinxInteractiveMode(
 
 /** @deprecated Use bootstrapLinxInteractiveMode. */
 export const bootstrapPiInteractiveMode = bootstrapLinxInteractiveMode
-
-function patchInteractivePodStatusFilterCleanup(interactive: any, restore: () => void): void {
-  const originalStop = interactive.stop?.bind(interactive)
-  if (typeof originalStop !== 'function') {
-    return
-  }
-
-  interactive.stop = function patchedStopWithPodStatusCleanup(...args: unknown[]): void {
-    try {
-      originalStop(...args)
-    } finally {
-      restore()
-    }
-  }
-}
 
 export function installPodBackedExtensionUi(interactive: any, runtime: any, sessionControl = getSessionControlManager(interactive, runtime)): void {
   if (interactive.__linxPodBackedExtensionUiInstalled) {
