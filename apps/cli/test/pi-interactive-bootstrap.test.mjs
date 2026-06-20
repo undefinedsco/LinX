@@ -6426,6 +6426,36 @@ test('linx interactive /symphony status reports Pod control-state failure withou
   assert.doesNotMatch(statuses[0], /auto-local-running/)
 })
 
+
+test('command autocomplete shell module adds LinX slash commands', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-command-autocomplete.ts')
+  t.after(() => cleanup())
+
+  const interactive = {
+    autocompleteProvider: undefined,
+    setupAutocompleteProvider() {
+      this.autocompleteProvider = {
+        commands: [{ name: 'login', description: 'refresh LinX login' }],
+      }
+    },
+  }
+
+  module.installLinxCommandAutocomplete(interactive)
+  interactive.setupAutocompleteProvider()
+
+  assert.deepEqual(interactive.autocompleteProvider.commands.map((command) => command.name), [
+    'login',
+    'auto',
+    'cd',
+    'goal',
+    'rewind',
+    'statusline',
+    'update',
+    'ai',
+    'symphony',
+  ])
+})
+
 test('linx interactive adds LinX commands to real slash command autocomplete provider', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
   t.after(() => cleanup())
