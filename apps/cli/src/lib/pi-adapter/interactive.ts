@@ -23,6 +23,7 @@ import { promptForBackendCredential } from '../linx-ai-connect-command.js'
 import { installSymphonyCommand } from '../linx-symphony-interactive-command.js'
 import { installLinxRestoredAutoStartup } from '../linx-restored-auto-startup.js'
 import { installLinxInteractivePostInitHooks, installLinxEscapeInterrupt } from '../linx-interactive-post-init.js'
+import { ensureInteractiveRuntimeHost } from '../linx-interactive-runtime-host.js'
 import {
   installLinxFinalSubmitCommandRouter,
   installLinxInputCommandRouter,
@@ -40,6 +41,7 @@ export { patchPiAssistantMessageRendering } from '../linx-assistant-message-rend
 export { installSymphonyCommand } from '../linx-symphony-interactive-command.js'
 export { installLinxRestoredAutoStartup } from '../linx-restored-auto-startup.js'
 export { installLinxInteractivePostInitHooks, installLinxEscapeInterrupt } from '../linx-interactive-post-init.js'
+export { ensureInteractiveRuntimeHost } from '../linx-interactive-runtime-host.js'
 export {
   installLinxFinalSubmitCommandRouter,
   installLinxGlobalCommands,
@@ -137,24 +139,6 @@ export function bootstrapLinxInteractiveMode(
 
 /** @deprecated Use bootstrapLinxInteractiveMode. */
 export const bootstrapPiInteractiveMode = bootstrapLinxInteractiveMode
-
-function ensureInteractiveRuntimeHost(runtime: any): void {
-  if (!runtime || typeof runtime !== 'object') {
-    return
-  }
-
-  if (typeof runtime.setBeforeSessionInvalidate !== 'function') {
-    runtime.setBeforeSessionInvalidate = (callback?: () => void): void => {
-      runtime.__linxBeforeSessionInvalidate = callback
-    }
-  }
-
-  if (typeof runtime.setRebindSession !== 'function') {
-    runtime.setRebindSession = (callback?: (session: unknown) => Promise<void>): void => {
-      runtime.__linxRebindSession = callback
-    }
-  }
-}
 
 function patchInteractivePodStatusFilterCleanup(interactive: any, restore: () => void): void {
   const originalStop = interactive.stop?.bind(interactive)
