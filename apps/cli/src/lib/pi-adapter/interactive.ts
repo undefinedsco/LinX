@@ -7,7 +7,7 @@ import type { AgentRuntimeBackendConfig } from '@linx/agent-runtime'
 import { getAIConfigProviderMetadata } from '../models.js'
 import { runSymphony, type SymphonyRuntime } from '../symphony-command.js'
 import { applyLinxInteractiveBranding, checkAndShowLinxUpdate, requestLinxCloudLogin } from './branding.js'
-import { parseLinxShellCommand, shouldRouteToBackendCommand, type LinxShellCommand } from '../linx-shell-command-router.js'
+import { parseLinxShellCommand, type LinxShellCommand } from '../linx-shell-command-router.js'
 import type { AutoModePeerCommandRoute } from '@linx/agent-runtime/auto-mode'
 import type { BackendCredentialEntry, BackendCredentialInput, BackendCredentialRepairReason } from './backend-credentials.js'
 import type { BackendCommandRouter } from './backend-command.js'
@@ -50,6 +50,7 @@ import { installSymphonyAutocomplete } from '../linx-command-autocomplete.js'
 import { installLinxFooterPatch, setLinxFooterInteractive } from '../linx-footer-patch.js'
 import { changeInteractiveCwd, installLinxCwdStartupNotice, resolveInteractiveCwd } from '../linx-workspace-command.js'
 import { patchPiAssistantMessageRendering } from '../linx-assistant-message-rendering.js'
+import { installBackendCommandRouter as installBackendCommandRouterWithProjection } from '../linx-backend-command-router.js'
 export { buildLinxExitMessage, installLinxResumeOutputStyle, withLinxResumeOutputStyle, withSuppressedPiResumeOutput }
 export { buildLinxAutoEditorIndicatorLine, installLinxAutoEditorIndicator } from '../linx-auto-editor-indicator.js'
 export { installLinxCommandAutocomplete, installSymphonyAutocomplete } from '../linx-command-autocomplete.js'
@@ -274,81 +275,9 @@ export function installPodBackedExtensionUi(interactive: any, runtime: any, sess
 }
 
 export function installBackendCommandRouter(interactive: any, router: BackendCommandRouter | undefined): void {
-  if (!router) {
-    return
-  }
-
-  interactive.__linxHandleProjectedBackendCommand = async (text: string): Promise<boolean> => {
-    const command = text.trim()
-    if (!shouldRouteToBackendCommand(command)) {
-      return false
-    }
-
-    let routed
-    try {
-      routed = await router.execute(command)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      interactive.showError?.(`${router.backend} command failed: ${message}`)
-      return true
-    }
-
-    if (!routed.handled) {
-      return false
-    }
-
-    if (routed.message) {
-      interactive.showStatus?.(routed.message)
-    }
-    interactive.ui?.requestRender?.()
-    return true
-  }
-  installProjectedCommandRouter(interactive)
-
-  const originalSetup = interactive.setupEditorSubmitHandler?.bind(interactive)
-  if (typeof originalSetup !== 'function') {
-    return
-  }
-
-  interactive.setupEditorSubmitHandler = function patchedBackendCommandSetupEditorSubmitHandler(...args: unknown[]): unknown {
-    const result = originalSetup(...args)
-    const originalSubmit = this.defaultEditor?.onSubmit?.bind(this.defaultEditor)
-    if (typeof originalSubmit !== 'function') {
-      return result
-    }
-
-    this.defaultEditor.onSubmit = async (text: string): Promise<void> => {
-      const command = text.trim()
-      if (!shouldRouteToBackendCommand(command)) {
-        await originalSubmit(text)
-        return
-      }
-
-      let routed
-      try {
-        routed = await router.execute(command)
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        this.showError?.(`${router.backend} command failed: ${message}`)
-        return
-      }
-
-      if (!routed.handled) {
-        await originalSubmit(text)
-        return
-      }
-
-      if (routed.clearInput !== false) {
-        this.editor?.setText?.('')
-      }
-      if (routed.message) {
-        this.showStatus?.(routed.message)
-      }
-      this.ui?.requestRender?.()
-    }
-
-    return result
-  }
+  installBackendCommandRouterWithProjection(interactive, router, {
+    installProjectedCommandRouter,
+  })
 }
 
 export function installLinxShellCommands(

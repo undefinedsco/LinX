@@ -6609,6 +6609,13 @@ test('assistant message rendering patch lives in a shell rendering module', asyn
   assert.equal(typeof module.patchPiAssistantMessageRendering, 'function')
 })
 
+test('backend command router patch lives in a shell command module', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-backend-command-router.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.installBackendCommandRouter, 'function')
+})
+
 test('workspace command shell module owns cwd changes and startup notice hooks', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-workspace-command.ts')
   t.after(() => cleanup())
