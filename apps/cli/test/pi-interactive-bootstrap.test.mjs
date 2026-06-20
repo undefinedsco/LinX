@@ -6629,6 +6629,13 @@ test('interactive command routing patch lives in a shell command module', async 
   assert.equal(typeof module.installProjectedCommandRouter, 'function')
 })
 
+test('restored auto startup patch lives in a shell startup module', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-restored-auto-startup.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.installLinxRestoredAutoStartup, 'function')
+})
+
 test('symphony interactive command patch lives in a shell command module', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-symphony-interactive-command.ts')
   t.after(() => cleanup())
