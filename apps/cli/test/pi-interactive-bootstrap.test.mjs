@@ -6627,6 +6627,13 @@ test('interactive command routing patch lives in a shell command module', async 
   assert.equal(typeof module.installProjectedCommandRouter, 'function')
 })
 
+test('symphony interactive command patch lives in a shell command module', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-symphony-interactive-command.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.installSymphonyCommand, 'function')
+})
+
 test('workspace command shell module owns cwd changes and startup notice hooks', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-workspace-command.ts')
   t.after(() => cleanup())
