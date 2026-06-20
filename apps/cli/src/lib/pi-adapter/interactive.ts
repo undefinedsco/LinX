@@ -1,6 +1,5 @@
 import { InteractiveMode } from '@earendil-works/pi-coding-agent'
-import { AssistantMessageComponent, FooterComponent, LoginDialogComponent } from '@earendil-works/pi-coding-agent'
-import { visibleWidth } from '@earendil-works/pi-tui'
+import { AssistantMessageComponent, LoginDialogComponent } from '@earendil-works/pi-coding-agent'
 import { existsSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { connectAiProviderCredential } from '../ai-command.js'
@@ -39,9 +38,6 @@ import {
   installSessionControlRuntimeEventBridge,
 } from './session-control.js'
 import {
-  buildLinxFooterStatusLine,
-} from '../linx-status-line.js'
-import {
   buildLinxExitMessage,
   installLinxExitMessage,
   installLinxResumeOutputStyle,
@@ -53,9 +49,11 @@ import { handleInteractiveRewindSelector, handleInteractiveRewindTurnsCommand } 
 import { installLinxEscapeInterrupt as installLinxInterruptControl } from '../linx-interrupt-control.js'
 import { installLinxAutoEditorIndicator } from '../linx-auto-editor-indicator.js'
 import { installSymphonyAutocomplete } from '../linx-command-autocomplete.js'
+import { installLinxFooterPatch, setLinxFooterInteractive } from '../linx-footer-patch.js'
 export { buildLinxExitMessage, installLinxResumeOutputStyle, withLinxResumeOutputStyle, withSuppressedPiResumeOutput }
 export { buildLinxAutoEditorIndicatorLine, installLinxAutoEditorIndicator } from '../linx-auto-editor-indicator.js'
 export { installLinxCommandAutocomplete, installSymphonyAutocomplete } from '../linx-command-autocomplete.js'
+export { installLinxFooterPatch, setLinxFooterInteractive, buildLinxFooterModePrefix } from '../linx-footer-patch.js'
 
 
 export interface LinxInteractiveBootstrap {
@@ -83,20 +81,15 @@ export interface LinxInteractiveBootstrapOptions {
 /** @deprecated Use LinxInteractiveBootstrapOptions. */
 export type PiInteractiveBootstrapOptions = LinxInteractiveBootstrapOptions
 
-let footerPatched = false
 let assistantMessagePatched = false
 const SYMPHONY_STATUS_POD_TIMEOUT_MS = 1_200
 const DEFAULT_SYMPHONY_WORKER_SUPERVISOR_INTERVAL_MS = 10 * 60 * 1000
-/** Module-level reference to interactive for footer mode state (set during bootstrap). */
-let _linxFooterInteractive: any = null
-
-
 export function bootstrapLinxInteractiveMode(
   runtime: any,
   options: LinxInteractiveBootstrapOptions = {},
 ): LinxInteractiveBootstrap {
   installLinxResumeOutputStyle()
-  patchPiFooter()
+  installLinxFooterPatch()
   patchPiAssistantMessageRendering()
   const sessionCwd = runtime?.cwd || process.cwd()
   ensureInteractiveRuntimeHost(runtime)
@@ -104,7 +97,7 @@ export function bootstrapLinxInteractiveMode(
   ;(interactive as any).runtime = runtime
   ;(interactive as any).__autoEnabled = runtime?.autoEnabled === true
   ;(interactive as any).__linxSymphonyModeEnabled = runtime?.symphonyEnabled === true
-  _linxFooterInteractive = interactive as any
+  setLinxFooterInteractive(interactive as any)
 
   if (options.onSymphonyControlChange) {
     ;(interactive as any).__linxOnSymphonyControlChange = options.onSymphonyControlChange
@@ -2049,48 +2042,6 @@ export function installLinxEscapeInterrupt(interactive: any): void {
     },
   })
 }
-function patchPiFooter(): void {
-  if (footerPatched) {
-    return
-  }
-
-  const originalRender = FooterComponent.prototype.render
-  FooterComponent.prototype.render = function patchedRender(width: number): string[] {
-    const lines = originalRender.call(this, width)
-    if (Array.isArray(lines) && lines.length > 1 && typeof lines[1] === 'string') {
-      const session = (this as unknown as { session?: unknown }).session
-      const autoCompactEnabled = (this as unknown as { autoCompactEnabled?: boolean }).autoCompactEnabled !== false
-      const footerData = (this as unknown as { footerData?: unknown }).footerData
-      const modePrefix = buildLinxFooterModePrefix()
-      const modeLen = visibleWidth(modePrefix)
-      const bulletLen = modeLen > 0 ? 3 : 0
-      const statusWidth = Math.max(0, width - modeLen - bulletLen)
-      lines[1] = buildLinxFooterStatusLine({
-        session,
-        width: statusWidth,
-        autoCompactEnabled,
-        footerData: footerData as Parameters<typeof buildLinxFooterStatusLine>[0]['footerData'],
-      })
-      if (modePrefix) {
-        lines[1] = modePrefix + ' • ' + lines[1]
-      }
-    }
-    return lines
-  }
-  footerPatched = true
-}
-
-
-function buildLinxFooterModePrefix(): string {
-  if (!_linxFooterInteractive) return ''
-  const autoOn = _linxFooterInteractive.__autoEnabled === true
-  const symphonyOn = _linxFooterInteractive.__linxSymphonyModeEnabled === true
-  if (!autoOn && !symphonyOn) return ''
-  if (autoOn && symphonyOn) return 'Symphony · Auto'
-  if (autoOn) return 'Auto'
-  return 'Symphony'
-}
-
 export function patchPiAssistantMessageRendering(): void {
   if (assistantMessagePatched) {
     return
