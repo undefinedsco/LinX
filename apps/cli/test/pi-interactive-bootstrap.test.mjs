@@ -6619,6 +6619,15 @@ test('welcome header rendering lives in a shell rendering module', async (t) => 
   assert.equal(typeof module.buildLinxWelcomeCardState, 'function')
 })
 
+test('interactive branding composition lives in a shell module', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-branding.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.applyLinxInteractiveBranding, 'function')
+  assert.equal(typeof module.requestLinxCloudLogin, 'function')
+  assert.equal(typeof module.LINX_AGENT_DIR, 'string')
+})
+
 test('backend command router patch lives in a shell command module', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-backend-command-router.ts')
   t.after(() => cleanup())

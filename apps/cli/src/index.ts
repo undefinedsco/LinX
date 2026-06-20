@@ -38,7 +38,7 @@ import {
 import { LinxPiPodMirror } from './lib/pi-adapter/pod-mirror.js'
 import { listPendingPiPodMirrorSync, retryPendingPiPodMirrorSync } from './lib/pi-adapter/sync-recovery.js'
 import type { RemoteChatMessage, RemoteChatTool } from './lib/chat-api.js'
-import { LINX_AGENT_DIR } from './lib/pi-adapter/branding.js'
+import { LINX_AGENT_DIR } from './lib/linx-interactive-branding.js'
 import { createFileSyncCheckpointStore } from './lib/sync-checkpoint-store.js'
 import { deriveLinxPiStartupControlState, hydrateLinxPiControlState } from './lib/pi-adapter/control-state.js'
 import { drizzle, solidResources, type SolidDatabase } from './lib/models.js'
