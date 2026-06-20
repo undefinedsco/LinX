@@ -5884,6 +5884,11 @@ test('linx interactive /symphony switches current chat peer for following messag
   assert.match(submitted[0], /Symphony is on: the user is chatting with Secretary/)
   assert.match(submitted[0], /Default response style: reply like normal chat/)
   assert.match(submitted[0], /do not explain that it was not delegated/)
+  assert.match(submitted[0], /use the xpod CLI as the direct Pod tool surface/i)
+  assert.match(submitted[0], /model-backed xpod obj commands/)
+  assert.match(submitted[0], /same Solid authority as LinX inside the Agent Runtime/)
+  assert.match(submitted[0], /verify xpod auth status\/whoami reports the same acting WebID\/Pod root/)
+  assert.match(submitted[0], /Do not hand-patch TTL or guess Pod paths/)
   assert.match(submitted[0], /ship the login fix/)
   assert.equal(submitted[1], 'normal chat')
   assert.equal(controlManagers.length, 1)
@@ -5974,6 +5979,7 @@ test('linx interactive /symphony keeps worker-looking messages in the Secretary 
   for (let i = 0; i < messages.length; i += 1) {
     assert.match(submitted[i], /AI Secretary Symphony request/)
     assert.match(submitted[i], /Symphony is on: the user is chatting with Secretary/)
+    assert.match(submitted[i], /xpod CLI as the direct Pod tool surface/i)
     assert.match(submitted[i], new RegExp(messages[i].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
   }
   assert.deepEqual(editorTexts, [''])
