@@ -1,7 +1,5 @@
 import { InteractiveMode } from '@earendil-works/pi-coding-agent'
 import { AssistantMessageComponent, LoginDialogComponent } from '@earendil-works/pi-coding-agent'
-import { existsSync, statSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { connectAiProviderCredential } from '../ai-command.js'
 import { listArchivedAutoModeSessions, runAutoMode } from '../auto-mode/runner.js'
 import type { AutoModeCredentialSource, AutoModeWorkerBackend } from '../auto-mode/types.js'
@@ -50,10 +48,12 @@ import { installLinxEscapeInterrupt as installLinxInterruptControl } from '../li
 import { installLinxAutoEditorIndicator } from '../linx-auto-editor-indicator.js'
 import { installSymphonyAutocomplete } from '../linx-command-autocomplete.js'
 import { installLinxFooterPatch, setLinxFooterInteractive } from '../linx-footer-patch.js'
+import { changeInteractiveCwd, installLinxCwdStartupNotice, resolveInteractiveCwd } from '../linx-workspace-command.js'
 export { buildLinxExitMessage, installLinxResumeOutputStyle, withLinxResumeOutputStyle, withSuppressedPiResumeOutput }
 export { buildLinxAutoEditorIndicatorLine, installLinxAutoEditorIndicator } from '../linx-auto-editor-indicator.js'
 export { installLinxCommandAutocomplete, installSymphonyAutocomplete } from '../linx-command-autocomplete.js'
 export { installLinxFooterPatch, setLinxFooterInteractive, buildLinxFooterModePrefix } from '../linx-footer-patch.js'
+export { changeInteractiveCwd, installLinxCwdStartupNotice, resolveInteractiveCwd, setRuntimeCwd } from '../linx-workspace-command.js'
 
 
 export interface LinxInteractiveBootstrap {
@@ -763,57 +763,6 @@ function formatAutoModeChangeStatus(enabled: boolean): string {
       'Auto only controls input ownership; it does not change whether the current chat peer is Secretary or worker/backend.',
       'Use /auto on to hand control back to Secretary.',
     ].join('\n')
-}
-
-async function changeInteractiveCwd(interactive: any, runtime: any, target: string | undefined): Promise<void> {
-  if (!target) {
-    interactive.showStatus?.(`Current workspace: ${resolveInteractiveCwd(interactive, runtime)}`)
-    interactive.ui?.requestRender?.()
-    return
-  }
-
-  const nextCwd = resolve(resolveInteractiveCwd(interactive, runtime), target)
-  if (!existsSync(nextCwd)) {
-    interactive.showError?.(`Workspace not found: ${nextCwd}`)
-    interactive.ui?.requestRender?.()
-    return
-  }
-  if (!statSync(nextCwd).isDirectory()) {
-    interactive.showError?.(`Workspace is not a directory: ${nextCwd}`)
-    interactive.ui?.requestRender?.()
-    return
-  }
-
-  process.chdir(nextCwd)
-  setRuntimeCwd(interactive, runtime, nextCwd)
-  await runtime?.backendCommandRouter?.setCwd?.(nextCwd)
-  interactive.showStatus?.(`Workspace changed to ${nextCwd}. Session history stays in the current thread.`)
-  interactive.ui?.requestRender?.()
-}
-
-function resolveInteractiveCwd(interactive: any, runtime: any): string {
-  const candidates = [
-    interactive?.session?.cwd,
-    runtime?.cwd,
-    interactive?.sessionManager?.getCwd?.(),
-    interactive?.session?.sessionManager?.getCwd?.(),
-    process.cwd(),
-  ]
-  for (const candidate of candidates) {
-    if (typeof candidate === 'string' && candidate.trim()) {
-      return candidate.trim()
-    }
-  }
-  return process.cwd()
-}
-
-function setRuntimeCwd(interactive: any, runtime: any, cwd: string): void {
-  if (interactive?.session && typeof interactive.session === 'object') {
-    interactive.session.cwd = cwd
-  }
-  if (runtime && typeof runtime === 'object') {
-    runtime.cwd = cwd
-  }
 }
 
 export function installSymphonyCommand(interactive: any): void {
@@ -2010,29 +1959,6 @@ async function promptForApiCredentialWithExtensionInput(
 
 function formatBackendCredentialRepairReason(reason: BackendCredentialRepairReason): string {
   return reason === 'invalid' ? 'invalid' : 'missing'
-}
-
-function installLinxCwdStartupNotice(interactive: any, sessionCwd: string): void {
-  const originalInit = interactive.init?.bind(interactive)
-  if (typeof originalInit !== 'function') return
-
-  interactive.init = async function patchedInit(...args: unknown[]): Promise<unknown> {
-    const result = await originalInit(...args)
-
-    const storedCwd = interactive?.session?.cwd ?? sessionCwd
-    const currentCwd = process.cwd()
-
-    if (currentCwd !== storedCwd) {
-      setTimeout(() => {
-        process.stdout.write(
-          `\n\x1b[33m  Session was at ${storedCwd}\x1b[0m\n` +
-          `\x1b[33m  You're now at  ${currentCwd}\x1b[0m\n`
-        )
-      }, 300)
-    }
-
-    return result
-  }
 }
 
 export function installLinxEscapeInterrupt(interactive: any): void {
