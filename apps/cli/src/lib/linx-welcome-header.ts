@@ -4,7 +4,7 @@ import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from '@earendil-works
 import { LINX_TUI_KEYMAP_COMMAND, LINX_TUI_KEYMAP_LABEL, LINX_TUI_LOGIN_COMMAND } from './linx-tui-contract.js'
 import { loadCredentials } from './credentials-store.js'
 import { extractUsernameFromWebId, resolveProfileDisplayName } from './profile-identity.js'
-import { suppressPodStatusOutput } from './pi-adapter/pod-status-output.js'
+import { suppressPodStatusOutput } from './pod-status-output.js'
 import { LINX_CLI_VERSION } from './linx-self-update.js'
 import { resolveRuntimeProviderLabel } from './linx-runtime-provider-label.js'
 
