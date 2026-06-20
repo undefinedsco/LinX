@@ -4465,6 +4465,31 @@ test('linx interactive handles /auto before backend fallback', async (t) => {
   assert.match(statuses[2], /Auto only controls input ownership; it does not change whether the current chat peer is Secretary or worker\/backend/)
 })
 
+
+test('auto editor indicator shell module decorates the active input bar', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-auto-editor-indicator.ts')
+  t.after(() => cleanup())
+
+  const { visibleWidth } = await import('@earendil-works/pi-tui')
+  const interactive = {
+    __autoEnabled: true,
+    defaultEditor: {
+      render(width) {
+        return [
+          '─'.repeat(width),
+          ' '.repeat(width),
+        ]
+      },
+    },
+  }
+
+  module.installLinxAutoEditorIndicator(interactive)
+  const rendered = interactive.defaultEditor.render(40)
+
+  assert.match(rendered.join('\n'), /托管中/)
+  assert.equal(rendered.every((line) => visibleWidth(line) <= 40), true)
+})
+
 test('linx interactive shows delegated input bar while auto is on', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
   t.after(() => cleanup())
