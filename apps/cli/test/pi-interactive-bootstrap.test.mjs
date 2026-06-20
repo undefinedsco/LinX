@@ -6601,3 +6601,12 @@ test('footer rendering patch lives in a shell rendering module', async (t) => {
   module.setLinxFooterInteractive({ __autoEnabled: true, __linxSymphonyModeEnabled: true })
   assert.equal(module.buildLinxFooterModePrefix(), 'Symphony · Auto')
 })
+
+test('workspace command shell module owns cwd changes and startup notice hooks', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-workspace-command.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.changeInteractiveCwd, 'function')
+  assert.equal(typeof module.resolveInteractiveCwd, 'function')
+  assert.equal(typeof module.installLinxCwdStartupNotice, 'function')
+})
