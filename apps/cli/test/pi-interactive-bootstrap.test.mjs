@@ -1714,6 +1714,15 @@ test('linx pod status output filter removes noisy Pod connection status lines', 
   assert.equal(module.filterPodStatusOutput(noisy), 'real user-facing line')
 })
 
+test('pod status output filtering lives in a shell output module', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pod-status-output.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.installPodStatusOutputFilter, 'function')
+  assert.equal(typeof module.suppressPodStatusOutput, 'function')
+  assert.equal(typeof module.filterPodStatusOutput, 'function')
+})
+
 test('linx status line supports Codex-style token config from environment', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-status-line.ts')
   t.after(() => cleanup())
