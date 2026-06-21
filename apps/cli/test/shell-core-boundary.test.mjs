@@ -314,3 +314,25 @@ test('runtime provider OAuth patch state is kept out of registry hidden fields',
 
   assert.deepEqual(violations, [])
 })
+
+test('interactive command routing patch state is kept behind the shell command routing host', () => {
+  const allowed = new Set([
+    'linx-interactive-command-routing-host.ts',
+  ])
+  const violations = []
+  const directInteractiveCommandRoutingPatchPattern = /__linx(?:GlobalCommandHandlerInstalled|InputCommandRouterInstalled|FinalSubmitCommandRouterWrapped|FinalSubmitSetCustomEditorComponentPatched|FinalSubmitCommandRouterInstalled|SessionCommandRouterAfterRebindInstalled)\b/
+
+  for (const file of listSourceFiles(libRoot)) {
+    const relativePath = relative(libRoot, file)
+    if (relativePath.startsWith(adapterSegment) || allowed.has(relativePath)) {
+      continue
+    }
+
+    const source = readFileSync(file, 'utf8')
+    if (directInteractiveCommandRoutingPatchPattern.test(source)) {
+      violations.push(relativePath)
+    }
+  }
+
+  assert.deepEqual(violations, [])
+})
