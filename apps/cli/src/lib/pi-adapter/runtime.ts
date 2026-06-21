@@ -2,26 +2,19 @@ import { createLinxAgentStreamAdapter, type LinxAgentStreamAdapter } from './str
 import type { AgentSessionRuntime } from '@earendil-works/pi-coding-agent'
 import type { AutoModeWorkerBackend } from '../auto-mode/types.js'
 import type { BackendCommandRouter } from '../backend-command.js'
-import type { PodDataSession } from '../pod-data-session.js'
 import type { NativeBackendApprovalPolicy } from '../native-backend-proxy.js'
-import { createLinxCloudRuntimeCoordinator } from '../linx-cloud-runtime-coordinator.js'
+import type { PodDataSession } from '../pod-data-session.js'
 import type { LinxRuntimeAdapterDependencies } from '../linx-runtime-adapter-dependencies.js'
-import {
-  resolveLinxRuntimeAdapterCwd,
-  resolveLinxRuntimeBackendMode,
-  resolveLinxRuntimeWorkerBackend,
-  resolveLinxRuntimeBaseUrl,
-  DEFAULT_LINX_RUNTIME_SESSION_ID,
-  type LinxRuntimeBackendMode,
-} from '../linx-runtime-adapter-defaults.js'
-import { createNativeBackendCommandRouter } from '../native-backend-command-router.js'
-import { createNativeBackendStreamBackend } from '../native-backend-stream-backend.js'
-import { createLinxRuntimeCompletionBackend } from '../linx-runtime-completion-backend.js'
+import type { LinxRuntimeBackendMode } from '../linx-runtime-adapter-defaults.js'
 import {
   createLinxAgentSessionRuntime,
   type LinxCloudPiAuthBridge,
   type LinxRuntimeOAuthProvider,
 } from '../linx-runtime-agent-session.js'
+import {
+  createRuntimeBackendComposition,
+  type RuntimeBackendCompositionOptions,
+} from '../linx-runtime-backend-composition.js'
 
 export interface LinxRuntimeFactoryContext {
   cwd: string
@@ -31,7 +24,7 @@ export interface LinxRuntimeFactoryContext {
 }
 
 export type LinxCreateRuntimeFactory = (context: LinxRuntimeFactoryContext) => Promise<AgentSessionRuntime>
-export interface LinxRuntimeAdapterOptions {
+export interface LinxRuntimeAdapterOptions extends RuntimeBackendCompositionOptions {
   cwd?: string
   model?: string
   port?: number
@@ -73,89 +66,42 @@ export function createLinxRuntimeAdapter(
   dependencies: LinxRuntimeAdapterDependencies,
   options: LinxRuntimeAdapterOptions = {},
 ): LinxRuntimeAdapter {
-  const backendMode = resolveLinxRuntimeBackendMode(options.backend)
-  const workerBackend = resolveLinxRuntimeWorkerBackend({ backendMode, workerBackend: options.workerBackend })
-  const cwd = resolveLinxRuntimeAdapterCwd(options.cwd)
-  const requestedModel = options.model?.trim() || undefined
-  const baseUrl = resolveLinxRuntimeBaseUrl(options.providerConfig?.baseUrl)
-  const cloudRuntime = createLinxCloudRuntimeCoordinator({
-    requestedModel,
-    runtimeUrl: baseUrl,
-    issuerUrl: options.providerConfig?.issuerUrl,
-    getPodDataSession: options.getPodDataSession,
-    createRemoteCompletion: dependencies.createRemoteCompletion,
-    listRemoteModels: dependencies.listRemoteModels,
-  })
-  const proxy = backendMode === 'native'
-    ? dependencies.createNativeProxy?.({
-      cwd,
-      model: requestedModel,
-      listenPort: options.port,
-      autoEnabled: options.autoEnabled,
-      codexApprovalPolicy: options.codexApprovalPolicy,
-      passthroughArgs: options.passthroughArgs,
-      env: options.backendEnv,
-      resolveEnv: options.resolveBackendEnv,
-    })
-    : null
-
-  if (backendMode === 'native' && !proxy) {
-    throw new Error('Native LinX runtime backend requires createNativeProxy')
-  }
-
-  if (backendMode === 'cloud' && !options.providerConfig?.oauth && !dependencies.createRemoteCompletion) {
-    throw new Error('Cloud LinX runtime backend requires createRemoteCompletion')
-  }
-
+  const runtime = createRuntimeBackendComposition(dependencies, options)
   const streamAdapter = createLinxAgentStreamAdapter({
-    sessionId: proxy?.record.id ?? DEFAULT_LINX_RUNTIME_SESSION_ID,
-    cwd: proxy?.record.cwd ?? cwd,
-    model: proxy?.record.model ?? cloudRuntime.getActiveModelId(),
-    backend: createNativeBackendStreamBackend(proxy),
-    completionBackend: !proxy && dependencies.createRemoteCompletion
-      ? createLinxRuntimeCompletionBackend({
-        cloudRuntime,
-        runtimeUrl: baseUrl,
-        issuerUrl: options.providerConfig?.issuerUrl,
-        getPodDataSession: options.getPodDataSession,
-        useExplicitOAuthProvider: Boolean(options.providerConfig?.oauth),
-      })
-      : undefined,
+    sessionId: runtime.sessionId,
+    cwd: runtime.cwd,
+    model: runtime.model,
+    backend: runtime.streamBackend,
+    completionBackend: runtime.completionBackend,
   })
-  const commandRouter = createNativeBackendCommandRouter(proxy)
 
   return {
-    remoteUrl: proxy?.remoteUrl ?? baseUrl,
-    sessionId: proxy?.record.id ?? DEFAULT_LINX_RUNTIME_SESSION_ID,
-    cwd: proxy?.record.cwd ?? cwd,
-    model: proxy?.record.model ?? cloudRuntime.getActiveModelId(),
+    remoteUrl: runtime.remoteUrl,
+    sessionId: runtime.sessionId,
+    cwd: runtime.cwd,
+    model: runtime.model,
     backend: 'linx',
-    runtimeBackend: workerBackend,
-    autoEnabled: options.autoEnabled === true,
-    symphonyEnabled: options.symphonyEnabled === true,
-    backendCommandRouter: commandRouter,
+    runtimeBackend: runtime.workerBackend,
+    autoEnabled: runtime.autoEnabled,
+    symphonyEnabled: runtime.symphonyEnabled,
+    backendCommandRouter: runtime.commandRouter,
     streamAdapter,
     createRuntime: async (context: LinxRuntimeFactoryContext): Promise<AgentSessionRuntime> => createLinxAgentSessionRuntime({
       context,
-      baseUrl,
-      requestedModel,
+      baseUrl: runtime.baseUrl,
+      requestedModel: runtime.requestedModel,
       streamSimple: streamAdapter.streamFn,
-      cloudRuntime,
-      issuerUrl: options.providerConfig?.issuerUrl,
-      oauth: options.providerConfig?.oauth,
-      getPodDataSession: options.getPodDataSession,
-      workerBackend,
-      backendCommandRouter: commandRouter,
-      backendSessionRef: proxy?.record,
-      autoEnabled: options.autoEnabled,
-      symphonyEnabled: options.symphonyEnabled,
+      cloudRuntime: runtime.cloudRuntime,
+      issuerUrl: runtime.issuerUrl,
+      oauth: runtime.oauth,
+      getPodDataSession: runtime.getPodDataSession,
+      workerBackend: runtime.workerBackend,
+      backendCommandRouter: runtime.commandRouter,
+      backendSessionRef: runtime.backendSessionRef,
+      autoEnabled: runtime.autoEnabled,
+      symphonyEnabled: runtime.symphonyEnabled,
     }),
-    async start(): Promise<void> {
-      await proxy?.start()
-    },
-    async close(): Promise<void> {
-      await proxy?.close()
-    },
+    start: () => runtime.start(),
+    close: () => runtime.close(),
   }
-
 }
