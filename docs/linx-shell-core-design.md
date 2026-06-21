@@ -163,6 +163,10 @@ Current shell-state rules:
   Rewind and other shell modules may ask the host module for the active mirror,
   but must not read or write mirror handles through `runtime.__linx*` or
   `interactive.__linx*` fields.
+- Runtime host callback hooks belong in `linx-interactive-runtime-host.ts`.
+  Shell modules may register and read those hooks through explicit host helpers,
+  but must not use runtime hidden fields such as before-invalidate or rebind
+  callback slots.
 - Direct `interactive.__linx*` fields may be added only when they are local
   install sentinels or upstream original-method references that cannot be held
   anywhere else. New exceptions need a boundary test in
