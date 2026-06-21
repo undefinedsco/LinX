@@ -132,6 +132,13 @@ test('LinX runtime completion backend helper lives outside the Pi adapter', asyn
   assert.equal(typeof module.createLinxRuntimeCompletionBackend, 'function')
 })
 
+test('native backend command router helper lives outside the Pi adapter', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/native-backend-command-router.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.createNativeBackendCommandRouter, 'function')
+})
+
 test('LinX runtime AgentSession composition helper lives outside the Pi adapter', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-runtime-agent-session.ts')
   t.after(() => cleanup())
