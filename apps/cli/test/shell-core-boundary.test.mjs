@@ -424,6 +424,16 @@ test('pi adapter bridge entries are not cross-shell aggregate re-export barrels'
   assert.deepEqual(violations, [])
 })
 
+test('pi adapter index exposes only the runtime bridge entry point', () => {
+  const source = readFileSync(join(libRoot, 'pi-adapter/index.ts'), 'utf8')
+  const forbidden = [
+    "export * from './stream.js'",
+  ]
+  const violations = forbidden.filter((snippet) => source.includes(snippet))
+
+  assert.deepEqual(violations, [])
+})
+
 function isPureReexportModule(source) {
   const withoutReexports = source
     .replace(/export\s+(?:type\s+)?\{[\s\S]*?\}\s+from\s+['"][^'"]+['"];?/gu, '')
