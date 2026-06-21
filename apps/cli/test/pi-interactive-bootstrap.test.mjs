@@ -6115,9 +6115,6 @@ test('linx interactive /symphony switches current chat peer for following messag
         return 'session-status'
       },
     },
-    __linxSymphonyPodProjectionRuntime: {
-      getPodDataSession: async () => null,
-    },
     runtime: {
       sessionControl: {
         createControlSession({ cwd }) {
@@ -6127,10 +6124,32 @@ test('linx interactive /symphony switches current chat peer for following messag
         },
       },
     },
-    __linxListSymphonyIssues() {
+    editor: {
+      setText(text) {
+        editorTexts.push(text)
+      },
+    },
+    ui: {
+      requestRender() {},
+    },
+    setupEditorSubmitHandler() {
+      this.defaultEditor.onSubmit = async (text) => {
+        submitted.push(text)
+      }
+    },
+    showStatus(message) {
+      statuses.push(message)
+    },
+  }
+
+  module.configureLinxInteractiveSymphonyState(interactive, {
+    podProjectionRuntime: {
+      getPodDataSession: async () => null,
+    },
+    listSymphonyIssues() {
       return []
     },
-    __linxListSymphonySessions() {
+    listSymphonySessions() {
       return [
         {
           status: 'running',
@@ -6155,23 +6174,7 @@ test('linx interactive /symphony switches current chat peer for following messag
         },
       ]
     },
-    editor: {
-      setText(text) {
-        editorTexts.push(text)
-      },
-    },
-    ui: {
-      requestRender() {},
-    },
-    setupEditorSubmitHandler() {
-      this.defaultEditor.onSubmit = async (text) => {
-        submitted.push(text)
-      }
-    },
-    showStatus(message) {
-      statuses.push(message)
-    },
-  }
+  })
 
   module.installSymphonyCommand(interactive)
   interactive.setupEditorSubmitHandler()
@@ -6234,7 +6237,6 @@ test('linx interactive /symphony keeps worker-looking messages in the Secretary 
   const interactive = {
     defaultEditor: {},
     __autoEnabled: true,
-    __linxSymphonyWorkerModel: 'deepseek-v4',
     podSession: {
       webId: 'https://alice.example/profile/card#me',
     },
@@ -6271,12 +6273,15 @@ test('linx interactive /symphony keeps worker-looking messages in the Secretary 
     showError(message) {
       errors.push(message)
     },
-    __linxRunSymphony: async (...args) => {
+  }
+
+  module.configureLinxInteractiveSymphonyState(interactive, {
+    workerModel: 'deepseek-v4',
+    runSymphony: async (...args) => {
       runCalls.push(args)
       throw new Error('raw Symphony user input must not directly dispatch a worker')
     },
-  }
-
+  })
   module.installSymphonyCommand(interactive)
   interactive.setupEditorSubmitHandler()
 
@@ -6290,7 +6295,7 @@ test('linx interactive /symphony keeps worker-looking messages in the Secretary 
   for (const message of messages) {
     await interactive.defaultEditor.onSubmit(message)
   }
-  await Promise.all(interactive.__linxSymphonyDispatches ?? [])
+  await Promise.all(module.getLinxInteractiveSymphonyDispatches(interactive))
 
   assert.equal(errors.length, 0)
   assert.deepEqual(runCalls, [])
@@ -6345,11 +6350,13 @@ test('linx interactive /symphony off restores worker backend chat without pendin
     showError(message) {
       errors.push(message)
     },
-    __linxRunSymphony: async () => {
-      throw new Error('raw Symphony user input must not directly dispatch a worker')
-    },
   }
 
+  module.configureLinxInteractiveSymphonyState(interactive, {
+    runSymphony: async () => {
+      throw new Error('raw Symphony user input must not directly dispatch a worker')
+    },
+  })
   module.installSymphonyCommand(interactive)
   interactive.setupEditorSubmitHandler()
 
@@ -6357,7 +6364,7 @@ test('linx interactive /symphony off restores worker backend chat without pendin
   await interactive.defaultEditor.onSubmit('请派出一个任务，让 worker 回复 exactly symphony-ok')
   await interactive.defaultEditor.onSubmit('/symphony off')
   await interactive.defaultEditor.onSubmit('normal chat after off')
-  await Promise.all(interactive.__linxSymphonyDispatches ?? [])
+  await Promise.all(module.getLinxInteractiveSymphonyDispatches(interactive))
 
   assert.equal(errors.length, 0)
   assert.equal(module.isLinxInteractiveSymphonyModeEnabled(interactive), false)
@@ -6387,7 +6394,7 @@ test('linx interactive /symphony status reads open issues and running workers fr
         return 'session-status'
       },
     },
-    __linxListSymphonySessions() {
+    testListSymphonySessions() {
       return [
         {
           status: 'running',
@@ -6401,7 +6408,7 @@ test('linx interactive /symphony status reads open issues and running workers fr
         },
       ]
     },
-    __linxListSymphonyIssues() {
+    testListSymphonyIssues() {
       return [
         {
           uri: 'urn:undefineds:linx:issue:issue_local_stale',
@@ -6418,7 +6425,7 @@ test('linx interactive /symphony status reads open issues and running workers fr
         },
       ]
     },
-    __linxSymphonyPodProjectionRuntime: {
+    testSymphonyPodProjectionRuntime: {
       getPodDataSession: async () => ({
         webId: 'https://alice.example/profile/card#me',
         podUrl: 'https://alice.example/',
@@ -6526,6 +6533,11 @@ test('linx interactive /symphony status reads open issues and running workers fr
     },
   }
 
+  module.configureLinxInteractiveSymphonyState(interactive, {
+    podProjectionRuntime: interactive.testSymphonyPodProjectionRuntime,
+    listSymphonyIssues: interactive.testListSymphonyIssues,
+    listSymphonySessions: interactive.testListSymphonySessions,
+  })
   module.configureLinxInteractiveShellState(interactive, { symphonyModeEnabled: true })
   module.installSymphonyCommand(interactive)
   interactive.setupEditorSubmitHandler()
@@ -6558,7 +6570,7 @@ test('linx interactive /symphony status reports Pod control-state failure withou
   const { issueResource, sessionResource, deliveryResource } = await import('@undefineds.co/models')
   const interactive = {
     defaultEditor: {},
-    __linxSymphonyStatusPodTimeoutMs: 10,
+    testSymphonyStatusPodTimeoutMs: 10,
     podSession: {
       webId: 'https://alice.example/profile/card#me',
     },
@@ -6567,7 +6579,7 @@ test('linx interactive /symphony status reports Pod control-state failure withou
         return 'session-status-timeout'
       },
     },
-    __linxListSymphonySessions() {
+    testListSymphonySessions() {
       return [
         {
           status: 'running',
@@ -6581,7 +6593,7 @@ test('linx interactive /symphony status reports Pod control-state failure withou
         },
       ]
     },
-    __linxListSymphonyIssues() {
+    testListSymphonyIssues() {
       return [
         {
           uri: 'urn:undefineds:linx:issue:issue_local_open',
@@ -6598,7 +6610,7 @@ test('linx interactive /symphony status reports Pod control-state failure withou
         },
       ]
     },
-    __linxSymphonyPodProjectionRuntime: {
+    testSymphonyPodProjectionRuntime: {
       getPodDataSession: async () => ({
         webId: 'https://alice.example/profile/card#me',
         podUrl: 'https://alice.example/',
@@ -6641,6 +6653,12 @@ test('linx interactive /symphony status reports Pod control-state failure withou
     },
   }
 
+  module.configureLinxInteractiveSymphonyState(interactive, {
+    statusPodTimeoutMs: interactive.testSymphonyStatusPodTimeoutMs,
+    podProjectionRuntime: interactive.testSymphonyPodProjectionRuntime,
+    listSymphonyIssues: interactive.testListSymphonyIssues,
+    listSymphonySessions: interactive.testListSymphonySessions,
+  })
   module.configureLinxInteractiveShellState(interactive, { symphonyModeEnabled: true })
   module.installSymphonyCommand(interactive)
   interactive.setupEditorSubmitHandler()

@@ -17,7 +17,9 @@ export { installLinxCommandAutocomplete, installSymphonyAutocomplete } from '../
 export { installLinxFooterPatch, setLinxFooterInteractive, buildLinxFooterModePrefix } from '../linx-footer-patch.js'
 export {
   configureLinxInteractiveShellState,
+  configureLinxInteractiveSymphonyState,
   getLinxInteractiveShellState,
+  getLinxInteractiveSymphonyDispatches,
   isLinxInteractiveGoalModeEnabled,
   isLinxInteractiveSymphonyModeEnabled,
 } from '../linx-interactive-shell-state.js'

@@ -138,11 +138,29 @@ LinX shell contract:
 Patch points should stay thin. If a patch grows stateful or reusable, extract it
 behind a named shell module before adding more behavior.
 
-The current remaining design debt is shared shell state. Many modules still
-store feature flags, callbacks, and runtime bridges as ad hoc `__linx*`
-properties on the interactive or session objects. That is acceptable only as a
-migration boundary. New cross-feature state should go through a named shell
-state accessor/module so ownership, lifetime, and tests are explicit.
+The current remaining design debt is shared shell state. Some modules still use
+`__linx*` properties on the interactive, editor, runtime, or session object.
+Only local patch sentinels and original-method handles are acceptable there.
+Runtime config, command bridges, mode flags, background work handles, and
+cross-feature state must go through named shell modules so ownership, lifetime,
+and tests are explicit.
+
+Current shell-state rules:
+
+- Mode state belongs in `linx-interactive-shell-state.ts`: auto control-change
+  callbacks, Symphony enabled/generation, goal enabled/supervisor timestamps.
+- Projected command bridges belong in `linx-interactive-shell-state.ts`:
+  Secretary/auto projected global commands, backend-native commands, and
+  `/ai connect` command injection.
+- Symphony interactive runtime config belongs in
+  `linx-interactive-shell-state.ts`: Pod projection runtime, worker backend,
+  worker credential source, worker model, worker supervisor interval, status
+  timeout, testable `run/list` hooks, dispatch promises, and dispatch abort
+  controllers.
+- Direct `interactive.__linx*` fields may be added only when they are local
+  install sentinels or upstream original-method references that cannot be held
+  anywhere else. New exceptions need a boundary test in
+  `apps/cli/test/shell-core-boundary.test.mjs`.
 
 ## Self-update contract
 
