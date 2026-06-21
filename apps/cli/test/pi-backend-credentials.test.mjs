@@ -2,8 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 
-test('pi backend credential helper prompts, saves to Pod, and reloads missing codex credentials', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/backend-credentials.ts')
+test('backend credential helper prompts, saves to Pod, and reloads missing codex credentials', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/backend-credentials.ts')
   t.after(() => cleanup())
 
   const loadCalls = []
@@ -33,7 +33,7 @@ test('pi backend credential helper prompts, saves to Pod, and reloads missing co
     },
   }
 
-  const credential = await module.loadOrPromptPiBackendCredential('codex', {
+  const credential = await module.loadOrPromptBackendCredential('codex', {
     runtime,
     async promptCredential(details) {
       prompts.push(details)
@@ -67,8 +67,8 @@ test('pi backend credential helper prompts, saves to Pod, and reloads missing co
   })
 })
 
-test('pi backend credential helper does not prompt when Pod already has credentials', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/backend-credentials.ts')
+test('backend credential helper does not prompt when Pod already has credentials', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/backend-credentials.ts')
   t.after(() => cleanup())
 
   const runtime = {
@@ -86,7 +86,7 @@ test('pi backend credential helper does not prompt when Pod already has credenti
     },
   }
 
-  const credential = await module.loadOrPromptPiBackendCredential('codex', {
+  const credential = await module.loadOrPromptBackendCredential('codex', {
     runtime,
     async promptCredential() {
       throw new Error('should not prompt when credential already exists')
@@ -96,8 +96,8 @@ test('pi backend credential helper does not prompt when Pod already has credenti
   assert.deepEqual(credential.env, { CODEX_API_KEY: 'sk-existing' })
 })
 
-test('pi backend credential helper can force secretary repair for existing bad credentials', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/backend-credentials.ts')
+test('backend credential helper can force secretary repair for existing bad credentials', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/backend-credentials.ts')
   t.after(() => cleanup())
 
   const loadCalls = []
@@ -123,7 +123,7 @@ test('pi backend credential helper can force secretary repair for existing bad c
     },
   }
 
-  const credential = await module.promptAndSavePiBackendCredential('codex', {
+  const credential = await module.promptAndSaveBackendCredential('codex', {
     runtime,
     async promptCredential() {
       return {

@@ -6,7 +6,7 @@ import type {
   BackendCredentialEntry,
   BackendCredentialInput,
   BackendCredentialRepairReason,
-} from './pi-adapter/backend-credentials.js'
+} from './backend-credentials.js'
 
 export async function promptForBackendCredential(
   interactive: any,
