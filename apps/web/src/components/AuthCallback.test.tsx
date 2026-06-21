@@ -143,7 +143,7 @@ describe('AuthCallback', () => {
 
     await waitFor(() => {
       expect(handleIncomingRedirectMock).toHaveBeenCalledWith({
-        url: `${window.location.origin}/auth/callback?code=abc&state=xyz`,
+        url: 'http://127.0.0.1:43123/auth/callback?code=abc&state=xyz',
         restorePreviousSession: false,
       })
     })
@@ -151,6 +151,42 @@ describe('AuthCallback', () => {
       expect(onSuccessMock).toHaveBeenCalledTimes(1)
     })
     expect(window.localStorage.getItem('solidClientAuthn:currentSession')).toBe('session-1')
+  })
+
+
+  it('retries transient Desktop callback restore fetch failures', async () => {
+    consumePendingRedirectMock.mockResolvedValueOnce('http://127.0.0.1:43123/auth/callback?code=abc&state=xyz')
+    handleIncomingRedirectMock
+      .mockRejectedValueOnce(new Error('Failed to fetch'))
+      .mockImplementationOnce(async () => {
+        sessionState.info.isLoggedIn = true
+        window.localStorage.setItem('solidClientAuthn:currentSession', 'session-1')
+        window.localStorage.setItem(
+          'solidClientAuthenticationUser:session-1',
+          JSON.stringify({
+            isLoggedIn: 'true',
+            webId: 'https://id.undefineds.co/alice/profile/card#me',
+          }),
+        )
+        return {
+          isLoggedIn: true,
+          sessionId: 'session-1',
+          webId: 'https://id.undefineds.co/alice/profile/card#me',
+        }
+      })
+    window.xpodDesktop = {
+      auth: {
+        consumePendingRedirect: consumePendingRedirectMock,
+        onRedirect: onRedirectMock,
+      },
+    } as any
+
+    render(<SolidAuthCallback onSuccess={onSuccessMock} onError={onErrorMock} />)
+
+    await waitFor(() => {
+      expect(handleIncomingRedirectMock).toHaveBeenCalledTimes(2)
+      expect(onSuccessMock).toHaveBeenCalledTimes(1)
+    })
   })
 
   it('does not stay on the callback spinner forever when no session is restored', async () => {
@@ -213,7 +249,7 @@ describe('AuthCallback', () => {
     fireEvent.click(screen.getByRole('button', { name: '重试本地空间' }))
 
     await waitFor(() => {
-      expect(connectMock).toHaveBeenCalledWith('https://node-0000.undefineds.co', expect.objectContaining({
+      expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', expect.objectContaining({
         authorizationSurface: 'embedded',
         returnToMicroAppId: 'chat',
         route: 'local',
@@ -247,7 +283,7 @@ describe('AuthCallback', () => {
     render(<SolidAuthCallback onSuccess={onSuccessMock} onError={onErrorMock} />)
 
     await waitFor(() => {
-      expect(connectMock).toHaveBeenCalledWith('https://node-0000.undefineds.co', expect.objectContaining({
+      expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', expect.objectContaining({
         authorizationSurface: 'embedded',
         returnToMicroAppId: 'chat',
         route: 'local',

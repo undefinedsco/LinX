@@ -14,7 +14,7 @@ const CURRENT_SOLID_SESSION_KEY = 'solidClientAuthn:currentSession'
 const SOLID_SESSION_PREFIX = 'solidClientAuthenticationUser:'
 
 export interface PendingLoginAttempt {
-  /** OIDC entry URL passed to Inrupt. For Local this is the selected SP facade. */
+  /** OIDC entry URL passed to Inrupt. For Local+Cloud this is the Cloud issuer. */
   issuerUrl: string
   /** Semantic identity issuer stored on the remembered account after login. */
   accountIssuerUrl?: string

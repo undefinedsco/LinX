@@ -1,12 +1,12 @@
 import {
-  chatTable,
-  messageTable,
-  threadTable,
+  chatResource,
+  messageResource,
+  threadResource,
 } from '@undefineds.co/models'
 
-export const Chat = chatTable
-export const Thread = threadTable
-export const Message = messageTable
+export const Chat = chatResource
+export const Thread = threadResource
+export const Message = messageResource
 
 export const MessageRole = {
   USER: 'user',

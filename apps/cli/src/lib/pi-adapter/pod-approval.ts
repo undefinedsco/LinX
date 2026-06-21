@@ -1,349 +1,571 @@
-import type { BeforeToolCallContext, BeforeToolCallResult } from '@mariozechner/pi-agent-core'
-import type { AgentSession } from '@mariozechner/pi-coding-agent'
-import { linxRuntimeEndpointForBackend } from '@linx/agent-runtime'
-import {
-  createFallbackAutoModeSecretaryRecommendation,
-  isTrustedAutoModeCommand,
-  resolveAutoModeAutoApprovalDecision,
-  autoModeApprovalActionUri,
-  autoModeApprovalRequestMessage,
-  autoModeApprovalRisk,
-  autoModeApprovalToolName,
-  type AutoModeApprovalDecision,
-  type AutoModeApprovalRequest,
-  type AutoModeMode,
-  type AutoModeSecretaryApprovalRecommendation,
-  type AutoModeSessionRecord,
+import { randomUUID } from 'node:crypto'
+import type { ExtensionUIDialogOptions, ExtensionUIContext } from '@earendil-works/pi-coding-agent'
+import type {
+  AutoModeApprovalDecision,
+  AutoModeApprovalOption,
+  AutoModeInteractionRequest,
+  AutoModeUserInputQuestion,
 } from '@linx/agent-runtime/auto-mode'
 import {
   createRemoteApproval,
-  requestRemoteApproval,
   resolveRemoteAutoModeApproval,
+  waitForRemoteAutoModeApproval,
+  type AutoModeRemoteApprovalRuntime,
   type RemoteApprovalRequestDetails,
   type RemoteApprovalSubjectContext,
-  type AutoModeRemoteApprovalRuntime,
 } from '../auto-mode/pod-approval.js'
-import { resolveAutoModeSecretaryRecommendation } from '../auto-mode/secretary.js'
-import { buildAgentUri, buildThreadUri, DEFAULT_SECRETARY_CHAT_ID } from './pod-mirror-mapping.js'
+import { DEFAULT_SECRETARY_CHAT_ID, secretaryAgentUri, secretaryThreadUri } from './pod-mirror-mapping.js'
+import type { SessionControlManager } from './session-control.js'
 
-export interface LinxPiRemoteApprovalOptions {
-  session: AgentSession
-  cwd: string
+const EXTENSION_UI_POLICY_VERSION = 'linx-pi-extension-ui/v1'
+const DEFAULT_POLL_MS = 1000
+const EXTENSION_UI_INPUT_QUESTION_ID = 'runtime'
+
+export interface PodBackedExtensionUiOptions {
+  cwd?: string
+  sessionId?: string | (() => string | undefined)
   pollMs?: number
   runtime?: AutoModeRemoteApprovalRuntime
-  mode?: AutoModeMode
-  resolveSecretaryRecommendation?: typeof resolveAutoModeSecretaryRecommendation
+  sessionControl?: SessionControlManager
+  onWarning?: (error: unknown) => void
 }
 
-export function installLinxPiRemoteApproval(options: LinxPiRemoteApprovalOptions): void {
-  const agent = options.session.agent
-  const originalBeforeToolCall = agent.beforeToolCall?.bind(agent)
-
-  agent.beforeToolCall = async (context: BeforeToolCallContext, signal?: AbortSignal) => {
-    const originalResult = await originalBeforeToolCall?.(context, signal)
-    if (originalResult?.block) {
-      return originalResult
-    }
-
-    const request = buildPiToolApprovalRequest(context, options.cwd)
-    if (!request) {
-      return originalResult
-    }
-
-    const decision = await resolveLinxPiToolApproval({
-      request,
-      record: buildPiApprovalRecord(options, context),
-      mode: options.mode ?? 'smart',
-      pollMs: options.pollMs,
-      signal,
-      runtime: options.runtime,
-      resolveSecretaryRecommendation: options.resolveSecretaryRecommendation ?? resolveAutoModeSecretaryRecommendation,
-    })
-
-    return mapApprovalDecisionToBeforeToolCallResult(decision, request)
+export function createPodBackedExtensionUiContext<T extends ExtensionUIContext>(
+  baseUi: T,
+  options: PodBackedExtensionUiOptions = {},
+): T {
+  return {
+    ...baseUi,
+    select(title, choices, opts) {
+      return selectWithPodApproval(baseUi, title, choices, opts, options)
+    },
+    confirm(title, message, opts) {
+      return confirmWithPodApproval(baseUi, title, message, opts, options)
+    },
+    input(title, placeholder, opts) {
+      return inputWithAutoSecretary(baseUi, title, placeholder, opts, options)
+    },
   }
 }
 
-interface LinxPiToolApprovalInput {
-  request: AutoModeApprovalRequest
-  record: AutoModeSessionRecord
-  mode: AutoModeMode
-  pollMs?: number
-  signal?: AbortSignal
-  runtime?: AutoModeRemoteApprovalRuntime
-  resolveSecretaryRecommendation: typeof resolveAutoModeSecretaryRecommendation
+async function selectWithPodApproval(
+  baseUi: Pick<ExtensionUIContext, 'select'>,
+  title: string,
+  choices: string[],
+  opts: ExtensionUIDialogOptions | undefined,
+  options: PodBackedExtensionUiOptions,
+): Promise<string | undefined> {
+  if (opts?.signal?.aborted || choices.length === 0) {
+    return baseUi.select(title, choices, opts)
+  }
+  if (!shouldPodBackSelect(choices)) {
+    return baseUi.select(title, choices, opts)
+  }
+
+  const approvalOptions = choices.map((label, index) => buildSelectApprovalOption(label, index))
+  const autoResult = await resolveAutoSecretaryExtensionUiInput({
+    title,
+    kind: 'select',
+    choices,
+    approvalOptions,
+    timeoutMs: opts?.timeout,
+    options,
+    mapResponse: (response) => {
+      if (!response) {
+        return undefined
+      }
+      if (response.kind === 'approval') {
+        return choiceFromRemoteDecision(response.decision, choices, approvalOptions)
+      }
+      const answer = response.answers[EXTENSION_UI_INPUT_QUESTION_ID]?.answers[0]
+      if (!answer) {
+        return undefined
+      }
+      return choices.includes(answer) ? answer : undefined
+    },
+  })
+  if (autoResult.resolved) {
+    return autoResult.value
+  }
+
+  const result = await raceLocalAndRemote({
+    title,
+    kind: 'select',
+    choices,
+    approvalOptions,
+    opts,
+    options,
+    runLocal: (signal) => baseUi.select(title, choices, { ...opts, signal }),
+    mapLocalToDecision: (selected) => podDecisionFromSelectedChoice(selected, approvalOptions),
+    mapRemoteToLocal: (decision) => choiceFromRemoteDecision(decision, choices, approvalOptions),
+    localResolutionNote: (selected) => selected
+      ? encodeExtensionUiNote({ kind: 'select', selectedOptionId: optionIdForChoice(selected, choices), selectedLabel: selected })
+      : encodeExtensionUiNote({ kind: 'select', cancelled: true }),
+  })
+
+  return result
 }
 
-export async function resolveLinxPiToolApproval(input: LinxPiToolApprovalInput): Promise<AutoModeApprovalDecision> {
-  const fallbackDecision = resolvePiFallbackAutoDecision(input)
-  if (fallbackDecision) {
-    return fallbackDecision
+async function confirmWithPodApproval(
+  baseUi: Pick<ExtensionUIContext, 'confirm'>,
+  title: string,
+  message: string,
+  opts: ExtensionUIDialogOptions | undefined,
+  options: PodBackedExtensionUiOptions,
+): Promise<boolean> {
+  if (opts?.signal?.aborted) {
+    return baseUi.confirm(title, message, opts)
   }
 
-  const rawRecommendation = await input.resolveSecretaryRecommendation({
-    mode: input.mode,
-    record: input.record,
-    request: input.request,
-  }).catch(() => createFallbackAutoModeSecretaryRecommendation({
-    mode: input.mode,
-    request: input.request,
-  }))
-  const recommendation = normalizePiApprovalRecommendation(input, rawRecommendation)
-
-  if (recommendation?.canAutoDecide && recommendation.decision && recommendation.source === 'model') {
-    return resolvePiRemoteApproval(input, recommendation)
+  const approvalOptions: AutoModeApprovalOption[] = [
+    { optionId: 'yes', label: 'Yes', kind: 'allow_once' },
+    { optionId: 'no', label: 'No', kind: 'reject_once' },
+  ]
+  const autoResult = await resolveAutoSecretaryExtensionUiInput({
+    title,
+    message,
+    kind: 'confirm',
+    choices: ['Yes', 'No'],
+    approvalOptions,
+    timeoutMs: opts?.timeout,
+    options,
+    mapResponse: (response) => {
+      if (!response) {
+        return undefined
+      }
+      if (response.kind === 'approval') {
+        return response.decision === 'accept' || response.decision === 'accept_for_session'
+      }
+      const answer = response.answers[EXTENSION_UI_INPUT_QUESTION_ID]?.answers[0]?.toLowerCase()
+      if (!answer) {
+        return undefined
+      }
+      if (['yes', 'y', 'true', 'allow', 'approve', 'confirm'].includes(answer)) {
+        return true
+      }
+      if (['no', 'n', 'false', 'deny', 'decline', 'reject'].includes(answer)) {
+        return false
+      }
+      return undefined
+    },
+  })
+  if (autoResult.resolved) {
+    return autoResult.value ?? false
   }
 
-  const autoDecision = resolvePiAutoDecision(input, recommendation)
-  if (autoDecision) {
-    return autoDecision
-  }
+  const result = await raceLocalAndRemote({
+    title,
+    message,
+    kind: 'confirm',
+    choices: ['Yes', 'No'],
+    approvalOptions,
+    opts,
+    options,
+    runLocal: (signal) => baseUi.confirm(title, message, { ...opts, signal }),
+    mapLocalToDecision: (confirmed) => confirmed ? 'accept' : 'decline',
+    mapRemoteToLocal: (decision) => decision === 'accept' || decision === 'accept_for_session',
+    localResolutionNote: (confirmed) => encodeExtensionUiNote({
+      kind: 'confirm',
+      selectedOptionId: confirmed ? 'yes' : 'no',
+      selectedLabel: confirmed ? 'Yes' : 'No',
+    }),
+  })
 
-  return resolvePiRemoteApproval(input, recommendation)
-    .catch(() => 'decline')
+  return result ?? false
 }
 
-function normalizePiApprovalRecommendation(
-  input: LinxPiToolApprovalInput,
-  recommendation: Awaited<ReturnType<typeof resolveAutoModeSecretaryRecommendation>> | null,
-): AutoModeSecretaryApprovalRecommendation | null {
-  if (!isApprovalRecommendation(input.request, recommendation)) {
-    return null
+async function inputWithAutoSecretary(
+  baseUi: Pick<ExtensionUIContext, 'input'>,
+  title: string,
+  placeholder: string | undefined,
+  opts: ExtensionUIDialogOptions | undefined,
+  options: PodBackedExtensionUiOptions,
+): Promise<string | undefined> {
+  if (opts?.signal?.aborted) {
+    return baseUi.input(title, placeholder, opts)
   }
 
-  if (recommendation.source === 'fallback' && recommendation.canAutoDecide && !isTrustedPiFallbackApproval(input.request)) {
+  const autoResult = await resolveAutoSecretaryExtensionUiInput({
+    title,
+    message: placeholder,
+    kind: 'input',
+    choices: [],
+    approvalOptions: [],
+    timeoutMs: opts?.timeout,
+    options,
+    mapResponse: (response) => {
+      if (!response) {
+        return undefined
+      }
+      if (response.kind !== 'user-input') {
+        return undefined
+      }
+      return response.answers[EXTENSION_UI_INPUT_QUESTION_ID]?.answers[0]
+    },
+  })
+  if (autoResult.resolved) {
+    return autoResult.value
+  }
+
+  return baseUi.input(title, placeholder, opts)
+}
+
+async function resolveAutoSecretaryExtensionUiInput<T>(input: {
+  title: string
+  message?: string
+  kind: 'select' | 'confirm' | 'input'
+  choices: string[]
+  approvalOptions: AutoModeApprovalOption[]
+  timeoutMs?: number
+  options: PodBackedExtensionUiOptions
+  mapResponse: (response: Awaited<ReturnType<SessionControlManager['resolveInteractionRequest']>>) => T | undefined
+}): Promise<{ resolved: true; value: T | undefined } | { resolved: false }> {
+  const sessionControl = input.options.sessionControl
+  if (!sessionControl) {
+    return { resolved: false }
+  }
+
+  const request = buildExtensionUiInteractionRequest(input)
+  const response = await sessionControl.resolveInteractionRequest({ request })
+  if (!response) {
+    return { resolved: false }
+  }
+
+  const value = input.mapResponse(response)
+  return value === undefined ? { resolved: false } : { resolved: true, value }
+}
+
+function buildExtensionUiInteractionRequest(input: {
+  title: string
+  message?: string
+  kind: 'select' | 'confirm' | 'input'
+  choices: string[]
+  approvalOptions: AutoModeApprovalOption[]
+  timeoutMs?: number
+  options: PodBackedExtensionUiOptions
+}): AutoModeInteractionRequest {
+  if (input.kind === 'input' || input.approvalOptions.length === 0) {
     return {
-      ...recommendation,
-      canAutoDecide: false,
-      decision: undefined,
+      kind: 'user-input',
+      message: [input.title, input.message].filter(Boolean).join('\n') || 'Input required',
+      questions: [buildExtensionUiQuestion(input)],
+      ...(input.timeoutMs ? { timeoutMs: input.timeoutMs } : {}),
+      raw: buildExtensionUiRaw(input),
     }
   }
 
-  return recommendation
+  return {
+    kind: 'codex-approval',
+    message: [input.title, input.message].filter(Boolean).join('\n') || 'Approval required',
+    approvalOptions: input.approvalOptions,
+    ...(input.timeoutMs ? { timeoutMs: input.timeoutMs } : {}),
+    raw: buildExtensionUiRaw(input),
+  }
 }
 
-async function resolvePiRemoteApproval(
-  input: LinxPiToolApprovalInput,
-  recommendation: AutoModeSecretaryApprovalRecommendation | null,
-): Promise<AutoModeApprovalDecision> {
-  const subject = buildPiApprovalSubject(input.record)
-  const request = buildPiRemoteApprovalRequest(input.request)
+function buildExtensionUiQuestion(input: {
+  title: string
+  message?: string
+  kind: 'select' | 'confirm' | 'input'
+  choices: string[]
+}): AutoModeUserInputQuestion {
+  return {
+    id: EXTENSION_UI_INPUT_QUESTION_ID,
+    header: input.kind === 'input' ? 'Input' : 'Select',
+    question: [input.title, input.message].filter(Boolean).join('\n') || 'Input required',
+    options: input.choices.map((label) => ({ label })),
+  }
+}
 
-  if (recommendation?.canAutoDecide && recommendation.decision) {
-    const remote = await createRemoteApproval({
-      subject,
-      request,
-      runtime: input.runtime,
-    })
-    await resolveRemoteAutoModeApproval({
+function buildExtensionUiRaw(input: {
+  title: string
+  message?: string
+  kind: 'select' | 'confirm' | 'input'
+  choices: string[]
+  options: PodBackedExtensionUiOptions
+}): Record<string, unknown> {
+  return {
+    source: 'pi-extension-ui',
+    kind: input.kind,
+    title: input.title,
+    ...(input.message ? { message: input.message } : {}),
+    choices: input.choices,
+    ...(input.options.cwd ? { cwd: input.options.cwd } : {}),
+    sessionId: resolveSessionId(input.options.sessionId),
+  }
+}
+
+async function raceLocalAndRemote<TLocal>(input: {
+  title: string
+  message?: string
+  kind: 'select' | 'confirm'
+  choices: string[]
+  approvalOptions: AutoModeApprovalOption[]
+  opts?: ExtensionUIDialogOptions
+  options: PodBackedExtensionUiOptions
+  runLocal: (signal: AbortSignal) => Promise<TLocal>
+  mapLocalToDecision: (value: TLocal) => AutoModeApprovalDecision
+  mapRemoteToLocal: (decision: AutoModeApprovalDecision) => TLocal
+  localResolutionNote: (value: TLocal) => string
+}): Promise<TLocal> {
+  const localAbort = new AbortController()
+  const removeInputAbort = linkAbortSignal(input.opts?.signal, () => localAbort.abort())
+  const remoteAbort = new AbortController()
+  const removeRemoteAbort = linkAbortSignal(input.opts?.signal, () => remoteAbort.abort())
+  const localPromise = input.runLocal(localAbort.signal).then((value) => ({
+    source: 'local' as const,
+    value,
+  }))
+  const remoteReadyPromise = createExtensionUiRemoteApproval({
+    title: input.title,
+    message: input.message,
+    kind: input.kind,
+    choices: input.choices,
+    approvalOptions: input.approvalOptions,
+    timeoutMs: input.opts?.timeout,
+    options: input.options,
+  }).catch((error) => {
+    input.options.onWarning?.(error)
+    return null
+  })
+  const remotePromise = remoteReadyPromise.then(async (remote) => {
+    if (!remote) {
+      return { source: 'remote-unavailable' as const }
+    }
+    const decision = await waitForRemoteAutoModeApproval({
       approvalId: remote.id,
       approvalUri: remote.approvalUri,
-      decision: recommendation.decision,
-      decisionRole: 'secretary',
-      note: recommendation.reason ?? 'resolved by AI secretary',
-      runtime: input.runtime,
-    }).catch(() => undefined)
-    return recommendation.decision
-  }
-
-  return requestRemoteApproval({
-    subject,
-    request,
-    pollMs: input.pollMs,
-    signal: input.signal,
-    runtime: input.runtime,
-  })
-}
-
-function buildPiApprovalSubject(record: AutoModeSessionRecord): (input: { webId: string }) => RemoteApprovalSubjectContext {
-  return ({ webId }) => ({
-    sessionUri: buildThreadUri(webId, DEFAULT_SECRETARY_CHAT_ID, record.id),
-    actorUri: buildAgentUri(webId),
-    policyVersion: 'linx-pi-remote-approval/v1',
-  })
-}
-
-function buildPiRemoteApprovalRequest(request: AutoModeApprovalRequest): RemoteApprovalRequestDetails {
-  const details = buildLinxPiApprovalDetails(request)
-  return {
-    kind: request.kind,
-    message: details.message,
-    toolCallId: extractPiToolCallId(request),
-    toolName: details.toolName,
-    action: details.action,
-    risk: details.risk,
-    ...(request.kind === 'command-approval' && request.command ? { command: request.command } : {}),
-    ...(request.kind === 'command-approval' && request.cwd ? { cwd: request.cwd } : {}),
-  }
-}
-
-function extractPiToolCallId(request: AutoModeApprovalRequest): string {
-  const raw = isRecord(request.raw) ? request.raw : {}
-  const params = isRecord(raw.params) ? raw.params : {}
-  const toolCall = isRecord(params.toolCall) ? params.toolCall : {}
-  return typeof toolCall.toolCallId === 'string' && toolCall.toolCallId.trim()
-    ? toolCall.toolCallId.trim()
-    : `${autoModeApprovalToolName(request)}-${Date.now()}`
-}
-
-function resolvePiAutoDecision(
-  input: Pick<LinxPiToolApprovalInput, 'mode' | 'request'>,
-  recommendation: AutoModeSecretaryApprovalRecommendation | null,
-): AutoModeApprovalDecision | null {
-  if (recommendation?.canAutoDecide && recommendation.decision) {
-    if (recommendation.source === 'fallback' && !isTrustedPiFallbackApproval(input.request)) {
-      return null
-    }
-    return recommendation.decision
-  }
-
-  return resolvePiFallbackAutoDecision(input)
-}
-
-function resolvePiFallbackAutoDecision(
-  input: Pick<LinxPiToolApprovalInput, 'mode' | 'request'>,
-): AutoModeApprovalDecision | null {
-  if (input.request.kind === 'command-approval') {
-    return resolveAutoModeAutoApprovalDecision({
-      mode: input.mode,
-      request: input.request,
+      pollMs: input.options.pollMs ?? DEFAULT_POLL_MS,
+      signal: remoteAbort.signal,
+      runtime: input.options.runtime,
     })
+    return {
+      source: 'remote' as const,
+      value: input.mapRemoteToLocal(decision),
+    }
+  })
+
+  void localPromise.catch(() => undefined)
+  void remotePromise.catch(() => undefined)
+
+  try {
+    const winner = await Promise.race([localPromise, remotePromise])
+    if (winner.source === 'remote-unavailable') {
+      return (await localPromise).value
+    }
+
+    if (winner.source === 'local') {
+      remoteAbort.abort()
+      void remoteReadyPromise.then((remote) => {
+        if (!remote) {
+          return undefined
+        }
+        return resolveRemoteAutoModeApproval({
+          approvalId: remote.id,
+          approvalUri: remote.approvalUri,
+          decision: input.mapLocalToDecision(winner.value),
+          decisionRole: 'human',
+          note: input.localResolutionNote(winner.value),
+          runtime: input.options.runtime,
+        })
+      }).catch((error) => input.options.onWarning?.(error))
+      return winner.value
+    }
+
+    localAbort.abort()
+    return winner.value
+  } finally {
+    removeInputAbort()
+    removeRemoteAbort()
+  }
+}
+
+async function createExtensionUiRemoteApproval(input: {
+  title: string
+  message?: string
+  kind: 'select' | 'confirm'
+  choices: string[]
+  approvalOptions: AutoModeApprovalOption[]
+  timeoutMs?: number
+  options: PodBackedExtensionUiOptions
+}): Promise<Awaited<ReturnType<typeof createRemoteApproval>>> {
+  return createRemoteApproval({
+    subject: ({ webId }) => buildExtensionUiApprovalSubject(webId, input.options),
+    request: ({ sessionUri }) => buildExtensionUiApprovalRequest({
+      title: input.title,
+      message: input.message,
+      kind: input.kind,
+      choices: input.choices,
+      approvalOptions: input.approvalOptions,
+      sessionUri,
+      cwd: input.options.cwd,
+      timeoutMs: input.timeoutMs,
+    }),
+    runtime: input.options.runtime,
+  })
+}
+
+function buildExtensionUiApprovalSubject(webId: string, options: PodBackedExtensionUiOptions): RemoteApprovalSubjectContext {
+  const sessionId = resolveSessionId(options.sessionId) ?? 'linx-pi-extension-ui'
+  const sessionUri = secretaryThreadUri(webId, sessionId, DEFAULT_SECRETARY_CHAT_ID)
+  return {
+    sessionUri,
+    actorUri: secretaryAgentUri(webId),
+    target: sessionUri,
+    policyVersion: EXTENSION_UI_POLICY_VERSION,
+  }
+}
+
+function buildExtensionUiApprovalRequest(input: {
+  title: string
+  message?: string
+  kind: 'select' | 'confirm'
+  choices: string[]
+  approvalOptions: AutoModeApprovalOption[]
+  sessionUri: string
+  cwd?: string
+  timeoutMs?: number
+}): RemoteApprovalRequestDetails {
+  const prompt = [input.title, input.message].filter(Boolean).join('\n')
+  return {
+    kind: 'codex-approval',
+    message: prompt,
+    toolCallId: `extension-ui-${input.kind}-${randomUUID()}`,
+    toolName: `extension-ui-${input.kind}`,
+    action: 'https://undefineds.co/ns#runtimeApproval',
+    risk: 'medium',
+    approvalOptions: input.approvalOptions,
+    ...(input.timeoutMs ? { timeoutMs: input.timeoutMs } : {}),
+    context: JSON.stringify({
+      source: 'pi-extension-ui',
+      kind: input.kind,
+      title: input.title,
+      ...(input.message ? { message: input.message } : {}),
+      choices: input.choices,
+      ...(input.cwd ? { cwd: input.cwd } : {}),
+    }),
+    entry: input.sessionUri,
+  }
+}
+
+function shouldPodBackSelect(choices: string[]): boolean {
+  const inferred = choices.map((choice) => inferApprovalOptionKind(choice))
+  const hasAllow = inferred.some((kind) => kind === 'allow_once' || kind === 'allow_always')
+  const hasReject = inferred.some((kind) => kind === 'reject_once' || kind === 'reject_always' || kind === 'cancel')
+  return hasAllow && hasReject
+}
+
+function buildSelectApprovalOption(label: string, index: number): AutoModeApprovalOption {
+  const kind = inferApprovalOptionKind(label)
+  return {
+    optionId: String(index),
+    label,
+    ...(kind ? { kind } : {}),
+  }
+}
+
+function inferApprovalOptionKind(label: string): AutoModeApprovalOption['kind'] | undefined {
+  const normalized = label.toLowerCase()
+  if (/\b(always|session|trust)\b/u.test(normalized)) {
+    return 'allow_always'
+  }
+  if (/\b(allow|approve|yes|ok|confirm|proceed|continue)\b/u.test(normalized)) {
+    return 'allow_once'
+  }
+  if (/\b(cancel|escape)\b/u.test(normalized)) {
+    return 'cancel'
+  }
+  if (/\b(block|deny|decline|reject|no)\b/u.test(normalized)) {
+    return 'reject_once'
+  }
+  return undefined
+}
+
+function decisionFromSelectedChoice(
+  selected: string | undefined,
+  approvalOptions: AutoModeApprovalOption[],
+): AutoModeApprovalDecision {
+  if (!selected) {
+    return 'cancel'
   }
 
-  if (input.mode === 'auto' && (
-    input.request.kind === 'file-change-approval'
-      || input.request.kind === 'permissions-approval'
-  )) {
+  const option = approvalOptions.find((entry) => entry.label === selected)
+  if (option?.kind === 'allow_always') {
     return 'accept_for_session'
   }
-
-  return null
-}
-
-function isTrustedPiFallbackApproval(request: AutoModeApprovalRequest): boolean {
-  return request.kind === 'command-approval' && isTrustedAutoModeCommand(request.command)
-}
-
-function isApprovalRecommendation(
-  request: AutoModeApprovalRequest,
-  recommendation: Awaited<ReturnType<typeof resolveAutoModeSecretaryRecommendation>> | null,
-): recommendation is AutoModeSecretaryApprovalRecommendation {
-  return Boolean(recommendation && recommendation.kind === request.kind)
-}
-
-function buildPiToolApprovalRequest(context: BeforeToolCallContext, cwd: string): AutoModeApprovalRequest | null {
-  const toolName = typeof context.toolCall.name === 'string' ? context.toolCall.name : undefined
-  if (!toolName) {
-    return null
+  if (option?.kind === 'reject_once' || option?.kind === 'reject_always') {
+    return 'decline'
   }
-
-  const toolCallId = typeof context.toolCall.id === 'string' && context.toolCall.id.trim()
-    ? context.toolCall.id.trim()
-    : `${toolName}-${Date.now()}`
-  const raw = {
-    endpoint: linxRuntimeEndpointForBackend('linx'),
-    params: {
-      toolCall: {
-        toolCallId,
-        name: toolName,
-      },
-    },
-    piToolCall: context.toolCall,
-    args: context.args,
+  if (option?.kind === 'cancel') {
+    return 'cancel'
   }
-
-  if (toolName === 'bash') {
-    const args = isRecord(context.args) ? context.args : {}
-    const command = typeof args.command === 'string' ? args.command : undefined
-    return {
-      kind: 'command-approval',
-      message: command ? `Approve command: ${command}` : 'Approve bash command',
-      command,
-      cwd,
-      raw,
-    }
-  }
-
-  if (toolName === 'edit' || toolName === 'write') {
-    return {
-      kind: 'file-change-approval',
-      message: `Approve ${toolName} tool call`,
-      reason: summarizeToolArgs(toolName, context.args),
-      raw,
-    }
-  }
-
-  return null
+  return 'accept'
 }
 
-function buildPiApprovalRecord(options: LinxPiRemoteApprovalOptions, context: BeforeToolCallContext): AutoModeSessionRecord {
-  const sessionId = getPiSessionId(options.session)
-  return {
-    id: sessionId,
-    backend: 'codex',
-    runtime: 'local',
-    transport: 'native',
-    mode: options.mode ?? 'smart',
-    cwd: options.cwd,
-    passthroughArgs: [],
-    credentialSource: 'cloud',
-    resolvedCredentialSource: 'cloud',
-    approvalSource: 'hybrid',
-    command: 'linx',
-    args: [],
-    status: 'running',
-    startedAt: new Date(context.assistantMessage.timestamp ?? Date.now()).toISOString(),
-    archiveDir: '',
-    eventsFile: '',
-  }
+function podDecisionFromSelectedChoice(
+  selected: string | undefined,
+  approvalOptions: AutoModeApprovalOption[],
+): AutoModeApprovalDecision {
+  const decision = decisionFromSelectedChoice(selected, approvalOptions)
+  // Extension UI options belong to the extension, not LinX's reusable grant
+  // layer. Preserve the exact option in the note without creating a grant.
+  return decision === 'accept_for_session' ? 'accept' : decision
 }
 
-function getPiSessionId(session: AgentSession): string {
-  const manager = (session as unknown as { sessionManager?: { getSessionId?: () => string } }).sessionManager
-  return manager?.getSessionId?.() || 'linx-pi-session'
-}
-
-function mapApprovalDecisionToBeforeToolCallResult(
+function choiceFromRemoteDecision(
   decision: AutoModeApprovalDecision,
-  request: AutoModeApprovalRequest,
-): BeforeToolCallResult | undefined {
-  if (decision === 'accept' || decision === 'accept_for_session') {
+  choices: string[],
+  approvalOptions: AutoModeApprovalOption[],
+): string | undefined {
+  if (decision === 'cancel') {
     return undefined
   }
 
-  return {
-    block: true,
-    reason: decision === 'cancel'
-      ? `LinX cancelled ${autoModeApprovalRequestMessage(request)}`
-      : `LinX denied ${autoModeApprovalRequestMessage(request)}`,
+  const preferredKinds = decision === 'accept_for_session'
+    ? ['allow_always', 'allow_once']
+    : decision === 'accept'
+      ? ['allow_once', 'allow_always']
+      : ['reject_once', 'reject_always', 'cancel']
+
+  for (const kind of preferredKinds) {
+    const option = approvalOptions.find((entry) => entry.kind === kind)
+    if (option) {
+      return choices[Number(option.optionId)] ?? option.label
+    }
   }
+
+  if (decision === 'decline') {
+    return undefined
+  }
+
+  return choices[0]
 }
 
-function summarizeToolArgs(toolName: string, args: unknown): string {
-  if (!isRecord(args)) {
-    return toolName
-  }
-
-  const path = typeof args.path === 'string' ? args.path : undefined
-  const filePath = typeof args.filePath === 'string' ? args.filePath : undefined
-  const target = path ?? filePath
-  return target ? `${toolName} ${target}` : toolName
+function optionIdForChoice(selected: string, choices: string[]): string | undefined {
+  const index = choices.findIndex((choice) => choice === selected)
+  return index >= 0 ? String(index) : undefined
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
+function encodeExtensionUiNote(value: Record<string, unknown>): string {
+  return JSON.stringify({
+    source: 'pi-extension-ui',
+    ...value,
+  })
 }
 
-export function buildLinxPiApprovalDetails(request: AutoModeApprovalRequest): {
-  message: string
-  toolName: string
-  action: string
-  risk: 'low' | 'medium' | 'high'
-} {
-  return {
-    message: autoModeApprovalRequestMessage(request),
-    toolName: autoModeApprovalToolName(request),
-    action: autoModeApprovalActionUri(request),
-    risk: autoModeApprovalRisk(request),
+function resolveSessionId(value: PodBackedExtensionUiOptions['sessionId']): string | undefined {
+  const resolved = typeof value === 'function' ? value() : value
+  return typeof resolved === 'string' && resolved.trim() ? resolved.trim() : undefined
+}
+
+function linkAbortSignal(signal: AbortSignal | undefined, onAbort: () => void): () => void {
+  if (!signal) {
+    return () => undefined
   }
+  if (signal.aborted) {
+    onAbort()
+    return () => undefined
+  }
+  signal.addEventListener('abort', onAbort, { once: true })
+  return () => signal.removeEventListener('abort', onAbort)
 }

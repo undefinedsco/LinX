@@ -69,15 +69,15 @@
 - 授权策略表达：ODRL（`odrl:`），Grant 主类型为 `odrl:Policy`
 - Pod 动作语义：ACL（`acl:`）
 
-本分支冻结的最小“Pod 稳定字段”模型在 `packages/models`：
+本分支冻结的最小“Pod 稳定字段”模型由 `@undefineds.co/models` owning repository 维护；LinX 只消费发布后的 npm 包：
 
-- `packages/models/src/approval.schema.ts`
-- `packages/models/src/audit.schema.ts`
-- `packages/models/src/grant.schema.ts`
-- `packages/models/src/inbox-notification.schema.ts`
-- `packages/models/src/vocab/sidecar.vocab.ts`
-- `packages/models/src/sidecar/sidecar-events.ts`
-- `packages/models/src/sidecar/persistence-mapping.ts`
+- `src/approval.schema.ts`
+- `src/audit.schema.ts`
+- `src/grant.schema.ts`
+- `src/inbox-notification.schema.ts`
+- `src/vocab/sidecar.vocab.ts`
+- `src/sidecar/sidecar-events.ts`
+- `src/sidecar/persistence-mapping.ts`
 
 ### 6A.2 Inbox 通知（AS2 / LDN）
 

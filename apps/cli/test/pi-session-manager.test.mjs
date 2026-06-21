@@ -225,8 +225,8 @@ test('native Pod session source reads session and messages through shared ORM re
   const sessionId = '019d4657-0000-7000-8000-000000000001'
   const sessionResourceId = '2026/04/01/019d4657-0000-7000-8000-000000000001.ttl'
   const cwd = '/tmp/native-pod-cwd'
-  const chatUri = `${POD_BASE}/.data/chat/ai-secretary/index.ttl#this`
-  const threadUri = `${POD_BASE}/.data/chat/ai-secretary/index.ttl#${sessionId}`
+  const chatUri = `${POD_BASE}/.data/chat/__secretary__/index.ttl#this`
+  const threadUri = `${POD_BASE}/.data/chat/__secretary__/index.ttl#${sessionId}`
   const idReads = []
 
   const db = {
@@ -241,7 +241,7 @@ test('native Pod session source reads session and messages through shared ORM re
       if (resource?.config?.name === 'session' && id === sessionResourceId) {
         return {
           id: sessionResourceId,
-          ownerWebId: WEB_ID,
+          owner: WEB_ID,
           chat: chatUri,
           thread: threadUri,
           tool: 'linx',
@@ -269,16 +269,27 @@ test('native Pod session source reads session and messages through shared ORM re
 	                return [
 	                  {
 	                    id: 'https://pod.example/.data/session/legacy-session.ttl',
-	                    ownerWebId: WEB_ID,
+	                    owner: WEB_ID,
 	                    chat: chatUri,
 	                    tool: 'linx',
 	                    status: 'active',
 	                    metadata: { cwd },
 	                  },
 	                  {
+	                    id: '2026/04/01/019d4657-0000-7000-8000-000000000009.ttl',
+	                    owner: WEB_ID,
+	                    chat: '__secretary__',
+	                    thread: `${POD_BASE}/.data/chat/__secretary__/index.ttl#019d4657-0000-7000-8000-000000000009`,
+	                    tool: 'linx',
+	                    status: 'archived',
+	                    metadata: { cwd },
+	                    createdAt: new Date('2026-04-01T00:00:00.000Z'),
+	                    updatedAt: new Date('2026-04-01T00:00:02.000Z'),
+	                  },
+	                  {
 	                    id: sessionId,
-	                    ownerWebId: WEB_ID,
-	                    chat: 'ai-secretary',
+	                    owner: WEB_ID,
+	                    chat: '__secretary__',
 	                    thread: threadUri,
 	                    tool: 'linx',
 	                    status: 'active',
@@ -341,9 +352,10 @@ test('native Pod session source uses session message resource refs before broad 
   const sessionId = '019d4657-0000-7000-8000-000000000002'
   const sessionResourceId = '2026/04/01/019d4657-0000-7000-8000-000000000002.ttl'
   const cwd = '/tmp/native-pod-cwd'
-  const chatUri = `${POD_BASE}/.data/chat/ai-secretary/index.ttl#this`
-  const threadUri = `${POD_BASE}/.data/chat/ai-secretary/index.ttl#${sessionId}`
-  const messageUri = `${POD_BASE}/.data/chat/ai-secretary/2026/04/01/messages.ttl#${sessionId}-u1`
+  const chatUri = `${POD_BASE}/.data/chat/__secretary__/index.ttl#this`
+  const threadUri = `${POD_BASE}/.data/chat/__secretary__/index.ttl#${sessionId}`
+  const messageUri = `${POD_BASE}/.data/chat/__secretary__/2026/04/01/messages.ttl#${sessionId}-u1`
+  const abandonedMessageUri = `${POD_BASE}/.data/chat/__secretary__/2026/04/01/messages.ttl#${sessionId}-u2`
   const idReads = []
   const iriReads = []
   let selectedMessages = false
@@ -360,12 +372,12 @@ test('native Pod session source uses session message resource refs before broad 
       if (resource?.config?.name === 'session' && id === sessionResourceId) {
         return {
           id: sessionResourceId,
-          ownerWebId: WEB_ID,
+          owner: WEB_ID,
           chat: chatUri,
           thread: threadUri,
           tool: 'linx',
           status: 'active',
-          metadata: { cwd, threadUri, messageResources: [messageUri] },
+          metadata: { cwd, threadUri, messages: [messageUri, abandonedMessageUri] },
           createdAt: new Date('2026-04-01T00:00:00.000Z'),
           updatedAt: new Date('2026-04-01T00:00:01.000Z'),
         }
@@ -395,6 +407,16 @@ test('native Pod session source uses session message resource refs before broad 
           createdAt: new Date('2026-04-01T00:00:00.000Z'),
         }
       }
+      if (resource?.config?.name === 'chat_message' && iri === abandonedMessageUri) {
+        return {
+          id: '2026/04/01/messages.ttl#019d4657-0000-7000-8000-000000000002-u2',
+          thread: threadUri,
+          role: 'user',
+          content: 'dirty exact resource',
+          status: 'abandoned',
+          createdAt: new Date('2026-04-01T00:00:01.000Z'),
+        }
+      }
       return null
     },
     select() {
@@ -416,7 +438,7 @@ test('native Pod session source uses session message resource refs before broad 
                 return []
               }
               if (resourceName === 'chat_message') {
-                throw new Error('message fallback scan should not run when messageResources exist')
+                throw new Error('message fallback scan should not run when session messages exist')
               }
               return []
             },
@@ -442,6 +464,7 @@ test('native Pod session source uses session message resource refs before broad 
   ])
   assert.deepEqual(iriReads, [
     { resource: 'chat_message', iri: messageUri },
+    { resource: 'chat_message', iri: abandonedMessageUri },
   ])
 })
 
@@ -452,9 +475,9 @@ test('native Pod session source surfaces exact message resource read failures', 
   const sessionId = '019d4657-0000-7000-8000-000000000003'
   const sessionResourceId = '2026/04/01/019d4657-0000-7000-8000-000000000003.ttl'
   const cwd = '/tmp/native-pod-cwd'
-  const chatUri = `${POD_BASE}/.data/chat/ai-secretary/index.ttl#this`
-  const threadUri = `${POD_BASE}/.data/chat/ai-secretary/index.ttl#${sessionId}`
-  const messageUri = `${POD_BASE}/.data/chat/ai-secretary/2026/04/01/messages.ttl#${sessionId}-u1`
+  const chatUri = `${POD_BASE}/.data/chat/__secretary__/index.ttl#this`
+  const threadUri = `${POD_BASE}/.data/chat/__secretary__/index.ttl#${sessionId}`
+  const messageUri = `${POD_BASE}/.data/chat/__secretary__/2026/04/01/messages.ttl#${sessionId}-u1`
   let selectedMessages = false
 
   const db = {
@@ -534,9 +557,9 @@ test('native Pod session list surfaces exact message resource read failures', as
   const sessionId = '019d4657-0000-7000-8000-000000000004'
   const sessionResourceId = '2026/04/01/019d4657-0000-7000-8000-000000000004.ttl'
   const cwd = '/tmp/native-pod-cwd'
-  const chatUri = `${POD_BASE}/.data/chat/ai-secretary/index.ttl#this`
-  const threadUri = `${POD_BASE}/.data/chat/ai-secretary/index.ttl#${sessionId}`
-  const messageUri = `${POD_BASE}/.data/chat/ai-secretary/2026/04/01/messages.ttl#${sessionId}-u1`
+  const chatUri = `${POD_BASE}/.data/chat/__secretary__/index.ttl#this`
+  const threadUri = `${POD_BASE}/.data/chat/__secretary__/index.ttl#${sessionId}`
+  const messageUri = `${POD_BASE}/.data/chat/__secretary__/2026/04/01/messages.ttl#${sessionId}-u1`
 
   const db = {
     resolveLocatorIri(resource, locator) {
@@ -590,7 +613,7 @@ test('native Pod session list surfaces exact message resource read failures', as
   })
 
   await assert.rejects(
-    () => source.listSessions('/tmp/another-cwd'),
+    () => source.listSessions(cwd),
     /exact list message read failed/,
   )
 })

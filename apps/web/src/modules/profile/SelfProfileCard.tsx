@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSession } from "@inrupt/solid-ui-react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  solidProfileTable,
+  solidProfileResource,
   type SolidProfileRow,
   type SolidProfileUpdate,
 } from "@undefineds.co/models";
@@ -185,7 +185,7 @@ export function SelfProfileCard() {
     queryKey: ["profile", webId],
     queryFn: async () => {
       if (!db || !webId) return null;
-      const record = await (db as any).findByIri(solidProfileTable, webId);
+      const record = await (db as any).findByIri(solidProfileResource, webId);
       return record as SolidProfileRow | null;
     },
     enabled: !!db && !!webId,

@@ -25,7 +25,7 @@ import {
 } from './login-utils'
 import {
   getLoginTransactionRetryEntryUrl,
-  isLocalLoginTransaction,
+  type LoginTransaction,
 } from './login-transaction'
 import type { ConnectingProviderInfo, LocalLoginProviderSource, LoginProviderOption } from './types'
 import type { LocalOnboardingSnapshot } from '@/types/electron-api'
@@ -132,7 +132,7 @@ export function useLoginController() {
       return
     }
 
-    const oidcEntryUrl = localProviderUrl
+    const oidcEntryUrl = accountIssuerUrl
 
     const connectKey = `${oidcEntryUrl}|${accountIssuerUrl}|${localProviderUrl}|${snapshot.provisionCode ?? ''}`
     if (localConnectKeyRef.current === connectKey) return
@@ -166,7 +166,7 @@ export function useLoginController() {
         ? undefined
         : { provisionCode: snapshot.provisionCode },
       ...(shouldTrySilentDesktopAuth ? { prompt: 'none' as const } : {}),
-      strictDiscovery: true,
+      ...(isStandalone ? { strictDiscovery: true as const } : {}),
       nodeId: snapshot.nodeId ?? undefined,
     } as const
 
@@ -246,10 +246,9 @@ export function useLoginController() {
         storageProviderUrl: pendingTransaction?.storageProviderUrl ?? pendingAttempt.storageProviderUrl,
         storageProviderLabel: pendingTransaction?.storageProviderLabel ?? pendingAttempt.storageProviderLabel,
         authorizationQuery: pendingTransaction?.authorizationQuery ?? pendingAttempt.authorizationQuery,
-        strictDiscovery: pendingTransaction?.strictDiscovery === true
-          || pendingAttempt.strictDiscovery === true
-          || isLocalLoginTransaction(pendingTransaction)
-          || isLocalPendingLoginAttempt(pendingAttempt),
+        ...(shouldUseStrictDiscoveryForRetry(pendingTransaction, pendingAttempt)
+          ? { strictDiscovery: true as const }
+          : {}),
         nodeId: pendingTransaction?.nodeId,
       }).catch((error: any) => {
         resetDesktopAuthState()
@@ -1313,13 +1312,35 @@ function resolveProviderDisplayName(provider: LoginProviderOption | undefined, f
   }
 }
 
-function isLocalPendingLoginAttempt(attempt: ReturnType<typeof getPendingLoginAttempt>): boolean {
+function shouldUseStrictDiscoveryForRetry(
+  transaction: LoginTransaction | null,
+  attempt: ReturnType<typeof getPendingLoginAttempt>,
+): boolean {
+  if (transaction?.strictDiscovery === true || attempt?.strictDiscovery === true) {
+    return true
+  }
+
+  if (transaction?.route === 'standalone') {
+    return true
+  }
+
+  if (transaction?.route === 'local') {
+    return false
+  }
+
+  return isStandaloneOrLoopbackPendingLoginAttempt(attempt)
+}
+
+function isStandaloneOrLoopbackPendingLoginAttempt(attempt: ReturnType<typeof getPendingLoginAttempt>): boolean {
   if (!attempt) {
     return false
   }
 
   const storageProviderLabel = attempt.storageProviderLabel?.trim().toLowerCase()
-  if (storageProviderLabel === 'local' || storageProviderLabel === 'standalone') {
+  if (storageProviderLabel === 'local') {
+    return false
+  }
+  if (storageProviderLabel === 'standalone') {
     return true
   }
 

@@ -1,14 +1,19 @@
 export type RuntimeThreadStatus = 'idle' | 'active' | 'paused' | 'completed' | 'error'
 export type RuntimeRunnerType = 'mock' | 'xpod-pty'
 export type RuntimeToolType = 'codex' | 'claude' | 'codebuddy' | 'mock'
+import type { RuntimeWorkspaceKind } from '@linx/agent-runtime/workspace'
+import type { ChatReconcilerMetadata } from '@linx/agent-runtime/chat-reconciler'
+
+export type { RuntimeWorkspaceKind }
 
 export interface RuntimeThreadRecord {
   id: string
   threadId: string
-  workspaceUri?: string
+  container?: string
+  workspaceKind: RuntimeWorkspaceKind
   title: string
-  repoPath: string
-  folderPath: string
+  repoPath?: string
+  folderPath?: string
   runnerType: RuntimeRunnerType
   tool: RuntimeToolType
   status: RuntimeThreadStatus
@@ -19,6 +24,8 @@ export interface RuntimeThreadRecord {
   baseRef?: string
   branch?: string
   lastError?: string
+  metadata?: Record<string, unknown>
+  reconciler?: ChatReconcilerMetadata
 }
 
 export type RuntimeThreadEvent =
@@ -35,9 +42,10 @@ export type RuntimeThreadEvent =
 
 export interface CreateRuntimeThreadInput {
   threadId: string
-  workspaceUri?: string
+  container?: string
+  workspaceKind?: RuntimeWorkspaceKind
   title: string
-  repoPath: string
+  repoPath?: string
   folderPath?: string
   runnerType?: RuntimeRunnerType
   tool?: RuntimeToolType

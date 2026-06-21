@@ -1,16 +1,18 @@
 import { expect, test, type Page } from '@playwright/test'
-import { startRealLocalCloudRuntime } from '../helpers/real-local-cloud-runtime.cjs'
+import { resolveSavedPublicLocalOrigin, startRealLocalCloudRuntime } from '../helpers/real-local-cloud-runtime.cjs'
 import { expectSecretaryInitialized } from '../helpers/secretary-bootstrap'
 
 test.describe.configure({ mode: 'serial' })
 
+const savedPublicLocalOrigin = resolveSavedPublicLocalOrigin()
+
 test.describe('Real Local -> Cloud auth flow', () => {
   test.skip(
-    !process.env.LINX_REAL_LOCAL_PUBLIC_URL && !process.env.LINX_REAL_LOCAL_DOMAIN,
-    'requires LINX_REAL_LOCAL_PUBLIC_URL=https://your-public-or-tunnel-domain/ mapped to LINX_REAL_LOCAL_PORT; set LINX_REAL_LOCAL_TUNNEL_TOKEN to let xpod start cloudflared',
+    !savedPublicLocalOrigin,
+    'Real Local -> Cloud auth requires saved desktop Local Cloud registration so production Cloud can reach the Local SP.',
   )
 
-  test('starts Local, signs up through production Cloud, and lands on chat', async ({ page }) => {
+  test('starts Cloud-managed Local, signs up through production Cloud, and lands on chat', async ({ page }) => {
     test.setTimeout(240_000)
 
     const runtime = await startRealLocalCloudRuntime(page)
@@ -73,6 +75,7 @@ test.describe('Real Local -> Cloud auth flow', () => {
 
       await clickLocalSpaceEntry(page)
       await waitForLocalReady(page, runtime, 180_000)
+      await runtime.ensureBrowserRoute()
       await continueToLocalAccountSurface(page)
 
       const registerResult = await registerOnProductionCloud(page, runtime)
@@ -96,19 +99,37 @@ test.describe('Real Local -> Cloud auth flow', () => {
       expect(debug.dbReady).toBe(true)
       expect(debug.dbStatus).toBe('ready')
       expect(debug.dbError).toBeNull()
-      expect(debug.loginStore?.state?.storedAccount?.webId).toBeTruthy()
-      expect(debug.loginStore?.state?.storedAccount?.storageProviderLabel).toBe('Local')
-      expect(normalizeUrl(debug.loginStore?.state?.storedAccount?.issuerUrl)).toBe('https://id.undefineds.co/')
-      expect(normalizeUrl(debug.loginStore?.state?.storedAccount?.storageProviderUrl)).toBe(normalizeUrl(debug.snapshot.publicUrl))
+      expect(debug.storedAccount?.webId).toBeTruthy()
+      expect(debug.storedAccount?.webId).toMatch(/^https:\/\/id\.undefineds\.co\//)
+      expect(debug.storedAccount?.storageProviderLabel).toBe('Local')
+      expect(normalizeUrl(debug.storedAccount?.issuerUrl)).toBe('https://id.undefineds.co/')
+      expect(normalizeUrl(debug.storedAccount?.storageProviderUrl)).toBe(normalizeUrl(debug.snapshot.publicUrl))
       expect(debug.dbPodUrl).toMatch(new RegExp(`^${escapeRegExp(normalizeUrl(debug.snapshot.publicUrl))}`))
       expect(debug.dbPodUrl).not.toMatch(/^https:\/\/id\.undefineds\.co\//)
       expect(debug.accessRoute?.canonicalPodUrl).toBe(debug.dbPodUrl)
       expect(normalizeUrl(debug.accessRoute?.canonicalBaseUrl)).toBe(normalizeUrl(debug.snapshot.publicUrl))
       expect(['local', 'lan', 'public', 'canonical']).toContain(debug.accessRoute?.kind)
       expect(debug.accessRoute?.accessBaseUrl).toBeTruthy()
-      if (debug.accessRoute?.kind !== 'canonical') {
+      if (debug.accessRoute?.kind === 'local' || debug.accessRoute?.kind === 'lan') {
         expect(normalizeUrl(debug.accessRoute?.accessBaseUrl)).not.toBe(normalizeUrl(debug.accessRoute?.canonicalBaseUrl))
+      } else {
+        expect(normalizeUrl(debug.accessRoute?.accessBaseUrl)).toBe(normalizeUrl(debug.accessRoute?.canonicalBaseUrl))
       }
+      await expectLocalIngressAcceptsCanonicalCapabilities(debug.snapshot)
+      await expectAuthenticatedCanonicalRequestAccepted(page)
+      // Cloud remains the identity/profile owner. LinX business data under
+      // `.data/` must use the Local SP Pod prefix as RDF subjects.
+      const dataSubjects = await readDataSubjects(page)
+      const expectedSubjectPrefix = normalizeUrl(debug.dbPodUrl)
+      const invalidSubjects = dataSubjects.subjects.filter((subject) => (
+        /^https?:\/\//.test(subject)
+        && !subject.startsWith(expectedSubjectPrefix)
+      ))
+      expect(dataSubjects.subjects.some((subject) => subject.startsWith(expectedSubjectPrefix))).toBe(true)
+      expect(
+        invalidSubjects,
+        `Local+Cloud data subjects must stay under the Local SP Pod prefix ${expectedSubjectPrefix}\n${JSON.stringify(dataSubjects, null, 2)}`,
+      ).toEqual([])
       expect(
         Object.keys(debug.localStorage).some((key) => key.startsWith('solidClientAuthn:') || key.startsWith('solidClientAuthenticationUser:')),
       ).toBe(true)
@@ -121,32 +142,29 @@ test.describe('Real Local -> Cloud auth flow', () => {
 })
 
 async function clickLocalSpaceEntry(page: Page): Promise<void> {
-  const currentProductEntry = page.getByRole('button', { name: /本地空间[\s\S]*(开始|登录|继续)/ })
-  if (await currentProductEntry.isVisible({ timeout: 3_000 }).catch(() => false)) {
-    await currentProductEntry.click()
+  const productEntry = page.locator('[data-provider-source="local"]').locator('xpath=ancestor::button[1]')
+  if (await productEntry.isVisible({ timeout: 3_000 }).catch(() => false)) {
+    await productEntry.click()
     return
   }
 
-  await page.getByRole('button', { name: /Local/ }).click()
+  await page.getByRole('button', { name: /本地空间|Local/ }).click()
 }
 
 async function continueToLocalAccountSurface(page: Page): Promise<void> {
+  if (/id\.undefineds\.co|\/\.account\//.test(page.url())) {
+    return
+  }
   if (await page.getByPlaceholder(/Email(?: address)?/i).isVisible({ timeout: 1_000 }).catch(() => false)) {
     return
   }
 
   const continueButton = page.getByRole('button', { name: /继续登录|Continue/i })
-  if (!await continueButton.isVisible({ timeout: 10_000 }).catch(() => false)) {
-    await page.waitForURL(/id\.undefineds\.co|\/\.account\//, { timeout: 30_000, waitUntil: 'domcontentloaded' })
-    return
+  if (await continueButton.isVisible({ timeout: 10_000 }).catch(() => false)) {
+    await continueButton.click({ timeout: 5_000 }).catch(() => undefined)
   }
 
-  await Promise.all([
-    page.waitForURL(/id\.undefineds\.co|\/\.account\//, { timeout: 30_000, waitUntil: 'domcontentloaded' }),
-    continueButton.evaluate((element) => {
-      ;(element as HTMLElement).click()
-    }),
-  ])
+  await page.waitForURL(/id\.undefineds\.co|\/\.account\//, { timeout: 30_000, waitUntil: 'domcontentloaded' })
 }
 
 async function registerOnProductionCloud(
@@ -220,9 +238,14 @@ async function provisionAndAuthorize(
       usedAddPod = true
       await ensureProvisionCodeOnCloudPage(page, runtime)
       try {
-        await firstPodNameInput.fill(runtime.username, { timeout: 5_000 })
+        await firstPodNameInput.fill(runtime.localPodName, { timeout: 5_000 })
       } catch {
         await page.waitForTimeout(500)
+        continue
+      }
+      const alreadyExistsMessage = page.getByText(/already\s+(?:used|exists)|is\s+already/i)
+      if (await alreadyExistsMessage.isVisible({ timeout: 1_000 }).catch(() => false)) {
+        await page.reload({ waitUntil: 'domcontentloaded' })
         continue
       }
       await expect(createStorageButton).toBeEnabled({ timeout: 20_000 })
@@ -251,7 +274,7 @@ async function provisionAndAuthorize(
       const podNameInput = page.getByPlaceholder(/my-pod/i)
       await expect(podNameInput).toBeVisible({ timeout: 20_000 })
       await ensureProvisionCodeOnCloudPage(page, runtime)
-      await podNameInput.fill(runtime.username)
+      await podNameInput.fill(runtime.localPodName)
 
       await Promise.all([
         page.waitForLoadState('networkidle'),
@@ -351,10 +374,42 @@ async function collectDebugState(page: Page, runtime: Awaited<ReturnType<typeof 
 
 async function readPageState(page: Page) {
   return page.evaluate(() => {
+    const parseJson = (value: string | null) => {
+      try {
+        return value ? JSON.parse(value) : null
+      } catch {
+        return null
+      }
+    }
+    const isSensitiveKey = (key: string) => /token|secret|password|provisionCode/i.test(key)
+    const redact = (value: unknown): unknown => {
+      if (Array.isArray(value)) return value.map(redact)
+      if (!value || typeof value !== 'object') return value
+      return Object.fromEntries(Object.entries(value).map(([key, nested]) => [
+        key,
+        isSensitiveKey(key) && nested ? '<redacted>' : redact(nested),
+      ]))
+    }
+    const readDebugStorage = (storage: Storage) => Object.fromEntries(
+      Object.keys(storage)
+        .filter((key) => key.startsWith('solid') || key.startsWith('linx') || key.startsWith('oidc'))
+        .map((key) => {
+          const raw = storage.getItem(key)
+          return [
+            key,
+            isSensitiveKey(key)
+              ? '<redacted>'
+              : redact(parseJson(raw) ?? raw),
+          ]
+        }),
+    )
     const sessionId = window.localStorage.getItem('solidClientAuthn:currentSession')
     const storedSession = sessionId
       ? window.localStorage.getItem(`solidClientAuthenticationUser:${sessionId}`)
       : null
+    const loginStore = parseJson(window.localStorage.getItem('linx-login'))
+    const rememberedAccount = parseJson(window.localStorage.getItem('linx-remembered-account'))
+    const storedAccount = loginStore?.state?.storedAccount ?? rememberedAccount ?? null
 
     return {
       url: window.location.href,
@@ -365,20 +420,128 @@ async function readPageState(page: Page) {
       dbError: (window as any).__SOLID_DB_ERROR__ ?? null,
       dbPodUrl: (window as any).__SOLID_DB_POD_URL__ ?? null,
       accessRoute: (window as any).__LINX_ACCESS_ROUTE__ ?? null,
-      loginStore: JSON.parse(window.localStorage.getItem('linx-login') ?? 'null'),
-      localStorage: Object.fromEntries(
-        Object.keys(window.localStorage)
-          .filter((key) => key.startsWith('solid') || key.startsWith('linx') || key.startsWith('oidc'))
-          .map((key) => [key, window.localStorage.getItem(key)]),
-      ),
-      sessionStorage: Object.fromEntries(
-        Object.keys(window.sessionStorage)
-          .filter((key) => key.startsWith('solid') || key.startsWith('linx') || key.startsWith('oidc'))
-          .map((key) => [key, window.sessionStorage.getItem(key)]),
-      ),
-      storedSession: storedSession ? JSON.parse(storedSession) : null,
+      loginStore,
+      rememberedAccount,
+      storedAccount,
+      localStorage: readDebugStorage(window.localStorage),
+      sessionStorage: readDebugStorage(window.sessionStorage),
+      storedSession: redact(parseJson(storedSession)),
     }
   })
+}
+
+async function readDataSubjects(page: Page): Promise<{ endpoint: string; podUrl: string; subjects: string[] }> {
+  return page.evaluate(async () => {
+    const db = (window as any).__SOLID_DB__
+    const podUrl = String(
+      (window as any).__SOLID_DB_POD_URL__
+        ?? db?.getDialect?.()?.getPodUrl?.()
+        ?? db?.getPodUrl?.()
+        ?? '',
+    )
+    const rawFetch = (
+      db?.getDialect?.()?.getAuthenticatedFetch?.()
+        ?? db?.getSession?.()?.fetch
+        ?? db?.session?.fetch
+    )
+    const fetchFn = typeof rawFetch === 'function'
+      ? rawFetch.bind(db?.session ?? db)
+      : null
+
+    if (!podUrl || !fetchFn) {
+      throw new Error('Solid DB Pod URL or authenticated fetch is missing.')
+    }
+
+    const endpoint = new URL('.data/-/sparql', podUrl.endsWith('/') ? podUrl : `${podUrl}/`).toString()
+    const response = await fetchFn(endpoint, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/sparql-results+json',
+        'Content-Type': 'application/sparql-query',
+      },
+      body: 'SELECT DISTINCT ?s WHERE { ?s ?p ?o . FILTER(isIRI(?s)) } ORDER BY ?s',
+    })
+    const text = await response.text()
+    if (!response.ok) {
+      throw new Error(`Failed to query Local SP data subjects: HTTP ${response.status} ${text.slice(0, 500)}`)
+    }
+    const parsed = JSON.parse(text)
+    const subjects = Array.isArray(parsed?.results?.bindings)
+      ? parsed.results.bindings
+        .map((binding: any) => binding?.s?.value)
+        .filter((value: unknown): value is string => typeof value === 'string' && value.length > 0)
+      : []
+
+    return { endpoint, podUrl, subjects }
+  })
+}
+
+async function expectLocalIngressAcceptsCanonicalCapabilities(snapshot: any): Promise<void> {
+  const localBaseUrl = normalizeUrl(snapshot?.localUrl)
+  const canonicalBaseUrl = normalizeUrl(snapshot?.publicUrl ?? snapshot?.baseUrl)
+  expect(localBaseUrl, 'Local snapshot must expose a local access URL').toBeTruthy()
+  expect(canonicalBaseUrl, 'Local snapshot must expose a canonical public/base URL').toBeTruthy()
+
+  const canonical = new URL(canonicalBaseUrl)
+  const capabilitiesUrl = new URL('/api/linx/capabilities', localBaseUrl).toString()
+  const response = await fetch(capabilitiesUrl, {
+    headers: {
+      Accept: 'application/json',
+      'X-Forwarded-Host': canonical.host,
+      'X-Forwarded-Proto': canonical.protocol.replace(':', ''),
+    },
+  })
+  const text = await response.text()
+  expect(
+    response.ok,
+    `Local xpod ingress should accept canonical forwarded capabilities probe: HTTP ${response.status} ${text.slice(0, 500)}`,
+  ).toBe(true)
+
+  const payload = JSON.parse(text)
+  expect(payload.contract).toBe('linx-local-onboarding/v1')
+  expect(normalizeUrl(payload.baseUrl)).toBe(canonicalBaseUrl)
+}
+
+async function expectAuthenticatedCanonicalRequestAccepted(page: Page): Promise<void> {
+  const result = await page.evaluate(async () => {
+    const db = (window as any).__SOLID_DB__
+    const podUrl = String(
+      (window as any).__SOLID_DB_POD_URL__
+        ?? db?.getDialect?.()?.getPodUrl?.()
+        ?? db?.getPodUrl?.()
+        ?? '',
+    )
+    const rawFetch = (
+      db?.getDialect?.()?.getAuthenticatedFetch?.()
+        ?? db?.getSession?.()?.fetch
+        ?? db?.session?.fetch
+    )
+    const fetchFn = typeof rawFetch === 'function'
+      ? rawFetch.bind(db?.session ?? db)
+      : null
+
+    if (!podUrl || !fetchFn) {
+      throw new Error('Solid DB Pod URL or authenticated fetch is missing.')
+    }
+
+    const resourceUrl = new URL('agents/__secretary__/AGENTS.md', podUrl.endsWith('/') ? podUrl : `${podUrl}/`).toString()
+    const response = await fetchFn(resourceUrl, {
+      method: 'GET',
+      headers: { Accept: 'text/plain,*/*' },
+    })
+    const text = await response.text().catch(() => '')
+    return {
+      url: resourceUrl,
+      status: response.status,
+      ok: response.ok,
+      bodyPreview: text.slice(0, 500),
+    }
+  })
+
+  expect(
+    result.ok,
+    `Authenticated canonical request should be accepted by Local SP route: ${result.url} HTTP ${result.status} ${result.bodyPreview}`,
+  ).toBe(true)
 }
 
 function normalizeUrl(url: unknown): string {

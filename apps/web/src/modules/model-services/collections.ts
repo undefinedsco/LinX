@@ -1,7 +1,7 @@
 import {
-  aiModelTable,
-  aiProviderTable,
-  credentialTable,
+  aiModelResource,
+  aiProviderResource,
+  credentialResource,
   type AIModelRow,
   type AIProviderRow,
   type CredentialRow,
@@ -20,22 +20,22 @@ function getDb(): SolidDatabase | null {
   return dbGetter ? dbGetter() : null
 }
 
-export const credentialCollection = createPodCollection<typeof credentialTable, CredentialRow>({
-  table: credentialTable,
+export const credentialCollection = createPodCollection<typeof credentialResource, CredentialRow>({
+  resource: credentialResource,
   queryKey: ['ai-credentials'],
   queryClient,
   getDb,
 })
 
-export const providerCollection = createPodCollection<typeof aiProviderTable, AIProviderRow>({
-  table: aiProviderTable,
+export const providerCollection = createPodCollection<typeof aiProviderResource, AIProviderRow>({
+  resource: aiProviderResource,
   queryKey: ['ai-providers'],
   queryClient,
   getDb,
 })
 
-export const modelCollection = createPodCollection<typeof aiModelTable, AIModelRow>({
-  table: aiModelTable,
+export const modelCollection = createPodCollection<typeof aiModelResource, AIModelRow>({
+  resource: aiModelResource,
   queryKey: ['ai-models'],
   queryClient,
   getDb,

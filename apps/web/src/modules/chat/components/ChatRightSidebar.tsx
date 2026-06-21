@@ -38,6 +38,7 @@ import { useChatList, useThreadList, useChatMutations } from '../collections'
 import { contactResource, agentResource, isAgentContact } from '@undefineds.co/models'
 import { getPrimaryParticipantUri } from '../utils/chat-participants'
 import { useEntity } from '@/lib/data/use-entity'
+import { SymphonyWorkerPanel } from '@/modules/symphony/components/SymphonyWorkerPanel'
 
 // ============================================================================
 // 角色设定卡片
@@ -321,7 +322,7 @@ export const ChatRightSidebar: FC<ChatRightSidebarProps> = () => {
   const { data: contact } = useEntity(contactResource, contactUri)
 
   // 获取 Agent（当 Contact 语义类型是 agent 时）
-  const agentUri = contact && isAgentContact(contact) ? contact.entityUri : null
+  const agentUri = contact && isAgentContact(contact) ? contact.about : null
   const { data: agent, refresh: refreshAgent } = useEntity(agentResource, agentUri)
   const agentId = typeof agent?.id === 'string' && agent.id.length > 0
     ? agent.id
@@ -419,6 +420,9 @@ export const ChatRightSidebar: FC<ChatRightSidebarProps> = () => {
             onStarThread={handleStarThread}
             onCreateThread={handleCreateThread}
           />
+
+          {/* Secretary worker 控制面 */}
+          <SymphonyWorkerPanel />
         </div>
       </ScrollArea>
     </div>

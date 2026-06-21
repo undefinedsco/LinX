@@ -182,7 +182,7 @@ export function useProviders() {
           for (const source of ['local', 'standalone'] as const) {
             const providerSnapshot = projectLocalOnboardingForSource(localOnboarding, source)
             local.push(createLocalLoginProvider({
-            id: source,
+              id: source,
               providerId: p.id,
               source,
               label: source === 'local' ? LOCAL_POD_LABEL : STANDALONE_POD_LABEL,

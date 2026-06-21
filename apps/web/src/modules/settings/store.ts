@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type SettingsSectionId = 'general' | 'updates' | 'runtime'
+export type SettingsSectionId = 'general' | 'updates' | 'runtime' | 'network'
 
 interface SettingsStore {
   selectedSection: SettingsSectionId

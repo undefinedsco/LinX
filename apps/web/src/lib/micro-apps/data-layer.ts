@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import { requireRowResourceId, type PodRepositoryDescriptor } from '@undefineds.co/models'
+import type { PodRepositoryDescriptor } from '@undefineds.co/models'
+import { requireRowResourceId } from '@/lib/data/resource-identity'
 import { createRepositoryQueries } from '@/lib/data/query-factory'
 import type {
   DetailConfig,

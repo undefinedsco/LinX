@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { parseLocalWorkspaceUri } from '@/lib/data/workspace-model'
+import { parseLocalWorkspaceUri } from '@/lib/data/workspace-uri'
 import { useSolidDatabase } from '@/providers/solid-database-provider'
 import { useThreadList } from '@/modules/chat/collections'
 import { useChatStore } from '@/modules/chat/store'

@@ -1081,6 +1081,18 @@ function setupIPC(): void {
     });
   });
 
+  ipcMain.handle('localOnboarding:saveNetworkConfig', async (_event, input: {
+    publicDomain?: string | null
+    tunnelProvider?: 'cloudflare' | null
+    tunnelToken?: string | null
+  }) => {
+    return localOnboarding.saveNetworkConfig({
+      publicDomain: input?.publicDomain,
+      tunnelProvider: input?.tunnelProvider ?? 'cloudflare',
+      tunnelToken: input?.tunnelToken,
+    });
+  });
+
   ipcMain.handle('localOnboarding:testConnectivity', async () => {
     return localOnboarding.testConnectivity();
   });

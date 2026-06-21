@@ -9,7 +9,7 @@
  */
 
 import {
-  solidProfileTable,
+  solidProfileResource,
   type SolidProfileRow,
   type SolidProfileUpdate,
 } from '@undefineds.co/models'
@@ -62,7 +62,7 @@ export const profileOps = {
     }
     
     try {
-      const record = await db.findByIri(solidProfileTable, webId)
+      const record = await db.findByIri(solidProfileResource, webId)
       return record as SolidProfileRow | null
     } catch (error) {
       console.error('[profileOps] Failed to fetch profile:', error)
@@ -83,7 +83,7 @@ export const profileOps = {
     }
     
     try {
-      await db.updateByIri(solidProfileTable, webId, data)
+      await db.updateByIri(solidProfileResource, webId, data)
       
       // Invalidate query cache
       queryClient.invalidateQueries({ queryKey: ['profile'] })

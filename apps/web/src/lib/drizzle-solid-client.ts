@@ -77,7 +77,7 @@ class MockSolidDatabase {
 
   async select() {
     return {
-      from: (table: any) => ({
+      from: (resource: any) => ({
         execute: async (): Promise<ChatRow[]> => {
           await this.delay(200) // 模拟网络延迟
           return [...this.mockChats]
@@ -93,7 +93,7 @@ class MockSolidDatabase {
     }
   }
 
-  async insert(table: any) {
+  async insert(resource: any) {
     return {
       values: (data: ChatInsert) => ({
         returning: () => ({
@@ -123,7 +123,7 @@ class MockSolidDatabase {
     }
   }
 
-  async update(table: any) {
+  async update(resource: any) {
     return {
       set: (data: Partial<ChatRow>) => ({
         where: (condition: any) => ({

@@ -39,6 +39,7 @@ export interface ProviderOption {
 }
 
 const REMEMBERED_ACCOUNT_KEY = 'linx-remembered-account'
+const LINX_CLOUD_IDENTITY_ORIGIN = 'https://id.undefineds.co'
 
 function getBrowserStorage(): Storage | null {
   if (typeof window === 'undefined') return null
@@ -69,8 +70,8 @@ export function getRememberedAccount(): StoredAccount | null {
       providerUrl?: string
       providerLabel?: string
     }
-    const issuerUrl = normalizeStoredUrl(parsed.issuerUrl)
-      ?? normalizeStoredUrl(parsed.providerUrl)
+    const storageProviderLabel = resolveStorageProviderLabel(parsed)
+    const issuerUrl = resolveStoredAccountIssuerUrl(parsed, storageProviderLabel)
     if (typeof parsed.displayName !== 'string' || !issuerUrl) {
       return null
     }
@@ -83,11 +84,7 @@ export function getRememberedAccount(): StoredAccount | null {
       storageProviderUrl: typeof parsed.storageProviderUrl === 'string'
         ? parsed.storageProviderUrl
         : normalizeStoredUrl(parsed.providerUrl) ?? undefined,
-      storageProviderLabel: typeof parsed.storageProviderLabel === 'string'
-        ? parsed.storageProviderLabel
-        : typeof parsed.providerLabel === 'string'
-          ? parsed.providerLabel
-        : undefined,
+      storageProviderLabel,
       webId: typeof parsed.webId === 'string' ? parsed.webId : undefined,
     }
   } catch {
@@ -103,8 +100,8 @@ function migrateStoredAccount(value: unknown): StoredAccount | null {
     providerUrl?: string
     providerLabel?: string
   }
-  const issuerUrl = normalizeStoredUrl(parsed.issuerUrl)
-    ?? normalizeStoredUrl(parsed.providerUrl)
+  const storageProviderLabel = resolveStorageProviderLabel(parsed)
+  const issuerUrl = resolveStoredAccountIssuerUrl(parsed, storageProviderLabel)
   const storageProviderUrl = normalizeStoredUrl(parsed.storageProviderUrl)
     ?? normalizeStoredUrl(parsed.providerUrl)
 
@@ -118,13 +115,46 @@ function migrateStoredAccount(value: unknown): StoredAccount | null {
     issuerUrl,
     issuerLabel: typeof parsed.issuerLabel === 'string' ? parsed.issuerLabel : undefined,
     storageProviderUrl: storageProviderUrl ?? undefined,
-    storageProviderLabel: typeof parsed.storageProviderLabel === 'string'
-      ? parsed.storageProviderLabel
-      : typeof parsed.providerLabel === 'string'
-        ? parsed.providerLabel
-        : undefined,
+    storageProviderLabel,
     webId: typeof parsed.webId === 'string' ? parsed.webId : undefined,
   }
+}
+
+function resolveStoredAccountIssuerUrl(
+  parsed: Partial<StoredAccount> & { providerUrl?: string; providerLabel?: string },
+  storageProviderLabel?: string,
+): string | null {
+  const explicitIssuerUrl = normalizeStoredUrl(parsed.issuerUrl)
+  if (explicitIssuerUrl) {
+    return explicitIssuerUrl
+  }
+
+  if (isLegacyCloudBackedLocalAccount(parsed, storageProviderLabel)) {
+    return LINX_CLOUD_IDENTITY_ORIGIN
+  }
+
+  return normalizeStoredUrl(parsed.providerUrl)
+}
+
+function resolveStorageProviderLabel(
+  parsed: Partial<StoredAccount> & { providerLabel?: string },
+): string | undefined {
+  if (typeof parsed.storageProviderLabel === 'string') {
+    return parsed.storageProviderLabel
+  }
+  if (typeof parsed.providerLabel === 'string') {
+    return parsed.providerLabel
+  }
+  return undefined
+}
+
+function isLegacyCloudBackedLocalAccount(
+  parsed: Partial<StoredAccount>,
+  storageProviderLabel?: string,
+): boolean {
+  return storageProviderLabel?.trim().toLowerCase() === 'local'
+    && typeof parsed.webId === 'string'
+    && normalizeStoredUrl(parsed.webId)?.startsWith(`${LINX_CLOUD_IDENTITY_ORIGIN}/`) === true
 }
 
 export interface LoginStore {

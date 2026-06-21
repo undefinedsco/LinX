@@ -1,12 +1,31 @@
 const { randomInt } = require('node:crypto')
 const { execFileSync } = require('node:child_process')
 const fs = require('node:fs')
+const http = require('node:http')
+const https = require('node:https')
 const net = require('node:net')
 const Module = require('node:module')
 const os = require('node:os')
 const path = require('node:path')
 
-const repoRoot = path.resolve(__dirname, '../..')
+const repoRoot = path.resolve(__dirname, '../../..')
+const desktopLocalRegistrationPath = path.join(
+  os.homedir(),
+  'Library/Application Support/@linx/desktop/local/xpod-cloud-registration.json',
+)
+
+
+function isE2eDebugEnabled() {
+  return process.env.LINX_E2E_DEBUG === '1' || process.env.LINX_E2E_DEBUG === 'true'
+}
+
+function debugLog(...args) {
+  if (isE2eDebugEnabled()) console.log(...args)
+}
+
+function debugWarn(...args) {
+  if (isE2eDebugEnabled()) console.warn(...args)
+}
 
 function pickRunId() {
   return `${Date.now().toString(36)}${randomInt(10_000).toString(36)}`.slice(-10)
@@ -57,7 +76,7 @@ async function findFreePortBlock(size = 3) {
   throw new Error(`无法为 Local xpod 预留连续 ${size} 个端口`)
 }
 
-async function resolveRuntimePort() {
+async function resolveRuntimePort(options = {}) {
   const configured = Number.parseInt(process.env.LINX_REAL_LOCAL_PORT ?? '', 10)
   if (Number.isFinite(configured) && configured > 0) {
     const ports = Array.from({ length: 3 }, (_, index) => configured + index)
@@ -68,13 +87,13 @@ async function resolveRuntimePort() {
     return configured
   }
 
-  if (process.env.LINX_REAL_LOCAL_TUNNEL_TOKEN) {
+  if (options.useSavedTunnelToken && resolveSavedTunnelToken()) {
     const fixedCloudflaredIngressPort = 5737
     const ports = Array.from({ length: 3 }, (_, index) => fixedCloudflaredIngressPort + index)
     const available = await Promise.all(ports.map(isPortFree))
     if (!available.every(Boolean)) {
       throw new Error(
-        `LINX_REAL_LOCAL_TUNNEL_TOKEN 当前默认要求 Cloudflare Tunnel ingress 指向 ${fixedCloudflaredIngressPort}。`
+        `保存的 Local Cloudflare Tunnel 当前默认要求 ingress 指向 ${fixedCloudflaredIngressPort}。`
         + ` 请释放连续端口 ${ports.join(', ')}，或设置 LINX_REAL_LOCAL_PORT 并同步更新 Cloudflare Tunnel ingress。`,
       )
     }
@@ -85,44 +104,95 @@ async function resolveRuntimePort() {
 }
 
 function resolveRequiredPublicDomain() {
-  const raw = process.env.LINX_REAL_LOCAL_PUBLIC_URL ?? process.env.LINX_REAL_LOCAL_DOMAIN ?? ''
+  const raw = resolveSavedPublicLocalUrl()
   const trimmed = raw.trim()
   if (!trimmed) {
     throw new Error(
       'Real Local -> Cloud 现网验证需要真实可达的 Local SP 公网/隧道地址。'
-      + ' 请设置 LINX_REAL_LOCAL_PUBLIC_URL=https://your-domain.example/，'
-      + '并把该域名转发到本机 LINX_REAL_LOCAL_PORT（默认随机，可设为 5737）。',
+      + ` 请先通过桌面 Local 配置生成保存文件：${desktopLocalRegistrationPath}`,
     )
   }
 
   const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
   const parsed = new URL(withScheme)
   if (parsed.protocol !== 'https:') {
-    throw new Error('LINX_REAL_LOCAL_PUBLIC_URL 必须是 HTTPS 地址，Cloud OIDC + Local SP 远程路径不接受 HTTP 公网入口。')
+    throw new Error('保存的 Local SP 公网入口必须是 HTTPS 地址，Cloud OIDC + Local SP 远程路径不接受 HTTP 公网入口。')
   }
   if (parsed.pathname !== '/' || parsed.search || parsed.hash) {
-    throw new Error('LINX_REAL_LOCAL_PUBLIC_URL 只能填写 origin，例如 https://pod.example.com/')
+    throw new Error('保存的 Local SP 公网入口只能是 origin，例如 https://pod.example.com/')
   }
 
   return parsed.hostname
 }
 
+function resolveOptionalPublicDomain() {
+  const raw = resolveSavedPublicLocalUrl()
+  return raw.trim() ? resolveRequiredPublicDomain() : null
+}
+
 function resolveOptionalTunnelToken() {
-  const raw = process.env.LINX_REAL_LOCAL_TUNNEL_TOKEN ?? ''
+  const raw = resolveSavedTunnelToken() ?? ''
   const trimmed = raw.trim()
   return trimmed || undefined
+}
+
+function resolveSavedPublicLocalOrigin() {
+  const raw = resolveSavedPublicLocalUrl()
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+
+  try {
+    const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
+    const parsed = new URL(withScheme)
+    return parsed.protocol === 'https:' ? parsed.origin : null
+  } catch {
+    return null
+  }
+}
+
+function resolveSavedPublicLocalUrl() {
+  return readSavedLocalCloudRegistration()?.publicUrl ?? ''
+}
+
+function resolveSavedTunnelToken() {
+  return readSavedLocalCloudRegistration()?.tunnelToken ?? ''
+}
+
+function readSavedLocalCloudRegistration() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(desktopLocalRegistrationPath, 'utf8'))
+    const registration = parsed?.local
+    return registration && typeof registration === 'object' ? registration : null
+  } catch {
+    return null
+  }
+}
+
+function seedSavedLocalCloudRegistration(tmpDir) {
+  const registration = readSavedLocalCloudRegistration()
+  if (!registration) return
+
+  fs.writeFileSync(
+    path.join(tmpDir, 'xpod-cloud-registration.json'),
+    JSON.stringify({ local: registration }, null, 2),
+    { encoding: 'utf8', mode: 0o600 },
+  )
 }
 
 function ensureTrailingSlash(url) {
   return url.endsWith('/') ? url : `${url}/`
 }
 
-function resolveRuntimeDomainConfig(publicDomain) {
+function resolveRuntimeDomainConfig(publicDomain, options = {}) {
   if (!publicDomain) {
     return { type: 'none' }
   }
 
   const normalized = publicDomain.trim().toLowerCase()
+  if (options.treatAsExplicitPublicUrl) {
+    return { type: 'custom', value: normalized }
+  }
+
   if (/^node-[a-z0-9-]+\.undefineds\.co$/.test(normalized) || normalized.endsWith('.nodes.undefineds.co')) {
     return { type: 'managed', value: normalized }
   }
@@ -146,6 +216,7 @@ function ensureDesktopModules() {
   const { resolveCompiledDesktopModule } = require('../../../apps/desktop/test/helpers.cjs')
 
   try {
+    ensureCompiledDesktopBuildMetaFresh(resolveCompiledDesktopModule)
     return {
       xpodManagerPath: resolveCompiledDesktopModule('lib/xpod-manager.js'),
       localOnboardingPath: resolveCompiledDesktopModule('lib/local-onboarding.js'),
@@ -168,6 +239,62 @@ function ensureDesktopModules() {
       xpodAuthEnhancerPath: resolveCompiledDesktopModule('lib/xpod-auth-enhancer.js'),
     }
   }
+}
+
+function ensureCompiledDesktopBuildMetaFresh(resolveCompiledDesktopModule) {
+  const sourceBuildMetaPath = path.resolve(repoRoot, 'apps/desktop/src/generated/build-meta.json')
+  let compiledBuildMetaPath
+  try {
+    compiledBuildMetaPath = resolveCompiledDesktopModule('generated/build-meta.json')
+  } catch {
+    runDesktopBuild()
+    return
+  }
+
+  const sourceVersion = readBuildMetaXpodVersion(sourceBuildMetaPath)
+  const compiledVersion = readBuildMetaXpodVersion(compiledBuildMetaPath)
+  const compiledXpodManagerPath = resolveCompiledDesktopModule('lib/xpod-manager.js')
+  const sourceFiles = [
+    path.resolve(repoRoot, 'apps/desktop/src/lib/xpod-manager.ts'),
+    path.resolve(repoRoot, 'apps/desktop/src/lib/local-onboarding.ts'),
+    path.resolve(repoRoot, 'apps/desktop/src/lib/xpod-auth-enhancer.ts'),
+  ]
+  const sourceChanged = sourceFiles.some((sourceFile) => isNewerThan(sourceFile, compiledXpodManagerPath))
+  if (sourceVersion && compiledVersion && sourceVersion === compiledVersion && !sourceChanged) {
+    return
+  }
+
+  debugLog(`[real-local-runtime] desktop build is stale: src=${sourceVersion ?? 'unknown'} compiled=${compiledVersion ?? 'unknown'} sourceChanged=${sourceChanged}`)
+  runDesktopBuild()
+}
+
+function isNewerThan(sourcePath, targetPath) {
+  try {
+    return fs.statSync(sourcePath).mtimeMs > fs.statSync(targetPath).mtimeMs
+  } catch {
+    return true
+  }
+}
+
+function readBuildMetaXpodVersion(filePath) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'))
+    return typeof parsed?.xpodVersion === 'string' ? parsed.xpodVersion : null
+  } catch {
+    return null
+  }
+}
+
+function runDesktopBuild() {
+  execFileSync(
+    resolveYarnBinary(),
+    ['workspace', '@linx/desktop', 'build'],
+    {
+      cwd: repoRoot,
+      stdio: 'inherit',
+      env: process.env,
+    },
+  )
 }
 
 function installElectronStub(baseDir) {
@@ -193,6 +320,9 @@ function installElectronStub(baseDir) {
 
 async function startRealLocalCloudRuntime(page, overrides = {}) {
   return startRealLocalRuntime(page, {
+    // Production Cloud creates/binds the Pod by calling the selected Local SP
+    // from the server side. A Playwright browser route can help browser fetches,
+    // but it cannot make the SP reachable from Cloud.
     requirePublicDomain: true,
     spaceKind: 'local',
     tmpPrefix: 'linx-prod-local-cloud-',
@@ -212,13 +342,22 @@ async function startRealLocalDeviceRuntime(page, overrides = {}) {
 async function startRealLocalRuntime(page, options) {
   const runId = pickRunId()
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), options.tmpPrefix))
+  if (options.spaceKind === 'local' && options.requirePublicDomain) {
+    seedSavedLocalCloudRegistration(tmpDir)
+  }
   // xpod uses the requested port as a gateway, then allocates CSS/API on the
   // next ports. Pick a free block so CSS does not collide with another process.
-  const port = await resolveRuntimePort()
+  const port = await resolveRuntimePort({
+    useSavedTunnelToken: Boolean(options.requirePublicDomain),
+  })
   const configuredBaseUrl = typeof options.baseUrl === 'function'
     ? options.baseUrl(port)
     : options.baseUrl
-  const publicDomain = options.requirePublicDomain ? resolveRequiredPublicDomain() : null
+  const publicDomain = options.spaceKind === 'local'
+    ? options.requirePublicDomain
+      ? resolveRequiredPublicDomain()
+      : resolveOptionalPublicDomain()
+    : null
   const tunnelToken = options.requirePublicDomain ? resolveOptionalTunnelToken() : undefined
   const provider = {
     id: 'local',
@@ -240,7 +379,10 @@ async function startRealLocalRuntime(page, options) {
   let addEmbeddedAuthQuery
   let installXpodAuthEnhancer
   let pendingProvisionCode = null
+  let pendingRedirectUrl = null
+  let loopbackServer = null
   const bridgeCalls = []
+  const installedBrowserRouteOrigins = new Set()
 
   try {
     const { xpodManagerPath, localOnboardingPath, xpodAuthEnhancerPath } = ensureDesktopModules()
@@ -294,8 +436,7 @@ async function startRealLocalRuntime(page, options) {
     })
     await controller.refresh()
     if (publicDomain && options.spaceKind === 'local') {
-      console.log(`[real-local-cloud] installing browser route https://${publicDomain} -> http://127.0.0.1:${port}`)
-      await installLocalSpBrowserRoute(page, {
+      await ensureBrowserRouteForOrigins({
         canonicalOrigin: `https://${publicDomain}`,
         accessOrigin: `http://127.0.0.1:${port}`,
       })
@@ -320,7 +461,7 @@ async function startRealLocalRuntime(page, options) {
         return eval(script)
       }, code),
     }).catch((error) => {
-      console.warn('[real-local-cloud] Failed to install auth enhancer:', error)
+      debugWarn('[real-local-cloud] Failed to install auth enhancer:', error)
       return false
     })
   }
@@ -330,9 +471,108 @@ async function startRealLocalRuntime(page, options) {
   })
   page.on('framenavigated', (frame) => {
     if (frame === page.mainFrame()) {
+      const url = frame.url()
+      if (/\/auth\/callback(?:\?|$)/.test(url) && /[?&](?:code|error)=/.test(url)) {
+        pendingRedirectUrl = url
+        void emitAuthRedirectAvailable()
+      }
       void installAuthEnhancerOnPage()
     }
   })
+
+  await page.context().route('http://127.0.0.1:43123/auth/callback**', async (route) => {
+    const callbackUrl = route.request().url()
+    pendingRedirectUrl = callbackUrl
+    debugLog(`[real-local-cloud] loopback callback ${redactSensitiveText(callbackUrl)}`)
+    const appCallbackUrl = 'http://localhost:5173/auth/callback'
+    await route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      body: `<!doctype html><meta charset="utf-8"><script>location.replace(${JSON.stringify(appCallbackUrl)})</script>`,
+    })
+    void emitAuthRedirectAvailable()
+  })
+
+  loopbackServer = http.createServer((request, response) => {
+    const requestUrl = `http://127.0.0.1:43123${request.url || '/'}`
+    if (request.url?.startsWith('/auth/callback')) {
+      pendingRedirectUrl = requestUrl
+      debugLog(`[real-local-cloud] loopback callback ${redactSensitiveText(requestUrl)}`)
+      const appCallbackUrl = 'http://localhost:5173/auth/callback'
+      response.writeHead(302, { Location: appCallbackUrl })
+      response.end()
+      void emitAuthRedirectAvailable()
+      return
+    }
+
+    response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
+    response.end('Not Found')
+  })
+  await new Promise((resolve, reject) => {
+    loopbackServer.once('error', reject)
+    loopbackServer.listen(43123, '127.0.0.1', resolve)
+  })
+
+  async function ensureBrowserRouteForOrigins({ canonicalOrigin, accessOrigin, forceSameOrigin = false }) {
+    const canonical = normalizeUrl(canonicalOrigin)
+    if (!canonical || installedBrowserRouteOrigins.has(canonical.origin)) {
+      return false
+    }
+
+    debugLog(`[real-local-cloud] installing browser route ${canonical.origin} -> ${accessOrigin}`)
+    await installLocalSpBrowserRoute(page, {
+      canonicalOrigin: canonical.origin,
+      accessOrigin,
+      forceSameOrigin,
+    })
+    installedBrowserRouteOrigins.add(canonical.origin)
+    return true
+  }
+
+  async function ensureBrowserRoute() {
+    if (options.spaceKind !== 'local' && options.spaceKind !== 'standalone') {
+      return false
+    }
+
+    const snapshot = await controller.refresh()
+    return ensureBrowserRouteForSnapshot(snapshot)
+  }
+
+  async function ensureBrowserRouteForSnapshot(snapshot) {
+    if (options.spaceKind !== 'local' && options.spaceKind !== 'standalone') {
+      return false
+    }
+
+    const canonical = normalizeUrl(snapshot.publicUrl ?? snapshot.baseUrl)
+    const access = normalizeUrl(snapshot.localUrl ?? `http://127.0.0.1:${port}/`)
+    const forceSameOrigin = options.spaceKind === 'standalone'
+    if (!canonical || !access || (canonical.origin === access.origin && !forceSameOrigin)) {
+      return false
+    }
+
+    return ensureBrowserRouteForOrigins({
+      canonicalOrigin: canonical.origin,
+      accessOrigin: access.origin,
+      forceSameOrigin,
+    })
+  }
+
+  async function withLocalBrowserRoute(snapshot) {
+    await ensureBrowserRouteForSnapshot(snapshot).catch((error) => {
+      debugWarn('[real-local-cloud] Failed to install browser route for snapshot:', error)
+      return false
+    })
+    return snapshot
+  }
+
+  async function emitAuthRedirectAvailable() {
+    await page.evaluate(() => {
+      const emitter = window.__linxE2eEmitAuthRedirect
+      if (typeof emitter === 'function') {
+        emitter()
+      }
+    }).catch(() => undefined)
+  }
 
   await page.exposeBinding('__linxDesktopInvoke', async (_source, payload) => {
     const args = payload.args ?? []
@@ -360,6 +600,7 @@ async function startRealLocalRuntime(page, options) {
           ...args[0],
           spaceKind: args[0]?.spaceKind ?? options.spaceKind,
         })
+        await ensureBrowserRoute()
         return { success: true }
       case 'xpod:stop':
         await manager.stop()
@@ -407,7 +648,10 @@ async function startRealLocalRuntime(page, options) {
         pendingProvisionCode = value || null
         return { success: true }
       }
+      case 'auth:prepareLoopbackRedirect':
+        return 'http://127.0.0.1:43123/auth/callback'
       case 'auth:resolveOidcIssuer':
+        await ensureBrowserRoute()
         return resolveOidcIssuerViaLocalTransport(args[0], controller)
       case 'local:getSnapshot':
         return controller.getSnapshot()
@@ -415,24 +659,29 @@ async function startRealLocalRuntime(page, options) {
       case 'local:chooseSpace':
         return controller.chooseSpace(args[0])
       case 'local:continue':
-        return controller.continue()
+        return withLocalBrowserRoute(await controller.continue())
       case 'local:refresh':
-        return controller.refresh()
+        return withLocalBrowserRoute(await controller.refresh())
       case 'local:saveTunnelToken':
         return controller.saveTunnelToken(args[0] ?? {})
       case 'local:testConnectivity':
         return controller.testConnectivity()
       case 'auth:getEmbeddedAuthorizationState':
         return { open: false, reason: 'dismissed', ready: false }
+      case 'auth:consumePendingRedirect': {
+        const value = pendingRedirectUrl
+        pendingRedirectUrl = null
+        return value
+      }
       case 'runtime:getDebugState': {
         const logPaths = manager.getLogPaths()
         const snapshot = await controller.refresh()
         return {
-          snapshot,
+          snapshot: redactSnapshot(snapshot),
           provider: redactProvider(provider),
           logPaths,
-          stdoutLog: readFileIfExists(logPaths.stdout),
-          stderrLog: readFileIfExists(logPaths.stderr),
+          stdoutLog: redactSensitiveText(readFileIfExists(logPaths.stdout)),
+          stderrLog: redactSensitiveText(readFileIfExists(logPaths.stderr)),
         }
       }
       default:
@@ -441,6 +690,19 @@ async function startRealLocalRuntime(page, options) {
   })
 
   await page.addInitScript(() => {
+    const authRedirectListeners = new Set()
+    Object.defineProperty(window, '__linxE2eEmitAuthRedirect', {
+      configurable: true,
+      value: () => {
+        for (const listener of Array.from(authRedirectListeners)) {
+          try {
+            listener()
+          } catch {
+            // Keep desktop bridge event delivery best-effort like Electron IPC.
+          }
+        }
+      },
+    })
     const withEmbeddedAuth = (url) => {
       try {
         const parsed = new URL(url)
@@ -508,6 +770,7 @@ async function startRealLocalRuntime(page, options) {
         auth: {
           getEmbeddedAuthorizationState: () => invoke('auth:getEmbeddedAuthorizationState'),
           resolveOidcIssuer: (url) => invoke('auth:resolveOidcIssuer', url),
+          prepareLoopbackRedirect: () => invoke('auth:prepareLoopbackRedirect'),
           openAuthorizationWindow: async (url) => {
             window.location.assign(url)
           },
@@ -523,10 +786,15 @@ async function startRealLocalRuntime(page, options) {
             window.location.assign(withEmbeddedAuth(url))
           },
           closeEmbeddedAuthorization: async () => undefined,
-          consumePendingRedirect: async () => null,
+          consumePendingRedirect: () => invoke('auth:consumePendingRedirect'),
           onAuthorizationWindowState: () => () => undefined,
           onEmbeddedAuthorizationState: () => () => undefined,
-          onRedirect: () => () => undefined,
+          onRedirect: (callback) => {
+            authRedirectListeners.add(callback)
+            return () => {
+              authRedirectListeners.delete(callback)
+            }
+          },
         },
         localOnboarding: {
           getSnapshot: () => invoke('local:getSnapshot'),
@@ -541,31 +809,44 @@ async function startRealLocalRuntime(page, options) {
     })
   })
 
+  const username = `linx${runId.replace(/[^a-z0-9]/gi, '').toLowerCase()}`.slice(0, 20)
   return {
     email: `linx-prod-${runId}@example.com`,
     password: 'TestIntegration123!',
-    username: `linx${runId.replace(/[^a-z0-9]/gi, '').toLowerCase()}`.slice(0, 20),
+    username,
+    localPodName: `${username.slice(0, 16)}pod`,
     port,
     baseUrl: configuredBaseUrl ? ensureTrailingSlash(configuredBaseUrl) : null,
-    start: () => controller.continue(),
+    start: async () => {
+      const current = await controller.refresh()
+      if (current?.spaceKind !== options.spaceKind) {
+        await controller.chooseSpace(options.spaceKind)
+      }
+      return withLocalBrowserRoute(await controller.continue())
+    },
     getSnapshot: () => controller.refresh(),
+    ensureBrowserRoute,
     getDebugState: async () => {
       const logPaths = manager.getLogPaths()
       const snapshot = await controller.refresh()
       return {
-        snapshot,
+        snapshot: redactSnapshot(snapshot),
         provider: redactProvider(provider),
         bridgeCalls,
         logPaths,
-        stdoutLog: readFileIfExists(logPaths.stdout),
-        stderrLog: readFileIfExists(logPaths.stderr),
+        stdoutLog: redactSensitiveText(readFileIfExists(logPaths.stdout)),
+        stderrLog: redactSensitiveText(readFileIfExists(logPaths.stderr)),
       }
     },
     stop: async () => {
       await manager.stop().catch(() => undefined)
+      if (loopbackServer) {
+        await new Promise((resolve) => loopbackServer.close(() => resolve()))
+        loopbackServer = null
+      }
       restoreElectron()
       if (process.env.LINX_REAL_LOCAL_KEEP_RUNTIME === '1') {
-        console.log(`[real-local-runtime] kept temporary runtime directory: ${tmpDir}`)
+        debugLog(`[real-local-runtime] kept temporary runtime directory: ${tmpDir}`)
         return
       }
       fs.rmSync(tmpDir, { recursive: true, force: true })
@@ -618,16 +899,16 @@ function normalizeUrl(url) {
   }
 }
 
-async function installLocalSpBrowserRoute(page, { canonicalOrigin, accessOrigin }) {
+async function installLocalSpBrowserRoute(page, { canonicalOrigin, accessOrigin, forceSameOrigin = false }) {
   const canonical = normalizeUrl(canonicalOrigin)
   const access = normalizeUrl(accessOrigin)
-  if (!canonical || !access || canonical.origin === access.origin) {
+  if (!canonical || !access || (canonical.origin === access.origin && !forceSameOrigin)) {
     return
   }
 
   await page.context().route((url) => url.origin === canonical.origin, async (route) => {
     const request = route.request()
-    console.log(`[real-local-cloud] route ${request.method()} ${request.url()}`)
+    debugLog(`[real-local-cloud] route ${request.method()} ${request.url()}`)
     const requestUrl = normalizeUrl(request.url())
     if (!requestUrl || requestUrl.origin !== canonical.origin) {
       await route.continue()
@@ -653,12 +934,12 @@ async function installLocalSpBrowserRoute(page, { canonicalOrigin, accessOrigin 
     const body = request.postDataBuffer()
     if (body && !['GET', 'HEAD'].includes(request.method().toUpperCase())) {
       init.body = body
+      requestHeaders['content-length'] = String(body.byteLength)
     }
-
     try {
-      const response = await fetch(forwardedUrl, init)
+      const response = await forwardHttpRequest(forwardedUrl, init)
       const location = response.headers.get('location')
-      console.log(`[real-local-cloud] route response ${response.status} ${request.url()} <- ${response.url}${location ? ` location=${location}` : ''}`)
+      debugLog(`[real-local-cloud] route response ${response.status} ${request.url()} <- ${response.url}${location ? ` location=${location}` : ''}`)
       const headers = createFulfillHeaders(response.headers, request.headers(), canonical, access)
       if (isDocumentRedirect(response.status, location, request)) {
         const redirectUrl = resolveCanonicalRedirectLocation(location, requestUrl, canonical, access)
@@ -677,17 +958,171 @@ async function installLocalSpBrowserRoute(page, { canonicalOrigin, accessOrigin 
         })
         return
       }
-      const responseBody = await response.arrayBuffer()
+      const responseBody = response.body
+      logOidcKeyMaterial(requestUrl, response, responseBody)
       await route.fulfill({
         status: response.status,
         headers,
-        body: Buffer.from(responseBody),
+        body: responseBody,
       })
     } catch (error) {
-      console.warn('[real-local-cloud] Local SP browser route failed:', error)
+      debugWarn('[real-local-cloud] Local SP browser route failed:', error)
       await route.abort('connectionrefused')
     }
   })
+}
+
+function forwardHttpRequest(rawUrl, init) {
+  const url = new URL(rawUrl)
+  const transport = url.protocol === 'https:' ? https : http
+
+  return new Promise((resolve, reject) => {
+    const request = transport.request(url, {
+      method: init.method,
+      headers: init.headers,
+      insecureHTTPParser: true,
+      timeout: 30_000,
+    }, (response) => {
+      if (shouldResolveWithoutBody(init.method, response)) {
+        response.resume()
+        resolve({
+          status: response.statusCode || 0,
+          headers: wrapNodeResponseHeaders(response.headers),
+          url: rawUrl,
+          body: Buffer.alloc(0),
+        })
+        return
+      }
+
+      const chunks = []
+      response.on('data', (chunk) => {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+      })
+      response.on('end', () => {
+        resolve({
+          status: response.statusCode || 0,
+          headers: wrapNodeResponseHeaders(response.headers),
+          url: rawUrl,
+          body: Buffer.concat(chunks),
+        })
+      })
+    })
+
+    request.on('timeout', () => {
+      request.destroy(new Error(`Local SP proxy request timed out: ${rawUrl}`))
+    })
+    request.on('error', reject)
+
+    if (init.body) {
+      request.write(init.body)
+    }
+    request.end()
+  })
+}
+
+function shouldResolveWithoutBody(method, response) {
+  const status = response.statusCode || 0
+  if (String(method).toUpperCase() === 'HEAD') {
+    return true
+  }
+  if (status === 204 || status === 205 || status === 304) {
+    return true
+  }
+  const length = response.headers['content-length']
+  if (length === '0') {
+    return true
+  }
+  return status === 201 && !length
+}
+
+function wrapNodeResponseHeaders(headers) {
+  const normalized = new Map()
+  for (const [key, value] of Object.entries(headers)) {
+    if (typeof value === 'undefined') {
+      continue
+    }
+    normalized.set(key.toLowerCase(), value)
+  }
+
+  return {
+    *entries() {
+      for (const [key, value] of normalized.entries()) {
+        if (Array.isArray(value)) {
+          yield [key, value.join(', ')]
+        } else {
+          yield [key, String(value)]
+        }
+      }
+    },
+    get(name) {
+      const value = normalized.get(String(name).toLowerCase())
+      if (Array.isArray(value)) {
+        return value.join(', ')
+      }
+      return typeof value === 'string' || typeof value === 'number'
+        ? String(value)
+        : null
+    },
+    getSetCookie() {
+      const value = normalized.get('set-cookie')
+      if (Array.isArray(value)) {
+        return value
+      }
+      return typeof value === 'string' ? [value] : []
+    },
+  }
+}
+
+function logOidcKeyMaterial(requestUrl, response, body) {
+  if (!process.env.LINX_DEBUG_OIDC_KEYS) {
+    return
+  }
+
+  try {
+    if (requestUrl.pathname === '/.oidc/token') {
+      const payload = JSON.parse(body.toString('utf8'))
+      const idToken = typeof payload.id_token === 'string' ? payload.id_token : ''
+      const accessToken = typeof payload.access_token === 'string' ? payload.access_token : ''
+      debugLog(`[real-local-cloud] oidc-token status=${response.status} id=${describeJwt(idToken)} access=${describeJwt(accessToken)}`)
+      return
+    }
+
+    if (requestUrl.pathname === '/.oidc/jwks') {
+      const payload = JSON.parse(body.toString('utf8'))
+      const keys = Array.isArray(payload.keys)
+        ? payload.keys.map((key) => ({
+            kid: key && typeof key.kid === 'string' ? key.kid : null,
+            alg: key && typeof key.alg === 'string' ? key.alg : null,
+            kty: key && typeof key.kty === 'string' ? key.kty : null,
+            crv: key && typeof key.crv === 'string' ? key.crv : null,
+          }))
+        : []
+      debugLog(`[real-local-cloud] oidc-jwks status=${response.status} keys=${JSON.stringify(keys)}`)
+    }
+  } catch (error) {
+    debugWarn('[real-local-cloud] failed to inspect OIDC key material:', error)
+  }
+}
+
+function describeJwt(token) {
+  if (!token) {
+    return 'none'
+  }
+
+  try {
+    const [headerPart, payloadPart] = token.split('.')
+    const header = JSON.parse(Buffer.from(headerPart, 'base64url').toString('utf8'))
+    const payload = JSON.parse(Buffer.from(payloadPart, 'base64url').toString('utf8'))
+    return JSON.stringify({
+      kid: typeof header.kid === 'string' ? header.kid : null,
+      alg: typeof header.alg === 'string' ? header.alg : null,
+      iss: typeof payload.iss === 'string' ? payload.iss : null,
+      webid: typeof payload.webid === 'string' ? payload.webid : null,
+      sub: typeof payload.sub === 'string' ? payload.sub : null,
+    })
+  } catch {
+    return 'unparseable'
+  }
 }
 
 function rewriteUrlOrigin(url, targetOrigin) {
@@ -700,10 +1135,13 @@ function rewriteUrlOrigin(url, targetOrigin) {
 
 function createForwardHeaders(headers, canonical) {
   const forwarded = { ...headers }
-  delete forwarded.host
   delete forwarded.connection
+  delete forwarded['content-length']
+  delete forwarded['transfer-encoding']
+  forwarded.host = canonical.host
   forwarded['x-forwarded-host'] = canonical.host
   forwarded['x-forwarded-proto'] = canonical.protocol.replace(':', '')
+  forwarded['accept-encoding'] = 'identity'
   return forwarded
 }
 
@@ -817,7 +1255,39 @@ function redactProvider(provider) {
   }
 }
 
+function redactSnapshot(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return snapshot
+  return redactSensitiveValue(snapshot)
+}
+
+function redactSensitiveValue(value) {
+  if (Array.isArray(value)) {
+    return value.map(redactSensitiveValue)
+  }
+  if (!value || typeof value !== 'object') {
+    return value
+  }
+
+  return Object.fromEntries(Object.entries(value).map(([key, nested]) => [
+    key,
+    isSensitiveKey(key) && nested
+      ? '<redacted>'
+      : redactSensitiveValue(nested),
+  ]))
+}
+
+function redactSensitiveText(value) {
+  return String(value || '')
+    .replace(/(CLOUDFLARE_TUNNEL_TOKEN:)[^\s\]]+/g, '$1<redacted>')
+    .replace(/(token:)\s*[^,\s\]]+/gi, '$1 <redacted>')
+}
+
+function isSensitiveKey(key) {
+  return /token|secret|password|provisionCode/i.test(key)
+}
+
 module.exports = {
+  resolveSavedPublicLocalOrigin,
   startRealLocalDeviceRuntime,
   startRealLocalCloudRuntime,
 }

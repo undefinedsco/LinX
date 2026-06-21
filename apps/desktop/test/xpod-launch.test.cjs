@@ -51,6 +51,35 @@ const provisionOnlyXpodBaseConfig = JSON.stringify([
   {
     overrideParameters: {
       '@type': 'ScopedPickWebIdHandler',
+      identityDbUrl: {
+        '@id': 'urn:solid-server:default:variable:identityDbUrl',
+        '@type': 'Variable',
+      },
+      provisionBaseUrl: {
+        '@id': 'urn:solid-server:default:variable:oidcIssuer',
+        '@type': 'Variable',
+      },
+    },
+  },
+  {
+    overrideParameters: {
+      '@type': 'ProvisionPodCreator',
+      provisionBaseUrl: {
+        '@id': 'urn:solid-server:default:variable:oidcIssuer',
+        '@type': 'Variable',
+      },
+      nodeId: {
+        '@id': 'urn:solid-server:default:variable:nodeId',
+        '@type': 'Variable',
+      },
+    },
+  },
+])
+
+const missingStorageScopeXpodBaseConfig = JSON.stringify([
+  {
+    overrideParameters: {
+      '@type': 'ScopedPickWebIdHandler',
       provisionBaseUrl: {
         '@id': 'urn:solid-server:default:variable:oidcIssuer',
         '@type': 'Variable',
@@ -684,9 +713,37 @@ test('resolveXpodLaunchTarget rejects xpod runtimes without storage-scoped WebID
       || filePath === packageBin
     ),
     readFileSync: (filePath) => filePath.endsWith('/config/xpod.base.json')
-      ? provisionOnlyXpodBaseConfig
+      ? missingStorageScopeXpodBaseConfig
       : cssImportRewriteRuntimeSource,
   }), /storage-scoped\/provision-aware WebID and PodCreator config/)
+})
+
+test('resolveXpodLaunchTarget accepts identity DB scoped WebID config', () => {
+  const repoRoot = '/repo/node_modules/@undefineds.co/xpod'
+  const packageBin = `${repoRoot}/bin/xpod.js`
+
+  const target = resolveXpodLaunchTarget({
+    appIsPackaged: false,
+    desktopDir: '/repo/apps/desktop/dist',
+    cwd: '/repo',
+    env: {},
+    existsSync: (filePath) => (
+      filePath === `${repoRoot}/package.json`
+      || filePath === `${repoRoot}/dist/identity/oidc/ScopedPickWebIdHandler.js`
+      || filePath === `${repoRoot}/config/xpod.base.json`
+      || filePath === `${repoRoot}/dist/runtime/css-process.js`
+      || filePath === packageBin
+    ),
+    readFileSync: (filePath) => filePath.endsWith('/config/xpod.base.json')
+      ? provisionOnlyXpodBaseConfig
+      : cssImportRewriteRuntimeSource,
+  })
+
+  assert.deepEqual(target, {
+    kind: 'package-bin',
+    rootDir: repoRoot,
+    entryPath: packageBin,
+  })
 })
 
 test('resolveXpodLaunchTarget rejects xpod runtimes without escaped CSS config import support', () => {

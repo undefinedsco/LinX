@@ -752,7 +752,9 @@ function hasRequiredProvisionConfig(
     const config = JSON.parse(readFileSync(configPath, 'utf-8')) as unknown;
     const scopedPickWebIdParams = findOverrideParameters(config, 'ScopedPickWebIdHandler');
     const provisionPodCreatorParams = findOverrideParameters(config, 'ProvisionPodCreator');
-    return hasVariable(scopedPickWebIdParams, 'storageBaseUrl', 'urn:solid-server:default:variable:baseUrl')
+    const hasStorageScope = hasVariable(scopedPickWebIdParams, 'storageBaseUrl', 'urn:solid-server:default:variable:baseUrl')
+      || hasVariable(scopedPickWebIdParams, 'identityDbUrl', 'urn:solid-server:default:variable:identityDbUrl');
+    return hasStorageScope
       && hasVariable(scopedPickWebIdParams, 'provisionBaseUrl', 'urn:solid-server:default:variable:oidcIssuer')
       && hasVariable(provisionPodCreatorParams, 'provisionBaseUrl', 'urn:solid-server:default:variable:oidcIssuer')
       && hasVariable(provisionPodCreatorParams, 'nodeId', 'urn:solid-server:default:variable:nodeId');

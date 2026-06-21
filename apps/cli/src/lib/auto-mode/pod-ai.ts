@@ -1,43 +1,23 @@
-import type { AutoModeBackend } from './types.js'
+import type { AutoModeWorkerBackend } from './types.js'
 import { getDefaultPodDataSession, type PodDataSession } from '../pod-data-session.js'
-import { selectAIConfigCredential } from '../models.js'
+import {
+  aiConfigRepository,
+  selectAIConfigCredentialForBackend,
+  type AIConfigBackendCredentialSelection,
+  type SolidDatabase,
+} from '../models.js'
 
-type SupportedPodAutoModeBackend = AutoModeBackend
-
-interface PodQueryDb {
-  select(): {
-    from(resource: unknown): {
-      execute(): Promise<unknown[]>
-    }
-  }
-  findById?: (resource: unknown, id: string) => Promise<unknown | null>
-  updateById?: (resource: unknown, id: string, data: Record<string, unknown>) => Promise<unknown>
-}
-
-interface PodCredentialRow extends Record<string, unknown> {
-  id?: string
-  service?: string
-  status?: string
-  apiKey?: string
-  provider?: string
-  baseUrl?: string
-  proxyUrl?: string
-  label?: string
-  isDefault?: boolean
-  lastUsedAt?: Date
-  failCount?: number
-}
-
-interface PodProviderRow extends Record<string, unknown> {
-  id?: string
-  '@id'?: string
-  baseUrl?: string
-}
+type SupportedPodAutoModeBackend = Exclude<AutoModeWorkerBackend, 'linx'>
 
 export interface PodBackedAutoModeCredential {
   backend: SupportedPodAutoModeBackend
-  provider: 'anthropic' | 'openai' | 'codebuddy'
+  provider: string
   env: Record<string, string>
+}
+
+interface PodAiRuntime {
+  getPodDataSession: () => Promise<PodDataSession | null>
+  createDb?: (session: PodDataSession) => SolidDatabase
 }
 
 interface PodProviderMatch {
@@ -46,58 +26,31 @@ interface PodProviderMatch {
   baseUrl?: string
 }
 
-interface PodAiRuntime {
-  getPodDataSession: () => Promise<PodDataSession | null>
-  createDb?: (session: PodDataSession) => PodQueryDb
-  credentialResource?: unknown
-  aiProviderResource?: unknown
-}
-
-const BACKEND_PROVIDER_ID: Record<SupportedPodAutoModeBackend, 'anthropic' | 'openai' | 'codebuddy'> = {
-  claude: 'anthropic',
-  codex: 'openai',
-  codebuddy: 'codebuddy',
-}
-
 function selectPodCredentialForBackend(
   backend: SupportedPodAutoModeBackend,
-  credentials: PodCredentialRow[],
-  providers: PodProviderRow[],
+  credentials: Array<Record<string, unknown>>,
+  providers: Array<Record<string, unknown>>,
 ): PodProviderMatch | null {
-  const providerId = BACKEND_PROVIDER_ID[backend]
-  const selected = selectAIConfigCredential(
-    providerId,
-    credentials as Array<Record<string, unknown>>,
-    providers as Array<Record<string, unknown>>,
-  )
-
-  if (!selected) {
-    return null
-  }
-
+  const selected = selectAIConfigCredentialForBackend(backend, credentials, providers)
+  if (!selected) return null
   return {
-    providerId,
+    providerId: selected.providerId,
     apiKey: selected.apiKey,
     baseUrl: selected.baseUrl,
   }
 }
 
-async function markCredentialUsed(
-  runtime: PodAiRuntime,
-  db: PodQueryDb,
-  row: PodCredentialRow | undefined,
-): Promise<void> {
-  if (!row?.id || !runtime.credentialResource) return
-  await db.updateById?.(runtime.credentialResource, row.id, { lastUsedAt: new Date() })
-}
-
-function buildBackendEnv(match: PodProviderMatch, backend: SupportedPodAutoModeBackend): PodBackedAutoModeCredential {
+function buildBackendEnv(
+  match: AIConfigBackendCredentialSelection,
+  backend: SupportedPodAutoModeBackend,
+): PodBackedAutoModeCredential {
   if (backend === 'claude') {
     return {
       backend,
-      provider: 'anthropic',
+      provider: match.providerId,
       env: {
         ANTHROPIC_API_KEY: match.apiKey,
+        ...(match.baseUrl ? { ANTHROPIC_BASE_URL: match.baseUrl } : {}),
       },
     }
   }
@@ -105,18 +58,17 @@ function buildBackendEnv(match: PodProviderMatch, backend: SupportedPodAutoModeB
   if (backend === 'codex') {
     return {
       backend,
-      provider: 'openai',
+      provider: match.providerId,
       env: {
-        OPENAI_API_KEY: match.apiKey,
         CODEX_API_KEY: match.apiKey,
-        ...(match.baseUrl ? { OPENAI_BASE_URL: match.baseUrl } : {}),
+        ...(match.baseUrl ? { CODEX_BASE_URL: match.baseUrl } : {}),
       },
     }
   }
 
   return {
     backend,
-    provider: 'codebuddy',
+    provider: match.providerId,
     env: {
       CODEBUDDY_API_KEY: match.apiKey,
       ...(match.baseUrl ? { CODEBUDDY_BASE_URL: match.baseUrl } : {}),
@@ -134,7 +86,7 @@ export function podCredentialMissingMessage(backend: SupportedPodAutoModeBackend
   }
 
   if (backend === 'codex') {
-    return 'No active OpenAI/Codex credential was found in LinX Pod AI settings. Configure an OpenAI credential in LinX, then try again.'
+    return 'No active Codex-compatible AI credential was found in LinX Pod AI settings. Configure a provider credential in LinX, then try again.'
   }
 
   if (backend === 'codebuddy') {
@@ -161,32 +113,29 @@ async function createDefaultRuntime(): Promise<PodAiRuntime> {
         podUrl: podSession.podUrl,
         resourcePreparation: 'off' as never,
         schema: models.solidResources,
-      }) as PodQueryDb
+      }) as SolidDatabase
     },
-    credentialResource: models.credentialResource,
-    aiProviderResource: models.aiProviderResource,
   }
 }
 
 async function loadRowsWithDrizzle(
+  backend: SupportedPodAutoModeBackend,
   runtime: PodAiRuntime,
   podSession: PodDataSession,
-  backend: SupportedPodAutoModeBackend,
-): Promise<{ db: PodQueryDb; credentials: PodCredentialRow[]; providers: PodProviderRow[] } | null> {
-  if (!runtime.createDb || !runtime.credentialResource || !runtime.aiProviderResource) {
+): Promise<{ db: SolidDatabase; match: AIConfigBackendCredentialSelection | undefined } | null> {
+  if (!runtime.createDb) {
     return null
   }
 
   const db = runtime.createDb(podSession)
-  const credentials = await db.select().from(runtime.credentialResource).execute() as PodCredentialRow[]
-  const providerId = BACKEND_PROVIDER_ID[backend]
-  const provider = await db.findById?.(runtime.aiProviderResource, providerId) as PodProviderRow | null | undefined
-
-  return { db, credentials, providers: provider ? [provider] : [] }
+  return {
+    db,
+    match: await aiConfigRepository.loadCredentialForBackend(db, backend),
+  }
 }
 
 export async function loadPodBackendCredential(
-  backend: AutoModeBackend,
+  backend: SupportedPodAutoModeBackend,
   runtime?: PodAiRuntime,
 ): Promise<PodBackedAutoModeCredential | null> {
   const activeRuntime = runtime ?? await createDefaultRuntime()
@@ -195,23 +144,20 @@ export async function loadPodBackendCredential(
     throw new Error(missingPodClientCredentialsMessage())
   }
 
-  const rows = await loadRowsWithDrizzle(activeRuntime, podSession, backend)
+  const rows = await loadRowsWithDrizzle(backend, activeRuntime, podSession)
   if (!rows) {
     throw new Error('LinX cloud credential source requires shared models/drizzle-solid access.')
   }
 
-  const match = selectPodCredentialForBackend(backend, rows.credentials, rows.providers)
-  if (!match) {
+  if (!rows.match) {
     return null
   }
 
-  const selected = selectAIConfigCredential(match.providerId, rows.credentials, rows.providers)
-  await markCredentialUsed(activeRuntime, rows.db, selected?.credential as PodCredentialRow | undefined)
+  await aiConfigRepository.markCredentialUsed(rows.db, rows.match)
 
-  return buildBackendEnv(match, backend)
+  return buildBackendEnv(rows.match, backend)
 }
 
 export const __podInternal = {
-  BACKEND_PROVIDER_ID,
   selectPodCredentialForBackend,
 }

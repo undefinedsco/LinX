@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { agentResourceId } from '@undefineds.co/models'
+import { agentResourceId } from '@/lib/data/resource-identity'
 import { buildAgentHomePath, ensureAgentHome } from './agent-home'
 
 describe('agent-home', () => {
@@ -43,6 +43,8 @@ describe('agent-home', () => {
       String(input).endsWith('/AGENTS.md') && init?.method === 'PUT'
     )
     expect(String(agentsMdPut?.[1]?.body)).toContain('This directory is the Agent Home')
+    expect(String(agentsMdPut?.[1]?.body)).toContain('If the AI runtime runs on the client, access Pod workspaces through the xpod CLI')
+    expect(String(agentsMdPut?.[1]?.body)).toContain('If the AI runtime runs on server/xpod, Pod storage may be exposed as a local folder')
     expect(String(agentsMdPut?.[1]?.body)).toContain('Help the user.')
     expect(agentsMdPut?.[1]?.headers).toMatchObject({
       'If-None-Match': '*',
@@ -57,7 +59,7 @@ describe('agent-home', () => {
     expect(String(metaPatch?.[1]?.body)).toContain('INSERT DATA')
     expect(String(metaPatch?.[1]?.body)).toContain('<https://alice.example/agents/agent-1/>')
     expect(String(metaPatch?.[1]?.body)).not.toContain('.meta#config')
-    expect(agentResourceId('__secretary__')).toBe('__secretary__/profile/card#me')
+    expect(agentResourceId('__secretary__')).toBe('__secretary__/')
   })
 
   it('rejects full Agent IRIs because callers must pass Agent row.id', async () => {
@@ -71,6 +73,8 @@ describe('agent-home', () => {
 
     expect(() => buildAgentHomePath('https://alice.example/.data/agents/__secretary__.ttl#this'))
       .toThrow('Agent resource id must be a base-relative resource id')
+    expect(() => buildAgentHomePath('__secretary__/profile/card#me'))
+      .toThrow('Agent resource id must use {agentKey}/.')
 
     await expect(ensureAgentHome(db, {
       agentId: 'https://alice.example/.data/agents/__secretary__.ttl#this' as any,

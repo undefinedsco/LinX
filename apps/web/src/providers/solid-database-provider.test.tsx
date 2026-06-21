@@ -43,19 +43,20 @@ vi.mock('@/lib/data/linx-solid-database', () => ({
 }))
 
 vi.mock('@undefineds.co/models', () => ({
-  chatTable: {},
-  threadTable: {},
-  workspaceTable: {},
-  messageTable: {},
-  contactTable: {},
-  agentTable: {},
-  credentialTable: {},
-  aiProviderTable: {},
-  aiModelTable: {},
-  settingsTable: {},
-  approvalTable: {},
-  auditTable: {},
-  inboxNotificationTable: {},
+  chatResource: {},
+  threadResource: {},
+  workspaceResource: {},
+  messageResource: {},
+  contactResource: {},
+  agentResource: {},
+  credentialResource: {},
+  aiProviderResource: {},
+  aiModelResource: {},
+  settingsResource: {},
+  approvalResource: {},
+  auditResource: {},
+  inboxNotificationResource: {},
+  inputRequestResource: {},
   solidSchema: {},
 }))
 
@@ -86,6 +87,34 @@ function mockSessionProfileStorage(storageUrl: string, webId = sessionState.sess
   })
 }
 
+function mockDefaultSessionProfileStorage() {
+  sessionState.session.fetch.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const webId = String(input)
+    if (webId === sessionState.session.info.webId) {
+      const storageUrl = deriveDefaultStorageUrl(webId)
+      return new Response(`
+        @prefix solid: <http://www.w3.org/ns/solid/terms#>.
+        <${webId}>
+          solid:storage <${storageUrl}> .
+      `, {
+        status: 200,
+        headers: { 'Content-Type': 'text/turtle' },
+      })
+    }
+
+    return fetch(input, init)
+  })
+}
+
+function deriveDefaultStorageUrl(webId: string): string {
+  const parsed = new URL(webId)
+  const [podSlug] = parsed.pathname.split('/').filter(Boolean)
+  parsed.pathname = podSlug ? `/${podSlug}/` : '/'
+  parsed.search = ''
+  parsed.hash = ''
+  return parsed.toString()
+}
+
 describe('SolidDatabaseProvider', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -101,7 +130,7 @@ describe('SolidDatabaseProvider', () => {
     sessionState.session.info.sessionId = 'session-1'
     sessionState.session.info.webId = 'https://id.example.com/alice/profile/card#me'
     sessionState.session.fetch.mockReset()
-    sessionState.session.fetch.mockImplementation((...args: Parameters<typeof fetch>) => fetch(...args))
+    mockDefaultSessionProfileStorage()
     sessionState.sessionRequestInProgress = false
     window.sessionStorage.clear()
     useLoginStore.setState({
@@ -153,7 +182,7 @@ describe('SolidDatabaseProvider', () => {
     expect((window as any).__SOLID_DB__).toBe(db)
   })
 
-  it('does not pass a Pod URL for Cloud-only login', async () => {
+  it('uses WebID profile storage when there is no pending login transaction', async () => {
     const db = {}
     createLinxSolidDatabaseMock.mockResolvedValue(db)
 
@@ -167,8 +196,13 @@ describe('SolidDatabaseProvider', () => {
       await Promise.resolve()
     })
 
+    expect(sessionState.session.fetch).toHaveBeenCalledWith(
+      'https://id.example.com/alice/profile/card#me',
+      expect.anything(),
+    )
     expect(createLinxSolidDatabaseMock).toHaveBeenCalledWith(sessionState.session, {
-      podUrl: null,
+      initTimeoutMs: 90_000,
+      podUrl: 'https://id.example.com/alice/',
     })
   })
 
@@ -278,22 +312,22 @@ describe('SolidDatabaseProvider', () => {
     })
   })
 
-  it('uses the selected Local SP profile when the Cloud WebID profile fetch fails', async () => {
+  it('uses the Cloud WebID profile as storage authority when authenticated profile fetch fails', async () => {
     const db = {}
     createLinxSolidDatabaseMock.mockResolvedValue(db)
     sessionState.session.info.webId = 'https://id.undefineds.co/alice/profile/card#me'
-    sessionState.session.fetch
-      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
-      .mockResolvedValueOnce(new Response(`
+    sessionState.session.fetch.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    const publicFetchMock = vi.fn().mockResolvedValue(new Response(`
         @prefix solid: <http://www.w3.org/ns/solid/terms#>.
-        <https://node-0000.undefineds.co/alice/profile/card#me>
+        <https://id.undefineds.co/alice/profile/card#me>
           solid:storage <https://node-0000.undefineds.co/alice/> .
       `, {
         status: 200,
         headers: { 'Content-Type': 'text/turtle' },
       }))
+    vi.stubGlobal('fetch', publicFetchMock)
     window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
-      issuerUrl: 'https://node-0000.undefineds.co',
+      issuerUrl: 'https://id.undefineds.co',
       accountIssuerUrl: 'https://id.undefineds.co',
       accountIssuerLabel: 'Cloud',
       storageProviderUrl: 'https://node-0000.undefineds.co/',
@@ -317,7 +351,11 @@ describe('SolidDatabaseProvider', () => {
       'https://id.undefineds.co/alice/profile/card#me',
       expect.anything(),
     )
-    expect(sessionState.session.fetch).toHaveBeenCalledWith(
+    expect(publicFetchMock).toHaveBeenCalledWith(
+      'https://id.undefineds.co/alice/profile/card#me',
+      expect.anything(),
+    )
+    expect(sessionState.session.fetch).not.toHaveBeenCalledWith(
       'https://node-0000.undefineds.co/alice/profile/card#me',
       expect.anything(),
     )
@@ -619,6 +657,10 @@ describe('SolidDatabaseProvider', () => {
     expect(screen.getByTestId('status').textContent).toBe('ready')
     expect(createLinxSolidDatabaseMock).toHaveBeenCalledWith(sessionState.session, {
       podUrl: 'http://192.168.1.10:5737/alice/',
+      transportUrlRewrite: {
+        fromBaseUrl: 'http://192.168.1.10:5737/',
+        toBaseUrl: 'http://localhost:5737/',
+      },
     })
     expect((window as any).__SOLID_DB_POD_URL__).toBe('http://192.168.1.10:5737/alice/')
     expect((window as any).__LINX_ACCESS_ROUTE__).toMatchObject({
@@ -633,7 +675,7 @@ describe('SolidDatabaseProvider', () => {
     expect(nativeFetch).toHaveBeenCalledWith('http://localhost:5737/alice/.data/bootstrap', undefined)
   })
 
-  it('keeps https Local spaces on canonical transport when local access would break browser fetch semantics', async () => {
+  it('keeps https Local spaces on canonical transport for signed fetches', async () => {
     const nativeFetch = vi.fn(async (input: RequestInfo | URL) => {
       const url = input.toString()
       if (url.startsWith('http://localhost:5737/api/linx/capabilities')) {
@@ -641,9 +683,6 @@ describe('SolidDatabaseProvider', () => {
       }
       if (url.startsWith('https://node.example/api/linx/capabilities')) {
         return jsonResponse({ contract: 'linx-local-onboarding/v1', baseUrl: 'https://node.example/' })
-      }
-      if (url.startsWith('https://node.example/alice/.data/bootstrap')) {
-        return new Response('ok')
       }
       throw new Error(`unexpected fetch: ${url}`)
     }) as unknown as typeof fetch
@@ -687,7 +726,6 @@ describe('SolidDatabaseProvider', () => {
       customProviders: [],
     })
     createLinxSolidDatabaseMock.mockImplementation(async (_session, options) => {
-      await fetch('https://node.example/alice/.data/bootstrap')
       return {
         getDialect: () => ({
           getPodUrl: () => options.podUrl,
@@ -717,7 +755,6 @@ describe('SolidDatabaseProvider', () => {
       rewriteEnabled: false,
       rewriteDisabledReason: 'https-canonical-to-http-access',
     })
-    expect(nativeFetch).toHaveBeenCalledWith('https://node.example/alice/.data/bootstrap')
   })
 
   it('does not override ordinary custom localhost providers without the Local label', async () => {
@@ -749,7 +786,7 @@ describe('SolidDatabaseProvider', () => {
     const db = {}
     createLinxSolidDatabaseMock.mockResolvedValue(db)
     sessionState.session.info.webId = 'https://solid.example.net/bob/profile/card#me'
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+    sessionState.session.fetch.mockResolvedValueOnce({
       ok: true,
       headers: new Headers({ 'content-type': 'text/turtle' }),
       text: async () => `
@@ -757,7 +794,7 @@ describe('SolidDatabaseProvider', () => {
         <https://solid.example.net/bob/profile/card#me>
           solid:storage <https://solid.example.net/users/bob/> .
       `,
-    }))
+    })
     window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
       issuerUrl: 'https://solid.example.net',
       storageProviderUrl: 'https://solid.example.net',
@@ -831,14 +868,14 @@ describe('SolidDatabaseProvider', () => {
     const db = {}
     createLinxSolidDatabaseMock.mockResolvedValue(db)
     sessionState.session.info.webId = 'https://solid.example.net/bob/profile/card#me'
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+    sessionState.session.fetch.mockResolvedValueOnce({
       ok: true,
       headers: new Headers({ 'content-type': 'application/ld+json' }),
       text: async () => JSON.stringify({
         '@id': 'https://solid.example.net/bob/profile/card#me',
         'solid:storage': { '@id': 'https://solid.example.net/users/bob/' },
       }),
-    }))
+    })
     window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
       issuerUrl: 'https://solid.example.net',
       storageProviderUrl: 'https://solid.example.net',
@@ -864,7 +901,7 @@ describe('SolidDatabaseProvider', () => {
     const db = {}
     createLinxSolidDatabaseMock.mockResolvedValue(db)
     sessionState.session.info.webId = 'https://solid.example.net/bob/profile/card#me'
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+    sessionState.session.fetch.mockResolvedValueOnce({
       ok: true,
       headers: new Headers({ 'content-type': 'text/turtle' }),
       text: async () => `
@@ -872,7 +909,7 @@ describe('SolidDatabaseProvider', () => {
         <https://solid.example.net/bob/profile/card#me>
           solid:storage <https://other.example.net/users/bob/> .
       `,
-    }))
+    })
     window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
       issuerUrl: 'https://solid.example.net',
       storageProviderUrl: 'https://solid.example.net',
@@ -937,6 +974,8 @@ describe('SolidDatabaseProvider', () => {
     })
 
     window.sessionStorage.clear()
+    sessionState.session.info.webId = 'https://id.undefineds.co/alice/profile/card#me'
+    mockSessionProfileStorage('https://id.undefineds.co/alice/')
     useLoginStore.setState({
       state: 'authenticated',
       error: null,
@@ -959,7 +998,8 @@ describe('SolidDatabaseProvider', () => {
     await flushAsyncWork()
 
     expect(createLinxSolidDatabaseMock).toHaveBeenLastCalledWith(sessionState.session, {
-      podUrl: null,
+      initTimeoutMs: 90_000,
+      podUrl: 'https://id.undefineds.co/alice/',
     })
     expect((window as any).__SOLID_DB_POD_URL__).toBe('https://id.undefineds.co/alice/')
   })

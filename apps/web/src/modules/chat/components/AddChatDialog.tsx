@@ -25,7 +25,7 @@ import {
   DEFAULT_RUNTIME_TOOL,
   createAndStartRuntimeSession,
   isRuntimeSessionMode,
-  resolveLocalWorkspaceUri,
+  resolveLocalContainer,
   type RuntimeToolType,
 } from '../runtime-client'
 import { formatErrorForUser } from '@/lib/user-facing-errors'
@@ -171,7 +171,7 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
 
         if (shouldCreateRuntime && threadId) {
           try {
-            const requestedWorkspaceUri = await resolveLocalWorkspaceUri(normalizedFolderPath)
+            const requestedWorkspaceUri = await resolveLocalContainer(normalizedFolderPath)
             const workspaceUri = await mutations.ensureThreadWorkspace.mutateAsync({
               threadId,
               workspaceUri: requestedWorkspaceUri,
@@ -183,7 +183,7 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
             })
             await createAndStartRuntimeSession({
               threadId,
-              workspaceUri,
+              container: workspaceUri,
               title: '默认话题',
               repoPath: normalizedRepoPath,
               folderPath: normalizedFolderPath,
@@ -198,6 +198,22 @@ export function AddChatDialog({ onCreated }: AddChatDialogProps) {
               description: formatErrorForUser(
                 runtimeError,
                 '聊天已创建，可在会话工具栏重试运行时会话。',
+              ),
+            })
+          }
+        } else if (threadId) {
+          try {
+            await mutations.ensureThreadWorkspace.mutateAsync({
+              threadId,
+              title: '默认话题',
+            })
+          } catch (workspaceError: any) {
+            console.error('Bind default Pod workspace failed:', workspaceError)
+            toast({
+              title: '默认空间绑定失败',
+              description: formatErrorForUser(
+                workspaceError,
+                '聊天已创建，但默认空间暂未绑定。进入会话后可继续使用。',
               ),
             })
           }

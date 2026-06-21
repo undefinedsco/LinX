@@ -1,30 +1,195 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 
-test('formatThreadLabel includes title and workspace when present', async () => {
-  const { formatThreadLabel } = await import('../dist/lib/thread-utils.js')
+function createMockDb() {
+  const inserts = []
+  const updates = []
+  const rows = new Map()
 
+  function tableRows(resource) {
+    const existing = rows.get(resource)
+    if (existing) return existing
+    const next = []
+    rows.set(resource, next)
+    return next
+  }
+
+  const db = {
+    insert(resource) {
+      return {
+        values(value) {
+          inserts.push({ resource, value })
+          tableRows(resource).push(value)
+          return {
+            async execute() {
+              return [value]
+            },
+          }
+        },
+      }
+    },
+    async findById(resource, id) {
+      return tableRows(resource).find((row) => row.id === id) ?? null
+    },
+    async updateById(resource, id, value) {
+      updates.push({ resource, id, value })
+      const entries = tableRows(resource)
+      const index = entries.findIndex((row) => row.id === id)
+      if (index === -1) {
+        const row = { id, ...value }
+        entries.push(row)
+        return row
+      }
+      entries[index] = { ...entries[index], ...value }
+      return entries[index]
+    },
+    resolveLocatorId(_resource, locator) {
+      if (locator && typeof locator === 'object' && 'chat' in locator && 'id' in locator) {
+        return `${locator.chat}/index.ttl#${locator.id}`
+      }
+      return String(locator?.id ?? locator)
+    },
+    select() {
+      return {
+        from(resource) {
+          return {
+            where() {
+              return this
+            },
+            orderBy() {
+              return this
+            },
+            async execute() {
+              return [...tableRows(resource)]
+            },
+          }
+        },
+      }
+    },
+  }
+
+  return { db, inserts, updates }
+}
+
+function createSession() {
+  return {
+    info: {
+      webId: 'https://alice.example/profile/card#me',
+    },
+  }
+}
+
+test('pod chat store models CLI message persistence as local-to-core Pod sync', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pod-chat-store.ts')
+  t.after(() => cleanup())
+  t.after(() => module.__podChatStoreInternal.resetRuntime())
+
+  const { db, inserts, updates } = createMockDb()
+  const syncResults = []
+  let uuid = 0
+  module.__podChatStoreInternal.setRuntime({
+    createDb: () => db,
+    now: () => new Date('2026-05-21T00:00:00.000Z'),
+    randomUUID: () => `uuid-${++uuid}`,
+    onSyncResult: (result) => syncResults.push(result),
+  })
+
+  await db.insert(module.__podChatStoreInternal.resources.threadResource).values({
+    id: 'chat/cli-default/index.ttl#thread-1',
+    chat: 'https://alice.example/.data/chat/cli-default/index.ttl#this',
+  }).execute()
+
+  await module.saveUserMessage(createSession(), 'cli-default', 'thread-1', 'hello from cli')
+
+  const messageInsert = inserts.find((entry) => entry.resource === module.__podChatStoreInternal.resources.messageResource)
+  assert.equal(messageInsert?.value.id, 'uuid-1')
+  assert.equal(messageInsert?.value.chat, 'https://alice.example/.data/chat/cli-default/index.ttl#this')
+  assert.equal(messageInsert?.value.thread, 'https://alice.example/.data/chat/cli-default/index.ttl#thread-1')
+  assert.equal(messageInsert?.value.maker, 'https://alice.example/profile/card#me')
+  assert.equal(messageInsert?.value.role, 'user')
+  assert.equal(messageInsert?.value.content, 'hello from cli')
+  assert.equal(messageInsert?.value.status, 'sent')
+  assert.deepEqual(messageInsert?.value.createdAt, new Date('2026-05-21T00:00:00.000Z'))
+  assert.equal(messageInsert?.value.metadata?.reconciler?.latest?.eventType, 'message.appended')
+  assert.equal(messageInsert?.value.metadata?.reconciler?.latest?.wakeJobs?.[0]?.targetRole, 'primary-agent')
   assert.equal(
-    formatThreadLabel({
-      id: 'thread-1',
-      title: 'CLI Session',
-      workspace: '/tmp/worktree',
-    }),
-    'thread-1 · CLI Session · /tmp/worktree',
+    messageInsert?.value.metadata?.reconciler?.latest?.wakeJobs?.[0]?.sourceResource,
+    'https://alice.example/.data/chat/cli-default/2026/05/21/messages.ttl#uuid-1',
   )
+  assert.equal(updates.length, 2)
+
+  assert.deepEqual(syncResults.map((result) => result.metadata.action), [
+    'message.create',
+    'chat.activity.update',
+    'thread.touch',
+  ])
+  assert.deepEqual(syncResults.map((result) => result.source), [
+    'cli-chat-store',
+    'cli-chat-store',
+    'cli-chat-store',
+  ])
+  assert.deepEqual(syncResults.map((result) => result.target), ['pod', 'pod', 'pod'])
+  assert.deepEqual(syncResults.map((result) => result.direction), [
+    'local-to-core',
+    'local-to-core',
+    'local-to-core',
+  ])
+  assert.deepEqual(syncResults.map((result) => result.plane), [
+    'projection',
+    'projection',
+    'projection',
+  ])
+  assert.deepEqual(syncResults.map((result) => result.authority), ['core', 'core', 'core'])
+  assert.deepEqual(syncResults.map((result) => result.status), [
+    'completed',
+    'completed',
+    'completed',
+  ])
 })
 
-test('toOpenAiMessages preserves role ordering', async () => {
-  const { toOpenAiMessages } = await import('../dist/lib/thread-utils.js')
+test('pod chat store retries transient Pod write failures', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pod-chat-store.ts')
+  t.after(() => cleanup())
+  t.after(() => module.__podChatStoreInternal.resetRuntime())
 
-  assert.deepEqual(
-    toOpenAiMessages([
-      { role: 'system', content: 'system prompt', createdAt: '2026-03-13T00:00:00.000Z' },
-      { role: 'user', content: 'hello', createdAt: '2026-03-13T00:00:01.000Z' },
-    ]),
-    [
-      { role: 'system', content: 'system prompt' },
-      { role: 'user', content: 'hello' },
-    ],
-  )
+  const { db } = createMockDb()
+  let uuid = 0
+  let messageAttempts = 0
+  const originalInsert = db.insert.bind(db)
+  db.insert = (resource) => {
+    const builder = originalInsert(resource)
+    if (resource !== module.__podChatStoreInternal.resources.messageResource) {
+      return builder
+    }
+    return {
+      values(value) {
+        const query = builder.values(value)
+        return {
+          async execute() {
+            messageAttempts += 1
+            if (messageAttempts === 1) {
+              throw new Error('SPARQL UPDATE failed: 502 Bad Gateway')
+            }
+            return query.execute()
+          },
+        }
+      },
+    }
+  }
+
+  module.__podChatStoreInternal.setRuntime({
+    createDb: () => db,
+    now: () => new Date('2026-05-21T00:00:00.000Z'),
+    randomUUID: () => `uuid-${++uuid}`,
+  })
+
+  await db.insert(module.__podChatStoreInternal.resources.threadResource).values({
+    id: 'chat/cli-default/index.ttl#thread-1',
+    chat: 'https://alice.example/.data/chat/cli-default/index.ttl#this',
+  }).execute()
+
+  await module.saveUserMessage(createSession(), 'cli-default', 'thread-1', 'hello after retry')
+
+  assert.equal(messageAttempts, 2)
 })

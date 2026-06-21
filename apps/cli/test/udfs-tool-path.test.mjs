@@ -1,15 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { MessageVocab, SIOC, ThreadVocab, UDFS, WF } from '@undefineds.co/models'
+import { MessageVocab, SIOC, ThreadVocab, WF } from '@undefineds.co/models'
 import { createLinxPiCodingTools } from '../dist/lib/pi-adapter/runtime.js'
 
 const CREDENTIAL_SCHEMA_URI = 'https://undefineds.co/ns#Credential'
 const API_KEY_PREDICATE_URI = 'https://undefineds.co/ns#apiKey'
 
 test('LinX consumed models keep Solid Chat compatibility predicates', () => {
-  assert.equal(ThreadVocab.scope, UDFS.inScope)
-  assert.equal(ThreadVocab.chat, SIOC.has_parent)
-  assert.equal(MessageVocab.scope, UDFS.inScope)
+  assert.equal(ThreadVocab.parent, SIOC.has_parent)
   assert.equal(MessageVocab.chat, WF.message)
   assert.equal(MessageVocab.thread, SIOC.has_member)
 })

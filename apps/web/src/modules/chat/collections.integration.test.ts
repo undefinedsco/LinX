@@ -1,30 +1,30 @@
 // @vitest-environment node
 import { afterAll, describe, expect, it } from 'vitest'
 import {
-  chatTable,
-  aiProviderTable,
-  credentialTable,
-  threadTable,
-  messageTable,
+  chatResource,
+  aiProviderResource,
+  credentialResource,
+  threadResource,
+  messageResource,
   solidSchema,
   extractChatIdFromChatRef,
   aiConfigProviderRef,
   getDefaultAIConfigCredentialId,
 } from '@undefineds.co/models'
 import { createXpodIntegrationContext, type XpodIntegrationContext } from '../../test/xpod-integration'
-import { chatOps, initializeChatCollections } from './collections'
+import { chatOps, initializeChatCollections, LINX_DEFAULT_SECRETARY } from './collections'
 
 let context: XpodIntegrationContext<typeof solidSchema> | null = null
 
 function chatResourceId(key: string): string {
-  return chatTable.buildId({ id: key })
+  return chatResource.buildId({ id: key })
 }
 
 async function getContext(): Promise<XpodIntegrationContext<typeof solidSchema>> {
   if (context) return context
   context = await createXpodIntegrationContext({
     schema: solidSchema,
-    tables: [chatTable, threadTable, messageTable, aiProviderTable, credentialTable],
+    resources: [chatResource, threadResource, messageResource, aiProviderResource, credentialResource],
   })
   initializeChatCollections(context.db)
   return context
@@ -40,7 +40,7 @@ describe('chat collections integration', () => {
 
     const id = `chat-${Date.now()}`
     const resourceId = chatResourceId(id)
-    const [created] = await database.insert(chatTable).values({
+    const [created] = await database.insert(chatResource).values({
       id: resourceId,
       title: 'Integration Chat',
       description: 'chat insert test',
@@ -50,7 +50,7 @@ describe('chat collections integration', () => {
     expect(created).toBeDefined()
 
     // Round-trip: SELECT back via SPARQL endpoint
-    const row = await (database as any).findById(chatTable as any, resourceId)
+    const row = await (database as any).findById(chatResource as any, resourceId)
     expect(row).toBeTruthy()
     expect(row?.title).toBe('Integration Chat')
   })
@@ -69,7 +69,7 @@ describe('chat collections integration', () => {
     } as const
 
     const resourceId = chatResourceId(id)
-    await database.insert(chatTable).values({
+    await database.insert(chatResource).values({
       id: resourceId,
       title: 'Group Round Trip',
       participants: [webId, assistantUri],
@@ -82,16 +82,16 @@ describe('chat collections integration', () => {
     expect(roundTripped?.participants).toEqual(expect.arrayContaining([assistantUri]))
     expect(roundTripped?.metadata).toMatchObject(metadata)
 
-    await (database as any).deleteById(chatTable as any, resourceId)
+    await (database as any).deleteById(chatResource as any, resourceId)
   })
 
   it('insert thread/message and SELECT back', { timeout: 90000 }, async () => {
     const { db: database, webId } = await getContext()
 
     const chatId = `chat-thread-${Date.now()}`
-    const chatResource = chatResourceId(chatId)
-    await database.insert(chatTable).values({
-      id: chatResource,
+    const chatRecordId = chatResourceId(chatId)
+    await database.insert(chatResource).values({
+      id: chatRecordId,
       title: 'Thread Test Chat',
       participants: [webId],
     }).execute()
@@ -112,6 +112,34 @@ describe('chat collections integration', () => {
     const roundTripped = msgRows.find((row) => row.id === message.id || (row as Record<string, unknown>)['@id'] === messageIri)
     expect(roundTripped).toBeDefined()
     expect(roundTripped?.content).toBe('hello from integration test')
+
+    const fetchFn = (database as any).getDialect?.()?.getAuthenticatedFetch?.()
+    expect(fetchFn).toBeTypeOf('function')
+    const response = await fetchFn(new URL(`.data/chat/${chatId}/index.ttl`, context!.podUrl).toString(), {
+      headers: { Accept: 'text/turtle, */*;q=0.1' },
+    })
+    const body = await response.text()
+    expect(response.ok, body).toBe(true)
+    expect(body).toContain('Thread Test Chat')
+    expect(body).toContain('Thread One')
+  })
+
+  it('keeps the Secretary chat subject when the default thread is created', { timeout: 90000 }, async () => {
+    const { db: database, podUrl } = await getContext()
+
+    await chatOps.ensureLinxWelcome({ force: true })
+    const thread = await chatOps.createThread(LINX_DEFAULT_SECRETARY.chatId, LINX_DEFAULT_SECRETARY.threadTitle)
+    expect(thread.title).toBe(LINX_DEFAULT_SECRETARY.threadTitle)
+
+    const fetchFn = (database as any).getDialect?.()?.getAuthenticatedFetch?.()
+    expect(fetchFn).toBeTypeOf('function')
+    const response = await fetchFn(new URL('.data/chat/__secretary__/index.ttl', podUrl).toString(), {
+      headers: { Accept: 'text/turtle, */*;q=0.1' },
+    })
+    const body = await response.text()
+    expect(response.ok, body).toBe(true)
+    expect(body).toContain(LINX_DEFAULT_SECRETARY.title)
+    expect(body).toContain(LINX_DEFAULT_SECRETARY.threadTitle)
   })
 
   it('resolves AI credential through provider resource refs', { timeout: 90000 }, async () => {
@@ -119,14 +147,16 @@ describe('chat collections integration', () => {
     const suffix = crypto.randomUUID()
     const providerId = `openai-${suffix}`
     const credentialId = getDefaultAIConfigCredentialId(providerId)
+    const providerResourceId = aiProviderResource.buildId({ id: providerId })
+    const credentialResourceId = credentialResource.buildId({ id: credentialId })
 
-    await database.insert(aiProviderTable).values({
-      id: providerId,
+    await database.insert(aiProviderResource).values({
+      id: providerResourceId,
       baseUrl: 'https://api.openai.example/v1',
     }).execute()
 
-    await database.insert(credentialTable).values({
-      id: credentialId,
+    await database.insert(credentialResource).values({
+      id: credentialResourceId,
       provider: aiConfigProviderRef(providerId),
       service: 'ai',
       status: 'active',
@@ -139,8 +169,8 @@ describe('chat collections integration', () => {
       baseUrl: 'https://api.openai.example/v1',
     })
 
-    await (database as any).deleteById(credentialTable as any, credentialId)
-    await (database as any).deleteById(aiProviderTable as any, providerId)
+    await (database as any).deleteById(credentialResource as any, credentialResourceId)
+    await (database as any).deleteById(aiProviderResource as any, providerResourceId)
   })
 
   it('delete chat and verify via SELECT', { timeout: 90000 }, async () => {
@@ -148,16 +178,16 @@ describe('chat collections integration', () => {
 
     const id = `chat-del-${Date.now()}`
     const resourceId = chatResourceId(id)
-    await database.insert(chatTable).values({
+    await database.insert(chatResource).values({
       id: resourceId,
       title: 'Delete Me',
       participants: [webId],
     }).execute()
 
-    await (database as any).deleteById(chatTable as any, resourceId)
+    await (database as any).deleteById(chatResource as any, resourceId)
 
     // Verify deletion via SPARQL SELECT
-    const row = await (database as any).findById(chatTable as any, resourceId)
+    const row = await (database as any).findById(chatResource as any, resourceId)
     expect(row).toBeNull()
   })
 })

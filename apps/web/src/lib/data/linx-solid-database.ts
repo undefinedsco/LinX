@@ -13,11 +13,17 @@ import {
 export interface CreateLinxSolidDatabaseOptions {
   initTimeoutMs?: number
   podUrl?: string | null
+  transportUrlRewrite?: TransportUrlRewrite | null
 }
 
 const DEFAULT_INIT_TIMEOUT_MS = 30_000
 const inFlightCreations = new Map<string, Promise<SolidDatabase>>()
 const MAX_BOOTSTRAP_EVENTS = 80
+
+export interface TransportUrlRewrite {
+  fromBaseUrl: string
+  toBaseUrl: string
+}
 
 /**
  * Creates a LinX-ready Solid database.
@@ -63,7 +69,8 @@ async function createLinxSolidDatabaseUncached(
   report({ stage: 'database:create:start' })
   installBrowserSparqlEngine()
 
-  const instance = drizzle(session as any, {
+  const runtimeSession = createTransportRewriteSession(session, options.transportUrlRewrite)
+  const instance = drizzle(runtimeSession as any, {
     disableInteropDiscovery: true,
     podUrl: normalizePodUrl(options.podUrl),
     resourcePreparation: 'best-effort',
@@ -100,6 +107,98 @@ async function createLinxSolidDatabaseUncached(
   return instance
 }
 
+export function createTransportRewriteSession(
+  session: unknown,
+  rewrite?: TransportUrlRewrite | null,
+): unknown {
+  if (!rewrite || !isUsableTransportRewrite(rewrite)) {
+    return session
+  }
+
+  const sourceSession = session as { fetch?: typeof fetch } | null | undefined
+  if (typeof sourceSession?.fetch !== 'function') {
+    return session
+  }
+
+  const rewrittenFetch = (input: RequestInfo | URL, init?: RequestInit) => {
+      const rewrittenInput = rewriteFetchInput(input, rewrite)
+      return sourceSession.fetch!(rewrittenInput, init)
+    }
+
+  if (typeof session === 'object' && session !== null) {
+    return new Proxy(session, {
+      get(target, property, receiver) {
+        if (property === 'fetch') {
+          return rewrittenFetch
+        }
+        return Reflect.get(target, property, receiver)
+      },
+    })
+  }
+
+  return {
+    fetch: rewrittenFetch,
+  }
+}
+
+function rewriteFetchInput(input: RequestInfo | URL, rewrite: TransportUrlRewrite): RequestInfo | URL {
+  const originalUrl = getRequestUrl(input)
+  const rewrittenUrl = originalUrl ? rewriteUrlBase(originalUrl, rewrite.fromBaseUrl, rewrite.toBaseUrl) : null
+  if (!rewrittenUrl || rewrittenUrl === originalUrl) {
+    return input
+  }
+
+  if (typeof Request !== 'undefined' && input instanceof Request) {
+    return new Request(rewrittenUrl, input)
+  }
+
+  if (input instanceof URL) {
+    return new URL(rewrittenUrl)
+  }
+
+  return rewrittenUrl
+}
+
+function getRequestUrl(input: RequestInfo | URL): string | null {
+  if (typeof input === 'string') {
+    return input
+  }
+  if (input instanceof URL) {
+    return input.toString()
+  }
+  if (typeof Request !== 'undefined' && input instanceof Request) {
+    return input.url
+  }
+  return null
+}
+
+function isUsableTransportRewrite(rewrite: TransportUrlRewrite): boolean {
+  return Boolean(
+    normalizePodUrl(rewrite.fromBaseUrl)
+    && normalizePodUrl(rewrite.toBaseUrl)
+    && normalizePodUrl(rewrite.fromBaseUrl) !== normalizePodUrl(rewrite.toBaseUrl),
+  )
+}
+
+function rewriteUrlBase(requestUrl: string, fromBaseUrl: string, toBaseUrl: string): string | null {
+  try {
+    const request = new URL(requestUrl)
+    const from = new URL(fromBaseUrl)
+    const to = new URL(toBaseUrl)
+    if (request.origin !== from.origin || !request.pathname.startsWith(from.pathname)) {
+      return null
+    }
+
+    const suffix = request.pathname.slice(from.pathname.length)
+    const rewritten = new URL(suffix.replace(/^\/+/, ''), to)
+    rewritten.search = request.search
+    rewritten.hash = request.hash
+    return rewritten.toString()
+  } catch {
+    return null
+  }
+}
+
 function resolveCreationCacheKeys(session: unknown, podUrl?: string | null): string[] {
   const info = (session as { info?: { sessionId?: string; webId?: string } } | null | undefined)?.info
   const normalizedPodUrl = normalizePodUrl(podUrl)
@@ -126,15 +225,15 @@ function installInsertWriteGuard(db: SolidDatabase): void {
   }
 
   const originalInsert = target.insert.bind(target)
-  target.insert = (table: unknown) => {
-    const builder = originalInsert(table)
+  target.insert = (resource: unknown) => {
+    const builder = originalInsert(resource)
     const originalValues = builder?.values
     if (typeof originalValues !== 'function') {
       return builder
     }
 
     builder.values = (values: unknown) => {
-      if (!isIdpResource(table)) {
+      if (!isIdpResource(resource)) {
         assertInsertValuesBelongToCurrentPod(db, values)
       }
       return originalValues.call(builder, values)
@@ -163,12 +262,12 @@ function wrapUpdateByIri(db: SolidDatabase, target: any): void {
   }
 
   const original = target.updateByIri.bind(target)
-  target.updateByIri = async (table: unknown, iri: string, values: Record<string, unknown>, ...rest: unknown[]) => {
-    if (!isIdpResource(table)) {
+  target.updateByIri = async (resource: unknown, iri: string, values: Record<string, unknown>, ...rest: unknown[]) => {
+    if (!isIdpResource(resource)) {
       assertIriBelongsToCurrentPod(db, iri, 'update')
       assertUpdateValuesBelongToCurrentPod(db, values)
     }
-    return await original(table, iri, values, ...rest)
+    return await original(resource, iri, values, ...rest)
   }
 }
 
@@ -178,12 +277,12 @@ function wrapUpdateById(db: SolidDatabase, target: any): void {
   }
 
   const original = target.updateById.bind(target)
-  target.updateById = async (table: unknown, id: string, values: Record<string, unknown>, ...rest: unknown[]) => {
-    if (!isIdpResource(table)) {
+  target.updateById = async (resource: unknown, id: string, values: Record<string, unknown>, ...rest: unknown[]) => {
+    if (!isIdpResource(resource)) {
       assertAbsoluteIdBelongsToCurrentPod(db, id, 'update')
       assertUpdateValuesBelongToCurrentPod(db, values)
     }
-    return await original(table, id, values, ...rest)
+    return await original(resource, id, values, ...rest)
   }
 }
 
@@ -193,11 +292,11 @@ function wrapDeleteByIri(db: SolidDatabase, target: any): void {
   }
 
   const original = target.deleteByIri.bind(target)
-  target.deleteByIri = async (table: unknown, iri: string, ...rest: unknown[]) => {
-    if (!isIdpResource(table)) {
+  target.deleteByIri = async (resource: unknown, iri: string, ...rest: unknown[]) => {
+    if (!isIdpResource(resource)) {
       assertIriBelongsToCurrentPod(db, iri, 'delete')
     }
-    return await original(table, iri, ...rest)
+    return await original(resource, iri, ...rest)
   }
 }
 
@@ -207,12 +306,12 @@ function wrapDeleteById(db: SolidDatabase, target: any): void {
   }
 
   const original = target.deleteById.bind(target)
-  target.deleteById = async (table: unknown, id: string, ...rest: unknown[]) => {
-    if (!isIdpResource(table)) {
+  target.deleteById = async (resource: unknown, id: string, ...rest: unknown[]) => {
+    if (!isIdpResource(resource)) {
       assertCurrentPodBaseUrl(db, 'delete')
       assertAbsoluteIdBelongsToCurrentPod(db, id, 'delete')
     }
-    return await original(table, id, ...rest)
+    return await original(resource, id, ...rest)
   }
 }
 
@@ -235,8 +334,8 @@ function isAbsoluteHttpIri(value: string): boolean {
   }
 }
 
-function isIdpResource(table: unknown): boolean {
-  return (table as any)?.config?.base === 'idp:///profile/card'
+function isIdpResource(resource: unknown): boolean {
+  return (resource as any)?.config?.base === 'idp:///profile/card'
 }
 
 function applyPodUrlOverride(db: SolidDatabase, podUrl?: string | null): void {

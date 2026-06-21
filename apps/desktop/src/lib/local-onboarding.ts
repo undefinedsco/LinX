@@ -61,6 +61,12 @@ export interface LocalOnboardingTunnel {
   endpoint: string | null
 }
 
+export interface LocalOnboardingNetworkConfigInput {
+  publicDomain?: string | null
+  tunnelProvider?: 'cloudflare' | null
+  tunnelToken?: string | null
+}
+
 export interface LocalOnboardingSnapshot {
   state: LocalOnboardingState
   spaceKind: LocalSpaceKind | null
@@ -97,6 +103,7 @@ interface LocalOnboardingControllerOptions {
 }
 
 type LocalXpodStatus = Awaited<ReturnType<LocalOnboardingControllerOptions['xpodManager']['getStatus']>>
+type ManagedDomainConfig = NonNullable<SolidProvider['managed']>['domain']
 
 const DEFAULT_SNAPSHOT: LocalOnboardingSnapshot = {
   state: 'space_required',
@@ -266,6 +273,25 @@ export class LocalOnboardingController {
 
     const localEntryUrl = localUrl ?? baseUrl ?? provider.issuerUrl
     const capabilities = await this.fetchCapabilities(localEntryUrl)
+    if (
+      spaceKind === 'local'
+      && publicUrl
+      && capabilities.baseUrl
+      && !urlsEqual(capabilities.baseUrl, publicUrl)
+    ) {
+      return this.updateSnapshot({
+        state: 'idle',
+        spaceKind,
+        localUrl,
+        baseUrl,
+        ...bindingFields,
+        capabilities,
+        message: '本地空间地址已变化，需要重新启动本地服务。',
+        errorCode: 'LOCAL_CANONICAL_MISMATCH',
+        canRetry: true,
+        canOpenSettings: true,
+      })
+    }
 
     return this.updateSnapshot({
       state: 'ready',
@@ -320,7 +346,14 @@ export class LocalOnboardingController {
     }
 
     if (status.running && !this.shouldRestartForSpaceKind(provider, status, spaceKind)) {
-      return this.refresh()
+      const canonicalMismatch = await this.hasRunningLocalCanonicalMismatch({
+        spaceKind,
+        localUrl,
+        publicUrl,
+      })
+      if (!canonicalMismatch) {
+        return this.refresh()
+      }
     }
 
     this.updateSnapshot({
@@ -406,8 +439,33 @@ export class LocalOnboardingController {
     provider?: 'cloudflare'
     token: string
   }): Promise<LocalOnboardingSnapshot> {
-    const token = extractCloudflareTunnelToken(input.token)
-    if (!token) {
+    return this.saveNetworkConfig({
+      tunnelProvider: input.provider ?? 'cloudflare',
+      tunnelToken: input.token,
+    })
+  }
+
+  public async saveNetworkConfig(input: LocalOnboardingNetworkConfigInput): Promise<LocalOnboardingSnapshot> {
+    const provider = this.ensureBootstrapProvider('local')
+    if (!provider.managed) {
+      throw new Error(`Provider '${provider.id}' is not a managed pod`)
+    }
+
+    const publicDomainConfig = resolvePublicDomainConfig(input.publicDomain, provider.managed.domain)
+    if (publicDomainConfig.error) {
+      return this.updateSnapshot({
+        ...this.snapshot,
+        state: this.snapshot.state === 'space_required' ? 'idle' : this.snapshot.state,
+        message: publicDomainConfig.error,
+        errorCode: 'LOCAL_PUBLIC_DOMAIN_INVALID',
+        canRetry: true,
+        canOpenSettings: true,
+      })
+    }
+
+    const hasTunnelTokenInput = typeof input.tunnelToken === 'string'
+    const token = hasTunnelTokenInput ? extractCloudflareTunnelToken(input.tunnelToken ?? '') : ''
+    if (hasTunnelTokenInput && input.tunnelToken?.trim() && !token) {
       return this.updateSnapshot({
         ...this.snapshot,
         state: this.snapshot.state === 'space_required' ? 'idle' : this.snapshot.state,
@@ -418,16 +476,13 @@ export class LocalOnboardingController {
       })
     }
 
-    const provider = this.ensureBootstrapProvider('local')
-    if (!provider.managed) {
-      throw new Error(`Provider '${provider.id}' is not a managed pod`)
-    }
-
     const nextManaged = {
       ...provider.managed,
       spaceKind: 'local' as const,
-      tunnelToken: token,
+      domain: publicDomainConfig.domain,
+      tunnelToken: token || provider.managed.tunnelToken,
     }
+    provider.managed = nextManaged
     this.updateProvider?.(provider.id, { managed: nextManaged })
     this.persistResolvedState({
       spaceKind: 'local',
@@ -518,12 +573,15 @@ export class LocalOnboardingController {
       return false
     }
 
-    const desiredTunnelToken = provider.managed?.tunnelToken
-    if (desiredTunnelToken && status.provisioning?.tunnelToken !== desiredTunnelToken) {
+    if (!status.provisioning?.publicUrl || !status.provisioning?.provisionCode || !status.provisioning?.cloudIdentityUrl) {
       return true
     }
 
-    if (!status.provisioning?.publicUrl || !status.provisioning?.provisionCode || !status.provisioning?.cloudIdentityUrl) {
+    const configuredTunnelToken = provider.managed?.tunnelToken
+    if (
+      configuredTunnelToken
+      && status.provisioning.tunnelToken !== configuredTunnelToken
+    ) {
       return true
     }
 
@@ -545,7 +603,11 @@ export class LocalOnboardingController {
 
   private resolveConfiguredPublicUrl(provider: SolidProvider): string | null {
     const domain = provider.managed?.domain
-    if (!domain || domain.type !== 'custom' || !domain.value?.trim()) {
+    if (
+      !domain
+      || (domain.type !== 'custom' && domain.type !== 'managed')
+      || !domain.value?.trim()
+    ) {
       return null
     }
 
@@ -566,6 +628,22 @@ export class LocalOnboardingController {
       hasToken,
       endpoint: provisioning?.tunnelEndpoint ?? null,
     }
+  }
+
+  private async hasRunningLocalCanonicalMismatch(input: {
+    spaceKind: LocalSpaceKind | null;
+    localUrl: string | null;
+    publicUrl: string | null;
+  }): Promise<boolean> {
+    if (input.spaceKind !== 'local' || !input.localUrl || !input.publicUrl) {
+      return false
+    }
+
+    const capabilities = await this.fetchCapabilities(input.localUrl)
+    return Boolean(
+      capabilities.baseUrl
+      && !urlsEqual(capabilities.baseUrl, input.publicUrl),
+    )
   }
 
   private resolveConnectivityForSnapshot(
@@ -834,6 +912,88 @@ function formatOptionalLocalProgressText(value: string | null | undefined): stri
 
 function isInternalDiagnosticText(value: string): boolean {
   return /node_modules|\/Users\/|\\Users\\|Application Support|\.js:\d+|\.ts:\d+|Require stack|Cannot find module|jsonld|componentsjs|publicUrl|provisionCode|spDomain|baseUrl|canonical|OIDC|issuer|provider|HTTP\s+\d{3}|\bPod\b|Solid|Agent|Secretary|WebID|IRI|RDF|row\.id|https?:\/\/|file:\/\/|localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(value)
+}
+
+function resolvePublicDomainConfig(
+  value: string | null | undefined,
+  fallback: ManagedDomainConfig,
+): {
+  domain: ManagedDomainConfig
+  error: string | null
+} {
+  if (typeof value === 'undefined') {
+    return { domain: fallback, error: null }
+  }
+
+  const raw = value?.trim() ?? ''
+  if (!raw) {
+    return { domain: { type: 'none' }, error: null }
+  }
+
+  const parsed = parsePublicDomain(raw)
+  if (!parsed.hostname) {
+    return {
+      domain: fallback,
+      error: parsed.error ?? '请填写可公开访问的 HTTPS 域名。',
+    }
+  }
+
+  if (isLocalhostHostname(parsed.hostname) || isPrivateIpHostname(parsed.hostname)) {
+    return {
+      domain: fallback,
+      error: '公网域名不能是 localhost、局域网地址或本机 IP。',
+    }
+  }
+
+  return {
+    domain: {
+      type: isManagedCloudDomain(parsed.hostname) ? 'managed' : 'custom',
+      value: parsed.hostname,
+    },
+    error: null,
+  }
+}
+
+function parsePublicDomain(raw: string): { hostname: string | null; error: string | null } {
+  try {
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) {
+      const url = new URL(raw)
+      if (url.protocol !== 'https:') {
+        return { hostname: null, error: '自有公网域名必须使用 HTTPS。' }
+      }
+      if ((url.pathname && url.pathname !== '/') || url.search || url.hash) {
+        return { hostname: null, error: '公网域名只填写 origin，不要包含路径或参数。' }
+      }
+      return { hostname: url.hostname, error: null }
+    }
+
+    if (raw.includes('/') || raw.includes('?') || raw.includes('#')) {
+      return { hostname: null, error: '公网域名只填写域名，不要包含路径或参数。' }
+    }
+
+    const url = new URL(`https://${raw}`)
+    return { hostname: url.hostname, error: null }
+  } catch {
+    return { hostname: null, error: '请填写可公开访问的 HTTPS 域名。' }
+  }
+}
+
+function isManagedCloudDomain(hostname: string): boolean {
+  return /^node-[a-z0-9-]+\.undefineds\.co$/i.test(hostname)
+    || /^[a-z0-9-]+\.nodes\.undefineds\.co$/i.test(hostname)
+}
+
+function isLocalhostHostname(hostname: string): boolean {
+  return hostname === 'localhost' || hostname.endsWith('.localhost')
+}
+
+function isPrivateIpHostname(hostname: string): boolean {
+  if (/^(127\.|10\.|192\.168\.)/.test(hostname)) {
+    return true
+  }
+
+  const match = hostname.match(/^172\.(\d+)\./)
+  return Boolean(match && Number(match[1]) >= 16 && Number(match[1]) <= 31)
 }
 
 function extractCloudflareTunnelToken(input: string): string {

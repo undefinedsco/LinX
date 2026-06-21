@@ -111,7 +111,7 @@ describe('login-utils post-login target helpers', () => {
 
     expect(getPendingLoginTransaction()).toEqual(expect.objectContaining({
       route: 'local',
-      oidcEntryUrl: 'https://node-0000.undefineds.co',
+      oidcEntryUrl: 'https://id.undefineds.co',
       oidcIssuerUrl: 'https://id.undefineds.co',
       accountIssuerUrl: 'https://id.undefineds.co',
       storageProviderUrl: 'https://node-0000.undefineds.co',
@@ -298,7 +298,7 @@ describe('login-utils post-login target helpers', () => {
 
     expect(getRememberedAccount()).toEqual({
       displayName: 'Ganlu05',
-      issuerUrl: 'https://node-0000.undefineds.co',
+      issuerUrl: 'https://id.undefineds.co',
       issuerLabel: undefined,
       storageProviderUrl: 'https://node-0000.undefineds.co',
       storageProviderLabel: 'Local',

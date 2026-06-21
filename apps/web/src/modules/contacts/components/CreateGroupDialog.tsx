@@ -51,7 +51,7 @@ export function CreateGroupDialog({ open, onOpenChange, onCreated }: CreateGroup
 
   const candidateContacts = useMemo(
     () => allContacts.filter((c: ContactRow) =>
-      !isGroupContact(c) && !c.deletedAt && typeof c.entityUri === 'string' && c.entityUri.length > 0
+      !isGroupContact(c) && !c.deletedAt && typeof c.about === 'string' && c.about.length > 0
     ),
     [allContacts]
   )
@@ -82,7 +82,7 @@ export function CreateGroupDialog({ open, onOpenChange, onCreated }: CreateGroup
     try {
       const byId = new Map(allContacts.map((contact) => [contact.id, contact]))
       const participants = Array.from(selectedParticipants)
-        .map((id) => byId.get(id)?.entityUri)
+        .map((id) => byId.get(id)?.about)
         .filter((uri): uri is string => typeof uri === 'string' && uri.length > 0)
 
       // Always use createGroupWithChat which validates member count
@@ -90,6 +90,7 @@ export function CreateGroupDialog({ open, onOpenChange, onCreated }: CreateGroup
         name: groupName.trim(),
         participants,
         ownerRef,
+        ...(session.fetch ? { matrix: { authFetch: session.fetch } } : {}),
       })
       onCreated?.(result.id, result.chatId)
       handleClose()

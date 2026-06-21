@@ -75,6 +75,16 @@ export const searchProviderModels = async (
   const providerDef = typeof provider === 'string' ? providerMap[provider] : provider
   const providerId = providerDef?.id || (typeof provider === 'string' ? provider : 'custom')
 
+  if (providerId === 'undefineds' && !apiKey) {
+    const models = (providerDef?.defaultModels || []).map((id) => ({
+      id,
+      name: id === 'linx-lite' ? 'LinX Lite' : id === 'linx' ? 'LinX' : id,
+      capabilities: [],
+      logo: providerDef?.avatar,
+    }))
+    return { '平台内置': models }
+  }
+
   if (providerId !== 'ollama' && !apiKey) {
     throw new Error('请先填写 API Key 再搜索在线模型')
   }

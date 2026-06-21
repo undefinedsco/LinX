@@ -37,14 +37,14 @@ Contacts 展示的是 Contact 投影。它可以链接到 Person 或 Agent，但
 | --- | --- | --- |
 | Contact | 通讯录卡片、关系、备注、最近互动 | 可链接到 Person 或 Agent |
 | Person | 人类身份、WebID/Profile | 不自动拥有 Agent home |
-| Agent | 可执行助手、能力根 | 必须有 `/.data/agents/{agentId}/` |
+| Agent | 可执行助手、能力根 | 必须有 `/agents/{agentId}/` |
 
 AI Secretary 同时有 Contact 投影和 Agent 身份：
 
 ```text
 Contact: /.data/contacts/ai-secretary.ttl
-Agent:   /.data/agents/secretary/profile.ttl
-Home:    /.data/agents/secretary/
+Agent:   /agents/secretary/
+Home:    /agents/secretary/
 ```
 
 联系人详情可以显示这些链接作为开发/高级信息，但首屏语言应是“默认助手”“发消息”“请赐名”，不要变成配置表单。

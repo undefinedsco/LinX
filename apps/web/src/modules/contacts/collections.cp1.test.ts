@@ -6,14 +6,19 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { ContactClass, ContactType, chatTable, contactTable } from '@undefineds.co/models'
+import { ContactClass, ContactType, chatResource, contactResource } from '@undefineds.co/models'
 
 const mockDb = {
+  getDialect: vi.fn(() => ({
+    getPodUrl: () => 'https://pod.example/alice/',
+  })),
   insert: vi.fn().mockReturnValue({
     values: vi.fn().mockReturnValue({
       execute: vi.fn().mockResolvedValue(undefined),
     }),
   }),
+  updateById: vi.fn().mockResolvedValue(undefined),
+  findById: vi.fn().mockResolvedValue(null),
   resolveRowIri: vi.fn(),
   resolveRowId: vi.fn(),
 }
@@ -58,17 +63,22 @@ function resetCollectionMocks() {
 }
 
 function resetMockDb() {
+  mockDb.getDialect.mockReturnValue({
+    getPodUrl: () => 'https://pod.example/alice/',
+  })
   mockDb.insert.mockImplementation(() => ({
     values: vi.fn().mockReturnValue({
       execute: vi.fn().mockResolvedValue(undefined),
     }),
   }))
-  mockDb.resolveRowIri.mockImplementation((table, row: Record<string, unknown>) => {
+  mockDb.updateById.mockResolvedValue(undefined)
+  mockDb.findById.mockResolvedValue(null)
+  mockDb.resolveRowIri.mockImplementation((resource, row: Record<string, unknown>) => {
     if (typeof row.id !== 'string' || row.id.length === 0) {
       throw new Error('Mock row is missing row.id.')
     }
-    if (table === chatTable) return `https://pod.example/.data/chat/${row.id}/index.ttl#this`
-    if (table === contactTable) return `https://pod.example/.data/contacts/${row.id}.ttl#this`
+    if (resource === chatResource) return `https://pod.example/.data/chat/${row.id}/index.ttl#this`
+    if (resource === contactResource) return `https://pod.example/.data/contacts/${row.id}.ttl#this`
     return `https://pod.example/${row.id}`
   })
   mockDb.resolveRowId.mockImplementation((_table, row: Record<string, unknown>) => {
@@ -120,7 +130,7 @@ function seedGroupContact(groupId = 'group-1', chatId = 'chat-1') {
     name: 'Test Group',
     rdfType: ContactClass.GROUP,
     contactType: ContactType.SOLID,
-    entityUri: `https://pod.example/.data/chat/${chatId}/index.ttl#this`,
+    about: `https://pod.example/.data/chat/${chatId}/index.ttl#this`,
   })
 }
 
@@ -204,6 +214,46 @@ describe('CP1: createGroupWithChat', () => {
 
     expect(result.name).toBe('Owner Plus One')
     expect(mockInsert).toHaveBeenCalledTimes(1)
+  })
+
+  it('creates a Matrix room for group chat when an authenticated Matrix adapter is provided', async () => {
+    const authFetch = vi.fn(async () => new Response(JSON.stringify({
+      room_id: '!room:pod.example',
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+
+    const result = await contactOps.createGroupWithChat({
+      name: 'Matrix Group',
+      participants: ['https://pod.example/bob/profile/card#me'],
+      ownerRef: 'https://pod.example/alice/profile/card#me',
+      matrix: { authFetch: authFetch as any },
+    })
+
+    expect(authFetch).toHaveBeenCalledWith(
+      'https://pod.example/_matrix/client/v3/createRoom',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    const body = JSON.parse((authFetch.mock.calls[0]?.[1] as RequestInit).body as string)
+    expect(body.name).toBe('Matrix Group')
+    expect(body.invite).toEqual(['@bob_profile_card_me:pod.example'])
+    expect(result.chatId).toMatch(/^matrix-[a-f0-9]{16}\/index\.ttl#this$/)
+    expect(mockInsert).not.toHaveBeenCalled()
+    expect(mockDb.updateById).toHaveBeenCalledWith(
+      chatResource,
+      result.chatId,
+      expect.objectContaining({
+        participants: [
+          'https://pod.example/alice/profile/card#me',
+          'https://pod.example/bob/profile/card#me',
+        ],
+        metadata: expect.objectContaining({
+          protocol: 'matrix',
+          roomId: '!room:pod.example',
+        }),
+      }),
+    )
   })
 })
 
@@ -367,9 +417,9 @@ describe('CP1: resolveMembers', () => {
   })
 
   it('should resolve member IDs to ContactRow objects', () => {
-    mockCollectionState.set('c-1', { id: 'c-1', name: 'Alice', entityUri: 'https://pod.example/profile/c-1#me' })
-    mockCollectionState.set('c-2', { id: 'c-2', name: 'Bob', entityUri: 'https://pod.example/profile/c-2#me' })
-    mockCollectionState.set('c-3', { id: 'c-3', name: 'Charlie', entityUri: 'https://pod.example/profile/c-3#me' })
+    mockCollectionState.set('c-1', { id: 'c-1', name: 'Alice', about: 'https://pod.example/profile/c-1#me' })
+    mockCollectionState.set('c-2', { id: 'c-2', name: 'Bob', about: 'https://pod.example/profile/c-2#me' })
+    mockCollectionState.set('c-3', { id: 'c-3', name: 'Charlie', about: 'https://pod.example/profile/c-3#me' })
 
     const result = contactOps.resolveMembers([
       'https://pod.example/profile/c-1#me',
@@ -382,7 +432,7 @@ describe('CP1: resolveMembers', () => {
   })
 
   it('should skip unknown IDs', () => {
-    mockCollectionState.set('c-1', { id: 'c-1', name: 'Alice', entityUri: 'https://pod.example/profile/c-1#me' })
+    mockCollectionState.set('c-1', { id: 'c-1', name: 'Alice', about: 'https://pod.example/profile/c-1#me' })
 
     const result = contactOps.resolveMembers(['https://pod.example/profile/c-1#me', 'unknown'])
 
@@ -390,15 +440,15 @@ describe('CP1: resolveMembers', () => {
     expect(result[0].name).toBe('Alice')
   })
 
-  it('should resolve member entity URIs back to contacts', () => {
+  it('should resolve member about refs back to contacts', () => {
     mockCollectionState.set('c-1', {
       id: 'c-1',
-      entityUri: 'https://pod.example/profile/c-1#me',
+      about: 'https://pod.example/profile/c-1#me',
       name: 'Alice',
     })
     mockCollectionState.set('c-2', {
       id: 'c-2',
-      entityUri: 'https://pod.example/profile/c-2#me',
+      about: 'https://pod.example/profile/c-2#me',
       name: 'Bob',
     })
 

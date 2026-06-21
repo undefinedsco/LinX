@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { forwardRef } from 'react'
 
@@ -18,8 +18,11 @@ const { mockSetThreadId, mockUseChatKit } = vi.hoisted(() => {
 })
 const mockIsRuntimeSessionMode = vi.fn()
 const mockUseRuntimeSession = vi.fn()
+const mockResolveLocalWorkspaceUri = vi.fn(async () => 'linx://device-123/repo/linx')
 const mockUseWorkspaceList = vi.fn()
+const mockUseChatList = vi.fn()
 const mockUseThreadList = vi.fn()
+const mockUseDefaultSecretaryBootstrapSettling = vi.fn()
 const mockClearMessageAnchor = vi.fn()
 const mockRuntimeEventHandler = { current: null as ((event: unknown) => void) | null }
 
@@ -102,19 +105,21 @@ const mockMutations = {
 
 vi.mock('../collections', () => ({
   useChatInit: () => ({ isReady: true }),
-  useChatList: () => ({
-    data: [{ id: 'chat-1', title: 'Runtime Chat' }],
-  }),
+  useChatList: () => mockUseChatList(),
   useThreadList: () => mockUseThreadList(),
   useWorkspaceList: () => mockUseWorkspaceList(),
   useChatMutations: () => mockMutations,
-  useLinxDefaultSecretaryBootstrapSettling: () => false,
+  useLinxDefaultSecretaryBootstrapSettling: () => mockUseDefaultSecretaryBootstrapSettling(),
+  LINX_DEFAULT_SECRETARY: {
+    chatId: '__secretary__/index.ttl#this',
+    threadTitle: '默认话题',
+  },
 }))
 
 vi.mock('../runtime-client', () => ({
   fetchRuntimeSessionLog: vi.fn(),
   isRuntimeSessionMode: () => mockIsRuntimeSessionMode(),
-  resolveLocalWorkspaceUri: vi.fn(async () => 'linx://node-123/repo/linx'),
+  resolveLocalContainer: (...args: unknown[]) => mockResolveLocalWorkspaceUri(...args),
   useRuntimeSession: () => mockUseRuntimeSession(),
   useRuntimeSessionEvents: vi.fn((_id: string | undefined, handler: (event: unknown) => void) => {
     mockRuntimeEventHandler.current = handler
@@ -131,10 +136,14 @@ describe('ChatContentPane', () => {
       data: [],
       isLoading: false,
     })
+    mockUseChatList.mockReturnValue({
+      data: [{ id: 'chat-1', title: 'Runtime Chat' }],
+    })
     mockUseThreadList.mockReturnValue({
       data: [{ id: 'thread-1', title: '默认话题' }],
       isLoading: false,
     })
+    mockUseDefaultSecretaryBootstrapSettling.mockReturnValue(false)
     mockUseRuntimeSession.mockReturnValue({
       runtimeSession: null,
       refetch: vi.fn(),
@@ -148,7 +157,11 @@ describe('ChatContentPane', () => {
       data: [],
       isLoading: false,
     })
+    mockMutations.ensureThreadWorkspace.mutateAsync.mockResolvedValue('https://alice.example/.data/workspaces/thread-1/')
+    mockResolveLocalWorkspaceUri.mockResolvedValue('linx://device-123/repo/linx')
     storeState.messageAnchorId = null
+    storeState.selectedChatId = 'chat-1'
+    storeState.selectedThreadId = 'thread-1'
     mockRuntimeEventHandler.current = null
   })
 
@@ -161,6 +174,103 @@ describe('ChatContentPane', () => {
       }),
     )
     expect(mockSetThreadId).not.toHaveBeenCalled()
+  })
+
+  it('exposes LinX platform models to ChatKit with linx-lite as the default', () => {
+    render(<ChatContentPane theme="light" />)
+
+    expect(mockUseChatKit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        composer: expect.objectContaining({
+          models: [
+            expect.objectContaining({ id: 'linx-lite', label: 'LinX Lite', default: true }),
+            expect.objectContaining({ id: 'linx', label: 'LinX', default: false }),
+          ],
+        }),
+      }),
+    )
+  })
+
+  it('does not create an initial Secretary thread while bootstrap is still pending', async () => {
+    storeState.selectedChatId = '__secretary__/index.ttl#this'
+    storeState.selectedThreadId = null
+    mockUseChatList.mockReturnValue({
+      data: [{ id: '__secretary__/index.ttl#this', title: 'AI Secretary' }],
+    })
+    mockUseThreadList.mockReturnValue({
+      data: [],
+      isLoading: false,
+    })
+    mockUseDefaultSecretaryBootstrapSettling.mockReturnValue(true)
+
+    render(<ChatContentPane theme="light" />)
+
+    await waitFor(() => {
+      expect(screen.getByText('正在准备话题...')).toBeInTheDocument()
+    })
+    expect(mockMutations.createThread.mutate).not.toHaveBeenCalled()
+  })
+
+  it('creates a random-id initial thread and binds the default Pod workspace after bootstrap when no thread exists', async () => {
+    storeState.selectedChatId = 'chat-1'
+    storeState.selectedThreadId = null
+    mockUseThreadList.mockReturnValue({
+      data: [],
+      isLoading: false,
+    })
+    mockUseDefaultSecretaryBootstrapSettling.mockReturnValue(false)
+
+    render(<ChatContentPane theme="light" />)
+
+    await waitFor(() => {
+      expect(mockMutations.createThread.mutate).toHaveBeenCalled()
+    })
+    const [input] = mockMutations.createThread.mutate.mock.calls[0]
+    expect(input).toEqual({
+      chatId: 'chat-1',
+      title: '默认话题',
+    })
+    expect(input).not.toHaveProperty('threadId')
+
+    const [, options] = mockMutations.createThread.mutate.mock.calls[0]
+    await act(async () => {
+      options.onSuccess({ id: 'thread-1' })
+    })
+
+    expect(storeState.selectThread).toHaveBeenCalledWith('thread-1')
+    expect(mockMutations.ensureThreadWorkspace.mutateAsync).toHaveBeenCalledWith({
+      threadId: 'thread-1',
+      title: '默认话题',
+    })
+  })
+
+  it('does not retry automatic initial thread creation for the same chat after a failure', async () => {
+    storeState.selectedChatId = 'chat-1'
+    storeState.selectedThreadId = null
+    mockUseThreadList.mockReturnValue({
+      data: [],
+      isLoading: false,
+    })
+    mockUseDefaultSecretaryBootstrapSettling.mockReturnValue(false)
+
+    const { rerender } = render(<ChatContentPane theme="light" />)
+
+    await waitFor(() => {
+      expect(mockMutations.createThread.mutate).toHaveBeenCalledTimes(1)
+    })
+    const [, options] = mockMutations.createThread.mutate.mock.calls[0]
+
+    act(() => {
+      options.onError(new Error('network down'))
+    })
+
+    mockUseThreadList.mockReturnValue({
+      data: [],
+      isLoading: false,
+    })
+    rerender(<ChatContentPane theme="light" />)
+
+    expect(mockMutations.createThread.mutate).toHaveBeenCalledTimes(1)
   })
 
   it('shows approval banner and routes to inbox for pending approvals', () => {
@@ -249,6 +359,61 @@ describe('ChatContentPane', () => {
 
     expect(screen.getByText('当前话题已绑定空间文件夹')).toBeInTheDocument()
     expect(screen.getByText('Pod Workspace · https://alice.example/.data/workspaces/ws-1/ · main · 基于 origin/main')).toBeInTheDocument()
+  })
+
+  it('creates a Pod-container runtime session from the bound workspace without requiring a local repo path', async () => {
+    const createSession = vi.fn(async () => ({ id: 'runtime-pod-1' }))
+    const startSession = vi.fn(async () => ({ id: 'runtime-pod-1', status: 'active' }))
+    const refetch = vi.fn()
+    mockIsRuntimeSessionMode.mockReturnValue(true)
+    mockUseRuntimeSession.mockReturnValue({
+      runtimeSession: null,
+      refetch,
+      createSession: { isPending: false, mutateAsync: createSession },
+      startSession: { isPending: false, mutateAsync: startSession },
+      pauseSession: { isPending: false, mutateAsync: vi.fn() },
+      resumeSession: { isPending: false, mutateAsync: vi.fn() },
+      stopSession: { isPending: false, mutateAsync: vi.fn() },
+    })
+    mockUseWorkspaceList.mockReturnValue({
+      data: [{
+        id: 'ws-1',
+        title: 'Pod Workspace',
+        workspaceType: 'pod',
+        kind: 'folder',
+        rootUri: 'https://alice.example/.data/workspaces/ws-1/',
+      }],
+      isLoading: false,
+    })
+    mockUseThreadList.mockReturnValue({
+      data: [{
+        id: 'thread-1',
+        title: '默认话题',
+        workspace: 'https://alice.example/.data/workspaces/ws-1/',
+      }],
+      isLoading: false,
+    })
+
+    render(<ChatContentPane theme="light" />)
+
+    fireEvent.click(screen.getByRole('button', { name: /创建运行时会话/ }))
+    fireEvent.click(screen.getByRole('button', { name: '创建并启动' }))
+
+    await waitFor(() => {
+      expect(createSession).toHaveBeenCalledWith({
+        threadId: 'thread-1',
+        container: 'https://alice.example/.data/workspaces/ws-1/',
+        workspaceKind: 'pod-container',
+        title: '默认话题',
+        tool: 'codex',
+        baseRef: 'HEAD',
+        branch: undefined,
+      })
+    })
+    expect(startSession).toHaveBeenCalledWith('runtime-pod-1')
+    expect(refetch).toHaveBeenCalled()
+    expect(mockResolveLocalWorkspaceUri).not.toHaveBeenCalled()
+    expect(mockMutations.ensureThreadWorkspace.mutateAsync).not.toHaveBeenCalled()
   })
 
   it('does not expose internal runtime event errors', () => {

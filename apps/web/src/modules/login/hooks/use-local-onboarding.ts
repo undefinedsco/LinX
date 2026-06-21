@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type {
   LocalSpaceKind,
+  LocalOnboardingNetworkConfigInput,
   LocalOnboardingSnapshot,
 } from '@/types/electron-api'
 
@@ -101,6 +102,22 @@ export function useLocalOnboarding() {
     }
   }, [desktopApi, unavailableSnapshot])
 
+  const saveNetworkConfig = useCallback(async (input: LocalOnboardingNetworkConfigInput) => {
+    if (!desktopApi?.localOnboarding?.saveNetworkConfig) {
+      if (!input.tunnelToken) return unavailableSnapshot
+      return saveTunnelToken(input.tunnelToken)
+    }
+
+    setActing(true)
+    try {
+      const next = await desktopApi.localOnboarding.saveNetworkConfig(input)
+      setSnapshot(next)
+      return next
+    } finally {
+      setActing(false)
+    }
+  }, [desktopApi, saveTunnelToken, unavailableSnapshot])
+
   const testConnectivity = useCallback(async () => {
     if (!desktopApi?.localOnboarding?.testConnectivity) return unavailableSnapshot
     setActing(true)
@@ -121,6 +138,7 @@ export function useLocalOnboarding() {
     chooseSpace,
     continueLocal,
     saveTunnelToken,
+    saveNetworkConfig,
     testConnectivity,
     openAdvancedSettings,
     isDesktop: Boolean(desktopApi?.localOnboarding),

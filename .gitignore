@@ -87,7 +87,7 @@ demos/
 preview/
 .external/
 .xpod/
-data/
+/data/
 local-home.js
 standalone>
 *.tgz
@@ -100,4 +100,7 @@ lib/**/*.d.ts.map
 
 # W3C test data (downloaded at test time)
 packages/models/tests/w3c-data/
+
+# Legacy local models checkout; LinX consumes @undefineds.co/models from npm.
+/packages/models/
 .omx/

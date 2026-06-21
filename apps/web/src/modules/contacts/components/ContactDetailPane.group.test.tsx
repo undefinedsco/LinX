@@ -169,18 +169,18 @@ describe('ContactDetailPane group flows', () => {
     const group = makeContact({
       id: 'group-1',
       name: '产品群',
-      entityUri: '/.data/chats/chat-1/index.ttl#this',
+      about: '/.data/chats/chat-1/index.ttl#this',
       rdfType: ContactClass.GROUP,
     })
     const owner = makeContact({
       id: 'owner-contact',
       name: 'Me',
-      entityUri: 'https://me.example/profile/card#me',
+      about: 'https://me.example/profile/card#me',
     })
     const member = makeContact({
       id: 'member-1',
       name: 'Bob',
-      entityUri: 'https://bob.example/profile/card#me',
+      about: 'https://bob.example/profile/card#me',
     })
 
     mockContactState.set(group.id, group)
@@ -211,7 +211,7 @@ describe('ContactDetailPane group flows', () => {
     const group = makeContact({
       id: 'group-1',
       name: '产品群',
-      entityUri: '/.data/chats/chat-1/index.ttl#this',
+      about: '/.data/chats/chat-1/index.ttl#this',
       rdfType: ContactClass.GROUP,
     })
 
@@ -239,23 +239,23 @@ describe('ContactDetailPane group flows', () => {
     const group = makeContact({
       id: 'group-1',
       name: '产品群',
-      entityUri: '/.data/chats/chat-1/index.ttl#this',
+      about: '/.data/chats/chat-1/index.ttl#this',
       rdfType: ContactClass.GROUP,
     })
     const owner = makeContact({
       id: 'owner-contact',
       name: 'Me',
-      entityUri: 'https://me.example/profile/card#me',
+      about: 'https://me.example/profile/card#me',
     })
     const member = makeContact({
       id: 'member-1',
       name: 'Bob',
-      entityUri: 'https://bob.example/profile/card#me',
+      about: 'https://bob.example/profile/card#me',
     })
     const candidate = makeContact({
       id: 'member-2',
       name: 'Charlie',
-      entityUri: 'https://charlie.example/profile/card#me',
+      about: 'https://charlie.example/profile/card#me',
     })
 
     mockContactState.set(group.id, group)
@@ -298,7 +298,7 @@ describe('ContactDetailPane group flows', () => {
     const candidate = makeContact({
       id: 'member-2',
       name: 'Charlie',
-      entityUri: 'https://charlie.example/profile/card#me',
+      about: 'https://charlie.example/profile/card#me',
     })
 
     mockContactState.set(candidate.id, candidate)

@@ -2,7 +2,7 @@
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import { Message, type ThreadStreamEvent } from '@/lib/vendor/xpod-chatkit'
 import { Chat, Thread } from '@/lib/vendor/xpod-chatkit'
-import { aiProviderTable, credentialTable, getDefaultAIConfigCredentialId } from '@undefineds.co/models'
+import { aiProviderResource, credentialResource, getDefaultAIConfigCredentialId } from '@undefineds.co/models'
 import { createLocalChatKitFetch } from '../fetch-handler'
 import { createXpodIntegrationContext, type XpodIntegrationContext } from '@/test/xpod-integration'
 
@@ -10,8 +10,8 @@ const chatkitSchema = {
   Chat,
   Thread,
   Message,
-  aiProviderTable,
-  credentialTable,
+  aiProviderResource,
+  credentialResource,
 }
 
 let context: XpodIntegrationContext<typeof chatkitSchema> | null = null
@@ -20,7 +20,7 @@ async function getContext(): Promise<XpodIntegrationContext<typeof chatkitSchema
   if (context) return context
   context = await createXpodIntegrationContext({
     schema: chatkitSchema,
-    tables: [Chat, Thread, Message, aiProviderTable, credentialTable],
+    resources: [Chat, Thread, Message, aiProviderResource, credentialResource],
   })
   return context
 }
@@ -109,13 +109,13 @@ describe('LocalChatKit pod archive integration', () => {
     const providerId = 'openai'
     const credentialId = getDefaultAIConfigCredentialId(providerId)
 
-    await db.insert(aiProviderTable).values({
-      id: providerId,
+    await db.insert(aiProviderResource).values({
+      id: aiProviderResource.buildId({ id: providerId }),
       baseUrl: providerBase,
     }).execute()
 
-    await db.insert(credentialTable).values({
-      id: credentialId,
+    await db.insert(credentialResource).values({
+      id: credentialResource.buildId({ id: credentialId }),
       provider: `/settings/providers/${providerId}.ttl`,
       service: 'ai',
       status: 'active',

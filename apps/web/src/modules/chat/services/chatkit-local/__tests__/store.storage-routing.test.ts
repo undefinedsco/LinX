@@ -44,7 +44,9 @@ describe('LocalChatKitStore storage routing', () => {
     expect(messageInsert?.chat).toBe('https://node-0000.undefineds.co/alice/.data/chat/default/index.ttl#this')
     expect(messageInsert?.thread).toBe('https://node-0000.undefineds.co/alice/.data/chat/default/index.ttl#thread-1')
     expect(messageInsert?.maker).toBe('https://id.undefineds.co/alice/profile/card#me')
-    expect(messageInsert?.metadata).toEqual({ chatkitItemId: 'msg-1' })
+    expect((messageInsert?.metadata as any)?.chatkitItemId).toBe('msg-1')
+    expect((messageInsert?.metadata as any)?.reconciler?.latest?.eventType).toBe('message.appended')
+    expect((messageInsert?.metadata as any)?.reconciler?.latest?.wakeJobs?.[0]?.targetRole).toBe('primary-agent')
   })
 
   it('fails closed instead of deriving storage from a Cloud WebID when the selected SP Pod URL is missing', async () => {
@@ -118,7 +120,7 @@ describe('LocalChatKitStore storage routing', () => {
   it('resolves assistant maker from a contact IRI with findByIri instead of deriving a row id', async () => {
     const inserts: Array<Record<string, unknown>> = []
     const contactIri = 'https://node-0000.undefineds.co/alice/.data/contacts/contact-1.ttl'
-    const agentIri = 'https://node-0000.undefineds.co/alice/agents/agent-1/profile/card#me'
+    const agentIri = 'https://node-0000.undefineds.co/alice/agents/agent-1/'
     const db = {
       getDialect: () => ({
         getPodUrl: () => 'https://node-0000.undefineds.co/alice/',
@@ -136,7 +138,7 @@ describe('LocalChatKitStore storage routing', () => {
         if (iri === contactIri) {
           return {
             id: 'contact-1',
-            entityUri: agentIri,
+            about: agentIri,
           }
         }
         return null

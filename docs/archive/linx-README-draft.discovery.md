@@ -130,7 +130,7 @@ LinX is a product layer, not a standalone backend.
 
 ### Models Layer
 
-- repository-based access through `packages/models`
+- repository-based access through the published `@undefineds.co/models` package
 - Pod reads and writes go through structured models
 - UI should not reach directly into low-level Solid dataset APIs
 
@@ -145,7 +145,7 @@ LinX is a product layer, not a standalone backend.
 - **Web**: React, TypeScript, Vite
 - **Desktop**: Electron
 - **Mobile**: Capacitor
-- **Data**: `drizzle-solid` + `drizzle-orm` through `@linx/models`
+- **Data**: `drizzle-solid` + `drizzle-orm` through `@undefineds.co/models`
 - **Solid**: `@inrupt/solid-client`, auth libraries, common vocab packages
 - **AI UI**: Chat-oriented components and streaming integration
 
@@ -186,7 +186,7 @@ yarn test:e2e
 - `apps/web` — main React/Vite product
 - `apps/desktop` — Electron shell
 - `apps/mobile` — Capacitor shell
-- `packages/models` — Pod data models and repositories
+- `@undefineds.co/models` — published Pod data models and repositories
 - `packages/shared-ui` — reusable UI components
 - `packages/utils` — shared helpers
 - `tests/unit` — unit tests

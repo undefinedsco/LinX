@@ -138,6 +138,18 @@ LinX 的建模边界：
 - `policy`：允许 Secretary 这么做的授权或自动化策略。
 - `source`：触发这次动作的消息、任务或 delivery。
 
+`Agent Home` 和 `Workspace` 必须分开建模：
+
+- `Agent Home` 是 Agent 的长期身份和配置根，默认在用户 Pod 中，例如 `/agents/__secretary__/`。
+- `Workspace` 是某次执行的工作现场，可以是 Pod 内的默认工作现场，也可以是本机 folder/worktree。
+  `git repository` 不是一种 Workspace kind；它是 workspace 关联的 Repository 元信息。实际执行现场永远是某个 folder 或 worktree。
+- 用户只和 Secretary 聊天且未指定代码目录时，默认 Workspace 应该是当前用户 Pod，而不是某个 repo 目录。
+- 只有进入代码任务、文件任务或外部项目任务时，才为 Thread/Session 绑定具体 repo、folder 或 worktree。
+- Workspace 的访问方式由 Agent runtime adapter 决定，不写成 Workspace 自身字段：
+  - AI 在 client 运行时，通过 xpod CLI 访问 Pod；不能假设 Pod 是本地目录。
+  - AI 在 server/xpod 运行时，Pod storage 可以在 server 侧直接表现为本地文件夹；`grep` / `rg` 只是实现细节。
+  - LinX 当前用 Agent metadata 中的 `linx.aiRuntimeLocation = client | server` 记录这个 adapter 偏好；默认是 `client`。
+
 不同工作现场通过 `Thread + Session + Workspace` 区分：
 
 ```text
@@ -147,18 +159,18 @@ AI Secretary Agent
   └─ Thread C + Session C + Workspace/worktree C
 ```
 
-如果 `Workspace` 是 git repository，同一 repo 下多个运行现场默认使用不同 worktree。不要把 Agent 身份塞进 workspace URI；workspace 是“在哪里工作”，Agent 是“谁在工作”。
+如果 `Workspace` 关联了 git repository，同一 repo 下多个运行现场默认使用不同 worktree；repo 根目录本身也只是一个 worktree。不要把 Agent 身份塞进 workspace URI；workspace 是“在哪里工作”，Agent 是“谁在工作”。
 
 ## 对象边界
 
 | 对象 | 含义 | 持久位置 / 边界 |
 | --- | --- | --- |
-| `Agent` | Secretary 或其他可执行身份的长期配置根 | `/.data/agents/{agentKey}/index.ttl#this`，`row.id = {agentKey}/index.ttl#this` |
-| `Agent Home` | `AGENTS.md`、rules、MCP、skills、backend、compaction、memory | 同目录 `/.data/agents/{agentKey}/`，跟 Agent 走，不跟目录、Thread、Session 走 |
+| `Agent` | Secretary 或其他可执行身份的长期配置根 | `/agents/{agentKey}/`，`row.id = {agentKey}/` |
+| `Agent Home` | `AGENTS.md`、rules、MCP、skills、backend、compaction、memory | 同目录 `/agents/{agentKey}/`，跟 Agent 走，不跟目录、Thread、Session、Workspace 走 |
 | `Chat` | 用户看到的会话/房间对象 | 回答“和谁/什么在聊” |
 | `Thread` | Chat 内的一条具体时间线/工作现场 | 绑定 workspace，可承载 group/private timeline |
 | `Session` | 一次 runtime 生命周期投影 | 绑定 Agent + Thread + Workspace |
-| `Workspace` | 真实工作目录或 worktree | 同目录可被多个 Session 引用 |
+| `Workspace` | 执行工作现场，可位于 server Pod 或 client 本机 | 同一个 Workspace 可被多个 Session 引用；代码 Workspace 是 folder/worktree，并可关联 Repository 元信息 |
 | `Issue` | 用户/产品可见的工作项 | 新增 shared Pod resource，必须关联 chat/thread 以便回看过程 |
 | `Task` | 通用可执行工作单元 | 复用既有 Task，不新增 Symphony 专属 TaskRecord |
 | `Delivery` | 跨 Thread/Session 的消息投递信封 | 记录 source、target、payload、projection、状态 |
@@ -811,8 +823,12 @@ nextAction
 
 规则：
 
-- `Workspace` 表示用户选择的 repo 或 folder。
-- 如果是 git repo，多 session 默认创建不同 worktree。
+- `Workspace` 表示用户选择的 Pod folder、本机 folder 或具体 worktree；Repository 是被 workspace 关联的元信息，不是 workspace kind。
+- 默认 Secretary Workspace 是当前用户 Pod；这不是 Agent Home，只是默认执行现场。
+- 如果 AI runtime 在 client，本地工具不能假设 Pod 是文件夹，必须通过 xpod CLI 访问 Pod 数据。
+- 如果 AI runtime 在 server/xpod，Pod storage 可以直接作为本地目录暴露给 runtime；这时 `grep` / `rg` 这类文件工具可以作为实现细节使用，但对产品层仍应回传 URI、resource type 和命中片段。
+- `client/server` 是 Agent runtime adapter 偏好，不是 Workspace 资源的持久身份。切换它不应改写 workspace URI，也不应把 Agent Home 搬进 workspace。
+- 如果 workspace 关联 git repository，多 session 默认创建不同 worktree。repo 根目录执行也按 worktree 处理，只是 `folderPath === repoPath`。
 - `Session` 记录实际 `folderPath`，也就是当前 runtime cwd。
 - git 元信息跟 Workspace/worktree 走，不放进 Agent Home。
 - Agent Home 跟 Agent 走，同一个 Secretary 在多个 worktree 中共享同一套长期规则。

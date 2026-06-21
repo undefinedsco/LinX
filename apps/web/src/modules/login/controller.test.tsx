@@ -886,7 +886,7 @@ describe('useLoginController', () => {
       await result.current.continueLocalLogin()
     })
 
-    expect(connectMock).toHaveBeenCalledWith('https://pod.example.com/', expect.objectContaining({
+    expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', expect.objectContaining({
       authorizationSurface: 'embedded',
       accountIssuerUrl: 'https://id.undefineds.co',
       accountIssuerLabel: 'Cloud',
@@ -897,7 +897,6 @@ describe('useLoginController', () => {
         provisionCode: 'pc-123',
       },
     }))
-    expect(connectMock).not.toHaveBeenCalledWith('https://id.undefineds.co', expect.anything())
     expect(connectMock.mock.calls[0]?.[1]).not.toHaveProperty('prompt')
   })
 
@@ -989,7 +988,7 @@ describe('useLoginController', () => {
     })
 
     expect(testConnectivityMock).not.toHaveBeenCalled()
-    expect(connectMock).toHaveBeenCalledWith('https://node-0000.undefineds.co/', expect.objectContaining({
+    expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', expect.objectContaining({
       authorizationSurface: 'embedded',
       route: 'local',
       accountIssuerUrl: 'https://id.undefineds.co',
@@ -1000,7 +999,6 @@ describe('useLoginController', () => {
       authorizationQuery: {
         provisionCode: 'pc-123',
       },
-      strictDiscovery: true,
       nodeId: 'abc',
     }))
     expect(result.current.error).toBeNull()
@@ -1041,7 +1039,7 @@ describe('useLoginController', () => {
     })
 
     expect(testConnectivityMock).not.toHaveBeenCalled()
-    expect(connectMock).toHaveBeenCalledWith('https://node-0000.undefineds.co/', expect.objectContaining({
+    expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', expect.objectContaining({
       authorizationSurface: 'embedded',
       route: 'local',
       accountIssuerUrl: 'https://id.undefineds.co',
@@ -1442,7 +1440,7 @@ describe('useLoginController', () => {
     })
 
     expect(startLocalMock).not.toHaveBeenCalled()
-    expect(connectMock).toHaveBeenCalledWith('https://pod.example.com/', expect.objectContaining({
+    expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', expect.objectContaining({
       authorizationSurface: 'embedded',
       accountIssuerUrl: 'https://id.undefineds.co',
       accountIssuerLabel: 'Cloud',
@@ -1453,7 +1451,6 @@ describe('useLoginController', () => {
         provisionCode: 'pc-123',
       },
     }))
-    expect(connectMock).not.toHaveBeenCalledWith('https://id.undefineds.co', expect.anything())
     expect(result.current.connectingProvider).toEqual({
       issuerLabel: 'Cloud',
       issuerUrl: 'https://id.undefineds.co',
@@ -1548,7 +1545,7 @@ describe('useLoginController', () => {
 
     expect(connectMock).toHaveBeenCalledTimes(2)
     expect(connectMock.mock.calls[1]).toEqual([
-      'https://node-abc123.undefineds.co/',
+      'https://id.undefineds.co',
       expect.objectContaining({
         authorizationSurface: 'embedded',
         accountIssuerUrl: 'https://id.undefineds.co',
@@ -1686,7 +1683,7 @@ describe('useLoginController', () => {
       await result.current.continueLocalLogin()
     })
 
-    expect(connectMock).toHaveBeenCalledWith('https://pod.example.com/', expect.objectContaining({
+    expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', expect.objectContaining({
       authorizationSurface: 'embedded',
       accountIssuerUrl: 'https://id.undefineds.co',
       accountIssuerLabel: 'Cloud',
@@ -1697,7 +1694,6 @@ describe('useLoginController', () => {
         provisionCode: 'pc-123',
       },
     }))
-    expect(connectMock).not.toHaveBeenCalledWith('https://id.undefineds.co', expect.anything())
     expect(connectMock.mock.calls[0]?.[1]).not.toHaveProperty('prompt')
   })
 
@@ -1749,7 +1745,7 @@ describe('useLoginController', () => {
       await result.current.continueLocalLogin()
     })
 
-    expect(connectMock).toHaveBeenCalledWith('https://pod.example.com/', expect.objectContaining({
+    expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', expect.objectContaining({
       authorizationSurface: 'embedded',
       accountIssuerUrl: 'https://id.undefineds.co',
       accountIssuerLabel: 'Cloud',
@@ -1760,9 +1756,7 @@ describe('useLoginController', () => {
         provisionCode: 'pc-123',
       },
       prompt: 'none',
-      strictDiscovery: true,
     }))
-    expect(connectMock).not.toHaveBeenCalledWith('https://id.undefineds.co', expect.anything())
   })
 
   it('falls back to interactive auth when a desktop silent Local attempt returns login_required', async () => {
@@ -1792,7 +1786,7 @@ describe('useLoginController', () => {
     renderHook(() => useLoginController())
 
     await waitFor(() => {
-      expect(connectMock).toHaveBeenCalledWith('https://node-0000.undefineds.co', expect.objectContaining({
+      expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', expect.objectContaining({
         authorizationSurface: 'embedded',
         returnToMicroAppId: 'chat',
         route: 'local',
@@ -1803,9 +1797,9 @@ describe('useLoginController', () => {
         authorizationQuery: {
           provisionCode: 'pc-123',
         },
-        strictDiscovery: true,
       }))
     })
+    expect(connectMock.mock.calls[0]?.[1]).not.toHaveProperty('strictDiscovery')
     expect(useLoginStore.getState().error).toBeNull()
   })
 
@@ -2103,7 +2097,7 @@ describe('useLoginController', () => {
     expect(useLoginStore.getState().storedAccount?.storageProviderLabel).toBe('Local')
   })
 
-  it('uses the selected Local SP profile when the Cloud WebID profile cannot be read with the SP token', async () => {
+  it('uses the Cloud WebID profile as storage authority when authenticated profile fetch fails', async () => {
     providersState.providers = [
       {
         id: 'local',
@@ -2120,7 +2114,7 @@ describe('useLoginController', () => {
     ]
     window.sessionStorage.setItem('linx-post-login-micro-app', 'chat')
     window.sessionStorage.setItem('linx-pending-login-attempt', JSON.stringify({
-      issuerUrl: 'https://node-0000.undefineds.co',
+      issuerUrl: 'https://id.undefineds.co',
       accountIssuerUrl: 'https://id.undefineds.co',
       accountIssuerLabel: 'Cloud',
       storageProviderUrl: 'https://node-0000.undefineds.co/',
@@ -2130,16 +2124,16 @@ describe('useLoginController', () => {
     }))
     sessionState.info.isLoggedIn = true
     sessionState.info.webId = 'https://id.undefineds.co/alice/profile/card#me'
-    sessionState.fetch
-      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
-      .mockResolvedValueOnce({
-        ok: true,
-        headers: new Headers({ 'content-type': 'application/ld+json' }),
-        text: async () => JSON.stringify({
-          '@id': 'https://node-0000.undefineds.co/alice/profile/card#me',
-          'solid:storage': { '@id': 'https://node-0000.undefineds.co/alice/' },
-        }),
-      })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({ 'content-type': 'application/ld+json' }),
+      text: async () => JSON.stringify({
+        '@id': 'https://id.undefineds.co/alice/profile/card#me',
+        'solid:storage': { '@id': 'https://node-0000.undefineds.co/alice/' },
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    sessionState.fetch.mockRejectedValueOnce(new TypeError('Failed to fetch'))
 
     renderHook(() => useLoginController())
 
@@ -2151,8 +2145,8 @@ describe('useLoginController', () => {
       'https://id.undefineds.co/alice/profile/card#me',
       expect.anything(),
     )
-    expect(sessionState.fetch).toHaveBeenCalledWith(
-      'https://node-0000.undefineds.co/alice/profile/card#me',
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://id.undefineds.co/alice/profile/card#me',
       expect.anything(),
     )
     expect(useLoginStore.getState().storedAccount?.issuerUrl).toBe('https://id.undefineds.co')

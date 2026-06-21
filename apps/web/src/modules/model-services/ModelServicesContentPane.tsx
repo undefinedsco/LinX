@@ -247,7 +247,8 @@ export function ModelServicesContentPane() {
     )
   }, [provider?.models, modelSearch])
 
-  const verificationRequiresApiKey = provider?.id !== 'ollama'
+  const isPlatformProvider = provider?.id === 'undefineds'
+  const verificationRequiresApiKey = provider ? !['ollama', 'undefineds'].includes(provider.id) : true
 
   const handleSave = () => {
     if (!provider) return
@@ -433,7 +434,7 @@ export function ModelServicesContentPane() {
                 {/* API Key */}
                 <div className="space-y-3">
                   <div className="flex justify-between items-center">
-                    <Label className="text-sm font-medium">API Key</Label>
+                    <Label className="text-sm font-medium">{isPlatformProvider ? '平台登录态' : 'API Key'}</Label>
                     {provider.apiKeyUrl && (
                       <a href={provider.apiKeyUrl} target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline">
                         获取 API Key
@@ -446,6 +447,7 @@ export function ModelServicesContentPane() {
                       value={localApiKey}
                       onChange={(e) => setLocalApiKey(e.target.value)}
                       onBlur={handleSave}
+                      disabled={isPlatformProvider}
                       placeholder={provider.defaultApiKeyPlaceholder || "sk-..."}
                       className="pr-24 font-mono bg-muted/20 focus:bg-background transition-colors border-border/60 focus:border-primary/50"
                       autoComplete="off"
@@ -474,18 +476,19 @@ export function ModelServicesContentPane() {
                   <div className="flex items-center gap-1.5 mt-1.5 ml-1">
                     <Lock className="w-3 h-3 text-primary/70" />
                     <p className="text-[11px] text-muted-foreground">
-                      您的 API Key 将被<span className="text-primary/80 font-medium mx-0.5">加密存储</span>在您的 Solid Pod 中，平台无法查看。
+                      {isPlatformProvider ? '平台模型使用当前登录态，不需要在 Pod 中额外保存 API Key。' : <>您的 API Key 将被<span className="text-primary/80 font-medium mx-0.5">加密存储</span>在您的 Solid Pod 中，平台无法查看。</>}
                     </p>
                   </div>
                 </div>
 
                 {/* Base URL */}
                 <div className="space-y-3">
-                  <Label className="text-sm font-medium">API 代理地址 (Base URL)</Label>
+                  <Label className="text-sm font-medium">{isPlatformProvider ? '平台地址 (Base URL)' : 'API 代理地址 (Base URL)'}</Label>
                   <Input 
                     value={localBaseUrl}
                     onChange={(e) => setLocalBaseUrl(e.target.value)}
                     onBlur={handleSave}
+                    disabled={isPlatformProvider}
                     placeholder={provider.defaultBaseUrl}
                     className="font-mono bg-muted/20 focus:bg-background transition-colors border-border/60 focus:border-primary/50"
                     autoComplete="off"

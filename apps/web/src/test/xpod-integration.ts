@@ -24,6 +24,7 @@ dotenv.config({ path: resolve(__dirname, '../../../../.env') })
 type AuthType = 'client_credentials' | 'oidc_oauth'
 type RequestedMode = 'local' | 'auth' | 'auto'
 type RuntimeMode = 'local-seeded-auth' | 'external-auth'
+type EnvLike = Record<string, string | undefined>
 
 interface StoredConfig {
   url: string
@@ -43,7 +44,7 @@ interface ExternalAuthConfig {
   podUrl?: string
   clientId: string
   clientSecret: string
-  source: 'env' | 'cli'
+  source: 'solid-home'
 }
 
 interface SeedAccountEntry {
@@ -82,7 +83,7 @@ export interface XpodIntegrationContext<TSchema extends Record<string, unknown>>
 
 interface XpodIntegrationOptions<TSchema extends Record<string, unknown>> {
   schema: TSchema
-  tables: unknown[]
+  resources: unknown[]
   initialize?: (db: SolidDatabase<TSchema>) => void | Promise<void>
 }
 
@@ -307,17 +308,13 @@ try {
   return { child, baseUrl }
 }
 
-function resolveSeedAccount(entries: SeedAccountEntry[], requestedPodName?: string): Omit<LocalSeedConfig, 'seedConfigPath'> {
+export function resolveSeedAccount(entries: SeedAccountEntry[]): Omit<LocalSeedConfig, 'seedConfigPath'> {
   if (!Array.isArray(entries) || entries.length === 0) {
     throw new Error('Seed config must contain at least one account with one pod')
   }
 
-  const matchedAccount = requestedPodName
-    ? entries.find((entry) => entry.pods?.some((pod) => pod.name === requestedPodName))
-    : entries[0]
-
-  const account = matchedAccount ?? entries[0]
-  const podName = requestedPodName ?? account.pods?.[0]?.name
+  const account = entries[0]
+  const podName = account.pods?.[0]?.name
 
   if (!account?.email || !account.password || !podName) {
     throw new Error('Seed config must provide email, password, and at least one pod name')
@@ -331,7 +328,6 @@ function resolveSeedAccount(entries: SeedAccountEntry[], requestedPodName?: stri
 }
 
 async function prepareLocalSeedConfig(runtimeRoot: string): Promise<LocalSeedConfig> {
-  const requestedPodName = process.env.XPOD_TEST_POD_NAME?.trim() || undefined
   const explicitSeedConfig = process.env.XPOD_TEST_SEED_CONFIG
 
   if (explicitSeedConfig) {
@@ -342,14 +338,14 @@ async function prepareLocalSeedConfig(runtimeRoot: string): Promise<LocalSeedCon
     }
     return {
       seedConfigPath,
-      ...resolveSeedAccount(parsed, requestedPodName),
+      ...resolveSeedAccount(parsed),
     }
   }
 
   const seedConfigPath = join(runtimeRoot, 'seed-accounts.json')
-  const email = process.env.XPOD_TEST_SEED_EMAIL || 'test-integration@example.com'
-  const password = process.env.XPOD_TEST_SEED_PASSWORD || 'TestIntegration123!'
-  const podName = requestedPodName || 'test'
+  const email = 'test-integration@example.com'
+  const password = 'TestIntegration123!'
+  const podName = 'test'
   const seedAccounts: SeedAccountEntry[] = [
     {
       email,
@@ -698,70 +694,46 @@ function resolvePodUrlFromWebId(webId: string, providerBaseUrl?: string): string
   }
 }
 
-function readCredentialsFromEnv(): ExternalAuthConfig | null {
-  const url = process.env.XPOD_TEST_URL
-  const webId = process.env.XPOD_TEST_WEBID
-  const podUrl = process.env.XPOD_TEST_POD_URL
-  const clientId = process.env.XPOD_TEST_CLIENT_ID
-  const clientSecret = process.env.XPOD_TEST_CLIENT_SECRET
+function resolveSolidHome(env: EnvLike, fallbackHome = homedir()): string {
+  return env.SOLID_HOME?.trim() || join(fallbackHome, '.solid')
+}
 
-  if (!url || !webId || !clientId || !clientSecret) {
+export function readUnifiedCredentialsFromSolidHome(
+  env: EnvLike = process.env,
+  fallbackHome = homedir(),
+): ExternalAuthConfig | null {
+  const credentialsPath = join(resolveSolidHome(env, fallbackHome), 'auth', 'credentials.json')
+  if (!existsSync(credentialsPath)) {
+    return null
+  }
+
+  const credentials = readJson<StoredConfig & { secrets?: StoredSecrets }>(credentialsPath)
+  const secrets = credentials?.secrets
+  const clientId = secrets?.clientId ?? (secrets as StoredSecrets & { secret_id?: string } | undefined)?.secret_id
+  const clientSecret = secrets?.clientSecret ?? (secrets as StoredSecrets & { secret_key?: string } | undefined)?.secret_key
+
+  if (
+    credentials?.authType !== 'client_credentials' ||
+    typeof credentials.url !== 'string' ||
+    typeof credentials.webId !== 'string' ||
+    typeof clientId !== 'string' ||
+    typeof clientSecret !== 'string'
+  ) {
     return null
   }
 
   return {
-    url,
-    webId,
-    podUrl,
+    url: credentials.url,
+    webId: credentials.webId,
+    podUrl: credentials.podUrl,
     clientId,
     clientSecret,
-    source: 'env',
+    source: 'solid-home',
   }
 }
 
-function readCredentialsFromCli(): ExternalAuthConfig | null {
-  const home = homedir()
-  const dirs = [join(home, '.linx'), join(home, '.xpod')]
-
-  for (const sourceDir of dirs) {
-    const configPath = join(sourceDir, 'config.json')
-    const secretsPath = join(sourceDir, 'secrets.json')
-
-    if (!existsSync(configPath) || !existsSync(secretsPath)) {
-      continue
-    }
-
-    const config = readJson<StoredConfig>(configPath)
-    const secrets = readJson<StoredSecrets>(secretsPath)
-
-    if (!config || !secrets) {
-      continue
-    }
-
-    if (
-      typeof config.url !== 'string' ||
-      typeof config.webId !== 'string' ||
-      typeof secrets.clientId !== 'string' ||
-      typeof secrets.clientSecret !== 'string'
-    ) {
-      continue
-    }
-
-    return {
-      url: config.url,
-      webId: config.webId,
-      podUrl: config.podUrl,
-      clientId: secrets.clientId,
-      clientSecret: secrets.clientSecret,
-      source: 'cli',
-    }
-  }
-
-  return null
-}
-
-function resolveExternalAuthConfig(): ExternalAuthConfig | null {
-  return readCredentialsFromEnv() ?? readCredentialsFromCli()
+export function resolveExternalAuthConfigFromEnv(env: EnvLike = process.env, fallbackHome = homedir()): ExternalAuthConfig | null {
+  return readUnifiedCredentialsFromSolidHome(env, fallbackHome)
 }
 
 async function initializeIntegrationDatabase<TSchema extends Record<string, unknown>>(
@@ -769,7 +741,7 @@ async function initializeIntegrationDatabase<TSchema extends Record<string, unkn
   options: XpodIntegrationOptions<TSchema>,
 ): Promise<void> {
   await initializeLinxPodStorage(db as any)
-  await db.init(options.tables as never[])
+  await db.init(options.resources as never[])
   await options.initialize?.(db)
 }
 
@@ -934,7 +906,7 @@ export async function createXpodIntegrationContext<TSchema extends Record<string
   options: XpodIntegrationOptions<TSchema>,
 ): Promise<XpodIntegrationContext<TSchema>> {
   const requestedMode = getRequestedMode()
-  const external = requestedMode === 'local' ? null : resolveExternalAuthConfig()
+  const external = requestedMode === 'local' ? null : resolveExternalAuthConfigFromEnv()
 
   if (external) {
     return createAuthenticatedContext(external, options)
@@ -942,7 +914,7 @@ export async function createXpodIntegrationContext<TSchema extends Record<string
 
   if (requestedMode === 'auth') {
     throw new Error(
-      'XPOD_TEST_MODE=auth requires XPOD_TEST_URL/XPOD_TEST_WEBID/XPOD_TEST_CLIENT_ID/XPOD_TEST_CLIENT_SECRET or ~/.xpod credentials',
+      'XPOD_TEST_MODE=auth requires unified Solid login credentials at $SOLID_HOME/auth/credentials.json.',
     )
   }
 

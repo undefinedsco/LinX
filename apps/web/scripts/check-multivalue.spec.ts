@@ -37,19 +37,19 @@ test.describe('多值问题诊断', () => {
         return { error: '数据库未初始化' }
       }
 
-      const tables = ['chatTable', 'threadTable', 'messageTable']
+      const resources = ['chatResource', 'threadResource', 'messageResource']
       const results: any = {}
 
-      for (const tableName of tables) {
+      for (const resourceName of resources) {
         try {
-          // 动态获取 table
-          const table = (window as any)[tableName]
-          if (!table) {
-            results[tableName] = { error: `找不到 ${tableName}` }
+          // 动态获取 resource
+          const resource = (window as any)[resourceName]
+          if (!resource) {
+            results[resourceName] = { error: `找不到 ${resourceName}` }
             continue
           }
 
-          const rows = await db.select().from(table).execute()
+          const rows = await db.select().from(resource).execute()
           
           // 统计
           const bySubject = new Map<string, any[]>()
@@ -77,14 +77,14 @@ test.describe('多值问题诊断', () => {
             }
           }
 
-          results[tableName] = {
+          results[resourceName] = {
             totalRows: rows.length,
             uniqueSubjects: bySubject.size,
             hasMultiValue: rows.length !== bySubject.size,
             duplicates: duplicates.slice(0, 5)
           }
         } catch (err: any) {
-          results[tableName] = { error: err.message }
+          results[resourceName] = { error: err.message }
         }
       }
 
@@ -100,16 +100,16 @@ test.describe('多值问题诊断', () => {
     if (result.error) {
       console.error('诊断失败:', result.error)
     } else {
-      for (const [table, data] of Object.entries(result)) {
-        const tableData = data as any
-        if (tableData.hasMultiValue) {
-          console.warn(`⚠️ ${table} 存在多值问题!`)
-          console.warn(`   行数: ${tableData.totalRows}, 唯一主体: ${tableData.uniqueSubjects}`)
-          console.warn('   重复主体:', tableData.duplicates)
-        } else if (tableData.error) {
-          console.log(`✗ ${table}: ${tableData.error}`)
+      for (const [resourceName, data] of Object.entries(result)) {
+        const resourceData = data as any
+        if (resourceData.hasMultiValue) {
+          console.warn(`⚠️ ${resourceName} 存在多值问题!`)
+          console.warn(`   行数: ${resourceData.totalRows}, 唯一主体: ${resourceData.uniqueSubjects}`)
+          console.warn('   重复主体:', resourceData.duplicates)
+        } else if (resourceData.error) {
+          console.log(`✗ ${resourceName}: ${resourceData.error}`)
         } else {
-          console.log(`✓ ${table}: 行数=${tableData.totalRows}, 无多值问题`)
+          console.log(`✓ ${resourceName}: 行数=${resourceData.totalRows}, 无多值问题`)
         }
       }
     }

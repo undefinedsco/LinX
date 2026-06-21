@@ -23,26 +23,34 @@ import {
   type ThreadStreamEvent,
 } from '@/lib/vendor/xpod-chatkit'
 import {
-  asResourceIri,
-  agentTable,
+  agentResource,
   aiProviderResource,
-  chatTable,
-  contactTable,
+  chatResource,
+  contactResource,
   credentialResource,
   extractChatIdFromChatRef,
   getDefaultAIConfigCredentialId,
   normalizeAIConfigProviderId,
   normalizeAIConfigResourceId,
-  requireRowResourceId,
   selectAIConfigCredential,
   type AgentRow,
   type ContactRow,
-  type ResourceIri,
   type SolidDatabase,
 } from '@undefineds.co/models'
+import {
+  asResourceIri,
+  requireRowResourceId,
+  type ResourceIri,
+} from '@/lib/data/resource-identity'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
 import { formatErrorForUser } from '@/lib/user-facing-errors'
 import { RuntimeSidecarSink } from './runtime-sidecar'
+import { sendMatrixThreadMessage } from '../../matrix-service'
+import {
+  DEFAULT_AGENT_AI_RUNTIME_LOCATION,
+  readAgentAiRuntimeLocation,
+  type AgentAiRuntimeLocation,
+} from '../../agent-runtime-location'
 
 function readChatIdFromThread(thread: ThreadMetadata): string | null {
   if (typeof thread.metadata?.chat_id !== 'string') {
@@ -57,7 +65,7 @@ function requireRowId(row: Record<string, unknown> | null | undefined, label: st
 
 function resolveContactIri(db: SolidDatabase, contact: Pick<ContactRow, 'id'>): ResourceIri {
   const id = requireRowId(contact, 'Contact row')
-  return asResourceIri(db.resolveRowIri(contactTable as any, { id }), 'Contact IRI')
+  return asResourceIri(db.resolveRowIri(contactResource as any, { id }), 'Contact IRI')
 }
 
 function contactMatchesRef(db: SolidDatabase, contact: ContactRow | null | undefined, ref: string): boolean {
@@ -102,8 +110,11 @@ type RuntimeThreadStatus = 'idle' | 'active' | 'paused' | 'completed' | 'error'
 interface RuntimeThreadRecord {
   id: string
   threadId: string
-  workspaceUri?: string
+  container?: string
+  workspaceKind?: 'local-folder' | 'local-worktree' | 'pod-container'
   title: string
+  repoPath?: string
+  folderPath?: string
   tool: string
   status: RuntimeThreadStatus
   tokenUsage: number
@@ -113,6 +124,28 @@ interface ThreadAgentConfig {
   provider: string
   model: string
   instructions?: string
+  aiRuntimeLocation: AgentAiRuntimeLocation
+}
+
+
+function normalizePlatformRuntimeModel(value: unknown): 'linx-lite' | 'linx' | null {
+  if (typeof value !== 'string') return null
+  const normalized = value.trim()
+  if (!normalized) return null
+
+  if (normalized === 'linx-lite' || normalized === 'linx') {
+    return normalized
+  }
+
+  if (normalized === 'undefineds/linx-lite') {
+    return 'linx-lite'
+  }
+
+  if (normalized === 'undefineds/linx') {
+    return 'linx'
+  }
+
+  return null
 }
 
 type RuntimeThreadEvent =
@@ -258,6 +291,12 @@ export class LocalChatKitService {
 
     if (params.input) {
       const userMessage = this.createUserMessage(threadId, params.input.content, thread)
+      const matrixSent = await this.trySendMatrixUserMessage(thread, userMessage)
+      if (matrixSent) {
+        yield { type: 'thread.item.added', item: userMessage }
+        yield { type: 'thread.item.done', item: userMessage }
+        return
+      }
       await this.store.addThreadItem(threadId, userMessage, context)
       yield { type: 'thread.item.added', item: userMessage }
       yield { type: 'thread.item.done', item: userMessage }
@@ -271,6 +310,12 @@ export class LocalChatKitService {
   ): AsyncIterable<ThreadStreamEvent> {
     const thread = await this.store.loadThread(params.thread_id, context)
     const userMessage = this.createUserMessage(params.thread_id, params.input.content)
+    const matrixSent = await this.trySendMatrixUserMessage(thread, userMessage)
+    if (matrixSent) {
+      yield { type: 'thread.item.added', item: userMessage }
+      yield { type: 'thread.item.done', item: userMessage }
+      return
+    }
     await this.store.addThreadItem(params.thread_id, userMessage, context)
     yield { type: 'thread.item.added', item: userMessage }
     yield { type: 'thread.item.done', item: userMessage }
@@ -412,10 +457,15 @@ export class LocalChatKitService {
         }
       } else {
         const agentConfig = await this.resolveThreadAgentConfig(thread)
-        const platformModel = this.resolvePlatformModel(agentConfig)
+        const platformModel = this.resolvePlatformModel(agentConfig, inferenceOptions?.model)
 
         if (platformModel) {
-          const stream = this.streamFromLinxRuntime(platformModel, messages, inferenceOptions)
+          const stream = this.streamFromLinxRuntime(
+            platformModel,
+            messages,
+            inferenceOptions,
+            agentConfig?.aiRuntimeLocation ?? DEFAULT_AGENT_AI_RUNTIME_LOCATION,
+          )
 
           for await (const chunk of stream) {
             fullText += chunk
@@ -500,6 +550,22 @@ export class LocalChatKitService {
 
   private isServiceMode(): boolean {
     return typeof window !== 'undefined' && !!(window as Window & { __LINX_SERVICE__?: boolean }).__LINX_SERVICE__
+  }
+
+  private async trySendMatrixUserMessage(thread: ThreadMetadata, userMessage: ThreadItem): Promise<boolean> {
+    const body = extractUserMessageText((userMessage as any).content)
+    const result = await sendMatrixThreadMessage({
+      db: this.db,
+      authFetch: this.authFetch,
+      webId: this.webId,
+      thread: {
+        id: thread.id,
+        metadata: thread.metadata as Record<string, unknown> | undefined,
+      },
+      body,
+      txnId: userMessage.id,
+    })
+    return result !== null
   }
 
   private async getRuntimeThread(threadId: string): Promise<RuntimeThreadRecord | null> {
@@ -800,7 +866,7 @@ export class LocalChatKitService {
     }
 
     const findProvider = typeof (this.db as any).findById === 'function'
-      ? (this.db as any).findById(aiProviderResource as any, providerId)
+      ? (this.db as any).findById(aiProviderResource as any, aiProviderResource.buildId({ id: providerId }))
       : Promise.resolve(null)
     const [credentialRows, providerRow] = await Promise.all([
       this.findAiCredentialRows(providerId),
@@ -826,7 +892,11 @@ export class LocalChatKitService {
     const findById = (this.db as any).findById
     if (typeof findById === 'function') {
       const defaultCredentialId = getDefaultAIConfigCredentialId(providerId)
-      const exact = await findById.call(this.db, credentialResource as any, defaultCredentialId)
+      const exact = await findById.call(
+        this.db,
+        credentialResource as any,
+        credentialResource.buildId({ id: defaultCredentialId }),
+      )
         .catch((error: unknown) => {
           if (isMissingExactReadError(error)) return null
           throw error
@@ -861,11 +931,11 @@ export class LocalChatKitService {
       return null
     }
 
-    const contacts = await this.db.select().from(contactTable).execute() as ContactRow[]
+    const contacts = await this.db.select().from(contactResource).execute() as ContactRow[]
 
     for (const participantRef of participantRefs) {
       const contact = contacts.find((entry) => contactMatchesRef(this.db, entry, participantRef))
-      const agentRef = contact?.entityUri ?? participantRef
+      const agentRef = contact?.about ?? participantRef
       const agent = await this.findAgentByRef(agentRef)
 
       if (!agent) {
@@ -883,6 +953,7 @@ export class LocalChatKitService {
         provider,
         model,
         instructions: typeof agent.instructions === 'string' ? agent.instructions : undefined,
+        aiRuntimeLocation: readAgentAiRuntimeLocation((agent as Record<string, unknown>).metadata),
       }
     }
 
@@ -894,39 +965,29 @@ export class LocalChatKitService {
     if (/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(ref)) {
       const findByIri = (this.db as any).findByIri
       return typeof findByIri === 'function'
-        ? await findByIri.call(this.db, agentTable as any, ref) as AgentRow | null
+        ? await findByIri.call(this.db, agentResource as any, ref) as AgentRow | null
         : null
     }
     const findById = (this.db as any).findById
     return typeof findById === 'function'
-      ? await findById.call(this.db, agentTable as any, ref) as AgentRow | null
+      ? await findById.call(this.db, agentResource as any, ref) as AgentRow | null
       : null
   }
 
   private async findChatById(chatId: string): Promise<any | null> {
-    const direct = await (this.db as any).findById?.(chatTable as any, chatId)
+    const direct = await (this.db as any).findById?.(chatResource as any, chatId)
     if (direct) return direct
 
-    const chats = await this.db.select().from(chatTable).execute()
+    const chats = await this.db.select().from(chatResource).execute()
     return chats.find((entry: any) => entry.id === chatId) ?? null
   }
 
-  private resolvePlatformModel(agentConfig: ThreadAgentConfig | null): string | null {
+  private resolvePlatformModel(agentConfig: ThreadAgentConfig | null, requestedModel?: unknown): string | null {
     if (!agentConfig || agentConfig.provider !== 'undefineds') {
       return null
     }
 
-    if (agentConfig.model === 'undefineds/linx-lite') {
-      return 'linx-lite'
-    }
-
-    if (agentConfig.model === 'undefineds/linx') {
-      return 'linx'
-    }
-
-    return agentConfig.model === 'linx-lite' || agentConfig.model === 'linx'
-      ? agentConfig.model
-      : null
+    return normalizePlatformRuntimeModel(requestedModel) ?? normalizePlatformRuntimeModel(agentConfig.model)
   }
 
   private resolveRuntimeBaseUrl(): string {
@@ -946,9 +1007,9 @@ export class LocalChatKitService {
     model: string,
     messages: Array<{ role: string; content: string }>,
     inferenceOptions?: any,
+    runtimeLocation: AgentAiRuntimeLocation = DEFAULT_AGENT_AI_RUNTIME_LOCATION,
   ): AsyncIterable<string> {
-    const endpoint = `${this.resolveRuntimeBaseUrl()}/chat/completions`
-    const response = await this.authFetch(endpoint, {
+    const requestInit: RequestInit = {
       method: 'POST',
       headers: {
         Accept: 'text/event-stream, text/plain, application/json',
@@ -961,7 +1022,11 @@ export class LocalChatKitService {
         temperature: inferenceOptions?.temperature ?? 0.7,
         max_tokens: inferenceOptions?.max_tokens ?? 2048,
       }),
-    })
+    }
+
+    const response = runtimeLocation === 'server'
+      ? await this.fetchServerOriginatedLinxRuntime(requestInit)
+      : await this.authFetch(`${this.resolveRuntimeBaseUrl()}/chat/completions`, requestInit)
 
     if (!response.ok) {
       const text = await response.text()
@@ -969,6 +1034,14 @@ export class LocalChatKitService {
     }
 
     yield* this.readTextOrSseStream(response)
+  }
+
+  private async fetchServerOriginatedLinxRuntime(requestInit: RequestInit): Promise<Response> {
+    if (!this.isServiceMode()) {
+      throw new Error('服务端 AI 运行只支持 LinX 桌面或本地服务。请切回客户端运行，或先启动本地空间。')
+    }
+
+    return fetch('/api/ai/chat/completions', requestInit)
   }
 
   private async *readTextOrSseStream(response: Response): AsyncIterable<string> {

@@ -10,7 +10,8 @@
     "dev:setup": "tsx src/setup/server.ts"
   },
   "dependencies": {
-    "@undefineds.co/xpod": "0.3.44",
+    "@linx/agent-runtime": "*",
+    "@undefineds.co/xpod": "0.3.52",
     "electron": "^42.2.0",
     "express": "^5.2.1",
     "open": "^11.0.0"

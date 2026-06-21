@@ -36,7 +36,12 @@ describe('ModelSelector', () => {
       expect(screen.getByText('A')).toBeInTheDocument() // Anthropic
     })
 
-    it('renders LinX cloud models', () => {
+    it('renders LinX platform models', () => {
+      render(<ModelSelector value="linx-lite" />)
+      expect(screen.getByText('LinX Lite')).toBeInTheDocument()
+    })
+
+    it('keeps legacy prefixed LinX model values selectable', () => {
       render(<ModelSelector value="undefineds/linx-lite" />)
       expect(screen.getByText('LinX Lite')).toBeInTheDocument()
     })

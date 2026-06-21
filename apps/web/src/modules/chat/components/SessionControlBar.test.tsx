@@ -124,11 +124,11 @@ describe('SessionControlBar', () => {
       <SessionControlBar
         {...baseProps}
         workspacePrimary="/repo/linx/worktrees/feature-runtime"
-        workspaceSecondary="节点 node-123 · feature/runtime · 基于 HEAD"
+        workspaceSecondary="设备 device-123 · feature/runtime · 基于 HEAD"
       />,
     )
     expect(screen.getByText('/repo/linx/worktrees/feature-runtime')).toBeInTheDocument()
-    expect(screen.getByText('节点 node-123 · feature/runtime · 基于 HEAD')).toBeInTheDocument()
+    expect(screen.getByText('设备 device-123 · feature/runtime · 基于 HEAD')).toBeInTheDocument()
   })
 
   it('formats token count with k suffix for large numbers', () => {

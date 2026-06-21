@@ -59,7 +59,7 @@
 
 | 上游 Wave | Vocab | UI 组件 | 消费字段 |
 |-----------|-------|---------|---------|
-| 01 | `ContactVocab` | ContactList, ContactDetail | `name`, `avatarUrl`, `contactType`, `entityUri`, `alias`, `starred`, `note` |
+| 01 | `ContactVocab` | ContactList, ContactDetail | `name`, `avatarUrl`, `contactType`, `about`, `alias`, `starred`, `note` |
 | 01 | `ContactClass.GROUP` | GroupCreateDialog | 创建群组联系人时写入 `rdfType=GroupContact` |
 | 01 | `ChatBaseVocab` | "发起聊天" 按钮 | 创建 Chat 时写入 `participants` 与 `metadata` |
 
@@ -68,11 +68,11 @@
 创建群组时需要同时写入 Contact 和 Chat：
 
 ```
-1. INSERT contactTable: { contactType: 'solid', rdfType: GroupContact, name: 群名, avatarUrl: 拼接头像, entityUri: chat URI }
+1. INSERT contactTable: { contactType: 'solid', rdfType: GroupContact, name: 群名, avatarUrl: 拼接头像, about: chat URI }
 2. INSERT chatTable: { title: 群名, participants: [成员 URIs], metadata.memberRoles: { [ownerWebId]: 'owner' } }
 ```
 
-> **约束**：群组联系人的 `entityUri` 指向关联 Chat
+> **约束**：群组联系人的 `about` 指向关联 Chat
 > （`/.data/chat/{id}/index.ttl#this`），而不是联系人自身资源。
 
 ### 6A.3 不新增 Pod 表

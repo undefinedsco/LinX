@@ -276,7 +276,7 @@ test('LocalOnboardingController restarts a running Standalone service when the u
     fetchCapabilities: async () => ({
       supported: true,
       contract: 'linx-local-onboarding/v1',
-      baseUrl: 'http://localhost:5737/',
+      baseUrl: status.baseUrl,
       version: '0.2.23',
     }),
   })
@@ -458,7 +458,7 @@ test('LocalOnboardingController marks an already running local service as ready'
     fetchCapabilities: async () => ({
       supported: true,
       contract: 'linx-local-onboarding/v1',
-      baseUrl: 'http://localhost:5737/',
+      baseUrl: 'https://node-abc123.undefineds.co/',
       version: '0.2.2',
     }),
   })
@@ -605,6 +605,73 @@ test('LocalOnboardingController saves a Cloudflare command token and restarts Lo
   assert.equal(snapshot.state, 'ready')
   assert.equal(snapshot.tunnel.hasToken, true)
   assert.equal(snapshot.tunnel.provider, 'cloudflare')
+})
+
+test('LocalOnboardingController saves Local network config with custom domain and tunnel token', async () => {
+  const { LocalOnboardingController } = require(resolveCompiledDesktopModule('lib/local-onboarding.js'))
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'linx-local-onboarding-network-'))
+  const provider = createProvider({ type: 'none' })
+  let status = {
+    running: true,
+    status: 'running',
+    localUrl: 'http://localhost:5737/',
+    baseUrl: 'https://node-0000.undefineds.co/',
+    provisioning: createProvisioning({
+      publicUrl: 'https://node-0000.undefineds.co/',
+      spDomain: 'node-0000.undefineds.co',
+    }),
+  }
+  const updates = []
+  const startCalls = []
+
+  const controller = new LocalOnboardingController({
+    stateDir,
+    ensureBootstrapProvider: () => provider,
+    updateProvider: (_id, update) => {
+      updates.push(update)
+      provider.managed = update.managed
+    },
+    xpodManager: {
+      getStatus: async () => status,
+      start: async (options) => {
+        startCalls.push(options)
+        status = {
+          running: true,
+          status: 'running',
+          localUrl: 'http://localhost:5737/',
+          baseUrl: 'https://pod.example.com/',
+          provisioning: createProvisioning({
+            publicUrl: 'https://pod.example.com/',
+            tunnelToken: options.tunnelToken,
+            tunnelProvider: 'cloudflare',
+          }),
+        }
+      },
+    },
+    fetchCapabilities: async () => ({
+      supported: true,
+      contract: 'linx-local-onboarding/v1',
+      baseUrl: 'https://pod.example.com/',
+      version: '0.3.31',
+    }),
+  })
+
+  await controller.chooseSpace('local')
+  const snapshot = await controller.saveNetworkConfig({
+    publicDomain: 'https://pod.example.com/',
+    tunnelProvider: 'cloudflare',
+    tunnelToken: 'cloudflared tunnel run --token token-456',
+  })
+
+  assert.equal(updates.length, 1)
+  assert.deepEqual(updates[0].managed.domain, { type: 'custom', value: 'pod.example.com' })
+  assert.equal(updates[0].managed.tunnelToken, 'token-456')
+  assert.equal(startCalls.length, 1)
+  assert.deepEqual(startCalls[0].domain, { type: 'custom', value: 'pod.example.com' })
+  assert.equal(startCalls[0].tunnelToken, 'token-456')
+  assert.equal(snapshot.state, 'ready')
+  assert.equal(snapshot.publicUrl, 'https://pod.example.com/')
+  assert.equal(snapshot.tunnel.hasToken, true)
 })
 
 test('LocalOnboardingController reports public route mismatch during connectivity test', async (t) => {

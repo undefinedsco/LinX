@@ -3,14 +3,14 @@ import dotenv from 'dotenv'
 import { Session } from '@inrupt/solid-client-authn-node'
 import { drizzle } from '@undefineds.co/drizzle-solid'
 import {
-  chatTable,
-  threadTable,
-  messageTable,
-  contactTable,
-  agentTable,
-  credentialTable,
-  aiProviderTable,
-  aiModelTable,
+  chatResource,
+  threadResource,
+  messageResource,
+  contactResource,
+  agentResource,
+  credentialResource,
+  aiProviderResource,
+  aiModelResource,
   solidSchema,
 } from '@undefineds.co/models'
 
@@ -42,21 +42,21 @@ async function main() {
   console.log('\n📊 数据量统计\n')
   console.log('==================================================')
 
-  const tables = [
-    { name: 'chats', table: chatTable },
-    { name: 'threads', table: threadTable },
-    { name: 'messages', table: messageTable },
-    { name: 'contacts', table: contactTable },
-    { name: 'agents', table: agentTable },
-    { name: 'credentials', table: credentialTable },
-    { name: 'aiProviders', table: aiProviderTable },
-    { name: 'aiModels', table: aiModelTable },
+  const resources = [
+    { name: 'chats', resource: chatResource },
+    { name: 'threads', resource: threadResource },
+    { name: 'messages', resource: messageResource },
+    { name: 'contacts', resource: contactResource },
+    { name: 'agents', resource: agentResource },
+    { name: 'credentials', resource: credentialResource },
+    { name: 'aiProviders', resource: aiProviderResource },
+    { name: 'aiModels', resource: aiModelResource },
   ]
 
   for (const item of tables) {
     try {
       const start = performance.now()
-      const rows = await db.select().from(item.table).execute()
+      const rows = await db.select().from(item.resource).execute()
       const elapsed = Math.round(performance.now() - start)
       const paddedName = item.name.padEnd(20)
       const paddedCount = String(rows.length).padStart(5)

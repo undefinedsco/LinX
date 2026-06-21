@@ -1,12 +1,14 @@
 import {
-  agentHomePathFromResourceId,
   aiConfigModelRef,
   aiConfigProviderRef,
   getDefaultAIConfigCredentialId,
-  type BaseRelativeResourceId,
   type SolidDatabase,
 } from '@undefineds.co/models'
 import { resolveCurrentPodBaseUrl } from '@/lib/data/current-pod-base'
+import {
+  agentHomePathFromResourceId,
+  type BaseRelativeResourceId,
+} from '@/lib/data/resource-identity'
 
 export interface EnsureAgentHomeInput {
   agentId: BaseRelativeResourceId
@@ -95,6 +97,8 @@ function buildAgentHomeFiles(input: EnsureAgentHomeInput): Array<{
     '- Read `.meta` for backend, model, skills, MCP, and compaction defaults.',
     '- Treat this Agent Home as the instruction root. Runtime sessions and workspaces do not own agent rules.',
     '- Keep durable agent preferences here; keep transient runtime state in sessions.',
+    '- If the AI runtime runs on the client, access Pod workspaces through the xpod CLI; do not treat the Pod as a local folder.',
+    '- If the AI runtime runs on server/xpod, Pod storage may be exposed as a local folder implementation detail.',
     '',
     input.instructions?.trim() ? '## Instructions\n\n' + input.instructions.trim() + '\n' : '',
   ].filter(Boolean).join('\n')

@@ -22,10 +22,40 @@
       "node": "./dist/auto-mode.js",
       "default": "./src/auto-mode.ts"
     },
+    "./chat-reconciler": {
+      "types": "./src/chat-reconciler.ts",
+      "node": "./dist/chat-reconciler.js",
+      "default": "./src/chat-reconciler.ts"
+    },
     "./companion-model": {
       "types": "./src/companion-model.ts",
       "node": "./dist/companion-model.js",
       "default": "./src/companion-model.ts"
+    },
+    "./control-plane": {
+      "types": "./src/control-plane.ts",
+      "node": "./dist/control-plane.js",
+      "default": "./src/control-plane.ts"
+    },
+    "./file-sync": {
+      "types": "./src/file-sync.ts",
+      "node": "./dist/file-sync.js",
+      "default": "./src/file-sync.ts"
+    },
+    "./matrix-client": {
+      "types": "./src/matrix-client.ts",
+      "node": "./dist/matrix-client.js",
+      "default": "./src/matrix-client.ts"
+    },
+    "./pod-resource-identity": {
+      "types": "./src/pod-resource-identity.ts",
+      "node": "./dist/pod-resource-identity.js",
+      "default": "./src/pod-resource-identity.ts"
+    },
+    "./reconciler": {
+      "types": "./src/reconciler.ts",
+      "node": "./dist/reconciler.js",
+      "default": "./src/reconciler.ts"
     },
     "./runtime": {
       "types": "./src/runtime.ts",
@@ -37,10 +67,30 @@
       "node": "./dist/symphony.js",
       "default": "./src/symphony.ts"
     },
+    "./sync": {
+      "types": "./src/sync.ts",
+      "node": "./dist/sync.js",
+      "default": "./src/sync.ts"
+    },
+    "./thread-reconciler-controller": {
+      "types": "./src/thread-reconciler-controller.ts",
+      "node": "./dist/thread-reconciler-controller.js",
+      "default": "./src/thread-reconciler-controller.ts"
+    },
     "./turn-controller": {
       "types": "./src/turn-controller.ts",
       "node": "./dist/turn-controller.js",
       "default": "./src/turn-controller.ts"
+    },
+    "./wake-scheduler": {
+      "types": "./src/wake-scheduler.ts",
+      "node": "./dist/wake-scheduler.js",
+      "default": "./src/wake-scheduler.ts"
+    },
+    "./workspace": {
+      "types": "./src/workspace.ts",
+      "node": "./dist/workspace.js",
+      "default": "./src/workspace.ts"
     }
   },
   "scripts": {
@@ -50,6 +100,6 @@
     "lint": "echo \"lint not configured\""
   },
   "devDependencies": {
-    "typescript": "^6.0.3"
+    "typescript": "^5.4.0"
   }
 }

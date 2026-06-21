@@ -1,13 +1,14 @@
 /**
  * Contact Collections & Operations Tests
- * 
+ *
  * Tests for contactOps business logic that coordinates multiple collections.
- * 
+ *
  * Note: These tests mock the database layer to test business logic in isolation.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { ContactClass, ContactType, agentResourceId, agentTable, chatTable, contactTable } from '@undefineds.co/models'
+import { ContactClass, ContactType, agentResource, chatResource, contactResource } from '@undefineds.co/models'
+import { agentResourceId } from '@/lib/data/resource-identity'
 
 // Mock search results storage for db.select().from().where().execute()
 let mockSearchResults: any[] = []
@@ -106,13 +107,13 @@ function resetMockDb() {
       execute: vi.fn().mockResolvedValue(undefined),
     }),
   }))
-  mockDb.resolveRowIri.mockImplementation((table, row: Record<string, unknown>) => {
+  mockDb.resolveRowIri.mockImplementation((resource, row: Record<string, unknown>) => {
     if (typeof row.id !== 'string' || row.id.length === 0) {
       throw new Error('Mock row is missing row.id.')
     }
-    if (table === chatTable) return `https://pod.example/.data/chat/${row.id}/index.ttl#this`
-    if (table === contactTable) return `https://pod.example/.data/contacts/${row.id}.ttl#this`
-    if (table === agentTable) return new URL(agentTable.resolveUri(row.id), 'https://pod.example/').toString()
+    if (resource === chatResource) return `https://pod.example/.data/chat/${row.id}/index.ttl#this`
+    if (resource === contactResource) return `https://pod.example/.data/contacts/${row.id}.ttl#this`
+    if (resource === agentResource) return new URL(agentResource.resolveUri(row.id), 'https://pod.example/').toString()
     return `https://pod.example/${row.id}`
   })
   mockDb.resolveRowId.mockImplementation((_table, row: Record<string, unknown>) => {
@@ -155,9 +156,9 @@ vi.stubGlobal('crypto', {
 })
 
 // Import after mocks are set up
-import { 
-  contactOps, 
-  contactCollection, 
+import {
+  contactOps,
+  contactCollection,
   agentCollection,
   setContactsDatabaseGetter,
 } from './collections'
@@ -195,12 +196,12 @@ describe('contactOps', () => {
       expect(result.chatId).toBe('uuid-3') // Chat ID (third UUID)
       expect(result.name).toBe('Test Agent')
       expect(result.contactType).toBe(ContactType.AGENT)
-      expect(result.entityUri).toBe('https://pod.example/agents/uuid-1/profile/card#me')
-      
-      // Repositories create Agent + Contact via db.insert; collection persists Chat
-      expect(mockDb.insert).toHaveBeenCalledTimes(2)
+      expect(result.about).toBe('https://pod.example/agents/uuid-1/')
+
+      // Agent is a directory-style Agent Home; db.insert persists Contact and collection persists Chat.
+      expect(mockDb.insert).toHaveBeenCalledTimes(1)
       expect(mockInsert).toHaveBeenCalledTimes(1)
-      
+
       // Verify query invalidation
       expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['chats'] })
       expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['contacts'] })
@@ -241,13 +242,13 @@ describe('contactOps', () => {
       expect(result.chatId).toBe('uuid-2') // Chat ID (second UUID)
       expect(result.name).toBe('Alice')
       expect(result.contactType).toBe(ContactType.SOLID)
-      expect(result.entityUri).toBe('https://alice.solidcommunity.net/profile/card#me')
+      expect(result.about).toBe('https://alice.solidcommunity.net/profile/card#me')
       expect(result.avatarUrl).toBe('https://alice.solidcommunity.net/avatar.png')
-      
+
       // Repository creates Contact; collection persists Chat
       expect(mockDb.insert).toHaveBeenCalledTimes(1)
       expect(mockInsert).toHaveBeenCalledTimes(1)
-      
+
       // Verify query invalidation
       expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['chats'] })
       expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['contacts'] })
@@ -405,20 +406,20 @@ describe('contactOps', () => {
         id: 'group-1',
         name: '产品群',
         rdfType: ContactClass.GROUP,
-        entityUri: 'https://pod.example/.data/chat/chat-1/index.ttl#this',
+        about: 'https://pod.example/.data/chat/chat-1/index.ttl#this',
         contactType: ContactType.SOLID,
       })
       mockCollectionState.set('owner-contact', {
         id: 'owner-contact',
         name: 'Me',
-        entityUri: ownerRef,
+        about: ownerRef,
         contactType: ContactType.SOLID,
       })
       mockCollectionState.set('member-1', {
         id: 'member-1',
         name: 'Bob',
         alias: '老鲍',
-        entityUri: memberRef,
+        about: memberRef,
         contactType: ContactType.SOLID,
       })
       mockCollectionState.set('chat-1', {
@@ -456,7 +457,7 @@ describe('Contact + Chat Linkage Logic', () => {
     setContactsDatabaseGetter(() => null)
   })
 
-  it('createAgent: Agent.id → Contact.entityUri, Contact reference → Chat.participants', async () => {
+  it('createAgent: Agent.id → Contact.about, Contact reference → Chat.participants', async () => {
     const result = await contactOps.createAgent({ name: 'AI Assistant' })
 
     // UUID allocation: uuid-1 (Agent), uuid-2 (Contact), uuid-3 (Chat)
@@ -465,12 +466,12 @@ describe('Contact + Chat Linkage Logic', () => {
     const chatId = 'uuid-3'
 
     // Verify linkage
-    expect(result.entityUri).toBe(`https://pod.example/agents/${agentId}/profile/card#me`)
+    expect(result.about).toBe(`https://pod.example/agents/${agentId}/`)
     expect(result.id).toBe(contactId)
     expect(result.chatId).toBe(chatId)
   })
 
-  it('addFriend: WebID → Contact.entityUri, Contact reference → Chat.participants', async () => {
+  it('addFriend: WebID → Contact.about, Contact reference → Chat.participants', async () => {
     const webId = 'https://friend.pod/profile/card#me'
     const result = await contactOps.addFriend({ name: 'Friend', webId })
 
@@ -479,7 +480,7 @@ describe('Contact + Chat Linkage Logic', () => {
     const chatId = 'uuid-2'
 
     // Verify linkage
-    expect(result.entityUri).toBe(webId) // Contact → WebID
+    expect(result.about).toBe(webId) // Contact → WebID
     expect(result.id).toBe(contactId)
     expect(result.chatId).toBe(chatId)
   })
@@ -499,7 +500,7 @@ describe('Contact + Chat Linkage Logic', () => {
     const friendDbInsertCount = mockDb.insert.mock.calls.length
     const friendCollectionInsertCount = mockInsert.mock.calls.length
 
-    expect(agentDbInsertCount).toBe(2) // Agent + Contact
+    expect(agentDbInsertCount).toBe(1) // Contact; Agent Home is directory-style
     expect(agentCollectionInsertCount).toBe(1) // Chat
     expect(friendDbInsertCount).toBe(1) // Contact
     expect(friendCollectionInsertCount).toBe(1) // Chat
@@ -558,7 +559,7 @@ describe('contactOps Query Operations', () => {
 
   describe('search', () => {
     const mockContacts = [
-      { id: '1', name: 'Alice Smith', alias: 'Ali', entityUri: 'https://alice.pod/#me' },
+      { id: '1', name: 'Alice Smith', alias: 'Ali', about: 'https://alice.pod/#me' },
       { id: '2', name: 'Bob Johnson', alias: null, note: 'Friend from work' },
       { id: '3', name: 'Charlie Brown', alias: 'Chuck', externalId: 'wxid_charlie' },
     ]
@@ -577,9 +578,9 @@ describe('contactOps Query Operations', () => {
     it('should search by name using drizzle-solid ilike', async () => {
       // Mock drizzle-solid returning filtered results
       mockSearchResults = [mockContacts[0]] // Alice Smith
-      
+
       const result = await contactOps.search('alice')
-      
+
       expect(result).toHaveLength(1)
       expect(result[0].name).toBe('Alice Smith')
       // Verify db.select was called (drizzle-solid path, not fallback)
@@ -588,9 +589,9 @@ describe('contactOps Query Operations', () => {
 
     it('should search by alias using drizzle-solid ilike', async () => {
       mockSearchResults = [mockContacts[2]] // Charlie Brown (alias: Chuck)
-      
+
       const result = await contactOps.search('chuck')
-      
+
       expect(result).toHaveLength(1)
       expect(result[0].name).toBe('Charlie Brown')
       expect(mockDb.select).toHaveBeenCalled()
@@ -598,9 +599,9 @@ describe('contactOps Query Operations', () => {
 
     it('should search by note using drizzle-solid ilike', async () => {
       mockSearchResults = [mockContacts[1]] // Bob Johnson (note: Friend from work)
-      
+
       const result = await contactOps.search('work')
-      
+
       expect(result).toHaveLength(1)
       expect(result[0].name).toBe('Bob Johnson')
       expect(mockDb.select).toHaveBeenCalled()
@@ -608,19 +609,19 @@ describe('contactOps Query Operations', () => {
 
     it('should search by externalId using drizzle-solid ilike', async () => {
       mockSearchResults = [mockContacts[2]] // Charlie Brown (externalId: wxid_charlie)
-      
+
       const result = await contactOps.search('wxid')
-      
+
       expect(result).toHaveLength(1)
       expect(result[0].name).toBe('Charlie Brown')
       expect(mockDb.select).toHaveBeenCalled()
     })
 
-    it('should search by entityUri using drizzle-solid ilike', async () => {
-      mockSearchResults = [mockContacts[0]] // Alice (entityUri: https://alice.pod/#me)
-      
+    it('should search by about using drizzle-solid ilike', async () => {
+      mockSearchResults = [mockContacts[0]] // Alice (about: https://alice.pod/#me)
+
       const result = await contactOps.search('alice.pod')
-      
+
       expect(result).toHaveLength(1)
       expect(result[0].name).toBe('Alice Smith')
       expect(mockDb.select).toHaveBeenCalled()
@@ -629,45 +630,45 @@ describe('contactOps Query Operations', () => {
     it('should return multiple matches', async () => {
       // 'o' matches Bob, Johnson, Brown
       mockSearchResults = [mockContacts[1], mockContacts[2]]
-      
+
       const result = await contactOps.search('o')
-      
+
       expect(result.length).toBeGreaterThanOrEqual(2)
       expect(mockDb.select).toHaveBeenCalled()
     })
 
     it('should return empty array when no matches', async () => {
       mockSearchResults = []
-      
+
       const result = await contactOps.search('nonexistent')
-      
+
       expect(result).toHaveLength(0)
       expect(mockDb.select).toHaveBeenCalled()
     })
   })
 
-  describe('findByEntityUri', () => {
+  describe('findByAbout', () => {
     beforeEach(() => {
       const mockContacts = [
-        { id: '1', name: 'Alice', entityUri: 'https://alice.pod/#me' },
-        { id: '2', name: 'Bob', entityUri: 'https://bob.pod/#me' },
-        { id: '3', name: 'Agent', entityUri: 'agent-uuid-1' },
+        { id: '1', name: 'Alice', about: 'https://alice.pod/#me' },
+        { id: '2', name: 'Bob', about: 'https://bob.pod/#me' },
+        { id: '3', name: 'Agent', about: 'agent-uuid-1' },
       ]
       mockContacts.forEach(c => mockCollectionState.set(c.id, c))
     })
 
     it('should find contact by WebID', () => {
-      const result = contactOps.findByEntityUri('https://alice.pod/#me')
+      const result = contactOps.findByAbout('https://alice.pod/#me')
       expect(result?.name).toBe('Alice')
     })
 
     it('should find contact by agent ID', () => {
-      const result = contactOps.findByEntityUri('agent-uuid-1')
+      const result = contactOps.findByAbout('agent-uuid-1')
       expect(result?.name).toBe('Agent')
     })
 
     it('should return null if not found', () => {
-      const result = contactOps.findByEntityUri('https://nonexistent.pod/#me')
+      const result = contactOps.findByAbout('https://nonexistent.pod/#me')
       expect(result).toBeNull()
     })
   })
@@ -738,14 +739,14 @@ describe('contactOps Solid Profile Operations', () => {
 
   describe('syncContact', () => {
     it('should update contact with fetched profile data for Solid contact', async () => {
-      const mockContact = { 
-        id: 'contact-1', 
-        name: 'Old Name', 
+      const mockContact = {
+        id: 'contact-1',
+        name: 'Old Name',
         contactType: 'solid',
-        entityUri: 'https://alice.pod/profile/card#me' 
+        about: 'https://alice.pod/profile/card#me'
       }
       mockCollectionState.set('contact-1', mockContact)
-      
+
       vi.spyOn(contactOps, 'fetchSolidProfile').mockResolvedValue({
         name: 'Alice Updated',
         webId: 'https://alice.pod/profile/card#me',
@@ -769,14 +770,14 @@ describe('contactOps Solid Profile Operations', () => {
     })
 
     it('should sync remote agent contact', async () => {
-      const mockContact = { 
-        id: 'contact-1', 
-        name: 'Old Agent', 
+      const mockContact = {
+        id: 'contact-1',
+        name: 'Old Agent',
         contactType: 'agent',
-        entityUri: 'https://other.pod/agents/agent-1' 
+        about: 'https://other.pod/agents/agent-1'
       }
       mockCollectionState.set('contact-1', mockContact)
-      
+
       vi.spyOn(contactOps, 'fetchRemoteAgent').mockResolvedValue({
         name: 'Updated Agent',
         avatarUrl: 'https://other.pod/agent-avatar.png',
@@ -790,12 +791,12 @@ describe('contactOps Solid Profile Operations', () => {
       expect(result.data?.name).toBe('Updated Agent')
     })
 
-    it('should skip sync for local agent (non-http entityUri)', async () => {
-      const mockContact = { 
-        id: 'contact-1', 
-        name: 'Local Agent', 
+    it('should skip sync for local agent (non-http about)', async () => {
+      const mockContact = {
+        id: 'contact-1',
+        name: 'Local Agent',
         contactType: 'agent',
-        entityUri: 'local-agent-uuid-1'  // Not http
+        about: 'local-agent-uuid-1'  // Not http
       }
       mockCollectionState.set('contact-1', mockContact)
 
@@ -815,11 +816,11 @@ describe('contactOps Solid Profile Operations', () => {
     })
 
     it('should return error if remote fetch fails', async () => {
-      const mockContact = { 
-        id: 'contact-1', 
-        name: 'Alice', 
+      const mockContact = {
+        id: 'contact-1',
+        name: 'Alice',
         contactType: 'solid',
-        entityUri: 'https://alice.pod/profile/card#me' 
+        about: 'https://alice.pod/profile/card#me'
       }
       mockCollectionState.set('contact-1', mockContact)
       vi.spyOn(contactOps, 'fetchSolidProfile').mockResolvedValue(null)
@@ -832,13 +833,13 @@ describe('contactOps Solid Profile Operations', () => {
   })
 
   describe('isRemoteContact', () => {
-    it('should return true for http entityUri', () => {
-      const contact = { entityUri: 'https://alice.pod/profile/card#me' } as any
+    it('should return true for http about', () => {
+      const contact = { about: 'https://alice.pod/profile/card#me' } as any
       expect(contactOps.isRemoteContact(contact)).toBe(true)
     })
 
-    it('should return false for local entityUri', () => {
-      const contact = { entityUri: 'local-uuid-123' } as any
+    it('should return false for local about', () => {
+      const contact = { about: 'local-uuid-123' } as any
       expect(contactOps.isRemoteContact(contact)).toBe(false)
     })
 

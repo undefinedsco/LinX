@@ -7,14 +7,18 @@ import {
   extractApprovalIdFromApprovalRef,
   extractAuditIdFromAuditRef,
   extractChatThreadRef,
+  extractInputRequestIdFromInputRequestRef,
   extractRuntimeSessionId as extractRuntimeSessionIdFromRef,
   inboxNotificationResource,
+  inputRequestResource,
   type ApprovalInsert,
   type ApprovalRow,
   type AuditInsert,
   type AuditRow,
   type InboxNotificationInsert,
   type InboxNotificationRow,
+  type InputRequestInsert,
+  type InputRequestRow,
   type SolidDatabase,
 } from '@undefineds.co/models'
 import { updateExactRecord } from '@/lib/data/exact-records'
@@ -39,7 +43,7 @@ function getDb(): SolidDatabase | null {
 }
 
 export const approvalCollection = createPodCollection<typeof approvalResource, ApprovalRow, ApprovalInsert>({
-  table: approvalResource,
+  resource: approvalResource,
   queryKey: ['inbox', 'approvals'],
   queryClient,
   getDb,
@@ -51,7 +55,7 @@ export const approvalCollection = createPodCollection<typeof approvalResource, A
 })
 
 export const auditCollection = createPodCollection<typeof auditResource, AuditRow, AuditInsert>({
-  table: auditResource,
+  resource: auditResource,
   queryKey: ['inbox', 'audit'],
   queryClient,
   getDb,
@@ -63,13 +67,25 @@ export const auditCollection = createPodCollection<typeof auditResource, AuditRo
 })
 
 export const inboxNotificationCollection = createPodCollection<typeof inboxNotificationResource, InboxNotificationRow, InboxNotificationInsert>({
-  table: inboxNotificationResource,
+  resource: inboxNotificationResource,
   queryKey: ['inbox', 'notifications'],
   queryClient,
   getDb,
   orderBy: { column: 'createdAt', direction: 'desc' },
   getKey: (item) => {
     if (!item.id) throw new Error('Inbox notification record is missing id')
+    return item.id
+  },
+})
+
+export const inputRequestCollection = createPodCollection<typeof inputRequestResource, InputRequestRow, InputRequestInsert>({
+  resource: inputRequestResource,
+  queryKey: ['inbox', 'inputRequests'],
+  queryClient,
+  getDb,
+  orderBy: { column: 'createdAt', direction: 'desc' },
+  getKey: (item) => {
+    if (!item.id) throw new Error('InputRequest record is missing id')
     return item.id
   },
 })
@@ -136,8 +152,8 @@ export function buildRuntimeToolResponse(decision: 'approved' | 'rejected', reas
   })
 }
 
-export type InboxItemKind = 'approval' | 'audit'
-export type InboxItemCategory = 'approval' | 'auth_required' | 'audit'
+export type InboxItemKind = 'approval' | 'input_request' | 'audit'
+export type InboxItemCategory = 'approval' | 'input_request' | 'auth_required' | 'audit'
 
 export interface InboxItem {
   id: string
@@ -148,6 +164,7 @@ export interface InboxItem {
   timestamp: string
   status?: string
   approval?: ApprovalRow
+  inputRequest?: InputRequestRow
   audit?: AuditRow
   notification?: InboxNotificationRow
   chatId?: string | null
@@ -176,12 +193,32 @@ function extractApprovalChatThreadRef(approval: ApprovalRow): { chatId: string |
   }
 }
 
+function extractInputRequestChatThreadRef(inputRequest: InputRequestRow): { chatId: string | null; threadId: string | null } {
+  const threadRef = extractChatThreadRef(inputRequest.thread || inputRequest.run || inputRequest.task)
+  const chatRef = extractChatThreadRef(inputRequest.chat)
+
+  return {
+    chatId: threadRef.chatId ?? chatRef.chatId,
+    threadId: threadRef.threadId,
+  }
+}
+
+function buildInputRequestDescription(inputRequest: InputRequestRow): string {
+  if (inputRequest.status === 'resolved') return '已回答'
+  if (inputRequest.status === 'expired') return '已过期'
+  if (inputRequest.status === 'cancelled') return '已取消'
+  if (inputRequest.status === 'handling') return '正在处理'
+  return '等待输入'
+}
+
 function buildInboxItems(
   notifications: InboxNotificationRow[],
   approvals: ApprovalRow[],
+  inputRequests: InputRequestRow[],
   audits: AuditRow[],
 ): InboxItem[] {
   const approvalById = new Map(approvals.map((item) => [item.id, item]))
+  const inputRequestById = new Map(inputRequests.map((item) => [item.id, item]))
   const auditById = new Map(audits.map((item) => [item.id, item]))
   const resolvedAuthTimestampsByKey = createResolvedAuthTimestampsIndex(audits)
   const seen = new Set<string>()
@@ -210,6 +247,31 @@ function buildInboxItems(
         thread: approval.thread || approval.target,
         about: approval.target,
         approvalId: approval.id,
+      })
+      continue
+    }
+
+    const inputRequestId = extractInputRequestIdFromInputRequestRef(notification.object)
+    const inputRequest = inputRequestId ? inputRequestById.get(inputRequestId) : null
+    if (inputRequest) {
+      const itemId = `input:${inputRequest.id}`
+      if (seen.has(itemId)) continue
+      seen.add(itemId)
+      const threadRef = extractInputRequestChatThreadRef(inputRequest)
+      items.push({
+        id: itemId,
+        kind: 'input_request',
+        category: 'input_request',
+        title: inputRequest.prompt || '需要输入',
+        description: buildInputRequestDescription(inputRequest),
+        timestamp: String(notification.createdAt ?? inputRequest.resolvedAt ?? inputRequest.createdAt ?? ''),
+        status: inputRequest.status,
+        inputRequest,
+        notification,
+        chatId: threadRef.chatId,
+        threadId: threadRef.threadId,
+        thread: inputRequest.thread || inputRequest.run || inputRequest.task,
+        about: inputRequest.run || inputRequest.task || inputRequest.session,
       })
       continue
     }
@@ -266,6 +328,26 @@ function buildInboxItems(
     })
   }
 
+  for (const inputRequest of inputRequests) {
+    const itemId = `input:${inputRequest.id}`
+    if (seen.has(itemId)) continue
+    const threadRef = extractInputRequestChatThreadRef(inputRequest)
+    items.push({
+      id: itemId,
+      kind: 'input_request',
+      category: 'input_request',
+      title: inputRequest.prompt || '需要输入',
+      description: buildInputRequestDescription(inputRequest),
+      timestamp: String(inputRequest.resolvedAt ?? inputRequest.createdAt ?? ''),
+      status: inputRequest.status,
+      inputRequest,
+      chatId: threadRef.chatId,
+      threadId: threadRef.threadId,
+      thread: inputRequest.thread || inputRequest.run || inputRequest.task,
+      about: inputRequest.run || inputRequest.task || inputRequest.session,
+    })
+  }
+
   for (const audit of audits) {
     const itemId = `audit:${audit.id}`
     if (seen.has(itemId)) continue
@@ -304,6 +386,9 @@ export const inboxOps = {
   },
   async fetchNotifications() {
     return inboxNotificationCollection.fetch()
+  },
+  async fetchInputRequests() {
+    return inputRequestCollection.fetch()
   },
   async resolveApproval(input: {
     approval: ApprovalRow
@@ -360,6 +445,7 @@ export const inboxOps = {
       queryClient.invalidateQueries({ queryKey: ['inbox', 'approvals'] }),
       queryClient.invalidateQueries({ queryKey: ['inbox', 'audit'] }),
       queryClient.invalidateQueries({ queryKey: ['inbox', 'notifications'] }),
+      queryClient.invalidateQueries({ queryKey: ['inbox', 'inputRequests'] }),
       queryClient.invalidateQueries({ queryKey: ['inbox', 'items'] }),
     ])
   },
@@ -374,13 +460,14 @@ export function useInboxItems(filterOverride?: InboxFilter, options?: { enabled?
     queryKey: ['inbox', 'items', filter],
     enabled: !!db && (options?.enabled ?? true),
     queryFn: async () => {
-      const [notifications, approvals, audits] = await Promise.all([
+      const [notifications, approvals, inputRequests, audits] = await Promise.all([
         inboxOps.fetchNotifications(),
         inboxOps.fetchApprovals(),
+        inboxOps.fetchInputRequests(),
         inboxOps.fetchAuditEntries(),
       ])
 
-      const allItems = buildInboxItems(notifications, approvals, audits)
+      const allItems = buildInboxItems(notifications, approvals, inputRequests, audits)
       return filterInboxItems(allItems, filter)
     },
   })

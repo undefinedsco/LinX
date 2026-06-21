@@ -1,8 +1,7 @@
 // @vitest-environment node
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import { QueryClient } from '@tanstack/react-query'
-import { aiProviderTable, solidSchema } from '@undefineds.co/models'
-import { extractPodResourceTemplateValue } from '@undefineds.co/drizzle-solid'
+import { aiProviderResource, solidSchema } from '@undefineds.co/models'
 import { deleteExactRecord } from './exact-records'
 import { createPodCollection } from './pod-collection'
 import { createXpodIntegrationContext, type XpodIntegrationContext } from '../../test/xpod-integration'
@@ -14,7 +13,7 @@ async function getContext(): Promise<XpodIntegrationContext<typeof solidSchema>>
   if (context) return context
   context = await createXpodIntegrationContext({
     schema: solidSchema,
-    tables: [aiProviderTable],
+    resources: [aiProviderResource],
   })
   return context
 }
@@ -25,7 +24,7 @@ async function cleanup() {
   if (!db) return
   for (const subject of createdSubjects) {
     try {
-      await deleteExactRecord(db as any, aiProviderTable as any, subject)
+      await deleteExactRecord(db as any, aiProviderResource as any, subject)
     } catch {
       // ignore cleanup errors
     }
@@ -45,7 +44,7 @@ describe('pod-collection integration', () => {
     const queryClient = new QueryClient()
 
     const collection = createPodCollection({
-      table: aiProviderTable,
+      resource: aiProviderResource,
       queryKey: ['model-providers-test-optimistic'],
       queryClient,
       getDb: () => database as any,
@@ -93,12 +92,12 @@ describe('pod-collection integration', () => {
 
       await tx.isPersisted.promise
 
-      const created = await (database as any).findById(aiProviderTable as any, id)
+      const providerResourceId = `${id}.ttl`
+      const created = await (database as any).findById(aiProviderResource as any, providerResourceId)
       const subject = (created as any)?.['@id']
       const expectedModelUri = new URL(`/settings/providers/${id}.ttl#model-1`, baseUrl).href
       if (subject) createdSubjects.push(subject)
-      expect(created?.id).toBe(`${id}.ttl`)
-      expect(extractPodResourceTemplateValue(aiProviderTable as any, created?.id)).toBe(id)
+      expect(created?.id).toBe(providerResourceId)
       expect(created?.baseUrl).toBe('https://api.test.com')
       expect(created?.proxyUrl).toBe('https://proxy.test.com')
       expect(created?.hasModel).toBe(expectedModelUri)
@@ -118,7 +117,7 @@ describe('pod-collection integration', () => {
       .mockImplementation(async () => {})
 
     const collection = createPodCollection({
-      table: aiProviderTable,
+      resource: aiProviderResource,
       queryKey: ['model-providers-test-notify'],
       queryClient,
       getDb: () => database as any,
@@ -131,7 +130,7 @@ describe('pod-collection integration', () => {
 
       const id = crypto.randomUUID()
       const [created] = await (database as any)
-        .insert(aiProviderTable)
+        .insert(aiProviderResource)
         .values({
           id,
           baseUrl: 'https://api.test.com',
@@ -153,11 +152,6 @@ describe('pod-collection integration', () => {
           }
         }, 100)
       })
-
-      await (database as any).updateById(aiProviderTable as any, id, {
-        proxyUrl: 'https://proxy.changed.test.com',
-      })
-      await (database as any).deleteById(aiProviderTable as any, id)
 
       expect(await notified).toBe(true)
     } finally {

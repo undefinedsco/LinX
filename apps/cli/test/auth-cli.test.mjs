@@ -10,6 +10,22 @@ import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 const cliRoot = fileURLToPath(new URL('..', import.meta.url))
 const entryPath = join(cliRoot, 'dist', 'index.js')
 
+function solidAuthDir(home) {
+  return join(home, '.solid', 'auth')
+}
+
+function solidCredentialsPath(home) {
+  return join(solidAuthDir(home), 'credentials.json')
+}
+
+function solidAccountPath(home) {
+  return join(solidAuthDir(home), 'account.json')
+}
+
+function solidOidcStorageDir(home) {
+  return join(solidAuthDir(home), 'oidc-storage')
+}
+
 function createFetchMock(t) {
   const root = mkdtempSync(join(tmpdir(), 'linx-cli-fetch-mock-'))
   const modulePath = join(root, 'fake-fetch.mjs')
@@ -163,14 +179,18 @@ function execCli(args, env, modulePath) {
 function createAiCommandHarness(rows = {}) {
   const operations = []
   const stored = new Map()
-  const tableName = (table) => table?.config?.name ?? table?.name ?? 'unknown'
+  const resourceName = (resource) => resource?.config?.name ?? resource?.name ?? 'unknown'
   const recordKey = (name, id) => `${name}:${id}`
   const resolveId = (name, target) => {
     if (typeof target === 'string') return target
     if (name === 'aiModel') {
+      const rawId = String(target.id ?? '')
+      if (rawId.includes('#')) {
+        return rawId.replace(/^\/?settings\/providers\//, '')
+      }
       const providerRef = String(target.isProvidedBy ?? '')
       const provider = providerRef.includes('#') ? providerRef.split('#').pop() : providerRef.split('/').pop()
-      return `${provider?.replace(/\.ttl$/, '')}.ttl#${target.id}`
+      return `${provider?.replace(/\.ttl$/, '')}.ttl#${rawId}`
     }
     return String(target.id)
   }
@@ -193,37 +213,37 @@ function createAiCommandHarness(rows = {}) {
   }
 
   const db = {
-    resolveLocatorId(table, locator) {
-      return resolveId(tableName(table), locator)
+    resolveLocatorId(resource, locator) {
+      return resolveId(resourceName(resource), locator)
     },
-    async findById(table, id) {
-      return stored.get(recordKey(tableName(table), id)) ?? null
+    async findById(resource, id) {
+      return stored.get(recordKey(resourceName(resource), id)) ?? null
     },
-    async updateById(table, id, update) {
-      const name = tableName(table)
+    async updateById(resource, id, update) {
+      const name = resourceName(resource)
       const key = recordKey(name, id)
       const next = { ...(stored.get(key) ?? {}), ...update }
       stored.set(key, next)
-      operations.push({ op: 'update', table: name, id, row: next })
+      operations.push({ op: 'update', resource: name, id, row: next })
       return next
     },
-    async deleteById(table, id) {
-      const name = tableName(table)
+    async deleteById(resource, id) {
+      const name = resourceName(resource)
       const key = recordKey(name, id)
       const row = stored.get(key) ?? null
       stored.delete(key)
-      operations.push({ op: 'delete', table: name, id, row })
+      operations.push({ op: 'delete', resource: name, id, row })
       return row
     },
-    insert(table) {
+    insert(resource) {
       return {
         values(row) {
           return {
             async execute() {
-              const name = tableName(table)
+              const name = resourceName(resource)
               const id = inferId(name, row)
               stored.set(recordKey(name, id), row)
-              operations.push({ op: 'insert', table: name, id, row })
+              operations.push({ op: 'insert', resource: name, id, row })
               return [row]
             },
           }
@@ -233,12 +253,14 @@ function createAiCommandHarness(rows = {}) {
   }
   const output = []
   const contexts = []
+  const syncResults = []
 
   return {
     db,
     operations,
     output,
     contexts,
+    syncResults,
     dependencies: {
       async resolvePodWriteContext(urlOverride) {
         contexts.push(urlOverride)
@@ -261,11 +283,53 @@ function createAiCommandHarness(rows = {}) {
       write(chunk) {
         output.push(chunk)
       },
+      syncNow() {
+        return new Date('2026-05-21T00:00:00.000Z')
+      },
+      onSyncResult(result) {
+        syncResults.push(result)
+      },
     },
   }
 }
 
-test('linx login command always starts a fresh browser consent flow', async (t) => {
+test('linx login command reuses an existing browser consent session by default', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/login-command.ts')
+  t.after(() => cleanup())
+
+  const loginOptions = []
+  const output = []
+
+  await module.runLinxLoginCommand({ url: 'https://id.undefineds.co/' }, {
+    write(chunk) {
+      output.push(chunk)
+    },
+    async openBrowser(url) {
+      throw new Error(`browser should not open when existing session is reused: ${url}`)
+    },
+    async promptText(prompt) {
+      throw new Error(`manual redirect prompt should not open when existing session is reused: ${prompt}`)
+    },
+    async ensureBrowserConsentLogin(options) {
+      loginOptions.push(options)
+      return {
+        url: 'https://id.undefineds.co/',
+        webId: 'https://id.undefineds.co/ganbb/profile/card#me',
+        reusedExistingSession: true,
+        tokenSet: {},
+        credentialsToSave: {},
+      }
+    },
+  })
+
+  assert.equal(loginOptions.length, 1)
+  assert.equal(loginOptions[0].issuerUrl, 'https://id.undefineds.co/')
+  assert.equal(loginOptions[0].forceFresh, false)
+  assert.match(output.join(''), /LinX login successful\./)
+  assert.match(output.join(''), /session: reused/)
+})
+
+test('linx login --fresh starts a fresh browser consent flow', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/login-command.ts')
   t.after(() => cleanup())
 
@@ -274,7 +338,7 @@ test('linx login command always starts a fresh browser consent flow', async (t) 
   const opened = []
   const output = []
 
-  await module.runLinxLoginCommand({ url: 'https://id.undefineds.co/' }, {
+  await module.runLinxLoginCommand({ url: 'https://id.undefineds.co/', fresh: true }, {
     write(chunk) {
       output.push(chunk)
     },
@@ -300,47 +364,24 @@ test('linx login command always starts a fresh browser consent flow', async (t) 
     },
   })
 
-  assert.equal(loginOptions.length, 1)
-  assert.equal(loginOptions[0].issuerUrl, 'https://id.undefineds.co/')
   assert.equal(loginOptions[0].forceFresh, true)
+  assert.equal(loginOptions[0].forceRefreshExisting, undefined)
   assert.deepEqual(opened, ['https://id.undefineds.co/.oidc/auth?client_id=test'])
   assert.deepEqual(prompts, ['redirect URL (leave empty to keep waiting): '])
   assert.match(output.join(''), /LinX login successful\./)
   assert.match(output.join(''), /session: browser-consent/)
 })
 
-test('linx login command does not reuse an existing browser session when forceFresh is enabled', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/login-command.ts')
-  t.after(() => cleanup())
-
-  const loginOptions = []
-  await module.runLinxLoginCommand({ url: 'https://id.undefineds.co/' }, {
-    async ensureBrowserConsentLogin(options) {
-      loginOptions.push(options)
-      return {
-        url: 'https://id.undefineds.co/',
-        webId: 'https://id.undefineds.co/ganbb/profile/card#me',
-        reusedExistingSession: true,
-        tokenSet: {},
-        credentialsToSave: {},
-      }
-    },
-  })
-
-  assert.equal(loginOptions[0].forceFresh, true)
-  assert.equal(loginOptions[0].forceRefreshExisting, undefined)
-})
-
-test('linx whoami reads the saved LinX account session', async (t) => {
+test('linx whoami reads the saved Solid auth account session', async (t) => {
   const home = mkdtempSync(join(tmpdir(), 'linx-cli-whoami-home-'))
-  const linxDir = join(home, '.linx')
+  const authDir = solidAuthDir(home)
 
   t.after(() => {
     rmSync(home, { recursive: true, force: true })
   })
 
-  mkdirSync(linxDir, { recursive: true })
-  writeFileSync(join(linxDir, 'account.json'), JSON.stringify({
+  mkdirSync(authDir, { recursive: true })
+  writeFileSync(solidAccountPath(home), JSON.stringify({
     url: 'https://account.test/',
     email: 'dev@example.com',
     token: 'token_test',
@@ -363,18 +404,17 @@ test('linx whoami reads the saved LinX account session', async (t) => {
 
 test('linx logout removes account session and client credentials', async (t) => {
   const home = mkdtempSync(join(tmpdir(), 'linx-cli-logout-home-'))
-  const linxDir = join(home, '.linx')
-  const oidcStorageDir = join(linxDir, 'oidc-storage')
+  const authDir = solidAuthDir(home)
+  const oidcStorageDir = solidOidcStorageDir(home)
 
   t.after(() => {
     rmSync(home, { recursive: true, force: true })
   })
 
-  mkdirSync(linxDir, { recursive: true })
+  mkdirSync(authDir, { recursive: true })
   mkdirSync(oidcStorageDir, { recursive: true })
-  writeFileSync(join(linxDir, 'account.json'), '{}')
-  writeFileSync(join(linxDir, 'config.json'), '{}')
-  writeFileSync(join(linxDir, 'secrets.json'), '{}')
+  writeFileSync(solidAccountPath(home), '{}')
+  writeFileSync(solidCredentialsPath(home), '{}')
   writeFileSync(join(oidcStorageDir, encodeURIComponent('solidClientAuthn:registeredSessions')), '["stale-session"]')
 
   const { logFile, modulePath } = createFetchMock(t)
@@ -384,15 +424,26 @@ test('linx logout removes account session and client credentials', async (t) => 
   }, modulePath)
 
   assert.match(output, /Logged out\./)
-  assert.equal(existsSync(join(linxDir, 'account.json')), false)
-  assert.equal(existsSync(join(linxDir, 'config.json')), false)
-  assert.equal(existsSync(join(linxDir, 'secrets.json')), false)
+  assert.equal(existsSync(solidAccountPath(home)), false)
+  assert.equal(existsSync(solidCredentialsPath(home)), false)
   assert.equal(existsSync(oidcStorageDir), false)
 })
 
 test('linx logout does not clear Pod-backed AI provider credentials', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/login-command.ts')
   t.after(() => cleanup())
+
+  const originalHome = process.env.HOME
+  const home = mkdtempSync(join(tmpdir(), 'linx-cli-logout-ai-home-'))
+  process.env.HOME = home
+  t.after(() => {
+    if (originalHome === undefined) {
+      delete process.env.HOME
+    } else {
+      process.env.HOME = originalHome
+    }
+    rmSync(home, { recursive: true, force: true })
+  })
 
   const output = []
   module.runLinxLogoutCommand({
@@ -401,7 +452,7 @@ test('linx logout does not clear Pod-backed AI provider credentials', async (t) 
     },
   })
 
-  assert.match(output.join(''), /Local LinX credentials removed/)
+  assert.match(output.join(''), /Local Solid auth credentials removed/)
   assert.doesNotMatch(output.join(''), /AI provider|API key|provider credential/i)
 })
 
@@ -421,9 +472,9 @@ test('linx ai connect writes provider and credential config to Pod', async (t) =
   assert.match(output, /Connected AI provider: anthropic/)
   assert.match(output, /api-key: sk-a\*\*\*\*-key/)
 
-  const providerInsert = harness.operations.find((item) => item.op === 'insert' && item.table === 'aiProvider')
-  const credentialInsert = harness.operations.find((item) => item.op === 'insert' && item.table === 'credential')
-  const modelInsert = harness.operations.find((item) => item.op === 'insert' && item.table === 'aiModel')
+  const providerInsert = harness.operations.find((item) => item.op === 'insert' && item.resource === 'aiProvider')
+  const credentialInsert = harness.operations.find((item) => item.op === 'insert' && item.resource === 'credential')
+  const modelInsert = harness.operations.find((item) => item.op === 'insert' && item.resource === 'aiModel')
 
   assert.deepEqual(harness.contexts, [undefined])
   assert.ok(providerInsert)
@@ -437,9 +488,38 @@ test('linx ai connect writes provider and credential config to Pod', async (t) =
   assert.equal(credentialInsert.row.service, 'ai')
   assert.equal(credentialInsert.row.apiKey, 'sk-ant-test-key')
   assert.equal(credentialInsert.row.defaultModel, undefined)
-  assert.equal(modelInsert.row.id, 'claude-sonnet-4-20250514')
+  assert.equal(modelInsert.row.id, 'anthropic.ttl#claude-sonnet-4-20250514')
   assert.equal(modelInsert.row.displayName, 'claude-sonnet-4-20250514')
   assert.equal(modelInsert.row.isProvidedBy, '/settings/providers/anthropic.ttl')
+  assert.equal(harness.syncResults.length, 1)
+  assert.deepEqual(harness.syncResults[0], {
+    source: 'cli-ai-command',
+    target: 'pod',
+    direction: 'local-to-core',
+    plane: 'control-plane',
+    authority: 'core',
+    attempted: 1,
+    applied: 1,
+    skipped: 0,
+    failed: 0,
+    failures: [],
+    startedAt: '2026-05-21T00:00:00.000Z',
+    completedAt: '2026-05-21T00:00:00.000Z',
+    status: 'completed',
+    metadata: {
+      action: 'ai.connect',
+      resourceBindings: {
+        provider: {
+          uri: '/settings/providers/anthropic.ttl',
+          local: 'anthropic',
+        },
+        model: {
+          uri: '/settings/providers/anthropic.ttl#claude-sonnet-4-20250514',
+          local: 'claude-sonnet-4-20250514',
+        },
+      },
+    },
+  })
 })
 
 test('linx ai disconnect removes provider credential config from Pod', async (t) => {
@@ -478,8 +558,33 @@ test('linx ai disconnect removes provider credential config from Pod', async (t)
   }, harness.dependencies)
 
   assert.match(harness.output.join(''), /Disconnected AI provider: anthropic/)
-  const deletes = harness.operations.filter((item) => item.op === 'delete' && item.table === 'credential')
+  const deletes = harness.operations.filter((item) => item.op === 'delete' && item.resource === 'credential')
   assert.deepEqual(deletes.map((item) => item.id).sort(), ['anthropic-default', 'claude-default'])
+  assert.equal(harness.syncResults.length, 1)
+  assert.deepEqual(harness.syncResults[0], {
+    source: 'cli-ai-command',
+    target: 'pod',
+    direction: 'local-to-core',
+    plane: 'control-plane',
+    authority: 'core',
+    attempted: 1,
+    applied: 1,
+    skipped: 0,
+    failed: 0,
+    failures: [],
+    startedAt: '2026-05-21T00:00:00.000Z',
+    completedAt: '2026-05-21T00:00:00.000Z',
+    status: 'completed',
+    metadata: {
+      action: 'ai.disconnect',
+      resourceBindings: {
+        provider: {
+          uri: '/settings/providers/anthropic.ttl',
+          local: 'anthropic',
+        },
+      },
+    },
+  })
 })
 
 test('linx ai status prints configured cloud AI credentials', async (t) => {
@@ -526,10 +631,10 @@ test('linx ai status reads explicit provider config without provider/model colle
   const output = []
   const selectResources = []
   const findByIds = []
-  const tableName = (table) => table?.config?.name ?? table?.name ?? 'unknown'
+  const resourceName = (resource) => resource?.config?.name ?? resource?.name ?? 'unknown'
   const db = {
-    resolveLocatorId(table, locator) {
-      assert.equal(tableName(table), 'aiModel')
+    resolveLocatorId(resource, locator) {
+      assert.equal(resourceName(resource), 'aiModel')
       assert.deepEqual(locator, {
         id: 'gpt-5.5',
         isProvidedBy: '/settings/providers/openai.ttl',
@@ -541,9 +646,9 @@ test('linx ai status reads explicit provider config without provider/model colle
         from(resource) {
           return {
             async execute() {
-              selectResources.push(tableName(resource))
-              if (tableName(resource) !== 'credential') {
-                throw new Error(`unexpected collection scan: ${tableName(resource)}`)
+              selectResources.push(resourceName(resource))
+              if (resourceName(resource) !== 'credential') {
+                throw new Error(`unexpected collection scan: ${resourceName(resource)}`)
               }
               return [{
                 id: 'openai-default',
@@ -558,15 +663,15 @@ test('linx ai status reads explicit provider config without provider/model colle
       }
     },
     async findById(resource, id) {
-      findByIds.push([tableName(resource), id])
-      if (tableName(resource) === 'aiProvider' && id === 'openai') {
+      findByIds.push([resourceName(resource), id])
+      if (resourceName(resource) === 'aiProvider' && id === 'openai') {
         return {
           id: 'openai',
           baseUrl: 'https://api.openai.com/v1',
           hasModel: '/settings/providers/openai.ttl#gpt-5.5',
         }
       }
-      if (tableName(resource) === 'aiModel' && id === 'openai.ttl#gpt-5.5') {
+      if (resourceName(resource) === 'aiModel' && id === 'openai.ttl#gpt-5.5') {
         return {
           id: 'gpt-5.5',
           displayName: 'GPT-5.5',
@@ -639,7 +744,7 @@ test('linx ai connect deletes replaced provider-scoped model config', async (t) 
     model: 'new-model',
   }, harness.dependencies)
 
-  const modelDeletes = harness.operations.filter((item) => item.op === 'delete' && item.table === 'aiModel')
+  const modelDeletes = harness.operations.filter((item) => item.op === 'delete' && item.resource === 'aiModel')
   assert.deepEqual(modelDeletes.map((item) => item.id), ['anthropic.ttl#old-model'])
 })
 
@@ -672,7 +777,7 @@ test('linx ai connect uses the resolved Pod context before ORM writes', async (t
   assert.match(harness.output.join(''), /Connected AI provider: openai/)
   assert.ok(harness.operations.some((item) =>
     item.op === 'insert'
-    && item.table === 'credential'
+    && item.resource === 'credential'
     && item.row.provider === '/settings/providers/openai.ttl'
     && item.row.apiKey === 'sk-openai-test-key'))
 })

@@ -12,12 +12,12 @@ import { useChatStore } from '@/modules/chat/store'
 import { useEntity } from '@/lib/data/use-entity'
 import { solidProfileResource, agentResource, ContactType, isAgentContact, isGroupContact } from '@undefineds.co/models'
 import { useToast } from '@/components/ui/use-toast'
-import { 
-  MessageCircle, 
-  Phone, 
-  Video, 
-  Star, 
-  MoreHorizontal, 
+import {
+  MessageCircle,
+  Phone,
+  Video,
+  Star,
+  MoreHorizontal,
   ChevronRight,
   Bot,
   User,
@@ -46,12 +46,12 @@ import { useQuery } from '@tanstack/react-query'
 import { CreateGroupDialog } from './CreateGroupDialog'
 import { MemberList, type GroupMember } from './MemberList'
 import { SelectableContactList } from './SelectableContactList'
-import { 
-  DropdownMenu, 
-  DropdownMenuContent, 
-  DropdownMenuItem, 
-  DropdownMenuSeparator, 
-  DropdownMenuTrigger 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { cn, toStringArray } from '@/lib/utils'
 import { formatErrorForUser } from '@/lib/user-facing-errors'
@@ -86,7 +86,7 @@ const GenderIcon = ({ type }: { type?: string }) => {
 
 function InfoRow({ label, children, onClick, last, hideArrow }: any) {
   return (
-    <div 
+    <div
       onClick={onClick}
       className={cn(
         "flex items-start py-4 px-4 hover:bg-muted/30 transition-colors cursor-pointer group",
@@ -122,7 +122,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
   // Contact data from collections (state is a Map)
   const contacts = Array.from(contactCollection.state.values())
   const selectChat = useChatStore((state) => state.selectChat)
-  
+
   // Edit State
   const [editMode, setEditMode] = useState<'none' | 'prompt' | 'tools' | 'alias' | 'delete'>('none')
   const [editingAlias, setEditingAlias] = useState('')
@@ -132,14 +132,14 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
   const [inviteSearch, setInviteSearch] = useState('')
   const [selectedInvitees, setSelectedInvitees] = useState<Set<string>>(new Set())
   const [isInviting, setIsInviting] = useState(false)
-  
+
   // Create Dialog State
   const [createForm, setCreateForm] = useState({
     name: '',
     instructions: '',
     model: 'openai/gpt-4o',
   })
-  
+
   // 添加朋友搜索状态
   const [friendSearch, setFriendSearch] = useState({
     webId: '',
@@ -147,7 +147,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
     searchResult: null as { name: string; webId: string; avatarUrl?: string } | null,
     error: '',
   })
-  
+
   // Reset create form when dialog opens
   useEffect(() => {
     if (createDialogOpen) {
@@ -170,18 +170,18 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
     ? contacts.find(c => c.id === selectedId)
     : null
   const isContactLoading = false // Collections handle loading state
-  
+
   // Choose the source resource from the explicit contact type.
-  const entityUri = realContact && !isGroupContact(realContact) ? realContact.entityUri || null : null
-  const entityResource = isAgentContact(realContact) ? agentResource : solidProfileResource
+  const aboutRef = realContact && !isGroupContact(realContact) ? realContact.about || null : null
+  const aboutResource = isAgentContact(realContact) ? agentResource : solidProfileResource
 
   // 使用 useEntity 获取源数据（本地或远程，统一处理）
-  const { 
-    data: entityData, 
-    isLoading: isSyncing, 
-    error: syncError, 
-    refresh: handleManualSync 
-  } = useEntity(entityResource, entityUri, {
+  const {
+    data: sourceData,
+    isLoading: isSyncing,
+    error: syncError,
+    refresh: handleManualSync
+  } = useEntity(aboutResource, aboutRef, {
     onUpdate: (data) => {
       // 同步成功后更新本地 Contact 缓存
       if (realContact?.id && data) {
@@ -203,17 +203,17 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
   const contact: UnifiedContact | null = useMemo(() => {
     if (!selectedId) return null
     if (!realContact) return null
-    
+
     // 构建 agentConfig（如果是 Agent 类型且有源数据）
-    const agentConfig = isAgentContact(realContact) && entityData ? {
-      ...entityData,
-      model: typeof (entityData as any).model === 'string' ? (entityData as any).model : undefined,
-      instructions: typeof (entityData as any).instructions === 'string' ? (entityData as any).instructions : undefined,
-      ttsModel: typeof (entityData as any).ttsModel === 'string' ? (entityData as any).ttsModel : undefined,
-      videoModel: typeof (entityData as any).videoModel === 'string' ? (entityData as any).videoModel : undefined,
-      tools: toStringArray((entityData as any).tools),
+    const agentConfig = isAgentContact(realContact) && sourceData ? {
+      ...(sourceData as Record<string, unknown>),
+      model: typeof (sourceData as any).model === 'string' ? (sourceData as any).model : undefined,
+      instructions: typeof (sourceData as any).instructions === 'string' ? (sourceData as any).instructions : undefined,
+      ttsModel: typeof (sourceData as any).ttsModel === 'string' ? (sourceData as any).ttsModel : undefined,
+      videoModel: typeof (sourceData as any).videoModel === 'string' ? (sourceData as any).videoModel : undefined,
+      tools: toStringArray((sourceData as any).tools),
     } : undefined
-    
+
     return {
       ...realContact,
       displayName: realContact.alias || realContact.name || 'Unknown',
@@ -221,7 +221,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
       sourceType: isAgentContact(realContact) ? 'agent' : (realContact.externalPlatform === 'wechat' ? 'wechat' : 'solid'),
       agentConfig,
     } as UnifiedContact
-  }, [selectedId, realContact, entityData])
+  }, [selectedId, realContact, sourceData])
 
   const currentUserRef = session.info.webId ?? undefined
   const isGroup = !!realContact && isGroupContact(realContact)
@@ -242,7 +242,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
       contactOps.resolveMembers(memberRefs).flatMap((member) => {
         const refs = new Set<string>()
         if (member.id) refs.add(member.id)
-        if (typeof member.entityUri === 'string' && member.entityUri.length > 0) refs.add(member.entityUri)
+        if (typeof member.about === 'string' && member.about.length > 0) refs.add(member.about)
         return Array.from(refs).map((ref) => [ref, member] as const)
       }),
     )
@@ -253,7 +253,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
         id: memberRef,
         name: getShortId(memberRef),
         contactType: ContactType.SOLID,
-        entityUri: memberRef,
+        about: memberRef,
         createdAt: new Date(0),
         updatedAt: new Date(0),
       } as any),
@@ -277,7 +277,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
     return inviteContacts
       .filter((candidate) => !isGroupContact(candidate) && !candidate.deletedAt)
       .filter((candidate) => {
-        const memberRef = candidate.entityUri || candidate.id
+        const memberRef = candidate.about || candidate.id
         return typeof memberRef === 'string' && memberRef.length > 0 && !existingMembers.has(memberRef)
       })
       .filter((candidate) => {
@@ -288,11 +288,11 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
   }, [inviteContacts, inviteSearch, inviteTargetGroupId, contacts])
 
   // === 操作处理函数 ===
-  
+
   // 开始聊天 - 查找或创建与该联系人的聊天
   const handleStartChat = useCallback(async () => {
     if (!contact || !selectedId) return
-    
+
     try {
       if (realContact && isGroupContact(realContact)) {
         const chat = contactOps.getGroupChat(realContact.id)
@@ -303,7 +303,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
         navigate({ to: '/$microAppId', params: { microAppId: 'chat' } })
         return
       }
-      
+
       // 使用 contactOps 查找或创建聊天
       const chatId = await contactOps.findOrCreateChat(selectedId)
       selectChat(chatId)
@@ -413,7 +413,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
   // 分享联系人
   const handleShare = useCallback(() => {
     if (!contact) return
-    const shareUrl = contact.entityUri || `linx://contact/${contact.id}`
+    const shareUrl = contact.about || `linx://contact/${contact.id}`
     navigator.clipboard.writeText(shareUrl)
     notify.success('联系人链接已复制')
   }, [contact, notify])
@@ -456,22 +456,22 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
       setFriendSearch(s => ({ ...s, error: '请输入用户地址' }))
       return
     }
-    
+
     setFriendSearch(s => ({ ...s, isSearching: true, error: '', searchResult: null }))
-    
+
     try {
       const webId = friendSearch.webId.trim()
       const profile = await contactOps.fetchSolidProfile(webId)
-      
+
       if (!profile) {
-        setFriendSearch(s => ({ 
-          ...s, 
-          isSearching: false, 
+        setFriendSearch(s => ({
+          ...s,
+          isSearching: false,
           error: '无法获取用户信息，请检查用户地址是否正确'
         }))
         return
       }
-      
+
       setFriendSearch(s => ({
         ...s,
         isSearching: false,
@@ -482,10 +482,10 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
         }
       }))
     } catch (e) {
-      setFriendSearch(s => ({ 
-        ...s, 
-        isSearching: false, 
-        error: '搜索失败，请检查网络连接' 
+      setFriendSearch(s => ({
+        ...s,
+        isSearching: false,
+        error: '搜索失败，请检查网络连接'
       }))
     }
   }, [friendSearch.webId])
@@ -493,7 +493,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
   // 添加朋友（确认搜索结果后）
   const handleAddFriend = useCallback(async () => {
     if (!friendSearch.searchResult) return
-    
+
     setIsSaving(true)
     try {
       // Use contactOps to create contact + chat together
@@ -502,7 +502,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
         webId: friendSearch.searchResult.webId,
         avatarUrl: friendSearch.searchResult.avatarUrl,
       })
-      
+
       notify.success('好友添加成功')
       closeCreateDialog()
       // Select the new contact
@@ -520,21 +520,21 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
       notify.error('请输入助手名称')
       return
     }
-    
+
     setIsSaving(true)
     try {
       // Use contactOps to create agent + contact + chat together
       const [provider, model] = createForm.model.includes('/')
         ? createForm.model.split('/')
         : ['openai', createForm.model]
-      
+
       const result = await contactOps.createAgent({
         name: createForm.name.trim(),
         instructions: createForm.instructions.trim() || undefined,
         model,
         provider,
       })
-      
+
       notify.success('助手创建成功')
       closeCreateDialog()
       // Select the new contact
@@ -597,7 +597,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
       const candidatesById = new Map(inviteContacts.map((candidate) => [candidate.id, candidate]))
       for (const inviteeId of selectedInvitees) {
         const candidate = candidatesById.get(inviteeId)
-        const memberRef = candidate?.entityUri || candidate?.id
+        const memberRef = candidate?.about || candidate?.id
         if (typeof memberRef === 'string' && memberRef.length > 0) {
           await contactOps.addMemberToGroup(inviteTargetGroupId, memberRef)
         }
@@ -633,7 +633,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
     </div>
   ) : (() => {
     const displayName = contact.alias || contact.name || 'Unknown'
-    const rawId = contact.externalId || contact.entityUri || contact.id
+    const rawId = contact.externalId || contact.about || contact.id
     const displayId = getShortId(rawId ?? '')
     const region = contact.province ? `${contact.province} ${contact.city || ''}` : '未知地区'
     const isAgent = contact.sourceType === 'agent'
@@ -674,7 +674,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
         <div className="flex-1 overflow-hidden flex">
           <div className="flex-1 overflow-y-auto">
             <div className="max-w-2xl mx-auto px-8 pt-2 pb-12 space-y-8">
-          
+
           {/* HEADER */}
           <div className="flex items-start gap-6">
             <Avatar className="w-24 h-24 rounded-2xl border border-border/50 shadow-sm shrink-0">
@@ -697,9 +697,9 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
                   <Button variant="ghost" size="icon" className="h-5 w-5 rounded-md hover:bg-muted-foreground/10 text-muted-foreground/50 hover:text-foreground" onClick={() => handleCopyId(rawId ?? '')}><Copy className="w-3 h-3" /></Button>
                   {isReference && (
                     <div className="flex items-center gap-1 pl-1 border-l border-border/40">
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         className={cn(
                           "h-5 w-5 rounded-md hover:bg-muted-foreground/10",
                           syncError ? "text-destructive/70 hover:text-destructive" : "text-primary/70 hover:text-primary"
@@ -732,8 +732,8 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
                       <span className="text-destructive/60">
                         {formatErrorForUser(syncError, '联系人同步失败。请稍后重试。')}
                       </span>
-                      <Button 
-                        variant="link" 
+                      <Button
+                        variant="link"
                         className="h-auto p-0 text-xs text-primary/70 hover:text-primary"
                         onClick={handleManualSync}
                       >
@@ -781,7 +781,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
                 </span>
               </InfoRow>
               <InfoRow label="群聊资源" hideArrow last>
-                <span className="font-mono text-xs break-all">{realContact?.entityUri || realContact?.id}</span>
+                <span className="font-mono text-xs break-all">{realContact?.about || realContact?.id}</span>
               </InfoRow>
             </div>
           ) : (
@@ -813,7 +813,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
                   {isReference && <Lock className="w-3 h-3 text-muted-foreground/40 shrink-0" />}
                 </div>
               </InfoRow>
-              
+
               <InfoRow label="聊天模型" hideArrow>
                 <span className="font-medium">{contact.agentConfig.model || '未设置'}</span>
               </InfoRow>
@@ -850,11 +850,11 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
           )}
 
           {/* BLOCK 3: Contact Details (Humans Only) */}
-          {!isAgent && !isGroup && (contact.entityUri || contactInbox) && (
+          {!isAgent && !isGroup && (contact.about || contactInbox) && (
             <div className="bg-card rounded-xl border border-border/40 overflow-hidden shadow-sm">
-              {contact.entityUri && (
+              {contact.about && (
                 <InfoRow label={contact.sourceType === 'solid' ? '用户地址' : '资源'} hideArrow last={!contactInbox}>
-                  <span className="font-mono text-xs break-all">{contact.entityUri}</span>
+                  <span className="font-mono text-xs break-all">{contact.about}</span>
                 </InfoRow>
               )}
               {contactInbox && (
@@ -912,7 +912,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
       {content}
 
       {/* --- DIALOGS --- */}
-      
+
       {/* 备注名编辑 Dialog */}
       <Dialog open={editMode === 'alias'} onOpenChange={(v) => !v && setEditMode('none')}>
         <DialogContent className="sm:max-w-sm">
@@ -920,8 +920,8 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
             <DialogTitle>修改备注名</DialogTitle>
             <DialogDescription>更新当前联系人或群组的备注名称。</DialogDescription>
           </DialogHeader>
-          <Input 
-            placeholder="输入备注名..." 
+          <Input
+            placeholder="输入备注名..."
             value={editingAlias}
             onChange={(e) => setEditingAlias(e.target.value)}
             className="mt-2"
@@ -944,8 +944,8 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
             <DialogTitle>编辑系统提示词</DialogTitle>
             <DialogDescription>调整当前助手的系统提示词。</DialogDescription>
           </DialogHeader>
-          <Textarea 
-            placeholder="输入 System Prompt..." 
+          <Textarea
+            placeholder="输入 System Prompt..."
             className="min-h-[200px] resize-none font-mono text-sm leading-relaxed"
             value={editingPrompt}
             onChange={(e) => setEditingPrompt(e.target.value)}
@@ -1033,7 +1033,7 @@ export function ContactDetailPane({}: MicroAppPaneProps) {
                 className="min-h-[100px] resize-none"
               />
             </div>
-            
+
             <div className="space-y-2">
               <label className="text-sm font-medium">聊天模型</label>
               <ModelSelector

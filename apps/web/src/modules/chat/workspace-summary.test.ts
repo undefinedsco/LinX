@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { WorkspaceRow } from '@/lib/data/workspace-model'
+import { buildLocalWorkspaceId, type WorkspaceContainerMetadata } from '@/lib/data/workspace-uri'
 import type { RuntimeSessionRecord } from './runtime-client'
 import { buildWorkspaceSummary } from './workspace-summary'
 
@@ -7,7 +7,7 @@ function createRuntimeSession(overrides: Partial<RuntimeSessionRecord> = {}): Ru
   return {
     id: 'runtime-1',
     threadId: 'thread-1',
-    workspaceUri: 'linx://node-123/repo/linx',
+    container: 'linx://device-123/repo/linx',
     title: 'Runtime',
     repoPath: '/repo/linx',
     folderPath: '/repo/linx',
@@ -24,7 +24,7 @@ function createRuntimeSession(overrides: Partial<RuntimeSessionRecord> = {}): Ru
   }
 }
 
-function createWorkspace(overrides: Partial<WorkspaceRow> = {}): WorkspaceRow {
+function createWorkspace(overrides: Partial<WorkspaceContainerMetadata> = {}): WorkspaceContainerMetadata {
   return {
     id: 'ws-1',
     title: 'Pod Workspace',
@@ -37,24 +37,24 @@ function createWorkspace(overrides: Partial<WorkspaceRow> = {}): WorkspaceRow {
     createdAt: new Date('2026-03-27T00:00:00Z'),
     updatedAt: new Date('2026-03-27T00:00:00Z'),
     ...overrides,
-  } as WorkspaceRow
+  } as WorkspaceContainerMetadata
 }
 
 describe('buildWorkspaceSummary', () => {
   it('builds local workspace summary from runtime session', () => {
     expect(buildWorkspaceSummary({
-      workspaceUri: 'linx://node-123/repo/linx',
+      workspaceUri: 'linx://device-123/repo/linx',
       runtimeSession: createRuntimeSession(),
     })).toEqual({
-      kindLabel: '本地仓库',
+      kindLabel: '本地 worktree',
       primaryText: '/repo/linx',
-      secondaryText: '节点 node-123 · feature/runtime · 基于 HEAD',
+      secondaryText: '设备 device-123 · feature/runtime · 基于 HEAD',
     })
   })
 
   it('detects worktree when folder differs from repo root', () => {
     expect(buildWorkspaceSummary({
-      workspaceUri: 'linx://node-123/repo/linx/worktrees/feature-x',
+      workspaceUri: 'linx://device-123/repo/linx/worktrees/feature-x',
       runtimeSession: createRuntimeSession({
         repoPath: '/repo/linx',
         folderPath: '/repo/linx/worktrees/feature-x',
@@ -62,7 +62,29 @@ describe('buildWorkspaceSummary', () => {
     })).toEqual({
       kindLabel: '本地 worktree',
       primaryText: '/repo/linx/worktrees/feature-x',
-      secondaryText: '节点 node-123 · feature/runtime · 基于 HEAD',
+      secondaryText: '设备 device-123 · feature/runtime · 基于 HEAD',
+    })
+  })
+
+  it('builds local worktree summary from persisted workspace row without runtime session', () => {
+    const workspaceUri = 'linx://device-123/repo/linx/worktrees/feature-x'
+
+    expect(buildWorkspaceSummary({
+      workspaceUri,
+      workspaces: [createWorkspace({
+        id: buildLocalWorkspaceId('device-123', '/repo/linx/worktrees/feature-x'),
+        title: 'Feature X',
+        workspaceType: 'local',
+        kind: 'worktree',
+        rootUri: workspaceUri,
+        repoRootUri: 'linx://device-123/repo/linx',
+        branch: 'feature/x',
+        baseRef: 'main',
+      })],
+    })).toEqual({
+      kindLabel: '本地 worktree',
+      primaryText: 'Feature X',
+      secondaryText: '设备 device-123 · 仓库 linx://device-123/repo/linx · feature/x · 基于 main',
     })
   })
 

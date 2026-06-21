@@ -24,6 +24,7 @@ const controllerMock = {
   dismissStorageConflict: vi.fn(),
   openCurrentSpacePodSetup: vi.fn(),
 }
+const useLoginControllerMock = vi.fn(() => controllerMock)
 
 vi.mock('@tanstack/react-router', async () => {
   const actual = await vi.importActual<typeof import('@tanstack/react-router')>('@tanstack/react-router')
@@ -35,7 +36,7 @@ vi.mock('@tanstack/react-router', async () => {
 })
 
 vi.mock('./controller', () => ({
-  useLoginController: () => controllerMock,
+  useLoginController: () => useLoginControllerMock(),
 }))
 
 vi.mock('./LoginModal', () => ({
@@ -55,14 +56,26 @@ describe('LoginOverlay', () => {
   it('renders the login modal on regular routes', () => {
     render(<LoginOverlay />)
     expect(screen.getByText('login modal')).toBeTruthy()
+    expect(useLoginControllerMock).toHaveBeenCalledTimes(1)
   })
 
-  it('hides the login modal on the auth callback route', () => {
+  it('keeps the login controller mounted on the auth callback route without rendering the modal', () => {
     useRouterStateMock.mockImplementation(({ select }) =>
       select({ location: { pathname: '/auth/callback' } }),
     )
 
     const { container } = render(<LoginOverlay />)
     expect(container.innerHTML).toBe('')
+    expect(useLoginControllerMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not mount the login controller on test routes', () => {
+    useRouterStateMock.mockImplementation(({ select }) =>
+      select({ location: { pathname: '/test/inrupt-simple' } }),
+    )
+
+    const { container } = render(<LoginOverlay />)
+    expect(container.innerHTML).toBe('')
+    expect(useLoginControllerMock).not.toHaveBeenCalled()
   })
 })

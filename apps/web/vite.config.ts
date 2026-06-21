@@ -11,7 +11,6 @@ const releaseRepo = String(process.env.VITE_RELEASE_REPO ?? 'undefinedsco/LinX')
 const assetBase = process.env.LINX_VITE_BASE ?? '/'
 const outputDir = process.env.LINX_VITE_OUT_DIR ?? 'dist'
 const repoRoot = path.resolve(__dirname, '../..')
-const modelsRoot = path.resolve(repoRoot, 'packages/models/src')
 const inruptAuthnBrowser = path.resolve(
   repoRoot,
   'node_modules/@inrupt/solid-client-authn-browser/dist/index.mjs',
@@ -93,6 +92,8 @@ export default defineConfig({
     exclude: [
       '@linx/stores',
       '@linx/stores/login',
+      '@linx/stores/pod-db',
+      '@linx/stores/symphony-control',
     ],
   },
   define: {
@@ -105,9 +106,15 @@ export default defineConfig({
     preserveSymlinks: true,
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@linx/agent-runtime/pod-resource-identity': path.resolve(
+        repoRoot,
+        'packages/agent-runtime/src/pod-resource-identity.ts',
+      ),
+      '@linx/stores/current-pod-base': path.resolve(repoRoot, 'packages/stores/src/current-pod-base.ts'),
+      '@linx/stores/exact-records': path.resolve(repoRoot, 'packages/stores/src/exact-records.ts'),
+      '@linx/stores/pod-db': path.resolve(repoRoot, 'packages/stores/src/pod-collection.ts'),
+      '@linx/stores/pod-write-guard': path.resolve(repoRoot, 'packages/stores/src/pod-write-guard.ts'),
       '@linx/stores': path.resolve(__dirname, '../../packages/stores/src'),
-      '@undefineds.co/models/client': path.resolve(modelsRoot, 'client/index.ts'),
-      '@undefineds.co/models': path.resolve(modelsRoot, 'index.ts'),
       '@inrupt/solid-client-authn-browser': inruptAuthnBrowser,
     },
     extensions: ['.ts', '.tsx', '.mjs', '.js', '.mts', '.jsx', '.json'],

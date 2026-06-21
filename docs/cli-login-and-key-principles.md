@@ -71,7 +71,7 @@ logs, generated docs, or TUI state.
 
 - No user-facing `credential-source` selector.
 - No durable local provider-key fallback for CLI backends.
-- No second provider alias table in CLI code.
+- No second provider alias resource or local registry in CLI code.
 - No hand-written Turtle parser/writer for AI credentials.
 - No App/GUI product rule is defined by this page; this page is CLI-only.
 

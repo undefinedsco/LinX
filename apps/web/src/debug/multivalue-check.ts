@@ -6,7 +6,7 @@
  * 或在组件中调用: import { checkMultiValue } from '@/debug/multivalue-check'
  */
 
-import { chatTable, threadTable, messageTable } from '@undefineds.co/models'
+import { chatResource, threadResource, messageResource } from '@undefineds.co/models'
 
 export async function checkMultiValue() {
   console.log('='.repeat(60))
@@ -23,17 +23,17 @@ export async function checkMultiValue() {
     return
   }
 
-  const tables = [
-    { name: 'chats', table: chatTable },
-    { name: 'threads', table: threadTable },
-    { name: 'messages', table: messageTable },
+  const resources = [
+    { name: 'chats', resource: chatResource },
+    { name: 'threads', resource: threadResource },
+    { name: 'messages', resource: messageResource },
   ]
 
-  for (const { name, table } of tables) {
+  for (const { name, resource } of resources) {
     console.log(`\n--- 检查 ${name} 表 ---`)
     
     try {
-      const rows = await db.select().from(table).execute()
+      const rows = await db.select().from(resource).execute()
       
       console.log(`  返回行数: ${rows.length}`)
       

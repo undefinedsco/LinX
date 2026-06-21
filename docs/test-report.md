@@ -87,7 +87,7 @@
 
 ### 2.1 Contact 集成测试
 
-**当前位置**: `../models/tests/*`（`@undefineds.co/models` 独立仓库）
+**当前位置**: `@undefineds.co/models` owning repository 的 `tests/*`；LinX 只消费已发布 npm 包，不再通过 `packages/models` checkout 跑这组测试。
 
 | 测试用例 | 耗时 | 状态 |
 |----------|------|------|
@@ -98,7 +98,7 @@
 
 ### 2.2 Credential 集成测试
 
-**当前位置**: `../models/tests/*`（`@undefineds.co/models` 独立仓库）
+**当前位置**: `@undefineds.co/models` owning repository 的 `tests/*`；LinX 只消费已发布 npm 包，不再通过 `packages/models` checkout 跑这组测试。
 
 | 测试用例 | 耗时 | 状态 |
 |----------|------|------|
@@ -108,7 +108,7 @@
 
 ### 2.3 Model Provider 集成测试
 
-**当前位置**: `../models/tests/*`（`@undefineds.co/models` 独立仓库）
+**当前位置**: `@undefineds.co/models` owning repository 的 `tests/*`；LinX 只消费已发布 npm 包，不再通过 `packages/models` checkout 跑这组测试。
 
 | 测试用例 | 耗时 | 状态 |
 |----------|------|------|
@@ -118,7 +118,7 @@
 
 ### 2.4 Chat/Thread/Message 集成测试
 
-**当前位置**: `../models/tests/*`（`@undefineds.co/models` 独立仓库）
+**当前位置**: `@undefineds.co/models` owning repository 的 `tests/*`；LinX 只消费已发布 npm 包，不再通过 `packages/models` checkout 跑这组测试。
 
 | 测试用例 | 耗时 | 状态 |
 |----------|------|------|
@@ -135,7 +135,7 @@
 
 **问题描述**:
 
-执行 `db.delete(table).where(eq(table.id, uuid))` 时，drizzle-solid 生成的 SPARQL 查询将 UUID 作为相对 IRI 处理，但未设置 base IRI，导致 SPARQL 解析器报错：
+执行 `db.delete(resource).where(eq(resource.id, uuid))` 时，drizzle-solid 生成的 SPARQL 查询将 UUID 作为相对 IRI 处理，但未设置 base IRI，导致 SPARQL 解析器报错：
 
 ```
 Failed to parse filter string into AST: 
@@ -197,7 +197,7 @@ npx vitest run src/modules/credentials/
 ### 集成测试
 
 ```bash
-# 默认直接运行即可；需要复用外部认证环境时，再设置 XPOD_TEST_MODE/XPOD_TEST_URL 等变量
+# 默认直接运行即可；需要复用外部认证环境时，设置 XPOD_TEST_MODE=auth 并让 SOLID_HOME 指向已登录的统一 Solid auth root
 
 # 运行所有集成测试
 cd ../models && npx vitest run tests/*.integration.test.ts

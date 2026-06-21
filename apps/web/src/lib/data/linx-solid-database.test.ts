@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { solidProfileTable } from '@undefineds.co/models'
-import { createLinxSolidDatabase } from './linx-solid-database'
+import { solidProfileResource } from '@undefineds.co/models'
+import { createLinxSolidDatabase, createTransportRewriteSession } from './linx-solid-database'
 
 const drizzleMock = vi.fn()
 const initializeLinxPodStorageMock = vi.fn()
@@ -11,7 +11,7 @@ vi.mock('@undefineds.co/drizzle-solid', () => ({
 }))
 
 vi.mock('@undefineds.co/models', () => ({
-  solidProfileTable: { config: { base: 'idp:///profile/card' } },
+  solidProfileResource: { config: { base: 'idp:///profile/card' } },
   solidSchema: { chat: 'schema' },
 }))
 
@@ -63,6 +63,61 @@ describe('createLinxSolidDatabase', () => {
       resourcePreparation: 'best-effort',
       schema: { chat: 'schema' },
     })
+  })
+
+  it('wraps authenticated fetch for local transport while preserving canonical Pod URLs', async () => {
+    const originalFetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response('ok'))
+    const session = {
+      info: { webId: 'https://id.example/alice#me' },
+      fetch: originalFetch,
+    }
+    const db = {
+      id: 'db',
+      getDialect: vi.fn(() => ({
+        getPodUrl: () => 'https://node.example/alice/',
+      })),
+    }
+    drizzleMock.mockReturnValue(db)
+    initializeLinxPodStorageMock.mockImplementation(async () => {
+      const wrappedSession = drizzleMock.mock.calls[0]?.[0] as typeof session
+      await wrappedSession.fetch('https://node.example/alice/agents/__secretary__/profile/card')
+    })
+
+    await createLinxSolidDatabase(session, {
+      podUrl: 'https://node.example/alice/',
+      transportUrlRewrite: {
+        fromBaseUrl: 'https://node.example/',
+        toBaseUrl: 'http://localhost:5737/',
+      },
+    })
+
+    expect(drizzleMock.mock.calls[0]?.[0]).not.toBe(session)
+    expect(originalFetch).toHaveBeenCalledWith('http://localhost:5737/alice/agents/__secretary__/profile/card', undefined)
+    expect(drizzleMock).toHaveBeenCalledWith(expect.any(Object), {
+      disableInteropDiscovery: true,
+      podUrl: 'https://node.example/alice/',
+      resourcePreparation: 'best-effort',
+      schema: { chat: 'schema' },
+    })
+  })
+
+  it('preserves session properties when creating a transport rewrite session', async () => {
+    const originalFetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response('ok'))
+    const session = {
+      info: { webId: 'https://id.example/alice#me' },
+      events: { on: vi.fn() },
+      fetch: originalFetch,
+    }
+
+    const wrapped = createTransportRewriteSession(session, {
+      fromBaseUrl: 'https://node.example/',
+      toBaseUrl: 'http://localhost:5737/',
+    }) as typeof session
+
+    expect(wrapped.info).toBe(session.info)
+    expect(wrapped.events).toBe(session.events)
+    await wrapped.fetch(new URL('https://node.example/alice/.data/chat/index.ttl'))
+    expect(originalFetch.mock.calls[0]?.[0]?.toString()).toBe('http://localhost:5737/alice/.data/chat/index.ttl')
   })
 
   it('overrides the dialect runtime when drizzle-solid does not forward podUrl yet', async () => {
@@ -237,15 +292,15 @@ describe('createLinxSolidDatabase', () => {
     const instance = await createLinxSolidDatabase({}, { podUrl: 'https://node-0000.undefineds.co/alice/' })
     const webId = 'https://id.undefineds.co/alice/profile/card#me'
 
-    expect(() => (instance as any).insert(solidProfileTable).values({
+    expect(() => (instance as any).insert(solidProfileResource).values({
       id: webId,
       name: 'Alice',
     })).not.toThrow()
-    await expect((instance as any).updateByIri(solidProfileTable, webId, { name: 'Alice' }))
+    await expect((instance as any).updateByIri(solidProfileResource, webId, { name: 'Alice' }))
       .resolves.toBeUndefined()
 
     expect(insertValues).toHaveBeenCalledWith({ id: webId, name: 'Alice' })
-    expect(updateByIri).toHaveBeenCalledWith(solidProfileTable, webId, { name: 'Alice' })
+    expect(updateByIri).toHaveBeenCalledWith(solidProfileResource, webId, { name: 'Alice' })
   })
 
   it('fails closed when an explicit SP Pod URL cannot be applied to the dialect runtime', async () => {

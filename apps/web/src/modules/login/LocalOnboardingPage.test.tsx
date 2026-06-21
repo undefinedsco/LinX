@@ -231,7 +231,7 @@ describe('LocalOnboardingPage', () => {
     }))
   })
 
-  it('waits for an explicit click before starting Local sign-in through the Local SP facade', async () => {
+  it('waits for an explicit click before starting Local sign-in through the Cloud issuer scoped to Local storage', async () => {
     localOnboardingState.snapshot = {
       state: 'ready',
       spaceKind: 'local',
@@ -266,7 +266,7 @@ describe('LocalOnboardingPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '继续登录' }))
 
-    expect(connectMock).toHaveBeenCalledWith('https://pod.example.com/', expect.objectContaining({
+    expect(connectMock).toHaveBeenCalledWith('https://id.undefineds.co', expect.objectContaining({
       authorizationSurface: 'embedded',
       route: 'local',
       accountIssuerUrl: 'https://id.undefineds.co',
@@ -277,10 +277,8 @@ describe('LocalOnboardingPage', () => {
       authorizationQuery: {
         provisionCode: 'pc-123',
       },
-      strictDiscovery: true,
       nodeId: 'node-123',
     }))
-    expect(connectMock).not.toHaveBeenCalledWith('https://id.undefineds.co', expect.anything())
   })
 
   it('does not auto start Local sign-in after Local becomes ready', async () => {

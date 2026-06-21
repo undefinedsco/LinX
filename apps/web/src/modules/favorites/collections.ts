@@ -8,7 +8,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { createPodCollection } from '@/lib/data/pod-collection'
 import {
-  favoriteTable,
+  favoriteResource,
   type FavoriteRow,
   type FavoriteInsert,
   type SourceModule,
@@ -36,11 +36,11 @@ function getDb(): SolidDatabase | null {
 // ============================================================================
 
 export const favoriteCollection = createPodCollection<
-  typeof favoriteTable,
+  typeof favoriteResource,
   FavoriteRow,
   FavoriteInsert
 >({
-  table: favoriteTable,
+  resource: favoriteResource,
   queryKey: ['favorites'],
   queryClient,
   getDb,

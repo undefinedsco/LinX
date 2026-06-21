@@ -3,15 +3,14 @@
  * 
  * When creating an AI chat, we need:
  * 1. An Agent record (stores provider, model, instructions)
- * 2. A Contact record (contactType='agent', entityUri points to Agent)
+ * 2. A Contact record (contactType='agent', about points to Agent)
  * 3. A Chat record (participants stores the Contact URI)
  */
 
 import type { SolidDatabase } from '@undefineds.co/models'
 import {
-  asResourceIri,
-  agentTable,
-  contactTable,
+  agentResource,
+  contactResource,
   agentRepository,
   contactRepository,
   ContactClass,
@@ -22,6 +21,7 @@ import {
   type AgentRow,
   type ContactRow,
 } from '@undefineds.co/models'
+import { asResourceIri } from '@/lib/data/resource-identity'
 
 export interface FindOrCreateAgentParams {
   provider: string
@@ -45,7 +45,7 @@ export async function findOrCreateAgent(
   const { provider, model, name, instructions } = params
 
   // Query existing agents
-  const agents = await db.select().from(agentTable).execute()
+  const agents = await db.select().from(agentResource).execute()
   
   // Find matching agent by provider + model
   const existing = agents.find(
@@ -56,7 +56,7 @@ export async function findOrCreateAgent(
   )
 
   if (existing) {
-    const uri = asResourceIri(db.resolveRowIri(agentTable as any, existing), 'Agent IRI')
+    const uri = asResourceIri(db.resolveRowIri(agentResource as any, existing), 'Agent IRI')
     return { agent: existing, agentUri: uri, created: false }
   }
 
@@ -69,7 +69,7 @@ export async function findOrCreateAgent(
     instructions: instructions || '',
   })
 
-  const uri = asResourceIri(db.resolveRowIri(agentTable as any, newAgent), 'Agent IRI')
+  const uri = asResourceIri(db.resolveRowIri(agentResource as any, newAgent), 'Agent IRI')
   return { agent: newAgent, agentUri: uri, created: true }
 }
 
@@ -83,15 +83,15 @@ export async function findOrCreateAgentContact(
   const { agent, agentUri } = params
 
   // Query existing contacts
-  const contacts = await db.select().from(contactTable).execute()
+  const contacts = await db.select().from(contactResource).execute()
   
   // Find contact that points to this agent
   const existing = contacts.find(
-    c => c.entityUri === agentUri && isAgentContact(c)
+    c => c.about === agentUri && isAgentContact(c)
   )
 
   if (existing) {
-    const uri = asResourceIri(db.resolveRowIri(contactTable as any, existing), 'Contact IRI')
+    const uri = asResourceIri(db.resolveRowIri(contactResource as any, existing), 'Contact IRI')
     return { contact: existing, contactUri: uri, created: false }
   }
 
@@ -99,13 +99,13 @@ export async function findOrCreateAgentContact(
   const newContact = await contactRepository.create!(db, {
     name: agent.name,
     avatarUrl: agent.avatarUrl || undefined,
-    entityUri: agentUri,
+    about: agentUri,
     rdfType: ContactClass.AGENT,
     contactType: ContactType.AGENT,
     isPublic: false,
   })
 
-  const uri = asResourceIri(db.resolveRowIri(contactTable as any, newContact), 'Contact IRI')
+  const uri = asResourceIri(db.resolveRowIri(contactResource as any, newContact), 'Contact IRI')
   return { contact: newContact, contactUri: uri, created: true }
 }
 

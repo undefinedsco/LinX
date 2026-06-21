@@ -1,24 +1,17 @@
 import { describe, expect, it, vi } from 'vitest'
-import { agentTable, contactTable } from '@undefineds.co/models'
+import { agentResource, contactResource } from '@undefineds.co/models'
 import { createAgentContactRecords, ensureAgentContactRecords } from './direct-chat-records'
 
 describe('direct-chat-records', () => {
-  it('preserves canonical Agent resource ids when repository create returns a short id', async () => {
-    const agentIri = 'https://pod.example/agents/__secretary__/profile/card#me'
+  it('preserves canonical Agent Home ids while creating the Contact record', async () => {
+    const agentIri = 'https://pod.example/agents/__secretary__/'
     const contactIri = 'https://pod.example/.data/contacts/__secretary__'
 
     const db = {
       insert: vi.fn((resource: unknown) => ({
         values: (input: Record<string, unknown>) => ({
           execute: vi.fn(async () => {
-            if (resource === agentTable) {
-              return [{
-                ...input,
-                id: '__secretary__',
-                '@id': agentIri,
-              }]
-            }
-            if (resource === contactTable) {
+            if (resource === contactResource) {
               return [{
                 ...input,
                 id: '__secretary__',
@@ -30,11 +23,11 @@ describe('direct-chat-records', () => {
         }),
       })),
       resolveRowIri: vi.fn((resource: unknown, row: Record<string, unknown>) => {
-        if (resource === agentTable) {
-          expect(row.id).toBe('__secretary__/profile/card#me')
+        if (resource === agentResource) {
+          expect(row.id).toBe('__secretary__/')
           return agentIri
         }
-        if (resource === contactTable) {
+        if (resource === contactResource) {
           return contactIri
         }
         return null
@@ -49,15 +42,15 @@ describe('direct-chat-records', () => {
       model: 'undefineds/linx-lite',
     })
 
-    expect(result.agentId).toBe('__secretary__/profile/card#me')
-    expect(result.agent.id).toBe('__secretary__/profile/card#me')
+    expect(result.agentId).toBe('__secretary__/')
+    expect(result.agent.id).toBe('__secretary__/')
     expect(result.contactId).toBe('__secretary__')
     expect(result.contactUri).toBe(contactIri)
-    expect(result.contact.entityUri).toBe(agentIri)
+    expect(result.contact.about).toBe(agentIri)
   })
 
   it('ensures an Agent contact by base-relative ids before chat bootstrap', async () => {
-    const agentIri = 'https://pod.example/agents/__secretary__/profile/card#me'
+    const agentIri = 'https://pod.example/agents/__secretary__/'
     const contactIri = 'https://pod.example/.data/contacts/__secretary__.ttl'
     const insertedRows: Array<{ resource: unknown; row: Record<string, unknown> }> = []
     const findById = vi.fn(async () => null)
@@ -72,11 +65,11 @@ describe('direct-chat-records', () => {
         }),
       })),
       resolveRowIri: vi.fn((resource: unknown, row: Record<string, unknown>) => {
-        if (resource === agentTable) {
-          expect(row.id).toBe('__secretary__/profile/card#me')
+        if (resource === agentResource) {
+          expect(row.id).toBe('__secretary__/')
           return agentIri
         }
-        if (resource === contactTable) {
+        if (resource === contactResource) {
           expect(row.id).toBe('__secretary__.ttl')
           return contactIri
         }
@@ -93,22 +86,17 @@ describe('direct-chat-records', () => {
       model: 'undefineds/linx-lite',
     })
 
-    expect(findById).toHaveBeenNthCalledWith(1, agentTable, '__secretary__/profile/card#me')
-    expect(findById).toHaveBeenNthCalledWith(2, contactTable, '__secretary__.ttl')
-    expect(insertedRows.map(({ resource }) => resource)).toEqual([agentTable, contactTable])
+    expect(findById).toHaveBeenCalledTimes(1)
+    expect(findById).toHaveBeenNthCalledWith(1, contactResource, '__secretary__.ttl')
+    expect(insertedRows.map(({ resource }) => resource)).toEqual([contactResource])
     expect(insertedRows[0].row).toMatchObject({
-      id: '__secretary__/profile/card#me',
-      '@id': agentIri,
-      name: 'AI Secretary',
-    })
-    expect(insertedRows[1].row).toMatchObject({
       id: '__secretary__',
       '@id': contactIri,
-      entity: agentIri,
+      about: agentIri,
     })
-    expect(result.agentId).toBe('__secretary__/profile/card#me')
+    expect(result.agentId).toBe('__secretary__/')
     expect(result.contactId).toBe('__secretary__')
     expect(result.contactUri).toBe(contactIri)
-    expect(result.contact.entityUri).toBe(agentIri)
+    expect(result.contact.about).toBe(agentIri)
   })
 })

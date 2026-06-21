@@ -1,8 +1,10 @@
 import {
+  normalizeWorkspaceKind,
   parseLocalWorkspaceUri,
   parseWorkspaceIdFromContainerUri,
-  type WorkspaceRow,
-} from '@/lib/data/workspace-model'
+  resolveWorkspaceIdFromUri,
+  type WorkspaceContainerMetadata,
+} from '@/lib/data/workspace-uri'
 import type { RuntimeSessionRecord } from './runtime-client'
 
 export interface WorkspaceSummary {
@@ -19,43 +21,46 @@ function joinMeta(parts: Array<string | null | undefined>): string | undefined {
   return normalized.length > 0 ? normalized.join(' · ') : undefined
 }
 
-function resolveLocalKindLabel(kind: 'folder' | 'git' | 'worktree') {
+function resolveLocalKindLabel(kind: 'folder' | 'worktree') {
   if (kind === 'worktree') return '本地 worktree'
-  if (kind === 'git') return '本地仓库'
   return '本地目录'
 }
 
 function resolvePodKindLabel(kind?: string | null) {
   if (kind === 'worktree') return '空间 worktree'
-  if (kind === 'git') return '空间仓库'
   return '空间文件夹'
 }
 
-function inferRuntimeWorkspaceKind(runtimeSession?: RuntimeSessionRecord | null): 'folder' | 'git' | 'worktree' {
+function resolveWorkspaceKindLabel(workspace?: WorkspaceContainerMetadata | null, fallbackUri?: string | null) {
+  const kind = normalizeWorkspaceKind(workspace?.kind)
+  const workspaceType = workspace?.workspaceType ?? (parseLocalWorkspaceUri(fallbackUri) ? 'local' : 'pod')
+  if (workspaceType === 'local') {
+    return resolveLocalKindLabel(kind)
+  }
+  return resolvePodKindLabel(kind)
+}
+
+function resolveRuntimeDisplayKind(runtimeSession?: RuntimeSessionRecord | null): 'folder' | 'worktree' {
   if (!runtimeSession?.repoPath?.trim()) {
     return 'folder'
   }
-
-  if (runtimeSession.folderPath?.trim() && runtimeSession.folderPath.trim() !== runtimeSession.repoPath.trim()) {
-    return 'worktree'
-  }
-
-  return 'git'
+  return 'worktree'
 }
 
-function resolvePodWorkspaceSummary(workspaceUri: string, workspaces: WorkspaceRow[]): WorkspaceSummary {
-  const workspaceId = parseWorkspaceIdFromContainerUri(workspaceUri)
+function resolveStoredWorkspaceSummary(workspaceUri: string, workspaces: WorkspaceContainerMetadata[]): WorkspaceSummary {
+  const workspaceId = resolveWorkspaceIdFromUri(workspaceUri) ?? parseWorkspaceIdFromContainerUri(workspaceUri)
   const workspace = workspaces.find((item) => item.id === workspaceId || item.rootUri === workspaceUri) ?? null
   const primaryText = workspace?.title?.trim() || workspace?.rootUri?.trim() || workspaceUri
   const rootUri = workspace?.rootUri?.trim()
   const secondaryText = joinMeta([
     rootUri && rootUri !== primaryText ? rootUri : undefined,
+    workspace?.workspaceType === 'local' && workspace?.repoRootUri ? `仓库 ${workspace.repoRootUri}` : undefined,
     workspace?.branch,
     workspace?.baseRef ? `基于 ${workspace.baseRef}` : undefined,
   ])
 
   return {
-    kindLabel: resolvePodKindLabel(workspace?.kind),
+    kindLabel: resolveWorkspaceKindLabel(workspace, workspaceUri),
     primaryText,
     secondaryText,
   }
@@ -67,7 +72,7 @@ export function buildWorkspaceSummary({
   runtimeSession,
 }: {
   workspaceUri?: string | null
-  workspaces?: WorkspaceRow[]
+  workspaces?: WorkspaceContainerMetadata[]
   runtimeSession?: RuntimeSessionRecord | null
 }): WorkspaceSummary | null {
   if (!workspaceUri && !runtimeSession) {
@@ -75,13 +80,24 @@ export function buildWorkspaceSummary({
   }
 
   const localWorkspace = parseLocalWorkspaceUri(workspaceUri)
+  const storedWorkspaceId = resolveWorkspaceIdFromUri(workspaceUri)
+  const storedWorkspace = storedWorkspaceId
+    ? workspaces?.find((item) => item.id === storedWorkspaceId || item.rootUri === workspaceUri)
+    : null
   if (localWorkspace || runtimeSession) {
-    const workspaceKind = inferRuntimeWorkspaceKind(runtimeSession)
-    const primaryText = runtimeSession?.folderPath?.trim() || localWorkspace?.path || workspaceUri || ''
+    const workspaceKind = resolveRuntimeDisplayKind(runtimeSession)
+    const primaryText = storedWorkspace?.title?.trim()
+      || runtimeSession?.folderPath?.trim()
+      || localWorkspace?.path
+      || workspaceUri
+      || ''
     const secondaryText = joinMeta([
-      localWorkspace?.nodeId ? `节点 ${localWorkspace.nodeId}` : undefined,
+      localWorkspace?.deviceId ? `设备 ${localWorkspace.deviceId}` : undefined,
+      storedWorkspace?.repoRootUri ? `仓库 ${storedWorkspace.repoRootUri}` : undefined,
       runtimeSession?.branch,
+      !runtimeSession?.branch ? storedWorkspace?.branch : undefined,
       runtimeSession?.baseRef ? `基于 ${runtimeSession.baseRef}` : undefined,
+      !runtimeSession?.baseRef && storedWorkspace?.baseRef ? `基于 ${storedWorkspace.baseRef}` : undefined,
     ])
 
     if (!primaryText) {
@@ -89,7 +105,7 @@ export function buildWorkspaceSummary({
     }
 
     return {
-      kindLabel: resolveLocalKindLabel(workspaceKind),
+      kindLabel: storedWorkspace ? resolveWorkspaceKindLabel(storedWorkspace, workspaceUri) : resolveLocalKindLabel(workspaceKind),
       primaryText,
       secondaryText,
     }
@@ -99,5 +115,5 @@ export function buildWorkspaceSummary({
     return null
   }
 
-  return resolvePodWorkspaceSummary(workspaceUri, workspaces ?? [])
+  return resolveStoredWorkspaceSummary(workspaceUri, workspaces ?? [])
 }

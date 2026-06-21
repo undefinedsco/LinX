@@ -1,6 +1,6 @@
 # xpod 需求：支持 LinX Desktop 本地部署
 
-> 状态：已按当前登录路径重写。旧版“用户手填平台分配域名”方案已废弃；当前 Local 默认由 Cloud provisioning 分配 managed canonical，注册后与设备 nodeId 绑定并稳定复用，高级配置才使用用户自有域名。
+> 状态：已按当前登录路径重写。旧版“用户手填平台分配域名”方案已废弃；当前 Local 默认由 Cloud provisioning 分配 managed canonical，注册后与 SP nodeId 绑定并稳定复用，高级配置才使用用户自有域名。deviceId 只表示能运行 workspace 的设备，不参与 SP 域名分配。
 
 本文是 xpod 交付需求，不是登录模型主文档；只记录 LinX 需要 xpod
 稳定提供的配置和运行契约。

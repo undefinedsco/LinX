@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { useSettingsStore } from '../store'
 import { requestOpenServiceManagement } from '../events'
 import { ShellStatusBadge } from '@/components/ShellStatusBadge'
+import { LocalNetworkSettingsCard } from './LocalNetworkSettingsCard'
 import { Bot, CheckCircle2, ExternalLink, Loader2, MonitorCog, Moon, Palette, RefreshCcw, Sun, Wrench } from 'lucide-react'
 
 function ThemeCard() {
@@ -151,6 +152,16 @@ export function SettingsContentPane({}: MicroAppPaneProps) {
       <div className="h-full overflow-y-auto bg-layout-content px-6 py-6">
         <div className="mx-auto max-w-3xl space-y-6">
           <RuntimeCard />
+        </div>
+      </div>
+    )
+  }
+
+  if (selectedSection === 'network') {
+    return (
+      <div className="h-full overflow-y-auto bg-layout-content px-6 py-6">
+        <div className="mx-auto max-w-3xl space-y-6">
+          <LocalNetworkSettingsCard />
         </div>
       </div>
     )

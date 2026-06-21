@@ -33,6 +33,10 @@ const SOLID_SESSION_PREFIX = 'solidClientAuthenticationUser:'
 const CALLBACK_RESTORE_TIMEOUT_MS = 15_000
 const SESSION_CURRENT_KEY_TIMEOUT_MS = 10_000
 const SESSION_CURRENT_KEY_POLL_MS = 100
+const CALLBACK_REDIRECT_RETRY_ATTEMPTS = 3
+const CALLBACK_REDIRECT_RETRY_DELAY_MS = 500
+let desktopRedirectRestorePromise: Promise<Awaited<ReturnType<ReturnType<typeof useSession>['session']['handleIncomingRedirect']>>> | null = null
+let desktopRedirectRestoreUrl: string | null = null
 
 export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackProps) {
   const { session, sessionRequestInProgress } = useSession()
@@ -112,8 +116,9 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
     if (navigatedRef.current || desktopRedirectRestoreInProgressRef.current) return
 
     const normalizedRedirectUrl = normalizeDesktopAuthRedirectUrl(redirectUrl)
-    if (isCallbackErrorRedirect(normalizedRedirectUrl)) {
-      const captured = capturePendingCallbackError(normalizedRedirectUrl)
+    if (isCallbackErrorRedirect(redirectUrl) || isCallbackErrorRedirect(normalizedRedirectUrl)) {
+      const captured = capturePendingCallbackError(redirectUrl)
+        ?? capturePendingCallbackError(normalizedRedirectUrl)
       if (captured?.error) {
         setError(formatLoginErrorForUser(
           captured.description ?? captured.error,
@@ -125,10 +130,17 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
 
     desktopRedirectRestoreInProgressRef.current = true
     try {
-      const restored = await session.handleIncomingRedirect({
-        url: normalizedRedirectUrl,
-        restorePreviousSession: false,
-      })
+      // Preserve the exact redirect URL that was registered with the OIDC
+      // authorization request. Desktop loopback callbacks use
+      // http://127.0.0.1:<port>/auth/callback; rewriting that to the renderer
+      // origin before Inrupt restores the session can make the token exchange
+      // use a different redirect_uri from the one Cloud issued the code for.
+      const restored = await restoreDesktopRedirectOnce(redirectUrl, () => (
+        handleIncomingRedirectWithRetry(() => session.handleIncomingRedirect({
+          url: redirectUrl,
+          restorePreviousSession: false,
+        }))
+      ))
       if (navigatedRef.current) return
 
       const restoredSessionId = typeof restored?.sessionId === 'string'
@@ -161,6 +173,7 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
 
   useEffect(() => {
     if (error || navigatedRef.current || session.info.isLoggedIn) return
+    if (sessionRequestInProgress) return
     const currentRedirectUrl = getCurrentLocationCallbackRedirectUrl()
     if (currentRedirectUrl) {
       const desktopAuth = typeof window !== 'undefined' ? window.xpodDesktop?.auth : undefined
@@ -189,10 +202,11 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
     return () => {
       cancelled = true
     }
-  }, [error, restoreDesktopRedirect, session.info.isLoggedIn])
+  }, [error, restoreDesktopRedirect, session.info.isLoggedIn, sessionRequestInProgress])
 
   useEffect(() => {
     if (error || navigatedRef.current || session.info.isLoggedIn) return
+    if (sessionRequestInProgress) return
     if (getCurrentLocationCallbackRedirectUrl()) return
 
     const desktopAuth = typeof window !== 'undefined' ? window.xpodDesktop?.auth : undefined
@@ -208,11 +222,12 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
           console.warn('[auth-callback] failed to consume desktop redirect event', restoreError)
         })
     })
-  }, [error, restoreDesktopRedirect, session.info.isLoggedIn])
+  }, [error, restoreDesktopRedirect, session.info.isLoggedIn, sessionRequestInProgress])
 
   useEffect(() => {
     if (error || navigatedRef.current) return
     if (session.info.isLoggedIn) return
+    if (sessionRequestInProgress) return
 
     const timeoutId = window.setTimeout(() => {
       if (navigatedRef.current) return
@@ -220,7 +235,7 @@ export default function SolidAuthCallback({ onSuccess, onError }: AuthCallbackPr
     }, CALLBACK_RESTORE_TIMEOUT_MS)
 
     return () => window.clearTimeout(timeoutId)
-  }, [error, session.info.isLoggedIn])
+  }, [error, session.info.isLoggedIn, sessionRequestInProgress])
 
   // Wait for the Inrupt callback to finish persisting auth metadata before
   // leaving /auth/callback. Navigating on the first LOGIN event can interrupt
@@ -359,6 +374,48 @@ function isSilentAuthError(error: string): boolean {
 }
 
 type CurrentSessionPersistence = 'ready' | 'repaired' | 'missing'
+
+
+async function handleIncomingRedirectWithRetry<T>(operation: () => Promise<T>): Promise<T> {
+  let lastError: unknown
+  for (let attempt = 1; attempt <= CALLBACK_REDIRECT_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      return await operation()
+    } catch (error) {
+      lastError = error
+      if (attempt >= CALLBACK_REDIRECT_RETRY_ATTEMPTS || !isTransientCallbackRestoreError(error)) {
+        throw error
+      }
+      await delay(CALLBACK_REDIRECT_RETRY_DELAY_MS * attempt)
+    }
+  }
+
+  throw lastError
+}
+
+function isTransientCallbackRestoreError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return /Failed to fetch|ERR_CONNECTION|network|NetworkError|fetch failed/i.test(message)
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
+
+function restoreDesktopRedirectOnce<T>(redirectUrl: string, operation: () => Promise<T>): Promise<T> {
+  if (desktopRedirectRestorePromise && desktopRedirectRestoreUrl === redirectUrl) {
+    return desktopRedirectRestorePromise as Promise<T>
+  }
+
+  desktopRedirectRestoreUrl = redirectUrl
+  desktopRedirectRestorePromise = operation().finally(() => {
+    if (desktopRedirectRestoreUrl === redirectUrl) {
+      desktopRedirectRestoreUrl = null
+      desktopRedirectRestorePromise = null
+    }
+  }) as typeof desktopRedirectRestorePromise
+  return desktopRedirectRestorePromise as Promise<T>
+}
 
 async function ensureCurrentSessionPersistence(
   sessionId: string | undefined,

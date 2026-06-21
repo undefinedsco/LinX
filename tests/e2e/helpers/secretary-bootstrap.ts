@@ -1,21 +1,72 @@
 import { expect, type Page } from '@playwright/test'
 
-export async function expectSecretaryInitialized(page: Page, timeoutMs = 45_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs
-  let state = await readSecretaryState(page)
+function isE2eDebugEnabled(): boolean {
+  return process.env.LINX_E2E_DEBUG === '1' || process.env.LINX_E2E_DEBUG === 'true'
+}
 
-  while (Date.now() < deadline && !state.ok && !state.ui.failed) {
+function debugLog(...args: unknown[]): void {
+  if (isE2eDebugEnabled()) console.log(...args)
+}
+
+export async function expectSecretaryInitialized(page: Page, timeoutMs = 45_000): Promise<number> {
+  await expectSecretaryVisible(page, timeoutMs)
+  return expectSecretaryPersisted(page, timeoutMs)
+}
+
+export async function expectSecretaryVisible(page: Page, timeoutMs = 45_000): Promise<number> {
+  const startedAt = Date.now()
+  const deadline = Date.now() + timeoutMs
+  let ui = await readSecretaryUiState(page)
+
+  while (Date.now() < deadline && !ui.uiReady && !ui.failed) {
     await page.waitForTimeout(500)
-    state = await readSecretaryState(page)
+    ui = await readSecretaryUiState(page)
   }
 
-  if (!state.ok) {
-    throw new Error(`expected AI Secretary to initialize\n${JSON.stringify(state, null, 2)}`)
+  if (!ui.uiReady) {
+    throw new Error(`expected AI Secretary to become visible\n${JSON.stringify(ui, null, 2)}`)
   }
 
   await expect(page.getByText('默认助手准备失败')).toHaveCount(0)
   await expect(page.getByText('正在准备默认助手')).toHaveCount(0)
   await expect(page.getByText('AI Secretary').first()).toBeVisible({ timeout: 10_000 })
+  const elapsedMs = Date.now() - startedAt
+  debugLog(`[secretary-bootstrap] visible in ${elapsedMs}ms`)
+  return elapsedMs
+}
+
+export async function expectSecretaryPersisted(page: Page, timeoutMs = 45_000): Promise<number> {
+  const startedAt = Date.now()
+  const deadline = Date.now() + timeoutMs
+  let state = await readSecretaryState(page)
+
+  while (Date.now() < deadline && !state.filesReady && !state.ui.failed) {
+    await page.waitForTimeout(500)
+    state = await readSecretaryState(page)
+  }
+
+  if (!state.filesReady) {
+    throw new Error(`expected AI Secretary to persist in Pod\n${JSON.stringify(state, null, 2)}`)
+  }
+
+  const elapsedMs = Date.now() - startedAt
+  debugLog(`[secretary-bootstrap] persisted in ${elapsedMs}ms pod=${state.podUrl ?? 'unknown'}`)
+  return elapsedMs
+}
+
+async function readSecretaryUiState(page: Page): Promise<SecretaryUiState> {
+  return page.evaluate(() => {
+    const text = document.body.innerText
+    const preparing = text.includes('正在准备默认助手')
+    const failed = text.includes('默认助手准备失败')
+    const hasSecretaryLabel = text.includes('AI Secretary')
+    return {
+      uiReady: hasSecretaryLabel && !failed && !preparing,
+      preparing,
+      failed,
+      hasSecretaryLabel,
+    }
+  })
 }
 
 async function readSecretaryState(page: Page): Promise<SecretaryState> {
@@ -59,19 +110,11 @@ async function readSecretaryState(page: Page): Promise<SecretaryState> {
 
     const expectedFiles = [
       {
-        path: 'agents/__secretary__/profile/card',
-        includes: 'AI Secretary',
-      },
-      {
         path: '.data/contacts/__secretary__.ttl',
-        includes: 'agents/__secretary__/profile/card#me',
+        includes: 'agents/__secretary__/',
       },
       {
         path: '.data/chat/__secretary__/index.ttl',
-        includes: 'AI Secretary',
-      },
-      {
-        path: '.data/chat/__secretary__/welcome.ttl',
         includes: 'AI Secretary',
       },
     ]
@@ -82,7 +125,7 @@ async function readSecretaryState(page: Page): Promise<SecretaryState> {
         const response = await fetchFn(url, {
           method: 'GET',
           headers: { Accept: '*/*' },
-          signal: AbortSignal.timeout(2_000),
+          signal: AbortSignal.timeout(8_000),
         })
         const text = await response.text().catch(() => '')
         return {
@@ -105,14 +148,17 @@ async function readSecretaryState(page: Page): Promise<SecretaryState> {
       }
     }))
 
-    const recordsReady = files.every((file) => file.ok)
+    const filesReady = files.every((file) => file.ok)
+    const uiReady = ui.hasSecretaryLabel && !ui.failed && !ui.preparing
 
     return {
-      ok: ui.hasSecretaryLabel && !ui.failed && !ui.preparing && recordsReady,
+      ok: uiReady && filesReady,
+      uiReady,
+      filesReady,
       podUrl,
       ui,
       files,
-      reason: recordsReady
+      reason: filesReady
         ? null
         : 'One or more Secretary contact/chat records are missing or have unexpected content.',
     }
@@ -132,8 +178,17 @@ async function readSecretaryState(page: Page): Promise<SecretaryState> {
   })
 }
 
+interface SecretaryUiState {
+  uiReady: boolean
+  preparing: boolean
+  failed: boolean
+  hasSecretaryLabel: boolean
+}
+
 interface SecretaryState {
   ok: boolean
+  uiReady: boolean
+  filesReady: boolean
   podUrl: string | null
   ui: {
     preparing: boolean

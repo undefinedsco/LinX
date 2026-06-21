@@ -7,7 +7,12 @@ describe('model-services provider metadata', () => {
     const anthropic = MODEL_PROVIDERS.find((provider) => provider.id === 'anthropic')
     const ollama = MODEL_PROVIDERS.find((provider) => provider.id === 'ollama')
 
-    expect(undefineds).toBeUndefined()
+    expect(undefineds).toMatchObject({
+      id: 'undefineds',
+      name: 'LinX Platform',
+      defaultBaseUrl: 'https://api.undefineds.co/v1',
+      defaultModels: ['linx-lite', 'linx'],
+    })
     expect(anthropic).toMatchObject({
       id: 'anthropic',
       name: 'Anthropic',

@@ -6,6 +6,11 @@ import {
   type RuntimeThreadEvent,
   type RuntimeThreadRecord,
 } from './runtime-runner'
+import {
+  inferRuntimeWorkspaceKind,
+  resolveRuntimeThreadWorkdir,
+  runtimeThreadWorkspaceFileUrl,
+} from './runtime-workspace'
 
 // xpod 0.2.0 runtime internals still use "thread" naming.
 // LinX treats that as an implementation detail and exposes "runtime session" at the product boundary.
@@ -33,20 +38,12 @@ type PtyRuntimeOutputEvent = {
   arguments: string
 }
 
-interface PtyThreadRuntimeInstance {
-  ensureStarted(threadId: string, cfg: unknown): Promise<unknown>
-  stop(threadId: string): void
-  sendMessage(
-    threadId: string,
-    text: string,
-    options?: { idleMs?: number; authWaitMs?: number },
-  ): AsyncIterable<PtyRuntimeOutputEvent>
-  respondToRequest(
-    threadId: string,
-    requestId: string,
-    output: string,
-    options?: { idleMs?: number; authWaitMs?: number },
-  ): AsyncIterable<PtyRuntimeOutputEvent>
+interface RequestScopedAgentRuntimeInstance {
+  run(input: {
+    threadId: string
+    prompt: string
+    config: unknown
+  }): AsyncIterable<PtyRuntimeOutputEvent>
 }
 
 interface GitWorktreeServiceInstance {
@@ -60,12 +57,12 @@ interface GitWorktreeServiceInstance {
 }
 
 interface XpodRuntimeModules {
-  PtyThreadRuntime: new (options?: { worktreeRootDirName?: string }) => PtyThreadRuntimeInstance
+  AcpAgentRuntime: new (options?: { worktreeRootDirName?: string }) => RequestScopedAgentRuntimeInstance
   GitWorktreeService: new () => GitWorktreeServiceInstance
 }
 
 let cachedModules: XpodRuntimeModules | null = null
-let sharedPtyRuntime: PtyThreadRuntimeInstance | null = null
+let sharedAcpRuntime: RequestScopedAgentRuntimeInstance | null = null
 let sharedGitService: GitWorktreeServiceInstance | null = null
 
 function loadXpodRuntimeModules(): XpodRuntimeModules {
@@ -75,26 +72,26 @@ function loadXpodRuntimeModules(): XpodRuntimeModules {
 
   const packageJsonPath = require.resolve('@undefineds.co/xpod/package.json')
   const packageDir = path.dirname(packageJsonPath)
-  const ptyModule = require(path.join(packageDir, 'dist', 'api', 'chatkit', 'runtime', 'PtyThreadRuntime.js')) as {
-    PtyThreadRuntime: XpodRuntimeModules['PtyThreadRuntime']
+  const runtimeModule = require(path.join(packageDir, 'dist', 'api', 'chatkit', 'runtime', 'AcpAgentRuntime.js')) as {
+    AcpAgentRuntime: XpodRuntimeModules['AcpAgentRuntime']
   }
   const gitModule = require(path.join(packageDir, 'dist', 'api', 'chatkit', 'runtime', 'GitWorktreeService.js')) as {
     GitWorktreeService: XpodRuntimeModules['GitWorktreeService']
   }
 
   cachedModules = {
-    PtyThreadRuntime: ptyModule.PtyThreadRuntime,
+    AcpAgentRuntime: runtimeModule.AcpAgentRuntime,
     GitWorktreeService: gitModule.GitWorktreeService,
   }
   return cachedModules
 }
 
-function getSharedPtyRuntime(): PtyThreadRuntimeInstance {
-  if (!sharedPtyRuntime) {
-    const { PtyThreadRuntime } = loadXpodRuntimeModules()
-    sharedPtyRuntime = new PtyThreadRuntime({ worktreeRootDirName: 'linx-runtime-worktrees' })
+function getSharedAcpRuntime(): RequestScopedAgentRuntimeInstance {
+  if (!sharedAcpRuntime) {
+    const { AcpAgentRuntime } = loadXpodRuntimeModules()
+    sharedAcpRuntime = new AcpAgentRuntime({ worktreeRootDirName: 'linx-runtime-worktrees' })
   }
-  return sharedPtyRuntime
+  return sharedAcpRuntime
 }
 
 function getSharedGitService(): GitWorktreeServiceInstance {
@@ -120,16 +117,13 @@ function buildDefaultBranchName(record: RuntimeThreadRecord): string {
 }
 
 export class XpodPtyRuntimeRunner implements RuntimeRunner {
-  private readonly ptyRuntime = getSharedPtyRuntime()
+  private readonly agentRuntime = getSharedAcpRuntime()
   private readonly gitService = getSharedGitService()
 
   constructor(private readonly host: RuntimeRunnerHost) {}
 
   async start(): Promise<RuntimeThreadRecord> {
-    await this.ensureWorkspaceReady()
-    const record = this.host.getRecord()
-
-    await this.ptyRuntime.ensureStarted(record.id, this.buildPtyConfig(record))
+    const workdir = await this.ensureWorkspaceReady()
 
     const updated = this.host.updateRecord({
       status: 'active',
@@ -142,7 +136,7 @@ export class XpodPtyRuntimeRunner implements RuntimeRunner {
       ts: Date.now(),
       threadId: updated.id,
       runner: updated.tool,
-      workdir: updated.folderPath,
+      workdir,
     })
     this.host.emitEvent({
       type: 'status',
@@ -155,8 +149,7 @@ export class XpodPtyRuntimeRunner implements RuntimeRunner {
   }
 
   async pause(): Promise<RuntimeThreadRecord> {
-    const record = this.host.getRecord()
-    this.ptyRuntime.stop(record.id)
+    // AcpAgentRuntime is request-scoped; there is no resident process to stop here.
     const updated = this.host.updateRecord({ status: 'paused' })
     this.host.emitEvent({
       type: 'status',
@@ -172,8 +165,7 @@ export class XpodPtyRuntimeRunner implements RuntimeRunner {
   }
 
   async stop(): Promise<RuntimeThreadRecord> {
-    const record = this.host.getRecord()
-    this.ptyRuntime.stop(record.id)
+    // AcpAgentRuntime is request-scoped; there is no resident process to stop here.
     const updated = this.host.updateRecord({ status: 'completed' })
     this.host.emitEvent({
       type: 'status',
@@ -204,9 +196,10 @@ export class XpodPtyRuntimeRunner implements RuntimeRunner {
       text: `$ ${text}`,
     })
 
-    void this.streamRuntimeEvents(record.id, this.ptyRuntime.sendMessage(record.id, text, {
-      idleMs: 800,
-      authWaitMs: 5 * 60_000,
+    void this.streamRuntimeEvents(record.id, this.agentRuntime.run({
+      threadId: record.id,
+      prompt: text,
+      config: this.buildRuntimeConfig(record),
     }))
     return record
   }
@@ -224,31 +217,43 @@ export class XpodPtyRuntimeRunner implements RuntimeRunner {
       text: `[tool_response] ${requestId} ${output}`,
     })
 
-    void this.streamRuntimeEvents(record.id, this.ptyRuntime.respondToRequest(record.id, requestId, output, {
-      idleMs: 800,
-      authWaitMs: 5 * 60_000,
+    void this.streamRuntimeEvents(record.id, this.agentRuntime.run({
+      threadId: record.id,
+      prompt: `Continue after tool response ${requestId}:\n${output}`,
+      config: this.buildRuntimeConfig(record),
     }))
     return record
   }
 
-  private async ensureWorkspaceReady(): Promise<void> {
+  private async ensureWorkspaceReady(): Promise<string> {
     const record = this.host.getRecord()
+    const workspaceKind = inferRuntimeWorkspaceKind(record)
 
-    const usesDedicatedFolder = record.folderPath !== record.repoPath
-    if (!usesDedicatedFolder) {
-      fs.mkdirSync(record.repoPath, { recursive: true })
-      return
+    if (workspaceKind === 'pod-container') {
+      return resolveRuntimeThreadWorkdir(record, { ensure: true })
     }
 
-    await this.gitService.assertGitRepo(record.repoPath)
+    const repoPath = record.repoPath
+    const folderPath = record.folderPath ?? record.repoPath
+    if (!repoPath || !folderPath) {
+      throw new Error('Local runtime session is missing repoPath or folderPath.')
+    }
 
-    if (fs.existsSync(record.folderPath)) {
-      return
+    const usesDedicatedFolder = folderPath !== repoPath
+    if (!usesDedicatedFolder) {
+      fs.mkdirSync(repoPath, { recursive: true })
+      return repoPath
+    }
+
+    await this.gitService.assertGitRepo(repoPath)
+
+    if (fs.existsSync(folderPath)) {
+      return folderPath
     }
 
     await this.gitService.createWorktree({
-      repoPath: record.repoPath,
-      worktreePath: record.folderPath,
+      repoPath,
+      worktreePath: folderPath,
       baseRef: record.baseRef || 'HEAD',
       branch: record.branch || buildDefaultBranchName(record),
     })
@@ -257,22 +262,22 @@ export class XpodPtyRuntimeRunner implements RuntimeRunner {
       branch: record.branch || buildDefaultBranchName(record),
       baseRef: record.baseRef || 'HEAD',
     })
+    return folderPath
   }
 
-  private buildPtyConfig(record: RuntimeThreadRecord) {
-    const workspace = record.folderPath === record.repoPath
-      ? { type: 'path' as const, rootPath: record.repoPath }
-      : {
-          type: 'git' as const,
-          rootPath: record.repoPath,
-          worktree: {
-            mode: 'existing' as const,
-            path: record.folderPath,
-          },
+  private buildRuntimeConfig(record: RuntimeThreadRecord) {
+    const workspaceKind = inferRuntimeWorkspaceKind(record)
+    const workspace = runtimeThreadWorkspaceFileUrl(record)
+    const worktree = workspaceKind === 'local-worktree' && record.folderPath
+      ? {
+          mode: 'existing' as const,
+          path: record.folderPath,
         }
+      : undefined
 
     return {
       workspace,
+      ...(worktree ? { worktree } : {}),
       idleMs: 800,
       authWaitMs: 5 * 60_000,
       runner: {

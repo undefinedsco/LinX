@@ -77,8 +77,19 @@ async function signUpToFreshRuntime(page: Page, runtime: SeededXpodRuntime): Pro
 
 async function ensurePodExistsForConsent(page: Page, runtime: SeededXpodRuntime): Promise<void> {
   const deadline = Date.now() + 60_000
+  const expectedPodUrl = new URL(`${runtime.podName}/`, runtime.baseUrl).href
+  const expectedWebId = new URL(`${runtime.podName}/profile/card#me`, runtime.baseUrl).href
 
   while (Date.now() < deadline) {
+    if (page.url().includes('/.account/account/')) {
+      const bodyText = await page.locator('body').innerText({ timeout: 1_000 }).catch(() => '')
+      if (bodyText.includes(expectedPodUrl) && bodyText.includes('Authorization Pending')) {
+        await pickExpectedWebId(page, expectedWebId)
+        await page.goto(new URL('/.account/oidc/consent/', runtime.baseUrl).href)
+        continue
+      }
+    }
+
     if (/\/\.account\/oidc\/consent\//.test(page.url())) {
       const authorizeButton = page.getByRole('button', { name: /Authorize|允许访问/i })
       const missingPodMessage = page.getByText('You need to create a Pod first to get a WebID.')
@@ -113,9 +124,9 @@ async function ensurePodExistsForConsent(page: Page, runtime: SeededXpodRuntime)
         page.getByRole('button', { name: /^Create$/i }).click(),
       ])
 
-      const expectedPodUrl = new URL(`${runtime.podName}/`, runtime.baseUrl).href
       await expect(page.getByRole('link', { name: expectedPodUrl, exact: true })).toBeVisible({ timeout: 30_000 })
 
+      await pickExpectedWebId(page, expectedWebId)
       await page.goto(new URL('/.account/oidc/consent/', runtime.baseUrl).href)
       continue
     }
@@ -132,6 +143,31 @@ async function authorizeRuntime(page: Page): Promise<void> {
   await expect(page.getByText('You need to create a Pod first to get a WebID.')).toHaveCount(0)
   await expect(authorizeButton).toBeEnabled({ timeout: 30_000 })
   await authorizeButton.click()
+}
+
+async function pickExpectedWebId(page: Page, webId: string): Promise<void> {
+  const result = await page.evaluate(async (targetWebId) => {
+    const response = await fetch('/.account/oidc/pick-webid/', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify({ webId: targetWebId, remember: true }),
+    })
+
+    return {
+      ok: response.ok,
+      status: response.status,
+      url: response.url,
+      body: await response.text().catch(() => ''),
+    }
+  }, webId)
+
+  if (!result.ok) {
+    throw new Error(`failed to pick WebID ${webId}: ${result.status} ${result.body}`)
+  }
 }
 
 function escapeRegex(value: string): string {

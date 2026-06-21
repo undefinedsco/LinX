@@ -172,7 +172,7 @@ export const LINX_IMPORT = createNamespace('lxi', 'https://vocab.linx.dev/import
 ### 9A.2 Import Vocab 对象
 
 ```typescript
-// packages/models/src/vocab/import.vocab.ts
+// @undefineds.co/models owning repository: src/vocab/import.vocab.ts
 
 import { LINX_IMPORT, DCTerms, SCHEMA } from '../namespaces'
 
@@ -230,7 +230,7 @@ export const ImportCheckpointVocab = {
 ### 9A.3 Pod 表定义
 
 ```typescript
-// packages/models/src/import/import-source.schema.ts（新增）
+// @undefineds.co/models owning repository: src/import/import-source.schema.ts（新增）
 
 export const importSourceTable = podTable(
   'import_source',
@@ -254,7 +254,7 @@ export const importSourceTable = podTable(
   },
 )
 
-// packages/models/src/import/import-mapping.schema.ts（新增）
+// @undefineds.co/models owning repository: src/import/import-mapping.schema.ts（新增）
 
 export const importMappingTable = podTable(
   'import_mapping',
@@ -279,7 +279,7 @@ export const importMappingTable = podTable(
   },
 )
 
-// packages/models/src/import/import-schedule.schema.ts（新增）
+// @undefineds.co/models owning repository: src/import/import-schedule.schema.ts（新增）
 
 export const importScheduleTable = podTable(
   'import_schedule',
@@ -300,7 +300,7 @@ export const importScheduleTable = podTable(
   },
 )
 
-// packages/models/src/import/import-run.schema.ts（新增）
+// @undefineds.co/models owning repository: src/import/import-run.schema.ts（新增）
 
 export const importRunTable = podTable(
   'import_run',
@@ -325,7 +325,7 @@ export const importRunTable = podTable(
   },
 )
 
-// packages/models/src/import/import-checkpoint.schema.ts（新增）
+// @undefineds.co/models owning repository: src/import/import-checkpoint.schema.ts（新增）
 
 export const importCheckpointTable = podTable(
   'import_checkpoint',
@@ -367,10 +367,10 @@ export const importCheckpointTable = podTable(
 ### 9A.6 Vocab 文件结构
 
 ```
-packages/models/src/vocab/
+@undefineds.co/models owning repository: src/vocab/
 ├── import.vocab.ts     ← ImportSourceVocab, ImportMappingVocab, ImportScheduleVocab, ImportRunVocab, ImportCheckpointVocab
 
-packages/models/src/import/
+@undefineds.co/models owning repository: src/import/
 ├── import-source.schema.ts
 ├── import-mapping.schema.ts
 ├── import-schedule.schema.ts

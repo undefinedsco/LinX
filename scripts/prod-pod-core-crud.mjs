@@ -12,6 +12,7 @@ import { assertDedicatedProdSmokeAccount } from './prod-smoke-account-guard.mjs'
 const runId = `linx-prod-crud-${crypto.randomUUID()}`
 const created = []
 let didCreateAnyResource = false
+const SOLID_AUTH_CREDENTIALS_HINT = '$SOLID_HOME/auth/credentials.json (SOLID_HOME defaults to ~/.solid)'
 
 function podBaseUrl(webId) {
   const url = new URL(webId)
@@ -36,7 +37,7 @@ function createOidcSessionLike(credentials, accessToken) {
 async function createSession() {
   const credentials = loadCredentials()
   if (!credentials) {
-    throw new Error('No ~/.linx credentials found. Run `linx login` first.')
+    throw new Error(`No LinX/Solid credentials found at ${SOLID_AUTH_CREDENTIALS_HINT}. Run \`linx login\` first.`)
   }
   assertDedicatedProdSmokeAccount(credentials.webId, { scriptName: 'scripts/prod-pod-core-crud.mjs' })
 
@@ -142,7 +143,8 @@ async function main() {
     sessionTable,
     solidSchema,
     threadTable,
-  } = await import('../packages/models/dist/index.js')
+    threadRepository,
+  } = await import('@undefineds.co/models')
   applySolidComunicaPatches()
   const baseUrl = podBaseUrl(webId)
   const db = drizzle(session, {
@@ -162,35 +164,36 @@ async function main() {
   ])
 
   const now = new Date('2026-01-02T03:04:05.000Z')
-  const chatId = `${runId}-chat`
-  const threadId = `${runId}-thread`
-  const messageId = `${runId}-message`
-  const runtimeSessionId = `${runId}-session`
-  const approvalId = `${runId}-approval`
-  const grantId = `${runId}-grant`
-  const auditId = `${runId}-audit`
+  const chatKey = `${runId}-chat`
+  const threadKey = `${runId}-thread`
+  const messageKey = `${runId}-message`
+  const runtimeSessionKey = `${runId}-session`
+  const approvalKey = `${runId}-approval`
+  const grantKey = `${runId}-grant`
+  const auditKey = `${runId}-audit`
 
-  const chatIri = db.resolveLocatorIri(chatTable, { id: chatId })
-  const chatResourceId = db.resolveResourceId(chatTable, chatIri)
-  const threadIri = db.resolveLocatorIri(threadTable, { id: threadId, chat: chatIri })
-  const threadResourceId = db.resolveResourceId(threadTable, threadIri)
-  const messageIri = db.resolveLocatorIri(messageTable, { id: messageId, chat: chatIri, createdAt: now })
-  const runtimeSessionIri = db.resolveLocatorIri(sessionTable, { id: runtimeSessionId, createdAt: now })
-  const runtimeSessionResourceId = db.resolveResourceId(sessionTable, runtimeSessionIri)
-  const approvalIri = db.resolveLocatorIri(approvalTable, { id: approvalId, createdAt: now })
-  const approvalResourceId = db.resolveResourceId(approvalTable, approvalIri)
-  const grantIri = db.resolveLocatorIri(grantTable, { id: grantId })
-  const grantResourceId = db.resolveResourceId(grantTable, grantIri)
-  const auditIri = db.resolveLocatorIri(auditTable, { id: auditId, createdAt: now })
-  const auditResourceId = db.resolveResourceId(auditTable, auditIri)
+  const chatResourceId = chatTable.buildId({ id: chatKey })
+  const chatIri = chatTable.buildIri(webId, { id: chatKey })
+  const threadResourceId = threadRepository.idForChat(chatResourceId, threadKey)
+  const threadIri = threadRepository.iriForChat(webId, chatResourceId, threadKey)
+  const messageResourceId = messageTable.buildId({ id: messageKey, parent: chatIri, chat: chatIri, createdAt: now })
+  const messageIri = messageTable.buildIri(webId, { id: messageKey, parent: chatIri, chat: chatIri, createdAt: now })
+  const runtimeSessionResourceId = sessionTable.buildId({ id: runtimeSessionKey, createdAt: now })
+  const runtimeSessionIri = sessionTable.buildIri(webId, { id: runtimeSessionKey, createdAt: now })
+  const approvalResourceId = approvalTable.buildId({ id: approvalKey, createdAt: now })
+  const approvalIri = approvalTable.buildIri(webId, { id: approvalKey, createdAt: now })
+  const grantResourceId = grantTable.buildId({ id: grantKey })
+  const grantIri = grantTable.buildIri(webId, { id: grantKey })
+  const auditResourceId = auditTable.buildId({ id: auditKey, createdAt: now })
+  const auditIri = auditTable.buildIri(webId, { id: auditKey, createdAt: now })
 
   created.push([auditTable, auditIri], [grantTable, grantIri], [approvalTable, approvalIri], [messageTable, messageIri], [sessionTable, runtimeSessionIri], [threadTable, threadIri], [chatTable, chatIri])
 
   try {
     await step('chat.create', () => db.insert(chatTable).values({
-      id: chatId,
+      id: chatResourceId,
       title: 'Prod CRUD chat',
-      description: `created-${chatId}`,
+      description: `created-${chatKey}`,
       participants: [webId],
       createdAt: now,
       updatedAt: now,
@@ -207,10 +210,10 @@ async function main() {
     })), { title: 'Prod CRUD chat updated' })
 
     await step('thread.create', () => db.insert(threadTable).values({
-      id: threadId,
-      chat: chatIri,
+      id: threadResourceId,
+      parent: chatIri,
       title: 'Prod CRUD thread',
-      workspace: `${baseUrl}/workspace/${threadId}/`,
+      workspace: `${baseUrl}/workspace/${threadKey}/`,
       metadata: { source: 'prod-pod-core-crud' },
       createdAt: now,
       updatedAt: now,
@@ -225,7 +228,8 @@ async function main() {
     })), { title: 'Prod CRUD thread updated' })
 
     await step('message.create', () => db.insert(messageTable).values({
-      id: messageId,
+      id: messageResourceId,
+      parent: chatIri,
       chat: chatIri,
       thread: threadIri,
       maker: webId,
@@ -250,11 +254,10 @@ async function main() {
     }
 
     await step('session.create', () => db.insert(sessionTable).values({
-      id: runtimeSessionId,
-      ownerWebId: webId,
+      id: runtimeSessionResourceId,
+      owner: webId,
       chat: chatIri,
       thread: threadIri,
-      sessionType: 'direct',
       status: 'active',
       tool: 'linx',
       tokenUsage: 12,
@@ -277,11 +280,11 @@ async function main() {
     })), { status: 'completed', tokenUsage: 34 })
 
     await step('approval.create', () => db.insert(approvalTable).values({
-      id: approvalId,
+      id: approvalResourceId,
       session: runtimeSessionIri,
-      toolCallId: `tool-${approvalId}`,
+      toolCallId: `tool-${approvalKey}`,
       toolName: 'shell',
-      target: `${baseUrl}/workspace/${threadId}/`,
+      target: `${baseUrl}/workspace/${threadKey}/`,
       action: 'https://undefineds.co/ns#executeCommand',
       risk: 'medium',
       status: 'pending',
@@ -309,8 +312,8 @@ async function main() {
     })), { status: 'approved', decisionBy: webId })
 
     await step('grant.create', () => db.insert(grantTable).values({
-      id: grantId,
-      target: `${baseUrl}/workspace/${threadId}/`,
+      id: grantResourceId,
+      target: `${baseUrl}/workspace/${threadKey}/`,
       action: 'https://undefineds.co/ns#executeCommand',
       effect: 'allow',
       riskCeiling: 'medium',
@@ -329,13 +332,13 @@ async function main() {
     })), { riskCeiling: 'high' })
 
     await step('audit.create', () => db.insert(auditTable).values({
-      id: auditId,
+      id: auditResourceId,
       action: 'approval_requested',
       actor: webId,
       actorRole: 'owner',
       onBehalfOf: webId,
       session: runtimeSessionIri,
-      toolCallId: `tool-${approvalId}`,
+      toolCallId: `tool-${approvalKey}`,
       approval: approvalIri,
       policyVersion: 'prod-pod-core-crud/v1',
       createdAt: now,

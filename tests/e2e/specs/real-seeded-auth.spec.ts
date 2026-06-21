@@ -142,8 +142,8 @@ async function authorizeSeededRuntime(page: Page, runtime: SeededXpodRuntime): P
     if (page.url().includes('/.account/account/')) {
       const bodyText = await page.locator('body').innerText({ timeout: 1_000 }).catch(() => '')
       if (bodyText.includes(expectedPodUrl) && bodyText.includes('Authorization Pending')) {
-        await clickAccountDashboardContinue(page)
-        await page.waitForURL(/\/\.account\/oidc\/consent\//, { timeout: 30_000 })
+        await pickExpectedWebId(page, new URL(`${runtime.podName}/profile/card#me`, runtime.baseUrl).href)
+        await page.goto(new URL('/.account/oidc/consent/', runtime.baseUrl).href)
         continue
       }
 
@@ -185,6 +185,10 @@ async function authorizeSeededRuntime(page: Page, runtime: SeededXpodRuntime): P
     }
 
     if (await authorizeButton.isVisible({ timeout: 1_000 }).catch(() => false)) {
+      if (await missingPodMessage.isVisible({ timeout: 500 }).catch(() => false)) {
+        await createPodButton.click()
+        continue
+      }
       await expect(missingPodMessage).toHaveCount(0)
       await expect(authorizeButton).toBeEnabled({ timeout: 20_000 })
       await authorizeButton.click()
@@ -197,16 +201,28 @@ async function authorizeSeededRuntime(page: Page, runtime: SeededXpodRuntime): P
   throw new Error(`timed out waiting for seeded xpod consent\n${JSON.stringify(await readCallbackDebugState(page), null, 2)}`)
 }
 
-async function clickAccountDashboardContinue(page: Page): Promise<void> {
-  const clicked = await page.evaluate(() => {
-    const candidates = Array.from(document.querySelectorAll('button, a, [role="button"]')) as HTMLElement[]
-    const target = candidates.find((element) => element.textContent?.trim().includes('Continue'))
-    target?.click()
-    return Boolean(target)
-  })
+async function pickExpectedWebId(page: Page, webId: string): Promise<void> {
+  const result = await page.evaluate(async (targetWebId) => {
+    const response = await fetch('/.account/oidc/pick-webid/', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify({ webId: targetWebId, remember: true }),
+    })
 
-  if (!clicked) {
-    throw new Error(`expected account dashboard Continue control\n${JSON.stringify(await readCallbackDebugState(page), null, 2)}`)
+    return {
+      ok: response.ok,
+      status: response.status,
+      url: response.url,
+      body: await response.text().catch(() => ''),
+    }
+  }, webId)
+
+  if (!result.ok) {
+    throw new Error(`failed to pick WebID ${webId}: ${result.status} ${result.body}`)
   }
 }
 
@@ -268,6 +284,15 @@ async function waitForChatPath(page: Page, timeoutMs: number): Promise<boolean> 
 async function assertLoginRouteReady(page: Page, runtime: SeededXpodRuntime): Promise<void> {
   try {
     await page.waitForFunction(() => Boolean((window as any).__SOLID_DB__), null, { timeout: 30_000 })
+    await page.waitForFunction(
+      (podName) => {
+        const loginStore = JSON.parse(window.localStorage.getItem('linx-login') ?? 'null')
+        const webId = loginStore?.state?.storedAccount?.webId
+        return typeof webId === 'string' && webId.includes(`/${podName}/profile/card#me`)
+      },
+      runtime.podName,
+      { timeout: 30_000 },
+    )
     await expect(page.getByRole('heading', { name: '选择空间' })).toHaveCount(0)
   } catch (error) {
     const debugState = await readCallbackDebugState(page)

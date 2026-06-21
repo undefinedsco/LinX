@@ -13,11 +13,11 @@ It is the execution baseline for implementation, verification, and release claim
 
 | Surface | Current truth owner | Existing Solid resource/schema | Active writer(s) | Gap | Next action |
 |---|---|---|---|---|---|
-| chat | Pod-backed for CLI default TUI, legacy CLI chat, and auto-mode conversation data | `chatTable` | `apps/cli/src/lib/pi-adapter/pod-mirror.ts`, `apps/cli/src/lib/pod-chat-store.ts`, `apps/cli/src/lib/auto-mode/pod-persistence.ts` | Production CRUD must be verified against real Pod before release claim | Keep as authoritative conversation root |
-| thread | Pod-backed for CLI default TUI, legacy CLI chat, and auto-mode conversation data | `threadTable` | `pod-mirror.ts`, `pod-chat-store.ts`, `auto-mode/pod-persistence.ts` | Production CRUD must be verified against real Pod before release claim | Keep as authoritative workspace/session thread |
-| message | Pod-backed for CLI default TUI, legacy CLI chat, and auto-mode conversation data | `messageTable` | `pod-mirror.ts`, `pod-chat-store.ts`, `auto-mode/pod-persistence.ts` | Production CRUD must be verified against real Pod before release claim | Keep as authoritative message history |
-| session | Pod-backed lifecycle projection for default TUI and web sidecar; live runtime control still uses Pi/runtime state | `sessionTable` | `pod-mirror.ts`, `apps/web/src/modules/chat/services/chatkit-local/runtime-sidecar.ts`, `apps/web/src/modules/chat/collections.ts` | Production CRUD must be verified; live transport state is not yet Pod-first | Keep Pod as durable session projection, local state only for live controls |
-| approval | Pod-backed in real approval flows | `approvalResource`, `auditResource`, `inboxNotificationTable` | `apps/cli/src/lib/auto-mode/pod-approval.ts`, `apps/web/src/modules/chat/services/chatkit-local/runtime-sidecar.ts` | Default Pi ordinary tool calls do not create approval rows unless an approval request actually exists | Keep approval rows tied to real approval semantics |
+| chat | Pod-backed for CLI default TUI, legacy CLI chat, and auto-mode conversation data | `chatResource` | `apps/cli/src/lib/pi-adapter/pod-mirror.ts`, `apps/cli/src/lib/pod-chat-store.ts`, `apps/cli/src/lib/auto-mode/pod-persistence.ts` | Production CRUD must be verified against real Pod before release claim | Keep as authoritative conversation root |
+| thread | Pod-backed for CLI default TUI, legacy CLI chat, and auto-mode conversation data | `threadResource` | `pod-mirror.ts`, `pod-chat-store.ts`, `auto-mode/pod-persistence.ts` | Production CRUD must be verified against real Pod before release claim | Keep as authoritative workspace/session thread |
+| message | Pod-backed for CLI default TUI, legacy CLI chat, and auto-mode conversation data | `messageResource` | `pod-mirror.ts`, `pod-chat-store.ts`, `auto-mode/pod-persistence.ts` | Production CRUD must be verified against real Pod before release claim | Keep as authoritative message history |
+| session | Pod-backed lifecycle projection for default TUI and web sidecar; live runtime control still uses Pi/runtime state | `sessionResource` | `pod-mirror.ts`, `apps/web/src/modules/chat/services/chatkit-local/runtime-sidecar.ts`, `apps/web/src/modules/chat/collections.ts` | Production CRUD must be verified; live transport state is not yet Pod-first | Keep Pod as durable session projection, local state only for live controls |
+| approval | Pod-backed in real approval flows | `approvalResource`, `auditResource`, `inboxNotificationResource` | `apps/cli/src/lib/auto-mode/pod-approval.ts`, `apps/web/src/modules/chat/services/chatkit-local/runtime-sidecar.ts` | Default Pi ordinary tool calls do not create approval rows unless an approval request actually exists | Keep approval rows tied to real approval semantics |
 | authorization / delegation | Pod-backed in remote approval grant flow | `grantResource` | `pod-approval.ts` writes `grantResource` for `accept_for_session` and reads active grants before creating new approvals | Broader Pi/web consumption still needs adoption; production CRUD must be verified | Keep grant as durable delegation policy |
 | audit | Pod-backed for default TUI tool execution and approval decisions | `auditResource` | `pod-mirror.ts`, `pod-approval.ts`, web sidecar | Production CRUD must be verified against real Pod before release claim | Keep as append-only audit/event surface |
 
@@ -45,7 +45,7 @@ Proceed with **Option A-prime**:
 
 ## Naming rule
 
-Use Solid/domain wording for shared storage semantics. Product-branded shared storage names such as `linxSchema` should not exist; new runtime/storage code should use `solidSchema` and describe resources as Solid resources rather than product-owned tables.
+Use Solid/domain wording for shared storage semantics. Product-branded shared storage names such as `linxSchema` should not exist; new runtime/storage code should use `solidSchema` and describe resources as Solid resources rather than product-owned storage abstractions.
 
 ## Pod integration test target
 
@@ -81,7 +81,7 @@ to keep xpod semantics intact and make the test harness target local xpod.
 
 `findByIri(iri)` is an exact subject lookup. It should use SPARQL as an acceleration path when a
 query capability exists, but the query must be subject-bound and bounded, for example
-`SELECT ?p ?o WHERE { <iri> ?p ?o . }`, then map predicate/object rows through the table schema.
+`SELECT ?p ?o WHERE { <iri> ?p ?o . }`, then map predicate/object rows through the resource schema.
 
 It must not reuse generic collection projection that expands every schema column into broad
 `OPTIONAL` patterns. Collection/list queries may still project optional fields, but OPTIONAL
@@ -99,7 +99,7 @@ Approval storage is date-bucketed, for example:
 /.data/approvals/{yyyy}/{MM}/{dd}.ttl#{approvalId}
 ```
 
-This bucket layout is a storage/resource layout detail owned by `packages/models`. Runtime code must
+This bucket layout is a storage/resource layout detail owned by `@undefineds.co/models`. Runtime code must
 not infer a different approval path in CLI/App shells.
 
 There are two separate read paths:
@@ -125,11 +125,11 @@ session" affordances from these fields, not from CLI-local state.
 
 ## Structured data access rule
 
-For every surface in this matrix, if a schema/resource exists in `packages/models`, the default
+For every surface in this matrix, if a schema/resource exists in `@undefineds.co/models`, the default
 application query path is:
 
 ```text
-Solid auth -> Inrupt-compatible session -> drizzle-solid -> packages/models resource/repository
+Solid auth -> Inrupt-compatible session -> drizzle-solid -> @undefineds.co/models resource/repository
 ```
 
 Client credentials and browser/OIDC consent may create that session differently, but after the

@@ -1,6 +1,6 @@
 import 'dotenv/config'
 import { drizzle } from '@undefineds.co/drizzle-solid'
-import { messageTable } from '@undefineds.co/models'
+import { messageResource } from '@undefineds.co/models'
 
 // 模拟 Inrupt session
 const mockSession = {
@@ -31,12 +31,12 @@ const mockSession = {
 
 async function main() {
   const db = drizzle(mockSession as any, {
-    schema: { messageTable },
+    schema: { messageResource },
   })
 
   console.log('Testing SELECT query...')
   try {
-    const results = await db.select().from(messageTable).limit(3).execute()
+    const results = await db.select().from(messageResource).limit(3).execute()
     console.log('Results:', results)
   } catch (e) {
     console.log('Error:', e)

@@ -10,7 +10,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
-import { CHAT_AGENT_PROVIDERS } from "@/lib/agent-providers"
+import { CHAT_AGENT_PROVIDERS, normalizeChatModelId } from "@/lib/agent-providers"
 
 // Capability Types
 export type ModelCapability = 'vision' | 'function_calling' | 'web_search' | 'reasoning' | 'embedding' | 'rerank' | 'free'
@@ -106,7 +106,8 @@ export function ModelSelector({ value, onChange, type = 'chat', placeholder, cla
   const [selectedTags, setSelectedTags] = React.useState<ModelCapability[]>([])
   
   const models = React.useMemo(() => MOCK_MODELS[type] || [], [type])
-  const selectedModel = React.useMemo(() => models.find(m => m.id === value), [models, value])
+  const selectedValue = React.useMemo(() => normalizeChatModelId(value ?? ""), [value])
+  const selectedModel = React.useMemo(() => models.find(m => m.id === selectedValue), [models, selectedValue])
 
   const availableTags = React.useMemo(() => {
     const set = new Set<ModelCapability>()
@@ -209,7 +210,7 @@ export function ModelSelector({ value, onChange, type = 'chat', placeholder, cla
                       onClick={() => { onChange?.(model.id); setOpen(false); }}
                       className={cn(
                         "relative flex items-center justify-between px-2 py-2 rounded-lg border border-transparent transition-all cursor-pointer group",
-                        value === model.id 
+                        selectedValue === model.id 
                           ? "bg-primary/5 border-primary/10" 
                           : "hover:bg-muted/50"
                       )}
@@ -218,7 +219,7 @@ export function ModelSelector({ value, onChange, type = 'chat', placeholder, cla
                         <ProviderIcon name={model.providerName} />
                         <div className="flex flex-col min-w-0 gap-0">
                           <div className="flex items-center gap-1.5">
-                            <span className={cn("font-medium text-sm", value === model.id ? "text-primary" : "text-foreground")}>
+                            <span className={cn("font-medium text-sm", selectedValue === model.id ? "text-primary" : "text-foreground")}>
                               {model.name}
                             </span>
                             <div className="flex gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
@@ -230,7 +231,7 @@ export function ModelSelector({ value, onChange, type = 'chat', placeholder, cla
                           </span>
                         </div>
                       </div>
-                      {value === model.id && <Check className="w-4 h-4 text-primary shrink-0 ml-2" />}
+                      {selectedValue === model.id && <Check className="w-4 h-4 text-primary shrink-0 ml-2" />}
                     </div>
                   ))}
                 </div>

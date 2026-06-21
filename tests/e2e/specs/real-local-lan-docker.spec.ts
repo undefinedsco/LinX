@@ -4,6 +4,7 @@ import { promisify } from 'node:util'
 import { startRealLocalDeviceRuntime } from '../helpers/real-local-cloud-runtime.cjs'
 
 const execFileAsync = promisify(execFile)
+const dockerProbeImage = process.env.LINX_DOCKER_LAN_IMAGE || 'node:22-alpine'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -63,7 +64,7 @@ async function fetchFromDocker(url: string): Promise<any> {
 
   const { stdout } = await execFileAsync(
     'docker',
-    ['run', '--rm', 'xpod:dev', 'node', '--input-type=module', '-e', script],
+    ['run', '--rm', dockerProbeImage, 'node', '--input-type=module', '-e', script],
     {
       timeout: 45_000,
       maxBuffer: 1024 * 1024,

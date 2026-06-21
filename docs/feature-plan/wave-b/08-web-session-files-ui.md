@@ -138,7 +138,7 @@ ChatListPane 中 `chatType='cli_session'` 的列表项需要差异化渲染：
 │                                                          │
 │  [Claude] 💭 分析当前代码结构...                          │
 │           🔧 Read apps/web/src/modules/chat/collections.ts │
-│           🔧 Read packages/models/src/chat.schema.ts     │
+│           🔧 Inspect @undefineds.co/models chat schema   │
 │           💭 设计重构方案...                               │
 │           📝 Write apps/web/src/modules/chat/collections.ts │
 │              ┌─ diff ──────────────────────────┐         │
@@ -377,7 +377,7 @@ CLI session 的底部输入栏用于向 CLI session 注入指令，而非与 AI 
 
 2. 解析优先级
    - 优先使用文件内 `@prefix`
-   - 其次使用系统命名空间（`packages/models/src/namespaces.ts`）
+   - 其次使用 `@undefineds.co/models` 导出的系统命名空间
    - 最后使用用户自定义命名空间（`ui.files.ttl.namespaces`）
 
 3. 冲突与安全规则

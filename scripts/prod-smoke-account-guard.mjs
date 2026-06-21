@@ -3,10 +3,9 @@ const DEFAULT_BLOCKED_WEBIDS = [
 ]
 
 export const PROD_SMOKE_WEBID_ENV = 'LINX_PROD_SMOKE_WEBID'
-export const LEGACY_PROD_SMOKE_WEBID_ENV = 'LINX_SMOKE_WEBID'
 
 export function getExpectedProdSmokeWebId(env = process.env) {
-  return normalizeWebId(env[PROD_SMOKE_WEBID_ENV] || env[LEGACY_PROD_SMOKE_WEBID_ENV] || '')
+  return normalizeWebId(env[PROD_SMOKE_WEBID_ENV] || '')
 }
 
 export function assertDedicatedProdSmokeAccount(actualWebId, options = {}) {

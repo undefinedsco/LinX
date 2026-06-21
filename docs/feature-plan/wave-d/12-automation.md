@@ -100,7 +100,7 @@ export const LINX_AUTO = createNamespace('lxa', 'https://vocab.linx.dev/automati
 ### 6A.2 Automation Vocab 对象
 
 ```typescript
-// packages/models/src/vocab/automation.vocab.ts
+// @undefineds.co/models owning repository: src/vocab/automation.vocab.ts
 
 import { LINX_AUTO, DCTerms } from '../namespaces'
 
@@ -134,7 +134,7 @@ export const AutomationRunVocab = {
 ### 6A.3 Pod 表定义
 
 ```typescript
-// packages/models/src/automation/automation-rule.schema.ts（新增）
+// @undefineds.co/models owning repository: src/automation/automation-rule.schema.ts（新增）
 
 export const automationRuleTable = podTable(
   'automation_rule',
@@ -173,7 +173,7 @@ export const automationRuleTable = podTable(
   },
 )
 
-// packages/models/src/automation/automation-run.schema.ts（新增）
+// @undefineds.co/models owning repository: src/automation/automation-run.schema.ts（新增）
 
 export const automationRunTable = podTable(
   'automation_run',
@@ -202,7 +202,7 @@ export const automationRunTable = podTable(
 AutonomySettings 不单独建表，复用现有 `settingsTable`（key-value 模式）：
 
 ```typescript
-// packages/models/src/settings/settings.schema.ts 中追加 SETTING_KEYS
+// @undefineds.co/models owning repository: src/settings/settings.schema.ts 中追加 SETTING_KEYS
 
 export const SETTING_KEYS = {
   // ... 现有 keys ...
@@ -243,10 +243,10 @@ export const SETTING_KEYS = {
 ### 6A.7 Vocab 文件结构
 
 ```
-packages/models/src/vocab/
+@undefineds.co/models owning repository: src/vocab/
 ├── automation.vocab.ts   ← AutomationRuleVocab, AutomationRunVocab
 
-packages/models/src/automation/
+@undefineds.co/models owning repository: src/automation/
 ├── automation-rule.schema.ts
 ├── automation-run.schema.ts
 └── index.ts              ← 统一导出

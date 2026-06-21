@@ -1,5 +1,6 @@
 import type { AutoModeEventLogEntry, AutoModeNormalizedEvent, AutoModeSessionRecord } from './types.js'
 import { getAutoModeBackendLabel } from './hooks/index.js'
+import { formatLinxCliErrorMessage } from '../linx-cloud-errors.js'
 
 interface TranscriptState {
   assistantLine: string
@@ -63,16 +64,16 @@ function appendNormalizedEvent(
   }
 
   if (event.type === 'approval.required') {
-    pushLine(lines, `[approval] ${event.message}`)
+    pushLine(lines, `[approval] ${formatLinxCliErrorMessage(event.message)}`)
     return
   }
 
   if (event.type === 'input.required') {
-    pushLine(lines, `[input] ${event.message}`)
+    pushLine(lines, `[input] ${formatLinxCliErrorMessage(event.message)}`)
     return
   }
 
-  pushLine(lines, `[note] ${event.message}`)
+  pushLine(lines, `[note] ${formatLinxCliErrorMessage(event.message)}`)
 }
 
 function formatRawArchiveLine(entry: AutoModeEventLogEntry): string | null {
@@ -100,17 +101,18 @@ function formatRawArchiveLine(entry: AutoModeEventLogEntry): string | null {
     }
 
     if (type === 'process.error' && typeof parsed.message === 'string') {
-      return `[error] ${parsed.message}`
+      return `[error] ${formatLinxCliErrorMessage(parsed.message)}`
     }
   } catch {
     // Keep original line when it is not structured JSON.
   }
 
+  const normalized = formatLinxCliErrorMessage(trimmed)
   if (entry.stream === 'stderr') {
-    return `stderr> ${trimmed}`
+    return `stderr> ${normalized}`
   }
 
-  return trimmed
+  return normalized
 }
 
 function shorten(text: string, width: number): string {
@@ -184,7 +186,7 @@ export function renderAutoModeTranscript(entries: AutoModeEventLogEntry[]): stri
 }
 
 export function formatArchivedAutoModeSession(record: AutoModeSessionRecord, entries: AutoModeEventLogEntry[]): string {
-  const label = getAutoModeBackendLabel(record.backend)
+  const label = record.backend === 'linx' ? 'LinX' : getAutoModeBackendLabel(record.backend)
   const header = [
     `${label} session history`,
     'controlled by: LinX',

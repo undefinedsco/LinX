@@ -51,6 +51,25 @@ function findFreePort() {
   })
 }
 
+function decodeProvisionCodePayload(code) {
+  assert.equal(typeof code, 'string')
+  const dotIndex = code.indexOf('.')
+  assert.ok(dotIndex > 0, 'provisionCode should be signed and self-contained')
+  const payload = JSON.parse(Buffer.from(code.slice(0, dotIndex), 'base64url').toString('utf8'))
+  assert.equal(typeof payload, 'object')
+  assert.notEqual(payload, null)
+  return payload
+}
+
+function assertProvisionCodeScope(code, expected) {
+  const payload = decodeProvisionCodePayload(code)
+  assert.equal(payload.spUrl, expected.spUrl)
+  assert.equal(payload.nodeId, expected.nodeId)
+  assert.equal(payload.serviceToken, expected.serviceToken)
+  assert.equal(typeof payload.exp, 'number')
+  assert.ok(payload.exp > Math.floor(Date.now() / 1000), 'provisionCode should not be expired')
+}
+
 test('Local onboarding reaches ready state against a real self-bootstrapped xpod runtime', {
   concurrency: false,
   timeout: 180000,
@@ -164,7 +183,11 @@ test('Local onboarding reaches ready state against a real self-bootstrapped xpod
   assert.equal(snapshot.localUrl, `http://localhost:${port}/`)
   assert.equal(snapshot.publicUrl, 'https://pod.example.com/')
   assert.equal(snapshot.cloudIdentityUrl, 'https://id.undefineds.co')
-  assert.equal(snapshot.provisionCode, 'pc-1')
+  assertProvisionCodeScope(snapshot.provisionCode, {
+    spUrl: 'https://pod.example.com/',
+    nodeId: 'abc123',
+    serviceToken: 'service-token-1',
+  })
   assert.equal(snapshot.capabilities?.baseUrl, 'https://pod.example.com/')
   assert.ok(providerStatuses.some(({ status }) => status === 'starting'))
   assert.ok(providerStatuses.some(({ status }) => status === 'running'))
@@ -305,7 +328,11 @@ test('Local onboarding upgrades a running Standalone xpod to Local after adding 
   assert.equal(remoteSnapshot.baseUrl, 'https://pod.example.com/')
   assert.equal(remoteSnapshot.publicUrl, 'https://pod.example.com/')
   assert.equal(remoteSnapshot.cloudIdentityUrl, 'https://id.undefineds.co')
-  assert.equal(remoteSnapshot.provisionCode, 'pc-1')
+  assertProvisionCodeScope(remoteSnapshot.provisionCode, {
+    spUrl: 'https://pod.example.com/',
+    nodeId: 'abc123',
+    serviceToken: 'service-token-1',
+  })
   assert.equal(remoteSnapshot.capabilities?.supported, true)
   assert.equal(remoteSnapshot.capabilities?.baseUrl, 'https://pod.example.com/')
   assert.equal(provisionCallCount, 1)

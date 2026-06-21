@@ -31,9 +31,7 @@ export async function detectStorageConflict(
     return null
   }
 
-  const actualStorageUrl = await fetchProfileStorageUrl(input.webId, input.fetch, {
-    storageProviderUrl: input.storageProviderPublicUrl,
-  })
+  const actualStorageUrl = await fetchProfileStorageUrl(input.webId, input.fetch)
   if (actualStorageUrl) {
     if (strictStoragePath && normalizeUrl(expectedStorageUrl) === normalizeUrl(actualStorageUrl)) {
       return null
@@ -84,15 +82,17 @@ export function buildAccountManagementUrl(storageProviderUrl?: string | null): s
 export async function fetchProfileStorageUrl(
   webId: string,
   fetcher: typeof fetch = fetch,
-  options?: { storageProviderUrl?: string | null },
+  _options?: { storageProviderUrl?: string | null },
 ): Promise<string | null> {
   let response: Response
   try {
     response = await fetchProfile(webId, fetcher)
   } catch (error) {
-    const providerResponse = await fetchStorageProviderProfile(webId, fetcher, options?.storageProviderUrl)
-    if (providerResponse) {
-      return parseProfileStorageUrl(providerResponse)
+    if (fetcher !== fetch) {
+      const publicResponse = await fetchProfile(webId, fetch)
+      if (publicResponse.ok) {
+        return parseProfileStorageUrl(publicResponse)
+      }
     }
     throw error
   }
@@ -105,13 +105,6 @@ export async function fetchProfileStorageUrl(
     const publicResponse = await fetchProfile(webId, fetch)
     if (publicResponse.ok) {
       return parseProfileStorageUrl(publicResponse)
-    }
-  }
-
-  if (!response.ok && fetcher !== fetch && isProfileAuthFailure(response)) {
-    const providerResponse = await fetchStorageProviderProfile(webId, fetcher, options?.storageProviderUrl)
-    if (providerResponse) {
-      return parseProfileStorageUrl(providerResponse)
     }
   }
 
@@ -167,33 +160,6 @@ function fetchProfile(webId: string, fetcher: typeof fetch): Promise<Response> {
       Accept: 'application/ld+json, application/json;q=0.9, text/turtle;q=0.8',
     },
   })
-}
-
-async function fetchStorageProviderProfile(
-  webId: string,
-  fetcher: typeof fetch,
-  storageProviderUrl?: string | null,
-): Promise<Response | null> {
-  const providerProfileUrl = resolveStorageProviderProfileUrl(webId, storageProviderUrl)
-  if (!providerProfileUrl || normalizeUrl(providerProfileUrl) === normalizeUrl(webId)) {
-    return null
-  }
-
-  const response = await fetchProfile(providerProfileUrl, fetcher)
-  return response.ok ? response : null
-}
-
-export function resolveStorageProviderProfileUrl(
-  webId: string,
-  storageProviderUrl?: string | null,
-): string | null {
-  const baseUrl = normalizeBaseUrl(storageProviderUrl)
-  const podSlug = derivePodSlugFromWebId(webId)
-  if (!baseUrl || !podSlug) {
-    return null
-  }
-
-  return `${baseUrl}${podSlug}/profile/card#me`
 }
 
 async function parseProfileStorageUrl(response: Response): Promise<string | null> {

@@ -1693,16 +1693,16 @@ async function handleChatCompletion(req: Request) {
   const db = drizzle(session);
   
   // 读取用户配置
-  const config = await db.select().from(aiConfigTable);
+  const config = await db.select().from(aiConfigResource);
   
   // 读取对话历史
-  const history = await db.select().from(threadsTable)
-    .where(eq(threadsTable.threadId, req.body.thread_id));
+  const history = await db.select().from(threadResource)
+    .where(eq(threadResource.threadId, req.body.thread_id));
   
   // 执行推理...
   
   // 保存对话
-  await db.insert(threadsTable).values({...});
+  await db.insert(threadResource).values({...});
 }
 ```
 

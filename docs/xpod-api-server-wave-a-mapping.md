@@ -56,7 +56,7 @@ interface AutonomyCheck {
 **Gap Analysis:**
 - xpod-api-server sets permission mode statically at agent config time
 - LinX needs **dynamic runtime checks** based on:
-  - `autonomy.level` from Pod `settingsTable`
+  - `autonomy.level` from Pod `settingsResource`
   - Tool name and arguments matching
   - Command whitelist logic
   - User's autonomy settings
@@ -70,7 +70,7 @@ interface AutonomyCheck {
 **Location:** `/src/agents/schema/agent-config.ts`
 
 ```typescript
-export const AgentConfig = podTable('AgentConfig', {
+export const agentConfigResource = podResource('AgentConfig', {
   ...
   timeout: int('timeout'),  // Line 40 - Agent execution timeout
   ...
@@ -98,7 +98,7 @@ data: {
 **Gap Analysis:**
 - xpod-api-server doesn't emit tool approval events with timeout timers
 - No auto-reject logic when timeout expires
-- Retry strategy table specifies "自动拒绝 + 通知用户" but not implemented
+- Retry strategy matrix specifies "自动拒绝 + 通知用户" but not implemented
 
 **Client-side responsibility (xpod-client-core):**
 - Parse approval events with timeout field
@@ -295,79 +295,58 @@ calling → running → error
 
 **Location:** `/src/agents/schema/`
 
-Agent-related Pod tables already defined:
+Agent-related Pod resources already defined:
 - `AgentProvider` (line 41+): Agent provider configuration
 - `AgentConfig` (line 30+): Agent instance config
 - `AgentStatus` (line 64+): Runtime status
 
-**BUT NO Approval/Inbox/Audit tables!**
+**BUT NO Approval/Inbox/Audit resources!**
 
 ### ✅ What LinX Wave A DEFINES (to implement)
 
 **Location:** LinX `/docs/feature-plan/wave-a/02-contracts-sidecar-events.md`
 
-**Inbox Table** (6A.2):
-```typescript
-export const inboxTable = podTable(
-  'inbox',
-  {
-    id: id('id'),
-    sessionRef: uri('sessionRef'),      // CLI session
-    toolCallRef: string('toolCallRef'), // toolCallId
-    chatId: uri('chatId'),              // Message
-    toolName: string('toolName'),
-    toolArguments: text('toolArguments'),
-    risk: string('risk'),               // low|medium|high
-    status: string('status'),           // pending|approved|rejected|expired
-    assignedTo: uri('assignedTo'),
-    decisionBy: uri('decisionBy'),      // Who approved
-    decisionRole: string('decisionRole'),
-    reason: text('reason'),
-    createdAt: timestamp('createdAt'),
-    resolvedAt: timestamp('resolvedAt'),
-  },
-  {
-    base: '/.data/inbox/',
-    type: LINX_SIDECAR.InboxItem,
-  }
-);
+**Inbox Resource** (6A.2):
+```text
+inboxResource
+  path: /.data/inbox/
+  type: LINX_SIDECAR.InboxItem
+  fields:
+    sessionRef: URI relation to runtime/session
+    toolCallRef: external runtime toolCallId
+    chat: URI relation to chat/message surface
+    toolName / toolArguments
+    risk: low | medium | high
+    status: pending | approved | rejected | expired
+    assignedTo / decisionBy / decisionRole / reason
+    createdAt / resolvedAt
 ```
 
 **Audit Resource** (6A.3):
-```typescript
-export const auditResource = podTable(
-  'audit',
-  {
-    id: id('id'),
-    action: string('action'),           // tool_approved|tool_rejected|etc
-    actor: uri('actor'),
-    actorRole: string('actorRole'),     // human|secretary|system
-    session: uri('session'),
-    entry: uri('entry'),
-    toolCallId: string('toolCallId'),
-    toolName: string('toolName'),
-    approval: uri('approval'),
-    policy: uri('policy'),
-    policyVersion: string('policyVersion'),
-    createdAt: timestamp('createdAt'),
-  },
-  {
-    base: '/.data/audits/',
-    subjectTemplate: '{yyyy}/{MM}/{dd}.ttl#{id}',
-    type: LINX_SIDECAR.AuditEntry,
-  }
-);
+```text
+auditResource
+  path: /.data/audits/{yyyy}/{MM}/{dd}.ttl#{auditId}
+  type: LINX_SIDECAR.AuditEntry
+  fields:
+    action: tool_approved | tool_rejected | tool_completed | ...
+    actor: URI relation to actor
+    actorRole: human | secretary | system
+    session / entry / approval / policy: URI relations
+    toolCallId: external runtime identifier
+    toolName
+    policyVersion
+    createdAt
 ```
 
 ### Gap Analysis
 
 **xpod-api-server:**
-- Does NOT define inbox or audit tables
+- Does NOT define inbox or audit resources
 - Does NOT implement approval persistence
 
 **xpod-client-core (to implement):**
 - Read InboxVocab from Pod
-- On approval events, write to inboxTable
+- On approval events, write to inboxResource
   - INSERT new inbox item when tool_approval_required
   - UPDATE status when user approves/rejects
   - Record decisionBy, decisionRole, reason, resolvedAt
@@ -425,7 +404,7 @@ interface SessionStateEvent {
 - xpod-api-server has terminal session management
 - LinX needs session events in SSE stream
 - Status flow: active → paused → completed (or error)
-- Client writes to chatTable (sessionStatus field)
+- Client writes to chatResource (sessionStatus field)
 
 ---
 
@@ -591,10 +570,10 @@ Web/Mobile UI
 └────────────────────────────────────────┘
         ↕ (drizzle-solid ORM)
 Pod Solid Storage (RDF)
-  ├─ messageTable (cache SSE events)
-  ├─ inboxTable (approval queue)
+  ├─ messageResource (cache SSE events)
+  ├─ inboxResource (approval queue)
   ├─ auditResource (approval audit)
-  └─ settingsTable (autonomy.level)
+  └─ settingsResource (autonomy.level)
 ```
 
 ---
@@ -610,8 +589,8 @@ Pod Solid Storage (RDF)
 | **tool_use_start/delta/end events** | ❌ | ✅ (to impl) | Need executor adaptation |
 | **tool_approval_required event** | ❌ | ✅ (to impl) | Need approval trigger logic |
 | **Tool call lifecycle** | ⚠️ Partial | ✅ (to impl) | Executor → approval → execution flow |
-| **Inbox table persistence** | ❌ | ✅ (to impl) | LinX defines schema |
-| **Audit table persistence** | ❌ | ✅ (to impl) | LinX defines schema |
+| **Inbox resource persistence** | ❌ | ✅ (to impl) | LinX defines schema |
+| **Audit resource persistence** | ❌ | ✅ (to impl) | LinX defines schema |
 | **Session state events** | ⚠️ Terminal only | ✅ (to impl) | Terminal session → ChatKit session mapping |
 | **Control commands (approve/reject/etc)** | ❌ | ✅ (to impl) | Terminal permission_response → MCP control |
 | **Agent executor integration** | ✅ Implemented | ✅ (to impl) | Consume executor events → SSE mapping |
@@ -626,17 +605,17 @@ Pod Solid Storage (RDF)
 3. Integrate with OutgoingStrategy for approval sending
 
 ### Phase 2: Autonomy & Approval
-1. Load AutonomyCheck settings from Pod settingsTable
+1. Load AutonomyCheck settings from Pod settingsResource
 2. Implement approval timeout timer (30s default)
-3. Write approval decision to inboxTable + auditResource
+3. Write approval decision to inboxResource + auditResource
 
 ### Phase 3: Persistence & Audit
-1. Implement inboxTable CRUD (insert approval, update decision)
+1. Implement inboxResource CRUD (insert approval, update decision)
 2. Implement auditResource logging (action + actor + stable resource pointers; no embedded context)
 3. Align with LinX's LINX_SIDECAR vocab
 
 ### Phase 4: Session Integration
-1. Map terminal session state → chatTable.sessionStatus
+1. Map terminal session state → chatResource.sessionStatus
 2. Emit session.state events to UI
 3. Implement pause/resume/stop control commands
 
@@ -646,13 +625,13 @@ Pod Solid Storage (RDF)
 
 1. **xpod-api-server is the Backend**: It provides the infrastructure for agent execution, auth, and streaming.
 
-2. **xpod-client-core is the Protocol Layer**: It's responsible for parsing SSE events, managing approval lifecycle, and writing to Pod persistence tables.
+2. **xpod-client-core is the Protocol Layer**: It's responsible for parsing SSE events, managing approval lifecycle, and writing to Pod persistence resources.
 
 3. **AutonomyCheck is Runtime**: Not a static config—needs to check Pod settings at runtime and make dynamic decisions per tool call.
 
 4. **Approval Events are Missing**: xpod-api-server doesn't emit tool_approval_required events; xpod-client-core must request them based on autonomy settings.
 
-5. **Pod Integration is Key**: Both inbox and audit tables are new Pod schemas (Wave A contract), xpod-client-core owns the write logic.
+5. **Pod Integration is Key**: Both inbox and audit resources are new Pod schemas (Wave A contract), xpod-client-core owns the write logic.
 
 6. **Auth is Solid**: DPoP support exists in xpod-api-server; xpod-client-core should reuse the same patterns for token management and verification.
 

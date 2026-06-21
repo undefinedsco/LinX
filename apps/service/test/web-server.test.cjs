@@ -23,6 +23,9 @@ function loadWebServerWithStubs(t, options = {}) {
 
   global.fetch = async (url, init = {}) => {
     fetchCalls.push({ url: String(url), init })
+    if (options.aiResponse && String(url).endsWith('/v1/chat/completions')) {
+      return options.aiResponse(url, init)
+    }
     const statusCode = options.provisionStatus ?? 200
     return {
       ok: statusCode >= 200 && statusCode < 300,
@@ -129,6 +132,7 @@ function setupPayload(overrides = {}) {
     },
     local: {
       nodeId: 'node-0000',
+      deviceId: 'device-0000',
     },
     ...overrides,
   }
@@ -218,6 +222,8 @@ test('setup writes Cloud+Local user-managed canonical domain env when Local has 
   assert.doesNotMatch(env, new RegExp(`^${['OIDC', 'ISSUER'].join('_')}=`, 'm'))
   assert.match(env, /^XPOD_CLOUD_API_ENDPOINT=https:\/\/api\.undefineds\.co$/m)
   assert.match(env, /^XPOD_NODE_ID=node-123$/m)
+  assert.match(env, /^LINX_NODE_ID=node-123$/m)
+  assert.match(env, /^LINX_DEVICE_ID=device-0000$/m)
   assert.match(env, /^XPOD_NODE_TOKEN=node-token$/m)
   assert.match(env, /^XPOD_SERVICE_TOKEN=service-token$/m)
   assert.match(env, /^LINX_PROVISION_CODE=provision-code$/m)
@@ -255,6 +261,8 @@ test('setup writes Cloud+Local Cloud-managed canonical domain env without a user
   assert.match(env, /^oidcIssuer=https:\/\/id\.undefineds\.co$/m)
   assert.doesNotMatch(env, new RegExp(`^${['OIDC', 'ISSUER'].join('_')}=`, 'm'))
   assert.match(env, /^XPOD_NODE_ID=node-123$/m)
+  assert.match(env, /^LINX_NODE_ID=node-123$/m)
+  assert.match(env, /^LINX_DEVICE_ID=device-0000$/m)
   assert.match(env, /^XPOD_NODE_TOKEN=node-token$/m)
   assert.match(env, /^XPOD_SERVICE_TOKEN=service-token$/m)
   assert.match(env, /^LINX_PROVISION_CODE=provision-code$/m)
@@ -330,6 +338,53 @@ test('service status exposes provisioning from generated env', async (t) => {
     completed: 0,
     error: 1,
   })
+})
+
+test('setup config separates SP node identity from runtime device identity', async (t) => {
+  const { server, tmpDir } = loadWebServerWithStubs(t)
+  const { listener, origin } = await listenOnRandomPort(server.app)
+  t.after(() => listener.close())
+
+  fs.writeFileSync(path.join(tmpDir, '.env'), [
+    'CSS_ROOT_FILE_PATH=/tmp/linx-pod',
+    'CSS_PORT=5737',
+    'XPOD_NODE_ID=node-123',
+    'LINX_NODE_ID=legacy-node',
+    'LINX_DEVICE_ID=device-abc',
+    'CSS_NODE_ID=css-node',
+    'LINX_SPACE_KIND=local',
+  ].join('\n'))
+
+  const response = await requestJson(origin, '/api/setup/config')
+
+  assert.equal(response.status, 200)
+  assert.equal(response.body.nodeId, 'node-123')
+  assert.equal(response.body.deviceId, 'device-abc')
+})
+
+test('setup config persists a generated runtime device identity', async (t) => {
+  const previousDeviceId = process.env.LINX_DEVICE_ID
+  delete process.env.LINX_DEVICE_ID
+  t.after(() => {
+    if (previousDeviceId === undefined) {
+      delete process.env.LINX_DEVICE_ID
+    } else {
+      process.env.LINX_DEVICE_ID = previousDeviceId
+    }
+  })
+
+  const { server, tmpDir } = loadWebServerWithStubs(t)
+  const { listener, origin } = await listenOnRandomPort(server.app)
+  t.after(() => listener.close())
+
+  const first = await requestJson(origin, '/api/setup/config')
+  const second = await requestJson(origin, '/api/setup/config')
+
+  assert.equal(first.status, 200)
+  assert.equal(second.status, 200)
+  assert.match(first.body.deviceId, /^device-[a-z0-9-]+$/)
+  assert.equal(second.body.deviceId, first.body.deviceId)
+  assert.equal(fs.readFileSync(path.join(tmpDir, '.device-id'), 'utf-8').trim(), first.body.deviceId)
 })
 
 test('service start accepts the configured Local space', async (t) => {
@@ -429,6 +484,40 @@ test('runtime API failures return user-facing copy without internal fields', asy
   assert.equal(response.status, 500)
   assert.equal(response.body.error, '工作会话创建失败。请重新进入 LinX；如果仍失败，请换一个空间。')
   assert.doesNotMatch(response.body.error, /findById|resource id|IRI/i)
+})
+
+test('server AI proxy targets the running xpod runtime and ignores caller supplied upstream URLs', async (t) => {
+  const { server, fetchCalls } = loadWebServerWithStubs(t, {
+    status: {
+      running: true,
+      port: 5737,
+      baseUrl: 'http://127.0.0.1:5737',
+      publicUrl: undefined,
+    },
+    aiResponse: async () => new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }),
+  })
+  const { listener, origin } = await listenOnRandomPort(server.app)
+  t.after(() => listener.close())
+
+  const response = await requestJson(origin, '/api/ai/chat/completions', {
+    method: 'POST',
+    body: {
+      model: 'linx-lite',
+      messages: [{ role: 'user', content: 'hi' }],
+      upstreamUrl: 'https://evil.example/v1/chat/completions',
+    },
+  })
+
+  assert.equal(response.status, 200)
+  assert.deepEqual(response.body, { choices: [{ message: { content: 'ok' } }] })
+
+  const aiCall = fetchCalls.find((call) => call.url === 'http://127.0.0.1:5737/v1/chat/completions')
+  assert.ok(aiCall)
+  assert.equal(fetchCalls.some((call) => call.url.includes('evil.example')), false)
+  assert.equal(JSON.parse(aiCall.init.body).model, 'linx-lite')
 })
 
 test('stored Cloud registration is ignored when no public URL can be recovered', (t) => {
