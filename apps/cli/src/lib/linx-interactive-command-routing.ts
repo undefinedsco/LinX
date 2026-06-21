@@ -8,6 +8,7 @@ import { changeInteractiveCwd, installLinxCwdStartupNotice } from './linx-worksp
 import { installLinxAutoEditorIndicator } from './linx-auto-editor-indicator.js'
 import { getSecretaryAutoInputController } from './secretary-auto-input-controller.js'
 import { getSessionControlManager } from './session-control.js'
+import { registerLinxInteractiveSubmitHandler } from './linx-interactive-submit-router.js'
 
 type ShellCommandOptions = {
   onAutoControlChange?: (enabled: boolean) => void | Promise<void>
@@ -42,32 +43,21 @@ function installLinxShellCommandHandler(interactive: any, runtime: any): void {
     return
   }
 
-  const originalSetup = interactive.setupEditorSubmitHandler?.bind(interactive)
-  if (typeof originalSetup !== 'function') {
-    return
-  }
-
-  interactive.setupEditorSubmitHandler = function patchedLinxGlobalSetupEditorSubmitHandler(...args: unknown[]): unknown {
-    const result = originalSetup(...args)
-    const originalSubmit = this.defaultEditor?.onSubmit?.bind(this.defaultEditor)
-    if (typeof originalSubmit !== 'function') {
-      return result
-    }
-
-    this.defaultEditor.onSubmit = async (text: string): Promise<void> => {
-      const command = parseLinxShellCommand(text.trim())
+  registerLinxInteractiveSubmitHandler(interactive, {
+    name: 'linx-shell-command',
+    priority: 50,
+    async handler({ interactive: target, text, input, originalSubmit }) {
+      const command = parseLinxShellCommand(input)
       if (!command) {
-        recordSubmittedUserMessage(this, runtime, text)
-        await originalSubmit(text)
-        return
+        recordSubmittedUserMessage(target, runtime, text)
+        return false
       }
 
-      this.editor?.setText?.('')
-      await handleLinxShellCommand(this, runtime, command)
-    }
-
-    return result
-  }
+      target.editor?.setText?.('')
+      await handleLinxShellCommand(target, runtime, command)
+      return true
+    },
+  })
 
   interactive.__linxGlobalCommandHandlerInstalled = true
   interactive.__linxHandleProjectedGlobalCommand = async (text: string): Promise<boolean | 'peer-command'> => {

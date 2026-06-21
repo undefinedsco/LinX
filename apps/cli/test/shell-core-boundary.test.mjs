@@ -45,3 +45,25 @@ function importsPiAdapterInternal(source) {
   return /\bfrom\s+['"][^'"]*pi-adapter\/[^'"]*['"]/u.test(source)
     || /\bimport\s*\(\s*['"][^'"]*pi-adapter\/[^'"]*['"]\s*\)/u.test(source)
 }
+
+
+test('interactive submit handling is centralized in the shell submit router', () => {
+  const allowed = new Set([
+    'linx-interactive-submit-router.ts',
+  ])
+  const violations = []
+
+  for (const file of listSourceFiles(libRoot)) {
+    const relativePath = relative(libRoot, file)
+    if (relativePath.startsWith(adapterSegment) || allowed.has(relativePath)) {
+      continue
+    }
+
+    const source = readFileSync(file, 'utf8')
+    if (/setupEditorSubmitHandler\s*=/.test(source)) {
+      violations.push(relativePath)
+    }
+  }
+
+  assert.deepEqual(violations, [])
+})

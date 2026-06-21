@@ -21,6 +21,7 @@ import {
   type SymphonyPodReportStatus,
   type SymphonyPodWorkerStatus,
 } from './symphony/pod-projection.js'
+import { registerLinxInteractiveSubmitHandler } from './linx-interactive-submit-router.js'
 
 const SYMPHONY_STATUS_POD_TIMEOUT_MS = 1_200
 const DEFAULT_SYMPHONY_WORKER_SUPERVISOR_INTERVAL_MS = 10 * 60 * 1000
@@ -30,38 +31,26 @@ export function installSymphonyCommand(interactive: any): void {
     return
   }
 
-  const originalSetup = interactive.setupEditorSubmitHandler?.bind(interactive)
-  if (typeof originalSetup !== 'function') {
-    return
-  }
-
-  interactive.setupEditorSubmitHandler = function patchedSymphonySetupEditorSubmitHandler(...args: unknown[]): unknown {
-    const result = originalSetup(...args)
-    const originalSubmit = this.defaultEditor?.onSubmit?.bind(this.defaultEditor)
-    if (typeof originalSubmit !== 'function') {
-      return result
-    }
-
-    this.defaultEditor.onSubmit = async (text: string): Promise<void> => {
-      const input = text.trim()
+  registerLinxInteractiveSubmitHandler(interactive, {
+    name: 'linx-symphony',
+    priority: 20,
+    async handler({ interactive: target, input, originalSubmit }) {
       const command = parseSymphonyCommand(input)
       if (command) {
-        this.editor?.setText?.('')
-        await handleSymphonyCommand(this, command)
-        return
+        target.editor?.setText?.('')
+        await handleSymphonyCommand(target, command)
+        return true
       }
 
-      if (this.__linxSymphonyModeEnabled && shouldProjectSymphonyInput(input)) {
-        getSessionControlManager(this, this.runtime).recordUserMessage({ text: input })
+      if (target.__linxSymphonyModeEnabled && shouldProjectSymphonyInput(input)) {
+        getSessionControlManager(target, target.runtime).recordUserMessage({ text: input })
         await originalSubmit(renderSymphonySecretaryProjection(input))
-        return
+        return true
       }
 
-      await originalSubmit(text)
-    }
-
-    return result
-  }
+      return false
+    },
+  })
 
   interactive.__linxSymphonyCommandInstalled = true
 }

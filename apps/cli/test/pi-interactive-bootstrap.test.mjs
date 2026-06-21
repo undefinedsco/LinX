@@ -456,8 +456,14 @@ test('pi interactive backend credential prompt reuses Pi login dialog when TUI i
 })
 
 test('linx interactive /ai connect reuses Pi login dialog but saves through LinX Pod AI connect', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
-  t.after(() => cleanup())
+  const [{ module, cleanup }, { module: brandingModule, cleanup: brandingCleanup }] = await Promise.all([
+    loadAutoModeModule('lib/pi-adapter/interactive.ts'),
+    loadAutoModeModule('lib/pi-adapter/branding.ts'),
+  ])
+  t.after(() => {
+    cleanup()
+    brandingCleanup()
+  })
 
   const submitted = []
   const statuses = []
@@ -2995,6 +3001,88 @@ test('linx update version comparison handles preview builds', async (t) => {
   assert.equal(module.isVersionNewer('0.2.4', '0.2.4-preview.1777478039135'), true)
   assert.equal(module.isVersionNewer('0.2.4-preview.1777478039135', '0.2.4'), false)
   assert.equal(module.isVersionNewer('0.2.4', '0.2.3'), true)
+})
+
+
+
+test('interactive shell command modules share one submit patch point', async (t) => {
+  const [{ module, cleanup }, { module: brandingModule, cleanup: brandingCleanup }] = await Promise.all([
+    loadAutoModeModule('lib/pi-adapter/interactive.ts'),
+    loadAutoModeModule('lib/pi-adapter/branding.ts'),
+  ])
+  t.after(() => {
+    cleanup()
+    brandingCleanup()
+  })
+
+  let setupPatchCount = 0
+  const submitted = []
+  const statuses = []
+  const selectors = []
+  const interactive = {
+    defaultEditor: {},
+    editor: {
+      setText() {},
+    },
+    ui: {
+      requestRender() {},
+    },
+    runtime: {},
+    setupEditorSubmitHandler() {
+      this.defaultEditor.onSubmit = async (text) => {
+        submitted.push(text)
+      }
+    },
+    showStatus(message) {
+      statuses.push(message)
+    },
+    async showExtensionSelector(title, options) {
+      selectors.push({ title, options })
+      return 'Later'
+    },
+    showError(message) {
+      throw new Error(String(message))
+    },
+  }
+
+  let currentSetup = interactive.setupEditorSubmitHandler
+  Object.defineProperty(interactive, 'setupEditorSubmitHandler', {
+    configurable: true,
+    enumerable: true,
+    get() {
+      return currentSetup
+    },
+    set(value) {
+      setupPatchCount += 1
+      currentSetup = value
+    },
+  })
+
+  brandingModule.applyLinxInteractiveBranding(interactive)
+  module.installLinxGlobalCommands(interactive, {}, process.cwd())
+  module.installSymphonyCommand(interactive)
+  module.installBackendCommandRouter(interactive, {
+    backend: 'codex',
+    async execute(command) {
+      return { handled: true, message: `backend:${command}` }
+    },
+  })
+
+  assert.equal(setupPatchCount, 1, 'shell integrations should install a single shared submit router patch')
+
+  interactive.setupEditorSubmitHandler()
+  await interactive.defaultEditor.onSubmit('/symphony on')
+  await interactive.defaultEditor.onSubmit('/symphony off')
+  await interactive.defaultEditor.onSubmit('/status')
+  await interactive.defaultEditor.onSubmit('/symphony on')
+  await interactive.defaultEditor.onSubmit('hello')
+
+  assert.equal(statuses.some((message) => String(message).includes('Symphony is on')), true)
+  assert.equal(statuses.some((message) => String(message).includes('Symphony is off')), true)
+  assert.equal(statuses.some((message) => String(message).includes('backend:/status')), true)
+  assert.equal(submitted.length, 1)
+  assert.match(submitted[0], /AI Secretary Symphony request/)
+  assert.match(submitted[0], /User message:\nhello/)
 })
 
 test('linx /login command shows a LinX-only auth selector before browser login', async (t) => {
