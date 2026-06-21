@@ -19,3 +19,13 @@ test('CLI entry delegates package command implementation to a shell package modu
   assert.doesNotMatch(indexSource, /function runLinxPackageCommand\b/, 'entry should not implement package command execution')
   assert.doesNotMatch(indexSource, /function printConfiguredLinxPackages\b/, 'entry should not implement package list rendering')
 })
+
+test('CLI entry delegates legacy chat and models commands to a shell command module', () => {
+  assert.match(indexSource, /from ['"]\.\/lib\/linx-chat-models-command\.js['"]/, 'entry should import chat/models command descriptors from a shell module')
+  assert.doesNotMatch(indexSource, /function loadChatRuntime/, 'entry should not load chat runtime internals directly')
+  assert.doesNotMatch(indexSource, /function resolveContext/, 'entry should not resolve Pod chat runtime context directly')
+  assert.doesNotMatch(indexSource, /function resolveRuntimeAuthContext/, 'entry should not resolve model-list auth context directly')
+  assert.doesNotMatch(indexSource, /function runSingleTurn/, 'entry should not implement single-turn chat execution')
+  assert.doesNotMatch(indexSource, /function runInteractive/, 'entry should not implement the legacy prompt loop')
+  assert.doesNotMatch(indexSource, /function formatRemoteModelMetadata/, 'entry should not render remote model metadata')
+})
