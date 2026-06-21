@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { MessageVocab, SIOC, ThreadVocab, WF } from '@undefineds.co/models'
-import { createLinxPiCodingTools } from '../dist/lib/pi-adapter/runtime.js'
+import { createLinxPiCodingTools } from '../dist/lib/linx-runtime-coding-tools.js'
 
 const CREDENTIAL_SCHEMA_URI = 'https://undefineds.co/ns#Credential'
 const API_KEY_PREDICATE_URI = 'https://undefineds.co/ns#apiKey'

@@ -13,17 +13,6 @@ import {
   type LinxCloudPiAuthBridge,
   type LinxRuntimeOAuthProvider,
 } from '../linx-runtime-agent-session.js'
-export {
-  resolveLinxInteractiveLoginReason,
-  resolveLinxStartupLoginPromptDecision,
-  resolveLinxStartupLoginReason,
-  type LinxStartupLoginPromptDecision,
-  type LinxStartupLoginReason,
-} from '../linx-startup-login-policy.js'
-export {
-  DEFAULT_LINX_PI_BASH_TIMEOUT_SECONDS,
-  createLinxPiCodingTools,
-} from '../linx-runtime-coding-tools.js'
 
 const UNDEFINEDS_SESSION_ID = 'undefineds_pi_frontend'
 export interface LinxRuntimeAdapterDependencies {

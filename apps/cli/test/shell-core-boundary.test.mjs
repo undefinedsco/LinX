@@ -471,6 +471,21 @@ function escapeRegExp(value) {
 }
 
 
+
+test('pi runtime adapter does not re-export shell or core helper modules', () => {
+  const runtimeSource = readFileSync(join(libRoot, 'pi-adapter/runtime.ts'), 'utf8')
+  const forbiddenReexports = [
+    /from\s+['"]\.\.\/linx-startup-login-policy\.js['"]/u,
+    /from\s+['"]\.\.\/linx-runtime-coding-tools\.js['"]/u,
+  ]
+
+  assert.equal(
+    forbiddenReexports.some((pattern) => pattern.test(runtimeSource)),
+    false,
+    'Pi runtime adapter should expose only the runtime bridge surface; import shell/core helpers from their owning modules',
+  )
+})
+
 test('repository scripts do not import shell/core modules through stale pi-adapter paths', () => {
   const stalePatterns = [
     /dist\/lib\/pi-adapter\/pod-mirror(?:\.js)?/u,
