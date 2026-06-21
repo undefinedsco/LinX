@@ -529,6 +529,21 @@ test('backend event source queueing is kept outside the Pi adapter', () => {
   assert.deepEqual(violations, [])
 })
 
+test('normalized backend event to Pi text stream mapping is kept outside the Pi adapter', () => {
+  const source = readFileSync(join(libRoot, 'pi-adapter/stream.ts'), 'utf8')
+  const forbidden = [
+    "event.type === 'assistant.delta'",
+    "event.type === 'assistant.done'",
+    "type: 'text_start'",
+    "type: 'text_delta'",
+    "type: 'text_end'",
+    "type: 'done'",
+  ]
+  const violations = forbidden.filter((snippet) => source.includes(snippet))
+
+  assert.deepEqual(violations, [])
+})
+
 test('repository scripts do not import shell/core modules through stale pi-adapter paths', () => {
   const stalePatterns = [
     /dist\/lib\/pi-adapter\/pod-mirror(?:\.js)?/u,
