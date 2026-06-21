@@ -20,7 +20,7 @@ test('auto-mode archive creates, updates, and lists sessions', async (t) => {
     rmSync(linxHome, { recursive: true, force: true })
   })
 
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, cleanup } = await loadAutoModeModule('lib/auto-mode/archive.ts')
   t.after(() => cleanup())
 
   const {
@@ -128,7 +128,7 @@ test('auto-mode archive defaults under HOME-derived SOLID_HOME when LINX_HOME is
     rmSync(tempHome, { recursive: true, force: true })
   })
 
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, cleanup } = await loadAutoModeModule('lib/auto-mode/archive.ts')
   t.after(() => cleanup())
 
   const { createAutoModeSession } = module

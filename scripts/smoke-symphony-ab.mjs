@@ -14,7 +14,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
-const autoModeEntry = join(repoRoot, 'apps/cli/dist/lib/auto-mode/index.js')
+const autoModeEntry = join(repoRoot, 'apps/cli/dist/lib/auto-mode/runner.js')
 const symphonyEntry = join(repoRoot, 'apps/cli/dist/lib/symphony-command.js')
 
 function usage() {
