@@ -1,4 +1,4 @@
-import { createLinxRuntimeAdapter } from './lib/pi-adapter/index.js'
+import { createLinxRuntimeAdapter } from './lib/pi-adapter/runtime.js'
 import type { CreateLinxRuntimeAdapterForPiCommand } from './lib/linx-pi-cli-command.js'
 
 export const createDefaultLinxRuntimeAdapterForPiCommand: CreateLinxRuntimeAdapterForPiCommand = (options) => createLinxRuntimeAdapter({
