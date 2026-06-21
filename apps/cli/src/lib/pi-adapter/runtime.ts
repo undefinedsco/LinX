@@ -6,7 +6,13 @@ import type { PodDataSession } from '../pod-data-session.js'
 import type { NativeBackendApprovalPolicy } from '../native-backend-proxy.js'
 import { createLinxCloudRuntimeCoordinator } from '../linx-cloud-runtime-coordinator.js'
 import type { LinxRuntimeAdapterDependencies } from '../linx-runtime-adapter-dependencies.js'
-import { resolveLinxRuntimeAdapterCwd } from '../linx-runtime-adapter-defaults.js'
+import {
+  resolveLinxRuntimeAdapterCwd,
+  resolveLinxRuntimeBackendMode,
+  resolveLinxRuntimeWorkerBackend,
+  resolveLinxRuntimeBaseUrl,
+  type LinxRuntimeBackendMode,
+} from '../linx-runtime-adapter-defaults.js'
 import { createNativeBackendCommandRouter } from '../native-backend-command-router.js'
 import { createNativeBackendStreamBackend } from '../native-backend-stream-backend.js'
 import { createLinxRuntimeCompletionBackend } from '../linx-runtime-completion-backend.js'
@@ -29,7 +35,7 @@ export interface LinxRuntimeAdapterOptions {
   cwd?: string
   model?: string
   port?: number
-  backend?: 'cloud' | 'native'
+  backend?: LinxRuntimeBackendMode
   workerBackend?: AutoModeWorkerBackend
   autoEnabled?: boolean
   symphonyEnabled?: boolean
@@ -67,11 +73,11 @@ export function createLinxRuntimeAdapter(
   dependencies: LinxRuntimeAdapterDependencies,
   options: LinxRuntimeAdapterOptions = {},
 ): LinxRuntimeAdapter {
-  const backendMode = options.backend ?? 'cloud'
-  const workerBackend = options.workerBackend ?? (backendMode === 'native' ? 'codex' : undefined)
+  const backendMode = resolveLinxRuntimeBackendMode(options.backend)
+  const workerBackend = resolveLinxRuntimeWorkerBackend({ backendMode, workerBackend: options.workerBackend })
   const cwd = resolveLinxRuntimeAdapterCwd(options.cwd)
   const requestedModel = options.model?.trim() || undefined
-  const baseUrl = options.providerConfig?.baseUrl ?? 'https://api.undefineds.co/v1'
+  const baseUrl = resolveLinxRuntimeBaseUrl(options.providerConfig?.baseUrl)
   const cloudRuntime = createLinxCloudRuntimeCoordinator({
     requestedModel,
     runtimeUrl: baseUrl,
