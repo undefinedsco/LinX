@@ -817,7 +817,7 @@ test('linx interactive session prompt routes peer commands without recursion', a
     text: '/goal implement the smoke test',
     options: undefined,
   }])
-  assert.equal(interactive.__linxGoalModeEnabled, true)
+  assert.equal(module.isLinxInteractiveGoalModeEnabled(interactive, runtime), true)
   assert.match(statuses.join('\n'), /Peer command routed/)
 })
 
@@ -5152,7 +5152,7 @@ test('linx interactive /auto can let Secretary send a /goal command to the curre
   assert.deepEqual(submitted, ['/goal ship the login fix'])
   assert.equal(interactive.__autoEnabled, true)
   assert.equal(runtime.autoEnabled, true)
-  assert.equal(interactive.__linxGoalModeEnabled, true)
+  assert.equal(module.isLinxInteractiveGoalModeEnabled(interactive, runtime), true)
   assert.equal(runtime.goalMode, true)
   assert.match(statuses.join('\n'), /Peer command routed; Secretary goal supervision mirror is active/)
   const entries = interactive.__sessionControlManager.controlSessionManager.getEntries()
@@ -5310,7 +5310,7 @@ test('linx interactive goal mode does not let agent_end trigger per-message Secr
 
   assert.deepEqual(sentUserMessages, [{ text: '/goal ship the login fix', options: undefined }])
   assert.equal(resolveNextUserInputCalls, 0)
-  assert.equal(interactive.__linxGoalModeEnabled, true)
+  assert.equal(module.isLinxInteractiveGoalModeEnabled(interactive, runtime), true)
   assert.equal(runtime.goalMode, true)
 })
 
@@ -6043,7 +6043,7 @@ test('linx interactive rejects /symphony objective and keeps routing inside LinX
   assert.deepEqual(commands, [])
   assert.deepEqual(submitted, [])
   assert.deepEqual(editorTexts, [''])
-  assert.equal(interactive.__linxSymphonyModeEnabled, undefined)
+  assert.equal(module.isLinxInteractiveSymphonyModeEnabled(interactive), false)
   assert.equal(prompts.length, 0)
   assert.equal(statuses.length, 1)
   assert.match(statuses[0], /Unsupported \/symphony argument: verify backend prompt projection/)
@@ -6183,7 +6183,7 @@ test('linx interactive /symphony switches current chat peer for following messag
   await interactive.defaultEditor.onSubmit('normal chat')
 
   assert.deepEqual(editorTexts, ['', '', ''])
-  assert.equal(interactive.__linxSymphonyModeEnabled, false)
+  assert.equal(module.isLinxInteractiveSymphonyModeEnabled(interactive), false)
   assert.match(statuses[0], /Symphony is on/)
   assert.match(statuses[0], /ordinary chat ordinary/)
   assert.doesNotMatch(statuses[0], /Skills:/)
@@ -6360,7 +6360,7 @@ test('linx interactive /symphony off restores worker backend chat without pendin
   await Promise.all(interactive.__linxSymphonyDispatches ?? [])
 
   assert.equal(errors.length, 0)
-  assert.equal(interactive.__linxSymphonyModeEnabled, false)
+  assert.equal(module.isLinxInteractiveSymphonyModeEnabled(interactive), false)
   assert.equal(submitted.length, 2)
   assert.match(submitted[0], /AI Secretary Symphony request/)
   assert.match(submitted[0], /请派出一个任务，让 worker 回复 exactly symphony-ok/)
@@ -6379,7 +6379,6 @@ test('linx interactive /symphony status reads open issues and running workers fr
   const { issueResource, sessionResource, deliveryResource } = await import('@undefineds.co/models')
   const interactive = {
     defaultEditor: {},
-    __linxSymphonyModeEnabled: true,
     podSession: {
       webId: 'https://alice.example/profile/card#me',
     },
@@ -6527,6 +6526,7 @@ test('linx interactive /symphony status reads open issues and running workers fr
     },
   }
 
+  module.configureLinxInteractiveShellState(interactive, { symphonyModeEnabled: true })
   module.installSymphonyCommand(interactive)
   interactive.setupEditorSubmitHandler()
 
@@ -6558,7 +6558,6 @@ test('linx interactive /symphony status reports Pod control-state failure withou
   const { issueResource, sessionResource, deliveryResource } = await import('@undefineds.co/models')
   const interactive = {
     defaultEditor: {},
-    __linxSymphonyModeEnabled: true,
     __linxSymphonyStatusPodTimeoutMs: 10,
     podSession: {
       webId: 'https://alice.example/profile/card#me',
@@ -6642,6 +6641,7 @@ test('linx interactive /symphony status reports Pod control-state failure withou
     },
   }
 
+  module.configureLinxInteractiveShellState(interactive, { symphonyModeEnabled: true })
   module.installSymphonyCommand(interactive)
   interactive.setupEditorSubmitHandler()
 
@@ -6822,14 +6822,22 @@ test('linx interactive autocomplete patch falls back to legacy setupAutocomplete
 })
 
 test('footer rendering patch lives in a shell rendering module', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/linx-footer-patch.ts')
-  t.after(() => cleanup())
+  const [{ module, cleanup }, { module: stateModule, cleanup: stateCleanup }] = await Promise.all([
+    loadAutoModeModule('lib/linx-footer-patch.ts'),
+    loadAutoModeModule('lib/linx-interactive-shell-state.ts'),
+  ])
+  t.after(() => {
+    cleanup()
+    stateCleanup()
+  })
 
   assert.equal(typeof module.installLinxFooterPatch, 'function')
   assert.equal(typeof module.setLinxFooterInteractive, 'function')
   assert.equal(typeof module.buildLinxFooterModePrefix, 'function')
 
-  module.setLinxFooterInteractive({ __autoEnabled: true, __linxSymphonyModeEnabled: true })
+  const interactive = { __autoEnabled: true }
+  stateModule.configureLinxInteractiveShellState(interactive, { symphonyModeEnabled: true })
+  module.setLinxFooterInteractive(interactive)
   assert.equal(module.buildLinxFooterModePrefix(), 'Symphony · Auto')
 })
 

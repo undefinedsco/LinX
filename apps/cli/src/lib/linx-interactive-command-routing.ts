@@ -9,6 +9,11 @@ import { installLinxAutoEditorIndicator } from './linx-auto-editor-indicator.js'
 import { getSecretaryAutoInputController } from './secretary-auto-input-controller.js'
 import { getSessionControlManager } from './session-control.js'
 import { registerLinxInteractiveSubmitHandler } from './linx-interactive-submit-router.js'
+import {
+  configureLinxInteractiveShellState,
+  notifyLinxInteractiveAutoControlChange,
+  setLinxInteractiveGoalModeEnabled,
+} from './linx-interactive-shell-state.js'
 
 type ShellCommandOptions = {
   onAutoControlChange?: (enabled: boolean) => void | Promise<void>
@@ -28,7 +33,9 @@ export function installLinxShellCommands(
   installLinxCwdStartupNotice(interactive, sessionCwd)
   installLinxAutoEditorIndicator(interactive)
   if (options.onAutoControlChange) {
-    interactive.__linxOnAutoControlChange = options.onAutoControlChange
+    configureLinxInteractiveShellState(interactive, {
+      autoControlChange: options.onAutoControlChange,
+    })
   }
   if (options.handleAiConnectCommand) {
     interactive.__linxHandleAiConnectCommand = options.handleAiConnectCommand
@@ -344,20 +351,7 @@ async function handleInteractivePeerCommand(
 }
 
 function applyInteractiveGoalMode(interactive: any, runtime: any, enabled: boolean): void {
-  interactive.__linxGoalModeEnabled = enabled
-  if (enabled) {
-    interactive.__linxGoalModeSupervisorLastAt = Date.now()
-  } else {
-    delete interactive.__linxGoalModeSupervisorLastAt
-  }
-  if (runtime && typeof runtime === 'object') {
-    runtime.goalMode = enabled
-    if (enabled) {
-      runtime.goalModeSupervisorLastAt = interactive.__linxGoalModeSupervisorLastAt
-    } else {
-      delete runtime.goalModeSupervisorLastAt
-    }
-  }
+  setLinxInteractiveGoalModeEnabled(interactive, runtime, enabled)
 }
 
 async function submitProjectedBackendInput(interactive: any, text: string): Promise<void> {
@@ -408,7 +402,7 @@ export async function handleInteractiveAutoCommand(
   }
   interactive.showStatus?.(formatAutoModeChangeStatus(enabled))
   interactive.ui?.requestRender?.()
-  await interactive.__linxOnAutoControlChange?.(enabled)
+  await notifyLinxInteractiveAutoControlChange(interactive, enabled)
 }
 
 function formatAutoModeChangeStatus(enabled: boolean): string {

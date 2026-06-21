@@ -88,3 +88,25 @@ test('interactive stop handling is centralized in the shell stop router', () => 
 
   assert.deepEqual(violations, [])
 })
+
+test('interactive mode state is centralized in the shell state module', () => {
+  const allowed = new Set([
+    'linx-interactive-shell-state.ts',
+  ])
+  const violations = []
+  const directStatePattern = /__linx(?:SymphonyModeEnabled|SymphonyModeGeneration|OnSymphonyControlChange|GoalModeEnabled|GoalModeSupervisorLastAt|OnAutoControlChange)\b/
+
+  for (const file of listSourceFiles(libRoot)) {
+    const relativePath = relative(libRoot, file)
+    if (relativePath.startsWith(adapterSegment) || allowed.has(relativePath)) {
+      continue
+    }
+
+    const source = readFileSync(file, 'utf8')
+    if (directStatePattern.test(source)) {
+      violations.push(relativePath)
+    }
+  }
+
+  assert.deepEqual(violations, [])
+})

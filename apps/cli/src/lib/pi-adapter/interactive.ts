@@ -15,6 +15,12 @@ export { installInteractiveStopCleanup } from '../shell-lifecycle.js'
 export { buildLinxAutoEditorIndicatorLine, installLinxAutoEditorIndicator } from '../linx-auto-editor-indicator.js'
 export { installLinxCommandAutocomplete, installSymphonyAutocomplete } from '../linx-command-autocomplete.js'
 export { installLinxFooterPatch, setLinxFooterInteractive, buildLinxFooterModePrefix } from '../linx-footer-patch.js'
+export {
+  configureLinxInteractiveShellState,
+  getLinxInteractiveShellState,
+  isLinxInteractiveGoalModeEnabled,
+  isLinxInteractiveSymphonyModeEnabled,
+} from '../linx-interactive-shell-state.js'
 export { changeInteractiveCwd, installLinxCwdStartupNotice, resolveInteractiveCwd, setRuntimeCwd } from '../linx-workspace-command.js'
 export { patchPiAssistantMessageRendering } from '../linx-assistant-message-rendering.js'
 export { installBackendCommandRouter } from '../linx-backend-command-router.js'

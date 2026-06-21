@@ -22,6 +22,12 @@ import {
   type SymphonyPodWorkerStatus,
 } from './symphony/pod-projection.js'
 import { registerLinxInteractiveSubmitHandler } from './linx-interactive-submit-router.js'
+import {
+  getLinxInteractiveSymphonyModeGeneration,
+  isLinxInteractiveSymphonyModeEnabled,
+  notifyLinxInteractiveSymphonyControlChange,
+  setLinxInteractiveSymphonyModeEnabled,
+} from './linx-interactive-shell-state.js'
 
 const SYMPHONY_STATUS_POD_TIMEOUT_MS = 1_200
 const DEFAULT_SYMPHONY_WORKER_SUPERVISOR_INTERVAL_MS = 10 * 60 * 1000
@@ -42,7 +48,7 @@ export function installSymphonyCommand(interactive: any): void {
         return true
       }
 
-      if (target.__linxSymphonyModeEnabled && shouldProjectSymphonyInput(input)) {
+      if (isLinxInteractiveSymphonyModeEnabled(target) && shouldProjectSymphonyInput(input)) {
         getSessionControlManager(target, target.runtime).recordUserMessage({ text: input })
         await originalSubmit(renderSymphonySecretaryProjection(input))
         return true
@@ -84,27 +90,19 @@ function parseSymphonyCommand(input: string): SymphonyCommand | null {
 
 async function handleSymphonyCommand(interactive: any, command: SymphonyCommand): Promise<void> {
   if (command.action === 'enable') {
-    interactive.__linxSymphonyModeEnabled = true
-    interactive.__linxSymphonyModeGeneration = (Number(interactive.__linxSymphonyModeGeneration) || 0) + 1
-    if (interactive.runtime && typeof interactive.runtime === 'object') {
-      interactive.runtime.symphonyEnabled = true
-    }
+    setLinxInteractiveSymphonyModeEnabled(interactive, interactive.runtime, true)
     interactive.showStatus?.(formatSymphonyModeChangeStatus(true))
     interactive.ui?.requestRender?.()
-    await interactive.__linxOnSymphonyControlChange?.(true)
+    await notifyLinxInteractiveSymphonyControlChange(interactive, true)
     return
   }
 
   if (command.action === 'disable') {
-    interactive.__linxSymphonyModeEnabled = false
-    interactive.__linxSymphonyModeGeneration = (Number(interactive.__linxSymphonyModeGeneration) || 0) + 1
+    setLinxInteractiveSymphonyModeEnabled(interactive, interactive.runtime, false)
     abortInteractiveSymphonyDispatches(interactive)
-    if (interactive.runtime && typeof interactive.runtime === 'object') {
-      interactive.runtime.symphonyEnabled = false
-    }
     interactive.showStatus?.(formatSymphonyModeChangeStatus(false))
     interactive.ui?.requestRender?.()
-    await interactive.__linxOnSymphonyControlChange?.(false)
+    await notifyLinxInteractiveSymphonyControlChange(interactive, false)
     return
   }
 
@@ -172,7 +170,7 @@ async function dispatchSymphonyWorkerFromInteractive(
   const workerGoalMode = interactive.__autoEnabled === true
   const workerSupervisorIntervalMs = workerGoalMode ? resolveSymphonyWorkerSupervisorIntervalMs(interactive) : undefined
   const cwd = resolveInteractiveCwd(interactive, interactive.runtime)
-  const dispatchGeneration = Number(interactive.__linxSymphonyModeGeneration) || 0
+  const dispatchGeneration = getLinxInteractiveSymphonyModeGeneration(interactive)
   const dispatches = Array.isArray(interactive.__linxSymphonyDispatches)
     ? interactive.__linxSymphonyDispatches
     : []
@@ -271,8 +269,8 @@ function isSymphonyAbortError(error: unknown): boolean {
 }
 
 function isCurrentSymphonyDispatch(interactive: any, generation: number): boolean {
-  return interactive.__linxSymphonyModeEnabled === true
-    && (Number(interactive.__linxSymphonyModeGeneration) || 0) === generation
+  return isLinxInteractiveSymphonyModeEnabled(interactive)
+    && getLinxInteractiveSymphonyModeGeneration(interactive) === generation
 }
 
 function createInteractiveSymphonyRuntime(interactive: any): SymphonyRuntime | undefined {
@@ -602,7 +600,7 @@ function inferSymphonyIdeaAffectedArea(input: string): string | undefined {
 
 
 async function formatSymphonyStatus(interactive: any): Promise<string> {
-  const enabled = interactive.__linxSymphonyModeEnabled === true
+  const enabled = isLinxInteractiveSymphonyModeEnabled(interactive)
   const [source, workersRead, issuesRead, reportsRead] = await Promise.all([
     resolveSymphonySourceContext(interactive),
     listRunningSymphonyWorkers(interactive),
