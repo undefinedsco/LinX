@@ -12,6 +12,7 @@ import { resolveLinxPiStartupControlState } from './linx-pi-startup-control.js'
 import { selectLinxPiSession } from './linx-session-selector-ui.js'
 import { createLinxPodMirrorRuntimeHost } from './linx-pod-mirror-runtime-host.js'
 import { runLinxPodMirrorSyncRetryCommand, runLinxPodMirrorSyncStatusCommand } from './linx-pod-mirror-sync-command.js'
+import { stopInteractiveShellUnlessRestarting } from './shell-lifecycle.js'
 
 const RESERVED_NON_TOP_LEVEL_COMMANDS = new Set([
   'automode',
@@ -211,7 +212,7 @@ export async function runPiCommand(argv: {
       await interactive.run()
     } finally {
       await podMirrorHost.close()
-      interactive.stop()
+      stopInteractiveShellUnlessRestarting(interactive)
     }
   } finally {
     await adapter.close()

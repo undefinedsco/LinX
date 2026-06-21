@@ -117,6 +117,13 @@ export function isInteractiveShellExitMessageSuppressed(interactive: Interactive
   return interactive?.[LINX_TUI_SUPPRESS_EXIT_MESSAGE] === true
 }
 
+export function stopInteractiveShellUnlessRestarting(interactive: InteractiveShellLifecycle | undefined | null): void {
+  if (!interactive || isInteractiveShellRestarting(interactive)) {
+    return
+  }
+  interactive.stop?.()
+}
+
 function beginInteractiveRestart(
   interactive: InteractiveShellLifecycle,
   env: NodeJS.ProcessEnv,
