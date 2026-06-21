@@ -6,7 +6,7 @@ LinX CLI 当前的登录目标是：
 
 - 默认前端是 `linx` 命令进入的 Pi 原生 TUI
 - 使用 LinX Cloud 的浏览器 OIDC / consent 流登录
-- 登录态保存在本地 `~/.linx`
+- 登录态保存在统一 Solid auth 目录：`${SOLID_HOME:-~/.solid}/auth`
 - 运行时优先复用已有登录态，避免每次重复打开浏览器
 
 ## 当前入口
@@ -78,60 +78,58 @@ linx --print "..."
 
 当前会写入：
 
-### 配置与 secrets
+### 统一 Solid auth 目录
 
-- `~/.linx/config.json`
-- `~/.linx/secrets.json`
-- `~/.linx/account.json`
+- `${SOLID_HOME:-~/.solid}/auth/credentials.json`
+- `${SOLID_HOME:-~/.solid}/auth/account.json`
 
 ### Inrupt OIDC storage
 
-- `~/.linx/oidc-storage/`
+- `${SOLID_HOME:-~/.solid}/auth/oidc-storage/`
 
 ## 当前本地凭据结构
 
-`config.json`：
+`credentials.json` 是统一 envelope，包含账号配置和 secrets：
 
 ```json
 {
   "url": "https://id.undefineds.co/",
   "webId": "https://id.undefineds.co/<name>/profile/card#me",
-  "authType": "oidc_oauth"
+  "authType": "oidc_oauth",
+  "secrets": {
+    "oidcRefreshToken": "...",
+    "oidcAccessToken": "...",
+    "oidcExpiresAt": "...",
+    "oidcClientId": "..."
+  }
 }
 ```
 
-`secrets.json`：
-
-```json
-{
-  "oidcRefreshToken": "...",
-  "oidcAccessToken": "...",
-  "oidcExpiresAt": "...",
-  "oidcClientId": "..."
-}
-```
+Solid client credentials 使用同一个文件，`authType` 为
+`client_credentials`，`secrets` 中保存 `clientId` 和 `clientSecret`。这是
+第二种 Solid 登录方式，不是 OpenAI/Anthropic/CodeBuddy provider API key。
 
 ## 复用策略
 
 当前 CLI 侧的正确策略应是：
 
 1. 若本地存在 `oidc_oauth`
-2. 优先从 `~/.linx/oidc-storage/` 中恢复 Inrupt 已持久化的 OIDC session
+2. 优先从 `${SOLID_HOME:-~/.solid}/auth/oidc-storage/` 中恢复 Inrupt 已持久化的 OIDC session
 3. 若 access token 即将过期或已过期，则使用该 session 上下文执行正式 refresh
 4. 将新的：
    - `oidcAccessToken`
    - `oidcExpiresAt`
    - 如有 rotation 的 `oidcRefreshToken`
-   回写到 `~/.linx/secrets.json`
+   回写到 `${SOLID_HOME:-~/.solid}/auth/credentials.json`
 
 这里的关键点是：
 
-- `secrets.json` 只保存 token set
+- `credentials.json.secrets` 保存 token set 或 client credentials
 - `oidc-storage/` 保存 Inrupt 侧的 session/client registration/context
 
-单纯只看 `secrets.json` 里的 access token 是否过期是不够的。
+单纯只看 `credentials.json.secrets` 里的 access token 是否过期是不够的。
 
-### 为什么不能只靠 `secrets.json`
+### 为什么不能只靠 `credentials.json.secrets`
 
 如果只读本地 `oidcAccessToken`：
 
@@ -238,7 +236,7 @@ https://id.undefineds.co/<name>/profile/card#me
 
 1. 本地没有任何可恢复 session
 2. refresh token 已失效
-3. 本地 `oidc-storage` 与 `secrets.json` 已损坏或无法对齐
+3. 本地 `oidc-storage` 与 `credentials.json` 已损坏或无法对齐
 
 ### `linx login` 成功，但 `linx models` 仍异常
 
