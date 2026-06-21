@@ -26,7 +26,9 @@ import {
   type WorkerWorkspaceKind,
   type SymphonyWorkerPlan,
 } from '@linx/agent-runtime/symphony'
-import { runAutoMode, listArchivedAutoModeSessions, loadAutoModeEvents, type AutoRunOptions } from './auto-mode/index.js'
+import { loadAutoModeEvents } from './auto-mode/archive.js'
+import { runAutoMode, listArchivedAutoModeSessions } from './auto-mode/runner.js'
+import type { AutoRunOptions } from './auto-mode/types.js'
 import {
   formatSymphonyRecordSummary,
   getSymphonyHome,
