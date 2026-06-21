@@ -31,6 +31,13 @@ test('LinX completion result Pi event bridge lives outside the Pi adapter', asyn
   assert.equal(typeof module.emitLinxCompletionResultToPiStream, 'function')
 })
 
+test('LinX backend event source bridge lives outside the Pi adapter', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-backend-event-source.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.createLinxBackendEventSource, 'function')
+})
+
 test('pi agent stream adapter captures session metadata and exposes a streamFn hook', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/stream.ts')
   t.after(() => cleanup())
