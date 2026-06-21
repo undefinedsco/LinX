@@ -14,6 +14,7 @@ import type {
   AutoModeUserInputAnswers,
 } from '@linx/agent-runtime/auto-mode'
 import { resolveAutoModeSecretaryRecommendation } from './auto-mode/secretary.js'
+import { isLinxInteractiveAutoModeEnabled } from './linx-interactive-shell-state.js'
 import { registerLinxInteractiveStopHandler } from './linx-interactive-stop-router.js'
 
 export const SESSION_CONTROL_CUSTOM_TYPE = 'linx-session-control'
@@ -567,7 +568,7 @@ function resolveCurrentAutoEnabled(context: {
   interactive?: any
   runtime?: any
 }): boolean {
-  return context.interactive?.__autoEnabled === true || context.runtime?.autoEnabled === true
+  return isLinxInteractiveAutoModeEnabled(context.interactive, context.runtime)
 }
 
 function resolveBusinessSessionRef(context: {

@@ -1,4 +1,9 @@
 import { Container, getKeybindings, Spacer, Text, truncateToWidth } from '@earendil-works/pi-tui'
+import {
+  getLinxInteractiveAutoInputController,
+  isLinxInteractiveAutoModeEnabled,
+  setLinxInteractiveAutoModeEnabled,
+} from './linx-interactive-shell-state.js'
 
 export async function handleInteractiveRewindSelector(interactive: any, runtime: any): Promise<void> {
   const session = resolveInteractiveSession(interactive, runtime)
@@ -169,21 +174,20 @@ async function stopActiveSessionWorkForRewind(session: any): Promise<void> {
 }
 
 function resetPendingAutoInputForRewind(interactive: any, runtime: any): void {
-  if (interactive?.__autoEnabled !== true || !interactive?.__linxAutoInputController) {
+  const controller = getLinxInteractiveAutoInputController<{ stop(): void; start(options?: { scheduleImmediately?: boolean }): void }>(interactive)
+  if (!isLinxInteractiveAutoModeEnabled(interactive, runtime) || !controller) {
     return
   }
 
   try {
-    interactive.__linxAutoInputController.stop()
-    interactive.__linxAutoInputController.start({ scheduleImmediately: false })
+    controller.stop()
+    controller.start({ scheduleImmediately: false })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     interactive.showWarning?.(`Auto input reset after rewind failed: ${message}`)
   }
 
-  if (runtime && typeof runtime === 'object') {
-    runtime.autoEnabled = true
-  }
+  setLinxInteractiveAutoModeEnabled(interactive, runtime, true)
 }
 
 function rewindSessionManagerByTurns(

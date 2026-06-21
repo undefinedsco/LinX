@@ -8,7 +8,6 @@ test('interrupt control hands auto back before Pi clear semantics', async (t) =>
 
   const calls = []
   const interactive = {
-    __autoEnabled: true,
     runtime: { autoEnabled: true },
     defaultEditor: {
       actionHandlers: new Map([
@@ -31,14 +30,12 @@ test('interrupt control hands auto back before Pi clear semantics', async (t) =>
   module.installLinxEscapeInterrupt(interactive, {
     disableAutoMode(target) {
       calls.push(['auto-off', target === interactive])
-      target.__autoEnabled = false
       target.runtime.autoEnabled = false
     },
   })
 
   interactive.defaultEditor.actionHandlers.get('app.clear')()
 
-  assert.equal(interactive.__autoEnabled, false)
   assert.equal(interactive.runtime.autoEnabled, false)
   assert.deepEqual(calls, ['abort', ['auto-off', true]])
 })

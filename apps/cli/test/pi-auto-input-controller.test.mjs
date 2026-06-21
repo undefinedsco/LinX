@@ -47,7 +47,6 @@ function createInteractiveStub(cwd, options = {}) {
   }]
   const sentUserMessages = []
   return {
-    __autoEnabled: true,
     sessionManager: {
       getSessionId() {
         return 'business-session'
@@ -168,6 +167,7 @@ test('Secretary auto input reuses runtime Pod session instead of local auth fall
     backend: 'linx',
     cwd,
     model: 'gpt-5-codex',
+    autoEnabled: true,
     agentRuntimeConfig: {
       backend: 'linx',
       model: 'gpt-5.5',
@@ -243,6 +243,7 @@ test('Secretary auto input stop aborts the in-flight runtime turn', async (t) =>
     backend: 'linx',
     cwd,
     model: 'gpt-5-codex',
+    autoEnabled: true,
     async getPodDataSession() {
       podSessionCalls += 1
       return runtimeSession
@@ -308,6 +309,7 @@ test('Secretary auto input keeps retrying LinX Cloud 502 outages instead of wait
     backend: 'linx',
     cwd,
     model: 'gpt-5-codex',
+    autoEnabled: true,
     async getPodDataSession() {
       return runtimeSession
     },

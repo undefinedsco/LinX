@@ -26,6 +26,7 @@ import {
   getLinxInteractiveListSymphonyIssues,
   getLinxInteractiveListSymphonySessions,
   getLinxInteractiveRunSymphony,
+  isLinxInteractiveAutoModeEnabled,
   getLinxInteractiveSymphonyAgentRuntime,
   getLinxInteractiveSymphonyAgentRuntimeConfig,
   getLinxInteractiveSymphonyDispatchControllers,
@@ -180,7 +181,7 @@ async function dispatchSymphonyWorkerFromInteractive(
   const agentRuntime = resolveSymphonyControlAgentRuntime(interactive)
   const workerModel = resolveSymphonyWorkerModel(interactive, objective, backend)
   const workerCredentialSource = resolveSymphonyWorkerCredentialSource(interactive, backend)
-  const workerGoalMode = interactive.__autoEnabled === true
+  const workerGoalMode = isLinxInteractiveAutoModeEnabled(interactive, interactive?.runtime)
   const workerSupervisorIntervalMs = workerGoalMode ? resolveSymphonyWorkerSupervisorIntervalMs(interactive) : undefined
   const cwd = resolveInteractiveCwd(interactive, interactive.runtime)
   const dispatchGeneration = getLinxInteractiveSymphonyModeGeneration(interactive)
@@ -200,7 +201,7 @@ async function dispatchSymphonyWorkerFromInteractive(
   const dispatchArgs = {
     objective: [objective],
     backend,
-    auto: interactive.__autoEnabled === true,
+    auto: isLinxInteractiveAutoModeEnabled(interactive, interactive?.runtime),
     cwd,
     plain: true,
     print: false,

@@ -1,7 +1,10 @@
 import { FooterComponent } from '@earendil-works/pi-coding-agent'
 import { visibleWidth } from '@earendil-works/pi-tui'
 import { buildLinxFooterStatusLine } from './linx-status-line.js'
-import { isLinxInteractiveSymphonyModeEnabled } from './linx-interactive-shell-state.js'
+import {
+  isLinxInteractiveAutoModeEnabled,
+  isLinxInteractiveSymphonyModeEnabled,
+} from './linx-interactive-shell-state.js'
 
 let footerPatched = false
 let footerInteractive: any = null
@@ -43,7 +46,7 @@ export function installLinxFooterPatch(): void {
 
 export function buildLinxFooterModePrefix(): string {
   if (!footerInteractive) return ''
-  const autoOn = footerInteractive.__autoEnabled === true
+  const autoOn = isLinxInteractiveAutoModeEnabled(footerInteractive)
   const symphonyOn = isLinxInteractiveSymphonyModeEnabled(footerInteractive)
   if (!autoOn && !symphonyOn) return ''
   if (autoOn && symphonyOn) return 'Symphony · Auto'

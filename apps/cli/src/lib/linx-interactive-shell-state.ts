@@ -21,10 +21,13 @@ export type LinxInteractiveSymphonyState = {
 
 export type LinxInteractiveShellState = {
   autoControlChange?: ShellControlChangeHandler
+  autoModeEnabled: boolean
+  autoInputController?: unknown
   symphonyControlChange?: ShellControlChangeHandler
   symphonyModeEnabled: boolean
   symphonyModeGeneration: number
   goalModeEnabled: boolean
+  goalModeSupervisorIntervalMs?: unknown
   goalModeSupervisorLastAt?: number
   aiConnectCommand?: AiConnectCommandHandler
   projectedGlobalCommand?: ProjectedCommandHandler
@@ -53,9 +56,12 @@ export function configureLinxInteractiveShellState(
   interactive: any,
   options: {
     autoControlChange?: ShellControlChangeHandler
+    autoModeEnabled?: boolean
+    autoInputController?: unknown
     symphonyControlChange?: ShellControlChangeHandler
     symphonyModeEnabled?: boolean
     goalModeEnabled?: boolean
+    goalModeSupervisorIntervalMs?: unknown
     aiConnectCommand?: AiConnectCommandHandler
     projectedGlobalCommand?: ProjectedCommandHandler
     projectedBackendCommand?: ProjectedCommandHandler
@@ -66,6 +72,12 @@ export function configureLinxInteractiveShellState(
   if (options.autoControlChange) {
     state.autoControlChange = options.autoControlChange
   }
+  if (options.autoModeEnabled !== undefined) {
+    state.autoModeEnabled = options.autoModeEnabled
+  }
+  if (options.autoInputController !== undefined) {
+    state.autoInputController = options.autoInputController
+  }
   if (options.symphonyControlChange) {
     state.symphonyControlChange = options.symphonyControlChange
   }
@@ -74,6 +86,9 @@ export function configureLinxInteractiveShellState(
   }
   if (options.goalModeEnabled !== undefined) {
     state.goalModeEnabled = options.goalModeEnabled
+  }
+  if (options.goalModeSupervisorIntervalMs !== undefined) {
+    state.goalModeSupervisorIntervalMs = options.goalModeSupervisorIntervalMs
   }
   if (options.aiConnectCommand) {
     state.aiConnectCommand = options.aiConnectCommand
@@ -165,6 +180,30 @@ export function getLinxInteractiveListSymphonySessions(interactive: any): (() =>
 
 export function getLinxInteractiveAiConnectCommand(interactive: any): AiConnectCommandHandler | undefined {
   return getLinxInteractiveShellState(interactive).aiConnectCommand
+}
+
+export function isLinxInteractiveAutoModeEnabled(interactive: any, runtime?: any): boolean {
+  return getLinxInteractiveShellState(interactive).autoModeEnabled === true || runtime?.autoEnabled === true
+}
+
+export function setLinxInteractiveAutoModeEnabled(interactive: any, runtime: any, enabled: boolean): void {
+  getLinxInteractiveShellState(interactive).autoModeEnabled = enabled
+  if (runtime && typeof runtime === 'object') {
+    runtime.autoEnabled = enabled
+  }
+}
+
+export function getLinxInteractiveAutoInputController<T = unknown>(interactive: any): T | undefined {
+  return getLinxInteractiveShellState(interactive).autoInputController as T | undefined
+}
+
+export function setLinxInteractiveAutoInputController<T = unknown>(interactive: any, controller: T): T {
+  getLinxInteractiveShellState(interactive).autoInputController = controller
+  return controller
+}
+
+export function getLinxInteractiveGoalModeSupervisorIntervalMs(interactive: any): unknown {
+  return getLinxInteractiveShellState(interactive).goalModeSupervisorIntervalMs
 }
 
 export async function handleLinxInteractiveProjectedCommand(
@@ -261,6 +300,7 @@ export function setLinxInteractiveGoalModeSupervisorLastAt(interactive: any, run
 
 function createDefaultShellState(): LinxInteractiveShellState {
   return {
+    autoModeEnabled: false,
     symphonyModeEnabled: false,
     symphonyModeGeneration: 0,
     goalModeEnabled: false,

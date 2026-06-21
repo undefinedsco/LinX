@@ -147,8 +147,10 @@ and tests are explicit.
 
 Current shell-state rules:
 
-- Mode state belongs in `linx-interactive-shell-state.ts`: auto control-change
-  callbacks, Symphony enabled/generation, goal enabled/supervisor timestamps.
+- Mode state belongs in `linx-interactive-shell-state.ts`: auto enabled flag,
+  auto input controller handle, auto control-change callbacks, Symphony
+  enabled/generation, goal enabled flag, goal supervisor interval, and goal
+  supervisor timestamps.
 - Projected command bridges belong in `linx-interactive-shell-state.ts`:
   Secretary/auto projected global commands, backend-native commands, and
   `/ai connect` command injection.
