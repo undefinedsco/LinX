@@ -1686,9 +1686,10 @@ test('linx interactive bootstrap wraps extension ui context with Pod-backed appr
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
   t.after(() => cleanup())
 
+  const baseUi = createBaseExtensionUi()
   const interactive = {
     createExtensionUIContext() {
-      return createBaseExtensionUi()
+      return baseUi
     },
     sessionManager: {
       getSessionId() {
@@ -1698,10 +1699,12 @@ test('linx interactive bootstrap wraps extension ui context with Pod-backed appr
   }
 
   module.installPodBackedExtensionUi(interactive, { cwd: '/tmp/linx-work' })
+  const wrappedCreateExtensionUIContext = interactive.createExtensionUIContext
+  module.installPodBackedExtensionUi(interactive, { cwd: '/tmp/linx-work' })
   const ui = interactive.createExtensionUIContext()
 
-  assert.notEqual(ui.select, createBaseExtensionUi().select)
-  assert.equal(interactive.__linxPodBackedExtensionUiInstalled, true)
+  assert.equal(interactive.createExtensionUIContext, wrappedCreateExtensionUIContext)
+  assert.notEqual(ui.select, baseUi.select)
 })
 
 test('linx pod status output filter removes noisy Pod connection status lines', async (t) => {

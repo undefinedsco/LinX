@@ -7,9 +7,10 @@ import {
 } from './linx-interactive-command-routing.js'
 
 const initializedInteractives = new WeakSet<object>()
+const postInitHooksInstalled = new WeakSet<object>()
 
 export function installLinxInteractivePostInitHooks(interactive: any, runtime: any): void {
-  if (!interactive || interactive.__linxInteractivePostInitHooksInstalled) {
+  if (!interactive || postInitHooksInstalled.has(interactive)) {
     return
   }
   const originalInit = interactive.init?.bind(interactive)
@@ -29,7 +30,7 @@ export function installLinxInteractivePostInitHooks(interactive: any, runtime: a
     installPostInitInteractiveControls(this, runtime)
     return result
   }
-  interactive.__linxInteractivePostInitHooksInstalled = true
+  postInitHooksInstalled.add(interactive)
 }
 
 function resolveInteractiveInitTarget(value: unknown, fallback: object): object {

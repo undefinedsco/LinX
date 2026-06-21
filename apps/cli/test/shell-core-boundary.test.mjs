@@ -380,3 +380,22 @@ test('interrupt control patch state is kept behind the shell interrupt host', ()
 
   assert.deepEqual(violations, [])
 })
+
+test('remaining interactive install sentinels stay out of hidden fields', () => {
+  const violations = []
+  const directRemainingInstallSentinelPattern = /__linx(?:CommandAutocompleteInstalled|SymphonyAutocompleteInstalled|PodBackedExtensionUiInstalled|InteractivePostInitHooksInstalled|SymphonyCommandInstalled|RestoredAutoStartupInstalled)\b/
+
+  for (const file of listSourceFiles(libRoot)) {
+    const relativePath = relative(libRoot, file)
+    if (relativePath.startsWith(adapterSegment)) {
+      continue
+    }
+
+    const source = readFileSync(file, 'utf8')
+    if (directRemainingInstallSentinelPattern.test(source)) {
+      violations.push(relativePath)
+    }
+  }
+
+  assert.deepEqual(violations, [])
+})

@@ -45,9 +45,10 @@ import {
 
 const SYMPHONY_STATUS_POD_TIMEOUT_MS = 1_200
 const DEFAULT_SYMPHONY_WORKER_SUPERVISOR_INTERVAL_MS = 10 * 60 * 1000
+const symphonyCommandInstalled = new WeakSet<object>()
 
 export function installSymphonyCommand(interactive: any): void {
-  if (interactive.__linxSymphonyCommandInstalled) {
+  if (!interactive || symphonyCommandInstalled.has(interactive)) {
     return
   }
 
@@ -72,7 +73,7 @@ export function installSymphonyCommand(interactive: any): void {
     },
   })
 
-  interactive.__linxSymphonyCommandInstalled = true
+  symphonyCommandInstalled.add(interactive)
 }
 
 type SymphonyCommand =

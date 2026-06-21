@@ -1,11 +1,13 @@
 import { getAIConfigProviderCatalog } from './models.js'
 
+const linxCommandAutocompleteInstalled = new WeakSet<object>()
+
 export function installSymphonyAutocomplete(interactive: any): void {
   installLinxCommandAutocomplete(interactive)
 }
 
 export function installLinxCommandAutocomplete(interactive: any): void {
-  if (interactive.__linxCommandAutocompleteInstalled || interactive.__linxSymphonyAutocompleteInstalled) {
+  if (!interactive || linxCommandAutocompleteInstalled.has(interactive)) {
     return
   }
 
@@ -23,8 +25,7 @@ export function installLinxCommandAutocomplete(interactive: any): void {
     return result
   }
 
-  interactive.__linxCommandAutocompleteInstalled = true
-  interactive.__linxSymphonyAutocompleteInstalled = true
+  linxCommandAutocompleteInstalled.add(interactive)
 }
 
 function installLinxAutocompleteCommands(provider: { commands?: unknown[] } | undefined): void {
