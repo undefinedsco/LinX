@@ -97,3 +97,61 @@ test('linx self-update reports npm failure and does not restart the interactive 
   assert.equal(events.some((event) => event.type === 'restart'), false)
   assert.deepEqual(events.at(-1), { type: 'error', message: 'LinX update failed: registry unavailable' })
 })
+
+
+test('linx self-update waits for the restarted interactive shell lifecycle to settle', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-self-update.ts')
+  t.after(() => cleanup())
+
+  const events = []
+  let child
+  let finishRestart
+  const interactive = {
+    showStatus(message) {
+      events.push({ type: 'status', message })
+    },
+    showError(message) {
+      events.push({ type: 'error', message })
+    },
+    ui: {
+      requestRender() {
+        events.push({ type: 'render' })
+      },
+    },
+  }
+  const runtime = {
+    env: {},
+    spawnProcess(command, args, options) {
+      events.push({ type: 'spawn', command, args, options })
+      child = createInstallChild()
+      return child
+    },
+    restartShell(shell) {
+      events.push({ type: 'restart-start', shell })
+      return new Promise((resolve) => {
+        finishRestart = () => {
+          events.push({ type: 'restart-finished' })
+          resolve()
+        }
+      })
+    },
+  }
+
+  let settled = false
+  const installing = module.installLinxSelfUpdateAndRestart(interactive, '0.3.27', { runtime })
+    .then(() => {
+      settled = true
+    })
+  await new Promise((resolve) => setImmediate(resolve))
+  child.emit('close', 0)
+  await new Promise((resolve) => setImmediate(resolve))
+
+  assert.equal(settled, false)
+  assert.equal(events.at(-1)?.type, 'restart-start')
+
+  finishRestart()
+  await installing
+
+  assert.equal(settled, true)
+  assert.deepEqual(events.at(-1), { type: 'restart-finished' })
+})

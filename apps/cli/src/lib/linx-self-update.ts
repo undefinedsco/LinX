@@ -9,7 +9,7 @@ export const LINX_CLI_VERSION = readLinxCliVersion()
 type SelfUpdateRuntime = {
   spawnProcess: typeof spawn
   env: NodeJS.ProcessEnv
-  restartShell: typeof restartInteractiveShellProcess
+  restartShell: (interactive: InteractiveShellLifecycle) => Promise<void> | void
 }
 
 const defaultSelfUpdateRuntime: SelfUpdateRuntime = {
@@ -70,7 +70,7 @@ export async function installLinxSelfUpdateAndRestart(
 
   interactive.showStatus?.(`LinX ${newVersion} installed. Restarting...`)
   interactive.ui?.requestRender?.()
-  runtime.restartShell(interactive)
+  await runtime.restartShell(interactive)
 }
 
 function runNpmInstallLatest(runtime: SelfUpdateRuntime): Promise<void> {

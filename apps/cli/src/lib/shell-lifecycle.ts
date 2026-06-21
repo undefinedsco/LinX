@@ -37,25 +37,38 @@ const defaultShellRestartRuntime: ShellRestartRuntime = {
 export function restartInteractiveShellProcess(
   interactive: InteractiveShellLifecycle,
   options: RestartInteractiveShellOptions = {},
-): void {
+): Promise<void> {
   const runtime = options.runtime ?? defaultShellRestartRuntime
   const suppression = stopInteractiveForRestart(interactive, runtime.env)
-  runtime.defer(() => {
+  return new Promise((resolve) => {
+    const finishWithExit = (code: number): void => {
+      runtime.exitProcess(code)
+      resolve()
+    }
     try {
-      const child = runtime.spawnProcess(runtime.execPath, runtime.argv.slice(1), {
-        cwd: runtime.cwd(),
-        env: buildRestartChildEnv(runtime.env, suppression.previousNoExitMessage),
-        stdio: 'inherit',
-        detached: false,
-      })
-      waitForRestartedProcess(interactive, child, runtime, suppression.restore)
+      runtime.defer(() => {
+        try {
+          const child = runtime.spawnProcess(runtime.execPath, runtime.argv.slice(1), {
+            cwd: runtime.cwd(),
+            env: buildRestartChildEnv(runtime.env, suppression.previousNoExitMessage),
+            stdio: 'inherit',
+            detached: false,
+          })
+          waitForRestartedProcess(interactive, child, runtime, suppression.restore, finishWithExit)
+        } catch (error) {
+          suppression.restore()
+          const message = error instanceof Error ? error.message : String(error)
+          interactive.showError?.(`LinX restart failed: ${message}`)
+          finishWithExit(1)
+        }
+      }, options.delayMs ?? DEFAULT_RESTART_DELAY_MS)
     } catch (error) {
       suppression.restore()
       const message = error instanceof Error ? error.message : String(error)
       interactive.showError?.(`LinX restart failed: ${message}`)
-      runtime.exitProcess(1)
+      finishWithExit(1)
     }
-  }, options.delayMs ?? DEFAULT_RESTART_DELAY_MS)
+  })
 }
 
 function stopInteractiveForRestart(
@@ -103,6 +116,7 @@ function waitForRestartedProcess(
   child: ChildProcess,
   runtime: ShellRestartRuntime,
   restoreEnv: () => void,
+  finishWithExit: (code: number) => void,
 ): void {
   let settled = false
 
@@ -113,7 +127,7 @@ function waitForRestartedProcess(
     settled = true
     restoreEnv()
     interactive.showError?.(`LinX restart failed: ${error.message}`)
-    runtime.exitProcess(1)
+    finishWithExit(1)
   })
 
   child.on('close', (code, signal) => {
@@ -122,7 +136,7 @@ function waitForRestartedProcess(
     }
     settled = true
     restoreEnv()
-    runtime.exitProcess(resolveRestartExitCode(code, signal))
+    finishWithExit(resolveRestartExitCode(code, signal))
   })
 }
 
