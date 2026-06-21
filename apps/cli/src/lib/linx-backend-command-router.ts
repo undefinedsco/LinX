@@ -1,6 +1,7 @@
 import type { BackendCommandRouter } from './backend-command.js'
 import { installProjectedCommandRouter } from './linx-interactive-command-routing.js'
 import { shouldRouteToBackendCommand } from './linx-shell-command-router.js'
+import { registerLinxInteractiveSubmitHandler } from './linx-interactive-submit-router.js'
 
 type ProjectedCommandRouterInstaller = (interactive: any) => void
 
@@ -43,23 +44,13 @@ export function installBackendCommandRouter(
   const installProjected = options.installProjectedCommandRouter ?? installProjectedCommandRouter
   installProjected(interactive)
 
-  const originalSetup = interactive.setupEditorSubmitHandler?.bind(interactive)
-  if (typeof originalSetup !== 'function') {
-    return
-  }
-
-  interactive.setupEditorSubmitHandler = function patchedBackendCommandSetupEditorSubmitHandler(...args: unknown[]): unknown {
-    const result = originalSetup(...args)
-    const originalSubmit = this.defaultEditor?.onSubmit?.bind(this.defaultEditor)
-    if (typeof originalSubmit !== 'function') {
-      return result
-    }
-
-    this.defaultEditor.onSubmit = async (text: string): Promise<void> => {
-      const command = text.trim()
+  registerLinxInteractiveSubmitHandler(interactive, {
+    name: 'linx-backend-command',
+    priority: 40,
+    async handler({ interactive: target, input }) {
+      const command = input
       if (!shouldRouteToBackendCommand(command)) {
-        await originalSubmit(text)
-        return
+        return false
       }
 
       let routed
@@ -67,24 +58,22 @@ export function installBackendCommandRouter(
         routed = await router.execute(command)
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
-        this.showError?.(`${router.backend} command failed: ${message}`)
-        return
+        target.showError?.(`${router.backend} command failed: ${message}`)
+        return true
       }
 
       if (!routed.handled) {
-        await originalSubmit(text)
-        return
+        return false
       }
 
       if (routed.clearInput !== false) {
-        this.editor?.setText?.('')
+        target.editor?.setText?.('')
       }
       if (routed.message) {
-        this.showStatus?.(routed.message)
+        target.showStatus?.(routed.message)
       }
-      this.ui?.requestRender?.()
-    }
-
-    return result
-  }
+      target.ui?.requestRender?.()
+      return true
+    },
+  })
 }

@@ -9,6 +9,7 @@ import { formatLinxCliErrorMessage } from './linx-cloud-errors.js'
 import { normalizeSelectorChoice } from './linx-selector-choice.js'
 import { openExternalUrl } from './linx-external-url.js'
 import { resolveRuntimeProviderLabel } from './linx-runtime-provider-label.js'
+import { registerLinxInteractiveSubmitHandler } from './linx-interactive-submit-router.js'
 
 const LINX_AUTH_LOGIN_IN_PROGRESS = Symbol.for('linx.tui.authLoginInProgress')
 const LINX_AUTH_LOGIN_ON_INIT = Symbol.for('linx.tui.authLoginOnInit')
@@ -59,29 +60,18 @@ export function requestLinxCloudLogin(interactive: any, reason: LinxAuthReason =
 }
 
 function patchLoginCommand(interactive: any, options: LinxLoginFlowOptions): void {
-  const originalSetup = interactive.setupEditorSubmitHandler?.bind(interactive)
-  if (typeof originalSetup !== 'function') {
-    return
-  }
-
-  interactive.setupEditorSubmitHandler = function patchedLinxLoginSetupEditorSubmitHandler(): void {
-    originalSetup()
-
-    const originalSubmit = this.defaultEditor?.onSubmit?.bind(this.defaultEditor)
-    if (typeof originalSubmit !== 'function') {
-      return
-    }
-
-    this.defaultEditor.onSubmit = async (text: string): Promise<void> => {
-      const command = text.trim()
-      if (command === '/login') {
-        this.editor?.setText?.('')
-        await startLinxCloudLogin(this, {}, options)
-        return
+  registerLinxInteractiveSubmitHandler(interactive, {
+    name: 'linx-login',
+    priority: 10,
+    async handler({ interactive: target, input }) {
+      if (input !== '/login') {
+        return false
       }
-      await originalSubmit(text)
-    }
-  }
+      target.editor?.setText?.('')
+      await startLinxCloudLogin(target, {}, options)
+      return true
+    },
+  })
 }
 
 function patchNativeOAuthSelectors(interactive: any, options: LinxLoginFlowOptions): void {
