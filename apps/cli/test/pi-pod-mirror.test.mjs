@@ -216,6 +216,21 @@ test('pod mirror mapping helpers live in a Pod projection core module', async (t
   assert.equal(typeof module.pathToWorkspaceUri, 'function')
 })
 
+test('Pod mirror projection lives outside the Pi adapter', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-pod-mirror.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.LinxPiPodMirror, 'function')
+})
+
+test('Pod mirror sync recovery lives outside the Pi adapter', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-pod-mirror-sync-recovery.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.listPendingPiPodMirrorSync, 'function')
+  assert.equal(typeof module.retryPendingPiPodMirrorSync, 'function')
+})
+
 test('buildPodMessageRow maps Pi user and assistant messages into standard Pod message rows', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pod-mirror-mapping.ts')
   t.after(() => cleanup())

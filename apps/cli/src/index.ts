@@ -33,9 +33,9 @@ import { DEFAULT_LINX_CLOUD_MODEL_ID, FALLBACK_LINX_CLOUD_MODEL_IDS } from './li
 import {
   createLinxPiSessionManager,
   listLinxPiSessions,
-} from './lib/pi-adapter/session.js'
-import { LinxPiPodMirror } from './lib/pi-adapter/pod-mirror.js'
-import { listPendingPiPodMirrorSync, retryPendingPiPodMirrorSync } from './lib/pi-adapter/sync-recovery.js'
+} from './lib/linx-session-manager.js'
+import { LinxPiPodMirror } from './lib/linx-pod-mirror.js'
+import { listPendingPiPodMirrorSync, retryPendingPiPodMirrorSync } from './lib/linx-pod-mirror-sync-recovery.js'
 import type { RemoteChatMessage, RemoteChatTool } from './lib/chat-api.js'
 import { LINX_AGENT_DIR } from './lib/linx-interactive-branding.js'
 import { createFileSyncCheckpointStore } from './lib/sync-checkpoint-store.js'
