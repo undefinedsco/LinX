@@ -104,6 +104,13 @@ test('LinX runtime coding tools helper lives outside the Pi adapter', async (t) 
   assert.equal(typeof module.createLinxPiCodingTools, 'function')
 })
 
+test('LinX runtime OAuth provider helper lives outside the Pi adapter', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-runtime-oauth-provider.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.createLinxManagedRuntimeOAuthProvider, 'function')
+})
+
 test('linx startup login prompt decision covers the auth state matrix', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-startup-login-policy.ts')
   t.after(() => cleanup())

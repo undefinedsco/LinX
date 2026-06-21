@@ -1,5 +1,4 @@
 import { createLinxAgentStreamAdapter, type LinxAgentStreamAdapter, type LinxCompletionBackendResult } from './stream.js'
-import { ensureBrowserConsentLogin } from '../oidc-auth.js'
 import { DEFAULT_LINX_CLOUD_MODEL_ID, resolvePreferredLinxCloudModelId } from '../default-model.js'
 import { withLinxRuntimeSystemPrompt, overrideLinxSystemPrompt } from '../linx-runtime-system-prompt.js'
 import { enableLinxXhighThinking } from '../linx-runtime-thinking.js'
@@ -24,6 +23,7 @@ import type { CodexApprovalPolicy } from '../codex-plugin/codex-native-proxy.js'
 import { loadCredentials } from '../credentials-store.js'
 import { createLinxBearerAuthFetch, resolveLinxCloudRuntimeAuthFetch, resolveRuntimeAuthFetchFromApiKey } from '../linx-cloud-runtime-auth.js'
 import { LINX_RUNTIME_MANAGED_AUTH_KEY } from '../linx-runtime-auth.js'
+import { createLinxManagedRuntimeOAuthProvider } from '../linx-runtime-oauth-provider.js'
 import {
   LINX_WEB_ACCESS_PACKAGE_SOURCE,
   ensurePiWebAccessConfig,
@@ -297,65 +297,11 @@ export function createLinxRuntimeAdapter(
       modelRegistry.isUsingOAuth = (model) => (
         model.provider === LINX_CLOUD_PROVIDER_ID ? false : originalIsUsingOAuth(model)
       )
-      const linxOAuthProvider = options.providerConfig?.oauth ?? {
-        name: 'LinX Cloud',
-        usesCallbackServer: true,
-        async login(callbacks: {
-          onAuth(info: { url: string; instructions?: string }): void
-          onProgress?(message: string): void
-          onManualCodeInput?: (signal?: AbortSignal) => Promise<string>
-          forceFresh?: boolean
-          signal?: AbortSignal
-        }) {
-          callbacks.onProgress?.('Opening LinX Cloud login in your browser...')
-          const result = await ensureBrowserConsentLogin({
-            issuerUrl: options.providerConfig?.issuerUrl,
-            forceFresh: callbacks.forceFresh,
-            signal: callbacks.signal,
-            onAuthUrl(url) {
-              callbacks.onAuth({
-                url,
-                instructions: 'Complete LinX Cloud consent in your browser. If the local callback is blocked, paste the final redirect URL below.',
-              })
-            },
-            manualRedirectUrl: callbacks.onManualCodeInput,
-          })
-          clearDefaultPodDataSession()
-          if (result.reusedExistingSession) {
-            callbacks.onProgress?.('Reused existing LinX Cloud session.')
-          }
-          const authFetch = await resolveLinxCloudRuntimeAuthFetch({
-            issuerUrl: options.providerConfig?.issuerUrl,
-            getPodDataSession: options.getPodDataSession,
-          })
-          await syncProviderModels({ runtimeFetch: authFetch })
-
-          return {
-            refresh: result.tokenSet.refreshToken ?? '',
-            access: LINX_RUNTIME_MANAGED_AUTH_KEY,
-            expires: result.tokenSet.expiresAt ? result.tokenSet.expiresAt * 1000 : Date.now() + 60 * 60 * 1000,
-          }
-        },
-        async refreshToken(credentials: OAuthCredentials) {
-          clearDefaultPodDataSession()
-          const authFetch = await resolveLinxCloudRuntimeAuthFetch({
-            issuerUrl: options.providerConfig?.issuerUrl,
-            getPodDataSession: options.getPodDataSession,
-          })
-          await syncProviderModels({ runtimeFetch: authFetch })
-          return {
-            type: 'oauth',
-            refresh: credentials.refresh,
-            access: LINX_RUNTIME_MANAGED_AUTH_KEY,
-            expires: Date.now() + 60 * 60 * 1000,
-          }
-        },
-        getApiKey(credentials: OAuthCredentials) {
-          return credentials.access === LINX_RUNTIME_MANAGED_AUTH_KEY
-            ? LINX_RUNTIME_MANAGED_AUTH_KEY
-            : LINX_RUNTIME_MANAGED_AUTH_KEY
-        },
-      }
+      const linxOAuthProvider = options.providerConfig?.oauth ?? createLinxManagedRuntimeOAuthProvider({
+        issuerUrl: options.providerConfig?.issuerUrl,
+        getPodDataSession: options.getPodDataSession,
+        syncProviderModels,
+      })
       const storedCredentials = options.providerConfig?.oauth ? null : loadCredentials()
       const hasManagedPodSession = !options.providerConfig?.oauth && Boolean(options.getPodDataSession)
       const explicitOAuthCredential = options.providerConfig?.oauth
