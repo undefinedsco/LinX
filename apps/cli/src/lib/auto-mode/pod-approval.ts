@@ -60,7 +60,7 @@ import {
   subjectIdFromResourceUrl,
   upsertManagedTurtleBlock,
   type PodFetch,
-} from '../pi-adapter/pod-native.js'
+} from '../pod-native.js'
 
 const AUTO_MODE_CHAT_ID_PREFIX = 'linx-auto-mode'
 const AUTO_MODE_AGENT_ID = '__secretary__'

@@ -2,8 +2,17 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 
+test('pod native helpers live in a Pod core module', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pod-native.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.buildChatIndexResourceUrl, 'function')
+  assert.equal(typeof module.upsertManagedTurtleBlock, 'function')
+  assert.equal(typeof module.parseManagedTurtleBlocks, 'function')
+})
+
 test('pod native URL helpers keep chat and message resources under chat storage', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/pod-native.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pod-native.ts')
   t.after(() => cleanup())
 
   const webId = 'https://id.undefineds.co/alice/profile/card#me'
@@ -20,7 +29,7 @@ test('pod native URL helpers keep chat and message resources under chat storage'
 })
 
 test('pod native URL helpers keep autonomy grants under Pod root settings', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/pod-native.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pod-native.ts')
   t.after(() => cleanup())
 
   assert.equal(
