@@ -197,3 +197,22 @@ test('Pod mirror runtime handle is centralized in the Pod mirror host module', (
 
   assert.deepEqual(violations, [])
 })
+
+test('runtime host hooks do not use runtime hidden fields', () => {
+  const violations = []
+  const directRuntimeHostHookPattern = /__linx(?:BeforeSessionInvalidate|RebindSession)\b/
+
+  for (const file of listSourceFiles(libRoot)) {
+    const relativePath = relative(libRoot, file)
+    if (relativePath.startsWith(adapterSegment)) {
+      continue
+    }
+
+    const source = readFileSync(file, 'utf8')
+    if (directRuntimeHostHookPattern.test(source)) {
+      violations.push(relativePath)
+    }
+  }
+
+  assert.deepEqual(violations, [])
+})

@@ -6990,6 +6990,32 @@ test('interactive runtime host bridge lives in a shell/runtime module', async (t
   t.after(() => cleanup())
 
   assert.equal(typeof module.ensureInteractiveRuntimeHost, 'function')
+  assert.equal(typeof module.getInteractiveRuntimeBeforeSessionInvalidate, 'function')
+  assert.equal(typeof module.getInteractiveRuntimeRebindSession, 'function')
+})
+
+test('interactive runtime host stores hooks behind explicit accessors', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-runtime-host.ts')
+  t.after(() => cleanup())
+
+  const runtime = {}
+  const before = () => {}
+  const rebind = async () => {}
+
+  module.ensureInteractiveRuntimeHost(runtime)
+  runtime.setBeforeSessionInvalidate(before)
+  runtime.setRebindSession(rebind)
+
+  assert.equal(module.getInteractiveRuntimeBeforeSessionInvalidate(runtime), before)
+  assert.equal(module.getInteractiveRuntimeRebindSession(runtime), rebind)
+  assert.equal(Object.prototype.hasOwnProperty.call(runtime, '__linxBeforeSessionInvalidate'), false)
+  assert.equal(Object.prototype.hasOwnProperty.call(runtime, '__linxRebindSession'), false)
+
+  runtime.setBeforeSessionInvalidate(undefined)
+  runtime.setRebindSession(undefined)
+
+  assert.equal(module.getInteractiveRuntimeBeforeSessionInvalidate(runtime), undefined)
+  assert.equal(module.getInteractiveRuntimeRebindSession(runtime), undefined)
 })
 
 test('interactive stop cleanup lives in the shell lifecycle module', async (t) => {

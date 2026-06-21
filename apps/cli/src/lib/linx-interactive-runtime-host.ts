@@ -1,17 +1,70 @@
+type BeforeSessionInvalidateHook = () => void
+type RebindSessionHook = (session: unknown) => Promise<void>
+
+interface InteractiveRuntimeHostHooks {
+  beforeSessionInvalidate?: BeforeSessionInvalidateHook
+  rebindSession?: RebindSessionHook
+}
+
+const runtimeHostHooks = new WeakMap<object, InteractiveRuntimeHostHooks>()
+
 export function ensureInteractiveRuntimeHost(runtime: any): void {
   if (!runtime || typeof runtime !== 'object') {
     return
   }
 
+  ensureRuntimeHostHooks(runtime)
+
   if (typeof runtime.setBeforeSessionInvalidate !== 'function') {
-    runtime.setBeforeSessionInvalidate = (callback?: () => void): void => {
-      runtime.__linxBeforeSessionInvalidate = callback
+    runtime.setBeforeSessionInvalidate = (callback?: BeforeSessionInvalidateHook): void => {
+      setInteractiveRuntimeBeforeSessionInvalidate(runtime, callback)
     }
   }
 
   if (typeof runtime.setRebindSession !== 'function') {
-    runtime.setRebindSession = (callback?: (session: unknown) => Promise<void>): void => {
-      runtime.__linxRebindSession = callback
+    runtime.setRebindSession = (callback?: RebindSessionHook): void => {
+      setInteractiveRuntimeRebindSession(runtime, callback)
     }
   }
+}
+
+export function getInteractiveRuntimeBeforeSessionInvalidate(runtime: unknown): BeforeSessionInvalidateHook | undefined {
+  return getRuntimeHostHooks(runtime).beforeSessionInvalidate
+}
+
+export function getInteractiveRuntimeRebindSession(runtime: unknown): RebindSessionHook | undefined {
+  return getRuntimeHostHooks(runtime).rebindSession
+}
+
+function setInteractiveRuntimeBeforeSessionInvalidate(runtime: object, callback?: BeforeSessionInvalidateHook): void {
+  const hooks = ensureRuntimeHostHooks(runtime)
+  if (callback) {
+    hooks.beforeSessionInvalidate = callback
+  } else {
+    delete hooks.beforeSessionInvalidate
+  }
+}
+
+function setInteractiveRuntimeRebindSession(runtime: object, callback?: RebindSessionHook): void {
+  const hooks = ensureRuntimeHostHooks(runtime)
+  if (callback) {
+    hooks.rebindSession = callback
+  } else {
+    delete hooks.rebindSession
+  }
+}
+
+function ensureRuntimeHostHooks(runtime: object): InteractiveRuntimeHostHooks {
+  let hooks = runtimeHostHooks.get(runtime)
+  if (!hooks) {
+    hooks = {}
+    runtimeHostHooks.set(runtime, hooks)
+  }
+  return hooks
+}
+
+function getRuntimeHostHooks(runtime: unknown): InteractiveRuntimeHostHooks {
+  return runtime && typeof runtime === 'object'
+    ? runtimeHostHooks.get(runtime) ?? {}
+    : {}
 }
