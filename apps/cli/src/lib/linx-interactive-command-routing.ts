@@ -20,6 +20,8 @@ import {
 import {
   getSessionCommandRouterOriginalPrompt,
   getSessionCommandRouterOriginalSendUserMessage,
+  isSessionCommandRouterInstalled,
+  markSessionCommandRouterInstalled,
   setSessionCommandRouterOriginals,
 } from './linx-session-command-routing-host.js'
 
@@ -175,7 +177,7 @@ export function installLinxFinalSubmitCommandRouter(interactive: any, runtime: a
 
 export function installLinxSessionCommandRouter(interactive: any, runtime: any): void {
   const session = interactive?.session ?? runtime?.session
-  if (!session || typeof session !== 'object' || session.__linxSessionCommandRouterInstalled === true) {
+  if (!session || typeof session !== 'object' || isSessionCommandRouterInstalled(session)) {
     return
   }
 
@@ -213,7 +215,7 @@ export function installLinxSessionCommandRouter(interactive: any, runtime: any):
     }
   }
 
-  session.__linxSessionCommandRouterInstalled = true
+  markSessionCommandRouterInstalled(session)
 }
 
 export function installLinxSessionCommandRouterAfterRebind(interactive: any, runtime: any): void {

@@ -6,6 +6,15 @@ type SessionCommandRouterOriginals = {
 }
 
 const sessionCommandRouterOriginals = new WeakMap<object, SessionCommandRouterOriginals>()
+const sessionCommandRouterInstallState = new WeakSet<object>()
+
+export function isSessionCommandRouterInstalled(session: unknown): boolean {
+  return Boolean(session && typeof session === 'object' && sessionCommandRouterInstallState.has(session))
+}
+
+export function markSessionCommandRouterInstalled(session: object): void {
+  sessionCommandRouterInstallState.add(session)
+}
 
 export function setSessionCommandRouterOriginals(
   session: object,
