@@ -18,8 +18,6 @@ import { emitNormalizedBackendEventsToPiStream } from '../linx-pi-normalized-eve
 import { emitLinxPiStreamError } from '../linx-pi-stream-errors.js'
 import { throwIfLinxStreamAborted } from '../linx-stream-abort.js'
 
-export type { LinxCompletionBackendResult } from '../linx-completion-backend.js'
-
 type PiStreamOptions = {
   apiKey?: string
   authFetch?: (url: string, init?: RequestInit) => Promise<Response>
