@@ -698,6 +698,16 @@ test('Pi stream adapter does not import backend-specific contract modules', () =
   assert.deepEqual(violations, [])
 })
 
+test('Pi stream adapter does not re-export backend completion result contracts', () => {
+  const source = readFileSync(join(libRoot, 'pi-adapter/stream.ts'), 'utf8')
+  const forbidden = [
+    "export type { LinxCompletionBackendResult } from '../linx-completion-backend.js'",
+  ]
+  const violations = forbidden.filter((snippet) => source.includes(snippet))
+
+  assert.deepEqual(violations, [])
+})
+
 test('normalized backend event to Pi text stream mapping is kept outside the Pi adapter', () => {
   const source = readFileSync(join(libRoot, 'pi-adapter/stream.ts'), 'utf8')
   const forbidden = [
