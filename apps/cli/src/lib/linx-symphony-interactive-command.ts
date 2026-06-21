@@ -23,7 +23,20 @@ import {
 } from './symphony/pod-projection.js'
 import { registerLinxInteractiveSubmitHandler } from './linx-interactive-submit-router.js'
 import {
+  getLinxInteractiveListSymphonyIssues,
+  getLinxInteractiveListSymphonySessions,
+  getLinxInteractiveRunSymphony,
+  getLinxInteractiveSymphonyAgentRuntime,
+  getLinxInteractiveSymphonyAgentRuntimeConfig,
+  getLinxInteractiveSymphonyDispatchControllers,
+  getLinxInteractiveSymphonyDispatches,
   getLinxInteractiveSymphonyModeGeneration,
+  getLinxInteractiveSymphonyPodProjectionRuntime,
+  getLinxInteractiveSymphonyStatusPodTimeoutMs,
+  getLinxInteractiveSymphonyWorkerBackend,
+  getLinxInteractiveSymphonyWorkerCredentialSource,
+  getLinxInteractiveSymphonyWorkerModel,
+  getLinxInteractiveSymphonyWorkerSupervisorIntervalMs,
   isLinxInteractiveSymphonyModeEnabled,
   notifyLinxInteractiveSymphonyControlChange,
   setLinxInteractiveSymphonyModeEnabled,
@@ -171,12 +184,9 @@ async function dispatchSymphonyWorkerFromInteractive(
   const workerSupervisorIntervalMs = workerGoalMode ? resolveSymphonyWorkerSupervisorIntervalMs(interactive) : undefined
   const cwd = resolveInteractiveCwd(interactive, interactive.runtime)
   const dispatchGeneration = getLinxInteractiveSymphonyModeGeneration(interactive)
-  const dispatches = Array.isArray(interactive.__linxSymphonyDispatches)
-    ? interactive.__linxSymphonyDispatches
-    : []
-  interactive.__linxSymphonyDispatches = dispatches
+  const dispatches = getLinxInteractiveSymphonyDispatches(interactive)
   const controller = new AbortController()
-  const controllers = getInteractiveSymphonyDispatchControllers(interactive)
+  const controllers = getLinxInteractiveSymphonyDispatchControllers(interactive)
   controllers.add(controller)
 
   interactive.showStatus?.(
@@ -186,9 +196,7 @@ async function dispatchSymphonyWorkerFromInteractive(
   )
   interactive.ui?.requestRender?.()
 
-  const run = typeof interactive.__linxRunSymphony === 'function'
-    ? interactive.__linxRunSymphony
-    : runSymphony
+  const run = getLinxInteractiveRunSymphony(interactive) ?? runSymphony
   const dispatchArgs = {
     objective: [objective],
     backend,
@@ -246,15 +254,8 @@ async function dispatchSymphonyWorkerFromInteractive(
   await Promise.resolve()
 }
 
-function getInteractiveSymphonyDispatchControllers(interactive: any): Set<AbortController> {
-  if (!(interactive.__linxSymphonyDispatchControllers instanceof Set)) {
-    interactive.__linxSymphonyDispatchControllers = new Set<AbortController>()
-  }
-  return interactive.__linxSymphonyDispatchControllers
-}
-
 function abortInteractiveSymphonyDispatches(interactive: any): void {
-  const controllers = getInteractiveSymphonyDispatchControllers(interactive)
+  const controllers = getLinxInteractiveSymphonyDispatchControllers(interactive)
   for (const controller of controllers) {
     if (!controller.signal.aborted) {
       controller.abort(new Error('Symphony dispatch aborted by /symphony off'))
@@ -274,7 +275,7 @@ function isCurrentSymphonyDispatch(interactive: any, generation: number): boolea
 }
 
 function createInteractiveSymphonyRuntime(interactive: any): SymphonyRuntime | undefined {
-  const projectionRuntime = interactive?.__linxSymphonyPodProjectionRuntime
+  const projectionRuntime = getLinxInteractiveSymphonyPodProjectionRuntime(interactive)
   if (!projectionRuntime) {
     return undefined
   }
@@ -299,7 +300,7 @@ function createInteractiveSymphonyRuntime(interactive: any): SymphonyRuntime | u
 
 function resolveSymphonyWorkerBackend(interactive: any, objective?: string): AutoModeWorkerBackend {
   const candidates = [
-    interactive?.__linxSymphonyWorkerBackend,
+    getLinxInteractiveSymphonyWorkerBackend(interactive),
     interactive?.runtime?.symphonyWorkerBackend,
     extractSymphonyWorkerBackendFromText(objective),
     interactive?.runtime?.runtimeBackend,
@@ -324,7 +325,7 @@ function isSymphonyWorkerBackend(value: unknown): value is AutoModeWorkerBackend
 
 function resolveSymphonyWorkerCredentialSource(interactive: any, backend: AutoModeWorkerBackend): AutoModeCredentialSource {
   const configured = normalizeSymphonyCredentialSource(
-    interactive?.__linxSymphonyWorkerCredentialSource,
+    getLinxInteractiveSymphonyWorkerCredentialSource(interactive),
     interactive?.runtime?.symphonyWorkerCredentialSource,
     interactive?.runtime?.workerCredentialSource,
   )
@@ -385,8 +386,8 @@ function extractSymphonyWorkerBackendFromText(input: string | undefined): AutoMo
 
 function resolveSymphonyControlAgentRuntime(interactive: any): AgentRuntimeBackendConfig | undefined {
   const configured = normalizeSymphonyAgentRuntimeConfig(
-    interactive?.__linxAgentRuntime,
-    interactive?.__linxAgentRuntimeConfig,
+    getLinxInteractiveSymphonyAgentRuntime(interactive),
+    getLinxInteractiveSymphonyAgentRuntimeConfig(interactive),
     interactive?.runtime?.agentRuntime,
     interactive?.runtime?.agentRuntimeConfig,
   )
@@ -438,7 +439,7 @@ function formatSymphonyControlRuntime(runtime: AgentRuntimeBackendConfig): strin
 
 function resolveSymphonyWorkerModel(interactive: any, objective: string, backend: AutoModeWorkerBackend): string | undefined {
   const configured = normalizeSymphonyConfigString(
-    interactive?.__linxSymphonyWorkerModel,
+    getLinxInteractiveSymphonyWorkerModel(interactive),
     interactive?.runtime?.symphonyWorkerModel,
     interactive?.runtime?.workerModel,
     extractSymphonyWorkerModelFromText(objective),
@@ -451,7 +452,7 @@ function resolveSymphonyWorkerModel(interactive: any, objective: string, backend
 
 function resolveSymphonyWorkerSupervisorIntervalMs(interactive: any): number {
   const value = Number(
-    interactive?.__linxSymphonyWorkerSupervisorIntervalMs
+    getLinxInteractiveSymphonyWorkerSupervisorIntervalMs(interactive)
     ?? interactive?.runtime?.symphonyWorkerSupervisorIntervalMs
     ?? DEFAULT_SYMPHONY_WORKER_SUPERVISOR_INTERVAL_MS,
   )
@@ -686,7 +687,7 @@ function formatSymphonyStatusError(message: string): string {
 }
 
 function resolveSymphonyStatusPodTimeoutMs(interactive: any): number {
-  const value = Number(interactive?.__linxSymphonyStatusPodTimeoutMs)
+  const value = Number(getLinxInteractiveSymphonyStatusPodTimeoutMs(interactive))
   return Number.isFinite(value) && value > 0 ? value : SYMPHONY_STATUS_POD_TIMEOUT_MS
 }
 
@@ -714,7 +715,7 @@ async function withSymphonyStatusTimeout<T>(
 }
 
 async function listOpenSymphonyIssues(interactive: any): Promise<SymphonyStatusRead<SymphonyIssueStatus>> {
-  const controlRuntime = interactive?.__linxSymphonyPodProjectionRuntime
+  const controlRuntime = getLinxInteractiveSymphonyPodProjectionRuntime(interactive)
   try {
     if (controlRuntime?.issueResource) {
       const podIssues = await withSymphonyStatusTimeout(
@@ -739,8 +740,9 @@ async function listOpenSymphonyIssues(interactive: any): Promise<SymphonyStatusR
   }
 
   try {
-    const issues = typeof interactive?.__linxListSymphonyIssues === 'function'
-      ? interactive.__linxListSymphonyIssues()
+    const listIssues = getLinxInteractiveListSymphonyIssues(interactive)
+    const issues = typeof listIssues === 'function'
+      ? listIssues()
       : listSymphonyIssues()
     return {
       items: issues.filter((issue: SymphonyIssueStatus) => issue.status !== 'closed' && issue.status !== 'resolved'),
@@ -752,7 +754,7 @@ async function listOpenSymphonyIssues(interactive: any): Promise<SymphonyStatusR
 }
 
 async function listRunningSymphonyWorkers(interactive: any): Promise<SymphonyStatusRead<SymphonyWorkerStatus>> {
-  const controlRuntime = interactive?.__linxSymphonyPodProjectionRuntime
+  const controlRuntime = getLinxInteractiveSymphonyPodProjectionRuntime(interactive)
   try {
     if (controlRuntime?.sessionResource) {
       const podWorkers = await withSymphonyStatusTimeout(
@@ -777,8 +779,9 @@ async function listRunningSymphonyWorkers(interactive: any): Promise<SymphonySta
   }
 
   try {
-    if (typeof interactive?.__linxListSymphonySessions === 'function') {
-      const sessions = interactive.__linxListSymphonySessions()
+    const listSessions = getLinxInteractiveListSymphonySessions(interactive)
+    if (typeof listSessions === 'function') {
+      const sessions = listSessions()
       return {
         items: sessions.filter((session: ReturnType<typeof listSymphonySessions>[number]) => session.status === 'running'),
         source: 'local',
@@ -796,7 +799,7 @@ async function listRunningSymphonyWorkers(interactive: any): Promise<SymphonySta
 }
 
 async function listRecentSymphonyReports(interactive: any): Promise<SymphonyStatusRead<SymphonyReportStatus>> {
-  const controlRuntime = interactive?.__linxSymphonyPodProjectionRuntime
+  const controlRuntime = getLinxInteractiveSymphonyPodProjectionRuntime(interactive)
   try {
     if (controlRuntime?.deliveryResource) {
       const podReports = await withSymphonyStatusTimeout(
@@ -824,8 +827,9 @@ async function listRecentSymphonyReports(interactive: any): Promise<SymphonyStat
   }
 
   try {
-    const sessions = typeof interactive?.__linxListSymphonySessions === 'function'
-      ? interactive.__linxListSymphonySessions()
+    const listSessions = getLinxInteractiveListSymphonySessions(interactive)
+    const sessions = typeof listSessions === 'function'
+      ? listSessions()
       : listSymphonySessions()
     return {
       items: sessions

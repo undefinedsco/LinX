@@ -3,6 +3,22 @@ type ProjectedCommandResult = boolean | 'peer-command'
 type ProjectedCommandHandler = (text: string) => ProjectedCommandResult | Promise<ProjectedCommandResult>
 type AiConnectCommandHandler = (interactive: any, runtime: any, command: any) => void | Promise<void>
 
+export type LinxInteractiveSymphonyState = {
+  podProjectionRuntime?: any
+  workerBackend?: unknown
+  workerCredentialSource?: unknown
+  agentRuntime?: unknown
+  agentRuntimeConfig?: unknown
+  workerModel?: unknown
+  workerSupervisorIntervalMs?: unknown
+  statusPodTimeoutMs?: unknown
+  runSymphony?: (...args: any[]) => any
+  listSymphonyIssues?: () => any
+  listSymphonySessions?: () => any
+  dispatches?: Promise<unknown>[]
+  dispatchControllers?: Set<AbortController>
+}
+
 export type LinxInteractiveShellState = {
   autoControlChange?: ShellControlChangeHandler
   symphonyControlChange?: ShellControlChangeHandler
@@ -13,6 +29,7 @@ export type LinxInteractiveShellState = {
   aiConnectCommand?: AiConnectCommandHandler
   projectedGlobalCommand?: ProjectedCommandHandler
   projectedBackendCommand?: ProjectedCommandHandler
+  symphony: LinxInteractiveSymphonyState
 }
 
 const LINX_INTERACTIVE_SHELL_STATE = Symbol.for('linx.tui.shellState')
@@ -42,6 +59,7 @@ export function configureLinxInteractiveShellState(
     aiConnectCommand?: AiConnectCommandHandler
     projectedGlobalCommand?: ProjectedCommandHandler
     projectedBackendCommand?: ProjectedCommandHandler
+    symphony?: Partial<LinxInteractiveSymphonyState>
   },
 ): LinxInteractiveShellState {
   const state = getLinxInteractiveShellState(interactive)
@@ -66,9 +84,84 @@ export function configureLinxInteractiveShellState(
   if (options.projectedBackendCommand) {
     state.projectedBackendCommand = options.projectedBackendCommand
   }
+  if (options.symphony) {
+    Object.assign(state.symphony, options.symphony)
+  }
   return state
 }
 
+export function configureLinxInteractiveSymphonyState(
+  interactive: any,
+  options: Partial<LinxInteractiveSymphonyState>,
+): LinxInteractiveSymphonyState {
+  const state = getLinxInteractiveShellState(interactive).symphony
+  Object.assign(state, options)
+  return state
+}
+
+export function getLinxInteractiveSymphonyState(interactive: any): LinxInteractiveSymphonyState {
+  return getLinxInteractiveShellState(interactive).symphony
+}
+
+export function getLinxInteractiveSymphonyDispatches(interactive: any): Promise<unknown>[] {
+  const state = getLinxInteractiveSymphonyState(interactive)
+  if (!Array.isArray(state.dispatches)) {
+    state.dispatches = []
+  }
+  return state.dispatches
+}
+
+export function getLinxInteractiveSymphonyDispatchControllers(interactive: any): Set<AbortController> {
+  const state = getLinxInteractiveSymphonyState(interactive)
+  if (!(state.dispatchControllers instanceof Set)) {
+    state.dispatchControllers = new Set<AbortController>()
+  }
+  return state.dispatchControllers
+}
+
+export function getLinxInteractiveSymphonyPodProjectionRuntime(interactive: any): any {
+  return getLinxInteractiveSymphonyState(interactive).podProjectionRuntime
+}
+
+export function getLinxInteractiveSymphonyWorkerBackend(interactive: any): unknown {
+  return getLinxInteractiveSymphonyState(interactive).workerBackend
+}
+
+export function getLinxInteractiveSymphonyWorkerCredentialSource(interactive: any): unknown {
+  return getLinxInteractiveSymphonyState(interactive).workerCredentialSource
+}
+
+export function getLinxInteractiveSymphonyAgentRuntime(interactive: any): unknown {
+  return getLinxInteractiveSymphonyState(interactive).agentRuntime
+}
+
+export function getLinxInteractiveSymphonyAgentRuntimeConfig(interactive: any): unknown {
+  return getLinxInteractiveSymphonyState(interactive).agentRuntimeConfig
+}
+
+export function getLinxInteractiveSymphonyWorkerModel(interactive: any): unknown {
+  return getLinxInteractiveSymphonyState(interactive).workerModel
+}
+
+export function getLinxInteractiveSymphonyWorkerSupervisorIntervalMs(interactive: any): unknown {
+  return getLinxInteractiveSymphonyState(interactive).workerSupervisorIntervalMs
+}
+
+export function getLinxInteractiveSymphonyStatusPodTimeoutMs(interactive: any): unknown {
+  return getLinxInteractiveSymphonyState(interactive).statusPodTimeoutMs
+}
+
+export function getLinxInteractiveRunSymphony(interactive: any): ((...args: any[]) => any) | undefined {
+  return getLinxInteractiveSymphonyState(interactive).runSymphony
+}
+
+export function getLinxInteractiveListSymphonyIssues(interactive: any): (() => any) | undefined {
+  return getLinxInteractiveSymphonyState(interactive).listSymphonyIssues
+}
+
+export function getLinxInteractiveListSymphonySessions(interactive: any): (() => any) | undefined {
+  return getLinxInteractiveSymphonyState(interactive).listSymphonySessions
+}
 
 export function getLinxInteractiveAiConnectCommand(interactive: any): AiConnectCommandHandler | undefined {
   return getLinxInteractiveShellState(interactive).aiConnectCommand
@@ -171,5 +264,6 @@ function createDefaultShellState(): LinxInteractiveShellState {
     symphonyModeEnabled: false,
     symphonyModeGeneration: 0,
     goalModeEnabled: false,
+    symphony: {},
   }
 }

@@ -24,7 +24,6 @@ test('non-adapter shell/core modules do not import from pi-adapter internals', (
 
   assert.deepEqual(violations, [])
 })
-
 function listSourceFiles(dir) {
   const files = []
   for (const entry of readdirSync(dir)) {
@@ -126,6 +125,28 @@ test('projected command handlers are centralized in the shell state module', () 
 
     const source = readFileSync(file, 'utf8')
     if (directProjectedHandlerPattern.test(source)) {
+      violations.push(relativePath)
+    }
+  }
+
+  assert.deepEqual(violations, [])
+})
+
+test('Symphony interactive runtime config is centralized in the shell state module', () => {
+  const allowed = new Set([
+    'linx-interactive-shell-state.ts',
+  ])
+  const violations = []
+  const directSymphonyConfigPattern = /__linx(?:SymphonyPodProjectionRuntime|SymphonyWorkerBackend|SymphonyWorkerCredentialSource|AgentRuntime|AgentRuntimeConfig|SymphonyWorkerModel|SymphonyWorkerSupervisorIntervalMs|SymphonyStatusPodTimeoutMs|RunSymphony|ListSymphonyIssues|ListSymphonySessions|SymphonyDispatches|SymphonyDispatchControllers)\b/
+
+  for (const file of listSourceFiles(libRoot)) {
+    const relativePath = relative(libRoot, file)
+    if (relativePath.startsWith(adapterSegment) || allowed.has(relativePath)) {
+      continue
+    }
+
+    const source = readFileSync(file, 'utf8')
+    if (directSymphonyConfigPattern.test(source)) {
       violations.push(relativePath)
     }
   }

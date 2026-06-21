@@ -18,6 +18,7 @@ import type { SessionControlManager, SessionControlSnapshot } from './session-co
 import { registerLinxInteractiveStopHandler } from './linx-interactive-stop-router.js'
 import {
   getLinxInteractiveGoalModeSupervisorLastAt,
+  getLinxInteractiveSymphonyWorkerSupervisorIntervalMs,
   handleLinxInteractiveProjectedCommand,
   isLinxInteractiveGoalModeEnabled,
   setLinxInteractiveGoalModeSupervisorLastAt,
@@ -665,7 +666,7 @@ function resolveGoalModeSupervisorIntervalMs(interactive: any, runtime: any): nu
   const value = Number(
     interactive?.__linxGoalModeSupervisorIntervalMs
       ?? runtime?.goalModeSupervisorIntervalMs
-      ?? interactive?.__linxSymphonyWorkerSupervisorIntervalMs
+      ?? getLinxInteractiveSymphonyWorkerSupervisorIntervalMs(interactive)
       ?? runtime?.symphonyWorkerSupervisorIntervalMs
       ?? DEFAULT_GOAL_MODE_SUPERVISOR_INTERVAL_MS,
   )
