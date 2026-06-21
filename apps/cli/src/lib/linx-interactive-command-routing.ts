@@ -24,6 +24,18 @@ import {
   markSessionCommandRouterInstalled,
   setSessionCommandRouterOriginals,
 } from './linx-session-command-routing-host.js'
+import {
+  isFinalSubmitSetCustomEditorComponentPatched,
+  isFinalSubmitWrappedHandler,
+  isGlobalCommandHandlerInstalled,
+  isInputCommandRouterInstalled,
+  isSessionCommandRouterAfterRebindInstalled,
+  markFinalSubmitSetCustomEditorComponentPatched,
+  markFinalSubmitWrappedHandler,
+  markGlobalCommandHandlerInstalled,
+  markInputCommandRouterInstalled,
+  markSessionCommandRouterAfterRebindInstalled,
+} from './linx-interactive-command-routing-host.js'
 
 type ShellCommandOptions = {
   onAutoControlChange?: (enabled: boolean) => void | Promise<void>
@@ -58,7 +70,7 @@ export function installLinxShellCommands(
 export const installLinxGlobalCommands = installLinxShellCommands
 
 function installLinxShellCommandHandler(interactive: any, runtime: any): void {
-  if (interactive.__linxGlobalCommandHandlerInstalled) {
+  if (isGlobalCommandHandlerInstalled(interactive)) {
     return
   }
 
@@ -78,7 +90,7 @@ function installLinxShellCommandHandler(interactive: any, runtime: any): void {
     },
   })
 
-  interactive.__linxGlobalCommandHandlerInstalled = true
+  markGlobalCommandHandlerInstalled(interactive)
   configureLinxInteractiveShellState(interactive, {
     projectedGlobalCommand: async (text: string): Promise<boolean | 'peer-command'> => {
       const command = parseLinxShellCommand(text.trim())
@@ -96,7 +108,7 @@ function installLinxShellCommandHandler(interactive: any, runtime: any): void {
 }
 
 export function installLinxInputCommandRouter(interactive: any, runtime: any): void {
-  if (!interactive || interactive.__linxInputCommandRouterInstalled) {
+  if (!interactive || isInputCommandRouterInstalled(interactive)) {
     return
   }
   const originalGetUserInput = interactive.getUserInput?.bind(interactive)
@@ -120,7 +132,7 @@ export function installLinxInputCommandRouter(interactive: any, runtime: any): v
       await handleLinxShellCommand(this, runtime, command)
     }
   }
-  interactive.__linxInputCommandRouterInstalled = true
+  markInputCommandRouterInstalled(interactive)
 }
 
 export function installLinxFinalSubmitCommandRouter(interactive: any, runtime: any): void {
@@ -132,7 +144,7 @@ export function installLinxFinalSubmitCommandRouter(interactive: any, runtime: a
     if (!editor || typeof editor.onSubmit !== 'function') {
       return
     }
-    if (editor.onSubmit.__linxFinalSubmitCommandRouterWrapped === true) {
+    if (isFinalSubmitWrappedHandler(editor.onSubmit)) {
       return
     }
 
@@ -147,7 +159,7 @@ export function installLinxFinalSubmitCommandRouter(interactive: any, runtime: a
       interactive.editor?.setText?.('')
       await handleLinxShellCommand(interactive, runtime, command)
     }
-    ;(wrappedSubmit as any).__linxFinalSubmitCommandRouterWrapped = true
+    markFinalSubmitWrappedHandler(wrappedSubmit)
     editor.onSubmit = wrappedSubmit
   }
 
@@ -159,7 +171,7 @@ export function installLinxFinalSubmitCommandRouter(interactive: any, runtime: a
   const originalSetCustomEditorComponent = interactive.setCustomEditorComponent?.bind(interactive)
   if (
     typeof originalSetCustomEditorComponent === 'function'
-    && interactive.__linxFinalSubmitSetCustomEditorComponentPatched !== true
+    && !isFinalSubmitSetCustomEditorComponentPatched(interactive)
   ) {
     interactive.setCustomEditorComponent = function patchedLinxFinalSubmitSetCustomEditorComponent(...args: unknown[]): unknown {
       const result = originalSetCustomEditorComponent(...args)
@@ -169,10 +181,8 @@ export function installLinxFinalSubmitCommandRouter(interactive: any, runtime: a
       }
       return result
     }
-    interactive.__linxFinalSubmitSetCustomEditorComponentPatched = true
+    markFinalSubmitSetCustomEditorComponentPatched(interactive)
   }
-
-  interactive.__linxFinalSubmitCommandRouterInstalled = true
 }
 
 export function installLinxSessionCommandRouter(interactive: any, runtime: any): void {
@@ -219,7 +229,7 @@ export function installLinxSessionCommandRouter(interactive: any, runtime: any):
 }
 
 export function installLinxSessionCommandRouterAfterRebind(interactive: any, runtime: any): void {
-  if (!interactive || interactive.__linxSessionCommandRouterAfterRebindInstalled === true) {
+  if (!interactive || isSessionCommandRouterAfterRebindInstalled(interactive)) {
     return
   }
 
@@ -233,7 +243,7 @@ export function installLinxSessionCommandRouterAfterRebind(interactive: any, run
     installLinxSessionCommandRouter(this, runtime)
     return result
   }
-  interactive.__linxSessionCommandRouterAfterRebindInstalled = true
+  markSessionCommandRouterAfterRebindInstalled(interactive)
 }
 
 async function maybeHandleLinxSessionCommand(interactive: any, runtime: any, text: unknown): Promise<boolean> {
