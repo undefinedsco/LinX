@@ -207,8 +207,17 @@ function createFakePodRuntime() {
   }
 }
 
+test('pod mirror mapping helpers live in a Pod projection core module', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pod-mirror-mapping.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.buildPodMessageRow, 'function')
+  assert.equal(typeof module.secretaryChatUri, 'function')
+  assert.equal(typeof module.pathToWorkspaceUri, 'function')
+})
+
 test('buildPodMessageRow maps Pi user and assistant messages into standard Pod message rows', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/pod-mirror-mapping.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pod-mirror-mapping.ts')
   t.after(() => cleanup())
 
   const userRow = module.buildPodMessageRow(
@@ -274,7 +283,7 @@ test('buildPodMessageRow maps Pi user and assistant messages into standard Pod m
 })
 
 test('buildPodMessageRow keeps tool results as system messages linked to the same chat/thread', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/pod-mirror-mapping.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pod-mirror-mapping.ts')
   t.after(() => cleanup())
 
   const row = module.buildPodMessageRow(
@@ -303,7 +312,7 @@ test('buildPodMessageRow keeps tool results as system messages linked to the sam
 })
 
 test('buildPodMessageRow sanitizes invalid Pod literal text before RDF projection', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/pod-mirror-mapping.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pod-mirror-mapping.ts')
   t.after(() => cleanup())
 
   const invalidText = `bad ${String.fromCharCode(0xD83C)}${String.fromCharCode(0x1B)} text`
@@ -333,7 +342,7 @@ test('buildPodMessageRow sanitizes invalid Pod literal text before RDF projectio
 })
 
 test('buildPodMessageRow skips operational assistant cloud/auth errors from durable Pod chat', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/pod-mirror-mapping.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/pod-mirror-mapping.ts')
   t.after(() => cleanup())
 
   for (const errorMessage of [

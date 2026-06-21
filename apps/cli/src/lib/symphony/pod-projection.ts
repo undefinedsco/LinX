@@ -77,7 +77,7 @@ import {
   type TaskInsert,
   type ThreadInsert,
 } from '../models.js'
-import { pathToWorkspaceUri } from '../pi-adapter/pod-mirror-mapping.js'
+import { pathToWorkspaceUri } from '../pod-mirror-mapping.js'
 import { getSymphonyHome } from './archive.js'
 
 const SYMPHONY_CHAT_ID = 'symphony'

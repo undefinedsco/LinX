@@ -42,7 +42,7 @@ import {
   type SolidDatabase,
   type ThreadInsert,
 } from '../models.js'
-export { buildPodMessageRow } from './pod-mirror-mapping.js'
+export { buildPodMessageRow } from '../pod-mirror-mapping.js'
 import {
   DEFAULT_SECRETARY_CHAT_ID,
   PI_AGENT_ID,
@@ -54,7 +54,7 @@ import {
   pathToWorkspaceUri,
   sanitizePodLiteralText,
   secretaryThreadResourceId,
-} from './pod-mirror-mapping.js'
+} from '../pod-mirror-mapping.js'
 
 const PI_POLICY_VERSION = 'linx-pi-pod-mirror/v1'
 const PI_SYMPHONY_SKILL_ID = 'symphony'

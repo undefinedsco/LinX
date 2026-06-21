@@ -14,7 +14,7 @@ import {
   type RemoteApprovalRequestDetails,
   type RemoteApprovalSubjectContext,
 } from '../auto-mode/pod-approval.js'
-import { DEFAULT_SECRETARY_CHAT_ID, secretaryAgentUri, secretaryThreadUri } from './pod-mirror-mapping.js'
+import { DEFAULT_SECRETARY_CHAT_ID, secretaryAgentUri, secretaryThreadUri } from '../pod-mirror-mapping.js'
 import type { SessionControlManager } from './session-control.js'
 
 const EXTENSION_UI_POLICY_VERSION = 'linx-pi-extension-ui/v1'

@@ -24,7 +24,7 @@ import {
   type SessionRow,
   type SolidDatabase,
 } from '../models.js'
-import { PI_CHAT_ID } from './pod-mirror-mapping.js'
+import { PI_CHAT_ID } from '../pod-mirror-mapping.js'
 
 export interface LinxPiSessionManagerOptions {
   cwd: string
