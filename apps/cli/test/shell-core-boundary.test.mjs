@@ -528,6 +528,21 @@ test('native backend stream mapping is kept outside the Pi runtime adapter', () 
   assert.deepEqual(violations, [])
 })
 
+test('native runtime proxy contract is kept outside the Pi runtime adapter', () => {
+  const source = readFileSync(join(libRoot, 'pi-adapter/runtime.ts'), 'utf8')
+  const forbidden = [
+    'createNativeProxy?: (options?: {',
+    'sendTurn(input: string): Promise<void>',
+    'executeCommand?(input: string): Promise<BackendCommandResult>',
+    'setAutoEnabled?(enabled: boolean): Promise<void> | void',
+    'setCwd?(cwd: string): Promise<void> | void',
+    'subscribe(listener:',
+  ]
+  const violations = forbidden.filter((snippet) => source.includes(snippet))
+
+  assert.deepEqual(violations, [])
+})
+
 test('completion result to Pi stream event mapping is kept outside the Pi adapter', () => {
   const source = readFileSync(join(libRoot, 'pi-adapter/stream.ts'), 'utf8')
   const forbidden = [

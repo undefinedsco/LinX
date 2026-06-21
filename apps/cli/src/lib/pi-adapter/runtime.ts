@@ -3,9 +3,9 @@ import type { LinxCompletionBackendResult } from '../linx-completion-backend.js'
 import type { AgentSessionRuntime } from '@earendil-works/pi-coding-agent'
 import type { RemoteAuthFetch, RemoteChatMessage, RemoteChatTool } from '../chat-api.js'
 import type { AutoModeWorkerBackend } from '../auto-mode/types.js'
-import type { BackendCommandRouter, BackendCommandResult } from '../backend-command.js'
+import type { BackendCommandRouter } from '../backend-command.js'
 import type { PodDataSession } from '../pod-data-session.js'
-import type { CodexApprovalPolicy } from '../codex-plugin/codex-native-proxy.js'
+import type { CreateNativeBackendProxy, NativeBackendApprovalPolicy } from '../native-backend-proxy.js'
 import { createLinxCloudRuntimeCoordinator } from '../linx-cloud-runtime-coordinator.js'
 import { createNativeBackendCommandRouter } from '../native-backend-command-router.js'
 import { createNativeBackendStreamBackend } from '../native-backend-stream-backend.js'
@@ -18,32 +18,7 @@ import {
 
 const UNDEFINEDS_SESSION_ID = 'undefineds_pi_frontend'
 export interface LinxRuntimeAdapterDependencies {
-  createNativeProxy?: (options?: {
-    cwd?: string
-    model?: string
-    listenPort?: number
-    autoEnabled?: boolean
-    codexApprovalPolicy?: CodexApprovalPolicy
-    passthroughArgs?: string[]
-    env?: Record<string, string>
-    resolveEnv?: () => Promise<Record<string, string> | undefined>
-  }) => {
-    remoteUrl: string
-    record: {
-      id: string
-      cwd: string
-      model?: string
-      backend: string
-    }
-    start(): Promise<void>
-    sendTurn(input: string): Promise<void>
-    executeCommand?(input: string): Promise<BackendCommandResult>
-    setAutoEnabled?(enabled: boolean): Promise<void> | void
-    setCwd?(cwd: string): Promise<void> | void
-    setSessionControl?(control: import('../session-control.js').SessionControlManager): void
-    subscribe(listener: (event: import('../auto-mode/types.js').AutoModeNormalizedEvent) => void): () => void
-    close(): Promise<void>
-  }
+  createNativeProxy?: CreateNativeBackendProxy
   createRemoteCompletion?: (options: {
     runtimeUrl: string
     authFetch: RemoteAuthFetch
@@ -79,7 +54,7 @@ export interface LinxRuntimeAdapterOptions {
   workerBackend?: AutoModeWorkerBackend
   autoEnabled?: boolean
   symphonyEnabled?: boolean
-  codexApprovalPolicy?: CodexApprovalPolicy
+  codexApprovalPolicy?: NativeBackendApprovalPolicy
   passthroughArgs?: string[]
   backendEnv?: Record<string, string>
   resolveBackendEnv?: () => Promise<Record<string, string> | undefined>

@@ -1,16 +1,7 @@
-import type { AutoModeNormalizedEvent } from './auto-mode/types.js'
-import type { BackendCommandResult, BackendCommandRouter } from './backend-command.js'
-import type { SessionControlManager } from './session-control.js'
+import type { BackendCommandRouter } from './backend-command.js'
+import type { NativeBackendProxy } from './native-backend-proxy.js'
 
-export interface NativeBackendCommandProxy {
-  readonly record: {
-    readonly backend: string
-  }
-  executeCommand?(input: string): Promise<BackendCommandResult>
-  setCwd?(cwd: string): Promise<void> | void
-  subscribe(listener: (event: AutoModeNormalizedEvent) => void): () => void
-  setSessionControl?(control: SessionControlManager): void
-}
+export type NativeBackendCommandProxy = Pick<NativeBackendProxy, 'record' | 'executeCommand' | 'setCwd' | 'subscribe' | 'setSessionControl'>
 
 export function createNativeBackendCommandRouter(
   proxy: NativeBackendCommandProxy | null | undefined,

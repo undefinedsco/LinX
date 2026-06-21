@@ -1,9 +1,6 @@
-import type { AutoModeNormalizedEvent } from './auto-mode/types.js'
+import type { NativeBackendProxy } from './native-backend-proxy.js'
 
-export interface NativeBackendStreamProxy {
-  sendTurn(input: string): Promise<void>
-  subscribe(listener: (event: AutoModeNormalizedEvent) => void): () => void
-}
+export type NativeBackendStreamProxy = Pick<NativeBackendProxy, 'sendTurn' | 'subscribe'>
 
 export function createNativeBackendStreamBackend(
   proxy: NativeBackendStreamProxy | null | undefined,
