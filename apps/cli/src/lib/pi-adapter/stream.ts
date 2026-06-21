@@ -14,6 +14,7 @@ import {
   resolveLinxPiModelId,
 } from '../linx-pi-completion-events.js'
 import { createLinxBackendEventSource } from '../linx-backend-event-source.js'
+import { emitNormalizedBackendEventsToPiStream } from '../linx-pi-normalized-event-stream.js'
 import { formatLinxStreamErrorMessage, isLinxStreamAbortError } from '../linx-stream-error-formatting.js'
 
 export type { LinxCompletionBackendResult } from '../linx-completion-backend.js'
@@ -96,49 +97,7 @@ export function createLinxAgentStreamAdapter(options: LinxAgentStreamAdapterOpti
         }
 
         const source = options.eventSource?.() ?? (options.backend ? createLinxBackendEventSource(options.backend, prompt) : undefined)
-        let text = ''
-        let textStarted = false
-
-        if (source) {
-          for await (const event of source) {
-            if (event.type === 'assistant.delta') {
-              if (!textStarted) {
-                message.content = [{ type: 'text', text: '' }]
-                stream.push({ type: 'text_start', contentIndex: 0, partial: { ...message } })
-                textStarted = true
-              }
-
-              text += event.text
-              message.content = [{ type: 'text', text }]
-              stream.push({
-                type: 'text_delta',
-                contentIndex: 0,
-                delta: event.text,
-                partial: { ...message },
-              })
-              continue
-            }
-
-            if (event.type === 'assistant.done') {
-              break
-            }
-          }
-        }
-
-        if (textStarted) {
-          stream.push({
-            type: 'text_end',
-            contentIndex: 0,
-            content: text,
-            partial: { ...message },
-          })
-        }
-
-        stream.push({
-          type: 'done',
-          reason: 'stop',
-          message,
-        })
+        await emitNormalizedBackendEventsToPiStream(stream, message, source)
       })().catch((error) => {
         const errorMessage = createLinxPiAssistantMessage()
         const aborted = isLinxStreamAbortError(error) || streamOptions?.signal?.aborted === true
