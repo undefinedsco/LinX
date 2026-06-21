@@ -14,6 +14,7 @@ import type {
   AutoModeUserInputAnswers,
 } from '@linx/agent-runtime/auto-mode'
 import { resolveAutoModeSecretaryRecommendation } from './auto-mode/secretary.js'
+import { registerLinxInteractiveStopHandler } from './linx-interactive-stop-router.js'
 
 export const SESSION_CONTROL_CUSTOM_TYPE = 'linx-session-control'
 
@@ -382,16 +383,14 @@ export function installSessionControlRuntimeEventBridge(
     interactive.__sessionControlRuntimeEventBridgeUnsubscribe = unsubscribe
   }
 
-  const originalStop = interactive?.stop?.bind(interactive)
-  if (typeof originalStop === 'function') {
-    interactive.stop = function patchedStopWithSessionControlBridge(...args: unknown[]): void {
-      try {
-        unsubscribe()
-      } finally {
-        originalStop(...args)
-      }
-    }
-  }
+  registerLinxInteractiveStopHandler(interactive, {
+    name: 'linx-session-control-runtime-event-bridge',
+    phase: 'before',
+    priority: 20,
+    handler() {
+      unsubscribe()
+    },
+  })
 }
 
 export function isSessionControlBlockedEvent(

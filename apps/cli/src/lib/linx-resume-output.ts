@@ -3,12 +3,12 @@ import {
   isInteractiveShellExitMessageSuppressed,
   LINX_TUI_NO_EXIT_MESSAGE_ENV,
 } from './shell-lifecycle.js'
+import { registerLinxInteractiveStopHandler } from './linx-interactive-stop-router.js'
 
 let linxResumeOutputStyleRestore: (() => void) | null = null
 
 export function installLinxExitMessage(interactive: any): void {
   const originalInit = interactive.init?.bind(interactive)
-  const originalStop = interactive.stop?.bind(interactive)
   let initialized = false
   let exitMessageWritten = false
 
@@ -20,25 +20,25 @@ export function installLinxExitMessage(interactive: any): void {
     }
   }
 
-  if (typeof originalStop !== 'function') {
-    return
-  }
-
-  interactive.stop = function patchedStop(...args: unknown[]): void {
-    originalStop(...args)
+  registerLinxInteractiveStopHandler(interactive, {
+    name: 'linx-exit-message',
+    phase: 'after',
+    priority: 100,
+    handler({ interactive: target }) {
     if (
       !initialized
       || exitMessageWritten
       || process.env[LINX_TUI_NO_EXIT_MESSAGE_ENV] === '1'
-      || isInteractiveShellExitMessageSuppressed(this)
+      || isInteractiveShellExitMessageSuppressed(target)
     ) {
       return
     }
     exitMessageWritten = true
     if (process.stdout.isTTY) {
-      process.stdout.write(`\n${buildLinxExitMessage(this)}\n`)
+      process.stdout.write(`\n${buildLinxExitMessage(target)}\n`)
     }
-  }
+    },
+  })
 }
 
 export function buildLinxExitMessage(interactive: any): string {

@@ -15,6 +15,7 @@ import { DEFAULT_LINX_CLOUD_MODEL_ID } from './default-model.js'
 import { getDefaultPodDataSession, type PodDataSession } from './pod-data-session.js'
 import { resolveRuntimeTarget } from './runtime-target.js'
 import type { SessionControlManager, SessionControlSnapshot } from './session-control.js'
+import { registerLinxInteractiveStopHandler } from './linx-interactive-stop-router.js'
 
 const AUTO_INPUT_DELAY_MS = 50
 const AUTO_INPUT_IDLE_WATCHDOG_MS = 1_000
@@ -225,19 +226,16 @@ class SecretaryAutoInputControllerImpl implements SecretaryAutoInputController {
       this.schedule('agent-end')
     })
 
-    const originalStop = this.interactive?.stop?.bind(this.interactive)
-    if (typeof originalStop === 'function' && !this.interactive.__linxAutoInputStopPatched) {
-      this.interactive.stop = (...args: unknown[]) => {
-        try {
-          this.stop()
-          this.unsubscribe?.()
-          this.unsubscribe = null
-        } finally {
-          originalStop(...args)
-        }
-      }
-      this.interactive.__linxAutoInputStopPatched = true
-    }
+    registerLinxInteractiveStopHandler(this.interactive, {
+      name: 'linx-auto-input-controller',
+      phase: 'before',
+      priority: 10,
+      handler: () => {
+        this.stop()
+        this.unsubscribe?.()
+        this.unsubscribe = null
+      },
+    })
   }
 
   private startIdleWatchdog(): void {

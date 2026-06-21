@@ -67,3 +67,24 @@ test('interactive submit handling is centralized in the shell submit router', ()
 
   assert.deepEqual(violations, [])
 })
+
+test('interactive stop handling is centralized in the shell stop router', () => {
+  const allowed = new Set([
+    'linx-interactive-stop-router.ts',
+  ])
+  const violations = []
+
+  for (const file of listSourceFiles(libRoot)) {
+    const relativePath = relative(libRoot, file)
+    if (relativePath.startsWith(adapterSegment) || allowed.has(relativePath)) {
+      continue
+    }
+
+    const source = readFileSync(file, 'utf8')
+    if (/\.stop\s*=/.test(source)) {
+      violations.push(relativePath)
+    }
+  }
+
+  assert.deepEqual(violations, [])
+})
