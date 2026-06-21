@@ -3,7 +3,7 @@ import { listArchivedAutoModeSessions, runAutoMode } from './auto-mode/runner.js
 import type { AutoModeCredentialSource, AutoModeWorkerBackend } from './auto-mode/types.js'
 import { runSymphony, type SymphonyRuntime } from './symphony-command.js'
 import { DEFAULT_SECRETARY_CHAT_ID, secretaryChatUri, secretaryThreadUri } from './pi-adapter/pod-mirror-mapping.js'
-import { getSessionControlManager } from './pi-adapter/session-control.js'
+import { getSessionControlManager } from './session-control.js'
 import { resolveInteractiveCwd } from './linx-workspace-command.js'
 import {
   createSymphonyIdeaRecord,

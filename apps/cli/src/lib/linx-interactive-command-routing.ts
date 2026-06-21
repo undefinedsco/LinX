@@ -7,7 +7,7 @@ import { handleInteractiveRewindSelector, handleInteractiveRewindTurnsCommand } 
 import { changeInteractiveCwd, installLinxCwdStartupNotice } from './linx-workspace-command.js'
 import { installLinxAutoEditorIndicator } from './linx-auto-editor-indicator.js'
 import { getSecretaryAutoInputController } from './pi-adapter/auto-input-controller.js'
-import { getSessionControlManager } from './pi-adapter/session-control.js'
+import { getSessionControlManager } from './session-control.js'
 
 type ShellCommandOptions = {
   onAutoControlChange?: (enabled: boolean) => void | Promise<void>

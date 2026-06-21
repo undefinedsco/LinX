@@ -1,5 +1,5 @@
 import type { AutoModeNormalizedEvent } from './auto-mode/types.js'
-import type { SessionControlManager } from './pi-adapter/session-control.js'
+import type { SessionControlManager } from './session-control.js'
 
 export type BackendCommandResult =
   | {

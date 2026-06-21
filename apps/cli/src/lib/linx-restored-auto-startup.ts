@@ -1,5 +1,5 @@
 import { getSecretaryAutoInputController } from './pi-adapter/auto-input-controller.js'
-import { getSessionControlManager } from './pi-adapter/session-control.js'
+import { getSessionControlManager } from './session-control.js'
 
 export function installLinxRestoredAutoStartup(
   interactive: any,

@@ -5512,7 +5512,7 @@ test('linx interactive /auto on only updates control state while streaming', asy
 })
 
 test('linx session control records only blocked runtime events while auto is on', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/session-control.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/session-control.ts')
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@earendil-works/pi-coding-agent')
@@ -6664,6 +6664,15 @@ test('backend command contract lives in a shell backend module', async (t) => {
   t.after(() => cleanup())
 
   assert.ok(module)
+})
+
+test('session control manager lives in a shell control module', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/session-control.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.SessionControlManager, 'function')
+  assert.equal(typeof module.getSessionControlManager, 'function')
+  assert.equal(typeof module.installSessionControlRuntimeEventBridge, 'function')
 })
 
 test('backend command router shell module installs projected routing by default', async (t) => {

@@ -13,7 +13,7 @@ import { persistAutoModeConversationToPod } from '../auto-mode/pod-persistence.j
 import { createCodexAttachBridge, type CodexAttachBridgeRuntime } from './bridge.js'
 import type { AutoRunOptions, AutoModeSpawnPlan } from '../auto-mode/types.js'
 import type { BackendCommandResult } from '../backend-command.js'
-import type { SessionControlManager } from '../pi-adapter/session-control.js'
+import type { SessionControlManager } from '../session-control.js'
 
 interface WritableLike {
   write(chunk: string): unknown
