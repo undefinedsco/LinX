@@ -581,6 +581,21 @@ test('runtime adapter product defaults are kept outside the Pi runtime adapter',
 })
 
 
+test('runtime backend composition is kept outside the Pi runtime adapter', () => {
+  const source = readFileSync(join(libRoot, 'pi-adapter/runtime.ts'), 'utf8')
+  const forbidden = [
+    'createLinxCloudRuntimeCoordinator',
+    'createNativeBackendCommandRouter',
+    'createNativeBackendStreamBackend',
+    'createLinxRuntimeCompletionBackend',
+    'resolveLinxRuntimeBackendMode',
+    'resolveLinxRuntimeWorkerBackend',
+  ]
+  const violations = forbidden.filter((snippet) => source.includes(snippet))
+
+  assert.deepEqual(violations, [])
+})
+
 test('runtime resource lookup does not depend on legacy pi-adapter bundle layouts', () => {
   const source = readFileSync(join(libRoot, 'linx-runtime-resources.ts'), 'utf8')
   const forbidden = [
