@@ -15,7 +15,7 @@ import {
 } from '../linx-pi-completion-events.js'
 import { createLinxBackendEventSource } from '../linx-backend-event-source.js'
 import { emitNormalizedBackendEventsToPiStream } from '../linx-pi-normalized-event-stream.js'
-import { formatLinxStreamErrorMessage, isLinxStreamAbortError } from '../linx-stream-error-formatting.js'
+import { emitLinxPiStreamError } from '../linx-pi-stream-errors.js'
 
 export type { LinxCompletionBackendResult } from '../linx-completion-backend.js'
 
@@ -99,11 +99,7 @@ export function createLinxAgentStreamAdapter(options: LinxAgentStreamAdapterOpti
         const source = options.eventSource?.() ?? (options.backend ? createLinxBackendEventSource(options.backend, prompt) : undefined)
         await emitNormalizedBackendEventsToPiStream(stream, message, source)
       })().catch((error) => {
-        const errorMessage = createLinxPiAssistantMessage()
-        const aborted = isLinxStreamAbortError(error) || streamOptions?.signal?.aborted === true
-        errorMessage.stopReason = aborted ? 'aborted' : 'error'
-        errorMessage.errorMessage = formatLinxStreamErrorMessage(error)
-        stream.push({ type: 'error', reason: errorMessage.stopReason, error: errorMessage })
+        emitLinxPiStreamError(stream, error, { signal: streamOptions?.signal })
       })
 
       return stream
