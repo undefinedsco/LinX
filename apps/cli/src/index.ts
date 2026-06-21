@@ -6,7 +6,7 @@ import { hideBin } from 'yargs/helpers'
 import { aiCommand } from './lib/ai-command.js'
 import { loginCommand, logoutCommand, whoamiCommand } from './lib/login-command.js'
 import { configCommand } from './lib/status-line-command.js'
-import { createCodexNativeProxy, createSymphonyCodexMcpServer } from './lib/codex-plugin/index.js'
+import { codexNativeProxyCommand, symphonyCodexMcpCommand } from './lib/linx-codex-plugin-command.js'
 import { createLinxPiCliCommands } from './lib/linx-pi-cli-command.js'
 import { linxInstallPackageCommand, linxListPackageCommand, linxRemovePackageCommand, linxUpdatePackageCommand } from './lib/linx-package-command.js'
 import { legacyChatCommand, modelsCommand } from './lib/linx-chat-models-command.js'
@@ -90,60 +90,8 @@ const cli = yargs(hideBin(process.argv))
   )
   .command(hiddenPiAliasCommand)
   .command(hiddenPiFrontendAliasCommand)
-  .command(
-    'symphony-codex-mcp',
-    false,
-    (command) => command,
-    async () => {
-      const server = createSymphonyCodexMcpServer()
-      const exitCode = await server.run()
-      process.exit(exitCode)
-    },
-  )
-  .command(
-    'codex-native-proxy',
-    false,
-    (command) =>
-      command
-        .option('cwd', {
-          type: 'string',
-          describe: 'Workspace path exposed to the native Codex shell',
-        })
-        .option('model', {
-          type: 'string',
-          describe: 'Model override forwarded to the native proxy session metadata',
-        })
-        .option('port', {
-          type: 'number',
-          default: 8787,
-          describe: 'Local websocket listen port for codex --remote',
-        }),
-    async (argv) => {
-      const proxy = createCodexNativeProxy({
-        cwd: argv.cwd || process.cwd(),
-        model: argv.model,
-        listenPort: argv.port,
-      })
-
-      await proxy.start()
-      process.stdout.write(`[linx] native codex proxy ready\n`)
-      process.stdout.write(`[linx] connect with: codex --remote ${proxy.remoteUrl} -C ${proxy.record.cwd}\n`)
-
-      const shutdown = async () => {
-        await proxy.close()
-        process.exit(0)
-      }
-
-      process.on('SIGINT', () => {
-        void shutdown()
-      })
-      process.on('SIGTERM', () => {
-        void shutdown()
-      })
-
-      await new Promise(() => {})
-    },
-  )
+  .command(symphonyCodexMcpCommand)
+  .command(codexNativeProxyCommand)
   .strict()
   .help()
   .fail((message, error, yargsInstance) => {
