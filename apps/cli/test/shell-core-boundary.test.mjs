@@ -235,3 +235,22 @@ test('credential dependency injection does not use interactive hidden fields', (
 
   assert.deepEqual(violations, [])
 })
+
+test('interactive lifecycle completion state is kept out of interactive hidden fields', () => {
+  const violations = []
+  const directLifecycleStatePattern = /__linxInteractiveInitCompleted\b/
+
+  for (const file of listSourceFiles(libRoot)) {
+    const relativePath = relative(libRoot, file)
+    if (relativePath.startsWith(adapterSegment)) {
+      continue
+    }
+
+    const source = readFileSync(file, 'utf8')
+    if (directLifecycleStatePattern.test(source)) {
+      violations.push(relativePath)
+    }
+  }
+
+  assert.deepEqual(violations, [])
+})
