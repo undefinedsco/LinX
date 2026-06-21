@@ -6,6 +6,8 @@ import {
   installLinxSessionCommandRouter,
 } from './linx-interactive-command-routing.js'
 
+const initializedInteractives = new WeakSet<object>()
+
 export function installLinxInteractivePostInitHooks(interactive: any, runtime: any): void {
   if (!interactive || interactive.__linxInteractivePostInitHooksInstalled) {
     return
@@ -16,17 +18,22 @@ export function installLinxInteractivePostInitHooks(interactive: any, runtime: a
   }
 
   interactive.init = async function patchedLinxInteractivePostInit(...args: unknown[]): Promise<unknown> {
-    if (this.__linxInteractiveInitCompleted === true) {
+    const target = resolveInteractiveInitTarget(this, interactive)
+    if (initializedInteractives.has(target)) {
       installPostInitInteractiveControls(this, runtime)
       return undefined
     }
 
     const result = await originalInit(...args)
-    this.__linxInteractiveInitCompleted = true
+    initializedInteractives.add(target)
     installPostInitInteractiveControls(this, runtime)
     return result
   }
   interactive.__linxInteractivePostInitHooksInstalled = true
+}
+
+function resolveInteractiveInitTarget(value: unknown, fallback: object): object {
+  return typeof value === 'object' && value !== null ? value : fallback
 }
 
 function installPostInitInteractiveControls(interactive: any, runtime: any): void {
