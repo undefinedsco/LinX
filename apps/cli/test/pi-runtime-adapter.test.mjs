@@ -43,6 +43,15 @@ async function readAuthHeader(authFetch, url = 'https://api.undefineds.co/v1/pro
   }
 }
 
+test('LinX cloud runtime auth helper lives outside the Pi adapter', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-cloud-runtime-auth.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.resolveLinxCloudRuntimeAuthFetch, 'function')
+  assert.equal(typeof module.resolveRuntimeAuthFetchFromApiKey, 'function')
+  assert.equal(typeof module.withLinxCloudCompletionTimeout, 'function')
+})
+
 test('linx startup login prompt decision covers the auth state matrix', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
   t.after(() => cleanup())
