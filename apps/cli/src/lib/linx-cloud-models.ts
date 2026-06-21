@@ -86,7 +86,9 @@ export function buildLinxCloudProviderModel(input: {
   }
 }
 
-export function buildFallbackLinxCloudProviderModels(activeModelId: string): ReturnType<typeof buildLinxCloudProviderModel>[] {
+export type LinxCloudProviderModelDefinition = ReturnType<typeof buildLinxCloudProviderModel>
+
+export function buildFallbackLinxCloudProviderModels(activeModelId: string): LinxCloudProviderModelDefinition[] {
   return mergeLinxCloudProviderModels([], activeModelId).map((entry) => buildLinxCloudProviderModel(entry))
 }
 
