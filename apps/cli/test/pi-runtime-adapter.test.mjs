@@ -72,8 +72,17 @@ test('LinX runtime resource helper lives outside the Pi adapter', async (t) => {
   assert.equal(typeof module.withLinxSkillSourceInfo, 'function')
 })
 
+test('LinX startup login policy helper lives outside the Pi adapter', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-startup-login-policy.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.resolveLinxStartupLoginPromptDecision, 'function')
+  assert.equal(typeof module.resolveLinxStartupLoginReason, 'function')
+  assert.equal(typeof module.resolveLinxInteractiveLoginReason, 'function')
+})
+
 test('linx startup login prompt decision covers the auth state matrix', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-startup-login-policy.ts')
   t.after(() => cleanup())
 
   let closed = false
@@ -144,7 +153,7 @@ test('linx startup login prompt decision covers the auth state matrix', async (t
 })
 
 test('linx interactive login reason preserves startup vs expired auth semantics', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-startup-login-policy.ts')
   t.after(() => cleanup())
 
   assert.equal(module.resolveLinxInteractiveLoginReason({
@@ -167,7 +176,7 @@ test('linx interactive login reason preserves startup vs expired auth semantics'
 })
 
 test('linx startup login prompt ignores transient upstream outages', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-startup-login-policy.ts')
   t.after(() => cleanup())
 
   const decision = await module.resolveLinxStartupLoginPromptDecision({
