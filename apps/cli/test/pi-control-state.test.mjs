@@ -24,6 +24,14 @@ function createDb(row, options = {}) {
   }
 }
 
+test('startup control state lives outside the Pi adapter', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-startup-control-state.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.deriveLinxPiStartupControlState, 'function')
+  assert.equal(typeof module.hydrateLinxPiControlState, 'function')
+})
+
 test('hydrateLinxPiControlState reads auto control state from Pod session metadata', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/control-state.ts')
   t.after(() => cleanup())
