@@ -569,6 +569,19 @@ test('backend event source queueing is kept outside the Pi adapter', () => {
   assert.deepEqual(violations, [])
 })
 
+test('stream backend contracts are kept outside the Pi stream adapter', () => {
+  const source = readFileSync(join(libRoot, 'pi-adapter/stream.ts'), 'utf8')
+  const forbidden = [
+    'sendTurn(input: string): Promise<void>',
+    'subscribe(listener:',
+    'complete(input: {',
+    'messages: RemoteChatMessage[]',
+  ]
+  const violations = forbidden.filter((snippet) => source.includes(snippet))
+
+  assert.deepEqual(violations, [])
+})
+
 test('normalized backend event to Pi text stream mapping is kept outside the Pi adapter', () => {
   const source = readFileSync(join(libRoot, 'pi-adapter/stream.ts'), 'utf8')
   const forbidden = [
