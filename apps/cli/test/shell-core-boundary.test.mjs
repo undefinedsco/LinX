@@ -580,6 +580,19 @@ test('runtime adapter product defaults are kept outside the Pi runtime adapter',
   assert.deepEqual(violations, [])
 })
 
+
+test('runtime resource lookup does not depend on legacy pi-adapter bundle layouts', () => {
+  const source = readFileSync(join(libRoot, 'linx-runtime-resources.ts'), 'utf8')
+  const forbidden = [
+    'Legacy adapter layout',
+    'dist/lib/pi-adapter',
+    "'..', '..', '..', 'vendor'",
+  ]
+  const violations = forbidden.filter((snippet) => source.includes(snippet))
+
+  assert.deepEqual(violations, [])
+})
+
 test('completion result to Pi stream event mapping is kept outside the Pi adapter', () => {
   const source = readFileSync(join(libRoot, 'pi-adapter/stream.ts'), 'utf8')
   const forbidden = [

@@ -857,7 +857,7 @@ test('pi runtime adapter prefers vendored pi-web-access packages when bundled', 
   t.after(() => cleanup())
 
   const bundleRoot = mkdtempSync(join(tmpdir(), 'linx-pi-vendor-root-'))
-  const runtimeDir = join(bundleRoot, 'dist', 'lib', 'pi-adapter')
+  const runtimeDir = join(bundleRoot, 'dist', 'lib')
   const vendorRoot = join(bundleRoot, 'vendor', 'pi-web-access')
   mkdirSync(vendorRoot, { recursive: true })
   writeFileSync(join(vendorRoot, 'package.json'), JSON.stringify({
@@ -870,7 +870,7 @@ test('pi runtime adapter prefers vendored pi-web-access packages when bundled', 
 
   const resolved = module.resolveBundledPiPackageRoot(
     'pi-web-access',
-    pathToFileURL(join(runtimeDir, 'runtime.js')).href,
+    pathToFileURL(join(runtimeDir, 'linx-runtime-resources.js')).href,
   )
 
   assert.equal(resolved, vendorRoot)
