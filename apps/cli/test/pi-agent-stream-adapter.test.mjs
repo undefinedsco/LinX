@@ -5,6 +5,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 
+test('LinX chat completion projection helper lives outside the Pi adapter', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-chat-completion-projection.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.normalizeChatCompletionMessagesFromPiContext, 'function')
+  assert.equal(typeof module.normalizeChatCompletionToolsFromPiContext, 'function')
+  assert.equal(typeof module.sanitizeChatCompletionMessages, 'function')
+})
+
 test('pi agent stream adapter captures session metadata and exposes a streamFn hook', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/stream.ts')
   t.after(() => cleanup())
