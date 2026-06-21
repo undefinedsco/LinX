@@ -6659,6 +6659,13 @@ test('backend command router patch lives in a shell command module', async (t) =
   assert.equal(typeof module.installBackendCommandRouter, 'function')
 })
 
+test('backend command contract lives in a shell backend module', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/backend-command.ts')
+  t.after(() => cleanup())
+
+  assert.ok(module)
+})
+
 test('backend command router shell module installs projected routing by default', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-backend-command-router.ts')
   t.after(() => cleanup())

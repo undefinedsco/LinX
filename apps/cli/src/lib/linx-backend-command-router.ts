@@ -1,4 +1,4 @@
-import type { BackendCommandRouter } from './pi-adapter/backend-command.js'
+import type { BackendCommandRouter } from './backend-command.js'
 import { installProjectedCommandRouter } from './linx-interactive-command-routing.js'
 import { shouldRouteToBackendCommand } from './linx-shell-command-router.js'
 
