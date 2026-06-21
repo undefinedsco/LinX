@@ -18,7 +18,7 @@ test('LinX session manager lives outside the Pi adapter', async (t) => {
 })
 
 test('createLinxPiSessionManager creates persisted sessions by default', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/session.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-session-manager.ts')
   t.after(() => cleanup())
 
   const cwd = mkdtempSync(join(tmpdir(), 'linx-pi-session-cwd-'))
@@ -36,7 +36,7 @@ test('createLinxPiSessionManager creates persisted sessions by default', async (
 })
 
 test('resolveLinxPiSession accepts full and short session ids', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/session.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-session-manager.ts')
   t.after(() => cleanup())
 
   const cwd = mkdtempSync(join(tmpdir(), 'linx-pi-session-resume-cwd-'))
@@ -81,7 +81,7 @@ test('resolveLinxPiSession accepts full and short session ids', async (t) => {
 })
 
 test('resuming a session repairs dangling assistant tool calls before continuation', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/session.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-session-manager.ts')
   t.after(() => cleanup())
 
   const cwd = mkdtempSync(join(tmpdir(), 'linx-pi-session-dangling-tool-cwd-'))
@@ -161,7 +161,7 @@ test('resuming a session repairs dangling assistant tool calls before continuati
 })
 
 test('list and resume recover from Pod when local JSONL cache is missing', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/session.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-session-manager.ts')
   t.after(() => cleanup())
 
   const cwd = mkdtempSync(join(tmpdir(), 'linx-pi-pod-session-cwd-'))
@@ -228,7 +228,7 @@ test('list and resume recover from Pod when local JSONL cache is missing', async
 })
 
 test('native Pod session source reads session and messages through shared ORM resources', async (t) => {
-  const { module: sessionModule, cleanup } = await loadAutoModeModule('lib/pi-adapter/session.ts')
+  const { module: sessionModule, cleanup } = await loadAutoModeModule('lib/linx-session-manager.ts')
   t.after(() => cleanup())
 
   const sessionId = '019d4657-0000-7000-8000-000000000001'
@@ -355,7 +355,7 @@ test('native Pod session source reads session and messages through shared ORM re
 })
 
 test('native Pod session source uses session message resource refs before broad message scans', async (t) => {
-  const { module: sessionModule, cleanup } = await loadAutoModeModule('lib/pi-adapter/session.ts')
+  const { module: sessionModule, cleanup } = await loadAutoModeModule('lib/linx-session-manager.ts')
   t.after(() => cleanup())
 
   const sessionId = '019d4657-0000-7000-8000-000000000002'
@@ -478,7 +478,7 @@ test('native Pod session source uses session message resource refs before broad 
 })
 
 test('native Pod session source surfaces exact message resource read failures', async (t) => {
-  const { module: sessionModule, cleanup } = await loadAutoModeModule('lib/pi-adapter/session.ts')
+  const { module: sessionModule, cleanup } = await loadAutoModeModule('lib/linx-session-manager.ts')
   t.after(() => cleanup())
 
   const sessionId = '019d4657-0000-7000-8000-000000000003'
@@ -560,7 +560,7 @@ test('native Pod session source surfaces exact message resource read failures', 
 })
 
 test('native Pod session list surfaces exact message resource read failures', async (t) => {
-  const { module: sessionModule, cleanup } = await loadAutoModeModule('lib/pi-adapter/session.ts')
+  const { module: sessionModule, cleanup } = await loadAutoModeModule('lib/linx-session-manager.ts')
   t.after(() => cleanup())
 
   const sessionId = '019d4657-0000-7000-8000-000000000004'
@@ -628,7 +628,7 @@ test('native Pod session list surfaces exact message resource read failures', as
 })
 
 test('native Pod session list surfaces container read failures', async (t) => {
-  const { module: sessionModule, cleanup } = await loadAutoModeModule('lib/pi-adapter/session.ts')
+  const { module: sessionModule, cleanup } = await loadAutoModeModule('lib/linx-session-manager.ts')
   t.after(() => cleanup())
 
   const db = {

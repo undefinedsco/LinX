@@ -113,7 +113,7 @@ async function withPatchedEnv(t, env, fn) {
 }
 
 test('Secretary auto input reuses runtime Pod session instead of local auth fallback', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/auto-input-controller.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/secretary-auto-input-controller.ts')
   t.after(() => cleanup())
 
   const home = mkdtempSync(join(tmpdir(), 'linx-secretary-home-'))
@@ -196,7 +196,7 @@ test('Secretary auto input reuses runtime Pod session instead of local auth fall
 })
 
 test('Secretary auto input stop aborts the in-flight runtime turn', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/auto-input-controller.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/secretary-auto-input-controller.ts')
   t.after(() => cleanup())
 
   const home = mkdtempSync(join(tmpdir(), 'linx-secretary-abort-home-'))
@@ -268,7 +268,7 @@ test('Secretary auto input stop aborts the in-flight runtime turn', async (t) =>
 })
 
 test('Secretary auto input keeps retrying LinX Cloud 502 outages instead of waiting for user', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/auto-input-controller.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/secretary-auto-input-controller.ts')
   t.after(() => cleanup())
 
   const home = mkdtempSync(join(tmpdir(), 'linx-secretary-502-home-'))
