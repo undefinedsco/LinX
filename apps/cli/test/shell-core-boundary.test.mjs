@@ -674,6 +674,17 @@ test('stream backend contracts are kept outside the Pi stream adapter', () => {
   assert.deepEqual(violations, [])
 })
 
+test('Pi stream adapter does not import backend-specific contract modules', () => {
+  const source = readFileSync(join(libRoot, 'pi-adapter/stream.ts'), 'utf8')
+  const forbidden = [
+    '../linx-runtime-completion-backend.js',
+    '../native-backend-stream-backend.js',
+  ]
+  const violations = forbidden.filter((snippet) => source.includes(snippet))
+
+  assert.deepEqual(violations, [])
+})
+
 test('normalized backend event to Pi text stream mapping is kept outside the Pi adapter', () => {
   const source = readFileSync(join(libRoot, 'pi-adapter/stream.ts'), 'utf8')
   const forbidden = [

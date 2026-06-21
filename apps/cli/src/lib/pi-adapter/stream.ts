@@ -1,7 +1,6 @@
 import { createAssistantMessageEventStream, type AssistantMessageEventStream } from '@earendil-works/pi-ai'
-import type { LinxRuntimeCompletionBackend } from '../linx-runtime-completion-backend.js'
-import type { LinxCompletionBackendResult } from '../linx-completion-backend.js'
 import type { AutoModeNormalizedEvent } from '../auto-mode/types.js'
+import type { AgentStreamBackendProxy, AgentStreamCompletionBackend } from '../agent-stream-bridge-contract.js'
 import {
   normalizeChatCompletionMessagesFromPiContext,
   normalizeChatCompletionToolsFromPiContext,
@@ -18,7 +17,6 @@ import { createLinxBackendEventSource } from '../linx-backend-event-source.js'
 import { emitNormalizedBackendEventsToPiStream } from '../linx-pi-normalized-event-stream.js'
 import { emitLinxPiStreamError } from '../linx-pi-stream-errors.js'
 import { throwIfLinxStreamAborted } from '../linx-stream-abort.js'
-import type { NativeBackendStreamProxy } from '../native-backend-stream-backend.js'
 
 export type { LinxCompletionBackendResult } from '../linx-completion-backend.js'
 
@@ -34,8 +32,8 @@ export interface LinxAgentStreamAdapterOptions {
   cwd?: string
   model?: string
   eventSource?: () => AsyncIterable<AutoModeNormalizedEvent> | Iterable<AutoModeNormalizedEvent>
-  backend?: NativeBackendStreamProxy
-  completionBackend?: LinxRuntimeCompletionBackend
+  backend?: AgentStreamBackendProxy
+  completionBackend?: AgentStreamCompletionBackend
 }
 
 export interface LinxAgentStreamAdapter {
