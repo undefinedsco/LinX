@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
+import { registerLinxInteractiveStopHandler } from './linx-interactive-stop-router.js'
 
 export const LINX_TUI_NO_EXIT_MESSAGE_ENV = 'LINX_TUI_NO_EXIT_MESSAGE'
 const LINX_TUI_RESTART_IN_PROGRESS = Symbol.for('linx.tui.restartInProgress')
@@ -219,16 +220,12 @@ export function installInteractiveStopCleanup(
   interactive: InteractiveShellLifecycle,
   cleanup: () => void,
 ): void {
-  const originalStop = interactive.stop?.bind(interactive)
-  if (typeof originalStop !== 'function') {
-    return
-  }
-
-  interactive.stop = function patchedStopWithCleanup(...args: unknown[]): void {
-    try {
-      originalStop(...args)
-    } finally {
+  registerLinxInteractiveStopHandler(interactive, {
+    name: 'linx-shell-cleanup',
+    phase: 'finally',
+    priority: 100,
+    handler() {
       cleanup()
-    }
-  }
+    },
+  })
 }

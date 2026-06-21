@@ -2897,6 +2897,53 @@ test('shell lifecycle restart drains terminal input before handing the TTY to th
   assert.deepEqual(events.at(-1), { type: 'exit', code: 0 })
 })
 
+test('interactive stop router keeps original stop and final cleanup when a before handler fails', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-stop-router.ts')
+  t.after(() => cleanup())
+
+  const events = []
+  const interactive = {
+    stop() {
+      events.push('original')
+    },
+  }
+
+  module.registerLinxInteractiveStopHandler(interactive, {
+    name: 'failing-before',
+    phase: 'before',
+    priority: 10,
+    handler() {
+      events.push('before')
+      throw new Error('before failed')
+    },
+  })
+  module.registerLinxInteractiveStopHandler(interactive, {
+    name: 'later-before',
+    phase: 'before',
+    priority: 20,
+    handler() {
+      events.push('later-before')
+    },
+  })
+  module.registerLinxInteractiveStopHandler(interactive, {
+    name: 'after',
+    phase: 'after',
+    handler() {
+      events.push('after')
+    },
+  })
+  module.registerLinxInteractiveStopHandler(interactive, {
+    name: 'cleanup',
+    phase: 'finally',
+    handler() {
+      events.push('cleanup')
+    },
+  })
+
+  assert.throws(() => interactive.stop(), /before failed/)
+  assert.deepEqual(events, ['before', 'later-before', 'original', 'after', 'cleanup'])
+})
+
 test('linx update notification normalizes object version values and selector object choices', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/branding.ts')
   t.after(() => cleanup())
