@@ -1,43 +1,18 @@
 import { createLinxAgentStreamAdapter, type LinxAgentStreamAdapter } from './stream.js'
 import type { LinxCompletionBackendResult } from '../linx-completion-backend.js'
-import { overrideLinxSystemPrompt } from '../linx-runtime-system-prompt.js'
-import { enableLinxXhighThinking } from '../linx-runtime-thinking.js'
-import { ensureLinxPiTheme } from '../linx-theme.js'
-import {
-  type AgentSessionRuntime,
-  AuthStorage,
-  ModelRegistry,
-  SessionManager,
-  SettingsManager,
-  createAgentSessionFromServices,
-  createAgentSessionRuntime,
-  createAgentSessionServices,
-} from '@earendil-works/pi-coding-agent'
-// web_fetch / web_search are now handled by pi-web-access
-import type { Api, Model, OAuthCredentials } from '@earendil-works/pi-ai'
+import type { AgentSessionRuntime } from '@earendil-works/pi-coding-agent'
 import type { RemoteAuthFetch, RemoteChatMessage, RemoteChatTool } from '../chat-api.js'
 import type { AutoModeWorkerBackend } from '../auto-mode/types.js'
 import type { BackendCommandRouter, BackendCommandResult } from '../backend-command.js'
 import type { PodDataSession } from '../pod-data-session.js'
 import type { CodexApprovalPolicy } from '../codex-plugin/codex-native-proxy.js'
-import { loadCredentials } from '../credentials-store.js'
-import { createLinxBearerAuthFetch, resolveLinxCloudRuntimeAuthFetch } from '../linx-cloud-runtime-auth.js'
 import { createLinxCloudRuntimeCoordinator } from '../linx-cloud-runtime-coordinator.js'
-import { createLinxManagedRuntimeOAuthProvider } from '../linx-runtime-oauth-provider.js'
-import {
-  LINX_WEB_ACCESS_PACKAGE_SOURCE,
-  ensurePiWebAccessConfig,
-  resolveBundledLinxSkillsDir,
-  resolveBundledPiPackageRoot,
-  resolveInstalledMarketSkillDirs,
-  withLinxSkillSourceInfo,
-} from '../linx-runtime-resources.js'
-import {
-  LINX_CLOUD_PROVIDER_ID,
-  LINX_CLOUD_PROVIDER_LABEL,
-} from '../linx-cloud-models.js'
-import { createLinxRuntimeProviderRegistration } from '../linx-runtime-provider-registration.js'
 import { createLinxRuntimeCompletionBackend } from '../linx-runtime-completion-backend.js'
+import {
+  createLinxAgentSessionRuntime,
+  type LinxCloudPiAuthBridge,
+  type LinxRuntimeOAuthProvider,
+} from '../linx-runtime-agent-session.js'
 export {
   resolveLinxInteractiveLoginReason,
   resolveLinxStartupLoginPromptDecision,
@@ -51,7 +26,6 @@ export {
 } from '../linx-runtime-coding-tools.js'
 
 const UNDEFINEDS_SESSION_ID = 'undefineds_pi_frontend'
-const UNDEFINEDS_AUTH_BRIDGE_ID = 'undefineds-cloud-oauth-bridge'
 export interface LinxRuntimeAdapterDependencies {
   createNativeProxy?: (options?: {
     cwd?: string
@@ -130,26 +104,14 @@ export interface LinxRuntimeAdapterOptions {
   providerConfig?: {
     baseUrl: string
     issuerUrl?: string
-    oauth?: {
-      name: string
-      login(...args: unknown[]): Promise<OAuthCredentials>
-      refreshToken(credentials: OAuthCredentials): Promise<OAuthCredentials>
-      getApiKey(credentials: OAuthCredentials): string
-      modifyModels?(models: Model<Api>[], credentials: OAuthCredentials): Model<Api>[]
-    }
+    oauth?: LinxRuntimeOAuthProvider
   }
 }
 
 /** @deprecated Use LinxRuntimeAdapterOptions. */
 export type PiRuntimeAdapterOptions = LinxRuntimeAdapterOptions
 
-export interface LinxCloudPiAuthBridge {
-  description: 'undefineds-cloud-oauth-bridge'
-  providerId: 'undefineds'
-  providerLabel: 'LinX Cloud'
-  runtimeUrl: string
-  shouldPromptLoginOnStart?: boolean
-}
+export type { LinxCloudPiAuthBridge }
 
 export interface LinxRuntimeAdapter {
   readonly remoteUrl: string
@@ -258,119 +220,21 @@ export function createLinxRuntimeAdapter(
     symphonyEnabled: options.symphonyEnabled === true,
     backendCommandRouter,
     streamAdapter,
-    createRuntime: async (context: LinxRuntimeFactoryContext): Promise<AgentSessionRuntime> => {
-      const authStorage = AuthStorage.inMemory()
-      const modelRegistry = ModelRegistry.inMemory(authStorage)
-      const linxOAuthProvider = options.providerConfig?.oauth ?? createLinxManagedRuntimeOAuthProvider({
-        issuerUrl: options.providerConfig?.issuerUrl,
-        getPodDataSession: options.getPodDataSession,
-        syncProviderModels: cloudRuntime.syncProviderModels,
-      })
-      const storedCredentials = options.providerConfig?.oauth ? null : loadCredentials()
-      const hasManagedPodSession = !options.providerConfig?.oauth && Boolean(options.getPodDataSession)
-      const explicitOAuthCredential = options.providerConfig?.oauth
-        ? await options.providerConfig.oauth.login()
-        : null
-      if (storedCredentials || hasManagedPodSession) {
-        const authFetch = await resolveLinxCloudRuntimeAuthFetch({
-          issuerUrl: options.providerConfig?.issuerUrl,
-          getPodDataSession: options.getPodDataSession,
-        })
-        await cloudRuntime.syncProviderModels({ runtimeFetch: authFetch }, { refreshOnAuthExpired: true })
-      } else if (explicitOAuthCredential?.access) {
-        await cloudRuntime.syncProviderModels({ runtimeFetch: createLinxBearerAuthFetch(explicitOAuthCredential.access) })
-      }
-      const settingsManager = SettingsManager.create(context.cwd, context.agentDir)
-      ensureLinxPiTheme(context.agentDir)
-      ensurePiWebAccessConfig()
-      settingsManager.setTheme('linx')
-      const { defaultModelId } = createLinxRuntimeProviderRegistration({
-        authStorage,
-        modelRegistry,
-        settingsManager,
-        baseUrl,
-        requestedModel,
-        streamSimple: streamAdapter.streamFn,
-        providerModels: cloudRuntime.providerModels,
-        oauth: linxOAuthProvider,
-        explicitOAuthCredential,
-        useManagedRuntimeAuth: !options.providerConfig?.oauth,
-      })
-      const bundledSkillsDir = resolveBundledLinxSkillsDir()
-      const marketSkillDirs = resolveInstalledMarketSkillDirs()
-      const additionalSkillPaths = [
-        ...(bundledSkillsDir ? [bundledSkillsDir] : []),
-        ...marketSkillDirs,
-      ]
-      const bundledPackagePaths = [
-        resolveBundledPiPackageRoot(LINX_WEB_ACCESS_PACKAGE_SOURCE),
-      ].filter((path): path is string => Boolean(path))
-      const services = await createAgentSessionServices({
-        cwd: context.cwd,
-        agentDir: context.agentDir,
-        authStorage,
-        settingsManager,
-        modelRegistry,
-        resourceLoaderOptions: {
-          // Built-in: pi-web-access handles web_search, fetch_content, and related web tools.
-          additionalExtensionPaths: bundledPackagePaths,
-          additionalSkillPaths,
-          skillsOverride: (base) => withLinxSkillSourceInfo(base, {
-            bundledSkillsDir,
-            marketSkillDirs,
-          }),
-          systemPromptOverride: overrideLinxSystemPrompt,
-        },
-      })
-      const selectedModel = modelRegistry.find(LINX_CLOUD_PROVIDER_ID, defaultModelId)
-        ?? modelRegistry.getAvailable().find((candidate) => candidate.provider === LINX_CLOUD_PROVIDER_ID)
-      if (!selectedModel) {
-        throw new Error('Failed to resolve undefineds model from the LinX runtime adapter')
-      }
-      const created = await createAgentSessionFromServices({
-        services,
-        sessionManager: context.sessionManager as SessionManager,
-        sessionStartEvent: context.sessionStartEvent as never,
-        model: selectedModel,
-      })
-      const session = created.session
-      enableLinxXhighThinking(session)
-      if (session.model?.provider !== selectedModel.provider || session.model.id !== selectedModel.id) {
-        await session.setModel(selectedModel)
-      }
-      const runtime = await createAgentSessionRuntime(async () => ({
-        ...created,
-        session,
-        services,
-        diagnostics: services.diagnostics,
-      }), {
-        cwd: context.cwd,
-        agentDir: context.agentDir,
-        sessionManager: context.sessionManager as SessionManager,
-        sessionStartEvent: context.sessionStartEvent as never,
-      })
-      ;(runtime as unknown as Record<string, unknown>).backend = 'linx'
-      ;(runtime as unknown as Record<string, unknown>).runtimeBackend = workerBackend
-      ;(runtime as unknown as Record<string, unknown>).autoEnabled = options.autoEnabled === true
-      ;(runtime as unknown as Record<string, unknown>).symphonyEnabled = options.symphonyEnabled === true
-      ;(runtime as unknown as Record<string, unknown>).linxAuthBridge = {
-        description: UNDEFINEDS_AUTH_BRIDGE_ID,
-        providerId: LINX_CLOUD_PROVIDER_ID,
-        providerLabel: LINX_CLOUD_PROVIDER_LABEL,
-        runtimeUrl: baseUrl,
-        shouldPromptLoginOnStart: cloudRuntime.shouldPromptLoginOnStart(),
-      } satisfies LinxCloudPiAuthBridge
-      if (backendCommandRouter) {
-        ;(runtime as unknown as Record<string, unknown>).backendCommandRouter = backendCommandRouter
-      }
-      if (proxy) {
-        ;(runtime as unknown as Record<string, unknown>).backendSessionRef = proxy.record
-      }
-      if (options.getPodDataSession) {
-        ;(runtime as unknown as Record<string, unknown>).getPodDataSession = options.getPodDataSession
-      }
-      return runtime
-    },
+    createRuntime: async (context: LinxRuntimeFactoryContext): Promise<AgentSessionRuntime> => createLinxAgentSessionRuntime({
+      context,
+      baseUrl,
+      requestedModel,
+      streamSimple: streamAdapter.streamFn,
+      cloudRuntime,
+      issuerUrl: options.providerConfig?.issuerUrl,
+      oauth: options.providerConfig?.oauth,
+      getPodDataSession: options.getPodDataSession,
+      workerBackend,
+      backendCommandRouter,
+      backendSessionRef: proxy?.record,
+      autoEnabled: options.autoEnabled,
+      symphonyEnabled: options.symphonyEnabled,
+    }),
     async start(): Promise<void> {
       await proxy?.start()
     },
