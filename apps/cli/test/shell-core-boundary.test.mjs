@@ -403,18 +403,10 @@ test('remaining interactive install sentinels stay out of hidden fields', () => 
 
 
 test('pi adapter bridge entries are not cross-shell aggregate re-export barrels', () => {
-  const allowedPureReexportEntries = new Set([
-    // Package adapter entry point: intentionally re-exports the public Pi bridge surface.
-    'index.ts',
-  ])
   const violations = []
   const adapterRoot = join(libRoot, 'pi-adapter')
   for (const file of listSourceFiles(adapterRoot)) {
     const relativePath = relative(adapterRoot, file)
-    if (allowedPureReexportEntries.has(relativePath)) {
-      continue
-    }
-
     const source = readFileSync(file, 'utf8')
     if (isPureReexportModule(source) && /from\s+['"]\.\.\//u.test(source)) {
       violations.push(relativePath)
@@ -424,14 +416,12 @@ test('pi adapter bridge entries are not cross-shell aggregate re-export barrels'
   assert.deepEqual(violations, [])
 })
 
-test('pi adapter index exposes only the runtime bridge entry point', () => {
-  const source = readFileSync(join(libRoot, 'pi-adapter/index.ts'), 'utf8')
-  const forbidden = [
-    "export * from './stream.js'",
-  ]
-  const violations = forbidden.filter((snippet) => source.includes(snippet))
-
-  assert.deepEqual(violations, [])
+test('pi adapter does not expose an aggregate index barrel', () => {
+  assert.equal(
+    existsSync(join(libRoot, 'pi-adapter/index.ts')),
+    false,
+    'Pi adapter consumers should import the owning runtime or stream bridge modules directly',
+  )
 })
 
 function isPureReexportModule(source) {
@@ -445,7 +435,6 @@ function isPureReexportModule(source) {
 test('pi adapter compatibility wrappers are not kept only for tests', () => {
   const allowedBridgeEntries = new Set([
     // Runtime bridge entry points are imported by the package adapter factory or loaded by Pi/package resources.
-    'index.ts',
     'runtime.ts',
     'stream.ts',
   ])
@@ -460,7 +449,7 @@ test('pi adapter compatibility wrappers are not kept only for tests', () => {
 
   for (const file of adapterFiles) {
     const relativePath = relative(adapterRoot, file)
-    if (relativePath === 'index.ts' || allowedBridgeEntries.has(relativePath)) {
+    if (allowedBridgeEntries.has(relativePath)) {
       continue
     }
 
