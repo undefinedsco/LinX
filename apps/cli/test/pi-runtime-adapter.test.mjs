@@ -1783,8 +1783,8 @@ export default function projectExtraTool(pi) {
   await runtime.dispose()
 })
 
-test('pi runtime adapter applies a default timeout to bash when the model omits one', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
+test('LinX runtime coding tools apply a default timeout to bash when the model omits one', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-runtime-coding-tools.ts')
   t.after(() => cleanup())
 
   const cwd = mkdtempSync(join(tmpdir(), 'linx-pi-runtime-bash-timeout-'))
