@@ -6,16 +6,14 @@ import { resolveAccountBaseUrl } from './account-api.js'
 import { buildAutoModeOptions, isAutoModeRequest, runAutoModeCommand, type AutoModeCommandArgs } from './auto-mode-command.js'
 import { resolveLinxInteractiveLoginReason, resolveLinxStartupLoginPromptDecision } from './linx-startup-login-policy.js'
 import { bootstrapLinxInteractiveMode, type LinxLoginReason } from './linx-interactive-bootstrap.js'
-import { isOidcLoginExpiredError } from './oidc-auth.js'
 import { clearDefaultPodDataSession, getDefaultPodDataSession } from './pod-data-session.js'
-import { createLinxPodDataSession, resolveStartupLinxPodDataSession } from './linx-pod-data-session-factory.js'
+import { resolveStartupLinxPodDataSession } from './linx-pod-data-session-factory.js'
 import { createLinxPiSessionManager, listLinxPiSessions } from './linx-session-manager.js'
 import { LinxPiPodMirror } from './linx-pod-mirror.js'
 import { listPendingPiPodMirrorSync, retryPendingPiPodMirrorSync } from './linx-pod-mirror-sync-recovery.js'
 import { LINX_AGENT_DIR } from './linx-interactive-branding.js'
 import { createFileSyncCheckpointStore } from './sync-checkpoint-store.js'
-import { deriveLinxPiStartupControlState, hydrateLinxPiControlState } from './linx-startup-control-state.js'
-import { drizzle, solidResources, type SolidDatabase } from './models.js'
+import { resolveLinxPiStartupControlState } from './linx-pi-startup-control.js'
 import type { RemoteAuthFetch, RemoteChatMessage, RemoteChatTool } from './chat-api.js'
 import type { LinxCompletionBackendResult } from './linx-completion-backend.js'
 
@@ -155,7 +153,7 @@ export async function runPiCommand(argv: {
     last: Boolean(argv.continue || argv.last),
   })
   const restoreAutoFromHydration = Boolean(argv.session || argv.continue || argv.last)
-  const controlState = await resolvePiStartupControlState({
+  const controlState = await resolveLinxPiStartupControlState({
     requestedAuto: typeof argv.auto === 'boolean' ? argv.auto : undefined,
     hydrateFromPod: !argv.print && !startupLoginPrompt.shouldPrompt,
     restoreAutoFromHydration,
@@ -257,89 +255,6 @@ export async function runPiCommand(argv: {
     await adapter.close()
     clearDefaultPodDataSession()
   }
-}
-
-async function resolvePiStartupControlState(options: {
-  requestedAuto?: boolean
-  hydrateFromPod: boolean
-  restoreAutoFromHydration?: boolean
-  sessionManager: { getSessionId(): string; getEntries(): Array<{ timestamp?: unknown }> }
-}): Promise<{ autoEnabled: boolean; symphonyEnabled: boolean }> {
-  if (!options.hydrateFromPod) {
-    return {
-      autoEnabled: options.requestedAuto === true,
-      symphonyEnabled: false,
-    }
-  }
-
-  const session = await createLinxPodDataSession().catch(() => null)
-  if (!session) {
-    return {
-      autoEnabled: options.requestedAuto === true,
-      symphonyEnabled: false,
-    }
-  }
-
-  try {
-    const db = drizzle(session.solidSession, {
-      logger: false,
-      disableInteropDiscovery: true,
-      podUrl: session.podUrl,
-      resourcePreparation: 'off' as never,
-      schema: solidResources,
-    }) as unknown as SolidDatabase
-    const hydration = await hydrateLinxPiControlState({
-      db,
-      sessionId: options.sessionManager.getSessionId(),
-      createdAt: getPiSessionCreatedAt(options.sessionManager),
-      onError(error) {
-        if (process.env.LINX_DEBUG === '1') {
-          const message = error instanceof Error ? error.stack || error.message : String(error)
-          process.stderr.write(`[linx control state] ${message}\n`)
-        }
-      },
-    })
-    return {
-      ...deriveLinxPiStartupControlState({
-        requestedAuto: options.requestedAuto,
-        hydration,
-        restoreAutoFromHydration: options.restoreAutoFromHydration,
-      }),
-    }
-  } finally {
-    await session.close().catch(() => undefined)
-  }
-}
-
-function getPiSessionCreatedAt(sessionManager: { getSessionId(): string; getEntries(): Array<{ timestamp?: unknown }> }): Date {
-  const entryDate = sessionManager.getEntries()
-    .map((entry) => toDate(entry.timestamp))
-    .find((date): date is Date => date instanceof Date)
-  return entryDate ?? parseTimestampFromUuidLikeId(sessionManager.getSessionId()) ?? new Date()
-}
-
-function parseTimestampFromUuidLikeId(id: string): Date | null {
-  const prefix = id.replace(/-/g, '').slice(0, 12)
-  if (!/^[\da-f]{12}$/i.test(prefix)) {
-    return null
-  }
-  const millis = Number.parseInt(prefix, 16)
-  if (!Number.isFinite(millis) || millis <= 0) {
-    return null
-  }
-  const date = new Date(millis)
-  return Number.isNaN(date.getTime()) ? null : date
-}
-
-function toDate(value: unknown): Date | null {
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return value
-  }
-  if (typeof value === 'number' || typeof value === 'string') {
-    const date = new Date(value)
-    return Number.isNaN(date.getTime()) ? null : date
-  }
-  return null
 }
 
 function cwdFromArg(cwd: unknown): string {
