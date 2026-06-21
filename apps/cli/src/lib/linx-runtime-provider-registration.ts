@@ -13,6 +13,8 @@ export type LinxRuntimeCloudProviderRegistration = {
 
 type LinxRuntimeProviderModelDefinitions = NonNullable<Parameters<ModelRegistry['registerProvider']>[1]['models']>
 
+const linxProviderOAuthDetectionPatchedRegistries = new WeakSet<ModelRegistry>()
+
 export function createLinxRuntimeProviderRegistration(input: {
   authStorage: AuthStorage
   modelRegistry: ModelRegistry
@@ -55,10 +57,7 @@ export function createLinxRuntimeProviderRegistration(input: {
 }
 
 function disableLinxProviderOAuthDetection(modelRegistry: ModelRegistry): void {
-  const registry = modelRegistry as ModelRegistry & {
-    __linxCloudOAuthDetectionPatched?: boolean
-  }
-  if (registry.__linxCloudOAuthDetectionPatched === true) {
+  if (linxProviderOAuthDetectionPatchedRegistries.has(modelRegistry)) {
     return
   }
 
@@ -66,5 +65,5 @@ function disableLinxProviderOAuthDetection(modelRegistry: ModelRegistry): void {
   modelRegistry.isUsingOAuth = (model) => (
     model.provider === LINX_CLOUD_PROVIDER_ID ? false : originalIsUsingOAuth(model)
   )
-  registry.__linxCloudOAuthDetectionPatched = true
+  linxProviderOAuthDetectionPatchedRegistries.add(modelRegistry)
 }
