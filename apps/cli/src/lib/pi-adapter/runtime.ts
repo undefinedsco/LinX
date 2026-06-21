@@ -1,6 +1,6 @@
 import { createLinxAgentStreamAdapter, type LinxAgentStreamAdapter } from './stream.js'
 import type { LinxCompletionBackendResult } from '../linx-completion-backend.js'
-import { withLinxRuntimeSystemPrompt, overrideLinxSystemPrompt } from '../linx-runtime-system-prompt.js'
+import { overrideLinxSystemPrompt } from '../linx-runtime-system-prompt.js'
 import { enableLinxXhighThinking } from '../linx-runtime-thinking.js'
 import { ensureLinxPiTheme } from '../linx-theme.js'
 import {
@@ -21,7 +21,7 @@ import type { BackendCommandRouter, BackendCommandResult } from '../backend-comm
 import type { PodDataSession } from '../pod-data-session.js'
 import type { CodexApprovalPolicy } from '../codex-plugin/codex-native-proxy.js'
 import { loadCredentials } from '../credentials-store.js'
-import { createLinxBearerAuthFetch, resolveLinxCloudRuntimeAuthFetch, resolveRuntimeAuthFetchFromApiKey } from '../linx-cloud-runtime-auth.js'
+import { createLinxBearerAuthFetch, resolveLinxCloudRuntimeAuthFetch } from '../linx-cloud-runtime-auth.js'
 import { createLinxCloudRuntimeCoordinator } from '../linx-cloud-runtime-coordinator.js'
 import { createLinxManagedRuntimeOAuthProvider } from '../linx-runtime-oauth-provider.js'
 import {
@@ -37,6 +37,7 @@ import {
   LINX_CLOUD_PROVIDER_LABEL,
 } from '../linx-cloud-models.js'
 import { createLinxRuntimeProviderRegistration } from '../linx-runtime-provider-registration.js'
+import { createLinxRuntimeCompletionBackend } from '../linx-runtime-completion-backend.js'
 export {
   resolveLinxInteractiveLoginReason,
   resolveLinxStartupLoginPromptDecision,
@@ -219,28 +220,13 @@ export function createLinxRuntimeAdapter(
       }
       : undefined,
     completionBackend: !proxy && dependencies.createRemoteCompletion
-      ? {
-        async complete(input) {
-          const authFetch = options.providerConfig?.oauth
-            ? input.authFetch
-              ?? resolveRuntimeAuthFetchFromApiKey(input.apiKey)
-              ?? await resolveLinxCloudRuntimeAuthFetch({
-                issuerUrl: options.providerConfig?.issuerUrl,
-                getPodDataSession: options.getPodDataSession,
-              })
-            : await resolveLinxCloudRuntimeAuthFetch({
-              issuerUrl: options.providerConfig?.issuerUrl,
-              getPodDataSession: options.getPodDataSession,
-            })
-          return cloudRuntime.completeWithAuthRecovery(authFetch, {
-            runtimeUrl: baseUrl,
-            model: input.model,
-            messages: withLinxRuntimeSystemPrompt(input.systemPrompt, input.messages),
-            tools: input.tools,
-            signal: input.signal,
-          })
-        },
-      }
+      ? createLinxRuntimeCompletionBackend({
+        cloudRuntime,
+        runtimeUrl: baseUrl,
+        issuerUrl: options.providerConfig?.issuerUrl,
+        getPodDataSession: options.getPodDataSession,
+        useExplicitOAuthProvider: Boolean(options.providerConfig?.oauth),
+      })
       : undefined,
   })
   const backendCommandRouter: BackendCommandRouter | undefined = proxy && typeof proxy.executeCommand === 'function'
