@@ -132,6 +132,13 @@ test('LinX runtime completion backend helper lives outside the Pi adapter', asyn
   assert.equal(typeof module.createLinxRuntimeCompletionBackend, 'function')
 })
 
+test('LinX runtime AgentSession composition helper lives outside the Pi adapter', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-runtime-agent-session.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.createLinxAgentSessionRuntime, 'function')
+})
+
 test('linx startup login prompt decision covers the auth state matrix', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-startup-login-policy.ts')
   t.after(() => cleanup())
