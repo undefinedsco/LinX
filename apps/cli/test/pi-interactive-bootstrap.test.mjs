@@ -6666,6 +6666,15 @@ test('backend command contract lives in a shell backend module', async (t) => {
   assert.ok(module)
 })
 
+test('runtime managed auth sentinel lives outside the Pi runtime adapter', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-runtime-auth.ts')
+  t.after(() => cleanup())
+
+  assert.equal(module.LINX_RUNTIME_MANAGED_AUTH_KEY, LINX_RUNTIME_MANAGED_AUTH_KEY)
+  assert.equal(module.isLinxRuntimeManagedAuthKey(LINX_RUNTIME_MANAGED_AUTH_KEY), true)
+  assert.equal(module.isLinxRuntimeManagedAuthKey('sk-real-key'), false)
+})
+
 test('backend credential helper lives in a shell backend module', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/backend-credentials.ts')
   t.after(() => cleanup())

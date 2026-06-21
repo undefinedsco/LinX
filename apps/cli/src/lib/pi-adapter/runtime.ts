@@ -30,13 +30,13 @@ import { clearDefaultPodDataSession, getDefaultPodDataSession, type PodDataSessi
 import type { CodexApprovalPolicy } from '../codex-plugin/codex-native-proxy.js'
 import { loadCredentials } from '../credentials-store.js'
 import { getSolidLinxAppDir, getSolidLinxPiWebAccessConfigPath } from '../solid-local-store.js'
+import { LINX_RUNTIME_MANAGED_AUTH_KEY, isLinxRuntimeManagedAuthKey } from '../linx-runtime-auth.js'
 
 const UNDEFINEDS_PROVIDER_ID = 'undefineds'
 const UNDEFINEDS_PROVIDER_LABEL = 'LinX Cloud'
 const UNDEFINEDS_PROVIDER_API = 'linx-cloud-chat-completions'
 const UNDEFINEDS_SESSION_ID = 'undefineds_pi_frontend'
 const UNDEFINEDS_AUTH_BRIDGE_ID = 'undefineds-cloud-oauth-bridge'
-export const LINX_RUNTIME_MANAGED_AUTH_KEY = 'linx-runtime-managed-auth'
 const LINX_PACKAGE_SOURCE = '@undefineds.co/linx'
 const LINX_WEB_ACCESS_PACKAGE_SOURCE = 'pi-web-access'
 const LINX_PRODUCT_SKILL_NAMES = new Set(['symphony', 'xpod-cli'])
@@ -886,7 +886,7 @@ function createBearerAuthFetch(apiKey: string): RemoteAuthFetch {
 
 function resolveRuntimeAuthFetchFromApiKey(apiKey: string | undefined): RemoteAuthFetch | null {
   const trimmed = apiKey?.trim()
-  if (!trimmed || trimmed === LINX_RUNTIME_MANAGED_AUTH_KEY) {
+  if (!trimmed || isLinxRuntimeManagedAuthKey(trimmed)) {
     return null
   }
   return createBearerAuthFetch(trimmed)
