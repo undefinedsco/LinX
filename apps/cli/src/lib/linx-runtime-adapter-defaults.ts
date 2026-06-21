@@ -3,6 +3,7 @@ import type { AutoModeWorkerBackend } from './auto-mode/types.js'
 export const DEFAULT_LINX_RUNTIME_BACKEND_MODE = 'cloud'
 export const DEFAULT_LINX_NATIVE_WORKER_BACKEND: AutoModeWorkerBackend = 'codex'
 export const DEFAULT_LINX_CLOUD_RUNTIME_URL = 'https://api.undefineds.co/v1'
+export const DEFAULT_LINX_RUNTIME_SESSION_ID = 'undefineds_pi_frontend'
 
 export type LinxRuntimeBackendMode = 'cloud' | 'native'
 

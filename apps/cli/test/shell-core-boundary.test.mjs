@@ -573,6 +573,7 @@ test('runtime adapter product defaults are kept outside the Pi runtime adapter',
     "options.backend ?? 'cloud'",
     "backendMode === 'native' ? 'codex' : undefined",
     "'https://api.undefineds.co/v1'",
+    "'undefineds_pi_frontend'",
   ]
   const violations = forbidden.filter((snippet) => source.includes(snippet))
 
