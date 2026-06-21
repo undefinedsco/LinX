@@ -1,5 +1,6 @@
 import type { Argv, CommandModule } from 'yargs'
-import { createCodexNativeProxy, createSymphonyCodexMcpServer } from './codex-plugin/index.js'
+import { createCodexNativeProxy } from './codex-plugin/codex-native-proxy.js'
+import { createSymphonyCodexMcpServer } from './codex-plugin/symphony-mcp.js'
 
 type CodexNativeProxyCommandArgs = {
   cwd?: string
