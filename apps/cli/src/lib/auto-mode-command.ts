@@ -2,6 +2,8 @@ import type { Argv } from 'yargs'
 import {
   formatArchivedAutoModeSession,
   formatAutoModeSessionSummary,
+} from './auto-mode/format.js'
+import {
   loadArchivedAutoModeEvents,
   listArchivedAutoModeSessionsWithPendingSync,
   listSupportedAutoModeBackends,
@@ -9,8 +11,8 @@ import {
   retryArchivedAutoModePodSync,
   resumeAutoModeSession,
   runAutoMode,
-  type AutoModeWorkerBackend,
-} from './auto-mode/index.js'
+} from './auto-mode/runner.js'
+import type { AutoModeWorkerBackend } from './auto-mode/types.js'
 
 const AUTO_MODE_BACKENDS = ['linx', 'codex', 'claude', 'codebuddy'] as const
 
