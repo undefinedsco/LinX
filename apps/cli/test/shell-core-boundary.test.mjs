@@ -435,10 +435,9 @@ function isPureReexportModule(source) {
 test('pi adapter compatibility wrappers are not kept only for tests', () => {
   const allowedBridgeEntries = new Set([
     // Runtime bridge entry points are imported by the package adapter factory or loaded by Pi/package resources.
+    'index.ts',
     'runtime.ts',
     'stream.ts',
-    'pod-tools.ts',
-    'web-fetch.ts',
   ])
   const violations = []
   const adapterRoot = join(libRoot, 'pi-adapter')
