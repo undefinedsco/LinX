@@ -408,7 +408,18 @@ function printConfiguredLinxPackages(packageManager: {
 }
 
 const { defaultPiCommand, execCommand, hiddenPiAliasCommand, hiddenPiFrontendAliasCommand } = createLinxPiCliCommands({
-  createRuntimeAdapter: createLinxRuntimeAdapter,
+  createRuntimeAdapter(options) {
+    return createLinxRuntimeAdapter({
+      async createRemoteCompletion(completionOptions) {
+        const chatApi = await import('./lib/chat-api.js')
+        return chatApi.createRemoteCompletionResult(completionOptions)
+      },
+      async listRemoteModels(authFetch, runtimeUrl, listOptions) {
+        const chatApi = await import('./lib/chat-api.js')
+        return chatApi.listRemoteModels(authFetch, runtimeUrl, listOptions ?? { fallback: false, timeoutMs: 5000 })
+      },
+    }, options)
+  },
 })
 
 const retiredSymphonyCommand: CommandModule<object, { args?: string[] }> = {
