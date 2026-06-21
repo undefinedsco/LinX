@@ -6922,21 +6922,31 @@ test('session control manager lives in a shell control module', async (t) => {
 })
 
 test('backend command router shell module installs projected routing by default', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/linx-backend-command-router.ts')
-  t.after(() => cleanup())
+  const [{ module, cleanup }, { module: stateModule, cleanup: stateCleanup }] = await Promise.all([
+    loadAutoModeModule('lib/linx-backend-command-router.ts'),
+    loadAutoModeModule('lib/linx-interactive-shell-state.ts'),
+  ])
+  t.after(() => {
+    cleanup()
+    stateCleanup()
+  })
 
+  const executed = []
   const interactive = {
     setupEditorSubmitHandler() {},
   }
 
   module.installBackendCommandRouter(interactive, {
     backend: 'codex',
-    async execute() {
+    async execute(command) {
+      executed.push(command)
       return { handled: false }
     },
   })
 
-  assert.equal(typeof interactive.__linxHandleProjectedCommand, 'function')
+  assert.equal(typeof stateModule.handleLinxInteractiveProjectedCommand, 'function')
+  assert.equal(await stateModule.handleLinxInteractiveProjectedCommand(interactive, '/models'), false)
+  assert.deepEqual(executed, ['/models'])
 })
 
 test('interactive command routing patch lives in a shell command module', async (t) => {

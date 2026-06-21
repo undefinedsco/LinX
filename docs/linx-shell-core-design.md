@@ -116,6 +116,14 @@ ordinary messages must fall through to the next handler or Pi's original submit
 path. A handler must not call the original submit and then also report
 `false`; that creates duplicate turns.
 
+Projected command routing is also shell-owned. Auto/Secretary projected input may
+contain slash commands, but feature modules must not exchange those projected
+handlers through ad hoc `interactive.__linxHandle*` fields. LinX shell modules
+register projected global/backend handlers in `linx-interactive-shell-state.ts`,
+and callers use the shell-state projected command helper. This keeps `/auto`,
+`/goal`, `/ai connect`, and backend-native slash commands on one command bridge
+instead of turning the Pi interactive object into a hidden service locator.
+
 ## Pi adapter boundary
 
 The Pi adapter is a bridge to an upstream TUI/runtime, not the product core.
