@@ -73,7 +73,7 @@ test('pi interactive bootstrap can instantiate with the LinX runtime adapter', a
   })
 
   assert.equal(typeof runtimeModule.createLinxRuntimeAdapter, 'function')
-  assert.equal(typeof runtimeModule.createPiRuntimeAdapter, 'function')
+  assert.equal(typeof runtimeModule.createLinxRuntimeAdapter, 'function')
   assert.equal(typeof interactiveModule.bootstrapLinxInteractiveMode, 'function')
   assert.equal(typeof interactiveModule.bootstrapPiInteractiveMode, 'function')
   assert.equal(typeof interactiveModule.withLinxResumeOutputStyle, 'function')
@@ -159,7 +159,7 @@ test('pi interactive bootstrap passes initial prompt options into Pi interactive
     rmSync(agentDir, { recursive: true, force: true })
   })
 
-  const adapter = runtimeModule.createPiRuntimeAdapter({
+  const adapter = runtimeModule.createLinxRuntimeAdapter({
     async createRemoteCompletion() {
       return 'ok'
     },
@@ -223,7 +223,7 @@ test('pi interactive backend credential prompt uses the existing extension input
     rmSync(agentDir, { recursive: true, force: true })
   })
   const prompts = []
-  const adapter = runtimeModule.createPiRuntimeAdapter({
+  const adapter = runtimeModule.createLinxRuntimeAdapter({
     createNativeProxy() {
       return {
         remoteUrl: 'ws://127.0.0.1:8877',
@@ -310,7 +310,7 @@ test('pi interactive backend credential prompt distinguishes invalid existing cr
   })
   const statuses = []
   const prompts = []
-  const adapter = runtimeModule.createPiRuntimeAdapter({
+  const adapter = runtimeModule.createLinxRuntimeAdapter({
     createNativeProxy() {
       return {
         remoteUrl: 'ws://127.0.0.1:8878',
@@ -389,7 +389,7 @@ test('pi interactive backend credential prompt reuses Pi login dialog when TUI i
     rmSync(cwd, { recursive: true, force: true })
     rmSync(agentDir, { recursive: true, force: true })
   })
-  const adapter = runtimeModule.createPiRuntimeAdapter({
+  const adapter = runtimeModule.createLinxRuntimeAdapter({
     createNativeProxy() {
       return {
         remoteUrl: 'ws://127.0.0.1:8879',
@@ -5869,7 +5869,7 @@ test('linx interactive restores auto mode visibly on resume startup', async (t) 
 
   const statuses = []
   const controllerStarts = []
-  const adapter = runtimeModule.createPiRuntimeAdapter({
+  const adapter = runtimeModule.createLinxRuntimeAdapter({
     async createRemoteCompletion() {
       return 'ok'
     },

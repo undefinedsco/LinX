@@ -40,7 +40,7 @@ test('pi runtime can prompt through the backend-shaped stream adapter contract',
   })
 
   const completionCalls = []
-  const adapter = module.createPiRuntimeAdapter({
+  const adapter = module.createLinxRuntimeAdapter({
     async createRemoteCompletion(input) {
       completionCalls.push(input)
       return 'hi'
@@ -103,7 +103,7 @@ test('pi runtime executes tools returned by the cloud completion backend', async
   })
 
   const completionCalls = []
-  const adapter = module.createPiRuntimeAdapter({
+  const adapter = module.createLinxRuntimeAdapter({
     async createRemoteCompletion(input) {
       completionCalls.push(input)
       if (completionCalls.length === 1) {
