@@ -33,7 +33,7 @@ function listSourceFiles(dir) {
       files.push(...listSourceFiles(path))
       continue
     }
-    if (/\.[cm]?tsx?$/u.test(entry)) {
+    if (/\.(?:[cm]?tsx?|mjs)$/u.test(entry)) {
       files.push(path)
     }
   }
@@ -399,3 +399,46 @@ test('remaining interactive install sentinels stay out of hidden fields', () => 
 
   assert.deepEqual(violations, [])
 })
+
+
+test('pi adapter compatibility wrappers are only kept when consumed', () => {
+  const allowedUnreferenced = new Set([
+    // Extension entry points loaded by Pi or copied package resources may be consumed outside repo text search.
+    'pod-tools.ts',
+    'web-fetch.ts',
+  ])
+  const violations = []
+  const adapterRoot = join(libRoot, 'pi-adapter')
+  const sourceFiles = listSourceFiles(libRoot)
+  const adapterFiles = listSourceFiles(adapterRoot)
+  const searchableFiles = [
+    ...sourceFiles.filter((file) => !relative(libRoot, file).startsWith(adapterSegment)),
+    ...listSourceFiles(join(repoRoot, 'apps/cli/test')),
+  ]
+
+  for (const file of adapterFiles) {
+    const relativePath = relative(adapterRoot, file)
+    if (relativePath === 'index.ts' || allowedUnreferenced.has(relativePath)) {
+      continue
+    }
+
+    const moduleName = relativePath.replace(/\.ts$/u, '')
+    const importPattern = new RegExp(`pi-adapter/${escapeRegExp(moduleName)}(?:\\.js|\\.ts)?['\"]`, 'u')
+    const isConsumed = searchableFiles.some((candidate) => {
+      if (candidate === file) {
+        return false
+      }
+      return importPattern.test(readFileSync(candidate, 'utf8'))
+    })
+
+    if (!isConsumed) {
+      violations.push(relativePath)
+    }
+  }
+
+  assert.deepEqual(violations, [])
+})
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
