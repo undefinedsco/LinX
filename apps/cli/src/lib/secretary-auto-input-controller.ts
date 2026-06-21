@@ -18,6 +18,7 @@ import type { SessionControlManager, SessionControlSnapshot } from './session-co
 import { registerLinxInteractiveStopHandler } from './linx-interactive-stop-router.js'
 import {
   getLinxInteractiveGoalModeSupervisorLastAt,
+  handleLinxInteractiveProjectedCommand,
   isLinxInteractiveGoalModeEnabled,
   setLinxInteractiveGoalModeSupervisorLastAt,
 } from './linx-interactive-shell-state.js'
@@ -1003,8 +1004,8 @@ async function deliverAsUserInput(session: any, text: string): Promise<void> {
 type ProjectedInputDelivery = 'control-command' | 'peer-command' | 'backend'
 
 async function deliverProjectedInput(interactive: any, session: any, text: string): Promise<ProjectedInputDelivery> {
-  if (text.trim().startsWith('/') && typeof interactive?.__linxHandleProjectedCommand === 'function') {
-    const handled = await interactive.__linxHandleProjectedCommand(text)
+  if (text.trim().startsWith('/')) {
+    const handled = await handleLinxInteractiveProjectedCommand(interactive, text)
     if (handled === 'peer-command') {
       return 'peer-command'
     }

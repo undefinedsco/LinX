@@ -1,4 +1,7 @@
 type ShellControlChangeHandler = (enabled: boolean) => void | Promise<void>
+type ProjectedCommandResult = boolean | 'peer-command'
+type ProjectedCommandHandler = (text: string) => ProjectedCommandResult | Promise<ProjectedCommandResult>
+type AiConnectCommandHandler = (interactive: any, runtime: any, command: any) => void | Promise<void>
 
 export type LinxInteractiveShellState = {
   autoControlChange?: ShellControlChangeHandler
@@ -7,6 +10,9 @@ export type LinxInteractiveShellState = {
   symphonyModeGeneration: number
   goalModeEnabled: boolean
   goalModeSupervisorLastAt?: number
+  aiConnectCommand?: AiConnectCommandHandler
+  projectedGlobalCommand?: ProjectedCommandHandler
+  projectedBackendCommand?: ProjectedCommandHandler
 }
 
 const LINX_INTERACTIVE_SHELL_STATE = Symbol.for('linx.tui.shellState')
@@ -33,6 +39,9 @@ export function configureLinxInteractiveShellState(
     symphonyControlChange?: ShellControlChangeHandler
     symphonyModeEnabled?: boolean
     goalModeEnabled?: boolean
+    aiConnectCommand?: AiConnectCommandHandler
+    projectedGlobalCommand?: ProjectedCommandHandler
+    projectedBackendCommand?: ProjectedCommandHandler
   },
 ): LinxInteractiveShellState {
   const state = getLinxInteractiveShellState(interactive)
@@ -48,7 +57,51 @@ export function configureLinxInteractiveShellState(
   if (options.goalModeEnabled !== undefined) {
     state.goalModeEnabled = options.goalModeEnabled
   }
+  if (options.aiConnectCommand) {
+    state.aiConnectCommand = options.aiConnectCommand
+  }
+  if (options.projectedGlobalCommand) {
+    state.projectedGlobalCommand = options.projectedGlobalCommand
+  }
+  if (options.projectedBackendCommand) {
+    state.projectedBackendCommand = options.projectedBackendCommand
+  }
   return state
+}
+
+
+export function getLinxInteractiveAiConnectCommand(interactive: any): AiConnectCommandHandler | undefined {
+  return getLinxInteractiveShellState(interactive).aiConnectCommand
+}
+
+export async function handleLinxInteractiveProjectedCommand(
+  interactive: any,
+  text: string,
+): Promise<ProjectedCommandResult> {
+  const command = String(text ?? '').trim()
+  if (!command.startsWith('/')) {
+    return false
+  }
+
+  const state = getLinxInteractiveShellState(interactive)
+  if (state.projectedGlobalCommand) {
+    const handled = await state.projectedGlobalCommand(command)
+    if (handled === 'peer-command') {
+      return 'peer-command'
+    }
+    if (handled === true) {
+      return true
+    }
+  }
+
+  if (state.projectedBackendCommand) {
+    const handled = await state.projectedBackendCommand(command)
+    if (handled === true) {
+      return true
+    }
+  }
+
+  return false
 }
 
 export function isLinxInteractiveSymphonyModeEnabled(interactive: any): boolean {

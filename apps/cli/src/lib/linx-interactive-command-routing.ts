@@ -11,6 +11,7 @@ import { getSessionControlManager } from './session-control.js'
 import { registerLinxInteractiveSubmitHandler } from './linx-interactive-submit-router.js'
 import {
   configureLinxInteractiveShellState,
+  getLinxInteractiveAiConnectCommand,
   notifyLinxInteractiveAutoControlChange,
   setLinxInteractiveGoalModeEnabled,
 } from './linx-interactive-shell-state.js'
@@ -38,7 +39,9 @@ export function installLinxShellCommands(
     })
   }
   if (options.handleAiConnectCommand) {
-    interactive.__linxHandleAiConnectCommand = options.handleAiConnectCommand
+    configureLinxInteractiveShellState(interactive, {
+      aiConnectCommand: options.handleAiConnectCommand,
+    })
   }
   installLinxShellCommandHandler(interactive, runtime)
 }
@@ -67,17 +70,19 @@ function installLinxShellCommandHandler(interactive: any, runtime: any): void {
   })
 
   interactive.__linxGlobalCommandHandlerInstalled = true
-  interactive.__linxHandleProjectedGlobalCommand = async (text: string): Promise<boolean | 'peer-command'> => {
-    const command = parseLinxShellCommand(text.trim())
-    if (!command) {
-      return false
-    }
-    await handleLinxShellCommand(interactive, runtime, command)
-    if (command.action === 'peer-command') {
-      return 'peer-command'
-    }
-    return true
-  }
+  configureLinxInteractiveShellState(interactive, {
+    projectedGlobalCommand: async (text: string): Promise<boolean | 'peer-command'> => {
+      const command = parseLinxShellCommand(text.trim())
+      if (!command) {
+        return false
+      }
+      await handleLinxShellCommand(interactive, runtime, command)
+      if (command.action === 'peer-command') {
+        return 'peer-command'
+      }
+      return true
+    },
+  })
   installProjectedCommandRouter(interactive)
 }
 
@@ -276,9 +281,7 @@ async function handleLinxShellCommand(
   }
 
   if (command.action === 'ai-connect') {
-    const handler = typeof interactive.__linxHandleAiConnectCommand === 'function'
-      ? interactive.__linxHandleAiConnectCommand
-      : handleInteractiveAiConnectCommand
+    const handler = getLinxInteractiveAiConnectCommand(interactive) ?? handleInteractiveAiConnectCommand
     await handler(interactive, runtime, command)
     return
   }
@@ -307,31 +310,7 @@ async function handleLinxShellCommand(
 }
 
 export function installProjectedCommandRouter(interactive: any): void {
-  interactive.__linxHandleProjectedCommand = async (text: string): Promise<boolean | 'peer-command'> => {
-    const command = text.trim()
-    if (!command.startsWith('/')) {
-      return false
-    }
-
-    if (typeof interactive.__linxHandleProjectedGlobalCommand === 'function') {
-      const handled = await interactive.__linxHandleProjectedGlobalCommand(command)
-      if (handled === 'peer-command') {
-        return 'peer-command'
-      }
-      if (handled === true) {
-        return true
-      }
-    }
-
-    if (typeof interactive.__linxHandleProjectedBackendCommand === 'function') {
-      const handled = await interactive.__linxHandleProjectedBackendCommand(command)
-      if (handled === true) {
-        return true
-      }
-    }
-
-    return false
-  }
+  configureLinxInteractiveShellState(interactive, {})
 }
 
 async function handleInteractivePeerCommand(

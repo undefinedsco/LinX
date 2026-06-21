@@ -1,5 +1,6 @@
 import type { BackendCommandRouter } from './backend-command.js'
 import { installProjectedCommandRouter } from './linx-interactive-command-routing.js'
+import { configureLinxInteractiveShellState } from './linx-interactive-shell-state.js'
 import { shouldRouteToBackendCommand } from './linx-shell-command-router.js'
 import { registerLinxInteractiveSubmitHandler } from './linx-interactive-submit-router.js'
 
@@ -16,31 +17,33 @@ export function installBackendCommandRouter(
     return
   }
 
-  interactive.__linxHandleProjectedBackendCommand = async (text: string): Promise<boolean> => {
-    const command = text.trim()
-    if (!shouldRouteToBackendCommand(command)) {
-      return false
-    }
+  configureLinxInteractiveShellState(interactive, {
+    projectedBackendCommand: async (text: string): Promise<boolean> => {
+      const command = text.trim()
+      if (!shouldRouteToBackendCommand(command)) {
+        return false
+      }
 
-    let routed
-    try {
-      routed = await router.execute(command)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      interactive.showError?.(`${router.backend} command failed: ${message}`)
+      let routed
+      try {
+        routed = await router.execute(command)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        interactive.showError?.(`${router.backend} command failed: ${message}`)
+        return true
+      }
+
+      if (!routed.handled) {
+        return false
+      }
+
+      if (routed.message) {
+        interactive.showStatus?.(routed.message)
+      }
+      interactive.ui?.requestRender?.()
       return true
-    }
-
-    if (!routed.handled) {
-      return false
-    }
-
-    if (routed.message) {
-      interactive.showStatus?.(routed.message)
-    }
-    interactive.ui?.requestRender?.()
-    return true
-  }
+    },
+  })
   const installProjected = options.installProjectedCommandRouter ?? installProjectedCommandRouter
   installProjected(interactive)
 
