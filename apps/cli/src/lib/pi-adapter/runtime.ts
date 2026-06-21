@@ -1,5 +1,5 @@
-import { createLinxAgentStreamAdapter, type LinxAgentStreamAdapter, type LinxCompletionBackendResult } from './stream.js'
-import { DEFAULT_LINX_CLOUD_MODEL_ID, resolvePreferredLinxCloudModelId } from '../default-model.js'
+import { createLinxAgentStreamAdapter, type LinxAgentStreamAdapter } from './stream.js'
+import type { LinxCompletionBackendResult } from '../linx-completion-backend.js'
 import { withLinxRuntimeSystemPrompt, overrideLinxSystemPrompt } from '../linx-runtime-system-prompt.js'
 import { enableLinxXhighThinking } from '../linx-runtime-thinking.js'
 import { ensureLinxPiTheme } from '../linx-theme.js'
@@ -15,13 +15,14 @@ import {
 } from '@earendil-works/pi-coding-agent'
 // web_fetch / web_search are now handled by pi-web-access
 import type { Api, Model, OAuthCredentials } from '@earendil-works/pi-ai'
-import { isRemoteAuthExpiredError, type RemoteAuthFetch, type RemoteChatMessage, type RemoteChatTool } from '../chat-api.js'
+import type { RemoteAuthFetch, RemoteChatMessage, RemoteChatTool } from '../chat-api.js'
 import type { AutoModeWorkerBackend } from '../auto-mode/types.js'
 import type { BackendCommandRouter, BackendCommandResult } from '../backend-command.js'
-import { clearDefaultPodDataSession, type PodDataSession } from '../pod-data-session.js'
+import type { PodDataSession } from '../pod-data-session.js'
 import type { CodexApprovalPolicy } from '../codex-plugin/codex-native-proxy.js'
 import { loadCredentials } from '../credentials-store.js'
 import { createLinxBearerAuthFetch, resolveLinxCloudRuntimeAuthFetch, resolveRuntimeAuthFetchFromApiKey } from '../linx-cloud-runtime-auth.js'
+import { createLinxCloudRuntimeCoordinator } from '../linx-cloud-runtime-coordinator.js'
 import { LINX_RUNTIME_MANAGED_AUTH_KEY } from '../linx-runtime-auth.js'
 import { createLinxManagedRuntimeOAuthProvider } from '../linx-runtime-oauth-provider.js'
 import {
@@ -36,9 +37,6 @@ import {
   LINX_CLOUD_PROVIDER_API,
   LINX_CLOUD_PROVIDER_ID,
   LINX_CLOUD_PROVIDER_LABEL,
-  buildFallbackLinxCloudProviderModels,
-  buildLinxCloudProviderModel,
-  mergeLinxCloudProviderModels,
   sanitizeLinxCloudDefaults,
 } from '../linx-cloud-models.js'
 export {
@@ -178,29 +176,15 @@ export function createLinxRuntimeAdapter(
   const workerBackend = options.workerBackend ?? (backendMode === 'native' ? 'codex' : undefined)
   const cwd = options.cwd ?? process.cwd()
   const requestedModel = options.model?.trim() || undefined
-  let activeModelId = requestedModel ?? DEFAULT_LINX_CLOUD_MODEL_ID
   const baseUrl = options.providerConfig?.baseUrl ?? 'https://api.undefineds.co/v1'
-  let shouldPromptLoginOnStart = false
-  const providerModels: Array<{
-    id: string
-    name: string
-    api: Api
-    reasoning: boolean
-    input: ['text']
-    cost: {
-      input: number
-      output: number
-      cacheRead: number
-      cacheWrite: number
-    }
-    contextWindow: number
-    maxTokens: number
-    compat: {
-      supportsStore: false
-      supportsDeveloperRole: false
-      supportsStrictMode: false
-    }
-  }> = buildFallbackLinxCloudProviderModels(activeModelId)
+  const cloudRuntime = createLinxCloudRuntimeCoordinator({
+    requestedModel,
+    runtimeUrl: baseUrl,
+    issuerUrl: options.providerConfig?.issuerUrl,
+    getPodDataSession: options.getPodDataSession,
+    createRemoteCompletion: dependencies.createRemoteCompletion,
+    listRemoteModels: dependencies.listRemoteModels,
+  })
   const proxy = backendMode === 'native'
     ? dependencies.createNativeProxy?.({
       cwd,
@@ -225,7 +209,7 @@ export function createLinxRuntimeAdapter(
   const streamAdapter = createLinxAgentStreamAdapter({
     sessionId: proxy?.record.id ?? UNDEFINEDS_SESSION_ID,
     cwd: proxy?.record.cwd ?? cwd,
-    model: proxy?.record.model ?? activeModelId,
+    model: proxy?.record.model ?? cloudRuntime.getActiveModelId(),
     backend: proxy
       ? {
         sendTurn(input) {
@@ -250,7 +234,7 @@ export function createLinxRuntimeAdapter(
               issuerUrl: options.providerConfig?.issuerUrl,
               getPodDataSession: options.getPodDataSession,
             })
-          return completeWithAuthRecovery(authFetch, {
+          return cloudRuntime.completeWithAuthRecovery(authFetch, {
             runtimeUrl: baseUrl,
             model: input.model,
             messages: withLinxRuntimeSystemPrompt(input.systemPrompt, input.messages),
@@ -283,7 +267,7 @@ export function createLinxRuntimeAdapter(
     remoteUrl: proxy?.remoteUrl ?? baseUrl,
     sessionId: proxy?.record.id ?? UNDEFINEDS_SESSION_ID,
     cwd: proxy?.record.cwd ?? cwd,
-    model: proxy?.record.model ?? activeModelId,
+    model: proxy?.record.model ?? cloudRuntime.getActiveModelId(),
     backend: 'linx',
     runtimeBackend: workerBackend,
     autoEnabled: options.autoEnabled === true,
@@ -300,7 +284,7 @@ export function createLinxRuntimeAdapter(
       const linxOAuthProvider = options.providerConfig?.oauth ?? createLinxManagedRuntimeOAuthProvider({
         issuerUrl: options.providerConfig?.issuerUrl,
         getPodDataSession: options.getPodDataSession,
-        syncProviderModels,
+        syncProviderModels: cloudRuntime.syncProviderModels,
       })
       const storedCredentials = options.providerConfig?.oauth ? null : loadCredentials()
       const hasManagedPodSession = !options.providerConfig?.oauth && Boolean(options.getPodDataSession)
@@ -312,9 +296,9 @@ export function createLinxRuntimeAdapter(
           issuerUrl: options.providerConfig?.issuerUrl,
           getPodDataSession: options.getPodDataSession,
         })
-        await syncProviderModels({ runtimeFetch: authFetch }, { refreshOnAuthExpired: true })
+        await cloudRuntime.syncProviderModels({ runtimeFetch: authFetch }, { refreshOnAuthExpired: true })
       } else if (explicitOAuthCredential?.access) {
-        await syncProviderModels({ runtimeFetch: createLinxBearerAuthFetch(explicitOAuthCredential.access) })
+        await cloudRuntime.syncProviderModels({ runtimeFetch: createLinxBearerAuthFetch(explicitOAuthCredential.access) })
       }
       modelRegistry.registerProvider(LINX_CLOUD_PROVIDER_ID, {
         api: LINX_CLOUD_PROVIDER_API,
@@ -323,7 +307,7 @@ export function createLinxRuntimeAdapter(
         oauth: linxOAuthProvider,
         authHeader: false,
         streamSimple: streamAdapter.streamFn,
-        models: providerModels,
+        models: cloudRuntime.providerModels,
       })
       if (!options.providerConfig?.oauth) {
         authStorage.setRuntimeApiKey(LINX_CLOUD_PROVIDER_ID, LINX_RUNTIME_MANAGED_AUTH_KEY)
@@ -336,8 +320,7 @@ export function createLinxRuntimeAdapter(
       ensureLinxPiTheme(context.agentDir)
       ensurePiWebAccessConfig()
       settingsManager.setTheme('linx')
-      const defaultModelId = sanitizeLinxCloudDefaults(settingsManager, requestedModel, providerModels)
-      activeModelId = defaultModelId
+      const defaultModelId = sanitizeLinxCloudDefaults(settingsManager, requestedModel, cloudRuntime.providerModels)
       const bundledSkillsDir = resolveBundledLinxSkillsDir()
       const marketSkillDirs = resolveInstalledMarketSkillDirs()
       const additionalSkillPaths = [
@@ -400,7 +383,7 @@ export function createLinxRuntimeAdapter(
         providerId: LINX_CLOUD_PROVIDER_ID,
         providerLabel: LINX_CLOUD_PROVIDER_LABEL,
         runtimeUrl: baseUrl,
-        shouldPromptLoginOnStart,
+        shouldPromptLoginOnStart: cloudRuntime.shouldPromptLoginOnStart(),
       } satisfies LinxCloudPiAuthBridge
       if (backendCommandRouter) {
         ;(runtime as unknown as Record<string, unknown>).backendCommandRouter = backendCommandRouter
@@ -421,105 +404,6 @@ export function createLinxRuntimeAdapter(
     },
   }
 
-  async function syncProviderModels(authSession: { runtimeFetch: RemoteAuthFetch }, options: { throwAuthExpired?: boolean; refreshOnAuthExpired?: boolean } = {}): Promise<void> {
-    if (!dependencies.listRemoteModels) {
-      return
-    }
-
-    const remoteModels = await listRemoteModelsWithAuthRecovery(authSession.runtimeFetch, options)
-    if (remoteModels.length === 0) {
-      return
-    }
-
-    const mergedModels = mergeLinxCloudProviderModels(remoteModels.map((entry) => ({
-      id: entry.id,
-      contextWindow: entry.contextWindow,
-    })), activeModelId)
-    const nextModels = mergedModels.map((entry) => buildLinxCloudProviderModel(entry))
-    providerModels.splice(0, providerModels.length, ...nextModels)
-
-    if (!requestedModel) {
-      activeModelId = resolvePreferredLinxCloudModelId(nextModels, activeModelId)
-    }
-  }
-
-  async function listRemoteModelsWithAuthRecovery(
-    authFetch: RemoteAuthFetch,
-    recoveryOptions: { throwAuthExpired?: boolean; refreshOnAuthExpired?: boolean },
-  ): Promise<Array<{ id: string; contextWindow?: number }>> {
-    try {
-      return await dependencies.listRemoteModels!(authFetch, baseUrl, { fallback: false, timeoutMs: 5000 })
-    } catch (error) {
-      if (!isAuthExpiredError(error)) {
-        return []
-      }
-
-      if (recoveryOptions.refreshOnAuthExpired) {
-        try {
-          const refreshedAuthFetch = await resolveRefreshedLinxPiCloudAuthFetch()
-          if (refreshedAuthFetch) {
-            return await dependencies.listRemoteModels!(refreshedAuthFetch, baseUrl, { fallback: false, timeoutMs: 5000 })
-          }
-        } catch (retryError) {
-          if (!isAuthExpiredError(retryError)) {
-            return []
-          }
-        }
-      }
-
-      shouldPromptLoginOnStart = true
-      if (recoveryOptions.throwAuthExpired) {
-        throw error
-      }
-      return []
-    }
-  }
-
-  async function completeWithAuthRecovery(
-    authFetch: RemoteAuthFetch,
-    request: {
-      runtimeUrl: string
-      model?: string
-      messages: RemoteChatMessage[]
-      tools?: RemoteChatTool[]
-      signal?: AbortSignal
-    },
-  ): Promise<string | LinxCompletionBackendResult> {
-    try {
-      return await dependencies.createRemoteCompletion!({
-        ...request,
-        authFetch,
-      })
-    } catch (error) {
-      if (!isAuthExpiredError(error)) {
-        throw error
-      }
-
-      const refreshedAuthFetch = await resolveRefreshedLinxPiCloudAuthFetch()
-      if (!refreshedAuthFetch) {
-        throw error
-      }
-
-      return dependencies.createRemoteCompletion!({
-        ...request,
-        authFetch: refreshedAuthFetch,
-      })
-    }
-  }
-
-  async function resolveRefreshedLinxPiCloudAuthFetch(): Promise<RemoteAuthFetch | null> {
-    clearDefaultPodDataSession()
-
-    const storedCredentials = loadCredentials()
-    if (storedCredentials || options.getPodDataSession) {
-      return resolveLinxCloudRuntimeAuthFetch({
-        issuerUrl: options.providerConfig?.issuerUrl,
-        getPodDataSession: options.getPodDataSession,
-      })
-    }
-
-    return null
-  }
 }
 
 /** @deprecated Use LinxRuntimeAdapter. */
@@ -528,6 +412,3 @@ export type PiRuntimeAdapter = LinxRuntimeAdapter
 /** @deprecated Use createLinxRuntimeAdapter. */
 export const createPiRuntimeAdapter = createLinxRuntimeAdapter
 
-function isAuthExpiredError(error: unknown): boolean {
-  return isRemoteAuthExpiredError(error)
-}

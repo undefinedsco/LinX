@@ -1,5 +1,6 @@
 import { createAssistantMessageEventStream, type AssistantMessage, type AssistantMessageEventStream } from '@earendil-works/pi-ai'
-import type { RemoteChatMessage, RemoteChatTool, RemoteChatToolCall } from '../chat-api.js'
+import type { RemoteChatMessage, RemoteChatTool } from '../chat-api.js'
+import type { LinxCompletionBackendResult } from '../linx-completion-backend.js'
 import type { AutoModeNormalizedEvent } from '../auto-mode/types.js'
 import { DEFAULT_LINX_CLOUD_MODEL_ID } from '../default-model.js'
 import { normalizeMisclassifiedCloudCompletionPodTimeoutMessage } from '../linx-cloud-errors.js'
@@ -14,22 +15,7 @@ import {
   LINX_CLOUD_PROVIDER_ID,
 } from '../linx-cloud-models.js'
 
-export interface LinxCompletionBackendResult {
-  content?: string
-  reasoningContent?: string
-  toolCalls?: RemoteChatToolCall[]
-  finishReason?: string | null
-  usage?: {
-    input: number
-    output: number
-    cacheRead: number
-    cacheWrite: number
-    totalTokens: number
-  }
-}
-
-/** @deprecated Use LinxCompletionBackendResult. */
-export type PiCompletionBackendResult = LinxCompletionBackendResult
+export type { LinxCompletionBackendResult, PiCompletionBackendResult } from '../linx-completion-backend.js'
 
 type PiStreamOptions = {
   apiKey?: string

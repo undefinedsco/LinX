@@ -22,8 +22,8 @@ import { resolveRuntimeTarget } from './lib/runtime-target.js'
 import { createCodexNativeProxy, createSymphonyCodexMcpServer } from './lib/codex-plugin/index.js'
 import {
   createLinxRuntimeAdapter,
-  type LinxCompletionBackendResult,
 } from './lib/pi-adapter/index.js'
+import type { LinxCompletionBackendResult } from './lib/linx-completion-backend.js'
 import {
   resolveLinxInteractiveLoginReason,
   resolveLinxStartupLoginPromptDecision,
