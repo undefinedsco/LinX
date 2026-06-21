@@ -6,7 +6,7 @@ import { handleInteractiveStatusLineCommand } from './linx-status-line-command.j
 import { handleInteractiveRewindSelector, handleInteractiveRewindTurnsCommand } from './linx-rewind-command.js'
 import { changeInteractiveCwd, installLinxCwdStartupNotice } from './linx-workspace-command.js'
 import { installLinxAutoEditorIndicator } from './linx-auto-editor-indicator.js'
-import { getSecretaryAutoInputController } from './pi-adapter/auto-input-controller.js'
+import { getSecretaryAutoInputController } from './secretary-auto-input-controller.js'
 import { getSessionControlManager } from './session-control.js'
 
 type ShellCommandOptions = {

@@ -6751,11 +6751,25 @@ test('pod-backed extension ui patch lives in a shell ui module', async (t) => {
   assert.equal(typeof module.installPodBackedExtensionUi, 'function')
 })
 
+test('pod-backed extension ui context lives outside the Pi adapter', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/pod-backed-extension-ui-context.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.createPodBackedExtensionUiContext, 'function')
+})
+
 test('restored auto startup patch lives in a shell startup module', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-restored-auto-startup.ts')
   t.after(() => cleanup())
 
   assert.equal(typeof module.installLinxRestoredAutoStartup, 'function')
+})
+
+test('Secretary auto input controller lives outside the Pi adapter', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/secretary-auto-input-controller.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.getSecretaryAutoInputController, 'function')
 })
 
 test('symphony interactive command patch lives in a shell command module', async (t) => {
