@@ -516,6 +516,19 @@ test('completion result to Pi stream event mapping is kept outside the Pi adapte
   assert.deepEqual(violations, [])
 })
 
+test('backend event source queueing is kept outside the Pi adapter', () => {
+  const source = readFileSync(join(libRoot, 'pi-adapter/stream.ts'), 'utf8')
+  const forbidden = [
+    'function* createBackendEventSource',
+    'const queue: AutoModeNormalizedEvent[]',
+    'backend.subscribe',
+    'backend.sendTurn',
+  ]
+  const violations = forbidden.filter((snippet) => source.includes(snippet))
+
+  assert.deepEqual(violations, [])
+})
+
 test('repository scripts do not import shell/core modules through stale pi-adapter paths', () => {
   const stalePatterns = [
     /dist\/lib\/pi-adapter\/pod-mirror(?:\.js)?/u,

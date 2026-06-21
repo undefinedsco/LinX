@@ -13,6 +13,7 @@ import {
   emitLinxCompletionResultToPiStream,
   resolveLinxPiModelId,
 } from '../linx-pi-completion-events.js'
+import { createLinxBackendEventSource } from '../linx-backend-event-source.js'
 import { formatLinxStreamErrorMessage, isLinxStreamAbortError } from '../linx-stream-error-formatting.js'
 
 export type { LinxCompletionBackendResult } from '../linx-completion-backend.js'
@@ -94,7 +95,7 @@ export function createLinxAgentStreamAdapter(options: LinxAgentStreamAdapterOpti
           return
         }
 
-        const source = options.eventSource?.() ?? (options.backend ? createBackendEventSource(options.backend, prompt) : undefined)
+        const source = options.eventSource?.() ?? (options.backend ? createLinxBackendEventSource(options.backend, prompt) : undefined)
         let text = ''
         let textStarted = false
 
@@ -162,43 +163,4 @@ function createAbortError(): Error {
   const error = new Error('Request was aborted.')
   error.name = 'AbortError'
   return error
-}
-
-async function* createBackendEventSource(
-  backend: {
-    sendTurn(input: string): Promise<void>
-    subscribe(listener: (event: AutoModeNormalizedEvent) => void): () => void
-  },
-  prompt: string,
-): AsyncIterable<AutoModeNormalizedEvent> {
-  const queue: AutoModeNormalizedEvent[] = []
-  let notify: (() => void) | null = null
-  let done = false
-  const unsubscribe = backend.subscribe((event) => {
-    queue.push(event)
-    notify?.()
-    notify = null
-    if (event.type === 'assistant.done') {
-      done = true
-    }
-  })
-
-  try {
-    await backend.sendTurn(prompt)
-    while (!done || queue.length > 0) {
-      if (queue.length === 0) {
-        await new Promise<void>((resolve) => {
-          notify = resolve
-        })
-        continue
-      }
-
-      const event = queue.shift()
-      if (event) {
-        yield event
-      }
-    }
-  } finally {
-    unsubscribe()
-  }
 }
