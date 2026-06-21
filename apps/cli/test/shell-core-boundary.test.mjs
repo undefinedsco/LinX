@@ -336,3 +336,25 @@ test('interactive command routing patch state is kept behind the shell command r
 
   assert.deepEqual(violations, [])
 })
+
+test('auto editor indicator patch state is kept behind the shell rendering host', () => {
+  const allowed = new Set([
+    'linx-auto-editor-indicator-host.ts',
+  ])
+  const violations = []
+  const directAutoIndicatorPatchPattern = /__linx(?:AutoEditorIndicatorInstalled|AutoEditorIndicatorRenderInstalled)\b/
+
+  for (const file of listSourceFiles(libRoot)) {
+    const relativePath = relative(libRoot, file)
+    if (relativePath.startsWith(adapterSegment) || allowed.has(relativePath)) {
+      continue
+    }
+
+    const source = readFileSync(file, 'utf8')
+    if (directAutoIndicatorPatchPattern.test(source)) {
+      violations.push(relativePath)
+    }
+  }
+
+  assert.deepEqual(violations, [])
+})

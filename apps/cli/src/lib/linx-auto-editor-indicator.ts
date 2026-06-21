@@ -1,10 +1,16 @@
 import { truncateToWidth, visibleWidth } from '@earendil-works/pi-tui'
 import { isLinxInteractiveAutoModeEnabled } from './linx-interactive-shell-state.js'
+import {
+  isAutoEditorIndicatorInstalled,
+  isAutoEditorIndicatorRenderInstalled,
+  markAutoEditorIndicatorInstalled,
+  markAutoEditorIndicatorRenderInstalled,
+} from './linx-auto-editor-indicator-host.js'
 
 const AUTO_EDITOR_INDICATOR_LABEL = ' 托管中 · Secretary 自动输入 · Ctrl+C 接管 · /auto off '
 
 export function installLinxAutoEditorIndicator(interactive: any): void {
-  if (!interactive || interactive.__linxAutoEditorIndicatorInstalled) {
+  if (!interactive || isAutoEditorIndicatorInstalled(interactive)) {
     return
   }
 
@@ -25,7 +31,7 @@ export function installLinxAutoEditorIndicator(interactive: any): void {
     }
   }
 
-  interactive.__linxAutoEditorIndicatorInstalled = true
+  markAutoEditorIndicatorInstalled(interactive)
 }
 
 export function buildLinxAutoEditorIndicatorLine(width: number): string {
@@ -39,7 +45,7 @@ export function buildLinxAutoEditorIndicatorLine(width: number): string {
 }
 
 function decorateLinxAutoEditorRender(editor: any, interactive: any): void {
-  if (!editor || editor.__linxAutoEditorIndicatorRenderInstalled || typeof editor.render !== 'function') {
+  if (!editor || isAutoEditorIndicatorRenderInstalled(editor) || typeof editor.render !== 'function') {
     return
   }
 
@@ -51,7 +57,7 @@ function decorateLinxAutoEditorRender(editor: any, interactive: any): void {
     }
     return decorateLinxAutoEditorLines(lines, width)
   }
-  editor.__linxAutoEditorIndicatorRenderInstalled = true
+  markAutoEditorIndicatorRenderInstalled(editor)
 }
 
 function decorateLinxAutoEditorLines(lines: string[], width: number): string[] {
