@@ -62,6 +62,16 @@ test('LinX cloud model catalog helper lives outside the Pi adapter', async (t) =
   assert.equal(typeof module.sanitizeLinxCloudDefaults, 'function')
 })
 
+test('LinX runtime resource helper lives outside the Pi adapter', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-runtime-resources.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.resolveBundledLinxSkillsDir, 'function')
+  assert.equal(typeof module.resolveInstalledMarketSkillDirs, 'function')
+  assert.equal(typeof module.resolveBundledPiPackageRoot, 'function')
+  assert.equal(typeof module.withLinxSkillSourceInfo, 'function')
+})
+
 test('linx startup login prompt decision covers the auth state matrix', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
   t.after(() => cleanup())
@@ -660,7 +670,9 @@ test('pi runtime adapter exposes bundled LinX skills during initial resource loa
 
 test('pi runtime adapter prefers bundled xpod-cli skill over installed market skill', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
+  const { module: resourceModule, cleanup: cleanupResources } = await loadAutoModeModule('lib/linx-runtime-resources.ts')
   t.after(() => cleanup())
+  t.after(() => cleanupResources())
 
   const { SessionManager } = await import('@earendil-works/pi-coding-agent')
   const cwd = mkdtempSync(join(tmpdir(), 'linx-pi-runtime-xpod-market-skill-'))
@@ -723,7 +735,7 @@ description: Xpod CLI Market Skill
   })
 
   try {
-    assert.deepEqual(module.resolveInstalledMarketSkillDirs(), [skillDir])
+    assert.deepEqual(resourceModule.resolveInstalledMarketSkillDirs(), [skillDir])
     const skills = runtime.session.resourceLoader.getSkills().skills
     const xpodSkills = skills.filter((skill) => skill.name === 'xpod-cli')
     assert.equal(xpodSkills.length, 1, 'expected bundled xpod-cli to de-duplicate market fallback')
@@ -736,7 +748,7 @@ description: Xpod CLI Market Skill
 })
 
 test('pi runtime adapter prefers vendored pi-web-access packages when bundled', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-runtime-resources.ts')
   t.after(() => cleanup())
 
   const bundleRoot = mkdtempSync(join(tmpdir(), 'linx-pi-vendor-root-'))
