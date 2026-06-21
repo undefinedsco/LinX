@@ -139,6 +139,37 @@ test('native backend command router helper lives outside the Pi adapter', async 
   assert.equal(typeof module.createNativeBackendCommandRouter, 'function')
 })
 
+test('native backend stream backend helper lives outside the Pi adapter', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/native-backend-stream-backend.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.createNativeBackendStreamBackend, 'function')
+  const calls = []
+  const listeners = []
+  const proxy = {
+    id: 'proxy-1',
+    async sendTurn(input) {
+      calls.push([this.id, input])
+    },
+    subscribe(listener) {
+      listeners.push([this.id, listener])
+      return () => calls.push([this.id, 'unsubscribed'])
+    },
+  }
+
+  const backend = module.createNativeBackendStreamBackend(proxy)
+  await backend.sendTurn('hello')
+  const unsubscribe = backend.subscribe(() => {})
+  unsubscribe()
+
+  assert.deepEqual(calls, [
+    ['proxy-1', 'hello'],
+    ['proxy-1', 'unsubscribed'],
+  ])
+  assert.equal(listeners.length, 1)
+  assert.equal(listeners[0][0], 'proxy-1')
+})
+
 test('LinX runtime AgentSession composition helper lives outside the Pi adapter', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-runtime-agent-session.ts')
   t.after(() => cleanup())
