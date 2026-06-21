@@ -62,7 +62,7 @@ dist/assets/index-Br5i8mvO.js   182.42 kB │ gzip: 55.98 kB
 rg -- "#[0-9a-fA-F]{3,6}|rgba\\(|rgb\\(" apps/prototype/src/prototype.css
 ```
 
-结果：无匹配。原型 CSS 不再包含硬编码 `#hex / rgb() / rgba()` 颜色，局部 `--proto-*` 只作为 `hsl(var(--foreground))`、`hsl(var(--primary))`、`hsl(var(--warm-amber))` 等全局 token 的语义别名。
+结果：无匹配。原型 CSS 不再包含硬编码 `#hex / rgb() / rgba()` 颜色，局部 `--proto-*` 只作为 `hsl(var(--foreground))`、`hsl(var(--primary))` 等全局 token 的语义别名。
 
 ## 截图证据
 
@@ -135,8 +135,8 @@ Playwright 同步断言：
   "verdict": "pass",
   "category_match": true,
   "differences": [
-    "实现版没有像素复制参考图，但保留了紧凑桌面密度、四栏结构和 warm guardian 的柔和界面气质。",
-    "颜色已切回 LinX 全局 token：主操作使用 --primary，温暖点缀使用 --warm-amber，背景/卡片/边框使用 shadcn/global layout token。",
+    "实现版没有像素复制参考图，但保留了紧凑桌面密度、四栏结构和克制的桌面工作台气质。",
+    "颜色已切回 LinX 全局 token：主操作使用 --primary，背景/卡片/边框使用 shadcn/global layout token。",
     "Chat 默认进入 AI Secretary，会话列表、聊天流、输入区和右侧上下文都围绕继续工作展开。",
     "Contacts 是联系人名片和共享上下文，不是 Agent 配置页。",
     "Files 使用位置/容器树、文件表格和 resource inspector，符合 Finder/Pod 浏览心智。",

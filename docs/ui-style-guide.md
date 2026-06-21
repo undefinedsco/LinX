@@ -1,165 +1,223 @@
 # UI Style Guide
 
-## Design Philosophy
+## Design philosophy
 
-LinX 的设计理念是「温暖守护者」—— 作为用户的 AI 秘书，界面需要传达**可信赖、温暖、有陪伴感**的情感，而不是冰冷的工具感。
+LinX uses a **macOS-native visual discipline** on top of a **desktop messaging interaction structure**.
 
-### v2 设计原则
+The product should feel like a quiet, capable workspace: chat-first, low cognitive load, clear storage/runtime state, and restrained visual chrome. The interface borrows from familiar desktop chat products for structure, but the visual system should stay neutral, precise, and platform-native rather than decorative.
 
-1. **实色优先** - 使用实色背景而非半透明/玻璃态，更简洁、性能更好
-2. **柔和阴影** - 使用自然的中性阴影，而非彩色阴影
-3. **暖色点缀** - 紫色品牌色搭配琥珀/橙色暖色调
-4. **大圆角** - 传达友好、无攻击性的感觉
-5. **舒适间距** - 足够的留白带来呼吸感
+### Core principles
 
-## Color Palette
+1. **Neutral foundation** — app chrome, panels, cards, and lists are built from neutral surfaces and text hierarchy.
+2. **Sparse accent** — LinX purple is reserved for primary action, selection, focus, and key brand moments.
+3. **Border-led structure** — use borders, dividers, spacing, and surface steps before shadows.
+4. **Purposeful radius** — radius follows component role; dense rows stay compact, cards/dialogs get moderate rounding, pills are used only where the shape has semantic value.
+5. **Native typography** — use system fonts and measured weight steps; avoid marketing-sized type inside workflow chrome.
+6. **Functional motion** — motion explains state changes; it should not become decoration.
 
-### Primary (Brand Purple)
-- `#5B21B6` - Deep purple (--purple-deep)
-- `#7C3AED` - Medium purple (--purple-medium, --primary)
-- `#C084FC` - Light purple (--purple-light)
+## Color roles
 
-### Warm Accents (温暖点缀)
-- `#F59E0B` - Amber (--warm-amber) - 用于成功、重要提示
-- `#F97316` - Orange (--warm-orange) - 用于次要强调
-- `#EAB308` - Yellow (--warm-yellow) - 用于警告
-- `#FBF9F7` - Cream (--warm-cream) - 亮色模式下的暖白背景
+### Brand accent
 
-### Success States
-- `#22C55E` - Emerald (--success) - 标准成功色
-- `#84CC16` - Lime (--success-warm) - 暖色成功色
+- Primary accent: existing LinX purple token (`--primary`) for decisive actions, selected state, focus, and brand anchors.
+- Accent usage must be sparse. If many things are purple, nothing is primary.
+- Do not use colored glow or colored shadow as a default accent treatment.
 
-### Neutrals
-- `#09090b` - Darkest background (dark mode)
-- `#18181b` - Card background (dark mode)
-- `#27272a` - Muted areas (dark mode)
-- `#3f3f46` - Borders (dark mode)
+### Neutral surfaces
 
-## Shadows
+Use existing semantic tokens first:
 
-### 柔和阴影原则
+- `--background` — app background.
+- `--foreground` — primary text.
+- `--card` / `--card-foreground` — panel and card surfaces.
+- `--muted` / `--muted-foreground` — secondary surfaces and supporting text.
+- `--border` / `--input` — separators, input outlines, panel boundaries.
 
-使用中性黑色阴影而非彩色阴影，更自然、更通用：
+Recommended surface hierarchy:
 
-```css
-/* 小阴影 - 按钮、输入框 */
-shadow-md shadow-black/5
+| Level | Role | Treatment |
+| --- | --- | --- |
+| 0 | App canvas | Flat background |
+| 1 | Sidebar/list pane | Slight surface shift or border separation |
+| 2 | Content panel/card | Card surface + subtle border |
+| 3 | Dialog/popover | Card surface + stronger border + shallow shadow |
 
-/* 中阴影 - 卡片 */
-shadow-lg shadow-black/5
+### Semantic states
 
-/* 大阴影 - 弹窗、悬浮层 */
-shadow-xl shadow-black/10
-```
-
-**避免使用：**
-- `shadow-[0_20px_60px_-12px_rgba(124,58,237,0.2)]` - 紫色阴影过于强烈
-- `backdrop-blur-md` - 玻璃态效果与"温暖"理念不符
-
-## Border Radius
-
-温暖感通过大圆角传达：
-
-| 用途 | 圆角值 | Tailwind 类 |
-|------|--------|-------------|
-| 小按钮/标签 | 8px | `rounded-lg` |
-| 输入框/中等组件 | 12px | `rounded-xl` |
-| 卡片/弹窗 | 16-24px | `rounded-2xl` |
-| 大型容器 | 28px | `rounded-3xl` |
+- Success, warning, destructive, and info colors are for state meaning only.
+- Keep semantic fills low-saturation unless the state is blocking or destructive.
+- Always pair color with text or icon shape; do not rely on color alone.
 
 ## Typography
 
-- Font family: Inter (or system sans fallback)
-- Heading weight: 600
-- Body weight: 400
-- Line height: >= 1.5
+- Font family: `-apple-system`, `BlinkMacSystemFont`, `SF Pro Text`, `Inter`, `Segoe UI`, `sans-serif`.
+- Heading weight: 600.
+- Control weight: 500.
+- Body weight: 400.
+- Body line height: at least 1.45 for readable content; dense list metadata may be tighter if still legible.
+
+Recommended desktop roles:
+
+| Role | Size | Weight | Usage |
+| --- | --- | --- | --- |
+| Page title | 20-24px | 600 | Settings/detail page title |
+| Section title | 15-17px | 600 | Group headers, cards |
+| Body | 14-15px | 400 | Normal text |
+| Control | 13-14px | 500 | Buttons, tabs, field labels |
+| Metadata | 12-13px | 400/500 | Timestamps, secondary labels |
+
+## Layout and spacing
+
+- Base rhythm: 4px/8px increments.
+- Desktop shell should prioritize scan speed: stable columns, predictable row heights, consistent gutters.
+- Chat/list layouts may be dense; onboarding, login, and destructive actions need more breathing room.
+- Advanced settings belong behind explicit settings surfaces, not in the primary login path.
+
+## Shape and radius
+
+Radius is tiered by function:
+
+| Component | Radius guidance |
+| --- | --- |
+| Dense list rows | 0-8px depending on selection treatment |
+| Buttons / inputs | 8-12px |
+| Cards / panels | 12-16px |
+| Dialogs / sheets | 16-20px |
+| Chips / badges / compact status | Pill only when the compact capsule communicates grouping/status |
+
+Do not use a single large radius everywhere as a brand marker.
+
+## Elevation and shadows
+
+Use the lightest treatment that separates layers:
+
+```css
+/* Panel/card default */
+border: 1px solid hsl(var(--border));
+box-shadow: none;
+
+/* Floating popover/dialog */
+box-shadow: 0 12px 32px rgba(0, 0, 0, 0.10);
+
+/* Press/hover response */
+transform: none or translateY(-1px) only where it improves affordance;
+```
+
+Avoid:
+
+- colored shadows;
+- glow effects;
+- broad decorative gradients;
+- heavy stacked shadows for normal cards;
+- default glass/blur effects in workflow chrome.
+
+## Component patterns
+
+### Surface panel
+
+```css
+.surface-panel {
+  @apply bg-card text-card-foreground border border-border rounded-xl;
+}
+```
+
+### Primary action
+
+```css
+.primary-action {
+  @apply bg-primary text-primary-foreground rounded-lg h-9 px-4 font-medium;
+  @apply transition-colors duration-150;
+}
+```
+
+### Input field
+
+```css
+.input-field {
+  @apply bg-background border border-input rounded-lg px-3 py-2;
+  @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35;
+}
+```
+
+### Status badge
+
+```css
+.status-badge {
+  @apply inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium;
+}
+```
+
+### Selection row
+
+```css
+.selection-row {
+  @apply flex items-center gap-3 border-b border-border px-3 py-2;
+  @apply hover:bg-muted/60;
+}
+
+.selection-row[data-selected="true"] {
+  @apply bg-primary/10 text-foreground;
+}
+```
 
 ## Motion
 
-- Transitions: 200ms (比之前的 300ms 更快捷，但仍然柔和)
-- Hover fades: 150-200ms
-- Easing: `ease-out` 或默认
-- Entry animations: `slide-in-from-top-2 + fade-in`
+- Default transition: 120-180ms.
+- Use `ease-out` for entry and hover response.
+- Avoid slow decorative transitions in chat and login flows.
+- Respect reduced motion; no essential meaning should depend on animation.
 
-## Component Classes
+## Iconography and badges
 
-### 温暖卡片
-```css
-.warm-card {
-  @apply bg-card border border-border/50 rounded-2xl;
-  @apply shadow-lg shadow-black/5;
-  @apply transition-all duration-200;
-}
-```
+- Use line icons with consistent stroke and size.
+- Icon-only actions need accessible labels.
+- Cloud, Local, and Standalone need distinct badges/marks, but the mark should not dominate the row.
+- Prefer dot/check/cross plus text for reachability and runtime state.
 
-### 温暖按钮
-```css
-.btn-warm {
-  @apply rounded-2xl h-12 px-6;
-  @apply bg-primary text-primary-foreground;
-  @apply shadow-md shadow-primary/20;
-  @apply transition-all duration-200;
-  @apply hover:shadow-lg hover:-translate-y-0.5;
-}
-```
+## Copy guidelines
 
-### 温暖输入框
-```css
-.input-warm {
-  @apply rounded-xl border border-border/60 bg-muted/50;
-  @apply transition-all duration-200;
-  @apply focus:bg-background focus:border-primary/50;
-}
-```
+Use concise operational copy:
 
-### 顶部装饰条
-```css
-.top-accent {
-  @apply absolute top-0 left-0 right-0 h-1 rounded-t-2xl;
-  background: linear-gradient(90deg,
-    hsl(var(--purple-medium)),
-    hsl(var(--warm-amber))
-  );
-}
-```
+| Avoid | Prefer |
+| --- | --- |
+| “出了点小问题” | “无法连接这个空间。” |
+| “正在连接你的空间...” | “正在连接 Local 服务...” |
+| “完成了！” | “已创建 Pod。” |
+| “使用其他账号” when changing storage | “切换空间” / “返回选择空间” |
+| Generic “准备中” | Specific step: “正在验证身份”, “正在创建 Pod”, “正在初始化 Secretary” |
 
-### 暖色徽章
-```css
-.badge-warm {
-  @apply rounded-full px-3 py-1;
-  @apply bg-amber-100 text-amber-700;
-  @apply dark:bg-amber-900/30 dark:text-amber-400;
-}
-```
+Rules:
 
-## Copy Guidelines
+- Explain what is happening, where data goes, and what the next action is.
+- Do not soften technical failures so much that the user cannot act.
+- Keep advanced terms in settings/diagnostics unless the current flow requires them.
 
-使用温暖、友好的文案：
+## Migration guidance
 
-| 避免 | 推荐 |
-|------|------|
-| 登录 | 欢迎回来 / 进入空间 |
-| 切换账号 | 使用其他账号 |
-| 正在连接 Pod... | 正在连接你的空间... |
-| 取消登录 | 取消 |
-| 错误 | 出了点小问题 |
-| 成功 | 完成了！ |
+Earlier UI code and comments may still contain an emotion-led style vocabulary. Treat those names and comments as legacy implementation details, not current design direction.
 
-## Migration from v1
+When touching UI code:
 
-### 已移除的元素
-- `backdrop-blur-md` / `backdrop-blur-sm` - 玻璃态效果
-- `bg-card/95` - 半透明背景
-- `shadow-[...rgba(124,58,237,...)]` - 紫色阴影
+1. Keep behavior stable first.
+2. Prefer neutral `surface` / `panel` / `action` / `status` naming for new work.
+3. Replace decorative accent, heavy shadow, and broad rounding with the rules above.
+4. Update comments that describe old brand language near the changed code.
+5. Do not introduce a second component library to accomplish this migration.
 
-### 替换映射
-| v1 | v2 |
-|----|-----|
-| `bg-card/95 backdrop-blur-md` | `bg-card` |
-| `shadow-[0_20px_60px_-12px_rgba(124,58,237,0.2)]` | `shadow-lg shadow-black/5` |
-| `border-border/30` | `border-border/50` |
+## Do / Don't
 
-### 保留的元素
-- 大圆角 (`rounded-2xl`, `rounded-3xl`)
-- 紫色品牌色
-- 平滑过渡动画
+### Do
+
+- Use neutral surfaces and subtle borders for structure.
+- Reserve purple for primary, selected, and focus semantics.
+- Show provider/storage/runtime state explicitly.
+- Keep chat-first workflows compact and scannable.
+- Use screenshots for visual verification on desktop changes.
+
+### Don't
+
+- Do not make WeChat visual skin the design target.
+- Do not copy Apple assets, names, or brand identity.
+- Do not introduce broad secondary accent palettes.
+- Do not use emoji as the primary status system.
+- Do not expose advanced Local networking setup in the main login path.
