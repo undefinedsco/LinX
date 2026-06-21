@@ -4,6 +4,7 @@ import {
   isLinxInteractiveAutoModeEnabled,
   setLinxInteractiveAutoModeEnabled,
 } from './linx-interactive-shell-state.js'
+import { getLinxPodMirrorForRuntime } from './linx-pod-mirror-runtime-host.js'
 
 export async function handleInteractiveRewindSelector(interactive: any, runtime: any): Promise<void> {
   const session = resolveInteractiveSession(interactive, runtime)
@@ -340,7 +341,7 @@ async function syncRewindProjection(
     interactive.showWarning?.(`Clean rewind history materialization skipped: ${input.cleanResult.warning}`)
   }
 
-  const mirror = runtime?.__linxPodMirror ?? interactive?.__linxPodMirror
+  const mirror = getLinxPodMirrorForRuntime(runtime) ?? getLinxPodMirrorForRuntime(interactive?.runtime)
   if (!mirror || typeof mirror.syncRewindProjection !== 'function') {
     return
   }

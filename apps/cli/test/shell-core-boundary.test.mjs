@@ -175,3 +175,25 @@ test('auto interactive runtime state is centralized in the shell state module', 
 
   assert.deepEqual(violations, [])
 })
+
+test('Pod mirror runtime handle is centralized in the Pod mirror host module', () => {
+  const allowed = new Set([
+    'linx-pod-mirror-runtime-host.ts',
+  ])
+  const violations = []
+  const directPodMirrorHandlePattern = /__linxPodMirror\b/
+
+  for (const file of listSourceFiles(libRoot)) {
+    const relativePath = relative(libRoot, file)
+    if (relativePath.startsWith(adapterSegment) || allowed.has(relativePath)) {
+      continue
+    }
+
+    const source = readFileSync(file, 'utf8')
+    if (directPodMirrorHandlePattern.test(source)) {
+      violations.push(relativePath)
+    }
+  }
+
+  assert.deepEqual(violations, [])
+})

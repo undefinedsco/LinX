@@ -159,6 +159,10 @@ Current shell-state rules:
   worker credential source, worker model, worker supervisor interval, status
   timeout, testable `run/list` hooks, dispatch promises, and dispatch abort
   controllers.
+- Pod mirror runtime handles belong in `linx-pod-mirror-runtime-host.ts`.
+  Rewind and other shell modules may ask the host module for the active mirror,
+  but must not read or write mirror handles through `runtime.__linx*` or
+  `interactive.__linx*` fields.
 - Direct `interactive.__linx*` fields may be added only when they are local
   install sentinels or upstream original-method references that cannot be held
   anywhere else. New exceptions need a boundary test in

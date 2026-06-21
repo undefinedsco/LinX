@@ -28,6 +28,14 @@ export interface LinxPodMirrorRuntimeHost {
   close(): Promise<void>
 }
 
+const runtimePodMirrors = new WeakMap<object, LinxPiPodMirror>()
+
+export function getLinxPodMirrorForRuntime(runtime: unknown): LinxPiPodMirror | undefined {
+  return runtime && typeof runtime === 'object'
+    ? runtimePodMirrors.get(runtime)
+    : undefined
+}
+
 export function createLinxPodMirrorRuntimeHost(options: LinxPodMirrorRuntimeHostOptions): LinxPodMirrorRuntimeHost {
   const podMirror = new LinxPiPodMirror({
     cwd: options.cwd,
@@ -44,8 +52,8 @@ export function createLinxPodMirrorRuntimeHost(options: LinxPodMirrorRuntimeHost
       }
     },
   })
-  const runtimeBridge = options.runtime as AgentSessionRuntime & LinxPodMirrorHostedRuntime & Record<string, unknown>
-  ;(runtimeBridge as { __linxPodMirror?: LinxPiPodMirror }).__linxPodMirror = podMirror
+  const runtimeBridge = options.runtime as AgentSessionRuntime & LinxPodMirrorHostedRuntime
+  runtimePodMirrors.set(runtimeBridge, podMirror)
   const unsubscribePodMirror = runtimeBridge.session.subscribe((event: unknown) => {
     podMirror.handleEvent(event)
   })
@@ -59,6 +67,7 @@ export function createLinxPodMirrorRuntimeHost(options: LinxPodMirrorRuntimeHost
       void podMirror.syncSymphonyControlState(enabled)
     },
     async close(): Promise<void> {
+      runtimePodMirrors.delete(runtimeBridge)
       unsubscribePodMirror()
       await podMirror.close().catch(() => undefined)
     },
