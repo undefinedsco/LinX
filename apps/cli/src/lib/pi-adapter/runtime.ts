@@ -1,6 +1,6 @@
 import { createLinxAgentStreamAdapter, type LinxAgentStreamAdapter, type LinxCompletionBackendResult } from './stream.js'
 import { ensureBrowserConsentLogin, isOidcLoginExpiredError, isOidcTransientRemoteError } from '../oidc-auth.js'
-import { DEFAULT_LINX_CLOUD_MODEL_ID, FALLBACK_LINX_CLOUD_MODEL_IDS, resolvePreferredLinxCloudModelId } from '../default-model.js'
+import { DEFAULT_LINX_CLOUD_MODEL_ID, resolvePreferredLinxCloudModelId } from '../default-model.js'
 import { ensureLinxPiTheme } from '../linx-theme.js'
 import {
   type BashOperations,
@@ -31,10 +31,16 @@ import { loadCredentials } from '../credentials-store.js'
 import { getSolidLinxAppDir, getSolidLinxPiWebAccessConfigPath } from '../solid-local-store.js'
 import { createLinxBearerAuthFetch, resolveLinxCloudRuntimeAuthFetch, resolveRuntimeAuthFetchFromApiKey } from '../linx-cloud-runtime-auth.js'
 import { LINX_RUNTIME_MANAGED_AUTH_KEY } from '../linx-runtime-auth.js'
+import {
+  LINX_CLOUD_PROVIDER_API,
+  LINX_CLOUD_PROVIDER_ID,
+  LINX_CLOUD_PROVIDER_LABEL,
+  buildFallbackLinxCloudProviderModels,
+  buildLinxCloudProviderModel,
+  mergeLinxCloudProviderModels,
+  sanitizeLinxCloudDefaults,
+} from '../linx-cloud-models.js'
 
-const UNDEFINEDS_PROVIDER_ID = 'undefineds'
-const UNDEFINEDS_PROVIDER_LABEL = 'LinX Cloud'
-const UNDEFINEDS_PROVIDER_API = 'linx-cloud-chat-completions'
 const UNDEFINEDS_SESSION_ID = 'undefineds_pi_frontend'
 const UNDEFINEDS_AUTH_BRIDGE_ID = 'undefineds-cloud-oauth-bridge'
 const LINX_PACKAGE_SOURCE = '@undefineds.co/linx'
@@ -42,7 +48,6 @@ const LINX_WEB_ACCESS_PACKAGE_SOURCE = 'pi-web-access'
 const LINX_PRODUCT_SKILL_NAMES = new Set(['symphony', 'xpod-cli'])
 const MARKET_XPOD_CLI_SKILL_SOURCE = 'xpod-cli@undefineds'
 export const DEFAULT_LINX_PI_BASH_TIMEOUT_SECONDS = 15
-const DEFAULT_LINX_CLOUD_CONTEXT_WINDOW = 1_000_000
 
 export interface LinxRuntimeAdapterDependencies {
   createNativeProxy?: (options?: {
@@ -256,7 +261,7 @@ export function createLinxRuntimeAdapter(
       supportsDeveloperRole: false
       supportsStrictMode: false
     }
-  }> = buildFallbackProviderModels(activeModelId)
+  }> = buildFallbackLinxCloudProviderModels(activeModelId)
   const proxy = backendMode === 'native'
     ? dependencies.createNativeProxy?.({
       cwd,
@@ -351,7 +356,7 @@ export function createLinxRuntimeAdapter(
       const modelRegistry = ModelRegistry.inMemory(authStorage)
       const originalIsUsingOAuth = modelRegistry.isUsingOAuth.bind(modelRegistry)
       modelRegistry.isUsingOAuth = (model) => (
-        model.provider === UNDEFINEDS_PROVIDER_ID ? false : originalIsUsingOAuth(model)
+        model.provider === LINX_CLOUD_PROVIDER_ID ? false : originalIsUsingOAuth(model)
       )
       const linxOAuthProvider = options.providerConfig?.oauth ?? {
         name: 'LinX Cloud',
@@ -426,8 +431,8 @@ export function createLinxRuntimeAdapter(
       } else if (explicitOAuthCredential?.access) {
         await syncProviderModels({ runtimeFetch: createLinxBearerAuthFetch(explicitOAuthCredential.access) })
       }
-      modelRegistry.registerProvider(UNDEFINEDS_PROVIDER_ID, {
-        api: UNDEFINEDS_PROVIDER_API,
+      modelRegistry.registerProvider(LINX_CLOUD_PROVIDER_ID, {
+        api: LINX_CLOUD_PROVIDER_API,
         baseUrl,
         apiKey: '$LINX_RUNTIME_AUTH',
         oauth: linxOAuthProvider,
@@ -436,10 +441,10 @@ export function createLinxRuntimeAdapter(
         models: providerModels,
       })
       if (!options.providerConfig?.oauth) {
-        authStorage.setRuntimeApiKey(UNDEFINEDS_PROVIDER_ID, LINX_RUNTIME_MANAGED_AUTH_KEY)
+        authStorage.setRuntimeApiKey(LINX_CLOUD_PROVIDER_ID, LINX_RUNTIME_MANAGED_AUTH_KEY)
       }
       if (options.providerConfig?.oauth && explicitOAuthCredential) {
-        authStorage.set(UNDEFINEDS_PROVIDER_ID, { type: 'oauth', ...explicitOAuthCredential })
+        authStorage.set(LINX_CLOUD_PROVIDER_ID, { type: 'oauth', ...explicitOAuthCredential })
       }
 
       const settingsManager = SettingsManager.create(context.cwd, context.agentDir)
@@ -474,8 +479,8 @@ export function createLinxRuntimeAdapter(
           systemPromptOverride: overrideLinxSystemPrompt,
         },
       })
-      const selectedModel = modelRegistry.find(UNDEFINEDS_PROVIDER_ID, defaultModelId)
-        ?? modelRegistry.getAvailable().find((candidate) => candidate.provider === UNDEFINEDS_PROVIDER_ID)
+      const selectedModel = modelRegistry.find(LINX_CLOUD_PROVIDER_ID, defaultModelId)
+        ?? modelRegistry.getAvailable().find((candidate) => candidate.provider === LINX_CLOUD_PROVIDER_ID)
       if (!selectedModel) {
         throw new Error('Failed to resolve undefineds model from the LinX runtime adapter')
       }
@@ -507,8 +512,8 @@ export function createLinxRuntimeAdapter(
       ;(runtime as unknown as Record<string, unknown>).symphonyEnabled = options.symphonyEnabled === true
       ;(runtime as unknown as Record<string, unknown>).linxAuthBridge = {
         description: UNDEFINEDS_AUTH_BRIDGE_ID,
-        providerId: UNDEFINEDS_PROVIDER_ID,
-        providerLabel: UNDEFINEDS_PROVIDER_LABEL,
+        providerId: LINX_CLOUD_PROVIDER_ID,
+        providerLabel: LINX_CLOUD_PROVIDER_LABEL,
         runtimeUrl: baseUrl,
         shouldPromptLoginOnStart,
       } satisfies LinxCloudPiAuthBridge
@@ -541,11 +546,11 @@ export function createLinxRuntimeAdapter(
       return
     }
 
-    const mergedModels = mergeLinxProviderModels(remoteModels.map((entry) => ({
+    const mergedModels = mergeLinxCloudProviderModels(remoteModels.map((entry) => ({
       id: entry.id,
       contextWindow: entry.contextWindow,
     })), activeModelId)
-    const nextModels = mergedModels.map((entry) => buildProviderModel(entry))
+    const nextModels = mergedModels.map((entry) => buildLinxCloudProviderModel(entry))
     providerModels.splice(0, providerModels.length, ...nextModels)
 
     if (!requestedModel) {
@@ -830,7 +835,7 @@ function enableLinxXhighThinking(session: {
   const originalGetAvailableThinkingLevels = session.getAvailableThinkingLevels?.bind(session)
 
   session.supportsXhighThinking = () => (
-    session.model?.provider === UNDEFINEDS_PROVIDER_ID && session.model.reasoning
+    session.model?.provider === LINX_CLOUD_PROVIDER_ID && session.model.reasoning
       ? (session.getAvailableThinkingLevels?.().includes('xhigh') ?? true)
       : (originalSupportsXhighThinking?.() ?? false)
   )
@@ -838,7 +843,7 @@ function enableLinxXhighThinking(session: {
   if (originalGetAvailableThinkingLevels) {
     session.getAvailableThinkingLevels = () => {
       const levels = originalGetAvailableThinkingLevels()
-      if (session.model?.provider === UNDEFINEDS_PROVIDER_ID && session.model.reasoning && !levels.includes('xhigh')) {
+      if (session.model?.provider === LINX_CLOUD_PROVIDER_ID && session.model.reasoning && !levels.includes('xhigh')) {
         return [...levels, 'xhigh']
       }
       return levels
@@ -873,114 +878,6 @@ export function createLinxPiCodingTools(cwd: string, options: {
 
 function isAuthExpiredError(error: unknown): boolean {
   return isRemoteAuthExpiredError(error)
-}
-
-function sanitizeLinxCloudDefaults(
-  settingsManager: SettingsManager,
-  requestedModel: string | undefined,
-  providerModels: Array<{ id: string }>,
-): string {
-  const availableModelIds = new Set(providerModels.map((model) => model.id))
-  const savedProvider = settingsManager.getDefaultProvider()
-  const savedModel = settingsManager.getDefaultModel()
-  const savedLinxModel = savedProvider === UNDEFINEDS_PROVIDER_ID && savedModel && availableModelIds.has(savedModel)
-    ? savedModel
-    : undefined
-  const nextModel = requestedModel || savedLinxModel || DEFAULT_LINX_CLOUD_MODEL_ID
-
-  if (savedProvider !== UNDEFINEDS_PROVIDER_ID || savedModel !== nextModel) {
-    settingsManager.setDefaultModelAndProvider(UNDEFINEDS_PROVIDER_ID, nextModel)
-  }
-
-  return nextModel
-}
-
-function buildProviderModel(input: {
-  id: string
-  contextWindow: number
-}): {
-  id: string
-  name: string
-  api: Api
-  reasoning: boolean
-  thinkingLevelMap: {
-    xhigh: 'xhigh'
-  }
-  input: ['text']
-  cost: {
-    input: number
-    output: number
-    cacheRead: number
-    cacheWrite: number
-  }
-  contextWindow: number
-  maxTokens: number
-  compat: {
-    supportsStore: false
-    supportsDeveloperRole: false
-    supportsStrictMode: false
-  }
-} {
-  return {
-    id: input.id,
-    name: input.id,
-    api: UNDEFINEDS_PROVIDER_API,
-    reasoning: true,
-    thinkingLevelMap: {
-      xhigh: 'xhigh',
-    },
-    input: ['text'],
-    cost: {
-      input: 0,
-      output: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-    },
-    contextWindow: input.contextWindow,
-    maxTokens: 64_000,
-    compat: {
-      supportsStore: false,
-      supportsDeveloperRole: false,
-      supportsStrictMode: false,
-    },
-  }
-}
-
-function buildFallbackProviderModels(activeModelId: string): ReturnType<typeof buildProviderModel>[] {
-  return mergeLinxProviderModels([], activeModelId).map((entry) => buildProviderModel(entry))
-}
-
-function mergeLinxProviderModels(
-  models: Array<{ id: string; contextWindow?: number }>,
-  activeModelId: string,
-): Array<{ id: string; contextWindow: number }> {
-  const byId = new Map<string, { id: string; contextWindow: number }>()
-  for (const id of [
-    ...FALLBACK_LINX_CLOUD_MODEL_IDS,
-    activeModelId,
-  ]) {
-    byId.set(id, {
-      id,
-      contextWindow: normalizeLinxCloudContextWindow(undefined),
-    })
-  }
-  for (const model of models) {
-    const id = model.id.trim()
-    if (!id) {
-      continue
-    }
-    byId.set(id, {
-      id,
-      contextWindow: normalizeLinxCloudContextWindow(model.contextWindow),
-    })
-  }
-  return [...byId.values()]
-}
-
-function normalizeLinxCloudContextWindow(contextWindow: number | undefined): number {
-  return typeof contextWindow === 'number' && Number.isFinite(contextWindow) && contextWindow > 0
-    ? contextWindow
-    : DEFAULT_LINX_CLOUD_CONTEXT_WINDOW
 }
 
 function withSystemPrompt(systemPrompt: string | undefined, messages: RemoteChatMessage[]): RemoteChatMessage[] {
