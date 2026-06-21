@@ -22,15 +22,15 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import type { Api, Model, OAuthCredentials } from '@earendil-works/pi-ai'
-import { RemoteChatRequestError, isRemoteAuthExpiredError, type RemoteAuthFetch, type RemoteChatMessage, type RemoteChatTool } from '../chat-api.js'
-import { formatLinxCloudTransientMessage } from '../linx-cloud-errors.js'
+import { isRemoteAuthExpiredError, type RemoteAuthFetch, type RemoteChatMessage, type RemoteChatTool } from '../chat-api.js'
 import type { AutoModeWorkerBackend } from '../auto-mode/types.js'
 import type { BackendCommandRouter, BackendCommandResult } from '../backend-command.js'
-import { clearDefaultPodDataSession, getDefaultPodDataSession, type PodDataSession } from '../pod-data-session.js'
+import { clearDefaultPodDataSession, type PodDataSession } from '../pod-data-session.js'
 import type { CodexApprovalPolicy } from '../codex-plugin/codex-native-proxy.js'
 import { loadCredentials } from '../credentials-store.js'
 import { getSolidLinxAppDir, getSolidLinxPiWebAccessConfigPath } from '../solid-local-store.js'
-import { LINX_RUNTIME_MANAGED_AUTH_KEY, isLinxRuntimeManagedAuthKey } from '../linx-runtime-auth.js'
+import { createLinxBearerAuthFetch, resolveLinxCloudRuntimeAuthFetch, resolveRuntimeAuthFetchFromApiKey } from '../linx-cloud-runtime-auth.js'
+import { LINX_RUNTIME_MANAGED_AUTH_KEY } from '../linx-runtime-auth.js'
 
 const UNDEFINEDS_PROVIDER_ID = 'undefineds'
 const UNDEFINEDS_PROVIDER_LABEL = 'LinX Cloud'
@@ -43,7 +43,6 @@ const LINX_PRODUCT_SKILL_NAMES = new Set(['symphony', 'xpod-cli'])
 const MARKET_XPOD_CLI_SKILL_SOURCE = 'xpod-cli@undefineds'
 export const DEFAULT_LINX_PI_BASH_TIMEOUT_SECONDS = 15
 const DEFAULT_LINX_CLOUD_CONTEXT_WINDOW = 1_000_000
-const DEFAULT_LINX_CLOUD_COMPLETION_TIMEOUT_MS = 10 * 60 * 1000
 
 export interface LinxRuntimeAdapterDependencies {
   createNativeProxy?: (options?: {
@@ -299,11 +298,11 @@ export function createLinxRuntimeAdapter(
           const authFetch = options.providerConfig?.oauth
             ? input.authFetch
               ?? resolveRuntimeAuthFetchFromApiKey(input.apiKey)
-              ?? await resolveLinxPiCloudAuthFetch({
+              ?? await resolveLinxCloudRuntimeAuthFetch({
                 issuerUrl: options.providerConfig?.issuerUrl,
                 getPodDataSession: options.getPodDataSession,
               })
-            : await resolveLinxPiCloudAuthFetch({
+            : await resolveLinxCloudRuntimeAuthFetch({
               issuerUrl: options.providerConfig?.issuerUrl,
               getPodDataSession: options.getPodDataSession,
             })
@@ -381,7 +380,7 @@ export function createLinxRuntimeAdapter(
           if (result.reusedExistingSession) {
             callbacks.onProgress?.('Reused existing LinX Cloud session.')
           }
-          const authFetch = await resolveLinxPiCloudAuthFetch({
+          const authFetch = await resolveLinxCloudRuntimeAuthFetch({
             issuerUrl: options.providerConfig?.issuerUrl,
             getPodDataSession: options.getPodDataSession,
           })
@@ -395,7 +394,7 @@ export function createLinxRuntimeAdapter(
         },
         async refreshToken(credentials: OAuthCredentials) {
           clearDefaultPodDataSession()
-          const authFetch = await resolveLinxPiCloudAuthFetch({
+          const authFetch = await resolveLinxCloudRuntimeAuthFetch({
             issuerUrl: options.providerConfig?.issuerUrl,
             getPodDataSession: options.getPodDataSession,
           })
@@ -419,13 +418,13 @@ export function createLinxRuntimeAdapter(
         ? await options.providerConfig.oauth.login()
         : null
       if (storedCredentials || hasManagedPodSession) {
-        const authFetch = await resolveLinxPiCloudAuthFetch({
+        const authFetch = await resolveLinxCloudRuntimeAuthFetch({
           issuerUrl: options.providerConfig?.issuerUrl,
           getPodDataSession: options.getPodDataSession,
         })
         await syncProviderModels({ runtimeFetch: authFetch }, { refreshOnAuthExpired: true })
       } else if (explicitOAuthCredential?.access) {
-        await syncProviderModels({ runtimeFetch: createBearerAuthFetch(explicitOAuthCredential.access) })
+        await syncProviderModels({ runtimeFetch: createLinxBearerAuthFetch(explicitOAuthCredential.access) })
       }
       modelRegistry.registerProvider(UNDEFINEDS_PROVIDER_ID, {
         api: UNDEFINEDS_PROVIDER_API,
@@ -623,7 +622,7 @@ export function createLinxRuntimeAdapter(
 
     const storedCredentials = loadCredentials()
     if (storedCredentials || options.getPodDataSession) {
-      return resolveLinxPiCloudAuthFetch({
+      return resolveLinxCloudRuntimeAuthFetch({
         issuerUrl: options.providerConfig?.issuerUrl,
         getPodDataSession: options.getPodDataSession,
       })
@@ -874,172 +873,6 @@ export function createLinxPiCodingTools(cwd: string, options: {
 
 function isAuthExpiredError(error: unknown): boolean {
   return isRemoteAuthExpiredError(error)
-}
-
-function createBearerAuthFetch(apiKey: string): RemoteAuthFetch {
-  return async (url, init) => {
-    const headers = new Headers(init?.headers)
-    headers.set('Authorization', `Bearer ${apiKey}`)
-    return fetch(url, { ...init, headers })
-  }
-}
-
-function resolveRuntimeAuthFetchFromApiKey(apiKey: string | undefined): RemoteAuthFetch | null {
-  const trimmed = apiKey?.trim()
-  if (!trimmed || isLinxRuntimeManagedAuthKey(trimmed)) {
-    return null
-  }
-  return createBearerAuthFetch(trimmed)
-}
-
-async function resolveLinxPiCloudAuthFetch(options: {
-  issuerUrl?: string
-  getPodDataSession?: () => Promise<PodDataSession | null>
-}): Promise<RemoteAuthFetch> {
-  if (options.getPodDataSession) {
-    return createPodDataSessionAuthFetch(options.getPodDataSession)
-  }
-
-  const session = await getDefaultPodDataSession()
-  if (session) {
-    return withCloudCompletionTimeout(session.runtimeFetch)
-  }
-
-  throw new Error('No LinX cloud login found. Interactive TUI supports /login in-app. For non-interactive --print mode, run `linx login` first.')
-}
-
-function createPodDataSessionAuthFetch(
-  getPodDataSession: () => Promise<PodDataSession | null>,
-): RemoteAuthFetch {
-  if (getPodDataSession !== getDefaultPodDataSession) {
-    return withCloudCompletionTimeout(async (url, init) => {
-      const session = await getPodDataSession()
-      if (session) {
-        try {
-          return await session.runtimeFetch(url, init)
-        } finally {
-          await session.close().catch(() => undefined)
-        }
-      }
-
-      throw new Error('No LinX cloud login found. Interactive TUI supports /login in-app. For non-interactive --print mode, run `linx login` first.')
-    })
-  }
-
-  let cachedSession: PodDataSession | null = null
-  let cachedSessionPromise: Promise<PodDataSession | null> | null = null
-
-  const getCachedSession = async (): Promise<PodDataSession | null> => {
-    if (cachedSession) {
-      return cachedSession
-    }
-    if (!cachedSessionPromise) {
-      cachedSessionPromise = getPodDataSession().then((session) => {
-        cachedSession = session
-        return session
-      }).finally(() => {
-        cachedSessionPromise = null
-      })
-    }
-    return cachedSessionPromise
-  }
-
-  return withCloudCompletionTimeout(async (url, init) => {
-    const session = await getCachedSession()
-    if (session) {
-      return await session.runtimeFetch(url, init)
-    }
-
-    throw new Error('No LinX cloud login found. Interactive TUI supports /login in-app. For non-interactive --print mode, run `linx login` first.')
-  })
-}
-
-function withCloudCompletionTimeout(fetcher: RemoteAuthFetch): RemoteAuthFetch {
-  return async (url, init) => {
-    if (!isChatCompletionRuntimeUrl(String(url))) {
-      return fetcher(url, init)
-    }
-
-    const timeoutMs = resolveLinxCloudCompletionTimeoutMs()
-    const controller = new AbortController()
-    const signal = init?.signal
-      ? combineAbortSignals(init.signal, controller.signal)
-      : controller.signal
-    let timedOut = false
-    const timer = setTimeout(() => {
-      timedOut = true
-      controller.abort()
-    }, timeoutMs)
-
-    try {
-      return await Promise.race([
-        fetcher(url, { ...init, signal }),
-        new Promise<Response>((_resolve, reject) => {
-          controller.signal.addEventListener('abort', () => {
-            if (timedOut) {
-              reject(new RemoteChatRequestError(
-                formatLinxCloudTransientMessage(`Request exceeded ${formatTimeoutSeconds(timeoutMs)}s.`),
-                0,
-                `Timed out waiting for POST ${url}`,
-              ))
-            }
-          }, { once: true })
-        }),
-      ])
-    } catch (error) {
-      if (timedOut) {
-        throw new RemoteChatRequestError(
-          formatLinxCloudTransientMessage(`Request exceeded ${formatTimeoutSeconds(timeoutMs)}s.`),
-          0,
-          error instanceof Error ? error.message : String(error),
-        )
-      }
-      throw error
-    } finally {
-      clearTimeout(timer)
-    }
-  }
-}
-
-function resolveLinxCloudCompletionTimeoutMs(): number {
-  const raw = process.env.LINX_CHAT_TIMEOUT_MS
-  if (!raw) {
-    return DEFAULT_LINX_CLOUD_COMPLETION_TIMEOUT_MS
-  }
-  const parsed = Number(raw)
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_LINX_CLOUD_COMPLETION_TIMEOUT_MS
-}
-
-function formatTimeoutSeconds(timeoutMs: number): number {
-  return Math.max(1, Math.round(timeoutMs / 1000))
-}
-
-function isChatCompletionRuntimeUrl(value: string): boolean {
-  try {
-    const target = new URL(value)
-    const segments = target.pathname.split('/').filter(Boolean)
-    return segments.length >= 3
-      && /^v\d+$/.test(segments.at(-3) ?? '')
-      && segments.at(-2) === 'chat'
-      && segments.at(-1) === 'completions'
-  } catch {
-    return false
-  }
-}
-
-function combineAbortSignals(left: AbortSignal, right: AbortSignal): AbortSignal {
-  if (typeof AbortSignal.any === 'function') {
-    return AbortSignal.any([left, right])
-  }
-  const controller = new AbortController()
-  const abort = () => controller.abort()
-  if (left.aborted || right.aborted) {
-    abort()
-    return controller.signal
-  }
-  left.addEventListener('abort', abort, { once: true })
-  right.addEventListener('abort', abort, { once: true })
-  return controller.signal
 }
 
 function sanitizeLinxCloudDefaults(
