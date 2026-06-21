@@ -401,9 +401,12 @@ test('remaining interactive install sentinels stay out of hidden fields', () => 
 })
 
 
-test('pi adapter compatibility wrappers are only kept when consumed', () => {
-  const allowedUnreferenced = new Set([
-    // Extension entry points loaded by Pi or copied package resources may be consumed outside repo text search.
+test('pi adapter compatibility wrappers are not kept only for tests', () => {
+  const allowedBridgeEntries = new Set([
+    // Runtime bridge entry points are imported by the package adapter factory or loaded by Pi/package resources.
+    'interactive.ts',
+    'runtime.ts',
+    'stream.ts',
     'pod-tools.ts',
     'web-fetch.ts',
   ])
@@ -411,27 +414,19 @@ test('pi adapter compatibility wrappers are only kept when consumed', () => {
   const adapterRoot = join(libRoot, 'pi-adapter')
   const sourceFiles = listSourceFiles(libRoot)
   const adapterFiles = listSourceFiles(adapterRoot)
-  const searchableFiles = [
-    ...sourceFiles.filter((file) => !relative(libRoot, file).startsWith(adapterSegment)),
-    ...listSourceFiles(join(repoRoot, 'apps/cli/test')),
-  ]
+  const runtimeFiles = sourceFiles.filter((file) => !relative(libRoot, file).startsWith(adapterSegment))
 
   for (const file of adapterFiles) {
     const relativePath = relative(adapterRoot, file)
-    if (relativePath === 'index.ts' || allowedUnreferenced.has(relativePath)) {
+    if (relativePath === 'index.ts' || allowedBridgeEntries.has(relativePath)) {
       continue
     }
 
     const moduleName = relativePath.replace(/\.ts$/u, '')
     const importPattern = new RegExp(`pi-adapter/${escapeRegExp(moduleName)}(?:\\.js|\\.ts)?['\"]`, 'u')
-    const isConsumed = searchableFiles.some((candidate) => {
-      if (candidate === file) {
-        return false
-      }
-      return importPattern.test(readFileSync(candidate, 'utf8'))
-    })
+    const hasRuntimeConsumer = runtimeFiles.some((candidate) => importPattern.test(readFileSync(candidate, 'utf8')))
 
-    if (!isConsumed) {
+    if (!hasRuntimeConsumer) {
       violations.push(relativePath)
     }
   }

@@ -33,7 +33,7 @@ test('startup control state lives outside the Pi adapter', async (t) => {
 })
 
 test('hydrateLinxPiControlState reads auto control state from Pod session metadata', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/control-state.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-startup-control-state.ts')
   t.after(() => cleanup())
 
   const db = createDb({
@@ -63,7 +63,7 @@ test('hydrateLinxPiControlState reads auto control state from Pod session metada
 })
 
 test('hydrateLinxPiControlState returns null state when session metadata is absent', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/control-state.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-startup-control-state.ts')
   t.after(() => cleanup())
 
   const hydration = await module.hydrateLinxPiControlState({
@@ -77,7 +77,7 @@ test('hydrateLinxPiControlState returns null state when session metadata is abse
 })
 
 test('hydrateLinxPiControlState reports failed control-plane sync without throwing', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/control-state.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-startup-control-state.ts')
   t.after(() => cleanup())
 
   const errors = []
@@ -95,7 +95,7 @@ test('hydrateLinxPiControlState reports failed control-plane sync without throwi
 })
 
 test('deriveLinxPiStartupControlState restores auto only for resume/last startup', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/control-state.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-startup-control-state.ts')
   t.after(() => cleanup())
 
   const hydrated = {

@@ -37,7 +37,7 @@ async function withWorkspaceCompatModules(t) {
     autoArchiveLoaded,
     symphonyLoaded,
   ] = await Promise.all([
-    loadAutoModeModule('lib/pi-adapter/session.ts'),
+    loadAutoModeModule('lib/linx-session-manager.ts'),
     loadAutoModeModule('lib/auto-mode/archive.ts'),
     loadAutoModeModule('lib/symphony-command.ts'),
   ])
