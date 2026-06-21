@@ -24,6 +24,7 @@ import { installLinxRestoredAutoStartup } from './linx-restored-auto-startup.js'
 import { installLinxInteractivePostInitHooks, installLinxEscapeInterrupt } from './linx-interactive-post-init.js'
 import { ensureInteractiveRuntimeHost } from './linx-interactive-runtime-host.js'
 import { installPodBackedExtensionUi } from './linx-pod-backed-extension-ui.js'
+import { configureLinxInteractiveShellState } from './linx-interactive-shell-state.js'
 import {
   installLinxSessionCommandRouter,
   installLinxSessionCommandRouterAfterRebind,
@@ -69,12 +70,12 @@ export function bootstrapLinxInteractiveMode(
   const interactive = new InteractiveMode(runtime, options)
   ;(interactive as any).runtime = runtime
   ;(interactive as any).__autoEnabled = runtime?.autoEnabled === true
-  ;(interactive as any).__linxSymphonyModeEnabled = runtime?.symphonyEnabled === true
+  configureLinxInteractiveShellState(interactive as any, {
+    symphonyModeEnabled: runtime?.symphonyEnabled === true,
+    ...(options.onSymphonyControlChange ? { symphonyControlChange: options.onSymphonyControlChange } : {}),
+  })
   setLinxFooterInteractive(interactive as any)
 
-  if (options.onSymphonyControlChange) {
-    ;(interactive as any).__linxOnSymphonyControlChange = options.onSymphonyControlChange
-  }
   const sessionControlManager = getSessionControlManager(interactive as any, runtime, sessionCwd)
   runtime?.backendCommandRouter?.setSessionControl?.(sessionControlManager)
   const restorePodStatusOutputFilter = installPodStatusOutputFilter()

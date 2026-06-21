@@ -16,6 +16,11 @@ import { getDefaultPodDataSession, type PodDataSession } from './pod-data-sessio
 import { resolveRuntimeTarget } from './runtime-target.js'
 import type { SessionControlManager, SessionControlSnapshot } from './session-control.js'
 import { registerLinxInteractiveStopHandler } from './linx-interactive-stop-router.js'
+import {
+  getLinxInteractiveGoalModeSupervisorLastAt,
+  isLinxInteractiveGoalModeEnabled,
+  setLinxInteractiveGoalModeSupervisorLastAt,
+} from './linx-interactive-shell-state.js'
 
 const AUTO_INPUT_DELAY_MS = 50
 const AUTO_INPUT_IDLE_WATCHDOG_MS = 1_000
@@ -652,7 +657,7 @@ function shouldGenerateNextUserInput(context: SecretaryAutoInputContext): boolea
 }
 
 function isGoalModeActive(interactive: any, runtime: any): boolean {
-  return interactive?.__linxGoalModeEnabled === true || runtime?.goalMode === true
+  return isLinxInteractiveGoalModeEnabled(interactive, runtime)
 }
 
 function resolveGoalModeSupervisorIntervalMs(interactive: any, runtime: any): number {
@@ -670,17 +675,11 @@ function resolveGoalModeSupervisorIntervalMs(interactive: any, runtime: any): nu
 }
 
 function resolveGoalModeSupervisorLastAt(interactive: any, runtime: any): number {
-  const value = Number(interactive?.__linxGoalModeSupervisorLastAt ?? runtime?.goalModeSupervisorLastAt)
-  return Number.isFinite(value) && value > 0 ? value : 0
+  return getLinxInteractiveGoalModeSupervisorLastAt(interactive, runtime)
 }
 
 function markGoalModeSupervisorChecked(interactive: any, runtime: any, at = Date.now()): void {
-  if (interactive && typeof interactive === 'object') {
-    interactive.__linxGoalModeSupervisorLastAt = at
-  }
-  if (runtime && typeof runtime === 'object') {
-    runtime.goalModeSupervisorLastAt = at
-  }
+  setLinxInteractiveGoalModeSupervisorLastAt(interactive, runtime, at)
 }
 
 function isGoalModeSupervisorDue(interactive: any, runtime: any): boolean {
