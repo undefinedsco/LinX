@@ -8,6 +8,7 @@ import type { PodDataSession } from '../pod-data-session.js'
 import type { CodexApprovalPolicy } from '../codex-plugin/codex-native-proxy.js'
 import { createLinxCloudRuntimeCoordinator } from '../linx-cloud-runtime-coordinator.js'
 import { createNativeBackendCommandRouter } from '../native-backend-command-router.js'
+import { createNativeBackendStreamBackend } from '../native-backend-stream-backend.js'
 import { createLinxRuntimeCompletionBackend } from '../linx-runtime-completion-backend.js'
 import {
   createLinxAgentSessionRuntime,
@@ -150,16 +151,7 @@ export function createLinxRuntimeAdapter(
     sessionId: proxy?.record.id ?? UNDEFINEDS_SESSION_ID,
     cwd: proxy?.record.cwd ?? cwd,
     model: proxy?.record.model ?? cloudRuntime.getActiveModelId(),
-    backend: proxy
-      ? {
-        sendTurn(input) {
-          return proxy.sendTurn(input)
-        },
-        subscribe(listener) {
-          return proxy.subscribe(listener)
-        },
-      }
-      : undefined,
+    backend: createNativeBackendStreamBackend(proxy),
     completionBackend: !proxy && dependencies.createRemoteCompletion
       ? createLinxRuntimeCompletionBackend({
         cloudRuntime,

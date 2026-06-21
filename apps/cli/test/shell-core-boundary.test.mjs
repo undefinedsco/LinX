@@ -516,6 +516,18 @@ test('native backend command router mapping is kept outside the Pi runtime adapt
   assert.deepEqual(violations, [])
 })
 
+test('native backend stream mapping is kept outside the Pi runtime adapter', () => {
+  const source = readFileSync(join(libRoot, 'pi-adapter/runtime.ts'), 'utf8')
+  const forbidden = [
+    'sendTurn(input) {',
+    'return proxy.sendTurn(input)',
+    'return proxy.subscribe(listener)',
+  ]
+  const violations = forbidden.filter((snippet) => source.includes(snippet))
+
+  assert.deepEqual(violations, [])
+})
+
 test('completion result to Pi stream event mapping is kept outside the Pi adapter', () => {
   const source = readFileSync(join(libRoot, 'pi-adapter/stream.ts'), 'utf8')
   const forbidden = [
