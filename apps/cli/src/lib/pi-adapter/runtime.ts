@@ -2,7 +2,6 @@ import { createLinxAgentStreamAdapter } from './stream.js'
 import type { LinxRuntimeAdapterDependencies } from '../linx-runtime-adapter-dependencies.js'
 import {
   createLinxAgentSessionRuntime,
-  type LinxCloudPiAuthBridge,
 } from '../linx-runtime-agent-session.js'
 import {
   createRuntimeBackendComposition,
@@ -12,8 +11,6 @@ import type {
   LinxRuntimeAdapterOptions,
   LinxRuntimeFactoryContext,
 } from '../linx-runtime-adapter-contract.js'
-
-export type { LinxCloudPiAuthBridge }
 
 export function createLinxRuntimeAdapter(
   dependencies: LinxRuntimeAdapterDependencies,
