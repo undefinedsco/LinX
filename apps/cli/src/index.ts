@@ -6,18 +6,17 @@ import { hideBin } from 'yargs/helpers'
 import { aiCommand } from './lib/ai-command.js'
 import { loginCommand, logoutCommand, whoamiCommand } from './lib/login-command.js'
 import { configCommand } from './lib/status-line-command.js'
-import { DefaultPackageManager, SettingsManager } from '@earendil-works/pi-coding-agent'
 import { promptText } from './lib/prompt.js'
 import { resolveRuntimeTarget } from './lib/runtime-target.js'
 import { createCodexNativeProxy, createSymphonyCodexMcpServer } from './lib/codex-plugin/index.js'
 import { createLinxPiCliCommands } from './lib/linx-pi-cli-command.js'
+import { linxInstallPackageCommand, linxListPackageCommand, linxRemovePackageCommand, linxUpdatePackageCommand } from './lib/linx-package-command.js'
 import { createLinxRuntimeAdapter } from './lib/pi-adapter/index.js'
 import type { LinxCompletionBackendResult } from './lib/linx-completion-backend.js'
 import type { PodDataSession } from './lib/pod-data-session.js'
 import { createLinxPodDataSession } from './lib/linx-pod-data-session-factory.js'
 import { DEFAULT_LINX_CLOUD_MODEL_ID, FALLBACK_LINX_CLOUD_MODEL_IDS } from './lib/default-model.js'
 import type { RemoteChatMessage, RemoteChatTool } from './lib/chat-api.js'
-import { LINX_AGENT_DIR } from './lib/linx-interactive-branding.js'
 import type { RemoteAuthFetch } from './lib/chat-api.js'
 import { formatLinxCliErrorMessage } from './lib/linx-cloud-errors.js'
 
@@ -86,8 +85,6 @@ interface RuntimeAuthContext {
   podSession: PodDataSession
   runtime: ChatRuntime
 }
-
-type LinxPackageCommand = 'install' | 'remove' | 'update' | 'list'
 
 function readPackageVersion(): string {
   try {
@@ -336,76 +333,6 @@ async function runInteractive(options: {
   }
 }
 
-async function runLinxPackageCommand(command: LinxPackageCommand, options: {
-  source?: string
-  local?: boolean
-} = {}): Promise<void> {
-  if ((command === 'install' || command === 'remove') && !options.source) {
-    throw new Error(`Missing ${command} source. Usage: linx ${command} <source> [-l]`)
-  }
-
-  const cwd = process.cwd()
-  const settingsManager = SettingsManager.create(cwd, LINX_AGENT_DIR)
-  const packageManager = new DefaultPackageManager({
-    cwd,
-    agentDir: LINX_AGENT_DIR,
-    settingsManager,
-  })
-  packageManager.setProgressCallback((event: { type?: string; message?: string }) => {
-    if (event.type === 'start' && event.message) {
-      process.stdout.write(`${event.message}\n`)
-    }
-  })
-
-  switch (command) {
-    case 'install':
-      await packageManager.installAndPersist(options.source!, { local: Boolean(options.local) })
-      process.stdout.write(`Installed ${options.source}\n`)
-      return
-    case 'remove': {
-      const removed = await packageManager.removeAndPersist(options.source!, { local: Boolean(options.local) })
-      if (!removed) {
-        throw new Error(`No matching package found for ${options.source}`)
-      }
-      process.stdout.write(`Removed ${options.source}\n`)
-      return
-    }
-    case 'update':
-      await packageManager.update(options.source)
-      process.stdout.write(options.source ? `Updated ${options.source}\n` : 'Updated packages\n')
-      return
-    case 'list':
-      printConfiguredLinxPackages(packageManager)
-      return
-  }
-}
-
-function printConfiguredLinxPackages(packageManager: {
-  listConfiguredPackages(): Array<{ scope?: string; source: string; filtered?: boolean; installedPath?: string }>
-}): void {
-  const configuredPackages = packageManager.listConfiguredPackages()
-  if (configuredPackages.length === 0) {
-    process.stdout.write('No packages installed.\n')
-    return
-  }
-
-  const printGroup = (title: string, packages: typeof configuredPackages): void => {
-    if (packages.length === 0) {
-      return
-    }
-    process.stdout.write(`${title}:\n`)
-    for (const pkg of packages) {
-      const display = pkg.filtered ? `${pkg.source} (filtered)` : pkg.source
-      process.stdout.write(`  ${display}\n`)
-      if (pkg.installedPath) {
-        process.stdout.write(`    ${pkg.installedPath}\n`)
-      }
-    }
-  }
-
-  printGroup('User packages', configuredPackages.filter((pkg) => pkg.scope === 'user'))
-  printGroup('Project packages', configuredPackages.filter((pkg) => pkg.scope === 'project'))
-}
 
 const { defaultPiCommand, execCommand, hiddenPiAliasCommand, hiddenPiFrontendAliasCommand } = createLinxPiCliCommands({
   createRuntimeAdapter(options) {
@@ -452,50 +379,10 @@ const cli = yargs(hideBin(process.argv))
   .command(aiCommand)
   .command(configCommand)
   .command(retiredSymphonyCommand)
-  .command(
-    'install [source]',
-    'Install a LinX package or extension',
-    (command) => command
-      .positional('source', { type: 'string', describe: 'Package source to install' })
-      .option('local', { alias: 'l', type: 'boolean', default: false, describe: 'Install project-locally (.pi/settings.json)' }),
-    async (argv) => {
-      await runLinxPackageCommand('install', {
-        source: typeof argv.source === 'string' ? argv.source : undefined,
-        local: Boolean(argv.local),
-      })
-    },
-  )
-  .command(
-    'remove [source]',
-    'Remove a LinX package or extension',
-    (command) => command
-      .positional('source', { type: 'string', describe: 'Package source to remove' })
-      .option('local', { alias: 'l', type: 'boolean', default: false, describe: 'Remove from project settings (.pi/settings.json)' }),
-    async (argv) => {
-      await runLinxPackageCommand('remove', {
-        source: typeof argv.source === 'string' ? argv.source : undefined,
-        local: Boolean(argv.local),
-      })
-    },
-  )
-  .command(
-    'update [source]',
-    'Update installed LinX packages',
-    (command) => command.positional('source', { type: 'string', describe: 'Package source to update' }),
-    async (argv) => {
-      await runLinxPackageCommand('update', {
-        source: typeof argv.source === 'string' ? argv.source : undefined,
-      })
-    },
-  )
-  .command(
-    'list',
-    'List installed LinX packages',
-    () => undefined,
-    async () => {
-      await runLinxPackageCommand('list')
-    },
-  )
+  .command(linxInstallPackageCommand)
+  .command(linxRemovePackageCommand)
+  .command(linxUpdatePackageCommand)
+  .command(linxListPackageCommand)
   .command(execCommand)
   .command(defaultPiCommand)
   .command(

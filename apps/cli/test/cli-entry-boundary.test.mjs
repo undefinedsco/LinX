@@ -11,3 +11,11 @@ test('CLI entry delegates Pi/TUI command orchestration to a shell command module
   assert.doesNotMatch(indexSource, /async function selectLinxSession\b/)
   assert.doesNotMatch(indexSource, /async function resolvePiStartupControlState\b/)
 })
+
+test('CLI entry delegates package command implementation to a shell package module', () => {
+  assert.match(indexSource, /from ['"]\.\/lib\/linx-package-command\.js['"]/, 'entry should import package command descriptors from a shell module')
+  assert.doesNotMatch(indexSource, /DefaultPackageManager/, 'entry should not construct the Pi package manager directly')
+  assert.doesNotMatch(indexSource, /SettingsManager/, 'entry should not construct Pi settings for package commands directly')
+  assert.doesNotMatch(indexSource, /function runLinxPackageCommand\b/, 'entry should not implement package command execution')
+  assert.doesNotMatch(indexSource, /function printConfiguredLinxPackages\b/, 'entry should not implement package list rendering')
+})
