@@ -38,3 +38,10 @@ test('CLI entry delegates hidden Codex bridge commands to a shell command module
   assert.doesNotMatch(indexSource, /symphony-codex-mcp/, 'entry should not define hidden Symphony MCP command internals directly')
   assert.doesNotMatch(indexSource, /new Promise\(\(\) => \{\}\)/, 'entry should not own long-running hidden process lifecycle loops')
 })
+
+test('CLI entry delegates retired and placeholder commands to a shell command module', () => {
+  assert.match(indexSource, /from ['"]\.\/lib\/linx-retired-command\.js['"]/, 'entry should import retired and placeholder command descriptors from a shell module')
+  assert.doesNotMatch(indexSource, /CommandModule/, 'entry should not need yargs command implementation types')
+  assert.doesNotMatch(indexSource, /retiredSymphonyCommand/, 'entry should not implement retired command descriptors inline')
+  assert.doesNotMatch(indexSource, /Fork is not implemented yet/, 'entry should not implement placeholder command errors inline')
+})

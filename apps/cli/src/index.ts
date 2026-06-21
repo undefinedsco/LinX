@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 import './lib/node-warning-filter.js'
 import { readFileSync } from 'node:fs'
-import yargs, { type CommandModule } from 'yargs'
+import yargs from 'yargs'
 import { hideBin } from 'yargs/helpers'
 import { aiCommand } from './lib/ai-command.js'
 import { loginCommand, logoutCommand, whoamiCommand } from './lib/login-command.js'
 import { configCommand } from './lib/status-line-command.js'
 import { codexNativeProxyCommand, symphonyCodexMcpCommand } from './lib/linx-codex-plugin-command.js'
+import { registerRetiredAndPlaceholderCommands } from './lib/linx-retired-command.js'
 import { createLinxPiCliCommands } from './lib/linx-pi-cli-command.js'
 import { linxInstallPackageCommand, linxListPackageCommand, linxRemovePackageCommand, linxUpdatePackageCommand } from './lib/linx-package-command.js'
 import { legacyChatCommand, modelsCommand } from './lib/linx-chat-models-command.js'
@@ -40,25 +41,7 @@ const { defaultPiCommand, execCommand, hiddenPiAliasCommand, hiddenPiFrontendAli
   },
 })
 
-const retiredSymphonyCommand: CommandModule<object, { args?: string[] }> = {
-  command: 'symphony [args..]',
-  describe: false,
-  builder(command) {
-    return command
-      .help(false)
-      .version(false)
-      .positional('args', {
-        array: true,
-        type: 'string',
-        describe: 'Retired Symphony CLI arguments',
-      })
-  },
-  handler(): void {
-    throw new Error('`linx symphony` is not a product command. Enter the TUI, run `/symphony on`, then send the objective as normal chat to Secretary.')
-  },
-}
-
-const cli = yargs(hideBin(process.argv))
+const cli = registerRetiredAndPlaceholderCommands(yargs(hideBin(process.argv))
   .scriptName('linx')
   .version(readPackageVersion())
   .parserConfiguration({
@@ -69,7 +52,6 @@ const cli = yargs(hideBin(process.argv))
   .command(whoamiCommand)
   .command(aiCommand)
   .command(configCommand)
-  .command(retiredSymphonyCommand)
   .command(linxInstallPackageCommand)
   .command(linxRemovePackageCommand)
   .command(linxUpdatePackageCommand)
@@ -78,22 +60,12 @@ const cli = yargs(hideBin(process.argv))
   .command(defaultPiCommand)
   .command(legacyChatCommand)
   .command(modelsCommand)
-  .command(
-    'fork [thread]',
-    'Fork a previous interactive session',
-    (command) => command
-      .positional('thread', { type: 'string', describe: 'Thread ID to fork' })
-      .option('last', { type: 'boolean', default: false, describe: 'Fork the most recent thread' }),
-    () => {
-      throw new Error('Fork is not implemented yet for LinX Pod-backed sessions.')
-    },
-  )
   .command(hiddenPiAliasCommand)
   .command(hiddenPiFrontendAliasCommand)
   .command(symphonyCodexMcpCommand)
   .command(codexNativeProxyCommand)
   .strict()
-  .help()
+  .help())
   .fail((message, error, yargsInstance) => {
     if (error) {
       console.error(formatLinxCliErrorMessage(error))
