@@ -1,12 +1,14 @@
 import { createPodBackedExtensionUiContext } from './pod-backed-extension-ui-context.js'
 import { getSessionControlManager } from './session-control.js'
 
+const podBackedExtensionUiInstalled = new WeakSet<object>()
+
 export function installPodBackedExtensionUi(
   interactive: any,
   runtime: any,
   sessionControl = getSessionControlManager(interactive, runtime),
 ): void {
-  if (interactive.__linxPodBackedExtensionUiInstalled) {
+  if (!interactive || podBackedExtensionUiInstalled.has(interactive)) {
     return
   }
 
@@ -34,5 +36,5 @@ export function installPodBackedExtensionUi(
     })
   }
 
-  interactive.__linxPodBackedExtensionUiInstalled = true
+  podBackedExtensionUiInstalled.add(interactive)
 }

@@ -2,12 +2,14 @@ import { getSecretaryAutoInputController } from './secretary-auto-input-controll
 import { getSessionControlManager } from './session-control.js'
 import { isLinxInteractiveAutoModeEnabled } from './linx-interactive-shell-state.js'
 
+const restoredAutoStartupInstalled = new WeakSet<object>()
+
 export function installLinxRestoredAutoStartup(
   interactive: any,
   runtime: any,
   sessionControl = getSessionControlManager(interactive, runtime),
 ): void {
-  if (!interactive || interactive.__linxRestoredAutoStartupInstalled) {
+  if (!interactive || restoredAutoStartupInstalled.has(interactive)) {
     return
   }
 
@@ -30,5 +32,5 @@ export function installLinxRestoredAutoStartup(
     return result
   }
 
-  interactive.__linxRestoredAutoStartupInstalled = true
+  restoredAutoStartupInstalled.add(interactive)
 }
