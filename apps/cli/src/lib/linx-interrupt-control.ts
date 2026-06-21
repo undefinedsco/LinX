@@ -1,5 +1,13 @@
 import { handleInteractiveRewindSelector } from './linx-rewind-command.js'
 import { isLinxInteractiveAutoModeEnabled } from './linx-interactive-shell-state.js'
+import {
+  isClearInterruptInstalled,
+  isEscapeInterruptInstalled,
+  isEscapeInterruptWrapper,
+  markClearInterruptInstalled,
+  markEscapeInterruptInstalled,
+  markEscapeInterruptWrapper,
+} from './linx-interrupt-control-host.js'
 
 export interface LinxInterruptControlOptions {
   disableAutoMode?: (interactive: any) => void | Promise<void>
@@ -10,14 +18,14 @@ export function installLinxEscapeInterrupt(
   options: LinxInterruptControlOptions = {},
 ): void {
   const editor = interactive?.defaultEditor
-  if (!editor || editor.__linxEscapeInterruptInstalled) {
+  if (!editor || isEscapeInterruptInstalled(editor)) {
     return
   }
 
   const initialOnEscape = typeof editor.onEscape === 'function'
     ? editor.onEscape
     : undefined
-  let currentOnEscape = isLinxEscapeInterruptWrapper(initialOnEscape)
+  let currentOnEscape = isEscapeInterruptWrapper(initialOnEscape)
     ? undefined
     : initialOnEscape
   let lastIdleEscapeTime = 0
@@ -58,9 +66,7 @@ export function installLinxEscapeInterrupt(
     lastIdleEscapeTime = 0
     currentOnEscape?.call(editor)
   }
-  Object.defineProperty(linxEscapeInterrupt, '__linxEscapeInterruptWrapper', {
-    value: true,
-  })
+  markEscapeInterruptWrapper(linxEscapeInterrupt)
 
   Object.defineProperty(editor, 'onEscape', {
     configurable: true,
@@ -68,7 +74,7 @@ export function installLinxEscapeInterrupt(
       return linxEscapeInterrupt
     },
     set(next: unknown) {
-      if (isLinxEscapeInterruptWrapper(next)) {
+      if (isEscapeInterruptWrapper(next)) {
         return
       }
       currentOnEscape = typeof next === 'function' ? next : undefined
@@ -76,7 +82,7 @@ export function installLinxEscapeInterrupt(
   })
 
   installLinxClearInterrupt(interactive, editor, options)
-  editor.__linxEscapeInterruptInstalled = true
+  markEscapeInterruptInstalled(editor)
 }
 
 function shouldHandleLinxIdleDoubleEscape(interactive: any): boolean {
@@ -95,14 +101,9 @@ async function openInteractiveRewindFromEscape(interactive: any): Promise<void> 
   }
 }
 
-function isLinxEscapeInterruptWrapper(value: unknown): boolean {
-  return typeof value === 'function'
-    && (value as { __linxEscapeInterruptWrapper?: unknown }).__linxEscapeInterruptWrapper === true
-}
-
 function installLinxClearInterrupt(interactive: any, editor: any, options: LinxInterruptControlOptions): void {
   const handlers = editor?.actionHandlers
-  if (!(handlers instanceof Map) || editor.__linxClearInterruptInstalled) {
+  if (!(handlers instanceof Map) || isClearInterruptInstalled(editor)) {
     return
   }
 
@@ -113,7 +114,7 @@ function installLinxClearInterrupt(interactive: any, editor: any, options: LinxI
     }
     originalClear?.call(editor)
   })
-  editor.__linxClearInterruptInstalled = true
+  markClearInterruptInstalled(editor)
 }
 
 function handBackAutoControlOnInterrupt(interactive: any, options: LinxInterruptControlOptions): boolean {
