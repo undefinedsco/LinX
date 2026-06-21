@@ -22,6 +22,13 @@ test('LinX stream error formatter lives outside the Pi adapter', async (t) => {
   assert.equal(typeof module.isLinxStreamAbortError, 'function')
 })
 
+test('LinX Pi stream error bridge lives outside the Pi adapter', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-pi-stream-errors.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.emitLinxPiStreamError, 'function')
+})
+
 test('LinX completion result Pi event bridge lives outside the Pi adapter', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-pi-completion-events.ts')
   t.after(() => cleanup())

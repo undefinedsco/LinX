@@ -544,6 +544,20 @@ test('normalized backend event to Pi text stream mapping is kept outside the Pi 
   assert.deepEqual(violations, [])
 })
 
+test('Pi stream error event mapping is kept outside the Pi adapter', () => {
+  const source = readFileSync(join(libRoot, 'pi-adapter/stream.ts'), 'utf8')
+  const forbidden = [
+    'formatLinxStreamErrorMessage',
+    'isLinxStreamAbortError',
+    "type: 'error'",
+    'errorMessage.stopReason',
+    'errorMessage.errorMessage',
+  ]
+  const violations = forbidden.filter((snippet) => source.includes(snippet))
+
+  assert.deepEqual(violations, [])
+})
+
 test('repository scripts do not import shell/core modules through stale pi-adapter paths', () => {
   const stalePatterns = [
     /dist\/lib\/pi-adapter\/pod-mirror(?:\.js)?/u,
