@@ -557,6 +557,16 @@ test('cloud runtime dependency contract is kept outside the Pi runtime adapter',
   assert.deepEqual(violations, [])
 })
 
+test('runtime adapter cwd default is kept outside the Pi runtime adapter', () => {
+  const source = readFileSync(join(libRoot, 'pi-adapter/runtime.ts'), 'utf8')
+  const forbidden = [
+    'process.cwd()',
+  ]
+  const violations = forbidden.filter((snippet) => source.includes(snippet))
+
+  assert.deepEqual(violations, [])
+})
+
 test('completion result to Pi stream event mapping is kept outside the Pi adapter', () => {
   const source = readFileSync(join(libRoot, 'pi-adapter/stream.ts'), 'utf8')
   const forbidden = [
