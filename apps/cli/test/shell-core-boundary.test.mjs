@@ -558,6 +558,19 @@ test('Pi stream error event mapping is kept outside the Pi adapter', () => {
   assert.deepEqual(violations, [])
 })
 
+test('stream abort guard is kept outside the Pi adapter', () => {
+  const source = readFileSync(join(libRoot, 'pi-adapter/stream.ts'), 'utf8')
+  const forbidden = [
+    'function throwIfAborted',
+    'function createAbortError',
+    "'AbortError'",
+    'Request was aborted.',
+  ]
+  const violations = forbidden.filter((snippet) => source.includes(snippet))
+
+  assert.deepEqual(violations, [])
+})
+
 test('repository scripts do not import shell/core modules through stale pi-adapter paths', () => {
   const stalePatterns = [
     /dist\/lib\/pi-adapter\/pod-mirror(?:\.js)?/u,

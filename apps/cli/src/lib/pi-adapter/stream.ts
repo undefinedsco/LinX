@@ -16,6 +16,7 @@ import {
 import { createLinxBackendEventSource } from '../linx-backend-event-source.js'
 import { emitNormalizedBackendEventsToPiStream } from '../linx-pi-normalized-event-stream.js'
 import { emitLinxPiStreamError } from '../linx-pi-stream-errors.js'
+import { throwIfLinxStreamAborted } from '../linx-stream-abort.js'
 
 export type { LinxCompletionBackendResult } from '../linx-completion-backend.js'
 
@@ -81,7 +82,7 @@ export function createLinxAgentStreamAdapter(options: LinxAgentStreamAdapterOpti
         const prompt = typeof lastUserText?.content === 'string' ? lastUserText.content : ''
 
         if (options.completionBackend) {
-          throwIfAborted(streamOptions?.signal)
+          throwIfLinxStreamAborted(streamOptions?.signal)
           const reply = await options.completionBackend.complete({
             model: resolvedModelId,
             apiKey: streamOptions?.apiKey,
@@ -91,7 +92,7 @@ export function createLinxAgentStreamAdapter(options: LinxAgentStreamAdapterOpti
             systemPrompt: context?.systemPrompt,
             signal: streamOptions?.signal,
           })
-          throwIfAborted(streamOptions?.signal)
+          throwIfLinxStreamAborted(streamOptions?.signal)
           emitLinxCompletionResultToPiStream(stream, message, reply)
           return
         }
@@ -105,17 +106,4 @@ export function createLinxAgentStreamAdapter(options: LinxAgentStreamAdapterOpti
       return stream
     },
   }
-}
-
-function throwIfAborted(signal?: AbortSignal): void {
-  if (!signal?.aborted) {
-    return
-  }
-  throw createAbortError()
-}
-
-function createAbortError(): Error {
-  const error = new Error('Request was aborted.')
-  error.name = 'AbortError'
-  return error
 }
