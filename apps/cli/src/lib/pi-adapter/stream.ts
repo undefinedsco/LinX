@@ -1,5 +1,5 @@
 import { createAssistantMessageEventStream, type AssistantMessageEventStream } from '@earendil-works/pi-ai'
-import type { RemoteChatMessage, RemoteChatTool } from '../chat-api.js'
+import type { LinxRuntimeCompletionBackend } from '../linx-runtime-completion-backend.js'
 import type { LinxCompletionBackendResult } from '../linx-completion-backend.js'
 import type { AutoModeNormalizedEvent } from '../auto-mode/types.js'
 import {
@@ -17,6 +17,7 @@ import { createLinxBackendEventSource } from '../linx-backend-event-source.js'
 import { emitNormalizedBackendEventsToPiStream } from '../linx-pi-normalized-event-stream.js'
 import { emitLinxPiStreamError } from '../linx-pi-stream-errors.js'
 import { throwIfLinxStreamAborted } from '../linx-stream-abort.js'
+import type { NativeBackendStreamProxy } from '../native-backend-stream-backend.js'
 
 export type { LinxCompletionBackendResult } from '../linx-completion-backend.js'
 
@@ -32,21 +33,8 @@ export interface LinxAgentStreamAdapterOptions {
   cwd?: string
   model?: string
   eventSource?: () => AsyncIterable<AutoModeNormalizedEvent> | Iterable<AutoModeNormalizedEvent>
-  backend?: {
-    sendTurn(input: string): Promise<void>
-    subscribe(listener: (event: AutoModeNormalizedEvent) => void): () => void
-  }
-  completionBackend?: {
-    complete(input: {
-      model?: string
-      apiKey?: string
-      authFetch?: (url: string, init?: RequestInit) => Promise<Response>
-      messages: RemoteChatMessage[]
-      tools?: RemoteChatTool[]
-      systemPrompt?: string
-      signal?: AbortSignal
-    }): Promise<string | LinxCompletionBackendResult>
-  }
+  backend?: NativeBackendStreamProxy
+  completionBackend?: LinxRuntimeCompletionBackend
 }
 
 export interface LinxAgentStreamAdapter {
