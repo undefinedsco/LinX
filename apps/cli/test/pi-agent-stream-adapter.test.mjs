@@ -22,6 +22,15 @@ test('LinX stream error formatter lives outside the Pi adapter', async (t) => {
   assert.equal(typeof module.isLinxStreamAbortError, 'function')
 })
 
+test('LinX completion result Pi event bridge lives outside the Pi adapter', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-pi-completion-events.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.createLinxPiAssistantMessage, 'function')
+  assert.equal(typeof module.resolveLinxPiModelId, 'function')
+  assert.equal(typeof module.emitLinxCompletionResultToPiStream, 'function')
+})
+
 test('pi agent stream adapter captures session metadata and exposes a streamFn hook', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/stream.ts')
   t.after(() => cleanup())

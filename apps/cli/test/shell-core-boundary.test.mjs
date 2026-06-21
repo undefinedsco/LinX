@@ -503,6 +503,19 @@ test('pi runtime adapter does not re-export shell or core helper modules', () =>
   )
 })
 
+test('completion result to Pi stream event mapping is kept outside the Pi adapter', () => {
+  const source = readFileSync(join(libRoot, 'pi-adapter/stream.ts'), 'utf8')
+  const forbidden = [
+    'function createBaseMessage',
+    'function resolveModelId',
+    'function emitCompletionResult',
+    'function parseToolArguments',
+  ]
+  const violations = forbidden.filter((snippet) => source.includes(snippet))
+
+  assert.deepEqual(violations, [])
+})
+
 test('repository scripts do not import shell/core modules through stale pi-adapter paths', () => {
   const stalePatterns = [
     /dist\/lib\/pi-adapter\/pod-mirror(?:\.js)?/u,
