@@ -28,7 +28,7 @@ test('pi agent stream adapter captures session metadata and exposes a streamFn h
 
   const sentTurns = []
   let listener = null
-  const adapter = module.createPiAgentStreamAdapter({
+  const adapter = module.createLinxAgentStreamAdapter({
     sessionId: 'auto_native_proxy_123',
     cwd: '/tmp/demo',
     model: 'gpt-5-codex',
@@ -82,7 +82,7 @@ test('pi agent stream adapter can use a direct completion backend with full cont
   t.after(() => cleanup())
 
   const completionCalls = []
-  const adapter = module.createPiAgentStreamAdapter({
+  const adapter = module.createLinxAgentStreamAdapter({
     sessionId: 'undefineds_pi_frontend',
     cwd: '/tmp/demo',
     model: 'gpt-5-codex',
@@ -126,7 +126,7 @@ test('pi agent stream adapter forwards abort signal to completion backend', asyn
 
   const controller = new AbortController()
   const completionCalls = []
-  const adapter = module.createPiAgentStreamAdapter({
+  const adapter = module.createLinxAgentStreamAdapter({
     completionBackend: {
       async complete(input) {
         completionCalls.push(input)
@@ -158,7 +158,7 @@ test('pi agent stream adapter defaults assistant metadata to linx-lite', async (
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/stream.ts')
   t.after(() => cleanup())
 
-  const adapter = module.createPiAgentStreamAdapter({
+  const adapter = module.createLinxAgentStreamAdapter({
     sessionId: 'undefineds_pi_frontend',
     cwd: '/tmp/demo',
     completionBackend: {
@@ -186,7 +186,7 @@ test('pi agent stream adapter uses the current session model instead of the boot
   t.after(() => cleanup())
 
   const completionCalls = []
-  const adapter = module.createPiAgentStreamAdapter({
+  const adapter = module.createLinxAgentStreamAdapter({
     sessionId: 'undefineds_pi_frontend',
     cwd: '/tmp/demo',
     model: 'gpt-5-codex',
@@ -216,7 +216,7 @@ test('pi agent stream adapter forwards tools and emits tool calls for Pi agent l
   t.after(() => cleanup())
 
   const completionCalls = []
-  const adapter = module.createPiAgentStreamAdapter({
+  const adapter = module.createLinxAgentStreamAdapter({
     sessionId: 'undefineds_pi_frontend',
     cwd: '/tmp/demo',
     model: 'linx-lite',
@@ -264,7 +264,7 @@ test('pi agent stream adapter keeps remote reasoning content out of visible TUI 
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/stream.ts')
   t.after(() => cleanup())
 
-  const adapter = module.createPiAgentStreamAdapter({
+  const adapter = module.createLinxAgentStreamAdapter({
     completionBackend: {
       async complete() {
         return {
@@ -298,7 +298,7 @@ test('pi agent stream adapter attaches remote usage for Pi footer context and ca
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/stream.ts')
   t.after(() => cleanup())
 
-  const adapter = module.createPiAgentStreamAdapter({
+  const adapter = module.createLinxAgentStreamAdapter({
     completionBackend: {
       async complete() {
         return {
@@ -337,7 +337,7 @@ test('pi agent stream adapter preserves assistant tool calls and tool results in
   t.after(() => cleanup())
 
   const completionCalls = []
-  const adapter = module.createPiAgentStreamAdapter({
+  const adapter = module.createLinxAgentStreamAdapter({
     completionBackend: {
       async complete(input) {
         completionCalls.push(input)
@@ -385,7 +385,7 @@ test('pi agent stream adapter drops interrupted dangling tool calls from resumed
   t.after(() => cleanup())
 
   const completionCalls = []
-  const adapter = module.createPiAgentStreamAdapter({
+  const adapter = module.createLinxAgentStreamAdapter({
     completionBackend: {
       async complete(input) {
         completionCalls.push(input)
@@ -432,7 +432,7 @@ test('pi agent stream adapter preserves DeepSeek reasoning content for tool-resu
   t.after(() => cleanup())
 
   const completionCalls = []
-  const adapter = module.createPiAgentStreamAdapter({
+  const adapter = module.createLinxAgentStreamAdapter({
     completionBackend: {
       async complete(input) {
         completionCalls.push(input)
@@ -491,7 +491,7 @@ test('pi agent stream adapter materializes oversized tool results before remote 
 
   const longToolResult = `fetch result start\n${'x'.repeat(160)}\nfetch result end`
   const completionCalls = []
-  const adapter = module.createPiAgentStreamAdapter({
+  const adapter = module.createLinxAgentStreamAdapter({
     completionBackend: {
       async complete(input) {
         completionCalls.push(input)
@@ -528,7 +528,7 @@ test('pi agent stream adapter maps expired LinX cloud auth errors to a compact T
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/stream.ts')
   t.after(() => cleanup())
 
-  const adapter = module.createPiAgentStreamAdapter({
+  const adapter = module.createLinxAgentStreamAdapter({
     completionBackend: {
       async complete() {
         const error = new Error('Chat request failed (401): {"error":"Unauthorized","message":"Invalid Solid token"}')
@@ -555,7 +555,7 @@ test('pi agent stream adapter maps misclassified cloud completion Pod timeouts t
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/stream.ts')
   t.after(() => cleanup())
 
-  const adapter = module.createPiAgentStreamAdapter({
+  const adapter = module.createLinxAgentStreamAdapter({
     completionBackend: {
       async complete() {
         throw new Error('LinX Pod request timed out after 30s: POST https://api.undefineds.co/v1/chat/completions')
@@ -583,7 +583,7 @@ test('pi agent stream adapter can expose raw cloud error details in debug mode',
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/stream.ts')
   t.after(() => cleanup())
 
-  const adapter = module.createPiAgentStreamAdapter({
+  const adapter = module.createLinxAgentStreamAdapter({
     completionBackend: {
       async complete() {
         const error = new Error('LinX Cloud is temporarily unavailable. Please retry shortly.')

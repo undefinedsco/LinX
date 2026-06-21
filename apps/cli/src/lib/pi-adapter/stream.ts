@@ -15,7 +15,7 @@ import {
 } from '../linx-cloud-models.js'
 import { formatLinxStreamErrorMessage, isLinxStreamAbortError } from '../linx-stream-error-formatting.js'
 
-export type { LinxCompletionBackendResult, PiCompletionBackendResult } from '../linx-completion-backend.js'
+export type { LinxCompletionBackendResult } from '../linx-completion-backend.js'
 
 type PiStreamOptions = {
   apiKey?: string
@@ -46,18 +46,12 @@ export interface LinxAgentStreamAdapterOptions {
   }
 }
 
-/** @deprecated Use LinxAgentStreamAdapterOptions. */
-export type PiAgentStreamAdapterOptions = LinxAgentStreamAdapterOptions
-
 export interface LinxAgentStreamAdapter {
   readonly sessionId?: string
   readonly cwd?: string
   readonly model?: string
   streamFn(..._args: unknown[]): AssistantMessageEventStream
 }
-
-/** @deprecated Use LinxAgentStreamAdapter. */
-export type PiAgentStreamAdapter = LinxAgentStreamAdapter
 
 export function createLinxAgentStreamAdapter(options: LinxAgentStreamAdapterOptions = {}): LinxAgentStreamAdapter {
   const createBaseMessage = (modelId?: string): AssistantMessage => ({
@@ -174,8 +168,6 @@ export function createLinxAgentStreamAdapter(options: LinxAgentStreamAdapterOpti
     },
   }
 }
-
-export const createPiAgentStreamAdapter = createLinxAgentStreamAdapter
 
 function throwIfAborted(signal?: AbortSignal): void {
   if (!signal?.aborted) {

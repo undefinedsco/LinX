@@ -265,7 +265,7 @@ test('pi runtime adapter defaults to cloud backend without creating a native pro
   t.after(() => cleanup())
 
   let proxyCreated = false
-  const adapter = module.createPiRuntimeAdapter({
+  const adapter = module.createLinxRuntimeAdapter({
     createNativeProxy() {
       proxyCreated = true
       throw new Error('cloud mode should not create a native proxy')
@@ -320,7 +320,7 @@ test('pi runtime adapter can still wrap the native proxy when explicitly request
   let started = false
   let closed = false
   const resolvedEnvCalls = []
-  const adapter = module.createPiRuntimeAdapter({
+  const adapter = module.createLinxRuntimeAdapter({
     createNativeProxy(options) {
       assert.equal(options.cwd, '/tmp/demo')
       assert.equal(options.model, undefined)
@@ -404,7 +404,7 @@ test('pi runtime adapter exposes native backend command router when the proxy su
 
   const commands = []
   const listeners = []
-  const adapter = module.createPiRuntimeAdapter({
+  const adapter = module.createLinxRuntimeAdapter({
     createNativeProxy() {
       return {
         remoteUrl: 'ws://127.0.0.1:8877',
@@ -507,7 +507,7 @@ test('pi runtime adapter createRuntime builds a minimal pi runtime around the cl
     rmSync(agentDir, { recursive: true, force: true })
   })
   const completionCalls = []
-  const adapter = module.createPiRuntimeAdapter({
+  const adapter = module.createLinxRuntimeAdapter({
     async createRemoteCompletion(input) {
       completionCalls.push(input)
       return 'hello from cloud'
@@ -569,7 +569,7 @@ test('pi runtime adapter prefers current Pod session fetch over stale Pi apiKey 
   const completionAuthHeaders = []
   let podSessionCalls = 0
   let podSessionCloses = 0
-  const adapter = module.createPiRuntimeAdapter({
+  const adapter = module.createLinxRuntimeAdapter({
     async createRemoteCompletion(input) {
       completionAuthHeaders.push(await readAuthHeader(input.authFetch))
       return 'hello from current session'
@@ -626,7 +626,7 @@ test('pi runtime adapter reports stalled cloud completions as cloud timeout, not
     }
   })
 
-  const adapter = module.createPiRuntimeAdapter({
+  const adapter = module.createLinxRuntimeAdapter({
     async createRemoteCompletion(input) {
       await input.authFetch('https://api.undefineds.co/v1/chat/completions', { method: 'POST' })
       return 'should not finish'
@@ -671,7 +671,7 @@ test('pi runtime adapter exposes bundled LinX skills during initial resource loa
     rmSync(agentDir, { recursive: true, force: true })
   })
 
-  const adapter = module.createPiRuntimeAdapter({
+  const adapter = module.createLinxRuntimeAdapter({
     async createRemoteCompletion() {
       return 'hello with skills'
     },
@@ -768,7 +768,7 @@ description: Xpod CLI Market Skill
     rmSync(codexHome, { recursive: true, force: true })
   })
 
-  const adapter = module.createPiRuntimeAdapter({
+  const adapter = module.createLinxRuntimeAdapter({
     async createRemoteCompletion() {
       return 'hello with xpod market skill'
     },
@@ -851,7 +851,7 @@ test('pi runtime adapter configures undefineds models as openai chat completions
     rmSync(agentDir, { recursive: true, force: true })
   })
 
-  const adapter = module.createPiRuntimeAdapter({
+  const adapter = module.createLinxRuntimeAdapter({
     async createRemoteCompletion() {
       return 'hello after api drift'
     },
@@ -906,7 +906,7 @@ test('pi runtime adapter lets interactive sessions start without a user API key'
     rmSync(agentDir, { recursive: true, force: true })
   })
 
-  const adapter = module.createPiRuntimeAdapter({
+  const adapter = module.createLinxRuntimeAdapter({
     async createRemoteCompletion() {
       return 'should not be reached'
     },
@@ -946,7 +946,7 @@ test('pi runtime adapter prefers linx-lite when cloud model discovery returns mu
   })
 
   const completionCalls = []
-  const adapter = module.createPiRuntimeAdapter({
+  const adapter = module.createLinxRuntimeAdapter({
     async createRemoteCompletion(input) {
       completionCalls.push(input)
       return 'hello from preferred default'
@@ -1011,7 +1011,7 @@ test('pi runtime adapter keeps both LinX fallback models when cloud discovery is
     rmSync(agentDir, { recursive: true, force: true })
   })
 
-  const adapter = module.createPiRuntimeAdapter({
+  const adapter = module.createLinxRuntimeAdapter({
     async createRemoteCompletion() {
       return 'hello fallback models'
     },
@@ -1073,7 +1073,7 @@ test('pi runtime adapter enables xhigh thinking for LinX cloud models', async (t
     rmSync(agentDir, { recursive: true, force: true })
   })
 
-  const adapter = module.createPiRuntimeAdapter({
+  const adapter = module.createLinxRuntimeAdapter({
     async createRemoteCompletion() {
       return 'hello xhigh'
     },
@@ -1136,7 +1136,7 @@ test('pi runtime adapter ignores stale undefineds defaults that point to gpt-5-c
   })
 
   const completionCalls = []
-  const adapter = module.createPiRuntimeAdapter({
+  const adapter = module.createLinxRuntimeAdapter({
     async createRemoteCompletion(input) {
       completionCalls.push(input)
       return 'hello after stale default fix'
@@ -1205,7 +1205,7 @@ test('pi runtime adapter preserves the last valid LinX model and thinking defaul
     rmSync(agentDir, { recursive: true, force: true })
   })
 
-  const adapter = module.createPiRuntimeAdapter({
+  const adapter = module.createLinxRuntimeAdapter({
     async createRemoteCompletion() {
       return 'hello saved default'
     },
@@ -1264,7 +1264,7 @@ test('pi runtime adapter brands the default system prompt as LinX AI Secretary',
     rmSync(agentDir, { recursive: true, force: true })
   })
 
-  const adapter = module.createPiRuntimeAdapter({
+  const adapter = module.createLinxRuntimeAdapter({
     async createRemoteCompletion() {
       return 'hello system prompt'
     },
@@ -1326,7 +1326,7 @@ test('pi runtime adapter marks expired cloud auth during startup model preflight
     rmSync(agentDir, { recursive: true, force: true })
   })
 
-  const adapter = module.createPiRuntimeAdapter({
+  const adapter = module.createLinxRuntimeAdapter({
     async createRemoteCompletion() {
       return 'not reached'
     },
@@ -1385,7 +1385,7 @@ test('pi runtime adapter does not fail interactive login when post-login model s
   })
 
   let runtimeLogin
-  const adapter = module.createPiRuntimeAdapter({
+  const adapter = module.createLinxRuntimeAdapter({
     async createRemoteCompletion() {
       return 'not reached'
     },
@@ -1453,7 +1453,7 @@ test('pi runtime adapter silently refreshes stored auth before prompting for log
   const podSessionAuthHeaders = ['DPoP initial-session-token', 'DPoP refreshed-session-token']
   let podSessionCalls = 0
   let podSessionCloses = 0
-  const adapter = module.createPiRuntimeAdapter({
+  const adapter = module.createLinxRuntimeAdapter({
     async createRemoteCompletion() {
       return 'hello after silent refresh'
     },
@@ -1526,7 +1526,7 @@ test('pi runtime adapter silently refreshes stored auth when chat completion rej
   const podSessionAuthHeaders = ['DPoP initial-session-token', 'DPoP refreshed-session-token']
   let podSessionCalls = 0
   let podSessionCloses = 0
-  const adapter = module.createPiRuntimeAdapter({
+  const adapter = module.createLinxRuntimeAdapter({
     async createRemoteCompletion(input) {
       const authHeader = await readAuthHeader(input.authFetch)
       completionAuthHeaders.push(authHeader)
@@ -1583,7 +1583,7 @@ test('pi runtime adapter clears startup auth prompt after a successful browser l
   t.after(() => cleanup())
 
   let loginCalls = 0
-  const adapter = module.createPiRuntimeAdapter({
+  const adapter = module.createLinxRuntimeAdapter({
     async createRemoteCompletion() {
       return 'ok'
     },
@@ -1646,7 +1646,7 @@ test('pi runtime adapter overrides restored non-LinX session models', async (t) 
   })
 
   const completionCalls = []
-  const adapter = module.createPiRuntimeAdapter({
+  const adapter = module.createLinxRuntimeAdapter({
     async createRemoteCompletion(input) {
       completionCalls.push(input)
       return 'hello after stale session model fix'
@@ -1730,7 +1730,7 @@ export default function projectExtraTool(pi) {
 }
 `)
 
-  const adapter = module.createPiRuntimeAdapter({
+  const adapter = module.createLinxRuntimeAdapter({
     async createRemoteCompletion() {
       return 'hello'
     },

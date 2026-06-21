@@ -472,6 +472,23 @@ function escapeRegExp(value) {
 
 
 
+
+test('pi adapter public surface uses LinX names instead of deprecated Pi aliases', () => {
+  const violations = []
+  const adapterRoot = join(libRoot, 'pi-adapter')
+  const forbiddenAliasPattern = /\bexport\s+(?:const|type|interface|function)\s+(?:create)?Pi[A-Z][A-Za-z0-9_]*\b/u
+
+  for (const file of listSourceFiles(adapterRoot)) {
+    const relativePath = relative(adapterRoot, file)
+    const source = readFileSync(file, 'utf8')
+    if (forbiddenAliasPattern.test(source)) {
+      violations.push(relativePath)
+    }
+  }
+
+  assert.deepEqual(violations.sort(), [])
+})
+
 test('pi runtime adapter does not re-export shell or core helper modules', () => {
   const runtimeSource = readFileSync(join(libRoot, 'pi-adapter/runtime.ts'), 'utf8')
   const forbiddenReexports = [

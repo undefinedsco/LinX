@@ -61,9 +61,6 @@ export interface LinxRuntimeAdapterDependencies {
   }>>
 }
 
-/** @deprecated Use LinxRuntimeAdapterDependencies. */
-export type PiRuntimeAdapterDependencies = LinxRuntimeAdapterDependencies
-
 export interface LinxRuntimeFactoryContext {
   cwd: string
   agentDir: string
@@ -72,11 +69,6 @@ export interface LinxRuntimeFactoryContext {
 }
 
 export type LinxCreateRuntimeFactory = (context: LinxRuntimeFactoryContext) => Promise<AgentSessionRuntime>
-/** @deprecated Use LinxRuntimeFactoryContext. */
-export type PiRuntimeFactoryContext = LinxRuntimeFactoryContext
-/** @deprecated Use LinxCreateRuntimeFactory. */
-export type PiCreateRuntimeFactory = LinxCreateRuntimeFactory
-
 export interface LinxRuntimeAdapterOptions {
   cwd?: string
   model?: string
@@ -96,9 +88,6 @@ export interface LinxRuntimeAdapterOptions {
     oauth?: LinxRuntimeOAuthProvider
   }
 }
-
-/** @deprecated Use LinxRuntimeAdapterOptions. */
-export type PiRuntimeAdapterOptions = LinxRuntimeAdapterOptions
 
 export type { LinxCloudPiAuthBridge }
 
@@ -233,9 +222,3 @@ export function createLinxRuntimeAdapter(
   }
 
 }
-
-/** @deprecated Use LinxRuntimeAdapter. */
-export type PiRuntimeAdapter = LinxRuntimeAdapter
-
-/** @deprecated Use createLinxRuntimeAdapter. */
-export const createPiRuntimeAdapter = createLinxRuntimeAdapter
