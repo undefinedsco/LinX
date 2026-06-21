@@ -52,6 +52,16 @@ test('LinX cloud runtime auth helper lives outside the Pi adapter', async (t) =>
   assert.equal(typeof module.withLinxCloudCompletionTimeout, 'function')
 })
 
+test('LinX cloud model catalog helper lives outside the Pi adapter', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-cloud-models.ts')
+  t.after(() => cleanup())
+
+  assert.equal(module.LINX_CLOUD_PROVIDER_ID, 'undefineds')
+  assert.equal(typeof module.buildFallbackLinxCloudProviderModels, 'function')
+  assert.equal(typeof module.mergeLinxCloudProviderModels, 'function')
+  assert.equal(typeof module.sanitizeLinxCloudDefaults, 'function')
+})
+
 test('linx startup login prompt decision covers the auth state matrix', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/runtime.ts')
   t.after(() => cleanup())
