@@ -7,11 +7,11 @@ import { bootstrapLinxInteractiveMode, type LinxLoginReason } from './linx-inter
 import { clearDefaultPodDataSession, getDefaultPodDataSession } from './pod-data-session.js'
 import { resolveStartupLinxPodDataSession } from './linx-pod-data-session-factory.js'
 import { createLinxPiSessionManager } from './linx-session-manager.js'
-import { listPendingPiPodMirrorSync, retryPendingPiPodMirrorSync } from './linx-pod-mirror-sync-recovery.js'
 import { LINX_AGENT_DIR } from './linx-interactive-branding.js'
 import { resolveLinxPiStartupControlState } from './linx-pi-startup-control.js'
 import { selectLinxPiSession } from './linx-session-selector-ui.js'
 import { createLinxPodMirrorRuntimeHost } from './linx-pod-mirror-runtime-host.js'
+import { runLinxPodMirrorSyncRetryCommand, runLinxPodMirrorSyncStatusCommand } from './linx-pod-mirror-sync-command.js'
 import type { RemoteAuthFetch, RemoteChatMessage, RemoteChatTool } from './chat-api.js'
 import type { LinxCompletionBackendResult } from './linx-completion-backend.js'
 
@@ -116,13 +116,14 @@ export async function runPiCommand(argv: {
   }
 
   if (argv['pi-sync-status']) {
-    await runPiSyncStatusCommand()
+    await runLinxPodMirrorSyncStatusCommand({ agentDir: LINX_AGENT_DIR })
     return
   }
 
   if (argv['pi-sync-retry']) {
-    await runPiSyncRetryCommand({
+    await runLinxPodMirrorSyncRetryCommand({
       cwd: argv.cwd || process.cwd(),
+      agentDir: LINX_AGENT_DIR,
       sessionId: argv['pi-sync-retry'],
     })
     return
@@ -246,42 +247,6 @@ function cwdFromArg(cwd: unknown): string {
   return typeof cwd === 'string' && cwd.trim() ? cwd : process.cwd()
 }
 
-async function runPiSyncStatusCommand(): Promise<void> {
-  const sessions = await listPendingPiPodMirrorSync(LINX_AGENT_DIR)
-  if (sessions.length === 0) {
-    process.stdout.write('No pending LinX Pod sync sessions.\n')
-    return
-  }
-
-  process.stdout.write(`${sessions.map((session) => {
-    const failed = session.checkpoints.filter((checkpoint) => checkpoint.status === 'failed').length
-    const partial = session.checkpoints.filter((checkpoint) => checkpoint.status === 'partial').length
-    const latest = session.checkpoints.at(-1)?.completedAt ?? 'unknown'
-    return `${session.sessionId} · failed=${failed} partial=${partial} latest=${latest}`
-  }).join('\n')}\n`)
-}
-
-async function runPiSyncRetryCommand(options: {
-  cwd: string
-  sessionId: string
-}): Promise<void> {
-  const result = await retryPendingPiPodMirrorSync({
-    cwd: options.cwd,
-    agentDir: LINX_AGENT_DIR,
-    sessionId: options.sessionId,
-  })
-  if (!result.attempted) {
-    process.stdout.write(`LinX Pod sync skipped: ${options.sessionId}\n`)
-    return
-  }
-
-  const status = result.results.map((item) => item.status).join(', ') || 'none'
-  process.stdout.write(
-    status === 'none'
-      ? `LinX Pod sync has no replayable local projections: ${options.sessionId}\n`
-      : `Retried LinX Pod sync: ${options.sessionId} (${status})\n`,
-  )
-}
 
 export interface PiCommandArgs {
   cwd?: string
