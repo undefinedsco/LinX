@@ -68,7 +68,7 @@ export interface LinxRuntimeAdapterDependencies {
     executeCommand?(input: string): Promise<BackendCommandResult>
     setAutoEnabled?(enabled: boolean): Promise<void> | void
     setCwd?(cwd: string): Promise<void> | void
-    setSessionControl?(control: import('./session-control.js').SessionControlManager): void
+    setSessionControl?(control: import('../session-control.js').SessionControlManager): void
     subscribe(listener: (event: import('../auto-mode/types.js').AutoModeNormalizedEvent) => void): () => void
     close(): Promise<void>
   }

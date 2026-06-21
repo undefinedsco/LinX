@@ -16,7 +16,7 @@ import {
   waitForRemoteAutoModeApproval,
 } from '../auto-mode/pod-approval.js'
 import type { AutoRunOptions, AutoModeSpawnPlan } from '../auto-mode/types.js'
-import type { SessionControlManager } from '../pi-adapter/session-control.js'
+import type { SessionControlManager } from '../session-control.js'
 
 export interface CodexAttachBridgeRuntime {
   createRemoteAutoModeApproval: typeof createRemoteAutoModeApproval

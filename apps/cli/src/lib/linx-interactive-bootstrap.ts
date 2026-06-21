@@ -5,7 +5,7 @@ import { installPodStatusOutputFilter } from './pod-status-output.js'
 import {
   getSessionControlManager,
   installSessionControlRuntimeEventBridge,
-} from './pi-adapter/session-control.js'
+} from './session-control.js'
 import {
   buildLinxExitMessage,
   installLinxExitMessage,

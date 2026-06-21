@@ -1,5 +1,5 @@
 import { createPodBackedExtensionUiContext } from './pi-adapter/pod-approval.js'
-import { getSessionControlManager } from './pi-adapter/session-control.js'
+import { getSessionControlManager } from './session-control.js'
 
 export function installPodBackedExtensionUi(
   interactive: any,
