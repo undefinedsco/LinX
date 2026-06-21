@@ -1,5 +1,8 @@
 import { calculateSessionUsage, formatTokenCount } from './linx-status-line.js'
-import { LINX_TUI_NO_EXIT_MESSAGE_ENV } from './shell-lifecycle.js'
+import {
+  isInteractiveShellExitMessageSuppressed,
+  LINX_TUI_NO_EXIT_MESSAGE_ENV,
+} from './shell-lifecycle.js'
 
 let linxResumeOutputStyleRestore: (() => void) | null = null
 
@@ -23,7 +26,12 @@ export function installLinxExitMessage(interactive: any): void {
 
   interactive.stop = function patchedStop(...args: unknown[]): void {
     originalStop(...args)
-    if (!initialized || exitMessageWritten || process.env[LINX_TUI_NO_EXIT_MESSAGE_ENV] === '1') {
+    if (
+      !initialized
+      || exitMessageWritten
+      || process.env[LINX_TUI_NO_EXIT_MESSAGE_ENV] === '1'
+      || isInteractiveShellExitMessageSuppressed(this)
+    ) {
       return
     }
     exitMessageWritten = true

@@ -103,6 +103,21 @@ The in-TUI self-update path is a shell lifecycle feature. It must use the shell
 lifecycle supervisor for restart. It must not live as ad hoc process-spawn logic
 inside branding or dialog code.
 
+The lifecycle supervisor must own the full handoff:
+
+- mark the current interactive shell as restarting before touching terminal
+  state;
+- suppress normal session-closed/resume copy for the whole abandoned shell
+  instance, not only for the first `stop()` call;
+- drain terminal input when the upstream TUI exposes a drain hook, then stop the
+  old TUI, then spawn the replacement process with inherited stdio;
+- keep the parent process alive until the replacement process closes, and mirror
+  its exit code.
+
+Feature code such as `/update` may ask the lifecycle supervisor to restart, but
+must not call `process.spawn`, restore raw mode, or decide whether exit copy is
+visible on its own.
+
 ## Documentation placement
 
 - This document owns shell/core modeling only.
