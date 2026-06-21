@@ -593,6 +593,18 @@ test('runtime resource lookup does not depend on legacy pi-adapter bundle layout
   assert.deepEqual(violations, [])
 })
 
+
+test('latest user prompt extraction is kept outside the Pi stream adapter', () => {
+  const source = readFileSync(join(libRoot, 'pi-adapter/stream.ts'), 'utf8')
+  const forbidden = [
+    "find((entry) => entry.role === 'user')",
+    "typeof lastUserText?.content === 'string'",
+  ]
+  const violations = forbidden.filter((snippet) => source.includes(snippet))
+
+  assert.deepEqual(violations, [])
+})
+
 test('completion result to Pi stream event mapping is kept outside the Pi adapter', () => {
   const source = readFileSync(join(libRoot, 'pi-adapter/stream.ts'), 'utf8')
   const forbidden = [

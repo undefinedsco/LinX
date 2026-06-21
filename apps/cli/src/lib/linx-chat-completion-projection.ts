@@ -101,6 +101,11 @@ export function normalizeChatCompletionToolsFromPiContext(
   return normalized
 }
 
+export function resolveLatestUserTextFromChatCompletionMessages(messages: RemoteChatMessage[]): string {
+  const lastUserText = [...messages].reverse().find((entry) => entry.role === 'user')
+  return typeof lastUserText?.content === 'string' ? lastUserText.content : ''
+}
+
 export function materializeLargeToolResult(
   content: string,
   metadata: {

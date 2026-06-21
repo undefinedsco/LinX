@@ -11,7 +11,24 @@ test('LinX chat completion projection helper lives outside the Pi adapter', asyn
 
   assert.equal(typeof module.normalizeChatCompletionMessagesFromPiContext, 'function')
   assert.equal(typeof module.normalizeChatCompletionToolsFromPiContext, 'function')
+  assert.equal(typeof module.resolveLatestUserTextFromChatCompletionMessages, 'function')
   assert.equal(typeof module.sanitizeChatCompletionMessages, 'function')
+})
+
+test('chat completion projection resolves the latest plain user text for backend prompts', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-chat-completion-projection.ts')
+  t.after(() => cleanup())
+
+  assert.equal(module.resolveLatestUserTextFromChatCompletionMessages([
+    { role: 'system', content: 'system prompt' },
+    { role: 'user', content: 'first prompt' },
+    { role: 'assistant', content: 'answer' },
+    { role: 'user', content: 'latest prompt' },
+  ]), 'latest prompt')
+
+  assert.equal(module.resolveLatestUserTextFromChatCompletionMessages([
+    { role: 'user', content: [{ type: 'text', text: 'structured user text' }] },
+  ]), '')
 })
 
 test('LinX stream error formatter lives outside the Pi adapter', async (t) => {
