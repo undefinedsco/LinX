@@ -12,8 +12,6 @@ import { resolveLinxPiStartupControlState } from './linx-pi-startup-control.js'
 import { selectLinxPiSession } from './linx-session-selector-ui.js'
 import { createLinxPodMirrorRuntimeHost } from './linx-pod-mirror-runtime-host.js'
 import { runLinxPodMirrorSyncRetryCommand, runLinxPodMirrorSyncStatusCommand } from './linx-pod-mirror-sync-command.js'
-import type { RemoteAuthFetch, RemoteChatMessage, RemoteChatTool } from './chat-api.js'
-import type { LinxCompletionBackendResult } from './linx-completion-backend.js'
 
 const RESERVED_NON_TOP_LEVEL_COMMANDS = new Set([
   'automode',
@@ -35,35 +33,22 @@ export interface LinxPiCliRuntimeAdapter {
   }): Promise<AgentSessionRuntime>
 }
 
+export interface CreateLinxRuntimeAdapterForPiCommandOptions {
+  cwd: string
+  model?: string
+  backend: 'cloud'
+  autoEnabled: boolean
+  symphonyEnabled: boolean
+  getPodDataSession: typeof getDefaultPodDataSession
+  port?: number
+  providerConfig: {
+    baseUrl: string
+    issuerUrl: string
+  }
+}
+
 export type CreateLinxRuntimeAdapterForPiCommand = (
-  dependencies: {
-    createRemoteCompletion(options: {
-      runtimeUrl: string
-      authFetch: RemoteAuthFetch
-      model?: string
-      messages: RemoteChatMessage[]
-      tools?: RemoteChatTool[]
-      systemPrompt?: string
-      signal?: AbortSignal
-    }): Promise<string | LinxCompletionBackendResult>
-    listRemoteModels(authFetch: RemoteAuthFetch, runtimeUrl: string, options?: { fallback?: boolean; timeoutMs?: number }): Promise<Array<{
-      id: string
-      contextWindow?: number
-    }>>
-  },
-  options: {
-    cwd: string
-    model?: string
-    backend: 'cloud'
-    autoEnabled: boolean
-    symphonyEnabled: boolean
-    getPodDataSession: typeof getDefaultPodDataSession
-    port?: number
-    providerConfig: {
-      baseUrl: string
-      issuerUrl: string
-    }
-  },
+  options: CreateLinxRuntimeAdapterForPiCommandOptions,
 ) => LinxPiCliRuntimeAdapter
 
 export interface LinxPiCliCommandDependencies {
@@ -162,15 +147,6 @@ export async function runPiCommand(argv: {
   const symphonyEnabled = controlState.symphonyEnabled
 
   const adapter = dependencies.createRuntimeAdapter({
-    async createRemoteCompletion(options) {
-      const chatApi = await import('./chat-api.js')
-      return chatApi.createRemoteCompletionResult(options)
-    },
-    async listRemoteModels(authFetch, runtimeUrl, options) {
-      const chatApi = await import('./chat-api.js')
-      return chatApi.listRemoteModels(authFetch, runtimeUrl, options ?? { fallback: false, timeoutMs: 5000 })
-    },
-  }, {
     cwd,
     model: argv.model,
     backend: 'cloud',
