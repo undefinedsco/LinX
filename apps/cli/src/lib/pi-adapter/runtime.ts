@@ -16,11 +16,6 @@ import {
   createLocalBashOperations,
 } from '@earendil-works/pi-coding-agent'
 // web_fetch / web_search are now handled by pi-web-access
-import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { basename, dirname, join, resolve } from 'node:path'
-import { createRequire } from 'node:module'
-import { fileURLToPath } from 'node:url'
 import type { Api, Model, OAuthCredentials } from '@earendil-works/pi-ai'
 import { isRemoteAuthExpiredError, type RemoteAuthFetch, type RemoteChatMessage, type RemoteChatTool } from '../chat-api.js'
 import type { AutoModeWorkerBackend } from '../auto-mode/types.js'
@@ -28,9 +23,16 @@ import type { BackendCommandRouter, BackendCommandResult } from '../backend-comm
 import { clearDefaultPodDataSession, type PodDataSession } from '../pod-data-session.js'
 import type { CodexApprovalPolicy } from '../codex-plugin/codex-native-proxy.js'
 import { loadCredentials } from '../credentials-store.js'
-import { getSolidLinxAppDir, getSolidLinxPiWebAccessConfigPath } from '../solid-local-store.js'
 import { createLinxBearerAuthFetch, resolveLinxCloudRuntimeAuthFetch, resolveRuntimeAuthFetchFromApiKey } from '../linx-cloud-runtime-auth.js'
 import { LINX_RUNTIME_MANAGED_AUTH_KEY } from '../linx-runtime-auth.js'
+import {
+  LINX_WEB_ACCESS_PACKAGE_SOURCE,
+  ensurePiWebAccessConfig,
+  resolveBundledLinxSkillsDir,
+  resolveBundledPiPackageRoot,
+  resolveInstalledMarketSkillDirs,
+  withLinxSkillSourceInfo,
+} from '../linx-runtime-resources.js'
 import {
   LINX_CLOUD_PROVIDER_API,
   LINX_CLOUD_PROVIDER_ID,
@@ -43,10 +45,6 @@ import {
 
 const UNDEFINEDS_SESSION_ID = 'undefineds_pi_frontend'
 const UNDEFINEDS_AUTH_BRIDGE_ID = 'undefineds-cloud-oauth-bridge'
-const LINX_PACKAGE_SOURCE = '@undefineds.co/linx'
-const LINX_WEB_ACCESS_PACKAGE_SOURCE = 'pi-web-access'
-const LINX_PRODUCT_SKILL_NAMES = new Set(['symphony', 'xpod-cli'])
-const MARKET_XPOD_CLI_SKILL_SOURCE = 'xpod-cli@undefineds'
 export const DEFAULT_LINX_PI_BASH_TIMEOUT_SECONDS = 15
 
 export interface LinxRuntimeAdapterDependencies {
@@ -642,189 +640,6 @@ export type PiRuntimeAdapter = LinxRuntimeAdapter
 
 /** @deprecated Use createLinxRuntimeAdapter. */
 export const createPiRuntimeAdapter = createLinxRuntimeAdapter
-
-export function resolveBundledLinxSkillsDir(importMetaUrl = import.meta.url): string | null {
-  const moduleDir = dirname(fileURLToPath(importMetaUrl))
-  const candidates = [
-    // Published package: dist/lib/pi-adapter/runtime.js -> dist/skills.
-    // This directory is a curated product-skill bundle, not the repo skill root.
-    join(moduleDir, '..', '..', 'skills'),
-    // Test/dev bundle: <tmp>/dist/lib/pi-adapter/runtime.js -> curated product skills.
-    resolve(moduleDir, '..', '..', '..', '..', 'skills'),
-    // Source-tree fallback when running through a TS loader.
-    resolve(moduleDir, '..', '..', '..', '..', '..', 'skills'),
-  ]
-
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) {
-      return candidate
-    }
-  }
-
-  return null
-}
-
-function ensurePiWebAccessConfig(): void {
-  const config = JSON.stringify({ workflow: 'none' }, null, 2) + '\n'
-  const linxPath = getSolidLinxPiWebAccessConfigPath()
-  const linxDir = getSolidLinxAppDir()
-  if (!existsSync(linxDir)) {
-    mkdirSync(linxDir, { recursive: true })
-  }
-  if (!existsSync(linxPath)) writeFileSync(linxPath, config)
-}
-
-export function resolveBundledPiPackageRoot(packageName: string, importMetaUrl = import.meta.url): string | null {
-  const moduleDir = dirname(fileURLToPath(importMetaUrl))
-  const vendoredCandidates = [
-    // Published/built package: dist/lib/pi-adapter/runtime.js -> vendor/<package>.
-    resolve(moduleDir, '..', '..', '..', 'vendor', packageName),
-    // Defensive fallback for layouts that place vendor under dist.
-    resolve(moduleDir, '..', '..', 'vendor', packageName),
-  ]
-  for (const candidate of vendoredCandidates) {
-    if (existsSync(join(candidate, 'package.json'))) {
-      return candidate
-    }
-  }
-
-  try {
-    const requireFromRuntime = createRequire(importMetaUrl)
-    return dirname(requireFromRuntime.resolve(`${packageName}/package.json`))
-  } catch {
-    return null
-  }
-}
-
-function withLinxSkillSourceInfo<T extends {
-  skills: Array<{
-    name: string
-    filePath: string
-    sourceInfo?: unknown
-  }>
-  diagnostics: unknown[]
-}>(base: T, options: {
-  bundledSkillsDir: string | null
-  marketSkillDirs: string[]
-}): T {
-  const { bundledSkillsDir, marketSkillDirs } = options
-  const bundledProductSkillNames = new Set<string>()
-  if (bundledSkillsDir) {
-    for (const skill of base.skills) {
-      if (skill.filePath.startsWith(bundledSkillsDir) && LINX_PRODUCT_SKILL_NAMES.has(skill.name)) {
-        bundledProductSkillNames.add(skill.name)
-      }
-    }
-  }
-  const filteredSkills = base.skills.filter((skill) => (
-    !(
-      bundledSkillsDir
-      && skill.filePath.startsWith(bundledSkillsDir)
-      && !LINX_PRODUCT_SKILL_NAMES.has(skill.name)
-    )
-    && !(
-      marketSkillDirs.some((dir) => skill.filePath.startsWith(dir))
-      && bundledProductSkillNames.has(skill.name)
-    )
-  ))
-
-  return {
-    ...base,
-    skills: filteredSkills.map((skill) => {
-      if (bundledSkillsDir && skill.filePath.startsWith(bundledSkillsDir)) {
-        return {
-          ...skill,
-          sourceInfo: {
-            path: skill.filePath,
-            source: LINX_PACKAGE_SOURCE,
-            scope: 'temporary',
-            origin: 'package',
-            baseDir: bundledSkillsDir,
-          },
-        }
-      }
-
-      const marketSkillDir = marketSkillDirs.find((dir) => skill.filePath.startsWith(dir))
-      if (marketSkillDir) {
-        return {
-          ...skill,
-          sourceInfo: {
-            path: skill.filePath,
-            source: MARKET_XPOD_CLI_SKILL_SOURCE,
-            scope: 'temporary',
-            origin: 'marketplace',
-            version: resolveMarketSkillVersion(marketSkillDir),
-            baseDir: marketSkillDir,
-          },
-        }
-      }
-
-      return skill
-    }),
-  }
-}
-
-export function resolveInstalledMarketSkillDirs(): string[] {
-  return [resolveInstalledXpodCliMarketSkillDir()].filter((path): path is string => Boolean(path))
-}
-
-function resolveInstalledXpodCliMarketSkillDir(): string | null {
-  const codexHome = process.env.CODEX_HOME?.trim() || join(homedir(), '.codex')
-  const versionsRoot = join(codexHome, 'plugins', 'cache', 'undefineds', 'xpod-cli')
-  if (!existsSync(versionsRoot)) {
-    return null
-  }
-
-  const candidates: Array<{ version: string; dir: string }> = []
-  for (const entry of safeReadDir(versionsRoot)) {
-    const versionDir = join(versionsRoot, entry)
-    if (!safeIsDirectory(versionDir)) {
-      continue
-    }
-    const skillDir = join(versionDir, 'skills', 'xpod-cli')
-    if (existsSync(join(skillDir, 'SKILL.md'))) {
-      candidates.push({ version: entry, dir: skillDir })
-    }
-  }
-
-  candidates.sort((a, b) => compareVersionLike(b.version, a.version))
-  return candidates[0]?.dir ?? null
-}
-
-function resolveMarketSkillVersion(skillDir: string): string | undefined {
-  const version = basename(dirname(dirname(skillDir)))
-  return version && version !== 'skills' ? version : undefined
-}
-
-function safeReadDir(dir: string): string[] {
-  try {
-    return readdirSync(dir)
-  } catch {
-    return []
-  }
-}
-
-function safeIsDirectory(path: string): boolean {
-  try {
-    return statSync(path).isDirectory()
-  } catch {
-    return false
-  }
-}
-
-function compareVersionLike(a: string, b: string): number {
-  const left = a.split(/[.-]/u).map((part) => Number(part))
-  const right = b.split(/[.-]/u).map((part) => Number(part))
-  const length = Math.max(left.length, right.length)
-  for (let i = 0; i < length; i += 1) {
-    const l = Number.isFinite(left[i]) ? left[i] : 0
-    const r = Number.isFinite(right[i]) ? right[i] : 0
-    if (l !== r) {
-      return l - r
-    }
-  }
-  return a.localeCompare(b)
-}
 
 function enableLinxXhighThinking(session: {
   model?: { provider?: string; reasoning?: boolean }
