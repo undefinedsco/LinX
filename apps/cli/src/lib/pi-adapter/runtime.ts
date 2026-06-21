@@ -2,14 +2,10 @@ import { createLinxAgentStreamAdapter, type LinxAgentStreamAdapter } from './str
 import type { AgentSessionRuntime } from '@earendil-works/pi-coding-agent'
 import type { AutoModeWorkerBackend } from '../auto-mode/types.js'
 import type { BackendCommandRouter } from '../backend-command.js'
-import type { NativeBackendApprovalPolicy } from '../native-backend-proxy.js'
-import type { PodDataSession } from '../pod-data-session.js'
 import type { LinxRuntimeAdapterDependencies } from '../linx-runtime-adapter-dependencies.js'
-import type { LinxRuntimeBackendMode } from '../linx-runtime-adapter-defaults.js'
 import {
   createLinxAgentSessionRuntime,
   type LinxCloudPiAuthBridge,
-  type LinxRuntimeOAuthProvider,
 } from '../linx-runtime-agent-session.js'
 import {
   createRuntimeBackendComposition,
@@ -24,25 +20,7 @@ export interface LinxRuntimeFactoryContext {
 }
 
 export type LinxCreateRuntimeFactory = (context: LinxRuntimeFactoryContext) => Promise<AgentSessionRuntime>
-export interface LinxRuntimeAdapterOptions extends RuntimeBackendCompositionOptions {
-  cwd?: string
-  model?: string
-  port?: number
-  backend?: LinxRuntimeBackendMode
-  workerBackend?: AutoModeWorkerBackend
-  autoEnabled?: boolean
-  symphonyEnabled?: boolean
-  codexApprovalPolicy?: NativeBackendApprovalPolicy
-  passthroughArgs?: string[]
-  backendEnv?: Record<string, string>
-  resolveBackendEnv?: () => Promise<Record<string, string> | undefined>
-  getPodDataSession?: () => Promise<PodDataSession | null>
-  providerConfig?: {
-    baseUrl: string
-    issuerUrl?: string
-    oauth?: LinxRuntimeOAuthProvider
-  }
-}
+export type LinxRuntimeAdapterOptions = RuntimeBackendCompositionOptions
 
 export type { LinxCloudPiAuthBridge }
 
