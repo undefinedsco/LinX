@@ -11,6 +11,7 @@ import {
   resolveLinxRuntimeBackendMode,
   resolveLinxRuntimeWorkerBackend,
   resolveLinxRuntimeBaseUrl,
+  DEFAULT_LINX_RUNTIME_SESSION_ID,
   type LinxRuntimeBackendMode,
 } from '../linx-runtime-adapter-defaults.js'
 import { createNativeBackendCommandRouter } from '../native-backend-command-router.js'
@@ -22,7 +23,6 @@ import {
   type LinxRuntimeOAuthProvider,
 } from '../linx-runtime-agent-session.js'
 
-const UNDEFINEDS_SESSION_ID = 'undefineds_pi_frontend'
 export interface LinxRuntimeFactoryContext {
   cwd: string
   agentDir: string
@@ -108,7 +108,7 @@ export function createLinxRuntimeAdapter(
   }
 
   const streamAdapter = createLinxAgentStreamAdapter({
-    sessionId: proxy?.record.id ?? UNDEFINEDS_SESSION_ID,
+    sessionId: proxy?.record.id ?? DEFAULT_LINX_RUNTIME_SESSION_ID,
     cwd: proxy?.record.cwd ?? cwd,
     model: proxy?.record.model ?? cloudRuntime.getActiveModelId(),
     backend: createNativeBackendStreamBackend(proxy),
@@ -126,7 +126,7 @@ export function createLinxRuntimeAdapter(
 
   return {
     remoteUrl: proxy?.remoteUrl ?? baseUrl,
-    sessionId: proxy?.record.id ?? UNDEFINEDS_SESSION_ID,
+    sessionId: proxy?.record.id ?? DEFAULT_LINX_RUNTIME_SESSION_ID,
     cwd: proxy?.record.cwd ?? cwd,
     model: proxy?.record.model ?? cloudRuntime.getActiveModelId(),
     backend: 'linx',
