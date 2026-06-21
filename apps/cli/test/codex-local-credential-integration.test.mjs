@@ -247,7 +247,7 @@ test('local .codex credentials flow through standard LinX AI config into codex a
     loadAutoModeModule('lib/credentials-store.ts'),
     loadAutoModeModule('lib/ai-command.ts'),
     loadAutoModeModule('lib/auto-mode/pod-ai.ts'),
-    loadAutoModeModule('lib/auto-mode/index.ts'),
+    loadAutoModeModule('lib/auto-mode/runner.ts'),
   ])
   t.after(() => credentialsCleanup())
   t.after(() => aiCleanup())

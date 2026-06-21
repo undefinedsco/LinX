@@ -47,7 +47,7 @@ function resolvePackageSourceRoot(packageName, candidates) {
   throw new Error(`Cannot find built ${packageName}. Run yarn install, or set LINX_MODELS_ROOT to an explicit built checkout.`)
 }
 
-export async function loadAutoModeModule(entryRelative = 'lib/auto-mode/index.ts') {
+export async function loadAutoModeModule(entryRelative = 'lib/auto-mode/runner.ts') {
   if (!bundleCache.has(entryRelative)) {
     bundleCache.set(entryRelative, loadBuiltAutoModeBundle(entryRelative) ?? buildAutoModeBundle(entryRelative))
   }

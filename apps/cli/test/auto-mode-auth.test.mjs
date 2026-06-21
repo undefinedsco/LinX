@@ -7,14 +7,32 @@ import { tmpdir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 
-let autoModeModulePromise
+let autoModeRunnerModulePromise
+let autoModeAuthModulePromise
+let autoModePodAiModulePromise
 
-async function getAutoModeBundle() {
-  if (!autoModeModulePromise) {
-    autoModeModulePromise = loadAutoModeModule()
+async function getAutoModeRunnerBundle() {
+  if (!autoModeRunnerModulePromise) {
+    autoModeRunnerModulePromise = loadAutoModeModule('lib/auto-mode/runner.ts')
   }
 
-  return autoModeModulePromise
+  return autoModeRunnerModulePromise
+}
+
+async function getAutoModeAuthBundle() {
+  if (!autoModeAuthModulePromise) {
+    autoModeAuthModulePromise = loadAutoModeModule('lib/auto-mode/auth.ts')
+  }
+
+  return autoModeAuthModulePromise
+}
+
+async function getAutoModePodAiBundle() {
+  if (!autoModePodAiModulePromise) {
+    autoModePodAiModulePromise = loadAutoModeModule('lib/auto-mode/pod-ai.ts')
+  }
+
+  return autoModePodAiModulePromise
 }
 
 async function runAutoMode(entryPath, options, env) {
@@ -90,7 +108,7 @@ async function withPatchedEnv(t, env, fn) {
 }
 
 test('claude auth preflight parser recognizes logged-out status json', async () => {
-  const { module } = await getAutoModeBundle()
+  const { module } = await getAutoModeAuthBundle()
   const parsed = module.__internal.parseClaudeAuthStatus(JSON.stringify({
     loggedIn: false,
     authMethod: 'none',
@@ -102,7 +120,7 @@ test('claude auth preflight parser recognizes logged-out status json', async () 
 })
 
 test('runtime auth failure detection prefers protocol payloads', async () => {
-  const { module } = await getAutoModeBundle()
+  const { module } = await getAutoModeAuthBundle()
   const failure = module.detectAutoModeAuthFailure('claude', JSON.stringify({
     type: 'assistant',
     error: 'authentication_failed',
@@ -117,7 +135,7 @@ test('runtime auth failure detection prefers protocol payloads', async () => {
 })
 
 test('pod ai selector prefers active anthropic credentials', async () => {
-  const { module } = await getAutoModeBundle()
+  const { module } = await getAutoModePodAiBundle()
   const match = module.__podInternal.selectPodCredentialForBackend('claude', [
     {
       id: 'cred-openai',
@@ -152,7 +170,7 @@ test('pod ai selector prefers active anthropic credentials', async () => {
 })
 
 test('pod ai selector uses shared provider aliases for claude credentials', async () => {
-  const { module } = await getAutoModeBundle()
+  const { module } = await getAutoModePodAiBundle()
   const match = module.__podInternal.selectPodCredentialForBackend('claude', [
     {
       id: 'cred-claude',
@@ -176,7 +194,7 @@ test('pod ai selector uses shared provider aliases for claude credentials', asyn
 })
 
 test('pod ai selector maps openai credentials to codex backend', async () => {
-  const { module } = await getAutoModeBundle()
+  const { module } = await getAutoModePodAiBundle()
   const match = module.__podInternal.selectPodCredentialForBackend('codex', [
     {
       id: 'cred-openai',
@@ -201,7 +219,7 @@ test('pod ai selector maps openai credentials to codex backend', async () => {
 })
 
 test('pod ai selector maps codebuddy credentials and prefers credential baseUrl', async () => {
-  const { module } = await getAutoModeBundle()
+  const { module } = await getAutoModePodAiBundle()
   const match = module.__podInternal.selectPodCredentialForBackend('codebuddy', [
     {
       id: 'cred-codebuddy',
@@ -227,7 +245,7 @@ test('pod ai selector maps codebuddy credentials and prefers credential baseUrl'
 })
 
 test('local credential source uses backend local auth and skips LinX Cloud Pod config', async (t) => {
-  const { module } = await getAutoModeBundle()
+  const { module } = await getAutoModeRunnerBundle()
 
   let preflightCalls = 0
   let podCalls = 0
@@ -271,7 +289,7 @@ mode: 'auto',
 })
 
 test('cloud credential source resolves pod-backed codex credentials and skips local auth preflight', async (t) => {
-  const { module } = await getAutoModeBundle()
+  const { module } = await getAutoModeRunnerBundle()
   let preflightCalls = 0
 
   t.mock.method(module.autoModeRuntime, 'preflightAutoModeAuth', async () => {
@@ -310,7 +328,7 @@ test('cloud credential source resolves pod-backed codex credentials and skips lo
 })
 
 test('explicit command env overrides pod credential env after cloud resolution', async (t) => {
-  const { module } = await getAutoModeBundle()
+  const { module } = await getAutoModeRunnerBundle()
 
   t.mock.method(module.autoModeRuntime, 'loadPodBackendCredential', async (backend) => {
     assert.equal(backend, 'codex')
@@ -347,7 +365,7 @@ mode: 'auto',
 })
 
 test('backend startup LinX Cloud auth prompt matches TUI sign-in choices', async (t) => {
-  const { module } = await getAutoModeBundle()
+  const { module } = await getAutoModeRunnerBundle()
   const calls = []
   const display = {
     setPhase() {},
@@ -374,7 +392,7 @@ test('backend startup LinX Cloud auth prompt matches TUI sign-in choices', async
 })
 
 test('backend startup Solid client credentials auth saves validated client credentials', async (t) => {
-  const { module } = await getAutoModeBundle()
+  const { module } = await getAutoModeRunnerBundle()
   const savedCredentials = []
   const savedAccounts = []
   const clearedSessions = []
@@ -511,7 +529,7 @@ test('oidc pod data session exposes a drizzle-compatible solid session', async (
 })
 
 test('pod-backed codex credential is read through shared model db', async () => {
-  const { module } = await getAutoModeBundle()
+  const { module } = await getAutoModePodAiBundle()
   const credentialResource = { name: 'credentialResource' }
   const aiProviderResource = { name: 'aiProviderResource' }
   const resourceName = (resource) => resource?.config?.name ?? resource?.name ?? 'unknown'
@@ -618,7 +636,7 @@ test('pod-backed codex credential is read through shared model db', async () => 
 })
 
 test('cloud credential source resolves pod-backed codebuddy credentials and skips local auth preflight', async (t) => {
-  const { module } = await getAutoModeBundle()
+  const { module } = await getAutoModeRunnerBundle()
   let preflightCalls = 0
 
   t.mock.method(module.autoModeRuntime, 'preflightAutoModeAuth', async () => {
@@ -657,7 +675,7 @@ mode: 'auto',
 })
 
 test('default credential resolution uses LinX Cloud Pod config and skips local backend auth status', async (t) => {
-  const { module } = await getAutoModeBundle()
+  const { module } = await getAutoModeRunnerBundle()
   let preflightCalls = 0
 
   t.mock.method(module.autoModeRuntime, 'preflightAutoModeAuth', async () => {
@@ -749,7 +767,7 @@ rl.on('line', (line) => {
   )
   chmodSync(fakeCodebuddyPath, 0o755)
 
-  const { module } = await getAutoModeBundle()
+  const { module } = await getAutoModeRunnerBundle()
 
   t.mock.method(module.autoModeRuntime, 'loadPodBackendCredential', async (backend) => {
     assert.equal(backend, 'codebuddy')
@@ -800,6 +818,12 @@ mode: 'auto',
 })
 
 test.after(async () => {
-  const loaded = autoModeModulePromise ? await autoModeModulePromise : null
-  loaded?.cleanup()
+  const loaded = await Promise.all([
+    autoModeRunnerModulePromise,
+    autoModeAuthModulePromise,
+    autoModePodAiModulePromise,
+  ].filter(Boolean))
+  for (const bundle of loaded) {
+    bundle.cleanup()
+  }
 })

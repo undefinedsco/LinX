@@ -21,6 +21,14 @@ test('auto-mode command module depends on owning auto-mode modules instead of th
   )
 })
 
+test('auto-mode internals do not expose an aggregate barrel inside the CLI shell', () => {
+  assert.equal(
+    existsSync(new URL('../src/lib/auto-mode/index.ts', import.meta.url)),
+    false,
+    'auto-mode internals should be consumed through owning modules, not a local aggregate barrel',
+  )
+})
+
 test('symphony command module depends on owning auto-mode modules instead of the aggregate barrel', () => {
   assert.doesNotMatch(
     symphonyCommandSource,
