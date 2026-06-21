@@ -5,6 +5,7 @@ import type { AutoModeNormalizedEvent } from '../auto-mode/types.js'
 import {
   normalizeChatCompletionMessagesFromPiContext,
   normalizeChatCompletionToolsFromPiContext,
+  resolveLatestUserTextFromChatCompletionMessages,
   type LinxChatCompletionContextMessage,
   type LinxChatCompletionContextTool,
 } from '../linx-chat-completion-projection.js'
@@ -66,8 +67,7 @@ export function createLinxAgentStreamAdapter(options: LinxAgentStreamAdapterOpti
         stream.push({ type: 'start', partial: { ...message } })
         const normalizedMessages = normalizeChatCompletionMessagesFromPiContext(context)
         const normalizedTools = normalizeChatCompletionToolsFromPiContext(context?.tools)
-        const lastUserText = [...normalizedMessages].reverse().find((entry) => entry.role === 'user')
-        const prompt = typeof lastUserText?.content === 'string' ? lastUserText.content : ''
+        const prompt = resolveLatestUserTextFromChatCompletionMessages(normalizedMessages)
 
         if (options.completionBackend) {
           throwIfLinxStreamAborted(streamOptions?.signal)
