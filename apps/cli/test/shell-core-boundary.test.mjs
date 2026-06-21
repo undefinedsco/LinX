@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
 const repoRoot = new URL('../../..', import.meta.url).pathname
@@ -468,4 +468,46 @@ test('pi adapter compatibility wrappers are not kept only for tests', () => {
 
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+
+test('repository scripts do not import shell/core modules through stale pi-adapter paths', () => {
+  const stalePatterns = [
+    /dist\/lib\/pi-adapter\/pod-mirror(?:\.js)?/u,
+    /dist\/lib\/pi-adapter\/pod-mirror-mapping(?:\.js)?/u,
+    /dist\/lib\/pi-adapter\/session(?:\.js)?/u,
+    /dist\/lib\/pi-adapter\/pod-native(?:\.js)?/u,
+  ]
+  const violations = []
+  for (const root of [join(repoRoot, 'scripts'), join(repoRoot, 'docs')]) {
+    for (const file of listTextFiles(root)) {
+      const source = readFileSync(file, 'utf8')
+      if (stalePatterns.some((pattern) => pattern.test(source))) {
+        violations.push(relative(repoRoot, file))
+      }
+    }
+  }
+
+  assert.deepEqual(violations.sort(), [])
+})
+
+function listTextFiles(root) {
+  if (!existsSync(root)) {
+    return []
+  }
+  const files = []
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    const next = join(root, entry.name)
+    if (entry.isDirectory()) {
+      if (entry.name === 'node_modules' || entry.name === 'dist') {
+        continue
+      }
+      files.push(...listTextFiles(next))
+      continue
+    }
+    if (entry.isFile() && /\.(?:md|mjs|js|ts)$/u.test(entry.name)) {
+      files.push(next)
+    }
+  }
+  return files
 }
