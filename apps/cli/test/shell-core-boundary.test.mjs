@@ -295,3 +295,22 @@ test('session command router install state is kept behind the shell session host
 
   assert.deepEqual(violations, [])
 })
+
+test('runtime provider OAuth patch state is kept out of registry hidden fields', () => {
+  const violations = []
+  const directRegistryPatchPattern = /__linxCloudOAuthDetectionPatched\b/
+
+  for (const file of listSourceFiles(libRoot)) {
+    const relativePath = relative(libRoot, file)
+    if (relativePath.startsWith(adapterSegment)) {
+      continue
+    }
+
+    const source = readFileSync(file, 'utf8')
+    if (directRegistryPatchPattern.test(source)) {
+      violations.push(relativePath)
+    }
+  }
+
+  assert.deepEqual(violations, [])
+})
