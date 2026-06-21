@@ -1,9 +1,10 @@
 import { createLinxAgentStreamAdapter, type LinxAgentStreamAdapter, type LinxCompletionBackendResult } from './stream.js'
 import { ensureBrowserConsentLogin } from '../oidc-auth.js'
 import { DEFAULT_LINX_CLOUD_MODEL_ID, resolvePreferredLinxCloudModelId } from '../default-model.js'
+import { withLinxRuntimeSystemPrompt, overrideLinxSystemPrompt } from '../linx-runtime-system-prompt.js'
+import { enableLinxXhighThinking } from '../linx-runtime-thinking.js'
 import { ensureLinxPiTheme } from '../linx-theme.js'
 import {
-  type BashOperations,
   type AgentSessionRuntime,
   AuthStorage,
   ModelRegistry,
@@ -12,8 +13,6 @@ import {
   createAgentSessionFromServices,
   createAgentSessionRuntime,
   createAgentSessionServices,
-  createCodingTools,
-  createLocalBashOperations,
 } from '@earendil-works/pi-coding-agent'
 // web_fetch / web_search are now handled by pi-web-access
 import type { Api, Model, OAuthCredentials } from '@earendil-works/pi-ai'
@@ -49,11 +48,13 @@ export {
   type LinxStartupLoginPromptDecision,
   type LinxStartupLoginReason,
 } from '../linx-startup-login-policy.js'
+export {
+  DEFAULT_LINX_PI_BASH_TIMEOUT_SECONDS,
+  createLinxPiCodingTools,
+} from '../linx-runtime-coding-tools.js'
 
 const UNDEFINEDS_SESSION_ID = 'undefineds_pi_frontend'
 const UNDEFINEDS_AUTH_BRIDGE_ID = 'undefineds-cloud-oauth-bridge'
-export const DEFAULT_LINX_PI_BASH_TIMEOUT_SECONDS = 15
-
 export interface LinxRuntimeAdapterDependencies {
   createNativeProxy?: (options?: {
     cwd?: string
@@ -252,7 +253,7 @@ export function createLinxRuntimeAdapter(
           return completeWithAuthRecovery(authFetch, {
             runtimeUrl: baseUrl,
             model: input.model,
-            messages: withSystemPrompt(input.systemPrompt, input.messages),
+            messages: withLinxRuntimeSystemPrompt(input.systemPrompt, input.messages),
             tools: input.tools,
             signal: input.signal,
           })
@@ -581,86 +582,6 @@ export type PiRuntimeAdapter = LinxRuntimeAdapter
 /** @deprecated Use createLinxRuntimeAdapter. */
 export const createPiRuntimeAdapter = createLinxRuntimeAdapter
 
-function enableLinxXhighThinking(session: {
-  model?: { provider?: string; reasoning?: boolean }
-  supportsXhighThinking?: () => boolean
-  getAvailableThinkingLevels?: () => string[]
-}): void {
-  const originalSupportsXhighThinking = session.supportsXhighThinking?.bind(session)
-  const originalGetAvailableThinkingLevels = session.getAvailableThinkingLevels?.bind(session)
-
-  session.supportsXhighThinking = () => (
-    session.model?.provider === LINX_CLOUD_PROVIDER_ID && session.model.reasoning
-      ? (session.getAvailableThinkingLevels?.().includes('xhigh') ?? true)
-      : (originalSupportsXhighThinking?.() ?? false)
-  )
-
-  if (originalGetAvailableThinkingLevels) {
-    session.getAvailableThinkingLevels = () => {
-      const levels = originalGetAvailableThinkingLevels()
-      if (session.model?.provider === LINX_CLOUD_PROVIDER_ID && session.model.reasoning && !levels.includes('xhigh')) {
-        return [...levels, 'xhigh']
-      }
-      return levels
-    }
-  }
-}
-
-export function createLinxPiCodingTools(cwd: string, options: {
-  bashTimeoutSeconds?: number
-  bashOperations?: BashOperations
-} = {}): Array<{
-  name: string
-  execute(callId: string, input: Record<string, unknown>): Promise<unknown>
-}> {
-  const localBashOperations = options.bashOperations ?? createLocalBashOperations()
-  const bashTimeoutSeconds = options.bashTimeoutSeconds ?? DEFAULT_LINX_PI_BASH_TIMEOUT_SECONDS
-  return createCodingTools(cwd, {
-    bash: {
-      operations: {
-        exec(command, workingDirectory, options) {
-          return localBashOperations.exec(command, workingDirectory ?? cwd, {
-            ...options,
-            timeout: typeof options.timeout === 'number'
-              ? options.timeout
-              : bashTimeoutSeconds,
-          })
-        },
-      },
-    },
-  })
-}
-
 function isAuthExpiredError(error: unknown): boolean {
   return isRemoteAuthExpiredError(error)
-}
-
-function withSystemPrompt(systemPrompt: string | undefined, messages: RemoteChatMessage[]): RemoteChatMessage[] {
-  const prompt = systemPrompt?.trim()
-  if (!prompt) {
-    return messages
-  }
-  if (messages.some((message) => message.role === 'system')) {
-    return messages
-  }
-  return [{ role: 'system', content: prompt }, ...messages]
-}
-
-function overrideLinxSystemPrompt(base: string | undefined): string | undefined {
-  const original = base?.trim()
-  const identity = [
-    'You are LinX, an AI Secretary operating inside the LinX CLI.',
-    'When replying in Chinese, describe yourself as "AI主理人".',
-    'Use a friendly, direct style like: "你好！我是 LinX，一个 AI 主理人，很高兴为你服务！"',
-    'Keep Pi-compatible coding agent behavior: read files, run commands, edit code, use tools, and follow project instructions.',
-    'When introducing capabilities, describe only user-facing LinX product abilities and the currently available runtime actions.',
-    'Do not advertise repository-local agent instructions, internal command names, bundled plugin skill names, package names, or developer-only workflows as features the user can call.',
-    'If a capability depends on the current workspace, installed tools, login state, backend, or Symphony mode, state that dependency instead of implying it is always available.',
-  ].join('\n')
-
-  if (!original) {
-    return identity
-  }
-
-  return `${identity}\n\n${original.replace(/\bpi\b/g, 'LinX').replace(/\bPi\b/g, 'LinX')}`
 }
