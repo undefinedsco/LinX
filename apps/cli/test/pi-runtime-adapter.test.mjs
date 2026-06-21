@@ -81,6 +81,29 @@ test('LinX startup login policy helper lives outside the Pi adapter', async (t) 
   assert.equal(typeof module.resolveLinxInteractiveLoginReason, 'function')
 })
 
+test('LinX runtime prompt helper lives outside the Pi adapter', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-runtime-system-prompt.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.withLinxRuntimeSystemPrompt, 'function')
+  assert.equal(typeof module.overrideLinxSystemPrompt, 'function')
+})
+
+test('LinX runtime thinking helper lives outside the Pi adapter', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-runtime-thinking.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.enableLinxXhighThinking, 'function')
+})
+
+test('LinX runtime coding tools helper lives outside the Pi adapter', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-runtime-coding-tools.ts')
+  t.after(() => cleanup())
+
+  assert.equal(module.DEFAULT_LINX_PI_BASH_TIMEOUT_SECONDS, 15)
+  assert.equal(typeof module.createLinxPiCodingTools, 'function')
+})
+
 test('linx startup login prompt decision covers the auth state matrix', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-startup-login-policy.ts')
   t.after(() => cleanup())
