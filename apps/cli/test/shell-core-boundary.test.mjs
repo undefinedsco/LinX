@@ -273,3 +273,25 @@ test('session original methods are kept behind shell-owned accessors', () => {
 
   assert.deepEqual(violations, [])
 })
+
+test('session command router install state is kept behind the shell session host', () => {
+  const allowed = new Set([
+    'linx-session-command-routing-host.ts',
+  ])
+  const violations = []
+  const directSessionInstallStatePattern = /__linxSessionCommandRouterInstalled\b/
+
+  for (const file of listSourceFiles(libRoot)) {
+    const relativePath = relative(libRoot, file)
+    if (relativePath.startsWith(adapterSegment) || allowed.has(relativePath)) {
+      continue
+    }
+
+    const source = readFileSync(file, 'utf8')
+    if (directSessionInstallStatePattern.test(source)) {
+      violations.push(relativePath)
+    }
+  }
+
+  assert.deepEqual(violations, [])
+})
