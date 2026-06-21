@@ -2,16 +2,16 @@
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { LinxPiPodMirror } from '../apps/cli/dist/lib/pi-adapter/pod-mirror.js'
+import { LinxPiPodMirror } from '../apps/cli/dist/lib/linx-pod-mirror.js'
 import {
   DEFAULT_SECRETARY_CHAT_ID,
   buildToolAuditId,
-} from '../apps/cli/dist/lib/pi-adapter/pod-mirror-mapping.js'
+} from '../apps/cli/dist/lib/pod-mirror-mapping.js'
 import {
   createNativeLinxPiPodSessionSource,
   createLinxPiSessionManager,
   listLinxPiSessions,
-} from '../apps/cli/dist/lib/pi-adapter/session.js'
+} from '../apps/cli/dist/lib/linx-session-manager.js'
 import {
   aiProviderResource,
   approvalResource,
@@ -28,7 +28,7 @@ import {
   buildApprovalResourceUrl,
   buildGrantResourceUrl,
   buildSessionResourceUrl,
-} from '../apps/cli/dist/lib/pi-adapter/pod-native.js'
+} from '../apps/cli/dist/lib/pod-native.js'
 import { __podApprovalInternal } from '../apps/cli/dist/lib/auto-mode/pod-approval.js'
 import { loadCredentials } from '../apps/cli/dist/lib/credentials-store.js'
 import { getDefaultPodDataSession } from '../apps/cli/dist/lib/pod-data-session.js'
