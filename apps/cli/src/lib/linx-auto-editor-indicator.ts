@@ -1,4 +1,5 @@
 import { truncateToWidth, visibleWidth } from '@earendil-works/pi-tui'
+import { isLinxInteractiveAutoModeEnabled } from './linx-interactive-shell-state.js'
 
 const AUTO_EDITOR_INDICATOR_LABEL = ' 托管中 · Secretary 自动输入 · Ctrl+C 接管 · /auto off '
 
@@ -45,7 +46,7 @@ function decorateLinxAutoEditorRender(editor: any, interactive: any): void {
   const originalRender = editor.render.bind(editor)
   editor.render = function linxAutoEditorIndicatorRender(width: number): string[] {
     const lines = originalRender(width)
-    if (interactive.__autoEnabled !== true) {
+    if (!isLinxInteractiveAutoModeEnabled(interactive)) {
       return lines
     }
     return decorateLinxAutoEditorLines(lines, width)

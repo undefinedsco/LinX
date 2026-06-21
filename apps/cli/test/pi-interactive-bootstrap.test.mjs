@@ -1498,7 +1498,6 @@ test('linx interrupt hands auto control back to the user before Pi clear exit se
 
   const calls = []
   const interactive = {
-    __autoEnabled: true,
     runtime: { autoEnabled: true },
     defaultEditor: {
       actionHandlers: new Map([
@@ -1532,7 +1531,7 @@ test('linx interrupt hands auto control back to the user before Pi clear exit se
   module.installLinxEscapeInterrupt(interactive)
   interactive.defaultEditor.actionHandlers.get('app.clear')()
 
-  assert.equal(interactive.__autoEnabled, false)
+  assert.equal(module.isLinxInteractiveAutoModeEnabled(interactive, interactive.runtime), false)
   assert.equal(interactive.runtime.autoEnabled, false)
   assert.equal(calls[0], 'abort')
   assert.match(calls[1], /Auto off: you drive the current session directly/)
@@ -4698,12 +4697,17 @@ test('linx interactive handles /auto before backend fallback', async (t) => {
 
 
 test('auto editor indicator shell module decorates the active input bar', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/linx-auto-editor-indicator.ts')
-  t.after(() => cleanup())
+  const [{ module, cleanup }, { module: stateModule, cleanup: stateCleanup }] = await Promise.all([
+    loadAutoModeModule('lib/linx-auto-editor-indicator.ts'),
+    loadAutoModeModule('lib/linx-interactive-shell-state.ts'),
+  ])
+  t.after(() => {
+    cleanup()
+    stateCleanup()
+  })
 
   const { visibleWidth } = await import('@earendil-works/pi-tui')
   const interactive = {
-    __autoEnabled: true,
     defaultEditor: {
       render(width) {
         return [
@@ -4714,6 +4718,7 @@ test('auto editor indicator shell module decorates the active input bar', async 
     },
   }
 
+  stateModule.configureLinxInteractiveShellState(interactive, { autoModeEnabled: true })
   module.installLinxAutoEditorIndicator(interactive)
   const rendered = interactive.defaultEditor.render(40)
 
@@ -4729,7 +4734,6 @@ test('linx interactive shows delegated input bar while auto is on', async (t) =>
 
   const renderCalls = []
   const interactive = {
-    __autoEnabled: false,
     defaultEditor: {
       render(width) {
         renderCalls.push(width)
@@ -4749,7 +4753,7 @@ test('linx interactive shows delegated input bar while auto is on', async (t) =>
   assert.equal(normal[0], '─'.repeat(60))
   assert.equal(renderCalls.length, 1)
 
-  interactive.__autoEnabled = true
+  module.configureLinxInteractiveShellState(interactive, { autoModeEnabled: true })
   const delegated = interactive.defaultEditor.render(60)
   const delegatedText = delegated.join('\n')
   assert.match(delegatedText, /托管中/)
@@ -4758,7 +4762,7 @@ test('linx interactive shows delegated input bar while auto is on', async (t) =>
   assert.match(delegatedText, /\/auto off/)
   assert.equal(delegated.every((line) => visibleWidth(line) <= 60), true)
 
-  interactive.__autoEnabled = false
+  module.configureLinxInteractiveShellState(interactive, { autoModeEnabled: false })
   const restored = interactive.defaultEditor.render(60)
   assert.equal(restored[0], '─'.repeat(60))
   assert.equal(renderCalls.length, 3)
@@ -4773,7 +4777,6 @@ test('linx interactive records normal user input through Thread Reconciler befor
   const controlManagers = []
   const submitted = []
   const interactive = {
-    __autoEnabled: false,
     defaultEditor: {},
     sessionManager: businessSessionManager,
     editor: {
@@ -5004,7 +5007,7 @@ test('linx interactive /auto with startup input enables auto and submits the inp
   assert.deepEqual(commands, [])
   assert.deepEqual(submitted, ['我们玩成语接龙'])
   assert.deepEqual(editorTexts, [''])
-  assert.equal(interactive.__autoEnabled, true)
+  assert.equal(module.isLinxInteractiveAutoModeEnabled(interactive, runtime), true)
   assert.equal(runtime.autoEnabled, true)
   assert.equal(resolveNextUserInputCalls, 0)
   assert.equal(controlManagers.length, 1)
@@ -5088,7 +5091,7 @@ test('linx interactive /auto startup input is backend-agnostic', async (t) => {
 
       assert.deepEqual(commands, [])
       assert.deepEqual(submitted, [`start ${backend}`])
-      assert.equal(interactive.__autoEnabled, true)
+      assert.equal(module.isLinxInteractiveAutoModeEnabled(interactive, runtime), true)
       assert.equal(runtime.autoEnabled, true)
       const snapshot = interactive.__sessionControlManager.getSnapshot()
       assert.equal(snapshot.autoEnabled, true)
@@ -5150,7 +5153,7 @@ test('linx interactive /auto can let Secretary send a /goal command to the curre
 
   assert.deepEqual(commands, [])
   assert.deepEqual(submitted, ['/goal ship the login fix'])
-  assert.equal(interactive.__autoEnabled, true)
+  assert.equal(module.isLinxInteractiveAutoModeEnabled(interactive, runtime), true)
   assert.equal(runtime.autoEnabled, true)
   assert.equal(module.isLinxInteractiveGoalModeEnabled(interactive, runtime), true)
   assert.equal(runtime.goalMode, true)
@@ -5214,7 +5217,7 @@ test('linx interactive /auto projected command treats /auto as Secretary control
   await interactive.defaultEditor.onSubmit('/auto /auto off')
 
   assert.deepEqual(submitted, [])
-  assert.equal(interactive.__autoEnabled, false)
+  assert.equal(module.isLinxInteractiveAutoModeEnabled(interactive, runtime), false)
   assert.equal(runtime.autoEnabled, false)
   assert.match(statuses.join('\n'), /Auto off: you drive the current session directly/)
   const entries = interactive.__sessionControlManager.controlSessionManager.getEntries()
@@ -5386,7 +5389,7 @@ test('linx interactive goal supervision can skip when Secretary has no useful st
   interactive.setupEditorSubmitHandler()
 
   await interactive.defaultEditor.onSubmit('/auto /goal ship the login fix')
-  interactive.__linxAutoInputController.schedule('runtime-idle')
+  module.getLinxInteractiveAutoInputController(interactive).schedule('runtime-idle')
   await new Promise((resolve) => setTimeout(resolve, 120))
 
   assert.deepEqual(sentUserMessages, [{ text: '/goal ship the login fix', options: undefined }])
@@ -5677,7 +5680,7 @@ test('linx interactive /auto off cancels pending Secretary user input projection
   await new Promise((resolve) => setTimeout(resolve, 120))
 
   assert.deepEqual(sentUserMessages, [])
-  assert.equal(interactive.__autoEnabled, false)
+  assert.equal(module.isLinxInteractiveAutoModeEnabled(interactive, runtime), false)
   assert.equal(runtime.autoEnabled, false)
 })
 
@@ -5738,7 +5741,6 @@ test('linx session control records only blocked runtime events while auto is on'
   const { SessionManager } = await import('@earendil-works/pi-coding-agent')
   const businessSessionManager = SessionManager.inMemory('/tmp/demo')
   const interactive = {
-    __autoEnabled: false,
     sessionManager: businessSessionManager,
   }
   const runtime = {
@@ -5813,7 +5815,6 @@ test('linx interactive /auto status can reflect runtime-initialized auto flag', 
 
   const statuses = []
   const interactive = {
-    __autoEnabled: true,
     defaultEditor: {},
     editor: { setText() {} },
     ui: { requestRender() {} },
@@ -5902,7 +5903,7 @@ test('linx interactive restores auto mode visibly on resume startup', async (t) 
     },
     stop() {},
   }
-  interactive.__linxAutoInputController = controller
+  module.setLinxInteractiveAutoInputController(interactive, controller)
   interactive.run = async () => {}
 
   await bootstrap.run()
@@ -6236,7 +6237,6 @@ test('linx interactive /symphony keeps worker-looking messages in the Secretary 
   const editorTexts = []
   const interactive = {
     defaultEditor: {},
-    __autoEnabled: true,
     podSession: {
       webId: 'https://alice.example/profile/card#me',
     },
@@ -6320,7 +6320,6 @@ test('linx interactive /symphony off restores worker backend chat without pendin
   const errors = []
   const interactive = {
     defaultEditor: {},
-    __autoEnabled: true,
     podSession: {
       webId: 'https://alice.example/profile/card#me',
     },
@@ -6853,8 +6852,8 @@ test('footer rendering patch lives in a shell rendering module', async (t) => {
   assert.equal(typeof module.setLinxFooterInteractive, 'function')
   assert.equal(typeof module.buildLinxFooterModePrefix, 'function')
 
-  const interactive = { __autoEnabled: true }
-  stateModule.configureLinxInteractiveShellState(interactive, { symphonyModeEnabled: true })
+  const interactive = {}
+  stateModule.configureLinxInteractiveShellState(interactive, { autoModeEnabled: true, symphonyModeEnabled: true })
   module.setLinxFooterInteractive(interactive)
   assert.equal(module.buildLinxFooterModePrefix(), 'Symphony · Auto')
 })

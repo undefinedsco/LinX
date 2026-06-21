@@ -18,10 +18,14 @@ export { installLinxFooterPatch, setLinxFooterInteractive, buildLinxFooterModePr
 export {
   configureLinxInteractiveShellState,
   configureLinxInteractiveSymphonyState,
+  getLinxInteractiveAutoInputController,
   getLinxInteractiveShellState,
   getLinxInteractiveSymphonyDispatches,
+  isLinxInteractiveAutoModeEnabled,
   isLinxInteractiveGoalModeEnabled,
   isLinxInteractiveSymphonyModeEnabled,
+  setLinxInteractiveAutoInputController,
+  setLinxInteractiveAutoModeEnabled,
 } from '../linx-interactive-shell-state.js'
 export { changeInteractiveCwd, installLinxCwdStartupNotice, resolveInteractiveCwd, setRuntimeCwd } from '../linx-workspace-command.js'
 export { patchPiAssistantMessageRendering } from '../linx-assistant-message-rendering.js'

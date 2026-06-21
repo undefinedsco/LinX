@@ -12,7 +12,9 @@ import { registerLinxInteractiveSubmitHandler } from './linx-interactive-submit-
 import {
   configureLinxInteractiveShellState,
   getLinxInteractiveAiConnectCommand,
+  isLinxInteractiveAutoModeEnabled,
   notifyLinxInteractiveAutoControlChange,
+  setLinxInteractiveAutoModeEnabled,
   setLinxInteractiveGoalModeEnabled,
 } from './linx-interactive-shell-state.js'
 
@@ -361,7 +363,7 @@ export async function handleInteractiveAutoCommand(
   options: { scheduleImmediately?: boolean } = {},
 ): Promise<void> {
   if (enabled === undefined) {
-    const active = interactive.__autoEnabled === true
+    const active = isLinxInteractiveAutoModeEnabled(interactive, runtime)
     interactive.showStatus?.(formatAutoModeChangeStatus(active))
     interactive.ui?.requestRender?.()
     return
@@ -369,10 +371,7 @@ export async function handleInteractiveAutoCommand(
 
   const control = getSessionControlManager(interactive, runtime)
   control.setAutoEnabled(enabled)
-  interactive.__autoEnabled = enabled
-  if (runtime && typeof runtime === 'object') {
-    runtime.autoEnabled = enabled
-  }
+  setLinxInteractiveAutoModeEnabled(interactive, runtime, enabled)
   const controller = getSecretaryAutoInputController(interactive, runtime, control)
   if (enabled) {
     controller.start({ scheduleImmediately: options.scheduleImmediately !== false })

@@ -69,8 +69,8 @@ export function bootstrapLinxInteractiveMode(
   ensureInteractiveRuntimeHost(runtime)
   const interactive = new InteractiveMode(runtime, options)
   ;(interactive as any).runtime = runtime
-  ;(interactive as any).__autoEnabled = runtime?.autoEnabled === true
   configureLinxInteractiveShellState(interactive as any, {
+    autoModeEnabled: runtime?.autoEnabled === true,
     symphonyModeEnabled: runtime?.symphonyEnabled === true,
     ...(options.onSymphonyControlChange ? { symphonyControlChange: options.onSymphonyControlChange } : {}),
   })

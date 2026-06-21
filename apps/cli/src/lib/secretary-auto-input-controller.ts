@@ -17,10 +17,14 @@ import { resolveRuntimeTarget } from './runtime-target.js'
 import type { SessionControlManager, SessionControlSnapshot } from './session-control.js'
 import { registerLinxInteractiveStopHandler } from './linx-interactive-stop-router.js'
 import {
+  getLinxInteractiveAutoInputController,
   getLinxInteractiveGoalModeSupervisorLastAt,
+  getLinxInteractiveGoalModeSupervisorIntervalMs,
   getLinxInteractiveSymphonyWorkerSupervisorIntervalMs,
   handleLinxInteractiveProjectedCommand,
+  isLinxInteractiveAutoModeEnabled,
   isLinxInteractiveGoalModeEnabled,
+  setLinxInteractiveAutoInputController,
   setLinxInteractiveGoalModeSupervisorLastAt,
 } from './linx-interactive-shell-state.js'
 
@@ -87,13 +91,14 @@ export function getSecretaryAutoInputController(
   runtime: any,
   sessionControl: SessionControlManager,
 ): SecretaryAutoInputController {
-  if (interactive?.__linxAutoInputController) {
-    return interactive.__linxAutoInputController
+  const existing = getLinxInteractiveAutoInputController<SecretaryAutoInputController>(interactive)
+  if (existing) {
+    return existing
   }
 
   const controller = new SecretaryAutoInputControllerImpl(interactive, runtime, sessionControl)
   if (interactive && typeof interactive === 'object') {
-    interactive.__linxAutoInputController = controller
+    setLinxInteractiveAutoInputController(interactive, controller)
   }
   return controller
 }
@@ -251,7 +256,7 @@ class SecretaryAutoInputControllerImpl implements SecretaryAutoInputController {
     }
 
     this.idleWatchdog = setInterval(() => {
-      if (!this.active || this.running || this.scheduled || this.recoveryTimer || this.interactive?.__autoEnabled !== true) {
+      if (!this.active || this.running || this.scheduled || this.recoveryTimer || !isLinxInteractiveAutoModeEnabled(this.interactive, this.runtime)) {
         return
       }
 
@@ -301,7 +306,7 @@ class SecretaryAutoInputControllerImpl implements SecretaryAutoInputController {
   }
 
   private async runOnce(): Promise<void> {
-    if (!this.active || this.running || this.interactive?.__autoEnabled !== true) {
+    if (!this.active || this.running || !isLinxInteractiveAutoModeEnabled(this.interactive, this.runtime)) {
       return
     }
 
@@ -336,7 +341,7 @@ class SecretaryAutoInputControllerImpl implements SecretaryAutoInputController {
       })
       context = execution.context
       const { reconciliation, scheduler, turn, text, attempts } = execution
-      if (!this.active || generation !== this.generation || this.interactive?.__autoEnabled !== true) {
+      if (!this.active || generation !== this.generation || !isLinxInteractiveAutoModeEnabled(this.interactive, this.runtime)) {
         this.sessionControl.recordAutoInputEvent('failed', {
           reason,
           message: 'AI Secretary auto input projection was cancelled before delivery',
@@ -496,7 +501,7 @@ class SecretaryAutoInputControllerImpl implements SecretaryAutoInputController {
           const shouldRetry = !firstText
             && this.active
             && input.generation === this.generation
-            && this.interactive?.__autoEnabled === true
+            && isLinxInteractiveAutoModeEnabled(this.interactive, this.runtime)
           turn = shouldRetry
             ? await runSecretaryAutoInputTurn({
               runtime: this.runtime,
@@ -573,7 +578,7 @@ class SecretaryAutoInputControllerImpl implements SecretaryAutoInputController {
     generation: number,
     error?: unknown,
   ): void {
-    if (!this.active || generation !== this.generation || this.interactive?.__autoEnabled !== true) {
+    if (!this.active || generation !== this.generation || !isLinxInteractiveAutoModeEnabled(this.interactive, this.runtime)) {
       return
     }
 
@@ -601,7 +606,7 @@ class SecretaryAutoInputControllerImpl implements SecretaryAutoInputController {
     this.interactive?.ui?.requestRender?.()
     this.recoveryTimer = setTimeout(() => {
       this.recoveryTimer = null
-      if (!this.active || generation !== this.generation || this.interactive?.__autoEnabled !== true) {
+      if (!this.active || generation !== this.generation || !isLinxInteractiveAutoModeEnabled(this.interactive, this.runtime)) {
         return
       }
       this.schedule(reason)
@@ -622,7 +627,7 @@ class SecretaryAutoInputControllerImpl implements SecretaryAutoInputController {
     this.interactive?.ui?.requestRender?.()
     this.recoveryTimer = setTimeout(() => {
       this.recoveryTimer = null
-      if (!this.active || generation !== this.generation || this.interactive?.__autoEnabled !== true) {
+      if (!this.active || generation !== this.generation || !isLinxInteractiveAutoModeEnabled(this.interactive, this.runtime)) {
         return
       }
       this.schedule(reason)
@@ -664,7 +669,7 @@ function isGoalModeActive(interactive: any, runtime: any): boolean {
 
 function resolveGoalModeSupervisorIntervalMs(interactive: any, runtime: any): number {
   const value = Number(
-    interactive?.__linxGoalModeSupervisorIntervalMs
+    getLinxInteractiveGoalModeSupervisorIntervalMs(interactive)
       ?? runtime?.goalModeSupervisorIntervalMs
       ?? getLinxInteractiveSymphonyWorkerSupervisorIntervalMs(interactive)
       ?? runtime?.symphonyWorkerSupervisorIntervalMs

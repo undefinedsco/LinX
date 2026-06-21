@@ -1,4 +1,5 @@
 import { handleInteractiveRewindSelector } from './linx-rewind-command.js'
+import { isLinxInteractiveAutoModeEnabled } from './linx-interactive-shell-state.js'
 
 export interface LinxInterruptControlOptions {
   disableAutoMode?: (interactive: any) => void | Promise<void>
@@ -116,7 +117,7 @@ function installLinxClearInterrupt(interactive: any, editor: any, options: LinxI
 }
 
 function handBackAutoControlOnInterrupt(interactive: any, options: LinxInterruptControlOptions): boolean {
-  if (interactive?.__autoEnabled !== true) {
+  if (!isLinxInteractiveAutoModeEnabled(interactive, interactive?.runtime)) {
     return false
   }
 

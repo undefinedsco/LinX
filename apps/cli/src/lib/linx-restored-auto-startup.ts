@@ -1,5 +1,6 @@
 import { getSecretaryAutoInputController } from './secretary-auto-input-controller.js'
 import { getSessionControlManager } from './session-control.js'
+import { isLinxInteractiveAutoModeEnabled } from './linx-interactive-shell-state.js'
 
 export function installLinxRestoredAutoStartup(
   interactive: any,
@@ -17,7 +18,7 @@ export function installLinxRestoredAutoStartup(
 
   interactive.init = async function patchedLinxRestoredAutoInit(...args: unknown[]): Promise<unknown> {
     const result = await originalInit(...args)
-    if (this.__autoEnabled === true && runtime?.autoEnabled === true) {
+    if (isLinxInteractiveAutoModeEnabled(this, runtime)) {
       const controller = getSecretaryAutoInputController(this, runtime, sessionControl)
       controller.start({ scheduleImmediately: true })
       interactive.showStatus?.([

@@ -153,3 +153,25 @@ test('Symphony interactive runtime config is centralized in the shell state modu
 
   assert.deepEqual(violations, [])
 })
+
+test('auto interactive runtime state is centralized in the shell state module', () => {
+  const allowed = new Set([
+    'linx-interactive-shell-state.ts',
+  ])
+  const violations = []
+  const directAutoStatePattern = /__(?:autoEnabled|linxAutoInputController|linxGoalModeSupervisorIntervalMs)\b/
+
+  for (const file of listSourceFiles(libRoot)) {
+    const relativePath = relative(libRoot, file)
+    if (relativePath.startsWith(adapterSegment) || allowed.has(relativePath)) {
+      continue
+    }
+
+    const source = readFileSync(file, 'utf8')
+    if (directAutoStatePattern.test(source)) {
+      violations.push(relativePath)
+    }
+  }
+
+  assert.deepEqual(violations, [])
+})
