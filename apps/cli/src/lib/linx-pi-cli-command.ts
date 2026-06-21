@@ -1,19 +1,19 @@
 import { join } from 'node:path'
 import type { Argv, CommandModule } from 'yargs'
-import { SessionSelectorComponent, initTheme, runPrintMode, SettingsManager, type AgentSessionRuntime } from '@earendil-works/pi-coding-agent'
-import { ProcessTerminal, TUI } from '@earendil-works/pi-tui'
+import { runPrintMode, type AgentSessionRuntime } from '@earendil-works/pi-coding-agent'
 import { resolveAccountBaseUrl } from './account-api.js'
 import { buildAutoModeOptions, isAutoModeRequest, runAutoModeCommand, type AutoModeCommandArgs } from './auto-mode-command.js'
 import { resolveLinxInteractiveLoginReason, resolveLinxStartupLoginPromptDecision } from './linx-startup-login-policy.js'
 import { bootstrapLinxInteractiveMode, type LinxLoginReason } from './linx-interactive-bootstrap.js'
 import { clearDefaultPodDataSession, getDefaultPodDataSession } from './pod-data-session.js'
 import { resolveStartupLinxPodDataSession } from './linx-pod-data-session-factory.js'
-import { createLinxPiSessionManager, listLinxPiSessions } from './linx-session-manager.js'
+import { createLinxPiSessionManager } from './linx-session-manager.js'
 import { LinxPiPodMirror } from './linx-pod-mirror.js'
 import { listPendingPiPodMirrorSync, retryPendingPiPodMirrorSync } from './linx-pod-mirror-sync-recovery.js'
 import { LINX_AGENT_DIR } from './linx-interactive-branding.js'
 import { createFileSyncCheckpointStore } from './sync-checkpoint-store.js'
 import { resolveLinxPiStartupControlState } from './linx-pi-startup-control.js'
+import { selectLinxPiSession } from './linx-session-selector-ui.js'
 import type { RemoteAuthFetch, RemoteChatMessage, RemoteChatTool } from './chat-api.js'
 import type { LinxCompletionBackendResult } from './linx-completion-backend.js'
 
@@ -99,7 +99,7 @@ export async function runPiCommand(argv: {
     throw new Error(`Unknown command: ${firstPromptToken}`)
   }
   if (argv.resume) {
-    const selectedSession = await selectLinxSession(cwdFromArg(argv.cwd))
+    const selectedSession = await selectLinxPiSession(cwdFromArg(argv.cwd))
     if (!selectedSession) {
       process.stdout.write('No session selected\n')
       return
@@ -259,40 +259,6 @@ export async function runPiCommand(argv: {
 
 function cwdFromArg(cwd: unknown): string {
   return typeof cwd === 'string' && cwd.trim() ? cwd : process.cwd()
-}
-
-async function selectLinxSession(cwd: string): Promise<string | null> {
-  const settingsManager = SettingsManager.create(cwd, LINX_AGENT_DIR)
-  initTheme(settingsManager.getTheme())
-
-  return new Promise((resolve) => {
-    const ui = new TUI(new ProcessTerminal())
-    let resolved = false
-    const finish = (sessionPath: string | null): void => {
-      if (resolved) {
-        return
-      }
-      resolved = true
-      ui.stop()
-      resolve(sessionPath)
-    }
-    const loadSessions = () => listLinxPiSessions(cwd, LINX_AGENT_DIR, { podSessionSource: null })
-    const selector = new SessionSelectorComponent(
-      loadSessions,
-      loadSessions,
-      (sessionPath) => finish(sessionPath),
-      () => finish(null),
-      () => {
-        ui.stop()
-        process.exit(0)
-      },
-      () => ui.requestRender(),
-      { showRenameHint: false },
-    )
-    ui.addChild(selector)
-    ui.setFocus(selector.getSessionList())
-    ui.start()
-  })
 }
 
 async function runPiSyncStatusCommand(): Promise<void> {
