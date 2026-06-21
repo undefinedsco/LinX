@@ -1,5 +1,5 @@
 import { createLinxAgentStreamAdapter, type LinxAgentStreamAdapter, type LinxCompletionBackendResult } from './stream.js'
-import { ensureBrowserConsentLogin, isOidcLoginExpiredError, isOidcTransientRemoteError } from '../oidc-auth.js'
+import { ensureBrowserConsentLogin } from '../oidc-auth.js'
 import { DEFAULT_LINX_CLOUD_MODEL_ID, resolvePreferredLinxCloudModelId } from '../default-model.js'
 import { ensureLinxPiTheme } from '../linx-theme.js'
 import {
@@ -42,6 +42,13 @@ import {
   mergeLinxCloudProviderModels,
   sanitizeLinxCloudDefaults,
 } from '../linx-cloud-models.js'
+export {
+  resolveLinxInteractiveLoginReason,
+  resolveLinxStartupLoginPromptDecision,
+  resolveLinxStartupLoginReason,
+  type LinxStartupLoginPromptDecision,
+  type LinxStartupLoginReason,
+} from '../linx-startup-login-policy.js'
 
 const UNDEFINEDS_SESSION_ID = 'undefineds_pi_frontend'
 const UNDEFINEDS_AUTH_BRIDGE_ID = 'undefineds-cloud-oauth-bridge'
@@ -144,73 +151,6 @@ export interface LinxCloudPiAuthBridge {
   providerLabel: 'LinX Cloud'
   runtimeUrl: string
   shouldPromptLoginOnStart?: boolean
-}
-
-export type LinxStartupLoginPromptDecision =
-  | { shouldPrompt: false; reason: 'print-mode' | 'native-backend' | 'credential-present' }
-  | { shouldPrompt: true; reason: 'missing-credential' | 'expired-credential' }
-
-export type LinxStartupLoginReason = 'startup' | 'expired' | null
-
-export async function resolveLinxStartupLoginPromptDecision(options: {
-  backend: 'cloud' | 'native'
-  print?: boolean
-  issuerUrl?: string
-  resolveSession?: () => Promise<Pick<PodDataSession, 'close'> | null>
-  loadStoredCredentials?: typeof loadCredentials
-}): Promise<LinxStartupLoginPromptDecision> {
-  if (options.print) {
-    return { shouldPrompt: false, reason: 'print-mode' }
-  }
-  if (options.backend === 'native') {
-    return { shouldPrompt: false, reason: 'native-backend' }
-  }
-
-  if (!options.resolveSession) {
-    return (options.loadStoredCredentials ?? loadCredentials)()
-      ? { shouldPrompt: false, reason: 'credential-present' }
-      : { shouldPrompt: true, reason: 'missing-credential' }
-  }
-
-  const resolveSession = options.resolveSession
-  let session: Pick<PodDataSession, 'close'> | null = null
-  try {
-    session = await resolveSession()
-    return session
-      ? { shouldPrompt: false, reason: 'credential-present' }
-      : { shouldPrompt: true, reason: 'missing-credential' }
-  } catch (error) {
-    if (isOidcLoginExpiredError(error)) {
-      return { shouldPrompt: true, reason: 'expired-credential' }
-    }
-    if (isOidcTransientRemoteError(error) && (options.loadStoredCredentials ?? loadCredentials)()) {
-      return { shouldPrompt: false, reason: 'credential-present' }
-    }
-    throw error
-  } finally {
-    await session?.close().catch(() => undefined)
-  }
-}
-
-export function resolveLinxStartupLoginReason(
-  decision: LinxStartupLoginPromptDecision,
-): LinxStartupLoginReason {
-  if (!decision.shouldPrompt) {
-    return null
-  }
-
-  return decision.reason === 'expired-credential' ? 'expired' : 'startup'
-}
-
-export function resolveLinxInteractiveLoginReason(options: {
-  startupDecision: LinxStartupLoginPromptDecision
-  runtimePromptOnStart?: boolean
-}): LinxStartupLoginReason {
-  if (options.runtimePromptOnStart) {
-    return 'expired'
-  }
-
-  return resolveLinxStartupLoginReason(options.startupDecision)
 }
 
 export interface LinxRuntimeAdapter {

@@ -22,10 +22,12 @@ import { resolveRuntimeTarget } from './lib/runtime-target.js'
 import { createCodexNativeProxy, createSymphonyCodexMcpServer } from './lib/codex-plugin/index.js'
 import {
   createLinxRuntimeAdapter,
-  resolveLinxInteractiveLoginReason,
-  resolveLinxStartupLoginPromptDecision,
   type LinxCompletionBackendResult,
 } from './lib/pi-adapter/index.js'
+import {
+  resolveLinxInteractiveLoginReason,
+  resolveLinxStartupLoginPromptDecision,
+} from './lib/linx-startup-login-policy.js'
 import { bootstrapLinxInteractiveMode, type LinxLoginReason } from './lib/linx-interactive-bootstrap.js'
 import { isOidcLoginExpiredError } from './lib/oidc-auth.js'
 import { clearDefaultPodDataSession, createPodDataSession, getDefaultPodDataSession, type PodDataSession } from './lib/pod-data-session.js'
