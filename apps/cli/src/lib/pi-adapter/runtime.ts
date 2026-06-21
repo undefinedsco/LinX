@@ -1,7 +1,4 @@
-import { createLinxAgentStreamAdapter, type LinxAgentStreamAdapter } from './stream.js'
-import type { AgentSessionRuntime } from '@earendil-works/pi-coding-agent'
-import type { AutoModeWorkerBackend } from '../auto-mode/types.js'
-import type { BackendCommandRouter } from '../backend-command.js'
+import { createLinxAgentStreamAdapter } from './stream.js'
 import type { LinxRuntimeAdapterDependencies } from '../linx-runtime-adapter-dependencies.js'
 import {
   createLinxAgentSessionRuntime,
@@ -9,36 +6,14 @@ import {
 } from '../linx-runtime-agent-session.js'
 import {
   createRuntimeBackendComposition,
-  type RuntimeBackendCompositionOptions,
 } from '../linx-runtime-backend-composition.js'
-
-export interface LinxRuntimeFactoryContext {
-  cwd: string
-  agentDir: string
-  sessionManager: unknown
-  sessionStartEvent?: unknown
-}
-
-export type LinxCreateRuntimeFactory = (context: LinxRuntimeFactoryContext) => Promise<AgentSessionRuntime>
-export type LinxRuntimeAdapterOptions = RuntimeBackendCompositionOptions
+import type {
+  LinxRuntimeAdapter,
+  LinxRuntimeAdapterOptions,
+  LinxRuntimeFactoryContext,
+} from '../linx-runtime-adapter-contract.js'
 
 export type { LinxCloudPiAuthBridge }
-
-export interface LinxRuntimeAdapter {
-  readonly remoteUrl: string
-  readonly sessionId: string
-  readonly cwd: string
-  readonly model?: string
-  readonly backend: 'linx'
-  readonly runtimeBackend?: AutoModeWorkerBackend
-  readonly autoEnabled: boolean
-  readonly symphonyEnabled: boolean
-  readonly backendCommandRouter?: BackendCommandRouter
-  readonly streamAdapter: LinxAgentStreamAdapter
-  createRuntime: LinxCreateRuntimeFactory
-  start(): Promise<void>
-  close(): Promise<void>
-}
 
 export function createLinxRuntimeAdapter(
   dependencies: LinxRuntimeAdapterDependencies,
@@ -64,7 +39,7 @@ export function createLinxRuntimeAdapter(
     symphonyEnabled: runtime.symphonyEnabled,
     backendCommandRouter: runtime.commandRouter,
     streamAdapter,
-    createRuntime: async (context: LinxRuntimeFactoryContext): Promise<AgentSessionRuntime> => createLinxAgentSessionRuntime({
+    createRuntime: async (context: LinxRuntimeFactoryContext) => createLinxAgentSessionRuntime({
       context,
       baseUrl: runtime.baseUrl,
       requestedModel: runtime.requestedModel,
