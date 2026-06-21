@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 
 const commandSource = readFileSync(new URL('../src/lib/linx-pi-cli-command.ts', import.meta.url), 'utf8')
 const autoModeCommandSource = readFileSync(new URL('../src/lib/auto-mode-command.ts', import.meta.url), 'utf8')
+const symphonyCommandSource = readFileSync(new URL('../src/lib/symphony-command.ts', import.meta.url), 'utf8')
 
 test('default Pi/TUI command module does not construct Pod ORM state directly', () => {
   assert.doesNotMatch(commandSource, /from ['"]\.\/models\.js['"]/, 'shell command should not import shared model DB primitives directly')
@@ -16,5 +17,13 @@ test('auto-mode command module depends on owning auto-mode modules instead of th
     autoModeCommandSource,
     /from ['"]\.\/auto-mode\/index\.js['"]/,
     'auto-mode command should import archive, format, runner, and types from their owning modules',
+  )
+})
+
+test('symphony command module depends on owning auto-mode modules instead of the aggregate barrel', () => {
+  assert.doesNotMatch(
+    symphonyCommandSource,
+    /from ['"]\.\/auto-mode\/index\.js['"]/,
+    'symphony command should import auto-mode runner and types from their owning modules',
   )
 })

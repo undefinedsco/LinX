@@ -1242,7 +1242,7 @@ rl.on('line', (line) => {
 
   const { module: symphonyModule, entryPath, cleanup } = await loadAutoModeModule('lib/symphony-command.ts')
   t.after(() => cleanup())
-  const autoModeModule = await importCompiledSibling(entryPath, 'auto-mode/index.js')
+  const autoModeModule = await importCompiledSibling(entryPath, 'auto-mode/runner.js')
   t.mock.method(autoModeModule.autoModeRuntime, 'promptText', async (prompt) => {
     if (prompt === 'you> ') {
       return '/exit'
