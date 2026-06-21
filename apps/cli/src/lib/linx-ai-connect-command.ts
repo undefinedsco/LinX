@@ -106,7 +106,6 @@ export async function handleInteractiveAiConnectCommand(
 function resolveInteractiveAiConnectCredentialSaver(interactive: any, runtime: any): typeof connectAiProviderCredential {
   const candidates = [
     runtime?.connectAiProviderCredential,
-    interactive?.__linxConnectAiProviderCredential,
     interactive?.runtime?.connectAiProviderCredential,
   ]
   for (const candidate of candidates) {

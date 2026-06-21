@@ -216,3 +216,22 @@ test('runtime host hooks do not use runtime hidden fields', () => {
 
   assert.deepEqual(violations, [])
 })
+
+test('credential dependency injection does not use interactive hidden fields', () => {
+  const violations = []
+  const directCredentialInjectionPattern = /__linx(?:PersistSolidClientCredentialsLogin|PersistSolidSecretLogin|ConnectAiProviderCredential)\b/
+
+  for (const file of listSourceFiles(libRoot)) {
+    const relativePath = relative(libRoot, file)
+    if (relativePath.startsWith(adapterSegment)) {
+      continue
+    }
+
+    const source = readFileSync(file, 'utf8')
+    if (directCredentialInjectionPattern.test(source)) {
+      violations.push(relativePath)
+    }
+  }
+
+  assert.deepEqual(violations, [])
+})

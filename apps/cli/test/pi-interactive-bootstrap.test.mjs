@@ -3500,14 +3500,6 @@ test('linx /login Solid client credentials marks Pi runtime auth as session-mana
     setupEditorSubmitHandler() {
       this.defaultEditor.onSubmit = async () => {}
     },
-    async __linxPersistSolidSecretLogin(secret) {
-      persistedSecrets.push(secret)
-      return {
-        webId: 'https://id.undefineds.co/alice/profile/card#me',
-        podUrl: 'https://id.undefineds.co/alice/',
-        accessToken: 'resolved-solid-access-token',
-      }
-    },
     async showExtensionSelector(_title, options) {
       assert.deepEqual(options, ['Authorize in browser', 'Enter Solid client credentials', 'Exit'])
       return 'Enter Solid client credentials'
@@ -3526,7 +3518,16 @@ test('linx /login Solid client credentials marks Pi runtime auth as session-mana
     async updateAvailableProviderCount() {},
   }
 
-  module.applyLinxInteractiveBranding(interactive)
+  module.applyLinxInteractiveBranding(interactive, {
+    async persistSolidClientCredentialsLogin(secret) {
+      persistedSecrets.push(secret)
+      return {
+        webId: 'https://id.undefineds.co/alice/profile/card#me',
+        podUrl: 'https://id.undefineds.co/alice/',
+        accessToken: 'resolved-solid-access-token',
+      }
+    },
+  })
   interactive.setupEditorSubmitHandler()
   await interactive.defaultEditor.onSubmit('/login')
 

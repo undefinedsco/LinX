@@ -31,6 +31,7 @@ type LinxAuthPendingRetry = {
 
 export type LinxLoginFlowOptions = {
   onLoginSettled?: (interactive: any) => void
+  persistSolidClientCredentialsLogin?: typeof persistSolidClientCredentialsLogin
   resolveProviderLabel?: (interactive: any) => string
 }
 
@@ -234,7 +235,7 @@ async function startLinxCloudLogin(interactive: any, loginOptions: { reason?: Li
     }
 
     if (selected === AUTH_OPTION_CLIENT_CREDENTIALS) {
-      await promptForLinxClientCredentials(interactive, reason)
+      await promptForLinxClientCredentials(interactive, reason, options)
       return
     }
 
@@ -341,7 +342,7 @@ function showLinxAuthFallback(interactive: any, title: string, options: string[]
   interactive.ui?.requestRender?.()
 }
 
-async function promptForLinxClientCredentials(interactive: any, reason: LinxAuthReason): Promise<void> {
+async function promptForLinxClientCredentials(interactive: any, reason: LinxAuthReason, options: LinxLoginFlowOptions): Promise<void> {
   if (typeof interactive.showExtensionInput !== 'function') {
     interactive.showError?.('This terminal build cannot collect Solid client credentials inside the TUI.')
     return
@@ -362,7 +363,7 @@ async function promptForLinxClientCredentials(interactive: any, reason: LinxAuth
     return
   }
 
-  const result = await resolveSolidClientCredentialsLogin(interactive)(trimmed)
+  const result = await resolveSolidClientCredentialsLogin(options)(trimmed)
   const authStorage = interactive.session?.modelRegistry?.authStorage
   authStorage?.setRuntimeApiKey?.(LINX_PROVIDER_ID, LINX_RUNTIME_MANAGED_AUTH_KEY)
   authStorage?.set?.(LINX_PROVIDER_ID, {
@@ -375,9 +376,8 @@ async function promptForLinxClientCredentials(interactive: any, reason: LinxAuth
   await finishLinxAuthSuccess(interactive, reason, 'Solid client credentials saved to ~/.solid/auth.')
 }
 
-function resolveSolidClientCredentialsLogin(interactive: any): typeof persistSolidClientCredentialsLogin {
-  const override = interactive?.__linxPersistSolidClientCredentialsLogin ?? interactive?.__linxPersistSolidSecretLogin
-  return typeof override === 'function' ? override : persistSolidClientCredentialsLogin
+function resolveSolidClientCredentialsLogin(options: LinxLoginFlowOptions): typeof persistSolidClientCredentialsLogin {
+  return options.persistSolidClientCredentialsLogin ?? persistSolidClientCredentialsLogin
 }
 
 async function finishLinxAuthSuccess(interactive: any, reason: LinxAuthReason, detail: string): Promise<void> {
