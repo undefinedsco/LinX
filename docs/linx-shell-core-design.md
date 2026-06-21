@@ -56,6 +56,33 @@ invariants:
 These invariants are shell concerns. They should not leak into branding, auth,
 Pod, backend, or shared model code.
 
+### Interactive lifecycle patch points
+
+Pi currently exposes several shell extension points as mutable methods on the
+interactive instance. LinX must treat those methods as shell-owned chokepoints,
+not as feature-local patch surfaces.
+
+Hard rules:
+
+- `interactive.stop` is patched only by
+  `apps/cli/src/lib/linx-interactive-stop-router.ts`.
+  Feature modules register stop handlers with explicit phases:
+  - `before`: release subscriptions, cancel auto input, and stop background
+    work before Pi releases the TUI;
+  - `after`: render normal-exit copy after Pi stop succeeds;
+  - `finally`: restore filters and process-local cleanup even when earlier
+    handlers fail.
+- `interactive.setupEditorSubmitHandler` is patched only by
+  `apps/cli/src/lib/linx-interactive-submit-router.ts`.
+  Feature modules register ordered submit handlers instead of wrapping
+  `defaultEditor.onSubmit` independently.
+- New lifecycle or submit behavior must add a handler to the relevant router and
+  a boundary test in `apps/cli/test/shell-core-boundary.test.mjs`.
+
+This makes TUI ownership deterministic. Login, Symphony, backend-native slash
+commands, auto/goal, self-update, exit messages, and cleanup may coexist without
+depending on module import order or wrapper nesting.
+
 ## Command routing invariants
 
 TUI command routing is shell-owned, but it has two classes of commands:
@@ -74,6 +101,21 @@ copy of shared business semantics. If a command needs provider config, auth
 status, approval state, chat/thread/message state, or Pod resource identities, it
 must use the shared model/runtime contract.
 
+The submit router owns the first decision point for interactive user input. The
+current priority order is:
+
+```text
+10 login
+20 Symphony
+40 backend-native slash commands
+50 LinX shell command fallback
+```
+
+Handlers return `true` only when they consumed the input. Unknown commands and
+ordinary messages must fall through to the next handler or Pi's original submit
+path. A handler must not call the original submit and then also report
+`false`; that creates duplicate turns.
+
 ## Pi adapter boundary
 
 The Pi adapter is a bridge to an upstream TUI/runtime, not the product core.
@@ -87,6 +129,12 @@ LinX shell contract:
 
 Patch points should stay thin. If a patch grows stateful or reusable, extract it
 behind a named shell module before adding more behavior.
+
+The current remaining design debt is shared shell state. Many modules still
+store feature flags, callbacks, and runtime bridges as ad hoc `__linx*`
+properties on the interactive or session objects. That is acceptable only as a
+migration boundary. New cross-feature state should go through a named shell
+state accessor/module so ownership, lifetime, and tests are explicit.
 
 ## Self-update contract
 

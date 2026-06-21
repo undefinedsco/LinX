@@ -20,7 +20,8 @@ Pod 交互的 collection / use-case / models / ORM / service 具体分层见 `do
 
 - Pod schema
 - RDF namespace / predicate / subject 规则
-- 本地 `~/.linx` 配置文件结构
+- 本地 auth/runtime 配置结构：Solid auth 走 `${SOLID_HOME:-~/.solid}/auth`，
+  LinX runtime/cache/archive 走 `LINX_HOME`
 - auto-mode session archive 格式
 - sidecar / approval / tool-call 事件格式
 
@@ -37,7 +38,8 @@ Pod 交互的 collection / use-case / models / ORM / service 具体分层见 `do
 - `packages/agent-runtime/auto-mode`: generic JSON line / codex JSON-RPC event normalization helper
 - `packages/agent-runtime/auto-mode`: approval request / structured user-input / auto-approval decision helper
 - `@undefineds.co/models`: `approval / audit / inbox_notification` 是跨端 remote approval 的共享真相
-- `@undefineds.co/models/client`: `~/.linx` account/config/secrets contract
+- `@undefineds.co/models/client`: Solid account/config/secrets contract consumed
+  from `${SOLID_HOME:-~/.solid}/auth`
 - `@undefineds.co/models/client`: linx cloud login bootstrap / whoami field helper
 - `@undefineds.co/models/client`: linx cloud account API 与 runtime API URL 解析 helper
 
