@@ -1,12 +1,11 @@
 import { createLinxAgentStreamAdapter, type LinxAgentStreamAdapter } from './stream.js'
-import type { LinxCompletionBackendResult } from '../linx-completion-backend.js'
 import type { AgentSessionRuntime } from '@earendil-works/pi-coding-agent'
-import type { RemoteAuthFetch, RemoteChatMessage, RemoteChatTool } from '../chat-api.js'
 import type { AutoModeWorkerBackend } from '../auto-mode/types.js'
 import type { BackendCommandRouter } from '../backend-command.js'
 import type { PodDataSession } from '../pod-data-session.js'
-import type { CreateNativeBackendProxy, NativeBackendApprovalPolicy } from '../native-backend-proxy.js'
+import type { NativeBackendApprovalPolicy } from '../native-backend-proxy.js'
 import { createLinxCloudRuntimeCoordinator } from '../linx-cloud-runtime-coordinator.js'
+import type { LinxRuntimeAdapterDependencies } from '../linx-runtime-adapter-dependencies.js'
 import { createNativeBackendCommandRouter } from '../native-backend-command-router.js'
 import { createNativeBackendStreamBackend } from '../native-backend-stream-backend.js'
 import { createLinxRuntimeCompletionBackend } from '../linx-runtime-completion-backend.js'
@@ -17,27 +16,6 @@ import {
 } from '../linx-runtime-agent-session.js'
 
 const UNDEFINEDS_SESSION_ID = 'undefineds_pi_frontend'
-export interface LinxRuntimeAdapterDependencies {
-  createNativeProxy?: CreateNativeBackendProxy
-  createRemoteCompletion?: (options: {
-    runtimeUrl: string
-    authFetch: RemoteAuthFetch
-    model?: string
-    messages: RemoteChatMessage[]
-    tools?: RemoteChatTool[]
-    systemPrompt?: string
-    signal?: AbortSignal
-  }) => Promise<string | LinxCompletionBackendResult>
-  listRemoteModels?: (
-    authFetch: RemoteAuthFetch,
-    runtimeUrl: string,
-    options?: { fallback?: boolean; timeoutMs?: number },
-  ) => Promise<Array<{
-    id: string
-    contextWindow?: number
-  }>>
-}
-
 export interface LinxRuntimeFactoryContext {
   cwd: string
   agentDir: string
