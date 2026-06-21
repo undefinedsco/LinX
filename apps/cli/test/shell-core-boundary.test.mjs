@@ -254,3 +254,22 @@ test('interactive lifecycle completion state is kept out of interactive hidden f
 
   assert.deepEqual(violations, [])
 })
+
+test('session original methods are kept behind shell-owned accessors', () => {
+  const violations = []
+  const directSessionOriginalMethodPattern = /__linx(?:PromptWithoutCommandRouting|SendUserMessageWithoutCommandRouting)\b/
+
+  for (const file of listSourceFiles(libRoot)) {
+    const relativePath = relative(libRoot, file)
+    if (relativePath.startsWith(adapterSegment)) {
+      continue
+    }
+
+    const source = readFileSync(file, 'utf8')
+    if (directSessionOriginalMethodPattern.test(source)) {
+      violations.push(relativePath)
+    }
+  }
+
+  assert.deepEqual(violations, [])
+})
