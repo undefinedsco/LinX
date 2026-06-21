@@ -6666,6 +6666,15 @@ test('backend command contract lives in a shell backend module', async (t) => {
   assert.ok(module)
 })
 
+test('backend credential helper lives in a shell backend module', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/backend-credentials.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.backendCredentialInput, 'function')
+  assert.equal(typeof module.loadOrPromptBackendCredential, 'function')
+  assert.equal(typeof module.promptAndSaveBackendCredential, 'function')
+})
+
 test('session control manager lives in a shell control module', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/session-control.ts')
   t.after(() => cleanup())
