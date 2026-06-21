@@ -401,10 +401,40 @@ test('remaining interactive install sentinels stay out of hidden fields', () => 
 })
 
 
+
+test('pi adapter bridge entries are not cross-shell aggregate re-export barrels', () => {
+  const allowedPureReexportEntries = new Set([
+    // Package adapter entry point: intentionally re-exports the public Pi bridge surface.
+    'index.ts',
+  ])
+  const violations = []
+  const adapterRoot = join(libRoot, 'pi-adapter')
+  for (const file of listSourceFiles(adapterRoot)) {
+    const relativePath = relative(adapterRoot, file)
+    if (allowedPureReexportEntries.has(relativePath)) {
+      continue
+    }
+
+    const source = readFileSync(file, 'utf8')
+    if (isPureReexportModule(source) && /from\s+['"]\.\.\//u.test(source)) {
+      violations.push(relativePath)
+    }
+  }
+
+  assert.deepEqual(violations, [])
+})
+
+function isPureReexportModule(source) {
+  const withoutReexports = source
+    .replace(/export\s+(?:type\s+)?\{[\s\S]*?\}\s+from\s+['"][^'"]+['"];?/gu, '')
+    .replace(/export\s+\*\s+from\s+['"][^'"]+['"];?/gu, '')
+    .trim()
+  return withoutReexports.length === 0
+}
+
 test('pi adapter compatibility wrappers are not kept only for tests', () => {
   const allowedBridgeEntries = new Set([
     // Runtime bridge entry points are imported by the package adapter factory or loaded by Pi/package resources.
-    'interactive.ts',
     'runtime.ts',
     'stream.ts',
     'pod-tools.ts',
@@ -415,6 +445,9 @@ test('pi adapter compatibility wrappers are not kept only for tests', () => {
   const sourceFiles = listSourceFiles(libRoot)
   const adapterFiles = listSourceFiles(adapterRoot)
   const runtimeFiles = sourceFiles.filter((file) => !relative(libRoot, file).startsWith(adapterSegment))
+  const adapterRelativeFiles = new Set(adapterFiles.map((file) => relative(adapterRoot, file)))
+  const staleAllowedEntries = [...allowedBridgeEntries].filter((entry) => !adapterRelativeFiles.has(entry))
+  assert.deepEqual(staleAllowedEntries, [])
 
   for (const file of adapterFiles) {
     const relativePath = relative(adapterRoot, file)

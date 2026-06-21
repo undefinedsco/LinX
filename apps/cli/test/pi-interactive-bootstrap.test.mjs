@@ -42,10 +42,22 @@ function restoreEnv(name, value) {
   process.env[name] = value
 }
 
+async function loadShellModules(entries) {
+  const loaded = await Promise.all(entries.map((entry) => loadAutoModeModule(entry)))
+  return {
+    module: Object.assign({}, ...loaded.map((entry) => entry.module)),
+    cleanup() {
+      for (const entry of loaded) {
+        entry.cleanup()
+      }
+    },
+  }
+}
+
 test('pi interactive bootstrap can instantiate with the LinX runtime adapter', async (t) => {
   const [{ module: runtimeModule, cleanup: runtimeCleanup }, { module: interactiveModule, cleanup: interactiveCleanup }] = await Promise.all([
     loadAutoModeModule('lib/pi-adapter/runtime.ts'),
-    loadAutoModeModule('lib/pi-adapter/interactive.ts'),
+    loadAutoModeModule('lib/linx-interactive-bootstrap.ts'),
   ])
   t.after(() => runtimeCleanup())
   t.after(() => interactiveCleanup())
@@ -132,7 +144,7 @@ test('pi interactive bootstrap passes initial prompt options into Pi interactive
   isolateSolidHome(t, 'linx-pi-initial-prompt-solid-')
   const [{ module: runtimeModule, cleanup: runtimeCleanup }, { module: interactiveModule, cleanup: interactiveCleanup }] = await Promise.all([
     loadAutoModeModule('lib/pi-adapter/runtime.ts'),
-    loadAutoModeModule('lib/pi-adapter/interactive.ts'),
+    loadAutoModeModule('lib/linx-interactive-bootstrap.ts'),
   ])
   t.after(() => runtimeCleanup())
   t.after(() => interactiveCleanup())
@@ -196,7 +208,7 @@ test('pi interactive backend credential prompt uses the existing extension input
   isolateSolidHome(t, 'linx-pi-backend-credential-solid-')
   const [{ module: runtimeModule, cleanup: runtimeCleanup }, { module, cleanup }] = await Promise.all([
     loadAutoModeModule('lib/pi-adapter/runtime.ts'),
-    loadAutoModeModule('lib/pi-adapter/interactive.ts'),
+    loadAutoModeModule('lib/linx-interactive-bootstrap.ts'),
   ])
   t.after(() => runtimeCleanup())
   t.after(() => cleanup())
@@ -282,7 +294,7 @@ test('pi interactive backend credential prompt distinguishes invalid existing cr
   isolateSolidHome(t, 'linx-pi-invalid-backend-credential-solid-')
   const [{ module: runtimeModule, cleanup: runtimeCleanup }, { module, cleanup }] = await Promise.all([
     loadAutoModeModule('lib/pi-adapter/runtime.ts'),
-    loadAutoModeModule('lib/pi-adapter/interactive.ts'),
+    loadAutoModeModule('lib/linx-interactive-bootstrap.ts'),
   ])
   t.after(() => runtimeCleanup())
   t.after(() => cleanup())
@@ -363,7 +375,7 @@ test('pi interactive backend credential prompt reuses Pi login dialog when TUI i
   isolateSolidHome(t, 'linx-pi-backend-credential-dialog-solid-')
   const [{ module: runtimeModule, cleanup: runtimeCleanup }, { module, cleanup }] = await Promise.all([
     loadAutoModeModule('lib/pi-adapter/runtime.ts'),
-    loadAutoModeModule('lib/pi-adapter/interactive.ts'),
+    loadAutoModeModule('lib/linx-interactive-bootstrap.ts'),
   ])
   t.after(() => runtimeCleanup())
   t.after(() => cleanup())
@@ -457,7 +469,7 @@ test('pi interactive backend credential prompt reuses Pi login dialog when TUI i
 
 test('linx interactive /ai connect reuses Pi login dialog but saves through LinX Pod AI connect', async (t) => {
   const [{ module, cleanup }, { module: brandingModule, cleanup: brandingCleanup }] = await Promise.all([
-    loadAutoModeModule('lib/pi-adapter/interactive.ts'),
+    loadAutoModeModule('lib/linx-interactive-command-routing.ts'),
     loadAutoModeModule('lib/linx-interactive-branding.ts'),
   ])
   t.after(() => {
@@ -555,7 +567,7 @@ test('linx interactive /ai connect reuses Pi login dialog but saves through LinX
 })
 
 test('linx interactive /ai connect survives Pi submit rebinding during bootstrap init', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-command-routing.ts')
   t.after(() => cleanup())
 
   const saves = []
@@ -630,7 +642,7 @@ test('linx interactive /ai connect survives Pi submit rebinding during bootstrap
 })
 
 test('linx interactive getUserInput consumes /ai connect before backend prompt loop', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-command-routing.ts')
   t.after(() => cleanup())
 
   const saves = []
@@ -706,7 +718,7 @@ test('linx interactive getUserInput consumes /ai connect before backend prompt l
 })
 
 test('linx interactive session prompt consumes /ai connect before backend prompt', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-command-routing.ts')
   t.after(() => cleanup())
 
   const saves = []
@@ -787,7 +799,7 @@ test('linx interactive session prompt consumes /ai connect before backend prompt
 })
 
 test('linx interactive session prompt routes peer commands without recursion', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadShellModules(['lib/linx-interactive-command-routing.ts', 'lib/linx-interactive-shell-state.ts'])
   t.after(() => cleanup())
 
   const statuses = []
@@ -822,7 +834,7 @@ test('linx interactive session prompt routes peer commands without recursion', a
 })
 
 test('linx interactive /rewind materializes a clean active Pi session without submitting to backend', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-command-routing.ts')
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@earendil-works/pi-coding-agent')
@@ -920,7 +932,7 @@ test('linx interactive /rewind materializes a clean active Pi session without su
 })
 
 test('linx interactive /rewind opens a TUI selector for the rollback target', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-command-routing.ts')
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@earendil-works/pi-coding-agent')
@@ -1025,7 +1037,7 @@ test('linx interactive /rewind opens a TUI selector for the rollback target', as
 })
 
 test('linx interactive /rewind can reset the branch to the session root', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-command-routing.ts')
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@earendil-works/pi-coding-agent')
@@ -1086,7 +1098,7 @@ test('linx interactive /rewind can reset the branch to the session root', async 
 })
 
 test('linx interactive /rewind can use legacy entry-only session managers', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-command-routing.ts')
   t.after(() => cleanup())
 
   const statuses = []
@@ -1162,7 +1174,7 @@ test('linx interactive /rewind can use legacy entry-only session managers', asyn
 })
 
 test('linx interactive /ai connect falls back to extension input when dialog cannot render', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-command-routing.ts')
   t.after(() => cleanup())
 
   const prompts = []
@@ -1224,7 +1236,7 @@ test('linx interactive /ai connect falls back to extension input when dialog can
 test('linx interactive branding stores agent state under .solid/apps/linx and patches update checks', async (t) => {
   const [{ module: brandingModule, cleanup: brandingCleanup }, { module: interactiveModule, cleanup: interactiveCleanup }] = await Promise.all([
     loadAutoModeModule('lib/linx-interactive-branding.ts'),
-    loadAutoModeModule('lib/pi-adapter/interactive.ts'),
+    loadAutoModeModule('lib/linx-interactive-bootstrap.ts'),
   ])
   t.after(() => brandingCleanup())
   t.after(() => interactiveCleanup())
@@ -1286,7 +1298,7 @@ test('linx interactive branding stores agent state under .solid/apps/linx and pa
 })
 
 test('linx assistant rendering hides backend reasoning blocks from resumed history', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-assistant-message-rendering.ts')
   t.after(() => cleanup())
 
   const { AssistantMessageComponent } = await import('@earendil-works/pi-coding-agent')
@@ -1312,7 +1324,7 @@ test('linx assistant rendering hides backend reasoning blocks from resumed histo
 })
 
 test('linx escape interrupt aborts streaming session before Pi default handler', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-post-init.ts')
   t.after(() => cleanup())
 
   const calls = []
@@ -1337,7 +1349,7 @@ test('linx escape interrupt aborts streaming session before Pi default handler',
 })
 
 test('linx escape interrupt aborts bash and preserves non-empty editor escape behavior', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-post-init.ts')
   t.after(() => cleanup())
 
   const calls = []
@@ -1369,7 +1381,7 @@ test('linx escape interrupt aborts bash and preserves non-empty editor escape be
 })
 
 test('linx escape interrupt opens rewind selector on double idle escape', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-post-init.ts')
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@earendil-works/pi-coding-agent')
@@ -1436,7 +1448,7 @@ test('linx escape interrupt opens rewind selector on double idle escape', async 
 })
 
 test('linx escape interrupt keeps wrapping later Pi escape handler assignments', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-post-init.ts')
   t.after(() => cleanup())
 
   const calls = []
@@ -1466,7 +1478,7 @@ test('linx escape interrupt keeps wrapping later Pi escape handler assignments',
 })
 
 test('linx escape interrupt ignores self rebinds to avoid recursive exit crashes', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-post-init.ts')
   t.after(() => cleanup())
 
   const calls = []
@@ -1493,7 +1505,7 @@ test('linx escape interrupt ignores self rebinds to avoid recursive exit crashes
 })
 
 test('linx interrupt hands auto control back to the user before Pi clear exit semantics', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadShellModules(['lib/linx-interactive-post-init.ts', 'lib/linx-interactive-shell-state.ts'])
   t.after(() => cleanup())
 
   const calls = []
@@ -1683,7 +1695,7 @@ test('linx extension ui falls back to local TUI when Pod approval is unavailable
 })
 
 test('linx interactive bootstrap wraps extension ui context with Pod-backed approvals', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-pod-backed-extension-ui.ts')
   t.after(() => cleanup())
 
   const baseUi = createBaseExtensionUi()
@@ -1862,7 +1874,7 @@ test('linx status line reads app-local JSON config from LINX_HOME', async (t) =>
 })
 
 test('linx interactive /update checks npm and opens the TUI update selector', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-command-routing.ts')
   t.after(() => cleanup())
 
   const previousOffline = process.env.PI_OFFLINE
@@ -1920,7 +1932,7 @@ test('linx interactive /update checks npm and opens the TUI update selector', as
 })
 
 test('linx interactive /statusline direct commands update app-local config', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-command-routing.ts')
   t.after(() => cleanup())
   const linxHome = mkdtempSync(join(tmpdir(), 'linx-interactive-statusline-home-'))
   const previousLinxHome = process.env.LINX_HOME
@@ -1977,7 +1989,7 @@ test('linx interactive /statusline direct commands update app-local config', asy
 })
 
 test('linx interactive /statusline opens a draft multi-select editor', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-command-routing.ts')
   t.after(() => cleanup())
   const linxHome = mkdtempSync(join(tmpdir(), 'linx-interactive-statusline-selector-home-'))
   const previousLinxHome = process.env.LINX_HOME
@@ -2089,7 +2101,7 @@ test('linx footer patch adds cache rate from assistant usage', async (t) => {
 
   const [{ module: runtimeModule, cleanup: runtimeCleanup }, { module: interactiveModule, cleanup: interactiveCleanup }] = await Promise.all([
     loadAutoModeModule('lib/pi-adapter/runtime.ts'),
-    loadAutoModeModule('lib/pi-adapter/interactive.ts'),
+    loadAutoModeModule('lib/linx-interactive-bootstrap.ts'),
   ])
   t.after(() => runtimeCleanup())
   t.after(() => interactiveCleanup())
@@ -2203,7 +2215,7 @@ test('linx footer patch keeps cache rate line within terminal width', async (t) 
 
   const [{ module: runtimeModule, cleanup: runtimeCleanup }, { module: interactiveModule, cleanup: interactiveCleanup }] = await Promise.all([
     loadAutoModeModule('lib/pi-adapter/runtime.ts'),
-    loadAutoModeModule('lib/pi-adapter/interactive.ts'),
+    loadAutoModeModule('lib/linx-interactive-bootstrap.ts'),
   ])
   t.after(() => runtimeCleanup())
   t.after(() => interactiveCleanup())
@@ -2299,7 +2311,7 @@ test('linx footer patch keeps cache rate line within terminal width', async (t) 
 })
 
 test('linx interactive exit message prints resume command and token usage', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-bootstrap.ts')
   t.after(() => cleanup())
 
   const output = module.buildLinxExitMessage({
@@ -2365,7 +2377,7 @@ test('linx interactive exit message prints resume command and token usage', asyn
 })
 
 test('linx interactive run suppresses Pi resume command output while preserving LinX output', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-bootstrap.ts')
   t.after(() => cleanup())
   const writes = captureProcessStreamWrites(t, process.stdout)
 
@@ -2378,7 +2390,7 @@ test('linx interactive run suppresses Pi resume command output while preserving 
 })
 
 test('linx resume output style suppresses split upstream Pi resume hints', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-bootstrap.ts')
   t.after(() => cleanup())
   const writes = captureProcessStreamWrites(t, process.stdout)
 
@@ -2393,7 +2405,7 @@ test('linx resume output style suppresses split upstream Pi resume hints', async
 })
 
 test('linx resume output style suppresses upstream Pi resume hints on stderr', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-bootstrap.ts')
   t.after(() => cleanup())
   const writes = captureProcessStreamWrites(t, process.stderr)
 
@@ -2406,7 +2418,7 @@ test('linx resume output style suppresses upstream Pi resume hints on stderr', a
 })
 
 test('linx resume output style keeps suppressing Pi resume hints written on the trailing tick', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-bootstrap.ts')
   t.after(() => cleanup())
   const writes = captureProcessStreamWrites(t, process.stdout)
 
@@ -2420,7 +2432,7 @@ test('linx resume output style keeps suppressing Pi resume hints written on the 
 })
 
 test('linx persistent resume output style suppresses Pi resume hints after run scope', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-bootstrap.ts')
   t.after(() => cleanup())
 
   module.installLinxResumeOutputStyle()()
@@ -2442,7 +2454,7 @@ test('linx persistent resume output style suppresses Pi resume hints after run s
 })
 
 test('linx resume output style preserves non-Pi output with the same sentence prefix', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-bootstrap.ts')
   t.after(() => cleanup())
   const writes = captureProcessStreamWrites(t, process.stdout)
 
@@ -3056,7 +3068,7 @@ test('linx update version comparison handles preview builds', async (t) => {
 
 test('interactive shell command modules share one submit patch point', async (t) => {
   const [{ module, cleanup }, { module: brandingModule, cleanup: brandingCleanup }] = await Promise.all([
-    loadAutoModeModule('lib/pi-adapter/interactive.ts'),
+    loadShellModules(['lib/linx-backend-command-router.ts', 'lib/linx-interactive-command-routing.ts', 'lib/linx-symphony-interactive-command.ts']),
     loadAutoModeModule('lib/linx-interactive-branding.ts'),
   ])
   t.after(() => {
@@ -4484,7 +4496,7 @@ test('linx auth-expired branch restore still runs when reauth is cancelled', asy
 })
 
 test('linx interactive preserves Pi built-ins before backend slash routing', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-backend-command-router.ts')
   t.after(() => cleanup())
 
   const submitted = []
@@ -4555,7 +4567,7 @@ test('linx interactive preserves Pi built-ins before backend slash routing', asy
 })
 
 test('linx interactive keeps global slash commands and unknown backend commands on the Pi path', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-backend-command-router.ts')
   t.after(() => cleanup())
 
   const submitted = []
@@ -4597,7 +4609,7 @@ test('linx interactive keeps global slash commands and unknown backend commands 
 })
 
 test('linx interactive handles /auto before backend fallback', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadShellModules(['lib/linx-backend-command-router.ts', 'lib/linx-interactive-command-routing.ts'])
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@earendil-works/pi-coding-agent')
@@ -4731,7 +4743,7 @@ test('auto editor indicator shell module decorates the active input bar', async 
 })
 
 test('linx interactive shows delegated input bar while auto is on', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadShellModules(['lib/linx-interactive-shell-state.ts', 'lib/linx-auto-editor-indicator.ts'])
   t.after(() => cleanup())
 
   const { visibleWidth } = await import('@earendil-works/pi-tui')
@@ -4773,7 +4785,7 @@ test('linx interactive shows delegated input bar while auto is on', async (t) =>
 })
 
 test('linx interactive records normal user input through Thread Reconciler before Pi projection', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-command-routing.ts')
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@earendil-works/pi-coding-agent')
@@ -4835,7 +4847,7 @@ test('linx interactive records normal user input through Thread Reconciler befor
 })
 
 test('linx interactive /auto on creates a control session without projecting a business turn', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadShellModules(['lib/linx-backend-command-router.ts', 'lib/linx-interactive-command-routing.ts'])
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@earendil-works/pi-coding-agent')
@@ -4925,7 +4937,7 @@ test('linx interactive /auto on creates a control session without projecting a b
 })
 
 test('linx interactive /auto with startup input enables auto and submits the input as Secretary projection', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadShellModules(['lib/linx-backend-command-router.ts', 'lib/linx-interactive-command-routing.ts', 'lib/linx-interactive-shell-state.ts'])
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@earendil-works/pi-coding-agent')
@@ -5042,7 +5054,7 @@ test('linx interactive /auto with startup input enables auto and submits the inp
 })
 
 test('linx interactive /auto startup input is backend-agnostic', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadShellModules(['lib/linx-backend-command-router.ts', 'lib/linx-interactive-command-routing.ts', 'lib/linx-interactive-shell-state.ts'])
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@earendil-works/pi-coding-agent')
@@ -5105,7 +5117,7 @@ test('linx interactive /auto startup input is backend-agnostic', async (t) => {
 })
 
 test('linx interactive /auto can let Secretary send a /goal command to the current chat peer', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadShellModules(['lib/linx-backend-command-router.ts', 'lib/linx-interactive-command-routing.ts', 'lib/linx-interactive-shell-state.ts'])
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@earendil-works/pi-coding-agent')
@@ -5179,7 +5191,7 @@ test('linx interactive /auto can let Secretary send a /goal command to the curre
 })
 
 test('linx interactive /auto projected command treats /auto as Secretary control only', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadShellModules(['lib/linx-interactive-command-routing.ts', 'lib/linx-interactive-shell-state.ts'])
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@earendil-works/pi-coding-agent')
@@ -5241,7 +5253,7 @@ test('linx interactive /auto projected command treats /auto as Secretary control
 })
 
 test('linx interactive goal mode does not let agent_end trigger per-message Secretary replies', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadShellModules(['lib/linx-interactive-command-routing.ts', 'lib/linx-interactive-shell-state.ts'])
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@earendil-works/pi-coding-agent')
@@ -5322,7 +5334,7 @@ test('linx interactive goal mode does not let agent_end trigger per-message Secr
 })
 
 test('linx interactive goal supervision can skip when Secretary has no useful steer', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadShellModules(['lib/linx-interactive-shell-state.ts', 'lib/linx-interactive-command-routing.ts'])
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@earendil-works/pi-coding-agent')
@@ -5407,7 +5419,7 @@ test('linx interactive goal supervision can skip when Secretary has no useful st
 })
 
 test('linx interactive /auto on projects Secretary output through user input after assistant messages', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-command-routing.ts')
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@earendil-works/pi-coding-agent')
@@ -5536,7 +5548,7 @@ test('linx interactive /auto on projects Secretary output through user input aft
 })
 
 test('linx interactive /auto on retries empty Secretary projection when backend asks for a game turn', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-command-routing.ts')
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@earendil-works/pi-coding-agent')
@@ -5624,7 +5636,7 @@ test('linx interactive /auto on retries empty Secretary projection when backend 
 })
 
 test('linx interactive /auto off cancels pending Secretary user input projection', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadShellModules(['lib/linx-interactive-command-routing.ts', 'lib/linx-interactive-shell-state.ts'])
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@earendil-works/pi-coding-agent')
@@ -5689,7 +5701,7 @@ test('linx interactive /auto off cancels pending Secretary user input projection
 })
 
 test('linx interactive /auto on only updates control state while streaming', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-command-routing.ts')
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@earendil-works/pi-coding-agent')
@@ -5814,7 +5826,7 @@ test('linx session control records only blocked runtime events while auto is on'
 })
 
 test('linx interactive /auto status can reflect runtime-initialized auto flag', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-command-routing.ts')
   t.after(() => cleanup())
 
   const statuses = []
@@ -5840,7 +5852,7 @@ test('linx interactive /auto status can reflect runtime-initialized auto flag', 
 test('linx interactive restores auto mode visibly on resume startup', async (t) => {
   const [{ module: runtimeModule, cleanup: runtimeCleanup }, { module, cleanup }] = await Promise.all([
     loadAutoModeModule('lib/pi-adapter/runtime.ts'),
-    loadAutoModeModule('lib/pi-adapter/interactive.ts'),
+    loadShellModules(['lib/linx-interactive-bootstrap.ts', 'lib/linx-interactive-shell-state.ts']),
   ])
   t.after(() => runtimeCleanup())
   t.after(() => cleanup())
@@ -5922,7 +5934,7 @@ test('linx interactive restores auto mode visibly on resume startup', async (t) 
 })
 
 test('linx interactive handles /cd before backend fallback and updates runtime cwd', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadShellModules(['lib/linx-backend-command-router.ts', 'lib/linx-interactive-command-routing.ts'])
   t.after(() => cleanup())
 
   const originalCwd = process.cwd()
@@ -5991,7 +6003,7 @@ test('linx interactive handles /cd before backend fallback and updates runtime c
 })
 
 test('linx interactive rejects /symphony objective and keeps routing inside LinX command layer', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadShellModules(['lib/linx-backend-command-router.ts', 'lib/linx-symphony-interactive-command.ts', 'lib/linx-interactive-shell-state.ts'])
   t.after(() => cleanup())
 
   const submitted = []
@@ -6057,7 +6069,7 @@ test('linx interactive rejects /symphony objective and keeps routing inside LinX
 })
 
 test('linx interactive resolves /symphony source from runtime Pod session', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-symphony-interactive-command.ts')
   t.after(() => cleanup())
 
   const statuses = []
@@ -6102,7 +6114,7 @@ test('linx interactive resolves /symphony source from runtime Pod session', asyn
 })
 
 test('linx interactive /symphony switches current chat peer for following messages', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadShellModules(['lib/linx-interactive-shell-state.ts', 'lib/linx-symphony-interactive-command.ts'])
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@earendil-works/pi-coding-agent')
@@ -6231,7 +6243,7 @@ test('linx interactive /symphony switches current chat peer for following messag
 })
 
 test('linx interactive /symphony keeps worker-looking messages in the Secretary lane', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadShellModules(['lib/linx-interactive-shell-state.ts', 'lib/linx-symphony-interactive-command.ts'])
   t.after(() => cleanup())
 
   const submitted = []
@@ -6316,7 +6328,7 @@ test('linx interactive /symphony keeps worker-looking messages in the Secretary 
 })
 
 test('linx interactive /symphony off restores worker backend chat without pending dispatch', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadShellModules(['lib/linx-interactive-shell-state.ts', 'lib/linx-symphony-interactive-command.ts'])
   t.after(() => cleanup())
 
   const submitted = []
@@ -6382,7 +6394,7 @@ test('linx interactive /symphony off restores worker backend chat without pendin
 })
 
 test('linx interactive /symphony status reads open issues and running workers from Pod control state when available', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadShellModules(['lib/linx-interactive-shell-state.ts', 'lib/linx-symphony-interactive-command.ts'])
   t.after(() => cleanup())
 
   const statuses = []
@@ -6566,7 +6578,7 @@ test('linx interactive /symphony status reads open issues and running workers fr
 })
 
 test('linx interactive /symphony status reports Pod control-state failure without showing local archive as truth', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadShellModules(['lib/linx-interactive-shell-state.ts', 'lib/linx-symphony-interactive-command.ts'])
   t.after(() => cleanup())
 
   const statuses = []
@@ -6709,7 +6721,7 @@ test('command autocomplete shell module adds LinX slash commands', async (t) => 
 })
 
 test('linx interactive adds LinX commands to real slash command autocomplete provider', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-command-autocomplete.ts')
   t.after(() => cleanup())
 
   const interactive = {
@@ -6810,7 +6822,7 @@ test('linx interactive adds LinX commands to real slash command autocomplete pro
 })
 
 test('linx interactive autocomplete patch falls back to legacy setupAutocomplete hook', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/interactive.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-command-autocomplete.ts')
   t.after(() => cleanup())
 
   const interactive = {
