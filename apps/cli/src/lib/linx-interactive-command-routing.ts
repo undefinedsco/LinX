@@ -17,6 +17,11 @@ import {
   setLinxInteractiveAutoModeEnabled,
   setLinxInteractiveGoalModeEnabled,
 } from './linx-interactive-shell-state.js'
+import {
+  getSessionCommandRouterOriginalPrompt,
+  getSessionCommandRouterOriginalSendUserMessage,
+  setSessionCommandRouterOriginals,
+} from './linx-session-command-routing-host.js'
 
 type ShellCommandOptions = {
   onAutoControlChange?: (enabled: boolean) => void | Promise<void>
@@ -185,8 +190,12 @@ export function installLinxSessionCommandRouter(interactive: any, runtime: any):
     return
   }
 
+  setSessionCommandRouterOriginals(session, {
+    prompt: originalPrompt,
+    sendUserMessage: originalSendUserMessage,
+  })
+
   if (originalPrompt) {
-    session.__linxPromptWithoutCommandRouting = originalPrompt
     session.prompt = async (text: unknown, ...args: unknown[]): Promise<unknown> => {
       if (await maybeHandleLinxSessionCommand(interactive, runtime, text)) {
         return undefined
@@ -196,7 +205,6 @@ export function installLinxSessionCommandRouter(interactive: any, runtime: any):
   }
 
   if (originalSendUserMessage) {
-    session.__linxSendUserMessageWithoutCommandRouting = originalSendUserMessage
     session.sendUserMessage = async (text: unknown, ...args: unknown[]): Promise<unknown> => {
       if (await maybeHandleLinxSessionCommand(interactive, runtime, text)) {
         return undefined
@@ -337,17 +345,13 @@ function applyInteractiveGoalMode(interactive: any, runtime: any, enabled: boole
 
 async function submitProjectedBackendInput(interactive: any, text: string): Promise<void> {
   const session = interactive?.session
-  const sendUserMessage = typeof session?.__linxSendUserMessageWithoutCommandRouting === 'function'
-    ? session.__linxSendUserMessageWithoutCommandRouting
-    : session?.sendUserMessage
+  const sendUserMessage = getSessionCommandRouterOriginalSendUserMessage(session) ?? session?.sendUserMessage
   if (typeof sendUserMessage === 'function') {
     await sendUserMessage(text, session.isStreaming ? { deliverAs: 'followUp' } : undefined)
     return
   }
 
-  const prompt = typeof session?.__linxPromptWithoutCommandRouting === 'function'
-    ? session.__linxPromptWithoutCommandRouting
-    : session?.prompt
+  const prompt = getSessionCommandRouterOriginalPrompt(session) ?? session?.prompt
   if (typeof prompt === 'function') {
     await prompt(text, session.isStreaming ? { streamingBehavior: 'followUp' } : undefined)
     return
