@@ -14,6 +14,14 @@ test('LinX chat completion projection helper lives outside the Pi adapter', asyn
   assert.equal(typeof module.sanitizeChatCompletionMessages, 'function')
 })
 
+test('LinX stream error formatter lives outside the Pi adapter', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-stream-error-formatting.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.formatLinxStreamErrorMessage, 'function')
+  assert.equal(typeof module.isLinxStreamAbortError, 'function')
+})
+
 test('pi agent stream adapter captures session metadata and exposes a streamFn hook', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/stream.ts')
   t.after(() => cleanup())

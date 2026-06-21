@@ -3,7 +3,6 @@ import type { RemoteChatMessage, RemoteChatTool } from '../chat-api.js'
 import type { LinxCompletionBackendResult } from '../linx-completion-backend.js'
 import type { AutoModeNormalizedEvent } from '../auto-mode/types.js'
 import { DEFAULT_LINX_CLOUD_MODEL_ID } from '../default-model.js'
-import { normalizeMisclassifiedCloudCompletionPodTimeoutMessage } from '../linx-cloud-errors.js'
 import {
   normalizeChatCompletionMessagesFromPiContext,
   normalizeChatCompletionToolsFromPiContext,
@@ -14,6 +13,7 @@ import {
   LINX_CLOUD_PROVIDER_API,
   LINX_CLOUD_PROVIDER_ID,
 } from '../linx-cloud-models.js'
+import { formatLinxStreamErrorMessage, isLinxStreamAbortError } from '../linx-stream-error-formatting.js'
 
 export type { LinxCompletionBackendResult, PiCompletionBackendResult } from '../linx-completion-backend.js'
 
@@ -164,9 +164,9 @@ export function createLinxAgentStreamAdapter(options: LinxAgentStreamAdapterOpti
         })
       })().catch((error) => {
         const errorMessage = createBaseMessage()
-        const aborted = isAbortError(error) || streamOptions?.signal?.aborted === true
+        const aborted = isLinxStreamAbortError(error) || streamOptions?.signal?.aborted === true
         errorMessage.stopReason = aborted ? 'aborted' : 'error'
-        errorMessage.errorMessage = formatStreamErrorMessage(error)
+        errorMessage.errorMessage = formatLinxStreamErrorMessage(error)
         stream.push({ type: 'error', reason: errorMessage.stopReason, error: errorMessage })
       })
 
@@ -188,71 +188,6 @@ function createAbortError(): Error {
   const error = new Error('Request was aborted.')
   error.name = 'AbortError'
   return error
-}
-
-function formatStreamErrorMessage(error: unknown): string {
-  if (isAbortError(error)) {
-    return 'Request was aborted.'
-  }
-  if (isAuthExpiredError(error)) {
-    return 'LinX Cloud login expired.'
-  }
-  const misclassifiedPodRuntimeTimeout = formatMisclassifiedPodRuntimeTimeout(error)
-  if (misclassifiedPodRuntimeTimeout) {
-    return misclassifiedPodRuntimeTimeout
-  }
-  return appendCloudDebugDetails(
-    error instanceof Error ? error.message : String(error),
-    error,
-  )
-}
-
-function appendCloudDebugDetails(message: string, error: unknown): string {
-  if (!isTruthyEnv('LINX_DEBUG_CLOUD') || !isRecord(error)) {
-    return message
-  }
-
-  const responseBody = typeof error.responseBody === 'string' ? error.responseBody : ''
-  const status = typeof error.status === 'number' ? error.status : undefined
-  if (!responseBody && status === undefined) {
-    return message
-  }
-
-  const parts = [
-    status === undefined ? undefined : `status=${status}`,
-    responseBody ? `response=${truncateCloudDebug(responseBody)}` : undefined,
-  ].filter(Boolean)
-
-  return `${message}\nCloud debug: ${parts.join(' ')}`
-}
-
-function isTruthyEnv(name: string): boolean {
-  const raw = process.env[name]
-  return raw === '1' || raw === 'true' || raw === 'yes'
-}
-
-function truncateCloudDebug(value: string): string {
-  const trimmed = value.replace(/\s+/g, ' ').trim()
-  return trimmed.length > 500 ? `${trimmed.slice(0, 500)}...` : trimmed
-}
-
-function formatMisclassifiedPodRuntimeTimeout(error: unknown): string | null {
-  return normalizeMisclassifiedCloudCompletionPodTimeoutMessage(error)
-}
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof Error && error.name === 'AbortError'
-}
-
-function isAuthExpiredError(error: unknown): boolean {
-  if (isRecord(error) && error.authExpired === true) {
-    return true
-  }
-  const message = error instanceof Error ? error.message : String(error)
-  const normalized = message.toLowerCase()
-  return normalized.includes('linx cloud login expired')
-    || normalized.includes('invalid solid token')
-    || (normalized.includes('chat request failed (401)') && normalized.includes('unauthorized'))
 }
 
 function resolveModelId(modelArg: unknown, overrideModelId?: string, fallbackModelId?: string): string {
