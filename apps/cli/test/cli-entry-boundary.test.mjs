@@ -29,3 +29,12 @@ test('CLI entry delegates legacy chat and models commands to a shell command mod
   assert.doesNotMatch(indexSource, /function runInteractive/, 'entry should not implement the legacy prompt loop')
   assert.doesNotMatch(indexSource, /function formatRemoteModelMetadata/, 'entry should not render remote model metadata')
 })
+
+test('CLI entry delegates hidden Codex bridge commands to a shell command module', () => {
+  assert.match(indexSource, /from ['"]\.\/lib\/linx-codex-plugin-command\.js['"]/, 'entry should import hidden Codex bridge command descriptors from a shell module')
+  assert.doesNotMatch(indexSource, /createCodexNativeProxy/, 'entry should not construct the native Codex proxy directly')
+  assert.doesNotMatch(indexSource, /createSymphonyCodexMcpServer/, 'entry should not construct the Symphony Codex MCP server directly')
+  assert.doesNotMatch(indexSource, /codex-native-proxy/, 'entry should not define hidden Codex proxy command internals directly')
+  assert.doesNotMatch(indexSource, /symphony-codex-mcp/, 'entry should not define hidden Symphony MCP command internals directly')
+  assert.doesNotMatch(indexSource, /new Promise\(\(\) => \{\}\)/, 'entry should not own long-running hidden process lifecycle loops')
+})
