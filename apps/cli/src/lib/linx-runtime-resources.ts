@@ -15,9 +15,7 @@ export function resolveBundledLinxSkillsDir(importMetaUrl = import.meta.url): st
   const candidates = uniquePaths([
     // New helper layout: dist/lib/linx-runtime-resources.js -> dist/skills.
     join(moduleDir, '..', 'skills'),
-    // Legacy adapter layout: dist/lib/pi-adapter/runtime.js -> dist/skills.
-    join(moduleDir, '..', '..', 'skills'),
-    // Test/dev bundle fallback: <tmp>/dist/lib[/pi-adapter] -> <tmp>/dist/skills or <tmp>/skills.
+    // Test/dev bundle fallback: <tmp>/dist/lib -> <tmp>/dist/skills or <tmp>/skills.
     resolve(moduleDir, '..', '..', '..', 'skills'),
     resolve(moduleDir, '..', '..', '..', '..', 'skills'),
     // Source-tree fallback when running through a TS loader.
@@ -48,11 +46,8 @@ export function resolveBundledPiPackageRoot(packageName: string, importMetaUrl =
   const vendoredCandidates = uniquePaths([
     // New helper layout: dist/lib/linx-runtime-resources.js -> package vendor/<package>.
     resolve(moduleDir, '..', '..', 'vendor', packageName),
-    // Legacy adapter layout: dist/lib/pi-adapter/runtime.js -> package vendor/<package>.
-    resolve(moduleDir, '..', '..', '..', 'vendor', packageName),
     // Defensive fallback for layouts that place vendor under dist.
     resolve(moduleDir, '..', 'vendor', packageName),
-    resolve(moduleDir, '..', '..', 'vendor', packageName),
   ])
   for (const candidate of vendoredCandidates) {
     if (existsSync(join(candidate, 'package.json'))) {
