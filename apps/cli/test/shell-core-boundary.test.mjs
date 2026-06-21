@@ -503,6 +503,19 @@ test('pi runtime adapter does not re-export shell or core helper modules', () =>
   )
 })
 
+test('native backend command router mapping is kept outside the Pi runtime adapter', () => {
+  const source = readFileSync(join(libRoot, 'pi-adapter/runtime.ts'), 'utf8')
+  const forbidden = [
+    'const backendCommandRouter',
+    'proxy.executeCommand',
+    'proxy.setCwd',
+    'proxy.setSessionControl',
+  ]
+  const violations = forbidden.filter((snippet) => source.includes(snippet))
+
+  assert.deepEqual(violations, [])
+})
+
 test('completion result to Pi stream event mapping is kept outside the Pi adapter', () => {
   const source = readFileSync(join(libRoot, 'pi-adapter/stream.ts'), 'utf8')
   const forbidden = [

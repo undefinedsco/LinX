@@ -7,6 +7,7 @@ import type { BackendCommandRouter, BackendCommandResult } from '../backend-comm
 import type { PodDataSession } from '../pod-data-session.js'
 import type { CodexApprovalPolicy } from '../codex-plugin/codex-native-proxy.js'
 import { createLinxCloudRuntimeCoordinator } from '../linx-cloud-runtime-coordinator.js'
+import { createNativeBackendCommandRouter } from '../native-backend-command-router.js'
 import { createLinxRuntimeCompletionBackend } from '../linx-runtime-completion-backend.js'
 import {
   createLinxAgentSessionRuntime,
@@ -169,23 +170,7 @@ export function createLinxRuntimeAdapter(
       })
       : undefined,
   })
-  const backendCommandRouter: BackendCommandRouter | undefined = proxy && typeof proxy.executeCommand === 'function'
-    ? {
-      backend: proxy.record.backend,
-      execute(input) {
-        return proxy.executeCommand!(input)
-      },
-      setCwd: typeof proxy.setCwd === 'function'
-        ? (nextCwd) => proxy.setCwd!(nextCwd)
-        : undefined,
-      subscribe(listener) {
-        return proxy.subscribe(listener)
-      },
-      setSessionControl: typeof proxy.setSessionControl === 'function'
-        ? (control) => proxy.setSessionControl!(control)
-        : undefined,
-    }
-    : undefined
+  const commandRouter = createNativeBackendCommandRouter(proxy)
 
   return {
     remoteUrl: proxy?.remoteUrl ?? baseUrl,
@@ -196,7 +181,7 @@ export function createLinxRuntimeAdapter(
     runtimeBackend: workerBackend,
     autoEnabled: options.autoEnabled === true,
     symphonyEnabled: options.symphonyEnabled === true,
-    backendCommandRouter,
+    backendCommandRouter: commandRouter,
     streamAdapter,
     createRuntime: async (context: LinxRuntimeFactoryContext): Promise<AgentSessionRuntime> => createLinxAgentSessionRuntime({
       context,
@@ -208,7 +193,7 @@ export function createLinxRuntimeAdapter(
       oauth: options.providerConfig?.oauth,
       getPodDataSession: options.getPodDataSession,
       workerBackend,
-      backendCommandRouter,
+      backendCommandRouter: commandRouter,
       backendSessionRef: proxy?.record,
       autoEnabled: options.autoEnabled,
       symphonyEnabled: options.symphonyEnabled,
