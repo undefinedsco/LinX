@@ -8,6 +8,15 @@ import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 const WEB_ID = 'https://id.undefineds.co/alice/profile/card#me'
 const POD_BASE = 'https://id.undefineds.co/alice'
 
+test('LinX session manager lives outside the Pi adapter', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-session-manager.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.createLinxPiSessionManager, 'function')
+  assert.equal(typeof module.listLinxPiSessions, 'function')
+  assert.equal(typeof module.resolveLinxPiSession, 'function')
+})
+
 test('createLinxPiSessionManager creates persisted sessions by default', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/session.ts')
   t.after(() => cleanup())
