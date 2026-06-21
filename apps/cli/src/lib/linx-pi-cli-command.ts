@@ -1,4 +1,3 @@
-import { join } from 'node:path'
 import type { Argv, CommandModule } from 'yargs'
 import { runPrintMode, type AgentSessionRuntime } from '@earendil-works/pi-coding-agent'
 import { resolveAccountBaseUrl } from './account-api.js'
@@ -8,12 +7,11 @@ import { bootstrapLinxInteractiveMode, type LinxLoginReason } from './linx-inter
 import { clearDefaultPodDataSession, getDefaultPodDataSession } from './pod-data-session.js'
 import { resolveStartupLinxPodDataSession } from './linx-pod-data-session-factory.js'
 import { createLinxPiSessionManager } from './linx-session-manager.js'
-import { LinxPiPodMirror } from './linx-pod-mirror.js'
 import { listPendingPiPodMirrorSync, retryPendingPiPodMirrorSync } from './linx-pod-mirror-sync-recovery.js'
 import { LINX_AGENT_DIR } from './linx-interactive-branding.js'
-import { createFileSyncCheckpointStore } from './sync-checkpoint-store.js'
 import { resolveLinxPiStartupControlState } from './linx-pi-startup-control.js'
 import { selectLinxPiSession } from './linx-session-selector-ui.js'
+import { createLinxPodMirrorRuntimeHost } from './linx-pod-mirror-runtime-host.js'
 import type { RemoteAuthFetch, RemoteChatMessage, RemoteChatTool } from './chat-api.js'
 import type { LinxCompletionBackendResult } from './linx-completion-backend.js'
 
@@ -205,37 +203,25 @@ export async function runPiCommand(argv: {
       return
     }
 
-    const podMirror = new LinxPiPodMirror({
+    const podMirrorHost = createLinxPodMirrorRuntimeHost({
+      runtime,
       cwd: adapter.cwd,
+      agentDir: LINX_AGENT_DIR,
       sessionManager,
       autoEnabled,
       symphonyEnabled,
-      checkpointStore: createFileSyncCheckpointStore({
-        dir: join(LINX_AGENT_DIR, 'sync', 'pi-pod-mirror', sessionManager.getSessionId()),
-      }),
-      onError(error) {
-        if (process.env.LINX_DEBUG === '1') {
-          const message = error instanceof Error ? error.stack || error.message : String(error)
-          process.stderr.write(`[linx pod mirror] ${message}\n`)
-        }
-      },
     })
-    const runtimeBridge = runtime as unknown as { session: { subscribe(listener: (event: unknown) => void): () => void } } & Record<string, unknown>
-    ;(runtimeBridge as { __linxPodMirror?: LinxPiPodMirror }).__linxPodMirror = podMirror
-    const unsubscribePodMirror = runtimeBridge.session.subscribe((event: unknown) => {
-      podMirror.handleEvent(event)
-    })
-    const interactive = bootstrapLinxInteractiveMode(runtimeBridge, {
+    const interactive = bootstrapLinxInteractiveMode(podMirrorHost.runtime, {
       initialMessage: prompt || undefined,
       restoredAuto: autoEnabled && restoreAutoFromHydration,
       onAutoControlChange(enabled) {
-        void podMirror.syncAutoControlState(enabled)
+        podMirrorHost.syncAutoControlState(enabled)
       },
       onSymphonyControlChange(enabled) {
-        void podMirror.syncSymphonyControlState(enabled)
+        podMirrorHost.syncSymphonyControlState(enabled)
       },
     })
-    const bridge = runtimeBridge as { linxAuthBridge?: { shouldPromptLoginOnStart?: boolean } }
+    const bridge = podMirrorHost.runtime
     const loginPromptReason: LinxLoginReason | null = resolveLinxInteractiveLoginReason({
       startupDecision: startupLoginPrompt,
       runtimePromptOnStart: bridge.linxAuthBridge?.shouldPromptLoginOnStart,
@@ -247,8 +233,7 @@ export async function runPiCommand(argv: {
     try {
       await interactive.run()
     } finally {
-      unsubscribePodMirror()
-      await podMirror.close().catch(() => undefined)
+      await podMirrorHost.close()
       interactive.stop()
     }
   } finally {
