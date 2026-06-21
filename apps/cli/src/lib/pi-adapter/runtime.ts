@@ -23,7 +23,6 @@ import type { CodexApprovalPolicy } from '../codex-plugin/codex-native-proxy.js'
 import { loadCredentials } from '../credentials-store.js'
 import { createLinxBearerAuthFetch, resolveLinxCloudRuntimeAuthFetch, resolveRuntimeAuthFetchFromApiKey } from '../linx-cloud-runtime-auth.js'
 import { createLinxCloudRuntimeCoordinator } from '../linx-cloud-runtime-coordinator.js'
-import { LINX_RUNTIME_MANAGED_AUTH_KEY } from '../linx-runtime-auth.js'
 import { createLinxManagedRuntimeOAuthProvider } from '../linx-runtime-oauth-provider.js'
 import {
   LINX_WEB_ACCESS_PACKAGE_SOURCE,
@@ -34,11 +33,10 @@ import {
   withLinxSkillSourceInfo,
 } from '../linx-runtime-resources.js'
 import {
-  LINX_CLOUD_PROVIDER_API,
   LINX_CLOUD_PROVIDER_ID,
   LINX_CLOUD_PROVIDER_LABEL,
-  sanitizeLinxCloudDefaults,
 } from '../linx-cloud-models.js'
+import { createLinxRuntimeProviderRegistration } from '../linx-runtime-provider-registration.js'
 export {
   resolveLinxInteractiveLoginReason,
   resolveLinxStartupLoginPromptDecision,
@@ -277,10 +275,6 @@ export function createLinxRuntimeAdapter(
     createRuntime: async (context: LinxRuntimeFactoryContext): Promise<AgentSessionRuntime> => {
       const authStorage = AuthStorage.inMemory()
       const modelRegistry = ModelRegistry.inMemory(authStorage)
-      const originalIsUsingOAuth = modelRegistry.isUsingOAuth.bind(modelRegistry)
-      modelRegistry.isUsingOAuth = (model) => (
-        model.provider === LINX_CLOUD_PROVIDER_ID ? false : originalIsUsingOAuth(model)
-      )
       const linxOAuthProvider = options.providerConfig?.oauth ?? createLinxManagedRuntimeOAuthProvider({
         issuerUrl: options.providerConfig?.issuerUrl,
         getPodDataSession: options.getPodDataSession,
@@ -300,27 +294,22 @@ export function createLinxRuntimeAdapter(
       } else if (explicitOAuthCredential?.access) {
         await cloudRuntime.syncProviderModels({ runtimeFetch: createLinxBearerAuthFetch(explicitOAuthCredential.access) })
       }
-      modelRegistry.registerProvider(LINX_CLOUD_PROVIDER_ID, {
-        api: LINX_CLOUD_PROVIDER_API,
-        baseUrl,
-        apiKey: '$LINX_RUNTIME_AUTH',
-        oauth: linxOAuthProvider,
-        authHeader: false,
-        streamSimple: streamAdapter.streamFn,
-        models: cloudRuntime.providerModels,
-      })
-      if (!options.providerConfig?.oauth) {
-        authStorage.setRuntimeApiKey(LINX_CLOUD_PROVIDER_ID, LINX_RUNTIME_MANAGED_AUTH_KEY)
-      }
-      if (options.providerConfig?.oauth && explicitOAuthCredential) {
-        authStorage.set(LINX_CLOUD_PROVIDER_ID, { type: 'oauth', ...explicitOAuthCredential })
-      }
-
       const settingsManager = SettingsManager.create(context.cwd, context.agentDir)
       ensureLinxPiTheme(context.agentDir)
       ensurePiWebAccessConfig()
       settingsManager.setTheme('linx')
-      const defaultModelId = sanitizeLinxCloudDefaults(settingsManager, requestedModel, cloudRuntime.providerModels)
+      const { defaultModelId } = createLinxRuntimeProviderRegistration({
+        authStorage,
+        modelRegistry,
+        settingsManager,
+        baseUrl,
+        requestedModel,
+        streamSimple: streamAdapter.streamFn,
+        providerModels: cloudRuntime.providerModels,
+        oauth: linxOAuthProvider,
+        explicitOAuthCredential,
+        useManagedRuntimeAuth: !options.providerConfig?.oauth,
+      })
       const bundledSkillsDir = resolveBundledLinxSkillsDir()
       const marketSkillDirs = resolveInstalledMarketSkillDirs()
       const additionalSkillPaths = [
@@ -411,4 +400,3 @@ export type PiRuntimeAdapter = LinxRuntimeAdapter
 
 /** @deprecated Use createLinxRuntimeAdapter. */
 export const createPiRuntimeAdapter = createLinxRuntimeAdapter
-

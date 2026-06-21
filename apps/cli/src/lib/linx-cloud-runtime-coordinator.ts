@@ -1,4 +1,3 @@
-import type { Api } from '@earendil-works/pi-ai'
 import { DEFAULT_LINX_CLOUD_MODEL_ID, resolvePreferredLinxCloudModelId } from './default-model.js'
 import { isRemoteAuthExpiredError, type RemoteAuthFetch, type RemoteChatMessage, type RemoteChatTool } from './chat-api.js'
 import type { LinxCompletionBackendResult } from './linx-completion-backend.js'
@@ -8,32 +7,12 @@ import { resolveLinxCloudRuntimeAuthFetch } from './linx-cloud-runtime-auth.js'
 import {
   buildFallbackLinxCloudProviderModels,
   buildLinxCloudProviderModel,
+  type LinxCloudProviderModelDefinition,
   mergeLinxCloudProviderModels,
 } from './linx-cloud-models.js'
 
-type LinxCloudRuntimeModel = {
-  id: string
-  name: string
-  api: Api
-  reasoning: boolean
-  input: ['text']
-  cost: {
-    input: number
-    output: number
-    cacheRead: number
-    cacheWrite: number
-  }
-  contextWindow: number
-  maxTokens: number
-  compat: {
-    supportsStore: false
-    supportsDeveloperRole: false
-    supportsStrictMode: false
-  }
-}
-
 export type LinxCloudRuntimeCoordinator = {
-  readonly providerModels: LinxCloudRuntimeModel[]
+  readonly providerModels: LinxCloudProviderModelDefinition[]
   getActiveModelId(): string
   shouldPromptLoginOnStart(): boolean
   syncProviderModels(authSession: { runtimeFetch: RemoteAuthFetch }, options?: { throwAuthExpired?: boolean; refreshOnAuthExpired?: boolean }): Promise<void>
@@ -67,7 +46,7 @@ export function createLinxCloudRuntimeCoordinator(options: {
 }): LinxCloudRuntimeCoordinator {
   let activeModelId = options.requestedModel ?? DEFAULT_LINX_CLOUD_MODEL_ID
   let shouldPromptLogin = false
-  const providerModels = buildFallbackLinxCloudProviderModels(activeModelId) as LinxCloudRuntimeModel[]
+  const providerModels = buildFallbackLinxCloudProviderModels(activeModelId)
 
   return {
     providerModels,
@@ -91,7 +70,7 @@ export function createLinxCloudRuntimeCoordinator(options: {
         id: entry.id,
         contextWindow: entry.contextWindow,
       })), activeModelId)
-      const nextModels = mergedModels.map((entry) => buildLinxCloudProviderModel(entry)) as LinxCloudRuntimeModel[]
+      const nextModels = mergedModels.map((entry) => buildLinxCloudProviderModel(entry))
       providerModels.splice(0, providerModels.length, ...nextModels)
 
       if (!options.requestedModel) {
