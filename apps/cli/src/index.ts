@@ -9,9 +9,9 @@ import { configCommand } from './lib/status-line-command.js'
 import { codexNativeProxyCommand, symphonyCodexMcpCommand } from './lib/linx-codex-plugin-command.js'
 import { registerRetiredAndPlaceholderCommands } from './lib/linx-retired-command.js'
 import { createLinxPiCliCommands } from './lib/linx-pi-cli-command.js'
+import { createDefaultLinxRuntimeAdapterForPiCommand } from './linx-cli-runtime-adapter-factory.js'
 import { linxInstallPackageCommand, linxListPackageCommand, linxRemovePackageCommand, linxUpdatePackageCommand } from './lib/linx-package-command.js'
 import { legacyChatCommand, modelsCommand } from './lib/linx-chat-models-command.js'
-import { createLinxRuntimeAdapter } from './lib/pi-adapter/index.js'
 import { formatLinxCliErrorMessage } from './lib/linx-cloud-errors.js'
 
 function readPackageVersion(): string {
@@ -27,18 +27,7 @@ function readPackageVersion(): string {
 
 
 const { defaultPiCommand, execCommand, hiddenPiAliasCommand, hiddenPiFrontendAliasCommand } = createLinxPiCliCommands({
-  createRuntimeAdapter(options) {
-    return createLinxRuntimeAdapter({
-      async createRemoteCompletion(completionOptions) {
-        const chatApi = await import('./lib/chat-api.js')
-        return chatApi.createRemoteCompletionResult(completionOptions)
-      },
-      async listRemoteModels(authFetch, runtimeUrl, listOptions) {
-        const chatApi = await import('./lib/chat-api.js')
-        return chatApi.listRemoteModels(authFetch, runtimeUrl, listOptions ?? { fallback: false, timeoutMs: 5000 })
-      },
-    }, options)
-  },
+  createRuntimeAdapter: createDefaultLinxRuntimeAdapterForPiCommand,
 })
 
 const cli = registerRetiredAndPlaceholderCommands(yargs(hideBin(process.argv))

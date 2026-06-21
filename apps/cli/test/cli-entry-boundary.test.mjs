@@ -12,6 +12,15 @@ test('CLI entry delegates Pi/TUI command orchestration to a shell command module
   assert.doesNotMatch(indexSource, /async function resolvePiStartupControlState\b/)
 })
 
+test('CLI entry delegates Pi runtime adapter wiring to a CLI composition module', () => {
+  assert.match(indexSource, /from ['"]\.\/linx-cli-runtime-adapter-factory\.js['"]/, 'entry should import pre-composed runtime adapter factory from a CLI composition module')
+  assert.doesNotMatch(indexSource, /from ['"]\.\/lib\/pi-adapter\/index\.js['"]/, 'entry should not import the Pi runtime adapter directly')
+  assert.doesNotMatch(indexSource, /createLinxRuntimeAdapter/, 'entry should not construct the LinX runtime adapter')
+  assert.doesNotMatch(indexSource, /createRemoteCompletionResult/, 'entry should not wire remote chat completion directly')
+  assert.doesNotMatch(indexSource, /listRemoteModels/, 'entry should not wire remote model listing directly')
+  assert.doesNotMatch(indexSource, /chat-api\.js/, 'entry should not dynamically import chat API internals')
+})
+
 test('CLI entry delegates package command implementation to a shell package module', () => {
   assert.match(indexSource, /from ['"]\.\/lib\/linx-package-command\.js['"]/, 'entry should import package command descriptors from a shell module')
   assert.doesNotMatch(indexSource, /DefaultPackageManager/, 'entry should not construct the Pi package manager directly')
