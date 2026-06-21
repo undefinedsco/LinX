@@ -2806,6 +2806,91 @@ test('shell lifecycle restart releases the old TUI and keeps the shell waiting f
   assert.equal(events.at(-1).code, 0)
 })
 
+test('shell lifecycle restart drains terminal input before handing the TTY to the replacement process', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/shell-lifecycle.ts')
+  t.after(() => cleanup())
+
+  const events = []
+  const childHandlers = {}
+  const runtimeEnv = {}
+  let resolveDrain
+  const interactive = {
+    ui: {
+      terminal: {
+        drainInput(maxMs) {
+          events.push({ type: 'drain', maxMs })
+          return new Promise((resolve) => {
+            resolveDrain = () => {
+              events.push({ type: 'drain-finished' })
+              resolve()
+            }
+          })
+        },
+      },
+    },
+    stop() {
+      events.push({
+        type: 'stop',
+        restarting: module.isInteractiveShellRestarting(interactive),
+        noExitMessage: runtimeEnv[module.LINX_TUI_NO_EXIT_MESSAGE_ENV],
+      })
+    },
+    showError(message) {
+      events.push(`error:${message}`)
+    },
+  }
+  const runtime = {
+    execPath: '/usr/local/bin/node',
+    argv: ['/usr/local/bin/node', '/usr/local/bin/linx', '--session', 'session_123'],
+    env: runtimeEnv,
+    cwd() {
+      return '/workspace/project'
+    },
+    spawnProcess(command, args, options) {
+      events.push({ type: 'spawn', command, args, options })
+      return {
+        on(event, handler) {
+          childHandlers[event] = handler
+          return this
+        },
+      }
+    },
+    exitProcess(code) {
+      events.push({ type: 'exit', code })
+    },
+    defer(callback, delayMs) {
+      events.push({ type: 'defer', delayMs })
+      callback()
+    },
+  }
+
+  const restart = module.restartInteractiveShellProcess(interactive, { runtime })
+  await new Promise((resolve) => setImmediate(resolve))
+
+  assert.deepEqual(events, [{ type: 'drain', maxMs: 1000 }])
+  assert.equal(module.isInteractiveShellRestarting(interactive), true)
+  assert.equal(runtimeEnv[module.LINX_TUI_NO_EXIT_MESSAGE_ENV], '1')
+
+  resolveDrain()
+  await new Promise((resolve) => setImmediate(resolve))
+
+  assert.deepEqual(events.slice(0, 4), [
+    { type: 'drain', maxMs: 1000 },
+    { type: 'drain-finished' },
+    { type: 'stop', restarting: true, noExitMessage: '1' },
+    { type: 'defer', delayMs: 50 },
+  ])
+  assert.equal(events[4]?.type, 'spawn')
+  assert.equal(events.some((event) => event?.type === 'exit'), false)
+
+  childHandlers.close(0, null)
+  await restart
+
+  assert.equal(module.isInteractiveShellRestarting(interactive), false)
+  assert.equal(runtimeEnv[module.LINX_TUI_NO_EXIT_MESSAGE_ENV], undefined)
+  assert.deepEqual(events.at(-1), { type: 'exit', code: 0 })
+})
+
 test('linx update notification normalizes object version values and selector object choices', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/pi-adapter/branding.ts')
   t.after(() => cleanup())

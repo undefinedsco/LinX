@@ -17,6 +17,76 @@ test('resume output module suppresses upstream Pi resume hints and preserves Lin
   assert.equal(writes.join(''), 'Resume: linx --session 019e5cf6-cbfa-75c2-9d50-5a736c158c17\n')
 })
 
+test('exit message stays suppressed after restart even when the command runner stops the interactive shell again', async (t) => {
+  const lifecycle = await loadAutoModeModule('lib/shell-lifecycle.ts')
+  const resume = await loadAutoModeModule('lib/linx-resume-output.ts')
+  t.after(() => {
+    lifecycle.cleanup()
+    resume.cleanup()
+  })
+
+  const previousNoExitMessage = process.env[lifecycle.module.LINX_TUI_NO_EXIT_MESSAGE_ENV]
+  const previousIsTTY = process.stdout.isTTY
+  Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true })
+  delete process.env[lifecycle.module.LINX_TUI_NO_EXIT_MESSAGE_ENV]
+  t.after(() => {
+    restoreEnv(lifecycle.module.LINX_TUI_NO_EXIT_MESSAGE_ENV, previousNoExitMessage)
+    Object.defineProperty(process.stdout, 'isTTY', { value: previousIsTTY, configurable: true })
+  })
+
+  const writes = captureProcessStreamWrites(t, process.stdout)
+  const childHandlers = {}
+  const interactive = {
+    initialized: false,
+    init() {
+      this.initialized = true
+    },
+    stop() {},
+    session: {
+      sessionId: '019e-restart-session',
+      getContextUsage() {
+        return { inputTokens: 1, outputTokens: 1, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 }
+      },
+    },
+  }
+  resume.module.installLinxExitMessage(interactive)
+  await interactive.init()
+
+  const restart = lifecycle.module.restartInteractiveShellProcess(interactive, {
+    runtime: {
+      execPath: '/usr/local/bin/node',
+      argv: ['/usr/local/bin/node', '/usr/local/bin/linx', '--session', '019e-restart-session'],
+      env: process.env,
+      cwd() {
+        return '/workspace/project'
+      },
+      spawnProcess() {
+        return {
+          on(event, handler) {
+            childHandlers[event] = handler
+            return this
+          },
+        }
+      },
+      exitProcess() {},
+      defer(callback) {
+        callback()
+      },
+    },
+  })
+  childHandlers.close(0, null)
+  await restart
+
+  interactive.stop()
+
+  assert.equal(
+    writes.join('').includes('LinX session closed.'),
+    false,
+    'restart path must not print the normal session-closed copy even if runner cleanup calls stop again',
+  )
+  assert.equal(writes.join('').includes('Resume: linx --session'), false)
+})
+
 function captureProcessStreamWrites(t, stream) {
   const originalWrite = stream.write
   const writes = []
@@ -33,4 +103,12 @@ function captureProcessStreamWrites(t, stream) {
     stream.write = originalWrite
   })
   return writes
+}
+
+function restoreEnv(name, value) {
+  if (value === undefined) {
+    delete process.env[name]
+  } else {
+    process.env[name] = value
+  }
 }
