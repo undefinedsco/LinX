@@ -82,6 +82,14 @@ test('auto-mode runner does not re-export Solid client credential parser through
   )
 })
 
+test('auto-mode runner does not expose Secretary reaction window policy through a test seam', () => {
+  assert.doesNotMatch(
+    autoModeRunnerSource,
+    /__testResolveSecretaryReactionWindowMs/,
+    'Secretary reaction window policy should live in an owning module instead of being tested through auto-mode runner',
+  )
+})
+
 test('Pod chat store does not expose a test-only internal aggregate', () => {
   assert.doesNotMatch(
     podChatStoreSource,

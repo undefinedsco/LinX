@@ -3,8 +3,6 @@ import { setTimeout as delay } from 'node:timers/promises'
 import {
   buildAcpPermissionResponse,
   buildAutoModeUserInputResponse,
-  MAX_AUTO_MODE_SECRETARY_REACTION_WINDOW_MS,
-  MIN_AUTO_MODE_SECRETARY_REACTION_WINDOW_MS,
   normalizeAcpInteractionRequest,
   normalizeAcpRequest,
   normalizeAcpSessionNotification,
@@ -53,6 +51,7 @@ import {
 import { persistAutoModeConversationToPod } from './pod-persistence.js'
 import { loadPodBackendCredential, podCredentialMissingMessage } from './pod-ai.js'
 import { resolveAutoModeSecretaryRecommendation } from './secretary.js'
+import { resolveSecretaryReactionWindowMs } from './secretary-reaction-window.js'
 import { promptText } from '../prompt.js'
 import { runLinxLoginCommand, runLinxLogoutCommand } from '../login-command.js'
 import { clearDefaultPodDataSession, createPodDataSession, type PodDataSession } from '../pod-data-session.js'
@@ -342,33 +341,6 @@ function approvalPromptLines(message: string, recommendation?: AutoModeSecretary
   }
   return lines
 }
-
-interface AutoModeSecretaryReactionWindowInput {
-  canAutoDecide?: boolean
-  reactionWindowMs?: number
-  source?: AutoModeSecretaryRecommendation['source']
-}
-
-function resolveSecretaryReactionWindowMs(recommendation?: AutoModeSecretaryReactionWindowInput | null): number {
-  if (!recommendation?.canAutoDecide) {
-    return 0
-  }
-
-  const reactionWindowMs = recommendation.reactionWindowMs ?? 0
-  if (recommendation.source === 'fallback') {
-    return Math.max(0, Math.min(MAX_AUTO_MODE_SECRETARY_REACTION_WINDOW_MS, reactionWindowMs))
-  }
-
-  return Math.max(
-    MIN_AUTO_MODE_SECRETARY_REACTION_WINDOW_MS,
-    Math.min(
-      MAX_AUTO_MODE_SECRETARY_REACTION_WINDOW_MS,
-      reactionWindowMs > 0 ? reactionWindowMs : MIN_AUTO_MODE_SECRETARY_REACTION_WINDOW_MS,
-    ),
-  )
-}
-
-export const __testResolveSecretaryReactionWindowMs = resolveSecretaryReactionWindowMs
 
 function approvalPromptOptions(
   allowSessionOption: boolean,
