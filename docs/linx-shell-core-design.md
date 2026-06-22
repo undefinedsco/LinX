@@ -194,6 +194,26 @@ Native surface reuse rules:
   before adding a command. Do not ship a top-level clone first and retrofit the
   boundary later.
 
+Retired surface rules:
+
+- Removing a duplicate top-level surface is a boundary repair, not a regression,
+  when the same behavior is already owned by Pi or the active backend. Remove the
+  command registration, help entry, and docs together instead of keeping a hidden
+  human-facing alias.
+- A hidden retired command is allowed only as a narrow migration notice for a
+  released LinX-owned surface. It must not perform the old behavior, start login,
+  hydrate Pod state, bootstrap Pi, or become the documented workflow.
+- Do not add compatibility shims for surfaces that were never LinX-owned product
+  contracts. In particular, `linx sessions` and `linx --sessions` are not kept as
+  hidden aliases because session listing belongs to Pi's resume selector.
+- Retired command-shaped top-level input must fail during admission, before
+  login, Pod lookup, auto hydration, or interactive bootstrap side effects.
+  Inside the TUI, the same word may still be valid if the active backend owns the
+  slash command.
+- Boundary tests must cover both discoverability and side effects: top-level help
+  must not list the retired surface, and admission tests must prove the retired
+  command does not reach login or interactive startup.
+
 Session inventory has three distinct meanings and must not be collapsed:
 
 - **Human list/choose:** Pi-owned interactive selection. Use `linx -r`,
