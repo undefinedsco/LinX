@@ -64,7 +64,8 @@ Codex / worker blocks on approval or input
 - `/symphony ...` 用来调整或检查 Secretary 的委派行为、任务切分、worker 投影和状态归档。
 - `Symphony` 是 Secretary 的全局控制面，不绑定从哪个 Chat/Thread 发起；在哪个界面触发只提供来源上下文，不决定投递模型。
 - Chat/Thread 是过程展示和回看载体，由 Secretary 在产品层创建或选择，并把对应 URI 写进 `Issue / Delivery / Session`。用户不需要选择或填写 Chat/Thread/Message URI，headless CLI 也不模拟这层产品上下文。
-- CLI 里的 `linx symphony ...` 只是 `/symphony ...` 的 headless 验证入口。
+- CLI 不提供 `linx symphony ...` 产品命令；该入口只保留为退役提示，引导用户进入 TUI 后使用 `/symphony on` 和正常 chat。
+- Headless 或集成验证只能走内部测试 harness、runtime adapter、MCP bridge 或明确隐藏的开发/插件 plumbing，不能重新包装成用户可发现的 Symphony CLI 面。
 - 不提供独立 `linx-symphony` 产品入口，避免把内置能力误解成另一个应用。
 
 runtime 层先做半套，直接使用 Codex：
