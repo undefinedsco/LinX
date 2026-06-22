@@ -200,6 +200,40 @@ Concrete command ownership examples:
 | Interactive TUI shell | LinX shell controls such as `/update`, `/statusline`, `/rewind`, `/ai connect`, `/cd`, plus routing/forwarding | durable Pod semantics, duplicated backend-native command languages |
 | Active backend/worker | Native commands such as `/new`, `/fork`, `/session`, `/model`, `/help` when supported by that backend | LinX package lifecycle, global credential storage, Pod resource identity |
 
+### Top-level command boundary checklist
+
+Use this checklist before adding or keeping any `linx <command>` entry:
+
+1. **Is it LinX-owned lifecycle/package behavior?** Keep it at top level only
+   when it manages LinX itself, for example login, update/install, or startup
+   selection.
+2. **Is it Pi/backend-native behavior?** Do not clone it. Forward it inside the
+   active TUI/backend surface, or rely on Pi's native selector/command if one
+   already exists.
+3. **Is it low-frequency interactive configuration?** Prefer a TUI command with
+   discoverable options. Do not promote it to a top-level command just because it
+   is easier to implement there.
+4. **Is it prompt text?** Only explicit prompt surfaces may treat
+   command-shaped words as prompt text. `linx --print fork` and
+   `linx exec fork ...` are prompt APIs; default `linx fork ...` is top-level
+   command admission and must fail when `fork` is not a LinX top-level command.
+5. **Is it a compatibility shim?** Hidden retired commands may only explain the
+   replacement surface. They must not perform product behavior or appear in
+   help.
+
+Specific decisions currently in force:
+
+- Do not add `linx sessions` or `linx --sessions`. Session listing/selection is
+  Pi startup/TUI selector behavior: `linx -r`, `linx --resume`, and `/resume`.
+- Do not add top-level `linx new`, `linx fork`, `linx session`, `linx model`,
+  or `linx help` aliases. Those are backend/TUI command words.
+- Keep `linx models` only as Cloud model-list inspection. It is plural because
+  it is not the same concept as backend-native `/model <id>` switching.
+- `--session`, `--session-dir`, and `--session-id` are runtime archive selectors.
+  They are not Pod chat/thread IDs and must not leak into shared data models.
+- When a backend exposes richer native command help, expose it where the backend
+  is active, not through top-level `linx --help`.
+
 ## Pi adapter boundary
 
 The Pi adapter is a bridge to an upstream TUI/runtime, not the product core.

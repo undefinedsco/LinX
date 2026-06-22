@@ -91,12 +91,7 @@ export async function runPiCommand(argv: {
   prompt?: string[]
 } & AutoModeCommandArgs, dependencies: LinxPiCliCommandDependencies, options: RunPiCommandOptions = {}): Promise<void> {
   assertLinxPiCliSessionSelectorCompatibility(argv)
-  const firstPromptToken = Array.isArray(argv.prompt) ? argv.prompt[0] : undefined
-  // Reject command-shaped aliases only when they would fall through to the default TUI prompt.
-  const shouldRejectReservedPromptCommand = options.rejectReservedPromptCommands && !argv.print && !argv.backend
-  if (shouldRejectReservedPromptCommand && firstPromptToken && RESERVED_NON_TOP_LEVEL_COMMANDS.has(firstPromptToken)) {
-    throw new Error(`Unknown command: ${firstPromptToken}`)
-  }
+  assertDefaultStartupPromptTokenIsAllowed(argv, options)
   if (argv.resume) {
     const selectedSession = await selectLinxPiSession(cwdFromArg(argv.cwd), argv['session-dir'])
     if (!selectedSession) {
@@ -249,6 +244,21 @@ export function assertLinxPiCliSessionSelectorCompatibility(argv: {
     sessionId: argv['session-id'],
     last: Boolean(argv.continue || argv.resume || argv.last),
   })
+}
+
+function assertDefaultStartupPromptTokenIsAllowed(argv: {
+  print?: boolean
+  backend?: unknown
+  prompt?: string[]
+}, options: RunPiCommandOptions): void {
+  if (!options.rejectReservedPromptCommands || argv.print || argv.backend) {
+    return
+  }
+
+  const firstPromptToken = Array.isArray(argv.prompt) ? argv.prompt[0] : undefined
+  if (firstPromptToken && RESERVED_NON_TOP_LEVEL_COMMANDS.has(firstPromptToken)) {
+    throw new Error(`Unknown command: ${firstPromptToken}`)
+  }
 }
 
 function cwdFromArg(cwd: unknown): string {
