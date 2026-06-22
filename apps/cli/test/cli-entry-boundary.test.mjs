@@ -34,6 +34,12 @@ test('default Pi/TUI command module delegates top-level prompt admission policy'
   assert.match(admissionSource, /RESERVED_NON_TOP_LEVEL_COMMANDS/, 'admission policy should own reserved command-shaped prompt tokens')
 })
 
+test('default Pi/TUI command module delegates auto-mode and backend admission policy', () => {
+  assert.match(piCliCommandSource, /from ['"]\.\/linx-auto-mode-cli-admission\.js['"]/, 'Pi command orchestration should import auto-mode CLI admission policy')
+  assert.doesNotMatch(piCliCommandSource, /\bisAutoModeRequest\b/, 'auto-mode request detection should live in the auto-mode admission policy module')
+  assert.doesNotMatch(piCliCommandSource, /\brunAutoModeCommand\b/, 'auto-mode command execution should live in the auto-mode admission policy module')
+})
+
 test('CLI app delegates Pi runtime adapter wiring to a CLI composition module', () => {
   assert.match(cliAppSource, /from ['"]\.\/linx-cli-runtime-adapter-factory\.js['"]/, 'CLI app should import pre-composed runtime adapter factory from a CLI composition module')
   assert.doesNotMatch(cliAppSource, /from ['"]\.\/lib\/pi-adapter\/index\.js['"]/, 'CLI app should not import the Pi runtime adapter directly')

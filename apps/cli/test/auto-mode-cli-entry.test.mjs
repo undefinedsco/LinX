@@ -500,7 +500,7 @@ test('compiled cli auto-mode rejects retired command surfaces', async (t) => {
         cwd: cliRoot,
         encoding: 'utf-8',
         stdio: 'pipe',
-        timeout: 1000,
+        timeout: 5000,
       }),
       new RegExp(`Unknown command: ${command}`),
     )

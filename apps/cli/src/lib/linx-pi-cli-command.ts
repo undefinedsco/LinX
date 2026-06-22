@@ -1,7 +1,7 @@
 import type { Argv, CommandModule } from 'yargs'
 import { runPrintMode, type AgentSessionRuntime } from '@earendil-works/pi-coding-agent'
 import { resolveAccountBaseUrl } from './account-api.js'
-import { buildAutoModeOptions, isAutoModeRequest, runAutoModeCommand, type AutoModeCommandArgs } from './auto-mode-command.js'
+import { buildAutoModeOptions, type AutoModeCommandArgs } from './auto-mode-command.js'
 import { resolveLinxInteractiveLoginReason, resolveLinxStartupLoginPromptDecision } from './linx-startup-login-policy.js'
 import { bootstrapLinxInteractiveMode, type LinxLoginReason } from './linx-interactive-bootstrap.js'
 import { clearDefaultPodDataSession, getDefaultPodDataSession } from './pod-data-session.js'
@@ -14,6 +14,7 @@ import { createLinxPodMirrorRuntimeHost } from './linx-pod-mirror-runtime-host.j
 import { stopInteractiveShellUnlessRestarting } from './shell-lifecycle.js'
 import { assertDefaultStartupPromptTokenIsAllowed, type LinxTopLevelCommandAdmissionOptions } from './linx-top-level-command-admission.js'
 import { handleLinxPodMirrorSyncCliAdmission } from './linx-pod-mirror-sync-cli-admission.js'
+import { handleLinxAutoModeCliAdmission } from './linx-auto-mode-cli-admission.js'
 
 export interface LinxPiCliRuntimeAdapter {
   readonly cwd: string
@@ -87,8 +88,7 @@ export async function runPiCommand(argv: {
     return
   }
 
-  if (isAutoModeRequest(argv)) {
-    await runAutoModeCommand(argv)
+  if (await handleLinxAutoModeCliAdmission(argv)) {
     return
   }
 
@@ -96,11 +96,7 @@ export async function runPiCommand(argv: {
     return
   }
 
-  if (argv.backend) {
-    await runAutoModeCommand({
-      ...argv,
-      plain: Boolean(argv.plain || argv.print),
-    })
+  if (await handleLinxAutoModeCliAdmission(argv, { includeBackend: true })) {
     return
   }
 
