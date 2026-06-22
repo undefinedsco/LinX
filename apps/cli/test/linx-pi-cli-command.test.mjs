@@ -60,3 +60,31 @@ test('runPiCommand cleanup delegates interactive stop to restart-aware shell lif
   assert.match(source, /stopInteractiveShellUnlessRestarting\(interactive\)/)
   assert.doesNotMatch(source, /finally\s*\{[\s\S]*?interactive\.stop\(\)/)
 })
+
+test('runPiCommand rejects conflicting Pi session selectors before side effects', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-pi-cli-command.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.assertLinxPiCliSessionSelectorCompatibility, 'function')
+  assert.throws(
+    () => module.assertLinxPiCliSessionSelectorCompatibility({
+      session: 'existing-session',
+      'session-id': 'new-session',
+    }),
+    /--session-id cannot be combined with --session/,
+  )
+  assert.throws(
+    () => module.assertLinxPiCliSessionSelectorCompatibility({
+      resume: true,
+      'session-id': 'new-session',
+    }),
+    /--session-id cannot be combined with --continue or --resume/,
+  )
+  assert.throws(
+    () => module.assertLinxPiCliSessionSelectorCompatibility({
+      continue: true,
+      'session-id': 'new-session',
+    }),
+    /--session-id cannot be combined with --continue or --resume/,
+  )
+})

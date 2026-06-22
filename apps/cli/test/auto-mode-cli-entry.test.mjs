@@ -464,6 +464,8 @@ test('compiled cli default entry is Pi TUI and hides explicit frontend aliases',
   assert.match(output, /--continue/)
   assert.match(output, /--resume/)
   assert.match(output, /--session/)
+  assert.match(output, /--session-id/)
+  assert.match(output, /--session-dir/)
   assert.doesNotMatch(output, /automode/)
   assert.doesNotMatch(output, /auto-mode/)
   assert.doesNotMatch(output, /--plain/)
@@ -474,50 +476,6 @@ test('compiled cli default entry is Pi TUI and hides explicit frontend aliases',
   assert.doesNotMatch(output, /native keeps/)
   assert.doesNotMatch(output, /pi-frontend/)
   assert.doesNotMatch(output, /linx pi /)
-})
-
-test('compiled cli rejects removed --sessions flag as an unknown option', async (t) => {
-  const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-sessions-flag-'))
-  t.after(() => {
-    rmSync(outdir, { recursive: true, force: true })
-  })
-
-  try {
-    execFileSync('tsc', [
-      '--outDir',
-      outdir,
-      '--rootDir',
-      sourceRoot,
-      '--module',
-      'nodenext',
-      '--moduleResolution',
-      'nodenext',
-      '--target',
-      'ES2022',
-      '--lib',
-      'ES2022',
-      '--types',
-      'node',
-      '--skipLibCheck',
-      'true',
-      '--noEmitOnError',
-      'false',
-      entryPath,
-    ], {
-      cwd: cliRoot,
-      stdio: 'pipe',
-    })
-  } catch {
-    assert.ok(existsSync(join(outdir, 'index.js')))
-  }
-
-  const result = execFileResult(process.execPath, [join(outdir, 'index.js'), '--sessions'], {
-    cwd: cliRoot,
-    encoding: 'utf-8',
-  })
-
-  assert.notEqual(result.status, 0)
-  assert.match(result.stderr, /Unknown argument: sessions/)
 })
 
 test('compiled cli exposes LinX package commands in help', async (t) => {

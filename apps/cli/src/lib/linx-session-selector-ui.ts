@@ -3,7 +3,7 @@ import { ProcessTerminal, TUI } from '@earendil-works/pi-tui'
 import { LINX_AGENT_DIR } from './linx-interactive-branding.js'
 import { listLinxPiSessions } from './linx-session-manager.js'
 
-export async function selectLinxPiSession(cwd: string): Promise<string | null> {
+export async function selectLinxPiSession(cwd: string, sessionDir?: string): Promise<string | null> {
   const settingsManager = SettingsManager.create(cwd, LINX_AGENT_DIR)
   initTheme(settingsManager.getTheme())
 
@@ -18,7 +18,10 @@ export async function selectLinxPiSession(cwd: string): Promise<string | null> {
       ui.stop()
       resolve(sessionPath)
     }
-    const loadSessions = () => listLinxPiSessions(cwd, LINX_AGENT_DIR, { podSessionSource: null })
+    const loadSessions = () => listLinxPiSessions(cwd, LINX_AGENT_DIR, {
+      sessionDir,
+      podSessionSource: null,
+    })
     const selector = new SessionSelectorComponent(
       loadSessions,
       loadSessions,

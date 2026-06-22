@@ -6,7 +6,7 @@ import { resolveLinxInteractiveLoginReason, resolveLinxStartupLoginPromptDecisio
 import { bootstrapLinxInteractiveMode, type LinxLoginReason } from './linx-interactive-bootstrap.js'
 import { clearDefaultPodDataSession, getDefaultPodDataSession } from './pod-data-session.js'
 import { resolveStartupLinxPodDataSession } from './linx-pod-data-session-factory.js'
-import { createLinxPiSessionManager } from './linx-session-manager.js'
+import { assertLinxPiSessionSelectorCompatibility, createLinxPiSessionManager } from './linx-session-manager.js'
 import { LINX_AGENT_DIR } from './linx-interactive-branding.js'
 import { resolveLinxPiStartupControlState } from './linx-pi-startup-control.js'
 import { selectLinxPiSession } from './linx-session-selector-ui.js'
@@ -70,6 +70,8 @@ export async function runPiCommand(argv: {
   'runtime-url'?: string
   print?: boolean
   session?: string
+  'session-dir'?: string
+  'session-id'?: string
   continue?: boolean
   resume?: boolean
   last?: boolean
@@ -77,13 +79,14 @@ export async function runPiCommand(argv: {
   'pi-sync-retry'?: string
   prompt?: string[]
 } & AutoModeCommandArgs, dependencies: LinxPiCliCommandDependencies): Promise<void> {
+  assertLinxPiCliSessionSelectorCompatibility(argv)
   const firstPromptToken = Array.isArray(argv.prompt) ? argv.prompt[0] : undefined
   // Reject command-shaped aliases that should not fall through to the default TUI prompt.
   if (firstPromptToken && RESERVED_NON_TOP_LEVEL_COMMANDS.has(firstPromptToken)) {
     throw new Error(`Unknown command: ${firstPromptToken}`)
   }
   if (argv.resume) {
-    const selectedSession = await selectLinxPiSession(cwdFromArg(argv.cwd))
+    const selectedSession = await selectLinxPiSession(cwdFromArg(argv.cwd), argv['session-dir'])
     if (!selectedSession) {
       process.stdout.write('No session selected\n')
       return
@@ -135,9 +138,11 @@ export async function runPiCommand(argv: {
     cwd,
     agentDir: LINX_AGENT_DIR,
     session: argv.session,
+    sessionDir: argv['session-dir'],
+    sessionId: argv['session-id'],
     last: Boolean(argv.continue || argv.last),
   })
-  const restoreAutoFromHydration = Boolean(argv.session || argv.continue || argv.last)
+  const restoreAutoFromHydration = Boolean(argv.session || argv['session-id'] || argv.continue || argv.last)
   const controlState = await resolveLinxPiStartupControlState({
     requestedAuto: typeof argv.auto === 'boolean' ? argv.auto : undefined,
     hydrateFromPod: !argv.print && !startupLoginPrompt.shouldPrompt,
@@ -220,6 +225,20 @@ export async function runPiCommand(argv: {
   }
 }
 
+export function assertLinxPiCliSessionSelectorCompatibility(argv: {
+  session?: string
+  'session-id'?: string
+  continue?: boolean
+  resume?: boolean
+  last?: boolean
+}): void {
+  assertLinxPiSessionSelectorCompatibility({
+    session: argv.session,
+    sessionId: argv['session-id'],
+    last: Boolean(argv.continue || argv.resume || argv.last),
+  })
+}
+
 function cwdFromArg(cwd: unknown): string {
   return typeof cwd === 'string' && cwd.trim() ? cwd : process.cwd()
 }
@@ -232,6 +251,8 @@ export interface PiCommandArgs {
   'runtime-url'?: string
   print?: boolean
   session?: string
+  'session-dir'?: string
+  'session-id'?: string
   continue?: boolean
   resume?: boolean
   last?: boolean
@@ -265,6 +286,14 @@ export function buildPiCommand(command: Argv<object>): Argv<LinxDefaultCommandAr
     .option('session', {
       type: 'string',
       describe: 'Resume a specific LinX session id or JSONL file',
+    })
+    .option('session-id', {
+      type: 'string',
+      describe: 'Use exact LinX session ID, creating it if missing',
+    })
+    .option('session-dir', {
+      type: 'string',
+      describe: 'Directory for LinX session storage and lookup',
     })
     .option('continue', {
       alias: 'c',
