@@ -5,6 +5,7 @@ import {
   mirrorSymphonyProjectionJsonLdFromPod,
   persistSymphonyControlStateToPod,
   persistSymphonyProjectionToPod,
+  type SymphonyPodProjectionRuntime,
 } from './pod-projection.js'
 
 export interface SymphonyRuntime {
@@ -25,4 +26,27 @@ export const defaultSymphonyRuntime: SymphonyRuntime = {
   persistSymphonyControlStateToPod,
   listOpenSymphonyIssuesFromPod,
   mirrorSymphonyProjectionJsonLdFromPod,
+}
+
+
+export function createSymphonyRuntimeForPodProjection(
+  projectionRuntime: SymphonyPodProjectionRuntime,
+): SymphonyRuntime {
+  return {
+    runAutoMode,
+    listAutoModeSessions: listArchivedAutoModeSessions,
+    loadAutoModeEvents: loadArchivedAutoModeEvents,
+    persistSymphonyControlStateToPod(plan, options) {
+      return persistSymphonyControlStateToPod(plan, {
+        ...options,
+        runtime: projectionRuntime,
+      })
+    },
+    listOpenSymphonyIssuesFromPod() {
+      return listOpenSymphonyIssuesFromPod({ runtime: projectionRuntime })
+    },
+    mirrorSymphonyProjectionJsonLdFromPod(result) {
+      return mirrorSymphonyProjectionJsonLdFromPod(result, { runtime: projectionRuntime })
+    },
+  }
 }
