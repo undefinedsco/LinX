@@ -1,6 +1,22 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { dirname, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
+
+let modelsModulePromise
+
+async function importCompiledSibling(entryPath, relativePath) {
+  return import(pathToFileURL(join(dirname(entryPath), relativePath)).href)
+}
+
+async function getModelsBundle() {
+  if (!modelsModulePromise) {
+    modelsModulePromise = loadAutoModeModule('lib/models.ts')
+  }
+
+  return modelsModulePromise
+}
 
 function createMockDb() {
   const inserts = []
@@ -81,28 +97,30 @@ function createSession() {
 }
 
 test('pod chat store models CLI message persistence as local-to-core Pod sync', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pod-chat-store.ts')
+  const { module, entryPath, cleanup } = await loadAutoModeModule('lib/pod-chat-store.ts')
+  const runtime = await importCompiledSibling(entryPath, 'pod-chat-store-runtime.js')
+  const { module: models } = await getModelsBundle()
   t.after(() => cleanup())
-  t.after(() => module.__podChatStoreInternal.resetRuntime())
+  t.after(() => runtime.resetPodChatStoreRuntime())
 
   const { db, inserts, updates } = createMockDb()
   const syncResults = []
   let uuid = 0
-  module.__podChatStoreInternal.setRuntime({
+  runtime.setPodChatStoreRuntime({
     createDb: () => db,
     now: () => new Date('2026-05-21T00:00:00.000Z'),
     randomUUID: () => `uuid-${++uuid}`,
     onSyncResult: (result) => syncResults.push(result),
   })
 
-  await db.insert(module.__podChatStoreInternal.resources.threadResource).values({
+  await db.insert(models.threadResource).values({
     id: 'chat/cli-default/index.ttl#thread-1',
     chat: 'https://alice.example/.data/chat/cli-default/index.ttl#this',
   }).execute()
 
   await module.saveUserMessage(createSession(), 'cli-default', 'thread-1', 'hello from cli')
 
-  const messageInsert = inserts.find((entry) => entry.resource === module.__podChatStoreInternal.resources.messageResource)
+  const messageInsert = inserts.find((entry) => entry.resource === models.messageResource)
   assert.equal(messageInsert?.value.id, 'uuid-1')
   assert.equal(messageInsert?.value.chat, 'https://alice.example/.data/chat/cli-default/index.ttl#this')
   assert.equal(messageInsert?.value.thread, 'https://alice.example/.data/chat/cli-default/index.ttl#thread-1')
@@ -149,9 +167,11 @@ test('pod chat store models CLI message persistence as local-to-core Pod sync', 
 })
 
 test('pod chat store retries transient Pod write failures', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/pod-chat-store.ts')
+  const { module, entryPath, cleanup } = await loadAutoModeModule('lib/pod-chat-store.ts')
+  const runtime = await importCompiledSibling(entryPath, 'pod-chat-store-runtime.js')
+  const { module: models } = await getModelsBundle()
   t.after(() => cleanup())
-  t.after(() => module.__podChatStoreInternal.resetRuntime())
+  t.after(() => runtime.resetPodChatStoreRuntime())
 
   const { db } = createMockDb()
   let uuid = 0
@@ -159,7 +179,7 @@ test('pod chat store retries transient Pod write failures', async (t) => {
   const originalInsert = db.insert.bind(db)
   db.insert = (resource) => {
     const builder = originalInsert(resource)
-    if (resource !== module.__podChatStoreInternal.resources.messageResource) {
+    if (resource !== models.messageResource) {
       return builder
     }
     return {
@@ -178,13 +198,13 @@ test('pod chat store retries transient Pod write failures', async (t) => {
     }
   }
 
-  module.__podChatStoreInternal.setRuntime({
+  runtime.setPodChatStoreRuntime({
     createDb: () => db,
     now: () => new Date('2026-05-21T00:00:00.000Z'),
     randomUUID: () => `uuid-${++uuid}`,
   })
 
-  await db.insert(module.__podChatStoreInternal.resources.threadResource).values({
+  await db.insert(models.threadResource).values({
     id: 'chat/cli-default/index.ttl#thread-1',
     chat: 'https://alice.example/.data/chat/cli-default/index.ttl#this',
   }).execute()
