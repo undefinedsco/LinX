@@ -85,16 +85,25 @@ depending on module import order or wrapper nesting.
 
 ## Command routing invariants
 
-TUI command routing is shell-owned, but it has two classes of commands:
+TUI command routing is shell-owned, but an interactive slash command has three
+possible outcomes:
 
 - **LinX shell commands:** commands whose behavior controls the LinX shell, for
   example `/update`, `/statusline`, `/rewind`, `/ai connect`, `/cd`, and local
   shell switches.
-- **Backend-native commands:** commands that belong to the active worker/backend
-  and should be forwarded as native backend input whenever possible.
+- **LinX-proxied backend commands:** commands that the active backend exposes
+  through a LinX-owned command proxy because the shell must bridge them across a
+  runtime boundary. The current narrow set is `/commands`, `/models`, `/status`,
+  and `/rollback`.
+- **Pi/backend native submit-path commands:** commands that already belong to
+  the active TUI/backend language and should fall through to Pi's original submit
+  path. Examples include `/new`, `/fork`, `/session`, `/model`, `/help`,
+  `/compact`, and `/name`. LinX must not clone or proxy these just because it can
+  see the slash input.
 
 The router may parse enough to decide ownership. Once a command is backend-owned,
 LinX should preserve the backend command language rather than redefining it.
+When a command is Pi-native, the right action is often to not handle it at all.
 
 A shell command may call shared core use-cases. It must not implement its own
 copy of shared business semantics. If a command needs provider config, auth
@@ -107,14 +116,15 @@ current priority order is:
 ```text
 10 login
 20 Symphony
-40 backend-native slash commands
+40 LinX-proxied backend slash commands
 50 LinX shell command fallback
+original Pi submit path for unconsumed Pi/backend-native commands and messages
 ```
 
-Handlers return `true` only when they consumed the input. Unknown commands and
-ordinary messages must fall through to the next handler or Pi's original submit
-path. A handler must not call the original submit and then also report
-`false`; that creates duplicate turns.
+Handlers return `true` only when they consumed the input. Unknown commands,
+Pi-native slash commands, and ordinary messages must fall through to the next
+handler or Pi's original submit path. A handler must not call the original submit
+and then also report `false`; that creates duplicate turns.
 
 Projected command routing is also shell-owned. Auto/Secretary projected input may
 contain slash commands, but feature modules must not exchange those projected
