@@ -1,8 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { dirname, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import { buildAutoModeApprovalDecisionReason } from '@linx/agent-runtime/auto-mode'
 import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 
 let approvalModule
+let approvalStoreModule
 let cleanup
 
 const AUTO_MODE_THREAD_URI = 'https://alice.example/.data/chat/linx-auto-mode-codex/index.ttl#auto_2026-03-18T00-00-00-000Z_deadbeef'
@@ -13,8 +17,8 @@ function createRecord(overrides = {}) {
     backend: 'codex',
     runtime: 'local',
     transport: 'acp',
-autoEnabled: false,
-mode: 'off',
+    autoEnabled: false,
+    mode: 'off',
     cwd: '/tmp/demo',
     model: 'gpt-5-codex',
     prompt: 'inspect workspace',
@@ -107,7 +111,7 @@ function createRuntime(module) {
     get sessionCalls() {
       return sessionCalls
     },
-    encodeDecisionReason: module.__podApprovalInternal.encodeDecisionReason,
+    encodeDecisionReason: buildAutoModeApprovalDecisionReason,
   }
 }
 
@@ -129,9 +133,14 @@ function createOidcRuntime(module) {
   return state
 }
 
+async function importCompiledSibling(entryPath, relativePath) {
+  return import(pathToFileURL(join(dirname(entryPath), relativePath)).href)
+}
+
 test.before(async () => {
   const loaded = await loadAutoModeModule('lib/auto-mode/pod-approval.ts')
   approvalModule = loaded.module
+  approvalStoreModule = await importCompiledSibling(loaded.entryPath, 'pod-approval-store.js')
   cleanup = loaded.cleanup
 })
 
@@ -678,7 +687,7 @@ test('shared model remote approval store uses ORM exact lookup and update paths'
     },
   }
 
-  const store = approvalModule.__podApprovalInternal.createSharedModelRemoteApprovalStore(webId, async () => db)
+  const store = approvalStoreModule.createSharedModelRemoteApprovalStore(webId, async () => db)
 
   await store.insertApproval({ ...row, approvalUri })
   const found = await store.findApproval('approval_shared_1', { resourceUri: approvalUri })
@@ -735,7 +744,7 @@ test('shared model remote approval store uses ORM short-id lookup and update pat
     },
   }
 
-  const store = approvalModule.__podApprovalInternal.createSharedModelRemoteApprovalStore(webId, async () => db)
+  const store = approvalStoreModule.createSharedModelRemoteApprovalStore(webId, async () => db)
 
   const found = await store.findApproval(approvalResourceId)
   await store.updateApproval(approvalResourceId, { status: 'approved', decisionBy: webId })
@@ -774,7 +783,7 @@ test('shared model remote approval store claims approval leases through models r
     },
   }
 
-  const store = approvalModule.__podApprovalInternal.createSharedModelRemoteApprovalStore(webId, async () => db)
+  const store = approvalStoreModule.createSharedModelRemoteApprovalStore(webId, async () => db)
   const result = await store.claimApproval({
     approvalUri,
     leaseOwner: 'client:cli',
@@ -800,7 +809,7 @@ test('native remote approval store writes and reads approval grant audit resourc
   const writes = []
   const webId = 'https://alice.example/profile/card#me'
 
-  const store = approvalModule.__podApprovalInternal.createNativeRemoteApprovalStore(webId, async (url, init = {}) => {
+  const store = approvalStoreModule.createNativeRemoteApprovalStore(webId, async (url, init = {}) => {
     const method = init.method ?? 'GET'
     if (method === 'GET') {
       if (resources.has(url)) {
@@ -890,7 +899,7 @@ test('native remote approval store writes and reads approval grant audit resourc
     decisionBy: webId,
     decisionRole: 'human',
     onBehalfOf: webId,
-    reason: approvalModule.__podApprovalInternal.encodeDecisionReason('accept_for_session'),
+    reason: buildAutoModeApprovalDecisionReason('accept_for_session'),
     resolvedAt: '2026-03-18T00:00:02.000Z',
   })
 
@@ -938,7 +947,7 @@ test('native remote approval store claims and preserves lease fields in Pod TTL 
   const resources = new Map()
   const webId = 'https://alice.example/profile/card#me'
 
-  const store = approvalModule.__podApprovalInternal.createNativeRemoteApprovalStore(webId, async (url, init = {}) => {
+  const store = approvalStoreModule.createNativeRemoteApprovalStore(webId, async (url, init = {}) => {
     const method = init.method ?? 'GET'
     if (method === 'GET') {
       if (resources.has(url)) {
