@@ -60,3 +60,21 @@ test('linx shell command router separates Secretary control from backend-owned s
   assert.equal(goal.action, 'peer-command')
   assert.equal(goal.route.kind, 'peer-command')
 })
+
+test('linx shell command router leaves Pi-native slash commands on the original submit path', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-shell-command-router.ts')
+  t.after(() => cleanup())
+
+  for (const command of [
+    '/compact',
+    '/model gpt-5.4-mini',
+    '/new',
+    '/session',
+    '/fork',
+    '/name ship-it',
+    '/help',
+  ]) {
+    assert.equal(module.shouldRouteToBackendCommand(command), false, `${command} should not be LinX-proxied`)
+    assert.equal(module.parseLinxShellCommand(command), null, `${command} should not be LinX shell-owned`)
+  }
+})
