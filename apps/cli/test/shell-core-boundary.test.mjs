@@ -278,6 +278,13 @@ test('credential dependency injection does not use interactive hidden fields', (
   assert.deepEqual(violations, [])
 })
 
+
+test('workspace startup notice does not patch interactive init directly', () => {
+  const source = readFileSync(join(libRoot, 'linx-workspace-command.ts'), 'utf8')
+
+  assert.doesNotMatch(source, /interactive\.init\s*=/)
+})
+
 test('interactive lifecycle completion state is kept out of interactive hidden fields', () => {
   const violations = []
   const directLifecycleStatePattern = /__linxInteractiveInitCompleted\b/

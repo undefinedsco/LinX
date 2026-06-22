@@ -52,25 +52,18 @@ export function setRuntimeCwd(interactive: any, runtime: any, cwd: string): void
   }
 }
 
-export function installLinxCwdStartupNotice(interactive: any, sessionCwd: string): void {
-  const originalInit = interactive.init?.bind(interactive)
-  if (typeof originalInit !== 'function') return
+export function scheduleLinxCwdStartupNotice(interactive: any, sessionCwd: string): void {
+  const storedCwd = interactive?.session?.cwd ?? sessionCwd
+  const currentCwd = process.cwd()
 
-  interactive.init = async function patchedInit(...args: unknown[]): Promise<unknown> {
-    const result = await originalInit(...args)
-
-    const storedCwd = interactive?.session?.cwd ?? sessionCwd
-    const currentCwd = process.cwd()
-
-    if (currentCwd !== storedCwd) {
-      setTimeout(() => {
-        process.stdout.write(
-          `\n\x1b[33m  Session was at ${storedCwd}\x1b[0m\n` +
-          `\x1b[33m  You're now at  ${currentCwd}\x1b[0m\n`
-        )
-      }, 300)
-    }
-
-    return result
+  if (currentCwd === storedCwd) {
+    return
   }
+
+  setTimeout(() => {
+    process.stdout.write(
+      `\n\x1b[33m  Session was at ${storedCwd}\x1b[0m\n` +
+      `\x1b[33m  You're now at  ${currentCwd}\x1b[0m\n`
+    )
+  }, 300)
 }

@@ -1,5 +1,4 @@
 import { parseLinxShellCommand, type LinxShellCommand } from './linx-shell-command-router.js'
-import { installLinxCwdStartupNotice } from './linx-workspace-command.js'
 import { installLinxAutoEditorIndicator } from './linx-auto-editor-indicator.js'
 import { registerLinxInteractiveSubmitHandler } from './linx-interactive-submit-router.js'
 import {
@@ -35,7 +34,6 @@ export function installLinxShellCommands(
   sessionCwd: string,
   options: ShellCommandOptions = {},
 ): void {
-  installLinxCwdStartupNotice(interactive, sessionCwd)
   installLinxAutoEditorIndicator(interactive)
   if (options.onAutoControlChange) {
     configureLinxInteractiveShellState(interactive, {

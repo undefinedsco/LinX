@@ -7086,11 +7086,11 @@ test('symphony interactive command patch lives in a shell command module', async
   assert.equal(typeof module.installSymphonyCommand, 'function')
 })
 
-test('workspace command shell module owns cwd changes and startup notice hooks', async (t) => {
+test('workspace command shell module owns cwd changes and startup notice rendering', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-workspace-command.ts')
   t.after(() => cleanup())
 
   assert.equal(typeof module.changeInteractiveCwd, 'function')
   assert.equal(typeof module.resolveInteractiveCwd, 'function')
-  assert.equal(typeof module.installLinxCwdStartupNotice, 'function')
+  assert.equal(typeof module.scheduleLinxCwdStartupNotice, 'function')
 })
