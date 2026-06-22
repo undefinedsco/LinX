@@ -85,11 +85,12 @@ export async function runPiCommand(argv: {
   'pi-sync-status'?: boolean
   'pi-sync-retry'?: string
   prompt?: string[]
+  defaultPromptEntry?: boolean
 } & AutoModeCommandArgs, dependencies: LinxPiCliCommandDependencies): Promise<void> {
   assertLinxPiCliSessionSelectorCompatibility(argv)
   const firstPromptToken = Array.isArray(argv.prompt) ? argv.prompt[0] : undefined
-  // Reject command-shaped aliases that should not fall through to the default TUI prompt.
-  if (firstPromptToken && RESERVED_NON_TOP_LEVEL_COMMANDS.has(firstPromptToken)) {
+  // Reject command-shaped aliases only when they would fall through to the default TUI prompt.
+  if (argv.defaultPromptEntry && firstPromptToken && RESERVED_NON_TOP_LEVEL_COMMANDS.has(firstPromptToken)) {
     throw new Error(`Unknown command: ${firstPromptToken}`)
   }
   if (argv.resume) {
@@ -336,14 +337,14 @@ export function buildPiCommand(command: Argv<object>): Argv<LinxDefaultCommandAr
 }
 
 export function createLinxPiCliCommands(dependencies: LinxPiCliCommandDependencies): LinxPiCliCommands {
-  const run = (argv: LinxDefaultCommandArgs): Promise<void> => runPiCommand(argv, dependencies)
-
   return {
     defaultPiCommand: {
       command: '$0 [prompt..]',
       describe: 'Run LinX with the selected runtime backend',
       builder: buildPiCommand,
-      handler: run,
+      handler(argv): Promise<void> {
+        return runPiCommand({ ...argv, defaultPromptEntry: true }, dependencies)
+      },
     },
     execCommand: {
       command: 'exec [prompt..]',

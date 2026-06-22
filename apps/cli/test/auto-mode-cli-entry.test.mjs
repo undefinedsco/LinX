@@ -168,6 +168,61 @@ test('compiled cli keeps --auto as auto control, not backend entry', async (t) =
   )
 })
 
+test('compiled cli exec keeps reserved command words as explicit non-interactive prompts', async (t) => {
+  const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-exec-command-shaped-prompt-'))
+  t.after(() => {
+    rmSync(outdir, { recursive: true, force: true })
+  })
+
+  try {
+    execFileSync('tsc', [
+      '--outDir',
+      outdir,
+      '--rootDir',
+      sourceRoot,
+      '--module',
+      'nodenext',
+      '--moduleResolution',
+      'nodenext',
+      '--target',
+      'ES2022',
+      '--lib',
+      'ES2022',
+      '--types',
+      'node',
+      '--skipLibCheck',
+      'true',
+      '--noEmitOnError',
+      'false',
+      entryPath,
+    ], {
+      cwd: cliRoot,
+      stdio: 'pipe',
+    })
+  } catch {
+    assert.ok(existsSync(join(outdir, 'index.js')))
+  }
+
+  const result = execFileResult(process.execPath, [join(outdir, 'index.js'), 'exec', 'fork', '--backend', 'codex', '--plain'], {
+    cwd: cliRoot,
+    env: {
+      ...process.env,
+      HOME: join(outdir, 'empty-home'),
+      LINX_HOME: join(outdir, 'linx-home'),
+      LINX_BACKEND_PLAIN: '1',
+    },
+    input: '3\n',
+    encoding: 'utf-8',
+    stdio: 'pipe',
+  })
+  const output = [result.stdout, result.stderr].join('')
+
+  assert.notEqual(result.status, 0)
+  assert.match(output, /backend: codex/)
+  assert.match(output, /LinX Cloud login required|run `linx login` first/i)
+  assert.doesNotMatch(output, /Unknown command: fork/)
+})
+
 test('compiled cli routes Codex --backend through the ACP auto-mode path', async (t) => {
   const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-backend-flag-'))
   t.after(() => {
