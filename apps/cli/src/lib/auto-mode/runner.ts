@@ -2188,7 +2188,6 @@ function applyAutoModeGoalMode(
 
 export const __testHandleAutoModeShellCommand = handleAutoModeShellCommand
 export const __testPromptLinxCloudAuth = promptLinxCloudAuth
-export const __testParseSolidClientCredentials = parseSolidClientCredentials
 
 export async function runAutoMode(options: AutoRunOptions): Promise<number> {
   const previousPlainEnv = process.env.LINX_BACKEND_PLAIN
