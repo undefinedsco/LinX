@@ -380,6 +380,18 @@ test('compiled cli auto-mode rejects retired command surfaces', async (t) => {
     }),
     /Unknown command: pi-frontend/,
   )
+
+  for (const command of ['fork', 'new', 'session', 'sessions', 'model']) {
+    assert.throws(
+      () => execFileSync(process.execPath, [join(outdir, 'index.js'), command, 'demo'], {
+        cwd: cliRoot,
+        encoding: 'utf-8',
+        stdio: 'pipe',
+        timeout: 1000,
+      }),
+      new RegExp(`Unknown command: ${command}`),
+    )
+  }
 })
 
 test('dev script routes auto-mode through the main cli command', async (t) => {

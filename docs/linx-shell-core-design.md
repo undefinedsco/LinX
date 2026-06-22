@@ -172,6 +172,29 @@ Top-level command admission rules:
   top-level `linx --help` shows shell/package entries; TUI command help shows
   interactive shell entries plus backend-native commands that are actually
   forwarded in that active backend.
+- The default top-level prompt form, `linx [prompt..]`, must not become a
+  garbage chute for command-shaped input. If the first positional token matches
+  a retired command, a TUI-only command, or a backend-native command that LinX no
+  longer exposes at top level, the CLI must reject it as an unknown command
+  before login, Pod lookup, auto hydration, or interactive bootstrap. This keeps
+  `linx sessions`, `linx fork ...`, `linx new ...`, `linx session ...`, and
+  similar inputs from silently starting a chat turn.
+- The command-shaped-token guard is only a top-level admission check. The same
+  words remain valid where they are owned: `/new`, `/fork`, `/session`,
+  `/model`, `/help`, and related backend-native commands must still pass through
+  inside the interactive backend surface when that backend supports them.
+- Hidden retired commands are migration shims, not new product surfaces. They
+  must be hidden from top-level help, explain the current executable surface, and
+  have a narrow removal/compatibility reason. Do not add a hidden command only to
+  preserve an implementation shortcut.
+
+Concrete command ownership examples:
+
+| Surface | Owns | Does not own |
+| --- | --- | --- |
+| Top-level CLI | `login`, package/update flows, explicit startup selectors such as `--resume`/`--session`, documented non-interactive scripts | backend thread controls, backend model switching, interactive help, session list clones |
+| Interactive TUI shell | LinX shell controls such as `/update`, `/statusline`, `/rewind`, `/ai connect`, `/cd`, plus routing/forwarding | durable Pod semantics, duplicated backend-native command languages |
+| Active backend/worker | Native commands such as `/new`, `/fork`, `/session`, `/model`, `/help` when supported by that backend | LinX package lifecycle, global credential storage, Pod resource identity |
 
 ## Pi adapter boundary
 
