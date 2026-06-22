@@ -141,10 +141,15 @@ session with `/session`, and resume a known target with `linx --session
 <path|id>`. LinX may pass through Pi-native session storage flags such as
 `--session-dir` and `--session-id`, but must not add a separate `linx sessions`
 or `--sessions` product command. Session listing is a Pi selector concern, not a
-second LinX product command.
+second LinX product command. If Pi changes its session selector contract, LinX
+adapts to that upstream contract instead of keeping a compatibility command that
+looks like a LinX product surface.
 
 Pi-aligned command boundaries:
 
+- Pi-native concepts keep Pi-native entry points. LinX may wrap startup, login,
+  package lifecycle, and rendering, but it must not rename Pi's command
+  language into a LinX-specific parallel command set.
 - LinX top-level flags that expose Pi concepts must keep Pi's names and
   selector semantics. Do not invent a second vocabulary for the same runtime
   behavior.
@@ -253,6 +258,9 @@ Specific decisions currently in force:
 
 - Do not add `linx sessions` or `linx --sessions`. Session listing/selection is
   Pi startup/TUI selector behavior: `linx -r`, `linx --resume`, and `/resume`.
+  Removing a LinX-owned session-list command is intentional; users should not
+  have to learn both `linx sessions` and Pi's resume selector for the same
+  action.
 - Do not add top-level `linx new`, `linx fork`, `linx session`, `linx model`,
   or `linx help` aliases. Those are backend/TUI command words.
 - Keep `linx models` only as Cloud model-list inspection. It is plural because
@@ -263,6 +271,10 @@ Specific decisions currently in force:
   `--pi-sync-status`, and `--pi-sync-retry` are local diagnostic/repair tools.
   They must stay out of top-level help and must not be described as the way to
   browse, list, choose, or resume sessions.
+- Local archive inspection and Pod mirror repair are maintainer diagnostics. If
+  an operation becomes part of normal session navigation, it must move to the
+  active Pi/TUI selector surface or a documented scriptable API; it must not be
+  smuggled through a hidden flag.
 - When a backend exposes richer native command help, expose it where the backend
   is active, not through top-level `linx --help`.
 
