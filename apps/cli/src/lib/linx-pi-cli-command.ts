@@ -13,24 +13,7 @@ import { selectLinxPiSession } from './linx-session-selector-ui.js'
 import { createLinxPodMirrorRuntimeHost } from './linx-pod-mirror-runtime-host.js'
 import { runLinxPodMirrorSyncRetryCommand, runLinxPodMirrorSyncStatusCommand } from './linx-pod-mirror-sync-command.js'
 import { stopInteractiveShellUnlessRestarting } from './shell-lifecycle.js'
-
-const RESERVED_NON_TOP_LEVEL_COMMANDS = new Set([
-  'automode',
-  'chat',
-  'footer',
-  'fork',
-  'help',
-  'model',
-  'new',
-  'pi',
-  'pi-frontend',
-  'resume',
-  'session',
-  'sessions',
-  'status-line',
-  'statusline',
-  'watch',
-])
+import { assertDefaultStartupPromptTokenIsAllowed, type LinxTopLevelCommandAdmissionOptions } from './linx-top-level-command-admission.js'
 
 export interface LinxPiCliRuntimeAdapter {
   readonly cwd: string
@@ -70,9 +53,7 @@ export interface LinxPiCliCommands {
   execCommand: CommandModule<object, LinxDefaultCommandArgs>
 }
 
-export interface RunPiCommandOptions {
-  rejectReservedPromptCommands?: boolean
-}
+export type RunPiCommandOptions = LinxTopLevelCommandAdmissionOptions
 
 export async function runPiCommand(argv: {
   cwd?: string
@@ -244,21 +225,6 @@ export function assertLinxPiCliSessionSelectorCompatibility(argv: {
     sessionId: argv['session-id'],
     last: Boolean(argv.continue || argv.resume || argv.last),
   })
-}
-
-function assertDefaultStartupPromptTokenIsAllowed(argv: {
-  print?: boolean
-  backend?: unknown
-  prompt?: string[]
-}, options: RunPiCommandOptions): void {
-  if (!options.rejectReservedPromptCommands || argv.print || argv.backend) {
-    return
-  }
-
-  const firstPromptToken = Array.isArray(argv.prompt) ? argv.prompt[0] : undefined
-  if (firstPromptToken && RESERVED_NON_TOP_LEVEL_COMMANDS.has(firstPromptToken)) {
-    throw new Error(`Unknown command: ${firstPromptToken}`)
-  }
 }
 
 function cwdFromArg(cwd: unknown): string {
