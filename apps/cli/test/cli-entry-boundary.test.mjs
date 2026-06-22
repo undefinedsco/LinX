@@ -5,6 +5,8 @@ import { readFileSync } from 'node:fs'
 const indexSource = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8')
 const cliAppSource = readFileSync(new URL('../src/linx-cli-app.ts', import.meta.url), 'utf8')
 
+const piCliCommandSource = readFileSync(new URL('../src/lib/linx-pi-cli-command.ts', import.meta.url), 'utf8')
+
 test('CLI entry delegates yargs command registration to a CLI app module', () => {
   assert.match(indexSource, /from ['"]\.\/linx-cli-app\.js['"]/, 'entry should import the CLI app runner')
   assert.doesNotMatch(indexSource, /from ['"]yargs['"]/, 'entry should not construct yargs directly')
@@ -21,6 +23,15 @@ test('CLI app delegates Pi/TUI command orchestration to a shell command module',
   assert.doesNotMatch(cliAppSource, /function buildPiCommand\b/)
   assert.doesNotMatch(cliAppSource, /async function selectLinxSession\b/)
   assert.doesNotMatch(cliAppSource, /async function resolvePiStartupControlState\b/)
+})
+
+test('default Pi/TUI command module delegates top-level prompt admission policy', () => {
+  const admissionSource = readFileSync(new URL('../src/lib/linx-top-level-command-admission.ts', import.meta.url), 'utf8')
+
+  assert.match(piCliCommandSource, /from ['"]\.\/linx-top-level-command-admission\.js['"]/, 'Pi command orchestration should import top-level command admission policy')
+  assert.doesNotMatch(piCliCommandSource, /RESERVED_NON_TOP_LEVEL_COMMANDS/, 'reserved top-level command words should live in the admission policy module')
+  assert.doesNotMatch(piCliCommandSource, /Unknown command:/, 'top-level command rejection copy should live in the admission policy module')
+  assert.match(admissionSource, /RESERVED_NON_TOP_LEVEL_COMMANDS/, 'admission policy should own reserved command-shaped prompt tokens')
 })
 
 test('CLI app delegates Pi runtime adapter wiring to a CLI composition module', () => {
