@@ -5,7 +5,7 @@ import { aiCommand } from './lib/ai-command.js'
 import { loginCommand, logoutCommand, whoamiCommand } from './lib/login-command.js'
 import { configCommand } from './lib/status-line-command.js'
 import { codexNativeProxyCommand, symphonyCodexMcpCommand } from './lib/linx-codex-plugin-command.js'
-import { registerRetiredAndPlaceholderCommands } from './lib/linx-retired-command.js'
+import { registerRetiredCommands } from './lib/linx-retired-command.js'
 import { createLinxPiCliCommands } from './lib/linx-pi-cli-command.js'
 import { createDefaultLinxRuntimeAdapterForPiCommand } from './linx-cli-runtime-adapter-factory.js'
 import { linxInstallPackageCommand, linxListPackageCommand, linxRemovePackageCommand, linxUpdatePackageCommand } from './lib/linx-package-command.js'
@@ -27,7 +27,7 @@ export function runLinxCli(argv = process.argv): void {
     createRuntimeAdapter: createDefaultLinxRuntimeAdapterForPiCommand,
   })
 
-  const cli = registerRetiredAndPlaceholderCommands(yargs(hideBin(argv))
+  const cli = registerRetiredCommands(yargs(hideBin(argv))
     .scriptName('linx')
     .version(readPackageVersion())
     .parserConfiguration({

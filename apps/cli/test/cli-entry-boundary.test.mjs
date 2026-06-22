@@ -59,9 +59,8 @@ test('CLI app delegates hidden Codex bridge commands to a shell command module',
   assert.doesNotMatch(cliAppSource, /new Promise\(\(\) => \{\}\)/, 'CLI app should not own long-running hidden process lifecycle loops')
 })
 
-test('CLI app delegates retired and placeholder commands to a shell command module', () => {
-  assert.match(cliAppSource, /from ['"]\.\/lib\/linx-retired-command\.js['"]/, 'CLI app should import retired and placeholder command descriptors from a shell module')
+test('CLI app delegates retired commands to a shell command module', () => {
+  assert.match(cliAppSource, /from ['"]\.\/lib\/linx-retired-command\.js['"]/, 'CLI app should import retired command descriptors from a shell module')
   assert.doesNotMatch(cliAppSource, /CommandModule/, 'CLI app should not need yargs command implementation types')
   assert.doesNotMatch(cliAppSource, /retiredSymphonyCommand/, 'CLI app should not implement retired command descriptors inline')
-  assert.doesNotMatch(cliAppSource, /Fork is not implemented yet/, 'CLI app should not implement placeholder command errors inline')
 })

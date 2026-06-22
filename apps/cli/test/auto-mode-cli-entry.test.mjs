@@ -470,6 +470,7 @@ test('compiled cli default entry is Pi TUI and hides explicit frontend aliases',
   assert.doesNotMatch(output, /auto-mode/)
   assert.doesNotMatch(output, /--plain/)
   assert.doesNotMatch(output, /--sessions/)
+  assert.doesNotMatch(output, /fork \[thread\]/)
   assert.doesNotMatch(output, /--show/)
   assert.doesNotMatch(output, /linx resume \[session\]/)
   assert.doesNotMatch(output, /cloud, native/)
