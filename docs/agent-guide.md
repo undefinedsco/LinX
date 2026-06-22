@@ -15,6 +15,7 @@
 - Pod ORM row 的 `id` 是 base-relative resource id，用于 UI key、selection 和所有 `ById` 调用；full IRI 只用于 RDF 关系或 `ByIri`。不要在 App 代码里从 `@id/subject/uri` 解析业务 id，缺 `row.id` 时先修 schema/repository/ORM。
 - 应用层 Pod 语义统一说 `Resource`，不再把 shared model 叫 `Table`。`*Table` 只允许出现在 drizzle-solid / models 的历史兼容边界、上游兼容测试，或 HTML/SQLite 这类非 Pod 语义场景；Web/CLI/Service 的业务代码和新文档不得消费或示例化 `*Table` alias。
 - 命名只在跨包公共 API、外部冲突边界、LinX Cloud 产品语义和品牌展示上使用 `Linx` 前缀；CLI/TUI 内部通用概念、helper、状态和 adapter 局部类型不要因为位于 LinX 仓库里重复加 `Linx` / `LinxPi` 前缀。
+- 添加、恢复或保留顶层 `linx <command>` 前必须按 `docs/linx-shell-core-design.md` 的 top-level admission checklist 判断；不要把 Pi/backend 已有的 session、thread、model、help 等原生命令克隆成 LinX 顶层产品面。
 
 ## Skill Routing
 

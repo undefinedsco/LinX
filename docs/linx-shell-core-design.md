@@ -167,6 +167,38 @@ Pi-aligned command boundaries:
   operations. Backend-native or Pi-native commands should be forwarded or
   adapted at the shell boundary, not cloned as parallel LinX product commands.
 
+Native surface reuse rules:
+
+- Treat upstream Pi/backend commands as existing product surfaces. LinX parity
+  means preserving or forwarding them where the upstream surface is active, not
+  re-registering them as LinX top-level aliases.
+- A missing LinX top-level alias is not a feature gap when Pi or the active
+  backend already provides the selector, slash command, or help surface. Fix
+  forwarding, adapter compatibility, or active-surface discoverability instead
+  of cloning the command.
+- Add a LinX-owned top-level command only after naming the durable LinX state,
+  package lifecycle, or scriptable contract it owns. If the command only lists,
+  chooses, forks, names, compacts, or switches an upstream runtime session, it
+  belongs to the Pi/backend surface.
+- Hidden commands and flags are not a user workflow. They may support local
+  maintainers, compatibility, or trusted machine bridges, but product docs and
+  user-facing help must point at the real executable surface.
+- If LinX needs a new scriptable API for something that currently exists only as
+  an interactive Pi/backend selector, define that scriptable contract explicitly
+  before adding a command. Do not ship a top-level clone first and retrofit the
+  boundary later.
+
+Session inventory has three distinct meanings and must not be collapsed:
+
+- **Human list/choose:** Pi-owned interactive selection. Use `linx -r`,
+  `linx --resume`, or `/resume`; do not add `linx sessions` / `--sessions`.
+- **Local archive diagnostics:** hidden maintainer inspection or repair of local
+  runtime files. This is not normal session navigation and must stay out of
+  user-facing help.
+- **Product conversation lookup:** Pod chat/thread/message resources owned by
+  shared models and repositories. These are not runtime archive sessions and
+  must not be addressed with Pi session selector flags.
+
 Top-level command admission rules:
 
 - A top-level `linx <command>` entry must be one of:
