@@ -76,6 +76,12 @@ Hard rules:
   `apps/cli/src/lib/linx-interactive-submit-router.ts`.
   Feature modules register ordered submit handlers instead of wrapping
   `defaultEditor.onSubmit` independently.
+- `interactive.init` is a post-init lifecycle seam, not a feature-local hook.
+  New post-init behavior belongs behind
+  `apps/cli/src/lib/linx-interactive-post-init.ts`; feature modules expose
+  idempotent shell effects for that seam to call instead of wrapping
+  `interactive.init` themselves. Existing direct init wrappers are migration
+  debt and should not be copied.
 - New lifecycle or submit behavior must add a handler to the relevant router and
   a boundary test in `apps/cli/test/shell-core-boundary.test.mjs`.
 
@@ -423,6 +429,16 @@ LinX shell commands, Symphony commands, backend command routing, session command
 routing, command autocomplete, and runtime event bridges. Bootstrap may pass the
 interactive, runtime, session cwd, and session-control manager into that module,
 but must not directly import or call each command router.
+
+Post-init lifecycle work belongs behind `linx-interactive-post-init.ts`. That
+module owns the `interactive.init` wrapping point and calls narrower shell seams
+after Pi has initialized. Feature modules must not install their own init
+wrappers just to run after startup. They should expose idempotent actions that
+the post-init seam schedules. For example, `linx-workspace-command.ts` owns cwd
+resolution, `/cd`, and the visible "session cwd differs from current cwd" copy;
+`linx-interactive-post-init.ts` owns when that copy is scheduled after init.
+`linx-interactive-command-routing.ts` remains the command router and must not
+also become a startup-notice lifecycle installer.
 
 Session-level command interception is a narrower shell-session patch and belongs
 behind `linx-session-command-routing.ts`. The general interactive command router

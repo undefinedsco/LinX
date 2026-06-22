@@ -80,7 +80,7 @@ export function bootstrapLinxInteractiveMode(
   if (options.restoredAuto === true && runtime?.autoEnabled === true) {
     installLinxRestoredAutoStartup(interactive as any, runtime, sessionControlManager)
   }
-  installLinxInteractivePostInitHooks(interactive as any, runtime)
+  installLinxInteractivePostInitHooks(interactive as any, runtime, sessionCwd)
 
   const bootstrap = {
     async init(): Promise<void> {
