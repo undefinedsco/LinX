@@ -1,5 +1,5 @@
 import type { CommandModule } from 'yargs'
-import { statusLineConfigCommand } from './status-line-command.js'
+import { statusLineConfigCommand } from './linx-status-line-config-command.js'
 
 export const configCommand: CommandModule<object, object> = {
   command: 'config <section>',
