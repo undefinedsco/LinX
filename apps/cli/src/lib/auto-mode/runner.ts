@@ -32,29 +32,19 @@ import {
   writeAutoModeSyncCheckpoint,
   writeAutoModeSession,
 } from './archive.js'
-import { detectAutoModeAuthFailure, preflightAutoModeAuth, promptLinxCloudAuth, runBackendLinxLogin, runBackendLinxLogout, type AutoModeAuthPreflightResult } from './auth.js'
+import { detectAutoModeAuthFailure, promptLinxCloudAuth, runBackendLinxLogin, runBackendLinxLogout, type AutoModeAuthPreflightResult } from './auth.js'
 import { createAutoModeDisplay, type AutoModeDisplay } from './display.js'
 import { formatAutoModeSessionSummary } from './format.js'
 import { describeAutoControl, getAutoModeHook, linxNativeBackend, listAutoModeHooks } from './hooks/registry.js'
-import {
-  createRemoteAutoModeApproval,
-  isRemoteApprovalAbortError,
-  materializeRemoteAutoModeGrant,
-  resolveExistingRemoteAutoModeGrant,
-  resolveRemoteAutoModeApproval,
-  waitForRemoteAutoModeApproval,
-} from './pod-approval.js'
-import { persistAutoModeConversationToPod } from './pod-persistence.js'
-import { loadPodBackendCredential, podCredentialMissingMessage } from './pod-ai.js'
-import { resolveAutoModeSecretaryRecommendation } from './secretary.js'
+import { isRemoteApprovalAbortError } from './pod-approval.js'
+import { podCredentialMissingMessage } from './pod-ai.js'
 import { resolveSecretaryReactionWindowMs } from './secretary-reaction-window.js'
 import { isAcpAutoModeWorkerBackend, isAutoModeWorkerBackend, resolveApprovalStrategy, defaultAutoModeApprovalStrategy } from './backend-kind.js'
 import { appendAutoModeSessionEvent as appendEntry, appendAndDisplaySessionNote, appendSessionNote } from './session-log.js'
 import { handleAutoModeShellCommand } from './shell-command.js'
-import { promptText } from '../prompt.js'
-import { createPodDataSession, type PodDataSession } from '../pod-data-session.js'
-import { connectAiProviderCredential } from '../ai-command.js'
-import { createRemoteCompletionResult, type RemoteCompletionResult } from '../chat-api.js'
+import { autoModeRuntime } from './runtime.js'
+import type { PodDataSession } from '../pod-data-session.js'
+import type { RemoteCompletionResult } from '../chat-api.js'
 import { resolveRuntimeTarget } from '../runtime-target.js'
 import { runThreadReconcilerCycle, type AgentRuntimeCapabilities, type ThreadControlEvent } from '@linx/agent-runtime'
 import { createLinxSyncCheckpoint, type LinxSyncRunResult } from '@linx/agent-runtime/sync'
@@ -104,22 +94,6 @@ interface ResolvedAutoModeRun {
 const AUTO_MODE_SECRETARY_COUNTDOWN_BAR_WIDTH = 10
 const AUTO_MODE_SECRETARY_COUNTDOWN_TICK_MS = 250
 const POD_PERSISTENCE_TIMEOUT_MS = 5_000
-
-export const autoModeRuntime = {
-  promptText,
-  preflightAutoModeAuth,
-  loadPodBackendCredential,
-  connectAiProviderCredential,
-  createRemoteAutoModeApproval,
-  resolveExistingRemoteAutoModeGrant,
-  waitForRemoteAutoModeApproval,
-  resolveRemoteAutoModeApproval,
-  materializeRemoteAutoModeGrant,
-  persistAutoModeConversationToPod,
-  resolveAutoModeSecretaryRecommendation,
-  createPodDataSession,
-  createRemoteCompletionResult,
-}
 
 function createLineSplitter(
   stream: OutputStream,

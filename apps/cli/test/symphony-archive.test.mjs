@@ -1242,15 +1242,16 @@ rl.on('line', (line) => {
 
   const { module: symphonyModule, entryPath, cleanup } = await loadAutoModeModule('lib/symphony-command.ts')
   t.after(() => cleanup())
-  const autoModeModule = await importCompiledSibling(entryPath, 'auto-mode/runner.js')
-  t.mock.method(autoModeModule.autoModeRuntime, 'promptText', async (prompt) => {
+  const autoModeRunnerModule = await importCompiledSibling(entryPath, 'auto-mode/runner.js')
+  const autoModeRuntime = (await importCompiledSibling(entryPath, 'auto-mode/runtime.js')).autoModeRuntime
+  t.mock.method(autoModeRuntime, 'promptText', async (prompt) => {
     if (prompt === 'you> ') {
       return '/exit'
     }
     return ''
   })
 
-  t.mock.method(autoModeModule.autoModeRuntime, 'loadPodBackendCredential', async (backend) => {
+  t.mock.method(autoModeRuntime, 'loadPodBackendCredential', async (backend) => {
     assert.equal(backend, 'codex')
     return {
       backend: 'codex',
@@ -1260,7 +1261,7 @@ rl.on('line', (line) => {
       },
     }
   })
-  t.mock.method(autoModeModule.autoModeRuntime, 'persistAutoModeConversationToPod', async () => {})
+  t.mock.method(autoModeRuntime, 'persistAutoModeConversationToPod', async () => {})
 
   const mirrorCalls = []
   const persistSymphonyProjectionToPod = async (plan, options) => {
@@ -1320,12 +1321,12 @@ rl.on('line', (line) => {
       acceptance: ['auto-mode receives projected prompt', 'archives completed records'],
     }, {
       runAutoMode(options) {
-        return autoModeModule.runAutoMode({
+        return autoModeRunnerModule.runAutoMode({
           ...options,
           commandOverride: join(binDir, 'codex-acp'),
         })
       },
-      listAutoModeSessions: autoModeModule.listArchivedAutoModeSessions,
+      listAutoModeSessions: autoModeRunnerModule.listArchivedAutoModeSessions,
       persistSymphonyProjectionToPod,
       mirrorSymphonyProjectionJsonLdFromPod,
     })
