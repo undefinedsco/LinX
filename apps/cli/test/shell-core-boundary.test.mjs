@@ -380,6 +380,30 @@ test('input and final-submit command routing patches live in a dedicated input m
 
 
 
+test('concrete shell command execution lives in a dedicated executor module', () => {
+  const commandRoutingSource = readFileSync(join(libRoot, 'linx-interactive-command-routing.ts'), 'utf8')
+
+  assert.match(
+    commandRoutingSource,
+    /from ['"]\.\/linx-shell-command-executor\.js['"]/,
+    'interactive command routing should import concrete shell command execution from its owning module',
+  )
+  const forbiddenCommandExecutionSnippets = [
+    'checkAndShowLinxUpdate',
+    'handleInteractiveAiConnectCommand',
+    'handleInteractiveStatusLineCommand',
+    'handleInteractiveRewindSelector',
+    'handleInteractiveRewindTurnsCommand',
+    'changeInteractiveCwd',
+    'routeLinxPeerCommand',
+    'routeLinxAutoCommand',
+    'getLinxInteractiveAiConnectCommand',
+    'handleLinxShellCommand',
+  ]
+  const violations = forbiddenCommandExecutionSnippets.filter((snippet) => commandRoutingSource.includes(snippet))
+
+  assert.deepEqual(violations, [])
+})
 
 test('submitted user message recording lives in a dedicated session-control module', () => {
   const commandRoutingSource = readFileSync(join(libRoot, 'linx-interactive-command-routing.ts'), 'utf8')
@@ -401,12 +425,12 @@ test('submitted user message recording lives in a dedicated session-control modu
 })
 
 test('auto command execution lives in a dedicated auto command module', () => {
-  const commandRoutingSource = readFileSync(join(libRoot, 'linx-interactive-command-routing.ts'), 'utf8')
+  const executorSource = readFileSync(join(libRoot, 'linx-shell-command-executor.ts'), 'utf8')
 
   assert.match(
-    commandRoutingSource,
+    executorSource,
     /from ['"]\.\/linx-auto-command-routing\.js['"]/,
-    'interactive command routing should import auto command execution from its owning module',
+    'shell command executor should import auto command execution from its owning module',
   )
   const forbiddenAutoCommandSnippets = [
     'getSecretaryAutoInputController',
@@ -417,18 +441,18 @@ test('auto command execution lives in a dedicated auto command module', () => {
     'Auto on: Secretary drives',
     'Auto off: you drive',
   ]
-  const violations = forbiddenAutoCommandSnippets.filter((snippet) => commandRoutingSource.includes(snippet))
+  const violations = forbiddenAutoCommandSnippets.filter((snippet) => executorSource.includes(snippet))
 
   assert.deepEqual(violations, [])
 })
 
 test('peer command routing lives in a dedicated peer command module', () => {
-  const commandRoutingSource = readFileSync(join(libRoot, 'linx-interactive-command-routing.ts'), 'utf8')
+  const executorSource = readFileSync(join(libRoot, 'linx-shell-command-executor.ts'), 'utf8')
 
   assert.match(
-    commandRoutingSource,
+    executorSource,
     /from ['"]\.\/linx-peer-command-routing\.js['"]/,
-    'interactive command routing should import peer command routing from its owning module',
+    'shell command executor should import peer command routing from its owning module',
   )
   const forbiddenPeerRoutingSnippets = [
     'AutoModePeerCommandRoute',
@@ -438,7 +462,7 @@ test('peer command routing lives in a dedicated peer command module', () => {
     'handleInteractivePeerCommand',
     'Active LinX session cannot accept peer goal input',
   ]
-  const violations = forbiddenPeerRoutingSnippets.filter((snippet) => commandRoutingSource.includes(snippet))
+  const violations = forbiddenPeerRoutingSnippets.filter((snippet) => executorSource.includes(snippet))
 
   assert.deepEqual(violations, [])
 })

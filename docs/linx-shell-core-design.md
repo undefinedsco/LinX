@@ -408,6 +408,15 @@ method patches are a lifecycle-sensitive Pi adaptation seam; keeping them in one
 input module prevents slash-command routing, projected command routing, and
 session method interception from depending on wrapper nesting or import order.
 
+Concrete LinX shell command execution belongs behind
+`linx-shell-command-executor.ts`. The interactive command routing module may
+parse slash input, install submit/projected/input/session routers, clear the
+editor, and delegate a parsed `LinxShellCommand`; it must not directly import or
+call feature executors such as update, rewind, statusline, `/ai connect`,
+workspace `cd`, peer-command delivery, or auto command execution. The executor
+is the composition point for concrete command actions; narrower feature seams
+still own their domain side effects.
+
 Peer-command projection is a shell-session delivery seam and belongs behind
 `linx-peer-command-routing.ts`. The general interactive command router may parse
 `/goal` or other peer commands and dispatch the parsed route, but it must not
