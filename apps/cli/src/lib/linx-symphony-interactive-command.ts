@@ -2,24 +2,15 @@ import type { AgentRuntimeBackendConfig } from '@linx/agent-runtime'
 import type { AutoModeCredentialSource, AutoModeWorkerBackend } from './auto-mode/types.js'
 import { runSymphony } from './symphony-command.js'
 import { createSymphonyRuntimeForPodProjection } from './symphony/runtime.js'
+import { formatSymphonyStatus } from './symphony/status.js'
 import { DEFAULT_SECRETARY_CHAT_ID, secretaryChatUri, secretaryThreadUri } from './pod-mirror-mapping.js'
 import { getSessionControlManager } from './session-control.js'
 import { resolveInteractiveCwd } from './linx-workspace-command.js'
 import {
   createSymphonyIdeaRecord,
-  listSymphonyIssues,
-  listSymphonySessions,
   type CaptureSymphonyIdeaInput,
 } from './symphony/archive.js'
-import {
-  listOpenSymphonyIssuesFromPod,
-  listRecentSymphonyReportsFromPod,
-  listRunningSymphonyWorkersFromPod,
-  mirrorSymphonyProjectionJsonLdFromPod,
-  persistSymphonyIdeaToPod,
-  type SymphonyPodReportStatus,
-  type SymphonyPodWorkerStatus,
-} from './symphony/pod-projection.js'
+import { persistSymphonyIdeaToPod } from './symphony/pod-projection.js'
 import { registerLinxInteractiveSubmitHandler } from './linx-interactive-submit-router.js'
 import {
   getLinxInteractiveListSymphonyIssues,
@@ -42,7 +33,6 @@ import {
   setLinxInteractiveSymphonyModeEnabled,
 } from './linx-interactive-shell-state.js'
 
-const SYMPHONY_STATUS_POD_TIMEOUT_MS = 1_200
 const DEFAULT_SYMPHONY_WORKER_SUPERVISOR_INTERVAL_MS = 10 * 60 * 1000
 const symphonyCommandInstalled = new WeakSet<object>()
 
@@ -121,7 +111,14 @@ async function handleSymphonyCommand(interactive: any, command: SymphonyCommand)
   }
 
   if (command.action === 'status') {
-    interactive.showStatus?.(await formatSymphonyStatus(interactive))
+    interactive.showStatus?.(await formatSymphonyStatus({
+      enabled: isLinxInteractiveSymphonyModeEnabled(interactive),
+      source: await resolveSymphonySourceContext(interactive),
+      podProjectionRuntime: getLinxInteractiveSymphonyPodProjectionRuntime(interactive),
+      statusPodTimeoutMs: getLinxInteractiveSymphonyStatusPodTimeoutMs(interactive),
+      listLocalIssues: getLinxInteractiveListSymphonyIssues(interactive),
+      listLocalSessions: getLinxInteractiveListSymphonySessions(interactive),
+    }))
     interactive.ui?.requestRender?.()
     return
   }
@@ -581,301 +578,6 @@ function inferSymphonyIdeaAffectedArea(input: string): string | undefined {
   return undefined
 }
 
-
-async function formatSymphonyStatus(interactive: any): Promise<string> {
-  const enabled = isLinxInteractiveSymphonyModeEnabled(interactive)
-  const [source, workersRead, issuesRead, reportsRead] = await Promise.all([
-    resolveSymphonySourceContext(interactive),
-    listRunningSymphonyWorkers(interactive),
-    listOpenSymphonyIssues(interactive),
-    listRecentSymphonyReports(interactive),
-  ])
-  const workers = workersRead.items
-  const issues = issuesRead.items
-  const reports = reportsRead.items
-  const controlStateErrors = Array.from(new Set([
-    workersRead.error,
-    issuesRead.error,
-    reportsRead.error,
-  ].filter((item): item is string => Boolean(item))))
-  const controlStateSources = new Set([workersRead.source, issuesRead.source, reportsRead.source])
-  const lines = [
-    `Symphony is ${enabled ? 'on' : 'off'}.`,
-    `Current chat peer: ${enabled ? 'Secretary' : 'worker/backend peer'}.`,
-    `Open issues: ${issues.length}`,
-    `Running workers: ${workers.length}`,
-    `Recent reports: ${reports.length}`,
-    controlStateErrors.length > 0
-      ? `Pod control state: unavailable (${formatSymphonyStatusError(controlStateErrors[0]!)})`
-      : controlStateSources.has('pod')
-        ? 'Pod control state: active.'
-        : 'Pod control state: portable local archive mode.',
-    'Skills: issue triage, existing issue lookup, create/update/ask decision, task split, worker dispatch, status/report tracking.',
-    'Delegation target: AI Secretary must choose a Chat resource before dispatch.',
-    'Allowed targets: personal AI contact chat or group chat.',
-    'Thread role: concrete work timeline under the selected Chat.',
-    'Session role: backend runtime lifecycle only.',
-  ]
-  for (const issue of issues.slice(0, 5)) {
-    lines.push(`  - ${formatSymphonyIssueStatus(issue)}`)
-  }
-  if (issues.length > 5) {
-    lines.push(`  ... ${issues.length - 5} more open issue(s)`)
-  }
-
-  for (const worker of workers.slice(0, 5)) {
-    lines.push(`  - ${formatSymphonyWorkerStatus(worker)}`)
-  }
-  if (workers.length > 5) {
-    lines.push(`  ... ${workers.length - 5} more running worker(s)`)
-  }
-
-  for (const report of reports.slice(0, 5)) {
-    lines.push(`  - ${formatSymphonyReportStatus(report)}`)
-  }
-  if (reports.length > 5) {
-    lines.push(`  ... ${reports.length - 5} more recent report(s)`)
-  }
-
-  if (source) {
-    lines.push(
-      'Source conversation:',
-      `  Chat: ${source.chat}`,
-      `  Thread: ${source.thread}`,
-      ...(source.sessionId ? [`  Runtime session: ${source.sessionId}`] : []),
-    )
-  } else {
-    lines.push('Source conversation: unavailable until LinX has WebID and session id.')
-  }
-
-  lines.push('Commands: /symphony on chat with Secretary, /symphony status inspect workers, /symphony off chat with worker/backend.')
-  return lines.join('\n')
-}
-
-type SymphonyWorkerStatus = SymphonyPodWorkerStatus | ReturnType<typeof listSymphonySessions>[number]
-type SymphonyIssueStatus = ReturnType<typeof listSymphonyIssues>[number]
-type SymphonyReportStatus = SymphonyPodReportStatus | ReturnType<typeof listSymphonySessions>[number]
-
-type SymphonyStatusReadSource = 'pod' | 'local' | 'none'
-
-interface SymphonyStatusRead<T> {
-  items: T[]
-  source: SymphonyStatusReadSource
-  error?: string
-}
-
-function formatSymphonyStatusError(message: string): string {
-  return message.replace(/\s+/gu, ' ').trim().slice(0, 180)
-}
-
-function resolveSymphonyStatusPodTimeoutMs(interactive: any): number {
-  const value = Number(getLinxInteractiveSymphonyStatusPodTimeoutMs(interactive))
-  return Number.isFinite(value) && value > 0 ? value : SYMPHONY_STATUS_POD_TIMEOUT_MS
-}
-
-async function withSymphonyStatusTimeout<T>(
-  interactive: any,
-  label: string,
-  task: Promise<T>,
-): Promise<T> {
-  const timeoutMs = resolveSymphonyStatusPodTimeoutMs(interactive)
-  let timer: NodeJS.Timeout | null = null
-  try {
-    return await Promise.race([
-      task,
-      new Promise<T>((_, reject) => {
-        timer = setTimeout(() => {
-          reject(new Error(`${label} timed out after ${timeoutMs}ms`))
-        }, timeoutMs)
-      }),
-    ])
-  } finally {
-    if (timer) {
-      clearTimeout(timer)
-    }
-  }
-}
-
-async function listOpenSymphonyIssues(interactive: any): Promise<SymphonyStatusRead<SymphonyIssueStatus>> {
-  const controlRuntime = getLinxInteractiveSymphonyPodProjectionRuntime(interactive)
-  try {
-    if (controlRuntime?.issueResource) {
-      const podIssues = await withSymphonyStatusTimeout(
-        interactive,
-        'Symphony Pod issue status',
-        listOpenSymphonyIssuesFromPod({ runtime: controlRuntime }),
-      )
-      if (podIssues) {
-        return { items: podIssues, source: 'pod' }
-      }
-    }
-  } catch (error) {
-    return { items: [], source: 'none', error: error instanceof Error ? error.message : String(error) }
-  }
-
-  if (controlRuntime?.issueResource) {
-    return {
-      items: [],
-      source: 'none',
-      error: 'No active Pod session; Symphony control-plane state is Pod-authoritative.',
-    }
-  }
-
-  try {
-    const listIssues = getLinxInteractiveListSymphonyIssues(interactive)
-    const issues = typeof listIssues === 'function'
-      ? listIssues()
-      : listSymphonyIssues()
-    return {
-      items: issues.filter((issue: SymphonyIssueStatus) => issue.status !== 'closed' && issue.status !== 'resolved'),
-      source: 'local',
-    }
-  } catch {
-    return { items: [], source: 'none' }
-  }
-}
-
-async function listRunningSymphonyWorkers(interactive: any): Promise<SymphonyStatusRead<SymphonyWorkerStatus>> {
-  const controlRuntime = getLinxInteractiveSymphonyPodProjectionRuntime(interactive)
-  try {
-    if (controlRuntime?.sessionResource) {
-      const podWorkers = await withSymphonyStatusTimeout(
-        interactive,
-        'Symphony Pod worker status',
-        listRunningSymphonyWorkersFromPod({ runtime: controlRuntime }),
-      )
-      if (podWorkers) {
-        return { items: podWorkers, source: 'pod' }
-      }
-    }
-  } catch (error) {
-    return { items: [], source: 'none', error: error instanceof Error ? error.message : String(error) }
-  }
-
-  if (controlRuntime?.sessionResource) {
-    return {
-      items: [],
-      source: 'none',
-      error: 'No active Pod session; Symphony control-plane state is Pod-authoritative.',
-    }
-  }
-
-  try {
-    const listSessions = getLinxInteractiveListSymphonySessions(interactive)
-    if (typeof listSessions === 'function') {
-      const sessions = listSessions()
-      return {
-        items: sessions.filter((session: ReturnType<typeof listSymphonySessions>[number]) => session.status === 'running'),
-        source: 'local',
-      }
-    }
-
-    return {
-      items: listSymphonySessions()
-        .filter((session: ReturnType<typeof listSymphonySessions>[number]) => session.status === 'running'),
-      source: 'local',
-    }
-  } catch {
-    return { items: [], source: 'none' }
-  }
-}
-
-async function listRecentSymphonyReports(interactive: any): Promise<SymphonyStatusRead<SymphonyReportStatus>> {
-  const controlRuntime = getLinxInteractiveSymphonyPodProjectionRuntime(interactive)
-  try {
-    if (controlRuntime?.deliveryResource) {
-      const podReports = await withSymphonyStatusTimeout(
-        interactive,
-        'Symphony Pod report status',
-        listRecentSymphonyReportsFromPod({
-          runtime: controlRuntime,
-          limit: 5,
-        }),
-      )
-      if (podReports) {
-        return { items: podReports, source: 'pod' }
-      }
-    }
-  } catch (error) {
-    return { items: [], source: 'none', error: error instanceof Error ? error.message : String(error) }
-  }
-
-  if (controlRuntime?.deliveryResource) {
-    return {
-      items: [],
-      source: 'none',
-      error: 'No active Pod session; Symphony control-plane state is Pod-authoritative.',
-    }
-  }
-
-  try {
-    const listSessions = getLinxInteractiveListSymphonySessions(interactive)
-    const sessions = typeof listSessions === 'function'
-      ? listSessions()
-      : listSymphonySessions()
-    return {
-      items: sessions
-        .filter((session: ReturnType<typeof listSymphonySessions>[number]) => session.status === 'completed' || session.status === 'failed')
-        .slice(0, 5),
-      source: 'local',
-    }
-  } catch {
-    return { items: [], source: 'none' }
-  }
-}
-
-function formatSymphonyWorkerStatus(session: SymphonyWorkerStatus): string {
-  const target = session.target?.label
-    ?? session.target?.agent
-    ?? session.target?.chat
-    ?? session.backend
-  const suffix = [
-    session.autoModeSessionId ? `runtime=${session.autoModeSessionId}` : undefined,
-    session.target?.chat ? `chat=${session.target.chat}` : undefined,
-    session.cwd ? `cwd=${session.cwd}` : undefined,
-  ].filter(Boolean).join(' · ')
-  return `${session.backend}/${session.mode} -> ${target}${suffix ? ` (${suffix})` : ''}`
-}
-
-function formatSymphonyReportStatus(report: SymphonyReportStatus): string {
-  const status = report.status
-  const reportRecord = report as Record<string, any>
-  const target = reportRecord.agent
-    ?? reportRecord.target?.label
-    ?? reportRecord.target?.agent
-    ?? report.backend
-  const title = 'summary' in report && report.summary
-    ? report.summary
-    : 'title' in report && report.title
-      ? report.title
-      : 'task' in report && report.task
-        ? formatSymphonyResourceTail(report.task)
-        : undefined
-  const suffix = [
-    report.autoModeSessionId ? `runtime=${report.autoModeSessionId}` : undefined,
-    'thread' in report && report.thread ? `thread=${report.thread}` : undefined,
-    'completedAt' in report && report.completedAt ? `completed=${report.completedAt}` : undefined,
-    report.error ? `error=${report.error}` : undefined,
-  ].filter(Boolean).join(' · ')
-  return `${status} ${report.backend} -> ${target}${title ? `: ${title}` : ''}${suffix ? ` (${suffix})` : ''}`
-}
-
-function formatSymphonyIssueStatus(issue: SymphonyIssueStatus): string {
-  const taskCount = issue.tasks?.length ?? 0
-  const suffix = [
-    formatSymphonyResourceTail(issue.uri),
-    taskCount > 0 ? `${taskCount} task${taskCount === 1 ? '' : 's'}` : undefined,
-    issue.thread ? `thread=${issue.thread}` : undefined,
-  ].filter(Boolean).join(' · ')
-  return `${issue.status} ${issue.title}${suffix ? ` (${suffix})` : ''}`
-}
-
-function formatSymphonyResourceTail(uri: string | undefined): string | undefined {
-  if (!uri) {
-    return undefined
-  }
-  return uri.trim().match(/[:/#]([^:/#]+)$/u)?.[1] ?? uri
-}
 
 interface SymphonySourceContext {
   chat: string
