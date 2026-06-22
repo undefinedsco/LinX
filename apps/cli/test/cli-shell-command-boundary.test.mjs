@@ -74,6 +74,14 @@ test('auto-mode auth does not expose shared parser through a test-only internal 
   )
 })
 
+test('auto-mode runner does not re-export Solid client credential parser through a test seam', () => {
+  assert.doesNotMatch(
+    autoModeRunnerSource,
+    /__testParseSolidClientCredentials/,
+    'Solid client credential parser tests should import the parser from its owning login module instead of through auto-mode runner',
+  )
+})
+
 test('Pod chat store does not expose a test-only internal aggregate', () => {
   assert.doesNotMatch(
     podChatStoreSource,
