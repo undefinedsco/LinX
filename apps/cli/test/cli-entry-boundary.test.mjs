@@ -47,6 +47,15 @@ test('default Pi/TUI command module delegates resume selector admission policy',
   assert.doesNotMatch(piCliCommandSource, /No session selected/, 'resume selector user copy should live in the resume admission policy module')
 })
 
+test('default Pi/TUI command module delegates runtime execution', () => {
+  assert.match(piCliCommandSource, /from ['"]\.\/linx-pi-runtime-execution\.js['"]/, 'Pi command orchestration should import runtime execution from a dedicated module')
+  assert.doesNotMatch(piCliCommandSource, /from ['"]@earendil-works\/pi-coding-agent['"]/, 'Pi command orchestration should not import Pi runtime execution APIs directly')
+  assert.doesNotMatch(piCliCommandSource, /\brunPrintMode\b/, 'print-mode execution should live in the runtime execution module')
+  assert.doesNotMatch(piCliCommandSource, /\bcreateLinxPodMirrorRuntimeHost\b/, 'Pod mirror host creation should live in the runtime execution module')
+  assert.doesNotMatch(piCliCommandSource, /\bbootstrapLinxInteractiveMode\b/, 'interactive bootstrap should live in the runtime execution module')
+  assert.doesNotMatch(piCliCommandSource, /\bstopInteractiveShellUnlessRestarting\b/, 'interactive stop lifecycle should live in the runtime execution module')
+})
+
 test('CLI app delegates Pi runtime adapter wiring to a CLI composition module', () => {
   assert.match(cliAppSource, /from ['"]\.\/linx-cli-runtime-adapter-factory\.js['"]/, 'CLI app should import pre-composed runtime adapter factory from a CLI composition module')
   assert.doesNotMatch(cliAppSource, /from ['"]\.\/lib\/pi-adapter\/index\.js['"]/, 'CLI app should not import the Pi runtime adapter directly')
