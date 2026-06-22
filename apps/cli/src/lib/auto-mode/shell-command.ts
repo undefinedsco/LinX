@@ -3,9 +3,7 @@ import {
   type AutoModeControlCommandRoute,
   type AutoModePeerCommandRoute,
 } from '@linx/agent-runtime/auto-mode'
-import { listAutoModeSessions } from './archive.js'
 import type { AutoModeDisplay } from './display.js'
-import { formatAutoModeSessionSummary } from './format.js'
 import { isAutoModeWorkerBackend, resolveApprovalStrategy } from './backend-kind.js'
 import { appendAndDisplaySessionNote, appendSessionNote } from './session-log.js'
 import type {
@@ -96,19 +94,6 @@ export async function handleAutoModeShellCommand(args: {
 
   if (input.startsWith('/follow-up ')) {
     return 'pass'
-  }
-
-  if (input === '/sessions') {
-    const summaries = listAutoModeSessions().slice(0, 5).map(formatAutoModeSessionSummary)
-    if (summaries.length === 0) {
-      appendAndDisplaySessionNote(record, display, 'No archived auto-mode sessions found')
-      return 'handled'
-    }
-
-    for (const summary of summaries) {
-      appendAndDisplaySessionNote(record, display, summary)
-    }
-    return 'handled'
   }
 
   if (input === '/new') {
