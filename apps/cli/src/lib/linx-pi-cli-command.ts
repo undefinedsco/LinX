@@ -9,12 +9,12 @@ import { resolveStartupLinxPodDataSession } from './linx-pod-data-session-factor
 import { assertLinxPiSessionSelectorCompatibility, createLinxPiSessionManager } from './linx-session-manager.js'
 import { LINX_AGENT_DIR } from './linx-interactive-branding.js'
 import { resolveLinxPiStartupControlState } from './linx-pi-startup-control.js'
-import { selectLinxPiSession } from './linx-session-selector-ui.js'
 import { createLinxPodMirrorRuntimeHost } from './linx-pod-mirror-runtime-host.js'
 import { stopInteractiveShellUnlessRestarting } from './shell-lifecycle.js'
 import { assertDefaultStartupPromptTokenIsAllowed, type LinxTopLevelCommandAdmissionOptions } from './linx-top-level-command-admission.js'
 import { handleLinxPodMirrorSyncCliAdmission } from './linx-pod-mirror-sync-cli-admission.js'
 import { handleLinxAutoModeCliAdmission } from './linx-auto-mode-cli-admission.js'
+import { handleLinxPiResumeCliAdmission } from './linx-pi-resume-cli-admission.js'
 
 export interface LinxPiCliRuntimeAdapter {
   readonly cwd: string
@@ -74,17 +74,11 @@ export async function runPiCommand(argv: {
 } & AutoModeCommandArgs, dependencies: LinxPiCliCommandDependencies, options: RunPiCommandOptions = {}): Promise<void> {
   assertLinxPiCliSessionSelectorCompatibility(argv)
   assertDefaultStartupPromptTokenIsAllowed(argv, options)
-  if (argv.resume) {
-    const selectedSession = await selectLinxPiSession(cwdFromArg(argv.cwd), argv['session-dir'])
-    if (!selectedSession) {
-      process.stdout.write('No session selected\n')
-      return
-    }
-    await runPiCommand({
-      ...argv,
-      resume: false,
-      session: selectedSession,
-    }, dependencies, options)
+  if (await handleLinxPiResumeCliAdmission(argv, {
+    runWithSelectedSession(selectedArgv) {
+      return runPiCommand(selectedArgv, dependencies, options)
+    },
+  })) {
     return
   }
 
@@ -212,11 +206,6 @@ export function assertLinxPiCliSessionSelectorCompatibility(argv: {
     last: Boolean(argv.continue || argv.resume || argv.last),
   })
 }
-
-function cwdFromArg(cwd: unknown): string {
-  return typeof cwd === 'string' && cwd.trim() ? cwd : process.cwd()
-}
-
 
 export interface PiCommandArgs {
   cwd?: string

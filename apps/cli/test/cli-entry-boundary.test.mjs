@@ -40,6 +40,13 @@ test('default Pi/TUI command module delegates auto-mode and backend admission po
   assert.doesNotMatch(piCliCommandSource, /\brunAutoModeCommand\b/, 'auto-mode command execution should live in the auto-mode admission policy module')
 })
 
+test('default Pi/TUI command module delegates resume selector admission policy', () => {
+  assert.match(piCliCommandSource, /from ['"]\.\/linx-pi-resume-cli-admission\.js['"]/, 'Pi command orchestration should import resume selector admission policy')
+  assert.doesNotMatch(piCliCommandSource, /from ['"]\.\/linx-session-selector-ui\.js['"]/, 'Pi command orchestration should not import selector rendering directly')
+  assert.doesNotMatch(piCliCommandSource, /\bselectLinxPiSession\b/, 'resume selector UI call should live in the resume admission policy module')
+  assert.doesNotMatch(piCliCommandSource, /No session selected/, 'resume selector user copy should live in the resume admission policy module')
+})
+
 test('CLI app delegates Pi runtime adapter wiring to a CLI composition module', () => {
   assert.match(cliAppSource, /from ['"]\.\/linx-cli-runtime-adapter-factory\.js['"]/, 'CLI app should import pre-composed runtime adapter factory from a CLI composition module')
   assert.doesNotMatch(cliAppSource, /from ['"]\.\/lib\/pi-adapter\/index\.js['"]/, 'CLI app should not import the Pi runtime adapter directly')
