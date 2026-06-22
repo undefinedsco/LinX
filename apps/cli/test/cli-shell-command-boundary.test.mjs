@@ -12,6 +12,7 @@ const autoModeFormatSource = readFileSync(new URL('../src/lib/auto-mode/format.t
 const autoModeSecretarySource = readFileSync(new URL('../src/lib/auto-mode/secretary.ts', import.meta.url), 'utf8')
 const autoModePodAiSource = readFileSync(new URL('../src/lib/auto-mode/pod-ai.ts', import.meta.url), 'utf8')
 const autoModeAuthSource = readFileSync(new URL('../src/lib/auto-mode/auth.ts', import.meta.url), 'utf8')
+const autoModePodPersistenceSource = readFileSync(new URL('../src/lib/auto-mode/pod-persistence.ts', import.meta.url), 'utf8')
 const podChatStoreSource = readFileSync(new URL('../src/lib/pod-chat-store.ts', import.meta.url), 'utf8')
 
 test('default Pi/TUI command module does not construct Pod ORM state directly', () => {
@@ -84,6 +85,14 @@ test('Pod chat store runtime seam is not re-exported through the store module', 
     podChatStoreSource,
     /export\s*\{[\s\S]*setPodChatStoreRuntime[\s\S]*\}\s*from ['"]\.\/pod-chat-store-runtime\.js['"]/,
     'Pod chat store tests should import the runtime seam from its owning module instead of using pod-chat-store as a hidden aggregate',
+  )
+})
+
+test('auto-mode Pod persistence builders do not expose a test-only internal aggregate', () => {
+  assert.doesNotMatch(
+    autoModePodPersistenceSource,
+    /__podPersistenceInternal/,
+    'Pod persistence builder tests should import projection builders from their owning module instead of a production __internal aggregate export',
   )
 })
 

@@ -1,9 +1,16 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { dirname, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 
 let persistenceModule
+let persistenceBuilders
 let cleanup
+
+async function importCompiledSibling(entryPath, relativePath) {
+  return import(pathToFileURL(join(dirname(entryPath), relativePath)).href)
+}
 
 function createRecord(overrides = {}) {
   return {
@@ -11,8 +18,8 @@ function createRecord(overrides = {}) {
     backend: 'codex',
     runtime: 'local',
     transport: 'acp',
-autoEnabled: true,
-mode: 'auto',
+    autoEnabled: true,
+    mode: 'auto',
     cwd: '/tmp/demo',
     model: 'gpt-5-codex',
     prompt: 'inspect workspace',
@@ -34,6 +41,7 @@ mode: 'auto',
 test.before(async () => {
   const loaded = await loadAutoModeModule('lib/auto-mode/pod-persistence.ts')
   persistenceModule = loaded.module
+  persistenceBuilders = await importCompiledSibling(loaded.entryPath, 'pod-persistence-builders.js')
   cleanup = loaded.cleanup
 })
 
@@ -44,7 +52,7 @@ test.after(() => {
 test('buildAutoModeConversationMessages maps archived transcript into standard Pod message rows', () => {
   const chatUri = 'https://alice.example/.data/chat/linx-auto-mode-codex/index.ttl#this'
   const threadUri = 'https://alice.example/.data/chat/linx-auto-mode-codex/index.ttl#auto_2026-03-18T00-00-00-000Z_deadbeef'
-  const rows = persistenceModule.__podPersistenceInternal.buildAutoModeConversationMessages(
+  const rows = persistenceBuilders.buildAutoModeConversationMessages(
     createRecord(),
     'https://alice.example/profile/card#me',
     [
@@ -143,7 +151,7 @@ test('buildAutoModeConversationMessages maps archived transcript into standard P
 })
 
 test('buildAutoModeConversationChatRow stores auto-mode as a group chat', () => {
-  const row = persistenceModule.__podPersistenceInternal.buildAutoModeConversationChatRow(
+  const row = persistenceBuilders.buildAutoModeConversationChatRow(
     createRecord(),
     'https://alice.example/profile/card#me',
     'Last line',
@@ -163,7 +171,7 @@ test('buildAutoModeConversationChatRow stores auto-mode as a group chat', () => 
 })
 
 test('buildAutoModeConversationSessionRow stores auto-mode lifecycle as a Pod session projection', () => {
-  const row = persistenceModule.__podPersistenceInternal.buildAutoModeConversationSessionRow(
+  const row = persistenceBuilders.buildAutoModeConversationSessionRow(
     createRecord(),
     'https://alice.example/profile/card#me',
   )
@@ -185,7 +193,7 @@ test('buildAutoModeConversationSessionRow stores auto-mode lifecycle as a Pod se
 
 test('auto-mode Pod resource URI builders resolve compound templates without placeholders', () => {
   const record = createRecord()
-  const messageUri = persistenceModule.__podPersistenceInternal.buildAutoModeMessageUri(
+  const messageUri = persistenceBuilders.buildAutoModeMessageUri(
     'https://alice.example/profile/card#me',
     record,
     {
@@ -195,11 +203,11 @@ test('auto-mode Pod resource URI builders resolve compound templates without pla
   )
 
   assert.equal(
-    persistenceModule.__podPersistenceInternal.buildAutoModeThreadUri('https://alice.example/profile/card#me', record),
+    persistenceBuilders.buildAutoModeThreadUri('https://alice.example/profile/card#me', record),
     'https://alice.example/.data/chat/linx-auto-mode-codex/index.ttl#auto_2026-03-18T00-00-00-000Z_deadbeef',
   )
   assert.equal(
-    persistenceModule.__podPersistenceInternal.buildAutoModeSessionUri('https://alice.example/profile/card#me', record),
+    persistenceBuilders.buildAutoModeSessionUri('https://alice.example/profile/card#me', record),
     'https://alice.example/.data/sessions/2026/03/18/auto_2026-03-18T00-00-00-000Z_deadbeef.ttl',
   )
   assert.equal(
