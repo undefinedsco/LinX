@@ -1,4 +1,4 @@
-import { handleInteractiveAutoCommand } from './linx-interactive-command-routing.js'
+import { handleInteractiveAutoCommand } from './linx-auto-command-routing.js'
 import { installLinxEscapeInterrupt as installLinxInterruptControl } from './linx-interrupt-control.js'
 import {
   installLinxFinalSubmitCommandRouter,

@@ -416,6 +416,15 @@ original-method accessors, or goal mirror side effects. This keeps "what command
 was parsed" separate from "how a projected peer command is delivered to the
 active backend session".
 
+Auto command execution is a shell input-ownership seam and belongs behind
+`linx-auto-command-routing.ts`. The general interactive command router may parse
+`/auto` and dispatch the parsed route, but it must not directly mutate auto mode
+state, start or stop the Secretary auto input controller, fire auto control
+callbacks, or own the user-visible auto status copy. Interrupt, restored-startup,
+and other shell lifecycle modules that need to disable or inspect auto mode
+should call the auto command seam directly instead of importing the general
+command router.
+
 The current remaining design debt is shared shell state. Some modules still use
 `__linx*` properties on the interactive, editor, runtime, or session object.
 Only local patch sentinels and original-method handles are acceptable there.

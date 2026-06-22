@@ -379,6 +379,29 @@ test('input and final-submit command routing patches live in a dedicated input m
 })
 
 
+
+test('auto command execution lives in a dedicated auto command module', () => {
+  const commandRoutingSource = readFileSync(join(libRoot, 'linx-interactive-command-routing.ts'), 'utf8')
+
+  assert.match(
+    commandRoutingSource,
+    /from ['"]\.\/linx-auto-command-routing\.js['"]/,
+    'interactive command routing should import auto command execution from its owning module',
+  )
+  const forbiddenAutoCommandSnippets = [
+    'getSecretaryAutoInputController',
+    'isLinxInteractiveAutoModeEnabled',
+    'notifyLinxInteractiveAutoControlChange',
+    'setLinxInteractiveAutoModeEnabled',
+    'formatAutoModeChangeStatus',
+    'Auto on: Secretary drives',
+    'Auto off: you drive',
+  ]
+  const violations = forbiddenAutoCommandSnippets.filter((snippet) => commandRoutingSource.includes(snippet))
+
+  assert.deepEqual(violations, [])
+})
+
 test('peer command routing lives in a dedicated peer command module', () => {
   const commandRoutingSource = readFileSync(join(libRoot, 'linx-interactive-command-routing.ts'), 'utf8')
 
