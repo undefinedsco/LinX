@@ -25,7 +25,7 @@ export function installLinxUpdateNotification(
   interactive: any,
   options: LinxUpdateNotificationOptions = {},
 ): void {
-  patchVersionCheck(interactive, options)
+  patchVersionCheck(interactive)
   patchUpdateNotification(interactive, options)
 }
 
@@ -61,20 +61,12 @@ export function replayDeferredLinxUpdateNotification(
   void showLinxUpdateSelector(interactive, version)
 }
 
-function patchVersionCheck(interactive: any, options: LinxUpdateNotificationOptions): void {
+function patchVersionCheck(interactive: any): void {
   const originalRun = interactive.run?.bind(interactive)
   if (typeof originalRun === 'function') {
     interactive.run = async function patchedLinxRun(...args: unknown[]): Promise<unknown> {
       this[LINX_SUPPRESS_UPSTREAM_PI_UPDATE] = true
       return originalRun(...args)
-    }
-  }
-
-  const originalInit = interactive.init?.bind(interactive)
-  if (typeof originalInit === 'function') {
-    interactive.init = async function patchedLinxVersionInit(...args: unknown[]): Promise<void> {
-      await originalInit(...args)
-      scheduleLinxVersionCheck(this, options)
     }
   }
 
@@ -98,7 +90,10 @@ function patchUpdateNotification(interactive: any, options: LinxUpdateNotificati
   }
 }
 
-function scheduleLinxVersionCheck(interactive: any, options: LinxUpdateNotificationOptions): void {
+export function scheduleLinxVersionCheckAfterInit(
+  interactive: any,
+  options: LinxUpdateNotificationOptions = {},
+): void {
   if (interactive[LINX_UPDATE_CHECK_SCHEDULED]) {
     return
   }
