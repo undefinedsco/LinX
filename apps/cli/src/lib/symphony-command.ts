@@ -26,9 +26,6 @@ import {
   type WorkerWorkspaceKind,
   type SymphonyWorkerPlan,
 } from '@linx/agent-runtime/symphony'
-import { loadAutoModeEvents } from './auto-mode/archive.js'
-import { runAutoMode, listArchivedAutoModeSessions } from './auto-mode/runner.js'
-import type { AutoRunOptions } from './auto-mode/types.js'
 import {
   formatSymphonyRecordSummary,
   getSymphonyHome,
@@ -41,25 +38,13 @@ import {
   withSymphonyTaskStatus,
   writeSymphonyRunPlan,
 } from './symphony/archive.js'
-import {
+import type {
   listOpenSymphonyIssuesFromPod,
-  mirrorSymphonyProjectionJsonLdFromPod,
   persistSymphonyControlStateToPod,
-  persistSymphonyProjectionToPod,
 } from './symphony/pod-projection.js'
+import { defaultSymphonyRuntime, type SymphonyRuntime } from './symphony/runtime.js'
 
 const DEFAULT_SYMPHONY_HEARTBEAT_INTERVAL_MS = 60_000
-
-export interface SymphonyRuntime {
-  runAutoMode(options: AutoRunOptions): Promise<number>
-  listAutoModeSessions(): ReturnType<typeof listArchivedAutoModeSessions>
-  loadAutoModeEvents?: typeof loadAutoModeEvents
-  persistSymphonyControlStateToPod?: typeof persistSymphonyControlStateToPod
-  /** @deprecated Use persistSymphonyControlStateToPod for LinX-owned Symphony records. */
-  persistSymphonyProjectionToPod?: typeof persistSymphonyProjectionToPod
-  listOpenSymphonyIssuesFromPod?: typeof listOpenSymphonyIssuesFromPod
-  mirrorSymphonyProjectionJsonLdFromPod?: typeof mirrorSymphonyProjectionJsonLdFromPod
-}
 
 interface SymphonyRunArgs {
   objective?: string[]
@@ -95,18 +80,9 @@ interface SymphonyRunArgs {
   '--'?: string[]
 }
 
-const defaultRuntime: SymphonyRuntime = {
-  runAutoMode,
-  listAutoModeSessions: listArchivedAutoModeSessions,
-  loadAutoModeEvents,
-  persistSymphonyControlStateToPod,
-  listOpenSymphonyIssuesFromPod,
-  mirrorSymphonyProjectionJsonLdFromPod,
-}
-
 export async function runSymphony(
   argv: SymphonyRunArgs,
-  runtime: SymphonyRuntime = defaultRuntime,
+  runtime: SymphonyRuntime = defaultSymphonyRuntime,
 ): Promise<SymphonyRunPlan> {
   throwIfAborted(argv.signal)
   const objective = normalizeObjective(argv.objective)
@@ -753,7 +729,11 @@ function readSymphonyWorkerFinalReport(autoModeSessionId: string | undefined, ru
 
   let events: AutoModeEventLogEntry[]
   try {
-    events = runtime.loadAutoModeEvents?.(autoModeSessionId) ?? loadAutoModeEvents(autoModeSessionId)
+    const loadEvents = runtime.loadAutoModeEvents
+    if (!loadEvents) {
+      return undefined
+    }
+    events = loadEvents(autoModeSessionId)
   } catch {
     return undefined
   }

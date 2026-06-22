@@ -1327,6 +1327,7 @@ rl.on('line', (line) => {
         })
       },
       listAutoModeSessions: autoModeRunnerModule.listArchivedAutoModeSessions,
+      loadAutoModeEvents: autoModeRunnerModule.loadArchivedAutoModeEvents,
       persistSymphonyProjectionToPod,
       mirrorSymphonyProjectionJsonLdFromPod,
     })

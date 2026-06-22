@@ -17,6 +17,7 @@ const autoModePodApprovalSource = readFileSync(new URL('../src/lib/auto-mode/pod
 const autoModeRuntimeSourceUrl = new URL('../src/lib/auto-mode/runtime.ts', import.meta.url)
 const podChatStoreSource = readFileSync(new URL('../src/lib/pod-chat-store.ts', import.meta.url), 'utf8')
 const symphonyPodProjectionSource = readFileSync(new URL('../src/lib/symphony/pod-projection.ts', import.meta.url), 'utf8')
+const symphonyRuntimeSourceUrl = new URL('../src/lib/symphony/runtime.ts', import.meta.url)
 const linxLoginFlowSource = readFileSync(new URL('../src/lib/linx-login-flow.ts', import.meta.url), 'utf8')
 const oidcAuthSource = readFileSync(new URL('../src/lib/oidc-auth.ts', import.meta.url), 'utf8')
 
@@ -167,6 +168,24 @@ test('symphony command module depends on owning auto-mode modules instead of the
     symphonyCommandSource,
     /from ['"]\.\/auto-mode\/index\.js['"]/,
     'symphony command should import auto-mode runner and types from their owning modules',
+  )
+})
+
+test('symphony command module does not own the default runtime dependency aggregate', () => {
+  assert.doesNotMatch(
+    symphonyCommandSource,
+    /const\s+defaultRuntime\s*:\s*SymphonyRuntime\b/,
+    'Symphony runtime dependencies should live in an owning runtime module instead of the command module',
+  )
+  assert.equal(
+    existsSync(symphonyRuntimeSourceUrl),
+    true,
+    'Symphony runtime dependency injection should have an owning module',
+  )
+  assert.doesNotMatch(
+    symphonyCommandSource,
+    /from ['"]\.\/auto-mode\/archive\.js['"]/,
+    'Symphony command should read auto-mode archives through its runtime boundary instead of a hidden fallback import',
   )
 })
 

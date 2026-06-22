@@ -1,7 +1,8 @@
 import type { AgentRuntimeBackendConfig } from '@linx/agent-runtime'
-import { listArchivedAutoModeSessions, runAutoMode } from './auto-mode/runner.js'
+import { listArchivedAutoModeSessions, loadArchivedAutoModeEvents, runAutoMode } from './auto-mode/runner.js'
 import type { AutoModeCredentialSource, AutoModeWorkerBackend } from './auto-mode/types.js'
-import { runSymphony, type SymphonyRuntime } from './symphony-command.js'
+import { runSymphony } from './symphony-command.js'
+import type { SymphonyRuntime } from './symphony/runtime.js'
 import { DEFAULT_SECRETARY_CHAT_ID, secretaryChatUri, secretaryThreadUri } from './pod-mirror-mapping.js'
 import { getSessionControlManager } from './session-control.js'
 import { resolveInteractiveCwd } from './linx-workspace-command.js'
@@ -285,6 +286,7 @@ function createInteractiveSymphonyRuntime(interactive: any): SymphonyRuntime | u
   return {
     runAutoMode,
     listAutoModeSessions: listArchivedAutoModeSessions,
+    loadAutoModeEvents: loadArchivedAutoModeEvents,
     persistSymphonyControlStateToPod(plan, options) {
       return persistSymphonyControlStateToPod(plan, {
         ...options,
