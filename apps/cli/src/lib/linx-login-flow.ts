@@ -17,6 +17,7 @@ const LINX_AUTH_PENDING_RETRY = Symbol.for('linx.tui.authPendingRetry')
 const LINX_AUTH_LOGIN_SCHEDULED = Symbol.for('linx.tui.authLoginScheduled')
 const LINX_AUTH_REPORTING_ERROR = Symbol.for('linx.tui.authReportingError')
 const LINX_PROVIDER_ID = 'undefineds'
+const linxLoginFlowOptions = new WeakMap<object, LinxLoginFlowOptions>()
 const AUTH_OPTION_BROWSER = 'Authorize in browser'
 const AUTH_OPTION_CLIENT_CREDENTIALS = 'Enter Solid client credentials'
 const AUTH_OPTION_EXIT = 'Exit'
@@ -36,11 +37,11 @@ export type LinxLoginFlowOptions = {
 }
 
 export function installLinxLoginFlow(interactive: any, options: LinxLoginFlowOptions = {}): void {
+  rememberLinxLoginFlowOptions(interactive, options)
   patchNativeOAuthSelectors(interactive, options)
   patchLoginCommand(interactive, options)
   patchAuthExpiredSessionEvents(interactive, options)
   patchAuthExpiredLoginPrompt(interactive, options)
-  patchStartupLoginPrompt(interactive, options)
 }
 
 export function shouldDeferLinxCloudLogin(interactive: any): boolean {
@@ -53,11 +54,38 @@ export function shouldDeferLinxCloudLogin(interactive: any): boolean {
 }
 
 export function requestLinxCloudLogin(interactive: any, reason: LinxAuthReason = 'manual', options: LinxLoginFlowOptions = {}): void {
+  rememberLinxLoginFlowOptions(interactive, options)
   if (!interactive.isInitialized) {
     interactive[LINX_AUTH_LOGIN_ON_INIT] = reason
     return
   }
   void startLinxCloudLogin(interactive, { reason }, options)
+}
+
+export function startPendingLinxCloudLoginAfterInit(interactive: any): void {
+  if (!interactive?.[LINX_AUTH_LOGIN_ON_INIT]) {
+    return
+  }
+
+  const reason = typeof interactive[LINX_AUTH_LOGIN_ON_INIT] === 'string'
+    ? interactive[LINX_AUTH_LOGIN_ON_INIT] as LinxAuthReason
+    : 'startup'
+  interactive[LINX_AUTH_LOGIN_ON_INIT] = false
+  const options = getLinxLoginFlowOptions(interactive)
+  queueMicrotask(() => startLinxCloudLogin(interactive, { reason }, options))
+}
+
+function rememberLinxLoginFlowOptions(interactive: any, options: LinxLoginFlowOptions): void {
+  if (interactive && typeof interactive === 'object') {
+    linxLoginFlowOptions.set(interactive, options)
+  }
+}
+
+function getLinxLoginFlowOptions(interactive: any): LinxLoginFlowOptions {
+  if (!interactive || typeof interactive !== 'object') {
+    return {}
+  }
+  return linxLoginFlowOptions.get(interactive) ?? {}
 }
 
 function patchLoginCommand(interactive: any, options: LinxLoginFlowOptions): void {
@@ -848,24 +876,6 @@ function prefillLoginCommand(interactive: any): void {
   interactive.editor?.setText?.('/login')
   interactive.ui?.setFocus?.(interactive.editor)
   interactive.ui?.requestRender?.()
-}
-
-function patchStartupLoginPrompt(interactive: any, options: LinxLoginFlowOptions): void {
-  const originalInit = interactive.init?.bind(interactive)
-  if (typeof originalInit !== 'function') {
-    return
-  }
-
-  interactive.init = async function patchedLinxLoginInit(...args: unknown[]): Promise<void> {
-    await originalInit(...args)
-    if (this[LINX_AUTH_LOGIN_ON_INIT]) {
-      const reason = typeof this[LINX_AUTH_LOGIN_ON_INIT] === 'string'
-        ? this[LINX_AUTH_LOGIN_ON_INIT] as LinxAuthReason
-        : 'startup'
-      this[LINX_AUTH_LOGIN_ON_INIT] = false
-      queueMicrotask(() => startLinxCloudLogin(this, { reason }, options))
-    }
-  }
 }
 
 function resolveProviderLabel(interactive: any, options: LinxLoginFlowOptions): string {

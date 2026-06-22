@@ -462,11 +462,13 @@ formatting, but its "TUI initialized" readiness mark is set by the post-init
 seam; `linx-welcome-header.ts` owns terminal-title patching and welcome-card
 rendering, but startup header replacement is a post-init effect;
 `linx-update-notification.ts` owns update checks and selector rendering, but
-automatic startup update checking is scheduled by the post-init seam.
+automatic startup update checking is scheduled by the post-init seam;
+`linx-login-flow.ts` owns login UI, auth-expired recovery, and pending startup
+login state, but the pending-login start effect runs from the post-init seam.
 `linx-interactive-post-init.ts` owns when those effects run after init.
 `linx-interactive-command-routing.ts` remains the command router and must not
-also become a startup-notice, restored-auto, exit-output, welcome-header, or
-update-check lifecycle installer.
+also become a startup-notice, restored-auto, exit-output, welcome-header,
+update-check, or startup-login lifecycle installer.
 
 Session-level command interception is a narrower shell-session patch and belongs
 behind `linx-session-command-routing.ts`. The general interactive command router
