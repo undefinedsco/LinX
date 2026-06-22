@@ -96,11 +96,6 @@ export async function handleAutoModeShellCommand(args: {
     return 'pass'
   }
 
-  if (input === '/new') {
-    appendAndDisplaySessionNote(record, display, 'Use `linx --backend <backend>` to start a fresh auto-mode session')
-    return 'handled'
-  }
-
   if (input === '/debug' || input === '/debug on') {
     display.setDebugMode(true)
     appendSessionNote(record, 'Debug protocol view enabled', { debug: true })
