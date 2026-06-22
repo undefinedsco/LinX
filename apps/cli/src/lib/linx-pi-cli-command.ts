@@ -18,6 +18,8 @@ const RESERVED_NON_TOP_LEVEL_COMMANDS = new Set([
   'automode',
   'chat',
   'footer',
+  'pi',
+  'pi-frontend',
   'resume',
   'status-line',
   'statusline',
@@ -59,8 +61,6 @@ export interface LinxPiCliCommandDependencies {
 
 export interface LinxPiCliCommands {
   defaultPiCommand: CommandModule<object, LinxDefaultCommandArgs>
-  hiddenPiAliasCommand: CommandModule<object, LinxDefaultCommandArgs>
-  hiddenPiFrontendAliasCommand: CommandModule<object, LinxDefaultCommandArgs>
   execCommand: CommandModule<object, LinxDefaultCommandArgs>
 }
 
@@ -336,18 +336,6 @@ export function createLinxPiCliCommands(dependencies: LinxPiCliCommandDependenci
     defaultPiCommand: {
       command: '$0 [prompt..]',
       describe: 'Run LinX with the selected runtime backend',
-      builder: buildPiCommand,
-      handler: run,
-    },
-    hiddenPiAliasCommand: {
-      command: 'pi [prompt..]',
-      describe: false,
-      builder: buildPiCommand,
-      handler: run,
-    },
-    hiddenPiFrontendAliasCommand: {
-      command: 'pi-frontend [prompt..]',
-      describe: false,
       builder: buildPiCommand,
       handler: run,
     },

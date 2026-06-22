@@ -362,6 +362,24 @@ test('compiled cli auto-mode rejects retired command surfaces', async (t) => {
     }),
     /Unknown command: chat/,
   )
+
+  assert.throws(
+    () => execFileSync(process.execPath, [join(outdir, 'index.js'), 'pi', '--list-backends'], {
+      cwd: cliRoot,
+      encoding: 'utf-8',
+      stdio: 'pipe',
+    }),
+    /Unknown command: pi/,
+  )
+
+  assert.throws(
+    () => execFileSync(process.execPath, [join(outdir, 'index.js'), 'pi-frontend', '--list-backends'], {
+      cwd: cliRoot,
+      encoding: 'utf-8',
+      stdio: 'pipe',
+    }),
+    /Unknown command: pi-frontend/,
+  )
 })
 
 test('dev script routes auto-mode through the main cli command', async (t) => {

@@ -23,7 +23,7 @@ function readPackageVersion(): string {
 }
 
 export function runLinxCli(argv = process.argv): void {
-  const { defaultPiCommand, execCommand, hiddenPiAliasCommand, hiddenPiFrontendAliasCommand } = createLinxPiCliCommands({
+  const { defaultPiCommand, execCommand } = createLinxPiCliCommands({
     createRuntimeAdapter: createDefaultLinxRuntimeAdapterForPiCommand,
   })
 
@@ -45,8 +45,6 @@ export function runLinxCli(argv = process.argv): void {
     .command(execCommand)
     .command(defaultPiCommand)
     .command(modelsCommand)
-    .command(hiddenPiAliasCommand)
-    .command(hiddenPiFrontendAliasCommand)
     .command(symphonyCodexMcpCommand)
     .command(codexNativeProxyCommand)
     .strict()
