@@ -50,7 +50,7 @@ test('exit message stays suppressed after restart even when the command runner s
     },
   }
   resume.module.installLinxExitMessage(interactive)
-  await interactive.init()
+  resume.module.markLinxExitMessageInitialized(interactive)
 
   const restart = lifecycle.module.restartInteractiveShellProcess(interactive, {
     runtime: {
@@ -85,6 +85,41 @@ test('exit message stays suppressed after restart even when the command runner s
     'restart path must not print the normal session-closed copy even if runner cleanup calls stop again',
   )
   assert.equal(writes.join('').includes('Resume: linx --session'), false)
+})
+
+test('exit message prints only after post-init lifecycle marks initialization', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-resume-output.ts')
+  t.after(() => cleanup())
+
+  const previousNoExitMessage = process.env.LINX_TUI_NO_EXIT_MESSAGE
+  const previousIsTTY = process.stdout.isTTY
+  Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true })
+  delete process.env.LINX_TUI_NO_EXIT_MESSAGE
+  t.after(() => {
+    restoreEnv('LINX_TUI_NO_EXIT_MESSAGE', previousNoExitMessage)
+    Object.defineProperty(process.stdout, 'isTTY', { value: previousIsTTY, configurable: true })
+  })
+
+  const writes = captureProcessStreamWrites(t, process.stdout)
+  const interactive = {
+    stop() {},
+    session: {
+      sessionId: '019e-post-init-session',
+      getContextUsage() {
+        return { inputTokens: 1, outputTokens: 1, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 }
+      },
+    },
+  }
+
+  module.installLinxExitMessage(interactive)
+  interactive.stop()
+  assert.equal(writes.join(''), '')
+
+  module.markLinxExitMessageInitialized(interactive)
+  interactive.stop()
+
+  assert.match(writes.join(''), /LinX session closed\./)
+  assert.match(writes.join(''), /Resume: linx --session 019e-post-init-session/)
 })
 
 function captureProcessStreamWrites(t, stream) {

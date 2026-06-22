@@ -7,38 +7,54 @@ import { registerLinxInteractiveStopHandler } from './linx-interactive-stop-rout
 
 let linxResumeOutputStyleRestore: (() => void) | null = null
 
-export function installLinxExitMessage(interactive: any): void {
-  const originalInit = interactive.init?.bind(interactive)
-  let initialized = false
-  let exitMessageWritten = false
+type LinxExitMessageState = {
+  initialized: boolean
+  written: boolean
+}
 
-  if (typeof originalInit === 'function') {
-    interactive.init = async function patchedInit(...args: unknown[]): Promise<unknown> {
-      const result = await originalInit(...args)
-      initialized = true
-      return result
-    }
-  }
+const linxExitMessageStates = new WeakMap<object, LinxExitMessageState>()
+
+export function installLinxExitMessage(interactive: any): void {
+  const state = getLinxExitMessageState(interactive)
 
   registerLinxInteractiveStopHandler(interactive, {
     name: 'linx-exit-message',
     phase: 'after',
     priority: 100,
     handler({ interactive: target }) {
-    if (
-      !initialized
-      || exitMessageWritten
-      || process.env[LINX_TUI_NO_EXIT_MESSAGE_ENV] === '1'
-      || isInteractiveShellExitMessageSuppressed(target)
-    ) {
-      return
-    }
-    exitMessageWritten = true
-    if (process.stdout.isTTY) {
-      process.stdout.write(`\n${buildLinxExitMessage(target)}\n`)
-    }
+      if (
+        !state.initialized
+        || state.written
+        || process.env[LINX_TUI_NO_EXIT_MESSAGE_ENV] === '1'
+        || isInteractiveShellExitMessageSuppressed(target)
+      ) {
+        return
+      }
+      state.written = true
+      if (process.stdout.isTTY) {
+        process.stdout.write(`\n${buildLinxExitMessage(target)}\n`)
+      }
     },
   })
+}
+
+export function markLinxExitMessageInitialized(interactive: any): void {
+  getLinxExitMessageState(interactive).initialized = true
+}
+
+function getLinxExitMessageState(interactive: any): LinxExitMessageState {
+  if (!interactive || typeof interactive !== 'object') {
+    return { initialized: false, written: false }
+  }
+
+  const existing = linxExitMessageStates.get(interactive)
+  if (existing) {
+    return existing
+  }
+
+  const state: LinxExitMessageState = { initialized: false, written: false }
+  linxExitMessageStates.set(interactive, state)
+  return state
 }
 
 export function buildLinxExitMessage(interactive: any): string {

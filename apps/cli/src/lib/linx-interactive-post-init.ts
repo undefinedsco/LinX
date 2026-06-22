@@ -1,4 +1,5 @@
 import { handleInteractiveAutoCommand } from './linx-auto-command-routing.js'
+import { markLinxExitMessageInitialized } from './linx-resume-output.js'
 import { startLinxRestoredAutoAfterInit } from './linx-restored-auto-startup.js'
 import { scheduleLinxCwdStartupNotice } from './linx-workspace-command.js'
 import { installLinxEscapeInterrupt as installLinxInterruptControl } from './linx-interrupt-control.js'
@@ -55,6 +56,7 @@ function installPostInitInteractiveControls(
   sessionCwd: string,
   options: LinxInteractivePostInitOptions,
 ): void {
+  markLinxExitMessageInitialized(interactive)
   installLinxSessionCommandRouter(interactive, runtime)
   installLinxInputCommandRouter(interactive, runtime)
   installLinxFinalSubmitCommandRouter(interactive, runtime)
