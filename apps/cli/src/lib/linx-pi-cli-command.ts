@@ -11,9 +11,9 @@ import { LINX_AGENT_DIR } from './linx-interactive-branding.js'
 import { resolveLinxPiStartupControlState } from './linx-pi-startup-control.js'
 import { selectLinxPiSession } from './linx-session-selector-ui.js'
 import { createLinxPodMirrorRuntimeHost } from './linx-pod-mirror-runtime-host.js'
-import { runLinxPodMirrorSyncRetryCommand, runLinxPodMirrorSyncStatusCommand } from './linx-pod-mirror-sync-command.js'
 import { stopInteractiveShellUnlessRestarting } from './shell-lifecycle.js'
 import { assertDefaultStartupPromptTokenIsAllowed, type LinxTopLevelCommandAdmissionOptions } from './linx-top-level-command-admission.js'
+import { handleLinxPodMirrorSyncCliAdmission } from './linx-pod-mirror-sync-cli-admission.js'
 
 export interface LinxPiCliRuntimeAdapter {
   readonly cwd: string
@@ -92,17 +92,7 @@ export async function runPiCommand(argv: {
     return
   }
 
-  if (argv['pi-sync-status']) {
-    await runLinxPodMirrorSyncStatusCommand({ agentDir: LINX_AGENT_DIR })
-    return
-  }
-
-  if (argv['pi-sync-retry']) {
-    await runLinxPodMirrorSyncRetryCommand({
-      cwd: argv.cwd || process.cwd(),
-      agentDir: LINX_AGENT_DIR,
-      sessionId: argv['pi-sync-retry'],
-    })
+  if (await handleLinxPodMirrorSyncCliAdmission(argv)) {
     return
   }
 
