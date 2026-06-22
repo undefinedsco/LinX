@@ -17,6 +17,7 @@ const autoModePodApprovalSource = readFileSync(new URL('../src/lib/auto-mode/pod
 const podChatStoreSource = readFileSync(new URL('../src/lib/pod-chat-store.ts', import.meta.url), 'utf8')
 const symphonyPodProjectionSource = readFileSync(new URL('../src/lib/symphony/pod-projection.ts', import.meta.url), 'utf8')
 const linxLoginFlowSource = readFileSync(new URL('../src/lib/linx-login-flow.ts', import.meta.url), 'utf8')
+const oidcAuthSource = readFileSync(new URL('../src/lib/oidc-auth.ts', import.meta.url), 'utf8')
 
 test('default Pi/TUI command module does not construct Pod ORM state directly', () => {
   assert.doesNotMatch(commandSource, /from ['"]\.\/models\.js['"]/, 'shell command should not import shared model DB primitives directly')
@@ -168,6 +169,22 @@ test('linx login flow does not expose auth refresh through a test seam', () => {
     linxLoginFlowSource,
     /__testRefreshLinxAuthState/,
     'LinX auth state refresh should be a named login-flow API instead of a production __test export',
+  )
+})
+
+test('OIDC auth does not expose browser-consent reuse through a test seam', () => {
+  assert.doesNotMatch(
+    oidcAuthSource,
+    /__testReuseExistingBrowserConsentLogin/,
+    'Browser-consent reuse should be a named OIDC auth API instead of a production __test export',
+  )
+})
+
+test('OIDC auth does not expose refresh error normalization through a test seam', () => {
+  assert.doesNotMatch(
+    oidcAuthSource,
+    /__testNormalizeOidcSessionRefreshError/,
+    'OIDC refresh error normalization should be a named OIDC auth API instead of a production __test export',
   )
 })
 

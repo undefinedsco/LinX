@@ -454,7 +454,7 @@ function renderCallbackPage(input: {
 </html>`
 }
 
-async function reuseExistingBrowserConsentLogin(
+export async function reuseExistingBrowserConsentLogin(
   options: BrowserOidcLoginOptions,
 ): Promise<BrowserOidcLoginResult | null> {
   const stored = loadCredentials()
@@ -727,7 +727,7 @@ export function isOidcTransientRemoteError(error: unknown): boolean {
   return resolveOidcTransientRemoteStatus(error) !== null
 }
 
-function normalizeOidcSessionRefreshError(error: unknown): Error {
+export function normalizeOidcSessionRefreshError(error: unknown): Error {
   if (isOidcTransientRemoteError(error)) {
     return new LinxOidcTransientRemoteError(error)
   }
@@ -789,6 +789,3 @@ function fallbackOidcTransientStatusMessage(status: number): string {
       return 'Service Unavailable'
   }
 }
-
-export const __testReuseExistingBrowserConsentLogin = reuseExistingBrowserConsentLogin
-export const __testNormalizeOidcSessionRefreshError = normalizeOidcSessionRefreshError
