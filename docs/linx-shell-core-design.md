@@ -408,6 +408,14 @@ method patches are a lifecycle-sensitive Pi adaptation seam; keeping them in one
 input module prevents slash-command routing, projected command routing, and
 session method interception from depending on wrapper nesting or import order.
 
+Peer-command projection is a shell-session delivery seam and belongs behind
+`linx-peer-command-routing.ts`. The general interactive command router may parse
+`/goal` or other peer commands and dispatch the parsed route, but it must not
+directly inspect `session.prompt`, `session.sendUserMessage`, session-command
+original-method accessors, or goal mirror side effects. This keeps "what command
+was parsed" separate from "how a projected peer command is delivered to the
+active backend session".
+
 The current remaining design debt is shared shell state. Some modules still use
 `__linx*` properties on the interactive, editor, runtime, or session object.
 Only local patch sentinels and original-method handles are acceptable there.

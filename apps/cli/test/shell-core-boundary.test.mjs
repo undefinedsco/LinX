@@ -378,6 +378,28 @@ test('input and final-submit command routing patches live in a dedicated input m
   assert.deepEqual(violations, [])
 })
 
+
+test('peer command routing lives in a dedicated peer command module', () => {
+  const commandRoutingSource = readFileSync(join(libRoot, 'linx-interactive-command-routing.ts'), 'utf8')
+
+  assert.match(
+    commandRoutingSource,
+    /from ['"]\.\/linx-peer-command-routing\.js['"]/,
+    'interactive command routing should import peer command routing from its owning module',
+  )
+  const forbiddenPeerRoutingSnippets = [
+    'AutoModePeerCommandRoute',
+    'getSessionCommandRouterOriginalPrompt',
+    'getSessionCommandRouterOriginalSendUserMessage',
+    'submitProjectedBackendInput',
+    'handleInteractivePeerCommand',
+    'Active LinX session cannot accept peer goal input',
+  ]
+  const violations = forbiddenPeerRoutingSnippets.filter((snippet) => commandRoutingSource.includes(snippet))
+
+  assert.deepEqual(violations, [])
+})
+
 test('interactive command routing patch state is kept behind the shell command routing host', () => {
   const allowed = new Set([
     'linx-interactive-command-routing-host.ts',
