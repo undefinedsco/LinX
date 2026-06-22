@@ -7,20 +7,23 @@ import { extractUsernameFromWebId, resolveProfileDisplayName } from './profile-i
 import { suppressPodStatusOutput } from './pod-status-output.js'
 import { LINX_CLI_VERSION } from './linx-self-update.js'
 import { resolveRuntimeProviderLabel } from './linx-runtime-provider-label.js'
+import { registerLinxTerminalTitleHandler } from './linx-terminal-title-router.js'
 
 export function installLinxWelcomeHeader(interactive: any): void {
-  patchTerminalTitle(interactive)
+  registerLinxTerminalTitleHandler(interactive, {
+    name: 'linx-welcome-header:terminal-title',
+    priority: 0,
+    handler({ interactive: titleInteractive }) {
+      setLinxWelcomeTerminalTitle(titleInteractive)
+    },
+  })
 }
 
-function patchTerminalTitle(interactive: any): void {
-  const original = interactive.updateTerminalTitle?.bind(interactive)
-  interactive.updateTerminalTitle = function patchedUpdateTerminalTitle(): void {
-    original?.()
-    const cwd = this.sessionManager?.getCwd?.() || process.cwd()
-    const sessionName = this.sessionManager?.getSessionName?.()
-    const suffix = sessionName ? `${sessionName} - ${basename(cwd)}` : basename(cwd)
-    this.ui?.terminal?.setTitle?.(`LinX - ${suffix}`)
-  }
+function setLinxWelcomeTerminalTitle(interactive: any): void {
+  const cwd = interactive.sessionManager?.getCwd?.() || process.cwd()
+  const sessionName = interactive.sessionManager?.getSessionName?.()
+  const suffix = sessionName ? `${sessionName} - ${basename(cwd)}` : basename(cwd)
+  interactive.ui?.terminal?.setTitle?.(`LinX - ${suffix}`)
 }
 
 export function renderLinxWelcomeHeaderAfterInit(interactive: any): void {
