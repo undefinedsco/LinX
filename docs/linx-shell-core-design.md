@@ -98,6 +98,10 @@ Hard rules:
   `apps/cli/src/lib/linx-editor-component-router.ts`; modules that need to
   re-wrap the active editor after Pi swaps components register ordered rebind
   handlers.
+- Extension UI context creation is shell UI-context lifecycle, not a Pod feature
+  patch point. `interactive.createExtensionUIContext` is patched only by
+  `apps/cli/src/lib/linx-extension-ui-context-router.ts`; modules that need to
+  augment extension dialogs register ordered context handlers.
 - New lifecycle or submit behavior must add a handler to the relevant router and
   a boundary test in `apps/cli/test/shell-core-boundary.test.mjs`.
 
@@ -527,6 +531,13 @@ final-submit command routing and auto editor rendering need to re-apply their
 editor-level decorators after that replacement. They must register ordered
 rebind handlers with the editor-component router rather than each wrapping
 `interactive.setCustomEditorComponent` independently.
+
+Extension UI context augmentation belongs behind
+`linx-extension-ui-context-router.ts`. Pi creates an extension UI context for
+dialogs such as approval selectors, confirms, and inputs; LinX features may
+decorate that context with Pod-backed approval or Secretary mediation. Those
+features must register ordered context handlers with the router instead of each
+wrapping `interactive.createExtensionUIContext`.
 
 Concrete LinX shell command execution belongs behind
 `linx-shell-command-executor.ts`. The interactive command routing module may
