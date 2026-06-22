@@ -90,6 +90,14 @@ test('auto-mode runner does not expose Secretary reaction window policy through 
   )
 })
 
+test('auto-mode runner does not expose shell command routing through a test seam', () => {
+  assert.doesNotMatch(
+    autoModeRunnerSource,
+    /__testHandleAutoModeShellCommand/,
+    'Auto-mode shell command routing should live in an owning module instead of being tested through runner',
+  )
+})
+
 test('Pod chat store does not expose a test-only internal aggregate', () => {
   assert.doesNotMatch(
     podChatStoreSource,

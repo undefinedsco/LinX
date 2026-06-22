@@ -2780,7 +2780,7 @@ rl.on('line', (line) => {
 })
 
 test('auto-mode /model surfaces ACP failure without mutating the model state', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, cleanup } = await loadAutoModeModule('lib/auto-mode/shell-command.ts')
   t.after(() => cleanup())
 
   const root = mkdtempSync(join(tmpdir(), 'linx-auto-mode-model-command-'))
@@ -2834,7 +2834,7 @@ mode: 'off',
     },
   }
 
-  await module.__testHandleAutoModeShellCommand({
+  await module.handleAutoModeShellCommand({
     input: '/model gpt-5.4',
     session: {
       async setModel() {
@@ -2854,7 +2854,7 @@ mode: 'off',
 })
 
 test('auto-mode exposes /hotkeys as the LinX keymap help command', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, cleanup } = await loadAutoModeModule('lib/auto-mode/shell-command.ts')
   t.after(() => cleanup())
 
   const root = mkdtempSync(join(tmpdir(), 'linx-auto-mode-hotkeys-command-'))
@@ -2887,7 +2887,7 @@ mode: 'off',
     eventsFile: join(archiveDir, 'events.jsonl'),
   }
 
-  const result = await module.__testHandleAutoModeShellCommand({
+  const result = await module.handleAutoModeShellCommand({
     input: '/hotkeys',
     session: { async setModel() {} },
     display: {
@@ -2905,7 +2905,7 @@ mode: 'off',
 })
 
 test('auto-mode shell can switch auto after entering an auto-mode session', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, cleanup } = await loadAutoModeModule('lib/auto-mode/shell-command.ts')
   t.after(() => cleanup())
 
   const root = mkdtempSync(join(tmpdir(), 'linx-auto-mode-mode-command-'))
@@ -2938,7 +2938,7 @@ mode: 'off',
     eventsFile: join(archiveDir, 'events.jsonl'),
   }
 
-  const result = await module.__testHandleAutoModeShellCommand({
+  const result = await module.handleAutoModeShellCommand({
     input: '/auto on',
     session: {
       async setModel() {},
@@ -2972,7 +2972,7 @@ mode: 'off',
 })
 
 test('auto-mode shell reports auto status and retires old mode commands', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, cleanup } = await loadAutoModeModule('lib/auto-mode/shell-command.ts')
   t.after(() => cleanup())
 
   const root = mkdtempSync(join(tmpdir(), 'linx-auto-mode-status-command-'))
@@ -3025,8 +3025,8 @@ mode: 'off',
     record,
   }
 
-  assert.equal(await module.__testHandleAutoModeShellCommand({ ...base, input: '/auto status' }), 'handled')
-  assert.equal(await module.__testHandleAutoModeShellCommand({ ...base, input: '/manual' }), 'pass')
+  assert.equal(await module.handleAutoModeShellCommand({ ...base, input: '/auto status' }), 'handled')
+  assert.equal(await module.handleAutoModeShellCommand({ ...base, input: '/manual' }), 'pass')
 
   assert.deepEqual(activity, [
     { message: 'Auto is off. Use /auto on or /auto off.', tone: 'note' },
@@ -3034,7 +3034,7 @@ mode: 'off',
 })
 
 test('auto-mode keeps Secretary control separate from goal mode', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, cleanup } = await loadAutoModeModule('lib/auto-mode/shell-command.ts')
   t.after(() => cleanup())
 
   const root = mkdtempSync(join(tmpdir(), 'linx-auto-mode-control-command-'))
@@ -3067,7 +3067,7 @@ test('auto-mode keeps Secretary control separate from goal mode', async (t) => {
     eventsFile: join(archiveDir, 'events.jsonl'),
   }
 
-  const result = await module.__testHandleAutoModeShellCommand({
+  const result = await module.handleAutoModeShellCommand({
     input: '/auto status',
     session: {
       async setModel() {},
@@ -3096,7 +3096,7 @@ test('auto-mode keeps Secretary control separate from goal mode', async (t) => {
 })
 
 test('auto-mode shell switches peer goal mode without changing Secretary auto control', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, cleanup } = await loadAutoModeModule('lib/auto-mode/shell-command.ts')
   t.after(() => cleanup())
 
   const root = mkdtempSync(join(tmpdir(), 'linx-auto-mode-goal-command-'))
@@ -3152,17 +3152,17 @@ test('auto-mode shell switches peer goal mode without changing Secretary auto co
     record,
   }
 
-  const status = await module.__testHandleAutoModeShellCommand({ ...base, input: '/goal status' })
+  const status = await module.handleAutoModeShellCommand({ ...base, input: '/goal status' })
   assert.deepEqual(status, { kind: 'send', text: '/goal status' })
-  const resumed = await module.__testHandleAutoModeShellCommand({ ...base, input: '/goal resume' })
+  const resumed = await module.handleAutoModeShellCommand({ ...base, input: '/goal resume' })
   assert.deepEqual(resumed, { kind: 'send', text: '/goal resume' })
-  const projected = await module.__testHandleAutoModeShellCommand({ ...base, input: '/goal ship the login fix' })
+  const projected = await module.handleAutoModeShellCommand({ ...base, input: '/goal ship the login fix' })
   assert.deepEqual(projected, { kind: 'send', text: '/goal ship the login fix' })
-  const paused = await module.__testHandleAutoModeShellCommand({ ...base, input: '/goal pause' })
+  const paused = await module.handleAutoModeShellCommand({ ...base, input: '/goal pause' })
   assert.deepEqual(paused, { kind: 'send', text: '/goal pause' })
-  const closed = await module.__testHandleAutoModeShellCommand({ ...base, input: '/goal close' })
+  const closed = await module.handleAutoModeShellCommand({ ...base, input: '/goal close' })
   assert.deepEqual(closed, { kind: 'send', text: '/goal close' })
-  const cancelled = await module.__testHandleAutoModeShellCommand({ ...base, input: '/goal cancel' })
+  const cancelled = await module.handleAutoModeShellCommand({ ...base, input: '/goal cancel' })
   assert.deepEqual(cancelled, { kind: 'send', text: '/goal cancel' })
 
   assert.equal(record.autoEnabled, true)
@@ -3181,7 +3181,7 @@ test('auto-mode shell switches peer goal mode without changing Secretary auto co
 })
 
 test('auto-mode shell routes /auto startup commands through shared ownership before peer delivery', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, cleanup } = await loadAutoModeModule('lib/auto-mode/shell-command.ts')
   t.after(() => cleanup())
 
   const root = mkdtempSync(join(tmpdir(), 'linx-auto-mode-startup-route-'))
@@ -3237,13 +3237,13 @@ test('auto-mode shell routes /auto startup commands through shared ownership bef
     record,
   }
 
-  const goal = await module.__testHandleAutoModeShellCommand({ ...base, input: '/auto /goal ship the login fix' })
+  const goal = await module.handleAutoModeShellCommand({ ...base, input: '/auto /goal ship the login fix' })
   assert.deepEqual(goal, { kind: 'send', text: '/goal ship the login fix' })
   assert.equal(record.autoEnabled, true)
   assert.equal(record.mode, 'auto')
   assert.equal(record.goalMode, true)
 
-  const nestedControl = await module.__testHandleAutoModeShellCommand({ ...base, input: '/auto /auto off' })
+  const nestedControl = await module.handleAutoModeShellCommand({ ...base, input: '/auto /auto off' })
   assert.equal(nestedControl, 'handled')
   assert.equal(record.autoEnabled, false)
   assert.equal(record.mode, 'off')
@@ -3268,7 +3268,7 @@ test('auto-mode shell routes /auto startup commands through shared ownership bef
 })
 
 test('auto-mode /debug toggles full-fidelity protocol view without affecting the main session state', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, cleanup } = await loadAutoModeModule('lib/auto-mode/shell-command.ts')
   t.after(() => cleanup())
 
   const root = mkdtempSync(join(tmpdir(), 'linx-auto-mode-debug-command-'))
@@ -3323,7 +3323,7 @@ mode: 'off',
     },
   }
 
-  await module.__testHandleAutoModeShellCommand({
+  await module.handleAutoModeShellCommand({
     input: '/debug on',
     session: { async setModel() {} },
     display,
@@ -3332,7 +3332,7 @@ mode: 'off',
     record,
   })
 
-  await module.__testHandleAutoModeShellCommand({
+  await module.handleAutoModeShellCommand({
     input: '/debug off',
     session: { async setModel() {} },
     display,
