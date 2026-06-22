@@ -26,15 +26,13 @@ import {
   installLinxSessionCommandRouterAfterRebind as installOwnedLinxSessionCommandRouterAfterRebind,
 } from './linx-session-command-routing.js'
 import {
-  isFinalSubmitSetCustomEditorComponentPatched,
-  isFinalSubmitWrappedHandler,
   isGlobalCommandHandlerInstalled,
-  isInputCommandRouterInstalled,
-  markFinalSubmitSetCustomEditorComponentPatched,
-  markFinalSubmitWrappedHandler,
   markGlobalCommandHandlerInstalled,
-  markInputCommandRouterInstalled,
 } from './linx-interactive-command-routing-host.js'
+import {
+  installLinxFinalSubmitCommandRouter as installOwnedLinxFinalSubmitCommandRouter,
+  installLinxInputCommandRouter as installOwnedLinxInputCommandRouter,
+} from './linx-input-command-routing.js'
 
 type ShellCommandOptions = {
   onAutoControlChange?: (enabled: boolean) => void | Promise<void>
@@ -107,81 +105,11 @@ function installLinxShellCommandHandler(interactive: any, runtime: any): void {
 }
 
 export function installLinxInputCommandRouter(interactive: any, runtime: any): void {
-  if (!interactive || isInputCommandRouterInstalled(interactive)) {
-    return
-  }
-  const originalGetUserInput = interactive.getUserInput?.bind(interactive)
-  if (typeof originalGetUserInput !== 'function') {
-    return
-  }
-
-  interactive.getUserInput = async function patchedLinxGetUserInput(...args: unknown[]): Promise<unknown> {
-    while (true) {
-      const input = await originalGetUserInput(...args)
-      if (typeof input !== 'string') {
-        return input
-      }
-
-      const command = parseLinxShellCommand(input.trim())
-      if (!command) {
-        return input
-      }
-
-      this.editor?.setText?.('')
-      await handleLinxShellCommand(this, runtime, command)
-    }
-  }
-  markInputCommandRouterInstalled(interactive)
+  installOwnedLinxInputCommandRouter(interactive, runtime, handleLinxShellCommand)
 }
 
 export function installLinxFinalSubmitCommandRouter(interactive: any, runtime: any): void {
-  if (!interactive) {
-    return
-  }
-
-  const wrapEditor = (editor: any): void => {
-    if (!editor || typeof editor.onSubmit !== 'function') {
-      return
-    }
-    if (isFinalSubmitWrappedHandler(editor.onSubmit)) {
-      return
-    }
-
-    const originalSubmit = editor.onSubmit.bind(editor)
-    const wrappedSubmit = async (text: string): Promise<void> => {
-      const command = parseLinxShellCommand(String(text ?? '').trim())
-      if (!command) {
-        await originalSubmit(text)
-        return
-      }
-
-      interactive.editor?.setText?.('')
-      await handleLinxShellCommand(interactive, runtime, command)
-    }
-    markFinalSubmitWrappedHandler(wrappedSubmit)
-    editor.onSubmit = wrappedSubmit
-  }
-
-  wrapEditor(interactive.defaultEditor)
-  if (interactive.editor !== interactive.defaultEditor) {
-    wrapEditor(interactive.editor)
-  }
-
-  const originalSetCustomEditorComponent = interactive.setCustomEditorComponent?.bind(interactive)
-  if (
-    typeof originalSetCustomEditorComponent === 'function'
-    && !isFinalSubmitSetCustomEditorComponentPatched(interactive)
-  ) {
-    interactive.setCustomEditorComponent = function patchedLinxFinalSubmitSetCustomEditorComponent(...args: unknown[]): unknown {
-      const result = originalSetCustomEditorComponent(...args)
-      wrapEditor(this.defaultEditor)
-      if (this.editor !== this.defaultEditor) {
-        wrapEditor(this.editor)
-      }
-      return result
-    }
-    markFinalSubmitSetCustomEditorComponentPatched(interactive)
-  }
+  installOwnedLinxFinalSubmitCommandRouter(interactive, runtime, handleLinxShellCommand)
 }
 
 export function installLinxSessionCommandRouter(interactive: any, runtime: any): void {

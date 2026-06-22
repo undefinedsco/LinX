@@ -357,6 +357,27 @@ test('runtime provider OAuth patch state is kept out of registry hidden fields',
   assert.deepEqual(violations, [])
 })
 
+
+test('input and final-submit command routing patches live in a dedicated input module', () => {
+  const commandRoutingSource = readFileSync(join(libRoot, 'linx-interactive-command-routing.ts'), 'utf8')
+
+  assert.match(
+    commandRoutingSource,
+    /from ['"]\.\/linx-input-command-routing\.js['"]/,
+    'interactive command routing should import input/final-submit routing from its owning module',
+  )
+  const forbiddenInputPatchSnippets = [
+    'interactive.getUserInput =',
+    'editor.onSubmit =',
+    'interactive.setCustomEditorComponent =',
+    'patchedLinxGetUserInput',
+    'patchedLinxFinalSubmitSetCustomEditorComponent',
+  ]
+  const violations = forbiddenInputPatchSnippets.filter((snippet) => commandRoutingSource.includes(snippet))
+
+  assert.deepEqual(violations, [])
+})
+
 test('interactive command routing patch state is kept behind the shell command routing host', () => {
   const allowed = new Set([
     'linx-interactive-command-routing-host.ts',
