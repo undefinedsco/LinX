@@ -353,6 +353,15 @@ test('compiled cli auto-mode rejects retired command surfaces', async (t) => {
     }),
     /Unknown command: resume/,
   )
+
+  assert.throws(
+    () => execFileSync(process.execPath, [join(outdir, 'index.js'), 'chat', 'hello'], {
+      cwd: cliRoot,
+      encoding: 'utf-8',
+      stdio: 'pipe',
+    }),
+    /Unknown command: chat/,
+  )
 })
 
 test('dev script routes auto-mode through the main cli command', async (t) => {
