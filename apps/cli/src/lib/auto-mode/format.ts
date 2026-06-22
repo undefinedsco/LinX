@@ -1,5 +1,5 @@
 import type { AutoModeEventLogEntry, AutoModeNormalizedEvent, AutoModeSessionRecord } from './types.js'
-import { getAutoModeBackendLabel } from './hooks/index.js'
+import { getAutoModeBackendLabel } from './hooks/registry.js'
 import { formatLinxCliErrorMessage } from '../linx-cloud-errors.js'
 
 interface TranscriptState {
