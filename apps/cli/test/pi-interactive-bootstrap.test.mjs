@@ -6982,6 +6982,14 @@ test('backend command router shell module installs projected routing by default'
   assert.deepEqual(executed, ['/models'])
 })
 
+
+test('interactive command surface composition lives in a shell command module', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-command-surface.ts')
+  t.after(() => cleanup())
+
+  assert.equal(typeof module.installLinxInteractiveCommandSurface, 'function')
+})
+
 test('interactive command routing patch lives in a shell command module', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-command-routing.ts')
   t.after(() => cleanup())

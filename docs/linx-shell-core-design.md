@@ -384,6 +384,14 @@ LinX shell contract:
 Patch points should stay thin. If a patch grows stateful or reusable, extract it
 behind a named shell module before adding more behavior.
 
+The interactive bootstrap composes shell surfaces; it should not know every
+feature-specific command installer. Interactive command-surface installation
+belongs behind `linx-interactive-command-surface.ts`, which owns the order for
+LinX shell commands, Symphony commands, backend command routing, session command
+routing, command autocomplete, and runtime event bridges. Bootstrap may pass the
+interactive, runtime, session cwd, and session-control manager into that module,
+but must not directly import or call each command router.
+
 The current remaining design debt is shared shell state. Some modules still use
 `__linx*` properties on the interactive, editor, runtime, or session object.
 Only local patch sentinels and original-method handles are acceptable there.

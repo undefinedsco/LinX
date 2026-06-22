@@ -2,10 +2,7 @@ import { InteractiveMode } from '@earendil-works/pi-coding-agent'
 import { applyLinxInteractiveBranding, requestLinxCloudLogin } from './linx-interactive-branding.js'
 import type { BackendCredentialEntry, BackendCredentialInput } from './backend-credentials.js'
 import { installPodStatusOutputFilter } from './pod-status-output.js'
-import {
-  getSessionControlManager,
-  installSessionControlRuntimeEventBridge,
-} from './session-control.js'
+import { getSessionControlManager } from './session-control.js'
 import {
   buildLinxExitMessage,
   installLinxExitMessage,
@@ -14,22 +11,15 @@ import {
   withSuppressedPiResumeOutput,
 } from './linx-resume-output.js'
 import { installInteractiveStopCleanup } from './shell-lifecycle.js'
-import { installSymphonyAutocomplete } from './linx-command-autocomplete.js'
 import { installLinxFooterPatch, setLinxFooterInteractive } from './linx-footer-patch.js'
 import { patchPiAssistantMessageRendering } from './linx-assistant-message-rendering.js'
-import { installBackendCommandRouter } from './linx-backend-command-router.js'
 import { promptForBackendCredential } from './linx-ai-connect-command.js'
-import { installSymphonyCommand } from './linx-symphony-interactive-command.js'
 import { installLinxRestoredAutoStartup } from './linx-restored-auto-startup.js'
+import { installLinxInteractiveCommandSurface } from './linx-interactive-command-surface.js'
 import { installLinxInteractivePostInitHooks, installLinxEscapeInterrupt } from './linx-interactive-post-init.js'
 import { ensureInteractiveRuntimeHost } from './linx-interactive-runtime-host.js'
 import { installPodBackedExtensionUi } from './linx-pod-backed-extension-ui.js'
 import { configureLinxInteractiveShellState } from './linx-interactive-shell-state.js'
-import {
-  installLinxSessionCommandRouter,
-  installLinxSessionCommandRouterAfterRebind,
-  installLinxShellCommands,
-} from './linx-interactive-command-routing.js'
 
 export { buildLinxExitMessage, installLinxResumeOutputStyle, withLinxResumeOutputStyle, withSuppressedPiResumeOutput }
 
@@ -77,20 +67,16 @@ export function bootstrapLinxInteractiveMode(
   setLinxFooterInteractive(interactive as any)
 
   const sessionControlManager = getSessionControlManager(interactive as any, runtime, sessionCwd)
-  runtime?.backendCommandRouter?.setSessionControl?.(sessionControlManager)
   const restorePodStatusOutputFilter = installPodStatusOutputFilter()
   applyLinxInteractiveBranding(interactive as any)
   installLinxExitMessage(interactive as any)
   installInteractiveStopCleanup(interactive as any, restorePodStatusOutputFilter)
   installPodBackedExtensionUi(interactive as any, runtime, sessionControlManager)
-  installSymphonyAutocomplete(interactive as any)
-  // Register /cd slash command; workspace follows terminal while session stays.
-  installLinxShellCommands(interactive as any, runtime, sessionCwd, options)
-  installSymphonyCommand(interactive as any)
-  installBackendCommandRouter(interactive as any, runtime?.backendCommandRouter)
-  installSessionControlRuntimeEventBridge(interactive as any, runtime, sessionCwd)
-  installLinxSessionCommandRouter(interactive as any, runtime)
-  installLinxSessionCommandRouterAfterRebind(interactive as any, runtime)
+  installLinxInteractiveCommandSurface(interactive as any, runtime, {
+    sessionCwd,
+    sessionControlManager,
+    shellCommandOptions: options,
+  })
   if (options.restoredAuto === true && runtime?.autoEnabled === true) {
     installLinxRestoredAutoStartup(interactive as any, runtime, sessionControlManager)
   }

@@ -46,6 +46,28 @@ function importsPiAdapterInternal(source) {
 }
 
 
+
+test('interactive bootstrap delegates command surface installation', () => {
+  const bootstrapSource = readFileSync(join(libRoot, 'linx-interactive-bootstrap.ts'), 'utf8')
+
+  assert.match(
+    bootstrapSource,
+    /from ['"]\.\/linx-interactive-command-surface\.js['"]/,
+    'interactive bootstrap should import one command-surface composition module',
+  )
+  const forbiddenDirectCommandInstallers = [
+    'installLinxShellCommands',
+    'installSymphonyCommand',
+    'installBackendCommandRouter',
+    'installLinxSessionCommandRouter',
+    'installLinxSessionCommandRouterAfterRebind',
+    'setSessionControl',
+  ]
+  const violations = forbiddenDirectCommandInstallers.filter((name) => bootstrapSource.includes(name))
+
+  assert.deepEqual(violations, [])
+})
+
 test('interactive submit handling is centralized in the shell submit router', () => {
   const allowed = new Set([
     'linx-interactive-submit-router.ts',
