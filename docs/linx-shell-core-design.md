@@ -198,6 +198,12 @@ Top-level command admission rules:
   interface needed by the caller. If a human is expected to type it directly, it
   is no longer plumbing and must satisfy the normal top-level command admission
   rules.
+- Hidden diagnostic and maintenance flags are allowed only for local inspection
+  or repair of shell-owned archives, sync checkpoints, or compatibility state.
+  They must not become discoverable session navigation, chat history browsing,
+  or backend command surfaces. If the operation is meant for normal users, give
+  it a visible command with a documented product contract; otherwise keep it
+  hidden and narrow.
 
 Concrete command ownership examples:
 
@@ -229,6 +235,9 @@ Use this checklist before adding or keeping any `linx <command>` entry:
    help.
 6. **Is it internal plumbing?** Keep it hidden and machine-oriented. Do not use
    hidden commands as a way to ship a second human command surface.
+7. **Is it diagnostic or repair-only?** Hidden flags may inspect local archives
+   or retry failed sync work. They must not replace Pi session selectors, TUI
+   commands, or documented scripting APIs.
 
 Specific decisions currently in force:
 
@@ -240,6 +249,10 @@ Specific decisions currently in force:
   it is not the same concept as backend-native `/model <id>` switching.
 - `--session`, `--session-dir`, and `--session-id` are runtime archive selectors.
   They are not Pod chat/thread IDs and must not leak into shared data models.
+- Hidden archive/debug flags such as `--show`, `--sync-status`, `--sync-retry`,
+  `--pi-sync-status`, and `--pi-sync-retry` are local diagnostic/repair tools.
+  They must stay out of top-level help and must not be described as the way to
+  browse, list, choose, or resume sessions.
 - When a backend exposes richer native command help, expose it where the backend
   is active, not through top-level `linx --help`.
 
