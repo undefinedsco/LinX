@@ -2985,6 +2985,58 @@ mode: 'off',
   ])
 })
 
+test('auto-mode shell does not own a parallel /sessions list entry', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/auto-mode/shell-command.ts')
+  t.after(() => cleanup())
+
+  const root = mkdtempSync(join(tmpdir(), 'linx-auto-mode-sessions-command-'))
+  const archiveDir = join(root, 'session')
+  mkdirSync(archiveDir, { recursive: true })
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  const activity = []
+  const record = {
+    id: 'auto_sessions_command_123',
+    backend: 'codex',
+    runtime: 'local',
+    transport: 'acp',
+    autoEnabled: false,
+    mode: 'off',
+    cwd: '/tmp/demo',
+    model: 'gpt-5-codex',
+    prompt: undefined,
+    passthroughArgs: [],
+    credentialSource: 'cloud',
+    resolvedCredentialSource: 'cloud',
+    approvalSource: 'hybrid',
+    command: 'codex-acp',
+    args: [],
+    status: 'running',
+    startedAt: '2026-04-17T00:00:00.000Z',
+    archiveDir,
+    eventsFile: join(archiveDir, 'events.jsonl'),
+  }
+
+  const result = await module.handleAutoModeShellCommand({
+    input: '/sessions',
+    session: { async setModel() {} },
+    display: {
+      showHelp() {},
+      showActivity(message, tone = 'note') {
+        activity.push({ message, tone })
+      },
+    },
+    queueState: { steeringCount: 0, followUpCount: 0 },
+    backend: 'codex',
+    record,
+  })
+
+  assert.equal(result, 'pass')
+  assert.deepEqual(activity, [])
+})
+
 test('auto-mode shell reports auto status and retires old mode commands', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/auto-mode/shell-command.ts')
   t.after(() => cleanup())
