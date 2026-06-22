@@ -82,6 +82,13 @@ Hard rules:
   idempotent shell effects for that seam to call instead of wrapping
   `interactive.init` themselves. Existing direct init wrappers are migration
   debt and should not be copied.
+- `interactive.run` is the TUI foreground lifecycle entry, not a feature-local
+  hook. Any behavior that must happen as Pi starts running belongs behind
+  `apps/cli/src/lib/linx-interactive-run-router.ts`. Feature modules may
+  register idempotent run-time effects, but they must not wrap
+  `interactive.run` themselves. This covers cases such as suppressing upstream
+  Pi update notifications, preparing restart-aware output state, and other work
+  that must execute exactly once before the foreground TUI loop takes ownership.
 - New lifecycle or submit behavior must add a handler to the relevant router and
   a boundary test in `apps/cli/test/shell-core-boundary.test.mjs`.
 
@@ -469,6 +476,15 @@ login state, but the pending-login start effect runs from the post-init seam.
 `linx-interactive-command-routing.ts` remains the command router and must not
 also become a startup-notice, restored-auto, exit-output, welcome-header,
 update-check, or startup-login lifecycle installer.
+
+Run lifecycle work belongs behind `linx-interactive-run-router.ts`. The
+adapter/bootstrap path may call `interactive.run()`, but feature modules must
+not replace it directly. If a feature needs a one-time action immediately before
+Pi enters the foreground run loop, expose that action as an idempotent handler
+and register it with the run router. Update notification is the canonical
+example: LinX may suppress Pi's upstream version prompt while the LinX update
+surface is active, but the update module should not own the `interactive.run`
+wrapper itself.
 
 Session-level command interception is a narrower shell-session patch and belongs
 behind `linx-session-command-routing.ts`. The general interactive command router
