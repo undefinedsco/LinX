@@ -130,8 +130,8 @@ parallel LinX-only entry points. Users list or choose sessions with `linx -r` /
 session with `/session`, and resume a known target with `linx --session
 <path|id>`. LinX may pass through Pi-native session storage flags such as
 `--session-dir` and `--session-id`, but must not add a separate `linx sessions`
-or `--sessions` product command unless it is intentionally designed as a new
-LinX shell feature with its own contract.
+or `--sessions` product command. Session listing is a Pi selector concern, not a
+second LinX product command.
 
 Pi-aligned command boundaries:
 
@@ -151,6 +151,27 @@ Pi-aligned command boundaries:
 - Top-level LinX commands are reserved for LinX-owned package/lifecycle/product
   operations. Backend-native or Pi-native commands should be forwarded or
   adapted at the shell boundary, not cloned as parallel LinX product commands.
+
+Top-level command admission rules:
+
+- A top-level `linx <command>` entry must be one of:
+  - LinX shell lifecycle or package management, such as login, update, local
+    Pod-mirror sync, or non-interactive startup/resume selection;
+  - a real non-interactive scripting surface with a documented contract;
+  - a hidden retired command whose only purpose is to point users at the current
+    TUI or shell surface.
+- Top-level help must not advertise backend-native commands, TUI-only commands,
+  or unimplemented placeholders. Examples: thread controls such as `new`,
+  `fork`, `session`, `model`, and `help` belong to the active backend/TUI
+  surface unless LinX has a separate implemented scripting contract for them.
+- Placeholder commands are not a product contract. Do not register a top-level
+  command that only throws "not implemented". Either pass the native command
+  through to the backend, implement the real LinX-owned behavior, or omit the
+  entry.
+- Command discovery must be scoped to the place where the command is executable:
+  top-level `linx --help` shows shell/package entries; TUI command help shows
+  interactive shell entries plus backend-native commands that are actually
+  forwarded in that active backend.
 
 ## Pi adapter boundary
 
