@@ -191,6 +191,13 @@ Top-level command admission rules:
   must be hidden from top-level help, explain the current executable surface, and
   have a narrow removal/compatibility reason. Do not add a hidden command only to
   preserve an implementation shortcut.
+- Hidden internal plumbing commands are allowed only when another trusted local
+  process needs a stable executable bridge, for example a Codex proxy or MCP
+  server launched by LinX orchestration. They must stay hidden from top-level
+  help, avoid user-facing product copy, and expose only the minimal machine
+  interface needed by the caller. If a human is expected to type it directly, it
+  is no longer plumbing and must satisfy the normal top-level command admission
+  rules.
 
 Concrete command ownership examples:
 
@@ -220,6 +227,8 @@ Use this checklist before adding or keeping any `linx <command>` entry:
 5. **Is it a compatibility shim?** Hidden retired commands may only explain the
    replacement surface. They must not perform product behavior or appear in
    help.
+6. **Is it internal plumbing?** Keep it hidden and machine-oriented. Do not use
+   hidden commands as a way to ship a second human command surface.
 
 Specific decisions currently in force:
 
