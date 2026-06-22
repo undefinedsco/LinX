@@ -40,13 +40,11 @@ test('CLI app delegates package command implementation to a shell package module
   assert.doesNotMatch(cliAppSource, /function printConfiguredLinxPackages\b/, 'CLI app should not implement package list rendering')
 })
 
-test('CLI app delegates legacy chat and models commands to a shell command module', () => {
-  assert.match(cliAppSource, /from ['"]\.\/lib\/linx-chat-models-command\.js['"]/, 'CLI app should import chat/models command descriptors from a shell module')
+test('CLI app delegates models command to a shell command module', () => {
+  assert.match(cliAppSource, /from ['"]\.\/lib\/linx-models-command\.js['"]/, 'CLI app should import models command descriptor from a shell module')
   assert.doesNotMatch(cliAppSource, /function loadChatRuntime\b/, 'CLI app should not load chat runtime internals directly')
-  assert.doesNotMatch(cliAppSource, /function resolveContext\b/, 'CLI app should not resolve Pod chat runtime context directly')
   assert.doesNotMatch(cliAppSource, /function resolveRuntimeAuthContext\b/, 'CLI app should not resolve model-list auth context directly')
-  assert.doesNotMatch(cliAppSource, /function runSingleTurn\b/, 'CLI app should not implement single-turn chat execution')
-  assert.doesNotMatch(cliAppSource, /function runInteractive\b/, 'CLI app should not implement the legacy prompt loop')
+  assert.doesNotMatch(cliAppSource, /legacyChatCommand/, 'CLI app should not register the retired legacy chat command')
   assert.doesNotMatch(cliAppSource, /function formatRemoteModelMetadata\b/, 'CLI app should not render remote model metadata')
 })
 

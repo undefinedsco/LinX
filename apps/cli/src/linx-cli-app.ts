@@ -9,7 +9,7 @@ import { registerRetiredCommands } from './lib/linx-retired-command.js'
 import { createLinxPiCliCommands } from './lib/linx-pi-cli-command.js'
 import { createDefaultLinxRuntimeAdapterForPiCommand } from './linx-cli-runtime-adapter-factory.js'
 import { linxInstallPackageCommand, linxListPackageCommand, linxRemovePackageCommand, linxUpdatePackageCommand } from './lib/linx-package-command.js'
-import { legacyChatCommand, modelsCommand } from './lib/linx-chat-models-command.js'
+import { modelsCommand } from './lib/linx-models-command.js'
 import { formatLinxCliErrorMessage } from './lib/linx-cloud-errors.js'
 
 function readPackageVersion(): string {
@@ -44,7 +44,6 @@ export function runLinxCli(argv = process.argv): void {
     .command(linxListPackageCommand)
     .command(execCommand)
     .command(defaultPiCommand)
-    .command(legacyChatCommand)
     .command(modelsCommand)
     .command(hiddenPiAliasCommand)
     .command(hiddenPiFrontendAliasCommand)

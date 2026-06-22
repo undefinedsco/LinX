@@ -16,6 +16,7 @@ import { stopInteractiveShellUnlessRestarting } from './shell-lifecycle.js'
 
 const RESERVED_NON_TOP_LEVEL_COMMANDS = new Set([
   'automode',
+  'chat',
   'footer',
   'resume',
   'status-line',
