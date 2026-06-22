@@ -11,14 +11,15 @@ import {
 } from '@linx/agent-runtime/auto-mode'
 import {
   createAgentRuntime,
-  resolveAgentRuntimeConfig,
-  type AgentRuntimeBackendConfig,
   type AgentRuntimeConfig,
 } from '@linx/agent-runtime'
 import { createRemoteCompletionResult } from '../chat-api.js'
-import { DEFAULT_LINX_CLOUD_MODEL_ID } from '../default-model.js'
 import { getDefaultPodDataSession } from '../pod-data-session.js'
 import { resolveRuntimeTarget } from '../runtime-target.js'
+import {
+  createSecretaryAgentRuntimeConfig,
+  resolveSecretaryRuntimeOverrides,
+} from './secretary-runtime-config.js'
 
 export interface AutoModeSecretaryRecommendationInput {
   mode: LegacyAutoModeMode
@@ -33,11 +34,6 @@ export interface AutoModeGrantCoverageInput {
   grant: Record<string, unknown>
 }
 
-const DEFAULT_SECRETARY_RUNTIME_BACKEND: AgentRuntimeBackendConfig = {
-  backend: 'linx',
-  model: DEFAULT_LINX_CLOUD_MODEL_ID,
-  credentialSource: 'cloud',
-}
 const SECRETARY_TIMEOUT_MS = 15_000
 
 export async function resolveAutoModeSecretaryRecommendation(
@@ -190,25 +186,6 @@ export async function resolveAutoModeGrantCoverage(
   }
 }
 
-function createSecretaryAgentRuntimeConfig(input: {
-  systemPrompt: string
-  metadata?: Record<string, unknown>
-  overrides?: { model?: string; runtime?: Partial<AgentRuntimeBackendConfig> }
-}): AgentRuntimeConfig {
-  return resolveAgentRuntimeConfig(
-    {
-      agent: '__secretary__',
-      role: 'secretary',
-      model: DEFAULT_LINX_CLOUD_MODEL_ID,
-      label: 'AI Secretary',
-      runtime: DEFAULT_SECRETARY_RUNTIME_BACKEND,
-      systemPrompt: input.systemPrompt,
-      metadata: input.metadata,
-    },
-    input.overrides,
-  )
-}
-
 async function completeWithSecretaryRuntime(
   session: Awaited<ReturnType<typeof getDefaultPodDataSession>>,
   runtimeUrl: string,
@@ -230,52 +207,6 @@ async function completeWithSecretaryRuntime(
     messages,
     signal,
   })
-}
-
-function resolveSecretaryRuntimeOverrides(record?: Partial<AutoModeSessionRecord>): {
-  model?: string
-  runtime?: Partial<AgentRuntimeBackendConfig>
-} | undefined {
-  const metadata = record?.metadata
-  const candidates = [
-    isRecord(metadata?.agentRuntime) ? metadata.agentRuntime : undefined,
-    isRecord(metadata?.symphony) && isRecord(metadata.symphony.agentRuntime)
-      ? metadata.symphony.agentRuntime
-      : undefined,
-  ]
-  for (const candidate of candidates) {
-    if (!candidate) {
-      continue
-    }
-    const runtime = normalizeAgentRuntimeBackendConfig(candidate)
-    if (runtime) {
-      return {
-        ...(runtime.model ? { model: runtime.model } : {}),
-        runtime,
-      }
-    }
-  }
-  return undefined
-}
-
-function normalizeAgentRuntimeBackendConfig(value: Record<string, unknown>): Partial<AgentRuntimeBackendConfig> | undefined {
-  const backend = normalizeString(value.backend)
-  const model = normalizeString(value.model)
-  const credentialSource = normalizeString(value.credentialSource)
-  const runtime = normalizeString(value.runtime)
-  const transport = normalizeString(value.transport)
-  const endpoint = normalizeString(value.endpoint)
-  const metadata = isRecord(value.metadata) ? { ...value.metadata } : undefined
-  const resolved: Partial<AgentRuntimeBackendConfig> = {
-    ...(backend ? { backend } : {}),
-    ...(model ? { model } : {}),
-    ...(credentialSource ? { credentialSource } : {}),
-    ...(runtime ? { runtime } : {}),
-    ...(transport ? { transport } : {}),
-    ...(endpoint ? { endpoint } : {}),
-    ...(metadata ? { metadata } : {}),
-  }
-  return Object.keys(resolved).length > 0 ? resolved : undefined
 }
 
 function buildSecretaryPayload(input: AutoModeSecretaryRecommendationInput): Record<string, unknown> {
@@ -448,10 +379,4 @@ function summarizeRequest(request: AutoModeInteractionRequest): Record<string, u
     approvalOptions: request.approvalOptions,
     expiresAt: request.expiresAt,
   }
-}
-
-export const __autoModeSecretaryInternal = {
-  createSecretaryAgentRuntimeConfig,
-  resolveSecretaryRuntimeOverrides,
-  normalizeAgentRuntimeBackendConfig,
 }
