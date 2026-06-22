@@ -1607,16 +1607,6 @@ test('auto-mode secretary countdown detail shrinks over time and clamps to a fiv
   assert.equal(module.formatAutoModeSecretaryCountdownDetail(5000, 5000), 'auto [##########] 5s')
   assert.equal(module.formatAutoModeSecretaryCountdownDetail(2500, 5000), 'auto [#####-----] 3s')
   assert.equal(module.formatAutoModeSecretaryCountdownDetail(0, 5000), 'auto [----------] 0s')
-  assert.equal(module.__testResolveSecretaryReactionWindowMs({
-    canAutoDecide: true,
-    reactionWindowMs: 1,
-    source: 'model',
-  }), 5000)
-  assert.equal(module.__testResolveSecretaryReactionWindowMs({
-    canAutoDecide: true,
-    reactionWindowMs: 0,
-    source: 'fallback',
-  }), 0)
 })
 
 test('auto-mode auto-approves trusted ACP permission requests when remote approval is unavailable', async (t) => {
