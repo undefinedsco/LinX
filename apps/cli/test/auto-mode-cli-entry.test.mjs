@@ -518,7 +518,7 @@ test('dev script routes auto-mode through the main cli command', async (t) => {
   assert.match(output, /codebuddy/i)
 })
 
-test('compiled cli entry keeps codex-native-proxy callable but hidden from top-level help', async (t) => {
+test('compiled cli entry keeps internal plumbing commands callable but hidden from top-level help', async (t) => {
   const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-native-proxy-'))
   t.after(() => {
     rmSync(outdir, { recursive: true, force: true })
@@ -553,7 +553,11 @@ test('compiled cli entry keeps codex-native-proxy callable but hidden from top-l
     assert.ok(existsSync(join(outdir, 'index.js')))
   }
 
-  const output = execFileSync(process.execPath, [join(outdir, 'index.js'), 'codex-native-proxy', '--help'], {
+  const proxyHelp = execFileSync(process.execPath, [join(outdir, 'index.js'), 'codex-native-proxy', '--help'], {
+    cwd: cliRoot,
+    encoding: 'utf-8',
+  })
+  const mcpHelp = execFileSync(process.execPath, [join(outdir, 'index.js'), 'symphony-codex-mcp', '--help'], {
     cwd: cliRoot,
     encoding: 'utf-8',
   })
@@ -562,10 +566,12 @@ test('compiled cli entry keeps codex-native-proxy callable but hidden from top-l
     encoding: 'utf-8',
   })
 
-  assert.match(output, /codex-native-proxy/)
-  assert.match(output, /websocket/i)
-  assert.match(output, /--port/)
+  assert.match(proxyHelp, /codex-native-proxy/)
+  assert.match(proxyHelp, /websocket/i)
+  assert.match(proxyHelp, /--port/)
+  assert.match(mcpHelp, /symphony-codex-mcp/)
   assert.doesNotMatch(topLevelHelp, /codex-native-proxy/)
+  assert.doesNotMatch(topLevelHelp, /symphony-codex-mcp/)
 })
 
 test('compiled cli default entry is Pi TUI and hides explicit frontend aliases', async (t) => {
