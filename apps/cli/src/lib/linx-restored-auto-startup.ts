@@ -4,7 +4,7 @@ import { isLinxInteractiveAutoModeEnabled } from './linx-interactive-shell-state
 
 const restoredAutoStartupInstalled = new WeakSet<object>()
 
-export function installLinxRestoredAutoStartup(
+export function startLinxRestoredAutoAfterInit(
   interactive: any,
   runtime: any,
   sessionControl = getSessionControlManager(interactive, runtime),
@@ -13,24 +13,17 @@ export function installLinxRestoredAutoStartup(
     return
   }
 
-  const originalInit = interactive.init?.bind(interactive)
-  if (typeof originalInit !== 'function') {
+  if (!isLinxInteractiveAutoModeEnabled(interactive, runtime)) {
     return
   }
 
-  interactive.init = async function patchedLinxRestoredAutoInit(...args: unknown[]): Promise<unknown> {
-    const result = await originalInit(...args)
-    if (isLinxInteractiveAutoModeEnabled(this, runtime)) {
-      const controller = getSecretaryAutoInputController(this, runtime, sessionControl)
-      controller.start({ scheduleImmediately: true })
-      interactive.showStatus?.([
-        'Auto restored from the previous session.',
-        'auto · Ctrl+C or /auto off to hand control back',
-      ].join('\n'))
-      interactive.ui?.requestRender?.()
-    }
-    return result
-  }
-
   restoredAutoStartupInstalled.add(interactive)
+
+  const controller = getSecretaryAutoInputController(interactive, runtime, sessionControl)
+  controller.start({ scheduleImmediately: true })
+  interactive.showStatus?.([
+    'Auto restored from the previous session.',
+    'auto · Ctrl+C or /auto off to hand control back',
+  ].join('\n'))
+  interactive.ui?.requestRender?.()
 }

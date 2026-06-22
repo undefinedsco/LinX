@@ -14,7 +14,6 @@ import { installInteractiveStopCleanup } from './shell-lifecycle.js'
 import { installLinxFooterPatch, setLinxFooterInteractive } from './linx-footer-patch.js'
 import { patchPiAssistantMessageRendering } from './linx-assistant-message-rendering.js'
 import { promptForBackendCredential } from './linx-ai-connect-command.js'
-import { installLinxRestoredAutoStartup } from './linx-restored-auto-startup.js'
 import { installLinxInteractiveCommandSurface } from './linx-interactive-command-surface.js'
 import { installLinxInteractivePostInitHooks, installLinxEscapeInterrupt } from './linx-interactive-post-init.js'
 import { ensureInteractiveRuntimeHost } from './linx-interactive-runtime-host.js'
@@ -77,10 +76,10 @@ export function bootstrapLinxInteractiveMode(
     sessionControlManager,
     shellCommandOptions: options,
   })
-  if (options.restoredAuto === true && runtime?.autoEnabled === true) {
-    installLinxRestoredAutoStartup(interactive as any, runtime, sessionControlManager)
-  }
-  installLinxInteractivePostInitHooks(interactive as any, runtime, sessionCwd)
+  installLinxInteractivePostInitHooks(interactive as any, runtime, sessionCwd, {
+    restoredAuto: options.restoredAuto === true,
+    sessionControlManager,
+  })
 
   const bootstrap = {
     async init(): Promise<void> {
