@@ -107,6 +107,10 @@ Hard rules:
   `session.getAvailableThinkingLevels` are patched only by
   `apps/cli/src/lib/linx-session-thinking-capability-router.ts`; provider
   modules register capability handlers.
+- Session/runtime cwd mutation is shell session state, not workspace command
+  internals. Writes to Pi session cwd and runtime cwd belong behind
+  `apps/cli/src/lib/linx-session-cwd-router.ts`; commands may request a cwd
+  change but must not know the mutable Pi/runtime field layout.
 - New lifecycle or submit behavior must add a handler to the relevant router and
   a boundary test in `apps/cli/test/shell-core-boundary.test.mjs`.
 
@@ -510,6 +514,12 @@ Feature modules may contribute title handlers, but they must not replace
 `interactive.updateTerminalTitle` directly. This keeps Pi's own terminal title
 refresh, LinX branding, and future peer/backend-specific title fragments ordered
 through one rendering seam.
+
+Session/runtime cwd mutation belongs behind `linx-session-cwd-router.ts`.
+`/cd` and workspace startup notices may resolve paths and decide user-facing
+copy, but applying the cwd to Pi session state and LinX runtime state is a shell
+session-state operation. Feature commands must call the cwd seam instead of
+writing `interactive.session.cwd` or `runtime.cwd` directly.
 
 Session-level command interception is a narrower shell-session patch and belongs
 behind `linx-session-command-routing.ts`. The general interactive command router

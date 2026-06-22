@@ -519,6 +519,27 @@ test('session thinking capability patching is centralized in the shell session t
   assert.deepEqual(violations, [])
 })
 
+test('interactive session cwd mutation is centralized in the shell session cwd router', () => {
+  const allowed = new Set([
+    'linx-session-cwd-router.ts',
+  ])
+  const violations = []
+
+  for (const file of listSourceFiles(libRoot)) {
+    const relativePath = relative(libRoot, file)
+    if (relativePath.startsWith(adapterSegment) || allowed.has(relativePath)) {
+      continue
+    }
+
+    const source = readFileSync(file, 'utf8')
+    if (/interactive\.session\.cwd\s*=/.test(source)) {
+      violations.push(relativePath)
+    }
+  }
+
+  assert.deepEqual(violations, [])
+})
+
 
 
 test('concrete shell command execution lives in a dedicated executor module', () => {
