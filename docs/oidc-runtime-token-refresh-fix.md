@@ -111,7 +111,7 @@ CLI 应实现统一的 OIDC session helper：
 
 然后：
 
-- `linx models`
+- `linx models` 只读模型列表检查
 - TUI runtime 初始化
 - `/v1/chat/completions` 调用前
 
