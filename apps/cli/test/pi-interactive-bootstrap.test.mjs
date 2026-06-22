@@ -3916,7 +3916,7 @@ test('linx auth refresh clears the startup re-prompt flag after browser login su
     async updateAvailableProviderCount() {},
   }
 
-  await module.__testRefreshLinxAuthState(interactive)
+  await module.refreshLinxAuthState(interactive)
 
   assert.equal(interactive.runtimeHost.linxAuthBridge.shouldPromptLoginOnStart, false)
 })

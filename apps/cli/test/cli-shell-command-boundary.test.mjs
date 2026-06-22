@@ -16,6 +16,7 @@ const autoModePodPersistenceSource = readFileSync(new URL('../src/lib/auto-mode/
 const autoModePodApprovalSource = readFileSync(new URL('../src/lib/auto-mode/pod-approval.ts', import.meta.url), 'utf8')
 const podChatStoreSource = readFileSync(new URL('../src/lib/pod-chat-store.ts', import.meta.url), 'utf8')
 const symphonyPodProjectionSource = readFileSync(new URL('../src/lib/symphony/pod-projection.ts', import.meta.url), 'utf8')
+const linxLoginFlowSource = readFileSync(new URL('../src/lib/linx-login-flow.ts', import.meta.url), 'utf8')
 
 test('default Pi/TUI command module does not construct Pod ORM state directly', () => {
   assert.doesNotMatch(commandSource, /from ['"]\.\/models\.js['"]/, 'shell command should not import shared model DB primitives directly')
@@ -159,6 +160,14 @@ test('codex plugin command module depends on owning plugin modules instead of th
     codexPluginCommandSource,
     /from ['"]\.\/codex-plugin\/index\.js['"]/,
     'codex plugin command should import native proxy and MCP server from their owning modules',
+  )
+})
+
+test('linx login flow does not expose auth refresh through a test seam', () => {
+  assert.doesNotMatch(
+    linxLoginFlowSource,
+    /__testRefreshLinxAuthState/,
+    'LinX auth state refresh should be a named login-flow API instead of a production __test export',
   )
 })
 
