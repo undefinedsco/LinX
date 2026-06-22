@@ -2,7 +2,6 @@ import type { AutoModeWorkerBackend } from './types.js'
 import { getDefaultPodDataSession, type PodDataSession } from '../pod-data-session.js'
 import {
   aiConfigRepository,
-  selectAIConfigCredentialForBackend,
   type AIConfigBackendCredentialSelection,
   type SolidDatabase,
 } from '../models.js'
@@ -18,26 +17,6 @@ export interface PodBackedAutoModeCredential {
 interface PodAiRuntime {
   getPodDataSession: () => Promise<PodDataSession | null>
   createDb?: (session: PodDataSession) => SolidDatabase
-}
-
-interface PodProviderMatch {
-  providerId: string
-  apiKey: string
-  baseUrl?: string
-}
-
-function selectPodCredentialForBackend(
-  backend: SupportedPodAutoModeBackend,
-  credentials: Array<Record<string, unknown>>,
-  providers: Array<Record<string, unknown>>,
-): PodProviderMatch | null {
-  const selected = selectAIConfigCredentialForBackend(backend, credentials, providers)
-  if (!selected) return null
-  return {
-    providerId: selected.providerId,
-    apiKey: selected.apiKey,
-    baseUrl: selected.baseUrl,
-  }
 }
 
 function buildBackendEnv(
@@ -156,8 +135,4 @@ export async function loadPodBackendCredential(
   await aiConfigRepository.markCredentialUsed(rows.db, rows.match)
 
   return buildBackendEnv(rows.match, backend)
-}
-
-export const __podInternal = {
-  selectPodCredentialForBackend,
 }
