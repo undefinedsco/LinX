@@ -19,6 +19,7 @@ const RESERVED_NON_TOP_LEVEL_COMMANDS = new Set([
   'chat',
   'footer',
   'fork',
+  'help',
   'model',
   'new',
   'pi',

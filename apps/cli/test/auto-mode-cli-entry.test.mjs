@@ -381,7 +381,7 @@ test('compiled cli auto-mode rejects retired command surfaces', async (t) => {
     /Unknown command: pi-frontend/,
   )
 
-  for (const command of ['fork', 'new', 'session', 'sessions', 'model']) {
+  for (const command of ['fork', 'new', 'session', 'sessions', 'model', 'help']) {
     assert.throws(
       () => execFileSync(process.execPath, [join(outdir, 'index.js'), command, 'demo'], {
         cwd: cliRoot,
@@ -494,7 +494,13 @@ test('compiled cli default entry is Pi TUI and hides explicit frontend aliases',
     cwd: cliRoot,
     encoding: 'utf-8',
   })
+  const helpCommandOutput = execFileSync(process.execPath, [join(outdir, 'index.js'), 'help'], {
+    cwd: cliRoot,
+    encoding: 'utf-8',
+  })
 
+  assert.match(helpCommandOutput, /linx \[prompt\.\.\]/)
+  assert.match(helpCommandOutput, /Run LinX with the selected runtime backend/i)
   assert.match(output, /linx \[prompt\.\.\]/)
   assert.match(output, /Run LinX with the selected runtime backend/i)
   assert.match(output, /runtime-url/)
