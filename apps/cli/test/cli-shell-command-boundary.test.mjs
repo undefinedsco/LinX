@@ -13,6 +13,7 @@ const autoModeSecretarySource = readFileSync(new URL('../src/lib/auto-mode/secre
 const autoModePodAiSource = readFileSync(new URL('../src/lib/auto-mode/pod-ai.ts', import.meta.url), 'utf8')
 const autoModeAuthSource = readFileSync(new URL('../src/lib/auto-mode/auth.ts', import.meta.url), 'utf8')
 const autoModePodPersistenceSource = readFileSync(new URL('../src/lib/auto-mode/pod-persistence.ts', import.meta.url), 'utf8')
+const autoModePodApprovalSource = readFileSync(new URL('../src/lib/auto-mode/pod-approval.ts', import.meta.url), 'utf8')
 const podChatStoreSource = readFileSync(new URL('../src/lib/pod-chat-store.ts', import.meta.url), 'utf8')
 
 test('default Pi/TUI command module does not construct Pod ORM state directly', () => {
@@ -93,6 +94,14 @@ test('auto-mode Pod persistence builders do not expose a test-only internal aggr
     autoModePodPersistenceSource,
     /__podPersistenceInternal/,
     'Pod persistence builder tests should import projection builders from their owning module instead of a production __internal aggregate export',
+  )
+})
+
+test('auto-mode Pod approval stores do not expose a test-only internal aggregate', () => {
+  assert.doesNotMatch(
+    autoModePodApprovalSource,
+    /__podApprovalInternal/,
+    'Pod approval store tests should import store factories from their owning module instead of a production __internal aggregate export',
   )
 })
 
