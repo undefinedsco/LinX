@@ -16,19 +16,7 @@ interface StatusLineArgs {
   colors?: boolean
 }
 
-export const configCommand: CommandModule<object, object> = {
-  command: 'config <section>',
-  describe: 'Show or configure LinX local settings',
-  builder: (yargs) =>
-    yargs
-      .command(statusLineCommand)
-      .demandCommand(1, 'Specify a config section. Try `linx config status-line --help`.')
-      .strict()
-      .help(),
-  handler(): void {},
-}
-
-const statusLineCommand: CommandModule<object, StatusLineArgs> = {
+export const statusLineConfigCommand: CommandModule<object, StatusLineArgs> = {
   command: 'status-line [args..]',
   aliases: ['statusline', 'footer'],
   describe: 'Show or configure the LinX TUI status line',
