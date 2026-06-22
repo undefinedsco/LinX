@@ -6921,7 +6921,7 @@ test('backend command router patch lives in a shell command module', async (t) =
 })
 
 test('backend command contract lives in a shell backend module', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/backend-command.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/backend-command-router-contract.ts')
   t.after(() => cleanup())
 
   assert.ok(module)

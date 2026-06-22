@@ -1,7 +1,7 @@
 import type { AssistantMessageEventStream } from '@earendil-works/pi-ai'
 import type { AgentSessionRuntime } from '@earendil-works/pi-coding-agent'
 import type { AutoModeWorkerBackend } from './auto-mode/types.js'
-import type { BackendCommandRouter } from './backend-command.js'
+import type { BackendCommandRouter } from './backend-command-router-contract.js'
 import type { RuntimeBackendCompositionOptions } from './linx-runtime-backend-composition.js'
 
 export interface LinxRuntimeFactoryContext {
