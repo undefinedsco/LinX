@@ -239,6 +239,26 @@ test('runtime host hooks do not use runtime hidden fields', () => {
   assert.deepEqual(violations, [])
 })
 
+
+test('session-control runtime state does not use interactive hidden fields', () => {
+  const violations = []
+  const directSessionControlStatePattern = /__sessionControl(?:Manager|RuntimeEventBridgeInstalled|RuntimeEventBridgeUnsubscribe)\b/
+
+  for (const file of listSourceFiles(libRoot)) {
+    const relativePath = relative(libRoot, file)
+    if (relativePath.startsWith(adapterSegment)) {
+      continue
+    }
+
+    const source = readFileSync(file, 'utf8')
+    if (directSessionControlStatePattern.test(source)) {
+      violations.push(relativePath)
+    }
+  }
+
+  assert.deepEqual(violations, [])
+})
+
 test('credential dependency injection does not use interactive hidden fields', () => {
   const violations = []
   const directCredentialInjectionPattern = /__linx(?:PersistSolidClientCredentialsLogin|PersistSolidSecretLogin|ConnectAiProviderCredential)\b/

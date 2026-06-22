@@ -4609,7 +4609,7 @@ test('linx interactive keeps global slash commands and unknown backend commands 
 })
 
 test('linx interactive handles /auto before backend fallback', async (t) => {
-  const { module, cleanup } = await loadShellModules(['lib/linx-backend-command-router.ts', 'lib/linx-interactive-command-routing.ts'])
+  const { module, cleanup } = await loadShellModules(['lib/linx-backend-command-router.ts', 'lib/linx-interactive-command-routing.ts', 'lib/session-control.ts'])
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@earendil-works/pi-coding-agent')
@@ -4697,7 +4697,7 @@ test('linx interactive handles /auto before backend fallback', async (t) => {
   assert.deepEqual(editorTexts, ['', '', ''])
   assert.equal(prompts.length, 0)
   assert.equal(customMessages.length, 0)
-  const snapshot = interactive.__sessionControlManager.getSnapshot()
+  const snapshot = module.getSessionControlManager(interactive, runtime, '/tmp/demo').getSnapshot()
   assert.equal(snapshot.autoEnabled, false)
   assert.equal(snapshot.businessSession.id, businessSessionManager.getSessionId())
   assert.notEqual(snapshot.controlSession.id, businessSessionManager.getSessionId())
@@ -4847,7 +4847,7 @@ test('linx interactive records normal user input through Thread Reconciler befor
 })
 
 test('linx interactive /auto on creates a control session without projecting a business turn', async (t) => {
-  const { module, cleanup } = await loadShellModules(['lib/linx-backend-command-router.ts', 'lib/linx-interactive-command-routing.ts'])
+  const { module, cleanup } = await loadShellModules(['lib/linx-backend-command-router.ts', 'lib/linx-interactive-command-routing.ts', 'lib/session-control.ts'])
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@earendil-works/pi-coding-agent')
@@ -4930,14 +4930,14 @@ test('linx interactive /auto on creates a control session without projecting a b
     && entry.customType === 'linx-session-control'
     && entry.data?.kind === 'auto.state.changed'
   )), true)
-  const snapshot = interactive.__sessionControlManager.getSnapshot()
+  const snapshot = module.getSessionControlManager(interactive, runtime, '/tmp/demo').getSnapshot()
   assert.equal(snapshot.autoEnabled, true)
   assert.equal(snapshot.businessSession.id, businessSessionManager.getSessionId())
   assert.equal(snapshot.controlSession.id, controlManagers[0].getSessionId())
 })
 
 test('linx interactive /auto with startup input enables auto and submits the input as Secretary projection', async (t) => {
-  const { module, cleanup } = await loadShellModules(['lib/linx-backend-command-router.ts', 'lib/linx-interactive-command-routing.ts', 'lib/linx-interactive-shell-state.ts'])
+  const { module, cleanup } = await loadShellModules(['lib/linx-backend-command-router.ts', 'lib/linx-interactive-command-routing.ts', 'lib/linx-interactive-shell-state.ts', 'lib/session-control.ts'])
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@earendil-works/pi-coding-agent')
@@ -5027,7 +5027,7 @@ test('linx interactive /auto with startup input enables auto and submits the inp
   assert.equal(runtime.autoEnabled, true)
   assert.equal(resolveNextUserInputCalls, 0)
   assert.equal(controlManagers.length, 1)
-  const snapshot = interactive.__sessionControlManager.getSnapshot()
+  const snapshot = module.getSessionControlManager(interactive, runtime, '/tmp/demo').getSnapshot()
   assert.equal(snapshot.autoEnabled, true)
   const entries = controlManagers[0].getEntries()
   const userInput = entries.find((entry) => (
@@ -5054,7 +5054,7 @@ test('linx interactive /auto with startup input enables auto and submits the inp
 })
 
 test('linx interactive /auto startup input is backend-agnostic', async (t) => {
-  const { module, cleanup } = await loadShellModules(['lib/linx-backend-command-router.ts', 'lib/linx-interactive-command-routing.ts', 'lib/linx-interactive-shell-state.ts'])
+  const { module, cleanup } = await loadShellModules(['lib/linx-backend-command-router.ts', 'lib/linx-interactive-command-routing.ts', 'lib/linx-interactive-shell-state.ts', 'lib/session-control.ts'])
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@earendil-works/pi-coding-agent')
@@ -5109,7 +5109,7 @@ test('linx interactive /auto startup input is backend-agnostic', async (t) => {
       assert.deepEqual(submitted, [`start ${backend}`])
       assert.equal(module.isLinxInteractiveAutoModeEnabled(interactive, runtime), true)
       assert.equal(runtime.autoEnabled, true)
-      const snapshot = interactive.__sessionControlManager.getSnapshot()
+      const snapshot = module.getSessionControlManager(interactive, runtime, '/tmp/demo').getSnapshot()
       assert.equal(snapshot.autoEnabled, true)
       assert.equal(snapshot.businessSession.id, businessSessionManager.getSessionId())
     })
@@ -5117,7 +5117,7 @@ test('linx interactive /auto startup input is backend-agnostic', async (t) => {
 })
 
 test('linx interactive /auto can let Secretary send a /goal command to the current chat peer', async (t) => {
-  const { module, cleanup } = await loadShellModules(['lib/linx-backend-command-router.ts', 'lib/linx-interactive-command-routing.ts', 'lib/linx-interactive-shell-state.ts'])
+  const { module, cleanup } = await loadShellModules(['lib/linx-backend-command-router.ts', 'lib/linx-interactive-command-routing.ts', 'lib/linx-interactive-shell-state.ts', 'lib/session-control.ts'])
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@earendil-works/pi-coding-agent')
@@ -5174,7 +5174,7 @@ test('linx interactive /auto can let Secretary send a /goal command to the curre
   assert.equal(module.isLinxInteractiveGoalModeEnabled(interactive, runtime), true)
   assert.equal(runtime.goalMode, true)
   assert.match(statuses.join('\n'), /Peer command routed; Secretary goal supervision mirror is active/)
-  const entries = interactive.__sessionControlManager.controlSessionManager.getEntries()
+  const entries = module.getSessionControlManager(interactive, runtime, '/tmp/demo').controlSessionManager.getEntries()
   assert.equal(entries.some((entry) => (
     entry.type === 'custom'
     && entry.customType === 'linx-session-control'
@@ -5191,7 +5191,7 @@ test('linx interactive /auto can let Secretary send a /goal command to the curre
 })
 
 test('linx interactive /auto projected command treats /auto as Secretary control only', async (t) => {
-  const { module, cleanup } = await loadShellModules(['lib/linx-interactive-command-routing.ts', 'lib/linx-interactive-shell-state.ts'])
+  const { module, cleanup } = await loadShellModules(['lib/linx-interactive-command-routing.ts', 'lib/linx-interactive-shell-state.ts', 'lib/session-control.ts'])
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@earendil-works/pi-coding-agent')
@@ -5236,7 +5236,7 @@ test('linx interactive /auto projected command treats /auto as Secretary control
   assert.equal(module.isLinxInteractiveAutoModeEnabled(interactive, runtime), false)
   assert.equal(runtime.autoEnabled, false)
   assert.match(statuses.join('\n'), /Auto off: you drive the current session directly/)
-  const entries = interactive.__sessionControlManager.controlSessionManager.getEntries()
+  const entries = module.getSessionControlManager(interactive, runtime, '/tmp/demo').controlSessionManager.getEntries()
   assert.equal(entries.some((entry) => (
     entry.type === 'custom'
     && entry.customType === 'linx-session-control'
@@ -5701,7 +5701,7 @@ test('linx interactive /auto off cancels pending Secretary user input projection
 })
 
 test('linx interactive /auto on only updates control state while streaming', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-command-routing.ts')
+  const { module, cleanup } = await loadShellModules(['lib/linx-interactive-command-routing.ts', 'lib/session-control.ts'])
   t.after(() => cleanup())
 
   const { SessionManager } = await import('@earendil-works/pi-coding-agent')
@@ -5736,7 +5736,9 @@ test('linx interactive /auto on only updates control state while streaming', asy
     showStatus() {},
   }
 
-  module.installLinxGlobalCommands(interactive, {}, '/tmp/demo')
+  const runtime = {}
+
+  module.installLinxGlobalCommands(interactive, runtime, '/tmp/demo')
   interactive.setupEditorSubmitHandler()
 
   await interactive.defaultEditor.onSubmit('/auto on')
@@ -5744,7 +5746,7 @@ test('linx interactive /auto on only updates control state while streaming', asy
   assert.equal(prompts.length, 0)
   assert.equal(customMessages.length, 0)
   assert.equal(pendingRefreshes, 0)
-  const controlEntries = interactive.__sessionControlManager
+  const controlEntries = module.getSessionControlManager(interactive, runtime, '/tmp/demo')
     .getSnapshot()
     .controlSession
   assert.ok(controlEntries.id)
