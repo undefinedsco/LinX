@@ -380,6 +380,26 @@ test('input and final-submit command routing patches live in a dedicated input m
 
 
 
+
+test('submitted user message recording lives in a dedicated session-control module', () => {
+  const commandRoutingSource = readFileSync(join(libRoot, 'linx-interactive-command-routing.ts'), 'utf8')
+
+  assert.match(
+    commandRoutingSource,
+    /from ['"]\.\/linx-submitted-user-message-recording\.js['"]/,
+    'interactive command routing should import submitted user message recording from its owning module',
+  )
+  const forbiddenRecordingSnippets = [
+    'getSessionControlManager',
+    'recordSubmittedUserMessage',
+    'Thread reconciliation unavailable',
+    'recordUserMessage',
+  ]
+  const violations = forbiddenRecordingSnippets.filter((snippet) => commandRoutingSource.includes(snippet))
+
+  assert.deepEqual(violations, [])
+})
+
 test('auto command execution lives in a dedicated auto command module', () => {
   const commandRoutingSource = readFileSync(join(libRoot, 'linx-interactive-command-routing.ts'), 'utf8')
 

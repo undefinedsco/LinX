@@ -5,7 +5,6 @@ import { handleInteractiveStatusLineCommand } from './linx-status-line-command.j
 import { handleInteractiveRewindSelector, handleInteractiveRewindTurnsCommand } from './linx-rewind-command.js'
 import { changeInteractiveCwd, installLinxCwdStartupNotice } from './linx-workspace-command.js'
 import { installLinxAutoEditorIndicator } from './linx-auto-editor-indicator.js'
-import { getSessionControlManager } from './session-control.js'
 import { registerLinxInteractiveSubmitHandler } from './linx-interactive-submit-router.js'
 import {
   configureLinxInteractiveShellState,
@@ -25,6 +24,7 @@ import {
 } from './linx-input-command-routing.js'
 import { routeLinxPeerCommand } from './linx-peer-command-routing.js'
 import { routeLinxAutoCommand } from './linx-auto-command-routing.js'
+import { recordInteractiveSubmittedUserMessage } from './linx-submitted-user-message-recording.js'
 
 type ShellCommandOptions = {
   onAutoControlChange?: (enabled: boolean) => void | Promise<void>
@@ -69,7 +69,7 @@ function installLinxShellCommandHandler(interactive: any, runtime: any): void {
     async handler({ interactive: target, text, input, originalSubmit }) {
       const command = parseLinxShellCommand(input)
       if (!command) {
-        recordSubmittedUserMessage(target, runtime, text)
+        recordInteractiveSubmittedUserMessage(target, runtime, text)
         return false
       }
 
@@ -110,19 +110,6 @@ export function installLinxSessionCommandRouter(interactive: any, runtime: any):
 
 export function installLinxSessionCommandRouterAfterRebind(interactive: any, runtime: any): void {
   installOwnedLinxSessionCommandRouterAfterRebind(interactive, runtime, handleLinxShellCommand)
-}
-
-function recordSubmittedUserMessage(interactive: any, runtime: any, text: string): void {
-  const input = text.trim()
-  if (!input || input.startsWith('/')) {
-    return
-  }
-  try {
-    getSessionControlManager(interactive, runtime).recordUserMessage({ text: input })
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    interactive.showWarning?.(`Thread reconciliation unavailable: ${message}`)
-  }
 }
 
 async function handleLinxShellCommand(
