@@ -120,7 +120,7 @@ test('existing browser consent reuse clears stale local OIDC state when storage 
     rmSync(home, { recursive: true, force: true })
   })
 
-  const reused = await module.__testReuseExistingBrowserConsentLogin({
+  const reused = await module.reuseExistingBrowserConsentLogin({
     issuerUrl: 'https://id.undefineds.co/',
   })
 
@@ -169,7 +169,7 @@ test('transient OIDC refresh failures do not clear stored login state', async (t
     rmSync(home, { recursive: true, force: true })
   })
 
-  const error = module.__testNormalizeOidcSessionRefreshError(new Error('expected 200 OK, got: 502 Bad Gateway'))
+  const error = module.normalizeOidcSessionRefreshError(new Error('expected 200 OK, got: 502 Bad Gateway'))
   assert.equal(module.isOidcTransientRemoteError(error), true)
   assert.equal(module.isOidcLoginExpiredError(error), false)
   assert.match(String(error), /temporarily unavailable/i)
