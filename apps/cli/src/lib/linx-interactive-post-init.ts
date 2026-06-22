@@ -1,8 +1,10 @@
 import { handleInteractiveAutoCommand } from './linx-auto-command-routing.js'
+import { shouldDeferLinxCloudLogin } from './linx-login-flow.js'
 import { markLinxExitMessageInitialized } from './linx-resume-output.js'
 import { startLinxRestoredAutoAfterInit } from './linx-restored-auto-startup.js'
 import { renderLinxWelcomeHeaderAfterInit } from './linx-welcome-header.js'
 import { scheduleLinxCwdStartupNotice } from './linx-workspace-command.js'
+import { scheduleLinxVersionCheckAfterInit } from './linx-update-notification.js'
 import { installLinxEscapeInterrupt as installLinxInterruptControl } from './linx-interrupt-control.js'
 import {
   installLinxFinalSubmitCommandRouter,
@@ -58,6 +60,9 @@ function installPostInitInteractiveControls(
   options: LinxInteractivePostInitOptions,
 ): void {
   renderLinxWelcomeHeaderAfterInit(interactive)
+  scheduleLinxVersionCheckAfterInit(interactive, {
+    shouldDefer: () => shouldDeferLinxCloudLogin(interactive),
+  })
   markLinxExitMessageInitialized(interactive)
   installLinxSessionCommandRouter(interactive, runtime)
   installLinxInputCommandRouter(interactive, runtime)

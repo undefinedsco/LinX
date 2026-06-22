@@ -1504,6 +1504,70 @@ test('linx escape interrupt ignores self rebinds to avoid recursive exit crashes
   assert.deepEqual(calls, ['isBashRunning', 'original'])
 })
 
+test('interactive post-init schedules startup update checks', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-post-init.ts')
+  t.after(() => cleanup())
+
+  const previousOffline = process.env.PI_OFFLINE
+  const previousFetch = globalThis.fetch
+  const selectorCalls = []
+  const fetchCalls = []
+  process.env.PI_OFFLINE = ''
+  globalThis.fetch = async (url) => {
+    fetchCalls.push(String(url))
+    return {
+      ok: true,
+      async json() {
+        return { version: '99.0.0' }
+      },
+    }
+  }
+  t.after(() => {
+    restoreEnv('PI_OFFLINE', previousOffline)
+    globalThis.fetch = previousFetch
+  })
+
+  const interactive = {
+    options: {},
+    settingsManager: {
+      getQuietStartup() {
+        return true
+      },
+    },
+    headerContainer: { children: [] },
+    builtInHeader: {},
+    sessionManager: {
+      getCwd() {
+        return process.cwd()
+      },
+      getSessionName() {
+        return undefined
+      },
+    },
+    session: {},
+    defaultEditor: {},
+    ui: {
+      terminal: { setTitle() {} },
+      requestRender() {},
+    },
+    async init() {},
+    async showExtensionSelector(title, options) {
+      selectorCalls.push({ title, options })
+      return 'Later'
+    },
+    showStatus() {},
+  }
+
+  module.installLinxInteractivePostInitHooks(interactive, {}, process.cwd())
+  await interactive.init()
+  await new Promise((resolve) => setImmediate(resolve))
+  await new Promise((resolve) => setImmediate(resolve))
+
+  assert.equal(fetchCalls.length, 1)
+  assert.equal(selectorCalls.length, 1)
+  assert.match(selectorCalls[0].title, /latest 99\.0\.0/)
+})
+
 test('linx interrupt hands auto control back to the user before Pi clear exit semantics', async (t) => {
   const { module, cleanup } = await loadShellModules(['lib/linx-interactive-post-init.ts', 'lib/linx-interactive-shell-state.ts'])
   t.after(() => cleanup())
