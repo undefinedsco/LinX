@@ -1,8 +1,7 @@
 import type { AgentRuntimeBackendConfig } from '@linx/agent-runtime'
-import { listArchivedAutoModeSessions, loadArchivedAutoModeEvents, runAutoMode } from './auto-mode/runner.js'
 import type { AutoModeCredentialSource, AutoModeWorkerBackend } from './auto-mode/types.js'
 import { runSymphony } from './symphony-command.js'
-import type { SymphonyRuntime } from './symphony/runtime.js'
+import { createSymphonyRuntimeForPodProjection } from './symphony/runtime.js'
 import { DEFAULT_SECRETARY_CHAT_ID, secretaryChatUri, secretaryThreadUri } from './pod-mirror-mapping.js'
 import { getSessionControlManager } from './session-control.js'
 import { resolveInteractiveCwd } from './linx-workspace-command.js'
@@ -18,7 +17,6 @@ import {
   listRunningSymphonyWorkersFromPod,
   mirrorSymphonyProjectionJsonLdFromPod,
   persistSymphonyIdeaToPod,
-  persistSymphonyControlStateToPod,
   type SymphonyPodReportStatus,
   type SymphonyPodWorkerStatus,
 } from './symphony/pod-projection.js'
@@ -277,29 +275,9 @@ function isCurrentSymphonyDispatch(interactive: any, generation: number): boolea
     && getLinxInteractiveSymphonyModeGeneration(interactive) === generation
 }
 
-function createInteractiveSymphonyRuntime(interactive: any): SymphonyRuntime | undefined {
+function createInteractiveSymphonyRuntime(interactive: any) {
   const projectionRuntime = getLinxInteractiveSymphonyPodProjectionRuntime(interactive)
-  if (!projectionRuntime) {
-    return undefined
-  }
-
-  return {
-    runAutoMode,
-    listAutoModeSessions: listArchivedAutoModeSessions,
-    loadAutoModeEvents: loadArchivedAutoModeEvents,
-    persistSymphonyControlStateToPod(plan, options) {
-      return persistSymphonyControlStateToPod(plan, {
-        ...options,
-        runtime: projectionRuntime,
-      })
-    },
-    listOpenSymphonyIssuesFromPod() {
-      return listOpenSymphonyIssuesFromPod({ runtime: projectionRuntime })
-    },
-    mirrorSymphonyProjectionJsonLdFromPod(result) {
-      return mirrorSymphonyProjectionJsonLdFromPod(result, { runtime: projectionRuntime })
-    },
-  }
+  return projectionRuntime ? createSymphonyRuntimeForPodProjection(projectionRuntime) : undefined
 }
 
 function resolveSymphonyWorkerBackend(interactive: any, objective?: string): AutoModeWorkerBackend {

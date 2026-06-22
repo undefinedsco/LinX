@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs'
 
 const commandSource = readFileSync(new URL('../src/lib/linx-pi-cli-command.ts', import.meta.url), 'utf8')
 const autoModeCommandSource = readFileSync(new URL('../src/lib/auto-mode-command.ts', import.meta.url), 'utf8')
+const interactiveSymphonyCommandSource = readFileSync(new URL('../src/lib/linx-symphony-interactive-command.ts', import.meta.url), 'utf8')
 const symphonyCommandSource = readFileSync(new URL('../src/lib/symphony-command.ts', import.meta.url), 'utf8')
 const codexPluginCommandSource = readFileSync(new URL('../src/lib/linx-codex-plugin-command.ts', import.meta.url), 'utf8')
 const autoModeRunnerSource = readFileSync(new URL('../src/lib/auto-mode/runner.ts', import.meta.url), 'utf8')
@@ -186,6 +187,19 @@ test('symphony command module does not own the default runtime dependency aggreg
     symphonyCommandSource,
     /from ['"]\.\/auto-mode\/archive\.js['"]/,
     'Symphony command should read auto-mode archives through its runtime boundary instead of a hidden fallback import',
+  )
+})
+
+test('interactive symphony command delegates runtime construction to the owning runtime module', () => {
+  assert.doesNotMatch(
+    interactiveSymphonyCommandSource,
+    /from ['"]\.\/auto-mode\/runner\.js['"]/,
+    'interactive Symphony command should not assemble auto-mode runtime dependencies directly',
+  )
+  assert.match(
+    interactiveSymphonyCommandSource,
+    /from ['"]\.\/symphony\/runtime\.js['"]/,
+    'interactive Symphony command should use the owning Symphony runtime module',
   )
 })
 
