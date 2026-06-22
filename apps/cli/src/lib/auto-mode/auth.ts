@@ -76,7 +76,3 @@ export async function preflightAutoModeAuth(backend: AutoModeWorkerBackend): Pro
 export function detectAutoModeAuthFailure(backend: AutoModeBackend, line: string): AutoModeAuthFailure | null {
   return detectSharedAutoModeAuthFailure(backend, line)
 }
-
-export const __internal = {
-  parseClaudeAuthStatus: parseAutoModeClaudeAuthStatus,
-}

@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { pathToFileURL } from 'node:url'
+import { parseAutoModeClaudeAuthStatus } from '@linx/agent-runtime/auto-mode'
 import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 
 let autoModeRunnerModulePromise
@@ -117,9 +118,8 @@ async function withPatchedEnv(t, env, fn) {
   return fn()
 }
 
-test('claude auth preflight parser recognizes logged-out status json', async () => {
-  const { module } = await getAutoModeAuthBundle()
-  const parsed = module.__internal.parseClaudeAuthStatus(JSON.stringify({
+test('claude auth preflight parser recognizes logged-out status json', () => {
+  const parsed = parseAutoModeClaudeAuthStatus(JSON.stringify({
     loggedIn: false,
     authMethod: 'none',
     apiProvider: 'firstParty',
