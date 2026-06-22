@@ -6888,6 +6888,7 @@ test('welcome header rendering lives in a shell rendering module', async (t) => 
   t.after(() => cleanup())
 
   assert.equal(typeof module.installLinxWelcomeHeader, 'function')
+  assert.equal(typeof module.renderLinxWelcomeHeaderAfterInit, 'function')
   assert.equal(typeof module.buildLinxWelcomeCardState, 'function')
 })
 

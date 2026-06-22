@@ -10,7 +10,6 @@ import { resolveRuntimeProviderLabel } from './linx-runtime-provider-label.js'
 
 export function installLinxWelcomeHeader(interactive: any): void {
   patchTerminalTitle(interactive)
-  patchHeader(interactive)
 }
 
 function patchTerminalTitle(interactive: any): void {
@@ -24,41 +23,33 @@ function patchTerminalTitle(interactive: any): void {
   }
 }
 
-function patchHeader(interactive: any): void {
-  const originalInit = interactive.init?.bind(interactive)
-  if (typeof originalInit !== 'function') {
+export function renderLinxWelcomeHeaderAfterInit(interactive: any): void {
+  const quietStartup = interactive?.options?.verbose ? false : interactive?.settingsManager?.getQuietStartup?.()
+  if (quietStartup) {
     return
   }
-  interactive.init = async function patchedInit(): Promise<void> {
-    await originalInit()
 
-    const quietStartup = this.options?.verbose ? false : this.settingsManager?.getQuietStartup?.()
-    if (quietStartup) {
-      return
-    }
-
-    let profileDisplayName: string | null = null
-    const replacement = new LinxWelcomeCard(() => buildLinxWelcomeCardState(this, profileDisplayName))
-    const currentHeader = this.customHeader ?? this.builtInHeader
-    const index = this.headerContainer?.children?.indexOf?.(currentHeader) ?? -1
-    if (index >= 0) {
-      this.headerContainer.children[index] = replacement
-    }
-    this.customHeader = replacement
-    this.ui?.requestRender?.()
-    this.updateTerminalTitle?.()
-
-    void suppressPodStatusOutput(() => resolveProfileDisplayName())
-      .then((displayName) => {
-        if (!displayName || displayName === profileDisplayName) {
-          return
-        }
-        profileDisplayName = displayName
-        replacement.invalidate()
-        this.ui?.requestRender?.()
-      })
-      .catch(() => undefined)
+  let profileDisplayName: string | null = null
+  const replacement = new LinxWelcomeCard(() => buildLinxWelcomeCardState(interactive, profileDisplayName))
+  const currentHeader = interactive?.customHeader ?? interactive?.builtInHeader
+  const index = interactive?.headerContainer?.children?.indexOf?.(currentHeader) ?? -1
+  if (index >= 0) {
+    interactive.headerContainer.children[index] = replacement
   }
+  interactive.customHeader = replacement
+  interactive.ui?.requestRender?.()
+  interactive.updateTerminalTitle?.()
+
+  void suppressPodStatusOutput(() => resolveProfileDisplayName())
+    .then((displayName) => {
+      if (!displayName || displayName === profileDisplayName) {
+        return
+      }
+      profileDisplayName = displayName
+      replacement.invalidate()
+      interactive.ui?.requestRender?.()
+    })
+    .catch(() => undefined)
 }
 
 type HeaderState = {
