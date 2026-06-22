@@ -203,6 +203,19 @@ test('interactive symphony command delegates runtime construction to the owning 
   )
 })
 
+test('interactive symphony command delegates status reads to the owning status module', () => {
+  assert.doesNotMatch(
+    interactiveSymphonyCommandSource,
+    /\blist(?:OpenSymphonyIssues|RunningSymphonyWorkers|RecentSymphonyReports)FromPod\b/,
+    'interactive Symphony command should not read Pod control status directly',
+  )
+  assert.match(
+    interactiveSymphonyCommandSource,
+    /from ['"]\.\/symphony\/status\.js['"]/,
+    'interactive Symphony command should use the owning Symphony status module',
+  )
+})
+
 test('codex plugin command module depends on owning plugin modules instead of the aggregate barrel', () => {
   assert.doesNotMatch(
     codexPluginCommandSource,
