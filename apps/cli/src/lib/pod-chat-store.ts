@@ -4,15 +4,12 @@ import {
   createLinxPodSyncScope,
   type LinxPodSyncResourceBindings,
   type LinxSyncOperationKind,
-  type LinxSyncRunResult,
 } from '@linx/agent-runtime/sync'
 import {
   agentResource,
   chatRepository,
   chatResource,
-  drizzle,
   eq,
-  solidResources,
   messageResource,
   threadResource,
   threadRepository,
@@ -21,22 +18,17 @@ import {
   type ThreadRow,
 } from './models.js'
 import { DEFAULT_LINX_CLOUD_MODEL_ID } from './default-model.js'
+import {
+  getPodChatStoreRuntime,
+  nextPodChatStoreSyncOperationId,
+  recordPodChatStoreSyncResult,
+} from './pod-chat-store-runtime.js'
 import { formatThreadLabel, toOpenAiMessages } from './thread-utils.js'
 
 const DEFAULT_CHAT_ID = 'cli-default'
 const DEFAULT_AGENT_ID = 'linx-cli-assistant'
 const POD_WRITE_RETRY_ATTEMPTS = 2
 const POD_WRITE_RETRY_DELAY_MS = 250
-
-interface CliChatStoreRuntime {
-  createDb(session: Session): SolidDatabase
-  now(): Date
-  randomUUID(): string
-  onSyncResult?(result: LinxSyncRunResult): void
-}
-
-const cliChatSyncResults: LinxSyncRunResult[] = []
-let cliChatSyncSeq = 0
 
 function extractChatId(chatIdOrUri: string | null | undefined): string {
   return chatRepository.idFromRef(chatIdOrUri) ?? chatIdOrUri ?? DEFAULT_CHAT_ID
@@ -59,27 +51,6 @@ export interface StoredThreadMessage {
   createdAt: string
 }
 
-function createDb(session: Session): SolidDatabase {
-  return drizzle(session, {
-    logger: false,
-    disableInteropDiscovery: true,
-    resourcePreparation: 'best-effort' as never,
-    schema: solidResources,
-  }) as unknown as SolidDatabase
-}
-
-const defaultRuntime: CliChatStoreRuntime = {
-  createDb,
-  now: () => new Date(),
-  randomUUID: () => crypto.randomUUID(),
-}
-
-let activeRuntime: CliChatStoreRuntime = defaultRuntime
-
-function getActiveRuntime(): CliChatStoreRuntime {
-  return activeRuntime
-}
-
 async function runCliChatProjection<T>(
   input: {
     action: string
@@ -94,7 +65,7 @@ async function runCliChatProjection<T>(
   },
   project: () => T | Promise<T>,
 ): Promise<T> {
-  const runtime = getActiveRuntime()
+  const runtime = getPodChatStoreRuntime()
   const sync = createLinxPodSyncScope({
     source: 'cli-chat-store',
     target: 'pod',
@@ -103,14 +74,13 @@ async function runCliChatProjection<T>(
     authority: 'core',
     now: runtime.now,
     onResult(result) {
-      cliChatSyncResults.push(result)
-      runtime.onSyncResult?.(result)
+      recordPodChatStoreSyncResult(result)
     },
   })
 
   return await sync.run({
     action: input.action,
-    operationId: nextCliChatSyncOperationId(input),
+    operationId: nextPodChatStoreSyncOperationId(input),
     kind: input.kind,
     description: `cli-chat-store:${input.action}`,
     subject: input.messageId ?? input.threadId ?? input.chatId,
@@ -150,13 +120,6 @@ function isTransientPodWriteError(error: unknown): boolean {
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
-
-function nextCliChatSyncOperationId(input: { action: string; chatId?: string; threadId?: string; messageId?: string }): string {
-  const subject = input.messageId ?? input.threadId ?? input.chatId ?? 'cli-chat'
-  const timestamp = getActiveRuntime().now().toISOString().replace(/[:.]/g, '-')
-  return `cli-chat-store:${input.action}:${subject}:${timestamp}:${++cliChatSyncSeq}`
-}
-
 
 function buildCliMessageReconcilerMetadata(input: {
   chatUri: string
@@ -216,7 +179,7 @@ function buildCliChatSyncResourceBindings(input: {
 }
 
 export async function initPodData(session: Session): Promise<SolidDatabase> {
-  const db = getActiveRuntime().createDb(session)
+  const db = getPodChatStoreRuntime().createDb(session)
 
   return db
 }
@@ -229,7 +192,7 @@ async function ensureCliAgent(db: SolidDatabase, webId: string): Promise<void> {
     return
   }
 
-  const now = getActiveRuntime().now()
+  const now = getPodChatStoreRuntime().now()
   await runCliChatProjection({
     action: 'agent.ensure',
     kind: 'insert',
@@ -259,7 +222,7 @@ export async function getOrCreateDefaultChat(session: Session): Promise<string> 
     return DEFAULT_CHAT_ID
   }
 
-  const now = getActiveRuntime().now()
+  const now = getPodChatStoreRuntime().now()
   await runCliChatProjection({
     action: 'chat.create',
     kind: 'insert',
@@ -306,8 +269,8 @@ export async function createThread(
   if (!webId) {
     throw new Error('Missing webId in Solid session')
   }
-  const threadId = getActiveRuntime().randomUUID()
-  const now = getActiveRuntime().now()
+  const threadId = getPodChatStoreRuntime().randomUUID()
+  const now = getPodChatStoreRuntime().now()
   const chatUri = chatResource.buildIri(webId, { id: chatId })
 
   await runCliChatProjection({
@@ -346,7 +309,7 @@ export async function touchThread(session: Session, threadId: string): Promise<v
     webId,
     chatId,
     threadId,
-  }, () => db.updateById(threadResource, threadRecordId, { updatedAt: getActiveRuntime().now() }))
+  }, () => db.updateById(threadResource, threadRecordId, { updatedAt: getPodChatStoreRuntime().now() }))
 }
 
 export async function loadMessages(session: Session, threadId: string): Promise<StoredThreadMessage[]> {
@@ -380,12 +343,12 @@ export async function saveUserMessage(
   content: string,
 ): Promise<void> {
   const db = await initPodData(session)
-  const now = getActiveRuntime().now()
+  const now = getPodChatStoreRuntime().now()
   const webId = session.info.webId
   if (!webId) {
     throw new Error('Missing webId in Solid session')
   }
-  const messageId = getActiveRuntime().randomUUID()
+  const messageId = getPodChatStoreRuntime().randomUUID()
   const chatUri = chatResource.buildIri(webId, { id: chatId })
   const threadUri = threadRepository.iriForChat(webId, chatId, threadId)
   const messageUri = messageResource.buildIri(webId, {
@@ -453,12 +416,12 @@ export async function saveAssistantMessage(
   content: string,
 ): Promise<void> {
   const db = await initPodData(session)
-  const now = getActiveRuntime().now()
+  const now = getPodChatStoreRuntime().now()
   const webId = session.info.webId
   if (!webId) {
     throw new Error('Missing webId in Solid session')
   }
-  const messageId = getActiveRuntime().randomUUID()
+  const messageId = getPodChatStoreRuntime().randomUUID()
   const chatUri = chatResource.buildIri(webId, { id: chatId })
   const threadUri = threadRepository.iriForChat(webId, chatId, threadId)
   const maker = agentResource.buildIri(webId, { id: DEFAULT_AGENT_ID })
@@ -543,31 +506,4 @@ export { toOpenAiMessages, formatThreadLabel }
 
 export function isMessageRow(_row: MessageRow): boolean {
   return true
-}
-
-export const __podChatStoreInternal = {
-  resources: {
-    agentResource,
-    chatResource,
-    threadResource,
-    messageResource,
-  },
-  getSyncResults(): LinxSyncRunResult[] {
-    return [...cliChatSyncResults]
-  },
-  resetSyncResults(): void {
-    cliChatSyncResults.length = 0
-    cliChatSyncSeq = 0
-  },
-  setRuntime(runtime: Partial<CliChatStoreRuntime> = {}): void {
-    activeRuntime = {
-      ...defaultRuntime,
-      ...runtime,
-    }
-  },
-  resetRuntime(): void {
-    activeRuntime = defaultRuntime
-    cliChatSyncResults.length = 0
-    cliChatSyncSeq = 0
-  },
 }
