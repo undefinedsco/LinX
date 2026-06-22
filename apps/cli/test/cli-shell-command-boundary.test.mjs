@@ -14,6 +14,7 @@ const autoModePodAiSource = readFileSync(new URL('../src/lib/auto-mode/pod-ai.ts
 const autoModeAuthSource = readFileSync(new URL('../src/lib/auto-mode/auth.ts', import.meta.url), 'utf8')
 const autoModePodPersistenceSource = readFileSync(new URL('../src/lib/auto-mode/pod-persistence.ts', import.meta.url), 'utf8')
 const autoModePodApprovalSource = readFileSync(new URL('../src/lib/auto-mode/pod-approval.ts', import.meta.url), 'utf8')
+const autoModeRuntimeSourceUrl = new URL('../src/lib/auto-mode/runtime.ts', import.meta.url)
 const podChatStoreSource = readFileSync(new URL('../src/lib/pod-chat-store.ts', import.meta.url), 'utf8')
 const symphonyPodProjectionSource = readFileSync(new URL('../src/lib/symphony/pod-projection.ts', import.meta.url), 'utf8')
 const linxLoginFlowSource = readFileSync(new URL('../src/lib/linx-login-flow.ts', import.meta.url), 'utf8')
@@ -105,6 +106,19 @@ test('auto-mode runner does not expose LinX Cloud auth prompt through a test sea
     autoModeRunnerSource,
     /__testPromptLinxCloudAuth/,
     'LinX Cloud auth prompt should live in an owning auth module instead of being tested through runner',
+  )
+})
+
+test('auto-mode runner does not export the runtime dependency aggregate', () => {
+  assert.doesNotMatch(
+    autoModeRunnerSource,
+    /export\s+const\s+autoModeRuntime\b/,
+    'Auto-mode runtime dependencies should live in an owning runtime module instead of being exported by runner',
+  )
+  assert.equal(
+    existsSync(autoModeRuntimeSourceUrl),
+    true,
+    'Auto-mode runtime dependency injection should have an owning module',
   )
 })
 

@@ -2,9 +2,14 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { pathToFileURL } from 'node:url'
 import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
+
+async function importCompiledSibling(entryPath, relativePath) {
+  return import(pathToFileURL(join(dirname(entryPath), relativePath)).href)
+}
 
 const originalHome = process.env.HOME
 const originalUserProfile = process.env.USERPROFILE
@@ -242,7 +247,7 @@ test('local .codex credentials flow through standard LinX AI config into codex a
     { module: credentialsModule, cleanup: credentialsCleanup },
     { module: aiModule, cleanup: aiCleanup },
     { module: podAiModule, cleanup: podAiCleanup },
-    { module: autoModeModule, cleanup: autoCleanup },
+    { module: autoModeModule, entryPath: autoModeEntryPath, cleanup: autoCleanup },
   ] = await Promise.all([
     loadAutoModeModule('lib/credentials-store.ts'),
     loadAutoModeModule('lib/ai-command.ts'),
@@ -253,6 +258,8 @@ test('local .codex credentials flow through standard LinX AI config into codex a
   t.after(() => aiCleanup())
   t.after(() => podAiCleanup())
   t.after(() => autoCleanup())
+
+  const autoModeRuntime = (await importCompiledSibling(autoModeEntryPath, 'runtime.js')).autoModeRuntime
 
   const harness = createPodConfigHarness()
   let credentialsCleared = false
@@ -327,11 +334,11 @@ test('local .codex credentials flow through standard LinX AI config into codex a
     assert.equal(sha256(podCredential.env.CODEX_API_KEY), keyHash)
     assert.equal(podCredential.env.CODEX_BASE_URL, 'https://api.openai.com/v1')
 
-    t.mock.method(autoModeModule.autoModeRuntime, 'loadPodBackendCredential', async (backend) => {
+    t.mock.method(autoModeRuntime, 'loadPodBackendCredential', async (backend) => {
       assert.equal(backend, 'codex')
       return podCredential
     })
-    t.mock.method(autoModeModule.autoModeRuntime, 'persistAutoModeConversationToPod', async () => true)
+    t.mock.method(autoModeRuntime, 'persistAutoModeConversationToPod', async () => true)
 
     const exitCode = await autoModeModule.runAutoMode({
       backend: 'codex',

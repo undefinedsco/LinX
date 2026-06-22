@@ -2,8 +2,9 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { pathToFileURL } from 'node:url'
 import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 import {
   getSmokeModel,
@@ -11,6 +12,10 @@ import {
   getSmokeTimeoutMs,
   shouldRunLiveSmoke,
 } from '../../../scripts/smoke-env.mjs'
+
+async function importCompiledSibling(entryPath, relativePath) {
+  return import(pathToFileURL(join(dirname(entryPath), relativePath)).href)
+}
 
 const LIVE_GATE = shouldRunLiveSmoke('acp')
 const LIVE_PROMPT = getSmokePrompt('Reply with exactly "linx-live-acp-ok". Do not use tools.')
@@ -206,9 +211,10 @@ function detectLiveAcpBackends(autoModeModule) {
 }
 
 test('optional live ACP backend smoke detects local environment and runs configured backends', { skip: !LIVE_GATE }, async (t) => {
-  const { module: autoModeModule, cleanup } = await loadAutoModeModule()
+  const { module: autoModeModule, entryPath, cleanup } = await loadAutoModeModule()
   t.after(() => cleanup())
-  t.mock.method(autoModeModule.autoModeRuntime, 'persistAutoModeConversationToPod', async () => {})
+  const autoModeRuntime = (await importCompiledSibling(entryPath, 'runtime.js')).autoModeRuntime
+  t.mock.method(autoModeRuntime, 'persistAutoModeConversationToPod', async () => {})
 
   const cases = detectLiveAcpBackends(autoModeModule)
   const runnable = cases.filter((item) => item.available)

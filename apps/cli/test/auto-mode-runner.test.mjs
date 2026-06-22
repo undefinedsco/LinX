@@ -1,9 +1,23 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { pathToFileURL } from 'node:url'
 import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
+
+async function importCompiledSibling(entryPath, relativePath) {
+  return import(pathToFileURL(join(dirname(entryPath), relativePath)).href)
+}
+
+async function loadAutoModeRunner() {
+  const loaded = await loadAutoModeModule()
+  const runtimeModule = await importCompiledSibling(loaded.entryPath, 'runtime.js')
+  return {
+    ...loaded,
+    runtime: runtimeModule.autoModeRuntime,
+  }
+}
 
 function writeExecutable(path, source) {
   writeFileSync(path, source)
@@ -92,12 +106,12 @@ async function withPatchedEnv(t, env, fn) {
   return fn()
 }
 
-function mockPodBackendCredential(t, module, backend = 'codex', env, options = {}) {
+function mockPodBackendCredential(t, runtime, backend = 'codex', env, options = {}) {
   const credentialEnv = env ?? {
     CODEX_API_KEY: 'sk-pod-openai',
   }
 
-  t.mock.method(module.autoModeRuntime, 'loadPodBackendCredential', async (requestedBackend) => {
+  t.mock.method(runtime, 'loadPodBackendCredential', async (requestedBackend) => {
     assert.equal(requestedBackend, backend)
     return {
       backend,
@@ -107,7 +121,7 @@ function mockPodBackendCredential(t, module, backend = 'codex', env, options = {
   })
 
   if (options.persist !== false) {
-    t.mock.method(module.autoModeRuntime, 'persistAutoModeConversationToPod', async () => {})
+    t.mock.method(runtime, 'persistAutoModeConversationToPod', async () => {})
   }
 }
 
@@ -130,11 +144,11 @@ test('auto-mode backend process inherits Solid auth home for xpod CLI tools', as
     envKeys: ['HOME', 'SOLID_HOME', 'LINX_HOME', 'CODEX_API_KEY'],
   })
 
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, runtime, cleanup } = await loadAutoModeRunner()
   t.after(() => cleanup())
 
-  mockPodBackendCredential(t, module, 'codex', { CODEX_API_KEY: 'sk-pod-openai' })
-  t.mock.method(module.autoModeRuntime, 'promptText', async () => '/exit')
+  mockPodBackendCredential(t, runtime, 'codex', { CODEX_API_KEY: 'sk-pod-openai' })
+  t.mock.method(runtime, 'promptText', async () => '/exit')
 
   await withPatchedEnv(t, {
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
@@ -177,13 +191,13 @@ test('auto-mode can run LinX native worker through session-managed runtime auth'
     rmSync(root, { recursive: true, force: true })
   })
 
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, runtime, cleanup } = await loadAutoModeRunner()
   t.after(() => cleanup())
 
   const sessions = []
   const completionCalls = []
   const persisted = []
-  t.mock.method(module.autoModeRuntime, 'createPodDataSession', async () => {
+  t.mock.method(runtime, 'createPodDataSession', async () => {
     const session = {
       webId: `https://id.undefineds.co/gcloud/profile/card#me-${sessions.length + 1}`,
       podUrl: 'https://id.undefineds.co/gcloud/',
@@ -199,7 +213,7 @@ test('auto-mode can run LinX native worker through session-managed runtime auth'
     sessions.push(session)
     return session
   })
-  t.mock.method(module.autoModeRuntime, 'createRemoteCompletionResult', async (options) => {
+  t.mock.method(runtime, 'createRemoteCompletionResult', async (options) => {
     completionCalls.push(options)
     return {
       content: 'native worker completed',
@@ -222,7 +236,7 @@ test('auto-mode can run LinX native worker through session-managed runtime auth'
       },
     }
   })
-  t.mock.method(module.autoModeRuntime, 'persistAutoModeConversationToPod', async (record) => {
+  t.mock.method(runtime, 'persistAutoModeConversationToPod', async (record) => {
     persisted.push(record)
   })
 
@@ -273,7 +287,7 @@ test('auto-mode can run LinX native worker through session-managed runtime auth'
 })
 
 test('auto-mode supported backends includes LinX native worker', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, runtime, cleanup } = await loadAutoModeRunner()
   t.after(() => cleanup())
 
   const backends = module.listSupportedAutoModeBackends()
@@ -315,7 +329,7 @@ test('auto-mode archives command args and every normalized event type for ACP ba
     },
   ]
 
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, runtime, cleanup } = await loadAutoModeRunner()
   t.after(() => cleanup())
 
   for (const item of cases) {
@@ -466,8 +480,8 @@ rl.on('line', (line) => {
 })
 `)
 
-      mockPodBackendCredential(t, module, item.backend, item.credentialEnv)
-      t.mock.method(module.autoModeRuntime, 'resolveAutoModeSecretaryRecommendation', async ({ request }) => {
+      mockPodBackendCredential(t, runtime, item.backend, item.credentialEnv)
+      t.mock.method(runtime, 'resolveAutoModeSecretaryRecommendation', async ({ request }) => {
         if (request.kind === 'user-input') {
           return {
             kind: 'user-input',
@@ -494,11 +508,11 @@ rl.on('line', (line) => {
           source: 'fallback',
         }
       })
-      t.mock.method(module.autoModeRuntime, 'resolveExistingRemoteAutoModeGrant', async () => null)
-      t.mock.method(module.autoModeRuntime, 'createRemoteAutoModeApproval', async () => {
+      t.mock.method(runtime, 'resolveExistingRemoteAutoModeGrant', async () => null)
+      t.mock.method(runtime, 'createRemoteAutoModeApproval', async () => {
         throw new Error('remote unavailable')
       })
-      t.mock.method(module.autoModeRuntime, 'promptText', async () => '/exit')
+      t.mock.method(runtime, 'promptText', async () => '/exit')
 
       await withPatchedEnv(t, {
         PATH: `${binDir}:${process.env.PATH ?? ''}`,
@@ -669,15 +683,15 @@ rl.on('line', (line) => {
 })
 `)
 
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, runtime, cleanup } = await loadAutoModeRunner()
   t.after(() => cleanup())
 
-  mockPodBackendCredential(t, module, 'claude', {
+  mockPodBackendCredential(t, runtime, 'claude', {
     ANTHROPIC_API_KEY: 'sk-pod-anthropic',
   })
 
   let promptCount = 0
-  t.mock.method(module.autoModeRuntime, 'promptText', async () => {
+  t.mock.method(runtime, 'promptText', async () => {
     promptCount += 1
     return promptCount === 1 ? 'first question' : promptCount === 2 ? 'second question' : '/exit'
   })
@@ -800,23 +814,23 @@ rl.on('line', (line) => {
 })
 `)
 
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, runtime, cleanup } = await loadAutoModeRunner()
   t.after(() => cleanup())
 
-  t.mock.method(module.autoModeRuntime, 'preflightAutoModeAuth', async () => {
+  t.mock.method(runtime, 'preflightAutoModeAuth', async () => {
     throw new Error('should not preflight local auth for cloud credential source')
   })
 
-  t.mock.method(module.autoModeRuntime, 'loadPodBackendCredential', async () => ({
+  t.mock.method(runtime, 'loadPodBackendCredential', async () => ({
     backend: 'claude',
     provider: 'anthropic',
     env: {
       ANTHROPIC_API_KEY: 'sk-pod-key',
     },
   }))
-  t.mock.method(module.autoModeRuntime, 'persistAutoModeConversationToPod', async () => {})
+  t.mock.method(runtime, 'persistAutoModeConversationToPod', async () => {})
 
-  t.mock.method(module.autoModeRuntime, 'promptText', async () => '/exit')
+  t.mock.method(runtime, 'promptText', async () => '/exit')
 
   await withPatchedEnv(t, {
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
@@ -902,11 +916,11 @@ rl.on('line', (line) => {
 })
 `)
 
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, runtime, cleanup } = await loadAutoModeRunner()
   t.after(() => cleanup())
 
   let loadCalls = 0
-  t.mock.method(module.autoModeRuntime, 'loadPodBackendCredential', async (backend) => {
+  t.mock.method(runtime, 'loadPodBackendCredential', async (backend) => {
     assert.equal(backend, 'codex')
     loadCalls += 1
     if (loadCalls === 1) {
@@ -923,18 +937,18 @@ rl.on('line', (line) => {
   })
 
   const savedCredentials = []
-  t.mock.method(module.autoModeRuntime, 'connectAiProviderCredential', async (input) => {
+  t.mock.method(runtime, 'connectAiProviderCredential', async (input) => {
     savedCredentials.push(input)
     return {
       providerId: input.provider,
       maskedApiKey: 'sk-e****enai',
     }
   })
-  t.mock.method(module.autoModeRuntime, 'persistAutoModeConversationToPod', async () => {})
+  t.mock.method(runtime, 'persistAutoModeConversationToPod', async () => {})
 
   let promptCount = 0
   const promptCalls = []
-  t.mock.method(module.autoModeRuntime, 'promptText', async (prompt) => {
+  t.mock.method(runtime, 'promptText', async (prompt) => {
     promptCalls.push(prompt)
     promptCount += 1
     if (prompt === 'answer> ') return 'deepseek'
@@ -994,19 +1008,19 @@ test('auto-mode exits cleanly when LinX Cloud auth recovery is cancelled', async
     reply: 'should not start backend',
   })
 
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, runtime, cleanup } = await loadAutoModeRunner()
   t.after(() => cleanup())
 
-  t.mock.method(module.autoModeRuntime, 'loadPodBackendCredential', async () => {
+  t.mock.method(runtime, 'loadPodBackendCredential', async () => {
     throw new Error('LinX cloud credential source is not connected yet. Run `linx login` first.')
   })
   const persisted = []
-  t.mock.method(module.autoModeRuntime, 'persistAutoModeConversationToPod', async (record) => {
+  t.mock.method(runtime, 'persistAutoModeConversationToPod', async (record) => {
     persisted.push(record)
   })
 
   const prompts = []
-  t.mock.method(module.autoModeRuntime, 'promptText', async (prompt) => {
+  t.mock.method(runtime, 'promptText', async (prompt) => {
     prompts.push(prompt)
     return '3'
   })
@@ -1092,14 +1106,14 @@ rl.on('line', (line) => {
 })
 `)
 
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, runtime, cleanup } = await loadAutoModeRunner()
   t.after(() => cleanup())
 
-  t.mock.method(module.autoModeRuntime, 'preflightAutoModeAuth', async () => {
+  t.mock.method(runtime, 'preflightAutoModeAuth', async () => {
     throw new Error('should not preflight local auth for cloud credential source')
   })
 
-  t.mock.method(module.autoModeRuntime, 'loadPodBackendCredential', async () => ({
+  t.mock.method(runtime, 'loadPodBackendCredential', async () => ({
     backend: 'codebuddy',
     provider: 'codebuddy',
     env: {
@@ -1107,9 +1121,9 @@ rl.on('line', (line) => {
       CODEBUDDY_BASE_URL: 'https://proxy.codebuddy.example/v1',
     },
   }))
-  t.mock.method(module.autoModeRuntime, 'persistAutoModeConversationToPod', async () => {})
+  t.mock.method(runtime, 'persistAutoModeConversationToPod', async () => {})
 
-  t.mock.method(module.autoModeRuntime, 'promptText', async () => '/exit')
+  t.mock.method(runtime, 'promptText', async () => '/exit')
 
   await withPatchedEnv(t, {
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
@@ -1192,14 +1206,14 @@ rl.on('line', (line) => {
 })
 `)
 
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, runtime, cleanup } = await loadAutoModeRunner()
   t.after(() => cleanup())
 
-  t.mock.method(module.autoModeRuntime, 'preflightAutoModeAuth', async () => {
+  t.mock.method(runtime, 'preflightAutoModeAuth', async () => {
     throw new Error('should not preflight local auth for cloud credential source')
   })
 
-  t.mock.method(module.autoModeRuntime, 'loadPodBackendCredential', async () => ({
+  t.mock.method(runtime, 'loadPodBackendCredential', async () => ({
     backend: 'codex',
     provider: 'openai',
     env: {
@@ -1207,9 +1221,9 @@ rl.on('line', (line) => {
       CODEX_BASE_URL: 'https://api.openai.com/v1',
     },
   }))
-  t.mock.method(module.autoModeRuntime, 'persistAutoModeConversationToPod', async () => {})
+  t.mock.method(runtime, 'persistAutoModeConversationToPod', async () => {})
 
-  t.mock.method(module.autoModeRuntime, 'promptText', async () => '/exit')
+  t.mock.method(runtime, 'promptText', async () => '/exit')
 
   await withPatchedEnv(t, {
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
@@ -1285,7 +1299,7 @@ test('auto-mode runs every backend through Pod credentials, ACP chat, and Pod pe
     },
   ]
 
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, runtime, cleanup } = await loadAutoModeRunner()
   t.after(() => cleanup())
 
   for (const item of cases) {
@@ -1305,10 +1319,10 @@ test('auto-mode runs every backend through Pod credentials, ACP chat, and Pod pe
         envKeys: Object.keys(item.expectedEnv),
       })
 
-      t.mock.method(module.autoModeRuntime, 'preflightAutoModeAuth', async () => {
+      t.mock.method(runtime, 'preflightAutoModeAuth', async () => {
         throw new Error('auto-mode backend validation must not fall back to local auth')
       })
-      t.mock.method(module.autoModeRuntime, 'loadPodBackendCredential', async (requestedBackend) => {
+      t.mock.method(runtime, 'loadPodBackendCredential', async (requestedBackend) => {
         assert.equal(requestedBackend, item.backend)
         return {
           backend: item.backend,
@@ -1316,11 +1330,11 @@ test('auto-mode runs every backend through Pod credentials, ACP chat, and Pod pe
           env: item.credentialEnv,
         }
       })
-      t.mock.method(module.autoModeRuntime, 'persistAutoModeConversationToPod', async (record) => {
+      t.mock.method(runtime, 'persistAutoModeConversationToPod', async (record) => {
         persisted.push(record)
         return true
       })
-      t.mock.method(module.autoModeRuntime, 'promptText', async () => '/exit')
+      t.mock.method(runtime, 'promptText', async () => '/exit')
 
       await withPatchedEnv(t, {
         PATH: `${binDir}:${process.env.PATH ?? ''}`,
@@ -1404,7 +1418,7 @@ test('auto-mode runs every backend through ACP approval control and Pod persiste
     },
   ]
 
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, runtime, cleanup } = await loadAutoModeRunner()
   t.after(() => cleanup())
 
   for (const item of cases) {
@@ -1491,10 +1505,10 @@ rl.on('line', (line) => {
 })
 `)
 
-      t.mock.method(module.autoModeRuntime, 'preflightAutoModeAuth', async () => {
+      t.mock.method(runtime, 'preflightAutoModeAuth', async () => {
         throw new Error('auto-mode backend validation must not fall back to local auth')
       })
-      t.mock.method(module.autoModeRuntime, 'loadPodBackendCredential', async (requestedBackend) => {
+      t.mock.method(runtime, 'loadPodBackendCredential', async (requestedBackend) => {
         assert.equal(requestedBackend, item.backend)
         return {
           backend: item.backend,
@@ -1502,8 +1516,8 @@ rl.on('line', (line) => {
           env: item.credentialEnv,
         }
       })
-      t.mock.method(module.autoModeRuntime, 'resolveExistingRemoteAutoModeGrant', async () => null)
-      t.mock.method(module.autoModeRuntime, 'resolveAutoModeSecretaryRecommendation', async (input) => {
+      t.mock.method(runtime, 'resolveExistingRemoteAutoModeGrant', async () => null)
+      t.mock.method(runtime, 'resolveAutoModeSecretaryRecommendation', async (input) => {
         assert.equal(input.mode, 'auto')
         assert.equal(input.request.kind, 'command-approval')
         assert.equal(input.request.command, 'pwd')
@@ -1517,20 +1531,20 @@ rl.on('line', (line) => {
           source: 'fallback',
         }
       })
-      t.mock.method(module.autoModeRuntime, 'createRemoteAutoModeApproval', async (payload) => {
+      t.mock.method(runtime, 'createRemoteAutoModeApproval', async (payload) => {
         createdApprovals.push(payload)
         return { id: `approval_matrix_${item.backend}_1` }
       })
-      t.mock.method(module.autoModeRuntime, 'waitForRemoteAutoModeApproval', async () => await new Promise(() => {}))
-      t.mock.method(module.autoModeRuntime, 'resolveRemoteAutoModeApproval', async (payload) => {
+      t.mock.method(runtime, 'waitForRemoteAutoModeApproval', async () => await new Promise(() => {}))
+      t.mock.method(runtime, 'resolveRemoteAutoModeApproval', async (payload) => {
         resolvedApprovals.push(payload)
         return { id: payload.approvalId, decision: payload.decision }
       })
-      t.mock.method(module.autoModeRuntime, 'persistAutoModeConversationToPod', async (record) => {
+      t.mock.method(runtime, 'persistAutoModeConversationToPod', async (record) => {
         persisted.push(record)
         return true
       })
-      t.mock.method(module.autoModeRuntime, 'promptText', async () => '/exit')
+      t.mock.method(runtime, 'promptText', async () => '/exit')
 
       await withPatchedEnv(t, {
         PATH: `${binDir}:${process.env.PATH ?? ''}`,
@@ -1601,7 +1615,7 @@ mode: 'auto',
 })
 
 test('auto-mode secretary countdown detail shrinks over time and clamps to a five second minimum', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, runtime, cleanup } = await loadAutoModeRunner()
   t.after(() => cleanup())
 
   assert.equal(module.formatAutoModeSecretaryCountdownDetail(5000, 5000), 'auto [##########] 5s')
@@ -1681,12 +1695,12 @@ rl.on('line', (line) => {
 })
 `)
 
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, runtime, cleanup } = await loadAutoModeRunner()
   t.after(() => cleanup())
 
-  mockPodBackendCredential(t, module, 'codex')
+  mockPodBackendCredential(t, runtime, 'codex')
 
-  t.mock.method(module.autoModeRuntime, 'resolveAutoModeSecretaryRecommendation', async () => ({
+  t.mock.method(runtime, 'resolveAutoModeSecretaryRecommendation', async () => ({
     kind: 'command-approval',
     canAutoDecide: true,
     decision: 'accept',
@@ -1695,11 +1709,11 @@ rl.on('line', (line) => {
     reactionWindowMs: 0,
     source: 'fallback',
   }))
-  t.mock.method(module.autoModeRuntime, 'resolveExistingRemoteAutoModeGrant', async () => null)
-  t.mock.method(module.autoModeRuntime, 'createRemoteAutoModeApproval', async () => {
+  t.mock.method(runtime, 'resolveExistingRemoteAutoModeGrant', async () => null)
+  t.mock.method(runtime, 'createRemoteAutoModeApproval', async () => {
     throw new Error('remote unavailable')
   })
-  t.mock.method(module.autoModeRuntime, 'promptText', async () => '/exit')
+  t.mock.method(runtime, 'promptText', async () => '/exit')
 
   await withPatchedEnv(t, {
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
@@ -1813,7 +1827,7 @@ rl.on('line', (line) => {
 })
 `)
 
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, runtime, cleanup } = await loadAutoModeRunner()
   t.after(() => cleanup())
 
   const prompts = []
@@ -1822,10 +1836,10 @@ rl.on('line', (line) => {
   const resolvedApprovals = []
   const materializedGrants = []
 
-  mockPodBackendCredential(t, module, 'codex')
+  mockPodBackendCredential(t, runtime, 'codex')
 
-  t.mock.method(module.autoModeRuntime, 'resolveExistingRemoteAutoModeGrant', async () => null)
-  t.mock.method(module.autoModeRuntime, 'promptText', async (prompt, signal) => {
+  t.mock.method(runtime, 'resolveExistingRemoteAutoModeGrant', async () => null)
+  t.mock.method(runtime, 'promptText', async (prompt, signal) => {
     prompts.push(prompt)
     if (prompt === 'you> ') {
       return '/exit'
@@ -1838,19 +1852,19 @@ rl.on('line', (line) => {
       }, { once: true })
     })
   })
-  t.mock.method(module.autoModeRuntime, 'createRemoteAutoModeApproval', async (payload) => {
+  t.mock.method(runtime, 'createRemoteAutoModeApproval', async (payload) => {
     createdApprovals.push(payload)
     return { id: 'approval_remote_1' }
   })
-  t.mock.method(module.autoModeRuntime, 'waitForRemoteAutoModeApproval', async (payload) => {
+  t.mock.method(runtime, 'waitForRemoteAutoModeApproval', async (payload) => {
     waitedApprovals.push(payload)
     return 'accept_for_session'
   })
-  t.mock.method(module.autoModeRuntime, 'resolveRemoteAutoModeApproval', async (payload) => {
+  t.mock.method(runtime, 'resolveRemoteAutoModeApproval', async (payload) => {
     resolvedApprovals.push(payload)
     return { id: payload.approvalId, decision: payload.decision }
   })
-  t.mock.method(module.autoModeRuntime, 'materializeRemoteAutoModeGrant', async (payload) => {
+  t.mock.method(runtime, 'materializeRemoteAutoModeGrant', async (payload) => {
     materializedGrants.push(payload)
     return { id: 'grant_remote_1' }
   })
@@ -1964,25 +1978,25 @@ rl.on('line', (line) => {
 })
 `)
 
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, runtime, cleanup } = await loadAutoModeRunner()
   t.after(() => cleanup())
 
   const prompts = []
   const createdApprovals = []
   const waitedApprovals = []
 
-  mockPodBackendCredential(t, module, 'codex')
+  mockPodBackendCredential(t, runtime, 'codex')
 
-  t.mock.method(module.autoModeRuntime, 'resolveExistingRemoteAutoModeGrant', async () => null)
-  t.mock.method(module.autoModeRuntime, 'promptText', async (prompt) => {
+  t.mock.method(runtime, 'resolveExistingRemoteAutoModeGrant', async () => null)
+  t.mock.method(runtime, 'promptText', async (prompt) => {
     prompts.push(prompt)
     return '/exit'
   })
-  t.mock.method(module.autoModeRuntime, 'createRemoteAutoModeApproval', async (payload) => {
+  t.mock.method(runtime, 'createRemoteAutoModeApproval', async (payload) => {
     createdApprovals.push(payload)
     return { id: 'approval_remote_only_1', approvalUri: 'https://pod.example/.data/approvals/approval_remote_only_1.ttl#it' }
   })
-  t.mock.method(module.autoModeRuntime, 'waitForRemoteAutoModeApproval', async (payload) => {
+  t.mock.method(runtime, 'waitForRemoteAutoModeApproval', async (payload) => {
     waitedApprovals.push(payload)
     return 'accept'
   })
@@ -2107,7 +2121,7 @@ rl.on('line', (line) => {
 })
 `)
 
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, runtime, cleanup } = await loadAutoModeRunner()
   t.after(() => cleanup())
 
   const createdApprovals = []
@@ -2115,28 +2129,28 @@ rl.on('line', (line) => {
   const resolvedApprovals = []
   const materializedGrants = []
 
-  mockPodBackendCredential(t, module, 'codex')
+  mockPodBackendCredential(t, runtime, 'codex')
 
-  t.mock.method(module.autoModeRuntime, 'resolveExistingRemoteAutoModeGrant', async () => null)
-  t.mock.method(module.autoModeRuntime, 'promptText', async (prompt) => {
+  t.mock.method(runtime, 'resolveExistingRemoteAutoModeGrant', async () => null)
+  t.mock.method(runtime, 'promptText', async (prompt) => {
     if (prompt === 'select> ') {
       return 's'
     }
     return '/exit'
   })
-  t.mock.method(module.autoModeRuntime, 'createRemoteAutoModeApproval', async (payload) => {
+  t.mock.method(runtime, 'createRemoteAutoModeApproval', async (payload) => {
     createdApprovals.push(payload)
     return { id: 'approval_local_1' }
   })
-  t.mock.method(module.autoModeRuntime, 'waitForRemoteAutoModeApproval', async (payload) => {
+  t.mock.method(runtime, 'waitForRemoteAutoModeApproval', async (payload) => {
     waitedApprovals.push(payload)
     return await new Promise(() => {})
   })
-  t.mock.method(module.autoModeRuntime, 'resolveRemoteAutoModeApproval', async (payload) => {
+  t.mock.method(runtime, 'resolveRemoteAutoModeApproval', async (payload) => {
     resolvedApprovals.push(payload)
     return { id: payload.approvalId, decision: payload.decision }
   })
-  t.mock.method(module.autoModeRuntime, 'materializeRemoteAutoModeGrant', async (payload) => {
+  t.mock.method(runtime, 'materializeRemoteAutoModeGrant', async (payload) => {
     materializedGrants.push(payload)
     return { id: 'grant_local_1' }
   })
@@ -2250,13 +2264,13 @@ rl.on('line', (line) => {
 })
 `)
 
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, runtime, cleanup } = await loadAutoModeRunner()
   t.after(() => cleanup())
 
   const resolvedApprovals = []
-  mockPodBackendCredential(t, module, 'codex')
-  t.mock.method(module.autoModeRuntime, 'resolveExistingRemoteAutoModeGrant', async () => null)
-  t.mock.method(module.autoModeRuntime, 'resolveAutoModeSecretaryRecommendation', async () => ({
+  mockPodBackendCredential(t, runtime, 'codex')
+  t.mock.method(runtime, 'resolveExistingRemoteAutoModeGrant', async () => null)
+  t.mock.method(runtime, 'resolveAutoModeSecretaryRecommendation', async () => ({
     kind: 'command-approval',
     canAutoDecide: true,
     decision: 'accept',
@@ -2265,7 +2279,7 @@ rl.on('line', (line) => {
     reactionWindowMs: 5000,
     source: 'model',
   }))
-  t.mock.method(module.autoModeRuntime, 'promptText', async (prompt, signal) => {
+  t.mock.method(runtime, 'promptText', async (prompt, signal) => {
     if (prompt === 'select> ') {
       return await new Promise((resolve, reject) => {
         signal?.addEventListener('abort', () => {
@@ -2277,9 +2291,9 @@ rl.on('line', (line) => {
     }
     return '/exit'
   })
-  t.mock.method(module.autoModeRuntime, 'createRemoteAutoModeApproval', async () => ({ id: 'approval_secretary_1' }))
-  t.mock.method(module.autoModeRuntime, 'waitForRemoteAutoModeApproval', async () => await new Promise(() => {}))
-  t.mock.method(module.autoModeRuntime, 'resolveRemoteAutoModeApproval', async (payload) => {
+  t.mock.method(runtime, 'createRemoteAutoModeApproval', async () => ({ id: 'approval_secretary_1' }))
+  t.mock.method(runtime, 'waitForRemoteAutoModeApproval', async () => await new Promise(() => {}))
+  t.mock.method(runtime, 'resolveRemoteAutoModeApproval', async (payload) => {
     resolvedApprovals.push(payload)
     return { id: payload.approvalId, decision: payload.decision }
   })
@@ -2399,12 +2413,12 @@ rl.on('line', (line) => {
 })
 `)
 
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, runtime, cleanup } = await loadAutoModeRunner()
   t.after(() => cleanup())
 
   const prompts = []
-  mockPodBackendCredential(t, module, 'codex')
-  t.mock.method(module.autoModeRuntime, 'promptText', async (prompt) => {
+  mockPodBackendCredential(t, runtime, 'codex')
+  t.mock.method(runtime, 'promptText', async (prompt) => {
     prompts.push(prompt)
     if (prompt === 'select> ') {
       return '2'
@@ -2527,10 +2541,10 @@ rl.on('line', (line) => {
 })
 `)
 
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, runtime, cleanup } = await loadAutoModeRunner()
   t.after(() => cleanup())
 
-  t.mock.method(module.autoModeRuntime, 'resolveAutoModeSecretaryRecommendation', async () => ({
+  t.mock.method(runtime, 'resolveAutoModeSecretaryRecommendation', async () => ({
     kind: 'user-input',
     canAutoDecide: true,
     answers: {
@@ -2544,9 +2558,9 @@ rl.on('line', (line) => {
     source: 'model',
   }))
 
-  mockPodBackendCredential(t, module, 'codex')
+  mockPodBackendCredential(t, runtime, 'codex')
 
-  t.mock.method(module.autoModeRuntime, 'promptText', async (prompt, signal) => {
+  t.mock.method(runtime, 'promptText', async (prompt, signal) => {
     if (prompt === 'select> ') {
       return await new Promise((resolve, reject) => {
         signal?.addEventListener('abort', () => {
@@ -2634,12 +2648,12 @@ rl.on('line', (line) => {
 })
 `)
 
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, runtime, cleanup } = await loadAutoModeRunner()
   t.after(() => cleanup())
 
   const prompts = []
-  mockPodBackendCredential(t, module, 'codex')
-  t.mock.method(module.autoModeRuntime, 'promptText', async (prompt) => {
+  mockPodBackendCredential(t, runtime, 'codex')
+  t.mock.method(runtime, 'promptText', async (prompt) => {
     prompts.push(prompt)
     return '/exit'
   })
@@ -2722,17 +2736,17 @@ rl.on('line', (line) => {
 })
 `)
 
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, runtime, cleanup } = await loadAutoModeRunner()
   t.after(() => cleanup())
 
-  mockPodBackendCredential(t, module, 'codex')
+  mockPodBackendCredential(t, runtime, 'codex')
 
   const scriptedInputs = [
     'Secretary steer: stay on the login recovery path',
     '/follow-up Secretary follow-up delivery: also add a regression test',
     '/exit',
   ]
-  t.mock.method(module.autoModeRuntime, 'promptText', async (prompt) => {
+  t.mock.method(runtime, 'promptText', async (prompt) => {
     if (prompt === 'you> ') {
       return scriptedInputs.shift() ?? '/exit'
     }
@@ -3386,14 +3400,14 @@ rl.on('line', (line) => {
 })
 `)
 
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, runtime, cleanup } = await loadAutoModeRunner()
   t.after(() => cleanup())
 
   const persisted = []
   const warnings = []
-  mockPodBackendCredential(t, module, 'codex', undefined, { persist: false })
-  t.mock.method(module.autoModeRuntime, 'promptText', async () => '/exit')
-  t.mock.method(module.autoModeRuntime, 'persistAutoModeConversationToPod', async (record) => {
+  mockPodBackendCredential(t, runtime, 'codex', undefined, { persist: false })
+  t.mock.method(runtime, 'promptText', async () => '/exit')
+  t.mock.method(runtime, 'persistAutoModeConversationToPod', async (record) => {
     persisted.push(record)
     throw new Error('ignore pod persistence errors')
   })
@@ -3452,15 +3466,15 @@ test('auto-mode times out final Pod persistence without blocking local success',
     reply: 'persist timeout turn',
   })
 
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, runtime, cleanup } = await loadAutoModeRunner()
   t.after(() => cleanup())
 
   const warnings = []
-  mockPodBackendCredential(t, module, 'codex', undefined, { persist: false })
-  t.mock.method(module.autoModeRuntime, 'promptText', async () => '/exit')
+  mockPodBackendCredential(t, runtime, 'codex', undefined, { persist: false })
+  t.mock.method(runtime, 'promptText', async () => '/exit')
   let syncSignal
   let aborted = false
-  t.mock.method(module.autoModeRuntime, 'persistAutoModeConversationToPod', async (_record, _runtime, options) => {
+  t.mock.method(runtime, 'persistAutoModeConversationToPod', async (_record, _runtime, options) => {
     syncSignal = options?.signal
     await new Promise((_resolve, reject) => {
       syncSignal?.addEventListener('abort', () => {
@@ -3555,13 +3569,13 @@ rl.on('line', (line) => {
 })
 `)
 
-  const { module, cleanup } = await loadAutoModeModule()
+  const { module, runtime, cleanup } = await loadAutoModeRunner()
   t.after(() => cleanup())
 
-  mockPodBackendCredential(t, module, 'codex')
+  mockPodBackendCredential(t, runtime, 'codex')
   const controller = new AbortController()
   let persisted
-  t.mock.method(module.autoModeRuntime, 'persistAutoModeConversationToPod', async (record) => {
+  t.mock.method(runtime, 'persistAutoModeConversationToPod', async (record) => {
     persisted = record
   })
 
