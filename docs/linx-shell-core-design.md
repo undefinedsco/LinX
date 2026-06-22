@@ -425,6 +425,14 @@ and other shell lifecycle modules that need to disable or inspect auto mode
 should call the auto command seam directly instead of importing the general
 command router.
 
+Submitted user-message recording is a shell session-control seam and belongs
+behind `linx-submitted-user-message-recording.ts`. The general interactive
+command router may decide that an input is not a LinX shell command and then
+delegate recording, but it must not directly construct session-control records,
+handle reconciliation warnings, or import the session-control manager for this
+purpose. This keeps command ownership separate from chat/thread reconciliation
+side effects.
+
 The current remaining design debt is shared shell state. Some modules still use
 `__linx*` properties on the interactive, editor, runtime, or session object.
 Only local patch sentinels and original-method handles are acceptable there.
