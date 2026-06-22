@@ -56,6 +56,17 @@ test('default Pi/TUI command module delegates runtime execution', () => {
   assert.doesNotMatch(piCliCommandSource, /\bstopInteractiveShellUnlessRestarting\b/, 'interactive stop lifecycle should live in the runtime execution module')
 })
 
+test('default Pi/TUI command module delegates startup planning', () => {
+  assert.match(piCliCommandSource, /from ['"]\.\/linx-pi-startup-plan\.js['"]/, 'Pi command orchestration should import startup planning from a dedicated module')
+  assert.doesNotMatch(piCliCommandSource, /\bresolveLinxStartupLoginPromptDecision\b/, 'startup login prompt decision should live in the startup plan module')
+  assert.doesNotMatch(piCliCommandSource, /\bresolveStartupLinxPodDataSession\b/, 'startup Pod session lookup should live in the startup plan module')
+  assert.doesNotMatch(piCliCommandSource, /\bcreateLinxPiSessionManager\b/, 'Pi session manager construction should live in the startup plan module')
+  assert.doesNotMatch(piCliCommandSource, /\bresolveLinxPiStartupControlState\b/, 'auto/Symphony startup control state should live in the startup plan module')
+  assert.doesNotMatch(piCliCommandSource, /\bgetDefaultPodDataSession\b/, 'runtime Pod data session source should live in the startup plan module')
+  assert.doesNotMatch(piCliCommandSource, /\bresolveAccountBaseUrl\b/, 'Cloud provider URL resolution should live in the startup plan module')
+  assert.doesNotMatch(piCliCommandSource, /\bLINX_AGENT_DIR\b/, 'agent-dir details should live below command admission')
+})
+
 test('CLI app delegates Pi runtime adapter wiring to a CLI composition module', () => {
   assert.match(cliAppSource, /from ['"]\.\/linx-cli-runtime-adapter-factory\.js['"]/, 'CLI app should import pre-composed runtime adapter factory from a CLI composition module')
   assert.doesNotMatch(cliAppSource, /from ['"]\.\/lib\/pi-adapter\/index\.js['"]/, 'CLI app should not import the Pi runtime adapter directly')

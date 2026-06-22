@@ -279,6 +279,42 @@ Specific decisions currently in force:
   is active, not through top-level `linx --help`.
 
 
+
+### CLI startup composition boundary
+
+The default `linx` entry is a shell composition surface. It may connect command
+line parsing, startup preflight, runtime adapter construction, and Pi execution,
+but it must not own the long-lived runtime decisions themselves. Keep the
+startup path split by responsibility:
+
+| Module boundary | Owns | Must not own |
+| --- | --- | --- |
+| CLI app entry | Registers command descriptors and global help shape | Pi adapter imports, hidden bridge internals, package manager implementation |
+| Pi command orchestration | Orders admission, startup planning, adapter creation, and runtime execution | Login decision logic, Pod session lookup, session manager construction, runtime bootstrap details |
+| Admission modules | Reject or route command-line shapes before side effects | Interactive rendering, Pod mutations, backend runtime startup |
+| Startup plan module | Computes startup login prompt, Pod data session source, session manager, startup control state, restore-auto hydration, and adapter/runtime option inputs | TTY lifecycle, process spawn/stop, shell rendering |
+| Runtime execution module | Runs print mode or interactive Pi runtime, hosts Pod mirror runtime, performs login-prompt handoff, and cleans up through restart-aware lifecycle hooks | Command admission policy, Cloud/account URL policy, shared Pod resource semantics |
+| Runtime adapter factory | Wires the active backend adapter from explicit startup options | CLI command parsing, user-facing help, session selector UI |
+
+Startup side-effect ordering is part of the boundary:
+
+1. Reject conflicting or retired command shapes before login, Pod session lookup,
+   auto hydration, or interactive bootstrap.
+2. Run command-specific admission such as auto/backend routing and hidden Pod
+   mirror diagnostics before constructing the interactive runtime.
+3. Resolve the startup login prompt before session manager/control-state
+   hydration.
+4. Hydrate Pod-backed startup state only when the launch mode can safely use it;
+   print mode and explicit startup login prompts must not do hidden hydration.
+5. Build adapter/runtime options as data, then pass them into the runtime
+   execution boundary.
+
+The command module may sequence these boundaries, but it should stay thin. When
+new startup behavior needs login state, Pod session state, account base URLs,
+session archive selectors, restore-auto state, or agent directory details, put
+that behavior in the startup plan or a narrower dependency module rather than
+adding another branch to the command orchestrator.
+
 ### Top-level config namespace
 
 `linx config` is the only top-level shell configuration namespace. It exists for

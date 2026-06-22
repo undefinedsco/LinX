@@ -1,17 +1,11 @@
 import type { Argv, CommandModule } from 'yargs'
-import { resolveAccountBaseUrl } from './account-api.js'
 import { buildAutoModeOptions, type AutoModeCommandArgs } from './auto-mode-command.js'
-import { resolveLinxStartupLoginPromptDecision } from './linx-startup-login-policy.js'
-import { getDefaultPodDataSession } from './pod-data-session.js'
-import { resolveStartupLinxPodDataSession } from './linx-pod-data-session-factory.js'
-import { assertLinxPiSessionSelectorCompatibility, createLinxPiSessionManager } from './linx-session-manager.js'
-import { LINX_AGENT_DIR } from './linx-interactive-branding.js'
-import { resolveLinxPiStartupControlState } from './linx-pi-startup-control.js'
 import { assertDefaultStartupPromptTokenIsAllowed, type LinxTopLevelCommandAdmissionOptions } from './linx-top-level-command-admission.js'
 import { handleLinxPodMirrorSyncCliAdmission } from './linx-pod-mirror-sync-cli-admission.js'
 import { handleLinxAutoModeCliAdmission } from './linx-auto-mode-cli-admission.js'
 import { handleLinxPiResumeCliAdmission } from './linx-pi-resume-cli-admission.js'
 import { runLinxPiRuntime, type CreateLinxRuntimeAdapterForPiCommand } from './linx-pi-runtime-execution.js'
+import { assertLinxPiStartupSessionSelectorCompatibility, createLinxPiStartupPlan } from './linx-pi-startup-plan.js'
 
 export interface LinxPiCliCommandDependencies {
   createRuntimeAdapter: CreateLinxRuntimeAdapterForPiCommand
@@ -62,54 +56,10 @@ export async function runPiCommand(argv: {
     return
   }
 
-  const cwd = argv.cwd || process.cwd()
-  const startupLoginPrompt = await resolveLinxStartupLoginPromptDecision({
-    backend: 'cloud',
-    print: argv.print,
-    issuerUrl: resolveAccountBaseUrl(),
-    resolveSession: resolveStartupLinxPodDataSession,
-  })
-
-  const sessionManager = await createLinxPiSessionManager({
-    cwd,
-    agentDir: LINX_AGENT_DIR,
-    session: argv.session,
-    sessionDir: argv['session-dir'],
-    sessionId: argv['session-id'],
-    last: Boolean(argv.continue || argv.last),
-  })
-  const restoreAutoFromHydration = Boolean(argv.session || argv['session-id'] || argv.continue || argv.last)
-  const controlState = await resolveLinxPiStartupControlState({
-    requestedAuto: typeof argv.auto === 'boolean' ? argv.auto : undefined,
-    hydrateFromPod: !argv.print && !startupLoginPrompt.shouldPrompt,
-    restoreAutoFromHydration,
-    sessionManager,
-  })
-  const autoEnabled = controlState.autoEnabled
-  const symphonyEnabled = controlState.symphonyEnabled
-
+  const startupPlan = await createLinxPiStartupPlan(argv)
   await runLinxPiRuntime({
-    adapter: dependencies.createRuntimeAdapter({
-      cwd,
-      model: argv.model,
-      backend: 'cloud',
-      autoEnabled,
-      symphonyEnabled,
-      getPodDataSession: getDefaultPodDataSession,
-      port: argv.port,
-      providerConfig: {
-        baseUrl: String(argv['runtime-url'] ?? 'https://api.undefineds.co/v1'),
-        issuerUrl: resolveAccountBaseUrl(),
-      },
-    }),
-    agentDir: LINX_AGENT_DIR,
-    autoEnabled,
-    print: argv.print,
-    prompt: argv.prompt,
-    restoreAutoFromHydration,
-    sessionManager,
-    startupLoginPrompt,
-    symphonyEnabled,
+    ...startupPlan.runtimeOptions,
+    adapter: dependencies.createRuntimeAdapter(startupPlan.adapterOptions),
   })
 }
 
@@ -120,11 +70,7 @@ export function assertLinxPiCliSessionSelectorCompatibility(argv: {
   resume?: boolean
   last?: boolean
 }): void {
-  assertLinxPiSessionSelectorCompatibility({
-    session: argv.session,
-    sessionId: argv['session-id'],
-    last: Boolean(argv.continue || argv.resume || argv.last),
-  })
+  assertLinxPiStartupSessionSelectorCompatibility(argv)
 }
 
 export interface PiCommandArgs {
