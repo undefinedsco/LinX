@@ -1,6 +1,6 @@
 import type { AgentRuntimeBackendConfig } from '@linx/agent-runtime'
 import type { AutoModeCredentialSource, AutoModeWorkerBackend } from './auto-mode/types.js'
-import { runSymphony } from './symphony-command.js'
+import { runSymphony } from './symphony/run.js'
 import { createSymphonyRuntimeForPodProjection } from './symphony/runtime.js'
 import { formatSymphonyStatus } from './symphony/status.js'
 import { DEFAULT_SECRETARY_CHAT_ID, secretaryChatUri, secretaryThreadUri } from './pod-mirror-mapping.js'

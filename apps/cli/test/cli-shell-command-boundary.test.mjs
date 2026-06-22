@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from 'node:fs'
 const commandSource = readFileSync(new URL('../src/lib/linx-pi-cli-command.ts', import.meta.url), 'utf8')
 const autoModeCommandSource = readFileSync(new URL('../src/lib/auto-mode-command.ts', import.meta.url), 'utf8')
 const interactiveSymphonyCommandSource = readFileSync(new URL('../src/lib/linx-symphony-interactive-command.ts', import.meta.url), 'utf8')
-const symphonyCommandSource = readFileSync(new URL('../src/lib/symphony-command.ts', import.meta.url), 'utf8')
+const symphonyRunSource = readFileSync(new URL('../src/lib/symphony/run.ts', import.meta.url), 'utf8')
 const codexPluginCommandSource = readFileSync(new URL('../src/lib/linx-codex-plugin-command.ts', import.meta.url), 'utf8')
 const autoModeRunnerSource = readFileSync(new URL('../src/lib/auto-mode/runner.ts', import.meta.url), 'utf8')
 const autoModeDisplaySource = readFileSync(new URL('../src/lib/auto-mode/display.ts', import.meta.url), 'utf8')
@@ -172,17 +172,31 @@ test('Symphony Pod projection does not expose a test-only internal aggregate', (
   )
 })
 
-test('symphony command module depends on owning auto-mode modules instead of the aggregate barrel', () => {
+test('Symphony run use-case lives under the Symphony module namespace', () => {
+  assert.equal(
+    existsSync(new URL('../src/lib/symphony-command.ts', import.meta.url)),
+    false,
+    'Symphony run behavior should not live in an ambiguous command module',
+  )
+  assert.equal(
+    existsSync(new URL('../src/lib/symphony/run.ts', import.meta.url)),
+    true,
+    'Symphony run behavior should live under the Symphony module namespace',
+  )
+  assert.match(symphonyRunSource, /export\s+async\s+function\s+runSymphony\b/)
+})
+
+test('symphony run module depends on owning auto-mode modules instead of the aggregate barrel', () => {
   assert.doesNotMatch(
-    symphonyCommandSource,
-    /from ['"]\.\/auto-mode\/index\.js['"]/,
+    symphonyRunSource,
+    /from ['"]\.\.\/auto-mode\/index\.js['"]/,
     'symphony command should import auto-mode runner and types from their owning modules',
   )
 })
 
-test('symphony command module does not own the default runtime dependency aggregate', () => {
+test('symphony run module does not own the default runtime dependency aggregate', () => {
   assert.doesNotMatch(
-    symphonyCommandSource,
+    symphonyRunSource,
     /const\s+defaultRuntime\s*:\s*SymphonyRuntime\b/,
     'Symphony runtime dependencies should live in an owning runtime module instead of the command module',
   )
@@ -192,8 +206,8 @@ test('symphony command module does not own the default runtime dependency aggreg
     'Symphony runtime dependency injection should have an owning module',
   )
   assert.doesNotMatch(
-    symphonyCommandSource,
-    /from ['"]\.\/auto-mode\/archive\.js['"]/,
+    symphonyRunSource,
+    /from ['"]\.\.\/auto-mode\/archive\.js['"]/,
     'Symphony command should read auto-mode archives through its runtime boundary instead of a hidden fallback import',
   )
 })

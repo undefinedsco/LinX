@@ -39,7 +39,7 @@ async function withWorkspaceCompatModules(t) {
   ] = await Promise.all([
     loadAutoModeModule('lib/linx-session-manager.ts'),
     loadAutoModeModule('lib/auto-mode/archive.ts'),
-    loadAutoModeModule('lib/symphony-command.ts'),
+    loadAutoModeModule('lib/symphony/run.ts'),
   ])
 
   t.after(() => {

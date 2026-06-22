@@ -377,7 +377,7 @@ test('symphony dispatch bridges non-dry-run plans into the auto-mode runtime and
     rmSync(root, { recursive: true, force: true })
   })
 
-  const { module, cleanup } = await loadAutoModeModule('lib/symphony-command.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/symphony/run.ts')
   t.after(() => cleanup())
 
   const runCalls = []
@@ -391,14 +391,14 @@ test('symphony dispatch bridges non-dry-run plans into the auto-mode runtime and
     JSON.stringify({
       symphonyFinal: true,
       summary: 'Runtime bridge completed with Pod projection.',
-      changedFiles: ['apps/cli/src/lib/symphony-command.ts'],
+      changedFiles: ['apps/cli/src/lib/symphony/run.ts'],
       commands: ['fake runtime'],
       evidence: ['runtime called'],
       risks: [],
       followUps: [{
         kind: 'missing_shared_abstraction',
         summary: 'Extract reusable worker acceptance review into shared control use-case.',
-        evidence: ['apps/cli/src/lib/symphony-command.ts'],
+        evidence: ['apps/cli/src/lib/symphony/run.ts'],
         suggestedDisposition: 'new_issue',
         reason: 'CLI and Web need the same worker acceptance logic.',
       }],
@@ -553,7 +553,7 @@ test('symphony dispatch persists heartbeat RunSteps while a worker is still runn
     rmSync(root, { recursive: true, force: true })
   })
 
-  const { module, cleanup } = await loadAutoModeModule('lib/symphony-command.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/symphony/run.ts')
   t.after(() => cleanup())
 
   const projectionCalls = []
@@ -636,7 +636,7 @@ test('symphony dispatch keeps the issue blocked when Secretary acceptance requir
     rmSync(root, { recursive: true, force: true })
   })
 
-  const { module, cleanup } = await loadAutoModeModule('lib/symphony-command.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/symphony/run.ts')
   t.after(() => cleanup())
 
   let autoSessions = []
@@ -651,7 +651,7 @@ test('symphony dispatch keeps the issue blocked when Secretary acceptance requir
       followUps: [{
         kind: 'missing_shared_abstraction',
         summary: 'Extract shared worker acceptance review before accepting this task.',
-        evidence: ['apps/cli/src/lib/symphony-command.ts'],
+        evidence: ['apps/cli/src/lib/symphony/run.ts'],
         requiredBeforeAcceptance: true,
         reason: 'The delivered behavior would otherwise duplicate lifecycle decisions.',
       }],
@@ -728,7 +728,7 @@ test('symphony dispatch can run quiet one-shot workers for TUI-verifiable delega
     rmSync(root, { recursive: true, force: true })
   })
 
-  const { module, cleanup } = await loadAutoModeModule('lib/symphony-command.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/symphony/run.ts')
   t.after(() => cleanup())
 
   const runCalls = []
@@ -801,7 +801,7 @@ test('symphony dispatch uses the worker session workspace resolved by control re
     rmSync(root, { recursive: true, force: true })
   })
 
-  const { module, cleanup } = await loadAutoModeModule('lib/symphony-command.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/symphony/run.ts')
   t.after(() => cleanup())
 
   const secretaryWorkspace = '/tmp/secretary-linx'
@@ -886,7 +886,7 @@ test('symphony dispatch merges follow-up work against Pod issues before local ca
     rmSync(root, { recursive: true, force: true })
   })
 
-  const { module, cleanup } = await loadAutoModeModule('lib/symphony-command.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/symphony/run.ts')
   t.after(() => cleanup())
 
   const existingIssue = {
@@ -985,7 +985,7 @@ test('symphony run preserves caller-provided delegation target chat and thread',
     rmSync(root, { recursive: true, force: true })
   })
 
-  const { module, cleanup } = await loadAutoModeModule('lib/symphony-command.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/symphony/run.ts')
   t.after(() => cleanup())
 
   const target = {
@@ -1042,7 +1042,7 @@ test('symphony product runtime fails Pod control writes instead of downgrading t
     rmSync(root, { recursive: true, force: true })
   })
 
-  const { module, cleanup } = await loadAutoModeModule('lib/symphony-command.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/symphony/run.ts')
   t.after(() => cleanup())
 
   let runCalled = false
@@ -1088,7 +1088,7 @@ test('symphony product runtime treats missing Pod session as blocked control sta
     rmSync(root, { recursive: true, force: true })
   })
 
-  const { module, cleanup } = await loadAutoModeModule('lib/symphony-command.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/symphony/run.ts')
   t.after(() => cleanup())
 
   await assert.rejects(
@@ -1240,10 +1240,10 @@ rl.on('line', (line) => {
 })
 `)
 
-  const { module: symphonyModule, entryPath, cleanup } = await loadAutoModeModule('lib/symphony-command.ts')
+  const { module: symphonyModule, entryPath, cleanup } = await loadAutoModeModule('lib/symphony/run.ts')
   t.after(() => cleanup())
-  const autoModeRunnerModule = await importCompiledSibling(entryPath, 'auto-mode/runner.js')
-  const autoModeRuntime = (await importCompiledSibling(entryPath, 'auto-mode/runtime.js')).autoModeRuntime
+  const autoModeRunnerModule = await importCompiledSibling(entryPath, '../auto-mode/runner.js')
+  const autoModeRuntime = (await importCompiledSibling(entryPath, '../auto-mode/runtime.js')).autoModeRuntime
   t.mock.method(autoModeRuntime, 'promptText', async (prompt) => {
     if (prompt === 'you> ') {
       return '/exit'
@@ -1404,7 +1404,7 @@ test('symphony launches Claude Code alias model as a router-backed goal worker s
     rmSync(root, { recursive: true, force: true })
   })
 
-  const { module, cleanup } = await loadAutoModeModule('lib/symphony-command.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/symphony/run.ts')
   t.after(() => cleanup())
 
   const runCalls = []
@@ -1463,7 +1463,7 @@ test('symphony launches Claude Code alias model as a router-backed goal worker s
 })
 
 test('symphony rejects codex worker with provider-routed deepseek model', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/symphony-command.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/symphony/run.ts')
   t.after(() => cleanup())
 
   let runCalled = false
@@ -1491,7 +1491,7 @@ test('symphony rejects codex worker with provider-routed deepseek model', async 
 })
 
 test('symphony rejects Claude Code worker with direct provider-routed deepseek model', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/symphony-command.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/symphony/run.ts')
   t.after(() => cleanup())
 
   let runCalled = false
@@ -1532,7 +1532,7 @@ test('symphony launches LinX native worker with deepseek-v4 goal model', async (
     rmSync(root, { recursive: true, force: true })
   })
 
-  const { module, cleanup } = await loadAutoModeModule('lib/symphony-command.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/symphony/run.ts')
   t.after(() => cleanup())
 
   const runCalls = []

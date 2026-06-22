@@ -37,12 +37,12 @@ import {
   withSymphonySessionStatus,
   withSymphonyTaskStatus,
   writeSymphonyRunPlan,
-} from './symphony/archive.js'
+} from './archive.js'
 import type {
   listOpenSymphonyIssuesFromPod,
   persistSymphonyControlStateToPod,
-} from './symphony/pod-projection.js'
-import { defaultSymphonyRuntime, type SymphonyRuntime } from './symphony/runtime.js'
+} from './pod-projection.js'
+import { defaultSymphonyRuntime, type SymphonyRuntime } from './runtime.js'
 
 const DEFAULT_SYMPHONY_HEARTBEAT_INTERVAL_MS = 60_000
 

@@ -421,7 +421,7 @@ Required behavior:
 
 The following current LinX code already implements part of this spec:
 
-- `apps/cli/src/lib/symphony-command.ts`: creates run plans, persists planned / running / completed / failed stages, dispatches workers through Thread Reconciler, calls auto-mode with `goalMode`, and emits delivery status events.
+- `apps/cli/src/lib/symphony/run.ts`: creates run plans, persists planned / running / completed / failed stages, dispatches workers through Thread Reconciler, calls auto-mode with `goalMode`, and emits delivery status events.
   For Codex workers it ingests the final report from the archived transcript
   after the worker exits.
 - `apps/cli/src/lib/auto-mode/runner.ts`: launches ACP/native backends, archives stdout/stderr/normalized events, handles approval/input requests, and projects final conversations to Pod.
