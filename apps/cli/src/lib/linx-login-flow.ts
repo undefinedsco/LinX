@@ -622,7 +622,7 @@ function extractUserMessageText(message: unknown): string | undefined {
   return text || undefined
 }
 
-async function refreshLinxAuthState(interactive: any): Promise<void> {
+export async function refreshLinxAuthState(interactive: any): Promise<void> {
   clearLinxAuthPromptOnStart(interactive)
   syncRuntimeCredential(interactive)
   interactive.session?.modelRegistry?.refresh?.()
@@ -630,7 +630,6 @@ async function refreshLinxAuthState(interactive: any): Promise<void> {
   interactive.ui?.requestRender?.()
 }
 
-export const __testRefreshLinxAuthState = refreshLinxAuthState
 
 function authStatusPrefix(reason: LinxAuthReason): string {
   if (reason === 'expired') {
