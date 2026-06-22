@@ -93,7 +93,8 @@ export async function runPiCommand(argv: {
   assertLinxPiCliSessionSelectorCompatibility(argv)
   const firstPromptToken = Array.isArray(argv.prompt) ? argv.prompt[0] : undefined
   // Reject command-shaped aliases only when they would fall through to the default TUI prompt.
-  if (options.rejectReservedPromptCommands && firstPromptToken && RESERVED_NON_TOP_LEVEL_COMMANDS.has(firstPromptToken)) {
+  const shouldRejectReservedPromptCommand = options.rejectReservedPromptCommands && !argv.print && !argv.backend
+  if (shouldRejectReservedPromptCommand && firstPromptToken && RESERVED_NON_TOP_LEVEL_COMMANDS.has(firstPromptToken)) {
     throw new Error(`Unknown command: ${firstPromptToken}`)
   }
   if (argv.resume) {

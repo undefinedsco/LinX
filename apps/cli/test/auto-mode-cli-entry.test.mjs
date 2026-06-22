@@ -168,6 +168,64 @@ test('compiled cli keeps --auto as auto control, not backend entry', async (t) =
   )
 })
 
+test('compiled cli print keeps reserved command words as explicit non-interactive prompts', async (t) => {
+  const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-print-command-shaped-prompt-'))
+  t.after(() => {
+    rmSync(outdir, { recursive: true, force: true })
+  })
+
+  try {
+    execFileSync('tsc', [
+      '--outDir',
+      outdir,
+      '--rootDir',
+      sourceRoot,
+      '--module',
+      'nodenext',
+      '--moduleResolution',
+      'nodenext',
+      '--target',
+      'ES2022',
+      '--lib',
+      'ES2022',
+      '--types',
+      'node',
+      '--skipLibCheck',
+      'true',
+      '--noEmitOnError',
+      'false',
+      entryPath,
+    ], {
+      cwd: cliRoot,
+      stdio: 'pipe',
+    })
+  } catch {
+    assert.ok(existsSync(join(outdir, 'index.js')))
+  }
+
+  assert.throws(
+    () => execFileSync(process.execPath, [join(outdir, 'index.js'), '--print', 'fork'], {
+      cwd: cliRoot,
+      env: {
+        ...process.env,
+        HOME: join(outdir, 'empty-home'),
+      },
+      encoding: 'utf-8',
+      stdio: 'pipe',
+    }),
+    (error) => {
+      const output = [
+        error.stdout?.toString?.() ?? '',
+        error.stderr?.toString?.() ?? '',
+        String(error),
+      ].join('')
+      assert.match(output, /run `linx login` first/i)
+      assert.doesNotMatch(output, /Unknown command: fork/)
+      return true
+    },
+  )
+})
+
 test('compiled cli exec keeps reserved command words as explicit non-interactive prompts', async (t) => {
   const outdir = mkdtempSync(join(cliRoot, '.tmp-linx-cli-exec-command-shaped-prompt-'))
   t.after(() => {
