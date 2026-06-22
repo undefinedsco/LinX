@@ -15,6 +15,7 @@ const autoModeAuthSource = readFileSync(new URL('../src/lib/auto-mode/auth.ts', 
 const autoModePodPersistenceSource = readFileSync(new URL('../src/lib/auto-mode/pod-persistence.ts', import.meta.url), 'utf8')
 const autoModePodApprovalSource = readFileSync(new URL('../src/lib/auto-mode/pod-approval.ts', import.meta.url), 'utf8')
 const podChatStoreSource = readFileSync(new URL('../src/lib/pod-chat-store.ts', import.meta.url), 'utf8')
+const symphonyPodProjectionSource = readFileSync(new URL('../src/lib/symphony/pod-projection.ts', import.meta.url), 'utf8')
 
 test('default Pi/TUI command module does not construct Pod ORM state directly', () => {
   assert.doesNotMatch(commandSource, /from ['"]\.\/models\.js['"]/, 'shell command should not import shared model DB primitives directly')
@@ -102,6 +103,14 @@ test('auto-mode Pod approval stores do not expose a test-only internal aggregate
     autoModePodApprovalSource,
     /__podApprovalInternal/,
     'Pod approval store tests should import store factories from their owning module instead of a production __internal aggregate export',
+  )
+})
+
+test('Symphony Pod projection does not expose a test-only internal aggregate', () => {
+  assert.doesNotMatch(
+    symphonyPodProjectionSource,
+    /__symphonyPodProjectionInternal/,
+    'Symphony Pod projection tests should use named public use-cases or owning modules instead of a production __internal aggregate export',
   )
 })
 
