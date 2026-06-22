@@ -1,49 +1,17 @@
 import type { Argv, CommandModule } from 'yargs'
-import { runPrintMode, type AgentSessionRuntime } from '@earendil-works/pi-coding-agent'
 import { resolveAccountBaseUrl } from './account-api.js'
 import { buildAutoModeOptions, type AutoModeCommandArgs } from './auto-mode-command.js'
-import { resolveLinxInteractiveLoginReason, resolveLinxStartupLoginPromptDecision } from './linx-startup-login-policy.js'
-import { bootstrapLinxInteractiveMode, type LinxLoginReason } from './linx-interactive-bootstrap.js'
-import { clearDefaultPodDataSession, getDefaultPodDataSession } from './pod-data-session.js'
+import { resolveLinxStartupLoginPromptDecision } from './linx-startup-login-policy.js'
+import { getDefaultPodDataSession } from './pod-data-session.js'
 import { resolveStartupLinxPodDataSession } from './linx-pod-data-session-factory.js'
 import { assertLinxPiSessionSelectorCompatibility, createLinxPiSessionManager } from './linx-session-manager.js'
 import { LINX_AGENT_DIR } from './linx-interactive-branding.js'
 import { resolveLinxPiStartupControlState } from './linx-pi-startup-control.js'
-import { createLinxPodMirrorRuntimeHost } from './linx-pod-mirror-runtime-host.js'
-import { stopInteractiveShellUnlessRestarting } from './shell-lifecycle.js'
 import { assertDefaultStartupPromptTokenIsAllowed, type LinxTopLevelCommandAdmissionOptions } from './linx-top-level-command-admission.js'
 import { handleLinxPodMirrorSyncCliAdmission } from './linx-pod-mirror-sync-cli-admission.js'
 import { handleLinxAutoModeCliAdmission } from './linx-auto-mode-cli-admission.js'
 import { handleLinxPiResumeCliAdmission } from './linx-pi-resume-cli-admission.js'
-
-export interface LinxPiCliRuntimeAdapter {
-  readonly cwd: string
-  start(): Promise<void>
-  close(): Promise<void>
-  createRuntime(context: {
-    cwd: string
-    agentDir: string
-    sessionManager: unknown
-  }): Promise<AgentSessionRuntime>
-}
-
-export interface CreateLinxRuntimeAdapterForPiCommandOptions {
-  cwd: string
-  model?: string
-  backend: 'cloud'
-  autoEnabled: boolean
-  symphonyEnabled: boolean
-  getPodDataSession: typeof getDefaultPodDataSession
-  port?: number
-  providerConfig: {
-    baseUrl: string
-    issuerUrl: string
-  }
-}
-
-export type CreateLinxRuntimeAdapterForPiCommand = (
-  options: CreateLinxRuntimeAdapterForPiCommandOptions,
-) => LinxPiCliRuntimeAdapter
+import { runLinxPiRuntime, type CreateLinxRuntimeAdapterForPiCommand } from './linx-pi-runtime-execution.js'
 
 export interface LinxPiCliCommandDependencies {
   createRuntimeAdapter: CreateLinxRuntimeAdapterForPiCommand
@@ -120,77 +88,29 @@ export async function runPiCommand(argv: {
   const autoEnabled = controlState.autoEnabled
   const symphonyEnabled = controlState.symphonyEnabled
 
-  const adapter = dependencies.createRuntimeAdapter({
-    cwd,
-    model: argv.model,
-    backend: 'cloud',
-    autoEnabled,
-    symphonyEnabled,
-    getPodDataSession: getDefaultPodDataSession,
-    port: argv.port,
-    providerConfig: {
-      baseUrl: String(argv['runtime-url'] ?? 'https://api.undefineds.co/v1'),
-      issuerUrl: resolveAccountBaseUrl(),
-    },
-  })
-
-  await adapter.start()
-
-  const runtime = await adapter.createRuntime({
-    cwd: adapter.cwd,
-    agentDir: LINX_AGENT_DIR,
-    sessionManager,
-  })
-  const prompt = ((argv.prompt as string[] | undefined) ?? []).join(' ').trim()
-  try {
-    if (argv.print) {
-      const exitCode = await runPrintMode(runtime, {
-        mode: 'text',
-        initialMessage: prompt || undefined,
-      })
-      if (exitCode !== 0) {
-        process.exitCode = exitCode
-      }
-      return
-    }
-
-    const podMirrorHost = createLinxPodMirrorRuntimeHost({
-      runtime,
-      cwd: adapter.cwd,
-      agentDir: LINX_AGENT_DIR,
-      sessionManager,
+  await runLinxPiRuntime({
+    adapter: dependencies.createRuntimeAdapter({
+      cwd,
+      model: argv.model,
+      backend: 'cloud',
       autoEnabled,
       symphonyEnabled,
-    })
-    const interactive = bootstrapLinxInteractiveMode(podMirrorHost.runtime, {
-      initialMessage: prompt || undefined,
-      restoredAuto: autoEnabled && restoreAutoFromHydration,
-      onAutoControlChange(enabled) {
-        podMirrorHost.syncAutoControlState(enabled)
+      getPodDataSession: getDefaultPodDataSession,
+      port: argv.port,
+      providerConfig: {
+        baseUrl: String(argv['runtime-url'] ?? 'https://api.undefineds.co/v1'),
+        issuerUrl: resolveAccountBaseUrl(),
       },
-      onSymphonyControlChange(enabled) {
-        podMirrorHost.syncSymphonyControlState(enabled)
-      },
-    })
-    const bridge = podMirrorHost.runtime
-    const loginPromptReason: LinxLoginReason | null = resolveLinxInteractiveLoginReason({
-      startupDecision: startupLoginPrompt,
-      runtimePromptOnStart: bridge.linxAuthBridge?.shouldPromptLoginOnStart,
-    })
-    if (loginPromptReason) {
-      interactive.requestLogin?.(loginPromptReason)
-    }
-
-    try {
-      await interactive.run()
-    } finally {
-      await podMirrorHost.close()
-      stopInteractiveShellUnlessRestarting(interactive)
-    }
-  } finally {
-    await adapter.close()
-    clearDefaultPodDataSession()
-  }
+    }),
+    agentDir: LINX_AGENT_DIR,
+    autoEnabled,
+    print: argv.print,
+    prompt: argv.prompt,
+    restoreAutoFromHydration,
+    sessionManager,
+    startupLoginPrompt,
+    symphonyEnabled,
+  })
 }
 
 export function assertLinxPiCliSessionSelectorCompatibility(argv: {

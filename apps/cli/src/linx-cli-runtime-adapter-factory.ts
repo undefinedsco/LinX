@@ -1,5 +1,5 @@
 import { createLinxRuntimeAdapter } from './lib/pi-adapter/runtime.js'
-import type { CreateLinxRuntimeAdapterForPiCommand } from './lib/linx-pi-cli-command.js'
+import type { CreateLinxRuntimeAdapterForPiCommand } from './lib/linx-pi-runtime-execution.js'
 
 export const createDefaultLinxRuntimeAdapterForPiCommand: CreateLinxRuntimeAdapterForPiCommand = (options) => createLinxRuntimeAdapter({
   async createRemoteCompletion(completionOptions) {
