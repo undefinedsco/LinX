@@ -8,6 +8,7 @@ import {
 } from './linx-self-update.js'
 import { openExternalUrl } from './linx-external-url.js'
 import { normalizeSelectorChoice } from './linx-selector-choice.js'
+import { registerLinxInteractiveRunHandler } from './linx-interactive-run-router.js'
 
 const LINX_UPDATE_IN_PROGRESS = Symbol.for('linx.tui.updateInProgress')
 const LINX_UPDATE_CHECK_SCHEDULED = Symbol.for('linx.tui.updateCheckScheduled')
@@ -62,17 +63,21 @@ export function replayDeferredLinxUpdateNotification(
 }
 
 function patchVersionCheck(interactive: any): void {
-  const originalRun = interactive.run?.bind(interactive)
-  if (typeof originalRun === 'function') {
-    interactive.run = async function patchedLinxRun(...args: unknown[]): Promise<unknown> {
-      this[LINX_SUPPRESS_UPSTREAM_PI_UPDATE] = true
-      return originalRun(...args)
-    }
-  }
+  installLinxUpstreamPiUpdateSuppression(interactive)
 
   interactive.checkForNewVersion = async function patchedCheckForNewVersion(): Promise<string | undefined> {
     return checkForNewLinxVersion()
   }
+}
+
+function installLinxUpstreamPiUpdateSuppression(interactive: any): void {
+  registerLinxInteractiveRunHandler(interactive, {
+    name: 'linx-update-notification:suppress-upstream-pi-update',
+    priority: 0,
+    handler({ interactive: runInteractive }) {
+      runInteractive[LINX_SUPPRESS_UPSTREAM_PI_UPDATE] = true
+    },
+  })
 }
 
 function patchUpdateNotification(interactive: any, options: LinxUpdateNotificationOptions): void {
