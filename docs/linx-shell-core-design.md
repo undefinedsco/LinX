@@ -399,6 +399,15 @@ not directly patch `session.prompt`, `session.sendUserMessage`, or
 `interactive.rebindCurrentSession`. This keeps editor submit routing, projected
 command routing, and session method patching as separate shell seams.
 
+Input and final-submit interception are another shell-input patch and belong
+behind `linx-input-command-routing.ts`. The general interactive command router
+may still own the LinX shell command handler and expose compatibility installer
+functions, but it must not directly patch `interactive.getUserInput`,
+`editor.onSubmit`, or `interactive.setCustomEditorComponent`. Those editor/input
+method patches are a lifecycle-sensitive Pi adaptation seam; keeping them in one
+input module prevents slash-command routing, projected command routing, and
+session method interception from depending on wrapper nesting or import order.
+
 The current remaining design debt is shared shell state. Some modules still use
 `__linx*` properties on the interactive, editor, runtime, or session object.
 Only local patch sentinels and original-method handles are acceptable there.
