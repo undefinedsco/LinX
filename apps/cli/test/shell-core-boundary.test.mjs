@@ -477,6 +477,27 @@ test('custom editor component rebinding is centralized in the shell editor compo
   assert.deepEqual(violations, [])
 })
 
+test('extension UI context patching is centralized in the shell extension UI router', () => {
+  const allowed = new Set([
+    'linx-extension-ui-context-router.ts',
+  ])
+  const violations = []
+
+  for (const file of listSourceFiles(libRoot)) {
+    const relativePath = relative(libRoot, file)
+    if (relativePath.startsWith(adapterSegment) || allowed.has(relativePath)) {
+      continue
+    }
+
+    const source = readFileSync(file, 'utf8')
+    if (/interactive\.createExtensionUIContext\s*=/.test(source)) {
+      violations.push(relativePath)
+    }
+  }
+
+  assert.deepEqual(violations, [])
+})
+
 
 
 test('concrete shell command execution lives in a dedicated executor module', () => {
