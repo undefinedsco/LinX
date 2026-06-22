@@ -498,6 +498,27 @@ test('extension UI context patching is centralized in the shell extension UI rou
   assert.deepEqual(violations, [])
 })
 
+test('session thinking capability patching is centralized in the shell session thinking router', () => {
+  const allowed = new Set([
+    'linx-session-thinking-capability-router.ts',
+  ])
+  const violations = []
+
+  for (const file of listSourceFiles(libRoot)) {
+    const relativePath = relative(libRoot, file)
+    if (relativePath.startsWith(adapterSegment) || allowed.has(relativePath)) {
+      continue
+    }
+
+    const source = readFileSync(file, 'utf8')
+    if (/session\.(?:supportsXhighThinking|getAvailableThinkingLevels)\s*=/.test(source)) {
+      violations.push(relativePath)
+    }
+  }
+
+  assert.deepEqual(violations, [])
+})
+
 
 
 test('concrete shell command execution lives in a dedicated executor module', () => {

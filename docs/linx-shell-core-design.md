@@ -102,6 +102,11 @@ Hard rules:
   patch point. `interactive.createExtensionUIContext` is patched only by
   `apps/cli/src/lib/linx-extension-ui-context-router.ts`; modules that need to
   augment extension dialogs register ordered context handlers.
+- Runtime session thinking capability is a session capability seam, not
+  provider-specific method replacement. `session.supportsXhighThinking` and
+  `session.getAvailableThinkingLevels` are patched only by
+  `apps/cli/src/lib/linx-session-thinking-capability-router.ts`; provider
+  modules register capability handlers.
 - New lifecycle or submit behavior must add a handler to the relevant router and
   a boundary test in `apps/cli/test/shell-core-boundary.test.mjs`.
 
@@ -538,6 +543,14 @@ dialogs such as approval selectors, confirms, and inputs; LinX features may
 decorate that context with Pod-backed approval or Secretary mediation. Those
 features must register ordered context handlers with the router instead of each
 wrapping `interactive.createExtensionUIContext`.
+
+Runtime session thinking capability belongs behind
+`linx-session-thinking-capability-router.ts`. Provider-specific capability
+rules, such as LinX Cloud exposing `xhigh` only for reasoning-capable models,
+must register handlers with that router. They must not replace
+`session.supportsXhighThinking` or `session.getAvailableThinkingLevels`
+directly, because multiple providers or runtime layers may need to contribute
+thinking-level capability rules.
 
 Concrete LinX shell command execution belongs behind
 `linx-shell-command-executor.ts`. The interactive command routing module may
