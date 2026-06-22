@@ -30,11 +30,14 @@ export interface LinxPiSessionManagerOptions {
   cwd: string
   agentDir: string
   session?: string
+  sessionDir?: string
+  sessionId?: string
   last?: boolean
   podSessionSource?: LinxPiPodSessionSource | null
 }
 
 export interface LinxPiListSessionsOptions {
+  sessionDir?: string
   podSessionSource?: LinxPiPodSessionSource | null
 }
 
@@ -94,7 +97,9 @@ export function createNativeLinxPiPodSessionSource(context: {
 }
 
 export async function createLinxPiSessionManager(options: LinxPiSessionManagerOptions): Promise<SessionManager> {
-  const sessionDir = getDefaultLinxPiSessionDir(options.cwd, options.agentDir)
+  assertLinxPiSessionSelectorCompatibility(options)
+  const sessionDir = resolveLinxPiSessionDir(options.cwd, options.agentDir, options.sessionDir)
+  const sessionId = normalizeLinxPiSessionId(options.sessionId)
 
   if (options.session?.trim()) {
     const session = await resolveLinxPiSession(options.session.trim(), options.cwd, sessionDir, {
@@ -105,15 +110,23 @@ export async function createLinxPiSessionManager(options: LinxPiSessionManagerOp
 
   if (options.last) {
     const sessions = await listLinxPiSessions(options.cwd, options.agentDir, {
+      sessionDir,
       podSessionSource: options.podSessionSource,
     })
     if (sessions[0]) {
       return openAndRepairLinxPiSession(sessions[0].path, sessionDir)
     }
-    return SessionManager.create(options.cwd, sessionDir)
+    return SessionManager.create(options.cwd, sessionDir, sessionId ? { id: sessionId } : undefined)
   }
 
-  return SessionManager.create(options.cwd, sessionDir)
+  if (sessionId) {
+    const existing = await findExactLinxPiSessionById(sessionId, options.cwd, sessionDir)
+    if (existing) {
+      return openAndRepairLinxPiSession(existing.path, sessionDir)
+    }
+  }
+
+  return SessionManager.create(options.cwd, sessionDir, sessionId ? { id: sessionId } : undefined)
 }
 
 export async function listLinxPiSessions(
@@ -121,7 +134,7 @@ export async function listLinxPiSessions(
   agentDir: string,
   options: LinxPiListSessionsOptions = {},
 ): Promise<SessionInfo[]> {
-  const sessionDir = getDefaultLinxPiSessionDir(cwd, agentDir)
+  const sessionDir = resolveLinxPiSessionDir(cwd, agentDir, options.sessionDir)
   const localSessions = filterRuntimeSessionsForWorkspace(
     await SessionManager.list(cwd, sessionDir),
     cwd,
@@ -218,10 +231,56 @@ function mergeSessions(localSessions: SessionInfo[], podSessions: SessionInfo[])
   return [...merged.values()]
 }
 
-function getDefaultLinxPiSessionDir(_cwd: string, agentDir: string): string {
+export function assertLinxPiSessionSelectorCompatibility(options: Pick<LinxPiSessionManagerOptions, 'session' | 'sessionId' | 'last'>): void {
+  if (!options.sessionId?.trim()) {
+    return
+  }
+  if (options.session?.trim()) {
+    throw new Error('--session-id cannot be combined with --session')
+  }
+  if (options.last) {
+    throw new Error('--session-id cannot be combined with --continue or --resume')
+  }
+}
+
+function resolveLinxPiSessionDir(_cwd: string, agentDir: string, sessionDir?: string): string {
   // Sessions are stored flat, not bound to workspace directory.
   // Workspace (cwd) is tracked as session metadata, so `cd` doesn't break the session.
-  return join(agentDir, 'sessions')
+  return sessionDir?.trim() ? resolve(expandHomePath(sessionDir.trim())) : join(agentDir, 'sessions')
+}
+
+async function findExactLinxPiSessionById(
+  sessionId: string,
+  cwd: string,
+  sessionDir: string,
+): Promise<SessionInfo | null> {
+  const sessions = await SessionManager.list(cwd, sessionDir)
+  return sessions.find((session) => session.id === sessionId) ?? null
+}
+
+function normalizeLinxPiSessionId(sessionId: string | undefined): string | undefined {
+  const normalized = sessionId?.trim()
+  if (!normalized) {
+    return undefined
+  }
+  if (!/^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/.test(normalized)) {
+    throw new Error([
+      'Session id must be non-empty, contain only alphanumeric characters,',
+      "'-', '_', and '.', and start and end with an alphanumeric character",
+    ].join(' '))
+  }
+  return normalized
+}
+
+function expandHomePath(path: string): string {
+  if (path === '~') {
+    return process.env.HOME ?? path
+  }
+  if (path.startsWith('~/')) {
+    const home = process.env.HOME
+    return home ? join(home, path.slice(2)) : path
+  }
+  return path
 }
 
 async function hydratePodSessions(

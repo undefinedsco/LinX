@@ -35,6 +35,128 @@ test('createLinxPiSessionManager creates persisted sessions by default', async (
   assert.match(manager.getSessionDir(), /sessions/)
 })
 
+test('createLinxPiSessionManager honors explicit Pi session directory', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-session-manager.ts')
+  t.after(() => cleanup())
+
+  const cwd = mkdtempSync(join(tmpdir(), 'linx-pi-explicit-session-dir-cwd-'))
+  const agentDir = mkdtempSync(join(tmpdir(), 'linx-pi-explicit-session-dir-agent-'))
+  const sessionDir = mkdtempSync(join(tmpdir(), 'linx-pi-explicit-session-dir-'))
+  t.after(() => {
+    rmSync(cwd, { recursive: true, force: true })
+    rmSync(agentDir, { recursive: true, force: true })
+    rmSync(sessionDir, { recursive: true, force: true })
+  })
+
+  const manager = await module.createLinxPiSessionManager({ cwd, agentDir, sessionDir })
+
+  assert.equal(manager.getSessionDir(), sessionDir)
+  assert.match(manager.getSessionFile(), new RegExp(`^${sessionDir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/`))
+
+  const listed = await module.listLinxPiSessions(cwd, agentDir, {
+    sessionDir,
+    podSessionSource: null,
+  })
+  assert.equal(listed.length, 0)
+
+  manager.appendMessage({
+    role: 'assistant',
+    content: [{ type: 'text', text: 'custom session dir' }],
+    api: 'openai-completions',
+    provider: 'undefineds',
+    model: 'linx-lite',
+    usage: {
+      input: 1,
+      output: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 2,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: 'stop',
+    timestamp: Date.now(),
+  })
+
+  const listedAfterPersist = await module.listLinxPiSessions(cwd, agentDir, {
+    sessionDir,
+    podSessionSource: null,
+  })
+  assert.equal(listedAfterPersist.length, 1)
+  assert.equal(listedAfterPersist[0].id, manager.getSessionId())
+})
+
+test('createLinxPiSessionManager supports Pi --session-id semantics', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-session-manager.ts')
+  t.after(() => cleanup())
+
+  const cwd = mkdtempSync(join(tmpdir(), 'linx-pi-session-id-cwd-'))
+  const agentDir = mkdtempSync(join(tmpdir(), 'linx-pi-session-id-agent-'))
+  const sessionDir = mkdtempSync(join(tmpdir(), 'linx-pi-session-id-dir-'))
+  const sessionId = 'linx-session-id-test-001'
+  t.after(() => {
+    rmSync(cwd, { recursive: true, force: true })
+    rmSync(agentDir, { recursive: true, force: true })
+    rmSync(sessionDir, { recursive: true, force: true })
+  })
+
+  const manager = await module.createLinxPiSessionManager({ cwd, agentDir, sessionDir, sessionId })
+  assert.equal(manager.getSessionId(), sessionId)
+  manager.appendMessage({
+    role: 'assistant',
+    content: [{ type: 'text', text: 'stable id' }],
+    api: 'openai-completions',
+    provider: 'undefineds',
+    model: 'linx-lite',
+    usage: {
+      input: 1,
+      output: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 2,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: 'stop',
+    timestamp: Date.now(),
+  })
+
+  const reopened = await module.createLinxPiSessionManager({ cwd, agentDir, sessionDir, sessionId })
+  assert.equal(reopened.getSessionId(), sessionId)
+  assert.equal(reopened.getEntries().length, 1)
+  assert.equal(reopened.getEntries()[0].message.content[0].text, 'stable id')
+})
+
+test('createLinxPiSessionManager rejects conflicting Pi session selectors', async (t) => {
+  const { module, cleanup } = await loadAutoModeModule('lib/linx-session-manager.ts')
+  t.after(() => cleanup())
+
+  const cwd = mkdtempSync(join(tmpdir(), 'linx-pi-session-conflict-cwd-'))
+  const agentDir = mkdtempSync(join(tmpdir(), 'linx-pi-session-conflict-agent-'))
+  t.after(() => {
+    rmSync(cwd, { recursive: true, force: true })
+    rmSync(agentDir, { recursive: true, force: true })
+  })
+
+  await assert.rejects(
+    () => module.createLinxPiSessionManager({
+      cwd,
+      agentDir,
+      session: 'existing-session',
+      sessionId: 'new-session',
+    }),
+    /--session-id cannot be combined with --session/,
+  )
+
+  await assert.rejects(
+    () => module.createLinxPiSessionManager({
+      cwd,
+      agentDir,
+      last: true,
+      sessionId: 'new-session',
+    }),
+    /--session-id cannot be combined with --continue or --resume/,
+  )
+})
+
 test('resolveLinxPiSession accepts full and short session ids', async (t) => {
   const { module, cleanup } = await loadAutoModeModule('lib/linx-session-manager.ts')
   t.after(() => cleanup())

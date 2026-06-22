@@ -124,6 +124,34 @@ and callers use the shell-state projected command helper. This keeps `/auto`,
 `/goal`, `/ai connect`, and backend-native slash commands on one command bridge
 instead of turning the Pi interactive object into a hidden service locator.
 
+Top-level session navigation follows Pi's native surface instead of introducing
+parallel LinX-only entry points. Users list or choose sessions with `linx -r` /
+`linx --resume` at startup or `/resume` inside the TUI, inspect the active
+session with `/session`, and resume a known target with `linx --session
+<path|id>`. LinX may pass through Pi-native session storage flags such as
+`--session-dir` and `--session-id`, but must not add a separate `linx sessions`
+or `--sessions` product command unless it is intentionally designed as a new
+LinX shell feature with its own contract.
+
+Pi-aligned command boundaries:
+
+- LinX top-level flags that expose Pi concepts must keep Pi's names and
+  selector semantics. Do not invent a second vocabulary for the same runtime
+  behavior.
+- `--session-dir` and `--session-id` are local runtime archive selectors. They
+  must not become Pod chat/thread identity, backend credential identity, or
+  product data-model fields.
+- Session selector conflicts must be rejected before login, Pod session lookup,
+  auto hydration, or interactive bootstrap side effects. In particular, an exact
+  `--session-id` target is mutually exclusive with `--session` and with
+  continue/resume selection.
+- Low-frequency interactive configuration belongs in the TUI command surface
+  when Pi already has an interactive affordance. Do not promote those commands
+  to top-level CLI entries unless they need non-interactive scripting semantics.
+- Top-level LinX commands are reserved for LinX-owned package/lifecycle/product
+  operations. Backend-native or Pi-native commands should be forwarded or
+  adapted at the shell boundary, not cloned as parallel LinX product commands.
+
 ## Pi adapter boundary
 
 The Pi adapter is a bridge to an upstream TUI/runtime, not the product core.
