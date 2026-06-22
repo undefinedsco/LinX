@@ -32,7 +32,7 @@ import {
   writeAutoModeSyncCheckpoint,
   writeAutoModeSession,
 } from './archive.js'
-import { detectAutoModeAuthFailure, preflightAutoModeAuth, type AutoModeAuthPreflightResult } from './auth.js'
+import { detectAutoModeAuthFailure, preflightAutoModeAuth, promptLinxCloudAuth, runBackendLinxLogin, runBackendLinxLogout, type AutoModeAuthPreflightResult } from './auth.js'
 import { createAutoModeDisplay, type AutoModeDisplay } from './display.js'
 import { formatAutoModeSessionSummary } from './format.js'
 import { describeAutoControl, getAutoModeHook, linxNativeBackend, listAutoModeHooks } from './hooks/registry.js'
@@ -52,13 +52,8 @@ import { isAcpAutoModeWorkerBackend, isAutoModeWorkerBackend, resolveApprovalStr
 import { appendAutoModeSessionEvent as appendEntry, appendAndDisplaySessionNote, appendSessionNote } from './session-log.js'
 import { handleAutoModeShellCommand } from './shell-command.js'
 import { promptText } from '../prompt.js'
-import { runLinxLoginCommand, runLinxLogoutCommand } from '../login-command.js'
-import { clearDefaultPodDataSession, createPodDataSession, type PodDataSession } from '../pod-data-session.js'
-import { parseSolidClientCredentials, persistSolidClientCredentialsLogin } from '../solid-client-credentials-login.js'
+import { createPodDataSession, type PodDataSession } from '../pod-data-session.js'
 import { connectAiProviderCredential } from '../ai-command.js'
-import { saveAccountSession } from '../account-session.js'
-import { clearCredentials, loadCredentials, saveCredentials } from '../credentials-store.js'
-import { resolveAccountBaseUrl } from '../account-api.js'
 import { createRemoteCompletionResult, type RemoteCompletionResult } from '../chat-api.js'
 import { resolveRuntimeTarget } from '../runtime-target.js'
 import { runThreadReconcilerCycle, type AgentRuntimeCapabilities, type ThreadControlEvent } from '@linx/agent-runtime'
@@ -123,13 +118,6 @@ export const autoModeRuntime = {
   persistAutoModeConversationToPod,
   resolveAutoModeSecretaryRecommendation,
   createPodDataSession,
-  clearDefaultPodDataSession,
-  loadCredentials,
-  saveCredentials,
-  clearCredentials,
-  saveAccountSession,
-  resolveAccountBaseUrl,
-  persistSolidClientCredentialsLogin,
   createRemoteCompletionResult,
 }
 
@@ -408,99 +396,6 @@ export function formatAutoModeSecretaryCountdownDetail(remainingMs: number, dura
   )
   const bar = `${'#'.repeat(filled)}${'-'.repeat(AUTO_MODE_SECRETARY_COUNTDOWN_BAR_WIDTH - filled)}`
   return `auto [${bar}] ${formatReactionWindow(clampedRemainingMs)}`
-}
-
-async function promptLinxCloudAuth(display: AutoModeDisplay, lines: string[], reason: 'startup' | 'expired' | 'manual' = 'manual'): Promise<'retry' | 'cancel'> {
-  while (true) {
-    display.setPhase('question', reason === 'expired' ? 'LinX Cloud login expired' : 'LinX Cloud login required')
-    const answer = (await display.chooseOption(
-      reason === 'expired' ? 'LinX Cloud login expired' : 'LinX Cloud login required',
-      lines,
-      [
-        { label: 'Authorize in browser', value: 'browser', description: 'refresh the LinX Cloud Solid session', shortcuts: ['b', '1'] },
-        { label: 'Enter Solid client credentials', value: 'client-credentials', description: 'use LinX Cloud client credentials', shortcuts: ['k', '2'] },
-        { label: 'Exit', value: 'exit', description: 'leave this session', shortcuts: ['x', '3'] },
-      ],
-    )).trim().toLowerCase()
-
-    if (answer === 'browser' || answer === 'b' || answer === '1') {
-      await runBackendLinxLogin(display)
-      return 'retry'
-    }
-
-    if (answer === 'client-credentials' || answer === 'k' || answer === '2') {
-      const saved = await promptBackendSolidClientCredentials(display)
-      if (saved) {
-        return 'retry'
-      }
-      continue
-    }
-
-    if (answer === 'exit' || answer === 'x' || answer === '3' || answer === 'cancel') {
-      display.setPhase('running', 'Authentication cancelled')
-      return 'cancel'
-    }
-  }
-}
-
-async function runBackendLinxLogin(display: AutoModeDisplay): Promise<void> {
-  display.showActivity('Opening LinX Cloud login in your browser...')
-  await runLinxLoginCommand({}, {
-    promptText: autoModeRuntime.promptText,
-    write(chunk) {
-      for (const line of chunk.split(/\r?\n/u)) {
-        const trimmed = line.trim()
-        if (trimmed) {
-          display.showActivity(trimmed)
-        }
-      }
-    },
-  })
-  autoModeRuntime.clearDefaultPodDataSession()
-  display.showActivity('LinX Cloud login refreshed.', 'success')
-}
-
-function runBackendLinxLogout(display: AutoModeDisplay): void {
-  runLinxLogoutCommand({
-    write(chunk) {
-      for (const line of chunk.split(/\r?\n/u)) {
-        const trimmed = line.trim()
-        if (trimmed) {
-          display.showActivity(trimmed)
-        }
-      }
-    },
-  })
-  autoModeRuntime.clearDefaultPodDataSession()
-  display.showActivity('Use /login or choose browser authorization to sign in again.', 'note')
-}
-
-async function promptBackendSolidClientCredentials(display: AutoModeDisplay): Promise<boolean> {
-  display.setPhase('question', 'Solid client credentials required')
-  const credentialsText = await display.promptSecret({
-    header: 'Solid client credentials',
-    question: 'Paste Solid client credentials in client_id:client_secret format.',
-    note: 'Input is hidden and saved locally as LinX Cloud client credentials.',
-  })
-  const parsed = parseSolidClientCredentials(credentialsText)
-  if (!parsed) {
-    display.showActivity('Solid client credentials entry cancelled or invalid. Expected client_id:client_secret.', 'error')
-    return false
-  }
-
-  autoModeRuntime.clearDefaultPodDataSession()
-
-  try {
-    await autoModeRuntime.persistSolidClientCredentialsLogin(credentialsText, autoModeRuntime)
-    autoModeRuntime.clearDefaultPodDataSession()
-    display.showActivity('Solid client credentials saved. Retrying backend startup.', 'success')
-    return true
-  } catch (error) {
-    autoModeRuntime.clearDefaultPodDataSession()
-    const message = error instanceof Error ? error.message : String(error)
-    display.showActivity(`Solid client credentials rejected: ${message}`, 'error')
-    return false
-  }
 }
 
 function isRecoverableLinxCloudAuthError(message: string): boolean {
@@ -1855,7 +1750,6 @@ function buildConversationSession(options: AutoRunOptions): BaseSession {
   return new AcpSession(options, hook)
 }
 
-export const __testPromptLinxCloudAuth = promptLinxCloudAuth
 
 export async function runAutoMode(options: AutoRunOptions): Promise<number> {
   const previousPlainEnv = process.env.LINX_BACKEND_PLAIN

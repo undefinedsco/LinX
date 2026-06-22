@@ -98,6 +98,14 @@ test('auto-mode runner does not expose shell command routing through a test seam
   )
 })
 
+test('auto-mode runner does not expose LinX Cloud auth prompt through a test seam', () => {
+  assert.doesNotMatch(
+    autoModeRunnerSource,
+    /__testPromptLinxCloudAuth/,
+    'LinX Cloud auth prompt should live in an owning auth module instead of being tested through runner',
+  )
+})
+
 test('Pod chat store does not expose a test-only internal aggregate', () => {
   assert.doesNotMatch(
     podChatStoreSource,

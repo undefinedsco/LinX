@@ -28,7 +28,6 @@ async function getAutoModeAuthBundle() {
 
   return autoModeAuthModulePromise
 }
-
 async function getAutoModePodAiBundle() {
   if (!autoModePodAiModulePromise) {
     autoModePodAiModulePromise = loadAutoModeModule('lib/auto-mode/pod-ai.ts')
@@ -375,7 +374,7 @@ mode: 'auto',
 })
 
 test('backend startup LinX Cloud auth prompt matches TUI sign-in choices', async (t) => {
-  const { module } = await getAutoModeRunnerBundle()
+  const { module } = await getAutoModeAuthBundle()
   const calls = []
   const display = {
     setPhase() {},
@@ -386,7 +385,7 @@ test('backend startup LinX Cloud auth prompt matches TUI sign-in choices', async
     },
   }
 
-  const action = await module.__testPromptLinxCloudAuth(display, [
+  const action = await module.promptLinxCloudAuth(display, [
     'LinX cloud credential source is not connected yet.',
   ], 'startup')
 
@@ -402,14 +401,14 @@ test('backend startup LinX Cloud auth prompt matches TUI sign-in choices', async
 })
 
 test('backend startup Solid client credentials auth saves validated client credentials', async (t) => {
-  const { module } = await getAutoModeRunnerBundle()
+  const { module } = await getAutoModeAuthBundle()
   const savedCredentials = []
   const savedAccounts = []
   const clearedSessions = []
   const key = 'linx-client:linx-secret'
   let chooseCount = 0
 
-  t.mock.method(module.autoModeRuntime, 'loadCredentials', () => ({
+  t.mock.method(module.autoModeAuthRuntime, 'loadCredentials', () => ({
     url: 'https://id.undefineds.co/',
     webId: 'https://id.undefineds.co/alice/profile/card#me',
     authType: 'oidc_oauth',
@@ -420,16 +419,16 @@ test('backend startup Solid client credentials auth saves validated client crede
       oidcExpiresAt: '2020-01-01T00:00:00.000Z',
     },
   }))
-  t.mock.method(module.autoModeRuntime, 'saveCredentials', (credentials) => {
+  t.mock.method(module.autoModeAuthRuntime, 'saveCredentials', (credentials) => {
     savedCredentials.push(credentials)
   })
-  t.mock.method(module.autoModeRuntime, 'saveAccountSession', (account) => {
+  t.mock.method(module.autoModeAuthRuntime, 'saveAccountSession', (account) => {
     savedAccounts.push(account)
   })
-  t.mock.method(module.autoModeRuntime, 'clearDefaultPodDataSession', () => {
+  t.mock.method(module.autoModeAuthRuntime, 'clearDefaultPodDataSession', () => {
     clearedSessions.push(true)
   })
-  t.mock.method(module.autoModeRuntime, 'createPodDataSession', async () => ({
+  t.mock.method(module.autoModeAuthRuntime, 'createPodDataSession', async () => ({
     webId: 'https://id.undefineds.co/alice/profile/card#me',
     podUrl: 'https://id.undefineds.co/alice/',
     async getRuntimeAuthToken() {
@@ -456,7 +455,7 @@ test('backend startup Solid client credentials auth saves validated client crede
     },
   }
 
-  const action = await module.__testPromptLinxCloudAuth(display, [
+  const action = await module.promptLinxCloudAuth(display, [
     'LinX cloud credential source is not connected yet.',
   ], 'startup')
 
