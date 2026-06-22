@@ -10,6 +10,7 @@ const autoModeRunnerSource = readFileSync(new URL('../src/lib/auto-mode/runner.t
 const autoModeDisplaySource = readFileSync(new URL('../src/lib/auto-mode/display.ts', import.meta.url), 'utf8')
 const autoModeFormatSource = readFileSync(new URL('../src/lib/auto-mode/format.ts', import.meta.url), 'utf8')
 const autoModeSecretarySource = readFileSync(new URL('../src/lib/auto-mode/secretary.ts', import.meta.url), 'utf8')
+const autoModePodAiSource = readFileSync(new URL('../src/lib/auto-mode/pod-ai.ts', import.meta.url), 'utf8')
 
 test('default Pi/TUI command module does not construct Pod ORM state directly', () => {
   assert.doesNotMatch(commandSource, /from ['"]\.\/models\.js['"]/, 'shell command should not import shared model DB primitives directly')
@@ -49,6 +50,14 @@ test('auto-mode Secretary does not expose test-only internal aggregate exports',
     autoModeSecretarySource,
     /__autoModeSecretaryInternal/,
     'Secretary runtime helpers should live in owning modules instead of a production __internal aggregate export',
+  )
+})
+
+test('auto-mode Pod AI credential selection does not expose test-only internal aggregate exports', () => {
+  assert.doesNotMatch(
+    autoModePodAiSource,
+    /__podInternal/,
+    'Pod AI credential selectors should live in owning modules instead of a production __internal aggregate export',
   )
 })
 

@@ -10,6 +10,7 @@ import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 let autoModeRunnerModulePromise
 let autoModeAuthModulePromise
 let autoModePodAiModulePromise
+let modelsModulePromise
 
 async function getAutoModeRunnerBundle() {
   if (!autoModeRunnerModulePromise) {
@@ -33,6 +34,15 @@ async function getAutoModePodAiBundle() {
   }
 
   return autoModePodAiModulePromise
+}
+
+
+async function getModelsBundle() {
+  if (!modelsModulePromise) {
+    modelsModulePromise = loadAutoModeModule('lib/models.ts')
+  }
+
+  return modelsModulePromise
 }
 
 async function runAutoMode(entryPath, options, env) {
@@ -135,8 +145,8 @@ test('runtime auth failure detection prefers protocol payloads', async () => {
 })
 
 test('pod ai selector prefers active anthropic credentials', async () => {
-  const { module } = await getAutoModePodAiBundle()
-  const match = module.__podInternal.selectPodCredentialForBackend('claude', [
+  const { module } = await getModelsBundle()
+  const match = module.selectAIConfigCredentialForBackend('claude', [
     {
       id: 'cred-openai',
       service: 'ai',
@@ -162,16 +172,16 @@ test('pod ai selector prefers active anthropic credentials', async () => {
     },
   ])
 
-  assert.deepEqual(match, {
-    providerId: 'anthropic',
-    apiKey: 'sk-anthropic',
-    baseUrl: 'https://api.anthropic.com/v1',
-  })
+  assert.equal(match.providerId, 'anthropic')
+  assert.equal(match.apiKey, 'sk-anthropic')
+  assert.equal(match.baseUrl, 'https://api.anthropic.com/v1')
+  assert.equal(match.backend, 'claude')
+  assert.equal(match.credentialId, 'cred-anthropic')
 })
 
 test('pod ai selector uses shared provider aliases for claude credentials', async () => {
-  const { module } = await getAutoModePodAiBundle()
-  const match = module.__podInternal.selectPodCredentialForBackend('claude', [
+  const { module } = await getModelsBundle()
+  const match = module.selectAIConfigCredentialForBackend('claude', [
     {
       id: 'cred-claude',
       service: 'ai',
@@ -186,16 +196,16 @@ test('pod ai selector uses shared provider aliases for claude credentials', asyn
     },
   ])
 
-  assert.deepEqual(match, {
-    providerId: 'anthropic',
-    apiKey: 'sk-claude',
-    baseUrl: 'https://api.anthropic.com/v1',
-  })
+  assert.equal(match.providerId, 'anthropic')
+  assert.equal(match.apiKey, 'sk-claude')
+  assert.equal(match.baseUrl, 'https://api.anthropic.com/v1')
+  assert.equal(match.backend, 'claude')
+  assert.equal(match.credentialId, 'cred-claude')
 })
 
 test('pod ai selector maps openai credentials to codex backend', async () => {
-  const { module } = await getAutoModePodAiBundle()
-  const match = module.__podInternal.selectPodCredentialForBackend('codex', [
+  const { module } = await getModelsBundle()
+  const match = module.selectAIConfigCredentialForBackend('codex', [
     {
       id: 'cred-openai',
       service: 'ai',
@@ -211,16 +221,16 @@ test('pod ai selector maps openai credentials to codex backend', async () => {
     },
   ])
 
-  assert.deepEqual(match, {
-    providerId: 'openai',
-    apiKey: 'sk-openai',
-    baseUrl: 'https://api.openai.com/v1',
-  })
+  assert.equal(match.providerId, 'openai')
+  assert.equal(match.apiKey, 'sk-openai')
+  assert.equal(match.baseUrl, 'https://api.openai.com/v1')
+  assert.equal(match.backend, 'codex')
+  assert.equal(match.credentialId, 'cred-openai')
 })
 
 test('pod ai selector maps codebuddy credentials and prefers credential baseUrl', async () => {
-  const { module } = await getAutoModePodAiBundle()
-  const match = module.__podInternal.selectPodCredentialForBackend('codebuddy', [
+  const { module } = await getModelsBundle()
+  const match = module.selectAIConfigCredentialForBackend('codebuddy', [
     {
       id: 'cred-codebuddy',
       service: 'ai',
@@ -237,11 +247,11 @@ test('pod ai selector maps codebuddy credentials and prefers credential baseUrl'
     },
   ])
 
-  assert.deepEqual(match, {
-    providerId: 'codebuddy',
-    apiKey: 'sk-codebuddy',
-    baseUrl: 'https://proxy.codebuddy.example/v1',
-  })
+  assert.equal(match.providerId, 'codebuddy')
+  assert.equal(match.apiKey, 'sk-codebuddy')
+  assert.equal(match.baseUrl, 'https://proxy.codebuddy.example/v1')
+  assert.equal(match.backend, 'codebuddy')
+  assert.equal(match.credentialId, 'cred-codebuddy')
 })
 
 test('local credential source uses backend local auth and skips LinX Cloud Pod config', async (t) => {
