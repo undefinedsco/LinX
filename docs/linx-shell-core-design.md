@@ -266,6 +266,62 @@ Specific decisions currently in force:
 - When a backend exposes richer native command help, expose it where the backend
   is active, not through top-level `linx --help`.
 
+
+### Top-level config namespace
+
+`linx config` is the only top-level shell configuration namespace. It exists for
+scriptable, app-local settings that must be inspectable or editable outside an
+active TUI. Individual sections are owned by their feature modules, but the
+namespace owner is the CLI shell.
+
+Current rules:
+
+- Keep section behavior under `linx config <section>` when it is a LinX shell
+  setting. Example: `linx config status-line ...` configures the local TUI
+  footer/status line.
+- Do not promote section names to top-level commands. `linx status-line`,
+  `linx statusline`, and `linx footer` are not product commands; the interactive
+  equivalent is `/statusline`.
+- The module that registers the top-level `config` command should be named as a
+  shell config owner, not as one section. Section modules may export section
+  descriptors or handlers, but they should not own the top-level config command.
+- Config commands may persist local shell preferences under `LINX_HOME`. They
+  must not become a second source of truth for Pod resources, credentials,
+  backend model selection, or session identity. Those belong to their shared
+  runtime/model contracts.
+- If a setting is primarily interactive and Pi already has an affordance, prefer
+  a TUI slash command or selector. Add non-interactive `linx config` coverage
+  only when scripting, diagnostics, or reproducible local setup need it.
+
+### Package/update command boundary
+
+LinX has two update meanings and they must stay separate:
+
+- `linx update` is a top-level package-management command. It updates installed
+  LinX plugins/extensions through the package manager surface. It is appropriate
+  at top level because it is scriptable lifecycle/package behavior.
+- `/update` and startup update prompts are interactive LinX self-update flows.
+  They install or upgrade the current `@undefineds.co/linx` CLI package and then
+  hand off to the shell lifecycle supervisor for restart.
+
+Package commands must stay in a shell package module. The CLI entrypoint may
+register package command descriptors, but it must not construct package manager
+objects, implement install/update/remove/list behavior inline, or mix package
+update with TUI self-restart handling.
+
+### Discoverability boundary
+
+A command is discoverable only where it is valid to execute:
+
+- Top-level `linx --help` lists top-level LinX shell/product/package surfaces.
+- TUI slash help lists interactive LinX shell commands and backend commands that
+  are active in the current backend.
+- Hidden compatibility, plumbing, and repair commands remain hidden. They may be
+  covered by tests and maintainer docs, but they are not user navigation.
+
+If users need a normal workflow, add or expose a real product surface. Do not use
+a hidden command or flag as the documented way to operate the product.
+
 ## Pi adapter boundary
 
 The Pi adapter is a bridge to an upstream TUI/runtime, not the product core.

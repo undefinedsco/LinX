@@ -40,6 +40,15 @@ test('CLI app delegates package command implementation to a shell package module
   assert.doesNotMatch(cliAppSource, /function printConfiguredLinxPackages\b/, 'CLI app should not implement package list rendering')
 })
 
+test('CLI app delegates config namespace registration to a shell config module', () => {
+  const statusLineCommandSource = readFileSync(new URL('../src/lib/status-line-command.ts', import.meta.url), 'utf8')
+
+  assert.match(cliAppSource, /from ['"]\.\/lib\/linx-config-command\.js['"]/, 'CLI app should import the top-level config namespace from a shell config module')
+  assert.doesNotMatch(cliAppSource, /from ['"]\.\/lib\/status-line-command\.js['"]/, 'CLI app should not import a section module as the top-level config owner')
+  assert.doesNotMatch(statusLineCommandSource, /export const configCommand\b/, 'status-line section module should not own the top-level config command')
+  assert.match(statusLineCommandSource, /export const statusLineConfigCommand\b/, 'status-line section module should export only its config section descriptor')
+})
+
 test('CLI app delegates models command to a shell command module', () => {
   assert.match(cliAppSource, /from ['"]\.\/lib\/linx-models-command\.js['"]/, 'CLI app should import models command descriptor from a shell module')
   assert.doesNotMatch(cliAppSource, /function loadChatRuntime\b/, 'CLI app should not load chat runtime internals directly')
