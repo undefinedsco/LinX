@@ -3710,7 +3710,7 @@ test('linx native oauth selector is replaced with LinX-only login', async (t) =>
 })
 
 test('linx startup login prompt uses the required-login copy and can exit', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-branding.ts')
+  const { module, cleanup } = await loadShellModules(['lib/linx-interactive-branding.ts', 'lib/linx-interactive-post-init.ts'])
   t.after(() => cleanup())
 
   const selectorCalls = []
@@ -3750,6 +3750,7 @@ test('linx startup login prompt uses the required-login copy and can exit', asyn
   }
 
   module.applyLinxInteractiveBranding(interactive)
+  module.installLinxInteractivePostInitHooks(interactive, {}, process.cwd())
   module.requestLinxCloudLogin(interactive, 'startup')
   await interactive.init()
   await new Promise((resolve) => setImmediate(resolve))
@@ -3761,7 +3762,7 @@ test('linx startup login prompt uses the required-login copy and can exit', asyn
 })
 
 test('linx expired login prompt is deferred until interactive init completes', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/linx-interactive-branding.ts')
+  const { module, cleanup } = await loadShellModules(['lib/linx-interactive-branding.ts', 'lib/linx-interactive-post-init.ts'])
   t.after(() => cleanup())
 
   const selectorCalls = []
@@ -3803,6 +3804,7 @@ test('linx expired login prompt is deferred until interactive init completes', a
   }
 
   module.applyLinxInteractiveBranding(interactive)
+  module.installLinxInteractivePostInitHooks(interactive, {}, process.cwd())
   module.requestLinxCloudLogin(interactive, 'expired')
   assert.equal(selectorCalls.length, 0)
 

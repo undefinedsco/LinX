@@ -309,6 +309,12 @@ test('update notification does not patch interactive init directly', () => {
   assert.doesNotMatch(source, /interactive\.init\s*=/)
 })
 
+test('login flow does not patch interactive init directly', () => {
+  const source = readFileSync(join(libRoot, 'linx-login-flow.ts'), 'utf8')
+
+  assert.doesNotMatch(source, /interactive\.init\s*=/)
+})
+
 test('interactive lifecycle completion state is kept out of interactive hidden fields', () => {
   const violations = []
   const directLifecycleStatePattern = /__linxInteractiveInitCompleted\b/

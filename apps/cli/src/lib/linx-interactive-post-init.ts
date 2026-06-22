@@ -1,5 +1,5 @@
 import { handleInteractiveAutoCommand } from './linx-auto-command-routing.js'
-import { shouldDeferLinxCloudLogin } from './linx-login-flow.js'
+import { shouldDeferLinxCloudLogin, startPendingLinxCloudLoginAfterInit } from './linx-login-flow.js'
 import { markLinxExitMessageInitialized } from './linx-resume-output.js'
 import { startLinxRestoredAutoAfterInit } from './linx-restored-auto-startup.js'
 import { renderLinxWelcomeHeaderAfterInit } from './linx-welcome-header.js'
@@ -60,6 +60,7 @@ function installPostInitInteractiveControls(
   options: LinxInteractivePostInitOptions,
 ): void {
   renderLinxWelcomeHeaderAfterInit(interactive)
+  startPendingLinxCloudLoginAfterInit(interactive)
   scheduleLinxVersionCheckAfterInit(interactive, {
     shouldDefer: () => shouldDeferLinxCloudLogin(interactive),
   })
