@@ -3,10 +3,10 @@ import test from 'node:test'
 import { loadAutoModeModule } from './auto-mode-test-bundle.mjs'
 
 test('auto-mode Secretary runtime config anchors identity on the Agent root', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/auto-mode/secretary.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/auto-mode/secretary-runtime-config.ts')
   t.after(() => cleanup())
 
-  const config = module.__autoModeSecretaryInternal.createSecretaryAgentRuntimeConfig({
+  const config = module.createSecretaryAgentRuntimeConfig({
     systemPrompt: 'system prompt',
     metadata: {
       cwd: '/tmp/linx',
@@ -26,10 +26,10 @@ test('auto-mode Secretary runtime config anchors identity on the Agent root', as
 })
 
 test('auto-mode Secretary runtime config accepts explicit Agent runtime metadata overrides', async (t) => {
-  const { module, cleanup } = await loadAutoModeModule('lib/auto-mode/secretary.ts')
+  const { module, cleanup } = await loadAutoModeModule('lib/auto-mode/secretary-runtime-config.ts')
   t.after(() => cleanup())
 
-  const direct = module.__autoModeSecretaryInternal.resolveSecretaryRuntimeOverrides({
+  const direct = module.resolveSecretaryRuntimeOverrides({
     metadata: {
       agentRuntime: {
         backend: 'linx',
@@ -60,7 +60,7 @@ test('auto-mode Secretary runtime config accepts explicit Agent runtime metadata
     },
   })
 
-  const symphony = module.__autoModeSecretaryInternal.resolveSecretaryRuntimeOverrides({
+  const symphony = module.resolveSecretaryRuntimeOverrides({
     metadata: {
       symphony: {
         agentRuntime: {

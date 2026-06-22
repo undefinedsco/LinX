@@ -9,6 +9,7 @@ const codexPluginCommandSource = readFileSync(new URL('../src/lib/linx-codex-plu
 const autoModeRunnerSource = readFileSync(new URL('../src/lib/auto-mode/runner.ts', import.meta.url), 'utf8')
 const autoModeDisplaySource = readFileSync(new URL('../src/lib/auto-mode/display.ts', import.meta.url), 'utf8')
 const autoModeFormatSource = readFileSync(new URL('../src/lib/auto-mode/format.ts', import.meta.url), 'utf8')
+const autoModeSecretarySource = readFileSync(new URL('../src/lib/auto-mode/secretary.ts', import.meta.url), 'utf8')
 
 test('default Pi/TUI command module does not construct Pod ORM state directly', () => {
   assert.doesNotMatch(commandSource, /from ['"]\.\/models\.js['"]/, 'shell command should not import shared model DB primitives directly')
@@ -41,6 +42,14 @@ test('auto-mode hook registry is imported through its owning module, not a defau
   for (const source of [autoModeRunnerSource, autoModeDisplaySource, autoModeFormatSource]) {
     assert.doesNotMatch(source, /from ['"]\.\/hooks\/index\.js['"]/)
   }
+})
+
+test('auto-mode Secretary does not expose test-only internal aggregate exports', () => {
+  assert.doesNotMatch(
+    autoModeSecretarySource,
+    /__autoModeSecretaryInternal/,
+    'Secretary runtime helpers should live in owning modules instead of a production __internal aggregate export',
+  )
 })
 
 test('symphony command module depends on owning auto-mode modules instead of the aggregate barrel', () => {
