@@ -164,6 +164,10 @@ Top-level command admission rules:
   or unimplemented placeholders. Examples: thread controls such as `new`,
   `fork`, `session`, `model`, and `help` belong to the active backend/TUI
   surface unless LinX has a separate implemented scripting contract for them.
+  The current exception is plural `models`: `linx models` is a read-only Cloud
+  `/v1/models` inspection command, not a session model switch. Singular
+  `linx model` remains reserved for backend-native `/model <id>` semantics and
+  must not be added as a top-level alias.
 - Placeholder commands are not a product contract. Do not register a top-level
   command that only throws "not implemented". Either pass the native command
   through to the backend, implement the real LinX-owned behavior, or omit the
@@ -192,7 +196,7 @@ Concrete command ownership examples:
 
 | Surface | Owns | Does not own |
 | --- | --- | --- |
-| Top-level CLI | `login`, package/update flows, explicit startup selectors such as `--resume`/`--session`, documented non-interactive scripts | backend thread controls, backend model switching, interactive help, session list clones |
+| Top-level CLI | `login`, package/update flows, explicit startup selectors such as `--resume`/`--session`, read-only `models` inspection, documented non-interactive scripts | backend thread controls, backend model switching, interactive help, session list clones |
 | Interactive TUI shell | LinX shell controls such as `/update`, `/statusline`, `/rewind`, `/ai connect`, `/cd`, plus routing/forwarding | durable Pod semantics, duplicated backend-native command languages |
 | Active backend/worker | Native commands such as `/new`, `/fork`, `/session`, `/model`, `/help` when supported by that backend | LinX package lifecycle, global credential storage, Pod resource identity |
 

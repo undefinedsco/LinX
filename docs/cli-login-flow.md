@@ -161,10 +161,10 @@ Pi runtime 里的 `undefineds` provider 不是普通“让用户自己填 API ke
 
 理想语义：
 
-- `linx models`
-- TUI 内部模型选择
+- `linx models`：只读列出 cloud 当前可用模型，作为非交互诊断/脚本面
+- TUI 内部模型选择：交互式选择当前会话模型
 
-都应该以 cloud `/v1/models` 为真相。
+都应该以 cloud `/v1/models` 为真相。`linx models` 不等价于 backend-native `/model <id>`；后者是会话内模型切换，仍属于 TUI/backend 命令面，不能克隆成顶层 `linx model`。
 
 当前代码已经接上：
 
