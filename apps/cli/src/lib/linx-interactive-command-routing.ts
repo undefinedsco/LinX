@@ -20,21 +20,20 @@ import {
 import {
   getSessionCommandRouterOriginalPrompt,
   getSessionCommandRouterOriginalSendUserMessage,
-  isSessionCommandRouterInstalled,
-  markSessionCommandRouterInstalled,
-  setSessionCommandRouterOriginals,
 } from './linx-session-command-routing-host.js'
+import {
+  installLinxSessionCommandRouter as installOwnedLinxSessionCommandRouter,
+  installLinxSessionCommandRouterAfterRebind as installOwnedLinxSessionCommandRouterAfterRebind,
+} from './linx-session-command-routing.js'
 import {
   isFinalSubmitSetCustomEditorComponentPatched,
   isFinalSubmitWrappedHandler,
   isGlobalCommandHandlerInstalled,
   isInputCommandRouterInstalled,
-  isSessionCommandRouterAfterRebindInstalled,
   markFinalSubmitSetCustomEditorComponentPatched,
   markFinalSubmitWrappedHandler,
   markGlobalCommandHandlerInstalled,
   markInputCommandRouterInstalled,
-  markSessionCommandRouterAfterRebindInstalled,
 } from './linx-interactive-command-routing-host.js'
 
 type ShellCommandOptions = {
@@ -186,79 +185,11 @@ export function installLinxFinalSubmitCommandRouter(interactive: any, runtime: a
 }
 
 export function installLinxSessionCommandRouter(interactive: any, runtime: any): void {
-  const session = interactive?.session ?? runtime?.session
-  if (!session || typeof session !== 'object' || isSessionCommandRouterInstalled(session)) {
-    return
-  }
-
-  const originalPrompt = typeof session.prompt === 'function'
-    ? session.prompt.bind(session)
-    : undefined
-  const originalSendUserMessage = typeof session.sendUserMessage === 'function'
-    ? session.sendUserMessage.bind(session)
-    : undefined
-
-  if (!originalPrompt && !originalSendUserMessage) {
-    return
-  }
-
-  setSessionCommandRouterOriginals(session, {
-    prompt: originalPrompt,
-    sendUserMessage: originalSendUserMessage,
-  })
-
-  if (originalPrompt) {
-    session.prompt = async (text: unknown, ...args: unknown[]): Promise<unknown> => {
-      if (await maybeHandleLinxSessionCommand(interactive, runtime, text)) {
-        return undefined
-      }
-      return originalPrompt(text, ...args)
-    }
-  }
-
-  if (originalSendUserMessage) {
-    session.sendUserMessage = async (text: unknown, ...args: unknown[]): Promise<unknown> => {
-      if (await maybeHandleLinxSessionCommand(interactive, runtime, text)) {
-        return undefined
-      }
-      return originalSendUserMessage(text, ...args)
-    }
-  }
-
-  markSessionCommandRouterInstalled(session)
+  installOwnedLinxSessionCommandRouter(interactive, runtime, handleLinxShellCommand)
 }
 
 export function installLinxSessionCommandRouterAfterRebind(interactive: any, runtime: any): void {
-  if (!interactive || isSessionCommandRouterAfterRebindInstalled(interactive)) {
-    return
-  }
-
-  const originalRebind = interactive.rebindCurrentSession?.bind(interactive)
-  if (typeof originalRebind !== 'function') {
-    return
-  }
-
-  interactive.rebindCurrentSession = async function patchedLinxRebindCurrentSession(...args: unknown[]): Promise<unknown> {
-    const result = await originalRebind(...args)
-    installLinxSessionCommandRouter(this, runtime)
-    return result
-  }
-  markSessionCommandRouterAfterRebindInstalled(interactive)
-}
-
-async function maybeHandleLinxSessionCommand(interactive: any, runtime: any, text: unknown): Promise<boolean> {
-  if (typeof text !== 'string') {
-    return false
-  }
-
-  const command = parseLinxShellCommand(text.trim())
-  if (!command) {
-    return false
-  }
-
-  interactive.editor?.setText?.('')
-  await handleLinxShellCommand(interactive, runtime, command)
-  return true
+  installOwnedLinxSessionCommandRouterAfterRebind(interactive, runtime, handleLinxShellCommand)
 }
 
 function recordSubmittedUserMessage(interactive: any, runtime: any, text: string): void {

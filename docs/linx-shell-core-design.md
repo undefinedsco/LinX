@@ -392,6 +392,13 @@ routing, command autocomplete, and runtime event bridges. Bootstrap may pass the
 interactive, runtime, session cwd, and session-control manager into that module,
 but must not directly import or call each command router.
 
+Session-level command interception is a narrower shell-session patch and belongs
+behind `linx-session-command-routing.ts`. The general interactive command router
+may provide the LinX shell command handler and compatibility exports, but it must
+not directly patch `session.prompt`, `session.sendUserMessage`, or
+`interactive.rebindCurrentSession`. This keeps editor submit routing, projected
+command routing, and session method patching as separate shell seams.
+
 The current remaining design debt is shared shell state. Some modules still use
 `__linx*` properties on the interactive, editor, runtime, or session object.
 Only local patch sentinels and original-method handles are acceptable there.

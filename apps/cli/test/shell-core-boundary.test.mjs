@@ -296,6 +296,26 @@ test('session original methods are kept behind shell-owned accessors', () => {
   assert.deepEqual(violations, [])
 })
 
+
+test('session command routing patches live in a dedicated shell session module', () => {
+  const commandRoutingSource = readFileSync(join(libRoot, 'linx-interactive-command-routing.ts'), 'utf8')
+
+  assert.match(
+    commandRoutingSource,
+    /from ['"]\.\/linx-session-command-routing\.js['"]/,
+    'interactive command routing should import session command routing from its owning module',
+  )
+  const forbiddenSessionPatchSnippets = [
+    'session.prompt =',
+    'session.sendUserMessage =',
+    'interactive.rebindCurrentSession =',
+    'maybeHandleLinxSessionCommand',
+  ]
+  const violations = forbiddenSessionPatchSnippets.filter((snippet) => commandRoutingSource.includes(snippet))
+
+  assert.deepEqual(violations, [])
+})
+
 test('session command router install state is kept behind the shell session host', () => {
   const allowed = new Set([
     'linx-session-command-routing-host.ts',
