@@ -89,6 +89,10 @@ Hard rules:
   `interactive.run` themselves. This covers cases such as suppressing upstream
   Pi update notifications, preparing restart-aware output state, and other work
   that must execute exactly once before the foreground TUI loop takes ownership.
+- Terminal-title patching is shell rendering lifecycle, not welcome-card
+  business logic. `interactive.updateTerminalTitle` is patched only by
+  `apps/cli/src/lib/linx-terminal-title-router.ts`; rendering modules register
+  ordered title handlers instead of replacing the Pi method directly.
 - New lifecycle or submit behavior must add a handler to the relevant router and
   a boundary test in `apps/cli/test/shell-core-boundary.test.mjs`.
 
@@ -466,8 +470,9 @@ resolution, `/cd`, and the visible "session cwd differs from current cwd" copy;
 `linx-restored-auto-startup.ts` owns the auto-restored status copy and controller
 start effect; `linx-resume-output.ts` owns normal exit copy and resume text
 formatting, but its "TUI initialized" readiness mark is set by the post-init
-seam; `linx-welcome-header.ts` owns terminal-title patching and welcome-card
-rendering, but startup header replacement is a post-init effect;
+seam; `linx-welcome-header.ts` owns welcome-card state/rendering and registers
+its terminal-title contribution with the rendering title router, while startup
+header replacement is a post-init effect;
 `linx-update-notification.ts` owns update checks and selector rendering, but
 automatic startup update checking is scheduled by the post-init seam;
 `linx-login-flow.ts` owns login UI, auth-expired recovery, and pending startup
@@ -485,6 +490,12 @@ and register it with the run router. Update notification is the canonical
 example: LinX may suppress Pi's upstream version prompt while the LinX update
 surface is active, but the update module should not own the `interactive.run`
 wrapper itself.
+
+Terminal-title rendering belongs behind `linx-terminal-title-router.ts`.
+Feature modules may contribute title handlers, but they must not replace
+`interactive.updateTerminalTitle` directly. This keeps Pi's own terminal title
+refresh, LinX branding, and future peer/backend-specific title fragments ordered
+through one rendering seam.
 
 Session-level command interception is a narrower shell-session patch and belongs
 behind `linx-session-command-routing.ts`. The general interactive command router

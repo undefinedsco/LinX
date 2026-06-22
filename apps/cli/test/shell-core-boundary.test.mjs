@@ -589,6 +589,27 @@ test('auto editor indicator patch state is kept behind the shell rendering host'
   assert.deepEqual(violations, [])
 })
 
+test('terminal title patching is centralized in the shell rendering router', () => {
+  const allowed = new Set([
+    'linx-terminal-title-router.ts',
+  ])
+  const violations = []
+
+  for (const file of listSourceFiles(libRoot)) {
+    const relativePath = relative(libRoot, file)
+    if (relativePath.startsWith(adapterSegment) || allowed.has(relativePath)) {
+      continue
+    }
+
+    const source = readFileSync(file, 'utf8')
+    if (/interactive\.updateTerminalTitle\s*=/.test(source)) {
+      violations.push(relativePath)
+    }
+  }
+
+  assert.deepEqual(violations, [])
+})
+
 test('interrupt control patch state is kept behind the shell interrupt host', () => {
   const allowed = new Set([
     'linx-interrupt-control-host.ts',
