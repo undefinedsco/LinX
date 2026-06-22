@@ -1,12 +1,11 @@
 import { parseLinxShellCommand, type LinxShellCommand } from './linx-shell-command-router.js'
 import {
-  isFinalSubmitSetCustomEditorComponentPatched,
   isFinalSubmitWrappedHandler,
   isInputCommandRouterInstalled,
-  markFinalSubmitSetCustomEditorComponentPatched,
   markFinalSubmitWrappedHandler,
   markInputCommandRouterInstalled,
 } from './linx-interactive-command-routing-host.js'
+import { registerLinxEditorComponentRebindHandler } from './linx-editor-component-router.js'
 
 export type LinxInputShellCommandHandler = (
   interactive: any,
@@ -83,19 +82,14 @@ export function installLinxFinalSubmitCommandRouter(
     wrapEditor(interactive.editor)
   }
 
-  const originalSetCustomEditorComponent = interactive.setCustomEditorComponent?.bind(interactive)
-  if (
-    typeof originalSetCustomEditorComponent === 'function'
-    && !isFinalSubmitSetCustomEditorComponentPatched(interactive)
-  ) {
-    interactive.setCustomEditorComponent = function patchedLinxFinalSubmitSetCustomEditorComponent(...args: unknown[]): unknown {
-      const result = originalSetCustomEditorComponent(...args)
-      wrapEditor(this.defaultEditor)
-      if (this.editor !== this.defaultEditor) {
-        wrapEditor(this.editor)
+  registerLinxEditorComponentRebindHandler(interactive, {
+    name: 'linx-final-submit-command-router:wrap-editor-submit',
+    priority: 0,
+    handler({ interactive: reboundInteractive }) {
+      wrapEditor(reboundInteractive.defaultEditor)
+      if (reboundInteractive.editor !== reboundInteractive.defaultEditor) {
+        wrapEditor(reboundInteractive.editor)
       }
-      return result
-    }
-    markFinalSubmitSetCustomEditorComponentPatched(interactive)
-  }
+    },
+  })
 }

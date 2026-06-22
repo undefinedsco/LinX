@@ -1,7 +1,6 @@
 const globalCommandHandlerInstalled = new WeakSet<object>()
 const inputCommandRouterInstalled = new WeakSet<object>()
 const finalSubmitWrappedHandlers = new WeakSet<object>()
-const finalSubmitSetCustomEditorComponentPatched = new WeakSet<object>()
 const sessionCommandRouterAfterRebindInstalled = new WeakSet<object>()
 
 export function isGlobalCommandHandlerInstalled(interactive: unknown): boolean {
@@ -28,17 +27,6 @@ export function markFinalSubmitWrappedHandler(handler: Function): void {
   finalSubmitWrappedHandlers.add(handler)
 }
 
-export function isFinalSubmitSetCustomEditorComponentPatched(interactive: unknown): boolean {
-  return Boolean(
-    interactive
-      && typeof interactive === 'object'
-      && finalSubmitSetCustomEditorComponentPatched.has(interactive),
-  )
-}
-
-export function markFinalSubmitSetCustomEditorComponentPatched(interactive: object): void {
-  finalSubmitSetCustomEditorComponentPatched.add(interactive)
-}
 
 export function isSessionCommandRouterAfterRebindInstalled(interactive: unknown): boolean {
   return Boolean(

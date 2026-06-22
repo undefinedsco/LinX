@@ -93,6 +93,11 @@ Hard rules:
   business logic. `interactive.updateTerminalTitle` is patched only by
   `apps/cli/src/lib/linx-terminal-title-router.ts`; rendering modules register
   ordered title handlers instead of replacing the Pi method directly.
+- Custom editor component rebinding is shell editor lifecycle, not feature-local
+  wrapper territory. `interactive.setCustomEditorComponent` is patched only by
+  `apps/cli/src/lib/linx-editor-component-router.ts`; modules that need to
+  re-wrap the active editor after Pi swaps components register ordered rebind
+  handlers.
 - New lifecycle or submit behavior must add a handler to the relevant router and
   a boundary test in `apps/cli/test/shell-core-boundary.test.mjs`.
 
@@ -508,10 +513,20 @@ Input and final-submit interception are another shell-input patch and belong
 behind `linx-input-command-routing.ts`. The general interactive command router
 may still own the LinX shell command handler and expose compatibility installer
 functions, but it must not directly patch `interactive.getUserInput`,
-`editor.onSubmit`, or `interactive.setCustomEditorComponent`. Those editor/input
-method patches are a lifecycle-sensitive Pi adaptation seam; keeping them in one
-input module prevents slash-command routing, projected command routing, and
-session method interception from depending on wrapper nesting or import order.
+or `editor.onSubmit`. Those editor/input method patches are a
+lifecycle-sensitive Pi adaptation seam; keeping them in one input module
+prevents slash-command routing, projected command routing, and session method
+interception from depending on wrapper nesting or import order. When final
+submit routing needs to re-wrap a newly rebound editor, it must register a
+handler with `linx-editor-component-router.ts` instead of replacing
+`interactive.setCustomEditorComponent`.
+
+Editor component rebinding belongs behind `linx-editor-component-router.ts`.
+Pi may replace the active editor component at runtime; LinX features such as
+final-submit command routing and auto editor rendering need to re-apply their
+editor-level decorators after that replacement. They must register ordered
+rebind handlers with the editor-component router rather than each wrapping
+`interactive.setCustomEditorComponent` independently.
 
 Concrete LinX shell command execution belongs behind
 `linx-shell-command-executor.ts`. The interactive command routing module may

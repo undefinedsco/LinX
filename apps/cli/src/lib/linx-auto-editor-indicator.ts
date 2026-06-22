@@ -6,6 +6,7 @@ import {
   markAutoEditorIndicatorInstalled,
   markAutoEditorIndicatorRenderInstalled,
 } from './linx-auto-editor-indicator-host.js'
+import { registerLinxEditorComponentRebindHandler } from './linx-editor-component-router.js'
 
 const AUTO_EDITOR_INDICATOR_LABEL = ' 托管中 · Secretary 自动输入 · Ctrl+C 接管 · /auto off '
 
@@ -19,17 +20,16 @@ export function installLinxAutoEditorIndicator(interactive: any): void {
     decorateLinxAutoEditorRender(interactive.editor, interactive)
   }
 
-  const originalSetCustomEditorComponent = interactive.setCustomEditorComponent?.bind(interactive)
-  if (typeof originalSetCustomEditorComponent === 'function') {
-    interactive.setCustomEditorComponent = function patchedSetCustomEditorComponent(...args: unknown[]): unknown {
-      const result = originalSetCustomEditorComponent(...args)
-      decorateLinxAutoEditorRender(this.defaultEditor, this)
-      if (this.editor && this.editor !== this.defaultEditor) {
-        decorateLinxAutoEditorRender(this.editor, this)
+  registerLinxEditorComponentRebindHandler(interactive, {
+    name: 'linx-auto-editor-indicator:decorate-editor-render',
+    priority: 10,
+    handler({ interactive: reboundInteractive }) {
+      decorateLinxAutoEditorRender(reboundInteractive.defaultEditor, reboundInteractive)
+      if (reboundInteractive.editor && reboundInteractive.editor !== reboundInteractive.defaultEditor) {
+        decorateLinxAutoEditorRender(reboundInteractive.editor, reboundInteractive)
       }
-      return result
-    }
-  }
+    },
+  })
 
   markAutoEditorIndicatorInstalled(interactive)
 }

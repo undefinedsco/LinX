@@ -456,6 +456,27 @@ test('input and final-submit command routing patches live in a dedicated input m
   assert.deepEqual(violations, [])
 })
 
+test('custom editor component rebinding is centralized in the shell editor component router', () => {
+  const allowed = new Set([
+    'linx-editor-component-router.ts',
+  ])
+  const violations = []
+
+  for (const file of listSourceFiles(libRoot)) {
+    const relativePath = relative(libRoot, file)
+    if (relativePath.startsWith(adapterSegment) || allowed.has(relativePath)) {
+      continue
+    }
+
+    const source = readFileSync(file, 'utf8')
+    if (/interactive\.setCustomEditorComponent\s*=/.test(source)) {
+      violations.push(relativePath)
+    }
+  }
+
+  assert.deepEqual(violations, [])
+})
+
 
 
 test('concrete shell command execution lives in a dedicated executor module', () => {
