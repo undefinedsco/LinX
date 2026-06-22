@@ -436,9 +436,10 @@ after Pi has initialized. Feature modules must not install their own init
 wrappers just to run after startup. They should expose idempotent actions that
 the post-init seam schedules. For example, `linx-workspace-command.ts` owns cwd
 resolution, `/cd`, and the visible "session cwd differs from current cwd" copy;
-`linx-interactive-post-init.ts` owns when that copy is scheduled after init.
-`linx-interactive-command-routing.ts` remains the command router and must not
-also become a startup-notice lifecycle installer.
+`linx-restored-auto-startup.ts` owns the auto-restored status copy and controller
+start effect; `linx-interactive-post-init.ts` owns when those effects run after
+init. `linx-interactive-command-routing.ts` remains the command router and must
+not also become a startup-notice or restored-auto lifecycle installer.
 
 Session-level command interception is a narrower shell-session patch and belongs
 behind `linx-session-command-routing.ts`. The general interactive command router
