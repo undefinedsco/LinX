@@ -1,4 +1,3 @@
-import type { AutoModePeerCommandRoute } from '@linx/agent-runtime/auto-mode'
 import { parseLinxShellCommand, type LinxShellCommand } from './linx-shell-command-router.js'
 import { checkAndShowLinxUpdate } from './linx-update-notification.js'
 import { handleInteractiveAiConnectCommand } from './linx-ai-connect-command.js'
@@ -15,12 +14,7 @@ import {
   isLinxInteractiveAutoModeEnabled,
   notifyLinxInteractiveAutoControlChange,
   setLinxInteractiveAutoModeEnabled,
-  setLinxInteractiveGoalModeEnabled,
 } from './linx-interactive-shell-state.js'
-import {
-  getSessionCommandRouterOriginalPrompt,
-  getSessionCommandRouterOriginalSendUserMessage,
-} from './linx-session-command-routing-host.js'
 import {
   installLinxSessionCommandRouter as installOwnedLinxSessionCommandRouter,
   installLinxSessionCommandRouterAfterRebind as installOwnedLinxSessionCommandRouterAfterRebind,
@@ -33,6 +27,7 @@ import {
   installLinxFinalSubmitCommandRouter as installOwnedLinxFinalSubmitCommandRouter,
   installLinxInputCommandRouter as installOwnedLinxInputCommandRouter,
 } from './linx-input-command-routing.js'
+import { routeLinxPeerCommand } from './linx-peer-command-routing.js'
 
 type ShellCommandOptions = {
   onAutoControlChange?: (enabled: boolean) => void | Promise<void>
@@ -157,7 +152,7 @@ async function handleLinxShellCommand(
   }
 
   if (command.action === 'peer-command') {
-    await handleInteractivePeerCommand(interactive, runtime, command.route)
+    await routeLinxPeerCommand(interactive, runtime, command.route)
     return
   }
 
@@ -192,43 +187,6 @@ async function handleLinxShellCommand(
 
 export function installProjectedCommandRouter(interactive: any): void {
   configureLinxInteractiveShellState(interactive, {})
-}
-
-async function handleInteractivePeerCommand(
-  interactive: any,
-  runtime: any,
-  route: AutoModePeerCommandRoute,
-): Promise<void> {
-  const goalMode = route.secretaryBehavior?.goalMode
-  if (goalMode !== undefined) {
-    applyInteractiveGoalMode(interactive, runtime, goalMode)
-    interactive.showStatus?.(`Peer command routed; Secretary goal supervision mirror is ${goalMode ? 'active' : 'paused'}.`)
-  } else {
-    interactive.showStatus?.('Peer command routed to current chat peer.')
-  }
-  await submitProjectedBackendInput(interactive, route.text)
-  interactive.ui?.requestRender?.()
-}
-
-function applyInteractiveGoalMode(interactive: any, runtime: any, enabled: boolean): void {
-  setLinxInteractiveGoalModeEnabled(interactive, runtime, enabled)
-}
-
-async function submitProjectedBackendInput(interactive: any, text: string): Promise<void> {
-  const session = interactive?.session
-  const sendUserMessage = getSessionCommandRouterOriginalSendUserMessage(session) ?? session?.sendUserMessage
-  if (typeof sendUserMessage === 'function') {
-    await sendUserMessage(text, session.isStreaming ? { deliverAs: 'followUp' } : undefined)
-    return
-  }
-
-  const prompt = getSessionCommandRouterOriginalPrompt(session) ?? session?.prompt
-  if (typeof prompt === 'function') {
-    await prompt(text, session.isStreaming ? { streamingBehavior: 'followUp' } : undefined)
-    return
-  }
-
-  throw new Error('Active LinX session cannot accept peer goal input')
 }
 
 export async function handleInteractiveAutoCommand(
