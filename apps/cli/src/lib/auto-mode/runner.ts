@@ -41,7 +41,7 @@ import {
 import { detectAutoModeAuthFailure, preflightAutoModeAuth, type AutoModeAuthPreflightResult } from './auth.js'
 import { createAutoModeDisplay, type AutoModeDisplay } from './display.js'
 import { formatAutoModeSessionSummary } from './format.js'
-import { describeAutoControl, getAutoModeHook, linxNativeBackend, listAutoModeHooks } from './hooks/index.js'
+import { describeAutoControl, getAutoModeHook, linxNativeBackend, listAutoModeHooks } from './hooks/registry.js'
 import {
   createRemoteAutoModeApproval,
   isRemoteApprovalAbortError,

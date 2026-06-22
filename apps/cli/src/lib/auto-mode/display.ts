@@ -22,7 +22,7 @@ import type {
   AutoModeUiEntry,
 } from './types.js'
 import { resolveAutoModeSessionDisplayId } from './format.js'
-import { getAutoModeBackendLabel } from './hooks/index.js'
+import { getAutoModeBackendLabel } from './hooks/registry.js'
 import {
   LINX_TUI_READY_DRAFT_HINT,
   LINX_TUI_READY_FOOTER_HINT,

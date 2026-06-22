@@ -6,7 +6,7 @@ let autoModeModulePromise
 
 async function getAutoModeModule() {
   if (!autoModeModulePromise) {
-    autoModeModulePromise = loadAutoModeModule('lib/auto-mode/hooks/index.ts')
+    autoModeModulePromise = loadAutoModeModule('lib/auto-mode/hooks/registry.ts')
   }
 
   return autoModeModulePromise
