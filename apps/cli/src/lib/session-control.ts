@@ -339,22 +339,54 @@ export class SessionControlManager {
   }
 }
 
+type SessionControlRegistry = {
+  managers: WeakMap<object, SessionControlManager>
+  runtimeEventBridgeHosts: WeakSet<object>
+}
+
+const SESSION_CONTROL_REGISTRY = Symbol.for('linx.sessionControl.registry')
+const sessionControlRegistry = getSessionControlRegistry()
+const sessionControlManagers = sessionControlRegistry.managers
+const sessionControlRuntimeEventBridgeHosts = sessionControlRegistry.runtimeEventBridgeHosts
+
+function getSessionControlRegistry(): SessionControlRegistry {
+  const host = globalThis as typeof globalThis & { [SESSION_CONTROL_REGISTRY]?: SessionControlRegistry }
+  const existing = host[SESSION_CONTROL_REGISTRY]
+  if (existing) {
+    return existing
+  }
+
+  const registry: SessionControlRegistry = {
+    managers: new WeakMap<object, SessionControlManager>(),
+    runtimeEventBridgeHosts: new WeakSet<object>(),
+  }
+  Object.defineProperty(host, SESSION_CONTROL_REGISTRY, {
+    configurable: false,
+    enumerable: false,
+    value: registry,
+    writable: false,
+  })
+  return registry
+}
+
 export function getSessionControlManager(
   interactive: any,
   runtime: any,
   sessionCwd?: string,
 ): SessionControlManager {
-  if (interactive?.__sessionControlManager instanceof SessionControlManager) {
-    return interactive.__sessionControlManager
+  const interactiveHost = asObjectHost(interactive)
+  const runtimeHost = asObjectHost(runtime)
+  const existing = (interactiveHost ? sessionControlManagers.get(interactiveHost) : undefined)
+    ?? (runtimeHost ? sessionControlManagers.get(runtimeHost) : undefined)
+  if (existing) {
+    bindSessionControlManager(interactiveHost, existing)
+    bindSessionControlManager(runtimeHost, existing)
+    return existing
   }
 
   const manager = new SessionControlManager({ interactive, runtime, sessionCwd })
-  if (interactive && typeof interactive === 'object') {
-    interactive.__sessionControlManager = manager
-  }
-  if (runtime && typeof runtime === 'object') {
-    runtime.__sessionControlManager = manager
-  }
+  bindSessionControlManager(interactiveHost, manager)
+  bindSessionControlManager(runtimeHost, manager)
   return manager
 }
 
@@ -363,7 +395,8 @@ export function installSessionControlRuntimeEventBridge(
   runtime: any,
   sessionCwd?: string,
 ): void {
-  if (interactive?.__sessionControlRuntimeEventBridgeInstalled) {
+  const bridgeHost = asObjectHost(interactive) ?? asObjectHost(runtime)
+  if (bridgeHost && sessionControlRuntimeEventBridgeHosts.has(bridgeHost)) {
     return
   }
 
@@ -379,9 +412,8 @@ export function installSessionControlRuntimeEventBridge(
     getSessionControlManager(interactive, runtime, sessionCwd).recordRuntimeEvent(event)
   })
 
-  if (interactive && typeof interactive === 'object') {
-    interactive.__sessionControlRuntimeEventBridgeInstalled = true
-    interactive.__sessionControlRuntimeEventBridgeUnsubscribe = unsubscribe
+  if (bridgeHost) {
+    sessionControlRuntimeEventBridgeHosts.add(bridgeHost)
   }
 
   registerLinxInteractiveStopHandler(interactive, {
@@ -390,8 +422,21 @@ export function installSessionControlRuntimeEventBridge(
     priority: 20,
     handler() {
       unsubscribe()
+      if (bridgeHost) {
+        sessionControlRuntimeEventBridgeHosts.delete(bridgeHost)
+      }
     },
   })
+}
+
+function asObjectHost(value: unknown): object | undefined {
+  return value && (typeof value === 'object' || typeof value === 'function') ? value as object : undefined
+}
+
+function bindSessionControlManager(host: object | undefined, manager: SessionControlManager): void {
+  if (host) {
+    sessionControlManagers.set(host, manager)
+  }
 }
 
 export function isSessionControlBlockedEvent(

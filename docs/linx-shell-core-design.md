@@ -474,6 +474,16 @@ handle reconciliation warnings, or import the session-control manager for this
 purpose. This keeps command ownership separate from chat/thread reconciliation
 side effects.
 
+Session-control manager and runtime-event bridge state belong behind
+`session-control.ts`. They must not be stored as ad hoc
+`interactive.__sessionControl*` or `runtime.__sessionControl*` fields. The
+session-control seam may use a named process-local registry so multiple compiled
+entry bundles in the same process can resolve the same manager, but callers must
+access it through `getSessionControlManager()` and
+`installSessionControlRuntimeEventBridge()`. This keeps control-session state
+observable through an explicit shell module rather than turning the Pi
+interactive object into a service locator.
+
 The current remaining design debt is shared shell state. Some modules still use
 `__linx*` properties on the interactive, editor, runtime, or session object.
 Only local patch sentinels and original-method handles are acceptable there.
