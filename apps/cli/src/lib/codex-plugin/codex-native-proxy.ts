@@ -12,7 +12,7 @@ import { appendAutoModeEvent, createAutoModeSession, finishAutoModeSession, writ
 import { persistAutoModeConversationToPod } from '../auto-mode/pod-persistence.js'
 import { createCodexAttachBridge, type CodexAttachBridgeRuntime } from './bridge.js'
 import type { AutoRunOptions, AutoModeSpawnPlan } from '../auto-mode/types.js'
-import type { BackendCommandResult } from '../backend-command.js'
+import type { BackendCommandResult } from '../backend-command-router-contract.js'
 import type { SessionControlManager } from '../session-control.js'
 
 interface WritableLike {

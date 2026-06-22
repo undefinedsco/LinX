@@ -1,4 +1,4 @@
-import type { BackendCommandRouter } from './backend-command.js'
+import type { BackendCommandRouter } from './backend-command-router-contract.js'
 import type { NativeBackendProxy } from './native-backend-proxy.js'
 
 export type NativeBackendCommandProxy = Pick<NativeBackendProxy, 'record' | 'executeCommand' | 'setCwd' | 'subscribe' | 'setSessionControl'>

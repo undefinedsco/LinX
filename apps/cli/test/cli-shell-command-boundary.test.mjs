@@ -22,6 +22,14 @@ const symphonyRuntimeSourceUrl = new URL('../src/lib/symphony/runtime.ts', impor
 const linxLoginFlowSource = readFileSync(new URL('../src/lib/linx-login-flow.ts', import.meta.url), 'utf8')
 const oidcAuthSource = readFileSync(new URL('../src/lib/oidc-auth.ts', import.meta.url), 'utf8')
 
+const backendCommandRouterSource = readFileSync(new URL('../src/lib/linx-backend-command-router.ts', import.meta.url), 'utf8')
+const nativeBackendCommandRouterSource = readFileSync(new URL('../src/lib/native-backend-command-router.ts', import.meta.url), 'utf8')
+const runtimeBackendCompositionSource = readFileSync(new URL('../src/lib/linx-runtime-backend-composition.ts', import.meta.url), 'utf8')
+const runtimeAdapterContractSource = readFileSync(new URL('../src/lib/linx-runtime-adapter-contract.ts', import.meta.url), 'utf8')
+const runtimeAgentSessionSource = readFileSync(new URL('../src/lib/linx-runtime-agent-session.ts', import.meta.url), 'utf8')
+const nativeBackendProxySource = readFileSync(new URL('../src/lib/native-backend-proxy.ts', import.meta.url), 'utf8')
+const codexNativeProxySource = readFileSync(new URL('../src/lib/codex-plugin/codex-native-proxy.ts', import.meta.url), 'utf8')
+
 test('default Pi/TUI command module does not construct Pod ORM state directly', () => {
   assert.doesNotMatch(commandSource, /from ['"]\.\/models\.js['"]/, 'shell command should not import shared model DB primitives directly')
   assert.doesNotMatch(commandSource, /\bdrizzle\s*\(/, 'shell command should delegate Pod DB construction to a use-case module')
@@ -222,6 +230,30 @@ test('codex plugin command module depends on owning plugin modules instead of th
     /from ['"]\.\/codex-plugin\/index\.js['"]/,
     'codex plugin command should import native proxy and MCP server from their owning modules',
   )
+})
+
+test('backend command routing contracts live in an explicit contract module', () => {
+  assert.equal(
+    existsSync(new URL('../src/lib/backend-command.ts', import.meta.url)),
+    false,
+    'backend command contracts should not live in an ambiguous command implementation module',
+  )
+  assert.equal(
+    existsSync(new URL('../src/lib/backend-command-router-contract.ts', import.meta.url)),
+    true,
+    'backend command routing contracts should have an explicit contract module',
+  )
+  for (const source of [
+    backendCommandRouterSource,
+    nativeBackendCommandRouterSource,
+    runtimeBackendCompositionSource,
+    runtimeAdapterContractSource,
+    runtimeAgentSessionSource,
+    nativeBackendProxySource,
+    codexNativeProxySource,
+  ]) {
+    assert.doesNotMatch(source, /from ['"][^'"]*backend-command\.js['"]/, 'backend command users should import the explicit router contract module')
+  }
 })
 
 test('linx login flow does not expose auth refresh through a test seam', () => {

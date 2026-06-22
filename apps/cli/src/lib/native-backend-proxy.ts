@@ -1,5 +1,5 @@
 import type { AutoModeNormalizedEvent, AutoModeSessionRecord } from './auto-mode/types.js'
-import type { BackendCommandResult } from './backend-command.js'
+import type { BackendCommandResult } from './backend-command-router-contract.js'
 import type { SessionControlManager } from './session-control.js'
 
 export type NativeBackendApprovalPolicy = 'never' | 'on-request'

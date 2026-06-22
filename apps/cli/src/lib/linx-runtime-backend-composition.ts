@@ -1,5 +1,5 @@
 import type { AutoModeWorkerBackend } from './auto-mode/types.js'
-import type { BackendCommandRouter } from './backend-command.js'
+import type { BackendCommandRouter } from './backend-command-router-contract.js'
 import type { NativeBackendApprovalPolicy } from './native-backend-proxy.js'
 import type { NativeBackendStreamProxy } from './native-backend-stream-backend.js'
 import type { PodDataSession } from './pod-data-session.js'

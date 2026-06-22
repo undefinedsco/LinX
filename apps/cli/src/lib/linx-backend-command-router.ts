@@ -1,4 +1,4 @@
-import type { BackendCommandRouter } from './backend-command.js'
+import type { BackendCommandRouter } from './backend-command-router-contract.js'
 import { installProjectedCommandRouter } from './linx-interactive-command-routing.js'
 import { configureLinxInteractiveShellState } from './linx-interactive-shell-state.js'
 import { shouldRouteToBackendCommand } from './linx-shell-command-router.js'

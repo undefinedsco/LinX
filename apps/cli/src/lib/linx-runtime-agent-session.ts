@@ -10,7 +10,7 @@ import {
 } from '@earendil-works/pi-coding-agent'
 import type { Api, Model, OAuthCredentials } from '@earendil-works/pi-ai'
 import type { AutoModeWorkerBackend } from './auto-mode/types.js'
-import type { BackendCommandRouter } from './backend-command.js'
+import type { BackendCommandRouter } from './backend-command-router-contract.js'
 import { loadCredentials } from './credentials-store.js'
 import { LINX_CLOUD_PROVIDER_ID, LINX_CLOUD_PROVIDER_LABEL } from './linx-cloud-models.js'
 import type { LinxCloudRuntimeCoordinator } from './linx-cloud-runtime-coordinator.js'
