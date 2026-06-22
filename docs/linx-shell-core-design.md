@@ -439,9 +439,12 @@ resolution, `/cd`, and the visible "session cwd differs from current cwd" copy;
 `linx-restored-auto-startup.ts` owns the auto-restored status copy and controller
 start effect; `linx-resume-output.ts` owns normal exit copy and resume text
 formatting, but its "TUI initialized" readiness mark is set by the post-init
-seam. `linx-interactive-post-init.ts` owns when those effects run after init.
+seam; `linx-welcome-header.ts` owns terminal-title patching and welcome-card
+rendering, but startup header replacement is a post-init effect.
+`linx-interactive-post-init.ts` owns when those effects run after init.
 `linx-interactive-command-routing.ts` remains the command router and must not
-also become a startup-notice, restored-auto, or exit-output lifecycle installer.
+also become a startup-notice, restored-auto, exit-output, or welcome-header
+lifecycle installer.
 
 Session-level command interception is a narrower shell-session patch and belongs
 behind `linx-session-command-routing.ts`. The general interactive command router
