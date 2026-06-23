@@ -118,11 +118,12 @@ Hard rules:
   `apps/cli/src/lib/linx-interactive-streaming-message-host.ts`; features may
   request streaming cleanup but must not know Pi's mutable streaming field
   layout.
-- Custom header replacement is shell rendering state, not welcome-card business
-  logic. Writes to `interactive.customHeader` belong behind
+- Custom header replacement and invalidation are shell rendering state, not
+  welcome-card business logic. Writes to `interactive.customHeader` and
+  follow-up render requests for header state changes belong behind
   `apps/cli/src/lib/linx-interactive-header-host.ts`; welcome or startup modules
   may build replacement components but must not know Pi's header field/container
-  mutation details.
+  mutation or render invalidation details.
 - Appending visible fallback text to the Pi chat transcript is shell rendering
   state, not feature business logic. Feature modules may build the notice text,
   but `Text` component creation, `interactive.chatContainer` mutation, and render
