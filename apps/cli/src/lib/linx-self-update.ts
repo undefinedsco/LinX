@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { showLinxInteractiveError } from './linx-interactive-error-display.js'
+import { showLinxInteractiveStatus } from './linx-interactive-status-display.js'
 import { restartInteractiveShellProcess, type InteractiveShellLifecycle } from './shell-lifecycle.js'
 
 export const LINX_UPDATE_PACKAGE_NAME = '@undefineds.co/linx'
@@ -55,8 +56,7 @@ export async function installLinxSelfUpdateAndRestart(
   newVersion: string,
   options: InstallLinxSelfUpdateOptions = {},
 ): Promise<void> {
-  interactive.showStatus?.(`Installing LinX ${newVersion}...`)
-  interactive.ui?.requestRender?.()
+  showLinxInteractiveStatus(interactive, `Installing LinX ${newVersion}...`)
   const runtime = {
     ...defaultSelfUpdateRuntime,
     ...options.runtime,
@@ -69,8 +69,7 @@ export async function installLinxSelfUpdateAndRestart(
     return
   }
 
-  interactive.showStatus?.(`LinX ${newVersion} installed. Restarting...`)
-  interactive.ui?.requestRender?.()
+  showLinxInteractiveStatus(interactive, `LinX ${newVersion} installed. Restarting...`)
   await runtime.restartShell(interactive)
 }
 
